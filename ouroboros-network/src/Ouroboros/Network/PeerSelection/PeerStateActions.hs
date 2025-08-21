@@ -5,6 +5,7 @@
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
@@ -43,6 +44,7 @@ import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
+import Control.Monad.Trans.Maybe
 
 import Control.Concurrent.JobPool (Job (..), JobPool)
 import Control.Concurrent.JobPool qualified as JobPool
@@ -52,10 +54,11 @@ import Data.ByteString.Lazy (ByteString)
 import Data.Functor (void, ($>))
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (isNothing)
+import Data.Maybe (catMaybes, isNothing)
 import Data.Typeable (Typeable, cast)
 
 import Network.Mux qualified as Mux
+import Network.Mux.Types qualified as Mux
 
 import Ouroboros.Network.Context
 import Ouroboros.Network.ControlMessage (ControlMessage (..))
@@ -294,8 +297,8 @@ instance Exception MiniProtocolExceptions
 data ApplicationHandle muxMode responderCtx peerAddr bytes m a b = ApplicationHandle {
     -- | List of applications for the given peer temperature.
     --
-    ahApplication         :: [MiniProtocol muxMode (ExpandedInitiatorContext peerAddr m)
-                                                   responderCtx bytes m a b],
+    ahApplication         :: [MiniProtocol (ExpandedInitiatorContext peerAddr m)
+                                           responderCtx bytes m a b],
 
     -- | 'ControlMessage' 'TVar' for the given peer temperature.
     --
@@ -320,7 +323,7 @@ getControlVar tok = ahControlVar . projectBundle tok
 
 getProtocols :: SingProtocolTemperature pt
              -> TemperatureBundle (ApplicationHandle muxMode responderCtx peerAddr bytes m a b)
-             -> [MiniProtocol muxMode (ExpandedInitiatorContext peerAddr m) responderCtx bytes m a b]
+             -> [MiniProtocol (ExpandedInitiatorContext peerAddr m) responderCtx bytes m a b]
 getProtocols tok bundle = ahApplication (projectBundle tok bundle)
 
 getMiniProtocolsVar :: SingProtocolTemperature pt
@@ -437,7 +440,8 @@ data PeerConnectionHandle (muxMode :: Mux.Mode) responderCtx peerAddr versionDat
     pchMux             :: !(Mux.Mux muxMode m),
     pchAppHandles      :: !(TemperatureBundle (ApplicationHandle muxMode responderCtx peerAddr bytes m a b)),
     pchVersionData     :: !versionData,
-    pchPromotedHotVar  :: !(StrictTVar m (Maybe Time))
+    pchPromotedHotVar  :: !(StrictTVar m (Maybe Time)),
+    pchDataFlow        :: !DataFlow
   }
 
 -- | Retrieve the time the remote peer has been promoted to hot state
@@ -574,7 +578,8 @@ data PeerStateActionsArguments muxMode socket responderCtx peerAddr versionData 
 
       spsExitPolicy             :: ExitPolicy a,
       spsRethrowPolicy          :: RethrowPolicy,
-      spsMainThreadId           :: ThreadId m
+      spsMainThreadId           :: ThreadId m,
+      spsMkResponderCtx         :: ConnectionId peerAddr -> responderCtx
     }
 
 
@@ -610,7 +615,8 @@ withPeerStateActions PeerStateActionsArguments {
                        spsConnectionManager,
                        spsExitPolicy,
                        spsRethrowPolicy,
-                       spsMainThreadId
+                       spsMainThreadId,
+                       spsMkResponderCtx
                      }
                      k =
     JobPool.withJobPool $ \jobPool ->
@@ -786,7 +792,7 @@ withPeerStateActions PeerStateActionsArguments {
                 ShutdownPeer -> throwIO e
 
             Right (Connected connId@ConnectionId { localAddress, remoteAddress }
-                             _dataFlow
+                             dataFlow
                             (Handle mux muxBundle controlMessageBundle versionData)) -> do
 
               atomically $ do
@@ -807,11 +813,14 @@ withPeerStateActions PeerStateActionsArguments {
                                             controlMessageBundle
                                             awaitVarBundle,
                         pchVersionData  = versionData,
+                        pchDataFlow     = dataFlow,
                         pchPromotedHotVar
                       }
 
-              startProtocols SingWarm isBigLedgerPeer connHandle
-              startProtocols SingEstablished isBigLedgerPeer connHandle
+              startProtocols
+                spsTracer SingWarm isBigLedgerPeer connHandle spsMkResponderCtx
+              startProtocols
+                spsTracer SingEstablished isBigLedgerPeer connHandle spsMkResponderCtx
               atomically $ writeTVar peerStateVar PeerWarm
               traceWith spsTracer (PeerStatusChanged
                                     (ColdToWarm
@@ -868,8 +877,8 @@ withPeerStateActions PeerStateActionsArguments {
                                    (STM m (HasReturned a)))))
         mkAwaitVars = traverse f
           where
-            f :: [MiniProtocol muxMode (ExpandedInitiatorContext peerAddr m)
-                                       responderCtx ByteString m a b]
+            f :: [MiniProtocol (ExpandedInitiatorContext peerAddr m)
+                               responderCtx ByteString m a b]
               -> STM m (StrictTVar m
                          (Map MiniProtocolNum
                            (STM m (HasReturned a))))
@@ -934,9 +943,10 @@ withPeerStateActions PeerStateActionsArguments {
     -- NB when adding any operations that can block for an extended period of
     -- of time timeouts should be implemented here in the same way it is in
     -- establishPeerConnection and deactivatePeerConnection.
-    activatePeerConnection :: IsBigLedgerPeer
-                           -> PeerConnectionHandle muxMode responderCtx peerAddr versionData ByteString m a b
-                           -> m ()
+    activatePeerConnection
+      :: IsBigLedgerPeer
+      -> PeerConnectionHandle muxMode responderCtx peerAddr versionData ByteString m a b
+      -> m ()
     activatePeerConnection
         isBigLedgerPeer
         connHandle@PeerConnectionHandle {
@@ -959,7 +969,8 @@ withPeerStateActions PeerStateActionsArguments {
                                   (ActiveCold peerStatus))
             throwIO $ ColdActivationException pchConnectionId
 
-      startProtocols SingHot isBigLedgerPeer connHandle
+      startProtocols
+        spsTracer SingHot isBigLedgerPeer connHandle spsMkResponderCtx
       atomically . writeTVar pchPromotedHotVar . (Just $!) =<< getMonotonicTime
       traceWith spsTracer (PeerStatusChanged (WarmToHot pchConnectionId))
 
@@ -1114,7 +1125,8 @@ mkApplicationHandleBundle muxBundle controlMessageBundle awaitVarsBundle =
     mkApplication :: SingProtocolTemperature pt
                   -> WithProtocolTemperature pt (ApplicationHandle muxMode responderCtx peerAddr bytes m a b)
     mkApplication tok =
-      let app =
+      let app:: ApplicationHandle muxMode responderCtx peerAddr bytes m a b
+          app =
             ApplicationHandle {
               ahApplication         = projectBundle tok muxBundle,
               ahControlVar          = projectBundle tok controlMessageBundle,
@@ -1130,22 +1142,25 @@ mkApplicationHandleBundle muxBundle controlMessageBundle awaitVarsBundle =
 -- protocol bundle indicated by the type of the first argument.
 --
 startProtocols :: forall (muxMode :: Mux.Mode) (pt :: ProtocolTemperature)
-                         responderCtx peerAddr versionData m a b.
+                         responderCtx peerAddr versionData versionNumber m a b.
                   ( Alternative (STM m)
                   , MonadAsync m
                   , MonadCatch m
                   , MonadThrow (STM m)
-                  , HasInitiator muxMode ~ True
                   )
-               => SingProtocolTemperature pt
+               => Tracer m (PeerSelectionActionsTrace peerAddr versionNumber)
+               -> SingProtocolTemperature pt
                -> IsBigLedgerPeer
                -> PeerConnectionHandle muxMode responderCtx peerAddr versionData ByteString m a b
+               -> (ConnectionId peerAddr -> responderCtx)
                -> m ()
-startProtocols tok isBigLedgerPeer connHandle@PeerConnectionHandle { pchMux, pchAppHandles } = do
+startProtocols spsTracer tok isBigLedgerPeer
+               connHandle@PeerConnectionHandle { pchMux, pchAppHandles, pchConnectionId, pchDataFlow }
+               spsMkResponderCtx = do
     let ptcls = getProtocols tok pchAppHandles
-    as <- traverse runInitiator ptcls
+    as <- catMaybes <$> traverse (runMaybeT . runInitiator) ptcls
     atomically $ writeTVar (getMiniProtocolsVar tok pchAppHandles)
-                           (miniProtocolResults $ zip (miniProtocolNum `map` ptcls) as)
+                           (miniProtocolResults as)
   where
 
     miniProtocolResults :: [(MiniProtocolNum, STM m (Either SomeException a))]
@@ -1153,26 +1168,45 @@ startProtocols tok isBigLedgerPeer connHandle@PeerConnectionHandle { pchMux, pch
     miniProtocolResults = Map.map (fmap hasReturnedFromEither)
                         . Map.fromList
 
-    runInitiator :: MiniProtocol muxMode (ExpandedInitiatorContext peerAddr m)
-                                         responderCtx ByteString m a b
-                 -> m (STM m (Either SomeException a))
+    runInitiator :: MiniProtocol (ExpandedInitiatorContext peerAddr m)
+                                 responderCtx ByteString m a b
+                 -> MaybeT m (MiniProtocolNum, STM m (Either SomeException a))
     runInitiator MiniProtocol {
                       miniProtocolNum,
                       miniProtocolRun
                     } =
-        case miniProtocolRun of
-          InitiatorProtocolOnly initiator ->
-              Mux.runMiniProtocol
+      MaybeT case miniProtocolRun of
+        SomeMiniProtocol _ ResponderProtocolOnly{} -> return Nothing
+        SomeMiniProtocol _ (InitiatorProtocolOnly initiator) ->
+          Just . (miniProtocolNum,) <$>
+            Mux.runMiniProtocol'
+              pchMux miniProtocolNum
+              Mux.InitiatorDir
+              Mux.StartEagerly
+              (runMiniProtocolCb initiator context)
+        SomeMiniProtocol start (InitiatorAndResponderProtocol initiator responder) -> do
+          result <- (miniProtocolNum,) <$>
+             Mux.runMiniProtocol'
+               pchMux miniProtocolNum
+               Mux.InitiatorDir
+               Mux.StartEagerly
+               (runMiniProtocolCb initiator context)
+          when (start == StartOnDemandUnidirectionalPairReversePolarity
+                && pchDataFlow == Unidirectional) do
+            run <- tryJust (\e -> case fromException e of
+                        Just (SomeAsyncException _) -> Nothing
+                        Nothing                     -> Just e) $
+              -- we run a responder, but we will not monitor it
+              Mux.runMiniProtocol'
                 pchMux miniProtocolNum
-                Mux.InitiatorDirectionOnly
-                Mux.StartEagerly
-                (runMiniProtocolCb initiator context)
-          InitiatorAndResponderProtocol initiator _ ->
-              Mux.runMiniProtocol
-                pchMux miniProtocolNum
-                Mux.InitiatorDirection
-                Mux.StartEagerly
-                (runMiniProtocolCb initiator context)
+                Mux.ResponderDir
+                Mux.StartOnDemand
+                (runMiniProtocolCb responder (spsMkResponderCtx pchConnectionId))
+            case run of
+              Left e     ->
+                traceWith spsTracer $ PeerResponderStartError pchConnectionId e
+              _otherwise -> pure ()
+          return . Just $ result
       where
         context :: ExpandedInitiatorContext peerAddr m
         context = mkInitiatorContext tok isBigLedgerPeer connHandle
@@ -1217,6 +1251,7 @@ data PeerSelectionActionsTrace peerAddr vNumber =
       PeerStatusChanged       (PeerStatusChangeType peerAddr)
     | PeerStatusChangeFailure (PeerStatusChangeType peerAddr) (FailureType vNumber)
     | PeerMonitoringError     (ConnectionId peerAddr) SomeException
+    | PeerResponderStartError (ConnectionId peerAddr) SomeException
     | PeerMonitoringResult    (ConnectionId peerAddr) (Maybe (WithSomeProtocolTemperature FirstToFinishResult))
     | AcquireConnectionError  SomeException
     | PeerHotDuration         (ConnectionId peerAddr) DiffTime
