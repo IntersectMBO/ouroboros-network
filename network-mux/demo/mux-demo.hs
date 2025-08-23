@@ -36,6 +36,7 @@ import System.Directory
 #endif
 
 import Network.Mux as Mx
+import Network.Mux.Types qualified as Mx
 import Network.Mux.Bearer qualified as Mx
 
 import Test.Mux.ReqResp
@@ -135,9 +136,10 @@ serverWorker bearer = do
 
     Mx.run Mx.nullTracers mux bearer
   where
-    ptcls :: [MiniProtocolInfo ResponderMode]
+    ptcls :: [MiniProtocolInfo]
     ptcls = [ MiniProtocolInfo {
                 miniProtocolNum        = MiniProtocolNum 2,
+                miniProtocolStart      = StartOnDemand,
                 miniProtocolDir        = ResponderDirectionOnly,
                 miniProtocolLimits     = defaultProtocolLimits,
                 miniProtocolCapability = Nothing
@@ -195,10 +197,11 @@ clientWorker bearer n msg = do
 
     Mx.run Mx.nullTracers mux bearer
   where
-    ptcls :: [MiniProtocolInfo Mx.InitiatorMode]
+    ptcls :: [MiniProtocolInfo]
     ptcls = [ MiniProtocolInfo {
                 miniProtocolNum        = MiniProtocolNum 2,
-                miniProtocolDir        = InitiatorDirectionOnly,
+                miniProtocolStart      = StartEagerly,
+                miniProtocolDir        = Mx.InitiatorDir,
                 miniProtocolLimits     = defaultProtocolLimits,
                 miniProtocolCapability = Nothing
               }

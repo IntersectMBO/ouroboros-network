@@ -138,13 +138,13 @@ readDemuxerBenchmark sndSizeV sndSize addr = do
         then doRead tag maxData queue (cnt + BL.length msg)
         else error "corrupt stream"
 
-mkMiniProtocolState :: MonadSTM m => Word16 -> m (MiniProtocolState 'InitiatorMode m)
+mkMiniProtocolState :: MonadSTM m => Word16 -> m (MiniProtocolState m)
 mkMiniProtocolState num = do
   mpq <- newTVarIO $ 0 :!: mempty
   mpv    <- newTVarIO StatusRunning
 
-  let mpi = MiniProtocolInfo (MiniProtocolNum num) InitiatorDirectionOnly
-                             (MiniProtocolLimits maxBound) Nothing
+  let mpi = MiniProtocolInfo (MiniProtocolNum num) InitiatorDir
+                             (MiniProtocolLimits maxBound) StartEagerly Nothing
   return $ MiniProtocolState mpi mpq mpv
 
 -- | Run a server that accept connections on `ad`.
