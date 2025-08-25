@@ -462,16 +462,13 @@ selectTheCandidate
         case inRace of
           [] -> pure Nothing
           _ : _ -> do
-            -- Precondition of 'compareCandidateChains' is fulfilled as all
-            -- 'getFullCandidate's intersect pairwise (due to having the same
-            -- anchor as our current chain).
             let maxChainOn f c0 c1 = case compareCandidateChains (f c0) (f c1) of
                   LT -> c1
                   _  -> c0
                 -- maximumBy yields the last element in case of a tie while we
                 -- prefer the first one
                 chainSfx = fst $
-                  List.foldl1' (maxChainOn (getFullCandidate . fst)) inRace
+                  List.foldl1' (maxChainOn (getChainSuffix . fst)) inRace
             pure $ Just (chainSfx, inRace)
 
 -- | Given _the_ candidate fragment to sync from, and a list of peers (with
