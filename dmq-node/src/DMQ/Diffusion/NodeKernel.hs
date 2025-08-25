@@ -1,9 +1,11 @@
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DataKinds #-}
 
 module DMQ.Diffusion.NodeKernel
   ( NodeKernel (..)
   , withNodeKernel
+  -- TODO maybe move out
+  , PoolValidationCtx (..)
+  , StakePools (..)
   ) where
 
 import Control.Concurrent.Class.MonadMVar
@@ -12,8 +14,13 @@ import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
+import Control.Tracer
 
 import Data.Function (on)
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Sequence (Seq)
+import Data.Sequence qualified as Seq
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Sequence (Seq)
@@ -24,6 +31,9 @@ import Data.Void (Void)
 import System.Random (StdGen)
 import System.Random qualified as Random
 
+import Cardano.Ledger.Shelley.API
+import DMQ.Protocol.LocalMsgSubmission.Type
+import Ouroboros.Consensus.Shelley.Ledger.Query
 import Ouroboros.Network.BlockFetch (FetchClientRegistry,
            newFetchClientRegistry)
 import Ouroboros.Network.ConnectionId (ConnectionId (..))
@@ -52,10 +62,26 @@ data NodeKernel crypto ntnAddr m =
   , sigChannelVar       :: !(TxChannelsVar m ntnAddr SigId (Sig crypto))
   , sigMempoolSem       :: !(TxMempoolSem m)
   , sigSharedTxStateVar :: !(SharedTxStateVar m ntnAddr SigId (Sig crypto))
+  , stakePools          :: !(StakePools m)
+  , nextEpochVar        :: !(StrictTVar m (Maybe UTCTime))
   }
+
+
+type PoolId = KeyHash StakePool
+
+data StakePools m = StakePools {
+  stakePoolsVar     :: StrictTVar m (Map PoolId StakeSnapshot),
+  poolValidationCtx :: m PoolValidationCtx
+  }
+
+data PoolValidationCtx =
+  DMQPoolValidationCtx !UTCTime
+                       !(Maybe UTCTime)
+                       !(Map PoolId StakeSnapshot)
 
 newNodeKernel :: ( MonadLabelledSTM m
                  , MonadMVar m
+                 , MonadTime m
                  , Ord ntnAddr
                  )
               => StdGen
@@ -71,6 +97,15 @@ newNodeKernel rng = do
   sigMempoolSem <- newTxMempoolSem
   let (rng', rng'') = Random.split rng
   sigSharedTxStateVar <- newSharedTxStateVar rng'
+  nextEpochVar <- newTVarIO Nothing
+  stakePoolsVar <- newTVarIO Map.empty
+  let poolValidationCtx = do
+        (nextEpochBoundary, stakePools) <-
+          atomically $ (,) <$> readTVar nextEpochVar <*> readTVar stakePoolsVar
+        now <- getCurrentTime
+        return $ DMQPoolValidationCtx now nextEpochBoundary stakePools
+
+      stakePools = StakePools { stakePoolsVar, poolValidationCtx }
 
   peerSharingAPI <-
     newPeerSharingAPI
@@ -86,6 +121,8 @@ newNodeKernel rng = do
                   , sigChannelVar
                   , sigMempoolSem
                   , sigSharedTxStateVar
+                  , nextEpochVar
+                  , stakePools
                   }
 
 
