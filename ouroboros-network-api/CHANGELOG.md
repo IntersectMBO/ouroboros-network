@@ -6,9 +6,6 @@
 
 ### Breaking changes
 
-* Simplify type of `headerForgeUTCTime` in `BlockFetchConsensusInterface`, and
-  remove the supporting type `FromConsensus`.
-
 ### Non-breaking changes
 
 ## 0.16.0.0 -- 2025-07-21
