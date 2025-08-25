@@ -75,8 +75,7 @@ import Ouroboros.Network.Protocol.BlockFetch.Type qualified as BlockFetch
 import Ouroboros.Network.BlockFetch
 import Ouroboros.Network.BlockFetch.Client
 import Ouroboros.Network.BlockFetch.ClientRegistry (FetchClientRegistry (..))
-import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainSelStarvation (..),
-           initialWithFingerprint)
+import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainSelStarvation (..))
 import Ouroboros.Network.DeltaQ (defaultGSV)
 
 import Ouroboros.Network.Server.Simple qualified as Server.Simple
@@ -434,10 +433,8 @@ clientBlockFetch sockAddrs maxSlotNo = withIOManager $ \iocp -> do
                   pure $ \p b ->
                     addTestFetchedBlock blockHeap (castPoint p) (blockHeader b),
 
-              readChainComparison    = pure $ initialWithFingerprint ChainComparison {
-                    plausibleCandidateChain,
-                    compareCandidateChains
-                  },
+              plausibleCandidateChain,
+              compareCandidateChains,
 
               blockFetchSize         = \_ -> 1000,
               blockMatchesHeader     = \_ _ -> True,
