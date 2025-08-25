@@ -35,6 +35,7 @@ import Data.Hashable
 import Data.List as List (foldl', groupBy, sortBy, transpose)
 import Data.Maybe (mapMaybe)
 import Data.Set (Set)
+import GHC.Stack (HasCallStack)
 
 import Control.Exception (assert)
 import Control.Monad (guard)
@@ -47,8 +48,8 @@ import Ouroboros.Network.Point (withOriginToMaybe)
 
 import Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..),
            PeerFetchInFlight (..), PeerFetchStatus (..))
-import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainComparison (..),
-           FetchMode (..), PraosFetchMode (..))
+import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode (..),
+           PraosFetchMode (..))
 import Ouroboros.Network.BlockFetch.DeltaQ (PeerFetchInFlightLimits (..),
            PeerGSV (..), SizeInBytes, calculatePeerFetchInFlightLimits,
            comparePeerGSV, comparePeerGSV', estimateExpectedResponseDuration,
@@ -56,16 +57,25 @@ import Ouroboros.Network.BlockFetch.DeltaQ (PeerFetchInFlightLimits (..),
 
 
 data FetchDecisionPolicy header = FetchDecisionPolicy {
-       maxInFlightReqsPerPeer      :: Word,  -- A protocol constant.
+       maxInFlightReqsPerPeer  :: Word,  -- A protocol constant.
 
-       maxConcurrencyBulkSync      :: Word,
-       maxConcurrencyDeadline      :: Word,
+       maxConcurrencyBulkSync  :: Word,
+       maxConcurrencyDeadline  :: Word,
        decisionLoopIntervalGenesis :: DiffTime,
-       decisionLoopIntervalPraos   :: DiffTime,
-       peerSalt                    :: Int,
-       bulkSyncGracePeriod         :: DiffTime,
+       decisionLoopIntervalPraos :: DiffTime,
+       peerSalt                :: Int,
+       bulkSyncGracePeriod     :: DiffTime,
 
-       blockFetchSize              :: header -> SizeInBytes
+       plausibleCandidateChain :: HasCallStack
+                               => AnchoredFragment header
+                               -> AnchoredFragment header -> Bool,
+
+       compareCandidateChains  :: HasCallStack
+                               => AnchoredFragment header
+                               -> AnchoredFragment header
+                               -> Ordering,
+
+       blockFetchSize          :: header -> SizeInBytes
      }
 
 
@@ -254,7 +264,6 @@ fetchDecisions
       HasHeader header,
       HeaderHash header ~ HeaderHash block)
   => FetchDecisionPolicy header
-  -> ChainComparison header
   -> PraosFetchMode
   -> AnchoredFragment header
   -> (Point block -> Bool)
@@ -262,12 +271,10 @@ fetchDecisions
   -> [(AnchoredFragment header, PeerInfo header peer extra)]
   -> [(FetchDecision (FetchRequest header), PeerInfo header peer extra)]
 fetchDecisions fetchDecisionPolicy@FetchDecisionPolicy {
+                 plausibleCandidateChain,
+                 compareCandidateChains,
                  blockFetchSize,
                  peerSalt
-               }
-               ChainComparison {
-                 plausibleCandidateChain,
-                 compareCandidateChains
                }
                fetchMode
                currentChain

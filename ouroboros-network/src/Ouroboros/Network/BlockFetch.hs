@@ -99,7 +99,6 @@ module Ouroboros.Network.BlockFetch
     -- * Re-export types used by 'BlockFetchConsensusInterface'
   , PraosFetchMode (..)
   , FetchMode (..)
-  , ChainComparison (..)
   , SizeInBytes
   ) where
 
@@ -122,7 +121,7 @@ import Ouroboros.Network.BlockFetch.ClientRegistry (FetchClientPolicy (..),
            readFetchClientsStateVars, readFetchClientsStatus, readPeerGSVs,
            setFetchClientContext)
 import Ouroboros.Network.BlockFetch.ConsensusInterface
-           (BlockFetchConsensusInterface (..), ChainComparison (..))
+           (BlockFetchConsensusInterface (..))
 import Ouroboros.Network.BlockFetch.Decision.Trace (TraceDecisionEvent)
 import Ouroboros.Network.BlockFetch.State
 
@@ -222,6 +221,8 @@ blockFetchLogic decisionTracer clientStateTracer
         peerSalt                    = bfcSalt,
         bulkSyncGracePeriod         = gbfcGracePeriod bfcGenesisBFConfig,
 
+        plausibleCandidateChain,
+        compareCandidateChains,
         blockFetchSize
       }
 
@@ -230,8 +231,7 @@ blockFetchLogic decisionTracer clientStateTracer
       FetchTriggerVariables {
         readStateCurrentChain    = readCurrentChain,
         readStateCandidateChains = readCandidateChains,
-        readStatePeerStatus      = readFetchClientsStatus registry,
-        readStateChainComparison = readChainComparison
+        readStatePeerStatus      = readFetchClientsStatus registry
       }
 
     fetchNonTriggerVariables :: FetchNonTriggerVariables addr header block m
