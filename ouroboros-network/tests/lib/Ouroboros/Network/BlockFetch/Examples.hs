@@ -150,8 +150,8 @@ blockFetchExample0 fetchMode decisionTracer clientStateTracer clientMsgTracer
           })
         >> return ()
 
-    headerForgeUTCTime =
-        convertSlotToTimeForTestsAssumingNoHardFork . headerSlot
+    headerForgeUTCTime (FromConsensus x) =
+        pure $ convertSlotToTimeForTestsAssumingNoHardFork (blockSlot x)
 
     driver :: TestFetchedBlockHeap m Block -> m ()
     driver blockHeap = do
@@ -264,8 +264,8 @@ blockFetchExample1 fetchMode decisionTracer clientStateTracer clientMsgTracer
           })
         >> return ()
 
-    headerForgeUTCTime =
-        convertSlotToTimeForTestsAssumingNoHardFork . headerSlot
+    headerForgeUTCTime (FromConsensus x) =
+        pure $ convertSlotToTimeForTestsAssumingNoHardFork (blockSlot x)
 
     -- | Terminates after 1 second per block in the candidate chains.
     downloadTimer :: m ()
@@ -279,7 +279,7 @@ blockFetchExample1 fetchMode decisionTracer clientStateTracer clientMsgTracer
 
 sampleBlockFetchPolicy1 :: (MonadSTM m, HasHeader header, HasHeader block)
                         => FetchMode
-                        -> (header -> UTCTime)
+                        -> (forall x. HasHeader x => FromConsensus x -> STM m UTCTime)
                         -> TestFetchedBlockHeap m block
                         -> AnchoredFragment header
                         -> Map peer (AnchoredFragment header)
