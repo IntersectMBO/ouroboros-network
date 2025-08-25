@@ -1,10 +1,11 @@
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DataKinds  #-}
+{-# LANGUAGE RankNTypes #-}
 
 module DMQ.Diffusion.NodeKernel
   ( NodeKernel (..)
   , withNodeKernel
+  , PoolValidationCtx (..)
+  , StakePools (..)
   ) where
 
 import Control.Concurrent.Class.MonadMVar
@@ -19,6 +20,8 @@ import Data.Aeson qualified as Aeson
 import Data.Function (on)
 import Data.Functor.Contravariant ((>$<))
 import Data.Hashable
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
 import Data.Sequence (Seq)
 import Data.Sequence qualified as Seq
 import Data.Set (Set)
@@ -29,8 +32,10 @@ import Data.Void (Void)
 import System.Random (StdGen)
 import System.Random qualified as Random
 
+import Cardano.Ledger.Shelley.API hiding (I)
 import Cardano.KESAgent.KES.Crypto (Crypto (..))
 import Cardano.KESAgent.KES.Evolution qualified as KES
+import Ouroboros.Consensus.Shelley.Ledger.Query
 
 import Ouroboros.Network.BlockFetch (FetchClientRegistry,
            newFetchClientRegistry)
@@ -64,10 +69,30 @@ data NodeKernel crypto ntnAddr m =
   , sigChannelVar       :: !(TxChannelsVar m ntnAddr SigId (Sig crypto))
   , sigMempoolSem       :: !(TxMempoolSem m)
   , sigSharedTxStateVar :: !(SharedTxStateVar m ntnAddr SigId (Sig crypto))
+  , stakePools          :: !(StakePools m)
+  , nextEpochVar        :: !(StrictTVar m (Maybe UTCTime))
   }
+
+-- | Cardano pool id's are hashes of the cold verification key
+--
+type PoolId = KeyHash StakePool
+
+data StakePools m = StakePools {
+    -- | contains map of cardano pool stake snapshot obtained
+    -- via local state query client
+    stakePoolsVar     :: StrictTVar m (Map PoolId StakeSnapshot)
+    -- | acquires validation context for signature validation
+  , poolValidationCtx :: m PoolValidationCtx
+  }
+
+data PoolValidationCtx =
+  DMQPoolValidationCtx !UTCTime -- ^ time of context acquisition
+                       !(Maybe UTCTime) -- ^ UTC time of next epoch boundary
+                       !(Map PoolId StakeSnapshot) -- ^ for signature validation
 
 newNodeKernel :: ( MonadLabelledSTM m
                  , MonadMVar m
+                 , MonadTime m
                  , Ord ntnAddr
                  )
               => KES.EvolutionConfig
@@ -84,6 +109,15 @@ newNodeKernel evolutionConfig rng = do
   sigMempoolSem <- newTxMempoolSem
   let (rng', rng'') = Random.split rng
   sigSharedTxStateVar <- newSharedTxStateVar rng'
+  nextEpochVar <- newTVarIO Nothing
+  stakePoolsVar <- newTVarIO Map.empty
+  let poolValidationCtx = do
+        (nextEpochBoundary, stakePools) <-
+          atomically $ (,) <$> readTVar nextEpochVar <*> readTVar stakePoolsVar
+        now <- getCurrentTime
+        return $ DMQPoolValidationCtx now nextEpochBoundary stakePools
+
+      stakePools = StakePools { stakePoolsVar, poolValidationCtx }
 
   peerSharingAPI <-
     newPeerSharingAPI
@@ -100,6 +134,8 @@ newNodeKernel evolutionConfig rng = do
                   , sigChannelVar
                   , sigMempoolSem
                   , sigSharedTxStateVar
+                  , nextEpochVar
+                  , stakePools
                   }
 
 
