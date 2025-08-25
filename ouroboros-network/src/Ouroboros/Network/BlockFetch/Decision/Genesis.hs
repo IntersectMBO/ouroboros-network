@@ -146,8 +146,8 @@ import Ouroboros.Network.AnchoredFragment qualified as AF
 import Ouroboros.Network.Block
 import Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..),
            PeerFetchInFlight (..), PeersOrder (..))
-import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainComparison(..),
-           ChainSelStarvation (..), FetchMode (..))
+import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainSelStarvation (..),
+           FetchMode (..))
 import Ouroboros.Network.BlockFetch.DeltaQ (calculatePeerFetchInFlightLimits)
 
 import Cardano.Slotting.Slot (WithOrigin)
@@ -167,7 +167,6 @@ fetchDecisionsGenesisM
       HeaderHash header ~ HeaderHash block, MonadMonotonicTime m)
   => Tracer m (TraceDecisionEvent peer header)
   -> FetchDecisionPolicy header
-  -> ChainComparison header
   -> AnchoredFragment header
   -> (Point block -> Bool)
      -- ^ Whether the block has been fetched (only if recent, i.e. within @k@).
@@ -182,7 +181,6 @@ fetchDecisionsGenesisM
 fetchDecisionsGenesisM
   tracer
   fetchDecisionPolicy@FetchDecisionPolicy {bulkSyncGracePeriod}
-  chainComparison
   currentChain
   fetchedBlocks
   fetchedMaxSlotNo
@@ -205,7 +203,6 @@ fetchDecisionsGenesisM
     let (theDecision, declines) =
           fetchDecisionsGenesis
             fetchDecisionPolicy
-            chainComparison
             currentChain
             fetchedBlocks
             fetchedMaxSlotNo
@@ -319,7 +316,6 @@ fetchDecisionsGenesis
      , HeaderHash header ~ HeaderHash block
      )
   => FetchDecisionPolicy header
-  -> ChainComparison header
   -> AnchoredFragment header
      -- ^ The current chain, anchored at the immutable tip.
   -> (Point block -> Bool)
@@ -338,7 +334,6 @@ fetchDecisionsGenesis
      -- one @'FetchRequest' header@.
 fetchDecisionsGenesis
   fetchDecisionPolicy
-  chainComparison
   currentChain
   fetchedBlocks
   fetchedMaxSlotNo
@@ -351,7 +346,7 @@ fetchDecisionsGenesis
       ) <-
       MaybeT $
         selectTheCandidate
-          chainComparison
+          fetchDecisionPolicy
           currentChain
           candidatesAndPeers
 
@@ -428,7 +423,7 @@ dropAlreadyFetched alreadyDownloaded fetchedMaxSlotNo candidate =
 selectTheCandidate
   :: forall header peerInfo.
      HasHeader header
-  => ChainComparison header
+  => FetchDecisionPolicy header
   -> AnchoredFragment header
      -- ^ The current chain.
   -> [(AnchoredFragment header, peerInfo)]
@@ -441,7 +436,7 @@ selectTheCandidate
      -- selected candidate that we choose to sync from and a list of peers that
      -- are still in the race to serve that candidate.
 selectTheCandidate
-  ChainComparison {compareCandidateChains, plausibleCandidateChain}
+  FetchDecisionPolicy {compareCandidateChains, plausibleCandidateChain}
   currentChain =
         separateDeclinedAndStillInRace
         -- Select the suffix up to the intersection with the current chain. This can
