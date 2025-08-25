@@ -1,9 +1,10 @@
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DataKinds #-}
 
 module DMQ.Diffusion.NodeKernel
   ( NodeKernel (..)
   , withNodeKernel
+  , PoolValidationCtx (..)
+  , StakePools (..)
   ) where
 
 import Control.Concurrent.Class.MonadMVar
@@ -12,18 +13,23 @@ import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
+import Control.Tracer
 
 import Data.Function (on)
-import Data.Set (Set)
-import Data.Set qualified as Set
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
 import Data.Sequence (Seq)
 import Data.Sequence qualified as Seq
+import Data.Set (Set)
+import Data.Set qualified as Set
 import Data.Time.Clock.POSIX (POSIXTime)
 import Data.Time.Clock.POSIX qualified as Time
 import Data.Void (Void)
 import System.Random (StdGen)
 import System.Random qualified as Random
 
+import Cardano.Ledger.Shelley.API
+import Ouroboros.Consensus.Shelley.Ledger.Query
 import Ouroboros.Network.BlockFetch (FetchClientRegistry,
            newFetchClientRegistry)
 import Ouroboros.Network.ConnectionId (ConnectionId (..))
@@ -53,10 +59,30 @@ data NodeKernel crypto ntnAddr m =
   , sigChannelVar       :: !(TxChannelsVar m ntnAddr SigId (Sig crypto))
   , sigMempoolSem       :: !(TxMempoolSem m)
   , sigSharedTxStateVar :: !(SharedTxStateVar m ntnAddr SigId (Sig crypto))
+  , stakePools          :: !(StakePools m)
+  , nextEpochVar        :: !(StrictTVar m (Maybe UTCTime))
   }
+
+-- | Cardano pool id's are hashes of the cold verification key
+--
+type PoolId = KeyHash StakePool
+
+data StakePools m = StakePools {
+    -- | contains map of cardano pool stake snapshot obtained
+    -- via local state query client
+    stakePoolsVar     :: StrictTVar m (Map PoolId StakeSnapshot)
+    -- | acquires validation context for signature validation
+  , poolValidationCtx :: m PoolValidationCtx
+  }
+
+data PoolValidationCtx =
+  DMQPoolValidationCtx !UTCTime -- ^ time of context acquisition
+                       !(Maybe UTCTime) -- ^ UTC time of next epoch boundary
+                       !(Map PoolId StakeSnapshot) -- ^ for signature validation
 
 newNodeKernel :: ( MonadLabelledSTM m
                  , MonadMVar m
+                 , MonadTime m
                  , Ord ntnAddr
                  )
               => StdGen
@@ -72,6 +98,15 @@ newNodeKernel rng = do
   sigMempoolSem <- newTxMempoolSem
   let (rng', rng'') = Random.split rng
   sigSharedTxStateVar <- newSharedTxStateVar rng'
+  nextEpochVar <- newTVarIO Nothing
+  stakePoolsVar <- newTVarIO Map.empty
+  let poolValidationCtx = do
+        (nextEpochBoundary, stakePools) <-
+          atomically $ (,) <$> readTVar nextEpochVar <*> readTVar stakePoolsVar
+        now <- getCurrentTime
+        return $ DMQPoolValidationCtx now nextEpochBoundary stakePools
+
+      stakePools = StakePools { stakePoolsVar, poolValidationCtx }
 
   peerSharingAPI <-
     newPeerSharingAPI
@@ -87,6 +122,8 @@ newNodeKernel rng = do
                   , sigChannelVar
                   , sigMempoolSem
                   , sigSharedTxStateVar
+                  , nextEpochVar
+                  , stakePools
                   }
 
 
