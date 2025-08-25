@@ -179,8 +179,6 @@ data ChainComparison header =
        -- This is used as part of selecting which chains to prioritise for
        -- downloading block bodies.
        --
-       -- PRECONDITION: The two fragments must intersect.
-       --
        compareCandidateChains  :: HasCallStack
                                => AnchoredFragment header
                                -> AnchoredFragment header
