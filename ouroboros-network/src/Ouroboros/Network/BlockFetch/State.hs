@@ -43,9 +43,8 @@ import Ouroboros.Network.BlockFetch.ClientState (FetchClientStateVars (..),
            FetchRequest (..), PeerFetchInFlight (..), PeerFetchStatus (..),
            PeersOrder (..), TraceFetchClientState (..), TraceLabelPeer (..),
            addNewFetchRequest, readFetchClientState)
-import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainComparison (..),
-           ChainSelStarvation, FetchMode (..), Fingerprint (..),
-           WithFingerprint (..))
+import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainSelStarvation,
+           FetchMode (..))
 import Ouroboros.Network.BlockFetch.Decision (FetchDecision,
            FetchDecisionPolicy (..), FetchDecline (..), PeerInfo,
            PraosFetchMode (..), fetchDecisions)
@@ -228,8 +227,7 @@ fetchDecisionsForStateSnapshot
       fetchStateFetchedBlocks,
       fetchStateFetchedMaxSlotNo,
       fetchStateFetchMode,
-      fetchStateChainSelStarvation,
-      fetchStateChainComparison
+      fetchStateChainSelStarvation
     }
     peersOrderHandlers =
     assert (                 Map.keysSet fetchStatePeerChains
@@ -242,7 +240,6 @@ fetchDecisionsForStateSnapshot
       PraosFetchMode fetchMode ->
         pure $ fetchDecisions
           fetchDecisionPolicy
-          fetchStateChainComparison
           fetchMode
           fetchStateCurrentChain
           fetchStateFetchedBlocks
@@ -252,7 +249,6 @@ fetchDecisionsForStateSnapshot
         fetchDecisionsGenesisM
           tracer
           fetchDecisionPolicy
-          fetchStateChainComparison
           fetchStateCurrentChain
           fetchStateFetchedBlocks
           fetchStateFetchedMaxSlotNo
@@ -306,8 +302,7 @@ fetchLogicIterationAct clientStateTracer FetchDecisionPolicy{blockFetchSize}
 data FetchTriggerVariables peer header m = FetchTriggerVariables {
        readStateCurrentChain    :: STM m (AnchoredFragment header),
        readStateCandidateChains :: STM m (Map peer (AnchoredFragment header)),
-       readStatePeerStatus      :: STM m (Map peer (PeerFetchStatus header)),
-       readStateChainComparison :: STM m (WithFingerprint (ChainComparison header))
+       readStatePeerStatus      :: STM m (Map peer (PeerFetchStatus header))
      }
 
 -- | STM actions to read various state variables that the fetch logic uses.
@@ -329,7 +324,6 @@ data FetchStateFingerprint peer header block =
        !(Maybe (Point block))
        !(Map peer (Point header))
        !(Map peer (PeerFetchStatus header))
-       !Fingerprint -- ^ From 'ChainComparison'
   deriving Eq
 
 initialFetchStateFingerprint :: FetchStateFingerprint peer header block
@@ -338,19 +332,17 @@ initialFetchStateFingerprint =
       Nothing
       Map.empty
       Map.empty
-      (Fingerprint 0)
 
 updateFetchStateFingerprintPeerStatus :: Ord peer
                                       => [(peer, PeerFetchStatus header)]
                                       -> FetchStateFingerprint peer header block
                                       -> FetchStateFingerprint peer header block
 updateFetchStateFingerprintPeerStatus statuses'
-    (FetchStateFingerprint current candidates statuses fpChainComp) =
+    (FetchStateFingerprint current candidates statuses) =
     FetchStateFingerprint
       current
       candidates
       (Map.union (Map.fromList statuses') statuses) -- left overrides right
-      fpChainComp
 
 -- |
 --
@@ -367,8 +359,7 @@ data FetchStateSnapshot peer header block m = FetchStateSnapshot {
        fetchStateFetchedBlocks    :: Point block -> Bool,
        fetchStateFetchMode        :: FetchMode,
        fetchStateFetchedMaxSlotNo :: MaxSlotNo,
-       fetchStateChainSelStarvation :: ChainSelStarvation,
-       fetchStateChainComparison  :: ChainComparison header
+       fetchStateChainSelStarvation :: ChainSelStarvation
      }
 
 readStateVariables :: (MonadSTM m, Eq peer,
@@ -387,11 +378,10 @@ readStateVariables FetchTriggerVariables{..}
                    fetchStateFingerprint = do
 
     -- Read all the trigger state variables
-    fetchStateCurrentChain <- readStateCurrentChain
-    fetchStatePeerChains   <- readStateCandidateChains
-    fetchStatePeerStatus   <- readStatePeerStatus
-    chainComparison        <- readStateChainComparison
-    gracePeriodExpired     <- LazySTM.readTVar gracePeriodTVar
+    fetchStateCurrentChain  <- readStateCurrentChain
+    fetchStatePeerChains    <- readStateCandidateChains
+    fetchStatePeerStatus    <- readStatePeerStatus
+    gracePeriodExpired      <- LazySTM.readTVar gracePeriodTVar
 
     -- Construct the change detection fingerprint
     let !fetchStateFingerprint' =
@@ -399,7 +389,6 @@ readStateVariables FetchTriggerVariables{..}
             (Just (castPoint (AF.headPoint fetchStateCurrentChain)))
             (Map.map AF.headPoint fetchStatePeerChains)
             fetchStatePeerStatus
-            (getFingerprint chainComparison)
 
     -- Check the fingerprint changed, or block and wait until it does
     check (gracePeriodExpired || fetchStateFingerprint' /= fetchStateFingerprint)
@@ -423,8 +412,7 @@ readStateVariables FetchTriggerVariables{..}
             fetchStateFetchedBlocks,
             fetchStateFetchMode,
             fetchStateFetchedMaxSlotNo,
-            fetchStateChainSelStarvation,
-            fetchStateChainComparison = forgetFingerprint chainComparison
+            fetchStateChainSelStarvation
           }
 
     return (fetchStateSnapshot, gracePeriodExpired, fetchStateFingerprint')

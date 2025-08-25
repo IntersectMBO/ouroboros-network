@@ -8,8 +8,6 @@
 
 * Simplify type of `headerForgeUTCTime` in `BlockFetchConsensusInterface`, and
   remove the supporting type `FromConsensus`.
-* Changed `BlockFetchConsensusInterface` to support dynamic (weighted) chain
-  comparisons.
 
 ### Non-breaking changes
 
