@@ -8,7 +8,7 @@
 
 * `Ouroboros.Network.NodeTo{Client,Node}` modules moved to
   `ouroboros-network:cardano-diffusion` (as `Cardano.Network.NodeTo{Node,Client}`)
-* Adapt to simplified type of `headerForgeUTCTime` in `BlockFetchConsensusInterface`.
+* (REVERTED temporarily) Adapt to simplified type of `headerForgeUTCTime` in `BlockFetchConsensusInterface`.
 * Type of `defaultSyncTargets` changed.
 * Type of `defaultPeerSharing` changed.
 * (REVERTED temporarily) Adapted to changes of `BlockFetchConsensusInterface`.

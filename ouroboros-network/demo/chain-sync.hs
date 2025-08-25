@@ -448,8 +448,9 @@ clientBlockFetch sockAddrs maxSlotNo = withIOManager $ \iocp -> do
             plausibleCandidateChain cur candidate =
                 AF.headBlockNo candidate > AF.headBlockNo cur
 
-            headerForgeUTCTime =
-                convertSlotToTimeForTestsAssumingNoHardFork . headerSlot
+            headerForgeUTCTime (FromConsensus hdr) =
+                pure $
+                convertSlotToTimeForTestsAssumingNoHardFork (headerSlot hdr)
 
         compareCandidateChains c1 c2 =
           AF.headBlockNo c1 `compare` AF.headBlockNo c2
