@@ -997,22 +997,22 @@ with args@Arguments {
                       let connState' = InboundIdleState
                                          connId connThread handle dataFlow
                       writeTVar connVar connState'
-                      return ( True
+                      return ( Right ()
                              , Just $ mkTransition connState connState'
                              , Inbound
                              )
 
                     -- Self connection: the inbound side lost the race to update
                     -- the state after negotiating the connection.
-                    OutboundUniState {} -> return (True, Nothing, Outbound)
-                    OutboundDupState {} -> return (True, Nothing, Outbound)
+                    OutboundUniState {} -> return (Right (), Nothing, Outbound)
+                    OutboundDupState {} -> return (Right (), Nothing, Outbound)
 
                     OutboundIdleState _ _ _ dataFlow' -> do
                       let connState' = InboundIdleState
                                          connId connThread handle
                                          dataFlow'
                       writeTVar connVar connState'
-                      return ( True
+                      return ( Right ()
                              , Just $ mkTransition connState connState'
                              , Outbound
                              )
@@ -1030,9 +1030,11 @@ with args@Arguments {
                     DuplexState {} ->
                       throwSTM (withCallStack (ImpossibleState (remoteAddress connId)))
 
-                    TerminatingState {} -> return (False, Nothing, Inbound)
+                    TerminatingState _ _ err ->
+                      return (Left err, Nothing, Inbound)
 
-                    TerminatedState {} -> return (False, Nothing, Inbound)
+                    TerminatedState err ->
+                      return (Left err, Nothing, Inbound)
 
                 traverse_ (traceWith trTracer . TransitionTrace connStateId) mbTransition
                 traceCounters stateVar
@@ -1049,8 +1051,8 @@ with args@Arguments {
                 -- idle, it will call 'releaseInboundConnection' which will
                 -- perform the aforementioned @Commit@ transition.
 
-                if connected
-                  then do
+                case connected of
+                  Right _ -> do
                     case inboundGovernorInfoChannel of
                       InResponderMode infoChannel ->
                         atomically $ InfoChannel.writeMessage
@@ -1061,8 +1063,8 @@ with args@Arguments {
 
                   -- the connection is in `TerminatingState` or
                   -- `TerminatedState`.
-                  else
-                    return $ Disconnected connId Nothing
+                  Left err ->
+                    return $ Disconnected connId err
 
     terminateInboundWithErrorOrQuery
       :: ConnectionId peerAddr
