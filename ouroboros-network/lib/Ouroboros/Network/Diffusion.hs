@@ -16,6 +16,7 @@ module Ouroboros.Network.Diffusion
   , runM
   , mkInterfaces
   , socketAddressType
+  , withIOManager
   , module Ouroboros.Network.Diffusion.Types
   ) where
 
