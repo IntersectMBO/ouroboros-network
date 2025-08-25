@@ -1641,7 +1641,7 @@ with args@Arguments {
                           -- @
                           let connState' = OutboundUniState connId connThread handle
                           writeTVar connVar connState'
-                          return (Just $ mkTransition connState connState')
+                          return (Right $ mkTransition connState connState')
                         Duplex -> do
                           -- @
                           --  Negotiated^{Duplex}_{Outbound}
@@ -1660,7 +1660,7 @@ with args@Arguments {
                             -- `includeInboundConnectionImpl`
                             _otherwise -> return ()
 
-                          return (Just $ mkTransition connState connState')
+                          return (Right $ mkTransition connState connState')
 
                     -- @
                     --   SelfConn'^{-1}
@@ -1670,7 +1670,7 @@ with args@Arguments {
                     InboundIdleState connId' connThread' handle' Unidirectional -> do
                       let connState' = OutboundUniState connId' connThread' handle'
                       writeTVar connVar connState'
-                      return (Just $ mkTransition connState connState')
+                      return (Right $ mkTransition connState connState')
 
                     -- @
                     --   SelfConn'^{-1}
@@ -1680,10 +1680,10 @@ with args@Arguments {
                     InboundIdleState connId' connThread' handle' Duplex -> do
                       let connState' = OutboundDupState connId' connThread' handle' Ticking
                       writeTVar connVar connState'
-                      return (Just $ mkTransition connState connState')
+                      return (Right $ mkTransition connState connState')
 
-                    TerminatedState _ ->
-                      return Nothing
+                    TerminatedState err ->
+                      return $ Left err
                     _ ->
                       let st = State.abstractState (Known connState) in
                       throwSTM (withCallStack (ForbiddenOperation peerAddr st))
@@ -1691,8 +1691,8 @@ with args@Arguments {
                           mbTransition
                 traceCounters stateVar
                 return $ case mbTransition of
-                  Just _  -> Connected    connId dataFlow handle
-                  Nothing -> Disconnected connId Nothing
+                  Right _  -> Connected    connId dataFlow handle
+                  Left err -> Disconnected connId err
 
           Right (There connId) -> do
             -- We can only enter the 'There' case if there is an inbound
