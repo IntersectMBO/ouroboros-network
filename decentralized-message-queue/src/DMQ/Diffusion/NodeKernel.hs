@@ -15,7 +15,6 @@ import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer
 
 import Data.Function (on)
 import Data.Sequence qualified as Seq
