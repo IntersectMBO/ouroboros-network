@@ -68,6 +68,7 @@ library
     DMQ.NodeToClient
     DMQ.NodeToClient.LocalMsgNotification
     DMQ.NodeToClient.LocalMsgSubmission
+    DMQ.NodeToClient.LocalStateQueryClient
     DMQ.NodeToClient.Version
     DMQ.NodeToNode
     DMQ.NodeToNode.Version
@@ -93,6 +94,10 @@ library
     bytestring >=0.10 && <0.13,
     cardano-binary,
     cardano-crypto-class,
+    cardano-crypto-wrapper,
+    cardano-ledger-byron,
+    cardano-ledger-shelley,
+    cardano-slotting,
     cborg >=0.2.1 && <0.3,
     containers >=0.5 && <0.8,
     contra-tracer >=0.1 && <0.3,
@@ -108,11 +113,15 @@ library
     network ^>=3.2.7,
     network-mux ^>=0.9.1,
     optparse-applicative ^>=0.18,
+    ouroboros-consensus,
+    ouroboros-consensus-cardano,
+    ouroboros-consensus-diffusion,
     ouroboros-network:{ouroboros-network, api, framework, orphan-instances, protocols} ^>=0.23,
     random ^>=1.2,
     singletons,
     text >=1.2.4 && <2.2,
     time ^>=1.12,
+    transformers,
     typed-protocols:{typed-protocols, cborg} ^>=1.1,
 
   hs-source-dirs: src
@@ -137,9 +146,10 @@ executable dmq-node
     cardano-git-rev,
     contra-tracer >=0.1 && <0.3,
     dmq-node,
+    io-classes,
     kes-agent-crypto,
     optparse-applicative,
-    ouroboros-network:{ouroboros-network, api},
+    ouroboros-network:{ouroboros-network, api, framework},
     random,
     text,
 
