@@ -784,7 +784,7 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
             outboundIdleTimeout = testOutboundIdleTimeout,
             updateVersionData = \a _ -> a,
             connStateIdSupply,
-            classifyHandleError = \_ -> HandshakeFailure }
+            classifyHandlerError = \_ -> HandshakeFailure }
           (InResponderMode inbgovInfoChannel)
           connectionHandler
           $ \(connectionManager

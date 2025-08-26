@@ -100,7 +100,7 @@ module Ouroboros.Network.ConnectionManager.Types
   , ConnectionHandler (..)
   , Inactive (..)
   , ExceptionInHandler (..)
-  , HandleErrorType (..)
+  , HandlerErrorType (..)
   , HandshakeConnectionResult (..)
     -- ** Prune Policy
   , PrunePolicy
@@ -413,7 +413,7 @@ instance Exception ExceptionInHandler
 
 -- | Data type used to classify 'handleErrors'.
 --
-data HandleErrorType =
+data HandlerErrorType =
     -- | Handshake negotiation failed.  This is not a protocol error.
     HandshakeFailure
 

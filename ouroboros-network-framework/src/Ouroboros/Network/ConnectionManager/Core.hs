@@ -155,7 +155,7 @@ data Arguments handlerTrace socket peerAddr handle handleError versionNumber ver
         --
         connStateIdSupply   :: ConnStateIdSupply m,
 
-        classifyHandleError :: handleError -> HandleErrorType
+        classifyHandlerError :: handleError -> HandlerErrorType
       }
 
 
@@ -404,7 +404,7 @@ with args@Arguments {
          connectionsLimits,
          updateVersionData,
          connStateIdSupply,
-         classifyHandleError
+         classifyHandlerError
        }
      inboundGovernorInfoChannel
      ConnectionHandler {
@@ -1079,7 +1079,7 @@ with args@Arguments {
           connState <- readTVar connVar
 
           let connState' =
-                case classifyHandleError <$> connectionError of
+                case classifyHandlerError <$> connectionError of
                   ConnectionHandlerError HandshakeFailure ->
                     TerminatingState connId connThread
                                      (case connectionError of
@@ -1815,7 +1815,7 @@ with args@Arguments {
           connState <- readTVar connVar
 
           let connState' =
-                case classifyHandleError <$> connectionError of
+                case classifyHandlerError <$> connectionError of
                   ConnectionHandlerError HandshakeFailure ->
                     TerminatingState connId connThread
                                      (case connectionError of

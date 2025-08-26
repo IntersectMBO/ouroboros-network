@@ -31,8 +31,8 @@ module Ouroboros.Network.ConnectionHandler
   ( Handle (..)
   , HandleWithExpandedCtx
   , HandleWithMinimalCtx
-  , HandleError (..)
-  , classifyHandleError
+  , HandlerError (..)
+  , classifyHandlerError
   , MkMuxConnectionHandler (..)
   , MuxConnectionHandler
   , makeConnectionHandler
@@ -110,7 +110,7 @@ sduHandshakeTimeout = 10
 -- * 'HandleHandshakeServerError'
 --                - the connection handler thread was running server side of the
 --                handshake protocol, which fail with 'HandshakeException'
--- * 'HandleError'
+-- * 'HandlerError'
 --                - the multiplexer thrown 'MuxError'.
 --
 data Handle (muxMode :: Mx.Mode) initiatorCtx responderCtx versionData bytes m a b =
@@ -155,48 +155,46 @@ type HandleWithMinimalCtx muxMode peerAddr versionData bytes m a b =
                           (ResponderContext peerAddr)
                           versionData bytes m a b
 
-data HandleError versionNumber where
-    HandleHandshakeClientError
-      :: !(HandshakeException versionNumber)
-      -> HandleError versionNumber
+-- | A connection handler error.
+--
+-- It is returned either when creating the `Handle` or raised by the connection
+-- handler.
+--
+data HandlerError versionNumber =
+    -- | A handshake exception when creating `Handle`.
+    HandleHandshakeClientError !(HandshakeException versionNumber)
 
-    HandleHandshakeServerError
-      :: !(HandshakeException versionNumber)
-      -> HandleError versionNumber
+    -- | A handshake exception when creating `Handle`.
+  | HandleHandshakeServerError !(HandshakeException versionNumber)
 
-    HandleError
-     :: !SomeException
-     -> HandleError versionNumber
-
-instance Show versionNumber
-      => Show (HandleError versionNumber) where
-    show (HandleHandshakeServerError err) = "HandleHandshakeServerError " ++ show err
-    show (HandleHandshakeClientError err) = "HandleHandshakeClientError " ++ show err
-    show (HandleError err)                = "HandleError " ++ show err
+    -- | A connection handler exception (e.g. might be a mini-protocol error, io
+    -- exception, etc).
+  | HandlerError !SomeException
+  deriving Show
 
 instance ( Typeable versionNumber
          , Show versionNumber
          )
-      => Exception (HandleError versionNumber) where
-    displayException (HandleHandshakeClientError err) = "handshake client error: " ++ displayException err
-    displayException (HandleHandshakeServerError err) = "handshake server error: " ++ displayException err
-    displayException (HandleError err)                = show err
+      => Exception (HandlerError versionNumber) where
+    displayException (HandleHandshakeClientError err) = "handshake client error: " ++ show err
+    displayException (HandleHandshakeServerError err) = "handshake server error: " ++ show err
+    displayException (HandlerError err)                = "connection handler error: " ++ show err
 
 
-classifyHandleError :: HandleError versionNumber
-                    -> HandleErrorType
-classifyHandleError (HandleHandshakeClientError (HandshakeProtocolLimit _)) =
+classifyHandlerError :: HandlerError versionNumber
+                     -> HandlerErrorType
+classifyHandlerError (HandleHandshakeClientError (HandshakeProtocolLimit _)) =
     HandshakeProtocolViolation
 -- TODO: 'HandshakeProtocolError' is not a protocol error! It is just
 -- a negotiation failure.  It should be renamed.
-classifyHandleError (HandleHandshakeClientError (HandshakeProtocolError _)) =
+classifyHandlerError (HandleHandshakeClientError (HandshakeProtocolError _)) =
     HandshakeFailure
-classifyHandleError (HandleHandshakeServerError (HandshakeProtocolLimit _)) =
+classifyHandlerError (HandleHandshakeServerError (HandshakeProtocolLimit _)) =
     HandshakeProtocolViolation
-classifyHandleError (HandleHandshakeServerError (HandshakeProtocolError _)) =
+classifyHandlerError (HandleHandshakeServerError (HandshakeProtocolError _)) =
     HandshakeFailure
 -- any other exception, e.g. MuxError \/ IOError, codec errors, etc.
-classifyHandleError (HandleError _) =
+classifyHandlerError (HandlerError _) =
     HandshakeProtocolViolation
 
 
@@ -208,7 +206,7 @@ type MuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr vers
                       socket
                       peerAddr
                       (Handle muxMode initiatorCtx responderCtx versionData bytes m a b)
-                      (HandleError versionNumber)
+                      (HandlerError versionNumber)
                       versionNumber
                       versionData
                       m
@@ -218,7 +216,7 @@ type MuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr vers
 type MuxConnectionManager muxMode socket initiatorCtx responderCtx peerAddr versionData versionNumber bytes m a b =
     ConnectionManager muxMode socket peerAddr
                       (Handle muxMode initiatorCtx responderCtx versionData bytes m a b)
-                      (HandleError versionNumber)
+                      (HandlerError versionNumber)
                       m
 
 -- | Type alias for 'ConnectionManager' which is using expanded context.
@@ -226,7 +224,7 @@ type MuxConnectionManager muxMode socket initiatorCtx responderCtx peerAddr vers
 type ConnectionManagerWithExpandedCtx muxMode socket peerAddr versionData versionNumber bytes m a b =
     ConnectionManager muxMode socket peerAddr
                       (HandleWithExpandedCtx muxMode peerAddr versionData bytes m a b)
-                      (HandleError versionNumber)
+                      (HandlerError versionNumber)
                       m
 
 -- | To be used as `makeConnectionHandler` field of 'ConnectionManagerArguments'.
@@ -311,7 +309,7 @@ makeConnectionHandler muxTracers forkPolicy
                              socket
                              peerAddr
                              (Handle muxMode initiatorCtx responderCtx versionData ByteString m a b)
-                             (HandleError versionNumber)
+                             (HandlerError versionNumber)
                              versionNumber
                              versionData
                              m
@@ -344,7 +342,7 @@ makeConnectionHandler muxTracers forkPolicy
               -- handshake negotiation failures, but not with 'IOException's or
               -- 'MuxError's.
               `catch` \(err :: SomeException) -> do
-                atomically $ writePromise (Left (HandleError err))
+                atomically $ writePromise (Left (HandlerError err))
                 throwIO err
             case hsResult of
               Left !err -> do
@@ -393,7 +391,7 @@ makeConnectionHandler muxTracers forkPolicy
                              socket
                              peerAddr
                              (Handle muxMode initiatorCtx responderCtx versionData ByteString m a b)
-                             (HandleError versionNumber)
+                             (HandlerError versionNumber)
                              versionNumber
                              versionData
                              m
@@ -426,7 +424,7 @@ makeConnectionHandler muxTracers forkPolicy
               -- handshake negotiation failures, but not with 'IOException's or
               -- 'MuxError's.
               `catch` \(err :: SomeException) -> do
-                atomically $ writePromise (Left (HandleError err))
+                atomically $ writePromise (Left (HandlerError err))
                 throwIO err
 
             case hsResult of

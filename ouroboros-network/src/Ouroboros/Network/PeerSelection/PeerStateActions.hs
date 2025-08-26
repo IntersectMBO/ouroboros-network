@@ -66,7 +66,7 @@ import Ouroboros.Network.PeerSelection.Governor.Types (PeerStateActions (..))
 import Ouroboros.Network.Protocol.Handshake (HandshakeException)
 import Ouroboros.Network.RethrowPolicy
 
-import Ouroboros.Network.ConnectionHandler (Handle (..), HandleError (..),
+import Ouroboros.Network.ConnectionHandler (Handle (..), HandlerError (..),
            MuxConnectionManager)
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
@@ -852,7 +852,7 @@ withPeerStateActions PeerStateActionsArguments {
                                             (HandshakeServerFailure err))
                       throwIO (ServerException err)
 
-                    HandleError err -> do
+                    HandlerError err -> do
                       traceWith spsTracer (PeerStatusChangeFailure
                                             (ColdToWarm Nothing remotePeerAddr )
                                             (HandleFailure err))

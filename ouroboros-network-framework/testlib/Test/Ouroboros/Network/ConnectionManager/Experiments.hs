@@ -326,7 +326,7 @@ withInitiatorOnlyConnectionManager name timeouts trTracer tracer stdGen snocket 
     connectionsLimits = acceptedConnLimit,
     updateVersionData = \a _ -> a,
     connStateIdSupply,
-    classifyHandleError = \_ -> HandshakeFailure
+    classifyHandlerError = \_ -> HandshakeFailure
     }
     NotInResponderMode
     mkConnectionHandler
@@ -527,7 +527,7 @@ withBidirectionalConnectionManager name timeouts
                                                     InitiatorAndResponderDiffusionMode -> Duplex
                                               },
             connStateIdSupply,
-            classifyHandleError = (\_ -> HandshakeFailure)
+            classifyHandlerError = (\_ -> HandshakeFailure)
             }
             (InResponderMode inbgovInfoChannel)
             connectionHandler

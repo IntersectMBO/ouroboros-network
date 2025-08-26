@@ -280,7 +280,7 @@ withBidirectionalConnectionManager snocket makeBearer socket
                     },
                   updateVersionData = \a _ -> a,
                   connStateIdSupply,
-                  classifyHandleError = (\_ -> HandshakeFailure)
+                  classifyHandlerError = (\_ -> HandshakeFailure)
                 }
               (InResponderMode inbgovInfoChannel)
               connectionHandler
@@ -566,7 +566,7 @@ bidirectionalExperiment
                             (HandleWithExpandedCtx
                               Mux.InitiatorResponderMode peerAddr
                               UnversionedProtocolData ByteString IO () ())
-                            (HandleError
+                            (HandlerError
                               UnversionedProtocol))
     connect n cm | n <= 1 =
       acquireOutboundConnection cm InitiatorAndResponderDiffusionMode remoteAddr

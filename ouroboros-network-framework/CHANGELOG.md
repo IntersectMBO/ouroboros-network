@@ -4,6 +4,8 @@
 
 ### Breaking changes
 
+* `HandleError` renamed as `HandlerError`, also `HandlerErrorType` and `classifyHandlerError`.
+
 ### Non-breaking changes
 
 ## 0.19.0.0 -- 28.06.2025
