@@ -13,7 +13,6 @@ import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer
 
 import Data.Function (on)
 import Data.Map.Strict (Map)
@@ -101,10 +100,10 @@ newNodeKernel rng = do
   nextEpochVar <- newTVarIO Nothing
   stakePoolsVar <- newTVarIO Map.empty
   let poolValidationCtx = do
-        (nextEpochBoundary, stakePools) <-
+        (nextEpochBoundary, stakePools') <-
           atomically $ (,) <$> readTVar nextEpochVar <*> readTVar stakePoolsVar
         now <- getCurrentTime
-        return $ DMQPoolValidationCtx now nextEpochBoundary stakePools
+        return $ DMQPoolValidationCtx now nextEpochBoundary stakePools'
 
       stakePools = StakePools { stakePoolsVar, poolValidationCtx }
 
@@ -138,15 +137,17 @@ withNodeKernel :: forall crypto ntnAddr m a.
                   , Ord ntnAddr
                   )
                => StdGen
+               -> (NodeKernel crypto ntnAddr m -> m (Either SomeException Void))
                -> (NodeKernel crypto ntnAddr m -> m a)
                -- ^ as soon as the callback exits the `mempoolWorker` will be
                -- killed
                -> m a
-withNodeKernel rng k = do
+withNodeKernel rng mkStakePoolMonitor k = do
   nodeKernel@NodeKernel { mempool } <- newNodeKernel rng
-  withAsync (mempoolWorker mempool)
-    $ \thread -> link thread
-              >> k nodeKernel
+  withAsync (mempoolWorker mempool) \workerAid -> do
+    link workerAid
+    withAsync (mkStakePoolMonitor nodeKernel) \spmAid ->
+      link spmAid >> k nodeKernel
 
 
 mempoolWorker :: forall crypto m.
