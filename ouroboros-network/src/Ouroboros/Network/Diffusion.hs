@@ -345,10 +345,10 @@ runM Interfaces
               :: InformationChannel
                    (IG.Event 'ResponderMode handle initiatorCtx ntcAddr versionData m c b) m
               -> ConnectionHandler 'ResponderMode (ConnectionHandlerTrace ntcVersion ntcVersionData)
-                                   ntcFd ntcAddr handle (HandleError muxMode versionNumber) version
+                                   ntcFd ntcAddr handle (HandleError versionNumber) version
                                    versionData m
               -> (   ConnectionManager 'ResponderMode ntcFd ntcAddr handle
-                                       (HandleError muxMode versionNumber) m
+                                       (HandleError versionNumber) m
                   -> m x)
               -> m x
             localWithConnectionManager responderInfoChannel connectionHandler k =
@@ -467,12 +467,12 @@ runM Interfaces
       --
 
       let connectionManagerArguments'
-            :: forall muxMode handle b.
+            :: forall handle b.
                PrunePolicy ntnAddr
             -> StdGen
             -> CM.Arguments
                  (ConnectionHandlerTrace ntnVersion ntnVersionData)
-                 ntnFd ntnAddr handle (HandleError muxMode ntnVersion) ntnVersion ntnVersionData m a b
+                 ntnFd ntnAddr handle (HandleError ntnVersion) ntnVersion ntnVersionData m a b
           connectionManagerArguments' prunePolicy stdGen =
             CM.Arguments {
               CM.tracer              = dtConnectionManagerTracer,

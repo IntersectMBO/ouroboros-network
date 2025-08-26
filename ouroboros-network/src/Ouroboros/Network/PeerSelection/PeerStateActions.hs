@@ -836,29 +836,29 @@ withPeerStateActions PeerStateActionsArguments {
                                    ("peerMonitoringLoop " ++ show remoteAddress))
               pure connHandle
 
-            Right (Disconnected _ Nothing) ->
-              -- Disconnected in 'TerminatingState' or 'TerminatedState' without
-              -- an exception.
-              throwIO $ userError "establishPeerConnection: Disconnected"
-            Right (Disconnected _ (Just reason)) ->
-              case reason of
-                HandleHandshakeClientError err -> do
-                  traceWith spsTracer (PeerStatusChangeFailure
-                                        (ColdToWarm Nothing remotePeerAddr)
-                                        (HandshakeClientFailure err))
-                  throwIO (ClientException err)
+            Right (Disconnected _ disconnectionError) ->
+              case disconnectionError of
+                ConnectionHandlerError handlerError ->
+                  case handlerError of
+                    HandleHandshakeClientError err -> do
+                      traceWith spsTracer (PeerStatusChangeFailure
+                                            (ColdToWarm Nothing remotePeerAddr)
+                                            (HandshakeClientFailure err))
+                      throwIO (ClientException err)
 
-                HandleHandshakeServerError err -> do
-                  traceWith spsTracer (PeerStatusChangeFailure
-                                        (ColdToWarm Nothing remotePeerAddr)
-                                        (HandshakeServerFailure err))
-                  throwIO (ServerException err)
+                    HandleHandshakeServerError err -> do
+                      traceWith spsTracer (PeerStatusChangeFailure
+                                            (ColdToWarm Nothing remotePeerAddr)
+                                            (HandshakeServerFailure err))
+                      throwIO (ServerException err)
 
-                HandleError err -> do
-                  traceWith spsTracer (PeerStatusChangeFailure
-                                        (ColdToWarm Nothing remotePeerAddr )
-                                        (HandleFailure err))
-                  throwIO err
+                    HandleError err -> do
+                      traceWith spsTracer (PeerStatusChangeFailure
+                                            (ColdToWarm Nothing remotePeerAddr )
+                                            (HandleFailure err))
+                      throwIO err
+
+                _ -> throwIO disconnectionError
       where
         mkAwaitVars :: OuroborosBundle muxMode (ExpandedInitiatorContext peerAddr m)
                                                responderCtx ByteString m a b

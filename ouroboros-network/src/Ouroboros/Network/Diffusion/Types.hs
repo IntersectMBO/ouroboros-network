@@ -610,7 +610,7 @@ type NodeToClientHandle ntcAddr versionData m =
     HandleWithMinimalCtx Mx.ResponderMode ntcAddr versionData ByteString m Void ()
 
 type NodeToClientHandleError ntcVersion =
-    HandleError Mx.ResponderMode ntcVersion
+    HandleError ntcVersion
 
 type MkNodeToClientConnectionHandler
       ntcFd ntcAddr ntcVersion ntcVersionData m =
@@ -646,7 +646,7 @@ type NodeToNodeConnectionManager
       ntnFd
       ntnAddr
       (NodeToNodeHandle mode ntnAddr ntnVersionData m a b)
-      (HandleError mode ntnVersion)
+      (HandleError ntnVersion)
       m
 
 --

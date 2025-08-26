@@ -947,28 +947,32 @@ with args@Arguments {
                                             , toState   = Known connState
                                             })
             return ( State.insert connId connVar state
-                   , Just (connVar, connThread, reader)
+                   , Right (connVar, connThread, reader)
                    )
           else
             return ( state
-                   , Nothing
+                   , Left ReachedInboundConnectionHardLimit
                    )
 
         case r of
-          Nothing ->
-            return (Disconnected connId Nothing)
+          Left reason ->
+            -- we were unable to include the connection due to hard inbound
+            -- connection limit
+            return (Disconnected connId reason)
 
-          Just (mutableConnState@MutableConnState { connVar, connStateId }
-               , connThread, reader) -> do
+          Right ( mutableConnState@MutableConnState { connVar, connStateId }
+                , connThread, reader) -> do
             traceCounters stateVar
 
             res <- atomically $ readPromise reader
             case res of
               Left handleError -> do
-                terminateInboundWithErrorOrQuery connId connStateId connVar connThread stateVar mutableConnState $ Just handleError
+                terminateInboundWithErrorOrQuery connId connStateId connVar connThread stateVar mutableConnState
+                                                 (ConnectionHandlerError handleError)
 
               Right HandshakeConnectionQuery -> do
-                terminateInboundWithErrorOrQuery connId connStateId connVar connThread stateVar mutableConnState Nothing
+                terminateInboundWithErrorOrQuery connId connStateId connVar connThread stateVar mutableConnState
+                                                 ConnectionDisconnectedByHandshakeQuery
 
               Right (HandshakeConnectionResult handle (_version, versionData)) -> do
                 let dataFlow = connectionDataFlow versionData
@@ -1025,10 +1029,10 @@ with args@Arguments {
                       throwSTM (withCallStack (ImpossibleState (remoteAddress connId)))
 
                     TerminatingState _ _ err ->
-                      return (Left err, Nothing, Inbound)
+                      return (Left (mkDisconnectionException ConnectionInTerminatingState err), Nothing, Inbound)
 
                     TerminatedState err ->
-                      return (Left err, Nothing, Inbound)
+                      return (Left (mkDisconnectionException ConnectionInTerminatedState err), Nothing, Inbound)
 
                 traverse_ (traceWith trTracer . TransitionTrace connStateId) mbTransition
                 traceCounters stateVar
@@ -1068,23 +1072,26 @@ with args@Arguments {
       -> StrictTMVar
            m (ConnectionManagerState peerAddr handle handleError version m)
       -> MutableConnState peerAddr handle handleError version m
-      -> Maybe handleError
+      -> DisconnectionException handleError
       -> m (Connected peerAddr handle handleError)
-    terminateInboundWithErrorOrQuery connId connStateId connVar connThread stateVar mutableConnState handleErrorM = do
+    terminateInboundWithErrorOrQuery connId connStateId connVar connThread stateVar mutableConnState connectionError = do
         transitions <- atomically $ do
           connState <- readTVar connVar
 
           let connState' =
-                case classifyHandleError <$> handleErrorM of
-                  Just HandshakeFailure ->
+                case classifyHandleError <$> connectionError of
+                  ConnectionHandlerError HandshakeFailure ->
                     TerminatingState connId connThread
-                                     handleErrorM
-                  Just HandshakeProtocolViolation ->
-                    TerminatedState handleErrorM
+                                     (case connectionError of
+                                        ConnectionHandlerError err -> Just err
+                                        _                          -> Nothing)
+                  ConnectionHandlerError HandshakeProtocolViolation ->
+                    TerminatedState (case connectionError of
+                                       ConnectionHandlerError err -> Just err
+                                       _                          -> Nothing)
                   -- On inbound query, connection is terminating.
-                  Nothing ->
-                    TerminatingState connId connThread
-                                     handleErrorM
+                  _ ->
+                    TerminatingState connId connThread Nothing
               transition = mkTransition connState connState'
               absConnState = State.abstractState (Known connState)
               shouldTrace = absConnState /= TerminatedSt
@@ -1148,7 +1155,7 @@ with args@Arguments {
         traverse_ (traceWith trTracer . TransitionTrace connStateId) transitions
         traceCounters stateVar
 
-        return (Disconnected connId handleErrorM)
+        return (Disconnected connId connectionError)
 
     -- We need 'mask' in order to guarantee that the traces are logged if an
     -- async exception lands between the successful STM action and the logging
@@ -1619,10 +1626,12 @@ with args@Arguments {
             res <- atomically (readPromise reader)
             case res of
               Left handleError -> do
-                terminateOutboundWithErrorOrQuery connId connStateId connVar connThread stateVar mutableConnState $ Just handleError
+                terminateOutboundWithErrorOrQuery connId connStateId connVar connThread stateVar mutableConnState
+                                                  (ConnectionHandlerError handleError)
 
               Right HandshakeConnectionQuery -> do
-                terminateOutboundWithErrorOrQuery connId connStateId connVar connThread stateVar mutableConnState Nothing
+                terminateOutboundWithErrorOrQuery connId connStateId connVar connThread stateVar mutableConnState
+                                                  ConnectionDisconnectedByHandshakeQuery
 
               Right (HandshakeConnectionResult handle (_version, versionData)) -> do
                 let dataFlow = connectionDataFlow versionData
@@ -1685,7 +1694,7 @@ with args@Arguments {
                       return (Right $ mkTransition connState connState')
 
                     TerminatedState err ->
-                      return $ Left err
+                      return $ Left $ mkDisconnectionException ConnectionInTerminatedState err
                     _ ->
                       let st = State.abstractState (Known connState) in
                       throwSTM (withCallStack (ForbiddenOperation peerAddr st))
@@ -1773,12 +1782,12 @@ with args@Arguments {
 
                 TerminatingState _connId _connThread handleError ->
                   return ( Right (TrTerminatingConnection provenance connId)
-                         , Disconnected connId handleError
+                         , Disconnected connId (mkDisconnectionException ConnectionInTerminatingState handleError)
                          )
                 TerminatedState handleError ->
                   return ( Right (TrTerminatedConnection provenance
                                                          (remoteAddress connId))
-                         , Disconnected connId handleError
+                         , Disconnected connId (mkDisconnectionException ConnectionInTerminatedState handleError)
                          )
 
             case etr of
@@ -1799,27 +1808,31 @@ with args@Arguments {
         -> Async m ()
         -> StrictTMVar m (ConnectionManagerState peerAddr handle handleError version m)
         -> MutableConnState peerAddr handle handleError version m
-        -> Maybe handleError
+        -> DisconnectionException handleError
         -> m (Connected peerAddr handle handleError)
-    terminateOutboundWithErrorOrQuery connId connStateId connVar connThread stateVar mutableConnState handleErrorM = do
+    terminateOutboundWithErrorOrQuery connId connStateId connVar connThread stateVar mutableConnState connectionError = do
         transitions <- atomically $ do
           connState <- readTVar connVar
 
           let connState' =
-                case classifyHandleError <$> handleErrorM of
-                  Just HandshakeFailure ->
+                case classifyHandleError <$> connectionError of
+                  ConnectionHandlerError HandshakeFailure ->
                     TerminatingState connId connThread
-                                     handleErrorM
-                  Just HandshakeProtocolViolation ->
-                    TerminatedState handleErrorM
+                                     (case connectionError of
+                                       ConnectionHandlerError err -> Just err
+                                       _                          -> Nothing)
+                  ConnectionHandlerError HandshakeProtocolViolation ->
+                    TerminatedState (case connectionError of
+                                      ConnectionHandlerError err -> Just err
+                                      _                          -> Nothing)
                   -- On outbound query, connection is terminated.
-                  Nothing ->
-                    TerminatedState handleErrorM
+                  _ ->
+                    TerminatedState Nothing
               transition = mkTransition connState connState'
               absConnState = State.abstractState (Known connState)
               shouldTransition = absConnState /= TerminatedSt
 
-          -- 'handleError' might be either a handshake negotiation
+          -- 'connectionError' might be either a handshake negotiation
           -- a protocol failure (an IO exception, a timeout or
           -- codec failure).  In the first case we should not reset
           -- the connection as this is not a protocol error.
@@ -1870,7 +1883,7 @@ with args@Arguments {
         traverse_ (traceWith trTracer . TransitionTrace connStateId) transitions
         traceCounters stateVar
 
-        return (Disconnected connId handleErrorM)
+        return (Disconnected connId connectionError)
 
 
     releaseOutboundConnectionImpl

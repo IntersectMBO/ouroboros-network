@@ -33,6 +33,7 @@ import Codec.CBOR.Read qualified as CBOR
 import Codec.CBOR.Term qualified as CBOR
 import Control.Tracer (Tracer, contramap)
 import Data.ByteString.Lazy qualified as BL
+import Data.Typeable (Typeable)
 
 import Network.Mux.Trace qualified as Mx
 import Network.Mux.Types qualified as Mx
@@ -61,6 +62,13 @@ data HandshakeException vNumber =
     HandshakeProtocolLimit ProtocolLimitFailure
   | HandshakeProtocolError (HandshakeProtocolError vNumber)
   deriving Show
+
+instance ( Typeable versionNumber
+         , Show versionNumber
+         )
+      => Exception (HandshakeException versionNumber) where
+  displayException (HandshakeProtocolLimit failure) = "handshake protocol limits: " ++ show failure
+  displayException (HandshakeProtocolError err)     = "handshake protocol error: " ++ show err
 
 
 -- | Try to complete either initiator or responder side of the Handshake protocol
