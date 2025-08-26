@@ -556,7 +556,6 @@ bidirectionalExperiment
                               Mux.InitiatorResponderMode peerAddr
                               UnversionedProtocolData ByteString IO () ())
                             (HandleError
-                              Mux.InitiatorResponderMode
                               UnversionedProtocol))
     connect n cm | n <= 1 =
       acquireOutboundConnection cm InitiatorAndResponderDiffusionMode remoteAddr

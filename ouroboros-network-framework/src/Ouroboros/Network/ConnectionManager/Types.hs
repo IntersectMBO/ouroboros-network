@@ -130,6 +130,8 @@ module Ouroboros.Network.ConnectionManager.Types
   , InboundConnectionManager (..)
     -- * Exceptions
   , ConnectionManagerError (..)
+  , DisconnectionException (..)
+  , mkDisconnectionException
   , SomeConnectionManagerError (..)
   , AbstractState (..)
     -- * Counters
@@ -493,7 +495,7 @@ data Connected peerAddr handle handleError =
     -- update from the handshake instead, but this would introduce a race
     -- between inbound \/ outbound threads.
     --
-  | Disconnected !(ConnectionId peerAddr) !(Maybe handleError)
+  | Disconnected !(ConnectionId peerAddr) !(DisconnectionException handleError)
 
 
 type AcquireOutboundConnection peerAddr handle handleError m
@@ -742,7 +744,7 @@ data ConnectionManagerError peerAddr
     -- was expected.
     --
     | UnknownPeer           !peerAddr                !CallStack
-    deriving (Show)
+    deriving Show
 
 
 instance ( Show peerAddr
@@ -831,6 +833,48 @@ connectionManagerErrorFromException :: (Typeable addr, Show addr)
 connectionManagerErrorFromException x = do
     SomeConnectionManagerError a <- fromException x
     cast a
+
+
+-- | Disconnection contextual information returned by `Disconnected`.
+--
+data DisconnectionException handlerError =
+      -- | We tried to accept or acquire a connection but the connection
+      -- manager moved it to `TerminatingState`.
+      ConnectionInTerminatingState
+
+      -- | We tried to accept or acquire a connection but the connection
+      -- manager moved it to `TerminatedState`.
+    | ConnectionInTerminatedState
+
+      -- | The connection was refused because we reached inbound connection hard
+      -- limit.
+    | ReachedInboundConnectionHardLimit
+
+      -- | `ConnectionDisconnectedByHandshakeQuery` is returned when the remote
+      -- side is doing a handshake query. It's not an exception when handshake is
+      -- terminated after a query, it should be handled in a special way.
+    | ConnectionDisconnectedByHandshakeQuery
+
+      -- | Connection handler raised an exception.
+    | ConnectionHandlerError handlerError
+    deriving (Show, Functor)
+
+
+instance Exception handleError
+      => Exception (DisconnectionException handleError) where
+  displayException ConnectionInTerminatingState           = "disconnected: connection in terminating state"
+  displayException ConnectionInTerminatedState            = "disconnected: connection in terminated state"
+  displayException ReachedInboundConnectionHardLimit      = "disconnected: inbound connection hard limit reached"
+  displayException ConnectionDisconnectedByHandshakeQuery = "disconnected: handshake query"
+  displayException (ConnectionHandlerError handlerError)  = "disconnected: " ++ displayException handlerError
+
+mkDisconnectionException
+  :: DisconnectionException handlerError
+  -> Maybe handlerError
+  -> DisconnectionException handlerError
+mkDisconnectionException _ (Just handlerError) = ConnectionHandlerError handlerError
+mkDisconnectionException err Nothing           = err
+
 
 --
 -- Tracing

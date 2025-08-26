@@ -133,29 +133,35 @@ type HandleWithMinimalCtx muxMode peerAddr versionData bytes m a b =
                           (ResponderContext peerAddr)
                           versionData bytes m a b
 
-data HandleError (muxMode :: Mx.Mode) versionNumber where
+data HandleError versionNumber where
     HandleHandshakeClientError
-      :: HasInitiator muxMode ~ True
-      => !(HandshakeException versionNumber)
-      -> HandleError muxMode versionNumber
+      :: !(HandshakeException versionNumber)
+      -> HandleError versionNumber
 
     HandleHandshakeServerError
-      :: HasResponder muxMode ~ True
-      => !(HandshakeException versionNumber)
-      -> HandleError muxMode versionNumber
+      :: !(HandshakeException versionNumber)
+      -> HandleError versionNumber
 
     HandleError
      :: !SomeException
-     -> HandleError muxMode versionNumber
+     -> HandleError versionNumber
 
 instance Show versionNumber
-      => Show (HandleError muxMode versionNumber) where
+      => Show (HandleError versionNumber) where
     show (HandleHandshakeServerError err) = "HandleHandshakeServerError " ++ show err
     show (HandleHandshakeClientError err) = "HandleHandshakeClientError " ++ show err
     show (HandleError err)                = "HandleError " ++ show err
 
+instance ( Typeable versionNumber
+         , Show versionNumber
+         )
+      => Exception (HandleError versionNumber) where
+    displayException (HandleHandshakeClientError err) = "handshake client error: " ++ displayException err
+    displayException (HandleHandshakeServerError err) = "handshake server error: " ++ displayException err
+    displayException (HandleError err)                = show err
 
-classifyHandleError :: HandleError muxMode versionNumber
+
+classifyHandleError :: HandleError versionNumber
                     -> HandleErrorType
 classifyHandleError (HandleHandshakeClientError (HandshakeProtocolLimit _)) =
     HandshakeProtocolViolation
@@ -180,7 +186,7 @@ type MuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr vers
                       socket
                       peerAddr
                       (Handle muxMode initiatorCtx responderCtx versionData bytes m a b)
-                      (HandleError muxMode versionNumber)
+                      (HandleError versionNumber)
                       versionNumber
                       versionData
                       m
@@ -190,7 +196,7 @@ type MuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr vers
 type MuxConnectionManager muxMode socket initiatorCtx responderCtx peerAddr versionData versionNumber bytes m a b =
     ConnectionManager muxMode socket peerAddr
                       (Handle muxMode initiatorCtx responderCtx versionData bytes m a b)
-                      (HandleError muxMode versionNumber)
+                      (HandleError versionNumber)
                       m
 
 -- | Type alias for 'ConnectionManager' which is using expanded context.
@@ -198,7 +204,7 @@ type MuxConnectionManager muxMode socket initiatorCtx responderCtx peerAddr vers
 type ConnectionManagerWithExpandedCtx muxMode socket peerAddr versionData versionNumber bytes m a b =
     ConnectionManager muxMode socket peerAddr
                       (HandleWithExpandedCtx muxMode peerAddr versionData bytes m a b)
-                      (HandleError muxMode versionNumber)
+                      (HandleError versionNumber)
                       m
 
 -- | To be used as `makeConnectionHandler` field of 'ConnectionManagerArguments'.
@@ -280,7 +286,7 @@ makeConnectionHandler muxTracer singMuxMode
                              socket
                              peerAddr
                              (Handle muxMode initiatorCtx responderCtx versionData ByteString m a b)
-                             (HandleError muxMode versionNumber)
+                             (HandleError versionNumber)
                              versionNumber
                              versionData
                              m
@@ -352,7 +358,7 @@ makeConnectionHandler muxTracer singMuxMode
                              socket
                              peerAddr
                              (Handle muxMode initiatorCtx responderCtx versionData ByteString m a b)
-                             (HandleError muxMode versionNumber)
+                             (HandleError versionNumber)
                              versionNumber
                              versionData
                              m
