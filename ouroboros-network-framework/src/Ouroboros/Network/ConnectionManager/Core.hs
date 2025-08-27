@@ -1074,27 +1074,14 @@ with args@Arguments {
       -> MutableConnState peerAddr handle handleError version m
       -> DisconnectionException handleError
       -> m (Connected peerAddr handle handleError)
-    terminateInboundWithErrorOrQuery connId connStateId connVar connThread stateVar mutableConnState connectionError = do
+    terminateInboundWithErrorOrQuery connId connStateId connVar connThread stateVar mutableConnState connError = do
         transitions <- atomically $ do
           connState <- readTVar connVar
 
-          let connState' =
-                case classifyHandlerError <$> connectionError of
-                  ConnectionHandlerError HandshakeFailure ->
-                    TerminatingState connId connThread
-                                     (case connectionError of
-                                        ConnectionHandlerError err -> Just err
-                                        _                          -> Nothing)
-                  ConnectionHandlerError HandshakeProtocolViolation ->
-                    TerminatedState (case connectionError of
-                                       ConnectionHandlerError err -> Just err
-                                       _                          -> Nothing)
-                  -- On inbound query, connection is terminating.
-                  _ ->
-                    TerminatingState connId connThread Nothing
-              transition = mkTransition connState connState'
+          let connState'   = computeConnStateOnError connId connThread connError
+              transition   = mkTransition connState connState'
               absConnState = State.abstractState (Known connState)
-              shouldTrace = absConnState /= TerminatedSt
+              shouldTrace  = absConnState /= TerminatedSt
 
           updated <-
             modifyTMVarSTM
@@ -1155,7 +1142,34 @@ with args@Arguments {
         traverse_ (traceWith trTracer . TransitionTrace connStateId) transitions
         traceCounters stateVar
 
-        return (Disconnected connId connectionError)
+        return (Disconnected connId connError)
+
+    -- Compute connection state based on `DisconnectionException`.  Shared
+    -- between:
+    --
+    -- * `terminateInboundWithErrorOrQuery` and
+    -- * `terminateOutboundWithErrorOrQuery`.
+    --
+    computeConnStateOnError
+      :: ConnectionId peerAddr
+      -> Async m ()
+      -> DisconnectionException handleError
+      -> ConnectionState peerAddr handle handleError version m
+    computeConnStateOnError connId connThread connError =
+      case classifyHandlerError <$> connError of
+        ConnectionHandlerError HandshakeFailure ->
+          TerminatingState connId connThread
+                           (case connError of
+                             ConnectionHandlerError err -> Just err
+                             _                          -> Nothing)
+        ConnectionHandlerError HandshakeProtocolViolation ->
+          TerminatedState (case connError of
+                            ConnectionHandlerError err -> Just err
+                            _                          -> Nothing)
+        -- On outbound query, connection is terminated.
+        _ ->
+          TerminatedState Nothing
+
 
     -- We need 'mask' in order to guarantee that the traces are logged if an
     -- async exception lands between the successful STM action and the logging
@@ -1810,29 +1824,16 @@ with args@Arguments {
         -> MutableConnState peerAddr handle handleError version m
         -> DisconnectionException handleError
         -> m (Connected peerAddr handle handleError)
-    terminateOutboundWithErrorOrQuery connId connStateId connVar connThread stateVar mutableConnState connectionError = do
+    terminateOutboundWithErrorOrQuery connId connStateId connVar connThread stateVar mutableConnState connError = do
         transitions <- atomically $ do
           connState <- readTVar connVar
 
-          let connState' =
-                case classifyHandlerError <$> connectionError of
-                  ConnectionHandlerError HandshakeFailure ->
-                    TerminatingState connId connThread
-                                     (case connectionError of
-                                       ConnectionHandlerError err -> Just err
-                                       _                          -> Nothing)
-                  ConnectionHandlerError HandshakeProtocolViolation ->
-                    TerminatedState (case connectionError of
-                                      ConnectionHandlerError err -> Just err
-                                      _                          -> Nothing)
-                  -- On outbound query, connection is terminated.
-                  _ ->
-                    TerminatedState Nothing
-              transition = mkTransition connState connState'
-              absConnState = State.abstractState (Known connState)
+          let connState'       = computeConnStateOnError connId connThread connError
+              transition       = mkTransition connState connState'
+              absConnState     = State.abstractState (Known connState)
               shouldTransition = absConnState /= TerminatedSt
 
-          -- 'connectionError' might be either a handshake negotiation
+          -- 'connError' might be either a handshake negotiation
           -- a protocol failure (an IO exception, a timeout or
           -- codec failure).  In the first case we should not reset
           -- the connection as this is not a protocol error.
@@ -1883,7 +1884,7 @@ with args@Arguments {
         traverse_ (traceWith trTracer . TransitionTrace connStateId) transitions
         traceCounters stateVar
 
-        return (Disconnected connId connectionError)
+        return (Disconnected connId connError)
 
 
     releaseOutboundConnectionImpl
