@@ -470,6 +470,9 @@ test-suite tests-lib-tests
 
 library framework-tests-lib
   import: ghc-options
+  mixins:
+    QuickCheck hiding (Test.QuickCheck.Monoids)
+
   visibility: public
   hs-source-dirs: framework/tests-lib
   exposed-modules:
@@ -481,7 +484,7 @@ library framework-tests-lib
     Test.Ouroboros.Network.RawBearer.Utils
 
   build-depends:
-    QuickCheck >=2.16,
+    QuickCheck,
     base >=4.14 && <4.22,
     bytestring,
     cborg,
@@ -498,6 +501,9 @@ library framework-tests-lib
 
 test-suite framework-sim-tests
   import: ghc-options
+  mixins:
+    QuickCheck hiding (Test.QuickCheck.Monoids)
+
   type: exitcode-stdio-1.0
   main-is: Main.hs
   hs-source-dirs: framework/sim-tests
@@ -509,7 +515,7 @@ test-suite framework-sim-tests
     Test.Simulation.Network.Snocket
 
   build-depends:
-    QuickCheck >=2.16,
+    QuickCheck,
     base >=4.14 && <4.22,
     bytestring,
     cborg,
@@ -541,6 +547,9 @@ test-suite framework-sim-tests
 
 test-suite framework-io-tests
   import: ghc-options
+  mixins:
+    QuickCheck hiding (Test.QuickCheck.Monoids)
+
   type: exitcode-stdio-1.0
   main-is: Main.hs
   hs-source-dirs: framework/io-tests
@@ -551,7 +560,7 @@ test-suite framework-io-tests
     Test.Ouroboros.Network.Socket
 
   build-depends:
-    QuickCheck >=2.16,
+    QuickCheck,
     base >=4.14 && <4.22,
     bytestring,
     contra-tracer,
@@ -819,10 +828,13 @@ test-suite protocols-tests
 -- Simulation Test Library
 library ouroboros-network-tests-lib
   import: ghc-options-tests
+  mixins:
+    QuickCheck hiding (Test.QuickCheck.Monoids)
+
   visibility: public
   hs-source-dirs: tests/lib
   build-depends:
-    QuickCheck >=2.16,
+    QuickCheck,
     aeson,
     array,
     base >=4.14 && <4.22,
@@ -845,6 +857,7 @@ library ouroboros-network-tests-lib
     nothunks,
     ouroboros-network:{ouroboros-network, api, api-tests-lib, framework, framework-tests-lib, protocols, protocols-tests-lib, tests-lib},
     pretty-simple,
+    quickcheck-monoids,
     random,
     serialise,
     splitmix,
@@ -878,6 +891,9 @@ library ouroboros-network-tests-lib
     Test.Ouroboros.Network.TxSubmission.AppV2
     Test.Ouroboros.Network.TxSubmission.TxLogic
     Test.Ouroboros.Network.TxSubmission.Types
+
+  ghc-options:
+    -Wno-unused-packages
 
 -- Simulation tests, and IO tests which don't require native system calls.
 -- (i.e. they don't require system call API provided by `Win32-network` or
@@ -915,7 +931,7 @@ test-suite ouroboros-network-io-tests
     Test.Ouroboros.Network.Socket
 
   build-depends:
-    QuickCheck >=2.16,
+    QuickCheck,
     base >=4.14 && <4.22,
     bytestring,
     cborg,
