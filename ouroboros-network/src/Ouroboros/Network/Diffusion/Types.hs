@@ -21,6 +21,7 @@ module Ouroboros.Network.Diffusion.Types
     -- * NodeToClient type aliases
   , NodeToClientHandle
   , NodeToClientHandleError
+  , NodeToClientHandlerError
   , MkNodeToClientConnectionHandler
     -- * NodeToNode type aliases
   , NodeToNodeHandle
@@ -610,7 +611,11 @@ type NodeToClientHandle ntcAddr versionData m =
     HandleWithMinimalCtx Mx.ResponderMode ntcAddr versionData ByteString m Void ()
 
 type NodeToClientHandleError ntcVersion =
-    HandleError Mx.ResponderMode ntcVersion
+    HandlerError ntcVersion
+{-# DEPRECATED NodeToClientHandleError "Use NodeToClientHandlerError" #-}
+
+type NodeToClientHandlerError ntcVersion =
+    HandlerError ntcVersion
 
 type MkNodeToClientConnectionHandler
       ntcFd ntcAddr ntcVersion ntcVersionData m =
@@ -622,7 +627,7 @@ type MkNodeToClientConnectionHandler
          ntcFd
          ntcAddr
          (NodeToClientHandle ntcAddr ntcVersionData m)
-         (NodeToClientHandleError ntcVersion)
+         (NodeToClientHandlerError ntcVersion)
          ntcVersion
          ntcVersionData
          m
@@ -646,7 +651,7 @@ type NodeToNodeConnectionManager
       ntnFd
       ntnAddr
       (NodeToNodeHandle mode ntnAddr ntnVersionData m a b)
-      (HandleError mode ntnVersion)
+      (HandlerError ntnVersion)
       m
 
 --

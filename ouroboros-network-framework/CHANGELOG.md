@@ -4,7 +4,12 @@
 
 ### Breaking changes
 
+* `HandleError` renamed as `HandlerError`, also `HandlerErrorType` and `classifyHandlerError`.
+
 ### Non-breaking changes
+
+* propagate diconnection reason out of connection manager when including an
+  inbound connection or acquiring an outbound connection.
 
 ## 0.19.0.0 -- 28.06.2025
 
