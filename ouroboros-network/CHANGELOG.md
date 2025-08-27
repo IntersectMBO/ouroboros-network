@@ -1,5 +1,9 @@
 # Revision history for ouroboros-network
 
+## 0.22.3.0 -- 27.08.2025
+
+* Compatible with `QuickCheck < 2.16`
+
 ## 0.22.2.0 -- 05.08.2025
 
 NOTE: morally this ought to be a major release.

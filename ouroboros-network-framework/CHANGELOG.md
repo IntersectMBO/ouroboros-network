@@ -6,6 +6,10 @@
 
 ### Non-breaking changes
 
+## 0.19.1.0 -- 27.08.2025
+
+* Compatible with `QuickCheck < 2.16`
+
 ## 0.19.0.0 -- 28.06.2025
 
 ### Breaking changes

@@ -1,5 +1,10 @@
 # Revision history for quickcheck-monoids
 
+## 0.1.0.3 -- 2025-08-27
+
+* Somewhat compatible with `QuickCheck-2.16`: `QuickCheck` is also defining
+  `Test.QuickCheck.Monoids` module.
+
 ## 0.1.0.2 -- 2025-06-28
 
 * Package is deprecated, use `QuickCheck >= 2.16` which provides `Every` and
