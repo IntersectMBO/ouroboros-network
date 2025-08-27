@@ -1,4 +1,6 @@
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE PackageImports      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Test.Ouroboros.Network.ConnectionManager.Utils where
@@ -10,6 +12,9 @@ import Ouroboros.Network.ConnectionManager.Core as CM
 import Ouroboros.Network.ConnectionManager.Types
 
 import Test.QuickCheck
+#if !MIN_VERSION_QuickCheck(2,16,0)
+import "quickcheck-monoids" Test.QuickCheck.Monoids
+#endif
 
 
 verifyAbstractTransition :: AbstractTransition
