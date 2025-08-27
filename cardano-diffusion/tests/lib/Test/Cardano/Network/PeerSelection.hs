@@ -90,6 +90,7 @@ import Cardano.Network.PeerSelection.State.LocalRootPeers qualified as LocalRoot
 import Ouroboros.Network.Block (Point, SlotNo)
 import Ouroboros.Network.BlockFetch (FetchMode (..), PraosFetchMode (..))
 import Test.QuickCheck
+import Test.QuickCheck.Monoids
 import Test.Tasty
 import Test.Tasty.QuickCheck
 import Text.Pretty.Simple

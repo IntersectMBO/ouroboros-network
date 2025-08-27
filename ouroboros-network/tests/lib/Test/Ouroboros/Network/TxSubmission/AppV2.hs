@@ -4,10 +4,13 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE PackageImports      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeOperators       #-}
+
+{-# LANGUAGE CPP #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -63,6 +66,9 @@ import Test.Ouroboros.Network.TxSubmission.Types
 import Test.Ouroboros.Network.Utils hiding (debugTracer)
 
 import Test.QuickCheck
+#if !MIN_VERSION_QuickCheck(2,16,0)
+import "quickcheck-monoids" Test.QuickCheck.Monoids
+#endif
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
 

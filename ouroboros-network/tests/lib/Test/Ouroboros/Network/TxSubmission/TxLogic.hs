@@ -7,9 +7,12 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE PackageImports      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
 {-# LANGUAGE TupleSections       #-}
+
+{-# LANGUAGE CPP                 #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -60,6 +63,9 @@ import Test.QuickCheck
 import Test.QuickCheck.Function (apply)
 import Test.QuickCheck.Gen (Gen (..))
 import Test.QuickCheck.Random (QCGen (..))
+#if !MIN_VERSION_QuickCheck(2,16,0)
+import "quickcheck-monoids" Test.QuickCheck.Monoids
+#endif
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
 import Text.Pretty.Simple
