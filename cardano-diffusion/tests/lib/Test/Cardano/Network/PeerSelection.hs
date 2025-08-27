@@ -88,6 +88,9 @@ import Cardano.Network.PeerSelection.Governor.Types qualified as Cardano.ExtraSi
 import Cardano.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 import Ouroboros.Network.BlockFetch (FetchMode (..), PraosFetchMode (..))
 import Test.QuickCheck
+#if !MIN_VERSION_QuickCheck(2,16,0)
+import "quickcheck-monoids" Test.QuickCheck.Monoids
+#endif
 import Test.Tasty
 import Test.Tasty.QuickCheck
 import Text.Pretty.Simple
