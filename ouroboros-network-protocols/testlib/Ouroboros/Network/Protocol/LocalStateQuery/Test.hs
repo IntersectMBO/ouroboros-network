@@ -45,7 +45,8 @@ import Ouroboros.Network.Mock.Chain (Point)
 import Ouroboros.Network.Mock.ConcreteBlock (Block)
 
 import Ouroboros.Network.Protocol.LocalStateQuery.Client
-import Ouroboros.Network.Protocol.LocalStateQuery.Codec
+import Ouroboros.Network.Protocol.LocalStateQuery.Codec hiding (Some (..))
+import Ouroboros.Network.Protocol.LocalStateQuery.Codec qualified as LocalStateQuery
 import Ouroboros.Network.Protocol.LocalStateQuery.Direct
 import Ouroboros.Network.Protocol.LocalStateQuery.Examples
 import Ouroboros.Network.Protocol.LocalStateQuery.Server
@@ -54,7 +55,7 @@ import Ouroboros.Network.Protocol.LocalStateQuery.Type
 import Test.ChainGenerators ()
 import Test.Ouroboros.Network.Protocol.Utils
 
-import Test.QuickCheck as QC hiding (Result, Some (Some))
+import Test.QuickCheck as QC hiding (Result)
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
 import Text.Show.Functions ()
@@ -387,10 +388,10 @@ codec =
     encodeQuery :: Query result -> CBOR.Encoding
     encodeQuery GetTheLedgerState = Serialise.encode ()
 
-    decodeQuery :: forall s . CBOR.Decoder s (Some Query)
+    decodeQuery :: forall s . CBOR.Decoder s (LocalStateQuery.Some Query)
     decodeQuery = do
       () <- Serialise.decode
-      return $ Some GetTheLedgerState
+      return $ LocalStateQuery.Some GetTheLedgerState
 
     encodeResult :: Query result -> result -> CBOR.Encoding
     encodeResult GetTheLedgerState = Serialise.encode

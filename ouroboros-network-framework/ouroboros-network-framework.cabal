@@ -101,7 +101,6 @@ library
     -Widentities
     -Wredundant-constraints
     -Wno-unticked-promoted-constructors
-    -Wunused-packages
 
 library testlib
   visibility: public
@@ -116,7 +115,7 @@ library testlib
 
   other-modules:
   build-depends:
-    QuickCheck >=2.16,
+    QuickCheck,
     base >=4.14 && <4.22,
     bytestring,
     cborg,
@@ -129,6 +128,7 @@ library testlib
     ouroboros-network-api,
     ouroboros-network-framework,
     ouroboros-network-testing,
+    quickcheck-monoids,
     random,
     serialise,
     typed-protocols:{typed-protocols, examples},
@@ -144,7 +144,7 @@ library testlib
     -Widentities
     -Wredundant-constraints
     -Wno-unticked-promoted-constructors
-    -Wunused-packages
+    -Wno-unused-packages
 
 test-suite sim-tests
   type: exitcode-stdio-1.0
@@ -157,8 +157,11 @@ test-suite sim-tests
     Test.Ouroboros.Network.Server.Sim
     Test.Simulation.Network.Snocket
 
+  mixins:
+    QuickCheck hiding (Test.QuickCheck.Monoids)
+
   build-depends:
-    QuickCheck >=2.16,
+    QuickCheck,
     base >=4.14 && <4.22,
     bytestring,
     cborg,
@@ -175,6 +178,7 @@ test-suite sim-tests
     pretty-simple,
     psqueues,
     quickcheck-instances,
+    quickcheck-monoids,
     quiet,
     random,
     serialise,
@@ -197,7 +201,7 @@ test-suite sim-tests
     -Widentities
     -Wredundant-constraints
     -Wno-unticked-promoted-constructors
-    -Wunused-packages
+    -Wno-unused-packages
 
   if flag(ipv6)
     cpp-options: -DOUROBOROS_NETWORK_IPV6
@@ -213,7 +217,7 @@ test-suite io-tests
     Test.Ouroboros.Network.Socket
 
   build-depends:
-    QuickCheck >=2.16,
+    QuickCheck,
     base >=4.14 && <4.22,
     bytestring,
     contra-tracer,

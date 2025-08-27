@@ -105,6 +105,7 @@ import Cardano.Network.Types (LedgerStateJudgement (..),
            NumberOfBigLedgerPeers (..))
 import Ouroboros.Network.BlockFetch (FetchMode (..), PraosFetchMode (..))
 import Test.QuickCheck
+import Test.QuickCheck.Monoids
 import Test.Tasty
 import Test.Tasty.QuickCheck
 import Text.Pretty.Simple
