@@ -1,5 +1,8 @@
 {-# LANGUAGE LambdaCase     #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE PackageImports #-}
+
+{-# LANGUAGE CPP            #-}
 
 module Test.Ouroboros.Network.ConnectionManager.Timeouts
   ( verifyAllTimeouts
@@ -39,6 +42,9 @@ import Data.Monoid (Sum (Sum))
 import Text.Printf (printf)
 
 import Test.QuickCheck
+#if !MIN_VERSION_QuickCheck(2,16,0)
+import "quickcheck-monoids" Test.QuickCheck.Monoids
+#endif
 
 import Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
 import Ouroboros.Network.ConnectionManager.Core qualified as CM
