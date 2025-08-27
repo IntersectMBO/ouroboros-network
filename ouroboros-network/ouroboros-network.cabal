@@ -1,6 +1,6 @@
 cabal-version: 3.4
 name: ouroboros-network
-version: 0.22.2.0
+version: 0.22.3.0
 synopsis: A networking layer for the Ouroboros blockchain protocol
 description: A networking layer for the Ouroboros blockchain protocol.
 license: Apache-2.0
@@ -303,13 +303,16 @@ library cardano-diffusion
 
 -- Simulation Test Library
 library testlib
+  mixins:
+    QuickCheck hiding (Test.QuickCheck.Monoids)
+
   import: ghc-options-tests
   default-language: Haskell2010
   default-extensions: ImportQualifiedPost
   visibility: public
   hs-source-dirs: testlib
   build-depends:
-    QuickCheck >=2.16,
+    QuickCheck,
     aeson,
     array,
     base >=4.14 && <4.22,
@@ -340,6 +343,7 @@ library testlib
     pipes,
     pretty-simple,
     psqueues,
+    quickcheck-monoids,
     random,
     serialise,
     tasty,
@@ -384,6 +388,9 @@ library testlib
     Test.Ouroboros.Network.TxSubmission
     Test.Ouroboros.Network.Version
 
+  ghc-options:
+    -Wno-unused-packages
+
 -- Simulation tests, and IO tests which don't require native system calls.
 -- (i.e. they don't require system call API provided by `Win32-network` or
 -- `network` dependency).  test-suite sim-tests
@@ -425,7 +432,7 @@ test-suite io-tests
   default-language: Haskell2010
   default-extensions: ImportQualifiedPost
   build-depends:
-    QuickCheck >=2.16,
+    QuickCheck,
     base >=4.14 && <4.22,
     bytestring,
     contra-tracer,

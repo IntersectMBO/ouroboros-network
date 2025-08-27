@@ -1,4 +1,8 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE ExplicitNamespaces #-}
+{-# LANGUAGE PackageImports #-}
+{-# LANGUAGE PatternSynonyms #-}
 
 -- | Monoids using `.&&.` and `.||.`.
 --
@@ -6,8 +10,17 @@
 -- `checkCoverage` (see test for a counterexample).
 --
 module Test.QuickCheck.Monoids
+#if !MIN_VERSION_QuickCheck(2,16,0)
+  ( type Every
+  , All(Every, getEvery, ..)
+  , type Some
+  , Any(Some, getSome, ..)
+#else
   ( All (..)
   , Any (..)
+  , Every (..)
+  , Some (..)
+#endif
   ) where
 
 import Data.List.NonEmpty as NonEmpty
@@ -20,7 +33,16 @@ import Test.QuickCheck
 -- existential variables.
 --
 data All = forall p. Testable p => All { getAll :: p }
-{-# DEPRECATED All "Use 'Every' from QuickCheck >= 2.16" #-}
+
+#if !MIN_VERSION_QuickCheck(2,16,0)
+type Every = All
+
+pattern Every :: ()
+              => Testable p
+              => p
+              -> All
+pattern Every { getEvery } = All getEvery
+#endif
 
 instance Testable All where
     property (All p) = property p
@@ -40,7 +62,16 @@ instance Monoid All where
 -- existential variables.
 --
 data Any = forall p. Testable p => Any { getAny :: p }
-{-# DEPRECATED Any "Use 'Some' from QuickCheck >= 2.16" #-}
+
+#if !MIN_VERSION_QuickCheck(2,16,0)
+type Some = Any
+
+pattern Some :: ()
+              => Testable p
+              => p
+              -> Any
+pattern Some { getSome } = Any getSome
+#endif
 
 instance Testable Any where
     property (Any p) = property p

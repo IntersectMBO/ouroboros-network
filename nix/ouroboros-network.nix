@@ -42,9 +42,9 @@ let
     # pkgs - nixpkgs instatiated for cross compilation, so
     # stdenv.hostPlatform.isWindows will work as expected
     src = ./..;
-    index-state = "2025-06-17T07:53:04Z";
-    index-sha256 = "sha256-/9/Z6Fpdzil6tDmMrKMKKVcnXksfIpLOQ/2drHo1Rts=";
     name = "ouroboros-network";
+    index-state = "2025-07-16T09:24:19Z";
+    index-sha256 = "sha256-fmnSRF68/UIQYzzdmNs3UT0cbYhn9d5nlhb3BnVXe48=";
     compiler-nix-name = lib.mkDefault defaultCompiler;
     cabalProjectLocal =
       if pkgs.stdenv.hostPlatform.isWindows
