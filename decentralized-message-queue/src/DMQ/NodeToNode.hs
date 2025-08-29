@@ -43,6 +43,8 @@ import Data.Aeson qualified as Aeson
 import Data.ByteString.Lazy qualified as BL
 import Data.Functor.Contravariant ((>$<))
 import Data.Hashable (Hashable)
+import Data.Set (Set)
+import Data.Set qualified as Set
 import Data.Void (Void)
 import System.Random (mkStdGen)
 
@@ -52,7 +54,7 @@ import Network.Mux.Types qualified as Mx
 import Network.TypedProtocol.Codec (Codec)
 
 import DMQ.Configuration (Configuration, Configuration' (..), I (..))
-import DMQ.Diffusion.NodeKernel (NodeKernel (..))
+import DMQ.Diffusion.NodeKernel
 import DMQ.NodeToNode.Version
 import DMQ.Protocol.SigSubmission.Codec
 import DMQ.Protocol.SigSubmission.Type
@@ -105,6 +107,9 @@ import Ouroboros.Network.Protocol.PeerSharing.Type qualified as Protocol
 import Ouroboros.Network.Protocol.TxSubmission2.Client (txSubmissionClientPeer)
 import Ouroboros.Network.Protocol.TxSubmission2.Server
            (txSubmissionServerPeerPipelined)
+
+-- TODO tidy
+import Cardano.Ledger.Shelley.API qualified as Ledger
 
 -- TODO: if we add `versionNumber` to `ctx` we could use `RunMiniProtocolCb`.
 -- This makes sense, since `ctx` already contains `versionData`.
@@ -181,6 +186,7 @@ ntnApps
     , sigChannelVar
     , sigMempoolSem
     , sigSharedTxStateVar
+    , poolIds
     }
     Codecs {
       sigSubmissionCodec
@@ -216,8 +222,10 @@ ntnApps
         -- we need to validate signatures when we received them, and shutdown
         -- connection if we receive one, rather than validate them in the
         -- mempool.
-        sigValid :: Sig -> Bool
-        sigValid _ = True
+        sigValid :: Sig -> STM m Bool
+        sigValid sig = Set.member (toPoolId $ sigOpCertificate sig) <$> (readTVar . getPoolIds $ poolIds)
+        toPoolId :: SigOpCertificate -> Ledger.KeyHash Ledger.StakePool
+        toPoolId = undefined
 
     aSigSubmissionClient
       :: NodeToNodeVersion

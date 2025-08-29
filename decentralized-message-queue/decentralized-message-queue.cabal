@@ -18,6 +18,16 @@ category: Network
 build-type: Simple
 extra-doc-files: CHANGELOG.md
 
+common extensions
+  default-extensions:
+    BangPatterns
+    BlockArguments
+    GADTs
+    ImportQualifiedPost
+    LambdaCase
+    NamedFieldPuns
+    ScopedTypeVariables
+
 common warnings
   ghc-options:
     -Wall
@@ -31,7 +41,9 @@ common warnings
     -Wunused-packages
 
 library
-  import: warnings
+  import:
+    warnings,
+    extensions
   exposed-modules:
     DMQ.Configuration
     DMQ.Configuration.CLIOptions
@@ -44,6 +56,17 @@ library
     DMQ.NodeToClient.Version
     DMQ.NodeToNode
     DMQ.NodeToNode.Version
+    DMQ.NodeToClient.LocalMsgSubmission
+    DMQ.NodeToClient.LocalMsgNotification
+    DMQ.Protocol.LocalMsgNotification.Client
+    DMQ.Protocol.LocalMsgNotification.Codec
+    DMQ.Protocol.LocalMsgNotification.Examples
+    DMQ.Protocol.LocalMsgNotification.Server
+    DMQ.Protocol.LocalMsgNotification.Type
+    DMQ.Protocol.LocalMsgSubmission.Client
+    DMQ.Protocol.LocalMsgSubmission.Codec
+    DMQ.Protocol.LocalMsgSubmission.Server
+    DMQ.Protocol.LocalMsgSubmission.Type
     DMQ.Protocol.SigSubmission.Codec
     DMQ.Protocol.SigSubmission.Type
     DMQ.Tracer
@@ -55,6 +78,7 @@ library
     aeson-pretty,
     base >=4.14 && <4.22,
     bytestring >=0.10 && <0.13,
+    cardano-ledger-shelley,
     cborg >=0.2.1 && <0.3,
     containers >=0.5 && <0.8,
     contra-tracer >=0.1 && <0.3,
@@ -74,16 +98,19 @@ library
     ouroboros-network-framework ^>=0.19,
     ouroboros-network-protocols ^>=0.15,
     random ^>=1.2,
+    singletons,
+    serialise,
     text >=1.2.4 && <2.2,
     time ^>=1.12,
     typed-protocols:{typed-protocols, cborg} ^>=1.1,
 
   hs-source-dirs: src
   default-language: Haskell2010
-  default-extensions: ImportQualifiedPost
 
 executable dmq-exe
-  import: warnings
+  import:
+    warnings,
+    extensions
   main-is: Main.hs
   ghc-options:
     -threaded
@@ -93,25 +120,35 @@ executable dmq-exe
     acts,
     aeson,
     base,
+    cardano-crypto-wrapper,
+    cardano-ledger-byron,
+    containers,
     contra-tracer >=0.1 && <0.3,
     decentralized-message-queue,
+    io-classes:{io-classes, strict-stm},
     optparse-applicative,
-    ouroboros-network,
+    ouroboros-network:{ouroboros-network, cardano-diffusion},
     ouroboros-network-api,
+    ouroboros-network-framework,
+    ouroboros-network-protocols,
+    ouroboros-consensus,
+    ouroboros-consensus-diffusion,
+    ouroboros-consensus-cardano,
     random,
 
   hs-source-dirs: app
   default-language: Haskell2010
-  default-extensions: ImportQualifiedPost
 
 test-suite dmq-test
-  import: warnings
+  import: warnings,
+          extensions
   default-language: Haskell2010
-  default-extensions: ImportQualifiedPost
   other-modules:
     Test.DMQ.NodeToClient
     Test.DMQ.NodeToNode
     Test.DMQ.Protocol.SigSubmission
+    Test.DMQ.Protocol.LocalMsgNotification
+    Test.DMQ.Protocol.LocalMsgSubmission
 
   type: exitcode-stdio-1.0
   hs-source-dirs: test
@@ -119,15 +156,23 @@ test-suite dmq-test
   build-depends:
     QuickCheck,
     base >=4.14 && <4.22,
+    bytestring,
+    contra-tracer,
     decentralized-message-queue,
     ouroboros-network-api,
+    ouroboros-network-framework,
     ouroboros-network-protocols:testlib,
+    ouroboros-network-testing,
     quickcheck-instances,
+    random,
+    serialise,
     tasty,
     tasty-quickcheck,
     time,
     typed-protocols:{typed-protocols, codec-properties},
     with-utf8,
+    io-classes,
+    io-sim
 
   ghc-options:
     -fno-ignore-asserts

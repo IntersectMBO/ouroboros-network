@@ -54,7 +54,6 @@ import Ouroboros.Network.Protocol.BlockFetch.Server
 import Ouroboros.Network.Protocol.BlockFetch.Type
 import Ouroboros.Network.Util.ShowProxy
 
-import Ouroboros.Network.BlockFetch.ConsensusInterface (initialWithFingerprint)
 import Ouroboros.Network.BlockFetch.Decision.Trace (TraceDecisionEvent)
 import Ouroboros.Network.Mock.ConcreteBlock
 
@@ -149,8 +148,8 @@ blockFetchExample0 fetchMode decisionTracer clientStateTracer clientMsgTracer
           })
         >> return ()
 
-    headerForgeUTCTime =
-        convertSlotToTimeForTestsAssumingNoHardFork . headerSlot
+    headerForgeUTCTime (FromConsensus x) =
+        pure $ convertSlotToTimeForTestsAssumingNoHardFork (blockSlot x)
 
     driver :: TestFetchedBlockHeap m Block -> m ()
     driver blockHeap = do
@@ -263,8 +262,8 @@ blockFetchExample1 fetchMode decisionTracer clientStateTracer clientMsgTracer
           })
         >> return ()
 
-    headerForgeUTCTime =
-        convertSlotToTimeForTestsAssumingNoHardFork . headerSlot
+    headerForgeUTCTime (FromConsensus x) =
+        pure $ convertSlotToTimeForTestsAssumingNoHardFork (blockSlot x)
 
     -- | Terminates after 1 second per block in the candidate chains.
     downloadTimer :: m ()
@@ -278,7 +277,7 @@ blockFetchExample1 fetchMode decisionTracer clientStateTracer clientMsgTracer
 
 sampleBlockFetchPolicy1 :: (MonadSTM m, HasHeader header, HasHeader block)
                         => FetchMode
-                        -> (header -> UTCTime)
+                        -> (forall x. HasHeader x => FromConsensus x -> STM m UTCTime)
                         -> TestFetchedBlockHeap m block
                         -> AnchoredFragment header
                         -> Map peer (AnchoredFragment header)
@@ -296,10 +295,8 @@ sampleBlockFetchPolicy1 fetchMode headerFieldsForgeUTCTime blockHeap currentChai
                                getTestFetchedBlocks blockHeap,
       mkAddFetchedBlock      = pure $ addTestFetchedBlock blockHeap,
 
-      readChainComparison    = pure $ initialWithFingerprint ChainComparison {
-            plausibleCandidateChain,
-            compareCandidateChains
-          },
+      plausibleCandidateChain,
+      compareCandidateChains,
 
       blockFetchSize         = \_ -> 2000,
       blockMatchesHeader     = \_ _ -> True,
