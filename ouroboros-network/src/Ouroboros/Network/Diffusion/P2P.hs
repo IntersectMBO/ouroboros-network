@@ -424,7 +424,7 @@ type NodeToClientHandle ntcAddr versionData m =
     HandleWithMinimalCtx Mx.ResponderMode ntcAddr versionData ByteString m Void ()
 
 type NodeToClientHandleError ntcVersion =
-    HandleError Mx.ResponderMode ntcVersion
+    HandleError ntcVersion
 
 type NodeToClientConnectionHandler
       ntcFd ntcAddr ntcVersion ntcVersionData m =
@@ -471,7 +471,7 @@ type NodeToNodeConnectionManager
       ntnFd
       ntnAddr
       (NodeToNodeHandle mode ntnAddr ntnVersionData m a b)
-      (HandleError mode ntnVersion)
+      (HandleError ntnVersion)
       m
 
 --
@@ -822,7 +822,7 @@ runM Interfaces
       --
       -- The `ouroboros-network` guarantees running on a fixed number of file
       -- descriptors given a topology file, see
-      -- https://github.com/IntersectMBO/ouroboros-network/issues/4585#issuecomment-1591777447 
+      -- https://github.com/IntersectMBO/ouroboros-network/issues/4585#issuecomment-1591777447
       -- There's also a calculation for `ouroboros-consensus`, see
       -- https://github.com/IntersectMBO/ouroboros-consensus/issues/20#issuecomment-1514554680
       -- File descriptors could be drained by the tracing system in
