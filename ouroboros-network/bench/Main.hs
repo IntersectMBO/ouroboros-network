@@ -8,17 +8,16 @@ import Test.Ouroboros.Network.PeerSelection.PeerMetric
            (microbenchmark1GenerateInput, microbenchmark1ProcessInput)
 
 main :: IO ()
-main = do
-    is <- mapM (microbenchmark1GenerateInput False . snd) benchmarks
+main =
     defaultMain
-      [bgroup "ouroboros-network:sim-benchmarks"
-         [ bench (unwords ["microbenchmark1",name])
-               $ nfAppIO microbenchmark1ProcessInput i
-         | ((name,_),i) <- zip benchmarks is
-         ]
+      [ bgroup "ouroboros-network:sim-benchmarks"
+        [ bgroup "PeerMetrics"
+          [ env (microbenchmark1GenerateInput False 1_000) $ \i ->
+                bench "1k" $ nfAppIO microbenchmark1ProcessInput i
+          , env (microbenchmark1GenerateInput False 10_000) $ \i ->
+                bench "10k" $ nfAppIO microbenchmark1ProcessInput i
+          , env (microbenchmark1GenerateInput False 100_000) $ \i ->
+                bench "100k" $ nfAppIO microbenchmark1ProcessInput i
+          ]
+        ]
       ]
-  where
-    benchmarks = [("1k"  ,   1000)
-                 ,("10k" , 10_000)
-                 ,("100k",100_000)
-                 ]
