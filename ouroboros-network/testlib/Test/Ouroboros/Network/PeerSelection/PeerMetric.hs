@@ -447,7 +447,7 @@ microbenchmark1GenerateInput verbose' n = do
   es <- generate (vector n)
   let fixedScript = mkFixedScript (Script (NonEmpty.fromList es))
   when verbose' $
-    mapM_ print (let FixedScript s = fixedScript in s)
+    mapM_ print (getFixedScript fixedScript)
   return fixedScript
 
 -- TODO:

@@ -345,6 +345,7 @@ library testlib
     psqueues,
     random,
     serialise,
+    splitmix,
     tasty,
     tasty-hunit,
     tasty-quickcheck,
@@ -506,7 +507,9 @@ benchmark sim-benchmarks
   main-is: Main.hs
   build-depends:
     base,
-    ouroboros-network:testlib,
+    deepseq,
+    ouroboros-network:{ouroboros-network, testlib},
+    splitmix,
     tasty-bench >=0.3.5,
 
   -- We use `-fproc-alignemtn` option to avoid skewed results due to changes in cache-line

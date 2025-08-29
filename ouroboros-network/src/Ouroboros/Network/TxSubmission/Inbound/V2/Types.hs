@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE ExistentialQuantification  #-}
@@ -35,6 +36,7 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Types
   , TxSubmissionProtocolError (..)
   ) where
 
+import Control.DeepSeq
 import Control.Exception (Exception (..))
 import Control.Monad.Class.MonadTime.SI
 import Data.Map.Strict (Map)
@@ -132,7 +134,7 @@ data PeerTxState txid tx = PeerTxState {
        toMempoolTxs             :: !(Map txid tx)
 
     }
-    deriving (Eq, Show, Generic)
+    deriving (Eq, Show, Generic, NFData)
 
 instance ( NoThunks txid
          , NoThunks tx
@@ -242,7 +244,7 @@ data SharedTxState peeraddr txid tx = SharedTxState {
       -- | Rng used to randomly order peers
       peerRng                  :: !StdGen
     }
-    deriving (Eq, Show, Generic)
+    deriving (Eq, Show, Generic, NFData)
 
 instance ( NoThunks peeraddr
          , NoThunks tx
@@ -256,7 +258,7 @@ instance ( NoThunks peeraddr
 --
 
 newtype TxsToMempool txid tx = TxsToMempool { listOfTxsToMempool :: [(txid, tx)] }
-  deriving newtype (Eq, Show, Semigroup, Monoid)
+  deriving newtype (Eq, Show, Semigroup, Monoid, NFData)
 
 
 -- | Decision made by the decision logic.  Each peer will receive a 'Decision'.
@@ -289,6 +291,10 @@ data TxDecision txid tx = TxDecision {
     -- ^ list of `tx`s to submit to the mempool.
   }
   deriving (Show, Eq)
+
+instance (NFData txid, NFData tx) => NFData (TxDecision txid tx) where
+  -- all fields except `txdTxsToMempool` when evaluated to WHNF evaluate to NF.
+  rnf TxDecision {txdTxsToMempool} = rnf txdTxsToMempool
 
 -- | A non-commutative semigroup instance.
 --
