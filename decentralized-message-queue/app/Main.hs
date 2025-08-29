@@ -114,9 +114,9 @@ runDMQ commandLineConfig = do
                        version
                        NodeToClientVersionData {
                            networkMagic =
-                             NetworkMagic
-                               . unProtocolMagicId
-                               $ mainnetProtocolMagicId
+                             NetworkMagic 2
+                               -- . unProtocolMagicId
+                               -- $ mainnetProtocolMagicId
                          , query = False
                        }
                        \_version ->
