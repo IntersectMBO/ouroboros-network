@@ -637,12 +637,12 @@ mkDiffusionConfiguration
     updateLedgerPeerSnapshot topologyDir readLedgerPeerPath writeVar = do
       mPeerSnapshotFile <- atomically readLedgerPeerPath
       mLedgerPeerSnapshot <- case mPeerSnapshotFile of
-        Nothing -> pure Nothing
-        Just peerSnapshotFile | FilePath.isRelative peerSnapshotFile -> do
-          peerSnapshotFile' <- Directory.makeAbsolute $ topologyDir FilePath.</> peerSnapshotFile
-          Just <$> readPeerSnapshotFileOrError peerSnapshotFile'
-        Just peerSnapshotFile ->
-          Just <$> readPeerSnapshotFileOrError peerSnapshotFile
+        _ -> pure Nothing
+        -- Just peerSnapshotFile | FilePath.isRelative peerSnapshotFile -> do
+        --   peerSnapshotFile' <- Directory.makeAbsolute $ topologyDir FilePath.</> peerSnapshotFile
+        --   Just <$> readPeerSnapshotFileOrError peerSnapshotFile'
+        -- Just peerSnapshotFile ->
+        --   Just <$> readPeerSnapshotFileOrError peerSnapshotFile
       atomically . writeVar $ mLedgerPeerSnapshot
       pure mLedgerPeerSnapshot
 
