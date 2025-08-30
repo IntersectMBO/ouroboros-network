@@ -125,9 +125,9 @@ codecSigSubmission =
       sigRawId <- decodeSigId
       sigRawBody <- SigBody <$> CBOR.decodeBytes
       sigRawKESPeriod <- CBOR.decodeWord32
+      sigRawExpiresAt <- realToFrac <$> CBOR.decodeWord32
       sigRawOpCertificate <- SigOpCertificate <$> CBOR.decodeBytes
       sigRawColdKey <- SigColdKey <$> CBOR.decodeBytes
-      sigRawExpiresAt <- realToFrac <$> CBOR.decodeWord32
       sigRawKESSignature <- SigKESSignature <$> CBOR.decodeBytes
       return $ \_ -> SigRaw {
           sigRawId,
