@@ -345,6 +345,7 @@ library testlib
     psqueues,
     random,
     serialise,
+    splitmix,
     tasty,
     tasty-hunit,
     tasty-quickcheck,
@@ -506,18 +507,21 @@ benchmark sim-benchmarks
   main-is: Main.hs
   build-depends:
     base,
-    ouroboros-network:testlib,
+    deepseq,
+    ouroboros-network:{ouroboros-network, testlib},
+    splitmix,
     tasty-bench >=0.3.5,
 
+  -- We use `-fproc-alignemtn` option to avoid skewed results due to changes in cache-line
+  -- alignment. See https://github.com/Bodigrim/tasty-bench#comparison-against-baseline
+  -- We use threaded RTS, because of
+  -- https://gitlab.haskell.org/ghc/ghc/-/issues/25165
   ghc-options:
     -fno-ignore-asserts
+    -threaded
+    -rtsopts
     -with-rtsopts=-A32m
+    -fproc-alignment=64
     +RTS
     -T
     -RTS
-
-  -- We use this option to avoid skewed results due to changes in cache-line
-  -- alignment. See
-  -- https://github.com/Bodigrim/tasty-bench#comparison-against-baseline
-  if impl(ghc >=8.6)
-    ghc-options: -fproc-alignment=64

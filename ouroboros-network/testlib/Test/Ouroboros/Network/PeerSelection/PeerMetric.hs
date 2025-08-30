@@ -1,4 +1,6 @@
 {-# LANGUAGE CPP                        #-}
+{-# LANGUAGE DeriveAnyClass             #-}
+{-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
@@ -27,6 +29,7 @@ import Data.Map.Merge.Strict qualified as Map
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
+import GHC.Generics
 
 import Network.Mux.Trace (TraceLabelPeer (..))
 
@@ -73,7 +76,7 @@ instance Arbitrary TestAddress where
 data Event =
     FetchedHeader TestAddress SlotNo
   | FetchedBlock  TestAddress SlotNo SizeInBytes
-  deriving Show
+  deriving (Show, Generic, NFData)
 
 eventPeer :: Event -> TestAddress
 eventPeer (FetchedHeader peer _)   = peer
@@ -100,6 +103,7 @@ instance Arbitrary Event where
 
 newtype FixedScript = FixedScript { getFixedScript :: Script Event }
   deriving Show
+  deriving newtype NFData
 
 -- | Order events by 'SlotNo'
 --
@@ -443,12 +447,15 @@ microbenchmark1GenerateInput verbose' n = do
   es <- generate (vector n)
   let fixedScript = mkFixedScript (Script (NonEmpty.fromList es))
   when verbose' $
-    mapM_ print (let FixedScript s = fixedScript in s)
+    mapM_ print (getFixedScript fixedScript)
   return fixedScript
 
+-- TODO:
+-- * we shouldn't use QuickCheck
+-- * and we shouldn't use IOSim (which `prop_simScript`) is using.
 microbenchmark1ProcessInput :: FixedScript -> IO ()
 microbenchmark1ProcessInput =
-  quickCheckWith (stdArgs{maxSuccess=1}) . prop_simScript
+  quickCheckWith (stdArgs{maxSuccess=1,chatty=False}) . prop_simScript
 
 microbenchmark1 :: Bool -> Int -> IO ()
 microbenchmark1 verbose' n =

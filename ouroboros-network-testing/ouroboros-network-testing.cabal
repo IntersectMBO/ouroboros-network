@@ -68,6 +68,7 @@ library
     cborg >=0.2.1 && <0.3,
     containers,
     contra-tracer,
+    deepseq,
     deque ^>=0.4,
     io-classes:{io-classes, si-timers, strict-stm} ^>=1.8.0.1,
     io-sim,
