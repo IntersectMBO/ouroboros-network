@@ -133,9 +133,9 @@ pattern
             sigRawBody,
             sigRawKESPeriod,
             sigRawKESSignature,
+            sigRawOpCertificate,
             sigRawColdKey,
-            sigRawExpiresAt,
-            sigRawOpCertificate
+            sigRawExpiresAt
           }
       }
 {-# COMPLETE Sig #-}
