@@ -58,13 +58,17 @@ instance Arbitrary POSIXTime where
   -- shrink via Word32 (e.g. in seconds)
   shrink posix = realToFrac <$> shrink (floor @_ @Word32 posix)
 
-instance Arbitrary SigKesSignature where
-  arbitrary = SigKesSignature <$> arbitrary
-  shrink = map SigKesSignature . shrink . getSigKesSignature
+instance Arbitrary SigKESSignature where
+  arbitrary = SigKESSignature <$> arbitrary
+  shrink = map SigKESSignature . shrink . getSigKESSignature
 
 instance Arbitrary SigOpCertificate where
   arbitrary = SigOpCertificate <$> arbitrary
   shrink = map SigOpCertificate . shrink . getSigOpCertificate
+
+instance Arbitrary SigColdKey where
+  arbitrary = SigColdKey <$> arbitrary
+  shrink = map SigColdKey . shrink . getSigColdKey
 
 instance Arbitrary Sig where
   arbitrary = Sig <$> arbitrary
@@ -72,7 +76,9 @@ instance Arbitrary Sig where
                   <*> arbitrary
                   <*> arbitrary
                   <*> arbitrary
-  shrink sig@Sig { sigId, sigBody, sigExpiresAt, sigOpCertificate, sigKesSignature } =
+                  <*> arbitrary
+                  <*> arbitrary
+  shrink sig@Sig { sigId, sigBody, sigKESSignature, sigKESPeriod, sigOpCertificate, sigExpiresAt } =
     [ sig { sigId = sigId' }
     | sigId' <- shrink sigId
     ]
@@ -81,16 +87,24 @@ instance Arbitrary Sig where
     | sigBody' <- shrink sigBody
     ]
     ++
-    [ sig { sigExpiresAt = sigExpiresAt' }
-    | sigExpiresAt' <- shrink sigExpiresAt
-    ]
-    ++
     [ sig { sigOpCertificate = sigOpCertificate' }
     | sigOpCertificate' <- shrink sigOpCertificate
     ]
     ++
-    [ sig { sigKesSignature = sigKesSignature' }
-    | sigKesSignature' <- shrink sigKesSignature
+    [ sig { sigKESSignature = sigKESSignature' }
+    | sigKESSignature' <- shrink sigKESSignature
+    ]
+    ++
+    [ sig { sigKESPeriod = sigKESPeriod' }
+    | sigKESPeriod' <- shrink sigKESPeriod
+    ]
+    ++
+    [ sig { sigColdKey = sigColdKey' }
+    | sigColdKey' <- shrink (sigColdKey sig)
+    ]
+    ++
+    [ sig { sigExpiresAt = sigExpiresAt' }
+    | sigExpiresAt' <- shrink sigExpiresAt
     ]
 
 

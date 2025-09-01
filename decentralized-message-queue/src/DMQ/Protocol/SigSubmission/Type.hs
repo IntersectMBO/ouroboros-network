@@ -7,9 +7,11 @@ module DMQ.Protocol.SigSubmission.Type
     SigHash (..)
   , SigId (..)
   , SigBody (..)
-  , SigKesSignature (..)
+  , SigKESSignature (..)
+  , SigKESPeriod
   , SigOpCertificate (..)
-  , Sig (SigRaw, Sig, sigId, sigBody, sigExpiresAt, sigOpCertificate, sigKesSignature)
+  , SigColdKey (..)
+  , Sig (SigRaw, Sig, sigId, sigBody, sigExpiresAt, sigOpCertificate, sigKESSignature, sigKESPeriod, sigColdKey)
     -- * `TxSubmission` mini-protocol
   , SigSubmission
   , module SigSubmission
@@ -17,6 +19,7 @@ module DMQ.Protocol.SigSubmission.Type
 
 import Data.ByteString (ByteString)
 import Data.Time.Clock.POSIX (POSIXTime)
+import Data.Word (Word32)
 
 import Ouroboros.Network.Protocol.TxSubmission2.Type as SigSubmission hiding
            (TxSubmission2)
@@ -39,25 +42,32 @@ newtype SigBody = SigBody { getSigBody :: ByteString }
 
 -- TODO:
 -- This type should be something like: `SignedKES (KES crypto) SigPayload`
-newtype SigKesSignature = SigKesSignature { getSigKesSignature :: ByteString }
+newtype SigKESSignature = SigKESSignature { getSigKESSignature :: ByteString }
   deriving stock (Show, Eq)
 
 newtype SigOpCertificate = SigOpCertificate { getSigOpCertificate :: ByteString }
+  deriving stock (Show, Eq)
+
+type SigKESPeriod = Word32
+
+newtype SigColdKey = SigColdKey { getSigColdKey :: ByteString }
   deriving stock (Show, Eq)
 
 -- | Sig type consists of payload and its KES signature.
 --
 data Sig = SigRaw {
     sigRawPayload      :: SigPayload,
-    sigRawKesSignature :: SigKesSignature
+    sigRawKESSignature :: SigKESSignature
   }
   deriving stock (Show, Eq)
 
 data SigPayload = SigPayload {
     sigPayloadId            :: SigId,
     sigPayloadBody          :: SigBody,
+    sigPayloadKESPeriod     :: SigKESPeriod,
     sigPayloadExpiresAt     :: POSIXTime,
-    sigPayloadOpCertificate :: SigOpCertificate
+    sigPayloadOpCertificate :: SigOpCertificate,
+    sigPayloadColdKey       :: SigColdKey
   }
   deriving stock (Show, Eq)
 
@@ -66,16 +76,20 @@ data SigPayload = SigPayload {
 pattern Sig
   :: SigId
   -> SigBody
-  -> POSIXTime
+  -> SigKESSignature
+  -> SigKESPeriod
   -> SigOpCertificate
-  -> SigKesSignature
+  -> SigColdKey
+  -> POSIXTime
   -> Sig
 pattern
     Sig { sigId,
           sigBody,
-          sigExpiresAt,
+          sigKESSignature,
+          sigKESPeriod,
           sigOpCertificate,
-          sigKesSignature
+          sigColdKey,
+          sigExpiresAt
         }
     <-
     SigRaw {
@@ -83,27 +97,33 @@ pattern
         SigPayload {
           sigPayloadId            = sigId,
           sigPayloadBody          = sigBody,
-          sigPayloadExpiresAt     = sigExpiresAt,
-          sigPayloadOpCertificate = sigOpCertificate
+          sigPayloadKESPeriod     = sigKESPeriod,
+          sigPayloadOpCertificate = sigOpCertificate,
+          sigPayloadColdKey       = sigColdKey,
+          sigPayloadExpiresAt     = sigExpiresAt
         },
-      sigRawKesSignature = sigKesSignature
+      sigRawKESSignature = sigKESSignature
     }
   where
     Sig sigPayloadId
         sigPayloadBody
-        sigPayloadExpiresAt
+        sigRawKESSignature
+        sigPayloadKESPeriod
         sigPayloadOpCertificate
-        sigRawKesSignature
+        sigPayloadColdKey
+        sigPayloadExpiresAt
       =
       SigRaw {
         sigRawPayload =
           SigPayload {
             sigPayloadId,
             sigPayloadBody,
-            sigPayloadExpiresAt,
-            sigPayloadOpCertificate
+            sigPayloadKESPeriod,
+            sigPayloadOpCertificate,
+            sigPayloadColdKey,
+            sigPayloadExpiresAt
           },
-        sigRawKesSignature
+        sigRawKESSignature
       }
 {-# COMPLETE Sig #-}
 
