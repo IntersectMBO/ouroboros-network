@@ -108,14 +108,17 @@ data ObjectDiffusion initAgency objectId object where
   StDone :: ObjectDiffusion initAgency objectId object
 
 instance
-  ( ShowProxy objectId,
+  ( SingI initAgency,
+    ShowProxy objectId,
     ShowProxy object
   ) =>
-  ShowProxy (ObjectDiffusion objectId object)
+  ShowProxy (ObjectDiffusion initAgency objectId object)
   where
   showProxy _ =
     concat
       [ "ObjectDiffusion ",
+        show (sing :: Sing initAgency),
+        " ",
         showProxy (Proxy :: Proxy objectId),
         " ",
         showProxy (Proxy :: Proxy object)
