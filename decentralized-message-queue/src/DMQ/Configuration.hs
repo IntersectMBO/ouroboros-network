@@ -100,6 +100,7 @@ data Configuration' f =
     dmqcChurnInterval                              :: f DiffTime,
     dmqcPeerSharing                                :: f PeerSharing,
     dmqcNetworkMagic                               :: f NetworkMagic,
+    dmqcCardanoNodeSocket                          :: f FilePath,
     dmqcPrettyLog                                  :: f Bool,
 
     dmqcMuxTracer                                  :: f Bool,
@@ -196,6 +197,7 @@ defaultConfiguration = Configuration {
       dmqcTopologyFile                               = I "dmq.topology.json",
       dmqcAcceptedConnectionsLimit                   = I defaultAcceptedConnectionsLimit,
       dmqcDiffusionMode                              = I InitiatorAndResponderDiffusionMode,
+      dmqcCardanoNodeSocket                          = I "cardano-node.socket",
       dmqcTargetOfRootPeers                          = I targetNumberOfRootPeers,
       dmqcTargetOfKnownPeers                         = I targetNumberOfKnownPeers,
       dmqcTargetOfEstablishedPeers                   = I targetNumberOfEstablishedPeers,
@@ -271,6 +273,7 @@ instance FromJSON PartialConfig where
       dmqcNetworkMagic <- Last . fmap NetworkMagic <$> v .:? "NetworkMagic"
       dmqcDiffusionMode <- Last <$> v .:? "DiffusionMode"
       dmqcPeerSharing <- Last <$> v .:? "PeerSharing"
+      dmqcCardanoNodeSocket <- Last <$> v .:? "CardanoNodeSocket"
 
       dmqcTargetOfRootPeers                 <- Last <$> v .:? "TargetNumberOfRootPeers"
       dmqcTargetOfKnownPeers                <- Last <$> v .:? "TargetNumberOfKnownPeers"
@@ -324,6 +327,7 @@ instance FromJSON PartialConfig where
         Configuration
           { dmqcIPv4 = Last dmqcIPv4
           , dmqcIPv6 = Last dmqcIPv6
+          , dmqcCardanoNodeSocket
           , dmqcPortNumber
           , dmqcConfigFile = mempty
           , dmqcTopologyFile = mempty
@@ -384,6 +388,7 @@ instance ToJSON Configuration where
       dmqcIPv6,
       dmqcPortNumber,
       dmqcConfigFile,
+      dmqcCardanoNodeSocket,
       dmqcTopologyFile,
       dmqcAcceptedConnectionsLimit,
       dmqcDiffusionMode,
@@ -438,6 +443,7 @@ instance ToJSON Configuration where
            , "IPv6"                                       .= (show <$> unI dmqcIPv6)
            , "PortNumber"                                 .= unI dmqcPortNumber
            , "ConfigFile"                                 .= unI dmqcConfigFile
+           , "CardanoNodeSocket"                          .= unI dmqcCardanoNodeSocket
            , "TopologyFile"                               .= unI dmqcTopologyFile
            , "AcceptedConnectionsLimit"                   .= unI dmqcAcceptedConnectionsLimit
            , "DiffusionMode"                              .= unI dmqcDiffusionMode
@@ -631,12 +637,12 @@ mkDiffusionConfiguration
     updateLedgerPeerSnapshot topologyDir readLedgerPeerPath writeVar = do
       mPeerSnapshotFile <- atomically readLedgerPeerPath
       mLedgerPeerSnapshot <- case mPeerSnapshotFile of
-        Nothing -> pure Nothing
-        Just peerSnapshotFile | FilePath.isRelative peerSnapshotFile -> do
-          peerSnapshotFile' <- Directory.makeAbsolute $ topologyDir FilePath.</> peerSnapshotFile
-          Just <$> readPeerSnapshotFileOrError peerSnapshotFile'
-        Just peerSnapshotFile ->
-          Just <$> readPeerSnapshotFileOrError peerSnapshotFile
+        _ -> pure Nothing
+        -- Just peerSnapshotFile | FilePath.isRelative peerSnapshotFile -> do
+        --   peerSnapshotFile' <- Directory.makeAbsolute $ topologyDir FilePath.</> peerSnapshotFile
+        --   Just <$> readPeerSnapshotFileOrError peerSnapshotFile'
+        -- Just peerSnapshotFile ->
+        --   Just <$> readPeerSnapshotFileOrError peerSnapshotFile
       atomically . writeVar $ mLedgerPeerSnapshot
       pure mLedgerPeerSnapshot
 
@@ -661,5 +667,3 @@ data ConfigurationError =
 
 instance Exception ConfigurationError where
   displayException NoAddressInformation = "no ipv4 or ipv6 address specified, use --host-addr or --host-ipv6-addr"
-
-

@@ -18,7 +18,7 @@ import Control.Concurrent.Class.MonadSTM.Strict
 
 import Data.Foldable (toList)
 import Data.Foldable qualified as Foldable
-import Data.Function (on)
+import Data.Function (on, (&))
 import Data.List (find, nubBy)
 import Data.Maybe (isJust)
 import Data.Sequence (Seq)
@@ -28,6 +28,7 @@ import Data.Set qualified as Set
 import Ouroboros.Network.SizeInBytes
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
 import Ouroboros.Network.TxSubmission.Mempool.Reader
+import Control.Monad
 
 
 -- | A simple in-memory mempool implementation.
@@ -90,7 +91,7 @@ getWriter :: forall tx txid m.
              , Ord txid
              )
           => (tx -> txid)
-          -> (tx -> Bool)
+          -> (tx -> STM m Bool)
           -- ^ validate a tx
           -> Mempool m tx
           -> TxSubmissionMempoolWriter txid tx Int m
@@ -102,12 +103,13 @@ getWriter getTxId validateTx (Mempool mempool) =
           atomically $ do
             mempoolTxs <- readTVar mempool
             let currentIds = Set.fromList (map getTxId (toList mempoolTxs))
-                validTxs = nubBy (on (==) getTxId)
-                         $ filter
-                            (\tx -> validateTx tx
-                                 && getTxId tx `Set.notMember` currentIds)
-                           txs
-                mempoolTxs' = Foldable.foldl' (Seq.|>) mempoolTxs validTxs
+            validTxs <-   fmap (nubBy (on (==) getTxId))
+                        . filterM
+                           (\tx -> do
+                             valid <- validateTx tx
+                             return $ valid && getTxId tx `Set.notMember` currentIds)
+                        $ txs
+            let mempoolTxs' = Foldable.foldl' (Seq.|>) mempoolTxs validTxs
             writeTVar mempool mempoolTxs'
             return (map getTxId validTxs)
       }

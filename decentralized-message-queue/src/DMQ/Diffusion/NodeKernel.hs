@@ -1,9 +1,12 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module DMQ.Diffusion.NodeKernel
   ( NodeKernel (..)
   , withNodeKernel
+  -- TODO maybe move out
+  , PoolIds (..)
   ) where
 
 import Control.Concurrent.Class.MonadMVar
@@ -15,6 +18,7 @@ import Control.Monad.Class.MonadTimer.SI
 
 import Data.Function (on)
 import Data.Sequence qualified as Seq
+import Data.Set (Set)
 import Data.Time.Clock.POSIX (POSIXTime)
 import Data.Time.Clock.POSIX qualified as Time
 import Data.Void (Void)
@@ -35,20 +39,30 @@ import Ouroboros.Network.TxSubmission.Mempool.Simple qualified as Mempool
 
 import DMQ.Protocol.SigSubmission.Type (Sig (..), SigId)
 
+-- TODO tidy
+import Cardano.Ledger.Shelley.API qualified as Ledger
+import Data.Set qualified as Set
+
 
 data NodeKernel ntnAddr m =
   NodeKernel {
     -- | The fetch client registry, used for the keep alive clients.
-    fetchClientRegistry :: FetchClientRegistry (ConnectionId ntnAddr) () () m
+    fetchClientRegistry :: !(FetchClientRegistry (ConnectionId ntnAddr) () () m)
 
     -- | Read the current peer sharing registry, used for interacting with
     -- the PeerSharing protocol
-  , peerSharingRegistry :: PeerSharingRegistry ntnAddr m
-  , peerSharingAPI      :: PeerSharingAPI ntnAddr StdGen m
-  , mempool             :: Mempool m Sig
-  , sigChannelVar       :: TxChannelsVar m ntnAddr SigId Sig
-  , sigMempoolSem       :: TxMempoolSem m
-  , sigSharedTxStateVar :: SharedTxStateVar m ntnAddr SigId Sig
+  , peerSharingRegistry :: !(PeerSharingRegistry ntnAddr m)
+  , peerSharingAPI      :: !(PeerSharingAPI ntnAddr StdGen m)
+  , mempool             :: !(Mempool m Sig)
+  , sigChannelVar       :: !(TxChannelsVar m ntnAddr SigId Sig)
+  , sigMempoolSem       :: !(TxMempoolSem m)
+  , sigSharedTxStateVar :: !(SharedTxStateVar m ntnAddr SigId Sig)
+  -- TODO make it a type wrapping a tvar
+  , poolIds             :: !(PoolIds m)
+  }
+
+data PoolIds m = PoolIds {
+  getPoolIds  :: !(StrictTVar m (Set (Ledger.KeyHash Ledger.StakePool)))
   }
 
 newNodeKernel :: ( MonadLabelledSTM m
@@ -68,6 +82,7 @@ newNodeKernel rng = do
   sigMempoolSem <- newTxMempoolSem
   let (rng', rng'') = Random.split rng
   sigSharedTxStateVar <- newSharedTxStateVar rng'
+  stakePools <- PoolIds <$> newTVarIO Set.empty
 
   peerSharingAPI <-
     newPeerSharingAPI
@@ -83,6 +98,8 @@ newNodeKernel rng = do
                   , sigChannelVar
                   , sigMempoolSem
                   , sigSharedTxStateVar
+                  -- TODO:
+                  , poolIds = stakePools
                   }
 
 
