@@ -289,7 +289,6 @@ instance FromJSON AcceptedConnectionsLimit where
       <*> v .: "softLimit"
       <*> v .: "delay"
 
-
 instance ToJSON MiniProtocolNum where
   toJSON (MiniProtocolNum w) = kindObject "MiniProtocolNum" [ "num" .= w ]
 
