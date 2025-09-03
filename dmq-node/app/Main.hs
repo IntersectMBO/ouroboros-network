@@ -56,7 +56,8 @@ runDMQ commandLineConfig = do
           dmqcPrettyLog            = I prettyLog,
           dmqcTopologyFile         = I topologyFile,
           dmqcHandshakeTracer      = I handshakeTracer,
-          dmqcLocalHandshakeTracer = I localHandshakeTracer
+          dmqcLocalHandshakeTracer = I localHandshakeTracer,
+          dmqcCardanoNodeSocket    = I snocketPath
         } = config' <> commandLineConfig
             `act`
             defaultConfiguration
