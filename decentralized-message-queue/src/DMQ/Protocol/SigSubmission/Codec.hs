@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
@@ -92,32 +93,41 @@ codecSigSubmission =
     encodeSig :: Sig -> CBOR.Encoding
     encodeSig Sig { sigId,
                     sigBody,
-                    sigExpiresAt,
-                    sigKesSignature,
-                    sigOpCertificate
+                    sigKESSignature,
+                    sigKESPeriod,
+                    sigOpCertificate,
+                    sigColdKey,
+                    sigExpiresAt
                   }
-       = CBOR.encodeListLen 5
+       = CBOR.encodeListLen 7
       <> encodeSigId sigId
       <> CBOR.encodeBytes (getSigBody sigBody)
-      <> CBOR.encodeWord32 (floor sigExpiresAt)
-      <> CBOR.encodeBytes (getSigKesSignature sigKesSignature)
+      <> CBOR.encodeWord32 sigKESPeriod
       <> CBOR.encodeBytes (getSigOpCertificate sigOpCertificate)
+      <> CBOR.encodeWord32 (floor sigExpiresAt)
+      <> CBOR.encodeBytes (getSigColdKey sigColdKey)
+      <> CBOR.encodeBytes (getSigKESSignature sigKESSignature)
 
     decodeSig :: forall s. CBOR.Decoder s Sig
     decodeSig = do
       a <- CBOR.decodeListLen
-      when (a /= 5) $ fail (printf "codecSigSubmission: unexpected number of parameters %d" a)
+      -- TODO: do we expect 6 or 7 parameters here?
+      when (a /= 7) $ fail (printf "codecSigSubmission: unexpected number of parameters %d" a)
       sigId <- decodeSigId
       sigBody <- SigBody <$> CBOR.decodeBytes
-      sigExpiresAt <- realToFrac <$> CBOR.decodeWord32
-      sigKesSignature <- SigKesSignature <$> CBOR.decodeBytes
+      sigKESPeriod <- CBOR.decodeWord32
       sigOpCertificate <- SigOpCertificate <$> CBOR.decodeBytes
+      sigColdKey <- SigColdKey <$> CBOR.decodeBytes
+      sigExpiresAt <- realToFrac <$> CBOR.decodeWord32
+      sigKESSignature <- SigKESSignature <$> CBOR.decodeBytes
       return Sig {
           sigId,
           sigBody,
-          sigExpiresAt,
-          sigKesSignature,
-          sigOpCertificate
+          sigKESSignature,
+          sigKESPeriod,
+          sigOpCertificate,
+          sigColdKey,
+          sigExpiresAt
         }
 
 
