@@ -68,7 +68,9 @@ library api
   build-depends:
     aeson,
     base >=4.14 && <4.23,
+    cardano-base ^>=0.1,
     cborg >=0.2.1 && <0.3,
+    containers,
     deepseq,
     nothunks,
     ouroboros-network:api,
@@ -151,6 +153,7 @@ library
     aeson,
     base >=4.14 && <4.23,
     bytestring,
+    cardano-base ^>=0.1,
     cardano-diffusion:{api, protocols},
     containers,
     contra-tracer,

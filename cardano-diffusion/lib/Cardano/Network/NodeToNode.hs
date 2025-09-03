@@ -74,11 +74,14 @@ module Cardano.Network.NodeToNode
 import Control.Exception (SomeException)
 
 import Data.ByteString.Lazy qualified as BL
+import Data.Set (Set)
 import Data.Word
 
 import Network.Mux qualified as Mx
 import Network.Socket (Socket, StructLinger (..))
 import Network.Socket qualified as Socket
+
+import Cardano.Base.FeatureFlags (CardanoFeatureFlag (..))
 
 import Cardano.Network.NodeToNode.Version
 import Cardano.Network.Protocol.Handshake.Codec
@@ -183,14 +186,15 @@ defaultMiniProtocolParameters = MiniProtocolParameters {
 -- both protocols, e.g.  wireshark plugins.
 --
 nodeToNodeProtocols
-  :: MiniProtocolParameters
+  :: Set CardanoFeatureFlag
+  -> MiniProtocolParameters
   -> NodeToNodeProtocols muxMode initiatorCtx responderCtx bytes m a b
   -> NodeToNodeVersion
   -- ^ negotiated version number
   -> NodeToNodeVersionData
   -- ^ negotiated version data
   -> OuroborosBundle muxMode initiatorCtx responderCtx bytes m a b
-nodeToNodeProtocols miniProtocolParameters protocols
+nodeToNodeProtocols _featureFlags miniProtocolParameters protocols
                     _version NodeToNodeVersionData { peerSharing }
                     =
     TemperatureBundle
