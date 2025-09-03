@@ -67,12 +67,14 @@ instance FromJSON NodeToNodeVersion where
   parseJSON = \case
     Number 14 -> pure NodeToNodeV_14
     Number 15 -> pure NodeToNodeV_15
+    Number 16 -> pure NodeToNodeV_16
     Number x  -> fail $ "FromJSON.NodeToNodeVersion: unsupported node-to-node protocol version " ++ show x
     x         -> fail $ "FromJSON.NodeToNodeVersion: error parsing NodeToNodeVersion: " ++ show x
 
 instance ToJSON NodeToNodeVersion where
   toJSON NodeToNodeV_14 = Number 14
   toJSON NodeToNodeV_15 = Number 15
+  toJSON NodeToNodeV_16 = Number 16
 
 instance FromJSON NodeToClientVersion where
   parseJSON = \case
