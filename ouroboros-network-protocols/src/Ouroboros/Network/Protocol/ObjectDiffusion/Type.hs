@@ -59,28 +59,28 @@ import Ouroboros.Network.Util.ShowProxy
 import Quiet (Quiet (..))
 
 pattern OutboundAgency :: Agency
-pattern OutboundAgency = ClientAgency
-type OutboundAgency = 'ClientAgency
+pattern OutboundAgency = ServerAgency
+type OutboundAgency = 'ServerAgency
 
 pattern InboundAgency :: Agency
-pattern InboundAgency = ServerAgency
-type InboundAgency = 'ServerAgency
+pattern InboundAgency = ClientAgency
+type InboundAgency = 'ClientAgency
 
 pattern AsOutbound :: PeerRole
-pattern AsOutbound = AsClient
-type AsOutbound = 'AsClient
+pattern AsOutbound = AsServer
+type AsOutbound = 'AsServer
 
 pattern AsInbound :: PeerRole
-pattern AsInbound = AsServer
-type AsInbound = 'AsServer
+pattern AsInbound = AsClient
+type AsInbound = 'AsClient
 
-pattern ReflOutboundAgency :: ReflRelativeAgency ClientAgency (r :: RelativeAgency) (r :: RelativeAgency)
-pattern ReflOutboundAgency = ReflClientAgency
-type ReflOutboundAgency = 'ReflClientAgency
+pattern ReflOutboundAgency :: ReflRelativeAgency ServerAgency (r :: RelativeAgency) (r :: RelativeAgency)
+pattern ReflOutboundAgency = ReflServerAgency
+type ReflOutboundAgency = 'ReflServerAgency
 
-pattern ReflInboundAgency :: ReflRelativeAgency ServerAgency (r :: RelativeAgency) (r :: RelativeAgency)
-pattern ReflInboundAgency = ReflServerAgency
-type ReflInboundAgency = 'ReflServerAgency
+pattern ReflInboundAgency :: ReflRelativeAgency ClientAgency (r :: RelativeAgency) (r :: RelativeAgency)
+pattern ReflInboundAgency = ReflClientAgency
+type ReflInboundAgency = 'ReflClientAgency
 
 -- | The kind of the object diffusion protocol, and the types of the states in
 -- the protocol state machine.
