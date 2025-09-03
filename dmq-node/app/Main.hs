@@ -73,6 +73,7 @@ runDMQ commandLineConfig = do
           dmqcShelleyGenesisFile   = I genesisFile,
           dmqcHandshakeTracer      = I handshakeTracer,
           dmqcLocalHandshakeTracer = I localHandshakeTracer,
+          dmqcCardanoNodeSocket    = I snocketPath,
           dmqcVersion              = I version
         } = config' <> commandLineConfig
             `act`
