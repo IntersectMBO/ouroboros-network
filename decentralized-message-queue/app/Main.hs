@@ -81,7 +81,8 @@ runDMQ commandLineConfig = do
           dmqcPrettyLog            = I prettyLog,
           dmqcTopologyFile         = I topologyFile,
           dmqcHandshakeTracer      = I handshakeTracer,
-          dmqcLocalHandshakeTracer = I localHandshakeTracer
+          dmqcLocalHandshakeTracer = I localHandshakeTracer,
+          dmqcCardanoNodeSocket    = I snocketPath
         } = config' <> commandLineConfig
             `act`
             defaultConfiguration
@@ -99,7 +100,6 @@ runDMQ commandLineConfig = do
 
     Diffusion.withIOManager \iocp -> do
       let localSnocket' = localSnocket iocp
-          snocketPath   = "node.socket" -- TODO path
 
       withNodeKernel psRng $ \nodeKernel -> do
         dmqDiffusionConfiguration <- mkDiffusionConfiguration dmqConfig nt
