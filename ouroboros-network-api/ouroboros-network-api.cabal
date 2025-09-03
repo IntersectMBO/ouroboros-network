@@ -59,6 +59,7 @@ library
     base >=4.14 && <4.22,
     base16-bytestring,
     bytestring >=0.10 && <0.13,
+    cardano-base,
     cardano-binary,
     cardano-slotting,
     cardano-strict-containers,
