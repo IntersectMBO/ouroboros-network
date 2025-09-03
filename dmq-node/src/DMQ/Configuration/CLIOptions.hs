@@ -46,13 +46,19 @@ parseCLIOptions =
           <> help "Topology file for DMQ Node"
           )
         )
+    <*> optional (
+          strOption
+          (   long "cardano-node-socket"
+          <> metavar "Cardano node socket path"
+          <> help "Used for local connections to Cardano node"
+          )
+        )
   where
-    mkConfiguration ipv4 ipv6 portNumber configFile topologyFile =
+    mkConfiguration ipv4 ipv6 portNumber configFile topologyFile cardanoNodeSocket =
       mempty { dmqcIPv4 = Last (Just <$> ipv4),
                dmqcIPv6 = Last (Just <$> ipv6),
                dmqcPortNumber = Last portNumber,
                dmqcConfigFile = Last configFile,
-               dmqcTopologyFile = Last topologyFile
+               dmqcTopologyFile = Last topologyFile,
+               dmqcCardanoNodeSocket = Last cardanoNodeSocket
              }
-
-
