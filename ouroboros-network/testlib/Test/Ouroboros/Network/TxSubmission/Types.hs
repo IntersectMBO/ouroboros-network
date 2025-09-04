@@ -1,5 +1,6 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE BlockArguments      #-}
+{-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
@@ -31,6 +32,7 @@ import Prelude hiding (seq)
 import NoThunks.Class
 
 import Control.Concurrent.Class.MonadSTM
+import Control.DeepSeq
 import Control.Exception (SomeException (..))
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
@@ -72,7 +74,7 @@ data Tx txid = Tx {
     -- invalid tx's in this sense.
     getTxValid   :: !Bool
   }
-  deriving (Eq, Ord, Show, Generic)
+  deriving (Eq, Ord, Show, Generic, NFData)
 
 instance NoThunks txid => NoThunks (Tx txid)
 instance ShowProxy txid => ShowProxy (Tx txid) where

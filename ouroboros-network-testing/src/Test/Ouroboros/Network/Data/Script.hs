@@ -1,6 +1,7 @@
-{-# LANGUAGE DeriveTraversable #-}
-{-# LANGUAGE DerivingVia       #-}
-{-# LANGUAGE TupleSections     #-}
+{-# LANGUAGE DeriveTraversable          #-}
+{-# LANGUAGE DerivingVia                #-}
+{-# LANGUAGE GeneralisedNewtypeDeriving #-}
+{-# LANGUAGE TupleSections              #-}
 
 module Test.Ouroboros.Network.Data.Script
   ( -- * Test scripts
@@ -40,6 +41,7 @@ import Data.Set qualified as Set
 import Control.Concurrent.Class.MonadSTM (TVar)
 import Control.Concurrent.Class.MonadSTM qualified as LazySTM
 import Control.Concurrent.Class.MonadSTM.Strict
+import Control.DeepSeq
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadTimer.SI
@@ -55,6 +57,7 @@ import Test.QuickCheck
 
 newtype Script a = Script (NonEmpty a)
   deriving (Eq, Show, Functor, Foldable, Traversable)
+  deriving newtype NFData
 
 singletonScript :: a -> Script a
 singletonScript x = Script (x :| [])
