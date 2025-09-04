@@ -15,8 +15,6 @@
 -- into the typed protocol.
 module Ouroboros.Network.Protocol.ObjectDiffusion.Outbound
   ( -- * Protocol type for the outbound
-
-    -- | The protocol states from the point of view of the outbound.
     ObjectDiffusionOutbound (..),
     OutboundStIdle (..),
     OutboundStObjectIds (..),

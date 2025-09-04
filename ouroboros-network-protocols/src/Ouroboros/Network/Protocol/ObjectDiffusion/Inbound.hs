@@ -14,8 +14,6 @@
 -- For execution, a conversion into the typed protocol is provided.
 module Ouroboros.Network.Protocol.ObjectDiffusion.Inbound
   ( -- * Protocol type for the inbound
-
-    -- | The protocol states from the point of view of the inbound.
     ObjectDiffusionInboundPipelined (..),
     InboundStIdle (..),
     Collect (..),
