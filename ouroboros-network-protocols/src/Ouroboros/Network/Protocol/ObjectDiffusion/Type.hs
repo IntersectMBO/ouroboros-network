@@ -46,7 +46,7 @@ import Quiet (Quiet (..))
 -- the protocol state machine.
 --
 -- We describe this protocol using the label \"inbound\" for the peer that is
--- receiving objects, and \"inbound\" for the one sending them.
+-- receiving objects, and \"outbound\" for the one sending them.
 type ObjectDiffusion :: Type -> Type -> Type
 data ObjectDiffusion objectId object where
   -- | Initial protocol message.
