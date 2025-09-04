@@ -143,7 +143,7 @@ belowTargetLocal inboundPeers
                  }
 
     -- Are there any groups of local peers that are below target?
-  | not (null groupsBelowTarget)
+  | not (null groupsBelowTarget')
     -- We need this detailed check because it is not enough to check we are
     -- below an aggregate target. We can be above target for some groups
     -- and below for others. We need to take into account peers which are being
@@ -153,16 +153,16 @@ belowTargetLocal inboundPeers
   , let groupsAvailableToPromote =
           [ (numMembersToPromote, membersAvailableToPromote)
           | let availableToPromote =
-                  localAvailableToConnect
-                     Set.\\ localEstablishedPeers
-                     Set.\\ localConnectInProgress
+                  localAvailableToConnect'
+                     Set.\\ localEstablishedPeers'
+                     Set.\\ localConnectInProgress'
                      Set.\\ inProgressDemoteToCold
           , not (Set.null availableToPromote)
-          , (WarmValency warmTarget, members, membersEstablished) <- groupsBelowTarget
+          , (WarmValency warmTarget, members, membersEstablished) <- groupsBelowTarget'
           , let membersAvailableToPromote = Set.intersection members availableToPromote
                 numMembersToPromote       = warmTarget
                                           - Set.size membersEstablished
-                                          - numLocalConnectInProgress
+                                          - numLocalConnectInProgress'
           , not (Set.null membersAvailableToPromote)
           , numMembersToPromote > 0
           ]
@@ -180,7 +180,7 @@ belowTargetLocal inboundPeers
       return $ \_now -> Decision {
         decisionTrace = [TracePromoteColdLocalPeers
                            [ (target, Set.size membersEstablished)
-                           | (target, _, membersEstablished) <- groupsBelowTarget ]
+                           | (target, _, membersEstablished) <- groupsBelowTarget' ]
                            selectedToPromote],
         decisionState = st {
                           inProgressPromoteCold = inProgressPromoteCold
@@ -195,11 +195,11 @@ belowTargetLocal inboundPeers
 
     -- If we could promote except that there are no peers currently available
     -- then we return the next wakeup time (if any)
-  | not (null groupsBelowTarget)
+  | not (null groupsBelowTarget')
   , let potentialToPromote =
           -- These are local peers that are cold but not ready.
           localRootPeersSet'
-             Set.\\ localEstablishedPeers
+             Set.\\ localEstablishedPeers'
              Set.\\ KnownPeers.availableToConnect knownPeers
   , not (Set.null potentialToPromote)
   = GuardedSkip (KnownPeers.minConnectTime knownPeers (`Set.notMember` bigLedgerPeersSet))
@@ -220,6 +220,20 @@ belowTargetLocal inboundPeers
 
     localRootPeersMap' = localPeers `Map.union` additionalLocalRootPeers
     localRootPeersSet' = Map.keysSet localRootPeersMap'
+    groupsBelowTarget' =
+      fmap (\(val, peers, estPeers) ->
+              ( val
+              , localRootPeersSet' `Set.intersection` peers
+              , localRootPeersSet' `Set.intersection` estPeers
+              )
+           ) groupsBelowTarget
+    localEstablishedPeers' =
+      localRootPeersSet' `Set.intersection` localEstablishedPeers
+    localAvailableToConnect' =
+      localRootPeersSet' `Set.intersection` localAvailableToConnect
+    localConnectInProgress' =
+      localRootPeersSet' `Set.intersection` localConnectInProgress
+    numLocalConnectInProgress' = Set.size localConnectInProgress'
 
     groupsBelowTarget =
       [ (warmValency, members, membersEstablished)
@@ -232,7 +246,7 @@ belowTargetLocal inboundPeers
         viewKnownBigLedgerPeers              = (bigLedgerPeersSet, _),
         viewEstablishedLocalRootPeers        = (localEstablishedPeers, _),
         viewAvailableToConnectLocalRootPeers = (localAvailableToConnect, _),
-        viewColdLocalRootPeersPromotions     = (localConnectInProgress, numLocalConnectInProgress)
+        viewColdLocalRootPeersPromotions     = (localConnectInProgress, _)
       } = peerSelectionStateToView extraPeersToSet extraStateToExtraCounters st
 
 
