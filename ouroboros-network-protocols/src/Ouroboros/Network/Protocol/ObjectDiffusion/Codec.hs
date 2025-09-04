@@ -22,7 +22,6 @@ import Control.Monad.Class.MonadTime.SI
 import Data.ByteString.Lazy (ByteString)
 import Data.Kind (Type)
 import Data.List.NonEmpty qualified as NonEmpty
-import Network.TypedProtocol (Agency)
 import Network.TypedProtocol.Codec.CBOR
 import Ouroboros.Network.Protocol.Limits
 import Ouroboros.Network.Protocol.ObjectDiffusion.Type
@@ -30,13 +29,13 @@ import Text.Printf
 
 -- | Byte Limits.
 byteLimitsObjectDiffusion ::
-  forall bytes (initAgency :: Agency) objectId object.
+  forall bytes objectId object.
   (bytes -> Word) ->
-  ProtocolSizeLimits (ObjectDiffusion initAgency objectId object) bytes
+  ProtocolSizeLimits (ObjectDiffusion objectId object) bytes
 byteLimitsObjectDiffusion = ProtocolSizeLimits stateToLimit
   where
     stateToLimit ::
-      forall (st :: ObjectDiffusion initAgency objectId object).
+      forall (st :: ObjectDiffusion objectId object).
       (ActiveState st) =>
       StateToken st ->
       Word
@@ -62,11 +61,13 @@ byteLimitsObjectDiffusion = ProtocolSizeLimits stateToLimit
 -- +---------------------------------+---------------+
 -- | `StObjects`                     | `shortWait`   |
 -- +---------------------------------+---------------+
-timeLimitsObjectDiffusion :: forall (initAgency :: Agency) (objectId :: Type) (object :: Type). ProtocolTimeLimits (ObjectDiffusion initAgency objectId object)
+timeLimitsObjectDiffusion ::
+  forall (objectId :: Type) (object :: Type).
+  ProtocolTimeLimits (ObjectDiffusion objectId object)
 timeLimitsObjectDiffusion = ProtocolTimeLimits stateToLimit
   where
     stateToLimit ::
-      forall (st :: ObjectDiffusion initAgency objectId object).
+      forall (st :: ObjectDiffusion objectId object).
       (ActiveState st) =>
       StateToken st ->
       Maybe DiffTime
@@ -78,7 +79,7 @@ timeLimitsObjectDiffusion = ProtocolTimeLimits stateToLimit
     stateToLimit a@SingDone                      = notActiveState a
 
 codecObjectDiffusion ::
-  forall (initAgency :: Agency) (objectId :: Type) (object :: Type) m.
+  forall (objectId :: Type) (object :: Type) m.
   (MonadST m) =>
   -- | encode 'objectId'
   (objectId -> CBOR.Encoding) ->
@@ -88,14 +89,14 @@ codecObjectDiffusion ::
   (object -> CBOR.Encoding) ->
   -- | decode object
   (forall s. CBOR.Decoder s object) ->
-  Codec (ObjectDiffusion initAgency objectId object) CBOR.DeserialiseFailure m ByteString
+  Codec (ObjectDiffusion objectId object) CBOR.DeserialiseFailure m ByteString
 codecObjectDiffusion encodeObjectId decodeObjectId encodeObject decodeObject =
   mkCodecCborLazyBS
     (encodeObjectDiffusion encodeObjectId encodeObject)
     decode
   where
     decode ::
-      forall (st :: ObjectDiffusion initAgency objectId object).
+      forall (st :: ObjectDiffusion objectId object).
       (ActiveState st) =>
       StateToken st ->
       forall s. CBOR.Decoder s (SomeMessage st)
@@ -105,18 +106,18 @@ codecObjectDiffusion encodeObjectId decodeObjectId encodeObject decodeObject =
       decodeObjectDiffusion decodeObjectId decodeObject stok len key
 
 encodeObjectDiffusion ::
-  forall (initAgency :: Agency) (objectId :: Type) (object :: Type) (st :: ObjectDiffusion initAgency objectId object) (st' :: ObjectDiffusion initAgency objectId object).
+  forall (objectId :: Type) (object :: Type) (st :: ObjectDiffusion objectId object) (st' :: ObjectDiffusion objectId object).
   -- | encode 'objectId'
   (objectId -> CBOR.Encoding) ->
   -- | encode 'object'
   (object -> CBOR.Encoding) ->
-  Message (ObjectDiffusion initAgency objectId object) st st' ->
+  Message (ObjectDiffusion objectId object) st st' ->
   CBOR.Encoding
 encodeObjectDiffusion encodeObjectId encodeObject = encode
   where
     encode ::
       forall st0 st1.
-      Message (ObjectDiffusion initAgency objectId object) st0 st1 ->
+      Message (ObjectDiffusion objectId object) st0 st1 ->
       CBOR.Encoding
     encode MsgInit =
       CBOR.encodeListLen 1
@@ -163,7 +164,7 @@ encodeObjectDiffusion encodeObjectId encodeObject = encode
         <> CBOR.encodeWord 4
 
 decodeObjectDiffusion ::
-  forall (initAgency :: Agency) (objectId :: Type) (object :: Type) (st :: ObjectDiffusion initAgency objectId object) s.
+  forall (objectId :: Type) (object :: Type) (st :: ObjectDiffusion objectId object) s.
   (ActiveState st) =>
   -- | decode 'objectId'
   (forall s'. CBOR.Decoder s' objectId) ->
@@ -176,7 +177,7 @@ decodeObjectDiffusion ::
 decodeObjectDiffusion decodeObjectId decodeObject = decode
   where
     decode ::
-      forall (st' :: ObjectDiffusion initAgency objectId object).
+      forall (st' :: ObjectDiffusion objectId object).
       (ActiveState st') =>
       StateToken st' ->
       Int ->
@@ -240,26 +241,26 @@ decodeObjectDiffusion decodeObjectId decodeObject = decode
           fail (printf "codecObjectDiffusion (%s) unexpected key (%d, %d)" (show stok) key len)
 
 codecObjectDiffusionId ::
-  forall (initAgency :: Agency) objectId object m.
+  forall objectId object m.
   (Monad m) =>
-  Codec (ObjectDiffusion initAgency objectId object) CodecFailure m (AnyMessage (ObjectDiffusion initAgency objectId object))
+  Codec (ObjectDiffusion objectId object) CodecFailure m (AnyMessage (ObjectDiffusion objectId object))
 codecObjectDiffusionId = Codec {encode, decode}
   where
     encode ::
       forall st st'.
       (ActiveState st) =>
       (StateTokenI st) =>
-      Message (ObjectDiffusion initAgency objectId object) st st' ->
-      AnyMessage (ObjectDiffusion initAgency objectId object)
+      Message (ObjectDiffusion objectId object) st st' ->
+      AnyMessage (ObjectDiffusion objectId object)
     encode = AnyMessage
 
     decode ::
-      forall (st :: ObjectDiffusion initAgency objectId object).
+      forall (st :: ObjectDiffusion objectId object).
       (ActiveState st) =>
       StateToken st ->
       m
         ( DecodeStep
-            (AnyMessage (ObjectDiffusion initAgency objectId object))
+            (AnyMessage (ObjectDiffusion objectId object))
             CodecFailure
             m
             (SomeMessage st)

@@ -18,8 +18,7 @@ module Ouroboros.Network.Protocol.ObjectDiffusion.Inbound
   , InboundStIdle (..)
   , Collect (..)
     -- * Execution as a typed protocol
-  , objectDiffusionInboundClientPeerPipelined
-  , objectDiffusionInboundServerPeerPipelined
+  , objectDiffusionInboundPeerPipelined
   ) where
 
 import Data.List.NonEmpty (NonEmpty)
@@ -72,27 +71,27 @@ data InboundStIdle (n :: N) objectId object m a where
     (Collect objectId object -> m (InboundStIdle n objectId object m a)) ->
     InboundStIdle (S n) objectId object m a
 
-inboundRun :: forall (initAgency :: Agency) (n :: N) objectId object m a.
+inboundRun :: forall (n :: N) objectId object m a.
   (Functor m) =>
       InboundStIdle n objectId object m a ->
-      Peer (ObjectDiffusion initAgency objectId object) AsInbound (Pipelined n (Collect objectId object)) StIdle m a
+      Peer (ObjectDiffusion objectId object) AsClient (Pipelined n (Collect objectId object)) StIdle m a
 
 inboundRun (SendMsgRequestObjectIdsBlocking ackNo reqNo kDone k) =
-      Yield ReflInboundAgency
+      Yield ReflClientAgency
         (MsgRequestObjectIds SingBlocking ackNo reqNo)
-        $ Await ReflOutboundAgency
+        $ Await ReflServerAgency
         $ \case
             MsgDone -> Effect (Done ReflNobodyAgency <$> kDone)
             MsgReplyObjectIds (BlockingReply objectIds) -> Effect (inboundRun <$> k objectIds)
 inboundRun (SendMsgRequestObjectIdsPipelined ackNo reqNo k) =
-      YieldPipelined ReflInboundAgency
+      YieldPipelined ReflClientAgency
         (MsgRequestObjectIds SingNonBlocking ackNo reqNo)
-        (ReceiverAwait ReflOutboundAgency $ \(MsgReplyObjectIds (NonBlockingReply objectIds)) -> ReceiverDone (CollectObjectIds reqNo objectIds))
+        (ReceiverAwait ReflServerAgency $ \(MsgReplyObjectIds (NonBlockingReply objectIds)) -> ReceiverDone (CollectObjectIds reqNo objectIds))
         (Effect (inboundRun <$> k))
 inboundRun (SendMsgRequestObjectsPipelined objectIds k) =
-      YieldPipelined ReflInboundAgency
+      YieldPipelined ReflClientAgency
         (MsgRequestObjects objectIds)
-        (ReceiverAwait ReflOutboundAgency $ \(MsgReplyObjects objects) -> ReceiverDone (CollectObjects objectIds objects))
+        (ReceiverAwait ReflServerAgency $ \(MsgReplyObjects objects) -> ReceiverDone (CollectObjects objectIds objects))
         (Effect (inboundRun <$> k))
 inboundRun (CollectPipelined mNone collect) =
       Collect
@@ -100,23 +99,12 @@ inboundRun (CollectPipelined mNone collect) =
         (Effect . fmap inboundRun . collect)
 
 -- | Transform a 'ObjectDiffusionInboundPipelined' into a 'PeerPipelined'.
-objectDiffusionInboundClientPeerPipelined ::
+objectDiffusionInboundPeerPipelined ::
   forall objectId object m a.
   (Functor m) =>
   ObjectDiffusionInboundPipelined objectId object m a ->
-  PeerPipelined (ObjectDiffusion InboundAgency objectId object) AsInbound StInit m a
-objectDiffusionInboundClientPeerPipelined (ObjectDiffusionInboundPipelined inboundSt) =
+  PeerPipelined (ObjectDiffusion objectId object) AsClient StInit m a
+objectDiffusionInboundPeerPipelined (ObjectDiffusionInboundPipelined inboundSt) =
   PeerPipelined $
-    Yield ReflInboundAgency MsgInit $
-    Effect $
-      inboundRun <$> inboundSt
-
-objectDiffusionInboundServerPeerPipelined ::
-  forall objectId object m a.
-  (Functor m) =>
-  ObjectDiffusionInboundPipelined objectId object m a ->
-  PeerPipelined (ObjectDiffusion OutboundAgency objectId object) AsInbound StInit m a
-objectDiffusionInboundServerPeerPipelined (ObjectDiffusionInboundPipelined inboundSt) =
-  PeerPipelined $
-     Await @_ @_ @(Pipelined Z (Collect objectId object)) ReflOutboundAgency
-      (\MsgInit -> Effect (inboundRun <$> inboundSt))
+    Yield ReflClientAgency MsgInit $
+      Effect $ inboundRun <$> inboundSt
