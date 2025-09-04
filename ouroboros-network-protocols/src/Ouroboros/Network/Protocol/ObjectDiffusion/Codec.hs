@@ -222,7 +222,7 @@ decodeObjectDiffusion decodeObjectId decodeObject = decode
           CBOR.decodeListLenIndef
           objIds <- CBOR.decodeSequenceLenIndef (flip (:)) [] reverse decodeObject
           return (SomeMessage (MsgReplyObjects objIds))
-        (SingObjectIds SingBlocking, 1, 4) ->
+        (SingIdle, 1, 4) ->
           return (SomeMessage MsgDone)
         (SingDone, _, _) -> notActiveState stok
         --
@@ -274,7 +274,7 @@ codecObjectDiffusionId = Codec {encode, decode}
       (SingObjectIds b, Just (AnyMessage msg)) -> case (b, msg) of
         (SingBlocking, MsgReplyObjectIds (BlockingReply {})) -> DecodeDone (SomeMessage msg) Nothing
         (SingNonBlocking, MsgReplyObjectIds (NonBlockingReply {})) -> DecodeDone (SomeMessage msg) Nothing
-        (SingBlocking, MsgDone {}) -> DecodeDone (SomeMessage msg) Nothing
         (_, _) -> DecodeFail (CodecFailure "codecObjectDiffusionId: no matching message")
+      (SingIdle, Just (AnyMessage msg@MsgDone)) -> DecodeDone (SomeMessage msg) Nothing
       (SingDone, _) -> notActiveState stok
       (_, _) -> DecodeFail (CodecFailure "codecObjectDiffusionId: no matching message")

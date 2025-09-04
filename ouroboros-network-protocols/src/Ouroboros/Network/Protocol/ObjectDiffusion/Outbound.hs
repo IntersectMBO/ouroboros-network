@@ -54,7 +54,9 @@ data OutboundStIdle objectId object m a = OutboundStIdle
       m (OutboundStObjectIds blocking objectId object m a),
     recvMsgRequestObjects ::
       [objectId] ->
-      m (OutboundStObjects objectId object m a)
+      m (OutboundStObjects objectId object m a),
+    recvMsgDone ::
+      m a
   }
 
 data OutboundStObjectIds blocking objectId object m a where
@@ -62,9 +64,6 @@ data OutboundStObjectIds blocking objectId object m a where
     BlockingReplyList blocking objectId ->
     OutboundStIdle objectId object m a ->
     OutboundStObjectIds blocking objectId object m a
-  -- | In the blocking case, the outbound can terminate the protocol. This could
-  -- be used when the outbound knows there will be no more objects to submit.
-  SendMsgDone :: a -> OutboundStObjectIds StBlocking objectId object m a
 
 data OutboundStObjects objectId object m a where
   SendMsgReplyObjects ::
@@ -77,7 +76,7 @@ outboundRun ::
   (Monad m) =>
   OutboundStIdle objectId object m a ->
   Peer (ObjectDiffusion objectId object) AsServer NonPipelined StIdle m a
-outboundRun OutboundStIdle {recvMsgRequestObjectIds, recvMsgRequestObjects} =
+outboundRun OutboundStIdle {recvMsgRequestObjectIds, recvMsgRequestObjects, recvMsgDone} =
   Await ReflClientAgency $ \msg -> case msg of
     MsgRequestObjectIds blocking ackNo reqNo -> Effect $ do
       reply <- recvMsgRequestObjectIds blocking ackNo reqNo
@@ -94,17 +93,13 @@ outboundRun OutboundStIdle {recvMsgRequestObjectIds, recvMsgRequestObjects} =
               Yield ReflServerAgency
                 (MsgReplyObjectIds objectIds)
                 (outboundRun k)
-        SendMsgDone result ->
-          return $
-            Yield ReflServerAgency
-              MsgDone
-              (Done ReflNobodyAgency result)
     MsgRequestObjects objectIds -> Effect $ do
       SendMsgReplyObjects objects k <- recvMsgRequestObjects objectIds
       return $
         Yield ReflServerAgency
           (MsgReplyObjects objects)
           (outboundRun k)
+    MsgDone -> Effect $ Done ReflNobodyAgency <$> recvMsgDone
 
 -- | A non-pipelined 'Peer' representing the 'ObjectDiffusionOutbound'.
 objectDiffusionOutboundPeer ::

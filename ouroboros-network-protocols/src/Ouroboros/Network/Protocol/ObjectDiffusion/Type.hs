@@ -264,10 +264,9 @@ instance Protocol (ObjectDiffusion objectId object) where
     MsgReplyObjects ::
       [object] ->
       Message (ObjectDiffusion objectId object) StObjects StIdle
-    -- \| Termination message, initiated by the client when the server is making
-    -- a blocking call for more object identifiers.
+    -- \| Termination message, initiated by the client side when idle.
     MsgDone ::
-      Message (ObjectDiffusion objectId object) (StObjectIds StBlocking) StDone
+      Message (ObjectDiffusion objectId object) StIdle StDone
 
   type StateAgency StInit = ClientAgency
   type StateAgency StIdle = ClientAgency

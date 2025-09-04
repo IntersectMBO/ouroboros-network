@@ -50,8 +50,6 @@ data InboundStIdle (n :: N) objectId object m a where
     NumObjectIdsAck ->
     -- | number of objectIds to request
     NumObjectIdsReq ->
-    -- | Result if done
-    m a ->
     ( NonEmpty objectId ->
       m (InboundStIdle Z objectId object m a)
     ) ->
@@ -70,18 +68,20 @@ data InboundStIdle (n :: N) objectId object m a where
     Maybe (InboundStIdle (S n) objectId object m a) ->
     (Collect objectId object -> m (InboundStIdle n objectId object m a)) ->
     InboundStIdle (S n) objectId object m a
+  SendMsgDone ::
+    m a ->
+    InboundStIdle Z objectId object m a
 
 inboundRun :: forall (n :: N) objectId object m a.
   (Functor m) =>
       InboundStIdle n objectId object m a ->
       Peer (ObjectDiffusion objectId object) AsClient (Pipelined n (Collect objectId object)) StIdle m a
 
-inboundRun (SendMsgRequestObjectIdsBlocking ackNo reqNo kDone k) =
+inboundRun (SendMsgRequestObjectIdsBlocking ackNo reqNo k) =
       Yield ReflClientAgency
         (MsgRequestObjectIds SingBlocking ackNo reqNo)
         $ Await ReflServerAgency
         $ \case
-            MsgDone -> Effect (Done ReflNobodyAgency <$> kDone)
             MsgReplyObjectIds (BlockingReply objectIds) -> Effect (inboundRun <$> k objectIds)
 inboundRun (SendMsgRequestObjectIdsPipelined ackNo reqNo k) =
       YieldPipelined ReflClientAgency
@@ -97,6 +97,8 @@ inboundRun (CollectPipelined mNone collect) =
       Collect
         (fmap inboundRun mNone)
         (Effect . fmap inboundRun . collect)
+inboundRun (SendMsgDone kDone) =
+      Yield ReflClientAgency MsgDone $ Effect $ Done ReflNobodyAgency <$> kDone
 
 -- | Transform a 'ObjectDiffusionInboundPipelined' into a 'PeerPipelined'.
 objectDiffusionInboundPeerPipelined ::
