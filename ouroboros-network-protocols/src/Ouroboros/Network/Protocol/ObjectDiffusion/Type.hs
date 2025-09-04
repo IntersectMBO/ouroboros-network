@@ -1,49 +1,48 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveFoldable #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE DerivingVia #-}
-{-# LANGUAGE EmptyCase #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GADTs #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveFoldable             #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE DerivingVia                #-}
+{-# LANGUAGE EmptyCase                  #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE PolyKinds #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE StandaloneKindSignatures #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE PatternSynonyms            #-}
+{-# LANGUAGE PolyKinds                  #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE StandaloneKindSignatures   #-}
+{-# LANGUAGE TypeFamilies               #-}
 
 -- | The type of the object diffusion protocol.
 --
 -- This is used to diffuse generic objects between nodes.
 module Ouroboros.Network.Protocol.ObjectDiffusion.Type
-  ( pattern InboundAgency,
-    InboundAgency,
-    pattern OutboundAgency,
-    OutboundAgency,
-    pattern AsInbound,
-    AsInbound,
-    pattern AsOutbound,
-    AsOutbound,
-    pattern ReflInboundAgency,
-    ReflInboundAgency,
-    pattern ReflOutboundAgency,
-    ReflOutboundAgency,
-    ObjectDiffusion (..),
-    Message (..),
-    SingObjectDiffusion (..),
-    SingBlockingStyle (..),
-    StBlockingStyle (..),
-    BlockingReplyList (..),
-    NumObjectIdsAck (..),
-    NumObjectIdsReq (..),
-    NumObjectsReq (..),
-    NumObjectsOutstanding (..),
+  ( pattern InboundAgency
+  , InboundAgency
+  , pattern OutboundAgency
+  , OutboundAgency
+  , pattern AsInbound
+  , AsInbound
+  , pattern AsOutbound
+  , AsOutbound
+  , pattern ReflInboundAgency
+  , ReflInboundAgency
+  , pattern ReflOutboundAgency
+  , ReflOutboundAgency
+  , ObjectDiffusion (..)
+  , Message (..)
+  , SingObjectDiffusion (..)
+  , SingBlockingStyle (..)
+  , StBlockingStyle (..)
+  , BlockingReplyList (..)
+  , NumObjectIdsAck (..)
+  , NumObjectIdsReq (..)
+  , NumObjectsReq (..)
+  , NumObjectsOutstanding (..)
     -- re-exports
-    SizeInBytes (..),
-  )
-where
+  , SizeInBytes (..)
+  ) where
 
 import Control.DeepSeq
 import Data.Kind (Type)
@@ -323,12 +322,12 @@ instance
   (NFData objectId, NFData object) =>
   NFData (Message (ObjectDiffusion initAgency objectId object) from to)
   where
-  rnf MsgInit = ()
+  rnf MsgInit                          = ()
   rnf (MsgRequestObjectIds tkbs w1 w2) = rnf tkbs `seq` rnf w1 `seq` rnf w2
-  rnf (MsgReplyObjectIds brl) = rnf brl
-  rnf (MsgRequestObjects objIds) = rnf objIds
-  rnf (MsgReplyObjects objects) = rnf objects
-  rnf MsgDone = ()
+  rnf (MsgReplyObjectIds brl)          = rnf brl
+  rnf (MsgRequestObjects objIds)       = rnf objIds
+  rnf (MsgReplyObjects objects)        = rnf objects
+  rnf MsgDone                          = ()
 
 -- | The value level equivalent of 'BlockingStyle'.
 --
@@ -349,7 +348,7 @@ instance SingI StBlocking where sing = SingBlocking
 instance SingI StNonBlocking where sing = SingNonBlocking
 
 instance NFData (SingBlockingStyle b) where
-  rnf SingBlocking = ()
+  rnf SingBlocking    = ()
   rnf SingNonBlocking = ()
 
 -- | We have requests for lists of things. In the blocking case the
@@ -366,7 +365,7 @@ deriving instance (Show a) => Show (BlockingReplyList blocking a)
 deriving instance Foldable (BlockingReplyList blocking)
 
 instance (NFData a) => NFData (BlockingReplyList blocking a) where
-  rnf (BlockingReply as) = rnf as
+  rnf (BlockingReply as)    = rnf as
   rnf (NonBlockingReply as) = rnf as
 
 deriving instance

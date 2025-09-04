@@ -1,8 +1,8 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 -- | A view of the object diffusion protocol from the point of view of
@@ -15,18 +15,16 @@
 -- into the typed protocol.
 module Ouroboros.Network.Protocol.ObjectDiffusion.Outbound
   ( -- * Protocol type for the outbound
-    ObjectDiffusionOutbound (..),
-    OutboundStIdle (..),
-    OutboundStObjectIds (..),
-    OutboundStObjects (..),
-    SingBlockingStyle (..),
-    BlockingReplyList (..),
-
+    ObjectDiffusionOutbound (..)
+  , OutboundStIdle (..)
+  , OutboundStObjectIds (..)
+  , OutboundStObjects (..)
+  , SingBlockingStyle (..)
+  , BlockingReplyList (..)
     -- * Execution as a typed protocol
-    objectDiffusionOutboundServerPeer,
-    objectDiffusionOutboundClientPeer,
-  )
-where
+  , objectDiffusionOutboundServerPeer
+  , objectDiffusionOutboundClientPeer
+  ) where
 
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Peer

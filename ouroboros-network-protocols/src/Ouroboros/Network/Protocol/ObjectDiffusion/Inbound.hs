@@ -1,9 +1,9 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeApplications    #-}
 
 -- | A view of the object diffusion protocol from the point of view of
 -- the inbound.
@@ -14,15 +14,13 @@
 -- For execution, a conversion into the typed protocol is provided.
 module Ouroboros.Network.Protocol.ObjectDiffusion.Inbound
   ( -- * Protocol type for the inbound
-    ObjectDiffusionInboundPipelined (..),
-    InboundStIdle (..),
-    Collect (..),
-
+    ObjectDiffusionInboundPipelined (..)
+  , InboundStIdle (..)
+  , Collect (..)
     -- * Execution as a typed protocol
-    objectDiffusionInboundClientPeerPipelined,
-    objectDiffusionInboundServerPeerPipelined,
-  )
-where
+  , objectDiffusionInboundClientPeerPipelined
+  , objectDiffusionInboundServerPeerPipelined
+  ) where
 
 import Data.List.NonEmpty (NonEmpty)
 import Network.TypedProtocol.Core

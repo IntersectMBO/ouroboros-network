@@ -1,19 +1,18 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE PolyKinds #-}
-{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE PolyKinds           #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 module Ouroboros.Network.Protocol.ObjectDiffusion.Codec
-  ( codecObjectDiffusion,
-    codecObjectDiffusionId,
-    byteLimitsObjectDiffusion,
-    timeLimitsObjectDiffusion,
-  )
-where
+  ( codecObjectDiffusion
+  , codecObjectDiffusionId
+  , byteLimitsObjectDiffusion
+  , timeLimitsObjectDiffusion
+  ) where
 
 import Codec.CBOR.Decoding qualified as CBOR
 import Codec.CBOR.Encoding qualified as CBOR
@@ -23,11 +22,11 @@ import Control.Monad.Class.MonadTime.SI
 import Data.ByteString.Lazy (ByteString)
 import Data.Kind (Type)
 import Data.List.NonEmpty qualified as NonEmpty
+import Network.TypedProtocol (Agency)
 import Network.TypedProtocol.Codec.CBOR
 import Ouroboros.Network.Protocol.Limits
 import Ouroboros.Network.Protocol.ObjectDiffusion.Type
 import Text.Printf
-import Network.TypedProtocol (Agency)
 
 -- | Byte Limits.
 byteLimitsObjectDiffusion ::
@@ -41,12 +40,12 @@ byteLimitsObjectDiffusion = ProtocolSizeLimits stateToLimit
       (ActiveState st) =>
       StateToken st ->
       Word
-    stateToLimit SingInit = smallByteLimit
-    stateToLimit (SingObjectIds SingBlocking) = largeByteLimit
+    stateToLimit SingInit                        = smallByteLimit
+    stateToLimit (SingObjectIds SingBlocking)    = largeByteLimit
     stateToLimit (SingObjectIds SingNonBlocking) = largeByteLimit
-    stateToLimit SingObjects = largeByteLimit
-    stateToLimit SingIdle = smallByteLimit
-    stateToLimit a@SingDone = notActiveState a
+    stateToLimit SingObjects                     = largeByteLimit
+    stateToLimit SingIdle                        = smallByteLimit
+    stateToLimit a@SingDone                      = notActiveState a
 
 -- | 'ObjectDiffusion' time limits.
 --
@@ -71,12 +70,12 @@ timeLimitsObjectDiffusion = ProtocolTimeLimits stateToLimit
       (ActiveState st) =>
       StateToken st ->
       Maybe DiffTime
-    stateToLimit SingInit = waitForever
-    stateToLimit (SingObjectIds SingBlocking) = waitForever
+    stateToLimit SingInit                        = waitForever
+    stateToLimit (SingObjectIds SingBlocking)    = waitForever
     stateToLimit (SingObjectIds SingNonBlocking) = shortWait
-    stateToLimit SingObjects = shortWait
-    stateToLimit SingIdle = waitForever
-    stateToLimit a@SingDone = notActiveState a
+    stateToLimit SingObjects                     = shortWait
+    stateToLimit SingIdle                        = waitForever
+    stateToLimit a@SingDone                      = notActiveState a
 
 codecObjectDiffusion ::
   forall (initAgency :: Agency) (objectId :: Type) (object :: Type) m.
@@ -127,7 +126,7 @@ encodeObjectDiffusion encodeObjectId encodeObject = encode
         <> CBOR.encodeWord 0
         <> CBOR.encodeBool
           ( case blocking of
-              SingBlocking -> True
+              SingBlocking    -> True
               SingNonBlocking -> False
           )
         <> CBOR.encodeWord16 ackNo
@@ -147,7 +146,7 @@ encodeObjectDiffusion encodeObjectId encodeObject = encode
       where
         objIds' :: [objectId]
         objIds' = case objIds of
-          BlockingReply xs -> NonEmpty.toList xs
+          BlockingReply xs    -> NonEmpty.toList xs
           NonBlockingReply xs -> xs
     encode (MsgRequestObjects objIds) =
       CBOR.encodeListLen 2
