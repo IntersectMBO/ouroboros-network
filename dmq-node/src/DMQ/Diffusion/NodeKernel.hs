@@ -14,15 +14,17 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 
 import Data.Function (on)
-import Data.Set (Set)
-import Data.Set qualified as Set
 import Data.Sequence (Seq)
 import Data.Sequence qualified as Seq
+import Data.Set (Set)
+import Data.Set qualified as Set
 import Data.Time.Clock.POSIX (POSIXTime)
 import Data.Time.Clock.POSIX qualified as Time
 import Data.Void (Void)
 import System.Random (StdGen)
 import System.Random qualified as Random
+
+import Cardano.KESAgent.KES.Evolution qualified as KES
 
 import Ouroboros.Network.BlockFetch (FetchClientRegistry,
            newFetchClientRegistry)
@@ -33,10 +35,11 @@ import Ouroboros.Network.PeerSharing (PeerSharingAPI, PeerSharingRegistry,
            newPeerSharingAPI, newPeerSharingRegistry,
            ps_POLICY_PEER_SHARE_MAX_PEERS, ps_POLICY_PEER_SHARE_STICKY_TIME)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Registry
-import Ouroboros.Network.TxSubmission.Mempool.Simple (Mempool (..), MempoolSeq (..))
+import Ouroboros.Network.TxSubmission.Mempool.Simple (Mempool (..),
+           MempoolSeq (..))
 import Ouroboros.Network.TxSubmission.Mempool.Simple qualified as Mempool
 
-import DMQ.Protocol.SigSubmission.Type (Sig (sigId, sigExpiresAt), SigId)
+import DMQ.Protocol.SigSubmission.Type (Sig (sigExpiresAt, sigId), SigId)
 
 
 data NodeKernel crypto ntnAddr m =
@@ -49,6 +52,7 @@ data NodeKernel crypto ntnAddr m =
   , peerSharingRegistry :: !(PeerSharingRegistry ntnAddr m)
   , peerSharingAPI      :: !(PeerSharingAPI ntnAddr StdGen m)
   , mempool             :: !(Mempool m SigId (Sig crypto))
+  , evolutionConfig     :: !(KES.EvolutionConfig)
   , sigChannelVar       :: !(TxChannelsVar m ntnAddr SigId (Sig crypto))
   , sigMempoolSem       :: !(TxMempoolSem m)
   , sigSharedTxStateVar :: !(SharedTxStateVar m ntnAddr SigId (Sig crypto))
@@ -58,9 +62,10 @@ newNodeKernel :: ( MonadLabelledSTM m
                  , MonadMVar m
                  , Ord ntnAddr
                  )
-              => StdGen
+              => KES.EvolutionConfig
+              -> StdGen
               -> m (NodeKernel crypto ntnAddr m)
-newNodeKernel rng = do
+newNodeKernel evolutionConfig rng = do
   publicPeerSelectionStateVar <- makePublicPeerSelectionStateVar
 
   fetchClientRegistry <- newFetchClientRegistry
@@ -83,6 +88,7 @@ newNodeKernel rng = do
                   , peerSharingRegistry
                   , peerSharingAPI
                   , mempool
+                  , evolutionConfig
                   , sigChannelVar
                   , sigMempoolSem
                   , sigSharedTxStateVar
@@ -99,13 +105,14 @@ withNodeKernel :: forall crypto ntnAddr m a.
                   , MonadTime        m
                   , Ord ntnAddr
                   )
-               => StdGen
+               => KES.EvolutionConfig
+               -> StdGen
                -> (NodeKernel crypto ntnAddr m -> m a)
                -- ^ as soon as the callback exits the `mempoolWorker` will be
                -- killed
                -> m a
-withNodeKernel rng k = do
-  nodeKernel@NodeKernel { mempool } <- newNodeKernel rng
+withNodeKernel evolutionConfig rng k = do
+  nodeKernel@NodeKernel { mempool } <- newNodeKernel evolutionConfig rng
   withAsync (mempoolWorker mempool)
     $ \thread -> link thread
               >> k nodeKernel
