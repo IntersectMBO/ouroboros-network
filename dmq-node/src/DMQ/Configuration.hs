@@ -87,6 +87,10 @@ data Configuration' f =
     dmqcPortNumber                                 :: f PortNumber,
     dmqcConfigFile                                 :: f FilePath,
     dmqcTopologyFile                               :: f FilePath,
+    dmqcShelleyGenesisFile                         :: f FilePath,
+    -- ^ shelley genesis file, e.g.
+    -- `/configuration/cardano/mainnet-shelley-genesis.json` in `cardano-node`
+    -- repo.
     dmqcAcceptedConnectionsLimit                   :: f AcceptedConnectionsLimit,
     dmqcDiffusionMode                              :: f DiffusionMode,
     dmqcTargetOfRootPeers                          :: f Int,
@@ -194,6 +198,7 @@ defaultConfiguration = Configuration {
       dmqcPortNumber                                 = I 3_141,
       dmqcConfigFile                                 = I "dmq.configuration.yaml",
       dmqcTopologyFile                               = I "dmq.topology.json",
+      dmqcShelleyGenesisFile                         = I "mainnet-shelley-genesis.json",
       dmqcAcceptedConnectionsLimit                   = I defaultAcceptedConnectionsLimit,
       dmqcDiffusionMode                              = I InitiatorAndResponderDiffusionMode,
       dmqcTargetOfRootPeers                          = I targetNumberOfRootPeers,
@@ -272,6 +277,8 @@ instance FromJSON PartialConfig where
       dmqcDiffusionMode <- Last <$> v .:? "DiffusionMode"
       dmqcPeerSharing <- Last <$> v .:? "PeerSharing"
 
+      dmqcShelleyGenesisFile <- Last <$> v .:? "ShelleyGenesisFile"
+
       dmqcTargetOfRootPeers                 <- Last <$> v .:? "TargetNumberOfRootPeers"
       dmqcTargetOfKnownPeers                <- Last <$> v .:? "TargetNumberOfKnownPeers"
       dmqcTargetOfEstablishedPeers          <- Last <$> v .:? "TargetNumberOfEstablishedPeers"
@@ -327,6 +334,7 @@ instance FromJSON PartialConfig where
           , dmqcPortNumber
           , dmqcConfigFile = mempty
           , dmqcTopologyFile = mempty
+          , dmqcShelleyGenesisFile
           , dmqcAcceptedConnectionsLimit
           , dmqcDiffusionMode
           , dmqcTargetOfRootPeers
@@ -385,6 +393,7 @@ instance ToJSON Configuration where
       dmqcPortNumber,
       dmqcConfigFile,
       dmqcTopologyFile,
+      dmqcShelleyGenesisFile,
       dmqcAcceptedConnectionsLimit,
       dmqcDiffusionMode,
       dmqcTargetOfRootPeers,
@@ -439,6 +448,7 @@ instance ToJSON Configuration where
            , "PortNumber"                                 .= unI dmqcPortNumber
            , "ConfigFile"                                 .= unI dmqcConfigFile
            , "TopologyFile"                               .= unI dmqcTopologyFile
+           , "ShelleyGenesisFile"                         .= unI dmqcShelleyGenesisFile
            , "AcceptedConnectionsLimit"                   .= unI dmqcAcceptedConnectionsLimit
            , "DiffusionMode"                              .= unI dmqcDiffusionMode
            , "TargetOfRootPeers"                          .= unI dmqcTargetOfRootPeers
