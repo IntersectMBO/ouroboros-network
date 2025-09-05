@@ -435,8 +435,8 @@ labelMsg (AnyMessage msg) =
   label (case msg of
            MsgInit            -> "MsgInit"
            MsgRequestTxIds {} -> "MsgRequestTxIds"
-           MsgReplyTxIds as   -> "MsgReplyTxIds " ++ renderRanges 3 (length as)
-           MsgRequestTxs as   -> "MsgRequestTxs " ++ renderRanges 3 (length as)
-           MsgReplyTxs as     -> "MsgReplyTxs " ++ renderRanges 3 (length as)
+           MsgReplyTxIds as   -> "MsgReplyTxIds " ++ renderRanges 25 (length as)
+           MsgRequestTxs as   -> "MsgRequestTxs " ++ renderRanges 25 (length as)
+           MsgReplyTxs as     -> "MsgReplyTxs "   ++ renderRanges 25 (length as)
            MsgDone            -> "MsgDone"
         )
