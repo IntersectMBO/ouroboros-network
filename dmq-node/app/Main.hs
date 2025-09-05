@@ -6,6 +6,7 @@
 
 module Main where
 
+import Control.Exception (throwIO)
 import Control.Monad (void, when)
 import Control.Tracer (Tracer (..), nullTracer, traceWith)
 
@@ -22,6 +23,7 @@ import System.Exit (exitSuccess)
 import System.Random (newStdGen, split)
 
 import Cardano.Git.Rev (gitRev)
+import Cardano.KESAgent.KES.Evolution qualified as KES
 import Cardano.KESAgent.Protocols.StandardCrypto (StandardCrypto)
 
 import DMQ.Configuration
@@ -68,6 +70,7 @@ runDMQ commandLineConfig = do
     let dmqConfig@Configuration {
           dmqcPrettyLog            = I prettyLog,
           dmqcTopologyFile         = I topologyFile,
+          dmqcShelleyGenesisFile   = I genesisFile,
           dmqcHandshakeTracer      = I handshakeTracer,
           dmqcLocalHandshakeTracer = I localHandshakeTracer,
           dmqcVersion              = I version
@@ -95,6 +98,12 @@ runDMQ commandLineConfig = do
         ]
       exitSuccess
 
+    res <- KES.evolutionConfigFromGenesisFile genesisFile
+    evolutionConfig <- case res of
+      Left err -> traceWith tracer (WithEventType "ShelleyGenesisFile" err)
+               >> throwIO (userError $ err)
+      Right ev -> return ev
+
     traceWith tracer (WithEventType "Configuration" dmqConfig)
     nt <- readTopologyFileOrError topologyFile
     traceWith tracer (WithEventType "NetworkTopology" nt)
@@ -102,7 +111,11 @@ runDMQ commandLineConfig = do
     stdGen <- newStdGen
     let (psRng, policyRng) = split stdGen
 
-    withNodeKernel @StandardCrypto tracer dmqConfig psRng $ \nodeKernel -> do
+    withNodeKernel @StandardCrypto
+                   tracer
+                   dmqConfig
+                   evolutionConfig
+                   psRng $ \nodeKernel -> do
       dmqDiffusionConfiguration <- mkDiffusionConfiguration dmqConfig nt
 
       let dmqNtNApps =
