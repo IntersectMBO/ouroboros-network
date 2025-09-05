@@ -19,6 +19,7 @@ module Ouroboros.Network.Protocol.TxSubmission2.Codec
   , WithBytes (..)
     -- * CBOR Utils
   , encodeBytes
+  , cborBytesFromOffsets
   ) where
 
 import Control.Monad.Class.MonadST
@@ -163,21 +164,28 @@ anncodecTxSubmission2' mkWithBytes encodeTxId decodeTxId
                           @WithByteSpan
                           @ByteString
                           mkWithBytes'
-                          decodeWithByteSpan
-                          decodeTxId decodeTx
+                          decodeTxId
+                          (decodeWithByteSpan decodeTx)
 
-    decodeWithByteSpan :: CBOR.Decoder s a -> CBOR.Decoder s (WithByteSpan a)
+    decodeWithByteSpan :: CBOR.Decoder s (ByteString -> tx)
+                       -> CBOR.Decoder s (WithByteSpan (ByteString -> tx))
     decodeWithByteSpan = fmap WithByteSpan . CBOR.decodeWithByteSpan
 
     mkWithBytes' :: ByteString
                  -> WithByteSpan (ByteString -> tx)
                  -> txWithBytes
     mkWithBytes' bytes (WithByteSpan (fn, start, end)) =
-        mkWithBytes cborBytes (fn bytes)
-      where
-        cborBytes = BSL.take (end - start) $ BSL.drop start bytes
+        mkWithBytes
+          (cborBytesFromOffsets start end bytes) -- bytes of the transaction
+          (fn bytes) -- note: fn expects full bytes
 
 
+cborBytesFromOffsets
+  :: CBOR.ByteOffset
+  -> CBOR.ByteOffset
+  -> ByteString
+  -> ByteString
+cborBytesFromOffsets start end = BSL.take (end - start) . BSL.drop start
 
 --
 -- Map protocol state & messages from `TxSubmission2 txid (Identity tx)` to
@@ -312,9 +320,8 @@ codecTxSubmission2 encodeTxId decodeTxId
                             @Identity      -- withByteSpan functor
                             @()            -- bytes
                             mkWithBytes
-                            decodeWithByteSpan
                             decodeTxId
-                            (const <$> decodeTx)
+                            (decodeWithByteSpan (const <$> decodeTx))
                             stok
 
     mapAnnotator :: Annotator () st -> SomeMessage st
@@ -405,17 +412,14 @@ decodeTxSubmission2
        ActiveState st
     => (bytes -> withByteSpan (bytes -> tx) -> txWithBytes)
     -- ^ mkWithBytes: smart constructor for `withBytes` functor.
-    -> (forall a s'. CBOR.Decoder s' a -> CBOR.Decoder s' (withByteSpan a))
-    -- ^ turn a `CBOR.Decoder` into a decoder of `withByteSpan a`, e.g.
-    -- `CBOR.decodeWithByteSpan`.
     -> (forall s'. CBOR.Decoder s' txid)
     -- ^ decode a transaction id
-    -> (forall s'. CBOR.Decoder s' (bytes -> tx))
+    -> (forall s'. CBOR.Decoder s' (withByteSpan (bytes -> tx)))
     -- ^ decode a transaction
     -> StateToken st
     -- ^ protocol state token
     -> CBOR.Decoder s (Annotator bytes st)
-decodeTxSubmission2 mkWithBytes decodeWithByteSpan
+decodeTxSubmission2 mkWithBytes
                     decodeTxId decodeTx
                     stok
   = do
@@ -461,7 +465,7 @@ decodeTxSubmission2 mkWithBytes decodeWithByteSpan
 
     (SingTxs, 2, 3) -> do
       CBOR.decodeListLenIndef
-      txs <- CBOR.decodeSequenceLenIndef (flip (:)) [] reverse (decodeWithByteSpan decodeTx)
+      txs <- CBOR.decodeSequenceLenIndef (flip (:)) [] reverse decodeTx
       return (Annotator  $
                \bytes -> SomeMessage (MsgReplyTxs $ (\tx -> mkWithBytes bytes tx) `map` txs))
 

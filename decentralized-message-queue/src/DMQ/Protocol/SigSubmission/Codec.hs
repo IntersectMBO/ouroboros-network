@@ -10,8 +10,8 @@ module DMQ.Protocol.SigSubmission.Codec
   , byteLimitsSigSubmission
   , timeLimitsSigSubmission
   , codecSigSubmissionId
-    -- * Utils for testing
-  , encodeSigRaw
+  -- * Exported utility functions
+  , encodeSigId
   ) where
 
 import Control.Monad (when)
@@ -29,6 +29,7 @@ import Network.TypedProtocol.Codec.CBOR
 import DMQ.Protocol.SigSubmission.Type
 import Ouroboros.Network.Protocol.Limits
 import Ouroboros.Network.Protocol.TxSubmission2.Codec qualified as TX
+import Ouroboros.Network.Protocol.TxSubmission2.Codec (cborBytesFromOffsets)
 
 
 -- | 'SigSubmission' time limits.
@@ -83,26 +84,6 @@ decodeSigId :: forall s. CBOR.Decoder s SigId
 decodeSigId = SigId . SigHash <$> CBOR.decodeBytes
 
 
-encodeSigRaw :: SigRaw
-             -> CBOR.Encoding
-encodeSigRaw SigRaw {
-    sigRawId,
-    sigRawBody,
-    sigRawKESPeriod,
-    sigRawKESSignature,
-    sigRawOpCertificate,
-    sigRawExpiresAt,
-    sigRawColdKey
-  }
-  =  CBOR.encodeListLen 7
-  <> encodeSigId sigRawId
-  <> CBOR.encodeBytes (getSigBody sigRawBody)
-  <> CBOR.encodeWord32 sigRawKESPeriod
-  <> CBOR.encodeWord32 (floor sigRawExpiresAt)
-  <> CBOR.encodeBytes (getSigOpCertificate sigRawOpCertificate)
-  <> CBOR.encodeBytes (getSigColdKey sigRawColdKey)
-  <> CBOR.encodeBytes (getSigKESSignature sigRawKESSignature)
-
 -- | 'SigSubmission' protocol codec.
 --
 codecSigSubmission
@@ -118,25 +99,34 @@ codecSigSubmission =
     encodeSig :: Sig -> CBOR.Encoding
     encodeSig = TX.encodeBytes . sigRawBytes
 
-    decodeSig :: forall s. CBOR.Decoder s (ByteString -> SigRaw)
+    decodeSig :: forall s. CBOR.Decoder s (ByteString -> SigRawWithSignedBytes)
     decodeSig = do
+      -- start of signed data
+      startOffset <- CBOR.peekByteOffset
       a <- CBOR.decodeListLen
       when (a /= 7) $ fail (printf "codecSigSubmission: unexpected number of parameters %d" a)
       sigRawId <- decodeSigId
       sigRawBody <- SigBody <$> CBOR.decodeBytes
-      sigRawKESPeriod <- CBOR.decodeWord32
+      sigRawKESPeriod <- CBOR.decodeWord
       sigRawExpiresAt <- realToFrac <$> CBOR.decodeWord32
+      -- end of signed data
+      endOffset <- CBOR.peekByteOffset
+
+      sigRawKESSignature <- SigKESSignature <$> CBOR.decodeBytes
       sigRawOpCertificate <- SigOpCertificate <$> CBOR.decodeBytes
       sigRawColdKey <- SigColdKey <$> CBOR.decodeBytes
-      sigRawKESSignature <- SigKESSignature <$> CBOR.decodeBytes
-      return $ \_ -> SigRaw {
-          sigRawId,
-          sigRawBody,
-          sigRawKESSignature,
-          sigRawKESPeriod,
-          sigRawOpCertificate,
-          sigRawColdKey,
-          sigRawExpiresAt
+      return $ \bytes -- ^ full bytes of the message, not just the sig part
+             -> SigRawWithSignedBytes {
+          sigRawSignedBytes = cborBytesFromOffsets startOffset endOffset bytes,
+          sigRaw = SigRaw {
+            sigRawId,
+            sigRawBody,
+            sigRawKESSignature,
+            sigRawKESPeriod,
+            sigRawOpCertificate,
+            sigRawColdKey,
+            sigRawExpiresAt
+          }
         }
 
 

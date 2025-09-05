@@ -14,7 +14,8 @@ module DMQ.Protocol.SigSubmission.Type
   , SigOpCertificate (..)
   , SigColdKey (..)
   , SigRaw (..)
-  , Sig (Sig, SigWithBytes, sigRaw, sigRawBytes, sigId, sigBody, sigExpiresAt, sigOpCertificate, sigKESPeriod, sigKESSignature, sigColdKey, sigBytes)
+  , SigRawWithSignedBytes (..)
+  , Sig (Sig, SigWithBytes, sigRawWithSignedBytes, sigRawBytes, sigId, sigBody, sigExpiresAt, sigOpCertificate, sigKESPeriod, sigKESSignature, sigColdKey, sigSignedBytes, sigBytes)
     -- * `TxSubmission` mini-protocol
   , SigSubmission
   , module SigSubmission
@@ -23,7 +24,6 @@ module DMQ.Protocol.SigSubmission.Type
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy qualified as LBS
 import Data.Time.Clock.POSIX (POSIXTime)
-import Data.Word (Word32)
 
 import Ouroboros.Network.Protocol.TxSubmission2.Type as SigSubmission hiding
            (TxSubmission2)
@@ -54,7 +54,7 @@ newtype SigKESSignature = SigKESSignature { getSigKESSignature :: ByteString }
 newtype SigOpCertificate = SigOpCertificate { getSigOpCertificate :: ByteString }
   deriving stock (Show, Eq)
 
-type SigKESPeriod = Word32
+type SigKESPeriod = Word
 
 newtype SigColdKey = SigColdKey { getSigColdKey :: ByteString }
   deriving stock (Show, Eq)
@@ -65,19 +65,36 @@ newtype SigColdKey = SigColdKey { getSigColdKey :: ByteString }
 data SigRaw = SigRaw {
     sigRawId            :: SigId,
     sigRawBody          :: SigBody,
-    sigRawKESSignature  :: SigKESSignature,
     sigRawKESPeriod     :: SigKESPeriod,
+    -- ^ KES period when this signature was created.
+    --
+    -- NOTE: `kes-agent` library is using `Word` for KES period, CIP-137
+    -- requires `Word64`, thus we're only supporting 64-bit architectures.
+    sigRawExpiresAt     :: POSIXTime,
+    sigRawKESSignature  :: SigKESSignature,
     sigRawOpCertificate :: SigOpCertificate,
-    sigRawColdKey       :: SigColdKey,
-    sigRawExpiresAt     :: POSIXTime
+    sigRawColdKey       :: SigColdKey
   }
   deriving stock (Show, Eq)
 
-data Sig = SigWithBytes {
-    sigRawBytes :: LBS.ByteString,
-    sigRaw      :: SigRaw
+
+data SigRawWithSignedBytes = SigRawWithSignedBytes {
+    sigRawSignedBytes :: LBS.ByteString,
+    -- ^ bytes signed by the KES key
+    sigRaw            :: SigRaw
+    -- ^ the `SigRaw` data type
   }
   deriving stock (Show, Eq)
+
+
+data Sig = SigWithBytes {
+    sigRawBytes           :: LBS.ByteString,
+    -- ^ encoded `SigRaw` data type
+    sigRawWithSignedBytes :: SigRawWithSignedBytes
+    -- ^ the `SigRaw` data type along with signed bytes
+  }
+  deriving stock (Show, Eq)
+
 
 -- | A convenient bidirectional pattern synonym for the `Sig` type.
 --
@@ -90,6 +107,7 @@ pattern Sig
   -> SigColdKey
   -> POSIXTime
   -> LBS.ByteString
+  -> LBS.ByteString
   -> Sig
 pattern
     Sig { sigId,
@@ -99,20 +117,24 @@ pattern
           sigOpCertificate,
           sigColdKey,
           sigExpiresAt,
+          sigSignedBytes,
           sigBytes
         }
     <-
     SigWithBytes {
       sigRawBytes = sigBytes,
-      sigRaw =
-        SigRaw {
-          sigRawId            = sigId,
-          sigRawBody          = sigBody,
-          sigRawKESSignature  = sigKESSignature,
-          sigRawKESPeriod     = sigKESPeriod,
-          sigRawOpCertificate = sigOpCertificate,
-          sigRawColdKey       = sigColdKey,
-          sigRawExpiresAt     = sigExpiresAt
+      sigRawWithSignedBytes =
+        SigRawWithSignedBytes {
+          sigRawSignedBytes = sigSignedBytes,
+          sigRaw = SigRaw {
+            sigRawId            = sigId,
+            sigRawBody          = sigBody,
+            sigRawKESSignature  = sigKESSignature,
+            sigRawKESPeriod     = sigKESPeriod,
+            sigRawOpCertificate = sigOpCertificate,
+            sigRawColdKey       = sigColdKey,
+            sigRawExpiresAt     = sigExpiresAt
+          }
         }
       }
   where
@@ -123,12 +145,14 @@ pattern
         sigRawOpCertificate
         sigRawColdKey
         sigRawExpiresAt
+        sigRawSignedBytes
         sigRawBytes
       =
       SigWithBytes {
         sigRawBytes = sigRawBytes,
-        sigRaw      =
-          SigRaw {
+        sigRawWithSignedBytes = SigRawWithSignedBytes {
+          sigRawSignedBytes,
+          sigRaw = SigRaw {
             sigRawId,
             sigRawBody,
             sigRawKESPeriod,
@@ -137,6 +161,7 @@ pattern
             sigRawColdKey,
             sigRawExpiresAt
           }
+        }
       }
 {-# COMPLETE Sig #-}
 
