@@ -513,8 +513,7 @@ encodeSigRaw sigRaw@SigRaw { sigRawKESSignature, sigRawOpCertificate, sigRawCold
 
 -- note: KES signature is updated by updateSigFn
 shrinkSigFn :: forall crypto.
-               ( Crypto crypto
-               )
+               Crypto crypto
             => Sig crypto -> [Sig crypto]
 shrinkSigFn SigWithBytes {sigRawWithSignedBytes = SigRawWithSignedBytes { sigRaw, sigRawSignedBytes } } =
     mkSig . (\sigRaw' -> SigRawWithSignedBytes { sigRaw = sigRaw', sigRawSignedBytes }) <$> shrinkSigRawFn sigRaw
@@ -825,7 +824,7 @@ prop_validateSig
   -> Property
 prop_validateSig constr = ioProperty $ do
     sig <- runWithConstr constr
-    return $ case validateSig sig of
+    return $ case validateSig KES.defEvolutionConfig sig of
       Left err -> counterexample ("KES seed: " ++ show (ctx constr))
                 . counterexample ("KES vk key: " ++ show (ocertVkHot . getSigOpCertificate . sigOpCertificate $ sig))
                 . counterexample (show sig)
