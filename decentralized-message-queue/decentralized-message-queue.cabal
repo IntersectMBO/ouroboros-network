@@ -124,7 +124,6 @@ test-suite dmq-test
     QuickCheck,
     base >=4.14 && <4.22,
     bytestring,
-    cardano-binary,
     cardano-crypto-class,
     cardano-crypto-tests,
     cborg,

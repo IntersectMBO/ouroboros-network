@@ -24,7 +24,6 @@ import Data.Bifunctor (second)
 import Data.ByteString.Lazy qualified as BL
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Time.Clock.POSIX (POSIXTime)
-import Data.Typeable
 import Data.Word (Word32)
 import GHC.TypeNats (KnownNat)
 import System.IO.Unsafe (unsafePerformIO)
@@ -32,7 +31,6 @@ import System.IO.Unsafe (unsafePerformIO)
 import Network.TypedProtocol.Codec
 import Network.TypedProtocol.Codec.Properties hiding (prop_codec)
 
-import Cardano.Binary (ToCBOR (..))
 import Cardano.Crypto.DSIGN.Class qualified as DSIGN
 import Cardano.Crypto.KES.Class (KESAlgorithm (..), VerKeyKES)
 import Cardano.Crypto.KES.Class qualified as KES
@@ -358,10 +356,7 @@ mkSigRawWithSignedBytes sigRaw =
 -- NOTE: this function is not exposed in the main library on purpose.  We
 -- should never construct `Sig` by serialising `SigRaw`.
 --
-mkSig :: forall crypto.
-         ( Crypto crypto
-         , Typeable crypto
-         )
+mkSig :: forall crypto. Crypto crypto
       => SigRawWithSignedBytes crypto -> Sig crypto
 mkSig sigRawWithSignedBytes@SigRawWithSignedBytes { sigRaw } =
     SigWithBytes {
@@ -388,28 +383,22 @@ encodeSigRaw' SigRaw {
   <> CBOR.encodeWord32 (floor sigRawExpiresAt)
 
 -- encode together with KES signature, OCert and cold key.
-encodeSigRaw :: ( Crypto crypto
-                , Typeable crypto
-                )
+encodeSigRaw :: Crypto crypto
              => SigRaw crypto
              -> CBOR.Encoding
 encodeSigRaw sigRaw@SigRaw { sigRawKESSignature, sigRawOpCertificate, sigRawColdKey } =
      encodeSigRaw' sigRaw
   <> CBOR.encodeBytes (getSigKESSignature sigRawKESSignature)
-  <> toCBOR (getSigOpCertificate sigRawOpCertificate)
+  <> encodeSigOpCertificate sigRawOpCertificate
   <> CBOR.encodeBytes (getSigColdKey sigRawColdKey)
 
 
-shrinkSigFn :: forall crypto.
-               ( Crypto crypto
-               , Typeable crypto
-               )
+shrinkSigFn :: forall crypto. Crypto crypto
             => Sig crypto -> [Sig crypto]
 shrinkSigFn SigWithBytes {sigRawWithSignedBytes = SigRawWithSignedBytes { sigRaw, sigRawSignedBytes } } =
     mkSig . (\sigRaw' -> SigRawWithSignedBytes { sigRaw = sigRaw', sigRawSignedBytes }) <$> shrinkSigRawFn sigRaw
 
 instance ( Crypto crypto
-         , Typeable crypto
          , DSIGN.ContextDSIGN (DSIGN crypto) ~ ()
          , DSIGN.Signable (DSIGN crypto) (KES.OCertSignable crypto)
          , kesCrypto ~ KES crypto
@@ -502,7 +491,7 @@ instance ( kesCrypto ~ KES crypto
 type AnySigMessage crypto = WithConstrVerKeyKESList (SeedSizeKES (KES crypto)) (KES crypto) (AnyMessage (SigSubmission crypto))
 
 
-prop_codec :: forall crypto. (Crypto crypto, Typeable crypto)
+prop_codec :: forall crypto. Crypto crypto
            => AnySigMessage crypto -> Property
 prop_codec constr = ioProperty $ do
   msg <- runWithConstr constr
@@ -537,7 +526,7 @@ prop_codec_id_standardcrypto :: Blind (AnySigMessage StandardCrypto)
 prop_codec_id_standardcrypto = prop_codec_id . getBlind
 
 
-prop_codec_splits2 :: forall crypto. (Crypto crypto, Typeable crypto)
+prop_codec_splits2 :: forall crypto. Crypto crypto
                    => AnySigMessage crypto -> Property
 prop_codec_splits2 constr = ioProperty $ do
   msg <- runWithConstr constr
@@ -552,7 +541,7 @@ prop_codec_splits2_standardcrypto :: Blind (AnySigMessage StandardCrypto) -> Pro
 prop_codec_splits2_standardcrypto = prop_codec_splits2 . getBlind
 
 
-prop_codec_splits3 :: forall crypto. (Crypto crypto, Typeable crypto)
+prop_codec_splits3 :: forall crypto. Crypto crypto
                    => AnySigMessage crypto -> Property
 prop_codec_splits3 constr = ioProperty $ do
   msg <- runWithConstr constr
@@ -568,10 +557,7 @@ prop_codec_splits3_standardcrypto = prop_codec_splits3 . getBlind
 
 
 prop_codec_cbor
-  :: forall crypto.
-     ( Crypto crypto
-     , Typeable crypto
-     )
+  :: forall crypto. Crypto crypto
   => AnySigMessage crypto
   -> Property
 prop_codec_cbor constr = ioProperty $ do
@@ -591,10 +577,7 @@ prop_codec_cbor_standardcrypto = prop_codec_cbor . getBlind
 
 
 prop_codec_valid_cbor
-  :: forall crypto.
-     ( Crypto crypto
-     , Typeable crypto
-     )
+  :: forall crypto. Crypto crypto
   => AnySigMessage crypto
   -> Property
 prop_codec_valid_cbor constr = ioProperty $ do
