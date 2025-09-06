@@ -14,7 +14,6 @@ module DMQ.NodeToClient
   ) where
 
 import Data.ByteString.Lazy (ByteString)
-import Data.Typeable
 import Data.Void
 import Data.Word
 
@@ -95,7 +94,6 @@ data Codecs m sig =
 
 dmqCodecs :: ( MonadST m
              , Crypto crypto
-             , Typeable crypto
              )
           => (SigMempoolFail -> CBOR.Encoding)
           -> (forall s. CBOR.Decoder s SigMempoolFail)

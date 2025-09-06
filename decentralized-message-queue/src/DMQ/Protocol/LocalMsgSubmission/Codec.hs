@@ -10,7 +10,6 @@ import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
 import Control.Monad.Class.MonadST
 import Data.ByteString.Lazy (ByteString)
-import Data.Typeable
 import Text.Printf
 
 import Cardano.KESAgent.KES.Crypto (Crypto (..))
@@ -26,7 +25,6 @@ codecLocalMsgSubmission
   :: forall crypto m.
      ( MonadST m
      , Crypto crypto
-     , Typeable crypto
      )
   => (SigMempoolFail -> CBOR.Encoding)
   -> (forall s. CBOR.Decoder s SigMempoolFail)

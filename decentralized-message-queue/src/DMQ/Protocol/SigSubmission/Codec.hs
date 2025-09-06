@@ -16,13 +16,14 @@ module DMQ.Protocol.SigSubmission.Codec
   , decodeSig
   , encodeSigId
   , decodeSigId
+  , encodeSigOpCertificate
+  , decodeSigOpCertificate
   ) where
 
 import Control.Monad (when)
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadTime.SI
 import Data.ByteString.Lazy (ByteString)
-import Data.Typeable
 import Text.Printf
 
 import Codec.CBOR.Decoding qualified as CBOR
@@ -31,8 +32,11 @@ import Codec.CBOR.Read qualified as CBOR
 
 import Network.TypedProtocol.Codec.CBOR
 
-import Cardano.Binary (FromCBOR (..))
+import Cardano.Binary (FromCBOR (..), ToCBOR (..))
+import Cardano.Crypto.DSIGN.Class (decodeSignedDSIGN, encodeSignedDSIGN)
+import Cardano.Crypto.KES.Class (decodeVerKeyKES, encodeVerKeyKES)
 import Cardano.KESAgent.KES.Crypto (Crypto (..))
+import Cardano.KESAgent.KES.OCert (OCert (..))
 
 import DMQ.Protocol.SigSubmission.Type
 import Ouroboros.Network.Protocol.Codec.Utils qualified as Utils
@@ -92,12 +96,40 @@ decodeSigId :: forall s. CBOR.Decoder s SigId
 decodeSigId = SigId . SigHash <$> CBOR.decodeBytes
 
 
+-- | We follow the same encoding as in `cardano-ledger` for `OCert`.
+--
+encodeSigOpCertificate :: Crypto crypto
+                       => SigOpCertificate crypto -> CBOR.Encoding
+encodeSigOpCertificate (SigOpCertificate ocert) =
+       CBOR.encodeListLen 4
+    <> encodeVerKeyKES (ocertVkHot ocert)
+    <> toCBOR (ocertN ocert)
+    <> toCBOR (ocertKESPeriod ocert)
+    <> encodeSignedDSIGN (ocertSigma ocert)
+
+
+decodeSigOpCertificate :: forall s crypto. Crypto crypto
+                       => CBOR.Decoder s (SigOpCertificate crypto)
+decodeSigOpCertificate = do
+    len <- CBOR.decodeListLen
+    when (len /= 4) $ fail (printf "decodeSigOpCertificate: unexpected number of parameters %d" len)
+    ocertVkHot <- decodeVerKeyKES
+    ocertN <- fromCBOR
+    ocertKESPeriod <- fromCBOR
+    ocertSigma <- decodeSignedDSIGN
+    return $ SigOpCertificate $ OCert {
+        ocertVkHot,
+        ocertN,
+        ocertKESPeriod,
+        ocertSigma
+      }
+
+
 -- | 'SigSubmission' protocol codec.
 --
 codecSigSubmission
   :: forall crypto m.
      ( Crypto crypto
-     , Typeable crypto
      , MonadST m
      )
   => AnnotatedCodec (SigSubmission crypto) CBOR.DeserialiseFailure m ByteString
@@ -113,7 +145,6 @@ encodeSig = Utils.encodeBytes . sigRawBytes
 
 decodeSig :: forall crypto s.
              ( Crypto crypto
-             , Typeable crypto
              )
           => CBOR.Decoder s (ByteString -> SigRawWithSignedBytes crypto)
 decodeSig = do
@@ -129,7 +160,7 @@ decodeSig = do
   endOffset <- CBOR.peekByteOffset
 
   sigRawKESSignature <- SigKESSignature <$> CBOR.decodeBytes
-  sigRawOpCertificate <- SigOpCertificate <$> fromCBOR
+  sigRawOpCertificate <- decodeSigOpCertificate
   sigRawColdKey <- SigColdKey <$> CBOR.decodeBytes
   return $ \bytes -- ^ full bytes of the message, not just the sig part
          -> SigRawWithSignedBytes {
