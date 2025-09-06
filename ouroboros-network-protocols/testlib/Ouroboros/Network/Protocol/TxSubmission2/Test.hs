@@ -347,7 +347,7 @@ anncodec_v2 :: MonadST m
                               m ByteString
 anncodec_v2 = anncodecTxSubmission2
               Serialise.encode Serialise.decode
-              Serialise.decode
+              (const <$> Serialise.decode)
 
 
 
