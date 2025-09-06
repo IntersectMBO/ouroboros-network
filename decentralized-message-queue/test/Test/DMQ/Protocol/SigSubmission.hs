@@ -18,13 +18,13 @@
 module Test.DMQ.Protocol.SigSubmission where
 
 import Codec.CBOR.Encoding qualified as CBOR
+import Codec.CBOR.Read qualified as CBOR
 import Codec.CBOR.Write qualified as CBOR
 import Control.Monad.ST (runST)
 import Data.Bifunctor (second)
 import Data.ByteString.Lazy qualified as BL
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Time.Clock.POSIX (POSIXTime)
-import Data.Typeable
 import Data.Word (Word32)
 import GHC.TypeNats (KnownNat)
 import System.IO.Unsafe (unsafePerformIO)
@@ -32,7 +32,6 @@ import System.IO.Unsafe (unsafePerformIO)
 import Network.TypedProtocol.Codec
 import Network.TypedProtocol.Codec.Properties hiding (prop_codec)
 
-import Cardano.Binary (ToCBOR (..))
 import Cardano.Crypto.DSIGN.Class qualified as DSIGN
 import Cardano.Crypto.KES.Class (KESAlgorithm (..), VerKeyKES)
 import Cardano.Crypto.KES.Class qualified as KES
@@ -72,6 +71,7 @@ tests =
                                              prop_codec_splits3_mockcrypto
         , testProperty "codec cbor"          prop_codec_cbor_mockcrypto
         , testProperty "codec valid cbor"    prop_codec_valid_cbor_mockcrypto
+        , testProperty "OCert"               prop_codec_ocert_mockcrypto
         ]
       , testGroup "standardcrypto"
         [ testProperty "codec"               prop_codec_standardcrypto
@@ -87,6 +87,7 @@ tests =
         -}
         , testProperty "codec cbor"          prop_codec_cbor_standardcrypto
         , testProperty "codec valid cbor"    prop_codec_valid_cbor_standardcrypto
+        , testProperty "OCert"               prop_codec_ocert_standardcrypto
         ]
       ]
     ]
@@ -358,10 +359,7 @@ mkSigRawWithSignedBytes sigRaw =
 -- NOTE: this function is not exposed in the main library on purpose.  We
 -- should never construct `Sig` by serialising `SigRaw`.
 --
-mkSig :: forall crypto.
-         ( Crypto crypto
-         , Typeable crypto
-         )
+mkSig :: forall crypto. Crypto crypto
       => SigRawWithSignedBytes crypto -> Sig crypto
 mkSig sigRawWithSignedBytes@SigRawWithSignedBytes { sigRaw } =
     SigWithBytes {
@@ -388,28 +386,22 @@ encodeSigRaw' SigRaw {
   <> CBOR.encodeWord32 (floor sigRawExpiresAt)
 
 -- encode together with KES signature, OCert and cold key.
-encodeSigRaw :: ( Crypto crypto
-                , Typeable crypto
-                )
+encodeSigRaw :: Crypto crypto
              => SigRaw crypto
              -> CBOR.Encoding
 encodeSigRaw sigRaw@SigRaw { sigRawKESSignature, sigRawOpCertificate, sigRawColdKey } =
      encodeSigRaw' sigRaw
   <> CBOR.encodeBytes (getSigKESSignature sigRawKESSignature)
-  <> toCBOR (getSigOpCertificate sigRawOpCertificate)
+  <> encodeSigOpCertificate sigRawOpCertificate
   <> CBOR.encodeBytes (getSigColdKey sigRawColdKey)
 
 
-shrinkSigFn :: forall crypto.
-               ( Crypto crypto
-               , Typeable crypto
-               )
+shrinkSigFn :: forall crypto. Crypto crypto
             => Sig crypto -> [Sig crypto]
 shrinkSigFn SigWithBytes {sigRawWithSignedBytes = SigRawWithSignedBytes { sigRaw, sigRawSignedBytes } } =
     mkSig . (\sigRaw' -> SigRawWithSignedBytes { sigRaw = sigRaw', sigRawSignedBytes }) <$> shrinkSigRawFn sigRaw
 
 instance ( Crypto crypto
-         , Typeable crypto
          , DSIGN.ContextDSIGN (DSIGN crypto) ~ ()
          , DSIGN.Signable (DSIGN crypto) (KES.OCertSignable crypto)
          , kesCrypto ~ KES crypto
@@ -498,11 +490,36 @@ instance ( kesCrypto ~ KES crypto
         (AnyMessage MsgDone) -> []
 
 
+prop_codec_ocert
+  :: forall crypto. Crypto crypto
+  => WithConstrVerKeyKES (SeedSizeKES (KES crypto)) (KES crypto) (OCert crypto)
+  -> Property
+prop_codec_ocert constr = ioProperty $ do
+  ocert <- runWithConstr constr
+  return . counterexample (show ocert)
+         $ let encoded = CBOR.toLazyByteString (encodeSigOpCertificate (SigOpCertificate ocert))
+           in case CBOR.deserialiseFromBytes decodeSigOpCertificate encoded of
+                Left err -> counterexample (show err) False
+                Right (bytes, SigOpCertificate ocert') ->
+                       ocert === ocert'
+                  .&&. BL.null bytes
+
+prop_codec_ocert_mockcrypto
+  :: Blind (WithConstrVerKeyKES (SeedSizeKES (KES MockCrypto)) (KES MockCrypto) (OCert MockCrypto))
+  -> Property
+prop_codec_ocert_mockcrypto = prop_codec_ocert . getBlind
+
+prop_codec_ocert_standardcrypto
+  :: Blind (WithConstrVerKeyKES (SeedSizeKES (KES StandardCrypto)) (KES StandardCrypto) (OCert StandardCrypto))
+  -> Property
+prop_codec_ocert_standardcrypto = prop_codec_ocert . getBlind
+
+
 
 type AnySigMessage crypto = WithConstrVerKeyKESList (SeedSizeKES (KES crypto)) (KES crypto) (AnyMessage (SigSubmission crypto))
 
 
-prop_codec :: forall crypto. (Crypto crypto, Typeable crypto)
+prop_codec :: forall crypto. Crypto crypto
            => AnySigMessage crypto -> Property
 prop_codec constr = ioProperty $ do
   msg <- runWithConstr constr
@@ -537,7 +554,7 @@ prop_codec_id_standardcrypto :: Blind (AnySigMessage StandardCrypto)
 prop_codec_id_standardcrypto = prop_codec_id . getBlind
 
 
-prop_codec_splits2 :: forall crypto. (Crypto crypto, Typeable crypto)
+prop_codec_splits2 :: forall crypto. Crypto crypto
                    => AnySigMessage crypto -> Property
 prop_codec_splits2 constr = ioProperty $ do
   msg <- runWithConstr constr
@@ -552,7 +569,7 @@ prop_codec_splits2_standardcrypto :: Blind (AnySigMessage StandardCrypto) -> Pro
 prop_codec_splits2_standardcrypto = prop_codec_splits2 . getBlind
 
 
-prop_codec_splits3 :: forall crypto. (Crypto crypto, Typeable crypto)
+prop_codec_splits3 :: forall crypto. Crypto crypto
                    => AnySigMessage crypto -> Property
 prop_codec_splits3 constr = ioProperty $ do
   msg <- runWithConstr constr
@@ -568,10 +585,7 @@ prop_codec_splits3_standardcrypto = prop_codec_splits3 . getBlind
 
 
 prop_codec_cbor
-  :: forall crypto.
-     ( Crypto crypto
-     , Typeable crypto
-     )
+  :: forall crypto. Crypto crypto
   => AnySigMessage crypto
   -> Property
 prop_codec_cbor constr = ioProperty $ do
@@ -591,10 +605,7 @@ prop_codec_cbor_standardcrypto = prop_codec_cbor . getBlind
 
 
 prop_codec_valid_cbor
-  :: forall crypto.
-     ( Crypto crypto
-     , Typeable crypto
-     )
+  :: forall crypto. Crypto crypto
   => AnySigMessage crypto
   -> Property
 prop_codec_valid_cbor constr = ioProperty $ do

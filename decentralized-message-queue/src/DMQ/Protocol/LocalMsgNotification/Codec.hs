@@ -19,7 +19,6 @@ import Control.Monad.Class.MonadST
 import Data.ByteString.Lazy (ByteString)
 import Data.Functor ((<&>))
 import Data.List.NonEmpty qualified as NonEmpty
-import Data.Typeable
 import Text.Printf
 
 import Cardano.KESAgent.KES.Crypto (Crypto (..))
@@ -38,7 +37,6 @@ codecLocalMsgNotification
   :: forall crypto m.
      ( MonadST m
      , Crypto crypto
-     , Typeable crypto
      )
   => AnnotatedCodec (LocalMsgNotification (Sig crypto)) CBOR.DeserialiseFailure m ByteString
 codecLocalMsgNotification =

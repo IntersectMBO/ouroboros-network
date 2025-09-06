@@ -538,7 +538,6 @@ data Codecs crypto addr m =
   }
 
 dmqCodecs :: ( Crypto crypto
-             , Typeable crypto
              , MonadST m
              )
           => (addr -> CBOR.Encoding)
