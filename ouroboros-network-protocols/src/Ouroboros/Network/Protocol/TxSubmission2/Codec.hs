@@ -17,14 +17,11 @@ module Ouroboros.Network.Protocol.TxSubmission2.Codec
   , byteLimitsTxSubmission2
   , timeLimitsTxSubmission2
   , WithBytes (..)
-    -- * CBOR Utils
-  , encodeBytes
   ) where
 
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadTime.SI
 import Data.ByteString.Lazy (ByteString)
-import Data.ByteString.Lazy qualified as BSL
 import Data.Constraint
 import Data.Functor.Identity
 import Data.Kind (Type)
@@ -38,6 +35,9 @@ import Codec.CBOR.Read qualified as CBOR
 
 import Network.TypedProtocol.Codec.CBOR
 
+import Ouroboros.Network.Protocol.Codec.Utils (WithByteSpan (..),
+           WithBytes (..), encodeWithBytes)
+import Ouroboros.Network.Protocol.Codec.Utils qualified as Utils
 import Ouroboros.Network.Protocol.Limits
 import Ouroboros.Network.Protocol.TxSubmission2.Type
 
@@ -84,29 +84,6 @@ timeLimitsTxSubmission2 = ProtocolTimeLimits stateToLimit
     stateToLimit SingTxs                     = shortWait
     stateToLimit SingIdle                    = waitForever
     stateToLimit a@SingDone                  = notActiveState a
-
-
-data WithBytes a = WithBytes {
-      cborBytes   :: ByteString,
-      -- ^ cbor encoding
-      cborPayload :: a
-      -- ^ decoded structure
-    }
-  deriving (Show, Eq)
-
-encodeBytes :: ByteString -> CBOR.Encoding
-encodeBytes =
-    -- this should be equivalent to
-    -- `CBOR.encodePreEncoded . BSL.toStrict . cborBytes`
-    -- but it doesn't copy the bytes
-    foldMap CBOR.encodePreEncoded . BSL.toChunks
-
-encodeWithBytes :: WithBytes a -> CBOR.Encoding
-encodeWithBytes = encodeBytes . cborBytes
-
--- | A bytespan functor.
---
-newtype WithByteSpan a = WithByteSpan (a, CBOR.ByteOffset, CBOR.ByteOffset)
 
 -- | An 'AnnotatedCodec' paired with `WithBytes` functor.
 --
@@ -163,19 +140,14 @@ anncodecTxSubmission2' mkWithBytes encodeTxId decodeTxId
                           @WithByteSpan
                           @ByteString
                           mkWithBytes'
-                          decodeWithByteSpan
+                          Utils.decodeWithByteSpan
                           decodeTxId decodeTx
-
-    decodeWithByteSpan :: CBOR.Decoder s a -> CBOR.Decoder s (WithByteSpan a)
-    decodeWithByteSpan = fmap WithByteSpan . CBOR.decodeWithByteSpan
 
     mkWithBytes' :: ByteString
                  -> WithByteSpan (ByteString -> tx)
                  -> txWithBytes
     mkWithBytes' bytes (WithByteSpan (fn, start, end)) =
-        mkWithBytes cborBytes (fn bytes)
-      where
-        cborBytes = BSL.take (end - start) $ BSL.drop start bytes
+        mkWithBytes (Utils.bytesBetweenOffsets start end bytes) (fn bytes)
 
 
 
@@ -463,7 +435,7 @@ decodeTxSubmission2 mkWithBytes decodeWithByteSpan
       CBOR.decodeListLenIndef
       txs <- CBOR.decodeSequenceLenIndef (flip (:)) [] reverse (decodeWithByteSpan decodeTx)
       return (Annotator  $
-               \bytes -> SomeMessage (MsgReplyTxs $ (\tx -> mkWithBytes bytes tx) `map` txs))
+               \bytes -> SomeMessage (MsgReplyTxs $ mkWithBytes bytes <$> txs))
 
     (SingTxIds SingBlocking, 1, 4) ->
       return (Annotator $ \_ -> SomeMessage MsgDone)
