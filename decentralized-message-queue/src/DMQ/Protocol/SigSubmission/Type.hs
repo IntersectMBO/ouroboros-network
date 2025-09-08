@@ -7,10 +7,10 @@ module DMQ.Protocol.SigSubmission.Type
     SigHash (..)
   , SigId (..)
   , SigBody (..)
-  , SigKesSignature (..)
+  , SigKESSignature (..)
   , SigOpCertificate (..)
   , SigPayload (..)
-  , Sig (SigRaw, Sig, sigId, sigBody, sigExpiresAt, sigOpCertificate, sigKesSignature)
+  , Sig (SigRaw, Sig, sigId, sigBody, sigExpiresAt, sigOpCertificate, sigKESSignature)
     -- * `TxSubmission` mini-protocol
   , SigSubmission
   , module SigSubmission
@@ -40,7 +40,7 @@ newtype SigBody = SigBody { getSigBody :: ByteString }
 
 -- TODO:
 -- This type should be something like: `SignedKES (KES crypto) SigPayload`
-newtype SigKesSignature = SigKesSignature { getSigKesSignature :: ByteString }
+newtype SigKESSignature = SigKESSignature { getSigKESSignature :: ByteString }
   deriving stock (Show, Eq)
 
 newtype SigOpCertificate = SigOpCertificate { getSigOpCertificate :: ByteString }
@@ -50,7 +50,7 @@ newtype SigOpCertificate = SigOpCertificate { getSigOpCertificate :: ByteString 
 --
 data Sig = SigRaw {
     sigRawPayload      :: SigPayload,
-    sigRawKesSignature :: SigKesSignature
+    sigRawKESSignature :: SigKESSignature
   }
   deriving stock (Show, Eq)
 
@@ -69,14 +69,14 @@ pattern Sig
   -> SigBody
   -> POSIXTime
   -> SigOpCertificate
-  -> SigKesSignature
+  -> SigKESSignature
   -> Sig
 pattern
     Sig { sigId,
           sigBody,
           sigExpiresAt,
           sigOpCertificate,
-          sigKesSignature
+          sigKESSignature
         }
     <-
     SigRaw {
@@ -87,14 +87,14 @@ pattern
           sigPayloadExpiresAt     = sigExpiresAt,
           sigPayloadOpCertificate = sigOpCertificate
         },
-      sigRawKesSignature = sigKesSignature
+      sigRawKESSignature = sigKESSignature
     }
   where
     Sig sigPayloadId
         sigPayloadBody
         sigPayloadExpiresAt
         sigPayloadOpCertificate
-        sigRawKesSignature
+        sigRawKESSignature
       =
       SigRaw {
         sigRawPayload =
@@ -104,7 +104,7 @@ pattern
             sigPayloadExpiresAt,
             sigPayloadOpCertificate
           },
-        sigRawKesSignature
+        sigRawKESSignature
       }
 {-# COMPLETE Sig #-}
 
