@@ -6,6 +6,7 @@
 
 module Test.DMQ.Protocol.SigSubmission where
 
+import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Write qualified as CBOR
 import Control.Monad.ST (runST)
 import Data.Time.Clock.POSIX (POSIXTime)
@@ -13,6 +14,8 @@ import Data.Word (Word32)
 
 import Network.TypedProtocol.Codec
 import Network.TypedProtocol.Codec.Properties hiding (prop_codec)
+
+import Cardano.Binary (ToCBOR (..))
 
 import DMQ.Protocol.SigSubmission.Codec
 import DMQ.Protocol.SigSubmission.Type
@@ -67,8 +70,14 @@ instance Arbitrary SigOpCertificate where
   arbitrary = SigOpCertificate <$> arbitrary
   shrink = map SigOpCertificate . shrink . getSigOpCertificate
 
+instance Arbitrary SigColdKey where
+  arbitrary = SigColdKey <$> arbitrary
+  shrink = map SigColdKey . shrink . getSigColdKey
+
 instance Arbitrary SigRaw where
   arbitrary = SigRaw <$> arbitrary
+                     <*> arbitrary
+                     <*> arbitrary
                      <*> arbitrary
                      <*> arbitrary
                      <*> arbitrary
@@ -76,7 +85,9 @@ instance Arbitrary SigRaw where
   shrink sig@SigRaw { sigRawId,
                       sigRawBody,
                       sigRawKESSignature,
+                      sigRawKESPeriod,
                       sigRawOpCertificate,
+                      sigRawColdKey,
                       sigRawExpiresAt
                     } =
     [ sig { sigRawId = sigRawId' }
@@ -91,25 +102,79 @@ instance Arbitrary SigRaw where
     | sigRawKESSignature' <- shrink sigRawKESSignature
     ]
     ++
+    [ sig { sigRawKESPeriod = sigRawKESPeriod' }
+    | sigRawKESPeriod' <- shrink sigRawKESPeriod
+    ]
+    ++
     [ sig { sigRawOpCertificate = sigRawOpCertificate' }
     | sigRawOpCertificate' <- shrink sigRawOpCertificate
+    ]
+    ++
+    [ sig { sigRawColdKey = sigRawColdKey' }
+    | sigRawColdKey' <- shrink sigRawColdKey
     ]
     ++
     [ sig { sigRawExpiresAt = sigRawExpiresAt' }
     | sigRawExpiresAt' <- shrink sigRawExpiresAt
     ]
 
+mkSigRawWithSignedBytes :: SigRaw -> SigRawWithSignedBytes
+mkSigRawWithSignedBytes sigRaw =
+    SigRawWithSignedBytes {
+      sigRaw,
+      sigRawSignedBytes
+    }
+  where
+    sigRawSignedBytes = CBOR.toLazyByteString (encodeSigRaw' sigRaw)
+
+instance Arbitrary SigRawWithSignedBytes where
+  arbitrary = mkSigRawWithSignedBytes <$> arbitrary
+  shrink SigRawWithSignedBytes {sigRaw} = mkSigRawWithSignedBytes <$> shrink sigRaw
+
 -- NOTE: this function is not exposed in the main library on purpose.  We
 -- should never construct `Sig` by serialising `SigRaw`.
 --
-mkSig :: SigRaw -> Sig
-mkSig sigRaw = SigWithBytes {sigRawBytes, sigRaw}
+mkSig :: SigRawWithSignedBytes -> Sig
+mkSig sigRawWithSignedBytes@SigRawWithSignedBytes { sigRaw } =
+    SigWithBytes {
+      sigRawBytes,
+      sigRawWithSignedBytes
+    }
   where
     sigRawBytes = CBOR.toLazyByteString (encodeSigRaw sigRaw)
 
 instance Arbitrary Sig where
   arbitrary = mkSig <$> arbitrary
-  shrink SigWithBytes {sigRaw} = mkSig <$> shrink sigRaw
+  shrink SigWithBytes {sigRawWithSignedBytes} = mkSig <$> shrink sigRawWithSignedBytes
+
+-- encode only signed part
+encodeSigRaw' :: SigRaw
+              -> CBOR.Encoding
+encodeSigRaw' SigRaw {
+    sigRawId,
+    sigRawBody,
+    sigRawKESPeriod,
+    sigRawExpiresAt
+  }
+  =  CBOR.encodeListLen 7
+  <> encodeSigId sigRawId
+  <> CBOR.encodeBytes (getSigBody sigRawBody)
+  <> CBOR.encodeWord sigRawKESPeriod
+  <> CBOR.encodeWord32 (floor sigRawExpiresAt)
+
+-- encode together with KES signature, OCert and cold key.
+encodeSigRaw :: SigRaw
+             -> CBOR.Encoding
+encodeSigRaw sigRaw@SigRaw { sigRawKESSignature, sigRawOpCertificate, sigRawColdKey } =
+     encodeSigRaw' sigRaw
+  <> CBOR.encodeBytes (getSigKESSignature sigRawKESSignature)
+  <> toCBOR (getSigOpCertificate sigRawOpCertificate)
+  <> CBOR.encodeBytes (getSigColdKey sigRawColdKey)
+
+
+shrinkSigFn :: Sig -> [Sig]
+shrinkSigFn SigWithBytes {sigRawWithSignedBytes = SigRawWithSignedBytes { sigRaw, sigRawSignedBytes } } =
+    mkSig . (\sigRaw' -> SigRawWithSignedBytes { sigRaw = sigRaw', sigRawSignedBytes }) <$> shrink sigRaw
 
 prop_codec :: AnyMessage SigSubmission -> Property
 prop_codec msg =

@@ -150,6 +150,7 @@ test-suite dmq-test
     QuickCheck,
     base >=4.14 && <4.22,
     bytestring,
+    cardano-binary,
     cborg,
     contra-tracer,
     decentralized-message-queue,
