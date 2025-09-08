@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
@@ -88,9 +89,6 @@ codecSigSubmission =
                           encodeSig   decodeSig
 
 
---
--- encoding primitives
---
 
 encodeSigId :: SigId -> CBOR.Encoding
 encodeSigId SigId { getSigId } = CBOR.encodeBytes (getSigHash getSigId)
@@ -104,14 +102,14 @@ encodeSig :: Sig -> CBOR.Encoding
 encodeSig Sig { sigId,
                 sigBody,
                 sigExpiresAt,
-                sigKesSignature,
+                sigKESSignature,
                 sigOpCertificate
               }
    = CBOR.encodeListLen 5
   <> encodeSigId sigId
   <> CBOR.encodeBytes (getSigBody sigBody)
   <> CBOR.encodeWord32 (floor sigExpiresAt)
-  <> CBOR.encodeBytes (getSigKesSignature sigKesSignature)
+  <> CBOR.encodeBytes (getSigKESSignature sigKESSignature)
   <> CBOR.encodeBytes (getSigOpCertificate sigOpCertificate)
 
 
@@ -122,13 +120,13 @@ decodeSig = do
   sigId <- decodeSigId
   sigBody <- SigBody <$> CBOR.decodeBytes
   sigExpiresAt <- realToFrac <$> CBOR.decodeWord32
-  sigKesSignature <- SigKesSignature <$> CBOR.decodeBytes
+  sigKESSignature <- SigKESSignature <$> CBOR.decodeBytes
   sigOpCertificate <- SigOpCertificate <$> CBOR.decodeBytes
   return Sig {
       sigId,
       sigBody,
       sigExpiresAt,
-      sigKesSignature,
+      sigKESSignature,
       sigOpCertificate
     }
 

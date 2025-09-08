@@ -58,9 +58,9 @@ instance Arbitrary POSIXTime where
   -- shrink via Word32 (e.g. in seconds)
   shrink posix = realToFrac <$> shrink (floor @_ @Word32 posix)
 
-instance Arbitrary SigKesSignature where
-  arbitrary = SigKesSignature <$> arbitrary
-  shrink = map SigKesSignature . shrink . getSigKesSignature
+instance Arbitrary SigKESSignature where
+  arbitrary = SigKESSignature <$> arbitrary
+  shrink = map SigKESSignature . shrink . getSigKESSignature
 
 instance Arbitrary SigOpCertificate where
   arbitrary = SigOpCertificate <$> arbitrary
@@ -72,7 +72,7 @@ instance Arbitrary Sig where
                   <*> arbitrary
                   <*> arbitrary
                   <*> arbitrary
-  shrink sig@Sig { sigId, sigBody, sigExpiresAt, sigOpCertificate, sigKesSignature } =
+  shrink sig@Sig { sigId, sigBody, sigExpiresAt, sigOpCertificate, sigKESSignature } =
     [ sig { sigId = sigId' }
     | sigId' <- shrink sigId
     ]
@@ -89,8 +89,8 @@ instance Arbitrary Sig where
     | sigOpCertificate' <- shrink sigOpCertificate
     ]
     ++
-    [ sig { sigKesSignature = sigKesSignature' }
-    | sigKesSignature' <- shrink sigKesSignature
+    [ sig { sigKESSignature = sigKESSignature' }
+    | sigKESSignature' <- shrink sigKESSignature
     ]
 
 
