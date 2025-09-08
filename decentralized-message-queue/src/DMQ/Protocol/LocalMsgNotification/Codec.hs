@@ -22,7 +22,7 @@ import Ouroboros.Network.Protocol.Codec.Utils qualified as Utils
 
 import DMQ.Protocol.LocalMsgNotification.Type
 import DMQ.Protocol.SigSubmission.Codec qualified as SigSubmission
-import DMQ.Protocol.SigSubmission.Type (Sig (..), SigRaw (..))
+import DMQ.Protocol.SigSubmission.Type (Sig (..), SigRawWithSignedBytes (..))
 import Network.TypedProtocol.Codec.CBOR
 
 
@@ -37,12 +37,12 @@ codecLocalMsgNotification =
   where
     mkSigWithBytes
       :: ByteString
-      -> Utils.WithByteSpan (ByteString -> SigRaw)
+      -> Utils.WithByteSpan (ByteString -> SigRawWithSignedBytes)
       -> Sig
     mkSigWithBytes bytes (Utils.WithByteSpan (f, start, end)) =
       SigWithBytes {
         sigRawBytes = Utils.bytesBetweenOffsets start end bytes,
-        sigRaw = f bytes
+        sigRawWithSignedBytes = f bytes
       }
 
 
