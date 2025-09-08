@@ -44,6 +44,11 @@ jobs:
         ghc-version: ${{ matrix.ghc }}
         cabal-version: "3.12.1.0"
 
+    - name: Install system dependencies
+      uses: input-output-hk/actions/base@latest
+      with:
+        use-sodium-vrf: true # default is true
+
     - uses: actions/checkout@v5
 
     - name: "Configure cabal.project.local"
