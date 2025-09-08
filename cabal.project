@@ -64,6 +64,6 @@ allow-newer: quickcheck-instances:QuickCheck
 source-repository-package
   type: git
   location: https://github.com/coot/kes-agent
-  tag: 12be4da8950fd2dc36f04bce3f03891d42c97a70
-  --sha256: sha256-R/BEwKIN+KV4Y6Ljn1Nhe7kA7BOOuwaf1O5ASxR/Sxs=
-  subdir: kes-agent
+  tag: 1d6b3edbb1273ce07b79a12665d8b898b02bc508
+  --sha256: sha256-G218oGlNztsqyU6bE9PTburnA+rE0TybDd11w+LCvS8=
+  subdir: kes-agent-crypto
