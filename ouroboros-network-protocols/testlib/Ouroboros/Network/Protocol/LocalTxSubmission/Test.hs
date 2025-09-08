@@ -30,7 +30,7 @@ import Codec.Serialise (DeserialiseFailure, Serialise)
 import Codec.Serialise qualified as Serialise (decode, encode)
 
 import Network.TypedProtocol.Codec
-import Network.TypedProtocol.Codec.Properties hiding (prop_codec)
+import Network.TypedProtocol.Codec.Properties hiding (prop_anncodec, prop_codec)
 import Network.TypedProtocol.Proofs
 
 import Ouroboros.Network.Channel
@@ -43,6 +43,7 @@ import Ouroboros.Network.Protocol.LocalTxSubmission.Direct
 import Ouroboros.Network.Protocol.LocalTxSubmission.Examples
 import Ouroboros.Network.Protocol.LocalTxSubmission.Server
 import Ouroboros.Network.Protocol.LocalTxSubmission.Type
+import Ouroboros.Network.Protocol.TxSubmission2.Test ()
 
 import Test.Data.CDDL (Any (..))
 import Test.Ouroboros.Network.Protocol.Utils (prop_codec_cborM,
@@ -67,9 +68,14 @@ tests =
         [ testProperty "direct"              prop_direct
         , testProperty "connect"             prop_connect
         , testProperty "codec"               prop_codec
+        , testProperty "anncodec"            prop_anncodec
         , testProperty "codec 2-splits"      prop_codec_splits2
         , testProperty "codec 3-splits"    $ withMaxSize 30
                                              prop_codec_splits3
+        , testProperty "anncodec 2-splits" $ withMaxSize 50
+                                             prop_anncodec_splits2
+        , testProperty "anncodec 3-splits" $ withMaxSize 20
+                                             prop_anncodec_splits3
         , testProperty "codec cbor"          prop_codec_cbor
         , testProperty "codec valid cbor"    prop_codec_valid_cbor
         , testProperty "channel ST"          prop_channel_ST
@@ -190,7 +196,7 @@ prop_pipe_IO p txs =
 -- Codec properties
 --
 
-instance Arbitrary (AnyMessage (LocalTxSubmission Tx Reject)) where
+instance Arbitrary tx => Arbitrary (AnyMessage (LocalTxSubmission tx Reject)) where
   arbitrary = oneof
     [ AnyMessage <$>
         (MsgSubmitTx <$> arbitrary)
@@ -239,6 +245,13 @@ codec = codecLocalTxSubmission
           Serialise.encode Serialise.decode
           Serialise.encode Serialise.decode
 
+anncodec :: MonadST m
+         => AnnotatedCodec (LocalTxSubmission (WithBytes Tx) Reject)
+                           DeserialiseFailure
+                           m ByteString
+anncodec = anncodecLocalTxSubmission
+           (const <$> Serialise.decode)
+           Serialise.encode Serialise.decode
 
 -- | Check the codec round trip property.
 --
@@ -246,11 +259,18 @@ prop_codec :: AnyMessage (LocalTxSubmission Tx Reject) -> Property
 prop_codec msg =
   runST (prop_codecM codec msg)
 
+prop_anncodec :: AnyMessage (LocalTxSubmission (WithBytes Tx) Reject) -> Property
+prop_anncodec msg = runST (prop_anncodecM anncodec msg)
+
 -- | Check for data chunk boundary problems in the codec using 2 chunks.
 --
 prop_codec_splits2 :: AnyMessage (LocalTxSubmission Tx Reject) -> Property
 prop_codec_splits2 msg =
   runST (prop_codec_splitsM splits2 codec msg)
+
+prop_anncodec_splits2 :: AnyMessage (LocalTxSubmission (WithBytes Tx) Reject) -> Property
+prop_anncodec_splits2 msg =
+  runST (prop_anncodec_splitsM splits2 anncodec msg)
 
 -- | Check for data chunk boundary problems in the codec using 3 chunks.
 --
@@ -258,6 +278,11 @@ prop_codec_splits3 :: AnyMessage (LocalTxSubmission Tx Reject) -> Property
 prop_codec_splits3 msg =
   labelMsg msg $
   runST (prop_codec_splitsM splits3 codec msg)
+
+prop_anncodec_splits3 :: AnyMessage (LocalTxSubmission (WithBytes Tx) Reject) -> Property
+prop_anncodec_splits3 msg =
+  labelMsg msg $
+  runST (prop_anncodec_splitsM splits3 anncodec msg)
 
 prop_codec_cbor
   :: AnyMessage (LocalTxSubmission Tx Reject)
