@@ -32,6 +32,7 @@ module Ouroboros.Network.Driver.Simple
     -- TODO: move these to a test lib
   , Role (..)
   , runConnectedPeers
+  , runAnnotatedConnectedPeers
   , runConnectedPeersAsymmetric
   , runConnectedPeersPipelined
   ) where
@@ -370,6 +371,36 @@ runConnectedPeers createChannels tracer codec client server =
       `concurrently`
     (do labelThisThread "server"
         fst <$> runPeer tracerServer codec serverChannel server
+    )
+  where
+    tracerClient = contramap ((,) Client) tracer
+    tracerServer = contramap ((,) Server) tracer
+
+
+runAnnotatedConnectedPeers
+  :: forall ps pr st failure bytes m a b.
+     ( MonadAsync m
+     , MonadThrow m
+     , ShowProxy ps
+     , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
+     , Show failure
+     , Monoid bytes
+     )
+  => m (Channel m bytes, Channel m bytes)
+  -> Tracer m (Role, TraceSendRecv ps)
+  -> AnnotatedCodec ps failure m bytes
+  -> Peer ps             pr  NonPipelined st m a
+  -> Peer ps (FlipAgency pr) NonPipelined st m b
+  -> m (a, b)
+runAnnotatedConnectedPeers createChannels tracer codec client server =
+    createChannels >>= \(clientChannel, serverChannel) ->
+
+    (do labelThisThread "client"
+        fst <$> runAnnotatedPeer tracerClient codec clientChannel client
+    )
+      `concurrently`
+    (do labelThisThread "server"
+        fst <$> runAnnotatedPeer tracerServer codec serverChannel server
     )
   where
     tracerClient = contramap ((,) Client) tracer
