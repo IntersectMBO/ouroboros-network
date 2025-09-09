@@ -136,6 +136,9 @@ jobs:
       if: runner.os != 'Windows'
       run: cabal run ouroboros-network:sim-tests -- +RTS -maxN2 -RTS
 
+    - name: dmq-node [test]
+      run: cabal run dmq-node:dmq-test -- +RTS -maxN2 -RTS
+
     # Uncomment the following back in for debugging. Remember to launch a `pwsh` from
     # the tmux session to debug `pwsh` issues. And be reminded that the `/msys2` and
     # `/msys2/mingw64` paths are not in PATH by default for the workflow, but tmate
