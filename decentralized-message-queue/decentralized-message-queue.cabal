@@ -54,8 +54,8 @@ library
     DMQ.Diffusion.NodeKernel
     DMQ.Diffusion.PeerSelection
     DMQ.NodeToClient
-    DMQ.NodeToClient.LocalMsgSubmission
     DMQ.NodeToClient.LocalMsgNotification
+    DMQ.NodeToClient.LocalMsgSubmission
     DMQ.NodeToClient.Version
     DMQ.NodeToNode
     DMQ.NodeToNode.Version
