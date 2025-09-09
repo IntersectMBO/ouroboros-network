@@ -61,7 +61,9 @@ tests =
   testGroup "DMQ.Protocol"
     [ testGroup "SigSubmission"
       [ testGroup "mockcrypto"
-        [ testProperty "codec"               prop_codec_mockcrypto
+        [ testProperty "OCert"               prop_codec_ocert_mockcrypto
+        , testProperty "Sig"                 prop_codec_sig_mockcrypto
+        , testProperty "codec"               prop_codec_mockcrypto
         , testProperty "codec id"            prop_codec_id_mockcrypto
         , testProperty "codec 2-splits"    $ withMaxSize 20
                                            $ withMaxSuccess 20
@@ -71,10 +73,11 @@ tests =
                                              prop_codec_splits3_mockcrypto
         , testProperty "codec cbor"          prop_codec_cbor_mockcrypto
         , testProperty "codec valid cbor"    prop_codec_valid_cbor_mockcrypto
-        , testProperty "OCert"               prop_codec_ocert_mockcrypto
         ]
       , testGroup "standardcrypto"
-        [ testProperty "codec"               prop_codec_standardcrypto
+        [ testProperty "OCert"               prop_codec_ocert_standardcrypto
+        , testProperty "Sig"                 prop_codec_sig_standardcrypto
+        , testProperty "codec"               prop_codec_standardcrypto
         , testProperty "codec id"            prop_codec_id_standardcrypto
         , testProperty "codec 2-splits"    $ withMaxSize 20
                                            $ withMaxSuccess 20
@@ -87,7 +90,6 @@ tests =
         -}
         , testProperty "codec cbor"          prop_codec_cbor_standardcrypto
         , testProperty "codec valid cbor"    prop_codec_valid_cbor_standardcrypto
-        , testProperty "OCert"               prop_codec_ocert_standardcrypto
         ]
       ]
     ]
@@ -514,6 +516,51 @@ prop_codec_ocert_standardcrypto
   -> Property
 prop_codec_ocert_standardcrypto = prop_codec_ocert . getBlind
 
+
+-- Verify `Sig` encoding/decoding roundtrip:
+-- * `SigRaw` is preserved by encoding/decoding.
+-- * bytes match the encoding of `encodeSig`.
+-- * signed bytes match the encoding of `encodeSigRaw'`.
+prop_codec_sig
+  :: forall crypto. Crypto crypto
+  => WithConstrVerKeyKES (SeedSizeKES (KES crypto)) (KES crypto) (Sig crypto)
+  -> Property
+prop_codec_sig constr = ioProperty $ do
+  sig <- runWithConstr constr
+  return . counterexample (show sig)
+         $ let encoded = CBOR.toLazyByteString (encodeSigRaw (sigRaw (sigRawWithSignedBytes sig)))
+           in case CBOR.deserialiseFromBytes (decodeSig @crypto) encoded of
+                Left err -> counterexample (show err) False
+                Right (leftovers, f) ->
+                  -- split the properties for better counterexample reporting
+
+                      -- SigRaw is preserved
+                       sigRaw (sigRawWithSignedBytes sig)
+                       ===
+                       sigRaw (sigRawWithSignedBytes (mkSig (f encoded)))
+
+                       -- signed bytes are preserved
+                  .&&. sigRawSignedBytes (sigRawWithSignedBytes sig)
+                       ===
+                       sigRawSignedBytes (sigRawWithSignedBytes (mkSig (f encoded)))
+
+                      -- bytes are preserved
+                  .&&. sigRawBytes sig
+                       ===
+                       sigRawBytes (mkSig (f encoded))
+
+                       -- no leftovers
+                  .&&. BL.null leftovers
+
+prop_codec_sig_mockcrypto
+  :: Blind (WithConstrVerKeyKES (SeedSizeKES (KES MockCrypto)) (KES MockCrypto) (Sig MockCrypto))
+  -> Property
+prop_codec_sig_mockcrypto = prop_codec_sig . getBlind
+
+prop_codec_sig_standardcrypto
+  :: Blind (WithConstrVerKeyKES (SeedSizeKES (KES MockCrypto)) (KES MockCrypto) (Sig MockCrypto))
+  -> Property
+prop_codec_sig_standardcrypto = prop_codec_sig . getBlind
 
 
 type AnySigMessage crypto = WithConstrVerKeyKESList (SeedSizeKES (KES crypto)) (KES crypto) (AnyMessage (SigSubmission crypto))
