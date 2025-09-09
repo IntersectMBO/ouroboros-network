@@ -31,7 +31,7 @@ packages: ./cardano-ping
           ./ouroboros-network-testing
           ./ntp-client
           ./cardano-client
-          ./decentralized-message-queue
+          ./dmq-node
           ./acts-generic
 
 tests: True

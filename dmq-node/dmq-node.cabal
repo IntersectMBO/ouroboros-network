@@ -1,14 +1,14 @@
 cabal-version: 3.4
-name: decentralized-message-queue
+name: dmq-node
 version: 0.1.0.0
-synopsis: Decentralized Message Queue Node
+synopsis: Decentralised Message Queue Node
 description:
-  Decentralized Message Queue Node based on Cardano Diffusion
+  Decentralised Message Queue Node based on Cardano Diffusion
   network layer. Allows one to create their own overlay network and
   run their own mini-protocols.
 
 homepage:
-  https://github.com/IntersectMBO/ouroboros-network/decentralized-message-queue
+  https://github.com/IntersectMBO/ouroboros-network
 
 license: Apache-2.0
 license-file: LICENSE
@@ -124,7 +124,7 @@ executable dmq-node
     aeson,
     base,
     contra-tracer >=0.1 && <0.3,
-    decentralized-message-queue,
+    dmq-node,
     kes-agent-crypto,
     optparse-applicative,
     ouroboros-network,
@@ -158,7 +158,7 @@ test-suite dmq-test
     cardano-crypto-tests,
     cborg,
     contra-tracer,
-    decentralized-message-queue,
+    dmq-node,
     io-classes,
     io-sim,
     kes-agent-crypto,
