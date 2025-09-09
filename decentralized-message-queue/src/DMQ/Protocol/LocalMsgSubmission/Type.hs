@@ -12,7 +12,6 @@ module DMQ.Protocol.LocalMsgSubmission.Type
   , module Ouroboros
   ) where
 
-import Data.Typeable
 import Data.Text (Text)
 import Network.TypedProtocol.Core as Core
 import Ouroboros.Network.Protocol.LocalTxSubmission.Type as Ouroboros

@@ -39,8 +39,8 @@ decodeReject = do
   len <- CBOR.decodeListLen
   tag <- CBOR.decodeWord
   case (tag, len) of
-    (0, 2) -> SigInvalid <$> CBOR.decodeString
-    (1, 1) -> pure SigDuplicate
-    (2, 1) -> pure SigExpired
-    (3, 2) -> SigResultOther <$> CBOR.decodeString
+    (0, 2)     -> SigInvalid <$> CBOR.decodeString
+    (1, 1)     -> pure SigDuplicate
+    (2, 1)     -> pure SigExpired
+    (3, 2)     -> SigResultOther <$> CBOR.decodeString
     _otherwise -> fail $ printf "unrecognized (tag,len) = (%d, %d)" tag len
