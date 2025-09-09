@@ -12,8 +12,8 @@ homepage:
 
 license: Apache-2.0
 license-file: LICENSE
-author: Armando Santos
-maintainer: armando.santos@iohk.io
+author: Armando Santos, Marcin Szamotulski, Marcin Wójtowicz
+maintainer: marcin.szamotulski@iohk.io
 category: Network
 build-type: Simple
 extra-doc-files: CHANGELOG.md
