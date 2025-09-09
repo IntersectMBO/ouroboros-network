@@ -5,6 +5,7 @@ module Ouroboros.Network.Protocol.Codec.Utils
   , WithByteSpan (..)
   , decodeWithByteSpan
   , bytesBetweenOffsets
+  , runWithByteSpan
   ) where
 
 import Codec.CBOR.Decoding qualified as CBOR
@@ -40,3 +41,9 @@ decodeWithByteSpan = fmap WithByteSpan . CBOR.decodeWithByteSpan
 
 bytesBetweenOffsets :: CBOR.ByteOffset -> CBOR.ByteOffset -> ByteString -> ByteString
 bytesBetweenOffsets start end bytes = BSL.take (end - start) $ BSL.drop start bytes
+
+runWithByteSpan :: ByteString -> WithByteSpan (ByteString -> a) -> WithBytes a
+runWithByteSpan bytes (WithByteSpan (a, start, end)) = WithBytes {
+    cborBytes   = bytesBetweenOffsets start end bytes,
+    cborPayload = a bytes
+  }
