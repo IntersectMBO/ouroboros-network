@@ -212,8 +212,8 @@ belowTargetLocal inboundPeers
     isFollowBackPeer (LocalRootConfig {followBack}) = followBack
 
     (followBackPeers, localPeers) =
-      Map.spanAntitone
-        (maybe False isFollowBackPeer . flip Map.lookup localRootPeersMap)
+      Map.partition
+        isFollowBackPeer
         localRootPeersMap
 
     additionalLocalRootPeers = followBackPeers `Map.intersection` inboundPeers
