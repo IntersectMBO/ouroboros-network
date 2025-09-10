@@ -1,8 +1,6 @@
-# Revision history for ouroboros-network-api
+# ouroboros-network-api changelog
 
-## next release
-
-### Breaking changes
+<!-- scriv-end-here -->
 
 ## 0.17.0.0 -- 2025-09-10
 

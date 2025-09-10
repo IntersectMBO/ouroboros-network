@@ -1,4 +1,6 @@
-# Revision history for decentralized-message-queue
+# dmq-node changelog
+
+<!-- scriv-end-here -->
 
 ## 0.1.0.0 -- YYYY-mm-dd
 

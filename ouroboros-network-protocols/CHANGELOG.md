@@ -1,8 +1,6 @@
-# Revision history for ouroboros-network-protocols
+# ouroboros-network-protocols changelog
 
-## next release
-
-### Breaking changes
+<!-- scriv-end-here -->
 
 ## 0.16.0.0 -- 2025-09-10
 

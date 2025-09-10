@@ -1,10 +1,6 @@
-# Revision history for cardano-client
+# cardano-client changelog
 
-## next release
-
-### Breaking changes
-
-### Non-breaking changes
+<!-- scriv-end-here -->
 
 ## 0.6.1.0 -- 2025-09-10
 

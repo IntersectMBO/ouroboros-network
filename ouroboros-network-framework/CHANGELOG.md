@@ -1,10 +1,6 @@
 # Revision history for ouroboros-network-framework
 
-## next release
-
-### Breaking changes
-
-### Non-breaking changes
+<!-- scriv-end-here -->
 
 ## 0.20.0.0 -- 10.09.2025
 
