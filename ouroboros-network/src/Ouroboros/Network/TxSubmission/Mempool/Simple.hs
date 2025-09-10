@@ -1,5 +1,8 @@
+{-# LANGUAGE DerivingStrategies  #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving  #-}
 
 -- | The module should be imported qualified.
 --
@@ -15,7 +18,11 @@ module Ouroboros.Network.TxSubmission.Mempool.Simple
 import Prelude hiding (read, seq)
 
 import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad (when)
+import Control.Monad.Class.MonadThrow
 
+import Data.Bifunctor (bimap)
+import Data.Either (partitionEithers)
 import Data.Foldable (toList)
 import Data.Foldable qualified as Foldable
 import Data.Function (on)
@@ -24,6 +31,7 @@ import Data.Maybe (isJust)
 import Data.Sequence (Seq)
 import Data.Sequence qualified as Seq
 import Data.Set qualified as Set
+import Data.Typeable (Typeable)
 
 import Ouroboros.Network.SizeInBytes
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
@@ -83,31 +91,66 @@ getReader getTxId getTxSize (Mempool mempool) =
     f idx tx = (getTxId tx, idx, getTxSize tx)
 
 
+data InvalidTxsError where
+    InvalidTxsError :: forall txid failure.
+                       ( Typeable txid
+                       , Typeable failure
+                       , Show txid
+                       , Show failure
+                       )
+                    => [(txid, failure)]
+                    -> InvalidTxsError
+
+deriving instance Show InvalidTxsError
+instance Exception InvalidTxsError
+
+
 -- | A simple mempool writer.
 --
-getWriter :: forall tx txid m.
+getWriter :: forall tx txid ctx failure m.
              ( MonadSTM m
+             , MonadThrow m
              , Ord txid
+             , Typeable txid
+             , Typeable failure
+             , Show txid
+             , Show failure
              )
           => (tx -> txid)
-          -> (tx -> Bool)
-          -- ^ validate a tx
+          -- ^ get txid of a tx
+          -> m ctx
+          -- ^ monadic validation ctx
+          -> (ctx -> tx -> Either failure ())
+          -- ^ validate a tx, any failing `tx` throws an exception.
+          -> (failure -> Bool)
+          -- ^ return `True` when a failure should throw an exception
           -> Mempool m tx
           -> TxSubmissionMempoolWriter txid tx Int m
-getWriter getTxId validateTx (Mempool mempool) =
+getWriter getTxId getValidationCtx validateTx failureFilterFn (Mempool mempool) =
     TxSubmissionMempoolWriter {
         txId = getTxId,
 
         mempoolAddTxs = \txs -> do
-          atomically $ do
+          ctx <- getValidationCtx
+          (invalidTxIds, validTxs) <- atomically $ do
             mempoolTxs <- readTVar mempool
-            let currentIds = Set.fromList (map getTxId (toList mempoolTxs))
-                validTxs = nubBy (on (==) getTxId)
-                         $ filter
-                            (\tx -> validateTx tx
-                                 && getTxId tx `Set.notMember` currentIds)
-                           txs
+            let -- TODO: set of current ids should be constructed incrementally,
+                -- e.g. it should be part of mempoolTxs
+                currentIds = Set.fromList (map getTxId (toList mempoolTxs))
+                (invalidTxIds, validTxs) =
+                    bimap (filter (failureFilterFn . snd))
+                          (nubBy (on (==) getTxId))
+                  . partitionEithers
+                  . map (\tx -> case validateTx ctx tx of
+                                 Left  e -> Left (getTxId tx, e)
+                                 Right _ -> Right tx
+                        )
+                  . filter (\tx -> getTxId tx `Set.notMember` currentIds)
+                  $ txs
                 mempoolTxs' = Foldable.foldl' (Seq.|>) mempoolTxs validTxs
             writeTVar mempool mempoolTxs'
-            return (map getTxId validTxs)
+            return (invalidTxIds, map getTxId validTxs)
+          when (not (null invalidTxIds)) $
+            throwIO (InvalidTxsError invalidTxIds)
+          return validTxs
       }

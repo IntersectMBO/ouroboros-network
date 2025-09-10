@@ -1,19 +1,19 @@
 cabal-version: 3.4
-name: decentralized-message-queue
+name: dmq-node
 version: 0.1.0.0
-synopsis: Decentralized Message Queue Node
+synopsis: Decentralised Message Queue Node
 description:
-  Decentralized Message Queue Node based on Cardano Diffusion
+  Decentralised Message Queue Node based on Cardano Diffusion
   network layer. Allows one to create their own overlay network and
   run their own mini-protocols.
 
 homepage:
-  https://github.com/IntersectMBO/ouroboros-network/decentralized-message-queue
+  https://github.com/IntersectMBO/ouroboros-network
 
 license: Apache-2.0
 license-file: LICENSE
-author: Armando Santos
-maintainer: armando.santos@iohk.io
+author: Armando Santos, Marcin Szamotulski, Marcin Wójtowicz
+maintainer: marcin.szamotulski@iohk.io
 category: Network
 build-type: Simple
 extra-doc-files: CHANGELOG.md
@@ -79,6 +79,8 @@ library
     aeson-pretty,
     base >=4.14 && <4.22,
     bytestring >=0.10 && <0.13,
+    cardano-binary,
+    cardano-crypto-class,
     cborg >=0.2.1 && <0.3,
     containers >=0.5 && <0.8,
     contra-tracer >=0.1 && <0.3,
@@ -90,6 +92,7 @@ library
     hashable >=1.0 && <1.6,
     io-classes:{io-classes, si-timers, strict-mvar, strict-stm} ^>=1.8.0.1,
     iproute ^>=1.7.15,
+    kes-agent-crypto ^>=0.1,
     network ^>=3.2.7,
     network-mux ^>=0.9,
     optparse-applicative ^>=0.18,
@@ -106,7 +109,7 @@ library
   hs-source-dirs: src
   default-language: Haskell2010
 
-executable dmq-exe
+executable dmq-node
   import:
     warnings,
     extensions
@@ -121,7 +124,8 @@ executable dmq-exe
     aeson,
     base,
     contra-tracer >=0.1 && <0.3,
-    decentralized-message-queue,
+    dmq-node,
+    kes-agent-crypto,
     optparse-applicative,
     ouroboros-network,
     ouroboros-network-api,
@@ -150,13 +154,17 @@ test-suite dmq-test
     QuickCheck,
     base >=4.14 && <4.22,
     bytestring,
+    cardano-crypto-class,
+    cardano-crypto-tests,
+    cborg,
     contra-tracer,
-    decentralized-message-queue,
+    dmq-node,
     io-classes,
     io-sim,
+    kes-agent-crypto,
     ouroboros-network-api,
     ouroboros-network-framework,
-    ouroboros-network-protocols:testlib,
+    ouroboros-network-protocols:{ouroboros-network-protocols, testlib},
     ouroboros-network-testing,
     quickcheck-instances,
     serialise,

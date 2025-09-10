@@ -44,6 +44,11 @@ jobs:
         ghc-version: ${{ matrix.ghc }}
         cabal-version: "3.12.1.0"
 
+    - name: Install system dependencies
+      uses: input-output-hk/actions/base@latest
+      with:
+        use-sodium-vrf: true # default is true
+
     - uses: actions/checkout@v5
 
     - name: "Configure cabal.project.local"
@@ -130,6 +135,9 @@ jobs:
     - name: ouroboros-network [sim-tests]
       if: runner.os != 'Windows'
       run: cabal run ouroboros-network:sim-tests -- +RTS -maxN2 -RTS
+
+    - name: dmq-node [test]
+      run: cabal run dmq-node:dmq-test -- +RTS -maxN2 -RTS
 
     # Uncomment the following back in for debugging. Remember to launch a `pwsh` from
     # the tmux session to debug `pwsh` issues. And be reminded that the `/msys2` and

@@ -1,12 +1,16 @@
-{-# LANGUAGE FlexibleContexts  #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE TupleSections     #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GeneralisedNewtypeDeriving #-}
+{-# LANGUAGE TupleSections              #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Test.DMQ.Protocol.LocalMsgNotification where
 
-import Codec.Serialise (DeserialiseFailure)
+import Codec.CBOR.Decoding qualified as CBOR
+import Codec.CBOR.Encoding qualified as CBOR
+import Codec.Serialise (DeserialiseFailure, Serialise (..))
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadST (MonadST)
 import Control.Monad.Class.MonadThrow
@@ -26,14 +30,14 @@ import DMQ.Protocol.LocalMsgNotification.Codec
 import DMQ.Protocol.LocalMsgNotification.Examples
 import DMQ.Protocol.LocalMsgNotification.Server
 import DMQ.Protocol.LocalMsgNotification.Type
-import DMQ.Protocol.SigSubmission.Codec
-import DMQ.Protocol.SigSubmission.Type hiding (SingTxSubmission (..))
 import Network.TypedProtocol
 import Network.TypedProtocol.Codec
 import Network.TypedProtocol.Codec.Properties hiding (prop_codec)
 import Ouroboros.Network.Channel
 import Ouroboros.Network.Driver.Simple
-import Ouroboros.Network.Util.ShowProxy
+import Ouroboros.Network.Protocol.Codec.Utils (WithBytes (..))
+import Ouroboros.Network.Protocol.Codec.Utils qualified as Utils
+import Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 import Test.DMQ.Protocol.SigSubmission ()
 import Test.Ouroboros.Network.Protocol.Utils
 import Test.Ouroboros.Network.Utils
@@ -60,26 +64,26 @@ tests =
 
 -- | Check the codec round trip property.
 --
-prop_codec :: AnyMessage (LocalMsgNotification Sig) -> Property
-prop_codec msg = runST (prop_codecM codec msg)
+prop_codec :: AnyMessage (LocalMsgNotification MsgWithBytes) -> Property
+prop_codec msg = runST (prop_anncodecM codec msg)
 
-prop_codec_splits2 :: AnyMessage (LocalMsgNotification Sig) -> Property
+prop_codec_splits2 :: AnyMessage (LocalMsgNotification MsgWithBytes) -> Property
 prop_codec_splits2 msg =
-  runST (prop_codec_splitsM splits2 codec msg)
+  runST (prop_anncodec_splitsM splits2 codec msg)
 
-prop_codec_splits3 :: AnyMessage (LocalMsgNotification Sig) -> Property
+prop_codec_splits3 :: AnyMessage (LocalMsgNotification MsgWithBytes) -> Property
 prop_codec_splits3 msg =
   labelMsg msg $
-  runST (prop_codec_splitsM splits3 codec msg)
+  runST (prop_anncodec_splitsM splits3 codec msg)
 
 prop_codec_cbor
-  :: AnyMessage (LocalMsgNotification Sig)
+  :: AnyMessage (LocalMsgNotification MsgWithBytes)
   -> Property
 prop_codec_cbor msg =
   runST (prop_codec_cborM codec msg)
 
 prop_codec_valid_cbor
-  :: AnyMessage (LocalMsgNotification Sig)
+  :: AnyMessage (LocalMsgNotification MsgWithBytes)
   -> Property
 prop_codec_valid_cbor = prop_codec_valid_cbor_encoding codec
 
@@ -87,7 +91,7 @@ prop_codec_valid_cbor = prop_codec_valid_cbor_encoding codec
 -- | Run a simple tx-submission client and server, going via the 'Peer'
 -- representation, but without going via a channel.
 --
-prop_connect :: Positive Word16 -> DistinctNEList Sig -> Bool
+prop_connect :: Positive Word16 -> DistinctNEList MsgWithBytes -> Bool
 prop_connect (Positive maxMsgs) (DistinctNEList msgs) =
   case runSimOrThrow
          (connect
@@ -105,20 +109,19 @@ prop_connect (Positive maxMsgs) (DistinctNEList msgs) =
 
 -- | Run a local tx-submission client and server using connected channels.
 --
-prop_channel :: (MonadAsync m, MonadCatch m, Eq msg, Show msg, ShowProxy msg)
+prop_channel :: (MonadAsync m, MonadCatch m, MonadST m)
              => m (Channel m ByteString, Channel m ByteString)
-             -> LocalMsgNotificationCodec m msg
              -> Positive Word16
-             -> DistinctNEList msg
+             -> DistinctNEList MsgWithBytes
              -> m Property
-prop_channel createChannels codec'
+prop_channel createChannels
              (Positive maxMsgs) (DistinctNEList msgs) =
   (\((), msgs') -> msgs' === NE.toList msgs) <$>
 
-  runConnectedPeers
+  runAnnotatedConnectedPeers
     createChannels
     testTracer
-    codec'
+    codec
     (localMsgNotificationServerPeer $
        testServer (("server",) `contramap` testTracer) maxMsgs msgs)
     (localMsgNotificationClientPeer $
@@ -126,19 +129,19 @@ prop_channel createChannels codec'
 
 -- | Run 'prop_channel' in the simulation monad.
 --
-prop_channel_ST :: Positive Word16 -> DistinctNEList Sig
+prop_channel_ST :: Positive Word16 -> DistinctNEList MsgWithBytes
                 -> Property
 prop_channel_ST maxMsgs msgs =
   runSimOrThrow
-    (prop_channel createConnectedChannels codec maxMsgs msgs)
+    (prop_channel createConnectedChannels maxMsgs msgs)
 
 -- | Run 'prop_channel' in the IO monad.
 --
-prop_channel_IO :: Positive Word16 -> DistinctNEList Sig
+prop_channel_IO :: Positive Word16 -> DistinctNEList MsgWithBytes
                 -> Property
 prop_channel_IO maxMsgs msgs =
     ioProperty $
-      prop_channel createConnectedBufferedChannelsUnbounded codec maxMsgs msgs
+      prop_channel createConnectedBufferedChannelsUnbounded maxMsgs msgs
 
 --
 -- Properties going directly, not via Peer.
@@ -147,7 +150,7 @@ prop_channel_IO maxMsgs msgs =
 -- | Run a simple tx-submission client and server, directly on the wrappers,
 -- without going via the 'Peer'.
 --
-prop_direct :: Positive Word16 -> DistinctNEList Sig -> Bool
+prop_direct :: Positive Word16 -> DistinctNEList MsgWithBytes -> Bool
 prop_direct (Positive maxMsgs) (DistinctNEList sigs) =
     runSimOrThrow
       (direct
@@ -190,13 +193,30 @@ direct (LocalMsgNotificationServer mserver0) (LocalMsgNotificationClient mclient
 --
 
 type LocalMsgNotificationCodec m msg =
-  Codec (LocalMsgNotification msg)
-        DeserialiseFailure m
-        ByteString
+    AnnotatedCodec (LocalMsgNotification msg)
+                   DeserialiseFailure m
+                   ByteString
+
+newtype Msg = Msg Int
+  deriving stock (Show, Eq)
+  deriving newtype Arbitrary
+  deriving newtype Serialise -- TODO: why do I need this instance?
+
+
+encodeMsg :: WithBytes Msg -> CBOR.Encoding
+encodeMsg = Utils.encodeWithBytes
+
+decodeMsg :: forall s. CBOR.Decoder s (ByteString -> Msg)
+decodeMsg = const . Msg <$> CBOR.decodeInt
+
+type MsgWithBytes = WithBytes Msg
+
+instance ShowProxy (WithBytes Msg) where
+  showProxy _ = "WithBytes Msg"
 
 codec :: MonadST m
-      => LocalMsgNotificationCodec m Sig
-codec = codecLocalMsgNotification encodeSig decodeSig
+      => LocalMsgNotificationCodec m MsgWithBytes
+codec = codecLocalMsgNotification' Utils.runWithByteSpan encodeMsg decodeMsg
 
 
 instance Arbitrary HasMore where
@@ -235,7 +255,7 @@ instance (Eq msg) => Eq (AnyMessage (LocalMsgNotification msg)) where
   _ == _ = False
 
 
-labelMsg :: AnyMessage (LocalMsgNotification Sig) -> Property -> Property
+labelMsg :: AnyMessage (LocalMsgNotification MsgWithBytes) -> Property -> Property
 labelMsg (AnyMessage msg) =
   label (case msg of
            MsgRequest {}     -> "MsgRequest"

@@ -43,13 +43,16 @@ import Data.Aeson qualified as Aeson
 import Data.ByteString.Lazy qualified as BL
 import Data.Functor.Contravariant ((>$<))
 import Data.Hashable (Hashable)
+import Data.Typeable
 import Data.Void (Void)
 import System.Random (mkStdGen)
 
 import Network.Mux.Trace qualified as Mx
 import Network.Mux.Types (Mode (..))
 import Network.Mux.Types qualified as Mx
-import Network.TypedProtocol.Codec (Codec)
+import Network.TypedProtocol.Codec (AnnotatedCodec, Codec)
+
+import Cardano.KESAgent.KES.Crypto (Crypto (..))
 
 import DMQ.Configuration (Configuration, Configuration' (..), I (..))
 import DMQ.Diffusion.NodeKernel (NodeKernel (..))
@@ -63,8 +66,8 @@ import Ouroboros.Network.Channel (Channel)
 import Ouroboros.Network.ConnectionId (ConnectionId (..))
 import Ouroboros.Network.Context (ExpandedInitiatorContext (..),
            ResponderContext (..))
-import Ouroboros.Network.Driver.Limits (runPeerWithLimits,
-           runPipelinedPeerWithLimits)
+import Ouroboros.Network.Driver.Limits (runAnnotatedPeerWithLimits,
+           runPeerWithLimits, runPipelinedAnnotatedPeerWithLimits)
 import Ouroboros.Network.Driver.Simple (TraceSendRecv)
 import Ouroboros.Network.Handshake.Acceptable (Acceptable (..))
 import Ouroboros.Network.Handshake.Queryable (Queryable (..))
@@ -142,8 +145,10 @@ data Apps addr m a b =
   }
 
 ntnApps
-  :: forall m addr .
-    ( Alternative (STM m)
+  :: forall crypto m addr .
+    ( Crypto crypto
+    , Typeable crypto
+    , Alternative (STM m)
     , MonadAsync m
     , MonadDelay m
     , MonadFork m
@@ -158,9 +163,9 @@ ntnApps
     )
  => (forall ev. Aeson.ToJSON ev => Tracer m (WithEventType ev))
  -> Configuration
- -> NodeKernel addr m
- -> Codecs addr m
- -> LimitsAndTimeouts addr
+ -> NodeKernel crypto addr m
+ -> Codecs crypto addr m
+ -> LimitsAndTimeouts crypto addr
  -> TxDecisionPolicy
  -> Apps addr m () ()
 ntnApps
@@ -206,18 +211,19 @@ ntnApps
     , aPeerSharingServer
     }
   where
-    sigSize :: Sig -> SizeInBytes
+    sigSize :: Sig crypto -> SizeInBytes
     sigSize _ = 0 -- TODO
 
     mempoolReader = Mempool.getReader sigId sigSize mempool
-    mempoolWriter = Mempool.getWriter sigId sigValid mempool
-      where
-        -- Note: invalid signatures are just omitted from the mempool. For DMQ
-        -- we need to validate signatures when we received them, and shutdown
-        -- connection if we receive one, rather than validate them in the
-        -- mempool.
-        sigValid :: Sig -> Bool
-        sigValid _ = True
+    -- TODO: invalid signatures are just omitted from the mempool. For DMQ
+    -- we need to validate signatures when we received them, and shutdown
+    -- connection if we receive one, rather than validate them in the
+    -- mempool.
+    mempoolWriter = Mempool.getWriter sigId
+                                      (pure ())
+                                      (\_ _ -> Right () :: Either Void ())
+                                      (\_ -> True)
+                                      mempool
 
     aSigSubmissionClient
       :: NodeToNodeVersion
@@ -229,7 +235,7 @@ ntnApps
                            eicConnectionId   = connId,
                            eicControlMessage = controlMessage
                          } channel =
-      runPeerWithLimits
+      runAnnotatedPeerWithLimits
         (if sigSubmissionClientTracer
           then WithEventType "SigSubmissionClient" . Mx.WithBearer connId >$< tracer
           else nullTracer)
@@ -262,8 +268,8 @@ ntnApps
           mempoolWriter
           sigSize
           (remoteAddress connId)
-          $ \(peerSigAPI :: PeerTxAPI m SigId Sig) ->
-            runPipelinedPeerWithLimits
+          $ \(peerSigAPI :: PeerTxAPI m SigId (Sig crypto)) ->
+            runPipelinedAnnotatedPeerWithLimits
               (if sigSubmissionServerTracer
                  then WithEventType "SigSubmissionServer" . Mx.WithBearer connId >$< tracer
                  else nullTracer)
@@ -273,7 +279,7 @@ ntnApps
               channel
               $ txSubmissionServerPeerPipelined
               $ txSubmissionInboundV2
-                  nullTracer
+                  nullTracer -- TODO
                   _SIG_SUBMISSION_INIT_DELAY
                   mempoolWriter
                   peerSigAPI
@@ -405,7 +411,7 @@ peerSharingMiniProtocolNum :: Mx.MiniProtocolNum
 peerSharingMiniProtocolNum = Mx.MiniProtocolNum 13
 
 nodeToNodeProtocols
-  :: LimitsAndTimeouts addr
+  :: LimitsAndTimeouts crypto addr
   -> Protocols appType initiatorCtx responderCtx bytes m a b
   -> NodeToNodeVersion
   -- ^ negotiated version number
@@ -463,7 +469,7 @@ nodeToNodeProtocols LimitsAndTimeouts {
       )
 
 initiatorProtocols
-  :: LimitsAndTimeouts addr
+  :: LimitsAndTimeouts crypto addr
   -> Apps addr m a b
   -> NodeToNodeVersion
   -> NodeToNodeVersionData
@@ -488,7 +494,7 @@ initiatorProtocols limitsAndTimeouts
     version
 
 initiatorAndResponderProtocols
-  :: LimitsAndTimeouts addr
+  :: LimitsAndTimeouts crypto addr
   -> Apps addr m a b
   -> NodeToNodeVersion
   -> NodeToNodeVersionData
@@ -521,9 +527,9 @@ initiatorAndResponderProtocols limitsAndTimeouts
     })
     version
 
-data Codecs addr m =
+data Codecs crypto addr m =
   Codecs {
-    sigSubmissionCodec :: Codec SigSubmission
+    sigSubmissionCodec :: AnnotatedCodec (SigSubmission crypto)
                             CBOR.DeserialiseFailure m BL.ByteString
   , keepAliveCodec     :: Codec KeepAlive
                             CBOR.DeserialiseFailure m BL.ByteString
@@ -531,10 +537,12 @@ data Codecs addr m =
                             CBOR.DeserialiseFailure m BL.ByteString
   }
 
-dmqCodecs :: MonadST m
+dmqCodecs :: ( Crypto crypto
+             , MonadST m
+             )
           => (addr -> CBOR.Encoding)
           -> (forall s. CBOR.Decoder s addr)
-          -> Codecs addr m
+          -> Codecs crypto addr m
 dmqCodecs encodeAddr decodeAddr =
   Codecs {
     sigSubmissionCodec = codecSigSubmission
@@ -542,15 +550,15 @@ dmqCodecs encodeAddr decodeAddr =
   , peerSharingCodec   = codecPeerSharing encodeAddr decodeAddr
   }
 
-data LimitsAndTimeouts addr =
+data LimitsAndTimeouts crypto addr =
   LimitsAndTimeouts {
     -- sig-submission
     sigSubmissionLimits
       :: MiniProtocolLimits
   , sigSubmissionSizeLimits
-      :: ProtocolSizeLimits SigSubmission BL.ByteString
+      :: ProtocolSizeLimits (SigSubmission crypto) BL.ByteString
   , sigSubmissionTimeLimits
-      :: ProtocolTimeLimits SigSubmission
+      :: ProtocolTimeLimits (SigSubmission crypto)
 
     -- keep-alive
   , keepAliveLimits
@@ -569,7 +577,7 @@ data LimitsAndTimeouts addr =
       :: ProtocolSizeLimits (Protocol.PeerSharing addr) BL.ByteString
   }
 
-dmqLimitsAndTimeouts :: LimitsAndTimeouts addr
+dmqLimitsAndTimeouts :: LimitsAndTimeouts crypto addr
 dmqLimitsAndTimeouts =
     LimitsAndTimeouts {
       sigSubmissionLimits =
