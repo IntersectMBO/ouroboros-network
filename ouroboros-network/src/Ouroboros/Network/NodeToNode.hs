@@ -77,8 +77,11 @@ module Ouroboros.Network.NodeToNode
 
 import Control.Exception (SomeException)
 
+import Cardano.Base.FeatureFlags (CardanoFeatureFlag (..))
 import Codec.CBOR.Term qualified as CBOR
 import Data.ByteString.Lazy qualified as BL
+import Data.Set (Set)
+import Data.Set qualified as Set
 import Data.Word
 import Network.Mux qualified as Mx
 import Network.Socket (Socket, StructLinger (..))
@@ -217,14 +220,15 @@ defaultMiniProtocolParameters = MiniProtocolParameters {
 -- both protocols, e.g.  wireshark plugins.
 --
 nodeToNodeProtocols
-  :: MiniProtocolParameters
+  :: Set CardanoFeatureFlag
+  -> MiniProtocolParameters
   -> NodeToNodeProtocols muxMode initiatorCtx responderCtx bytes m a b
   -> NodeToNodeVersion
   -- ^ negotiated version number
   -> NodeToNodeVersionData
   -- ^ negotiated version data
   -> OuroborosBundle muxMode initiatorCtx responderCtx bytes m a b
-nodeToNodeProtocols miniProtocolParameters protocols
+nodeToNodeProtocols featureFlags miniProtocolParameters protocols
                     version NodeToNodeVersionData { peerSharing }
                     =
     TemperatureBundle
@@ -255,7 +259,10 @@ nodeToNodeProtocols miniProtocolParameters protocols
                 miniProtocolRun    = txSubmissionProtocol
               }
             ]
-              <> concat [perasMiniProtocols | isPerasEnabled version]
+              <> concat [ perasMiniProtocols
+                        | isPerasEnabled version
+                        , Set.member PerasFlag featureFlags
+                        ]
            where
              -- TODO: should also depend on the Peras feature flag, cf
              -- https://github.com/tweag/cardano-peras/issues/96
