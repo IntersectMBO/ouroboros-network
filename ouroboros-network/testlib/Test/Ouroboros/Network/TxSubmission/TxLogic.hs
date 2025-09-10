@@ -61,48 +61,50 @@ import Text.Pretty.Simple
 
 
 tests :: TestTree
-tests = testGroup "TxLogic"
-  [ testGroup "State"
-    [ testGroup "Arbitrary"
-      [ testGroup "ArbSharedTxState"
-        [ testProperty "generator"              prop_SharedTxState_generator
-        , testProperty "shrinker"             $ withMaxSuccess 10
-                                                prop_SharedTxState_shrinker
-        , testProperty "nothunks"               prop_SharedTxState_nothunks
+tests = testGroup "AppV2"
+  [ testGroup "TxLogic"
+    [ testGroup "State"
+      [ testGroup "Arbitrary"
+        [ testGroup "ArbSharedTxState"
+          [ testProperty "generator"              prop_SharedTxState_generator
+          , testProperty "shrinker"             $ withMaxSuccess 10
+                                                  prop_SharedTxState_shrinker
+          , testProperty "nothunks"               prop_SharedTxState_nothunks
+          ]
+        , testGroup "ArbReceivedTxIds"
+          [ testProperty "generator"              prop_receivedTxIds_generator
+          ]
+        , testGroup "ArbCollectTxs"
+          [ testProperty "generator"              prop_collectTxs_generator
+          , testProperty "shrinker"             $ withMaxSuccess 10
+                                                  prop_collectTxs_shrinker
+          ]
         ]
-      , testGroup "ArbReceivedTxIds"
-        [ testProperty "generator"              prop_receivedTxIds_generator
-        ]
-      , testGroup "ArbCollectTxs"
-        [ testProperty "generator"              prop_collectTxs_generator
-        , testProperty "shrinker"             $ withMaxSuccess 10
-                                                prop_collectTxs_shrinker
+      , testProperty "acknowledgeTxIds"           prop_acknowledgeTxIds
+      , testProperty "receivedTxIdsImpl"          prop_receivedTxIdsImpl
+      , testProperty "collectTxsImpl"             prop_collectTxsImpl
+      , testProperty "splitAcknowledgedTxIds"     prop_splitAcknowledgedTxIds
+      , testGroup "NoThunks"
+        [ testProperty "receivedTxIdsImpl"        prop_receivedTxIdsImpl_nothunks
+        , testProperty "collectTxsImpl"           prop_collectTxsImpl_nothunks
         ]
       ]
-    , testProperty "acknowledgeTxIds"           prop_acknowledgeTxIds
-    , testProperty "receivedTxIdsImpl"          prop_receivedTxIdsImpl
-    , testProperty "collectTxsImpl"             prop_collectTxsImpl
-    , testProperty "splitAcknowledgedTxIds"     prop_splitAcknowledgedTxIds
-    , testGroup "NoThunks"
-      [ testProperty "receivedTxIdsImpl"        prop_receivedTxIdsImpl_nothunks
-      , testProperty "collectTxsImpl"           prop_collectTxsImpl_nothunks
+    , testGroup "Decisions"
+      [ testGroup "ArbDecisionContexts"
+        [ testProperty "generator"               prop_ArbDecisionContexts_generator
+        , testProperty "shrinker"              $ withMaxSuccess 33
+                                                 prop_ArbDecisionContexts_shrinker
+        ]
+      , testProperty "shared state invariant"    prop_makeDecisions_sharedstate
+      , testProperty "inflight"                  prop_makeDecisions_inflight
+      , testProperty "policy"                    prop_makeDecisions_policy
+      , testProperty "acknowledged"              prop_makeDecisions_acknowledged
+      , testProperty "exhaustive"                prop_makeDecisions_exhaustive
       ]
-    ]
-  , testGroup "Decisions"
-    [ testGroup "ArbDecisionContexts"
-      [ testProperty "generator"               prop_ArbDecisionContexts_generator
-      , testProperty "shrinker"              $ withMaxSuccess 33
-                                               prop_ArbDecisionContexts_shrinker
-      ]
-    , testProperty "shared state invariant"    prop_makeDecisions_sharedstate
-    , testProperty "inflight"                  prop_makeDecisions_inflight
-    , testProperty "policy"                    prop_makeDecisions_policy
-    , testProperty "acknowledged"              prop_makeDecisions_acknowledged
-    , testProperty "exhaustive"                prop_makeDecisions_exhaustive
-    ]
-  , testGroup "Registry"
-    [ testGroup "filterActivePeers"
-      [ testProperty "not limiting decisions"  prop_filterActivePeers_not_limitting_decisions
+    , testGroup "Registry"
+      [ testGroup "filterActivePeers"
+        [ testProperty "not limiting decisions"  prop_filterActivePeers_not_limitting_decisions
+        ]
       ]
     ]
   ]

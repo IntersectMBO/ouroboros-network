@@ -71,7 +71,7 @@ import Test.Tasty.QuickCheck (testProperty)
 
 tests :: TestTree
 tests = testGroup "AppV2"
-  [ testProperty "diffusion"     prop_txSubmission_diffusion
+  [ testProperty "txSubmission"  prop_txSubmission
   , testProperty "inflight"      prop_txSubmission_inflight
   , testProperty "SharedTxState" $ withMaxSize 25
                                  $ withMaxSuccess 25
@@ -305,8 +305,8 @@ filterValidTxs
 -- property test are the same as for tx submission v1. We need this to know we
 -- didn't regress.
 --
-prop_txSubmission_diffusion :: TxSubmissionState -> Property
-prop_txSubmission_diffusion st@(TxSubmissionState peers _) =
+prop_txSubmission :: TxSubmissionState -> Property
+prop_txSubmission st@(TxSubmissionState peers _) =
     let tr = runSimTrace (txSubmissionSimulation st)
         numPeersWithWronglySizedTx :: Int
         numPeersWithWronglySizedTx =

@@ -8,7 +8,7 @@ import Test.Tasty (TestTree, testGroup)
 
 tests :: TestTree
 tests = testGroup "Ouroboros.Network.TxSubmission"
-  [ TxLogic.tests
-  , AppV1.tests
+  [ AppV1.tests
+  , TxLogic.tests
   , AppV2.tests
   ]
