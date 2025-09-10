@@ -18,6 +18,16 @@ category: Network
 build-type: Simple
 extra-doc-files: CHANGELOG.md
 
+common extensions
+  default-extensions:
+    BangPatterns
+    BlockArguments
+    GADTs
+    ImportQualifiedPost
+    LambdaCase
+    NamedFieldPuns
+    ScopedTypeVariables
+
 common warnings
   ghc-options:
     -Wall
@@ -31,7 +41,10 @@ common warnings
     -Wunused-packages
 
 library
-  import: warnings
+  import:
+    warnings,
+    extensions
+
   exposed-modules:
     DMQ.Configuration
     DMQ.Configuration.CLIOptions
@@ -41,9 +54,20 @@ library
     DMQ.Diffusion.NodeKernel
     DMQ.Diffusion.PeerSelection
     DMQ.NodeToClient
+    DMQ.NodeToClient.LocalMsgNotification
+    DMQ.NodeToClient.LocalMsgSubmission
     DMQ.NodeToClient.Version
     DMQ.NodeToNode
     DMQ.NodeToNode.Version
+    DMQ.Protocol.LocalMsgNotification.Client
+    DMQ.Protocol.LocalMsgNotification.Codec
+    DMQ.Protocol.LocalMsgNotification.Examples
+    DMQ.Protocol.LocalMsgNotification.Server
+    DMQ.Protocol.LocalMsgNotification.Type
+    DMQ.Protocol.LocalMsgSubmission.Client
+    DMQ.Protocol.LocalMsgSubmission.Codec
+    DMQ.Protocol.LocalMsgSubmission.Server
+    DMQ.Protocol.LocalMsgSubmission.Type
     DMQ.Protocol.SigSubmission.Codec
     DMQ.Protocol.SigSubmission.Type
     DMQ.Tracer
@@ -74,16 +98,19 @@ library
     ouroboros-network-framework ^>=0.19,
     ouroboros-network-protocols ^>=0.15,
     random ^>=1.2,
+    singletons,
     text >=1.2.4 && <2.2,
     time ^>=1.12,
     typed-protocols:{typed-protocols, cborg} ^>=1.1,
 
   hs-source-dirs: src
   default-language: Haskell2010
-  default-extensions: ImportQualifiedPost
 
 executable dmq-exe
-  import: warnings
+  import:
+    warnings,
+    extensions
+
   main-is: Main.hs
   ghc-options:
     -threaded
@@ -102,15 +129,18 @@ executable dmq-exe
 
   hs-source-dirs: app
   default-language: Haskell2010
-  default-extensions: ImportQualifiedPost
 
 test-suite dmq-test
-  import: warnings
+  import:
+    warnings,
+    extensions
+
   default-language: Haskell2010
-  default-extensions: ImportQualifiedPost
   other-modules:
     Test.DMQ.NodeToClient
     Test.DMQ.NodeToNode
+    Test.DMQ.Protocol.LocalMsgNotification
+    Test.DMQ.Protocol.LocalMsgSubmission
     Test.DMQ.Protocol.SigSubmission
 
   type: exitcode-stdio-1.0
@@ -119,10 +149,17 @@ test-suite dmq-test
   build-depends:
     QuickCheck,
     base >=4.14 && <4.22,
+    bytestring,
+    contra-tracer,
     decentralized-message-queue,
+    io-classes,
+    io-sim,
     ouroboros-network-api,
+    ouroboros-network-framework,
     ouroboros-network-protocols:testlib,
+    ouroboros-network-testing,
     quickcheck-instances,
+    serialise,
     tasty,
     tasty-quickcheck,
     time,
