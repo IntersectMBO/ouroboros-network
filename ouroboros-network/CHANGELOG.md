@@ -4,6 +4,12 @@
 
 ### Breaking changes
 
+### Non-breaking changes
+
+## 0.23.0.0 -- 2025-09-10
+
+### Breaking changes
+
 * `Ouroboros.Network.NodeTo{Client,Node}` modules moved to
   `ouroboros-network:cardano-diffusion` (as `Cardano.Network.NodeTo{Node,Client}`)
 * Adapt to simplified type of `headerForgeUTCTime` in `BlockFetchConsensusInterface`.

@@ -6,6 +6,10 @@
 
 ### Non-breaking changes
 
+## 0.9.1.0 -- 2025-09-10
+
+### Non-breaking changes
+
 * Exposed `MakeBearerCb` to expose its haddocks.
 
 ## 0.9.0.0 -- 2025-06-28

@@ -6,6 +6,10 @@
 
 ### Non-breaking changes
 
+## 0.6.1.0 -- 2025-09-10
+
+* Support `ouroboros-network-0.22`
+
 ## 0.6.0.0 -- 2025-06-28
 
 ### Breaking changes

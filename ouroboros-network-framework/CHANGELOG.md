@@ -4,12 +4,19 @@
 
 ### Breaking changes
 
+### Non-breaking changes
+
+## 0.20.0.0 -- 10.09.2025
+
+### Breaking changes
+
 * `HandleError` renamed as `HandlerError`, also `HandlerErrorType` and `classifyHandlerError`.
 
 ### Non-breaking changes
 
 * propagate diconnection reason out of connection manager when including an
   inbound connection or acquiring an outbound connection.
+* added `runAnnotatedConnectedPeers`.
 
 ## 0.19.0.0 -- 28.06.2025
 

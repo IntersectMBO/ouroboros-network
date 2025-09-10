@@ -1,6 +1,6 @@
 cabal-version: 3.4
 name: ouroboros-network
-version: 0.22.1.0
+version: 0.23.0.0
 synopsis: A networking layer for the Ouroboros blockchain protocol
 description: A networking layer for the Ouroboros blockchain protocol.
 license: Apache-2.0
@@ -158,9 +158,9 @@ library
     network ^>=3.2.7,
     network-mux,
     nothunks,
-    ouroboros-network-api ^>=0.16,
-    ouroboros-network-framework ^>=0.19,
-    ouroboros-network-protocols ^>=0.15,
+    ouroboros-network-api ^>=0.17,
+    ouroboros-network-framework ^>=0.20,
+    ouroboros-network-protocols ^>=0.16,
     psqueues >=0.2.3 && <0.3,
     random,
     strict-checked-vars ^>=0.2,
@@ -219,8 +219,8 @@ library orphan-instances
     network,
     network-mux,
     ouroboros-network:{ouroboros-network, cardano-diffusion},
-    ouroboros-network-api ^>=0.16,
-    ouroboros-network-framework ^>=0.19,
+    ouroboros-network-api ^>=0.17,
+    ouroboros-network-framework ^>=0.20,
     ouroboros-network-protocols,
     text,
     typed-protocols,
@@ -290,9 +290,9 @@ library cardano-diffusion
     network ^>=3.2.7,
     network-mux,
     ouroboros-network,
-    ouroboros-network-api ^>=0.16,
-    ouroboros-network-framework ^>=0.19,
-    ouroboros-network-protocols ^>=0.15,
+    ouroboros-network-api ^>=0.17,
+    ouroboros-network-framework ^>=0.20,
+    ouroboros-network-protocols ^>=0.16,
     random,
     typed-protocols:{typed-protocols, stateful} ^>=1.1,
 
@@ -339,7 +339,7 @@ library testlib
     ouroboros-network-mock,
     ouroboros-network-protocols,
     ouroboros-network-protocols:testlib,
-    ouroboros-network-testing ^>=0.8.1,
+    ouroboros-network-testing ^>=0.8.3,
     pipes,
     pretty-simple,
     psqueues,
