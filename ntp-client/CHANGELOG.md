@@ -1,6 +1,6 @@
-# Revision history for ntp-client
+# ntp-client changelog
 
-## next release
+<!-- scriv-end-here -->
 
 ## 0.0.1.6 -- 2024-08-07
 

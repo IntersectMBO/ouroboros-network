@@ -1,4 +1,6 @@
-# Revision history for acts-generic
+# acts-generic changelog
+
+<!-- scriv-end-here -->
 
 ## 0.1.0.0 -- YYYY-mm-dd
 

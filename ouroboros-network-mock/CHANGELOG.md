@@ -1,6 +1,6 @@
-# Revision history for ouroboros-network-mock
+# ouroboros-network-mock changelog
 
-## next release
+<!-- scriv-end-here -->
 
 ## 0.1.1.2 -- 2024-08-07
 

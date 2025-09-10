@@ -41,6 +41,7 @@ hsPkgs.shellFor {
     pkgs.jq
     pkgs.yq-go
     pkgs.gh
+    pkgs.scriv
   ];
 
   # This is the place for tools that are required to be built with the same GHC

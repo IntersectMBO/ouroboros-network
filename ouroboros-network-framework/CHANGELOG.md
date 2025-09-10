@@ -1,6 +1,8 @@
 # Revision history for ouroboros-network-framework
 
-## next release
+<!-- scriv-end-here -->
+
+## 0.20.0.0 -- 10.09.2025
 
 ### Breaking changes
 
@@ -10,6 +12,7 @@
 
 * propagate diconnection reason out of connection manager when including an
   inbound connection or acquiring an outbound connection.
+* added `runAnnotatedConnectedPeers`.
 
 ## 0.19.0.0 -- 28.06.2025
 

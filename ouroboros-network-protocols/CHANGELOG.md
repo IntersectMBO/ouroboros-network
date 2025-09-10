@@ -1,10 +1,22 @@
-# Revision history for ouroboros-network-protocols
+# ouroboros-network-protocols changelog
 
-## next release
+<!-- scriv-end-here -->
+
+## 0.16.0.0 -- 2025-09-10
 
 ### Breaking changes
 
+* Generalised `CoolectPipelined` constructor for `TxSubmission2.Server` to allow
+  running a monadic action in the continuation when no message is available.
+* `SendMsgRequestTxsPipelined` constructor for `TxSubmission2.Server` was modified:
+  now it takes a mpa of txids to sizes instead of a list of txids.
+
 ### Non-breaking changes
+
+* Added annoteded codec for `TxSubmission2` mini-protocol.
+* Added annoteded codec for `LocalTxSubmission` mini-protocol.
+* Added `Ouroboros.Network.Protocols.Codec.Utils` module with utility function
+  for writing annotated codecs.
 
 ## 0.15.0.0 -- 28.06.2025
 

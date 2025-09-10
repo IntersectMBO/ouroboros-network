@@ -1,10 +1,10 @@
-# Revision history for cardano-client
+# cardano-client changelog
 
-## next release
+<!-- scriv-end-here -->
 
-### Breaking changes
+## 0.6.1.0 -- 2025-09-10
 
-### Non-breaking changes
+* Support `ouroboros-network-0.22`
 
 ## 0.6.0.0 -- 2025-06-28
 

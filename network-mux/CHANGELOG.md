@@ -1,8 +1,8 @@
-# Revision history for mux
+# network-mux changelog
 
-## next release
+<!-- scriv-end-here -->
 
-### Breaking changes
+## 0.9.1.0 -- 2025-09-10
 
 ### Non-breaking changes
 
