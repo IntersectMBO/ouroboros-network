@@ -43,7 +43,7 @@ import Ouroboros.Network.Snocket (Snocket (..))
 import Cardano.KESAgent.KES.Bundle (Bundle (..), TaggedBundle (..), Timestamp (..))
 import Cardano.KESAgent.KES.Crypto (Crypto (..))
 import Cardano.KESAgent.KES.Evolution (
-  getCurrentKESPeriodWith,
+  getCurrentKESPeriodAt,
   updateKESTo,
  )
 import Cardano.KESAgent.KES.OCert (
@@ -68,10 +68,11 @@ import Cardano.KESAgent.Util.RefCounting (
 -- evolve it.
 checkEvolution :: AgentContext m c => Agent c m fd addr -> m ()
 checkEvolution agent = do
-  p' <-
-    getCurrentKESPeriodWith
-      (agentGetCurrentTime $ agentOptions agent)
-      (agentEvolutionConfig $ agentOptions agent)
+  now <- agentGetCurrentTime $ agentOptions agent
+  let p' =
+        getCurrentKESPeriodAt
+          now
+          (agentEvolutionConfig $ agentOptions agent)
   agentTrace agent $ AgentCheckEvolution p'
   alterBundle agent "checkEvolution" $ \bundleMay -> do
     case bundleMay of

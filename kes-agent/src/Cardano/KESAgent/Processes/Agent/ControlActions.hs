@@ -47,7 +47,7 @@ import Cardano.KESAgent.KES.Bundle (
  )
 import Cardano.KESAgent.KES.Crypto (Crypto (..))
 import Cardano.KESAgent.KES.Evolution (
-  getCurrentKESPeriodWith,
+  getCurrentKESPeriodAt,
   getKESPeriodTimes,
  )
 import Cardano.KESAgent.KES.OCert (OCert (..))
@@ -205,10 +205,10 @@ getInfo agent = do
         return $ Just (KeyInfo vk)
 
   now <- agentGetCurrentTime (agentOptions agent)
-  kesPeriod <-
-    getCurrentKESPeriodWith
-      (agentGetCurrentTime $ agentOptions agent)
-      (agentEvolutionConfig $ agentOptions agent)
+  let kesPeriod =
+        getCurrentKESPeriodAt
+          now
+          (agentEvolutionConfig $ agentOptions agent)
   let (kesPeriodStart, kesPeriodEnd) =
         getKESPeriodTimes
           (agentEvolutionConfig $ agentOptions agent)

@@ -1,4 +1,4 @@
-cabal-version: 2.4
+cabal-version: 3.0
 name: kes-agent
 version: 0.1.0.0
 
@@ -38,10 +38,6 @@ library
     import: base-dependencies
     exposed-modules:
                    Cardano.KESAgent.Priority
-                   Cardano.KESAgent.KES.Evolution
-                   Cardano.KESAgent.KES.Crypto
-                   Cardano.KESAgent.KES.OCert
-                   Cardano.KESAgent.KES.Bundle
                    Cardano.KESAgent.Processes.Agent
                    Cardano.KESAgent.Processes.Agent.Type
                    Cardano.KESAgent.Processes.Agent.Context
@@ -87,13 +83,8 @@ library
                    Cardano.KESAgent.Protocols.Control.V3.Peers
                    Cardano.KESAgent.Protocols.Control.V3.Protocol
 
-                   Cardano.KESAgent.Protocols.VersionedProtocol
                    Cardano.KESAgent.Protocols.RecvResult
-                   Cardano.KESAgent.Protocols.StandardCrypto
                    Cardano.KESAgent.Util.Formatting
-                   Cardano.KESAgent.Util.HexBS
-                   Cardano.KESAgent.Util.Pretty
-                   Cardano.KESAgent.Util.RefCounting
                    Cardano.KESAgent.Util.RetrySocket
                    Cardano.KESAgent.Util.PlatformPoison
                    Cardano.KESAgent.Util.ColoredOutput
@@ -125,6 +116,7 @@ library
                  , formatting
                  , ghc-prim
                  , io-classes >=1.8.0.0
+                 , kes-agent-crypto
                  , mtl
                  , network
                  , network-mux
@@ -138,13 +130,14 @@ library
                  , text
                  , template-haskell >=2.18.0.0
                  , time >=1.10
-                 , typed-protocols ^>=1.0
+                 , typed-protocols ^>=1.0 || ^>=1.1
                  -- , typed-protocols-doc
     hs-source-dirs: src
     default-language: Haskell2010
     if os(windows)
     else
         build-depends: hsyslog
+
 
 executable kes-agent
     import: project-config
@@ -153,6 +146,7 @@ executable kes-agent
     hs-source-dirs: cli
     main-is: AgentMain.hs
     build-depends: kes-agent
+                 , kes-agent-crypto
                  , async
                  , bytestring
                  , cardano-crypto-class
@@ -183,6 +177,7 @@ executable kes-service-client-demo
     hs-source-dirs: cli
     main-is: ServiceDemoMain.hs
     build-depends: kes-agent
+                 , kes-agent-crypto
                  , bytestring
                  , cardano-crypto-class
                  , contra-tracer
@@ -205,6 +200,7 @@ executable kes-agent-control
     hs-source-dirs: cli
     main-is: ControlMain.hs
     build-depends: kes-agent
+                 , kes-agent-crypto
                  , aeson >=2.0
                  , bytestring
                  , cardano-crypto-class
@@ -240,6 +236,7 @@ test-suite kes-agent-tests
                       , kes-agent:kes-agent-control
                       , kes-agent:kes-service-client-demo
     build-depends: kes-agent
+                 , kes-agent-crypto
                  , aeson >=2.0
                  , async
                  , bytestring

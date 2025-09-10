@@ -1,17 +1,30 @@
+{-# LANGUAGE TypeApplications #-}
+
 module Cardano.KESAgent.Util.GetVersion
 where
 
+import Control.Exception (throwIO, try)
 import Data.List (intercalate, isPrefixOf)
 import Data.Maybe
 import Data.Version
 import Paths_kes_agent (version)
 import System.Exit
+import System.IO.Error (isDoesNotExistError)
 import System.Process
 
 checkGit :: IO Bool
 checkGit = do
-  (exitCode, _, _) <- readProcessWithExitCode "git" ["status"] ""
-  return (exitCode == ExitSuccess)
+  r <- try $ readProcessWithExitCode "git" ["status"] ""
+  case r of
+    Right (exitCode, _, _) ->
+      return (exitCode == ExitSuccess)
+    Left e
+      | isDoesNotExistError e ->
+          do
+            print e
+            return False
+      | otherwise ->
+          throwIO e
 
 git :: [String] -> IO String
 git args = readProcess "git" args ""
@@ -23,6 +36,9 @@ emptyToNothing :: [a] -> Maybe [a]
 emptyToNothing [] = Nothing
 emptyToNothing xs = Just xs
 
+-- TODO: we should use `cardano-git-revision` and only as a dependency of the
+-- binary, not the library.  Furthermore consider using the same approach as
+-- `nix/set-git-rev.nix` in `cardano-node` repo.
 getProgramVersion :: IO String
 getProgramVersion = do
   let baseVersion = showVersion version
@@ -47,10 +63,19 @@ getProgramVersion = do
               , emptyToNothing gitCommit
               ]
       else do
-        timestamp <- getTimestamp
-        return
-          [ Just baseVersion
-          , Just "dev"
-          , Just timestamp
-          ]
+        r <- try @IOError getTimestamp
+        case r of
+          Right timestamp ->
+            return
+              [ Just baseVersion
+              , Just "dev"
+              , Just timestamp
+              ]
+          Left e -> do
+            print e
+            return
+              [ Just baseVersion
+              , Just "dev"
+              ]
+
   return . intercalate "-" . catMaybes $ components

@@ -40,6 +40,8 @@ import GHC.Generics (Generic)
 import NoThunks.Class (NoThunks (..))
 import Quiet (Quiet (..))
 
+-- | KESPeriod begins at the start of the chain, unlike `Period` in KES API,
+-- which starts at some specific KESPeriod (see `ocertKESPeriod`).
 newtype KESPeriod = KESPeriod {unKESPeriod :: Word}
   deriving (Eq, Generic, Ord, Typeable)
   deriving newtype (NoThunks, FromCBOR, ToCBOR)
