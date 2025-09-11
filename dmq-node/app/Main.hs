@@ -10,7 +10,6 @@ module Main where
 
 import Control.Exception (throwIO)
 import Control.Monad (void, when)
-import Control.Monad.Class.MonadAsync
 import Control.Tracer (Tracer (..), nullTracer, traceWith)
 
 import Data.Act
@@ -28,13 +27,15 @@ import System.Random (newStdGen, split)
 import Cardano.Git.Rev (gitRev)
 import Cardano.KESAgent.KES.Evolution qualified as KES
 import Cardano.KESAgent.Protocols.StandardCrypto (StandardCrypto)
+import Cardano.Ledger.Keys (VKey (..))
+import Cardano.Ledger.Hashes (hashKey)
 
 import DMQ.Configuration
 import DMQ.Configuration.CLIOptions (parseCLIOptions)
 import DMQ.Configuration.Topology (readTopologyFileOrError)
 import DMQ.Diffusion.Applications (diffusionApplications)
 import DMQ.Diffusion.Arguments
-import DMQ.Diffusion.NodeKernel (mempool, withNodeKernel)
+import DMQ.Diffusion.NodeKernel
 import DMQ.Handlers.TopLevel (toplevelExceptionHandler)
 import DMQ.NodeToClient qualified as NtC
 import DMQ.NodeToNode (NodeToNodeVersion, dmqCodecs, dmqLimitsAndTimeouts,
@@ -45,9 +46,11 @@ import DMQ.Tracer
 
 import DMQ.Diffusion.PeerSelection (policy)
 import DMQ.NodeToClient.LocalStateQueryClient
+import DMQ.Protocol.SigSubmission.Validate
 import Ouroboros.Network.Diffusion qualified as Diffusion
 import Ouroboros.Network.PeerSelection.PeerSharing.Codec (decodeRemoteAddress,
            encodeRemoteAddress)
+import Ouroboros.Network.SizeInBytes
 import Ouroboros.Network.Snocket
 import Ouroboros.Network.TxSubmission.Mempool.Simple qualified as Mempool
 
@@ -118,56 +121,66 @@ runDMQ commandLineConfig = do
     let (psRng, policyRng) = split stdGen
 
     Diffusion.withIOManager \iocp -> do
-      let localSnocket' = localSnocket iocp
+      let localSnocket'      = localSnocket iocp
+          mkStakePoolMonitor = connectToCardanoNode tracer localSnocket' snocketPath
 
       withNodeKernel @StandardCrypto
                      tracer
                      dmqConfig
                      evolutionConfig
-                     psRng $ \nodeKernel -> do
+                     psRng
+                     mkStakePoolMonitor $ \nodeKernel -> do
         dmqDiffusionConfiguration <- mkDiffusionConfiguration dmqConfig nt
 
-        let stakePoolMonitor = connectToCardanoNode tracer localSnocket' snocketPath nodeKernel
-
-        withAsync stakePoolMonitor \aid -> do
-          link aid
-          let dmqNtNApps =
-                ntnApps tracer
-                        dmqConfig
-                        nodeKernel
-                        (dmqCodecs
+        let sigSize :: Sig StandardCrypto -> SizeInBytes
+            sigSize _ = 0 -- TODO
+            mempoolReader = Mempool.getReader sigId sigSize (mempool nodeKernel)
+            dmqNtNApps =
+              let ntnMempoolWriter = Mempool.writerAdapter $
+                    Mempool.getWriter sigId
+                                      (poolValidationCtx $ stakePools nodeKernel)
+                                      (validateSig FailDefault (hashKey . VKey))
+                                      SigDuplicate
+                                      (mempool nodeKernel)
+               in ntnApps tracer
+                          dmqConfig
+                          mempoolReader
+                          ntnMempoolWriter
+                          sigSize
+                          nodeKernel
+                          (dmqCodecs
                                    (encodeRemoteAddress (maxBound @NodeToNodeVersion))
                                    (decodeRemoteAddress (maxBound @NodeToNodeVersion)))
-                        dmqLimitsAndTimeouts
-                        defaultSigDecisionPolicy
-              dmqNtCApps =
-                let sigSize _ = 0 -- TODO
-                    maxMsgs = 1000 -- TODO: make this negotiated in the handshake?
-                    mempoolReader = Mempool.getReader sigId sigSize (mempool nodeKernel)
-                    mempoolWriter = Mempool.getWriter sigId (pure ())
-                                                            (\_ _ -> Right () :: Either Void ())
-                                                            (\_ _ -> pure True)
-                                                            (mempool nodeKernel)
-                 in NtC.ntcApps tracer dmqConfig
-                                mempoolReader mempoolWriter maxMsgs
-                                (NtC.dmqCodecs encodeReject decodeReject)
-              dmqDiffusionArguments =
-                diffusionArguments (if handshakeTracer
-                                      then WithEventType "Handshake" >$< tracer
-                                      else nullTracer)
-                                   (if localHandshakeTracer
-                                      then WithEventType "Handshake" >$< tracer
-                                      else nullTracer)
-              dmqDiffusionApplications =
-                diffusionApplications nodeKernel
-                                      dmqConfig
-                                      dmqDiffusionConfiguration
-                                      dmqLimitsAndTimeouts
-                                      dmqNtNApps
-                                      dmqNtCApps
-                                      (policy policyRng)
+                          dmqLimitsAndTimeouts
+                          defaultSigDecisionPolicy
+            dmqNtCApps =
+              let maxMsgs = 1000 -- TODO: make this negotiated in the handshake?
+                  ntcMempoolWriter =
+                    Mempool.getWriter sigId
+                                      (poolValidationCtx $ stakePools nodeKernel)
+                                      (validateSig FailSoft (hashKey . VKey))
+                                      SigDuplicate
+                                      (mempool nodeKernel)
+               in NtC.ntcApps tracer dmqConfig
+                              mempoolReader ntcMempoolWriter maxMsgs
+                              (NtC.dmqCodecs encodeReject decodeReject)
+            dmqDiffusionArguments =
+              diffusionArguments (if handshakeTracer
+                                    then WithEventType "Handshake" >$< tracer
+                                    else nullTracer)
+                                 (if localHandshakeTracer
+                                    then WithEventType "Handshake" >$< tracer
+                                    else nullTracer)
+            dmqDiffusionApplications =
+              diffusionApplications nodeKernel
+                                    dmqConfig
+                                    dmqDiffusionConfiguration
+                                    dmqLimitsAndTimeouts
+                                    dmqNtNApps
+                                    dmqNtCApps
+                                    (policy policyRng)
 
-          Diffusion.run dmqDiffusionArguments
-                        (dmqDiffusionTracers dmqConfig tracer)
-                        dmqDiffusionConfiguration
-                        dmqDiffusionApplications
+        Diffusion.run dmqDiffusionArguments
+                      (dmqDiffusionTracers dmqConfig tracer)
+                      dmqDiffusionConfiguration
+                      dmqDiffusionApplications
