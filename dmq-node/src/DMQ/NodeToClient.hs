@@ -43,6 +43,7 @@ import DMQ.Protocol.LocalMsgSubmission.Codec
 import DMQ.Protocol.LocalMsgSubmission.Server
 import DMQ.Protocol.LocalMsgSubmission.Type
 import DMQ.Protocol.SigSubmission.Type (Sig)
+import DMQ.Protocol.SigSubmission.Validate
 
 import Ouroboros.Network.Context
 import Ouroboros.Network.Driver.Simple
@@ -52,9 +53,8 @@ import Ouroboros.Network.Mux
 import Ouroboros.Network.Protocol.Handshake (Handshake, HandshakeArguments (..))
 import Ouroboros.Network.Protocol.Handshake.Codec (cborTermVersionDataCodec,
            codecHandshake, noTimeLimitsHandshake)
-import Ouroboros.Network.TxSubmission.Inbound.V2.Types
-           (TxSubmissionMempoolWriter)
 import Ouroboros.Network.TxSubmission.Mempool.Reader
+import Ouroboros.Network.TxSubmission.Mempool.Simple
 import Ouroboros.Network.Util.ShowProxy
 
 
@@ -95,8 +95,8 @@ data Codecs m sig =
 dmqCodecs :: ( MonadST m
              , Crypto crypto
              )
-          => (SigMempoolFail -> CBOR.Encoding)
-          -> (forall s. CBOR.Decoder s SigMempoolFail)
+          => (MempoolAddFail (Sig crypto) -> CBOR.Encoding)
+          -> (forall s. CBOR.Decoder s (MempoolAddFail (Sig crypto)))
           -> Codecs m (Sig crypto)
 dmqCodecs encodeReject' decodeReject' =
   Codecs {
@@ -127,9 +127,9 @@ data Apps ntcAddr m a =
 -- | Construct applications for the node-to-client protocols
 --
 ntcApps
-  :: (MonadThrow m, MonadThread m, MonadSTM m, ShowProxy SigMempoolFail, ShowProxy sig)
+  :: (MonadThrow m, MonadThread m, MonadSTM m, ShowProxy (MempoolAddFail sig), ShowProxy sig)
   => TxSubmissionMempoolReader msgid sig idx m
-  -> TxSubmissionMempoolWriter msgid sig idx m
+  -> MempoolWriter msgid sig failure idx m
   -> Word16
   -> Codecs m sig
   -> Apps ntcAddr m ()

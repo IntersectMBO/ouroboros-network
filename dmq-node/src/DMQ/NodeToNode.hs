@@ -90,7 +90,7 @@ import Ouroboros.Network.PeerSharing (bracketPeerSharingClient,
            peerSharingClient, peerSharingServer)
 import Ouroboros.Network.Snocket (RemoteAddress)
 import Ouroboros.Network.TxSubmission.Inbound.V2 as SigSubmission
-import Ouroboros.Network.TxSubmission.Mempool.Simple qualified as Mempool
+import Ouroboros.Network.TxSubmission.Mempool.Reader
 import Ouroboros.Network.TxSubmission.Outbound
 
 import Ouroboros.Network.OrphanInstances ()
@@ -150,12 +150,12 @@ data Apps addr m a b =
   }
 
 ntnApps
-  :: forall crypto m addr .
+  :: forall crypto m addr idx.
     ( Crypto crypto
-    , DSIGN.ContextDSIGN (DSIGN crypto) ~ ()
-    , DSIGN.Signable (DSIGN crypto) (OCertSignable crypto)
-    , KES.ContextKES (KES crypto) ~ ()
-    , KES.Signable (KES crypto) BS.ByteString
+    -- , DSIGN.ContextDSIGN (DSIGN crypto) ~ ()
+    -- , DSIGN.Signable (DSIGN crypto) (OCertSignable crypto)
+    -- , KES.ContextKES (KES crypto) ~ ()
+    -- , KES.Signable (KES crypto) BS.ByteString
     , Typeable crypto
     , Alternative (STM m)
     , MonadAsync m
@@ -166,12 +166,16 @@ ntnApps
     , MonadThrow (STM m)
     , MonadTimer m
     , Ord addr
+    , Ord idx
     , Show addr
     , Hashable addr
     , Aeson.ToJSON addr
     )
  => (forall ev. Aeson.ToJSON ev => Tracer m (WithEventType ev))
  -> Configuration
+ -> TxSubmissionMempoolReader SigId (Sig crypto) idx m
+ -> TxSubmissionMempoolWriter SigId (Sig crypto) idx m
+ -> (Sig crypto -> SizeInBytes)
  -> NodeKernel crypto addr m
  -> Codecs crypto addr m
  -> LimitsAndTimeouts crypto addr
@@ -187,11 +191,13 @@ ntnApps
     , dmqcPeerSharingClientTracer   = I peerSharingClientTracer
     , dmqcPeerSharingServerTracer   = I peerSharingServerTracer
     }
+    mempoolReader
+    mempoolWriter
+    sigSize
     NodeKernel {
       fetchClientRegistry
     , peerSharingRegistry
     , peerSharingAPI
-    , mempool
     , sigChannelVar
     , sigMempoolSem
     , sigSharedTxStateVar
@@ -220,20 +226,6 @@ ntnApps
     , aPeerSharingServer
     }
   where
-    sigSize :: Sig crypto -> SizeInBytes
-    sigSize _ = 0 -- TODO
-
-    mempoolReader = Mempool.getReader sigId sigSize mempool
-    -- TODO: invalid signatures are just omitted from the mempool. For DMQ
-    -- we need to validate signatures when we received them, and shutdown
-    -- connection if we receive one, rather than validate them in the
-    -- mempool.
-    mempoolWriter = Mempool.getWriter sigId
-                                      (pure ()) -- TODO not needed
-                                      (\_ -> validateSig)
-                                      (\_ -> True)
-                                      mempool
-
     aSigSubmissionClient
       :: NodeToNodeVersion
       -> ExpandedInitiatorContext addr m
