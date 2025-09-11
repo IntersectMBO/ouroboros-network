@@ -16,11 +16,12 @@ module DMQ.Protocol.LocalMsgSubmission.Client
 
 import DMQ.Protocol.LocalMsgSubmission.Type
 import Network.TypedProtocol.Peer.Client
+import Ouroboros.Network.TxSubmission.Mempool.Simple
 import Ouroboros.Network.Protocol.LocalTxSubmission.Client
 
 -- | Type aliases for the high level client API
 --
-type LocalMsgSubmissionClient sig = LocalTxSubmissionClient sig SigMempoolFail
+type LocalMsgSubmissionClient sig = LocalTxSubmissionClient sig (MempoolAddFail sig)
 type LocalMsgClientStIdle     = LocalTxClientStIdle
 
 
