@@ -314,7 +314,7 @@ library testlib
   visibility: public
   hs-source-dirs: testlib
   build-depends:
-    QuickCheck,
+    QuickCheck < 2.16,
     aeson,
     array,
     base >=4.14 && <4.22,

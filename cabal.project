@@ -18,7 +18,7 @@ index-state:
   , hackage.haskell.org 2025-08-05T15:28:56Z
 
   -- Bump this if you need newer packages from CHaP
-  , cardano-haskell-packages 2025-03-18T17:41:11Z
+  , cardano-haskell-packages 2025-09-10T20:31:08Z
 
 packages: ./cardano-ping
           ./monoidal-synchronisation
@@ -61,8 +61,8 @@ package acts
 source-repository-package
   type: git
   location: https://github.com/IntersectMBO/ouroboros-consensus
-  tag: 9433554b866a7135af5d4097082bf0481fa1a05d
-  --sha256: sha256-BNdV7fSgJoZR9Z5LafJKCbhAUwfAk2NTK68Yv/V0eBA=
+  tag: 6b71fb3f32e516613e1a05d402f52d60c2cb188d
+  --sha256:
   subdir:
     ouroboros-consensus-cardano
     ouroboros-consensus-diffusion
@@ -70,41 +70,23 @@ source-repository-package
     ouroboros-consensus-protocol
     ouroboros-consensus
 
-source-repository-package
-  type: git
-  location: https://github.com/IntersectMBO/cardano-ledger
-  tag: 20485948f78ab139d246695e540f9ec00963a16e
-  --sha256: sha256-SHnyp+GvNeR82UXoKeDEgsp1AUE2yF5dGL4HIZm0zK8=
-  subdir:
-    eras/allegra/impl
-    eras/alonzo/impl
-    eras/alonzo/test-suite
-    eras/babbage/impl
-    eras/babbage/test-suite
-    eras/byron/chain/executable-spec
-    eras/byron/crypto
-    eras/byron/ledger/executable-spec
-    eras/byron/ledger/impl
-    eras/conway/impl
-    eras/dijkstra
-    eras/mary/impl
-    eras/shelley/impl
-    eras/shelley-ma/test-suite
-    eras/shelley/test-suite
-    libs/cardano-data
-    libs/cardano-ledger-api
-    libs/cardano-ledger-binary
-    libs/cardano-ledger-core
-    libs/cardano-protocol-tpraos
-    libs/non-integral
-    libs/set-algebra
-    libs/small-steps
-    libs/vector-map
-
 -- kes-agent is not yet in CHaP, so we pull it from its GitHub repo
 source-repository-package
   type: git
-  location: https://github.com/input-output-hk/kes-agent
-  tag: ebf8c0e480adf7b3ccd68bc7dd5b57f781f369ea
-  --sha256: sha256-QIb6qgcwtO7aB9PUhZTHyKw50GV3ViXOakQvnR3HFIY=
-  subdir: kes-agent-crypto
+  location: https://github.com/coot/kes-agent
+  tag: 2d41b37a9d199b3f987453594182c579977ad69c
+  --sha256:
+  subdir:
+    kes-agent
+    kes-agent-crypto
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/typed-protocols
+  tag: 326733ac873588f366fa988701c87fc58bad87eb
+  --sha256:
+  subdir:
+    typed-protocols
+
+constraints:
+    QuickCheck < 2.16
