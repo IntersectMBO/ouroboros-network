@@ -186,14 +186,18 @@ splitAcknowledgedTxIds
     (txIdsToRequest, acknowledgedTxIds', unacknowledgedTxIds')
   where
     (acknowledgedTxIds', unacknowledgedTxIds')
-      = StrictSeq.spanl (\txid -> (txid `Map.member` bufferedTxs
-                         || txid `Set.member` unknownTxs
-                         || txid `Map.member` downloadedTxs)
-                         && txid `Set.notMember` requestedTxsInflight
+      = StrictSeq.spanl (\txid ->
+                            txid `Set.notMember` requestedTxsInflight
+                         && (
+                              txid `Map.member` downloadedTxs
+                           || txid `Set.member` unknownTxs
+                           || txid `Map.member` bufferedTxs
+                         )
                         )
                         unacknowledgedTxIds
-    numOfUnacked = StrictSeq.length unacknowledgedTxIds
-    numOfAcked   = StrictSeq.length acknowledgedTxIds'
+
+    numOfUnacked        = StrictSeq.length unacknowledgedTxIds
+    numOfAcked          = StrictSeq.length acknowledgedTxIds'
     unackedAndRequested = fromIntegral numOfUnacked + requestedTxIdsInflight
 
     txIdsToRequest =
