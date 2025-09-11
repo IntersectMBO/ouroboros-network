@@ -64,6 +64,7 @@ import DMQ.Diffusion.NodeKernel (NodeKernel (..))
 import DMQ.NodeToNode.Version
 import DMQ.Protocol.SigSubmission.Codec
 import DMQ.Protocol.SigSubmission.Type
+import DMQ.Protocol.SigSubmission.Validate
 import DMQ.Tracer
 
 import Ouroboros.Network.BlockFetch.ClientRegistry (bracketKeepAliveClient)
@@ -229,9 +230,9 @@ ntnApps
     -- connection if we receive one, rather than validate them in the
     -- mempool.
     mempoolWriter = Mempool.getWriter sigId
-                                      (pure ()) -- TODO not needed
-                                      (\_ -> validateSig)
-                                      (\_ -> True)
+                                      undefined --(pure ()) -- TODO not needed
+                                      (validateSig FailDefault)
+                                      undefined
                                       mempool
 
     aSigSubmissionClient
@@ -274,7 +275,7 @@ ntnApps
           sigDecisionPolicy
           sigSharedTxStateVar
           mempoolReader
-          mempoolWriter
+          undefined --mempoolWriter
           sigSize
           (remoteAddress connId)
           $ \(peerSigAPI :: PeerTxAPI m SigId (Sig crypto)) ->
@@ -290,7 +291,7 @@ ntnApps
               $ txSubmissionInboundV2
                   nullTracer -- TODO
                   _SIG_SUBMISSION_INIT_DELAY
-                  mempoolWriter
+                  undefined --mempoolWriter
                   peerSigAPI
 
 

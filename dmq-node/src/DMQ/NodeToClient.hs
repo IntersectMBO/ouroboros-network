@@ -48,6 +48,7 @@ import Ouroboros.Network.Context
 import Ouroboros.Network.Driver.Simple
 import Ouroboros.Network.Handshake.Acceptable (Acceptable (..))
 import Ouroboros.Network.Handshake.Queryable (Queryable (..))
+import Ouroboros.Network.TxSubmission.Mempool.Simple
 import Ouroboros.Network.Mux
 import Ouroboros.Network.Protocol.Handshake (Handshake, HandshakeArguments (..))
 import Ouroboros.Network.Protocol.Handshake.Codec (cborTermVersionDataCodec,
@@ -95,8 +96,8 @@ data Codecs m sig =
 dmqCodecs :: ( MonadST m
              , Crypto crypto
              )
-          => (SigMempoolFail -> CBOR.Encoding)
-          -> (forall s. CBOR.Decoder s SigMempoolFail)
+          => (MempoolAddFail (Sig crypto) -> CBOR.Encoding)
+          -> (forall s. CBOR.Decoder s (MempoolAddFail (Sig crypto)))
           -> Codecs m (Sig crypto)
 dmqCodecs encodeReject' decodeReject' =
   Codecs {
@@ -127,7 +128,7 @@ data Apps ntcAddr m a =
 -- | Construct applications for the node-to-client protocols
 --
 ntcApps
-  :: (MonadThrow m, MonadThread m, MonadSTM m, ShowProxy SigMempoolFail, ShowProxy sig)
+  :: (MonadThrow m, MonadThread m, MonadSTM m, ShowProxy (MempoolAddFail sig), ShowProxy sig)
   => TxSubmissionMempoolReader msgid sig idx m
   -> TxSubmissionMempoolWriter msgid sig idx m
   -> Word16

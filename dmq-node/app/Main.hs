@@ -31,6 +31,7 @@ import DMQ.Tracer
 
 import DMQ.Diffusion.PeerSelection (policy)
 import DMQ.NodeToClient.LocalStateQueryClient
+import DMQ.Protocol.SigSubmission.Validate
 import Ouroboros.Network.Diffusion qualified as Diffusion
 import Ouroboros.Network.PeerSelection.PeerSharing.Codec (decodeRemoteAddress,
            encodeRemoteAddress)
@@ -102,8 +103,14 @@ runDMQ commandLineConfig = do
                 let sigSize _ = 0 -- TODO
                     maxMsgs = 1000 -- TODO: make this negotiated in the handshake?
                     mempoolReader = Mempool.getReader sigId sigSize (mempool nodeKernel)
-                    mempoolWriter = Mempool.getWriter sigId (const ()) (\_ _ -> pure True) (mempool nodeKernel)
-                 in NtC.ntcApps mempoolReader mempoolWriter maxMsgs
+                    StakePools { poolValidationCtx } = stakePools nodeKernel
+                    mempoolWriter =
+                      Mempool.getWriter sigId
+                                        undefined
+                                        (validateSig FailSoft)
+                                        undefined
+                                        (mempool nodeKernel)
+                 in NtC.ntcApps mempoolReader undefined {-mempoolWriter-} maxMsgs
                                 (NtC.dmqCodecs encodeReject decodeReject)
               dmqDiffusionArguments =
                 diffusionArguments (if handshakeTracer
