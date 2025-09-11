@@ -285,6 +285,7 @@ belowTargetOther actions@PeerSelectionActions {
                    policyPickColdPeersToPromote
                  }
                  st@PeerSelectionState {
+                   localRootPeers,
                    knownPeers,
                    establishedPeers,
                    inProgressPromoteCold,
@@ -312,11 +313,16 @@ belowTargetOther actions@PeerSelectionActions {
       --
       let availableToPromote :: Set peeraddr
           availableToPromote = availableToConnect
+                                 Set.\\ followBackPeers
                                  Set.\\ EstablishedPeers.toSet establishedPeers
                                  Set.\\ inProgressPromoteCold
           numPeersToPromote  = targetNumberOfEstablishedPeers
                              - numEstablishedPeers
                              - numConnectInProgress
+          followBackPeers    = Map.keysSet
+            $ Map.filter (\(LocalRootConfig {followBack}) -> followBack)
+            $ LocalRootPeers.toMap localRootPeers
+
       selectedToPromote <- pickPeers memberExtraPeers st
                              policyPickColdPeersToPromote
                              availableToPromote
