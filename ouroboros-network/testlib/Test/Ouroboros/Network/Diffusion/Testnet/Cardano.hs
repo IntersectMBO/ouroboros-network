@@ -380,7 +380,7 @@ unit_cm_valid_transitions =
                   [ (HotValency {getHotValency = 1},
                      WarmValency {getWarmValency = 1},
                      Map.fromList [(RelayAccessAddress "0:71:0:1:0:1:0:1" 65_534,
-                                    LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode IsTrustable)])
+                                    LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode False IsTrustable)])
                    ]
                   (Script (LedgerPools [] :| []))
                   (PeerSelectionTargets
@@ -422,7 +422,7 @@ unit_cm_valid_transitions =
                   [ (HotValency {getHotValency = 1},
                      WarmValency {getWarmValency = 1},
                      Map.fromList [(RelayAccessAddress "0:79::1:0:0" 3,
-                                    LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode IsTrustable)])
+                                    LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode False IsTrustable)])
                    ]
                   (Script (LedgerPools [] :| []))
                   ( PeerSelectionTargets
@@ -628,7 +628,7 @@ unit_connection_manager_trace_coverage =
              naPeerSharing = PeerSharingDisabled,
              naLocalRootPeers =
                [ (1,1,Map.fromList [ (RelayAccessAddress (read "127.0.0.1") 1000,
-                                      LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)
+                                      LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode False IsNotTrustable)
                                    ])
                ],
              naLedgerPeers = Script (LedgerPools [] :| []),
@@ -752,7 +752,7 @@ unit_connection_manager_transitions_coverage =
              naPeerSharing = PeerSharingDisabled,
              naLocalRootPeers =
                [ (1,1,Map.fromList [ (RelayAccessAddress (read "127.0.0.1") 1000,
-                                      LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)
+                                      LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode False IsNotTrustable)
                                    ])
                ],
              naLedgerPeers = Script (LedgerPools [] :| []),
@@ -879,6 +879,7 @@ prop_txSubmission_allTransactions (ArbTxDecisionPolicy decisionPolicy)
   let localRootConfig = LocalRootConfig
                           DoNotAdvertisePeer
                           InitiatorAndResponderDiffusionMode
+                          False
                           IsNotTrustable
       diffScript =
         DiffusionScript
@@ -1318,8 +1319,8 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
               (Script (UseBootstrapPeers [RelayAccessDomain "bootstrap" 0] :| []))
               (TestAddress (IPAddr (read "0:7:0:7::") 65_533))
               PeerSharingDisabled
-              [ (1,1,Map.fromList [(RelayAccessDomain "test2" 65_535,LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)
-              , (RelayAccessAddress "0:6:0:3:0:6:0:5" 65_530,LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)])
+              [ (1,1,Map.fromList [(RelayAccessDomain "test2" 65_535,LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode False IsNotTrustable)
+              , (RelayAccessAddress "0:6:0:3:0:6:0:5" 65_530,LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode False IsNotTrustable)])
               ]
               (Script (LedgerPools [] :| []))
               (nullPeerSelectionTargets {
@@ -1337,11 +1338,11 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
               (Script (PraosFetchMode FetchModeDeadline :| []))
               []
           , [JoinNetwork 1.742_857_142_857
-            ,Reconfigure 6.333_333_333_33 [(1,1,Map.fromList [(RelayAccessDomain "test2" 65_535,LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)]),
-                                        (1,1,Map.fromList [(RelayAccessAddress "0:6:0:3:0:6:0:5" 65_530,LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)
+            ,Reconfigure 6.333_333_333_33 [(1,1,Map.fromList [(RelayAccessDomain "test2" 65_535,LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode False IsNotTrustable)]),
+                                        (1,1,Map.fromList [(RelayAccessAddress "0:6:0:3:0:6:0:5" 65_530,LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode False IsNotTrustable)
                                        ])]
-            ,Reconfigure 23.888_888_888_88 [(1,1,Map.empty),(1,1,Map.fromList [(RelayAccessAddress "0:6:0:3:0:6:0:5" 65_530,LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)])]
-            ,Reconfigure 4.870_967_741_935 [(1,1,Map.fromList [(RelayAccessDomain "test2" 65_535,LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)])]
+            ,Reconfigure 23.888_888_888_88 [(1,1,Map.empty),(1,1,Map.fromList [(RelayAccessAddress "0:6:0:3:0:6:0:5" 65_530,LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode False IsNotTrustable)])]
+            ,Reconfigure 4.870_967_741_935 [(1,1,Map.fromList [(RelayAccessDomain "test2" 65_535,LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode False IsNotTrustable)])]
             ]
           )
         , ( NodeArgs 1 InitiatorAndResponderDiffusionMode
@@ -1977,8 +1978,8 @@ unit_4191 = testWithIOSim prop_diffusion_dns_can_recover long_trace absInfo scri
             (Script (UseBootstrapPeers [RelayAccessDomain "bootstrap" 0] :| []))
             (TestAddress (IPAddr (read "0.0.1.236") 65_527))
             PeerSharingDisabled
-            [ (2,2,Map.fromList [ (RelayAccessDomain "test2" 15,LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)
-                                , (RelayAccessDomain "test3" 4,LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)])
+            [ (2,2,Map.fromList [ (RelayAccessDomain "test2" 15,LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode False IsNotTrustable)
+                                , (RelayAccessDomain "test3" 4,LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode False IsNotTrustable)])
             ]
             (Script (LedgerPools [] :| []))
             (PeerSelectionTargets
@@ -2028,7 +2029,7 @@ unit_4191 = testWithIOSim prop_diffusion_dns_can_recover long_trace absInfo scri
               , Reconfigure 0.415_384_615_384 [(1,1,Map.fromList [])
               , (1,1,Map.empty)]
               , Reconfigure 15.550_561_797_752 [(1,1,Map.empty)
-              , (1,1,Map.fromList [(RelayAccessDomain "test2" 15,LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)])]
+              , (1,1,Map.fromList [(RelayAccessDomain "test2" 15,LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode False IsNotTrustable)])]
               , Reconfigure 82.857_142_857_14 []
               ])
         ]
@@ -2093,7 +2094,7 @@ prop_connect_failure (AbsIOError ioerr) =
             naBootstrapPeers = Script (DontUseBootstrapPeers :| []),
             naAddr = TestAddress (IPAddr nodeIP nodePort),
             naPeerSharing = PeerSharingDisabled,
-            naLocalRootPeers = [(1,1,Map.fromList [(RelayAccessAddress relayIP relayPort,LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)])],
+            naLocalRootPeers = [(1,1,Map.fromList [(RelayAccessAddress relayIP relayPort,LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode False IsNotTrustable)])],
             naLedgerPeers = Script (LedgerPools [] :| []),
             naPeerTargets = (PeerSelectionTargets
               { targetNumberOfRootPeers = 1,
@@ -2221,7 +2222,7 @@ prop_accept_failure (AbsIOError ioerr) =
             naBootstrapPeers = Script (DontUseBootstrapPeers :| []),
             naAddr = TestAddress (IPAddr nodeIP nodePort),
             naPeerSharing = PeerSharingDisabled,
-            naLocalRootPeers = [(1,1,Map.fromList [(RelayAccessAddress relayIP relayPort,LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)])],
+            naLocalRootPeers = [(1,1,Map.fromList [(RelayAccessAddress relayIP relayPort,LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode False IsNotTrustable)])],
             naLedgerPeers = Script (LedgerPools [] :| []),
             naPeerTargets = (PeerSelectionTargets
               { targetNumberOfRootPeers = 1,
@@ -3238,21 +3239,21 @@ async_demotion_network_script =
           ]
         )
       , ( common { naAddr           = addr2,
-                   naLocalRootPeers = [(1,1, Map.fromList [(ra_addr1, LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)])] }
+                   naLocalRootPeers = [(1,1, Map.fromList [(ra_addr1, LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode False IsNotTrustable)])] }
         , [JoinNetwork 0, Kill 5, JoinNetwork 20]
         )
       , ( common { naAddr           = addr3,
-                   naLocalRootPeers = [(1,1, Map.fromList [(ra_addr1, LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)])] }
+                   naLocalRootPeers = [(1,1, Map.fromList [(ra_addr1, LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode False IsNotTrustable)])] }
         , [JoinNetwork 0]
         )
       ]
   where
     addr1    = TestAddress (IPAddr (read "10.0.0.1") 3000)
     ra_addr1 = RelayAccessAddress (read "10.0.0.1") 3000
-    localRoots1  = [(2,2, Map.fromList [(ra_addr2, LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)
-                                       ,(ra_addr3, LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)])]
-    localRoots1' = [(2,2, Map.fromList [(ra_addr2, LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)
-                                       ,(ra_addr3, LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)])]
+    localRoots1  = [(2,2, Map.fromList [(ra_addr2, LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode False IsNotTrustable)
+                                       ,(ra_addr3, LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode False IsNotTrustable)])]
+    localRoots1' = [(2,2, Map.fromList [(ra_addr2, LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode False IsNotTrustable)
+                                       ,(ra_addr3, LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode False IsNotTrustable)])]
 
     addr2    = TestAddress (IPAddr (read "10.0.0.2") 3000)
     ra_addr2 = RelayAccessAddress (read "10.0.0.2") 3000
@@ -3858,7 +3859,7 @@ prop_unit_4258 =
              (Script (UseBootstrapPeers [RelayAccessDomain "bootstrap" 0] :| []))
              (TestAddress (IPAddr (read "0.0.0.4") 9))
              PeerSharingDisabled
-             [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.8" 65_531,LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)])]
+             [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.8" 65_531,LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode False IsNotTrustable)])]
              (Script (LedgerPools [] :| []))
              (nullPeerSelectionTargets {
                  targetNumberOfRootPeers = 2,
@@ -3893,7 +3894,7 @@ prop_unit_4258 =
              (Script (UseBootstrapPeers [RelayAccessDomain "bootstrap" 0] :| []))
              (TestAddress (IPAddr (read "0.0.0.8") 65_531))
              PeerSharingDisabled
-             [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.4" 9,LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)])]
+             [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.4" 9,LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode False IsNotTrustable)])]
              (Script (LedgerPools [] :| []))
              (nullPeerSelectionTargets {
                  targetNumberOfRootPeers = 4,
@@ -3924,7 +3925,7 @@ prop_unit_4258 =
              (Script (PraosFetchMode FetchModeDeadline :| []))
              []
          , [ JoinNetwork 3.384_615_384_615,
-             Reconfigure 3.583_333_333_333 [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.4" 9,LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)])],
+             Reconfigure 3.583_333_333_333 [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.4" 9,LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode False IsNotTrustable)])],
              Kill 15.555_555_555_55,
              JoinNetwork 30.533_333_333_33,
              Kill 71.111_111_111_11
@@ -3965,8 +3966,8 @@ prop_unit_reconnect =
               (Script (DontUseBootstrapPeers :| []))
               (TestAddress (IPAddr (read "0.0.0.0") 0))
               PeerSharingDisabled
-              [ (2,2,Map.fromList [ (RelayAccessAddress "0.0.0.1" 0,LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)
-                                  , (RelayAccessAddress "0.0.0.2" 0,LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)
+              [ (2,2,Map.fromList [ (RelayAccessAddress "0.0.0.1" 0,LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode False IsNotTrustable)
+                                  , (RelayAccessAddress "0.0.0.2" 0,LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode False IsNotTrustable)
                                   ])
               ]
               (Script (LedgerPools [] :| []))
@@ -3996,7 +3997,7 @@ prop_unit_reconnect =
                (Script (DontUseBootstrapPeers :| []))
                (TestAddress (IPAddr (read "0.0.0.1") 0))
                PeerSharingDisabled
-               [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.0" 0,LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)])]
+               [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.0" 0,LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode False IsNotTrustable)])]
                (Script (LedgerPools [] :| []))
                (PeerSelectionTargets {
                      targetNumberOfRootPeers = 1,
@@ -4437,7 +4438,7 @@ unit_peer_sharing =
                (mainnetSimArgs 3 defaultTxDecisionPolicy)
                (singletonScript (mempty, ShortDelay))
                [ ( (defaultNodeArgs GenesisMode) { naAddr = ip_0,
-                                     naLocalRootPeers = [(1, 1, Map.fromList [(ra_1, LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)])],
+                                     naLocalRootPeers = [(1, 1, Map.fromList [(ra_1, LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode False IsNotTrustable)])],
                                      naPeerTargets = targets 1
                                    }
                  , [JoinNetwork 0]
@@ -4449,7 +4450,7 @@ unit_peer_sharing =
                  , [JoinNetwork 0]
                  )
                , ( (defaultNodeArgs GenesisMode) { naAddr = ip_2,
-                                     naLocalRootPeers = [(1, 1, Map.fromList [(ra_1, LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)])],
+                                     naLocalRootPeers = [(1, 1, Map.fromList [(ra_1, LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode False IsNotTrustable)])],
                                      naPeerTargets = targets 2
                                    }
                  , [JoinNetwork 0]
@@ -4960,7 +4961,7 @@ unit_local_root_diffusion_mode diffusionMode =
              naPeerSharing = PeerSharingDisabled,
              naLocalRootPeers =
                [ (1,1,Map.fromList [ (RelayAccessAddress (read "127.0.0.1") 1000,
-                                      LocalRootConfig DoNotAdvertisePeer diffusionMode IsNotTrustable)
+                                      LocalRootConfig DoNotAdvertisePeer diffusionMode False IsNotTrustable)
                                    ])
                ],
              naLedgerPeers = Script (LedgerPools [] :| []),

@@ -31,7 +31,7 @@ import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
-import Ouroboros.Network.PeerSelection.State.LocalRootPeers (WarmValency (..))
+import Ouroboros.Network.PeerSelection.State.LocalRootPeers (WarmValency (..), LocalRootConfig (LocalRootConfig, followBack))
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 import Ouroboros.Network.PeerSelection.Types (PeerStatus (..),
            PublicExtraPeersAPI (..))
@@ -74,6 +74,8 @@ belowTarget
   -- This might be useful if the user requires its diffusion layer to
   -- stop making progress during a sensitive/vulnerable situation and
   -- quarantine it and make sure it is only connected to trusted peers.
+  -> Map peeraddr PeerSharing
+  -- ^ Inbound peers that have negotiated a duplex connection
   -> PeerSelectionActions
       extraState
       extraFlags
@@ -91,9 +93,9 @@ belowTarget
       peeraddr
       peerconn
       m
-belowTarget enableAction =
+belowTarget enableAction inboundPeers =
      belowTargetBigLedgerPeers enableAction
-  <> belowTargetLocal
+  <> belowTargetLocal inboundPeers
   <> belowTargetOther
 
 
@@ -107,7 +109,9 @@ belowTargetLocal
      , Ord peeraddr
      , HasCallStack
      )
-  => PeerSelectionActions
+  => Map peeraddr PeerSharing
+  -- ^ Inbound peers that have negotiated a duplex connection
+  -> PeerSelectionActions
       extraState
       extraFlags
       extraPeers extraAPI extraCounters peeraddr peerconn m
@@ -119,7 +123,8 @@ belowTargetLocal
       peeraddr
       peerconn
       m
-belowTargetLocal actions@PeerSelectionActions {
+belowTargetLocal inboundPeers
+                 actions@PeerSelectionActions {
                    extraPeersAPI = PublicExtraPeersAPI {
                      memberExtraPeers,
                      extraPeersToSet
@@ -149,6 +154,7 @@ belowTargetLocal actions@PeerSelectionActions {
           [ (numMembersToPromote, membersAvailableToPromote)
           | let availableToPromote =
                   localAvailableToConnect
+                     Set.\\ unreachablePeers
                      Set.\\ localEstablishedPeers
                      Set.\\ localConnectInProgress
                      Set.\\ inProgressDemoteToCold
@@ -202,6 +208,14 @@ belowTargetLocal actions@PeerSelectionActions {
   | otherwise
   = GuardedSkip Nothing
   where
+    isUnreachablePeer addr (LocalRootConfig {followBack}) =
+      followBack && not (Map.member addr inboundPeers)
+
+    unreachablePeers =
+      Map.keysSet
+        $ Map.filterWithKey isUnreachablePeer
+        $ LocalRootPeers.toMap localRootPeers
+
     groupsBelowTarget =
       [ (warmValency, members, membersEstablished)
       | (_, warmValency, members) <- LocalRootPeers.toGroupSets localRootPeers
@@ -253,6 +267,7 @@ belowTargetOther actions@PeerSelectionActions {
                    policyPickColdPeersToPromote
                  }
                  st@PeerSelectionState {
+                   localRootPeers,
                    knownPeers,
                    establishedPeers,
                    inProgressPromoteCold,
@@ -268,7 +283,7 @@ belowTargetOther actions@PeerSelectionActions {
     -- not cold and our invariant is that they are always in the connect set.
     -- We can also subtract the in progress ones since they are also already
     -- in the connect set and we cannot pick them again.
-  , numAvailableToConnect - numEstablishedPeers - numConnectInProgress > 0
+  , numAvailableToConnect - numFollowBackPeers - numEstablishedPeers - numConnectInProgress > 0
   = Guarded Nothing $ do
       -- The availableToPromote here is non-empty due to the second guard.
       -- The known peers map restricted to the connect set is the same size as
@@ -280,11 +295,13 @@ belowTargetOther actions@PeerSelectionActions {
       --
       let availableToPromote :: Set peeraddr
           availableToPromote = availableToConnect
+                                 Set.\\ followBackPeers
                                  Set.\\ EstablishedPeers.toSet establishedPeers
                                  Set.\\ inProgressPromoteCold
           numPeersToPromote  = targetNumberOfEstablishedPeers
                              - numEstablishedPeers
                              - numConnectInProgress
+
       selectedToPromote <- pickPeers memberExtraPeers st
                              policyPickColdPeersToPromote
                              availableToPromote
@@ -310,6 +327,12 @@ belowTargetOther actions@PeerSelectionActions {
   | otherwise
   = GuardedSkip Nothing
   where
+    numFollowBackPeers = Set.size followBackPeers
+
+    followBackPeers    = Map.keysSet
+      $ Map.filter (\(LocalRootConfig {followBack}) -> followBack)
+      $ LocalRootPeers.toMap localRootPeers
+
     PeerSelectionView {
         viewKnownBigLedgerPeers     = (bigLedgerPeersSet, _),
 
