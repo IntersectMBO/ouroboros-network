@@ -1,11 +1,16 @@
+{-# LANGUAGE CPP             #-}
 {-# LANGUAGE LambdaCase      #-}
 {-# LANGUAGE NamedFieldPuns  #-}
+{-# LANGUAGE PackageImports  #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ViewPatterns    #-}
 
 module Test.Ouroboros.Network.InboundGovernor.Utils where
 
 import Test.QuickCheck
+#if !MIN_VERSION_QuickCheck(2,16,0)
+import "quickcheck-monoids" Test.QuickCheck.Monoids
+#endif
 
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.InboundGovernor (RemoteSt (..))

@@ -3,6 +3,7 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE NumericUnderscores  #-}
 {-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE PackageImports      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
@@ -109,6 +110,9 @@ import Test.Ouroboros.Network.Utils hiding (SmallDelay, debugTracer)
 
 
 import Test.QuickCheck
+#if !MIN_VERSION_QuickCheck(2,16,0)
+import "quickcheck-monoids" Test.QuickCheck.Monoids
+#endif
 import Test.Tasty
 import Test.Tasty.QuickCheck (testProperty)
 

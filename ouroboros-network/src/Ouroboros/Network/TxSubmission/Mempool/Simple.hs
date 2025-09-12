@@ -1,13 +1,20 @@
-{-# LANGUAGE DerivingStrategies  #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving  #-}
+{-# LANGUAGE BangPatterns             #-}
+{-# LANGUAGE DerivingStrategies       #-}
+{-# LANGUAGE DisambiguateRecordFields #-}
+{-# LANGUAGE FlexibleContexts         #-}
+{-# LANGUAGE GADTs                    #-}
+{-# LANGUAGE NamedFieldPuns           #-}
+{-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE StandaloneDeriving       #-}
+{-# LANGUAGE TypeFamilies             #-}
 
 -- | The module should be imported qualified.
 --
 module Ouroboros.Network.TxSubmission.Mempool.Simple
-  ( Mempool (..)
+  ( InvalidTxsError
+  , MempoolAddFail
+  , Mempool (..)
+  , MempoolSeq (..)
   , empty
   , new
   , read
@@ -18,45 +25,56 @@ module Ouroboros.Network.TxSubmission.Mempool.Simple
 import Prelude hiding (read, seq)
 
 import Control.Concurrent.Class.MonadSTM.Strict
-import Control.Monad (when)
 import Control.Monad.Class.MonadThrow
-
+import Control.Monad.Trans.Except
 import Data.Bifunctor (bimap)
-import Data.Either (partitionEithers)
+import Data.Either
 import Data.Foldable (toList)
 import Data.Foldable qualified as Foldable
-import Data.Function (on)
-import Data.List (find, nubBy)
-import Data.Maybe (isJust)
+import Data.List (find)
+import Data.Maybe (isJust, isNothing, fromJust)
 import Data.Sequence (Seq)
 import Data.Sequence qualified as Seq
+import Data.Set (Set)
 import Data.Set qualified as Set
-import Data.Typeable (Typeable)
 
+import Ouroboros.Network.Protocol.LocalTxSubmission.Type (SubmitResult (..))
 import Ouroboros.Network.SizeInBytes
-import Ouroboros.Network.TxSubmission.Inbound.V2.Types
 import Ouroboros.Network.TxSubmission.Mempool.Reader
 
 
+data MempoolSeq txid tx = MempoolSeq {
+    mempoolSet :: !(Set txid),
+    -- ^ cached set of `txid`s in the mempool
+    mempoolSeq :: !(Seq tx)
+    -- ^ sequence of all `tx`s
+  }
+
 -- | A simple in-memory mempool implementation.
 --
-newtype Mempool m tx = Mempool (StrictTVar m (Seq tx))
+newtype Mempool m txid tx = Mempool (StrictTVar m (MempoolSeq txid tx))
 
 
-empty :: MonadSTM m => m (Mempool m tx)
-empty = Mempool <$> newTVarIO Seq.empty
+empty :: MonadSTM m => m (Mempool m txid tx)
+empty = Mempool <$> newTVarIO (MempoolSeq Set.empty Seq.empty)
 
 
-new :: MonadSTM m
-    => [tx]
-    -> m (Mempool m tx)
-new = fmap Mempool
-    . newTVarIO
-    . Seq.fromList
+new :: ( MonadSTM m
+       , Ord txid
+       )
+    => (tx -> txid)
+    -> [tx]
+    -> m (Mempool m txid tx)
+new getTxId txs =
+    fmap Mempool
+  . newTVarIO
+  $ MempoolSeq { mempoolSet = Set.fromList (getTxId <$> txs),
+                 mempoolSeq = Seq.fromList txs
+               }
 
 
-read :: MonadSTM m => Mempool m tx -> m [tx]
-read (Mempool mempool) = toList <$> readTVarIO mempool
+read :: MonadSTM m => Mempool m txid tx -> m [tx]
+read (Mempool mempool) = toList . mempoolSeq <$> readTVarIO mempool
 
 
 getReader :: forall tx txid m.
@@ -65,7 +83,7 @@ getReader :: forall tx txid m.
              )
           => (tx -> txid)
           -> (tx -> SizeInBytes)
-          -> Mempool m tx
+          -> Mempool m txid tx
           -> TxSubmissionMempoolReader txid tx Int m
 getReader getTxId getTxSize (Mempool mempool) =
     -- Using `0`-based index.  `mempoolZeroIdx = -1` so that
@@ -75,7 +93,7 @@ getReader getTxId getTxSize (Mempool mempool) =
                               }
   where
     mempoolGetSnapshot :: STM m (MempoolSnapshot txid tx Int)
-    mempoolGetSnapshot = getSnapshot <$> readTVar mempool
+    mempoolGetSnapshot = getSnapshot . mempoolSeq <$> readTVar mempool
 
     getSnapshot :: Seq tx
                 -> MempoolSnapshot txid tx Int
@@ -90,67 +108,82 @@ getReader getTxId getTxSize (Mempool mempool) =
     f :: Int -> tx -> (txid, Int, SizeInBytes)
     f idx tx = (getTxId tx, idx, getTxSize tx)
 
+-- | type of mempool validation errors which are thrown as exceptions
+--
+data family InvalidTxsError failure
 
-data InvalidTxsError where
-    InvalidTxsError :: forall txid failure.
-                       ( Typeable txid
-                       , Typeable failure
-                       , Show txid
-                       , Show failure
-                       )
-                    => [(txid, failure)]
-                    -> InvalidTxsError
+-- | type of mempool validation errors which are non-fatal
+--
+data family MempoolAddFail tx
 
-deriving instance Show InvalidTxsError
-instance Exception InvalidTxsError
+-- | A mempool writer which generalizes the tx submission mempool writer
+-- TODO: We could replace TxSubmissionMempoolWriter with this at some point
+--
+data MempoolWriter txid tx failure idx m =
+     MempoolWriter {
+
+       -- | Compute the transaction id from a transaction.
+       --
+       -- This is used in the protocol handler to verify a full transaction
+       -- matches a previously given transaction id.
+       --
+       txId          :: tx -> txid,
+
+       -- | Supply a batch of transactions to the mempool. They are either
+       -- accepted or rejected individually, but in the order supplied.
+       --
+       -- The 'txid's of all transactions that were added successfully are
+       -- returned.
+       mempoolAddTxs :: [tx] -> m [SubmitResult (MempoolAddFail tx)]
+    }
 
 
--- | A simple mempool writer.
+-- | A mempool writer with validation harness
+-- PRECONDITION: no duplicates given to mempoolAddTxs
 --
 getWriter :: forall tx txid ctx failure m.
              ( MonadSTM m
+             , Exception (InvalidTxsError failure)
              , MonadThrow m
              , Ord txid
-             , Typeable txid
-             , Typeable failure
-             , Show txid
-             , Show failure
              )
           => (tx -> txid)
           -- ^ get txid of a tx
           -> m ctx
-          -- ^ monadic validation ctx
-          -> (ctx -> tx -> Either failure ())
-          -- ^ validate a tx, any failing `tx` throws an exception.
-          -> (failure -> Bool)
-          -- ^ return `True` when a failure should throw an exception
-          -> Mempool m tx
-          -> TxSubmissionMempoolWriter txid tx Int m
-getWriter getTxId getValidationCtx validateTx failureFilterFn (Mempool mempool) =
-    TxSubmissionMempoolWriter {
-        txId = getTxId,
+          -- ^ acquire validation context
+          -> ([tx] -> ctx -> Except (InvalidTxsError failure) [(Either (MempoolAddFail tx) ())])
+          -- ^ validation function which should evaluate its result to normal form
+          -- esp. if it is 'expensive'
+          -> Maybe (MempoolAddFail tx)
+          -- ^ replace duplicates if Just
+          -> Mempool m txid tx
+          -> MempoolWriter txid tx failure Int m
+getWriter getTxId acquireCtx validateTxs mDuplicate (Mempool mempool) =
+  MempoolWriter {
+    txId = getTxId,
 
-        mempoolAddTxs = \txs -> do
-          ctx <- getValidationCtx
-          (invalidTxIds, validTxs) <- atomically $ do
-            mempoolTxs <- readTVar mempool
-            let -- TODO: set of current ids should be constructed incrementally,
-                -- e.g. it should be part of mempoolTxs
-                currentIds = Set.fromList (map getTxId (toList mempoolTxs))
-                (invalidTxIds, validTxs) =
-                    bimap (filter (failureFilterFn . snd))
-                          (nubBy (on (==) getTxId))
-                  . partitionEithers
-                  . map (\tx -> case validateTx ctx tx of
-                                 Left  e -> Left (getTxId tx, e)
-                                 Right _ -> Right tx
-                        )
-                  . filter (\tx -> getTxId tx `Set.notMember` currentIds)
-                  $ txs
-                mempoolTxs' = Foldable.foldl' (Seq.|>) mempoolTxs validTxs
-            writeTVar mempool mempoolTxs'
-            return (invalidTxIds, map getTxId validTxs)
-          when (not (null invalidTxIds)) $
-            throwIO (InvalidTxsError invalidTxIds)
-          return validTxs
-      }
+    mempoolAddTxs = \txs -> do
+      ctx  <- acquireCtx
+      vTxs <- case runExcept (validateTxs txs ctx) of
+        Left  e -> throwIO e
+        Right r -> pure $ zipWith3 ((,,) . getTxId) txs txs r
+
+      atomically $ do
+        MempoolSeq { mempoolSet, mempoolSeq } <- readTVar mempool
+        let result =
+              [if duplicate then
+                 Left . SubmitFail . fromJust $ mDuplicate
+               else
+                 bimap SubmitFail (const (txid, tx)) eErrTx
+              | (txid, tx, eErrTx) <- vTxs
+              , let duplicate = txid `Set.member` mempoolSet
+              , not (duplicate && isNothing mDuplicate)
+              ]
+            (validIds, validTxs) = unzip . rights $ result
+            mempoolTxs' = MempoolSeq {
+               mempoolSet = Set.union mempoolSet (Set.fromList validIds),
+               mempoolSeq = Foldable.foldl' (Seq.|>) mempoolSeq validTxs
+            }
+        writeTVar mempool mempoolTxs'
+        return $ fromLeft SubmitSuccess <$> result
+  }

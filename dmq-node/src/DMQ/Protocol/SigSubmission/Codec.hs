@@ -1,7 +1,6 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
-{-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -33,8 +32,9 @@ import Codec.CBOR.Read qualified as CBOR
 import Network.TypedProtocol.Codec.CBOR
 
 import Cardano.Binary (FromCBOR (..), ToCBOR (..))
-import Cardano.Crypto.DSIGN.Class (decodeSignedDSIGN, encodeSignedDSIGN)
-import Cardano.Crypto.KES.Class (decodeVerKeyKES, encodeVerKeyKES)
+import Cardano.Crypto.DSIGN.Class (decodeSignedDSIGN, decodeVerKeyDSIGN,
+           encodeSignedDSIGN)
+import Cardano.Crypto.KES.Class (decodeSigKES, decodeVerKeyKES, encodeVerKeyKES)
 import Cardano.KESAgent.KES.Crypto (Crypto (..))
 import Cardano.KESAgent.KES.OCert (OCert (..))
 
@@ -154,14 +154,14 @@ decodeSig = do
   when (a /= 7) $ fail (printf "codecSigSubmission: unexpected number of parameters %d" a)
   sigRawId <- decodeSigId
   sigRawBody <- SigBody <$> CBOR.decodeBytes
-  sigRawKESPeriod <- CBOR.decodeWord
+  sigRawKESPeriod <- KESPeriod <$> CBOR.decodeWord
   sigRawExpiresAt <- realToFrac <$> CBOR.decodeWord32
   -- end of signed data
   endOffset <- CBOR.peekByteOffset
 
-  sigRawKESSignature <- SigKESSignature <$> CBOR.decodeBytes
+  sigRawKESSignature <- SigKESSignature <$> decodeSigKES
   sigRawOpCertificate <- decodeSigOpCertificate
-  sigRawColdKey <- SigColdKey <$> CBOR.decodeBytes
+  sigRawColdKey <- SigColdKey <$> decodeVerKeyDSIGN
   return $ \bytes -- ^ full bytes of the message, not just the sig part
          -> SigRawWithSignedBytes {
       sigRawSignedBytes = Utils.bytesBetweenOffsets startOffset endOffset bytes,
