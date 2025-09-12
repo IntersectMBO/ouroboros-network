@@ -143,7 +143,7 @@ belowTargetLocal inboundPeers
                  }
 
     -- Are there any groups of local peers that are below target?
-  | not (null groupsBelowTarget')
+  | not (null groupsBelowTarget)
     -- We need this detailed check because it is not enough to check we are
     -- below an aggregate target. We can be above target for some groups
     -- and below for others. We need to take into account peers which are being
@@ -153,16 +153,17 @@ belowTargetLocal inboundPeers
   , let groupsAvailableToPromote =
           [ (numMembersToPromote, membersAvailableToPromote)
           | let availableToPromote =
-                  localAvailableToConnect'
-                     Set.\\ localEstablishedPeers'
-                     Set.\\ localConnectInProgress'
+                  localAvailableToConnect
+                     Set.\\ unreachablePeers
+                     Set.\\ localEstablishedPeers
+                     Set.\\ localConnectInProgress
                      Set.\\ inProgressDemoteToCold
           , not (Set.null availableToPromote)
-          , (WarmValency warmTarget, members, membersEstablished) <- groupsBelowTarget'
+          , (WarmValency warmTarget, members, membersEstablished) <- groupsBelowTarget
           , let membersAvailableToPromote = Set.intersection members availableToPromote
                 numMembersToPromote       = warmTarget
                                           - Set.size membersEstablished
-                                          - numLocalConnectInProgress'
+                                          - numLocalConnectInProgress
           , not (Set.null membersAvailableToPromote)
           , numMembersToPromote > 0
           ]
@@ -180,7 +181,7 @@ belowTargetLocal inboundPeers
       return $ \_now -> Decision {
         decisionTrace = [TracePromoteColdLocalPeers
                            [ (target, Set.size membersEstablished)
-                           | (target, _, membersEstablished) <- groupsBelowTarget' ]
+                           | (target, _, membersEstablished) <- groupsBelowTarget ]
                            selectedToPromote],
         decisionState = st {
                           inProgressPromoteCold = inProgressPromoteCold
@@ -189,17 +190,17 @@ belowTargetLocal inboundPeers
         decisionJobs  = [ jobPromoteColdPeer actions policy peer IsNotBigLedgerPeer diffusionMode
                         | peer <- Set.toList selectedToPromote
                         , let diffusionMode = LocalRootPeers.diffusionMode
-                                            $ localRootPeersMap' Map.! peer
+                                            $ LocalRootPeers.toMap localRootPeers Map.! peer
                         ]
       }
 
     -- If we could promote except that there are no peers currently available
     -- then we return the next wakeup time (if any)
-  | not (null groupsBelowTarget')
+  | not (null groupsBelowTarget)
   , let potentialToPromote =
           -- These are local peers that are cold but not ready.
-          localRootPeersSet'
-             Set.\\ localEstablishedPeers'
+          localRootPeersSet
+             Set.\\ localEstablishedPeers
              Set.\\ KnownPeers.availableToConnect knownPeers
   , not (Set.null potentialToPromote)
   = GuardedSkip (KnownPeers.minConnectTime knownPeers (`Set.notMember` bigLedgerPeersSet))
@@ -207,33 +208,13 @@ belowTargetLocal inboundPeers
   | otherwise
   = GuardedSkip Nothing
   where
-    localRootPeersMap = LocalRootPeers.toMap localRootPeers
+    isUnreachablePeer addr (LocalRootConfig {followBack}) =
+      followBack && not (Map.member addr inboundPeers)
 
-    isFollowBackPeer (LocalRootConfig {followBack}) = followBack
-
-    (followBackPeers, localPeers) =
-      Map.partition
-        isFollowBackPeer
-        localRootPeersMap
-
-    additionalLocalRootPeers = followBackPeers `Map.intersection` inboundPeers
-
-    localRootPeersMap' = localPeers `Map.union` additionalLocalRootPeers
-    localRootPeersSet' = Map.keysSet localRootPeersMap'
-    groupsBelowTarget' =
-      fmap (\(val, peers, estPeers) ->
-              ( val
-              , localRootPeersSet' `Set.intersection` peers
-              , localRootPeersSet' `Set.intersection` estPeers
-              )
-           ) groupsBelowTarget
-    localEstablishedPeers' =
-      localRootPeersSet' `Set.intersection` localEstablishedPeers
-    localAvailableToConnect' =
-      localRootPeersSet' `Set.intersection` localAvailableToConnect
-    localConnectInProgress' =
-      localRootPeersSet' `Set.intersection` localConnectInProgress
-    numLocalConnectInProgress' = Set.size localConnectInProgress'
+    unreachablePeers =
+      Map.keysSet
+        $ Map.filterWithKey isUnreachablePeer
+        $ LocalRootPeers.toMap localRootPeers
 
     groupsBelowTarget =
       [ (warmValency, members, membersEstablished)
@@ -244,9 +225,10 @@ belowTargetLocal inboundPeers
 
     PeerSelectionView {
         viewKnownBigLedgerPeers              = (bigLedgerPeersSet, _),
+        viewKnownLocalRootPeers              = (localRootPeersSet, _),
         viewEstablishedLocalRootPeers        = (localEstablishedPeers, _),
         viewAvailableToConnectLocalRootPeers = (localAvailableToConnect, _),
-        viewColdLocalRootPeersPromotions     = (localConnectInProgress, _)
+        viewColdLocalRootPeersPromotions     = (localConnectInProgress, numLocalConnectInProgress)
       } = peerSelectionStateToView extraPeersToSet extraStateToExtraCounters st
 
 
@@ -301,7 +283,7 @@ belowTargetOther actions@PeerSelectionActions {
     -- not cold and our invariant is that they are always in the connect set.
     -- We can also subtract the in progress ones since they are also already
     -- in the connect set and we cannot pick them again.
-  , numAvailableToConnect - numEstablishedPeers - numConnectInProgress > 0
+  , numAvailableToConnect - numFollowBackPeers - numEstablishedPeers - numConnectInProgress > 0
   = Guarded Nothing $ do
       -- The availableToPromote here is non-empty due to the second guard.
       -- The known peers map restricted to the connect set is the same size as
@@ -319,9 +301,6 @@ belowTargetOther actions@PeerSelectionActions {
           numPeersToPromote  = targetNumberOfEstablishedPeers
                              - numEstablishedPeers
                              - numConnectInProgress
-          followBackPeers    = Map.keysSet
-            $ Map.filter (\(LocalRootConfig {followBack}) -> followBack)
-            $ LocalRootPeers.toMap localRootPeers
 
       selectedToPromote <- pickPeers memberExtraPeers st
                              policyPickColdPeersToPromote
@@ -348,6 +327,12 @@ belowTargetOther actions@PeerSelectionActions {
   | otherwise
   = GuardedSkip Nothing
   where
+    numFollowBackPeers = Set.size followBackPeers
+
+    followBackPeers    = Map.keysSet
+      $ Map.filter (\(LocalRootConfig {followBack}) -> followBack)
+      $ LocalRootPeers.toMap localRootPeers
+
     PeerSelectionView {
         viewKnownBigLedgerPeers     = (bigLedgerPeersSet, _),
 
