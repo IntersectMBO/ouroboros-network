@@ -14,11 +14,14 @@ module Ouroboros.Network.NodeToNode.Version
   , isPerasEnabled
   ) where
 
+import Data.Set (Set)
+import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
 
 import Codec.CBOR.Term qualified as CBOR
 
+import Cardano.Base.FeatureFlags
 import Control.DeepSeq
 import GHC.Generics
 import Ouroboros.Network.CodecCBORTerm
@@ -75,7 +78,7 @@ data NodeToNodeVersion =
   | NodeToNodeV_16
     -- ^ Experimental.
     --
-    -- Adds Peras mini-protocols.
+    -- Adds Peras mini-protocols (if 'PerasFlag' is set).
   deriving (Eq, Ord, Enum, Bounded, Show, Generic, NFData)
 
 nodeToNodeVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToNodeVersion
@@ -199,5 +202,7 @@ nodeToNodeCodecCBORTerm =
 
 data ConnectionMode = UnidirectionalMode | DuplexMode
 
-isPerasEnabled :: NodeToNodeVersion -> Bool
-isPerasEnabled v = v >= NodeToNodeV_16
+isPerasEnabled :: Set CardanoFeatureFlag -> NodeToNodeVersion -> Bool
+isPerasEnabled featureFlags v =
+       Set.member PerasFlag featureFlags
+    && v >= NodeToNodeV_16
