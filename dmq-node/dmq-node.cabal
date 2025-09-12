@@ -71,6 +71,7 @@ library
     DMQ.Protocol.LocalMsgSubmission.Type
     DMQ.Protocol.SigSubmission.Codec
     DMQ.Protocol.SigSubmission.Type
+    DMQ.Protocol.SigSubmission.Validate
     DMQ.Tracer
 
   build-depends:
@@ -84,6 +85,7 @@ library
     cardano-crypto-class,
     cardano-crypto-wrapper,
     cardano-ledger-byron,
+    cardano-ledger-core,
     cardano-ledger-shelley,
     cardano-slotting,
     cborg >=0.2.1 && <0.3,
@@ -113,6 +115,7 @@ library
     text >=1.2.4 && <2.2,
     time ^>=1.12,
     transformers,
+    transformers-except,
     typed-protocols:{typed-protocols, cborg} ^>=1.1,
 
   hs-source-dirs: src
