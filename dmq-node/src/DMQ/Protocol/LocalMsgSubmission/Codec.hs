@@ -17,6 +17,7 @@ import Cardano.KESAgent.KES.Crypto (Crypto (..))
 import DMQ.Protocol.LocalMsgSubmission.Type
 import DMQ.Protocol.SigSubmission.Codec qualified as SigSubmission
 import DMQ.Protocol.SigSubmission.Type (Sig (..))
+import DMQ.Protocol.SigSubmission.Validate
 
 import Network.TypedProtocol.Codec.CBOR
 import Ouroboros.Network.Protocol.LocalTxSubmission.Codec qualified as LTX
@@ -26,13 +27,13 @@ codecLocalMsgSubmission
      ( MonadST m
      , Crypto crypto
      )
-  => (SigMempoolFail -> CBOR.Encoding)
-  -> (forall s. CBOR.Decoder s SigMempoolFail)
+  => (MempoolAddFail (Sig crypto) -> CBOR.Encoding)
+  -> (forall s. CBOR.Decoder s (MempoolAddFail (Sig crypto)))
   -> AnnotatedCodec (LocalMsgSubmission (Sig crypto)) CBOR.DeserialiseFailure m ByteString
 codecLocalMsgSubmission =
   LTX.anncodecLocalTxSubmission' SigWithBytes SigSubmission.encodeSig SigSubmission.decodeSig
 
-encodeReject :: SigMempoolFail -> CBOR.Encoding
+encodeReject :: MempoolAddFail (Sig crypto) -> CBOR.Encoding
 encodeReject = \case
   SigInvalid reason -> CBOR.encodeListLen 2 <> CBOR.encodeWord 0 <> CBOR.encodeString reason
   SigDuplicate      -> CBOR.encodeListLen 1 <> CBOR.encodeWord 1
@@ -40,7 +41,7 @@ encodeReject = \case
   SigResultOther reason
                     -> CBOR.encodeListLen 2 <> CBOR.encodeWord 3 <> CBOR.encodeString reason
 
-decodeReject :: CBOR.Decoder s SigMempoolFail
+decodeReject :: CBOR.Decoder s (MempoolAddFail (Sig crypto))
 decodeReject = do
   len <- CBOR.decodeListLen
   tag <- CBOR.decodeWord
