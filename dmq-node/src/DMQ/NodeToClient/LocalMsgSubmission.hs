@@ -1,4 +1,6 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE FlexibleContexts   #-}
+{-# LANGUAGE OverloadedStrings  #-}
+{-# LANGUAGE StandaloneDeriving #-}
 
 module DMQ.NodeToClient.LocalMsgSubmission where
 
@@ -6,62 +8,63 @@ import Control.Concurrent.Class.MonadSTM
 import Control.Tracer
 import Data.Aeson (ToJSON (..), object, (.=))
 import Data.Aeson qualified as Aeson
-import Data.Maybe
-
-import Ouroboros.Network.TxSubmission.Inbound.V2
 
 import DMQ.Protocol.LocalMsgSubmission.Server
 import DMQ.Protocol.LocalMsgSubmission.Type
+import Ouroboros.Network.TxSubmission.Mempool.Simple
 
 -- | Local transaction submission server, for adding txs to the 'Mempool'
 --
 localMsgSubmissionServer ::
      MonadSTM m
-  => (msg -> msgid)
+  => (sig -> sigid)
   -- ^ get message id
-  -> Tracer m (TraceLocalMsgSubmission msgid)
-  -> TxSubmissionMempoolWriter msgid msg idx m
-  -> m (LocalMsgSubmissionServer msg m ())
-localMsgSubmissionServer getMsgId tracer TxSubmissionMempoolWriter { mempoolAddTxs } =
+  -> Tracer m (TraceLocalMsgSubmission sig sigid)
+  -> MempoolWriter sigid sig failure idx m
+  -- ^ duplicate error tag in case the mempool returns the empty list on failure
+  -> m (LocalMsgSubmissionServer sig m ())
+localMsgSubmissionServer getMsgId tracer MempoolWriter { mempoolAddTxs } =
     pure server
   where
-    failure =
-      -- TODO remove dummy hardcode when mempool returns reason
-      (SubmitFail SigExpired, server) <$ traceWith tracer (TraceSubmitFailure SigExpired)
-    success msgid =
-      (SubmitSuccess, server) <$ traceWith tracer (TraceSubmitAccept msgid)
+    process (sigid, e@(SubmitFail reason)) =
+      (e, server) <$ traceWith tracer (TraceSubmitFailure sigid reason)
+    process (sigid, success) =
+      (success, server) <$ traceWith tracer (TraceSubmitAccept sigid)
 
     server = LocalTxSubmissionServer {
-      recvMsgSubmitTx = \msg -> do
-        traceWith tracer $ TraceReceivedMsg (getMsgId msg)
-        -- TODO mempool should return 'SubmitResult'
-        maybe failure success . listToMaybe =<< mempoolAddTxs [msg]
+      recvMsgSubmitTx = \sig -> do
+        traceWith tracer $ TraceReceivedMsg (getMsgId sig)
+        process . head =<< mempoolAddTxs [sig]
 
     , recvMsgDone = ()
     }
 
 
-data TraceLocalMsgSubmission msgid =
-    TraceReceivedMsg msgid
-  -- ^ A transaction was received.
-  | TraceSubmitFailure SigMempoolFail
-  | TraceSubmitAccept msgid
-  deriving Show
+data TraceLocalMsgSubmission sig sigid =
+    TraceReceivedMsg sigid
+  -- ^ A signature was received.
+  | TraceSubmitFailure sigid (MempoolAddFail sig)
+  | TraceSubmitAccept sigid
 
-instance ToJSON msgid
-      => ToJSON (TraceLocalMsgSubmission msgid) where
-  toJSON (TraceReceivedMsg msgid) =
+deriving instance
+     (Show sig, Show sigid, Show (MempoolAddFail sig))
+  => Show (TraceLocalMsgSubmission sig sigid)
+
+instance (ToJSON sigid, ToJSON (MempoolAddFail sig))
+      => ToJSON (TraceLocalMsgSubmission sig sigid) where
+  toJSON (TraceReceivedMsg sigid) =
     -- TODO: once we have verbosity levels, we could include the full tx, for
     -- now one can use `TraceSendRecv` tracer for the mini-protocol to see full
     -- msgs.
     object [ "kind" .= Aeson.String "TraceReceivedMsg"
-           , "sigId" .= msgid
+           , "sigId" .= sigid
            ]
-  toJSON (TraceSubmitFailure reject) =
+  toJSON (TraceSubmitFailure sigid reject) =
     object [ "kind" .= Aeson.String "TraceSubmitFailure"
+           , "sigId" .= sigid
            , "reason" .= reject
            ]
-  toJSON (TraceSubmitAccept msgid) =
+  toJSON (TraceSubmitAccept sigid) =
     object [ "kind" .= Aeson.String "TraceSubmitAccept"
-           , "sigId" .= msgid
+           , "sigId" .= sigid
            ]
