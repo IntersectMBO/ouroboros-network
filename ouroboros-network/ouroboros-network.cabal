@@ -305,10 +305,10 @@ library cardano-diffusion
 
 -- Simulation Test Library
 library testlib
+  import: ghc-options-tests
   mixins:
     QuickCheck hiding (Test.QuickCheck.Monoids)
 
-  import: ghc-options-tests
   default-language: Haskell2010
   default-extensions: ImportQualifiedPost
   visibility: public
