@@ -25,7 +25,6 @@ packages: ./cardano-ping
           ./network-mux
           ./ouroboros-network
           ./ouroboros-network-api
-          ./ouroboros-network-mock
           ./ouroboros-network-testing
           ./ntp-client
           ./cardano-client
