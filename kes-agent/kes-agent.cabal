@@ -1,6 +1,6 @@
 cabal-version: 3.0
 name: kes-agent
-version: 0.1.0.0
+version: 0.2.0.0
 
 synopsis: KES agent library and binaries
 description: KES agent provides a solution for storing KES keys
@@ -116,7 +116,7 @@ library
                  , formatting
                  , ghc-prim
                  , io-classes >=1.8.0.0
-                 , kes-agent-crypto
+                 , kes-agent-crypto ^>= 0.1.0.0
                  , mtl
                  , network
                  , network-mux
