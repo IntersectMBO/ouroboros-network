@@ -715,10 +715,8 @@ library protocols-tests-lib
     io-sim,
     network,
     network-mux,
-    ouroboros-network:framework,
-    ouroboros-network:protocols,
     ouroboros-network-api,
-    ouroboros-network-mock,
+    ouroboros-network:{framework, mock, protocols},
     ouroboros-network-testing,
     pipes,
     quickcheck-instances,
@@ -733,7 +731,7 @@ test-suite protocols-tests
   type: exitcode-stdio-1.0
   hs-source-dirs: protocols/tests
   main-is: Main.hs
-  -- TODO: these two tests should be moved to `ouroboros-network-mock`
+  -- TODO: these two tests should be moved to `ouroboros-network:mock`
   other-modules:
     Test.AnchoredFragment
     Test.Chain
@@ -745,7 +743,7 @@ test-suite protocols-tests
     base >=4.14 && <4.22,
     ouroboros-network:protocols-tests-lib,
     ouroboros-network-api,
-    ouroboros-network-mock,
+    ouroboros-network:{mock, protocols-tests-lib},
     ouroboros-network-testing ^>=0.8,
     tasty,
     tasty-quickcheck,
@@ -779,10 +777,8 @@ test-suite protocols-cddl
     filepath,
     mtl,
     network,
-    ouroboros-network:framework,
-    ouroboros-network:{protocols, protocols-tests-lib},
+    ouroboros-network:{mock, framework, protocols, protocols-tests-lib},
     ouroboros-network-api,
-    ouroboros-network-mock,
     process-extras,
     quickcheck-instances,
     serialise,
@@ -813,7 +809,6 @@ test-suite protocols-bench
     deepseq,
     network,
     ouroboros-network:{framework, protocols, protocols-tests-lib},
-    ouroboros-network:{protocols, protocols-tests-lib},
     ouroboros-network-api,
     tasty-bench,
     typed-protocols:{typed-protocols, stateful},
@@ -831,6 +826,41 @@ test-suite protocols-bench
   -- Read: https://hackage.haskell.org/package/tasty-bench for details
   if impl(ghc >=8.6)
     ghc-options: -fproc-alignment=64
+
+library mock
+  visibility: public
+  hs-source-dirs: mock
+  exposed-modules:
+    Ouroboros.Network.Mock.Chain
+    Ouroboros.Network.Mock.ConcreteBlock
+    Ouroboros.Network.Mock.ProducerState
+
+  default-language: Haskell2010
+  default-extensions: ImportQualifiedPost
+  build-depends:
+    base >=4.14 && <4.22,
+    bytestring,
+    cborg,
+    containers,
+    hashable,
+    nothunks,
+    ouroboros-network-api,
+    serialise,
+    time,
+
+  ghc-options:
+    -Wall
+    -Wno-unticked-promoted-constructors
+    -Wcompat
+    -Wincomplete-uni-patterns
+    -Wincomplete-record-updates
+    -Wpartial-fields
+    -Widentities
+    -Wredundant-constraints
+    -Wunused-packages
+
+  if flag(asserts)
+    ghc-options: -fno-ignore-asserts
 
 -- Simulation Test Library
 library testlib
@@ -861,9 +891,8 @@ library testlib
     network,
     network-mux,
     nothunks,
-    ouroboros-network:{ouroboros-network, cardano-diffusion, framework, framework-tests-lib, orphan-instances, protocols, protocols-tests-lib},
+    ouroboros-network:{cardano-diffusion, framework, framework-tests-lib, mock, orphan-instances, ouroboros-network, protocols, protocols-tests-lib},
     ouroboros-network-api,
-    ouroboros-network-mock,
     ouroboros-network-testing ^>=0.8.3,
     pipes,
     pretty-simple,
@@ -965,11 +994,8 @@ test-suite io-tests
     monoidal-synchronisation,
     network,
     network-mux,
-    ouroboros-network:cardano-diffusion,
-    ouroboros-network:{framework, protocols, protocols-tests-lib},
-    ouroboros-network:{protocols, protocols-tests-lib},
+    ouroboros-network:{cardano-diffusion, framework, mock, protocols, protocols-tests-lib},
     ouroboros-network-api,
-    ouroboros-network-mock,
     ouroboros-network-testing ^>=0.8.1,
     serialise,
     tasty,
@@ -1005,9 +1031,8 @@ executable demo-chain-sync
     io-classes:{si-timers, strict-stm},
     network-mux,
     optparse-applicative,
-    ouroboros-network:{ouroboros-network, cardano-diffusion, framework, protocols},
+    ouroboros-network:{ouroboros-network, cardano-diffusion, framework, mock, protocols},
     ouroboros-network-api,
-    ouroboros-network-mock,
     random,
     serialise,
     typed-protocols,
