@@ -74,7 +74,6 @@ controlledClient controlMessageSTM = go
 --
 chainSyncClientExample :: forall header block tip m a.
                           ( HasHeader header
-                          , HasHeader block
                           , HeaderHash header ~ HeaderHash block
                           , MonadSTM m
                           )
@@ -167,7 +166,6 @@ recentOffsets = [0,1,2,3,5,8,13,21,34,55,89,144,233,377,610,987,1597,2584]
 chainSyncServerExample :: forall blk header m a.
                           ( HasHeader blk
                           , MonadSTM m
-                          , HeaderHash header ~ HeaderHash blk
                           )
                        => a
                        -> StrictTVar m (ChainProducerState blk)

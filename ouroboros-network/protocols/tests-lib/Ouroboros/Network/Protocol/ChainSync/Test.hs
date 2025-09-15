@@ -18,7 +18,6 @@ import Data.ByteString.Lazy (ByteString)
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
-import Control.Monad.Class.MonadSay
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow
 import Control.Tracer (nullTracer)
@@ -134,9 +133,7 @@ testClient doneVar tip =
 --
 chainSyncForkExperiment
   :: forall m.
-     ( MonadST m
-     , MonadSTM m
-     )
+     MonadSTM m
   => (forall a b.
          ChainSyncServer Block (Point Block) (Tip Block) m a
       -> ChainSyncClient Block (Point Block) (Tip Block) m b
@@ -194,9 +191,7 @@ propChainSyncConnectIO cps =
 --
 chainSyncPipelinedForkExperiment
   :: forall m.
-     ( MonadST m
-     , MonadSTM m
-     )
+     MonadSTM m
   => (forall a b. ChainSyncServer Block (Point Block) (Tip Block) m a
       -> ChainSyncClientPipelined Block (Point Block) (Tip Block) m b
       -> m ())
@@ -673,11 +668,9 @@ propChainSyncPipe cps =
 chainSyncDemoPipelined
   :: forall m.
      ( MonadST    m
-     , MonadSTM   m
      , MonadFork  m
      , MonadAsync m
      , MonadThrow m
-     , MonadSay   m
      )
   => Channel m ByteString
   -> Channel m ByteString

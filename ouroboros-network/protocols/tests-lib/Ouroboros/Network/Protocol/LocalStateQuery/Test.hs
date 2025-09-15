@@ -24,7 +24,7 @@ import Data.Map qualified as Map
 
 import Control.Monad.Class.MonadAsync (MonadAsync)
 import Control.Monad.Class.MonadST (MonadST)
-import Control.Monad.Class.MonadThrow (MonadCatch, MonadMask)
+import Control.Monad.Class.MonadThrow (MonadMask)
 import Control.Monad.IOSim
 import Control.Monad.ST (runST)
 import Control.Tracer (nullTracer)
@@ -204,7 +204,6 @@ prop_connect input =
 -- | Run a local state query client and server using connected channels.
 --
 prop_channel :: ( MonadAsync m
-                , MonadCatch m
                 , MonadMask  m
                 , MonadST m
                 )

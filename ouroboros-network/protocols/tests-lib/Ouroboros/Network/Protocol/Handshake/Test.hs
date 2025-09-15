@@ -30,7 +30,6 @@ import Codec.CBOR.Term qualified as CBOR
 import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadAsync
-import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadST (MonadST)
 import Control.Monad.Class.MonadThrow (MonadCatch, MonadMask, MonadThrow,
            bracket)
@@ -191,9 +190,7 @@ versionNumberCodec = CodecCBORTerm { encodeTerm, decodeTerm }
     decodeTerm _             = Left ("unknown tag", Nothing)
 
 
-versionNumberHandshakeCodec :: ( MonadST    m
-                               , MonadThrow m
-                               )
+versionNumberHandshakeCodec :: MonadST m
                             => Codec (Handshake VersionNumber CBOR.Term)
                                       CBOR.DeserialiseFailure m ByteString
 versionNumberHandshakeCodec = codecHandshake versionNumberCodec
@@ -548,8 +545,6 @@ prop_pipe_IO (ArbitraryVersions clientVersions serverVersions) =
 --
 prop_channel_asymmetric
     :: ( MonadAsync m
-       , MonadCatch m
-       , MonadLabelledSTM m
        , MonadMask  m
        , MonadST m
        )
@@ -932,7 +927,6 @@ prop_query_version_NodeToClient_SimNet
 --
 prop_query_version :: ( MonadAsync m
                       , MonadCatch m
-                      , MonadST m
                       , Eq vData
                       , Acceptable vData
                       , Queryable vData
@@ -980,9 +974,9 @@ prop_query_version createChannels codec versionDataCodec clientVersions serverVe
 
 -- | Run a query for the server's supported version.
 --
-prop_peerSharing_symmetric :: ( MonadAsync m
+prop_peerSharing_symmetric ::
+                           ( MonadAsync m
                            , MonadCatch m
-                           , MonadST m
                            )
                            => m (Channel m ByteString, Channel m ByteString)
                            -> Codec (Handshake NodeToNodeVersion CBOR.Term)
@@ -1053,8 +1047,6 @@ prop_acceptOrRefuse_symmetric
      , Show vData
      , Ord  vNumber
      , Show vNumber
-     , Eq   r
-     , Show r
      )
   => Versions vNumber vData r
   -> Versions vNumber vData r
@@ -1126,7 +1118,6 @@ prop_acceptOrRefuse_symmetric_NodeToClient (ArbitraryNodeToClientVersions a)
 prop_channel_simultaneous_open
     :: ( MonadAsync m
        , MonadCatch m
-       , MonadST m
        , Acceptable vData
        , Ord vNumber
        )
@@ -1271,13 +1262,9 @@ prop_channel_simultaneous_open_sim
     :: forall vNumber vData m.
        ( Alternative (STM m)
        , MonadAsync       m
-       , MonadCatch       m
        , MonadDelay       m
-       , MonadFork        m
        , MonadLabelledSTM m
        , MonadMask        m
-       , MonadMonotonicTime m
-       , MonadST          m
        , MonadThrow  (STM m)
        , MonadTime        m
        , MonadTimer       m
