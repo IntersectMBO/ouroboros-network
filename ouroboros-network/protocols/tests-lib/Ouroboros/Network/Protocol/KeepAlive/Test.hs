@@ -10,7 +10,6 @@ module Ouroboros.Network.Protocol.KeepAlive.Test where
 
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadST
-import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
 import Control.Monad.IOSim (runSimOrThrow)
 import Control.Monad.ST (runST)
@@ -96,7 +95,6 @@ prop_connect f (NonNegative n) =
 --
 
 prop_channel :: ( MonadST    m
-                , MonadSTM   m
                 , MonadAsync m
                 , MonadCatch m
                 )

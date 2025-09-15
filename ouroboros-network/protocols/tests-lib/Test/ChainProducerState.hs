@@ -193,7 +193,7 @@ genFollowerState n c = do
     followerPoint <- frequency
       [ (2, return (headPoint c))
       , (2, return (mkRollbackPoint c n))
-      , (8, mkRollbackPoint c <$> choose (1, fromIntegral n - 1))
+      , (8, mkRollbackPoint c <$> choose (1, n - 1))
       ]
     followerNext <- oneof
       [ return FollowerForwardFrom

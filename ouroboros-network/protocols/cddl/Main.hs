@@ -257,9 +257,9 @@ cddlc path = do
 
 readCDDLSpecs :: IO CDDLSpecs
 readCDDLSpecs = do
-    dir <- bool (                                  "cddl" </> "specs") -- False
-                ("ouroboros-network-protocols" </> "cddl" </> "specs") -- True
-       <$> doesDirectoryExist "ouroboros-network-protocols"
+    dir <- bool (                        "protocols" </> "cddl" </> "specs") -- False
+                ("ouroboros-network" </> "protocols" </> "cddl" </> "specs") -- True
+       <$> doesDirectoryExist "ouroboros-network"
     setEnv "CDDL_INCLUDE_PATH" (dir <> ":")
 
     handshakeNodeToClient <- cddlc (dir </> "handshake-node-to-client.cddl")
@@ -300,9 +300,7 @@ readCDDLSpecs = do
 --
 validateEncoder
     :: forall ps.
-       ( forall (st :: ps) sing. sing ~ StateToken st => Show sing
-       )
-    => CDDLSpec ps
+       CDDLSpec ps
     -> Codec ps CBOR.DeserialiseFailure IO BL.ByteString
     -> AnyMessage ps
     -> Property
@@ -359,9 +357,7 @@ validateCBORTermEncoder spec
 
 validateEncoderSt
     :: forall ps f.
-       ( forall (st :: ps) sing. sing ~ StateToken st => Show sing
-       )
-    => CDDLSpec ps
+       CDDLSpec ps
     -> Stateful.Codec ps CBOR.DeserialiseFailure f IO BL.ByteString
     -> Stateful.AnyMessage ps f
     -> Property
@@ -1004,7 +1000,7 @@ handshakeFix term =
           , TMap (sortOn
                    (\(k, _) -> case k of
                      TInt i     -> (fromIntegral i :: Integer)
-                     TInteger i -> (fromIntegral i :: Integer)
+                     TInteger i -> i
                      _          -> error "orderHandshakeDict: unexpected key")
                    l
                  )
