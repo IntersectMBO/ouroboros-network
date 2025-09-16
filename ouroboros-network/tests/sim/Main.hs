@@ -3,8 +3,6 @@ module Main (main) where
 import Main.Utf8 (withUtf8)
 import Test.Tasty
 
-import Test.Cardano.Network.NodeToClient.Version qualified (tests)
-import Test.Cardano.Network.NodeToNode.Version qualified (tests)
 import Test.Cardano.Network.OrphanInstances.Tests qualified (tests)
 import Test.Cardano.Network.Version qualified (tests)
 
@@ -36,8 +34,6 @@ tests =
   [ Test.ChainProducerState.tests
 
     -- cardano
-  , Test.Cardano.Network.NodeToClient.Version.tests
-  , Test.Cardano.Network.NodeToNode.Version.tests
   , Test.Cardano.Network.OrphanInstances.Tests.tests
   , Test.Cardano.Network.Version.tests
 
