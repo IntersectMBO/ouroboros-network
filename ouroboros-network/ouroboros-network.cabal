@@ -133,6 +133,8 @@ test-suite api-tests
   default-language: Haskell2010
   default-extensions: ImportQualifiedPost
   other-modules:
+    Test.Cardano.Network.NodeToClient.Version
+    Test.Cardano.Network.NodeToNode.Version
     Test.Ouroboros.Network.PeerSelection.RelayAccessPoint
 
   build-depends:
@@ -1012,8 +1014,6 @@ library ouroboros-network-tests-lib
   exposed-modules:
     Ouroboros.Network.BlockFetch.Examples
     Ouroboros.Network.MockNode
-    Test.Cardano.Network.NodeToClient.Version
-    Test.Cardano.Network.NodeToNode.Version
     Test.Cardano.Network.OrphanInstances.Tests
     Test.Cardano.Network.Version
     Test.Ouroboros.Network.BlockFetch
