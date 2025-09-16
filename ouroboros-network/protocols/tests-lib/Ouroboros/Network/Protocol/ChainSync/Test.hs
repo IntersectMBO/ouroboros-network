@@ -36,6 +36,7 @@ import Ouroboros.Network.Block (BlockNo, Serialised (..), StandardHash,
            pattern GenesisPoint, unwrapCBORinCBOR, wrapCBORinCBOR)
 import Ouroboros.Network.Mock.Chain (Chain, Point)
 import Ouroboros.Network.Mock.Chain qualified as Chain
+import Ouroboros.Network.Mock.ChainGenerators ()
 import Ouroboros.Network.Mock.ConcreteBlock (Block, BlockHeader (..))
 import Ouroboros.Network.Mock.ProducerState qualified as ChainProducerState
 
@@ -50,11 +51,10 @@ import Ouroboros.Network.Protocol.ChainSync.ExamplesPipelined qualified as Chain
 import Ouroboros.Network.Protocol.ChainSync.Server
 import Ouroboros.Network.Protocol.ChainSync.Type
 
+import Test.ChainProducerState (ChainProducerStateForkTest (..))
 import Test.Data.PipeliningDepth (PipeliningDepth (..))
 import Test.Ouroboros.Network.Utils (renderRanges)
 
-import Test.ChainGenerators ()
-import Test.ChainProducerState (ChainProducerStateForkTest (..))
 import Test.Ouroboros.Network.Protocol.Utils (prop_codec_cborM,
            prop_codec_valid_cbor_encoding, splits2, splits3)
 

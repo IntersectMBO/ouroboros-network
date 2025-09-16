@@ -12,6 +12,7 @@ module Ouroboros.Network.Protocol.LocalTxMonitor.Test (tests) where
 import Codec.Serialise (Serialise)
 import Codec.Serialise qualified as S
 import Data.ByteString.Lazy (ByteString)
+import Data.Text qualified as Text
 
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadST
@@ -36,8 +37,8 @@ import Ouroboros.Network.Protocol.LocalTxMonitor.Examples
 import Ouroboros.Network.Protocol.LocalTxMonitor.Server
 import Ouroboros.Network.Protocol.LocalTxMonitor.Type
 
-import Data.Text qualified as Text
-import Test.ChainGenerators ()
+import Ouroboros.Network.Mock.ChainGenerators ()
+
 import Test.Ouroboros.Network.Protocol.Utils (prop_codec_cborM,
            prop_codec_valid_cbor_encoding, splits2, splits3)
 import Test.QuickCheck hiding (Result)

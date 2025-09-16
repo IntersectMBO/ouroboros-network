@@ -59,7 +59,6 @@ import Ouroboros.Network.Block (Point, SlotNo, Tip, decodeTip, encodeTip,
            unwrapCBORinCBOR, wrapCBORinCBOR)
 import Ouroboros.Network.CodecCBORTerm
 import Ouroboros.Network.Magic
-import Ouroboros.Network.Mock.ConcreteBlock qualified as Concrete (Block)
 
 import Cardano.Network.NodeToClient.Version (NodeToClientVersion,
            NodeToClientVersionData (..), nodeToClientCodecCBORTerm)
@@ -113,7 +112,8 @@ import Ouroboros.Network.Protocol.PeerSharing.Codec (codecPeerSharing)
 import Ouroboros.Network.Protocol.PeerSharing.Test ()
 import Ouroboros.Network.Protocol.PeerSharing.Type qualified as PeerSharing
 
-import Test.ChainGenerators ()
+import Ouroboros.Network.Mock.ChainGenerators ()
+import Ouroboros.Network.Mock.ConcreteBlock qualified as Concrete (Block)
 import Test.Data.CDDL (Any (..))
 
 import Ouroboros.Network.PeerSelection.PeerSharing.Codec (decodeRemoteAddress,

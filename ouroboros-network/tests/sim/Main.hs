@@ -4,7 +4,6 @@ import Main.Utf8 (withUtf8)
 import Test.Tasty
 
 import Test.Cardano.Network.OrphanInstances.Tests qualified (tests)
-import Test.Cardano.Network.Version qualified (tests)
 
 import Test.ChainProducerState qualified (tests)
 
@@ -35,7 +34,6 @@ tests =
 
     -- cardano
   , Test.Cardano.Network.OrphanInstances.Tests.tests
-  , Test.Cardano.Network.Version.tests
 
     -- network logic
   , Test.Ouroboros.Network.Diffusion.Policies.tests
@@ -54,7 +52,6 @@ tests =
   , Test.Ouroboros.Network.PeerSelection.Cardano.LocalRootPeers.tests
   , Test.Ouroboros.Network.PeerSelection.Cardano.MockEnvironment.tests
   , Test.Ouroboros.Network.PeerSelection.Cardano.PublicRootPeers.tests
-
 
     -- pseudo system-level
   , Test.Ouroboros.Network.MockNode.tests

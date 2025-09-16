@@ -38,6 +38,7 @@ import Ouroboros.Network.IOManager
 import Ouroboros.Network.Magic
 import Ouroboros.Network.Mock.Chain (Chain, ChainUpdate, Point)
 import Ouroboros.Network.Mock.Chain qualified as Chain
+import Ouroboros.Network.Mock.ChainGenerators (TestBlockChainAndUpdates (..))
 import Ouroboros.Network.Mock.ProducerState qualified as CPS
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.Protocol.ChainSync.Client qualified as ChainSync
@@ -52,7 +53,6 @@ import Ouroboros.Network.Protocol.Handshake.Version (acceptableVersion,
 import Ouroboros.Network.Server.Simple qualified as Server.Simple
 import Ouroboros.Network.Util.ShowProxy
 
-import Test.ChainGenerators (TestBlockChainAndUpdates (..))
 import Test.Ouroboros.Network.Serialise
 
 import Test.QuickCheck
