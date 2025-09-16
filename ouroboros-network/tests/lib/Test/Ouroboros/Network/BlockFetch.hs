@@ -36,6 +36,8 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.IOSim
 import Control.Tracer (Tracer (Tracer), contramap, nullTracer)
 
+import Cardano.Network.NodeToNode.Version (NodeToNodeVersion)
+
 import Ouroboros.Network.ControlMessage (ControlMessage (..))
 import Ouroboros.Network.DeltaQ
 --TODO: could re-export some of the trace types from more convenient places:
@@ -51,7 +53,6 @@ import Ouroboros.Network.BlockFetch.Examples
 import Ouroboros.Network.Driver (TraceSendRecv)
 import Ouroboros.Network.Mock.Chain qualified as Chain
 import Ouroboros.Network.Mock.ConcreteBlock
-import Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion)
 import Ouroboros.Network.Protocol.BlockFetch.Type (BlockFetch)
 
 import Test.Ouroboros.Network.Utils

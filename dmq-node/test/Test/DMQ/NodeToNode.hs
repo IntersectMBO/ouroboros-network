@@ -4,8 +4,8 @@
 module Test.DMQ.NodeToNode (tests) where
 
 import Ouroboros.Network.CodecCBORTerm
+import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.Magic (NetworkMagic (..))
-import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 
 import DMQ.NodeToNode

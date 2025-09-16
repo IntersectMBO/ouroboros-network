@@ -22,9 +22,10 @@ import Network.Socket (SockAddr (..), tupleToHostAddress)
 import Network.TypedProtocol.Codec
 import Network.TypedProtocol.Stateful.Codec qualified as Stateful
 
+import Cardano.Network.NodeToClient.Version
+import Cardano.Network.NodeToNode.Version
+
 import Ouroboros.Network.Block (SlotNo)
-import Ouroboros.Network.NodeToClient.Version
-import Ouroboros.Network.NodeToNode.Version
 import Ouroboros.Network.Protocol.BlockFetch.Codec.CDDL
 import Ouroboros.Network.Protocol.BlockFetch.Type
 import Ouroboros.Network.Protocol.ChainSync.Codec.CDDL

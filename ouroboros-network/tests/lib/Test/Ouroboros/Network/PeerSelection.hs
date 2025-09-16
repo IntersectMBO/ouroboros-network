@@ -53,13 +53,13 @@ import Network.DNS qualified as DNS (defaultResolvConf)
 import Network.Socket (SockAddr)
 
 import Cardano.Network.ConsensusMode
+import Ouroboros.Network.DiffusionMode
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
            requiresBootstrapPeers)
 import Cardano.Network.PeerSelection.LocalRootPeers (OutboundConnectionsState)
 import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
 import Cardano.Network.PeerSelection.PublicRootPeers qualified as Cardano.PublicRootPeers
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
-import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.PeerSelection.Governor hiding (PeerSelectionState (..),
            peerSharing)
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor

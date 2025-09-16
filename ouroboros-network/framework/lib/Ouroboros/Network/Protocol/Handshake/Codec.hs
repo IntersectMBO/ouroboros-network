@@ -41,16 +41,16 @@ import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
 import Codec.CBOR.Term qualified as CBOR
 
+import Cardano.Network.NodeToClient.Version (NodeToClientVersion,
+           nodeToClientVersionCodec)
+import Cardano.Network.NodeToNode.Version (NodeToNodeVersion,
+           nodeToNodeVersionCodec)
+
 import Ouroboros.Network.CodecCBORTerm
 import Ouroboros.Network.Driver.Limits
 
 import Ouroboros.Network.Protocol.Handshake.Type
 import Ouroboros.Network.Protocol.Limits
-
-import Ouroboros.Network.NodeToClient.Version (NodeToClientVersion,
-           nodeToClientVersionCodec)
-import Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion,
-           nodeToNodeVersionCodec)
 
 -- | Codec for version data ('vData' in code) exchanged by the handshake
 -- protocol.

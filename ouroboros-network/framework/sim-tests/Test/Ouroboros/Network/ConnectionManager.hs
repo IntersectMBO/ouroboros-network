@@ -63,8 +63,8 @@ import Ouroboros.Network.ConnectionId (ConnectionId (..))
 import Ouroboros.Network.ConnectionManager.Core qualified as CM
 import Ouroboros.Network.ConnectionManager.State qualified as CM
 import Ouroboros.Network.ConnectionManager.Types
+import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.MuxMode
-import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.Server.RateLimiting
 import Ouroboros.Network.Snocket (Accept (..), Accepted (..),
            AddressFamily (TestFamily), Snocket (..), TestAddress (..))

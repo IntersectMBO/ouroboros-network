@@ -64,11 +64,11 @@ import Ouroboros.Network.ConnectionManager.State (ConnStateIdSupply,
            ConnectionManagerState, ConnectionState (..), MutableConnState (..))
 import Ouroboros.Network.ConnectionManager.State qualified as State
 import Ouroboros.Network.ConnectionManager.Types
+import Ouroboros.Network.DiffusionMode (DiffusionMode (..))
 import Ouroboros.Network.InboundGovernor (Event (..), NewConnectionInfo (..))
 import Ouroboros.Network.InboundGovernor.InformationChannel (InformationChannel)
 import Ouroboros.Network.InboundGovernor.InformationChannel qualified as InfoChannel
 import Ouroboros.Network.MuxMode
-import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket
 

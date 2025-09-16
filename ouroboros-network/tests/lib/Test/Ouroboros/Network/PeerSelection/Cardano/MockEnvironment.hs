@@ -63,8 +63,8 @@ import Control.Monad.IOSim
 import Control.Tracer (Tracer (..), contramap, traceWith)
 
 import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano
+import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.ExitPolicy
-import Ouroboros.Network.NodeToNode.Version (DiffusionMode)
 import Ouroboros.Network.PeerSelection.Governor hiding (PeerSelectionState (..))
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers

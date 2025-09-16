@@ -48,10 +48,15 @@ import Network.TypedProtocol.Proofs
 import Test.Ouroboros.Network.Protocol.Utils (prop_codec_cborM,
            prop_codec_valid_cbor_encoding, splits2, splits3)
 
+import Cardano.Network.NodeToClient.Version as NTC
+import Cardano.Network.NodeToNode.Version as NTN
+
 import Ouroboros.Network.Channel
 import Ouroboros.Network.CodecCBORTerm
 import Ouroboros.Network.Driver.Simple (runConnectedPeers,
            runConnectedPeersAsymmetric, runPeer)
+import Ouroboros.Network.Magic
+import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.Snocket (TestAddress (..))
 import Ouroboros.Network.Snocket qualified as Snocket
 import Simulation.Network.Snocket
@@ -65,11 +70,6 @@ import Ouroboros.Network.Protocol.Handshake.Version
 
 import Codec.CBOR.Write qualified as CBOR
 
-import Ouroboros.Network.Magic
-import Ouroboros.Network.NodeToClient.Version as NTC
-import Ouroboros.Network.NodeToNode.Version as NTN
-
-import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)

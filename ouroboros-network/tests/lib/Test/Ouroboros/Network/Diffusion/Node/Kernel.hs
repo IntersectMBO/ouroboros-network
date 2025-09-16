@@ -68,6 +68,7 @@ import Ouroboros.Network.Block (HasFullHeader, SlotNo)
 import Ouroboros.Network.Block qualified as Block
 import Ouroboros.Network.BlockFetch
 import Ouroboros.Network.ConnectionId (ConnectionId (..))
+import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.Handshake.Acceptable (Accept (..), Acceptable (..))
 import Ouroboros.Network.Mock.Chain (Chain (..))
 import Ouroboros.Network.Mock.Chain qualified as Chain
@@ -77,7 +78,6 @@ import Ouroboros.Network.Mock.ProducerState
 
 import Simulation.Network.Snocket (AddressType (..), GlobalAddressScheme (..))
 
-import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.PeerSelection (PeerSharing, RelayAccessPoint (..))
 import Ouroboros.Network.PeerSelection.Governor (PublicPeerSelectionState,
            makePublicPeerSelectionStateVar)
@@ -89,6 +89,7 @@ import Ouroboros.Network.Snocket (TestAddress (..))
 import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (SharedTxStateVar,
            TxChannels (..), TxChannelsVar, TxMempoolSem, newSharedTxStateVar,
            newTxMempoolSem)
+
 import Test.Ouroboros.Network.Diffusion.Node.ChainDB (ChainDB (..))
 import Test.Ouroboros.Network.Diffusion.Node.ChainDB qualified as ChainDB
 import Test.Ouroboros.Network.Orphans ()

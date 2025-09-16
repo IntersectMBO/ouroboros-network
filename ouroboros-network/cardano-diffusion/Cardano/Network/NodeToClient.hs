@@ -64,12 +64,13 @@ import Network.Mux qualified as Mx
 import Network.TypedProtocol.Peer.Client
 import Network.TypedProtocol.Stateful.Peer.Client qualified as Stateful
 
+import Cardano.Network.NodeToClient.Version
+
 import Ouroboros.Network.Context
 import Ouroboros.Network.Driver (TraceSendRecv (..))
 import Ouroboros.Network.Driver.Limits (ProtocolLimitFailure (..))
 import Ouroboros.Network.IOManager
 import Ouroboros.Network.Mux
-import Ouroboros.Network.NodeToClient.Version
 import Ouroboros.Network.Protocol.ChainSync.Client as ChainSync
 import Ouroboros.Network.Protocol.ChainSync.Type qualified as ChainSync
 import Ouroboros.Network.Protocol.Handshake.Codec

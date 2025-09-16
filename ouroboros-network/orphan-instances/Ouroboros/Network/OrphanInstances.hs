@@ -73,13 +73,13 @@ import Ouroboros.Network.Diffusion.Topology (LocalRootPeersGroup (..),
            LocalRootPeersGroups (..), NetworkTopology (..),
            PublicRootPeers (..), RootConfig (..))
 import Ouroboros.Network.Diffusion.Types (DiffusionTracer (..))
+import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.Driver.Simple
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (repromoteDelay))
 import Ouroboros.Network.InboundGovernor qualified as InboundGovernor
 import Ouroboros.Network.InboundGovernor.State (RemoteSt)
 import Ouroboros.Network.InboundGovernor.State qualified as InboundGovernor
 import Ouroboros.Network.Mux (MiniProtocolNum (..))
-import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.PeerSelection hiding (PublicRootPeers)
 import Ouroboros.Network.PeerSelection.Governor.Types (AssociationMode (..),
            DebugPeerSelectionState (..), PeerSharingResult (..),

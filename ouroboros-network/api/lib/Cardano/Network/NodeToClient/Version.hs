@@ -3,7 +3,7 @@
 {-# LANGUAGE LambdaCase     #-}
 {-# LANGUAGE NamedFieldPuns #-}
 
-module Ouroboros.Network.NodeToClient.Version
+module Cardano.Network.NodeToClient.Version
   ( NodeToClientVersion (..)
   , NodeToClientVersionData (..)
   , nodeToClientCodecCBORTerm

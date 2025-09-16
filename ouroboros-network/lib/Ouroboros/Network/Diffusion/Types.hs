@@ -32,6 +32,7 @@ module Ouroboros.Network.Diffusion.Types
   , AbstractTransitionTrace
   , IG.RemoteTransitionTrace
   , SRVPrefix
+  , DiffusionMode (..)
   ) where
 
 import Control.Concurrent.Class.MonadSTM.Strict
@@ -63,6 +64,7 @@ import Ouroboros.Network.ConnectionManager.Core qualified as CM
 import Ouroboros.Network.ConnectionManager.State qualified as CM
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.Context
+import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.Driver.Simple (TraceSendRecv)
 import Ouroboros.Network.ExitPolicy
 import Ouroboros.Network.InboundGovernor qualified as IG
@@ -74,7 +76,6 @@ import Ouroboros.Network.Server qualified as Server
 import Ouroboros.Network.Snocket (FileDescriptor, Snocket)
 import Ouroboros.Network.Socket (SystemdSocketTracer)
 
-import Ouroboros.Network.NodeToNode.Version (DiffusionMode)
 import Ouroboros.Network.PeerSelection as PeerSelection
 import Ouroboros.Network.PeerSelection.Governor.Types
 import Ouroboros.Network.PeerSelection.RootPeersDNS

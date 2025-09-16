@@ -181,8 +181,8 @@ import Network.Mux.Types qualified as Mux
 
 import Ouroboros.Network.ConnectionId (ConnectionId (..))
 import Ouroboros.Network.ConnectionManager.ConnMap (ConnMap)
+import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.MuxMode
-import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 
 
 -- | Connection manager supports `IPv4` and `IPv6` addresses.
