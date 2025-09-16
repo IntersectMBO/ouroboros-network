@@ -29,7 +29,7 @@ import Network.TypedProtocol.Core
 import Network.TypedProtocol.Stateful.Codec qualified as Stateful
 import Network.TypedProtocol.Stateful.Codec.CBOR qualified as Stateful
 
-import Ouroboros.Network.NodeToClient.Version qualified as V
+import Cardano.Network.NodeToClient.Version qualified as V
 import Ouroboros.Network.Protocol.LocalStateQuery.Type
 
 

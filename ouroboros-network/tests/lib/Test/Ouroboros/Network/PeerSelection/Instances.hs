@@ -27,7 +27,7 @@ import Data.Word (Word16, Word32, Word64)
 import Cardano.Network.Diffusion.Configuration qualified as Cardano (srvPrefix)
 import Cardano.Slotting.Slot (SlotNo (..))
 
-import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
+import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.PeerSelection.Governor
 
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type (AfterSlot (..),

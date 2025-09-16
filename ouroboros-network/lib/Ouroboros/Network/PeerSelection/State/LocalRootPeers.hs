@@ -39,7 +39,8 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 
 import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
-import Ouroboros.Network.NodeToNode.Version (DiffusionMode)
+
+import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
 
 

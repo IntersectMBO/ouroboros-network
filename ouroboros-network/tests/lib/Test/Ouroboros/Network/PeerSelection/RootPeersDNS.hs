@@ -70,7 +70,7 @@ import Control.Monad.Class.MonadTimer.SI qualified as MonadTimer
 import Control.Monad.IOSim
 import Control.Tracer (Tracer (Tracer), contramap, nullTracer, traceWith)
 
-import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
+import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.PeerSelection
 import Ouroboros.Network.PeerSelection.RootPeersDNS
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),

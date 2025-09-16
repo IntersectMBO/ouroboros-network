@@ -76,12 +76,12 @@ import Ouroboros.Network.ConnectionId
 import Ouroboros.Network.ConnectionManager.Core qualified as CM
 import Ouroboros.Network.ConnectionManager.State qualified as CM
 import Ouroboros.Network.ConnectionManager.Types
+import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.InboundGovernor qualified as IG
 import Ouroboros.Network.InboundGovernor.State (ConnectionState (..))
 import Ouroboros.Network.InboundGovernor.State qualified as IG
 import Ouroboros.Network.Mux
 import Ouroboros.Network.MuxMode
-import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.Protocol.Handshake.Codec (noTimeLimitsHandshake,
            timeLimitsHandshake)
 import Ouroboros.Network.Protocol.Handshake.Unversioned

@@ -29,7 +29,7 @@ import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
 import Text.Printf
 
-import Ouroboros.Network.NodeToClient.Version qualified as V
+import Cardano.Network.NodeToClient.Version qualified as V
 import Ouroboros.Network.Protocol.LocalTxMonitor.Type
 
 codecLocalTxMonitor ::

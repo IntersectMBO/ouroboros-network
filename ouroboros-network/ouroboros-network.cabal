@@ -71,6 +71,8 @@ library api
   hs-source-dirs: api/lib
   exposed-modules:
     Cardano.Network.ConsensusMode
+    Cardano.Network.NodeToClient.Version
+    Cardano.Network.NodeToNode.Version
     Cardano.Network.PeerSelection.Bootstrap
     Cardano.Network.PeerSelection.LocalRootPeers
     Cardano.Network.PeerSelection.PeerTrustable
@@ -81,12 +83,11 @@ library api
     Ouroboros.Network.BlockFetch.ConsensusInterface
     Ouroboros.Network.CodecCBORTerm
     Ouroboros.Network.ControlMessage
+    Ouroboros.Network.DiffusionMode
     Ouroboros.Network.Handshake
     Ouroboros.Network.Handshake.Acceptable
     Ouroboros.Network.Handshake.Queryable
     Ouroboros.Network.Magic
-    Ouroboros.Network.NodeToClient.Version
-    Ouroboros.Network.NodeToNode.Version
     Ouroboros.Network.PeerSelection.LedgerPeers.Type
     Ouroboros.Network.PeerSelection.LedgerPeers.Utils
     Ouroboros.Network.PeerSelection.PeerAdvertise

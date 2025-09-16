@@ -40,7 +40,7 @@ import Ouroboros.Network.ConnectionManager.Core (defaultProtocolIdleTimeout,
            defaultResetTimeout, defaultTimeWaitTimeout)
 import Ouroboros.Network.Diffusion.Policies (closeConnectionTimeout,
            deactivateTimeout, peerMetricsConfiguration)
-import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
+import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.PeerSelection.Governor.Types
            (PeerSelectionTargets (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))

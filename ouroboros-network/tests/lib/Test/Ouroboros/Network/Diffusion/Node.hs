@@ -83,12 +83,12 @@ import Ouroboros.Network.BlockFetch.ConsensusInterface
 import Ouroboros.Network.ConnectionManager.State (ConnStateIdSupply)
 import Ouroboros.Network.ConnectionManager.Types (DataFlow (..))
 import Ouroboros.Network.Diffusion qualified as Diffusion
+import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
 import Ouroboros.Network.Mock.Chain (Chain, toAnchoredFragment, toOldestFirst)
 import Ouroboros.Network.Mock.ConcreteBlock (Block (..), BlockHeader (..),
            convertSlotToTimeForTestsAssumingNoHardFork)
 import Ouroboros.Network.Mock.ProducerState (ChainProducerState (..))
-import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.PeerSelection.Churn (PeerChurnArgs)
 import Ouroboros.Network.PeerSelection.Governor (PeerSelectionState (..),
            PeerSelectionTargets (..), PublicPeerSelectionState (..))

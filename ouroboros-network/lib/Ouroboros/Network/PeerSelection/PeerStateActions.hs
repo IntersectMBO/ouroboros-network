@@ -59,9 +59,9 @@ import Network.Mux qualified as Mux
 
 import Ouroboros.Network.Context
 import Ouroboros.Network.ControlMessage (ControlMessage (..))
+import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.ExitPolicy
 import Ouroboros.Network.Mux
-import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.PeerSelection.Governor.Types (PeerStateActions (..))
 import Ouroboros.Network.Protocol.Handshake (HandshakeException)
 import Ouroboros.Network.RethrowPolicy

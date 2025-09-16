@@ -81,6 +81,7 @@ import Ouroboros.Network.Context
 import Ouroboros.Network.ControlMessage (ControlMessage (..))
 import Ouroboros.Network.Diffusion qualified as Diffusion
 import Ouroboros.Network.Diffusion.Policies qualified as Diffusion.Policies
+import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.Driver.Limits
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
 import Ouroboros.Network.KeepAlive
@@ -88,7 +89,6 @@ import Ouroboros.Network.Mock.Chain qualified as Chain
 import Ouroboros.Network.Mock.ConcreteBlock
 import Ouroboros.Network.Mock.ProducerState
 import Ouroboros.Network.Mux
-import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
 import Ouroboros.Network.PeerSelection.PeerSharing qualified as PSTypes
 import Ouroboros.Network.PeerSharing (PeerSharingAPI, bracketPeerSharingClient,

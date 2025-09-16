@@ -82,6 +82,8 @@ import Network.Mux qualified as Mx
 import Network.Socket (Socket, StructLinger (..))
 import Network.Socket qualified as Socket
 
+import Cardano.Network.NodeToNode.Version
+
 import Ouroboros.Network.ConnectionManager.Types (DataFlow (..),
            ExceptionInHandler (..))
 import Ouroboros.Network.Context
@@ -89,7 +91,6 @@ import Ouroboros.Network.ControlMessage (ControlMessage (..))
 import Ouroboros.Network.Driver (TraceSendRecv (..))
 import Ouroboros.Network.Driver.Limits (ProtocolLimitFailure (..))
 import Ouroboros.Network.Mux
-import Ouroboros.Network.NodeToNode.Version
 import Ouroboros.Network.PeerSelection.Governor.Types
            (PeerSelectionTargets (..))
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))

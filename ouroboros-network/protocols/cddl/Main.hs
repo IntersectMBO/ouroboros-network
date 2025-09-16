@@ -61,14 +61,14 @@ import Ouroboros.Network.CodecCBORTerm
 import Ouroboros.Network.Magic
 import Ouroboros.Network.Mock.ConcreteBlock qualified as Concrete (Block)
 
-import Ouroboros.Network.NodeToClient.Version (NodeToClientVersion,
+import Cardano.Network.NodeToClient.Version (NodeToClientVersion,
            NodeToClientVersionData (..), nodeToClientCodecCBORTerm)
-import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..),
+import Cardano.Network.NodeToClient.Version qualified as NtCVersion
+import Cardano.Network.NodeToNode.Version (DiffusionMode (..),
            NodeToNodeVersion (..), NodeToNodeVersionData (..),
            nodeToNodeCodecCBORTerm)
+import Cardano.Network.NodeToNode.Version qualified as NtNVersion
 
-import Ouroboros.Network.NodeToClient.Version qualified as NtCVersion
-import Ouroboros.Network.NodeToNode.Version qualified as NtNVersion
 import Ouroboros.Network.PeerSelection.RelayAccessPoint (PortNumber)
 import Ouroboros.Network.Protocol.BlockFetch.Codec (codecBlockFetch)
 import Ouroboros.Network.Protocol.BlockFetch.Test ()

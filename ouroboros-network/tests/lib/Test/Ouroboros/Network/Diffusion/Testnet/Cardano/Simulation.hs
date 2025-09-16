@@ -109,13 +109,13 @@ import Ouroboros.Network.ConnectionManager.Core qualified as CM
 import Ouroboros.Network.ConnectionManager.State qualified as CM
 import Ouroboros.Network.ConnectionManager.Types (AbstractTransitionTrace)
 import Ouroboros.Network.Diffusion qualified as Diffusion
+import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.Driver.Limits (ProtocolSizeLimits (..),
            ProtocolTimeLimits (..))
 import Ouroboros.Network.Handshake.Acceptable (Acceptable (acceptableVersion))
 import Ouroboros.Network.InboundGovernor (RemoteTransitionTrace)
 import Ouroboros.Network.InboundGovernor qualified as IG
 import Ouroboros.Network.Mux (MiniProtocolLimits (..))
-import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.PeerSelection hiding (peerChurnGovernor,
            requestPublicRootPeers)
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor

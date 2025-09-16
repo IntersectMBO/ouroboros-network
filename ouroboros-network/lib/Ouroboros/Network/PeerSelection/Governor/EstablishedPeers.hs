@@ -23,7 +23,7 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import System.Random (randomR)
 
-import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
+import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.PeerSelection.Governor.Types
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type (IsBigLedgerPeer (..))
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))

@@ -136,17 +136,16 @@ import Data.Semigroup (Min (..))
 import Data.Set (Set)
 import Data.Set qualified as Set
 import GHC.Stack (HasCallStack)
-
-import Control.Applicative (Alternative)
-import Control.Concurrent.JobPool (Job)
-import Control.Exception (Exception (..), SomeException, assert)
-import Control.Monad.Class.MonadSTM
-import Control.Monad.Class.MonadTime.SI
 import System.Random (StdGen)
 
+import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Concurrent.JobPool (Job)
+import Control.Exception (Exception (..), SomeException, assert)
+import Control.Monad.Class.MonadTime.SI
+
+import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.ExitPolicy
-import Ouroboros.Network.NodeToNode.Version (DiffusionMode)
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)

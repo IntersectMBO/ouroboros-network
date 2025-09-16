@@ -66,13 +66,13 @@ import Ouroboros.Network.ConnectionManager.Core qualified as CM
 import Ouroboros.Network.ConnectionManager.State qualified as CM
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.Context
+import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.InboundGovernor qualified as InboundGovernor
 import Ouroboros.Network.InboundGovernor.InformationChannel
            (newInformationChannel)
 import Ouroboros.Network.IOManager
 import Ouroboros.Network.Mux
 import Ouroboros.Network.MuxMode
-import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.Protocol.Handshake
 import Ouroboros.Network.Protocol.Handshake.Unversioned
 import Ouroboros.Network.RethrowPolicy

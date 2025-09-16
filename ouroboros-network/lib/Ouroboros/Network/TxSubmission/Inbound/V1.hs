@@ -41,7 +41,8 @@ import Control.Tracer (Tracer, traceWith)
 
 import Network.TypedProtocol.Core (N, Nat (..), natToInt)
 
-import Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion)
+import Cardano.Network.NodeToNode.Version (NodeToNodeVersion)
+
 import Ouroboros.Network.Protocol.TxSubmission2.Server
 import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types (ProcessedTxCount (..),
