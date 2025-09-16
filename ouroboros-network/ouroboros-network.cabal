@@ -37,6 +37,8 @@ source-repository head
   location: https://github.com/intersectmbo/ouroboros-network
 
 common ghc-options
+  default-language: Haskell2010
+  default-extensions: ImportQualifiedPost
   ghc-options:
     -Wall
     -Wno-unticked-promoted-constructors
@@ -48,6 +50,9 @@ common ghc-options
     -Wredundant-constraints
     -Wunused-packages
 
+  if flag(asserts)
+    ghc-options: -fno-ignore-asserts
+
 -- in tests librararies redundant constraints are sometimes useful (e.g.
 -- by default truned off debug tracing might require extra constraints like
 -- `Show` or `MonadSay`).
@@ -57,7 +62,7 @@ common ghc-options-tests
 
 library
   import: ghc-options
-  hs-source-dirs: src
+  hs-source-dirs: lib
   -- At this experiment/prototype stage everything is exposed.
   -- This has to be tidied up once the design becomes clear.
   exposed-modules:
@@ -124,8 +129,6 @@ library
     Ouroboros.Network.AnchoredSeq,
     Ouroboros.Network.Magic,
 
-  default-language: Haskell2010
-  default-extensions: ImportQualifiedPost
   other-extensions:
     BangPatterns
     DataKinds
@@ -181,9 +184,6 @@ library
   if !os(windows)
     build-depends:
       directory
-
-  if flag(asserts)
-    ghc-options: -fno-ignore-asserts
 
 library framework
   import: ghc-options
@@ -257,8 +257,6 @@ library framework
   if os(windows)
     build-depends: Win32 >=2.5.4.1 && <3.0
   hs-source-dirs: framework
-  default-language: Haskell2010
-  default-extensions: ImportQualifiedPost
 
 library framework-tests-lib
   import: ghc-options
@@ -272,7 +270,6 @@ library framework-tests-lib
     Test.Ouroboros.Network.Orphans
     Test.Ouroboros.Network.RawBearer.Utils
 
-  other-modules:
   build-depends:
     QuickCheck >=2.16,
     base >=4.14 && <4.22,
@@ -290,9 +287,6 @@ library framework-tests-lib
     random,
     serialise,
     typed-protocols:{typed-protocols, examples},
-
-  default-language: Haskell2010
-  default-extensions: ImportQualifiedPost
 
 test-suite framework-sim-tests
   import: ghc-options
@@ -332,8 +326,6 @@ test-suite framework-sim-tests
     typed-protocols:{typed-protocols, cborg, examples},
     with-utf8,
 
-  default-language: Haskell2010
-  default-extensions: ImportQualifiedPost
   ghc-options:
     -rtsopts
     -threaded
@@ -374,8 +366,6 @@ test-suite framework-io-tests
 
   if os(windows)
     build-depends: Win32-network <0.3
-  default-language: Haskell2010
-  default-extensions: ImportQualifiedPost
   ghc-options:
     -rtsopts
     -threaded
@@ -388,10 +378,7 @@ library orphan-instances
     Cardano.Network.OrphanInstances
     Ouroboros.Network.OrphanInstances
 
-  other-modules:
   reexported-modules:
-  default-language: Haskell2010
-  default-extensions: ImportQualifiedPost
   other-extensions:
     BangPatterns
     DataKinds
@@ -429,10 +416,8 @@ library orphan-instances
     text,
     typed-protocols,
 
-  if flag(asserts)
-    ghc-options: -fno-ignore-asserts
-
 executable demo-ping-pong
+  import: ghc-options
   hs-source-dirs: demo
   main-is: ping-pong.hs
   build-depends:
@@ -446,21 +431,8 @@ executable demo-ping-pong
     ouroboros-network-api,
     typed-protocols:examples,
 
-  default-language: Haskell2010
-  default-extensions: ImportQualifiedPost
-  ghc-options:
-    -Wall
-    -threaded
-    -Wcompat
-    -Wincomplete-uni-patterns
-    -Wincomplete-record-updates
-    -Wpartial-fields
-    -Widentities
-    -Wredundant-constraints
-    -Wno-unticked-promoted-constructors
-    -Wunused-packages
-
 executable demo-connection-manager
+  import: ghc-options
   hs-source-dirs: demo
   main-is: connection-manager.hs
   build-depends:
@@ -476,20 +448,6 @@ executable demo-connection-manager
     ouroboros-network-api,
     random,
     typed-protocols:{typed-protocols, examples},
-
-  default-language: Haskell2010
-  default-extensions: ImportQualifiedPost
-  ghc-options:
-    -Wall
-    -threaded
-    -Wcompat
-    -Wincomplete-uni-patterns
-    -Wincomplete-record-updates
-    -Wpartial-fields
-    -Widentities
-    -Wredundant-constraints
-    -Wno-unticked-promoted-constructors
-    -Wunused-packages
 
 library cardano-diffusion
   import: ghc-options
@@ -514,8 +472,6 @@ library cardano-diffusion
     Cardano.Network.PeerSelection.PeerSelectionActions
     Cardano.Network.PeerSelection.PublicRootPeers
 
-  other-modules:
-  reexported-modules:
   default-language: Haskell2010
   default-extensions: ImportQualifiedPost
   other-extensions:
@@ -561,9 +517,6 @@ library cardano-diffusion
     build-depends:
       unix
 
-  if flag(asserts)
-    ghc-options: -fno-ignore-asserts
-
 library protocols
   import: ghc-options
   visibility: public
@@ -607,8 +560,6 @@ library protocols
     Ouroboros.Network.Protocol.TxSubmission2.Server
     Ouroboros.Network.Protocol.TxSubmission2.Type
 
-  default-language: Haskell2010
-  default-extensions: ImportQualifiedPost
   other-extensions:
     BangPatterns
     DataKinds
@@ -650,15 +601,10 @@ library protocols
     text,
     typed-protocols:{typed-protocols, cborg, stateful, stateful-cborg} ^>=1.1,
 
-  if flag(asserts)
-    ghc-options: -fno-ignore-asserts
-
 library protocols-tests-lib
   import: ghc-options
   visibility: public
   hs-source-dirs: protocols/tests-lib
-  default-language: Haskell2010
-  default-extensions: ImportQualifiedPost
   exposed-modules:
     Ouroboros.Network.Protocol.BlockFetch.Codec.CDDL
     Ouroboros.Network.Protocol.BlockFetch.Direct
@@ -715,8 +661,8 @@ library protocols-tests-lib
     io-sim,
     network,
     network-mux,
-    ouroboros-network-api,
     ouroboros-network:{framework, mock, protocols},
+    ouroboros-network-api,
     ouroboros-network-testing,
     pipes,
     quickcheck-instances,
@@ -736,14 +682,12 @@ test-suite protocols-tests
     Test.AnchoredFragment
     Test.Chain
 
-  default-language: Haskell2010
-  default-extensions: ImportQualifiedPost
   build-depends:
     QuickCheck ^>=2.16,
     base >=4.14 && <4.22,
+    ouroboros-network:{mock, protocols-tests-lib},
     ouroboros-network:protocols-tests-lib,
     ouroboros-network-api,
-    ouroboros-network:{mock, protocols-tests-lib},
     ouroboros-network-testing ^>=0.8,
     tasty,
     tasty-quickcheck,
@@ -765,8 +709,6 @@ test-suite protocols-cddl
   else
     buildable: False
 
-  default-language: Haskell2010
-  default-extensions: ImportQualifiedPost
   build-depends:
     QuickCheck,
     base >=4.14 && <4.22,
@@ -777,7 +719,7 @@ test-suite protocols-cddl
     filepath,
     mtl,
     network,
-    ouroboros-network:{mock, framework, protocols, protocols-tests-lib},
+    ouroboros-network:{framework, mock, protocols, protocols-tests-lib},
     ouroboros-network-api,
     process-extras,
     quickcheck-instances,
@@ -796,11 +738,11 @@ test-suite protocols-cddl
     -with-rtsopts=-M400m
 
 test-suite protocols-bench
+  import: ghc-options-tests
   type: exitcode-stdio-1.0
   default-extensions: ImportQualifiedPost
   hs-source-dirs: protocols/bench
   main-is: Main.hs
-  default-language: Haskell2010
   build-depends:
     base >=4.14 && <4.22,
     bytestring,
@@ -814,10 +756,6 @@ test-suite protocols-bench
     typed-protocols:{typed-protocols, stateful},
 
   ghc-options:
-    -Wall
-    -Wno-unticked-promoted-constructors
-    -Wcompat
-    -Wunused-packages
     -rtsopts
     -with-rtsopts=-A32m
     -with-rtsopts=-T
@@ -828,6 +766,7 @@ test-suite protocols-bench
     ghc-options: -fproc-alignment=64
 
 library mock
+  import: ghc-options
   visibility: public
   hs-source-dirs: mock
   exposed-modules:
@@ -835,8 +774,6 @@ library mock
     Ouroboros.Network.Mock.ConcreteBlock
     Ouroboros.Network.Mock.ProducerState
 
-  default-language: Haskell2010
-  default-extensions: ImportQualifiedPost
   build-depends:
     base >=4.14 && <4.22,
     bytestring,
@@ -848,27 +785,11 @@ library mock
     serialise,
     time,
 
-  ghc-options:
-    -Wall
-    -Wno-unticked-promoted-constructors
-    -Wcompat
-    -Wincomplete-uni-patterns
-    -Wincomplete-record-updates
-    -Wpartial-fields
-    -Widentities
-    -Wredundant-constraints
-    -Wunused-packages
-
-  if flag(asserts)
-    ghc-options: -fno-ignore-asserts
-
 -- Simulation Test Library
-library testlib
+library ouroboros-network-tests-lib
   import: ghc-options-tests
-  default-language: Haskell2010
-  default-extensions: ImportQualifiedPost
   visibility: public
-  hs-source-dirs: testlib
+  hs-source-dirs: tests/lib
   build-depends:
     QuickCheck >=2.16,
     aeson,
@@ -891,7 +812,7 @@ library testlib
     network,
     network-mux,
     nothunks,
-    ouroboros-network:{cardano-diffusion, framework, framework-tests-lib, mock, orphan-instances, ouroboros-network, protocols, protocols-tests-lib},
+    ouroboros-network:{ouroboros-network, cardano-diffusion, framework, framework-tests-lib, mock, orphan-instances, protocols, protocols-tests-lib},
     ouroboros-network-api,
     ouroboros-network-testing ^>=0.8.3,
     pipes,
@@ -949,16 +870,14 @@ library testlib
 -- Simulation tests, and IO tests which don't require native system calls.
 -- (i.e. they don't require system call API provided by `Win32-network` or
 -- `network` dependency).  test-suite sim-tests
-test-suite sim-tests
+test-suite ouroboros-network-sim-tests
   import: ghc-options-tests
-  default-language: Haskell2010
-  default-extensions: ImportQualifiedPost
   type: exitcode-stdio-1.0
-  hs-source-dirs: sim-tests
+  hs-source-dirs: tests/sim
   main-is: Main.hs
   build-depends:
     base >=4.14 && <4.22,
-    ouroboros-network:{protocols, protocols-tests-lib, testlib},
+    ouroboros-network:{ouroboros-network-tests-lib, protocols-tests-lib},
     tasty,
     with-utf8,
 
@@ -974,17 +893,15 @@ test-suite sim-tests
 -- library.  These tests are compiled natively & run on all supported
 -- platforms: x86_64-w64-mingw32 (Windows), x86_64-linux, x86-64-darwin and
 -- aarch64-darwin.
-test-suite io-tests
+test-suite ouroboros-network-io-tests
   import: ghc-options-tests
   type: exitcode-stdio-1.0
-  hs-source-dirs: io-tests
+  hs-source-dirs: tests/io
   main-is: Main.hs
   other-modules:
     Test.Ouroboros.Network.Pipe
     Test.Ouroboros.Network.Socket
 
-  default-language: Haskell2010
-  default-extensions: ImportQualifiedPost
   build-depends:
     QuickCheck >=2.16,
     base >=4.14 && <4.22,
@@ -1037,24 +954,19 @@ executable demo-chain-sync
     serialise,
     typed-protocols,
 
-  default-language: Haskell2010
-  default-extensions: ImportQualifiedPost
   ghc-options:
-    -Wall
     -threaded
     -rtsopts
 
 benchmark sim-benchmarks
   import: ghc-options-tests
-  default-language: Haskell2010
-  default-extensions: ImportQualifiedPost
   type: exitcode-stdio-1.0
   hs-source-dirs: bench
   main-is: Main.hs
   build-depends:
     base,
     deepseq,
-    ouroboros-network:{ouroboros-network, testlib},
+    ouroboros-network:{ouroboros-network, ouroboros-network-tests-lib},
     splitmix,
     tasty-bench >=0.3.5,
 
