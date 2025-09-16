@@ -129,9 +129,10 @@ library api-tests-lib
   import: ghc-options
   hs-source-dirs: api/tests-lib
   exposed-modules:
-    Ouroboros.Network.Mock.ConcreteBlock
     Ouroboros.Network.Mock.Chain
     Ouroboros.Network.Mock.ChainGenerators
+    Ouroboros.Network.Mock.ConcreteBlock
+
   build-depends:
     QuickCheck,
     base,
@@ -153,11 +154,11 @@ test-suite api-tests
   main-is: Main.hs
   hs-source-dirs: api/tests
   other-modules:
-    Test.Ouroboros.Network.AnchoredFragment
-    Test.Ouroboros.Network.Chain
-    Test.Cardano.Network.Version
     Test.Cardano.Network.NodeToClient.Version
     Test.Cardano.Network.NodeToNode.Version
+    Test.Cardano.Network.Version
+    Test.Ouroboros.Network.AnchoredFragment
+    Test.Ouroboros.Network.Chain
     Test.Ouroboros.Network.PeerSelection.RelayAccessPoint
 
   build-depends:
@@ -822,6 +823,7 @@ library protocols-tests-lib
   visibility: public
   hs-source-dirs: protocols/tests-lib
   exposed-modules:
+    Ouroboros.Network.Mock.ProducerState
     Ouroboros.Network.Protocol.BlockFetch.Codec.CDDL
     Ouroboros.Network.Protocol.BlockFetch.Direct
     Ouroboros.Network.Protocol.BlockFetch.Examples
@@ -875,7 +877,7 @@ library protocols-tests-lib
     io-sim,
     network,
     network-mux,
-    ouroboros-network:{api, api-tests-lib, framework, mock, protocols, tests-lib},
+    ouroboros-network:{api, api-tests-lib, framework, protocols, tests-lib},
     pipes,
     quickcheck-instances,
     serialise,
@@ -889,10 +891,9 @@ test-suite protocols-tests
   type: exitcode-stdio-1.0
   hs-source-dirs: protocols/tests
   main-is: Main.hs
-
   build-depends:
     base >=4.14 && <4.22,
-    ouroboros-network:{protocols-tests-lib},
+    ouroboros-network:protocols-tests-lib,
     tasty,
 
   ghc-options:
@@ -932,7 +933,6 @@ test-suite protocols-cddl
     temporary,
     text,
     typed-protocols:{typed-protocols, stateful},
-    tasty-quickcheck,
 
   ghc-options:
     -threaded
@@ -967,18 +967,6 @@ test-suite protocols-bench
   if impl(ghc >=8.6)
     ghc-options: -fproc-alignment=64
 
-library mock
-  import: ghc-options
-  visibility: public
-  hs-source-dirs: mock
-  exposed-modules:
-    Ouroboros.Network.Mock.ProducerState
-
-  build-depends:
-    base >=4.14 && <4.22,
-    containers,
-    ouroboros-network:{api, api-tests-lib},
-
 -- Simulation Test Library
 library ouroboros-network-tests-lib
   import: ghc-options-tests
@@ -1006,7 +994,7 @@ library ouroboros-network-tests-lib
     network,
     network-mux,
     nothunks,
-    ouroboros-network:{ouroboros-network, api, api-tests-lib, cardano-diffusion, framework, framework-tests-lib, mock, orphan-instances, protocols, protocols-tests-lib, tests-lib},
+    ouroboros-network:{ouroboros-network, api, api-tests-lib, cardano-diffusion, framework, framework-tests-lib, orphan-instances, protocols, protocols-tests-lib, tests-lib},
     pipes,
     pretty-simple,
     psqueues,
@@ -1100,7 +1088,7 @@ test-suite ouroboros-network-io-tests
     monoidal-synchronisation,
     network,
     network-mux,
-    ouroboros-network:{api, api-tests-lib, cardano-diffusion, framework, mock, protocols, protocols-tests-lib, tests-lib},
+    ouroboros-network:{api, api-tests-lib, cardano-diffusion, framework, protocols, protocols-tests-lib, tests-lib},
     serialise,
     tasty,
     tasty-quickcheck,
