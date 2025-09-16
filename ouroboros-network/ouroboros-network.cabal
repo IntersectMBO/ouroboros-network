@@ -32,6 +32,11 @@ flag ipv6
   -- Default to False since travis lacks IPv6 support
   default: False
 
+flag nightly
+  description: Enable nightly tests
+  manual: False
+  default: False
+
 source-repository head
   type: git
   location: https://github.com/intersectmbo/ouroboros-network
@@ -246,8 +251,8 @@ library framework
     network-mux ^>=0.9.1,
     nothunks,
     nothunks ^>=0.1.4 || ^>=0.2,
+    ouroboros-network:tests-lib,
     ouroboros-network-api ^>=0.17,
-    ouroboros-network-testing,
     psqueues,
     quiet,
     random ^>=1.2,
@@ -257,6 +262,92 @@ library framework
   if os(windows)
     build-depends: Win32 >=2.5.4.1 && <3.0
   hs-source-dirs: framework
+
+library tests-lib
+  import: ghc-options
+  visibility: public
+  hs-source-dirs: tests-lib/lib
+  -- At this experiment/prototype stage everything is exposed.
+  -- This has to be tidied up once the design becomes clear.
+  exposed-modules:
+    Test.Ouroboros.Network.Data.AbsBearerInfo
+    Test.Ouroboros.Network.Data.Script
+    Test.Ouroboros.Network.Data.Signal
+    Test.Ouroboros.Network.QuickCheck
+    Test.Ouroboros.Network.Serialise
+    Test.Ouroboros.Network.Utils
+
+  other-extensions:
+    BangPatterns
+    DataKinds
+    EmptyCase
+    ExistentialQuantification
+    FlexibleContexts
+    FlexibleInstances
+    FunctionalDependencies
+    GADTSyntax
+    GADTs
+    GeneralizedNewtypeDeriving
+    MultiParamTypeClasses
+    NamedFieldPuns
+    OverloadedStrings
+    PolyKinds
+    RankNTypes
+    RecordWildCards
+    ScopedTypeVariables
+    TemplateHaskell
+    TupleSections
+    TypeApplications
+    TypeFamilies
+    TypeInType
+
+  build-depends:
+    QuickCheck,
+    base >=4.14 && <4.22,
+    cborg >=0.2.1 && <0.3,
+    containers,
+    contra-tracer,
+    deepseq,
+    deque ^>=0.4,
+    io-classes:{io-classes, si-timers, strict-stm} ^>=1.8.0.1,
+    io-sim,
+    network-mux,
+    pretty-simple,
+    psqueues >=0.2.3 && <0.3,
+    serialise >=0.2 && <0.3,
+    tasty,
+    tasty-expected-failure,
+
+  ghc-options:
+    -Wall
+    -Wno-unticked-promoted-constructors
+    -fno-ignore-asserts
+    -Wcompat
+    -Wincomplete-uni-patterns
+    -Wincomplete-record-updates
+    -Wpartial-fields
+    -Widentities
+    -Wredundant-constraints
+
+  if flag(nightly)
+    cpp-options: -DNIGHTLY
+
+test-suite tests-lib-tests
+  import: ghc-options
+  type: exitcode-stdio-1.0
+  main-is: Main.hs
+  hs-source-dirs: tests-lib/tests
+  other-modules: Test.Ouroboros.Network.Data.AbsBearerInfo.Test
+  build-depends:
+    QuickCheck,
+    base >=4.14 && <4.22,
+    ouroboros-network:tests-lib,
+    tasty,
+    tasty-quickcheck,
+
+  ghc-options:
+    -rtsopts
+    -threaded
 
 library framework-tests-lib
   import: ghc-options
@@ -281,9 +372,8 @@ library framework-tests-lib
     io-classes:{io-classes, si-timers, strict-stm},
     io-sim,
     network-mux,
-    ouroboros-network:framework,
+    ouroboros-network:{framework, tests-lib},
     ouroboros-network-api,
-    ouroboros-network-testing,
     random,
     serialise,
     typed-protocols:{typed-protocols, examples},
@@ -311,9 +401,8 @@ test-suite framework-sim-tests
     io-sim,
     monoidal-synchronisation,
     network-mux,
-    ouroboros-network:{framework, framework-tests-lib},
+    ouroboros-network:{framework, framework-tests-lib, tests-lib},
     ouroboros-network-api,
-    ouroboros-network-testing,
     pretty-simple,
     psqueues,
     quickcheck-instances,
@@ -661,9 +750,8 @@ library protocols-tests-lib
     io-sim,
     network,
     network-mux,
-    ouroboros-network:{framework, mock, protocols},
+    ouroboros-network:{framework, mock, protocols, tests-lib},
     ouroboros-network-api,
-    ouroboros-network-testing,
     pipes,
     quickcheck-instances,
     serialise,
@@ -685,10 +773,8 @@ test-suite protocols-tests
   build-depends:
     QuickCheck ^>=2.16,
     base >=4.14 && <4.22,
-    ouroboros-network:{mock, protocols-tests-lib},
-    ouroboros-network:protocols-tests-lib,
+    ouroboros-network:{mock, protocols-tests-lib, tests-lib},
     ouroboros-network-api,
-    ouroboros-network-testing ^>=0.8,
     tasty,
     tasty-quickcheck,
 
@@ -812,9 +898,8 @@ library ouroboros-network-tests-lib
     network,
     network-mux,
     nothunks,
-    ouroboros-network:{ouroboros-network, cardano-diffusion, framework, framework-tests-lib, mock, orphan-instances, protocols, protocols-tests-lib},
+    ouroboros-network:{ouroboros-network, cardano-diffusion, framework, framework-tests-lib, mock, orphan-instances, protocols, protocols-tests-lib, tests-lib},
     ouroboros-network-api,
-    ouroboros-network-testing ^>=0.8.3,
     pipes,
     pretty-simple,
     psqueues,
@@ -911,9 +996,8 @@ test-suite ouroboros-network-io-tests
     monoidal-synchronisation,
     network,
     network-mux,
-    ouroboros-network:{cardano-diffusion, framework, mock, protocols, protocols-tests-lib},
+    ouroboros-network:{cardano-diffusion, framework, mock, protocols, protocols-tests-lib, tests-lib},
     ouroboros-network-api,
-    ouroboros-network-testing ^>=0.8.1,
     serialise,
     tasty,
     tasty-quickcheck,
