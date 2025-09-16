@@ -65,6 +65,115 @@ common ghc-options-tests
   import: ghc-options
   ghc-options: -Wno-redundant-constraints
 
+library api
+  import: ghc-options
+  visibility: public
+  hs-source-dirs: api/lib
+  exposed-modules:
+    Cardano.Network.ConsensusMode
+    Cardano.Network.PeerSelection.Bootstrap
+    Cardano.Network.PeerSelection.LocalRootPeers
+    Cardano.Network.PeerSelection.PeerTrustable
+    Cardano.Network.Types
+    Ouroboros.Network.AnchoredFragment
+    Ouroboros.Network.AnchoredSeq
+    Ouroboros.Network.Block
+    Ouroboros.Network.BlockFetch.ConsensusInterface
+    Ouroboros.Network.CodecCBORTerm
+    Ouroboros.Network.ControlMessage
+    Ouroboros.Network.Handshake
+    Ouroboros.Network.Handshake.Acceptable
+    Ouroboros.Network.Handshake.Queryable
+    Ouroboros.Network.Magic
+    Ouroboros.Network.NodeToClient.Version
+    Ouroboros.Network.NodeToNode.Version
+    Ouroboros.Network.PeerSelection.LedgerPeers.Type
+    Ouroboros.Network.PeerSelection.LedgerPeers.Utils
+    Ouroboros.Network.PeerSelection.PeerAdvertise
+    Ouroboros.Network.PeerSelection.PeerMetric.Type
+    Ouroboros.Network.PeerSelection.PeerSharing
+    Ouroboros.Network.PeerSelection.PeerSharing.Codec
+    Ouroboros.Network.PeerSelection.RelayAccessPoint
+    Ouroboros.Network.Point
+    Ouroboros.Network.Protocol.Limits
+    Ouroboros.Network.SizeInBytes
+    Ouroboros.Network.Util.ShowProxy
+
+  build-depends:
+    aeson,
+    base >=4.14 && <4.22,
+    base16-bytestring,
+    bytestring >=0.10 && <0.13,
+    cardano-binary,
+    cardano-slotting,
+    cardano-strict-containers,
+    cborg >=0.2.1 && <0.3,
+    containers,
+    contra-tracer,
+    deepseq,
+    dns,
+    io-classes:{io-classes, si-timers, strict-stm} ^>=1.8.0.1,
+    iproute ^>=1.7.15,
+    measures,
+    network ^>=3.2.7,
+    network-mux ^>=0.9,
+    nothunks,
+    quiet,
+    random,
+    serialise >=0.2 && <0.3,
+    text >=1.2 && <2.2,
+    typed-protocols ^>=1.1,
+
+test-suite api-tests
+  import: ghc-options
+  type: exitcode-stdio-1.0
+  main-is: Main.hs
+  hs-source-dirs: api/tests
+  default-language: Haskell2010
+  default-extensions: ImportQualifiedPost
+  other-modules:
+    Test.Ouroboros.Network.PeerSelection.RelayAccessPoint
+
+  build-depends:
+    QuickCheck,
+    aeson,
+    base >=4.14 && <4.22,
+    bytestring,
+    cardano-binary,
+    cborg,
+    iproute,
+    ouroboros-network:api,
+    tasty,
+    tasty-quickcheck,
+    with-utf8,
+
+  ghc-options:
+    -rtsopts
+
+benchmark api-bench
+  type: exitcode-stdio-1.0
+  default-extensions: ImportQualifiedPost
+  hs-source-dirs: api/bench
+  default-language: Haskell2010
+  main-is: Main.hs
+  other-modules:
+    BenchBlock
+
+  build-depends:
+    base >=4.14 && <4.22,
+    bytestring,
+    cryptohash-sha256,
+    nothunks,
+    ouroboros-network:api,
+    tasty-bench,
+
+  ghc-options:
+    -Wall
+    -Wunused-packages
+    -rtsopts
+    "-with-rtsopts=-A32m -T"
+    -fproc-alignment=64
+
 library
   import: ghc-options
   hs-source-dirs: lib
@@ -178,8 +287,7 @@ library
     network ^>=3.2.7,
     network-mux,
     nothunks,
-    ouroboros-network:{framework, protocols} ^>=0.23,
-    ouroboros-network-api ^>=0.17,
+    ouroboros-network:{api, framework, protocols} ^>=0.23,
     psqueues >=0.2.3 && <0.3,
     random,
     strict-checked-vars ^>=0.2,
@@ -251,8 +359,7 @@ library framework
     network-mux ^>=0.9.1,
     nothunks,
     nothunks ^>=0.1.4 || ^>=0.2,
-    ouroboros-network:tests-lib,
-    ouroboros-network-api ^>=0.17,
+    ouroboros-network:{api, tests-lib},
     psqueues,
     quiet,
     random ^>=1.2,
@@ -372,8 +479,7 @@ library framework-tests-lib
     io-classes:{io-classes, si-timers, strict-stm},
     io-sim,
     network-mux,
-    ouroboros-network:{framework, tests-lib},
-    ouroboros-network-api,
+    ouroboros-network:{api, framework, tests-lib},
     random,
     serialise,
     typed-protocols:{typed-protocols, examples},
@@ -401,8 +507,7 @@ test-suite framework-sim-tests
     io-sim,
     monoidal-synchronisation,
     network-mux,
-    ouroboros-network:{framework, framework-tests-lib, tests-lib},
-    ouroboros-network-api,
+    ouroboros-network:{api, framework, framework-tests-lib, tests-lib},
     pretty-simple,
     psqueues,
     quickcheck-instances,
@@ -444,8 +549,7 @@ test-suite framework-io-tests
     monoidal-synchronisation,
     network,
     network-mux,
-    ouroboros-network:{framework, framework-tests-lib},
-    ouroboros-network-api,
+    ouroboros-network:{api, framework, framework-tests-lib},
     random,
     tasty,
     tasty-quickcheck,
@@ -500,8 +604,7 @@ library orphan-instances
     iproute,
     network,
     network-mux,
-    ouroboros-network:{ouroboros-network, cardano-diffusion, framework, protocols},
-    ouroboros-network-api ^>=0.17,
+    ouroboros-network:{ouroboros-network, api, cardano-diffusion, framework, protocols},
     text,
     typed-protocols,
 
@@ -516,8 +619,7 @@ executable demo-ping-pong
     contra-tracer,
     directory,
     network-mux,
-    ouroboros-network:framework,
-    ouroboros-network-api,
+    ouroboros-network:{api, framework},
     typed-protocols:examples,
 
 executable demo-connection-manager
@@ -533,8 +635,7 @@ executable demo-connection-manager
     network,
     network-mux,
     optparse-applicative,
-    ouroboros-network:framework,
-    ouroboros-network-api,
+    ouroboros-network:{api, framework},
     random,
     typed-protocols:{typed-protocols, examples},
 
@@ -597,8 +698,7 @@ library cardano-diffusion
     monoidal-synchronisation,
     network ^>=3.2.7,
     network-mux,
-    ouroboros-network:{ouroboros-network, framework, protocols},
-    ouroboros-network-api ^>=0.17,
+    ouroboros-network:{ouroboros-network, api, framework, protocols},
     random,
     typed-protocols:{typed-protocols, stateful} ^>=1.1,
 
@@ -682,7 +782,7 @@ library protocols
     deepseq,
     io-classes:{io-classes, si-timers} ^>=1.8.0.1,
     nothunks,
-    ouroboros-network-api ^>=0.17,
+    ouroboros-network:api,
     quiet,
     random,
     serialise,
@@ -750,8 +850,7 @@ library protocols-tests-lib
     io-sim,
     network,
     network-mux,
-    ouroboros-network:{framework, mock, protocols, tests-lib},
-    ouroboros-network-api,
+    ouroboros-network:{api, framework, mock, protocols, tests-lib},
     pipes,
     quickcheck-instances,
     serialise,
@@ -773,8 +872,7 @@ test-suite protocols-tests
   build-depends:
     QuickCheck ^>=2.16,
     base >=4.14 && <4.22,
-    ouroboros-network:{mock, protocols-tests-lib, tests-lib},
-    ouroboros-network-api,
+    ouroboros-network:{api, mock, protocols-tests-lib, tests-lib},
     tasty,
     tasty-quickcheck,
 
@@ -805,8 +903,7 @@ test-suite protocols-cddl
     filepath,
     mtl,
     network,
-    ouroboros-network:{framework, mock, protocols, protocols-tests-lib},
-    ouroboros-network-api,
+    ouroboros-network:{api, framework, mock, protocols, protocols-tests-lib},
     process-extras,
     quickcheck-instances,
     serialise,
@@ -836,8 +933,7 @@ test-suite protocols-bench
     containers,
     deepseq,
     network,
-    ouroboros-network:{framework, protocols, protocols-tests-lib},
-    ouroboros-network-api,
+    ouroboros-network:{api, framework, protocols, protocols-tests-lib},
     tasty-bench,
     typed-protocols:{typed-protocols, stateful},
 
@@ -867,7 +963,7 @@ library mock
     containers,
     hashable,
     nothunks,
-    ouroboros-network-api,
+    ouroboros-network:api,
     serialise,
     time,
 
@@ -898,8 +994,7 @@ library ouroboros-network-tests-lib
     network,
     network-mux,
     nothunks,
-    ouroboros-network:{ouroboros-network, cardano-diffusion, framework, framework-tests-lib, mock, orphan-instances, protocols, protocols-tests-lib, tests-lib},
-    ouroboros-network-api,
+    ouroboros-network:{ouroboros-network, api, cardano-diffusion, framework, framework-tests-lib, mock, orphan-instances, protocols, protocols-tests-lib, tests-lib},
     pipes,
     pretty-simple,
     psqueues,
@@ -996,8 +1091,7 @@ test-suite ouroboros-network-io-tests
     monoidal-synchronisation,
     network,
     network-mux,
-    ouroboros-network:{cardano-diffusion, framework, mock, protocols, protocols-tests-lib, tests-lib},
-    ouroboros-network-api,
+    ouroboros-network:{api, cardano-diffusion, framework, mock, protocols, protocols-tests-lib, tests-lib},
     serialise,
     tasty,
     tasty-quickcheck,
@@ -1032,8 +1126,7 @@ executable demo-chain-sync
     io-classes:{si-timers, strict-stm},
     network-mux,
     optparse-applicative,
-    ouroboros-network:{ouroboros-network, cardano-diffusion, framework, mock, protocols},
-    ouroboros-network-api,
+    ouroboros-network:{ouroboros-network, api, cardano-diffusion, framework, mock, protocols},
     random,
     serialise,
     typed-protocols,
