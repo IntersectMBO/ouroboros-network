@@ -125,14 +125,37 @@ library api
     text >=1.2 && <2.2,
     typed-protocols ^>=1.1,
 
+library api-tests-lib
+  import: ghc-options
+  hs-source-dirs: api/tests-lib
+  exposed-modules:
+    Ouroboros.Network.Mock.ConcreteBlock
+    Ouroboros.Network.Mock.Chain
+    Ouroboros.Network.Mock.ChainGenerators
+  build-depends:
+    QuickCheck,
+    base,
+    bytestring,
+    cardano-slotting:testlib ^>=0.2.0,
+    cborg,
+    hashable,
+    nothunks,
+    ouroboros-network:api,
+    quickcheck-instances,
+    serialise,
+    tasty,
+    tasty-quickcheck,
+    time,
+
 test-suite api-tests
   import: ghc-options
   type: exitcode-stdio-1.0
   main-is: Main.hs
   hs-source-dirs: api/tests
-  default-language: Haskell2010
-  default-extensions: ImportQualifiedPost
   other-modules:
+    Test.Ouroboros.Network.AnchoredFragment
+    Test.Ouroboros.Network.Chain
+    Test.Cardano.Network.Version
     Test.Cardano.Network.NodeToClient.Version
     Test.Cardano.Network.NodeToNode.Version
     Test.Ouroboros.Network.PeerSelection.RelayAccessPoint
@@ -145,8 +168,9 @@ test-suite api-tests
     cardano-binary,
     cborg,
     iproute,
-    ouroboros-network:api,
+    ouroboros-network:{api, api-tests-lib, tests-lib},
     tasty,
+    tasty-hunit,
     tasty-quickcheck,
     with-utf8,
 
@@ -833,7 +857,6 @@ library protocols-tests-lib
     Ouroboros.Network.Protocol.TxSubmission2.Direct
     Ouroboros.Network.Protocol.TxSubmission2.Examples
     Ouroboros.Network.Protocol.TxSubmission2.Test
-    Test.ChainGenerators
     Test.ChainProducerState
     Test.Data.CDDL
     Test.Data.PipeliningDepth
@@ -843,7 +866,6 @@ library protocols-tests-lib
     QuickCheck,
     base >=4.14 && <4.22,
     bytestring,
-    cardano-slotting:testlib ^>=0.2.0,
     cardano-strict-containers,
     cborg,
     containers,
@@ -853,7 +875,7 @@ library protocols-tests-lib
     io-sim,
     network,
     network-mux,
-    ouroboros-network:{api, framework, mock, protocols, tests-lib},
+    ouroboros-network:{api, api-tests-lib, framework, mock, protocols, tests-lib},
     pipes,
     quickcheck-instances,
     serialise,
@@ -867,17 +889,11 @@ test-suite protocols-tests
   type: exitcode-stdio-1.0
   hs-source-dirs: protocols/tests
   main-is: Main.hs
-  -- TODO: these two tests should be moved to `ouroboros-network:mock`
-  other-modules:
-    Test.AnchoredFragment
-    Test.Chain
 
   build-depends:
-    QuickCheck ^>=2.16,
     base >=4.14 && <4.22,
-    ouroboros-network:{api, mock, protocols-tests-lib, tests-lib},
+    ouroboros-network:{protocols-tests-lib},
     tasty,
-    tasty-quickcheck,
 
   ghc-options:
     -threaded
@@ -906,7 +922,7 @@ test-suite protocols-cddl
     filepath,
     mtl,
     network,
-    ouroboros-network:{api, framework, mock, protocols, protocols-tests-lib},
+    ouroboros-network:{api, api-tests-lib, framework, protocols, protocols-tests-lib},
     process-extras,
     quickcheck-instances,
     serialise,
@@ -916,6 +932,7 @@ test-suite protocols-cddl
     temporary,
     text,
     typed-protocols:{typed-protocols, stateful},
+    tasty-quickcheck,
 
   ghc-options:
     -threaded
@@ -955,20 +972,12 @@ library mock
   visibility: public
   hs-source-dirs: mock
   exposed-modules:
-    Ouroboros.Network.Mock.Chain
-    Ouroboros.Network.Mock.ConcreteBlock
     Ouroboros.Network.Mock.ProducerState
 
   build-depends:
     base >=4.14 && <4.22,
-    bytestring,
-    cborg,
     containers,
-    hashable,
-    nothunks,
-    ouroboros-network:api,
-    serialise,
-    time,
+    ouroboros-network:{api, api-tests-lib},
 
 -- Simulation Test Library
 library ouroboros-network-tests-lib
@@ -997,7 +1006,7 @@ library ouroboros-network-tests-lib
     network,
     network-mux,
     nothunks,
-    ouroboros-network:{ouroboros-network, api, cardano-diffusion, framework, framework-tests-lib, mock, orphan-instances, protocols, protocols-tests-lib, tests-lib},
+    ouroboros-network:{ouroboros-network, api, api-tests-lib, cardano-diffusion, framework, framework-tests-lib, mock, orphan-instances, protocols, protocols-tests-lib, tests-lib},
     pipes,
     pretty-simple,
     psqueues,
@@ -1015,7 +1024,6 @@ library ouroboros-network-tests-lib
     Ouroboros.Network.BlockFetch.Examples
     Ouroboros.Network.MockNode
     Test.Cardano.Network.OrphanInstances.Tests
-    Test.Cardano.Network.Version
     Test.Ouroboros.Network.BlockFetch
     Test.Ouroboros.Network.Diffusion.Node
     Test.Ouroboros.Network.Diffusion.Node.ChainDB
@@ -1092,7 +1100,7 @@ test-suite ouroboros-network-io-tests
     monoidal-synchronisation,
     network,
     network-mux,
-    ouroboros-network:{api, cardano-diffusion, framework, mock, protocols, protocols-tests-lib, tests-lib},
+    ouroboros-network:{api, api-tests-lib, cardano-diffusion, framework, mock, protocols, protocols-tests-lib, tests-lib},
     serialise,
     tasty,
     tasty-quickcheck,
@@ -1127,7 +1135,7 @@ executable demo-chain-sync
     io-classes:{si-timers, strict-stm},
     network-mux,
     optparse-applicative,
-    ouroboros-network:{ouroboros-network, api, cardano-diffusion, framework, mock, protocols},
+    ouroboros-network:{ouroboros-network, api, api-tests-lib, cardano-diffusion, framework, protocols},
     random,
     serialise,
     typed-protocols,

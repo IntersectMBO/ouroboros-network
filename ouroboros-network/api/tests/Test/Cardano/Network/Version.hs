@@ -4,9 +4,9 @@
 --
 module Test.Cardano.Network.Version (tests) where
 
-import Cardano.Network.NodeToClient (NodeToClientVersion (..),
+import Cardano.Network.NodeToClient.Version (NodeToClientVersion (..),
            nodeToClientVersionCodec)
-import Cardano.Network.NodeToNode (NodeToNodeVersion (..),
+import Cardano.Network.NodeToNode.Version (NodeToNodeVersion (..),
            nodeToNodeVersionCodec)
 import Ouroboros.Network.CodecCBORTerm
 
@@ -56,8 +56,8 @@ roundTripPropAll
        , Enum a
        , Bounded a
        , Show a
-       , Eq failure
        , Show failure
+       , Eq failure
        )
     => CodecCBORTerm failure a -> Assertion
 roundTripPropAll codec =
@@ -68,8 +68,6 @@ crossFailureProp
     :: forall failure a b.
        ( Show a
        , Show b
-       , Eq failure
-       , Show failure
        )
     => CodecCBORTerm failure a
     -> CodecCBORTerm failure b
@@ -85,8 +83,6 @@ crossFailurePropAll
     :: forall failure a b.
        ( Show a
        , Show b
-       , Eq failure
-       , Show failure
        )
     => CodecCBORTerm failure a
     -> CodecCBORTerm failure b

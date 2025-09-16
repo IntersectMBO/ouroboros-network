@@ -35,6 +35,7 @@ import Ouroboros.Network.Block (Serialised (..), genesisPoint, unwrapCBORinCBOR,
 
 import Ouroboros.Network.Mock.Chain (Chain, Point)
 import Ouroboros.Network.Mock.Chain qualified as Chain
+import Ouroboros.Network.Mock.ChainGenerators (TestChainAndPoints (..))
 import Ouroboros.Network.Mock.ConcreteBlock (Block)
 
 import Ouroboros.Network.Protocol.BlockFetch.Client
@@ -45,7 +46,6 @@ import Ouroboros.Network.Protocol.BlockFetch.Server
 import Ouroboros.Network.Protocol.BlockFetch.Type
 import Test.Data.PipeliningDepth (PipeliningDepth (..))
 
-import Test.ChainGenerators (TestChainAndPoints (..))
 import Test.Ouroboros.Network.Protocol.Utils (prop_codec_cborM,
            prop_codec_valid_cbor_encoding, splits2, splits3)
 

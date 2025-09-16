@@ -10,7 +10,7 @@
 {-# OPTIONS_GHC -Wno-x-partial #-}
 #endif
 
-module Test.AnchoredFragment
+module Test.Ouroboros.Network.AnchoredFragment
   ( tests
   , TestBlockAnchoredFragment (..)
   ) where
@@ -29,10 +29,11 @@ import Ouroboros.Network.AnchoredFragment (AnchoredFragment,
 import Ouroboros.Network.AnchoredFragment qualified as AF
 import Ouroboros.Network.Block
 import Ouroboros.Network.Mock.Chain qualified as Chain
+import Ouroboros.Network.Mock.ChainGenerators (TestBlockChain (..),
+           TestChainAndRange (..), addSlotGap, genChainAnchor, genNonNegative,
+           genSlotGap)
 import Ouroboros.Network.Mock.ConcreteBlock
 import Ouroboros.Network.Point (WithOrigin (..), withOrigin)
-import Test.ChainGenerators (TestBlockChain (..), TestChainAndRange (..),
-           addSlotGap, genChainAnchor, genNonNegative, genSlotGap)
 
 
 --

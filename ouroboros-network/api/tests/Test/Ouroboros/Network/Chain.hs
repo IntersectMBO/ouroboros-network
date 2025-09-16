@@ -6,7 +6,7 @@
 
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 
-module Test.Chain (tests) where
+module Test.Ouroboros.Network.Chain (tests) where
 
 import Data.List qualified as L
 import Data.Maybe (listToMaybe)
@@ -18,8 +18,8 @@ import Test.Tasty.QuickCheck (testProperty)
 import Ouroboros.Network.Block (blockPrevHash, pattern GenesisPoint, pointHash)
 import Ouroboros.Network.Mock.Chain (Chain (..))
 import Ouroboros.Network.Mock.Chain qualified as Chain
+import Ouroboros.Network.Mock.ChainGenerators hiding (tests)
 
-import Test.ChainGenerators hiding (tests)
 import Test.Ouroboros.Network.Serialise (prop_serialise)
 
 

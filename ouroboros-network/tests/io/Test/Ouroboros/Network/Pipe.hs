@@ -21,7 +21,6 @@ import Control.Monad.Class.MonadTimer.SI
 import Data.ByteString.Lazy qualified as BL
 import Data.Monoid.Synchronisation
 import Data.Void (Void)
-import Test.ChainGenerators (TestBlockChainAndUpdates (..))
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
@@ -49,6 +48,7 @@ import Ouroboros.Network.Block (decodeTip, encodeTip)
 import Ouroboros.Network.Context
 import Ouroboros.Network.Mock.Chain (Chain, ChainUpdate, Point)
 import Ouroboros.Network.Mock.Chain qualified as Chain
+import Ouroboros.Network.Mock.ChainGenerators (TestBlockChainAndUpdates (..))
 import Ouroboros.Network.Mock.ProducerState qualified as CPS
 import Ouroboros.Network.Protocol.ChainSync.Client as ChainSync
 import Ouroboros.Network.Protocol.ChainSync.Codec as ChainSync

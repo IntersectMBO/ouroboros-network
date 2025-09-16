@@ -41,6 +41,7 @@ import Ouroboros.Network.Channel
 import Ouroboros.Network.Driver.Stateful qualified as Stateful
 import Ouroboros.Network.Util.ShowProxy
 
+import Ouroboros.Network.Mock.ChainGenerators ()
 import Ouroboros.Network.Mock.Chain (Point)
 import Ouroboros.Network.Mock.ConcreteBlock (Block)
 
@@ -51,7 +52,6 @@ import Ouroboros.Network.Protocol.LocalStateQuery.Examples
 import Ouroboros.Network.Protocol.LocalStateQuery.Server
 import Ouroboros.Network.Protocol.LocalStateQuery.Type
 
-import Test.ChainGenerators ()
 import Test.Ouroboros.Network.Protocol.Utils
 
 import Test.QuickCheck as QC hiding (Result, Some (Some))

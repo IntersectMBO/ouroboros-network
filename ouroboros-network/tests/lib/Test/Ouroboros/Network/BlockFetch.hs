@@ -12,7 +12,6 @@ module Test.Ouroboros.Network.BlockFetch
   , tests
   ) where
 
-import Test.ChainGenerators (TestChainFork (..))
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.HUnit
@@ -52,6 +51,7 @@ import Ouroboros.Network.BlockFetch.DeltaQ
 import Ouroboros.Network.BlockFetch.Examples
 import Ouroboros.Network.Driver (TraceSendRecv)
 import Ouroboros.Network.Mock.Chain qualified as Chain
+import Ouroboros.Network.Mock.ChainGenerators (TestChainFork (..))
 import Ouroboros.Network.Mock.ConcreteBlock
 import Ouroboros.Network.Protocol.BlockFetch.Type (BlockFetch)
 

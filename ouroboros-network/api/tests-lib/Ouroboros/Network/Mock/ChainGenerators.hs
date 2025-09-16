@@ -12,7 +12,7 @@
 
 -- | Arbitrary generators for chains, headers and blocks
 --
-module Test.ChainGenerators
+module Ouroboros.Network.Mock.ChainGenerators
   ( -- * Arbitrary chains generators
     -- These generators are used to test various scenarios that require
     -- a chain: e.g. appending a block to chain, arbitrary updates
@@ -25,6 +25,7 @@ module Test.ChainGenerators
   , TestChainAndRange (..)
   , TestChainAndPoints (..)
   , TestChainFork (..)
+  , TestChainRange (..)
     -- * Utility functions
   , genNonNegative
   , genSlotGap
@@ -48,7 +49,6 @@ import Ouroboros.Network.Mock.Chain qualified as Chain
 import Ouroboros.Network.Mock.ConcreteBlock
 import Ouroboros.Network.Point (WithOrigin (..), block, blockPointHash,
            blockPointSlot, fromWithOrigin, origin)
-import Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange (..))
 
 import Data.List (scanl')
 import Test.Cardano.Slotting.Arbitrary ()
@@ -130,15 +130,17 @@ instance Arbitrary (Point Block) where
          . shrink
          .     (castPoint :: Point Block -> Point BlockHeader)
 
-instance Arbitrary (ChainRange (Point Block)) where
+data TestChainRange = TestChainRange (Point Block) (Point Block)
+
+instance Arbitrary TestChainRange where
   arbitrary = do
     low  <- arbitrary
     high <- arbitrary `suchThat` (\high -> pointSlot low <= pointSlot high)
-    return (ChainRange low high)
+    return (TestChainRange low high)
 
-  shrink (ChainRange low high) = [ ChainRange low' high'
-                                 | (low', high') <- shrink (low, high)
-                                 , pointSlot low <= pointSlot high ]
+  shrink (TestChainRange low high) = [ TestChainRange low' high'
+                                     | (low', high') <- shrink (low, high)
+                                     , pointSlot low <= pointSlot high ]
 
 instance Arbitrary BlockBody where
     arbitrary =

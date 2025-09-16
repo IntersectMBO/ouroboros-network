@@ -25,7 +25,6 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.IOSim
 import Control.Tracer
 
-import Test.ChainGenerators (TestBlockChainAndUpdates (..))
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
@@ -38,6 +37,7 @@ import Ouroboros.Network.Block (Tip (..), decodeTip, encodeTip)
 import Ouroboros.Network.Context
 import Ouroboros.Network.Mock.Chain (Chain, ChainUpdate, Point)
 import Ouroboros.Network.Mock.Chain qualified as Chain
+import Ouroboros.Network.Mock.ChainGenerators (TestBlockChainAndUpdates (..))
 import Ouroboros.Network.Mock.ProducerState qualified as CPS
 import Ouroboros.Network.Protocol.ChainSync.Client qualified as ChainSync
 import Ouroboros.Network.Protocol.ChainSync.Codec qualified as ChainSync

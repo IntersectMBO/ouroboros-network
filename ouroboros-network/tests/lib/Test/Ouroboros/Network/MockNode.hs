@@ -40,12 +40,12 @@ import Control.Monad.IOSim qualified as Sim
 import Ouroboros.Network.Block
 import Ouroboros.Network.Mock.Chain (Chain (..))
 import Ouroboros.Network.Mock.Chain qualified as Chain
+import Ouroboros.Network.Mock.ChainGenerators (TestBlockChain (..))
 import Ouroboros.Network.Mock.ConcreteBlock as ConcreteBlock
 import Ouroboros.Network.Mock.ProducerState (ChainProducerState (..))
 
 import Ouroboros.Network.MockNode
 
-import Test.ChainGenerators (TestBlockChain (..))
 
 
 tests :: TestTree
