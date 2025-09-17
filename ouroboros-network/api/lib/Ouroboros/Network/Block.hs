@@ -79,6 +79,7 @@ import Codec.CBOR.Read qualified as Read
 import Codec.CBOR.Write qualified as Write
 import Codec.Serialise (Serialise (..))
 import Control.Monad (when)
+import Data.Aeson (FromJSON, ToJSON)
 import Data.ByteString.Base16.Lazy qualified as B16
 import Data.ByteString.Lazy qualified as Lazy
 import Data.ByteString.Lazy.Char8 qualified as BSC
@@ -216,6 +217,8 @@ deriving newtype instance StandardHash block => Ord      (Point block)
 deriving via (Quiet (Point block))
                  instance StandardHash block => Show     (Point block)
 deriving newtype instance StandardHash block => NoThunks (Point block)
+deriving newtype instance ToJSON (Point.Block SlotNo (HeaderHash block)) => ToJSON (Point block)
+deriving newtype instance FromJSON (Point.Block SlotNo (HeaderHash block)) => FromJSON (Point block)
 
 instance ShowProxy block => ShowProxy (Point block) where
     showProxy _ = "Point " ++ showProxy (Proxy :: Proxy block)
