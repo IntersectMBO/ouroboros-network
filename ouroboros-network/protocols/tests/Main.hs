@@ -24,13 +24,13 @@ tests =
   [ Test.Data.CDDL.tests
 
     -- protocols
-  , Ouroboros.Network.Protocol.ChainSync.Test.tests
   , Ouroboros.Network.Protocol.BlockFetch.Test.tests
+  , Ouroboros.Network.Protocol.ChainSync.Test.tests
+  , Ouroboros.Network.Protocol.Handshake.Test.tests
+  , Ouroboros.Network.Protocol.KeepAlive.Test.tests
   , Ouroboros.Network.Protocol.LocalStateQuery.Test.tests
   , Ouroboros.Network.Protocol.LocalTxMonitor.Test.tests
   , Ouroboros.Network.Protocol.LocalTxSubmission.Test.tests
-  , Ouroboros.Network.Protocol.TxSubmission2.Test.tests
-  , Ouroboros.Network.Protocol.Handshake.Test.tests
-  , Ouroboros.Network.Protocol.KeepAlive.Test.tests
   , Ouroboros.Network.Protocol.PeerSharing.Test.tests
+  , Ouroboros.Network.Protocol.TxSubmission2.Test.tests
   ]

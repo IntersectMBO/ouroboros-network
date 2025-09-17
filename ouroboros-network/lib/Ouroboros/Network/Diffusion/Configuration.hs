@@ -10,15 +10,11 @@ module Ouroboros.Network.Diffusion.Configuration
   , defaultDeadlineChurnInterval
   , defaultBulkChurnInterval
   , BlockProducerOrRelay (..)
-  , defaultTxSubmissionLogicVersion
     -- re-exports
   , AcceptedConnectionsLimit (..)
   , DiffusionMode (..)
   , PeerSelectionTargets (..)
   , PeerSharing (..)
-  , ConsensusMode (..)
-  , TxSubmissionLogicVersion (..)
-  , defaultConsensusMode
   , defaultEgressPollInterval
   , deactivateTimeout
   , closeConnectionTimeout
@@ -35,7 +31,6 @@ module Ouroboros.Network.Diffusion.Configuration
 
 import Control.Monad.Class.MonadTime.SI
 
-import Cardano.Network.ConsensusMode
 import Ouroboros.Network.ConnectionManager.Core (defaultProtocolIdleTimeout,
            defaultResetTimeout, defaultTimeWaitTimeout)
 import Ouroboros.Network.Diffusion.Policies (closeConnectionTimeout,
@@ -48,8 +43,6 @@ import Ouroboros.Network.PeerSharing (ps_POLICY_PEER_SHARE_MAX_PEERS,
            ps_POLICY_PEER_SHARE_STICKY_TIME)
 import Ouroboros.Network.Protocol.Handshake (handshake_QUERY_SHUTDOWN_DELAY)
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
-import Ouroboros.Network.TxSubmission.Inbound.V2.Types
-           (TxSubmissionLogicVersion (..))
 
 -- | Outbound governor targets
 -- Targets may vary depending on whether a node is operating in
@@ -118,8 +111,3 @@ local_TIME_WAIT_TIMEOUT = 0
 -- for tuning latency vs. network efficiency
 defaultEgressPollInterval :: DiffTime
 defaultEgressPollInterval = 0
-
--- | The default logic version is the legacy one, the new one is still
--- experimental.
-defaultTxSubmissionLogicVersion :: TxSubmissionLogicVersion
-defaultTxSubmissionLogicVersion = TxSubmissionLogicV1

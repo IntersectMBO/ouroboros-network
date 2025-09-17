@@ -10,7 +10,8 @@
 {-# LANGUAGE TypeOperators       #-}
 
 module Ouroboros.Network.Protocol.LocalTxMonitor.Codec
-  ( codecLocalTxMonitor
+  ( LocalTxMonitorVersion (..)
+  , codecLocalTxMonitor
   , codecLocalTxMonitorId
   ) where
 
@@ -29,7 +30,6 @@ import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
 import Text.Printf
 
-import Cardano.Network.NodeToClient.Version qualified as V
 import Ouroboros.Network.Protocol.LocalTxMonitor.Type
 
 codecLocalTxMonitor ::
@@ -37,7 +37,7 @@ codecLocalTxMonitor ::
      ( MonadST m
      , ptcl ~ LocalTxMonitor txid tx slot
      )
-  => V.NodeToClientVersion
+  => LocalTxMonitorVersion
      -- ^ Whether to accept `MsgGetMeasures`
   -> (txid -> CBOR.Encoding)
   -> (forall s. CBOR.Decoder s txid)
@@ -52,7 +52,7 @@ codecLocalTxMonitor version
                     encodeSlot decodeSlot =
     mkCodecCborLazyBS encode decode
   where
-    canHandleMeasures = version >= V.NodeToClientV_20
+    canHandleMeasures = version >= LocalTxMonitor_V2
 
     encode ::
          forall (st  :: ptcl) (st' :: ptcl).

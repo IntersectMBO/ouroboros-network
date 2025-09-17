@@ -127,7 +127,7 @@ instance Exception Failure
 data Tracers ntnAddr ntnVersion ntnVersionData
              ntcAddr ntcVersion ntcVersionData
              extraState extraDebugState
-             extraFlags extraPeers extraCounters m = Tracers {
+             extraFlags extraPeers extraCounters extraTrace m = Tracers {
       -- | Mux tracer
       dtMuxTracer
         :: Tracer m (Mx.WithBearer (ConnectionId ntnAddr) Mx.Trace)
@@ -185,7 +185,7 @@ data Tracers ntnAddr ntnVersion ntnVersionData
         :: Tracer m TraceLedgerPeers
 
     , dtTracePeerSelectionTracer
-        :: Tracer m (TracePeerSelection extraDebugState extraFlags extraPeers ntnAddr)
+        :: Tracer m (TracePeerSelection extraDebugState extraFlags extraPeers extraTrace ntnAddr)
 
     , dtDebugPeerSelectionInitiatorTracer
         :: Tracer m (DebugPeerSelection extraState extraFlags extraPeers ntnAddr)
@@ -250,7 +250,9 @@ nullTracers :: Applicative m
             => Tracers ntnAddr ntnVersion ntnVersionData
                        ntcAddr ntcVersion ntcVersionData
                        extraState extraDebugState
-                       extraFlags extraPeers extraCounters m
+                       extraFlags extraPeers
+                       extraCounters extraTrace
+                       m
 nullTracers = Tracers {
     dtMuxTracer                                  = nullTracer
   , dtChannelTracer                              = nullTracer
@@ -285,8 +287,8 @@ nullTracers = Tracers {
 -- diffusion layer. These differ from
 --
 data Arguments extraState extraDebugState extraFlags extraPeers
-               extraAPI extraChurnArgs extraCounters exception
-               resolver m
+               extraAPI extraChurnArgs extraCounters extraTrace
+               exception resolver m
                ntnFd ntnAddr ntnVersion ntnVersionData
                ntcAddr ntcVersion ntcVersionData =
   Arguments {
@@ -350,7 +352,7 @@ data Arguments extraState extraDebugState extraFlags extraPeers
       :: forall muxMode responderCtx bytes a b .
          PeerSelectionGovernorArgs
            extraState extraDebugState extraFlags extraPeers
-           extraAPI extraCounters
+           extraAPI extraCounters extraTrace
            ntnAddr
            (PeerConnectionHandle muxMode responderCtx
                                  ntnAddr ntnVersionData bytes m a b)
@@ -400,6 +402,7 @@ data Arguments extraState extraDebugState extraFlags extraPeers
            extraPeers
            extraAPI
            extraCounters
+           extraTrace
            ntnAddr
       -> m Void
 

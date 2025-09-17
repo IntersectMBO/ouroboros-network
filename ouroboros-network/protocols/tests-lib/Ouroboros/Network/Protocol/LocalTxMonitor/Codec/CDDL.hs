@@ -10,7 +10,7 @@ import Ouroboros.Network.Protocol.LocalTxMonitor.Type
 import Ouroboros.Network.Protocol.TxSubmission2.Test (Tx, TxId)
 
 localTxMonitorCodec :: Codec (LocalTxMonitor TxId Tx SlotNo)
-                            CBOR.DeserialiseFailure IO BL.ByteString
+                             CBOR.DeserialiseFailure IO BL.ByteString
 localTxMonitorCodec =
     codecLocalTxMonitor
       maxBound

@@ -47,8 +47,8 @@ data ChurnCounters = ChurnCounter ChurnAction Int
 
 -- | Record of arguments for peer churn governor
 --
-data PeerChurnArgs m extraArgs extraDebugState extraFlags extraPeers extraAPI extraCounters peeraddr = PeerChurnArgs {
-  pcaPeerSelectionTracer :: Tracer m (TracePeerSelection extraDebugState extraFlags extraPeers peeraddr),
+data PeerChurnArgs m extraArgs extraDebugState extraFlags extraPeers extraAPI extraCounters extraTrace peeraddr = PeerChurnArgs {
+  pcaPeerSelectionTracer :: Tracer m (TracePeerSelection extraDebugState extraFlags extraPeers extraTrace peeraddr),
   pcaChurnTracer         :: Tracer m ChurnCounters,
   pcaDeadlineInterval    :: DiffTime,
   pcaBulkInterval        :: DiffTime,
@@ -72,13 +72,13 @@ data PeerChurnArgs m extraArgs extraDebugState extraFlags extraPeers extraAPI ex
 -- On startup the churn governor gives a head start to local root peers over
 -- root peers.
 --
-peerChurnGovernor :: forall m extraArgs extraDebugState extraFlags extraPeers extraAPI extraCounters peeraddr.
+peerChurnGovernor :: forall m extraArgs extraDebugState extraFlags extraPeers extraAPI extraCounters extraTrace peeraddr.
                      ( MonadDelay m
                      , Alternative (STM m)
                      , MonadTimer m
                      , MonadCatch m
                      )
-                  => PeerChurnArgs m extraArgs extraDebugState extraFlags extraPeers extraAPI extraCounters peeraddr
+                  => PeerChurnArgs m extraArgs extraDebugState extraFlags extraPeers extraAPI extraCounters extraTrace peeraddr
                   -> m Void
 peerChurnGovernor
   PeerChurnArgs {

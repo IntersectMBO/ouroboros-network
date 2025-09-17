@@ -44,7 +44,7 @@ belowTarget
   -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
   -> Guarded (STM m)
             (TimedDecision m extraState extraDebugState extraFlags extraPeers
-                           peeraddr peerconn)
+                             extraTrace peeraddr peerconn)
 belowTarget actions@PeerSelectionActions {
               extraPeersAPI = PublicExtraPeersAPI {
                 extraPeersToSet
@@ -98,7 +98,7 @@ belowTarget actions@PeerSelectionActions {
 
 jobReqPublicRootPeers
   :: forall m extraState extraDebugState extraFlags extraPeers
-           extraAPI extraCounters peeraddr peerconn.
+           extraAPI extraCounters extraTrace peeraddr peerconn.
      ( MonadSTM m
      , Ord peeraddr
      , Semigroup extraPeers
@@ -115,7 +115,7 @@ jobReqPublicRootPeers
   -> StdGen
   -> Int
   -> Job () m (Completion m extraState extraDebugState extraFlags extraPeers
-                         peeraddr peerconn)
+                            extraTrace peeraddr peerconn)
 jobReqPublicRootPeers PeerSelectionActions{ requestPublicRootPeers,
                                             extraPeersAPI = PublicExtraPeersAPI {
                                               differenceExtraPeers,
@@ -130,7 +130,7 @@ jobReqPublicRootPeers PeerSelectionActions{ requestPublicRootPeers,
   where
     handler :: SomeException
             -> Completion m extraState extraDebugState extraFlags extraPeers
-                          peeraddr peerconn
+                            extraTrace peeraddr peerconn
     handler e =
       Completion $ \st now ->
       -- This is a failure, so move the backoff counter one in the failure
@@ -159,7 +159,7 @@ jobReqPublicRootPeers PeerSelectionActions{ requestPublicRootPeers,
           }
 
     job :: m (Completion m extraState extraDebugState extraFlags extraPeers
-                         peeraddr peerconn)
+                           extraTrace peeraddr peerconn)
     job = do
       (results, ttl) <- requestPublicRootPeers AllLedgerPeers rng numExtraAllowed
       return $ Completion $ \st now ->

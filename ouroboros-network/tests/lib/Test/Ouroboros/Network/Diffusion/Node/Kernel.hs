@@ -61,8 +61,6 @@ import System.Random qualified as Random
 
 import Network.Socket (PortNumber)
 
-import Cardano.Network.NodeToNode ()
-
 import Ouroboros.Network.AnchoredFragment (Anchor (..))
 import Ouroboros.Network.Block (HasFullHeader, SlotNo)
 import Ouroboros.Network.Block qualified as Block

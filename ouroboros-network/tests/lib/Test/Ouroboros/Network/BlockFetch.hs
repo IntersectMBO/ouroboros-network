@@ -35,8 +35,6 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.IOSim
 import Control.Tracer (Tracer (Tracer), contramap, nullTracer)
 
-import Cardano.Network.NodeToNode.Version (NodeToNodeVersion)
-
 import Ouroboros.Network.ControlMessage (ControlMessage (..))
 import Ouroboros.Network.DeltaQ
 --TODO: could re-export some of the trace types from more convenient places:
@@ -93,6 +91,9 @@ tests = testGroup "BlockFetch"
   , testProperty "eq comparePeerGSV" prop_comparePeerGSVEq
   ]
 
+
+data NodeToNodeVersion = TestVersion
+  deriving (Eq, Ord, Show, Enum, Bounded)
 
 --
 -- Properties

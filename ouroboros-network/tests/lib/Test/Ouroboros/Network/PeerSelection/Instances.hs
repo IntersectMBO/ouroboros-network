@@ -24,7 +24,6 @@ import Data.Hashable
 import Data.IP qualified as IP
 import Data.Word (Word16, Word32, Word64)
 
-import Cardano.Network.Diffusion.Configuration qualified as Cardano (srvPrefix)
 import Cardano.Slotting.Slot (SlotNo (..))
 
 import Ouroboros.Network.DiffusionMode
@@ -42,6 +41,8 @@ import Test.Ouroboros.Network.Utils (ShrinkCarefully, prop_shrink_nonequal,
            prop_shrink_valid)
 import Test.QuickCheck
 
+srvPrefix :: SRVPrefix
+srvPrefix = "_cardano._tcp"
 
 --
 -- QuickCheck instances
@@ -146,7 +147,7 @@ instance Arbitrary PortNumber where
          . fromIntegral @PortNumber @Word16
 
 instance Arbitrary RelayAccessPoint where
-    arbitrary = prefixLedgerRelayAccessPoint Cardano.srvPrefix <$> arbitrary
+    arbitrary = prefixLedgerRelayAccessPoint srvPrefix <$> arbitrary
 
 instance Arbitrary LedgerRelayAccessPoint where
   arbitrary =

@@ -23,12 +23,13 @@ library
   build-depends:
     base >=4.14 && <4.22,
     bytestring >=0.10 && <0.13,
+    cardano-diffusion ^>=0.1,
     cborg >=0.2.8 && <0.3,
     containers >=0.5 && <0.9,
     contra-tracer >=0.1 && <0.3,
     io-classes:si-timers ^>=1.8.0.1,
     network-mux ^>=0.9,
-    ouroboros-network:{api, cardano-diffusion, framework} ^>=0.23,
+    ouroboros-network:{api, framework} ^>=0.23,
 
   ghc-options:
     -Wall

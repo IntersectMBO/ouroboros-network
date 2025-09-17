@@ -28,10 +28,10 @@ import Control.Tracer
 import Network.Mux qualified as Mx
 
 import Ouroboros.Network.Mux
-import Ouroboros.Network.Snocket
+import Ouroboros.Network.Snocket hiding (Accept (..))
 import Ouroboros.Network.Socket
 
-import Cardano.Network.NodeToNode
+-- import Cardano.Network.NodeToNode
 
 import Ouroboros.Network.Block (Tip, decodeTip, encodeTip)
 import Ouroboros.Network.IOManager
@@ -40,7 +40,6 @@ import Ouroboros.Network.Mock.Chain (Chain, ChainUpdate, Point)
 import Ouroboros.Network.Mock.Chain qualified as Chain
 import Ouroboros.Network.Mock.ChainGenerators (TestBlockChainAndUpdates (..))
 import Ouroboros.Network.Mock.ProducerState qualified as CPS
-import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.Protocol.ChainSync.Client qualified as ChainSync
 import Ouroboros.Network.Protocol.ChainSync.Codec qualified as ChainSync
 import Ouroboros.Network.Protocol.ChainSync.Examples qualified as ChainSync
@@ -48,8 +47,7 @@ import Ouroboros.Network.Protocol.ChainSync.Server qualified as ChainSync
 import Ouroboros.Network.Protocol.Handshake (HandshakeArguments (..))
 import Ouroboros.Network.Protocol.Handshake.Codec (cborTermVersionDataCodec,
            noTimeLimitsHandshake)
-import Ouroboros.Network.Protocol.Handshake.Version (acceptableVersion,
-           queryVersion)
+import Ouroboros.Network.Protocol.Handshake.Version (simpleSingletonVersions)
 import Ouroboros.Network.Server.Simple qualified as Server.Simple
 import Ouroboros.Network.Util.ShowProxy
 
@@ -60,6 +58,86 @@ import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
 import Text.Printf
 import Text.Show.Functions ()
+
+import Codec.CBOR.Read qualified as CBOR
+import Codec.CBOR.Term qualified as CBOR
+import Control.Monad.Class.MonadST
+import Data.Text (Text)
+import Data.Text qualified as T
+import Network.TypedProtocol.Codec (Codec)
+import Ouroboros.Network.CodecCBORTerm
+import Ouroboros.Network.Handshake.Acceptable
+import Ouroboros.Network.Handshake.Queryable
+import Ouroboros.Network.Protocol.Handshake.Codec qualified as Handshake
+import Ouroboros.Network.Protocol.Handshake.Type (Handshake)
+
+--
+-- Simple testing versioning scheme
+--
+
+data TestVersion = TestVersion
+  deriving (Eq, Ord, Enum, Bounded, Show)
+
+newtype TestVersionData = TestVersionData { networkMagic :: NetworkMagic }
+  deriving (Show, Eq)
+
+instance Acceptable TestVersionData where
+    -- | Check that both side use the same 'networkMagic'.  Choose smaller one
+    -- from both 'diffusionMode's, e.g. if one is running in 'InitiatorOnlyMode'
+    -- agree on it. Agree on the same 'PeerSharing' value.
+    acceptableVersion local remote
+      | networkMagic local == networkMagic remote
+      = Accept remote
+      | otherwise
+      = Refuse $ T.pack $ "version data mismatch: "
+                       ++ show local
+                       ++ " /= " ++ show remote
+
+instance Queryable TestVersionData where
+    queryVersion = const False
+
+
+handshakeCodec :: MonadST m
+               => Codec (Handshake TestVersion CBOR.Term)
+                        CBOR.DeserialiseFailure m BL.ByteString
+handshakeCodec = Handshake.codecHandshake CodecCBORTerm { encodeTerm, decodeTerm }
+  where
+    encodeTerm :: TestVersion -> CBOR.Term
+    encodeTerm TestVersion = CBOR.TInt 1
+
+    decodeTerm :: CBOR.Term -> Either (Text, Maybe Int) TestVersion
+    decodeTerm (CBOR.TInt 1) = Right TestVersion
+    decodeTerm (CBOR.TInt n) = Left ( T.pack "decode TestVersion: unknown tag: "
+                                        <> T.pack (show n)
+                                    , Just n
+                                    )
+    decodeTerm _ = Left ( T.pack "decode TestVersion: unexpected term"
+                        , Nothing)
+
+testVersionCodecCBORTerm
+  :: TestVersion
+  -> CodecCBORTerm Text TestVersionData
+testVersionCodecCBORTerm !_ =
+    CodecCBORTerm { encodeTerm = encodeTerm, decodeTerm = decodeTerm }
+  where
+    encodeTerm :: TestVersionData -> CBOR.Term
+    encodeTerm TestVersionData {networkMagic}
+      = CBOR.TList
+          [ CBOR.TInt (fromIntegral $ unNetworkMagic networkMagic)
+          ]
+
+    decodeTerm :: CBOR.Term -> Either Text TestVersionData
+    decodeTerm (CBOR.TList [CBOR.TInt x])
+      | x >= 0
+      , x <= 0xffffffff
+      = Right
+          TestVersionData {
+              networkMagic = NetworkMagic (fromIntegral x)
+            }
+      | otherwise
+      = Left $ T.pack $ "networkMagic out of bound: " <> show x
+    decodeTerm t
+      = Left $ T.pack $ "unknown encoding: " ++ show t
 
 
 --
@@ -167,20 +245,16 @@ demo chain0 updates = withIOManager $ \iocp -> do
       HandshakeArguments {
         haHandshakeTracer  = nullTracer,
         haBearerTracer     = nullTracer,
-        haHandshakeCodec   = nodeToNodeHandshakeCodec,
-        haVersionDataCodec = cborTermVersionDataCodec nodeToNodeCodecCBORTerm,
+        haHandshakeCodec   = handshakeCodec,
+        haVersionDataCodec = cborTermVersionDataCodec testVersionCodecCBORTerm,
         haAcceptVersion    = acceptableVersion,
         haQueryVersion     = queryVersion,
         haTimeLimits       = noTimeLimitsHandshake
 
       }
       (simpleSingletonVersions
-        (maxBound :: NodeToNodeVersion)
-        (NodeToNodeVersionData {
-          networkMagic  = NetworkMagic 0,
-          diffusionMode = InitiatorAndResponderDiffusionMode,
-          peerSharing = PeerSharingDisabled,
-          query = False })
+        (maxBound :: TestVersion)
+        TestVersionData { networkMagic = NetworkMagic 0 }
         (\_ -> SomeResponderApplication responderApp))
       $ \producerAddress' _ -> do
       withAsync
@@ -188,20 +262,16 @@ demo chain0 updates = withIOManager $ \iocp -> do
           (socketSnocket iocp)
           makeSocketBearer
           ConnectToArgs {
-            ctaHandshakeCodec      = nodeToNodeHandshakeCodec,
+            ctaHandshakeCodec      = handshakeCodec,
             ctaHandshakeTimeLimits = noTimeLimitsHandshake,
-            ctaVersionDataCodec    = cborTermVersionDataCodec nodeToNodeCodecCBORTerm,
+            ctaVersionDataCodec    = cborTermVersionDataCodec testVersionCodecCBORTerm,
             ctaConnectTracers      = nullNetworkConnectTracers,
             ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
           }
           (`configureSocket` Nothing)
           (simpleSingletonVersions
-            (maxBound :: NodeToNodeVersion)
-            (NodeToNodeVersionData {
-              networkMagic  = NetworkMagic 0,
-              diffusionMode = InitiatorOnlyDiffusionMode,
-              peerSharing = PeerSharingDisabled,
-              query = False })
+            (maxBound :: TestVersion)
+            TestVersionData { networkMagic  = NetworkMagic 0 }
             (\_ -> initiatorApp))
           (Just consumerAddress)
           producerAddress')

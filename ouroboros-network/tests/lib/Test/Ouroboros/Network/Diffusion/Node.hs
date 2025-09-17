@@ -32,7 +32,6 @@ module Test.Ouroboros.Network.Diffusion.Node
   , config_REPROMOTE_DELAY
     -- * re-exports
   , Node.BlockGeneratorArgs (..)
-  , Node.LimitsAndTimeouts (..)
   , Node.randomBlockGenerationArgs
   , Node.ntnAddrToRelayAccessPoint
   ) where
@@ -61,9 +60,7 @@ import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Void (Void)
 import Network.DNS (Domain, TYPE)
-import System.Random (StdGen, mkStdGen, split)
-
-import Cardano.Network.Diffusion.Configuration qualified as Cardano
+import System.Random (StdGen, split)
 
 import Ouroboros.Network.Mux (noBindForkPolicy)
 import Ouroboros.Network.Protocol.Handshake (HandshakeArguments (..))
@@ -98,12 +95,11 @@ import Ouroboros.Network.PeerSelection.LedgerPeers (NumberOfPeers)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
            (LedgerPeersConsensusInterface, LedgerPeersKind, UseLedgerPeers)
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
-import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics,
-           PeerMetricsConfiguration (..), newPeerMetric)
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSelection.PeerStateActions (PeerConnectionHandle)
 import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers)
-import Ouroboros.Network.PeerSelection.RelayAccessPoint (RelayAccessPoint)
+import Ouroboros.Network.PeerSelection.RelayAccessPoint (RelayAccessPoint,
+           SRVPrefix)
 import Ouroboros.Network.PeerSelection.RootPeersDNS (DNSLookupType (..),
            DNSSemaphore, PeerActionsDNS)
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency,
@@ -115,8 +111,7 @@ import Ouroboros.Network.Snocket (MakeBearer, Snocket, TestAddress (..),
 
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy (TxDecisionPolicy)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (decisionLogicThreads)
-import Ouroboros.Network.TxSubmission.Inbound.V2.Types (TraceTxLogic,
-           TraceTxSubmissionInbound)
+import Ouroboros.Network.TxSubmission.Inbound.V2.Types (TraceTxLogic)
 
 import Simulation.Network.Snocket (AddressType (..), FD)
 
@@ -126,7 +121,7 @@ import Test.Ouroboros.Network.Diffusion.Node.ChainDB (addBlock,
 import Test.Ouroboros.Network.Diffusion.Node.Kernel (NodeKernel (..), NtCAddr,
            NtCVersion, NtCVersionData, NtNAddr, NtNVersion, NtNVersionData (..))
 import Test.Ouroboros.Network.Diffusion.Node.Kernel qualified as Node
-import Test.Ouroboros.Network.Diffusion.Node.MiniProtocols qualified as Node
+-- import Test.Ouroboros.Network.Diffusion.Node.MiniProtocols qualified as Node
 import Test.Ouroboros.Network.PeerSelection.RootPeersDNS (DNSLookupDelay,
            DNSTimeout, DomainAccessPoint (..), MockDNSLookupResult,
            mockDNSActions)
@@ -147,6 +142,7 @@ data Interfaces extraAPI m = Interfaces
     , iLedgerPeersConsensusInterface
                          :: LedgerPeersConsensusInterface extraAPI m
     , iConnStateIdSupply :: ConnStateIdSupply m
+    , iSRVPrefix         :: SRVPrefix
     }
 
 type NtNFD m = FD m NtNAddr
@@ -179,8 +175,9 @@ data Arguments extraChurnArgs extraFlags m = Arguments
     }
 
 run :: forall extraState extraDebugState extraAPI
-             extraPeers extraFlags extraChurnArgs extraCounters
-             exception resolver m.
+              extraPeers extraFlags extraChurnArgs
+              extraCounters extraTrace
+              exception resolver m.
        ( Alternative (STM m)
        , MonadAsync       m
        , MonadDelay       m
@@ -206,7 +203,6 @@ run :: forall extraState extraDebugState extraAPI
        , forall a. Semigroup a => Semigroup (m a)
        )
     => Node.BlockGeneratorArgs Block StdGen
-    -> Node.LimitsAndTimeouts BlockHeader Block
     -> Interfaces extraAPI m
     -> Arguments extraChurnArgs extraFlags m
     -> extraState
@@ -220,6 +216,7 @@ run :: forall extraState extraDebugState extraAPI
           extraPeers
           extraAPI
           extraCounters
+          extraTrace
           NtNAddr
           (PeerConnectionHandle
              muxMode responderCtx NtNAddr ntnVersionData bytes m a b)
@@ -251,29 +248,33 @@ run :: forall extraState extraDebugState extraAPI
              extraPeers
              extraAPI
              extraCounters
+             extraTrace
              NtNAddr
         -> m Void)
     -> Diffusion.Tracers NtNAddr NtNVersion NtNVersionData
                          NtCAddr NtCVersion NtCVersionData
                          extraState extraDebugState extraFlags
-                         extraPeers extraCounters m
+                         extraPeers extraCounters extraTrace m
     -> Tracer m (TraceLabelPeer NtNAddr (TraceFetchClientState BlockHeader))
-    -> Tracer m (TraceTxSubmissionInbound Int (Tx Int))
     -> Tracer m (TraceTxLogic NtNAddr Int (Tx Int))
+    -> (   NodeKernel BlockHeader Block StdGen Int m
+        -> StdGen
+        -> Diffusion.Applications NtNAddr NtNVersion NtNVersionData
+                                  NtCAddr NtCVersion NtCVersionData
+                                  m ()
+       )
     -> m Void
-run blockGeneratorArgs limits ni na
+run blockGeneratorArgs ni na
     emptyExtraState emptyExtraCounters
     extraPeersAPI psArgs psToExtraCounters
     toExtraPeers requestPublicRootPeers peerChurnGovernor
-    tracers tracerBlockFetch tracerTxSubmissionInbound
-    tracerTxLogic = do
+    tracers tracerBlockFetch
+    tracerTxLogic mkApps = do
     labelThisThread ("node-" ++ Node.ppNtNAddr (aIPAddress na))
     Node.withNodeKernelThread (aIPAddress na) blockGeneratorArgs (aTxs na)
       $ \ nodeKernel nodeKernelThread -> do
         dnsTimeoutScriptVar <- newTVarIO (aDNSTimeoutScript na)
         dnsLookupDelayScriptVar <- newTVarIO (aDNSLookupDelayScript na)
-        peerMetrics <- newPeerMetric PeerMetricsConfiguration { maxEntriesToTrack = 180 }
-        policyStdGenVar <- newTVarIO (mkStdGen 12)
 
         let -- diffusion interfaces
             interfaces :: Diffusion.Interfaces (NtNFD m) NtNAddr
@@ -343,25 +344,15 @@ run blockGeneratorArgs limits ni na
               , Diffusion.daRequestPublicRootPeers            = Just requestPublicRootPeers
               , Diffusion.daPeerChurnGovernor                 = peerChurnGovernor
               , Diffusion.daExtraChurnArgs                    = aExtraChurnArgs na
-              , Diffusion.daSRVPrefix                         = Cardano.srvPrefix
+              , Diffusion.daSRVPrefix                         = iSRVPrefix ni
               }
-
-            apps = Node.applications
-                     (aDebugTracer na)
-                     tracerTxSubmissionInbound
-                     tracerTxLogic
-                     nodeKernel
-                     Node.cborCodecs
-                     limits
-                     (appArgs peerMetrics policyStdGenVar)
-                     blockHeader
 
         withAsync
            (Diffusion.runM interfaces
                            tracers
                            extraParameters
                            (mkArgs (nkPublicPeerSelectionVar nodeKernel))
-                           apps)
+                           (mkApps nodeKernel keepAliveStdGen))
            $ \ diffusionThread ->
                withAsync (blockFetch nodeKernel) $ \blockFetchLogicThread ->
 
@@ -499,22 +490,6 @@ run blockGeneratorArgs limits ni na
       , Diffusion.dcMuxForkPolicy          = noBindForkPolicy
       , Diffusion.dcLocalMuxForkPolicy     = noBindForkPolicy
       , Diffusion.dcEgressPollInterval     = 0.001
-      }
-
-    appArgs :: PeerMetrics m NtNAddr
-            -> StrictTVar m StdGen
-            -> Node.AppArgs BlockHeader Block m
-    appArgs peerMetrics stdGenVar = Node.AppArgs
-      { Node.aaKeepAliveStdGen     = keepAliveStdGen
-      , Node.aaPolicyStdGen        = stdGenVar
-      , Node.aaDiffusionMode       = aDiffusionMode na
-      , Node.aaKeepAliveInterval   = aKeepAliveInterval na
-      , Node.aaPingPongInterval    = aPingPongInterval na
-      , Node.aaShouldChainSyncExit = aShouldChainSyncExit na
-      , Node.aaChainSyncEarlyExit  = aChainSyncEarlyExit na
-      , Node.aaPeerSharing         = aPeerSharing na
-      , Node.aaPeerMetrics         = peerMetrics
-      , Node.aaTxDecisionPolicy    = aTxDecisionPolicy na
       }
 
 --- Utils
