@@ -20,7 +20,8 @@ import Data.Ratio ((%))
 
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
 
--- | The total accumulated stake of big ledger peers.
+-- | Big ledger peers are those ledger peers, which when sorted down by their
+-- relative stake, in the aggregate hold 90% of the total stake in the network.
 --
 bigLedgerPeerQuota :: AccPoolStake
 bigLedgerPeerQuota = 0.9
