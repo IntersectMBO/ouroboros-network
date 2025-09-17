@@ -16,6 +16,7 @@ module Ouroboros.Network.Point
   , withOriginFromMaybe
   ) where
 
+import Data.Aeson
 import GHC.Generics (Generic)
 import NoThunks.Class (NoThunks)
 
@@ -25,7 +26,7 @@ data Block slot hash = Block
   { blockPointSlot :: !slot
   , blockPointHash :: !hash
   }
-  deriving (Eq, Ord, Show, Generic, NoThunks)
+  deriving (Eq, Ord, Show, ToJSON, FromJSON, Generic, NoThunks)
 
 block :: slot -> hash -> WithOrigin (Block slot hash)
 block slot hash = at (Block slot hash)
