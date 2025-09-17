@@ -22,6 +22,7 @@ module Ouroboros.Network.NodeToNode
   , blockFetchProtocolLimits
   , txSubmissionProtocolLimits
   , keepAliveProtocolLimits
+  , perasCertDiffusionProtocolLimits
   , defaultMiniProtocolParameters
   , NodeToNodeVersion (..)
   , NodeToNodeVersionData (..)
@@ -104,6 +105,7 @@ module Ouroboros.Network.NodeToNode
   , txSubmissionMiniProtocolNum
   , keepAliveMiniProtocolNum
   , peerSharingMiniProtocolNum
+  , perasCertDiffusionMiniProtocolNum
   ) where
 
 import Control.Concurrent.Async qualified as Async
@@ -114,14 +116,17 @@ import Codec.CBOR.Read qualified as CBOR
 import Codec.CBOR.Term qualified as CBOR
 import Data.ByteString.Lazy qualified as BL
 import Data.Functor (void)
+import Data.Set (Set)
 import Data.Void (Void)
 import Data.Word
 import Network.Mux qualified as Mx
 import Network.Socket (Socket, StructLinger (..))
 import Network.Socket qualified as Socket
 
+import Cardano.Base.FeatureFlags (CardanoFeatureFlag (..))
 import Ouroboros.Network.BlockFetch.Client (BlockFetchProtocolFailure)
-import Ouroboros.Network.ConnectionManager.Types (ExceptionInHandler (..))
+import Ouroboros.Network.ConnectionManager.Types (DataFlow (..),
+           ExceptionInHandler (..))
 import Ouroboros.Network.Context
 import Ouroboros.Network.ControlMessage (ControlMessage (..))
 import Ouroboros.Network.Driver (TraceSendRecv (..))
@@ -138,6 +143,7 @@ import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.Protocol.Handshake.Codec
 import Ouroboros.Network.Protocol.Handshake.Type
 import Ouroboros.Network.Protocol.Handshake.Version hiding (Accept)
+import Ouroboros.Network.Protocol.ObjectDiffusion.Type (NumObjectsOutstanding)
 import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToAck (..))
 import Ouroboros.Network.Snocket
 import Ouroboros.Network.Socket
@@ -165,25 +171,28 @@ type HandshakeTr ntnAddr ntnVersion =
 data NodeToNodeProtocols appType initiatorCtx responderCtx bytes m a b = NodeToNodeProtocols {
     -- | chain-sync mini-protocol
     --
-    chainSyncProtocol    :: RunMiniProtocol appType initiatorCtx responderCtx bytes m a b,
+    chainSyncProtocol          :: RunMiniProtocol appType initiatorCtx responderCtx bytes m a b,
 
     -- | block-fetch mini-protocol
     --
-    blockFetchProtocol   :: RunMiniProtocol appType initiatorCtx responderCtx bytes m a b,
+    blockFetchProtocol         :: RunMiniProtocol appType initiatorCtx responderCtx bytes m a b,
 
     -- | tx-submission mini-protocol
     --
-    txSubmissionProtocol :: RunMiniProtocol appType initiatorCtx responderCtx bytes m a b,
+    txSubmissionProtocol       :: RunMiniProtocol appType initiatorCtx responderCtx bytes m a b,
+
+    -- | Peras certificate diffusion mini-protocol
+    --
+    perasCertDiffusionProtocol :: RunMiniProtocol appType initiatorCtx responderCtx bytes m a b,
 
     -- | keep-alive mini-protocol
     --
-    keepAliveProtocol    :: RunMiniProtocol appType initiatorCtx responderCtx bytes m a b,
+    keepAliveProtocol          :: RunMiniProtocol appType initiatorCtx responderCtx bytes m a b,
 
     -- | peer sharing mini-protocol
     --
-    peerSharingProtocol  :: RunMiniProtocol appType initiatorCtx responderCtx bytes m a b
-
-  }
+    peerSharingProtocol        :: RunMiniProtocol appType initiatorCtx responderCtx bytes m a b
+}
 
 type NodeToNodeProtocolsWithExpandedCtx appType ntnAddr bytes m a b =
     NodeToNodeProtocols appType (ExpandedInitiatorContext ntnAddr m) (ResponderContext ntnAddr) bytes m a b
@@ -192,11 +201,11 @@ type NodeToNodeProtocolsWithMinimalCtx  appType ntnAddr bytes m a b =
 
 
 data MiniProtocolParameters = MiniProtocolParameters {
-      chainSyncPipeliningHighMark :: !Word16,
+      chainSyncPipeliningHighMark     :: !Word16,
       -- ^ high threshold for pipelining (we will never exceed that many
       -- messages pipelined).
 
-      chainSyncPipeliningLowMark  :: !Word16,
+      chainSyncPipeliningLowMark      :: !Word16,
       -- ^ low threshold: if we hit the 'chainSyncPipeliningHighMark' we will
       -- listen for responses until there are at most
       -- 'chainSyncPipeliningLowMark' pipelined message
@@ -206,20 +215,44 @@ data MiniProtocolParameters = MiniProtocolParameters {
       -- Note: 'chainSyncPipeliningLowMark' and 'chainSyncPipeliningLowMark'
       -- are passed to 'pipelineDecisionLowHighMark'.
 
-      blockFetchPipeliningMax     :: !Word16,
+      blockFetchPipeliningMax         :: !Word16,
       -- ^ maximal number of pipelined messages in 'block-fetch' mini-protocol.
 
-      txSubmissionMaxUnacked      :: !NumTxIdsToAck
+      txSubmissionMaxUnacked          :: !NumTxIdsToAck,
       -- ^ maximal number of unacked tx (pipelining is bounded by twice this
       -- number)
+
+      perasCertDiffusionMaxFifoLength :: !NumObjectsOutstanding
+    -- ^ Maximum number of PerasCerts in the outbound peer's outstanding FIFO.
+    --
+    -- This indirectly limits the number of pipelined requests from the inbound peer:
+    -- the inbound peer can only request @n@ new IDs if the execution of preceding
+    -- requests would result in at least @n@ empty seats in the FIFO.
+    --
+    -- In the worst case:
+    --
+    --   * The inbound peer requests IDs and objects one by one.
+    --   * The inbound peer is aware of @perasCertDiffusionMaxFifoLength@ IDs for objects
+    --     it hasn't requested yet (i.e., the FIFO is full).
+    --
+    -- Then, the inbound peer can pipeline at most @perasCertDiffusionMaxFifoLength@
+    -- requests for one object each (with a known ID), and up to
+    -- @perasCertDiffusionMaxFifoLength@ requests for one new ID each.
+    --
+    -- So, the theoretical maximum pipeline size is
+    -- @2 * perasCertDiffusionMaxFifoLength@, but in practice the pipeline size will
+    -- be much smaller, as the inbound peer typically batches requests.
     }
 
 defaultMiniProtocolParameters :: MiniProtocolParameters
 defaultMiniProtocolParameters = MiniProtocolParameters {
-      chainSyncPipeliningLowMark  = 200
-    , chainSyncPipeliningHighMark = 300
-    , blockFetchPipeliningMax     = 100
-    , txSubmissionMaxUnacked       = 10
+      chainSyncPipeliningLowMark      = 200
+    , chainSyncPipeliningHighMark     = 300
+    , blockFetchPipeliningMax         = 100
+    , txSubmissionMaxUnacked          = 10
+    -- | TODO: this value is still being discussed.
+    -- See https://github.com/tweag/cardano-peras/issues/97 for reference.
+    , perasCertDiffusionMaxFifoLength = 10
   }
 
 -- | Make an 'OuroborosApplication' for the bundle of mini-protocols that
@@ -241,15 +274,16 @@ defaultMiniProtocolParameters = MiniProtocolParameters {
 -- both protocols, e.g.  wireshark plugins.
 --
 nodeToNodeProtocols
-  :: MiniProtocolParameters
+  :: Set CardanoFeatureFlag
+  -> MiniProtocolParameters
   -> NodeToNodeProtocols muxMode initiatorCtx responderCtx bytes m a b
   -> NodeToNodeVersion
   -- ^ negotiated version number
   -> NodeToNodeVersionData
   -- ^ negotiated version data
   -> OuroborosBundle muxMode initiatorCtx responderCtx bytes m a b
-nodeToNodeProtocols miniProtocolParameters protocols
-                    _version NodeToNodeVersionData { peerSharing }
+nodeToNodeProtocols featureFlags miniProtocolParameters protocols
+                    version NodeToNodeVersionData { peerSharing }
                     =
     TemperatureBundle
       -- Hot protocols: 'chain-sync', 'block-fetch' and 'tx-submission'.
@@ -257,7 +291,8 @@ nodeToNodeProtocols miniProtocolParameters protocols
         case protocols of
           NodeToNodeProtocols { chainSyncProtocol,
                                 blockFetchProtocol,
-                                txSubmissionProtocol
+                                txSubmissionProtocol,
+                                perasCertDiffusionProtocol
                               } ->
             [ MiniProtocol {
                 miniProtocolNum    = chainSyncMiniProtocolNum,
@@ -277,7 +312,19 @@ nodeToNodeProtocols miniProtocolParameters protocols
                 miniProtocolLimits = txSubmissionProtocolLimits miniProtocolParameters,
                 miniProtocolRun    = txSubmissionProtocol
               }
-            ])
+            ]
+              <> concat [perasMiniProtocols | isPerasEnabled featureFlags version]
+           where
+             -- TODO: should also depend on the Peras feature flag, cf
+             -- https://github.com/tweag/cardano-peras/issues/96
+             perasMiniProtocols =
+               [ MiniProtocol {
+                   miniProtocolNum    = perasCertDiffusionMiniProtocolNum,
+                   miniProtocolStart  = StartOnDemand,
+                   miniProtocolLimits = perasCertDiffusionProtocolLimits miniProtocolParameters,
+                   miniProtocolRun    = perasCertDiffusionProtocol
+                 }
+               ])
 
       -- Warm protocols: reserved for 'tip-sample'.
       (WithWarm [])
@@ -313,7 +360,8 @@ chainSyncProtocolLimits
   , blockFetchProtocolLimits
   , txSubmissionProtocolLimits
   , keepAliveProtocolLimits
-  , peerSharingProtocolLimits :: MiniProtocolParameters -> MiniProtocolLimits
+  , peerSharingProtocolLimits
+  , perasCertDiffusionProtocolLimits :: MiniProtocolParameters -> MiniProtocolLimits
 
 chainSyncProtocolLimits MiniProtocolParameters { chainSyncPipeliningHighMark } =
   MiniProtocolLimits {
@@ -430,6 +478,16 @@ peerSharingProtocolLimits _ =
   maximumIngressQueue = 4 * 1440
   }
 
+perasCertDiffusionProtocolLimits MiniProtocolParameters { perasCertDiffusionMaxFifoLength } =
+  MiniProtocolLimits {
+      -- The reasoning here is very similar to the 'txSubmissionProtocolLimits'.
+      --
+      -- Peras certificates will definitely be smaller than 20 kB; potentially
+      -- even smaller.
+      maximumIngressQueue = addSafetyMargin $
+        fromIntegral perasCertDiffusionMaxFifoLength * 20_000
+    }
+
 chainSyncMiniProtocolNum :: MiniProtocolNum
 chainSyncMiniProtocolNum = MiniProtocolNum 2
 
@@ -444,6 +502,9 @@ keepAliveMiniProtocolNum = MiniProtocolNum 8
 
 peerSharingMiniProtocolNum :: MiniProtocolNum
 peerSharingMiniProtocolNum = MiniProtocolNum 10
+
+perasCertDiffusionMiniProtocolNum :: MiniProtocolNum
+perasCertDiffusionMiniProtocolNum = MiniProtocolNum 11
 
 -- | A specialised version of @'Ouroboros.Network.Socket.connectToNode'@.
 --

@@ -31,6 +31,8 @@ encodeRemoteAddress :: NodeToNodeVersion -> SockAddr -> CBOR.Encoding
 encodeRemoteAddress =
   \case
     NodeToNodeV_14 -> sockAddr
+    NodeToNodeV_15 -> sockAddr
+    NodeToNodeV_16 -> sockAddr
 
   where
     sockAddr = \case
@@ -56,6 +58,8 @@ decodeRemoteAddress :: NodeToNodeVersion -> CBOR.Decoder s SockAddr
 decodeRemoteAddress =
   \case
     NodeToNodeV_14 -> decoder14
+    NodeToNodeV_15 -> decoder14
+    NodeToNodeV_16 -> decoder14
 
   where
     decoder14 = do
