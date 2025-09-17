@@ -18,6 +18,7 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
+import System.IO.Unsafe
 
 import Codec.CBOR.Term qualified as CBOR
 
@@ -29,6 +30,7 @@ import Ouroboros.Network.Handshake.Acceptable (Accept (..), Acceptable (..))
 import Ouroboros.Network.Handshake.Queryable (Queryable (..))
 import Ouroboros.Network.Magic
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
+import System.Environment (lookupEnv)
 
 -- | Enumeration of node to node protocol versions.
 --
@@ -205,5 +207,10 @@ data ConnectionMode = UnidirectionalMode | DuplexMode
 
 isPerasEnabled :: Set CardanoFeatureFlag -> NodeToNodeVersion -> Bool
 isPerasEnabled featureFlags v =
-       Set.member PerasFlag featureFlags
-    && v >= NodeToNodeV_16
+    --    Set.member PerasFlag featureFlags
+    -- && v >= NodeToNodeV_16
+    isPerasEnabledEnv -- TODO just temporary for simplicity
+
+isPerasEnabledEnv :: Bool
+isPerasEnabledEnv = unsafePerformIO (lookupEnv "ENABLE_PERAS") == Just "1"
+{-# NOINLINE isPerasEnabledEnv #-}
