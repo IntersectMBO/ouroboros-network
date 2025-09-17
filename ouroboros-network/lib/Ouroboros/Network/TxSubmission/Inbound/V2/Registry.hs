@@ -25,6 +25,7 @@ import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
+import Control.Tracer (Tracer, traceWith)
 
 import Data.Foldable as Foldable (foldl', traverse_)
 import Data.Hashable
@@ -37,7 +38,6 @@ import Data.Set qualified as Set
 import Data.Typeable (Typeable)
 import Data.Void (Void)
 
-import Control.Tracer (Tracer, traceWith)
 import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Ouroboros.Network.TxSubmission.Inbound.V2.Decision
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy

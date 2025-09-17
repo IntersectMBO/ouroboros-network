@@ -28,7 +28,6 @@ module Ouroboros.Network.PeerSelection.Governor
   , ChurnAction (..)
   , DebugPeerSelection (..)
   , AssociationMode (..)
-  , readAssociationMode
   , DebugPeerSelectionState (..)
   , peerSelectionGovernor
     -- * Internals exported for testing
@@ -65,7 +64,6 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer (..), traceWith)
 import System.Random
 
-import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
 import Ouroboros.Network.PeerSelection.Governor.ActivePeers qualified as ActivePeers
 import Ouroboros.Network.PeerSelection.Governor.BigLedgerPeers qualified as BigLedgerPeers
 import Ouroboros.Network.PeerSelection.Governor.EstablishedPeers qualified as EstablishedPeers
@@ -73,7 +71,6 @@ import Ouroboros.Network.PeerSelection.Governor.KnownPeers qualified as KnownPee
 import Ouroboros.Network.PeerSelection.Governor.Monitor qualified as Monitor
 import Ouroboros.Network.PeerSelection.Governor.RootPeers qualified as RootPeers
 import Ouroboros.Network.PeerSelection.Governor.Types
-import Ouroboros.Network.PeerSelection.LedgerPeers.Type (UseLedgerPeers (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
@@ -465,11 +462,11 @@ peerSelectionGovernor :: ( Alternative (STM m)
                          , Semigroup extraPeers
                          , Eq extraFlags
                          )
-                      => Tracer m (TracePeerSelection extraDebugState extraFlags extraPeers peeraddr)
+                      => Tracer m (TracePeerSelection extraDebugState extraFlags extraPeers extraTrace peeraddr)
                       -> Tracer m (DebugPeerSelection extraState extraFlags extraPeers peeraddr)
                       -> Tracer m (PeerSelectionCounters extraCounters)
                       -> PeerSelectionGovernorArgs
-                          extraState extraDebugState extraFlags extraPeers extraAPI extraCounters
+                          extraState extraDebugState extraFlags extraPeers extraAPI extraCounters extraTrace
                           peeraddr peerconn exception m
                       -> StdGen
                       -> extraState
@@ -511,7 +508,8 @@ peerSelectionGovernor tracer debugTracer countersTracer peerSelectionArgs fuzzRn
 -- In each case we trace the action, update the state and execute the
 -- action asynchronously.
 --
-peerSelectionGovernorLoop :: forall m extraState extraDebugState extraFlags extraPeers extraAPI extraCounters exception peeraddr peerconn.
+peerSelectionGovernorLoop :: forall m extraState extraDebugState extraFlags extraPeers extraAPI extraCounters extraTrace
+                                      exception peeraddr peerconn.
                              ( Alternative (STM m)
                              , MonadAsync m
                              , MonadDelay m
@@ -525,11 +523,11 @@ peerSelectionGovernorLoop :: forall m extraState extraDebugState extraFlags extr
                              , Semigroup extraPeers
                              , Eq extraFlags
                              )
-                          => Tracer m (TracePeerSelection extraDebugState extraFlags extraPeers peeraddr)
+                          => Tracer m (TracePeerSelection extraDebugState extraFlags extraPeers extraTrace peeraddr)
                           -> Tracer m (DebugPeerSelection extraState extraFlags extraPeers peeraddr)
                           -> Tracer m (PeerSelectionCounters extraCounters)
                           -> PeerSelectionGovernorArgs
-                              extraState extraDebugState extraFlags extraPeers extraAPI extraCounters
+                              extraState extraDebugState extraFlags extraPeers extraAPI extraCounters extraTrace
                               peeraddr peerconn exception m
                           -> PeerSelectionActions
                               extraState extraFlags extraPeers extraAPI extraCounters
@@ -538,7 +536,7 @@ peerSelectionGovernorLoop :: forall m extraState extraDebugState extraFlags extr
                           -> PeerSelectionInterfaces
                               extraState extraFlags extraPeers extraCounters
                               peeraddr peerconn m
-                          -> JobPool () m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
+                          -> JobPool () m (Completion m extraState extraDebugState extraFlags extraPeers extraTrace peeraddr peerconn)
                           -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
                           -> m Void
 peerSelectionGovernorLoop tracer
@@ -644,7 +642,7 @@ peerSelectionGovernorLoop tracer
 
     evalGuardedDecisions :: Time
                          -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
-                         -> m (TimedDecision m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
+                         -> m (TimedDecision m extraState extraDebugState extraFlags extraPeers extraTrace peeraddr peerconn)
     evalGuardedDecisions blockedAt st = do
       inboundPeers <- readInboundPeers actions
       case guardedDecisions blockedAt st inboundPeers of
@@ -669,12 +667,12 @@ peerSelectionGovernorLoop tracer
     guardedDecisions :: Time
                      -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
                      -> Map peeraddr PeerSharing
-                     -> Guarded (STM m) (TimedDecision m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
+                     -> Guarded (STM m) (TimedDecision m extraState extraDebugState extraFlags extraPeers extraTrace peeraddr peerconn)
     guardedDecisions blockedAt st inboundPeers =
       -- All the alternative potentially-blocking decisions.
 
-        -- Make sure preBlocking set is in the right place
-        preBlocking policy actions st
+         -- Make sure preBlocking set is in the right place
+         preBlocking policy actions st
 
       <> Monitor.connections          actions st
       <> Monitor.jobs                 jobPool st
@@ -731,37 +729,10 @@ peerSelectionGovernorLoop tracer
 
 
 wakeupDecision :: PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
-               -> TimedDecision m extraState extraDebugState extraFlags extraPeers peeraddr peerconn
+               -> TimedDecision m extraState extraDebugState extraFlags extraPeers extraTrace peeraddr peerconn
 wakeupDecision st _now =
   Decision {
     decisionTrace = [TraceGovernorWakeup],
     decisionState = st { stdGen = fst (split (stdGen st)) } ,
     decisionJobs  = []
   }
-
-
--- | Classify if a node is in promiscuous mode.
---
--- A node is not in promiscuous mode only if: it doesn't use ledger peers, peer
--- sharing, the set of bootstrap peers is empty.
---
-readAssociationMode
-  :: MonadSTM m
-  => STM m UseLedgerPeers
-  -> PeerSharing
-  -> UseBootstrapPeers
-  -> STM m AssociationMode
-readAssociationMode
-  readUseLedgerPeers
-  peerSharing
-  useBootstrapPeers
-  =
-  do useLedgerPeers <- readUseLedgerPeers
-     pure $
-       case (useLedgerPeers, peerSharing, useBootstrapPeers) of
-         (DontUseLedgerPeers, PeerSharingDisabled, DontUseBootstrapPeers)
-           -> LocalRootsOnly
-         (DontUseLedgerPeers, PeerSharingDisabled, UseBootstrapPeers config)
-           |  null config
-           -> LocalRootsOnly
-         _ -> Unrestricted

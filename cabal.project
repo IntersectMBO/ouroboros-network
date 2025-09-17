@@ -24,6 +24,7 @@ packages: ./cardano-ping
           ./monoidal-synchronisation
           ./network-mux
           ./ouroboros-network
+          ./cardano-diffusion
           ./ntp-client
           ./cardano-client
           ./dmq-node

@@ -3,7 +3,6 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE RankNTypes                 #-}
 
 module Ouroboros.Network.BlockFetch.ConsensusInterface
@@ -12,7 +11,6 @@ module Ouroboros.Network.BlockFetch.ConsensusInterface
   , BlockFetchConsensusInterface (..)
   , ChainSelStarvation (..)
   , ChainComparison (..)
-  , mkReadFetchMode
     -- * Utilities
   , WithFingerprint (..)
   , Fingerprint (..)
@@ -22,7 +20,6 @@ module Ouroboros.Network.BlockFetch.ConsensusInterface
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadTime (UTCTime)
 import Control.Monad.Class.MonadTime.SI (Time)
-import Data.Functor ((<&>))
 
 import Data.Map.Strict (Map)
 import Data.Word (Word64)
@@ -30,8 +27,6 @@ import GHC.Generics (Generic)
 import GHC.Stack (HasCallStack)
 import NoThunks.Class (NoThunks)
 
-import Cardano.Network.ConsensusMode (ConsensusMode (..))
-import Cardano.Network.Types (LedgerStateJudgement (..))
 import Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import Ouroboros.Network.Block
 import Ouroboros.Network.SizeInBytes (SizeInBytes)
@@ -62,23 +57,6 @@ data PraosFetchMode =
 -- | The fetch mode that the block fetch logic should use.
 data FetchMode = FetchModeGenesis | PraosFetchMode PraosFetchMode
   deriving (Eq, Show)
-
--- | Construct 'readFetchMode' for 'BlockFetchConsensusInterface' by branching
--- on the 'ConsensusMode'.
-mkReadFetchMode
-  :: Functor m
-  => ConsensusMode
-  -> m LedgerStateJudgement
-     -- ^ Used for 'GenesisMode'.
-  -> m PraosFetchMode
-     -- ^ Used for 'PraosMode' for backwards compatibility.
-  -> m FetchMode
-mkReadFetchMode consensusMode getLedgerStateJudgement getFetchMode =
-    case consensusMode of
-      GenesisMode -> getLedgerStateJudgement <&> \case
-        YoungEnough -> PraosFetchMode FetchModeDeadline
-        TooOld      -> FetchModeGenesis
-      PraosMode   -> PraosFetchMode <$> getFetchMode
 
 -- | The consensus layer functionality that the block fetch logic requires.
 --

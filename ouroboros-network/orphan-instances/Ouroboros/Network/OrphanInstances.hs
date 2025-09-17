@@ -11,7 +11,6 @@
 
 module Ouroboros.Network.OrphanInstances where
 
-import Cardano.Network.NodeToClient (LocalAddress (..), ProtocolLimitFailure)
 import Control.Applicative (Alternative ((<|>)))
 import Control.Exception (Exception (..))
 import Control.Monad (zipWithM)
@@ -89,7 +88,7 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LRP
 import Ouroboros.Network.Server qualified as Server
 import Ouroboros.Network.Server.RateLimiting (AcceptConnectionsPolicyTrace (..),
            AcceptedConnectionsLimit (..))
-import Ouroboros.Network.Snocket (RemoteAddress)
+import Ouroboros.Network.Snocket (LocalAddress (..), RemoteAddress)
 
 -- Helper function for ToJSON instances with a "kind" field
 kindObject :: Text -> [Pair] -> Value
@@ -815,12 +814,13 @@ instance ToJSON Time where
 instance ( ToJSON extraDebugState
          , ToJSON extraFlags
          , ToJSON extraPeers
+         , ToJSON extraTracer
          , ToJSON peerAddr
          , ToJSONKey peerAddr
          , Ord peerAddr
          , ToJSON (PublicRootPeers.PublicRootPeers extraPeers peerAddr)
          )
-       => ToJSON (TracePeerSelection extraDebugState extraFlags extraPeers peerAddr) where
+       => ToJSON (TracePeerSelection extraDebugState extraFlags extraPeers extraTracer peerAddr) where
   toJSON (TraceLocalRootPeersChanged lrp lrp') =
     object [ "kind" .= String "LocalRootPeersChanged"
            , "previous" .= lrp
@@ -1100,16 +1100,10 @@ instance ( ToJSON extraDebugState
            , "selected" .= selected
            , "available" .= available
            ]
-  toJSON (TraceLedgerStateJudgementChanged new) =
-    object [ "kind" .= String "LedgerStateJudgementChanged"
-           , "LedgerStateJudgement" .= show new
-           ]
+  toJSON (ExtraTrace extraTrace) =
+    toJSON extraTrace
   toJSON TraceOnlyBootstrapPeers =
     object [ "kind" .= String "OnlyBootstrapPeers" ]
-  toJSON (TraceUseBootstrapPeersChanged ubp) =
-    object [ "kind" .= String "UseBootstrapPeersChanged"
-           , "UseBootstrapPeers" .= show ubp
-           ]
   toJSON TraceBootstrapPeersFlagChangedWhilstInSensitiveState =
     object [ "kind" .= String "BootstrapPeersFlagChangedWhilstInSensitiveState"
            ]

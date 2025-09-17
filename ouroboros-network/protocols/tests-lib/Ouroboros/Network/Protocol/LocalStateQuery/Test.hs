@@ -41,8 +41,8 @@ import Ouroboros.Network.Channel
 import Ouroboros.Network.Driver.Stateful qualified as Stateful
 import Ouroboros.Network.Util.ShowProxy
 
-import Ouroboros.Network.Mock.ChainGenerators ()
 import Ouroboros.Network.Mock.Chain (Point)
+import Ouroboros.Network.Mock.ChainGenerators ()
 import Ouroboros.Network.Mock.ConcreteBlock (Block)
 
 import Ouroboros.Network.Protocol.LocalStateQuery.Client

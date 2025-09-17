@@ -44,8 +44,6 @@ import Data.Set qualified as Set
 import Data.Typeable (Typeable)
 import System.Random (mkStdGen)
 
-import Cardano.Network.NodeToNode (NodeToNodeVersion (..))
-
 import Ouroboros.Network.Channel
 import Ouroboros.Network.ControlMessage (ControlMessage (..), ControlMessageSTM)
 import Ouroboros.Network.Driver
@@ -77,6 +75,9 @@ tests = testGroup "AppV2"
                                  $ withMaxSuccess 25
                                  prop_sharedTxStateInvariant
   ]
+
+data TestVersion = TestVersion
+  deriving (Eq, Ord, Bounded, Enum, Show)
 
 data TxSubmissionState =
   TxSubmissionState {
@@ -185,7 +186,7 @@ runTxSubmission tracer tracerTxLogic st0 txDecisionPolicy = do
                                      (NumTxIdsToAck $ getNumTxIdsToReq
                                        $ maxUnacknowledgedTxIds txDecisionPolicy)
                                      (getMempoolReader mempool)
-                                     (maxBound :: NodeToNodeVersion)
+                                     (maxBound :: TestVersion)
                                      ctrlMsgSTM
                       runPeerWithLimits (("OUTBOUND " ++ show addr,) `contramap` tracer)
                                         txSubmissionCodec2

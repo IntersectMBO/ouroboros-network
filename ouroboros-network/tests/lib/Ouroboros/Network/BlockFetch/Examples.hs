@@ -39,8 +39,6 @@ import Ouroboros.Network.Block
 
 import Network.TypedProtocol.Peer.Client
 
-import Cardano.Network.NodeToNode (NodeToNodeVersion (..))
-
 import Ouroboros.Network.AnchoredFragment qualified as AF
 import Ouroboros.Network.BlockFetch
 import Ouroboros.Network.BlockFetch.Client
@@ -57,6 +55,10 @@ import Ouroboros.Network.Util.ShowProxy
 import Ouroboros.Network.BlockFetch.ConsensusInterface (initialWithFingerprint)
 import Ouroboros.Network.BlockFetch.Decision.Trace (TraceDecisionEvent)
 import Ouroboros.Network.Mock.ConcreteBlock
+
+
+data NodeToNodeVersion = NodeToNodeTestVersion
+  deriving (Eq, Ord, Bounded, Enum, Show)
 
 
 -- | Run a single block fetch protocol until the chain is downloaded.

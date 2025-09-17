@@ -2,7 +2,6 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Network.PeerSelection.Governor.KnownPeers
@@ -63,7 +62,7 @@ belowTarget
   -> PeerSelectionActions extraState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m
   -> Time -- ^ blocked at
   -> Map peeraddr PeerSharing
-  -> MkGuardedDecision extraState extraDebugState extraFlags extraPeers peeraddr peerconn m
+  -> MkGuardedDecision extraState extraDebugState extraFlags extraPeers extraTrace peeraddr peerconn m
 belowTarget enableAction
             actions@PeerSelectionActions {
               peerSharing,
@@ -243,7 +242,7 @@ belowTarget enableAction
 -- is used.
 jobPeerShare
   :: forall m extraState extraDebugState extraFlags extraPeers
-           extraAPI extraCounters peeraddr peerconn.
+              extraAPI extraCounters extraTrace peeraddr peerconn.
     (MonadAsync m, MonadTimer m, Ord peeraddr, Hashable peeraddr)
   => PeerSelectionActions
       extraState
@@ -260,7 +259,7 @@ jobPeerShare
   -> PeerSharingAmount
   -> [peeraddr]
   -> Job () m (Completion m extraState extraDebugState extraFlags extraPeers
-                         peeraddr peerconn)
+                            extraTrace peeraddr peerconn)
 jobPeerShare PeerSelectionActions{requestPeerShare}
              PeerSelectionPolicy { policyPeerShareBatchWaitTime
                                  , policyPeerShareOverallTimeout
@@ -279,7 +278,7 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
       sortBy (\a b -> compare (hashWithSalt salt a) (hashWithSalt salt b))
       addrs
 
-    handler :: [peeraddr] -> SomeException -> m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
+    handler :: [peeraddr] -> SomeException -> m (Completion m extraState extraDebugState extraFlags extraPeers extraTrace peeraddr peerconn)
     handler peers e = return $
       Completion $ \st _ ->
       Decision { decisionTrace = [TracePeerShareResults [ (p, Left e) | p <- peers ]],
@@ -290,7 +289,7 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
                  decisionJobs = []
                }
 
-    jobPhase1 :: [peeraddr] -> m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
+    jobPhase1 :: [peeraddr] -> m (Completion m extraState extraDebugState extraFlags extraPeers extraTrace peeraddr peerconn)
     jobPhase1 peers = do
       -- In the typical case, where most requests return within a short
       -- timeout we want to collect all the responses into a batch and
@@ -385,7 +384,7 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
                          }
 
     jobPhase2 :: Int -> [peeraddr] -> [Async m (PeerSharingResult peeraddr)]
-              -> m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
+              -> m (Completion m extraState extraDebugState extraFlags extraPeers extraTrace peeraddr peerconn)
     jobPhase2 maxRemaining peers peerShares = do
 
       -- Wait again, for all remaining to finish or a timeout.
@@ -474,6 +473,7 @@ aboveTarget
       extraDebugState
       extraFlags
       extraPeers
+      extraTrace
       peeraddr
       peerconn
       m

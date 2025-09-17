@@ -24,11 +24,8 @@ module Ouroboros.Network.PeerSelection.State.LocalRootPeers
   , toGroupSets
   , toMap
   , keysSet
-  , trustableKeysSet
     -- * Special operations
   , clampToLimit
-  , clampToTrustable
-  , isPeerTrustable
   ) where
 
 import Prelude hiding (null)
@@ -37,8 +34,6 @@ import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Set (Set)
 import Data.Set qualified as Set
-
-import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
 
 import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
@@ -241,49 +236,3 @@ clampToLimit totalLimit (LocalRootPeers m gs0) =
             !w' = min w (WarmValency (Set.size g'))
             !h' = HotValency (getHotValency h `min` getWarmValency w')
       = [(h', w', g')]
-
-clampToTrustable :: Ord peeraddr
-                 => LocalRootPeers PeerTrustable peeraddr
-                 -> LocalRootPeers PeerTrustable peeraddr
-clampToTrustable (LocalRootPeers m gs) =
-  let trustedMap = Map.filter (\LocalRootConfig { extraFlags } -> case extraFlags of
-                                 IsTrustable    -> True
-                                 IsNotTrustable -> False
-                              )
-                              m
-   in LocalRootPeers trustedMap (trustedGroups gs)
-  where
-    trustedGroups [] = []
-    trustedGroups ((h, w, g):gss) =
-      let trusted = Map.filter (\LocalRootConfig { extraFlags } -> case extraFlags of
-                                  IsTrustable    -> True
-                                  IsNotTrustable -> False
-                               )
-                               m
-          trustedSet = Map.keysSet trusted
-          trustedGroup = Set.intersection g trustedSet
-          w' = min w (WarmValency (Set.size trustedGroup))
-          h' = HotValency (getHotValency h `min` getWarmValency w')
-       in if Set.null trustedGroup
-             then trustedGroups gss
-             else (h', w', trustedGroup) : trustedGroups gss
-
-isPeerTrustable :: Ord peeraddr
-                => peeraddr
-                -> LocalRootPeers PeerTrustable peeraddr
-                -> Bool
-isPeerTrustable peeraddr lrp =
-  case Map.lookup peeraddr (toMap lrp) of
-    Just LocalRootConfig { extraFlags = IsTrustable }
-      -> True
-    _ -> False
-
-trustableKeysSet :: LocalRootPeers PeerTrustable peeraddr
-                 -> Set peeraddr
-trustableKeysSet (LocalRootPeers m _) =
-    Map.keysSet
-  . Map.filter (\LocalRootConfig { extraFlags } ->
-                 case extraFlags of
-                   IsTrustable    -> True
-                   IsNotTrustable -> False)
-  $ m

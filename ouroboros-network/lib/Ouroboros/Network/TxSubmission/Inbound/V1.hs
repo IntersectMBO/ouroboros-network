@@ -41,8 +41,6 @@ import Control.Tracer (Tracer, traceWith)
 
 import Network.TypedProtocol.Core (N, Nat (..), natToInt)
 
-import Cardano.Network.NodeToNode.Version (NodeToNodeVersion)
-
 import Ouroboros.Network.Protocol.TxSubmission2.Server
 import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types (ProcessedTxCount (..),
@@ -123,7 +121,7 @@ initialServerState = ServerState 0 Seq.empty Map.empty Map.empty 0
 
 
 txSubmissionInbound
-  :: forall txid tx idx m.
+  :: forall txid tx idx m version.
      ( Ord txid
      , NoThunks txid
      , NoThunks tx
@@ -136,7 +134,7 @@ txSubmissionInbound
   -> NumTxIdsToAck  -- ^ Maximum number of unacknowledged txids allowed
   -> TxSubmissionMempoolReader txid tx idx m
   -> TxSubmissionMempoolWriter txid tx idx m
-  -> NodeToNodeVersion
+  -> version
   -> TxSubmissionServerPipelined txid tx m ()
 txSubmissionInbound tracer initDelay (NumTxIdsToAck maxUnacked) mpReader mpWriter _version =
     TxSubmissionServerPipelined $ do

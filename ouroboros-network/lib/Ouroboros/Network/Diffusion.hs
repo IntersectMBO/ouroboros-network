@@ -95,7 +95,8 @@ runM
                 ntcFd ntcAddr ntcVersion ntcVersionData
                 resolver exception a
                 extraState extraDebugState extraPeers
-                extraAPI extraFlags extraChurnArgs extraCounters .
+                extraAPI extraFlags extraChurnArgs
+                extraCounters extraTrace.
 
        ( Alternative (STM m)
        , MonadAsync       m
@@ -134,12 +135,12 @@ runM
        Tracers ntnAddr ntnVersion ntnVersionData
                ntcAddr ntcVersion ntcVersionData
                extraState extraDebugState extraFlags
-               extraPeers extraCounters m
+               extraPeers extraCounters extraTrace m
        -- | arguments
     -> Arguments extraState extraDebugState extraFlags
                  extraPeers extraAPI extraChurnArgs
-                 extraCounters exception resolver
-                 m
+                 extraCounters extraTrace
+                 exception resolver m
                  ntnFd ntnAddr ntnVersion ntnVersionData
                        ntcAddr ntcVersion ntcVersionData
     -> -- | configuration
@@ -839,6 +840,7 @@ run :: ( Monoid extraPeers
         extraAPI
         extraChurnArgs
         extraCounters
+        extraTrace
         exception
         Resolver
         IO
@@ -861,6 +863,7 @@ run :: ( Monoid extraPeers
         extraFlags
         extraPeers
         extraCounters
+        extraTrace
         IO
     -> Configuration
         extraFlags

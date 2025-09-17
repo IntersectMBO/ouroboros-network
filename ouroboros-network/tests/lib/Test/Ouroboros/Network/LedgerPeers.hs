@@ -42,7 +42,6 @@ import System.Random
 
 import Network.DNS (Domain)
 
-import Cardano.Network.Diffusion.Configuration qualified as Cardano (srvPrefix)
 import Cardano.Slotting.Slot (SlotNo (..), WithOrigin (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers
 import Ouroboros.Network.PeerSelection.LedgerPeers.Utils
@@ -69,9 +68,8 @@ tests = testGroup "Ouroboros.Network.LedgerPeers"
 
 type ExtraTestInterface = ()
 
-
 cardanoSRVPrefix :: SRVPrefix
-cardanoSRVPrefix = Cardano.srvPrefix
+cardanoSRVPrefix = "_cardano._tcp"
 
 data StakePool = StakePool {
       spStake :: !Word64

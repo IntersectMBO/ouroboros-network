@@ -32,8 +32,6 @@ import Data.List (intercalate, nubBy)
 import Data.Maybe (fromMaybe)
 import Data.Word (Word16)
 
-import Cardano.Network.NodeToNode (NodeToNodeVersion (..))
-
 import Ouroboros.Network.Channel
 import Ouroboros.Network.ControlMessage (ControlMessage (..), ControlMessageSTM)
 import Ouroboros.Network.Driver
@@ -57,6 +55,9 @@ tests :: TestTree
 tests = testGroup "AppV1"
   [ testProperty "txSubmission" prop_txSubmission
   ]
+
+data TestVersion = TestVersion
+  deriving (Eq, Ord, Bounded, Enum, Show)
 
 txSubmissionSimulation
   :: forall m txid.
@@ -124,7 +125,7 @@ txSubmissionSimulation tracer maxUnacked outboundTxs
         nullTracer
         maxUnacked
         (getMempoolReader outboundMempool)
-        (maxBound :: NodeToNodeVersion)
+        (maxBound :: TestVersion)
         controlMessageSTM
 
     inboundPeer :: Mempool m (Tx txid) -> TxSubmissionServerPipelined txid (Tx txid) m ()
@@ -135,7 +136,7 @@ txSubmissionSimulation tracer maxUnacked outboundTxs
         maxUnacked
         (getMempoolReader inboundMempool)
         (getMempoolWriter inboundMempool)
-        (maxBound :: NodeToNodeVersion)
+        (maxBound :: TestVersion)
 
 prop_txSubmission :: Positive Word16
                   -> NonEmptyList (Tx Int)

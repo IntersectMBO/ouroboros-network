@@ -311,3 +311,8 @@ instance ( NFData txid
 
 deriving instance (Show txid, Show tx, Show slot)
   => Show (Message (LocalTxMonitor txid tx slot) from to)
+
+
+data LocalTxMonitorVersion = LocalTxMonitor_V1 -- <  NodeToClientV_20
+                           | LocalTxMonitor_V2 -- >= NodeToClientV_20
+  deriving (Eq, Ord, Enum, Bounded, Show)

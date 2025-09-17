@@ -45,7 +45,7 @@ import Ouroboros.Network.PeerSelection.Types (PeerStatus (..),
 --
 belowTarget
   :: forall extraState extraDebugState extraFlags extraPeers extraAPI
-            extraCounters peeraddr peerconn m.
+            extraCounters extraTrace peeraddr peerconn m.
      ( Alternative (STM m)
      , MonadDelay m
      , MonadSTM m
@@ -73,6 +73,7 @@ belowTarget
       extraDebugState
       extraFlags
       extraPeers
+      extraTrace
       peeraddr
       peerconn
       m
@@ -87,7 +88,8 @@ belowTarget enableAction = belowTargetBigLedgerPeers enableAction
 -- state) then this monitoring action will be disabled.
 --
 belowTargetBigLedgerPeers
-  :: forall extraState extraDebugState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m.
+  :: forall extraState extraDebugState extraFlags extraPeers extraAPI extraCounters extraTrace
+            peeraddr peerconn m.
      ( MonadDelay m
      , MonadSTM m
      , Ord peeraddr
@@ -114,6 +116,7 @@ belowTargetBigLedgerPeers
       extraDebugState
       extraFlags
       extraPeers
+      extraTrace
       peeraddr
       peerconn
       m
@@ -198,7 +201,7 @@ belowTargetBigLedgerPeers enableAction
 
 belowTargetLocal
   :: forall extraState extraDebugState extraFlags extraPeers extraAPI
-            extraCounters peeraddr peerconn m.
+            extraCounters extraTrace peeraddr peerconn m.
      ( MonadDelay m
      , MonadSTM m
      , Ord peeraddr
@@ -218,6 +221,7 @@ belowTargetLocal
       extraDebugState
       extraFlags
       extraPeers
+      extraTrace
       peeraddr
       peerconn
       m
@@ -320,7 +324,7 @@ belowTargetLocal actions@PeerSelectionActions {
 
 belowTargetOther
   :: forall extraState extraDebugState extraFlags extraPeers extraAPI
-            extraCounters peeraddr peerconn m.
+            extraCounters extraTrace peeraddr peerconn m.
      ( MonadDelay m
      , MonadSTM m
      , Ord peeraddr
@@ -340,6 +344,7 @@ belowTargetOther
       extraDebugState
       extraFlags
       extraPeers
+      extraTrace
       peeraddr
       peerconn
       m
@@ -421,7 +426,7 @@ belowTargetOther actions@PeerSelectionActions {
 
 jobPromoteWarmPeer
   :: forall extraState extraDebugState extraFlags extraPeers extraAPI
-            extraCounters peeraddr peerconn m.
+            extraCounters extraTrace peeraddr peerconn m.
      ( MonadDelay m
      , Ord peeraddr
      )
@@ -438,8 +443,8 @@ jobPromoteWarmPeer
   -> peeraddr
   -> IsBigLedgerPeer
   -> peerconn
-  -> Job () m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr
-                         peerconn)
+  -> Job () m (Completion m extraState extraDebugState extraFlags extraPeers extraTrace
+                            peeraddr peerconn)
 jobPromoteWarmPeer PeerSelectionActions{ peerStateActions =
                                            PeerStateActions {
                                              activatePeerConnection,
@@ -451,7 +456,7 @@ jobPromoteWarmPeer PeerSelectionActions{ peerStateActions =
   where
     handler :: SomeException
             -> m (Completion m extraState extraDebugState extraFlags extraPeers
-                             peeraddr peerconn)
+                               extraTrace peeraddr peerconn)
     handler e = do
       -- We wait here, not to avoid race conditions or broken locking, this is
       -- just a very simple back-off strategy. For cold -> warm failures we use
@@ -541,7 +546,7 @@ jobPromoteWarmPeer PeerSelectionActions{ peerStateActions =
                       }
 
 
-    job :: m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
+    job :: m (Completion m extraState extraDebugState extraFlags extraPeers extraTrace peeraddr peerconn)
     job = do
       activatePeerConnection isBigLedgerPeer peerconn
       return $ Completion $ \st@PeerSelectionState {
@@ -602,7 +607,7 @@ jobPromoteWarmPeer PeerSelectionActions{ peerStateActions =
 --
 aboveTarget
   :: forall extraState extraDebugState extraFlags extraPeers extraAPI
-            extraCounters peeraddr peerconn m.
+            extraCounters extraTrace peeraddr peerconn m.
      ( Alternative (STM m)
      , MonadTimer m
      , Ord peeraddr
@@ -622,6 +627,7 @@ aboveTarget
       extraDebugState
       extraFlags
       extraPeers
+      extraTrace
       peeraddr
       peerconn
       m
@@ -635,7 +641,7 @@ aboveTarget = aboveTargetBigLedgerPeers
 
 aboveTargetBigLedgerPeers
   :: forall extraState extraDebugState extraFlags extraPeers extraAPI
-           extraCounters peeraddr peerconn m.
+            extraCounters extraTrace peeraddr peerconn m.
      ( MonadTimer m
      , Ord peeraddr
      )
@@ -653,6 +659,7 @@ aboveTargetBigLedgerPeers
       extraDebugState
       extraFlags
       extraPeers
+      extraTrace
       peeraddr
       peerconn
       m
@@ -732,7 +739,7 @@ aboveTargetBigLedgerPeers actions@PeerSelectionActions {
 
 aboveTargetLocal
   :: forall extraState extraDebugState extraFlags extraPeers extraAPI
-            extraCounters peeraddr peerconn m.
+            extraCounters extraTrace peeraddr peerconn m.
      ( MonadTimer m
      , Ord peeraddr
      , HasCallStack
@@ -751,6 +758,7 @@ aboveTargetLocal
       extraDebugState
       extraFlags
       extraPeers
+      extraTrace
       peeraddr
       peerconn
       m
@@ -836,7 +844,7 @@ aboveTargetLocal actions@PeerSelectionActions {
 
 aboveTargetOther
   :: forall extraState extraDebugState extraFlags extraPeers extraAPI
-            extraCounters peeraddr peerconn m.
+            extraCounters extraTrace peeraddr peerconn m.
      ( MonadTimer m
      , Ord peeraddr
      , HasCallStack
@@ -855,6 +863,7 @@ aboveTargetOther
       extraDebugState
       extraFlags
       extraPeers
+      extraTrace
       peeraddr
       peerconn
       m
@@ -935,7 +944,8 @@ aboveTargetOther actions@PeerSelectionActions {
 
 
 jobDemoteActivePeer
-  :: forall extraState extraDebugState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m.
+  :: forall extraState extraDebugState extraFlags extraPeers extraAPI extraCounters extraTrace
+            peeraddr peerconn m.
      ( MonadTimer m
      , Ord peeraddr
      )
@@ -950,14 +960,14 @@ jobDemoteActivePeer
       m
   -> peeraddr
   -> peerconn
-  -> Job () m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr
-                          peerconn)
+  -> Job () m (Completion m extraState extraDebugState extraFlags extraPeers extraTrace
+                            peeraddr peerconn)
 jobDemoteActivePeer PeerSelectionActions{peerStateActions = PeerStateActions {deactivatePeerConnection,
                                                                               monitorPeerConnection}}
                     peeraddr peerconn =
     Job job handler () "demoteActivePeer"
   where
-    handler :: SomeException -> m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
+    handler :: SomeException -> m (Completion m extraState extraDebugState extraFlags extraPeers extraTrace peeraddr peerconn)
     handler e = do
       -- cf. issue #5111 - we wait for the connection to be forgotten by the CM
       -- before we return. Otherwise, if the same peer is promoted too quickly by
@@ -1016,7 +1026,7 @@ jobDemoteActivePeer PeerSelectionActions{peerStateActions = PeerStateActions {de
               decisionJobs  = []
             }
 
-    job :: m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
+    job :: m (Completion m extraState extraDebugState extraFlags extraPeers extraTrace peeraddr peerconn)
     job = do
       deactivatePeerConnection peerconn
       return . Completion $ \st@PeerSelectionState {
