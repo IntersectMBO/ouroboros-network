@@ -1,6 +1,10 @@
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DataKinds                #-}
+{-# LANGUAGE DisambiguateRecordFields #-}
+{-# LANGUAGE GADTs                    #-}
+{-# LANGUAGE LambdaCase               #-}
+{-# LANGUAGE NamedFieldPuns           #-}
+{-# LANGUAGE PatternSynonyms          #-}
+{-# LANGUAGE ScopedTypeVariables      #-}
 
 -- | This module contains governor decisions for monitoring tasks:
 --
@@ -18,14 +22,17 @@ module Cardano.Network.PeerSelection.Governor.Monitor
   , ExtraTrace (..)
   ) where
 
-import Data.Set qualified as Set
-
+import Control.Concurrent.JobPool (Job (..))
+import Control.Exception (assert)
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Set (Set)
+import Data.Set qualified as Set
 
 import Cardano.Network.ConsensusMode
-import Cardano.Network.Diffusion.Configuration qualified as Cardano (srvPrefix)
 import Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
 import Cardano.Network.LedgerStateJudgement
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
@@ -37,24 +44,21 @@ import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Ca
 import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
 import Cardano.Network.PeerSelection.PublicRootPeers qualified as Cardano.PublicRootPeers
 import Cardano.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
-import Control.Exception (assert)
-import Data.Map.Strict (Map)
-import Data.Map.Strict qualified as Map
-import Data.Set (Set)
+import Ouroboros.Network.Block (HeaderHash, SlotNo, atSlot, pattern BlockPoint,
+           withHash)
 import Ouroboros.Network.PeerSelection.Governor.ActivePeers
            (jobDemoteActivePeer)
-import Ouroboros.Network.PeerSelection.Governor.Monitor (jobVerifyPeerSnapshot)
 import Ouroboros.Network.PeerSelection.Governor.Types hiding
            (PeerSelectionCounters)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
-           (LedgerPeersConsensusInterface (..))
+           (LedgerPeerSnapshot (..), LedgerPeersConsensusInterface (..),
+           LedgerPeersKind (..))
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers
            (LocalRootConfig (..))
 import Ouroboros.Network.PeerSelection.Types
-import Ouroboros.Network.Point (Block (..), WithOrigin (..))
 
 
 -- | Used to set 'bootstrapPeersTimeout' for crashing the node in a critical
@@ -496,8 +500,8 @@ monitorLedgerStateJudgement
             (TimedDecision m Cardano.ExtraState extraDebugState extraFlags
                              (Cardano.ExtraPeers peeraddr) ExtraTrace peeraddr peerconn)
 monitorLedgerStateJudgement PeerSelectionActions{
-                              getLedgerStateCtx = ledgerCtx@LedgerPeersConsensusInterface {
-                                lpExtraAPI = Cardano.LedgerPeersConsensusInterface {
+                              getLedgerStateCtx = LedgerPeersConsensusInterface {
+                                lpExtraAPI = lpExtraAPI@Cardano.LedgerPeersConsensusInterface {
                                   Cardano.getLedgerStateJudgement = readLedgerStateJudgement
                                 }
                               }
@@ -524,8 +528,9 @@ monitorLedgerStateJudgement PeerSelectionActions{
         Decision {
           decisionTrace = [ExtraTrace (TraceLedgerStateJudgementChanged lsj)],
           decisionJobs = case (lsj, ledgerPeerSnapshot) of
-                           (TooOld, Just ledgerPeerSnapshot') ->
-                             [jobVerifyPeerSnapshot Cardano.srvPrefix ledgerPeerSnapshot' ledgerCtx]
+                           (TooOld, Just (LedgerBigPeerSnapshotV23 point _magic _pools))
+                             | BlockPoint { atSlot, withHash } <- point ->
+                                 [jobVerifyPeerSnapshot (atSlot, withHash) lpExtraAPI]
                            _otherwise -> [],
           decisionState = st {
             extraState = cpst {
@@ -674,6 +679,33 @@ waitForSystemToQuiesce st@PeerSelectionState{
                                       }
         }
   | otherwise = GuardedSkip Nothing
+
+
+-- |This job, which is initiated by monitorLedgerStateJudgement job,
+-- verifies whether the provided big ledger pools match up with the
+-- ledger state once the node catches up to the slot at which the
+-- snapshot was ostensibly taken
+--
+jobVerifyPeerSnapshot :: MonadSTM m
+                      => (SlotNo, HeaderHash (LedgerPeerSnapshot BigLedgerPeers))
+                      -> Cardano.LedgerPeersConsensusInterface m
+                      -> Job () m (Completion m extraState extraDebugState extraFlags extraPeers extraTrace peeraddr peerconn)
+jobVerifyPeerSnapshot (slotNo, fileHash)
+                      Cardano.LedgerPeersConsensusInterface { getBlockHash }
+  = Job job (const (completion False)) () "jobVerifyPeerSnapshot"
+  where
+    completion result = return . Completion $ \st _now ->
+      Decision {
+        decisionTrace = [TraceVerifyPeerSnapshot result],
+        decisionState = st,
+        decisionJobs  = [] }
+
+    job = getBlockHash slotNo $ \promise -> do
+      waited <- atomically promise
+      case waited of
+        BlockPoint { withHash } -> do
+          completion $ show fileHash == show withHash
+        _otherwise -> error "impossible!"
 
 
 -- | Extra trace points for `TracePeerSelection`.
