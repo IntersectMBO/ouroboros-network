@@ -151,6 +151,7 @@ library
     aeson,
     base >=4.14 && <4.22,
     bytestring,
+    cardano-crypto-class,
     cardano-diffusion:{api, protocols},
     containers,
     contra-tracer,
