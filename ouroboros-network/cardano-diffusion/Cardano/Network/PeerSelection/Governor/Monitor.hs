@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -17,14 +18,16 @@ module Cardano.Network.PeerSelection.Governor.Monitor
   , waitForSystemToQuiesce
   ) where
 
-import Data.Set qualified as Set
-
+import Control.Exception (assert)
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Set (Set)
+import Data.Set qualified as Set
 
 import Cardano.Network.ConsensusMode
-import Cardano.Network.Diffusion.Configuration qualified as Cardano (srvPrefix)
 import Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
 import Cardano.Network.PeerSelection.Bootstrap (isBootstrapPeersEnabled,
            isNodeAbleToMakeProgress, requiresBootstrapPeers)
@@ -34,17 +37,13 @@ import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Ca
 import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
 import Cardano.Network.PeerSelection.PublicRootPeers qualified as Cardano.PublicRootPeers
 import Cardano.Network.Types (LedgerStateJudgement (..))
-import Control.Exception (assert)
-import Data.Map.Strict (Map)
-import Data.Map.Strict qualified as Map
-import Data.Set (Set)
 import Ouroboros.Network.PeerSelection.Governor.ActivePeers
            (jobDemoteActivePeer)
 import Ouroboros.Network.PeerSelection.Governor.Monitor (jobVerifyPeerSnapshot)
 import Ouroboros.Network.PeerSelection.Governor.Types hiding
            (PeerSelectionCounters)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
-           (LedgerPeersConsensusInterface (..))
+           (LedgerPeersConsensusInterface (..), LedgerPeerSnapshot (..))
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
@@ -520,8 +519,8 @@ monitorLedgerStateJudgement PeerSelectionActions{
         Decision {
           decisionTrace = [TraceLedgerStateJudgementChanged lsj],
           decisionJobs = case (lsj, ledgerPeerSnapshot) of
-                           (TooOld, Just ledgerPeerSnapshot') ->
-                             [jobVerifyPeerSnapshot Cardano.srvPrefix ledgerPeerSnapshot' ledgerCtx]
+                           (TooOld, Just (LedgerPeerSnapshotV3 point _pools)) ->
+                             [jobVerifyPeerSnapshot point ledgerCtx undefined]
                            _otherwise -> [],
           decisionState = st {
             extraState = cpst {

@@ -127,6 +127,11 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   , DemotionTimeoutException (..)
   ) where
 
+import Control.Applicative (Alternative)
+import Control.Concurrent.JobPool (Job)
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Exception (Exception (..), SomeException, assert)
+import Control.Monad.Class.MonadTime.SI
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
@@ -136,18 +141,12 @@ import Data.Semigroup (Min (..))
 import Data.Set (Set)
 import Data.Set qualified as Set
 import GHC.Stack (HasCallStack)
-
-import Control.Applicative (Alternative)
-import Control.Concurrent.JobPool (Job)
-import Control.Exception (Exception (..), SomeException, assert)
-import Control.Monad.Class.MonadSTM
-import Control.Monad.Class.MonadTime.SI
 import System.Random (StdGen)
 
-import Control.Concurrent.Class.MonadSTM.Strict
+import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
+import Ouroboros.Network.Block
 import Ouroboros.Network.ExitPolicy
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode)
-import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers)
@@ -718,7 +717,10 @@ data PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn =
 --     considering them all to have bad connectivity.
 --     Should also take account of DNS failures for root peer set.
 --     lastSuccessfulNetworkEvent :: Time
-    } deriving Show
+    }
+
+deriving instance (Show LedgerPeerSnapshot, Show extraFlags, Show peeraddr, Show extraPeers, Show peerconn, Show extraState, StandardHash LedgerPeerSnapshot, Ord peeraddr)
+  => Show (PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn)
 
 -- | A node is classified as `LocalRootsOnly` if it is a hidden relay or
 -- a BP, e.g. if it is configured such that it can only have a chance to be
@@ -1897,4 +1899,5 @@ deriving instance ( Show extraState
                   , Show extraPeers
                   , Ord peeraddr
                   , Show peeraddr
+                  , StandardHash LedgerPeerSnapshot
                   ) => Show (DebugPeerSelection extraState extraFlags extraPeers peeraddr)
