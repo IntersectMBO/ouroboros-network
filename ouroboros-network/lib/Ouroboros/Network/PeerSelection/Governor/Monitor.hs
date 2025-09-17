@@ -1,3 +1,4 @@
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -11,7 +12,6 @@
 module Ouroboros.Network.PeerSelection.Governor.Monitor
   ( targetPeers
   , jobs
-  , jobVerifyPeerSnapshot
   , connections
   , localRoots
   , ledgerPeerSnapshotChange
@@ -23,7 +23,7 @@ import Data.Maybe (fromMaybe, isJust)
 import Data.Set (Set)
 import Data.Set qualified as Set
 
-import Control.Concurrent.JobPool (Job (..), JobPool)
+import Control.Concurrent.JobPool (JobPool)
 import Control.Concurrent.JobPool qualified as JobPool
 import Control.Exception (assert)
 import Control.Monad.Class.MonadSTM
@@ -31,7 +31,6 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import System.Random (randomR)
 
-import Ouroboros.Network.Block (HeaderHash, SlotNo)
 import Ouroboros.Network.ExitPolicy (RepromoteDelay)
 import Ouroboros.Network.ExitPolicy qualified as ExitPolicy
 import Ouroboros.Network.PeerSelection.Governor.ActivePeers
@@ -39,11 +38,7 @@ import Ouroboros.Network.PeerSelection.Governor.ActivePeers
 import Ouroboros.Network.PeerSelection.Governor.Types hiding
            (PeerSelectionCounters)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
-           (LedgerPeerSnapshot (..), LedgerPeersConsensusInterface (..),
-           SRVPrefix, compareLedgerPeerSnapshotApproximate,
-           getRelayAccessPointsFromLedger,
-           getRelayAccessPointsFromLedgerPeerSnapshot)
-import Ouroboros.Network.PeerSelection.LedgerPeers.Utils
+           (LedgerPeerSnapshot (..))
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
@@ -410,38 +405,6 @@ localRoots actions@PeerSelectionActions{ readLocalRootPeers
                             | (peeraddr, peerconn) <- Map.assocs selectedToDemote' ]
           }
 
--- |This job, which is initiated by monitorLedgerStateJudgement job,
--- verifies whether the provided big ledger pools match up with the
--- ledger state once the node catches up to the slot at which the
--- snapshot was ostensibly taken
---
-jobVerifyPeerSnapshot :: MonadSTM m
-                      => SRVPrefix
-                      -> LedgerPeerSnapshot
-                      -> LedgerPeersConsensusInterface extraAPI m
-                      -> Job () m (Completion m extraState extraDebugState extraFlags extraPeers extraTrace peeraddr peerconn)
-jobVerifyPeerSnapshot srvPrefix
-                      ledgerPeerSnapshot
-                      ledgerCtx@LedgerPeersConsensusInterface { lpGetLatestSlot }
-  = Job job (const (completion False)) () "jobVerifyPeerSnapshot"
-  where
-    (slot, snapshotPeers) =
-      getRelayAccessPointsFromLedgerPeerSnapshot srvPrefix ledgerPeerSnapshot
-
-    completion result = return . Completion $ \st _now ->
-      Decision {
-        decisionTrace = [TraceVerifyPeerSnapshot result],
-        decisionState = st,
-        decisionJobs  = [] }
-
-    job = do
-      ledgerPeers <-
-        atomically $ do
-          check . (>= slot) =<< lpGetLatestSlot
-          accumulateBigLedgerStake <$> getRelayAccessPointsFromLedger srvPrefix ledgerCtx
-      completion $ snapshotPeers
-                   `compareLedgerPeerSnapshotApproximate`
-                   ledgerPeers
 
 -- |This job monitors for any changes in the big ledger peer snapshot
 -- and flips ledger state judgement private state so that monitoring action
@@ -464,8 +427,9 @@ ledgerPeerSnapshotChange extraStateChange
     ledgerPeerSnapshot' <- readLedgerPeerSnapshot
     case (ledgerPeerSnapshot', ledgerPeerSnapshot) of
       (Nothing, _) -> retry
-      (Just (LedgerPeerSnapshot (slot, _)), Just (LedgerPeerSnapshot (slot', _)))
-        | slot == slot' -> retry
+      (Just (LedgerBigPeerSnapshotV23 point _magic _pools),
+       Just (LedgerBigPeerSnapshotV23 point' _magic' _pools'))
+        | point == point' -> retry
       _otherwise ->
         return $ \_now ->
                    Decision { decisionTrace = [],
