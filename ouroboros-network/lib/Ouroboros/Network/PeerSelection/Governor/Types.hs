@@ -1,5 +1,6 @@
 {-# LANGUAGE BangPatterns              #-}
 {-# LANGUAGE CPP                       #-}
+{-# LANGUAGE DataKinds                 #-}
 {-# LANGUAGE DeriveFunctor             #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
@@ -9,6 +10,7 @@
 {-# LANGUAGE RecordWildCards           #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE StandaloneDeriving        #-}
+{-# LANGUAGE UndecidableInstances      #-}
 {-# LANGUAGE ViewPatterns              #-}
 
 #if __GLASGOW_HASKELL__ < 904
@@ -70,6 +72,11 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   , DemotionTimeoutException (..)
   ) where
 
+import Control.Applicative (Alternative)
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Concurrent.JobPool (Job)
+import Control.Exception (Exception (..), SomeException, assert)
+import Control.Monad.Class.MonadTime.SI
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
@@ -80,12 +87,6 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 import GHC.Stack (HasCallStack)
 import System.Random (StdGen)
-
-import Control.Applicative (Alternative)
-import Control.Concurrent.Class.MonadSTM.Strict
-import Control.Concurrent.JobPool (Job)
-import Control.Exception (Exception (..), SomeException, assert)
-import Control.Monad.Class.MonadTime.SI
 
 import Ouroboros.Network.ConnectionManager.Types (Provenance)
 import Ouroboros.Network.DiffusionMode
@@ -356,7 +357,7 @@ data PeerSelectionActions extraState extraFlags extraPeers extraAPI extraCounter
 
        -- | Read the current state of ledger peer snapshot
        --
-       readLedgerPeerSnapshot :: STM m (Maybe LedgerPeerSnapshot)
+       readLedgerPeerSnapshot :: STM m (Maybe (LedgerPeerSnapshot BigLedgerPeers))
      }
 
 -- | Interfaces required by the peer selection governor, which do not need to
@@ -658,7 +659,7 @@ data PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn =
 
     -- | Internal state of ledger peer snapshot
     --
-    ledgerPeerSnapshot          :: Maybe LedgerPeerSnapshot,
+    ledgerPeerSnapshot          :: Maybe (LedgerPeerSnapshot BigLedgerPeers),
 
     -- | Extension point so that 3rd party users can plug their own peer
     -- selection state if needed
