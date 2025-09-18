@@ -16,8 +16,6 @@
 {-# LANGUAGE UndecidableInstances       #-}
 {-# LANGUAGE ViewPatterns               #-}
 
-{-# OPTIONS_GHC -fno-warn-orphans       #-}
-
 -- | Various types related to ledger peers.  This module is re-exported from
 -- "Ouroboros.Network.PeerSelection.LedgerPeers".
 --
@@ -149,8 +147,8 @@ instance FromJSON LedgerPeerSnapshot where
           slot <- v .: "slotNo"
           bigPools' <- forM (zip [0 :: Int ..] bigPools) \(idx, poolO) -> do
                          let f poolV = do
-                                 AccPoolStakeCoded accStake <- poolV .: "accumulatedStake"
-                                 PoolStakeCoded reStake <- poolV .: "relativeStake"
+                                 accStake <- poolV .: "accumulatedStake"
+                                 reStake  <- poolV .: "relativeStake"
                                  -- decode using `LedgerRelayAccessPointV1` instance
                                  relays <- fmap getLedgerReelayAccessPointV1 <$> poolV .: "relays"
                                  return (accStake, (reStake, relays))
@@ -161,9 +159,9 @@ instance FromJSON LedgerPeerSnapshot where
           slot <- v .: "slotNo"
           bigPools' <- forM (zip [0 :: Int ..] bigPools) \(idx, poolO) -> do
                          let f poolV = do
-                                 AccPoolStakeCoded accStake <- poolV .: "accumulatedStake"
-                                 PoolStakeCoded reStake <- poolV .: "relativeStake"
-                                 relays <- poolV .: "relays"
+                                 accStake <- poolV .: "accumulatedStake"
+                                 reStake  <- poolV .: "relativeStake"
+                                 relays   <- poolV .: "relays"
                                  return (accStake, (reStake, relays))
                          withObject ("bigLedgerPools[" <> show idx <> "]") f (Object poolO)
 
@@ -172,9 +170,9 @@ instance FromJSON LedgerPeerSnapshot where
           point     <- v .: "Point"
           bigPools' <- forM (zip [0 :: Int ..] bigPools) \(idx, poolO) -> do
                          let f poolV = do
-                                 AccPoolStakeCoded accStake <- poolV .: "accumulatedStake"
-                                 PoolStakeCoded reStake <- poolV .: "relativeStake"
-                                 relays <- poolV .: "relays"
+                                 accStake <- poolV .: "accumulatedStake"
+                                 reStake  <- poolV .: "relativeStake"
+                                 relays   <- poolV .: "relays"
                                  return (accStake, (reStake, relays))
                          withObject ("bigLedgerPools[" <> show idx <> "]") f (Object poolO)
 
@@ -215,47 +213,39 @@ data LedgerPeerSnapshotSRVSupport
 
 encodeLedgerPeerSnapshot :: LedgerPeerSnapshotSRVSupport -> LedgerPeerSnapshot -> Codec.Encoding
 encodeLedgerPeerSnapshot LedgerPeerSnapshotDoesntSupportSRV (LedgerPeerSnapshotV2 (wOrigin, pools)) =
-       Codec.encodeListLen 2
-    <> Codec.encodeWord8 1 -- internal version
-    <> Codec.encodeListLen 2
-    <> encodeWithOrigin wOrigin
-    <> toCBOR pools'
-    where
-      pools' =
-        [(AccPoolStakeCoded accPoolStake, (PoolStakeCoded relStake, relays))
-        | (accPoolStake, (relStake, relays)) <-
-            -- filter out SRV domains, not supported by `< NodeToClientV_22`
-            map
-              (second $ second $ NonEmpty.filter
-                (\case
-                    LedgerRelayAccessSRVDomain {} -> False
-                    _ -> True)
-              )
-            pools
-        , not (null relays)
-        ]
+     Codec.encodeListLen 2
+  <> Codec.encodeWord8 1 -- internal version
+  <> Codec.encodeListLen 2
+  <> encodeWithOrigin wOrigin
+  <> toCBOR pools'
+  where
+    pools' =
+      [(accPoolStake, (relStake, NonEmpty.fromList relays))
+      | (accPoolStake, (relStake, relays)) <-
+          -- filter out SRV domains, not supported by `< NodeToClientV_22`
+          map
+            (second $ second $ NonEmpty.filter
+              (\case
+                  LedgerRelayAccessSRVDomain {} -> False
+                  _ -> True)
+            )
+          pools
+      , not (null relays)
+      ]
+
 encodeLedgerPeerSnapshot LedgerPeerSnapshotSupportsSRV (LedgerPeerSnapshotV2 (wOrigin, pools)) =
-       Codec.encodeListLen 2
-    <> Codec.encodeWord8 1 -- internal version
-    <> Codec.encodeListLen 2
-    <> encodeWithOrigin wOrigin
-    <> toCBOR pools'
-    where
-      pools' =
-        [(AccPoolStakeCoded accPoolStake, (PoolStakeCoded relStake, relays))
-        | (accPoolStake, (relStake, relays)) <- pools
-        ]
+     Codec.encodeListLen 2
+  <> Codec.encodeWord8 1 -- internal version
+  <> Codec.encodeListLen 2
+  <> encodeWithOrigin wOrigin
+  <> toCBOR pools
+
 encodeLedgerPeerSnapshot _LedgerPeerSnapshotSupportsSRV (LedgerPeerSnapshotV3 pt pools) =
-       Codec.encodeListLen 2
-    <> Codec.encodeWord8 3 -- internal version
-    <> Codec.encodeListLen 2
-    <> encodeLedgerPeerSnapshotPoint pt
-    <> toCBOR pools'
-    where
-      pools' =
-        [(AccPoolStakeCoded accPoolStake, (PoolStakeCoded relStake, relays))
-        | (accPoolStake, (relStake, relays)) <- pools
-        ]
+     Codec.encodeListLen 2
+  <> Codec.encodeWord8 3 -- internal version
+  <> Codec.encodeListLen 2
+  <> encodeLedgerPeerSnapshotPoint pt
+  <> encodeStakePools pools
 
 
 encodeLedgerPeerSnapshotPoint :: Point LedgerPeerSnapshot -> Codec.Encoding
@@ -292,6 +282,33 @@ decodeLedgerPeerSnapshotPoint = do
     _      -> fail "LedgerPeers.Type: Unrecognized CBOR encoding of Point for LedgerPeerSnapshot"
 
 
+encodeStakePools :: [(AccPoolStake, (PoolStake, NonEmpty LedgerRelayAccessPoint))]
+                 -> Codec.Encoding
+encodeStakePools pools =
+     Codec.encodeListLenIndef
+  <> foldr (\(AccPoolStake accPoolStake, (PoolStake poolStake, relays)) r ->
+                 Codec.encodeListLen 3
+              <> toCBOR accPoolStake
+              <> toCBOR poolStake
+              <> toCBOR relays
+              <> r)
+           Codec.encodeBreak
+           pools
+
+
+decodeStakePools :: Codec.Decoder s [(AccPoolStake, (PoolStake, NonEmpty LedgerRelayAccessPoint))]
+decodeStakePools = do
+  Codec.decodeListLenIndef
+  Codec.decodeSequenceLenIndef
+         (flip (:)) [] reverse
+         do
+           Codec.decodeListLenOf 3
+           accPoolStake <- AccPoolStake <$> fromCBOR
+           poolStake    <- PoolStake <$> fromCBOR
+           relays       <- fromCBOR
+           return (accPoolStake, (poolStake, relays))
+
+
 -- | Used by functions to indicate what kind of ledger peer to process
 --
 data LedgerPeersKind = AllLedgerPeers | BigLedgerPeers
@@ -314,25 +331,24 @@ isLedgerPeersEnabled :: UseLedgerPeers -> Bool
 isLedgerPeersEnabled DontUseLedgerPeers = False
 isLedgerPeersEnabled UseLedgerPeers {}  = True
 
+
 -- | The relative stake of a stakepool in relation to the total amount staked.
 -- A value in the [0, 1] range.
 --
 newtype PoolStake = PoolStake { unPoolStake :: Rational }
   deriving (Eq, Ord, Show)
-  deriving newtype (Fractional, Num, NFData)
+  deriving newtype (Fractional, Num, NFData, FromJSON, ToJSON, ToCBOR, FromCBOR)
+  -- the ToCBOR and FromCBOR instances can be removed once V22 is no longer supported
 
-newtype PoolStakeCoded = PoolStakeCoded PoolStake
-  deriving (ToCBOR, FromCBOR, FromJSON, ToJSON) via Rational
 
 -- | The accumulated relative stake of a stake pool, like PoolStake but it also includes the
 -- relative stake of all preceding pools. A value in the range [0, 1].
 --
 newtype AccPoolStake = AccPoolStake { unAccPoolStake :: Rational }
-    deriving (Eq, Ord, Show)
-    deriving newtype (Fractional, Num, NFData)
+  deriving (Eq, Ord, Show)
+  deriving newtype (Fractional, Num, NFData, FromJSON, ToJSON, FromCBOR, ToCBOR)
+  -- the ToCBOR and FromCBOR instances can be removed once V22 is no longer supported
 
-newtype AccPoolStakeCoded = AccPoolStakeCoded AccPoolStake
-  deriving (ToCBOR, FromCBOR, FromJSON, ToJSON) via Rational
 
 -- | Identifies a peer as coming from ledger or not.
 data IsLedgerPeer = IsLedgerPeer
