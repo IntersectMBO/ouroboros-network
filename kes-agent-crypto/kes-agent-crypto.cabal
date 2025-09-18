@@ -40,7 +40,7 @@ library
                    Cardano.KESAgent.Util.RefCounting
     build-depends: aeson >=2.0
                  , bytestring >=0.11
-                 , cardano-crypto-class
+                 , cardano-crypto-class >=2.2
                  , cardano-binary
                    -- We need to pin this down to this exact version, because
                    -- there are two independent packages named contra-tracer:
