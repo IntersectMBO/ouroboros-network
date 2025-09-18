@@ -17,8 +17,8 @@ package ouroboros-network-api
 
 
 -- IPv6 tests are DISABLED
-package ouroboros-network-framework
+package ouroboros-network
   flags: -ipv6
 
-package ouroboros-network-protocols
+package cardano-diffusion
   flags: +cddl

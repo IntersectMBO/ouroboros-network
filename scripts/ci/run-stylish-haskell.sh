@@ -63,11 +63,8 @@ done
 FD_OPTS="-e hs --ignore-file ./scripts/ci/check-stylish-ignore -X stylish-haskell $STYLISH_HASKELL_ARGS"
 
 fd . './network-mux'                 $FD_OPTS
-fd . './ouroboros-network-api'       $FD_OPTS
-fd . './ouroboros-network-framework' $FD_OPTS
-fd . './ouroboros-network-mock'      $FD_OPTS
-fd . './ouroboros-network-protocols' $FD_OPTS
 fd . './ouroboros-network'           $FD_OPTS
+fd . './cardano-diffusion'           $FD_OPTS
 fd . './cardano-client'              $FD_OPTS
 fd . './dmq-node'                    $FD_OPTS
 

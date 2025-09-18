@@ -102,23 +102,25 @@ let
         doCheck = !pkgs.stdenv.hostPlatform.isWindows;
 
         # pkgs are instantiated for the host platform
-        packages.ouroboros-network-protocols.components.tests.cddl.build-tools = [ pkgs.cddl pkgs.cbor-diag pkgs.cddlc ];
-        packages.ouroboros-network-protocols.components.tests.cddl.preCheck = "export HOME=`pwd`";
+        packages.cardano-diffusion.components.tests.protocols-cddl.build-tools = [ pkgs.cddl pkgs.cbor-diag pkgs.cddlc ];
+        packages.cardano-diffusion.components.tests.protocols-cddl.preCheck = "export HOME=`pwd`";
+        # note: protocols-cddl is disabled on Windows in ./scripts/ci/cabal.project.local.Windows
 
         packages.dmq-node.components.tests.dmq-cddl.build-tools = [ pkgs.cddl pkgs.cbor-diag pkgs.cddlc ];
         packages.dmq-node.components.tests.dmq-cddl.preCheck = "export HOME=`pwd`";
 
-        packages.ouroboros-network-framework.components.tests.sim-tests.doCheck = onLinux;
-        packages.ouroboros-network.components.tests.sim-tests.doCheck = onLinux;
+        # pkgs are disabled since we don't have enough CPU bandwidth on MacOS machines
+        packages.ouroboros-network.components.tests.framework-sim-tests.doCheck = onLinux;
+        packages.ouroboros-network.components.tests.ouroboros-network-sim-tests.doCheck = onLinux;
 
 
         packages.dmq-node.components.tests.dmq-test.preCheck =
           if buildSystem == "x86_64-linux" then "export GHCRTS=-M1600M" else "";
         packages.network-mux.components.tests.test.preCheck =
           if buildSystem == "x86_64-linux" then "export GHCRTS=-M800M" else "";
-        packages.ouroboros-network-protocols.components.tests.test.preCheck =
+        packages.ouroboros-network.components.tests.protocols-test.preCheck =
           if buildSystem == "x86_64-linux" then "export GHCRTS=-M800M" else "";
-        packages.ouroboros-network.components.tests.sim-tests.preCheck =
+        packages.cardano-diffusion.components.tests.cardano-diffusion-sim-tests.preCheck =
           if buildSystem == "x86_64-linux" then "export GHCRTS=-M7000M" else "";
       })
       ({ pkgs, ... }: lib.mkIf pkgs.stdenv.hostPlatform.isWindows {
@@ -128,8 +130,8 @@ let
         # rubby fails to build with musl, hence we disable cddl tests
         packages.dmq-node.components.tests.dmq-cddl.build-tools = lib.mkForce [ ];
         packages.dmq-node.components.tests.dmq-cddl.doCheck = lib.mkForce false;
-        packages.ouroboros-network-protocols.components.tests.cddl.build-tools = lib.mkForce [ ];
-        packages.ouroboros-network-protocols.components.tests.cddl.doCheck = lib.mkForce false;
+        packages.cardano-diffusion.components.tests.protocols-cddl.build-tools = lib.mkForce [ ];
+        packages.cardano-diffusion.components.tests.protocols-cddl.doCheck = lib.mkForce false;
         packages.dmq-node.ghcOptions = with pkgs; [
           "-L${lib.getLib static-gmp}/lib"
           "-L${lib.getLib static-libsodium-vrf}/lib"
