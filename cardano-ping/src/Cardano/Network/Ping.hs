@@ -154,6 +154,7 @@ supportedNodeToClientVersions magic =
   , NodeToClientVersionV20 magic
   , NodeToClientVersionV21 magic
   , NodeToClientVersionV22 magic
+  , NodeToClientVersionV23 magic
   ]
 
 data InitiatorOnly = InitiatorOnly | InitiatorAndResponder
@@ -193,6 +194,7 @@ data NodeVersion
   | NodeToClientVersionV20 Word32
   | NodeToClientVersionV21 Word32
   | NodeToClientVersionV22 Word32
+  | NodeToClientVersionV23 Word32
   | NodeToNodeVersionV1    Word32
   | NodeToNodeVersionV2    Word32
   | NodeToNodeVersionV3    Word32
@@ -212,32 +214,33 @@ data NodeVersion
 instance ToJSON NodeVersion where
   toJSON nv =
     object $ case nv of
-      NodeToClientVersionV9  m -> go2 "NodeToClientVersionV9" m
-      NodeToClientVersionV10 m -> go2 "NodeToClientVersionV10" m
-      NodeToClientVersionV11 m -> go2 "NodeToClientVersionV11" m
-      NodeToClientVersionV12 m -> go2 "NodeToClientVersionV12" m
-      NodeToClientVersionV13 m -> go2 "NodeToClientVersionV13" m
-      NodeToClientVersionV14 m -> go2 "NodeToClientVersionV14" m
-      NodeToClientVersionV15 m -> go2 "NodeToClientVersionV15" m
-      NodeToClientVersionV16 m -> go2 "NodeToClientVersionV16" m
-      NodeToClientVersionV17 m -> go2 "NodeToClientVersionV17" m
-      NodeToClientVersionV18 m -> go2 "NodeToClientVersionV18" m
-      NodeToClientVersionV19 m -> go2 "NodeToClientVersionV19" m
-      NodeToClientVersionV20 m -> go2 "NodeToClientVersionV20" m
-      NodeToClientVersionV21 m -> go2 "NodeToClientVersionV21" m
-      NodeToClientVersionV22 m -> go2 "NodeToClientVersionV22" m
-      NodeToNodeVersionV1    m -> go2 "NodeToNodeVersionV1" m
-      NodeToNodeVersionV2    m -> go2 "NodeToNodeVersionV2" m
-      NodeToNodeVersionV3    m -> go2 "NodeToNodeVersionV3" m
-      NodeToNodeVersionV4    m i -> go3 "NodeToNodeVersionV4" m i
-      NodeToNodeVersionV5    m i -> go3 "NodeToNodeVersionV5" m i
-      NodeToNodeVersionV6    m i -> go3 "NodeToNodeVersionV6" m i
-      NodeToNodeVersionV7    m i -> go3 "NodeToNodeVersionV7" m i
-      NodeToNodeVersionV8    m i -> go3 "NodeToNodeVersionV8" m i
-      NodeToNodeVersionV9    m i -> go3 "NodeToNodeVersionV9" m i
-      NodeToNodeVersionV10   m i -> go3 "NodeToNodeVersionV10" m i
-      NodeToNodeVersionV11   m i -> go3 "NodeToNodeVersionV11" m i
-      NodeToNodeVersionV12   m i -> go3 "NodeToNodeVersionV12" m i
+      NodeToClientVersionV9  m      -> go2 "NodeToClientVersionV9" m
+      NodeToClientVersionV10 m      -> go2 "NodeToClientVersionV10" m
+      NodeToClientVersionV11 m      -> go2 "NodeToClientVersionV11" m
+      NodeToClientVersionV12 m      -> go2 "NodeToClientVersionV12" m
+      NodeToClientVersionV13 m      -> go2 "NodeToClientVersionV13" m
+      NodeToClientVersionV14 m      -> go2 "NodeToClientVersionV14" m
+      NodeToClientVersionV15 m      -> go2 "NodeToClientVersionV15" m
+      NodeToClientVersionV16 m      -> go2 "NodeToClientVersionV16" m
+      NodeToClientVersionV17 m      -> go2 "NodeToClientVersionV17" m
+      NodeToClientVersionV18 m      -> go2 "NodeToClientVersionV18" m
+      NodeToClientVersionV19 m      -> go2 "NodeToClientVersionV19" m
+      NodeToClientVersionV20 m      -> go2 "NodeToClientVersionV20" m
+      NodeToClientVersionV21 m      -> go2 "NodeToClientVersionV21" m
+      NodeToClientVersionV22 m      -> go2 "NodeToClientVersionV22" m
+      NodeToClientVersionV23 m      -> go2 "NodeToClientVersionV23" m
+      NodeToNodeVersionV1    m      -> go2 "NodeToNodeVersionV1" m
+      NodeToNodeVersionV2    m      -> go2 "NodeToNodeVersionV2" m
+      NodeToNodeVersionV3    m      -> go2 "NodeToNodeVersionV3" m
+      NodeToNodeVersionV4    m i    -> go3 "NodeToNodeVersionV4" m i
+      NodeToNodeVersionV5    m i    -> go3 "NodeToNodeVersionV5" m i
+      NodeToNodeVersionV6    m i    -> go3 "NodeToNodeVersionV6" m i
+      NodeToNodeVersionV7    m i    -> go3 "NodeToNodeVersionV7" m i
+      NodeToNodeVersionV8    m i    -> go3 "NodeToNodeVersionV8" m i
+      NodeToNodeVersionV9    m i    -> go3 "NodeToNodeVersionV9" m i
+      NodeToNodeVersionV10   m i    -> go3 "NodeToNodeVersionV10" m i
+      NodeToNodeVersionV11   m i    -> go3 "NodeToNodeVersionV11" m i
+      NodeToNodeVersionV12   m i    -> go3 "NodeToNodeVersionV12" m i
       NodeToNodeVersionV13   m i ps -> go4 "NodeToNodeVersionV13" m i ps
       NodeToNodeVersionV14   m i ps -> go4 "NodeToNodeVersionV14" m i ps
       where
@@ -376,6 +379,9 @@ handshakeReqEnc versions query =
       <>  nodeToClientDataWithQuery magic
     encodeVersion (NodeToClientVersionV22 magic) =
           CBOR.encodeWord (22 `setBit` nodeToClientVersionBit)
+      <>  nodeToClientDataWithQuery magic
+    encodeVersion (NodeToClientVersionV23 magic) =
+          CBOR.encodeWord (23 `setBit` nodeToClientVersionBit)
       <>  nodeToClientDataWithQuery magic
 
     -- node-to-node
@@ -528,6 +534,7 @@ handshakeDec = do
         (20, True)  -> Right . NodeToClientVersionV20 <$> (CBOR.decodeListLen *> CBOR.decodeWord32 <* (modeFromBool <$> CBOR.decodeBool))
         (21, True)  -> Right . NodeToClientVersionV21 <$> (CBOR.decodeListLen *> CBOR.decodeWord32 <* (modeFromBool <$> CBOR.decodeBool))
         (22, True)  -> Right . NodeToClientVersionV22 <$> (CBOR.decodeListLen *> CBOR.decodeWord32 <* (modeFromBool <$> CBOR.decodeBool))
+        (23, True)  -> Right . NodeToClientVersionV23 <$> (CBOR.decodeListLen *> CBOR.decodeWord32 <* (modeFromBool <$> CBOR.decodeBool))
         _           -> return $ Left $ UnknownVersionInRsp version
 
     decodeWithMode :: (Word32 -> InitiatorOnly -> NodeVersion) -> CBOR.Decoder s (Either HandshakeFailure NodeVersion)
@@ -839,31 +846,32 @@ pingClient stdout stderr PingOpts{..} versions peer = bracket
 isSameVersionAndMagic :: NodeVersion -> NodeVersion -> Bool
 isSameVersionAndMagic v1 v2 = extract v1 == extract v2
   where extract :: NodeVersion -> (Int, Word32)
-        extract (NodeToClientVersionV9 m)  = (-9, m)
-        extract (NodeToClientVersionV10 m) = (-10, m)
-        extract (NodeToClientVersionV11 m) = (-11, m)
-        extract (NodeToClientVersionV12 m) = (-12, m)
-        extract (NodeToClientVersionV13 m) = (-13, m)
-        extract (NodeToClientVersionV14 m) = (-14, m)
-        extract (NodeToClientVersionV15 m) = (-15, m)
-        extract (NodeToClientVersionV16 m) = (-16, m)
-        extract (NodeToClientVersionV17 m) = (-17, m)
-        extract (NodeToClientVersionV18 m) = (-18, m)
-        extract (NodeToClientVersionV19 m) = (-19, m)
-        extract (NodeToClientVersionV20 m) = (-20, m)
-        extract (NodeToClientVersionV21 m) = (-21, m)
-        extract (NodeToClientVersionV22 m) = (-22, m)
-        extract (NodeToNodeVersionV1 m)    = (1, m)
-        extract (NodeToNodeVersionV2 m)    = (2, m)
-        extract (NodeToNodeVersionV3 m)    = (3, m)
-        extract (NodeToNodeVersionV4 m _)  = (4, m)
-        extract (NodeToNodeVersionV5 m _)  = (5, m)
-        extract (NodeToNodeVersionV6 m _)  = (6, m)
-        extract (NodeToNodeVersionV7 m _)  = (7, m)
-        extract (NodeToNodeVersionV8 m _)  = (8, m)
-        extract (NodeToNodeVersionV9 m _)  = (9, m)
-        extract (NodeToNodeVersionV10 m _) = (10, m)
-        extract (NodeToNodeVersionV11 m _) = (11, m)
-        extract (NodeToNodeVersionV12 m _) = (12, m)
+        extract (NodeToClientVersionV9 m)    = (-9, m)
+        extract (NodeToClientVersionV10 m)   = (-10, m)
+        extract (NodeToClientVersionV11 m)   = (-11, m)
+        extract (NodeToClientVersionV12 m)   = (-12, m)
+        extract (NodeToClientVersionV13 m)   = (-13, m)
+        extract (NodeToClientVersionV14 m)   = (-14, m)
+        extract (NodeToClientVersionV15 m)   = (-15, m)
+        extract (NodeToClientVersionV16 m)   = (-16, m)
+        extract (NodeToClientVersionV17 m)   = (-17, m)
+        extract (NodeToClientVersionV18 m)   = (-18, m)
+        extract (NodeToClientVersionV19 m)   = (-19, m)
+        extract (NodeToClientVersionV20 m)   = (-20, m)
+        extract (NodeToClientVersionV21 m)   = (-21, m)
+        extract (NodeToClientVersionV22 m)   = (-22, m)
+        extract (NodeToClientVersionV23 m)   = (-23, m)
+        extract (NodeToNodeVersionV1 m)      = (1, m)
+        extract (NodeToNodeVersionV2 m)      = (2, m)
+        extract (NodeToNodeVersionV3 m)      = (3, m)
+        extract (NodeToNodeVersionV4 m _)    = (4, m)
+        extract (NodeToNodeVersionV5 m _)    = (5, m)
+        extract (NodeToNodeVersionV6 m _)    = (6, m)
+        extract (NodeToNodeVersionV7 m _)    = (7, m)
+        extract (NodeToNodeVersionV8 m _)    = (8, m)
+        extract (NodeToNodeVersionV9 m _)    = (9, m)
+        extract (NodeToNodeVersionV10 m _)   = (10, m)
+        extract (NodeToNodeVersionV11 m _)   = (11, m)
+        extract (NodeToNodeVersionV12 m _)   = (12, m)
         extract (NodeToNodeVersionV13 m _ _) = (13, m)
         extract (NodeToNodeVersionV14 m _ _) = (14, m)
