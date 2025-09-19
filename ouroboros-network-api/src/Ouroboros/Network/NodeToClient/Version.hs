@@ -56,6 +56,8 @@ data NodeToClientVersion
     -- ^ new codecs for @PParams@ and @CompactGenesis@
     | NodeToClientV_22
     -- ^ support SRV records in @GetBigLedgerPeerSnapshot@ query
+    | NodeToClientV_23
+    -- ^ added @QueryDRepsDelegations@,
   deriving (Eq, Ord, Enum, Bounded, Show, Generic, NFData)
 
 -- | We set 16ths bit to distinguish `NodeToNodeVersion` and
@@ -76,6 +78,7 @@ nodeToClientVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
           NodeToClientV_20 -> enc 20
           NodeToClientV_21 -> enc 21
           NodeToClientV_22 -> enc 22
+          NodeToClientV_23 -> enc 23
         where
           enc :: Int -> CBOR.Term
           enc = CBOR.TInt . (`setBit` nodeToClientVersionBit)
@@ -89,6 +92,7 @@ nodeToClientVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
             20 -> Right NodeToClientV_20
             21 -> Right NodeToClientV_21
             22 -> Right NodeToClientV_22
+            23 -> Right NodeToClientV_23
             n  -> Left (unknownTag n)
         where
           dec :: CBOR.Term -> Either (Text, Maybe Int) Int
