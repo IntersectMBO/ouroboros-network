@@ -11,7 +11,7 @@ repository cardano-haskell-packages
 
 index-state:
   hackage.haskell.org 2025-08-05T15:28:56Z,
-  cardano-haskell-packages 2025-07-30T14:13:57Z,
+  cardano-haskell-packages 2025-09-16T18:21:39Z,
 
 packages:
   kes-agent
