@@ -24,9 +24,11 @@ data-files: fixtures/*.vkey
           , fixtures/mainnet-shelley-genesis.json
 
 common project-config
+     if !arch(wasm32)
+         ghc-options:
+             -threaded
+             -rtsopts=all
      ghc-options:
-         -threaded
-         -rtsopts=all
          -haddock
          -Wunused-imports
 
@@ -94,6 +96,7 @@ library
                    Paths_kes_agent
     autogen-modules:
                    Paths_kes_agent
+
     build-depends: async
                  , aeson >=2.0
                  , base16-bytestring
@@ -118,23 +121,25 @@ library
                  , io-classes >=1.8.0.0
                  , kes-agent-crypto ^>= 0.1.0.0
                  , mtl
-                 , network
-                 , network-mux
                  , nothunks
                  , ouroboros-network-framework
                  , process >=1.6 && <1.7
                  , quiet
                  , serdoc-core
-                 , socket >= 0.8.3 && <0.9
                  , stm>=2.5 && <2.6
                  , text
                  , template-haskell >=2.18.0.0
                  , time >=1.10
                  , typed-protocols ^>=1.0 || ^>=1.1
                  -- , typed-protocols-doc
+    if !arch(wasm32)
+        build-depends: socket >= 0.8.3 && <0.9
+                     , network
+                     , network-mux
+
     hs-source-dirs: src
     default-language: Haskell2010
-    if os(windows)
+    if os(windows) || arch(wasm32)
     else
         build-depends: hsyslog
 
@@ -155,7 +160,6 @@ executable kes-agent
                  , directory
                  , filepath
                  , io-classes
-                 , network
                  , ouroboros-network-framework
                  , optparse-applicative
                  , serdoc-core
@@ -164,11 +168,14 @@ executable kes-agent
                  , tomland
                  , typed-protocols
                  , Win32-network
+    if arch(wasm32)
+        buildable: False
     if os(windows)
     else
         build-depends: unix
                      , hdaemonize
                      , hsyslog
+                     , network
 
 executable kes-service-client-demo
     import: project-config
@@ -189,6 +196,8 @@ executable kes-service-client-demo
                  , time
                  , typed-protocols
                  , Win32-network
+    if arch(wasm32)
+        buildable: False
     if os(windows)
     else
         build-depends: hsyslog
@@ -215,6 +224,8 @@ executable kes-agent-control
                  , time
                  , typed-protocols
                  , Win32-network
+    if arch(wasm32)
+        buildable: False
     if os(windows)
     else
         build-depends: hsyslog
@@ -266,6 +277,8 @@ test-suite kes-agent-tests
                  , text >=1.2.5
                  , time >=1.10
                  , Win32-network
+    if arch(wasm32)
+        buildable: False
     if os(windows)
     else
         build-depends: socket-unix >=0.2.0.0 && <0.3.0.0

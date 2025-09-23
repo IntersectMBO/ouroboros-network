@@ -13,6 +13,8 @@ where
 poisonWindows :: Monad m => m ()
 #if defined(mingw32_HOST_OS)
 poisonWindows = error "This functionality is not supported on Windows"
+#elif defined(wasm32_HOST_ARCH)
+poisonWindows = error "This functionality is not supported on WebAssembly"
 #else
-poisonWindows = return()
+poisonWindows = return ()
 #endif
