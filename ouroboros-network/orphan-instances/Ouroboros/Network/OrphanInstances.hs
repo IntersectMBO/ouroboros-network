@@ -102,6 +102,7 @@ instance FromJSON RootConfig where
                 RootConfig
                   <$> o .:  "accessPoints"
                   <*> o .:? "advertise" .!= DoNotAdvertisePeer
+                  <*> o .:  "behindFirewall"
 
 instance ToJSON RootConfig where
   toJSON ra = object

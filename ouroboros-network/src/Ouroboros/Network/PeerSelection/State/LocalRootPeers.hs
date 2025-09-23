@@ -48,9 +48,10 @@ import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
 --
 
 data LocalRootConfig extraFlags = LocalRootConfig {
-    peerAdvertise :: !PeerAdvertise,
-    diffusionMode :: !DiffusionMode,
-    extraFlags    :: !extraFlags
+    peerAdvertise  :: !PeerAdvertise,
+    diffusionMode  :: !DiffusionMode,
+    behindFirewall :: !Bool,
+    extraFlags     :: !extraFlags
   }
   deriving (Show, Eq)
 

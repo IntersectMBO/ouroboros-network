@@ -67,6 +67,8 @@ import Ouroboros.Network.ExitPolicy
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode)
 import Ouroboros.Network.PeerSelection.Governor hiding (PeerSelectionState (..))
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor
+import Ouroboros.Network.PeerSelection.State.LocalRootPeers (
+           LocalRootConfig (LocalRootConfig, behindFirewall))
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 import Ouroboros.Network.Point
 
@@ -151,6 +153,7 @@ data GovernorMockEnvironment = GovernorMockEnvironment {
        localRootPeers             :: !(LocalRootPeers PeerTrustable PeerAddr),
        publicRootPeers            :: !(PublicRootPeers (Cardano.ExtraPeers PeerAddr) PeerAddr),
        targets                    :: !(TimedScript (PeerSelectionTargets, PeerSelectionTargets)),
+       inboundPeers               :: !(Set PeerAddr),
        pickKnownPeersForPeerShare :: !(PickScript PeerAddr),
        pickColdPeersToPromote     :: !(PickScript PeerAddr),
        pickWarmPeersToPromote     :: !(PickScript PeerAddr),
@@ -458,7 +461,8 @@ mockPeerSelectionActions' tracer
                           GovernorMockEnvironment {
                             localRootPeers,
                             publicRootPeers,
-                            peerSharingFlag
+                            peerSharingFlag,
+                            inboundPeers
                           }
                           (originalPeerTargets, _peerTargets)
                           scripts
@@ -504,7 +508,7 @@ mockPeerSelectionActions' tracer
                 writeTVar outboundConnectionsStateVar a
           }
       },
-      readInboundPeers = pure Map.empty,
+      readInboundPeers,
       readLedgerPeerSnapshot = pure Nothing,
       peerSelectionTargets = originalPeerTargets,
       extraPeersAPI = Cardano.ExtraPeers.cardanoPublicRootPeersAPI,
@@ -550,6 +554,15 @@ mockPeerSelectionActions' tracer
 
       traceWith tracer (TraceEnvRootsResult (Set.toList (PublicRootPeers.toSet Cardano.ExtraPeers.toSet result)))
       return (result, ttl)
+
+    readInboundPeers :: m (Map PeerAddr PeerSharing)
+    readInboundPeers = sequence $
+      Map.fromSet
+        (\addr -> do
+          let Just (_, peerSharingScript, _) = Map.lookup addr scripts
+          stepScript peerSharingScript
+        )
+        inboundPeers
 
     requestPeerShare :: PeerSharingAmount -> PeerAddr -> m (PeerSharingResult PeerAddr)
     requestPeerShare _ addr = do
@@ -939,6 +952,7 @@ instance Arbitrary GovernorMockEnvironment where
       let peersSet       = allPeers peerGraph
       (localRootPeers,
        publicRootPeers) <- arbitraryRootPeers peersSet
+      inboundPeers      <- arbitraryInboundPeers localRootPeers
 
       let arbitrarySubsetOfPeers = arbitrarySubset peersSet
       pickKnownPeersForPeerShare <- arbitraryPickScript arbitrarySubsetOfPeers
@@ -961,6 +975,16 @@ instance Arbitrary GovernorMockEnvironment where
 
       return GovernorMockEnvironment{..}
     where
+      -- Subset of peers behind a firewall
+      arbitraryInboundPeers :: LocalRootPeers PeerTrustable PeerAddr -> Gen (Set PeerAddr)
+      arbitraryInboundPeers local =
+        let
+          behindFirewallPeers =
+            Map.keysSet
+              $ Map.filter (\LocalRootConfig {behindFirewall} -> behindFirewall)
+              $ LocalRootPeers.toMap local
+        in arbitrarySubset behindFirewallPeers
+
       arbitraryRootPeers :: Set PeerAddr
                          -> Gen (LocalRootPeers PeerTrustable PeerAddr, PublicRootPeers (Cardano.ExtraPeers PeerAddr) PeerAddr)
       arbitraryRootPeers peers | Set.null peers =

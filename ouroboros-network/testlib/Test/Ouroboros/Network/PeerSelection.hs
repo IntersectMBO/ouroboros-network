@@ -166,6 +166,8 @@ tests =
                      prop_governor_target_active_local_below
       , testProperty "progresses towards active target (from above)"
                      prop_governor_target_active_local_above
+      , testProperty "never connect to peers behind a firewall"
+                     prop_governor_never_connect_peer_behind_firewall
       ]
 
     , testGroup "big ledger peers"
@@ -2471,7 +2473,7 @@ prop_governor_target_known_big_ledger_peers_above (MaxTime maxTime) env =
 -- test to assert that this happens in some fraction of test cases.
 --
 prop_governor_target_established_below :: MaxTime -> GovernorMockEnvironment -> Property
-prop_governor_target_established_below (MaxTime maxTime) env =
+prop_governor_target_established_below (MaxTime maxTime) env@GovernorMockEnvironment{inboundPeers} =
     let events = Signal.eventsFromListUpToTime maxTime
                . selectPeerSelectionTraceEvents
                    @Cardano.ExtraState
@@ -2486,6 +2488,27 @@ prop_governor_target_established_below (MaxTime maxTime) env =
           selectGovState (targetNumberOfEstablishedPeers . Governor.targets)
                          (Cardano.ExtraState.empty (consensusMode env) (NumberOfBigLedgerPeers 0)) Cardano.ExtraPeers.empty
                          events
+
+        govLocalRootPeersSig :: Signal (LocalRootPeers PeerTrustable PeerAddr)
+        govLocalRootPeersSig =
+          selectGovState Governor.localRootPeers
+                         (Cardano.ExtraState.empty (consensusMode env) (NumberOfBigLedgerPeers 0)) Cardano.ExtraPeers.empty
+                         events
+
+        govUnreachablePeersSig :: Signal (Set PeerAddr)
+        govUnreachablePeersSig =
+          (\local ->
+             let
+               isUnreachablePeer addr (LocalRootConfig {behindFirewall}) =
+                 behindFirewall && not (Set.member addr inboundPeers)
+
+               unreachablePeers =
+                 Map.keysSet
+                   $ Map.filterWithKey isUnreachablePeer
+                   $ LocalRootPeers.toMap local
+             in
+               unreachablePeers
+          ) <$> govLocalRootPeersSig
 
         govKnownPeersSig :: Signal (Set PeerAddr)
         govKnownPeersSig =
@@ -2538,12 +2561,13 @@ prop_governor_target_established_below (MaxTime maxTime) env =
 
         -- There are no opportunities if we're at or above target
         --
-        promotionOpportunity target known established recentFailures
+        promotionOpportunity target known unreachable established recentFailures
           | Set.size established >= target
           = Set.empty
 
           | otherwise
           = known Set.\\ established
+                  Set.\\ unreachable
                   Set.\\ recentFailures
 
         promotionOpportunities :: Signal (Set PeerAddr)
@@ -2551,6 +2575,7 @@ prop_governor_target_established_below (MaxTime maxTime) env =
           promotionOpportunity
             <$> govTargetsSig
             <*> govKnownPeersSig
+            <*> govUnreachablePeersSig
             <*> govEstablishedPeersSig
             <*> govEstablishedFailuresSig
 
@@ -3210,15 +3235,9 @@ prop_governor_target_active_big_ledger_peers_above (MaxTime maxTime) env =
                  <*> demotionOpportunities
                  <*> demotionOpportunitiesIgnoredTooLong)
 
-
--- | A variant of 'prop_governor_target_established_below' but for the target
--- that all local root peers should become established.
---
--- We do not need separate above and below variants of this property since it
--- is not possible to exceed the target.
---
-prop_governor_target_established_local :: MaxTime -> GovernorMockEnvironment -> Property
-prop_governor_target_established_local (MaxTime maxTime) env =
+-- |  Avoid connecting to root peers marked as behind a firewall and without inbound connection.
+prop_governor_never_connect_peer_behind_firewall :: MaxTime -> GovernorMockEnvironment -> Property
+prop_governor_never_connect_peer_behind_firewall (MaxTime maxTime) env@GovernorMockEnvironment{inboundPeers} =
     let events = Signal.eventsFromListUpToTime maxTime
                . selectPeerSelectionTraceEvents
                    @Cardano.ExtraState
@@ -3233,6 +3252,85 @@ prop_governor_target_established_local (MaxTime maxTime) env =
           selectGovState Governor.localRootPeers
                          (Cardano.ExtraState.empty (consensusMode env) (NumberOfBigLedgerPeers 0)) Cardano.ExtraPeers.empty
                          events
+
+        govUnreachablePeersSig :: Signal (Set PeerAddr)
+        govUnreachablePeersSig =
+          (\local ->
+             let
+               isUnreachablePeer addr (LocalRootConfig {behindFirewall}) =
+                 behindFirewall && not (Set.member addr inboundPeers)
+
+               unreachablePeers =
+                 Map.keysSet
+                   $ Map.filterWithKey isUnreachablePeer
+                   $ LocalRootPeers.toMap local
+             in
+               unreachablePeers
+          ) <$> govLocalRootPeersSig
+
+        govPromotionSig :: Signal (Set PeerAddr)
+        govPromotionSig =
+            Signal.fromEventsWith Set.empty
+          . Signal.selectEvents
+              (\case TracePromoteColdPeers _ _ peers  -> Just $! peers
+                     _ -> Nothing
+              )
+          . selectGovEvents
+          $ events
+
+        unreachablePromotions :: Signal (Set PeerAddr)
+        unreachablePromotions =
+          Set.intersection
+            <$> govUnreachablePeersSig
+            <*> govPromotionSig
+
+     in counterexample
+          "\nSignal key: (local root peers, unreachable local root peers, promotions, unreachable promotions)" $
+
+        signalProperty 20 show
+          (\(_,_,_,promotions) -> Set.null promotions)
+          ((,,,) <$> govLocalRootPeersSig
+                 <*> govUnreachablePeersSig
+                 <*> govPromotionSig
+                 <*> unreachablePromotions)
+
+-- | A variant of 'prop_governor_target_established_below' but for the target
+-- that all local root peers should become established.
+--
+-- We do not need separate above and below variants of this property since it
+-- is not possible to exceed the target.
+--
+prop_governor_target_established_local :: MaxTime -> GovernorMockEnvironment -> Property
+prop_governor_target_established_local (MaxTime maxTime) env@GovernorMockEnvironment{inboundPeers} =
+    let events = Signal.eventsFromListUpToTime maxTime
+               . selectPeerSelectionTraceEvents
+                   @Cardano.ExtraState
+                   @PeerTrustable
+                   @(Cardano.ExtraPeers PeerAddr)
+                   @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
+               . runGovernorInMockEnvironment
+               $ env
+
+        govLocalRootPeersSig :: Signal (LocalRootPeers PeerTrustable PeerAddr)
+        govLocalRootPeersSig =
+          selectGovState Governor.localRootPeers
+                         (Cardano.ExtraState.empty (consensusMode env) (NumberOfBigLedgerPeers 0)) Cardano.ExtraPeers.empty
+                         events
+
+        govUnreachablePeersSig :: Signal (Set PeerAddr)
+        govUnreachablePeersSig =
+          (\local ->
+             let
+               isUnreachablePeer addr (LocalRootConfig {behindFirewall}) =
+                 behindFirewall && not (Set.member addr inboundPeers)
+
+               unreachablePeers =
+                 Map.keysSet
+                   $ Map.filterWithKey isUnreachablePeer
+                   $ LocalRootPeers.toMap local
+             in
+               unreachablePeers
+          ) <$> govLocalRootPeersSig
 
         govEstablishedPeersSig :: Signal (Set PeerAddr)
         govEstablishedPeersSig =
@@ -3281,18 +3379,20 @@ prop_governor_target_established_local (MaxTime maxTime) env =
 
         promotionOpportunities :: Signal (Set PeerAddr)
         promotionOpportunities =
-          (\local established recentFailures inProgressPromoteCold ->
+          (\local unreachable established recentFailures inProgressPromoteCold ->
               Set.unions
                 [ -- There are no opportunities if we're at or above target
                   if Set.size groupEstablished >= warmTarget'
                      then Set.empty
                      else group Set.\\ established
+                                Set.\\ unreachable
                                 Set.\\ recentFailures
                                 Set.\\ inProgressPromoteCold
                 | (_, WarmValency warmTarget', group) <- LocalRootPeers.toGroupSets local
                 , let groupEstablished = group `Set.intersection` established
                 ]
           ) <$> govLocalRootPeersSig
+            <*> govUnreachablePeersSig
             <*> govEstablishedPeersSig
             <*> govEstablishedFailuresSig
             <*> govInProgressPromoteColdSig
@@ -4063,8 +4163,8 @@ prop_issue_3550 = prop_governor_target_established_below defaultMaxTime $
           (PeerAddr 29,[],GovernorScripts {peerShareScript = Script (Nothing :| []), peerSharingScript = Script (PeerSharingDisabled :| []), connectionScript = Script ((ToWarm,NoDelay) :| [(ToCold,NoDelay),(Noop,NoDelay)])})
         ],
       localRootPeers = LocalRootPeers.fromGroups
-        [ (1, 1, Map.fromList [(PeerAddr 16, LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)])
-        , (1, 1, Map.fromList [(PeerAddr 4, LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)])
+        [ (1, 1, Map.fromList [(PeerAddr 16, LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode False IsNotTrustable)])
+        , (1, 1, Map.fromList [(PeerAddr 4, LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode False IsNotTrustable)])
         ],
       publicRootPeers = Cardano.PublicRootPeers.fromPublicRootPeers
         (Map.fromList [ (PeerAddr 14, DoNotAdvertisePeer)
@@ -4079,6 +4179,7 @@ prop_issue_3550 = prop_governor_target_established_below defaultMaxTime $
                 targetNumberOfActivePeers = 3 },
            nullPeerSelectionTargets),
          NoDelay) :| []),
+      inboundPeers = Set.empty,
       pickKnownPeersForPeerShare = Script (PickFirst :| []),
       pickColdPeersToPromote = Script (PickFirst :| []),
       pickWarmPeersToPromote = Script (PickFirst :| []),
@@ -4111,9 +4212,10 @@ prop_issue_3515 = prop_governor_nolivelock $
                            peerSharingScript = Script (PeerSharingDisabled :| []),
                            connectionScript = Script ((ToCold,NoDelay) :| [(Noop,NoDelay)])
                          })],
-      localRootPeers = LocalRootPeers.fromGroups [(1,1,Map.fromList [(PeerAddr 10, LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)])],
+      localRootPeers = LocalRootPeers.fromGroups [(1,1,Map.fromList [(PeerAddr 10, LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode False IsNotTrustable)])],
       publicRootPeers = PublicRootPeers.empty Cardano.ExtraPeers.empty,
       targets = Script . NonEmpty.fromList $ targets'',
+      inboundPeers = Set.empty,
       pickKnownPeersForPeerShare = Script (PickFirst :| []),
       pickColdPeersToPromote = Script (PickFirst :| []),
       pickWarmPeersToPromote = Script (PickFirst :| []),
@@ -4153,9 +4255,10 @@ prop_issue_3494 = prop_governor_nofail $
                                                 peerSharingScript = Script (PeerSharingDisabled :| []),
                                                 connectionScript = Script ((ToCold,NoDelay) :| [(Noop,NoDelay)])
                                               })],
-      localRootPeers = LocalRootPeers.fromGroups [(1,1,Map.fromList [(PeerAddr 64, LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)])],
+      localRootPeers = LocalRootPeers.fromGroups [(1,1,Map.fromList [(PeerAddr 64, LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode False IsNotTrustable)])],
       publicRootPeers = PublicRootPeers.empty Cardano.ExtraPeers.empty,
       targets = Script . NonEmpty.fromList $ targets'',
+      inboundPeers = Set.empty,
       pickKnownPeersForPeerShare = Script (PickFirst :| []),
       pickColdPeersToPromote = Script (PickFirst :| []),
       pickWarmPeersToPromote = Script (PickFirst :| []),
@@ -4203,12 +4306,13 @@ prop_issue_3233 = prop_governor_nolivelock $
          (PeerAddr 15,[],GovernorScripts {peerShareScript = Script (Just ([],PeerShareTimeSlow) :| []), peerSharingScript = Script (PeerSharingDisabled :| []), connectionScript = Script ((Noop,NoDelay) :| [])})
         ],
       localRootPeers = LocalRootPeers.fromGroups
-        [ (1, 1, Map.fromList [(PeerAddr 15, LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)])
-        , (1, 1, Map.fromList [(PeerAddr 13, LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)])
+        [ (1, 1, Map.fromList [(PeerAddr 15, LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode False IsNotTrustable)])
+        , (1, 1, Map.fromList [(PeerAddr 13, LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode False IsNotTrustable)])
         ],
       publicRootPeers = Cardano.PublicRootPeers.fromPublicRootPeers
         (Map.fromList [(PeerAddr 4, DoNotAdvertisePeer)]),
       targets = Script . NonEmpty.fromList $ targets'',
+      inboundPeers = Set.empty,
       pickKnownPeersForPeerShare = Script (PickFirst :| []),
       pickColdPeersToPromote = Script (PickFirst :| []),
       pickWarmPeersToPromote = Script (PickFirst :| []),

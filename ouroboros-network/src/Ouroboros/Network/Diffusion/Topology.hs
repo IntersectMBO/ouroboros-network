@@ -56,6 +56,8 @@ data RootConfig = RootConfig
   , rootAdvertise    :: PeerAdvertise
     -- ^ 'advertise' configures whether the root should be advertised through
     -- peer sharing.
+  , behindFirewall   :: Bool
+    -- ^ peer is unreachable and will initiate the connection first
   } deriving (Eq, Show)
 
 
@@ -64,9 +66,9 @@ data RootConfig = RootConfig
 --
 rootConfigToRelayAccessPoint
   :: RootConfig
-  -> [(RelayAccessPoint, PeerAdvertise)]
-rootConfigToRelayAccessPoint RootConfig { rootAccessPoints, rootAdvertise  } =
-    [ (ap, rootAdvertise) | ap <- rootAccessPoints ]
+  -> [(RelayAccessPoint, PeerAdvertise, Bool)]
+rootConfigToRelayAccessPoint RootConfig { rootAccessPoints, rootAdvertise, behindFirewall } =
+    [ (ap, rootAdvertise, behindFirewall) | ap <- rootAccessPoints ]
 
 producerAddresses
   :: NetworkTopology extraConfig extraFlags
@@ -80,11 +82,12 @@ producerAddresses NetworkTopology { localRootPeersGroups
   ( map (\lrp -> ( hotValency lrp
                  , warmValency lrp
                  , Map.fromList
-                 . map (\(addr, peerAdvertise) ->
+                 . map (\(addr, peerAdvertise, behindFirewall) ->
                          ( addr
                          , LocalRootConfig {
                              diffusionMode = rootDiffusionMode lrp,
                              peerAdvertise,
+                             behindFirewall,
                              LRP.extraFlags = extraFlags lrp
                            }
                          )
@@ -95,6 +98,7 @@ producerAddresses NetworkTopology { localRootPeersGroups
         )
         (groups localRootPeersGroups)
   , foldMap ( Map.fromList
+            . fmap (\(a, b, _) -> (a, b))
             . rootConfigToRelayAccessPoint
             . publicRoots
             ) publicRootPeers
