@@ -1,6 +1,8 @@
-# Revision history for ouroboros-network-testing
+# ouroboros-network-testing changelog
 
-## next release
+<!-- scriv-end-here -->
+
+## 0.8.3.0 -- 10.09.2025
 
 ### Breaking changes
 
@@ -8,6 +10,7 @@
 * `renderRanges`: print a range using math notation for open/closed intervals.
 * Pretty print `WithName` using `Show` instance.
 * Pretty print `WithTime` using `Show` instance.
+* Added `DistinctList` and `DistinctNEList` quickcheck modifiers.
 
 ## 0.8.2.0 -- 28.06.2025
 

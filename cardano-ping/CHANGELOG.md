@@ -1,10 +1,6 @@
-# Revision history for cardano-ping
+# cardano-ping changelog
 
-## next version
-
-### Breaking changes
-
-### Non-breaking changes
+<!-- scriv-end-here -->
 
 ## 0.9.0.0 -- 2026-06-28
 

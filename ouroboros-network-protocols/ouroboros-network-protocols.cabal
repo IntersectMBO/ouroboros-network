@@ -1,6 +1,6 @@
 cabal-version: 3.0
 name: ouroboros-network-protocols
-version: 0.15.0.0
+version: 0.16.0.0
 synopsis: Ouroboros Network Protocols
 description: Ouroboros Network Protocols.
 license: Apache-2.0
@@ -45,6 +45,7 @@ library
     Ouroboros.Network.Protocol.ChainSync.PipelineDecision
     Ouroboros.Network.Protocol.ChainSync.Server
     Ouroboros.Network.Protocol.ChainSync.Type
+    Ouroboros.Network.Protocol.Codec.Utils
     Ouroboros.Network.Protocol.KeepAlive.Client
     Ouroboros.Network.Protocol.KeepAlive.Codec
     Ouroboros.Network.Protocol.KeepAlive.Server
@@ -105,7 +106,7 @@ library
     deepseq,
     io-classes:{io-classes, si-timers} ^>=1.8.0.1,
     nothunks,
-    ouroboros-network-api ^>=0.16,
+    ouroboros-network-api ^>=0.17,
     quiet,
     random,
     serialise,

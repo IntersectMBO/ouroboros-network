@@ -1,6 +1,8 @@
-# Revision history for ouroboros-network
+# ouroboros-network changelog
 
-## next release
+<!-- scriv-end-here -->
+
+## 0.23.0.0 -- 2025-09-10
 
 ### Breaking changes
 

@@ -31,7 +31,7 @@ jobs:
 
     steps:
     - name: Checkout ouroboros-network repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
       # we need nix to later build the spec documents
     - name: Install Nix
@@ -85,7 +85,7 @@ jobs:
         done
 
     - name: Upload artifacts
-      uses: actions/upload-pages-artifact@v3
+      uses: actions/upload-pages-artifact@v4
       with:
         path: ./haddocks
 
