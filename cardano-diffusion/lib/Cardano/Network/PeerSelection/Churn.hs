@@ -13,7 +13,8 @@
 -- | This subsystem manages the discovery and selection of /upstream/ peers.
 --
 module Cardano.Network.PeerSelection.Churn
-  ( ChurnMode (..)
+  ( PeerChurnArgs (..)
+  , ChurnMode (..)
   , TraceChurnMode (..)
   , ExtraArguments (..)
   , peerChurnGovernor
@@ -21,21 +22,22 @@ module Cardano.Network.PeerSelection.Churn
 
 import Data.Void (Void)
 
+import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer, traceWith)
+import Data.Functor (($>))
+import Data.Monoid.Synchronisation (FirstToFinish (..))
 import System.Random
 
 import Cardano.Network.ConsensusMode (ConsensusMode (..))
 import Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
+import Cardano.Network.LedgerStateJudgement
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
 import Cardano.Network.PeerSelection.Governor.Types qualified as Cardano
-import Cardano.Network.Types (LedgerStateJudgement (..))
-import Control.Applicative (Alternative)
-import Data.Functor (($>))
-import Data.Monoid.Synchronisation (FirstToFinish (..))
+
 import Ouroboros.Network.BlockFetch (FetchMode (..), PraosFetchMode (..))
 import Ouroboros.Network.Diffusion.Policies (churnEstablishConnectionTimeout,
            closeConnectionTimeout, deactivateTimeout)

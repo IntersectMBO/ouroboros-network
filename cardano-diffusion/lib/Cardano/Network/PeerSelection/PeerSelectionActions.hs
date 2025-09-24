@@ -6,11 +6,11 @@
 {-# LANGUAGE ScopedTypeVariables      #-}
 {-# LANGUAGE TupleSections            #-}
 
-module Cardano.Network.PeerSelection.PeerSelectionActions (requestPublicRootPeers) where
+module Cardano.Network.PeerSelection.PeerSelectionActions (requestPublicRootPeersImpl) where
 
+import Cardano.Network.LedgerStateJudgement (LedgerStateJudgement)
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
            requiresBootstrapPeers)
-import Cardano.Network.Types (LedgerStateJudgement)
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadAsync (MonadAsync)
@@ -39,7 +39,7 @@ import System.Random
 -- We start by reading the current ledger state judgement, if it is
 -- YoungEnough we only care about fetching for ledger peers, otherwise we
 -- aim to fetch bootstrap peers.
-requestPublicRootPeers
+requestPublicRootPeersImpl
   :: forall m peeraddr resolver.
     ( MonadThrow m
     , MonadAsync m
@@ -58,7 +58,7 @@ requestPublicRootPeers
   -> StdGen
   -> Int
   -> m (CardanoPublicRootPeers peeraddr, DiffTime)
-requestPublicRootPeers
+requestPublicRootPeersImpl
   publicTracer useBootstrapped
   getLedgerStateJudgement readPublicRootPeers
   pad@PeerActionsDNS { paToPeerAddr = toPeerAddr

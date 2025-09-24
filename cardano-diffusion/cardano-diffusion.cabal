@@ -58,12 +58,12 @@ library api
   exposed-modules:
     Cardano.Network.ConsensusMode
     Cardano.Network.FetchMode
+    Cardano.Network.LedgerStateJudgement
     Cardano.Network.NodeToClient.Version
     Cardano.Network.NodeToNode.Version
     Cardano.Network.PeerSelection.Bootstrap
     Cardano.Network.PeerSelection.LocalRootPeers
     Cardano.Network.PeerSelection.PeerTrustable
-    Cardano.Network.Types
 
   build-depends:
     aeson,
@@ -110,6 +110,7 @@ library
     Cardano.Network.LedgerPeerConsensusInterface
     Cardano.Network.NodeToClient
     Cardano.Network.NodeToNode
+    Cardano.Network.PeerSelection
     Cardano.Network.PeerSelection.Churn
     Cardano.Network.PeerSelection.ExtraRootPeers
     Cardano.Network.PeerSelection.Governor.Monitor
@@ -147,6 +148,7 @@ library
     TypeInType
 
   build-depends:
+    aeson,
     base >=4.14 && <4.22,
     bytestring,
     cardano-diffusion:{api, protocols},

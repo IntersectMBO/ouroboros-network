@@ -28,7 +28,6 @@ module Test.Cardano.Network.PeerSelection.MockEnvironment
   , selectPeerSelectionTraceEventsUntil
   , peerShareReachablePeers
   , module Test.Ouroboros.Network.Data.Script
-  , module Ouroboros.Network.PeerSelection.Types
   , tests
   , prop_shrink_nonequal_GovernorMockEnvironment
   , config_REPROMOTE_DELAY
@@ -64,15 +63,25 @@ import Control.Monad.Fail qualified as Fail
 import Control.Monad.IOSim
 import Control.Tracer (Tracer (..), contramap, traceWith)
 
-import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano
-import Cardano.Network.PeerSelection.Governor.Types (ExtraTrace (..),
-           readAssociationMode)
+import Ouroboros.Network.BlockFetch (FetchMode (..), PraosFetchMode (..))
 import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.ExitPolicy
+import Ouroboros.Network.PeerSelection hiding (requestPublicRootPeers)
 import Ouroboros.Network.PeerSelection.Governor hiding (PeerSelectionState (..))
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor
+import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 import Ouroboros.Network.Point
+
+import Cardano.Network.ConsensusMode
+import Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
+import Cardano.Network.LedgerStateJudgement
+import Cardano.Network.PeerSelection as Cardano
+import Cardano.Network.PeerSelection.ExtraRootPeers qualified as Cardano.ExtraPeers
+import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano
+import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano.ExtraState
+import Cardano.Network.PeerSelection.Governor.Types qualified as Cardano.ExtraSizes
+import Cardano.Network.PeerSelection.PublicRootPeers qualified as Cardano.PublicRootPeers
 
 import Test.Ouroboros.Network.Data.Script (PickScript, Script (..),
            ScriptDelay (..), TimedScript, arbitraryPickScript,
@@ -89,32 +98,6 @@ import Test.Ouroboros.Network.Utils (ShrinkCarefully, arbitrarySubset,
 
 import Test.Cardano.Network.PeerSelection.Instances
 import Test.Cardano.Network.PeerSelection.PublicRootPeers ()
-
-import Cardano.Network.ConsensusMode
-import Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
-import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
-           requiresBootstrapPeers)
-import Cardano.Network.PeerSelection.ExtraRootPeers qualified as Cardano
-import Cardano.Network.PeerSelection.ExtraRootPeers qualified as Cardano.ExtraPeers
-import Cardano.Network.PeerSelection.Governor.PeerSelectionActions qualified as Cardano
-import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano.ExtraState
-import Cardano.Network.PeerSelection.Governor.Types qualified as Cardano
-import Cardano.Network.PeerSelection.Governor.Types qualified as Cardano.ExtraSizes
-import Cardano.Network.PeerSelection.LocalRootPeers
-           (OutboundConnectionsState (..))
-import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable)
-import Cardano.Network.PeerSelection.PublicRootPeers qualified as Cardano.PublicRootPeers
-import Cardano.Network.Types (LedgerStateJudgement (..),
-           NumberOfBigLedgerPeers (..))
-
-import Ouroboros.Network.BlockFetch (FetchMode (..), PraosFetchMode (..))
-import Ouroboros.Network.PeerSelection.LedgerPeers
-import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
-import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers (..))
-import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
-import Ouroboros.Network.PeerSelection.Types (PeerStatus (..))
-import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount,
-           PeerSharingResult (..))
 
 import Test.QuickCheck
 import Test.Tasty (TestTree, localOption, testGroup)

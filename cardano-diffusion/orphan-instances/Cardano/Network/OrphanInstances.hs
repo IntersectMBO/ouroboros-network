@@ -11,16 +11,14 @@ import Data.Aeson
 import Data.Aeson qualified as Aeson
 import Data.Map qualified as Map
 
+import Cardano.Network.LedgerStateJudgement
 import Cardano.Network.NodeToClient (NodeToClientVersion (..),
            NodeToClientVersionData (..))
 import Cardano.Network.NodeToNode (NodeToNodeVersion (..),
            NodeToNodeVersionData (..))
-import Cardano.Network.PeerSelection.Bootstrap
-import Cardano.Network.PeerSelection.Governor.Types (ExtraTrace (..))
-import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
-import Cardano.Network.PeerSelection.PublicRootPeers (CardanoPublicRootPeers,
-           getBootstrapPeers, getPublicConfigPeers)
-import Cardano.Network.Types
+import Cardano.Network.PeerSelection
+import Cardano.Network.PeerSelection.PublicRootPeers (getBootstrapPeers,
+           getPublicConfigPeers)
 
 import Ouroboros.Network.Diffusion.Topology
 import Ouroboros.Network.Magic (NetworkMagic (..))

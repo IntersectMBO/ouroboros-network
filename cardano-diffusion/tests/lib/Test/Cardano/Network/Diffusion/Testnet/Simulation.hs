@@ -78,16 +78,9 @@ import Network.TypedProtocol.PingPong.Type qualified as PingPong
 
 import Cardano.Network.ConsensusMode
 import Cardano.Network.Diffusion.Configuration qualified as Cardano
-import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
-import Cardano.Network.PeerSelection.LocalRootPeers
-           (OutboundConnectionsState (..))
-import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable)
-import Cardano.Network.Types (LedgerStateJudgement (..),
-           NumberOfBigLedgerPeers (..))
-
 import Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
-import Cardano.Network.PeerSelection.Churn (ChurnMode (..), TraceChurnMode,
-           peerChurnGovernor)
+import Cardano.Network.LedgerStateJudgement
+import Cardano.Network.PeerSelection hiding (requestPublicRootPeers)
 import Cardano.Network.PeerSelection.Churn qualified as Churn
 import Cardano.Network.PeerSelection.ExtraRootPeers qualified as Cardano
 import Cardano.Network.PeerSelection.Governor.PeerSelectionActions qualified as Cardano
@@ -96,8 +89,6 @@ import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Ca
 import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as ExtraState
 import Cardano.Network.PeerSelection.Governor.Types qualified as Cardano
 import Cardano.Network.PeerSelection.Governor.Types qualified as ExtraSizes
-import Cardano.Network.PeerSelection.PeerSelectionActions
-           (requestPublicRootPeers)
 
 import Ouroboros.Network.Block (BlockNo)
 import Ouroboros.Network.BlockFetch (FetchMode (..), PraosFetchMode (..),
@@ -115,8 +106,8 @@ import Ouroboros.Network.Handshake.Acceptable (Acceptable (acceptableVersion))
 import Ouroboros.Network.InboundGovernor (RemoteTransitionTrace)
 import Ouroboros.Network.InboundGovernor qualified as IG
 import Ouroboros.Network.Mux (MiniProtocolLimits (..))
-import Ouroboros.Network.PeerSelection hiding (requestPublicRootPeers)
-import Ouroboros.Network.PeerSelection.Governor qualified as Governor
+import Ouroboros.Network.PeerSelection
+import Ouroboros.Network.PeerSelection qualified as Governor
 import Ouroboros.Network.PeerSelection.LedgerPeers (accPoolStake)
 import Ouroboros.Network.Protocol.BlockFetch.Codec (byteLimitsBlockFetch,
            timeLimitsBlockFetch)
@@ -1320,10 +1311,10 @@ diffusionSimulation
           tracers = mkTracers addr i
 
           requestPublicRootPeers' =
-            requestPublicRootPeers (Diffusion.dtTracePublicRootPeersTracer tracers)
-                                   readUseBootstrapPeers
-                                   (pure TooOld)
-                                   readPublicRootPeers
+            requestPublicRootPeersImpl (Diffusion.dtTracePublicRootPeersTracer tracers)
+                                       readUseBootstrapPeers
+                                       (pure TooOld)
+                                       readPublicRootPeers
 
 
           tracerTxLogic =

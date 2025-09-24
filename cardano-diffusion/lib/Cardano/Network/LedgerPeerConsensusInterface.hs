@@ -1,9 +1,18 @@
-module Cardano.Network.LedgerPeerConsensusInterface where
+module Cardano.Network.LedgerPeerConsensusInterface
+  ( LedgerPeersConsensusInterface (..)
+    -- * Re-exports
+  , FetchMode (..)
+  , LedgerStateJudgement (..)
+  , OutboundConnectionsState (..)
+  ) where
 
-import Cardano.Network.PeerSelection.LocalRootPeers (OutboundConnectionsState)
-import Cardano.Network.Types (LedgerStateJudgement)
 import Control.Concurrent.Class.MonadSTM (MonadSTM (..))
-import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode)
+
+import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode (..))
+
+import Cardano.Network.LedgerStateJudgement
+import Cardano.Network.PeerSelection.LocalRootPeers
+           (OutboundConnectionsState (..))
 
 -- | Cardano Node specific consensus interface actions.
 --

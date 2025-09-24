@@ -51,18 +51,15 @@ import Network.DNS.Types qualified as DNS
 import Network.Mux.Trace qualified as Mx
 
 import Cardano.Network.ConsensusMode
+import Cardano.Network.LedgerStateJudgement
 import Cardano.Network.NodeToNode (DiffusionMode (..))
-import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
-           requiresBootstrapPeers)
-import Cardano.Network.PeerSelection.ExtraRootPeers qualified as Cardano
+import Cardano.Network.PeerSelection (NumberOfBigLedgerPeers (..),
+           PeerTrustable (..), UseBootstrapPeers (..))
+import Cardano.Network.PeerSelection qualified as Cardano
 import Cardano.Network.PeerSelection.ExtraRootPeers qualified as Cardano.ExtraPeers
-import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano
 import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano.ExtraState
-import Cardano.Network.PeerSelection.Governor.Types qualified as Cardano
-import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
 import Cardano.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
 import Cardano.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
-import Cardano.Network.Types (LedgerStateJudgement, NumberOfBigLedgerPeers (..))
 
 import Ouroboros.Network.Block (BlockNo (..))
 import Ouroboros.Network.BlockFetch (FetchMode (..), PraosFetchMode (..),
@@ -77,16 +74,12 @@ import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
 import Ouroboros.Network.InboundGovernor qualified as IG
 import Ouroboros.Network.Mock.ConcreteBlock (BlockHeader)
 import Ouroboros.Network.PeerSelection
-import Ouroboros.Network.PeerSelection.Governor hiding (PeerSelectionState (..))
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
-import Ouroboros.Network.PeerSelection.RootPeersDNS hiding (IOError)
+import Ouroboros.Network.PeerSelection.RootPeersDNS (DNSorIOError (DNSError))
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
-import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
-           LocalRootConfig (..), WarmValency (..))
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
-import Ouroboros.Network.PeerSharing (PeerSharingResult (..))
 import Ouroboros.Network.Server qualified as Server
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
@@ -109,7 +102,6 @@ import Test.Ouroboros.Network.LedgerPeers (LedgerPools (..))
 import Test.Ouroboros.Network.TxSubmission.TxLogic (ArbTxDecisionPolicy (..))
 import Test.Ouroboros.Network.TxSubmission.Types (Tx (..), TxId)
 import Test.Ouroboros.Network.Utils hiding (SmallDelay, debugTracer)
-
 
 import Test.QuickCheck
 import Test.Tasty
@@ -525,7 +517,7 @@ prop_diffusion_nofail ioSimTrace traceNumber =
    in ioProperty $ do
      r <-
        evaluate ( List.foldl' (flip seq) True
-              $ [ assertPeerSelectionState Cardano.toSet Cardano.invariant st ()
+              $ [ assertPeerSelectionState Cardano.ExtraPeers.toSet Cardano.ExtraPeers.invariant st ()
                 | (_, DiffusionDebugPeerSelectionTrace (TraceGovernorState _ _ st)) <- trace ]
               )
        `catch` \(AssertionFailed _) -> return False
@@ -1197,7 +1189,7 @@ prop_only_bootstrap_peers_in_fallback_state ioSimTrace traceNumber =
       let govUseBootstrapPeers :: Signal UseBootstrapPeers
           govUseBootstrapPeers =
             selectDiffusionPeerSelectionState
-              (Cardano.bootstrapPeersFlag . Governor.extraState)
+              (Cardano.ExtraState.bootstrapPeersFlag . Governor.extraState)
               events
 
           -- A signal which shows when bootstrap peers changed and are no
@@ -1220,7 +1212,7 @@ prop_only_bootstrap_peers_in_fallback_state ioSimTrace traceNumber =
           govLedgerStateJudgement :: Signal LedgerStateJudgement
           govLedgerStateJudgement =
             selectDiffusionPeerSelectionState
-              (Cardano.ledgerStateJudgement . Governor.extraState)
+              (Cardano.ExtraState.ledgerStateJudgement . Governor.extraState)
               events
 
           trJoinKillSig :: Signal JoinedOrKilled
@@ -1277,7 +1269,7 @@ prop_only_bootstrap_peers_in_fallback_state ioSimTrace traceNumber =
                 ) ->
                 if    isAlive
                    && not useBootstrapPeersChanged
-                   && requiresBootstrapPeers useBootstrapPeers ledgerStateJudgement
+                   && Cardano.requiresBootstrapPeers useBootstrapPeers ledgerStateJudgement
                    then knownPeers `Set.difference` trustedPeers
                    else Set.empty
               )
@@ -5121,7 +5113,7 @@ selectDiffusionPeerSelectionState f =
   . Signal.selectEvents
       (\case
         DiffusionDebugPeerSelectionTrace (TraceGovernorState _ _ st) ->
-          Just (Cardano.consensusMode (Governor.extraState st), f st)
+          Just (Cardano.ExtraState.consensusMode (Governor.extraState st), f st)
         _                                                            ->
           Nothing)
   where
