@@ -72,12 +72,12 @@ requestPublicRootPeers
                        $ requiresBootstrapPeers <$> useBootstrapped
                                                 <*> getLedgerStateJudgement
   if usingBootstrapPeers
-     then do
+    then do
       -- If the ledger state is in sensitive state we should get trustable peers.
       (bootstrapPeers, dt) <- requestConfiguredBootstrapPeers n
       pure (Cardano.PublicRootPeers.fromBootstrapPeers bootstrapPeers, dt)
-     else do
-      Ouroboros.requestPublicRootPeers
+    else do
+      Ouroboros.requestPublicRootPeersImpl
         publicTracer
         readPublicRootPeers
         pad

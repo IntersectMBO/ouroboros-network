@@ -19,18 +19,20 @@ clampToTrustable :: Ord peeraddr
                  => LocalRootPeers PeerTrustable peeraddr
                  -> LocalRootPeers PeerTrustable peeraddr
 clampToTrustable (LocalRootPeers m gs) =
-  let trustedMap = Map.filter (\LocalRootConfig { extraFlags } -> case extraFlags of
-                                 IsTrustable    -> True
-                                 IsNotTrustable -> False
+  let trustedMap = Map.filter (\LocalRootConfig { extraLocalRootFlags } ->
+                                case extraLocalRootFlags of
+                                  IsTrustable    -> True
+                                  IsNotTrustable -> False
                               )
                               m
    in LocalRootPeers trustedMap (trustedGroups gs)
   where
     trustedGroups [] = []
     trustedGroups ((h, w, g):gss) =
-      let trusted = Map.filter (\LocalRootConfig { extraFlags } -> case extraFlags of
-                                  IsTrustable    -> True
-                                  IsNotTrustable -> False
+      let trusted = Map.filter (\LocalRootConfig { extraLocalRootFlags } ->
+                                 case extraLocalRootFlags of
+                                   IsTrustable    -> True
+                                   IsNotTrustable -> False
                                )
                                m
           trustedSet = Map.keysSet trusted
@@ -47,7 +49,7 @@ isPeerTrustable :: Ord peeraddr
                 -> Bool
 isPeerTrustable peeraddr lrp =
   case Map.lookup peeraddr (toMap lrp) of
-    Just LocalRootConfig { extraFlags = IsTrustable }
+    Just LocalRootConfig { extraLocalRootFlags = IsTrustable }
       -> True
     _ -> False
 
@@ -55,8 +57,8 @@ trustableKeysSet :: LocalRootPeers PeerTrustable peeraddr
                  -> Set peeraddr
 trustableKeysSet (LocalRootPeers m _) =
     Map.keysSet
-  . Map.filter (\LocalRootConfig { extraFlags } ->
-                 case extraFlags of
+  . Map.filter (\LocalRootConfig { extraLocalRootFlags } ->
+                 case extraLocalRootFlags of
                    IsTrustable    -> True
                    IsNotTrustable -> False)
   $ m

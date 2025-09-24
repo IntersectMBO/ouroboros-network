@@ -77,8 +77,7 @@ import Ouroboros.Network.Snocket (FileDescriptor, Snocket)
 import Ouroboros.Network.Socket (SystemdSocketTracer)
 
 import Ouroboros.Network.PeerSelection as PeerSelection
-import Ouroboros.Network.PeerSelection.Governor.Types
-import Ouroboros.Network.PeerSelection.RootPeersDNS
+import Ouroboros.Network.PeerSelection.Churn as PeerSelection
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit)
 

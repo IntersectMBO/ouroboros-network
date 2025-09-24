@@ -98,7 +98,6 @@ import Cardano.Network.PeerSelection.Governor.Types qualified as Cardano
 import Cardano.Network.PeerSelection.Governor.Types qualified as ExtraSizes
 import Cardano.Network.PeerSelection.PeerSelectionActions
            (requestPublicRootPeers)
-import Ouroboros.Network.PeerSelection.RelayAccessPoint
 
 import Ouroboros.Network.Block (BlockNo)
 import Ouroboros.Network.BlockFetch (FetchMode (..), PraosFetchMode (..),
@@ -116,13 +115,9 @@ import Ouroboros.Network.Handshake.Acceptable (Acceptable (acceptableVersion))
 import Ouroboros.Network.InboundGovernor (RemoteTransitionTrace)
 import Ouroboros.Network.InboundGovernor qualified as IG
 import Ouroboros.Network.Mux (MiniProtocolLimits (..))
-import Ouroboros.Network.PeerSelection hiding (peerChurnGovernor,
-           requestPublicRootPeers)
+import Ouroboros.Network.PeerSelection hiding (requestPublicRootPeers)
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor
 import Ouroboros.Network.PeerSelection.LedgerPeers (accPoolStake)
-import Ouroboros.Network.PeerSelection.RootPeersDNS
-import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
-           LocalRootConfig, WarmValency (..))
 import Ouroboros.Network.Protocol.BlockFetch.Codec (byteLimitsBlockFetch,
            timeLimitsBlockFetch)
 import Ouroboros.Network.Protocol.ChainSync.Codec (byteLimitsChainSync,

@@ -133,11 +133,12 @@ peerChurnGovernor PeerChurnArgs {
                     pcaRng                 = inRng,
                     pcaPeerSelectionVar    = peerSelectionVar,
                     pcaReadCounters        = readCounters,
-                    getLedgerStateCtx = LedgerPeersConsensusInterface {
-                      lpExtraAPI    = Cardano.LedgerPeersConsensusInterface {
-                        Cardano.readFetchMode,
-                        Cardano.getLedgerStateJudgement
-                      }
+                    getLedgerPeersAPI      =
+                      LedgerPeersConsensusInterface {
+                        lpExtraAPI = Cardano.LedgerPeersConsensusInterface {
+                          Cardano.readFetchMode,
+                          Cardano.getLedgerStateJudgement
+                        }
                     },
                     getLocalRootHotTarget,
                     pcaPeerSelectionTargets = peerSelectionTargets,

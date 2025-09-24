@@ -50,7 +50,6 @@ import Ouroboros.Network.Protocol.Limits
            (ProtocolLimitFailure (ExceededSizeLimit, ExceededTimeLimit))
 import Ouroboros.Network.Protocol.LocalTxSubmission.Type (LocalTxSubmission)
 import Ouroboros.Network.Protocol.LocalTxSubmission.Type qualified as LocalTxSubmission
-import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount (..))
 import Ouroboros.Network.Protocol.PeerSharing.Type qualified as PeerSharing
 import Ouroboros.Network.Protocol.TxSubmission2.Type (TxSubmission2)
 import Ouroboros.Network.Protocol.TxSubmission2.Type qualified as Tx
@@ -80,21 +79,10 @@ import Ouroboros.Network.InboundGovernor.State (RemoteSt)
 import Ouroboros.Network.InboundGovernor.State qualified as InboundGovernor
 import Ouroboros.Network.Mux (MiniProtocolNum (..))
 import Ouroboros.Network.PeerSelection hiding (PublicRootPeers)
-import Ouroboros.Network.PeerSelection.Governor.Types (AssociationMode (..),
-           DebugPeerSelectionState (..), PeerSharingResult (..),
-           TracePeerSelection (..))
-import Ouroboros.Network.PeerSelection.LedgerPeers (PoolStake (..))
+import Ouroboros.Network.PeerSelection.Churn
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
-import Ouroboros.Network.PeerSelection.RootPeersDNS
-import Ouroboros.Network.PeerSelection.State.KnownPeers
-           (KnownPeerInfo (KnownPeerInfo))
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
-import Ouroboros.Network.PeerSelection.State.LocalRootPeers
-           (HotValency (HotValency),
-           LocalRootConfig (LocalRootConfig, peerAdvertise), LocalRootPeers,
-           WarmValency (WarmValency))
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
-import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LRP
 import Ouroboros.Network.Server qualified as Server
 import Ouroboros.Network.Server.RateLimiting (AcceptConnectionsPolicyTrace (..),
            AcceptedConnectionsLimit (..))
@@ -154,13 +142,13 @@ localRootPeersGroupToJSON :: (extraFlags -> Maybe (Key, Value))
                           -- not encoded in the JSON value
                           -> LocalRootPeersGroup extraFlags
                           -> Value
-localRootPeersGroupToJSON extraFlagsToJSON lrpg =
+localRootPeersGroupToJSON extraFlagsToJSON lrpg@LocalRootPeersGroup {extraFlags} =
     Object $
          ("accessPoints"   .?= rootAccessPoints (localRoots lrpg))
       <> ("advertise"      .?= rootAdvertise (localRoots lrpg))
       <> ("hotValency"     .?= hotValency lrpg)
       <> ("warmValency"    .?= warmValency lrpg)
-      <> foldMap (uncurry (.?=)) (extraFlagsToJSON (extraFlags lrpg))
+      <> foldMap (uncurry (.?=)) (extraFlagsToJSON extraFlags)
       <> ("diffusionMode"  .?= rootDiffusionMode lrpg)
 
 localRootPeersGroupsFromJSON
@@ -431,11 +419,11 @@ instance ToJSON addr => ToJSON (PeerSharingResult addr) where
     PeerSharingNotRegisteredYet -> String "PeerSharingNotRegisteredYet"
 
 instance ToJSON extraFlags => ToJSON (LocalRootConfig extraFlags) where
-  toJSON LocalRootConfig { peerAdvertise, LRP.extraFlags, LRP.diffusionMode } =
+  toJSON LocalRootConfig { peerAdvertise, extraLocalRootFlags, LocalRootPeers.diffusionMode } =
     object
       [ "peerAdvertise" .= peerAdvertise
       , "diffusionMode" .= show diffusionMode
-      , "extraFlags"    .= extraFlags
+      , "extraFlags"    .= extraLocalRootFlags
       ]
 
 instance ToJSON RemoteAddress where

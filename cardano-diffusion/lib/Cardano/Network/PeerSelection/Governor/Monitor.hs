@@ -645,7 +645,7 @@ waitForSystemToQuiesce st@PeerSelectionState{
   , not hasOnlyBootstrapPeers
   -- Are the local root peers all trustable?
   , all (\case
-          LocalRootConfig { extraFlags = IsTrustable }
+          LocalRootConfig { extraLocalRootFlags = IsTrustable }
             -> True
           _ -> False
         )
