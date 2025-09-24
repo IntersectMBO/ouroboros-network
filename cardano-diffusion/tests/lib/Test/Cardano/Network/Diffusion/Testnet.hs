@@ -817,18 +817,18 @@ prop_no_txSubmission_error ioSimTrace traceNumber =
              . Trace.take traceNumber
              $ ioSimTrace
 
-   in counterexample (intercalate "\n" $ map show $ events)
+   in counterexample (intercalate "\n" $ map show events)
     $ all (\case
              (_, DiffusionInboundGovernorTrace (IG.TrMuxErrored _ err)) ->
                case fromException err of
-                 Just ProtocolErrorRequestBlocking               -> False
-                 Just ProtocolErrorRequestedNothing              -> False
-                 Just ProtocolErrorAckedTooManyTxids             -> False
-                 Just (ProtocolErrorRequestedTooManyTxids _ _ _) -> False
-                 Just ProtocolErrorRequestNonBlocking            -> False
-                 Just ProtocolErrorRequestedUnavailableTx        -> False
-                 _                                               -> True
-             _                                                   -> True
+                 Just ProtocolErrorRequestBlocking          -> False
+                 Just ProtocolErrorRequestedNothing         -> False
+                 Just ProtocolErrorAckedTooManyTxids        -> False
+                 Just ProtocolErrorRequestedTooManyTxids {} -> False
+                 Just ProtocolErrorRequestNonBlocking       -> False
+                 Just ProtocolErrorRequestedUnavailableTx   -> False
+                 _                                          -> True
+             _                                              -> True
           )
           events
 
@@ -953,10 +953,10 @@ prop_txSubmission_allTransactions (ArbTxDecisionPolicy decisionPolicy)
     -- things.
     --
     -- TODO: the generator ought to give us unique `TxId`s.
-    uniqueTxsA = map (\(t, i) -> t { getTxId = List.foldl' (+) 0 (map ord "0.0.0.0") + i })
-                     (zip txsA [0 :: TxId ..])
-    uniqueTxsB = map (\(t, i) -> t { getTxId = List.foldl' (+) 0 (map ord "0.0.0.1") + i })
-                     (zip txsB [100 :: TxId ..])
+    uniqueTxsA = zipWith (\t i -> t { getTxId = List.foldl' (+) 0 (map ord "0.0.0.0") + i })
+                         txsA [0 :: TxId ..]
+    uniqueTxsB = zipWith (\t i -> t { getTxId = List.foldl' (+) 0 (map ord "0.0.0.1") + i })
+                         txsB [100 :: TxId ..]
 
     -- This checks the property that after running the simulation for a while
     -- both nodes manage to get all valid transactions.
@@ -1047,18 +1047,17 @@ prop_check_inflight_ratio bi ds@(DiffusionScript simArgs _ _) =
       events :: Events DiffusionTestTrace
       events = Signal.eventsFromList
              . Trace.toList
-             . fmap ( (\(WithTime t (WithName _ b)) -> (t, b))
-                    )
+             . fmap (\(WithTime t (WithName _ b)) -> (t, b))
              . withTimeNameTraceEvents
                 @DiffusionTestTrace
                 @NtNAddr
-             . Trace.take 500000
+             . Trace.take 500_000
              $ runSimTrace
-             $ sim
+               sim
 
       inflightTxsMap =
           foldr'
-            (\(_, m) r -> Map.unionWith (max) m r
+            (\(_, m) r -> Map.unionWith max m r
             )
             Map.empty
         $ Signal.eventsToList
@@ -1067,7 +1066,7 @@ prop_check_inflight_ratio bi ds@(DiffusionScript simArgs _ _) =
                DiffusionTxLogic (TraceSharedTxState _ d) -> Just (inflightTxs d)
                _                                         -> Nothing
            )
-        $ events
+          events
 
       txDecisionPolicy = saTxDecisionPolicy simArgs
 
@@ -1076,7 +1075,7 @@ prop_check_inflight_ratio bi ds@(DiffusionScript simArgs _ _) =
                     ++ show @(Ratio Int) (fromIntegral m / fromIntegral (txInflightMultiplicity txDecisionPolicy))
                     )
                     (Map.elems inflightTxsMap))
-    $ True
+      True
 
 -- | This test coverage of InboundGovernor transitions.
 --
@@ -2028,7 +2027,7 @@ unit_4191 = testWithIOSim prop_diffusion_dns_can_recover long_trace absInfo scri
             , [ JoinNetwork 6.710_144_927_536
               , Kill 7.454_545_454_545
               , JoinNetwork 10.763_157_894_736
-              , Reconfigure 0.415_384_615_384 [(1,1,Map.fromList [])
+              , Reconfigure 0.415_384_615_384 [(1,1,Map.empty)
               , (1,1,Map.empty)]
               , Reconfigure 15.550_561_797_752 [(1,1,Map.empty)
               , (1,1,Map.fromList [(RelayAccessDomain "test2" 15,LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)])]
@@ -3856,7 +3855,7 @@ prop_unit_4258 =
         (SimArgs 1 10 defaultTxDecisionPolicy)
         (singletonTimedScript Map.empty)
         [( NodeArgs (-3) InitiatorAndResponderDiffusionMode
-             (Map.fromList [])
+             Map.empty
              PraosMode
              (Script (UseBootstrapPeers [RelayAccessDomain "bootstrap" 0] :| []))
              (TestAddress (IPAddr (read "0.0.0.4") 9))
@@ -4334,33 +4333,35 @@ unit_peer_sharing =
                . map (\as -> case as of
                         [] -> -- this should be a test failure!
                               error "invariant violation: no traces for one of the nodes"
-                        WithName { wnName } : _ -> (wnName, mapMaybe (\a -> case a of
+                        WithName { wnName } : _ -> ( wnName
+                                                   , mapMaybe (\a -> case wtEvent (wnEvent a) of
                                                                               DiffusionPeerSelectionTrace b -> Just b
                                                                               _ -> Nothing)
-                                                          . map (wtEvent . wnEvent)
-                                                          $ as))
+                                                              as
+                                                   )
+                     )
                $ events'
 
         events' = Trace.toList
-               . splitWithNameTrace
-               . fmap (\(WithTime t (WithName name b))
-                       -> WithName name (WithTime t b))
-               . withTimeNameTraceEvents
-                  @DiffusionTestTrace
-                  @NtNAddr
-               -- We need roughly 1200 because:
-               -- * first peer sharing request will be issued after
-               --   `policyPeerSharAcitvationDelay = 300`
-               -- * this request will not bring any new peers, because non of the peers
-               --    are yet mature
-               -- * inbound connections become mature at 900s (15 mins)
-               -- * next peer share request happens after 900s, e.g. around 1200s.
-               . Trace.takeWhile (\se -> case se of
-                                          SimEvent    {seTime} -> seTime < Time 1250
-                                          SimPOREvent {seTime} -> seTime < Time 1250
-                                          _                    -> False
-                                 )
-               $ runSimTrace sim
+                . splitWithNameTrace
+                . fmap (\(WithTime t (WithName name b))
+                        -> WithName name (WithTime t b))
+                . withTimeNameTraceEvents
+                   @DiffusionTestTrace
+                   @NtNAddr
+                -- We need roughly 1200 because:
+                -- * first peer sharing request will be issued after
+                --   `policyPeerSharAcitvationDelay = 300`
+                -- * this request will not bring any new peers, because none of
+                --   the peers are yet mature
+                -- * inbound connections become mature at 900s (15 mins)
+                -- * next peer share request happens after 900s, e.g. around 1200s.
+                . Trace.takeWhile (\se -> case se of
+                                           SimEvent    {seTime} -> seTime < Time 1250
+                                           SimPOREvent {seTime} -> seTime < Time 1250
+                                           _                    -> False
+                                  )
+                $ runSimTrace sim
 
         verify :: NtNAddr
                -> [TracePeerSelection extraDebugState extraFlags
@@ -4681,7 +4682,7 @@ splitIntoStreams :: Ord k
                  ->  [a]
                  -> [[a]]
 splitIntoStreams f = Map.elems
-                   . Map.fromListWith (\a b -> b ++ a)
+                   . Map.fromListWith (flip (++))
                    . map (\a -> (fromJust (f a), [a]))
                    . filter (isJust . f)
 
@@ -5213,7 +5214,7 @@ toBearerInfo abi =
         biOutboundAttenuation  = attenuation (abiOutboundAttenuation abi),
         biInboundWriteFailure  = abiInboundWriteFailure abi,
         biOutboundWriteFailure = abiOutboundWriteFailure abi,
-        biAcceptFailures       = (\(errDelay, ioErr) -> (delay errDelay, ioErr)) <$> abiAcceptFailure abi,
+        biAcceptFailures       = first delay <$> abiAcceptFailure abi,
         biSDUSize              = toSduSize (abiSDUSize abi)
       }
 
