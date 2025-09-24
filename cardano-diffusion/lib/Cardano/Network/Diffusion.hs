@@ -30,17 +30,14 @@ import Cardano.Network.NodeToClient qualified as NodeToClient
 import Cardano.Network.NodeToNode (NodeToNodeVersionData (..), RemoteAddress,
            ntnDataFlow)
 import Cardano.Network.NodeToNode qualified as NodeToNode
+import Cardano.Network.PeerSelection qualified as Cardano
 import Cardano.Network.PeerSelection.Churn qualified as Cardano.Churn
 import Cardano.Network.PeerSelection.ExtraRootPeers qualified as Cardano
-import Cardano.Network.PeerSelection.Governor.PeerSelectionActions qualified as Cardano
 import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano.PeerSelectionState
 import Cardano.Network.PeerSelection.Governor.Types qualified as Cardano.Types
-import Cardano.Network.PeerSelection.PeerSelectionActions qualified as Cardano
 
 import Ouroboros.Network.Diffusion qualified as Diffusion
 import Ouroboros.Network.IOManager
-import Ouroboros.Network.PeerSelection.LedgerPeers.Type
-           (LedgerPeersConsensusInterface (..))
 import Ouroboros.Network.PeerSelection.PeerStateActions
 import Ouroboros.Network.Protocol.Handshake
 
@@ -150,7 +147,7 @@ run CardanoNodeArguments {
                   daPeerSelectionStateToExtraCounters = Cardano.Types.cardanoPeerSelectionStatetoCounters,
                   daToExtraPeers                      = flip Cardano.ExtraPeers Set.empty,
                   daRequestPublicRootPeers            =
-                      Just $ Cardano.requestPublicRootPeers
+                      Just $ Cardano.requestPublicRootPeersImpl
                                (Diffusion.dtTracePublicRootPeersTracer tracers)
                                readUseBootstrapPeers
                                (Cardano.getLedgerStateJudgement (lpExtraAPI ledgerPeersAPI))

@@ -8,8 +8,9 @@ module Cardano.Network.PeerSelection.Bootstrap
   , isNodeAbleToMakeProgress
   ) where
 
-import Cardano.Network.Types (LedgerStateJudgement (..))
 import GHC.Generics (Generic)
+
+import Cardano.Network.LedgerStateJudgement
 import Ouroboros.Network.PeerSelection.RelayAccessPoint (RelayAccessPoint)
 
 -- | `UseBootstrapPeers` is read from the topology file.  It's value might

@@ -8,19 +8,21 @@
 
 module Cardano.Network.Diffusion.Handlers where
 
+import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadTime.SI
 
+import Cardano.Network.LedgerStateJudgement
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers)
 import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano
 import Cardano.Network.PeerSelection.Governor.Types qualified as Cardano
-import Cardano.Network.Types (LedgerStateJudgement)
-import Control.Concurrent.Class.MonadSTM.Strict
+
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.Diffusion.Types (Tracers (..))
 import Ouroboros.Network.PeerSelection.Governor
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type (UseLedgerPeers)
 import Ouroboros.Network.PeerSelection.PeerMetric
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
+
 #ifdef POSIX
 import Control.Tracer (traceWith)
 import Ouroboros.Network.ConnectionManager.Core (Trace (..))

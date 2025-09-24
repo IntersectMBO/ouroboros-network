@@ -56,32 +56,19 @@ import Network.DNS qualified as DNS (defaultResolvConf)
 import Network.Socket (SockAddr)
 
 import Cardano.Network.ConsensusMode
-import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
-           requiresBootstrapPeers)
-import Cardano.Network.PeerSelection.LocalRootPeers (OutboundConnectionsState)
-import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
+import Cardano.Network.PeerSelection
 import Cardano.Network.PeerSelection.PublicRootPeers qualified as Cardano.PublicRootPeers
 
 import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
-import Ouroboros.Network.PeerSelection.Governor hiding (PeerSelectionState (..),
-           peerSharing)
+import Ouroboros.Network.PeerSelection
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor
-import Ouroboros.Network.PeerSelection.LedgerPeers
-import Ouroboros.Network.PeerSelection.PeerAdvertise
-import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
-import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers)
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
-import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
-import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore
-import Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
-import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
-           LocalRootConfig (..), LocalRootPeers (..), WarmValency (..))
-import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
+import Ouroboros.Network.PeerSelection.State.LocalRootPeers
+           (LocalRootPeers (..))
 import Ouroboros.Network.Point
-import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingResult (..))
 
 import Test.Cardano.Network.PeerSelection.MockEnvironment hiding (tests)
 import Test.Cardano.Network.PeerSelection.Utils
@@ -97,16 +84,13 @@ import Test.Ouroboros.Network.Utils (disjointSetsProperty, isSubsetProperty,
 import Control.Monad.IOSim
 
 import Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
-import Cardano.Network.PeerSelection.ExtraRootPeers qualified as Cardano
+import Cardano.Network.LedgerStateJudgement
+import Cardano.Network.PeerSelection qualified as Cardano
 import Cardano.Network.PeerSelection.ExtraRootPeers qualified as Cardano.ExtraPeers
-import Cardano.Network.PeerSelection.Governor.PeerSelectionActions qualified as Cardano
 import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano
 import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano.ExtraState
-import Cardano.Network.PeerSelection.Governor.Types qualified as Cardano
 import Cardano.Network.PeerSelection.Governor.Types qualified as Cardano.ExtraSizes
 import Cardano.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
-import Cardano.Network.Types (LedgerStateJudgement (..),
-           NumberOfBigLedgerPeers (..))
 import Ouroboros.Network.BlockFetch (FetchMode (..), PraosFetchMode (..))
 import Test.QuickCheck
 import Test.Tasty

@@ -1,18 +1,16 @@
-{-# LANGUAGE DerivingVia                #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE NamedFieldPuns             #-}
-{-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE DerivingVia #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Test.Cardano.Network.PeerSelection.Instances (ArbitraryLedgerStateJudgement (..)) where
 
 import Cardano.Network.ConsensusMode (ConsensusMode (..))
-import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
-import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
-import Cardano.Network.Types (LedgerStateJudgement (..))
+import Cardano.Network.LedgerStateJudgement
+import Cardano.Network.PeerSelection (PeerTrustable (..),
+           UseBootstrapPeers (..))
+
 import Test.Ouroboros.Network.PeerSelection.Instances ()
+
 import Test.QuickCheck
 
 

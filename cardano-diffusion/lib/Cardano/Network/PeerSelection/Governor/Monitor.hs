@@ -27,6 +27,7 @@ import Control.Monad.Class.MonadTimer.SI
 import Cardano.Network.ConsensusMode
 import Cardano.Network.Diffusion.Configuration qualified as Cardano (srvPrefix)
 import Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
+import Cardano.Network.LedgerStateJudgement
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
            isBootstrapPeersEnabled, isNodeAbleToMakeProgress,
            requiresBootstrapPeers)
@@ -36,7 +37,6 @@ import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Ca
 import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
 import Cardano.Network.PeerSelection.PublicRootPeers qualified as Cardano.PublicRootPeers
 import Cardano.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
-import Cardano.Network.Types (LedgerStateJudgement (..))
 import Control.Exception (assert)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map

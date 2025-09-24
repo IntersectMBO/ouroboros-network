@@ -9,10 +9,12 @@ module Cardano.Network.PeerSelection.Governor.Types
   , cardanoPeerSelectionGovernorArgs
   , readAssociationMode
   , Cardano.ExtraTrace (..)
+  , Cardano.NumberOfBigLedgerPeers (..)
   ) where
 
 import Cardano.Network.ConsensusMode (ConsensusMode (..))
 import Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
+import Cardano.Network.LedgerStateJudgement
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
            requiresBootstrapPeers)
 import Cardano.Network.PeerSelection.ExtraRootPeers qualified as Cardano
@@ -27,8 +29,6 @@ import Cardano.Network.PeerSelection.LocalRootPeers
 import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable)
 import Cardano.Network.PeerSelection.PublicRootPeers qualified as Cardano.PublicRootPeers
 import Cardano.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
-import Cardano.Network.Types (LedgerStateJudgement (..),
-           getNumberOfBigLedgerPeers)
 import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM
 import Control.Monad.Class.MonadTimer.SI
@@ -44,6 +44,7 @@ import Ouroboros.Network.PeerSelection.LedgerPeers
            (LedgerPeersConsensusInterface (lpExtraAPI))
 import Ouroboros.Network.PeerSelection.PublicRootPeers (getBigLedgerPeers)
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
+
 
 -- | Peer selection view.
 --
@@ -182,7 +183,7 @@ outboundConnectionsState
 
       -- Genesis mode
       (Unrestricted, DontUseBootstrapPeers, GenesisMode)
-        |  activeNumBigLedgerPeers >= getNumberOfBigLedgerPeers minNumberOfBigLedgerPeers
+        |  activeNumBigLedgerPeers >= Cardano.getNumberOfBigLedgerPeers minNumberOfBigLedgerPeers
         -> TrustedStateWithExternalPeers
 
         |  otherwise

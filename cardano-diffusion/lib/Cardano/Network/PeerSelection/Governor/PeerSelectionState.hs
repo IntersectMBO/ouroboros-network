@@ -1,10 +1,30 @@
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+
 module Cardano.Network.PeerSelection.Governor.PeerSelectionState where
 
-import Cardano.Network.ConsensusMode (ConsensusMode)
-import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
-import Cardano.Network.Types (LedgerStateJudgement (..),
-           NumberOfBigLedgerPeers (..))
 import Control.Monad.Class.MonadTime.SI (Time (..))
+import Data.Aeson (FromJSON)
+
+import Cardano.Network.ConsensusMode (ConsensusMode)
+import Cardano.Network.LedgerStateJudgement
+import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
+
+
+-- | Minimum number of hot big ledger peers in Genesis mode
+--   for trusted state to be signalled to Consensus. This number
+--   should be smaller than the `targetNumberOfActiveBigLedgerPeers`
+--   but greater than 1. In Genesis, we may demote a big ledger peer
+--   for underperformance, but not promote a replacement immediately
+--   to guard against adversaries which may want to slow down our
+--   progress.
+--
+newtype NumberOfBigLedgerPeers =
+  NumberOfBigLedgerPeers { getNumberOfBigLedgerPeers :: Int }
+  deriving stock (Eq, Show)
+  deriving newtype (FromJSON)
+
+
 
 -- | Cardano Node PeerSelection State extension data type.
 -- It contain specific PeerSelection state parameters to guide the Outbound

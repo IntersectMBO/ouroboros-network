@@ -24,7 +24,8 @@ module Cardano.Network.Diffusion.Configuration
 
 import Cardano.Network.NodeToNode (MiniProtocolParameters (..),
            defaultMiniProtocolParameters)
-import Cardano.Network.Types (NumberOfBigLedgerPeers (..))
+import Cardano.Network.PeerSelection.Governor.PeerSelectionState
+           (NumberOfBigLedgerPeers (..))
 
 import Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..),
            GenesisBlockFetchConfiguration (..))

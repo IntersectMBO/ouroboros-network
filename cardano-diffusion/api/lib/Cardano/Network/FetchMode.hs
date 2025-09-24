@@ -2,13 +2,15 @@
 
 module Cardano.Network.FetchMode
   ( mkReadFetchMode
+  , ConsensusMode (..)
+  , LedgerStateJudgement (..)
   , module Ouroboros.Network.BlockFetch.ConsensusInterface
   ) where
 
 import Data.Functor ((<&>))
 
-import Cardano.Network.ConsensusMode (ConsensusMode (..))
-import Cardano.Network.Types (LedgerStateJudgement (..))
+import Cardano.Network.ConsensusMode
+import Cardano.Network.LedgerStateJudgement
 import Ouroboros.Network.BlockFetch.ConsensusInterface
 
 
