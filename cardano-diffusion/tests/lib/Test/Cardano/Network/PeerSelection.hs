@@ -3726,7 +3726,7 @@ prop_governor_only_bootstrap_peers_in_clean_state env =
           . selectEnvEvents
           $ events
           where
-            isTrustable LocalRootConfig { extraFlags = IsTrustable }
+            isTrustable LocalRootConfig { extraLocalRootFlags = IsTrustable }
                           = True
             isTrustable _ = False
 

@@ -10,8 +10,7 @@ import Ouroboros.Network.Diffusion.Configuration (DiffusionMode)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type (UseLedgerPeers)
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint (RelayAccessPoint)
-import Ouroboros.Network.PeerSelection.State.LocalRootPeers hiding (extraFlags)
-import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LRP
+import Ouroboros.Network.PeerSelection.State.LocalRootPeers
 
 data NetworkTopology extraConfig extraFlags =
   NetworkTopology {
@@ -85,7 +84,7 @@ producerAddresses NetworkTopology { localRootPeersGroups
                          , LocalRootConfig {
                              diffusionMode = rootDiffusionMode lrp,
                              peerAdvertise,
-                             LRP.extraFlags = extraFlags lrp
+                             extraLocalRootFlags = extraFlags lrp
                            }
                          )
                        )

@@ -10,7 +10,7 @@ module Ouroboros.Network.PeerSelection.PeerSelectionActions
   ( PeerSelectionActions (..)
   , withPeerSelectionActions
   , requestPeerSharingResult
-  , requestPublicRootPeers
+  , requestPublicRootPeersImpl
   ) where
 
 
@@ -129,7 +129,7 @@ requestPeerSharingResult sharingController amount peer = do
 -- are found, it retrieves extra peers instead. The result includes the
 -- public root peers and the time taken for the operation.
 --
-requestPublicRootPeers
+requestPublicRootPeersImpl
   :: forall m peeraddr extraPeers resolver.
     ( MonadThrow m
     , MonadAsync m
@@ -147,7 +147,7 @@ requestPublicRootPeers
   -> StdGen
   -> Int
   -> m (PublicRootPeers extraPeers peeraddr, DiffTime)
-requestPublicRootPeers
+requestPublicRootPeersImpl
   publicTracer readPublicRootPeers
   PeerActionsDNS { paToPeerAddr = toPeerAddr
                  , paDnsActions = dnsActions

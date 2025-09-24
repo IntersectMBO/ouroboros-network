@@ -72,9 +72,6 @@ import Control.Tracer (Tracer (Tracer), contramap, nullTracer, traceWith)
 
 import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.PeerSelection
-import Ouroboros.Network.PeerSelection.RootPeersDNS
-import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
-           LocalRootConfig (..), WarmValency (..))
 import Test.Ouroboros.Network.Data.Script (Script (Script), initScript',
            scriptHead, singletonScript, stepScript')
 import Test.Ouroboros.Network.PeerSelection.Instances

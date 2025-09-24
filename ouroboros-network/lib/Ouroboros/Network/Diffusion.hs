@@ -1,14 +1,14 @@
-{-# LANGUAGE BlockArguments           #-}
-{-# LANGUAGE CPP                      #-}
-{-# LANGUAGE DataKinds                #-}
-{-# LANGUAGE DisambiguateRecordFields #-}
-{-# LANGUAGE FlexibleContexts         #-}
-{-# LANGUAGE GADTs                    #-}
-{-# LANGUAGE KindSignatures           #-}
-{-# LANGUAGE NamedFieldPuns           #-}
-{-# LANGUAGE RankNTypes               #-}
-{-# LANGUAGE ScopedTypeVariables      #-}
-{-# LANGUAGE TypeOperators            #-}
+{-# LANGUAGE BlockArguments        #-}
+{-# LANGUAGE CPP                   #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE KindSignatures        #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeOperators         #-}
 
 -- | This module is expected to be imported qualified.
 --
@@ -70,8 +70,8 @@ import Ouroboros.Network.IOManager
 import Ouroboros.Network.Mux hiding (MiniProtocol (..))
 import Ouroboros.Network.MuxMode
 import Ouroboros.Network.PeerSelection as PeerSelection
-import Ouroboros.Network.PeerSelection.Governor qualified as Governor
-import Ouroboros.Network.PeerSelection.RootPeersDNS (PeerActionsDNS (..))
+import Ouroboros.Network.PeerSelection.Churn as PeerSelection
+import Ouroboros.Network.PeerSelection.PeerSelectionActions as PeerSelection
 import Ouroboros.Network.PeerSelection.RootPeersDNS qualified as RootPeersDNS
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 import Ouroboros.Network.PeerSharing (PeerSharingRegistry (..))
@@ -440,9 +440,9 @@ runM Interfaces
       localRootsVar <- newTVarIO mempty
 
       -- churn will set initial targets
-      peerSelectionTargetsVar <- newTVarIO Governor.nullPeerSelectionTargets
+      peerSelectionTargetsVar <- newTVarIO PeerSelection.nullPeerSelectionTargets
 
-      countersVar <- newTVarIO (Governor.emptyPeerSelectionCounters daEmptyExtraCounters)
+      countersVar <- newTVarIO (PeerSelection.emptyPeerSelectionCounters daEmptyExtraCounters)
 
       -- Design notes:
       --  - We split the following code into two parts:
@@ -558,7 +558,7 @@ runM Interfaces
                  muxMode socket (ExpandedInitiatorContext ntnAddr m)
                  responderCtx ntnAddr ntnVersionData ntnVersion
                  ByteString m a b
-            -> (Governor.PeerStateActions
+            -> (PeerSelection.PeerStateActions
                   ntnAddr
                   (PeerConnectionHandle muxMode responderCtx ntnAddr
                      ntnVersionData ByteString m a b)
@@ -625,7 +625,7 @@ runM Interfaces
                                          requestPublicRootPeers     =
                                            case daRequestPublicRootPeers of
                                              Nothing ->
-                                               PeerSelection.requestPublicRootPeers
+                                               PeerSelection.requestPublicRootPeersImpl
                                                  dtTracePublicRootPeersTracer
                                                  dcReadPublicRootPeers
                                                  dnsActions
@@ -665,7 +665,7 @@ runM Interfaces
                 m
             -> m Void
           peerSelectionGovernor' peerSelectionTracer dbgVar peerSelectionActions =
-            Governor.peerSelectionGovernor
+            PeerSelection.peerSelectionGovernor
               dtTracePeerSelectionTracer
               peerSelectionTracer
               dtTracePeerSelectionCounters
@@ -697,7 +697,7 @@ runM Interfaces
               , pcaRng                 = churnRng
               , pcaPeerSelectionVar    = peerSelectionTargetsVar
               , pcaReadCounters        = readTVar countersVar
-              , getLedgerStateCtx      = daLedgerPeersCtx
+              , getLedgerPeersAPI      = daLedgerPeersCtx
               , getLocalRootHotTarget  =
                    LocalRootPeers.hotTarget
                  . LocalRootPeers.fromGroups
@@ -755,13 +755,13 @@ runM Interfaces
         -- InitiatorOnly mode, run peer selection only:
         InitiatorOnlyDiffusionMode ->
           withConnectionManagerInitiatorOnlyMode $ \connectionManager -> do
-          debugStateVar <- newTVarIO $ Governor.emptyPeerSelectionState fuzzRng daEmptyExtraState mempty
+          debugStateVar <- newTVarIO $ PeerSelection.emptyPeerSelectionState fuzzRng daEmptyExtraState mempty
           daInstallSigUSR1Handler connectionManager debugStateVar
           withPeerStateActions' connectionManager $ \peerStateActions->
             withPeerSelectionActions'
               (return Map.empty)
               peerStateActions $
-              \(ledgerPeersThread, localRootPeersProvider) peerSelectionActions->
+              \(ledgerPeersThread, localRootPeersProviderThread) peerSelectionActions->
                 Async.withAsync
                   (peerSelectionGovernor'
                     dtDebugPeerSelectionInitiatorTracer
@@ -771,7 +771,7 @@ runM Interfaces
                       peerChurnGovernor' $ \churnGovernorThread ->
                       -- wait for any thread to fail:
                       snd <$> Async.waitAny
-                                [ledgerPeersThread, localRootPeersProvider, governorThread, churnGovernorThread]
+                                [ledgerPeersThread, localRootPeersProviderThread, governorThread, churnGovernorThread]
 
         -- InitiatorAndResponder mode, run peer selection and the server:
         InitiatorAndResponderDiffusionMode -> do
@@ -788,14 +788,14 @@ runM Interfaces
             -- end, unique to ...
             withServer sockets inboundInfoChannel
               \inboundGovernorThread readInboundState connectionManager -> do
-                debugStateVar <- newTVarIO $ Governor.emptyPeerSelectionState fuzzRng daEmptyExtraState mempty
+                debugStateVar <- newTVarIO $ PeerSelection.emptyPeerSelectionState fuzzRng daEmptyExtraState mempty
                 daInstallSigUSR1Handler connectionManager debugStateVar
                 withPeerStateActions' connectionManager $
                   \peerStateActions ->
                     withPeerSelectionActions'
                       (mkInboundPeersMap <$> readInboundState)
                       peerStateActions $
-                        \(ledgerPeersThread, localRootPeersProvider) peerSelectionActions ->
+                        \(ledgerPeersThread, localRootPeersProviderThread) peerSelectionActions ->
                           Async.withAsync
                             (do
                               labelThisThread "Peer selection governor"
@@ -807,7 +807,7 @@ runM Interfaces
                                     \churnGovernorThread ->
                                       -- wait for any thread to fail:
                                       snd <$> Async.waitAny [ ledgerPeersThread
-                                                            , localRootPeersProvider
+                                                            , localRootPeersProviderThread
                                                             , governorThread
                                                             , churnGovernorThread
                                                             , inboundGovernorThread

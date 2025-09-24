@@ -58,7 +58,7 @@ data PeerChurnArgs m extraArgs extraDebugState extraFlags extraPeers extraAPI ex
   pcaRng                 :: StdGen,
   pcaPeerSelectionVar    :: StrictTVar m PeerSelectionTargets,
   pcaReadCounters        :: STM m (PeerSelectionCounters extraCounters),
-  getLedgerStateCtx      :: LedgerPeersConsensusInterface extraAPI m,
+  getLedgerPeersAPI      :: LedgerPeersConsensusInterface extraAPI m,
   getLocalRootHotTarget  :: STM m HotValency,
   pcaPeerSelectionTargets:: PeerSelectionTargets,
   -- ^ configured peer selection targets
