@@ -223,10 +223,10 @@ prop_codec_valid_cbor = prop_codec_valid_cbor_encoding codec
 
 data ObjectSubmissionTestParams =
      ObjectSubmissionTestParams {
-       testMaxUnacked        :: Positive (Small Word16),
+       testMaxUnacked            :: Positive (Small Word16),
        testMaxObjectIdsToRequest :: Positive (Small Word16),
        testMaxObjectToRequest    :: Positive (Small Word16),
-       testTransactions      :: DistinctList Object
+       testTransactions          :: DistinctList Object
      }
   deriving Show
 
