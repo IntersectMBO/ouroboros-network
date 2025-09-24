@@ -23,6 +23,7 @@ module Ouroboros.Network.NodeToNode
   , keepAliveProtocolLimits
   , peerSharingProtocolLimits
   , perasCertDiffusionProtocolLimits
+  , perasVoteDiffusionProtocolLimits
   , defaultMiniProtocolParameters
   , NodeToNodeVersion (..)
   , NodeToNodeVersionData (..)
@@ -73,6 +74,7 @@ module Ouroboros.Network.NodeToNode
   , keepAliveMiniProtocolNum
   , peerSharingMiniProtocolNum
   , perasCertDiffusionMiniProtocolNum
+  , perasVoteDiffusionMiniProtocolNum
   ) where
 
 import Control.Exception (SomeException)
@@ -132,6 +134,10 @@ data NodeToNodeProtocols appType initiatorCtx responderCtx bytes m a b = NodeToN
     --
     perasCertDiffusionProtocol :: RunMiniProtocol appType initiatorCtx responderCtx bytes m a b,
 
+    -- | Peras vote diffusion mini-protocol
+    --
+    perasVoteDiffusionProtocol :: RunMiniProtocol appType initiatorCtx responderCtx bytes m a b,
+
     -- | keep-alive mini-protocol
     --
     keepAliveProtocol          :: RunMiniProtocol appType initiatorCtx responderCtx bytes m a b,
@@ -169,26 +175,31 @@ data MiniProtocolParameters = MiniProtocolParameters {
       -- ^ maximal number of unacked tx (pipelining is bounded by twice this
       -- number)
 
-      perasCertDiffusionMaxFifoLength :: !NumObjectsOutstanding
-    -- ^ Maximum number of PerasCerts in the outbound peer's outstanding FIFO.
-    --
-    -- This indirectly limits the number of pipelined requests from the inbound peer:
-    -- the inbound peer can only request @n@ new IDs if the execution of preceding
-    -- requests would result in at least @n@ empty seats in the FIFO.
-    --
-    -- In the worst case:
-    --
-    --   * The inbound peer requests IDs and objects one by one.
-    --   * The inbound peer is aware of @perasCertDiffusionMaxFifoLength@ IDs for objects
-    --     it hasn't requested yet (i.e., the FIFO is full).
-    --
-    -- Then, the inbound peer can pipeline at most @perasCertDiffusionMaxFifoLength@
-    -- requests for one object each (with a known ID), and up to
-    -- @perasCertDiffusionMaxFifoLength@ requests for one new ID each.
-    --
-    -- So, the theoretical maximum pipeline size is
-    -- @2 * perasCertDiffusionMaxFifoLength@, but in practice the pipeline size will
-    -- be much smaller, as the inbound peer typically batches requests.
+      perasCertDiffusionMaxFifoLength :: !NumObjectsOutstanding,
+      -- ^ Maximum number of PerasCerts in the outbound peer's outstanding FIFO.
+      --
+      -- This indirectly limits the number of pipelined requests from the inbound peer:
+      -- the inbound peer can only request @n@ new IDs if the execution of preceding
+      -- requests would result in at least @n@ empty seats in the FIFO.
+      --
+      -- In the worst case:
+      --
+      --   * The inbound peer requests IDs and objects one by one.
+      --   * The inbound peer is aware of @perasCertDiffusionMaxFifoLength@ IDs for objects
+      --     it hasn't requested yet (i.e., the FIFO is full).
+      --
+      -- Then, the inbound peer can pipeline at most @perasCertDiffusionMaxFifoLength@
+      -- requests for one object each (with a known ID), and up to
+      -- @perasCertDiffusionMaxFifoLength@ requests for one new ID each.
+      --
+      -- So, the theoretical maximum pipeline size is
+      -- @2 * perasCertDiffusionMaxFifoLength@, but in practice the pipeline size will
+      -- be much smaller, as the inbound peer typically batches requests.
+
+      perasVoteDiffusionMaxFifoLength :: !NumObjectsOutstanding
+      -- ^ Maximum number of PerasVotes in the outbound peer's outstanding FIFO.
+      -- See comment on 'perasCertDiffusionMaxFifoLength' for more details to
+      -- understand why this indirectly limits the number of pipelined requests.
     }
 
 defaultMiniProtocolParameters :: MiniProtocolParameters
@@ -200,6 +211,9 @@ defaultMiniProtocolParameters = MiniProtocolParameters {
     -- | TODO: this value is still being discussed.
     -- See https://github.com/tweag/cardano-peras/issues/97 for reference.
     , perasCertDiffusionMaxFifoLength = 10
+    -- | TODO: this value is still being discussed.
+    -- See https://github.com/tweag/cardano-peras/issues/97 for reference.
+    , perasVoteDiffusionMaxFifoLength = 10_000
   }
 
 -- | Make an 'OuroborosApplication' for the bundle of mini-protocols that
@@ -239,7 +253,8 @@ nodeToNodeProtocols featureFlags miniProtocolParameters protocols
           NodeToNodeProtocols { chainSyncProtocol,
                                 blockFetchProtocol,
                                 txSubmissionProtocol,
-                                perasCertDiffusionProtocol
+                                perasCertDiffusionProtocol,
+                                perasVoteDiffusionProtocol
                               } ->
             [ MiniProtocol {
                 miniProtocolNum    = chainSyncMiniProtocolNum,
@@ -268,6 +283,12 @@ nodeToNodeProtocols featureFlags miniProtocolParameters protocols
                    miniProtocolStart  = StartOnDemand,
                    miniProtocolLimits = perasCertDiffusionProtocolLimits miniProtocolParameters,
                    miniProtocolRun    = perasCertDiffusionProtocol
+                 }
+               , MiniProtocol {
+                   miniProtocolNum    = perasVoteDiffusionMiniProtocolNum,
+                   miniProtocolStart  = StartOnDemand,
+                   miniProtocolLimits = perasVoteDiffusionProtocolLimits miniProtocolParameters,
+                   miniProtocolRun    = perasVoteDiffusionProtocol
                  }
                ])
 
@@ -306,7 +327,8 @@ chainSyncProtocolLimits
   , txSubmissionProtocolLimits
   , keepAliveProtocolLimits
   , peerSharingProtocolLimits
-  , perasCertDiffusionProtocolLimits :: MiniProtocolParameters -> MiniProtocolLimits
+  , perasCertDiffusionProtocolLimits
+  , perasVoteDiffusionProtocolLimits :: MiniProtocolParameters -> MiniProtocolLimits
 
 chainSyncProtocolLimits MiniProtocolParameters { chainSyncPipeliningHighMark } =
   MiniProtocolLimits {
@@ -434,6 +456,15 @@ perasCertDiffusionProtocolLimits MiniProtocolParameters { perasCertDiffusionMaxF
         fromIntegral perasCertDiffusionMaxFifoLength * 20_000
     }
 
+perasVoteDiffusionProtocolLimits MiniProtocolParameters { perasVoteDiffusionMaxFifoLength } =
+  MiniProtocolLimits {
+      -- Peras votes are expected to be much smaller than Peras certificates.
+      -- We assume an upper bound of 1 kB per vote.
+      -- See https://github.com/tweag/cardano-peras/issues/97
+      maximumIngressQueue = addSafetyMargin $
+        fromIntegral perasVoteDiffusionMaxFifoLength * 1_000
+    }
+
 chainSyncMiniProtocolNum :: MiniProtocolNum
 chainSyncMiniProtocolNum = MiniProtocolNum 2
 
@@ -451,6 +482,9 @@ peerSharingMiniProtocolNum = MiniProtocolNum 10
 
 perasCertDiffusionMiniProtocolNum :: MiniProtocolNum
 perasCertDiffusionMiniProtocolNum = MiniProtocolNum 11
+
+perasVoteDiffusionMiniProtocolNum :: MiniProtocolNum
+perasVoteDiffusionMiniProtocolNum = MiniProtocolNum 12
 
 -- | A specialised version of @'Ouroboros.Network.Socket.connectToNode'@.
 --
