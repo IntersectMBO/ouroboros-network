@@ -63,11 +63,15 @@ makeMockGenesisFile dst = do
   let settings' = KeyMap.insert "systemStart" (JSON.toJSON systemStart) settings
   JSON.encodeFile dst settings'
 
--- | a small helper function that creates a temporary directory with a short path
--- than 'withSystemTempDirectory', which in combination with nix will create
--- very long paths.
+-- | Create a temporary directory with a short path on Unixy OSes to
+-- avoid Unix-domain socket path limits (esp. under nix on macOS).
+-- On Windows, fall back to the system temp directory.
 withShortTmpDir :: (FilePath -> IO a) -> IO a
+#if defined(mingw32_HOST_OS)
+withShortTmpDir = withSystemTempDirectory "KesAgentTest"
+#else
 withShortTmpDir = withTempDirectory "/tmp" "KesAgentTest"
+#endif
 
 jsonResultToMaybe :: JSON.Result a -> IO a
 jsonResultToMaybe (JSON.Success a) = return a
