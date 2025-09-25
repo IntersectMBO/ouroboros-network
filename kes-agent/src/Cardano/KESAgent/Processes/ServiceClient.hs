@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MonoLocalBinds #-}
@@ -108,10 +109,12 @@ formatDelayMicro us
       printf "%0.1fs" ((fromIntegral us :: Double) / 1_000_000)
   | us < 60_000_000 =
       printf "%0.0fs" ((fromIntegral us :: Double) / 1_000_000)
+#if !defined(wasm32_HOST_ARCH)
   | us < 3600_000_000 =
       printf "%i:$02i minutes" (us `div` 60_000_000) ((us `mod` 60_000_000) `div` 1_000_000)
   | otherwise =
       printf "%i:$02i hours" (us `div` 3600_000_000) ((us `mod` 3600_000_000) `div` 60_000_000)
+#endif
 
 instance Pretty ServiceClientTrace where
   pretty (ServiceClientDriverTrace d) = "Service: service driver: " ++ pretty d
