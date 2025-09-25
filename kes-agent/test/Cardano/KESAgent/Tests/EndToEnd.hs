@@ -63,6 +63,16 @@ makeMockGenesisFile dst = do
   let settings' = KeyMap.insert "systemStart" (JSON.toJSON systemStart) settings
   JSON.encodeFile dst settings'
 
+-- | Create a temporary directory with a short path on Unixy OSes to
+-- avoid Unix-domain socket path limits (esp. under nix on macOS).
+-- On Windows, fall back to the system temp directory.
+withShortTmpDir :: (FilePath -> IO a) -> IO a
+#if defined(mingw32_HOST_OS)
+withShortTmpDir = withSystemTempDirectory "KesAgentTest"
+#else
+withShortTmpDir = withTempDirectory "/tmp" "KesAgentTest"
+#endif
+
 jsonResultToMaybe :: JSON.Result a -> IO a
 jsonResultToMaybe (JSON.Success a) = return a
 jsonResultToMaybe (JSON.Error err) = error $ "Invalid JSON: " ++ err
@@ -129,7 +139,7 @@ socketAddresses tmpdir =
 
 kesAgentFails :: Assertion
 kesAgentFails = do
-  (agentOutLines, agentErrLines, exitCode) <- withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
+  (agentOutLines, agentErrLines, exitCode) <- withShortTmpDir $ \tmpdir -> do
     let (controlAddr, serviceAddr) = socketAddresses tmpdir
         kesKeyFile = tmpdir </> "kes.vkey"
         opcertFile = tmpdir </> "opcert.cert"
@@ -164,7 +174,7 @@ kesAgentFails = do
 
 kesAgentGenesisFile :: Assertion
 kesAgentGenesisFile = do
-  (agentOutLines, agentErrLines, exitCode) <- withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
+  (agentOutLines, agentErrLines, exitCode) <- withShortTmpDir $ \tmpdir -> do
     let (controlAddr, serviceAddr) = socketAddresses tmpdir
         kesKeyFile = tmpdir </> "kes.vkey"
         opcertFile = tmpdir </> "opcert.cert"
@@ -196,7 +206,7 @@ kesAgentGenesisFile = do
 
 kesAgentNoControlAddress :: Assertion
 kesAgentNoControlAddress = do
-  (agentOutLines, agentErrLines, exitCode) <- withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
+  (agentOutLines, agentErrLines, exitCode) <- withShortTmpDir $ \tmpdir -> do
     let (controlAddr, serviceAddr) = socketAddresses tmpdir
         kesKeyFile = tmpdir </> "kes.vkey"
         opcertFile = tmpdir </> "opcert.cert"
@@ -246,7 +256,7 @@ logHandle h = do
 
 kesAgentControlInstallValid :: Assertion
 kesAgentControlInstallValid =
-  withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
+  withShortTmpDir $ \tmpdir -> do
     let (controlAddr, serviceAddr) = socketAddresses tmpdir
         kesKeyFile = tmpdir </> "kes.vkey"
         opcertFile = tmpdir </> "opcert.cert"
@@ -292,7 +302,7 @@ kesAgentControlInstallValid =
           ExitSuccess
           ["KES key installed."]
         -- Allow some time for service client to actually receive the key
-        threadDelay 10_000
+        threadDelay 300_000
     assertMatchingOutputLinesWith
       ("SERVICE OUTPUT CHECK\n" {- <> (Text.unpack . Text.unlines $ agentOutLines) -})
       4
@@ -301,7 +311,7 @@ kesAgentControlInstallValid =
 
 kesAgentControlUpdateValid :: Assertion
 kesAgentControlUpdateValid =
-  withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
+  withShortTmpDir $ \tmpdir -> do
     let (controlAddr, serviceAddr) = socketAddresses tmpdir
         kesKeyFile = tmpdir </> "kes.vkey"
         opcertFile = tmpdir </> "opcert.cert"
@@ -373,7 +383,7 @@ kesAgentControlUpdateValid =
           ExitSuccess
           ["KES key installed."]
         -- Allow some time for service client to actually receive the key
-        threadDelay 10_000
+        threadDelay 100_000
     assertMatchingOutputLinesWith
       ("SERVICE OUTPUT CHECK 1\n" {- <> (Text.unpack . Text.unlines $ agentOutLines) -})
       3
@@ -388,7 +398,7 @@ kesAgentControlUpdateValid =
 
 kesAgentControlInstallInvalidOpCert :: Assertion
 kesAgentControlInstallInvalidOpCert =
-  withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
+  withShortTmpDir $ \tmpdir -> do
     let (controlAddr, serviceAddr) = socketAddresses tmpdir
         kesKeyFile = tmpdir </> "kes.vkey"
     opcertFile <- getDataFileName "fixtures/opcert.cert"
@@ -426,7 +436,7 @@ kesAgentControlInstallInvalidOpCert =
 
 kesAgentControlInstallNoKey :: Assertion
 kesAgentControlInstallNoKey =
-  withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
+  withShortTmpDir $ \tmpdir -> do
     let (controlAddr, serviceAddr) = socketAddresses tmpdir
         opcertFile = tmpdir </> "opcert.cert"
     kesKeyFile <- getDataFileName "fixtures/kes.vkey"
@@ -463,7 +473,7 @@ kesAgentControlInstallNoKey =
 
 kesAgentControlInstallDroppedKey :: Assertion
 kesAgentControlInstallDroppedKey =
-  withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
+  withShortTmpDir $ \tmpdir -> do
     let (controlAddr, serviceAddr) = socketAddresses tmpdir
         opcertFile = tmpdir </> "opcert.cert"
         kesKeyFile = tmpdir </> "kes.vkey"
@@ -524,7 +534,7 @@ kesAgentControlInstallDroppedKey =
 
 kesAgentControlDropInstalled :: Assertion
 kesAgentControlDropInstalled =
-  withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
+  withShortTmpDir $ \tmpdir -> do
     let (controlAddr, serviceAddr) = socketAddresses tmpdir
         kesKeyFile = tmpdir </> "kes.vkey"
         opcertFile = tmpdir </> "opcert.cert"
@@ -606,7 +616,7 @@ kesAgentControlDropInstalled =
 
 kesAgentControlInstallMultiNodes :: Assertion
 kesAgentControlInstallMultiNodes =
-  withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
+  withShortTmpDir $ \tmpdir -> do
     let (controlAddr, serviceAddr) = socketAddresses tmpdir
         kesKeyFile = tmpdir </> "kes.vkey"
         opcertFile = tmpdir </> "opcert.cert"
@@ -630,7 +640,7 @@ kesAgentControlInstallMultiNodes =
         (serviceOutLines1, ()) <- withService serviceAddr $ do
           -- Little bit of delay here to allow for the version handshake to
           -- finish
-          threadDelay 10_000
+          threadDelay 100_000
           return ()
         (serviceOutLines2, ()) <- withService serviceAddr $ do
           controlClientCheck
@@ -679,7 +689,7 @@ kesAgentControlInstallMultiNodes =
 
 kesAgentControlUpdateMultiNodes :: Assertion
 kesAgentControlUpdateMultiNodes =
-  withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
+  withShortTmpDir $ \tmpdir -> do
     let (controlAddr, serviceAddr) = socketAddresses tmpdir
         kesKeyFile = tmpdir </> "kes.vkey"
         opcertFile = tmpdir </> "opcert.cert"
@@ -703,7 +713,7 @@ kesAgentControlUpdateMultiNodes =
         (serviceOutLines1, ()) <- withService serviceAddr $ do
           -- Little bit of delay here to allow for the version handshake to
           -- finish
-          threadDelay 10_000
+          threadDelay 100_000
           return ()
         (serviceOutLines2, ()) <- withService serviceAddr $ do
           controlClientCheck
@@ -784,7 +794,7 @@ kesAgentControlUpdateMultiNodes =
 -- - Verify via control2.socket that the key is still there
 kesAgentKeySurvivesSighup :: Assertion
 kesAgentKeySurvivesSighup =
-  withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
+  withShortTmpDir $ \tmpdir -> do
     let (controlAddr, serviceAddr) = socketAddresses tmpdir
         controlAddr2 = tmpdir </> "control2.socket"
         kesKeyFile = tmpdir </> "kes.vkey"
@@ -860,7 +870,7 @@ kesAgentKeySurvivesSighup =
 
 kesAgentEvolvesKeyInitially :: Assertion
 kesAgentEvolvesKeyInitially =
-  withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
+  withShortTmpDir $ \tmpdir -> do
     let (controlAddr, serviceAddr) = socketAddresses tmpdir
         kesKeyFile = tmpdir </> "kes.vkey"
         opcertFile = tmpdir </> "opcert.cert"
@@ -925,7 +935,7 @@ kesAgentEvolvesKeyInitially =
 
 kesAgentEvolvesKey :: Assertion
 kesAgentEvolvesKey =
-  withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
+  withShortTmpDir $ \tmpdir -> do
     let (controlAddr, serviceAddr) = socketAddresses tmpdir
         kesKeyFile = tmpdir </> "kes.vkey"
         opcertFile = tmpdir </> "opcert.cert"
@@ -1010,7 +1020,7 @@ kesAgentEvolvesKey =
 
 kesAgentPropagate :: Assertion
 kesAgentPropagate =
-  withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
+  withShortTmpDir $ \tmpdir -> do
     let controlAddr1 = tmpdir </> "control1.socket"
         serviceAddr1 = tmpdir </> "service1.socket"
         controlAddr2 = tmpdir </> "control2.socket"
@@ -1076,7 +1086,7 @@ kesAgentPropagate =
 
 kesAgentPropagateUpdate :: Assertion
 kesAgentPropagateUpdate =
-  withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
+  withShortTmpDir $ \tmpdir -> do
     let controlAddr1 = tmpdir </> "control1.socket"
         serviceAddr1 = tmpdir </> "service1.socket"
         controlAddr2 = tmpdir </> "control2.socket"
@@ -1181,7 +1191,7 @@ kesAgentPropagateUpdate =
 
 kesAgentSelfHeal1 :: Assertion
 kesAgentSelfHeal1 =
-  withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
+  withShortTmpDir $ \tmpdir -> do
     let controlAddr1 = tmpdir </> "control1.socket"
         serviceAddr1 = tmpdir </> "service1.socket"
         controlAddr2 = tmpdir </> "control2.socket"
@@ -1267,7 +1277,7 @@ kesAgentSelfHeal1 =
 
 kesAgentSelfHeal2 :: Assertion
 kesAgentSelfHeal2 =
-  withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
+  withShortTmpDir $ \tmpdir -> do
     let controlAddr1 = tmpdir </> "control1.socket"
         serviceAddr1 = tmpdir </> "service1.socket"
         controlAddr2 = tmpdir </> "control2.socket"
@@ -1319,7 +1329,7 @@ kesAgentSelfHeal2 =
             ExitSuccess
             ["KES key installed."]
           -- Allow some time for agent to shut down cleanly
-          threadDelay 10_000
+          threadDelay 100_000
         controlClientCheckP
           "Connect"
           [ "info"
@@ -1343,7 +1353,7 @@ kesAgentSelfHeal2 =
             ExitSuccess
             (any (`elem` ["Current evolution: 0 / 64", "Current evolution: 1 / 64"]))
           -- Allow some time for agent to shut down cleanly
-          threadDelay 10_000
+          threadDelay 100_000
         return (agentOutLines2a ++ ["------"] ++ agentOutLines2b, ())
     return ()
 
