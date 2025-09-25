@@ -302,7 +302,7 @@ kesAgentControlInstallValid =
           ExitSuccess
           ["KES key installed."]
         -- Allow some time for service client to actually receive the key
-        threadDelay 10_000
+        threadDelay 100_000
     assertMatchingOutputLinesWith
       ("SERVICE OUTPUT CHECK\n" {- <> (Text.unpack . Text.unlines $ agentOutLines) -})
       4
@@ -383,7 +383,7 @@ kesAgentControlUpdateValid =
           ExitSuccess
           ["KES key installed."]
         -- Allow some time for service client to actually receive the key
-        threadDelay 10_000
+        threadDelay 100_000
     assertMatchingOutputLinesWith
       ("SERVICE OUTPUT CHECK 1\n" {- <> (Text.unpack . Text.unlines $ agentOutLines) -})
       3
@@ -640,7 +640,7 @@ kesAgentControlInstallMultiNodes =
         (serviceOutLines1, ()) <- withService serviceAddr $ do
           -- Little bit of delay here to allow for the version handshake to
           -- finish
-          threadDelay 10_000
+          threadDelay 100_000
           return ()
         (serviceOutLines2, ()) <- withService serviceAddr $ do
           controlClientCheck
@@ -713,7 +713,7 @@ kesAgentControlUpdateMultiNodes =
         (serviceOutLines1, ()) <- withService serviceAddr $ do
           -- Little bit of delay here to allow for the version handshake to
           -- finish
-          threadDelay 10_000
+          threadDelay 100_000
           return ()
         (serviceOutLines2, ()) <- withService serviceAddr $ do
           controlClientCheck
@@ -1329,7 +1329,7 @@ kesAgentSelfHeal2 =
             ExitSuccess
             ["KES key installed."]
           -- Allow some time for agent to shut down cleanly
-          threadDelay 10_000
+          threadDelay 100_000
         controlClientCheckP
           "Connect"
           [ "info"
@@ -1353,7 +1353,7 @@ kesAgentSelfHeal2 =
             ExitSuccess
             (any (`elem` ["Current evolution: 0 / 64", "Current evolution: 1 / 64"]))
           -- Allow some time for agent to shut down cleanly
-          threadDelay 10_000
+          threadDelay 100_000
         return (agentOutLines2a ++ ["------"] ++ agentOutLines2b, ())
     return ()
 
