@@ -302,7 +302,7 @@ kesAgentControlInstallValid =
           ExitSuccess
           ["KES key installed."]
         -- Allow some time for service client to actually receive the key
-        threadDelay 100_000
+        threadDelay 300_000
     assertMatchingOutputLinesWith
       ("SERVICE OUTPUT CHECK\n" {- <> (Text.unpack . Text.unlines $ agentOutLines) -})
       4
