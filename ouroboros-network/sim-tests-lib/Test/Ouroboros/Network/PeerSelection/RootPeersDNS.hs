@@ -242,10 +242,10 @@ simpleMockRoots = MockRoots localRootPeers dnsMap Map.empty (singletonScript Map
       [ ( 2, 2
         , Map.fromList
           [ ( RelayAccessAddress (read "192.0.2.1") (read "3333")
-            , LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode ()
+            , LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode False ()
             )
           , ( RelayAccessDomain  "test.domain"      (read "4444")
-            , LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode ()
+            , LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode False ()
             )
           ]
         )

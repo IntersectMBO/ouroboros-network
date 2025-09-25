@@ -163,6 +163,7 @@ instance Arbitrary extraFlags => Arbitrary (LocalRootConfig extraFlags) where
                 <$> arbitrary
                 <*> elements [InitiatorAndResponderDiffusionMode, InitiatorOnlyDiffusionMode]
                 <*> arbitrary
+                <*> arbitrary
   shrink a@LocalRootConfig { peerAdvertise, extraFlags, diffusionMode } =
     [ a { extraFlags = peerTrustable' }
     | peerTrustable' <- shrink extraFlags
