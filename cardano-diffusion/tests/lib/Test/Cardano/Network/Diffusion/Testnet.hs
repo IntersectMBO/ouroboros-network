@@ -4342,6 +4342,7 @@ unit_peer_sharing =
                      )
                $ events'
 
+        events' :: [[WithName NtNAddr (WithTime DiffusionTestTrace)]]
         events' = Trace.toList
                 . splitWithNameTrace
                 . fmap (\(WithTime t (WithName name b))
@@ -4349,19 +4350,21 @@ unit_peer_sharing =
                 . withTimeNameTraceEvents
                    @DiffusionTestTrace
                    @NtNAddr
-                -- We need roughly 1200 because:
-                -- * first peer sharing request will be issued after
-                --   `policyPeerSharAcitvationDelay = 300`
-                -- * this request will not bring any new peers, because none of
-                --   the peers are yet mature
-                -- * inbound connections become mature at 900s (15 mins)
-                -- * next peer share request happens after 900s, e.g. around 1200s.
-                . Trace.takeWhile (\se -> case se of
-                                           SimEvent    {seTime} -> seTime < Time 1250
-                                           SimPOREvent {seTime} -> seTime < Time 1250
-                                           _                    -> False
-                                  )
-                $ runSimTrace sim
+                $ trace
+
+        -- We need roughly 1200 because:
+        -- * first peer sharing request will be issued after
+        --   `policyPeerSharAcitvationDelay = 300`
+        -- * this request will not bring any new peers, because none of
+        --   the peers are yet mature
+        -- * inbound connections become mature at 900s (15 mins)
+        -- * next peer share request happens after 900s, e.g. around 1200s.
+        trace = Trace.takeWhile (\se -> case se of
+                                          SimEvent    {seTime} -> seTime < Time 1_250
+                                          SimPOREvent {seTime} -> seTime < Time 1_250
+                                          _                    -> False
+                                )
+              $ runSimTrace sim
 
         verify :: NtNAddr
                -> [TracePeerSelection extraDebugState extraFlags
@@ -4386,7 +4389,8 @@ unit_peer_sharing =
         verify _ _ = Every True
 
     in
-      -- counterexample (ppEvents trace) $
+      -- counterexample (ppTrace_ trace) $
+      -- counterexample (foldr (\as out -> "===\n" ++ unlines (show <$> as) ++ out) "" events') $
       counterexample (Map.foldrWithKey (\addr evs s -> concat [ "\n\n===== "
                                                               , show addr
                                                               , " =====\n\n"

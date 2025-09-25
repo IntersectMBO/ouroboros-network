@@ -34,8 +34,9 @@ isBootstrapPeersEnabled _                     = True
 -- * When bootstrap peers are in use and the ledger is in 'TooOld' state,
 -- the system is considered to be in a sensitive state.
 requiresBootstrapPeers :: UseBootstrapPeers -> LedgerStateJudgement -> Bool
-requiresBootstrapPeers ubp lsj =
-  isBootstrapPeersEnabled ubp && lsj == TooOld
+requiresBootstrapPeers _ubp YoungEnough = False
+requiresBootstrapPeers ubp  TooOld      = isBootstrapPeersEnabled ubp
+
 
 -- | A node is able to make progress either if it isn't in a sensitive state
 -- _or_ if it is in a sensitive state and has reached a clean state from which
