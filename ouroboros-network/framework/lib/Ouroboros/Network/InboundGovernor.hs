@@ -155,7 +155,6 @@ with :: forall (muxMode :: Mux.Mode) socket peerAddr initiatorCtx responderCtx
         , MonadMask        m
         , Ord peerAddr
         , HasResponder muxMode ~ True
-        , MonadTraceSTM m
         , MonadFork m
         , MonadDelay m
         , Show peerAddr
@@ -181,6 +180,7 @@ with
     k
     = do
     stateVar <- newTVarIO emptyState
+    labelTVarIO stateVar "inbound-governor-state-var"
     active   <- newTVarIO True -- ^ inbound governor status: True = Active
     let connectionHandler =
           mkConnectionHandler $ inboundGovernorMuxTracer infoChannel
