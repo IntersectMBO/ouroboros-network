@@ -168,6 +168,7 @@ executable kes-agent
                  , tomland
                  , typed-protocols
                  , Win32-network
+                 , network
     if arch(wasm32)
         buildable: False
     if os(windows)
@@ -175,7 +176,6 @@ executable kes-agent
         build-depends: unix
                      , hdaemonize
                      , hsyslog
-                     , network
 
 executable kes-service-client-demo
     import: project-config
