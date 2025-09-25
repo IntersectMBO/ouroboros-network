@@ -63,6 +63,12 @@ makeMockGenesisFile dst = do
   let settings' = KeyMap.insert "systemStart" (JSON.toJSON systemStart) settings
   JSON.encodeFile dst settings'
 
+-- | a small helper function that creates a temporary directory with a short path
+-- than 'withSystemTempDirectory', which in combination with nix will create
+-- very long paths.
+withShortTmpDir :: (FilePath -> IO a) -> IO a
+withShortTmpDir = withTempDirectory "/tmp" "KesAgentTest"
+
 jsonResultToMaybe :: JSON.Result a -> IO a
 jsonResultToMaybe (JSON.Success a) = return a
 jsonResultToMaybe (JSON.Error err) = error $ "Invalid JSON: " ++ err
@@ -129,7 +135,7 @@ socketAddresses tmpdir =
 
 kesAgentFails :: Assertion
 kesAgentFails = do
-  (agentOutLines, agentErrLines, exitCode) <- withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
+  (agentOutLines, agentErrLines, exitCode) <- withShortTmpDir $ \tmpdir -> do
     let (controlAddr, serviceAddr) = socketAddresses tmpdir
         kesKeyFile = tmpdir </> "kes.vkey"
         opcertFile = tmpdir </> "opcert.cert"
@@ -164,7 +170,7 @@ kesAgentFails = do
 
 kesAgentGenesisFile :: Assertion
 kesAgentGenesisFile = do
-  (agentOutLines, agentErrLines, exitCode) <- withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
+  (agentOutLines, agentErrLines, exitCode) <- withShortTmpDir $ \tmpdir -> do
     let (controlAddr, serviceAddr) = socketAddresses tmpdir
         kesKeyFile = tmpdir </> "kes.vkey"
         opcertFile = tmpdir </> "opcert.cert"
@@ -196,7 +202,7 @@ kesAgentGenesisFile = do
 
 kesAgentNoControlAddress :: Assertion
 kesAgentNoControlAddress = do
-  (agentOutLines, agentErrLines, exitCode) <- withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
+  (agentOutLines, agentErrLines, exitCode) <- withShortTmpDir $ \tmpdir -> do
     let (controlAddr, serviceAddr) = socketAddresses tmpdir
         kesKeyFile = tmpdir </> "kes.vkey"
         opcertFile = tmpdir </> "opcert.cert"
@@ -246,7 +252,7 @@ logHandle h = do
 
 kesAgentControlInstallValid :: Assertion
 kesAgentControlInstallValid =
-  withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
+  withShortTmpDir $ \tmpdir -> do
     let (controlAddr, serviceAddr) = socketAddresses tmpdir
         kesKeyFile = tmpdir </> "kes.vkey"
         opcertFile = tmpdir </> "opcert.cert"
@@ -301,7 +307,7 @@ kesAgentControlInstallValid =
 
 kesAgentControlUpdateValid :: Assertion
 kesAgentControlUpdateValid =
-  withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
+  withShortTmpDir $ \tmpdir -> do
     let (controlAddr, serviceAddr) = socketAddresses tmpdir
         kesKeyFile = tmpdir </> "kes.vkey"
         opcertFile = tmpdir </> "opcert.cert"
@@ -388,7 +394,7 @@ kesAgentControlUpdateValid =
 
 kesAgentControlInstallInvalidOpCert :: Assertion
 kesAgentControlInstallInvalidOpCert =
-  withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
+  withShortTmpDir $ \tmpdir -> do
     let (controlAddr, serviceAddr) = socketAddresses tmpdir
         kesKeyFile = tmpdir </> "kes.vkey"
     opcertFile <- getDataFileName "fixtures/opcert.cert"
@@ -426,7 +432,7 @@ kesAgentControlInstallInvalidOpCert =
 
 kesAgentControlInstallNoKey :: Assertion
 kesAgentControlInstallNoKey =
-  withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
+  withShortTmpDir $ \tmpdir -> do
     let (controlAddr, serviceAddr) = socketAddresses tmpdir
         opcertFile = tmpdir </> "opcert.cert"
     kesKeyFile <- getDataFileName "fixtures/kes.vkey"
@@ -463,7 +469,7 @@ kesAgentControlInstallNoKey =
 
 kesAgentControlInstallDroppedKey :: Assertion
 kesAgentControlInstallDroppedKey =
-  withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
+  withShortTmpDir $ \tmpdir -> do
     let (controlAddr, serviceAddr) = socketAddresses tmpdir
         opcertFile = tmpdir </> "opcert.cert"
         kesKeyFile = tmpdir </> "kes.vkey"
@@ -524,7 +530,7 @@ kesAgentControlInstallDroppedKey =
 
 kesAgentControlDropInstalled :: Assertion
 kesAgentControlDropInstalled =
-  withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
+  withShortTmpDir $ \tmpdir -> do
     let (controlAddr, serviceAddr) = socketAddresses tmpdir
         kesKeyFile = tmpdir </> "kes.vkey"
         opcertFile = tmpdir </> "opcert.cert"
@@ -606,7 +612,7 @@ kesAgentControlDropInstalled =
 
 kesAgentControlInstallMultiNodes :: Assertion
 kesAgentControlInstallMultiNodes =
-  withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
+  withShortTmpDir $ \tmpdir -> do
     let (controlAddr, serviceAddr) = socketAddresses tmpdir
         kesKeyFile = tmpdir </> "kes.vkey"
         opcertFile = tmpdir </> "opcert.cert"
@@ -679,7 +685,7 @@ kesAgentControlInstallMultiNodes =
 
 kesAgentControlUpdateMultiNodes :: Assertion
 kesAgentControlUpdateMultiNodes =
-  withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
+  withShortTmpDir $ \tmpdir -> do
     let (controlAddr, serviceAddr) = socketAddresses tmpdir
         kesKeyFile = tmpdir </> "kes.vkey"
         opcertFile = tmpdir </> "opcert.cert"
@@ -784,7 +790,7 @@ kesAgentControlUpdateMultiNodes =
 -- - Verify via control2.socket that the key is still there
 kesAgentKeySurvivesSighup :: Assertion
 kesAgentKeySurvivesSighup =
-  withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
+  withShortTmpDir $ \tmpdir -> do
     let (controlAddr, serviceAddr) = socketAddresses tmpdir
         controlAddr2 = tmpdir </> "control2.socket"
         kesKeyFile = tmpdir </> "kes.vkey"
@@ -860,7 +866,7 @@ kesAgentKeySurvivesSighup =
 
 kesAgentEvolvesKeyInitially :: Assertion
 kesAgentEvolvesKeyInitially =
-  withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
+  withShortTmpDir $ \tmpdir -> do
     let (controlAddr, serviceAddr) = socketAddresses tmpdir
         kesKeyFile = tmpdir </> "kes.vkey"
         opcertFile = tmpdir </> "opcert.cert"
@@ -925,7 +931,7 @@ kesAgentEvolvesKeyInitially =
 
 kesAgentEvolvesKey :: Assertion
 kesAgentEvolvesKey =
-  withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
+  withShortTmpDir $ \tmpdir -> do
     let (controlAddr, serviceAddr) = socketAddresses tmpdir
         kesKeyFile = tmpdir </> "kes.vkey"
         opcertFile = tmpdir </> "opcert.cert"
@@ -1010,7 +1016,7 @@ kesAgentEvolvesKey =
 
 kesAgentPropagate :: Assertion
 kesAgentPropagate =
-  withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
+  withShortTmpDir $ \tmpdir -> do
     let controlAddr1 = tmpdir </> "control1.socket"
         serviceAddr1 = tmpdir </> "service1.socket"
         controlAddr2 = tmpdir </> "control2.socket"
@@ -1076,7 +1082,7 @@ kesAgentPropagate =
 
 kesAgentPropagateUpdate :: Assertion
 kesAgentPropagateUpdate =
-  withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
+  withShortTmpDir $ \tmpdir -> do
     let controlAddr1 = tmpdir </> "control1.socket"
         serviceAddr1 = tmpdir </> "service1.socket"
         controlAddr2 = tmpdir </> "control2.socket"
@@ -1181,7 +1187,7 @@ kesAgentPropagateUpdate =
 
 kesAgentSelfHeal1 :: Assertion
 kesAgentSelfHeal1 =
-  withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
+  withShortTmpDir $ \tmpdir -> do
     let controlAddr1 = tmpdir </> "control1.socket"
         serviceAddr1 = tmpdir </> "service1.socket"
         controlAddr2 = tmpdir </> "control2.socket"
@@ -1267,7 +1273,7 @@ kesAgentSelfHeal1 =
 
 kesAgentSelfHeal2 :: Assertion
 kesAgentSelfHeal2 =
-  withSystemTempDirectory "KesAgentTest" $ \tmpdir -> do
+  withShortTmpDir $ \tmpdir -> do
     let controlAddr1 = tmpdir </> "control1.socket"
         serviceAddr1 = tmpdir </> "service1.socket"
         controlAddr2 = tmpdir </> "control2.socket"
