@@ -26,7 +26,6 @@ packages: ./cardano-ping
           ./ouroboros-network
           ./cardano-diffusion
           ./ntp-client
-          ./cardano-client
           ./dmq-node
           ./acts-generic
 
