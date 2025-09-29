@@ -1,6 +1,6 @@
 cabal-version: 3.4
 name: dmq-node
-version: 0.1.0.0
+version: 0.2.0.0
 synopsis: Decentralised Message Queue Node
 description:
   Decentralised Message Queue Node based on Cardano Diffusion
