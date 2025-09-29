@@ -1,14 +1,13 @@
-{-# LANGUAGE BlockArguments        #-}
-{-# LANGUAGE CPP                   #-}
-{-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE GADTs                 #-}
-{-# LANGUAGE KindSignatures        #-}
-{-# LANGUAGE NamedFieldPuns        #-}
-{-# LANGUAGE RankNTypes            #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE TypeOperators         #-}
+{-# LANGUAGE BlockArguments      #-}
+{-# LANGUAGE CPP                 #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeOperators       #-}
 
 -- | This module is expected to be imported qualified.
 --
@@ -384,17 +383,17 @@ runM Interfaces
               Server.snocket          = diNtcSnocket,
               Server.tracer           = dtLocalServerTracer,
               Server.connectionLimits = localConnectionLimits,
-              inboundGovernorArgs =
+              Server.inboundGovernorArgs =
                 IG.Arguments {
-                  tracer                = dtLocalInboundGovernorTracer,
-                  transitionTracer      = nullTracer,
-                  debugTracer           = nullTracer,
-                  connectionDataFlow    = ntcDataFlow,
-                  idleTimeout           = Nothing,
-                  withConnectionManager = localWithConnectionManager localInbInfoChannel,
-                  mkConnectionHandler   = mkLocalConnectionHandler,
-                  infoChannel           = localInbInfoChannel
-                  }
+                  IG.tracer                = dtLocalInboundGovernorTracer,
+                  IG.transitionTracer      = nullTracer,
+                  IG.debugTracer           = nullTracer,
+                  IG.connectionDataFlow    = ntcDataFlow,
+                  IG.idleTimeout           = Nothing,
+                  IG.withConnectionManager = localWithConnectionManager localInbInfoChannel,
+                  IG.mkConnectionHandler   = mkLocalConnectionHandler,
+                  IG.infoChannel           = localInbInfoChannel
+                }
               }
           (\inboundGovernorThread _ _ -> Async.wait inboundGovernorThread)
 
@@ -731,19 +730,19 @@ runM Interfaces
                Server.tracer       = dtServerTracer,
                Server.connectionLimits
                                    = dcAcceptedConnectionsLimit,
-               inboundGovernorArgs =
+               Server.inboundGovernorArgs =
                  IG.Arguments {
-                   tracer                = dtInboundGovernorTracer,
-                   transitionTracer      = dtInboundGovernorTransitionTracer,
-                   debugTracer           = nullTracer,
-                   connectionDataFlow    = daNtnDataFlow,
-                   idleTimeout           = Just dcProtocolIdleTimeout,
-                   withConnectionManager =
+                   IG.tracer                = dtInboundGovernorTracer,
+                   IG.transitionTracer      = dtInboundGovernorTransitionTracer,
+                   IG.debugTracer           = nullTracer,
+                   IG.connectionDataFlow    = daNtnDataFlow,
+                   IG.idleTimeout           = Just dcProtocolIdleTimeout,
+                   IG.withConnectionManager =
                      withConnectionManagerInitiatorAndResponderMode inboundInfoChannel,
-                   mkConnectionHandler   =
+                   IG.mkConnectionHandler   =
                        makeConnectionHandler' daApplicationInitiatorResponderMode
                      . MuxInitiatorResponderConnectionHandler daNtnDataFlow,
-                   infoChannel           = inboundInfoChannel
+                   IG.infoChannel           = inboundInfoChannel
                  }
              }
 

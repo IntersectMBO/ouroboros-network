@@ -1,6 +1,3 @@
-{-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE ExplicitNamespaces    #-}
-
 module Ouroboros.Network.PeerSelection
   ( module Governor
   , module PeerSelection
