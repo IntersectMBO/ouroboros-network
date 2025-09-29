@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE NamedFieldPuns       #-}
+{-# LANGUAGE OverloadedStrings    #-}
 {-# LANGUAGE PatternSynonyms      #-}
 {-# LANGUAGE StandaloneDeriving   #-}
 {-# LANGUAGE TypeSynonymInstances #-}
@@ -24,6 +25,7 @@ module DMQ.Protocol.SigSubmission.Type
   , module SigSubmission
   ) where
 
+import Data.Aeson
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy qualified as LBS
 import Data.Time.Clock.POSIX (POSIXTime)
@@ -31,8 +33,9 @@ import Data.Typeable
 
 import Cardano.Crypto.DSIGN.Class (DSIGNAlgorithm)
 import Cardano.Crypto.KES.Class (VerKeyKES)
+-- import Cardano.Crypto.Util (SignableRepresentation (..))
 import Cardano.KESAgent.KES.Crypto as KES
-import Cardano.KESAgent.KES.OCert (OCert)
+import Cardano.KESAgent.KES.OCert (OCert (..))
 
 import Ouroboros.Network.Protocol.TxSubmission2.Type as SigSubmission hiding
            (TxSubmission2)
@@ -101,6 +104,33 @@ deriving instance ( DSIGNAlgorithm (KES.DSIGN crypto)
                   )
                => Eq (SigRaw crypto)
 
+instance Crypto crypto
+      => ToJSON (SigRaw crypto) where
+  -- TODO: it is too verbose, we need verbosity levels for these JSON fields
+  toJSON SigRaw { sigRawId
+             {- , sigRawBody
+                , sigRawKESPeriod
+                , sigRawExpiresAt
+                , sigRawKESSignature
+                , sigRawOpCertificate
+                , sigRawColdKey -}
+                } =
+    object [ "id"            .= show (getSigHash (getSigId sigRawId))
+        {- , "body"          .= show (getSigBody sigRawBody)
+           , "kesPeriod"     .= sigRawKESPeriod
+           , "expiresAt"     .= show sigRawExpiresAt
+           , "kesSignature"  .= show (getSigKESSignature sigRawKESSignature)
+
+           , "opCertificate" .= show (getSignableRepresentation signable)
+           , "coldKey"       .= show (getSigColdKey sigRawColdKey) -}
+           ]
+        {-
+        where
+          ocert    = getSigOpCertificate sigRawOpCertificate
+          signable :: OCertSignable crypto
+          signable = OCertSignable (ocertVkHot ocert) (ocertN ocert) (ocertKESPeriod ocert)
+        -}
+
 data SigRawWithSignedBytes crypto = SigRawWithSignedBytes {
     sigRawSignedBytes :: LBS.ByteString,
     -- ^ bytes signed by the KES key
@@ -117,6 +147,9 @@ deriving instance ( DSIGNAlgorithm (KES.DSIGN crypto)
                   )
                => Eq (SigRawWithSignedBytes crypto)
 
+instance Crypto crypto
+      => ToJSON (SigRawWithSignedBytes crypto) where
+  toJSON SigRawWithSignedBytes {sigRaw} = toJSON sigRaw
 
 data Sig crypto = SigWithBytes {
     sigRawBytes           :: LBS.ByteString,
@@ -134,6 +167,9 @@ deriving instance ( DSIGNAlgorithm (KES.DSIGN crypto)
                   )
                => Eq (Sig crypto)
 
+instance Crypto crypto
+      => ToJSON (Sig crypto) where
+  toJSON SigWithBytes {sigRawWithSignedBytes} = toJSON sigRawWithSignedBytes
 
 -- | A convenient bidirectional pattern synonym for the `Sig` type.
 --
