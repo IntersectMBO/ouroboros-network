@@ -24,8 +24,7 @@ active-repositories:
   , :rest
   , cardano-haskell-packages:override
 
-packages: ./cardano-ping
-          ./monoidal-synchronisation
+packages: ./monoidal-synchronisation
           ./network-mux
           ./ouroboros-network
           ./cardano-diffusion
