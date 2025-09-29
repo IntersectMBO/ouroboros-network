@@ -1,5 +1,6 @@
 # monoidal-synchronisation changelog
 
+<!-- scriv-insert-here -->
 <!-- scriv-end-here -->
 
 ## 0.1.0.6 - 2024-08-07
