@@ -6,15 +6,20 @@ set -eo pipefail
 
 RESULT=0
 
+HEAD="HEAD"
 MERGE_BASE=$(git merge-base origin/main HEAD)
 
 function check_project () {
   project=$1
   n=$()
-  if [[ -n $(git diff --name-only $MERGE_BASE HEAD -- $project) ]];then
-    if [[ -z $(git diff --name-only $MERGE_BASE HEAD -- $project/changelog.d/*.md) ]]; then
-      echo "$project was modified but its CHANGELOG was not updated"
-      RESULT=1
+  if [[ -n $(git diff --name-only $MERGE_BASE $HEAD -- $project) ]];then
+    if [[ -z $(git diff --name-only $MERGE_BASE $HEAD -- $project/changelog.d/*.md) ]]; then
+      if [[ -z $(git diff --name-only $MERGE_BASE $HEAD -- $project/CHANGELOG.md) ]]; then
+        echo "$project was modified but its changelog.d directory was not updated"
+        RESULT=1
+      else
+        echo "$project was modified, its CHANGELOG.md file was updated (new release version?)"
+      fi 
     fi
   fi
 }
