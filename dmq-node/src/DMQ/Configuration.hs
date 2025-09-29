@@ -136,7 +136,9 @@ data Configuration' f =
     dmqcKeepAliveClientTracer                      :: f Bool,
     dmqcKeepAliveServerTracer                      :: f Bool,
     dmqcPeerSharingClientTracer                    :: f Bool,
-    dmqcPeerSharingServerTracer                    :: f Bool
+    dmqcPeerSharingServerTracer                    :: f Bool,
+    dmqcLocalMsgSubmissionServerTracer             :: f Bool,
+    dmqcLocalMsgNotificationServerTracer           :: f Bool
   }
   deriving Generic
 
@@ -242,7 +244,9 @@ defaultConfiguration = Configuration {
       dmqcKeepAliveClientTracer                      = I False,
       dmqcKeepAliveServerTracer                      = I False,
       dmqcPeerSharingClientTracer                    = I False,
-      dmqcPeerSharingServerTracer                    = I False
+      dmqcPeerSharingServerTracer                    = I False,
+      dmqcLocalMsgSubmissionServerTracer             = I True,
+      dmqcLocalMsgNotificationServerTracer           = I True
     }
   where
     PeerSelectionTargets {
@@ -323,6 +327,8 @@ instance FromJSON PartialConfig where
       dmqcKeepAliveServerTracer                      <- Last <$> v .:? "KeepAliveClientTracer"
       dmqcPeerSharingClientTracer                    <- Last <$> v .:? "PeerSharingServerTracer"
       dmqcPeerSharingServerTracer                    <- Last <$> v .:? "PeerSharingClientTracer"
+      dmqcLocalMsgSubmissionServerTracer             <- Last <$> v .:? "LocalMsgSubmissionServerTracer"
+      dmqcLocalMsgNotificationServerTracer           <- Last <$> v .:? "LocalMsgNotificationServerTracer"
 
       pure $
         Configuration
@@ -379,6 +385,8 @@ instance FromJSON PartialConfig where
           , dmqcKeepAliveServerTracer
           , dmqcPeerSharingClientTracer
           , dmqcPeerSharingServerTracer
+          , dmqcLocalMsgSubmissionServerTracer
+          , dmqcLocalMsgNotificationServerTracer
           }
 
 -- | ToJSON instance used by logging system.
@@ -437,7 +445,9 @@ instance ToJSON Configuration where
       dmqcKeepAliveClientTracer,
       dmqcKeepAliveServerTracer,
       dmqcPeerSharingClientTracer,
-      dmqcPeerSharingServerTracer
+      dmqcPeerSharingServerTracer,
+      dmqcLocalMsgSubmissionServerTracer,
+      dmqcLocalMsgNotificationServerTracer
     }
     =
     object [ "IPv4"                                       .= (show <$> unI dmqcIPv4)
@@ -493,6 +503,8 @@ instance ToJSON Configuration where
            , "KeepAliveServerTracer"                      .= unI dmqcKeepAliveServerTracer
            , "PeerSharingClientTracer"                    .= unI dmqcPeerSharingClientTracer
            , "PeerSharingServerTracer"                    .= unI dmqcPeerSharingServerTracer
+           , "LocalMsgSubmissionServerTracer"             .= unI dmqcLocalMsgSubmissionServerTracer
+           , "LocalMsgNotificationServerTracer"           .= unI dmqcLocalMsgNotificationServerTracer
            ]
 
 -- | Read the `DMQConfiguration` from the specified file.

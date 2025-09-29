@@ -92,7 +92,8 @@ runDMQ commandLineConfig = do
                                                         (\_ _ -> Right () :: Either Void ())
                                                         (\_ -> True)
                                                         (mempool nodeKernel)
-             in NtC.ntcApps mempoolReader mempoolWriter maxMsgs
+             in NtC.ntcApps tracer dmqConfig
+                            mempoolReader mempoolWriter maxMsgs
                             (NtC.dmqCodecs encodeReject decodeReject)
           dmqDiffusionArguments =
             diffusionArguments (if handshakeTracer
