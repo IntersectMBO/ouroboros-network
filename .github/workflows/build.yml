@@ -136,11 +136,11 @@ jobs:
       if: runner.os != 'Windows'
       run: cabal run ouroboros-network:ouroboros-network-sim-tests -- +RTS -maxN2 -RTS
 
-    - name: cardano-diffusion:protocols-tests
+    - name: cardano-diffusion [protocols-tests]
       if: runner.os != 'Windows'
       run: cabal run cardano-diffusion:protocols-tests -- +RTS -maxN2 -RTS
 
-    - name: cardano-diffusion:api-tests
+    - name: cardano-diffusion [api-tests]
       if: runner.os != 'Windows'
       run: cabal run cardano-diffusion:api-tests -- +RTS -maxN2 -RTS
 
@@ -148,12 +148,12 @@ jobs:
       if: runner.os != 'Windows'
       run: cabal run cardano-diffusion:protocols-tests -- +RTS -maxN2 -RTS
 
-    - name: cardano-diffusion:cardano-diffusion-sim-test
+    - name: cardano-diffusion [cardano-diffusion-sim-test]
       if: runner.os != 'Windows'
       run: cabal run cardano-diffusion:cardano-diffusion-sim-tests -- +RTS -maxN2 -RTS
 
-    - name: dmq-node [test]
-      run: cabal run dmq-node:dmq-test -- +RTS -maxN2 -RTS
+    - name: dmq-node [dmq-tests]
+      run: cabal run dmq-node:dmq-tests -- +RTS -maxN2 -RTS
 
     # Uncomment the following back in for debugging. Remember to launch a `pwsh` from
     # the tmux session to debug `pwsh` issues. And be reminded that the `/msys2` and

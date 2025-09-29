@@ -113,8 +113,7 @@ let
         packages.ouroboros-network.components.tests.framework-sim-tests.doCheck = onLinux;
         packages.ouroboros-network.components.tests.ouroboros-network-sim-tests.doCheck = onLinux;
 
-
-        packages.dmq-node.components.tests.dmq-test.preCheck =
+        packages.dmq-node.components.tests.dmq-tests.preCheck =
           if buildSystem == "x86_64-linux" then "export GHCRTS=-M1600M" else "";
         packages.network-mux.components.tests.test.preCheck =
           if buildSystem == "x86_64-linux" then "export GHCRTS=-M800M" else "";

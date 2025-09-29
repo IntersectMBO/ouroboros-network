@@ -141,7 +141,7 @@ executable dmq-node
   hs-source-dirs: app
   default-language: Haskell2010
 
-test-suite dmq-test
+test-suite dmq-tests
   import:
     warnings,
     extensions
