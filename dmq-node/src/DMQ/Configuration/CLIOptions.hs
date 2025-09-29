@@ -32,6 +32,13 @@ parseCLIOptions =
         )
     <*> optional (
           strOption
+          (  long "local-socket"
+          <> metavar "FILENAME"
+          <> help "Unix socket for node-to-client communication"
+          )
+        )
+    <*> optional (
+          strOption
           (  long "configuration-file"
           <> short 'c'
           <> metavar "FILENAME"
@@ -47,11 +54,12 @@ parseCLIOptions =
           )
         )
   where
-    mkConfiguration ipv4 ipv6 portNumber configFile topologyFile =
-      mempty { dmqcIPv4 = Last (Just <$> ipv4),
-               dmqcIPv6 = Last (Just <$> ipv6),
-               dmqcPortNumber = Last portNumber,
-               dmqcConfigFile = Last configFile,
+    mkConfiguration ipv4 ipv6 portNumber localAddress configFile topologyFile =
+      mempty { dmqcIPv4         = Last (Just <$> ipv4),
+               dmqcIPv6         = Last (Just <$> ipv6),
+               dmqcLocalAddress = Last (LocalAddress <$> localAddress),
+               dmqcPortNumber   = Last portNumber,
+               dmqcConfigFile   = Last configFile,
                dmqcTopologyFile = Last topologyFile
              }
 
