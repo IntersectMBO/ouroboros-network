@@ -1,5 +1,6 @@
 # cardano-ping changelog
 
+<!-- scriv-insert-here -->
 <!-- scriv-end-here -->
 
 ## 0.9.0.0 -- 2026-06-28
