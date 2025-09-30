@@ -6,7 +6,6 @@ module Test.Cardano.Network.NodeToNode.Version (tests) where
 import Cardano.Network.NodeToNode.Version
 
 import Ouroboros.Network.CodecCBORTerm
-import Ouroboros.Network.Magic
 
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Test.QuickCheck

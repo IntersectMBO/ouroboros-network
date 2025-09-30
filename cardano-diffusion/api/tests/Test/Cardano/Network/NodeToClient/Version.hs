@@ -6,7 +6,6 @@ module Test.Cardano.Network.NodeToClient.Version (tests) where
 import Cardano.Network.NodeToClient.Version
 
 import Ouroboros.Network.CodecCBORTerm
-import Ouroboros.Network.Magic
 
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)

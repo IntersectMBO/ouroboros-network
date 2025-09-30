@@ -7,6 +7,7 @@
 --
 module Ouroboros.Network.Protocol.Handshake
   ( runHandshakeClient
+  , runHandshakeClientWithRTT
   , runHandshakeServer
   , HandshakeArguments (..)
   , Versions (..)
@@ -89,7 +90,6 @@ tryHandshake doHandshake = do
           return $ Left $ HandshakeProtocolError err
       Right (Right r) -> return $ Right r
 
-
 --
 -- Record arguments
 --
@@ -131,24 +131,24 @@ data HandshakeArguments connectionId vNumber vData m = HandshakeArguments {
     }
 
 
--- | Run client side of the 'Handshake' protocol
+-- | Run client side of the 'Handshake' protocol.
 --
 runHandshakeClient
-    :: ( MonadAsync m
+    :: forall versionNumber versionData application connId m.
+       ( MonadAsync m
        , MonadFork m
        , MonadTimer m
        , MonadMask m
        , MonadThrow (STM m)
-       , Ord vNumber
+       , Ord versionNumber
        )
     => Mx.Bearer m
-    -> connectionId
-    -> HandshakeArguments connectionId vNumber vData m
-    -> Versions vNumber vData application
-    -> m (Either (HandshakeException vNumber)
-                 (HandshakeResult application vNumber vData))
-runHandshakeClient bearer
-                   connectionId
+    -> connId
+    -> HandshakeArguments connId versionNumber versionData m
+    -> Versions versionNumber versionData application
+    -> m (Either (HandshakeException versionNumber)
+                 (HandshakeResult application versionNumber versionData))
+runHandshakeClient bearer connectionId
                    HandshakeArguments {
                      haHandshakeTracer,
                      haBearerTracer,
@@ -157,35 +157,89 @@ runHandshakeClient bearer
                      haAcceptVersion,
                      haTimeLimits
                    }
-                   versions  =
-    tryHandshake
-      (fst <$>
-        runPeerWithLimits
-          (Mx.WithBearer connectionId `contramap` haHandshakeTracer)
-          haHandshakeCodec
-          byteLimitsHandshake
-          haTimeLimits
-          (Mx.bearerAsChannel (Mx.WithBearer connectionId `contramap` haBearerTracer)
-                              bearer handshakeProtocolNum Mx.InitiatorDir)
-          (handshakeClientPeer haVersionDataCodec haAcceptVersion versions))
+                   versions =
+  tryHandshake
+    (fst <$>
+      runPeerWithLimits
+        (Mx.WithBearer connectionId `contramap` haHandshakeTracer)
+        haHandshakeCodec
+        byteLimitsHandshake
+        haTimeLimits
+        (Mx.bearerAsChannel (Mx.WithBearer connectionId `contramap` haBearerTracer)
+                            bearer handshakeProtocolNum Mx.InitiatorDir)
+        (handshakeClientPeer haVersionDataCodec haAcceptVersion versions))
+
+-- | Run client side of the 'Handshake' protocol and compute RTT.
+--
+runHandshakeClientWithRTT
+    :: forall versionNumber versionData application connId m.
+       ( MonadAsync m
+       , MonadFork m
+       , MonadTimer m
+       , MonadMask m
+       , MonadThrow (STM m)
+       , Ord versionNumber
+       )
+    => Mx.Bearer m
+    -> connId
+    -> HandshakeArguments connId versionNumber versionData m
+    -> Versions versionNumber versionData application
+    -> m (Either ProtocolLimitFailure
+                 ( Either (HandshakeProtocolError versionNumber)
+                          (HandshakeResult application versionNumber versionData)
+                 , DiffTime
+                 ))
+runHandshakeClientWithRTT
+  bearer
+  connectionId
+  HandshakeArguments {
+    haHandshakeTracer,
+    haBearerTracer,
+    haHandshakeCodec,
+    haVersionDataCodec,
+    haAcceptVersion,
+    haTimeLimits
+  }
+  versions
+  =
+  tryHandshakeWithRTT
+    (fst <$>
+      runPeerWithLimits
+        (Mx.WithBearer connectionId `contramap` haHandshakeTracer)
+        haHandshakeCodec
+        byteLimitsHandshake
+        haTimeLimits
+        (Mx.bearerAsChannel (Mx.WithBearer connectionId `contramap` haBearerTracer)
+                            bearer handshakeProtocolNum Mx.InitiatorDir)
+        (handshakeClientPeerWithRTT haVersionDataCodec haAcceptVersion versions))
+  where
+    tryHandshakeWithRTT :: forall r.
+                           m ( Either (HandshakeProtocolError versionNumber) r
+                             , DiffTime
+                             )
+                        -> m (Either ProtocolLimitFailure ( Either (HandshakeProtocolError versionNumber) r
+                                                          , DiffTime
+                                                          ))
+    tryHandshakeWithRTT = try
 
 
 -- | Run server side of the 'Handshake' protocol.
 --
 runHandshakeServer
-    :: ( MonadAsync m
+    :: forall versionNumber versionData application connId m.
+       ( MonadAsync m
        , MonadFork m
        , MonadTimer m
        , MonadMask m
        , MonadThrow (STM m)
-       , Ord vNumber
+       , Ord versionNumber
        )
     => Mx.Bearer m
-    -> connectionId
-    -> HandshakeArguments connectionId vNumber vData m
-    -> Versions vNumber vData application
-    -> m (Either (HandshakeException vNumber)
-                 (HandshakeResult application vNumber vData))
+    -> connId
+    -> HandshakeArguments connId versionNumber versionData m
+    -> Versions versionNumber versionData application
+    -> m (Either (HandshakeException versionNumber)
+                 (HandshakeResult application versionNumber versionData))
 runHandshakeServer bearer
                    connectionId
                    HandshakeArguments {

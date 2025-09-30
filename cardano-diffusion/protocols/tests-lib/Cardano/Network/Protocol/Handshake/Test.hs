@@ -33,7 +33,6 @@ import Cardano.Network.NodeToNode.Version as NTN
 import Ouroboros.Network.Channel
 import Ouroboros.Network.CodecCBORTerm
 import Ouroboros.Network.Driver.Simple (runConnectedPeers)
-import Ouroboros.Network.Magic
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 
 import Ouroboros.Network.Protocol.Handshake.Client

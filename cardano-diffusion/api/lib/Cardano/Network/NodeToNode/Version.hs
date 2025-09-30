@@ -10,6 +10,7 @@ module Cardano.Network.NodeToNode.Version
   , ConnectionMode (..)
   , nodeToNodeVersionCodec
   , nodeToNodeCodecCBORTerm
+  , NetworkMagic (..)
   ) where
 
 import Data.Text (Text)

@@ -8,6 +8,7 @@ module Cardano.Network.NodeToClient.Version
   , NodeToClientVersionData (..)
   , nodeToClientCodecCBORTerm
   , nodeToClientVersionCodec
+  , NetworkMagic (..)
   ) where
 
 import Codec.CBOR.Term qualified as CBOR
