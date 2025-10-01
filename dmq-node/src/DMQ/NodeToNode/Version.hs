@@ -7,8 +7,8 @@
 module DMQ.NodeToNode.Version
   ( NodeToNodeVersion (..)
   , NodeToNodeVersionData (..)
-  , nodeToNodeCodecCBORTerm
   , nodeToNodeVersionCodec
+  , nodeToNodeVersionDataCodec
   , ntnDataFlow
   ) where
 
@@ -19,7 +19,7 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import GHC.Generics (Generic)
 
-import Ouroboros.Network.CodecCBORTerm (CodecCBORTerm (..))
+import Ouroboros.Network.CodecCBORTerm
 import Ouroboros.Network.ConnectionManager.Types (DataFlow (..))
 import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.Handshake.Acceptable (Acceptable (..))
@@ -153,6 +153,9 @@ nodeToNodeCodecCBORTerm =
       = Left $ T.pack $ "peerSharing is out of bound: " <> show peerSharing
     decodeTerm1 t
       = Left $ T.pack $ "unknown encoding: " ++ show t
+
+nodeToNodeVersionDataCodec :: VersionDataCodec NodeToNodeVersion NodeToNodeVersionData
+nodeToNodeVersionDataCodec = mkVersionedCodecCBORTerm nodeToNodeCodecCBORTerm
 
 ntnDataFlow :: NodeToNodeVersionData -> DataFlow
 ntnDataFlow NodeToNodeVersionData { diffusionMode } =
