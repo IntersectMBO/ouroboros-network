@@ -6,7 +6,6 @@
 module Cardano.Network.NodeToClient.Version
   ( NodeToClientVersion (..)
   , NodeToClientVersionData (..)
-  , nodeToClientCodecCBORTerm
   , nodeToClientVersionCodec
   , nodeToClientVersionDataCodec
   , NetworkMagic (..)

@@ -470,8 +470,8 @@ pingClient protocol stdout opts@PingOpts{..} peer =
             NodeToNode {}   -> NodeToNode.nodeToNodeHandshakeCodec
             NodeToClient {} -> NodeToClient.nodeToClientHandshakeCodec,
           haVersionDataCodec = case protocol of
-            NodeToNode {}   -> cborTermVersionDataCodec nodeToNodeCodecCBORTerm
-            NodeToClient {} -> cborTermVersionDataCodec nodeToClientCodecCBORTerm,
+            NodeToNode {}   -> NodeToNode.nodeToNodeVersionDataCodec
+            NodeToClient {} -> NodeToClient.nodeToClientVersionDataCodec,
           haAcceptVersion = acceptableVersion,
           haQueryVersion  = queryVersion,
           haTimeLimits    = timeLimitsHandshake

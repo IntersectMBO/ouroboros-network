@@ -47,7 +47,6 @@ module Cardano.Network.NodeToClient
     -- ** Codecs
   , nodeToClientHandshakeCodec
   , nodeToClientVersionCodec
-  , nodeToClientCodecCBORTerm
   , nodeToClientVersionDataCodec
     -- * Limits
   , maximumMiniProtocolLimits
@@ -241,7 +240,7 @@ connectTo snocket tracers versions path =
       ConnectToArgs {
         ctaHandshakeCodec      = nodeToClientHandshakeCodec,
         ctaHandshakeTimeLimits = noTimeLimitsHandshake,
-        ctaVersionDataCodec    = cborTermVersionDataCodec nodeToClientCodecCBORTerm,
+        ctaVersionDataCodec    = nodeToClientVersionDataCodec,
         ctaConnectTracers      = tracers,
         ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
       }
@@ -290,7 +289,7 @@ connectToWithMux snocket tracers versions path k =
     ConnectToArgs {
       ctaHandshakeCodec      = nodeToClientHandshakeCodec,
       ctaHandshakeTimeLimits = noTimeLimitsHandshake,
-      ctaVersionDataCodec    = cborTermVersionDataCodec nodeToClientCodecCBORTerm,
+      ctaVersionDataCodec    = nodeToClientVersionDataCodec,
       ctaConnectTracers      = tracers,
       ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
     }

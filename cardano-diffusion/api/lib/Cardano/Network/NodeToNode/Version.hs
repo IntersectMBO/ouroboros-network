@@ -9,7 +9,6 @@ module Cardano.Network.NodeToNode.Version
   , DiffusionMode (..)
   , ConnectionMode (..)
   , nodeToNodeVersionCodec
-  , nodeToNodeCodecCBORTerm
   , nodeToNodeVersionDataCodec
   , NetworkMagic (..)
   ) where
