@@ -432,7 +432,7 @@ run blockGeneratorArgs ni na
     -- various pseudo random generators
     (diffStgGen, keepAliveStdGen) = splitGen (iRng ni)
 
-    ntnUnversionedDataCodec :: VersionDataCodec CBOR.Term NtNVersion NtNVersionData
+    ntnUnversionedDataCodec :: VersionDataCodec NtNVersion NtNVersionData
     ntnUnversionedDataCodec = VersionDataCodec { encodeData, decodeData }
       where
         encodeData _ NtNVersionData { ntnDiffusionMode, ntnPeerSharing } =

@@ -48,6 +48,7 @@ module Cardano.Network.NodeToClient
   , nodeToClientHandshakeCodec
   , nodeToClientVersionCodec
   , nodeToClientCodecCBORTerm
+  , nodeToClientVersionDataCodec
     -- * Re-exports
   , ConnectionId (..)
   , MinimalInitiatorContext (..)

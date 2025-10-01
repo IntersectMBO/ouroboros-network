@@ -33,7 +33,7 @@ handshakeClientPeer
   :: ( Monad m
      , Ord vNumber
      )
-  => VersionDataCodec CBOR.Term vNumber vData
+  => VersionDataCodec vNumber vData
   -> (vData -> vData -> Accept vData)
   -> Versions vNumber vData r
   -> Client (Handshake vNumber CBOR.Term)
@@ -55,7 +55,7 @@ handshakeClientPeerWithRTT
   :: ( Ord vNumber
      , MonadMonotonicTime m
      )
-  => VersionDataCodec CBOR.Term vNumber vData
+  => VersionDataCodec vNumber vData
   -> (vData -> vData -> Accept vData)
   -> Versions vNumber vData r
   -> Client (Handshake vNumber CBOR.Term)
@@ -95,7 +95,7 @@ handshakeClientPeer'
      , Monad m
      )
   => TimeAPI time diffTime m
-  -> VersionDataCodec CBOR.Term vNumber vData
+  -> VersionDataCodec vNumber vData
   -> (vData -> vData -> Accept vData)
   -> Versions vNumber vData r
   -> Client (Handshake vNumber CBOR.Term)
@@ -189,12 +189,12 @@ encodeVersions encoder (Versions vs) = go `Map.mapWithKey` vs
 
 
 acceptOrRefuse
-  :: forall vParams vNumber vData r.
+  :: forall vNumber vData r.
      Ord vNumber
-  => VersionDataCodec vParams vNumber vData
+  => VersionDataCodec vNumber vData
   -> (vData -> vData -> Accept vData)
   -> Versions vNumber vData r
-  -> Map vNumber vParams
+  -> Map vNumber CBOR.Term
   -- ^ proposed versions received either with `MsgProposeVersions` or
   -- `MsgReplyVersions`
   -> Either (RefuseReason vNumber) (r, vNumber, vData)

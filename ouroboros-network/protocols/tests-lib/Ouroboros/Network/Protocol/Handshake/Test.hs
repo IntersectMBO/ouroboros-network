@@ -627,7 +627,7 @@ prop_query_version :: ( MonadAsync m
                    => m (Channel m ByteString, Channel m ByteString)
                    -> Codec (Handshake vNumber CBOR.Term)
                              CBOR.DeserialiseFailure m ByteString
-                   -> VersionDataCodec CBOR.Term vNumber vData
+                   -> VersionDataCodec vNumber vData
                    -> Versions vNumber vData Bool
                    -> Versions vNumber vData Bool
                    -> (vData -> vData)
@@ -681,10 +681,11 @@ prop_acceptOrRefuse_symmetric
      , Ord  vNumber
      , Show vNumber
      )
-  => Versions vNumber vData r
+  => VersionDataCodec vNumber vData
+  -> Versions vNumber vData r
   -> Versions vNumber vData r
   -> Property
-prop_acceptOrRefuse_symmetric clientVersions serverVersions =
+prop_acceptOrRefuse_symmetric codec clientVersions serverVersions =
     case ( acceptOrRefuse codec acceptableVersion clientVersions serverMap
          , acceptOrRefuse codec acceptableVersion serverVersions clientMap
          ) of
@@ -704,25 +705,17 @@ prop_acceptOrRefuse_symmetric clientVersions serverVersions =
         property False
 
   where
-    codec :: VersionDataCodec vData vNumber vData
-    codec = VersionDataCodec {
-        encodeData = \_ vData -> vData,
-        decodeData = \_ vData -> Right vData
-      }
-
-    toMap :: Versions vNumber vData r
-          -> Map vNumber vData
-    toMap (Versions m) = versionData `Map.map` m
-
-    clientMap = toMap clientVersions
-    serverMap = toMap serverVersions
+    clientMap, serverMap :: Map vNumber CBOR.Term
+    clientMap = Map.mapWithKey (\v -> encodeData codec v . versionData) $ getVersions clientVersions
+    serverMap = Map.mapWithKey (\v -> encodeData codec v . versionData) $ getVersions serverVersions
 
 
 prop_acceptOrRefuse_symmetric_VersionData
   :: ArbitraryVersions
   -> Property
 prop_acceptOrRefuse_symmetric_VersionData (ArbitraryVersions a b) =
-    prop_acceptOrRefuse_symmetric a b
+    prop_acceptOrRefuse_symmetric (cborTermVersionDataCodec dataCodecCBORTerm)
+                                  a b
 
 
 -- | Run two handshake clients against each other, which simulates a TCP
@@ -740,7 +733,7 @@ prop_channel_simultaneous_open
     => m (Channel m ByteString, Channel m ByteString)
     -> Codec (Handshake vNumber CBOR.Term)
               CBOR.DeserialiseFailure m ByteString
-    -> VersionDataCodec CBOR.Term vNumber vData
+    -> VersionDataCodec vNumber vData
     -> Versions vNumber vData Bool
     -> Versions vNumber vData Bool
     -> m Property
@@ -829,7 +822,7 @@ prop_channel_simultaneous_open_sim
        )
     => Codec (Handshake vNumber CBOR.Term)
               CBOR.DeserialiseFailure m ByteString
-    -> VersionDataCodec CBOR.Term vNumber vData
+    -> VersionDataCodec vNumber vData
     -> Versions vNumber vData Bool
     -> Versions vNumber vData Bool
     -> m Property

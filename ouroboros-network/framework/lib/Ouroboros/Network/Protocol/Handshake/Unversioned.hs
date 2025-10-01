@@ -55,8 +55,8 @@ instance Queryable UnversionedProtocolData where
   queryVersion UnversionedProtocolData = False
 
 
-unversionedProtocolDataCodec :: VersionDataCodec CBOR.Term UnversionedProtocol
-                                                           UnversionedProtocolData
+unversionedProtocolDataCodec :: VersionDataCodec UnversionedProtocol
+                                                 UnversionedProtocolData
 unversionedProtocolDataCodec = cborTermVersionDataCodec
                                  (const CodecCBORTerm {encodeTerm, decodeTerm})
     where

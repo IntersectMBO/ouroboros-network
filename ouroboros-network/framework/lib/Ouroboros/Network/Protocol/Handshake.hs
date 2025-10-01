@@ -118,7 +118,7 @@ data HandshakeArguments connectionId vNumber vData m = HandshakeArguments {
       -- | A codec for protocol parameters.
       --
       haVersionDataCodec
-        ::  VersionDataCodec CBOR.Term vNumber vData,
+        ::  VersionDataCodec vNumber vData,
 
       -- | accept version, first argument is our version data the second
       -- argument is the remote version data.
