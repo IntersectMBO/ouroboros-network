@@ -14,8 +14,9 @@ module Ouroboros.Network.Protocol.Handshake.Codec
   , encodeRefuseReason
   , decodeRefuseReason
     -- ** Version data codec
-  , VersionDataCodec (..)
-  , cborTermVersionDataCodec
+  , VersionDataCodec
+  , VersionedCodecCBORTerm (..)
+  , mkVersionedCodecCBORTerm
   ) where
 
 import Control.Monad (replicateM, unless)

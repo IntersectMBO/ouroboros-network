@@ -138,6 +138,8 @@ testVersionCodecCBORTerm !_ =
     decodeTerm t
       = Left $ T.pack $ "unknown encoding: " ++ show t
 
+testVersionDataCodec :: VersionDataCodec TestVersion TestVersionData
+testVersionDataCodec = mkVersionedCodecCBORTerm testVersionCodecCBORTerm
 
 --
 -- The list of all tests
@@ -245,7 +247,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
         haHandshakeTracer  = nullTracer,
         haBearerTracer     = nullTracer,
         haHandshakeCodec   = handshakeCodec,
-        haVersionDataCodec = cborTermVersionDataCodec testVersionCodecCBORTerm,
+        haVersionDataCodec = testVersionDataCodec,
         haAcceptVersion    = acceptableVersion,
         haQueryVersion     = queryVersion,
         haTimeLimits       = noTimeLimitsHandshake
@@ -263,7 +265,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
           ConnectToArgs {
             ctaHandshakeCodec      = handshakeCodec,
             ctaHandshakeTimeLimits = noTimeLimitsHandshake,
-            ctaVersionDataCodec    = cborTermVersionDataCodec testVersionCodecCBORTerm,
+            ctaVersionDataCodec    = testVersionDataCodec,
             ctaConnectTracers      = nullNetworkConnectTracers,
             ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
           }
