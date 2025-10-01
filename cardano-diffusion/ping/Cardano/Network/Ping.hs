@@ -1,92 +1,92 @@
-{-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE InstanceSigs #-}
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE InstanceSigs        #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE StandaloneDeriving  #-}
+{-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Cardano.Network.Ping
-  ( PingOpts(..)
-  , LogFormat(..)
-  , LogMsg(..)
-  , StatPoint(..)
-  , ProtocolFlavour(..)
+  ( PingOpts (..)
+  , LogFormat (..)
+  , LogMsg (..)
+  , StatPoint (..)
+  , ProtocolFlavour (..)
   , pingClients
   , mainnetMagic
   ) where
 
-import           Control.DeepSeq (NFData (..))
-import           Control.Monad (unless, void, when)
-import           Control.Concurrent.Class.MonadSTM.Strict
-import           Control.Monad.Class.MonadAsync
-import           Control.Monad.Class.MonadThrow
-import           Control.Monad.Class.MonadTime.SI
-import           Control.Tracer (Tracer, mkTracer, nullTracer, traceWith)
-import           Data.Aeson (Value, ToJSON(toJSON), object, encode, KeyValue((.=)))
-import           Data.Aeson.Text (encodeToLazyText)
-import           Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as BL
-import qualified Data.ByteString.Lazy.Char8 as LBS.Char
-import           Data.IP
-import qualified Data.Map.Strict as Map
-import           Data.Maybe (fromMaybe,)
-import           Data.TDigest (insert, maximumValue, minimumValue, tdigest, mean, quantile, stddev, TDigest)
-import           Data.Time.Format.ISO8601 (iso8601Show)
-import           Data.Word (Word16, Word32)
-import           Network.Mux (MiniProtocolInfo (..))
-import qualified Network.Mux as Mx
-import           Network.Mux.Bearer (MakeBearer (..), makeSocketBearer)
-import           Network.Socket (AddrInfo, StructLinger (..))
-import           System.Random (initStdGen)
-import           Text.Printf (printf)
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.DeepSeq (NFData)
+import Control.Monad (unless, void, when)
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
+import Control.Tracer (Tracer, mkTracer, nullTracer, traceWith)
+
+import Codec.CBOR.Term qualified as CBOR
+import Codec.Serialise qualified as Serialise
+import Data.Aeson (KeyValue ((.=)), ToJSON (toJSON), Value, encode, object)
+import Data.Aeson.Text (encodeToLazyText)
+import Data.ByteString (ByteString)
+import Data.ByteString qualified as BS
+import Data.ByteString.Lazy qualified as BL
+import Data.ByteString.Lazy.Char8 qualified as LBS.Char
+import Data.IP
+import Data.Map.Strict qualified as Map
+import Data.Maybe (fromMaybe)
+import Data.TDigest (TDigest)
+import Data.TDigest qualified as TDigest
+import Data.Text.Lazy qualified as TL
+import Data.Text.Lazy.IO qualified as TL
+import Data.Time.Format.ISO8601 (iso8601Show)
+import Data.Word (Word16, Word32)
+import Network.Mux (MiniProtocolInfo (..))
+import Network.Mux qualified as Mx
+import Network.Mux.Bearer (MakeBearer (..), makeSocketBearer)
+import Network.Socket (AddrInfo, StructLinger (..))
+import Network.Socket qualified as Socket
+import System.IO qualified as IO
+import System.Random (initStdGen)
+import Text.Printf (printf)
 
 import Cardano.Network.Diffusion.Configuration (defaultChainSyncIdleTimeout)
 import Cardano.Network.NodeToClient qualified as NodeToClient
+import Cardano.Network.NodeToClient.Version
 import Cardano.Network.NodeToNode qualified as NodeToNode
 import Cardano.Network.NodeToNode.Version
-import Cardano.Network.NodeToClient.Version
-import Cardano.Network.NodeToClient qualified as NodeToClient
 import Cardano.Network.OrphanInstances ()
 import Cardano.Network.PeerSelection (PeerSharing (..), PeerTrustable (..))
 import Cardano.Network.Protocol.ChainSync.Client (ChainSyncClient)
 import Cardano.Network.Protocol.ChainSync.Client qualified as ChainSync
 import Cardano.Network.Protocol.ChainSync.Codec qualified as ChainSync
 import Cardano.Network.Protocol.ChainSync.Codec.TimeLimits qualified as ChainSync
-import Cardano.Network.Protocol.KeepAlive.Type qualified as KeepAlive
 import Cardano.Network.Protocol.KeepAlive.Client (KeepAliveClient (..))
 import Cardano.Network.Protocol.KeepAlive.Client qualified as KeepAlive
 import Cardano.Network.Protocol.KeepAlive.Codec qualified as KeepAlive
+import Cardano.Network.Protocol.KeepAlive.Type qualified as KeepAlive
 
 import Ouroboros.Network.Block hiding (blockNo)
 import Ouroboros.Network.ConnectionId
 import Ouroboros.Network.Driver.Limits
-import Ouroboros.Network.Protocol.Handshake hiding (Accept (..), RefuseReason (..))
+import Ouroboros.Network.Protocol.Handshake hiding (Accept (..),
+           RefuseReason (..))
 import Ouroboros.Network.Util.ShowProxy
-
-import qualified Codec.CBOR.Term as CBOR
-import qualified Codec.Serialise as Serialise
-import           Control.Monad.Class.MonadTimer.SI
-import qualified Data.Text.Lazy as TL
-import qualified Data.Text.Lazy.IO as TL
-import qualified Network.Socket as Socket
-import qualified System.IO as IO
 
 data LogFormat = AsJSON | AsText
   deriving (Eq, Show)
 
 data PingOpts = PingOpts
-  { pingOptsCount    :: Word32
+  { pingOptsCount          :: Word32
     -- ^ Number of messages to send to the server
   , pingOptsHandshakeQuery :: Bool
     -- ^ Whether to send a query during the handshake to request the available protocol versions
@@ -94,9 +94,9 @@ data PingOpts = PingOpts
     -- ^ The network magic to use for all connections
   , pingOptsJson           :: LogFormat
     -- ^ Print output in JSON
-  , pingOptsQuiet    :: Bool
+  , pingOptsQuiet          :: Bool
     -- ^ Less verbose output
-  , pingOptsGetTip   :: Bool
+  , pingOptsGetTip         :: Bool
     -- ^ Get Tip after handshake
   , pingOptsQuery          :: Bool
     -- ^ Query handshake parameters
@@ -244,19 +244,19 @@ toStatPoint ts host cookie sample td =
     , spMedian    = quantile' 0.5
     , spP90       = quantile' 0.9
     , spMean      = mean'
-    , spMin       = minimumValue td
-    , spMax       = maximumValue td
+    , spMin       = TDigest.minimumValue td
+    , spMax       = TDigest.maximumValue td
     , spStd       = stddev'
     }
   where
     quantile' :: Double -> Double
-    quantile' q = fromMaybe 0 (quantile q td)
+    quantile' q = fromMaybe 0 (TDigest.quantile q td)
 
     mean' :: Double
-    mean' = fromMaybe 0 (mean td)
+    mean' = fromMaybe 0 (TDigest.mean td)
 
     stddev' :: Double
-    stddev' = fromMaybe 0 (stddev td)
+    stddev' = fromMaybe 0 (TDigest.stddev td)
 
 
 keepAliveDelay :: DiffTime
@@ -328,7 +328,7 @@ chainSyncClient stdout host logFormat =
            ChainSync.ChainSyncClient $ do
              end <- getMonotonicTime
              let (ptSlotNo, ptHash, ptBlockNo) = case tip of
-                   TipGenesis -> (0, mempty, 0)
+                   TipGenesis              -> (0, mempty, 0)
                    Tip slotNo hash blockNo -> (slotNo, hash, blockNo)
                  pingTip = PingTip {
                    ptHost = host,
@@ -372,7 +372,7 @@ keepAliveClient stdout peerName logFormat count td0 =
         end <- getMonotonicTime
         now <- getCurrentTime
         let rtt = toSample end start
-            td' = insert rtt td
+            td' = TDigest.insert rtt td
             point = toStatPoint now peerName cookie16 rtt td'
         case logFormat of
           AsJSON -> traceWith stdout $ LogMsg (encode point)
@@ -599,7 +599,7 @@ pingClient protocol stdout opts@PingOpts{..} peer =
                                 peerName
                                 pingOptsJson
                                 pingOptsCount
-                                (tdigest [])))
+                                (TDigest.tdigest [])))
                         >>= void . atomically
                     )
                     `finally` Mx.stop mx
