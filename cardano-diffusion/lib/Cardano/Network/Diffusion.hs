@@ -84,9 +84,7 @@ run CardanoNodeArguments {
               haBearerTracer    = Diffusion.dtBearerTracer tracers,
               haHandshakeTracer = Diffusion.dtHandshakeTracer tracers,
               haHandshakeCodec  = NodeToNode.nodeToNodeHandshakeCodec,
-              haVersionDataCodec =
-                cborTermVersionDataCodec
-                  NodeToNode.nodeToNodeCodecCBORTerm,
+              haVersionDataCodec = NodeToNode.nodeToNodeVersionDataCodec,
               haAcceptVersion = acceptableVersion,
               haQueryVersion = queryVersion,
               haTimeLimits = timeLimitsHandshake
@@ -96,9 +94,7 @@ run CardanoNodeArguments {
               haBearerTracer     = Diffusion.dtLocalBearerTracer tracers,
               haHandshakeTracer  = Diffusion.dtLocalHandshakeTracer tracers,
               haHandshakeCodec   = NodeToClient.nodeToClientHandshakeCodec,
-              haVersionDataCodec =
-                cborTermVersionDataCodec
-                  NodeToClient.nodeToClientCodecCBORTerm,
+              haVersionDataCodec = NodeToClient.nodeToClientVersionDataCodec,
               haAcceptVersion = acceptableVersion,
               haQueryVersion = queryVersion,
               haTimeLimits = noTimeLimitsHandshake

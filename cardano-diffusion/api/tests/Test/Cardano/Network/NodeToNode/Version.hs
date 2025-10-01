@@ -43,19 +43,19 @@ prop_nodeToNodeVersionCodec version =
 
 prop_nodeToNodeCodec :: NodeToNodeVersion -> NodeToNodeVersionData -> Property
 prop_nodeToNodeCodec ntnVersion rawNtnData =
-    case decodeTerm (encodeTerm ntnData) of
+    case decodeData ntnVersion (encodeData ntnVersion ntnData) of
       Right ntnData' -> ntnData' === ntnData
       Left err       -> counterexample (show err) False
   where
     ntnData = fixNtnVersionDataForVersion ntnVersion rawNtnData
-    CodecCBORTerm { encodeTerm, decodeTerm } = nodeToNodeCodecCBORTerm ntnVersion
+    VersionDataCodec { encodeData, decodeData } = nodeToNodeVersionDataCodec
 
 prop_nodeToNodeCodecHandleInvalidData :: Property
 prop_nodeToNodeCodecHandleInvalidData =
     forAll genInvalidNtnVersionAndDataPair checkEncodeFails
   where
     checkEncodeFails (ntnVersion, ntnData) = ioProperty $ do
-        r <- try @SomeException (evaluate (encodeTerm ntnData))
+        r <- try @SomeException (evaluate (encodeData ntnVersion ntnData))
         case r of
           Left _  -> pure $ property True
           Right _ -> pure $ counterexample explanation False
@@ -64,4 +64,4 @@ prop_nodeToNodeCodecHandleInvalidData =
              show ntnData
           ++ " was encoded successfully, but should have failed for version "
           ++ show ntnVersion
-        CodecCBORTerm { encodeTerm } = nodeToNodeCodecCBORTerm ntnVersion
+        VersionDataCodec { encodeData } = nodeToNodeVersionDataCodec

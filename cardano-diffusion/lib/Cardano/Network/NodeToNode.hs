@@ -46,7 +46,6 @@ module Cardano.Network.NodeToNode
     -- *** Codecs
   , nodeToNodeHandshakeCodec
   , nodeToNodeVersionCodec
-  , nodeToNodeCodecCBORTerm
   , nodeToNodeVersionDataCodec
     -- * Re-exports
   , ExpandedInitiatorContext (..)

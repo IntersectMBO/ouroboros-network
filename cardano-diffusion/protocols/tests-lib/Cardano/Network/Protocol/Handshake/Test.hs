@@ -298,7 +298,7 @@ prop_query_version_NodeToClient_ST
    runSimOrThrow $ prop_query_version
                     createConnectedChannels
                     (codecHandshake nodeToClientVersionCodec)
-                    (cborTermVersionDataCodec nodeToClientCodecCBORTerm)
+                    nodeToClientVersionDataCodec
                     clientVersions
                     serverVersions
                     (\vd -> vd {NTC.query = True})
@@ -314,7 +314,7 @@ prop_query_version_NodeToClient_IO
    ioProperty $ prop_query_version
                     createConnectedChannels
                     (codecHandshake nodeToClientVersionCodec)
-                    (cborTermVersionDataCodec nodeToClientCodecCBORTerm)
+                    nodeToClientVersionDataCodec
                     clientVersions
                     serverVersions
                     (\vd -> vd {NTC.query = True})
@@ -330,7 +330,7 @@ prop_query_version_NodeToClient_SimNet
    runSimOrThrow $ prop_query_version
                     createConnectedChannels
                     (codecHandshake nodeToClientVersionCodec)
-                    (cborTermVersionDataCodec nodeToClientCodecCBORTerm)
+                    nodeToClientVersionDataCodec
                     clientVersions
                     serverVersions
                     (\vd -> vd {NTC.query = True})
@@ -454,7 +454,7 @@ prop_channel_simultaneous_open_NodeToClient_ST
   runSimOrThrow $ prop_channel_simultaneous_open
                     createConnectedChannels
                     (codecHandshake nodeToClientVersionCodec)
-                    (cborTermVersionDataCodec nodeToClientCodecCBORTerm)
+                    nodeToClientVersionDataCodec
                     clientVersions
                     serverVersions
 
@@ -468,7 +468,7 @@ prop_channel_simultaneous_open_NodeToClient_IO
   ioProperty $ prop_channel_simultaneous_open
                     createConnectedChannels
                     (codecHandshake nodeToClientVersionCodec)
-                    (cborTermVersionDataCodec nodeToClientCodecCBORTerm)
+                    nodeToClientVersionDataCodec
                     clientVersions
                     serverVersions
 
@@ -493,6 +493,6 @@ prop_channel_simultaneous_open_NodeToClient_SimNet
     (ArbitraryNodeToClientVersions serverVersions) =
       runSimOrThrow $ prop_channel_simultaneous_open_sim
         (codecHandshake nodeToClientVersionCodec)
-        (cborTermVersionDataCodec nodeToClientCodecCBORTerm)
+        nodeToClientVersionDataCodec
         clientVersions
         serverVersions

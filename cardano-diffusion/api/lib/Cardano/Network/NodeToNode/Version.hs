@@ -12,7 +12,6 @@ module Cardano.Network.NodeToNode.Version
   , PerasSupport (..)
     -- * Codecs
   , nodeToNodeVersionCodec
-  , nodeToNodeCodecCBORTerm
   , nodeToNodeVersionDataCodec
   , NetworkMagic (..)
     -- * Feature predicates
