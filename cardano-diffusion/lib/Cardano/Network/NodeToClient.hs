@@ -19,6 +19,11 @@ module Cardano.Network.NodeToClient
   , nullNetworkConnectTracers
   , connectTo
   , connectToWithMux
+    -- * Mini-Protocol numbers
+  , localChainSyncMiniProtocolNum
+  , localTxSubmissionMiniProtocolNum
+  , localStateQueryMiniProtocolNum
+  , localTxMonitorMiniProtocolNum
     -- * Null Protocol Peers
   , chainSyncPeerNull
   , localStateQueryPeerNull
@@ -43,6 +48,8 @@ module Cardano.Network.NodeToClient
   , nodeToClientHandshakeCodec
   , nodeToClientVersionCodec
   , nodeToClientCodecCBORTerm
+    -- * Limits
+  , maximumMiniProtocolLimits
     -- * Re-exports
   , ConnectionId (..)
   , MinimalInitiatorContext (..)
@@ -110,6 +117,18 @@ data NodeToClientProtocols appType ntcAddr bytes m a b = NodeToClientProtocols {
     localTxMonitorProtocol    :: RunMiniProtocolWithMinimalCtx
                                    appType ntcAddr bytes m a b
   }
+
+localChainSyncMiniProtocolNum :: MiniProtocolNum
+localChainSyncMiniProtocolNum = MiniProtocolNum 5
+
+localTxSubmissionMiniProtocolNum :: MiniProtocolNum
+localTxSubmissionMiniProtocolNum = MiniProtocolNum 6
+
+localStateQueryMiniProtocolNum :: MiniProtocolNum
+localStateQueryMiniProtocolNum = MiniProtocolNum 7
+
+localTxMonitorMiniProtocolNum :: MiniProtocolNum
+localTxMonitorMiniProtocolNum = MiniProtocolNum 9
 
 
 -- | Make an 'OuroborosApplication' for the bundle of mini-protocols that

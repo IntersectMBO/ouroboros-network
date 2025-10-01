@@ -204,15 +204,6 @@ rmIfExists path = do
   b <- doesFileExist path
   when b (removeFile path)
 
--- TODO: provide sensible limits
--- https://github.com/intersectmbo/ouroboros-network/issues/575
-maximumMiniProtocolLimits :: MiniProtocolLimits
-maximumMiniProtocolLimits =
-    MiniProtocolLimits {
-      maximumIngressQueue = maxBound
-    }
-
-
 --
 -- Chain sync demo
 --
