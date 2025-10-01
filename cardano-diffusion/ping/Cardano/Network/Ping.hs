@@ -56,12 +56,12 @@ import Cardano.Network.NodeToClient qualified as NodeToClient
 import Cardano.Network.NodeToNode qualified as NodeToNode
 import Cardano.Network.NodeToNode.Version
 import Cardano.Network.NodeToClient.Version
+import Cardano.Network.NodeToClient qualified as NodeToClient
 import Cardano.Network.OrphanInstances ()
 import Cardano.Network.PeerSelection (PeerSharing (..), PeerTrustable (..))
 import Cardano.Network.Protocol.ChainSync.Client (ChainSyncClient)
 import Cardano.Network.Protocol.ChainSync.Client qualified as ChainSync
 import Cardano.Network.Protocol.ChainSync.Codec qualified as ChainSync
-import Cardano.Network.Protocol.Handshake.Codec (nodeToClientHandshakeCodec, nodeToNodeHandshakeCodec)
 import Cardano.Network.Protocol.ChainSync.Codec.TimeLimits qualified as ChainSync
 import Cardano.Network.Protocol.KeepAlive.Type qualified as KeepAlive
 import Cardano.Network.Protocol.KeepAlive.Client (KeepAliveClient (..))
@@ -291,8 +291,10 @@ data ProtocolFlavour version versionData where
 -- ChainSync Tip Sampling
 --
 
--- We don't need blocks, headers or points, so we just go away with any valid CBOR
--- term:
+-- We don't need blocks, headers or points, so we just go away with any valid
+-- CBOR term.  As a result:
+-- NOTE: the `chainSync` below is used for both `NodeToNode` and `NodeToClient`
+-- protocols.
 type ChainSyncHeader = CBOR.Term
 type ChainSyncPoint  = CBOR.Term
 data ChainSyncBlock
@@ -302,6 +304,8 @@ type ChainSyncTip = Tip ChainSyncBlock
 instance StandardHash ChainSyncBlock
 
 
+-- A `ChainSyncClient` that finds the current `Tip` over `node-to-node`
+-- or `node-to-client` protocol.
 chainSyncClient
   :: Tracer IO LogMsg
   -> Either FilePath (IP, Socket.PortNumber)
@@ -463,8 +467,8 @@ pingClient protocol stdout opts@PingOpts{..} peer =
           haHandshakeTracer = nullTracer,
           haBearerTracer    = nullTracer,
           haHandshakeCodec  = case protocol of
-            NodeToNode   -> nodeToNodeHandshakeCodec
-            NodeToClient -> nodeToClientHandshakeCodec,
+            NodeToNode   -> NodeToNode.nodeToNodeHandshakeCodec
+            NodeToClient -> NodeToClient.nodeToClientHandshakeCodec,
           haVersionDataCodec = case protocol of
             NodeToNode   -> NodeToNode.nodeToNodeVersionDataCodec
             NodeToClient -> NodeToClient.nodeToClientVersionDataCodec,
@@ -520,8 +524,7 @@ pingClient protocol stdout opts@PingOpts{..} peer =
               -- show negotiated version
               logMsg $ NegotiatedVersion version
               case protocol of
-                NodeToClient -> pure ()
-                NodeToNode | pingOptsGetTip -> do
+                _ | pingOptsGetTip -> do
                   --
                   -- run chain sync to get the tip
                   --
@@ -534,14 +537,21 @@ pingClient protocol stdout opts@PingOpts{..} peer =
                   mx <- Mx.new
                           Mx.nullTracers
                           [MiniProtocolInfo {
-                            miniProtocolNum        = NodeToNode.chainSyncMiniProtocolNum,
+                            miniProtocolNum        = case protocol of
+                                                       NodeToNode -> NodeToNode.chainSyncMiniProtocolNum
+                                                       NodeToClient -> NodeToClient.localChainSyncMiniProtocolNum,
                             miniProtocolDir        = Mx.InitiatorDirectionOnly,
-                            miniProtocolLimits     = NodeToNode.chainSyncProtocolLimits NodeToNode.defaultMiniProtocolParameters,
+                            miniProtocolLimits     = case protocol of
+                                                       NodeToNode -> NodeToNode.chainSyncProtocolLimits NodeToNode.defaultMiniProtocolParameters
+                                                       NodeToClient -> NodeToClient.maximumMiniProtocolLimits,
                             miniProtocolCapability = Nothing
                           }]
                   withAsync (Mx.run mx bearer) $ \_ ->
                     (Mx.runMiniProtocol mx
-                      NodeToNode.chainSyncMiniProtocolNum
+                      (case protocol of
+                         NodeToNode -> NodeToNode.chainSyncMiniProtocolNum
+                         NodeToClient -> NodeToClient.localChainSyncMiniProtocolNum
+                      )
                       Mx.InitiatorDirectionOnly
                       Mx.StartEagerly
                       (\channel ->
@@ -559,8 +569,8 @@ pingClient protocol stdout opts@PingOpts{..} peer =
                         >>= void . atomically
                     )
                     `finally` Mx.stop mx
-                NodeToNode | otherwise -> do
-                  -- 
+                NodeToNode -> do
+                  --
                   -- run keepalive client to get RTT samples
                   --
                   mx <- Mx.new
@@ -593,6 +603,7 @@ pingClient protocol stdout opts@PingOpts{..} peer =
                         >>= void . atomically
                     )
                     `finally` Mx.stop mx
+                NodeToClient -> pure ()
               threadDelay idleTimeout
 
     getPeerName :: IO TL.Text
