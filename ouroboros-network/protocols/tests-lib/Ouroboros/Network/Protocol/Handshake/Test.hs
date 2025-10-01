@@ -320,8 +320,8 @@ prop_shrink_ArbitraryValidVersions a = all id
   | ArbitraryValidVersions vs' <- shrink a
   ]
 
--- |
--- Generators for pairs of arbitrary list of versions.
+
+-- | Generators for pairs of arbitrary list of versions.
 --
 data ArbitraryVersions =
   ArbitraryVersions
@@ -345,9 +345,7 @@ instance Arbitrary ArbitraryVersions where
       | vs'' <- shrinkList (const []) (Map.toList vs')
       ]
 
-
--- |
--- Check if a @'ProtocolVersion' 'VersionNumber' r@ is valid.
+-- | Check if a @'ProtocolVersion' 'VersionNumber' r@ is valid.
 --
 validVersion :: VersionNumber -> Version VersionData Bool -> Bool
 validVersion Version_0 ((Version _ d)) = dataVersion1 d == False
@@ -667,6 +665,11 @@ prop_query_version createChannels codec versionDataCodec clientVersions serverVe
 -- The refuse reason might differ, although if one side refuses it with
 -- `Refused` the other side must refuse the same version.
 --
+-- NOTE: this test should be run with only valid versions, otherwise it might
+-- fail, e.g. if `Version_0` with `VersionData 0 True True` is passed, then
+-- `clientVersions` will be `VersionData 0 False False`, which inevitably leads
+-- to a failure.
+--
 prop_acceptOrRefuse_symmetric
   :: forall vNumber vData r.
      ( Acceptable vData
@@ -684,8 +687,10 @@ prop_acceptOrRefuse_symmetric codec clientVersions serverVersions =
          , acceptOrRefuse codec acceptableVersion serverVersions clientMap
          ) of
       (Right (_, vNumber, vData), Right (_, vNumber', vData')) ->
-             vNumber === vNumber'
-        .&&. vData   === vData'
+             (counterexample "negotiated version numbers mismatch:" $
+               vNumber === vNumber')
+        .&&. (counterexample "negotiated version data mismatch:" $
+               vData === vData')
       (Left (VersionMismatch vNumbers _), Left (VersionMismatch vNumbers' _)) ->
              vNumbers  === Map.keys clientMap
         .&&. vNumbers' === Map.keys serverMap
@@ -705,9 +710,10 @@ prop_acceptOrRefuse_symmetric codec clientVersions serverVersions =
 
 
 prop_acceptOrRefuse_symmetric_VersionData
-  :: ArbitraryVersions
+  :: ArbitraryValidVersions
+  -> ArbitraryValidVersions
   -> Property
-prop_acceptOrRefuse_symmetric_VersionData (ArbitraryVersions a b) =
+prop_acceptOrRefuse_symmetric_VersionData (ArbitraryValidVersions a) (ArbitraryValidVersions b) =
     prop_acceptOrRefuse_symmetric (cborTermVersionDataCodec dataCodecCBORTerm)
                                   a b
 
