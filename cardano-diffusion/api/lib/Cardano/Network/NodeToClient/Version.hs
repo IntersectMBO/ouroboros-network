@@ -8,6 +8,7 @@ module Cardano.Network.NodeToClient.Version
   , NodeToClientVersionData (..)
   , nodeToClientCodecCBORTerm
   , nodeToClientVersionCodec
+  , nodeToClientVersionDataCodec
   , NetworkMagic (..)
   ) where
 
@@ -150,3 +151,7 @@ nodeToClientCodecCBORTerm _v = CodecCBORTerm {encodeTerm, decodeTerm}
       decoder :: Int -> Bool -> Either Text NodeToClientVersionData
       decoder x query | x >= 0 && x <= 0xffffffff = Right (NodeToClientVersionData (NetworkMagic $ fromIntegral x) query)
                       | otherwise                 = Left $ T.pack $ "networkMagic out of bound: " <> show x
+
+
+nodeToClientVersionDataCodec :: VersionDataCodec NodeToClientVersion NodeToClientVersionData
+nodeToClientVersionDataCodec = cborTermVersionDataCodec nodeToClientCodecCBORTerm

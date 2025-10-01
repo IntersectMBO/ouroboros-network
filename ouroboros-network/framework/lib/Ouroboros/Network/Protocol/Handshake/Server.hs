@@ -23,7 +23,7 @@ import Ouroboros.Network.Protocol.Handshake.Version
 handshakeServerPeer
   :: ( Ord vNumber
      )
-  => VersionDataCodec CBOR.Term vNumber vData
+  => VersionDataCodec vNumber vData
   -> (vData -> vData -> Accept vData)
   -> (vData -> Bool)
   -> Versions vNumber vData r

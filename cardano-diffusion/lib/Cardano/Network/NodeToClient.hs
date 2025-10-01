@@ -47,6 +47,7 @@ module Cardano.Network.NodeToClient
   , nodeToClientHandshakeCodec
   , nodeToClientVersionCodec
   , nodeToClientCodecCBORTerm
+  , nodeToClientVersionDataCodec
     -- * Limits
   , maximumMiniProtocolLimits
     -- * Re-exports
