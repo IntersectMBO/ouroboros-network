@@ -397,11 +397,11 @@ prop_connect (ArbitraryVersions clientVersions serverVersions) =
   in case runSimOrThrow
            (connect
               (handshakeClientPeer
-                (cborTermVersionDataCodec dataCodecCBORTerm)
+                (mkVersionedCodecCBORTerm dataCodecCBORTerm)
                 acceptableVersion
                 clientVersions)
               (handshakeServerPeer
-                (cborTermVersionDataCodec dataCodecCBORTerm)
+                (mkVersionedCodecCBORTerm dataCodecCBORTerm)
                 acceptableVersion
                 queryVersion
                 serverVersions)) of
@@ -438,11 +438,11 @@ prop_channel createChannels clientVersions serverVersions =
       runConnectedPeers
         createChannels nullTracer versionNumberHandshakeCodec
         (handshakeClientPeer
-          (cborTermVersionDataCodec dataCodecCBORTerm)
+          (mkVersionedCodecCBORTerm dataCodecCBORTerm)
           acceptableVersion
           clientVersions)
         (handshakeServerPeer
-          (cborTermVersionDataCodec dataCodecCBORTerm)
+          (mkVersionedCodecCBORTerm dataCodecCBORTerm)
           acceptableVersion
           queryVersion
           serverVersions)
@@ -513,11 +513,11 @@ prop_channel_asymmetric createChannels clientVersions = do
         versionNumberHandshakeCodec
         (codecHandshake versionNumberCodec')
         (handshakeClientPeer
-          (cborTermVersionDataCodec dataCodecCBORTerm)
+          (mkVersionedCodecCBORTerm dataCodecCBORTerm)
           acceptableVersion
           clientVersions)
         (handshakeServerPeer
-          (cborTermVersionDataCodec dataCodecCBORTerm)
+          (mkVersionedCodecCBORTerm dataCodecCBORTerm)
           acceptableVersion
           queryVersion
           serverVersions)
@@ -714,7 +714,7 @@ prop_acceptOrRefuse_symmetric_VersionData
   -> ArbitraryValidVersions
   -> Property
 prop_acceptOrRefuse_symmetric_VersionData (ArbitraryValidVersions a) (ArbitraryValidVersions b) =
-    prop_acceptOrRefuse_symmetric (cborTermVersionDataCodec dataCodecCBORTerm)
+    prop_acceptOrRefuse_symmetric (mkVersionedCodecCBORTerm dataCodecCBORTerm)
                                   a b
 
 
@@ -785,7 +785,7 @@ prop_channel_simultaneous_open_ST (ArbitraryVersions clientVersions serverVersio
   runSimOrThrow $ prop_channel_simultaneous_open
                     createConnectedChannels
                     versionNumberHandshakeCodec
-                    (cborTermVersionDataCodec dataCodecCBORTerm)
+                    (mkVersionedCodecCBORTerm dataCodecCBORTerm)
                     clientVersions
                     serverVersions
 
@@ -796,7 +796,7 @@ prop_channel_simultaneous_open_IO (ArbitraryVersions clientVersions serverVersio
   ioProperty $ prop_channel_simultaneous_open
                  createConnectedChannels
                  versionNumberHandshakeCodec
-                 (cborTermVersionDataCodec dataCodecCBORTerm)
+                 (mkVersionedCodecCBORTerm dataCodecCBORTerm)
                  clientVersions
                  serverVersions
 
@@ -880,7 +880,7 @@ prop_channel_simultaneous_open_SimNet
   (ArbitraryVersions clientVersions serverVersions) =
     runSimOrThrow $ prop_channel_simultaneous_open_sim
       versionNumberHandshakeCodec
-      (cborTermVersionDataCodec dataCodecCBORTerm)
+      (mkVersionedCodecCBORTerm dataCodecCBORTerm)
       clientVersions
       serverVersions
 

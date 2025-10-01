@@ -153,4 +153,4 @@ nodeToClientCodecCBORTerm _v = CodecCBORTerm {encodeTerm, decodeTerm}
 
 
 nodeToClientVersionDataCodec :: VersionDataCodec NodeToClientVersion NodeToClientVersionData
-nodeToClientVersionDataCodec = cborTermVersionDataCodec nodeToClientCodecCBORTerm
+nodeToClientVersionDataCodec = mkVersionedCodecCBORTerm nodeToClientCodecCBORTerm

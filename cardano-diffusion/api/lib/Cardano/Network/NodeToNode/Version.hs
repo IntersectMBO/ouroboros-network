@@ -171,6 +171,6 @@ nodeToNodeCodecCBORTerm =
 
 
 nodeToNodeVersionDataCodec :: VersionDataCodec NodeToNodeVersion NodeToNodeVersionData
-nodeToNodeVersionDataCodec = cborTermVersionDataCodec nodeToNodeCodecCBORTerm
+nodeToNodeVersionDataCodec = mkVersionedCodecCBORTerm nodeToNodeCodecCBORTerm
 
 data ConnectionMode = UnidirectionalMode | DuplexMode

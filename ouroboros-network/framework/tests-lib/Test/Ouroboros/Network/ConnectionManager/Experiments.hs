@@ -291,7 +291,7 @@ withInitiatorOnlyConnectionManager name timeouts trTracer tracer stdGen snocket 
               haHandshakeTracer = WithName name `contramap` nullTracer,
               haBearerTracer = WithName name `contramap` nullTracer,
               haHandshakeCodec = unversionedHandshakeCodec,
-              haVersionDataCodec = cborTermVersionDataCodec dataFlowProtocolDataCodec,
+              haVersionDataCodec = mkVersionedCodecCBORTerm dataFlowProtocolDataCodec,
               haAcceptVersion = acceptableVersion,
               haQueryVersion = queryVersion,
               haTimeLimits = handshakeTimeLimits
@@ -487,7 +487,7 @@ withBidirectionalConnectionManager name timeouts
                 haHandshakeTracer = WithName name `contramap` nullTracer,
                 haBearerTracer = WithName `contramap` nullTracer,
                 haHandshakeCodec = unversionedHandshakeCodec,
-                haVersionDataCodec = cborTermVersionDataCodec dataFlowProtocolDataCodec,
+                haVersionDataCodec = mkVersionedCodecCBORTerm dataFlowProtocolDataCodec,
                 haAcceptVersion = acceptableVersion,
                 haQueryVersion = queryVersion,
                 haTimeLimits = handshakeTimeLimits
