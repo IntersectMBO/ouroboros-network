@@ -34,7 +34,7 @@ newtype LocalRootPeersGroups extraFlags = LocalRootPeersGroups
 -- will attempt to maintain. By default this value will be equal to 'hotValency'.
 --
 data LocalRootPeersGroup extraFlags = LocalRootPeersGroup
-  { localRoots        :: RootConfig
+  { localRoots        :: LocalRoots
   , hotValency        :: HotValency
   , warmValency       :: WarmValency
   , rootDiffusionMode :: DiffusionMode
@@ -44,6 +44,12 @@ data LocalRootPeersGroup extraFlags = LocalRootPeersGroup
 
 newtype PublicRootPeers = PublicRootPeers
   { publicRoots :: RootConfig
+  } deriving (Eq, Show)
+
+data LocalRoots = LocalRoots
+  { rootConfig     :: RootConfig
+  , behindFirewall :: Bool
+    -- ^ peer is unreachable and will initiate the connection first
   } deriving (Eq, Show)
 
 -- | Each root peer consists of a list of access points and a shared
@@ -56,8 +62,6 @@ data RootConfig = RootConfig
   , rootAdvertise    :: PeerAdvertise
     -- ^ 'advertise' configures whether the root should be advertised through
     -- peer sharing.
-  , behindFirewall   :: Bool
-    -- ^ peer is unreachable and will initiate the connection first
   } deriving (Eq, Show)
 
 
@@ -66,9 +70,16 @@ data RootConfig = RootConfig
 --
 rootConfigToRelayAccessPoint
   :: RootConfig
+  -> [(RelayAccessPoint, PeerAdvertise)]
+rootConfigToRelayAccessPoint RootConfig { rootAccessPoints, rootAdvertise } =
+    [ (ap, rootAdvertise) | ap <- rootAccessPoints ]
+
+localRootsToRelayAccessPoint
+  :: LocalRoots
   -> [(RelayAccessPoint, PeerAdvertise, Bool)]
-rootConfigToRelayAccessPoint RootConfig { rootAccessPoints, rootAdvertise, behindFirewall } =
-    [ (ap, rootAdvertise, behindFirewall) | ap <- rootAccessPoints ]
+localRootsToRelayAccessPoint LocalRoots {rootConfig, behindFirewall} =
+      (\(accessPoint, advertise) -> (accessPoint, advertise, behindFirewall))
+  <$> rootConfigToRelayAccessPoint rootConfig
 
 producerAddresses
   :: NetworkTopology extraConfig extraFlags
@@ -92,13 +103,12 @@ producerAddresses NetworkTopology { localRootPeersGroups
                            }
                          )
                        )
-                 . rootConfigToRelayAccessPoint
+                 . localRootsToRelayAccessPoint
                  $ localRoots lrp
                  )
         )
         (groups localRootPeersGroups)
   , foldMap ( Map.fromList
-            . fmap (\(a, b, _) -> (a, b))
             . rootConfigToRelayAccessPoint
             . publicRoots
             ) publicRootPeers
