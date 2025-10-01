@@ -346,17 +346,18 @@ validateEncoder spec
 
 -- | Validate CBORTermCodec against its cddl specification.
 --
-validateCBORTermEncoder
+validateVersionDataEncoder
     :: Show a
     => CDDLSpec a
     -> VersionDataCodec v a
     -> v
     -> a
     -> Property
-validateCBORTermEncoder spec
-                        VersionDataCodec { encodeData }
-                        v
-                        a =
+validateVersionDataEncoder
+    spec
+    VersionDataCodec { encodeData }
+    v a
+    =
     counterexample (show a) $
     counterexample sterms $
     ioProperty $
@@ -627,7 +628,7 @@ prop_encodeNodeToNodeVersionDataV14ToV15
     -> NtNVersionDataV14ToV15
     -> Property
 prop_encodeNodeToNodeVersionDataV14ToV15 spec (NtNVersionDataV14ToV15 (v, a)) =
-  validateCBORTermEncoder spec nodeToNodeVersionDataCodec v a
+  validateVersionDataEncoder spec nodeToNodeVersionDataCodec v a
 
 newtype NtNVersionDataV16ToLast = NtNVersionDataV16ToLast (NodeToNodeVersion, NodeToNodeVersionData)
   deriving Show
@@ -643,7 +644,7 @@ prop_encodeNodeToNodeVersionDataV16ToLast
     -> NtNVersionDataV16ToLast
     -> Property
 prop_encodeNodeToNodeVersionDataV16ToLast spec (NtNVersionDataV16ToLast (v, a)) =
-  validateCBORTermEncoder spec nodeToNodeVersionDataCodec v a
+  validateVersionDataEncoder spec nodeToNodeVersionDataCodec v a
 
 --
 -- Test decoders
@@ -701,15 +702,21 @@ validateDecoder transform (CDDLSpec spec) codec stoks rounds = do
 -- (and encoded with `diag2cbor.rb`) and check that we can decode it using a given
 -- codec.
 --
-validateCBORTermDecoder
-  :: Show fail
-  => Maybe (CBOR.Term -> CBOR.Term)
+validateVersionDataDecoder
+  :: Maybe (CBOR.Term -> CBOR.Term)
   -- ^ transform a generated term
-  -> CDDLSpec a
-  -> CodecCBORTerm fail a
   -> Int
+  -- ^ number of rounds
+  -> CDDLSpec a
+  -> VersionDataCodec v a
+  -> v
   -> Assertion
-validateCBORTermDecoder transform (CDDLSpec spec) codec rounds = do
+validateVersionDataDecoder
+  transform
+  rounds (CDDLSpec spec)
+  VersionDataCodec { decodeData }
+  version
+  = do
     eterms <- runExceptT $ generateCBORFromSpec spec rounds
     case eterms of
       Left err -> assertFailure err
@@ -724,7 +731,7 @@ validateCBORTermDecoder transform (CDDLSpec spec) codec rounds = do
                    Left err           -> error $ "validateDecoder: decoding error: "
                                               ++ show err
               Right (_, decoded_term) = CBOR.deserialiseFromBytes CBOR.decodeTerm encoded_term'
-              res = decodeTerm codec decoded_term
+              res = decodeData version decoded_term
           case res of
             Left err -> assertFailure $ concat
               [ "decoding failures:\n"
@@ -989,21 +996,15 @@ unit_decodeNodeToNodeVersionDataV14ToV15
     :: CDDLSpec NodeToNodeVersionData
     -> Assertion
 unit_decodeNodeToNodeVersionDataV14ToV15 spec =
-    forM_ [NodeToNodeV_14 .. NodeToNodeV_15] $ \v ->
-    validateCBORTermDecoder Nothing spec (c v) 100
-  where
-    c = \v -> case nodeToNodeVersionDataCodec of
-      VersionDataCodec enc dec -> CodecCBORTerm (enc v) (dec v)
+    forM_ [NodeToNodeV_14 .. NodeToNodeV_15] $
+      validateVersionDataDecoder Nothing 100 spec nodeToNodeVersionDataCodec
 
 unit_decodeNodeToNodeVersionDataV16ToLast
     :: CDDLSpec NodeToNodeVersionData
     -> Assertion
 unit_decodeNodeToNodeVersionDataV16ToLast spec =
-    forM_ [NodeToNodeV_16 ..] $ \v ->
-    validateCBORTermDecoder Nothing spec (c v) 100
-  where
-    c = \v -> case nodeToNodeVersionDataCodec of
-      VersionDataCodec enc dec -> CodecCBORTerm (enc v) (dec v)
+    forM_ [NodeToNodeV_16 ..] $
+      validateVersionDataDecoder Nothing 100 spec nodeToNodeVersionDataCodec
 
 
 --

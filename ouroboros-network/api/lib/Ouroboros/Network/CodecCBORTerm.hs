@@ -1,7 +1,12 @@
+{-# LANGUAGE NamedFieldPuns  #-}
+{-# LANGUAGE PatternSynonyms #-}
+
 module Ouroboros.Network.CodecCBORTerm
   ( CodecCBORTerm (..)
-  , VersionDataCodec (..)
-  , cborTermVersionDataCodec
+  , VersionDataCodec
+  , VersionedCodecCBORTerm (.., VersionDataCodec, encodeData, decodeData)
+  , mkVersionedCodecCBORTerm
+  , unVersionCodecCBORTerm
   ) where
 
 import Codec.CBOR.Term qualified as CBOR
@@ -17,19 +22,43 @@ data CodecCBORTerm fail a = CodecCBORTerm
   , decodeTerm :: CBOR.Term -> Either fail a
   }
 
--- | Codec for version data exchanged by the handshake protocol.
+
+-- | A pure codec which encodes to / decodes from `CBOR.Term` which can
+-- depend on a version.
 --
-data VersionDataCodec vNumber vData = VersionDataCodec {
-    encodeData :: vNumber -> vData -> CBOR.Term,
-    -- ^ encoder of 'vData' which has access to 'extra vData' which can bring
-    -- extra instances into the scope (by means of pattern matching on a GADT).
-    decodeData :: vNumber -> CBOR.Term -> Either Text vData
-    -- ^ decoder of 'vData'.
+data VersionedCodecCBORTerm fail v a = VersionedCodecCBORTerm {
+    encodeVersionedTerm :: v -> a -> CBOR.Term,
+    decodeVersionedTerm :: v -> CBOR.Term -> Either fail a
   }
 
-cborTermVersionDataCodec :: (vNumber -> CodecCBORTerm Text vData)
-                         -> VersionDataCodec vNumber vData
-cborTermVersionDataCodec codec = VersionDataCodec {
-      encodeData = encodeTerm . codec,
-      decodeData = decodeTerm . codec
+mkVersionedCodecCBORTerm :: (vNumber -> CodecCBORTerm fail vData)
+                         -> VersionedCodecCBORTerm  fail vNumber vData
+mkVersionedCodecCBORTerm codec = VersionedCodecCBORTerm {
+      encodeVersionedTerm = encodeTerm . codec,
+      decodeVersionedTerm = decodeTerm . codec
     }
+
+unVersionCodecCBORTerm :: VersionedCodecCBORTerm fail vNumber vData
+                       -> vNumber -> CodecCBORTerm fail vData
+unVersionCodecCBORTerm VersionedCodecCBORTerm{encodeVersionedTerm, decodeVersionedTerm} v =
+    CodecCBORTerm {
+      encodeTerm = encodeVersionedTerm v,
+      decodeTerm = decodeVersionedTerm v
+    }
+
+--
+-- A specialised VersionedCodecCBORTerm used for encoding / decoding
+-- handshake's version data
+--
+
+type VersionDataCodec versionNumber versionData =
+    VersionedCodecCBORTerm Text versionNumber versionData
+
+-- | Codec for version data exchanged by the handshake protocol.
+--
+pattern VersionDataCodec :: (v -> a -> CBOR.Term)
+                         -> (v -> CBOR.Term -> Either Text a)
+                         -> VersionDataCodec v a
+pattern VersionDataCodec { encodeData, decodeData } =
+    VersionedCodecCBORTerm encodeData decodeData
+{-# COMPLETE VersionDataCodec #-}
