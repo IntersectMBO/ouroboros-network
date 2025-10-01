@@ -62,10 +62,11 @@ import Data.Void (Void)
 import Network.DNS (Domain, TYPE)
 import System.Random (StdGen, split)
 
+import Ouroboros.Network.CodecCBORTerm
 import Ouroboros.Network.Mux (noBindForkPolicy)
 import Ouroboros.Network.Protocol.Handshake (HandshakeArguments (..))
-import Ouroboros.Network.Protocol.Handshake.Codec (VersionDataCodec (..),
-           noTimeLimitsHandshake, timeLimitsHandshake)
+import Ouroboros.Network.Protocol.Handshake.Codec (noTimeLimitsHandshake,
+           timeLimitsHandshake)
 import Ouroboros.Network.Protocol.Handshake.Unversioned
            (unversionedHandshakeCodec, unversionedProtocolDataCodec)
 import Ouroboros.Network.Protocol.Handshake.Version (Accept (Accept))
