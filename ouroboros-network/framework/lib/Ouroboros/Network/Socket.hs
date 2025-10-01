@@ -242,7 +242,7 @@ sduHandshakeTimeout = 10
 data ConnectToArgs fd addr vNumber vData = ConnectToArgs {
     ctaHandshakeCodec      :: Codec (Handshake vNumber CBOR.Term) CBOR.DeserialiseFailure IO BL.ByteString,
     ctaHandshakeTimeLimits :: ProtocolTimeLimits (Handshake vNumber CBOR.Term),
-    ctaVersionDataCodec    :: VersionDataCodec CBOR.Term vNumber vData,
+    ctaVersionDataCodec    :: VersionDataCodec vNumber vData,
     ctaConnectTracers      :: NetworkConnectTracers addr vNumber,
     ctaHandshakeCallbacks  :: HandshakeCallbacks vData
   }

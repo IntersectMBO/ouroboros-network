@@ -46,8 +46,7 @@ import Ouroboros.Network.Protocol.ChainSync.Codec qualified as ChainSync
 import Ouroboros.Network.Protocol.ChainSync.Examples qualified as ChainSync
 import Ouroboros.Network.Protocol.ChainSync.Server qualified as ChainSync
 import Ouroboros.Network.Protocol.Handshake (HandshakeArguments (..))
-import Ouroboros.Network.Protocol.Handshake.Codec (cborTermVersionDataCodec,
-           noTimeLimitsHandshake)
+import Ouroboros.Network.Protocol.Handshake.Codec (noTimeLimitsHandshake)
 import Ouroboros.Network.Protocol.Handshake.Version (simpleSingletonVersions)
 import Ouroboros.Network.Server.Simple qualified as Server.Simple
 import Ouroboros.Network.Util.ShowProxy

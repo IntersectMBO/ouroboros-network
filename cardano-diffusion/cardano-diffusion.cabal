@@ -353,7 +353,6 @@ library protocols-tests-lib
     random,
     tasty,
     tasty-quickcheck,
-    text,
     typed-protocols,
 
 test-suite protocols-tests

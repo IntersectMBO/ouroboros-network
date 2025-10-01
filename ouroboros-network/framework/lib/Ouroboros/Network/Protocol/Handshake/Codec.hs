@@ -27,7 +27,6 @@ import Data.Either (partitionEithers)
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Maybe (mapMaybe)
-import Data.Text (Text)
 import Text.Printf
 
 import Network.TypedProtocol.Codec.CBOR
@@ -43,30 +42,6 @@ import Ouroboros.Network.Driver.Limits
 
 import Ouroboros.Network.Protocol.Handshake.Type
 import Ouroboros.Network.Protocol.Limits
-
--- | Codec for version data ('vData' in code) exchanged by the handshake
--- protocol.
---
--- Note: 'extra' type param is instantiated to 'DictVersion'; 'agreedOptions'
--- is instantiated to 'NodeToNodeVersionData' in "Ouroboros.Network.NodeToNode"
--- or to '()' in "Ouroboros.Network.NodeToClient".
---
-data VersionDataCodec bytes vNumber vData = VersionDataCodec {
-    encodeData :: vNumber -> vData -> bytes,
-    -- ^ encoder of 'vData' which has access to 'extra vData' which can bring
-    -- extra instances into the scope (by means of pattern matching on a GADT).
-    decodeData :: vNumber -> bytes -> Either Text vData
-    -- ^ decoder of 'vData'.
-  }
-
--- TODO: remove this from top level API, this is the only way we encode or
--- decode version data.
-cborTermVersionDataCodec :: (vNumber -> CodecCBORTerm Text vData)
-                         -> VersionDataCodec CBOR.Term vNumber vData
-cborTermVersionDataCodec codec = VersionDataCodec {
-      encodeData = encodeTerm . codec,
-      decodeData = decodeTerm . codec
-    }
 
 -- |
 -- We assume that a TCP segment size of 1440 bytes with initial window of size

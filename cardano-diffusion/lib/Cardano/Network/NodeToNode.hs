@@ -45,6 +45,7 @@ module Cardano.Network.NodeToNode
   , nodeToNodeHandshakeCodec
   , nodeToNodeVersionCodec
   , nodeToNodeCodecCBORTerm
+  , nodeToNodeVersionDataCodec
     -- * Re-exports
   , ExpandedInitiatorContext (..)
   , MinimalInitiatorContext (..)
@@ -413,7 +414,7 @@ connectTo sn tr =
                   ConnectToArgs {
                     ctaHandshakeCodec      = nodeToNodeHandshakeCodec,
                     ctaHandshakeTimeLimits = timeLimitsHandshake,
-                    ctaVersionDataCodec    = cborTermVersionDataCodec nodeToNodeCodecCBORTerm,
+                    ctaVersionDataCodec    = nodeToNodeVersionDataCodec,
                     ctaConnectTracers      = tr,
                     ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
                   }
