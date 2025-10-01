@@ -8,8 +8,8 @@ module DMQ.NodeToClient.Version
   ( NodeToClientVersion (..)
   , NodeToClientVersionData (..)
   , stdVersionDataNTC
-  , nodeToClientCodecCBORTerm
   , nodeToClientVersionCodec
+  , nodeToClientVersionDataCodec
   ) where
 
 import Codec.CBOR.Term qualified as CBOR
@@ -22,7 +22,7 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import GHC.Generics (Generic)
 
-import Ouroboros.Network.CodecCBORTerm (CodecCBORTerm (..))
+import Ouroboros.Network.CodecCBORTerm
 import Ouroboros.Network.Handshake.Acceptable (Acceptable (..))
 import Ouroboros.Network.Handshake.Queryable (Queryable (..))
 import Ouroboros.Network.Magic (NetworkMagic (..))
@@ -119,6 +119,9 @@ nodeToClientCodecCBORTerm _v = CodecCBORTerm {encodeTerm, decodeTerm}
       decoder :: Int -> Bool -> Either Text NodeToClientVersionData
       decoder x query | x >= 0 && x <= 0xffffffff = Right (NodeToClientVersionData (NetworkMagic $ fromIntegral x) query)
                       | otherwise                 = Left $ T.pack $ "networkMagic out of bound: " <> show x
+
+nodeToClientVersionDataCodec :: VersionDataCodec NodeToClientVersion NodeToClientVersionData
+nodeToClientVersionDataCodec = mkVersionedCodecCBORTerm nodeToClientCodecCBORTerm
 
 stdVersionDataNTC :: NetworkMagic -> NodeToClientVersionData
 stdVersionDataNTC networkMagic =
