@@ -1,18 +1,27 @@
+{-# LANGUAGE MultiWayIf          #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TypeApplications    #-}
 
 module Main where
 
-import Control.Monad (void)
+import Control.Monad (void, when)
 import Control.Tracer (Tracer (..), nullTracer, traceWith)
 
 import Data.Act
 import Data.Aeson (ToJSON)
 import Data.Functor.Contravariant ((>$<))
+import Data.Maybe (maybeToList)
+import Data.Text qualified as Text
+import Data.Text.IO qualified as Text
+import Data.Version (showVersion)
 import Data.Void (Void)
 import Options.Applicative
+import System.Exit (exitSuccess)
 import System.Random (newStdGen, split)
 
+import Cardano.Git.Rev (gitRev)
 import Cardano.KESAgent.Protocols.StandardCrypto (StandardCrypto)
 
 import DMQ.Configuration
@@ -32,6 +41,8 @@ import Ouroboros.Network.Diffusion qualified as Diffusion
 import Ouroboros.Network.PeerSelection.PeerSharing.Codec (decodeRemoteAddress,
            encodeRemoteAddress)
 import Ouroboros.Network.TxSubmission.Mempool.Simple qualified as Mempool
+
+import Paths_dmq_node qualified as Meta
 
 main :: IO ()
 main = void . runDMQ =<< execParser opts
@@ -56,12 +67,31 @@ runDMQ commandLineConfig = do
           dmqcPrettyLog            = I prettyLog,
           dmqcTopologyFile         = I topologyFile,
           dmqcHandshakeTracer      = I handshakeTracer,
-          dmqcLocalHandshakeTracer = I localHandshakeTracer
+          dmqcLocalHandshakeTracer = I localHandshakeTracer,
+          dmqcVersion              = I version
         } = config' <> commandLineConfig
             `act`
             defaultConfiguration
     let tracer :: ToJSON ev => Tracer IO (WithEventType ev)
         tracer = dmqTracer prettyLog
+
+    when version $ do
+      let gitrev = $(gitRev)
+          cleanGitRev = if | Text.take 6 (Text.drop 7 gitrev) == "-dirty"
+                           -- short dirty revision
+                           -> Just $ Text.take (6 + 7) gitrev
+                           | Text.all (== '0') gitrev
+                           -- no git revision available
+                           -> Nothing
+                           | otherwise
+                           -> Just gitrev
+      Text.putStr $ Text.unlines $
+        [ "dmq-node version: " <> Text.pack (showVersion Meta.version) ]
+        ++
+        [ "git revision: " <> rev
+        | rev <- maybeToList cleanGitRev
+        ]
+      exitSuccess
 
     traceWith tracer (WithEventType "Configuration" dmqConfig)
     nt <- readTopologyFileOrError topologyFile
