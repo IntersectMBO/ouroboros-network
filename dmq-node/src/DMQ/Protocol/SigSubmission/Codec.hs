@@ -148,10 +148,13 @@ decodeSig :: forall crypto s.
              )
           => CBOR.Decoder s (ByteString -> SigRawWithSignedBytes crypto)
 decodeSig = do
-  -- start of signed data
   startOffset <- CBOR.peekByteOffset
   a <- CBOR.decodeListLen
-  when (a /= 7) $ fail (printf "codecSigSubmission: unexpected number of parameters %d" a)
+  when (a /= 4) $ fail (printf "codecSigSubmission: unexpected number of parameters %d" a)
+  -- start of signed data
+  -- the following 4 parameters in the signed part are treated as a single CBOR
+  -- list element in the CDDL spec, thus we only have 4 elements in the list
+  -- all together.
   sigRawId <- decodeSigId
   sigRawBody <- SigBody <$> CBOR.decodeBytes
   sigRawKESPeriod <- CBOR.decodeWord

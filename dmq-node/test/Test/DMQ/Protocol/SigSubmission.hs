@@ -381,7 +381,7 @@ encodeSigRaw' SigRaw {
     sigRawKESPeriod,
     sigRawExpiresAt
   }
-  =  CBOR.encodeListLen 7
+  =  CBOR.encodeListLen 4
   <> encodeSigId sigRawId
   <> CBOR.encodeBytes (getSigBody sigRawBody)
   <> CBOR.encodeWord sigRawKESPeriod
