@@ -53,14 +53,22 @@ parseCLIOptions =
           <> help "Topology file for DMQ Node"
           )
         )
+    <*> optional (
+          switch
+          (   long "version"
+          <>  short 'v'
+          <> help "Show dmq-node version"
+          )
+        )
   where
-    mkConfiguration ipv4 ipv6 portNumber localAddress configFile topologyFile =
+    mkConfiguration ipv4 ipv6 portNumber localAddress configFile topologyFile version =
       mempty { dmqcIPv4         = Last (Just <$> ipv4),
                dmqcIPv6         = Last (Just <$> ipv6),
                dmqcLocalAddress = Last (LocalAddress <$> localAddress),
                dmqcPortNumber   = Last portNumber,
                dmqcConfigFile   = Last configFile,
-               dmqcTopologyFile = Last topologyFile
+               dmqcTopologyFile = Last topologyFile,
+               dmqcVersion      = Last version
              }
 
 

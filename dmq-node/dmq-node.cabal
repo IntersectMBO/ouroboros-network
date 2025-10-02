@@ -115,6 +115,8 @@ executable dmq-node
     extensions
 
   main-is: Main.hs
+  other-modules: Paths_dmq_node
+  autogen-modules: Paths_dmq_node
   ghc-options:
     -threaded
     -rtsopts
@@ -123,6 +125,7 @@ executable dmq-node
     acts,
     aeson,
     base,
+    cardano-git-rev,
     contra-tracer >=0.1 && <0.3,
     dmq-node,
     kes-agent-crypto,
@@ -130,6 +133,7 @@ executable dmq-node
     ouroboros-network,
     ouroboros-network-api,
     random,
+    text,
 
   hs-source-dirs: app
   default-language: Haskell2010

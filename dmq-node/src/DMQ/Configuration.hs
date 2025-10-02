@@ -138,7 +138,9 @@ data Configuration' f =
     dmqcPeerSharingClientTracer                    :: f Bool,
     dmqcPeerSharingServerTracer                    :: f Bool,
     dmqcLocalMsgSubmissionServerTracer             :: f Bool,
-    dmqcLocalMsgNotificationServerTracer           :: f Bool
+    dmqcLocalMsgNotificationServerTracer           :: f Bool,
+
+    dmqcVersion                                    :: f Bool
   }
   deriving Generic
 
@@ -246,7 +248,10 @@ defaultConfiguration = Configuration {
       dmqcPeerSharingClientTracer                    = I False,
       dmqcPeerSharingServerTracer                    = I False,
       dmqcLocalMsgSubmissionServerTracer             = I True,
-      dmqcLocalMsgNotificationServerTracer           = I True
+      dmqcLocalMsgNotificationServerTracer           = I True,
+
+      -- CLI only options
+      dmqcVersion                                    = I False
     }
   where
     PeerSelectionTargets {
@@ -387,6 +392,7 @@ instance FromJSON PartialConfig where
           , dmqcPeerSharingServerTracer
           , dmqcLocalMsgSubmissionServerTracer
           , dmqcLocalMsgNotificationServerTracer
+          , dmqcVersion = mempty
           }
 
 -- | ToJSON instance used by logging system.
