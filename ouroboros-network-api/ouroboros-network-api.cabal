@@ -56,7 +56,7 @@ library
   default-extensions: ImportQualifiedPost
   build-depends:
     aeson,
-    base >=4.14 && <4.22,
+    base >=4.14 && <4.23,
     base16-bytestring,
     bytestring >=0.10 && <0.13,
     cardano-binary,
@@ -105,7 +105,7 @@ test-suite test
   build-depends:
     QuickCheck,
     aeson,
-    base >=4.14 && <4.22,
+    base >=4.14 && <4.23,
     bytestring,
     cardano-binary,
     cborg,
@@ -137,7 +137,7 @@ benchmark bench-anchored-fragment
     BenchBlock
 
   build-depends:
-    base >=4.14 && <4.22,
+    base >=4.14 && <4.23,
     bytestring,
     cryptohash-sha256,
     nothunks,

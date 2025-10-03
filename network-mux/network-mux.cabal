@@ -49,10 +49,10 @@ library
     -- functions, see
     -- https://github.com/haskell/network/issues/484
     array >=0.5 && <0.6,
-    base >=4.14 && <4.22,
+    base >=4.14 && <4.23,
     binary >=0.8 && <0.11,
     bytestring >=0.10 && <0.13,
-    containers >=0.5 && <0.8,
+    containers >=0.5 && <0.9,
     contra-tracer >=0.1 && <0.2,
     io-classes:{io-classes, si-timers, strict-stm} ^>=1.8.0.1,
     monoidal-synchronisation >=0.1 && <0.2,
@@ -61,7 +61,7 @@ library
     quiet,
     statistics-linreg >=0.3 && <0.4,
     strict,
-    time >=1.9.1 && <1.14,
+    time >=1.9.1 && <1.16,
     vector >=0.12 && <0.14,
 
   if os(windows)
@@ -127,7 +127,7 @@ test-suite test
   build-depends:
     QuickCheck,
     Win32-network,
-    base >=4.14 && <4.22,
+    base >=4.14 && <4.23,
     binary,
     bytestring,
     cborg,
@@ -174,7 +174,7 @@ executable mux-demo
   main-is: mux-demo.hs
   other-modules: Test.Mux.ReqResp
   build-depends:
-    base >=4.14 && <4.22,
+    base >=4.14 && <4.23,
     bytestring,
     cborg,
     contra-tracer,
@@ -199,7 +199,7 @@ benchmark socket-read-write-benchmarks
   main-is: Main.hs
   other-modules:
   build-depends:
-    base >=4.14 && <4.22,
+    base >=4.14 && <4.23,
     bytestring,
     contra-tracer,
     io-classes:{io-classes, si-timers, strict-stm},
