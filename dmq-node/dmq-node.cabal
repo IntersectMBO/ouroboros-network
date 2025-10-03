@@ -18,6 +18,12 @@ category: Network
 build-type: Simple
 extra-doc-files: CHANGELOG.md
 
+flag cddl
+  description: Enable CDDL based tests of the CBOR encoding
+  manual: True
+  -- These tests need the cddl and the cbor-diag Ruby-package
+  default: True
+
 common extensions
   default-extensions:
     BangPatterns
@@ -78,6 +84,7 @@ library
     aeson >=2.1.1.0 && <3,
     aeson-pretty,
     base >=4.14 && <4.22,
+    base16-bytestring,
     bytestring >=0.10 && <0.13,
     cardano-binary,
     cardano-crypto-class,
@@ -174,7 +181,6 @@ test-suite dmq-test
     serialise,
     tasty,
     tasty-quickcheck,
-    time,
     typed-protocols:{typed-protocols, codec-properties},
     with-utf8,
 
@@ -185,3 +191,40 @@ test-suite dmq-test
     +RTS
     -T
     -RTS
+
+test-suite dmq-cddl
+  import:
+    warnings,
+    extensions
+
+  type: exitcode-stdio-1.0
+  hs-source-dirs: cddl
+  main-is: Main.hs
+
+  if flag(cddl)
+    buildable: True
+  else
+    buildable: False
+
+  default-language: Haskell2010
+  build-depends:
+    base >=4.14 && <4.22,
+    base16-bytestring,
+    bytestring,
+    cborg,
+    directory,
+    dmq-node,
+    filepath,
+    kes-agent-crypto,
+    mtl,
+    process-extras,
+    quickcheck-instances,
+    serialise,
+    tasty,
+    tasty-hunit,
+    tasty-quickcheck,
+    temporary,
+
+  ghc-options:
+    -threaded
+    -rtsopts

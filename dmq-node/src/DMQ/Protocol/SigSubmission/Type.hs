@@ -23,11 +23,16 @@ module DMQ.Protocol.SigSubmission.Type
     -- * `TxSubmission` mini-protocol
   , SigSubmission
   , module SigSubmission
+  , POSIXTime
+    -- * Utilities
+  , CBORBytes (..)
   ) where
 
 import Data.Aeson
 import Data.ByteString (ByteString)
+import Data.ByteString.Base16.Lazy as LBS.Base16
 import Data.ByteString.Lazy qualified as LBS
+import Data.ByteString.Lazy.Char8 qualified as LBS.Char8
 import Data.Time.Clock.POSIX (POSIXTime)
 import Data.Typeable
 
@@ -243,3 +248,16 @@ pattern
 instance Typeable crypto => ShowProxy (Sig crypto) where
 
 type SigSubmission crypto = TxSubmission2.TxSubmission2 SigId (Sig crypto)
+
+
+--
+-- Utilities
+--
+
+-- | A newtype wrapper to show CBOR bytes in hex format.
+--
+newtype CBORBytes = CBORBytes { getCBORBytes :: LBS.ByteString }
+  deriving Eq
+
+instance Show CBORBytes where
+  show = LBS.Char8.unpack . LBS.Base16.encode . getCBORBytes

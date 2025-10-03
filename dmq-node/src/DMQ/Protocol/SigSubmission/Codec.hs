@@ -44,6 +44,7 @@ import Ouroboros.Network.Protocol.Limits
 import Ouroboros.Network.Protocol.TxSubmission2.Codec qualified as TX
 
 
+
 -- | 'SigSubmission' time limits.
 --
 -- +-----------------------------+---------------+
@@ -148,36 +149,42 @@ decodeSig :: forall crypto s.
              )
           => CBOR.Decoder s (ByteString -> SigRawWithSignedBytes crypto)
 decodeSig = do
-  startOffset <- CBOR.peekByteOffset
-  a <- CBOR.decodeListLen
-  when (a /= 4) $ fail (printf "codecSigSubmission: unexpected number of parameters %d" a)
-  -- start of signed data
-  -- the following 4 parameters in the signed part are treated as a single CBOR
-  -- list element in the CDDL spec, thus we only have 4 elements in the list
-  -- all together.
-  sigRawId <- decodeSigId
-  sigRawBody <- SigBody <$> CBOR.decodeBytes
-  sigRawKESPeriod <- CBOR.decodeWord
-  sigRawExpiresAt <- realToFrac <$> CBOR.decodeWord32
-  -- end of signed data
-  endOffset <- CBOR.peekByteOffset
+    a <- CBOR.decodeListLen
+    when (a /= 4) $ fail (printf "decodeSig: unexpected number of parameters %d for Sig" a)
 
-  sigRawKESSignature <- SigKESSignature <$> CBOR.decodeBytes
-  sigRawOpCertificate <- decodeSigOpCertificate
-  sigRawColdKey <- SigColdKey <$> CBOR.decodeBytes
-  return $ \bytes -- ^ full bytes of the message, not just the sig part
-         -> SigRawWithSignedBytes {
-      sigRawSignedBytes = Utils.bytesBetweenOffsets startOffset endOffset bytes,
-      sigRaw = SigRaw {
-        sigRawId,
-        sigRawBody,
-        sigRawKESSignature,
-        sigRawKESPeriod,
-        sigRawOpCertificate,
-        sigRawColdKey,
-        sigRawExpiresAt
+    -- start of signed data
+    startOffset <- CBOR.peekByteOffset
+    (sigRawId, sigRawBody, sigRawKESPeriod, sigRawExpiresAt)
+      <- decodePayload
+    endOffset <- CBOR.peekByteOffset
+    -- end of signed data
+
+    sigRawKESSignature <- SigKESSignature <$> CBOR.decodeBytes
+    sigRawOpCertificate <- decodeSigOpCertificate
+    sigRawColdKey <- SigColdKey <$> CBOR.decodeBytes
+    return $ \bytes -- ^ full bytes of the message, not just the sig part
+           -> SigRawWithSignedBytes {
+        sigRawSignedBytes = Utils.bytesBetweenOffsets startOffset endOffset bytes,
+        sigRaw = SigRaw {
+          sigRawId,
+          sigRawBody,
+          sigRawKESSignature,
+          sigRawKESPeriod,
+          sigRawOpCertificate,
+          sigRawColdKey,
+          sigRawExpiresAt
+        }
       }
-    }
+  where
+    decodePayload :: CBOR.Decoder s (SigId, SigBody, SigKESPeriod, POSIXTime)
+    decodePayload = do
+      a <- CBOR.decodeListLen
+      when (a /= 4) $ fail (printf "decodeSig: unexpected number of parameters %d for Sig's payload" a)
+      (,,,) <$> decodeSigId
+            <*> (SigBody <$> CBOR.decodeBytes)
+            <*> CBOR.decodeWord
+            <*> (realToFrac <$> CBOR.decodeWord32)
+
 
 
 codecSigSubmissionId
