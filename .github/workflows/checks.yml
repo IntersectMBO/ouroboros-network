@@ -21,6 +21,8 @@ jobs:
       run: sudo apt install -y fd-find
 
     - uses: actions/checkout@v5
+      with:
+        fetch-depth: 0
 
     - name: Check changelogs
       run: ./scripts/ci/check-changelogs.sh
