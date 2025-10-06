@@ -14,4 +14,4 @@ For top level release notes, leave all the headers commented out.
 
 ### Non-Breaking
 
-- fix test false positive
+- fixed false positive in `prop_diffusion_target_active_below` testnet test
