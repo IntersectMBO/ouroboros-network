@@ -557,7 +557,7 @@ readConfigurationFileOrError
   -> IO PartialConfig
 readConfigurationFileOrError nc =
       readConfigurationFile nc
-  >>= either (\err -> error $ "DMQ.Topology.eeadConfigurationFile: "
+  >>= either (\err -> error $ "DMQ.Topology.readConfigurationFile: "
                            <> Text.unpack err)
              pure
 
