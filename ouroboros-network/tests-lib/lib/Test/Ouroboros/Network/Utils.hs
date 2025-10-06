@@ -185,6 +185,8 @@ data WithName name event = WithName {
 instance (Show name, Show event) => Show (WithName name event) where
   show (WithName name ev) = "#" <> show name <> " % " <> show ev
 
+-- NOTE: one shouldn't use it in `sayTracer`, use
+-- `selectTraceEventsSayWithTime` instead.
 data WithTime event = WithTime {
     wtTime  :: Time,
     wtEvent :: event

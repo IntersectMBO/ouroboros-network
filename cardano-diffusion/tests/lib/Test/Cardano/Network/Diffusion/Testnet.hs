@@ -1292,7 +1292,7 @@ prop_only_bootstrap_peers_in_fallback_state ioSimTrace traceNumber =
                        <*> govLedgerStateJudgement
                        <*> trIsNodeAlive
               )
-       in counterexample (List.intercalate "\n" $ map show $ Signal.eventsToList events)
+       in counterexample (List.intercalate "\n" $ map (show . uncurry WithTime) $ Signal.eventsToList events)
         $ signalProperty 20 show
             Set.null
             keepNonTrustablePeersTooLong
@@ -2827,7 +2827,7 @@ prop_diffusion_target_established_local ioSimTrace traceNumber =
        in counterexample
             ("\nSignal key: (local root peers, established peers, " ++
              "recent failures, is alive, opportunities, ignored too long)\n" ++
-               List.intercalate "\n" (map show $ eventsToList events)
+               List.intercalate "\n" (map (show . uncurry WithTime) $ eventsToList events)
             )
         $ signalProperty 20 show
               (\(_,_,_,_,_,_, tooLong) -> Set.null tooLong)
@@ -3031,7 +3031,7 @@ prop_diffusion_target_active_below ioSimTrace traceNumber =
             ("\nSignal key: (local, established peers, active peers, " ++
              "recent failures, opportunities, is node running, ignored too long)") $
           counterexample
-            (List.intercalate "\n" $ map show $ Signal.eventsToList events) $
+            (List.intercalate "\n" $ map (show . uncurry WithTime) $ Signal.eventsToList events) $
 
           signalProperty 20 show
             (\(_, _, _, _, _, _, toolong) -> Set.null toolong)
@@ -3208,7 +3208,8 @@ prop_diffusion_target_active_local_below ioSimTrace traceNumber =
             ("\nSignal key: (local, established peers, active peers, " ++
              "recent failures, opportunities, ignored too long)") $
           counterexample
-            (List.intercalate "\n" $ map show $ Signal.eventsToList events) $
+            (List.intercalate "\n" $
+              map (show . uncurry WithTime)  $ Signal.eventsToList events) $
 
           signalProperty 20 show
             (\(_,_,_,_,_,toolong) -> Set.null toolong)
@@ -3346,7 +3347,7 @@ prop_diffusion_async_demotions ioSimTrace traceNumber =
             lastTime = fst
                      . last
                      $ evsList
-        in counterexample (unlines $ map show evsList)
+        in counterexample (unlines $ map (show . uncurry WithTime) evsList)
           $ classifySimulatedTime lastTime
           $ classifyNumberOfEvents (length evsList)
           $ verify_async_demotions ev
@@ -3598,7 +3599,7 @@ prop_diffusion_target_active_local_above ioSimTrace traceNumber =
        in counterexample
             ("\nSignal key: (local peers, active peers, is alive " ++
              "demotion opportunities, ignored too long)") $
-          counterexample (List.intercalate "\n" $ map show $ Signal.eventsToList events) $
+          counterexample (List.intercalate "\n" $ map (show . uncurry WithTime) $ Signal.eventsToList events) $
 
           signalProperty 20 show
             (\(_,_,_,_,toolong) -> Set.null toolong)
