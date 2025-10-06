@@ -675,6 +675,7 @@ validateDecoder transform (CDDLSpec spec) codec stoks rounds = do
               , "while decoding:\n"
               , show decoded_term
               , "\n"
+              , "generated term:\n"
               , BL.Char8.unpack generated_term
               ]
             Nothing -> return ()

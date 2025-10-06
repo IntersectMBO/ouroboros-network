@@ -62,7 +62,7 @@ nodeToClientVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
 
           unknownTag x = ( T.pack "decode NodeToClientVersion: unknown tag: " <> T.pack (show x), Just x)
 
-      -- The 16th bit to distinguish `NodeToNodeVersion` and `NodeToClientVersion`.
+      -- The 12th bit to distinguish `NodeToNodeVersion` and `NodeToClientVersion`.
       -- This is different than the one defined in ouroboros-network.
       nodeToClientVersionBit :: Int
       nodeToClientVersionBit = 12

@@ -48,6 +48,7 @@
             # dmq-node depends cardano-crypto-class, so we need crypto overlays
             inputs.iohkNix.overlays.crypto
             inputs.iohkNix.overlays.haskell-nix-crypto
+            inputs.iohkNix.overlays.haskell-nix-extra
             (import ./nix/tools.nix inputs)
             (import ./nix/ouroboros-network.nix inputs)
             (import ./nix/network-docs.nix inputs)
@@ -109,6 +110,12 @@
       in
       lib.recursiveUpdate flake rec {
         project = pkgs.ouroboros-network;
+        # `nix build .\#dmq-node` will have the git revision set in the binary,
+        # `nib build .\#hydraJobs.x86_64-linux.packages.dmq-node:exe:dmq-node` won't.
+        packages.dmq-node =
+          pkgs.setGitRev
+            (inputs.self.rev or inputs.self.dirtyShortRev)
+            flake.packages."dmq-node:exe:dmq-node";
         inherit hydraJobs legacyPackages devShells;
       }
     );

@@ -1,5 +1,6 @@
 # ouroboros-network changelog
 
+<!-- scriv-insert-here -->
 <!-- scriv-end-here -->
 
 ## 0.23.0.0 -- 2025-09-10

@@ -1,10 +1,12 @@
 {-# LANGUAGE DataKinds                #-}
 {-# LANGUAGE FlexibleInstances        #-}
+{-# LANGUAGE OverloadedStrings        #-}
 {-# LANGUAGE PolyKinds                #-}
 {-# LANGUAGE StandaloneDeriving       #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
 {-# LANGUAGE TypeData                 #-}
 {-# LANGUAGE TypeFamilies             #-}
+
 
 -- | Defines types for the local message notification protocol
 --
@@ -17,10 +19,14 @@ module DMQ.Protocol.LocalMsgNotification.Type
   , SingBlockingStyle (..)
   ) where
 
+import Data.Aeson
+import Data.Foldable qualified as Foldable
 import Data.Kind
 import Data.Singletons
 
+import Network.TypedProtocol.Codec (AnyMessage (..))
 import Network.TypedProtocol.Core
+
 import Ouroboros.Network.Protocol.TxSubmission2.Type (BlockingReplyList (..),
            SingBlockingStyle (..), StBlockingStyle (..))
 import Ouroboros.Network.Util.ShowProxy
@@ -119,3 +125,20 @@ instance StateTokenI StDone where stateToken = SingDone
 --
 data HasMore = HasMore | DoesNotHaveMore
   deriving (Eq, Show)
+
+instance ToJSON sig => ToJSON (AnyMessage (LocalMsgNotification sig)) where
+  toJSON (AnyMessage msg) = case msg of
+    MsgRequest blockingStyle ->
+      object [ "type" .= String "MsgRequest"
+             , "blockingStyle" .= show blockingStyle
+             ]
+    MsgReply msgs hasMore ->
+      object [ "type" .= String "MsgReply"
+             , "msgs" .= Foldable.toList msgs
+             , "hasMore" .= case hasMore of
+                  HasMore         -> True
+                  DoesNotHaveMore -> False
+             ]
+    MsgClientDone ->
+      object [ "type" .= String "MsgClientDone"
+             ]

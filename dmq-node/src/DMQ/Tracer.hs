@@ -39,7 +39,7 @@ import Ouroboros.Network.PeerSelection (DebugPeerSelection (..))
 import Ouroboros.Network.PeerSelection.Governor.Types qualified as Governor
 import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers)
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
-import Ouroboros.Network.Snocket (LocalAddress, RemoteAddress)
+import Ouroboros.Network.Snocket (RemoteAddress)
 
 import DMQ.Configuration
 import DMQ.NodeToClient.Version

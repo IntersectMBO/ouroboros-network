@@ -41,6 +41,8 @@ import Ouroboros.Network.Protocol.KeepAlive.Type (KeepAlive)
 import Ouroboros.Network.Protocol.KeepAlive.Type qualified as KeepAlive
 import Ouroboros.Network.Protocol.Limits
            (ProtocolLimitFailure (ExceededSizeLimit, ExceededTimeLimit))
+import Ouroboros.Network.Protocol.LocalTxSubmission.Type (LocalTxSubmission)
+import Ouroboros.Network.Protocol.LocalTxSubmission.Type qualified as LocalTxSubmission
 import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount (..))
 import Ouroboros.Network.Protocol.PeerSharing.Type qualified as PeerSharing
 import Ouroboros.Network.Protocol.TxSubmission2.Type (TxSubmission2)
@@ -1660,3 +1662,26 @@ instance ToJSON peerAddr => ToJSON (AnyMessage (PeerSharing.PeerSharing peerAddr
       , "agency" .= String (pack $ show stok)
       ]
 
+instance (ToJSON tx, ToJSON reason) => ToJSON (AnyMessage (LocalTxSubmission tx reason)) where
+  toJSON (AnyMessageAndAgency stok (LocalTxSubmission.MsgSubmitTx tx)) =
+    object
+      [ "kind" .= String "MsgSubmitTx"
+      , "agency" .= String (pack $ show stok)
+      , "tx" .= tx
+      ]
+  toJSON (AnyMessageAndAgency stok LocalTxSubmission.MsgAcceptTx) =
+    object
+      [ "kind" .= String "MsgAcceptTx"
+      , "agency" .= String (pack $ show stok)
+      ]
+  toJSON (AnyMessageAndAgency stok (LocalTxSubmission.MsgRejectTx reason)) =
+    object
+      [ "kind" .= String "MsgRejectTx"
+      , "agency" .= String (pack $ show stok)
+      , "reason" .= reason
+      ]
+  toJSON (AnyMessageAndAgency stok LocalTxSubmission.MsgDone) =
+    object
+      [ "kind" .= String "MsgDone"
+      , "agency" .= String (pack $ show stok)
+      ]
