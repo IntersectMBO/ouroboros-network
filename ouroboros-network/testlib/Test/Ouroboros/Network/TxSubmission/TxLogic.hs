@@ -19,6 +19,8 @@ module Test.Ouroboros.Network.TxSubmission.TxLogic
   , PeerAddr
   , sharedTxStateInvariant
   , InvariantStrength (..)
+    -- * Utils
+  , mkDecisionContext
   ) where
 
 import Prelude hiding (seq)
@@ -39,6 +41,7 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Typeable
 import System.Random (StdGen, mkStdGen)
+import System.Random.SplitMix (SMGen)
 
 import NoThunks.Class
 
@@ -55,6 +58,8 @@ import Test.Ouroboros.Network.TxSubmission.Types
 
 import Test.QuickCheck
 import Test.QuickCheck.Function (apply)
+import Test.QuickCheck.Gen (Gen (..))
+import Test.QuickCheck.Random (QCGen (..))
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
 import Text.Pretty.Simple
@@ -1224,6 +1229,25 @@ instance (Arbitrary txid, Ord txid, Function txid, CoArbitrary txid)
                                 (apply mempoolHasTx) policy sharedState'
         , sharedState'' /= sharedState
         ]
+
+
+-- | Construct decision context in a deterministic way.  For micro benchmarks.
+--
+-- It is based on QuickCheck's `arbitrary` instance for `ArbDecisionContexts.
+--
+mkDecisionContext :: SMGen
+                  -- ^ pseudo random generator
+                  -> Int
+                  -- ^ size
+                  -> (TxDecisionPolicy, SharedTxState PeerAddr TxId (Tx TxId))
+mkDecisionContext stdgen size =
+    case unGen gen (QCGen stdgen) size of
+      ArbDecisionContexts { arbDecisionPolicy = policy,
+                            arbSharedState    = sharedState
+                          } -> (policy, sharedState)
+  where
+    gen :: Gen (ArbDecisionContexts TxId)
+    gen = arbitrary
 
 
 prop_ArbDecisionContexts_generator

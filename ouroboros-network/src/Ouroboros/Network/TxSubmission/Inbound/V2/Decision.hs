@@ -84,7 +84,7 @@ makeDecisions policy st =
 orderByRejections :: Hashable peeraddr
                   => Int
                   -> Map peeraddr (PeerTxState txid tx)
-                  -> [ (peeraddr, PeerTxState txid tx)]
+                  -> [(peeraddr, PeerTxState txid tx)]
 orderByRejections salt =
         List.sortOn (\(peeraddr, ps) -> (score ps, hashWithSalt salt peeraddr))
       . Map.toList
@@ -103,7 +103,7 @@ data St peeraddr txid tx =
         -- ^ acknowledged `txid` with multiplicities.  It is used to update
         -- `referenceCounts`.
 
-        stInSubmissionToMempoolTxs :: Set txid
+        stInSubmissionToMempoolTxs :: !(Set txid)
         -- ^ TXs on their way to the mempool. Used to prevent issueing new
         -- fetch requests for them.
       }
@@ -258,10 +258,12 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
                               stInflight
                     -- remove `tx`s which were already downloaded by some
                     -- other peer or are in-flight or unknown by this peer.
-                    `Map.withoutKeys`
-                    (Map.keysSet bufferedTxs <> requestedTxsInflight <> unknownTxs
-                        <> stInSubmissionToMempoolTxs)
-
+                    `Map.withoutKeys` (
+                         Map.keysSet bufferedTxs
+                      <> requestedTxsInflight
+                      <> unknownTxs
+                      <> stInSubmissionToMempoolTxs
+                    )
                   )
                   requestedTxsInflightSize
                   -- pick from `txid`'s which are available from that given

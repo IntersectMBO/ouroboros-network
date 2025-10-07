@@ -8,6 +8,7 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Policy
   , NumTxIdsToReq (..)
   ) where
 
+import Control.DeepSeq
 import Control.Monad.Class.MonadTime.SI
 import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToReq (..))
 import Ouroboros.Network.SizeInBytes (SizeInBytes (..))
@@ -63,6 +64,9 @@ data TxDecisionPolicy = TxDecisionPolicy {
 
     }
   deriving Show
+
+instance NFData TxDecisionPolicy where
+  rnf TxDecisionPolicy{} = ()
 
 defaultTxDecisionPolicy :: TxDecisionPolicy
 defaultTxDecisionPolicy =
