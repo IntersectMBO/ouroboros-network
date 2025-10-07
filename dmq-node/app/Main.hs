@@ -3,14 +3,14 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE PackageImports      #-}
 
 module Main where
 
 import Control.Monad (void, when)
-import Control.Tracer (Tracer (..), nullTracer, traceWith)
+import "contra-tracer" Control.Tracer (Tracer (..), traceWith)
 
 import Data.Act
-import Data.Aeson (ToJSON)
 import Data.Functor.Contravariant ((>$<))
 import Data.Maybe (maybeToList)
 import Data.Text qualified as Text
@@ -46,6 +46,8 @@ import Ouroboros.Network.TxSubmission.Mempool.Simple qualified as Mempool
 
 import Paths_dmq_node qualified as Meta
 
+import qualified Cardano.Logging as Logging
+
 main :: IO ()
 main = toplevelExceptionHandler $ void . runDMQ =<< execParser opts
   where
@@ -66,16 +68,25 @@ runDMQ commandLineConfig = do
     -- combine default configuration, configuration file and command line
     -- options
     let dmqConfig@Configuration {
-          dmqcPrettyLog            = I prettyLog,
           dmqcTopologyFile         = I topologyFile,
-          dmqcHandshakeTracer      = I handshakeTracer,
-          dmqcLocalHandshakeTracer = I localHandshakeTracer,
           dmqcVersion              = I version
         } = config' <> commandLineConfig
             `act`
             defaultConfiguration
-    let tracer :: ToJSON ev => Tracer IO (WithEventType ev)
-        tracer = dmqTracer prettyLog
+    {-- Alternative A
+    -- Also available "readConfigurationWithDefault"!
+    --}
+    traceConfig <- Logging.readConfiguration configFilePath
+
+    {--
+    (dmqTracer' :: forall ev. ToJSON ev => Logging.Trace IO (WithEventType ev))
+      <- mkCardanoTracer traceConfig
+    dmqTracer' :: forall ev. ToJSON ev => Logging.Trace IO (WithEventType ev)
+    --}
+    dmqTracer' <- mkCardanoTracer traceConfig
+
+    let tracer :: Tracer IO WithEventType
+        tracer = dmqTracer dmqTracer'
 
     when version $ do
       let gitrev = $(gitRev)
@@ -95,9 +106,10 @@ runDMQ commandLineConfig = do
         ]
       exitSuccess
 
-    traceWith tracer (WithEventType "Configuration" dmqConfig)
+    traceWith tracer (WithEventType (DMQ "Configuration") dmqConfig)
+
     nt <- readTopologyFileOrError topologyFile
-    traceWith tracer (WithEventType "NetworkTopology" nt)
+    traceWith tracer (WithEventType (DMQ "NetworkTopology") nt)
 
     stdGen <- newStdGen
     let (psRng, policyRng) = split stdGen
@@ -128,12 +140,8 @@ runDMQ commandLineConfig = do
                             mempoolReader mempoolWriter maxMsgs
                             (NtC.dmqCodecs encodeReject decodeReject)
           dmqDiffusionArguments =
-            diffusionArguments (if handshakeTracer
-                                  then WithEventType "Handshake" >$< tracer
-                                  else nullTracer)
-                               (if localHandshakeTracer
-                                  then WithEventType "Handshake" >$< tracer
-                                  else nullTracer)
+            diffusionArguments (WithEventType (DMQ "Handshake") >$< tracer)
+                               (WithEventType (DMQ "LocalHandshake") >$< tracer)
           dmqDiffusionApplications =
             diffusionApplications nodeKernel
                                   dmqConfig

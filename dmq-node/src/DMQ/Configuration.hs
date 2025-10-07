@@ -103,51 +103,6 @@ data Configuration' f =
     dmqcChurnInterval                              :: f DiffTime,
     dmqcPeerSharing                                :: f PeerSharing,
     dmqcNetworkMagic                               :: f NetworkMagic,
-    dmqcPrettyLog                                  :: f Bool,
-
-    dmqcMuxTracer                                  :: f Bool,
-    dmqcChannelTracer                              :: f Bool,
-    dmqcBearerTracer                               :: f Bool,
-    dmqcHandshakeTracer                            :: f Bool,
-    dmqcLocalMuxTracer                             :: f Bool,
-    dmqcLocalChannelTracer                         :: f Bool,
-    dmqcLocalBearerTracer                          :: f Bool,
-    dmqcLocalHandshakeTracer                       :: f Bool,
-    dmqcDiffusionTracer                            :: f Bool,
-    dmqcTraceLocalRootPeersTracer                  :: f Bool,
-    dmqcTracePublicRootPeersTracer                 :: f Bool,
-    dmqcTraceLedgerPeersTracer                     :: f Bool,
-    dmqcTracePeerSelectionTracer                   :: f Bool,
-    dmqcTraceChurnCounters                         :: f Bool,
-    dmqcDebugPeerSelectionInitiatorTracer          :: f Bool,
-    dmqcDebugPeerSelectionInitiatorResponderTracer :: f Bool,
-    dmqcTracePeerSelectionCounters                 :: f Bool,
-    dmqcPeerSelectionActionsTracer                 :: f Bool,
-    dmqcConnectionManagerTracer                    :: f Bool,
-    dmqcConnectionManagerTransitionTracer          :: f Bool,
-    dmqcServerTracer                               :: f Bool,
-    dmqcInboundGovernorTracer                      :: f Bool,
-    dmqcInboundGovernorTransitionTracer            :: f Bool,
-    dmqcLocalConnectionManagerTracer               :: f Bool,
-    dmqcLocalServerTracer                          :: f Bool,
-    dmqcLocalInboundGovernorTracer                 :: f Bool,
-    dmqcDnsTracer                                  :: f Bool,
-
-    -- low level verbose traces which trace protocol messages
-    -- TODO: pref
-    dmqcSigSubmissionClientProtocolTracer          :: f Bool,
-    dmqcSigSubmissionServerProtocolTracer          :: f Bool,
-    dmqcKeepAliveClientProtocolTracer              :: f Bool,
-    dmqcKeepAliveServerProtocolTracer              :: f Bool,
-    dmqcPeerSharingClientProtocolTracer            :: f Bool,
-    dmqcPeerSharingServerProtocolTracer            :: f Bool,
-    dmqcLocalMsgSubmissionServerProtocolTracer     :: f Bool,
-    dmqcLocalMsgNotificationServerProtocolTracer   :: f Bool,
-
-    dmqcSigSubmissionLogicTracer                   :: f Bool,
-    dmqcSigSubmissionOutboundTracer                :: f Bool,
-    dmqcSigSubmissionInboundTracer                 :: f Bool,
-    dmqcLocalMsgSubmissionServerTracer             :: f Bool,
 
     dmqcVersion                                    :: f Bool
   }
@@ -222,48 +177,6 @@ defaultConfiguration = Configuration {
       dmqcProtocolIdleTimeout                        = I defaultProtocolIdleTimeout,
       dmqcChurnInterval                              = I defaultDeadlineChurnInterval,
       dmqcPeerSharing                                = I PeerSharingEnabled,
-      dmqcPrettyLog                                  = I False,
-      dmqcMuxTracer                                  = I False,
-      dmqcChannelTracer                              = I False,
-      dmqcBearerTracer                               = I False,
-      dmqcHandshakeTracer                            = I True,
-      dmqcLocalMuxTracer                             = I True,
-      dmqcLocalChannelTracer                         = I False,
-      dmqcLocalBearerTracer                          = I False,
-      dmqcLocalHandshakeTracer                       = I True,
-      dmqcDiffusionTracer                            = I True,
-      dmqcTraceLocalRootPeersTracer                  = I False,
-      dmqcTracePublicRootPeersTracer                 = I False,
-      dmqcTraceLedgerPeersTracer                     = I False,
-      dmqcTracePeerSelectionTracer                   = I True,
-      dmqcTraceChurnCounters                         = I False,
-      dmqcDebugPeerSelectionInitiatorTracer          = I False,
-      dmqcDebugPeerSelectionInitiatorResponderTracer = I False,
-      dmqcTracePeerSelectionCounters                 = I True,
-      dmqcPeerSelectionActionsTracer                 = I False,
-      dmqcConnectionManagerTracer                    = I True,
-      dmqcConnectionManagerTransitionTracer          = I False,
-      dmqcServerTracer                               = I True,
-      dmqcInboundGovernorTracer                      = I True,
-      dmqcInboundGovernorTransitionTracer            = I False,
-      dmqcLocalConnectionManagerTracer               = I False,
-      dmqcLocalServerTracer                          = I False,
-      dmqcLocalInboundGovernorTracer                 = I False,
-      dmqcDnsTracer                                  = I False,
-
-      dmqcSigSubmissionClientProtocolTracer          = I False,
-      dmqcSigSubmissionServerProtocolTracer          = I False,
-      dmqcKeepAliveClientProtocolTracer              = I False,
-      dmqcKeepAliveServerProtocolTracer              = I False,
-      dmqcPeerSharingClientProtocolTracer            = I False,
-      dmqcPeerSharingServerProtocolTracer            = I False,
-      dmqcLocalMsgSubmissionServerProtocolTracer     = I True,
-      dmqcLocalMsgNotificationServerProtocolTracer   = I True,
-
-      dmqcSigSubmissionOutboundTracer                = I False,
-      dmqcSigSubmissionInboundTracer                 = I True,
-      dmqcSigSubmissionLogicTracer                   = I False,
-      dmqcLocalMsgSubmissionServerTracer             = I True,
 
       -- CLI only options
       dmqcVersion                                    = I False
@@ -312,50 +225,6 @@ instance FromJSON PartialConfig where
       dmqcProtocolIdleTimeout <- Last <$> v .:? "ProtocolIdleTimeout"
       dmqcChurnInterval <- Last <$> v .:? "ChurnInterval"
 
-      dmqcPrettyLog <- Last <$> v .:? "PrettyLog"
-
-      dmqcMuxTracer                                  <- Last <$> v .:? "MuxTracer"
-      dmqcChannelTracer                              <- Last <$> v .:? "ChannelTracer"
-      dmqcBearerTracer                               <- Last <$> v .:? "BearerTracer"
-      dmqcHandshakeTracer                            <- Last <$> v .:? "HandshakeTracer"
-      dmqcLocalMuxTracer                             <- Last <$> v .:? "LocalMuxTracer"
-      dmqcLocalChannelTracer                         <- Last <$> v .:? "LocalChannelTracer"
-      dmqcLocalBearerTracer                          <- Last <$> v .:? "LocalBearerTracer"
-      dmqcLocalHandshakeTracer                       <- Last <$> v .:? "LocalHandshakeTracer"
-      dmqcDiffusionTracer                            <- Last <$> v .:? "DiffusionTracer"
-      dmqcTraceLocalRootPeersTracer                  <- Last <$> v .:? "LocalRootPeersTracer"
-      dmqcTracePublicRootPeersTracer                 <- Last <$> v .:? "PublicRootPeersTracer"
-      dmqcTraceLedgerPeersTracer                     <- Last <$> v .:? "LedgerPeersTracer"
-      dmqcTracePeerSelectionTracer                   <- Last <$> v .:? "PeerSelectionTracer"
-      dmqcTraceChurnCounters                         <- Last <$> v .:? "ChurnCounters"
-      dmqcDebugPeerSelectionInitiatorTracer          <- Last <$> v .:? "DebugPeerSelectionInitiatorTracer"
-      dmqcDebugPeerSelectionInitiatorResponderTracer <- Last <$> v .:? "DebugPeerSelectionInitiatorResponderTracer"
-      dmqcTracePeerSelectionCounters                 <- Last <$> v .:? "PeerSelectionCounters"
-      dmqcPeerSelectionActionsTracer                 <- Last <$> v .:? "PeerSelectionActionsTracer"
-      dmqcConnectionManagerTracer                    <- Last <$> v .:? "ConnectionManagerTracer"
-      dmqcConnectionManagerTransitionTracer          <- Last <$> v .:? "ConnectionManagerTransitionTracer"
-      dmqcServerTracer                               <- Last <$> v .:? "ServerTracer"
-      dmqcInboundGovernorTracer                      <- Last <$> v .:? "InboundGovernorTracer"
-      dmqcInboundGovernorTransitionTracer            <- Last <$> v .:? "InboundGovernorTransitionTracer"
-      dmqcLocalConnectionManagerTracer               <- Last <$> v .:? "LocalConnectionManagerTracer"
-      dmqcLocalServerTracer                          <- Last <$> v .:? "LocalServerTracer"
-      dmqcLocalInboundGovernorTracer                 <- Last <$> v .:? "LocalInboundGovernorTracer"
-      dmqcDnsTracer                                  <- Last <$> v .:? "DnsTracer"
-
-      dmqcSigSubmissionClientProtocolTracer          <- Last <$> v .:? "SigSubmissionClientProtocolTracer"
-      dmqcSigSubmissionServerProtocolTracer          <- Last <$> v .:? "SigSubmissionServerProtocolTracer"
-      dmqcKeepAliveClientProtocolTracer              <- Last <$> v .:? "KeepAliveServerProtocolTracer"
-      dmqcKeepAliveServerProtocolTracer              <- Last <$> v .:? "KeepAliveClientProtocolTracer"
-      dmqcPeerSharingClientProtocolTracer            <- Last <$> v .:? "PeerSharingServerProtocolTracer"
-      dmqcPeerSharingServerProtocolTracer            <- Last <$> v .:? "PeerSharingClientProtocolTracer"
-      dmqcLocalMsgSubmissionServerProtocolTracer     <- Last <$> v .:? "LocalMsgSubmissionServerProtocolracer"
-      dmqcLocalMsgNotificationServerProtocolTracer   <- Last <$> v .:? "LocalMsgNotificationServerProtocolracer"
-
-      dmqcSigSubmissionOutboundTracer                <- Last <$> v .:? "SigSubmissionOutboundTracer"
-      dmqcSigSubmissionInboundTracer                 <- Last <$> v .:? "SigSubmissionInboundTracer"
-      dmqcSigSubmissionLogicTracer                   <- Last <$> v .:? "SigSubmissionLogicTracer"
-      dmqcLocalMsgSubmissionServerTracer             <- Last <$> v .:? "LocalMsgSubmissionServerTracer"
-
       pure $
         Configuration
           { dmqcIPv4         = Last dmqcIPv4
@@ -389,45 +258,6 @@ instance ToJSON Configuration where
            , "ChurnInterval"                              .= unI dmqcChurnInterval
            , "PeerSharing"                                .= unI dmqcPeerSharing
            , "NetworkMagic"                               .= unNetworkMagic (unI dmqcNetworkMagic)
-           , "PrettyLog"                                  .= unI dmqcPrettyLog
-           , "MuxTracer"                                  .= unI dmqcMuxTracer
-           , "ChannelTracer"                              .= unI dmqcChannelTracer
-           , "BearerTracer"                               .= unI dmqcBearerTracer
-           , "HandshakeTracer"                            .= unI dmqcHandshakeTracer
-           , "LocalMuxTracer"                             .= unI dmqcLocalMuxTracer
-           , "LocalChannelTracer"                         .= unI dmqcLocalChannelTracer
-           , "LocalBearerTracer"                          .= unI dmqcLocalBearerTracer
-           , "LocalHandshakeTracer"                       .= unI dmqcLocalHandshakeTracer
-           , "DiffusionTracer"                            .= unI dmqcDiffusionTracer
-           , "LocalRootPeersTracer"                       .= unI dmqcTraceLocalRootPeersTracer
-           , "PublicRootPeersTracer"                      .= unI dmqcTracePublicRootPeersTracer
-           , "LedgerPeersTracer"                          .= unI dmqcTraceLedgerPeersTracer
-           , "PeerSelectionTracer"                        .= unI dmqcTracePeerSelectionTracer
-           , "ChurnCounters"                              .= unI dmqcTraceChurnCounters
-           , "DebugPeerSelectionInitiatorTracer"          .= unI dmqcDebugPeerSelectionInitiatorTracer
-           , "DebugPeerSelectionInitiatorResponderTracer" .= unI dmqcDebugPeerSelectionInitiatorResponderTracer
-           , "PeerSelectionCounters"                      .= unI dmqcTracePeerSelectionCounters
-           , "PeerSelectionActionsTracer"                 .= unI dmqcPeerSelectionActionsTracer
-           , "ConnectionManagerTracer"                    .= unI dmqcConnectionManagerTracer
-           , "ConnectionManagerTransitionTracer"          .= unI dmqcConnectionManagerTransitionTracer
-           , "ServerTracer"                               .= unI dmqcServerTracer
-           , "InboundGovernorTracer"                      .= unI dmqcInboundGovernorTracer
-           , "InboundGovernorTransitionTracer"            .= unI dmqcInboundGovernorTransitionTracer
-           , "LocalConnectionManagerTracer"               .= unI dmqcLocalConnectionManagerTracer
-           , "LocalServerTracer"                          .= unI dmqcLocalServerTracer
-           , "LocalInboundGovernorTracer"                 .= unI dmqcLocalInboundGovernorTracer
-           , "DnsTracer"                                  .= unI dmqcDnsTracer
-           , "SigSubmissionClientProtocolTracer"          .= unI dmqcSigSubmissionClientProtocolTracer
-           , "SigSubmissionServerProtocolTracer"          .= unI dmqcSigSubmissionServerProtocolTracer
-           , "KeepAliveClientProtocolTracer"              .= unI dmqcKeepAliveClientProtocolTracer
-           , "KeepAliveServerProtocolTracer"              .= unI dmqcKeepAliveServerProtocolTracer
-           , "PeerSharingClientProtocolTracer"            .= unI dmqcPeerSharingClientProtocolTracer
-           , "PeerSharingServerProtocolTracer"            .= unI dmqcPeerSharingServerProtocolTracer
-           , "LocalMsgSubmissionServerProtocolTracer"     .= unI dmqcLocalMsgSubmissionServerProtocolTracer
-           , "LocalMsgNotificationServerProtocolTracer"   .= unI dmqcLocalMsgNotificationServerProtocolTracer
-           , "SigSubmissionOutboundTracer"                .= unI dmqcSigSubmissionOutboundTracer
-           , "SigSubmissionInboundTracer"                 .= unI dmqcSigSubmissionInboundTracer
-           , "SigSubmissionLogicTracer"                   .= unI dmqcSigSubmissionLogicTracer
            ]
 
 -- | Read the `DMQConfiguration` from the specified file.
