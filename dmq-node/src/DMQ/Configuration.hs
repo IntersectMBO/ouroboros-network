@@ -103,7 +103,6 @@ data Configuration' f =
     dmqcChurnInterval                              :: f DiffTime,
     dmqcPeerSharing                                :: f PeerSharing,
     dmqcNetworkMagic                               :: f NetworkMagic,
-    dmqcPrettyLog                                  :: f Bool,
 
     dmqcMuxTracer                                  :: f Bool,
     dmqcChannelTracer                              :: f Bool,
@@ -222,7 +221,6 @@ defaultConfiguration = Configuration {
       dmqcProtocolIdleTimeout                        = I defaultProtocolIdleTimeout,
       dmqcChurnInterval                              = I defaultDeadlineChurnInterval,
       dmqcPeerSharing                                = I PeerSharingEnabled,
-      dmqcPrettyLog                                  = I False,
       dmqcMuxTracer                                  = I False,
       dmqcChannelTracer                              = I False,
       dmqcBearerTracer                               = I False,
@@ -312,8 +310,6 @@ instance FromJSON PartialConfig where
       dmqcProtocolIdleTimeout <- Last <$> v .:? "ProtocolIdleTimeout"
       dmqcChurnInterval <- Last <$> v .:? "ChurnInterval"
 
-      dmqcPrettyLog <- Last <$> v .:? "PrettyLog"
-
       dmqcMuxTracer                                  <- Last <$> v .:? "MuxTracer"
       dmqcChannelTracer                              <- Last <$> v .:? "ChannelTracer"
       dmqcBearerTracer                               <- Last <$> v .:? "BearerTracer"
@@ -389,7 +385,6 @@ instance ToJSON Configuration where
            , "ChurnInterval"                              .= unI dmqcChurnInterval
            , "PeerSharing"                                .= unI dmqcPeerSharing
            , "NetworkMagic"                               .= unNetworkMagic (unI dmqcNetworkMagic)
-           , "PrettyLog"                                  .= unI dmqcPrettyLog
            , "MuxTracer"                                  .= unI dmqcMuxTracer
            , "ChannelTracer"                              .= unI dmqcChannelTracer
            , "BearerTracer"                               .= unI dmqcBearerTracer

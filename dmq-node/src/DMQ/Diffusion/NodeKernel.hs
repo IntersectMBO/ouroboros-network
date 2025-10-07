@@ -1,6 +1,7 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE PackageImports      #-}
 
 module DMQ.Diffusion.NodeKernel
   ( NodeKernel (..)
@@ -13,9 +14,8 @@ import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer (Tracer, nullTracer)
+import "contra-tracer" Control.Tracer (Tracer, nullTracer)
 
-import Data.Aeson qualified as Aeson
 import Data.Function (on)
 import Data.Functor.Contravariant ((>$<))
 import Data.Hashable
@@ -108,7 +108,7 @@ withNodeKernel :: forall crypto ntnAddr m a.
                   , Show ntnAddr
                   , Hashable ntnAddr
                   )
-               => (forall ev. Aeson.ToJSON ev => Tracer m (WithEventType ev))
+               => (Tracer m WithEventType)
                -> Configuration
                -> StdGen
                -> (NodeKernel crypto ntnAddr m -> m a)

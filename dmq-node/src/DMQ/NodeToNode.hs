@@ -4,6 +4,7 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE PackageImports      #-}
 
 module DMQ.NodeToNode
   ( RemoteAddress
@@ -33,7 +34,7 @@ import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer (Tracer, nullTracer)
+import "contra-tracer" Control.Tracer (Tracer, nullTracer)
 
 import Codec.CBOR.Decoding qualified as CBOR
 import Codec.CBOR.Encoding qualified as CBOR
@@ -161,7 +162,7 @@ ntnApps
     , Hashable addr
     , Aeson.ToJSON addr
     )
- => (forall ev. Aeson.ToJSON ev => Tracer m (WithEventType ev))
+ => (Tracer m WithEventType)
  -> Configuration
  -> NodeKernel crypto addr m
  -> Codecs crypto addr m

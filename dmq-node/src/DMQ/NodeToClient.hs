@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds        #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE RankNTypes       #-}
+{-# LANGUAGE PackageImports      #-}
 
 module DMQ.NodeToClient
   ( module DMQ.NodeToClient.Version
@@ -24,7 +25,7 @@ import Control.Concurrent.Class.MonadSTM
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadST (MonadST)
 import Control.Monad.Class.MonadThrow
-import Control.Tracer (Tracer, nullTracer)
+import "contra-tracer" Control.Tracer (Tracer, nullTracer)
 
 import Codec.CBOR.Decoding qualified as CBOR
 import Codec.CBOR.Encoding qualified as CBOR
@@ -140,7 +141,7 @@ ntcApps
      , Typeable crypto
      , Aeson.ToJSON ntcAddr
      )
-  => (forall ev. Aeson.ToJSON ev => Tracer m (WithEventType ev))
+  => (Tracer m WithEventType)
   -> Configuration
   -> TxSubmissionMempoolReader SigId (Sig crypto) idx m
   -> TxSubmissionMempoolWriter SigId (Sig crypto) idx m
