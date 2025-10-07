@@ -6,7 +6,7 @@ set -eo pipefail
 
 RESULT=0
 
-MERGE_BASE=$(git merge-base main HEAD)
+MERGE_BASE=$(git merge-base origin/main HEAD)
 
 function check_project () {
   project=$1
