@@ -321,7 +321,6 @@ testWithIOSim prop traceNumber bi ds =
   let sim :: forall s . IOSim s Void
       sim = diffusionSimulation (toBearerInfo bi)
                                 ds
-                                iosimTracer
       trace = runSimTrace sim
    in labelDiffusionScript ds $
       -- we don't capture the time in the say trace, we add it here
@@ -346,7 +345,6 @@ testWithIOSimPOR prop traceNumber bi ds =
         exploreRaces
         diffusionSimulation (toBearerInfo bi)
                             ds
-                            iosimTracer
    in labelDiffusionScript ds
     $ exploreSimTrace id sim $ \_ trace ->
         -- we don't capture the time in the say trace, we add it here
@@ -502,9 +500,8 @@ unit_cm_valid_transitions =
                 ]
             ]
       sim :: forall s. IOSim s Void
-      sim = do
-        exploreRaces
-        diffusionSimulation (toBearerInfo bi) ds iosimTracer
+      sim = diffusionSimulation (toBearerInfo bi) ds
+
   in exploreSimTrace (\a -> a { explorationReplay = Just s }) sim $ \_ ioSimTrace ->
        prop_diffusion_cm_valid_transition_order' ioSimTrace short_trace
 
@@ -564,7 +561,6 @@ unit_connection_manager_trace_coverage =
   let sim :: forall s . IOSim s Void
       sim = diffusionSimulation (toBearerInfo absNoAttenuation)
                                 script
-                                iosimTracer
 
       events :: [CM.Trace
                   NtNAddr
@@ -674,7 +670,6 @@ unit_connection_manager_transitions_coverage =
   let sim :: forall s . IOSim s Void
       sim = diffusionSimulation (toBearerInfo absNoAttenuation)
                                 script
-                                iosimTracer
       trace = runSimTrace sim
 
       -- events from `traceTVar` installed in `newMutableConnState`
@@ -798,7 +793,6 @@ prop_inbound_governor_trace_coverage defaultBearerInfo diffScript =
   let sim :: forall s . IOSim s Void
       sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                 diffScript
-                                iosimTracer
 
       events :: [IG.Trace NtNAddr]
       events = mapMaybe (\case DiffusionInboundGovernorTrace st -> Just st
@@ -956,8 +950,7 @@ prop_txSubmission_allTransactions (ArbTxDecisionPolicy decisionPolicy)
          ]
    in checkAllTransactions (runSimTrace
                               (diffusionSimulation noAttenuation
-                                                   diffScript
-                                                   iosimTracer)
+                                                   diffScript)
                            )
                            500_000 -- ^ Running for 500k might not be enough.
   where
@@ -1057,7 +1050,6 @@ prop_check_inflight_ratio bi ds@(DiffusionScript simArgs _ _) =
   let sim :: forall s . IOSim s Void
       sim = diffusionSimulation (toBearerInfo bi)
                                 ds
-                                iosimTracer
 
       events :: Events DiffusionTestTrace
       events = Signal.eventsFromList
@@ -1101,7 +1093,6 @@ prop_inbound_governor_transitions_coverage defaultBearerInfo diffScript =
   let sim :: forall s . IOSim s Void
       sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                 diffScript
-                                iosimTracer
 
       events :: [IG.RemoteTransitionTrace NtNAddr]
       events = mapMaybe (\case DiffusionInboundGovernorTransitionTrace st ->
@@ -1133,7 +1124,6 @@ prop_fetch_client_state_trace_coverage defaultBearerInfo diffScript =
   let sim :: forall s . IOSim s Void
       sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                 diffScript
-                                iosimTracer
 
       events :: [TraceFetchClientState BlockHeader]
       events = mapMaybe (\case DiffusionFetchTrace st ->
@@ -1524,7 +1514,6 @@ prop_server_trace_coverage defaultBearerInfo diffScript =
   let sim :: forall s . IOSim s Void
       sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                 diffScript
-                                iosimTracer
 
       events :: [Server.Trace NtNAddr]
       events = mapMaybe (\case DiffusionServerTrace st -> Just st
@@ -1553,7 +1542,6 @@ prop_peer_selection_action_trace_coverage defaultBearerInfo diffScript =
   let sim :: forall s . IOSim s Void
       sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                 diffScript
-                                iosimTracer
 
       events :: [PeerSelectionActionsTrace NtNAddr NtNVersion]
       events = mapMaybe (\case DiffusionPeerSelectionActionsTrace st -> Just st
@@ -1612,7 +1600,6 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
   let sim :: forall s . IOSim s Void
       sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                 diffScript
-                                iosimTracer
 
       events :: [TracePeerSelection Cardano.ExtraState
                                     PeerTrustable
@@ -3998,7 +3985,6 @@ prop_unit_reconnect =
       sim = diffusionSimulation (toBearerInfo (absNoAttenuation { abiInboundAttenuation  = SpeedAttenuation SlowSpeed (Time 20) 1000
                                                                 } ))
                                 diffScript
-                                iosimTracer
 
       events :: [Events (WithName NtNAddr DiffusionTestTrace)]
       events = Trace.toList
@@ -4295,7 +4281,6 @@ unit_peer_sharing =
     let sim :: forall s. IOSim s Void
         sim = diffusionSimulation (toBearerInfo absNoAttenuation)
                                   script
-                                  iosimTracer
 
         -- TODO: we need `CardanoTracePeerSelection addr` type alias!
         events :: Map NtNAddr [TracePeerSelection Cardano.ExtraState
@@ -4885,7 +4870,7 @@ unit_local_root_diffusion_mode :: DiffusionMode
 unit_local_root_diffusion_mode diffusionMode =
     -- this is a unit test
     withMaxSuccess 1 $
-    let sim = diffusionSimulation (toBearerInfo absNoAttenuation) script iosimTracer
+    let sim = diffusionSimulation (toBearerInfo absNoAttenuation) script
 
         -- list of negotiated version data
         events :: [NtNVersionData]
