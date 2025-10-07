@@ -133,7 +133,6 @@ executable dmq-node
 
   build-depends:
     acts,
-    aeson,
     base,
     cardano-git-rev,
     contra-tracer >=0.1 && <0.3,

@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds        #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE RankNTypes       #-}
+{-# LANGUAGE PackageImports      #-}
 
 module DMQ.NodeToClient
   ( module DMQ.NodeToClient.Version
@@ -24,7 +25,7 @@ import Control.Concurrent.Class.MonadSTM
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadST (MonadST)
 import Control.Monad.Class.MonadThrow
-import Control.Tracer (Tracer, nullTracer)
+import "contra-tracer" Control.Tracer (Tracer, nullTracer)
 
 import Codec.CBOR.Decoding qualified as CBOR
 import Codec.CBOR.Encoding qualified as CBOR
@@ -140,7 +141,7 @@ ntcApps
      , Typeable crypto
      , Aeson.ToJSON ntcAddr
      )
-  => (forall ev. Aeson.ToJSON ev => Tracer m (WithEventType ev))
+  => (Tracer m WithEventType)
   -> Configuration
   -> TxSubmissionMempoolReader SigId (Sig crypto) idx m
   -> TxSubmissionMempoolWriter SigId (Sig crypto) idx m
@@ -148,10 +149,7 @@ ntcApps
   -> Codecs crypto m
   -> Apps ntcAddr m ()
 ntcApps tracer
-        Configuration { dmqcLocalMsgSubmissionServerProtocolTracer   = I localMsgSubmissionServerProtocolTracer,
-                        dmqcLocalMsgNotificationServerProtocolTracer = I localMsgNotificationServerProtocolTracer,
-                        dmqcLocalMsgSubmissionServerTracer           = I localMsgSubmissionServerTracer
-                      }
+        _
         mempoolReader
         mempoolWriter
         maxMsgs
@@ -164,27 +162,19 @@ ntcApps tracer
     aLocalMsgSubmission _version ResponderContext { rcConnectionId = connId } channel = do
       labelThisThread "LocalMsgSubmission.Server"
       runAnnotatedPeer
-        (if localMsgSubmissionServerProtocolTracer
-           then WithEventType "LocalMsgSubmission.Protocol.Server" . Mx.WithBearer connId >$< tracer
-           else nullTracer)
+        (WithEventType (DMQ "LocalMsgSubmission.Protocol.Server") . Mx.WithBearer connId >$< tracer)
         msgSubmissionCodec
         channel
         (localMsgSubmissionServerPeer $
           localMsgSubmissionServer
             sigId
-            -- TODO: use a separate option for this tracer rather than reusing
-            -- `dmqLocalMsgSubmissionServerTracer`.
-            (if localMsgSubmissionServerTracer
-               then WithEventType "LocalMsgSubmission.Server" . Mx.WithBearer connId >$< tracer
-               else nullTracer)
+            (WithEventType (DMQ "LocalMsgSubmission.Server") . Mx.WithBearer connId >$< tracer)
             mempoolWriter)
 
     aLocalMsgNotification _version ResponderContext { rcConnectionId = connId } channel = do
       labelThisThread "LocalMsgNotification.Server"
       runAnnotatedPeer
-        (if localMsgNotificationServerProtocolTracer
-           then WithEventType "LocalMsgNotification.Protocol.Server" . Mx.WithBearer connId >$< tracer
-           else nullTracer)
+        (WithEventType (DMQ "LocalMsgNotification.Protocol.Server") . Mx.WithBearer connId >$< tracer)
         msgNotificationCodec
         channel
         (localMsgNotificationServerPeer $

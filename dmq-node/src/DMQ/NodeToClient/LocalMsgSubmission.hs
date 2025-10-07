@@ -1,9 +1,10 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PackageImports    #-}
 
 module DMQ.NodeToClient.LocalMsgSubmission where
 
 import Control.Concurrent.Class.MonadSTM
-import Control.Tracer
+import "contra-tracer" Control.Tracer
 import Data.Aeson (ToJSON (..), object, (.=))
 import Data.Aeson qualified as Aeson
 import Data.Maybe
