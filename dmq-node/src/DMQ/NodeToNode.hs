@@ -174,6 +174,7 @@ ntnApps
       dmqcSigSubmissionClientTracer  = I sigSubmissionClientTracer
     , dmqcSigSubmissionServerTracer  = I sigSubmissionServerTracer
     , dmqcSigSubmissionInboundTracer = I sigSubmissionInboundTracer
+    , dmqcSigSubmissionLogicTracer   = I sigSubmissionLogicTracer
     , dmqcKeepAliveClientTracer      = I keepAliveClientTracer
     , dmqcKeepAliveServerTracer      = I keepAliveServerTracer
     , dmqcPeerSharingClientTracer    = I peerSharingClientTracer
@@ -260,7 +261,9 @@ ntnApps
       -> m ((), Maybe BL.ByteString)
     aSigSubmissionServer _version ResponderContext { rcConnectionId = connId } channel =
         SigSubmission.withPeer
-          nullTracer
+          (if sigSubmissionLogicTracer
+             then WithEventType "SigSubmissionLogic" . Mx.WithBearer connId >$< tracer
+             else nullTracer)
           sigChannelVar
           sigMempoolSem
           sigDecisionPolicy

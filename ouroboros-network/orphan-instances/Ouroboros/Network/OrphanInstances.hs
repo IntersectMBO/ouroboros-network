@@ -93,7 +93,7 @@ import Ouroboros.Network.Server.RateLimiting (AcceptConnectionsPolicyTrace (..),
            AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket (RemoteAddress)
 import Ouroboros.Network.TxSubmission.Inbound.V2 (ProcessedTxCount (..),
-           TraceTxSubmissionInbound (..))
+           TraceTxLogic (..), TraceTxSubmissionInbound (..))
 
 -- Helper function for ToJSON instances with a "kind" field
 kindObject :: Text -> [Pair] -> Value
@@ -1743,3 +1743,19 @@ instance ( ToJSON txid
       , "decision" .= String (pack $ show decision)
       ]
 
+-- TODO: in cardano-node in the `coot/tx-submission-10.5` branch there's
+-- a better instance.
+instance ( Show addr
+         , Show txid
+         , Show tx
+         )
+       => ToJSON (TraceTxLogic addr txid tx) where
+  toJSON (TraceSharedTxState tag st) =
+    object [ "kind" .= String "SharedTxState"
+           , "tag"  .= String (pack tag)
+           , "sharedTxState" .= String (pack . show $ st)
+           ]
+  toJSON (TraceTxDecisions decisions) =
+    object [ "kind"      .= String "TxDecisions"
+           , "decisions" .= String (pack . show $ decisions)
+           ]

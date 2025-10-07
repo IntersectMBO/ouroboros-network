@@ -134,6 +134,7 @@ data Configuration' f =
     dmqcSigSubmissionClientTracer                  :: f Bool,
     dmqcSigSubmissionServerTracer                  :: f Bool,
     dmqcSigSubmissionInboundTracer                 :: f Bool,
+    dmqcSigSubmissionLogicTracer                   :: f Bool,
     dmqcKeepAliveClientTracer                      :: f Bool,
     dmqcKeepAliveServerTracer                      :: f Bool,
     dmqcPeerSharingClientTracer                    :: f Bool,
@@ -245,6 +246,7 @@ defaultConfiguration = Configuration {
       dmqcSigSubmissionClientTracer                  = I False,
       dmqcSigSubmissionServerTracer                  = I False,
       dmqcSigSubmissionInboundTracer                 = I True,
+      dmqcSigSubmissionLogicTracer                   = I False,
       dmqcKeepAliveClientTracer                      = I False,
       dmqcKeepAliveServerTracer                      = I False,
       dmqcPeerSharingClientTracer                    = I False,
@@ -331,6 +333,7 @@ instance FromJSON PartialConfig where
       dmqcSigSubmissionClientTracer                  <- Last <$> v .:? "SigSubmissionClientTracer"
       dmqcSigSubmissionServerTracer                  <- Last <$> v .:? "SigSubmissionServerTracer"
       dmqcSigSubmissionInboundTracer                 <- Last <$> v .:? "SigSubmissionInboundTracer"
+      dmqcSigSubmissionLogicTracer                   <- Last <$> v .:? "SigSubmissionLogicTracer"
       dmqcKeepAliveClientTracer                      <- Last <$> v .:? "KeepAliveServerTracer"
       dmqcKeepAliveServerTracer                      <- Last <$> v .:? "KeepAliveClientTracer"
       dmqcPeerSharingClientTracer                    <- Last <$> v .:? "PeerSharingServerTracer"
@@ -390,6 +393,7 @@ instance FromJSON PartialConfig where
           , dmqcSigSubmissionClientTracer
           , dmqcSigSubmissionServerTracer
           , dmqcSigSubmissionInboundTracer
+          , dmqcSigSubmissionLogicTracer
           , dmqcKeepAliveClientTracer
           , dmqcKeepAliveServerTracer
           , dmqcPeerSharingClientTracer
@@ -453,6 +457,7 @@ instance ToJSON Configuration where
       dmqcSigSubmissionClientTracer,
       dmqcSigSubmissionServerTracer,
       dmqcSigSubmissionInboundTracer,
+      dmqcSigSubmissionLogicTracer,
       dmqcKeepAliveClientTracer,
       dmqcKeepAliveServerTracer,
       dmqcPeerSharingClientTracer,
@@ -511,6 +516,7 @@ instance ToJSON Configuration where
            , "SigSubmissionClientTracer"                  .= unI dmqcSigSubmissionClientTracer
            , "SigSubmissionServerTracer"                  .= unI dmqcSigSubmissionServerTracer
            , "SigSubmissionInboundTracer"                 .= unI dmqcSigSubmissionInboundTracer
+           , "SigSubmissionLogicTracer"                   .= unI dmqcSigSubmissionLogicTracer
            , "KeepAliveClientTracer"                      .= unI dmqcKeepAliveClientTracer
            , "KeepAliveServerTracer"                      .= unI dmqcKeepAliveServerTracer
            , "PeerSharingClientTracer"                    .= unI dmqcPeerSharingClientTracer
