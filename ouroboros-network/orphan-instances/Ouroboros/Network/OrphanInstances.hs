@@ -92,6 +92,8 @@ import Ouroboros.Network.Server qualified as Server
 import Ouroboros.Network.Server.RateLimiting (AcceptConnectionsPolicyTrace (..),
            AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket (RemoteAddress)
+import Ouroboros.Network.TxSubmission.Inbound.V2 (ProcessedTxCount (..),
+           TraceTxSubmissionInbound (..))
 
 -- Helper function for ToJSON instances with a "kind" field
 kindObject :: Text -> [Pair] -> Value
@@ -1685,3 +1687,59 @@ instance (ToJSON tx, ToJSON reason) => ToJSON (AnyMessage (LocalTxSubmission tx 
       [ "kind" .= String "MsgDone"
       , "agency" .= String (pack $ show stok)
       ]
+
+instance ( ToJSON txid
+         , ToJSON tx
+         , Show txid
+         , Show tx
+         )
+       => ToJSON (TraceTxSubmissionInbound txid tx) where
+  toJSON (TraceTxSubmissionCollected count) =
+    object
+      [ "kind" .= String "TxSubmissionCollected"
+      , "count" .= toJSON count
+      ]
+  toJSON (TraceTxSubmissionProcessed processed) =
+    object
+      [ "kind" .= String "TxSubmissionProcessed"
+      , "accepted" .= toJSON (ptxcAccepted processed)
+      , "rejected" .= toJSON (ptxcRejected processed)
+      ]
+  toJSON (TraceTxInboundCanRequestMoreTxs count) =
+    object
+      [ "kind" .= String "TxInboundCanRequestMoreTxs"
+      , "count" .= toJSON count
+      ]
+  toJSON (TraceTxInboundCannotRequestMoreTxs count) =
+    object
+      [ "kind" .= String "TxInboundCannotRequestMoreTxs"
+      , "count" .= toJSON count
+      ]
+  toJSON (TraceTxInboundAddedToMempool txids diffTime) =
+    object
+      [ "kind" .= String "TxInboundAddedToMempool"
+      , "txids" .= toJSON txids
+      , "time" .= diffTime
+      ]
+  toJSON (TraceTxInboundRejectedFromMempool txids diffTime) =
+    object
+      [ "kind" .= String "TxInboundRejectedFromMempool"
+      , "txids" .= toJSON txids
+      , "time" .= diffTime
+      ]
+  toJSON (TraceTxInboundError err) =
+    object
+      [ "kind" .= String "TxInboundError"
+      , "error" .= String (pack $ show err)
+      ]
+  toJSON TraceTxInboundTerminated =
+    object
+      [ "kind" .= String "TxInboundTerminated"
+      ]
+  toJSON (TraceTxInboundDecision decision) =
+    object
+      [ "kind" .= String "TxInboundDecision"
+      -- TODO: this is too verbose, it will show full tx's
+      , "decision" .= String (pack $ show decision)
+      ]
+
