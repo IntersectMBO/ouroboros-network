@@ -23,7 +23,6 @@ import Data.Map qualified as Map
 import Data.Maybe (mapMaybe)
 import Data.Set (Set)
 import Data.Set qualified as Set
-import Data.Typeable (Typeable)
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (AssertionFailed (..), throw)
@@ -33,7 +32,7 @@ import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.IOSim
-import Control.Tracer (Tracer (Tracer), contramap, nullTracer)
+import Control.Tracer (contramap, nullTracer)
 
 import Ouroboros.Network.ControlMessage (ControlMessage (..))
 import Ouroboros.Network.DeltaQ
@@ -1002,11 +1001,3 @@ prop_comparePeerGSVEq salt p (PeerGSVT a) aActive =
     let peerSet = if aActive then Set.singleton p
                              else Set.empty in
     comparePeerGSV peerSet salt (a, p) (a, p) === EQ
-
-
---
--- Trace utils
---
-
-dynamicTracer :: Typeable a => Tracer (IOSim s) a
-dynamicTracer = Tracer traceM

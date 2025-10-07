@@ -36,6 +36,7 @@ module Test.Ouroboros.Network.Utils
   , debugTracer
   , debugTracerG
   , sayTracer
+  , dynamicTracer
     -- * Tasty Utils
   , nightlyTest
   , ignoreTest
@@ -278,6 +279,9 @@ debugTracerG :: (Show a, Typeable a) => Tracer (IOSim s) a
 debugTracerG =    Tracer (\msg -> getCurrentTime >>= say . show . (,msg))
                <> Tracer traceM
             -- <> Tracer Debug.traceShowM
+
+dynamicTracer :: Typeable a => Tracer (IOSim s) a
+dynamicTracer = Tracer traceM
 
 --
 -- Nightly tests
