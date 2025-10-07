@@ -171,12 +171,13 @@ ntnApps
 ntnApps
     tracer
     Configuration {
-      dmqcSigSubmissionClientTracer = I sigSubmissionClientTracer
-    , dmqcSigSubmissionServerTracer = I sigSubmissionServerTracer
-    , dmqcKeepAliveClientTracer     = I keepAliveClientTracer
-    , dmqcKeepAliveServerTracer     = I keepAliveServerTracer
-    , dmqcPeerSharingClientTracer   = I peerSharingClientTracer
-    , dmqcPeerSharingServerTracer   = I peerSharingServerTracer
+      dmqcSigSubmissionClientTracer  = I sigSubmissionClientTracer
+    , dmqcSigSubmissionServerTracer  = I sigSubmissionServerTracer
+    , dmqcSigSubmissionInboundTracer = I sigSubmissionInboundTracer
+    , dmqcKeepAliveClientTracer      = I keepAliveClientTracer
+    , dmqcKeepAliveServerTracer      = I keepAliveServerTracer
+    , dmqcPeerSharingClientTracer    = I peerSharingClientTracer
+    , dmqcPeerSharingServerTracer    = I peerSharingServerTracer
     }
     NodeKernel {
       fetchClientRegistry
@@ -279,7 +280,9 @@ ntnApps
               channel
               $ txSubmissionServerPeerPipelined
               $ txSubmissionInboundV2
-                  nullTracer -- TODO
+                  (if sigSubmissionInboundTracer
+                     then WithEventType "SigSubmissionInbound" . Mx.WithBearer connId >$< tracer
+                     else nullTracer)
                   _SIG_SUBMISSION_INIT_DELAY
                   mempoolWriter
                   peerSigAPI
