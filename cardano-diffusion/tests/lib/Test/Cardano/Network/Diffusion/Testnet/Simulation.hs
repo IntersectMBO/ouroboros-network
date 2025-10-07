@@ -28,7 +28,6 @@ module Test.Cardano.Network.Diffusion.Testnet.Simulation
     -- * Tracing
   , DiffusionTestTrace (..)
   , ppDiffusionTestTrace
-  , iosimTracer
     -- * Re-exports
   , TestAddress (..)
   , RelayAccessPoint (..)
@@ -48,7 +47,7 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.Fix
-import Control.Monad.IOSim (IOSim, traceM)
+import Control.Monad.IOSim (IOSim)
 import Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)
 
 import Data.Bifunctor (first)
@@ -998,13 +997,6 @@ ppDiffusionTestTrace (DiffusionDNSTrace tr)                         = show tr
 ppDiffusionTestTrace (DiffusionMuxTrace tr)                         = show tr
 
 
--- | A debug tracer which embeds events in DiffusionTestTrace.
---
-iosimTracer :: forall s.
-               Tracer (IOSim s) (WithTime (WithName NtNAddr DiffusionTestTrace))
-iosimTracer = Tracer traceM
-
-
 -- | Run an arbitrary topology in `IOSim`.
 --
 diffusionSimulation
@@ -1012,7 +1004,7 @@ diffusionSimulation
   -> DiffusionScript
   -> IOSim s Void
 diffusionSimulation bearerInfo diffusionScript =
-  diffusionSimulationM bearerInfo diffusionScript iosimTracer
+  diffusionSimulationM bearerInfo diffusionScript dynamicTracer
 
 -- | Run an arbitrary topology in a generic monad `m`.
 --
