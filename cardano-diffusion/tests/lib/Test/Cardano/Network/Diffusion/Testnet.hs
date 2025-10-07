@@ -309,29 +309,38 @@ traceFromList = Trace.fromList (MainReturn  (Time 0) (Labelled (ThreadId []) (Ju
 
 
 testWithIOSim :: (SimTrace Void -> Int -> Property)
+              -- ^ property to verify
               -> Int
+              -- ^ number of trace events to analyse
               -> AbsBearerInfo
+              -- ^ bearer configuration
               -> DiffusionScript
+              -- ^ sim-net configuration
               -> Property
-testWithIOSim f traceNumber bi ds =
+testWithIOSim prop traceNumber bi ds =
   let sim :: forall s . IOSim s Void
       sim = diffusionSimulation (toBearerInfo bi)
                                 ds
                                 iosimTracer
       trace = runSimTrace sim
-   in labelDiffusionScript ds
-    $ counterexample (intercalate "\n" $
-        selectTraceEventsSay' $ Trace.take traceNumber trace)
-    --counterexample (Trace.ppTrace show (ppSimEvent 0 0 0) $ Trace.take traceNumber trace)
-    $ f trace traceNumber
+   in labelDiffusionScript ds $
+      -- we don't capture the time in the say trace, we add it here
+      counterexample (intercalate "\n" $ map (\(Time t, ev) -> show t <> " " <> ev) $
+        selectTraceEventsSayWithTime' $ Trace.take traceNumber trace) $
+      -- counterexample (Trace.ppTrace show (ppSimEvent 0 0 0) $ Trace.take traceNumber trace) $
+      prop trace traceNumber
 
 
 testWithIOSimPOR :: (SimTrace Void -> Int -> Property)
+                 -- ^ property to verify
                  -> Int
+                 -- ^ number of trace events to analyse
                  -> AbsBearerInfo
+                 -- ^ bearer configuration
                  -> DiffusionScript
+                 -- ^ sim-net configuration
                  -> Property
-testWithIOSimPOR f traceNumber bi ds =
+testWithIOSimPOR prop traceNumber bi ds =
   let sim :: forall s . IOSim s Void
       sim = do
         exploreRaces
@@ -339,8 +348,12 @@ testWithIOSimPOR f traceNumber bi ds =
                             ds
                             iosimTracer
    in labelDiffusionScript ds
-    $ exploreSimTrace id sim $ \_ ioSimTrace ->
-        f ioSimTrace  traceNumber
+    $ exploreSimTrace id sim $ \_ trace ->
+        -- we don't capture the time in the say trace, we add it here
+        counterexample (intercalate "\n" $ map (\(Time t, ev) -> show t <> " " <> ev) $
+          selectTraceEventsSayWithTime' $ Trace.take traceNumber trace) $
+        -- counterexample (Trace.ppTrace show (ppSimEvent 0 0 0) $ Trace.take traceNumber trace) $
+        prop trace traceNumber
 
 
 --
