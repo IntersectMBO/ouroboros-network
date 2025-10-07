@@ -138,6 +138,7 @@ ntcApps
      , MonadSTM m
      , ShowProxy SigMempoolFail
      , ShowProxy sig
+     , Aeson.ToJSON msgid
      , Aeson.ToJSON sig
      , Aeson.ToJSON ntcAddr
      )
@@ -170,7 +171,13 @@ ntcApps tracer
         msgSubmissionCodec
         channel
         (localMsgSubmissionServerPeer $
-          localMsgSubmissionServer nullTracer mempoolWriter)
+          localMsgSubmissionServer
+            -- TODO: use a separate option for this tracer rather than reusing
+            -- `dmqLocalMsgSubmissionServerTracer`.
+            (if localMsgSubmissionServerTracer
+               then WithEventType "LocalMsgSubmissionServer" . Mx.WithBearer connId >$< tracer
+               else nullTracer)
+            mempoolWriter)
 
     aLocalMsgNotification _version ResponderContext { rcConnectionId = connId } channel = do
       labelThisThread "LocalMsgNotificationServer"
@@ -181,7 +188,9 @@ ntcApps tracer
         msgNotificationCodec
         channel
         (localMsgNotificationServerPeer $
-          localMsgNotificationServer nullTracer (pure ()) maxMsgs mempoolReader)
+          localMsgNotificationServer
+            nullTracer
+            (pure ()) maxMsgs mempoolReader)
 
 
 data Protocols appType ntcAddr bytes m a b =

@@ -30,9 +30,11 @@ module DMQ.Protocol.SigSubmission.Type
 
 import Data.Aeson
 import Data.ByteString (ByteString)
+import Data.ByteString.Base16 as BS.Base16
 import Data.ByteString.Base16.Lazy as LBS.Base16
 import Data.ByteString.Lazy qualified as LBS
 import Data.ByteString.Lazy.Char8 qualified as LBS.Char8
+import Data.Text.Encoding qualified as Text
 import Data.Time.Clock.POSIX (POSIXTime)
 import Data.Typeable
 
@@ -53,6 +55,10 @@ newtype SigHash = SigHash { getSigHash :: ByteString }
 
 newtype SigId = SigId { getSigId :: SigHash }
   deriving stock (Show, Eq, Ord)
+
+instance ToJSON SigId where
+  toJSON (SigId (SigHash bs)) =
+    String (Text.decodeUtf8Lenient . BS.Base16.encode $ bs)
 
 instance ShowProxy SigId where
 
