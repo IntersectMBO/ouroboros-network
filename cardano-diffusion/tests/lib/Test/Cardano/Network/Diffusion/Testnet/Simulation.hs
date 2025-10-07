@@ -1005,8 +1005,18 @@ iosimTracer :: forall s.
 iosimTracer = Tracer traceM
 
 
--- | Run an arbitrary topology
+-- | Run an arbitrary topology in `IOSim`.
+--
 diffusionSimulation
+  :: BearerInfo
+  -> DiffusionScript
+  -> IOSim s Void
+diffusionSimulation bearerInfo diffusionScript =
+  diffusionSimulationM bearerInfo diffusionScript iosimTracer
+
+-- | Run an arbitrary topology in a generic monad `m`.
+--
+diffusionSimulationM
   :: forall m. ( Alternative (STM m)
                , MonadAsync       m
                , MonadDelay       m
@@ -1029,7 +1039,7 @@ diffusionSimulation
   -> Tracer m (WithTime (WithName NtNAddr DiffusionTestTrace))
   -- ^ timed trace of nodes in the system
   -> m Void
-diffusionSimulation
+diffusionSimulationM
   defaultBearerInfo
   (DiffusionScript simArgs dnsMapScript nodeArgs)
   nodeTracer = do
