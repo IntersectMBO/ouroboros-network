@@ -4,11 +4,13 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE PackageImports      #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module DMQ.Tracer
-  ( dmqTracer
+  ( mkCardanoTracer
+  , dmqTracer
   , dmqDiffusionTracers
   , WithEventType (..)
   , NoExtraPeers (..)
@@ -22,13 +24,10 @@ module DMQ.Tracer
   ) where
 
 import Codec.CBOR.Term (Term)
-import Control.Monad.Class.MonadTime
-import Control.Tracer
+import "contra-tracer" Control.Tracer
 
 import Data.Aeson
-import Data.Aeson.Encode.Pretty (encodePretty)
-import Data.Bool (bool)
-import Data.ByteString.Lazy.Char8 qualified as LBS.Char8
+import Data.Aeson.KeyMap (fromList)
 import Data.Functor.Contravariant ((>$<))
 import Data.Set qualified as Set
 import Data.Text qualified as Text
@@ -41,38 +40,115 @@ import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers)
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
 import Ouroboros.Network.Snocket (RemoteAddress)
 
+import qualified Cardano.Logging as Logging
+
 import DMQ.Configuration
 import DMQ.NodeToClient.Version
 import DMQ.NodeToNode.Version
 
-data TraceEvent ev = TraceEvent
-  { time      :: UTCTime
-  , eventType :: String
-  , event     :: ev
-  }
+data WithEventType = forall a. ToJSON a => WithEventType String a
 
-instance ToJSON ev => ToJSON (TraceEvent ev) where
-  toJSON TraceEvent {time, eventType, event} =
-    object [ "time"  .= time
-           , "type"  .= eventType
-           , "event" .= event
-           ]
+instance Logging.LogFormatting WithEventType where
+  -- Machine readable representation with varying details based on the detail level.
+  -- forMachine :: DetailLevel -> a -> Aeson.Object
+  forMachine _ (WithEventType _ event) = fromList [ ("data", toJSON event) ]
+  -- Human readable representation.
+  -- forHuman :: a -> Text
+  forHuman _ = ""
+  -- Metrics representation.
+  -- asMetrics :: a -> [Metric]
+  asMetrics _ = []
 
-data WithEventType a = WithEventType String a
-  deriving Show
-instance ToJSON a => ToJSON (WithEventType a) where
-  toJSON (WithEventType eventType a) = toJSON (eventType, a)
+instance Logging.MetaTrace WithEventType where
+  -- allNamespaces :: [Namespace a]
+  allNamespaces = [
+      Logging.Namespace [] ["Mux"]
+    , Logging.Namespace [] ["Channel"]
+    , Logging.Namespace [] ["Bearer"]
+    , Logging.Namespace [] ["Handshake"]
+    , Logging.Namespace [] ["LocalMux"]
+    , Logging.Namespace [] ["LocalChannel"]
+    , Logging.Namespace [] ["LocalBearer"]
+    , Logging.Namespace [] ["LocalHandshake"]
+    , Logging.Namespace [] ["Diffusion"]
+    , Logging.Namespace [] ["LocalRootPeers"]
+    , Logging.Namespace [] ["PublicRootPeers"]
+    , Logging.Namespace [] ["LedgerPeers"]
+    , Logging.Namespace [] ["PeerSelection"]
+    , Logging.Namespace [] ["DebugPeerSelectionInitiator"]
+    , Logging.Namespace [] ["DebugPeerSelectionInitiatorResponder"]
+    , Logging.Namespace [] ["PeerSelectionCounters"]
+    , Logging.Namespace [] ["ChurnCounters"]
+    , Logging.Namespace [] ["PeerSelectionActions"]
+    , Logging.Namespace [] ["ConnectionManager"]
+    , Logging.Namespace [] ["ConnectionManagerTransition"]
+    , Logging.Namespace [] ["Server"]
+    , Logging.Namespace [] ["InboundGovernor"]
+    , Logging.Namespace [] ["InboundGovernorTransition"]
+    , Logging.Namespace [] ["dtDnsTracer"]
+    , Logging.Namespace [] ["dtLocalConnectionManagerTracer"]
+    , Logging.Namespace [] ["dtLocalServerTracer"]
+    , Logging.Namespace [] ["dtLocalInboundGovernorTracer"]
+    ]
+  namespaceFor (WithEventType str _) = Logging.Namespace [] [(Text.pack str)]
+  severityFor _ _ = Just Logging.Info
+  privacyFor _ _ =  Just Logging.Public
+  detailsFor _ _ =  Just Logging.DNormal
+  documentFor _ = Nothing
+  metricsDocFor _ = []
+
+mkCardanoTracer :: Logging.TraceConfig
+                -> IO (Logging.Trace IO WithEventType)
+mkCardanoTracer traceConfig = do
+  emptyConfigReflection <- Logging.emptyConfigReflection
+  stdoutTrace <- Logging.standardTracer
+  {-- From: Cardano.Logging.Tracer.Composed
+      -- | Construct a tracer according to the requirements for cardano node.
+      -- The tracer gets a 'name', which is appended to its namespace.
+      -- The tracer has to be an instance of LogFormatting for the display of
+      -- messages and an instance of MetaTrace for meta information such as
+      -- severity, privacy, details and backends'.
+      -- The tracer gets the backends': 'trStdout', 'trForward' and 'mbTrEkg'
+      -- as arguments.
+      -- The returned tracer needs to be configured with a configuration
+      -- before it is used.
+      mkCardanoTracer :: forall evt. ( LogFormatting evt , MetaTrace evt)
+                      => Trace IO FormattedMessage
+                      -> Trace IO FormattedMessage
+                      -> Maybe (Trace IO FormattedMessage)
+                      -> [Text]
+                      -> IO (Trace IO evt)
+  --}
+  tracer <- Logging.mkCardanoTracer
+                  stdoutTrace
+                  mempty
+                  Nothing
+                  [] -- ["DMQ"]
+  {-- From: Cardano.Logging.Configuration
+      -- | Call this function at initialisation, and later for reconfiguration.
+      -- Config reflection is used to optimise the tracers and has to collect
+      -- information about the tracers. Although it is possible to give more
+      -- then one tracer of the same time, it is not a common case to do this.
+      configureTracers :: forall a m. (MetaTrace a ,  MonadIO m)
+                       => ConfigReflection
+                       -> TraceConfig
+                       -> [Trace m a]
+                       -> m ()
+  --}
+  Logging.configureTracers
+    emptyConfigReflection
+    traceConfig
+    [tracer]
+  return tracer
 
 -- | DMQ tracer
-dmqTracer :: ToJSON ev
-          => Bool
-          -> Tracer IO (WithEventType ev)
-dmqTracer pretty = contramapM
-           (\(WithEventType eventType event) -> do
-              time <- getCurrentTime
-              return $ bool encode encodePretty pretty TraceEvent { time, eventType, event }
+dmqTracer :: (Logging.Trace IO WithEventType)
+          -> Tracer IO WithEventType
+dmqTracer cardanoTracer = contramapM
+           (\wet@(WithEventType _ _) -> do
+              Logging.traceWith cardanoTracer wet
            )
-       $ Tracer LBS.Char8.putStrLn
+       $ Tracer (\_ -> return ())
 
 -- An orphan instance needed for `Handshake versionNumber Term`
 instance ToJSON Term where
@@ -156,7 +232,7 @@ dmqDiffusionTracers
   :: forall m.
      Applicative m
   => Configuration
-  -> (forall ev. ToJSON ev => Tracer m (WithEventType ev))
+  -> (Tracer m WithEventType)
   -> Diffusion.Tracers RemoteAddress NodeToNodeVersion   NodeToNodeVersionData
                        LocalAddress  NodeToClientVersion NodeToClientVersionData
                        NoExtraState

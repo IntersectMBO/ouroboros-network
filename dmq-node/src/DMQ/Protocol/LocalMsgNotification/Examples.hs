@@ -1,7 +1,9 @@
+{-# LANGUAGE PackageImports    #-}
+
 module DMQ.Protocol.LocalMsgNotification.Examples where
 
 import Control.Exception (assert)
-import Control.Tracer
+import "contra-tracer" Control.Tracer
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Word

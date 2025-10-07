@@ -1,8 +1,10 @@
+{-# LANGUAGE PackageImports    #-}
+
 module DMQ.NodeToClient.LocalMsgNotification where
 
 import Control.Concurrent.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
-import Control.Tracer
+import "contra-tracer" Control.Tracer
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Maybe (fromJust)
 import Data.Traversable (mapAccumR)
