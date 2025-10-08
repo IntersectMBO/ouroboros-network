@@ -148,8 +148,9 @@ ntcApps
   -> Codecs crypto m
   -> Apps ntcAddr m ()
 ntcApps tracer
-        Configuration { dmqcLocalMsgSubmissionServerTracer   = I localMsgSubmissionServerTracer,
-                        dmqcLocalMsgNotificationServerTracer = I localMsgNotificationServerTracer
+        Configuration { dmqcLocalMsgSubmissionServerProtocolTracer   = I localMsgSubmissionServerProtocolTracer,
+                        dmqcLocalMsgNotificationServerProtocolTracer = I localMsgNotificationServerProtocolTracer,
+                        dmqcLocalMsgSubmissionServerTracer           = I localMsgSubmissionServerTracer
                       }
         mempoolReader
         mempoolWriter
@@ -161,10 +162,10 @@ ntcApps tracer
   }
   where
     aLocalMsgSubmission _version ResponderContext { rcConnectionId = connId } channel = do
-      labelThisThread "LocalMsgSubmissionServer"
+      labelThisThread "LocalMsgSubmission.Server"
       runAnnotatedPeer
-        (if localMsgSubmissionServerTracer
-           then WithEventType "LocalMsgSubmissionServer" . Mx.WithBearer connId >$< tracer
+        (if localMsgSubmissionServerProtocolTracer
+           then WithEventType "LocalMsgSubmission.Protocol.Server" . Mx.WithBearer connId >$< tracer
            else nullTracer)
         msgSubmissionCodec
         channel
@@ -174,15 +175,15 @@ ntcApps tracer
             -- TODO: use a separate option for this tracer rather than reusing
             -- `dmqLocalMsgSubmissionServerTracer`.
             (if localMsgSubmissionServerTracer
-               then WithEventType "LocalMsgSubmissionServer" . Mx.WithBearer connId >$< tracer
+               then WithEventType "LocalMsgSubmission.Server" . Mx.WithBearer connId >$< tracer
                else nullTracer)
             mempoolWriter)
 
     aLocalMsgNotification _version ResponderContext { rcConnectionId = connId } channel = do
-      labelThisThread "LocalMsgNotificationServer"
+      labelThisThread "LocalMsgNotification.Server"
       runAnnotatedPeer
-        (if localMsgNotificationServerTracer
-           then WithEventType "LocalMsgNotificationServer" . Mx.WithBearer connId >$< tracer
+        (if localMsgNotificationServerProtocolTracer
+           then WithEventType "LocalMsgNotification.Protocol.Server" . Mx.WithBearer connId >$< tracer
            else nullTracer)
         msgNotificationCodec
         channel

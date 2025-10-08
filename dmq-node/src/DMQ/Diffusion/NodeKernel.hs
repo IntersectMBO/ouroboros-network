@@ -129,7 +129,7 @@ withNodeKernel tracer
           $ \mempoolThread ->
     withAsync (decisionLogicThreads
                 (if sigSubmissionLogicTracer
-                   then WithEventType "SigSubmissionLogic" >$< tracer
+                   then WithEventType "SigSubmission.Logic" >$< tracer
                    else nullTracer)
                 nullTracer
                 defaultSigDecisionPolicy

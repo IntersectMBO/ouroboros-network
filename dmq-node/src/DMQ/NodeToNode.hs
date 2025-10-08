@@ -171,14 +171,15 @@ ntnApps
 ntnApps
     tracer
     Configuration {
-      dmqcSigSubmissionClientTracer  = I sigSubmissionClientTracer
-    , dmqcSigSubmissionServerTracer  = I sigSubmissionServerTracer
-    , dmqcSigSubmissionInboundTracer = I sigSubmissionInboundTracer
-    , dmqcSigSubmissionLogicTracer   = I sigSubmissionLogicTracer
-    , dmqcKeepAliveClientTracer      = I keepAliveClientTracer
-    , dmqcKeepAliveServerTracer      = I keepAliveServerTracer
-    , dmqcPeerSharingClientTracer    = I peerSharingClientTracer
-    , dmqcPeerSharingServerTracer    = I peerSharingServerTracer
+      dmqcSigSubmissionClientProtocolTracer  = I sigSubmissionClientProtocolTracer
+    , dmqcSigSubmissionServerProtocolTracer  = I sigSubmissionServerProtocolTracer
+    , dmqcKeepAliveClientProtocolTracer      = I keepAliveClientProtocolTracer
+    , dmqcKeepAliveServerProtocolTracer      = I keepAliveServerProtocolTracer
+    , dmqcPeerSharingClientProtocolTracer    = I peerSharingClientProtocolTracer
+    , dmqcPeerSharingServerProtocolTracer    = I peerSharingServerProtocolTracer
+
+    , dmqcSigSubmissionInboundTracer         = I sigSubmissionInboundTracer
+    , dmqcSigSubmissionLogicTracer           = I sigSubmissionLogicTracer
     }
     NodeKernel {
       fetchClientRegistry
@@ -238,8 +239,8 @@ ntnApps
                            eicControlMessage = controlMessage
                          } channel =
       runAnnotatedPeerWithLimits
-        (if sigSubmissionClientTracer
-          then WithEventType "SigSubmissionClient" . Mx.WithBearer connId >$< tracer
+        (if sigSubmissionClientProtocolTracer
+          then WithEventType "SigSubmission.Protocol.Client" . Mx.WithBearer connId >$< tracer
           else nullTracer)
         sigSubmissionCodec
         sigSubmissionSizeLimits
@@ -262,7 +263,7 @@ ntnApps
     aSigSubmissionServer _version ResponderContext { rcConnectionId = connId } channel =
         SigSubmission.withPeer
           (if sigSubmissionLogicTracer
-             then WithEventType "SigSubmissionLogic" . Mx.WithBearer connId >$< tracer
+             then WithEventType "SigSubmission.Logic" . Mx.WithBearer connId >$< tracer
              else nullTracer)
           sigChannelVar
           sigMempoolSem
@@ -274,8 +275,8 @@ ntnApps
           (remoteAddress connId)
           $ \(peerSigAPI :: PeerTxAPI m SigId (Sig crypto)) ->
             runPipelinedAnnotatedPeerWithLimits
-              (if sigSubmissionServerTracer
-                 then WithEventType "SigSubmissionServer" . Mx.WithBearer connId >$< tracer
+              (if sigSubmissionServerProtocolTracer
+                 then WithEventType "SigSubmission.Protocol.Server" . Mx.WithBearer connId >$< tracer
                  else nullTracer)
               sigSubmissionCodec
               sigSubmissionSizeLimits
@@ -284,7 +285,7 @@ ntnApps
               $ txSubmissionServerPeerPipelined
               $ txSubmissionInboundV2
                   (if sigSubmissionInboundTracer
-                     then WithEventType "SigSubmissionInbound" . Mx.WithBearer connId >$< tracer
+                     then WithEventType "SigSubmission.Inbound" . Mx.WithBearer connId >$< tracer
                      else nullTracer)
                   _SIG_SUBMISSION_INIT_DELAY
                   mempoolWriter
@@ -302,11 +303,11 @@ ntnApps
                      , eicControlMessage = controlMessageSTM
                      }
                      channel = do
-      labelThisThread "KeepAliveClient"
+      labelThisThread "KeepAlive.Client"
       let kacApp dqCtx =
             runPeerWithLimits
-              (if keepAliveClientTracer
-                 then WithEventType "KeepAliveClient" . Mx.WithBearer connId >$< tracer
+              (if keepAliveClientProtocolTracer
+                 then WithEventType "KeepAlive.Protocol.Client" . Mx.WithBearer connId >$< tracer
                  else nullTracer)
               keepAliveCodec
               keepAliveSizeLimits
@@ -333,10 +334,10 @@ ntnApps
                        rcConnectionId = connId
                      }
                      channel = do
-      labelThisThread "KeepAliveServer"
+      labelThisThread "KeepAlive.Server"
       runPeerWithLimits
-        (if keepAliveServerTracer
-           then WithEventType "KeepAliveServer" . Mx.WithBearer connId >$< tracer
+        (if keepAliveServerProtocolTracer
+           then WithEventType "KeepAlive.Protocol.Server" . Mx.WithBearer connId >$< tracer
            else nullTracer)
         keepAliveCodec
         keepAliveSizeLimits
@@ -356,13 +357,13 @@ ntnApps
                        , eicControlMessage = controlMessageSTM
                        }
                        channel = do
-      labelThisThread "PeerSharingClient"
+      labelThisThread "PeerSharing.Client"
       bracketPeerSharingClient peerSharingRegistry (remoteAddress connId)
         $ \controller -> do
           psClient <- peerSharingClient controlMessageSTM controller
           ((), trailing) <- runPeerWithLimits
-            (if peerSharingClientTracer
-               then WithEventType "PeerSharingClient" . Mx.WithBearer connId >$< tracer
+            (if peerSharingClientProtocolTracer
+               then WithEventType "PeerSharing.Protocol.Client" . Mx.WithBearer connId >$< tracer
                else nullTracer)
             peerSharingCodec
             peerSharingSizeLimits
@@ -381,10 +382,10 @@ ntnApps
                          rcConnectionId = connId
                        }
                        channel = do
-      labelThisThread "PeerSharingServer"
+      labelThisThread "PeerSharing.Server"
       runPeerWithLimits
-        (if peerSharingServerTracer
-           then WithEventType "PeerSharingServer" . Mx.WithBearer connId >$< tracer
+        (if peerSharingServerProtocolTracer
+           then WithEventType "PeerSharing.Protocol.Server" . Mx.WithBearer connId >$< tracer
            else nullTracer)
         peerSharingCodec
         peerSharingSizeLimits
