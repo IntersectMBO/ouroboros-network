@@ -17,6 +17,7 @@
 
 module Test.Cardano.Network.Diffusion.Testnet (tests) where
 
+import Control.Arrow ((&&&))
 import Control.Exception (AssertionFailed (..), catch, displayException,
            evaluate, fromException)
 import Control.Monad.Class.MonadFork
@@ -2907,70 +2908,51 @@ prop_diffusion_target_active_below ioSimTrace traceNumber =
               events
 
           govActiveFailuresSig :: Signal (Set NtNAddr)
-          govActiveFailuresSig =
+          govActiveFailuresSig = holdUntilNextWakeup govAnythingSig $
               Signal.keyedLinger
-                180 -- 3 minutes  -- TODO: too eager to reconnect?
-                (fromMaybe Set.empty)
+                162 -- 5 * 2^5 + fuzz(-2,2)
+                -- arm `Nothing` from the underlying signal with an empty set,
+                -- we don't want to reset the lingered state too soon.
+                (Just . fromMaybe Set.empty)
             . Signal.fromEvents
             . Signal.selectEvents
                 (\case TracePromoteWarmFailed _ _ peer _ ->
-                         --TODO: the environment does not yet cause this to happen
-                         -- it requires synchronous failure in the establish
-                         -- action
                          Just (Set.singleton peer)
-                       --TODO
                        TraceDemoteAsynchronous status
                          | Set.null failures -> Nothing
                          | otherwise         -> Just failures
                          where
-                           failures = Map.keysSet (Map.filter (==PeerWarm) . fmap fst $ status)
+                           failures = Map.keysSet status
                        TraceDemoteLocalAsynchronous status
                          | Set.null failures -> Nothing
                          | otherwise         -> Just failures
                          where
-                           failures = Map.keysSet (Map.filter (==PeerWarm) . fmap fst $ status)
+                           failures = Map.keysSet status
                        TracePromoteWarmBigLedgerPeerFailed _ _ peer _ ->
                          Just (Set.singleton peer)
                        TraceDemoteBigLedgerPeersAsynchronous status
                          | Set.null failures -> Nothing
                          | otherwise -> Just failures
                          where
-                           failures = Map.keysSet (Map.filter ((==PeerCooling) . fst) status)
+                           failures = Map.keysSet status
                        _ -> Nothing
                 )
             . selectDiffusionPeerSelectionEvents
             $ events
 
-          govInProgressPromoteWarmSig :: Signal (Set NtNAddr)
-          govInProgressPromoteWarmSig =
-            selectDiffusionPeerSelectionState Governor.inProgressPromoteWarm  events
+          govInProgressIneligibleSig :: Signal (Set NtNAddr)
+          govInProgressIneligibleSig =
+            selectDiffusionPeerSelectionState
+            (uncurry Set.union . (    Governor.inProgressPromoteWarm
+                                  &&& Governor.inProgressDemoteWarm))
+            events
 
-          trJoinKillSig :: Signal JoinedOrKilled
-          trJoinKillSig =
-              Signal.fromChangeEvents Terminated -- Default to TrKillingNode
-            . Signal.selectEvents
-                (\case TrJoiningNetwork -> Just Joined
-                       TrTerminated     -> Just Terminated
-                       _                -> Nothing
-                )
-            . selectDiffusionSimulationTrace
+          govAnythingSig :: Signal (Maybe ())
+          govAnythingSig =
+              Signal.fromEvents
+            . void
+            . selectDiffusionPeerSelectionEvents
             $ events
-
-          -- Signal.keyedUntil receives 2 functions one that sets start of the
-          -- set signal, one that ends it and another that stops all.
-          --
-          -- In this particular case we want a signal that is keyed beginning
-          -- on a TrJoiningNetwork and ends on TrKillingNode, giving us a Signal
-          -- with the periods when a node was alive.
-          trIsNodeAlive :: Signal Bool
-          trIsNodeAlive =
-                not . Set.null
-            <$> Signal.keyedUntil (fromJoinedOrTerminated (Set.singleton ())
-                                                           Set.empty)
-                                  (fromJoinedOrTerminated  Set.empty
-                                                          (Set.singleton ()))
-                                  (const False)
-                                  trJoinKillSig
 
           -- There are no opportunities if we're at or above target.
           --
@@ -2983,14 +2965,14 @@ prop_diffusion_target_active_below ioSimTrace traceNumber =
           -- want to promote any, since we'd then be above target for the local
           -- root peer group.
           --
-          promotionOpportunity target local established active recentFailures isAlive
-                               inProgressDemoteToCold inProgressPromoteWarm
-            | isAlive && Set.size active < target
+          promotionOpportunity target local established active recentFailures
+                               inProgressDemoteToCold inProgressIneligible
+            | Set.size active < target
             = established Set.\\ active
                           Set.\\ LocalRootPeers.keysSet local
                           Set.\\ recentFailures
                           Set.\\ inProgressDemoteToCold
-                          Set.\\ inProgressPromoteWarm
+                          Set.\\ inProgressIneligible
 
             | otherwise
             = Set.empty
@@ -3003,31 +2985,26 @@ prop_diffusion_target_active_below ioSimTrace traceNumber =
               <*> govEstablishedPeersSig
               <*> govActivePeersSig
               <*> govActiveFailuresSig
-              <*> trIsNodeAlive
               <*> govInProgressDemoteToColdSig
-              <*> govInProgressPromoteWarmSig
+              <*> govInProgressIneligibleSig
 
           promotionOpportunitiesIgnoredTooLong :: Signal (Set NtNAddr)
           promotionOpportunitiesIgnoredTooLong =
             Signal.keyedTimeout
-              10 -- seconds
+              1 -- seconds
               id
               promotionOpportunities
 
        in counterexample
             ("\nSignal key: (local, established peers, active peers, " ++
              "recent failures, opportunities, is node running, ignored too long)") $
-          counterexample
-            (List.intercalate "\n" $ map show $ Signal.eventsToList events) $
-
           signalProperty 20 show
-            (\(_, _, _, _, _, _, toolong) -> Set.null toolong)
-            ((,,,,,,) <$> govLocalRootPeersSig
+            (\(_, _, _, _, _, toolong) -> Set.null toolong)
+            ((,,,,,) <$> govLocalRootPeersSig
                  <*> govEstablishedPeersSig
                  <*> govActivePeersSig
                  <*> govActiveFailuresSig
-                 <*> govInProgressPromoteWarmSig
-                 <*> trIsNodeAlive
+                 <*> govInProgressIneligibleSig
                  <*> promotionOpportunitiesIgnoredTooLong
             )
 
@@ -5050,6 +5027,20 @@ data JoinedOrKilled = Joined | Terminated
 fromJoinedOrTerminated :: c -> c -> JoinedOrKilled -> c
 fromJoinedOrTerminated j _ Joined     = j
 fromJoinedOrTerminated _ k Terminated = k
+
+-- We maintain and update the baseSignal and only publish
+-- it when we receive a Just () in the arm signal. Some tests
+-- appear to fail due to our signal timeouts, but of which the
+-- governor is not aware while it is dormant/blocked. The test
+-- is allowed to pass unless when/if the governor wakes up, it does
+-- take the action we need it to take.
+holdUntilNextWakeup :: Signal (Maybe ()) -> Signal (Set a) -> Signal (Set a)
+holdUntilNextWakeup armSignal baseSignal =
+  Signal.latch f Set.empty ((,) <$> armSignal
+                                <*> baseSignal)
+  where
+    f (Just (), collected)  = Just collected
+    f (Nothing, _collected) = Nothing
 
 getTime :: (Time, ThreadId (IOSim s), Maybe ThreadLabel, SimEventType) -> Time
 getTime (t, _, _, _) = t
