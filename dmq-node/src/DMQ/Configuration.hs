@@ -145,6 +145,7 @@ data Configuration' f =
     dmqcLocalMsgNotificationServerProtocolTracer   :: f Bool,
 
     dmqcSigSubmissionLogicTracer                   :: f Bool,
+    dmqcSigSubmissionOutboundTracer                :: f Bool,
     dmqcSigSubmissionInboundTracer                 :: f Bool,
     dmqcLocalMsgSubmissionServerTracer             :: f Bool,
 
@@ -259,6 +260,7 @@ defaultConfiguration = Configuration {
       dmqcLocalMsgSubmissionServerProtocolTracer     = I True,
       dmqcLocalMsgNotificationServerProtocolTracer   = I True,
 
+      dmqcSigSubmissionOutboundTracer                = I False,
       dmqcSigSubmissionInboundTracer                 = I True,
       dmqcSigSubmissionLogicTracer                   = I False,
       dmqcLocalMsgSubmissionServerTracer             = I True,
@@ -349,6 +351,7 @@ instance FromJSON PartialConfig where
       dmqcLocalMsgSubmissionServerProtocolTracer     <- Last <$> v .:? "LocalMsgSubmissionServerProtocolracer"
       dmqcLocalMsgNotificationServerProtocolTracer   <- Last <$> v .:? "LocalMsgNotificationServerProtocolracer"
 
+      dmqcSigSubmissionOutboundTracer                <- Last <$> v .:? "SigSubmissionOutboundTracer"
       dmqcSigSubmissionInboundTracer                 <- Last <$> v .:? "SigSubmissionInboundTracer"
       dmqcSigSubmissionLogicTracer                   <- Last <$> v .:? "SigSubmissionLogicTracer"
       dmqcLocalMsgSubmissionServerTracer             <- Last <$> v .:? "LocalMsgSubmissionServerTracer"
@@ -422,6 +425,7 @@ instance ToJSON Configuration where
            , "PeerSharingServerProtocolTracer"            .= unI dmqcPeerSharingServerProtocolTracer
            , "LocalMsgSubmissionServerProtocolTracer"     .= unI dmqcLocalMsgSubmissionServerProtocolTracer
            , "LocalMsgNotificationServerProtocolTracer"   .= unI dmqcLocalMsgNotificationServerProtocolTracer
+           , "SigSubmissionOutboundTracer"                .= unI dmqcSigSubmissionOutboundTracer
            , "SigSubmissionInboundTracer"                 .= unI dmqcSigSubmissionInboundTracer
            , "SigSubmissionLogicTracer"                   .= unI dmqcSigSubmissionLogicTracer
            ]

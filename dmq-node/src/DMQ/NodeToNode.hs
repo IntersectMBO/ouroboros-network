@@ -178,6 +178,7 @@ ntnApps
     , dmqcPeerSharingClientProtocolTracer    = I peerSharingClientProtocolTracer
     , dmqcPeerSharingServerProtocolTracer    = I peerSharingServerProtocolTracer
 
+    , dmqcSigSubmissionOutboundTracer        = I sigSubmissionOutboundTracer
     , dmqcSigSubmissionInboundTracer         = I sigSubmissionInboundTracer
     , dmqcSigSubmissionLogicTracer           = I sigSubmissionLogicTracer
     }
@@ -248,7 +249,9 @@ ntnApps
         channel
         $ txSubmissionClientPeer
         $ txSubmissionOutbound
-            nullTracer
+            (if sigSubmissionOutboundTracer
+               then WithEventType "SigSubmission.Outbound" . Mx.WithBearer connId >$< tracer
+               else nullTracer)
             _MAX_SIGS_TO_ACK
             mempoolReader
             version
