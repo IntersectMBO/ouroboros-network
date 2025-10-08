@@ -19,6 +19,7 @@ module DMQ.Tracer
   , NoExtraConfig (..)
   , NoExtraAPI (..)
   , NoExtraChurnArgs (..)
+  , NoExtraTracer (..)
   ) where
 
 import Codec.CBOR.Term (Term)
@@ -103,6 +104,10 @@ instance ToJSON NoExtraDebugState where
   omitField _ = True
 data NoExtraChurnArgs  = NoExtraChurnArgs
 data NoExtraAPI        = NoExtraAPI
+data NoExtraTracer     = NoExtraTracer
+instance ToJSON NoExtraTracer where
+  toJSON _ = Null
+  omitField _ = True
 
 instance ToJSON (Governor.PeerSelectionCounters NoExtraCounters) where
   toJSON Governor.PeerSelectionCounters {..} =
@@ -164,6 +169,7 @@ dmqDiffusionTracers
                        NoExtraFlags
                        NoExtraPeers
                        NoExtraCounters
+                       NoExtraTracer
                        m
 dmqDiffusionTracers
     Configuration {

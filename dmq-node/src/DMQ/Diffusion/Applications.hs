@@ -1,6 +1,5 @@
-{-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE NamedFieldPuns   #-}
 
 module DMQ.Diffusion.Applications where
 
@@ -40,15 +39,15 @@ diffusionApplications
     dmqcNetworkMagic = I networkMagic
   }
   Diffusion.Configuration {
-    dcMode
-  , dcPeerSharing
+    Diffusion.dcMode
+  , Diffusion.dcPeerSharing
   }
   ntnLimitsAndTimeouts
   ntnApps
   ntcApps
   peerSelectionPolicy =
   Diffusion.Applications {
-    daApplicationInitiatorMode =
+    Diffusion.daApplicationInitiatorMode =
       combineVersions
         [ simpleSingletonVersions
             version
@@ -56,7 +55,7 @@ diffusionApplications
             (NTN.initiatorProtocols ntnLimitsAndTimeouts ntnApps version)
         | version <- [minBound..maxBound]
         ]
-  , daApplicationInitiatorResponderMode =
+  , Diffusion.daApplicationInitiatorResponderMode =
       combineVersions
         [ simpleSingletonVersions
             version
@@ -64,7 +63,7 @@ diffusionApplications
             (NTN.initiatorAndResponderProtocols ntnLimitsAndTimeouts ntnApps version)
         | version <- [minBound..maxBound]
         ]
-  , daLocalResponderApplication         =
+  , Diffusion.daLocalResponderApplication =
       combineVersions
         [ simpleSingletonVersions
             version
@@ -72,13 +71,13 @@ diffusionApplications
             (NTC.responders ntcApps version)
         | version <- [minBound..maxBound]
         ]
-  , daRethrowPolicy                     =  muxErrorRethrowPolicy
-                                        <> ioErrorRethrowPolicy
-  , daReturnPolicy                      = const dmqRepromoteDelay
-  , daRepromoteErrorDelay               = dmqRepromoteDelay
-  , daLocalRethrowPolicy                = mempty
-  , daPeerSelectionPolicy               = peerSelectionPolicy
-  , daPeerSharingRegistry               = peerSharingRegistry
+  , Diffusion.daRethrowPolicy       =  muxErrorRethrowPolicy
+                                   <> ioErrorRethrowPolicy
+  , Diffusion.daReturnPolicy        = const dmqRepromoteDelay
+  , Diffusion.daRepromoteErrorDelay = dmqRepromoteDelay
+  , Diffusion.daLocalRethrowPolicy  = mempty
+  , Diffusion.daPeerSelectionPolicy = peerSelectionPolicy
+  , Diffusion.daPeerSharingRegistry = peerSharingRegistry
   }
 
 

@@ -66,6 +66,7 @@ import Ouroboros.Network.Channel (Channel)
 import Ouroboros.Network.ConnectionId (ConnectionId (..))
 import Ouroboros.Network.Context (ExpandedInitiatorContext (..),
            ResponderContext (..))
+import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.Driver.Limits (runAnnotatedPeerWithLimits,
            runPeerWithLimits, runPipelinedAnnotatedPeerWithLimits)
 import Ouroboros.Network.Driver.Simple (TraceSendRecv)
@@ -79,7 +80,6 @@ import Ouroboros.Network.Mux (MiniProtocol (..), MiniProtocolCb (..),
            OuroborosBundleWithExpandedCtx, RunMiniProtocol (..),
            StartOnDemandOrEagerly (..), TemperatureBundle (..),
            WithProtocolTemperature (..))
-import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.PeerSelection (PeerSharing (..))
 import Ouroboros.Network.PeerSharing (bracketPeerSharingClient,
            peerSharingClient, peerSharingServer)

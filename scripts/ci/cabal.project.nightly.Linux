@@ -15,15 +15,9 @@ package ntp-client
 package network-mux
   flags: +ipv6
 
-package ouroboros-network-api
-  flags: +asserts
-
-package ouroboros-network-testing
-  flags: +nightly
-
 -- IPv6 tests are DISABLED
-package ouroboros-network-framework
-  flags: -ipv6
+package ouroboros-network
+  flags: +asserts -ipv6
 
-package ouroboros-network-protocols
-  flags: +cddl
+package cardano-diffusion
+  flags: +asserts +cddl
