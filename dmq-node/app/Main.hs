@@ -30,6 +30,7 @@ import DMQ.Configuration.Topology (readTopologyFileOrError)
 import DMQ.Diffusion.Applications (diffusionApplications)
 import DMQ.Diffusion.Arguments
 import DMQ.Diffusion.NodeKernel (mempool, withNodeKernel)
+import DMQ.Handlers.TopLevel (toplevelExceptionHandler)
 import DMQ.NodeToClient qualified as NtC
 import DMQ.NodeToNode (dmqCodecs, dmqLimitsAndTimeouts, ntnApps)
 import DMQ.Protocol.LocalMsgSubmission.Codec
@@ -45,7 +46,7 @@ import Ouroboros.Network.TxSubmission.Mempool.Simple qualified as Mempool
 import Paths_dmq_node qualified as Meta
 
 main :: IO ()
-main = void . runDMQ =<< execParser opts
+main = toplevelExceptionHandler $ void . runDMQ =<< execParser opts
   where
     opts = info (parseCLIOptions <**> helper)
                 ( fullDesc
