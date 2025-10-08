@@ -94,6 +94,7 @@ import Ouroboros.Network.Server.RateLimiting (AcceptConnectionsPolicyTrace (..),
 import Ouroboros.Network.Snocket (RemoteAddress)
 import Ouroboros.Network.TxSubmission.Inbound.V2 (ProcessedTxCount (..),
            TraceTxLogic (..), TraceTxSubmissionInbound (..))
+import Ouroboros.Network.TxSubmission.Outbound (TraceTxSubmissionOutbound (..))
 
 -- Helper function for ToJSON instances with a "kind" field
 kindObject :: Text -> [Pair] -> Value
@@ -1759,3 +1760,24 @@ instance ( Show addr
     object [ "kind"      .= String "TxDecisions"
            , "decisions" .= String (pack . show $ decisions)
            ]
+
+
+-- TODO: we need verbosity levels, this instance should be removed once
+-- `dmq-node` has a production tracer.
+instance (ToJSON txid, ToJSON tx)
+      => ToJSON (TraceTxSubmissionOutbound txid tx) where
+  toJSON (TraceTxSubmissionOutboundRecvMsgRequestTxs txids) =
+    object
+      [ "kind"  .= String "TxSubmissionOutboundRecvMsgRequestTxs"
+      , "txids" .= txids
+      ]
+  toJSON (TraceTxSubmissionOutboundSendMsgReplyTxs txs) =
+    object
+      [ "kind" .= String "TxSubmissionOutboundSendMsgReplyTxs"
+      , "txs"  .= txs
+      ]
+  toJSON (TraceControlMessage controlMessage) =
+    object
+      [ "kind" .= String "ControlMessage"
+      , "controlMessage" .= String (pack $ show controlMessage)
+      ]
