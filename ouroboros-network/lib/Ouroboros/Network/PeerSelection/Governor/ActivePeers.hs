@@ -686,11 +686,17 @@ aboveTargetBigLedgerPeers actions@PeerSelectionActions {
                           }
     -- Are we above the general target for number of active peers?
   | numActiveBigLedgerPeers > targetNumberOfActiveBigLedgerPeers
-
-    -- Would we demote any if we could?
-  , let numPeersToDemote = numActiveBigLedgerPeers
+  , let activeBigLedger = activePeers
+                              `Set.intersection` bigLedgerPeersSet
+        -- Would we demote any if we could?
+        numPeersToDemote = numActiveBigLedgerPeers
                          - targetNumberOfActiveBigLedgerPeers
                          - numDemoteInProgressBigLedgerPeers
+                         -- don't drop too many and don't fail to take an opportunity
+                         -- if there are warm peers which are async demoted
+                         - Set.size (Set.intersection
+                                       inProgressDemoteToCold
+                                       activeBigLedger)
   , numPeersToDemote > 0
 
     -- Are there any hot peers we actually can pick to demote?
@@ -698,8 +704,7 @@ aboveTargetBigLedgerPeers actions@PeerSelectionActions {
     -- TODO: review this decision. If we want to be able to demote local root
     -- peers, e.g. for churn and improved selection, then we'll need an extra
     -- mechanism to avoid promotion/demotion loops for local peers.
-  , let availableToDemote = activePeers
-                              `Set.intersection` bigLedgerPeersSet
+  , let availableToDemote = activeBigLedger
                               Set.\\ inProgressDemoteHot
                               Set.\\ inProgressDemoteToCold
                               Set.\\ LocalRootPeers.keysSet localRootPeers
@@ -890,12 +895,16 @@ aboveTargetOther actions@PeerSelectionActions {
                  }
     -- Are we above the general target for number of active peers?
   | numActivePeers > targetNumberOfActivePeers
-
-    -- Would we demote any if we could?
-  , let numPeersToDemote = numActivePeers
+  , let activeNonBig = activePeers Set.\\ bigLedgerPeersSet
+        -- Would we demote any if we could?
+        numPeersToDemote = numActivePeers
                          - targetNumberOfActivePeers
                          - numDemoteInProgress
-                         - (Set.size inProgressDemoteToCold)
+                         -- don't drop too many and don't fail to take an opportunity
+                         -- if there are warm peers which are async demoted
+                         - Set.size (Set.intersection
+                                       inProgressDemoteToCold
+                                       activeNonBig)
   , numPeersToDemote > 0
 
     -- Are there any hot peers we actually can pick to demote?
@@ -903,10 +912,9 @@ aboveTargetOther actions@PeerSelectionActions {
     -- TODO: review this decision. If we want to be able to demote local root
     -- peers, e.g. for churn and improved selection, then we'll need an extra
     -- mechanism to avoid promotion/demotion loops for local peers.
-  , let availableToDemote = activePeers
+  , let availableToDemote = activeNonBig
                               Set.\\ inProgressDemoteHot
                               Set.\\ LocalRootPeers.keysSet localRootPeers
-                              Set.\\ bigLedgerPeersSet
                               Set.\\ inProgressDemoteToCold
   , not (Set.null availableToDemote)
   = Guarded Nothing $ do
