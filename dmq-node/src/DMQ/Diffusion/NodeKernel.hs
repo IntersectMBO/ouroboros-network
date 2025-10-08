@@ -1,4 +1,5 @@
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module DMQ.Diffusion.NodeKernel
@@ -12,14 +13,20 @@ import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
+import Control.Tracer (Tracer, nullTracer)
 
+import Data.Aeson qualified as Aeson
 import Data.Function (on)
+import Data.Functor.Contravariant ((>$<))
+import Data.Hashable
 import Data.Sequence qualified as Seq
 import Data.Time.Clock.POSIX (POSIXTime)
 import Data.Time.Clock.POSIX qualified as Time
 import Data.Void (Void)
 import System.Random (StdGen)
 import System.Random qualified as Random
+
+import Cardano.KESAgent.KES.Crypto (Crypto (..))
 
 import Ouroboros.Network.BlockFetch (FetchClientRegistry,
            newFetchClientRegistry)
@@ -29,11 +36,13 @@ import Ouroboros.Network.PeerSelection.Governor.Types
 import Ouroboros.Network.PeerSharing (PeerSharingAPI, PeerSharingRegistry,
            newPeerSharingAPI, newPeerSharingRegistry,
            ps_POLICY_PEER_SHARE_MAX_PEERS, ps_POLICY_PEER_SHARE_STICKY_TIME)
-import Ouroboros.Network.TxSubmission.Inbound.V2.Registry
+import Ouroboros.Network.TxSubmission.Inbound.V2
 import Ouroboros.Network.TxSubmission.Mempool.Simple (Mempool (..))
 import Ouroboros.Network.TxSubmission.Mempool.Simple qualified as Mempool
 
+import DMQ.Configuration
 import DMQ.Protocol.SigSubmission.Type (Sig (sigExpiresAt), SigId)
+import DMQ.Tracer
 
 
 data NodeKernel crypto ntnAddr m =
@@ -87,7 +96,8 @@ newNodeKernel rng = do
 
 
 withNodeKernel :: forall crypto ntnAddr m a.
-                  ( MonadAsync       m
+                  ( Crypto crypto
+                  , MonadAsync       m
                   , MonadFork        m
                   , MonadDelay       m
                   , MonadLabelledSTM m
@@ -95,17 +105,40 @@ withNodeKernel :: forall crypto ntnAddr m a.
                   , MonadMVar        m
                   , MonadTime        m
                   , Ord ntnAddr
+                  , Show ntnAddr
+                  , Hashable ntnAddr
                   )
-               => StdGen
+               => (forall ev. Aeson.ToJSON ev => Tracer m (WithEventType ev))
+               -> Configuration
+               -> StdGen
                -> (NodeKernel crypto ntnAddr m -> m a)
                -- ^ as soon as the callback exits the `mempoolWorker` will be
                -- killed
                -> m a
-withNodeKernel rng k = do
-  nodeKernel@NodeKernel { mempool } <- newNodeKernel rng
+withNodeKernel tracer
+               Configuration {
+                 dmqcSigSubmissionLogicTracer = I sigSubmissionLogicTracer
+               }
+               rng k = do
+  nodeKernel@NodeKernel { mempool,
+                          sigChannelVar,
+                          sigSharedTxStateVar
+                        }
+    <- newNodeKernel rng
   withAsync (mempoolWorker mempool)
-    $ \thread -> link thread
-              >> k nodeKernel
+          $ \mempoolThread ->
+    withAsync (decisionLogicThreads
+                (if sigSubmissionLogicTracer
+                   then WithEventType "SigSubmissionLogic" >$< tracer
+                   else nullTracer)
+                nullTracer
+                defaultSigDecisionPolicy
+                sigChannelVar
+                sigSharedTxStateVar)
+            $ \sigLogicThread
+      -> link mempoolThread
+      >> link sigLogicThread
+      >> k nodeKernel
 
 
 mempoolWorker :: forall crypto m.
