@@ -16,6 +16,7 @@ module DMQ.NodeToClient
 import Data.Aeson qualified as Aeson
 import Data.ByteString.Lazy (ByteString)
 import Data.Functor.Contravariant ((>$<))
+import Data.Typeable (Typeable)
 import Data.Void
 import Data.Word
 
@@ -45,7 +46,7 @@ import DMQ.Protocol.LocalMsgNotification.Type
 import DMQ.Protocol.LocalMsgSubmission.Codec
 import DMQ.Protocol.LocalMsgSubmission.Server
 import DMQ.Protocol.LocalMsgSubmission.Type
-import DMQ.Protocol.SigSubmission.Type (Sig)
+import DMQ.Protocol.SigSubmission.Type (Sig, SigId, sigId)
 import DMQ.Tracer
 
 import Ouroboros.Network.Context
@@ -60,7 +61,6 @@ import Ouroboros.Network.Protocol.Handshake.Codec (cborTermVersionDataCodec,
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
            (TxSubmissionMempoolWriter)
 import Ouroboros.Network.TxSubmission.Mempool.Reader
-import Ouroboros.Network.Util.ShowProxy
 
 
 type HandshakeTr ntcAddr = Mx.WithBearer (ConnectionId ntcAddr) (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term))
@@ -87,13 +87,13 @@ ntcHandshakeArguments tracer =
   }
 
 
-data Codecs m sig =
+data Codecs crypto m =
   Codecs {
     msgSubmissionCodec
-      :: !(AnnotatedCodec (LocalMsgSubmission sig)
+      :: !(AnnotatedCodec (LocalMsgSubmission (Sig crypto))
                  CBOR.DeserialiseFailure m ByteString)
   , msgNotificationCodec
-      :: !(AnnotatedCodec (LocalMsgNotification sig)
+      :: !(AnnotatedCodec (LocalMsgNotification (Sig crypto))
                CBOR.DeserialiseFailure m ByteString)
   }
 
@@ -102,7 +102,7 @@ dmqCodecs :: ( MonadST m
              )
           => (SigMempoolFail -> CBOR.Encoding)
           -> (forall s. CBOR.Decoder s SigMempoolFail)
-          -> Codecs m (Sig crypto)
+          -> Codecs crypto m
 dmqCodecs encodeReject' decodeReject' =
   Codecs {
     msgSubmissionCodec   = codecLocalMsgSubmission encodeReject' decodeReject'
@@ -132,22 +132,20 @@ data Apps ntcAddr m a =
 -- | Construct applications for the node-to-client protocols
 --
 ntcApps
-  :: forall msgid sig idx ntcAddr m.
+  :: forall crypto idx ntcAddr m.
      ( MonadThrow m
      , MonadThread m
      , MonadSTM m
-     , ShowProxy SigMempoolFail
-     , ShowProxy sig
-     , Aeson.ToJSON msgid
-     , Aeson.ToJSON sig
+     , Crypto crypto
+     , Typeable crypto
      , Aeson.ToJSON ntcAddr
      )
   => (forall ev. Aeson.ToJSON ev => Tracer m (WithEventType ev))
   -> Configuration
-  -> TxSubmissionMempoolReader msgid sig idx m
-  -> TxSubmissionMempoolWriter msgid sig idx m
+  -> TxSubmissionMempoolReader SigId (Sig crypto) idx m
+  -> TxSubmissionMempoolWriter SigId (Sig crypto) idx m
   -> Word16
-  -> Codecs m sig
+  -> Codecs crypto m
   -> Apps ntcAddr m ()
 ntcApps tracer
         Configuration { dmqcLocalMsgSubmissionServerTracer   = I localMsgSubmissionServerTracer,
@@ -172,6 +170,7 @@ ntcApps tracer
         channel
         (localMsgSubmissionServerPeer $
           localMsgSubmissionServer
+            sigId
             -- TODO: use a separate option for this tracer rather than reusing
             -- `dmqLocalMsgSubmissionServerTracer`.
             (if localMsgSubmissionServerTracer
