@@ -100,7 +100,7 @@ runDMQ commandLineConfig = do
     stdGen <- newStdGen
     let (psRng, policyRng) = split stdGen
 
-    withNodeKernel @StandardCrypto psRng $ \nodeKernel -> do
+    withNodeKernel @StandardCrypto tracer dmqConfig psRng $ \nodeKernel -> do
       dmqDiffusionConfiguration <- mkDiffusionConfiguration dmqConfig nt
 
       let dmqNtNApps =
