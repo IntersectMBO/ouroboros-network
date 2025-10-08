@@ -28,6 +28,7 @@
 -- `ouroboros-network` too, them some of these tests might not be needed.
 module Test.Cardano.Network.PeerSelection (tests) where
 
+import Control.Arrow ((&&&))
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (AssertionFailed (..), catch, evaluate)
 import Control.Monad (when)
@@ -1736,7 +1737,7 @@ prop_governor_target_known_2_opportunity_taken (MaxTime maxTime) env =
               -- peers are unavailable for peer sharing for at least an
               -- hour after each peer sharing interaction
               (60 * 60)
-              (maybe Set.empty Set.singleton)
+              (Just . maybe Set.empty Set.singleton)
               envPeerSharesEventsAsSig
 
         govLedgerStateJudgementSig :: Signal LedgerStateJudgement
@@ -2348,11 +2349,17 @@ prop_governor_target_known_above (MaxTime maxTime) env =
                          (Cardano.ExtraState.empty (consensusMode env) (NumberOfBigLedgerPeers 0)) Cardano.ExtraPeers.empty
                          events
 
+        govInProgressIneligibleSig :: Signal (Set PeerAddr)
+        govInProgressIneligibleSig =
+          selectGovState Governor.inProgressPromoteCold
+                         (Cardano.ExtraState.empty (consensusMode env) (NumberOfBigLedgerPeers 0)) Cardano.ExtraPeers.empty
+                         events
+
         -- There are no demotion opportunities if we're at or below target.
         -- Otherwise, the opportunities for demotion are known peers that
         -- are not currently established and are not local.
         --
-        demotionOpportunity targets local public known established
+        demotionOpportunity targets local public known established ineligible
           | Set.size known <= targetNumberOfKnownPeers targets
           = Set.empty
 
@@ -2360,6 +2367,7 @@ prop_governor_target_known_above (MaxTime maxTime) env =
          = known Set.\\ established
                  Set.\\ local
                  Set.\\ publicProtected
+                 Set.\\ ineligible
           where
             -- Furthermore, public roots are protected from demotion if we are
             -- at or below target for roots peers.
@@ -2379,11 +2387,12 @@ prop_governor_target_known_above (MaxTime maxTime) env =
             <*> govPublicRootPeersSig
             <*> govKnownPeersSig
             <*> govEstablishedPeersSig
+            <*> govInProgressIneligibleSig
 
         demotionOpportunitiesIgnoredTooLong :: Signal (Set PeerAddr)
         demotionOpportunitiesIgnoredTooLong =
           Signal.keyedTimeout
-            10 -- seconds
+            1 -- seconds
             id
             demotionOpportunities
 
@@ -2438,16 +2447,23 @@ prop_governor_target_known_big_ledger_peers_above (MaxTime maxTime) env =
                          (Cardano.ExtraState.empty (consensusMode env) (NumberOfBigLedgerPeers 0)) Cardano.ExtraPeers.empty
                          events
 
+        govInProgressIneligibleSig :: Signal (Set PeerAddr)
+        govInProgressIneligibleSig =
+          selectGovState Governor.inProgressPromoteCold
+                         (Cardano.ExtraState.empty (consensusMode env) (NumberOfBigLedgerPeers 0)) Cardano.ExtraPeers.empty
+                         events
+
         -- There are no demotion opportunities if we're at or below target.
         -- Otherwise, the opportunities for demotion are known peers that
         -- are not currently established and are not local.
         --
-        demotionOpportunity targets known established
+        demotionOpportunity targets known established ineligible
           | Set.size known <= targetNumberOfKnownBigLedgerPeers targets
           = Set.empty
 
          | otherwise
          = known Set.\\ established
+                 Set.\\ ineligible
 
         demotionOpportunities :: Signal (Set PeerAddr)
         demotionOpportunities =
@@ -2455,11 +2471,12 @@ prop_governor_target_known_big_ledger_peers_above (MaxTime maxTime) env =
             <$> govTargetsSig
             <*> govKnownPeersSig
             <*> govEstablishedPeersSig
+            <*> govInProgressIneligibleSig
 
         demotionOpportunitiesIgnoredTooLong :: Signal (Set PeerAddr)
         demotionOpportunitiesIgnoredTooLong =
           Signal.keyedTimeout
-            10 -- seconds
+            1
             id
             demotionOpportunities
 
@@ -2523,6 +2540,12 @@ prop_governor_target_established_below (MaxTime maxTime) env =
                          (Cardano.ExtraState.empty (consensusMode env) (NumberOfBigLedgerPeers 0)) Cardano.ExtraPeers.empty
                          events
 
+        govLocalRootPeersSig :: Signal (LocalRootPeers.LocalRootPeers PeerTrustable PeerAddr)
+        govLocalRootPeersSig =
+          selectGovState Governor.localRootPeers
+                         (Cardano.ExtraState.empty (consensusMode env) (NumberOfBigLedgerPeers 0)) Cardano.ExtraPeers.empty
+                         events
+
         govKnownPeersSig :: Signal (Set PeerAddr)
         govKnownPeersSig =
           selectGovState (dropBigLedgerPeers $
@@ -2533,40 +2556,36 @@ prop_governor_target_established_below (MaxTime maxTime) env =
         govEstablishedPeersSig :: Signal (Set PeerAddr)
         govEstablishedPeersSig =
           selectGovState
-            (EstablishedPeers.toSet . Governor.establishedPeers)
+            (dropBigLedgerPeers $
+               EstablishedPeers.toSet . Governor.establishedPeers)
             (Cardano.ExtraState.empty (consensusMode env) (NumberOfBigLedgerPeers 0)) Cardano.ExtraPeers.empty
             events
+
+        govInProgressPromoteColdSig :: Signal (Set PeerAddr)
+        govInProgressPromoteColdSig =
+          selectGovState (dropBigLedgerPeers Governor.inProgressPromoteCold)
+                         (Cardano.ExtraState.empty (consensusMode env) (NumberOfBigLedgerPeers 0)) Cardano.ExtraPeers.empty
+                         events
 
         govEstablishedFailuresSig :: Signal (Set PeerAddr)
         govEstablishedFailuresSig =
             Signal.keyedLinger
-              180 -- 3 minutes  -- TODO: too eager to reconnect?
-              (fromMaybe Set.empty)
+              162 -- 5*2^5 + fuzz(-2,2)
+              (Just . fromMaybe Set.empty)
           . Signal.fromEvents
           . Signal.selectEvents
               (\case TracePromoteColdFailed _ _ peer _ _ ->
-                       --TODO: the environment does not yet cause this to happen
-                       -- it requires synchronous failure in the establish action
                        Just $! Set.singleton peer
-                     --TODO: what about TraceDemoteWarmDone ?
-                     -- these are also not immediate candidates
-                     -- why does the property not fail for not tracking these?
-                     TraceDemoteAsynchronous status
-                       | Set.null failures -> Nothing
-                       | otherwise         -> Just failures
-                       where
-                         !failures = Map.keysSet (Map.filter (==PeerCooling) . fmap fst $ status)
                      TraceDemoteLocalAsynchronous status
                        | Set.null failures -> Nothing
                        | otherwise         -> Just failures
                        where
-                         !failures = Map.keysSet (Map.filter (==PeerCooling) . fmap fst $ status)
-                     TracePromoteWarmFailed _ _ peer _ ->
-                       Just $! Set.singleton peer
-                     TraceDemoteWarmFailed _ _ peer _ ->
-                       Just $! Set.singleton peer
-                     TraceDemoteHotFailed _ _ peer _ ->
-                       Just $! Set.singleton peer
+                         !failures = Map.keysSet status
+                     TraceDemoteAsynchronous status
+                       | Set.null failures -> Nothing
+                       | otherwise         -> Just failures
+                       where
+                         !failures = Map.keysSet status
                      _ -> Nothing
               )
           . selectGovEvents
@@ -2574,41 +2593,46 @@ prop_governor_target_established_below (MaxTime maxTime) env =
 
         -- There are no opportunities if we're at or above target
         --
-        promotionOpportunity target known established recentFailures
-          | Set.size established >= target
+        promotionOpportunity target known local established recentFailures inProgressCold
+          | Set.size established + Set.size inProgressCold >= target
           = Set.empty
 
           | otherwise
           = known Set.\\ established
+                  Set.\\ LocalRootPeers.keysSet local
                   Set.\\ recentFailures
+                  Set.\\ inProgressCold
 
         promotionOpportunities :: Signal (Set PeerAddr)
         promotionOpportunities =
           promotionOpportunity
             <$> govTargetsSig
             <*> govKnownPeersSig
+            <*> govLocalRootPeersSig
             <*> govEstablishedPeersSig
             <*> govEstablishedFailuresSig
+            <*> govInProgressPromoteColdSig
 
         promotionOpportunitiesIgnoredTooLong :: Signal (Set PeerAddr)
         promotionOpportunitiesIgnoredTooLong =
           Signal.keyedTimeout
-            (repromoteDelay config_REPROMOTE_DELAY + 20) -- seconds
+            1
             id
             promotionOpportunities
 
      in counterexample
           ("\nSignal key: (target, known peers, established peers, recent failures, " ++
-           "opportunities, ignored too long)") $
+           "in progress, opportunities, ignored too long)")
 
-        signalProperty 20 show
-          (\(_,_,_,_,_,toolong) -> Set.null toolong)
-          ((,,,,,) <$> govTargetsSig
-                   <*> govKnownPeersSig
-                   <*> govEstablishedPeersSig
-                   <*> govEstablishedFailuresSig
-                   <*> promotionOpportunities
-                   <*> promotionOpportunitiesIgnoredTooLong)
+             $ signalProperty 20 show
+               (\(_,_,_,_,_,_,toolong) -> Set.null toolong)
+               ((,,,,,,) <$> govTargetsSig
+                        <*> govKnownPeersSig
+                        <*> govEstablishedPeersSig
+                        <*> govEstablishedFailuresSig
+                        <*> govInProgressPromoteColdSig
+                        <*> promotionOpportunities
+                        <*> promotionOpportunitiesIgnoredTooLong)
 
 -- | A version of the `prop_governor_target_established_below` for big ledger
 -- peers.
@@ -2651,48 +2675,44 @@ prop_governor_target_established_big_ledger_peers_below (MaxTime maxTime) env =
         govEstablishedFailuresSig =
             Signal.keyedLinger
               180 -- 3 minutes  -- TODO: too eager to reconnect?
-              (fromMaybe Set.empty)
+              (Just . fromMaybe Set.empty)
           . Signal.fromEvents
           . Signal.selectEvents
               (\case TracePromoteColdBigLedgerPeerFailed _ _ peer _ _ ->
                        --TODO: the environment does not yet cause this to happen
                        -- it requires synchronous failure in the establish action
                        Just (Set.singleton peer)
-                     TracePromoteWarmBigLedgerPeerFailed _ _ peer _ ->
-                       Just (Set.singleton peer)
-                     --TODO: what about TraceDemoteWarmDone ?
-                     -- these are also not immediate candidates
-                     -- why does the property not fail for not tracking these?
                      TraceDemoteBigLedgerPeersAsynchronous status
                        | Set.null failures -> Nothing
                        | otherwise         -> Just failures
                        where
-                         failures = Map.keysSet (Map.filter (==PeerCooling) . fmap fst $ status)
+                         !failures = Map.keysSet status
                      TraceDemoteLocalAsynchronous status
                        | Set.null failures -> Nothing
                        | otherwise         -> Just failures
                        where
-                         failures = Map.keysSet (Map.filter (==PeerCooling) . fmap fst $ status)
-                     TracePromoteWarmFailed _ _ peer _ ->
-                       Just (Set.singleton peer)
-                     TraceDemoteWarmBigLedgerPeerFailed _ _ peer _ ->
-                       Just (Set.singleton peer)
-                     TraceDemoteHotBigLedgerPeerFailed _ _ peer _ ->
-                       Just (Set.singleton peer)
+                         !failures = Map.keysSet status
                      _ -> Nothing
               )
           . selectGovEvents
           $ events
 
+        govInProgressIneligibleSig :: Signal (Set PeerAddr)
+        govInProgressIneligibleSig =
+          selectGovState (takeBigLedgerPeers Governor.inProgressPromoteCold)
+                         (Cardano.ExtraState.empty (consensusMode env) (NumberOfBigLedgerPeers 0)) Cardano.ExtraPeers.empty
+                         events
+
         -- There are no opportunities if we're at or above target
         --
-        promotionOpportunity target known established recentFailures
-          | Set.size established >= target
+        promotionOpportunity target known established recentFailures ineligible
+          | Set.size established + Set.size ineligible >= target
           = Set.empty
 
           | otherwise
           = known Set.\\ established
                   Set.\\ recentFailures
+                  Set.\\ ineligible
 
         promotionOpportunities :: Signal (Set PeerAddr)
         promotionOpportunities =
@@ -2701,11 +2721,12 @@ prop_governor_target_established_big_ledger_peers_below (MaxTime maxTime) env =
             <*> govKnownPeersSig
             <*> govEstablishedPeersSig
             <*> govEstablishedFailuresSig
+            <*> govInProgressIneligibleSig
 
         promotionOpportunitiesIgnoredTooLong :: Signal (Set PeerAddr)
         promotionOpportunitiesIgnoredTooLong =
           Signal.keyedTimeout
-            (repromoteDelay config_REPROMOTE_DELAY + 20) -- seconds
+            (repromoteDelay config_REPROMOTE_DELAY + 1) -- seconds
             id
             promotionOpportunities
 
@@ -2749,9 +2770,12 @@ prop_governor_target_active_below (MaxTime maxTime) env =
                          (Cardano.ExtraState.empty (consensusMode env) (NumberOfBigLedgerPeers 0)) Cardano.ExtraPeers.empty
                          events
 
-        govInProgressDemoteToColdSig :: Signal (Set PeerAddr)
-        govInProgressDemoteToColdSig =
-          selectGovState Governor.inProgressDemoteToCold
+        govInProgressIneligibleSig :: Signal (Set PeerAddr)
+        govInProgressIneligibleSig =
+          selectGovState (\psState -> Set.unions [ Governor.inProgressDemoteToCold psState
+                                                 , Governor.inProgressPromoteWarm psState
+                                                 , Governor.inProgressDemoteWarm psState
+                                                 ])
                          (Cardano.ExtraState.empty (consensusMode env) (NumberOfBigLedgerPeers 0)) Cardano.ExtraPeers.empty
                          events
 
@@ -2765,7 +2789,7 @@ prop_governor_target_active_below (MaxTime maxTime) env =
 
         govActivePeersSig :: Signal (Set PeerAddr)
         govActivePeersSig =
-          selectGovState (dropBigLedgerPeers Governor.activePeers)
+          selectGovState Governor.activePeers
                          (Cardano.ExtraState.empty (consensusMode env) (NumberOfBigLedgerPeers 0)) Cardano.ExtraPeers.empty
                          events
 
@@ -2773,28 +2797,23 @@ prop_governor_target_active_below (MaxTime maxTime) env =
         govActiveFailuresSig =
             Signal.keyedLinger
               180 -- 3 minutes  -- TODO: too eager to reconnect?
-              (fromMaybe Set.empty)
+              (Just . fromMaybe Set.empty)
           . Signal.fromEvents
           . Signal.selectEvents
               (\case TracePromoteWarmFailed _ _ peer _ ->
                        --TODO: the environment does not yet cause this to happen
                        -- it requires synchronous failure in the establish action
                        Just $! Set.singleton peer
-                     TraceDemoteWarmFailed _ _ peer _ ->
-                       Just $! Set.singleton peer
-                     TraceDemoteHotFailed _ _ peer _ ->
-                       Just $! Set.singleton peer
-                     --TODO
                      TraceDemoteAsynchronous status
                        | Set.null failures -> Nothing
                        | otherwise         -> Just failures
                        where
-                         !failures = Map.keysSet (Map.filter (==PeerWarm) . fmap fst $ status)
+                         !failures = Map.keysSet status
                      TraceDemoteLocalAsynchronous status
                        | Set.null failures -> Nothing
                        | otherwise         -> Just failures
                        where
-                         !failures = Map.keysSet (Map.filter (==PeerWarm) . fmap fst $ status)
+                         !failures = Map.keysSet status
                      _ -> Nothing
               )
           . selectGovEvents
@@ -2811,7 +2830,7 @@ prop_governor_target_active_below (MaxTime maxTime) env =
         -- want to promote any, since we'd then be above target for the local
         -- root peer group.
         --
-        promotionOpportunity target local established active recentFailures inProgressDemoteToCold
+        promotionOpportunity target local established active recentFailures inProgressIneligible
           | Set.size active >= target
           = Set.empty
 
@@ -2819,7 +2838,7 @@ prop_governor_target_active_below (MaxTime maxTime) env =
           = established Set.\\ active
                         Set.\\ LocalRootPeers.keysSet local
                         Set.\\ recentFailures
-                        Set.\\ inProgressDemoteToCold
+                        Set.\\ inProgressIneligible
 
         promotionOpportunities :: Signal (Set PeerAddr)
         promotionOpportunities =
@@ -2829,12 +2848,14 @@ prop_governor_target_active_below (MaxTime maxTime) env =
             <*> govEstablishedPeersSig
             <*> govActivePeersSig
             <*> govActiveFailuresSig
-            <*> govInProgressDemoteToColdSig
+            <*> govInProgressIneligibleSig
 
         promotionOpportunitiesIgnoredTooLong :: Signal (Set PeerAddr)
         promotionOpportunitiesIgnoredTooLong =
           Signal.keyedTimeout
-            15 -- seconds
+            -- TODO this test fails even the timeout is too aggressive,
+            -- unlike other tests, and the shrinker also appears to not terminate
+            10 -- seconds
             id
             promotionOpportunities
 
@@ -2882,9 +2903,12 @@ prop_governor_target_active_big_ledger_peers_below (MaxTime maxTime) env =
             (Cardano.ExtraState.empty (consensusMode env) (NumberOfBigLedgerPeers 0)) Cardano.ExtraPeers.empty
             events
 
-        govInProgressDemoteToColdSig :: Signal (Set PeerAddr)
-        govInProgressDemoteToColdSig =
-          selectGovState Governor.inProgressDemoteToCold
+        govInProgressIneligibleSig :: Signal (Set PeerAddr)
+        govInProgressIneligibleSig =
+          selectGovState (\psState -> Set.unions [ Governor.inProgressDemoteToCold psState
+                                                 , Governor.inProgressPromoteWarm psState
+                                                 , Governor.inProgressDemoteWarm  psState
+                                                 ])
                          (Cardano.ExtraState.empty (consensusMode env) (NumberOfBigLedgerPeers 0)) Cardano.ExtraPeers.empty
                          events
 
@@ -2898,10 +2922,10 @@ prop_governor_target_active_big_ledger_peers_below (MaxTime maxTime) env =
         govActiveFailuresSig =
             Signal.keyedLinger
               180 -- 3 minutes  -- TODO: too eager to reconnect?
-              (fromMaybe Set.empty)
+              (Just . fromMaybe Set.empty)
           . Signal.fromEvents
           . Signal.selectEvents
-              (\case TracePromoteWarmFailed _ _ peer _ ->
+              (\case TracePromoteWarmBigLedgerPeerFailed _ _ peer _ ->
                        --TODO: the environment does not yet cause this to happen
                        -- it requires synchronous failure in the establish action
                        Just (Set.singleton peer)
@@ -2909,7 +2933,12 @@ prop_governor_target_active_big_ledger_peers_below (MaxTime maxTime) env =
                        | Set.null failures -> Nothing
                        | otherwise         -> Just failures
                        where
-                         failures = Map.keysSet (Map.filter (==PeerWarm) . fmap fst $ status)
+                         !failures = Map.keysSet status
+                     TraceDemoteLocalAsynchronous status
+                       | Set.null failures -> Nothing
+                       | otherwise         -> Just failures
+                       where
+                         !failures = Map.keysSet status
                      _ -> Nothing
               )
           . selectGovEvents
@@ -2917,14 +2946,14 @@ prop_governor_target_active_big_ledger_peers_below (MaxTime maxTime) env =
 
         -- There are no opportunities if we're at or above target.
         --
-        promotionOpportunity target established active recentFailures inProgressDemoteToCold
+        promotionOpportunity target established active recentFailures inProgressIneligible
           | Set.size active >= target
           = Set.empty
 
           | otherwise
           = established Set.\\ active
                         Set.\\ recentFailures
-                        Set.\\ inProgressDemoteToCold
+                        Set.\\ inProgressIneligible
 
         promotionOpportunities :: Signal (Set PeerAddr)
         promotionOpportunities =
@@ -2933,12 +2962,12 @@ prop_governor_target_active_big_ledger_peers_below (MaxTime maxTime) env =
             <*> govEstablishedPeersSig
             <*> govActivePeersSig
             <*> govActiveFailuresSig
-            <*> govInProgressDemoteToColdSig
+            <*> govInProgressIneligibleSig
 
         promotionOpportunitiesIgnoredTooLong :: Signal (Set PeerAddr)
         promotionOpportunitiesIgnoredTooLong =
           Signal.keyedTimeout
-            (repromoteDelay config_REPROMOTE_DELAY + 20) -- seconds
+            (repromoteDelay config_REPROMOTE_DELAY + 1) -- seconds
             id
             promotionOpportunities
 
@@ -2974,9 +3003,12 @@ prop_governor_target_established_above (MaxTime maxTime) env =
                          (Cardano.ExtraState.empty (consensusMode env) (NumberOfBigLedgerPeers 0)) Cardano.ExtraPeers.empty
                          events
 
-        govInProgressDemoteToColdSig :: Signal (Set PeerAddr)
-        govInProgressDemoteToColdSig =
-          selectGovState Governor.inProgressDemoteToCold
+        govInProgressIneligibleSig :: Signal (Set PeerAddr)
+        govInProgressIneligibleSig =
+          selectGovState (\psState -> Set.unions [ Governor.inProgressDemoteToCold psState
+                                                 , Governor.inProgressPromoteWarm psState
+                                                 , Governor.inProgressDemoteWarm psState
+                                                 ])
                          (Cardano.ExtraState.empty (consensusMode env) (NumberOfBigLedgerPeers 0)) Cardano.ExtraPeers.empty
                          events
 
@@ -3004,14 +3036,15 @@ prop_governor_target_established_above (MaxTime maxTime) env =
         -- Otherwise the demotion opportunities are the established peers that
         -- are not active and not local root peers.
         --
-        demotionOpportunity target local established active inProgressDemoteToCold
+        demotionOpportunity target local established active inProgressIneligible
           | Set.size established <= target
           = Set.empty
 
           | otherwise
           = established Set.\\ active
                         Set.\\ LocalRootPeers.keysSet local
-                        Set.\\ inProgressDemoteToCold
+                        Set.\\ inProgressIneligible
+
         demotionOpportunities :: Signal (Set PeerAddr)
         demotionOpportunities =
           demotionOpportunity
@@ -3019,12 +3052,12 @@ prop_governor_target_established_above (MaxTime maxTime) env =
             <*> govLocalRootPeersSig
             <*> govEstablishedPeersSig
             <*> govActivePeersSig
-            <*> govInProgressDemoteToColdSig
+            <*> govInProgressIneligibleSig
 
         demotionOpportunitiesIgnoredTooLong :: Signal (Set PeerAddr)
         demotionOpportunitiesIgnoredTooLong =
           Signal.keyedTimeout
-            10 -- seconds
+            1
             id
             demotionOpportunities
 
@@ -3039,7 +3072,7 @@ prop_governor_target_established_above (MaxTime maxTime) env =
                     <*> govEstablishedPeersSig
                     <*> govActivePeersSig
                     <*> demotionOpportunities
-                    <*> govInProgressDemoteToColdSig
+                    <*> govInProgressIneligibleSig
                     <*> demotionOpportunitiesIgnoredTooLong)
 
 
@@ -3072,9 +3105,12 @@ prop_governor_target_established_big_ledger_peers_above (MaxTime maxTime) env =
             (Cardano.ExtraState.empty (consensusMode env) (NumberOfBigLedgerPeers 0)) Cardano.ExtraPeers.empty
             events
 
-        govInProgressDemoteToColdSig :: Signal (Set PeerAddr)
-        govInProgressDemoteToColdSig =
-          selectGovState Governor.inProgressDemoteToCold
+        govInProgressIneligibleSig :: Signal (Set PeerAddr)
+        govInProgressIneligibleSig =
+          selectGovState (\psState -> Set.unions [ Governor.inProgressDemoteToCold psState
+                                                 , Governor.inProgressDemoteWarm psState
+                                                 , Governor.inProgressPromoteWarm psState
+                                                 ])
                          (Cardano.ExtraState.empty (consensusMode env) (NumberOfBigLedgerPeers 0)) Cardano.ExtraPeers.empty
                          events
 
@@ -3088,25 +3124,26 @@ prop_governor_target_established_big_ledger_peers_above (MaxTime maxTime) env =
         -- Otherwise the demotion opportunities are the established peers that
         -- are not active and not local root peers.
         --
-        demotionOpportunity target established active inProgressDemoteToCold
+        demotionOpportunity target established active inProgressIneligible
           | Set.size established <= target
           = Set.empty
 
           | otherwise
           = established Set.\\ active
-                        Set.\\ inProgressDemoteToCold
+                        Set.\\ inProgressIneligible
+
         demotionOpportunities :: Signal (Set PeerAddr)
         demotionOpportunities =
           demotionOpportunity
             <$> govTargetsSig
             <*> govEstablishedPeersSig
             <*> govActivePeersSig
-            <*> govInProgressDemoteToColdSig
+            <*> govInProgressIneligibleSig
 
         demotionOpportunitiesIgnoredTooLong :: Signal (Set PeerAddr)
         demotionOpportunitiesIgnoredTooLong =
           Signal.keyedTimeout
-            10 -- seconds
+            1
             id
             demotionOpportunities
 
@@ -3153,19 +3190,20 @@ prop_governor_target_active_above (MaxTime maxTime) env =
                          (Cardano.ExtraState.empty (consensusMode env) (NumberOfBigLedgerPeers 0)) Cardano.ExtraPeers.empty
                          events
 
-        govInProgressDemoteToColdSig :: Signal (Set PeerAddr)
-        govInProgressDemoteToColdSig =
-          selectGovState Governor.inProgressDemoteToCold
+        govInProgressIneligibleSig :: Signal (Set PeerAddr)
+        govInProgressIneligibleSig =
+          selectGovState (\psState -> Set.union (Governor.inProgressDemoteToCold psState)
+                                                (Governor.inProgressDemoteHot psState))
                          (Cardano.ExtraState.empty (consensusMode env) (NumberOfBigLedgerPeers 0)) Cardano.ExtraPeers.empty
                          events
 
-        demotionOpportunity target local active inProgressDemoteToCold
-          | (Set.size active - Set.size inProgressDemoteToCold) <= target
+        demotionOpportunity target local active inProgressIneligible
+          | Set.size active <= target
           = Set.empty
 
           | otherwise
           = active Set.\\ LocalRootPeers.keysSet local
-                   Set.\\ inProgressDemoteToCold
+                   Set.\\ inProgressIneligible
 
         demotionOpportunities :: Signal (Set PeerAddr)
         demotionOpportunities =
@@ -3173,12 +3211,12 @@ prop_governor_target_active_above (MaxTime maxTime) env =
             <$> govTargetsSig
             <*> govLocalRootPeersSig
             <*> govActivePeersSig
-            <*> govInProgressDemoteToColdSig
+            <*> govInProgressIneligibleSig
 
         demotionOpportunitiesIgnoredTooLong :: Signal (Set PeerAddr)
         demotionOpportunitiesIgnoredTooLong =
           Signal.keyedTimeout
-            15 -- seconds
+            1
             id
             demotionOpportunities
 
@@ -3222,23 +3260,31 @@ prop_governor_target_active_big_ledger_peers_above (MaxTime maxTime) env =
                          (Cardano.ExtraState.empty (consensusMode env) (NumberOfBigLedgerPeers 0)) Cardano.ExtraPeers.empty
                          events
 
-        demotionOpportunity target active
+        govInProgressIneligibleSig :: Signal (Set PeerAddr)
+        govInProgressIneligibleSig =
+          selectGovState (\psState -> Set.union (Governor.inProgressDemoteToCold psState)
+                                                (Governor.inProgressDemoteHot psState))
+                         (Cardano.ExtraState.empty (consensusMode env) (NumberOfBigLedgerPeers 0)) Cardano.ExtraPeers.empty
+                         events
+
+        demotionOpportunity target active inProgressIneligible
           | Set.size active <= target
           = Set.empty
 
           | otherwise
-          = active
+          = active Set.\\ inProgressIneligible
 
         demotionOpportunities :: Signal (Set PeerAddr)
         demotionOpportunities =
           demotionOpportunity
             <$> govTargetsSig
             <*> govActivePeersSig
+            <*> govInProgressIneligibleSig
 
         demotionOpportunitiesIgnoredTooLong :: Signal (Set PeerAddr)
         demotionOpportunitiesIgnoredTooLong =
           Signal.keyedTimeout
-            10 -- seconds
+            1
             id
             demotionOpportunities
 
@@ -3281,7 +3327,14 @@ prop_governor_target_established_local (MaxTime maxTime) env =
         govEstablishedPeersSig :: Signal (Set PeerAddr)
         govEstablishedPeersSig =
           selectGovState
-            (EstablishedPeers.toSet . Governor.establishedPeers)
+            (dropBigLedgerPeers $ EstablishedPeers.toSet . Governor.establishedPeers)
+            (Cardano.ExtraState.empty (consensusMode env) (NumberOfBigLedgerPeers 0)) Cardano.ExtraPeers.empty
+            events
+
+        govEstablishedBigPeersSig :: Signal (Set PeerAddr)
+        govEstablishedBigPeersSig =
+          selectGovState
+            (takeBigLedgerPeers $ EstablishedPeers.toSet . Governor.establishedPeers)
             (Cardano.ExtraState.empty (consensusMode env) (NumberOfBigLedgerPeers 0)) Cardano.ExtraPeers.empty
             events
 
@@ -3296,28 +3349,30 @@ prop_governor_target_established_local (MaxTime maxTime) env =
         govEstablishedFailuresSig =
             Signal.keyedLinger
               180 -- 3 minutes  -- TODO: too eager to reconnect?
-              (fromMaybe Set.empty)
+              (Just . fromMaybe Set.empty)
           . Signal.fromEvents
           . Signal.selectEvents
               (\case TracePromoteColdFailed _ _ peer _ _ ->
                        --TODO: the environment does not yet cause this to happen
                        -- it requires synchronous failure in the establish action
                        Just (Set.singleton peer)
-                     --TODO: what about TraceDemoteWarmDone ?
-                     -- these are also not immediate candidates
-                     -- why does the property not fail for not tracking these?
-                     TraceDemoteAsynchronous status
-                       | Set.null failures -> Nothing
-                       | otherwise         -> Just failures
-                       where
-                         failures = Map.keysSet (Map.filter (==PeerCooling) . fmap fst $ status)
+                     TracePromoteColdBigLedgerPeerFailed _ _ peer _ _ ->
+                       Just (Set.singleton peer)
                      TraceDemoteLocalAsynchronous status
                        | Set.null failures -> Nothing
                        | otherwise         -> Just failures
                        where
-                         failures = Map.keysSet (Map.filter (==PeerCooling) . fmap fst $ status)
-                     TracePromoteWarmFailed _ _ peer _ ->
-                       Just (Set.singleton peer)
+                         !failures = Map.keysSet status
+                     TraceDemoteBigLedgerPeersAsynchronous status
+                       | Set.null failures -> Nothing
+                       | otherwise         -> Just failures
+                       where
+                         !failures = Map.keysSet status
+                     TraceDemoteAsynchronous status
+                       | Set.null failures -> Nothing
+                       | otherwise         -> Just failures
+                       where
+                         !failures = Map.keysSet status
                      _ -> Nothing
               )
           . selectGovEvents
@@ -3325,26 +3380,26 @@ prop_governor_target_established_local (MaxTime maxTime) env =
 
         promotionOpportunities :: Signal (Set PeerAddr)
         promotionOpportunities =
-          (\local established recentFailures inProgressPromoteCold ->
-              Set.unions
-                [ -- There are no opportunities if we're at or above target
-                  if Set.size groupEstablished >= warmTarget'
-                     then Set.empty
-                     else group Set.\\ established
-                                Set.\\ recentFailures
-                                Set.\\ inProgressPromoteCold
-                | (_, WarmValency warmTarget', group) <- LocalRootPeers.toGroupSets local
-                , let groupEstablished = group `Set.intersection` established
-                ]
+          (\local established estBig recentFailures promoteCold ->
+                Set.unions
+                  [opportunity
+                  | (_, WarmValency warmTarget, group) <- LocalRootPeers.toGroupSets local
+                  , let opportunity
+                          | Set.size (Set.intersection
+                                       group (established `Set.union` estBig)) >= warmTarget = Set.empty
+                          | otherwise = group
+                  ]
+                  Set.\\ Set.unions [established, estBig, recentFailures, promoteCold]
           ) <$> govLocalRootPeersSig
             <*> govEstablishedPeersSig
+            <*> govEstablishedBigPeersSig
             <*> govEstablishedFailuresSig
             <*> govInProgressPromoteColdSig
 
         promotionOpportunitiesIgnoredTooLong :: Signal (Set PeerAddr)
         promotionOpportunitiesIgnoredTooLong =
           Signal.keyedTimeout
-            15 -- seconds
+            1 -- seconds
             id
             promotionOpportunities
 
@@ -3401,38 +3456,57 @@ prop_governor_target_active_local_below (MaxTime maxTime) env =
 
         govActivePeersSig :: Signal (Set PeerAddr)
         govActivePeersSig =
-          selectGovState Governor.activePeers
+          selectGovState (dropBigLedgerPeers Governor.activePeers)
                          (Cardano.ExtraState.empty (consensusMode env) (NumberOfBigLedgerPeers 0)) Cardano.ExtraPeers.empty
                          events
 
-        govInProgressDemoteToColdSig :: Signal (Set PeerAddr)
-        govInProgressDemoteToColdSig =
-          selectGovState Governor.inProgressDemoteToCold
-          (Cardano.ExtraState.empty (consensusMode env) (NumberOfBigLedgerPeers 0)) Cardano.ExtraPeers.empty
-          events
+        govActiveBigPeersSig :: Signal (Set PeerAddr)
+        govActiveBigPeersSig =
+          selectGovState (takeBigLedgerPeers Governor.activePeers)
+                         (Cardano.ExtraState.empty (consensusMode env) (NumberOfBigLedgerPeers 0)) Cardano.ExtraPeers.empty
+                         events
+
+        govInProgressIneligibleSig :: Signal (Set PeerAddr)
+        govInProgressIneligibleSig =
+          selectGovState (uncurry Set.union . (    Governor.inProgressDemoteToCold
+                                               &&& Governor.inProgressDemoteWarm))
+                         (Cardano.ExtraState.empty (consensusMode env) (NumberOfBigLedgerPeers 0)) Cardano.ExtraPeers.empty
+                         events
+
+        govInProgressPromoteWarmSig :: Signal (Set PeerAddr)
+        govInProgressPromoteWarmSig =
+          selectGovState Governor.inProgressPromoteWarm
+                         (Cardano.ExtraState.empty (consensusMode env) (NumberOfBigLedgerPeers 0)) Cardano.ExtraPeers.empty
+                         events
 
         govActiveFailuresSig :: Signal (Set PeerAddr)
         govActiveFailuresSig =
             Signal.keyedLinger
               180 -- 3 minutes  -- TODO: too eager to reconnect?
-              (fromMaybe Set.empty)
+              (Just . fromMaybe Set.empty)
           . Signal.fromEvents
           . Signal.selectEvents
               (\case TracePromoteWarmFailed _ _ peer _ ->
                        --TODO: the environment does not yet cause this to happen
                        -- it requires synchronous failure in the establish action
                        Just (Set.singleton peer)
-                     --TODO
-                     TraceDemoteAsynchronous status
-                       | Set.null failures -> Nothing
-                       | otherwise         -> Just failures
-                       where
-                         failures = Map.keysSet (Map.filter (==PeerWarm) . fmap fst $ status)
+                     TracePromoteWarmBigLedgerPeerFailed _ _ peer _ ->
+                       Just (Set.singleton peer)
                      TraceDemoteLocalAsynchronous status
                        | Set.null failures -> Nothing
                        | otherwise         -> Just failures
                        where
-                         failures = Map.keysSet (Map.filter (==PeerWarm) . fmap fst $ status)
+                         !failures = Map.keysSet status
+                     TraceDemoteBigLedgerPeersAsynchronous status
+                       | Set.null failures -> Nothing
+                       | otherwise         -> Just failures
+                       where
+                         !failures = Map.keysSet status
+                     TraceDemoteAsynchronous status
+                       | Set.null failures -> Nothing
+                       | otherwise         -> Just failures
+                       where
+                         !failures = Map.keysSet status
                      _ -> Nothing
               )
           . selectGovEvents
@@ -3440,28 +3514,28 @@ prop_governor_target_active_local_below (MaxTime maxTime) env =
 
         promotionOpportunities :: Signal (Set PeerAddr)
         promotionOpportunities =
-          (\local established active recentFailures inProgressDemoteToCold ->
-              Set.unions
-                [ -- There are no opportunities if we're at or above target
-                  if Set.size groupActive >= hotTarget'
-                     then Set.empty
-                     else groupEstablished Set.\\ active
-                                           Set.\\ recentFailures
-                                           Set.\\ inProgressDemoteToCold
-                | (HotValency hotTarget', _, group) <- LocalRootPeers.toGroupSets local
-                , let groupActive      = group `Set.intersection` active
-                      groupEstablished = group `Set.intersection` established
-                ]
+          (\local established active actBig
+            recentFailures promoteWarm inProgressIneligible ->
+                Set.unions
+                  [opportunity
+                  | (HotValency hotTarget, _, group) <- LocalRootPeers.toGroupSets local
+                  , let opportunity
+                          | Set.size (group `Set.intersection` (active `Set.union` actBig)) >= hotTarget = Set.empty
+                          | otherwise = group `Set.intersection` established
+                  ]
+                  Set.\\ Set.unions [active, actBig, recentFailures, promoteWarm, inProgressIneligible]
           ) <$> govLocalRootPeersSig
             <*> govEstablishedPeersSig
             <*> govActivePeersSig
+            <*> govActiveBigPeersSig
             <*> govActiveFailuresSig
-            <*> govInProgressDemoteToColdSig
+            <*> govInProgressPromoteWarmSig
+            <*> govInProgressIneligibleSig
 
         promotionOpportunitiesIgnoredTooLong :: Signal (Set PeerAddr)
         promotionOpportunitiesIgnoredTooLong =
           Signal.keyedTimeout
-            (repromoteDelay config_REPROMOTE_DELAY + 20) -- seconds
+            (repromoteDelay config_REPROMOTE_DELAY + 1) -- seconds
             id
             promotionOpportunities
 
@@ -3502,26 +3576,34 @@ prop_governor_target_active_local_above (MaxTime maxTime) env =
                          (Cardano.ExtraState.empty (consensusMode env) (NumberOfBigLedgerPeers 0)) Cardano.ExtraPeers.empty
                          events
 
-        deomotionOpportunities :: Signal (Set PeerAddr)
-        deomotionOpportunities =
-          (\local active ->
+        govInProgressIneligibleSig :: Signal (Set PeerAddr)
+        govInProgressIneligibleSig =
+          selectGovState (uncurry Set.union . (    Governor.inProgressDemoteToCold
+                                               &&& Governor.inProgressDemoteHot))
+                         (Cardano.ExtraState.empty (consensusMode env) (NumberOfBigLedgerPeers 0)) Cardano.ExtraPeers.empty
+                         events
+
+        demotionOpportunities :: Signal (Set PeerAddr)
+        demotionOpportunities =
+          (\local active inProgressIneligible ->
               Set.unions
-                [ -- There are no opportunities if we're at or below target
-                  if Set.size groupActive <= hotTarget'
-                     then Set.empty
-                     else groupActive
-                | (HotValency hotTarget', _, group) <- LocalRootPeers.toGroupSets local
+                [opportunity
+                | (HotValency hotTarget, _, group) <- LocalRootPeers.toGroupSets local
                 , let groupActive = group `Set.intersection` active
-                ]
+                      opportunity
+                        | Set.size groupActive <= hotTarget = Set.empty
+                        | otherwise = groupActive
+                ] Set.\\ inProgressIneligible
           ) <$> govLocalRootPeersSig
             <*> govActivePeersSig
+            <*> govInProgressIneligibleSig
 
         demotionOpportunitiesIgnoredTooLong :: Signal (Set PeerAddr)
         demotionOpportunitiesIgnoredTooLong =
           Signal.keyedTimeout
-            10 -- seconds
+            1
             id
-            deomotionOpportunities
+            demotionOpportunities
 
      in counterexample
           ("\nSignal key: (local peers, active peers, " ++
@@ -3531,7 +3613,7 @@ prop_governor_target_active_local_above (MaxTime maxTime) env =
           (\(_,_,_,toolong) -> Set.null toolong)
           ((,,,) <$> (LocalRootPeers.toGroupSets <$> govLocalRootPeersSig)
                  <*> govActivePeersSig
-                 <*> deomotionOpportunities
+                 <*> demotionOpportunities
                  <*> demotionOpportunitiesIgnoredTooLong)
 
 -- | When in 'TooOld' state make sure we don't stay connected to non trustable

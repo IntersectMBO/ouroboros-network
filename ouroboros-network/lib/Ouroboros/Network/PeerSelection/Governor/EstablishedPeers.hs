@@ -501,6 +501,7 @@ jobPromoteColdPeer PeerSelectionActions {
             (fuzz, stdGen') = randomR (-2, 2 :: Double) stdGen
 
             -- exponential backoff: 5s, 10s, 20s, 40s, 80s, 160s.
+            -- Don't forget to change in diffusion tests if changed here
             delay :: DiffTime
             delay = realToFrac fuzz
                   + fromIntegral
