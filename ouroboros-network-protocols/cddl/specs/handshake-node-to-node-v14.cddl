@@ -15,7 +15,7 @@ msgQueryReply      = [3, versionTable]
 ; The codec only accepts definite-length maps.
 versionTable = { * versionNumber_v14 => v14.nodeToNodeVersionData }
 
-versionNumber_v14 = 14 / 15
+versionNumber_v14 = 14 / 15 / 16
 
 ; All version numbers
 versionNumbers = versionNumber_v14
