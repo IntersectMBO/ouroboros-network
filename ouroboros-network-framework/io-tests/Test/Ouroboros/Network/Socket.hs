@@ -347,7 +347,7 @@ prop_socket_recv_error f rerr =
                     _ <- async $ do
                       threadDelay 0.1
                       atomically $ putTMVar lock ()
-                    mux <- Mx.new (toMiniProtocolInfos (\_ _ -> Nothing) app)
+                    mux <- Mx.new Mx.nullTracers (toMiniProtocolInfos (\_ _ -> Nothing) app)
                     let respCtx = ResponderContext connectionId
                     resOps <- sequence
                       [ Mx.runMiniProtocol
@@ -367,7 +367,7 @@ prop_socket_recv_error f rerr =
                               [(Mx.ResponderDirectionOnly, void . runMiniProtocolCb initiator respCtx)]
                       ]
 
-                    withAsync (Mx.run Mx.nullTracers mux bearer) $ \aid -> do
+                    withAsync (Mx.run mux bearer) $ \aid -> do
                       _ <- atomically $ runFirstToFinish $ foldMap FirstToFinish resOps
                       Mx.stop mux
                       wait aid

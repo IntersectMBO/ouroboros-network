@@ -163,6 +163,8 @@ data Trace =
     | TraceStartOnDemandAny MiniProtocolNum MiniProtocolDir
     | TraceStartedOnDemand MiniProtocolNum MiniProtocolDir
     | TraceTerminating MiniProtocolNum MiniProtocolDir
+    | forall mode. TraceNewMux [MiniProtocolInfo mode]
+    | TraceStarting
     | TraceStopping
     | TraceStopped
 
@@ -175,6 +177,8 @@ instance Show Trace where
     show (TraceStartOnDemandAny mid dir) = printf "Preparing to start on any (%s) in %s" (show mid) (show dir)
     show (TraceStartedOnDemand mid dir) = printf "Started on demand (%s) in %s" (show mid) (show dir)
     show (TraceTerminating mid dir) = printf "Terminating (%s) in %s" (show mid) (show dir)
+    show (TraceNewMux infos) = printf "New mux with protocols: %s" (show infos)
+    show TraceStarting = "Mux starting"
     show TraceStopping = "Mux stopping"
     show TraceStopped  = "Mux stoppped"
 

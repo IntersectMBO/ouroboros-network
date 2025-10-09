@@ -99,7 +99,8 @@ data Mux (mode :: Mode) m =
        muxMiniProtocols   :: !(Map (MiniProtocolNum, MiniProtocolDir)
                                    (MiniProtocolState mode m)),
        muxControlCmdQueue :: !(StrictTQueue m (ControlCmd mode m)),
-       muxStatus          :: StrictTVar m Status
+       muxStatus          :: StrictTVar m Status,
+       muxTracers         :: Tracers m
      }
 
 
@@ -127,18 +128,21 @@ stopped Mux { muxStatus } =
 --
 new :: forall (mode :: Mode) m.
        MonadLabelledSTM m
-    => [MiniProtocolInfo mode]
+    => Tracers m
+    -> [MiniProtocolInfo mode]
     -- ^ description of protocols run by the mux layer.  Only these protocols
     -- one will be able to execute.
     -> m (Mux mode m)
-new ptcls = do
+new muxTracers ptcls = do
+    traceWith (tracer_ muxTracers) (TraceNewMux ptcls)
     muxMiniProtocols   <- mkMiniProtocolStateMap ptcls
     muxControlCmdQueue <- atomically newTQueue
     muxStatus <- newTVarIO Ready
     return Mux {
       muxMiniProtocols,
       muxControlCmdQueue,
-      muxStatus
+      muxStatus,
+      muxTracers
     }
 
 mkMiniProtocolStateMap :: MonadSTM m
@@ -224,18 +228,20 @@ run :: forall m (mode :: Mode).
        , MonadTimer m
        , MonadMask m
        )
-    => Tracers m
-    -> Mux mode m
+    => Mux mode m
     -> Bearer m
     -> m ()
-run tracers@TracersI { tracer_,
-                       bearerTracer_
-                     }
-    Mux { muxMiniProtocols,
+run Mux { muxMiniProtocols,
           muxControlCmdQueue,
-          muxStatus
+          muxStatus,
+          muxTracers = tracers@TracersI {
+              tracer_,
+              bearerTracer_
+            }
         }
     bearer@Bearer{name} = do
+
+    traceWith tracer_ TraceStarting
     egressQueue <- atomically $ newTBQueue 100
 
     -- label shared variables
@@ -360,20 +366,6 @@ data ControlCmd mode m =
        !(MiniProtocolState mode m)
        !(MiniProtocolAction m)
    | CmdShutdown
-
--- | Strategy how to start a mini-protocol.
---
-data StartOnDemandOrEagerly =
-    -- | Start a mini-protocol promptly.
-    StartEagerly
-    -- | Start a mini-protocol when data is received for the given
-    -- mini-protocol.  Must be used only when initial message is sent by the
-    -- remote side.
-  | StartOnDemand
-    -- | Like `StartOnDemand`, but start a mini-protocol if data is received for
-    -- any mini-protocol set to `StartOnDemand`.
-  | StartOnDemandAny
-  deriving (Eq, Show)
 
 data MiniProtocolAction m where
     MiniProtocolAction :: forall m a.
@@ -767,8 +759,13 @@ runMiniProtocol :: forall mode m a.
                 -> StartOnDemandOrEagerly
                 -> (ByteChannel m -> m (a, Maybe BL.ByteString))
                 -> m (STM m (Either SomeException a))
-runMiniProtocol Mux { muxMiniProtocols, muxControlCmdQueue, muxStatus}
-                ptclNum ptclDir startMode protocolAction
+runMiniProtocol Mux { muxMiniProtocols,
+                      muxControlCmdQueue,
+                      muxStatus
+                    }
+                ptclNum ptclDir
+                startMode
+                protocolAction
 
     -- Ensure the mini-protocol is known and get the status var
   | Just ptclState@MiniProtocolState{miniProtocolStatusVar}

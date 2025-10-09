@@ -259,8 +259,20 @@ clientServerSimulation payloads =
         handleConnection :: Mx.Bearer m -> TestAddr -> m ()
         handleConnection bearer remoteAddr = do
           labelThisThread "server-handler"
+          let connId = ConnectionId {
+                  localAddress  = serverAddr,
+                  remoteAddress = remoteAddr
+                }
+
+              -- server mux tracer
+              mxTracer :: forall x. Show x => Tracer m x
+              mxTracer =
+                (("server", connId,)
+                   `contramap`
+                   traceTime (Tracer (say . show)))
           bracket
-            (Mx.new [ MiniProtocolInfo {
+            (Mx.new (Mx.Tracers mxTracer mxTracer mxTracer)
+                    [ MiniProtocolInfo {
                         miniProtocolNum        = reqRespProtocolNum,
                         miniProtocolDir        = Mx.ResponderDirectionOnly,
                         miniProtocolLimits     = Mx.MiniProtocolLimits maxBound,
@@ -269,31 +281,23 @@ clientServerSimulation payloads =
                     ])
             Mx.stop
             $ \mux -> do
-              let connId = ConnectionId {
-                      localAddress  = serverAddr,
-                      remoteAddress = remoteAddr
-                    }
-                  tr = (connId,) `contramap`
-                       traceTime (   Tracer (say . show)
-                                  -- <> Tracer Debug.traceShowM
-                                 )
+
+              let prtclTracer = (connId,) `contramap`
+                                traceTime (   Tracer (say . show)
+                                           -- <> Tracer Debug.traceShowM
+                                          )
 
               resSTM <- runMiniProtocol
                           mux reqRespProtocolNum
                           Mx.ResponderDirectionOnly
                           Mx.StartOnDemand
-                          (\channel -> runPeer tr codecReqResp
+                          (\channel -> runPeer prtclTracer
+                                               codecReqResp
                                                channel
                                                serverPeer)
               withAsync
                 (do labelThisThread "server-mux"
-                    let serverTracer :: forall x. Show x => Tracer m x
-                        serverTracer =
-                          (("server", connId,)
-                             `contramap`
-                             traceTime (Tracer (say . show)))
-                    Mx.run (Mx.Tracers serverTracer serverTracer serverTracer)
-                           mux bearer)
+                    Mx.run mux bearer)
                 $ \_muxThread -> do
                   res <- atomically resSTM
                   say $ "SERVER HANDLER " ++ show res
@@ -307,27 +311,39 @@ clientServerSimulation payloads =
                 (close snocket)
                 $ \fd -> do
                   connect snocket fd serverAddr
-                  mux <- Mx.new [ MiniProtocolInfo {
+
+                  localAddr <- getLocalAddr snocket fd
+                  let connId = ConnectionId {
+                          localAddress  = localAddr,
+                          remoteAddress = serverAddr
+                        }
+
+                      -- client mux tracer
+                      mxTracer :: forall x. Show x => Tracer m x
+                      mxTracer =
+                        (("client", connId,)
+                           `contramap`
+                           traceTime (Tracer (say . show)))
+
+                  mux <- Mx.new (Mx.Tracers mxTracer mxTracer mxTracer)
+                                [ MiniProtocolInfo {
                                     miniProtocolNum        = reqRespProtocolNum,
                                     miniProtocolDir        = Mx.InitiatorDirectionOnly,
                                     miniProtocolLimits     = Mx.MiniProtocolLimits maxBound,
                                     miniProtocolCapability = Nothing
                                   }
                                 ]
-                  localAddr <- getLocalAddr snocket fd
-                  let connId = ConnectionId {
-                          localAddress  = localAddr,
-                          remoteAddress = serverAddr
-                        }
-                      tr = (connId,) `contramap`
-                           traceTime (   Tracer (say . show)
-                                      -- <> Tracer Debug.traceShowM
-                                     )
+
+                  let prtclTracer = (connId,) `contramap`
+                                    traceTime (   Tracer (say . show)
+                                               -- <> Tracer Debug.traceShowM
+                                              )
                   resSTM <- runMiniProtocol
                               mux reqRespProtocolNum
                               InitiatorDirectionOnly
                               StartEagerly
-                              (\channel -> runPeer tr codecReqResp
+                              (\channel -> runPeer prtclTracer
+                                                   codecReqResp
                                                    channel
                                                    clientPeer)
                   bearer <- Mx.getBearer makeFDBearer 10 fd Nothing
@@ -335,13 +351,7 @@ clientServerSimulation payloads =
                   -- kill mux as soon as the client returns
                   withAsync
                     (do labelThisThread "client-mux"
-                        let clientTracer :: forall x. Show x => Tracer m x
-                            clientTracer =
-                              (("client", connId,)
-                                 `contramap`
-                                 traceTime (Tracer (say . show)))
-                        Mx.run (Mx.Tracers clientTracer clientTracer clientTracer)
-                               mux bearer)
+                        Mx.run mux bearer)
                     $ \_ -> do
                       res <- atomically resSTM
                       Mx.stop mux
