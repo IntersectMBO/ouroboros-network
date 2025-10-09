@@ -45,6 +45,7 @@ import qualified Cardano.Logging as Logging
 import DMQ.Configuration
 import DMQ.NodeToClient.Version
 import DMQ.NodeToNode.Version
+import DMQ.Tracer.Types
 
 data WithEventType = forall a. ToJSON a => WithEventType String a
 
