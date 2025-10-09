@@ -1,2 +1,10 @@
 { "NetworkMagic": 12
+, "TraceOptions": {
+    "": {
+      "backends": [
+        "Stdout MachineFormat"
+      ],
+      "severity": "Debug"
+    }
+  }
 }
