@@ -1,2 +1,46 @@
 { "NetworkMagic": 12
+, "TraceOptions": {
+    "": {
+      "backends": [
+        "Stdout MachineFormat"
+      ],
+      "severity": "Info"
+    }
+  , "Handshake": {
+      "severity": "Debug"
+    }
+  , "LocalMux": {
+      "severity": "Debug"
+    }
+  , "LocalHandshake": {
+      "severity": "Debug"
+    }
+  , "Diffusion": {
+      "severity": "Debug"
+    }
+  , "PeerSelection": {
+      "severity": "Debug"
+    }
+  , "PeerSelectionCounters": {
+      "severity": "Debug"
+    }
+  , "ConnectionManager": {
+      "severity": "Debug"
+    }
+  , "Server": {
+      "severity": "Debug"
+    }
+  , "InboundGovernor": {
+      "severity": "Debug"
+    }
+  , "LocalMsgSubmission.Protocol.Server": {
+      "severity": "Debug"
+    }
+  , "LocalMsgNotification.Protocol.Server": {
+      "severity": "Debug"
+    }
+  , "SigSubmission.Inbound": {
+      "severity": "Debug"
+    }
+  }
 }
