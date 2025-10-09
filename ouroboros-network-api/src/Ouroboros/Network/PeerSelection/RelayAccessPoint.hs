@@ -20,6 +20,7 @@ import Control.Monad (unless)
 
 import Data.Aeson
 import Data.Aeson.Types
+import Data.ByteString (ByteString)
 import Data.ByteString.Char8 qualified as BSC
 import Data.IP qualified as IP
 import Data.Text qualified as Text
@@ -59,18 +60,22 @@ instance NFData RelayAccessPoint where
       IP.IPv4 ipv4 -> rnf (IP.fromIPv4w ipv4)
       IP.IPv6 ipv6 -> rnf (IP.fromIPv6w ipv6)
 
+-- This instance is used to parse `RelayAccessPoint`s in topology files.
 instance FromJSON RelayAccessPoint where
   parseJSON = withObject "RelayAccessPoint" $ \o -> do
     addr <- encodeUtf8 <$> o .: "address"
     let res = flip parseMaybe o $ const do
           port <- o .: "port"
-          return (toRelayAccessPoint addr port)
+          return $ toRelayAccessPoint addr port
     case res of
       Nothing  -> return $ RelayAccessSRVDomain (fullyQualified addr)
+      Just rap@(RelayAccessAddress addr' _) -> do
+        unless (isValidDestinationIPAddr addr') $
+          fail (show addr' ++ " is not a valid destination address")
+        return rap
       Just rap -> return rap
-
     where
-      toRelayAccessPoint :: DNS.Domain -> Int -> RelayAccessPoint
+      toRelayAccessPoint :: ByteString -> Int -> RelayAccessPoint
       toRelayAccessPoint address port =
           case readMaybe (BSC.unpack address) of
             Nothing   -> RelayAccessDomain (fullyQualified address) (fromIntegral port)
@@ -78,6 +83,10 @@ instance FromJSON RelayAccessPoint where
       fullyQualified = \case
         domain | Just (_, '.') <- BSC.unsnoc domain -> domain
                | otherwise -> domain `BSC.snoc` '.'
+
+isValidDestinationIPAddr :: IP.IP -> Bool
+isValidDestinationIPAddr (IP.IPv4 ipv4) = IP.fromIPv4w ipv4 /= 0
+isValidDestinationIPAddr (IP.IPv6 ipv6) = IP.fromIPv6w ipv6 /= (0,0,0,0)
 
 instance ToJSON RelayAccessPoint where
   toJSON (RelayAccessDomain addr port) =
@@ -190,11 +199,12 @@ instance FromJSON LedgerRelayAccessPoint where
       Just rap -> return rap
 
     where
-      toRelayAccessPoint :: DNS.Domain -> Int -> LedgerRelayAccessPoint
+      toRelayAccessPoint :: ByteString -> Int -> LedgerRelayAccessPoint
       toRelayAccessPoint address port =
           case readMaybe (BSC.unpack address) of
             Nothing   -> LedgerRelayAccessDomain (fullyQualified address) (fromIntegral port)
             Just addr -> LedgerRelayAccessAddress addr (fromIntegral port)
+
       fullyQualified = \case
         domain | Just (_, '.') <- BSC.unsnoc domain -> domain
                | otherwise -> domain `BSC.snoc` '.'
