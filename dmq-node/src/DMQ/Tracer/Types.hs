@@ -50,9 +50,10 @@ import           Formatting
 instance (LogFormatting peer, LogFormatting tr, Typeable tr) =>
     LogFormatting (Mux.WithBearer peer tr) where
     forMachine dtal (Mux.WithBearer b ev) =
-      mconcat [ "kind"   .= (show . typeOf $ ev)
-              , "bearer" .= forMachine dtal b
-              , "event"  .= forMachine dtal ev ]
+      mconcat [ "bearer" .= forMachine dtal b
+              , "event"  .= forMachine dtal ev
+              -- "kind"   .= (show . typeOf $ ev)
+              ]
     forHuman (Mux.WithBearer b ev) = "With mux bearer " <> forHumanOrMachine b
                                       <> ". " <> forHumanOrMachine ev
 
@@ -73,27 +74,26 @@ instance MetaTrace tr => MetaTrace (Mux.WithBearer peer tr) where
 
 instance LogFormatting Mux.BearerTrace where
     forMachine _dtal Mux.TraceRecvHeaderStart = mconcat
-      [ "kind" .= String "Mux.TraceRecvHeaderStart"
-      , "msg"  .= String "Bearer Receive Header Start"
+      [ "msg"  .= String "Bearer Receive Header Start"
+      -- "kind" .= String "Mux.TraceRecvHeaderStart"
       ]
     forMachine _dtal (Mux.TraceRecvHeaderEnd SDUHeader { mhTimestamp, mhNum, mhDir, mhLength }) = mconcat
-      [ "kind" .= String "Mux.TraceRecvHeaderStart"
-      , "msg"  .=  String "Bearer Receive Header End"
+      [ "msg"  .=  String "Bearer Receive Header End"
       , "timestamp" .= String (showTHex (unRemoteClockModel mhTimestamp))
       , "miniProtocolNum" .= String (showT mhNum)
       , "miniProtocolDir" .= String (showT mhDir)
       , "length" .= String (showT mhLength)
+      -- "kind" .= String "Mux.TraceRecvHeaderStart"
       ]
     forMachine _dtal (Mux.TraceRecvDeltaQObservation SDUHeader { mhTimestamp, mhLength } ts) = mconcat
-      [ "kind" .= String "Mux.TraceRecvDeltaQObservation"
-      , "msg"  .=  String "Bearer DeltaQ observation"
+      [ "msg"  .=  String "Bearer DeltaQ observation"
       , "timeRemote" .=  String (showT ts)
       , "timeLocal" .= String (showTHex (unRemoteClockModel mhTimestamp))
       , "length" .= String (showT mhLength)
+      -- "kind" .= String "Mux.TraceRecvDeltaQObservation"
       ]
     forMachine _dtal (Mux.TraceRecvDeltaQSample d sp so dqs dqvm dqvs estR sdud) = mconcat
-      [ "kind" .= String "Mux.TraceRecvDeltaQSample"
-      , "msg"  .=  String "Bearer DeltaQ Sample"
+      [ "msg"  .=  String "Bearer DeltaQ Sample"
       , "duration" .=  String (showT d)
       , "packets" .= String (showT sp)
       , "sumBytes" .= String (showT so)
@@ -102,41 +102,42 @@ instance LogFormatting Mux.BearerTrace where
       , "DeltaQ_VVar" .= String (showT dqvs)
       , "DeltaQ_estR" .= String (showT estR)
       , "sizeDist" .= String (showT sdud)
+      -- "kind" .= String "Mux.TraceRecvDeltaQSample"
       ]
     forMachine _dtal (Mux.TraceRecvStart len) = mconcat
-      [ "kind" .= String "Mux.TraceRecvStart"
-      , "msg"  .= String "Bearer Receive Start"
+      [ "msg"  .= String "Bearer Receive Start"
       , "length" .= String (showT len)
+      -- "kind" .= String "Mux.TraceRecvStart"
       ]
     forMachine _dtal (Mux.TraceRecvRaw len) = mconcat
-      [ "kind" .= String "Mux.TraceRecvRaw"
-      , "msg"  .= String "Bearer Receive Raw"
+      [ "msg"  .= String "Bearer Receive Raw"
       , "length" .= String (showT len)
+      -- "kind" .= String "Mux.TraceRecvRaw"
       ]
     forMachine _dtal (Mux.TraceRecvEnd len) = mconcat
-      [ "kind" .= String "Mux.TraceRecvEnd"
-      , "msg"  .= String "Bearer Receive End"
+      [ "msg"  .= String "Bearer Receive End"
       , "length" .= String (showT len)
+      -- "kind" .= String "Mux.TraceRecvEnd"
       ]
     forMachine _dtal (Mux.TraceSendStart SDUHeader { mhTimestamp, mhNum, mhDir, mhLength }) = mconcat
-      [ "kind" .= String "Mux.TraceSendStart"
-      , "msg"  .= String "Bearer Send Start"
+      [ "msg"  .= String "Bearer Send Start"
       , "timestamp" .= String (showTHex (unRemoteClockModel mhTimestamp))
       , "miniProtocolNum" .= String (showT mhNum)
       , "miniProtocolDir" .= String (showT mhDir)
       , "length" .= String (showT mhLength)
+      -- "kind" .= String "Mux.TraceSendStart"
       ]
     forMachine _dtal Mux.TraceSendEnd = mconcat
-      [ "kind" .= String "Mux.TraceSendEnd"
-      , "msg"  .= String "Bearer Send End"
+      [ "msg"  .= String "Bearer Send End"
+      -- "kind" .= String "Mux.TraceSendEnd"
       ]
     forMachine _dtal Mux.TraceSDUReadTimeoutException = mconcat
-      [ "kind" .= String "Mux.TraceSDUReadTimeoutException"
-      , "msg"  .= String "Timed out reading SDU"
+      [ "msg"  .= String "Timed out reading SDU"
+      -- "kind" .= String "Mux.TraceSDUReadTimeoutException"
       ]
     forMachine _dtal Mux.TraceSDUWriteTimeoutException = mconcat
-      [ "kind" .= String "Mux.TraceSDUWriteTimeoutException"
-      , "msg"  .= String "Timed out writing SDU"
+      [ "msg"  .= String "Timed out writing SDU"
+      -- "kind" .= String "Mux.TraceSDUWriteTimeoutException"
       ]
     forMachine _dtal Mux.TraceEmitDeltaQ = mempty
 #ifdef linux_HOST_OS
@@ -144,8 +145,7 @@ instance LogFormatting Mux.BearerTrace where
             { tcpi_snd_mss, tcpi_rcv_mss, tcpi_lost, tcpi_retrans
             , tcpi_rtt, tcpi_rttvar, tcpi_snd_cwnd }
             len) = mconcat
-      [ "kind" .= String "Mux.TraceTCPInfo"
-      , "msg"  .= String "TCPInfo"
+      [ "msg"  .= String "TCPInfo"
       , "rtt"  .= (fromIntegral tcpi_rtt :: Word)
       , "rttvar" .= (fromIntegral tcpi_rttvar :: Word)
       , "snd_cwnd" .= (fromIntegral tcpi_snd_cwnd :: Word)
@@ -154,12 +154,13 @@ instance LogFormatting Mux.BearerTrace where
       , "lost" .= (fromIntegral tcpi_lost :: Word)
       , "retrans" .= (fromIntegral tcpi_retrans :: Word)
       , "length" .= len
+      -- "kind" .= String "Mux.TraceTCPInfo"
       ]
 #else
     forMachine _dtal (Mux.TraceTCPInfo _ len) = mconcat
-      [ "kind" .= String "Mux.TraceTCPInfo"
-      , "msg"  .= String "TCPInfo"
+      [ "msg"  .= String "TCPInfo"
       , "len"  .= String (showT len)
+      -- "kind" .= String "Mux.TraceTCPInfo"
       ]
 #endif
 
@@ -300,26 +301,26 @@ instance MetaTrace Mux.BearerTrace where
 
 instance LogFormatting Mux.ChannelTrace where
     forMachine _dtal (Mux.TraceChannelRecvStart mid) = mconcat
-      [ "kind" .= String "Mux.TraceChannelRecvStart"
-      , "msg"  .= String "Channel Receive Start"
+      [ "msg"  .= String "Channel Receive Start"
       , "miniProtocolNum" .= String (showT mid)
+      -- "kind" .= String "Mux.TraceChannelRecvStart"
       ]
     forMachine _dtal (Mux.TraceChannelRecvEnd mid len) = mconcat
-      [ "kind" .= String "Mux.TraceChannelRecvEnd"
-      , "msg"  .= String "Channel Receive End"
+      [ "msg"  .= String "Channel Receive End"
       , "miniProtocolNum" .= String (showT mid)
       , "length" .= String (showT len)
+      -- "kind" .= String "Mux.TraceChannelRecvEnd"
       ]
     forMachine _dtal (Mux.TraceChannelSendStart mid len) = mconcat
-      [ "kind" .= String "Mux.TraceChannelSendStart"
-      , "msg"  .= String "Channel Send Start"
+      [ "msg"  .= String "Channel Send Start"
       , "miniProtocolNum" .= String (showT mid)
       , "length" .= String (showT len)
+      -- "kind" .= String "Mux.TraceChannelSendStart"
       ]
     forMachine _dtal (Mux.TraceChannelSendEnd mid) = mconcat
-      [ "kind" .= String "Mux.TraceChannelSendEnd"
-      , "msg"  .= String "Channel Send End"
+      [ "msg"  .= String "Channel Send End"
       , "miniProtocolNum" .= String (showT mid)
+      -- "kind" .= String "Mux.TraceChannelSendEnd"
       ]
 
     forHuman (Mux.TraceChannelRecvStart mid) =
@@ -366,60 +367,60 @@ instance MetaTrace Mux.ChannelTrace where
 
 instance LogFormatting Mux.Trace where
     forMachine _dtal (Mux.TraceState new) = mconcat
-      [ "kind" .= String "Mux.TraceState"
-      , "msg"  .= String "MuxState"
+      [ "msg"  .= String "MuxState"
       , "state" .= String (showT new)
+      -- "kind" .= String "Mux.TraceState"
       ]
     forMachine _dtal (Mux.TraceCleanExit mid dir) = mconcat
-      [ "kind" .= String "Mux.TraceCleanExit"
-      , "msg"  .= String "Miniprotocol terminated cleanly"
+      [ "msg"  .= String "Miniprotocol terminated cleanly"
       , "miniProtocolNum" .= String (showT mid)
       , "miniProtocolDir" .= String (showT dir)
+      -- "kind" .= String "Mux.TraceCleanExit"
       ]
     forMachine _dtal (Mux.TraceExceptionExit mid dir exc) = mconcat
-      [ "kind" .= String "Mux.TraceExceptionExit"
-      , "msg"  .= String "Miniprotocol terminated with exception"
+      [ "msg"  .= String "Miniprotocol terminated with exception"
       , "miniProtocolNum" .= String (showT mid)
       , "miniProtocolDir" .= String (showT dir)
       , "exception" .= String (showT exc)
+      -- "kind" .= String "Mux.TraceExceptionExit"
       ]
     forMachine _dtal (Mux.TraceStartEagerly mid dir) = mconcat
-      [ "kind" .= String "Mux.TraceStartEagerly"
-      , "msg"  .= String "Eagerly started"
+      [ "msg"  .= String "Eagerly started"
       , "miniProtocolNum" .= String (showT mid)
       , "miniProtocolDir" .= String (showT dir)
+      -- "kind" .= String "Mux.TraceStartEagerly"
       ]
     forMachine _dtal (Mux.TraceStartOnDemand mid dir) = mconcat
-      [ "kind" .= String "Mux.TraceStartOnDemand"
-      , "msg"  .= String "Preparing to start"
+      [ "msg"  .= String "Preparing to start"
       , "miniProtocolNum" .= String (showT mid)
       , "miniProtocolDir" .= String (showT dir)
+      -- "kind" .= String "Mux.TraceStartOnDemand"
       ]
     forMachine _dtal (Mux.TraceStartOnDemandAny mid dir) = mconcat
-      [ "kind" .= String "Mux.TraceStartOnDemandAny"
-      , "msg"  .= String "Preparing to start"
+      [ "msg"  .= String "Preparing to start"
       , "miniProtocolNum" .= String (showT mid)
       , "miniProtocolDir" .= String (showT dir)
+      -- "kind" .= String "Mux.TraceStartOnDemandAny"
       ]
     forMachine _dtal (Mux.TraceStartedOnDemand mid dir) = mconcat
-      [ "kind" .= String "Mux.TraceStartedOnDemand"
-      , "msg"  .= String "Started on demand"
+      [ "msg"  .= String "Started on demand"
       , "miniProtocolNum" .= String (showT mid)
       , "miniProtocolDir" .= String (showT dir)
+      -- "kind" .= String "Mux.TraceStartedOnDemand"
       ]
     forMachine _dtal (Mux.TraceTerminating mid dir) = mconcat
-      [ "kind" .= String "Mux.TraceTerminating"
-      , "msg"  .= String "Terminating"
+      [ "msg"  .= String "Terminating"
       , "miniProtocolNum" .= String (showT mid)
       , "miniProtocolDir" .= String (showT dir)
+      -- "kind" .= String "Mux.TraceTerminating"
       ]
     forMachine _dtal Mux.TraceStopping = mconcat
-      [ "kind" .= String "Mux.TraceStopping"
-      , "msg"  .= String "Mux stopping"
+      [ "msg"  .= String "Mux stopping"
+      -- "kind" .= String "Mux.TraceStopping"
       ]
     forMachine _dtal Mux.TraceStopped = mconcat
-      [ "kind" .= String "Mux.TraceStopped"
-      , "msg"  .= String "Mux stoppped"
+      [ "msg"  .= String "Mux stoppped"
+      -- "kind" .= String "Mux.TraceStopped"
       ]
 
     forHuman (Mux.TraceState new) =
@@ -520,10 +521,11 @@ instance MetaTrace Mux.Trace where
 instance (Show term, Show ntcVersion) =>
   LogFormatting (AnyMessage (HS.Handshake ntcVersion term)) where
   forMachine _dtal (AnyMessageAndAgency stok msg) =
-    mconcat [ "kind" .= String kind
-            , "msg" .= (String . showT $ msg)
+    mconcat [ "msg" .= (String . showT $ msg)
             , "agency" .= String (pack $ show stok)
+            -- "kind" .= String kind
             ]
+{--
     where
       kind = case msg of
         HS.MsgProposeVersions {} -> "ProposeVersions"
@@ -531,6 +533,7 @@ instance (Show term, Show ntcVersion) =>
         HS.MsgQueryReply      {} -> "QueryReply"
         HS.MsgAcceptVersion   {} -> "AcceptVersion"
         HS.MsgRefuse          {} -> "Refuse"
+--}
 
   forHuman (AnyMessageAndAgency stok msg) =
     "Handshake (agency, message) = " <> "(" <> showT stok <> "," <> forHumanOrMachine (AnyMessage msg) <> ")"
@@ -594,72 +597,72 @@ instance MetaTrace (AnyMessage (HS.Handshake a b)) where
 instance (Show ntnAddr, Show ntcAddr) =>
   LogFormatting (Diff.DiffusionTracer ntnAddr ntcAddr) where
   forMachine _dtal (Diff.RunServer sockAddr) = mconcat
-    [ "kind" .= String "RunServer"
-    , "socketAddress" .= String (pack (show sockAddr))
+    [ "socketAddress" .= String (pack (show sockAddr))
+    -- "kind" .= String "RunServer"
     ]
 
   forMachine _dtal (Diff.RunLocalServer localAddress) = mconcat
-    [ "kind" .= String "RunLocalServer"
-    , "localAddress" .= String (pack (show localAddress))
+    [ "localAddress" .= String (pack (show localAddress))
+    -- "kind" .= String "RunLocalServer"
     ]
   forMachine _dtal (Diff.UsingSystemdSocket localAddress) = mconcat
-    [ "kind" .= String "UsingSystemdSocket"
-    , "path" .= String (pack . show $ localAddress)
+    [ "path" .= String (pack . show $ localAddress)
+    -- "kind" .= String "UsingSystemdSocket"
     ]
 
   forMachine _dtal (Diff.CreateSystemdSocketForSnocketPath localAddress) = mconcat
-    [ "kind" .= String "CreateSystemdSocketForSnocketPath"
-    , "path" .= String (pack . show $ localAddress)
+    [ "path" .= String (pack . show $ localAddress)
+    -- "kind" .= String "CreateSystemdSocketForSnocketPath"
     ]
   forMachine _dtal (Diff.CreatedLocalSocket localAddress) = mconcat
-    [ "kind" .= String "CreatedLocalSocket"
-    , "path" .= String (pack . show $ localAddress)
+    [ "path" .= String (pack . show $ localAddress)
+    -- "kind" .= String "CreatedLocalSocket"
     ]
   forMachine _dtal (Diff.ConfiguringLocalSocket localAddress socket) = mconcat
-    [ "kind" .= String "ConfiguringLocalSocket"
-    , "path" .= String (pack . show $ localAddress)
+    [ "path" .= String (pack . show $ localAddress)
     , "socket" .= String (pack (show socket))
+    -- "kind" .= String "ConfiguringLocalSocket"
     ]
   forMachine _dtal (Diff.ListeningLocalSocket localAddress socket) = mconcat
-    [ "kind" .= String "ListeningLocalSocket"
-    , "path" .=  String (pack . show $ localAddress)
+    [ "path" .=  String (pack . show $ localAddress)
     , "socket" .= String (pack (show socket))
+    -- "kind" .= String "ListeningLocalSocket"
     ]
   forMachine _dtal (Diff.LocalSocketUp localAddress fd) = mconcat
-    [ "kind" .= String "LocalSocketUp"
-    , "path" .= String (pack . show $ localAddress)
+    [ "path" .= String (pack . show $ localAddress)
     , "socket" .= String (pack (show fd))
+    -- "kind" .= String "LocalSocketUp"
     ]
   forMachine _dtal (Diff.CreatingServerSocket socket) = mconcat
-    [ "kind" .= String "CreatingServerSocket"
-    , "socket" .= String (pack (show socket))
+    [ "socket" .= String (pack (show socket))
+    -- "kind" .= String "CreatingServerSocket"
     ]
   forMachine _dtal (Diff.ListeningServerSocket socket) = mconcat
-    [ "kind" .= String "ListeningServerSocket"
-    , "socket" .= String (pack (show socket))
+    [ "socket" .= String (pack (show socket))
+    -- "kind" .= String "ListeningServerSocket"
     ]
   forMachine _dtal (Diff.ServerSocketUp socket) = mconcat
-    [ "kind" .= String "ServerSocketUp"
-    , "socket" .= String (pack (show socket))
+    [ "socket" .= String (pack (show socket))
+    -- "kind" .= String "ServerSocketUp"
     ]
   forMachine _dtal (Diff.ConfiguringServerSocket socket) = mconcat
-    [ "kind" .= String "ConfiguringServerSocket"
-    , "socket" .= String (pack (show socket))
+    [ "socket" .= String (pack (show socket))
+    -- "kind" .= String "ConfiguringServerSocket"
     ]
   forMachine _dtal (Diff.UnsupportedLocalSystemdSocket path) = mconcat
-    [ "kind" .= String "UnsupportedLocalSystemdSocket"
-    , "path" .= String (pack (show path))
+    [ "path" .= String (pack (show path))
+    -- "kind" .= String "UnsupportedLocalSystemdSocket"
     ]
   forMachine _dtal Diff.UnsupportedReadySocketCase = mconcat
-    [ "kind" .= String "UnsupportedReadySocketCase"
+    [ -- "kind" .= String "UnsupportedReadySocketCase"
     ]
   forMachine _dtal (Diff.DiffusionErrored exception) = mconcat
-    [ "kind" .= String "DiffusionErrored"
-    , "error" .= String (pack (show exception))
+    [ "error" .= String (pack (show exception))
+    -- "kind" .= String "DiffusionErrored"
     ]
   forMachine _dtal (Diff.SystemdSocketConfiguration config) = mconcat
-    [ "kind" .= String "SystemdSocketConfiguration"
-    , "path" .= String (pack (show config))
+    [ "path" .= String (pack (show config))
+    -- "kind" .= String "SystemdSocketConfiguration"
     ]
 
 instance MetaTrace (Diff.DiffusionTracer ntnAddr ntcAddr) where
@@ -774,84 +777,105 @@ instance MetaTrace (Diff.DiffusionTracer ntnAddr ntcAddr) where
 instance LogFormatting TraceLedgerPeers where
   forMachine _dtal (PickedLedgerPeer addr _ackStake stake) =
     mconcat
-      [ "kind" .= String "PickedLedgerPeer"
-      , "address" .= show addr
+      [ "address" .= show addr
       , "relativeStake" .= (realToFrac (unPoolStake stake) :: Double)
+      -- "kind" .= String "PickedLedgerPeer"
       ]
   forMachine _dtal (PickedLedgerPeers (NumberOfPeers n) addrs) =
     mconcat
-      [ "kind" .= String "PickedLedgerPeers"
-      , "desiredCount" .= n
+      [ "desiredCount" .= n
       , "count" .= List.length addrs
       , "addresses" .= show addrs
+      -- "kind" .= String "PickedLedgerPeers"
       ]
   forMachine _dtal (PickedBigLedgerPeer addr _ackStake stake) =
     mconcat
-      [ "kind" .= String "PickedBigLedgerPeer"
-      , "address" .= show addr
+      [ "address" .= show addr
       , "relativeStake" .= (realToFrac (unPoolStake stake) :: Double)
+      -- "kind" .= String "PickedBigLedgerPeer"
       ]
   forMachine _dtal (PickedBigLedgerPeers (NumberOfPeers n) addrs) =
     mconcat
-      [ "kind" .= String "PickedBigLedgerPeers"
-      , "desiredCount" .= n
+      [ "desiredCount" .= n
       , "count" .= List.length addrs
       , "addresses" .= show addrs
+      -- "kind" .= String "PickedBigLedgerPeers"
       ]
   forMachine _dtal (FetchingNewLedgerState cnt bigCnt) =
     mconcat
-      [ "kind" .= String "FetchingNewLedgerState"
-      , "numberOfLedgerPeers" .= cnt
+      [ "numberOfLedgerPeers" .= cnt
       , "numberOfBigLedgerPeers" .= bigCnt
+      -- "kind" .= String "FetchingNewLedgerState"
       ]
   forMachine _dtal DisabledLedgerPeers =
     mconcat
-      [ "kind" .= String "DisabledLedgerPeers"
+      [ -- "kind" .= String "DisabledLedgerPeers"
       ]
+{--
+
+src/DMQ/Tracer/Types.hs:814:26: error: [GHC-39999]
+    • No instance for ‘aeson-2.2.3.0:Data.Aeson.Types.ToJSON.ToJSON
+                         Ouroboros.Network.PeerSelection.LedgerPeers.Type.UseLedgerPeers’
+        arising from a use of ‘.=’
+    • In the expression: "useLedgerPeers" .= ulp
+      In the first argument of ‘mconcat’, namely
+        ‘["useLedgerPeers" .= ulp]’
+      In the expression: mconcat ["useLedgerPeers" .= ulp]
+    |
+814 |       [ "useLedgerPeers" .= ulp
+
+
   forMachine _dtal (TraceUseLedgerPeers ulp) =
     mconcat
-      [ "kind" .= String "UseLedgerPeers"
-      , "useLedgerPeers" .= ulp
+      [ "useLedgerPeers" .= ulp
+      -- "kind" .= String "UseLedgerPeers"
+      ]
+
+--}
+  forMachine _dtal (TraceUseLedgerPeers _ulp) =
+    mconcat
+      [ "useLedgerPeers" .= (0::Int)
+      -- "kind" .= String "UseLedgerPeers"
       ]
   forMachine _dtal WaitingOnRequest =
     mconcat
-      [ "kind" .= String "WaitingOnRequest"
+      [ -- "kind" .= String "WaitingOnRequest"
       ]
   forMachine _dtal (RequestForPeers (NumberOfPeers np)) =
     mconcat
-      [ "kind" .= String "RequestForPeers"
-      , "numberOfPeers" .= np
+      [ "numberOfPeers" .= np
+      -- "kind" .= String "RequestForPeers"
       ]
   forMachine _dtal (ReusingLedgerState cnt age) =
     mconcat
-      [ "kind" .= String "ReusingLedgerState"
-      , "numberOfPools" .= cnt
+      [ "numberOfPools" .= cnt
       , "ledgerStateAge" .= age
+      -- "kind" .= String "ReusingLedgerState"
       ]
   forMachine _dtal FallingBackToPublicRootPeers =
     mconcat
-      [ "kind" .= String "FallingBackToPublicRootPeers"
+      [ --"kind" .= String "FallingBackToPublicRootPeers"
       ]
   forMachine _dtal (NotEnoughLedgerPeers (NumberOfPeers target) numOfLedgerPeers) =
     mconcat
-      [ "kind" .= String "NotEnoughLedgerPeers"
-      , "target" .= target
+      [ "target" .= target
       , "numOfLedgerPeers" .= numOfLedgerPeers
+      -- "kind" .= String "NotEnoughLedgerPeers"
       ]
   forMachine _dtal (NotEnoughBigLedgerPeers (NumberOfPeers target) numOfBigLedgerPeers) =
     mconcat
-      [ "kind" .= String "NotEnoughBigLedgerPeers"
-      , "target" .= target
+      [ "target" .= target
       , "numOfBigLedgerPeers" .= numOfBigLedgerPeers
+      -- "kind" .= String "NotEnoughBigLedgerPeers"
       ]
   forMachine _dtal (TraceLedgerPeersDomains daps) =
     mconcat
-      [ "kind" .= String "TraceLedgerPeersDomains"
-      , "domainAccessPoints" .= daps
+      [ "domainAccessPoints" .= daps
+      -- "kind" .= String "TraceLedgerPeersDomains"
       ]
   forMachine _dtal UsingBigLedgerPeerSnapshot =
     mconcat
-      [ "kind" .= String "UsingBigLedgerPeerSnapshot"
+      [ --"kind" .= String "UsingBigLedgerPeerSnapshot"
       ]
 
 instance MetaTrace TraceLedgerPeers where
