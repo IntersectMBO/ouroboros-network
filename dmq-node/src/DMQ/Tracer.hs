@@ -45,58 +45,8 @@ import qualified Cardano.Logging as Logging
 import DMQ.Configuration
 import DMQ.NodeToClient.Version
 import DMQ.NodeToNode.Version
+import DMQ.Tracer.Translation
 import DMQ.Tracer.Types
-
-data WithEventType = forall a. ToJSON a => WithEventType String a
-
-instance Logging.LogFormatting WithEventType where
-  -- Machine readable representation with varying details based on the detail level.
-  -- forMachine :: DetailLevel -> a -> Aeson.Object
-  forMachine _ (WithEventType _ event) = fromList [ ("data", toJSON event) ]
-  -- Human readable representation.
-  -- forHuman :: a -> Text
-  forHuman _ = ""
-  -- Metrics representation.
-  -- asMetrics :: a -> [Metric]
-  asMetrics _ = []
-
-instance Logging.MetaTrace WithEventType where
-  -- allNamespaces :: [Namespace a]
-  allNamespaces = [
-      Logging.Namespace [] ["Mux"]
-    , Logging.Namespace [] ["Channel"]
-    , Logging.Namespace [] ["Bearer"]
-    , Logging.Namespace [] ["Handshake"]
-    , Logging.Namespace [] ["LocalMux"]
-    , Logging.Namespace [] ["LocalChannel"]
-    , Logging.Namespace [] ["LocalBearer"]
-    , Logging.Namespace [] ["LocalHandshake"]
-    , Logging.Namespace [] ["Diffusion"]
-    , Logging.Namespace [] ["LocalRootPeers"]
-    , Logging.Namespace [] ["PublicRootPeers"]
-    , Logging.Namespace [] ["LedgerPeers"]
-    , Logging.Namespace [] ["PeerSelection"]
-    , Logging.Namespace [] ["DebugPeerSelectionInitiator"]
-    , Logging.Namespace [] ["DebugPeerSelectionInitiatorResponder"]
-    , Logging.Namespace [] ["PeerSelectionCounters"]
-    , Logging.Namespace [] ["ChurnCounters"]
-    , Logging.Namespace [] ["PeerSelectionActions"]
-    , Logging.Namespace [] ["ConnectionManager"]
-    , Logging.Namespace [] ["ConnectionManagerTransition"]
-    , Logging.Namespace [] ["Server"]
-    , Logging.Namespace [] ["InboundGovernor"]
-    , Logging.Namespace [] ["InboundGovernorTransition"]
-    , Logging.Namespace [] ["dtDnsTracer"]
-    , Logging.Namespace [] ["dtLocalConnectionManagerTracer"]
-    , Logging.Namespace [] ["dtLocalServerTracer"]
-    , Logging.Namespace [] ["dtLocalInboundGovernorTracer"]
-    ]
-  namespaceFor (WithEventType str _) = Logging.Namespace [] [(Text.pack str)]
-  severityFor _ _ = Just Logging.Info
-  privacyFor _ _ =  Just Logging.Public
-  detailsFor _ _ =  Just Logging.DNormal
-  documentFor _ = Nothing
-  metricsDocFor _ = []
 
 mkCardanoTracer :: Logging.TraceConfig
                 -> IO (Logging.Trace IO WithEventType)

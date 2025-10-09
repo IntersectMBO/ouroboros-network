@@ -77,7 +77,9 @@ library
     DMQ.Protocol.SigSubmission.Codec
     DMQ.Protocol.SigSubmission.Type
     DMQ.Tracer
+    DMQ.Tracer.Translation
     DMQ.Tracer.Types
+    DMQ.Tracer.Types.P2P
 
   build-depends:
     acts,
