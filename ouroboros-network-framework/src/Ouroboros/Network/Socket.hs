@@ -404,8 +404,8 @@ connectToNodeWithMux'
        Right (HandshakeNegotiationResult app versionNumber agreedOptions) -> do
          Mx.withReadBufferIO (\buffer -> do
              bearer <- Mx.getBearer makeBearer sduTimeout sd buffer
-             mux <- Mx.new (toMiniProtocolInfos (runForkPolicy noBindForkPolicy remoteAddress) app)
-             withAsync (Mx.run muxTracers mux bearer) $ \aid ->
+             mux <- Mx.new muxTracers (toMiniProtocolInfos (runForkPolicy noBindForkPolicy remoteAddress) app)
+             withAsync (Mx.run mux bearer) $ \aid ->
                k connectionId versionNumber agreedOptions app mux aid
            )
 

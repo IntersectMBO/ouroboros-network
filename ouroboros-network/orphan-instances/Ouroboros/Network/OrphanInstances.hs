@@ -294,7 +294,13 @@ instance FromJSON AcceptedConnectionsLimit where
       <*> v .: "softLimit"
       <*> v .: "delay"
 
-
+-- This instance is quite verbose, especially if a MiniProtocolNum is included
+-- as a field, e.g.
+--
+-- > { miniProtocolNum = { kind: "MiniProtocolNum", num: 2 }, ... }
+--
+-- TODO: can we change it?
+--
 instance ToJSON MiniProtocolNum where
   toJSON (MiniProtocolNum w) = kindObject "MiniProtocolNum" [ "num" .= w ]
 
@@ -505,6 +511,20 @@ instance (ToJSON peer, ToJSON a) => ToJSON (Mux.WithBearer peer a) where
 instance ToJSON Mux.MiniProtocolDir where
   toJSON miniProtocolDir = String (pack . show $ miniProtocolDir)
 
+instance ToJSON (Mux.MiniProtocolInfo mode) where
+  toJSON Mux.MiniProtocolInfo {
+            Mux.miniProtocolNum = Mux.MiniProtocolNum miniProtocolNum,
+            Mux.miniProtocolDir,
+            Mux.miniProtocolLimits = Mux.MiniProtocolLimits { Mux.maximumIngressQueue },
+            Mux.miniProtocolCapability
+         }
+    = object
+      [ "miniProtocolNum"        .= miniProtocolNum
+      , "miniProtocolDir"        .= show miniProtocolDir
+      , "maximumIngressQueue"    .= maximumIngressQueue
+      , "miniProtocolCapability" .= miniProtocolCapability
+      ]
+
 instance ToJSON Mux.Trace where
   toJSON = \case
     Mux.TraceState state ->
@@ -546,6 +566,13 @@ instance ToJSON Mux.Trace where
       object [ "type" .= String "Terminating"
              , "miniProtocolNum" .= miniProtocolNum
              , "miniProtocolDir" .= miniProtocolDir
+             ]
+    Mux.TraceNewMux infos ->
+      object [ "type" .= String "NewMux"
+             , "miniProtocolInfos" .= infos
+             ]
+    Mux.TraceStarting ->
+      object [ "type" .= String "Starting"
              ]
     Mux.TraceStopping ->
       object [ "type" .= String "Stopping"

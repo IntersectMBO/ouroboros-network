@@ -356,7 +356,18 @@ makeConnectionHandler muxTracers forkPolicy
                       <$> newTVarIO Continue
                       <*> newTVarIO Continue
                       <*> newTVarIO Continue
-                mux <- Mx.new (mkMiniProtocolInfos (runForkPolicy forkPolicy remoteAddress) app)
+                muxTracers' <- case inResponderMode of
+                  InResponderMode (inboundGovernorMuxTracer, connectionDataFlow)
+                    | Duplex <- connectionDataFlow agreedOptions -> do
+                        countersVar <- newTVarIO . SJust $ ResponderCounters 0 0
+                        pure $ Mx.tracersWithBearer connectionId muxTracers {
+                            Mx.tracer = Mx.tracer muxTracers <> inboundGovernorMuxTracer countersVar
+                          }
+                  _notResponder ->
+                        -- If this is InitiatorOnly, or a server where unidirectional flow was negotiated
+                        -- the IG will never be informed of this remote for obvious reasons.
+                        pure $ Mx.tracersWithBearer connectionId muxTracers
+                mux <- Mx.new muxTracers' (mkMiniProtocolInfos (runForkPolicy forkPolicy remoteAddress) app)
                 let !handle = Handle {
                         hMux            = mux,
                         hMuxBundle      = app,
@@ -366,18 +377,7 @@ makeConnectionHandler muxTracers forkPolicy
                 atomically $ writePromise (Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
                 withBuffer \buffer -> do
                   bearer <- mkMuxBearer sduTimeout socket buffer
-                  muxTracers' <- case inResponderMode of
-                    InResponderMode (inboundGovernorMuxTracer, connectionDataFlow)
-                      | Duplex <- connectionDataFlow agreedOptions -> do
-                          countersVar <- newTVarIO . SJust $ ResponderCounters 0 0
-                          pure $ Mx.tracersWithBearer connectionId muxTracers {
-                              Mx.tracer = Mx.tracer muxTracers <> inboundGovernorMuxTracer countersVar
-                            }
-                    _notResponder ->
-                          -- If this is InitiatorOnly, or a server where unidirectional flow was negotiated
-                          -- the IG will never be informed of this remote for obvious reasons.
-                          pure $ Mx.tracersWithBearer connectionId muxTracers
-                  unmask $ Mx.run muxTracers' mux bearer
+                  unmask $ Mx.run mux bearer
 
               Right (HandshakeQueryResult vMap) -> do
                 atomically $ writePromise (Right HandshakeConnectionQuery)
@@ -438,7 +438,12 @@ makeConnectionHandler muxTracers forkPolicy
                      <$> newTVarIO Continue
                      <*> newTVarIO Continue
                      <*> newTVarIO Continue
-               mux <- Mx.new (mkMiniProtocolInfos (runForkPolicy forkPolicy remoteAddress) app)
+
+               countersVar <- newTVarIO . SJust $ ResponderCounters 0 0
+               mux <- Mx.new (Mx.tracersWithBearer connectionId muxTracers {
+                               Mx.tracer = Mx.tracer muxTracers <> inboundGovernorMuxTracer countersVar
+                             })
+                             (mkMiniProtocolInfos (runForkPolicy forkPolicy remoteAddress) app)
 
                let !handle = Handle {
                        hMux            = mux,
@@ -449,11 +454,7 @@ makeConnectionHandler muxTracers forkPolicy
                atomically $ writePromise (Right $ HandshakeConnectionResult handle (versionNumber, agreedOptions))
                withBuffer \buffer -> do
                  bearer <- mkMuxBearer sduTimeout socket buffer
-                 countersVar <- newTVarIO . SJust $ ResponderCounters 0 0
-                 unmask $ Mx.run (Mx.tracersWithBearer connectionId muxTracers {
-                               Mx.tracer = Mx.tracer muxTracers <> inboundGovernorMuxTracer countersVar
-                             })
-                             mux bearer
+                 unmask $ Mx.run mux bearer
               Right (HandshakeQueryResult vMap) -> do
                 atomically $ writePromise (Right HandshakeConnectionQuery)
                 traceWith tracer $ TrHandshakeQuery vMap

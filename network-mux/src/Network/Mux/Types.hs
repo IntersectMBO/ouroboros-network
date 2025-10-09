@@ -16,6 +16,7 @@ module Network.Mux.Types
   ( MiniProtocolInfo (..)
   , MiniProtocolNum (..)
   , MiniProtocolDirection (..)
+  , StartOnDemandOrEagerly (..)
   , MiniProtocolLimits (..)
   , Mode (..)
   , HasInitiator
@@ -99,6 +100,7 @@ newtype MiniProtocolLimits =
        --
        maximumIngressQueue :: Int
      }
+  deriving Show
 
 -- $interface
 --
@@ -147,6 +149,7 @@ data MiniProtocolInfo (mode :: Mode) =
        miniProtocolCapability :: !(Maybe Int)
        -- ^ capability on which the mini-protocol should run
      }
+  deriving Show
 
 data MiniProtocolDirection (mode :: Mode) where
     InitiatorDirectionOnly :: MiniProtocolDirection InitiatorMode
@@ -156,6 +159,21 @@ data MiniProtocolDirection (mode :: Mode) where
 
 deriving instance Eq (MiniProtocolDirection (mode :: Mode))
 deriving instance Ord (MiniProtocolDirection (mode :: Mode))
+deriving instance Show (MiniProtocolDirection (mode :: Mode))
+
+-- | Strategy how to start a mini-protocol.
+--
+data StartOnDemandOrEagerly =
+    -- | Start a mini-protocol promptly.
+    StartEagerly
+    -- | Start a mini-protocol when data is received for the given
+    -- mini-protocol.  Must be used only when initial message is sent by the
+    -- remote side.
+  | StartOnDemand
+    -- | Like `StartOnDemand`, but start a mini-protocol if data is received for
+    -- any mini-protocol set to `StartOnDemand`.
+  | StartOnDemandAny
+  deriving (Eq, Show)
 
 --
 -- Mux status

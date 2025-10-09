@@ -121,7 +121,7 @@ server = do
 
 serverWorker :: Bearer IO -> IO ()
 serverWorker bearer = do
-    mux <- Mx.new ptcls
+    mux <- Mx.new Mx.nullTracers ptcls
 
     void $ forkIO $ do
       awaitResult <-
@@ -133,7 +133,7 @@ serverWorker bearer = do
       putStrLn $ "Result: " ++ show result
       Mx.stop mux
 
-    Mx.run Mx.nullTracers mux bearer
+    Mx.run mux bearer
   where
     ptcls :: [MiniProtocolInfo ResponderMode]
     ptcls = [ MiniProtocolInfo {
@@ -181,7 +181,7 @@ client n msg = do
 
 clientWorker :: Mx.Bearer IO -> Int -> String -> IO ()
 clientWorker bearer n msg = do
-    mux <- Mx.new ptcls
+    mux <- Mx.new Mx.nullTracers ptcls
 
     void $ forkIO $ do
       awaitResult <-
@@ -193,7 +193,7 @@ clientWorker bearer n msg = do
       putStrLn $ "Result: " ++ show result
       Mx.stop mux
 
-    Mx.run Mx.nullTracers mux bearer
+    Mx.run mux bearer
   where
     ptcls :: [MiniProtocolInfo Mx.InitiatorMode]
     ptcls = [ MiniProtocolInfo {
