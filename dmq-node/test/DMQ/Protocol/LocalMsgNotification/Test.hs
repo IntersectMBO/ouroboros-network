@@ -6,7 +6,7 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Test.DMQ.Protocol.LocalMsgNotification where
+module DMQ.Protocol.LocalMsgNotification.Test where
 
 import Codec.CBOR.Decoding qualified as CBOR
 import Codec.CBOR.Encoding qualified as CBOR
@@ -30,15 +30,18 @@ import DMQ.Protocol.LocalMsgNotification.Codec
 import DMQ.Protocol.LocalMsgNotification.Examples
 import DMQ.Protocol.LocalMsgNotification.Server
 import DMQ.Protocol.LocalMsgNotification.Type
+import DMQ.Protocol.SigSubmission.Test ()
+
 import Network.TypedProtocol
 import Network.TypedProtocol.Codec
 import Network.TypedProtocol.Codec.Properties hiding (prop_codec)
+
 import Ouroboros.Network.Channel
 import Ouroboros.Network.Driver.Simple
 import Ouroboros.Network.Protocol.Codec.Utils (WithBytes (..))
 import Ouroboros.Network.Protocol.Codec.Utils qualified as Utils
 import Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
-import Test.DMQ.Protocol.SigSubmission ()
+
 import Test.Ouroboros.Network.Protocol.Utils
 import Test.Ouroboros.Network.Utils
 

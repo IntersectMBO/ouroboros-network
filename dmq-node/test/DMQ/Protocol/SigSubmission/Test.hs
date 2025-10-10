@@ -15,7 +15,7 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Test.DMQ.Protocol.SigSubmission where
+module DMQ.Protocol.SigSubmission.Test where
 
 import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
