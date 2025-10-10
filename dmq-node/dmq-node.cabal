@@ -68,7 +68,6 @@ library
     DMQ.NodeToNode.Version
     DMQ.Protocol.LocalMsgNotification.Client
     DMQ.Protocol.LocalMsgNotification.Codec
-    DMQ.Protocol.LocalMsgNotification.Examples
     DMQ.Protocol.LocalMsgNotification.Server
     DMQ.Protocol.LocalMsgNotification.Type
     DMQ.Protocol.LocalMsgSubmission.Client
@@ -153,11 +152,12 @@ test-suite dmq-test
 
   default-language: Haskell2010
   other-modules:
+    DMQ.Protocol.LocalMsgNotification.Examples
+    DMQ.Protocol.LocalMsgNotification.Test
+    DMQ.Protocol.LocalMsgSubmission.Test
+    DMQ.Protocol.SigSubmission.Test
     Test.DMQ.NodeToClient
     Test.DMQ.NodeToNode
-    Test.DMQ.Protocol.LocalMsgNotification
-    Test.DMQ.Protocol.LocalMsgSubmission
-    Test.DMQ.Protocol.SigSubmission
 
   type: exitcode-stdio-1.0
   hs-source-dirs: test
