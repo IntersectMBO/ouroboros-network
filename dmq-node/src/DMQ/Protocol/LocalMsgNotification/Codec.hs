@@ -16,8 +16,8 @@ import Codec.CBOR.Decoding qualified as CBOR
 import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
 import Control.Monad.Class.MonadST
+import Data.Bool (bool)
 import Data.ByteString.Lazy (ByteString)
-import Data.Functor ((<&>))
 import Data.List.NonEmpty qualified as NonEmpty
 import Text.Printf
 
@@ -78,13 +78,24 @@ codecLocalMsgNotification' mkWithBytes encodeMsg decodeMsgWithBytes =
                            SingBlocking    -> True
                            SingNonBlocking -> False)
 
-    encode (MsgReply msgs hasMore) =
+    encode (MsgReply msgs@NonBlockingReply{} hasMore) =
         CBOR.encodeListLen 3
      <> CBOR.encodeWord 1
      <> CBOR.encodeListLenIndef
-     <> foldr (\msg r -> encodeMsg msg <> r)
-              CBOR.encodeBreak
-              msgs
+     <> foldMap encodeMsg msgs
+     <> CBOR.encodeBreak
+     <> CBOR.encodeBool hasMore'
+     where
+       hasMore' = case hasMore of
+                    HasMore         -> True
+                    DoesNotHaveMore -> False
+
+    encode (MsgReply msgs@BlockingReply{} hasMore) =
+        CBOR.encodeListLen 3
+     <> CBOR.encodeWord 2
+     <> CBOR.encodeListLenIndef
+     <> foldMap encodeMsg msgs
+     <> CBOR.encodeBreak
      <> CBOR.encodeBool hasMore'
      where
        hasMore' = case hasMore of
@@ -93,7 +104,7 @@ codecLocalMsgNotification' mkWithBytes encodeMsg decodeMsgWithBytes =
 
     encode MsgClientDone =
         CBOR.encodeListLen 1
-     <> CBOR.encodeWord 2
+     <> CBOR.encodeWord 3
 
 
     decode :: forall (st :: LocalMsgNotification msg).
@@ -104,7 +115,6 @@ codecLocalMsgNotification' mkWithBytes encodeMsg decodeMsgWithBytes =
       len <- CBOR.decodeListLen
       key <- CBOR.decodeWord
       case (stok, len, key) of
-        (SingIdle, 1, 2) -> return (Annotator \_ -> SomeMessage MsgClientDone)
 
         (SingIdle, 2, 0) -> do
           blocking <- CBOR.decodeBool
@@ -112,23 +122,24 @@ codecLocalMsgNotification' mkWithBytes encodeMsg decodeMsgWithBytes =
                       then Annotator \_ -> SomeMessage (MsgRequest SingBlocking)
                       else Annotator \_ -> SomeMessage (MsgRequest SingNonBlocking)
 
-        (SingBusy blocking, 3, 1) -> do
+        (SingBusy SingNonBlocking, 3, 1) -> do
           CBOR.decodeListLenIndef
           msgs <- CBOR.decodeSequenceLenIndef
                     (flip (:)) [] reverse
                     (Utils.decodeWithByteSpan decodeMsgWithBytes)
-          more <- CBOR.decodeBool <&> \case
-                                        True  -> HasMore
-                                        False -> DoesNotHaveMore
-          case (blocking, msgs) of
-            (SingBlocking, _:_) ->
-              return (Annotator \bytes ->
-                       SomeMessage $ MsgReply (BlockingReply (mkWithBytes bytes <$> NonEmpty.fromList msgs))
-                                              more)
-            (SingNonBlocking, _) ->
-              return (Annotator \bytes -> SomeMessage $ MsgReply (NonBlockingReply $ mkWithBytes bytes <$> msgs) more)
+          more <- bool DoesNotHaveMore HasMore <$> CBOR.decodeBool
+          return (Annotator \bytes -> SomeMessage $ MsgReply (NonBlockingReply $ mkWithBytes bytes <$> msgs) more)
 
-            (SingBlocking, []) -> fail "codecLocalMsgNotification: MsgReply: empty list not permitted"
+        (SingBusy SingBlocking, 3, 2) -> do
+          CBOR.decodeListLenIndef
+          msgs <- CBOR.decodeSequenceLenIndef
+                    (flip (:)) [] reverse
+                    (Utils.decodeWithByteSpan decodeMsgWithBytes)
+          more <- bool DoesNotHaveMore HasMore <$> CBOR.decodeBool
+          return (Annotator \bytes ->
+                   SomeMessage $ MsgReply (BlockingReply (mkWithBytes bytes <$> NonEmpty.fromList msgs)) more)
+
+        (SingIdle, 1, 3) -> return (Annotator \_ -> SomeMessage MsgClientDone)
 
         (SingDone, _, _) -> notActiveState stok
 
