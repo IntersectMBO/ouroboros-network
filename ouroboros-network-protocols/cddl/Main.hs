@@ -644,6 +644,7 @@ data SomeAgency ps where
 -- (and encoded with `diag2cbor.rb`) and check that we can decode it at one of
 -- the given agencies.
 --
+-- TODO: move to a common library shared with `dmq-node:cddl-test`
 validateDecoder :: Maybe (CBOR.Term -> CBOR.Term)
                 -- ^ transform a generated term
                 -> CDDLSpec ps

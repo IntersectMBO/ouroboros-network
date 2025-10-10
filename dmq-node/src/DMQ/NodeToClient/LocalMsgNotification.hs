@@ -26,6 +26,14 @@ instance Exception LocalMsgNotificationProtocolError where
 
 -- | Local Message Notification server application
 --
+-- enforced protocol invariants:
+--
+-- * non-blocking requests are only accepted when the server has no more messages,
+--   client is aware of this from previous replies
+-- * dually, blocking requests are only accepted when the server has more
+--   messages.
+-- * the first request must be blocking
+--
 localMsgNotificationServer
   :: forall m msg msgid idx a. (MonadSTM m, MonadThrow m)
   => Tracer m (TraceMessageNotificationServer msg)
