@@ -8,7 +8,7 @@
 module Main where
 
 import Control.Monad (void, when)
-import "contra-tracer" Control.Tracer (Tracer (..), nullTracer, traceWith)
+import "contra-tracer" Control.Tracer (Tracer (..), traceWith)
 
 import Data.Act
 import Data.Functor.Contravariant ((>$<))
@@ -68,8 +68,6 @@ runDMQ commandLineConfig = do
     -- options
     let dmqConfig@Configuration {
           dmqcTopologyFile         = I topologyFile,
-          dmqcHandshakeTracer      = I handshakeTracer,
-          dmqcLocalHandshakeTracer = I localHandshakeTracer,
           dmqcVersion              = I version
         } = config' <> commandLineConfig
             `act`
@@ -140,12 +138,8 @@ runDMQ commandLineConfig = do
                             mempoolReader mempoolWriter maxMsgs
                             (NtC.dmqCodecs encodeReject decodeReject)
           dmqDiffusionArguments =
-            diffusionArguments (if handshakeTracer
-                                  then WithEventType "Handshake" >$< tracer
-                                  else nullTracer)
-                               (if localHandshakeTracer
-                                  then WithEventType "Handshake" >$< tracer
-                                  else nullTracer)
+            diffusionArguments (WithEventType "Handshake" >$< tracer)
+                               (WithEventType "Handshake" >$< tracer)
           dmqDiffusionApplications =
             diffusionApplications nodeKernel
                                   dmqConfig

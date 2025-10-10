@@ -309,9 +309,7 @@ instance ToJSON (DebugPeerSelection NoExtraState NoExtraFlags NoExtraPeers Remot
            ]
 
 dmqDiffusionTracers
-  :: forall m.
-     Applicative m
-  => Configuration
+  :: Configuration
   -> (Tracer m WithEventType)
   -> Diffusion.Tracers RemoteAddress NodeToNodeVersion   NodeToNodeVersionData
                        LocalAddress  NodeToClientVersion NodeToClientVersionData
@@ -321,95 +319,34 @@ dmqDiffusionTracers
                        NoExtraPeers
                        NoExtraCounters
                        m
-dmqDiffusionTracers
-    Configuration {
-      dmqcMuxTracer                                  = I muxTracer,
-      dmqcChannelTracer                              = I channelTracer,
-      dmqcBearerTracer                               = I bearerTracer,
-      dmqcHandshakeTracer                            = I handshakeTracer,
-      dmqcLocalMuxTracer                             = I localMuxTracer,
-      dmqcLocalChannelTracer                         = I localChannelTracer,
-      dmqcLocalBearerTracer                          = I localBearerTracer,
-      dmqcLocalHandshakeTracer                       = I localHandshakeTracer,
-      dmqcDiffusionTracer                            = I diffusionTracer,
-      dmqcTraceLocalRootPeersTracer                  = I traceLocalRootPeersTracer,
-      dmqcTracePublicRootPeersTracer                 = I tracePublicRootPeersTracer,
-      dmqcTraceLedgerPeersTracer                     = I traceLedgerPeersTracer,
-      dmqcTracePeerSelectionTracer                   = I tracePeerSelectionTracer,
-      dmqcTraceChurnCounters                         = I traceChurnCounters,
-      dmqcDebugPeerSelectionInitiatorTracer          = I debugPeerSelectionInitiatorTracer,
-      dmqcDebugPeerSelectionInitiatorResponderTracer = I debugPeerSelectionInitiatorResponderTracer,
-      dmqcTracePeerSelectionCounters                 = I tracePeerSelectionCounters,
-      dmqcPeerSelectionActionsTracer                 = I peerSelectionActionsTracer,
-      dmqcConnectionManagerTracer                    = I connectionManagerTracer,
-      dmqcConnectionManagerTransitionTracer          = I connectionManagerTransitionTracer,
-      dmqcServerTracer                               = I serverTracer,
-      dmqcInboundGovernorTracer                      = I inboundGovernorTracer,
-      dmqcInboundGovernorTransitionTracer            = I inboundGovernorTransitionTracer,
-      dmqcLocalConnectionManagerTracer               = I localConnectionManagerTracer,
-      dmqcLocalServerTracer                          = I localServerTracer,
-      dmqcLocalInboundGovernorTracer                 = I localInboundGovernorTracer,
-      dmqcDnsTracer                                  = I dnsTracer
-    }
-    tracer
-  = Diffusion.Tracers {
-    Diffusion.dtMuxTracer                                  = muxTracer
-                                                          .- WithEventType "Mux" >$< tracer,
-    Diffusion.dtChannelTracer                              = channelTracer
-                                                          .- WithEventType "Channel" >$< tracer,
-    Diffusion.dtBearerTracer                               = bearerTracer
-                                                          .- WithEventType "Bearer" >$< tracer,
-    Diffusion.dtHandshakeTracer                            = handshakeTracer
-                                                          .- WithEventType "Handshake" >$< tracer,
-    Diffusion.dtLocalMuxTracer                             = localMuxTracer
-                                                          .- WithEventType "LocalMux" >$< tracer,
-    Diffusion.dtLocalChannelTracer                         = localChannelTracer
-                                                          .- WithEventType "LocalChannel" >$< tracer,
-    Diffusion.dtLocalBearerTracer                          = localBearerTracer
-                                                          .- WithEventType "LocalBearer" >$< tracer,
-    Diffusion.dtLocalHandshakeTracer                       = localHandshakeTracer
-                                                          .- WithEventType "LocalHandshake" >$< tracer,
-    Diffusion.dtDiffusionTracer                            = diffusionTracer
-                                                          .- WithEventType "Diffusion" >$< tracer,
-    Diffusion.dtTraceLocalRootPeersTracer                  = traceLocalRootPeersTracer
-                                                          .- WithEventType "LocalRootPeers" >$< tracer,
-    Diffusion.dtTracePublicRootPeersTracer                 = tracePublicRootPeersTracer
-                                                          .- WithEventType "PublicRootPeers" >$< tracer,
-    Diffusion.dtTraceLedgerPeersTracer                     = traceLedgerPeersTracer
-                                                          .- WithEventType "LedgerPeers" >$< tracer,
-    Diffusion.dtTracePeerSelectionTracer                   = tracePeerSelectionTracer
-                                                          .- WithEventType "PeerSelection" >$< tracer,
-    Diffusion.dtDebugPeerSelectionInitiatorTracer          = debugPeerSelectionInitiatorTracer
-                                                          .- WithEventType "DebugPeerSelectionInitiator" >$< tracer,
-    Diffusion.dtDebugPeerSelectionInitiatorResponderTracer = debugPeerSelectionInitiatorResponderTracer
-                                                          .- WithEventType "DebugPeerSelectionInitiatorResponder" >$< tracer,
-    Diffusion.dtTracePeerSelectionCounters                 = tracePeerSelectionCounters
-                                                          .- WithEventType "PeerSelectionCounters" >$< tracer,
-    Diffusion.dtTraceChurnCounters                         = traceChurnCounters
-                                                          .- WithEventType "ChurnCounters" >$< tracer,
-    Diffusion.dtPeerSelectionActionsTracer                 = peerSelectionActionsTracer
-                                                          .- WithEventType "PeerSelectionActions" >$< tracer,
-    Diffusion.dtConnectionManagerTracer                    = connectionManagerTracer
-                                                          .- WithEventType "ConnectionManager" >$< tracer,
-    Diffusion.dtConnectionManagerTransitionTracer          = connectionManagerTransitionTracer
-                                                          .- WithEventType "ConnectionManagerTransition" >$< tracer,
-    Diffusion.dtServerTracer                               = serverTracer
-                                                          .- WithEventType "Server" >$< tracer,
-    Diffusion.dtInboundGovernorTracer                      = inboundGovernorTracer
-                                                          .- WithEventType "InboundGovernor" >$< tracer,
-    Diffusion.dtInboundGovernorTransitionTracer            = inboundGovernorTransitionTracer
-                                                          .- WithEventType "InboundGovernorTransition" >$< tracer,
-    Diffusion.dtDnsTracer                                  = dnsTracer
-                                                          .- WithEventType "dtDnsTracer" >$< tracer,
-    Diffusion.dtLocalConnectionManagerTracer               = localConnectionManagerTracer
-                                                          .- WithEventType "dtLocalConnectionManagerTracer" >$< tracer,
-    Diffusion.dtLocalServerTracer                          = localServerTracer
-                                                          .- WithEventType "dtLocalServerTracer" >$< tracer,
-    Diffusion.dtLocalInboundGovernorTracer                 = localInboundGovernorTracer
-                                                          .- WithEventType "dtLocalInboundGovernorTracer" >$< tracer
+dmqDiffusionTracers _ tracer =
+  Diffusion.Tracers {
+    Diffusion.dtMuxTracer                                  = WithEventType "Mux" >$< tracer,
+    Diffusion.dtChannelTracer                              = WithEventType "Channel" >$< tracer,
+    Diffusion.dtBearerTracer                               = WithEventType "Bearer" >$< tracer,
+    Diffusion.dtHandshakeTracer                            = WithEventType "Handshake" >$< tracer,
+    Diffusion.dtLocalMuxTracer                             = WithEventType "LocalMux" >$< tracer,
+    Diffusion.dtLocalChannelTracer                         = WithEventType "LocalChannel" >$< tracer,
+    Diffusion.dtLocalBearerTracer                          = WithEventType "LocalBearer" >$< tracer,
+    Diffusion.dtLocalHandshakeTracer                       = WithEventType "LocalHandshake" >$< tracer,
+    Diffusion.dtDiffusionTracer                            = WithEventType "Diffusion" >$< tracer,
+    Diffusion.dtTraceLocalRootPeersTracer                  = WithEventType "LocalRootPeers" >$< tracer,
+    Diffusion.dtTracePublicRootPeersTracer                 = WithEventType "PublicRootPeers" >$< tracer,
+    Diffusion.dtTraceLedgerPeersTracer                     = WithEventType "LedgerPeers" >$< tracer,
+    Diffusion.dtTracePeerSelectionTracer                   = WithEventType "PeerSelection" >$< tracer,
+    Diffusion.dtTraceChurnCounters                         = WithEventType "ChurnCounters" >$< tracer,
+    Diffusion.dtDebugPeerSelectionInitiatorTracer          = WithEventType "DebugPeerSelectionInitiator" >$< tracer,
+    Diffusion.dtDebugPeerSelectionInitiatorResponderTracer = WithEventType "DebugPeerSelectionInitiatorResponder" >$< tracer,
+    Diffusion.dtTracePeerSelectionCounters                 = WithEventType "PeerSelectionCounters" >$< tracer,
+    Diffusion.dtPeerSelectionActionsTracer                 = WithEventType "PeerSelectionActions" >$< tracer,
+    Diffusion.dtConnectionManagerTracer                    = WithEventType "ConnectionManager" >$< tracer,
+    Diffusion.dtConnectionManagerTransitionTracer          = WithEventType "ConnectionManagerTransition" >$< tracer,
+    Diffusion.dtServerTracer                               = WithEventType "Server" >$< tracer,
+    Diffusion.dtInboundGovernorTracer                      = WithEventType "InboundGovernor" >$< tracer,
+    Diffusion.dtInboundGovernorTransitionTracer            = WithEventType "InboundGovernorTransition" >$< tracer,
+    Diffusion.dtLocalConnectionManagerTracer               = WithEventType "LocalConnectionManagerTracer" >$< tracer,
+    Diffusion.dtLocalServerTracer                          = WithEventType "LocalServerTracer" >$< tracer,
+    Diffusion.dtLocalInboundGovernorTracer                 = WithEventType "LocalInboundGovernorTracer" >$< tracer,
+    Diffusion.dtDnsTracer                                  = WithEventType "DnsTracer" >$< tracer
   }
-  where
-    (.-) :: Bool -> Tracer m a -> Tracer m a
-    True  .- a = a
-    False .- _ = nullTracer
-    infixl 3 .-
+
