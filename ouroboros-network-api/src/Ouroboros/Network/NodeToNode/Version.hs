@@ -19,6 +19,7 @@ import Codec.CBOR.Term qualified as CBOR
 
 import Control.DeepSeq
 import GHC.Generics
+import NoThunks.Class (NoThunks)
 import Ouroboros.Network.CodecCBORTerm
 import Ouroboros.Network.Handshake.Acceptable (Accept (..), Acceptable (..))
 import Ouroboros.Network.Handshake.Queryable (Queryable (..))
@@ -70,7 +71,7 @@ data NodeToNodeVersion =
     -- ^ Plomin HF, mandatory on mainnet as of 2025.01.29
   | NodeToNodeV_15
     -- ^ SRV support
-  deriving (Eq, Ord, Enum, Bounded, Show, Generic, NFData)
+  deriving (Eq, Ord, Enum, Bounded, Show, Generic, NFData, NoThunks)
 
 nodeToNodeVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToNodeVersion
 nodeToNodeVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
