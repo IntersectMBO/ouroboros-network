@@ -194,9 +194,9 @@ networkTopologyFromJSON
 networkTopologyFromJSON parseLocalRoots parseExtraConfig =
   withObject "NetworkTopology" $ \o ->
               NetworkTopology <$> (o .: "localRoots" >>= parseLocalRoots)
-                              <*> o .: "publicRoots"
+                              <*> o .:  "publicRoots"
                               <*> o .:? "useLedgerAfterSlot" .!= DontUseLedgerPeers
-                              <*> o .: "peerSnapshotFile"
+                              <*> o .:? "peerSnapshotFile"
                               <*> parseExtraConfig o
 
 networkTopologyToJSON
