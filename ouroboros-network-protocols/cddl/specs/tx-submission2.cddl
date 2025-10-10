@@ -29,7 +29,7 @@ txCount         = base.word16
 txIdList        = [ *base.txId ]
 txList          = [ *base.tx ]
 txIdAndSize     = [base.txId, txSizeInBytes]
-; The codec only accepts definite-length lists.
+; The codec only accepts indefinite-length lists.
 txIdsAndSizes   = [ *txIdAndSize ]
 txSizeInBytes   = base.word32
 

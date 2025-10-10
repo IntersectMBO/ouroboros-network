@@ -225,6 +225,7 @@ test-suite dmq-cddl
     tasty-hunit,
     tasty-quickcheck,
     temporary,
+    typed-protocols,
 
   ghc-options:
     -threaded
