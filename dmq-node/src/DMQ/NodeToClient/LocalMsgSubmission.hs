@@ -1,42 +1,46 @@
+{-# LANGUAGE FlexibleContexts   #-}
+{-# LANGUAGE StandaloneDeriving #-}
+
 module DMQ.NodeToClient.LocalMsgSubmission where
 
 import Control.Concurrent.Class.MonadSTM
 import Control.Tracer
-import Data.Maybe
 
 import DMQ.Protocol.LocalMsgSubmission.Server
 import DMQ.Protocol.LocalMsgSubmission.Type
-import Ouroboros.Network.TxSubmission.Inbound.V2
+import Ouroboros.Network.TxSubmission.Mempool.Simple
 
 -- | Local transaction submission server, for adding txs to the 'Mempool'
 --
 localMsgSubmissionServer ::
      MonadSTM m
-  => Tracer m (TraceLocalMsgSubmission msg msgid SigMempoolFail)
-  -> TxSubmissionMempoolWriter msgid msg idx m
-  -> m (LocalMsgSubmissionServer msg m ())
-localMsgSubmissionServer tracer TxSubmissionMempoolWriter { mempoolAddTxs } =
+  => Tracer m (TraceLocalMsgSubmission sig sigid)
+  -> MempoolWriter sigid sig failure idx m
+  -- ^ duplicate error tag in case the mempool returns the empty list on failure
+  -> m (LocalMsgSubmissionServer sig m ())
+localMsgSubmissionServer tracer MempoolWriter { mempoolAddTxs } =
     pure server
   where
-    failure =
-      -- TODO remove dummy hardcode when mempool returns reason
-      (SubmitFail SigExpired, server) <$ traceWith tracer (TraceSubmitFailure SigExpired)
-    success msgid =
-      (SubmitSuccess, server) <$ traceWith tracer (TraceSubmitAccept msgid)
+    process (sigid, e@(SubmitFail reason)) =
+      (e, server) <$ traceWith tracer (TraceSubmitFailure sigid reason)
+    process (sigid, success) =
+      (success, server) <$ traceWith tracer (TraceSubmitAccept sigid)
 
     server = LocalTxSubmissionServer {
-      recvMsgSubmitTx = \msg -> do
-        traceWith tracer $ TraceReceivedMsg msg
-        -- TODO mempool should return 'SubmitResult'
-        maybe failure success . listToMaybe =<< mempoolAddTxs [msg]
+      recvMsgSubmitTx = \sig -> do
+        traceWith tracer $ TraceReceivedMsg sig
+        process . head =<< mempoolAddTxs [sig]
 
     , recvMsgDone = ()
     }
 
 
-data TraceLocalMsgSubmission msg msgid reject =
-    TraceReceivedMsg msg
+data TraceLocalMsgSubmission sig sigid =
+    TraceReceivedMsg sig
   -- ^ A transaction was received.
-  | TraceSubmitFailure reject
-  | TraceSubmitAccept msgid
-  deriving Show
+  | TraceSubmitFailure sigid (MempoolAddFail sig)
+  | TraceSubmitAccept sigid
+
+deriving instance
+     (Show sig, Show sigid, Show (MempoolAddFail sig))
+  => Show (TraceLocalMsgSubmission sig sigid)
