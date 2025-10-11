@@ -50,7 +50,6 @@ import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
 import Control.Tracer (Tracer (..), contramap, traceWith)
 import Data.Functor.Identity (Identity (..))
-import Data.Maybe (maybeToList)
 
 
 -- $intro
@@ -327,7 +326,7 @@ runAnnotatedDecoderWithChannel
   -> DecodeStep bytes failure m (bytes -> a)
   -> m (Either failure (a, Maybe bytes))
 
-runAnnotatedDecoderWithChannel Channel{recv} bs0 = go (maybeToList bs0) bs0
+runAnnotatedDecoderWithChannel Channel{recv} = go []
   where
     go :: [bytes]
        -> Maybe bytes
