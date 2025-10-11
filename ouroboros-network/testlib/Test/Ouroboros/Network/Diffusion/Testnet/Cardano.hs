@@ -17,6 +17,7 @@
 
 module Test.Ouroboros.Network.Diffusion.Testnet.Cardano (tests) where
 
+import Control.Arrow ((&&&))
 import Control.Exception (AssertionFailed (..), catch, displayException,
            evaluate, fromException)
 import Control.Monad.Class.MonadFork
@@ -2939,9 +2940,12 @@ prop_diffusion_target_active_below ioSimTrace traceNumber =
             . selectDiffusionPeerSelectionEvents
             $ events
 
-          govInProgressPromoteWarmSig :: Signal (Set NtNAddr)
-          govInProgressPromoteWarmSig =
-            selectDiffusionPeerSelectionState Governor.inProgressPromoteWarm  events
+          govInProgressIneligibleSig :: Signal (Set NtNAddr)
+          govInProgressIneligibleSig =
+            selectDiffusionPeerSelectionState
+            (uncurry Set.union . (    Governor.inProgressPromoteWarm
+                                  &&& Governor.inProgressDemoteWarm))
+            events
 
           trJoinKillSig :: Signal JoinedOrKilled
           trJoinKillSig =
@@ -2982,13 +2986,13 @@ prop_diffusion_target_active_below ioSimTrace traceNumber =
           -- root peer group.
           --
           promotionOpportunity target local established active recentFailures isAlive
-                               inProgressDemoteToCold inProgressPromoteWarm
+                               inProgressDemoteToCold inProgressIneligible
             | isAlive && Set.size active < target
             = established Set.\\ active
                           Set.\\ LocalRootPeers.keysSet local
                           Set.\\ recentFailures
                           Set.\\ inProgressDemoteToCold
-                          Set.\\ inProgressPromoteWarm
+                          Set.\\ inProgressIneligible
 
             | otherwise
             = Set.empty
@@ -3003,7 +3007,7 @@ prop_diffusion_target_active_below ioSimTrace traceNumber =
               <*> govActiveFailuresSig
               <*> trIsNodeAlive
               <*> govInProgressDemoteToColdSig
-              <*> govInProgressPromoteWarmSig
+              <*> govInProgressIneligibleSig
 
           promotionOpportunitiesIgnoredTooLong :: Signal (Set NtNAddr)
           promotionOpportunitiesIgnoredTooLong =
@@ -3015,8 +3019,8 @@ prop_diffusion_target_active_below ioSimTrace traceNumber =
        in counterexample
             ("\nSignal key: (local, established peers, active peers, " ++
              "recent failures, opportunities, is node running, ignored too long)") $
-          counterexample
-            (List.intercalate "\n" $ map show $ Signal.eventsToList events) $
+          -- counterexample
+          --   (List.intercalate "\n" $ map show $ Signal.eventsToList events) $
 
           signalProperty 20 show
             (\(_, _, _, _, _, _, toolong) -> Set.null toolong)
@@ -3024,7 +3028,7 @@ prop_diffusion_target_active_below ioSimTrace traceNumber =
                  <*> govEstablishedPeersSig
                  <*> govActivePeersSig
                  <*> govActiveFailuresSig
-                 <*> govInProgressPromoteWarmSig
+                 <*> govInProgressIneligibleSig
                  <*> trIsNodeAlive
                  <*> promotionOpportunitiesIgnoredTooLong
             )
