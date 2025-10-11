@@ -9,7 +9,15 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Ouroboros.Network.OrphanInstances where
+-- | Orphan JSON instances for Ouroboros.Network types.
+--
+module Ouroboros.Network.OrphanInstances
+  ( networkTopologyFromJSON
+  , localRootPeersGroupsFromJSON
+  , networkTopologyToJSON
+  , localRootPeersGroupsToJSON
+  , peerSelectionTargetsToObject
+  ) where
 
 import Cardano.Network.NodeToClient (LocalAddress (..), ProtocolLimitFailure)
 import Control.Applicative (Alternative ((<|>)))
@@ -149,16 +157,12 @@ localRootPeersGroupToJSON :: (extraFlags -> Maybe (Key, Value))
                           -> Value
 localRootPeersGroupToJSON extraFlagsToJSON lrpg =
     Object $
-         ("accessPoints"  .?= rootAccessPoints (localRoots lrpg))
-      <> ("advertise"     .?= rootAdvertise (localRoots lrpg))
-      <> ("hotValency"    .?= hotValency lrpg)
-      <> ("warmValency"   .?= warmValency lrpg)
-      <> (case mv of
-            Nothing     -> mempty
-            Just (k, v) -> k .?= v)
-      <> ("diffusionMode" .?= rootDiffusionMode lrpg)
-  where
-    mv = extraFlagsToJSON (extraFlags lrpg)
+         ("accessPoints"   .?= rootAccessPoints (localRoots lrpg))
+      <> ("advertise"      .?= rootAdvertise (localRoots lrpg))
+      <> ("hotValency"     .?= hotValency lrpg)
+      <> ("warmValency"    .?= warmValency lrpg)
+      <> foldMap (uncurry (.?=)) (extraFlagsToJSON (extraFlags lrpg))
+      <> ("diffusionMode"  .?= rootDiffusionMode lrpg)
 
 localRootPeersGroupsFromJSON
   :: (Object -> Parser extraFlags)
@@ -219,11 +223,7 @@ networkTopologyToJSON
       <> ("publicRoots"        .?= publicRootPeers)
       <> ("useLedgerAfterSlot" .?= useLedgerPeers)
       <> ("peerSnapshotFile"   .?= peerSnapshotPath)
-      <> (case mv of
-            Nothing    -> mempty
-            Just (k,v) -> k .?= v)
-  where
-    mv = extraConfigToJSON extraConfig
+      <> foldMap (uncurry (.?=)) (extraConfigToJSON extraConfig)
 
 instance FromJSON PeerSharing where
   parseJSON = withBool "PeerSharing" $ \b ->
