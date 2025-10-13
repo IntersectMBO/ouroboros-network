@@ -123,10 +123,8 @@ runDMQ commandLineConfig = do
                     dmqConfig
                     nodeKernel
                     (dmqCodecs
-                              -- TODO: `maxBound :: Cardano.Network.NodeToNode.NodeToNodeVersion`
-                              -- is unsafe here!
-                                (encodeRemoteAddress (maxBound :: NodeToNodeVersion))
-                                (decodeRemoteAddress (maxBound :: NodeToNodeVersion)))
+                       (encodeRemoteAddress (maxBound @NodeToNodeVersion))
+                       (decodeRemoteAddress (maxBound @NodeToNodeVersion)))
                     dmqLimitsAndTimeouts
                     defaultSigDecisionPolicy
           dmqNtCApps =
