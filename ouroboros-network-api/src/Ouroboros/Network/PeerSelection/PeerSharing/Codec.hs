@@ -11,7 +11,6 @@ import Codec.CBOR.Decoding qualified as CBOR
 import Codec.CBOR.Encoding qualified as CBOR
 
 import Network.Socket (PortNumber, SockAddr (..))
-import Ouroboros.Network.NodeToNode.Version (NodeToNodeVersion (..))
 
 encodePortNumber :: PortNumber -> CBOR.Encoding
 encodePortNumber = CBOR.encodeWord16 . fromIntegral
@@ -27,7 +26,7 @@ decodePortNumber = fromIntegral <$> CBOR.decodeWord16
 ---
 -- /Invariant:/ not a unix socket address type.
 ---
-encodeRemoteAddress :: NodeToNodeVersion -> SockAddr -> CBOR.Encoding
+encodeRemoteAddress :: version -> SockAddr -> CBOR.Encoding
 encodeRemoteAddress _ = \case
   SockAddrInet pn w -> CBOR.encodeListLen 3
                     <> CBOR.encodeWord 0
@@ -47,7 +46,7 @@ encodeRemoteAddress _ = \case
 --
 -- See the network design document for more details
 --
-decodeRemoteAddress :: NodeToNodeVersion -> CBOR.Decoder s SockAddr
+decodeRemoteAddress :: version -> CBOR.Decoder s SockAddr
 decodeRemoteAddress _ = do
   _ <- CBOR.decodeListLen
   tok <- CBOR.decodeWord

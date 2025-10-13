@@ -34,7 +34,8 @@ import DMQ.Diffusion.Arguments
 import DMQ.Diffusion.NodeKernel (mempool, withNodeKernel)
 import DMQ.Handlers.TopLevel (toplevelExceptionHandler)
 import DMQ.NodeToClient qualified as NtC
-import DMQ.NodeToNode (dmqCodecs, dmqLimitsAndTimeouts, ntnApps)
+import DMQ.NodeToNode (NodeToNodeVersion, dmqCodecs, dmqLimitsAndTimeouts,
+           ntnApps)
 import DMQ.Protocol.LocalMsgSubmission.Codec
 import DMQ.Protocol.SigSubmission.Type (Sig (..))
 import DMQ.Tracer
@@ -122,10 +123,8 @@ runDMQ commandLineConfig = do
                     dmqConfig
                     nodeKernel
                     (dmqCodecs
-                              -- TODO: `maxBound :: Cardano.Network.NodeToNode.NodeToNodeVersion`
-                              -- is unsafe here!
-                               (encodeRemoteAddress maxBound)
-                               (decodeRemoteAddress maxBound))
+                       (encodeRemoteAddress (maxBound @NodeToNodeVersion))
+                       (decodeRemoteAddress (maxBound @NodeToNodeVersion)))
                     dmqLimitsAndTimeouts
                     defaultSigDecisionPolicy
           dmqNtCApps =
