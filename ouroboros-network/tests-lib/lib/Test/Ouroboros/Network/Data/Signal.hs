@@ -41,6 +41,7 @@ module Test.Ouroboros.Network.Data.Signal
   , scanl
   , always
   , eventually
+  , latch
     -- * Set-based temporal operations
   , keyedTimeout
   , keyedLinger
@@ -53,7 +54,7 @@ import Prelude hiding (scanl, until)
 import Data.Bool (bool)
 import Data.Foldable qualified as Deque (toList)
 import Data.List (groupBy)
-import Data.Maybe (maybeToList)
+import Data.Maybe (fromMaybe, maybeToList)
 import Data.OrdPSQ (OrdPSQ)
 import Data.OrdPSQ qualified as PSQ
 import Data.Set (Set)
@@ -262,12 +263,13 @@ nubBy eq (Signal x0 xs0) =
 -- signal is @True@.
 --
 linger :: DiffTime
-       -> (a -> Bool)
+       -> (a -> Maybe Bool)
+       -- ^ Nothing to stop tracking
        -> Signal a
        -> Signal Bool
 linger d arm =
     fmap (not . Set.null)
-  . keyedLinger d (bool Set.empty (Set.singleton ()) . arm)
+  . keyedLinger d (fmap (bool Set.empty (Set.singleton ())) . arm)
 
 
 -- | Make a timeout signal, based on observing an underlying signal.
@@ -303,6 +305,17 @@ until start stop =
                (bool Set.empty (Set.singleton ()) . stop)
                (const False)
 
+-- | The signal is scrutinised with a function and if it returns Nothing,
+-- then the previous Signal output is maintained, otherwise the new
+-- signal value is provided.
+--
+latch :: (a -> Maybe b)
+      -> b
+      -> Signal a
+      -> Signal b
+latch f = scanl f'
+  where
+    f' z' e = fromMaybe z' (f e)
 
 -- | Make a signal that keeps track of recent activity, based on observing an
 -- underlying signal.
@@ -311,10 +324,11 @@ until start stop =
 --
 keyedLinger :: forall a b. Ord b
             => DiffTime
-            -> (a -> Set b)  -- ^ The activity set signal
+            -> (a -> Maybe (Set b))
+            -- ^ The activity set signal, Nothing to stop
             -> Signal a
             -> Signal (Set b)
-keyedLinger d arm = keyedLinger' (fmap (\x -> (x, d)) arm)
+keyedLinger d arm = keyedLinger' (fmap (\x -> (x, d)) <$> arm)
 
 -- | Make a signal that keeps track of recent activity, based on observing an
 -- underlying signal.
@@ -336,7 +350,11 @@ keyedLinger d arm = keyedLinger' (fmap (\x -> (x, d)) arm)
 -- those. This allow us to correctly identify valid promotion opportunities.
 --
 keyedLinger' :: forall a b. Ord b
-            => (a -> (Set b, DiffTime))  -- ^ The activity set signal
+            => (a -> Maybe (Set b, DiffTime))
+            -- ^ The activity set signal. The returned signal will be raised
+            -- for the given amount of time with a set which might be a super
+            -- set of the given keys (due to accumulation).  On `Nothing` the
+            -- returned signal is reset.
             -> Signal a
             -> Signal (Set b)
 keyedLinger' arm =
@@ -347,11 +365,12 @@ keyedLinger' arm =
   where
     go :: Set b
        -> OrdPSQ b Time ()
-       -> [E (Set b, DiffTime)]
+       -> [E (Maybe (Set b, DiffTime))]
        -> [E (Set b)]
     go !_ !_ [] = []
 
-    go !lingerSet !lingerPSQ (E ts@(TS t _) xs : txs)
+    go !_ !_ (E _ts Nothing : txs) = go Set.empty PSQ.empty txs
+    go !lingerSet !lingerPSQ (E ts@(TS t _) xs@Just{} : txs)
       | Just (y, t', _, lingerPSQ') <- PSQ.minView lingerPSQ
       , t' < t
       , (ys, lingerPSQ'') <- PSQ.atMostView t' lingerPSQ'
@@ -359,7 +378,7 @@ keyedLinger' arm =
             lingerSet' = Set.difference lingerSet armed
       = E (TS t' 0) lingerSet' : go lingerSet' lingerPSQ'' (E ts xs : txs)
 
-    go !lingerSet !lingerPSQ (E ts@(TS t _) x : txs) =
+    go !lingerSet !lingerPSQ (E ts@(TS t _) (Just x) : txs) =
       let lingerSet' = lingerSet <> fst x
           t'         = addTime (snd x) t
           lingerPSQ' = Set.foldl' (\s y -> PSQ.insert y t' () s) lingerPSQ (fst x)
@@ -552,5 +571,3 @@ mergeBy cmp = merge
 
 data MergeResult a b = OnlyInLeft a | InBoth a b | OnlyInRight b
   deriving (Eq, Show)
-
-
