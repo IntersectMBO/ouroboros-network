@@ -30,6 +30,7 @@ import Data.Bifunctor (bimap, first)
 import Data.Char (ord)
 import Data.Dynamic (fromDynamic)
 import Data.Foldable (fold, foldr')
+import Data.Functor (void)
 import Data.IP qualified as IP
 import Data.List (intercalate, sort)
 import Data.List qualified as List
@@ -1419,63 +1420,72 @@ prop_track_coolingToCold_demotions ioSimTracer traceNumber =
               Governor.inProgressDemoteToCold
               events
 
-
-          trJoinKillSig :: Signal JoinedOrKilled
-          trJoinKillSig =
-              Signal.fromChangeEvents Terminated -- Default to TrKillingNode
-            . Signal.selectEvents
-                (\case TrJoiningNetwork -> Just Joined
-                       TrTerminated     -> Just Terminated
-                       _                -> Nothing
-                )
-            . selectDiffusionSimulationTrace
-            $ events
-
-          -- Signal.keyedUntil receives 2 functions one that sets start of the
-          -- set signal, one that ends it and another that stops all.
-          --
-          -- In this particular case we want a signal that is keyed beginning
-          -- on a TrJoiningNetwork and ends on TrKillingNode, giving us a Signal
-          -- with the periods when a node was alive.
-          trIsNodeAlive :: Signal Bool
-          trIsNodeAlive =
-                not . Set.null
-            <$> Signal.keyedUntil (fromJoinedOrTerminated (Set.singleton ())
-                                                           Set.empty)
-                                  (fromJoinedOrTerminated  Set.empty
-                                                          (Set.singleton ()))
-                                  (const False)
-                                  trJoinKillSig
-
-          govInProgressDemoteToColdWhileAlive :: Signal (Maybe (Set NtNAddr))
-          govInProgressDemoteToColdWhileAlive =
-            (\isAlive inProgressDemoteToCold ->
-              if isAlive then Just inProgressDemoteToCold
-                         else Nothing
-            ) <$> trIsNodeAlive
-              <*> govInProgressDemoteToCold
-
           allInProgressDemoteToCold :: [NtNAddr]
           allInProgressDemoteToCold = Set.toList
                                     . Set.unions
-                                    . mapMaybe snd
+                                    . map snd
                                     . Signal.eventsToList
                                     . Signal.toChangeEvents
-                                    $ govInProgressDemoteToColdWhileAlive
+                                    $ govInProgressDemoteToCold
+
+
+          cmTimeWaitDoneSig :: Signal (Maybe TimeWaitPeer)
+          cmTimeWaitDoneSig =
+              Signal.fromEvents
+            . Signal.selectEvents
+                (\case (Left (CM.TrConnectionTimeWait peer))
+                         -> Just $ TimeWaitEntered (remoteAddress peer)
+                       (Left (CM.TrConnectionTimeWaitDone peer))
+                         -> Just $ TimeWaitDone (remoteAddress peer)
+                       (Right _)  -> Just ResetAll
+                       _otherwise -> Nothing)
+            . Signal.selectEvents
+                    (\case DiffusionConnectionManagerTrace tr        -> Just $ Left tr
+                           -- reset CM signal state
+                           DiffusionSimulationTrace TrKillingNode    -> Just $ Right ()
+                           _                                         -> Nothing)
+            $ events
+
+          cmTimeWaitDoneKeyedSig :: Signal (Set NtNAddr)
+          cmTimeWaitDoneKeyedSig =
+              Signal.keyedUntil
+                (\case Just (TimeWaitEntered peer) -> Set.singleton peer
+                       _otherwise                  -> Set.empty)
+                (\case Just (TimeWaitDone    peer) -> Set.singleton peer
+                       _otherwise                  -> Set.empty)
+                (\case Just ResetAll -> True
+                       _otherwise    -> False)
+                cmTimeWaitDoneSig
+
+          cmTimeWaitDoneLinger :: Signal (Set NtNAddr)
+          cmTimeWaitDoneLinger =
+            Signal.keyedLinger'
+              (\case Just (TimeWaitEntered peer) -> Just (Set.singleton peer, 30)
+                     Just ResetAll               -> Nothing
+                     _otherwise                  -> Just (Set.empty, 0))
+              cmTimeWaitDoneSig
 
           notInProgressDemoteToColdForTooLong =
             map (\addr ->
                   Signal.keyedTimeout
-                    120
+                    1
                     (\case
-                        Just s | Set.member addr s -> Set.singleton addr
-                        _                          -> Set.empty
+                        (inProgress, waitDoneKeyed, waitDoneLinger)
+                          | Set.member addr inProgress
+                          , Set.member addr waitDoneKeyed ->
+                              if Set.member addr waitDoneLinger
+                                then Set.empty else Set.singleton addr
+                          | Set.member addr inProgress
+                          , Set.notMember addr waitDoneKeyed -> Set.singleton addr
+                          | otherwise -> Set.empty
                     )
-                    govInProgressDemoteToColdWhileAlive
+                    ((,,) <$> govInProgressDemoteToCold
+                          <*> cmTimeWaitDoneKeyedSig
+                          <*> cmTimeWaitDoneLinger)
                 )
                 allInProgressDemoteToCold
 
-       in conjoin
+       in collect (length allInProgressDemoteToCold) $ conjoin
         $ map (signalProperty 20 show Set.null) notInProgressDemoteToColdForTooLong
 
 prop_track_coolingToCold_demotions_iosimpor
@@ -2711,122 +2721,114 @@ prop_diffusion_target_established_local ioSimTrace traceNumber =
               Governor.inProgressPromoteCold
               events
 
-          govInProgressDemoteToColdSig :: Signal (Set NtNAddr)
-          govInProgressDemoteToColdSig =
-            selectDiffusionPeerSelectionState
-              Governor.inProgressDemoteToCold
-              events
-
           govEstablishedPeersSig :: Signal (Set NtNAddr)
           govEstablishedPeersSig =
             selectDiffusionPeerSelectionState
-              ( EstablishedPeers.toSet
-              . Governor.establishedPeers)
+              (EstablishedPeers.toSet . Governor.establishedPeers)
               events
 
           govEstablishedFailuresSig :: Signal (Set NtNAddr)
-          govEstablishedFailuresSig =
+          govEstablishedFailuresSig = holdUntilNextWakeup govAnythingSig $
               Signal.keyedLinger
-                180 -- 3 minutes  -- TODO: too eager to reconnect?
-                (fromMaybe Set.empty)
+                162 -- 5 * 2^5 + fuzz(-2,2)
+                -- arm `Nothing` from the underlying signal with an empty set,
+                -- we don't want to reset the lingered state too soon.
+                (Just . fromMaybe Set.empty)
             . Signal.fromEvents
             . Signal.selectEvents
                 (\case TracePromoteColdFailed _ _ peer _ _ ->
                          Just (Set.singleton peer)
-                       --TODO: what about TraceDemoteWarmDone ?
-                       -- these are also not immediate candidates
-                       -- why does the property not fail for not tracking these?
+                       TracePromoteColdBigLedgerPeerFailed _ _ peer _ _ ->
+                         Just (Set.singleton peer)
+                       TraceDemoteBigLedgerPeersAsynchronous status
+                         | Set.null failures -> Nothing
+                         | otherwise         -> Just failures
+                         where
+                           failures =
+                             Map.keysSet status
                        TraceDemoteAsynchronous status
                          | Set.null failures -> Nothing
                          | otherwise         -> Just failures
                          where
                            failures =
-                             Map.keysSet (Map.filter (==PeerCooling) . fmap fst $ status)
+                             Map.keysSet status
                        TraceDemoteLocalAsynchronous status
                          | Set.null failures -> Nothing
                          | otherwise         -> Just failures
                          where
                            failures =
-                             Map.keysSet (Map.filter (==PeerCooling) . fmap fst $ status)
-                       TracePromoteWarmFailed _ _ peer _ ->
-                         Just (Set.singleton peer)
+                             Map.keysSet status
                        _ -> Nothing
                 )
             . selectDiffusionPeerSelectionEvents
             $ events
 
-          trJoinKillSig :: Signal JoinedOrKilled
-          trJoinKillSig =
-              Signal.fromChangeEvents Terminated -- Default to TrKillingNode
-            . Signal.selectEvents
-                (\case TrJoiningNetwork -> Just Joined
-                       TrKillingNode    -> Just Terminated
-                       _                -> Nothing
-                )
-            . selectDiffusionSimulationTrace
+          govAnythingSig :: Signal (Maybe ())
+          govAnythingSig =
+              Signal.fromEvents
+            . void
+            . selectDiffusionPeerSelectionEvents
             $ events
 
-          -- Signal.keyedUntil receives 2 functions one that sets start of the
-          -- set signal, one that ends it and another that stops all.
-          --
-          -- In this particular case we want a signal that is keyed beginning
-          -- on a TrJoiningNetwork and ends on TrKillingNode, giving us a Signal
-          -- with the periods when a node was alive.
-          trIsNodeAlive :: Signal Bool
-          trIsNodeAlive =
-                not . Set.null
-            <$> Signal.keyedUntil (fromJoinedOrTerminated (Set.singleton ())
-                                                           Set.empty)
-                                  (fromJoinedOrTerminated  Set.empty
-                                                          (Set.singleton ()))
-                                  (const False)
-                                  trJoinKillSig
+          govUseBootstrapPeersSig :: Signal Bool
+          govUseBootstrapPeersSig =
+            selectDiffusionPeerSelectionState
+              (\psState ->
+                 let bpf = Cardano.ExtraState.bootstrapPeersFlag $ Governor.extraState psState
+                     lsj = Cardano.ExtraState.ledgerStateJudgement $ Governor.extraState psState
+                  in case (bpf, lsj) of
+                    (UseBootstrapPeers{}, TooOld) -> True
+                    _otherwise                    -> False
+              )
+              events
 
           promotionOpportunities :: Signal (Set NtNAddr)
           promotionOpportunities =
-            (\local established recentFailures inProgressPromoteCold isAlive inProgressDemoteToCold ->
-              if isAlive then
+            (\local established recentFailures inProgressPromoteCold useBootstrapPeers ->
                 Set.unions
-                  [ -- There are no opportunities if we're at or above target
-                    if Set.size groupEstablished >= warmTarget
-                       then Set.empty
-                       else groupEstablished Set.\\ established
-                                             Set.\\ recentFailures
-                                             Set.\\ inProgressPromoteCold
-                                             Set.\\ inProgressDemoteToCold
-                  | (_, WarmValency warmTarget, group) <- LocalRootPeers.toGroupSets local
-                  , let groupEstablished = group `Set.intersection` established
+                  [opportunity
+                  | let local' =
+                          if useBootstrapPeers
+                            then LocalRootPeers.clampToTrustable local
+                            else local
+                  , (_, WarmValency warmTarget, group) <- LocalRootPeers.toGroupSets local'
+                  , let opportunity
+                          |   Set.size (Set.intersection
+                                          group established)
+                            + Set.size (Set.intersection
+                                          inProgressPromoteCold group)
+                            >= warmTarget
+                          = Set.empty
+                          | otherwise = group
                   ]
-              else Set.empty
+                  Set.\\ Set.unions [established, recentFailures, inProgressPromoteCold]
             ) <$> govLocalRootPeersSig
               <*> govEstablishedPeersSig
               <*> govEstablishedFailuresSig
               <*> govInProgressPromoteColdSig
-              <*> trIsNodeAlive
-              <*> govInProgressDemoteToColdSig
+              <*> govUseBootstrapPeersSig
 
           promotionOpportunitiesIgnoredTooLong :: Signal (Set NtNAddr)
           promotionOpportunitiesIgnoredTooLong =
             Signal.keyedTimeout
-              15 -- seconds
+              1
               id
               promotionOpportunities
 
        in counterexample
-            ("\nSignal key: (local root peers, established peers, " ++
-             "recent failures, is alive, opportunities, ignored too long)\n" ++
-               List.intercalate "\n" (map show $ eventsToList events)
+            ("\nSignal key: (local root peers, est. local peers, in progress promotions, " ++
+             "recent failures, opportunities, ignored too long)\n"
             )
         $ signalProperty 20 show
-              (\(_,_,_,_,_,_, tooLong) -> Set.null tooLong)
-              ((,,,,,,) <$> govLocalRootPeersSig
-                      <*> govEstablishedPeersSig
-                      <*> govEstablishedFailuresSig
-                      <*> govInProgressPromoteColdSig
-                      <*> trIsNodeAlive
-                      <*> promotionOpportunities
-                      <*> promotionOpportunitiesIgnoredTooLong
+              (\(_,_,_,_,_, tooLong) -> Set.null tooLong)
+              ((,,,,,) <$> (LocalRootPeers.toGroupSets <$> govLocalRootPeersSig)
+                       <*> govEstablishedPeersSig
+                       <*> govInProgressPromoteColdSig
+                       <*> govEstablishedFailuresSig
+                       <*> promotionOpportunities
+                       <*> promotionOpportunitiesIgnoredTooLong
               )
+
 
 prop_diffusion_target_established_local_iosimpor
   :: AbsBearerInfo -> DiffusionScript -> Property
@@ -3062,59 +3064,38 @@ prop_diffusion_target_active_local_below ioSimTrace traceNumber =
               (EstablishedPeers.toSet . Governor.establishedPeers)
               events
 
-          govInProgressDemoteToColdSig :: Signal (Set NtNAddr)
-          govInProgressDemoteToColdSig =
-            selectDiffusionPeerSelectionState
-              Governor.inProgressDemoteToCold
-              events
-
-          govInProgressPromoteWarmSig :: Signal (Set NtNAddr)
-          govInProgressPromoteWarmSig =
-            selectDiffusionPeerSelectionState Governor.inProgressPromoteWarm events
-
-          trJoinKillSig :: Signal JoinedOrKilled
-          trJoinKillSig =
-              Signal.fromChangeEvents Terminated -- Default to TrKillingNode
-            . Signal.selectEvents
-                    (\case DiffusionSimulationTrace TrJoiningNetwork
-                            -> Just Joined
-                           DiffusionSimulationTrace TrTerminated
-                            -> Just Terminated
-                           DiffusionConnectionManagerTrace CM.TrShutdown
-                            -> Just Terminated
-                           _ -> Nothing
-                    )
-            $ events
-
-          -- Signal.keyedUntil receives 2 functions one that sets start of the
-          -- set signal, one that ends it and another that stops all.
-          --
-          -- In this particular case we want a signal that is keyed beginning
-          -- on a TrJoiningNetwork and ends on TrKillingNode, giving us a Signal
-          -- with the periods when a node was alive.
-          trIsNodeAlive :: Signal Bool
-          trIsNodeAlive =
-                not . Set.null
-            <$> Signal.keyedUntil (fromJoinedOrTerminated (Set.singleton ())
-                                                           Set.empty)
-                                  (fromJoinedOrTerminated  Set.empty
-                                                          (Set.singleton ()))
-                                  (const False)
-                                  trJoinKillSig
-
           govActivePeersSig :: Signal (Set NtNAddr)
           govActivePeersSig =
             selectDiffusionPeerSelectionState Governor.activePeers events
 
+          govInProgressIneligibleSig :: Signal (Set NtNAddr)
+          govInProgressIneligibleSig =
+            selectDiffusionPeerSelectionState
+              (\psState -> Set.unions [ Governor.inProgressPromoteWarm psState
+                                      , Governor.inProgressDemoteWarm psState
+                                      , Governor.inProgressDemoteToCold psState
+                                      ])
+              events
+
+          govAnythingSig :: Signal (Maybe ())
+          govAnythingSig =
+              Signal.fromEvents
+            . void
+            . selectDiffusionPeerSelectionEvents
+            $ events
+
           govActiveFailuresSig :: Signal (Set NtNAddr)
-          govActiveFailuresSig =
+          govActiveFailuresSig = holdUntilNextWakeup govAnythingSig $
               Signal.keyedLinger
-                180 -- 3 minutes  -- TODO: too eager to reconnect?
-                (fromMaybe Set.empty)
+                162 -- max $ 5*2^5 + fuzz(-2,2)
+                -- arm `Nothing` from the underlying signal with an empty set,
+                -- we don't want to reset the lingered state too soon.
+                (Just . fromMaybe Set.empty)
             . Signal.fromEvents
             . Signal.selectEvents
                 (\case TracePromoteWarmFailed _ _ peer _ ->
-                         --TODO: the simulation does not yet cause this to happen
+                         Just (Set.singleton peer)
+                       TracePromoteWarmBigLedgerPeerFailed _ _ peer _  ->
                          Just (Set.singleton peer)
                        TraceDemoteAsynchronous status
                          | Set.null failures -> Nothing
@@ -3130,58 +3111,75 @@ prop_diffusion_target_active_local_below ioSimTrace traceNumber =
                            -- unlike in the governor case we take into account
                            -- all asynchronous demotions
                            failures = Map.keysSet status
+                       TraceDemoteBigLedgerPeersAsynchronous status
+                         | Set.null failures -> Nothing
+                         | otherwise         -> Just failures
+                         where
+                           failures =
+                             Map.keysSet status
                        _ -> Nothing
                 )
             . selectDiffusionPeerSelectionEvents
             $ events
 
+          govUseBootstrapPeersSig :: Signal Bool
+          govUseBootstrapPeersSig =
+            selectDiffusionPeerSelectionState
+              (\psState ->
+                 let bpf = Cardano.ExtraState.bootstrapPeersFlag $ Governor.extraState psState
+                     lsj = Cardano.ExtraState.ledgerStateJudgement $ Governor.extraState psState
+                  in case (bpf, lsj) of
+                    (UseBootstrapPeers{}, TooOld) -> True
+                    _otherwise                    -> False
+              )
+              events
+
           promotionOpportunities :: Signal (Set NtNAddr)
           promotionOpportunities =
-            (\local established active recentFailures isAlive inProgressDemoteToCold inProgressPromoteWarm ->
-              if isAlive then
+            (\local established active recentFailures inProgressIneligible useBootstrapPeers ->
                 Set.unions
-                  [ -- There are no opportunities if we're at or above target
-                    if Set.size groupActive >= hotTarget
-                       then Set.empty
-                       else groupEstablished Set.\\ active
-                                             Set.\\ recentFailures
-                                             Set.\\ inProgressDemoteToCold
-                                             Set.\\ inProgressPromoteWarm
-                  | (HotValency hotTarget, _, group) <- LocalRootPeers.toGroupSets local
-                  , let groupActive      = group `Set.intersection` active
-                        groupEstablished = group `Set.intersection` established
+                  [opportunity
+                  | let local' =
+                          if useBootstrapPeers
+                            then LocalRootPeers.clampToTrustable local
+                            else local
+                  , (HotValency hotTarget, _, group) <- LocalRootPeers.toGroupSets local'
+                  , let opportunity
+                          | Set.size (Set.intersection
+                                       group active)
+                            >= hotTarget
+                          = Set.empty
+                          | otherwise = group `Set.intersection` established
                   ]
-                        else
-              Set.empty
+                  Set.\\ Set.unions [active, recentFailures, inProgressIneligible]
             ) <$> govLocalRootPeersSig
               <*> govEstablishedPeersSig
               <*> govActivePeersSig
               <*> govActiveFailuresSig
-              <*> trIsNodeAlive
-              <*> govInProgressDemoteToColdSig
-              <*> govInProgressPromoteWarmSig
+              <*> govInProgressIneligibleSig
+              <*> govUseBootstrapPeersSig
 
           promotionOpportunitiesIgnoredTooLong :: Signal (Set NtNAddr)
           promotionOpportunitiesIgnoredTooLong =
             Signal.keyedTimeout
-              10 -- seconds
+              1 -- seconds
               id
               promotionOpportunities
 
        in counterexample
             ("\nSignal key: (local, established peers, active peers, " ++
              "recent failures, opportunities, ignored too long)") $
-          counterexample
-            (List.intercalate "\n" $ map show $ Signal.eventsToList events) $
+          -- counterexample
+          --   (List.intercalate "\n" $ map show $ Signal.eventsToList events) $
 
           signalProperty 20 show
             (\(_,_,_,_,_,toolong) -> Set.null toolong)
             ((,,,,,) <$> (LocalRootPeers.toGroupSets <$> govLocalRootPeersSig)
-                     <*> govEstablishedPeersSig
-                     <*> govActivePeersSig
-                     <*> govActiveFailuresSig
-                     <*> promotionOpportunities
-                     <*> promotionOpportunitiesIgnoredTooLong)
+                      <*> govEstablishedPeersSig
+                      <*> govActivePeersSig
+                      <*> govActiveFailuresSig
+                      <*> promotionOpportunities
+                      <*> promotionOpportunitiesIgnoredTooLong)
 
 prop_diffusion_target_active_local_below_iosimpor
   :: AbsBearerInfo -> DiffusionScript -> Property
@@ -3502,73 +3500,49 @@ prop_diffusion_target_active_local_above ioSimTrace traceNumber =
           govActivePeersSig =
             selectDiffusionPeerSelectionState Governor.activePeers events
 
-          govInProgressDemoteToColdSig :: Signal (Set NtNAddr)
-          govInProgressDemoteToColdSig =
-            selectDiffusionPeerSelectionState Governor.inProgressDemoteToCold events
+          govActiveBigPeersSig :: Signal (Set NtNAddr)
+          govActiveBigPeersSig =
+            selectDiffusionPeerSelectionState (dropBigLedgerPeers Governor.activePeers) events
 
-          trJoinKillSig :: Signal JoinedOrKilled
-          trJoinKillSig =
-              Signal.fromChangeEvents Terminated -- Default to TrKillingNode
-            . Signal.selectEvents
-                (\case TrJoiningNetwork -> Just Joined
-                       TrTerminated     -> Just Terminated
-                       _                -> Nothing
-                )
-            . selectDiffusionSimulationTrace
-            $ events
-
-          -- Signal.keyedUntil receives 2 functions one that sets start of the
-          -- set signal, one that ends it and another that stops all.
-          --
-          -- In this particular case we want a signal that is keyed beginning
-          -- on a TrJoiningNetwork and ends on TrKillingNode, giving us a Signal
-          -- with the periods when a node was alive.
-          trIsNodeAlive :: Signal Bool
-          trIsNodeAlive =
-                not . Set.null
-            <$> Signal.keyedUntil (fromJoinedOrTerminated (Set.singleton ())
-                                                           Set.empty)
-                                  (fromJoinedOrTerminated  Set.empty
-                                                          (Set.singleton ()))
-                                  (const False)
-                                  trJoinKillSig
+          govInProgressIneligibleSig :: Signal (Set NtNAddr)
+          govInProgressIneligibleSig =
+            selectDiffusionPeerSelectionState
+            (uncurry Set.union . (    Governor.inProgressDemoteToCold
+                                  &&& Governor.inProgressDemoteHot))
+            events
 
           demotionOpportunities :: Signal (Set NtNAddr)
           demotionOpportunities =
-            (\local active isAlive inProgressDemoteToCold ->
-              if isAlive
-              then Set.unions
-                    [ -- There are no opportunities if we're at or below target
-                      if Set.size groupActive <= hotTarget
-                         then Set.empty
-                         else groupActive
-                                Set.\\ inProgressDemoteToCold
-                    | (HotValency hotTarget, _, group) <- LocalRootPeers.toGroupSets local
-                    , let groupActive = group `Set.intersection` active
-                    ]
-              else Set.empty
+            (\local active bigActive inProgressIneligible ->
+              Set.unions
+                [opportunity
+                | (HotValency hotTarget, _, group) <- LocalRootPeers.toGroupSets local
+                , let groupActive = group `Set.intersection` active
+                      opportunity
+                        | Set.size groupActive <= hotTarget = Set.empty
+                        | otherwise = groupActive
+                ] Set.\\ Set.union inProgressIneligible bigActive
             ) <$> govLocalRootPeersSig
               <*> govActivePeersSig
-              <*> trIsNodeAlive
-              <*> govInProgressDemoteToColdSig
+              <*> govActiveBigPeersSig
+              <*> govInProgressIneligibleSig
 
           demotionOpportunitiesIgnoredTooLong :: Signal (Set NtNAddr)
           demotionOpportunitiesIgnoredTooLong =
             Signal.keyedTimeout
-              100 -- seconds
+              1 -- seconds
               id
               demotionOpportunities
 
        in counterexample
-            ("\nSignal key: (local peers, active peers, is alive " ++
+            ("\nSignal key: (local peers, active peers, " ++
              "demotion opportunities, ignored too long)") $
-          counterexample (List.intercalate "\n" $ map show $ Signal.eventsToList events) $
+          --counterexample (List.intercalate "\n" $ map show $ Signal.eventsToList events) $
 
           signalProperty 20 show
-            (\(_,_,_,_,toolong) -> Set.null toolong)
-            ((,,,,) <$> (LocalRootPeers.toGroupSets <$> govLocalRootPeersSig)
+            (\(_,_,_,toolong) -> Set.null toolong)
+            ((,,,) <$> (LocalRootPeers.toGroupSets <$> govLocalRootPeersSig)
                     <*> govActivePeersSig
-                    <*> trIsNodeAlive
                     <*> demotionOpportunities
                     <*> demotionOpportunitiesIgnoredTooLong)
 
@@ -4500,8 +4474,8 @@ prop_churn_notimeouts ioSimTrace traceNumber =
                 isGovernorStuck = fmap (not . Set.null)
                                 . keyedLinger'
                                     (\d -> if d > 0
-                                          then (Set.singleton (), d)
-                                          else (Set.empty, d)
+                                          then Just (Set.singleton (), d)
+                                          else Just (Set.empty, d)
                                     )
                                 . Signal.fromChangeEvents 0
                                 . Signal.selectEvents
@@ -5020,6 +4994,11 @@ prop_no_peershare_unwilling_iosim
 -- Utils
 --
 
+data TimeWaitPeer = TimeWaitEntered NtNAddr
+                  | TimeWaitDone NtNAddr
+                  | ResetAll
+
+
 data JoinedOrKilled = Joined | Terminated
   deriving (Eq, Show)
 
@@ -5124,15 +5103,18 @@ selectDiffusionPeerSelectionState' :: (forall peerconn. Governor.PeerSelectionSt
                                   -> Signal a
 selectDiffusionPeerSelectionState' f =
   -- TODO: #3182 Rng seed should come from quickcheck.
-    Signal.fromChangeEvents
-      (f $ Governor.emptyPeerSelectionState
-             (mkStdGen 42)
-             (Cardano.ExtraState.empty PraosMode (NumberOfBigLedgerPeers 0))
-             Cardano.ExtraPeers.empty)
+    Signal.fromChangeEvents initial
   . Signal.selectEvents
       (\case
         DiffusionDebugPeerSelectionTrace (TraceGovernorState _ _ st) -> Just (f st)
+        -- don't let old state linger around when a node is restarted
+        DiffusionSimulationTrace         TrKillingNode               -> Just initial
         _                                                            -> Nothing)
+  where
+    initial = f $ Governor.emptyPeerSelectionState
+                    (mkStdGen 42)
+                    (Cardano.ExtraState.empty PraosMode (NumberOfBigLedgerPeers 0))
+                    Cardano.ExtraPeers.empty
 
 selectDiffusionConnectionManagerEvents
   :: Trace () DiffusionTestTrace
