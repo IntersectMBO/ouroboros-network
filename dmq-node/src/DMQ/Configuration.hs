@@ -9,6 +9,7 @@
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE QuantifiedConstraints      #-}
 {-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
@@ -27,6 +28,7 @@ module DMQ.Configuration
   , defaultConfiguration
   , NoExtraConfig (..)
   , NoExtraFlags (..)
+  , LocalAddress (..)
   ) where
 
 import Control.Concurrent.Class.MonadSTM (MonadSTM (..))
@@ -70,7 +72,7 @@ import Ouroboros.Network.PeerSelection.LedgerPeers.Type
            (LedgerPeerSnapshot (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
-import Ouroboros.Network.Snocket (RemoteAddress)
+import Ouroboros.Network.Snocket (LocalAddress (..), RemoteAddress)
 import Ouroboros.Network.TxSubmission.Inbound.V2 (TxDecisionPolicy (..))
 
 import DMQ.Configuration.Topology (NoExtraConfig (..), NoExtraFlags (..),
@@ -84,6 +86,7 @@ data Configuration' f =
   Configuration {
     dmqcIPv4                                       :: f (Maybe IPv4),
     dmqcIPv6                                       :: f (Maybe IPv6),
+    dmqcLocalAddress                               :: f LocalAddress,
     dmqcPortNumber                                 :: f PortNumber,
     dmqcConfigFile                                 :: f FilePath,
     dmqcTopologyFile                               :: f FilePath,
@@ -129,12 +132,24 @@ data Configuration' f =
     dmqcLocalServerTracer                          :: f Bool,
     dmqcLocalInboundGovernorTracer                 :: f Bool,
     dmqcDnsTracer                                  :: f Bool,
-    dmqcSigSubmissionClientTracer                  :: f Bool,
-    dmqcSigSubmissionServerTracer                  :: f Bool,
-    dmqcKeepAliveClientTracer                      :: f Bool,
-    dmqcKeepAliveServerTracer                      :: f Bool,
-    dmqcPeerSharingClientTracer                    :: f Bool,
-    dmqcPeerSharingServerTracer                    :: f Bool
+
+    -- low level verbose traces which trace protocol messages
+    -- TODO: pref
+    dmqcSigSubmissionClientProtocolTracer          :: f Bool,
+    dmqcSigSubmissionServerProtocolTracer          :: f Bool,
+    dmqcKeepAliveClientProtocolTracer              :: f Bool,
+    dmqcKeepAliveServerProtocolTracer              :: f Bool,
+    dmqcPeerSharingClientProtocolTracer            :: f Bool,
+    dmqcPeerSharingServerProtocolTracer            :: f Bool,
+    dmqcLocalMsgSubmissionServerProtocolTracer     :: f Bool,
+    dmqcLocalMsgNotificationServerProtocolTracer   :: f Bool,
+
+    dmqcSigSubmissionLogicTracer                   :: f Bool,
+    dmqcSigSubmissionOutboundTracer                :: f Bool,
+    dmqcSigSubmissionInboundTracer                 :: f Bool,
+    dmqcLocalMsgSubmissionServerTracer             :: f Bool,
+
+    dmqcVersion                                    :: f Bool
   }
   deriving Generic
 
@@ -190,6 +205,7 @@ defaultConfiguration :: Configuration
 defaultConfiguration = Configuration {
       dmqcIPv4                                       = I Nothing,
       dmqcIPv6                                       = I Nothing,
+      dmqcLocalAddress                               = I (LocalAddress "dmq-node.socket"),
       dmqcNetworkMagic                               = I NetworkMagic { unNetworkMagic = 3_141_592 },
       dmqcPortNumber                                 = I 3_141,
       dmqcConfigFile                                 = I "dmq.configuration.yaml",
@@ -234,12 +250,23 @@ defaultConfiguration = Configuration {
       dmqcLocalServerTracer                          = I False,
       dmqcLocalInboundGovernorTracer                 = I False,
       dmqcDnsTracer                                  = I False,
-      dmqcSigSubmissionClientTracer                  = I False,
-      dmqcSigSubmissionServerTracer                  = I False,
-      dmqcKeepAliveClientTracer                      = I False,
-      dmqcKeepAliveServerTracer                      = I False,
-      dmqcPeerSharingClientTracer                    = I False,
-      dmqcPeerSharingServerTracer                    = I False
+
+      dmqcSigSubmissionClientProtocolTracer          = I False,
+      dmqcSigSubmissionServerProtocolTracer          = I False,
+      dmqcKeepAliveClientProtocolTracer              = I False,
+      dmqcKeepAliveServerProtocolTracer              = I False,
+      dmqcPeerSharingClientProtocolTracer            = I False,
+      dmqcPeerSharingServerProtocolTracer            = I False,
+      dmqcLocalMsgSubmissionServerProtocolTracer     = I True,
+      dmqcLocalMsgNotificationServerProtocolTracer   = I True,
+
+      dmqcSigSubmissionOutboundTracer                = I False,
+      dmqcSigSubmissionInboundTracer                 = I True,
+      dmqcSigSubmissionLogicTracer                   = I False,
+      dmqcLocalMsgSubmissionServerTracer             = I True,
+
+      -- CLI only options
+      dmqcVersion                                    = I False
     }
   where
     PeerSelectionTargets {
@@ -267,6 +294,7 @@ instance FromJSON PartialConfig where
       case dmqcIPv6 of
         Just Nothing -> parseFail "couldn't parse IPv6 address"
         _            -> pure ()
+      dmqcLocalAddress <- Last . fmap LocalAddress <$> v .:? "LocalAddress"
       dmqcPortNumber <- Last . fmap (fromIntegral @Int) <$> v.:? "PortNumber"
       dmqcNetworkMagic <- Last . fmap NetworkMagic <$> v .:? "NetworkMagic"
       dmqcDiffusionMode <- Last <$> v .:? "DiffusionMode"
@@ -313,130 +341,39 @@ instance FromJSON PartialConfig where
       dmqcLocalServerTracer                          <- Last <$> v .:? "LocalServerTracer"
       dmqcLocalInboundGovernorTracer                 <- Last <$> v .:? "LocalInboundGovernorTracer"
       dmqcDnsTracer                                  <- Last <$> v .:? "DnsTracer"
-      dmqcSigSubmissionClientTracer                  <- Last <$> v .:? "SigSubmissionServerTracer"
-      dmqcSigSubmissionServerTracer                  <- Last <$> v .:? "SigSubmissionClientTracer"
-      dmqcKeepAliveClientTracer                      <- Last <$> v .:? "KeepAliveServerTracer"
-      dmqcKeepAliveServerTracer                      <- Last <$> v .:? "KeepAliveClientTracer"
-      dmqcPeerSharingClientTracer                    <- Last <$> v .:? "PeerSharingServerTracer"
-      dmqcPeerSharingServerTracer                    <- Last <$> v .:? "PeerSharingClientTracer"
+
+      dmqcSigSubmissionClientProtocolTracer          <- Last <$> v .:? "SigSubmissionClientProtocolTracer"
+      dmqcSigSubmissionServerProtocolTracer          <- Last <$> v .:? "SigSubmissionServerProtocolTracer"
+      dmqcKeepAliveClientProtocolTracer              <- Last <$> v .:? "KeepAliveServerProtocolTracer"
+      dmqcKeepAliveServerProtocolTracer              <- Last <$> v .:? "KeepAliveClientProtocolTracer"
+      dmqcPeerSharingClientProtocolTracer            <- Last <$> v .:? "PeerSharingServerProtocolTracer"
+      dmqcPeerSharingServerProtocolTracer            <- Last <$> v .:? "PeerSharingClientProtocolTracer"
+      dmqcLocalMsgSubmissionServerProtocolTracer     <- Last <$> v .:? "LocalMsgSubmissionServerProtocolracer"
+      dmqcLocalMsgNotificationServerProtocolTracer   <- Last <$> v .:? "LocalMsgNotificationServerProtocolracer"
+
+      dmqcSigSubmissionOutboundTracer                <- Last <$> v .:? "SigSubmissionOutboundTracer"
+      dmqcSigSubmissionInboundTracer                 <- Last <$> v .:? "SigSubmissionInboundTracer"
+      dmqcSigSubmissionLogicTracer                   <- Last <$> v .:? "SigSubmissionLogicTracer"
+      dmqcLocalMsgSubmissionServerTracer             <- Last <$> v .:? "LocalMsgSubmissionServerTracer"
 
       pure $
         Configuration
-          { dmqcIPv4 = Last dmqcIPv4
-          , dmqcIPv6 = Last dmqcIPv6
-          , dmqcPortNumber
-          , dmqcConfigFile = mempty
+          { dmqcIPv4         = Last dmqcIPv4
+          , dmqcIPv6         = Last dmqcIPv6
+          , dmqcConfigFile   = mempty
           , dmqcTopologyFile = mempty
-          , dmqcAcceptedConnectionsLimit
-          , dmqcDiffusionMode
-          , dmqcTargetOfRootPeers
-          , dmqcTargetOfKnownPeers
-          , dmqcTargetOfEstablishedPeers
-          , dmqcTargetOfActivePeers
-          , dmqcTargetOfKnownBigLedgerPeers
-          , dmqcTargetOfEstablishedBigLedgerPeers
-          , dmqcTargetOfActiveBigLedgerPeers
-          , dmqcProtocolIdleTimeout
-          , dmqcChurnInterval
-          , dmqcPeerSharing
-          , dmqcNetworkMagic
-          , dmqcPrettyLog
-          , dmqcMuxTracer
-          , dmqcChannelTracer
-          , dmqcBearerTracer
-          , dmqcHandshakeTracer
-          , dmqcLocalMuxTracer
-          , dmqcLocalChannelTracer
-          , dmqcLocalBearerTracer
-          , dmqcLocalHandshakeTracer
-          , dmqcDiffusionTracer
-          , dmqcTraceLocalRootPeersTracer
-          , dmqcTracePublicRootPeersTracer
-          , dmqcTraceLedgerPeersTracer
-          , dmqcTracePeerSelectionTracer
-          , dmqcTraceChurnCounters
-          , dmqcDebugPeerSelectionInitiatorTracer
-          , dmqcDebugPeerSelectionInitiatorResponderTracer
-          , dmqcTracePeerSelectionCounters
-          , dmqcPeerSelectionActionsTracer
-          , dmqcConnectionManagerTracer
-          , dmqcConnectionManagerTransitionTracer
-          , dmqcServerTracer
-          , dmqcInboundGovernorTracer
-          , dmqcInboundGovernorTransitionTracer
-          , dmqcLocalConnectionManagerTracer
-          , dmqcLocalServerTracer
-          , dmqcLocalInboundGovernorTracer
-          , dmqcDnsTracer
-          , dmqcSigSubmissionClientTracer
-          , dmqcSigSubmissionServerTracer
-          , dmqcKeepAliveClientTracer
-          , dmqcKeepAliveServerTracer
-          , dmqcPeerSharingClientTracer
-          , dmqcPeerSharingServerTracer
+          , dmqcVersion      = mempty
+          , ..
           }
 
 -- | ToJSON instance used by logging system.
 --
 instance ToJSON Configuration where
-  toJSON Configuration {
-      dmqcIPv4,
-      dmqcIPv6,
-      dmqcPortNumber,
-      dmqcConfigFile,
-      dmqcTopologyFile,
-      dmqcAcceptedConnectionsLimit,
-      dmqcDiffusionMode,
-      dmqcTargetOfRootPeers,
-      dmqcTargetOfKnownPeers,
-      dmqcTargetOfEstablishedPeers,
-      dmqcTargetOfActivePeers,
-      dmqcTargetOfKnownBigLedgerPeers,
-      dmqcTargetOfEstablishedBigLedgerPeers,
-      dmqcTargetOfActiveBigLedgerPeers,
-      dmqcProtocolIdleTimeout,
-      dmqcChurnInterval,
-      dmqcPeerSharing,
-      dmqcNetworkMagic,
-      dmqcPrettyLog,
-      dmqcMuxTracer,
-      dmqcChannelTracer,
-      dmqcBearerTracer,
-      dmqcHandshakeTracer,
-      dmqcLocalMuxTracer,
-      dmqcLocalChannelTracer,
-      dmqcLocalBearerTracer,
-      dmqcLocalHandshakeTracer,
-      dmqcDiffusionTracer,
-      dmqcTraceLocalRootPeersTracer,
-      dmqcTracePublicRootPeersTracer,
-      dmqcTraceLedgerPeersTracer,
-      dmqcTracePeerSelectionTracer,
-      dmqcTraceChurnCounters,
-      dmqcDebugPeerSelectionInitiatorTracer,
-      dmqcDebugPeerSelectionInitiatorResponderTracer,
-      dmqcTracePeerSelectionCounters,
-      dmqcPeerSelectionActionsTracer,
-      dmqcConnectionManagerTracer,
-      dmqcConnectionManagerTransitionTracer,
-      dmqcServerTracer,
-      dmqcInboundGovernorTracer,
-      dmqcInboundGovernorTransitionTracer,
-      dmqcLocalConnectionManagerTracer,
-      dmqcLocalServerTracer,
-      dmqcLocalInboundGovernorTracer,
-      dmqcDnsTracer,
-      dmqcSigSubmissionClientTracer,
-      dmqcSigSubmissionServerTracer,
-      dmqcKeepAliveClientTracer,
-      dmqcKeepAliveServerTracer,
-      dmqcPeerSharingClientTracer,
-      dmqcPeerSharingServerTracer
-    }
-    =
+  toJSON Configuration {..} =
     object [ "IPv4"                                       .= (show <$> unI dmqcIPv4)
            , "IPv6"                                       .= (show <$> unI dmqcIPv6)
            , "PortNumber"                                 .= unI dmqcPortNumber
+           , "LocalAddress"                               .= unI dmqcLocalAddress
            , "ConfigFile"                                 .= unI dmqcConfigFile
            , "TopologyFile"                               .= unI dmqcTopologyFile
            , "AcceptedConnectionsLimit"                   .= unI dmqcAcceptedConnectionsLimit
@@ -480,12 +417,17 @@ instance ToJSON Configuration where
            , "LocalServerTracer"                          .= unI dmqcLocalServerTracer
            , "LocalInboundGovernorTracer"                 .= unI dmqcLocalInboundGovernorTracer
            , "DnsTracer"                                  .= unI dmqcDnsTracer
-           , "SigSubmissionClientTracer"                  .= unI dmqcSigSubmissionClientTracer
-           , "SigSubmissionServerTracer"                  .= unI dmqcSigSubmissionServerTracer
-           , "KeepAliveClientTracer"                      .= unI dmqcKeepAliveClientTracer
-           , "KeepAliveServerTracer"                      .= unI dmqcKeepAliveServerTracer
-           , "PeerSharingClientTracer"                    .= unI dmqcPeerSharingClientTracer
-           , "PeerSharingServerTracer"                    .= unI dmqcPeerSharingServerTracer
+           , "SigSubmissionClientProtocolTracer"          .= unI dmqcSigSubmissionClientProtocolTracer
+           , "SigSubmissionServerProtocolTracer"          .= unI dmqcSigSubmissionServerProtocolTracer
+           , "KeepAliveClientProtocolTracer"              .= unI dmqcKeepAliveClientProtocolTracer
+           , "KeepAliveServerProtocolTracer"              .= unI dmqcKeepAliveServerProtocolTracer
+           , "PeerSharingClientProtocolTracer"            .= unI dmqcPeerSharingClientProtocolTracer
+           , "PeerSharingServerProtocolTracer"            .= unI dmqcPeerSharingServerProtocolTracer
+           , "LocalMsgSubmissionServerProtocolTracer"     .= unI dmqcLocalMsgSubmissionServerProtocolTracer
+           , "LocalMsgNotificationServerProtocolTracer"   .= unI dmqcLocalMsgNotificationServerProtocolTracer
+           , "SigSubmissionOutboundTracer"                .= unI dmqcSigSubmissionOutboundTracer
+           , "SigSubmissionInboundTracer"                 .= unI dmqcSigSubmissionInboundTracer
+           , "SigSubmissionLogicTracer"                   .= unI dmqcSigSubmissionLogicTracer
            ]
 
 -- | Read the `DMQConfiguration` from the specified file.
@@ -528,11 +470,12 @@ mkDiffusionConfiguration
   :: HasCallStack
   => Configuration
   -> NetworkTopology NoExtraConfig NoExtraFlags
-  -> IO (Diffusion.Configuration NoExtraFlags IO ntnFd RemoteAddress ntcFd ntcAddr)
+  -> IO (Diffusion.Configuration NoExtraFlags IO ntnFd RemoteAddress ntcFd LocalAddress)
 mkDiffusionConfiguration
   Configuration {
     dmqcIPv4                              = I ipv4
   , dmqcIPv6                              = I ipv6
+  , dmqcLocalAddress                      = I localAddress
   , dmqcTopologyFile                      = I topologyFile
   , dmqcPortNumber                        = I portNumber
   , dmqcDiffusionMode                     = I diffusionMode
@@ -590,7 +533,7 @@ mkDiffusionConfiguration
       Diffusion.Configuration {
         Diffusion.dcIPv4Address              = Right <$> addrIPv4
       , Diffusion.dcIPv6Address              = Right <$> addrIPv6
-      , Diffusion.dcLocalAddress             = Nothing
+      , Diffusion.dcLocalAddress             = Just (Right localAddress)
       , Diffusion.dcAcceptedConnectionsLimit = acceptedConnectionsLimit
       , Diffusion.dcMode                     = diffusionMode
       , Diffusion.dcPublicPeerSelectionVar   = publicPeerSelectionVar

@@ -13,7 +13,10 @@ module DMQ.NodeToClient
   , responders
   ) where
 
+import Data.Aeson qualified as Aeson
 import Data.ByteString.Lazy (ByteString)
+import Data.Functor.Contravariant ((>$<))
+import Data.Typeable (Typeable)
 import Data.Void
 import Data.Word
 
@@ -33,6 +36,7 @@ import Network.Mux qualified as Mx
 import Network.TypedProtocol.Codec hiding (decode, encode)
 import Network.TypedProtocol.Codec.CBOR qualified as CBOR
 
+import DMQ.Configuration
 import DMQ.NodeToClient.LocalMsgNotification
 import DMQ.NodeToClient.LocalMsgSubmission
 import DMQ.NodeToClient.Version
@@ -42,20 +46,21 @@ import DMQ.Protocol.LocalMsgNotification.Type
 import DMQ.Protocol.LocalMsgSubmission.Codec
 import DMQ.Protocol.LocalMsgSubmission.Server
 import DMQ.Protocol.LocalMsgSubmission.Type
-import DMQ.Protocol.SigSubmission.Type (Sig)
+import DMQ.Protocol.SigSubmission.Type (Sig, SigId, sigId)
+import DMQ.Tracer
 
 import Ouroboros.Network.Context
 import Ouroboros.Network.Driver.Simple
 import Ouroboros.Network.Handshake.Acceptable (Acceptable (..))
 import Ouroboros.Network.Handshake.Queryable (Queryable (..))
 import Ouroboros.Network.Mux
+import Ouroboros.Network.OrphanInstances ()
 import Ouroboros.Network.Protocol.Handshake (Handshake, HandshakeArguments (..))
 import Ouroboros.Network.Protocol.Handshake.Codec (cborTermVersionDataCodec,
            codecHandshake, noTimeLimitsHandshake)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
            (TxSubmissionMempoolWriter)
 import Ouroboros.Network.TxSubmission.Mempool.Reader
-import Ouroboros.Network.Util.ShowProxy
 
 
 type HandshakeTr ntcAddr = Mx.WithBearer (ConnectionId ntcAddr) (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term))
@@ -82,13 +87,13 @@ ntcHandshakeArguments tracer =
   }
 
 
-data Codecs m sig =
+data Codecs crypto m =
   Codecs {
     msgSubmissionCodec
-      :: !(AnnotatedCodec (LocalMsgSubmission sig)
+      :: !(AnnotatedCodec (LocalMsgSubmission (Sig crypto))
                  CBOR.DeserialiseFailure m ByteString)
   , msgNotificationCodec
-      :: !(AnnotatedCodec (LocalMsgNotification sig)
+      :: !(AnnotatedCodec (LocalMsgNotification (Sig crypto))
                CBOR.DeserialiseFailure m ByteString)
   }
 
@@ -97,7 +102,7 @@ dmqCodecs :: ( MonadST m
              )
           => (SigMempoolFail -> CBOR.Encoding)
           -> (forall s. CBOR.Decoder s SigMempoolFail)
-          -> Codecs m (Sig crypto)
+          -> Codecs crypto m
 dmqCodecs encodeReject' decodeReject' =
   Codecs {
     msgSubmissionCodec   = codecLocalMsgSubmission encodeReject' decodeReject'
@@ -127,36 +132,65 @@ data Apps ntcAddr m a =
 -- | Construct applications for the node-to-client protocols
 --
 ntcApps
-  :: (MonadThrow m, MonadThread m, MonadSTM m, ShowProxy SigMempoolFail, ShowProxy sig)
-  => TxSubmissionMempoolReader msgid sig idx m
-  -> TxSubmissionMempoolWriter msgid sig idx m
+  :: forall crypto idx ntcAddr m.
+     ( MonadThrow m
+     , MonadThread m
+     , MonadSTM m
+     , Crypto crypto
+     , Typeable crypto
+     , Aeson.ToJSON ntcAddr
+     )
+  => (forall ev. Aeson.ToJSON ev => Tracer m (WithEventType ev))
+  -> Configuration
+  -> TxSubmissionMempoolReader SigId (Sig crypto) idx m
+  -> TxSubmissionMempoolWriter SigId (Sig crypto) idx m
   -> Word16
-  -> Codecs m sig
+  -> Codecs crypto m
   -> Apps ntcAddr m ()
-ntcApps mempoolReader mempoolWriter maxMsgs
+ntcApps tracer
+        Configuration { dmqcLocalMsgSubmissionServerProtocolTracer   = I localMsgSubmissionServerProtocolTracer,
+                        dmqcLocalMsgNotificationServerProtocolTracer = I localMsgNotificationServerProtocolTracer,
+                        dmqcLocalMsgSubmissionServerTracer           = I localMsgSubmissionServerTracer
+                      }
+        mempoolReader
+        mempoolWriter
+        maxMsgs
         Codecs { msgSubmissionCodec, msgNotificationCodec } =
   Apps {
     aLocalMsgSubmission
   , aLocalMsgNotification
   }
   where
-    aLocalMsgSubmission _version _ctx channel = do
-      labelThisThread "LocalMsgSubmissionServer"
+    aLocalMsgSubmission _version ResponderContext { rcConnectionId = connId } channel = do
+      labelThisThread "LocalMsgSubmission.Server"
       runAnnotatedPeer
-        nullTracer
+        (if localMsgSubmissionServerProtocolTracer
+           then WithEventType "LocalMsgSubmission.Protocol.Server" . Mx.WithBearer connId >$< tracer
+           else nullTracer)
         msgSubmissionCodec
         channel
         (localMsgSubmissionServerPeer $
-          localMsgSubmissionServer nullTracer mempoolWriter)
+          localMsgSubmissionServer
+            sigId
+            -- TODO: use a separate option for this tracer rather than reusing
+            -- `dmqLocalMsgSubmissionServerTracer`.
+            (if localMsgSubmissionServerTracer
+               then WithEventType "LocalMsgSubmission.Server" . Mx.WithBearer connId >$< tracer
+               else nullTracer)
+            mempoolWriter)
 
-    aLocalMsgNotification _version _ctx channel = do
-      labelThisThread "LocalMsgNotificationServer"
+    aLocalMsgNotification _version ResponderContext { rcConnectionId = connId } channel = do
+      labelThisThread "LocalMsgNotification.Server"
       runAnnotatedPeer
-        nullTracer
+        (if localMsgNotificationServerProtocolTracer
+           then WithEventType "LocalMsgNotification.Protocol.Server" . Mx.WithBearer connId >$< tracer
+           else nullTracer)
         msgNotificationCodec
         channel
         (localMsgNotificationServerPeer $
-          localMsgNotificationServer nullTracer (pure ()) maxMsgs mempoolReader)
+          localMsgNotificationServer
+            nullTracer
+            (pure ()) maxMsgs mempoolReader)
 
 
 data Protocols appType ntcAddr bytes m a b =

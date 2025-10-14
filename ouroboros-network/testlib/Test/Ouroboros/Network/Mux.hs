@@ -165,7 +165,8 @@ demo chain0 updates delay = do
                        Nothing
 
     clientAsync <- async $ do
-      clientMux <- Mx.new (toMiniProtocolInfos (\_ _ -> Nothing) consumerApp)
+      clientMux <- Mx.new (Mx.Tracers activeTracer activeTracer activeTracer)
+                          (toMiniProtocolInfos (\_ _ -> Nothing) consumerApp)
       let initCtx = MinimalInitiatorContext (ConnectionId "consumer" "producer")
       resOps <- sequence
         [ Mx.runMiniProtocol
@@ -184,13 +185,14 @@ demo chain0 updates delay = do
               InitiatorProtocolOnly initiator ->
                 [(Mx.InitiatorDirectionOnly, void . runMiniProtocolCb initiator initCtx)]
         ]
-      withAsync (Mx.run (Mx.Tracers activeTracer activeTracer activeTracer) clientMux clientBearer) $ \aid -> do
+      withAsync (Mx.run clientMux clientBearer) $ \aid -> do
         _ <- atomically $ runFirstToFinish $ foldMap FirstToFinish resOps
         Mx.stop clientMux
         wait aid
 
     serverAsync <- async $ do
-      serverMux <- Mx.new (toMiniProtocolInfos (\_ _ -> Nothing) producerApp)
+      serverMux <- Mx.new (Mx.Tracers activeTracer activeTracer activeTracer)
+                          (toMiniProtocolInfos (\_ _ -> Nothing) producerApp)
       let respCtx = ResponderContext (ConnectionId "producer" "consumer")
       resOps <- sequence
         [ Mx.runMiniProtocol
@@ -209,7 +211,7 @@ demo chain0 updates delay = do
               ResponderProtocolOnly responder ->
                 [(Mx.ResponderDirectionOnly, void . runMiniProtocolCb responder respCtx)]
         ]
-      withAsync (Mx.run (Mx.Tracers activeTracer activeTracer activeTracer) serverMux serverBearer) $ \aid -> do
+      withAsync (Mx.run serverMux serverBearer) $ \aid -> do
         _ <- atomically $ runFirstToFinish $ foldMap FirstToFinish resOps
         Mx.stop serverMux
         wait aid

@@ -105,11 +105,15 @@ let
         packages.ouroboros-network-protocols.components.tests.cddl.build-tools = [ pkgs.cddl pkgs.cbor-diag pkgs.cddlc ];
         packages.ouroboros-network-protocols.components.tests.cddl.preCheck = "export HOME=`pwd`";
 
+        packages.dmq-node.components.tests.dmq-cddl.build-tools = [ pkgs.cddl pkgs.cbor-diag pkgs.cddlc ];
+        packages.dmq-node.components.tests.dmq-cddl.preCheck = "export HOME=`pwd`";
+
         packages.ouroboros-network-framework.components.tests.sim-tests.doCheck = onLinux;
         packages.ouroboros-network.components.tests.sim-tests.doCheck = onLinux;
 
+
         packages.dmq-node.components.tests.dmq-test.preCheck =
-          if buildSystem == "x86_64-linux" then "export GHCRTS=-M1200M" else "";
+          if buildSystem == "x86_64-linux" then "export GHCRTS=-M1600M" else "";
         packages.network-mux.components.tests.test.preCheck =
           if buildSystem == "x86_64-linux" then "export GHCRTS=-M800M" else "";
         packages.ouroboros-network-protocols.components.tests.test.preCheck =

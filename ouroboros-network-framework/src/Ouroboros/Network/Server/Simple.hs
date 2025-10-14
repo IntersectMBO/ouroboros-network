@@ -82,8 +82,8 @@ with sn makeBearer configureSock addr handshakeArgs versions k =
                 Left (HandshakeProtocolError e) -> throwIO e
                 Right HandshakeQueryResult {}   -> error "handshake query is not supported"
                 Right (HandshakeNegotiationResult (SomeResponderApplication app) vNumber vData) -> do
-                  mux <- Mx.new (toMiniProtocolInfos (runForkPolicy noBindForkPolicy (remoteAddress connId)) app)
-                  withAsync (Mx.run Mx.nullTracers mux bearer) $ \aid -> do
+                  mux <- Mx.new Mx.nullTracers (toMiniProtocolInfos (runForkPolicy noBindForkPolicy (remoteAddress connId)) app)
+                  withAsync (Mx.run mux bearer) $ \aid -> do
                     void $ simpleMuxCallback connId vNumber vData app mux aid
 
             errorHandler = \e -> throwIO e

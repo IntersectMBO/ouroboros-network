@@ -6,9 +6,10 @@ import Cardano.Crypto.Libsodium
 
 import Test.DMQ.NodeToClient qualified
 import Test.DMQ.NodeToNode qualified
-import Test.DMQ.Protocol.LocalMsgNotification qualified
-import Test.DMQ.Protocol.LocalMsgSubmission qualified
-import Test.DMQ.Protocol.SigSubmission qualified
+
+import DMQ.Protocol.LocalMsgNotification.Test qualified
+import DMQ.Protocol.LocalMsgSubmission.Test qualified
+import DMQ.Protocol.SigSubmission.Test qualified
 
 import Test.Tasty
 
@@ -26,7 +27,7 @@ tests =
   , Test.DMQ.NodeToNode.tests
 
     -- protocols
-  , Test.DMQ.Protocol.SigSubmission.tests
-  , Test.DMQ.Protocol.LocalMsgSubmission.tests
-  , Test.DMQ.Protocol.LocalMsgNotification.tests
+  , DMQ.Protocol.SigSubmission.Test.tests
+  , DMQ.Protocol.LocalMsgSubmission.Test.tests
+  , DMQ.Protocol.LocalMsgNotification.Test.tests
   ]

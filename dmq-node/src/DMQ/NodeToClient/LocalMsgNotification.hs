@@ -1,4 +1,7 @@
-module DMQ.NodeToClient.LocalMsgNotification where
+module DMQ.NodeToClient.LocalMsgNotification
+  ( localMsgNotificationServer
+  , LocalMsgNotificationProtocolError (..)
+  ) where
 
 import Control.Concurrent.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
@@ -23,11 +26,10 @@ instance Exception LocalMsgNotificationProtocolError where
   displayException ProtocolErrorUnexpectedNonBlockingRequest =
     "The client issued a non-blocking request when a blocking request was expected."
 
-
 -- | Local Message Notification server application
 --
 localMsgNotificationServer
-  :: forall m msg msgid idx a. (MonadSTM m, MonadThrow m)
+  :: forall m msg msgid idx a. (MonadSTM m {-, MonadThrow m -})
   => Tracer m (TraceMessageNotificationServer msg)
   -> m a
   -> Word16
@@ -43,7 +45,7 @@ localMsgNotificationServer tracer mdone maxMsgs0
     maxMsgs = fromIntegral maxMsgs0
 
     serverIdle :: idx -> HasMore -> ServerIdle m msg a
-    serverIdle !lastIdx hasMore = ServerIdle { msgRequestHandler, msgDoneHandler }
+    serverIdle !lastIdx _hasMore = ServerIdle { msgRequestHandler, msgDoneHandler }
       where
         msgRequestHandler :: forall blocking.
                              SingBlockingStyle blocking
@@ -59,8 +61,8 @@ localMsgNotificationServer tracer mdone maxMsgs0
                 in (lastIdx', hasMore', msgs)
           case blocking of
             SingBlocking
-              | HasMore <- hasMore ->
-                  throwIO ProtocolErrorUnexpectedBlockingRequest
+              -- | HasMore <- hasMore ->
+              --     throwIO ProtocolErrorUnexpectedBlockingRequest
               | otherwise -> do
                   (lastIdx', hasMore', msgs) <- atomically do
                     snapshot <- mempoolGetSnapshot
@@ -73,8 +75,8 @@ localMsgNotificationServer tracer mdone maxMsgs0
                                        hasMore'
                                        (serverIdle lastIdx' hasMore')
             SingNonBlocking
-              | DoesNotHaveMore <- hasMore ->
-                  throwIO ProtocolErrorUnexpectedNonBlockingRequest
+              -- | DoesNotHaveMore <- hasMore ->
+              --     throwIO ProtocolErrorUnexpectedNonBlockingRequest
               | otherwise -> do
                   snapshot <- atomically mempoolGetSnapshot
                   let (lastIdx', hasMore', msgs) = process snapshot

@@ -9,7 +9,15 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Ouroboros.Network.OrphanInstances where
+-- | Orphan JSON instances for Ouroboros.Network types.
+--
+module Ouroboros.Network.OrphanInstances
+  ( networkTopologyFromJSON
+  , localRootPeersGroupsFromJSON
+  , networkTopologyToJSON
+  , localRootPeersGroupsToJSON
+  , peerSelectionTargetsToObject
+  ) where
 
 import Cardano.Network.NodeToClient (LocalAddress (..), ProtocolLimitFailure)
 import Control.Applicative (Alternative ((<|>)))
@@ -41,6 +49,8 @@ import Ouroboros.Network.Protocol.KeepAlive.Type (KeepAlive)
 import Ouroboros.Network.Protocol.KeepAlive.Type qualified as KeepAlive
 import Ouroboros.Network.Protocol.Limits
            (ProtocolLimitFailure (ExceededSizeLimit, ExceededTimeLimit))
+import Ouroboros.Network.Protocol.LocalTxSubmission.Type (LocalTxSubmission)
+import Ouroboros.Network.Protocol.LocalTxSubmission.Type qualified as LocalTxSubmission
 import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount (..))
 import Ouroboros.Network.Protocol.PeerSharing.Type qualified as PeerSharing
 import Ouroboros.Network.Protocol.TxSubmission2.Type (TxSubmission2)
@@ -90,6 +100,9 @@ import Ouroboros.Network.Server qualified as Server
 import Ouroboros.Network.Server.RateLimiting (AcceptConnectionsPolicyTrace (..),
            AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket (RemoteAddress)
+import Ouroboros.Network.TxSubmission.Inbound.V2 (ProcessedTxCount (..),
+           TraceTxLogic (..), TraceTxSubmissionInbound (..))
+import Ouroboros.Network.TxSubmission.Outbound (TraceTxSubmissionOutbound (..))
 
 -- Helper function for ToJSON instances with a "kind" field
 kindObject :: Text -> [Pair] -> Value
@@ -144,16 +157,12 @@ localRootPeersGroupToJSON :: (extraFlags -> Maybe (Key, Value))
                           -> Value
 localRootPeersGroupToJSON extraFlagsToJSON lrpg =
     Object $
-         ("accessPoints"  .?= rootAccessPoints (localRoots lrpg))
-      <> ("advertise"     .?= rootAdvertise (localRoots lrpg))
-      <> ("hotValency"    .?= hotValency lrpg)
-      <> ("warmValency"   .?= warmValency lrpg)
-      <> (case mv of
-            Nothing     -> mempty
-            Just (k, v) -> k .?= v)
-      <> ("diffusionMode" .?= rootDiffusionMode lrpg)
-  where
-    mv = extraFlagsToJSON (extraFlags lrpg)
+         ("accessPoints"   .?= rootAccessPoints (localRoots lrpg))
+      <> ("advertise"      .?= rootAdvertise (localRoots lrpg))
+      <> ("hotValency"     .?= hotValency lrpg)
+      <> ("warmValency"    .?= warmValency lrpg)
+      <> foldMap (uncurry (.?=)) (extraFlagsToJSON (extraFlags lrpg))
+      <> ("diffusionMode"  .?= rootDiffusionMode lrpg)
 
 localRootPeersGroupsFromJSON
   :: (Object -> Parser extraFlags)
@@ -189,9 +198,9 @@ networkTopologyFromJSON
 networkTopologyFromJSON parseLocalRoots parseExtraConfig =
   withObject "NetworkTopology" $ \o ->
               NetworkTopology <$> (o .: "localRoots" >>= parseLocalRoots)
-                              <*> o .: "publicRoots"
+                              <*> o .:  "publicRoots"
                               <*> o .:? "useLedgerAfterSlot" .!= DontUseLedgerPeers
-                              <*> o .: "peerSnapshotFile"
+                              <*> o .:? "peerSnapshotFile"
                               <*> parseExtraConfig o
 
 networkTopologyToJSON
@@ -214,11 +223,7 @@ networkTopologyToJSON
       <> ("publicRoots"        .?= publicRootPeers)
       <> ("useLedgerAfterSlot" .?= useLedgerPeers)
       <> ("peerSnapshotFile"   .?= peerSnapshotPath)
-      <> (case mv of
-            Nothing    -> mempty
-            Just (k,v) -> k .?= v)
-  where
-    mv = extraConfigToJSON extraConfig
+      <> foldMap (uncurry (.?=)) (extraConfigToJSON extraConfig)
 
 instance FromJSON PeerSharing where
   parseJSON = withBool "PeerSharing" $ \b ->
@@ -289,7 +294,13 @@ instance FromJSON AcceptedConnectionsLimit where
       <*> v .: "softLimit"
       <*> v .: "delay"
 
-
+-- This instance is quite verbose, especially if a MiniProtocolNum is included
+-- as a field, e.g.
+--
+-- > { miniProtocolNum = { kind: "MiniProtocolNum", num: 2 }, ... }
+--
+-- TODO: can we change it?
+--
 instance ToJSON MiniProtocolNum where
   toJSON (MiniProtocolNum w) = kindObject "MiniProtocolNum" [ "num" .= w ]
 
@@ -500,6 +511,20 @@ instance (ToJSON peer, ToJSON a) => ToJSON (Mux.WithBearer peer a) where
 instance ToJSON Mux.MiniProtocolDir where
   toJSON miniProtocolDir = String (pack . show $ miniProtocolDir)
 
+instance ToJSON (Mux.MiniProtocolInfo mode) where
+  toJSON Mux.MiniProtocolInfo {
+            Mux.miniProtocolNum = Mux.MiniProtocolNum miniProtocolNum,
+            Mux.miniProtocolDir,
+            Mux.miniProtocolLimits = Mux.MiniProtocolLimits { Mux.maximumIngressQueue },
+            Mux.miniProtocolCapability
+         }
+    = object
+      [ "miniProtocolNum"        .= miniProtocolNum
+      , "miniProtocolDir"        .= show miniProtocolDir
+      , "maximumIngressQueue"    .= maximumIngressQueue
+      , "miniProtocolCapability" .= miniProtocolCapability
+      ]
+
 instance ToJSON Mux.Trace where
   toJSON = \case
     Mux.TraceState state ->
@@ -541,6 +566,13 @@ instance ToJSON Mux.Trace where
       object [ "type" .= String "Terminating"
              , "miniProtocolNum" .= miniProtocolNum
              , "miniProtocolDir" .= miniProtocolDir
+             ]
+    Mux.TraceNewMux infos ->
+      object [ "type" .= String "NewMux"
+             , "miniProtocolInfos" .= infos
+             ]
+    Mux.TraceStarting ->
+      object [ "type" .= String "Starting"
              ]
     Mux.TraceStopping ->
       object [ "type" .= String "Stopping"
@@ -1660,3 +1692,119 @@ instance ToJSON peerAddr => ToJSON (AnyMessage (PeerSharing.PeerSharing peerAddr
       , "agency" .= String (pack $ show stok)
       ]
 
+instance (ToJSON tx, ToJSON reason) => ToJSON (AnyMessage (LocalTxSubmission tx reason)) where
+  toJSON (AnyMessageAndAgency stok (LocalTxSubmission.MsgSubmitTx tx)) =
+    object
+      [ "kind" .= String "MsgSubmitTx"
+      , "agency" .= String (pack $ show stok)
+      , "tx" .= tx
+      ]
+  toJSON (AnyMessageAndAgency stok LocalTxSubmission.MsgAcceptTx) =
+    object
+      [ "kind" .= String "MsgAcceptTx"
+      , "agency" .= String (pack $ show stok)
+      ]
+  toJSON (AnyMessageAndAgency stok (LocalTxSubmission.MsgRejectTx reason)) =
+    object
+      [ "kind" .= String "MsgRejectTx"
+      , "agency" .= String (pack $ show stok)
+      , "reason" .= reason
+      ]
+  toJSON (AnyMessageAndAgency stok LocalTxSubmission.MsgDone) =
+    object
+      [ "kind" .= String "MsgDone"
+      , "agency" .= String (pack $ show stok)
+      ]
+
+instance ( ToJSON txid
+         , ToJSON tx
+         , Show txid
+         , Show tx
+         )
+       => ToJSON (TraceTxSubmissionInbound txid tx) where
+  toJSON (TraceTxSubmissionCollected count) =
+    object
+      [ "kind" .= String "TxSubmissionCollected"
+      , "count" .= toJSON count
+      ]
+  toJSON (TraceTxSubmissionProcessed processed) =
+    object
+      [ "kind" .= String "TxSubmissionProcessed"
+      , "accepted" .= toJSON (ptxcAccepted processed)
+      , "rejected" .= toJSON (ptxcRejected processed)
+      ]
+  toJSON (TraceTxInboundCanRequestMoreTxs count) =
+    object
+      [ "kind" .= String "TxInboundCanRequestMoreTxs"
+      , "count" .= toJSON count
+      ]
+  toJSON (TraceTxInboundCannotRequestMoreTxs count) =
+    object
+      [ "kind" .= String "TxInboundCannotRequestMoreTxs"
+      , "count" .= toJSON count
+      ]
+  toJSON (TraceTxInboundAddedToMempool txids diffTime) =
+    object
+      [ "kind" .= String "TxInboundAddedToMempool"
+      , "txids" .= toJSON txids
+      , "time" .= diffTime
+      ]
+  toJSON (TraceTxInboundRejectedFromMempool txids diffTime) =
+    object
+      [ "kind" .= String "TxInboundRejectedFromMempool"
+      , "txids" .= toJSON txids
+      , "time" .= diffTime
+      ]
+  toJSON (TraceTxInboundError err) =
+    object
+      [ "kind" .= String "TxInboundError"
+      , "error" .= String (pack $ show err)
+      ]
+  toJSON TraceTxInboundTerminated =
+    object
+      [ "kind" .= String "TxInboundTerminated"
+      ]
+  toJSON (TraceTxInboundDecision decision) =
+    object
+      [ "kind" .= String "TxInboundDecision"
+      -- TODO: this is too verbose, it will show full tx's
+      , "decision" .= String (pack $ show decision)
+      ]
+
+-- TODO: in cardano-node in the `coot/tx-submission-10.5` branch there's
+-- a better instance.
+instance ( Show addr
+         , Show txid
+         , Show tx
+         )
+       => ToJSON (TraceTxLogic addr txid tx) where
+  toJSON (TraceSharedTxState tag st) =
+    object [ "kind" .= String "SharedTxState"
+           , "tag"  .= String (pack tag)
+           , "sharedTxState" .= String (pack . show $ st)
+           ]
+  toJSON (TraceTxDecisions decisions) =
+    object [ "kind"      .= String "TxDecisions"
+           , "decisions" .= String (pack . show $ decisions)
+           ]
+
+
+-- TODO: we need verbosity levels, this instance should be removed once
+-- `dmq-node` has a production tracer.
+instance (ToJSON txid, ToJSON tx)
+      => ToJSON (TraceTxSubmissionOutbound txid tx) where
+  toJSON (TraceTxSubmissionOutboundRecvMsgRequestTxs txids) =
+    object
+      [ "kind"  .= String "TxSubmissionOutboundRecvMsgRequestTxs"
+      , "txids" .= txids
+      ]
+  toJSON (TraceTxSubmissionOutboundSendMsgReplyTxs txs) =
+    object
+      [ "kind" .= String "TxSubmissionOutboundSendMsgReplyTxs"
+      , "txs"  .= txs
+      ]
+  toJSON (TraceControlMessage controlMessage) =
+    object
+      [ "kind" .= String "ControlMessage"
+      , "controlMessage" .= String (pack $ show controlMessage)
+      ]

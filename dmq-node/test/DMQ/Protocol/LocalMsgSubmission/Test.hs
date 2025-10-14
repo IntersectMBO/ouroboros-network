@@ -1,4 +1,4 @@
-module Test.DMQ.Protocol.LocalMsgSubmission where
+module DMQ.Protocol.LocalMsgSubmission.Test where
 
 import Test.Tasty
 

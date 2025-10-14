@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds         #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PolyKinds         #-}
 {-# LANGUAGE TypeFamilies      #-}
 
@@ -12,6 +13,7 @@ module DMQ.Protocol.LocalMsgSubmission.Type
   , module Ouroboros
   ) where
 
+import Data.Aeson
 import Data.Text (Text)
 import Network.TypedProtocol.Core as Core
 import Ouroboros.Network.Protocol.LocalTxSubmission.Type as Ouroboros
@@ -31,3 +33,15 @@ data SigMempoolFail =
   deriving (Eq, Show)
 
 instance ShowProxy SigMempoolFail where
+
+instance ToJSON SigMempoolFail where
+  toJSON SigDuplicate = String "duplicate"
+  toJSON SigExpired   = String "expired"
+  toJSON (SigInvalid txt) = object
+    [ "type" .= String "invalid"
+    , "reason" .= txt
+    ]
+  toJSON (SigResultOther txt) = object
+    [ "type" .= String "other"
+    , "reason" .= txt
+    ]

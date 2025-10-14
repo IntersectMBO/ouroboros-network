@@ -9,17 +9,8 @@
 module Ouroboros.Network.TxSubmission.Inbound.V2
   ( -- * TxSubmision Inbound client
     txSubmissionInboundV2
-    -- * PeerTxAPI
-  , withPeer
-  , PeerTxAPI
-    -- * Supporting types
+    -- * Supporting types and APIs
   , module V2
-  , TxChannelsVar
-  , newTxChannelsVar
-  , TxMempoolSem
-  , newTxMempoolSem
-  , SharedTxStateVar
-  , newSharedTxStateVar
   , TxDecisionPolicy (..)
   , defaultTxDecisionPolicy
   ) where
@@ -39,7 +30,7 @@ import Network.TypedProtocol
 
 import Ouroboros.Network.Protocol.TxSubmission2.Server
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
-import Ouroboros.Network.TxSubmission.Inbound.V2.Registry
+import Ouroboros.Network.TxSubmission.Inbound.V2.Registry as V2
 import Ouroboros.Network.TxSubmission.Inbound.V2.State
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types as V2
 

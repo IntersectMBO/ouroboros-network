@@ -1,6 +1,6 @@
 cabal-version: 3.4
 name: dmq-node
-version: 0.1.0.0
+version: 0.2.0.0
 synopsis: Decentralised Message Queue Node
 description:
   Decentralised Message Queue Node based on Cardano Diffusion
@@ -17,6 +17,12 @@ maintainer: marcin.szamotulski@iohk.io
 category: Network
 build-type: Simple
 extra-doc-files: CHANGELOG.md
+
+flag cddl
+  description: Enable CDDL based tests of the CBOR encoding
+  manual: True
+  -- These tests need the cddl and the cbor-diag Ruby-package
+  default: True
 
 common extensions
   default-extensions:
@@ -53,6 +59,7 @@ library
     DMQ.Diffusion.Arguments
     DMQ.Diffusion.NodeKernel
     DMQ.Diffusion.PeerSelection
+    DMQ.Handlers.TopLevel
     DMQ.NodeToClient
     DMQ.NodeToClient.LocalMsgNotification
     DMQ.NodeToClient.LocalMsgSubmission
@@ -61,7 +68,6 @@ library
     DMQ.NodeToNode.Version
     DMQ.Protocol.LocalMsgNotification.Client
     DMQ.Protocol.LocalMsgNotification.Codec
-    DMQ.Protocol.LocalMsgNotification.Examples
     DMQ.Protocol.LocalMsgNotification.Server
     DMQ.Protocol.LocalMsgNotification.Type
     DMQ.Protocol.LocalMsgSubmission.Client
@@ -78,6 +84,7 @@ library
     aeson >=2.1.1.0 && <3,
     aeson-pretty,
     base >=4.14 && <4.22,
+    base16-bytestring,
     bytestring >=0.10 && <0.13,
     cardano-binary,
     cardano-crypto-class,
@@ -115,6 +122,8 @@ executable dmq-node
     extensions
 
   main-is: Main.hs
+  other-modules: Paths_dmq_node
+  autogen-modules: Paths_dmq_node
   ghc-options:
     -threaded
     -rtsopts
@@ -123,6 +132,7 @@ executable dmq-node
     acts,
     aeson,
     base,
+    cardano-git-rev,
     contra-tracer >=0.1 && <0.3,
     dmq-node,
     kes-agent-crypto,
@@ -130,6 +140,7 @@ executable dmq-node
     ouroboros-network,
     ouroboros-network-api,
     random,
+    text,
 
   hs-source-dirs: app
   default-language: Haskell2010
@@ -141,11 +152,12 @@ test-suite dmq-test
 
   default-language: Haskell2010
   other-modules:
+    DMQ.Protocol.LocalMsgNotification.Examples
+    DMQ.Protocol.LocalMsgNotification.Test
+    DMQ.Protocol.LocalMsgSubmission.Test
+    DMQ.Protocol.SigSubmission.Test
     Test.DMQ.NodeToClient
     Test.DMQ.NodeToNode
-    Test.DMQ.Protocol.LocalMsgNotification
-    Test.DMQ.Protocol.LocalMsgSubmission
-    Test.DMQ.Protocol.SigSubmission
 
   type: exitcode-stdio-1.0
   hs-source-dirs: test
@@ -170,7 +182,6 @@ test-suite dmq-test
     serialise,
     tasty,
     tasty-quickcheck,
-    time,
     typed-protocols:{typed-protocols, codec-properties},
     with-utf8,
 
@@ -181,3 +192,41 @@ test-suite dmq-test
     +RTS
     -T
     -RTS
+
+test-suite dmq-cddl
+  import:
+    warnings,
+    extensions
+
+  type: exitcode-stdio-1.0
+  hs-source-dirs: cddl
+  main-is: Main.hs
+
+  if flag(cddl)
+    buildable: True
+  else
+    buildable: False
+
+  default-language: Haskell2010
+  build-depends:
+    base >=4.14 && <4.22,
+    base16-bytestring,
+    bytestring,
+    cborg,
+    directory,
+    dmq-node,
+    filepath,
+    kes-agent-crypto,
+    mtl,
+    process-extras,
+    quickcheck-instances,
+    serialise,
+    tasty,
+    tasty-hunit,
+    tasty-quickcheck,
+    temporary,
+    typed-protocols,
+
+  ghc-options:
+    -threaded
+    -rtsopts

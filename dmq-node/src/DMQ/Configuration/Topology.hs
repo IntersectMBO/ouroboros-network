@@ -17,6 +17,7 @@ import Ouroboros.Network.Diffusion.Topology (NetworkTopology (..))
 import Ouroboros.Network.OrphanInstances (localRootPeersGroupsFromJSON,
            networkTopologyFromJSON, networkTopologyToJSON)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type (LedgerPeerSnapshot)
+import System.Exit (die)
 
 data NoExtraConfig = NoExtraConfig
   deriving Show
@@ -55,10 +56,8 @@ readTopologyFile nc = do
     handler e = Text.pack $ "DMQ.Topology.readTopologyFile: "
                           ++ displayException e
     handlerJSON :: String -> Text
-    handlerJSON err = mconcat
-      [ "Is your topology file formatted correctly? "
-      , "Expecting P2P Topology file format. "
-      , "The port and valency fields should be numerical. "
+    handlerJSON err = Text.unlines
+      [ "topology parsing error:"
       , Text.pack err
       ]
 
@@ -67,8 +66,7 @@ readTopologyFileOrError
   -> IO (NetworkTopology NoExtraConfig NoExtraFlags)
 readTopologyFileOrError nc =
       readTopologyFile nc
-  >>= either (\err -> error $ "DMQ.Topology.readTopologyFile: "
-                           <> Text.unpack err)
+  >>= either (die . Text.unpack)
              pure
 
 readPeerSnapshotFile :: FilePath -> IO (Either Text LedgerPeerSnapshot)
@@ -86,14 +84,13 @@ readPeerSnapshotFile psf = do
     handler e = Text.pack $ "DMQ.Topology.readLedgerPeerSnapshotFile: "
                           ++ displayException e
     handlerJSON :: String -> Text
-    handlerJSON err = mconcat
-      [ "Is your snapshot file formatted correctly? "
+    handlerJSON err = Text.unlines
+      [ "snapshot file parging error:"
       , Text.pack err
       ]
 
 readPeerSnapshotFileOrError :: FilePath -> IO LedgerPeerSnapshot
 readPeerSnapshotFileOrError psf =
       readPeerSnapshotFile psf
-  >>= either (\err -> error $ "DMQ.Topology.readLedgerPeerSnapshotFile: "
-                           <> Text.unpack err)
+  >>= either (die . Text.unpack)
              pure

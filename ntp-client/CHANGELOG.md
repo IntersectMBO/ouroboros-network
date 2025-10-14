@@ -1,5 +1,6 @@
 # ntp-client changelog
 
+<!-- scriv-insert-here -->
 <!-- scriv-end-here -->
 
 ## 0.0.1.6 -- 2024-08-07

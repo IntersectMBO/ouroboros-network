@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE NamedFieldPuns       #-}
+{-# LANGUAGE OverloadedStrings    #-}
 {-# LANGUAGE PatternSynonyms      #-}
 {-# LANGUAGE StandaloneDeriving   #-}
 {-# LANGUAGE TypeSynonymInstances #-}
@@ -22,17 +23,26 @@ module DMQ.Protocol.SigSubmission.Type
     -- * `TxSubmission` mini-protocol
   , SigSubmission
   , module SigSubmission
+  , POSIXTime
+    -- * Utilities
+  , CBORBytes (..)
   ) where
 
+import Data.Aeson
 import Data.ByteString (ByteString)
+import Data.ByteString.Base16 as BS.Base16
+import Data.ByteString.Base16.Lazy as LBS.Base16
 import Data.ByteString.Lazy qualified as LBS
+import Data.ByteString.Lazy.Char8 qualified as LBS.Char8
+import Data.Text.Encoding qualified as Text
 import Data.Time.Clock.POSIX (POSIXTime)
 import Data.Typeable
 
 import Cardano.Crypto.DSIGN.Class (DSIGNAlgorithm)
 import Cardano.Crypto.KES.Class (VerKeyKES)
+-- import Cardano.Crypto.Util (SignableRepresentation (..))
 import Cardano.KESAgent.KES.Crypto as KES
-import Cardano.KESAgent.KES.OCert (OCert)
+import Cardano.KESAgent.KES.OCert (OCert (..))
 
 import Ouroboros.Network.Protocol.TxSubmission2.Type as SigSubmission hiding
            (TxSubmission2)
@@ -45,6 +55,10 @@ newtype SigHash = SigHash { getSigHash :: ByteString }
 
 newtype SigId = SigId { getSigId :: SigHash }
   deriving stock (Show, Eq, Ord)
+
+instance ToJSON SigId where
+  toJSON (SigId (SigHash bs)) =
+    String (Text.decodeUtf8Lenient . BS.Base16.encode $ bs)
 
 instance ShowProxy SigId where
 
@@ -101,6 +115,33 @@ deriving instance ( DSIGNAlgorithm (KES.DSIGN crypto)
                   )
                => Eq (SigRaw crypto)
 
+instance Crypto crypto
+      => ToJSON (SigRaw crypto) where
+  -- TODO: it is too verbose, we need verbosity levels for these JSON fields
+  toJSON SigRaw { sigRawId
+             {- , sigRawBody
+                , sigRawKESPeriod
+                , sigRawExpiresAt
+                , sigRawKESSignature
+                , sigRawOpCertificate
+                , sigRawColdKey -}
+                } =
+    object [ "id"            .= show (getSigHash (getSigId sigRawId))
+        {- , "body"          .= show (getSigBody sigRawBody)
+           , "kesPeriod"     .= sigRawKESPeriod
+           , "expiresAt"     .= show sigRawExpiresAt
+           , "kesSignature"  .= show (getSigKESSignature sigRawKESSignature)
+
+           , "opCertificate" .= show (getSignableRepresentation signable)
+           , "coldKey"       .= show (getSigColdKey sigRawColdKey) -}
+           ]
+        {-
+        where
+          ocert    = getSigOpCertificate sigRawOpCertificate
+          signable :: OCertSignable crypto
+          signable = OCertSignable (ocertVkHot ocert) (ocertN ocert) (ocertKESPeriod ocert)
+        -}
+
 data SigRawWithSignedBytes crypto = SigRawWithSignedBytes {
     sigRawSignedBytes :: LBS.ByteString,
     -- ^ bytes signed by the KES key
@@ -117,6 +158,9 @@ deriving instance ( DSIGNAlgorithm (KES.DSIGN crypto)
                   )
                => Eq (SigRawWithSignedBytes crypto)
 
+instance Crypto crypto
+      => ToJSON (SigRawWithSignedBytes crypto) where
+  toJSON SigRawWithSignedBytes {sigRaw} = toJSON sigRaw
 
 data Sig crypto = SigWithBytes {
     sigRawBytes           :: LBS.ByteString,
@@ -134,6 +178,9 @@ deriving instance ( DSIGNAlgorithm (KES.DSIGN crypto)
                   )
                => Eq (Sig crypto)
 
+instance Crypto crypto
+      => ToJSON (Sig crypto) where
+  toJSON SigWithBytes {sigRawWithSignedBytes} = toJSON sigRawWithSignedBytes
 
 -- | A convenient bidirectional pattern synonym for the `Sig` type.
 --
@@ -207,3 +254,16 @@ pattern
 instance Typeable crypto => ShowProxy (Sig crypto) where
 
 type SigSubmission crypto = TxSubmission2.TxSubmission2 SigId (Sig crypto)
+
+
+--
+-- Utilities
+--
+
+-- | A newtype wrapper to show CBOR bytes in hex format.
+--
+newtype CBORBytes = CBORBytes { getCBORBytes :: LBS.ByteString }
+  deriving Eq
+
+instance Show CBORBytes where
+  show = LBS.Char8.unpack . LBS.Base16.encode . getCBORBytes

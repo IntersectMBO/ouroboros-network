@@ -15,7 +15,7 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Test.DMQ.Protocol.SigSubmission where
+module DMQ.Protocol.SigSubmission.Test where
 
 import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
@@ -24,7 +24,6 @@ import Control.Monad.ST (runST)
 import Data.Bifunctor (second)
 import Data.ByteString.Lazy qualified as BL
 import Data.List.NonEmpty qualified as NonEmpty
-import Data.Time.Clock.POSIX (POSIXTime)
 import Data.Word (Word32)
 import GHC.TypeNats (KnownNat)
 import System.IO.Unsafe (unsafePerformIO)
@@ -381,7 +380,7 @@ encodeSigRaw' SigRaw {
     sigRawKESPeriod,
     sigRawExpiresAt
   }
-  =  CBOR.encodeListLen 7
+  =  CBOR.encodeListLen 4
   <> encodeSigId sigRawId
   <> CBOR.encodeBytes (getSigBody sigRawBody)
   <> CBOR.encodeWord sigRawKESPeriod
@@ -392,7 +391,8 @@ encodeSigRaw :: Crypto crypto
              => SigRaw crypto
              -> CBOR.Encoding
 encodeSigRaw sigRaw@SigRaw { sigRawKESSignature, sigRawOpCertificate, sigRawColdKey } =
-     encodeSigRaw' sigRaw
+     CBOR.encodeListLen 4
+  <> encodeSigRaw' sigRaw
   <> CBOR.encodeBytes (getSigKESSignature sigRawKESSignature)
   <> encodeSigOpCertificate sigRawOpCertificate
   <> CBOR.encodeBytes (getSigColdKey sigRawColdKey)
@@ -528,29 +528,32 @@ prop_codec_sig
 prop_codec_sig constr = ioProperty $ do
   sig <- runWithConstr constr
   return . counterexample (show sig)
+         . counterexample ("sigRawBytes (hex): \"" ++ show (CBORBytes (sigRawBytes sig)) ++ "\"")
          $ let encoded = CBOR.toLazyByteString (encodeSigRaw (sigRaw (sigRawWithSignedBytes sig)))
-           in case CBOR.deserialiseFromBytes (decodeSig @crypto) encoded of
-                Left err -> counterexample (show err) False
-                Right (leftovers, f) ->
-                  -- split the properties for better counterexample reporting
+           in counterexample ("encoded (hex): \"" ++ show (CBORBytes encoded) ++ "\"") $
+             case CBOR.deserialiseFromBytes (decodeSig @crypto) encoded of
+               Left err ->
+                 counterexample (show err) False
+               Right (leftovers, f) ->
+                 -- split the properties for better counterexample reporting
 
-                      -- SigRaw is preserved
-                       sigRaw (sigRawWithSignedBytes sig)
-                       ===
-                       sigRaw (sigRawWithSignedBytes (mkSig (f encoded)))
+                     -- SigRaw is preserved
+                      sigRaw (sigRawWithSignedBytes sig)
+                      ===
+                      sigRaw (sigRawWithSignedBytes (mkSig (f encoded)))
 
-                       -- signed bytes are preserved
-                  .&&. sigRawSignedBytes (sigRawWithSignedBytes sig)
-                       ===
-                       sigRawSignedBytes (sigRawWithSignedBytes (mkSig (f encoded)))
+                      -- signed bytes are preserved
+                 .&&. sigRawSignedBytes (sigRawWithSignedBytes sig)
+                      ===
+                      sigRawSignedBytes (sigRawWithSignedBytes (mkSig (f encoded)))
 
-                      -- bytes are preserved
-                  .&&. sigRawBytes sig
-                       ===
-                       sigRawBytes (mkSig (f encoded))
+                     -- bytes are preserved
+                 .&&. sigRawBytes sig
+                      ===
+                      sigRawBytes (mkSig (f encoded))
 
-                       -- no leftovers
-                  .&&. BL.null leftovers
+                      -- no leftovers
+                 .&&. BL.null leftovers
 
 prop_codec_sig_mockcrypto
   :: Blind (WithConstrVerKeyKES (SeedSizeKES (KES MockCrypto)) (KES MockCrypto) (Sig MockCrypto))
