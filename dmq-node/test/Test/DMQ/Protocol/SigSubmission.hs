@@ -53,6 +53,7 @@ import Test.Crypto.Instances
 
 import DMQ.Protocol.SigSubmission.Codec
 import DMQ.Protocol.SigSubmission.Type
+import DMQ.Protocol.SigSubmission.Validate
 
 import Ouroboros.Network.Protocol.TxSubmission2.Test (labelMsg)
 
