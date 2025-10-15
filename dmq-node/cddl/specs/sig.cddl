@@ -13,7 +13,7 @@ messagePayload = [
 
 messageId    = bstr
 messageBody  = bstr
-kesSignature = bstr
+kesSignature = bstr .size 448
 kesPeriod    = word64
 operationalCertificate = [ bstr .size 32, word64, word64, bstr .size 64 ]
 coldVerificationKey = bstr .size 32

@@ -10,6 +10,7 @@ import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
 import Control.Monad.Class.MonadST
 import Data.ByteString.Lazy (ByteString)
+import Data.Text qualified as T
 import Text.Printf
 
 import Cardano.KESAgent.KES.Crypto (Crypto (..))
@@ -17,6 +18,7 @@ import Cardano.KESAgent.KES.Crypto (Crypto (..))
 import DMQ.Protocol.LocalMsgSubmission.Type
 import DMQ.Protocol.SigSubmission.Codec qualified as SigSubmission
 import DMQ.Protocol.SigSubmission.Type (Sig (..))
+import DMQ.Protocol.SigSubmission.Validate
 
 import Network.TypedProtocol.Codec.CBOR
 import Ouroboros.Network.Protocol.LocalTxSubmission.Codec qualified as LTX
@@ -26,26 +28,38 @@ codecLocalMsgSubmission
      ( MonadST m
      , Crypto crypto
      )
-  => (SigMempoolFail -> CBOR.Encoding)
-  -> (forall s. CBOR.Decoder s SigMempoolFail)
+  => (MempoolAddFail (Sig crypto) -> CBOR.Encoding)
+  -> (forall s. CBOR.Decoder s (MempoolAddFail (Sig crypto)))
   -> AnnotatedCodec (LocalMsgSubmission (Sig crypto)) CBOR.DeserialiseFailure m ByteString
 codecLocalMsgSubmission =
   LTX.anncodecLocalTxSubmission' SigWithBytes SigSubmission.encodeSig SigSubmission.decodeSig
 
-encodeReject :: SigMempoolFail -> CBOR.Encoding
+encodeReject :: MempoolAddFail (Sig crypto) -> CBOR.Encoding
 encodeReject = \case
-  SigInvalid reason -> CBOR.encodeListLen 2 <> CBOR.encodeWord 0 <> CBOR.encodeString reason
+  SigInvalid reason -> CBOR.encodeListLen 2 <> CBOR.encodeWord 0 <> e --undefined --CBOR.encodeString (T.pack $ show reason)
+    where
+      e = case reason of
+        InvalidKESSignature start end err -> undefined
+        InvalidSignatureOCERT count period err -> undefined
+        KESBeforeStartOCERT start end -> undefined
+        KESAfterEndOCERT start end -> undefined
+        UnrecognizedPool -> undefined
+        ExpiredPool -> undefined
+        NotInitialized -> undefined
+        ClockSkew -> undefined
   SigDuplicate      -> CBOR.encodeListLen 1 <> CBOR.encodeWord 1
   SigExpired        -> CBOR.encodeListLen 1 <> CBOR.encodeWord 2
   SigResultOther reason
                     -> CBOR.encodeListLen 2 <> CBOR.encodeWord 3 <> CBOR.encodeString reason
 
-decodeReject :: CBOR.Decoder s SigMempoolFail
+decodeReject :: CBOR.Decoder s (MempoolAddFail (Sig crypto))
 decodeReject = do
   len <- CBOR.decodeListLen
   tag <- CBOR.decodeWord
   case (tag, len) of
-    (0, 2)     -> SigInvalid <$> CBOR.decodeString
+    (0, 2)     -> SigInvalid <$> d
+      where
+        d = undefined
     (1, 1)     -> pure SigDuplicate
     (2, 1)     -> pure SigExpired
     (3, 2)     -> SigResultOther <$> CBOR.decodeString

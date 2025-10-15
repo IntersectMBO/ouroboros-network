@@ -1,22 +1,16 @@
-{-# LANGUAGE DeriveAnyClass             #-}
-{-# LANGUAGE DeriveFunctor              #-}
-{-# LANGUAGE DeriveGeneric              #-}
-{-# LANGUAGE DerivingStrategies         #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE LambdaCase                 #-}
-{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveFunctor  #-}
+{-# LANGUAGE DeriveGeneric  #-}
+{-# LANGUAGE LambdaCase     #-}
+{-# LANGUAGE RankNTypes     #-}
 
 module Ouroboros.Network.BlockFetch.ConsensusInterface
   ( PraosFetchMode (..)
   , FetchMode (..)
   , BlockFetchConsensusInterface (..)
+  , FromConsensus (..)
   , ChainSelStarvation (..)
-  , ChainComparison (..)
   , mkReadFetchMode
-    -- * Utilities
-  , WithFingerprint (..)
-  , Fingerprint (..)
-  , initialWithFingerprint
   ) where
 
 import Control.Monad.Class.MonadSTM
@@ -25,7 +19,6 @@ import Control.Monad.Class.MonadTime.SI (Time)
 import Data.Functor ((<&>))
 
 import Data.Map.Strict (Map)
-import Data.Word (Word64)
 import GHC.Generics (Generic)
 import GHC.Stack (HasCallStack)
 import NoThunks.Class (NoThunks)
@@ -137,9 +130,24 @@ data BlockFetchConsensusInterface peer header block m =
        -- have been downloaded anyway.
        readFetchedMaxSlotNo    :: STM m MaxSlotNo,
 
-       -- | Compare chain fragments. This might involve further state, such as
-       -- Peras certificates (which give certain blocks additional weight).
-       readChainComparison     :: STM m (WithFingerprint (ChainComparison header)),
+       -- | Given the current chain, is the given chain plausible as a
+       -- candidate chain. Classically for Ouroboros this would simply
+       -- check if the candidate is strictly longer, but for Ouroboros
+       -- with operational key certificates there are also cases where
+       -- we would consider a chain of equal length to the current chain.
+       --
+       plausibleCandidateChain :: HasCallStack
+                               => AnchoredFragment header
+                               -> AnchoredFragment header -> Bool,
+
+       -- | Compare two candidate chains and return a preference ordering.
+       -- This is used as part of selecting which chains to prioritise for
+       -- downloading block bodies.
+       --
+       compareCandidateChains  :: HasCallStack
+                               => AnchoredFragment header
+                               -> AnchoredFragment header
+                               -> Ordering,
 
        -- | Much of the logic for deciding which blocks to download from which
        -- peer depends on making estimates based on recent performance metrics.
@@ -154,7 +162,19 @@ data BlockFetchConsensusInterface peer header block m =
        blockMatchesHeader      :: header -> block -> Bool,
 
        -- | Calculate when a header's block was forged.
-       headerForgeUTCTime      :: header -> UTCTime,
+       --
+       -- PRECONDITION: This function will succeed and give a _correct_ result
+       -- when applied to headers obtained via this interface (ie via
+       -- Consensus, ie via 'readCurrentChain' or 'readCandidateChains').
+       --
+       -- WARNING: This function may fail or, worse, __give an incorrect result
+       -- (!!)__ if applied to headers obtained from sources outside of this
+       -- interface. The 'FromConsensus' newtype wrapper is intended to make it
+       -- difficult to make that mistake, so please pay that syntactic price
+       -- and consider its meaning at each call to this function. Relatedly,
+       -- preserve that argument wrapper as much as possible when deriving
+       -- ancillary functions\/interfaces from this function.
+       headerForgeUTCTime :: FromConsensus header -> STM m UTCTime,
 
        -- | Information on the ChainSel starvation status; whether it is ongoing
        -- or has ended recently. Needed by the bulk sync decision logic.
@@ -178,58 +198,21 @@ data ChainSelStarvation
   | ChainSelStarvationEndedAt Time
   deriving (Eq, Show, NoThunks, Generic)
 
-
-data ChainComparison header =
-     ChainComparison {
-       -- | Given the current chain, is the given chain plausible as a candidate
-       -- chain. Classically for Ouroboros this would simply check if the
-       -- candidate is strictly longer, but it can also involve further
-       -- criteria:
-       --
-       --  * Tiebreakers (e.g. based on the opcert numbers and VRFs) for chains
-       --    of equal length.
-       --
-       --  * Weight in the context of Ouroboros Peras, due to a boost from a
-       --    Peras certificate.
-       --
-       plausibleCandidateChain :: HasCallStack
-                               => AnchoredFragment header
-                               -> AnchoredFragment header
-                               -> Bool,
-
-       -- | Compare two candidate chains and return a preference ordering.
-       -- This is used as part of selecting which chains to prioritise for
-       -- downloading block bodies.
-       --
-       -- PRECONDITION: The two fragments must intersect.
-       --
-       compareCandidateChains  :: HasCallStack
-                               => AnchoredFragment header
-                               -> AnchoredFragment header
-                               -> Ordering
-     }
-
 {-------------------------------------------------------------------------------
-  Utilities
+  Syntactic indicator of key precondition about Consensus time conversions
 -------------------------------------------------------------------------------}
 
--- | Simple type that can be used to indicate some value (without/only with an
--- expensive 'Eq' instance) changed.
-newtype Fingerprint = Fingerprint Word64
-  deriving stock (Show, Eq, Generic)
-  deriving newtype (Enum)
-  deriving anyclass (NoThunks)
+-- | A new type used to emphasize the precondition of
+-- 'Ouroboros.Network.BlockFetch.ConsensusInterface.headerForgeUTCTime' at each
+-- call site.
+--
+-- At time of writing, the @a@ is either a header or a block. The headers are
+-- literally from Consensus (ie provided by ChainSync). Blocks, on the other
+-- hand, are indirectly from Consensus: they were fetched only because we
+-- favored the corresponding header that Consensus provided.
+newtype FromConsensus a = FromConsensus {unFromConsensus :: a}
+  deriving (Functor)
 
--- | Store a value together with its 'Fingerprint'.
-data WithFingerprint a = WithFingerprint
-  { forgetFingerprint :: !a
-  , getFingerprint    :: !Fingerprint
-  }
-  deriving stock (Show, Functor, Generic)
-  deriving anyclass (NoThunks)
-
--- | Attach @'Fingerprint' 0@ to the given value. When the underlying @a@ is
--- changed, the 'Fingerprint' must be updated to a new unique value (e.g. via
--- 'succ').
-initialWithFingerprint :: a -> WithFingerprint a
-initialWithFingerprint a = WithFingerprint a (Fingerprint 0)
+instance Applicative FromConsensus where
+  pure = FromConsensus
+  FromConsensus f <*> FromConsensus a = FromConsensus (f a)
