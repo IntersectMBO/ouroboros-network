@@ -28,7 +28,7 @@ import Ouroboros.Network.Protocol.ObjectDiffusion.Type
 
 data ObjectDiffusionInboundPipelined objectId object m a where
   ObjectDiffusionInboundPipelined
-    :: m (InboundStIdle Z objectId object m a)
+    :: InboundStIdle Z objectId object m a
     -> ObjectDiffusionInboundPipelined objectId object m a
 
 -- | This is the type of the pipelined results, collected by 'CollectPipelined'.
@@ -48,24 +48,26 @@ data InboundStIdle (n :: N) objectId object m a where
   SendMsgRequestObjectIdsBlocking
     :: NumObjectIdsAck -- ^ number of objectIds to acknowledge
     -> NumObjectIdsReq -- ^ number of objectIds to request
-    -> ( NonEmpty objectId -> m (InboundStIdle Z objectId object m a))
+    -> (NonEmpty objectId -> InboundStIdle Z objectId object m a)
     -> InboundStIdle Z objectId object m a
   SendMsgRequestObjectIdsPipelined
     :: NumObjectIdsAck
     -> NumObjectIdsReq
-    -> m (InboundStIdle (S n) objectId object m a)
+    -> InboundStIdle (S n) objectId object m a
     -> InboundStIdle n objectId object m a
   SendMsgRequestObjectsPipelined
     :: [objectId]
-    -> m (InboundStIdle (S n) objectId object m a)
+    -> InboundStIdle (S n) objectId object m a
     -> InboundStIdle n objectId object m a
   CollectPipelined
     :: Maybe (InboundStIdle (S n) objectId object m a)
-    -> (Collect objectId object -> m (InboundStIdle n objectId object m a))
+    -> (Collect objectId object -> InboundStIdle n objectId object m a)
     -> InboundStIdle (S n) objectId object m a
   SendMsgDone
-    :: m a
+    :: a
     -> InboundStIdle Z objectId object m a
+  WithEffect :: m (InboundStIdle n objectId object m a)
+    -> InboundStIdle n objectId object m a
 
 inboundRun
   :: forall (n :: N) objectId object m a.
@@ -78,7 +80,7 @@ inboundRun (SendMsgRequestObjectIdsBlocking ackNo reqNo k) =
         $ Await
         $ \case
             MsgReplyObjectIds (BlockingReply objectIds) ->
-              Effect (inboundRun <$> k objectIds)
+              inboundRun (k objectIds)
 inboundRun (SendMsgRequestObjectIdsPipelined ackNo reqNo k) =
       YieldPipelined
         (MsgRequestObjectIds SingNonBlocking ackNo reqNo)
@@ -86,7 +88,7 @@ inboundRun (SendMsgRequestObjectIdsPipelined ackNo reqNo k) =
           $ \(MsgReplyObjectIds (NonBlockingReply objectIds)) ->
               ReceiverDone (CollectObjectIds reqNo objectIds)
         )
-        (Effect (inboundRun <$> k))
+        (inboundRun k)
 inboundRun (SendMsgRequestObjectsPipelined objectIds k) =
       YieldPipelined
         (MsgRequestObjects objectIds)
@@ -94,13 +96,15 @@ inboundRun (SendMsgRequestObjectsPipelined objectIds k) =
           $ \(MsgReplyObjects objects) ->
               ReceiverDone (CollectObjects objectIds objects)
         )
-        (Effect (inboundRun <$> k))
-inboundRun (CollectPipelined mNone collect) =
+        (inboundRun k)
+inboundRun (CollectPipelined none collect) =
       Collect
-        (fmap inboundRun mNone)
-        (Effect . fmap inboundRun . collect)
-inboundRun (SendMsgDone kDone) =
-      Yield MsgDone $ Effect $ Done <$> kDone
+        (inboundRun <$> none)
+        (inboundRun . collect)
+inboundRun (SendMsgDone done) =
+      Yield MsgDone $ Done done
+inboundRun (WithEffect mNext) =
+      Effect $ inboundRun <$> mNext
 
 -- | Transform a 'ObjectDiffusionInboundPipelined' into a 'PeerPipelined'.
 objectDiffusionInboundPeerPipelined
@@ -109,6 +113,4 @@ objectDiffusionInboundPeerPipelined
   => ObjectDiffusionInboundPipelined objectId object m a
   -> PeerPipelined (ObjectDiffusion objectId object) AsClient StInit m a
 objectDiffusionInboundPeerPipelined (ObjectDiffusionInboundPipelined inboundSt) =
-  PeerPipelined $
-    Yield MsgInit $
-      Effect $ inboundRun <$> inboundSt
+  PeerPipelined $ Yield MsgInit $ inboundRun  inboundSt
