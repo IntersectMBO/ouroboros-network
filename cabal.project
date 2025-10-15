@@ -18,7 +18,7 @@ index-state:
   , hackage.haskell.org 2025-08-05T15:28:56Z
 
   -- Bump this if you need newer packages from CHaP
-  , cardano-haskell-packages 2025-03-18T17:41:11Z
+  , cardano-haskell-packages 2025-09-10T02:05:10Z
 
 packages: ./cardano-ping
           ./monoidal-synchronisation
@@ -63,7 +63,7 @@ source-repository-package
   type: git
   location: https://github.com/input-output-hk/typed-protocols
   tag: e29a21541c4af44a3d586ef0b2a61f8d87cc6bdd
-  --sha256:
+  --sha256: sha256-Kww2GEqi+GbjmKVIhMADazpUddOBuXqQCiR58WkMj10=
   subdir: typed-protocols
 
 -- kes-agent is not yet in CHaP, so we pull it from its GitHub repo
@@ -71,7 +71,19 @@ source-repository-package
   type: git
   location: https://github.com/crocodile-dentist/kes-agent
   tag: c0ef04dde5582a28415ff7c8c1bb197adeec6fc8
-  --sha256:
+  --sha256: sha256-slF7zuBy2DKWKlQfhBPW5FDRhueWrFcJkrHW4jEEELs=
   subdir:
     kes-agent
     kes-agent-crypto
+
+source-repository-package
+  type: git
+  location: https://github.com/IntersectMBO/ouroboros-consensus
+  tag: 97137fb0484454f0cd208c55bfee278f7561e9ed
+  --sha256: sha256-T56Axhx/dk7D9s+LOi+NhY+Tb5n7H99OfUjUE5hPxtQ=
+  subdir:
+    ouroboros-consensus-cardano
+    ouroboros-consensus-diffusion
+    sop-extras
+    ouroboros-consensus-protocol
+    ouroboros-consensus
