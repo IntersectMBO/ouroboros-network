@@ -20,8 +20,13 @@ extra-doc-files: CHANGELOG.md
 
 flag cddl
   description: Enable CDDL based tests of the CBOR encoding
-  manual: True
   -- These tests need the cddl and the cbor-diag Ruby-package
+  default: True
+
+flag standardcrypto-tests
+  description: Enable StandardCrypto tests
+  -- these tests are flaky on GH Windows instances
+  manual: True
   default: True
 
 common extensions
@@ -185,6 +190,9 @@ test-suite dmq-tests
     +RTS
     -T
     -RTS
+
+  if flag(standardcrypto-tests)
+    cpp-options: -DSTANDARDCRYPTO_TESTS
 
 test-suite dmq-cddl
   import:

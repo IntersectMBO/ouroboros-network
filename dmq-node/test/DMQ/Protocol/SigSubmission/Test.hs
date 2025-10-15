@@ -1,5 +1,6 @@
 {-# LANGUAGE BangPatterns         #-}
 {-# LANGUAGE BlockArguments       #-}
+{-# LANGUAGE CPP                  #-}
 {-# LANGUAGE DeriveFunctor        #-}
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE FlexibleInstances    #-}
@@ -16,8 +17,11 @@
 {-# LANGUAGE UndecidableInstances #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
+#ifndef STANDARDCRYPTO_TESTS
+{-# OPTIONS_GHC -Wno-unused-top-binds #-}
+#endif
 
-module DMQ.Protocol.SigSubmission.Test where
+module DMQ.Protocol.SigSubmission.Test (tests) where
 
 import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
@@ -84,6 +88,7 @@ tests =
           , testProperty "codec valid cbor"    prop_codec_valid_cbor_mockcrypto
           , testProperty "OCert"               prop_codec_cbor_mockcrypto
           ]
+#ifdef STANDARDCRYPTO_TESTS
         , testGroup "StandardCrypto"
           [ testProperty "OCert"               prop_codec_ocert_standardcrypto
           , testProperty "Sig"                 prop_codec_sig_standardcrypto
@@ -101,6 +106,7 @@ tests =
           , testProperty "codec cbor"          prop_codec_cbor_standardcrypto
           , testProperty "codec valid cbor"    prop_codec_valid_cbor_standardcrypto
           ]
+#endif
         ]
       ]
     , testGroup "Crypto"
@@ -108,10 +114,12 @@ tests =
         [ testProperty "KES sign verify"     prop_sign_verify_mockcrypto
         , testProperty "validateSig"         prop_validateSig_mockcrypto
         ]
+#ifdef STANDARDCRYPTO_TESTS
       , testGroup "StandardCrypto"
         [ testProperty "KES sign verify"     prop_sign_verify_standardcrypto
         , testProperty "validateSig"         prop_validateSig_standardcrypto
         ]
+#endif
       ]
     ]
 
@@ -243,13 +251,6 @@ shrinkWithConstr :: Arbitrary ctx
 shrinkWithConstr update shrinker constr =
        unsafePerformIO (sequenceWithConstr update $ shrinker <$> constr)
     ++ shrinkWithConstrCtx constr
-
-shrinkWithConstr' :: Arbitrary ctx
-                  => (a -> key ->  a)
-                  -> (a -> [a])
-                  -> WithConstr ctx key a
-                  -> [WithConstr ctx key a]
-shrinkWithConstr' update = shrinkWithConstr (\a k -> pure (update a k))
 
 
 type KESCTX            size          = PinnedSizedBytes size
@@ -772,8 +773,10 @@ prop_codec_splits3_mockcrypto :: Blind (AnySigMessage MockCrypto) -> Property
 prop_codec_splits3_mockcrypto = prop_codec_splits3 . getBlind
 -}
 
+{-
 prop_codec_splits3_standardcrypto :: Blind (AnySigMessage StandardCrypto) -> Property
 prop_codec_splits3_standardcrypto = prop_codec_splits3 . getBlind
+-}
 
 
 prop_codec_cbor
