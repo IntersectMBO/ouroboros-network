@@ -57,7 +57,8 @@ main = do
         rmIfExists defaultLocalSocketAddrPath
         void serverPingPong
 
-      "pingpong2":"client":[] -> clientPingPong2
+      "pingpong2":"client":[]       -> clientPingPong2 False
+      "pingpong2":"client-flood":[] -> clientPingPong2 True
       "pingpong2":"server":[] -> do
         rmIfExists defaultLocalSocketAddrPath
         void serverPingPong2
@@ -69,7 +70,8 @@ instance ShowProxy PingPong where
 
 usage :: IO ()
 usage = do
-    hPutStrLn stderr "usage: demo-ping-pong [pingpong|pingpong2] {client|server} [addr]"
+    hPutStrLn stderr $ "usage: demo-ping-pong pingpong  {client|client-pipelined|server}\n"
+                    ++ "       demo-ping-pong pingpong2 {client|client-flood|server}"
     exitFailure
 
 defaultLocalSocketAddrPath :: FilePath
@@ -143,7 +145,7 @@ clientPingPong pipelined =
       mkMiniProtocolCbFromPeerPipelined $ \_ctx ->
         ( contramap show stdoutTracer
         , codecPingPong
-        , void $ pingPongClientPeerPipelined (pingPongClientPipelinedMax 5)
+        , void $ pingPongClientPeerPipelined (pingPongClientPipelinedMax 15)
         )
 
       | otherwise =
@@ -151,7 +153,7 @@ clientPingPong pipelined =
       mkMiniProtocolCbFromPeer $ \_ctx ->
         ( contramap show stdoutTracer
         , codecPingPong
-        , pingPongClientPeer (pingPongClientCount 5)
+        , pingPongClientPeer (pingPongClientCount 15)
         )
 
 
@@ -211,8 +213,8 @@ demoProtocol1 pingPong pingPong' =
     ]
 
 
-clientPingPong2 :: IO ()
-clientPingPong2 =
+clientPingPong2 :: Bool -> IO ()
+clientPingPong2 flood =
     withIOManager $ \iomgr -> void $ do
     connectToNode
       (Snocket.localSnocket iomgr)
@@ -233,12 +235,17 @@ clientPingPong2 =
              Mx.InitiatorMode addr LBS.ByteString IO  () Void
     app = demoProtocol1 pingpong pingpong'
 
+    client :: PingPongClient IO ()
+    client = if flood
+             then pingPongClientFlood
+             else pingPongClientCount 15
+
     pingpong =
       InitiatorProtocolOnly $
       mkMiniProtocolCbFromPeer $ \_ctx ->
         ( contramap (show . (,) (1 :: Int)) tracer
         , codecPingPong
-        , pingPongClientPeer (pingPongClientCount 5)
+        , pingPongClientPeer client
         )
 
     pingpong'=
@@ -246,7 +253,7 @@ clientPingPong2 =
       mkMiniProtocolCbFromPeer $ \_ctx ->
         ( contramap (show . (,) (2 :: Int)) tracer
         , codecPingPong
-        , pingPongClientPeer (pingPongClientCount 5)
+        , pingPongClientPeer client
         )
 
 
