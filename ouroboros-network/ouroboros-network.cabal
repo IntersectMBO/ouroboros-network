@@ -282,6 +282,7 @@ library cardano-diffusion
   build-depends:
     base >=4.14 && <4.22,
     bytestring,
+    cardano-base,
     containers,
     contra-tracer,
     dns,
