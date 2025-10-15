@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -12,7 +13,6 @@ module Ouroboros.Network.Server.Simple where
 
 import Control.Applicative (Alternative)
 import Control.Concurrent.JobPool qualified as JobPool
-import Control.Monad (forever)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork (MonadFork)
 import Control.Monad.Class.MonadSTM
@@ -28,10 +28,18 @@ import Network.Mux qualified as Mx
 import Ouroboros.Network.ConnectionId
 import Ouroboros.Network.Mux
 import Ouroboros.Network.Protocol.Handshake
-import Ouroboros.Network.Snocket as Snocket
+import Ouroboros.Network.Server (isECONNABORTED)
+import Ouroboros.Network.Snocket (Snocket)
+import Ouroboros.Network.Snocket qualified as Snocket
 import Ouroboros.Network.Socket
 
 
+-- TODO: add tracers:
+--
+-- * accept errors,
+-- * errors thrown by a connection handler thread,
+-- * mux tracers
+--
 with :: forall fd addr vNumber vData m a b.
         ( Alternative (STM m),
           MonadAsync m,
@@ -60,37 +68,54 @@ with sn makeBearer configureSock addr handshakeArgs versions k =
          configureSock sd addr
          Snocket.bind sn sd addr
          Snocket.listen sn sd
-         addr' <- getLocalAddr sn sd
+         addr' <- Snocket.getLocalAddr sn sd
          pure (sd, addr'))
      (Snocket.close sn . fst)
      (\(sock, addr') ->
        -- accept loop
-       withAsync (forever $ acceptOne jobPool sock) (k addr')
+       withAsync (Snocket.accept sn sock >>= acceptLoop jobPool) (k addr')
      )
   where
-    acceptOne :: JobPool.JobPool () m () -> fd -> m ()
-    acceptOne jobPool sock = accept sn sock >>= runAccept >>= \case
-      (Accepted sock' remoteAddr, _) -> do
-        let connThread = do
-              -- connection responder thread
-              let connId = ConnectionId addr remoteAddr
-              bearer <- Mx.getBearer makeBearer (-1) sock' Nothing
-              configureSock sock' addr
-              r <- runHandshakeServer bearer connId handshakeArgs versions
-              case r of
-                Left (HandshakeProtocolLimit e) -> throwIO e
-                Left (HandshakeProtocolError e) -> throwIO e
-                Right HandshakeQueryResult {}   -> error "handshake query is not supported"
-                Right (HandshakeNegotiationResult (SomeResponderApplication app) vNumber vData) -> do
-                  mux <- Mx.new Mx.nullTracers (toMiniProtocolInfos (runForkPolicy noBindForkPolicy (remoteAddress connId)) app)
-                  withAsync (Mx.run mux bearer) $ \aid -> do
-                    void $ simpleMuxCallback connId vNumber vData app mux aid
+    acceptLoop :: JobPool.JobPool () m ()
+               -> Snocket.Accept m fd addr
+               -> m Void
+    acceptLoop jobPool Snocket.Accept { Snocket.runAccept } = do
+        (accepted, acceptNext) <- runAccept
+        acceptOne accepted
+        acceptLoop jobPool acceptNext
+      where
+        -- handle accept failures and fork a connection thread which performs
+        -- a handshake and runs mux
+        acceptOne :: Snocket.Accepted fd addr -> m ()
+        acceptOne (Snocket.AcceptFailure e)
+          | Just ioErr <- fromException e
+          , isECONNABORTED ioErr
+          = return ()
+        acceptOne (Snocket.AcceptFailure e)
+          = throwIO e
 
-            errorHandler = \e -> throwIO e
+        acceptOne (Snocket.Accepted sock' remoteAddr) = do
+            let connThread = do
+                  -- connection responder thread
+                  let connId = ConnectionId addr remoteAddr
+                  bearer <- Mx.getBearer makeBearer (-1) sock' Nothing
+                  configureSock sock' addr
+                  r <- runHandshakeServer bearer connId handshakeArgs versions
+                  case r of
+                    Left (HandshakeProtocolLimit e) -> throwIO e
+                    Left (HandshakeProtocolError e) -> throwIO e
+                    Right HandshakeQueryResult {}   -> error "handshake query is not supported"
+                    Right (HandshakeNegotiationResult (SomeResponderApplication app) vNumber vData) -> do
+                      mux <- Mx.new Mx.nullTracers
+                                    (toMiniProtocolInfos
+                                      (runForkPolicy noBindForkPolicy (remoteAddress connId))
+                                      app)
+                      withAsync (Mx.run mux bearer) $ \aid -> do
+                        void $ simpleMuxCallback connId vNumber vData app mux aid
 
-        JobPool.forkJob jobPool
-                      $ JobPool.Job connThread
-                                    errorHandler
-                                    ()
-                                    "conn-thread"
-      (AcceptFailure e, _) -> throwIO e
+                errorHandler = \e -> throwIO e
+            JobPool.forkJob jobPool
+                          $ JobPool.Job connThread
+                                        errorHandler
+                                        ()
+                                        "conn-thread"
