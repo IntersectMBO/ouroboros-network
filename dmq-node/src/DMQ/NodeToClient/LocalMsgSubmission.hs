@@ -5,6 +5,7 @@
 module DMQ.NodeToClient.LocalMsgSubmission where
 
 import Control.Concurrent.Class.MonadSTM
+import Control.Monad.Class.MonadThrow
 import Control.Tracer
 import Data.Aeson (ToJSON (..), object, (.=))
 import Data.Aeson qualified as Aeson
@@ -16,25 +17,29 @@ import Ouroboros.Network.TxSubmission.Mempool.Simple
 -- | Local transaction submission server, for adding txs to the 'Mempool'
 --
 localMsgSubmissionServer ::
-     MonadSTM m
+     (MonadSTM m, MonadThrow m)
   => (sig -> sigid)
   -- ^ get message id
   -> Tracer m (TraceLocalMsgSubmission sig sigid)
-  -> MempoolWriter sigid sig failure idx m
+  -> MempoolWriter sigid sig idx m
   -- ^ duplicate error tag in case the mempool returns the empty list on failure
   -> m (LocalMsgSubmissionServer sig m ())
 localMsgSubmissionServer getMsgId tracer MempoolWriter { mempoolAddTxs } =
     pure server
   where
-    process (sigid, e@(SubmitFail reason)) =
+    process (Left (sigid, reason)) = do
+      traceWith tracer (TraceSubmitFailure sigid reason)
+      throwIO $ userError "temp"
+    process (Right [(sigid, e@(SubmitFail reason))]) =
       (e, server) <$ traceWith tracer (TraceSubmitFailure sigid reason)
-    process (sigid, success) =
-      (success, server) <$ traceWith tracer (TraceSubmitAccept sigid)
+    process (Right [(sigid, SubmitSuccess)]) =
+      (SubmitSuccess, server) <$ traceWith tracer (TraceSubmitAccept sigid)
+    process _ = undefined
 
     server = LocalTxSubmissionServer {
       recvMsgSubmitTx = \sig -> do
         traceWith tracer $ TraceReceivedMsg (getMsgId sig)
-        process . head =<< mempoolAddTxs [sig]
+        process =<< mempoolAddTxs [sig]
 
     , recvMsgDone = ()
     }

@@ -10,6 +10,7 @@ import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
 import Control.Monad.Class.MonadST
 import Data.ByteString.Lazy (ByteString)
+import Data.Text qualified as T
 import Text.Printf
 
 import Cardano.KESAgent.KES.Crypto (Crypto (..))
@@ -35,7 +36,17 @@ codecLocalMsgSubmission =
 
 encodeReject :: MempoolAddFail (Sig crypto) -> CBOR.Encoding
 encodeReject = \case
-  SigInvalid reason -> CBOR.encodeListLen 2 <> CBOR.encodeWord 0 <> CBOR.encodeString reason
+  SigInvalid reason -> CBOR.encodeListLen 2 <> CBOR.encodeWord 0 <> e --undefined --CBOR.encodeString (T.pack $ show reason)
+    where
+      e = case reason of
+        InvalidKESSignature start end err -> undefined
+        InvalidSignatureOCERT count period err -> undefined
+        KESBeforeStartOCERT start end -> undefined
+        KESAfterEndOCERT start end -> undefined
+        UnrecognizedPool -> undefined
+        ExpiredPool -> undefined
+        NotInitialized -> undefined
+        ClockSkew -> undefined
   SigDuplicate      -> CBOR.encodeListLen 1 <> CBOR.encodeWord 1
   SigExpired        -> CBOR.encodeListLen 1 <> CBOR.encodeWord 2
   SigResultOther reason
@@ -46,7 +57,9 @@ decodeReject = do
   len <- CBOR.decodeListLen
   tag <- CBOR.decodeWord
   case (tag, len) of
-    (0, 2)     -> SigInvalid <$> CBOR.decodeString
+    (0, 2)     -> SigInvalid <$> d
+      where
+        d = undefined
     (1, 1)     -> pure SigDuplicate
     (2, 1)     -> pure SigExpired
     (3, 2)     -> SigResultOther <$> CBOR.decodeString

@@ -132,7 +132,7 @@ data Apps ntcAddr m a =
 -- | Construct applications for the node-to-client protocols
 --
 ntcApps
-  :: forall crypto idx ntcAddr failure m.
+  :: forall crypto idx ntcAddr m.
      ( MonadThrow m
      , MonadThread m
      , MonadSTM m
@@ -145,7 +145,7 @@ ntcApps
   => (forall ev. Aeson.ToJSON ev => Tracer m (WithEventType ev))
   -> Configuration
   -> TxSubmissionMempoolReader SigId (Sig crypto) idx m
-  -> MempoolWriter SigId (Sig crypto) failure idx m
+  -> MempoolWriter SigId (Sig crypto) idx m
   -> Word16
   -> Codecs crypto m
   -> Apps ntcAddr m ()
