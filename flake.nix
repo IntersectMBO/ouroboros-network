@@ -52,6 +52,20 @@
             (import ./nix/tools.nix inputs)
             (import ./nix/ouroboros-network.nix inputs)
             (import ./nix/network-docs.nix inputs)
+            (final: _prev: {
+              static-libsodium-vrf = final.libsodium-vrf.overrideDerivation (old: {
+                configureFlags = old.configureFlags ++ [ "--disable-shared" ];
+              });
+              static-secp256k1 = final.secp256k1.overrideDerivation (old: {
+                configureFlags = old.configureFlags ++ [ "--enable-static" "--disable-shared" ];
+              });
+              static-gmp = (final.gmp.override { withStatic = true; }).overrideDerivation (old: {
+                configureFlags = old.configureFlags ++ [ "--enable-static" "--disable-shared" ];
+              });
+              static-libblst = (final.libblst.override { enableShared = false; }).overrideDerivation (_old: {
+                postFixup = "";
+              });
+            })
           ];
         };
 
@@ -116,6 +130,10 @@
           pkgs.setGitRev
             (inputs.self.rev or inputs.self.dirtyShortRev)
             flake.packages."dmq-node:exe:dmq-node";
+        packages.dmq-node-static =
+          pkgs.setGitRev
+            (inputs.self.rev or inputs.self.dirtyShortRev)
+            flake.packages."x86_64-unknown-linux-musl:dmq-node:exe:dmq-node";
         inherit hydraJobs legacyPackages devShells;
       }
     );
