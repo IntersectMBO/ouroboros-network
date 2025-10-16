@@ -16,6 +16,7 @@ module DMQ.NodeToClient
 import Data.Aeson qualified as Aeson
 import Data.ByteString.Lazy (ByteString)
 import Data.Functor.Contravariant ((>$<))
+import Data.Typeable
 import Data.Void
 import Data.Word
 
@@ -132,20 +133,22 @@ data Apps ntcAddr m a =
 -- | Construct applications for the node-to-client protocols
 --
 ntcApps
-  :: forall crypto idx ntcAddr failure m.
+  :: forall crypto idx ntcAddr m.
      ( MonadThrow m
      , MonadThread m
      , MonadSTM m
      , Crypto crypto
      , Aeson.ToJSON ntcAddr
      , Aeson.ToJSON (MempoolAddFail (Sig crypto))
+     , Show (MempoolAddFail (Sig crypto))
      , ShowProxy (MempoolAddFail (Sig crypto))
      , ShowProxy (Sig crypto)
+     , Typeable crypto
      )
   => (forall ev. Aeson.ToJSON ev => Tracer m (WithEventType ev))
   -> Configuration
   -> TxSubmissionMempoolReader SigId (Sig crypto) idx m
-  -> MempoolWriter SigId (Sig crypto) failure idx m
+  -> MempoolWriter SigId (Sig crypto) idx m
   -> Word16
   -> Codecs crypto m
   -> Apps ntcAddr m ()

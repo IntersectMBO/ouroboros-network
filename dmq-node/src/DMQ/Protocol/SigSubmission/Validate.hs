@@ -1,7 +1,9 @@
 {-# LANGUAGE DataKinds          #-}
 {-# LANGUAGE FlexibleInstances  #-}
+{-# LANGUAGE MultiWayIf         #-}
 {-# LANGUAGE OverloadedStrings  #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TupleSections      #-}
 {-# LANGUAGE TypeFamilies       #-}
 {-# LANGUAGE TypeOperators      #-}
 
@@ -43,7 +45,7 @@ import Ouroboros.Network.Util.ShowProxy
 -- for invalid messages
 --
 data instance MempoolAddFail (Sig crypto) =
-    SigInvalid Text
+    SigInvalid SigValidationError
   | SigDuplicate
   | SigExpired
   | SigResultOther Text
@@ -56,20 +58,13 @@ instance ToJSON (MempoolAddFail (Sig crypto)) where
   toJSON SigExpired   = String "expired"
   toJSON (SigInvalid txt) = object
     [ "type" .= String "invalid"
-    , "reason" .= txt
+    -- , "reason" .= txt
     ]
   toJSON (SigResultOther txt) = object
     [ "type" .= String "other"
     , "reason" .= txt
       ]
 
--- | The type of exception raised by the mempool writer for invalid messages
--- as determined by the validation procedure and policy
---
-newtype instance InvalidTxsError SigValidationError = InvalidTxsError SigValidationError
-
-deriving instance Show (InvalidTxsError SigValidationError)
-instance Exception (InvalidTxsError SigValidationError)
 
 -- | The policy which is realized by the mempool writer when encountering
 -- an invalid message.
@@ -89,51 +84,55 @@ data SigValidationError =
   | ExpiredPool
   | NotInitialized
   | ClockSkew
-  deriving Show
+  deriving (Eq, Show)
 
 -- TODO fine tune policy
 sigValidationPolicy
   :: SigValidationError
   -> Either (MempoolAddFail (Sig crypto)) (MempoolAddFail (Sig crypto))
 sigValidationPolicy sve = case sve of
-  InvalidKESSignature {} -> Left . SigInvalid . Text.pack . show $ sve
-  InvalidSignatureOCERT {} -> Left . SigInvalid . Text.pack . show $ sve
+  InvalidKESSignature {} -> Left $ SigInvalid sve
+  InvalidSignatureOCERT {} -> Left $ SigInvalid sve
   KESAfterEndOCERT {} -> Left SigExpired
   KESBeforeStartOCERT start sig ->
     Left . SigResultOther . Text.pack
     $ printf "KESBeforeStartOCERT %s %s" (show start) (show sig)
-  UnrecognizedPool -> Left . SigInvalid $ Text.pack "unrecognized pool id"
-  ClockSkew -> Left . SigInvalid $ Text.pack "clock skew out of range"
-  ExpiredPool -> Left . SigInvalid $ Text.pack "expired pool"
+  UnrecognizedPool -> Left $ SigInvalid sve
+  ClockSkew -> Left $ SigInvalid sve
+  ExpiredPool -> Left $ SigInvalid sve
   NotInitialized -> Right . SigResultOther $ Text.pack "not initialized yet"
 
 -- TODO:
 --  We don't validate ocert numbers, since we might not have necessary
 --  information to do so, but we can validate that they are growing.
-validateSig :: forall crypto.
+validateSig :: forall crypto m.
                ( Crypto crypto
                , ContextDSIGN (KES.DSIGN crypto) ~ ()
                , DSIGN.Signable (DSIGN crypto) (OCertSignable crypto)
                , ContextKES (KES crypto) ~ ()
                , Signable (KES crypto) ByteString
+               , Monad m
                )
             => ValidationPolicy
             -> (DSIGN.VerKeyDSIGN (DSIGN crypto) -> KeyHash StakePool)
             -> [Sig crypto]
             -> PoolValidationCtx
             -- ^ cardano pool id verification
-            -> Except (InvalidTxsError SigValidationError) [Either (MempoolAddFail (Sig crypto)) ()]
-validateSig policy verKeyHashingFn sigs ctx = firstExceptT InvalidTxsError $ traverse process sigs
+            -> ExceptT (Sig crypto, MempoolAddFail (Sig crypto)) m
+                       [(Sig crypto, Either (MempoolAddFail (Sig crypto)) ())]
+validateSig policy verKeyHashingFn sigs ctx = traverse process' sigs
   where
     DMQPoolValidationCtx now mNextEpoch pools = ctx
+
+    process' sig = bimapExceptT (sig,) (sig,) $ process sig
 
     process Sig { sigSignedBytes = signedBytes,
                   sigKESPeriod,
                   sigOpCertificate = SigOpCertificate ocert@OCert {
-                      ocertKESPeriod,
-                      ocertVkHot,
-                      ocertN
-                  },
+                    ocertKESPeriod,
+                    ocertVkHot,
+                    ocertN
+                    },
                   sigColdKey = SigColdKey coldKey,
                   sigKESSignature = SigKESSignature kesSig
                 } = do
@@ -145,21 +144,27 @@ validateSig policy verKeyHashingFn sigs ctx = firstExceptT InvalidTxsError $ tra
         Nothing | isNothing mNextEpoch -> classifyError NotInitialized
                 | otherwise            -> classifyError UnrecognizedPool
         -- TODO make 5 a constant
-        Just ss | not (isZero (ssSetPool ss))
-                -- we bound the time we're willing to approve a message
-                -- in case smth happened to localstatequery and it's taking
-                -- too long to update our state
-                , now <= addUTCTime 5 nextEpoch -> right $ Right ()
-                | not (isZero (ssMarkPool ss))
-                -- we take abs time in case we're late with our own
-                -- localstatequery update, and/or the other side's clock
-                -- is ahead, and we're just about or have just crossed the epoch
-                -- and the pool is expected to move into the set mark
-                , abs (diffUTCTime nextEpoch now) <= 5 -> right $ Right ()
-                -- pool is deregistered and ineligible to mint blocks
+        Just ss | not (isZero (ssSetPool ss)) ->
+                    if | now < nextEpoch -> success
+                         -- localstatequery is late, but the pool is about to expire
+                       | isZero (ssMarkPool ss) -> classifyError ExpiredPool
+                         -- we bound the time we're willing to approve a message
+                         -- in case smth happened to localstatequery and it's taking
+                         -- too long to update our state
+                       | now <= addUTCTime 5 nextEpoch -> success
+                       | otherwise -> classifyError ClockSkew
+                | not (isZero (ssMarkPool ss)) ->
+                    -- we take abs time in case we're late with our own
+                    -- localstatequery update, and/or the other side's clock
+                    -- is ahead, and we're just about or have just crossed the epoch
+                    -- and the pool is expected to move into the set mark
+                    if abs (diffUTCTime nextEpoch now) <= 5
+                      then success
+                      else classifyError ClockSkew
+                  -- pool is deregistered and ineligible to mint blocks
                 | isZero (ssMarkPool ss) && isZero (ssSetPool ss) ->
                     classifyError ExpiredPool
-                | otherwise -> classifyError ClockSkew
+                | otherwise -> error "validateSig unexpected pool validation error"
           where
             -- mNextEpoch and pools are initialized in one STM transaction
             -- and fromJust will not fail here
@@ -177,6 +182,8 @@ validateSig policy verKeyHashingFn sigs ctx = firstExceptT InvalidTxsError $ tra
       -- for eg. remember to run all results with possibly non-fatal errors
       right $ e1 >> e2 >> e3 >> e4 >> e5
       where
+        success = right $ Right ()
+
         startKESPeriod, endKESPeriod :: KESPeriod
 
         startKESPeriod = ocertKESPeriod
@@ -188,20 +195,22 @@ validateSig policy verKeyHashingFn sigs ctx = firstExceptT InvalidTxsError $ tra
         classifyError sigValidationError = case policy of
           FailSoft ->
             let mempoolAddFail = either id id (sigValidationPolicy sigValidationError)
-             in right . Left $ mempoolAddFail
+             in right $ Left mempoolAddFail
           FailDefault ->
-            either (const $ throwE sigValidationError) (right . Left)
+            either throwE (right . Left)
                    (sigValidationPolicy sigValidationError)
 
         (?!:) :: Either e1 ()
               -> (e1 -> SigValidationError)
-              -> Except SigValidationError (Either (MempoolAddFail (Sig crypto)) ())
+              -> ExceptT (MempoolAddFail (Sig crypto)) m
+                         (Either (MempoolAddFail (Sig crypto)) ())
         (?!:) = (handleE classifyError .) . flip firstExceptT . hoistEither . fmap Right
 
         (?!) :: Bool
              -> SigValidationError
-             -> Except SigValidationError (Either (MempoolAddFail (Sig crypto)) ())
-        (?!) flag sve = if flag then right $ Right () else classifyError sve
+             -> ExceptT (MempoolAddFail (Sig crypto)) m
+                        (Either (MempoolAddFail (Sig crypto)) ())
+        (?!) flag sve = if flag then success else classifyError sve
 
         infix 1 ?!
         infix 1 ?!:
