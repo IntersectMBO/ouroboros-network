@@ -134,7 +134,6 @@ belowTargetLocal actions@PeerSelectionActions {
                  st@PeerSelectionState {
                    localRootPeers,
                    knownPeers,
-                   establishedPeers,
                    inProgressPromoteCold,
                    inProgressDemoteToCold
                  }
@@ -159,7 +158,8 @@ belowTargetLocal actions@PeerSelectionActions {
           , let membersAvailableToPromote = Set.intersection members availableToPromote
                 numMembersToPromote       = warmTarget
                                           - Set.size membersEstablished
-                                          - numLocalConnectInProgress
+                                          - Set.size (Set.intersection
+                                                        localConnectInProgress members)
           , not (Set.null membersAvailableToPromote)
           , numMembersToPromote > 0
           ]
@@ -199,7 +199,7 @@ belowTargetLocal actions@PeerSelectionActions {
              Set.\\ localEstablishedPeers
              Set.\\ KnownPeers.availableToConnect knownPeers
   , not (Set.null potentialToPromote)
-  = GuardedSkip (KnownPeers.minConnectTime knownPeers (`Set.notMember` bigLedgerPeersSet))
+  = GuardedSkip (KnownPeers.minConnectTime knownPeers (`Set.notMember` minConnectExcludeSet))
 
   | otherwise
   = GuardedSkip Nothing
@@ -207,16 +207,20 @@ belowTargetLocal actions@PeerSelectionActions {
     groupsBelowTarget =
       [ (warmValency, members, membersEstablished)
       | (_, warmValency, members) <- LocalRootPeers.toGroupSets localRootPeers
-      , let membersEstablished = members `Set.intersection` EstablishedPeers.toSet establishedPeers
+      , let membersEstablished = members `Set.intersection` establishedPeers
       , Set.size membersEstablished < getWarmValency warmValency
       ]
+
+    minConnectExcludeSet =
+      bigLedgerPeersSet `Set.union` Set.difference establishedPeers localEstablishedPeers
 
     PeerSelectionView {
         viewKnownBigLedgerPeers              = (bigLedgerPeersSet, _),
         viewKnownLocalRootPeers              = (localRootPeersSet, _),
+        viewEstablishedPeers                 = (establishedPeers, _),
         viewEstablishedLocalRootPeers        = (localEstablishedPeers, _),
         viewAvailableToConnectLocalRootPeers = (localAvailableToConnect, _),
-        viewColdLocalRootPeersPromotions     = (localConnectInProgress, numLocalConnectInProgress)
+        viewColdLocalRootPeersPromotions     = (localConnectInProgress, _)
       } = peerSelectionStateToView extraPeersToSet extraStateToExtraCounters st
 
 
