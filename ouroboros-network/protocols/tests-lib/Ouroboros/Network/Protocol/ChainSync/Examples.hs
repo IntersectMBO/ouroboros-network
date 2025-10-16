@@ -1,0 +1,259 @@
+{-# LANGUAGE BangPatterns         #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE NamedFieldPuns       #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE TypeOperators        #-}
+{-# LANGUAGE UndecidableInstances #-}
+
+module Ouroboros.Network.Protocol.ChainSync.Examples
+  ( chainSyncClientExample
+  , Client (..)
+  , pureClient
+  , controlledClient
+  , Tip (..)
+  , chainSyncServerExample
+  ) where
+
+import Control.Concurrent.Class.MonadSTM.Strict
+
+import Ouroboros.Network.Block (HasHeader (..), HeaderHash, Tip (..), castPoint,
+           castTip, genesisPoint)
+import Ouroboros.Network.ControlMessage (ControlMessage (..), ControlMessageSTM)
+import Ouroboros.Network.Mock.Chain (Chain (..), ChainUpdate (..), Point (..))
+import Ouroboros.Network.Mock.Chain qualified as Chain
+import Ouroboros.Network.Mock.ProducerState (ChainProducerState, FollowerId)
+import Ouroboros.Network.Mock.ProducerState qualified as ChainProducerState
+import Ouroboros.Network.Protocol.ChainSync.Client
+import Ouroboros.Network.Protocol.ChainSync.Server
+
+data Client header point tip m t = Client
+  { rollbackward :: point -> tip -> m (Either t (Client header point tip m t))
+  , rollforward  :: header -> m (Either t (Client header point tip m t))
+  , points       :: [point] -> m (Either t (Client header point tip m t))
+  }
+
+-- | A client which doesn't do anything and never ends. Used with
+-- 'chainSyncClientExample', the StrictTVar m (Chain header) will be updated but
+-- nothing further will happen.
+pureClient :: Applicative m => Client header point tip m void
+pureClient = Client
+  { rollbackward = \_ _ -> pure (Right pureClient)
+  , rollforward  = \_ -> pure (Right pureClient)
+  , points       = \_ -> pure (Right pureClient)
+  }
+
+controlledClient :: MonadSTM m
+                 => ControlMessageSTM m
+                 -> Client header point tip m ()
+controlledClient controlMessageSTM = go
+  where
+    go = Client
+      { rollbackward = \_ _ -> do
+          ctrl <- atomically controlMessageSTM
+          case ctrl of
+            Continue  -> pure (Right go)
+            Quiesce   -> error "Ouroboros.Network.Protocol.ChainSync.Examples.controlledClient: unexpected Quiesce"
+            Terminate -> pure (Left ())
+      , rollforward = \_ -> do
+          ctrl <- atomically controlMessageSTM
+          case ctrl of
+            Continue  -> pure (Right go)
+            Quiesce   -> error "Ouroboros.Network.Protocol.ChainSync.Examples.controlledClient: unexpected Quiesce"
+            Terminate -> pure (Left ())
+      , points = \_ -> pure (Right go)
+      }
+
+
+-- | An instance of the client side of the chain sync protocol that
+-- consumes into a 'Chain' stored in a 'StrictTVar'.
+--
+-- This is of course only useful in tests and reference implementations since
+-- this is not a realistic chain representation.
+--
+chainSyncClientExample :: forall header block tip m a.
+                          ( HasHeader header
+                          , HeaderHash header ~ HeaderHash block
+                          , MonadSTM m
+                          )
+                       => StrictTVar m (Chain header)
+                       -> Client header (Point block) tip m a
+                       -> ChainSyncClient header (Point block) tip m a
+chainSyncClientExample chainvar client = ChainSyncClient $
+    either SendMsgDone initialise <$> getChainPoints
+  where
+    initialise :: ([Point block], Client header (Point block) tip m a)
+               -> ClientStIdle header (Point block) tip m a
+    initialise (points, client') =
+      SendMsgFindIntersect points $
+      -- In this consumer example, we do not care about whether the server
+      -- found an intersection or not. If not, we'll just sync from genesis.
+      --
+      -- Alternative policies here include:
+      --  iteratively finding the best intersection
+      --  rejecting the server if there is no intersection in the last K blocks
+      --
+      ClientStIntersect {
+        recvMsgIntersectFound    = \_ _ -> ChainSyncClient (return (requestNext client')),
+        recvMsgIntersectNotFound = \  _ -> ChainSyncClient (return (requestNext client'))
+      }
+
+    requestNext :: Client header (Point block) tip m a
+                -> ClientStIdle header (Point block) tip m a
+    requestNext client' =
+      SendMsgRequestNext
+        -- We have the opportunity to do something when receiving
+        -- MsgAwaitReply. In this example we don't take up that opportunity.
+        (pure ())
+        (handleNext client')
+
+    handleNext :: Client header (Point block) tip m a
+               -> ClientStNext header (Point block) tip m a
+    handleNext client' =
+      ClientStNext {
+        recvMsgRollForward  = \header _tip -> ChainSyncClient $ do
+          addBlock header
+          choice <- rollforward client' header
+          pure $ case choice of
+            Left a         -> SendMsgDone a
+            Right client'' -> requestNext client''
+
+      , recvMsgRollBackward = \pIntersect tip -> ChainSyncClient $ do
+          rollback pIntersect
+          choice <- rollbackward client' pIntersect tip
+          pure $ case choice of
+            Left a         -> SendMsgDone a
+            Right client'' -> requestNext client''
+      }
+
+    getChainPoints :: m (Either a ([Point block], Client header (Point block) tip m a))
+    getChainPoints = do
+      pts <- Chain.selectPoints recentOffsets <$> atomically (readTVar chainvar)
+      choice <- points client (fmap castPoint pts)
+      pure $ case choice of
+        Left a        -> Left a
+        Right client' -> Right (fmap castPoint pts, client')
+
+    addBlock :: header -> m ()
+    addBlock b = atomically $ do
+        chain <- readTVar chainvar
+        let !chain' = Chain.addBlock b chain
+        writeTVar chainvar chain'
+
+    rollback :: Point block -> m ()
+    rollback p = atomically $ do
+        chain <- readTVar chainvar
+        --TODO: handle rollback failure
+        let !chain' = case Chain.rollback (castPoint p) chain of
+              Just a  -> a
+              Nothing -> error "out of scope rollback"
+        writeTVar chainvar chain'
+
+-- | Offsets from the head of the chain to select points on the consumer's
+-- chain to send to the producer. The specific choice here is fibonacci up
+-- to 2160.
+--
+recentOffsets :: [Int]
+recentOffsets = [0,1,2,3,5,8,13,21,34,55,89,144,233,377,610,987,1597,2584]
+
+-- | An instance of the server side of the chain sync protocol that reads from
+-- a pure 'ChainProducerState' stored in a 'StrictTVar'.
+--
+-- This is of course only useful in tests and reference implementations since
+-- this is not a realistic chain representation.
+--
+chainSyncServerExample :: forall blk header m a.
+                          ( HasHeader blk
+                          , MonadSTM m
+                          )
+                       => a
+                       -> StrictTVar m (ChainProducerState blk)
+                       -> (blk -> header)
+                       -> ChainSyncServer header (Point blk) (Tip blk) m a
+chainSyncServerExample recvMsgDoneClient chainvar toHeader = ChainSyncServer $
+    idle <$> newFollower
+  where
+    idle :: FollowerId -> ServerStIdle header (Point blk) (Tip blk) m a
+    idle r =
+      ServerStIdle {
+        recvMsgRequestNext   = handleRequestNext r,
+        recvMsgFindIntersect = \pts -> handleFindIntersect r (map castPoint pts),
+        recvMsgDoneClient    = pure recvMsgDoneClient
+      }
+
+    idle' :: FollowerId -> ChainSyncServer header (Point blk) (Tip blk) m a
+    idle' = ChainSyncServer . pure . idle
+
+    handleRequestNext :: FollowerId
+                      -> m (Either (ServerStNext header (Point blk) (Tip blk) m a)
+                                (m (ServerStNext header (Point blk) (Tip blk) m a)))
+    handleRequestNext r = do
+      mupdate <- tryReadChainUpdate r
+      case mupdate of
+        Just update -> return (Left  (sendNext r update))
+        Nothing     -> return (Right (sendNext r <$> readChainUpdate r))
+                       -- Follower is at the head, have to block and wait for
+                       -- the producer's state to change.
+
+    sendNext :: FollowerId
+             -> (Tip blk, ChainUpdate blk blk)
+             -> ServerStNext header (Point blk) (Tip blk) m a
+    sendNext r (tip, AddBlock b) = SendMsgRollForward  (toHeader b)  (castTip tip) (idle' r)
+    sendNext r (tip, RollBack p) = SendMsgRollBackward (castPoint p) (castTip tip) (idle' r)
+
+    handleFindIntersect :: FollowerId
+                        -> [Point blk]
+                        -> m (ServerStIntersect header (Point blk) (Tip blk) m a)
+    handleFindIntersect r points = do
+      -- TODO: guard number of points
+      -- Find the first point that is on our chain
+      changed <- improveReadPoint r points
+      case changed of
+        (Just pt, tip) -> return $ SendMsgIntersectFound    (castPoint pt) (castTip tip) (idle' r)
+        (Nothing, tip) -> return $ SendMsgIntersectNotFound (castTip tip)  (idle' r)
+
+    newFollower :: m FollowerId
+    newFollower = atomically $ do
+      cps <- readTVar chainvar
+      let (cps', rid) = ChainProducerState.initFollower genesisPoint cps
+      writeTVar chainvar cps'
+      return rid
+
+    improveReadPoint :: FollowerId
+                     -> [Point blk]
+                     -> m (Maybe (Point blk), Tip blk)
+    improveReadPoint rid points =
+      atomically $ do
+        cps <- readTVar chainvar
+        case ChainProducerState.findFirstPoint (map castPoint points) cps of
+          Nothing     -> let chain = ChainProducerState.chainState cps
+                         in return (Nothing, castTip (Chain.headTip chain))
+          Just ipoint -> do
+            let !cps' = ChainProducerState.updateFollower rid ipoint cps
+            writeTVar chainvar cps'
+            let chain = ChainProducerState.chainState cps'
+            return (Just (castPoint ipoint), castTip (Chain.headTip chain))
+
+    tryReadChainUpdate :: FollowerId
+                       -> m (Maybe (Tip blk, ChainUpdate blk blk))
+    tryReadChainUpdate rid =
+      atomically $ do
+        cps <- readTVar chainvar
+        case ChainProducerState.followerInstruction rid cps of
+          Nothing -> return Nothing
+          Just (u, cps') -> do
+            writeTVar chainvar cps'
+            let chain = ChainProducerState.chainState cps'
+            return $ Just (castTip (Chain.headTip chain), u)
+
+    readChainUpdate :: FollowerId -> m (Tip blk, ChainUpdate blk blk)
+    readChainUpdate rid =
+      atomically $ do
+        cps <- readTVar chainvar
+        case ChainProducerState.followerInstruction rid cps of
+          Nothing        -> retry
+          Just (u, cps') -> do
+            writeTVar chainvar cps'
+            let chain = ChainProducerState.chainState cps'
+            return (castTip (Chain.headTip chain), u)

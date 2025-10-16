@@ -103,10 +103,7 @@ library
     network ^>=3.2.7,
     network-mux ^>=0.9.1,
     optparse-applicative ^>=0.18,
-    ouroboros-network:{ouroboros-network, orphan-instances} ^>=0.23,
-    ouroboros-network-api ^>=0.17,
-    ouroboros-network-framework ^>=0.20,
-    ouroboros-network-protocols ^>=0.16,
+    ouroboros-network:{ouroboros-network, api, framework, orphan-instances, protocols} ^>=0.23,
     random ^>=1.2,
     singletons,
     text >=1.2.4 && <2.2,
@@ -137,15 +134,14 @@ executable dmq-node
     dmq-node,
     kes-agent-crypto,
     optparse-applicative,
-    ouroboros-network,
-    ouroboros-network-api,
+    ouroboros-network:{ouroboros-network, api},
     random,
     text,
 
   hs-source-dirs: app
   default-language: Haskell2010
 
-test-suite dmq-test
+test-suite dmq-tests
   import:
     warnings,
     extensions
@@ -174,10 +170,7 @@ test-suite dmq-test
     io-classes,
     io-sim,
     kes-agent-crypto,
-    ouroboros-network-api,
-    ouroboros-network-framework,
-    ouroboros-network-protocols:{ouroboros-network-protocols, testlib},
-    ouroboros-network-testing,
+    ouroboros-network:{api, framework, protocols, protocols-tests-lib, tests-lib},
     quickcheck-instances,
     serialise,
     tasty,

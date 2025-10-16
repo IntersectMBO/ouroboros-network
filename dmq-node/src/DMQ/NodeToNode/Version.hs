@@ -21,10 +21,10 @@ import GHC.Generics (Generic)
 
 import Ouroboros.Network.CodecCBORTerm (CodecCBORTerm (..))
 import Ouroboros.Network.ConnectionManager.Types (DataFlow (..))
+import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.Handshake.Acceptable (Acceptable (..))
 import Ouroboros.Network.Handshake.Queryable (Queryable (..))
 import Ouroboros.Network.Magic (NetworkMagic (..))
-import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.PeerSelection (PeerSharing (..))
 import Ouroboros.Network.Protocol.Handshake (Accept (..))
 

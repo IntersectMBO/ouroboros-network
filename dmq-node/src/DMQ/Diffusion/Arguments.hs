@@ -50,7 +50,8 @@ diffusionArguments
   => Tracer m (NtN.HandshakeTr ntnAddr)
   -> Tracer m (NtC.HandshakeTr ntcAddr)
   -> Diffusion.Arguments
-       NoExtraState NoExtraDebugState NoExtraFlags NoExtraPeers NoExtraAPI NoExtraChurnArgs NoExtraCounters
+       NoExtraState NoExtraDebugState NoExtraFlags NoExtraPeers
+       NoExtraAPI NoExtraChurnArgs NoExtraCounters NoExtraTracer
        IOException
        Resolver
        m

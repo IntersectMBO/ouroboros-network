@@ -14,7 +14,7 @@ inputs: final: prev: {
     buildPhase =
       let
         src = ../.;
-        cddl-specs = ../ouroboros-network-protocols/cddl/specs;
+        cddl-specs = ../cardano-diffusion/protocols/cddl/specs;
       in
       ''
         for d in network-design network-spec; do
@@ -24,8 +24,8 @@ inputs: final: prev: {
 
         touch docs/network-spec/.isRelease
 
-        mkdir -p ouroboros-network-protocols/cddl/specs
-        cp ${cddl-specs}/*.cddl ouroboros-network-protocols/cddl/specs
+        mkdir -p cardano-diffusion/protocols/cddl/specs
+        cp ${cddl-specs}/*.cddl cardano-diffusion/protocols/cddl/specs
 
         mkdir -p $out
 

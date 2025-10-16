@@ -19,7 +19,6 @@ module Ouroboros.Network.OrphanInstances
   , peerSelectionTargetsToObject
   ) where
 
-import Cardano.Network.NodeToClient (LocalAddress (..), ProtocolLimitFailure)
 import Control.Applicative (Alternative ((<|>)))
 import Control.Exception (Exception (..))
 import Control.Monad (zipWithM)
@@ -51,7 +50,6 @@ import Ouroboros.Network.Protocol.Limits
            (ProtocolLimitFailure (ExceededSizeLimit, ExceededTimeLimit))
 import Ouroboros.Network.Protocol.LocalTxSubmission.Type (LocalTxSubmission)
 import Ouroboros.Network.Protocol.LocalTxSubmission.Type qualified as LocalTxSubmission
-import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount (..))
 import Ouroboros.Network.Protocol.PeerSharing.Type qualified as PeerSharing
 import Ouroboros.Network.Protocol.TxSubmission2.Type (TxSubmission2)
 import Ouroboros.Network.Protocol.TxSubmission2.Type qualified as Tx
@@ -73,33 +71,22 @@ import Ouroboros.Network.Diffusion.Topology (LocalRootPeersGroup (..),
            LocalRootPeersGroups (..), NetworkTopology (..),
            PublicRootPeers (..), RootConfig (..))
 import Ouroboros.Network.Diffusion.Types (DiffusionTracer (..))
+import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.Driver.Simple
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (repromoteDelay))
 import Ouroboros.Network.InboundGovernor qualified as InboundGovernor
 import Ouroboros.Network.InboundGovernor.State (RemoteSt)
 import Ouroboros.Network.InboundGovernor.State qualified as InboundGovernor
 import Ouroboros.Network.Mux (MiniProtocolNum (..))
-import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.PeerSelection hiding (PublicRootPeers)
-import Ouroboros.Network.PeerSelection.Governor.Types (AssociationMode (..),
-           DebugPeerSelectionState (..), PeerSharingResult (..),
-           TracePeerSelection (..))
-import Ouroboros.Network.PeerSelection.LedgerPeers (PoolStake (..))
+import Ouroboros.Network.PeerSelection.Churn
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
-import Ouroboros.Network.PeerSelection.RootPeersDNS
-import Ouroboros.Network.PeerSelection.State.KnownPeers
-           (KnownPeerInfo (KnownPeerInfo))
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
-import Ouroboros.Network.PeerSelection.State.LocalRootPeers
-           (HotValency (HotValency),
-           LocalRootConfig (LocalRootConfig, peerAdvertise), LocalRootPeers,
-           WarmValency (WarmValency))
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
-import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LRP
 import Ouroboros.Network.Server qualified as Server
 import Ouroboros.Network.Server.RateLimiting (AcceptConnectionsPolicyTrace (..),
            AcceptedConnectionsLimit (..))
-import Ouroboros.Network.Snocket (RemoteAddress)
+import Ouroboros.Network.Snocket (LocalAddress (..), RemoteAddress)
 import Ouroboros.Network.TxSubmission.Inbound.V2 (ProcessedTxCount (..),
            TraceTxLogic (..), TraceTxSubmissionInbound (..))
 import Ouroboros.Network.TxSubmission.Outbound (TraceTxSubmissionOutbound (..))
@@ -155,13 +142,13 @@ localRootPeersGroupToJSON :: (extraFlags -> Maybe (Key, Value))
                           -- not encoded in the JSON value
                           -> LocalRootPeersGroup extraFlags
                           -> Value
-localRootPeersGroupToJSON extraFlagsToJSON lrpg =
+localRootPeersGroupToJSON extraFlagsToJSON lrpg@LocalRootPeersGroup {extraFlags} =
     Object $
          ("accessPoints"   .?= rootAccessPoints (localRoots lrpg))
       <> ("advertise"      .?= rootAdvertise (localRoots lrpg))
       <> ("hotValency"     .?= hotValency lrpg)
       <> ("warmValency"    .?= warmValency lrpg)
-      <> foldMap (uncurry (.?=)) (extraFlagsToJSON (extraFlags lrpg))
+      <> foldMap (uncurry (.?=)) (extraFlagsToJSON extraFlags)
       <> ("diffusionMode"  .?= rootDiffusionMode lrpg)
 
 localRootPeersGroupsFromJSON
@@ -432,11 +419,11 @@ instance ToJSON addr => ToJSON (PeerSharingResult addr) where
     PeerSharingNotRegisteredYet -> String "PeerSharingNotRegisteredYet"
 
 instance ToJSON extraFlags => ToJSON (LocalRootConfig extraFlags) where
-  toJSON LocalRootConfig { peerAdvertise, LRP.extraFlags, LRP.diffusionMode } =
+  toJSON LocalRootConfig { peerAdvertise, extraLocalRootFlags, LocalRootPeers.diffusionMode } =
     object
       [ "peerAdvertise" .= peerAdvertise
       , "diffusionMode" .= show diffusionMode
-      , "extraFlags"    .= extraFlags
+      , "extraFlags"    .= extraLocalRootFlags
       ]
 
 instance ToJSON RemoteAddress where
@@ -847,12 +834,13 @@ instance ToJSON Time where
 instance ( ToJSON extraDebugState
          , ToJSON extraFlags
          , ToJSON extraPeers
+         , ToJSON extraTracer
          , ToJSON peerAddr
          , ToJSONKey peerAddr
          , Ord peerAddr
          , ToJSON (PublicRootPeers.PublicRootPeers extraPeers peerAddr)
          )
-       => ToJSON (TracePeerSelection extraDebugState extraFlags extraPeers peerAddr) where
+       => ToJSON (TracePeerSelection extraDebugState extraFlags extraPeers extraTracer peerAddr) where
   toJSON (TraceLocalRootPeersChanged lrp lrp') =
     object [ "kind" .= String "LocalRootPeersChanged"
            , "previous" .= lrp
@@ -1132,16 +1120,10 @@ instance ( ToJSON extraDebugState
            , "selected" .= selected
            , "available" .= available
            ]
-  toJSON (TraceLedgerStateJudgementChanged new) =
-    object [ "kind" .= String "LedgerStateJudgementChanged"
-           , "LedgerStateJudgement" .= show new
-           ]
+  toJSON (ExtraTrace extraTrace) =
+    toJSON extraTrace
   toJSON TraceOnlyBootstrapPeers =
     object [ "kind" .= String "OnlyBootstrapPeers" ]
-  toJSON (TraceUseBootstrapPeersChanged ubp) =
-    object [ "kind" .= String "UseBootstrapPeersChanged"
-           , "UseBootstrapPeers" .= show ubp
-           ]
   toJSON TraceBootstrapPeersFlagChangedWhilstInSensitiveState =
     object [ "kind" .= String "BootstrapPeersFlagChangedWhilstInSensitiveState"
            ]

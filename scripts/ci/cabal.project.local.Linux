@@ -16,8 +16,8 @@ package network-mux
   flags: +ipv6
 
 -- IPv6 tests are DISABLED
-package ouroboros-network-framework
-  flags: -ipv6
+package ouroboros-network
+  flags: +asserts -ipv6
 
-package ouroboros-network-protocols
-  flags: +cddl
+package cardano-diffusion
+  flags: +asserts +cddl
