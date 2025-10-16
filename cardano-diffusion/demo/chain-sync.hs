@@ -276,6 +276,8 @@ serverChainSync sockAddr slotLength seed = withIOManager $ \iocp -> do
       Just a  -> return (Random.mkStdGen a)
     Server.Simple.with
       (localSnocket iocp)
+      nullTracer
+      Mx.nullTracers
       makeLocalBearer
       mempty
       (localAddressFromPath sockAddr)
@@ -552,6 +554,8 @@ serverBlockFetch sockAddr slotLength seed = withIOManager $ \iocp -> do
       Just a  -> return (Random.mkStdGen a)
     Server.Simple.with
       (localSnocket iocp)
+      nullTracer
+      Mx.nullTracers
       makeLocalBearer
       mempty
       (localAddressFromPath sockAddr)

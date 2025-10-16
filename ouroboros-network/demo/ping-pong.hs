@@ -160,6 +160,8 @@ serverPingPong =
     withIOManager $ \iomgr -> do
     Server.with
       (Snocket.localSnocket iomgr)
+      nullTracer
+      Mx.nullTracers
       makeLocalBearer
       mempty
       defaultLocalSocketAddr
@@ -255,6 +257,8 @@ serverPingPong2 =
     withIOManager $ \iomgr -> do
     Server.with
       (Snocket.localSnocket iomgr)
+      nullTracer
+      Mx.nullTracers
       makeLocalBearer
       mempty
       defaultLocalSocketAddr
