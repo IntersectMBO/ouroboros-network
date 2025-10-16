@@ -259,11 +259,12 @@ belowTargetLocal actions@PeerSelectionActions {
                      Set.\\ inProgressPromoteWarm
                      Set.\\ inProgressDemoteWarm
                      Set.\\ inProgressDemoteToCold
-                numPromoteInProgress = Set.size inProgressPromoteWarm
           , not (Set.null availableToPromote)
           , (HotValency hotTarget, members, membersActive) <- groupsBelowTarget
           , let membersAvailableToPromote = Set.intersection
                                               members availableToPromote
+                numPromoteInProgress      = Set.size (Set.intersection
+                                                       inProgressPromoteWarm members)
                 numMembersToPromote       = hotTarget
                                           - Set.size membersActive
                                           - numPromoteInProgress
