@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns             #-}
+{-# LANGUAGE BlockArguments           #-}
 {-# LANGUAGE DerivingStrategies       #-}
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE FlexibleContexts         #-}
@@ -12,8 +13,7 @@
 -- | The module should be imported qualified.
 --
 module Ouroboros.Network.TxSubmission.Mempool.Simple
-  ( InvalidTxsError
-  , MempoolAddFail
+  ( MempoolAddFail
   , Mempool (..)
   , MempoolSeq (..)
   , MempoolWriter (..)
@@ -30,9 +30,8 @@ import Prelude hiding (read, seq)
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.DeepSeq
 import Control.Exception (assert)
-import Control.Monad.Class.MonadThrow
 import Control.Monad.Trans.Except
-import Data.Bifunctor (bimap)
+import Data.Bifunctor (bimap, first, second)
 import Data.Either
 import Data.Foldable (toList)
 import Data.Foldable qualified as Foldable
@@ -114,9 +113,6 @@ getReader getTxId getTxSize (Mempool mempool) =
     f :: Int -> tx -> (txid, Int, SizeInBytes)
     f idx tx = (getTxId tx, idx, getTxSize tx)
 
--- | type of mempool validation errors which are thrown as exceptions
---
-data family InvalidTxsError failure
 
 -- | type of mempool validation errors which are non-fatal
 --
@@ -125,7 +121,7 @@ data family MempoolAddFail tx
 -- | A mempool writer which generalizes the tx submission mempool writer
 -- TODO: We could replace TxSubmissionMempoolWriter with this at some point
 --
-data MempoolWriter txid tx failure idx m =
+data MempoolWriter txid tx idx m =
      MempoolWriter {
 
        -- | Compute the transaction id from a transaction.
@@ -140,17 +136,17 @@ data MempoolWriter txid tx failure idx m =
        --
        -- The 'txid's of all transactions that were added successfully are
        -- returned.
-       mempoolAddTxs :: [tx] -> m [(txid, SubmitResult (MempoolAddFail tx))]
+       mempoolAddTxs
+         :: [tx]
+         -> m (Either (txid, MempoolAddFail tx) [(txid, SubmitResult (MempoolAddFail tx))])
     }
 
 
 -- | A mempool writer with validation harness
 -- PRECONDITION: no duplicates given to mempoolAddTxs
 --
-getWriter :: forall tx txid ctx failure m.
+getWriter :: forall tx txid ctx m.
              ( MonadSTM m
-             , Exception (InvalidTxsError failure)
-             , MonadThrow m
              -- TODO:
              -- , NFData txid
              -- , NFData tx
@@ -161,40 +157,44 @@ getWriter :: forall tx txid ctx failure m.
           -- ^ get txid of a tx
           -> m ctx
           -- ^ acquire validation context
-          -> ([tx] -> ctx -> Except (InvalidTxsError failure) [(Either (MempoolAddFail tx) ())])
+          -> (   [tx]
+              -> ctx
+              -> ExceptT (tx, MempoolAddFail tx) m
+                         [(tx, Either (MempoolAddFail tx) ())])
           -- ^ validation function which should evaluate its result to normal form
           -- esp. if it is 'expensive'
           -> MempoolAddFail tx
           -- ^ replace duplicates
           -> Mempool m txid tx
-          -> MempoolWriter txid tx failure Int m
+          -> MempoolWriter txid tx Int m
 getWriter getTxId acquireCtx validateTxs duplicateFail (Mempool mempool) =
   MempoolWriter {
     txId = getTxId,
 
     mempoolAddTxs = \txs -> assert (not . null $ txs) $ do
-      ctx  <- acquireCtx
-      !vTxs <- case runExcept (validateTxs txs ctx) of
-        Left  e -> throwIO e
-        Right r -> pure {-. force-} $ zipWith3 ((,,) . getTxId) txs txs r
+      ctx <- acquireCtx
+      first (first getTxId)
+            <$> runExceptT do
+        -- todo probably should force the results before entering the atomically block
+        !vTxs <- zipWith ((,) . getTxId) txs <$> validateTxs txs ctx
 
-      atomically $ do
-        MempoolSeq { mempoolSet, mempoolSeq } <- readTVar mempool
-        let result =
-              [if duplicate then
-                 Left . (txid,) $ SubmitFail duplicateFail
-               else
-                 bimap ((txid,) . SubmitFail) (const (txid, tx)) eErrTx
-              | (txid, tx, eErrTx) <- vTxs
-              , let duplicate = txid `Set.member` mempoolSet
-              ]
-            (validIds, validTxs) = unzip . rights $ result
-            mempoolTxs' = MempoolSeq {
-               mempoolSet = Set.union mempoolSet (Set.fromList validIds),
-               mempoolSeq = Foldable.foldl' (Seq.|>) mempoolSeq validTxs
-            }
-        writeTVar mempool mempoolTxs'
-        return $ either id ((,SubmitSuccess) . fst) <$> result
+        ExceptT . atomically $ do
+          MempoolSeq { mempoolSet, mempoolSeq } <- readTVar mempool
+          let result =
+                [if duplicate then
+                   Left (txid, duplicateFail)
+                 else
+                   bimap ((txid,)) (const (txid, tx)) eResult
+                | (txid, (tx, eResult)) <- vTxs
+                , let duplicate = txid `Set.member` mempoolSet
+                ]
+              (validIds, validTxs) = unzip . rights $ result
+              mempoolTxs' = MempoolSeq {
+                 mempoolSet = Set.union mempoolSet (Set.fromList validIds),
+                 mempoolSeq = Foldable.foldl' (Seq.|>) mempoolSeq validTxs
+              }
+          writeTVar mempool mempoolTxs'
+          return . Right $ either (second SubmitFail) (second (const SubmitSuccess)) <$> result
   }
 
 
@@ -203,9 +203,9 @@ getWriter getTxId acquireCtx validateTxs duplicateFail (Mempool mempool) =
 -- to avoid more breaking changes for now.
 --
 writerAdapter :: (Functor m)
-              => MempoolWriter txid tx failure idx m
+              => MempoolWriter txid tx idx m
               -> TxSubmissionMempoolWriter txid tx idx m
-writerAdapter MempoolWriter { txId, mempoolAddTxs } =
+writerAdapter MempoolWriter { txId, mempoolAddTxs } = undefined
   TxSubmissionMempoolWriter { txId, mempoolAddTxs = adapter }
   where
-    adapter = fmap (fmap fst) . mempoolAddTxs
+    adapter = fmap (either (const []) (fmap fst)) . mempoolAddTxs
