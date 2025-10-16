@@ -2,11 +2,14 @@
 {-# LANGUAGE CPP                   #-}
 {-# LANGUAGE DerivingStrategies    #-}
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE StandaloneDeriving    #-}
+{-# LANGUAGE UndecidableInstances  #-}
 #if __GLASGOW_HASKELL__ >= 908
 {-# OPTIONS_GHC -Wno-x-partial #-}
 #endif
@@ -388,7 +391,8 @@ data StakeMapOverSource = StakeMapOverSource {
     useLedgerAfter   :: AfterSlot,
     srvPrefix        :: SRVPrefix
   }
-  deriving Show
+
+deriving instance Show LedgerPeerSnapshot => Show StakeMapOverSource
 
 -- | Build up a stake map to sample ledger peers from. The SlotNo, if different from 0,
 -- indicates that the maps are the stake pools from the snapshot taken from the particular
