@@ -56,14 +56,23 @@ with :: forall fd addr vNumber vData m a b.
           Show vNumber
         )
      => Snocket m fd addr
+     -- ^ low level snocket API
      -> Tracer m (ServerTracer addr)
+     -- ^ server tracer: must not be `nullTracer` in production
      -> Mx.TracersWithBearer (ConnectionId addr) m
+     -- ^ mux tracers
      -> Mx.MakeBearer m fd
      -> (fd -> addr -> m ())
+     -- ^ socket configuration for both listening and connection sockets
      -> addr
+     -- ^ server address to bind to
      -> HandshakeArguments (ConnectionId addr) vNumber vData m
+     -- ^ handshake arguments
      -> Versions vNumber vData (SomeResponderApplication addr BL.ByteString m b)
+     -- ^ applications to run on each connection
      -> (addr -> Async m Void -> m a)
+     -- ^ continuation for an internally used `withAsync` function that runs
+     -- server accept loop
      -> m a
 with sn tracer muxTracers makeBearer configureSock addr handshakeArgs versions k =
    JobPool.withJobPool $ \jobPool ->
