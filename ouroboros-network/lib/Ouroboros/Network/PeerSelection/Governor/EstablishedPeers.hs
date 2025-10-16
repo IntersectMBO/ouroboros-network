@@ -159,7 +159,8 @@ belowTargetLocal actions@PeerSelectionActions {
           , let membersAvailableToPromote = Set.intersection members availableToPromote
                 numMembersToPromote       = warmTarget
                                           - Set.size membersEstablished
-                                          - numLocalConnectInProgress
+                                          - Set.size (Set.intersection
+                                                        localConnectInProgress members)
           , not (Set.null membersAvailableToPromote)
           , numMembersToPromote > 0
           ]
@@ -216,7 +217,7 @@ belowTargetLocal actions@PeerSelectionActions {
         viewKnownLocalRootPeers              = (localRootPeersSet, _),
         viewEstablishedLocalRootPeers        = (localEstablishedPeers, _),
         viewAvailableToConnectLocalRootPeers = (localAvailableToConnect, _),
-        viewColdLocalRootPeersPromotions     = (localConnectInProgress, numLocalConnectInProgress)
+        viewColdLocalRootPeersPromotions     = (localConnectInProgress, _)
       } = peerSelectionStateToView extraPeersToSet extraStateToExtraCounters st
 
 
