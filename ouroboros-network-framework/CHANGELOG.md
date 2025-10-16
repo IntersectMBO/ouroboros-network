@@ -6,6 +6,11 @@
 
 ### Non-breaking changes
 
+## 0.19.2.0 -- 2025-10-09
+
+* Fixed `Ouroboros.Network.Server.Simple.with` to properly use `Snocket` API
+  when accepting inbound connections.
+
 ## 0.19.1.0 -- 27.08.2025
 
 * Compatible with `QuickCheck < 2.16`
