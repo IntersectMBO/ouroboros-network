@@ -41,7 +41,6 @@ import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
 import Codec.CBOR.Term qualified as CBOR
 import Data.Aeson qualified as Aeson
-import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BL
 import Data.Functor.Contravariant ((>$<))
 import Data.Hashable (Hashable)
@@ -54,10 +53,7 @@ import Network.Mux.Types (Mode (..))
 import Network.Mux.Types qualified as Mx
 import Network.TypedProtocol.Codec (AnnotatedCodec, Codec)
 
-import Cardano.Crypto.DSIGN.Class qualified as DSIGN
-import Cardano.Crypto.KES.Class qualified as KES
 import Cardano.KESAgent.KES.Crypto (Crypto (..))
-import Cardano.KESAgent.KES.OCert (OCertSignable)
 
 import DMQ.Configuration (Configuration, Configuration' (..), I (..))
 import DMQ.Diffusion.NodeKernel (NodeKernel (..))
@@ -202,8 +198,8 @@ ntnApps
       fetchClientRegistry
     , peerSharingRegistry
     , peerSharingAPI
-    , mempool
-    , evolutionConfig
+    -- , mempool
+    -- , evolutionConfig
     , sigChannelVar
     , sigMempoolSem
     , sigSharedTxStateVar
