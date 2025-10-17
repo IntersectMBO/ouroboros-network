@@ -6,7 +6,6 @@ module Test.Cardano.Network.NodeToClient.Version (tests) where
 import Cardano.Network.NodeToClient.Version
 
 import Ouroboros.Network.CodecCBORTerm
-import Ouroboros.Network.Magic
 
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
@@ -45,8 +44,8 @@ prop_nodeToClientVersionCodec version =
 
 prop_nodeToClientCodec :: VersionAndVersionData -> Bool
 prop_nodeToClientCodec (VersionAndVersionData vNumber vData) =
-      case decodeTerm (encodeTerm vData) of
+      case decodeData vNumber (encodeData vNumber vData) of
         Right vData' -> networkMagic vData' == networkMagic vData
         Left {}      -> False
     where
-      CodecCBORTerm { encodeTerm, decodeTerm } = nodeToClientCodecCBORTerm vNumber
+      VersionDataCodec { encodeData, decodeData } = nodeToClientVersionDataCodec
