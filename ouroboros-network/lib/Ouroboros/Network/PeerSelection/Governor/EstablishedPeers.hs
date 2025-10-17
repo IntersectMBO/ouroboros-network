@@ -257,6 +257,7 @@ belowTargetOther actions@PeerSelectionActions {
                    policyPickColdPeersToPromote
                  }
                  st@PeerSelectionState {
+                   localRootPeers,
                    knownPeers,
                    establishedPeers,
                    inProgressPromoteCold,
@@ -286,6 +287,7 @@ belowTargetOther actions@PeerSelectionActions {
           availableToPromote = availableToConnect
                                  Set.\\ EstablishedPeers.toSet establishedPeers
                                  Set.\\ inProgressPromoteCold
+                                 Set.\\ LocalRootPeers.keysSet localRootPeers
           numPeersToPromote  = targetNumberOfEstablishedPeers
                              - numEstablishedPeers
                              - numConnectInProgress
