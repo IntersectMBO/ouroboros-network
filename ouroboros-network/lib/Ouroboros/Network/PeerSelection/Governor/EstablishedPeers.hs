@@ -159,7 +159,8 @@ belowTargetLocal actions@PeerSelectionActions {
           , let membersAvailableToPromote = Set.intersection members availableToPromote
                 numMembersToPromote       = warmTarget
                                           - Set.size membersEstablished
-                                          - numLocalConnectInProgress
+                                          - Set.size (Set.intersection
+                                                        localConnectInProgress members)
           , not (Set.null membersAvailableToPromote)
           , numMembersToPromote > 0
           ]
@@ -216,7 +217,7 @@ belowTargetLocal actions@PeerSelectionActions {
         viewKnownLocalRootPeers              = (localRootPeersSet, _),
         viewEstablishedLocalRootPeers        = (localEstablishedPeers, _),
         viewAvailableToConnectLocalRootPeers = (localAvailableToConnect, _),
-        viewColdLocalRootPeersPromotions     = (localConnectInProgress, numLocalConnectInProgress)
+        viewColdLocalRootPeersPromotions     = (localConnectInProgress, _)
       } = peerSelectionStateToView extraPeersToSet extraStateToExtraCounters st
 
 
@@ -256,6 +257,7 @@ belowTargetOther actions@PeerSelectionActions {
                    policyPickColdPeersToPromote
                  }
                  st@PeerSelectionState {
+                   localRootPeers,
                    knownPeers,
                    establishedPeers,
                    inProgressPromoteCold,
@@ -285,6 +287,7 @@ belowTargetOther actions@PeerSelectionActions {
           availableToPromote = availableToConnect
                                  Set.\\ EstablishedPeers.toSet establishedPeers
                                  Set.\\ inProgressPromoteCold
+                                 Set.\\ LocalRootPeers.keysSet localRootPeers
           numPeersToPromote  = targetNumberOfEstablishedPeers
                              - numEstablishedPeers
                              - numConnectInProgress
@@ -507,6 +510,7 @@ jobPromoteColdPeer PeerSelectionActions {
             (fuzz, stdGen') = randomR (-2, 2 :: Double) stdGen
 
             -- exponential backoff: 5s, 10s, 20s, 40s, 80s, 160s.
+            -- Don't forget to change in diffusion tests if changed here
             delay :: DiffTime
             delay = realToFrac fuzz
                   + fromIntegral
@@ -698,20 +702,20 @@ aboveTargetOther actions@PeerSelectionActions {
     -- Or more precisely, how many established peers could we demote?
     -- We only want to pick established peers that are not active, since for
     -- active one we need to demote them first.
-  | let peerSelectionView = peerSelectionStateToView extraPeersToSet extraStateToExtraCounters st
-        PeerSelectionView {
+  | let peerSelectionView@PeerSelectionView {
             viewKnownBigLedgerPeers = (bigLedgerPeersSet, _),
-            viewEstablishedPeers    = (_, numEstablishedPeers),
+            viewEstablishedPeers    = (establishedPeersSet, numEstablishedPeers),
             viewActivePeers         = (_, numActivePeers)
           }
-          =
-          peerSelectionView
+          = peerSelectionStateToView extraPeersToSet extraStateToExtraCounters st
         PeerSelectionCountersHWC {
             numberOfWarmLocalRootPeers = numLocalWarmPeers
           }
           =
           snd <$> peerSelectionView
-
+        warmPeers =
+                 establishedPeersSet
+          Set.\\ Set.unions [activePeers, LocalRootPeers.keysSet localRootPeers, bigLedgerPeersSet]
         -- One constraint on how many to demote is the difference in the
         -- number we have now vs the target. The other constraint is that
         -- we pick established peers that are not also active. These
@@ -725,17 +729,15 @@ aboveTargetOther actions@PeerSelectionActions {
                                    - numActivePeers)
                             - Set.size (inProgressDemoteWarm  Set.\\ bigLedgerPeersSet)
                             - Set.size (inProgressPromoteWarm Set.\\ bigLedgerPeersSet)
+                            - Set.size (Set.intersection warmPeers inProgressDemoteToCold)
+  , numPeersToDemote > 0
 
-        availableToDemote :: Set peeraddr
-        availableToDemote = EstablishedPeers.toSet establishedPeers
-                              Set.\\ activePeers
-                              Set.\\ LocalRootPeers.keysSet localRootPeers
-                              Set.\\ bigLedgerPeersSet
+  , let availableToDemote :: Set peeraddr
+        availableToDemote = warmPeers
                               Set.\\ inProgressDemoteWarm
                               Set.\\ inProgressPromoteWarm
                               Set.\\ inProgressDemoteToCold
-  , numPeersToDemote > 0
-  , not (Set.null availableToDemote)
+  , assert (not . Set.null $ availableToDemote) not (Set.null availableToDemote)
   = Guarded Nothing $ do
       selectedToDemote <- pickPeers memberExtraPeers st
                             policyPickWarmPeersToDemote
@@ -814,6 +816,9 @@ aboveTargetBigLedgerPeers actions@PeerSelectionActions {
     -- We only want to pick established peers that are not active, since for
     -- active one we need to demote them first.
   | let bigLedgerPeersSet = PublicRootPeers.getBigLedgerPeers publicRootPeers
+        warmBigLedgerPeers = EstablishedPeers.toSet establishedPeers
+                             `Set.intersection` bigLedgerPeersSet
+                              Set.\\ activePeers
         PeerSelectionCounters {
             numberOfEstablishedBigLedgerPeers = numEstablishedBigLedgerPeers,
             numberOfActiveBigLedgerPeers      = numActiveBigLedgerPeers
@@ -825,25 +830,22 @@ aboveTargetBigLedgerPeers actions@PeerSelectionActions {
         -- pick active peer.  The `min` is taken so that `pickPeers` is given
         -- consistent number of peers with the set of peers available to demote,
         -- i.e. `availableToDemote`.
-        numBigLedgerPeersToDemote    = min ( numEstablishedBigLedgerPeers
-                                           - targetNumberOfEstablishedBigLedgerPeers)
-                                           ( numEstablishedBigLedgerPeers
-                                           - numActiveBigLedgerPeers)
-                                     - Set.size inProgressDemoteWarm
-                                     - Set.size inProgressPromoteWarm
+        numBigLedgerPeersToDemote    =
+            min (numEstablishedBigLedgerPeers - targetNumberOfEstablishedBigLedgerPeers)
+                (numEstablishedBigLedgerPeers - numActiveBigLedgerPeers)
+          - Set.size inProgressDemoteWarm
+          - Set.size inProgressPromoteWarm
+          - Set.size (Set.intersection warmBigLedgerPeers inProgressDemoteToCold)
 
         availableToDemote :: Set peeraddr
-        availableToDemote = EstablishedPeers.toSet establishedPeers
-                             `Set.intersection` bigLedgerPeersSet
-                              Set.\\ activePeers
+        availableToDemote = warmBigLedgerPeers
                               Set.\\ inProgressDemoteWarm
                               Set.\\ inProgressPromoteWarm
                               Set.\\ inProgressDemoteToCold
 
   , numBigLedgerPeersToDemote > 0
-  , not (Set.null availableToDemote)
+  , assert (not $ Set.null availableToDemote) not (Set.null availableToDemote)
   = Guarded Nothing $ do
-
       selectedToDemote <- pickPeers memberExtraPeers st
                             policyPickWarmPeersToDemote
                             availableToDemote
