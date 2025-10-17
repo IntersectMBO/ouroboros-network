@@ -240,6 +240,8 @@ prop_socket_send_recv initiatorAddr responderAddr configureSock f xs =
     res <-
       Server.Simple.with
         snocket
+        nullTracer
+        Mx.nullTracers
         Mx.makeSocketBearer
         ((. Just) <$> configureSock)
         responderAddr

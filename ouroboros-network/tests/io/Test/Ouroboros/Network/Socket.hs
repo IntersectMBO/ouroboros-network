@@ -239,6 +239,8 @@ demo chain0 updates = withIOManager $ \iocp -> do
 
     Server.Simple.with
       (socketSnocket iocp)
+      nullTracer
+      Mx.nullTracers
       makeSocketBearer
       ((. Just) <$> configureSocket)
       producerAddress
