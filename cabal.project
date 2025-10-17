@@ -15,10 +15,10 @@ repository cardano-haskell-packages
 -- repeat the index-state for hackage to work around haskell.nix parsing limitation
 index-state:
   -- Bump this if you need newer packages from Hackage
-  , hackage.haskell.org 2025-08-05T15:28:56Z
+  , hackage.haskell.org 2025-10-16T22:17:21Z
 
   -- Bump this if you need newer packages from CHaP
-  , cardano-haskell-packages 2025-03-18T17:41:11Z
+  , cardano-haskell-packages 2025-10-15T14:00:24Z
 
 packages: ./cardano-ping
           ./monoidal-synchronisation
@@ -62,3 +62,142 @@ source-repository-package
   tag: 6d0f51fba415d3c641a8a8da37130e7adfc3ea01
   --sha256: sha256-qM8RgmKOGBMlizPtXw2YOboYIzM6T3kvG9/Rp1F+bYQ=
   subdir: kes-agent-crypto
+
+if impl (ghc >= 9.14)
+  constraints:
+    , containers > 0.7
+    , foldl >= 1.4.18
+    , nothunks ^>= 0.2
+    -- Newest version causes Arbitrary instance clashes in quickcheck-instances.
+    , QuickCheck < 2.17.0.0
+
+-- cabal-allow-newer
+if impl (ghc >= 9.14)
+  allow-newer:
+    , OneTuple:base
+    , aeson:QuickCheck
+    , aeson:base
+    , aeson:bytestring
+    , aeson:containers
+    , aeson:deepseq
+    , aeson:ghc-prim
+    , aeson:template-haskell
+    , aeson:text-iso8601
+    , aeson:text-short
+    , aeson:witherable
+    , assoc:base
+    , async:base
+    , base:ghc-internal
+    , base:ghc-prim
+    , bifunctors:template-haskell
+    , bifunctors:th-abstraction
+    , binary:containers
+    , binary-orphans:base
+    , boring:base
+    , canonical-json:containers
+    , cardano-diffusion:cborg
+    , cardano-diffusion:io-classes
+    , cardano-diffusion:typed-protocols
+    , cardano-prelude:canonical-json
+    , cborg:base
+    , cborg:bytestring
+    , cborg:containers
+    , criterion:microstache
+    , data-fix:base
+    , directory:base
+    , exceptions:mtl
+    , filepath:base
+    , free:base
+    , free:exceptions
+    , free:mtl
+    , free:template-haskell
+    , generic-data:base
+    , generically:base
+    , ghc-heap:base
+    , ghc-heap:containers
+    , ghc-heap:ghc-internal
+    , ghc-heap:ghc-prim
+    , hashable:base
+    , hashable:containers
+    , hashable:ghc-bignum
+    , hsc2hs:base
+    , indexed-traversable:base
+    , indexed-traversable:containers
+    , indexed-traversable-instances:base
+    , integer-conversion:base
+    , integer-logarithms:base
+    , integer-logarithms:ghc-bignum
+    , io-classes:async
+    , io-classes:base
+    , io-sim:base
+    , kes-agent-crypto:base
+    , microstache:aeson
+    , microstache:base
+    , microstache:bytestring
+    , microstache:containers
+    , network-mux:containers
+    , network-uri:th-compat
+    , nothunks:containers
+    , nothunks:wherefrom-compat
+    , os-string:bytestring
+    , os-string:exceptions
+    , os-string:template-haskell
+    , parallel:base
+    , parsec:bytestring
+    , primitive:base
+    , process:base
+    , quickcheck-instances:array
+    , quickcheck-instances:base
+    , quickcheck-instances:bytestring
+    , quickcheck-instances:containers
+    , recursion-schemes:containers
+    , recursion-schemes:data-fix
+    , recursion-schemes:free
+    , recursion-schemes:template-haskell
+    , scientific:base
+    , scientific:containers
+    , scientific:integer-logarithms
+    , scientific:template-haskell
+    , semialign:base
+    , semialign:containers
+    , semigroupoids:bifunctors
+    , serialise:base
+    , serialise:bytestring
+    , serialise:containers
+    , serialise:ghc-prim
+    , serialise:hashable
+    , serialise:these
+    , singletons:base
+    , splitmix:base
+    , statistics:parallel
+    , tagged:template-haskell
+    , tdigest:base
+    , text:array
+    , text:binary
+    , text-short:base
+    , text-short:ghc-prim
+    , text-short:template-haskell
+    , th-abstraction:template-haskell
+    , th-compat:template-haskell
+    , these:base
+    , time-compat:base
+    , time-compat:deepseq
+    , tree-diff:aeson
+    , tree-diff:base
+    , tree-diff:containers
+    , tree-diff:deepseq
+    , tree-diff:scientific
+    , tree-diff:tagged
+    , tree-diff:uuid-types
+    , typed-protocols:base
+    , typed-protocols:singletons
+    , unix:base
+    , unordered-containers:base
+    , unordered-containers:hashable
+    , unordered-containers:template-haskell
+    , uuid-types:template-haskell
+    , vector-th-unbox:base
+    , vector-th-unbox:template-haskell
+    , wherefrom-compat:base
+    , with-utf8:base
+    , witherable:containers
