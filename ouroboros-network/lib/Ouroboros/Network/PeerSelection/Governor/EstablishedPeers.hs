@@ -261,37 +261,14 @@ belowTargetOther actions@PeerSelectionActions {
                  }
                  st@PeerSelectionState {
                    knownPeers,
-                   establishedPeers,
                    inProgressPromoteCold,
                    targets = PeerSelectionTargets {
                                targetNumberOfEstablishedPeers
                              }
                  }
-    -- Are we below the target for number of established peers?
-  | numEstablishedPeers + numConnectInProgress < targetNumberOfEstablishedPeers
-
-    -- Are there any cold peers we could possibly pick to connect to?
-    -- We can subtract the established ones because by definition they are
-    -- not cold and our invariant is that they are always in the connect set.
-    -- We can also subtract the in progress ones since they are also already
-    -- in the connect set and we cannot pick them again.
-  , numAvailableToConnect - numEstablishedPeers - numConnectInProgress > 0
+  | numPeersToPromote > 0
+  , Set.size availableToPromote > 0
   = Guarded Nothing $ do
-      -- The availableToPromote here is non-empty due to the second guard.
-      -- The known peers map restricted to the connect set is the same size as
-      -- the connect set (because it is a subset). The establishedPeers is a
-      -- subset of the connect set and we also know that there is no overlap
-      -- between inProgressPromoteCold and establishedPeers. QED.
-      --
-      -- The numPeersToPromote is positive based on the first guard.
-      --
-      let availableToPromote :: Set peeraddr
-          availableToPromote = availableToConnect
-                                 Set.\\ EstablishedPeers.toSet establishedPeers
-                                 Set.\\ inProgressPromoteCold
-          numPeersToPromote  = targetNumberOfEstablishedPeers
-                             - numEstablishedPeers
-                             - numConnectInProgress
       selectedToPromote <- pickPeers memberExtraPeers st
                              policyPickColdPeersToPromote
                              availableToPromote
@@ -311,17 +288,30 @@ belowTargetOther actions@PeerSelectionActions {
 
     -- If we could connect except that there are no peers currently available
     -- then we return the next wakeup time (if any)
-  | numEstablishedPeers + numConnectInProgress < targetNumberOfEstablishedPeers
-  = GuardedSkip (KnownPeers.minConnectTime knownPeers (`Set.notMember` bigLedgerPeersSet))
+  | numPeersToPromote > 0
+  = GuardedSkip (KnownPeers.minConnectTime knownPeers (`Set.notMember` rootSet))
 
   | otherwise
   = GuardedSkip Nothing
   where
+    -- we compute the available set because there isn't a direct
+    -- way with simple arithmetic to distinguish local and established
+    -- local root peers which would be double counted.
+    availableToPromote = availableToConnect
+                           Set.\\ establishedPeers
+                           Set.\\ inProgressPromoteCold
+                           Set.\\ localRootSet
+    numPeersToPromote  =
+        targetNumberOfEstablishedPeers
+      - numEstablishedPeers
+      - numConnectInProgress
+    rootSet = Set.union bigLedgerPeersSet localRootSet
     PeerSelectionView {
         viewKnownBigLedgerPeers     = (bigLedgerPeersSet, _),
 
-        viewAvailableToConnectPeers = (availableToConnect, numAvailableToConnect),
-        viewEstablishedPeers        = (_, numEstablishedPeers),
+        viewAvailableToConnectPeers = (availableToConnect, _),
+        viewKnownLocalRootPeers     = (localRootSet, _),
+        viewEstablishedPeers        = (establishedPeers, numEstablishedPeers),
         viewColdPeersPromotions     = (_, numConnectInProgress)
       }
       =
