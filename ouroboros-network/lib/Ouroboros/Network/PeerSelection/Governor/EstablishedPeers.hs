@@ -377,8 +377,7 @@ belowTargetBigLedgerPeers enableAction
                             extraState
                           }
     -- Are we below the target for number of established peers?
-  | numEstablishedPeers + numConnectInProgress
-      < targetNumberOfEstablishedBigLedgerPeers
+  | numPeersToPromote > 0
 
     -- Are there any cold peers we could possibly pick to connect to?
     -- We can subtract the established ones because by definition they are
@@ -401,9 +400,6 @@ belowTargetBigLedgerPeers enableAction
           availableToPromote = availableToConnect
                                  Set.\\ EstablishedPeers.toSet establishedPeers
                                  Set.\\ inProgressPromoteCold
-          numPeersToPromote  = targetNumberOfEstablishedBigLedgerPeers
-                             - numEstablishedPeers
-                             - numConnectInProgress
       selectedToPromote <- pickPeers memberExtraPeers st
                              policyPickColdPeersToPromote
                              availableToPromote
@@ -423,13 +419,17 @@ belowTargetBigLedgerPeers enableAction
 
     -- If we could connect except that there are no peers currently available
     -- then we return the next wakeup time (if any)
-  | numEstablishedPeers + numConnectInProgress
-      < targetNumberOfEstablishedBigLedgerPeers
+  | numPeersToPromote > 0
   = GuardedSkip (KnownPeers.minConnectTime knownPeers  (`Set.member` bigLedgerPeersSet))
 
   | otherwise
   = GuardedSkip Nothing
   where
+    numPeersToPromote =
+        targetNumberOfEstablishedBigLedgerPeers
+      - numEstablishedPeers
+      - numConnectInProgress
+
     PeerSelectionView {
         viewKnownBigLedgerPeers              = (bigLedgerPeersSet, _),
         viewAvailableToConnectBigLedgerPeers = (availableToConnect, numAvailableToConnect),
