@@ -28,6 +28,7 @@ module Ouroboros.Network.Server
   , InboundGovernor.RemoteTransition
   , InboundGovernor.RemoteTransitionTrace
   , isECONNABORTED
+  , server_CONNABORTED_DELAY
   ) where
 
 import Control.Applicative (Alternative)
