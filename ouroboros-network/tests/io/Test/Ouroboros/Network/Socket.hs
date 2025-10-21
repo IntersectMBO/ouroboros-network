@@ -185,7 +185,8 @@ prop_socket_demo :: TestBlockChainAndUpdates -> Property
 prop_socket_demo (TestBlockChainAndUpdates chain updates) =
     ioProperty $ demo chain updates
 
-
+-- | __Exceptions:__
+-- May throw 'IOError' when compiling to @wasm@.
 demo :: forall block .
         ( Chain.HasHeader block
         , Serialise (Chain.HeaderHash block)

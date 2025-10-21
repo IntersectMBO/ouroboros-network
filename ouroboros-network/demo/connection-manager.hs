@@ -647,7 +647,8 @@ optionParser =
             <> showDefault
             )
 
-
+-- | __Exceptions:__
+-- May throw 'IOError' when compiling to @wasm@.
 run :: (Addr, Port)
     -> (Addr, Port)
     -> DiffTime -- ^ protocol idle timeout

@@ -346,6 +346,8 @@ type SocketSnocket = Snocket IO Socket SockAddr
 -- | Create a 'Snocket' for the given 'Socket.Family'. In the 'bind' method set
 -- 'Socket.ReuseAddr` and 'Socket.ReusePort'.
 --
+-- __Exceptions:__
+-- May throw 'IOError' when compiling to @wasm@.
 socketSnocket
   :: IOManager
   -- ^ 'IOManager' interface.  We use it when we create a new socket and when we
@@ -452,6 +454,8 @@ type LocalSnocket = Snocket IO LocalSocket LocalAddress
 -- around this, the address passed to 'open' via 'LocalFamily' will be
 -- referenced by 'LocalSocket'.
 --
+-- __Exceptions:__
+-- May throw 'IOError' when compiling to @wasm@.
 localSnocket :: IOManager -> LocalSnocket
 #if defined(mingw32_HOST_OS)
 localSnocket ioManager = Snocket {
