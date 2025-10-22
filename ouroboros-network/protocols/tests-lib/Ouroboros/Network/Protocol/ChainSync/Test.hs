@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
@@ -31,9 +32,17 @@ import Network.TypedProtocol.Proofs (connect, connectPipelined)
 import Ouroboros.Network.Channel
 import Ouroboros.Network.Driver
 
-import Ouroboros.Network.Block (BlockNo, Serialised (..), StandardHash,
-           Tip (..), decodeTip, encodeTip, pattern BlockPoint,
-           pattern GenesisPoint, unwrapCBORinCBOR, wrapCBORinCBOR)
+import Ouroboros.Network.Block (BlockNo, Serialised (..),
+           Tip (..), decodeTip, encodeTip,
+#if __GLASGOW_HASKELL__ < 914
+           StandardHash ,
+           pattern BlockPoint,
+           pattern GenesisPoint,
+#else
+           data BlockPoint,
+           data GenesisPoint,
+#endif
+           unwrapCBORinCBOR, wrapCBORinCBOR)
 import Ouroboros.Network.Mock.Chain (Chain, Point)
 import Ouroboros.Network.Mock.Chain qualified as Chain
 import Ouroboros.Network.Mock.ChainGenerators ()
@@ -443,8 +452,14 @@ instance Arbitrary (Serialised BlockHeader) where
       serialiseBlock :: BlockHeader -> Serialised BlockHeader
       serialiseBlock = Serialised . S.serialise
 
-instance ( StandardHash header
-         , Eq header
+instance (
+#if __GLASGOW_HASKELL__ < 914
+  -- These constraints are REQUIRED for ghc < 9.14 but REDUNDANT for ghc >= 9.14
+  -- See https://gitlab.haskell.org/ghc/ghc/-/issues/26381#note_637863
+           StandardHash header
+         , 
+#endif
+           Eq header
          , Eq point
          , Eq tip
          ) => Eq (AnyMessage (ChainSync header point tip)) where
