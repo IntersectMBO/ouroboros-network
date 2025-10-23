@@ -17,10 +17,9 @@ module Ouroboros.Network.Server.Simple
 import Control.Applicative (Alternative)
 import Control.Concurrent.JobPool qualified as JobPool
 import Control.Monad.Class.MonadAsync
-import Control.Monad.Class.MonadFork (MonadFork)
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
-import Control.Monad.Class.MonadTimer.SI (MonadDelay, MonadTimer)
+import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer, traceWith)
 import Data.ByteString.Lazy qualified as BL
 import Data.Functor (void)
@@ -32,7 +31,7 @@ import Network.Mux qualified as Mx
 import Ouroboros.Network.ConnectionId
 import Ouroboros.Network.Mux
 import Ouroboros.Network.Protocol.Handshake
-import Ouroboros.Network.Server (isECONNABORTED)
+import Ouroboros.Network.Server (isECONNABORTED, server_CONNABORTED_DELAY)
 import Ouroboros.Network.Snocket (Snocket)
 import Ouroboros.Network.Snocket qualified as Snocket
 import Ouroboros.Network.Socket
@@ -111,7 +110,8 @@ with sn tracer muxTracers makeBearer configureSock addr handshakeArgs versions k
         acceptOne (Snocket.AcceptFailure e)
           | Just ioErr <- fromException e
           , isECONNABORTED ioErr
-          = traceWith tracer (AcceptException e)
+          = threadDelay server_CONNABORTED_DELAY
+
         acceptOne (Snocket.AcceptFailure e)
           = do traceWith tracer (AcceptException e)
                throwIO e
