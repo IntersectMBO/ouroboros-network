@@ -1179,6 +1179,8 @@ peerSelectionStateToView
         inProgressDemoteHot
       }
     =
+    -- TODO: investigate whether the demotion sets can include the async demotions
+    -- as well
     PeerSelectionView {
       viewRootPeers                          = size rootPeersSet,
 

@@ -140,9 +140,7 @@ connections PeerSelectionActions{
                                 (EstablishedPeers.toMap establishedPeers)
       let demotions = asynchronousDemotions monitorStatus
       check (not (Map.null demotions))
-      let (demotedToWarm, demotedToCoolingOrCold) = Map.partition ((==PeerWarm) . fst) demotions
-          (demotedToCold, demotedToCooling) = Map.partition ((==PeerCold) . fst) demotedToCoolingOrCold
-          -- fuzz reconnect delays
+      let -- fuzz reconnect delays
           (aFuzz, stdGen')  = randomR (0.1, 10 :: Double) stdGen
           (rFuzz, stdGen'') = randomR (0.1, 4  :: Double) stdGen'
           demotions' = (\a@(peerState, repromoteDelay) -> case peerState of
@@ -157,6 +155,9 @@ connections PeerSelectionActions{
                            , (\x -> (x + realToFrac rFuzz) `max` 0) <$> repromoteDelay
                            )
                        ) <$> demotions
+          (demotedToWarm, demotedToCoolingOrCold) = Map.partition ((==PeerWarm) . fst) demotions'
+          (demotedToCold, demotedToCooling) = Map.partition ((==PeerCold) . fst) demotedToCoolingOrCold
+
       return $ \now ->
         let -- Remove all asynchronous demotions from 'activePeers'
             activePeers'       = activePeers Set.\\ Map.keysSet demotions'

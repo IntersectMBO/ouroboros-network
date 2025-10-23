@@ -529,10 +529,7 @@ mockPeerSelectionActions' tracer
                        Cardano.PublicRootPeers.fromPublicRootPeers publicConfigPeers
                      | otherwise            ->
                        PublicRootPeers.fromLedgerPeers ledgerPeers
-                   BigLedgerPeers
-                     | Set.null ledgerPeers ->
-                       Cardano.PublicRootPeers.fromPublicRootPeers publicConfigPeers
-                     | otherwise            ->
+                   BigLedgerPeers ->
                        PublicRootPeers.fromBigLedgerPeers bigLedgerPeers
 
       traceWith tracer (TraceEnvRootsResult (Set.toList (PublicRootPeers.toSet Cardano.ExtraPeers.toSet result)))

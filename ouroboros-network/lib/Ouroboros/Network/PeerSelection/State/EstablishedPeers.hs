@@ -132,10 +132,7 @@ readyPeers :: Ord peeraddr
            => EstablishedPeers peeraddr peerconn
            -> Set peeraddr
 readyPeers EstablishedPeers { allPeers, nextActivateTimes } =
-    PSQ.fold'
-      (\peeraddr _ _ -> Set.delete peeraddr)
-      (Map.keysSet allPeers)
-      nextActivateTimes
+  Map.keysSet allPeers `Set.difference` Set.fromList (PSQ.keys nextActivateTimes)
 
 
 -- | The number of established peers. The size of 'allPeers'
