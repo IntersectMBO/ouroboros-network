@@ -1,4 +1,5 @@
 {-# LANGUAGE BlockArguments        #-}
+{-# LANGUAGE DerivingVia           #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE LambdaCase            #-}
@@ -1045,11 +1046,11 @@ diffusionSimulationM
         dnsMapVar <- fromLazyTVar <$> playTimedScript nullTracer dnsMapScript
         withAsyncAll
           (zipWith
-            (\(args, commands) i -> do
-              labelThisThread ("ctrl-" ++ ppNtNAddr (naAddr args))
-              runCommand ntnSnocket ntcSnocket dnsMapVar simArgs args connStateIdSupply i Nothing commands)
+            (\(args, commands) nodeId -> do
+              labelThisThread ("ctrl-" ++ show nodeId)
+              runCommand ntnSnocket ntcSnocket dnsMapVar simArgs args connStateIdSupply nodeId Nothing commands)
             nodeArgs
-            [1..])
+            [NodeId 1..])
           $ \nodes -> do
             (_, x) <- waitAny nodes
             return x
@@ -1069,7 +1070,7 @@ diffusionSimulationM
       -> SimArgs -- ^ Simulation arguments needed in order to run a simulation
       -> NodeArgs -- ^ Simulation arguments needed in order to run a single node
       -> CM.ConnStateIdSupply m
-      -> Int
+      -> NodeId
       -> Maybe ( Async m Void
                , StrictTVar m [( HotValency
                                , WarmValency
@@ -1080,8 +1081,8 @@ diffusionSimulationM
       -> [Command] -- ^ List of commands/actions to perform for a single node
       -> m Void
     runCommand ntnSocket ntcSocket dnsMapVar sArgs nArgs@NodeArgs { naAddr }
-               connStateIdSupply i hostAndLRP cmds = do
-      traceWith (diffSimTracer naAddr) . TrSay $ "node-" <> show i
+               connStateIdSupply nodeId hostAndLRP cmds = do
+      traceWith (diffSimTracer naAddr) . TrSay $ show nodeId ++ " @ " ++ ppNtNAddr naAddr
       runCommand' hostAndLRP cmds
       where
         runCommand' Nothing [] = do
@@ -1100,7 +1101,7 @@ diffusionSimulationM
           threadDelay delay
           traceWith (diffSimTracer naAddr) TrJoiningNetwork
           lrpVar <- newTVarIO $ naLocalRootPeers nArgs
-          withAsync (runNode sArgs nArgs ntnSocket ntcSocket connStateIdSupply lrpVar dnsMapVar) $ \nodeAsync ->
+          withAsync (runNode sArgs nArgs ntnSocket ntcSocket connStateIdSupply lrpVar dnsMapVar nodeId) $ \nodeAsync ->
             runCommand' (Just (nodeAsync, lrpVar)) cs
         runCommand' _ (JoinNetwork _:_) =
           error "runCommand: Impossible happened"
@@ -1134,6 +1135,7 @@ diffusionSimulationM
                              , Map RelayAccessPoint (LocalRootConfig PeerTrustable)
                              )]
             -> StrictTVar m MockDNSMap
+            -> NodeId
             -> m Void
     runNode SimArgs
             { saSlot                  = bgaSlotDuration
@@ -1160,7 +1162,8 @@ diffusionSimulationM
             ntcSnocket
             connStateIdSupply
             lrpVar
-            dMapVar = do
+            dMapVar
+            nodeId = do
       chainSyncExitVar <- newTVarIO chainSyncExitOnBlockNo
       ledgerPeersVar <- initScript' ledgerPeers
       onlyOutboundConnectionsStateVar <- newTVarIO UntrustedState
@@ -1306,7 +1309,7 @@ diffusionSimulationM
               , Node.aTxs                  = txs
               }
 
-          tracers = mkTracers addr
+          tracers = mkTracers addr nodeId
 
           requestPublicRootPeers' =
             requestPublicRootPeersImpl (Diffusion.dtTracePublicRootPeersTracer tracers)
@@ -1426,6 +1429,7 @@ diffusionSimulationM
 
     mkTracers
       :: NtNAddr
+      -> NodeId
       -> Diffusion.Tracers NtNAddr NtNVersion NtNVersionData
                            NtCAddr NtCVersion NtCVersionData
                            Cardano.ExtraState
@@ -1434,12 +1438,12 @@ diffusionSimulationM
                            (Cardano.ExtraPeerSelectionSetsWithSizes NtNAddr)
                            Cardano.ExtraTrace
                            m
-    mkTracers ntnAddr =
+    mkTracers ntnAddr nodeId =
       let sayTracer' :: Show event => Tracer m event
           sayTracer' = Tracer $ \event ->
                        -- time of events is added in `testWithIOSim` and
                        -- `testWithIOSimPOR`
-                       say $ ppNtNAddr ntnAddr ++ " @ " ++ show event
+                       say $ show nodeId ++ " @ " ++ show event
 
           nodeTracer' = nodeTracer
                      <> sayTracer'
@@ -1547,6 +1551,13 @@ timeLimitsPingPong = ProtocolTimeLimits $ \case
 --
 -- Utils
 --
+
+newtype NodeId = NodeId Int
+  deriving Enum via Int
+  deriving (Ord, Eq)
+
+instance Show NodeId where
+    show (NodeId n) = "node-" ++ show n
 
 withAsyncAll :: MonadAsync m => [m a] -> ([Async m a] -> m b) -> m b
 withAsyncAll xs0 action = go [] xs0
