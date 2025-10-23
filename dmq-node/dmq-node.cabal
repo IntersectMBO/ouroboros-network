@@ -118,6 +118,7 @@ library
     ouroboros-consensus,
     ouroboros-consensus-cardano,
     ouroboros-consensus-diffusion,
+    cardano-diffusion,
     ouroboros-network:{ouroboros-network, api, framework, orphan-instances, protocols} ^>=0.23,
     random ^>=1.2,
     singletons,
