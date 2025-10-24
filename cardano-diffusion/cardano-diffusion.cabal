@@ -429,11 +429,14 @@ test-suite protocols-bench
     ghc-options: -fproc-alignment=64
 
 library cardano-diffusion-tests-lib
+  mixins:
+    QuickCheck hiding (Test.QuickCheck.Monoids)
+
   import: ghc-options-tests
   visibility: public
   hs-source-dirs: tests/lib
   build-depends:
-    QuickCheck >=2.16,
+    QuickCheck,
     aeson,
     base >=4.14 && <4.22,
     bytestring,

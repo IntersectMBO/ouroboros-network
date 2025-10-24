@@ -1,4 +1,6 @@
 {-# LANGUAGE BangPatterns         #-}
+{-# LANGUAGE BlockArguments       #-}
+{-# LANGUAGE CPP                  #-}
 {-# LANGUAGE DeriveFunctor        #-}
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE FlexibleInstances    #-}
@@ -9,21 +11,28 @@
 {-# LANGUAGE RecordWildCards      #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE StandaloneDeriving   #-}
+{-# LANGUAGE TupleSections        #-}
 {-# LANGUAGE TypeApplications     #-}
 {-# LANGUAGE TypeOperators        #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
+#ifndef STANDARDCRYPTO_TESTS
+{-# OPTIONS_GHC -Wno-unused-top-binds #-}
+#endif
 
-module DMQ.Protocol.SigSubmission.Test where
+module DMQ.Protocol.SigSubmission.Test (tests) where
 
 import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
 import Codec.CBOR.Write qualified as CBOR
+import Control.Monad (zipWithM, (>=>))
 import Control.Monad.ST (runST)
 import Data.Bifunctor (second)
+import Data.ByteString (ByteString)
 import Data.ByteString.Lazy qualified as BL
 import Data.List.NonEmpty qualified as NonEmpty
+import Data.Typeable
 import Data.Word (Word32)
 import GHC.TypeNats (KnownNat)
 import System.IO.Unsafe (unsafePerformIO)
@@ -31,12 +40,15 @@ import System.IO.Unsafe (unsafePerformIO)
 import Network.TypedProtocol.Codec
 import Network.TypedProtocol.Codec.Properties hiding (prop_codec)
 
+import Cardano.Crypto.DSIGN.Class (DSIGNAlgorithm, SignKeyDSIGN,
+           deriveVerKeyDSIGN, encodeVerKeyDSIGN)
 import Cardano.Crypto.DSIGN.Class qualified as DSIGN
-import Cardano.Crypto.KES.Class (KESAlgorithm (..), VerKeyKES)
+import Cardano.Crypto.KES.Class (KESAlgorithm (..), VerKeyKES, encodeSigKES)
 import Cardano.Crypto.KES.Class qualified as KES
 import Cardano.Crypto.PinnedSizedBytes (PinnedSizedBytes, psbToByteString)
 import Cardano.Crypto.Seed (mkSeedFromBytes)
 import Cardano.KESAgent.KES.Crypto (Crypto (..))
+import Cardano.KESAgent.KES.Evolution qualified as KES
 import Cardano.KESAgent.KES.OCert (OCert (..))
 import Cardano.KESAgent.KES.OCert qualified as KES
 import Cardano.KESAgent.Protocols.StandardCrypto (MockCrypto, StandardCrypto)
@@ -48,7 +60,7 @@ import DMQ.Protocol.SigSubmission.Type
 import Ouroboros.Network.Protocol.TxSubmission2.Test (labelMsg)
 
 import Test.Ouroboros.Network.Protocol.Utils (prop_codec_cborM,
-           prop_codec_valid_cbor_encoding, splits2, splits3)
+           prop_codec_valid_cbor_encoding, splits2)
 
 import Test.QuickCheck.Instances.ByteString ()
 import Test.Tasty
@@ -59,37 +71,55 @@ tests :: TestTree
 tests =
   testGroup "DMQ.Protocol"
     [ testGroup "SigSubmission"
-      [ testGroup "mockcrypto"
-        [ testProperty "OCert"               prop_codec_ocert_mockcrypto
-        , testProperty "Sig"                 prop_codec_sig_mockcrypto
-        , testProperty "codec"               prop_codec_mockcrypto
-        , testProperty "codec id"            prop_codec_id_mockcrypto
-        , testProperty "codec 2-splits"    $ withMaxSize 20
-                                           $ withMaxSuccess 20
-                                             prop_codec_splits2_mockcrypto
-        , testProperty "codec 3-splits"    $ withMaxSize 10
-                                           $ withMaxSuccess 10
-                                             prop_codec_splits3_mockcrypto
-        , testProperty "codec cbor"          prop_codec_cbor_mockcrypto
-        , testProperty "codec valid cbor"    prop_codec_valid_cbor_mockcrypto
+      [ testGroup "Codec"
+        [ testGroup "MockCrypto"
+          [ testProperty "OCert"               prop_codec_ocert_mockcrypto
+          , testProperty "Sig"                 prop_codec_sig_mockcrypto
+          , testProperty "codec"               prop_codec_mockcrypto
+          , testProperty "codec id"            prop_codec_id_mockcrypto
+          , testProperty "codec 2-splits"    $ withMaxSize 20
+                                             $ withMaxSuccess 20
+                                               prop_codec_splits2_mockcrypto
+          -- MockCrypto produces too large messages for this test to run:
+          -- , testProperty "codec 3-splits"    $ withMaxSize 10
+          --                                    $ withMaxSuccess 10
+          --                                      prop_codec_splits3_mockcrypto
+          , testProperty "codec cbor"          prop_codec_cbor_mockcrypto
+          , testProperty "codec valid cbor"    prop_codec_valid_cbor_mockcrypto
+          , testProperty "OCert"               prop_codec_cbor_mockcrypto
+          ]
+#ifdef STANDARDCRYPTO_TESTS
+        , testGroup "StandardCrypto"
+          [ testProperty "OCert"               prop_codec_ocert_standardcrypto
+          , testProperty "Sig"                 prop_codec_sig_standardcrypto
+          , testProperty "codec"               prop_codec_standardcrypto
+          , testProperty "codec id"            prop_codec_id_standardcrypto
+          , testProperty "codec 2-splits"    $ withMaxSize 20
+                                             $ withMaxSuccess 20
+                                               prop_codec_splits2_standardcrypto
+          -- StandardCrypto produces too large messages for this test to run:
+          {-
+          , testProperty "codec 3-splits"    $ withMaxSize 10
+                                             $ withMaxSuccess 10
+                                               prop_codec_splits3_standardcrypto
+          -}
+          , testProperty "codec cbor"          prop_codec_cbor_standardcrypto
+          , testProperty "codec valid cbor"    prop_codec_valid_cbor_standardcrypto
+          ]
+#endif
         ]
-      , testGroup "standardcrypto"
-        [ testProperty "OCert"               prop_codec_ocert_standardcrypto
-        , testProperty "Sig"                 prop_codec_sig_standardcrypto
-        , testProperty "codec"               prop_codec_standardcrypto
-        , testProperty "codec id"            prop_codec_id_standardcrypto
-        , testProperty "codec 2-splits"    $ withMaxSize 20
-                                           $ withMaxSuccess 20
-                                             prop_codec_splits2_standardcrypto
-        -- StandardCrypt produces too large messages for this test to run:
-        {-
-        , testProperty "codec 3-splits"    $ withMaxSize 10
-                                           $ withMaxSuccess 10
-                                             prop_codec_splits3_standardcrypto
-        -}
-        , testProperty "codec cbor"          prop_codec_cbor_standardcrypto
-        , testProperty "codec valid cbor"    prop_codec_valid_cbor_standardcrypto
+      ]
+    , testGroup "Crypto"
+      [ testGroup "MockCrypto"
+        [ testProperty "KES sign verify"     prop_sign_verify_mockcrypto
+        , testProperty "validateSig"         prop_validateSig_mockcrypto
         ]
+#ifdef STANDARDCRYPTO_TESTS
+      , testGroup "StandardCrypto"
+        [ testProperty "KES sign verify"     prop_sign_verify_standardcrypto
+        , testProperty "validateSig"         prop_validateSig_standardcrypto
+        ]
+#endif
       ]
     ]
 
@@ -111,31 +141,65 @@ instance Arbitrary POSIXTime where
   -- shrink via Word32 (e.g. in seconds)
   shrink posix = realToFrac <$> shrink (floor @_ @Word32 posix)
 
-instance Arbitrary SigKESSignature where
-  arbitrary = SigKESSignature <$> arbitrary
-  shrink = map SigKESSignature . shrink . getSigKESSignature
 
-mkVerKeyKES
+-- | Make a KES key pair.
+--
+mkKeysKES
   :: forall kesCrypto.
      KESAlgorithm kesCrypto
   => PinnedSizedBytes (SeedSizeKES kesCrypto)
-  -> IO (VerKeyKES kesCrypto)
-mkVerKeyKES seed = do
-    withMLockedSeedFromPSB seed $ \mseed ->
-      KES.genKeyKES mseed >>= deriveVerKeyKES
+  -> IO (SignKeyKES kesCrypto, VerKeyKES kesCrypto)
+mkKeysKES seed =
+    withMLockedSeedFromPSB seed $ \mseed -> do
+      snKESKey <- KES.genKeyKES mseed
+      (snKESKey,) <$> deriveVerKeyKES snKESKey
 
 
+-- | The idea of this data type is to go around limitation of QuickCheck `Gen`
+-- type, which does not allow IO actions.  So instead we generate some random
+-- context (e.g. key seed) and then the data is created when the property
+-- runs.
+--
+-- Keeping the `key` seprate allows to have access to it when shrinking, see
+-- `shrinkWithConstr`, this is important when the signed data is shrinked and
+-- we need to update a KES signature as well.
+--
+-- However the limitation is shrinking: it requires `unsafePerformIO` anyway,
+-- see `shrinkWithConstr`.
+--
+-- TODO: to avoid complexity can we use `UnsoundPureKESAlgorithm` instead of
+-- `KESAlgorithm`?
+--
 data WithConstr ctx key a =
-    WithConstr { constr :: key -> a,
+    WithConstr { constr :: key -> IO a,
                  mkKey  :: ctx -> IO key,
                  ctx    :: ctx
                }
 deriving instance Functor (WithConstr ctx key)
 
+withConstrBind :: WithConstr ctx key a -> (a -> IO b) -> WithConstr ctx key b
+withConstrBind WithConstr { constr, mkKey, ctx } fn =
+    WithConstr { constr = constr >=> fn,
+                 mkKey,
+                 ctx
+               }
+
+runWithConstr :: WithConstr ctx key a -> IO a
+runWithConstr WithConstr { constr, mkKey, ctx } = mkKey ctx >>= constr
+
+constrWithKeys
+  :: (keys -> IO a)
+  -> WithConstr ctx keys keys
+  -> WithConstr ctx keys a
+constrWithKeys f WithConstr { constr, mkKey, ctx } =
+    WithConstr { constr = constr >=> f,
+                 mkKey,
+                 ctx
+               }
 
 constWithConstr :: a -> WithConstr [ctx] [key] a
 constWithConstr a =
-    WithConstr { constr = const a,
+    WithConstr { constr = const (pure a),
                  mkKey  = \_ -> pure [],
                  ctx = []
                }
@@ -146,16 +210,16 @@ listWithConstr :: forall ctx key a b.
                ->  WithConstr [ctx] [key] b
 listWithConstr constr' as =
     WithConstr {
-      constr = \keys -> constr' (zipWith ($) constrs keys),
-      mkKey  = \ctxs -> sequence (zipWith ($) mkKeys ctxs),
+      constr = \keys -> constr' <$> zipWithM ($) constrs keys,
+      mkKey  = \ctxs -> zipWithM ($) mkKeys ctxs,
       ctx    = ctx <$> as
 
     }
   where
-    constrs :: [(key -> a)]
+    constrs :: [key -> IO a]
     constrs = constr <$> as
 
-    mkKeys :: [(ctx -> IO key)]
+    mkKeys :: [ctx -> IO key]
     mkKeys = mkKey <$> as
 
 
@@ -168,7 +232,7 @@ shrinkWithConstrCtx constr@WithConstr { ctx } =
 
 
 sequenceWithConstr
-  :: (a -> key -> a)
+  :: (a -> key -> IO a)
   ->     WithConstr ctx key [a]
   -> IO [WithConstr ctx key  a]
 sequenceWithConstr update constr@WithConstr { mkKey, ctx } = do
@@ -180,33 +244,30 @@ sequenceWithConstr update constr@WithConstr { mkKey, ctx } = do
 
 -- unsafePerformIO :(
 shrinkWithConstr :: Arbitrary ctx
-                 => (a -> key -> a)
+                 => (a -> key -> IO a)
                  -> (a -> [a])
-                 -> WithConstr ctx key a
+                 ->  WithConstr ctx key a
                  -> [WithConstr ctx key a]
 shrinkWithConstr update shrinker constr =
        unsafePerformIO (sequenceWithConstr update $ shrinker <$> constr)
     ++ shrinkWithConstrCtx constr
 
 
-runWithConstr :: WithConstr ctx key a -> IO a
-runWithConstr WithConstr { constr, mkKey, ctx } = constr <$> mkKey ctx
+type KESCTX            size          = PinnedSizedBytes size
+type WithConstrKES     size crypto a = WithConstr (KESCTX size)  (SignKeyKES crypto, VerKeyKES crypto)  a
+type WithConstrKESList size crypto a = WithConstr [KESCTX size] [(SignKeyKES crypto, VerKeyKES crypto)] a
 
 
-type VerKeyKESCTX            size          = PinnedSizedBytes size
-type WithConstrVerKeyKES     size crypto a = WithConstr (VerKeyKESCTX size) (VerKeyKES crypto) a
-type WithConstrVerKeyKESList size crypto a = WithConstr [VerKeyKESCTX size] [VerKeyKES crypto] a
-
-mkVerKeyKESConstr
+mkKeysKESConstr
   :: forall kesCrypto.
      KESAlgorithm kesCrypto
-  => VerKeyKESCTX (SeedSizeKES kesCrypto)
-  -> WithConstrVerKeyKES (SeedSizeKES kesCrypto)
-                         kesCrypto
-                         (VerKeyKES kesCrypto)
-mkVerKeyKESConstr ctx =
-  WithConstr { constr = id,
-               mkKey  = mkVerKeyKES,
+  => KESCTX (SeedSizeKES kesCrypto)
+  -> WithConstrKES (SeedSizeKES kesCrypto)
+                    kesCrypto
+                   (SignKeyKES kesCrypto, VerKeyKES kesCrypto)
+mkKeysKESConstr ctx =
+  WithConstr { constr = pure,
+               mkKey  = mkKeysKES,
                ctx
              }
 
@@ -214,71 +275,115 @@ instance ( size ~ SeedSizeKES kesCrypto
          , KnownNat size
          , KESAlgorithm kesCrypto
          )
-      => Arbitrary (WithConstrVerKeyKES size kesCrypto (VerKeyKES kesCrypto)) where
-  arbitrary = mkVerKeyKESConstr <$> arbitrary
+      => Arbitrary (WithConstrKES size kesCrypto (SignKeyKES kesCrypto, VerKeyKES kesCrypto)) where
+  arbitrary = mkKeysKESConstr <$> arbitrary
   shrink = shrinkWithConstrCtx
+
+
+-- | An auxiliary data type to hold KES keys along with an OCert, payload and
+-- its KES signature.
+data CryptoCtx crypto = CryptoCtx {
+    snKESKey :: SignKeyKES (KES crypto),
+    -- ^ signing KES key
+    vnKESKey :: VerKeyKES (KES crypto),
+    -- ^ verification KES key
+    coldKey  :: SignKeyDSIGN (DSIGN crypto),
+    -- ^ signing cold key
+    ocert    :: OCert crypto
+    -- ^ ocert
+  }
 
 
 instance ( Crypto crypto
          , DSIGN.Signable (DSIGN crypto) (KES.OCertSignable crypto)
          , DSIGN.ContextDSIGN (DSIGN crypto) ~ ()
+         , ContextKES (KES crypto) ~ ()
          , kesCrypto ~ KES crypto
+         , KESAlgorithm kesCrypto
+         , Signable kesCrypto ByteString
          , size ~ SeedSizeKES kesCrypto
          , KnownNat size
          )
-      => Arbitrary (WithConstrVerKeyKES size kesCrypto (OCert crypto)) where
+      => Arbitrary (WithConstrKES size kesCrypto (CryptoCtx crypto)) where
   arbitrary = do
-    verKeyKES <- arbitrary
+    withKeys <- arbitrary
     n <- arbitrary
     seedColdKey :: PinnedSizedBytes (DSIGN.SeedSizeDSIGN (DSIGN crypto))
                 <- arbitrary
-    let !skCold = DSIGN.genKeyDSIGN (mkSeedFromBytes . psbToByteString $ seedColdKey)
+    let !coldKey = DSIGN.genKeyDSIGN (mkSeedFromBytes . psbToByteString $ seedColdKey)
     period <- KES.KESPeriod <$> arbitrary
-    return $ fmap (\vkKES -> KES.makeOCert vkKES n period skCold) verKeyKES
-  shrink = shrinkWithConstrCtx
-
-
-instance ( kesCrypto ~ KES crypto
-         , size ~ SeedSizeKES kesCrypto
-         , KnownNat size
-         , Arbitrary (WithConstrVerKeyKES size kesCrypto (OCert crypto))
-         )
-      => Arbitrary (WithConstrVerKeyKES size kesCrypto (SigOpCertificate crypto)) where
-  arbitrary = fmap SigOpCertificate <$> arbitrary
+    return $ constrWithKeys
+             (\(snKESKey, vnKESKey) ->
+               return $ CryptoCtx {
+                 snKESKey,
+                 vnKESKey,
+                 coldKey,
+                 ocert = KES.makeOCert vnKESKey n period coldKey
+               })
+             withKeys
   shrink = shrinkWithConstrCtx
 
 
 instance ( Crypto crypto
          , kesCrypto ~ KES crypto
+         , ContextKES kesCrypto ~ ()
          , size ~ SeedSizeKES kesCrypto
-         , Arbitrary (WithConstrVerKeyKES size kesCrypto (OCert crypto))
+         , Signable kesCrypto ByteString
+         , dsignCrypto ~ DSIGN crypto
+         , DSIGNAlgorithm dsignCrypto
+         , Arbitrary (WithConstrKES size kesCrypto (CryptoCtx crypto))
          )
-      => Arbitrary (WithConstrVerKeyKES size kesCrypto (SigRawWithSignedBytes crypto)) where
+      => Arbitrary (WithConstrKES size kesCrypto (SigRawWithSignedBytes crypto)) where
   arbitrary = do
     sigRawId <- arbitrary
-    sigRawBody <- arbitrary
     sigRawExpiresAt <- arbitrary
-    opCert <- arbitrary
-    sigRawKESPeriod <- arbitrary
-    sigRawKESSignature <- arbitrary
-    sigRawColdKey <- arbitrary
-    return $ fmap (\cert -> let sigRawOpCertificate = SigOpCertificate cert
-                                sigRaw = SigRaw {
-                                    sigRawId,
-                                    sigRawBody,
-                                    sigRawKESPeriod,
-                                    sigRawOpCertificate,
-                                    sigRawColdKey,
-                                    sigRawExpiresAt,
-                                    sigRawKESSignature = undefined -- to be filled below
-                                }
-                                signedBytes = CBOR.toStrictByteString (encodeSigRaw' sigRaw)
-                            in
-                              SigRawWithSignedBytes {
-                                sigRawSignedBytes = BL.fromStrict signedBytes,
-                                sigRaw = sigRaw { sigRawKESSignature }
-                              }
-                  ) opCert
+    let maxKESOffset :: Word
+        maxKESOffset = totalPeriodsKES (Proxy :: Proxy kesCrypto)
+    -- offset since `ocertKESPeriod`, so that the signature is still valid
+    kesOffset <- arbitrary `suchThat` (< maxKESOffset)
+    payload <- arbitrary
+    crypto <- arbitrary
+    return $ withConstrBind crypto \CryptoCtx {ocert, coldKey, snKESKey} -> do
+      let sigRawOpCertificate :: SigOpCertificate crypto
+          sigRawOpCertificate = SigOpCertificate ocert
+
+          sigRawBody :: SigBody
+          sigRawBody = SigBody payload
+
+          sigRawColdKey :: SigColdKey crypto
+          sigRawColdKey = SigColdKey $ deriveVerKeyDSIGN coldKey
+
+          sigRawKESPeriod :: KESPeriod
+          sigRawKESPeriod = KESPeriod $ unKESPeriod (ocertKESPeriod ocert)
+                                      + kesOffset
+
+          sigRaw = SigRaw {
+              sigRawId,
+              sigRawBody,
+              sigRawKESPeriod,
+              sigRawOpCertificate,
+              sigRawColdKey,
+              sigRawExpiresAt,
+              sigRawKESSignature = undefined -- to be filled below
+          }
+          signedBytes = CBOR.toStrictByteString (encodeSigRaw' sigRaw)
+
+      -- evolve the key to the target period
+      mbSnKESKey <- KES.updateKESTo () sigRawKESPeriod ocert (KES.SignKeyWithPeriodKES snKESKey 0)
+      case mbSnKESKey of
+        Just (KES.SignKeyWithPeriodKES snKESKey' _) -> do
+          -- signed bytes with the snKESKey'
+          sigRawKESSignature
+             <- SigKESSignature
+            <$> KES.signKES () kesOffset signedBytes snKESKey'
+          return SigRawWithSignedBytes {
+              sigRawSignedBytes = BL.fromStrict signedBytes,
+              sigRaw = sigRaw { sigRawKESSignature }
+            }
+        Nothing ->
+          error $ "arbitrary SigRawWithSignedBytes: could not evolve KES key to the target period by KES offset: "
+               ++ show kesOffset
+
   shrink = shrinkWithConstrSigRawWithSignedBytes
 
 
@@ -289,26 +394,38 @@ instance ( Crypto crypto
 --
 shrinkWithConstrSigRawWithSignedBytes
   ::  forall crypto.
-      Crypto crypto
-  =>  WithConstrVerKeyKES (SeedSizeKES (KES crypto)) (KES crypto) (SigRawWithSignedBytes crypto)
-  -> [WithConstrVerKeyKES (SeedSizeKES (KES crypto)) (KES crypto) (SigRawWithSignedBytes crypto)]
+      ( Crypto crypto
+      , ContextKES (KES crypto) ~ ()
+      , Signable (KES crypto) ByteString
+      )
+  =>  WithConstrKES (SeedSizeKES (KES crypto)) (KES crypto) (SigRawWithSignedBytes crypto)
+  -> [WithConstrKES (SeedSizeKES (KES crypto)) (KES crypto) (SigRawWithSignedBytes crypto)]
 shrinkWithConstrSigRawWithSignedBytes = shrinkWithConstr updateFn shrinkSigRawWithSignedBytesFn
   where
     updateFn :: SigRawWithSignedBytes crypto
-             -> VerKeyKES (KES crypto)
-             -> SigRawWithSignedBytes crypto
+             -> (SignKeyKES (KES crypto), VerKeyKES (KES crypto))
+             -> IO (SigRawWithSignedBytes crypto)
     updateFn
       SigRawWithSignedBytes {
-        sigRaw = sigRaw@SigRaw { sigRawOpCertificate = SigOpCertificate ocert },
+        sigRaw = sigRaw@SigRaw { sigRawOpCertificate = SigOpCertificate ocert,
+                                 sigRawKESPeriod
+                               },
         sigRawSignedBytes
       }
-      ocertVkHot
-      =
+      (snKeyKES, ocertVkHot)
+      = do
       let sigRaw' = sigRaw {
               sigRawOpCertificate = SigOpCertificate ocert { ocertVkHot }
             }
-      in SigRawWithSignedBytes {
-        sigRaw = sigRaw',
+      -- update KES key to sigRawKESPeriod
+      Just (KES.SignKeyWithPeriodKES snKeyKES' _)
+        <- KES.updateKESTo () sigRawKESPeriod ocert (KES.SignKeyWithPeriodKES snKeyKES 0)
+      -- sign the message
+      sign <- KES.signKES () (KES.unKESPeriod sigRawKESPeriod - KES.unKESPeriod (ocertKESPeriod ocert))
+                             (BL.toStrict sigRawSignedBytes)
+                             snKeyKES'
+      pure $ SigRawWithSignedBytes {
+        sigRaw = sigRaw' { sigRawKESSignature = SigKESSignature sign },
         sigRawSignedBytes
       }
 
@@ -326,11 +443,18 @@ shrinkSigRawWithSignedBytesFn SigRawWithSignedBytes { sigRaw } =
   | sigRaw' <- shrinkSigRawFn sigRaw
   , let sigRawSignedBytes' = CBOR.toLazyByteString (encodeSigRaw' sigRaw')
   ]
+
+
+-- | Pure shrinking function for `SigRaw`.  It does not update the KES
+-- signature.
+--
 shrinkSigRawFn :: SigRaw crypto -> [SigRaw crypto]
 shrinkSigRawFn sig@SigRaw { sigRawId,
-                             sigRawBody,
-                             sigRawExpiresAt
-                           } =
+                            sigRawBody,
+                            sigRawKESPeriod,
+                            sigRawExpiresAt,
+                            sigRawOpCertificate = SigOpCertificate ocert
+                          } =
   [ sig { sigRawId = sigRawId' }
   | sigRawId' <- shrink sigRawId
   ]
@@ -339,23 +463,15 @@ shrinkSigRawFn sig@SigRaw { sigRawId,
   | sigRawBody' <- shrink sigRawBody
   ]
   ++
+  [ sig { sigRawKESPeriod = sigRawKESPeriod' }
+  | sigRawKESPeriod' <- KESPeriod <$> shrink (unKESPeriod sigRawKESPeriod)
+  , sigRawKESPeriod' >= ocertKESPeriod ocert
+  ]
+  ++
   [ sig { sigRawExpiresAt = sigRawExpiresAt' }
   | sigRawExpiresAt' <- shrink sigRawExpiresAt
   ]
 
-instance Arbitrary SigColdKey where
-  arbitrary = SigColdKey <$> arbitrary
-  shrink = map SigColdKey . shrink . getSigColdKey
-
-
-mkSigRawWithSignedBytes :: SigRaw crypto -> SigRawWithSignedBytes crypto
-mkSigRawWithSignedBytes sigRaw =
-    SigRawWithSignedBytes {
-      sigRaw,
-      sigRawSignedBytes
-    }
-  where
-    sigRawSignedBytes = CBOR.toLazyByteString (encodeSigRaw' sigRaw)
 
 -- NOTE: this function is not exposed in the main library on purpose.  We
 -- should never construct `Sig` by serialising `SigRaw`.
@@ -368,7 +484,7 @@ mkSig sigRawWithSignedBytes@SigRawWithSignedBytes { sigRaw } =
       sigRawWithSignedBytes
     }
   where
-    sigRawBytes = CBOR.toLazyByteString (encodeSigRaw sigRaw)
+    sigRawBytes = CBOR.toLazyByteString (encodeSigRaw  sigRaw)
 
 
 -- encode only signed part
@@ -383,7 +499,7 @@ encodeSigRaw' SigRaw {
   =  CBOR.encodeListLen 4
   <> encodeSigId sigRawId
   <> CBOR.encodeBytes (getSigBody sigRawBody)
-  <> CBOR.encodeWord sigRawKESPeriod
+  <> CBOR.encodeWord (unKESPeriod sigRawKESPeriod)
   <> CBOR.encodeWord32 (floor sigRawExpiresAt)
 
 -- encode together with KES signature, OCert and cold key.
@@ -393,41 +509,60 @@ encodeSigRaw :: Crypto crypto
 encodeSigRaw sigRaw@SigRaw { sigRawKESSignature, sigRawOpCertificate, sigRawColdKey } =
      CBOR.encodeListLen 4
   <> encodeSigRaw' sigRaw
-  <> CBOR.encodeBytes (getSigKESSignature sigRawKESSignature)
+  <> encodeSigKES (getSigKESSignature sigRawKESSignature)
   <> encodeSigOpCertificate sigRawOpCertificate
-  <> CBOR.encodeBytes (getSigColdKey sigRawColdKey)
+  <> encodeVerKeyDSIGN (getSigColdKey sigRawColdKey)
 
-
-shrinkSigFn :: forall crypto. Crypto crypto
+-- note: KES signature is updated by updateSigFn
+shrinkSigFn :: forall crypto.
+               Crypto crypto
             => Sig crypto -> [Sig crypto]
 shrinkSigFn SigWithBytes {sigRawWithSignedBytes = SigRawWithSignedBytes { sigRaw, sigRawSignedBytes } } =
     mkSig . (\sigRaw' -> SigRawWithSignedBytes { sigRaw = sigRaw', sigRawSignedBytes }) <$> shrinkSigRawFn sigRaw
+
+
+updateSigFn :: forall crypto.
+               KESAlgorithm (KES crypto)
+            => ContextKES (KES crypto) ~ ()
+            => Signable (KES crypto) ByteString
+            => Sig crypto
+            -> (SignKeyKES (KES crypto), VerKeyKES (KES crypto))
+            -> IO (Sig crypto)
+updateSigFn
+  sig@Sig { sigOpCertificate = SigOpCertificate opCert,
+            sigBody          = SigBody body
+          }
+  (snKESKey, vnKESKey)
+  = do
+  signature <- KES.signKES () (KES.unKESPeriod (ocertKESPeriod opCert)) body snKESKey
+  return $ sig { sigOpCertificate = SigOpCertificate opCert { ocertVkHot = vnKESKey},
+                 sigKESSignature  = SigKESSignature signature
+               }
+
 
 instance ( Crypto crypto
          , DSIGN.ContextDSIGN (DSIGN crypto) ~ ()
          , DSIGN.Signable (DSIGN crypto) (KES.OCertSignable crypto)
          , kesCrypto ~ KES crypto
+         , ContextKES kesCrypto ~ ()
+         , Signable kesCrypto ByteString
          , size ~ SeedSizeKES kesCrypto
          , KnownNat size
          )
-      => Arbitrary (WithConstrVerKeyKES size kesCrypto (Sig crypto)) where
+      => Arbitrary (WithConstrKES size kesCrypto (Sig crypto)) where
   arbitrary = fmap mkSig <$> arbitrary
   shrink = shrinkWithConstr updateSigFn shrinkSigFn
 
-updateSigFn :: Sig crypto -> VerKeyKES (KES crypto) -> Sig crypto
-updateSigFn
-  sig@Sig {sigOpCertificate = SigOpCertificate opCert}
-  ocertVkHot
-  =
-  sig { sigOpCertificate = SigOpCertificate opCert { ocertVkHot } }
-
 
 instance ( kesCrypto ~ KES crypto
+         , KESAlgorithm kesCrypto
+         , ContextKES kesCrypto ~ ()
+         , Signable kesCrypto ByteString
          , size ~ SeedSizeKES kesCrypto
          , KnownNat size
-         , Arbitrary (WithConstrVerKeyKES size kesCrypto (Sig crypto))
+         , Arbitrary (WithConstrKES size kesCrypto (Sig crypto))
          )
-      => Arbitrary (WithConstrVerKeyKESList size kesCrypto (AnyMessage (SigSubmission crypto))) where
+      => Arbitrary (WithConstrKESList size kesCrypto (AnyMessage (SigSubmission crypto))) where
   arbitrary = oneof
     [ pure . constWithConstr $ AnyMessage MsgInit
     , constWithConstr . AnyMessage  <$>
@@ -451,15 +586,19 @@ instance ( kesCrypto ~ KES crypto
     , constWithConstr . AnyMessage <$> MsgRequestTxs <$> arbitrary
 
     , listWithConstr (AnyMessage . MsgReplyTxs)
-        <$> (arbitrary :: Gen [WithConstrVerKeyKES size kesCrypto (Sig crypto)])
+        <$> (arbitrary :: Gen [WithConstrKES size kesCrypto (Sig crypto)])
 
     , constWithConstr .  AnyMessage <$> pure MsgDone
     ]
   shrink = shrinkWithConstr updateFn shrinkFn
     where
-      updateFn :: AnyMessage (SigSubmission crypto) -> [VerKeyKES kesCrypto] -> AnyMessage (SigSubmission crypto)
-      updateFn (AnyMessage (MsgReplyTxs txs)) vkKeyKESs = AnyMessage (MsgReplyTxs (zipWith updateSigFn txs vkKeyKESs))
-      updateFn msg _ = msg
+      updateFn :: AnyMessage (SigSubmission crypto)
+               -> [(SignKeyKES kesCrypto, VerKeyKES kesCrypto)]
+               -> IO (AnyMessage (SigSubmission crypto))
+      updateFn (AnyMessage (MsgReplyTxs txs)) keys = do
+        sigs <- traverse (uncurry updateSigFn) (zip txs keys)
+        return $ AnyMessage (MsgReplyTxs sigs)
+      updateFn msg _ = pure msg
 
       shrinkFn :: AnyMessage (SigSubmission crypto) -> [AnyMessage (SigSubmission crypto)]
       shrinkFn = \case
@@ -494,10 +633,10 @@ instance ( kesCrypto ~ KES crypto
 
 prop_codec_ocert
   :: forall crypto. Crypto crypto
-  => WithConstrVerKeyKES (SeedSizeKES (KES crypto)) (KES crypto) (OCert crypto)
+  => WithConstrKES (SeedSizeKES (KES crypto)) (KES crypto) (CryptoCtx crypto)
   -> Property
 prop_codec_ocert constr = ioProperty $ do
-  ocert <- runWithConstr constr
+  CryptoCtx { ocert } <- runWithConstr constr
   return . counterexample (show ocert)
          $ let encoded = CBOR.toLazyByteString (encodeSigOpCertificate (SigOpCertificate ocert))
            in case CBOR.deserialiseFromBytes decodeSigOpCertificate encoded of
@@ -507,12 +646,12 @@ prop_codec_ocert constr = ioProperty $ do
                   .&&. BL.null bytes
 
 prop_codec_ocert_mockcrypto
-  :: Blind (WithConstrVerKeyKES (SeedSizeKES (KES MockCrypto)) (KES MockCrypto) (OCert MockCrypto))
+  :: Blind (WithConstrKES (SeedSizeKES (KES MockCrypto)) (KES MockCrypto) (CryptoCtx MockCrypto))
   -> Property
 prop_codec_ocert_mockcrypto = prop_codec_ocert . getBlind
 
 prop_codec_ocert_standardcrypto
-  :: Blind (WithConstrVerKeyKES (SeedSizeKES (KES StandardCrypto)) (KES StandardCrypto) (OCert StandardCrypto))
+  :: Blind (WithConstrKES (SeedSizeKES (KES StandardCrypto)) (KES StandardCrypto) (CryptoCtx StandardCrypto))
   -> Property
 prop_codec_ocert_standardcrypto = prop_codec_ocert . getBlind
 
@@ -523,7 +662,7 @@ prop_codec_ocert_standardcrypto = prop_codec_ocert . getBlind
 -- * signed bytes match the encoding of `encodeSigRaw'`.
 prop_codec_sig
   :: forall crypto. Crypto crypto
-  => WithConstrVerKeyKES (SeedSizeKES (KES crypto)) (KES crypto) (Sig crypto)
+  => WithConstrKES (SeedSizeKES (KES crypto)) (KES crypto) (Sig crypto)
   -> Property
 prop_codec_sig constr = ioProperty $ do
   sig <- runWithConstr constr
@@ -556,17 +695,17 @@ prop_codec_sig constr = ioProperty $ do
                  .&&. BL.null leftovers
 
 prop_codec_sig_mockcrypto
-  :: Blind (WithConstrVerKeyKES (SeedSizeKES (KES MockCrypto)) (KES MockCrypto) (Sig MockCrypto))
+  :: Blind (WithConstrKES (SeedSizeKES (KES MockCrypto)) (KES MockCrypto) (Sig MockCrypto))
   -> Property
 prop_codec_sig_mockcrypto = prop_codec_sig . getBlind
 
 prop_codec_sig_standardcrypto
-  :: Blind (WithConstrVerKeyKES (SeedSizeKES (KES MockCrypto)) (KES MockCrypto) (Sig MockCrypto))
+  :: Blind (WithConstrKES (SeedSizeKES (KES MockCrypto)) (KES MockCrypto) (Sig MockCrypto))
   -> Property
 prop_codec_sig_standardcrypto = prop_codec_sig . getBlind
 
 
-type AnySigMessage crypto = WithConstrVerKeyKESList (SeedSizeKES (KES crypto)) (KES crypto) (AnyMessage (SigSubmission crypto))
+type AnySigMessage crypto = WithConstrKESList (SeedSizeKES (KES crypto)) (KES crypto) (AnyMessage (SigSubmission crypto))
 
 
 prop_codec :: forall crypto. Crypto crypto
@@ -619,6 +758,9 @@ prop_codec_splits2_standardcrypto :: Blind (AnySigMessage StandardCrypto) -> Pro
 prop_codec_splits2_standardcrypto = prop_codec_splits2 . getBlind
 
 
+{-
+-- TODO: we need a different splits3 function that does not explore all the
+-- ways of splitting a message into three chunks.
 prop_codec_splits3 :: forall crypto. Crypto crypto
                    => AnySigMessage crypto -> Property
 prop_codec_splits3 constr = ioProperty $ do
@@ -629,9 +771,12 @@ prop_codec_splits3 constr = ioProperty $ do
 
 prop_codec_splits3_mockcrypto :: Blind (AnySigMessage MockCrypto) -> Property
 prop_codec_splits3_mockcrypto = prop_codec_splits3 . getBlind
+-}
 
+{-
 prop_codec_splits3_standardcrypto :: Blind (AnySigMessage StandardCrypto) -> Property
 prop_codec_splits3_standardcrypto = prop_codec_splits3 . getBlind
+-}
 
 
 prop_codec_cbor
@@ -672,3 +817,74 @@ prop_codec_valid_cbor_standardcrypto
   :: Blind (AnySigMessage StandardCrypto)
   -> Property
 prop_codec_valid_cbor_standardcrypto = prop_codec_valid_cbor . getBlind
+
+
+-- | Check that the KES signature is valid.
+--
+prop_validateSig
+  :: ( Crypto crypto
+     , DSIGN.ContextDSIGN (DSIGN crypto) ~ ()
+     , DSIGN.Signable (DSIGN crypto) (KES.OCertSignable crypto)
+     , KES.ContextKES (KES crypto) ~ ()
+     , KES.Signable (KES crypto) ByteString
+     )
+  => WithConstrKES size kesCrypt (Sig crypto)
+  -> Property
+prop_validateSig constr = ioProperty $ do
+    sig <- runWithConstr constr
+    return $ case validateSig KES.defEvolutionConfig sig of
+      Left err -> counterexample ("KES seed: " ++ show (ctx constr))
+                . counterexample ("KES vk key: " ++ show (ocertVkHot . getSigOpCertificate . sigOpCertificate $ sig))
+                . counterexample (show sig)
+                . counterexample (show err)
+                $ False
+      Right () -> property True
+
+prop_validateSig_mockcrypto
+  :: Blind (WithConstrKES (SeedSizeKES (KES MockCrypto)) (KES MockCrypto) (Sig MockCrypto))
+  -> Property
+prop_validateSig_mockcrypto = prop_validateSig . getBlind
+
+-- TODO: FAILS, why?
+prop_validateSig_standardcrypto
+  :: Blind (WithConstrKES (SeedSizeKES (KES StandardCrypto)) (KES StandardCrypto) (Sig StandardCrypto))
+  -> Property
+prop_validateSig_standardcrypto = prop_validateSig . getBlind
+
+
+-- | Sign & verify a payload with KES keys.
+--
+prop_sign_verify
+  :: ( Crypto crypto
+     , ContextKES (KES crypto) ~ ()
+     , Signable (KES crypto) ByteString
+     )
+  => WithConstrKES (SeedSizeKES (KES crypto)) (KES crypto) (CryptoCtx crypto)
+  -- ^ KES keys
+  -> ByteString
+  -- ^ payload
+  -> Property
+prop_sign_verify constr payload = ioProperty $ do
+    CryptoCtx { snKESKey, vnKESKey } <- runWithConstr constr
+    signed <- KES.signKES () 0 payload snKESKey
+    let res = KES.verifyKES () vnKESKey 0 payload signed
+    return $ counterexample "KES signature does not verify"
+           $ case res of
+              Left err -> counterexample (show err)
+                        . counterexample ("vnKESKey:  " ++ show vnKESKey)
+                        . counterexample ("signature: " ++ show signed)
+                        $ False
+              Right () -> property True
+
+
+prop_sign_verify_mockcrypto
+  :: Blind (WithConstrKES (SeedSizeKES (KES MockCrypto)) (KES MockCrypto) (CryptoCtx MockCrypto))
+  -> ByteString
+  -> Property
+prop_sign_verify_mockcrypto = prop_sign_verify . getBlind
+
+prop_sign_verify_standardcrypto
+  :: Blind (WithConstrKES (SeedSizeKES (KES StandardCrypto)) (KES StandardCrypto) (CryptoCtx StandardCrypto))
+  -> ByteString
+  -> Property
+prop_sign_verify_standardcrypto = prop_sign_verify . getBlind

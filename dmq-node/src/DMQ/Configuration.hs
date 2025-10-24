@@ -90,6 +90,10 @@ data Configuration' f =
     dmqcPortNumber                                 :: f PortNumber,
     dmqcConfigFile                                 :: f FilePath,
     dmqcTopologyFile                               :: f FilePath,
+    dmqcShelleyGenesisFile                         :: f FilePath,
+    -- ^ shelley genesis file, e.g.
+    -- `/configuration/cardano/mainnet-shelley-genesis.json` in `cardano-node`
+    -- repo.
     dmqcAcceptedConnectionsLimit                   :: f AcceptedConnectionsLimit,
     dmqcDiffusionMode                              :: f DiffusionMode,
     dmqcTargetOfRootPeers                          :: f Int,
@@ -103,6 +107,7 @@ data Configuration' f =
     dmqcChurnInterval                              :: f DiffTime,
     dmqcPeerSharing                                :: f PeerSharing,
     dmqcNetworkMagic                               :: f NetworkMagic,
+    dmqcCardanoNodeSocket                          :: f FilePath,
     dmqcPrettyLog                                  :: f Bool,
 
     dmqcMuxTracer                                  :: f Bool,
@@ -210,8 +215,10 @@ defaultConfiguration = Configuration {
       dmqcPortNumber                                 = I 3_141,
       dmqcConfigFile                                 = I "dmq.configuration.yaml",
       dmqcTopologyFile                               = I "dmq.topology.json",
+      dmqcShelleyGenesisFile                         = I "mainnet-shelley-genesis.json",
       dmqcAcceptedConnectionsLimit                   = I defaultAcceptedConnectionsLimit,
       dmqcDiffusionMode                              = I InitiatorAndResponderDiffusionMode,
+      dmqcCardanoNodeSocket                          = I "cardano-node.socket",
       dmqcTargetOfRootPeers                          = I targetNumberOfRootPeers,
       dmqcTargetOfKnownPeers                         = I targetNumberOfKnownPeers,
       dmqcTargetOfEstablishedPeers                   = I targetNumberOfEstablishedPeers,
@@ -299,6 +306,9 @@ instance FromJSON PartialConfig where
       dmqcNetworkMagic <- Last . fmap NetworkMagic <$> v .:? "NetworkMagic"
       dmqcDiffusionMode <- Last <$> v .:? "DiffusionMode"
       dmqcPeerSharing <- Last <$> v .:? "PeerSharing"
+      dmqcCardanoNodeSocket <- Last <$> v .:? "CardanoNodeSocket"
+
+      dmqcShelleyGenesisFile <- Last <$> v .:? "ShelleyGenesisFile"
 
       dmqcTargetOfRootPeers                 <- Last <$> v .:? "TargetNumberOfRootPeers"
       dmqcTargetOfKnownPeers                <- Last <$> v .:? "TargetNumberOfKnownPeers"
@@ -375,7 +385,9 @@ instance ToJSON Configuration where
            , "PortNumber"                                 .= unI dmqcPortNumber
            , "LocalAddress"                               .= unI dmqcLocalAddress
            , "ConfigFile"                                 .= unI dmqcConfigFile
+           , "CardanoNodeSocket"                          .= unI dmqcCardanoNodeSocket
            , "TopologyFile"                               .= unI dmqcTopologyFile
+           , "ShelleyGenesisFile"                         .= unI dmqcShelleyGenesisFile
            , "AcceptedConnectionsLimit"                   .= unI dmqcAcceptedConnectionsLimit
            , "DiffusionMode"                              .= unI dmqcDiffusionMode
            , "TargetOfRootPeers"                          .= unI dmqcTargetOfRootPeers
@@ -604,5 +616,3 @@ data ConfigurationError =
 
 instance Exception ConfigurationError where
   displayException NoAddressInformation = "no ipv4 or ipv6 address specified, use --host-addr or --host-ipv6-addr"
-
-

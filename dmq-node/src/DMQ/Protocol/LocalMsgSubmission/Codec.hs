@@ -10,13 +10,17 @@ import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
 import Control.Monad.Class.MonadST
 import Data.ByteString.Lazy (ByteString)
+import Data.Text qualified as T
+import Data.Tuple (swap)
 import Text.Printf
 
+import Cardano.Binary
 import Cardano.KESAgent.KES.Crypto (Crypto (..))
 
 import DMQ.Protocol.LocalMsgSubmission.Type
 import DMQ.Protocol.SigSubmission.Codec qualified as SigSubmission
 import DMQ.Protocol.SigSubmission.Type (Sig (..))
+import DMQ.Protocol.SigSubmission.Validate
 
 import Network.TypedProtocol.Codec.CBOR
 import Ouroboros.Network.Protocol.LocalTxSubmission.Codec qualified as LTX
@@ -26,26 +30,59 @@ codecLocalMsgSubmission
      ( MonadST m
      , Crypto crypto
      )
-  => (SigMempoolFail -> CBOR.Encoding)
-  -> (forall s. CBOR.Decoder s SigMempoolFail)
+  => (MempoolAddFail (Sig crypto) -> CBOR.Encoding)
+  -> (forall s. CBOR.Decoder s (MempoolAddFail (Sig crypto)))
   -> AnnotatedCodec (LocalMsgSubmission (Sig crypto)) CBOR.DeserialiseFailure m ByteString
 codecLocalMsgSubmission =
   LTX.anncodecLocalTxSubmission' SigWithBytes SigSubmission.encodeSig SigSubmission.decodeSig
 
-encodeReject :: SigMempoolFail -> CBOR.Encoding
+encodeReject :: MempoolAddFail (Sig crypto) -> CBOR.Encoding
 encodeReject = \case
-  SigInvalid reason -> CBOR.encodeListLen 2 <> CBOR.encodeWord 0 <> CBOR.encodeString reason
+  SigInvalid reason -> CBOR.encodeListLen 2 <> CBOR.encodeWord 0 <> e
+    where
+      e = case reason of
+        InvalidKESSignature ocertKESPeriod sigKESPeriod err ->  mconcat [
+          CBOR.encodeListLen 4, CBOR.encodeWord 0, toCBOR ocertKESPeriod, toCBOR sigKESPeriod, CBOR.encodeString (T.pack err)
+          ]
+        InvalidSignatureOCERT ocertN sigKESPeriod err -> mconcat [
+          CBOR.encodeListLen 4, CBOR.encodeWord 1, CBOR.encodeWord64 ocertN, toCBOR sigKESPeriod, CBOR.encodeString (T.pack err)
+          ]
+        KESBeforeStartOCERT startKESPeriod sigKESPeriod -> mconcat [
+          CBOR.encodeListLen 3, CBOR.encodeWord 2, toCBOR startKESPeriod, toCBOR sigKESPeriod
+          ]
+        KESAfterEndOCERT endKESPeriod sigKESPeriod ->  mconcat [
+          CBOR.encodeListLen 3, CBOR.encodeWord 3, toCBOR endKESPeriod, toCBOR sigKESPeriod
+          ]
+        UnrecognizedPool -> CBOR.encodeListLen 1 <> CBOR.encodeWord 4
+        ExpiredPool      -> CBOR.encodeListLen 1 <> CBOR.encodeWord 5
+        NotInitialized   -> CBOR.encodeListLen 1 <> CBOR.encodeWord 6
+        ClockSkew        -> CBOR.encodeListLen 1 <> CBOR.encodeWord 7
   SigDuplicate      -> CBOR.encodeListLen 1 <> CBOR.encodeWord 1
   SigExpired        -> CBOR.encodeListLen 1 <> CBOR.encodeWord 2
   SigResultOther reason
                     -> CBOR.encodeListLen 2 <> CBOR.encodeWord 3 <> CBOR.encodeString reason
 
-decodeReject :: CBOR.Decoder s SigMempoolFail
+decodeReject :: CBOR.Decoder s (MempoolAddFail (Sig crypto))
 decodeReject = do
   len <- CBOR.decodeListLen
   tag <- CBOR.decodeWord
   case (tag, len) of
-    (0, 2)     -> SigInvalid <$> CBOR.decodeString
+    (0, 2) -> SigInvalid <$> decSigValidError
+      where
+        decSigValidError :: CBOR.Decoder s SigValidationError
+        decSigValidError = do
+          lenTag <- (,) <$> CBOR.decodeListLen <*> CBOR.decodeWord
+          case swap lenTag of
+            (0, 4) -> InvalidKESSignature <$> fromCBOR <*> fromCBOR <*> (T.unpack <$> CBOR.decodeString)
+            (1, 4) -> InvalidSignatureOCERT <$> CBOR.decodeWord64 <*> fromCBOR <*> (T.unpack <$> CBOR.decodeString)
+            (2, 3) -> KESBeforeStartOCERT <$> fromCBOR <*> fromCBOR
+            (3, 4) -> KESAfterEndOCERT <$> fromCBOR <*> fromCBOR
+            (4, 1) -> pure UnrecognizedPool
+            (5, 1) -> pure ExpiredPool
+            (6, 1) -> pure NotInitialized
+            (7, 1) -> pure ClockSkew
+            _otherwise -> fail $ printf "unrecognized (tag,len) = (%d, %d) when decoding SigInvalid tag" tag len
+
     (1, 1)     -> pure SigDuplicate
     (2, 1)     -> pure SigExpired
     (3, 2)     -> SigResultOther <$> CBOR.decodeString

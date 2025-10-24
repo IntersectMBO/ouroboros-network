@@ -54,6 +54,13 @@ parseCLIOptions =
           )
         )
     <*> optional (
+          strOption
+          (   long "cardano-node-socket"
+          <> metavar "Cardano node socket path"
+          <> help "Used for local connections to Cardano node"
+          )
+        )
+    <*> optional (
           switch
           (   long "version"
           <>  short 'v'
@@ -61,14 +68,14 @@ parseCLIOptions =
           )
         )
   where
-    mkConfiguration ipv4 ipv6 portNumber localAddress configFile topologyFile version =
-      mempty { dmqcIPv4         = Last (Just <$> ipv4),
-               dmqcIPv6         = Last (Just <$> ipv6),
-               dmqcLocalAddress = Last (LocalAddress <$> localAddress),
-               dmqcPortNumber   = Last portNumber,
-               dmqcConfigFile   = Last configFile,
-               dmqcTopologyFile = Last topologyFile,
-               dmqcVersion      = Last version
+    mkConfiguration ipv4 ipv6 portNumber localAddress
+                    configFile topologyFile cardanoNodeSocket version =
+      mempty { dmqcIPv4              = Last (Just <$> ipv4),
+               dmqcIPv6              = Last (Just <$> ipv6),
+               dmqcLocalAddress      = Last (LocalAddress <$> localAddress),
+               dmqcPortNumber        = Last portNumber,
+               dmqcConfigFile        = Last configFile,
+               dmqcTopologyFile      = Last topologyFile,
+               dmqcCardanoNodeSocket = Last cardanoNodeSocket,
+               dmqcVersion           = Last version
              }
-
-

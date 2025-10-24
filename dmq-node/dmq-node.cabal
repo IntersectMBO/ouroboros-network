@@ -20,8 +20,13 @@ extra-doc-files: CHANGELOG.md
 
 flag cddl
   description: Enable CDDL based tests of the CBOR encoding
-  manual: True
   -- These tests need the cddl and the cbor-diag Ruby-package
+  default: True
+
+flag standardcrypto-tests
+  description: Enable StandardCrypto tests
+  -- these tests are flaky on GH Windows instances
+  manual: True
   default: True
 
 common extensions
@@ -63,6 +68,7 @@ library
     DMQ.NodeToClient
     DMQ.NodeToClient.LocalMsgNotification
     DMQ.NodeToClient.LocalMsgSubmission
+    DMQ.NodeToClient.LocalStateQueryClient
     DMQ.NodeToClient.Version
     DMQ.NodeToNode
     DMQ.NodeToNode.Version
@@ -76,6 +82,7 @@ library
     DMQ.Protocol.LocalMsgSubmission.Type
     DMQ.Protocol.SigSubmission.Codec
     DMQ.Protocol.SigSubmission.Type
+    DMQ.Protocol.SigSubmission.Validate
     DMQ.Tracer
 
   build-depends:
@@ -88,6 +95,11 @@ library
     bytestring >=0.10 && <0.13,
     cardano-binary,
     cardano-crypto-class,
+    cardano-crypto-wrapper,
+    cardano-ledger-byron,
+    cardano-ledger-core,
+    cardano-ledger-shelley,
+    cardano-slotting,
     cborg >=0.2.1 && <0.3,
     containers >=0.5 && <0.8,
     contra-tracer >=0.1 && <0.3,
@@ -103,11 +115,17 @@ library
     network ^>=3.2.7,
     network-mux ^>=0.9.1,
     optparse-applicative ^>=0.18,
+    ouroboros-consensus,
+    ouroboros-consensus-cardano,
+    ouroboros-consensus-diffusion,
+    cardano-diffusion,
     ouroboros-network:{ouroboros-network, api, framework, orphan-instances, protocols} ^>=0.23,
     random ^>=1.2,
     singletons,
     text >=1.2.4 && <2.2,
     time ^>=1.12,
+    transformers,
+    transformers-except,
     typed-protocols:{typed-protocols, cborg} ^>=1.1,
 
   hs-source-dirs: src
@@ -130,11 +148,12 @@ executable dmq-node
     aeson,
     base,
     cardano-git-rev,
+    cardano-ledger-core,
     contra-tracer >=0.1 && <0.3,
     dmq-node,
     kes-agent-crypto,
     optparse-applicative,
-    ouroboros-network:{ouroboros-network, api},
+    ouroboros-network:{ouroboros-network, api, framework},
     random,
     text,
 
@@ -185,6 +204,9 @@ test-suite dmq-tests
     +RTS
     -T
     -RTS
+
+  if flag(standardcrypto-tests)
+    cpp-options: -DSTANDARDCRYPTO_TESTS
 
 test-suite dmq-cddl
   import:

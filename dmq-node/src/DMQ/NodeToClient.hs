@@ -16,7 +16,7 @@ module DMQ.NodeToClient
 import Data.Aeson qualified as Aeson
 import Data.ByteString.Lazy (ByteString)
 import Data.Functor.Contravariant ((>$<))
-import Data.Typeable (Typeable)
+import Data.Typeable
 import Data.Void
 import Data.Word
 
@@ -47,6 +47,7 @@ import DMQ.Protocol.LocalMsgSubmission.Codec
 import DMQ.Protocol.LocalMsgSubmission.Server
 import DMQ.Protocol.LocalMsgSubmission.Type
 import DMQ.Protocol.SigSubmission.Type (Sig, SigId, sigId)
+import DMQ.Protocol.SigSubmission.Validate
 import DMQ.Tracer
 
 import Ouroboros.Network.Context
@@ -58,9 +59,9 @@ import Ouroboros.Network.OrphanInstances ()
 import Ouroboros.Network.Protocol.Handshake (Handshake, HandshakeArguments (..))
 import Ouroboros.Network.Protocol.Handshake.Codec (cborTermVersionDataCodec,
            codecHandshake, noTimeLimitsHandshake)
-import Ouroboros.Network.TxSubmission.Inbound.V2.Types
-           (TxSubmissionMempoolWriter)
 import Ouroboros.Network.TxSubmission.Mempool.Reader
+import Ouroboros.Network.TxSubmission.Mempool.Simple
+import Ouroboros.Network.Util.ShowProxy
 
 
 type HandshakeTr ntcAddr = Mx.WithBearer (ConnectionId ntcAddr) (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term))
@@ -100,8 +101,8 @@ data Codecs crypto m =
 dmqCodecs :: ( MonadST m
              , Crypto crypto
              )
-          => (SigMempoolFail -> CBOR.Encoding)
-          -> (forall s. CBOR.Decoder s SigMempoolFail)
+          => (MempoolAddFail (Sig crypto)  -> CBOR.Encoding)
+          -> (forall s. CBOR.Decoder s  (MempoolAddFail (Sig crypto)))
           -> Codecs crypto m
 dmqCodecs encodeReject' decodeReject' =
   Codecs {
@@ -137,13 +138,17 @@ ntcApps
      , MonadThread m
      , MonadSTM m
      , Crypto crypto
-     , Typeable crypto
      , Aeson.ToJSON ntcAddr
+     , Aeson.ToJSON (MempoolAddFail (Sig crypto))
+     , Show (MempoolAddFail (Sig crypto))
+     , ShowProxy (MempoolAddFail (Sig crypto))
+     , ShowProxy (Sig crypto)
+     , Typeable crypto
      )
   => (forall ev. Aeson.ToJSON ev => Tracer m (WithEventType ev))
   -> Configuration
   -> TxSubmissionMempoolReader SigId (Sig crypto) idx m
-  -> TxSubmissionMempoolWriter SigId (Sig crypto) idx m
+  -> MempoolWriter SigId (Sig crypto) idx m
   -> Word16
   -> Codecs crypto m
   -> Apps ntcAddr m ()
