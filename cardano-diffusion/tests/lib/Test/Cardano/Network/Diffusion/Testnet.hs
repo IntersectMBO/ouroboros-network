@@ -309,38 +309,49 @@ traceFromList = Trace.fromList (MainReturn  (Time 0) (Labelled (ThreadId []) (Ju
 
 
 testWithIOSim :: (SimTrace Void -> Int -> Property)
+              -- ^ property to verify
               -> Int
+              -- ^ number of trace events to analyse
               -> AbsBearerInfo
+              -- ^ bearer configuration
               -> DiffusionScript
+              -- ^ sim-net configuration
               -> Property
-testWithIOSim f traceNumber bi ds =
+testWithIOSim prop traceNumber bi ds =
   let sim :: forall s . IOSim s Void
       sim = diffusionSimulation (toBearerInfo bi)
                                 ds
-                                iosimTracer
       trace = runSimTrace sim
-   in labelDiffusionScript ds
-    $ counterexample (intercalate "\n" $
-        selectTraceEventsSay' $ Trace.take traceNumber trace)
-    --counterexample (Trace.ppTrace show (ppSimEvent 0 0 0) $ Trace.take traceNumber trace)
-    $ f trace traceNumber
+   in labelDiffusionScript ds $
+      -- we don't capture the time in the say trace, we add it here
+      counterexample (intercalate "\n" $ map (\(Time t, ev) -> show t <> " " <> ev) $
+        selectTraceEventsSayWithTime' $ Trace.take traceNumber trace) $
+      -- counterexample (Trace.ppTrace show (ppSimEvent 0 0 0) $ Trace.take traceNumber trace) $
+      prop trace traceNumber
 
 
 testWithIOSimPOR :: (SimTrace Void -> Int -> Property)
+                 -- ^ property to verify
                  -> Int
+                 -- ^ number of trace events to analyse
                  -> AbsBearerInfo
+                 -- ^ bearer configuration
                  -> DiffusionScript
+                 -- ^ sim-net configuration
                  -> Property
-testWithIOSimPOR f traceNumber bi ds =
+testWithIOSimPOR prop traceNumber bi ds =
   let sim :: forall s . IOSim s Void
       sim = do
         exploreRaces
         diffusionSimulation (toBearerInfo bi)
                             ds
-                            iosimTracer
    in labelDiffusionScript ds
-    $ exploreSimTrace id sim $ \_ ioSimTrace ->
-        f ioSimTrace  traceNumber
+    $ exploreSimTrace id sim $ \_ trace ->
+        -- we don't capture the time in the say trace, we add it here
+        counterexample (intercalate "\n" $ map (\(Time t, ev) -> show t <> " " <> ev) $
+          selectTraceEventsSayWithTime' $ Trace.take traceNumber trace) $
+        -- counterexample (Trace.ppTrace show (ppSimEvent 0 0 0) $ Trace.take traceNumber trace) $
+        prop trace traceNumber
 
 
 --
@@ -489,9 +500,8 @@ unit_cm_valid_transitions =
                 ]
             ]
       sim :: forall s. IOSim s Void
-      sim = do
-        exploreRaces
-        diffusionSimulation (toBearerInfo bi) ds iosimTracer
+      sim = diffusionSimulation (toBearerInfo bi) ds
+
   in exploreSimTrace (\a -> a { explorationReplay = Just s }) sim $ \_ ioSimTrace ->
        prop_diffusion_cm_valid_transition_order' ioSimTrace short_trace
 
@@ -551,7 +561,6 @@ unit_connection_manager_trace_coverage =
   let sim :: forall s . IOSim s Void
       sim = diffusionSimulation (toBearerInfo absNoAttenuation)
                                 script
-                                iosimTracer
 
       events :: [CM.Trace
                   NtNAddr
@@ -661,7 +670,6 @@ unit_connection_manager_transitions_coverage =
   let sim :: forall s . IOSim s Void
       sim = diffusionSimulation (toBearerInfo absNoAttenuation)
                                 script
-                                iosimTracer
       trace = runSimTrace sim
 
       -- events from `traceTVar` installed in `newMutableConnState`
@@ -785,7 +793,6 @@ prop_inbound_governor_trace_coverage defaultBearerInfo diffScript =
   let sim :: forall s . IOSim s Void
       sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                 diffScript
-                                iosimTracer
 
       events :: [IG.Trace NtNAddr]
       events = mapMaybe (\case DiffusionInboundGovernorTrace st -> Just st
@@ -943,8 +950,7 @@ prop_txSubmission_allTransactions (ArbTxDecisionPolicy decisionPolicy)
          ]
    in checkAllTransactions (runSimTrace
                               (diffusionSimulation noAttenuation
-                                                   diffScript
-                                                   iosimTracer)
+                                                   diffScript)
                            )
                            500_000 -- ^ Running for 500k might not be enough.
   where
@@ -1044,7 +1050,6 @@ prop_check_inflight_ratio bi ds@(DiffusionScript simArgs _ _) =
   let sim :: forall s . IOSim s Void
       sim = diffusionSimulation (toBearerInfo bi)
                                 ds
-                                iosimTracer
 
       events :: Events DiffusionTestTrace
       events = Signal.eventsFromList
@@ -1088,7 +1093,6 @@ prop_inbound_governor_transitions_coverage defaultBearerInfo diffScript =
   let sim :: forall s . IOSim s Void
       sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                 diffScript
-                                iosimTracer
 
       events :: [IG.RemoteTransitionTrace NtNAddr]
       events = mapMaybe (\case DiffusionInboundGovernorTransitionTrace st ->
@@ -1120,7 +1124,6 @@ prop_fetch_client_state_trace_coverage defaultBearerInfo diffScript =
   let sim :: forall s . IOSim s Void
       sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                 diffScript
-                                iosimTracer
 
       events :: [TraceFetchClientState BlockHeader]
       events = mapMaybe (\case DiffusionFetchTrace st ->
@@ -1281,7 +1284,9 @@ prop_only_bootstrap_peers_in_fallback_state ioSimTrace traceNumber =
                        <*> govLedgerStateJudgement
                        <*> trIsNodeAlive
               )
-       in counterexample (List.intercalate "\n" $ map show $ Signal.eventsToList events)
+       in counterexample
+            (List.intercalate "\n" $
+              map (show . uncurry WithTime) $ Signal.eventsToList events)
         $ signalProperty 20 show
             Set.null
             keepNonTrustablePeersTooLong
@@ -1509,7 +1514,6 @@ prop_server_trace_coverage defaultBearerInfo diffScript =
   let sim :: forall s . IOSim s Void
       sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                 diffScript
-                                iosimTracer
 
       events :: [Server.Trace NtNAddr]
       events = mapMaybe (\case DiffusionServerTrace st -> Just st
@@ -1538,7 +1542,6 @@ prop_peer_selection_action_trace_coverage defaultBearerInfo diffScript =
   let sim :: forall s . IOSim s Void
       sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                 diffScript
-                                iosimTracer
 
       events :: [PeerSelectionActionsTrace NtNAddr NtNVersion]
       events = mapMaybe (\case DiffusionPeerSelectionActionsTrace st -> Just st
@@ -1597,7 +1600,6 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
   let sim :: forall s . IOSim s Void
       sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                 diffScript
-                                iosimTracer
 
       events :: [TracePeerSelection Cardano.ExtraState
                                     PeerTrustable
@@ -2815,7 +2817,11 @@ prop_diffusion_target_established_local ioSimTrace traceNumber =
               id
               promotionOpportunities
 
-       in counterexample
+       in
+          -- counterexample
+          --   (List.intercalate "\n"
+          --     (map (show . uncurry WithTime) $ eventsToList events))
+          counterexample
             ("\nSignal key: (local root peers, est. local peers, in progress promotions, " ++
              "recent failures, opportunities, ignored too long)\n"
             )
@@ -2997,7 +3003,10 @@ prop_diffusion_target_active_below ioSimTrace traceNumber =
               id
               promotionOpportunities
 
-       in counterexample
+       in
+          -- counterexample
+          --   (List.intercalate "\n" $ map (show . uncurry WithTime) $ Signal.eventsToList events) $
+          counterexample
             ("\nSignal key: (local, established peers, active peers, " ++
              "recent failures, opportunities, is node running, ignored too long)") $
           signalProperty 20 show
@@ -3166,12 +3175,13 @@ prop_diffusion_target_active_local_below ioSimTrace traceNumber =
               id
               promotionOpportunities
 
-       in counterexample
+       in
+          -- counterexample
+          --   (List.intercalate "\n" $
+          --     map (show . uncurry WithTime) $ Signal.eventsToList events) $
+          counterexample
             ("\nSignal key: (local, established peers, active peers, " ++
              "recent failures, opportunities, ignored too long)") $
-          -- counterexample
-          --   (List.intercalate "\n" $ map show $ Signal.eventsToList events) $
-
           signalProperty 20 show
             (\(_,_,_,_,_,toolong) -> Set.null toolong)
             ((,,,,,) <$> (LocalRootPeers.toGroupSets <$> govLocalRootPeersSig)
@@ -3308,7 +3318,7 @@ prop_diffusion_async_demotions ioSimTrace traceNumber =
             lastTime = fst
                      . last
                      $ evsList
-        in counterexample (unlines $ map show evsList)
+        in counterexample (unlines $ map (show . uncurry WithTime) evsList)
           $ classifySimulatedTime lastTime
           $ classifyNumberOfEvents (length evsList)
           $ verify_async_demotions ev
@@ -3534,11 +3544,11 @@ prop_diffusion_target_active_local_above ioSimTrace traceNumber =
               id
               demotionOpportunities
 
-       in counterexample
+       in
+         -- counterexample (List.intercalate "\n" $ map (show . uncurry WithTime) $ Signal.eventsToList events) $
+         counterexample
             ("\nSignal key: (local peers, active peers, " ++
              "demotion opportunities, ignored too long)") $
-          --counterexample (List.intercalate "\n" $ map show $ Signal.eventsToList events) $
-
           signalProperty 20 show
             (\(_,_,_,toolong) -> Set.null toolong)
             ((,,,) <$> (LocalRootPeers.toGroupSets <$> govLocalRootPeersSig)
@@ -3975,7 +3985,6 @@ prop_unit_reconnect =
       sim = diffusionSimulation (toBearerInfo (absNoAttenuation { abiInboundAttenuation  = SpeedAttenuation SlowSpeed (Time 20) 1000
                                                                 } ))
                                 diffScript
-                                iosimTracer
 
       events :: [Events (WithName NtNAddr DiffusionTestTrace)]
       events = Trace.toList
@@ -4272,7 +4281,6 @@ unit_peer_sharing =
     let sim :: forall s. IOSim s Void
         sim = diffusionSimulation (toBearerInfo absNoAttenuation)
                                   script
-                                  iosimTracer
 
         -- TODO: we need `CardanoTracePeerSelection addr` type alias!
         events :: Map NtNAddr [TracePeerSelection Cardano.ExtraState
@@ -4862,7 +4870,7 @@ unit_local_root_diffusion_mode :: DiffusionMode
 unit_local_root_diffusion_mode diffusionMode =
     -- this is a unit test
     withMaxSuccess 1 $
-    let sim = diffusionSimulation (toBearerInfo absNoAttenuation) script iosimTracer
+    let sim = diffusionSimulation (toBearerInfo absNoAttenuation) script
 
         -- list of negotiated version data
         events :: [NtNVersionData]
