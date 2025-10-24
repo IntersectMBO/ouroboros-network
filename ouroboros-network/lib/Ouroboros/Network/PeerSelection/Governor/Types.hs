@@ -1021,43 +1021,43 @@ peerSelectionCountersHWC PeerSelectionCounters {..} =
     PeerSelectionCounters {
       numberOfRootPeers,
 
-      numberOfKnownPeers                         = numberOfKnownPeers
-                                                 - numberOfEstablishedPeers,
+      numberOfKnownPeers                        = numberOfKnownPeers
+                                                - numberOfEstablishedPeers,
       numberOfAvailableToConnectPeers,
       numberOfColdPeersPromotions,
-      numberOfEstablishedPeers                   = numberOfEstablishedPeers
-                                                 - numberOfActivePeers,
+      numberOfEstablishedPeers                  = numberOfEstablishedPeers
+                                                - numberOfActivePeers,
       numberOfWarmPeersDemotions,
       numberOfWarmPeersPromotions,
       numberOfActivePeers,
       numberOfActivePeersDemotions,
 
-      numberOfKnownBigLedgerPeers                = numberOfKnownBigLedgerPeers
-                                                 - numberOfEstablishedBigLedgerPeers,
+      numberOfKnownBigLedgerPeers               = numberOfKnownBigLedgerPeers
+                                                - numberOfEstablishedBigLedgerPeers,
       numberOfAvailableToConnectBigLedgerPeers,
       numberOfColdBigLedgerPeersPromotions,
-      numberOfEstablishedBigLedgerPeers          = numberOfEstablishedBigLedgerPeers
-                                                 - numberOfActiveBigLedgerPeers,
+      numberOfEstablishedBigLedgerPeers         = numberOfEstablishedBigLedgerPeers
+                                                - numberOfActiveBigLedgerPeers,
       numberOfWarmBigLedgerPeersDemotions,
       numberOfWarmBigLedgerPeersPromotions,
       numberOfActiveBigLedgerPeers,
       numberOfActiveBigLedgerPeersDemotions,
 
-      numberOfKnownLocalRootPeers                = numberOfKnownLocalRootPeers
-                                                 - numberOfEstablishedLocalRootPeers,
+      numberOfKnownLocalRootPeers               = numberOfKnownLocalRootPeers
+                                                - numberOfEstablishedLocalRootPeers,
       numberOfAvailableToConnectLocalRootPeers,
       numberOfColdLocalRootPeersPromotions,
-      numberOfEstablishedLocalRootPeers          = numberOfEstablishedLocalRootPeers
-                                                 - numberOfActiveLocalRootPeers,
+      numberOfEstablishedLocalRootPeers         = numberOfEstablishedLocalRootPeers
+                                                - numberOfActiveLocalRootPeers,
       numberOfWarmLocalRootPeersPromotions,
       numberOfActiveLocalRootPeers,
       numberOfActiveLocalRootPeersDemotions,
 
-      numberOfKnownNonRootPeers                   = numberOfKnownNonRootPeers
-                                                 - numberOfEstablishedNonRootPeers,
+      numberOfKnownNonRootPeers                 = numberOfKnownNonRootPeers
+                                                - numberOfEstablishedNonRootPeers,
       numberOfColdNonRootPeersPromotions,
-      numberOfEstablishedNonRootPeers             = numberOfEstablishedNonRootPeers
-                                                 - numberOfActiveNonRootPeers,
+      numberOfEstablishedNonRootPeers           = numberOfEstablishedNonRootPeers
+                                                - numberOfActiveNonRootPeers,
       numberOfWarmNonRootPeersDemotions,
       numberOfWarmNonRootPeersPromotions,
       numberOfActiveNonRootPeers,
