@@ -4,7 +4,22 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Cardano.Network.PeerSelection.PublicRootPeers where
+module Cardano.Network.PeerSelection.PublicRootPeers
+  ( CardanoPublicRootPeers
+  , merge
+  , getPublicConfigPeers
+  , getBootstrapPeers
+  , toPublicConfigPeerSet
+  , fromMapAndSet
+  , fromPublicRootPeers
+  , fromBootstrapPeers
+  , insertPublicConfigPeer
+  , insertBootstrapPeer
+  , insertLedgerPeer
+  , insertBigLedgerPeer
+    -- * Re-exported modules
+  , module PublicRootPeers
+  ) where
 
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -14,7 +29,7 @@ import Data.Set qualified as Set
 import Cardano.Network.PeerSelection.ExtraRootPeers (ExtraPeers (..))
 import Cardano.Network.PeerSelection.ExtraRootPeers qualified as ExtraPeers
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
-import Ouroboros.Network.PeerSelection.PublicRootPeers
+import Ouroboros.Network.PeerSelection.PublicRootPeers as PublicRootPeers
 
 type CardanoPublicRootPeers peeraddr =
   PublicRootPeers (ExtraPeers peeraddr) peeraddr
