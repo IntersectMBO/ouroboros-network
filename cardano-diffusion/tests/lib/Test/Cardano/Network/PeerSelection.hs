@@ -56,6 +56,7 @@ import Network.Socket (SockAddr)
 
 import Cardano.Network.ConsensusMode
 import Cardano.Network.PeerSelection
+-- import Cardano.Network.PeerSelection.PublicRootPeers (PublicRootPeers (..))
 import Cardano.Network.PeerSelection.PublicRootPeers qualified as Cardano.PublicRootPeers
 
 import Ouroboros.Network.DiffusionMode
@@ -3111,6 +3112,16 @@ prop_governor_target_established_above (MaxTime maxTime) env =
                          Cardano.ExtraPeers.empty
                          events
 
+        govDemotionsInProgressSig :: Signal (Set PeerAddr)
+        govDemotionsInProgressSig =
+          selectGovState (\psState -> Set.unions [ Governor.inProgressDemoteWarm psState
+                                                 , Governor.inProgressDemoteToCold psState
+                                                 ])
+                         (Cardano.ExtraState.empty (consensusMode env)
+                                                   (NumberOfBigLedgerPeers 0))
+                         Cardano.ExtraPeers.empty
+                         events
+
         govInProgressIneligibleSig :: Signal (Set PeerAddr)
         govInProgressIneligibleSig =
           selectGovState (\psState -> Set.unions [ Governor.inProgressDemoteToCold psState
@@ -3152,8 +3163,8 @@ prop_governor_target_established_above (MaxTime maxTime) env =
         -- Otherwise the demotion opportunities are the established peers that
         -- are not active and not local root peers.
         --
-        demotionOpportunity target local established active inProgressIneligible
-          | Set.size established <= target
+        demotionOpportunity target local established active demotionsInProgress inProgressIneligible
+          | Set.size established - Set.size demotionsInProgress <= target
           = Set.empty
 
           | otherwise
@@ -3168,6 +3179,7 @@ prop_governor_target_established_above (MaxTime maxTime) env =
             <*> govLocalRootPeersSig
             <*> govEstablishedPeersSig
             <*> govActivePeersSig
+            <*> govDemotionsInProgressSig
             <*> govInProgressIneligibleSig
 
         demotionOpportunitiesIgnoredTooLong :: Signal (Set PeerAddr)
@@ -3177,19 +3189,22 @@ prop_governor_target_established_above (MaxTime maxTime) env =
             id
             demotionOpportunities
 
-     in counterexample
+     in
+        -- counterexample (unlines . ("EVENTS" :) . map show $ Signal.eventsToList events) $
+        counterexample
           ("\nSignal key: (target, local peers, established peers, active peers, " ++
-           "demotion opportunities, ignored too long)") $
+          "demotion opportunities, demotions in progress, in progress ineligeble, ignored too long)") $
 
         signalProperty 20 show
-          (\(_,_,_,_,_,_,toolong) -> Set.null toolong)
-          ((,,,,,,) <$> govTargetsSig
-                    <*> (LocalRootPeers.toGroupSets <$> govLocalRootPeersSig)
-                    <*> govEstablishedPeersSig
-                    <*> govActivePeersSig
-                    <*> demotionOpportunities
-                    <*> govInProgressIneligibleSig
-                    <*> demotionOpportunitiesIgnoredTooLong)
+          (\(_,_,_,_,_,_,_,toolong) -> Set.null toolong)
+          ((,,,,,,,) <$> govTargetsSig
+                     <*> (LocalRootPeers.toGroupSets <$> govLocalRootPeersSig)
+                     <*> govEstablishedPeersSig
+                     <*> govActivePeersSig
+                     <*> demotionOpportunities
+                     <*> govDemotionsInProgressSig
+                     <*> govInProgressIneligibleSig
+                     <*> demotionOpportunitiesIgnoredTooLong)
 
 
 -- | Like 'prop_governor_target_established_above' but for big ledger peers.
