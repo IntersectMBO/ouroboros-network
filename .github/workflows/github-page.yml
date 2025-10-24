@@ -44,11 +44,16 @@ jobs:
           experimental-features = nix-command flakes
 
     - name: Install Haskell
-      uses: haskell-actions/setup@v2
+      uses: input-output-hk/actions/haskell@latest
       id: setup-haskell
       with:
         ghc-version: ${{ matrix.ghc }}
         cabal-version: '3.14.1.1'
+
+    - name: Install base libraries
+      uses: input-output-hk/actions/base@latest
+      with:
+        use-sodium-vrf: false
 
     - uses: actions/cache@v4
       name: Cache cabal store
