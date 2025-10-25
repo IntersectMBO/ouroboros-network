@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                   #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -68,7 +69,13 @@ instance (GAct s f, GAct s g) => GAct s (f :+: g) where
 --
 newtype GenericAct s a = GenericAct { getGenericAct :: a }
 
-instance (Generic s, Generic a, GAct s (Rep a), Semigroup s) => Act s (GenericAct s a) where
+instance (
+#if __GLASGOW_HASKELL__ < 914
+  -- These constraints are REQUIRED for ghc < 9.14 but REDUNDANT for ghc >= 9.14
+  -- See https://gitlab.haskell.org/ghc/ghc/-/issues/26381#note_637863
+  Generic s, 
+#endif
+  Generic a, GAct s (Rep a), Semigroup s) => Act s (GenericAct s a) where
   act s (GenericAct a) = GenericAct (s `gact` a)
 
 

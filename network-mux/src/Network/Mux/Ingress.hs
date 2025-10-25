@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns          #-}
+{-# LANGUAGE CPP                   #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns        #-}
@@ -17,7 +18,11 @@ import Data.ByteString.Builder.Internal (lazyByteStringInsert,
            lazyByteStringThreshold)
 import Data.ByteString.Lazy qualified as BL
 import Data.List (nub)
+#if __GLASGOW_HASKELL__ < 914
 import Data.Strict.Tuple (pattern (:!:))
+#else
+import Data.Strict.Tuple (data (:!:))
+#endif
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad
