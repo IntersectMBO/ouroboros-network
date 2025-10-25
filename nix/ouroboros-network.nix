@@ -46,7 +46,7 @@ let
     compiler-nix-name = lib.mkDefault defaultCompiler;
     cabalProjectLocal =
       if pkgs.stdenv.hostPlatform.isWindows
-      then lib.readFile ../scripts/ci/cabal.project.local.Windows
+      then lib.readFile ../scripts/ci/cabal.project.local.Nix.Windows
       else lib.readFile ../scripts/ci/cabal.project.local.Linux;
 
     #
