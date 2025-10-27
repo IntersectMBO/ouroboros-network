@@ -388,6 +388,32 @@ library framework
     build-depends: Win32 >=2.5.4.1 && <3.0
   hs-source-dirs: framework
 
+library framework-cardano-logging
+  import: ghc-options
+  visibility: public
+  hs-source-dirs: framework/cardano-logging
+  exposed-modules:
+    Ouroboros.Network.Logging.Framework
+  other-modules:
+    Ouroboros.Network.Logging.Framework.ConnectionId
+    Ouroboros.Network.Logging.Framework.ConnectionManager
+    Ouroboros.Network.Logging.Framework.Driver
+    Ouroboros.Network.Logging.Framework.InboundGovernor
+    Ouroboros.Network.Logging.Framework.Server
+  build-depends:
+    aeson,
+    base >=4.14 && <4.23,
+    containers,
+    formatting,
+    iproute,
+    network,
+    network-mux,
+    ouroboros-network:framework,
+    ouroboros-network:orphan-instances,
+    text,
+    trace-dispatcher ^>= 2.11.0,
+    typed-protocols:{typed-protocols, stateful} ^>= 1.2,
+
 library tests-lib
   import: ghc-options
   visibility: public
@@ -598,7 +624,6 @@ library cardano-logging
   exposed-modules:
     Ouroboros.Network.Logging
   other-modules:
-    Ouroboros.Network.Logging.PeerSelection.ChurnCounters
     Ouroboros.Network.Logging.PeerSelection.Governor
     Ouroboros.Network.Logging.PeerSelection.Governor.DebugPeerSelection
     Ouroboros.Network.Logging.PeerSelection.Governor.PeerSelectionCounters
