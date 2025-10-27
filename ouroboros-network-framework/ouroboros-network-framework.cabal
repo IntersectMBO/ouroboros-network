@@ -102,6 +102,38 @@ library
     -Wredundant-constraints
     -Wno-unticked-promoted-constructors
 
+library logging
+  visibility: public
+  hs-source-dirs: logging
+  exposed-modules:
+    Ouroboros.Network.Logging.Framework
+  other-modules:
+    Ouroboros.Network.Logging.Framework.ConnectionId
+    Ouroboros.Network.Logging.Framework.Driver
+  build-depends:
+    aeson,
+    base >=4.14 && <4.22,
+    containers,
+    iproute,
+    network ^>=3.2.7,
+    ouroboros-network-framework,
+    text,
+    trace-dispatcher ^>= 2.10.0,
+    typed-protocols >= 1.0,
+    typed-protocols:stateful >= 1.0
+  default-language: Haskell2010
+  default-extensions: ImportQualifiedPost
+  ghc-options:
+    -Wall
+    -Wcompat
+    -Wincomplete-uni-patterns
+    -Wincomplete-record-updates
+    -Wpartial-fields
+    -Widentities
+    -Wredundant-constraints
+    -Wno-unticked-promoted-constructors
+    -Wno-unused-packages
+
 library testlib
   visibility: public
   hs-source-dirs: testlib
