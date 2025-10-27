@@ -7,18 +7,22 @@ module DMQ.NodeToClient.LocalStateQueryClient
   ) where
 
 import Control.Concurrent.Class.MonadSTM.Strict
+import Control.DeepSeq
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.Trans.Except
 import Control.Tracer (Tracer (..), nullTracer)
+import Data.Functor ((<&>))
 import Data.Functor.Contravariant ((>$<))
+import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Strict qualified as Map
 import Data.Proxy
 import Data.Void
 
 import Cardano.Chain.Genesis
 import Cardano.Chain.Slotting
+import Cardano.Crypto.Hash qualified as Crypto
 import Cardano.Crypto.ProtocolMagic
 import Cardano.Network.NodeToClient
 import Cardano.Slotting.EpochInfo.API
@@ -38,6 +42,9 @@ import Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
 import Ouroboros.Network.Block
 import Ouroboros.Network.Magic
 import Ouroboros.Network.Mux qualified as Mx
+import Ouroboros.Network.PeerSelection.LedgerPeers.Type
+import Ouroboros.Network.PeerSelection.LedgerPeers.Utils
+import Ouroboros.Network.Point
 import Ouroboros.Network.Protocol.LocalStateQuery.Client
 import Ouroboros.Network.Protocol.LocalStateQuery.Type
 
@@ -52,7 +59,8 @@ cardanoClient
   -> StakePools m
   -> StrictTVar m (Maybe UTCTime) -- ^ from node kernel
   -> LocalStateQueryClient (CardanoBlock crypto) (Point block) (Query block) m Void
-cardanoClient _tracer StakePools { stakePoolsVar } nextEpochVar = LocalStateQueryClient (idle Nothing)
+cardanoClient _tracer StakePools { stakePoolsVar, ledgerPeersVar, ledgerBigPeersVar } nextEpochVar =
+  LocalStateQueryClient (idle Nothing)
   where
     idle mSystemStart = pure $ SendMsgAcquire ImmutableTip acquire
       where
@@ -103,9 +111,45 @@ cardanoClient _tracer StakePools { stakePoolsVar } nextEpochVar = LocalStateQuer
       atomically do
         writeTVar stakePoolsVar ssStakeSnapshots
         writeTVar nextEpochVar $ Just nextEpoch
-      pure $ SendMsgRelease do
-        threadDelay $ min (realToFrac toNextEpoch) 86400 -- TODO fuzz this?
-        idle $ Just systemStart
+      pure $
+        SendMsgQuery (BlockQuery . QueryIfCurrentConway $ GetLedgerPeerSnapshot AllLedgerPeers)
+        $ wrappingMismatch handleLedgerPeers
+      where
+        handleLedgerPeers (SomeLedgerPeerSnapshot (LedgerAllPeerSnapshotV23 pt magic peers)) = do
+          let bigSrvRelays = force
+                [(accStake, (stake, NonEmpty.fromList relays'))
+                | (accStake, (stake, relays)) <- accumulateBigLedgerStake peers
+                , let relays' = NonEmpty.filter
+                                  (\case
+                                      LedgerRelayAccessSRVDomain {} -> True
+                                      _ -> False
+                                  )
+                                  relays
+                , not (null relays')
+                ]
+              pt' = Point $ getPoint pt <&>
+                              \blk -> blk { blockPointSlot = maxBound,
+                                            blockPointHash = Crypto.castHash (blockPointHash blk)}
+              srvRelays = force
+                [ (stake, NonEmpty.fromList relays')
+                | (stake, relays) <- peers
+                , let relays' = NonEmpty.filter
+                                  (\case
+                                      LedgerRelayAccessSRVDomain {} -> True
+                                      _ -> False
+                                  )
+                                  relays
+                , not (null relays')
+                ]
+          atomically do
+            writeTMVar ledgerPeersVar $ LedgerAllPeerSnapshotV23 pt magic srvRelays
+            writeTVar  ledgerBigPeersVar . Just $! LedgerBigPeerSnapshotV23 pt' magic bigSrvRelays
+          pure $ SendMsgRelease do
+            threadDelay $ min (realToFrac toNextEpoch) 86400 -- TODO fuzz this?
+            idle $ Just systemStart
+
+        handleLedgerPeers _ = error "handleLedgerPeers: impossible!"
+
 
 connectToCardanoNode :: Tracer IO (WithEventType String)
                      -> LocalSnocket

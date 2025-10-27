@@ -22,6 +22,7 @@ import Control.Monad.Class.MonadST (MonadST)
 import Control.Monad.Class.MonadThrow (MonadCatch)
 import Control.Monad.Class.MonadTimer.SI (MonadDelay, MonadTimer)
 import Control.Tracer (Tracer)
+import Data.List.NonEmpty (NonEmpty)
 import Network.DNS (Resolver)
 import Network.Socket (Socket)
 
@@ -35,7 +36,7 @@ import Ouroboros.Network.PeerSelection.Churn (peerChurnGovernor)
 import Ouroboros.Network.PeerSelection.Governor.Types
            (ExtraGuardedDecisions (..), PeerSelectionGovernorArgs (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
-           (LedgerPeersConsensusInterface (..))
+           (LedgerPeersConsensusInterface (..), PoolStake, LedgerRelayAccessPoint)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint (SRVPrefix)
 import Ouroboros.Network.PeerSelection.Types (nullPublicExtraPeersAPI)
 
@@ -49,6 +50,7 @@ diffusionArguments
      )
   => Tracer m (NtN.HandshakeTr ntnAddr)
   -> Tracer m (NtC.HandshakeTr ntcAddr)
+  -> STM m [(PoolStake, NonEmpty LedgerRelayAccessPoint)]
   -> Diffusion.Arguments
        NoExtraState NoExtraDebugState NoExtraFlags NoExtraPeers
        NoExtraAPI NoExtraChurnArgs NoExtraCounters NoExtraTracer
@@ -63,7 +65,8 @@ diffusionArguments
        NodeToClientVersion
        NodeToClientVersionData
 diffusionArguments handshakeNtNTracer
-                   handshakeNtCTracer =
+                   handshakeNtCTracer
+                   lpGetLedgerPeers =
   Diffusion.Arguments {
     Diffusion.daNtnDataFlow    = DMQ.ntnDataFlow
   , Diffusion.daNtnPeerSharing = peerSharing
@@ -74,7 +77,7 @@ diffusionArguments handshakeNtNTracer
   , Diffusion.daLedgerPeersCtx        =
       LedgerPeersConsensusInterface {
         lpGetLatestSlot  = return minBound
-      , lpGetLedgerPeers = return []
+      , lpGetLedgerPeers
       , lpExtraAPI       = NoExtraAPI
       }
   , Diffusion.daEmptyExtraState           = NoExtraState

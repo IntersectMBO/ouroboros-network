@@ -17,8 +17,6 @@ import Data.Text qualified as Text
 import Ouroboros.Network.Diffusion.Topology (NetworkTopology (..))
 import Ouroboros.Network.OrphanInstances (localRootPeersGroupsFromJSON,
            networkTopologyFromJSON, networkTopologyToJSON)
-import Ouroboros.Network.PeerSelection.LedgerPeers.Type (LedgerPeerSnapshot,
-           LedgerPeersKind (..))
 import System.Exit (die)
 
 data NoExtraConfig = NoExtraConfig
@@ -68,31 +66,5 @@ readTopologyFileOrError
   -> IO (NetworkTopology NoExtraConfig NoExtraFlags)
 readTopologyFileOrError nc =
       readTopologyFile nc
-  >>= either (die . Text.unpack)
-             pure
-
-readPeerSnapshotFile :: FilePath -> IO (Either Text (LedgerPeerSnapshot BigLedgerPeers))
-readPeerSnapshotFile psf = do
-  eBs <- try $ BS.readFile psf
-  case eBs of
-    Left e -> return . Left $ handler e
-    Right bs ->
-      let bs' = LBS.fromStrict bs in
-        case eitherDecode bs' of
-          Left err -> return $ Left (handlerJSON err)
-          Right t  -> return $ Right t
-  where
-    handler :: IOException -> Text
-    handler e = Text.pack $ "DMQ.Topology.readLedgerPeerSnapshotFile: "
-                          ++ displayException e
-    handlerJSON :: String -> Text
-    handlerJSON err = Text.unlines
-      [ "snapshot file parging error:"
-      , Text.pack err
-      ]
-
-readPeerSnapshotFileOrError :: FilePath -> IO (LedgerPeerSnapshot BigLedgerPeers)
-readPeerSnapshotFileOrError psf =
-      readPeerSnapshotFile psf
   >>= either (die . Text.unpack)
              pure

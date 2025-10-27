@@ -32,7 +32,7 @@ module DMQ.Configuration
   , LocalAddress (..)
   ) where
 
-import Control.Concurrent.Class.MonadSTM (MonadSTM (..))
+import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI (DiffTime)
 import Data.Act
@@ -49,11 +49,8 @@ import Data.Text (Text)
 import Data.Text qualified as Text
 import Generic.Data (gmappend, gmempty)
 import GHC.Generics (Generic)
-import GHC.Stack (HasCallStack)
 import Network.Socket (AddrInfo (..), AddrInfoFlag (..), PortNumber,
            SocketType (..), defaultHints, getAddrInfo)
-import System.Directory qualified as Directory
-import System.FilePath qualified as FilePath
 import System.IO.Error (isDoesNotExistError)
 import Text.Read (readMaybe)
 
@@ -76,8 +73,7 @@ import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket (LocalAddress (..), RemoteAddress)
 import Ouroboros.Network.TxSubmission.Inbound.V2 (TxDecisionPolicy (..))
 
-import DMQ.Configuration.Topology (NoExtraConfig (..), NoExtraFlags (..),
-           readPeerSnapshotFileOrError)
+import DMQ.Configuration.Topology (NoExtraConfig (..), NoExtraFlags (..))
 
 -- | Configuration comes in two flavours paramemtrised by `f` functor:
 -- `PartialConfig` is using `Last` and `Configuration` is using an identity
@@ -480,16 +476,15 @@ readConfigurationFileOrError nc =
              pure
 
 mkDiffusionConfiguration
-  :: HasCallStack
-  => Configuration
+  :: Configuration
   -> NetworkTopology NoExtraConfig NoExtraFlags
+  -> StrictTVar IO (Maybe (LedgerPeerSnapshot BigLedgerPeers))
   -> IO (Diffusion.Configuration NoExtraFlags IO ntnFd RemoteAddress ntcFd LocalAddress)
 mkDiffusionConfiguration
   Configuration {
     dmqcIPv4                              = I ipv4
   , dmqcIPv6                              = I ipv6
   , dmqcLocalAddress                      = I localAddress
-  , dmqcTopologyFile                      = I topologyFile
   , dmqcPortNumber                        = I portNumber
   , dmqcDiffusionMode                     = I diffusionMode
   , dmqcAcceptedConnectionsLimit          = I acceptedConnectionsLimit
@@ -506,8 +501,8 @@ mkDiffusionConfiguration
   }
   nt@NetworkTopology {
     useLedgerPeers
-  , peerSnapshotPath
-  } = do
+  }
+  ledgerBigPeersVar = do
     case (ipv4, ipv6) of
       (Nothing, Nothing) ->
            throwIO NoAddressInformation
@@ -535,12 +530,6 @@ mkDiffusionConfiguration
     localRootsVar   <- newTVarIO localRoots
     publicRootsVar  <- newTVarIO publicRoots
     useLedgerVar    <- newTVarIO useLedgerPeers
-    ledgerPeerSnapshotPathVar <- newTVarIO peerSnapshotPath
-    topologyDir <- FilePath.takeDirectory <$> Directory.makeAbsolute topologyFile
-    ledgerPeerSnapshotVar <- newTVarIO =<< updateLedgerPeerSnapshot
-                                            topologyDir
-                                            (readTVar ledgerPeerSnapshotPathVar)
-                                            (const . pure $ ())
 
     return $
       Diffusion.Configuration {
@@ -562,7 +551,7 @@ mkDiffusionConfiguration
           }
       , Diffusion.dcReadLocalRootPeers       = readTVar localRootsVar
       , Diffusion.dcReadPublicRootPeers      = readTVar publicRootsVar
-      , Diffusion.dcReadLedgerPeerSnapshot   = readTVar ledgerPeerSnapshotVar
+      , Diffusion.dcReadLedgerPeerSnapshot   = readTVar ledgerBigPeersVar
       , Diffusion.dcPeerSharing              = peerSharing
       , Diffusion.dcReadUseLedgerPeers       = readTVar useLedgerVar
       , Diffusion.dcProtocolIdleTimeout      = protocolIdleTimeout
@@ -578,23 +567,6 @@ mkDiffusionConfiguration
               addrFlags = [AI_PASSIVE, AI_ADDRCONFIG]
             , addrSocketType = Stream
             }
-
-    updateLedgerPeerSnapshot :: HasCallStack
-                             => FilePath
-                             -> STM IO (Maybe FilePath)
-                             -> (Maybe (LedgerPeerSnapshot BigLedgerPeers) -> STM IO ())
-                             -> IO (Maybe (LedgerPeerSnapshot BigLedgerPeers))
-    updateLedgerPeerSnapshot topologyDir readLedgerPeerPath writeVar = do
-      mPeerSnapshotFile <- atomically readLedgerPeerPath
-      mLedgerPeerSnapshot <- case mPeerSnapshotFile of
-        Nothing -> pure Nothing
-        Just peerSnapshotFile | FilePath.isRelative peerSnapshotFile -> do
-          peerSnapshotFile' <- Directory.makeAbsolute $ topologyDir FilePath.</> peerSnapshotFile
-          Just <$> readPeerSnapshotFileOrError peerSnapshotFile'
-        Just peerSnapshotFile ->
-          Just <$> readPeerSnapshotFileOrError peerSnapshotFile
-      atomically . writeVar $ mLedgerPeerSnapshot
-      pure mLedgerPeerSnapshot
 
 
 -- TODO: review this once we know what is the size of a `Sig`.
