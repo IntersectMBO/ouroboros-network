@@ -7,6 +7,7 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 module Test.Ouroboros.Network.TxSubmission.Types
   ( Tx (..)
@@ -42,6 +43,7 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.IOSim hiding (SimResult)
+import Control.Monad.Trans.Except.Extra
 import Control.Tracer (Tracer (..), showTracing, traceWith)
 
 import Codec.CBOR.Decoding qualified as CBOR
@@ -58,7 +60,7 @@ import Ouroboros.Network.Protocol.TxSubmission2.Codec
 import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Ouroboros.Network.TxSubmission.Inbound.V1
 import Ouroboros.Network.TxSubmission.Mempool.Reader
-import Ouroboros.Network.TxSubmission.Mempool.Simple (Mempool)
+import Ouroboros.Network.TxSubmission.Mempool.Simple (Mempool, TxValidationFail)
 import Ouroboros.Network.TxSubmission.Mempool.Simple qualified as Mempool
 import Ouroboros.Network.Util.ShowProxy
 
@@ -76,6 +78,8 @@ data Tx txid = Tx {
     getTxValid   :: !Bool
   }
   deriving (Eq, Ord, Show, Generic, NFData)
+
+data instance TxValidationFail (Tx txid) = TxFail
 
 instance NoThunks txid => NoThunks (Tx txid)
 instance ShowProxy txid => ShowProxy (Tx txid) where
@@ -133,13 +137,16 @@ getMempoolWriter :: forall txid m.
                     )
                  => Mempool m txid (Tx txid)
                  -> TxSubmissionMempoolWriter txid (Tx txid) Int m
-getMempoolWriter = Mempool.getWriter getTxId
+getMempoolWriter = Mempool.writerAdapter
+                 . Mempool.getWriter getTxId
                                      (pure ())
-                                     (\_ tx -> if getTxValid tx
-                                               then Right ()
-                                               else Left ()
+                                     (\txs _ctx ->
+                                        case txs of
+                                          [tx] | getTxValid tx -> right [(tx, Right ())]
+                                               | otherwise     -> left (tx, TxFail)
+                                          _otherwise -> error "getMempoolWriter: impossible"
                                      )
-                                     (\_ -> False)
+                                     TxFail
 
 
 txSubmissionCodec2 :: MonadST m
