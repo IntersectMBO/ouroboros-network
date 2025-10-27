@@ -180,6 +180,30 @@ library
   if flag(txsubmission-delay)
     cpp-options: -DTXSUBMISSION_DELAY
 
+library logging
+  import: ghc-options
+  visibility: public
+  hs-source-dirs: logging
+  exposed-modules:
+    Ouroboros.Network.Logging
+  other-modules:
+    Ouroboros.Network.Logging.PeerSelection.ChurnCounters
+    Ouroboros.Network.Logging.PeerSelection.PeerStateActions
+  reexported-modules:
+  default-language: Haskell2010
+  other-extensions:
+  build-depends:
+    aeson,
+    base >=4.14 && <4.22,
+    iproute,
+    network ^>=3.2.7,
+    ouroboros-network,
+    ouroboros-network:orphan-instances,
+    text,
+    trace-dispatcher ^>= 2.10.0
+  if flag(asserts)
+    ghc-options: -fno-ignore-asserts
+
 library orphan-instances
   import: ghc-options
   visibility: public
