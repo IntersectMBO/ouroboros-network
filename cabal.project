@@ -20,6 +20,14 @@ index-state:
   -- Bump this if you need newer packages from CHaP
   , cardano-haskell-packages 2025-02-15T18:39:38Z
 
+-- `trace-dispatcher` from repo "cardano-node" branch "fmaste/dmq-node".
+source-repository-package
+  type: git
+  location: https://github.com/IntersectMBO/cardano-node.git
+  subdir: trace-dispatcher
+  tag: c33672805ce56fdbbb29fcab5e64d30c88277857
+  --sha256: 04gsn3r1znqydmjlbipwlrvwk2yq91hg6rv92b3dzphiqrrlfgsr
+
 packages: ./cardano-ping
           ./monoidal-synchronisation
           ./network-mux
