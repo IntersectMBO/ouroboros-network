@@ -440,6 +440,14 @@ instance LogFormatting Mux.Trace where
       , "miniProtocolNum" .= String (showT mid)
       , "miniProtocolDir" .= String (showT dir)
       ]
+    forMachine _dtal (Mux.TraceNewMux _) = mconcat
+      [ "kind" .= String "Mux.TraceNewMux"
+      , "msg"  .= String "New Mux"
+      ]
+    forMachine _dtal Mux.TraceStarting = mconcat
+      [ "kind" .= String "Mux.TraceSarting"
+      , "msg"  .= String "Mux starting"
+      ]
     forMachine _dtal Mux.TraceStopping = mconcat
       [ "kind" .= String "Mux.TraceStopping"
       , "msg"  .= String "Mux stopping"
@@ -448,18 +456,6 @@ instance LogFormatting Mux.Trace where
       [ "kind" .= String "Mux.TraceStopped"
       , "msg"  .= String "Mux stoppped"
       ]
-{-- TODO:
-framework/cardano-logging/Network/Mux/Logging.hs:400:5: warning: [GHC-62161] [-Wincomplete-patterns]
-    Pattern match(es) are non-exhaustive
-    In an equation for ‘forMachine’:
-        Patterns of type ‘DetailLevel’, ‘Mux.Trace’ not matched:
-            _ (Mux.TraceNewMux _)
-            _ Mux.TraceStarting
-    |
-400 |     forMachine _dtal (Mux.TraceState new) = mconcat
-    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
---}
-    forMachine _dtal _ = mconcat []
 
     forHuman (Mux.TraceState new) =
       sformat ("State: " % shown) new
@@ -479,20 +475,10 @@ framework/cardano-logging/Network/Mux/Logging.hs:400:5: warning: [GHC-62161] [-W
       sformat ("Started on demand (" % shown % ") in " % shown) mid dir
     forHuman (Mux.TraceTerminating mid dir) =
       sformat ("Terminating (" % shown % ") in " % shown) mid dir
+    forHuman (Mux.TraceNewMux _) = "New Mux"
+    forHuman Mux.TraceStarting = "Mux Starting"
     forHuman Mux.TraceStopping = "Mux stopping"
-    forHuman Mux.TraceStopped  = "Mux stoppped"
-{-- TODO:
-framework/cardano-logging/Network/Mux/Logging.hs:469:5: warning: [GHC-62161] [-Wincomplete-patterns]
-    Pattern match(es) are non-exhaustive
-    In an equation for ‘forHuman’:
-        Patterns of type ‘Mux.Trace’ not matched:
-            Mux.TraceNewMux _
-            Mux.TraceStarting
-    |
-469 |     forHuman (Mux.TraceState new) =
-    |
---}
-    forHuman _ = ""
+    forHuman Mux.TraceStopped = "Mux stoppped"
 
     asMetrics = \case
       Mux.TraceState{} -> []
@@ -509,20 +495,10 @@ framework/cardano-logging/Network/Mux/Logging.hs:469:5: warning: [GHC-62161] [-W
       Mux.TraceStartOnDemandAny{} -> []
       Mux.TraceStartedOnDemand{} -> []
       Mux.TraceTerminating{} -> []
+      Mux.TraceNewMux{} -> []
+      Mux.TraceStarting{} -> []
       Mux.TraceStopping{} -> []
       Mux.TraceStopped{} -> []
-{-- TODO:
-framework/cardano-logging/Network/Mux/Logging.hs:502:17: warning: [GHC-62161] [-Wincomplete-patterns]
-    Pattern match(es) are non-exhaustive
-    In a \case alternative:
-        Patterns of type ‘Mux.Trace’ not matched:
-            Mux.TraceNewMux _
-            Mux.TraceStarting
-    |
-502 |     asMetrics = \case
-    |
---}
-      _ -> []
 
 instance MetaTrace Mux.Trace where
     namespaceFor Mux.TraceState {}                 =
@@ -541,22 +517,14 @@ instance MetaTrace Mux.Trace where
       Namespace [] ["StartedOnDemand"]
     namespaceFor Mux.TraceTerminating {}           =
       Namespace [] ["Terminating"]
+    namespaceFor (Mux.TraceNewMux _)               =
+      Namespace [] ["NewMux"]
+    namespaceFor Mux.TraceStarting                 =
+      Namespace [] ["Starting"]
     namespaceFor Mux.TraceStopping                 =
       Namespace [] ["Stopping"]
     namespaceFor Mux.TraceStopped                  =
       Namespace [] ["Stopped"]
-{-- TODO:
-framework/cardano-logging/Network/Mux/Logging.hs:533:5: warning: [GHC-62161] [-Wincomplete-patterns]
-    Pattern match(es) are non-exhaustive
-    In an equation for ‘namespaceFor’:
-        Patterns of type ‘Mux.Trace’ not matched:
-            Mux.TraceNewMux _
-            Mux.TraceStarting
-    |
-533 |     namespaceFor Mux.TraceState {}                 =
-    |
---}
-    namespaceFor _  = Namespace [] []
 
     severityFor (Namespace _ ["State"]) _            = Just Info
     severityFor (Namespace _ ["CleanExit"]) _        = Just Notice
@@ -566,6 +534,8 @@ framework/cardano-logging/Network/Mux/Logging.hs:533:5: warning: [GHC-62161] [-W
     severityFor (Namespace _ ["StartOnDemandAny"]) _ = Just Debug
     severityFor (Namespace _ ["StartedOnDemand"]) _  = Just Debug
     severityFor (Namespace _ ["Terminating"]) _      = Just Debug
+    severityFor (Namespace _ ["NewMux"]) _           = Just Debug
+    severityFor (Namespace _ ["Starting"]) _         = Just Debug
     severityFor (Namespace _ ["Stopping"]) _         = Just Debug
     severityFor (Namespace _ ["Stopped"]) _          = Just Debug
     severityFor _ _                                  = Nothing
@@ -586,9 +556,13 @@ framework/cardano-logging/Network/Mux/Logging.hs:533:5: warning: [GHC-62161] [-W
       "Start whenever any other protocol has started."
     documentFor (Namespace _ ["Terminating"])           = Just
       "Terminating."
+    documentFor (Namespace _ ["NewMux"])                = Just
+      "New Mux"
+    documentFor (Namespace _ ["Starting"])              = Just
+      "Mux Starting"
     documentFor (Namespace _ ["Stopping"])              = Just
       "Mux shutdown."
-    documentFor (Namespace _ ["Stopped"])              = Just
+    documentFor (Namespace _ ["Stopped"])               = Just
       "Mux shutdown."
     documentFor _ = Nothing
 
@@ -602,6 +576,8 @@ framework/cardano-logging/Network/Mux/Logging.hs:533:5: warning: [GHC-62161] [-W
     metricsDocFor (Namespace _ ["StartedOnDemand"])     = []
     metricsDocFor (Namespace _ ["StartOnDemandAny"])    = []
     metricsDocFor (Namespace _ ["Terminating"])         = []
+    metricsDocFor (Namespace _ ["NewMux"])              = []
+    metricsDocFor (Namespace _ ["Starting"])            = []
     metricsDocFor (Namespace _ ["Stopping"])            = []
     metricsDocFor (Namespace _ ["Stopped"])             = []
     metricsDocFor _                                     = []
@@ -615,6 +591,8 @@ framework/cardano-logging/Network/Mux/Logging.hs:533:5: warning: [GHC-62161] [-W
       , Namespace [] ["StartOnDemandAny"]
       , Namespace [] ["StartedOnDemand"]
       , Namespace [] ["Terminating"]
+      , Namespace [] ["NewMux"]
+      , Namespace [] ["Starting"]
       , Namespace [] ["Stopping"]
       , Namespace [] ["Stopped"]
       ]
