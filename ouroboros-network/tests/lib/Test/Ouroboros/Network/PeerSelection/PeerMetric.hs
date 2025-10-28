@@ -33,6 +33,7 @@ import GHC.Generics
 
 import Network.Mux.Trace (TraceLabelPeer (..))
 
+import Ouroboros.Network.Block (SlotNo (..))
 import Ouroboros.Network.ConnectionId
 import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics,
            PeerMetricsConfiguration (..), ReportPeerMetrics (..),
@@ -40,7 +41,6 @@ import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics,
            reportMetric, upstreamyness)
 import Ouroboros.Network.SizeInBytes
 
-import Cardano.Slotting.Slot (SlotNo (..))
 
 import Control.Monad.IOSim
 

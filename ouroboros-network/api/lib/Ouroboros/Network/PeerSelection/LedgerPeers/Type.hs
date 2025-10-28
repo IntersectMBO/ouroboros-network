@@ -106,6 +106,7 @@ data SomeHashableBlock =
   forall blk. ( StandardHash blk
               , ToCBOR (HeaderHash blk)
               , FromCBOR (HeaderHash blk)
+              , ToJSON (HeaderHash blk)
               , Typeable blk) => SomeHashableBlock !(Proxy blk) !(HeaderHash blk)
 
 type instance HeaderHash SomeHashableBlock = SomeHashableBlock
@@ -132,7 +133,7 @@ instance NoThunks SomeHashableBlock where
   showTypeOf _proxy = "SomeHashableBlock"
 
 instance ToJSON SomeHashableBlock where
-  toJSON (SomeHashableBlock _proxy hash) = toJSON . show $ hash
+  toJSON (SomeHashableBlock _proxy hash) = toJSON hash
 
 
 -- | facility for encoding the snapshot in CBOR for backwards compatibility
@@ -200,6 +201,7 @@ instance ToJSON (LedgerPeerSnapshot a) where
                                    ]]
 
 instance ( StandardHash blk
+         , ToJSON (HeaderHash blk)
          , FromJSON (HeaderHash blk)
          , FromCBOR (HeaderHash blk)
          , ToCBOR (HeaderHash blk)
@@ -229,6 +231,7 @@ instance ( StandardHash blk
 
 instance ( StandardHash blk
          , FromJSON (HeaderHash blk)
+         , ToJSON (HeaderHash blk)
          , FromCBOR (HeaderHash blk)
          , ToCBOR (HeaderHash blk)
          , Typeable blk
@@ -343,6 +346,7 @@ encodeLedgerPeerSnapshot _LedgerPeerSnapshotSupportsSRV (LedgerAllPeerSnapshotV2
 decodeLedgerPeerSnapshot :: forall s blk.
                             ( FromCBOR (HeaderHash blk)
                             , ToCBOR (HeaderHash blk)
+                            , ToJSON (HeaderHash blk)
                             , StandardHash blk
                             , Typeable blk)
                          => Proxy blk
@@ -396,6 +400,7 @@ encodeLedgerPeerSnapshotPoint = \case
 decodeLedgerPeerSnapshotPoint :: forall blk s.
                                  ( FromCBOR (HeaderHash blk)
                                  , ToCBOR (HeaderHash blk)
+                                 , ToJSON (HeaderHash blk)
                                  , Typeable blk
                                  , StandardHash blk)
                               => Proxy blk -> Codec.Decoder s (Point SomeHashableBlock)
