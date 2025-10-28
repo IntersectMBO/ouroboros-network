@@ -52,7 +52,6 @@ import Data.Ratio
 import System.Random
 import Text.Printf
 
-import Cardano.Slotting.Slot (SlotNo (..), WithOrigin (..))
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadThrow
 import Data.Set (Set)
@@ -60,11 +59,13 @@ import Data.Set qualified as Set
 import Data.Void (Void)
 import Data.Word (Word16, Word64)
 import Network.DNS qualified as DNS
+import Ouroboros.Network.Block (SlotNo)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
 import Ouroboros.Network.PeerSelection.LedgerPeers.Utils
            (accumulateBigLedgerStake, bigLedgerPeerQuota,
            recomputeRelativeStake)
 import Ouroboros.Network.PeerSelection.RootPeersDNS
+import Ouroboros.Network.Point (WithOrigin (..))
 
 -- | Ledger Peer request result
 --
