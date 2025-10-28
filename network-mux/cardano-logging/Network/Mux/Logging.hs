@@ -426,6 +426,9 @@ instance LogFormatting Mux.Trace where
       , "msg"  .= String "Mux stoppped"
       ]
 
+    forMachine _dtal (Mux.TraceNewMux _) = mconcat []
+    forMachine _dtal Mux.TraceStarting = mconcat []
+
     forHuman (Mux.TraceState new) =
       sformat ("State: " % shown) new
     forHuman (Mux.TraceCleanExit mid dir) =
@@ -446,6 +449,9 @@ instance LogFormatting Mux.Trace where
       sformat ("Terminating (" % shown % ") in " % shown) mid dir
     forHuman Mux.TraceStopping = "Mux stopping"
     forHuman Mux.TraceStopped  = "Mux stoppped"
+
+    forHuman (Mux.TraceNewMux _) = ""
+    forHuman Mux.TraceStarting = ""
 
 instance MetaTrace Mux.Trace where
     namespaceFor Mux.TraceState {}                 =
@@ -468,6 +474,9 @@ instance MetaTrace Mux.Trace where
       Namespace [] ["Stopping"]
     namespaceFor Mux.TraceStopped                  =
       Namespace [] ["Stopped"]
+
+    namespaceFor (Mux.TraceNewMux _)               = Namespace [] []
+    namespaceFor Mux.TraceStarting                 = Namespace [] []
 
     severityFor (Namespace _ ["State"]) _                 = Just Info
     severityFor (Namespace _ ["CleanExit"]) _             = Just Notice
