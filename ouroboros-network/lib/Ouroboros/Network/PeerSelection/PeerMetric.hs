@@ -50,7 +50,7 @@ import GHC.Generics
 import NoThunks.Class
 import NoThunks.Class.Orphans ()
 
-import Cardano.Slotting.Slot (SlotNo (..))
+import Ouroboros.Network.Block (SlotNo (..))
 import Ouroboros.Network.ConnectionId (ConnectionId (..))
 import Ouroboros.Network.DeltaQ (SizeInBytes)
 import Ouroboros.Network.PeerSelection.PeerMetric.Type

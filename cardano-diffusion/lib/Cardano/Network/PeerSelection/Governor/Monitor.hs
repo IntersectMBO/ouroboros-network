@@ -54,6 +54,7 @@ import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers
            (LocalRootConfig (..))
 import Ouroboros.Network.PeerSelection.Types
+import Ouroboros.Network.Point (Block (..), WithOrigin (..))
 
 
 -- | Used to set 'bootstrapPeersTimeout' for crashing the node in a critical
