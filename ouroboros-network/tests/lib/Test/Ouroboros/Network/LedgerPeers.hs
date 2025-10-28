@@ -566,7 +566,7 @@ prop_ledgerPeerSnapshotCBORV2 srvSupport slotNo
       _otherwise -> error "impossible"
 
 
--- TODO: move to `ouroboros-network-api:test`
+-- TODO: move to `ouroboros-network:api-tests`
 prop_ledgerPeerSnapshotCBORV3 :: SlotNo -> Word32 -> LedgerPools -> Bool -> Property
 prop_ledgerPeerSnapshotCBORV3 slotNo magic ledgerPools big =
   counterexample (show someSnapshot) $
