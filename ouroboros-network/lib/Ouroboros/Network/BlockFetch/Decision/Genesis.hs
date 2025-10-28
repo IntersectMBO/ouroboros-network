@@ -149,10 +149,9 @@ import Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..),
 import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainComparison(..),
            ChainSelStarvation (..), FetchMode (..))
 import Ouroboros.Network.BlockFetch.DeltaQ (calculatePeerFetchInFlightLimits)
-
-import Cardano.Slotting.Slot (WithOrigin)
 import Ouroboros.Network.BlockFetch.Decision
 import Ouroboros.Network.BlockFetch.Decision.Trace (TraceDecisionEvent (..))
+import Ouroboros.Network.Point (WithOrigin)
 
 
 type WithDeclined peer = Writer (DList (FetchDecline, peer))
