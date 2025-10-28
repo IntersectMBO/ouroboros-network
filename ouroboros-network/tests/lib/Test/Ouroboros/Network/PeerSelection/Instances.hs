@@ -24,11 +24,9 @@ import Data.Hashable
 import Data.IP qualified as IP
 import Data.Word (Word16, Word32, Word64)
 
-import Cardano.Slotting.Slot (SlotNo (..))
-
+import Ouroboros.Network.Block (SlotNo (..))
 import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.PeerSelection.Governor
-
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type (AfterSlot (..),
            UseLedgerPeers (..))
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
