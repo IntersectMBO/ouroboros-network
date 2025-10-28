@@ -61,6 +61,7 @@ import Control.Monad.Fail qualified as Fail
 import Control.Monad.IOSim
 import Control.Tracer (Tracer (..), contramap, traceWith)
 
+import Ouroboros.Network.Block (Point, SlotNo)
 import Ouroboros.Network.BlockFetch (FetchMode (..), PraosFetchMode (..))
 import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.ExitPolicy
@@ -485,6 +486,10 @@ mockPeerSelectionActions' tracer
           lpExtraAPI = Cardano.LedgerPeersConsensusInterface {
             readFetchMode = pure (PraosFetchMode FetchModeDeadline),
             getLedgerStateJudgement = readLedgerStateJudgement,
+            getBlockHash =
+              let dummy :: forall r kind. SlotNo -> (STM m (Point (LedgerPeerSnapshot kind)) -> r) -> r
+                  dummy _slotNo k = k retry
+               in dummy,
             updateOutboundConnectionsState = \a -> do
               a' <- readTVar outboundConnectionsStateVar
               when (a /= a') $

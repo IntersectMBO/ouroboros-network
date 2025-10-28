@@ -90,7 +90,7 @@ import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Ex
 import Cardano.Network.PeerSelection.Governor.Types qualified as Cardano
 import Cardano.Network.PeerSelection.Governor.Types qualified as ExtraSizes
 
-import Ouroboros.Network.Block (BlockNo)
+import Ouroboros.Network.Block (BlockNo, Point, SlotNo)
 import Ouroboros.Network.BlockFetch (FetchMode (..), PraosFetchMode (..),
            TraceFetchClientState, TraceLabelPeer (..))
 import Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace)
@@ -1245,6 +1245,12 @@ diffusionSimulationM
                     Cardano.LedgerPeersConsensusInterface {
                       Cardano.readFetchMode = pure (PraosFetchMode FetchModeDeadline)
                     , Cardano.getLedgerStateJudgement = pure TooOld
+                    , Cardano.getBlockHash =
+                        let dummy :: forall r s. SlotNo
+                                  -> (STM m (Point (LedgerPeerSnapshot s)) -> r)
+                                  -> r
+                            dummy _slotNo k = k retry
+                         in dummy
                     , Cardano.updateOutboundConnectionsState =
                         \a -> do
                           a' <- readTVar onlyOutboundConnectionsStateVar

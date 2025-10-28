@@ -64,6 +64,7 @@ import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers
            (LocalRootPeers (..))
 import Ouroboros.Network.Point
+import Ouroboros.Network.Socket ()
 
 import Test.Cardano.Network.PeerSelection.MockEnvironment hiding (tests)
 import Test.Cardano.Network.PeerSelection.Utils
@@ -86,6 +87,7 @@ import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Ca
 import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano.ExtraState
 import Cardano.Network.PeerSelection.Governor.Types qualified as Cardano.ExtraSizes
 import Cardano.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
+import Ouroboros.Network.Block (Point, SlotNo)
 import Ouroboros.Network.BlockFetch (FetchMode (..), PraosFetchMode (..))
 import Test.QuickCheck
 import Test.Tasty
@@ -4374,6 +4376,13 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
                     lpExtraAPI = Cardano.LedgerPeersConsensusInterface {
                       readFetchMode = pure (PraosFetchMode FetchModeDeadline),
                       getLedgerStateJudgement = readLedgerStateJudgement,
+                      getBlockHash =
+                        let dummy :: forall r kind.
+                                     SlotNo
+                                  -> (STM IO (Point (LedgerPeerSnapshot kind)) -> r)
+                                  -> r
+                            dummy _slotNo k = k retry
+                         in dummy,
                       updateOutboundConnectionsState = \a -> do
                         a' <- readTVar olocVar
                         when (a /= a') $
