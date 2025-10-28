@@ -29,11 +29,16 @@ import "contra-tracer" Control.Tracer
 import Data.Aeson
 import Data.Aeson.Encode.Pretty (encodePretty)
 import Data.Aeson.KeyMap (fromList)
-import Data.Functor.Contravariant ((>$<))
 import Data.Set qualified as Set
 import Data.Text qualified as Text
 import Data.Text.Lazy (toStrict)
 import Data.Text.Lazy.Encoding (decodeUtf8)
+
+-- TODO
+--import Cardano.Network.Logging ()
+import Network.Mux.Logging ()
+import Ouroboros.Network.Logging ()
+import Ouroboros.Network.Logging.Framework ()
 
 import Ouroboros.Network.Diffusion qualified as Diffusion
 import Ouroboros.Network.OrphanInstances ()
@@ -49,35 +54,7 @@ import DMQ.Configuration
 import DMQ.NodeToClient.Version
 import DMQ.NodeToNode.Version
 
-data EventType =
-    Mux
-  | Channel
-  | Bearer
-  | Handshake
-  | LocalMux
-  | LocalChannel
-  | LocalBearer
-  | LocalHandshake
-  | Diffusion
-  | LocalRootPeers
-  | PublicRootPeers
-  | LedgerPeers
-  | PeerSelection
-  | ChurnCounters
-  | DebugPeerSelectionInitiator
-  | DebugPeerSelectionInitiatorResponder
-  | PeerSelectionCounters
-  | PeerSelectionActions
-  | ConnectionManager
-  | ConnectionManagerTransition
-  | Server
-  | InboundGovernor
-  | InboundGovernorTransition
-  | LocalConnectionManager
-  | LocalServer
-  | LocalInboundGovernor
-  | Dns
-  | DMQ String
+data EventType = DMQ String
   deriving (Eq, Show)
 
 data WithEventType = forall a. ToJSON a => WithEventType EventType a
@@ -96,39 +73,10 @@ instance Logging.LogFormatting WithEventType where
 instance Logging.MetaTrace WithEventType where
   -- allNamespaces :: [Namespace a]
   allNamespaces = [
-    -- Diffusion traces.
-    --------------------
-      Logging.Namespace [] ["Mux"]
-    , Logging.Namespace [] ["Channel"]
-    , Logging.Namespace [] ["Bearer"]
-    , Logging.Namespace [] ["Handshake"]
-    , Logging.Namespace [] ["LocalMux"]
-    , Logging.Namespace [] ["LocalChannel"]
-    , Logging.Namespace [] ["LocalBearer"]
-    , Logging.Namespace [] ["LocalHandshake"]
-    , Logging.Namespace [] ["Diffusion"]
-    , Logging.Namespace [] ["LocalRootPeers"]
-    , Logging.Namespace [] ["PublicRootPeers"]
-    , Logging.Namespace [] ["LedgerPeers"]
-    , Logging.Namespace [] ["PeerSelection"]
-    , Logging.Namespace [] ["ChurnCounters"]
-    , Logging.Namespace [] ["DebugPeerSelectionInitiator"]
-    , Logging.Namespace [] ["DebugPeerSelectionInitiatorResponder"]
-    , Logging.Namespace [] ["PeerSelectionCounters"]
-    , Logging.Namespace [] ["PeerSelectionActions"]
-    , Logging.Namespace [] ["ConnectionManager"]
-    , Logging.Namespace [] ["ConnectionManagerTransition"]
-    , Logging.Namespace [] ["Server"]
-    , Logging.Namespace [] ["InboundGovernor"]
-    , Logging.Namespace [] ["InboundGovernorTransition"]
-    , Logging.Namespace [] ["LocalConnectionManager"]
-    , Logging.Namespace [] ["LocalServer"]
-    , Logging.Namespace [] ["LocalInboundGovernor"]
-    , Logging.Namespace [] ["DnsTracer"]
     -- DMQ-Node only traces.
     ------------------------
     -- Main.
-    , Logging.Namespace [] ["Configuration"]
+      Logging.Namespace [] ["Configuration"]
     , Logging.Namespace [] ["ShelleyGenesisFile"]
     , Logging.Namespace [] ["NetworkTopology"]
     -- Diffusion.NodeKernel and NodeToClient
@@ -148,62 +96,8 @@ instance Logging.MetaTrace WithEventType where
     , Logging.Namespace [] ["SigSubmission.Protocol.Server"]
     ]
   namespaceFor (WithEventType et _) = Logging.Namespace [] [(Text.pack $ show et)]
-  severityFor (Logging.Namespace [] ["Mux"]) _ = Just Logging.Info
-  severityFor (Logging.Namespace [] ["Channel"]) _ = Just Logging.Info
-  severityFor (Logging.Namespace [] ["Bearer"]) _ = Just Logging.Info
-  severityFor (Logging.Namespace [] ["Handshake"]) _ = Just Logging.Info
-  severityFor (Logging.Namespace [] ["LocalMux"]) _ = Just Logging.Info
-  severityFor (Logging.Namespace [] ["LocalChannel"]) _ = Just Logging.Info
-  severityFor (Logging.Namespace [] ["LocalBearer"]) _ = Just Logging.Info
-  severityFor (Logging.Namespace [] ["LocalHandshake"]) _ = Just Logging.Info
-  severityFor (Logging.Namespace [] ["Diffusion"]) _ = Just Logging.Info
-  severityFor (Logging.Namespace [] ["LocalRootPeers"]) _ = Just Logging.Info
-  severityFor (Logging.Namespace [] ["PublicRootPeers"]) _ = Just Logging.Info
-  severityFor (Logging.Namespace [] ["LedgerPeers"]) _ = Just Logging.Info
-  severityFor (Logging.Namespace [] ["PeerSelection"]) _ = Just Logging.Info
-  severityFor (Logging.Namespace [] ["ChurnCounters"]) _ = Just Logging.Info
-  severityFor (Logging.Namespace [] ["DebugPeerSelectionInitiator"]) _ = Just Logging.Info
-  severityFor (Logging.Namespace [] ["DebugPeerSelectionInitiatorResponder"]) _ = Just Logging.Info
-  severityFor (Logging.Namespace [] ["PeerSelectionCounters"]) _ = Just Logging.Info
-  severityFor (Logging.Namespace [] ["PeerSelectionActions"]) _ = Just Logging.Info
-  severityFor (Logging.Namespace [] ["ConnectionManager"]) _ = Just Logging.Info
-  severityFor (Logging.Namespace [] ["ConnectionManagerTransition"]) _ = Just Logging.Info
-  severityFor (Logging.Namespace [] ["Server"]) _ = Just Logging.Info
-  severityFor (Logging.Namespace [] ["InboundGovernor"]) _ = Just Logging.Info
-  severityFor (Logging.Namespace [] ["InboundGovernorTransition"]) _ = Just Logging.Info
-  severityFor (Logging.Namespace [] ["LocalConnectionManager"]) _ = Just Logging.Info
-  severityFor (Logging.Namespace [] ["LocalServerTracer"]) _ = Just Logging.Info
-  severityFor (Logging.Namespace [] ["LocalInboundGovernor"]) _ = Just Logging.Info
-  severityFor (Logging.Namespace [] ["Dns"]) _ = Just Logging.Info
   severityFor _ _ = Just Logging.Info
   privacyFor _ _ =  Just Logging.Public
-  detailsFor (Logging.Namespace [] ["Mux"]) _ = Just Logging.DNormal
-  detailsFor (Logging.Namespace [] ["Channel"]) _ = Just Logging.DNormal
-  detailsFor (Logging.Namespace [] ["Bearer"]) _ = Just Logging.DNormal
-  detailsFor (Logging.Namespace [] ["Handshake"]) _ = Just Logging.DNormal
-  detailsFor (Logging.Namespace [] ["LocalMux"]) _ = Just Logging.DNormal
-  detailsFor (Logging.Namespace [] ["LocalChannel"]) _ = Just Logging.DNormal
-  detailsFor (Logging.Namespace [] ["LocalBearer"]) _ = Just Logging.DNormal
-  detailsFor (Logging.Namespace [] ["LocalHandshake"]) _ = Just Logging.DNormal
-  detailsFor (Logging.Namespace [] ["Diffusion"]) _ = Just Logging.DNormal
-  detailsFor (Logging.Namespace [] ["LocalRootPeers"]) _ = Just Logging.DNormal
-  detailsFor (Logging.Namespace [] ["PublicRootPeers"]) _ = Just Logging.DNormal
-  detailsFor (Logging.Namespace [] ["LedgerPeers"]) _ = Just Logging.DNormal
-  detailsFor (Logging.Namespace [] ["PeerSelection"]) _ = Just Logging.DNormal
-  detailsFor (Logging.Namespace [] ["ChurnCounters"]) _ = Just Logging.DNormal
-  detailsFor (Logging.Namespace [] ["DebugPeerSelectionInitiator"]) _ = Just Logging.DNormal
-  detailsFor (Logging.Namespace [] ["DebugPeerSelectionInitiatorResponder"]) _ = Just Logging.DNormal
-  detailsFor (Logging.Namespace [] ["PeerSelectionCounters"]) _ = Just Logging.DNormal
-  detailsFor (Logging.Namespace [] ["PeerSelectionActions"]) _ = Just Logging.DNormal
-  detailsFor (Logging.Namespace [] ["ConnectionManager"]) _ = Just Logging.DNormal
-  detailsFor (Logging.Namespace [] ["ConnectionManagerTransition"]) _ = Just Logging.DNormal
-  detailsFor (Logging.Namespace [] ["Server"]) _ = Just Logging.DNormal
-  detailsFor (Logging.Namespace [] ["InboundGovernor"]) _ = Just Logging.DNormal
-  detailsFor (Logging.Namespace [] ["InboundGovernorTransition"]) _ = Just Logging.DNormal
-  detailsFor (Logging.Namespace [] ["LocalConnectionManager"]) _ = Just Logging.DNormal
-  detailsFor (Logging.Namespace [] ["LocalServer"]) _ = Just Logging.DNormal
-  detailsFor (Logging.Namespace [] ["LocalInboundGovernor"]) _ = Just Logging.DNormal
-  detailsFor (Logging.Namespace [] ["Dns"]) _ = Just Logging.DNormal
   detailsFor _ _ =  Just Logging.DNormal
   documentFor _ = Nothing
   metricsDocFor _ = []
@@ -230,6 +124,8 @@ mkCardanoTracer dmqConfigFilePath = do
   traceConfig <- Logging.readConfiguration dmqConfigFilePath
   emptyConfigReflection <- Logging.emptyConfigReflection
   stdoutTrace <- Logging.standardTracer
+  let trForward = mempty
+  let mbTrEkg = Nothing
   {-- From: Cardano.Logging.Tracer.Composed
       -- | Construct a tracer according to the requirements for cardano node.
       -- The tracer gets a 'name', which is appended to its namespace.
@@ -268,6 +164,7 @@ mkCardanoTracer dmqConfigFilePath = do
     emptyConfigReflection
     traceConfig
     [cardanoTracer]
+
   -- Make it a "contra-tracer" tracer for backward compatibility.
   -- This is a `Tracer IO WithEventType`.
   let dmqTracer = contramapM
@@ -275,7 +172,182 @@ mkCardanoTracer dmqConfigFilePath = do
                       Logging.traceWith cardanoTracer wet
                     )
                   $ Tracer (\_ -> return ())
-  return (dmqTracer, dmqDiffusionTracers dmqTracer)
+
+  !dtMuxTracer <- Logging.mkCardanoTracer
+    stdoutTrace trForward mbTrEkg
+    ["Net", "Mux", "Remote"]
+  Logging.configureTracers emptyConfigReflection traceConfig [dtMuxTracer]
+  !dtChannelTracer <- Logging.mkCardanoTracer
+    stdoutTrace trForward mbTrEkg
+    ["Net", "Mux", "Remote", "Channel"]
+  Logging.configureTracers emptyConfigReflection traceConfig [dtChannelTracer]
+  !dtBearerTracer <- Logging.mkCardanoTracer
+    stdoutTrace trForward mbTrEkg
+    ["Net", "Mux", "Remote", "Bearer"]
+  Logging.configureTracers emptyConfigReflection traceConfig [dtBearerTracer]
+  !dtHandshakeTracer <- Logging.mkCardanoTracer
+    stdoutTrace trForward mbTrEkg
+    ["Net", "Handshake", "Remote"]
+  Logging.configureTracers emptyConfigReflection traceConfig [dtHandshakeTracer]
+  !dtLocalMuxTracer <- Logging.mkCardanoTracer
+    stdoutTrace trForward mbTrEkg
+    ["Net", "Mux", "Local"]
+  Logging.configureTracers emptyConfigReflection traceConfig [dtLocalMuxTracer]
+  !dtLocalChannelTracer <- Logging.mkCardanoTracer
+    stdoutTrace trForward mbTrEkg
+    ["Net", "Mux", "Local", "Channel"]
+  Logging.configureTracers emptyConfigReflection traceConfig [dtLocalChannelTracer]
+  !dtLocalBearerTracer <- Logging.mkCardanoTracer
+    stdoutTrace trForward mbTrEkg
+    ["Net", "Mux", "Local", "Bearer"]
+  Logging.configureTracers emptyConfigReflection traceConfig [dtLocalBearerTracer]
+  !dtLocalHandshakeTracer <- Logging.mkCardanoTracer
+    stdoutTrace trForward mbTrEkg
+    ["Net", "Handshake", "Local"]
+  Logging.configureTracers emptyConfigReflection traceConfig [dtLocalHandshakeTracer]
+  !dtDiffusionTracer <- Logging.mkCardanoTracer
+    stdoutTrace trForward mbTrEkg
+    ["Startup", "DiffusionInit"]
+  Logging.configureTracers emptyConfigReflection traceConfig [dtDiffusionTracer]
+  !dtTraceLocalRootPeersTracer  <- Logging.mkCardanoTracer
+    stdoutTrace trForward mbTrEkg
+    ["Net", "Peers", "LocalRoot"]
+  Logging.configureTracers emptyConfigReflection traceConfig [dtTraceLocalRootPeersTracer]
+  !dtTracePublicRootPeersTracer  <- Logging.mkCardanoTracer
+    stdoutTrace trForward mbTrEkg
+    ["Net", "Peers", "PublicRoot"]
+  Logging.configureTracers emptyConfigReflection traceConfig [dtTracePublicRootPeersTracer]
+  !dtTraceLedgerPeersTracer <- Logging.mkCardanoTracer
+    stdoutTrace trForward mbTrEkg
+    ["Net", "Peers", "Ledger"]
+  Logging.configureTracers emptyConfigReflection traceConfig [dtTraceLedgerPeersTracer]
+  !dtTracePeerSelectionTracer <- Logging.mkCardanoTracer
+    stdoutTrace trForward mbTrEkg
+    ["Net", "PeerSelection", "Selection"]
+  Logging.configureTracers emptyConfigReflection traceConfig [dtTracePeerSelectionTracer]
+  !dtDebugPeerSelectionInitiatorTracer <- Logging.mkCardanoTracer
+    stdoutTrace trForward mbTrEkg
+    ["Net", "PeerSelection", "Initiator"]
+  Logging.configureTracers emptyConfigReflection traceConfig [dtDebugPeerSelectionInitiatorTracer]
+  !dtDebugPeerSelectionInitiatorResponderTracer <- Logging.mkCardanoTracer
+    stdoutTrace trForward mbTrEkg
+    ["Net", "PeerSelection", "Responder"]
+  Logging.configureTracers emptyConfigReflection traceConfig [dtDebugPeerSelectionInitiatorResponderTracer]
+  !dtTraceChurnCounters <- Logging.mkCardanoTracer
+    stdoutTrace trForward mbTrEkg
+    ["Net", "Churn"]
+  Logging.configureTracers emptyConfigReflection traceConfig [dtTraceChurnCounters]
+  !dtTracePeerSelectionCounters <- Logging.mkCardanoTracer
+    stdoutTrace trForward mbTrEkg
+    ["Net", "PeerSelection"]
+  Logging.configureTracers emptyConfigReflection traceConfig [dtTracePeerSelectionCounters]
+  !dtPeerSelectionActionsTracer <- Logging.mkCardanoTracer
+    stdoutTrace trForward mbTrEkg
+    ["Net", "PeerSelection", "Actions"]
+  Logging.configureTracers emptyConfigReflection traceConfig [dtPeerSelectionActionsTracer]
+  !dtConnectionManagerTracer <- Logging.mkCardanoTracer
+    stdoutTrace trForward mbTrEkg
+    ["Net", "ConnectionManager", "Remote"]
+  Logging.configureTracers emptyConfigReflection traceConfig [dtConnectionManagerTracer]
+  !dtConnectionManagerTransitionTracer <- Logging.mkCardanoTracer
+    stdoutTrace trForward mbTrEkg
+    ["Net", "ConnectionManager", "Transition"]
+  Logging.configureTracers emptyConfigReflection traceConfig [dtConnectionManagerTransitionTracer]
+  !dtServerTracer <- Logging.mkCardanoTracer
+    stdoutTrace trForward mbTrEkg
+    ["Net", "Server", "Local"]
+  Logging.configureTracers emptyConfigReflection traceConfig [dtServerTracer]
+  !dtInboundGovernorTracer <- Logging.mkCardanoTracer
+    stdoutTrace trForward mbTrEkg
+    ["Net", "InboundGovernor", "Remote"]
+  Logging.configureTracers emptyConfigReflection traceConfig [dtInboundGovernorTracer]
+  !dtInboundGovernorTransitionTracer <- Logging.mkCardanoTracer
+    stdoutTrace trForward mbTrEkg
+    ["Net", "InboundGovernor", "Transition"]
+  Logging.configureTracers emptyConfigReflection traceConfig [dtInboundGovernorTransitionTracer]
+  !dtLocalConnectionManagerTracer <- Logging.mkCardanoTracer
+    stdoutTrace trForward Nothing -- never conflate metrics of the same name with those originating from `connectionManagerTr`
+    ["Net", "ConnectionManager", "Local"]
+  Logging.configureTracers emptyConfigReflection traceConfig [dtLocalConnectionManagerTracer]
+  !dtLocalServerTracer <- Logging.mkCardanoTracer
+    stdoutTrace trForward mbTrEkg
+    ["Net", "Server", "Local"]
+  Logging.configureTracers emptyConfigReflection traceConfig [dtLocalServerTracer]
+  !dtLocalInboundGovernorTracer <- Logging.mkCardanoTracer
+    stdoutTrace trForward mbTrEkg
+    ["Net", "InboundGovernor", "Local"]
+  Logging.configureTracers emptyConfigReflection traceConfig [dtLocalInboundGovernorTracer]
+  !dtDnsTracer <- Logging.mkCardanoTracer
+    stdoutTrace trForward mbTrEkg
+    ["Net", "DNS"]
+  Logging.configureTracers emptyConfigReflection traceConfig [dtDnsTracer]
+
+  let dmqDifussionTracers =
+        -- From `Cardano.Node.Tracing.Tracers`
+        -- Branch "ana/10.6-final-integration-mix"
+{--
+Diffusion.Tracers {
+  Diffusion.dtMuxTracer = Tracer $ traceWith dtMuxTracer
+, Diffusion.dtChannelTracer = Tracer $ traceWith dtChannelTracer
+, Diffusion.dtBearerTracer = Tracer $ traceWith dtBearerTracer
+, Diffusion.dtHandshakeTracer = Tracer $ traceWith dtHandshakeTracer
+, Diffusion.dtLocalMuxTracer = Tracer $ traceWith dtLocalMuxTracer
+, Diffusion.dtLocalChannelTracer = Tracer $ traceWith dtLocalChannelTracer
+, Diffusion.dtLocalBearerTracer = Tracer $ traceWith dtLocalBearerTracer
+, Diffusion.dtLocalHandshakeTracer = Tracer $ traceWith dtLocalHandshakeTracer
+, Diffusion.dtDiffusionTracer = Tracer $ traceWith dtDiffusionTracer
+, Diffusion.dtTraceLocalRootPeersTracer = Tracer $ traceWith localRootPeersTr
+, Diffusion.dtTracePublicRootPeersTracer = Tracer $ traceWith publicRootPeersTr
+, Diffusion.dtTraceLedgerPeersTracer = Tracer $ traceWith dtTraceLedgerPeersTracer
+, Diffusion.dtTracePeerSelectionTracer = Tracer $ traceWith dtTracePeerSelectionTracer
+, Diffusion.dtDebugPeerSelectionInitiatorTracer = Tracer $ traceWith dtDebugPeerSelectionInitiatorTracer
+, Diffusion.dtDebugPeerSelectionInitiatorResponderTracer = Tracer $ traceWith dtDebugPeerSelectionInitiatorResponderTracer
+
+, Diffusion.dtTracePeerSelectionCounters = Tracer $ traceWith peerSelectionCountersTr
+, Diffusion.dtTraceChurnCounters = Tracer $ traceWith churnCountersTr
+, Diffusion.dtPeerSelectionActionsTracer = Tracer $ traceWith peerSelectionActionsTr
+, Diffusion.dtConnectionManagerTracer = Tracer $ traceWith dtConnectionManagerTracer
+, Diffusion.dtConnectionManagerTransitionTracer = Tracer $ traceWith dtConnectionManagerTransitionTracer
+, Diffusion.dtServerTracer = Tracer $ traceWith serverTr
+, Diffusion.dtInboundGovernorTracer = Tracer $ traceWith inboundGovernorTr
+, Diffusion.dtInboundGovernorTransitionTracer = Tracer $ traceWith inboundGovernorTransitionsTr
+, Diffusion.dtDnsTracer = Tracer $ traceWith dtDnsTr
+, Diffusion.dtLocalConnectionManagerTracer =  Tracer $ traceWith localConnectionManagerTr
+, Diffusion.dtLocalServerTracer = Tracer $ traceWith localServerTr
+, Diffusion.dtLocalInboundGovernorTracer = Tracer $ traceWith localInboundGovernorTr
+}
+--}
+        Diffusion.Tracers {
+            Diffusion.dtMuxTracer                                  = Tracer $ Logging.traceWith dtMuxTracer,
+            Diffusion.dtChannelTracer                              = Tracer $ Logging.traceWith dtChannelTracer,
+            Diffusion.dtBearerTracer                               = Tracer $ Logging.traceWith dtBearerTracer,
+            Diffusion.dtHandshakeTracer                            = Tracer $ Logging.traceWith dtHandshakeTracer,
+            Diffusion.dtLocalMuxTracer                             = Tracer $ Logging.traceWith dtLocalMuxTracer,
+            Diffusion.dtLocalChannelTracer                         = Tracer $ Logging.traceWith dtLocalChannelTracer,
+            Diffusion.dtLocalBearerTracer                          = Tracer $ Logging.traceWith dtLocalBearerTracer,
+            Diffusion.dtLocalHandshakeTracer                       = Tracer $ Logging.traceWith dtLocalHandshakeTracer,
+            Diffusion.dtDiffusionTracer                            = Tracer $ Logging.traceWith dtDiffusionTracer,
+            Diffusion.dtTraceLocalRootPeersTracer                  = Tracer $ Logging.traceWith dtTraceLocalRootPeersTracer,
+            Diffusion.dtTracePublicRootPeersTracer                 = Tracer $ Logging.traceWith dtTracePublicRootPeersTracer,
+            Diffusion.dtTraceLedgerPeersTracer                     = Tracer $ Logging.traceWith dtTraceLedgerPeersTracer,
+            Diffusion.dtTracePeerSelectionTracer                   = Tracer $ Logging.traceWith dtTracePeerSelectionTracer,
+            Diffusion.dtDebugPeerSelectionInitiatorTracer          = Tracer $ Logging.traceWith dtDebugPeerSelectionInitiatorTracer,
+            Diffusion.dtDebugPeerSelectionInitiatorResponderTracer = Tracer $ Logging.traceWith dtDebugPeerSelectionInitiatorResponderTracer,
+            Diffusion.dtTraceChurnCounters                         = Tracer $ Logging.traceWith dtTraceChurnCounters,
+            Diffusion.dtTracePeerSelectionCounters                 = Tracer $ Logging.traceWith dtTracePeerSelectionCounters,
+            Diffusion.dtPeerSelectionActionsTracer                 = Tracer $ Logging.traceWith dtPeerSelectionActionsTracer,
+            Diffusion.dtConnectionManagerTracer                    = Tracer $ Logging.traceWith dtConnectionManagerTracer,
+            Diffusion.dtConnectionManagerTransitionTracer          = Tracer $ Logging.traceWith dtConnectionManagerTransitionTracer,
+            Diffusion.dtServerTracer                               = Tracer $ Logging.traceWith dtServerTracer,
+            Diffusion.dtInboundGovernorTracer                      = Tracer $ Logging.traceWith dtInboundGovernorTracer,
+            Diffusion.dtInboundGovernorTransitionTracer            = Tracer $ Logging.traceWith dtInboundGovernorTransitionTracer,
+            Diffusion.dtLocalConnectionManagerTracer               = Tracer $ Logging.traceWith dtLocalConnectionManagerTracer,
+            Diffusion.dtLocalServerTracer                          = Tracer $ Logging.traceWith dtLocalServerTracer,
+            Diffusion.dtLocalInboundGovernorTracer                 = Tracer $ Logging.traceWith dtLocalInboundGovernorTracer,
+            Diffusion.dtDnsTracer                                  = Tracer $ Logging.traceWith dtDnsTracer
+          }
+
+  return (dmqTracer, dmqDifussionTracers)
 
 -- An orphan instance needed for `Handshake versionNumber Term`
 instance ToJSON Term where
@@ -286,7 +358,8 @@ instance Semigroup NoExtraPeers where
   _ <> _ = NoExtraPeers
 instance Monoid NoExtraPeers where
   mempty = NoExtraPeers
-
+instance Show NoExtraPeers where
+  show _ = ""
 instance ToJSON NoExtraPeers where
   toJSON _ = Null
   omitField _ = True
@@ -307,6 +380,12 @@ instance ToJSON NoExtraDebugState where
 data NoExtraChurnArgs  = NoExtraChurnArgs
 data NoExtraAPI        = NoExtraAPI
 data NoExtraTracer     = NoExtraTracer
+instance Show NoExtraState where
+  show _ = ""
+instance Show NoExtraDebugState where
+  show _ = ""
+instance Show NoExtraTracer where
+  show _ = ""
 instance ToJSON NoExtraTracer where
   toJSON _ = Null
   omitField _ = True
@@ -358,46 +437,3 @@ instance ToJSON (DebugPeerSelection NoExtraState NoExtraFlags NoExtraPeers Remot
                                 (const NoExtraCounters)
                                 st
            ]
-
-dmqDiffusionTracers
-  :: (Tracer IO WithEventType)
-  -> Diffusion.Tracers RemoteAddress NodeToNodeVersion   NodeToNodeVersionData
-                       LocalAddress  NodeToClientVersion NodeToClientVersionData
-                       NoExtraState
-                       NoExtraDebugState
-                       NoExtraFlags
-                       NoExtraPeers
-                       NoExtraCounters
-                       NoExtraTracer
-                       IO
-dmqDiffusionTracers tracer =
-  Diffusion.Tracers {
-    Diffusion.dtMuxTracer                                  = WithEventType Mux >$< tracer,
-    Diffusion.dtChannelTracer                              = WithEventType Channel >$< tracer,
-    Diffusion.dtBearerTracer                               = WithEventType Bearer >$< tracer,
-    Diffusion.dtHandshakeTracer                            = WithEventType Handshake >$< tracer,
-    Diffusion.dtLocalMuxTracer                             = WithEventType LocalMux >$< tracer,
-    Diffusion.dtLocalChannelTracer                         = WithEventType LocalChannel >$< tracer,
-    Diffusion.dtLocalBearerTracer                          = WithEventType LocalBearer >$< tracer,
-    Diffusion.dtLocalHandshakeTracer                       = WithEventType LocalHandshake >$< tracer,
-    Diffusion.dtDiffusionTracer                            = WithEventType Diffusion >$< tracer,
-    Diffusion.dtTraceLocalRootPeersTracer                  = WithEventType LocalRootPeers >$< tracer,
-    Diffusion.dtTracePublicRootPeersTracer                 = WithEventType PublicRootPeers >$< tracer,
-    Diffusion.dtTraceLedgerPeersTracer                     = WithEventType LedgerPeers >$< tracer,
-    Diffusion.dtTracePeerSelectionTracer                   = WithEventType PeerSelection >$< tracer,
-    Diffusion.dtTraceChurnCounters                         = WithEventType ChurnCounters >$< tracer,
-    Diffusion.dtDebugPeerSelectionInitiatorTracer          = WithEventType DebugPeerSelectionInitiator >$< tracer,
-    Diffusion.dtDebugPeerSelectionInitiatorResponderTracer = WithEventType DebugPeerSelectionInitiatorResponder >$< tracer,
-    Diffusion.dtTracePeerSelectionCounters                 = WithEventType PeerSelectionCounters >$< tracer,
-    Diffusion.dtPeerSelectionActionsTracer                 = WithEventType PeerSelectionActions >$< tracer,
-    Diffusion.dtConnectionManagerTracer                    = WithEventType ConnectionManager >$< tracer,
-    Diffusion.dtConnectionManagerTransitionTracer          = WithEventType ConnectionManagerTransition >$< tracer,
-    Diffusion.dtServerTracer                               = WithEventType Server >$< tracer,
-    Diffusion.dtInboundGovernorTracer                      = WithEventType InboundGovernor >$< tracer,
-    Diffusion.dtInboundGovernorTransitionTracer            = WithEventType InboundGovernorTransition >$< tracer,
-    Diffusion.dtLocalConnectionManagerTracer               = WithEventType LocalConnectionManager >$< tracer,
-    Diffusion.dtLocalServerTracer                          = WithEventType LocalServer >$< tracer,
-    Diffusion.dtLocalInboundGovernorTracer                 = WithEventType LocalInboundGovernor >$< tracer,
-    Diffusion.dtDnsTracer                                  = WithEventType Dns >$< tracer
-  }
-
