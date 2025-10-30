@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds         #-}
 {-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE NamedFieldPuns    #-}
@@ -16,7 +17,8 @@ import Data.Text qualified as Text
 import Ouroboros.Network.Diffusion.Topology (NetworkTopology (..))
 import Ouroboros.Network.OrphanInstances (localRootPeersGroupsFromJSON,
            networkTopologyFromJSON, networkTopologyToJSON)
-import Ouroboros.Network.PeerSelection.LedgerPeers.Type (LedgerPeerSnapshot)
+import Ouroboros.Network.PeerSelection.LedgerPeers.Type (LedgerPeerSnapshot,
+           LedgerPeersKind (..))
 import System.Exit (die)
 
 data NoExtraConfig = NoExtraConfig
@@ -69,7 +71,7 @@ readTopologyFileOrError nc =
   >>= either (die . Text.unpack)
              pure
 
-readPeerSnapshotFile :: FilePath -> IO (Either Text LedgerPeerSnapshot)
+readPeerSnapshotFile :: FilePath -> IO (Either Text (LedgerPeerSnapshot BigLedgerPeers))
 readPeerSnapshotFile psf = do
   eBs <- try $ BS.readFile psf
   case eBs of
@@ -89,7 +91,7 @@ readPeerSnapshotFile psf = do
       , Text.pack err
       ]
 
-readPeerSnapshotFileOrError :: FilePath -> IO LedgerPeerSnapshot
+readPeerSnapshotFileOrError :: FilePath -> IO (LedgerPeerSnapshot BigLedgerPeers)
 readPeerSnapshotFileOrError psf =
       readPeerSnapshotFile psf
   >>= either (die . Text.unpack)
