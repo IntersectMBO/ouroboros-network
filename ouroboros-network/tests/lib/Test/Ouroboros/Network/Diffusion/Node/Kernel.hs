@@ -322,7 +322,8 @@ data NodeKernel header block s txid m = NodeKernel {
         :: SharedTxStateVar m NtNAddr txid (Tx txid)
     }
 
-newNodeKernel :: ( MonadSTM m
+newNodeKernel :: ( MonadTraceSTM m
+                 , MonadLabelledSTM m
                  , Strict.MonadMVar m
                  , RandomGen rng
                  , Eq txid
@@ -333,6 +334,8 @@ newNodeKernel :: ( MonadSTM m
               -> m (NodeKernel header block rng txid m)
 newNodeKernel psRng txSeed txs = do
     publicStateVar <- makePublicPeerSelectionStateVar
+    labelTVarIO publicStateVar "public-peer-selection-state-var"
+    traceTVarIO publicStateVar (\_ a -> return $ TraceString (show a))
     NodeKernel
       <$> newTVarIO Map.empty
       <*> newTVarIO (ChainProducerState Chain.Genesis Map.empty 0)
@@ -422,6 +425,8 @@ withNodeKernelThread
      , MonadFork          m
      , MonadThrow         m
      , MonadThrow    (STM m)
+     , MonadTraceSTM      m
+     , MonadLabelledSTM   m
      , Strict.MonadMVar   m
      , HasFullHeader block
      , RandomGen seed

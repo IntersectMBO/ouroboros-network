@@ -36,6 +36,7 @@ module Test.Ouroboros.Network.Utils
   , debugTracer
   , debugTracerG
   , sayTracer
+  , dynamicTracer
     -- * Tasty Utils
   , nightlyTest
   , ignoreTest
@@ -185,6 +186,8 @@ data WithName name event = WithName {
 instance (Show name, Show event) => Show (WithName name event) where
   show (WithName name ev) = "#" <> show name <> " % " <> show ev
 
+-- NOTE: one shouldn't use it in `sayTracer`, use
+-- `selectTraceEventsSayWithTime` instead.
 data WithTime event = WithTime {
     wtTime  :: Time,
     wtEvent :: event
@@ -276,6 +279,9 @@ debugTracerG :: (Show a, Typeable a) => Tracer (IOSim s) a
 debugTracerG =    Tracer (\msg -> getCurrentTime >>= say . show . (,msg))
                <> Tracer traceM
             -- <> Tracer Debug.traceShowM
+
+dynamicTracer :: Typeable a => Tracer (IOSim s) a
+dynamicTracer = Tracer traceM
 
 --
 -- Nightly tests

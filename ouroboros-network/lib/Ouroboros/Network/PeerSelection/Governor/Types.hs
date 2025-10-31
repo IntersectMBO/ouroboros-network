@@ -772,6 +772,7 @@ newtype PublicPeerSelectionState peeraddr =
   PublicPeerSelectionState {
     availableToShare :: Set peeraddr
   }
+  deriving Show
 
 emptyPublicPeerSelectionState :: Ord peeraddr
                               => PublicPeerSelectionState peeraddr
