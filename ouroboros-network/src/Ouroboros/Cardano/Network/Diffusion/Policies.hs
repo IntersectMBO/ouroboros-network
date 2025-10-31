@@ -33,7 +33,7 @@ simpleChurnModePeerSelectionPolicy rngVar getChurnMode metrics errorDelay =
   }
   where
     hotDemotionPolicy :: PickPolicy peerAddr (STM m)
-    hotDemotionPolicy _ _ _ available pickNum = do
+    hotDemotionPolicy _ _ _ _ available pickNum = do
         mode <- getChurnMode
         scores <- case mode of
                        ChurnModeNormal -> do

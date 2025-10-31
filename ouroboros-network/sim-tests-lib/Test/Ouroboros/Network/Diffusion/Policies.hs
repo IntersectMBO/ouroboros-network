@@ -53,18 +53,20 @@ instance Arbitrary ArbitrarySockAddr where
             SockAddrInet (fromIntegral (port :: Word16)) ip
 
 data ArbitraryPeerInfo = ArbitraryPeerInfo {
-    piFailCount :: !Int
-  , piTepid     :: !Bool
+    piFailCount  :: !Int
+  , piTepid      :: !Bool
+  , piReciprocal :: !Bool
   } deriving Show
 
 instance Arbitrary ArbitraryPeerInfo where
     arbitrary = do
         tepid <- arbitrary
+        reciprocal <- arbitrary
         failCnt <- oneof [ return 0
                          , choose (0, 10)
                          , choose (0, maxBound)
                          ]
-        return $ ArbitraryPeerInfo failCnt tepid
+        return $ ArbitraryPeerInfo failCnt tepid reciprocal
 
 
 data ArbitraryPolicyArguments = ArbitraryPolicyArguments {
@@ -165,6 +167,7 @@ prop_hotToWarmM ArbitraryPolicyArguments{..} seed = do
                   (const PeerSourceLocalRoot)
                   peerConnectFailCount
                   peerIsTepid
+                  peerIsReciprocal
                   (Map.keysSet apaAvailable)
                   apaPickNum
     noneWorse metrics picked
@@ -176,6 +179,9 @@ prop_hotToWarmM ArbitraryPolicyArguments{..} seed = do
 
     peerIsTepid p =
         maybe (error "peerIsTepid") piTepid (Map.lookup p apaAvailable)
+
+    peerIsReciprocal p =
+        maybe (error "peerIsReciprocal") piReciprocal (Map.lookup p apaAvailable)
 
     noneWorse :: PeerMetrics m SockAddr
               -> Set SockAddr
@@ -238,6 +244,9 @@ prop_randomDemotionM ArbitraryPolicyArguments{..} seed = do
     peerIsTepid p =
         maybe (error "peerIsTepid") piTepid (Map.lookup p apaAvailable)
 
+    peerIsReciprocal p =
+        maybe (error "peerIsReciprocal") piReciprocal (Map.lookup p apaAvailable)
+
     doDemotion :: Int
                -> PeerSelectionPolicy SockAddr m
                -> Map SockAddr Int
@@ -286,6 +295,7 @@ prop_randomDemotionM ArbitraryPolicyArguments{..} seed = do
                     (const PeerSourceLocalRoot)
                     peerConnectFailCount
                     peerIsTepid
+                    peerIsReciprocal
                     (Map.keysSet apaAvailable)
                     apaPickNum
         if Set.size picked /= apaPickNum

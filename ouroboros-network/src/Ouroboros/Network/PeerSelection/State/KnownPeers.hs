@@ -27,6 +27,9 @@ module Ouroboros.Network.PeerSelection.State.KnownPeers
   , lookupTepidFlag
   , setTepidFlag
   , clearTepidFlag
+  , lookupReciprocalFlag
+  , setReciprocalFlag
+  , clearReciprocalFlag
   , setSuccessfulConnectionFlag
     -- ** Tracking when we can (re)connect
   , minConnectTime
@@ -133,7 +136,9 @@ data KnownPeerInfo = KnownPeerInfo {
        -- set/enabled if we established a successful connection with this
        -- peer. It won't be unset after this.
        --
-       knownSuccessfulConnection :: !Bool
+       knownSuccessfulConnection :: !Bool,
+
+       knownPeerReciprocal       :: !Bool
      }
   deriving (Eq, Show)
 
@@ -169,6 +174,7 @@ alterKnownPeerInfo (peerSharing, peerAdvertise) peerLookupResult =
       , knownPeerSharing   = maybeToStrictMaybe peerSharing
       , knownPeerAdvertise = maybeToStrictMaybe peerAdvertise
       , knownSuccessfulConnection = False
+      , knownPeerReciprocal = False
       }
     Just kpi -> Just $
       -- pick first known value
@@ -377,6 +383,39 @@ setTepidFlag :: Ord peeraddr
              -> KnownPeers peeraddr
 setTepidFlag = setTepidFlag' True
 
+lookupReciprocalFlag :: Ord peeraddr
+                => peeraddr
+                -> KnownPeers peeraddr
+                -> Maybe Bool
+lookupReciprocalFlag peeraddr KnownPeers{allPeers} =
+    knownPeerReciprocal <$> Map.lookup peeraddr allPeers
+
+setReciprocalFlag' :: Ord peeraddr
+             => Bool
+             -> peeraddr
+             -> KnownPeers peeraddr
+             -> KnownPeers peeraddr
+setReciprocalFlag' val peeraddr knownPeers@KnownPeers{allPeers} =
+    assert (peeraddr `Map.member` allPeers) $
+    knownPeers { allPeers = Map.update (\kpi  -> Just kpi { knownPeerReciprocal = val })
+                              peeraddr allPeers
+               }
+
+clearReciprocalFlag :: Ord peeraddr
+             => peeraddr
+             -> KnownPeers peeraddr
+             -> KnownPeers peeraddr
+clearReciprocalFlag = setReciprocalFlag' False
+
+setReciprocalFlag :: Ord peeraddr
+             => Set peeraddr
+             -> KnownPeers peeraddr
+             -> KnownPeers peeraddr
+setReciprocalFlag peers knownPeers@KnownPeers{allPeers} =
+    assert (peers `Set.isSubsetOf` Map.keysSet allPeers) $
+    knownPeers { allPeers = foldr (Map.update (\kpi  -> Just kpi { knownPeerReciprocal = True }))
+                                  allPeers peers
+               }
 
 setSuccessfulConnectionFlag :: Ord peeraddr
                             => Set peeraddr

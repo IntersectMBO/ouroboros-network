@@ -710,13 +710,13 @@ mockPeerSelectionPolicy GovernorMockEnvironment {
     pickColdPeersToForgetVar   <- initScript' pickColdPeersToForget
     pickInboundPeersVar        <- initScript' pickInboundPeers
     return PeerSelectionPolicy {
-      policyPickKnownPeersForPeerShare = \_ _ _ -> interpretPickScript pickKnownPeersForPeerShareVar,
-      policyPickColdPeersToPromote  = \_ _ _ -> interpretPickScript pickColdPeersToPromoteVar,
-      policyPickWarmPeersToPromote  = \_ _ _ -> interpretPickScript pickWarmPeersToPromoteVar,
-      policyPickHotPeersToDemote    = \_ _ _ -> interpretPickScript pickHotPeersToDemoteVar,
-      policyPickWarmPeersToDemote   = \_ _ _ -> interpretPickScript pickWarmPeersToDemoteVar,
-      policyPickColdPeersToForget   = \_ _ _ -> interpretPickScript pickColdPeersToForgetVar,
-      policyPickInboundPeers        = \_ _ _ -> interpretPickScript pickInboundPeersVar,
+      policyPickKnownPeersForPeerShare = \_ _ _ _ -> interpretPickScript pickKnownPeersForPeerShareVar,
+      policyPickColdPeersToPromote  = \_ _ _ _ -> interpretPickScript pickColdPeersToPromoteVar,
+      policyPickWarmPeersToPromote  = \_ _ _ _ -> interpretPickScript pickWarmPeersToPromoteVar,
+      policyPickHotPeersToDemote    = \_ _ _ _ -> interpretPickScript pickHotPeersToDemoteVar,
+      policyPickWarmPeersToDemote   = \_ _ _ _ -> interpretPickScript pickWarmPeersToDemoteVar,
+      policyPickColdPeersToForget   = \_ _ _ _ -> interpretPickScript pickColdPeersToForgetVar,
+      policyPickInboundPeers        = \_ _ _ _ -> interpretPickScript pickInboundPeersVar,
       policyFindPublicRootTimeout   = 5,    -- seconds
       policyMaxInProgressPeerShareReqs = 2,
       policyPeerShareRetryTime         = 3600, -- seconds

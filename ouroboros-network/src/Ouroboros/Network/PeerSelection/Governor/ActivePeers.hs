@@ -26,7 +26,7 @@ import Ouroboros.Network.PeerSelection.Governor.Types
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type (IsBigLedgerPeer (..))
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
-import Ouroboros.Network.PeerSelection.State.KnownPeers (setTepidFlag)
+import Ouroboros.Network.PeerSelection.State.KnownPeers (setTepidFlag, clearReciprocalFlag)
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..))
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
@@ -986,7 +986,7 @@ jobDemoteActivePeer PeerSelectionActions{peerStateActions = PeerStateActions {de
                 --
                 then (activePeers, knownPeers, establishedPeers)
                 else (Set.delete peeraddr activePeers,
-                      setTepidFlag peeraddr knownPeers,
+                      clearReciprocalFlag peeraddr $ setTepidFlag peeraddr knownPeers,
                       EstablishedPeers.delete peeraddr establishedPeers)
             bigLedgerPeersSet     = PublicRootPeers.getBigLedgerPeers publicRootPeers
          in Decision {
@@ -1026,7 +1026,7 @@ jobDemoteActivePeer PeerSelectionActions{peerStateActions = PeerStateActions {de
                              _now ->
         assert (peeraddr `EstablishedPeers.member` establishedPeers st) $
         let activePeers' = Set.delete peeraddr activePeers
-            knownPeers'  = setTepidFlag peeraddr knownPeers
+            knownPeers'  = clearReciprocalFlag peeraddr $ setTepidFlag peeraddr knownPeers
             bigLedgerPeersSet = PublicRootPeers.getBigLedgerPeers publicRootPeers
          in Decision {
               decisionTrace = if peeraddr `Set.member` bigLedgerPeersSet

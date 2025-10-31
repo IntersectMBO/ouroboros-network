@@ -113,7 +113,7 @@ simplePeerSelectionPolicy :: forall m peerAddr.
 simplePeerSelectionPolicy rngVar metrics errorDelay = PeerSelectionPolicy {
       policyPickKnownPeersForPeerShare = simplePromotionPolicy,
       policyPickColdPeersToPromote     = simplePromotionPolicy,
-      policyPickWarmPeersToPromote     = simplePromotionPolicy,
+      policyPickWarmPeersToPromote     = reciprocalPromotionPolicy,
       policyPickInboundPeers           = simplePromotionPolicy,
 
       policyPickHotPeersToDemote  = hotDemotionPolicy,
@@ -132,7 +132,7 @@ simplePeerSelectionPolicy rngVar metrics errorDelay = PeerSelectionPolicy {
   where
 
     hotDemotionPolicy :: PickPolicy peerAddr (STM m)
-    hotDemotionPolicy _ _ _ available pickNum = do
+    hotDemotionPolicy _ _ _ _ available pickNum = do
         jpm <- joinedPeerMetricAt metrics
         hup <- upstreamyness metrics
         bup <- fetchynessBlocks metrics
@@ -156,7 +156,7 @@ simplePeerSelectionPolicy rngVar metrics errorDelay = PeerSelectionPolicy {
     -- Randomly pick peers to demote, peers with knownPeerTepid set are twice
     -- as likely to be demoted.
     warmDemotionPolicy :: PickPolicy peerAddr (STM m)
-    warmDemotionPolicy _ _ isTepid available pickNum = do
+    warmDemotionPolicy _ _ isTepid _ available pickNum = do
       available' <- addRand rngVar available (tepidWeight isTepid)
       return $ Set.fromList
              . map fst
@@ -169,7 +169,7 @@ simplePeerSelectionPolicy rngVar metrics errorDelay = PeerSelectionPolicy {
     -- Randomly pick peers to forget, peers with failures are more likely to
     -- be forgotten.
     coldForgetPolicy :: PickPolicy peerAddr (STM m)
-    coldForgetPolicy _ failCnt _ available pickNum = do
+    coldForgetPolicy _ failCnt _ _ available pickNum = do
       available' <- addRand rngVar available (failWeight failCnt)
       return $ Set.fromList
              . map fst
@@ -179,8 +179,18 @@ simplePeerSelectionPolicy rngVar metrics errorDelay = PeerSelectionPolicy {
              $ available'
 
     simplePromotionPolicy :: PickPolicy peerAddr (STM m)
-    simplePromotionPolicy _ _ _ available pickNum = do
+    simplePromotionPolicy _ _ _ _ available pickNum = do
       available' <- addRand rngVar available (,)
+      return $ Set.fromList
+             . map fst
+             . take pickNum
+             . sortOn snd
+             . Map.assocs
+             $ available'
+
+    reciprocalPromotionPolicy :: PickPolicy peerAddr (STM m)
+    reciprocalPromotionPolicy _ _ _ reciprocalFlag available pickNum = do
+      available' <- addRand rngVar available (reciprocalWeight reciprocalFlag)
       return $ Set.fromList
              . map fst
              . take pickNum
@@ -205,6 +215,14 @@ simplePeerSelectionPolicy rngVar metrics errorDelay = PeerSelectionPolicy {
           if isTepid peer then (peer, r `div` 2)
                           else (peer, r)
 
+    -- Reciprocal flag doubles r
+    reciprocalWeight :: (peerAddr -> Bool)
+                -> peerAddr
+                -> Word32
+                -> (peerAddr, Word32)
+    reciprocalWeight isReciprocal peer r =
+          if isReciprocal peer then (peer, r * 2)
+                               else (peer, r)
 
  -- Add scaled random number in order to prevent ordering based on SockAddr
 addRand :: ( MonadSTM m

@@ -184,6 +184,7 @@ type PickPolicy peeraddr m =
          (peeraddr -> PeerSource) -- Where the peer is known from
       -> (peeraddr -> Int)        -- Connection failure count
       -> (peeraddr -> Bool)       -- Found to be tepid flag
+      -> (peeraddr -> Bool)       -- Reciprocal peer (from light-peersharing)
       -> Set peeraddr             -- The set to pick from
       -> Int                      -- Max number to choose, fewer is ok.
       -> m (Set peeraddr)         -- The set picked.
@@ -1476,7 +1477,7 @@ pickPeers' precondition memberExtraPeers st@PeerSelectionState{localRootPeers, p
     assert (precondition num available st) $
     fmap (\picked -> assert (postcondition picked) picked)
          (pick peerSource peerConnectFailCount peerTepidFlag
-               available numClamped)
+               peerReciprocalFlag available numClamped)
   where
     postcondition picked = not (Set.null picked)
                         && Set.size picked <= numClamped
@@ -1497,6 +1498,10 @@ pickPeers' precondition memberExtraPeers st@PeerSelectionState{localRootPeers, p
     peerTepidFlag p  =
         fromMaybe errorUnavailable $
           KnownPeers.lookupTepidFlag p knownPeers
+
+    peerReciprocalFlag p  =
+        fromMaybe errorUnavailable $
+          KnownPeers.lookupReciprocalFlag p knownPeers
 
     -- This error can trigger if `available` is not a subset of `knownPeers`. In
     -- practice, values supplied by callers as `available` tend to be

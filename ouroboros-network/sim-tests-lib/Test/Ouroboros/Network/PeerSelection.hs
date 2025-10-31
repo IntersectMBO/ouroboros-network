@@ -4095,13 +4095,13 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
 
     policy :: PeerSelectionPolicy SockAddr IO
     policy  = PeerSelectionPolicy {
-                policyPickKnownPeersForPeerShare = \_ _ _ -> pickTrivially,
-                policyPickColdPeersToForget   = \_ _ _ -> pickTrivially,
-                policyPickColdPeersToPromote  = \_ _ _ -> pickTrivially,
-                policyPickWarmPeersToPromote  = \_ _ _ -> pickTrivially,
-                policyPickHotPeersToDemote    = \_ _ _ -> pickTrivially,
-                policyPickWarmPeersToDemote   = \_ _ _ -> pickTrivially,
-                policyPickInboundPeers        = \_ _ _ -> pickTrivially,
+                policyPickKnownPeersForPeerShare = \_ _ _ _ -> pickTrivially,
+                policyPickColdPeersToForget   = \_ _ _ _ -> pickTrivially,
+                policyPickColdPeersToPromote  = \_ _ _ _ -> pickTrivially,
+                policyPickWarmPeersToPromote  = \_ _ _ _ -> pickTrivially,
+                policyPickHotPeersToDemote    = \_ _ _ _ -> pickTrivially,
+                policyPickWarmPeersToDemote   = \_ _ _ _ -> pickTrivially,
+                policyPickInboundPeers        = \_ _ _ _ -> pickTrivially,
                 policyFindPublicRootTimeout   = 5,
                 policyMaxInProgressPeerShareReqs = 0,
                 policyPeerShareRetryTime         = 0, -- seconds
