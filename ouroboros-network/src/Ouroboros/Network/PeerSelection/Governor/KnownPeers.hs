@@ -17,7 +17,7 @@ import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Set qualified as Set
 import GHC.Stack (HasCallStack)
-import System.Random (random)
+import System.Random (random, randomR)
 
 import Control.Concurrent.JobPool (Job (..))
 import Control.Exception (Exception (..), SomeException, assert)
@@ -212,7 +212,9 @@ belowTarget enableAction
   | otherwise
   = GuardedSkip Nothing
   where
-    (useInboundPeers, stdGen') = random stdGen
+    (useInboundPeers, stdGen') =
+        let (p, s) = randomR (0, 1 :: Double) stdGen in
+        (p < 0.75, s)
     PeerSelectionCounters {
         numberOfKnownPeers = numKnownPeers
       }
