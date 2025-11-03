@@ -27,7 +27,7 @@ import Cardano.Network.ConsensusMode (ConsensusMode (..))
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
 import Cardano.Network.Types (LedgerStateJudgement (..))
 import Control.Applicative (Alternative)
-import Data.Functor (($>))
+import Data.Functor (void, ($>))
 import Data.Monoid.Synchronisation (FirstToFinish (..))
 import Ouroboros.Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
 import Ouroboros.Cardano.Network.PeerSelection.Churn.ExtraArguments qualified as Churn
@@ -175,7 +175,7 @@ peerChurnGovernor PeerChurnArgs {
       -- ^ update counters function
       -> CheckPeerSelectionCounters extraCounters
       -- ^ check counters
-      -> m ()
+      -> m Int
     updateTargets churnAction getCounter timeoutDelay modifyTargets checkCounters = do
       -- update targets, and return the new targets
       startTime <- getMonotonicTime
@@ -207,12 +207,14 @@ peerChurnGovernor PeerChurnArgs {
                              endTime <- getMonotonicTime
                              traceWith tracer (TraceChurnAction (endTime `diffTime` startTime) churnAction r)
                              traceWith churnTracer (ChurnCounter churnAction r)
+                             return $ abs r
                            Left c' -> do
                              endTime <- getMonotonicTime
                              cancelTimeout
                              let r = c' - c
                              traceWith tracer (TraceChurnTimeout (endTime `diffTime` startTime) churnAction r)
                              traceWith churnTracer (ChurnCounter churnAction r)
+                             return $ abs r
                      )
 
     --
@@ -301,11 +303,12 @@ peerChurnGovernor PeerChurnArgs {
       numberOfEstablishedBigLedgerPeers >= targetNumberOfEstablishedBigLedgerPeers
 
     decreaseEstablishedPeers
-      :: ChurnRegime
+      :: Int
+      -> ChurnRegime
       -> HotValency
       -> PeerSelectionTargets
       -> ModifyPeerSelectionTargets
-    decreaseEstablishedPeers regime _ base targets =
+    decreaseEstablishedPeers minDecrease regime _ base targets =
       targets {
         targetNumberOfEstablishedPeers =
           case regime of
@@ -317,7 +320,9 @@ peerChurnGovernor PeerChurnArgs {
             -- all warm peers to speed up the time to find the best performers.
             -- That is why we use the number of active peers in current targets
             -- as the upper bound on the number of established peers during this action.
-            _otherwise ->   decrease (targetNumberOfEstablishedPeers base - targetNumberOfActivePeers base)
+            _otherwise ->   decreaseWithMin minDecrease
+                                           (targetNumberOfEstablishedPeers base -
+                                            targetNumberOfActivePeers base)
                           + targetNumberOfActivePeers base }
 
     checkEstablishedPeersDecreased
@@ -372,15 +377,17 @@ peerChurnGovernor PeerChurnArgs {
          numberOfActiveBigLedgerPeers
       <= targetNumberOfActiveBigLedgerPeers
 
-    decreaseEstablishedBigLedgerPeers :: ChurnRegime
+    decreaseEstablishedBigLedgerPeers :: Int
+                                      -> ChurnRegime
                                       -> HotValency
                                       -> PeerSelectionTargets
                                       -> ModifyPeerSelectionTargets
-    decreaseEstablishedBigLedgerPeers _ _ base targets =
+    decreaseEstablishedBigLedgerPeers minDecrease _ _ base targets =
       targets {
         targetNumberOfEstablishedBigLedgerPeers =
-          decrease (targetNumberOfEstablishedBigLedgerPeers base -
-                    targetNumberOfActiveBigLedgerPeers base)
+          decreaseWithMin minDecrease
+                          (targetNumberOfEstablishedBigLedgerPeers base -
+                           targetNumberOfActiveBigLedgerPeers base)
           + targetNumberOfActiveBigLedgerPeers base
         }
 
@@ -395,11 +402,12 @@ peerChurnGovernor PeerChurnArgs {
 
 
     decreaseKnownPeers
-      :: ChurnRegime
+      :: Int
+      -> ChurnRegime
       -> HotValency
       -> PeerSelectionTargets
       -> ModifyPeerSelectionTargets
-    decreaseKnownPeers _ _ base targets =
+    decreaseKnownPeers minDecrease _ _ base targets =
       targets {
           -- we clamp from above to not accidentally actually increase
           -- the number of root peers
@@ -407,7 +415,8 @@ peerChurnGovernor PeerChurnArgs {
             decrease (targetNumberOfRootPeers base - targetNumberOfEstablishedPeers base)
             + targetNumberOfEstablishedPeers base
         , targetNumberOfKnownPeers =
-            decrease (targetNumberOfKnownPeers base - targetNumberOfEstablishedPeers base)
+            decreaseWithMin minDecrease
+                            (targetNumberOfKnownPeers base - targetNumberOfEstablishedPeers base)
             + targetNumberOfEstablishedPeers base
         }
 
@@ -422,15 +431,17 @@ peerChurnGovernor PeerChurnArgs {
          numberOfKnownPeers <= targetNumberOfKnownPeers
 
     decreaseKnownBigLedgerPeers
-      :: ChurnRegime
+      :: Int
+      -> ChurnRegime
       -> HotValency
       -> PeerSelectionTargets
       -> ModifyPeerSelectionTargets
-    decreaseKnownBigLedgerPeers _ _ base targets =
+    decreaseKnownBigLedgerPeers minDecrease _ _ base targets =
       targets {
           targetNumberOfKnownBigLedgerPeers =
-            decrease (targetNumberOfKnownBigLedgerPeers base -
-                      targetNumberOfEstablishedBigLedgerPeers base)
+            decreaseWithMin minDecrease
+                            (targetNumberOfKnownBigLedgerPeers base -
+                             targetNumberOfEstablishedBigLedgerPeers base)
             + targetNumberOfEstablishedBigLedgerPeers base
         }
 
@@ -496,84 +507,84 @@ peerChurnGovernor PeerChurnArgs {
       traceWith tracer $ TraceChurnMode churnMode
 
       -- Purge the worst active big ledger peers.
-      updateTargets DecreasedActiveBigLedgerPeers
+      activeBigLedgerDecreased <- updateTargets DecreasedActiveBigLedgerPeers
                     numberOfActiveBigLedgerPeers
                     deactivateTimeout
                     decreaseActiveBigLedgerPeers
                     checkActiveBigLedgerPeersDecreased
 
       -- Pick new active big ledger peers.
-      updateTargets IncreasedActiveBigLedgerPeers
+      void $ updateTargets IncreasedActiveBigLedgerPeers
                     numberOfActiveBigLedgerPeers
                     shortTimeout
                     increaseActiveBigLedgerPeers
                     checkActiveBigLedgerPeersIncreased
 
       -- Forget the worst performing established big ledger peers.
-      updateTargets DecreasedEstablishedBigLedgerPeers
+      establishedBigLedgerDecreased <- updateTargets DecreasedEstablishedBigLedgerPeers
                     numberOfEstablishedBigLedgerPeers
                     (1 + closeConnectionTimeout)
-                    decreaseEstablishedBigLedgerPeers
+                    (decreaseEstablishedBigLedgerPeers activeBigLedgerDecreased)
                     checkEstablishedBigLedgerPeersDecreased
 
       -- Forget the worst performing known big ledger peers.
-      updateTargets DecreasedKnownBigLedgerPeers
+      void $ updateTargets DecreasedKnownBigLedgerPeers
                     numberOfKnownBigLedgerPeers
                     shortTimeout
-                    decreaseKnownBigLedgerPeers
+                    (decreaseKnownBigLedgerPeers establishedBigLedgerDecreased)
                     checkKnownBigLedgerPeersDecreased
 
       -- Pick new known big ledger peers
-      updateTargets IncreasedKnownBigLedgerPeers
+      void $ updateTargets IncreasedKnownBigLedgerPeers
                     numberOfKnownBigLedgerPeers
                     (2 * requestPeersTimeout + shortTimeout)
                     increaseKnownBigLedgerPeers
                     checkKnownBigLedgerPeersIncreased
 
       -- Pick new non-active big ledger peers
-      updateTargets IncreasedEstablishedBigLedgerPeers
+      void $ updateTargets IncreasedEstablishedBigLedgerPeers
                     numberOfEstablishedBigLedgerPeers
                     churnEstablishConnectionTimeout
                     increaseEstablishedBigLedgerPeers
                     checkEstablishedBigLedgerPeersIncreased
 
       -- Purge the worst active peers.
-      updateTargets DecreasedActivePeers
+      activePeersDecreased <- updateTargets DecreasedActivePeers
                     numberOfActivePeers
                     deactivateTimeout
                     decreaseActivePeers
                     checkActivePeersDecreased
 
       -- Pick new active peers.
-      updateTargets IncreasedActivePeers
+      void $ updateTargets IncreasedActivePeers
                     numberOfActivePeers
                     shortTimeout
                     increaseActivePeers
                     checkActivePeersIncreased
 
       -- Forget the worst performing established peers.
-      updateTargets DecreasedEstablishedPeers
+      establishedPeersDecreased <- updateTargets DecreasedEstablishedPeers
                     numberOfEstablishedPeers
                     (1 + closeConnectionTimeout)
-                    decreaseEstablishedPeers
+                    (decreaseEstablishedPeers activePeersDecreased)
                     checkEstablishedPeersDecreased
 
       -- Forget the worst performing known peers (root peers, ledger peers)
-      updateTargets DecreasedKnownPeers
+      void $ updateTargets DecreasedKnownPeers
                     numberOfKnownPeers
                     shortTimeout
-                    decreaseKnownPeers
+                    (decreaseKnownPeers establishedPeersDecreased)
                     checkKnownPeersDecreased
 
       -- Pick new known peers
-      updateTargets IncreasedKnownPeers
+      void $ updateTargets IncreasedKnownPeers
                     numberOfKnownPeers
                     (2 * requestPeersTimeout + shortTimeout)
                     increaseKnownPeers
                     checkKnownPeersIncreased
 
       -- Pick new non-active peers
-      updateTargets IncreasedEstablishedPeers
+      void $ updateTargets IncreasedEstablishedPeers
                     numberOfEstablishedPeers
                     churnEstablishConnectionTimeout
                     increaseEstablishedPeers
@@ -621,3 +632,7 @@ peerChurnGovernor PeerChurnArgs {
     -- Replace 20% or at least one peer every churnInterval.
     decrease :: Int -> Int
     decrease v = max 0 $ v  - max 1 (v `div` 5)
+
+    -- Replace 20% or at least `u` or at least one peer every churnInterval.
+    decreaseWithMin :: Int -> Int -> Int
+    decreaseWithMin u v =  max 0 $ v - max u (max 1 (v `div` 5))
