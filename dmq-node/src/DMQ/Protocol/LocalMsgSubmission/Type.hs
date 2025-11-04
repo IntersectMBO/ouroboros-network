@@ -1,6 +1,5 @@
 {-# LANGUAGE DataKinds         #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PolyKinds         #-}
 {-# LANGUAGE TypeFamilies      #-}
 
@@ -19,4 +18,4 @@ import Ouroboros.Network.TxSubmission.Mempool.Simple
 
 -- | The LocalMsgSubmission protocol is an alias for the LocalTxSubmission
 --
-type LocalMsgSubmission sig = Ouroboros.LocalTxSubmission sig (MempoolAddFail sig)
+type LocalMsgSubmission sig = Ouroboros.LocalTxSubmission sig (TxValidationFail sig)

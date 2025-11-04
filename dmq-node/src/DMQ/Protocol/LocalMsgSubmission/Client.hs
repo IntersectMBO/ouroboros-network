@@ -21,7 +21,7 @@ import Ouroboros.Network.TxSubmission.Mempool.Simple
 
 -- | Type aliases for the high level client API
 --
-type LocalMsgSubmissionClient sig = LocalTxSubmissionClient sig (MempoolAddFail sig)
+type LocalMsgSubmissionClient sig = LocalTxSubmissionClient sig (TxValidationFail sig)
 type LocalMsgClientStIdle     = LocalTxClientStIdle
 
 

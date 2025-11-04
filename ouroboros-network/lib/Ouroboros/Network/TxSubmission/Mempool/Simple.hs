@@ -6,14 +6,13 @@
 {-# LANGUAGE GADTs                    #-}
 {-# LANGUAGE NamedFieldPuns           #-}
 {-# LANGUAGE ScopedTypeVariables      #-}
-{-# LANGUAGE StandaloneDeriving       #-}
 {-# LANGUAGE TupleSections            #-}
 {-# LANGUAGE TypeFamilies             #-}
 
 -- | The module should be imported qualified.
 --
 module Ouroboros.Network.TxSubmission.Mempool.Simple
-  ( MempoolAddFail
+  ( TxValidationFail
   , Mempool (..)
   , MempoolSeq (..)
   , MempoolWriter (..)
@@ -28,7 +27,6 @@ module Ouroboros.Network.TxSubmission.Mempool.Simple
 import Prelude hiding (read, seq)
 
 import Control.Concurrent.Class.MonadSTM.Strict
-import Control.DeepSeq
 import Control.Exception (assert)
 import Control.Monad.Trans.Except
 import Data.Bifunctor (bimap, first, second)
@@ -116,7 +114,7 @@ getReader getTxId getTxSize (Mempool mempool) =
 
 -- | type of mempool validation errors which are non-fatal
 --
-data family MempoolAddFail tx
+data family TxValidationFail tx
 
 -- | A mempool writer which generalizes the tx submission mempool writer
 -- TODO: We could replace TxSubmissionMempoolWriter with this at some point
@@ -138,7 +136,7 @@ data MempoolWriter txid tx idx m =
        -- returned.
        mempoolAddTxs
          :: [tx]
-         -> m (Either (txid, MempoolAddFail tx) [(txid, SubmitResult (MempoolAddFail tx))])
+         -> m (Either (txid, TxValidationFail tx) [(txid, SubmitResult (TxValidationFail tx))])
     }
 
 
@@ -147,10 +145,9 @@ data MempoolWriter txid tx idx m =
 --
 getWriter :: forall tx txid ctx m.
              ( MonadSTM m
-             -- TODO:
              -- , NFData txid
              -- , NFData tx
-             -- , NFData (MempoolAddFail tx)
+             -- , NFData (TxValidationFail tx)
              , Ord txid
              )
           => (tx -> txid)
@@ -159,11 +156,11 @@ getWriter :: forall tx txid ctx m.
           -- ^ acquire validation context
           -> (   [tx]
               -> ctx
-              -> ExceptT (tx, MempoolAddFail tx) m
-                         [(tx, Either (MempoolAddFail tx) ())])
+              -> ExceptT (tx, TxValidationFail tx) m
+                         [(tx, Either (TxValidationFail tx) ())])
           -- ^ validation function which should evaluate its result to normal form
           -- esp. if it is 'expensive'
-          -> MempoolAddFail tx
+          -> TxValidationFail tx
           -- ^ replace duplicates
           -> Mempool m txid tx
           -> MempoolWriter txid tx Int m
@@ -184,7 +181,7 @@ getWriter getTxId acquireCtx validateTxs duplicateFail (Mempool mempool) =
                 [if duplicate then
                    Left (txid, duplicateFail)
                  else
-                   bimap ((txid,)) (const (txid, tx)) eResult
+                   bimap (txid,) (const (txid, tx)) eResult
                 | (txid, (tx, eResult)) <- vTxs
                 , let duplicate = txid `Set.member` mempoolSet
                 ]
