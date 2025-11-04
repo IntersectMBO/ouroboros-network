@@ -26,7 +26,7 @@ localMsgSubmissionServer ::
      , Typeable msgid
      , Typeable msg
      , Show msgid
-     , Show (MempoolAddFail msg))
+     , Show (TxValidationFail msg))
   => (msg -> msgid)
   -- ^ get message id
   -> Tracer m (TraceLocalMsgSubmission msg msgid)
@@ -57,27 +57,27 @@ localMsgSubmissionServer getMsgId tracer MempoolWriter { mempoolAddTxs } =
 data TraceLocalMsgSubmission msg msgid =
     TraceReceivedMsg msgid
   -- ^ A signature was received.
-  | TraceSubmitFailure msgid (MempoolAddFail msg)
+  | TraceSubmitFailure msgid (TxValidationFail msg)
   | TraceSubmitAccept msgid
 
 deriving instance
-     (Show msg, Show msgid, Show (MempoolAddFail msg))
+     (Show msg, Show msgid, Show (TxValidationFail msg))
   => Show (TraceLocalMsgSubmission msg msgid)
 
 
 
 data MsgSubmissionServerException msgid msg =
-    MsgValidationException msgid (MempoolAddFail msg)
+    MsgValidationException msgid (TxValidationFail msg)
   | TooManyMessages
 
-deriving instance (Show (MempoolAddFail msg), Show msgid)
+deriving instance (Show (TxValidationFail msg), Show msgid)
   => Show (MsgSubmissionServerException msgid msg)
 
-instance (Typeable msgid, Typeable msg, Show (MempoolAddFail msg), Show msgid)
+instance (Typeable msgid, Typeable msg, Show (TxValidationFail msg), Show msgid)
   => Exception (MsgSubmissionServerException msgid msg) where
 
 
-instance (ToJSON msgid, ToJSON (MempoolAddFail msg))
+instance (ToJSON msgid, ToJSON (TxValidationFail msg))
       => ToJSON (TraceLocalMsgSubmission msg msgid) where
   toJSON (TraceReceivedMsg msgid) =
     -- TODO: once we have verbosity levels, we could include the full tx, for

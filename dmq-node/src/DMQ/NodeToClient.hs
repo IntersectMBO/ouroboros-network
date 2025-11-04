@@ -101,8 +101,8 @@ data Codecs crypto m =
 dmqCodecs :: ( MonadST m
              , Crypto crypto
              )
-          => (MempoolAddFail (Sig crypto)  -> CBOR.Encoding)
-          -> (forall s. CBOR.Decoder s  (MempoolAddFail (Sig crypto)))
+          => (TxValidationFail (Sig crypto)  -> CBOR.Encoding)
+          -> (forall s. CBOR.Decoder s  (TxValidationFail (Sig crypto)))
           -> Codecs crypto m
 dmqCodecs encodeReject' decodeReject' =
   Codecs {
@@ -139,9 +139,8 @@ ntcApps
      , MonadSTM m
      , Crypto crypto
      , Aeson.ToJSON ntcAddr
-     , Aeson.ToJSON (MempoolAddFail (Sig crypto))
-     , Show (MempoolAddFail (Sig crypto))
-     , ShowProxy (MempoolAddFail (Sig crypto))
+     , Aeson.ToJSON (TxValidationFail (Sig crypto))
+     , ShowProxy (TxValidationFail (Sig crypto))
      , ShowProxy (Sig crypto)
      , Typeable crypto
      )

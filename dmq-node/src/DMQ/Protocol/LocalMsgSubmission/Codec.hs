@@ -30,13 +30,13 @@ codecLocalMsgSubmission
      ( MonadST m
      , Crypto crypto
      )
-  => (MempoolAddFail (Sig crypto) -> CBOR.Encoding)
-  -> (forall s. CBOR.Decoder s (MempoolAddFail (Sig crypto)))
+  => (TxValidationFail (Sig crypto) -> CBOR.Encoding)
+  -> (forall s. CBOR.Decoder s (TxValidationFail (Sig crypto)))
   -> AnnotatedCodec (LocalMsgSubmission (Sig crypto)) CBOR.DeserialiseFailure m ByteString
 codecLocalMsgSubmission =
   LTX.anncodecLocalTxSubmission' SigWithBytes SigSubmission.encodeSig SigSubmission.decodeSig
 
-encodeReject :: MempoolAddFail (Sig crypto) -> CBOR.Encoding
+encodeReject :: TxValidationFail (Sig crypto) -> CBOR.Encoding
 encodeReject = \case
   SigInvalid reason -> CBOR.encodeListLen 2 <> CBOR.encodeWord8 0 <> e
     where
@@ -64,7 +64,7 @@ encodeReject = \case
   SigResultOther reason
                     -> CBOR.encodeListLen 2 <> CBOR.encodeWord8 3 <> CBOR.encodeString reason
 
-decodeReject :: CBOR.Decoder s (MempoolAddFail (Sig crypto))
+decodeReject :: CBOR.Decoder s (TxValidationFail (Sig crypto))
 decodeReject = do
   len <- CBOR.decodeListLen
   tag <- CBOR.decodeWord8

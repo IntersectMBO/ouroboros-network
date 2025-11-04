@@ -2,10 +2,11 @@
 {-# LANGUAGE FlexibleInstances  #-}
 {-# LANGUAGE MultiWayIf         #-}
 {-# LANGUAGE OverloadedStrings  #-}
-{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TupleSections      #-}
 {-# LANGUAGE TypeFamilies       #-}
 {-# LANGUAGE TypeOperators      #-}
+
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 -- | Encapsulates signature validation utilities leveraged by the mempool writer
 --
@@ -46,16 +47,16 @@ import Ouroboros.Network.Util.ShowProxy
 -- | The type of non-fatal failures reported by the mempool writer
 -- for invalid messages
 --
-data instance MempoolAddFail (Sig crypto) =
+data instance TxValidationFail (Sig crypto) =
     SigInvalid SigValidationError
   | SigDuplicate
   | SigExpired
   | SigResultOther Text
   deriving (Eq, Show)
 
-instance (Typeable crypto) => ShowProxy (MempoolAddFail (Sig crypto))
+instance (Typeable crypto) => ShowProxy (TxValidationFail (Sig crypto))
 
-instance ToJSON (MempoolAddFail (Sig crypto)) where
+instance ToJSON (TxValidationFail (Sig crypto)) where
   toJSON SigDuplicate = String "duplicate"
   toJSON SigExpired   = String "expired"
   toJSON (SigInvalid e) = object
@@ -101,8 +102,8 @@ validateSig :: forall crypto m.
             -> [Sig crypto]
             -> PoolValidationCtx m
             -- ^ cardano pool id verification
-            -> ExceptT (Sig crypto, MempoolAddFail (Sig crypto)) m
-                       [(Sig crypto, Either (MempoolAddFail (Sig crypto)) ())]
+            -> ExceptT (Sig crypto, TxValidationFail (Sig crypto)) m
+                       [(Sig crypto, Either (TxValidationFail (Sig crypto)) ())]
 validateSig _ec verKeyHashingFn sigs ctx = traverse process' sigs
   where
     DMQPoolValidationCtx now mNextEpoch pools ocertCountersVar = ctx
@@ -125,7 +126,7 @@ validateSig _ec verKeyHashingFn sigs ctx = traverse process' sigs
          ?! KESBeforeStartOCERT startKESPeriod sigKESPeriod
       e <- case Map.lookup (verKeyHashingFn coldKey) pools of
         Nothing | isNothing mNextEpoch
-                  -> invalid SigResultOther $ Text.pack "not initialized yet"
+                  -> right . Left . SigResultOther $ Text.pack "not initialized yet"
                 | otherwise
                   -> left $ SigInvalid UnrecognizedPool
         -- TODO make 5 a constant
@@ -138,7 +139,7 @@ validateSig _ec verKeyHashingFn sigs ctx = traverse process' sigs
                          -- in case smth happened to localstatequery and it's taking
                          -- too long to update our state
                        | now <= addUTCTime 5 nextEpoch -> success
-                       | otherwise -> left $ SigInvalid ClockSkew
+                       | otherwise -> right . Left $ SigInvalid ClockSkew
                 | not (isZero (ssMarkPool ss)) ->
                     -- we take abs time in case we're late with our own
                     -- localstatequery update, and/or the other side's clock
@@ -169,15 +170,14 @@ validateSig _ec verKeyHashingFn sigs ctx = traverse process' sigs
         let f = \case
               Nothing -> Right $ Just ocertN
               Just n | n <= ocertN -> Right $ Just ocertN
-                     | otherwise   -> Left . throwE . SigInvalid $ InvalidOCertCounter n ocertN
+                     | otherwise   -> Left $ InvalidOCertCounter n ocertN
         in case Map.alterF f (verKeyHashingFn coldKey) ocertCounters of
           Right ocertCounters' -> (void success, ocertCounters')
-          Left  err            -> (err, ocertCounters)
+          Left  err            -> (throwE (SigInvalid err), ocertCounters)
       -- for eg. remember to run all results with possibly non-fatal errors
       right e
       where
         success = right $ Right ()
-        invalid tag = right . Left . tag
 
         startKESPeriod, endKESPeriod :: KESPeriod
 
@@ -189,12 +189,12 @@ validateSig _ec verKeyHashingFn sigs ctx = traverse process' sigs
 
         (?!:) :: Either e1 ()
               -> (e1 -> SigValidationError)
-              -> ExceptT (MempoolAddFail (Sig crypto)) m ()
+              -> ExceptT (TxValidationFail (Sig crypto)) m ()
         (?!:) result f = firstExceptT (SigInvalid . f) . hoistEither $ result
 
         (?!) :: Bool
              -> SigValidationError
-             -> ExceptT (MempoolAddFail (Sig crypto)) m ()
+             -> ExceptT (TxValidationFail (Sig crypto)) m ()
         (?!) flag sve = if flag then void success else left (SigInvalid sve)
 
         infix 1 ?!

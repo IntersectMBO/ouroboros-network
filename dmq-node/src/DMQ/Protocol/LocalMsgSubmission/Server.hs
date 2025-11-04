@@ -22,7 +22,7 @@ import Ouroboros.Network.TxSubmission.Mempool.Simple
 
 -- | Type aliases for the high level client API
 --
-type LocalMsgSubmissionServer sig = LocalTxSubmissionServer sig (MempoolAddFail sig)
+type LocalMsgSubmissionServer sig = LocalTxSubmissionServer sig (TxValidationFail sig)
 
 
 -- | A non-pipelined 'Peer' representing the 'LocalMsgSubmissionServer'.
