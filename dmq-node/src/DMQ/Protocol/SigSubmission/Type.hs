@@ -7,7 +7,6 @@
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE StandaloneDeriving   #-}
 {-# LANGUAGE TypeFamilies         #-}
-{-# LANGUAGE TypeOperators        #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module DMQ.Protocol.SigSubmission.Type
@@ -32,7 +31,6 @@ module DMQ.Protocol.SigSubmission.Type
   ) where
 
 import Data.Aeson
-import Data.Bifunctor (first)
 import Data.ByteString (ByteString)
 import Data.ByteString.Base16 as BS.Base16
 import Data.ByteString.Base16.Lazy as LBS.Base16
@@ -42,13 +40,10 @@ import Data.Text.Encoding qualified as Text
 import Data.Time.Clock.POSIX (POSIXTime)
 import Data.Typeable
 
-import Cardano.Crypto.DSIGN.Class (ContextDSIGN, DSIGNAlgorithm, VerKeyDSIGN)
-import Cardano.Crypto.DSIGN.Class qualified as DSIGN
-import Cardano.Crypto.KES.Class (KESAlgorithm (..), Signable)
+import Cardano.Crypto.DSIGN.Class (DSIGNAlgorithm, VerKeyDSIGN)
+import Cardano.Crypto.KES.Class (KESAlgorithm (..))
 import Cardano.KESAgent.KES.Crypto as KES
-import Cardano.KESAgent.KES.Evolution qualified as KES
-import Cardano.KESAgent.KES.OCert (KESPeriod (..), OCert (..), OCertSignable,
-           validateOCert)
+import Cardano.KESAgent.KES.OCert (KESPeriod (..), OCert (..))
 
 import Ouroboros.Network.Protocol.TxSubmission2.Type as SigSubmission hiding
            (TxSubmission2)
