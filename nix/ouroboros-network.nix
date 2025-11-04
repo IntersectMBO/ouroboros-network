@@ -137,6 +137,19 @@ let
           "-L${lib.getLib static-secp256k1}/lib"
           "-L${lib.getLib static-libblst}/lib"
         ];
+        packages.cardano-diffusion.ghcOptions = with pkgs; [
+          "-L${lib.getLib static-gmp}/lib"
+          "-L${lib.getLib static-libsodium-vrf}/lib"
+          "-L${lib.getLib static-secp256k1}/lib"
+          "-L${lib.getLib static-libblst}/lib"
+        ];
+        # for api-bench
+        packages.ouroboros-network.ghcOptions = with pkgs; [
+          "-L${lib.getLib static-gmp}/lib"
+          "-L${lib.getLib static-libsodium-vrf}/lib"
+          "-L${lib.getLib static-secp256k1}/lib"
+          "-L${lib.getLib static-libblst}/lib"
+        ];
       })
     ];
   });
