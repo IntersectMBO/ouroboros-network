@@ -61,11 +61,11 @@ import Ouroboros.Network.CodecCBORTerm
 import Ouroboros.Network.Magic
 
 import Cardano.Network.NodeToClient.Version (NodeToClientVersion,
-           NodeToClientVersionData (..), nodeToClientCodecCBORTerm)
+           NodeToClientVersionData (..), nodeToClientVersionDataCodec)
 import Cardano.Network.NodeToClient.Version qualified as NtCVersion
 import Cardano.Network.NodeToNode.Version (DiffusionMode (..),
            NodeToNodeVersion (..), NodeToNodeVersionData (..),
-           nodeToNodeCodecCBORTerm)
+           nodeToNodeVersionDataCodec)
 import Cardano.Network.NodeToNode.Version qualified as NtNVersion
 
 import Ouroboros.Network.PeerSelection.RelayAccessPoint (PortNumber)
@@ -327,11 +327,13 @@ validateEncoder spec
 validateCBORTermEncoder
     :: Show a
     => CDDLSpec a
-    -> CodecCBORTerm fail a
+    -> VersionDataCodec v a
+    -> v
     -> a
     -> Property
 validateCBORTermEncoder spec
-                        CodecCBORTerm { encodeTerm }
+                        VersionDataCodec { encodeData }
+                        v
                         a =
     counterexample (show a) $
     counterexample sterms $
@@ -342,7 +344,7 @@ validateCBORTermEncoder spec
   where
     blob  = CBOR.toLazyByteString
           . CBOR.encodeTerm
-          . encodeTerm
+          . encodeData v
           $ a
     terms = CBOR.deserialiseFromBytes CBOR.decodeTerm blob
 
@@ -414,12 +416,12 @@ genNtNHandshake genVersion = oneof
     [     AnyMessage
         . Handshake.MsgProposeVersions
         . Map.fromList
-        . map (\(v, d) -> (v, encodeTerm (nodeToNodeCodecCBORTerm v) d))
+        . map (\(v, d) -> (v, encodeData nodeToNodeVersionDataCodec v d))
       <$> listOf ((,) <$> genVersion <*> genData)
 
     ,     AnyMessage
         . uncurry Handshake.MsgAcceptVersion
-        . (\(v, d) -> (v, encodeTerm (nodeToNodeCodecCBORTerm v) d))
+        . (\(v, d) -> (v, encodeData nodeToNodeVersionDataCodec v d))
       <$> ((,) <$> genVersion <*> genData)
 
     ,     AnyMessage
@@ -472,12 +474,12 @@ instance Arbitrary (AnyMessage (Handshake NodeToClientVersion CBOR.Term)) where
         [     AnyMessage
             . Handshake.MsgProposeVersions
             . Map.fromList
-            . map (\(v, d) -> (v, encodeTerm (nodeToClientCodecCBORTerm v) d))
+            . map (\(v, d) -> (v, encodeData nodeToClientVersionDataCodec v d))
           <$> listOf ((,) <$> genVersion <*> genData)
 
         ,     AnyMessage
             . uncurry Handshake.MsgAcceptVersion
-            . (\(v, d) -> (v, encodeTerm (nodeToClientCodecCBORTerm v) d))
+            . (\(v, d) -> (v, encodeData nodeToClientVersionDataCodec v d))
           <$> ((,) <$> genVersion <*> genData)
 
         ,     AnyMessage
@@ -620,7 +622,7 @@ prop_encodeNodeToNodeVersionDataV14ToLast
     -> NtNVersionDataV14ToLast
     -> Property
 prop_encodeNodeToNodeVersionDataV14ToLast spec (NtNVersionDataV14ToLast (v, a)) =
-  validateCBORTermEncoder spec (nodeToNodeCodecCBORTerm v) a
+  validateCBORTermEncoder spec nodeToNodeVersionDataCodec v a
 
 --
 -- Test decoders
@@ -952,7 +954,11 @@ unit_decodeNodeToNodeVersionDataV14ToLast
     -> Assertion
 unit_decodeNodeToNodeVersionDataV14ToLast spec =
     forM_ [NodeToNodeV_14 ..] $ \v ->
-    validateCBORTermDecoder Nothing spec (nodeToNodeCodecCBORTerm v) 100
+    validateCBORTermDecoder Nothing spec (c v) 100
+  where
+    c = \v -> case nodeToNodeVersionDataCodec of
+      VersionDataCodec enc dec -> CodecCBORTerm (enc v) (dec v)
+
 
 --
 -- Utils

@@ -18,6 +18,11 @@ module Cardano.Network.NodeToClient
   , nullNetworkConnectTracers
   , connectTo
   , connectToWithMux
+    -- * Mini-Protocol numbers
+  , localChainSyncMiniProtocolNum
+  , localTxSubmissionMiniProtocolNum
+  , localStateQueryMiniProtocolNum
+  , localTxMonitorMiniProtocolNum
     -- * Null Protocol Peers
   , chainSyncPeerNull
   , localStateQueryPeerNull
@@ -41,7 +46,9 @@ module Cardano.Network.NodeToClient
     -- ** Codecs
   , nodeToClientHandshakeCodec
   , nodeToClientVersionCodec
-  , nodeToClientCodecCBORTerm
+  , nodeToClientVersionDataCodec
+    -- * Limits
+  , maximumMiniProtocolLimits
     -- * Re-exports
   , ConnectionId (..)
   , MinimalInitiatorContext (..)
@@ -109,6 +116,18 @@ data NodeToClientProtocols appType ntcAddr bytes m a b = NodeToClientProtocols {
     localTxMonitorProtocol    :: RunMiniProtocolWithMinimalCtx
                                    appType ntcAddr bytes m a b
   }
+
+localChainSyncMiniProtocolNum :: MiniProtocolNum
+localChainSyncMiniProtocolNum = MiniProtocolNum 5
+
+localTxSubmissionMiniProtocolNum :: MiniProtocolNum
+localTxSubmissionMiniProtocolNum = MiniProtocolNum 6
+
+localStateQueryMiniProtocolNum :: MiniProtocolNum
+localStateQueryMiniProtocolNum = MiniProtocolNum 7
+
+localTxMonitorMiniProtocolNum :: MiniProtocolNum
+localTxMonitorMiniProtocolNum = MiniProtocolNum 9
 
 
 -- | Make an 'OuroborosApplication' for the bundle of mini-protocols that
@@ -216,7 +235,7 @@ connectTo snocket tracers versions path =
       ConnectToArgs {
         ctaHandshakeCodec      = nodeToClientHandshakeCodec,
         ctaHandshakeTimeLimits = noTimeLimitsHandshake,
-        ctaVersionDataCodec    = cborTermVersionDataCodec nodeToClientCodecCBORTerm,
+        ctaVersionDataCodec    = nodeToClientVersionDataCodec,
         ctaConnectTracers      = tracers,
         ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
       }
@@ -265,7 +284,7 @@ connectToWithMux snocket tracers versions path k =
     ConnectToArgs {
       ctaHandshakeCodec      = nodeToClientHandshakeCodec,
       ctaHandshakeTimeLimits = noTimeLimitsHandshake,
-      ctaVersionDataCodec    = cborTermVersionDataCodec nodeToClientCodecCBORTerm,
+      ctaVersionDataCodec    = nodeToClientVersionDataCodec,
       ctaConnectTracers      = tracers,
       ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
     }

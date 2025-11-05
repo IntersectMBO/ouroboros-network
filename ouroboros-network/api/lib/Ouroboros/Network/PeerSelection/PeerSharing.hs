@@ -17,7 +17,7 @@ import GHC.Generics (Generic)
 data PeerSharing = PeerSharingDisabled -- ^ Peer does not participate in Peer Sharing
                                        -- at all
                  | PeerSharingEnabled -- ^ Peer participates in Peer Sharing
-  deriving  (Eq, Show, Read, Generic)
+  deriving  (Eq, Ord, Show, Read, Generic)
 
 -- | The combination of two 'PeerSharing' values forms a Monoid where the unit
 -- is 'PeerSharingEnabled'.
