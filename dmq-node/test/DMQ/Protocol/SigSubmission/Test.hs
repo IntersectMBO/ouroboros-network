@@ -26,12 +26,18 @@ module DMQ.Protocol.SigSubmission.Test (tests) where
 import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
 import Codec.CBOR.Write qualified as CBOR
+import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad (zipWithM, (>=>))
 import Control.Monad.ST (runST)
+import Control.Monad.Trans.Except
 import Data.Bifunctor (second)
+import Data.Binary qualified as Binary
 import Data.ByteString (ByteString)
+import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BL
 import Data.List.NonEmpty qualified as NonEmpty
+import Data.Map qualified as Map
+import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Data.Typeable
 import Data.Word (Word32)
 import GHC.TypeNats (KnownNat)
@@ -46,7 +52,9 @@ import Cardano.Crypto.DSIGN.Class qualified as DSIGN
 import Cardano.Crypto.KES.Class (KESAlgorithm (..), VerKeyKES, encodeSigKES)
 import Cardano.Crypto.KES.Class qualified as KES
 import Cardano.Crypto.PinnedSizedBytes (PinnedSizedBytes, psbToByteString)
+import Cardano.Crypto.Hash (castHash, hashWith)
 import Cardano.Crypto.Seed (mkSeedFromBytes)
+import Cardano.Ledger.Hashes (KeyHash (..))
 import Cardano.KESAgent.KES.Crypto (Crypto (..))
 import Cardano.KESAgent.KES.Evolution qualified as KES
 import Cardano.KESAgent.KES.OCert (OCert (..))
@@ -54,8 +62,10 @@ import Cardano.KESAgent.KES.OCert qualified as KES
 import Cardano.KESAgent.Protocols.StandardCrypto (MockCrypto, StandardCrypto)
 import Test.Crypto.Instances
 
+import DMQ.Diffusion.NodeKernel (PoolValidationCtx(..))
 import DMQ.Protocol.SigSubmission.Codec
 import DMQ.Protocol.SigSubmission.Type
+import DMQ.Protocol.SigSubmission.Validate
 
 import Ouroboros.Network.Protocol.TxSubmission2.Test (labelMsg)
 
@@ -830,15 +840,20 @@ prop_validateSig
      )
   => WithConstrKES size kesCrypt (Sig crypto)
   -> Property
-prop_validateSig constr = ioProperty $ do
+prop_validateSig constr = ioProperty do
     sig <- runWithConstr constr
-    return $ case validateSig KES.defEvolutionConfig sig of
+    countersVar <- newTVarIO Map.empty
+    let validationCtx =
+          DMQPoolValidationCtx (posixSecondsToUTCTime 0) Nothing Map.empty countersVar
+        dummyHash = KeyHash . castHash . hashWith (BS.toStrict . Binary.encode . const (0 :: Int))
+    result <- runExceptT $ validateSig KES.defEvolutionConfig dummyHash [sig] validationCtx
+    return case result of
       Left err -> counterexample ("KES seed: " ++ show (ctx constr))
                 . counterexample ("KES vk key: " ++ show (ocertVkHot . getSigOpCertificate . sigOpCertificate $ sig))
                 . counterexample (show sig)
                 . counterexample (show err)
                 $ False
-      Right () -> property True
+      Right {} -> property True
 
 prop_validateSig_mockcrypto
   :: Blind (WithConstrKES (SeedSizeKES (KES MockCrypto)) (KES MockCrypto) (Sig MockCrypto))
