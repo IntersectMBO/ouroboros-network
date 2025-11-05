@@ -1,6 +1,6 @@
 # Revision history for ouroboros-network
 
-## 0.22.3.1 -- 04.11.2025
+## 0.22.4.0 -- 04.11.2025
 
 ### Non-breaking changes
 
