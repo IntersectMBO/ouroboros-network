@@ -1,5 +1,12 @@
 # Revision history for ouroboros-network
 
+## 0.22.4.0 -- 04.11.2025
+
+### Non-breaking changes
+
+* Enforce a minimum churn of established peers based on churned active peers.
+* Enforce a minimum churn of known peers based on churned established peers.
+
 ## 0.22.3.0 -- 27.08.2025
 
 * Compatible with `QuickCheck < 2.16`
