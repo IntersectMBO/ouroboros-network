@@ -10,6 +10,7 @@ import Data.List (sortOn, unfoldr)
 import Data.Map.Merge.Strict qualified as Map
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
+import Data.Ord (Down(..))
 import Data.Set qualified as Set
 import Data.Word (Word32)
 import System.Random
@@ -113,7 +114,7 @@ simplePeerSelectionPolicy :: forall m peerAddr.
 simplePeerSelectionPolicy rngVar metrics errorDelay = PeerSelectionPolicy {
       policyPickKnownPeersForPeerShare = simplePromotionPolicy,
       policyPickColdPeersToPromote     = simplePromotionPolicy,
-      policyPickWarmPeersToPromote     = simplePromotionPolicy,
+      policyPickWarmPeersToPromote     = warmPromotionPolicy,
       policyPickInboundPeers           = simplePromotionPolicy,
 
       policyPickHotPeersToDemote  = hotDemotionPolicy,
@@ -165,6 +166,17 @@ simplePeerSelectionPolicy rngVar metrics errorDelay = PeerSelectionPolicy {
              . Map.assocs
              $ available'
 
+    -- Randomly pick peers to promote, peers with knownPeerTepid set are half
+    -- as likely to be demoted.
+    warmPromotionPolicy :: PickPolicy peerAddr (STM m)
+    warmPromotionPolicy _ _ isTepid available pickNum = do
+      available' <- addRand rngVar available (tepidWeight isTepid)
+      return $ Set.fromList
+             . map fst
+             . take pickNum
+             . sortOn (Down . snd)
+             . Map.assocs
+             $ available'
 
     -- Randomly pick peers to forget, peers with failures are more likely to
     -- be forgotten.
