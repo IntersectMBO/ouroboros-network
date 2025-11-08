@@ -69,7 +69,7 @@ import Ouroboros.Network.DeltaQ (GSV (GSV),
            PeerGSV (PeerGSV, inboundGSV, outboundGSV))
 import Ouroboros.Network.Diffusion.Topology (LocalRootPeersGroup (..),
            LocalRootPeersGroups (..), NetworkTopology (..),
-           PublicRootPeers (..), RootConfig (..))
+           PublicRootPeers (..), LocalRoots (..), RootConfig (..))
 import Ouroboros.Network.Diffusion.Types (DiffusionTracer (..))
 import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.Driver.Simple
@@ -96,6 +96,21 @@ kindObject :: Text -> [Pair] -> Value
 kindObject k fields = object $ ("kind" .= String k) : fields
 
 -- FromJSON Instances
+
+instance FromJSON LocalRoots where
+  parseJSON = withObject "LocalRoots" $ \o ->
+                LocalRoots
+                  <$> (RootConfig
+                        <$> o .:  "accessPoints"
+                        <*> o .:? "advertise" .!= DoNotAdvertisePeer)
+                  <*> o .:? "behindFirewall" .!= False
+
+instance ToJSON LocalRoots where
+  toJSON ra =
+    object
+      [ "rootConfig"     .= rootConfig ra
+      , "behindFirewall" .= behindFirewall ra
+      ]
 
 instance FromJSON RootConfig where
   parseJSON = withObject "RootConfig" $ \o ->
@@ -144,8 +159,8 @@ localRootPeersGroupToJSON :: (extraFlags -> Maybe (Key, Value))
                           -> Value
 localRootPeersGroupToJSON extraFlagsToJSON lrpg@LocalRootPeersGroup {extraFlags} =
     Object $
-         ("accessPoints"   .?= rootAccessPoints (localRoots lrpg))
-      <> ("advertise"      .?= rootAdvertise (localRoots lrpg))
+         ("accessPoints"   .?= rootAccessPoints (rootConfig . localRoots $ lrpg))
+      <> ("advertise"      .?= rootAdvertise (rootConfig . localRoots  $ lrpg))
       <> ("hotValency"     .?= hotValency lrpg)
       <> ("warmValency"    .?= warmValency lrpg)
       <> foldMap (uncurry (.?=)) (extraFlagsToJSON extraFlags)
