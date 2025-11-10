@@ -796,6 +796,7 @@ envEventCredits (TraceEnvSetLocalRoots  peers)  = LocalRootPeers.size peers
 envEventCredits (TraceEnvSetPublicRoots peers)  = PublicRootPeers.size ExtraPeers.size peers
 envEventCredits  TraceEnvRequestPublicRootPeers = 0
 envEventCredits  TraceEnvRequestBigLedgerPeers  = 0
+envEventCredits  (TraceEnvNewConnCreated _)     = 0
 envEventCredits  TraceEnvPublicRootTTL          = 60
 envEventCredits  TraceEnvBigLedgerPeersTTL      = 60
 

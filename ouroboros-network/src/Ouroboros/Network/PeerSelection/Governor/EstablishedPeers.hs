@@ -8,6 +8,7 @@ module Ouroboros.Network.PeerSelection.Governor.EstablishedPeers
   , aboveTarget
   ) where
 
+import Data.Bool (bool)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Set (Set)
@@ -23,6 +24,7 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import System.Random (randomR)
 
+import Ouroboros.Network.ConnectionManager.Types (ConnectionMode(..))
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.PeerSelection.Governor.Types
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type (IsBigLedgerPeer (..))
@@ -31,7 +33,8 @@ import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
-import Ouroboros.Network.PeerSelection.State.LocalRootPeers (WarmValency (..))
+import Ouroboros.Network.PeerSelection.State.LocalRootPeers (WarmValency (..),
+           LocalRootConfig (..))
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 import Ouroboros.Network.PeerSelection.Types (PeerStatus (..),
            PublicExtraPeersAPI (..))
@@ -454,7 +457,7 @@ maxColdPeerRetryBackoff = 5
 jobPromoteColdPeer
   :: forall extraState extraDebugState extraFlags extraPeers extraAPI
            extraCounters peeraddr peerconn m.
-     ( Monad m
+     ( MonadSTM m
      , Ord peeraddr
      )
   => PeerSelectionActions
@@ -473,6 +476,7 @@ jobPromoteColdPeer
   -> Job () m (Completion m extraState extraDebugState extraFlags extraPeers
                           peeraddr peerconn)
 jobPromoteColdPeer PeerSelectionActions {
+                     readLocalRootPeers,
                      peerStateActions = PeerStateActions {establishPeerConnection},
                      peerConnToPeerSharing,
                      extraPeersAPI = PublicExtraPeersAPI {
@@ -542,7 +546,21 @@ jobPromoteColdPeer PeerSelectionActions {
     job = do
       --TODO: decide if we should do timeouts here or if we should make that
       -- the responsibility of establishPeerConnection
-      peerconn <- establishPeerConnection isBigLedgerPeer diffusionMode peeraddr
+      let
+        isNotBehindFirewall m =
+          maybe
+            True
+            (\LocalRootConfig {behindFirewall} -> not behindFirewall)
+            (Map.lookup peeraddr m)
+
+      connectionMode <- atomically $
+        bool RequireInbound CreateNewIfNoInbound
+        -- ^ We require inbound if peer is behind a firewall
+        . foldr (\(_, _, m) b -> b && isNotBehindFirewall m) True
+        -- ^ True if peer is not behind a firewall
+        <$> readLocalRootPeers
+
+      peerconn <- establishPeerConnection isBigLedgerPeer diffusionMode peeraddr connectionMode
       let !peerSharing = peerConnToPeerSharing peerconn
 
       return $ Completion $ \st@PeerSelectionState {

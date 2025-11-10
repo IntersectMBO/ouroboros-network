@@ -148,6 +148,7 @@ import Control.Concurrent.Class.MonadSTM.Strict
 import Ouroboros.Network.ExitPolicy
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode)
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
+import Ouroboros.Network.ConnectionManager.Types (ConnectionMode)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers)
@@ -459,7 +460,9 @@ data PeerStateActions peeraddr peerconn m = PeerStateActions {
     --
     establishPeerConnection  :: IsBigLedgerPeer
                              -> DiffusionMode
-                             -> peeraddr -> m peerconn,
+                             -> peeraddr
+                             -> ConnectionMode
+                             -> m peerconn,
 
     -- | Activate a connection: warm to hot promotion.
     --

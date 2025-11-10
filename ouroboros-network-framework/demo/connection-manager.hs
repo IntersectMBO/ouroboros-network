@@ -559,9 +559,9 @@ bidirectionalExperiment
                               Mux.InitiatorResponderMode
                               UnversionedProtocol))
     connect n cm | n <= 1 =
-      acquireOutboundConnection cm InitiatorAndResponderDiffusionMode remoteAddr
+      acquireOutboundConnection cm InitiatorAndResponderDiffusionMode remoteAddr CreateNewIfNoInbound
     connect n cm =
-      acquireOutboundConnection cm InitiatorAndResponderDiffusionMode remoteAddr
+      acquireOutboundConnection cm InitiatorAndResponderDiffusionMode remoteAddr CreateNewIfNoInbound
         `catch` \(_ :: IOException) -> threadDelay 1
                                     >> connect (pred n) cm
         `catch` \(_ :: Mux.Error)   -> threadDelay 1

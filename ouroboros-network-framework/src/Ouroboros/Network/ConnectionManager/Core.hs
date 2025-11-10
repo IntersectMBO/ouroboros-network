@@ -1321,8 +1321,9 @@ with args@Arguments {
         -> ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version versionData m
         -> DiffusionMode
         -> peerAddr
+        -> ConnectionMode
         -> m (Connected peerAddr handle handleError)
-    acquireOutboundConnectionImpl stateVar stdGenVar handler diffusionMode peerAddr = do
+    acquireOutboundConnectionImpl stateVar stdGenVar handler diffusionMode peerAddr connectionMode = do
         let provenance = Outbound
         traceWith tracer (TrIncludeConnection provenance peerAddr)
         (trace, mutableConnState@MutableConnState { connVar, connStateId }
@@ -1469,6 +1470,10 @@ with args@Arguments {
 
           -- connection manager does not have a connection with @peerAddr@.
           Right Nowhere -> do
+            -- Only proceed if creating a new connection is allowed
+            when (inboundRequired connectionMode)  $
+              throwIO (withCallStack $ InboundConnectionNotFound peerAddr)
+
             (reader, writer) <- newEmptyPromiseIO
 
             (connId, connThread) <-
