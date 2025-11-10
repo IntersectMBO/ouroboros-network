@@ -147,7 +147,7 @@ data InFlightState = InFlightState {
       inFlightCount   :: !Int
     , inFlightLastReq :: !Time
     }
-    deriving (Eq, Ord, Show, Generic)
+    deriving (Eq, Ord, Show, Generic, NFData)
 
 instance Semigroup InFlightState where
     (<>) (InFlightState c0 t0) (InFlightState c1 t1) = InFlightState (c0 + c1) (max t0 t1)
