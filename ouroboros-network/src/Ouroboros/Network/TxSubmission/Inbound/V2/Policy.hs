@@ -58,9 +58,11 @@ data TxDecisionPolicy = TxDecisionPolicy {
       scoreRate              :: !Double,
       -- ^ rate at which "rejected" TXs drain. Unit: TX/seconds.
 
-      scoreMax               :: !Double
+      scoreMax               :: !Double,
       -- ^ Maximum number of "rejections". Unit: seconds
 
+      interTxSpace           :: !DiffTime
+      -- ^ space between requests for the same TX.
     }
   deriving Show
 
@@ -74,5 +76,6 @@ defaultTxDecisionPolicy =
     txInflightMultiplicity = 2,
     bufferedTxsMinLifetime = 2,
     scoreRate              = 0.1,
-    scoreMax               = 15 * 60
+    scoreMax               = 15 * 60,
+    interTxSpace           = 0.2
   }
