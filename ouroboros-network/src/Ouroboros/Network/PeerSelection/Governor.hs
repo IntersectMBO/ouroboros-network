@@ -697,7 +697,7 @@ peerSelectionGovernorLoop tracer
                                  actions blockedAt inboundPeers policy st
       <> KnownPeers.aboveTarget  actions                        policy st
 
-      <> EstablishedPeers.belowTarget enableProgressMakingActions inboundPeers
+      <> EstablishedPeers.belowTarget enableProgressMakingActions
                                       actions policy st
       <> EstablishedPeers.aboveTarget actions policy st
 

@@ -31,7 +31,7 @@ import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
-import Ouroboros.Network.PeerSelection.State.LocalRootPeers (WarmValency (..), LocalRootConfig (..))
+import Ouroboros.Network.PeerSelection.State.LocalRootPeers (WarmValency (..))
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 import Ouroboros.Network.PeerSelection.Types (PeerStatus (..),
            PublicExtraPeersAPI (..))
@@ -74,8 +74,6 @@ belowTarget
   -- This might be useful if the user requires its diffusion layer to
   -- stop making progress during a sensitive/vulnerable situation and
   -- quarantine it and make sure it is only connected to trusted peers.
-  -> Map peeraddr PeerSharing
-  -- ^ Inbound peers that have negotiated a duplex connection
   -> PeerSelectionActions
       extraState
       extraFlags
@@ -93,10 +91,10 @@ belowTarget
       peeraddr
       peerconn
       m
-belowTarget enableAction inboundPeers =
+belowTarget enableAction =
      belowTargetBigLedgerPeers enableAction
-  <> belowTargetLocal inboundPeers
-  <> belowTargetOther inboundPeers
+  <> belowTargetLocal
+  <> belowTargetOther
 
 
 -- | For locally configured root peers we have the explicit target that comes from local
@@ -109,9 +107,7 @@ belowTargetLocal
      , Ord peeraddr
      , HasCallStack
      )
-  => Map peeraddr PeerSharing
-  -- ^ Inbound peers that have negotiated a duplex connection
-  -> PeerSelectionActions
+  => PeerSelectionActions
       extraState
       extraFlags
       extraPeers extraAPI extraCounters peeraddr peerconn m
@@ -123,8 +119,7 @@ belowTargetLocal
       peeraddr
       peerconn
       m
-belowTargetLocal inboundPeers
-                 actions@PeerSelectionActions {
+belowTargetLocal actions@PeerSelectionActions {
                    extraPeersAPI = PublicExtraPeersAPI {
                      memberExtraPeers,
                      extraPeersToSet
@@ -154,7 +149,6 @@ belowTargetLocal inboundPeers
           [ (numMembersToPromote, membersAvailableToPromote)
           | let availableToPromote =
                   localAvailableToConnect
-                     Set.\\ unreachablePeers
                      Set.\\ localEstablishedPeers
                      Set.\\ localConnectInProgress
                      Set.\\ inProgressDemoteToCold
@@ -200,7 +194,6 @@ belowTargetLocal inboundPeers
   , let potentialToPromote =
           -- These are local peers that are cold but not ready.
           localRootPeersSet
-             Set.\\ unreachablePeers
              Set.\\ localEstablishedPeers
              Set.\\ KnownPeers.availableToConnect knownPeers
   , not (Set.null potentialToPromote)
@@ -209,14 +202,6 @@ belowTargetLocal inboundPeers
   | otherwise
   = GuardedSkip Nothing
   where
-    isUnreachablePeer addr (LocalRootConfig {behindFirewall}) =
-      behindFirewall && not (Map.member addr inboundPeers)
-
-    unreachablePeers =
-      Map.keysSet
-        $ Map.filterWithKey isUnreachablePeer
-        $ LocalRootPeers.toMap localRootPeers
-
     groupsBelowTarget =
       [ (warmValency, members, membersEstablished)
       | (_, warmValency, members) <- LocalRootPeers.toGroupSets localRootPeers
@@ -240,9 +225,7 @@ belowTargetOther
      , Ord peeraddr
      , HasCallStack
      )
-  => Map peeraddr PeerSharing
-  -- ^ Inbound peers that have negotiated a duplex connection
-  -> PeerSelectionActions
+  => PeerSelectionActions
       extraState
       extraFlags
       extraPeers
@@ -259,8 +242,7 @@ belowTargetOther
       peeraddr
       peerconn
       m
-belowTargetOther inboundPeers
-                 actions@PeerSelectionActions {
+belowTargetOther actions@PeerSelectionActions {
                    extraPeersAPI = PublicExtraPeersAPI {
                      memberExtraPeers,
                      extraPeersToSet
@@ -271,7 +253,6 @@ belowTargetOther inboundPeers
                    policyPickColdPeersToPromote
                  }
                  st@PeerSelectionState {
-                   localRootPeers,
                    knownPeers,
                    establishedPeers,
                    inProgressPromoteCold,
@@ -287,7 +268,7 @@ belowTargetOther inboundPeers
     -- not cold and our invariant is that they are always in the connect set.
     -- We can also subtract the in progress ones since they are also already
     -- in the connect set and we cannot pick them again.
-  , numAvailableToConnect - numUnreachablePeers - numEstablishedPeers - numConnectInProgress > 0
+  , numAvailableToConnect - numEstablishedPeers - numConnectInProgress > 0
   = Guarded Nothing $ do
       -- The availableToPromote here is non-empty due to the second guard.
       -- The known peers map restricted to the connect set is the same size as
@@ -299,7 +280,6 @@ belowTargetOther inboundPeers
       --
       let availableToPromote :: Set peeraddr
           availableToPromote = availableToConnect
-                                 Set.\\ unreachablePeers
                                  Set.\\ EstablishedPeers.toSet establishedPeers
                                  Set.\\ inProgressPromoteCold
           numPeersToPromote  = targetNumberOfEstablishedPeers
@@ -330,16 +310,6 @@ belowTargetOther inboundPeers
   | otherwise
   = GuardedSkip Nothing
   where
-    numUnreachablePeers = Set.size unreachablePeers
-
-    isUnreachablePeer addr (LocalRootConfig {behindFirewall}) =
-      behindFirewall && not (Map.member addr inboundPeers)
-
-    unreachablePeers =
-      Map.keysSet
-        $ Map.filterWithKey isUnreachablePeer
-        $ LocalRootPeers.toMap localRootPeers
-
     PeerSelectionView {
         viewKnownBigLedgerPeers     = (bigLedgerPeersSet, _),
 
