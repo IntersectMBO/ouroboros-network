@@ -35,7 +35,7 @@ main =
                 )
                 (\a ->
                      bench "makeDecisions: 10"
-                   $ nf (uncurry Tx.makeDecisions) a
+                   $ nf (\(t, p, st) -> Tx.makeDecisions t p st) a
                 )
           , env (do let a = TX.mkDecisionContext (SM.mkSMGen 131) 100
                     evaluate (rnf a)
@@ -44,7 +44,7 @@ main =
                 )
                 (\a ->
                      bench "makeDecisions: 100"
-                   $ nf (uncurry Tx.makeDecisions) a
+                   $ nf (\(t, p, st) -> Tx.makeDecisions t p st) a
                 )
           , env (do let a = TX.mkDecisionContext (SM.mkSMGen 361) 1_000
                     evaluate (rnf a)
@@ -53,7 +53,7 @@ main =
                 )
                 (\a ->
                      bench "makeDecisions: 1000"
-                   $ nf (uncurry Tx.makeDecisions) a
+                   $ nf (\(t, p, st) -> Tx.makeDecisions t p st) a
                 )
 {-
           , env (do
