@@ -18,6 +18,7 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Registry
   ) where
 
 import Control.Concurrent.Class.MonadMVar.Strict
+import Control.Concurrent.Class.MonadSTM qualified as Lazy
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Concurrent.Class.MonadSTM.TSem
 import Control.Monad.Class.MonadAsync
@@ -244,8 +245,8 @@ withPeer tracer
 
         purgeInflightTxs m txid = Map.alter fn txid m
           where
-            fn (Just n) | n > 1 = Just $! pred n
-            fn _                = Nothing
+            fn (Just a ) | inFlightCount a > 1 = Just $! a { inFlightCount = inFlightCount a - 1 }
+            fn _                               = Nothing
 
     --
     -- PeerTxAPI
@@ -439,28 +440,31 @@ drainRejectionThread tracer policy sharedStateVar = do
       threadDelay 1
 
       !now <- getMonotonicTime
-      st'' <- atomically $ do
+      st''' <- atomically $ do
         st <- readTVar sharedStateVar
         let ptss = if now > nextDrain then Map.map (updateRejects policy now 0) (peerTxStates st)
                                       else peerTxStates st
             st' = tickTimedTxs now st
                     { peerTxStates = ptss }
-        writeTVar sharedStateVar st'
-        return st'
-      traceWith tracer (TraceSharedTxState "drainRejectionThread" st'')
+            st'' = st' { inflightTxs = Map.filter (filterStaleReq now) (inflightTxs st')}
+        writeTVar sharedStateVar st''
+        return st''
+      traceWith tracer (TraceSharedTxState "drainRejectionThread" st''')
 
       if now > nextDrain
          then go $ addTime drainInterval now
          else go nextDrain
 
+    filterStaleReq :: Time -> InFlightState -> Bool
+    filterStaleReq now e = inFlightCount e > 0 || inFlightLastReq e > now
 
 decisionLogicThread
     :: forall m peeraddr txid tx.
        ( MonadDelay m
        , MonadMVar  m
-       , MonadSTM   m
        , MonadMask  m
        , MonadFork  m
+       , MonadTimer  m
        , Ord peeraddr
        , Ord txid
        , Hashable peeraddr
@@ -481,26 +485,36 @@ decisionLogicThread tracer counterTracer policy txChannelsVar sharedStateVar = d
       -- if there are too many inbound connections.
       threadDelay _DECISION_LOOP_DELAY
 
-      (decisions, st) <- atomically do
+      now <- getMonotonicTime
+      delayVar <- registerDelay $ 2 * _DECISION_LOOP_DELAY
+      res_m <- atomically do
         sharedTxState <- readTVar sharedStateVar
-        let activePeers = filterActivePeers policy sharedTxState
+        let activePeers = filterActivePeers now policy sharedTxState
+        timerExpired <- Lazy.readTVar delayVar
 
-        -- block until at least one peer is active
-        check (not (Map.null activePeers))
+        -- block until at least one peer is active or the timer expires
+        if not (Map.null activePeers)
+           then do
+             let (sharedState, decisions) = makeDecisions now policy sharedTxState activePeers
+             writeTVar sharedStateVar sharedState
+             return $ Just (decisions, sharedState)
+        else if timerExpired
+           then return Nothing
+           else retry
 
-        let (sharedState, decisions) = makeDecisions policy sharedTxState activePeers
-        writeTVar sharedStateVar sharedState
-        return (decisions, sharedState)
-      traceWith tracer (TraceSharedTxState "decisionLogicThread" st)
-      traceWith tracer (TraceTxDecisions decisions)
-      TxChannels { txChannelMap } <- readMVar txChannelsVar
-      traverse_
-        (\(mvar, d) -> modifyMVarWithDefault_ mvar d (\d' -> pure (d' <> d)))
-        (Map.intersectionWith (,)
-          txChannelMap
-          decisions)
-      traceWith counterTracer (mkTxSubmissionCounters st)
-      go
+      case res_m of
+           Nothing              -> go
+           Just (decisions, st) -> do
+             traceWith tracer (TraceSharedTxState "decisionLogicThread" st)
+             traceWith tracer (TraceTxDecisions decisions)
+             TxChannels { txChannelMap } <- readMVar txChannelsVar
+             traverse_
+               (\(mvar, d) -> modifyMVarWithDefault_ mvar d (\d' -> pure (d' <> d)))
+               (Map.intersectionWith (,)
+               txChannelMap
+               decisions)
+             traceWith counterTracer (mkTxSubmissionCounters st)
+             go
 
     -- Variant of modifyMVar_ that puts a default value if the MVar is empty.
     modifyMVarWithDefault_ :: StrictMVar m a -> a -> (a -> m a) -> m ()
@@ -523,6 +537,7 @@ decisionLogicThreads
        , MonadMask  m
        , MonadAsync m
        , MonadFork  m
+       , MonadTimer  m
        , Ord peeraddr
        , Ord txid
        , Hashable peeraddr

@@ -15,6 +15,8 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Types
     PeerTxState (..)
     -- * SharedTxState
   , SharedTxState (..)
+    -- * InFlightState
+  , InFlightState (..)
     -- * Decisions
   , TxsToMempool (..)
   , TxDecision (..)
@@ -141,6 +143,21 @@ instance ( NoThunks txid
          ) => NoThunks (PeerTxState txid tx)
 
 
+data InFlightState = InFlightState {
+      inFlightCount   :: !Int
+    , inFlightLastReq :: !Time
+    }
+    deriving (Eq, Ord, Show, Generic)
+
+instance Semigroup InFlightState where
+    (<>) (InFlightState c0 t0) (InFlightState c1 t1) = InFlightState (c0 + c1) (max t0 t1)
+
+instance Monoid InFlightState where
+    mempty = InFlightState 0 (Time 0)
+    mappend = (<>)
+
+instance NoThunks InFlightState
+
 -- | Shared state of all `TxSubmission` clients.
 --
 -- New `txid` enters `unacknowledgedTxIds` it is also added to `availableTxIds`
@@ -176,7 +193,7 @@ data SharedTxState peeraddr txid tx = SharedTxState {
       --
       -- This set can intersect with `availableTxIds`.
       --
-      inflightTxs              :: !(Map txid Int),
+      inflightTxs              :: !(Map txid InFlightState),
 
       -- | Overall size of all `tx`s in-flight.
       --
@@ -430,7 +447,7 @@ mkTxSubmissionCounters
                                         Set.\\ Map.keysSet inSubmissionToMempoolTxs,
     numOfBufferedTxs              = Map.size bufferedTxs,
     numOfInSubmissionToMempoolTxs = Map.size inSubmissionToMempoolTxs,
-    numOfTxIdsInflight            = getSum $ foldMap Sum inflightTxs
+    numOfTxIdsInflight            = getSum $ foldMap (Sum . inFlightCount) inflightTxs
   }
 
 
