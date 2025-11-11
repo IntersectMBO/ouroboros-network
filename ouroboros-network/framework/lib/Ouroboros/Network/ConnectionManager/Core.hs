@@ -1459,6 +1459,10 @@ with args@Arguments {
                   retry
 
             Nothing -> do
+              -- Only proceed if creating a new connection is allowed
+              when (inboundRequired connectionMode)  $
+                throwIO (withCallStack $ InboundConnectionNotFound peerAddr)
+
               let connState' = ReservedOutboundState
               (mutableConnState@MutableConnState { connVar, connStateId }
                 :: MutableConnState peerAddr handle handleError
@@ -1487,10 +1491,6 @@ with args@Arguments {
 
           -- connection manager does not have a connection with @peerAddr@.
           Right Nowhere -> do
-            -- Only proceed if creating a new connection is allowed
-            when (inboundRequired connectionMode)  $
-              throwIO (withCallStack $ InboundConnectionNotFound peerAddr)
-
             (reader, writer) <- newEmptyPromiseIO
 
             (connId, connThread) <-

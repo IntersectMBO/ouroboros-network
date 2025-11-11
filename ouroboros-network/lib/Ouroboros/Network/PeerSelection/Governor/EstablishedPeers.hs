@@ -885,7 +885,7 @@ connectionMode peer localRootPeers =
       maybe
         CreateNewIfNoInbound
         (\LocalRootConfig {localRootBehindFirewall} ->
-           bool RequireInbound CreateNewIfNoInbound localRootBehindFirewall)
+           bool CreateNewIfNoInbound RequireInbound localRootBehindFirewall)
         (Map.lookup peer $ LocalRootPeers.toMap localRootPeers)
 
 jobDemoteEstablishedPeer
