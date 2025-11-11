@@ -89,7 +89,7 @@ library api
 
   build-depends:
     aeson,
-    base >=4.14 && <4.22,
+    base >=4.14 && <4.23,
     base16-bytestring,
     bytestring >=0.10 && <0.13,
     cardano-binary,
@@ -149,7 +149,7 @@ test-suite api-tests
   build-depends:
     QuickCheck,
     aeson,
-    base >=4.14 && <4.22,
+    base >=4.14 && <4.23,
     bytestring,
     cardano-binary,
     cborg,
@@ -172,7 +172,7 @@ benchmark api-bench
     BenchBlock
 
   build-depends:
-    base >=4.14 && <4.22,
+    base >=4.14 && <4.23,
     bytestring,
     cryptohash-sha256,
     nothunks,
@@ -280,7 +280,7 @@ library
     TypeInType
 
   build-depends:
-    base >=4.14 && <4.22,
+    base >=4.14 && <4.23,
     bytestring >=0.10 && <0.13,
     cardano-prelude,
     cardano-slotting,
@@ -357,11 +357,11 @@ library framework
   build-depends:
     -- ^ only to derive nothunk instances
     Win32-network ^>=0.2,
-    base >=4.12 && <4.22,
+    base >=4.12 && <4.23,
     bytestring >=0.10 && <0.13,
     cardano-strict-containers,
     cborg >=0.2.1 && <0.3,
-    containers >=0.5 && <0.8,
+    containers >=0.5 && <0.9,
     contra-tracer,
     deepseq,
     hashable,
@@ -422,7 +422,7 @@ library tests-lib
 
   build-depends:
     QuickCheck,
-    base >=4.14 && <4.22,
+    base >=4.14 && <4.23,
     cborg >=0.2.1 && <0.3,
     containers,
     contra-tracer,
@@ -459,7 +459,7 @@ test-suite tests-lib-tests
   other-modules: Test.Ouroboros.Network.Data.AbsBearerInfo.Test
   build-depends:
     QuickCheck,
-    base >=4.14 && <4.22,
+    base >=4.14 && <4.23,
     ouroboros-network:tests-lib,
     tasty,
     tasty-quickcheck,
@@ -482,7 +482,7 @@ library framework-tests-lib
 
   build-depends:
     QuickCheck >=2.16,
-    base >=4.14 && <4.22,
+    base >=4.14 && <4.23,
     bytestring,
     cborg,
     containers,
@@ -510,7 +510,7 @@ test-suite framework-sim-tests
 
   build-depends:
     QuickCheck >=2.16,
-    base >=4.14 && <4.22,
+    base >=4.14 && <4.23,
     bytestring,
     cborg,
     containers,
@@ -552,7 +552,7 @@ test-suite framework-io-tests
 
   build-depends:
     QuickCheck >=2.16,
-    base >=4.14 && <4.22,
+    base >=4.14 && <4.23,
     bytestring,
     contra-tracer,
     directory,
@@ -609,7 +609,7 @@ library orphan-instances
 
   build-depends:
     aeson,
-    base >=4.14 && <4.22,
+    base >=4.14 && <4.23,
     containers,
     io-classes:si-timers,
     iproute,
@@ -625,7 +625,7 @@ executable demo-ping-pong
   main-is: ping-pong.hs
   build-depends:
     async,
-    base >=4.14 && <4.22,
+    base >=4.14 && <4.23,
     bytestring,
     contra-tracer,
     directory,
@@ -638,7 +638,7 @@ executable demo-connection-manager
   hs-source-dirs: demo
   main-is: connection-manager.hs
   build-depends:
-    base >=4.14 && <4.22,
+    base >=4.14 && <4.23,
     bytestring,
     contra-tracer,
     hashable,
@@ -718,7 +718,7 @@ library protocols
     TypeInType
 
   build-depends:
-    base >=4.14 && <4.22,
+    base >=4.14 && <4.23,
     bytestring >=0.10 && <0.13,
     cborg >=0.2.1 && <0.3,
     constraints,
@@ -781,7 +781,7 @@ library protocols-tests-lib
 
   build-depends:
     QuickCheck,
-    base >=4.14 && <4.22,
+    base >=4.14 && <4.23,
     bytestring,
     cardano-strict-containers,
     cborg,
@@ -806,7 +806,7 @@ test-suite protocols-tests
   hs-source-dirs: protocols/tests
   main-is: Main.hs
   build-depends:
-    base >=4.14 && <4.22,
+    base >=4.14 && <4.23,
     ouroboros-network:protocols-tests-lib,
     tasty,
 
@@ -825,7 +825,7 @@ library ouroboros-network-tests-lib
     QuickCheck >=2.16,
     aeson,
     array,
-    base >=4.14 && <4.22,
+    base >=4.14 && <4.23,
     bytestring,
     cardano-slotting,
     cardano-strict-containers,
@@ -852,7 +852,7 @@ library ouroboros-network-tests-lib
     tasty-hunit,
     tasty-quickcheck,
     text,
-    time >=1.9.1 && <1.14,
+    time >=1.9.1 && <1.16,
     typed-protocols,
 
   exposed-modules:
@@ -888,7 +888,7 @@ test-suite ouroboros-network-sim-tests
   hs-source-dirs: tests/sim
   main-is: Main.hs
   build-depends:
-    base >=4.14 && <4.22,
+    base >=4.14 && <4.23,
     ouroboros-network:{ouroboros-network-tests-lib, protocols-tests-lib},
     tasty,
     with-utf8,
@@ -916,7 +916,7 @@ test-suite ouroboros-network-io-tests
 
   build-depends:
     QuickCheck >=2.16,
-    base >=4.14 && <4.22,
+    base >=4.14 && <4.23,
     bytestring,
     cborg,
     contra-tracer,

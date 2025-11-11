@@ -67,7 +67,7 @@ library api
 
   build-depends:
     aeson,
-    base >=4.14 && <4.22,
+    base >=4.14 && <4.23,
     cborg >=0.2.1 && <0.3,
     deepseq,
     nothunks,
@@ -86,7 +86,7 @@ test-suite api-tests
 
   build-depends:
     QuickCheck,
-    base >=4.14 && <4.22,
+    base >=4.14 && <4.23,
     cardano-diffusion:api,
     ouroboros-network:api,
     tasty,
@@ -149,7 +149,7 @@ library
 
   build-depends:
     aeson,
-    base >=4.14 && <4.22,
+    base >=4.14 && <4.23,
     bytestring,
     cardano-diffusion:{api, protocols},
     containers,
@@ -201,7 +201,7 @@ library orphan-instances
 
   build-depends:
     aeson,
-    base >=4.14 && <4.22,
+    base >=4.14 && <4.23,
     cardano-diffusion:{cardano-diffusion, api},
     containers,
     ouroboros-network:{ouroboros-network, api, orphan-instances},
@@ -212,7 +212,7 @@ executable demo-chain-sync
   main-is: chain-sync.hs
   build-depends:
     async,
-    base >=4.14 && <4.22,
+    base >=4.14 && <4.23,
     bytestring,
     cardano-diffusion,
     containers,
@@ -279,7 +279,7 @@ library protocols
     Ouroboros.Network.Protocol.TxSubmission2.Type as Cardano.Network.Protocol.TxSubmission2.Type,
 
   build-depends:
-    base >=4.12 && <4.22,
+    base >=4.12 && <4.23,
     bytestring >=0.10 && <0.13,
     cardano-diffusion:api,
     cborg >=0.2.1 && <0.3,
@@ -331,7 +331,7 @@ library protocols-tests-lib
 
   build-depends:
     QuickCheck,
-    base >=4.14 && <4.22,
+    base >=4.14 && <4.23,
     bytestring,
     cardano-diffusion:api,
     cborg,
@@ -351,7 +351,7 @@ test-suite protocols-tests
   hs-source-dirs: protocols/tests
   main-is: Main.hs
   build-depends:
-    base >=4.14 && <4.22,
+    base >=4.14 && <4.23,
     cardano-diffusion:protocols-tests-lib,
     tasty,
 
@@ -374,7 +374,7 @@ test-suite protocols-cddl
 
   build-depends:
     QuickCheck,
-    base >=4.14 && <4.22,
+    base >=4.14 && <4.23,
     bytestring,
     cardano-diffusion:{api, protocols, protocols-tests-lib},
     cborg,
@@ -407,7 +407,7 @@ test-suite protocols-bench
   hs-source-dirs: protocols/bench
   main-is: Main.hs
   build-depends:
-    base >=4.14 && <4.22,
+    base >=4.14 && <4.23,
     bytestring,
     cardano-diffusion:{api, protocols, protocols-tests-lib},
     cborg,
@@ -435,7 +435,7 @@ library cardano-diffusion-tests-lib
   build-depends:
     QuickCheck >=2.16,
     aeson,
-    base >=4.14 && <4.22,
+    base >=4.14 && <4.23,
     bytestring,
     cardano-diffusion:{cardano-diffusion, api, orphan-instances, protocols-tests-lib},
     cardano-slotting,
@@ -483,7 +483,7 @@ test-suite cardano-diffusion-sim-tests
   hs-source-dirs: tests/sim
   main-is: Main.hs
   build-depends:
-    base >=4.14 && <4.22,
+    base >=4.14 && <4.23,
     cardano-diffusion:cardano-diffusion-tests-lib,
     tasty,
     with-utf8,
@@ -504,7 +504,7 @@ library subscription
   default-language: Haskell2010
   default-extensions: ImportQualifiedPost
   build-depends:
-    base >=4.14 && <4.22,
+    base >=4.14 && <4.23,
     bytestring >=0.10 && <0.13,
     cardano-diffusion ^>=0.1,
     cborg >=0.2.8 && <0.3,
