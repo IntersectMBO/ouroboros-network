@@ -1442,29 +1442,34 @@ with args@Arguments {
                   retry
 
             Nothing -> do
-              -- Only proceed if creating a new connection is allowed
-              when (inboundRequired connectionMode)  $
-                throwIO (withCallStack $ InboundConnectionNotFound peerAddr)
-
               let connState' = ReservedOutboundState
               (mutableConnState@MutableConnState { connVar, connStateId }
                 :: MutableConnState peerAddr handle handleError
                                     version m)
                 <- State.newMutableConnState peerAddr connStateIdSupply connState'
-              -- TODO: label `connVar` using 'ConnectionId'
-              labelTVar connVar ("conn-state-" ++ show peerAddr)
 
-              writeTMVar stateVar
-                        (State.insertUnknownLocalAddr peerAddr mutableConnState state)
-              return ( Just (Left (TransitionTrace
-                                    connStateId
-                                    Transition {
-                                        fromState = Unknown,
-                                        toState   = Known connState'
-                                      }))
-                     , mutableConnState
-                     , Right Nowhere
-                     )
+              -- Only proceed if creating a new connection is allowed
+              if (inboundRequired connectionMode)
+              then  return ( Just (Right (TrInboundConnectionNotFound peerAddr))
+                       , mutableConnState
+                       , Left (withCallStack
+                                (InboundConnectionNotFound peerAddr))
+                       )
+              else do
+                -- TODO: label `connVar` using 'ConnectionId'
+                labelTVar connVar ("conn-state-" ++ show peerAddr)
+
+                writeTMVar stateVar
+                          (State.insertUnknownLocalAddr peerAddr mutableConnState state)
+                return ( Just (Left (TransitionTrace
+                                      connStateId
+                                      Transition {
+                                          fromState = Unknown,
+                                          toState   = Known connState'
+                                        }))
+                       , mutableConnState
+                       , Right Nowhere
+                       )
 
         traverse_ (either (traceWith trTracer) (traceWith tracer)) trace
         traceCounters stateVar
@@ -2468,6 +2473,7 @@ data Trace peerAddr handlerTrace
                                    peerAddr         -- ^ remote address
                                    SomeException
   | TrTerminatingConnection        Provenance (ConnectionId peerAddr)
+  | TrInboundConnectionNotFound    peerAddr
   | TrTerminatedConnection         Provenance peerAddr
   | TrConnectionHandler            (ConnectionId peerAddr) handlerTrace
   | TrShutdown
