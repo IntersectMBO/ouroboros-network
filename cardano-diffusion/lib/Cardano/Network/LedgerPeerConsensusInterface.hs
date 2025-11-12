@@ -1,3 +1,5 @@
+{-# LANGUAGE RankNTypes #-}
+
 module Cardano.Network.LedgerPeerConsensusInterface
   ( LedgerPeersConsensusInterface (..)
     -- * Re-exports
@@ -8,11 +10,14 @@ module Cardano.Network.LedgerPeerConsensusInterface
 
 import Control.Concurrent.Class.MonadSTM (MonadSTM (..))
 
-import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode (..))
-
+import Cardano.Crypto.Hash (Blake2b_256, Hash)
 import Cardano.Network.LedgerStateJudgement
 import Cardano.Network.PeerSelection.LocalRootPeers
            (OutboundConnectionsState (..))
+import Ouroboros.Network.Block (SlotNo)
+import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode (..))
+import Ouroboros.Network.Point (Block)
+
 
 -- | Cardano Node specific consensus interface actions.
 --
@@ -31,4 +36,7 @@ data LedgerPeersConsensusInterface m =
     -- it only has local peers.
     --
   , updateOutboundConnectionsState :: OutboundConnectionsState -> STM m ()
+
+  , getBlockHash
+      :: forall r. SlotNo -> (forall a. STM m (Block SlotNo (Hash Blake2b_256 a)) -> r) -> r
   }

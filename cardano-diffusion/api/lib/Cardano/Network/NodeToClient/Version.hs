@@ -56,8 +56,13 @@ data NodeToClientVersion
     -- ^ new codecs for @PParams@ and @CompactGenesis@
     | NodeToClientV_22
     -- ^ support SRV records in @GetBigLedgerPeerSnapshot@ query
+    -- TODO: remove CBOR instances from LedgerPeers.Type when V22 support
+    --       is removed, update {To,From}JSON LedgerPeerSnapshot instances
+    --       and update LedgerPeerSnapshot query encoding in consensus.
+    --       marked with TODO's.
     | NodeToClientV_23
     -- ^ added @QueryDRepsDelegations@,
+    -- LedgerPeerSnapshot CBOR encoding contains block hash and NetworkMagic
   deriving (Eq, Ord, Enum, Bounded, Show, Generic, NFData)
 
 -- | We set 16ths bit to distinguish `NodeToNodeVersion` and
