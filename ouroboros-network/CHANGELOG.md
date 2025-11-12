@@ -6,6 +6,13 @@
 
 ### Non-breaking changes
 
+## 0.21.4.0 -- 2025-10-05
+
+### Non-breaking changes
+
+* Enforce a minimum churn of established peers based on churned active peers.
+* Enforce a minimum churn of known peers based on churned established peers.
+
 ## 0.21.3.0 -- 2025-07-15
 
 ### Breaking changes
