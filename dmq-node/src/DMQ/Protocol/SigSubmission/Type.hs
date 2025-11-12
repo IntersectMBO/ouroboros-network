@@ -6,7 +6,7 @@
 {-# LANGUAGE PatternSynonyms      #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE StandaloneDeriving   #-}
-{-# LANGUAGE TypeOperators        #-}
+{-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module DMQ.Protocol.SigSubmission.Type
@@ -20,7 +20,6 @@ module DMQ.Protocol.SigSubmission.Type
   , SigRaw (..)
   , SigRawWithSignedBytes (..)
   , Sig (Sig, SigWithBytes, sigRawWithSignedBytes, sigRawBytes, sigId, sigBody, sigExpiresAt, sigOpCertificate, sigKESPeriod, sigKESSignature, sigColdKey, sigSignedBytes, sigBytes)
-  , validateSig
     -- * `TxSubmission` mini-protocol
   , SigSubmission
   , module SigSubmission
@@ -32,7 +31,6 @@ module DMQ.Protocol.SigSubmission.Type
   ) where
 
 import Data.Aeson
-import Data.Bifunctor (first)
 import Data.ByteString (ByteString)
 import Data.ByteString.Base16 as BS.Base16
 import Data.ByteString.Base16.Lazy as LBS.Base16
@@ -41,15 +39,11 @@ import Data.ByteString.Lazy.Char8 qualified as LBS.Char8
 import Data.Text.Encoding qualified as Text
 import Data.Time.Clock.POSIX (POSIXTime)
 import Data.Typeable
-import Data.Word (Word64)
 
-import Cardano.Crypto.DSIGN.Class (ContextDSIGN, DSIGNAlgorithm, VerKeyDSIGN)
-import Cardano.Crypto.DSIGN.Class qualified as DSIGN
-import Cardano.Crypto.KES.Class (KESAlgorithm (..), Signable)
+import Cardano.Crypto.DSIGN.Class (DSIGNAlgorithm, VerKeyDSIGN)
+import Cardano.Crypto.KES.Class (KESAlgorithm (..))
 import Cardano.KESAgent.KES.Crypto as KES
-import Cardano.KESAgent.KES.Evolution qualified as KES
-import Cardano.KESAgent.KES.OCert (KESPeriod (..), OCert (..), OCertSignable,
-           validateOCert)
+import Cardano.KESAgent.KES.OCert (KESPeriod (..), OCert (..))
 
 import Ouroboros.Network.Protocol.TxSubmission2.Type as SigSubmission hiding
            (TxSubmission2)
@@ -274,61 +268,6 @@ pattern
 instance Typeable crypto => ShowProxy (Sig crypto) where
 
 
-data SigValidationError =
-    InvalidKESSignature KESPeriod KESPeriod String
-  | InvalidSignatureOCERT
-      !Word64    -- OCert counter
-      !KESPeriod -- OCert KES period
-      !String    -- DSIGN error message
-  | KESBeforeStartOCERT KESPeriod KESPeriod
-  | KESAfterEndOCERT KESPeriod KESPeriod
-  deriving Show
-
-validateSig :: forall crypto.
-               ( Crypto crypto
-               , ContextDSIGN (KES.DSIGN crypto) ~ ()
-               , DSIGN.Signable (DSIGN crypto) (OCertSignable crypto)
-               , ContextKES (KES crypto) ~ ()
-               , Signable (KES crypto) ByteString
-               )
-            => KES.EvolutionConfig
-            -> Sig crypto
-            -> Either SigValidationError ()
-validateSig _ec
-            Sig { sigSignedBytes = signedBytes,
-                  sigKESPeriod,
-                  sigOpCertificate = SigOpCertificate ocert@OCert {
-                      ocertKESPeriod,
-                      ocertVkHot,
-                      ocertN
-                  },
-                  sigColdKey = SigColdKey coldKey,
-                  sigKESSignature = SigKESSignature kesSig
-                }
-            = do
-            sigKESPeriod < endKESPeriod
-              ?!  KESAfterEndOCERT endKESPeriod sigKESPeriod
-            sigKESPeriod >= startKESPeriod
-              ?!  KESBeforeStartOCERT startKESPeriod sigKESPeriod
-
-            -- validate OCert, which includes verifying its signature
-            validateOCert coldKey ocertVkHot ocert
-              ?!: InvalidSignatureOCERT ocertN sigKESPeriod
-            -- validate KES signature of the payload
-            verifyKES () ocertVkHot
-                         (unKESPeriod sigKESPeriod - unKESPeriod startKESPeriod)
-                         (LBS.toStrict signedBytes)
-                         kesSig
-              ?!: InvalidKESSignature ocertKESPeriod sigKESPeriod
-  where
-    startKESPeriod, endKESPeriod :: KESPeriod
-
-    startKESPeriod = ocertKESPeriod
-    -- TODO: is `totalPeriodsKES` the same as `praosMaxKESEvo`
-    -- or `sgMaxKESEvolution` in the genesis file?
-    endKESPeriod   = KESPeriod $ unKESPeriod startKESPeriod
-                               + totalPeriodsKES (Proxy :: Proxy (KES crypto))
-
 type SigSubmission crypto = TxSubmission2.TxSubmission2 SigId (Sig crypto)
 
 
@@ -343,19 +282,3 @@ newtype CBORBytes = CBORBytes { getCBORBytes :: LBS.ByteString }
 
 instance Show CBORBytes where
   show = LBS.Char8.unpack . LBS.Base16.encode . getCBORBytes
-
-
---
--- Utility functions
---
-
-(?!:) :: Either e1 a -> (e1 -> e2) -> Either e2 a
-(?!:) = flip first
-
-infix 1 ?!:
-
-(?!) :: Bool -> e -> Either e ()
-(?!) True  _ = Right ()
-(?!) False e = Left e
-
-infix 1 ?!

@@ -151,6 +151,7 @@ library
     aeson,
     base >=4.14 && <4.22,
     bytestring,
+    cardano-crypto-class,
     cardano-diffusion:{api, protocols},
     containers,
     contra-tracer,
@@ -430,10 +431,13 @@ test-suite protocols-bench
 
 library cardano-diffusion-tests-lib
   import: ghc-options-tests
+  mixins:
+    QuickCheck hiding (Test.QuickCheck.Monoids)
+
   visibility: public
   hs-source-dirs: tests/lib
   build-depends:
-    QuickCheck >=2.16,
+    QuickCheck,
     aeson,
     base >=4.14 && <4.22,
     bytestring,
@@ -453,6 +457,7 @@ library cardano-diffusion-tests-lib
     pipes,
     pretty-simple,
     psqueues,
+    quickcheck-monoids,
     random,
     serialise,
     tasty,

@@ -1,10 +1,11 @@
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DataKinds  #-}
+{-# LANGUAGE RankNTypes #-}
 
 module DMQ.Diffusion.NodeKernel
   ( NodeKernel (..)
   , withNodeKernel
+  , PoolValidationCtx (..)
+  , StakePools (..)
   ) where
 
 import Control.Concurrent.Class.MonadMVar
@@ -19,6 +20,8 @@ import Data.Aeson qualified as Aeson
 import Data.Function (on)
 import Data.Functor.Contravariant ((>$<))
 import Data.Hashable
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
 import Data.Sequence (Seq)
 import Data.Sequence qualified as Seq
 import Data.Set (Set)
@@ -26,17 +29,22 @@ import Data.Set qualified as Set
 import Data.Time.Clock.POSIX (POSIXTime)
 import Data.Time.Clock.POSIX qualified as Time
 import Data.Void (Void)
+import Data.Word
 import System.Random (StdGen)
 import System.Random qualified as Random
 
+import Cardano.Ledger.Shelley.API hiding (I)
 import Cardano.KESAgent.KES.Crypto (Crypto (..))
 import Cardano.KESAgent.KES.Evolution qualified as KES
+import Ouroboros.Consensus.Shelley.Ledger.Query
 
 import Ouroboros.Network.BlockFetch (FetchClientRegistry,
            newFetchClientRegistry)
 import Ouroboros.Network.ConnectionId (ConnectionId (..))
 import Ouroboros.Network.PeerSelection.Governor.Types
            (makePublicPeerSelectionStateVar)
+import Ouroboros.Network.PeerSelection.LedgerPeers.Type (LedgerPeerSnapshot,
+           LedgerPeersKind (..))
 import Ouroboros.Network.PeerSharing (PeerSharingAPI, PeerSharingRegistry,
            newPeerSharingAPI, newPeerSharingRegistry,
            ps_POLICY_PEER_SHARE_MAX_PEERS, ps_POLICY_PEER_SHARE_STICKY_TIME)
@@ -60,14 +68,46 @@ data NodeKernel crypto ntnAddr m =
   , peerSharingRegistry :: !(PeerSharingRegistry ntnAddr m)
   , peerSharingAPI      :: !(PeerSharingAPI ntnAddr StdGen m)
   , mempool             :: !(Mempool m SigId (Sig crypto))
-  , evolutionConfig     :: !(KES.EvolutionConfig)
+  , evolutionConfig     :: !KES.EvolutionConfig
   , sigChannelVar       :: !(TxChannelsVar m ntnAddr SigId (Sig crypto))
   , sigMempoolSem       :: !(TxMempoolSem m)
   , sigSharedTxStateVar :: !(SharedTxStateVar m ntnAddr SigId (Sig crypto))
+  , stakePools          :: !(StakePools m)
+  , nextEpochVar        :: !(StrictTVar m (Maybe UTCTime))
   }
+
+-- | Cardano pool id's are hashes of the cold verification key
+--
+type PoolId = KeyHash StakePool
+
+data StakePools m = StakePools {
+    -- | contains map of cardano pool stake snapshot obtained
+    -- via local state query client
+    stakePoolsVar     :: !(StrictTVar m (Map PoolId StakeSnapshot))
+    -- | acquires validation context for signature validation
+  , poolValidationCtx :: !(m (PoolValidationCtx m))
+     -- | provides only those big peers which provide SRV endpoints
+     -- as otherwise those are cardano-nodes
+  , ledgerBigPeersVar
+      :: !(StrictTVar m (Maybe (LedgerPeerSnapshot BigLedgerPeers)))
+    -- | all ledger peers, restricted to srv endpoints
+  , ledgerPeersVar
+      :: !(StrictTMVar m (LedgerPeerSnapshot AllLedgerPeers))
+  }
+
+data PoolValidationCtx m =
+  DMQPoolValidationCtx !UTCTime
+                       -- ^ time of context acquisition
+                       !(Maybe UTCTime)
+                       -- ^ UTC time of next epoch boundary for handling clock skey
+                       !(Map PoolId StakeSnapshot)
+                       -- ^ for signature validation
+                       !(StrictTVar m (Map PoolId Word64))
+                       -- ^ ocert counter to validate only monotonically increasing values
 
 newNodeKernel :: ( MonadLabelledSTM m
                  , MonadMVar m
+                 , MonadTime m
                  , Ord ntnAddr
                  )
               => KES.EvolutionConfig
@@ -84,6 +124,20 @@ newNodeKernel evolutionConfig rng = do
   sigMempoolSem <- newTxMempoolSem
   let (rng', rng'') = Random.split rng
   sigSharedTxStateVar <- newSharedTxStateVar rng'
+  (nextEpochVar, ocertCountersVar, stakePoolsVar, ledgerBigPeersVar, ledgerPeersVar) <- atomically $
+    (,,,,) <$> newTVar Nothing
+           <*> newTVar Map.empty
+           <*> newTVar Map.empty
+           <*> newTVar Nothing
+           <*> newEmptyTMVar
+  let poolValidationCtx = do
+        (nextEpochBoundary, stakePools') <-
+          atomically $
+            (,) <$> readTVar nextEpochVar <*> readTVar stakePoolsVar
+        now <- getCurrentTime
+        return $ DMQPoolValidationCtx now nextEpochBoundary stakePools' ocertCountersVar
+
+      stakePools = StakePools { stakePoolsVar, poolValidationCtx, ledgerBigPeersVar, ledgerPeersVar }
 
   peerSharingAPI <-
     newPeerSharingAPI
@@ -100,6 +154,8 @@ newNodeKernel evolutionConfig rng = do
                   , sigChannelVar
                   , sigMempoolSem
                   , sigSharedTxStateVar
+                  , nextEpochVar
+                  , stakePools
                   }
 
 
@@ -120,6 +176,7 @@ withNodeKernel :: forall crypto ntnAddr m a.
                -> Configuration
                -> KES.EvolutionConfig
                -> StdGen
+               -> (NodeKernel crypto ntnAddr m -> m (Either SomeException Void))
                -> (NodeKernel crypto ntnAddr m -> m a)
                -- ^ as soon as the callback exits the `mempoolWorker` and all
                -- decision logic threads will be killed
@@ -129,7 +186,8 @@ withNodeKernel tracer
                  dmqcSigSubmissionLogicTracer = I sigSubmissionLogicTracer
                }
                evolutionConfig
-               rng k = do
+               rng
+               mkStakePoolMonitor k = do
   nodeKernel@NodeKernel { mempool,
                           sigChannelVar,
                           sigSharedTxStateVar
@@ -145,10 +203,12 @@ withNodeKernel tracer
                 defaultSigDecisionPolicy
                 sigChannelVar
                 sigSharedTxStateVar)
-            $ \sigLogicThread
-      -> link mempoolThread
-      >> link sigLogicThread
-      >> k nodeKernel
+            $ \sigLogicThread ->
+      withAsync (mkStakePoolMonitor nodeKernel) \spmAid -> do
+        link mempoolThread
+        link sigLogicThread
+        link spmAid
+        k nodeKernel
 
 
 mempoolWorker :: forall crypto m.

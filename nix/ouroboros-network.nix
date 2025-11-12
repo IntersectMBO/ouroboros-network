@@ -43,6 +43,8 @@ let
     # stdenv.hostPlatform.isWindows will work as expected
     src = ./..;
     name = "ouroboros-network";
+    index-state = "2025-07-16T09:24:19Z";
+    index-sha256 = "sha256-fmnSRF68/UIQYzzdmNs3UT0cbYhn9d5nlhb3BnVXe48=";
     compiler-nix-name = lib.mkDefault defaultCompiler;
     cabalProjectLocal =
       if pkgs.stdenv.hostPlatform.isWindows
@@ -132,6 +134,19 @@ let
         packages.cardano-diffusion.components.tests.protocols-cddl.build-tools = lib.mkForce [ ];
         packages.cardano-diffusion.components.tests.protocols-cddl.doCheck = lib.mkForce false;
         packages.dmq-node.ghcOptions = with pkgs; [
+          "-L${lib.getLib static-gmp}/lib"
+          "-L${lib.getLib static-libsodium-vrf}/lib"
+          "-L${lib.getLib static-secp256k1}/lib"
+          "-L${lib.getLib static-libblst}/lib"
+        ];
+        packages.cardano-diffusion.ghcOptions = with pkgs; [
+          "-L${lib.getLib static-gmp}/lib"
+          "-L${lib.getLib static-libsodium-vrf}/lib"
+          "-L${lib.getLib static-secp256k1}/lib"
+          "-L${lib.getLib static-libblst}/lib"
+        ];
+        # for api-bench
+        packages.ouroboros-network.ghcOptions = with pkgs; [
           "-L${lib.getLib static-gmp}/lib"
           "-L${lib.getLib static-libsodium-vrf}/lib"
           "-L${lib.getLib static-secp256k1}/lib"

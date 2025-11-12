@@ -15,6 +15,9 @@
 {-# LANGUAGE StandaloneDeriving  #-}
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeOperators       #-}
+#if !MIN_VERSION_QuickCheck(2,16,0)
+{-# LANGUAGE PackageImports      #-}
+#endif
 
 -- for 'debugTracer'
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
@@ -64,6 +67,9 @@ import System.Random (StdGen, mkStdGen, split)
 import Text.Printf
 
 import Test.QuickCheck
+#if !MIN_VERSION_QuickCheck(2,16,0)
+import "quickcheck-monoids" Test.QuickCheck.Monoids
+#endif
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck
 
