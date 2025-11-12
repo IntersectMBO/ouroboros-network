@@ -184,7 +184,7 @@ belowTargetLocal actions@PeerSelectionActions {
                           inProgressPromoteCold = inProgressPromoteCold
                                                <> selectedToPromote
                         },
-        decisionJobs  = [ jobPromoteColdPeer actions policy peer IsNotBigLedgerPeer diffusionMode
+        decisionJobs  = [ jobPromoteColdPeer actions policy peer IsNotBigLedgerPeer diffusionMode (connectionMode peer localRootPeers)
                         | peer <- Set.toList selectedToPromote
                         , let diffusionMode = LocalRootPeers.diffusionMode
                                             $ LocalRootPeers.toMap localRootPeers Map.! peer
@@ -256,6 +256,7 @@ belowTargetOther actions@PeerSelectionActions {
                    policyPickColdPeersToPromote
                  }
                  st@PeerSelectionState {
+                   localRootPeers,
                    knownPeers,
                    establishedPeers,
                    inProgressPromoteCold,
@@ -301,7 +302,7 @@ belowTargetOther actions@PeerSelectionActions {
                           inProgressPromoteCold = inProgressPromoteCold
                                                <> selectedToPromote
                         },
-        decisionJobs  = [ jobPromoteColdPeer actions policy peer IsNotBigLedgerPeer InitiatorAndResponderDiffusionMode
+        decisionJobs  = [ jobPromoteColdPeer actions policy peer IsNotBigLedgerPeer InitiatorAndResponderDiffusionMode (connectionMode peer localRootPeers)
                         | peer <- Set.toList selectedToPromote ]
       }
 
@@ -373,6 +374,7 @@ belowTargetBigLedgerPeers enableAction
                             policyPickColdPeersToPromote
                           }
                           st@PeerSelectionState {
+                            localRootPeers,
                             knownPeers,
                             establishedPeers,
                             inProgressPromoteCold,
@@ -422,7 +424,7 @@ belowTargetBigLedgerPeers enableAction
                           inProgressPromoteCold = inProgressPromoteCold
                                                <> selectedToPromote
                         },
-        decisionJobs  = [ jobPromoteColdPeer actions policy peer IsBigLedgerPeer InitiatorAndResponderDiffusionMode
+        decisionJobs  = [ jobPromoteColdPeer actions policy peer IsBigLedgerPeer InitiatorAndResponderDiffusionMode (connectionMode peer localRootPeers)
                         | peer <- Set.toList selectedToPromote ]
       }
 
@@ -473,10 +475,10 @@ jobPromoteColdPeer
   -> peeraddr
   -> IsBigLedgerPeer
   -> DiffusionMode
+  -> ConnectionMode
   -> Job () m (Completion m extraState extraDebugState extraFlags extraPeers
                           peeraddr peerconn)
 jobPromoteColdPeer PeerSelectionActions {
-                     readLocalRootPeers,
                      peerStateActions = PeerStateActions {establishPeerConnection},
                      peerConnToPeerSharing,
                      extraPeersAPI = PublicExtraPeersAPI {
@@ -485,7 +487,7 @@ jobPromoteColdPeer PeerSelectionActions {
                      extraStateToExtraCounters
                    }
                    PeerSelectionPolicy { policyPeerShareActivationDelay }
-                   peeraddr isBigLedgerPeer diffusionMode =
+                   peeraddr isBigLedgerPeer diffusionMode connMode =
     Job job handler () "promoteColdPeer"
   where
     handler :: SomeException
@@ -546,21 +548,7 @@ jobPromoteColdPeer PeerSelectionActions {
     job = do
       --TODO: decide if we should do timeouts here or if we should make that
       -- the responsibility of establishPeerConnection
-      let
-        isNotBehindFirewall m =
-          maybe
-            True
-            (\LocalRootConfig {behindFirewall} -> not behindFirewall)
-            (Map.lookup peeraddr m)
-
-      connectionMode <- atomically $
-        bool RequireInbound CreateNewIfNoInbound
-        -- ^ We require inbound if peer is behind a firewall
-        . foldr (\(_, _, m) b -> b && isNotBehindFirewall m) True
-        -- ^ True if peer is not behind a firewall
-        <$> readLocalRootPeers
-
-      peerconn <- establishPeerConnection isBigLedgerPeer diffusionMode peeraddr connectionMode
+      peerconn <- establishPeerConnection isBigLedgerPeer diffusionMode peeraddr connMode
       let !peerSharing = peerConnToPeerSharing peerconn
 
       return $ Completion $ \st@PeerSelectionState {
@@ -879,6 +867,19 @@ aboveTargetBigLedgerPeers actions@PeerSelectionActions {
   | otherwise
   = GuardedSkip Nothing
 
+connectionMode
+  :: forall peeraddr extraFlags.
+    ( Ord peeraddr
+    )
+  => peeraddr
+  -> LocalRootPeers.LocalRootPeers extraFlags peeraddr
+  -> ConnectionMode
+connectionMode peer localRootPeers =
+      maybe
+        CreateNewIfNoInbound
+        (\LocalRootConfig {behindFirewall} ->
+           bool CreateNewIfNoInbound RequireInbound behindFirewall)
+        (Map.lookup peer $ LocalRootPeers.toMap localRootPeers)
 
 jobDemoteEstablishedPeer
   :: forall extraState extraDebugState extraFlags extraPeers extraAPI
