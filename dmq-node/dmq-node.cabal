@@ -88,13 +88,13 @@ library
     acts-generic,
     aeson >=2.1.1.0 && <3,
     aeson-pretty,
-    base >=4.14 && <4.22,
+    base >=4.14 && <4.23,
     base16-bytestring,
     bytestring >=0.10 && <0.13,
     cardano-binary,
     cardano-crypto-class,
     cborg >=0.2.1 && <0.3,
-    containers >=0.5 && <0.8,
+    containers >=0.5 && <0.9,
     contra-tracer >=0.1 && <0.3,
     deepseq >=1.0 && <1.6,
     directory,
@@ -107,12 +107,12 @@ library
     kes-agent-crypto ^>=0.1,
     network ^>=3.2.7,
     network-mux ^>=0.9.1,
-    optparse-applicative ^>=0.18,
+    optparse-applicative >=0.18 && <0.20,
     ouroboros-network:{ouroboros-network, api, framework, orphan-instances, protocols} ^>=0.23,
     random ^>=1.2,
     singletons,
     text >=1.2.4 && <2.2,
-    time ^>=1.12,
+    time >=1.12 && <1.16,
     typed-protocols:{typed-protocols, cborg} ^>=1.1,
 
   hs-source-dirs: src
@@ -165,7 +165,7 @@ test-suite dmq-tests
   main-is: Main.hs
   build-depends:
     QuickCheck,
-    base >=4.14 && <4.22,
+    base >=4.14 && <4.23,
     bytestring,
     cardano-crypto-class,
     cardano-crypto-tests,
@@ -210,7 +210,7 @@ test-suite dmq-cddl
 
   default-language: Haskell2010
   build-depends:
-    base >=4.14 && <4.22,
+    base >=4.14 && <4.23,
     base16-bytestring,
     bytestring,
     cborg,
