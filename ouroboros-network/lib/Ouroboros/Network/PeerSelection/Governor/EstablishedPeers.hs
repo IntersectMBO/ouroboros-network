@@ -377,6 +377,7 @@ belowTargetBigLedgerPeers enableAction
                             policyPickColdPeersToPromote
                           }
                           st@PeerSelectionState {
+                            localRootPeers,
                             knownPeers,
                             establishedPeers,
                             inProgressPromoteCold,
@@ -422,7 +423,9 @@ belowTargetBigLedgerPeers enableAction
                           inProgressPromoteCold = inProgressPromoteCold
                                                <> selectedToPromote
                         },
-        decisionJobs  = [ jobPromoteColdPeer actions policy peer IsBigLedgerPeer InitiatorAndResponderDiffusionMode CreateNewIfNoInbound -- TODO
+        decisionJobs  = [ jobPromoteColdPeer actions policy peer IsBigLedgerPeer
+                          InitiatorAndResponderDiffusionMode
+                          (connectionMode peer localRootPeers)
                         | peer <- Set.toList selectedToPromote ]
       }
 
@@ -461,7 +464,7 @@ maxColdPeerRetryBackoff = 5
 jobPromoteColdPeer
   :: forall extraState extraDebugState extraFlags extraPeers extraAPI
             extraCounters extraTrace peeraddr peerconn m.
-     ( MonadSTM m
+     ( Monad m
      , Ord peeraddr
      )
   => PeerSelectionActions

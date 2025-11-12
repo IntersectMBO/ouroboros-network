@@ -707,7 +707,7 @@ tooBusyForTooLong trace0 =
   where
     -- How long between events before we say it's the end of a busy span
     sameSpanThreshold :: DiffTime
-    sameSpanThreshold = 45
+    sameSpanThreshold = 40 -- TODO 45
 
     -- Starting credits for a busy span, even if there are no triggering
     -- environment events. The value chosen here takes account of the normal
