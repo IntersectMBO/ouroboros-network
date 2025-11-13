@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                      #-}
 {-# LANGUAGE DataKinds                #-}
 {-# LANGUAGE DeriveGeneric            #-}
 {-# LANGUAGE DerivingVia              #-}
@@ -104,6 +105,12 @@ instance Show peer => Show (Message (PeerSharing peer) from to) where
     show (MsgSharePeers resp)     = "MsgSharePeers "   ++ show resp
     show MsgDone                  = "MsgDone"
 
+#if __GLASGOW_HASKELL__ < 914
+  -- These constraints are REQUIRED for ghc < 9.14 but REDUNDANT for ghc >= 9.14
+  -- See https://gitlab.haskell.org/ghc/ghc/-/issues/26381#note_637863
 deriving instance (Show peerAddress) => Show (PeerSharing peerAddress)
-
 deriving instance (Eq peerAddress) => Eq (PeerSharing peerAddress)
+#else
+deriving instance Show (PeerSharing peerAddress)
+deriving instance Eq (PeerSharing peerAddress)
+#endif

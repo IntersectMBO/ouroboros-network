@@ -504,10 +504,14 @@ mkSnocket scheduleMap = do
                             , show (remoteAddr, seIdx se)
                             ]))
           return se
-        case seConnDelay se of
-          Left d  -> threadDelay d
-                  >> throwIO (ioe (show (remoteAddr, seIdx se)))
-          Right d -> threadDelay d
+        case se of
+          ScheduleOutbound {} ->
+            case seConnDelay se of
+              Left d  -> threadDelay d
+                        >> throwIO (ioe (show (remoteAddr, seIdx se)))
+              Right d -> threadDelay d
+          ScheduleInbound {} ->
+            pure ()
       where
         ioe :: String -> IOException
         ioe ioe_description =
