@@ -1079,7 +1079,11 @@ prop_governor_peershare_1hr env@GovernorMockEnvironment {
                        )
      in counterexample ( intercalate "\n"
                        . map (ppSimEvent 20 20 20)
-                       . takeWhile (\e -> seTime e <= Time (60*60))
+                       . takeWhile (\e ->
+                            case e of
+                              SimEvent    {seTime} -> seTime < Time (60*60)
+                              SimPOREvent {seTime} -> seTime < Time (60*60)
+                              _                    -> False)
                        . Trace.toList
                        $ ioSimTrace) $
         subsetProperty    found reachable

@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP              #-}
 {-# LANGUAGE DataKinds        #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs            #-}
@@ -15,7 +16,13 @@ import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
 
-import Ouroboros.Network.Block (blockPrevHash, pattern GenesisPoint, pointHash)
+import Ouroboros.Network.Block (blockPrevHash,
+#if __GLASGOW_HASKELL__ < 914
+       pattern GenesisPoint,
+#else
+       data GenesisPoint,
+#endif
+       pointHash)
 import Ouroboros.Network.Mock.Chain (Chain (..))
 import Ouroboros.Network.Mock.Chain qualified as Chain
 import Ouroboros.Network.Mock.ChainGenerators hiding (tests)
