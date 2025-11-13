@@ -147,7 +147,7 @@ sharedTxStateInvariant invariantStrength
 
          -- `inflightTxs` and `bufferedTxs` are disjoint
          counterexample "inflightTxs not disjoint with bufferedTxs"
-         (null (Map.keysSet inflightTxs `Set.intersection` bufferedTxsSet))
+         (null (Map.keysSet activeInFlight `Set.intersection` bufferedTxsSet))
     .&&.
          counterexample "bufferedTxs txid not a subset of unacknowledged txids"
          let unacknowledgedSet =
@@ -209,12 +209,12 @@ sharedTxStateInvariant invariantStrength
          (Map.keysSet bufferedTxs `Set.isSubsetOf` liveSet)
 
     .&&. counterexample "inflightTxs must be a sum of requestedTxInflight sets"
-        (inflightTxs
+        (Map.keysSet activeInFlight
           ===
-          foldr (\PeerTxState { requestedTxsInflight } m ->
+          Map.keysSet (foldr (\PeerTxState { requestedTxsInflight } m ->
                  Map.unionWith (<>) (Map.fromSet (const $ TXS.InFlightState 1 (Time 0)) requestedTxsInflight) m)
                 Map.empty
-                peerTxStates)
+                peerTxStates))
 
          -- PeerTxState invariants
     .&&. counterexample "PeerTxState invariant violation"
@@ -231,6 +231,9 @@ sharedTxStateInvariant invariantStrength
 
 
   where
+    activeInFlight :: Map txid TXS.InFlightState
+    activeInFlight = Map.filter (\e -> TXS.inFlightCount e > 0) inflightTxs
+
     peerTxStateInvariant :: PeerTxState txid tx -> Property
     peerTxStateInvariant PeerTxState { availableTxIds,
                                        unacknowledgedTxIds,
