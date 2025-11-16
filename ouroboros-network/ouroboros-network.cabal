@@ -851,7 +851,7 @@ library ouroboros-network-tests-lib
     tasty-hunit,
     tasty-quickcheck,
     text,
-    time >=1.9.1 && <1.16,
+    time >=1.9.1 && <1.14,
     typed-protocols,
 
   exposed-modules:
