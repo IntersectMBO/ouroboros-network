@@ -508,6 +508,7 @@ data Connected peerAddr handle handleError =
 data ConnectionMode
     = CreateNewIfNoInbound
     | RequireInbound
+    deriving Show
 
 inboundRequired :: ConnectionMode -> Bool
 inboundRequired RequireInbound = True
@@ -742,7 +743,7 @@ data ConnectionManagerError peerAddr
     -- | No matching inbound connection found and creating new connection is
     -- not allowed.
     --
-    | InboundConnectionNotFound !peerAddr !CallStack
+    | InboundConnectionNotFound !ConnectionMode !peerAddr !CallStack
 
     -- | Connections that would be forbidden by the kernel (@TCP@ semantics).
     --
@@ -795,8 +796,10 @@ instance ( Show peerAddr
              , "\n"
              , prettyCallStack cs
              ]
-    displayException (InboundConnectionNotFound peerAddr cs) =
+    displayException (InboundConnectionNotFound connMode peerAddr cs) =
       concat [ "No matching inbound connection found and creating new connection is not allowed with peer "
+             , show connMode
+             , "\n"
              , show peerAddr
              , "\n"
              , prettyCallStack cs

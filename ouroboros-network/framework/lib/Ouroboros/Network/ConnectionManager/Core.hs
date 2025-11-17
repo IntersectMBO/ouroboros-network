@@ -1464,20 +1464,30 @@ with args@Arguments {
                 :: MutableConnState peerAddr handle handleError
                                     version m)
                 <- State.newMutableConnState peerAddr connStateIdSupply connState'
-              -- TODO: label `connVar` using 'ConnectionId'
-              labelTVar connVar ("conn-state-" ++ show peerAddr)
 
-              writeTMVar stateVar
-                        (State.insertUnknownLocalAddr peerAddr mutableConnState state)
-              return ( Just (Left (TransitionTrace
-                                    connStateId
-                                    Transition {
-                                        fromState = Unknown,
-                                        toState   = Known connState'
-                                      }))
-                     , mutableConnState
-                     , Right Nowhere
-                     )
+              -- Only proceed if creating a new connection is allowed
+              if inboundRequired connectionMode
+              then do
+                return ( Just (Right (TrInboundConnectionNotFound connectionMode peerAddr))
+                   , mutableConnState
+                   , Left (withCallStack
+                            (InboundConnectionNotFound connectionMode peerAddr))
+                   )
+              else do
+                -- TODO: label `connVar` using 'ConnectionId'
+                labelTVar connVar ("conn-state-" ++ show peerAddr)
+
+                writeTMVar stateVar
+                          (State.insertUnknownLocalAddr peerAddr mutableConnState state)
+                return ( Just (Left (TransitionTrace
+                                      connStateId
+                                      Transition {
+                                          fromState = Unknown,
+                                          toState   = Known connState'
+                                        }))
+                       , mutableConnState
+                       , Right Nowhere
+                       )
 
         traverse_ (either (traceWith trTracer) (traceWith tracer)) trace
         traceCounters stateVar
@@ -1487,10 +1497,6 @@ with args@Arguments {
 
           -- connection manager does not have a connection with @peerAddr@.
           Right Nowhere -> do
-            -- Only proceed if creating a new connection is allowed
-            when (inboundRequired connectionMode)  $
-              throwIO (withCallStack $ InboundConnectionNotFound peerAddr)
-
             (reader, writer) <- newEmptyPromiseIO
 
             (connId, connThread) <-
@@ -2473,6 +2479,7 @@ withCallStack k = k callStack
 --
 data Trace peerAddr handlerTrace
   = TrIncludeConnection            Provenance peerAddr
+  | TrInboundConnectionNotFound    ConnectionMode peerAddr
   | TrReleaseConnection            Provenance (ConnectionId peerAddr)
   | TrConnect                      (Maybe peerAddr) -- ^ local address
                                    peerAddr         -- ^ remote address

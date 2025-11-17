@@ -1282,6 +1282,12 @@ instance (Show addr, Show versionNumber, Show agreedOptions,
           ToJSON addr, ToJSON versionNumber, ToJSON agreedOptions)
       => ToJSON (ConnMgr.Trace addr (ConnectionHandlerTrace versionNumber agreedOptions)) where
   toJSON = \case
+    TrInboundConnectionNotFound connMode peerAddr ->
+      object
+        [ "kind" .= String "InboundConnectionNotFound"
+        , "remoteAddress" .= peerAddr
+        , "connectionMode" .= String (pack . show $ connMode)
+        ]
     TrIncludeConnection prov peerAddr ->
       object
         [ "kind" .= String "IncludeConnection"
