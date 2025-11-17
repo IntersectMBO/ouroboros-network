@@ -154,8 +154,6 @@ tests =
                      prop_governor_target_active_local_below
       , testProperty "progresses towards active target (from above)"
                      prop_governor_target_active_local_above
-      , testProperty "never connect to peers behind a firewall"
-                     prop_governor_never_connect_peer_behind_firewall
       ]
 
     , testGroup "big ledger peers"
@@ -801,7 +799,6 @@ envEventCredits (TraceEnvSetLocalRoots  peers)  = LocalRootPeers.size peers
 envEventCredits (TraceEnvSetPublicRoots peers)  = PublicRootPeers.size Cardano.ExtraPeers.size peers
 envEventCredits  TraceEnvRequestPublicRootPeers = 0
 envEventCredits  TraceEnvRequestBigLedgerPeers  = 0
-envEventCredits  (TraceEnvNewConnCreated _)     = 0
 envEventCredits  TraceEnvPublicRootTTL          = 60
 envEventCredits  TraceEnvBigLedgerPeersTTL      = 60
 
@@ -3209,57 +3206,6 @@ prop_governor_target_established_above (MaxTime maxTime) env =
                      <*> govInProgressIneligibleSig
                      <*> demotionOpportunitiesIgnoredTooLong)
 
--- |  Avoid connecting to root peers marked as behind a firewall and without inbound connection.
-prop_governor_never_connect_peer_behind_firewall :: MaxTime -> GovernorMockEnvironment -> Property
-prop_governor_never_connect_peer_behind_firewall (MaxTime maxTime) env =
-    let events = Signal.eventsFromListUpToTime maxTime
-               . selectPeerSelectionTraceEvents
-                   @Cardano.ExtraState
-                   @PeerTrustable
-                   @(Cardano.ExtraPeers PeerAddr)
-                   @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
-                   @Cardano.ExtraTrace
-               . runGovernorInMockEnvironment
-               $ env
-
-        govLocalRootPeersSig :: Signal (LocalRootPeers PeerTrustable PeerAddr)
-        govLocalRootPeersSig =
-          selectGovState Governor.localRootPeers
-                         (Cardano.ExtraState.empty (consensusMode env) (NumberOfBigLedgerPeers 0)) Cardano.ExtraPeers.empty
-                         events
-
-        govUnreachablePeersSig :: Signal (Set PeerAddr)
-        govUnreachablePeersSig =
-          (\local ->
-             let
-               isUnreachablePeer (LocalRootConfig {localRootBehindFirewall}) = localRootBehindFirewall
-
-               unreachablePeers =
-                 Map.keysSet
-                   $ Map.filter isUnreachablePeer
-                   $ LocalRootPeers.toMap local
-             in
-               unreachablePeers
-          ) <$> govLocalRootPeersSig
-
-        newConnectionSig :: Signal (Maybe PeerAddr)
-        newConnectionSig =
-            Signal.fromEvents
-          . Signal.selectEvents
-              (\case TraceEnvNewConnCreated addr -> Just $! addr
-                     _other                       -> Nothing)
-          . selectEnvEvents
-          $ events
-
-     in counterexample
-          "\nSignal key: (local root peers, unreachable local root peers, new connection)" $
-
-        signalProperty 100 show
-          (\(_,unreachablePeers,newConnection) -> maybe True (not . flip Set.member unreachablePeers) newConnection)
-          ((,,) <$> govLocalRootPeersSig
-                <*> govUnreachablePeersSig
-                <*> newConnectionSig)
-
 -- | Like 'prop_governor_target_established_above' but for big ledger peers.
 --
 prop_governor_target_established_big_ledger_peers_above
@@ -3613,7 +3559,7 @@ prop_governor_target_established_local (MaxTime maxTime) env =
         promotionOpportunitiesIgnoredTooLong :: Signal (Set PeerAddr)
         promotionOpportunitiesIgnoredTooLong =
           Signal.keyedTimeout
-            2 -- seconds  -- cabal run cardano-diffusion:cardano-diffusion-sim-tests -- --quickcheck-replay="(SMGen 13722084053961804625 14989040016076027617,42)" -p '/local root peers/&&/progresses towards established target/'
+            1 -- seconds
             id
             promotionOpportunities
 

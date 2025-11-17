@@ -132,6 +132,8 @@ tests =
                                  prop_diffusion_target_active_public_iosimpor
     , nightlyTest $ testProperty "target established local"
                                  prop_diffusion_target_established_local_iosimpor
+    , nightlyTest $ testProperty "never connect to peers behind a firewall"
+                                 prop_diffusion_never_connect_peer_behind_firewall_iosimpor
     , nightlyTest $ testProperty "target active local"
                                  prop_diffusion_target_active_local_iosimpor
     , nightlyTest $ testProperty "target active root"
@@ -192,6 +194,8 @@ tests =
                    prop_diffusion_target_active_public_iosim
     , testProperty "target established local"
                    prop_diffusion_target_established_local_iosim
+    , testProperty "never connect to peers behind a firewall"
+                   prop_diffusion_never_connect_peer_behind_firewall_iosim
     , testProperty "unit reconnect"
                    prop_unit_reconnect
     , testProperty "target active local"
@@ -2847,6 +2851,96 @@ prop_diffusion_target_established_local_iosim
 prop_diffusion_target_established_local_iosim
   = testWithIOSim prop_diffusion_target_established_local long_trace
 
+-- | Avoid connecting to root peers marked as behind a firewall and without
+-- inbound connection.
+--
+prop_diffusion_never_connect_peer_behind_firewall
+  :: SimTrace Void
+  -> Int
+  -> Property
+prop_diffusion_never_connect_peer_behind_firewall ioSimTrace traceNumber =
+    let events :: [Events DiffusionTestTrace]
+        events = Trace.toList
+               . fmap ( Signal.eventsFromList
+                      . fmap (\(WithName _ (WithTime t b)) -> (t, b))
+                      )
+               . splitWithNameTrace
+               . fmap (\(WithTime t (WithName name b)) ->
+                         WithName name (WithTime t b))
+               . withTimeNameTraceEvents
+                  @DiffusionTestTrace
+                  @NtNAddr
+               . Trace.take traceNumber
+               $ ioSimTrace
+
+    in conjoin
+      $ (\ev ->
+        let evsList = eventsToList ev
+            lastTime = fst
+                     . last
+                     $ evsList
+         in classifySimulatedTime lastTime
+          $ classifyNumberOfEvents (length evsList)
+          $ verify_target_established_local ev
+        )
+      <$> events
+
+  where
+    verify_target_established_local :: Events DiffusionTestTrace
+                                    -> Property
+    verify_target_established_local events  =
+      let govLocalRootPeersSig
+            :: Signal (LocalRootPeers.LocalRootPeers PeerTrustable NtNAddr)
+          govLocalRootPeersSig =
+            selectDiffusionPeerSelectionState Governor.localRootPeers events
+
+          govUnreachablePeersSig :: Signal (Set NtNAddr)
+          govUnreachablePeersSig =
+            (\local ->
+               let
+                 isUnreachablePeer (LocalRootConfig {localRootBehindFirewall}) =
+                   localRootBehindFirewall
+                 unreachablePeers =
+                   Map.keysSet
+                     $ Map.filter isUnreachablePeer
+                     $ LocalRootPeers.toMap local
+               in
+                 unreachablePeers
+            ) <$> govLocalRootPeersSig
+
+          govInboundConnectionsSig :: Signal (Set NtNAddr)
+          govInboundConnectionsSig =
+              Signal.keyedLinger
+                180 -- 3 minutes
+                (Just . fromMaybe Set.empty)
+            . Signal.fromEvents
+            . Signal.selectEvents
+                (\case
+                  DiffusionConnectionManagerTrace
+                    -- initiated by remote
+                    (CM.TrConnectionNotFound Inbound peer) ->
+                      Just (Set.singleton peer)
+                  _other -> Nothing
+                )
+            $ events
+
+      in counterexample
+          ("\nSignal key: (local root peers, unreachables, inbounds") $
+        signalProperty 100 show
+          (\(_,unreachables,inbounds) -> unreachables `Set.disjoint` inbounds)
+          ((,,) <$> govLocalRootPeersSig
+                   <*> govUnreachablePeersSig
+                   <*> govInboundConnectionsSig)
+
+prop_diffusion_never_connect_peer_behind_firewall_iosimpor
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_never_connect_peer_behind_firewall_iosimpor
+  = testWithIOSimPOR prop_diffusion_never_connect_peer_behind_firewall short_trace
+
+prop_diffusion_never_connect_peer_behind_firewall_iosim
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_never_connect_peer_behind_firewall_iosim
+  = testWithIOSim prop_diffusion_never_connect_peer_behind_firewall long_trace
 
 -- | A variant of
 -- 'Test.Ouroboros.Network.PeerSelection.prop_governor_target_active_below'
