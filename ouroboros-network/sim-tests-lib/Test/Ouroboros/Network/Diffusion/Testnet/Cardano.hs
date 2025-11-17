@@ -129,6 +129,8 @@ tests =
                       (testWithIOSimPOR prop_diffusion_target_active_public 10000)
     , nightlyTest $ testProperty "target established local"
                       (testWithIOSimPOR prop_diffusion_target_established_local 10000)
+    , nightlyTest $ testProperty "never connect to peers behind a firewall"
+                      (testWithIOSimPOR prop_diffusion_never_connect_peer_behind_firewall 10000)
     , nightlyTest $ testProperty "target active local"
                       (testWithIOSimPOR prop_diffusion_target_active_local 10000)
     , nightlyTest $ testProperty "target active root"
@@ -2474,6 +2476,90 @@ prop_diffusion_target_established_local ioSimTrace traceNumber =
                       <*> promotionOpportunities
                       <*> promotionOpportunitiesIgnoredTooLong
               )
+
+-- | A variant of
+-- 'Test.Ouroboros.Network.PeerSelection.prop_governor_never_connect_peer_behind_firewall'
+-- but for running on Diffusion. This means it has to have in consideration the
+-- the logs for all nodes running will all appear in the trace and the test
+-- property should only be valid while a given node is up and running.
+--
+prop_diffusion_never_connect_peer_behind_firewall
+  :: SimTrace Void
+  -> Int
+  -> Property
+prop_diffusion_never_connect_peer_behind_firewall ioSimTrace traceNumber =
+    let events :: [Events DiffusionTestTrace]
+        events = Trace.toList
+               . fmap ( Signal.eventsFromList
+                      . fmap (\(WithName _ (WithTime t b)) -> (t, b))
+                      )
+               . splitWithNameTrace
+               . fmap (\(WithTime t (WithName name b)) ->
+                         WithName name (WithTime t b))
+               . withTimeNameTraceEvents
+                  @DiffusionTestTrace
+                  @NtNAddr
+               . Trace.take traceNumber
+               $ ioSimTrace
+
+    in conjoin
+      $ (\ev ->
+        let evsList = eventsToList ev
+            lastTime = fst
+                     . last
+                     $ evsList
+         in classifySimulatedTime lastTime
+          $ classifyNumberOfEvents (length evsList)
+          $ verify_target_established_local ev
+        )
+      <$> events
+
+  where
+    verify_target_established_local :: Events DiffusionTestTrace
+                                    -> Property
+    verify_target_established_local events  =
+      let govLocalRootPeersSig
+            :: Signal (LocalRootPeers.LocalRootPeers PeerTrustable NtNAddr)
+          govLocalRootPeersSig =
+            selectDiffusionPeerSelectionState Governor.localRootPeers events
+
+          govUnreachablePeersSig :: Signal (Set NtNAddr)
+          govUnreachablePeersSig =
+            (\local ->
+               let
+                 isUnreachablePeer (LocalRootConfig {behindFirewall}) =
+                   behindFirewall
+                 unreachablePeers =
+                   Map.keysSet
+                     $ Map.filter isUnreachablePeer
+                     $ LocalRootPeers.toMap local
+               in
+                 unreachablePeers
+            ) <$> govLocalRootPeersSig
+
+          govOutboundConnectionsSig :: Signal (Set NtNAddr)
+          govOutboundConnectionsSig =
+              Signal.keyedLinger
+                180 -- 3 minutes
+                (fromMaybe Set.empty)
+            . Signal.fromEvents
+            . Signal.selectEvents
+                (\case
+                  DiffusionConnectionManagerTrace
+                    -- initiated by remote
+                    (CM.TrConnectionNotFound Inbound peer) ->
+                      Just (Set.singleton peer)
+                  _other -> Nothing
+                )
+            $ events
+
+      in counterexample
+          ("\nSignal key: (local root peers, local root peers behind a firewall, __") $
+        signalProperty 100 show
+          (\(_,unreachable,outbound) -> unreachable `Set.disjoint` outbound)
+          ((,,) <$> govLocalRootPeersSig
+                   <*> govUnreachablePeersSig
+                   <*> govOutboundConnectionsSig)
 
 -- | A variant of
 -- 'Test.Ouroboros.Network.PeerSelection.prop_governor_target_active_below'
