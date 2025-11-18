@@ -47,7 +47,6 @@ import Cardano.Crypto.DSIGN.Class (ContextDSIGN, DSIGNAlgorithm, VerKeyDSIGN)
 import Cardano.Crypto.DSIGN.Class qualified as DSIGN
 import Cardano.Crypto.KES.Class (KESAlgorithm (..), Signable)
 import Cardano.KESAgent.KES.Crypto as KES
-import Cardano.KESAgent.KES.Evolution qualified as KES
 import Cardano.KESAgent.KES.OCert (KESPeriod (..), OCert (..), OCertSignable,
            validateOCert)
 
@@ -291,11 +290,9 @@ validateSig :: forall crypto.
                , ContextKES (KES crypto) ~ ()
                , Signable (KES crypto) ByteString
                )
-            => KES.EvolutionConfig
-            -> Sig crypto
+            => Sig crypto
             -> Either SigValidationError ()
-validateSig _ec
-            Sig { sigSignedBytes = signedBytes,
+validateSig Sig { sigSignedBytes = signedBytes,
                   sigKESPeriod,
                   sigOpCertificate = SigOpCertificate ocert@OCert {
                       ocertKESPeriod,

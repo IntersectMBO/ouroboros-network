@@ -196,7 +196,6 @@ ntnApps
     , peerSharingRegistry
     , peerSharingAPI
     , mempool
-    , evolutionConfig
     , sigChannelVar
     , sigMempoolSem
     , sigSharedTxStateVar
@@ -235,7 +234,7 @@ ntnApps
     -- mempool.
     mempoolWriter = Mempool.getWriter sigId
                                       (pure ()) -- TODO not needed
-                                      (\_ -> validateSig evolutionConfig)
+                                      (\_ -> validateSig)
                                       (\_ -> True)
                                       mempool
 

@@ -6,7 +6,6 @@
 
 module Main where
 
-import Control.Exception (throwIO)
 import Control.Monad (void, when)
 import Control.Tracer (Tracer (..), nullTracer, traceWith)
 
@@ -23,7 +22,6 @@ import System.Exit (exitSuccess)
 import System.Random (newStdGen, split)
 
 import Cardano.Git.Rev (gitRev)
-import Cardano.KESAgent.KES.Evolution qualified as KES
 import Cardano.KESAgent.Protocols.StandardCrypto (StandardCrypto)
 
 import DMQ.Configuration
@@ -70,7 +68,6 @@ runDMQ commandLineConfig = do
     let dmqConfig@Configuration {
           dmqcPrettyLog            = I prettyLog,
           dmqcTopologyFile         = I topologyFile,
-          dmqcShelleyGenesisFile   = I genesisFile,
           dmqcHandshakeTracer      = I handshakeTracer,
           dmqcLocalHandshakeTracer = I localHandshakeTracer,
           dmqcVersion              = I version
@@ -91,18 +88,11 @@ runDMQ commandLineConfig = do
                            | otherwise
                            -> Just gitrev
       Text.putStr $ Text.unlines $
-        [ "dmq-node version: " <> Text.pack (showVersion Meta.version) ]
-        ++
-        [ "git revision: " <> rev
-        | rev <- maybeToList cleanGitRev
-        ]
+          "dmq-node version: " <> Text.pack (showVersion Meta.version)
+        : [ "git revision: " <> rev
+          | rev <- maybeToList cleanGitRev
+          ]
       exitSuccess
-
-    res <- KES.evolutionConfigFromGenesisFile genesisFile
-    evolutionConfig <- case res of
-      Left err -> traceWith tracer (WithEventType "ShelleyGenesisFile" err)
-               >> throwIO (userError $ err)
-      Right ev -> return ev
 
     traceWith tracer (WithEventType "Configuration" dmqConfig)
     nt <- readTopologyFileOrError topologyFile
@@ -114,7 +104,6 @@ runDMQ commandLineConfig = do
     withNodeKernel @StandardCrypto
                    tracer
                    dmqConfig
-                   evolutionConfig
                    psRng $ \nodeKernel -> do
       dmqDiffusionConfiguration <- mkDiffusionConfiguration dmqConfig nt
 

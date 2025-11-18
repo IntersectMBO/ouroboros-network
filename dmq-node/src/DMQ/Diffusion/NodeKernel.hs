@@ -30,7 +30,6 @@ import System.Random (StdGen)
 import System.Random qualified as Random
 
 import Cardano.KESAgent.KES.Crypto (Crypto (..))
-import Cardano.KESAgent.KES.Evolution qualified as KES
 
 import Ouroboros.Network.BlockFetch (FetchClientRegistry,
            newFetchClientRegistry)
@@ -60,7 +59,6 @@ data NodeKernel crypto ntnAddr m =
   , peerSharingRegistry :: !(PeerSharingRegistry ntnAddr m)
   , peerSharingAPI      :: !(PeerSharingAPI ntnAddr StdGen m)
   , mempool             :: !(Mempool m SigId (Sig crypto))
-  , evolutionConfig     :: !(KES.EvolutionConfig)
   , sigChannelVar       :: !(TxChannelsVar m ntnAddr SigId (Sig crypto))
   , sigMempoolSem       :: !(TxMempoolSem m)
   , sigSharedTxStateVar :: !(SharedTxStateVar m ntnAddr SigId (Sig crypto))
@@ -70,10 +68,9 @@ newNodeKernel :: ( MonadLabelledSTM m
                  , MonadMVar m
                  , Ord ntnAddr
                  )
-              => KES.EvolutionConfig
-              -> StdGen
+              => StdGen
               -> m (NodeKernel crypto ntnAddr m)
-newNodeKernel evolutionConfig rng = do
+newNodeKernel rng = do
   publicPeerSelectionStateVar <- makePublicPeerSelectionStateVar
 
   fetchClientRegistry <- newFetchClientRegistry
@@ -96,7 +93,6 @@ newNodeKernel evolutionConfig rng = do
                   , peerSharingRegistry
                   , peerSharingAPI
                   , mempool
-                  , evolutionConfig
                   , sigChannelVar
                   , sigMempoolSem
                   , sigSharedTxStateVar
@@ -118,7 +114,6 @@ withNodeKernel :: forall crypto ntnAddr m a.
                   )
                => (forall ev. Aeson.ToJSON ev => Tracer m (WithEventType ev))
                -> Configuration
-               -> KES.EvolutionConfig
                -> StdGen
                -> (NodeKernel crypto ntnAddr m -> m a)
                -- ^ as soon as the callback exits the `mempoolWorker` and all
@@ -128,13 +123,12 @@ withNodeKernel tracer
                Configuration {
                  dmqcSigSubmissionLogicTracer = I sigSubmissionLogicTracer
                }
-               evolutionConfig
                rng k = do
   nodeKernel@NodeKernel { mempool,
                           sigChannelVar,
                           sigSharedTxStateVar
                         }
-    <- newNodeKernel evolutionConfig rng
+    <- newNodeKernel rng
   withAsync (mempoolWorker mempool)
           $ \mempoolThread ->
     withAsync (decisionLogicThreads
