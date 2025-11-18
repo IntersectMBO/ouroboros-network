@@ -117,7 +117,8 @@ instance FromJSON DiffusionMode where
       _ -> fail "Parsing NodeDiffusionMode failed: can be either 'InitiatorOnly' or 'InitiatorAndResponder'"
 
 instance ToJSON DiffusionMode where
-  toJSON = String . pack . show
+  toJSON InitiatorOnlyDiffusionMode         = "InitiatorOnly"
+  toJSON InitiatorAndResponderDiffusionMode = "InitiatorAndResponder"
 
 -- | Does not use the 'FromJSON' instance of 'RootConfig', so that
 -- 'accessPoints', 'advertise', 'valency' and 'warmValency' fields are attached
