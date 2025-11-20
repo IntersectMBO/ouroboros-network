@@ -49,7 +49,7 @@ jobs:
       with:
         use-sodium-vrf: true # default is true
 
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
 
     - name: "Configure cabal.project.local"
       run: |

@@ -31,7 +31,7 @@ jobs:
 
     steps:
     - name: Checkout ouroboros-network repository
-      uses: actions/checkout@v5
+      uses: actions/checkout@v6
 
       # we need nix to later build the spec documents
     - name: Install Nix
