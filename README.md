@@ -178,5 +178,5 @@ arguments it will specify what arguments it needs.
 [`chainSyncClientPeer`]: https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network-protocols/Ouroboros-Network-Protocol-ChainSync-Client.html#v:chainSyncClientPeer
 [`OuroborosApplication`]: https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network-framework/Ouroboros-Network-Mux.html#t:OuroborosApplication
 [`simpleSingletonVersion`]: https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network-framework/Ouroboros-Network-Protocol-Handshake-Version.html#v:simpleSingletonVersions
-[`Ouroboros.Network.NodeToNode`]: https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network/Ouroboros-Network-NodeToNode.html
-[`Ouroboros.Network.NodeToClient`]: https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network/Ouroboros-Network-NodeToClient.html
+[`Ouroboros.Network.NodeToNode`]: https://ouroboros-network.cardano.intersectmbo.org/cardano-diffusion/Cardano-Network-NodeToNode.html
+[`Ouroboros.Network.NodeToClient`]: https://ouroboros-network.cardano.intersectmbo.org/cardano-diffusion/Cardano-Network-NodeToClient.html
