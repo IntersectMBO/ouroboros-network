@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
@@ -19,7 +20,11 @@ import Control.Monad.Primitive
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
 
+import Data.IntMap (IntMap)
+import Data.IntMap qualified as IntMap
+
 import Control.Monad.Class.MonadST
+import Control.Monad.Class.MonadTime.SI (Time)
 import Control.Tracer (Tracer, traceWith)
 
 import Network.Mux.Channel
@@ -80,29 +85,39 @@ data TraceSendRecv msg
 runDecoderWithChannel :: forall m a.
                          MonadST m
                       => ByteChannel m
-                      -> Maybe LBS.ByteString
+                      -> Maybe (Reception LBS.ByteString)
                       -> Decoder (PrimState m) a
-                      -> m (Either CBOR.DeserialiseFailure (a, Maybe LBS.ByteString))
+                      -> m (Either CBOR.DeserialiseFailure (a, Maybe (Reception LBS.ByteString)))
 
 runDecoderWithChannel Channel{recv} trailing decoder =
-    stToIO (CBOR.deserialiseIncremental decoder) >>= go (LBS.toStrict <$> trailing)
+    stToIO (CBOR.deserialiseIncremental decoder) >>= go IntMap.empty 0 (fmap (fmap LBS.toStrict) trailing)
   where
 
-    go :: Maybe BS.ByteString
+    go :: IntMap Time
+       -> Int
+       -> Maybe (Reception BS.ByteString)
        -> CBOR.IDecode (PrimState m) a
-       -> m (Either CBOR.DeserialiseFailure (a, Maybe LBS.ByteString))
+       -> m (Either CBOR.DeserialiseFailure (a, Maybe (Reception LBS.ByteString)))
 
-    go Nothing (CBOR.Partial k) =
-      recv >>= stToIO . k . fmap LBS.toStrict >>= go Nothing
-    go (Just bs) (CBOR.Partial k)  =
-      stToIO (k (Just bs)) >>= go Nothing
-    go _ (CBOR.Done trailing' _ a) | BS.null trailing'
-                                   = return (Right (a, Nothing))
-                                   | otherwise
-                                   = return (Right (a, Just $ LBS.fromStrict trailing'))
-    go _ (CBOR.Fail _ _ failure)   = return $ Left failure
+    go _ _ Nothing (CBOR.Partial k) = do
+      mRcptn <- recv
+      let (!tms', !rsz', mbs) = case mRcptn of
+              Nothing -> (IntMap.empty, 0, Nothing)
+              Just (MkReception tms bs) -> (tms, fromIntegral $ LBS.length bs, Just $! LBS.toStrict bs)
+      stToIO (k mbs) >>= go tms' rsz' Nothing
 
-
+    go _ _ (Just (MkReception tms bs)) (CBOR.Partial k)  =
+      stToIO (k (Just bs)) >>= go tms (BS.length bs) Nothing
+    go tms rsz _ (CBOR.Done trailing' _ a) =
+        let nConsumed = rsz - BS.length trailing'
+            (_lt, mbEq, gt) = IntMap.splitLookup nConsumed tms
+            tms' :: IntMap Time
+            tms' = IntMap.mapKeysMonotonic (\key -> key - nConsumed) $ case mbEq of
+                Nothing -> gt
+                Just tm -> IntMap.insert nConsumed tm gt
+        in
+        return (Right (a, if BS.null trailing' then Nothing else Just (MkReception tms' (LBS.fromStrict trailing'))))
+    go _ _ _ (CBOR.Fail _ _ failure)   = return $ Left failure
 
 -- | Run a client using a byte 'ByteChannel'.
 --
@@ -116,14 +131,14 @@ runClient :: forall req resp m a.
           => Tracer m (TraceSendRecv (MsgReqResp req resp))
           -> ByteChannel m
           -> ReqRespClient req resp m a
-          -> m (a, Maybe LBS.ByteString)
+          -> m (a, Maybe (Reception LBS.ByteString))
 
 runClient tracer channel@Channel {send} =
     go Nothing
   where
-    go :: Maybe LBS.ByteString
+    go :: Maybe (Reception LBS.ByteString)
        -> ReqRespClient req resp m a
-       -> m (a, Maybe LBS.ByteString)
+       -> m (a, Maybe (Reception LBS.ByteString))
     go trailing (SendMsgReq req mnext) = do
       let msg :: MsgReqResp req resp
           msg = MsgReq req
@@ -179,14 +194,14 @@ runServer :: forall req resp m a.
           => Tracer m (TraceSendRecv (MsgReqResp req resp))
           -> ByteChannel m
           -> ReqRespServer req resp m a
-          -> m (a, Maybe LBS.ByteString)
+          -> m (a, Maybe (Reception LBS.ByteString))
 
 runServer tracer channel@Channel {send} =
     go Nothing
   where
-    go :: Maybe LBS.ByteString
+    go :: Maybe (Reception LBS.ByteString)
        -> ReqRespServer req resp m a
-       -> m (a, Maybe LBS.ByteString)
+       -> m (a, Maybe (Reception LBS.ByteString))
     go trailing ReqRespServer {recvMsgReq, recvMsgDone} = do
       res <- runDecoderWithChannel channel trailing decode
       case res of

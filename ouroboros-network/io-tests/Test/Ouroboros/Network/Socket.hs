@@ -133,6 +133,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
           InitiatorProtocolOnly $ mkMiniProtocolCbFromPeer $ \_ctx ->
             ( nullTracer
             , codecChainSync
+            , fromIntegral . BL.length
             , ChainSync.chainSyncClientPeer
                 (ChainSync.chainSyncClientExample consumerVar
                    (consumerClient done target consumerVar))
@@ -150,6 +151,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
           ResponderProtocolOnly $ mkMiniProtocolCbFromPeer $ \_ctx ->
             ( nullTracer
             , codecChainSync
+            , fromIntegral . BL.length
             , ChainSync.chainSyncServerPeer server
             )
 

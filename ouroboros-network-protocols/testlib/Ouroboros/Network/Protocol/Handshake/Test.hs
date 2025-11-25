@@ -470,6 +470,7 @@ prop_connect (ArbitraryVersions clientVersions serverVersions) =
 --
 prop_channel :: ( MonadAsync m
                 , MonadCatch m
+                , MonadMonotonicTime m
                 , MonadST m
                 )
              => m (Channel m ByteString, Channel m ByteString)
@@ -485,7 +486,7 @@ prop_channel createChannels clientVersions serverVersions =
   in do
     (!clientRes', !serverRes') <-
       runConnectedPeers
-        createChannels nullTracer versionNumberHandshakeCodec
+        createChannels nullTracer versionNumberHandshakeCodec (fromIntegral . BL.length)
         (handshakeClientPeer
           (cborTermVersionDataCodec dataCodecCBORTerm)
           acceptableVersion
@@ -549,7 +550,8 @@ prop_channel_asymmetric
     :: ( MonadAsync m
        , MonadCatch m
        , MonadLabelledSTM m
-       , MonadMask  m
+       , MonadMask m
+       , MonadMonotonicTime m
        , MonadST m
        )
     => m (Channel m ByteString, Channel m ByteString)
@@ -563,6 +565,7 @@ prop_channel_asymmetric createChannels clientVersions = do
         nullTracer
         versionNumberHandshakeCodec
         (codecHandshake versionNumberCodec')
+        (fromIntegral . BL.length)
         (handshakeClientPeer
           (cborTermVersionDataCodec dataCodecCBORTerm)
           acceptableVersion
@@ -931,6 +934,7 @@ prop_query_version_NodeToClient_SimNet
 --
 prop_query_version :: ( MonadAsync m
                       , MonadCatch m
+                      , MonadMonotonicTime m
                       , MonadST m
                       , Eq vData
                       , Acceptable vData
@@ -950,7 +954,7 @@ prop_query_version :: ( MonadAsync m
 prop_query_version createChannels codec versionDataCodec clientVersions serverVersions setQuery = do
   (clientRes, _serverRes) <-
     runConnectedPeers
-      createChannels nullTracer codec
+      createChannels nullTracer codec (fromIntegral . BL.length)
       (handshakeClientPeer
         versionDataCodec
         acceptableVersion
@@ -981,6 +985,7 @@ prop_query_version createChannels codec versionDataCodec clientVersions serverVe
 --
 prop_peerSharing_symmetric :: ( MonadAsync m
                            , MonadCatch m
+                           , MonadMonotonicTime m
                            , MonadST m
                            )
                            => m (Channel m ByteString, Channel m ByteString)
@@ -993,7 +998,7 @@ prop_peerSharing_symmetric :: ( MonadAsync m
 prop_peerSharing_symmetric createChannels codec versionDataCodec clientVersions serverVersions = do
   (clientRes, serverRes) <-
     runConnectedPeers
-      createChannels nullTracer codec
+      createChannels nullTracer codec (fromIntegral . BL.length)
       (handshakeClientPeer
         versionDataCodec
         acceptableVersion
@@ -1125,6 +1130,7 @@ prop_acceptOrRefuse_symmetric_NodeToClient (ArbitraryNodeToClientVersions a)
 prop_channel_simultaneous_open
     :: ( MonadAsync m
        , MonadCatch m
+       , MonadMonotonicTime m
        , MonadST m
        , Acceptable vData
        , Ord vNumber
@@ -1155,11 +1161,11 @@ prop_channel_simultaneous_open createChannels codec versionDataCodec clientVersi
     (clientRes', serverRes') <-
       (fst <$> runPeer nullTracer
                       -- (("client",) `contramap` Tracer Debug.traceShowM)
-                       codec clientChannel client)
+                       codec (fromIntegral . BL.length) clientChannel client)
         `concurrently`
       (fst <$> runPeer nullTracer
                       -- (("server",) `contramap` Tracer Debug.traceShowM)
-                       codec serverChannel client')
+                       codec (fromIntegral . BL.length) serverChannel client')
     pure $
       case (clientRes', serverRes') of
         -- both succeeded, we just check that the application (which is

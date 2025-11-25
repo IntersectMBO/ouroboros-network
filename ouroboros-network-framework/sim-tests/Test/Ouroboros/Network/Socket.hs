@@ -217,6 +217,7 @@ prop_socket_send_recv initiatorAddr responderAddr configureSock f xs =
           MiniProtocolCb $ \_ctx channel -> do
             (r, trailing) <- runPeer nullTracer
                          ReqResp.codecReqResp
+                         (fromIntegral . BL.length)
                          channel
                          (ReqResp.reqRespServerPeer (ReqResp.reqRespServerMapAccumL (\a -> pure . f a) 0))
             atomically $ putTMVar sv r
@@ -233,6 +234,7 @@ prop_socket_send_recv initiatorAddr responderAddr configureSock f xs =
           MiniProtocolCb $ \_ctx channel -> do
             (r, trailing) <- runPeer nullTracer
                          ReqResp.codecReqResp
+                         (fromIntegral . BL.length)
                          channel
                          (ReqResp.reqRespClientPeer (ReqResp.reqRespClientMap xs))
             atomically $ putTMVar cv r
@@ -316,6 +318,7 @@ prop_socket_recv_error f rerr =
           MiniProtocolCb $ \_ctx channel -> do
             (r, trailing) <- runPeer nullTracer
                          ReqResp.codecReqResp
+                         (fromIntegral . BL.length)
                          channel
                          (ReqResp.reqRespServerPeer (ReqResp.reqRespServerMapAccumL (\a -> pure . f a) 0))
             atomically $ putTMVar sv r
@@ -515,6 +518,7 @@ prop_socket_client_connect_error _ xs =
           MiniProtocolCb $ \_ctx channel -> do
             (_, trailing) <- runPeer nullTracer
                     ReqResp.codecReqResp
+                    (fromIntegral . BL.length)
                     channel
                     (ReqResp.reqRespClientPeer (ReqResp.reqRespClientMap xs)
                             :: Client (ReqResp.ReqResp Int Int)

@@ -180,11 +180,13 @@ executable mux-demo
     base >=4.14 && <4.22,
     bytestring,
     cborg,
+    containers,
     contra-tracer,
     io-classes,
     network-mux,
     primitive,
     serialise,
+    si-timers,
     stm,
 
   if os(windows)
@@ -204,12 +206,12 @@ benchmark socket-read-write
   build-depends:
     base >=4.14 && <4.22,
     bytestring,
+    containers,
     contra-tracer,
     io-classes,
     network,
     network-mux,
     si-timers,
-    strict,
     strict-stm,
     tasty-bench,
 

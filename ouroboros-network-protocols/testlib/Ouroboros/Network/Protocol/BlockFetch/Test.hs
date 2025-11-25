@@ -15,11 +15,13 @@ module Ouroboros.Network.Protocol.BlockFetch.Test (tests) where
 import Codec.Serialise qualified as S
 import Control.Monad.ST (runST)
 import Data.ByteString.Lazy (ByteString)
+import qualified Data.ByteString.Lazy as BL
 
 import Control.Monad.Class.MonadAsync (MonadAsync)
 import Control.Monad.Class.MonadST (MonadST)
 import Control.Monad.Class.MonadSTM (MonadSTM)
 import Control.Monad.Class.MonadThrow (MonadCatch)
+import Control.Monad.Class.MonadTime.SI (MonadMonotonicTime)
 import Control.Monad.IOSim (runSimOrThrow)
 import Control.Tracer (nullTracer)
 
@@ -282,7 +284,7 @@ prop_connect_pipelined5 (TestChainAndPoints chain points)
 
 -- | Run a simple block-fetch client and server using connected channels.
 --
-prop_channel :: (MonadAsync m, MonadCatch m, MonadST m)
+prop_channel :: (MonadAsync m, MonadCatch m, MonadMonotonicTime m, MonadST m)
              => m (Channel m ByteString, Channel m ByteString)
              -> Chain Block -> [Point Block] -> m Property
 prop_channel createChannels chain points = do
@@ -290,6 +292,7 @@ prop_channel createChannels chain points = do
       runConnectedPeers
         createChannels nullTracer
         codec
+        (fromIntegral . BL.length)
         (blockFetchClientPeer (testClient chain points))
         (blockFetchServerPeer (testServer chain))
     return $ reverse bodies === concat (receivedBlockBodies chain points)
