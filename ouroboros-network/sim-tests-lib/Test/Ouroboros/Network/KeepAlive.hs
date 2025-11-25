@@ -58,7 +58,7 @@ runKeepAliveClient
     -> peer
     -> Channel m BL.ByteString
     -> KeepAliveInterval
-    -> m ((), Maybe BL.ByteString)
+    -> m ((), Maybe (Reception BL.ByteString))
 runKeepAliveClient tracer rng controlMessageSTM registry peer channel keepAliveInterval =
     let kacApp dqCtx = runPeerWithLimits
                          nullTracer
@@ -80,7 +80,7 @@ runKeepAliveServer
         , MonadThrow (STM m)
         )
     => Channel m BL.ByteString
-    -> m ((), Maybe BL.ByteString)
+    -> m ((), Maybe (Reception BL.ByteString))
 runKeepAliveServer channel =
     runPeerWithLimits
         nullTracer
@@ -110,7 +110,7 @@ runKeepAliveClientAndServer
     -> FetchClientRegistry peer header block m
     -> peer
     -> KeepAliveInterval
-    -> m (Async m ((), Maybe BL.ByteString), Async m ((), Maybe BL.ByteString))
+    -> m (Async m ((), Maybe (Reception BL.ByteString)), Async m ((), Maybe (Reception BL.ByteString)))
 runKeepAliveClientAndServer (NetworkDelay nd) seed tracer controlMessageSTM registry peer keepAliveInterval = do
     (clientChannel, serverChannel) <- createConnectedChannels
 

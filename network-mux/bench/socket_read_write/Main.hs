@@ -14,7 +14,7 @@ import Data.ByteString.Builder (Builder, toLazyByteString)
 import Data.ByteString.Lazy qualified as BL
 import Data.Functor (void)
 import Data.Int
-import Data.Strict.Tuple as Strict (Pair ((:!:)))
+import Data.IntMap qualified as IntMap
 import Data.Word
 import Network.Socket (Socket)
 import Network.Socket qualified as Socket
@@ -23,6 +23,7 @@ import Test.Tasty.Bench
 
 import Network.Mux
 import Network.Mux.Bearer
+import Network.Mux.Channel (Reception (..))
 import Network.Mux.Egress
 import Network.Mux.Ingress
 import Network.Mux.Timeout (withTimeoutSerial)
@@ -65,7 +66,7 @@ readBenchmark sndSizeV sndSize addr = do
    doRead  chan !cnt = do
      msg_m <- recv chan
      case msg_m of
-          Just msg -> doRead chan (cnt + BL.length msg)
+          Just (MkReception _tms msg) -> doRead chan (cnt + BL.length msg)
           Nothing  -> error "doRead: nullread"
 
 -- | Like readDemuxerBenchmark but it doesn't empty the ingress queue until
@@ -88,10 +89,10 @@ readDemuxerQueueBenchmark sndSizeV sndSize addr = do
        )
     )
  where
-   doRead :: Word8 -> Int64 -> StrictTVar IO (Strict.Pair Int64 Builder) -> IO ()
+   doRead :: Word8 -> Int64 -> StrictTVar IO IngressQueueVal -> IO ()
    doRead tag maxData queue = do
      msg <- atomically $ do
-       l :!: b <- readTVar queue
+       MkIngressQueueVal l _tm b <- readTVar queue
        if l == maxData
           then
             return (toLazyByteString b)
@@ -124,15 +125,15 @@ readDemuxerBenchmark sndSizeV sndSize addr = do
        )
     )
  where
-   doRead :: Word8 -> Int64 -> StrictTVar IO (Strict.Pair Int64 Builder) -> Int64 -> IO ()
+   doRead :: Word8 -> Int64 -> StrictTVar IO IngressQueueVal -> Int64 -> IO ()
    doRead _ maxData _ cnt | cnt >= maxData = return ()
    doRead tag maxData queue !cnt = do
      msg <- atomically $ do
-       l :!: b <- readTVar queue
+       MkIngressQueueVal l _tms b <- readTVar queue
        if l == 0
           then retry
           else do
-            writeTVar queue $ 0 :!: mempty
+            writeTVar queue $ MkIngressQueueVal 0 IntMap.empty mempty
             return (toLazyByteString b)
      if BL.all ( == tag) msg
         then doRead tag maxData queue (cnt + BL.length msg)
@@ -140,7 +141,7 @@ readDemuxerBenchmark sndSizeV sndSize addr = do
 
 mkMiniProtocolState :: MonadSTM m => Word16 -> m (MiniProtocolState 'InitiatorMode m)
 mkMiniProtocolState num = do
-  mpq <- newTVarIO $ 0 :!: mempty
+  mpq <- newTVarIO $ MkIngressQueueVal 0 IntMap.empty mempty
   mpv    <- newTVarIO StatusRunning
 
   let mpi = MiniProtocolInfo (MiniProtocolNum num) InitiatorDirectionOnly

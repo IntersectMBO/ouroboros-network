@@ -52,6 +52,7 @@ import Ouroboros.Network.Snocket
 import Simulation.Network.Snocket
 
 import Network.Mux as Mx
+import Network.Mux.Channel as Mx
 import Network.Mux.Types as Mx
 import Network.TypedProtocol.Codec.CBOR
 import Network.TypedProtocol.Core
@@ -265,7 +266,7 @@ clientServerSimulation payloads =
                           mux reqRespProtocolNum
                           Mx.ResponderDirectionOnly
                           Mx.StartOnDemand
-                          (\channel -> runPeer tr codecReqResp
+                          (\channel -> runPeer tr codecReqResp (fromIntegral . BL.length)
                                                channel
                                                serverPeer)
               withAsync
@@ -307,7 +308,7 @@ clientServerSimulation payloads =
                               mux reqRespProtocolNum
                               InitiatorDirectionOnly
                               StartEagerly
-                              (\channel -> runPeer tr codecReqResp
+                              (\channel -> runPeer tr codecReqResp (fromIntegral . BL.length)
                                                    channel
                                                    clientPeer)
                   bearer <- Mx.getBearer makeFDBearer 10 nullTracer fd Nothing
@@ -588,7 +589,7 @@ prop_self_connect payload =
                                     (Just <$> waitSTM serverThread)
                                    `orElse`
                                    pure Nothing
-                    return $ Just payload === payload'
+                    return $ Just payload === fmap (\(Mx.MkReception _tms bs) -> bs) payload'
                         .&&. isNothing serverResult
 
 

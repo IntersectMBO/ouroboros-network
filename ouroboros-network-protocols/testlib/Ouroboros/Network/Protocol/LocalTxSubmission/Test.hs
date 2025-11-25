@@ -18,10 +18,12 @@ module Ouroboros.Network.Protocol.LocalTxSubmission.Test
   ) where
 
 import Data.ByteString.Lazy (ByteString)
+import Data.ByteString.Lazy qualified as BL
 
 import Control.Monad.Class.MonadAsync (MonadAsync)
 import Control.Monad.Class.MonadST (MonadST)
 import Control.Monad.Class.MonadThrow (MonadCatch)
+import Control.Monad.Class.MonadTime.SI (MonadMonotonicTime)
 import Control.Monad.IOSim
 import Control.Monad.ST (runST)
 import Control.Tracer (nullTracer)
@@ -143,7 +145,7 @@ prop_connect p txs =
 
 -- | Run a local tx-submission client and server using connected channels.
 --
-prop_channel :: (MonadAsync m, MonadCatch m, MonadST m)
+prop_channel :: (MonadAsync m, MonadCatch m, MonadMonotonicTime m, MonadST m)
              => m (Channel m ByteString, Channel m ByteString)
              -> (Tx -> SubmitResult Reject) -> [Tx]
              -> m Bool
@@ -155,6 +157,7 @@ prop_channel createChannels p txs =
       createChannels
       nullTracer
       codec
+      (fromIntegral . BL.length)
       (localTxSubmissionClientPeer $
        localTxSubmissionClient txs)
       (localTxSubmissionServerPeer $ pure $

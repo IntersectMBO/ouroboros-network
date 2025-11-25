@@ -12,6 +12,7 @@ import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI (MonadMonotonicTime)
 import Control.Monad.IOSim (runSimOrThrow)
 import Control.Monad.ST (runST)
 import Control.Tracer (nullTracer)
@@ -98,6 +99,7 @@ prop_channel :: ( MonadST    m
                 , MonadSTM   m
                 , MonadAsync m
                 , MonadCatch m
+                , MonadMonotonicTime m
                 )
              => (Int -> Int)
              -> Int
@@ -106,6 +108,7 @@ prop_channel f n = do
     (s, c) <- runConnectedPeers createConnectedChannels
                                 nullTracer
                                 codecKeepAlive_v2
+                                (fromIntegral . BL.length)
                                 server client
     return ((s, c) === (n, foldr (.) id (replicate n f) 0))
   where
