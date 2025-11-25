@@ -21,6 +21,7 @@ module Network.Mux.Types
   , HasResponder
   , Status (..)
   , IngressQueue
+  , IngressQueueVal (..)
   , MiniProtocolIx
   , MiniProtocolDir (..)
   , protocolDirEnum
@@ -50,8 +51,9 @@ import Data.ByteString.Builder (Builder)
 import Data.ByteString.Lazy qualified as BL
 import Data.Functor (void)
 import Data.Int
+import Data.IntMap (IntMap)
+import Data.IntMap qualified as IntMap
 import Data.Ix (Ix (..))
-import Data.Strict.Tuple as Strict (Pair)
 import Data.Word
 import Foreign.Ptr (Ptr)
 import Quiet
@@ -61,7 +63,7 @@ import GHC.Generics (Generic)
 import Control.Concurrent.Class.MonadSTM.Strict (StrictTVar)
 import Control.Monad.Class.MonadTime.SI
 
-import Network.Mux.Channel (ByteChannel, Channel (..))
+import Network.Mux.Channel (ByteChannel, Channel (..), Reception (..))
 import Network.Mux.Timeout (TimeoutFn)
 
 
@@ -176,7 +178,14 @@ data Status
 -- Mux internal types
 --
 
-type IngressQueue m = StrictTVar m (Strict.Pair Int64 Builder)
+type IngressQueue m = StrictTVar m IngressQueueVal
+
+data IngressQueueVal = MkIngressQueueVal
+  -- | number of bytes in the 'Builder'
+  !Int64
+  -- | when each chunk of those bytes arose
+  !(IntMap Time)
+  !Builder
 
 -- | The index of a protocol in a MuxApplication, used for array indices
 newtype MiniProtocolIx = MiniProtocolIx Int
@@ -278,7 +287,7 @@ bearerAsChannel
 bearerAsChannel bearer ptclNum ptclDir =
       Channel {
         send = \blob -> void $ write bearer noTimeout (wrap blob),
-        recv = Just . msBlob . fst <$> read bearer noTimeout
+        recv = Just . cnv <$> read bearer noTimeout
       }
     where
       -- wrap a 'ByteString' as 'SDU'
@@ -293,6 +302,9 @@ bearerAsChannel bearer ptclNum ptclDir =
               },
             msBlob = blob
           }
+
+      cnv :: (SDU, Time) -> Reception BL.ByteString
+      cnv (sdu, tm) = MkReception (IntMap.singleton 0 tm) (msBlob sdu)
 
       noTimeout :: TimeoutFn m
       noTimeout _ r = Just <$> r

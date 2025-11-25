@@ -16,8 +16,8 @@ import Data.Array
 import Data.ByteString.Builder.Internal (lazyByteStringInsert,
            lazyByteStringThreshold)
 import Data.ByteString.Lazy qualified as BL
+import Data.IntMap qualified as IntMap
 import Data.List (nub)
-import Data.Strict.Tuple (pattern (:!:))
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad
@@ -107,7 +107,7 @@ demuxer ptcls bearer =
   let !dispatchTable = setupDispatchTable ptcls in
   withTimeoutSerial $ \timeout ->
   forever $ do
-    (sdu, _) <- Mx.read bearer timeout
+    (sdu, tm) <- Mx.read bearer timeout
     -- say $ printf "demuxing sdu on mid %s mode %s lenght %d " (show $ msId sdu) (show $ msDir sdu)
     --             (BL.length $ msBlob sdu)
     case lookupMiniProtocol dispatchTable (msNum sdu)
@@ -119,16 +119,17 @@ demuxer ptcls bearer =
                    throwIO (InitiatorOnly (msNum sdu))
       Just (MiniProtocolDispatchInfo q qMax) ->
         atomically $ do
-          len :!: buf <- readTVar q
+          MkIngressQueueVal len tms buf <- readTVar q
           let !len' = len + BL.length (msBlob sdu)
           if len' <= fromIntegral qMax
               then do
-                let buf' = if len == 0
+                let tms' = IntMap.insert (fromIntegral len') tm tms
+                    buf' = if len == 0
                                then -- Don't copy the payload if the queue was empty
                                  lazyByteStringInsert $ msBlob sdu
                                else -- Copy payloads smaller than 128 bytes
                                  buf <> lazyByteStringThreshold 128 (msBlob sdu)
-                writeTVar q $ len' :!: buf'
+                writeTVar q $ MkIngressQueueVal len' tms' buf'
               else throwSTM $ IngressQueueOverRun (msNum sdu) (msDir sdu)
 
 lookupMiniProtocol :: MiniProtocolDispatch m

@@ -60,6 +60,7 @@ module Ouroboros.Network.Mux
 
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI (MonadMonotonicTime)
 import Control.Tracer (Tracer)
 
 import Data.Foldable (fold)
@@ -339,7 +340,7 @@ type RunMiniProtocolWithMinimalCtx mode peerAddr bytes m a b =
 newtype MiniProtocolCb ctx bytes m a =
     MiniProtocolCb {
       runMiniProtocolCb ::
-        ctx -> Channel m bytes -> m (a, Maybe bytes)
+        ctx -> Channel m bytes -> m (a, Maybe (Reception bytes))
     }
 
 
@@ -347,13 +348,15 @@ newtype MiniProtocolCb ctx bytes m a =
 --
 mkMiniProtocolCbFromPeer
   :: forall (pr :: PeerRole) ps (st :: ps) failure bytes ctx m a.
-     ( MonadThrow m
+     ( MonadMonotonicTime m
+     , MonadThrow         m
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
      , Show failure
      )
   => (ctx -> ( Tracer m (TraceSendRecv ps)
              , Codec ps failure m bytes
+             , bytes -> Word
              , Peer ps pr NonPipelined st m a
              )
      )
@@ -361,21 +364,23 @@ mkMiniProtocolCbFromPeer
 mkMiniProtocolCbFromPeer fn =
     MiniProtocolCb $ \ctx channel ->
       case fn ctx of
-        (tracer, codec, peer) ->
-          runPeer tracer codec channel peer
+        (tracer, codec, size, peer) ->
+          runPeer tracer codec size channel peer
 
 -- | Create a 'MuxPeer' from a tracer, codec and 'Stateful.Peer'.
 --
 mkMiniProtocolCbFromPeerSt
   :: forall (pr :: PeerRole) ps (f :: ps -> Type) (st :: ps) failure bytes ctx m a.
-     ( MonadAsync m
-     , MonadMask  m
+     ( MonadAsync         m
+     , MonadMask          m
+     , MonadMonotonicTime m
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
      , Show failure
      )
   => (ctx -> ( Tracer m (Stateful.TraceSendRecv ps f)
              , Stateful.Codec ps failure f m bytes
+             , bytes -> Word
              , f st
              , Stateful.Peer ps pr st f m a
              )
@@ -384,22 +389,24 @@ mkMiniProtocolCbFromPeerSt
 mkMiniProtocolCbFromPeerSt fn =
     MiniProtocolCb $ \ctx channel ->
       case fn ctx of
-        (tracer, codec, f, peer) ->
-          Stateful.runPeer tracer codec channel f peer
+        (tracer, codec, size, f, peer) ->
+          Stateful.runPeer tracer codec size channel f peer
 
 
 -- | Create a 'MuxPeer' from a tracer, codec and 'PeerPipelined'.
 --
 mkMiniProtocolCbFromPeerPipelined
   :: forall (pr :: PeerRole) ps (st :: ps) failure ctx bytes m a.
-     ( MonadAsync m
-     , MonadThrow m
+     ( MonadAsync         m
+     , MonadMonotonicTime m
+     , MonadThrow         m
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
      , Show failure
      )
   => (ctx -> ( Tracer m (TraceSendRecv ps)
              , Codec ps failure m bytes
+             , bytes -> Word
              , PeerPipelined ps pr st m a
              )
      )
@@ -407,8 +414,8 @@ mkMiniProtocolCbFromPeerPipelined
 mkMiniProtocolCbFromPeerPipelined fn =
     MiniProtocolCb $ \ctx channel ->
       case fn ctx of
-        (tracer, codec, peer) ->
-          runPipelinedPeer tracer codec channel peer
+        (tracer, codec, size, peer) ->
+          runPipelinedPeer tracer codec size channel peer
 
 
 contramapMiniProtocolCbCtx :: (ctx -> ctx')
