@@ -39,12 +39,13 @@ import Network.TypedProtocol.Stateful.Driver
 import Network.TypedProtocol.Stateful.Peer
 
 import Ouroboros.Network.Channel
-import Ouroboros.Network.Driver.Simple (DecoderFailure (..), Role (..))
+import Ouroboros.Network.Driver.Simple (DecoderFailure (..), Role (..), runDecoderWithChannel)
 import Ouroboros.Network.Util.ShowProxy
 
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI (MonadMonotonicTime, getMonotonicTime, Time)
 import Control.Tracer (Tracer (..), contramap, traceWith)
 
 
@@ -75,17 +76,20 @@ import Control.Tracer (Tracer (..), contramap, traceWith)
 
 
 driverStateful :: forall ps (pr :: PeerRole) failure bytes (f :: ps -> Type) m.
-                ( MonadAsync       m
-                , MonadMask        m
+                ( MonadAsync         m
+                , MonadMask          m
+                , MonadMonotonicTime m
                 , Show failure
                 , forall (st' :: ps) tok. tok ~ StateToken st' => Show tok
                 , ShowProxy ps
                 )
              => Tracer m (TraceSendRecv ps f)
              -> Codec ps failure f m bytes
+             -> (bytes -> Word)
+                 -- ^ byte size
              -> Channel m bytes
-             -> Driver ps pr bytes failure (Maybe bytes) f m
-driverStateful tracer Codec{encode, decode} channel@Channel{send} = do
+             -> Driver ps pr bytes failure (Maybe (Reception bytes)) f m
+driverStateful tracer Codec{encode, decode} size channel@Channel{send} = do
     Driver { sendMessage
            , recvMessage
            , initialDState = Nothing
@@ -101,8 +105,9 @@ driverStateful tracer Codec{encode, decode} channel@Channel{send} = do
                 -> Message ps st st'
                 -> m ()
     sendMessage !_ f msg = do
+      tm <- getMonotonicTime
       send (encode f msg)
-      traceWith tracer (TraceSendMsg (AnyMessage f msg))
+      traceWith tracer (TraceSendMsg tm (AnyMessage f msg))
 
     recvMessage :: forall (st :: ps).
                    StateTokenI st
@@ -111,16 +116,16 @@ driverStateful tracer Codec{encode, decode} channel@Channel{send} = do
                                         TheyHaveAgency
                                        (Relative pr (StateAgency st))
                 -> f st
-                -> Maybe bytes
-                -> m (SomeMessage st, Maybe bytes)
+                -> Maybe (Reception bytes)
+                -> m (SomeMessage st, Maybe (Reception bytes))
     recvMessage !_ f trailing = do
       let tok = stateToken
       decoder <- decode tok f
-      result  <- runDecoderWithChannel channel trailing decoder
+      result  <- runDecoderWithChannel size channel trailing decoder
       case result of
-        Right x@(SomeMessage msg, _trailing') -> do
-          traceWith tracer (TraceRecvMsg (AnyMessage f msg))
-          return x
+        Right (SomeMessage msg, mbTm, trailing') -> do
+          traceWith tracer (TraceRecvMsg mbTm (AnyMessage f msg))
+          return (SomeMessage msg, trailing')
         Left failure ->
           throwIO (DecoderFailure tok failure)
 
@@ -131,44 +136,31 @@ driverStateful tracer Codec{encode, decode} channel@Channel{send} = do
 --
 runPeer
   :: forall ps (st :: ps) pr failure bytes f m a .
-     ( MonadAsync       m
-     , MonadMask        m
+     ( MonadAsync         m
+     , MonadMask          m
+     , MonadMonotonicTime m
      , Show failure
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
      , ShowProxy ps
      )
   => Tracer m (TraceSendRecv ps f)
   -> Codec ps failure f m bytes
+  -> (bytes -> Word)
+     -- ^ byte size
   -> Channel m bytes
   -> f st
   -> Peer ps pr st f m a
-  -> m (a, Maybe bytes)
-runPeer tracer codec channel f peer =
+  -> m (a, Maybe (Reception bytes))
+runPeer tracer codec size channel f peer =
     runPeerWithDriver driver f peer
   where
-    driver = driverStateful tracer codec channel
+    driver = driverStateful tracer codec size channel
 
 
 
 --
 -- Utils
 --
-
--- | Run a codec incremental decoder 'DecodeStep' against a channel. It also
--- takes any extra input data and returns any unused trailing data.
---
-runDecoderWithChannel :: Monad m
-                      => Channel m bytes
-                      -> Maybe bytes
-                      -> DecodeStep bytes failure m a
-                      -> m (Either failure (a, Maybe bytes))
-
-runDecoderWithChannel Channel{recv} = go
-  where
-    go _ (DecodeDone x trailing)         = return (Right (x, trailing))
-    go _ (DecodeFail failure)            = return (Left failure)
-    go Nothing         (DecodePartial k) = recv >>= k        >>= go Nothing
-    go (Just trailing) (DecodePartial k) = k (Just trailing) >>= go Nothing
 
 
 -- | Run two 'Peer's via a pair of connected 'Channel's and a common 'Codec'.
@@ -179,8 +171,9 @@ runDecoderWithChannel Channel{recv} = go
 -- for example 'createConnectedChannels'.
 --
 runConnectedPeers :: forall ps pr st failure bytes f m a b.
-                     ( MonadAsync       m
-                     , MonadMask        m
+                     ( MonadAsync         m
+                     , MonadMask          m
+                     , MonadMonotonicTime m
                      , Show failure
                      , forall (st' :: ps) tok. tok ~ StateToken st' => Show tok
                      , ShowProxy ps
@@ -188,19 +181,21 @@ runConnectedPeers :: forall ps pr st failure bytes f m a b.
                   => m (Channel m bytes, Channel m bytes)
                   -> Tracer m (Role, TraceSendRecv ps f)
                   -> Codec ps failure f m bytes
+                  -> (bytes -> Word)
+                     -- ^ size
                   -> f st
                   -> Peer ps             pr  st f m a
                   -> Peer ps (FlipAgency pr) st f m b
                   -> m (a, b)
-runConnectedPeers createChannels tracer codec f client server =
+runConnectedPeers createChannels tracer codec size f client server =
     createChannels >>= \(clientChannel, serverChannel) ->
 
     (do labelThisThread "client"
-        fst <$> runPeer tracerClient codec clientChannel f client
+        fst <$> runPeer tracerClient codec size clientChannel f client
     )
       `concurrently`
     (do labelThisThread "server"
-        fst <$> runPeer tracerServer codec serverChannel f server
+        fst <$> runPeer tracerServer codec size serverChannel f server
     )
   where
     tracerClient = contramap (Client,) tracer
@@ -211,8 +206,9 @@ runConnectedPeers createChannels tracer codec f client server =
 -- 'Handshake' protocol which knows how to decode different versions.
 --
 runConnectedPeersAsymmetric
-    :: ( MonadAsync       m
-       , MonadMask        m
+    :: ( MonadAsync         m
+       , MonadMask          m
+       , MonadMonotonicTime m
        , Show failure
        , forall (st' :: ps) tok. tok ~ StateToken st' => Show tok
        , ShowProxy ps
@@ -221,25 +217,31 @@ runConnectedPeersAsymmetric
     -> Tracer m (Role, TraceSendRecv ps f)
     -> Codec ps failure f m bytes
     -> Codec ps failure f m bytes
+    -> (bytes -> Word)
+       -- ^ bytes size
     -> f st
     -> Peer ps             pr  st f m a
     -> Peer ps (FlipAgency pr) st f m b
     -> m (a, b)
-runConnectedPeersAsymmetric createChannels tracer codec codec' f client server =
+runConnectedPeersAsymmetric createChannels tracer codec codec' size f client server =
     createChannels >>= \(clientChannel, serverChannel) ->
 
-    (fst <$> runPeer tracerClient codec  clientChannel f client)
+    (fst <$> runPeer tracerClient codec  size clientChannel f client)
       `concurrently`
-    (fst <$> runPeer tracerServer codec' serverChannel f server)
+    (fst <$> runPeer tracerServer codec' size serverChannel f server)
   where
     tracerClient = contramap (Client,) tracer
     tracerServer = contramap (Server,) tracer
 
 
 data TraceSendRecv ps (f :: ps -> Type) where
-  TraceSendMsg :: AnyMessage ps f -> TraceSendRecv ps f
-  TraceRecvMsg :: AnyMessage ps f -> TraceSendRecv ps f
+  TraceSendMsg :: Time -> AnyMessage ps f -> TraceSendRecv ps f
+  TraceRecvMsg :: Maybe Time -> AnyMessage ps f -> TraceSendRecv ps f
 
 instance Show (AnyMessage ps f) => Show (TraceSendRecv ps f) where
-  show (TraceSendMsg msg) = "Send " ++ show msg
-  show (TraceRecvMsg msg) = "Recv " ++ show msg
+  show (TraceSendMsg tm msg) = "Send " ++ show tm ++ " " ++ show msg
+  show (TraceRecvMsg mbTm msg) =
+      let s = case mbTm of
+              Nothing -> "Nothing"
+              Just x -> "(Just " ++ show x ++ ")"
+      in"Recv " ++ show s ++ " " ++ show msg

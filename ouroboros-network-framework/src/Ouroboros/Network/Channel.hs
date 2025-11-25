@@ -12,9 +12,11 @@ module Ouroboros.Network.Channel
   , createPipelineTestChannels
   ) where
 
+import Data.IntMap qualified as IntMap
 import Numeric.Natural
 
 import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad.Class.MonadTime.SI (MonadMonotonicTime, Time, getMonotonicTime)
 
 import Network.Mux.Channel as Mx
 
@@ -28,7 +30,7 @@ import Network.Mux.Channel as Mx
 -- can be used to test that framing and other codecs work with any possible
 -- chunking.
 --
-fixedInputChannel :: MonadSTM m => [a] -> m (Channel m a)
+fixedInputChannel :: MonadSTM m => [(Time, a)] -> m (Channel m a)
 fixedInputChannel xs0 = do
     v <- newTVarIO xs0
     return Channel {send, recv = recv v}
@@ -37,7 +39,7 @@ fixedInputChannel xs0 = do
                xs <- readTVar v
                case xs of
                  []      -> return Nothing
-                 (x:xs') -> writeTVar v xs' >> return (Just x)
+                 ((tm, x):xs') -> writeTVar v xs' >> return (Just (MkReception (IntMap.singleton 0 tm) x))
 
     send _ = return ()
 
@@ -47,7 +49,7 @@ fixedInputChannel xs0 = do
 --
 -- This is primarily useful for testing protocols.
 --
-createConnectedBufferedChannelsUnbounded :: forall m a. MonadSTM m
+createConnectedBufferedChannelsUnbounded :: forall m a. (MonadSTM m, MonadMonotonicTime m)
                                          => m (Channel m a, Channel m a)
 createConnectedBufferedChannelsUnbounded = do
     -- Create two TQueues to act as the channel buffers (one for each
@@ -61,7 +63,9 @@ createConnectedBufferedChannelsUnbounded = do
     queuesAsChannel bufferRead bufferWrite =
         Channel{send, recv}
       where
-        send x = atomically (writeTQueue bufferWrite x)
+        send x = do
+            tm <- getMonotonicTime
+            atomically (writeTQueue bufferWrite (MkReception (IntMap.singleton 0 tm) x))
         recv   = atomically (Just <$> readTQueue bufferRead)
 
 
@@ -73,23 +77,16 @@ createConnectedBufferedChannelsUnbounded = do
 --
 -- This is primarily useful for testing protocols.
 --
-createConnectedBufferedChannels :: forall m a. MonadLabelledSTM m
+createConnectedBufferedChannels :: forall m a. (MonadLabelledSTM m, MonadMonotonicTime m)
                                 => Natural -> m (Channel m a, Channel m a)
 createConnectedBufferedChannels sz = do
     (chan1, chan2) <- atomically $ createConnectedBufferedChannelsSTM sz
-    pure (wrap chan1, wrap chan2)
+    pure (chan1, chan2)
   where
-    wrap :: Channel (STM m) a -> Channel m a
-    wrap Channel{send, recv} = Channel
-      { send    = atomically . send
-      , recv    = atomically recv
-      }
 
 -- | As 'createConnectedBufferedChannels', but in 'STM'.
---
--- TODO: it should return a pair of `Channel m a`.
-createConnectedBufferedChannelsSTM :: MonadLabelledSTM m
-                                   => Natural -> STM m (Channel (STM m) a, Channel (STM m) a)
+createConnectedBufferedChannelsSTM :: (MonadLabelledSTM m, MonadMonotonicTime m)
+                                   => Natural -> STM m (Channel m a, Channel m a)
 createConnectedBufferedChannelsSTM sz = do
     -- Create two TBQueues to act as the channel buffers (one for each
     -- direction) and use them to make both ends of a bidirectional channel
@@ -104,8 +101,10 @@ createConnectedBufferedChannelsSTM sz = do
     queuesAsChannel bufferRead bufferWrite =
         Channel{send, recv}
       where
-        send x  = writeTBQueue bufferWrite x
-        recv    = Just <$> readTBQueue bufferRead
+        send x = do
+            tm <- getMonotonicTime
+            atomically $ writeTBQueue bufferWrite $! MkReception (IntMap.singleton 0 tm) x
+        recv    = atomically $ Just <$> readTBQueue bufferRead
 
 
 -- | Create a pair of channels that are connected via N-place buffers.
@@ -117,7 +116,7 @@ createConnectedBufferedChannelsSTM sz = do
 --
 -- This is primarily useful for testing protocols.
 --
-createPipelineTestChannels :: MonadSTM m
+createPipelineTestChannels :: (MonadSTM m, MonadMonotonicTime m)
                            => Natural -> m (Channel m a, Channel m a)
 createPipelineTestChannels sz = do
     -- Create two TBQueues to act as the channel buffers (one for each
@@ -131,10 +130,12 @@ createPipelineTestChannels sz = do
     queuesAsChannel bufferRead bufferWrite =
         Channel{send, recv}
       where
-        send x = atomically $ do
+        send x = do
+            tm <- getMonotonicTime
+            atomically $ do
                    full <- isFullTBQueue bufferWrite
                    if full then error failureMsg
-                           else writeTBQueue bufferWrite x
+                           else writeTBQueue bufferWrite $ MkReception (IntMap.singleton 0 tm) x
         recv   = atomically (Just <$> readTBQueue bufferRead)
 
     failureMsg = "createPipelineTestChannels: "

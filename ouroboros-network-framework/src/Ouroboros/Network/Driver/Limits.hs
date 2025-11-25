@@ -30,11 +30,14 @@ module Ouroboros.Network.Driver.Limits
   ) where
 
 import Data.Maybe (fromMaybe)
+import Data.IntMap (IntMap)
+import Data.IntMap qualified as IntMap
 
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI (Time, getMonotonicTime)
 import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer (..), contramap, traceWith)
 
@@ -51,7 +54,8 @@ import Ouroboros.Network.Util.ShowProxy
 
 
 driverWithLimits :: forall ps (pr :: PeerRole) failure bytes m.
-                    ( MonadThrow m
+                    ( MonadMonotonicTime m
+                    , MonadThrow m
                     , ShowProxy ps
                     , forall (st' :: ps) tok. tok ~ StateToken st' => Show tok
                     , Show failure
@@ -62,7 +66,7 @@ driverWithLimits :: forall ps (pr :: PeerRole) failure bytes m.
                  -> ProtocolSizeLimits ps bytes
                  -> ProtocolTimeLimits ps
                  -> Channel m bytes
-                 -> Driver ps pr (Maybe bytes) m
+                 -> Driver ps pr (Maybe (Reception bytes)) m
 driverWithLimits tracer timeoutFn
                  Codec{encode, decode}
                  ProtocolSizeLimits{sizeLimitForState, dataSize}
@@ -77,16 +81,17 @@ driverWithLimits tracer timeoutFn
                 -> Message ps st st'
                 -> m ()
     sendMessage !_ msg = do
+      tm <- getMonotonicTime
       send (encode msg)
-      traceWith tracer (TraceSendMsg (AnyMessage msg))
+      traceWith tracer (TraceSendMsg tm (AnyMessage msg))
 
 
     recvMessage :: forall (st :: ps).
                    StateTokenI st
                 => ActiveState st
                 => TheyHaveAgencyProof pr st
-                -> Maybe bytes
-                -> m (SomeMessage st, Maybe bytes)
+                -> Maybe (Reception bytes)
+                -> m (SomeMessage st, Maybe (Reception bytes))
     recvMessage !_ trailing = do
       let tok = stateToken
       decoder <- decode tok
@@ -97,9 +102,9 @@ driverWithLimits tracer timeoutFn
                                        channel trailing decoder
 
       case result of
-        Just (Right x@(SomeMessage msg, _trailing')) -> do
-          traceWith tracer (TraceRecvMsg (AnyMessage msg))
-          return x
+        Just (Right (SomeMessage msg, mbTm, trailing')) -> do
+          traceWith tracer (TraceRecvMsg mbTm (AnyMessage msg))
+          return (SomeMessage msg, trailing')
         Just (Left (Just failure)) -> throwIO (DecoderFailure tok failure)
         Just (Left Nothing)        -> throwIO (ExceededSizeLimit tok)
         Nothing                    -> throwIO (ExceededTimeLimit tok)
@@ -112,11 +117,12 @@ runDecoderWithLimit
     -> (bytes -> Word)
     -- ^ byte size
     -> Channel m bytes
-    -> Maybe bytes
+    -> Maybe (Reception bytes)
     -> DecodeStep bytes failure m a
-    -> m (Either (Maybe failure) (a, Maybe bytes))
+       -- ^ ASSUMPTION: must not already be 'DecodeDone'
+    -> m (Either (Maybe failure) (a, Maybe Time, Maybe (Reception bytes)))
 runDecoderWithLimit limit size Channel{recv} =
-    go 0
+    \trailing step -> go IntMap.empty 0 0 trailing step
   where
     -- Our strategy here is as follows...
     --
@@ -131,27 +137,48 @@ runDecoderWithLimit limit size Channel{recv} =
     -- This leaves just one special case: if the decoder finishes with that
     -- final chunk, we must check if it consumed too much of the final chunk.
     --
-    go :: Word        -- ^ size of consumed input so far
-       -> Maybe bytes -- ^ any trailing data
+    go :: IntMap Time
+       -> Word        -- ^ size of the latest 'Reception'
+       -> Word        -- ^ size of consumed input so far
+       -> Maybe (Reception bytes) -- ^ any trailing data
        -> DecodeStep bytes failure m a
-       -> m (Either (Maybe failure) (a, Maybe bytes))
+       -> m (Either (Maybe failure) (a, Maybe Time, Maybe (Reception bytes)))
 
-    go !sz !_ (DecodeDone x trailing)
+    go !tms !rsz !sz !_ (DecodeDone x trailing)
       | let sz' = sz - maybe 0 size trailing
       , sz' > limit = return (Left Nothing)
-      | otherwise   = return (Right (x, trailing))
+      | otherwise   =
+        let nConsumed = rsz - maybe 0 size trailing
+            (lt, mbEq, gt) = IntMap.splitLookup (fromIntegral nConsumed) tms
+            tms' :: IntMap Time
+            tms' = IntMap.mapKeysMonotonic (\key -> key - fromIntegral nConsumed) $ case mbEq of
+                Nothing -> gt
+                Just tm -> IntMap.insert (fromIntegral nConsumed) tm gt
+            mbTm :: Maybe Time
+            mbTm = case IntMap.lookupMax lt of
+                Nothing -> Nothing   -- this 'Channel' did not provide a 'Time' for this byte
+                Just (_, tm) -> Just tm
+        in
+        return (Right (x, mbTm, MkReception tms' <$> trailing))
 
-    go !_ !_ (DecodeFail failure) = return (Left (Just failure))
+    go !_ !_ !_ !_ (DecodeFail failure) = return (Left (Just failure))
 
-    go !sz trailing (DecodePartial k)
+    go !_ !_ !sz !trailing (DecodePartial k)
       | sz > limit = return (Left Nothing)
       | otherwise  = case trailing of
                        Nothing -> do mbs <- recv
-                                     let !sz' = sz + maybe 0 size mbs
-                                     go sz' Nothing =<< k mbs
-                       Just bs -> do let sz' = sz + size bs
-                                     go sz' Nothing =<< k (Just bs)
+                                     let !rsz' = maybe 0 (size . forgetTms) mbs
+                                         !sz' = sz + rsz'
+                                     let !tms' = maybe IntMap.empty getTms mbs
+                                     go tms' rsz' sz' Nothing =<< k (fmap forgetTms mbs)
+                       Just (MkReception tms' bs) -> do
+                           -- INVARIANT This is only reachable on the first
+                           -- invocation of @go@, so the incoming @tms@, @rsz@
+                           -- and @sz@ are empty.
+                           go tms' (size bs) (size bs) Nothing =<< k (Just bs)
 
+    getTms = \(MkReception tms _bs) -> tms
+    forgetTms = \(MkReception _tms bs) -> bs
 
 runPeerWithLimits
   :: forall ps (st :: ps) pr failure bytes m a .
@@ -170,7 +197,7 @@ runPeerWithLimits
   -> ProtocolTimeLimits ps
   -> Channel m bytes
   -> Peer ps pr NonPipelined st m a
-  -> m (a, Maybe bytes)
+  -> m (a, Maybe (Reception bytes))
 runPeerWithLimits tracer codec slimits tlimits channel peer =
     withTimeoutSerial $ \timeoutFn ->
       let driver = driverWithLimits tracer timeoutFn codec slimits tlimits channel
@@ -199,7 +226,7 @@ runPipelinedPeerWithLimits
   -> ProtocolTimeLimits ps
   -> Channel m bytes
   -> PeerPipelined ps pr st m a
-  -> m (a, Maybe bytes)
+  -> m (a, Maybe (Reception bytes))
 runPipelinedPeerWithLimits tracer codec slimits tlimits channel peer =
     withTimeoutSerial $ \timeoutFn ->
       let driver = driverWithLimits tracer timeoutFn codec slimits tlimits channel
@@ -242,8 +269,10 @@ runConnectedPeersWithLimits createChannels tracer codec slimits tlimits client s
                                      clientChannel client)
       `concurrently`
     (do labelThisThread "server"
-        fst <$> runPeer tracerServer codec serverChannel server)
+        fst <$> runPeer tracerServer codec dataSize serverChannel server)
   where
+    ProtocolSizeLimits{dataSize} = slimits
+
     tracerClient = contramap ((,) Client) tracer
     tracerServer = contramap ((,) Server) tracer
 
@@ -282,7 +311,9 @@ runConnectedPipelinedPeersWithLimits createChannels tracer codec slimits tlimits
                      tracerClient codec slimits tlimits
                                         clientChannel client)
       `concurrently`
-    (fst <$> runPeer tracerServer codec serverChannel server)
+    (fst <$> runPeer tracerServer codec dataSize serverChannel server)
   where
+    ProtocolSizeLimits{dataSize} = slimits
+
     tracerClient = contramap ((,) Client) tracer
     tracerServer = contramap ((,) Server) tracer
