@@ -123,7 +123,7 @@ demuxer ptcls bearer =
           let !len' = len + BL.length (msBlob sdu)
           if len' <= fromIntegral qMax
               then do
-                let tms' = IntMap.insert (fromIntegral len') tm tms
+                let tms' = IntMap.insert (fromIntegral len) tm tms
                     buf' = if len == 0
                                then -- Don't copy the payload if the queue was empty
                                  lazyByteStringInsert $ msBlob sdu
