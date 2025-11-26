@@ -28,12 +28,15 @@ module Ouroboros.Network.Driver.Simple
   , DecoderFailure (..)
     -- * Util
   , runDecoderWithChannel
+  , runDecoderWithChannel_DecodeDone
     -- * Connected peers
     -- TODO: move these to a test lib
   , runConnectedPeers
   , runConnectedPeersPipelined
   , runConnectedPeersAsymmetric
   ) where
+
+import Control.Applicative ((<|>))
 
 import Data.IntMap (IntMap)
 import Data.IntMap qualified as IntMap
@@ -223,6 +226,21 @@ runPipelinedPeer tracer codec size channel peer =
 -- Utils
 --
 
+runDecoderWithChannel_DecodeDone :: IntMap Time -> Int -> Int -> (Maybe Time, IntMap Time)
+runDecoderWithChannel_DecodeDone tms rsz nTrailing =
+    let nConsumed = rsz - nTrailing
+        (lt, mbEq, gt) = IntMap.splitLookup nConsumed tms
+        mbTm :: Maybe Time
+        mbTm = case IntMap.lookupMax lt of
+            Nothing -> Nothing   -- this 'Channel' did not provide a 'Time' for this byte
+            Just (_, tm) -> Just tm
+        tms' :: IntMap Time
+        tms' = IntMap.mapKeysMonotonic (\key -> key - nConsumed) $ case mbEq <|> mbTm of
+            Nothing -> gt
+            Just tm -> IntMap.insert nConsumed tm gt
+    in
+    (mbTm, tms')
+
 runDecoderWithChannel :: Monad m
                       => (bytes -> Word)
                       -- ^ byte size
@@ -234,16 +252,11 @@ runDecoderWithChannel size Channel{recv} =
     \trailing step -> go IntMap.empty 0 trailing step
   where
     go tms rsz _ (DecodeDone x trailing) =
-        let nConsumed = rsz - maybe 0 size trailing
-            (lt, mbEq, gt) = IntMap.splitLookup (fromIntegral nConsumed) tms
-            tms' :: IntMap Time
-            tms' = IntMap.mapKeysMonotonic (\key -> key - fromIntegral nConsumed) $ case mbEq of
-                Nothing -> gt
-                Just tm -> IntMap.insert (fromIntegral nConsumed) tm gt
-            mbTm :: Maybe Time
-            mbTm = case IntMap.lookupMax lt of
-                Nothing -> Nothing   -- this 'Channel' did not provide a 'Time' for this byte
-                Just (_, tm) -> Just tm
+        let (mbTm, tms') =
+                runDecoderWithChannel_DecodeDone
+                    tms
+                    (fromIntegral rsz)
+                    (fromIntegral $ maybe 0 size trailing)
         in
         return (Right (x, mbTm, MkReception tms' <$> trailing))
     go _ _ _                                 (DecodeFail failure) = return (Left failure)

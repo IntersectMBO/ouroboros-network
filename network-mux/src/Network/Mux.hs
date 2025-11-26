@@ -692,7 +692,7 @@ muxChannel tracer egressQueue want@(Wanton w) mc md q =
             MkIngressQueueVal l tms blob <- readTVar q
             if l == 0
                 then retry
-                else writeTVar q (MkIngressQueueVal 0 mempty mempty) >> return (tms, toLazyByteString blob)
+                else writeTVar q (MkIngressQueueVal 0 IntMap.empty mempty) >> return (tms, toLazyByteString blob)
         -- say $ printf "recv mid %s mode %s blob len %d" (show mid) (show md) (BL.length blob)
         traceWith tracer $ TraceChannelRecvEnd mc (fromIntegral $ BL.length blob)
         return $ Just $ MkReception tms blob
