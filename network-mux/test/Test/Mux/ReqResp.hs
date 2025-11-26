@@ -110,9 +110,9 @@ runDecoderWithChannel Channel{recv} trailing decoder =
       stToIO (k (Just bs)) >>= go tms (BS.length bs) Nothing
     go tms rsz _ (CBOR.Done trailing' _ a) =
         let nConsumed = rsz - BS.length trailing'
-            (_lt, mbEq, gt) = IntMap.splitLookup nConsumed tms
+            (lt, mbEq, gt) = IntMap.splitLookup nConsumed tms
             tms' :: IntMap Time
-            tms' = IntMap.mapKeysMonotonic (\key -> key - nConsumed) $ case mbEq of
+            tms' = IntMap.mapKeysMonotonic (\key -> key - nConsumed) $ case mbEq <|> fmap snd (IntMap.lookupMax lt) of
                 Nothing -> gt
                 Just tm -> IntMap.insert nConsumed tm gt
         in

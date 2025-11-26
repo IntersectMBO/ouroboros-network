@@ -148,16 +148,11 @@ runDecoderWithLimit limit size Channel{recv} =
       | let sz' = sz - maybe 0 size trailing
       , sz' > limit = return (Left Nothing)
       | otherwise   =
-        let nConsumed = rsz - maybe 0 size trailing
-            (lt, mbEq, gt) = IntMap.splitLookup (fromIntegral nConsumed) tms
-            tms' :: IntMap Time
-            tms' = IntMap.mapKeysMonotonic (\key -> key - fromIntegral nConsumed) $ case mbEq of
-                Nothing -> gt
-                Just tm -> IntMap.insert (fromIntegral nConsumed) tm gt
-            mbTm :: Maybe Time
-            mbTm = case IntMap.lookupMax lt of
-                Nothing -> Nothing   -- this 'Channel' did not provide a 'Time' for this byte
-                Just (_, tm) -> Just tm
+        let (mbTm, tms') =
+                runDecoderWithChannel_DecodeDone
+                    tms
+                    (fromIntegral rsz)
+                    (fromIntegral $ maybe 0 size trailing)
         in
         return (Right (x, mbTm, MkReception tms' <$> trailing))
 
