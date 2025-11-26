@@ -24,6 +24,8 @@ policy gen =
   , policyPeerShareBatchWaitTime     = 0 -- seconds
   , policyPeerShareOverallTimeout    = 0 -- seconds
   , policyPeerShareActivationDelay   = 2 -- seconds
+  , policyMaxConnectionRetries       = 5
+  , policyClearFailCountDelay        = 120 -- seconds
   }
   where
     pickTrivially :: Applicative m => Set SockAddr -> Int -> m (Set SockAddr)
