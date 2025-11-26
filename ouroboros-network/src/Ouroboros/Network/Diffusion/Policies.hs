@@ -126,6 +126,7 @@ simplePeerSelectionPolicy rngVar metrics errorDelay = PeerSelectionPolicy {
       policyPeerShareBatchWaitTime     = 3,    -- seconds
       policyPeerShareOverallTimeout    = 10,   -- seconds
       policyPeerShareActivationDelay   = 300,  -- seconds
+      policyMaxConnectionRetries       = 3,    -- XXX for testing, should be 5
 
       policyErrorDelay = ExitPolicy.repromoteDelay errorDelay
     }
