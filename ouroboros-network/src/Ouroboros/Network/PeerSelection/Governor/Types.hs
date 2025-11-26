@@ -212,6 +212,10 @@ data PeerSelectionPolicy peeraddr m = PeerSelectionPolicy {
        -- allowed to take
        policyPeerShareActivationDelay   :: !DiffTime,
        -- ^ Delay until we consider a peer suitable for peer sharing
+       policyMaxConnectionRetries       :: !Int,
+       -- ^ Maximum cold promotion attempts for non localroots, and bootstrap peers,
+       policyClearFailCountDelay          :: !DiffTime,
+       -- ^ Time a peer has to have been hot before clearing its fail counter.
 
        -- | Re-promote delay, passed from `ExitPolicy`.
        --
@@ -1698,8 +1702,8 @@ data TracePeerSelection extraDebugState extraFlags extraPeers peeraddr =
      | TracePromoteColdPeers   Int Int (Set peeraddr)
      -- | target local established, actual local established, selected peers
      | TracePromoteColdLocalPeers [(WarmValency, Int)] (Set peeraddr)
-     -- promotion, reason
-     | TracePromoteColdFailed  Int Int peeraddr DiffTime SomeException
+     -- promotion, reason, forgotten?
+     | TracePromoteColdFailed  Int Int peeraddr DiffTime SomeException Bool
      -- | target established, actual established, peer
      | TracePromoteColdDone    Int Int peeraddr
 
@@ -1707,8 +1711,8 @@ data TracePeerSelection extraDebugState extraFlags extraPeers peeraddr =
      -- peers, selected peers
      | TracePromoteColdBigLedgerPeers   Int Int (Set peeraddr)
      -- | target established big ledger peers, actual established big ledger
-     -- peers, peer, delay until next promotion, reason
-     | TracePromoteColdBigLedgerPeerFailed  Int Int peeraddr DiffTime SomeException
+     -- peers, peer, delay until next promotion, reason, forgotten?
+     | TracePromoteColdBigLedgerPeerFailed  Int Int peeraddr DiffTime SomeException Bool
      -- | target established big ledger peers, actual established big ledger
      -- peers, peer
      | TracePromoteColdBigLedgerPeerDone    Int Int peeraddr

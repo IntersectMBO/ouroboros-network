@@ -665,7 +665,7 @@ peerSelectionGovernorLoop tracer
         -- Make sure preBlocking set is in the right place
         preBlocking policy actions st
 
-      <> Monitor.connections          actions st
+      <> Monitor.connections          actions policy st
       <> Monitor.jobs                 jobPool st
       -- This job monitors for changes in big ledger peer snapshot file (eg. reload)
       -- and copies it into the governor's private state. When a change is detected,
