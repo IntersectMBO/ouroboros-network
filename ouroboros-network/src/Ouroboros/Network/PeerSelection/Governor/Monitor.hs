@@ -118,11 +118,15 @@ jobs jobPool st =
 connections :: forall m extraState extraDebugState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn.
                (MonadSTM m, Ord peeraddr)
             => PeerSelectionActions extraState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m
+            -> PeerSelectionPolicy  peeraddr m
             -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
             -> Guarded (STM m) (TimedDecision m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
 connections PeerSelectionActions{
               peerStateActions = PeerStateActions {monitorPeerConnection}
+            , extraPeersAPI = PublicExtraPeersAPI { memberExtraPeers
+                                                  , differenceExtraPeers }
             }
+            PeerSelectionPolicy { policyMaxConnectionRetries }
             st@PeerSelectionState {
               publicRootPeers,
               localRootPeers,
@@ -180,14 +184,21 @@ connections PeerSelectionActions{
 
             -- Asynchronous transition to cold peer can only be
             -- a result of a failure.
-            knownPeers'        = KnownPeers.setConnectTimes
-                                    ( (\(_, a) -> ExitPolicy.repromoteDelay (fromMaybe 0 a) `addTime` now)
-                                      <$> demotedToCold
-                                    )
-                               . Set.foldr'
-                                   ((snd .) . KnownPeers.incrementFailCount)
-                                   (knownPeers st)
-                               $ Map.keysSet demotedToCold
+            (knownPeers', forgottenPeers) = KnownPeers.reportFailures
+                              now
+                              policyMaxConnectionRetries
+                              (Map.keysSet demotedToCold)
+                              ( \p -> LocalRootPeers.member p localRootPeers ||
+                                (memberExtraPeers p (PublicRootPeers.getExtraPeers publicRootPeers))
+                              )
+                              (\p _ ->
+                                  case Map.lookup p demotedToCold of
+                                       Nothing -> 0
+                                       Just (_, a) -> ExitPolicy.repromoteDelay (fromMaybe 0 a)
+                              )
+                              (knownPeers st)
+            publicRootPeers' = PublicRootPeers.difference differenceExtraPeers publicRootPeers
+                                                          forgottenPeers
             (localDemotions, nonLocalDemotions) =
               Map.partitionWithKey
                 (\peer _ -> peer `LocalRootPeers.member` localRootPeers)
@@ -217,6 +228,7 @@ connections PeerSelectionActions{
                                 activePeers       = activePeers',
                                 establishedPeers  = establishedPeers',
                                 knownPeers        = knownPeers',
+                                publicRootPeers   = publicRootPeers',
 
                                 -- When promoting a warm peer, it might happen
                                 -- that the connection will break (or one of the
