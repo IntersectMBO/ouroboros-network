@@ -234,10 +234,12 @@ runDecoderWithChannel_DecodeDone tms rsz nTrailing =
         mbTm = case IntMap.lookupMax lt of
             Nothing -> Nothing   -- this 'Channel' did not provide a 'Time' for this byte
             Just (_, tm) -> Just tm
+
+        gt' = IntMap.mapKeysMonotonic (\key -> key - nConsumed) gt
         tms' :: IntMap Time
-        tms' = IntMap.mapKeysMonotonic (\key -> key - nConsumed) $ case mbEq <|> mbTm of
-            Nothing -> gt
-            Just tm -> IntMap.insert nConsumed tm gt
+        tms' = case mbEq <|> mbTm of
+            Nothing -> gt'
+            Just tm -> IntMap.insert 0 tm gt'
     in
     (mbTm, tms')
 
