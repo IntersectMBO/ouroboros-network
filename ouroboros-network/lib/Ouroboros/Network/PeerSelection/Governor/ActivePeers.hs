@@ -450,9 +450,14 @@ jobPromoteWarmPeer PeerSelectionActions{ peerStateActions =
                                            PeerStateActions {
                                              activatePeerConnection,
                                              errorDelay
-                                           }
+                                           },
+                                         extraPeersAPI =
+                                           PublicExtraPeersAPI { memberExtraPeers,
+                                                                 differenceExtraPeers }
                                        }
-                   _ peeraddr isBigLedgerPeer peerconn =
+                   PeerSelectionPolicy { policyMaxConnectionRetries,
+                                         policyClearFailCountDelay }
+                   peeraddr isBigLedgerPeer peerconn =
     Job job handler () "promoteWarmPeer"
   where
     handler :: SomeException
@@ -474,6 +479,7 @@ jobPromoteWarmPeer PeerSelectionActions{ peerStateActions =
         -- When promotion fails we set the peer as cold.
         Completion $ \st@PeerSelectionState {
                                  publicRootPeers,
+                                 localRootPeers,
                                  activePeers,
                                  establishedPeers,
                                  knownPeers,
@@ -491,21 +497,26 @@ jobPromoteWarmPeer PeerSelectionActions{ peerStateActions =
                  then let establishedPeers' = EstablishedPeers.delete peeraddr
                                                 establishedPeers
                           (fuzz, stdGen')  = randomR (-2, 2 :: Double) stdGen
-                          delay             = realToFrac fuzz + repromoteDelay errorDelay
-                          knownPeers'       = if peeraddr `KnownPeers.member` knownPeers
-                                                 then KnownPeers.setConnectTimes
-                                                        (Map.singleton
-                                                          peeraddr
-                                                          (delay `addTime` now))
-                                                      $ snd $ KnownPeers.incrementFailCount
-                                                        peeraddr
-                                                        knownPeers
-                                                 else
+                          delay             = realToFrac fuzz + errorDelay
+                          (knownPeers', forgottenPeers) =
+                              if peeraddr `KnownPeers.member` knownPeers
+                                 then KnownPeers.reportFailures
+                                           now
+                                           policyMaxConnectionRetries
+                                           (Set.singleton peeraddr)
+                                           (\p -> LocalRootPeers.member p localRootPeers ||
+                                            (memberExtraPeers p (PublicRootPeers.getExtraPeers publicRootPeers)))
+                                           (\_ _ -> repromoteDelay delay)
+                                           knownPeers
+                                 else
                                                    -- Apparently the governor can remove
                                                    -- the peer we failed to promote from the
                                                    -- set of known peers before we can process
                                                    -- the failure.
-                                                   knownPeers
+                                   (knownPeers, Set.empty)
+                          publicRootPeers' = PublicRootPeers.difference differenceExtraPeers
+                                                                        publicRootPeers
+                                                                        forgottenPeers
                        in
                       Decision {
                         decisionTrace = if peeraddr `Set.member` bigLedgerPeersSet
@@ -524,6 +535,7 @@ jobPromoteWarmPeer PeerSelectionActions{ peerStateActions =
                                           inProgressPromoteWarm = Set.delete peeraddr
                                                                     (inProgressPromoteWarm st),
                                           knownPeers            = knownPeers',
+                                          publicRootPeers       = publicRootPeers',
                                           establishedPeers      = establishedPeers',
                                           stdGen                = stdGen'
                                         },
@@ -553,14 +565,18 @@ jobPromoteWarmPeer PeerSelectionActions{ peerStateActions =
       return $ Completion $ \st@PeerSelectionState {
                                publicRootPeers,
                                activePeers,
+                               knownPeers,
                                targets = PeerSelectionTargets {
                                            targetNumberOfActivePeers
                                          }
                              }
-                           _now ->
+                           now ->
         let bigLedgerPeersSet = PublicRootPeers.getBigLedgerPeers publicRootPeers
          in if peeraddr `EstablishedPeers.member` establishedPeers st
-               then let activePeers' = Set.insert peeraddr activePeers in
+               then let activePeers' = Set.insert peeraddr activePeers
+                        knownPeers'  = KnownPeers.setClearFailCountTime
+                                           peeraddr (policyClearFailCountDelay `addTime` now)
+                                           knownPeers  in
                     Decision {
                       decisionTrace = if peeraddr `Set.member` bigLedgerPeersSet
                                       then [TracePromoteWarmBigLedgerPeerDone
@@ -577,7 +593,8 @@ jobPromoteWarmPeer PeerSelectionActions{ peerStateActions =
                       decisionState = st {
                                         activePeers           = activePeers',
                                         inProgressPromoteWarm = Set.delete peeraddr
-                                                                  (inProgressPromoteWarm st)
+                                                                  (inProgressPromoteWarm st),
+                                        knownPeers            = knownPeers'
                                       },
                       decisionJobs  = []
                     }
