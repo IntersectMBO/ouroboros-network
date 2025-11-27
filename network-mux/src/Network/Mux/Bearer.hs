@@ -68,6 +68,8 @@ makeSocketBearer = makeSocketBearer' 0
 makeSocketBearer' :: DiffTime -> MakeBearer IO Socket
 makeSocketBearer' pt = MakeBearer $ (\sduTimeout tr fd rb -> do
     Socket.setSocketOption fd opt 135168
+    Socket.setSocketOption fd Socket.NoDelay 1
+    Socket.setSocketOption fd (Socket.SockOpt 6 12) 1
     return $ socketAsBearer size batch rb sduTimeout pt tr fd)
   where
     opt = Socket.SockOpt 6 25 -- IPPROTO_TCP and TCP_NOTSENT_LOWAT copy-pasted from my system's linux .h files
