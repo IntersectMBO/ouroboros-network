@@ -14,7 +14,6 @@ module Test.Ouroboros.Network.Driver (tests) where
 import Data.Bifunctor (bimap)
 import Data.Kind (Type)
 import Data.List (intercalate)
-import Data.List qualified as List
 import Text.Read (readMaybe)
 
 import Network.TypedProtocol.Codec
@@ -98,7 +97,7 @@ byteLimitsReqResp
   :: forall req resp.
      Word
   -> ProtocolSizeLimits (ReqResp req resp) String
-byteLimitsReqResp limit = ProtocolSizeLimits stateToLimit (fromIntegral . length)
+byteLimitsReqResp limit = ProtocolSizeLimits stateToLimit
   where
     stateToLimit :: forall (st  :: ReqResp req resp).  ActiveState st
                  => StateToken st -> Word
@@ -156,9 +155,9 @@ prop_channel_simple_reqresp tracer reqPayloads = do
       (c1, c2) <- createConnectedChannels
 
       res <- try $
-        (fst <$> runPeer tracer codecReqResp (fromIntegral . List.length) c1 recvPeer)
+        (fst <$> runPeer tracer codecReqResp c1 recvPeer)
           `concurrently`
-        (void $ runPeer tracer codecReqResp (fromIntegral . List.length) c2 sendPeer)
+        (void $ runPeer tracer codecReqResp c2 sendPeer)
 
       pure $ case res :: Either ProtocolLimitFailure ([DiffTime], ()) of
         Right _                  -> property True
@@ -215,7 +214,7 @@ prop_channel_ping_pong a b n tr = do
     (_, r) <- runConnectedPeersPipelined
                 (bimap (delayChannel a)
                 (delayChannel b) <$> createConnectedChannels)
-                tr codecPingPong (fromIntegral . List.length) client server
+                tr codecPingPong client server
     return (r == n)
   where
     client = pingPongClientPeerPipelined (pingPongClientPipelinedMin n)
@@ -520,8 +519,7 @@ prop_channel_ping_pong_with_limits_ST a@(ArbDelaysAndTimeouts delay delay' timel
 
     slimits :: ProtocolSizeLimits PingPong String
     slimits = ProtocolSizeLimits {
-        sizeLimitForState = \_ -> toSize sizelimit,
-        dataSize = fromIntegral . List.length
+        sizeLimitForState = \_ -> toSize sizelimit
       }
 
     tlimits :: ProtocolTimeLimits PingPong
@@ -578,9 +576,9 @@ prop_channel_stateful_reqresp logging tracer reqPayloads = do
           initialState = Stateful.StateIdle
 
       res <- try $
-        (fst <$> Stateful.runPeer tracer codec (fromIntegral . List.length) outbound initialState clientPeer)
+        (fst <$> Stateful.runPeer tracer codec outbound initialState clientPeer)
           `concurrently`
-        (fst <$> Stateful.runPeer tracer codec (fromIntegral . List.length) inbound initialState serverPeer)
+        (fst <$> Stateful.runPeer tracer codec inbound initialState serverPeer)
 
       pure $ case res :: Either ProtocolLimitFailure ([String], ()) of
         Right (as, _)            -> as === fst `map` reqPayloads

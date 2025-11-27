@@ -22,7 +22,6 @@ module Ouroboros.Network.Protocol.TxSubmission2.Test
 
 import Data.Bifunctor (second)
 import Data.ByteString.Lazy (ByteString)
-import Data.ByteString.Lazy qualified as BL
 import Data.List (nub)
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Word (Word16)
@@ -217,7 +216,6 @@ prop_channel createChannels params@TxSubmissionTestParams{testTransactions} =
       createChannels
       nullTracer
       codec_v2
-      (fromIntegral . BL.length)
       (txSubmissionServerPeerPipelined $
        testServer (("server",) `contramap` nullTracer) params)
       (txSubmissionClientPeer $

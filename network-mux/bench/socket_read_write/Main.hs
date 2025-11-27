@@ -10,7 +10,7 @@ import Control.Monad (forever, replicateM_, unless, when)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer
-import Data.ByteString.Builder (Builder, toLazyByteString)
+import Data.ByteString.Builder (toLazyByteString)
 import Data.ByteString.Lazy qualified as BL
 import Data.Functor (void)
 import Data.Int

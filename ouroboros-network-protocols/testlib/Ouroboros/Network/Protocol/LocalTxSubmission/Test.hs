@@ -18,7 +18,6 @@ module Ouroboros.Network.Protocol.LocalTxSubmission.Test
   ) where
 
 import Data.ByteString.Lazy (ByteString)
-import Data.ByteString.Lazy qualified as BL
 
 import Control.Monad.Class.MonadAsync (MonadAsync)
 import Control.Monad.Class.MonadST (MonadST)
@@ -157,7 +156,6 @@ prop_channel createChannels p txs =
       createChannels
       nullTracer
       codec
-      (fromIntegral . BL.length)
       (localTxSubmissionClientPeer $
        localTxSubmissionClient txs)
       (localTxSubmissionServerPeer $ pure $

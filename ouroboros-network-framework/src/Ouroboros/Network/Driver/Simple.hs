@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns          #-}
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE PolyKinds             #-}
@@ -27,6 +28,7 @@ module Ouroboros.Network.Driver.Simple
   , Role (..)
   , DecoderFailure (..)
     -- * Util
+  , BearerBytes (..)
   , runDecoderWithChannel
   , runDecoderWithChannel_DecodeDone
     -- * Connected peers
@@ -37,7 +39,8 @@ module Ouroboros.Network.Driver.Simple
   ) where
 
 import Control.Applicative ((<|>))
-
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BL
 import Data.IntMap (IntMap)
 import Data.IntMap qualified as IntMap
 
@@ -124,20 +127,27 @@ instance Show DecoderFailure where
 instance Exception DecoderFailure where
 
 
+class BearerBytes bytes where
+    bearerBytesSize :: bytes -> Word
+
+instance BearerBytes BS.ByteString where bearerBytesSize = fromIntegral . BS.length
+instance BearerBytes BL.ByteString where bearerBytesSize = fromIntegral . BL.length
+instance BearerBytes [Char] where bearerBytesSize = fromIntegral . length
+instance BearerBytes (AnyMessage msg) where bearerBytesSize = const 1
+
 driverSimple :: forall ps (pr :: PeerRole) failure bytes m.
                 ( MonadMonotonicTime m
                 , MonadThrow         m
                 , ShowProxy ps
                 , forall (st' :: ps) tok. tok ~ StateToken st' => Show tok
                 , Show failure
+                , BearerBytes bytes
                 )
              => Tracer m (TraceSendRecv ps)
              -> Codec ps failure m bytes
-             -> (bytes -> Word)
-                -- ^ bytes size
              -> Channel m bytes
              -> Driver ps pr (Maybe (Reception bytes)) m
-driverSimple tracer Codec{encode, decode} size channel@Channel{send} =
+driverSimple tracer Codec{encode, decode} channel@Channel{send} =
     Driver { sendMessage, recvMessage, initialDState = Nothing }
   where
     sendMessage :: forall (st :: ps) (st' :: ps).
@@ -160,7 +170,7 @@ driverSimple tracer Codec{encode, decode} size channel@Channel{send} =
     recvMessage !_ trailing = do
       let tok = stateToken
       decoder <- decode tok
-      result  <- runDecoderWithChannel size channel trailing decoder
+      result  <- runDecoderWithChannel channel trailing decoder
       case result of
         Right (SomeMessage !msg, mbTm, trailing') -> do
           traceWith tracer (TraceRecvMsg mbTm (AnyMessage msg))
@@ -180,18 +190,17 @@ runPeer
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
      , Show failure
+     , BearerBytes bytes
      )
   => Tracer m (TraceSendRecv ps)
   -> Codec ps failure m bytes
-  -> (bytes -> Word)
-     -- ^ bytes size
   -> Channel m bytes
   -> Peer ps pr NonPipelined st m a
   -> m (a, Maybe (Reception bytes))
-runPeer tracer codec size channel peer =
+runPeer tracer codec channel peer =
     runPeerWithDriver driver peer
   where
-    driver = driverSimple tracer codec size channel
+    driver = driverSimple tracer codec channel
 
 
 -- | Run a pipelined peer with the given channel via the given codec.
@@ -209,18 +218,17 @@ runPipelinedPeer
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
      , Show failure
+     , BearerBytes bytes
      )
   => Tracer m (TraceSendRecv ps)
   -> Codec ps failure m bytes
-  -> (bytes -> Word)
-     -- ^ bytes size
   -> Channel m bytes
   -> PeerPipelined ps pr st m a
   -> m (a, Maybe (Reception bytes))
-runPipelinedPeer tracer codec size channel peer =
+runPipelinedPeer tracer codec channel peer =
     runPipelinedPeerWithDriver driver peer
   where
-    driver = driverSimple tracer codec size channel
+    driver = driverSimple tracer codec channel
 
 --
 -- Utils
@@ -243,16 +251,16 @@ runDecoderWithChannel_DecodeDone tms rsz nTrailing =
     in
     (mbTm, tms')
 
-runDecoderWithChannel :: Monad m
-                      => (bytes -> Word)
-                      -- ^ byte size
-                      -> Channel m bytes
+runDecoderWithChannel :: (Monad m, BearerBytes bytes)
+                      => Channel m bytes
                       -> Maybe (Reception bytes)
                       -> DecodeStep bytes failure m a
                       -> m (Either failure (a, Maybe Time, Maybe (Reception bytes)))
-runDecoderWithChannel size Channel{recv} =
+runDecoderWithChannel Channel{recv} =
     \trailing step -> go IntMap.empty 0 trailing step
   where
+    size = bearerBytesSize
+
     go tms rsz _ (DecodeDone x trailing) =
         let (mbTm, tms') =
                 runDecoderWithChannel_DecodeDone
@@ -289,24 +297,23 @@ runConnectedPeers :: forall ps pr st failure bytes m a b.
                      , ShowProxy ps
                      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
                      , Show failure
+                     , BearerBytes bytes
                      )
                   => m (Channel m bytes, Channel m bytes)
                   -> Tracer m (Role, TraceSendRecv ps)
                   -> Codec ps failure m bytes
-                  -> (bytes -> Word)
-                     -- ^ bytes size
                   -> Peer ps             pr  NonPipelined st m a
                   -> Peer ps (FlipAgency pr) NonPipelined st m b
                   -> m (a, b)
-runConnectedPeers createChannels tracer codec size client server =
+runConnectedPeers createChannels tracer codec client server =
     createChannels >>= \(clientChannel, serverChannel) ->
 
     (do labelThisThread "client"
-        fst <$> runPeer tracerClient codec size clientChannel client
+        fst <$> runPeer tracerClient codec clientChannel client
     )
       `concurrently`
     (do labelThisThread "server"
-        fst <$> runPeer tracerServer codec size serverChannel server
+        fst <$> runPeer tracerServer codec serverChannel server
     )
   where
     tracerClient = contramap ((,) Client) tracer
@@ -319,21 +326,20 @@ runConnectedPeersPipelined :: ( MonadAsync         m
                               , ShowProxy ps
                               , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
                               , Show failure
+                              , BearerBytes bytes
                               )
                            => m (Channel m bytes, Channel m bytes)
                            -> Tracer m (Role, TraceSendRecv ps)
                            -> Codec ps failure m bytes
-                           -> (bytes -> Word)
-                              -- ^ bytes size
                            -> PeerPipelined ps             pr               st m a
                            -> Peer          ps (FlipAgency pr) NonPipelined st m b
                            -> m (a, b)
-runConnectedPeersPipelined createChannels tracer codec size client server =
+runConnectedPeersPipelined createChannels tracer codec client server =
     createChannels >>= \(clientChannel, serverChannel) ->
 
-    (fst <$> runPipelinedPeer tracerClient codec size clientChannel client)
+    (fst <$> runPipelinedPeer tracerClient codec clientChannel client)
       `concurrently`
-    (fst <$> runPeer          tracerServer codec size serverChannel server)
+    (fst <$> runPeer          tracerServer codec serverChannel server)
   where
     tracerClient = contramap ((,) Client) tracer
     tracerServer = contramap ((,) Server) tracer
@@ -349,22 +355,21 @@ runConnectedPeersAsymmetric
        , ShowProxy ps
        , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
        , Show failure
+       , BearerBytes bytes
        )
     => m (Channel m bytes, Channel m bytes)
     -> Tracer m (Role, TraceSendRecv ps)
     -> Codec ps failure m bytes
     -> Codec ps failure m bytes
-    -> (bytes -> Word)
-       -- ^ bytes size
     -> Peer ps             pr  NonPipelined st m a
     -> Peer ps (FlipAgency pr) NonPipelined st m b
     -> m (a, b)
-runConnectedPeersAsymmetric createChannels tracer codec codec' size client server =
+runConnectedPeersAsymmetric createChannels tracer codec codec' client server =
     createChannels >>= \(clientChannel, serverChannel) ->
 
-    (fst <$> runPeer tracerClient codec  size clientChannel client)
+    (fst <$> runPeer tracerClient codec  clientChannel client)
       `concurrently`
-    (fst <$> runPeer tracerServer codec' size serverChannel server)
+    (fst <$> runPeer tracerServer codec' serverChannel server)
   where
     tracerClient = contramap ((,) Client) tracer
     tracerServer = contramap ((,) Server) tracer

@@ -39,7 +39,7 @@ import Network.TypedProtocol.Stateful.Driver
 import Network.TypedProtocol.Stateful.Peer
 
 import Ouroboros.Network.Channel
-import Ouroboros.Network.Driver.Simple (DecoderFailure (..), Role (..), runDecoderWithChannel)
+import Ouroboros.Network.Driver.Simple (BearerBytes, DecoderFailure (..), Role (..), runDecoderWithChannel)
 import Ouroboros.Network.Util.ShowProxy
 
 import Control.Monad.Class.MonadAsync
@@ -82,14 +82,13 @@ driverStateful :: forall ps (pr :: PeerRole) failure bytes (f :: ps -> Type) m.
                 , Show failure
                 , forall (st' :: ps) tok. tok ~ StateToken st' => Show tok
                 , ShowProxy ps
+                , BearerBytes bytes
                 )
              => Tracer m (TraceSendRecv ps f)
              -> Codec ps failure f m bytes
-             -> (bytes -> Word)
-                 -- ^ byte size
              -> Channel m bytes
              -> Driver ps pr bytes failure (Maybe (Reception bytes)) f m
-driverStateful tracer Codec{encode, decode} size channel@Channel{send} = do
+driverStateful tracer Codec{encode, decode} channel@Channel{send} = do
     Driver { sendMessage
            , recvMessage
            , initialDState = Nothing
@@ -121,7 +120,7 @@ driverStateful tracer Codec{encode, decode} size channel@Channel{send} = do
     recvMessage !_ f trailing = do
       let tok = stateToken
       decoder <- decode tok f
-      result  <- runDecoderWithChannel size channel trailing decoder
+      result  <- runDecoderWithChannel channel trailing decoder
       case result of
         Right (SomeMessage msg, mbTm, trailing') -> do
           traceWith tracer (TraceRecvMsg mbTm (AnyMessage f msg))
@@ -142,19 +141,18 @@ runPeer
      , Show failure
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
      , ShowProxy ps
+     , BearerBytes bytes
      )
   => Tracer m (TraceSendRecv ps f)
   -> Codec ps failure f m bytes
-  -> (bytes -> Word)
-     -- ^ byte size
   -> Channel m bytes
   -> f st
   -> Peer ps pr st f m a
   -> m (a, Maybe (Reception bytes))
-runPeer tracer codec size channel f peer =
+runPeer tracer codec channel f peer =
     runPeerWithDriver driver f peer
   where
-    driver = driverStateful tracer codec size channel
+    driver = driverStateful tracer codec channel
 
 
 
@@ -177,25 +175,24 @@ runConnectedPeers :: forall ps pr st failure bytes f m a b.
                      , Show failure
                      , forall (st' :: ps) tok. tok ~ StateToken st' => Show tok
                      , ShowProxy ps
+                     , BearerBytes bytes
                      )
                   => m (Channel m bytes, Channel m bytes)
                   -> Tracer m (Role, TraceSendRecv ps f)
                   -> Codec ps failure f m bytes
-                  -> (bytes -> Word)
-                     -- ^ size
                   -> f st
                   -> Peer ps             pr  st f m a
                   -> Peer ps (FlipAgency pr) st f m b
                   -> m (a, b)
-runConnectedPeers createChannels tracer codec size f client server =
+runConnectedPeers createChannels tracer codec f client server =
     createChannels >>= \(clientChannel, serverChannel) ->
 
     (do labelThisThread "client"
-        fst <$> runPeer tracerClient codec size clientChannel f client
+        fst <$> runPeer tracerClient codec clientChannel f client
     )
       `concurrently`
     (do labelThisThread "server"
-        fst <$> runPeer tracerServer codec size serverChannel f server
+        fst <$> runPeer tracerServer codec serverChannel f server
     )
   where
     tracerClient = contramap (Client,) tracer
@@ -212,23 +209,22 @@ runConnectedPeersAsymmetric
        , Show failure
        , forall (st' :: ps) tok. tok ~ StateToken st' => Show tok
        , ShowProxy ps
+       , BearerBytes bytes
        )
     => m (Channel m bytes, Channel m bytes)
     -> Tracer m (Role, TraceSendRecv ps f)
     -> Codec ps failure f m bytes
     -> Codec ps failure f m bytes
-    -> (bytes -> Word)
-       -- ^ bytes size
     -> f st
     -> Peer ps             pr  st f m a
     -> Peer ps (FlipAgency pr) st f m b
     -> m (a, b)
-runConnectedPeersAsymmetric createChannels tracer codec codec' size f client server =
+runConnectedPeersAsymmetric createChannels tracer codec codec' f client server =
     createChannels >>= \(clientChannel, serverChannel) ->
 
-    (fst <$> runPeer tracerClient codec  size clientChannel f client)
+    (fst <$> runPeer tracerClient codec  clientChannel f client)
       `concurrently`
-    (fst <$> runPeer tracerServer codec' size serverChannel f server)
+    (fst <$> runPeer tracerServer codec' serverChannel f server)
   where
     tracerClient = contramap (Client,) tracer
     tracerServer = contramap (Server,) tracer

@@ -35,7 +35,6 @@ import Control.Monad.Fix (MonadFix)
 import Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)
 
 import Data.ByteString.Lazy (ByteString)
-import Data.ByteString.Lazy qualified as LBS
 import Data.Either (partitionEithers)
 import Data.Functor (($>))
 import Data.Hashable (Hashable)
@@ -354,7 +353,6 @@ withBidirectionalConnectionManager snocket makeBearer socket
         (mkMiniProtocolCbFromPeer
           (\_ctx -> ( ("Initiator",protocolNum,) `contramap` debugTracer -- TraceSendRecv
                     , codecReqResp @Int @Int
-                    , fromIntegral . LBS.length
                     , Effect $ do
                         reqs <-
                           atomically $ do
@@ -369,7 +367,6 @@ withBidirectionalConnectionManager snocket makeBearer socket
         (mkMiniProtocolCbFromPeer
           (\_ctx -> ( ("Responder",protocolNum,) `contramap` debugTracer -- TraceSendRecv
                     , codecReqResp @Int @Int
-                    , fromIntegral . LBS.length
                     , Effect $ reqRespServerPeer <$> reqRespServerId
                     )
           ))

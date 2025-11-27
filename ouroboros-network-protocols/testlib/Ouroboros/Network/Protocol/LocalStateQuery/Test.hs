@@ -19,7 +19,6 @@ module Ouroboros.Network.Protocol.LocalStateQuery.Test
 import Codec.CBOR.Decoding qualified as CBOR
 import Codec.CBOR.Encoding qualified as CBOR
 import Data.ByteString.Lazy (ByteString)
-import Data.ByteString.Lazy qualified as BL
 import Data.Map (Map)
 import Data.Map qualified as Map
 
@@ -219,7 +218,6 @@ prop_channel createChannels input = do
         createChannels
         nullTracer
         codec
-        (fromIntegral . BL.length)
         StateIdle
         (localStateQueryClientPeer $
          localStateQueryClient clientInput)

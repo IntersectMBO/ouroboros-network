@@ -11,6 +11,10 @@
 --
 module Test.Mux.ReqResp where
 
+import Control.Applicative ((<|>))
+import Data.IntMap (IntMap)
+import Data.IntMap.Strict qualified as IntMap
+
 import Codec.CBOR.Decoding (Decoder)
 import Codec.CBOR.Decoding qualified as CBOR hiding (Done, Fail)
 import Codec.CBOR.Encoding qualified as CBOR
@@ -19,9 +23,6 @@ import Codec.Serialise (Serialise (..), serialise)
 import Control.Monad.Primitive
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
-
-import Data.IntMap (IntMap)
-import Data.IntMap qualified as IntMap
 
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadTime.SI (Time)

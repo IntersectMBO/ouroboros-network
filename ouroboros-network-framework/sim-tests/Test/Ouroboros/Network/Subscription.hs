@@ -572,7 +572,6 @@ prop_send_recv f xs _first = ioProperty $ withIOManager $ \iocp -> do
           MiniProtocolCb $ \_ctx channel -> do
             (r, trailing) <- runPeer (tagTrace "Responder" activeTracer)
                          ReqResp.codecReqResp
-                         (fromIntegral . BL.length)
                          channel
                          (ReqResp.reqRespServerPeer (ReqResp.reqRespServerMapAccumL (\a -> pure . f a) 0))
             atomically $ putTMVar sv r
@@ -589,7 +588,6 @@ prop_send_recv f xs _first = ioProperty $ withIOManager $ \iocp -> do
           MiniProtocolCb $ \_ctx channel -> do
             (r, trailing) <- runPeer (tagTrace "Initiator" activeTracer)
                          ReqResp.codecReqResp
-                         (fromIntegral . BL.length)
                          channel
                          (ReqResp.reqRespClientPeer (ReqResp.reqRespClientMap xs))
             atomically $ putTMVar cv r
@@ -731,7 +729,6 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
             (MiniProtocolCb $ \_ctx channel -> do
              (r, trailing) <- runPeer (tagTrace (rrcTag ++ " Initiator") activeTracer)
                          ReqResp.codecReqResp
-                         (fromIntegral . BL.length)
                          channel
                          (ReqResp.reqRespClientPeer (ReqResp.reqRespClientMap xs))
              atomically $ putTMVar rrcClientVar r
@@ -743,7 +740,6 @@ prop_send_recv_init_and_rsp f xs = ioProperty $ withIOManager $ \iocp -> do
             (MiniProtocolCb $ \_ctx channel -> do
              (r, trailing) <- runPeer (tagTrace (rrcTag ++ " Responder") activeTracer)
                          ReqResp.codecReqResp
-                         (fromIntegral . BL.length)
                          channel
                          (ReqResp.reqRespServerPeer (ReqResp.reqRespServerMapAccumL
                            (\a -> pure . f a) 0))

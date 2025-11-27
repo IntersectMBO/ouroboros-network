@@ -266,7 +266,7 @@ clientServerSimulation payloads =
                           mux reqRespProtocolNum
                           Mx.ResponderDirectionOnly
                           Mx.StartOnDemand
-                          (\channel -> runPeer tr codecReqResp (fromIntegral . BL.length)
+                          (\channel -> runPeer tr codecReqResp
                                                channel
                                                serverPeer)
               withAsync
@@ -308,7 +308,7 @@ clientServerSimulation payloads =
                               mux reqRespProtocolNum
                               InitiatorDirectionOnly
                               StartEagerly
-                              (\channel -> runPeer tr codecReqResp (fromIntegral . BL.length)
+                              (\channel -> runPeer tr codecReqResp
                                                    channel
                                                    clientPeer)
                   bearer <- Mx.getBearer makeFDBearer 10 nullTracer fd Nothing

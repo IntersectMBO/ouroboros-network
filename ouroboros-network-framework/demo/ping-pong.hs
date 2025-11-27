@@ -142,7 +142,6 @@ clientPingPong pipelined =
       mkMiniProtocolCbFromPeerPipelined $ \_ctx ->
         ( contramap show stdoutTracer
         , codecPingPong
-        , fromIntegral . LBS.length
         , void $ pingPongClientPeerPipelined (pingPongClientPipelinedMax 5)
         )
 
@@ -151,7 +150,6 @@ clientPingPong pipelined =
       mkMiniProtocolCbFromPeer $ \_ctx ->
         ( contramap show stdoutTracer
         , codecPingPong
-        , fromIntegral . LBS.length
         , pingPongClientPeer (pingPongClientCount 5)
         )
 
@@ -187,7 +185,6 @@ serverPingPong =
       mkMiniProtocolCbFromPeer $ \_ctx ->
         ( tracer
         , codecPingPong
-        , fromIntegral . LBS.length
         , pingPongServerPeer pingPongServerStandard
         )
 
@@ -242,7 +239,6 @@ clientPingPong2 =
       mkMiniProtocolCbFromPeer $ \_ctx ->
         ( contramap (show . (,) (1 :: Int)) tracer
         , codecPingPong
-        , fromIntegral . LBS.length
         , pingPongClientPeer (pingPongClientCount 5)
         )
 
@@ -251,7 +247,6 @@ clientPingPong2 =
       mkMiniProtocolCbFromPeer $ \_ctx ->
         ( contramap (show . (,) (2 :: Int)) tracer
         , codecPingPong
-        , fromIntegral . LBS.length
         , pingPongClientPeer (pingPongClientCount 5)
         )
 
@@ -287,7 +282,6 @@ serverPingPong2 =
       mkMiniProtocolCbFromPeer $ \_ctx ->
         ( contramap (show . (,) (1 :: Int)) tracer
         , codecPingPong
-        , fromIntegral . LBS.length
         , pingPongServerPeer pingPongServerStandard
         )
 
@@ -296,7 +290,6 @@ serverPingPong2 =
       mkMiniProtocolCbFromPeer $ \_ctx ->
         ( contramap (show . (,) (2 :: Int)) tracer
         , codecPingPong
-        , fromIntegral . LBS.length
         , pingPongServerPeer pingPongServerStandard
         )
 

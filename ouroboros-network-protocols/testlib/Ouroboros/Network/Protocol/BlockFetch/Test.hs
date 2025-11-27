@@ -15,7 +15,6 @@ module Ouroboros.Network.Protocol.BlockFetch.Test (tests) where
 import Codec.Serialise qualified as S
 import Control.Monad.ST (runST)
 import Data.ByteString.Lazy (ByteString)
-import qualified Data.ByteString.Lazy as BL
 
 import Control.Monad.Class.MonadAsync (MonadAsync)
 import Control.Monad.Class.MonadST (MonadST)
@@ -292,7 +291,6 @@ prop_channel createChannels chain points = do
       runConnectedPeers
         createChannels nullTracer
         codec
-        (fromIntegral . BL.length)
         (blockFetchClientPeer (testClient chain points))
         (blockFetchServerPeer (testServer chain))
     return $ reverse bodies === concat (receivedBlockBodies chain points)

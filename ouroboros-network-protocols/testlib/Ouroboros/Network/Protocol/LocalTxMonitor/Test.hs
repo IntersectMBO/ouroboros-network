@@ -12,7 +12,6 @@ module Ouroboros.Network.Protocol.LocalTxMonitor.Test (tests) where
 import Codec.Serialise (Serialise)
 import Codec.Serialise qualified as S
 import Data.ByteString.Lazy (ByteString)
-import Data.ByteString.Lazy qualified as BL
 
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadST
@@ -169,7 +168,7 @@ prop_channel :: (MonadAsync m, MonadCatch m, MonadMonotonicTime m, MonadST m)
              -> (SlotNo, [Tx])
              -> m Bool
 prop_channel createChannels (slot, txs) = do
-  ((txs', _), ()) <- runConnectedPeers createChannels nullTracer codec (fromIntegral . BL.length)
+  ((txs', _), ()) <- runConnectedPeers createChannels nullTracer codec
                         (localTxMonitorClientPeer $
                           localTxMonitorClient txId)
                         (localTxMonitorServerPeer $

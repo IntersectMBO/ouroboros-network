@@ -33,8 +33,7 @@ import Ouroboros.Network.Protocol.TxSubmission2.Type
 
 -- | Byte Limits.
 byteLimitsTxSubmission2 :: forall bytes txid tx.
-                           (bytes -> Word)
-                        -> ProtocolSizeLimits (TxSubmission2 txid tx) bytes
+                           ProtocolSizeLimits (TxSubmission2 txid tx) bytes
 byteLimitsTxSubmission2 = ProtocolSizeLimits stateToLimit
   where
     stateToLimit :: forall (st :: TxSubmission2 txid tx).

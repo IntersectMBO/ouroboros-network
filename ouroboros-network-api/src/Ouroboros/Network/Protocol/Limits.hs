@@ -19,9 +19,7 @@ import Ouroboros.Network.Util.ShowProxy
 
 data ProtocolSizeLimits ps bytes = ProtocolSizeLimits {
        sizeLimitForState :: forall (st :: ps). ActiveState st
-                         => StateToken st -> Word,
-
-       dataSize          :: bytes -> Word
+                         => StateToken st -> Word
      }
 
 newtype ProtocolTimeLimits ps = ProtocolTimeLimits {

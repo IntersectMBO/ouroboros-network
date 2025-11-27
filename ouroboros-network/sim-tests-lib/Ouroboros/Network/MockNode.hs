@@ -308,7 +308,6 @@ relayNode _nid initChain chans = do
       let consumer = chainSyncClientPeer (chainSyncClientExample chainVar pureClient)
       void $ forkIO $ void $ runPeer nullTracer
                                    codecChainSyncId
-                                   (const 1)
                                    channel
                                    consumer
       return chainVar
@@ -323,7 +322,6 @@ relayNode _nid initChain chans = do
       -- it. FIXME: use async...
       void $ forkIO $ void $ runPeer nullTracer
                                      codecChainSyncId
-                                     (const 1)
                                      channel
                                      producer
 

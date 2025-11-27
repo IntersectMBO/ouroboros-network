@@ -10,7 +10,6 @@
 module Test.Ouroboros.Network.Mux (tests) where
 
 import Codec.Serialise (Serialise (..))
-import Data.ByteString.Lazy qualified as BL
 import Data.Functor (void)
 import Data.Monoid.Synchronisation (FirstToFinish (..))
 
@@ -127,7 +126,6 @@ demo chain0 updates delay = do
                  encode             decode
                  encode             decode
                 (encodeTip encode) (decodeTip decode)
-            , fromIntegral . BL.length
             , consumerPeer
             )
 
@@ -146,7 +144,6 @@ demo chain0 updates delay = do
                  encode             decode
                  encode             decode
                 (encodeTip encode) (decodeTip decode)
-            , fromIntegral . BL.length
             , producerPeer
             )
 

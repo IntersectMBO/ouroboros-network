@@ -353,10 +353,10 @@ mkMiniProtocolCbFromPeer
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
      , Show failure
+     , BearerBytes bytes
      )
   => (ctx -> ( Tracer m (TraceSendRecv ps)
              , Codec ps failure m bytes
-             , bytes -> Word
              , Peer ps pr NonPipelined st m a
              )
      )
@@ -364,8 +364,8 @@ mkMiniProtocolCbFromPeer
 mkMiniProtocolCbFromPeer fn =
     MiniProtocolCb $ \ctx channel ->
       case fn ctx of
-        (tracer, codec, size, peer) ->
-          runPeer tracer codec size channel peer
+        (tracer, codec, peer) ->
+          runPeer tracer codec channel peer
 
 -- | Create a 'MuxPeer' from a tracer, codec and 'Stateful.Peer'.
 --
@@ -377,10 +377,10 @@ mkMiniProtocolCbFromPeerSt
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
      , Show failure
+     , BearerBytes bytes
      )
   => (ctx -> ( Tracer m (Stateful.TraceSendRecv ps f)
              , Stateful.Codec ps failure f m bytes
-             , bytes -> Word
              , f st
              , Stateful.Peer ps pr st f m a
              )
@@ -389,8 +389,8 @@ mkMiniProtocolCbFromPeerSt
 mkMiniProtocolCbFromPeerSt fn =
     MiniProtocolCb $ \ctx channel ->
       case fn ctx of
-        (tracer, codec, size, f, peer) ->
-          Stateful.runPeer tracer codec size channel f peer
+        (tracer, codec, f, peer) ->
+          Stateful.runPeer tracer codec channel f peer
 
 
 -- | Create a 'MuxPeer' from a tracer, codec and 'PeerPipelined'.
@@ -403,10 +403,10 @@ mkMiniProtocolCbFromPeerPipelined
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
      , Show failure
+     , BearerBytes bytes
      )
   => (ctx -> ( Tracer m (TraceSendRecv ps)
              , Codec ps failure m bytes
-             , bytes -> Word
              , PeerPipelined ps pr st m a
              )
      )
@@ -414,8 +414,8 @@ mkMiniProtocolCbFromPeerPipelined
 mkMiniProtocolCbFromPeerPipelined fn =
     MiniProtocolCb $ \ctx channel ->
       case fn ctx of
-        (tracer, codec, size, peer) ->
-          runPipelinedPeer tracer codec size channel peer
+        (tracer, codec, peer) ->
+          runPipelinedPeer tracer codec channel peer
 
 
 contramapMiniProtocolCbCtx :: (ctx -> ctx')

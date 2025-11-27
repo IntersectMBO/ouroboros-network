@@ -31,7 +31,6 @@ import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
 
 import Data.ByteString.Lazy (ByteString)
-import Data.ByteString.Lazy qualified as BSL
 import Data.Foldable as Foldable (find, foldl', toList)
 import Data.Function (on)
 import Data.List (intercalate, nubBy)
@@ -229,7 +228,7 @@ txSubmissionSimulation maxUnacked outboundTxs
       async $ runPeerWithLimits
                 (("OUTBOUND",) `contramap` verboseTracer)
                 txSubmissionCodec2
-                (byteLimitsTxSubmission2 (fromIntegral . BSL.length))
+                byteLimitsTxSubmission2
                 timeLimitsTxSubmission2
                 (maybe id delayChannel outboundDelay outboundChannel)
                 (txSubmissionClientPeer (outboundPeer outboundMempool))
@@ -238,7 +237,7 @@ txSubmissionSimulation maxUnacked outboundTxs
       async $ runPipelinedPeerWithLimits
                 (("INBOUND",) `contramap` verboseTracer)
                 txSubmissionCodec2
-                (byteLimitsTxSubmission2 (fromIntegral . BSL.length))
+                byteLimitsTxSubmission2
                 timeLimitsTxSubmission2
                 (maybe id delayChannel inboundDelay inboundChannel)
                 (txSubmissionServerPeerPipelined (inboundPeer inboundMempool))

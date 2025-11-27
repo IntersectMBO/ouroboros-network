@@ -259,7 +259,6 @@ clientChainSync sockPaths maxSlotNo = withIOManager $ \iocp ->
           mkMiniProtocolCbFromPeer $ \_ctx ->
             ( contramap show stdoutTracer
             , codecChainSync
-            , fromIntegral . LBS.length
             , ChainSync.chainSyncClientPeer (chainSyncClient (continueForever Proxy) maxSlotNo)
             )
 
@@ -301,7 +300,6 @@ serverChainSync sockAddr slotLength seed = withIOManager $ \iocp -> do
           mkMiniProtocolCbFromPeer $ \_ctx ->
             ( contramap show stdoutTracer
             , codecChainSync
-            , fromIntegral . LBS.length
             , ChainSync.chainSyncServerPeer (chainSyncServer prng slotLength)
             )
 
@@ -399,7 +397,6 @@ clientBlockFetch sockAddrs maxSlotNo = withIOManager $ \iocp -> do
                  runPeer
                    nullTracer -- (contramap (show . TraceLabelPeer ("chain-sync", getFilePath $ remoteAddress connId)) stdoutTracer)
                    codecChainSync
-                   (fromIntegral . LBS.length)
                    channel
                    (ChainSync.chainSyncClientPeer
                      (chainSyncClient' continueUntilMaxSlot  maxSlotNo syncTracer currentChainVar chainVar))
@@ -415,7 +412,6 @@ clientBlockFetch sockAddrs maxSlotNo = withIOManager $ \iocp -> do
                 runPipelinedPeer
                   nullTracer -- (contramap (show . TraceLabelPeer ("block-fetch", getFilePath $ remoteAddress connId)) stdoutTracer)
                   codecBlockFetch
-                  (fromIntegral . LBS.length)
                   channel
                   (blockFetchClient (maxBound :: NodeToNodeVersion) continueUntilMaxSlot
                                     nullTracer clientCtx)
@@ -586,7 +582,6 @@ serverBlockFetch sockAddr slotLength seed = withIOManager $ \iocp -> do
       mkMiniProtocolCbFromPeer $ \_ctx ->
         ( contramap show stdoutTracer
         , codecChainSync
-        , fromIntegral . LBS.length
         , ChainSync.chainSyncServerPeer (chainSyncServer prng slotLength)
         )
 
@@ -598,7 +593,6 @@ serverBlockFetch sockAddr slotLength seed = withIOManager $ \iocp -> do
       mkMiniProtocolCbFromPeer $ \_ctx ->
         ( contramap show stdoutTracer
         , codecBlockFetch
-        , fromIntegral . LBS.length
         , BlockFetch.blockFetchServerPeer (blockFetchServer prng)
         )
 

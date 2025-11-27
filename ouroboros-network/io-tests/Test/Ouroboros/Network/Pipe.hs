@@ -173,7 +173,6 @@ demo chain0 updates = do
                                      , ChainSync.codecChainSync encode             decode
                                                                 encode             decode
                                                      (encodeTip encode) (decodeTip decode)
-                                     , fromIntegral . BL.length
                                      , ChainSync.chainSyncClientPeer
                                           (ChainSync.chainSyncClientExample consumerVar
                                             (consumerClient done target consumerVar))
@@ -192,7 +191,6 @@ demo chain0 updates = do
                                      , ChainSync.codecChainSync encode             decode
                                                                 encode             decode
                                                      (encodeTip encode) (decodeTip decode)
-                                     , fromIntegral . BL.length 
                                      , ChainSync.chainSyncServerPeer server
                                      )
 

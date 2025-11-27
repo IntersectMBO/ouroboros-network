@@ -48,7 +48,6 @@ import Control.Tracer (Tracer (..), contramap, nullTracer)
 
 import Codec.Serialise.Class (Serialise)
 import Data.ByteString.Lazy (ByteString)
-import Data.ByteString.Lazy qualified as LBS
 import Data.Functor (($>), (<&>))
 import Data.Hashable
 import Data.List (mapAccumL)
@@ -612,7 +611,6 @@ reqRespSizeLimits :: forall req resp. ProtocolSizeLimits (ReqResp req resp)
                                                          ByteString
 reqRespSizeLimits = ProtocolSizeLimits
     { sizeLimitForState
-    , dataSize = fromIntegral . LBS.length
     }
   where
     sizeLimitForState :: forall (st :: ReqResp req resp).

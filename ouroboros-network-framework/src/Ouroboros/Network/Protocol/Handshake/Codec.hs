@@ -86,7 +86,7 @@ maxTransmissionUnit = 4 * 1440
 
 -- | Byte limits
 byteLimitsHandshake :: forall vNumber. ProtocolSizeLimits (Handshake vNumber CBOR.Term) ByteString
-byteLimitsHandshake = ProtocolSizeLimits stateToLimit (fromIntegral . BL.length)
+byteLimitsHandshake = ProtocolSizeLimits stateToLimit
   where
     stateToLimit :: forall (st  :: Handshake vNumber CBOR.Term).
                     ActiveState st

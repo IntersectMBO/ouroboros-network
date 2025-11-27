@@ -486,7 +486,7 @@ prop_channel createChannels clientVersions serverVersions =
   in do
     (!clientRes', !serverRes') <-
       runConnectedPeers
-        createChannels nullTracer versionNumberHandshakeCodec (fromIntegral . BL.length)
+        createChannels nullTracer versionNumberHandshakeCodec
         (handshakeClientPeer
           (cborTermVersionDataCodec dataCodecCBORTerm)
           acceptableVersion
@@ -565,7 +565,6 @@ prop_channel_asymmetric createChannels clientVersions = do
         nullTracer
         versionNumberHandshakeCodec
         (codecHandshake versionNumberCodec')
-        (fromIntegral . BL.length)
         (handshakeClientPeer
           (cborTermVersionDataCodec dataCodecCBORTerm)
           acceptableVersion
@@ -954,7 +953,7 @@ prop_query_version :: ( MonadAsync m
 prop_query_version createChannels codec versionDataCodec clientVersions serverVersions setQuery = do
   (clientRes, _serverRes) <-
     runConnectedPeers
-      createChannels nullTracer codec (fromIntegral . BL.length)
+      createChannels nullTracer codec
       (handshakeClientPeer
         versionDataCodec
         acceptableVersion
@@ -998,7 +997,7 @@ prop_peerSharing_symmetric :: ( MonadAsync m
 prop_peerSharing_symmetric createChannels codec versionDataCodec clientVersions serverVersions = do
   (clientRes, serverRes) <-
     runConnectedPeers
-      createChannels nullTracer codec (fromIntegral . BL.length)
+      createChannels nullTracer codec
       (handshakeClientPeer
         versionDataCodec
         acceptableVersion
@@ -1161,11 +1160,11 @@ prop_channel_simultaneous_open createChannels codec versionDataCodec clientVersi
     (clientRes', serverRes') <-
       (fst <$> runPeer nullTracer
                       -- (("client",) `contramap` Tracer Debug.traceShowM)
-                       codec (fromIntegral . BL.length) clientChannel client)
+                       codec clientChannel client)
         `concurrently`
       (fst <$> runPeer nullTracer
                       -- (("server",) `contramap` Tracer Debug.traceShowM)
-                       codec (fromIntegral . BL.length) serverChannel client')
+                       codec serverChannel client')
     pure $
       case (clientRes', serverRes') of
         -- both succeeded, we just check that the application (which is

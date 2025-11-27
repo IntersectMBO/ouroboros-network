@@ -19,7 +19,6 @@ import Control.Monad.Class.MonadTime.SI (MonadMonotonicTime)
 import Control.Monad.IOSim (runSimOrThrow)
 import Control.Monad.ST (runST)
 import Control.Tracer (nullTracer)
-import Data.ByteString.Lazy qualified as BL
 import Data.Foldable as Foldable (foldl')
 import Data.Word (Word8)
 
@@ -28,7 +27,7 @@ import Network.TypedProtocol.Proofs
 
 import Ouroboros.Network.Channel (createConnectedChannels)
 import Ouroboros.Network.Driver.Limits (ProtocolSizeLimits (..))
-import Ouroboros.Network.Driver.Simple (runConnectedPeers)
+import Ouroboros.Network.Driver.Simple (bearerBytesSize, runConnectedPeers)
 import Ouroboros.Network.Protocol.PeerSharing.Client (peerSharingClientPeer)
 import Ouroboros.Network.Protocol.PeerSharing.Codec (byteLimitsPeerSharing,
            codecPeerSharing)
@@ -113,7 +112,6 @@ prop_channel f l = do
     (s, _) <- runConnectedPeers createConnectedChannels
                                 nullTracer
                                 (codecPeerSharing CBOR.encodeInt CBOR.decodeInt)
-                                (fromIntegral . BL.length)
                                 client server
     let compute = Foldable.foldl' (\(x, r) (PeerSharingAmount amount)
                            -> (x + 1, replicate (applyFun f amount) x ++ r))
@@ -188,9 +186,9 @@ prop_codec_splits3 msg =
 prop_byteLimits :: AnyMessage (PeerSharing Int)
                 -> Bool
 prop_byteLimits (AnyMessage (msg :: Message (PeerSharing Int) st st')) =
-        dataSize (encode msg)
+        bearerBytesSize (encode msg)
      <= sizeLimitForState (stateToken :: StateToken st)
   where
     Codec { encode } = codecPeerSharing @IO CBOR.encodeInt CBOR.decodeInt
-    ProtocolSizeLimits { sizeLimitForState, dataSize } =
-      byteLimitsPeerSharing (fromIntegral . BL.length)
+    ProtocolSizeLimits { sizeLimitForState } =
+      byteLimitsPeerSharing

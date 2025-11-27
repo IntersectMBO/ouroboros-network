@@ -2,7 +2,8 @@
 -- | Drivers for running 'Peer's with a 'Codec' and a 'Channel'.
 --
 module Ouroboros.Network.Driver
-  ( runPeer
+  ( BearerBytes (..)
+  , runPeer
   , runPipelinedPeer
   , runPeerWithLimits
   , runPipelinedPeerWithLimits

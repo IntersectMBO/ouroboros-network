@@ -63,7 +63,7 @@ runKeepAliveClient tracer rng controlMessageSTM registry peer channel keepAliveI
     let kacApp dqCtx = runPeerWithLimits
                          nullTracer
                          codecKeepAlive_v2
-                         (byteLimitsKeepAlive (fromIntegral . BL.length))
+                         byteLimitsKeepAlive
                          timeLimitsKeepAlive
                          channel
                          $ keepAliveClientPeer
@@ -85,7 +85,7 @@ runKeepAliveServer channel =
     runPeerWithLimits
         nullTracer
         codecKeepAlive_v2
-        (byteLimitsKeepAlive (fromIntegral . BL.length))
+        byteLimitsKeepAlive
         timeLimitsKeepAlive
         channel
         $ keepAliveServerPeer

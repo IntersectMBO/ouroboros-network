@@ -127,15 +127,12 @@ import Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
            (TracePublicRootPeers)
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
            LocalRootConfig, WarmValency (..))
-import Ouroboros.Network.Protocol.BlockFetch.Codec (byteLimitsBlockFetch,
-           timeLimitsBlockFetch)
+import Ouroboros.Network.Protocol.BlockFetch.Codec (timeLimitsBlockFetch)
 import Ouroboros.Network.Protocol.ChainSync.Codec (ChainSyncTimeout (..),
-           byteLimitsChainSync, timeLimitsChainSync)
-import Ouroboros.Network.Protocol.KeepAlive.Codec (byteLimitsKeepAlive,
-           timeLimitsKeepAlive)
+           timeLimitsChainSync)
+import Ouroboros.Network.Protocol.KeepAlive.Codec (timeLimitsKeepAlive)
 import Ouroboros.Network.Protocol.Limits (shortWait, smallByteLimit)
-import Ouroboros.Network.Protocol.PeerSharing.Codec (byteLimitsPeerSharing,
-           timeLimitsPeerSharing)
+import Ouroboros.Network.Protocol.PeerSharing.Codec (timeLimitsPeerSharing)
 import Ouroboros.Network.Server2 qualified as Server
 import Ouroboros.Network.Snocket (Snocket, TestAddress (..))
 
@@ -1129,14 +1126,14 @@ diffusionSimulation
           limitsAndTimeouts
             = Node.LimitsAndTimeouts
                 { Node.chainSyncLimits      = defaultMiniProtocolsLimit
-                , Node.chainSyncSizeLimits  = byteLimitsChainSync (const 0)
+                , Node.chainSyncSizeLimits  = ProtocolSizeLimits (const maxBound)
                 , Node.chainSyncTimeLimits  =
                     timeLimitsChainSync stdChainSyncTimeout
                 , Node.blockFetchLimits     = defaultMiniProtocolsLimit
-                , Node.blockFetchSizeLimits = byteLimitsBlockFetch (const 0)
+                , Node.blockFetchSizeLimits = ProtocolSizeLimits (const maxBound)
                 , Node.blockFetchTimeLimits = timeLimitsBlockFetch
                 , Node.keepAliveLimits      = defaultMiniProtocolsLimit
-                , Node.keepAliveSizeLimits  = byteLimitsKeepAlive (const 0)
+                , Node.keepAliveSizeLimits  = ProtocolSizeLimits (const maxBound)
                 , Node.keepAliveTimeLimits  = timeLimitsKeepAlive
                 , Node.pingPongLimits       = defaultMiniProtocolsLimit
                 , Node.pingPongSizeLimits   = byteLimitsPingPong
@@ -1146,12 +1143,9 @@ diffusionSimulation
                     ProtocolTimeLimits (const shortWait)
                 , Node.handhsakeSizeLimits  =
                     ProtocolSizeLimits (const (4 * 1440))
-                                       (fromIntegral . BL.length)
                 , Node.peerSharingLimits     = defaultMiniProtocolsLimit
-                , Node.peerSharingTimeLimits =
-                    timeLimitsPeerSharing
-                , Node.peerSharingSizeLimits =
-                    byteLimitsPeerSharing (const 0)
+                , Node.peerSharingTimeLimits = timeLimitsPeerSharing
+                , Node.peerSharingSizeLimits = ProtocolSizeLimits (const maxBound)
 
                 }
 
@@ -1384,7 +1378,7 @@ diffusionSimulation
 --
 
 byteLimitsPingPong :: ProtocolSizeLimits PingPong.PingPong BL.ByteString
-byteLimitsPingPong = ProtocolSizeLimits (const smallByteLimit) (fromIntegral . BL.length)
+byteLimitsPingPong = ProtocolSizeLimits (const smallByteLimit)
 
 timeLimitsPingPong :: ProtocolTimeLimits PingPong.PingPong
 timeLimitsPingPong = ProtocolTimeLimits $ \case

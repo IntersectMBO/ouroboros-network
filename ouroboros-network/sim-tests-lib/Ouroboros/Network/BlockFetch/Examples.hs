@@ -342,7 +342,7 @@ runFetchClient :: (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
 runFetchClient tracer version registry peerid channel client =
     bracketFetchClient registry version peerid $ \clientCtx ->
       fst <$>
-        runPipelinedPeerWithLimits tracer codec (byteLimitsBlockFetch (fromIntegral . LBS.length))
+        runPipelinedPeerWithLimits tracer codec byteLimitsBlockFetch
           timeLimitsBlockFetch channel (client clientCtx)
   where
     codec = codecBlockFetch encode decode encode decode
@@ -357,7 +357,7 @@ runFetchServer :: (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
                 -> m a
 runFetchServer tracer channel server =
     fst <$>
-      runPeerWithLimits tracer codec (byteLimitsBlockFetch (fromIntegral . LBS.length))
+      runPeerWithLimits tracer codec byteLimitsBlockFetch
         timeLimitsBlockFetch channel (blockFetchServerPeer server)
   where
     codec = codecBlockFetch encode decode encode decode

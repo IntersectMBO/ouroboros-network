@@ -19,14 +19,13 @@ import Control.Tracer (nullTracer)
 
 import Codec.CBOR.Read qualified as CBOR
 import Data.ByteString.Lazy (ByteString)
-import Data.ByteString.Lazy qualified as BL
 
 import Network.TypedProtocol.Codec hiding (prop_codec)
 import Network.TypedProtocol.Proofs
 
 import Ouroboros.Network.Channel
 import Ouroboros.Network.Driver.Limits
-import Ouroboros.Network.Driver.Simple (runConnectedPeers)
+import Ouroboros.Network.Driver.Simple (bearerBytesSize, runConnectedPeers)
 
 import Ouroboros.Network.Protocol.KeepAlive.Client
 import Ouroboros.Network.Protocol.KeepAlive.Codec
@@ -108,7 +107,6 @@ prop_channel f n = do
     (s, c) <- runConnectedPeers createConnectedChannels
                                 nullTracer
                                 codecKeepAlive_v2
-                                (fromIntegral . BL.length)
                                 server client
     return ((s, c) === (n, foldr (.) id (replicate n f) 0))
   where
@@ -166,8 +164,8 @@ prop_codec_v2_valid_cbor msg =
 prop_byteLimits :: AnyMessage KeepAlive
                 -> Bool
 prop_byteLimits (AnyMessage (msg :: Message KeepAlive st st')) =
-        dataSize (encode msg)
+        bearerBytesSize (encode msg)
      <= sizeLimitForState (stateToken :: StateToken st)
   where
     Codec { encode } = codecKeepAlive_v2 :: Codec KeepAlive CBOR.DeserialiseFailure IO ByteString
-    ProtocolSizeLimits { sizeLimitForState, dataSize } = byteLimitsKeepAlive (fromIntegral . BL.length)
+    ProtocolSizeLimits { sizeLimitForState } = byteLimitsKeepAlive

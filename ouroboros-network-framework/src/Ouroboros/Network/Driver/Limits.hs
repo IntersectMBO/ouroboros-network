@@ -59,6 +59,7 @@ driverWithLimits :: forall ps (pr :: PeerRole) failure bytes m.
                     , ShowProxy ps
                     , forall (st' :: ps) tok. tok ~ StateToken st' => Show tok
                     , Show failure
+                    , BearerBytes bytes
                     )
                  => Tracer m (TraceSendRecv ps)
                  -> TimeoutFn m
@@ -69,7 +70,7 @@ driverWithLimits :: forall ps (pr :: PeerRole) failure bytes m.
                  -> Driver ps pr (Maybe (Reception bytes)) m
 driverWithLimits tracer timeoutFn
                  Codec{encode, decode}
-                 ProtocolSizeLimits{sizeLimitForState, dataSize}
+                 ProtocolSizeLimits{sizeLimitForState}
                  ProtocolTimeLimits{timeLimitForState}
                  channel@Channel{send} =
     Driver { sendMessage, recvMessage, initialDState = Nothing }
@@ -98,8 +99,7 @@ driverWithLimits tracer timeoutFn
       let sizeLimit = sizeLimitForState @st stateToken
           timeLimit = fromMaybe (-1) (timeLimitForState @st stateToken)
       result  <- timeoutFn timeLimit $
-                   runDecoderWithLimit sizeLimit dataSize
-                                       channel trailing decoder
+                   runDecoderWithLimit sizeLimit channel trailing decoder
 
       case result of
         Just (Right (SomeMessage msg, mbTm, trailing')) -> do
@@ -111,19 +111,19 @@ driverWithLimits tracer timeoutFn
 
 
 runDecoderWithLimit
-    :: forall m bytes failure a. Monad m
+    :: forall m bytes failure a. (Monad m, BearerBytes bytes)
     => Word
     -- ^ message size limit
-    -> (bytes -> Word)
-    -- ^ byte size
     -> Channel m bytes
     -> Maybe (Reception bytes)
     -> DecodeStep bytes failure m a
        -- ^ ASSUMPTION: must not already be 'DecodeDone'
     -> m (Either (Maybe failure) (a, Maybe Time, Maybe (Reception bytes)))
-runDecoderWithLimit limit size Channel{recv} =
+runDecoderWithLimit limit Channel{recv} =
     \trailing step -> go IntMap.empty 0 0 trailing step
   where
+    size = bearerBytesSize
+
     -- Our strategy here is as follows...
     --
     -- We of course want to enforce the maximum data limit, but we also want to
@@ -185,6 +185,7 @@ runPeerWithLimits
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
      , Show failure
+     , BearerBytes bytes
      )
   => Tracer m (TraceSendRecv ps)
   -> Codec ps failure m bytes
@@ -214,6 +215,7 @@ runPipelinedPeerWithLimits
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
      , Show failure
+     , BearerBytes bytes
      )
   => Tracer m (TraceSendRecv ps)
   -> Codec ps failure m bytes
@@ -246,6 +248,7 @@ runConnectedPeersWithLimits
      , Exception failure
      , ShowProxy ps
      , forall (st' :: ps) sing. sing ~ StateToken st' => Show sing
+     , BearerBytes bytes
      )
   => m (Channel m bytes, Channel m bytes)
   -> Tracer m (Role, TraceSendRecv ps)
@@ -264,10 +267,8 @@ runConnectedPeersWithLimits createChannels tracer codec slimits tlimits client s
                                      clientChannel client)
       `concurrently`
     (do labelThisThread "server"
-        fst <$> runPeer tracerServer codec dataSize serverChannel server)
+        fst <$> runPeer tracerServer codec serverChannel server)
   where
-    ProtocolSizeLimits{dataSize} = slimits
-
     tracerClient = contramap ((,) Client) tracer
     tracerServer = contramap ((,) Server) tracer
 
@@ -290,6 +291,7 @@ runConnectedPipelinedPeersWithLimits
      , Exception failure
      , ShowProxy ps
      , forall (st' :: ps) sing. sing ~ StateToken st' => Show sing
+     , BearerBytes bytes
      )
   => m (Channel m bytes, Channel m bytes)
   -> Tracer m (Role, TraceSendRecv ps)
@@ -306,9 +308,7 @@ runConnectedPipelinedPeersWithLimits createChannels tracer codec slimits tlimits
                      tracerClient codec slimits tlimits
                                         clientChannel client)
       `concurrently`
-    (fst <$> runPeer tracerServer codec dataSize serverChannel server)
+    (fst <$> runPeer tracerServer codec serverChannel server)
   where
-    ProtocolSizeLimits{dataSize} = slimits
-
     tracerClient = contramap ((,) Client) tracer
     tracerServer = contramap ((,) Server) tracer

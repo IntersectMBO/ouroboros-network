@@ -14,7 +14,6 @@ import Codec.Serialise qualified as S
 import Control.Monad (unless, void)
 import Control.Monad.ST qualified as ST
 import Data.ByteString.Lazy (ByteString)
-import Data.ByteString.Lazy qualified as BL
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadAsync
@@ -631,8 +630,8 @@ chainSyncDemo clientChan serverChan (ChainProducerStateForkTest cps chain) = do
       client :: ChainSyncClient Block (Point Block) (Tip Block) m ()
       client = ChainSyncExamples.chainSyncClientExample chainVar (testClient doneVar (Chain.headPoint pchain))
 
-  void $ forkIO (void $ runPeer nullTracer codec (fromIntegral . BL.length) serverChan (chainSyncServerPeer server))
-  void $ forkIO (void $ runPeer nullTracer codec (fromIntegral . BL.length) clientChan (chainSyncClientPeer client))
+  void $ forkIO (void $ runPeer nullTracer codec serverChan (chainSyncServerPeer server))
+  void $ forkIO (void $ runPeer nullTracer codec clientChan (chainSyncClientPeer client))
 
   atomically $ do
     done <- readTVar doneVar
@@ -701,8 +700,8 @@ chainSyncDemoPipelined clientChan serverChan mkClient (ChainProducerStateForkTes
       client :: ChainSyncClientPipelined Block (Point Block) (Tip Block) m ()
       client = mkClient chainVar (testClient doneVar (Chain.headPoint pchain))
 
-  void $ forkIO (void $ runPeer nullTracer codec (fromIntegral . BL.length) serverChan (chainSyncServerPeer server))
-  void $ forkIO (void $ runPipelinedPeer nullTracer codec (fromIntegral . BL.length) clientChan (chainSyncClientPeerPipelined client))
+  void $ forkIO (void $ runPeer nullTracer codec serverChan (chainSyncServerPeer server))
+  void $ forkIO (void $ runPipelinedPeer nullTracer codec clientChan (chainSyncClientPeerPipelined client))
 
   atomically $ do
     done <- readTVar doneVar

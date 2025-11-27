@@ -31,8 +31,7 @@ import Ouroboros.Network.Protocol.Limits
 
 -- | Byte Limit.
 byteLimitsBlockFetch :: forall bytes block point.
-                        (bytes -> Word)
-                     -> ProtocolSizeLimits (BlockFetch block point) bytes
+                        ProtocolSizeLimits (BlockFetch block point) bytes
 byteLimitsBlockFetch = ProtocolSizeLimits stateToLimit
   where
     stateToLimit :: forall (st :: BlockFetch block point).
