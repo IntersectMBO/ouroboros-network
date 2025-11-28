@@ -1,19 +1,14 @@
-{-# LANGUAGE BangPatterns               #-}
-{-# LANGUAGE CPP                        #-}
-{-# LANGUAGE DeriveFunctor              #-}
-{-# LANGUAGE DerivingStrategies         #-}
-{-# LANGUAGE DerivingVia                #-}
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE GeneralisedNewtypeDeriving #-}
-{-# LANGUAGE LambdaCase                 #-}
-{-# LANGUAGE NamedFieldPuns             #-}
-{-# LANGUAGE NumericUnderscores         #-}
-{-# LANGUAGE RankNTypes                 #-}
-{-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE StandaloneDeriving         #-}
-{-# LANGUAGE TypeApplications           #-}
-{-# LANGUAGE ViewPatterns               #-}
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE CPP                 #-}
+{-# LANGUAGE DerivingVia         #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE ViewPatterns        #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
@@ -3461,15 +3456,15 @@ prop_governor_target_active_big_ledger_peers_above (MaxTime maxTime) env =
 --
 prop_governor_target_established_local :: MaxTime -> GovernorMockEnvironment -> Property
 prop_governor_target_established_local (MaxTime maxTime) env =
-    let events = Signal.eventsFromListUpToTime maxTime
+    let trace = runGovernorInMockEnvironment env
+        events = Signal.eventsFromListUpToTime maxTime
                . selectPeerSelectionTraceEvents
                    @Cardano.ExtraState
                    @PeerTrustable
                    @(Cardano.ExtraPeers PeerAddr)
                    @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
                    @Cardano.ExtraTrace
-               . runGovernorInMockEnvironment
-               $ env
+               $ trace
 
         govLocalRootPeersSig :: Signal (LocalRootPeers PeerTrustable PeerAddr)
         govLocalRootPeersSig =
@@ -3541,16 +3536,22 @@ prop_governor_target_established_local (MaxTime maxTime) env =
 
         promotionOpportunities :: Signal (Set PeerAddr)
         promotionOpportunities =
-          (\local established estBig recentFailures promoteCold ->
+          (\local established establishedBig recentFailures promoteCold ->
                 Set.unions
-                  [opportunity
+                  [ opportunity
                   | (_, WarmValency warmTarget, group) <- LocalRootPeers.toGroupSets local
                   , let opportunity
-                          | Set.size (Set.intersection
-                                       group (established `Set.union` estBig)) >= warmTarget = Set.empty
-                          | otherwise = group
+                          |   Set.size (group `Set.intersection` (established `Set.union` establishedBig))
+                            + Set.size (group `Set.intersection` promoteCold)
+                            -- add those peers that are being promoted to warm,
+                            -- since peer selection is making progress on them
+                            >= warmTarget
+                          = Set.empty
+
+                          | otherwise
+                          = group
                   ]
-                  Set.\\ Set.unions [established, estBig, recentFailures, promoteCold]
+                  Set.\\ Set.unions [established, establishedBig, recentFailures, promoteCold]
           ) <$> govLocalRootPeersSig
             <*> govEstablishedPeersSig
             <*> govEstablishedBigPeersSig
@@ -3564,18 +3565,19 @@ prop_governor_target_established_local (MaxTime maxTime) env =
             id
             promotionOpportunities
 
-     in counterexample
+     in counterexample (ppTrace_ (Trace.takeWhile (\e -> seTime e <= maxTime) trace)) $
+        counterexample
           ("\nSignal key: (local root peers, established peers, " ++
            "recent failures, opportunities, ignored too long)") $
 
         signalProperty 20 show
           (\(_,_,_,_,_,toolong) -> Set.null toolong)
           ((,,,,,) <$> govLocalRootPeersSig
-                  <*> govEstablishedPeersSig
-                  <*> govEstablishedFailuresSig
-                  <*> govInProgressPromoteColdSig
-                  <*> promotionOpportunities
-                  <*> promotionOpportunitiesIgnoredTooLong)
+                   <*> govEstablishedPeersSig
+                   <*> govEstablishedFailuresSig
+                   <*> govInProgressPromoteColdSig
+                   <*> promotionOpportunities
+                   <*> promotionOpportunitiesIgnoredTooLong)
 
 
 -- | A variant of 'prop_governor_target_active_below' but for the target that
