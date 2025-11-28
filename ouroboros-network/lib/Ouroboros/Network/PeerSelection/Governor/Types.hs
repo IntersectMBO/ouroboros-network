@@ -151,7 +151,7 @@ data PeerSelectionPolicy peeraddr m = PeerSelectionPolicy {
        policyPeerShareActivationDelay   :: !DiffTime,
        -- ^ Delay until we consider a peer suitable for peer sharing
        policyMaxConnectionRetries       :: !Int
-       -- ^ Maximum cold promotion attempts for non localroots, and bootstrap peers
+       -- ^ Maximum cold promotion attempts (excluding localroots and bootstrap peers)
      }
 
 
