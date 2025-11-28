@@ -113,6 +113,8 @@ module Ouroboros.Network.ConnectionManager.Types
   , resultInState
   , DemotedToColdRemoteTr (..)
   , AcquireOutboundConnection
+  , ConnectionMode (..)
+  , inboundRequired
   , IncludeInboundConnection
     -- *** Outbound side
   , acquireOutboundConnection
@@ -488,9 +490,24 @@ data Connected peerAddr handle handleError =
     --
   | Disconnected !(ConnectionId peerAddr) !(DisconnectionException handleError)
 
+-- | Describes the behavior for handling connections when no inbound connection
+-- is found.
+--  - 'CreateNewIfNoInbound': If no inbound connection exists, create a new
+-- conection.
+--  - 'RequireInbound': Strictly require an inbound connection; fail if none
+-- exists.
+data ConnectionMode
+    = CreateNewIfNoInbound
+    | RequireInbound
+    deriving Show
+
+inboundRequired :: ConnectionMode -> Bool
+inboundRequired RequireInbound = True
+inboundRequired _other         = False
 
 type AcquireOutboundConnection peerAddr handle handleError m
-    = DiffusionMode -> peerAddr -> m (Connected peerAddr handle handleError)
+    = DiffusionMode -> peerAddr -> ConnectionMode -> m (Connected peerAddr handle handleError)
+
 type IncludeInboundConnection socket peerAddr handle handleError m
     = Word32
     -- ^ inbound connections hard limit.
@@ -714,6 +731,11 @@ data ConnectionManagerError peerAddr
     --
     | ForbiddenConnection   !(ConnectionId peerAddr) !CallStack
 
+    -- | No matching inbound connection found and creating new connection is
+    -- not allowed.
+    --
+    | InboundConnectionNotFound !ConnectionMode !peerAddr !CallStack
+
     -- | Connections that would be forbidden by the kernel (@TCP@ semantics).
     --
     | ImpossibleConnection  !(ConnectionId peerAddr) !CallStack
@@ -762,6 +784,14 @@ instance ( Show peerAddr
     displayException (ImpossibleConnection connId cs) =
       concat [ "Impossible connection with peer "
              , show connId
+             , "\n"
+             , prettyCallStack cs
+             ]
+    displayException (InboundConnectionNotFound connMode peerAddr cs) =
+      concat [ "No matching inbound connection found and creating new connection is not allowed with peer "
+             , show connMode
+             , "\n"
+             , show peerAddr
              , "\n"
              , prettyCallStack cs
              ]

@@ -32,7 +32,7 @@ newtype LocalRootPeersGroups extraFlags = LocalRootPeersGroups
 -- will attempt to maintain. By default this value will be equal to 'hotValency'.
 --
 data LocalRootPeersGroup extraFlags = LocalRootPeersGroup
-  { localRoots        :: RootConfig
+  { localRoots        :: LocalRoots
   , hotValency        :: HotValency
   , warmValency       :: WarmValency
   , rootDiffusionMode :: DiffusionMode
@@ -42,6 +42,12 @@ data LocalRootPeersGroup extraFlags = LocalRootPeersGroup
 
 newtype PublicRootPeers = PublicRootPeers
   { publicRoots :: RootConfig
+  } deriving (Eq, Show)
+
+data LocalRoots = LocalRoots
+  { rootConfig     :: RootConfig
+  , behindFirewall :: Bool
+    -- ^ peer is unreachable and will initiate the connection first
   } deriving (Eq, Show)
 
 -- | Each root peer consists of a list of access points and a shared
@@ -63,8 +69,15 @@ data RootConfig = RootConfig
 rootConfigToRelayAccessPoint
   :: RootConfig
   -> [(RelayAccessPoint, PeerAdvertise)]
-rootConfigToRelayAccessPoint RootConfig { rootAccessPoints, rootAdvertise  } =
+rootConfigToRelayAccessPoint RootConfig { rootAccessPoints, rootAdvertise } =
     [ (ap, rootAdvertise) | ap <- rootAccessPoints ]
+
+localRootsToRelayAccessPoint
+  :: LocalRoots
+  -> [(RelayAccessPoint, PeerAdvertise, Bool)]
+localRootsToRelayAccessPoint LocalRoots {rootConfig, behindFirewall} =
+      (\(accessPoint, advertise) -> (accessPoint, advertise, behindFirewall))
+  <$> rootConfigToRelayAccessPoint rootConfig
 
 producerAddresses
   :: NetworkTopology extraConfig extraFlags
@@ -78,16 +91,17 @@ producerAddresses NetworkTopology { localRootPeersGroups
   ( map (\lrp -> ( hotValency lrp
                  , warmValency lrp
                  , Map.fromList
-                 . map (\(addr, peerAdvertise) ->
+                 . map (\(addr, peerAdvertise, localRootBehindFirewall) ->
                          ( addr
                          , LocalRootConfig {
                              diffusionMode = rootDiffusionMode lrp,
                              peerAdvertise,
+                             localRootBehindFirewall,
                              extraLocalRootFlags = extraFlags lrp
                            }
                          )
                        )
-                 . rootConfigToRelayAccessPoint
+                 . localRootsToRelayAccessPoint
                  $ localRoots lrp
                  )
         )

@@ -300,43 +300,45 @@ connectionManagerTraceMap
       ntnAddr
       (ConnectionHandlerTrace ntnVersion ntnVersionData)
   -> String
-connectionManagerTraceMap (TrIncludeConnection p _)        =
+connectionManagerTraceMap (TrInboundConnectionNotFound cm _) =
+  "TrInboundConnectionNotFound " ++ show cm
+connectionManagerTraceMap (TrIncludeConnection p _)          =
   "TrIncludeConnection " ++ show p
-connectionManagerTraceMap (TrReleaseConnection p _)        =
+connectionManagerTraceMap (TrReleaseConnection p _)          =
   "TrUnregisterConnection " ++ show p
-connectionManagerTraceMap TrConnect {}                     =
+connectionManagerTraceMap TrConnect {}                       =
   "TrConnect"
-connectionManagerTraceMap (TrConnectError _ _ _)           =
+connectionManagerTraceMap (TrConnectError _ _ _)             =
   "TrConnectError"
-connectionManagerTraceMap (TrTerminatingConnection p _)    =
+connectionManagerTraceMap (TrTerminatingConnection p _)      =
   "TrTerminatingConnection " ++ show p
-connectionManagerTraceMap (TrTerminatedConnection p _)     =
+connectionManagerTraceMap (TrTerminatedConnection p _)       =
   "TrTerminatedConnection " ++ show p
-connectionManagerTraceMap (TrConnectionHandler _ _)        =
+connectionManagerTraceMap (TrConnectionHandler _ _)          =
   "TrConnectionHandler"
-connectionManagerTraceMap TrShutdown                       =
+connectionManagerTraceMap TrShutdown                         =
   "TrShutdown"
-connectionManagerTraceMap (TrConnectionExists p _ as)      =
+connectionManagerTraceMap (TrConnectionExists p _ as)        =
   "TrConnectionExists " ++ show p ++ " " ++ show as
-connectionManagerTraceMap (TrForbiddenConnection _)        =
+connectionManagerTraceMap (TrForbiddenConnection _)          =
   "TrForbiddenConnection"
-connectionManagerTraceMap (TrConnectionFailure _)          =
+connectionManagerTraceMap (TrConnectionFailure _)            =
   "TrConnectionFailure"
-connectionManagerTraceMap (TrConnectionNotFound p _)       =
+connectionManagerTraceMap (TrConnectionNotFound p _)         =
   "TrConnectionNotFound " ++ show p
-connectionManagerTraceMap (TrForbiddenOperation _ as)      =
+connectionManagerTraceMap (TrForbiddenOperation _ as)        =
   "TrForbiddenOperation" ++ show as
-connectionManagerTraceMap (TrPruneConnections _ _ _)       =
+connectionManagerTraceMap (TrPruneConnections _ _ _)         =
   "TrPruneConnections"
-connectionManagerTraceMap (TrConnectionCleanup _)          =
+connectionManagerTraceMap (TrConnectionCleanup _)            =
   "TrConnectionCleanup"
-connectionManagerTraceMap (TrConnectionTimeWait _)         =
+connectionManagerTraceMap (TrConnectionTimeWait _)           =
   "TrConnectionTimeWait"
-connectionManagerTraceMap (TrConnectionTimeWaitDone _)     =
+connectionManagerTraceMap (TrConnectionTimeWaitDone _)       =
   "TrConnectionTimeWaitDone"
-connectionManagerTraceMap (TrConnectionManagerCounters _)  =
+connectionManagerTraceMap (TrConnectionManagerCounters _)    =
   "TrConnectionManagerCounters"
-connectionManagerTraceMap (TrState _)                      =
+connectionManagerTraceMap (TrState _)                        =
   "TrState"
-connectionManagerTraceMap (TrUnexpectedlyFalseAssertion _) =
+connectionManagerTraceMap (TrUnexpectedlyFalseAssertion _)   =
   "TrUnexpectedlyFalseAssertion"
