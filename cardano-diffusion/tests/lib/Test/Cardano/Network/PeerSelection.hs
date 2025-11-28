@@ -3477,16 +3477,7 @@ prop_governor_target_established_local (MaxTime maxTime) env =
         govEstablishedPeersSig :: Signal (Set PeerAddr)
         govEstablishedPeersSig =
           selectGovState
-            (dropBigLedgerPeers $ EstablishedPeers.toSet . Governor.establishedPeers)
-            (Cardano.ExtraState.empty (consensusMode env)
-                                      (NumberOfBigLedgerPeers 0))
-            Cardano.ExtraPeers.empty
-            events
-
-        govEstablishedBigPeersSig :: Signal (Set PeerAddr)
-        govEstablishedBigPeersSig =
-          selectGovState
-            (takeBigLedgerPeers $ EstablishedPeers.toSet . Governor.establishedPeers)
+            (EstablishedPeers.toSet . Governor.establishedPeers)
             (Cardano.ExtraState.empty (consensusMode env)
                                       (NumberOfBigLedgerPeers 0))
             Cardano.ExtraPeers.empty
@@ -3536,12 +3527,12 @@ prop_governor_target_established_local (MaxTime maxTime) env =
 
         promotionOpportunities :: Signal (Set PeerAddr)
         promotionOpportunities =
-          (\local established establishedBig recentFailures promoteCold ->
+          (\local established recentFailures promoteCold ->
                 Set.unions
                   [ opportunity
                   | (_, WarmValency warmTarget, group) <- LocalRootPeers.toGroupSets local
                   , let opportunity
-                          |   Set.size (group `Set.intersection` (established `Set.union` establishedBig))
+                          |   Set.size (group `Set.intersection` established)
                             + Set.size (group `Set.intersection` promoteCold)
                             -- add those peers that are being promoted to warm,
                             -- since peer selection is making progress on them
@@ -3551,10 +3542,9 @@ prop_governor_target_established_local (MaxTime maxTime) env =
                           | otherwise
                           = group
                   ]
-                  Set.\\ Set.unions [established, establishedBig, recentFailures, promoteCold]
+                  Set.\\ Set.unions [established, recentFailures, promoteCold]
           ) <$> govLocalRootPeersSig
             <*> govEstablishedPeersSig
-            <*> govEstablishedBigPeersSig
             <*> govEstablishedFailuresSig
             <*> govInProgressPromoteColdSig
 
