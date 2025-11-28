@@ -518,7 +518,7 @@ jobPromoteColdPeer PeerSelectionActions {
             unForgetAble = LocalRootPeers.member peeraddr localRootPeers ||
                            (memberExtraPeers peeraddr (PublicRootPeers.getExtraPeers publicRootPeers))
             (publicRootPeers', knownPeers'', forgotten) =
-              if unForgetAble  || failCount < policyMaxConnectionRetries
+              if unForgetAble || failCount < policyMaxConnectionRetries
                  then ( publicRootPeers
                       , KnownPeers.setConnectTimes (Map.singleton peeraddr (delay `addTime` now))
                                                    knownPeers'
