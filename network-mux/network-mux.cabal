@@ -138,6 +138,7 @@ test-suite test
     network,
     network-mux,
     primitive,
+    quickcheck-instances,
     serialise,
     splitmix,
     tasty,

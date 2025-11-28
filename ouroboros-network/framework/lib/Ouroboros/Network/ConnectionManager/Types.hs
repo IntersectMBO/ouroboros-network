@@ -98,7 +98,6 @@ module Ouroboros.Network.ConnectionManager.Types
   , MaskedAction (..)
   , ConnectionHandlerFn
   , ConnectionHandler (..)
-  , Inactive (..)
   , ExceptionInHandler (..)
   , HandlerErrorType (..)
   , HandshakeConnectionResult (..)
@@ -176,7 +175,7 @@ import Data.Word (Word32)
 import GHC.Stack (CallStack, prettyCallStack)
 import System.Random (StdGen)
 
-import Network.Mux.Types (HasInitiator, HasResponder, MiniProtocolDir)
+import Network.Mux.Types (HasInitiator, HasResponder)
 import Network.Mux.Types qualified as Mux
 
 import Ouroboros.Network.ConnectionId (ConnectionId (..))
@@ -383,14 +382,6 @@ newtype ConnectionHandler muxMode handlerTrace socket peerAddr handle handleErro
           WithMuxTuple muxMode
             (ConnectionHandlerFn handlerTrace socket peerAddr handle handleError versionNumber versionData m)
       }
-
-
--- | Boolean like type
---
-data Inactive =
-    Active MiniProtocolDir
-  | Inactive
-  deriving (Eq, Show)
 
 
 -- | Exception which where caught in the connection thread and were re-thrown in

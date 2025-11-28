@@ -112,7 +112,7 @@ data Arguments handlerTrace socket peerAddr handle handleError versionNumber ver
         makeBearer          :: MakeBearer m socket,
 
         -- | With a ReadBuffer
-        withBuffer          :: ((Maybe (Mx.ReadBuffer m) -> m ()) -> m ()),
+        withBuffer          :: (Maybe (Mx.ReadBuffer m) -> m ()) -> m (),
 
         -- | Socket configuration.
         --

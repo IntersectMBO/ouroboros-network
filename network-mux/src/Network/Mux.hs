@@ -342,8 +342,9 @@ miniProtocolJob TracersI {
           `orElse` throwSTM (BlockedOnCompletionVar miniProtocolNum)
         case remainder of
           Just trailing ->
-            modifyTVar miniProtocolIngressQueue (\(l :!: b) ->
-              l + BL.length trailing :!: b <> lazyByteString trailing)
+            modifyTVar miniProtocolIngressQueue $ \(l :!: b) ->
+                  BL.length trailing + l
+              :!: lazyByteString trailing <> b
           Nothing ->
             pure ()
 

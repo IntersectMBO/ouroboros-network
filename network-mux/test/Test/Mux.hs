@@ -34,6 +34,7 @@ import Data.Tuple (swap)
 import Data.Word
 import System.Random.SplitMix qualified as SM
 import Test.QuickCheck hiding ((.&.))
+import Test.QuickCheck.Instances.ByteString ()
 import Test.Tasty
 import Test.Tasty.QuickCheck (testProperty)
 import Text.Printf
@@ -95,6 +96,8 @@ tests =
   , testProperty "mux restart"                  prop_mux_restart
   , testProperty "mux close (Sim)"              prop_mux_close_sim
   , testProperty "mux close (IO)"               (withMaxSuccess 50 prop_mux_close_io)
+  , testProperty "trailing bytes (Sim)"         prop_mux_trailing_bytes_iosim
+  , testProperty "trailing bytes (IO)"          prop_mux_trailing_bytes_io
   , testGroup "Generators"
     [ testProperty "genByteString"              prop_arbitrary_genByteString
     , testProperty "genLargeByteString"         prop_arbitrary_genLargeByteString
@@ -2341,6 +2344,118 @@ prop_mux_close_sim fault (Positive sduSize_) reqs fn acc =
         aWriteAttenuation = Nothing
       }
 
+
+newtype NonEmptyByteString = NonEmptyByteString BL.ByteString
+  deriving Show
+
+instance Arbitrary NonEmptyByteString where
+    arbitrary = do
+      bs <- arbitrary `suchThat` (not . BL.null)
+      return $ NonEmptyByteString bs
+
+    shrink (NonEmptyByteString bs) =
+      [ NonEmptyByteString bs'
+      | bs' <- shrink bs
+      , not (BL.null bs')
+      ]
+
+prop_mux_trailing_bytes
+  :: ( Alternative   (STM m)
+     , MonadAsync         m
+     , MonadDelay         m
+     , MonadFork          m
+     , MonadLabelledSTM   m
+     , MonadMask          m
+     , MonadTimer         m
+     , MonadThrow    (STM m)
+     )
+  => BL.ByteString
+  -> NonEmptyByteString
+  -> m Property
+prop_mux_trailing_bytes reminder (NonEmptyByteString received) = do
+    mux_w <- atomically $ newTBQueue 10
+    mux_r <- atomically $ newTBQueue 10
+    bearer <- getBearer Mx.makeQueueChannelBearer
+                (-1)
+                QueueChannel { writeQueue = mux_w, readQueue = mux_r }
+                Nothing
+    mux <- Mx.new Mx.nullTracers
+                  [ MiniProtocolInfo {
+                      miniProtocolNum,
+                      miniProtocolDir = Mx.ResponderDirectionOnly,
+                      miniProtocolLimits = Mx.MiniProtocolLimits maxBound,
+                      miniProtocolCapability = Nothing
+                    }
+                  ]
+    withAsync (Mx.run mux bearer) $ \_ -> do
+      -- The following sequence represents a remote application sending data
+      -- that terminates and restarts a mini-protocol, leaving trailing bytes on
+      -- the receiving end after the restart already happened and the bytes were
+      -- read from the network.
+      --
+      -- 1. Send an SDU with a payload of `received` bytes.  This represents the
+      -- remote side sending additional data after restarting the mini-protocol.
+      -- The initial data for this conversation is in the trailing bytes, which
+      -- are assumed to be already received. We inject them in the next step.
+      atomically $ writeTBQueue mux_r
+        $ Mx.encodeSDU
+        $ Mx.SDU { Mx.msHeader = Mx.SDUHeader {
+                     Mx.mhTimestamp = Mx.RemoteClockModel 0,
+                     Mx.mhNum       = miniProtocolNum,
+                     Mx.mhDir       = Mx.InitiatorDir,
+                     Mx.mhLength    = fromIntegral (BL.length received)
+                   },
+                   Mx.msBlob = received
+                }
+
+      -- 2. Run a mini-protocol which returns `reminder` as trailing bytes.
+      -- This represents the responder side stopping the mini-protocol with
+      -- trailing bytes.
+      _ <- atomically =<< Mx.runMiniProtocol
+              mux
+              miniProtocolNum
+              Mx.ResponderDirectionOnly
+              Mx.StartEagerly
+              (\_ -> do
+                labelThisThread "resp:1"
+                return ((), Just reminder))
+
+      -- 3. Read all bytes from the channel
+      r <- atomically =<< Mx.runMiniProtocol
+              mux
+              miniProtocolNum
+              Mx.ResponderDirectionOnly
+              Mx.StartEagerly
+              (\chan -> do
+                labelThisThread "resp:2"
+                a <- Mx.recv chan
+                return (a, Nothing)
+              )
+
+      -- 4. Verify that we received trailing bytes were injected before the
+      -- additional data (`received` bytes).
+      case r of
+        Left e    -> throwIO e
+        Right bts -> return $ bts === Just (reminder <> received)
+  where
+    miniProtocolNum :: Mx.MiniProtocolNum
+    miniProtocolNum = Mx.MiniProtocolNum 1
+
+
+prop_mux_trailing_bytes_iosim :: BL.ByteString
+                              -> NonEmptyByteString
+                              -> Property
+prop_mux_trailing_bytes_iosim reminder received =
+  let trace = runSimTrace $ prop_mux_trailing_bytes reminder received
+  in counterexample (ppTrace_ trace) (case traceResult True trace of
+                                       Left e  -> counterexample (show e) False
+                                       Right r -> r)
+
+prop_mux_trailing_bytes_io :: BL.ByteString
+                           -> NonEmptyByteString
+                           -> Property
+prop_mux_trailing_bytes_io reminder received =
+  ioProperty $ prop_mux_trailing_bytes reminder received
 
 -- compare error types, not the payloads
 compareErrors :: Mx.Error -> Mx.Error -> Bool
