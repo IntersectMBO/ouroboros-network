@@ -9,6 +9,7 @@ on:
   merge_group:
   push:
     branches:
+      - main
       - "release/*"
 
 jobs:
