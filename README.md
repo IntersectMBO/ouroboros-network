@@ -136,7 +136,7 @@ The API consists of three layers:
 
 • callback [`MiniProtocolCb`].  The callback is wrapped in `OuroborosApplication` GADT which allows to differentiate the initiator/responder (or client/server) callbacks.
 
-• versioning which is a map from version numbers to the above callbacks and version data (the tricky part here is that version data type can be different between different versions; there is a simple way of building this map using a semigroup). You can use [`simpleSingletonVersion`] if your application does not depend on negotiated version data.  However, [`Ouroboros.Network.NodeToNode`] and [`Ouroboros.Network.NodeToClient`] expose API which hides versioning from the caller.
+• versioning which is a map from version numbers to the above callbacks and version data (the tricky part here is that version data type can be different between different versions; there is a simple way of building this map using a semigroup). You can use [`simpleSingletonVersion`] if your application does not depend on negotiated version data.  However, [`Cardano.Network.NodeToNode`] and [`Cardano.Network.NodeToClient`] expose API which hides versioning from the caller.
 
 
 ## Demo applications
@@ -178,5 +178,5 @@ arguments it will specify what arguments it needs.
 [`chainSyncClientPeer`]: https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network-protocols/Ouroboros-Network-Protocol-ChainSync-Client.html#v:chainSyncClientPeer
 [`OuroborosApplication`]: https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network-framework/Ouroboros-Network-Mux.html#t:OuroborosApplication
 [`simpleSingletonVersion`]: https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network-framework/Ouroboros-Network-Protocol-Handshake-Version.html#v:simpleSingletonVersions
-[`Ouroboros.Network.NodeToNode`]: https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network/Ouroboros-Network-NodeToNode.html
-[`Ouroboros.Network.NodeToClient`]: https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network/Ouroboros-Network-NodeToClient.html
+[`Cardano.Network.NodeToNode`]: https://ouroboros-network.cardano.intersectmbo.org/cardano-diffusion/Cardano-Network-NodeToNode.html
+[`Cardano.Network.NodeToClient`]: https://ouroboros-network.cardano.intersectmbo.org/cardano-diffusion/Cardano-Network-NodeToClient.html
