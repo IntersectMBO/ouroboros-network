@@ -60,8 +60,6 @@ local blockfetch_msg_codes = {
 
 local on_blockfetch_msg = ProtoField.uint8("ouroboros.blockmsg", "BlockFetch Message", base.DEC, blockfetch_msg_codes, nil, "BlockFetch Message Types")
 
-local ON_HDR_LEN = 8
-
 local txsubmission_msg_codes = {
 	[0] = "MsgRequestTxIds",
 	[1] = "MsgReplyTxIds",
@@ -91,6 +89,8 @@ local peersharing_msg_codes = {
 
 local on_peersharing_msg = ProtoField.uint8("ouroboros.peersharingmsg", "PeerSharing Message", base.DEC, peersharing_msg_codes, nil, "PeerSharing Message Types")
 
+local on_cbor_payload = ProtoField.bytes("ouroboros.cbor_payload",
+                                         "CBOR payload (raw)", base.NONE)
 
 ouroboros.fields = {
 	on_transmission_time,
@@ -101,7 +101,8 @@ ouroboros.fields = {
 	on_blockfetch_msg,
 	on_txsubmission_msg,
 	on_keepalive_msg,
-	on_peersharing_msg
+	on_peersharing_msg,
+	on_cbor_payload
 }
 
 
@@ -109,64 +110,101 @@ function ouroboros.dissector(tvbuf, pktinfo, root)
 
 	local pktlen = tvbuf:len()
 	local offset = 0
+	local total = 0
 
 	while offset < pktlen do
 		result = dissectOuroboros(tvbuf, pktinfo, root, offset)
 		if result > 0 then
 			-- We parsed an Ouroboros message
 			offset = offset + result
-		else
-			-- we need more bytes
+			total = total + result
+		elseif result < 0 then
+			-- we need more bytes for current frame
 			pktinfo.desegment_offset = offset
-			result = -result
-			pktinfo.desegment_len = result
-			return pktlen
+			pktinfo.desegment_len = -result
+			return -result
+		else
+			-- some error
+			break
 		end
 	end
+
+	return total
 end
 
 dissectOuroboros = function (tvbuf, pktinfo, root, offset)
 
-	local msglen = tvbuf:len() - offset
+	local pktlen = tvbuf:len()
+	local msglen = pktlen - offset
+
 	if msglen < ON_HDR_LEN then
 		-- Not enough data to read the header, we need at least one more segmet.
-		return -DESEGMENT_ONE_MORE_SEGMENT
+		local need = ON_HDR_LEN - msglen
+		return -need
 	end
 
-	local on_length_buf = tvbuf:range(offset + 6, 2)
-	local length = on_length_buf:uint()
+	local ts_buf   = tvbuf:range(offset, 4)     -- 4-byte timestamp
+	local conv_buf = tvbuf:range(offset + 4, 2) -- 2-byte conv id
+	local len_buf  = tvbuf:range(offset + 6, 2) -- 2-byte CBOR length
 
-	if msglen < ON_HDR_LEN + length then
-		-- more bytes needed to read the whole message
-		return -(length - msglen + ON_HDR_LEN)
+	local ts   = ts_buf:uint()
+	local convId = conv_buf:uint()
+	local len  = len_buf:uint()
+
+	local total_len = ON_HDR_LEN + len
+	if msglen < total_len then
+		-- Not enough data for the whole payload, ask for the rest
+		local need = total_len - msglen
+		return -need
 	end
-	
+
+	-- We have a complete mux frame.
 	pktinfo.cols.protocol = ouroboros.name
 
-	local subtree = root:add(ouroboros, tvbuf(), "Ouroboros")
-	local conv = tvbuf:range(offset + 4, 2)
-	local convId = conv:uint()
+	local subtree = root:add(ouroboros, tvbuf(offset, total_len),
+				string.format("Ouroboros (%u bytes)", total_len))
+	subtree:add(on_transmission_time, ts_buf)
+	subtree:add(on_conversation, conv_buf)
+	subtree:add(on_length, len_buf)
 
-	if (convId >= 0x8000) then convId = convId - 0x8000
+	if on_cbor_payload then
+		subtree:add(on_cbor_payload, tvbuf(offset + ON_HDR_LEN, len))
 	end
 
-	subtree:add(on_transmission_time, tvbuf:range(offset, 4))
-	subtree:add(on_conversation, conv)
-	subtree:add(on_length, length)
+	if len > 0 then
+		local miniProt = nil
+		local miniVal = convId & 0x7fff
 
-	-- XXX Without completly parsing the CBOR payload we can't be sure that this is
-	-- the correct message type since a CBOR message may be split into
-	-- multiple MUX segements.
-	if     convId == 0 then subtree:add(on_handshake_msg, tvbuf:range(offset + 9, 1))
-	elseif convId == 2 then subtree:add(on_chainsync_msg, tvbuf:range(offset + 9, 1))
-	elseif convId == 3 then subtree:add(on_blockfetch_msg, tvbuf:range(offset + 9, 1))
-	elseif convId == 4 then subtree:add(on_txsubmission_msg, tvbuf:range(offset + 9, 1))
-	elseif convId == 8 then subtree:add(on_keepalive_msg, tvbuf:range(offset + 9, 1))
-	elseif convId == 10 then subtree:add(on_peersharing_msg, tvbuf:range(offset + 9, 1))
+		if     miniVal == 0  then miniProt = on_handshake_msg
+		elseif miniVal == 2  then miniProt = on_chainsync_msg
+		elseif miniVal == 3  then miniProt = on_blockfetch_msg
+		elseif miniVal == 4  then miniProt = on_txsubmission_msg
+		elseif miniVal == 8  then miniProt = on_keepalive_msg
+		elseif miniVal == 10 then miniProt = on_peersharing_msg
+		end
+
+		if miniProt and len > 1 then
+			subtree:add(miniProt, tvbuf(offset + ON_HDR_LEN + 1, 1))
+		end
+
+
+		if not cbor then
+			subtree:add_expert_info(PI_MALFORMED, PI_ERROR, "CBOR dissector not found")
+		else
+			local cbor_tvb = tvbuf:range(offset + ON_HDR_LEN, len):tvb()
+			local success, err = pcall(function()
+				cbor:call(cbor_tvb, pktinfo, subtree)
+			end)
+
+			if not success then
+				subtree:add_expert_info(PI_MALFORMED, PI_WARN,
+					"Possible partial CBOR message")
+			end
+		end
 	end
 
-	cbor:call(tvbuf(ON_HDR_LEN):tvb(), pktinfo, subtree)
-	return ON_HDR_LEN + length
+	return total_len
+
 end
 
 local tcp_port = DissectorTable.get("tcp.port")
