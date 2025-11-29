@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                        #-}
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DeriveTraversable          #-}
@@ -40,8 +41,13 @@ module Ouroboros.Network.Block
   , pointHash
   , castPoint
   , blockPoint
+#if __GLASGOW_HASKELL__ < 914
   , pattern GenesisPoint
   , pattern BlockPoint
+#else
+  , data GenesisPoint
+  , data BlockPoint
+#endif
   , atSlot
   , withHash
   , Tip (..)
