@@ -118,7 +118,8 @@ simplePeerSelectionPolicy rngVar metrics = PeerSelectionPolicy {
       policyPeerShareRetryTime         = 900,  -- seconds
       policyPeerShareBatchWaitTime     = 3,    -- seconds
       policyPeerShareOverallTimeout    = 10,   -- seconds
-      policyPeerShareActivationDelay   = 300   -- seconds
+      policyPeerShareActivationDelay   = 300,  -- seconds
+      policyMaxConnectionRetries       = 5
     }
   where
 
