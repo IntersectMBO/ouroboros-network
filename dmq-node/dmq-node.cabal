@@ -92,6 +92,8 @@ library
     base16-bytestring,
     bytestring >=0.10 && <0.13,
     cardano-binary,
+    -- TODO
+    --cardano-diffusion:logging,
     cardano-crypto-class,
     cborg >=0.2.1 && <0.3,
     containers >=0.5 && <0.9,
@@ -107,12 +109,16 @@ library
     kes-agent-crypto ^>=0.1,
     network ^>=3.2.7,
     network-mux ^>=0.9.1,
+    network-mux:cardano-logging,
     optparse-applicative >=0.18 && <0.20,
     ouroboros-network:{ouroboros-network, api, framework, orphan-instances, protocols} ^>=0.23,
+    ouroboros-network:cardano-logging,
+    ouroboros-network:framework-cardano-logging,
     random ^>=1.2,
     singletons,
     text >=1.2.4 && <2.2,
     time >=1.12 && <1.16,
+    trace-dispatcher ^>= 2.10.0,
     typed-protocols:{typed-protocols, cborg} ^>=1.1,
 
   hs-source-dirs: src
@@ -132,7 +138,6 @@ executable dmq-node
 
   build-depends:
     acts,
-    aeson,
     base,
     cardano-git-rev,
     contra-tracer >=0.1 && <0.3,
@@ -141,7 +146,7 @@ executable dmq-node
     optparse-applicative,
     ouroboros-network:{ouroboros-network, api},
     random,
-    text,
+    text
 
   hs-source-dirs: app
   default-language: Haskell2010
