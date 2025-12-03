@@ -69,43 +69,6 @@ data InboundStIdle (n :: N) objectId object m a where
   WithEffect :: m (InboundStIdle n objectId object m a)
     -> InboundStIdle n objectId object m a
 
-inboundRun
-  :: forall (n :: N) objectId object m a.
-     (Functor m)
-  => InboundStIdle n objectId object m a
-  -> Peer (ObjectDiffusion objectId object) AsClient (Pipelined n (Collect objectId object)) StIdle m a
-
-inboundRun (SendMsgRequestObjectIdsBlocking ackNo reqNo k) =
-      Yield (MsgRequestObjectIds SingBlocking ackNo reqNo)
-        $ Await
-        $ \case
-            MsgReplyObjectIds (BlockingReply objectIds) ->
-              inboundRun (k objectIds)
-inboundRun (SendMsgRequestObjectIdsPipelined ackNo reqNo k) =
-      YieldPipelined
-        (MsgRequestObjectIds SingNonBlocking ackNo reqNo)
-        (ReceiverAwait
-          $ \(MsgReplyObjectIds (NonBlockingReply objectIds)) ->
-              ReceiverDone (CollectObjectIds reqNo objectIds)
-        )
-        (inboundRun k)
-inboundRun (SendMsgRequestObjectsPipelined objectIds k) =
-      YieldPipelined
-        (MsgRequestObjects objectIds)
-        (ReceiverAwait
-          $ \(MsgReplyObjects objects) ->
-              ReceiverDone (CollectObjects objectIds objects)
-        )
-        (inboundRun k)
-inboundRun (CollectPipelined none collect) =
-      Collect
-        (inboundRun <$> none)
-        (inboundRun . collect)
-inboundRun (SendMsgDone done) =
-      Yield MsgDone $ Done done
-inboundRun (WithEffect mNext) =
-      Effect $ inboundRun <$> mNext
-
 -- | Transform a 'ObjectDiffusionInboundPipelined' into a 'PeerPipelined'.
 objectDiffusionInboundPeerPipelined
   :: forall objectId object m a.
@@ -113,4 +76,39 @@ objectDiffusionInboundPeerPipelined
   => ObjectDiffusionInboundPipelined objectId object m a
   -> PeerPipelined (ObjectDiffusion objectId object) AsClient StInit m a
 objectDiffusionInboundPeerPipelined (ObjectDiffusionInboundPipelined inboundSt) =
-  PeerPipelined $ Yield MsgInit $ inboundRun  inboundSt
+  PeerPipelined $ Yield MsgInit $ run inboundSt
+  where
+    run
+      :: InboundStIdle n objectId object m a
+      -> Peer (ObjectDiffusion objectId object) AsClient (Pipelined n (Collect objectId object)) StIdle m a
+
+    run (SendMsgRequestObjectIdsBlocking ackNo reqNo k) =
+          Yield (MsgRequestObjectIds SingBlocking ackNo reqNo)
+            $ Await
+            $ \case
+                MsgReplyObjectIds (BlockingReply objectIds) ->
+                  run (k objectIds)
+    run (SendMsgRequestObjectIdsPipelined ackNo reqNo k) =
+          YieldPipelined
+            (MsgRequestObjectIds SingNonBlocking ackNo reqNo)
+            (ReceiverAwait
+              $ \(MsgReplyObjectIds (NonBlockingReply objectIds)) ->
+                  ReceiverDone (CollectObjectIds reqNo objectIds)
+            )
+            (run k)
+    run (SendMsgRequestObjectsPipelined objectIds k) =
+          YieldPipelined
+            (MsgRequestObjects objectIds)
+            (ReceiverAwait
+              $ \(MsgReplyObjects objects) ->
+                  ReceiverDone (CollectObjects objectIds objects)
+            )
+            (run k)
+    run (CollectPipelined none collect) =
+          Collect
+            (run <$> none)
+            (run . collect)
+    run (SendMsgDone done) =
+          Yield MsgDone $ Done done
+    run (WithEffect mNext) =
+          Effect $ run <$> mNext

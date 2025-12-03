@@ -38,7 +38,9 @@ instance Arbitrary NodeToNodeVersionData where
                      , PeerSharingEnabled
                      ]
         <*> arbitrary
-
+        <*> elements [ PerasUnsupported
+                     , PerasSupported
+                     ]
 
 prop_nodeToNodeVersionCodec :: NodeToNodeVersion
                             -> Bool
@@ -53,8 +55,7 @@ prop_nodeToNodeVersionCodec version =
 prop_nodeToNodeCodec :: NodeToNodeVersion -> NodeToNodeVersionData -> Bool
 prop_nodeToNodeCodec ntnVersion ntnData =
       case decodeTerm (encodeTerm ntnData) of
-        Right ntnData' -> networkMagic  ntnData' == networkMagic  ntnData
-                       && diffusionMode ntnData' == diffusionMode ntnData
+        Right ntnData' -> ntnData' == ntnData
         Left {}        -> False
     where
       CodecCBORTerm { encodeTerm, decodeTerm } = nodeToNodeCodecCBORTerm ntnVersion
