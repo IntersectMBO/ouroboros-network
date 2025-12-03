@@ -8,10 +8,11 @@ module Cardano.Network.NodeToNode.Version
   , NodeToNodeVersionData (..)
   , DiffusionMode (..)
   , ConnectionMode (..)
+  , PerasSupportStatus (..)
   , nodeToNodeVersionCodec
   , nodeToNodeCodecCBORTerm
     -- * Feature predicates
-  , isPerasEnabled
+  , getLocalPerasSupportStatus
   ) where
 
 import Data.Set (Set)
@@ -108,23 +109,25 @@ data NodeToNodeVersionData = NodeToNodeVersionData
   , diffusionMode :: !DiffusionMode
   , peerSharing   :: !PeerSharing
   , query         :: !Bool
+  , perasSupportStatus   :: !PerasSupportStatus
   }
   deriving (Show, Eq)
-  -- 'Eq' instance is not provided, it is not what we need in version
-  -- negotiation (see 'Acceptable' instance below).
 
 instance Acceptable NodeToNodeVersionData where
     -- | Check that both side use the same 'networkMagic'.  Choose smaller one
     -- from both 'diffusionMode's, e.g. if one is running in 'InitiatorOnlyMode'
     -- agree on it. Agree on the same 'PeerSharing' value.
+    -- Also agree on whether or not Peras should be used.
     acceptableVersion local remote
       | networkMagic local == networkMagic remote
       = let acceptedDiffusionMode = diffusionMode local `min` diffusionMode remote
+            acceptedPerasSupportStatus = perasSupportStatus local `min` perasSupportStatus remote
          in Accept NodeToNodeVersionData
-              { networkMagic  = networkMagic local
-              , diffusionMode = acceptedDiffusionMode
-              , peerSharing   = peerSharing local <> peerSharing remote
-              , query         = query local || query remote
+              { networkMagic       = networkMagic local
+              , diffusionMode      = acceptedDiffusionMode
+              , peerSharing        = peerSharing local <> peerSharing remote
+              , query              = query local || query remote
+              , perasSupportStatus = acceptedPerasSupportStatus
               }
       | otherwise
       = Refuse $ T.pack $ "version data mismatch: "
@@ -144,7 +147,7 @@ nodeToNodeCodecCBORTerm =
     codec = CodecCBORTerm { encodeTerm = encodeTerm, decodeTerm = decodeTerm }
 
     encodeTerm :: NodeToNodeVersionData -> CBOR.Term
-    encodeTerm NodeToNodeVersionData { networkMagic, diffusionMode, peerSharing, query }
+    encodeTerm NodeToNodeVersionData { networkMagic, diffusionMode, peerSharing, query, perasSupportStatus }
       = CBOR.TList
           [ CBOR.TInt (fromIntegral $ unNetworkMagic networkMagic)
           , CBOR.TBool (case diffusionMode of
@@ -154,10 +157,13 @@ nodeToNodeCodecCBORTerm =
                          PeerSharingDisabled -> 0
                          PeerSharingEnabled  -> 1)
           , CBOR.TBool query
+          , CBOR.TBool (case perasSupportStatus of
+                         PerasUnsupported -> False
+                         PerasSupported   -> True)
           ]
 
     decodeTerm :: CBOR.Term -> Either Text NodeToNodeVersionData
-    decodeTerm (CBOR.TList [CBOR.TInt x, CBOR.TBool diffusionMode, CBOR.TInt peerSharing, CBOR.TBool query])
+    decodeTerm (CBOR.TList [CBOR.TInt x, CBOR.TBool diffusionMode, CBOR.TInt peerSharing, CBOR.TBool query, CBOR.TBool perasSupportStatus])
       | x >= 0
       , x <= 0xffffffff
       , Just ps <- case peerSharing of
@@ -171,7 +177,10 @@ nodeToNodeCodecCBORTerm =
                               then InitiatorOnlyDiffusionMode
                               else InitiatorAndResponderDiffusionMode,
               peerSharing = ps,
-              query = query
+              query = query,
+              perasSupportStatus = if perasSupportStatus
+                                   then PerasSupported
+                                   else PerasUnsupported
             }
       | x < 0 || x > 0xffffffff
       = Left $ T.pack $ "networkMagic out of bound: " <> show x
@@ -183,7 +192,17 @@ nodeToNodeCodecCBORTerm =
 
 data ConnectionMode = UnidirectionalMode | DuplexMode
 
-isPerasEnabled :: Set CardanoFeatureFlag -> NodeToNodeVersion -> Bool
-isPerasEnabled featureFlags v =
-       Set.member PerasFlag featureFlags
-    && v >= NodeToNodeV_16
+data PerasSupportStatus = PerasUnsupported | PerasSupported
+  deriving (Eq, Show)
+
+instance Ord PerasSupportStatus where
+  PerasUnsupported <= PerasUnsupported = True
+  PerasSupported <= PerasUnsupported = False
+  PerasUnsupported <= PerasSupported = True
+  PerasSupported <= PerasSupported = True
+
+getLocalPerasSupportStatus :: Set CardanoFeatureFlag -> NodeToNodeVersion -> PerasSupportStatus
+getLocalPerasSupportStatus featureFlags v =
+  if Set.member PerasFlag featureFlags && v >= NodeToNodeV_16
+    then PerasSupported
+    else PerasUnsupported

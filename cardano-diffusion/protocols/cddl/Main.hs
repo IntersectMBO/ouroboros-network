@@ -65,7 +65,7 @@ import Cardano.Network.NodeToClient.Version (NodeToClientVersion,
 import Cardano.Network.NodeToClient.Version qualified as NtCVersion
 import Cardano.Network.NodeToNode.Version (DiffusionMode (..),
            NodeToNodeVersion (..), NodeToNodeVersionData (..),
-           nodeToNodeCodecCBORTerm)
+           nodeToNodeCodecCBORTerm, PerasSupportStatus (..))
 import Cardano.Network.NodeToNode.Version qualified as NtNVersion
 
 import Ouroboros.Network.PeerSelection.RelayAccessPoint (PortNumber)
@@ -436,8 +436,11 @@ genNtNHandshake genVersion = oneof
                 ]
           <*> elements [ PeerSharingDisabled
                        , PeerSharingEnabled
-                      ]
+                       ]
           <*> arbitrary
+          <*> elements [ PerasUnsupported
+                       , PerasSupported
+                       ]
 
     genRefuseReason :: Gen (Handshake.RefuseReason NodeToNodeVersion)
     genRefuseReason = oneof
@@ -605,6 +608,9 @@ instance Arbitrary NodeToNodeVersionData where
                      , PeerSharingEnabled
                      ]
         <*> arbitrary
+        <*> elements [ PerasUnsupported
+                     , PerasSupported
+                     ]
 
 newtype NtNVersionDataV14ToLast = NtNVersionDataV14ToLast (NodeToNodeVersion, NodeToNodeVersionData)
   deriving Show
