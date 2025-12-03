@@ -82,6 +82,7 @@ library api
     Ouroboros.Network.PeerSelection.PeerSharing
     Ouroboros.Network.PeerSelection.PeerSharing.Codec
     Ouroboros.Network.PeerSelection.RelayAccessPoint
+    Ouroboros.Network.PerasSupportStatus
     Ouroboros.Network.Point
     Ouroboros.Network.Protocol.Limits
     Ouroboros.Network.SizeInBytes

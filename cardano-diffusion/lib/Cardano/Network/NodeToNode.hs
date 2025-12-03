@@ -208,7 +208,7 @@ defaultMiniProtocolParameters = MiniProtocolParameters {
     , perasCertDiffusionMaxFifoLength = 10
     -- | TODO: this value is still being discussed.
     -- See https://github.com/tweag/cardano-peras/issues/97 for reference.
-    , perasVoteDiffusionMaxFifoLength = 10_000
+    , perasVoteDiffusionMaxFifoLength = 1_000
   }
 
 -- | Make an 'OuroborosApplication' for the bundle of mini-protocols that
@@ -238,8 +238,8 @@ nodeToNodeProtocols
   -> NodeToNodeVersionData
   -- ^ negotiated version data
   -> OuroborosBundle muxMode initiatorCtx responderCtx bytes m a b
-nodeToNodeProtocols featureFlags miniProtocolParameters protocols
-                    version NodeToNodeVersionData { peerSharing }
+nodeToNodeProtocols _featureFlags miniProtocolParameters protocols
+                    _version NodeToNodeVersionData { peerSharing, perasSupportStatus }
                     =
     TemperatureBundle
       -- Hot protocols: 'chain-sync', 'block-fetch' and 'tx-submission'.
@@ -270,7 +270,7 @@ nodeToNodeProtocols featureFlags miniProtocolParameters protocols
                 miniProtocolRun    = txSubmissionProtocol
               }
             ]
-              <> concat [perasMiniProtocols | isPerasEnabled featureFlags version]
+              <> concat [perasMiniProtocols | perasSupportStatus == PerasSupported]
            where
              perasMiniProtocols =
                [ MiniProtocol {
