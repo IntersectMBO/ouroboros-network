@@ -3,6 +3,10 @@
 <!-- scriv-insert-here -->
 <!-- scriv-end-here -->
 
+### Breaking changes
+
+- Added `NodeToNodeVersion15` and `NodeToNodeVersion16`
+
 ## 0.9.0.0 -- 2026-06-28
 
 ### Breaking changes
