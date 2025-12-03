@@ -55,13 +55,13 @@ byteLimitsChainSync = ProtocolSizeLimits stateToLimit
 -- | Chain sync `mustReplayTimeout` lower bound.
 --
 minChainSyncTimeout :: DiffTime
-minChainSyncTimeout = 135
+minChainSyncTimeout = 601
 
 
 -- | Chain sync `mustReplayTimeout` upper bound.
 --
 maxChainSyncTimeout :: DiffTime
-maxChainSyncTimeout = 269
+maxChainSyncTimeout = 911
 
 
 -- | ChainSync timeout for the `StIdle` state, e.g. how long the client can
