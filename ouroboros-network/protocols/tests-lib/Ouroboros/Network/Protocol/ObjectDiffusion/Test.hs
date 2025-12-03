@@ -9,9 +9,9 @@
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE DeriveGeneric              #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
-{-# LANGUAGE DeriveGeneric              #-}
 module Ouroboros.Network.Protocol.ObjectDiffusion.Test (tests) where
 
 import Data.ByteString.Lazy (ByteString)

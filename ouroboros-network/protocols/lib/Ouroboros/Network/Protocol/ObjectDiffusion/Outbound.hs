@@ -20,8 +20,6 @@ module Ouroboros.Network.Protocol.ObjectDiffusion.Outbound
   , OutboundStIdle (..)
   , OutboundStObjectIds (..)
   , OutboundStObjects (..)
-  , SingBlockingStyle (..)
-  , BlockingReplyList (..)
     -- * Execution as a typed protocol
   , objectDiffusionOutboundPeer
   ) where
@@ -49,7 +47,7 @@ newtype ObjectDiffusionOutbound objectId object m a = ObjectDiffusionOutbound {
 -- It must be prepared to handle any of these.
 data OutboundStIdle objectId object m a = OutboundStIdle {
       recvMsgRequestObjectIds :: forall blocking.
-                                  SingBlockingStyle blocking
+                                 SingBlockingStyle blocking
                               -> NumObjectIdsAck
                               -> NumObjectIdsReq
                               -> m (OutboundStObjectIds blocking objectId object m a),
@@ -70,42 +68,40 @@ data OutboundStObjects objectId object m a where
     -> OutboundStIdle objectId object m a
     -> OutboundStObjects objectId object m a
 
-outboundRun
-  :: forall objectId object m a.
-     (Monad m)
-  => OutboundStIdle objectId object m a
-  -> Peer (ObjectDiffusion objectId object) AsServer NonPipelined StIdle m a
-outboundRun OutboundStIdle {recvMsgRequestObjectIds, recvMsgRequestObjects, recvMsgDone} =
-  Await $ \case
-    MsgRequestObjectIds blocking ackNo reqNo -> Effect $ do
-      reply <- recvMsgRequestObjectIds blocking ackNo reqNo
-      case reply of
-        SendMsgReplyObjectIds objectIds k ->
-          -- TODO: investigate why GHC cannot infer `SingI`; it used to in
-          -- `coot/typed-protocols-rewrite` branch
-          return $ case blocking of
-            SingBlocking ->
-              Yield
-                (MsgReplyObjectIds objectIds)
-                (outboundRun k)
-            SingNonBlocking ->
-              Yield
-                (MsgReplyObjectIds objectIds)
-                (outboundRun k)
-    MsgRequestObjects objectIds -> Effect $ do
-      SendMsgReplyObjects objects k <- recvMsgRequestObjects objectIds
-      return $
-        Yield
-          (MsgReplyObjects objects)
-          (outboundRun k)
-    MsgDone -> Effect $ Done <$> recvMsgDone
-
 -- | A non-pipelined 'Peer' representing the 'ObjectDiffusionOutbound'.
 objectDiffusionOutboundPeer
   :: forall objectId object m a.
-     (Monad m)
+     Monad m
   => ObjectDiffusionOutbound objectId object m a
   -> Peer (ObjectDiffusion objectId object) AsServer NonPipelined StInit m a
 objectDiffusionOutboundPeer (ObjectDiffusionOutbound outboundSt) =
     Await
-      (\MsgInit -> Effect (outboundRun <$> outboundSt))
+      (\MsgInit -> Effect (run <$> outboundSt))
+  where
+    run
+      :: OutboundStIdle objectId object m a
+      -> Peer (ObjectDiffusion objectId object) AsServer NonPipelined StIdle m a
+    run OutboundStIdle {recvMsgRequestObjectIds, recvMsgRequestObjects, recvMsgDone} =
+      Await $ \case
+        MsgRequestObjectIds blocking ackNo reqNo -> Effect $ do
+          reply <- recvMsgRequestObjectIds blocking ackNo reqNo
+          case reply of
+            SendMsgReplyObjectIds objectIds k ->
+              -- TODO: investigate why GHC cannot infer `SingI`; it used to in
+              -- `coot/typed-protocols-rewrite` branch
+              return $ case blocking of
+                SingBlocking ->
+                  Yield
+                    (MsgReplyObjectIds objectIds)
+                    (run k)
+                SingNonBlocking ->
+                  Yield
+                    (MsgReplyObjectIds objectIds)
+                    (run k)
+        MsgRequestObjects objectIds -> Effect $ do
+          SendMsgReplyObjects objects k <- recvMsgRequestObjects objectIds
+          return $
+            Yield
+              (MsgReplyObjects objects)
+              (run k)
+        MsgDone -> Effect $ Done <$> recvMsgDone

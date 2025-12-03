@@ -132,22 +132,20 @@ encodeObjectDiffusion encodeObjectId encodeObject = encode
          CBOR.encodeListLen 2
       <> CBOR.encodeWord 2
       <> CBOR.encodeListLenIndef
-      <> foldr (\objId r -> encodeObjectId objId <> r) CBOR.encodeBreak objIds'
-           where
-             objIds' :: [objectId]
-             objIds' = case objIds of
-               BlockingReply xs    -> NonEmpty.toList xs
-               NonBlockingReply xs -> xs
+      <> foldMap encodeObjectId objIds
+      <> CBOR.encodeBreak
     encode (MsgRequestObjects objIds) =
          CBOR.encodeListLen 2
       <> CBOR.encodeWord 3
       <> CBOR.encodeListLenIndef
-      <> foldr (\objId r -> encodeObjectId objId <> r) CBOR.encodeBreak objIds
+      <> foldMap encodeObjectId objIds
+      <> CBOR.encodeBreak
     encode (MsgReplyObjects objects) =
          CBOR.encodeListLen 2
       <> CBOR.encodeWord 4
       <> CBOR.encodeListLenIndef
-      <> foldr (\objId r -> encodeObject objId <> r) CBOR.encodeBreak objects
+      <> foldMap encodeObject objects
+      <> CBOR.encodeBreak
     encode MsgDone =
          CBOR.encodeListLen 1
       <> CBOR.encodeWord 5
@@ -233,7 +231,7 @@ decodeObjectDiffusion decodeObjectId decodeObject = decode
 
 codecObjectDiffusionId
   :: forall objectId object m.
-     (Monad m)
+     Monad m
   => Codec
        (ObjectDiffusion objectId object)
        CodecFailure
@@ -243,7 +241,7 @@ codecObjectDiffusionId = Codec {encode, decode}
   where
     encode
       :: forall st st'.
-         (ActiveState st
+         ( ActiveState st
          , StateTokenI st
          )
       => Message (ObjectDiffusion objectId object) st st'
@@ -252,7 +250,7 @@ codecObjectDiffusionId = Codec {encode, decode}
 
     decode
       :: forall (st :: ObjectDiffusion objectId object).
-         (ActiveState st)
+         ActiveState st
       => StateToken st
       -> m (DecodeStep
              (AnyMessage (ObjectDiffusion objectId object))

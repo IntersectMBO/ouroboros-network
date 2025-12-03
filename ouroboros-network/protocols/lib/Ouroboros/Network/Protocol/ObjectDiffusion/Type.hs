@@ -18,12 +18,12 @@ module Ouroboros.Network.Protocol.ObjectDiffusion.Type
   ( ObjectDiffusion (..)
   , Message (..)
   , SingObjectDiffusion (..)
-  , BlockingReplyList (..)
   , NumObjectIdsAck (..)
   , NumObjectIdsReq (..)
   , NumObjectsReq (..)
   , NumObjectsOutstanding (..)
     -- re-exports
+  , BlockingReplyList (..)
   , SingBlockingStyle (..)
   , SizeInBytes (..)
   , StBlockingStyle (..)
@@ -31,7 +31,6 @@ module Ouroboros.Network.Protocol.ObjectDiffusion.Type
 
 import Control.DeepSeq (NFData (..))
 import Data.Kind (Type)
-import Data.List.NonEmpty (NonEmpty)
 import Data.Monoid (Sum (..))
 import Data.Singletons
 import Data.Word (Word16)
@@ -39,7 +38,7 @@ import GHC.Generics (Generic)
 import Network.TypedProtocol.Core
 import NoThunks.Class (NoThunks (..))
 import Ouroboros.Network.Protocol.TxSubmission2.Type (SingBlockingStyle (..),
-           StBlockingStyle (..))
+           StBlockingStyle (..), BlockingReplyList (..))
 import Ouroboros.Network.SizeInBytes (SizeInBytes (..))
 import Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 import Quiet (Quiet (..))
@@ -99,15 +98,13 @@ data SingObjectDiffusion k where
 deriving instance Show (SingObjectDiffusion k)
 
 instance StateTokenI StInit where stateToken = SingInit
-
 instance StateTokenI StIdle where stateToken = SingIdle
-
-instance (SingI stBlocking) => StateTokenI (StObjectIds stBlocking) where
+instance (SingI stBlocking)
+      => StateTokenI (StObjectIds stBlocking) where
   stateToken = SingObjectIds sing
-
 instance StateTokenI StObjects where stateToken = SingObjects
-
 instance StateTokenI StDone where stateToken = SingDone
+
 
 newtype NumObjectIdsAck = NumObjectIdsAck {getNumObjectIdsAck :: Word16}
   deriving (Eq, Ord, NFData, Generic)
@@ -137,6 +134,7 @@ newtype NumObjectsOutstanding = NumObjectsOutstanding {getNumObjectsOutstanding 
   deriving (Monoid)    via (Sum Word16)
   deriving (Show)      via (Quiet NumObjectsOutstanding)
 
+
 -- | There are some constraints of the protocol that are not captured in the
 -- types of the messages, but are documented with the messages. Violation
 -- of these constraints is also a protocol error. The constraints are intended
@@ -163,6 +161,7 @@ instance Protocol (ObjectDiffusion objectId object) where
   -- acknowledgement is included in the same messages used to ask for more
   -- object identifiers.
   data Message (ObjectDiffusion objectId object) from to where
+
     -- | Initial message. The payload is currently unused; the planned use case
     -- is to indicate that the inbound side is only interested to receive messages
     -- newer than a given indicator.
@@ -203,6 +202,7 @@ instance Protocol (ObjectDiffusion objectId object) where
     --
     -- * The non-blocking case __MUST__ be used when there are non-zero
     --   remaining unacknowledged objects.
+
     MsgRequestObjectIds
       :: forall (blocking :: StBlockingStyle) objectId object.
          SingBlockingStyle blocking
@@ -223,6 +223,7 @@ instance Protocol (ObjectDiffusion objectId object) where
     -- The order in which these object identifiers are returned must be the
     -- order in which they are submitted to the mempool, to preserve dependent
     -- objects.
+
     MsgReplyObjectIds
       :: BlockingReplyList blocking objectId
       -> Message (ObjectDiffusion objectId object) (StObjectIds blocking) StIdle
@@ -238,6 +239,7 @@ instance Protocol (ObjectDiffusion objectId object) where
     --
     -- It is an error to ask for object identifiers that are not
     -- outstanding or that were already asked for.
+
     MsgRequestObjects
       :: [objectId]
       -> Message (ObjectDiffusion objectId object) StIdle StObjects
@@ -251,9 +253,11 @@ instance Protocol (ObjectDiffusion objectId object) where
     -- should be considered as if this peer had never announced them. (Note
     -- that this is no guarantee that the object is invalid, it may still
     -- be valid and available from another peer).
+
     MsgReplyObjects
       :: [object]
       -> Message (ObjectDiffusion objectId object) StObjects StIdle
+
     -- | Termination message, initiated by the client side when idle.
     MsgDone
       :: Message (ObjectDiffusion objectId object) StIdle StDone
@@ -276,20 +280,6 @@ instance ( NFData objectId
   rnf (MsgRequestObjects objIds)       = rnf objIds
   rnf (MsgReplyObjects objects)        = rnf objects
   rnf MsgDone                          = ()
-
--- | We have requests for lists of things. In the blocking case the
--- corresponding reply must be non-empty, whereas in the non-blocking case
--- and empty reply is fine.
-data BlockingReplyList (blocking :: StBlockingStyle) a where
-  BlockingReply    :: NonEmpty a -> BlockingReplyList StBlocking a
-  NonBlockingReply :: [a]        -> BlockingReplyList StNonBlocking a
-deriving instance (Eq a)   => Eq (BlockingReplyList blocking a)
-deriving instance (Show a) => Show (BlockingReplyList blocking a)
-deriving instance             Foldable (BlockingReplyList blocking)
-
-instance (NFData a) => NFData (BlockingReplyList blocking a) where
-  rnf (BlockingReply as)    = rnf as
-  rnf (NonBlockingReply as) = rnf as
 
 deriving instance (Eq objectId, Eq object)
                => Eq (Message (ObjectDiffusion objectId object) from to)
