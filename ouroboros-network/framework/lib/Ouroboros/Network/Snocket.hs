@@ -251,9 +251,15 @@ data AddressFamily addr where
     --
     TestFamily   :: AddressFamily (TestAddress addr)
 
+#if __GLASGOW_HASKELL__ < 914
+  -- These constraints are REQUIRED for ghc < 9.14 but REDUNDANT for ghc >= 9.14
+  -- See https://gitlab.haskell.org/ghc/ghc/-/issues/26381#note_637863
 deriving instance Eq   addr => Eq   (AddressFamily addr)
 deriving instance Show addr => Show (AddressFamily addr)
-
+#else
+deriving instance Eq   (AddressFamily addr)
+deriving instance Show (AddressFamily addr)
+#endif
 
 -- | Abstract communication interface that can be used by more than
 -- 'Socket'.  Snockets are polymorphic over monad which is used, this feature
