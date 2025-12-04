@@ -106,6 +106,11 @@ import Cardano.Network.Protocol.LocalTxSubmission.Codec.CDDL
 import Cardano.Network.Protocol.LocalTxSubmission.Test qualified as LocalTxSubmission
 import Cardano.Network.Protocol.LocalTxSubmission.Type (LocalTxSubmission)
 import Cardano.Network.Protocol.LocalTxSubmission.Type qualified as LocalTxSubmission
+import Cardano.Network.Protocol.ObjectDiffusion.Codec (codecObjectDiffusion)
+import Cardano.Network.Protocol.ObjectDiffusion.Codec.CDDL
+import Cardano.Network.Protocol.ObjectDiffusion.Test (Object, ObjectId)
+import Cardano.Network.Protocol.ObjectDiffusion.Type (ObjectDiffusion)
+import Cardano.Network.Protocol.ObjectDiffusion.Type qualified as ObjectDiffusion
 import Cardano.Network.Protocol.PeerSharing.Codec (codecPeerSharing)
 import Cardano.Network.Protocol.PeerSharing.Test ()
 import Cardano.Network.Protocol.PeerSharing.Type qualified as PeerSharing
@@ -147,6 +152,7 @@ tests CDDLSpecs { cddlChainSync
                 , cddlLocalTxSubmission
                 , cddlLocalTxMonitor
                 , cddlTxSubmission2
+                , cddlObjectDiffusion
                 , cddlKeepAlive
                 , cddlLocalStateQuery
                 , cddlHandshakeNodeToNodeV14ToLast
@@ -177,6 +183,8 @@ tests CDDLSpecs { cddlChainSync
                                                cddlBlockFetch)
       , testProperty "TxSubmission2"     (prop_encodeTxSubmission2
                                                cddlTxSubmission2)
+      , testProperty "ObjectDiffusion"   (prop_encodeObjectDiffusion
+                                               cddlObjectDiffusion)
       , testProperty "KeepAlive"         (prop_encodeKeepAlive
                                                cddlKeepAlive)
       , testProperty "LocalTxSubmission" (prop_encodeLocalTxSubmission
@@ -208,6 +216,8 @@ tests CDDLSpecs { cddlChainSync
                                            cddlBlockFetch)
       , testCase "TxSubmission2"     (unit_decodeTxSubmission2
                                            cddlTxSubmission2)
+      , testCase "ObjectDiffusion"   (unit_decodeObjectDiffusion
+                                           cddlObjectDiffusion)
       , testCase "KeepAlive"         (unit_decodeKeepAlive
                                            cddlKeepAlive)
       , testCase "LocalTxSubmission" (unit_decodeLocalTxSubmission
@@ -237,6 +247,7 @@ data CDDLSpecs = CDDLSpecs {
     cddlChainSync                    :: CDDLSpec (ChainSync BlockHeader HeaderPoint HeaderTip),
     cddlBlockFetch                   :: CDDLSpec (BlockFetch Block BlockPoint),
     cddlTxSubmission2                :: CDDLSpec (TxSubmission2 TxId Tx),
+    cddlObjectDiffusion              :: CDDLSpec (ObjectDiffusion ObjectId Object),
     cddlKeepAlive                    :: CDDLSpec KeepAlive,
     cddlLocalTxSubmission            :: CDDLSpec (LocalTxSubmission
                                                     LocalTxSubmission.Tx
@@ -272,6 +283,7 @@ readCDDLSpecs = do
     chainSync             <- cddlc (dir </> "chain-sync.cddl")
     blockFetch            <- cddlc (dir </> "block-fetch.cddl")
     txSubmission2         <- cddlc (dir </> "tx-submission2.cddl")
+    objectDiffusion       <- cddlc (dir </> "object-diffusion.cddl")
     keepAlive             <- cddlc (dir </> "keep-alive.cddl")
     localTxSubmission     <- cddlc (dir </> "local-tx-submission.cddl")
     localTxMonitor        <- cddlc (dir </> "local-tx-monitor.cddl")
@@ -287,6 +299,7 @@ readCDDLSpecs = do
         cddlChainSync                    = CDDLSpec chainSync,
         cddlBlockFetch                   = CDDLSpec blockFetch,
         cddlTxSubmission2                = CDDLSpec txSubmission2,
+        cddlObjectDiffusion              = CDDLSpec objectDiffusion,
         cddlKeepAlive                    = CDDLSpec keepAlive,
         cddlLocalTxSubmission            = CDDLSpec localTxSubmission,
         cddlLocalTxMonitor               = CDDLSpec localTxMonitor,
@@ -551,6 +564,13 @@ prop_encodeTxSubmission2
     -> AnyMessage (TxSubmission2 TxId Tx)
     -> Property
 prop_encodeTxSubmission2 spec = validateEncoder spec txSubmissionCodec2
+
+
+prop_encodeObjectDiffusion
+    :: CDDLSpec   (ObjectDiffusion ObjectId Object)
+    -> AnyMessage (ObjectDiffusion ObjectId Object)
+    -> Property
+prop_encodeObjectDiffusion spec = validateEncoder spec objectDiffusionCodec
 
 
 prop_encodeKeepAlive
@@ -882,13 +902,28 @@ unit_decodeTxSubmission2
     :: CDDLSpec (TxSubmission2 TxId Tx)
     -> Assertion
 unit_decodeTxSubmission2 spec =
-    validateDecoder (Just txSubmissionFix)
+    validateDecoder (Just indefiniteListFix)
       spec txSubmissionCodec2
       [ SomeAgency TxSubmission2.SingInit
       , SomeAgency $ TxSubmission2.SingTxIds TxSubmission2.SingBlocking
       , SomeAgency $ TxSubmission2.SingTxIds TxSubmission2.SingNonBlocking
       , SomeAgency   TxSubmission2.SingTxs
       , SomeAgency   TxSubmission2.SingIdle
+      ]
+      100
+
+
+unit_decodeObjectDiffusion
+    :: CDDLSpec (ObjectDiffusion ObjectId Object)
+    -> Assertion
+unit_decodeObjectDiffusion spec =
+    validateDecoder (Just indefiniteListFix)
+      spec objectDiffusionCodec
+      [ SomeAgency ObjectDiffusion.SingInit
+      , SomeAgency $ ObjectDiffusion.SingObjectIds ObjectDiffusion.SingBlocking
+      , SomeAgency $ ObjectDiffusion.SingObjectIds ObjectDiffusion.SingNonBlocking
+      , SomeAgency   ObjectDiffusion.SingObjects
+      , SomeAgency   ObjectDiffusion.SingIdle
       ]
       100
 
@@ -1000,12 +1035,12 @@ withTemporaryFile bs k =
 
 
 -- | The cddl spec cannot differentiate between fix-length list encoding and
--- infinite-length encoding.  The cddl tool always generates fix-length
--- encoding but tx-submission codec is accepting only infinite-length
--- encoding.
+-- infinite-length encoding. The cddl tool always generates fix-length
+-- encoding but tx-submission and object-diffusion codecs are accepting only
+-- indefinite-length encoding.
 --
-txSubmissionFix :: CBOR.Term -> CBOR.Term
-txSubmissionFix term =
+indefiniteListFix :: CBOR.Term -> CBOR.Term
+indefiniteListFix term =
     case term of
       TList [TInt tag, TList l] -> TList [TInt tag, TListI l]
       _                         -> term

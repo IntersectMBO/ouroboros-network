@@ -12,7 +12,11 @@
 {-# LANGUAGE TypeFamilies               #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Ouroboros.Network.Protocol.ObjectDiffusion.Test (tests) where
+module Ouroboros.Network.Protocol.ObjectDiffusion.Test
+  ( tests
+  , ObjectId (..)
+  , Object (..)
+  ) where
 
 import Data.ByteString.Lazy (ByteString)
 import Data.List (nub)
