@@ -105,11 +105,11 @@ nodeToNodeVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
 -- | Version data for NodeToNode protocol
 --
 data NodeToNodeVersionData = NodeToNodeVersionData
-  { networkMagic  :: !NetworkMagic
-  , diffusionMode :: !DiffusionMode
-  , peerSharing   :: !PeerSharing
-  , query         :: !Bool
-  , perasSupportStatus   :: !PerasSupportStatus
+  { networkMagic       :: !NetworkMagic
+  , diffusionMode      :: !DiffusionMode
+  , peerSharing        :: !PeerSharing
+  , query              :: !Bool
+  , perasSupportStatus :: !PerasSupportStatus
   }
   deriving (Show, Eq)
 
@@ -197,9 +197,9 @@ data PerasSupportStatus = PerasUnsupported | PerasSupported
 
 instance Ord PerasSupportStatus where
   PerasUnsupported <= PerasUnsupported = True
-  PerasSupported <= PerasUnsupported = False
-  PerasUnsupported <= PerasSupported = True
-  PerasSupported <= PerasSupported = True
+  PerasSupported <= PerasUnsupported   = False
+  PerasUnsupported <= PerasSupported   = True
+  PerasSupported <= PerasSupported     = True
 
 getLocalPerasSupportStatus :: Set CardanoFeatureFlag -> NodeToNodeVersion -> PerasSupportStatus
 getLocalPerasSupportStatus featureFlags v =

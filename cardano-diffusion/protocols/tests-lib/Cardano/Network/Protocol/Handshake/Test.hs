@@ -158,7 +158,7 @@ instance Arbitrary ArbitraryNodeToNodeVersionData where
         shrinkPeerSharing PeerSharingEnabled  = [PeerSharingDisabled]
 
         shrinkPerasSupportStatus PerasUnsupported = []
-        shrinkPerasSupportStatus PerasSupported = [PerasUnsupported]
+        shrinkPerasSupportStatus PerasSupported   = [PerasUnsupported]
 
 newtype ArbitraryNodeToNodeVersions =
         ArbitraryNodeToNodeVersions

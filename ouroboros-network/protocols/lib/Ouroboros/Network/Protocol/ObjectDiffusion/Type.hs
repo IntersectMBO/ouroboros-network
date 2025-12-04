@@ -37,8 +37,8 @@ import Data.Word (Word16)
 import GHC.Generics (Generic)
 import Network.TypedProtocol.Core
 import NoThunks.Class (NoThunks (..))
-import Ouroboros.Network.Protocol.TxSubmission2.Type (SingBlockingStyle (..),
-           StBlockingStyle (..), BlockingReplyList (..))
+import Ouroboros.Network.Protocol.TxSubmission2.Type (BlockingReplyList (..),
+           SingBlockingStyle (..), StBlockingStyle (..))
 import Ouroboros.Network.SizeInBytes (SizeInBytes (..))
 import Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 import Quiet (Quiet (..))
