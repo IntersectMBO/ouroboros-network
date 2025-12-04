@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                  #-}
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE GADTs                #-}
@@ -387,7 +388,13 @@ instance ToJSON KnownPeerInfo where
 instance ToJSON PeerStatus where
   toJSON = String . pack . show
 
-instance (ToJSON extraFlags, ToJSONKey peerAddr, ToJSON peerAddr, Ord peerAddr)
+instance (ToJSON extraFlags, ToJSONKey peerAddr,
+#if __GLASGOW_HASKELL__ < 914
+  -- These constraints are REQUIRED for ghc < 9.14 but REDUNDANT for ghc >= 9.14
+  -- See https://gitlab.haskell.org/ghc/ghc/-/issues/26381#note_637863
+  ToJSON peerAddr,
+#endif
+  Ord peerAddr)
   => ToJSON (LocalRootPeers extraFlags peerAddr) where
   toJSON lrp = kindObject "LocalRootPeers"
     [ "groups" .= toJSONList (LocalRootPeers.toGroups lrp) ]
@@ -834,7 +841,11 @@ instance ToJSON Time where
 
 instance ( ToJSON extraDebugState
          , ToJSON extraFlags
+#if __GLASGOW_HASKELL__ < 914
+  -- These constraints are REQUIRED for ghc < 9.14 but REDUNDANT for ghc >= 9.14
+  -- See https://gitlab.haskell.org/ghc/ghc/-/issues/26381#note_637863
          , ToJSON extraPeers
+#endif
          , ToJSON extraTracer
          , ToJSON peerAddr
          , ToJSONKey peerAddr
@@ -1264,7 +1275,12 @@ instance (Show versionNumber, ToJSON versionNumber, ToJSON agreedOptions)
       , "command" .= show cerr
       ]
 
-instance (Show addr, Show versionNumber, Show agreedOptions,
+instance (Show addr, Show versionNumber,
+#if __GLASGOW_HASKELL__ < 914
+  -- These constraints are REQUIRED for ghc < 9.14 but REDUNDANT for ghc >= 9.14
+  -- See https://gitlab.haskell.org/ghc/ghc/-/issues/26381#note_637863
+          Show agreedOptions,
+#endif
           ToJSON addr, ToJSON versionNumber, ToJSON agreedOptions)
       => ToJSON (ConnMgr.Trace addr (ConnectionHandlerTrace versionNumber agreedOptions)) where
   toJSON = \case
@@ -1406,7 +1422,13 @@ instance (Show addr, Show versionNumber, Show agreedOptions,
         , "info" .= String (pack . show $ info)
         ]
 
-instance (Show addr, ToJSON addr)
+instance (
+#if __GLASGOW_HASKELL__ < 914
+     -- These constraints are REQUIRED for ghc < 9.14 but REDUNDANT for ghc >= 9.14
+     -- See https://gitlab.haskell.org/ghc/ghc/-/issues/26381#note_637863
+     Show addr,
+#endif
+     ToJSON addr)
       => ToJSON (ConnMgr.AbstractTransitionTrace addr) where
     toJSON (ConnMgr.TransitionTrace addr tr) =
       object
@@ -1432,7 +1454,13 @@ instance ToJSON AcceptConnectionsPolicyTrace where
            , "numberOfConnection" .= show numOfConnections
            ]
 
-instance (Show addr, ToJSON addr)
+instance (
+#if __GLASGOW_HASKELL__ < 914
+  -- These constraints are REQUIRED for ghc < 9.14 but REDUNDANT for ghc >= 9.14
+  -- See https://gitlab.haskell.org/ghc/ghc/-/issues/26381#note_637863
+  Show addr,
+#endif
+  ToJSON addr)
       => ToJSON (Server.Trace addr) where
   toJSON (Server.TrAcceptConnection connId)     =
     object [ "kind" .= String "AcceptConnection"
@@ -1700,7 +1728,11 @@ instance (ToJSON tx, ToJSON reason) => ToJSON (AnyMessage (LocalTxSubmission tx 
       ]
 
 instance ( ToJSON txid
+#if __GLASGOW_HASKELL__ < 914
+  -- These constraints are REQUIRED for ghc < 9.14 but REDUNDANT for ghc >= 9.14
+  -- See https://gitlab.haskell.org/ghc/ghc/-/issues/26381#note_637863
          , ToJSON tx
+#endif
          , Show txid
          , Show tx
          )

@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
@@ -39,7 +40,11 @@ data Some (f :: k -> Type) where
 codecLocalStateQuery
   :: forall block point query m.
      ( MonadST m
+#if __GLASGOW_HASKELL__ < 914
+  -- These constraints are REQUIRED for ghc < 9.14 but REDUNDANT for ghc >= 9.14
+  -- See https://gitlab.haskell.org/ghc/ghc/-/issues/26381#note_637863
      , ShowQuery query
+#endif
      )
   => LocalStateQueryVersion
      -- ^ eg whether to allow 'ImmutableTip' in @'MsgAcquire'

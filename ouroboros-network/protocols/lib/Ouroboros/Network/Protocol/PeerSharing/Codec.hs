@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
@@ -106,8 +107,13 @@ codecPeerSharingId = Codec encodeMsg decodeMsg
      encodeMsg = AnyMessage
 
      decodeMsg :: forall (st :: PeerSharing peerAddress).
+#if __GLASGOW_HASKELL__ < 914
+                -- These constraints are REQUIRED for ghc < 9.14 but REDUNDANT for ghc >= 9.14
+                -- See https://gitlab.haskell.org/ghc/ghc/-/issues/26381#note_637863
                   ActiveState st
-               => StateToken st
+               => 
+#endif
+                  StateToken st
                -> m (DecodeStep (AnyMessage (PeerSharing peerAddress))
                           CodecFailure m (SomeMessage st))
      decodeMsg stok = return $ DecodePartial $ \bytes -> return $

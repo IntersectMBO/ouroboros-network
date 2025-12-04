@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns              #-}
+{-# LANGUAGE CPP                       #-}
 {-# LANGUAGE DataKinds                 #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
@@ -66,7 +67,11 @@ import Data.Map (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (isNothing)
 import Data.Monoid.Synchronisation (FirstToFinish (..))
+#if __GLASGOW_HASKELL__ < 914
 import Data.Strict.Tuple (pattern (:!:))
+#else
+import Data.Strict.Tuple (data (:!:))
+#endif
 
 import Control.Applicative
 import Control.Concurrent.Class.MonadSTM.Strict
