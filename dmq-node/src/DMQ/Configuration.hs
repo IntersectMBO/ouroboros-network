@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE FlexibleContexts           #-}
@@ -69,7 +70,7 @@ import Ouroboros.Network.OrphanInstances ()
 import Ouroboros.Network.PeerSelection.Governor.Types
            (PeerSelectionTargets (..), makePublicPeerSelectionStateVar)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
-           (LedgerPeerSnapshot (..))
+           (LedgerPeerSnapshot (..), LedgerPeersKind (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket (LocalAddress (..), RemoteAddress)
@@ -569,8 +570,8 @@ mkDiffusionConfiguration
     updateLedgerPeerSnapshot :: HasCallStack
                              => FilePath
                              -> STM IO (Maybe FilePath)
-                             -> (Maybe LedgerPeerSnapshot -> STM IO ())
-                             -> IO (Maybe LedgerPeerSnapshot)
+                             -> (Maybe (LedgerPeerSnapshot BigLedgerPeers) -> STM IO ())
+                             -> IO (Maybe (LedgerPeerSnapshot BigLedgerPeers))
     updateLedgerPeerSnapshot topologyDir readLedgerPeerPath writeVar = do
       mPeerSnapshotFile <- atomically readLedgerPeerPath
       mLedgerPeerSnapshot <- case mPeerSnapshotFile of
@@ -604,5 +605,3 @@ data ConfigurationError =
 
 instance Exception ConfigurationError where
   displayException NoAddressInformation = "no ipv4 or ipv6 address specified, use --host-addr or --host-ipv6-addr"
-
-
