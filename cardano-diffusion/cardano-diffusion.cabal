@@ -329,6 +329,7 @@ library protocols-tests-lib
     Ouroboros.Network.Protocol.LocalTxSubmission.Examples as Cardano.Network.Protocol.LocalTxSubmission.Examples,
     Ouroboros.Network.Protocol.LocalTxSubmission.Test as Cardano.Network.Protocol.LocalTxSubmission.Test,
     Ouroboros.Network.Protocol.ObjectDiffusion.Codec.CDDL as Cardano.Network.Protocol.ObjectDiffusion.Codec.CDDL,
+    Ouroboros.Network.Protocol.ObjectDiffusion.Direct as Cardano.Network.Protocol.ObjectDiffusion.Direct,
     Ouroboros.Network.Protocol.ObjectDiffusion.Test as Cardano.Network.Protocol.ObjectDiffusion.Test,
     Ouroboros.Network.Protocol.PeerSharing.Direct as Cardano.Network.Protocol.PeerSharing.Direct,
     Ouroboros.Network.Protocol.PeerSharing.Examples as Cardano.Network.Protocol.PeerSharing.Examples,

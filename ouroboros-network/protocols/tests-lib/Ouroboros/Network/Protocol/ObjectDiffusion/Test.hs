@@ -36,6 +36,7 @@ import Ouroboros.Network.Util.ShowProxy
 
 import Ouroboros.Network.Protocol.ObjectDiffusion.Codec
 import Ouroboros.Network.Protocol.ObjectDiffusion.Type
+import Ouroboros.Network.Protocol.ObjectDiffusion.Direct
 
 import Test.Data.CDDL (Any (..))
 import Test.Ouroboros.Network.Protocol.Utils (prop_codec_cborM,
@@ -227,8 +228,8 @@ prop_codec_valid_cbor = prop_codec_valid_cbor_encoding codec
 -- Local generators
 --
 
-data ObjectSubmissionTestParams =
-     ObjectSubmissionTestParams {
+data ObjectDiffusionTestParams =
+     ObjectDiffusionTestParams {
        testMaxUnacked            :: Positive (Small Word16),
        testMaxObjectIdsToRequest :: Positive (Small Word16),
        testMaxObjectToRequest    :: Positive (Small Word16),
@@ -236,15 +237,15 @@ data ObjectSubmissionTestParams =
      }
   deriving Show
 
-instance Arbitrary ObjectSubmissionTestParams where
+instance Arbitrary ObjectDiffusionTestParams where
   arbitrary =
-    ObjectSubmissionTestParams <$> arbitrary
+    ObjectDiffusionTestParams <$> arbitrary
                            <*> arbitrary
                            <*> arbitrary
                            <*> arbitrary
 
-  shrink (ObjectSubmissionTestParams a b c d) =
-    [ ObjectSubmissionTestParams a' b' c' d'
+  shrink (ObjectDiffusionTestParams a b c d) =
+    [ ObjectDiffusionTestParams a' b' c' d'
     | (a', b', c', d') <- shrink (a, b, c, d) ]
 
 
