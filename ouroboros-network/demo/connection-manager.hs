@@ -175,7 +175,7 @@ debugIOErrorRethrowPolicy =
 -- across warm \/ how \/ established) protocols.
 --
 withBidirectionalConnectionManager
-    :: forall peerAddr socket m a.
+    :: forall peerAddr extraFlags socket m a.
        ( ConnectionManagerMonad m
 
        , Hashable peerAddr
@@ -204,7 +204,7 @@ withBidirectionalConnectionManager
     -- ^ series of request possible to do with the bidirectional connection
     -- manager towards some peer.
     -> (ConnectionManagerWithExpandedCtx
-          Mux.InitiatorResponderMode socket peerAddr UnversionedProtocolData
+          Mux.InitiatorResponderMode socket peerAddr extraFlags UnversionedProtocolData
           UnversionedProtocol ByteString m () ()
        -> peerAddr
        -> Async m Void
@@ -311,7 +311,7 @@ withBidirectionalConnectionManager snocket makeBearer socket
                       -> LazySTM.TVar m [[Int]]
                       -> TemperatureBundle
                           ([MiniProtocolWithExpandedCtx
-                              Mux.InitiatorResponderMode peerAddr ByteString m () ()])
+                              Mux.InitiatorResponderMode peerAddr extraFlags ByteString m () ()])
     serverApplication hotRequestsVar
                       warmRequestsVar
                       establishedRequestsVar
@@ -358,7 +358,7 @@ withBidirectionalConnectionManager snocket makeBearer socket
       :: Mux.MiniProtocolNum
       -> LazySTM.TVar m [[Int]]
       -> RunMiniProtocolWithExpandedCtx
-           Mux.InitiatorResponderMode peerAddr ByteString m () ()
+           Mux.InitiatorResponderMode peerAddr extraFlags ByteString m () ()
     reqRespInitiatorAndResponder protocolNum requestsVar =
       InitiatorAndResponderProtocol
         (mkMiniProtocolCbFromPeer
@@ -397,7 +397,7 @@ withBidirectionalConnectionManager snocket makeBearer socket
 -- | Run all initiator mini-protocols and collect results.
 --
 runInitiatorProtocols
-    :: forall muxMode addr m a b.
+    :: forall muxMode addr extraFlags m a b.
        ( Alternative (STM m)
        , MonadAsync       m
        , MonadCatch       m
@@ -409,8 +409,8 @@ runInitiatorProtocols
        )
     => SingMuxMode muxMode
     -> Mux.Mux muxMode m
-    -> (forall pt. SingProtocolTemperature pt -> ExpandedInitiatorContext addr m)
-    -> OuroborosBundleWithExpandedCtx muxMode addr ByteString m a b
+    -> (forall pt. SingProtocolTemperature pt -> ExpandedInitiatorContext addr extraFlags m)
+    -> OuroborosBundleWithExpandedCtx muxMode addr extraFlags ByteString m a b
     -> m (Maybe (TemperatureBundle [a]))
 runInitiatorProtocols
     singMuxMode mux getContext
@@ -441,7 +441,7 @@ runInitiatorProtocols
                 (WithEstablished established)
   where
     runInitiator :: SingProtocolTemperature pt
-                 -> MiniProtocolWithExpandedCtx muxMode addr ByteString m a b
+                 -> MiniProtocolWithExpandedCtx muxMode addr extraFlags ByteString m a b
                  -> m (STM m (Either SomeException a))
     runInitiator sing ptcl =
         Mux.runMiniProtocol
@@ -509,7 +509,8 @@ bidirectionalExperiment
                              eicControlMessage  = readTVar
                                                 . projectBundle tok
                                                 $ controlMessageBundle,
-                             eicIsBigLedgerPeer = IsNotBigLedgerPeer
+                             eicIsBigLedgerPeer = IsNotBigLedgerPeer,
+                             eicExtraFlags      = ()
                            })
                   muxBundle
               res <-
@@ -559,12 +560,13 @@ bidirectionalExperiment
     connect :: Int
             -> ConnectionManagerWithExpandedCtx
                  Mux.InitiatorResponderMode
-                 socket peerAddr UnversionedProtocolData
+                 socket peerAddr extraFlags
+                 UnversionedProtocolData
                  UnversionedProtocol ByteString
                  IO () ()
             -> IO (Connected peerAddr
                             (HandleWithExpandedCtx
-                              Mux.InitiatorResponderMode peerAddr
+                              Mux.InitiatorResponderMode peerAddr extraFlags
                               UnversionedProtocolData ByteString IO () ())
                             (HandlerError
                               UnversionedProtocol))
