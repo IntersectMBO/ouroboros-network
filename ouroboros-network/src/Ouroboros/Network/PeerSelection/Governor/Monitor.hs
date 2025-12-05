@@ -120,6 +120,8 @@ connections :: forall m extraState extraDebugState extraFlags extraPeers extraAP
             -> Guarded (STM m) (TimedDecision m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
 connections PeerSelectionActions{
               peerStateActions = PeerStateActions {monitorPeerConnection}
+            , extraPeersAPI = PublicExtraPeersAPI { memberExtraPeers
+                                                  , differenceExtraPeers }
             }
             st@PeerSelectionState {
               publicRootPeers,
@@ -178,10 +180,14 @@ connections PeerSelectionActions{
 
             -- Asynchronous transition to cold peer can only be
             -- a result of a failure.
-            knownPeers'        = KnownPeers.setConnectTimes
+            (knownPeers', publicRootPeers') = KnownPeers.setConnectTimes
                                     ( (\(_, a) -> ExitPolicy.repromoteDelay (fromMaybe 0 a) `addTime` now)
                                       <$> demotedToCold
                                     )
+                                    ( \p -> LocalRootPeers.member p localRootPeers ||
+                                          (memberExtraPeers p (PublicRootPeers.getExtraPeers publicRootPeers))
+                                    )
+                                    (PublicRootPeers.difference differenceExtraPeers publicRootPeers)
                                . Set.foldr'
                                    ((snd .) . KnownPeers.incrementFailCount)
                                    (knownPeers st)
@@ -215,6 +221,7 @@ connections PeerSelectionActions{
                                 activePeers       = activePeers',
                                 establishedPeers  = establishedPeers',
                                 knownPeers        = knownPeers',
+                                publicRootPeers   = publicRootPeers',
 
                                 -- When promoting a warm peer, it might happen
                                 -- that the connection will break (or one of the

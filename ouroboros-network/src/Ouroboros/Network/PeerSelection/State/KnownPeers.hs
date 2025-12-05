@@ -426,26 +426,38 @@ minConnectTime KnownPeers { nextConnectTimes } fn =
 
 setConnectTimes :: Ord peeraddr
                 => Map peeraddr Time --TODO: make this a single entry
+                -> (peeraddr -> Bool)
+                -> (Set peeraddr -> a)
                 -> KnownPeers peeraddr
-                -> KnownPeers peeraddr
+                -> (KnownPeers peeraddr, a)
 setConnectTimes times
+                unforgetable
+                bump
                 knownPeers@KnownPeers {
                   allPeers,
                   availableToConnect,
                   nextConnectTimes
                 } =
     assert (all (`Map.member` allPeers) (Map.keysSet times)) $
-    let knownPeers' = knownPeers {
+    let (times', forgets) = Map.partitionWithKey partFn times
+        knownPeers' = delete (Map.keysSet forgets) knownPeers {
           availableToConnect =
                    availableToConnect
-            Set.\\ Map.keysSet times,
+            Set.\\ Map.keysSet times',
 
           nextConnectTimes =
             Map.foldlWithKey' (\psq peeraddr time -> PSQ.insert peeraddr time () psq)
                               nextConnectTimes
-                              times
+                              times'
         }
-    in assert (invariant knownPeers') knownPeers'
+    in assert (invariant knownPeers') (knownPeers', bump (Map.keysSet forgets))
+  where
+    partFn p _ =
+      case Map.lookup p allPeers of
+           Just k -> if knownPeerFailCount k < 5 || unforgetable p
+                        then True
+                        else False
+           Nothing -> False -- Impossible
 
 -----------------------------------
 -- Tracking when we should clear the fail counter
