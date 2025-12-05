@@ -542,14 +542,19 @@ jobPromoteWarmPeer PeerSelectionActions{peerStateActions = PeerStateActions {act
       return $ Completion $ \st@PeerSelectionState {
                                publicRootPeers,
                                activePeers,
+                               knownPeers,
                                targets = PeerSelectionTargets {
                                            targetNumberOfActivePeers
                                          }
                              }
-                           _now ->
+                           now ->
         let bigLedgerPeersSet = PublicRootPeers.getBigLedgerPeers publicRootPeers
          in if peeraddr `EstablishedPeers.member` establishedPeers st
-               then let activePeers' = Set.insert peeraddr activePeers in
+               then let clearTime    = 120 -- XXX add to policy
+                        activePeers' = Set.insert peeraddr activePeers
+                        knownPeers'  = KnownPeers.setClearFailCountTime
+                                           peeraddr (clearTime `addTime` now)
+                                           knownPeers  in
                     Decision {
                       decisionTrace = if peeraddr `Set.member` bigLedgerPeersSet
                                       then [TracePromoteWarmBigLedgerPeerDone
@@ -566,7 +571,8 @@ jobPromoteWarmPeer PeerSelectionActions{peerStateActions = PeerStateActions {act
                       decisionState = st {
                                         activePeers           = activePeers',
                                         inProgressPromoteWarm = Set.delete peeraddr
-                                                                  (inProgressPromoteWarm st)
+                                                                  (inProgressPromoteWarm st),
+                                        knownPeers            = knownPeers'
                                       },
                       decisionJobs  = []
                     }

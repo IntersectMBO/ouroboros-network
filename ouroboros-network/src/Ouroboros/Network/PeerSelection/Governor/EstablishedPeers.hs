@@ -592,10 +592,7 @@ jobPromoteColdPeer PeerSelectionActions {
                                   )
                                   (Set.singleton peeraddr)
                               $ KnownPeers.setSuccessfulConnectionFlag (Set.singleton peeraddr)
-                              $ KnownPeers.clearTepidFlag peeraddr $
-                                    KnownPeers.resetFailCount
-                                        peeraddr
-                                        knownPeers
+                              $ KnownPeers.clearTepidFlag peeraddr knownPeers
             bigLedgerPeersSet = PublicRootPeers.getBigLedgerPeers publicRootPeers
 
             st' = st { establishedPeers      = establishedPeers',
