@@ -492,7 +492,7 @@ jobPromoteColdPeer PeerSelectionActions {
                      extraStateToExtraCounters
                    }
                    PeerSelectionPolicy { policyPeerShareActivationDelay }
-                   peeraddr isBigLedgerPeer diffusionMode connMode =
+                   peeraddr isBigLedgerPeer diffusionMode provenance =
     Job job handler () "promoteColdPeer"
   where
     handler :: SomeException
@@ -554,7 +554,7 @@ jobPromoteColdPeer PeerSelectionActions {
     job = do
       --TODO: decide if we should do timeouts here or if we should make that
       -- the responsibility of establishPeerConnection
-      peerconn <- establishPeerConnection isBigLedgerPeer diffusionMode connMode peeraddr
+      peerconn <- establishPeerConnection isBigLedgerPeer diffusionMode provenance peeraddr
       let !peerSharing = peerConnToPeerSharing peerconn
 
       return $ Completion $ \st@PeerSelectionState {
