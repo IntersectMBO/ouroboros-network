@@ -1469,10 +1469,10 @@ with args@Arguments {
               if inboundRequired connectionMode
               then do
                 return ( Just (Right (TrInboundConnectionNotFound connectionMode peerAddr))
-                   , mutableConnState
-                   , Left (withCallStack
-                            (InboundConnectionNotFound connectionMode peerAddr))
-                   )
+                       , mutableConnState
+                       , Left (withCallStack
+                                (InboundConnectionNotFound connectionMode peerAddr))
+                       )
               else do
                 -- TODO: label `connVar` using 'ConnectionId'
                 labelTVar connVar ("conn-state-" ++ show peerAddr)
