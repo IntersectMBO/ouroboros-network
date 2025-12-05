@@ -2898,11 +2898,9 @@ prop_diffusion_never_connect_peer_behind_firewall ioSimTrace traceNumber =
           govUnreachablePeersSig =
             (\local ->
                let
-                 isUnreachablePeer (LocalRootConfig {localRootBehindFirewall}) =
-                   localRootBehindFirewall
                  unreachablePeers =
                    Map.keysSet
-                     $ Map.filter isUnreachablePeer
+                     $ Map.filter localRootBehindFirewall
                      $ LocalRootPeers.toMap local
                in
                  unreachablePeers
