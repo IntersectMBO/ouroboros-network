@@ -2929,7 +2929,7 @@ prop_diffusion_never_connect_peer_behind_firewall ioSimTrace traceNumber =
           (\(_,unreachables,inbounds) -> unreachables `Set.disjoint` inbounds)
           ((,,) <$> govLocalRootPeersSig
                 <*> govUnreachablePeersSig
-                <*> govInboundConnectionsSig)
+                <*> govNotFoundInboundConnSig)
 
 prop_diffusion_never_connect_peer_behind_firewall_iosimpor
   :: AbsBearerInfo -> DiffusionScript -> Property
