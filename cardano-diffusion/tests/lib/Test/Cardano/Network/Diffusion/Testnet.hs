@@ -2927,8 +2927,8 @@ prop_diffusion_never_connect_peer_behind_firewall ioSimTrace traceNumber =
         signalProperty 100 show
           (\(_,unreachables,inbounds) -> unreachables `Set.disjoint` inbounds)
           ((,,) <$> govLocalRootPeersSig
-                   <*> govUnreachablePeersSig
-                   <*> govInboundConnectionsSig)
+                <*> govUnreachablePeersSig
+                <*> govInboundConnectionsSig)
 
 prop_diffusion_never_connect_peer_behind_firewall_iosimpor
   :: AbsBearerInfo -> DiffusionScript -> Property
