@@ -114,8 +114,6 @@ module Ouroboros.Network.ConnectionManager.Types
   , resultInState
   , DemotedToColdRemoteTr (..)
   , AcquireOutboundConnection
-  , ConnectionMode (..)
-  , inboundRequired
   , IncludeInboundConnection
     -- *** Outbound side
   , acquireOutboundConnection
@@ -499,23 +497,13 @@ data Connected peerAddr handle handleError =
     --
   | Disconnected !(ConnectionId peerAddr) !(DisconnectionException handleError)
 
--- | Describes the behavior for handling connections when no inbound connection
--- is found.
---  - 'CreateNewIfNoInbound': If no inbound connection exists, create a new
--- conection.
---  - 'RequireInbound': Strictly require an inbound connection; fail if none
--- exists.
-data ConnectionMode
-    = CreateNewIfNoInbound
-    | RequireInbound
-    deriving Show
-
-inboundRequired :: ConnectionMode -> Bool
-inboundRequired RequireInbound = True
-inboundRequired _other         = False
-
+-- | Acquire outbound connection
+-- 'Inbound' provenance restricts acquiring an outbound connection to those
+-- initiated by a remote peer.
+-- 'Outbound' provenance allows acquiring an outbound connection regardless of
+-- who initiated it.
 type AcquireOutboundConnection peerAddr handle handleError m
-    = DiffusionMode -> peerAddr -> ConnectionMode -> m (Connected peerAddr handle handleError)
+    = DiffusionMode -> peerAddr -> Provenance -> m (Connected peerAddr handle handleError)
 
 type IncludeInboundConnection socket peerAddr handle handleError m
     = Word32
@@ -743,7 +731,7 @@ data ConnectionManagerError peerAddr
     -- | No matching inbound connection found while establishing a new connection is
     -- not allowed.
     --
-    | InboundConnectionNotFound !ConnectionMode !peerAddr !CallStack
+    | InboundConnectionNotFound !Provenance !peerAddr !CallStack
 
     -- | Connections that would be forbidden by the kernel (@TCP@ semantics).
     --

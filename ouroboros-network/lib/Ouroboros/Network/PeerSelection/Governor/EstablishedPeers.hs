@@ -24,7 +24,7 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import System.Random (randomR)
 
-import Ouroboros.Network.ConnectionManager.Types (ConnectionMode(..))
+import Ouroboros.Network.ConnectionManager.Types (Provenance (..))
 import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.PeerSelection.Governor.Types
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type (IsBigLedgerPeer (..))
@@ -188,7 +188,7 @@ belowTargetLocal actions@PeerSelectionActions {
                         },
         decisionJobs  = [ jobPromoteColdPeer
                             actions policy peer IsNotBigLedgerPeer diffusionMode
-                            (connectionMode peer localRootPeers)
+                            (localRootConnectionProvenance peer localRootPeers)
                         | peer <- Set.toList selectedToPromote
                         , let diffusionMode = LocalRootPeers.diffusionMode
                                             $ LocalRootPeers.toMap localRootPeers Map.! peer
@@ -291,7 +291,7 @@ belowTargetOther actions@PeerSelectionActions {
         decisionJobs  = [ jobPromoteColdPeer
                             actions policy peer IsNotBigLedgerPeer
                             InitiatorAndResponderDiffusionMode
-                            (connectionMode peer localRootPeers)
+                            (localRootConnectionProvenance peer localRootPeers)
                         | peer <- Set.toList selectedToPromote ]
       }
 
@@ -425,7 +425,7 @@ belowTargetBigLedgerPeers enableAction
                         },
         decisionJobs  = [ jobPromoteColdPeer actions policy peer IsBigLedgerPeer
                           InitiatorAndResponderDiffusionMode
-                          (connectionMode peer localRootPeers)
+                          (localRootConnectionProvenance peer localRootPeers)
                         | peer <- Set.toList selectedToPromote ]
       }
 
@@ -480,7 +480,7 @@ jobPromoteColdPeer
   -> peeraddr
   -> IsBigLedgerPeer
   -> DiffusionMode
-  -> ConnectionMode
+  -> Provenance
   -> Job () m (Completion m extraState extraDebugState extraFlags extraPeers
                             extraTrace peeraddr peerconn)
 jobPromoteColdPeer PeerSelectionActions {
@@ -877,18 +877,18 @@ aboveTargetBigLedgerPeers actions@PeerSelectionActions {
   | otherwise
   = GuardedSkip Nothing
 
-connectionMode
+localRootConnectionProvenance
   :: forall peeraddr extraFlags.
     ( Ord peeraddr
     )
   => peeraddr
   -> LocalRootPeers.LocalRootPeers extraFlags peeraddr
-  -> ConnectionMode
-connectionMode peer localRootPeers =
+  -> Provenance
+localRootConnectionProvenance peer localRootPeers =
       maybe
-        CreateNewIfNoInbound
+        Outbound
         (\LocalRootConfig {localRootBehindFirewall} ->
-           bool CreateNewIfNoInbound RequireInbound localRootBehindFirewall)
+           bool Outbound Inbound localRootBehindFirewall)
         (Map.lookup peer $ LocalRootPeers.toMap localRootPeers)
 
 jobDemoteEstablishedPeer

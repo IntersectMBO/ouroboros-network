@@ -1338,7 +1338,7 @@ with args@Arguments {
         -> ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version versionData m
         -> DiffusionMode
         -> peerAddr
-        -> ConnectionMode
+        -> Provenance
         -> m (Connected peerAddr handle handleError)
     acquireOutboundConnectionImpl stateVar stdGenVar handler diffusionMode peerAddr connectionMode = do
         let provenance = Outbound
@@ -1466,7 +1466,7 @@ with args@Arguments {
                 <- State.newMutableConnState peerAddr connStateIdSupply connState'
 
               -- Only proceed if creating a new connection is allowed
-              if inboundRequired connectionMode
+              if connectionMode == Inbound
               then do
                 return ( Just (Right (TrInboundConnectionNotFound connectionMode peerAddr))
                        , mutableConnState
@@ -2479,7 +2479,7 @@ withCallStack k = k callStack
 --
 data Trace peerAddr handlerTrace
   = TrIncludeConnection            Provenance peerAddr
-  | TrInboundConnectionNotFound    ConnectionMode peerAddr
+  | TrInboundConnectionNotFound    Provenance peerAddr
   | TrReleaseConnection            Provenance (ConnectionId peerAddr)
   | TrConnect                      (Maybe peerAddr) -- ^ local address
                                    peerAddr         -- ^ remote address

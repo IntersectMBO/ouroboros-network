@@ -763,7 +763,7 @@ withPeerStateActions PeerStateActionsArguments {
     establishPeerConnection :: JobPool () m (Maybe SomeException)
                             -> IsBigLedgerPeer
                             -> DiffusionMode
-                            -> ConnectionMode
+                            -> Provenance
                             -> peerAddr
                             -> m (PeerConnectionHandle muxMode responderCtx peerAddr versionData ByteString m a b)
     establishPeerConnection jobPool isBigLedgerPeer diffusionMode connectionMode remotePeerAddr =

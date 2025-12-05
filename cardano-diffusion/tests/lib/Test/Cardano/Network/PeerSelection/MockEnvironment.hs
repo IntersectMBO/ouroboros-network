@@ -62,7 +62,7 @@ import Control.Monad.IOSim
 import Control.Tracer (Tracer (..), contramap, traceWith)
 
 import Ouroboros.Network.BlockFetch (FetchMode (..), PraosFetchMode (..))
-import Ouroboros.Network.ConnectionManager.Types (ConnectionMode (..))
+import Ouroboros.Network.ConnectionManager.Types (Provenance (..))
 import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.ExitPolicy
 import Ouroboros.Network.PeerSelection hiding (requestPublicRootPeers)
@@ -551,7 +551,7 @@ mockPeerSelectionActions' tracer
           traceWith tracer (TraceEnvPeerShareResult addr peeraddrs)
           return (PeerSharingResult peeraddrs)
 
-    establishPeerConnection :: IsBigLedgerPeer -> DiffusionMode -> ConnectionMode -> PeerAddr -> m (PeerConn m)
+    establishPeerConnection :: IsBigLedgerPeer -> DiffusionMode -> Provenance -> PeerAddr -> m (PeerConn m)
     establishPeerConnection _ _ _ peeraddr = do
       --TODO: add support for variable delays and synchronous failure
       traceWith tracer (TraceEnvEstablishConn peeraddr)
