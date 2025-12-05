@@ -53,6 +53,8 @@ import Network.TypedProtocol.PingPong.Examples
 import Network.TypedProtocol.PingPong.Server
 import Network.TypedProtocol.PingPong.Type
 
+import Cardano.Network.Driver.Limits
+import Cardano.Network.Protocol.Limits
 import Cardano.Network.NodeToNode (blockFetchMiniProtocolNum,
            chainSyncMiniProtocolNum, keepAliveMiniProtocolNum,
            peerSharingMiniProtocolNum, txSubmissionMiniProtocolNum)

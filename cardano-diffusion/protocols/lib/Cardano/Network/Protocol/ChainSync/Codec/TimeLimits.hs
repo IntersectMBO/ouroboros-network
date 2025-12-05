@@ -17,6 +17,8 @@ import Ouroboros.Network.Protocol.ChainSync.Codec
 import Ouroboros.Network.Protocol.ChainSync.Type
 import Ouroboros.Network.Protocol.Limits
 
+import Cardano.Network.Protocol.Limits
+
 import Data.Bifunctor (first)
 import Data.Kind (Type)
 import System.Random (StdGen, randomR)
