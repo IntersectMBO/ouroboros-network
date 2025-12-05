@@ -1340,7 +1340,7 @@ with args@Arguments {
         -> peerAddr
         -> Provenance
         -> m (Connected peerAddr handle handleError)
-    acquireOutboundConnectionImpl stateVar stdGenVar handler diffusionMode peerAddr connectionMode = do
+    acquireOutboundConnectionImpl stateVar stdGenVar handler diffusionMode peerAddr connProv = do
         let provenance = Outbound
         traceWith tracer (TrIncludeConnection provenance peerAddr)
         (trace, eHandleWedge) <- atomically $ do
@@ -1448,11 +1448,11 @@ with args@Arguments {
 
             Nothing -> do
               -- Only proceed if creating a new connection is allowed
-              if connectionMode == Inbound
+              if connProv == Inbound
               then do
-                return ( Just (Right (TrInboundConnectionNotFound connectionMode peerAddr))
+                return ( Just (Right (TrInboundConnectionNotFound connProv peerAddr))
                        , Left (withCallStack
-                                (InboundConnectionNotFound connectionMode peerAddr))
+                                (InboundConnectionNotFound connProv peerAddr))
                        )
               else do
                 let connState' = ReservedOutboundState
