@@ -2906,8 +2906,9 @@ prop_diffusion_never_connect_peer_behind_firewall ioSimTrace traceNumber =
                  unreachablePeers
             ) <$> govLocalRootPeersSig
 
-          govInboundConnectionsSig :: Signal (Set NtNAddr)
-          govInboundConnectionsSig =
+          -- all connections which triggered `TrConnectionNotFound Inbound`
+          govNotFoundInboundConnSig :: Signal (Set NtNAddr)
+          govNotFoundInboundConnSig =
               Signal.keyedLinger
                 180 -- 3 minutes
                 (Just . fromMaybe Set.empty)
