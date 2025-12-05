@@ -30,11 +30,6 @@ newtype ProtocolTimeLimits ps = ProtocolTimeLimits {
                          => StateToken st -> Maybe DiffTime
      }
 
-newtype ProtocolTimeLimitsWithRnd ps = ProtocolTimeLimitsWithRnd {
-      timeLimitForStateWithRnd :: forall (st :: ps). ActiveState st
-                               => StateToken st -> StdGen -> (Maybe DiffTime, StdGen)
-    }
-
 data ProtocolLimitFailure where
     ExceededSizeLimit :: forall ps (st :: ps).
                          ( Show (StateToken st)

@@ -59,6 +59,7 @@ library api
     Cardano.Network.ConsensusMode
     Cardano.Network.FetchMode
     Cardano.Network.LedgerStateJudgement
+    Cardano.Network.Protocol.Limits
     Cardano.Network.NodeToClient.Version
     Cardano.Network.NodeToNode.Version
     Cardano.Network.PeerSelection.Bootstrap
@@ -72,6 +73,9 @@ library api
     deepseq,
     nothunks,
     ouroboros-network:api,
+    random ^>=1.2,
+    typed-protocols:{typed-protocols} ^>=1.1,
+    io-classes:{si-timers} ^>=1.8.0.1,
     text >=1.2 && <2.2,
 
 test-suite api-tests
@@ -167,6 +171,46 @@ library
     build-depends:
       unix
 
+library framework
+  import: ghc-options
+  visibility: public
+  hs-source-dirs: framework/lib
+  exposed-modules:
+    Cardano.Network.Driver.Limits
+
+  -- other-extensions:
+  build-depends:
+    base >=4.12 && <4.23,
+    cardano-diffusion:api,
+    contra-tracer,
+    io-classes:{io-classes, si-timers} ^>=1.8.0.1,
+    ouroboros-network:{api, framework},
+    random ^>=1.2,
+    typed-protocols:{typed-protocols} ^>=1.1,
+    network-mux ^>=0.9.1,
+  -- build-depends:
+  --   -- ^ only to derive nothunk instances
+  --   Win32-network ^>=0.2,
+  --   cardano-strict-containers,
+  --   containers >=0.5 && <0.9,
+  --   contra-tracer,
+  --   deepseq,
+  --   hashable,
+  --   io-classes:{io-classes, si-timers, strict-stm} ^>=1.8.0.1,
+  --   monoidal-synchronisation ^>=0.1.0.6,
+  --   network ^>=3.2.7,
+  --   network-mux ^>=0.9.1,
+  --   nothunks ^>=0.1.4 || ^>=0.2 || ^>=0.3,
+  --   ouroboros-network:{api, tests-lib},
+  --   psqueues,
+  --   quiet,
+  --   random ^>=1.2,
+  --   text,
+  --   typed-protocols:{typed-protocols, cborg, stateful} ^>=1.1,
+
+  -- if os(windows)
+  --   build-depends: Win32 >=2.5.4.1 && <3.0
+
 library orphan-instances
   import: ghc-options
   visibility: public
@@ -237,6 +281,7 @@ library protocols
   hs-source-dirs: protocols/lib
   exposed-modules:
     Cardano.Network.Protocol.Handshake.Codec
+    Cardano.Network.Protocol.ChainSync.Codec.TimeLimits
     Cardano.Network.Protocol.LocalStateQuery.Codec
     Cardano.Network.Protocol.LocalTxMonitor.Codec
     Cardano.Network.Protocol.PeerSharing.Codec
@@ -283,9 +328,10 @@ library protocols
     bytestring >=0.10 && <0.13,
     cardano-diffusion:api,
     cborg >=0.2.1 && <0.3,
-    io-classes ^>=1.8.0.1,
+    io-classes:{io-classes, si-timers} ^>=1.8.0.1,
     ouroboros-network:{api, framework, protocols},
-    typed-protocols:{typed-protocols, stateful} ^>=1.1,
+    random,
+    typed-protocols:{typed-protocols, cborg, stateful} ^>=1.1,
 
 library protocols-tests-lib
   import: ghc-options
@@ -437,7 +483,7 @@ library cardano-diffusion-tests-lib
     aeson,
     base >=4.14 && <4.23,
     bytestring,
-    cardano-diffusion:{cardano-diffusion, api, orphan-instances, protocols-tests-lib},
+    cardano-diffusion:{cardano-diffusion, api, framework, orphan-instances, protocols, protocols-tests-lib},
     cardano-slotting,
     cborg,
     containers,

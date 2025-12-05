@@ -132,6 +132,7 @@ belowTargetBigLedgerPeers enableAction
                             policyPickWarmPeersToPromote
                           }
                           st@PeerSelectionState {
+                            localRootPeers,
                             publicRootPeers,
                             establishedPeers,
                             activePeers,
@@ -178,8 +179,11 @@ belowTargetBigLedgerPeers enableAction
                           inProgressPromoteWarm = inProgressPromoteWarm
                                                <> selectedToPromote
                         },
-        decisionJobs  = [ jobPromoteWarmPeer actions policy peeraddr IsBigLedgerPeer peerconn
-                        | (peeraddr, peerconn) <- Map.assocs selectedToPromote' ]
+        decisionJobs  = [ jobPromoteWarmPeer actions policy peeraddr extraFlags IsBigLedgerPeer peerconn
+                        | (peeraddr, peerconn) <- Map.assocs selectedToPromote'
+                        , let extraFlags = LocalRootPeers.extraLocalRootFlags localRootConfig
+                              localRootConfig = LocalRootPeers.toMap localRootPeers Map.! peeraddr
+                        ]
       }
 
     -- If we could promote except that there are no peers currently available
@@ -294,8 +298,11 @@ belowTargetLocal actions@PeerSelectionActions {
                           inProgressPromoteWarm = inProgressPromoteWarm
                                                <> selectedToPromote
                         },
-        decisionJobs  = [ jobPromoteWarmPeer actions policy peeraddr IsNotBigLedgerPeer peerconn
-                        | (peeraddr, peerconn) <- Map.assocs selectedToPromote' ]
+        decisionJobs  = [ jobPromoteWarmPeer actions policy peeraddr extraFlags IsNotBigLedgerPeer peerconn
+                        | (peeraddr, peerconn) <- Map.assocs selectedToPromote'
+                        , let extraFlags = LocalRootPeers.extraLocalRootFlags localRootConfig
+                              localRootConfig = LocalRootPeers.toMap localRootPeers Map.! peeraddr
+                        ]
       }
 
 
@@ -404,8 +411,11 @@ belowTargetOther actions@PeerSelectionActions {
                           inProgressPromoteWarm = inProgressPromoteWarm
                                                <> selectedToPromote
                         },
-        decisionJobs  = [ jobPromoteWarmPeer actions policy peeraddr IsNotBigLedgerPeer peerconn
-                        | (peeraddr, peerconn) <- Map.assocs selectedToPromote' ]
+        decisionJobs  = [ jobPromoteWarmPeer actions policy peeraddr extraFlags IsNotBigLedgerPeer peerconn
+                        | (peeraddr, peerconn) <- Map.assocs selectedToPromote'
+                        , let extraFlags = LocalRootPeers.extraLocalRootFlags localRootConfig
+                              localRootConfig = LocalRootPeers.toMap localRootPeers Map.! peeraddr
+                        ]
       }
 
     -- If we could promote except that there are no peers currently available
@@ -442,6 +452,7 @@ jobPromoteWarmPeer
       m
   -> PeerSelectionPolicy peeraddr m
   -> peeraddr
+  -> extraFlags
   -> IsBigLedgerPeer
   -> peerconn
   -> Job () m (Completion m extraState extraDebugState extraFlags extraPeers extraTrace
@@ -452,7 +463,7 @@ jobPromoteWarmPeer PeerSelectionActions{ peerStateActions =
                                              errorDelay
                                            }
                                        }
-                   _ peeraddr isBigLedgerPeer peerconn =
+                   _ peeraddr extraFlags isBigLedgerPeer peerconn =
     Job job handler () "promoteWarmPeer"
   where
     handler :: SomeException
@@ -549,7 +560,7 @@ jobPromoteWarmPeer PeerSelectionActions{ peerStateActions =
 
     job :: m (Completion m extraState extraDebugState extraFlags extraPeers extraTrace peeraddr peerconn)
     job = do
-      activatePeerConnection isBigLedgerPeer peerconn
+      activatePeerConnection isBigLedgerPeer extraFlags peerconn
       return $ Completion $ \st@PeerSelectionState {
                                publicRootPeers,
                                activePeers,

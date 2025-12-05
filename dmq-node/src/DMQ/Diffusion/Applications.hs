@@ -25,12 +25,12 @@ diffusionApplications
   -> Configuration
   -> Diffusion.Configuration NoExtraFlags m ntnFd ntnAddr ntcFd ntcAddr
   -> NTN.LimitsAndTimeouts crypto ntnAddr
-  -> NTN.Apps ntnAddr m a ()
+  -> NTN.Apps ntnAddr extraFlags m a ()
   -> NTC.Apps ntcAddr m ()
   -> PeerSelectionPolicy ntnAddr m
   -> Diffusion.Applications ntnAddr NodeToNodeVersion   NodeToNodeVersionData
                             ntcAddr NodeToClientVersion NodeToClientVersionData
-                            m a
+                            extraFlags m a
 diffusionApplications
   NodeKernel {
     peerSharingRegistry

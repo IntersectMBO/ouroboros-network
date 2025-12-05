@@ -343,7 +343,7 @@ data PeerSelectionActions extraState extraFlags extraPeers extraAPI extraCounter
 
        -- | Core actions run by the governor to change 'PeerStatus'.
        --
-       peerStateActions       :: PeerStateActions peeraddr peerconn m,
+       peerStateActions       :: PeerStateActions peeraddr extraFlags peerconn m,
 
        -- | Read the current ledger state
        --
@@ -381,7 +381,7 @@ data PeerSelectionInterfaces extraState extraFlags extraPeers extraCounters peer
 
 -- | Callbacks which are performed to change peer state.
 --
-data PeerStateActions peeraddr peerconn m = PeerStateActions {
+data PeerStateActions peeraddr extraFlags peerconn m = PeerStateActions {
     -- | Monitor peer state.  Must be non-blocking.
     --
     monitorPeerConnection    :: peerconn -> STM m (PeerStatus, Maybe RepromoteDelay),
@@ -393,7 +393,9 @@ data PeerStateActions peeraddr peerconn m = PeerStateActions {
     --
     establishPeerConnection  :: IsBigLedgerPeer
                              -> DiffusionMode
-                             -> peeraddr -> m peerconn,
+                             -> peeraddr
+                             -> extraFlags
+                             -> m peerconn,
 
     -- | Activate a connection: warm to hot promotion.
     --
@@ -401,7 +403,9 @@ data PeerStateActions peeraddr peerconn m = PeerStateActions {
     -- mini-protocol callbacks.
     --
     activatePeerConnection   :: IsBigLedgerPeer
-                             -> peerconn -> m (),
+                             -> extraFlags
+                             -> peerconn
+                             -> m (),
 
     -- | Deactive a peer: hot to warm demotion.
     --

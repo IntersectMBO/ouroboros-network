@@ -53,9 +53,12 @@ import Network.TypedProtocol.PingPong.Examples
 import Network.TypedProtocol.PingPong.Server
 import Network.TypedProtocol.PingPong.Type
 
+import Cardano.Network.Driver.Limits
+import Cardano.Network.Protocol.Limits
 import Cardano.Network.NodeToNode (blockFetchMiniProtocolNum,
            chainSyncMiniProtocolNum, keepAliveMiniProtocolNum,
            peerSharingMiniProtocolNum, txSubmissionMiniProtocolNum)
+import Cardano.Network.PeerSelection (PeerTrustable (IsNotTrustable))
 
 import Ouroboros.Network.BlockFetch
 import Ouroboros.Network.BlockFetch.Client
@@ -276,7 +279,7 @@ applications :: forall block header s m.
              -> (block -> header)
              -> Diffusion.Applications NtNAddr NtNVersion NtNVersionData
                                        NtCAddr NtCVersion NtCVersionData
-                                       m ()
+                                       PeerTrustable m ()
 applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug nodeKernel
              Codecs { chainSyncCodec, blockFetchCodec
                     , keepAliveCodec, pingPongCodec
@@ -328,12 +331,12 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
   where
     initiatorApp
       :: PSTypes.PeerSharing
-      -> OuroborosBundleWithExpandedCtx Mx.InitiatorMode NtNAddr ByteString m () Void
+      -> OuroborosBundleWithExpandedCtx Mx.InitiatorMode NtNAddr PeerTrustable ByteString m () Void
     -- initiator mode will never run a peer sharing responder side
     initiatorApp peerSharing = fmap f <$> initiatorAndResponderApp peerSharing
       where
-        f :: MiniProtocolWithExpandedCtx Mx.InitiatorResponderMode NtNAddr ByteString m () ()
-          -> MiniProtocolWithExpandedCtx Mx.InitiatorMode          NtNAddr ByteString m () Void
+        f :: MiniProtocolWithExpandedCtx Mx.InitiatorResponderMode NtNAddr PeerTrustable ByteString m () ()
+          -> MiniProtocolWithExpandedCtx Mx.InitiatorMode          NtNAddr PeerTrustable ByteString m () Void
         f MiniProtocol { miniProtocolNum
                        , miniProtocolLimits
                        , miniProtocolRun } =
@@ -348,7 +351,7 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
 
     initiatorAndResponderApp
       :: PSTypes.PeerSharing
-      -> OuroborosBundleWithExpandedCtx Mx.InitiatorResponderMode NtNAddr ByteString m () ()
+      -> OuroborosBundleWithExpandedCtx Mx.InitiatorResponderMode NtNAddr PeerTrustable ByteString m () ()
     initiatorAndResponderApp peerSharing = TemperatureBundle
       { withHot = WithHot
           [ MiniProtocol
@@ -426,12 +429,13 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
     localResponderApp = OuroborosApplication []
 
     chainSyncInitiator
-      :: MiniProtocolCb (ExpandedInitiatorContext NtNAddr m) ByteString m ()
+      :: MiniProtocolCb (ExpandedInitiatorContext NtNAddr PeerTrustable m) ByteString m ()
     chainSyncInitiator =
       MiniProtocolCb $
         \  ExpandedInitiatorContext {
              eicConnectionId   = connId,
-             eicControlMessage = controlMessageSTM
+             eicControlMessage = controlMessageSTM,
+             eicExtraFlags     = peerTrustable
            }
            channel
         ->
@@ -467,6 +471,7 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
                           (\chainVar ->
                             runPeerWithLimitsRnd
                               (((ppNtNConnId connId ++) . (" " ++) . show) `contramap` debugTracer)
+                              peerTrustable
                               (mkStdGen 0) -- TODO
                               chainSyncCodec
                               (chainSyncSizeLimits limits)
@@ -486,6 +491,7 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
       labelThisThread "ChainSyncServer"
       runPeerWithLimitsRnd
         (((ppNtNConnId connId ++) . (" " ++) . show) `contramap` debugTracer)
+        IsNotTrustable -- TODO no PeerTrustable in this context
         (mkStdGen 0)
         chainSyncCodec
         (chainSyncSizeLimits limits)
@@ -496,7 +502,7 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
             () (nkChainProducerState nodeKernel) toHeader))
 
     blockFetchInitiator
-      :: MiniProtocolCb (ExpandedInitiatorContext NtNAddr m) ByteString m ()
+      :: MiniProtocolCb (ExpandedInitiatorContext NtNAddr PeerTrustable m) ByteString m ()
     blockFetchInitiator  =
       MiniProtocolCb $
       \  ExpandedInitiatorContext {
@@ -545,7 +551,7 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
           )
 
     keepAliveInitiator
-      :: MiniProtocolCb (ExpandedInitiatorContext NtNAddr m) ByteString m ()
+      :: MiniProtocolCb (ExpandedInitiatorContext NtNAddr PeerTrustable m) ByteString m ()
     keepAliveInitiator  =
       MiniProtocolCb $
       \  ExpandedInitiatorContext {
@@ -588,7 +594,7 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
         (keepAliveServerPeer keepAliveServer)
 
     pingPongInitiator
-      :: MiniProtocolCb (ExpandedInitiatorContext NtNAddr m) ByteString m ()
+      :: MiniProtocolCb (ExpandedInitiatorContext NtNAddr PeerTrustable m) ByteString m ()
     pingPongInitiator  =
         MiniProtocolCb $
         \  ExpandedInitiatorContext {
@@ -644,7 +650,7 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
 
 
     peerSharingInitiator
-      :: MiniProtocolCb (ExpandedInitiatorContext NtNAddr m) ByteString m ()
+      :: MiniProtocolCb (ExpandedInitiatorContext NtNAddr PeerTrustable m) ByteString m ()
     peerSharingInitiator  =
       MiniProtocolCb $
        \  ExpandedInitiatorContext {
@@ -683,7 +689,7 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
     txSubmissionInitiator
       :: TxDecisionPolicy
       -> Mempool m TxId (Tx TxId)
-      -> MiniProtocolCb (ExpandedInitiatorContext NtNAddr m) ByteString m ()
+      -> MiniProtocolCb (ExpandedInitiatorContext NtNAddr PeerTrustable m) ByteString m ()
     txSubmissionInitiator txDecisionPolicy mempool =
       MiniProtocolCb $
         \ ExpandedInitiatorContext {

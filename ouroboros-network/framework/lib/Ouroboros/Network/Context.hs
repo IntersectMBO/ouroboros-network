@@ -19,10 +19,11 @@ import Ouroboros.Network.PeerSelection.LedgerPeers.Type
 
 -- | Context passed to initiator mini-protocol execution.
 --
-data ExpandedInitiatorContext addr m = ExpandedInitiatorContext {
+data ExpandedInitiatorContext addr extraFlags m = ExpandedInitiatorContext {
     eicConnectionId    :: !(ConnectionId addr),
     eicControlMessage  :: !(ControlMessageSTM m),
-    eicIsBigLedgerPeer :: !IsBigLedgerPeer
+    eicIsBigLedgerPeer :: !IsBigLedgerPeer,
+    eicExtraFlags      :: !extraFlags
   }
 
 -- | A context passed to initiator mini-protocol execution for non-p2p

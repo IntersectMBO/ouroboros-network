@@ -116,9 +116,9 @@ import Ouroboros.Network.Protocol.TxSubmission2.Server
 
 -- TODO: if we add `versionNumber` to `ctx` we could use `RunMiniProtocolCb`.
 -- This makes sense, since `ctx` already contains `versionData`.
-type ClientApp addr m a =
+type ClientApp addr extraFlags m a =
      NodeToNodeVersion
-  -> ExpandedInitiatorContext addr m
+  -> ExpandedInitiatorContext addr extraFlags m
   -> Channel m BL.ByteString
   -> m (a, Maybe BL.ByteString)
 
@@ -128,29 +128,29 @@ type ServerApp addr m a =
   -> Channel m BL.ByteString
   -> m (a, Maybe BL.ByteString)
 
-data Apps addr m a b =
+data Apps addr extraFlags m a b =
   Apps {
     -- | Start a sig-submission client
-    aSigSubmissionClient :: ClientApp addr m a
+    aSigSubmissionClient :: ClientApp addr extraFlags m a
 
     -- | Start a sig-submission server
   , aSigSubmissionServer :: ServerApp addr m b
 
     -- | Start a keep-alive client.
-  , aKeepAliveClient     :: ClientApp addr m a
+  , aKeepAliveClient     :: ClientApp addr extraFlags m a
 
     -- | Start a keep-alive server.
   , aKeepAliveServer     :: ServerApp addr m b
 
     -- | Start a peer-sharing client.
-  , aPeerSharingClient   :: ClientApp addr m a
+  , aPeerSharingClient   :: ClientApp addr extraFlags m a
 
     -- | Start a peer-sharing server.
   , aPeerSharingServer   :: ServerApp addr m b
   }
 
 ntnApps
-  :: forall crypto m addr .
+  :: forall crypto m addr extraFlags .
     ( Crypto crypto
     , DSIGN.ContextDSIGN (DSIGN crypto) ~ ()
     , DSIGN.Signable (DSIGN crypto) (OCertSignable crypto)
@@ -176,7 +176,7 @@ ntnApps
  -> Codecs crypto addr m
  -> LimitsAndTimeouts crypto addr
  -> TxDecisionPolicy
- -> Apps addr m () ()
+ -> Apps addr extraFlags m () ()
 ntnApps
     tracer
     Configuration {
@@ -240,7 +240,7 @@ ntnApps
 
     aSigSubmissionClient
       :: NodeToNodeVersion
-      -> ExpandedInitiatorContext addr m
+      -> ExpandedInitiatorContext addr extraFlags m
       -> Channel m BL.ByteString
       -> m ((), Maybe BL.ByteString)
     aSigSubmissionClient version
@@ -306,7 +306,7 @@ ntnApps
 
     aKeepAliveClient
       :: NodeToNodeVersion
-      -> ExpandedInitiatorContext addr m
+      -> ExpandedInitiatorContext addr extraFlags m
       -> Channel m BL.ByteString
       -> m ((), Maybe BL.ByteString)
     aKeepAliveClient _version
@@ -360,7 +360,7 @@ ntnApps
 
     aPeerSharingClient
       :: NodeToNodeVersion
-      -> ExpandedInitiatorContext addr m
+      -> ExpandedInitiatorContext addr extraFlags m
       -> Channel m BL.ByteString
       -> m ((), Maybe BL.ByteString)
     aPeerSharingClient _version
@@ -489,10 +489,10 @@ nodeToNodeProtocols LimitsAndTimeouts {
 
 initiatorProtocols
   :: LimitsAndTimeouts crypto addr
-  -> Apps addr m a b
+  -> Apps addr extraFlags m a b
   -> NodeToNodeVersion
   -> NodeToNodeVersionData
-  -> OuroborosBundleWithExpandedCtx 'InitiatorMode addr BL.ByteString m a Void
+  -> OuroborosBundleWithExpandedCtx 'InitiatorMode addr extraFlags BL.ByteString m a Void
 initiatorProtocols limitsAndTimeouts
                    Apps {
                      aSigSubmissionClient
@@ -514,10 +514,10 @@ initiatorProtocols limitsAndTimeouts
 
 initiatorAndResponderProtocols
   :: LimitsAndTimeouts crypto addr
-  -> Apps addr m a b
+  -> Apps addr extraFlags m a b
   -> NodeToNodeVersion
   -> NodeToNodeVersionData
-  -> OuroborosBundleWithExpandedCtx 'InitiatorResponderMode addr BL.ByteString m a b
+  -> OuroborosBundleWithExpandedCtx 'InitiatorResponderMode addr extraFlags BL.ByteString m a b
 initiatorAndResponderProtocols limitsAndTimeouts
                                Apps {
                                  aSigSubmissionClient
