@@ -58,7 +58,7 @@ import Cardano.Network.Protocol.Limits
 import Cardano.Network.NodeToNode (blockFetchMiniProtocolNum,
            chainSyncMiniProtocolNum, keepAliveMiniProtocolNum,
            peerSharingMiniProtocolNum, txSubmissionMiniProtocolNum)
-import Cardano.Network.PeerSelection (PeerTrustable)
+import Cardano.Network.PeerSelection (PeerTrustable (IsNotTrustable))
 
 import Ouroboros.Network.BlockFetch
 import Ouroboros.Network.BlockFetch.Client
@@ -434,7 +434,8 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
       MiniProtocolCb $
         \  ExpandedInitiatorContext {
              eicConnectionId   = connId,
-             eicControlMessage = controlMessageSTM
+             eicControlMessage = controlMessageSTM,
+             eicExtraFlags     = peerTrustable
            }
            channel
         ->
@@ -470,6 +471,7 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
                           (\chainVar ->
                             runPeerWithLimitsRnd
                               (((ppNtNConnId connId ++) . (" " ++) . show) `contramap` debugTracer)
+                              peerTrustable
                               (mkStdGen 0) -- TODO
                               chainSyncCodec
                               (chainSyncSizeLimits limits)
@@ -489,6 +491,7 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
       labelThisThread "ChainSyncServer"
       runPeerWithLimitsRnd
         (((ppNtNConnId connId ++) . (" " ++) . show) `contramap` debugTracer)
+        IsNotTrustable -- TODO no PeerTrustable in this context
         (mkStdGen 0)
         chainSyncCodec
         (chainSyncSizeLimits limits)

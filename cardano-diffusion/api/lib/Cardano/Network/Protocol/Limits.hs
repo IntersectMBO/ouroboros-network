@@ -14,8 +14,10 @@ import System.Random (StdGen)
 
 import Network.TypedProtocol.Core
 
+import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable)
+
 
 newtype ProtocolTimeLimitsWithRnd ps = ProtocolTimeLimitsWithRnd {
       timeLimitForStateWithRnd :: forall (st :: ps). ActiveState st
-                               => StateToken st -> StdGen -> (Maybe DiffTime, StdGen)
+                               => PeerTrustable -> StateToken st -> StdGen -> (Maybe DiffTime, StdGen)
     }

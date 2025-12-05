@@ -17,6 +17,7 @@ import Ouroboros.Network.Protocol.ChainSync.Codec
 import Ouroboros.Network.Protocol.ChainSync.Type
 import Ouroboros.Network.Protocol.Limits
 
+import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable)
 import Cardano.Network.Protocol.Limits
 
 import Data.Bifunctor (first)
@@ -49,14 +50,14 @@ timeLimitsChainSync idleTimeout = ProtocolTimeLimitsWithRnd stateToLimit
   where
     stateToLimit :: forall (st :: ChainSync header point tip).
                     ActiveState st
-                 => StateToken st -> StdGen -> (Maybe DiffTime, StdGen)
-    stateToLimit SingIdle                 rnd | ChainSyncIdleTimeout timeout <- idleTimeout
-                                              = (Just timeout, rnd)
-                                              | otherwise
-                                              = (Nothing, rnd)
-    stateToLimit SingIntersect            rnd = (shortWait, rnd)
-    stateToLimit (SingNext SingCanAwait)  rnd = (shortWait, rnd)
-    stateToLimit (SingNext SingMustReply) rnd =
+                 => PeerTrustable -> StateToken st -> StdGen -> (Maybe DiffTime, StdGen)
+    stateToLimit _ SingIdle                 rnd | ChainSyncIdleTimeout timeout <- idleTimeout
+                                                = (Just timeout, rnd)
+                                                | otherwise
+                                                = (Nothing, rnd)
+    stateToLimit _ SingIntersect            rnd = (shortWait, rnd)
+    stateToLimit _ (SingNext SingCanAwait)  rnd = (shortWait, rnd)
+    stateToLimit _ (SingNext SingMustReply) rnd =
       -- We draw from a range for which streaks of empty slots ranges
       -- from 0.0001% up to 1% probability.
       -- t = T_s [log (1-Y) / log (1-f)]
@@ -75,5 +76,5 @@ timeLimitsChainSync idleTimeout = ProtocolTimeLimitsWithRnd stateToLimit
                                     )
                           $ rnd
       in (Just timeout, rnd')
-    stateToLimit a@SingDone rnd = (notActiveState a, rnd)
+    stateToLimit _ a@SingDone rnd = (notActiveState a, rnd)
 

@@ -45,6 +45,7 @@ import Ouroboros.Network.Driver.Limits
 import Ouroboros.Network.Driver.Simple
 import Ouroboros.Network.Util.ShowProxy
  
+import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable)
 import Cardano.Network.Protocol.Limits
 
 
@@ -71,6 +72,7 @@ mkDriverWithLimitsRnd
   -- message
 
   -> Tracer m (TraceSendRecv ps)
+  -> PeerTrustable
   -> TimeoutFn m
   -> StdGen
   -> CodecF ps failure m annotator bytes
@@ -78,7 +80,7 @@ mkDriverWithLimitsRnd
   -> ProtocolTimeLimitsWithRnd ps
   -> Channel m bytes
   -> Driver ps pr (Maybe bytes, StdGen) m
-mkDriverWithLimitsRnd runDecodeStep nat tracer timeoutFn rnd0
+mkDriverWithLimitsRnd runDecodeStep nat tracer peerTrustable timeoutFn rnd0
                       Codec{encode, decode}
                       ProtocolSizeLimits{sizeLimitForState, dataSize}
                       ProtocolTimeLimitsWithRnd{timeLimitForStateWithRnd}
@@ -107,7 +109,7 @@ mkDriverWithLimitsRnd runDecodeStep nat tracer timeoutFn rnd0
       decoder <- decode tok
       let sizeLimit = sizeLimitForState @st stateToken
           (timeLimit, rnd') = first (fromMaybe (-1))
-                            $ timeLimitForStateWithRnd @st stateToken rnd
+                            $ timeLimitForStateWithRnd @st peerTrustable stateToken rnd
       result  <- timeoutFn timeLimit $
                    runDecodeStep sizeLimit dataSize
                                  channel trailing (nat <$> decoder)
@@ -131,6 +133,7 @@ driverWithLimitsRnd :: forall ps (pr :: PeerRole) failure bytes m.
                        , Show failure
                        )
                     => Tracer m (TraceSendRecv ps)
+                    -> PeerTrustable
                     -> TimeoutFn m
                     -> StdGen
                     -> Codec ps failure m bytes
@@ -156,6 +159,7 @@ runPeerWithLimitsRnd
      , Show failure
      )
   => Tracer m (TraceSendRecv ps)
+  -> PeerTrustable
   -> StdGen
   -> Codec ps failure m bytes
   -> ProtocolSizeLimits ps bytes
@@ -163,9 +167,9 @@ runPeerWithLimitsRnd
   -> Channel m bytes
   -> Peer ps pr NonPipelined st m a
   -> m (a, Maybe bytes)
-runPeerWithLimitsRnd tracer rnd codec slimits tlimits channel peer =
+runPeerWithLimitsRnd tracer peerTrustable rnd codec slimits tlimits channel peer =
     withTimeoutSerial $ \timeoutFn ->
-      let driver = driverWithLimitsRnd tracer timeoutFn rnd codec slimits tlimits channel
+      let driver = driverWithLimitsRnd tracer peerTrustable timeoutFn rnd codec slimits tlimits channel
       in     (\(a, (trailing, _)) -> (a, trailing))
          <$> runPeerWithDriver driver peer
 
@@ -185,6 +189,7 @@ runPipelinedPeerWithLimitsRnd
      , Show failure
      )
   => Tracer m (TraceSendRecv ps)
+  -> PeerTrustable
   -> StdGen
   -> Codec ps failure m bytes
   -> ProtocolSizeLimits ps bytes
@@ -192,9 +197,9 @@ runPipelinedPeerWithLimitsRnd
   -> Channel m bytes
   -> PeerPipelined ps pr st m a
   -> m (a, Maybe bytes)
-runPipelinedPeerWithLimitsRnd tracer rnd codec slimits tlimits channel peer =
+runPipelinedPeerWithLimitsRnd tracer peerTrustable rnd codec slimits tlimits channel peer =
     withTimeoutSerial $ \timeoutFn ->
-      let driver = driverWithLimitsRnd tracer timeoutFn rnd codec slimits tlimits channel
+      let driver = driverWithLimitsRnd tracer peerTrustable timeoutFn rnd codec slimits tlimits channel
       in     (\(a, (trailing, _)) -> (a, trailing))
          <$> runPipelinedPeerWithDriver driver peer
 
@@ -212,6 +217,7 @@ runConnectedPeersWithLimitsRnd
      )
   => m (Channel m bytes, Channel m bytes)
   -> Tracer m (Role, TraceSendRecv ps)
+  -> PeerTrustable
   -> StdGen
   -> Codec ps failure m bytes
   -> ProtocolSizeLimits ps bytes
@@ -219,13 +225,13 @@ runConnectedPeersWithLimitsRnd
   -> Peer ps             pr  NonPipelined st m a
   -> Peer ps (FlipAgency pr) NonPipelined st m b
   -> m (a, b)
-runConnectedPeersWithLimitsRnd createChannels tracer rnd codec slimits tlimits client server =
+runConnectedPeersWithLimitsRnd createChannels tracer peerTrustable rnd codec slimits tlimits client server =
     createChannels >>= \(clientChannel, serverChannel) ->
 
     (do labelThisThread "client"
-        fst <$> runPeerWithLimitsRnd
-                        tracerClient rnd codec slimits tlimits
-                                     clientChannel client)
+        fst <$> runPeerWithLimitsRnd tracerClient
+                        peerTrustable rnd codec slimits tlimits
+                        clientChannel client)
       `concurrently`
     (do labelThisThread "server"
         fst <$> runPeer tracerServer codec serverChannel server)
@@ -247,6 +253,7 @@ runConnectedPipelinedPeersWithLimitsRnd
      )
   => m (Channel m bytes, Channel m bytes)
   -> Tracer m (Role, TraceSendRecv ps)
+  -> PeerTrustable
   -> StdGen
   -> Codec ps failure m bytes
   -> ProtocolSizeLimits ps bytes
@@ -254,11 +261,11 @@ runConnectedPipelinedPeersWithLimitsRnd
   -> PeerPipelined ps    pr               st m a
   -> Peer ps (FlipAgency pr) NonPipelined st m b
   -> m (a, b)
-runConnectedPipelinedPeersWithLimitsRnd createChannels tracer rnd codec slimits tlimits client server =
+runConnectedPipelinedPeersWithLimitsRnd createChannels tracer peerTrustable rnd codec slimits tlimits client server =
     createChannels >>= \(clientChannel, serverChannel) ->
 
     (fst <$> runPipelinedPeerWithLimitsRnd
-                     tracerClient rnd codec slimits tlimits
+                     tracerClient peerTrustable rnd codec slimits tlimits
                                         clientChannel client)
       `concurrently`
     (fst <$> runPeer tracerServer codec serverChannel server)
