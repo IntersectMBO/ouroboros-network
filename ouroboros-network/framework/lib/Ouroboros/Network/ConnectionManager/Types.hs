@@ -740,7 +740,7 @@ data ConnectionManagerError peerAddr
     --
     | ForbiddenConnection   !(ConnectionId peerAddr) !CallStack
 
-    -- | No matching inbound connection found and creating new connection is
+    -- | No matching inbound connection found while establishing a new connection is
     -- not allowed.
     --
     | InboundConnectionNotFound !ConnectionMode !peerAddr !CallStack
