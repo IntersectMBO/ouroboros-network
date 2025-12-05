@@ -763,10 +763,10 @@ withPeerStateActions PeerStateActionsArguments {
     establishPeerConnection :: JobPool () m (Maybe SomeException)
                             -> IsBigLedgerPeer
                             -> DiffusionMode
-                            -> peerAddr
                             -> ConnectionMode
+                            -> peerAddr
                             -> m (PeerConnectionHandle muxMode responderCtx peerAddr versionData ByteString m a b)
-    establishPeerConnection jobPool isBigLedgerPeer diffusionMode remotePeerAddr connectionMode =
+    establishPeerConnection jobPool isBigLedgerPeer diffusionMode connectionMode remotePeerAddr =
       -- Protect consistency of the peer state with 'bracketOnError' if
       -- opening a connection fails.
       bracketOnError

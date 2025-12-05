@@ -394,8 +394,8 @@ data PeerStateActions peeraddr peerconn m = PeerStateActions {
     --
     establishPeerConnection  :: IsBigLedgerPeer
                              -> DiffusionMode
-                             -> peeraddr
                              -> ConnectionMode
+                             -> peeraddr
                              -> m peerconn,
 
     -- | Activate a connection: warm to hot promotion.

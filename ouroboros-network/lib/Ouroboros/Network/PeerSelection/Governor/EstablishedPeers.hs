@@ -554,7 +554,7 @@ jobPromoteColdPeer PeerSelectionActions {
     job = do
       --TODO: decide if we should do timeouts here or if we should make that
       -- the responsibility of establishPeerConnection
-      peerconn <- establishPeerConnection isBigLedgerPeer diffusionMode peeraddr connMode
+      peerconn <- establishPeerConnection isBigLedgerPeer diffusionMode connMode peeraddr
       let !peerSharing = peerConnToPeerSharing peerconn
 
       return $ Completion $ \st@PeerSelectionState {

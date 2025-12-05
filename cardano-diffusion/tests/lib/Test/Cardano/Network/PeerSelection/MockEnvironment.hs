@@ -551,8 +551,8 @@ mockPeerSelectionActions' tracer
           traceWith tracer (TraceEnvPeerShareResult addr peeraddrs)
           return (PeerSharingResult peeraddrs)
 
-    establishPeerConnection :: IsBigLedgerPeer -> DiffusionMode -> PeerAddr -> ConnectionMode -> m (PeerConn m)
-    establishPeerConnection _ _ peeraddr _ = do
+    establishPeerConnection :: IsBigLedgerPeer -> DiffusionMode -> ConnectionMode -> PeerAddr -> m (PeerConn m)
+    establishPeerConnection _ _ _ peeraddr = do
       --TODO: add support for variable delays and synchronous failure
       traceWith tracer (TraceEnvEstablishConn peeraddr)
       threadDelay 1
