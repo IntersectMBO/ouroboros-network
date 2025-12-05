@@ -817,7 +817,7 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
                                 -- handshake negotiation.
                                 timeout (1 + 5 + testTimeWaitTimeout)
                                   (acquireOutboundConnection
-                                    connectionManager InitiatorAndResponderDiffusionMode addr))
+                                    connectionManager InitiatorAndResponderDiffusionMode addr Outbound))
                             `catches`
                               [ Handler $ \(e :: IOException) -> return (Left (toException e))
                               , Handler $ \(e :: SomeConnectionManagerError) ->
@@ -983,10 +983,11 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
         Just (SomeConnectionManagerError e@UnknownPeer {})          -> throwIO e
 
         -- If 'ForbiddenConnection' is thrown we let the test continue.
-        Just (SomeConnectionManagerError ForbiddenConnection {})    -> pure ()
-        Just (SomeConnectionManagerError ConnectionExists {})       -> pure ()
-        Just (SomeConnectionManagerError ConnectionTerminating {})  -> pure ()
-        Just (SomeConnectionManagerError ConnectionTerminated {})   -> pure ()
+        Just (SomeConnectionManagerError ForbiddenConnection {})       -> pure ()
+        Just (SomeConnectionManagerError ConnectionExists {})          -> pure ()
+        Just (SomeConnectionManagerError ConnectionTerminating {})     -> pure ()
+        Just (SomeConnectionManagerError ConnectionTerminated {})      -> pure ()
+        Just (SomeConnectionManagerError InboundConnectionNotFound {}) -> pure ()
 
 
 -- | This includes the @Overwritten@ transition.

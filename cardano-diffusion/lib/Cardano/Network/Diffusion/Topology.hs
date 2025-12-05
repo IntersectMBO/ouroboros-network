@@ -30,5 +30,6 @@ isValidTrustedPeerConfiguration
               IsTrustable    -> not
                               . null
                               . rootAccessPoints
+                              . rootConfig
                               $ localRoots
           ) lprgs
