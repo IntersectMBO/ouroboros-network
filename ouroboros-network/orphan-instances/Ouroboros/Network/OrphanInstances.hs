@@ -100,9 +100,7 @@ kindObject k fields = object $ ("kind" .= String k) : fields
 instance FromJSON LocalRoots where
   parseJSON = withObject "LocalRoots" $ \o ->
                 LocalRoots
-                  <$> (RootConfig
-                        <$> o .:  "accessPoints"
-                        <*> o .:? "advertise" .!= DoNotAdvertisePeer)
+                  <$> parseJSON (Object o)
                   <*> o .:? "behindFirewall" .!= False
 
 instance ToJSON LocalRoots where
