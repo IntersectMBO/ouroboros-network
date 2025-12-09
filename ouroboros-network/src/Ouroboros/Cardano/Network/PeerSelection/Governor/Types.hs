@@ -28,7 +28,7 @@ import Ouroboros.Cardano.Network.PublicRootPeers qualified as Cardano
 import Ouroboros.Network.PeerSelection.Governor (readAssociationMode)
 import Ouroboros.Network.PeerSelection.Governor.Types (AssociationMode (..),
            BootstrapPeersCriticalTimeoutError (..), ExtraGuardedDecisions (..),
-           PeerSelectionActions (..), PeerSelectionGovernorArgs (..),
+           Guarded (..), PeerSelectionActions (..), PeerSelectionGovernorArgs (..),
            PeerSelectionInterfaces (..), PeerSelectionSetsWithSizes,
            PeerSelectionState (..), PeerSelectionView (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers
@@ -230,7 +230,10 @@ cardanoPeerSelectionGovernorArgs extraActions =
           <> monitorLedgerStateJudgement psa pst
           <> waitForSystemToQuiesce          pst
       , postBlocking    = mempty
-      , postNonBlocking = mempty
+      , postNonBlocking = \_psp _psa pst ->
+          -- ensure this is run in case when peer selection has nothing else
+          -- that can wake the governor up.
+          GuardedSkip $ Cardano.bootstrapPeersTimeout (extraState pst)
       , customTargetsAction         = Just $ \_ -> Cardano.targetPeers extraActions
       , customLocalRootsAction      = Just $ \_ -> Cardano.localRoots
       , enableProgressMakingActions = \st ->
