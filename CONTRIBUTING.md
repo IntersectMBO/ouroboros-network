@@ -209,9 +209,10 @@ free to ping someone from the team.
 
 # Contacting the developers
 
-The core contributors to consensus codebase are:
+The core contributors to kes-agent codebase are:
 
--   [Tobias Dammers](https://github.com/tdammers)
+-   [Thomas Vellekoop](https://github.com/perturbing)
+-   [Fraser Murray](https://github.com/fraser-iohk)
 
 # Code of conduct
 
