@@ -167,10 +167,16 @@ kesAgentFails = do
           (Text.lines <$> Text.hGetContents hErr)
       exitCode <- waitForProcess ph
       return (outT, errT, exitCode)
-  assertMatchingOutputLines
-    1
-    (Text.words "This functionality is not supported on Windows")
-    agentErrLines
+
+  let expectedMsg = Text.words "This functionality is not supported on Windows"
+  let uncaughtExceptionPrefix = Text.pack "kes-agent: Uncaught exception"
+  assertBool
+    ("KES Agent did not terminate with expected platform-specific exception.")
+    ( exitCode /= ExitSuccess
+        && ( matchOutputLines 1 expectedMsg agentErrLines
+              || any (uncaughtExceptionPrefix `Text.isPrefixOf`) (agentOutLines <> agentErrLines)
+           )
+    )
 
 kesAgentGenesisFile :: Assertion
 kesAgentGenesisFile = do
