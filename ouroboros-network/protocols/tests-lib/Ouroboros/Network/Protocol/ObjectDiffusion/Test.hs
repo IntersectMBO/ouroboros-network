@@ -19,9 +19,7 @@ module Ouroboros.Network.Protocol.ObjectDiffusion.Test
   ) where
 
 import Data.ByteString.Lazy (ByteString)
-import Data.List (nub)
 import Data.List.NonEmpty qualified as NonEmpty
-import Data.Word (Word16)
 
 import Control.Monad.Class.MonadST (MonadST)
 import Control.Monad.ST (runST)
@@ -185,7 +183,7 @@ prop_codec
 prop_codec msg =
   runST (prop_codecM codec msg)
 
--- | Check the codec round trip property for the id condec.
+-- | Check the codec round trip property for the id codec.
 --
 prop_codec_id
   :: AnyMessage (ObjectDiffusion ObjectId Object)
@@ -222,40 +220,6 @@ prop_codec_valid_cbor
   :: AnyMessage (ObjectDiffusion ObjectId Object)
   -> Property
 prop_codec_valid_cbor = prop_codec_valid_cbor_encoding codec
-
---
--- Local generators
---
-
-data ObjectSubmissionTestParams =
-     ObjectSubmissionTestParams {
-       testMaxUnacked            :: Positive (Small Word16),
-       testMaxObjectIdsToRequest :: Positive (Small Word16),
-       testMaxObjectToRequest    :: Positive (Small Word16),
-       testTransactions          :: DistinctList Object
-     }
-  deriving Show
-
-instance Arbitrary ObjectSubmissionTestParams where
-  arbitrary =
-    ObjectSubmissionTestParams <$> arbitrary
-                           <*> arbitrary
-                           <*> arbitrary
-                           <*> arbitrary
-
-  shrink (ObjectSubmissionTestParams a b c d) =
-    [ ObjectSubmissionTestParams a' b' c' d'
-    | (a', b', c', d') <- shrink (a, b, c, d) ]
-
-
-newtype DistinctList a = DistinctList { fromDistinctList :: [a] }
-  deriving Show
-
-instance (Eq a, Arbitrary a) => Arbitrary (DistinctList a) where
-  arbitrary = DistinctList . nub <$> arbitrary
-
-  shrink (DistinctList xs) =
-    [ DistinctList (nub xs') | xs' <- shrink xs ]
 
 
 labelMsg :: AnyMessage (ObjectDiffusion objectId object) -> Property -> Property
