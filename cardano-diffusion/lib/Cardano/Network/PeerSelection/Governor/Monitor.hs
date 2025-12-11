@@ -163,7 +163,7 @@ targetPeers Cardano.ExtraPeerSelectionActions {
           localRootPeers' =
               LocalRootPeers.clampToLimit
                               (targetNumberOfKnownPeers targets')
-            $ (if usingBootstrapPeers
+            . (if usingBootstrapPeers
                   then LocalRootPeers.clampToTrustable
                   else id)
             $ localRootPeers

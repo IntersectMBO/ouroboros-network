@@ -490,11 +490,12 @@ difference diff (Signal x0 txs0) =
                                : go x' txs
 
 
-scanl :: (b -> a -> b) -> b -> Signal a -> Signal b
+scanl :: forall a b. (b -> a -> b) -> b -> Signal a -> Signal b
 scanl f z (Signal x0 txs0) =
     let a0 = f z x0 in
     Signal a0 (go a0 txs0)
   where
+    go :: b -> [E a] -> [E b]
     go !_ []             = []
     go !a (E ts x : txs) = E ts a' : go a' txs
                           where

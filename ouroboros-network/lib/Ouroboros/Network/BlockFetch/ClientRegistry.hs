@@ -63,7 +63,7 @@ data FetchClientRegistry peer header block m =
          :: StrictTVar  m (Map peer (ThreadId m, StrictTMVar m ())),
        fcrDying
          :: StrictTVar m (Set peer)
-                         }
+     }
 
 newFetchClientRegistry :: MonadSTM m
                        => m (FetchClientRegistry peer header block m)
@@ -353,3 +353,6 @@ readPeerGSVs (FetchClientRegistry _ _ _ dqRegistry keepRegistry _) = do
   kr <- readTVar keepRegistry
   -- The intersection gives us only the currently hot peers
   return $ Map.intersection dr kr
+
+
+
