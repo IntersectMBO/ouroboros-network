@@ -12,6 +12,7 @@
 {-# LANGUAGE TypeFamilies               #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
+{-# LANGUAGE NamedFieldPuns #-}
 module Ouroboros.Network.Protocol.ObjectDiffusion.Test
   ( tests
   , ObjectId (..)
@@ -38,7 +39,7 @@ import Ouroboros.Network.Protocol.ObjectDiffusion.Type
 import Test.Data.CDDL (Any (..))
 import Test.Ouroboros.Network.Protocol.Utils (prop_codec_cborM,
            prop_codec_valid_cbor_encoding, splits2, splits3)
-import Test.Ouroboros.Network.Utils (renderRanges)
+import Test.Ouroboros.Network.Utils (renderRanges, DistinctList (..))
 
 import Control.DeepSeq
 import GHC.Generics
@@ -46,6 +47,17 @@ import Test.QuickCheck as QC
 import Test.QuickCheck.Instances.ByteString ()
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
+import Ouroboros.Network.Protocol.ObjectDiffusion.Inbound (ObjectDiffusionInboundPipelined)
+import Ouroboros.Network.Protocol.ObjectDiffusion.Outbound (ObjectDiffusionOutbound)
+import Data.Word (Word16)
+import Ouroboros.Network.Protocol.ObjectDiffusion.Direct (
+  objectDiffusionInbound,
+  objectDiffusionOutbound,
+  TraceObjectDiffusionDirect,
+  directPipelined
+  )
+import Control.Tracer (Tracer, nullTracer)
+import Control.Monad.IOSim (runSimOrThrow)
 
 
 --
@@ -65,6 +77,7 @@ tests =
                                              prop_codec_splits3
         , testProperty "codec cbor"          prop_codec_cbor
         , testProperty "codec valid cbor"    prop_codec_valid_cbor
+        , testProperty "direct"              prop_direct
         ]
     ]
 
@@ -72,7 +85,7 @@ tests =
 -- Common types & clients and servers used in the tests in this module.
 --
 
-newtype Object = Object ObjectId
+newtype Object = Object { getObjectId :: ObjectId }
   deriving (Eq, Show, Arbitrary, Serialise, Generic, NFData)
 
 instance ShowProxy Object where
@@ -232,3 +245,76 @@ labelMsg (AnyMessage msg) =
            MsgReplyObjects as     -> "MsgReplyObjects " ++ renderRanges 3 (length as)
            MsgDone                -> "MsgDone"
         )
+
+--
+-- Direct client and server tests
+--
+
+data ObjectDiffusionTestParams =
+     ObjectDiffusionTestParams {
+       testMaxUnacked        :: Positive (Small Word16),
+       testMaxObjectIdsToRequest :: Positive (Small Word16),
+       testMaxObjectsToRequest    :: Positive (Small Word16),
+       testObjects           :: DistinctList Object
+     }
+  deriving Show
+
+instance Arbitrary ObjectDiffusionTestParams where
+  arbitrary =
+    ObjectDiffusionTestParams <$> arbitrary
+                              <*> arbitrary
+                              <*> arbitrary
+                              <*> arbitrary
+
+  shrink (ObjectDiffusionTestParams a b c d) =
+    [ ObjectDiffusionTestParams a' b' c' d'
+    | (a', b', c', d') <- shrink (a, b, c, d) ]
+
+
+testInbound :: Tracer m (TraceObjectDiffusionDirect ObjectId Object)
+            -> ObjectDiffusionTestParams
+            -> ObjectDiffusionInboundPipelined ObjectId Object m [Object]
+testInbound
+  tracer
+  ObjectDiffusionTestParams {
+    testMaxUnacked            = Positive (Small maxUnacked),
+    testMaxObjectIdsToRequest = Positive (Small maxObjectIdsToRequest),
+    testMaxObjectsToRequest   = Positive (Small maxObjectsToRequest)
+  } =
+    objectDiffusionInbound
+      tracer
+      getObjectId
+      maxUnacked
+      maxObjectIdsToRequest
+      maxObjectsToRequest
+
+testOutbound :: Monad m
+             => Tracer m (TraceObjectDiffusionDirect ObjectId Object)
+             -> ObjectDiffusionTestParams
+             -> ObjectDiffusionOutbound ObjectId Object m ()
+testOutbound
+  tracer
+  ObjectDiffusionTestParams {
+    testMaxUnacked = Positive (Small maxUnacked),
+    testObjects    = DistinctList objects
+  } =
+    objectDiffusionOutbound
+      tracer
+      getObjectId
+      maxUnacked
+      objects
+
+-- | Run a simple object diffusion client and server, directly on the wrappers,
+-- without going via the 'Peer'.
+prop_direct :: ObjectDiffusionTestParams  -> Bool
+prop_direct params@ObjectDiffusionTestParams{testObjects} =
+    objects == fromDistinctList testObjects
+  where
+    objects =
+      runSimOrThrow
+        (directPipelined
+          (testOutbound nullTracer params)
+          (testInbound nullTracer params))
+
+
+
