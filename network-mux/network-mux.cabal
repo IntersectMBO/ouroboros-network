@@ -194,6 +194,28 @@ executable mux-demo
       directory,
       network,
 
+executable mux-leios-demo
+  import: demo-deps
+  hs-source-dirs:
+    demo
+    test
+
+  main-is: mux-leios-demo.hs
+  other-modules: Test.Mux.ReqResp
+  build-depends:
+    Win32-network,
+    base >=4.14 && <4.23,
+    bytestring,
+    cborg,
+    contra-tracer,
+    io-classes,
+    iproute,
+    network,
+    network-mux,
+    primitive,
+    serialise,
+    stm,
+
 benchmark socket-read-write-benchmarks
   type: exitcode-stdio-1.0
   hs-source-dirs: bench/socket_read_write
