@@ -26,7 +26,6 @@ packages: ./cardano-ping
           ./ouroboros-network
           ./cardano-diffusion
           ./ntp-client
-          ./dmq-node
           ./acts-generic
 
 tests: True
@@ -54,11 +53,3 @@ package acts
   flags: -finitary
 
 allow-newer: quickcheck-instances:QuickCheck
-
--- kes-agent is not yet in CHaP, so we pull it from its GitHub repo
-source-repository-package
-  type: git
-  location: https://github.com/input-output-hk/kes-agent
-  tag: 6d0f51fba415d3c641a8a8da37130e7adfc3ea01
-  --sha256: sha256-qM8RgmKOGBMlizPtXw2YOboYIzM6T3kvG9/Rp1F+bYQ=
-  subdir: kes-agent-crypto

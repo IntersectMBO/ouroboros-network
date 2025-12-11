@@ -45,27 +45,9 @@
           overlays = [
             # haskellNix.overlay can be configured by later overlays, so need to come before them.
             inputs.haskellNix.overlay
-            # dmq-node depends cardano-crypto-class, so we need crypto overlays
-            inputs.iohkNix.overlays.crypto
-            inputs.iohkNix.overlays.haskell-nix-crypto
-            inputs.iohkNix.overlays.haskell-nix-extra
             (import ./nix/tools.nix inputs)
             (import ./nix/ouroboros-network.nix inputs)
             (import ./nix/network-docs.nix inputs)
-            (final: _prev: {
-              static-libsodium-vrf = final.libsodium-vrf.overrideDerivation (old: {
-                configureFlags = old.configureFlags ++ [ "--disable-shared" ];
-              });
-              static-secp256k1 = final.secp256k1.overrideDerivation (old: {
-                configureFlags = old.configureFlags ++ [ "--enable-static" "--disable-shared" ];
-              });
-              static-gmp = (final.gmp.override { withStatic = true; }).overrideDerivation (old: {
-                configureFlags = old.configureFlags ++ [ "--enable-static" "--disable-shared" ];
-              });
-              static-libblst = (final.libblst.override { enableShared = false; }).overrideDerivation (_old: {
-                postFixup = "";
-              });
-            })
           ];
         };
 
@@ -124,16 +106,6 @@
       in
       lib.recursiveUpdate flake rec {
         project = pkgs.ouroboros-network;
-        # `nix build .\#dmq-node` will have the git revision set in the binary,
-        # `nib build .\#hydraJobs.x86_64-linux.packages.dmq-node:exe:dmq-node` won't.
-        packages.dmq-node =
-          pkgs.setGitRev
-            (inputs.self.rev or inputs.self.dirtyShortRev)
-            flake.packages."dmq-node:exe:dmq-node";
-        packages.dmq-node-static =
-          pkgs.setGitRev
-            (inputs.self.rev or inputs.self.dirtyShortRev)
-            flake.packages."x86_64-unknown-linux-musl:dmq-node:exe:dmq-node";
         inherit hydraJobs legacyPackages devShells;
       }
     );

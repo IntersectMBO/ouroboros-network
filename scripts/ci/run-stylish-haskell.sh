@@ -65,7 +65,6 @@ FD_OPTS="-e hs --ignore-file ./scripts/ci/check-stylish-ignore -X stylish-haskel
 fd . './network-mux'                 $FD_OPTS
 fd . './ouroboros-network'           $FD_OPTS
 fd . './cardano-diffusion'           $FD_OPTS
-fd . './dmq-node'                    $FD_OPTS
 
 if [ $USE_GIT == 1 ]; then
 git --no-pager diff --exit-code

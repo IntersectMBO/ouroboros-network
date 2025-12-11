@@ -46,7 +46,7 @@ let
     compiler-nix-name = lib.mkDefault defaultCompiler;
     cabalProjectLocal =
       if pkgs.stdenv.hostPlatform.isWindows
-      then lib.readFile ../scripts/ci/cabal.project.local.Nix.Windows
+      then lib.readFile ../scripts/ci/cabal.project.local.Windows
       else lib.readFile ../scripts/ci/cabal.project.local.Linux;
 
     #
@@ -55,7 +55,7 @@ let
 
     # we also want cross compilation to windows on linux (and only with default compiler).
     crossPlatforms =
-      p: lib.optionals (pkgs.stdenv.hostPlatform.isLinux && config.compiler-nix-name == crossGHCVersion) [ p.ucrt64 p.musl64 ];
+      p: lib.optionals (pkgs.stdenv.hostPlatform.isLinux && config.compiler-nix-name == crossGHCVersion) [ p.ucrt64 ];
 
     #
     # VARIANTS
@@ -106,15 +106,10 @@ let
         packages.cardano-diffusion.components.tests.protocols-cddl.preCheck = "export HOME=`pwd`";
         # note: protocols-cddl is disabled on Windows in ./scripts/ci/cabal.project.local.Windows
 
-        packages.dmq-node.components.tests.dmq-cddl.build-tools = [ pkgs.cddl pkgs.cbor-diag pkgs.cddlc ];
-        packages.dmq-node.components.tests.dmq-cddl.preCheck = "export HOME=`pwd`";
-
         # pkgs are disabled since we don't have enough CPU bandwidth on MacOS machines
         packages.ouroboros-network.components.tests.framework-sim-tests.doCheck = onLinux;
         packages.ouroboros-network.components.tests.ouroboros-network-sim-tests.doCheck = onLinux;
 
-        packages.dmq-node.components.tests.dmq-tests.preCheck =
-          if buildSystem == "x86_64-linux" then "export GHCRTS=-M2500M" else "";
         packages.network-mux.components.tests.test.preCheck =
           if buildSystem == "x86_64-linux" then "export GHCRTS=-M800M" else "";
         packages.ouroboros-network.components.tests.protocols-test.preCheck =
@@ -124,19 +119,6 @@ let
       })
       ({ pkgs, ... }: lib.mkIf pkgs.stdenv.hostPlatform.isWindows {
         packages.basement.configureFlags = [ "--hsc2hs-options=--cflag=-Wno-int-conversion" ];
-      })
-      ({ pkgs, ... }: lib.mkIf pkgs.stdenv.hostPlatform.isMusl {
-        # rubby fails to build with musl, hence we disable cddl tests
-        packages.dmq-node.components.tests.dmq-cddl.build-tools = lib.mkForce [ ];
-        packages.dmq-node.components.tests.dmq-cddl.doCheck = lib.mkForce false;
-        packages.cardano-diffusion.components.tests.protocols-cddl.build-tools = lib.mkForce [ ];
-        packages.cardano-diffusion.components.tests.protocols-cddl.doCheck = lib.mkForce false;
-        packages.dmq-node.ghcOptions = with pkgs; [
-          "-L${lib.getLib static-gmp}/lib"
-          "-L${lib.getLib static-libsodium-vrf}/lib"
-          "-L${lib.getLib static-secp256k1}/lib"
-          "-L${lib.getLib static-libblst}/lib"
-        ];
       })
     ];
   });
