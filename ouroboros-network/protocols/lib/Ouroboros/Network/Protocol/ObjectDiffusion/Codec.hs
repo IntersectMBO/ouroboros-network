@@ -36,7 +36,7 @@ byteLimitsObjectDiffusion = ProtocolSizeLimits stateToLimit
   where
     stateToLimit
       :: forall (st :: ObjectDiffusion objectId object).
-         (ActiveState st)
+         ActiveState st
       => StateToken st
       -> Word
     stateToLimit SingInit                        = smallByteLimit
@@ -68,7 +68,7 @@ timeLimitsObjectDiffusion = ProtocolTimeLimits stateToLimit
   where
     stateToLimit
       :: forall (st :: ObjectDiffusion objectId object).
-         (ActiveState st)
+         ActiveState st
       => StateToken st
       -> Maybe DiffTime
     stateToLimit SingInit                        = waitForever
@@ -80,7 +80,7 @@ timeLimitsObjectDiffusion = ProtocolTimeLimits stateToLimit
 
 codecObjectDiffusion
   :: forall (objectId :: Type) (object :: Type) m.
-     (MonadST m)
+     MonadST m
   => (objectId -> CBOR.Encoding)         -- ^ encode 'objectId'
   -> (forall s. CBOR.Decoder s objectId) -- ^ decode 'objectId'
   -> (object   -> CBOR.Encoding)         -- ^ encode object
@@ -93,7 +93,7 @@ codecObjectDiffusion encodeObjectId decodeObjectId encodeObject decodeObject =
     where
       decode
         :: forall (st :: ObjectDiffusion objectId object).
-           (ActiveState st)
+           ActiveState st
         => StateToken st
         -> forall s. CBOR.Decoder s (SomeMessage st)
       decode stok = do
@@ -153,7 +153,7 @@ encodeObjectDiffusion encodeObjectId encodeObject = encode
 decodeObjectDiffusion
   :: forall (objectId :: Type) (object :: Type)
             (st :: ObjectDiffusion objectId object) s.
-     (ActiveState st)
+     ActiveState st
   => (forall s'. CBOR.Decoder s' objectId) -- ^ decode 'objectId'
   -> (forall s'. CBOR.Decoder s' object)   -- ^ decode object
   -> StateToken st
@@ -164,7 +164,7 @@ decodeObjectDiffusion decodeObjectId decodeObject = decode
   where
     decode
       :: forall (st' :: ObjectDiffusion objectId object).
-         (ActiveState st')
+         ActiveState st'
       => StateToken st'
       -> Int
       -> Word
