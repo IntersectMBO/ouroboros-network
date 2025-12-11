@@ -45,11 +45,6 @@ jobs:
         ghc-version: ${{ matrix.ghc }}
         cabal-version: "3.12.1.0"
 
-    - name: Install system dependencies
-      uses: input-output-hk/actions/base@latest
-      with:
-        use-sodium-vrf: true # default is true
-
     - uses: actions/checkout@v6
 
     - name: "Configure cabal.project.local"
@@ -152,9 +147,6 @@ jobs:
     - name: cardano-diffusion [cardano-diffusion-sim-test]
       if: runner.os != 'Windows'
       run: cabal run cardano-diffusion:cardano-diffusion-sim-tests -- +RTS -maxN2 -RTS
-
-    - name: dmq-node [dmq-tests]
-      run: cabal run dmq-node:dmq-tests -- +RTS -maxN2 -RTS
 
     # Uncomment the following back in for debugging. Remember to launch a `pwsh` from
     # the tmux session to debug `pwsh` issues. And be reminded that the `/msys2` and

@@ -106,15 +106,10 @@ let
         packages.cardano-diffusion.components.tests.protocols-cddl.preCheck = "export HOME=`pwd`";
         # note: protocols-cddl is disabled on Windows in ./scripts/ci/cabal.project.local.Windows
 
-        packages.dmq-node.components.tests.dmq-cddl.build-tools = [ pkgs.cddl pkgs.cbor-diag pkgs.cddlc ];
-        packages.dmq-node.components.tests.dmq-cddl.preCheck = "export HOME=`pwd`";
-
         # pkgs are disabled since we don't have enough CPU bandwidth on MacOS machines
         packages.ouroboros-network.components.tests.framework-sim-tests.doCheck = onLinux;
         packages.ouroboros-network.components.tests.ouroboros-network-sim-tests.doCheck = onLinux;
 
-        packages.dmq-node.components.tests.dmq-tests.preCheck =
-          if buildSystem == "x86_64-linux" then "export GHCRTS=-M2500M" else "";
         packages.network-mux.components.tests.test.preCheck =
           if buildSystem == "x86_64-linux" then "export GHCRTS=-M800M" else "";
         packages.ouroboros-network.components.tests.protocols-test.preCheck =
