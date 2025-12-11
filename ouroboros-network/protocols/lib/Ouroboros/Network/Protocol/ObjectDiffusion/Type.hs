@@ -21,7 +21,7 @@ module Ouroboros.Network.Protocol.ObjectDiffusion.Type
   , NumObjectIdsAck (..)
   , NumObjectIdsReq (..)
   , NumObjectsReq (..)
-  , NumObjectsOutstanding (..)
+  , NumObjectsUnacknowledged (..)
     -- re-exports
   , BlockingReplyList (..)
   , SingBlockingStyle (..)
@@ -127,12 +127,12 @@ newtype NumObjectsReq = NumObjectsReq {getNumObjectsReq :: Word16}
   deriving (Monoid)    via (Sum Word16)
   deriving (Show)      via (Quiet NumObjectsReq)
 
-newtype NumObjectsOutstanding = NumObjectsOutstanding {getNumObjectsOutstanding :: Word16}
+newtype NumObjectsUnacknowledged = NumObjectsUnacknowledged {getNumObjectsUnacknowledged :: Word16}
   deriving (Eq, Ord, NFData, Generic)
   deriving newtype (Num, Enum, Real, Integral, Bounded, NoThunks)
   deriving (Semigroup) via (Sum Word16)
   deriving (Monoid)    via (Sum Word16)
-  deriving (Show)      via (Quiet NumObjectsOutstanding)
+  deriving (Show)      via (Quiet NumObjectsUnacknowledged)
 
 
 -- | There are some constraints of the protocol that are not captured in the
