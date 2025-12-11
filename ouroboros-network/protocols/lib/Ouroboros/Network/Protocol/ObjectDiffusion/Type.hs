@@ -162,9 +162,15 @@ instance Protocol (ObjectDiffusion objectId object) where
   -- object identifiers.
   data Message (ObjectDiffusion objectId object) from to where
 
-    -- | Initial message. The payload is currently unused; the planned use case
-    -- is to indicate that the inbound side is only interested to receive messages
-    -- newer than a given indicator.
+    -- | Initial message.
+    -- Unlike in TxSubmission, this message doesn't change agency, since the
+    -- following message is still emitted by the inbound peer.
+    -- But in the future, we expect that `MsgInit` will carry a payload,
+    -- typically a ticketNo, that allows the outbound side to "resume" from the
+    -- last known point of the inbound side, instead of advertising any possible
+    -- object starting with the first one in the ObjectPool.
+    --
+    -- See https://github.com/tweag/cardano-peras/issues/182
     MsgInit
       :: Message (ObjectDiffusion objectId object) StInit StIdle
     -- | Request a list of object identifiers from the server, and confirm a
