@@ -29,17 +29,19 @@ import Cardano.Crypto.Libsodium (sodiumInit)
 import Ouroboros.Network.RawBearer
 import Ouroboros.Network.Snocket
 
+import Control.Exception (IOException, catch, displayException, throwIO)
 import Control.Monad (forM_, unless, when)
 import Control.Monad.Extra (whenJust)
 import Control.Tracer
 import qualified Data.ByteString as BS
+import Data.List (isPrefixOf)
 import Data.Maybe (fromMaybe)
 import Data.Proxy
 import Network.Socket
 import Options.Applicative
 import System.Environment
 import System.Exit
-import System.IO (stdout)
+import System.IO (hPutStrLn, stderr, stdout)
 import System.IOManager
 import Text.Printf
 import Text.Read (readMaybe)
@@ -510,7 +512,11 @@ runGetInfo :: CommonOptions -> IO ()
 runGetInfo opt' = withIOManager $ \ioManager -> do
   optEnv <- optFromEnv
   let opt = opt' <> optEnv <> defCommonOptions
-  info <- runControlClientCommand opt ioManager controlGetInfo
+
+  let run = runControlClientCommand opt ioManager controlGetInfo
+
+  info <- run `catch` handleConnectionError
+
   let cmode = ColorsAuto
   let cPutStr = hcPutStr cmode stdout
   let cPutStrLn = hcPutStrLn cmode stdout
@@ -521,13 +527,14 @@ runGetInfo opt' = withIOManager $ \ioManager -> do
   printf "Current KES period: %u\n" (unKESPeriod $ agentInfoCurrentKESPeriod info)
   printf "Current KES period started: %s\n" $
     maybe "<unknown>" show (agentInfoCurrentKESPeriodStart info)
-  printf "Next KES period starts: %s\n" $ maybe "<unknown>" show (agentInfoCurrentKESPeriodEnd info)
+  printf "Next KES period starts: %s\n" $
+    maybe "<unknown>" show (agentInfoCurrentKESPeriodEnd info)
+
   whenJust (agentInfoCurrentBundle info) $ \tbundleInfo -> do
     cPutStrLn (bold defaultColor) $ printf "--- Installed KES SignKey ---"
     printf "Timestamp: %s\n" (maybe "n/a" show $ taggedBundleInfoTimestamp tbundleInfo)
     case taggedBundleInfo tbundleInfo of
-      Nothing -> do
-        cPutStr red $ printf "{KEY DELETED}"
+      Nothing -> cPutStr red $ printf "{KEY DELETED}"
       Just bundleInfo -> do
         printf "VerKey: %s\n" (hexShowBS . rawSerialiseVerKeyKES $ bundleInfoVK bundleInfo)
         printf "Valid from period: %u\n" (unKESPeriod $ bundleInfoStartKESPeriod bundleInfo)
@@ -538,9 +545,11 @@ runGetInfo opt' = withIOManager $ \ioManager -> do
         printf "OpCert number: %u\n" (bundleInfoOCertN bundleInfo)
         let (SignedDSIGN sig) = bundleInfoSigma bundleInfo
         printf "OpCert signature: %s\n" (hexShowBS . rawSerialiseSigDSIGN $ sig)
+
   whenJust (agentInfoStagedKey info) $ \keyInfo -> do
     cPutStrLn (bold defaultColor) $ printf "--- Staged KES SignKey ---"
     printf "VerKey: %s\n" (hexShowBS . rawSerialiseVerKeyKES $ keyInfoVK keyInfo)
+
   unless (null $ agentInfoBootstrapConnections info) $ do
     cPutStrLn (bold defaultColor) $ printf "--- Bootstrap Peers ---"
     forM_ (agentInfoBootstrapConnections info) $ \(BootstrapInfo addr status) -> do
@@ -549,6 +558,16 @@ runGetInfo opt' = withIOManager $ \ioManager -> do
             ConnectionConnecting -> (yellow, "connecting...")
             ConnectionDown -> (red, "down")
       cPutStrLn color $ printf "%+30s: %s" addr (label :: String)
+  where
+    handleConnectionError :: IOException -> IO a
+    handleConnectionError e = do
+      let msg = displayException e
+      if (`isPrefixOf` msg) "Network.Socket.connect"
+        then do
+          hPutStrLn stderr $ "kes-agent-control: " ++ msg
+          exitWith (ExitFailure 1)
+        else
+          throwIO e
 
 programDesc = fullDesc
 
