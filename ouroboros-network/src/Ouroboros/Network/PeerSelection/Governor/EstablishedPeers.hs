@@ -24,7 +24,7 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import System.Random (randomR)
 
-import Ouroboros.Network.ConnectionManager.Types (ConnectionMode(..))
+import Ouroboros.Network.ConnectionManager.Types (Provenance (..))
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.PeerSelection.Governor.Types
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type (IsBigLedgerPeer (..))
@@ -184,7 +184,7 @@ belowTargetLocal actions@PeerSelectionActions {
                           inProgressPromoteCold = inProgressPromoteCold
                                                <> selectedToPromote
                         },
-        decisionJobs  = [ jobPromoteColdPeer actions policy peer IsNotBigLedgerPeer diffusionMode (connectionMode peer localRootPeers)
+        decisionJobs  = [ jobPromoteColdPeer actions policy peer IsNotBigLedgerPeer diffusionMode (localRootConnectionProvenance peer)
                         | peer <- Set.toList selectedToPromote
                         , let diffusionMode = LocalRootPeers.diffusionMode
                                             $ LocalRootPeers.toMap localRootPeers Map.! peer
@@ -211,6 +211,15 @@ belowTargetLocal actions@PeerSelectionActions {
       , let membersEstablished = members `Set.intersection` EstablishedPeers.toSet establishedPeers
       , Set.size membersEstablished < getWarmValency warmValency
       ]
+      
+    localRootConnectionProvenance
+      :: peeraddr
+      -> Provenance
+    localRootConnectionProvenance peer =
+          maybe
+            Outbound
+            localProvenance
+            (Map.lookup peer $ LocalRootPeers.toMap localRootPeers)
 
     PeerSelectionView {
         viewKnownBigLedgerPeers              = (bigLedgerPeersSet, _),
@@ -256,7 +265,6 @@ belowTargetOther actions@PeerSelectionActions {
                    policyPickColdPeersToPromote
                  }
                  st@PeerSelectionState {
-                   localRootPeers,
                    knownPeers,
                    establishedPeers,
                    inProgressPromoteCold,
@@ -302,7 +310,7 @@ belowTargetOther actions@PeerSelectionActions {
                           inProgressPromoteCold = inProgressPromoteCold
                                                <> selectedToPromote
                         },
-        decisionJobs  = [ jobPromoteColdPeer actions policy peer IsNotBigLedgerPeer InitiatorAndResponderDiffusionMode (connectionMode peer localRootPeers)
+        decisionJobs  = [ jobPromoteColdPeer actions policy peer IsNotBigLedgerPeer InitiatorAndResponderDiffusionMode Outbound
                         | peer <- Set.toList selectedToPromote ]
       }
 
@@ -374,7 +382,6 @@ belowTargetBigLedgerPeers enableAction
                             policyPickColdPeersToPromote
                           }
                           st@PeerSelectionState {
-                            localRootPeers,
                             knownPeers,
                             establishedPeers,
                             inProgressPromoteCold,
@@ -424,7 +431,7 @@ belowTargetBigLedgerPeers enableAction
                           inProgressPromoteCold = inProgressPromoteCold
                                                <> selectedToPromote
                         },
-        decisionJobs  = [ jobPromoteColdPeer actions policy peer IsBigLedgerPeer InitiatorAndResponderDiffusionMode (connectionMode peer localRootPeers)
+        decisionJobs  = [ jobPromoteColdPeer actions policy peer IsBigLedgerPeer InitiatorAndResponderDiffusionMode Outbound
                         | peer <- Set.toList selectedToPromote ]
       }
 
@@ -475,7 +482,7 @@ jobPromoteColdPeer
   -> peeraddr
   -> IsBigLedgerPeer
   -> DiffusionMode
-  -> ConnectionMode
+  -> Provenance
   -> Job () m (Completion m extraState extraDebugState extraFlags extraPeers
                           peeraddr peerconn)
 jobPromoteColdPeer PeerSelectionActions {
@@ -487,7 +494,7 @@ jobPromoteColdPeer PeerSelectionActions {
                      extraStateToExtraCounters
                    }
                    PeerSelectionPolicy { policyPeerShareActivationDelay }
-                   peeraddr isBigLedgerPeer diffusionMode connMode =
+                   peeraddr isBigLedgerPeer diffusionMode prov =
     Job job handler () "promoteColdPeer"
   where
     handler :: SomeException
@@ -548,7 +555,7 @@ jobPromoteColdPeer PeerSelectionActions {
     job = do
       --TODO: decide if we should do timeouts here or if we should make that
       -- the responsibility of establishPeerConnection
-      peerconn <- establishPeerConnection isBigLedgerPeer diffusionMode peeraddr connMode
+      peerconn <- establishPeerConnection isBigLedgerPeer diffusionMode peeraddr prov
       let !peerSharing = peerConnToPeerSharing peerconn
 
       return $ Completion $ \st@PeerSelectionState {
@@ -866,20 +873,6 @@ aboveTargetBigLedgerPeers actions@PeerSelectionActions {
 
   | otherwise
   = GuardedSkip Nothing
-
-connectionMode
-  :: forall peeraddr extraFlags.
-    ( Ord peeraddr
-    )
-  => peeraddr
-  -> LocalRootPeers.LocalRootPeers extraFlags peeraddr
-  -> ConnectionMode
-connectionMode peer localRootPeers =
-      maybe
-        CreateNewIfNoInbound
-        (\LocalRootConfig {behindFirewall} ->
-           bool CreateNewIfNoInbound RequireInbound behindFirewall)
-        (Map.lookup peer $ LocalRootPeers.toMap localRootPeers)
 
 jobDemoteEstablishedPeer
   :: forall extraState extraDebugState extraFlags extraPeers extraAPI

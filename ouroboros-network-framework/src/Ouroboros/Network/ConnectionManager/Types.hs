@@ -114,8 +114,6 @@ module Ouroboros.Network.ConnectionManager.Types
   , resultInState
   , DemotedToColdRemoteTr (..)
   , AcquireOutboundConnection
-  , ConnectionMode (..)
-  , inboundRequired
   , IncludeInboundConnection
     -- *** Outbound side
   , acquireOutboundConnection
@@ -497,22 +495,8 @@ data Connected peerAddr handle handleError =
     --
   | Disconnected !(ConnectionId peerAddr) !(Maybe handleError)
 
--- | Describes the behavior for handling connections when no inbound connection
--- is found.
---  - 'CreateNewIfNoInbound': If no inbound connection exists, create a new
--- conection.
---  - 'RequireInbound': Strictly require an inbound connection; fail if none
--- exists.
-data ConnectionMode
-    = CreateNewIfNoInbound
-    | RequireInbound
-
-inboundRequired :: ConnectionMode -> Bool
-inboundRequired RequireInbound = True
-inboundRequired _other         = False
-
 type AcquireOutboundConnection peerAddr handle handleError m
-    = DiffusionMode -> peerAddr -> ConnectionMode -> m (Connected peerAddr handle handleError)
+    = DiffusionMode -> peerAddr -> Provenance -> m (Connected peerAddr handle handleError)
 type IncludeInboundConnection socket peerAddr handle handleError m
     = Word32
     -- ^ inbound connections hard limit.

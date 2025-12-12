@@ -38,6 +38,7 @@ import Data.Map.Strict qualified as Map
 import Data.Set (Set)
 import Data.Set qualified as Set
 
+import Ouroboros.Network.ConnectionManager.Types (Provenance)
 import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode)
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
@@ -48,10 +49,10 @@ import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
 --
 
 data LocalRootConfig extraFlags = LocalRootConfig {
-    peerAdvertise  :: !PeerAdvertise,
-    diffusionMode  :: !DiffusionMode,
-    behindFirewall :: !Bool,
-    extraFlags     :: !extraFlags
+    peerAdvertise   :: !PeerAdvertise,
+    diffusionMode   :: !DiffusionMode,
+    localProvenance :: !Provenance,
+    extraFlags      :: !extraFlags
   }
   deriving (Show, Eq)
 

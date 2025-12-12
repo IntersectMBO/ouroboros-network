@@ -49,7 +49,7 @@ import Data.IP (toIPv4w)
 
 import Control.Concurrent.Class.MonadSTM
 import Control.Concurrent.Class.MonadSTM.Strict qualified as StrictTVar
-import Control.Exception (throw, ErrorCall (..))
+import Control.Exception (throw)
 import Control.Monad (forM, when)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
@@ -62,8 +62,8 @@ import Control.Monad.Fail qualified as Fail
 import Control.Monad.IOSim
 import Control.Tracer (Tracer (..), contramap, traceWith)
 
+import Ouroboros.Network.ConnectionManager.Types (Provenance)
 import Ouroboros.Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano
-import Ouroboros.Network.ConnectionManager.Types (ConnectionMode (..))
 import Ouroboros.Network.ExitPolicy
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode)
 import Ouroboros.Network.PeerSelection.Governor hiding (PeerSelectionState (..))
@@ -337,7 +337,6 @@ data TraceMockEnv = TraceEnvAddPeers       !PeerGraph
                   | TraceEnvSetTargets     !PeerSelectionTargets
                   | TraceEnvPeersDemote    !AsyncDemotion !PeerAddr
                   | TraceEnvEstablishConn  !PeerAddr
-                  | TraceEnvNewConnCreated !PeerAddr
                   | TraceEnvActivatePeer   !PeerAddr
                   | TraceEnvDeactivatePeer !PeerAddr
                   | TraceEnvCloseConn      !PeerAddr
@@ -559,33 +558,19 @@ mockPeerSelectionActions' tracer
           traceWith tracer (TraceEnvPeerShareResult addr peeraddrs)
           return (PeerSharingResult peeraddrs)
 
-    establishPeerConnection :: IsBigLedgerPeer -> DiffusionMode -> PeerAddr -> ConnectionMode -> m (PeerConn m)
-    establishPeerConnection _ _ peeraddr connMode = do
+    establishPeerConnection :: IsBigLedgerPeer -> DiffusionMode -> PeerAddr -> Provenance -> m (PeerConn m)
+    establishPeerConnection _ _ peeraddr _ = do
       --TODO: add support for variable delays and synchronous failure
       traceWith tracer (TraceEnvEstablishConn peeraddr)
       threadDelay 1
       let Just (_, peerSharingScript, connectScript) = Map.lookup peeraddr scripts
-      (conn@(PeerConn _ _ v), newConnCreated) <- atomically $ do
+      conn@(PeerConn _ _ v) <- atomically $ do
+        conn  <- newTVar PeerWarm
         conns <- readTVar connsVar
-        (conn, conns', newConnCreated) <- maybe
-          ( case connMode of
-              CreateNewIfNoInbound -> do
-                conn <- newTVar PeerWarm
-                pure (conn, conns, True)
-              RequireInbound -> do
-                throwSTM (ErrorCall "No inbound connection found.")
-          )
-          (\conn -> do
-              pure (conn, Map.insert peeraddr conn conns, False)
-          )
-          (Map.lookup peeraddr conns)
-
+        let !conns' = Map.insert peeraddr conn conns
         writeTVar connsVar conns'
         remotePeerSharing <- stepScriptSTM peerSharingScript
-        return (PeerConn peeraddr (peerSharingFlag <> remotePeerSharing) conn, newConnCreated)
-
-      when newConnCreated $
-        traceWith tracer (TraceEnvNewConnCreated peeraddr)
+        return (PeerConn peeraddr (peerSharingFlag <> remotePeerSharing) conn)
 
       _ <- async $
         -- monitoring loop which does asynchronous demotions. It will terminate

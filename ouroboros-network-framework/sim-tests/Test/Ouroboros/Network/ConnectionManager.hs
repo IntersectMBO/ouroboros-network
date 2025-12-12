@@ -818,7 +818,7 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
                                 -- handshake negotiation.
                                 timeout (1 + 5 + testTimeWaitTimeout)
                                   (acquireOutboundConnection
-                                    connectionManager InitiatorAndResponderDiffusionMode addr CreateNewIfNoInbound))
+                                    connectionManager InitiatorAndResponderDiffusionMode addr Outbound))
                             `catches`
                               [ Handler $ \(e :: IOException) -> return (Left (toException e))
                               , Handler $ \(e :: SomeConnectionManagerError) ->

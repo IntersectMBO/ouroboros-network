@@ -24,6 +24,7 @@ import Data.Word (Word32, Word64)
 
 import Cardano.Slotting.Slot (SlotNo (..))
 
+import Ouroboros.Network.ConnectionManager.Types (Provenance (..))
 import Ouroboros.Network.NodeToNode.Version (DiffusionMode (..))
 import Ouroboros.Network.PeerSelection.Governor
 
@@ -162,7 +163,7 @@ instance Arbitrary extraFlags => Arbitrary (LocalRootConfig extraFlags) where
   arbitrary = LocalRootConfig
                 <$> arbitrary
                 <*> elements [InitiatorAndResponderDiffusionMode, InitiatorOnlyDiffusionMode]
-                <*> arbitrary
+                <*> elements [Outbound, Inbound]
                 <*> arbitrary
   shrink a@LocalRootConfig { peerAdvertise, extraFlags, diffusionMode } =
     [ a { extraFlags = peerTrustable' }
