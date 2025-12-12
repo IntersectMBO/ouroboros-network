@@ -8,7 +8,6 @@ module Ouroboros.Network.PeerSelection.Governor.EstablishedPeers
   , aboveTarget
   ) where
 
-import Data.Bool (bool)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Set (Set)
