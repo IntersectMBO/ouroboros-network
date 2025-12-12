@@ -80,3 +80,5 @@ cabal.project.consensus
 
 # neovim Session
 *.vim
+
+/mux-leios-tmp-dir
