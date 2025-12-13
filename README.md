@@ -8,10 +8,12 @@ designed for forward security. In Cardano, we use this to sign blocks,
 
 This forward security however requires that after a key has been evolved, all
 copies of the old key must be securely erased. This implies that KES keys must
-never be stored on disk. The KES Agent, then, exists so that keys aren't lost
-in the event of a restart.
+never be stored on disk. The KES Agent exists so that KES keys can be securely
+stored in memory, rather than on disk, and will manage the evolution of KES keys
+in place of the node, allowing for the keys to persist (in ephemeral storage)
+even over a restart of the node itself.
 
-For further information, see [the Guide](docs/guide.markdown).
+For further information, see [the Guide](doc/guide.markdown).
 
 ## OS Compatibility
 
@@ -58,7 +60,7 @@ Querying the KES agent to verify that it works:
 KES_AGENT_CONTROL_PATH=/path/to/control.socket kes-agent-control info
 ```
 
-For further information, see [the Guide](docs/guide.markdown).
+For further information, see [the Guide](doc/guide.markdown).
 
 ## License & Copyright
 

@@ -47,7 +47,7 @@ cabal build all
 Specific executables can be executed through cabal:
 
 ``` sh
-cabal run db-analyser
+cabal run kes-agent-control
 ```
 
 # Testing
@@ -83,25 +83,11 @@ This section contain guidelines on what to check when making a pull request.
 - When bumping version bounds on the dependencies *it is not necessary* to
   increase the package version number. See [this
   section](#updating-the-dependencies-bounds).
-- When you want to create a changelog entry, follow [this and the following
-  section](docs/website/contents/for-developers/ReleaseProcess.md#installing-scriv).
-
-## Following our git process
-
-Our [git process](docs/website/contents/for-developers/GitProcess.md) describes
-the `git` practices we encourage when working with the code in this repository.
 
 ## Updating the documentation
 
 When submitting a pull request, please look update the relevant parts of the
 documentation (see [this section](#documentation)).
-
-## Following the style guide
-
-We have a [Haskell style
-guide](docs/website/contents/for-developers/StyleGuide.md) that should be
-followed when writing code in Consensus. Our style guide is not set in stone,
-and improvements are always welcome.
 
 ## Formatting the code
 
