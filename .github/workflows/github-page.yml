@@ -55,7 +55,7 @@ jobs:
       with:
         use-sodium-vrf: false
 
-    - uses: actions/cache@v4
+    - uses: actions/cache@v5
       name: Cache cabal store
       with:
         path: ${{ steps.setup-haskell.outputs.cabal-store }}
