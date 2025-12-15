@@ -158,14 +158,14 @@ serverWorker bearer len1 len2 = do
             (MiniProtocolNum 2)
             ResponderDirectionOnly
             StartOnDemand
-            (\chan -> runServer (reqrespTracer "server:praos") chan (serverReqResp len1))
+            (\chan -> runServerBin (reqrespTracer "server:praos") chan (serverReqResp len1))
          awaitResult2 <-
            runMiniProtocol
              mux
              (MiniProtocolNum 3)
              ResponderDirectionOnly
              StartOnDemand
-             (\chan -> runServer (reqrespTracer "server:leios") chan (serverReqResp len2))
+             (\chan -> runServerBin (reqrespTracer "server:leios") chan (serverReqResp len2))
          -- wait for both mini-protocols to finish
          results <- atomically $ (,) <$> awaitResult1
                                      <*> awaitResult2
@@ -228,14 +228,14 @@ clientWorker bearer len n1 n2 = do
              (MiniProtocolNum 2)
              InitiatorDirectionOnly
              StartEagerly
-             (\chan -> runClient (reqrespTracer "client:praos") chan (clientReqResp len n1))
+             (\chan -> runClientBin (reqrespTracer "client:praos") chan (clientReqResp '0' len n1))
          awaitResult2 <-
            runMiniProtocol
              mux
              (MiniProtocolNum 3)
              InitiatorDirectionOnly
              StartEagerly
-             (\chan -> runClient (reqrespTracer "client:leios") chan (clientReqResp len n2))
+             (\chan -> runClientBin (reqrespTracer "client:leios") chan (clientReqResp '1' len n2))
          -- wait for both mini-protocols to finish
          results <- atomically $ (,) <$> awaitResult1
                                      <*> awaitResult2
@@ -246,12 +246,13 @@ clientWorker bearer len n1 n2 = do
 
 
 clientReqResp
-  :: Int
+  :: Char
+  -> Int
   -> Int
   -> ReqRespClient ByteString ByteString IO Int
-clientReqResp len n = go n
+clientReqResp c len n = go n
   where
-    !msg = BSC.replicate len '0'
+    !msg = BSC.replicate len c
 
     go :: Int -> ReqRespClient ByteString ByteString IO Int
     go m | m <= 0

@@ -176,6 +176,7 @@ executable mux-demo
   other-modules: Test.Mux.ReqResp
   build-depends:
     base >=4.14 && <4.23,
+    binary,
     bytestring,
     cborg,
     contra-tracer,
@@ -204,6 +205,7 @@ executable mux-leios-demo
   other-modules: Test.Mux.ReqResp
   build-depends:
     base >=4.14 && <4.23,
+    binary,
     bytestring,
     cborg,
     contra-tracer,
@@ -223,6 +225,7 @@ benchmark socket-read-write-benchmarks
   other-modules:
   build-depends:
     base >=4.14 && <4.23,
+    binary,
     bytestring,
     contra-tracer,
     io-classes:{io-classes, si-timers, strict-stm},
