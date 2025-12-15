@@ -128,7 +128,7 @@ serverWorker bearer = do
         runMiniProtocol mux (MiniProtocolNum 2)
                              ResponderDirectionOnly
                              StartOnDemand $ \channel ->
-          runServer debugTracer channel (echoServer 0)
+          runServerCBOR debugTracer channel (echoServer 0)
       result <- atomically awaitResult
       putStrLn $ "Result: " ++ show result
       Mx.stop mux
@@ -188,7 +188,7 @@ clientWorker bearer n msg = do
         runMiniProtocol mux (MiniProtocolNum 2)
                              InitiatorDirectionOnly
                              StartEagerly $ \channel ->
-          runClient debugTracer channel (echoClient 0 n (BSC.pack msg))
+          runClientCBOR debugTracer channel (echoClient 0 n (BSC.pack msg))
       result <- atomically awaitResult
       putStrLn $ "Result: " ++ show result
       Mx.stop mux
