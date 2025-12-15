@@ -176,6 +176,7 @@ executable mux-demo
   other-modules: Test.Mux.ReqResp
   build-depends:
     base >=4.14 && <4.23,
+    binary,
     bytestring,
     cborg,
     contra-tracer,
@@ -205,6 +206,7 @@ executable mux-leios-demo
   build-depends:
     Win32-network,
     base >=4.14 && <4.23,
+    binary,
     bytestring,
     cborg,
     contra-tracer,
