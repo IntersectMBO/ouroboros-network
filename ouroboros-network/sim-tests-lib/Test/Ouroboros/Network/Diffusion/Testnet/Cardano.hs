@@ -1292,6 +1292,8 @@ prop_peer_selection_action_trace_coverage defaultBearerInfo diffScript =
         "PeerMonitoringResult " ++ show wspt
       peerSelectionActionsTraceMap (AcquireConnectionError e)      =
         "AcquireConnectionError " ++ show e
+      peerSelectionActionsTraceMap (PeerHotDuration _id _dt) =
+        "PeerHotDuration"
 
       eventsSeenNames = map peerSelectionActionsTraceMap events
 
@@ -3765,7 +3767,7 @@ prop_diffusion_peer_selection_actions_no_dodgy_traces ioSimTrace traceNumber =
                                    $ evs'
           numOfActiveColdErrors    = length
                                    . filter (\case
-                                                (PeerStatusChangeFailure HotToWarm{} ActiveCold)
+                                                (PeerStatusChangeFailure HotToWarm{} ActiveCold{})
                                                   -> True
                                                 _ -> False)
                                    $ evs'
@@ -3790,7 +3792,7 @@ prop_diffusion_peer_selection_actions_no_dodgy_traces ioSimTrace traceNumber =
          . map
            (\case
              ev@( WithTime _ (PeerStatusChangeFailure (HotToWarm _) TimeoutError)
-                , WithTime _ (PeerStatusChangeFailure (HotToWarm _) ActiveCold)
+                , WithTime _ (PeerStatusChangeFailure (HotToWarm _) ActiveCold{})
                 )
                -> counterexample (show ev)
                 $ counterexample (unlines $ map show peerSelectionActionsEvents)
@@ -3860,7 +3862,8 @@ prop_diffusion_peer_selection_actions_no_dodgy_traces ioSimTrace traceNumber =
                 WithTime _ (PeerStatusChangeFailure type_ _) -> getConnId type_
                 WithTime _ (PeerMonitoringError connId _)    -> Just connId
                 WithTime _ (PeerMonitoringResult connId _)   -> Just connId
-                WithTime _ (AcquireConnectionError _)        -> Nothing)
+                WithTime _ (AcquireConnectionError _)        -> Nothing
+                WithTime _ (PeerHotDuration connId _)        -> Just connId)
          $ peerSelectionActionsEvents
          )
 
@@ -4750,4 +4753,3 @@ showBucket size a | a < size
                            , show (a `div` size * size + size)
                            , ")"
                            ]
-

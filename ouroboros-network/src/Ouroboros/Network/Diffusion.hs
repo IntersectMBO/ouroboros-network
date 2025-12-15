@@ -16,8 +16,9 @@ module Ouroboros.Network.Diffusion
   , run
   ) where
 
-import Control.Concurrent.Class.MonadSTM.Strict (StrictTVar)
+import Control.Concurrent.Class.MonadSTM.Strict (STM, StrictTVar)
 import Control.Exception (Exception, IOException)
+import Control.Monad.Class.MonadTime.SI
 import Data.Functor (void)
 import Network.DNS (Resolver)
 import Network.Socket (Socket)
@@ -31,6 +32,7 @@ import Ouroboros.Network.NodeToNode (NodeToNodeVersion, NodeToNodeVersionData,
            RemoteAddress)
 import Ouroboros.Network.PeerSelection.Governor.Types (PeerSelectionState)
 import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
+import Ouroboros.Network.PeerSelection.PeerStateActions (getPromotedHotTime)
 
 -- | Promoted data types.
 --
@@ -111,7 +113,10 @@ run :: forall (p2p :: P2P) extraArgs extraState extraDebugState extraFlags
       , Exception exception
       )
     => (forall mode x y.
-           P2P.NodeToNodeConnectionManager mode Socket
+           (   P2P.NodeToNodePeerConnectionHandle mode RemoteAddress
+                                                  NodeToNodeVersionData IO x y
+            -> STM IO (Maybe Time))
+        -> P2P.NodeToNodeConnectionManager mode Socket
                                            RemoteAddress NodeToNodeVersionData
                                            NodeToNodeVersion IO x y
         -> StrictTVar IO
@@ -148,7 +153,7 @@ run sigUSR1Signal
             (P2PApplicationsExtra appsExtra) =
     void $
     P2P.run
-      sigUSR1Signal tracers tracersExtra
+      (sigUSR1Signal getPromotedHotTime) tracers tracersExtra
       args argsExtra apps appsExtra
 run _
     tracers (NonP2PTracers tracersExtra)

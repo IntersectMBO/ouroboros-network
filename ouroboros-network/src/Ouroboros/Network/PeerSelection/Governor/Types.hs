@@ -774,18 +774,24 @@ data DebugPeerSelectionState extraState extraFlags extraPeers peeraddr =
     dpssUpstreamyness               :: !(Map peeraddr Int),
     dpssFetchynessBlocks            :: !(Map peeraddr Int),
     dpssAssociationMode             :: !AssociationMode,
+    dpssHotDurations                :: !(Map peeraddr (IsBigLedgerPeer, DiffTime)),
     dpssExtraState                  :: !extraState
   } deriving Show
 
 makeDebugPeerSelectionState
-  :: PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
+  :: (Ord peeraddr, MonadSTM m)
+  => PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
   -> Map peeraddr Int
   -> Map peeraddr Int
   -> extraDebugState
   -> AssociationMode
-  -> DebugPeerSelectionState extraDebugState extraFlags extraPeers peeraddr
-makeDebugPeerSelectionState PeerSelectionState {..} up bp es am =
-  DebugPeerSelectionState {
+  -> (peerconn -> STM m (Maybe Time))
+  -> Time
+  -> m (DebugPeerSelectionState extraDebugState extraFlags extraPeers peeraddr)
+makeDebugPeerSelectionState PeerSelectionState {..} up bp es am getPromotedHotTime now = do
+  let activeMap = EstablishedPeers.toMap establishedPeers `Map.restrictKeys` activePeers
+  dpssHotDurations <- Map.traverseMaybeWithKey getDiffTimes activeMap
+  return DebugPeerSelectionState {
       dpssTargets                     = targets
     , dpssLocalRootPeers              = localRootPeers
     , dpssPublicRootPeers             = publicRootPeers
@@ -807,8 +813,20 @@ makeDebugPeerSelectionState PeerSelectionState {..} up bp es am =
     , dpssUpstreamyness               = up
     , dpssFetchynessBlocks            = bp
     , dpssAssociationMode             = am
+    , dpssHotDurations
     , dpssExtraState                  = es
   }
+  where
+    getDiffTimes peeraddr peerconn = do
+      t1 <- atomically $ getPromotedHotTime peerconn
+      case t1 of
+        Nothing -> return Nothing
+        Just t1' ->
+          let !dt = now `diffTime` t1'
+          in if Set.member peeraddr (PublicRootPeers.getBigLedgerPeers publicRootPeers)
+               then return . Just $ (IsBigLedgerPeer, dt)
+               else return . Just $ (IsNotBigLedgerPeer, dt)
+
 
 -- | Public 'PeerSelectionState' that can be accessed by Peer Sharing
 -- mechanisms without any problem.
