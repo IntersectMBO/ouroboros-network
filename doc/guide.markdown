@@ -155,6 +155,20 @@ cold server for generating OpCerts.
 Installation
 ------------
 
+### System Hardening Recommendations
+
+This section outlines general security recommendations for hosts running the KES Agent. These recommendations are measures intended to reduce the risk of sensitive material being written to persistent storage.
+
+**Threat model reminder:** The KES Agent is designed to prevent access to **past** KES key evolutions. It is assumed that an attacker who fully compromises the host may gain access to the **current** KES evolution. The recommendations below are focused on avoiding accidental persistence of sensitive material (e.g., via swap, crash dumps, or hibernation), not on preventing live compromise.
+
+* **Disable Swap:** It is strongly recommended to permanently disable swap at runtime and ensure it is not re-enabled on reboot. 
+
+* **Disable Hibernation and Suspend:** Power management features (like hibernation, suspension, and hybrid sleep) that write RAM contents to disk must be disabled. These features are not appropriate for always-on server workloads.
+
+* **Disable Core Dumps and Crash Dumps:** Disable core dumps at the system and service level (e.g., systemd-coredump or kdump). This reduces the risk of sensitive in-memory material being written to disk during abnormal process termination.
+
+* **Hardened SSH Access:** Use OpenSSH configured to use the memory locking feature, typically enabled via the `--with-linux-memlock-onfault` flag if available in your distribution's package or a custom build. This provides an additional layer of memory security for the SSH daemon itself.
+
 ### Using a tarball
 
 1. Download a suitable installer tarball for your OS and architecture.
@@ -288,8 +302,21 @@ Now:
 
 ### Configuring `cardano-node` To Use The KES Agent
 
-TODO
+The only difference from the usual procedure is using the new flag 
+`--shelley-kes-agent-socket SERVICE_SOCKET_PATH` instead of using the kes.skey
+from file. 
 
+```shell
+cardano-node run \
+  --config                          configuration.yaml \
+  --topology                        node-spo1/topology.json \
+  --database-path                   node-spo1/db \
+  --socket-path                     node-spo1/node.sock \
+  --shelley-kes-agent-socket        service.socket \
+  --shelley-vrf-key                 node-spo1/vrf.skey \
+  --shelley-operational-certificate opcert.cert \
+  --port                            3001
+```
 ### Running `cardano-node`, `kes-agent-control` And/Or `kes-agent` On Separate Hosts
 
 By default, `kes-agent` uses Unix domain sockets for communication with both
