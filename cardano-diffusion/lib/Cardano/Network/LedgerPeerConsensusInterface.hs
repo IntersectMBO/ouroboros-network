@@ -13,7 +13,7 @@ import Control.Concurrent.Class.MonadSTM (MonadSTM (..))
 import Cardano.Network.LedgerStateJudgement
 import Cardano.Network.PeerSelection.LocalRootPeers
            (OutboundConnectionsState (..))
-import Ouroboros.Network.Block (Point, SlotNo)
+import Ouroboros.Network.Block (Point)
 import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type (SomeHashableBlock)
 
@@ -37,5 +37,5 @@ data LedgerPeersConsensusInterface m =
   , updateOutboundConnectionsState :: OutboundConnectionsState -> STM m ()
 
   , getBlockHash
-      :: forall r. SlotNo -> (m (Maybe (Point SomeHashableBlock)) -> m r) -> m r
+      :: forall r. Point SomeHashableBlock -> (m (Maybe (Point SomeHashableBlock)) -> m r) -> m r
   }

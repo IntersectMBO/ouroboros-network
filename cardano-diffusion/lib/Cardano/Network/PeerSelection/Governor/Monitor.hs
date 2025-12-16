@@ -22,6 +22,7 @@ module Cardano.Network.PeerSelection.Governor.Monitor
   , ExtraTrace (..)
   ) where
 
+import Control.Monad (join)
 import Control.Concurrent.JobPool (Job (..))
 import Control.Exception (assert)
 import Control.Monad.Class.MonadSTM
@@ -44,7 +45,7 @@ import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Ca
 import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
 import Cardano.Network.PeerSelection.PublicRootPeers qualified as Cardano.PublicRootPeers
 import Cardano.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
-import Ouroboros.Network.Block (SlotNo, atSlot, pattern BlockPoint, withHash)
+import Ouroboros.Network.Block (SlotNo, atSlot, pattern BlockPoint, withHash, blockPoint)
 import Ouroboros.Network.PeerSelection.Governor.ActivePeers
            (jobDemoteActivePeer)
 import Ouroboros.Network.PeerSelection.Governor.Types hiding
@@ -706,12 +707,13 @@ jobVerifyPeerSnapshot (slotNo, fileHash)
         decisionState = st,
         decisionJobs  = [] }
 
-    job = getBlockHash slotNo $ \promise -> do
-      waited <- promise
-      case waited of
-        Just (BlockPoint { withHash }) -> do
-          completion $ fileHash == withHash
-        _otherwise -> completion False
+    job = getBlockHash (BlockPoint slotNo fileHash) $ \promise -> do
+            waited <- promise
+            case waited of
+              Nothing -> undefined -- TODO
+              Just BlockPoint { withHash } -> do
+                completion $ show fileHash == show withHash
+              _otherwise -> error "impossible!"
 
 
 -- | Extra trace points for `TracePeerSelection`.
