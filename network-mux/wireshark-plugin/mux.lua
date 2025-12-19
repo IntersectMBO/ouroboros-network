@@ -39,7 +39,7 @@ function mux.dissector(tvbuf, pktinfo, root)
 
   -- Parse possibly multiple MuxSDU's in the TCP segment.
   while offset < pktlen do
-    result = dissectMux(tvbuf, pktinfo, root, offset)
+    local result = dissectMux(tvbuf, pktinfo, root, offset)
     if result.mux_length > 0 then
       -- A compate MuxSDU was parsed.
       pktinfo.cols.protocol = mux.name
@@ -98,6 +98,17 @@ dissectMux = function (tvbuf, pktinfo, root, offset)
   local mini_protocol_num_buf = tvbuf:range(offset + 4, 2) -- 2-byte conv id
   local len_buf               = tvbuf:range(offset + 6, 2) -- 2-byte SDU payload length
   local len                   = len_buf:uint()
+
+  -- a simply sanity check on mini-protocol number, currently we don't have
+  -- mini-protocols numbers above 20
+  --
+  -- TODO: this was added to ignore TCP frames after a segment was lost, and
+  -- parsing got out of sync.  It only get's up to sync again, when a new TCP
+  -- frame starts with a new MuxSDU.
+  local mini_protocol_num = mini_protocol_num_buf:uint() & 0x7fff
+  if mini_protocol_num > 20 then
+    return { mux_length = 0 }
+  end
 
   local mux_length = MUX_HDR_LEN + len
   if msglen < mux_length then
