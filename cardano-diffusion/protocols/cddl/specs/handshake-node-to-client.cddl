@@ -19,7 +19,7 @@ versionTable = { * versionNumber => nodeToClientVersionData }
 
 
 ; as of version 2 (which is no longer supported) we set 16th bit to 1
-;               16    / 17    / 18    / 19    / 20    / 21    / 22     / 23
+;               16    / 17    / 18    / 19    / 20    / 21    / 22    / 23
 versionNumber = 32784 / 32785 / 32786 / 32787 / 32788 / 32789 / 32790 / 32791
 
 ; As of version 15 and higher

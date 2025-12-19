@@ -1,12 +1,17 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DerivingVia         #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE NumericUnderscores  #-}
 {-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE PatternSynonyms     #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE TypeData            #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -34,6 +39,7 @@ import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Monoid (Sum (..))
 import Data.Ord (Down (..))
+import Data.Proxy
 import Data.Ratio
 import Data.Set (Set)
 import Data.Set qualified as Set
@@ -42,11 +48,13 @@ import System.Random
 
 import Network.DNS (Domain)
 
-import Cardano.Slotting.Slot (SlotNo (..), WithOrigin (..))
+import Ouroboros.Network.Block
+import Ouroboros.Network.Magic
 import Ouroboros.Network.PeerSelection.LedgerPeers
 import Ouroboros.Network.PeerSelection.LedgerPeers.Utils
            (recomputeRelativeStake)
 import Ouroboros.Network.PeerSelection.RootPeersDNS
+import Ouroboros.Network.Point (WithOrigin (..))
 
 import Test.Ouroboros.Network.Data.Script
 import Test.Ouroboros.Network.PeerSelection.RootPeersDNS
@@ -63,13 +71,20 @@ tests = testGroup "Ouroboros.Network.LedgerPeers"
   , testProperty "recomputeRelativeStake" prop_recomputeRelativeStake
   , testProperty "getLedgerPeers invariants" prop_getLedgerPeers
   , testProperty "LedgerPeerSnapshot CBOR version 2" prop_ledgerPeerSnapshotCBORV2
-  , testProperty "LedgerPeerSnapshot JSON version 2" prop_ledgerPeerSnapshotJSONV2
+  , testProperty "LedgerPeerSnapshot CBOR version 3" prop_ledgerPeerSnapshotCBORV3
+  , testProperty "LedgerPeerSnapshot JSON version 2/3" prop_ledgerPeerSnapshotJSON
   ]
 
 type ExtraTestInterface = ()
 
 cardanoSRVPrefix :: SRVPrefix
 cardanoSRVPrefix = "_cardano._tcp"
+
+type data MockBlock
+
+type instance HeaderHash MockBlock = Word64
+
+instance StandardHash MockBlock
 
 data StakePool = StakePool {
       spStake :: !Word64
@@ -209,8 +224,10 @@ prop_ledgerPeerSnapshot_requests
         bigPoolRelays = fmap (snd . snd) . Map.toList $ bigPoolMap
         poolRelays    = fmap (snd . snd) . Map.toList $ poolMap
     in case (ledgerWithOrigin, ledgerPeers, peerSnapshot) of
-        (At t, LedgerPeers ledgerPools, Just (LedgerPeerSnapshot (At t', snapshotAccStake)))
-          | t' >= t ->
+        (At t,
+         LedgerPeers ledgerPools,
+         Just (LedgerBigPeerSnapshotV23 BlockPoint { atSlot } _magic snapshotAccStake))
+          | atSlot >= t ->
             snapshotRelays === bigPoolRelays .&&. bigPoolRelays === poolRelays
           | otherwise ->
                  bigPoolRelays === ledgerBigPoolRelays
@@ -228,12 +245,14 @@ prop_ledgerPeerSnapshot_requests
             ledgerBigPoolRelays = fmap (snd . snd) (accumulateBigLedgerStake ledgerPools)
             ledgerRelays = fmap (snd . snd) . Map.toList $ accPoolStake ledgerPools
 
-        (_, _, Just (LedgerPeerSnapshot (At t', snapshotAccStake)))
-          | After slot <- useLedgerAfter, t' >= slot ->
+        (_, _, Just (LedgerBigPeerSnapshotV23 BlockPoint { atSlot } _magic snapshotAccStake))
+          | After slot <- useLedgerAfter, atSlot >= slot ->
             snapshotRelays === bigPoolRelays .&&. bigPoolRelays === poolRelays
           where
             snapshotRelays :: [NonEmpty RelayAccessPoint]
-            snapshotRelays = fmap (fmap (prefixLedgerRelayAccessPoint cardanoSRVPrefix) . snd . snd) snapshotAccStake
+            snapshotRelays =
+              fmap (fmap (prefixLedgerRelayAccessPoint cardanoSRVPrefix) . snd . snd)
+                   snapshotAccStake
 
         _otherwise -> bigPoolRelays === [] .&&. poolRelays === []
 
@@ -511,59 +530,111 @@ prop_ledgerPeerSnapshotCBORV2 :: LedgerPeerSnapshotSRVSupport
                               -> Property
 prop_ledgerPeerSnapshotCBORV2 srvSupport slotNo
                               ledgerPools =
-  counterexample (show snapshot) $
+  counterexample (show someSnapshot) $
          counterexample ("Invalid CBOR encoding" <> show encoded)
                         (validFlatTerm encoded)
     .&&. either ((`counterexample` False) . ("CBOR decode failed: " <>))
                 (counterexample . ("CBOR round trip failed: " <>) . show <*> (result ==))
                 decoded
   where
-    snapshot = snapshotV2 slotNo ledgerPools
-    encoded = toFlatTerm . encodeLedgerPeerSnapshot srvSupport $ snapshot
-    decoded = fromFlatTerm (decodeLedgerPeerSnapshot srvSupport) encoded
+    someSnapshot = snapshotV2 slotNo ledgerPools
+    encoded = toFlatTerm . encodeLedgerPeerSnapshot' srvSupport $ someSnapshot
+    decoded = unwrap <$> fromFlatTerm (decodeLedgerPeerSnapshot (Proxy :: Proxy MockBlock)) encoded
+    unwrap :: SomeLedgerPeerSnapshot -> LedgerPeerSnapshot BigLedgerPeers
+    unwrap = \case
+      SomeLedgerPeerSnapshot lps@LedgerPeerSnapshotV2{} -> lps
+      _otherwise -> error "impossible"
 
-    result = case srvSupport of
-      LedgerPeerSnapshotSupportsSRV      -> snapshot
-      LedgerPeerSnapshotDoesntSupportSRV ->
-          -- filter out SRV records
-          LedgerPeerSnapshotV2
-            ( slotNo'
-            , [ (accStake, (stake, NonEmpty.fromList relays'))
-              | (accStake, (stake, relays)) <- peers
-              , let relays' = NonEmpty.filter
-                      (\case
-                         LedgerRelayAccessSRVDomain {} -> False
-                         _ -> True
-                      )
-                      relays
-              , not (null relays')
-              ]
-            )
-        where
-          LedgerPeerSnapshotV2 (slotNo', peers) = snapshot
+    result = case someSnapshot of
+      SomeLedgerPeerSnapshot lps@(LedgerPeerSnapshotV2 (slotNo', peers)) ->
+        case srvSupport of
+          LedgerPeerSnapshotSupportsSRV      -> lps
+          LedgerPeerSnapshotDoesntSupportSRV ->
+            LedgerPeerSnapshotV2
+              ( slotNo'
+              , [ (accStake, (stake, NonEmpty.fromList relays'))
+                | (accStake, (stake, relays)) <- peers
+                , let relays' = NonEmpty.filter
+                        (\case
+                           LedgerRelayAccessSRVDomain {} -> False
+                           _ -> True
+                        )
+                        relays
+                , not (null relays')
+                ]
+              )
+      _otherwise -> error "impossible"
+
+
+-- TODO: move to `ouroboros-network-api:test`
+prop_ledgerPeerSnapshotCBORV3 :: SlotNo -> Word32 -> LedgerPools -> Bool -> Property
+prop_ledgerPeerSnapshotCBORV3 slotNo magic ledgerPools big =
+  counterexample (show someSnapshot) $
+         counterexample ("Invalid CBOR encoding" <> show encoded)
+                        (validFlatTerm encoded)
+    .&&. either ((`counterexample` False) . ("CBOR decode failed: " <>))
+                (counterexample . ("CBOR round trip failed: " <>) . show <*> cmp)
+                decoded
+  where
+    someSnapshot = snapshotV3 slotNo (NetworkMagic magic) ledgerPools big
+    encoded = toFlatTerm . encodeLedgerPeerSnapshot' LedgerPeerSnapshotSupportsSRV $ someSnapshot
+    decoded = fromFlatTerm (decodeLedgerPeerSnapshot (Proxy :: Proxy MockBlock)) encoded
+    cmp decoded' = case (someSnapshot, decoded') of
+      (SomeLedgerPeerSnapshot someSnapshot',
+       SomeLedgerPeerSnapshot decoded'')-> case (someSnapshot', decoded'') of
+        (lps@LedgerBigPeerSnapshotV23{}, lps'@LedgerBigPeerSnapshotV23{}) -> lps == lps'
+        (lps@LedgerAllPeerSnapshotV23{}, lps'@LedgerAllPeerSnapshotV23{}) -> lps == lps'
+        _otherwise -> False
+
 
 -- | Tests if LedgerPeerSnapshot JSON round trip is the identity function
 --
 -- TODO: move to `ouroboros-network-api:test`
-prop_ledgerPeerSnapshotJSONV2 :: SlotNo
-                              -> LedgerPools
-                              -> Property
-prop_ledgerPeerSnapshotJSONV2 slotNo
-                              ledgerPools =
-  counterexample (show snapshot) $
-     either ((`counterexample` False) . ("JSON decode failed: " <>))
-            (counterexample . ("JSON round trip failed: " <>) . show <*> nearlyEqualModuloFullyQualified snapshot)
-            roundTrip
+prop_ledgerPeerSnapshotJSON :: SlotNo
+                            -> (Bool, Bool)
+                            -> Word32
+                            -> LedgerPools
+                            -> Property
+prop_ledgerPeerSnapshotJSON slotNo (v3, big) pureMagic ledgerPools =
+  counterexample (show someSnapshot) $
+     either ((`counterexample` False) . renderMsg)
+            (    counterexample . ("JSON round trip failed: " <>) . show
+             <*> nearlyEqualModuloFullyQualified someSnapshot)
+            someRoundTrip
   where
-    snapshot = snapshotV2 slotNo ledgerPools
-    roundTrip = case fromJSON . toJSON $ snapshot of
-                  Aeson.Success s -> Right s
-                  Error str       -> Left str
+    renderMsg msg = mconcat ["JSON decode failed: "
+                            , show msg
+                            , "\nNB. JSON encoding: ", show $ case someSnapshot of
+                                                                SomeLedgerPeerSnapshot lps -> toJSON lps
+                            ]
 
-    nearlyEqualModuloFullyQualified snapshotOriginal snapshotRoundTripped =
-      let LedgerPeerSnapshotV2 (wOrigin, relaysWithAccStake) = snapshotOriginal
-          strippedRelaysWithAccStake = stripFQN <$> relaysWithAccStake
-          LedgerPeerSnapshotV2 (wOrigin', relaysWithAccStake') = snapshotRoundTripped
+    someSnapshot =
+      if v3
+        then snapshotV3 slotNo (NetworkMagic pureMagic) ledgerPools big
+        else snapshotV2 slotNo ledgerPools
+
+    jsonResult = case someSnapshot of
+      SomeLedgerPeerSnapshot lps -> case lps of
+        lps'@LedgerBigPeerSnapshotV23{} ->
+          SomeLedgerPeerSnapshot <$>
+            (fmap (parseLedgerPeerSnapshotWithBlock @MockBlock @BigLedgerPeers) . fromJSON . toJSON $ lps')
+        lps'@LedgerAllPeerSnapshotV23{} ->
+          SomeLedgerPeerSnapshot <$>
+            (fmap (parseLedgerPeerSnapshotWithBlock @MockBlock @AllLedgerPeers) . fromJSON . toJSON $ lps')
+        lps'@LedgerPeerSnapshotV2{}     ->
+          SomeLedgerPeerSnapshot <$>
+            (fmap (parseLedgerPeerSnapshotWithBlock @MockBlock @BigLedgerPeers) . fromJSON . toJSON $ lps')
+
+    someRoundTrip = case jsonResult of
+      Aeson.Success s -> Right s
+      Error str       -> Left str
+
+    nearlyEqualModuloFullyQualified :: SomeLedgerPeerSnapshot -> SomeLedgerPeerSnapshot -> Property
+    nearlyEqualModuloFullyQualified (SomeLedgerPeerSnapshot
+                                      (LedgerPeerSnapshotV2 (wOrigin, relaysWithAccStake)))
+                                    (SomeLedgerPeerSnapshot
+                                      (LedgerPeerSnapshotV2 (wOrigin', relaysWithAccStake'))) =
+      let strippedRelaysWithAccStake = stripFQN <$> relaysWithAccStake
           strippedRelaysWithAccStake' = stripFQN <$> relaysWithAccStake'
       in
              wOrigin === wOrigin'
@@ -571,6 +642,34 @@ prop_ledgerPeerSnapshotJSONV2 slotNo
                             (strippedRelaysWithAccStake === strippedRelaysWithAccStake')
         .&&. counterexample "approximation error"
                             (compareApprox relaysWithAccStake relaysWithAccStake')
+
+    nearlyEqualModuloFullyQualified (SomeLedgerPeerSnapshot
+                                      (LedgerBigPeerSnapshotV23 point magic relaysWithAccStake))
+                                    (SomeLedgerPeerSnapshot
+                                      (LedgerBigPeerSnapshotV23 point' magic' relaysWithAccStake')) =
+      let strippedRelaysWithAccStake = stripFQN <$> relaysWithAccStake
+          strippedRelaysWithAccStake' = stripFQN <$> relaysWithAccStake'
+      in
+             point === point'
+        .&&. magic === magic'
+        .&&. counterexample "fully qualified name"
+                            (strippedRelaysWithAccStake === strippedRelaysWithAccStake')
+        .&&. counterexample "approximation error"
+                            (compareApprox relaysWithAccStake relaysWithAccStake')
+
+    nearlyEqualModuloFullyQualified (SomeLedgerPeerSnapshot
+                                      (LedgerAllPeerSnapshotV23 point magic relays))
+                                    (SomeLedgerPeerSnapshot
+                                      (LedgerAllPeerSnapshotV23 point' magic' relays')) =
+      let strippedRelays  = stripFQN <$> zip (repeat (0 :: Int)) relays
+          strippedRelays' = stripFQN <$> zip (repeat (0 :: Int)) relays'
+      in
+             point === point'
+        .&&. magic === magic'
+        .&&. counterexample "fully qualified name"
+                            (strippedRelays === strippedRelays')
+
+    nearlyEqualModuloFullyQualified _ _ = property False
 
     stripFQN (_, (_, relays)) = step <$> relays
     step it@(LedgerRelayAccessDomain domain port) =
@@ -601,14 +700,29 @@ prop_ledgerPeerSnapshotJSONV2 slotNo
 --
 snapshotV2 :: SlotNo
            -> LedgerPools
-           -> LedgerPeerSnapshot
+           -> SomeLedgerPeerSnapshot
 snapshotV2 slot
-           (LedgerPools pools) = LedgerPeerSnapshotV2 (originOrSlot, poolStakeWithAccumulation)
+           (LedgerPools pools) =
+  SomeLedgerPeerSnapshot $ LedgerPeerSnapshotV2 (originOrSlot, poolStakeWithAccumulation)
   where
     poolStakeWithAccumulation = Map.assocs . accPoolStake $ pools
     originOrSlot = if slot == 0
                    then Origin
                    else At slot
+
+snapshotV3 :: SlotNo -> NetworkMagic -> LedgerPools -> Bool -> SomeLedgerPeerSnapshot
+snapshotV3 slotNo magic (LedgerPools pools) big = snapshot
+  where
+    snapshot =
+      if big
+        then let point = BlockPoint slotNo (SomeHashableBlock (Proxy :: Proxy MockBlock) (unSlotNo slotNo))
+                 bigPools = Map.assocs . accPoolStake $ pools
+                 lps  = LedgerBigPeerSnapshotV23 point magic bigPools
+              in SomeLedgerPeerSnapshot lps
+        else let point = BlockPoint slotNo (SomeHashableBlock (Proxy :: Proxy MockBlock) (unSlotNo slotNo))
+                 lps = LedgerAllPeerSnapshotV23 point magic pools
+              in SomeLedgerPeerSnapshot lps
+
 
 -- TODO: Belongs in iosim.
 data SimResult a = SimReturn a [String]

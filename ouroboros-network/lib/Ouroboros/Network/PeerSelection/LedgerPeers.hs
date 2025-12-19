@@ -1,5 +1,6 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DerivingStrategies  #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE LambdaCase          #-}
@@ -36,9 +37,11 @@ module Ouroboros.Network.PeerSelection.LedgerPeers
   , resolveLedgerPeers
   ) where
 
+import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad (when)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
+import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Tracer (Tracer, traceWith)
 import Data.IP qualified as IP
@@ -49,22 +52,21 @@ import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (isJust)
 import Data.Ratio
-import System.Random
-import Text.Printf
-
-import Cardano.Slotting.Slot (SlotNo (..), WithOrigin (..))
-import Control.Concurrent.Class.MonadSTM.Strict
-import Control.Monad.Class.MonadThrow
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Void (Void)
 import Data.Word (Word16, Word64)
 import Network.DNS qualified as DNS
+import System.Random
+import Text.Printf
+
+import Ouroboros.Network.Block (SlotNo)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
 import Ouroboros.Network.PeerSelection.LedgerPeers.Utils
            (accumulateBigLedgerStake, bigLedgerPeerQuota,
            recomputeRelativeStake)
 import Ouroboros.Network.PeerSelection.RootPeersDNS
+import Ouroboros.Network.Point (WithOrigin (..))
 
 -- | Ledger Peer request result
 --
@@ -380,7 +382,7 @@ ledgerPeersThread PeerActionsDNS {
 data StakeMapOverSource = StakeMapOverSource {
     ledgerWithOrigin :: WithOrigin SlotNo,
     ledgerPeers      :: LedgerPeers,
-    peerSnapshot     :: Maybe LedgerPeerSnapshot,
+    peerSnapshot     :: Maybe (LedgerPeerSnapshot BigLedgerPeers),
     cachedSlot       :: Maybe SlotNo,
     peerMap          :: Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint),
     bigPeerMap       :: Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint),
@@ -411,7 +413,7 @@ stakeMapWithSlotOverSource StakeMapOverSource {
     -- check if we can use the snapshot first
     (ledgerSlotNo, _, Just ledgerPeerSnapshot)
       | (At snapshotSlotNo, snapshotRelays)
-        <- getRelayAccessPointsFromLedgerPeerSnapshot srvPrefix ledgerPeerSnapshot
+        <- getRelayAccessPointsFromBigLedgerPeersSnapshot srvPrefix ledgerPeerSnapshot
       , snapshotSlotNo >= ledgerSlotNo'
       , snapshotSlotNo >= useLedgerAfter' ->
           -- we cache the peers from the snapshot
@@ -447,7 +449,7 @@ data WithLedgerPeersArgs extraAPI m = WithLedgerPeersArgs {
   -- ^ Get Ledger Peers comes from here
   wlpGetUseLedgerPeers     :: STM m UseLedgerPeers,
   -- ^ Get Use Ledger After value
-  wlpGetLedgerPeerSnapshot :: STM m (Maybe LedgerPeerSnapshot),
+  wlpGetLedgerPeerSnapshot :: STM m (Maybe (LedgerPeerSnapshot BigLedgerPeers)),
   -- ^ Get ledger peer snapshot from file read by node
   wlpSemaphore             :: DNSSemaphore m,
   wlpSRVPrefix             :: SRVPrefix

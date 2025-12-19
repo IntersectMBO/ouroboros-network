@@ -64,6 +64,7 @@ import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers
            (LocalRootPeers (..))
 import Ouroboros.Network.Point
+import Ouroboros.Network.Socket ()
 
 import Test.Cardano.Network.PeerSelection.MockEnvironment hiding (tests)
 import Test.Cardano.Network.PeerSelection.Utils
@@ -4374,6 +4375,7 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
                     lpExtraAPI = Cardano.LedgerPeersConsensusInterface {
                       readFetchMode = pure (PraosFetchMode FetchModeDeadline),
                       getLedgerStateJudgement = readLedgerStateJudgement,
+                      getBlockHash = \_slotNo k -> k $ atomically retry,
                       updateOutboundConnectionsState = \a -> do
                         a' <- readTVar olocVar
                         when (a /= a') $
