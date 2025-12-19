@@ -8,12 +8,18 @@ addr() {
 SERVER_ADDR=$(addr 2)
 SERVER_PORT=9001
 REQUEST_SIZE=10 # 10B
-PRAOS_BLOCK_SIZE=1000 # 1KB
-LEIOS_BLOCK_SIZE=$((12288)) # 
+MUX_SDU=12288
+LEIOS_BLOCK_SIZE=$((($MUX_SDU - 5) * 1000))
+PRAOS_BLOCK_SIZE=$((($MUX_SDU - 5) * 10))
 
 # client's configuration
-NUM_LEIOS_REQUESTS=10
-NUM_PRAOS_REQUESTS=$(($NUM_LEIOS_REQUESTS * $LEIOS_BLOCK_SIZE / $PRAOS_BLOCK_SIZE))
+NUM_LEIOS_REQUESTS=20
+NUM_PRAOS_REQUESTS=1000 # $(($NUM_LEIOS_REQUESTS * $LEIOS_BLOCK_SIZE / $PRAOS_BLOCK_SIZE))
+
+EGRESS_THROUPUT="100mbit"
+INGRESS_DELAY="20ms"
+
+RTS_OPTIONS="-N2"
 
 TMP_DIR=$(mktemp -d ${TMPDIR:-/tmp}/mux-leios-demo.XXXXXX)
 rm -f ./mux-leios-tmp-dir
@@ -81,13 +87,13 @@ add_qdiscs() {
 
   # Limit bandwidth of and pace outgoing traffic.
   sudo tc -n ns$i qdisc add dev veth$i$j root handle 1: htb default 1
-  sudo tc -n ns$i class add dev veth$i$j parent 1: classid 1:1 htb rate 100mbit
+  sudo tc -n ns$i class add dev veth$i$j parent 1: classid 1:1 htb rate $EGRESS_THROUPUT
   sudo tc -n ns$i qdisc add dev veth$i$j parent 1:1 handle 10: fq_codel
 
   # Delay incoming traffic.
   sudo tc -n ns$j qdisc add dev veth$j$i handle ffff: ingress
   sudo tc -n ns$j filter add dev veth$j$i parent ffff: protocol ip u32 match u32 0 0 action mirred egress redirect dev ifb$j$i
-  sudo tc -n ns$j qdisc add dev ifb$j$i root netem delay 20ms
+  sudo tc -n ns$j qdisc add dev ifb$j$i root netem delay $INGRESS_DELAY
 
   { set +x; } 2>/dev/null
 }
@@ -99,19 +105,20 @@ cabal build mux-leios-demo
 CMD=$(cabal list-bin exe:mux-leios-demo)
 
 # client is executed in `ns1`
-# CLIENT_CMD="$CMD client $SERVER_ADDR $SERVER_PORT $REQUEST_SIZE $NUM_PRAOS_REQUESTS $NUM_LEIOS_REQUESTS 2>$TMP_DIR/client.stderr | tee $TMP_DIR/client.stdout"
-CLIENT_CMD="$CMD client-burst $SERVER_ADDR $SERVER_PORT 2>$TMP_DIR/client.stderr | tee $TMP_DIR/client.stdout"
+# CLIENT_CMD="$CMD client $SERVER_ADDR $SERVER_PORT $REQUEST_SIZE $NUM_PRAOS_REQUESTS $NUM_LEIOS_REQUESTS +RTS ${RTS_OPTIONS} -RTS 2>$TMP_DIR/client.stderr | tee $TMP_DIR/client.stdout"
+CLIENT_CMD="$CMD client-burst $SERVER_ADDR $SERVER_PORT +RTS ${RTS_OPTIONS} -RTS 2>$TMP_DIR/client.stderr | tee $TMP_DIR/client.stdout"
 # server is executed in `ns2`
-# SERVER_CMD="$CMD server $SERVER_ADDR $SERVER_PORT $PRAOS_BLOCK_SIZE $LEIOS_BLOCK_SIZE 2>$TMP_DIR/server.stderr 1>$TMP_DIR/server.stdout"
-SERVER_CMD="$CMD server-burst $SERVER_ADDR $SERVER_PORT $NUM_PRAOS_REQUESTS $PRAOS_BLOCK_SIZE $NUM_LEIOS_REQUESTS $LEIOS_BLOCK_SIZE 2>$TMP_DIR/server.stderr 1>$TMP_DIR/server.stdout"
+# SERVER_CMD="$CMD server $SERVER_ADDR $SERVER_PORT $PRAOS_BLOCK_SIZE $LEIOS_BLOCK_SIZE +RTS ${RTS_OPTIONS} -RTS 2>$TMP_DIR/server.stderr 1>$TMP_DIR/server.stdout"
+SERVER_CMD="$CMD server-burst $SERVER_ADDR $SERVER_PORT $NUM_PRAOS_REQUESTS $PRAOS_BLOCK_SIZE $NUM_LEIOS_REQUESTS $LEIOS_BLOCK_SIZE +RTS $RTS_OPTIONS -RTS 2>$TMP_DIR/server.stderr 1>$TMP_DIR/server.stdout"
 
-echo "Server command: $SERVER_CMD"
-echo "Client command: $CLIENT_CMD"
+echo "Server command: $SERVER_CMD" | tee -a $TMP_DIR/config
+echo "Client command: $CLIENT_CMD" | tee -a $TMP_DIR/config
 
 sudo ip netns exec ns1 bash -c "{ echo "ns1"; ip addr show veth12; }"
 sudo ip netns exec ns2 bash -c "{ echo "ns2"; ip addr show veth21; }"
 # run tcpdump in `ns1` to capture packats from the client side
 sudo ip netns exec ns1 tcpdump -i veth12 -w $TMP_DIR/ns1-veth12.pcap &
+sudo ip netns exec ns2 tcpdump -i veth21 -w $TMP_DIR/ns2-veth21.pcap &
 
 # run the server asynchronously
 sudo ip netns exec ns2 bash -c "$SERVER_CMD" &
