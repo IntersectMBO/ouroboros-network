@@ -218,6 +218,10 @@ executable mux-leios-demo
     stm,
     Win32-network,
 
+  ghc-options:
+    -rtsopts
+    -threaded
+
 benchmark socket-read-write-benchmarks
   type: exitcode-stdio-1.0
   hs-source-dirs: bench/socket_read_write
