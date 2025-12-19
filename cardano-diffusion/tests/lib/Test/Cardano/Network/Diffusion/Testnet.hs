@@ -26,7 +26,7 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.IOSim
 
 import Data.Bifoldable (bifoldMap)
-import Data.Bifunctor (bimap, first)
+import Data.Bifunctor (bimap, first, second)
 import Data.Char (ord)
 import Data.Dynamic (fromDynamic)
 import Data.Foldable (fold, foldr')
@@ -77,6 +77,7 @@ import Ouroboros.Network.InboundGovernor qualified as IG
 import Ouroboros.Network.Mock.ConcreteBlock (BlockHeader)
 import Ouroboros.Network.PeerSelection
 import Ouroboros.Network.PeerSelection.Governor qualified as Governor
+import Ouroboros.Network.PeerSelection.Governor.Types
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
 import Ouroboros.Network.PeerSelection.RootPeersDNS (DNSorIOError (DNSError))
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
@@ -234,6 +235,8 @@ tests =
                    prop_accept_failure
     , testProperty "only bootstrap peers in fallback state"
                    prop_only_bootstrap_peers_in_fallback_state_iosim
+    , testProperty "bootstrap peers timeout"
+                   prop_bootstrap_timeout_iosim
     , testGroup "local root diffusion mode"
         [ testProperty "InitiatorOnly"
           (unit_local_root_diffusion_mode InitiatorOnlyDiffusionMode)
@@ -1223,9 +1226,9 @@ prop_only_bootstrap_peers_in_fallback_state ioSimTrace traceNumber =
           trJoinKillSig =
               Signal.fromChangeEvents Terminated -- Default to TrKillingNode
             . Signal.selectEvents
-                (\case TrJoiningNetwork -> Just Joined
-                       TrTerminated     -> Just Terminated
-                       _                -> Nothing
+                (\case TrJoiningNetwork{} -> Just Joined
+                       TrTerminated       -> Just Terminated
+                       _                  -> Nothing
                 )
             . selectDiffusionSimulationTrace
             $ events
@@ -1300,6 +1303,107 @@ prop_only_bootstrap_peers_in_fallback_state_iosim
   :: AbsBearerInfo -> DiffusionScript -> Property
 prop_only_bootstrap_peers_in_fallback_state_iosim
   = testWithIOSim prop_only_bootstrap_peers_in_fallback_state long_trace
+
+prop_bootstrap_timeout_iosim
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_bootstrap_timeout_iosim = testWithIOSim prop long_trace
+  where
+    prop ioSimTrace traceNumber =
+      let events :: [Events DiffusionTestTrace]
+          events = Trace.toList
+                 . fmap ( Signal.eventsFromList
+                        . fmap (\(WithName _ (WithTime t b)) -> (t, b))
+                        )
+                 . splitWithNameTrace
+                 . fmap (\(WithTime t (WithName name b)) -> WithName name (WithTime t b))
+                 . withTimeNameTraceEvents
+                    @DiffusionTestTrace
+                    @NtNAddr
+                 . Trace.take traceNumber
+                 $ ioSimTrace
+
+         in conjoin
+          $ (\ev ->
+            let evsList = eventsToList ev
+                lastTime = fst
+                         . last
+                         $ evsList
+             in classifySimulatedTime lastTime
+              $ classifyNumberOfEvents (length evsList)
+              $ timeout_enforced ev
+            )
+          <$> events
+
+    timeout_enforced evs =
+      let govUseBootstrapPeers :: Signal UseBootstrapPeers
+          govUseBootstrapPeers =
+            selectDiffusionPeerSelectionState
+              (Cardano.ExtraState.bootstrapPeersFlag . Governor.extraState)
+              evs
+
+          govLedgerStateJudgement :: Signal LedgerStateJudgement
+          govLedgerStateJudgement =
+            selectDiffusionPeerSelectionState
+              (Cardano.ExtraState.ledgerStateJudgement . Governor.extraState)
+              evs
+
+          sigPeerSelection
+            :: Signal
+                 (Maybe (Governor.TracePeerSelection Cardano.ExtraState PeerTrustable
+                                                    (Cardano.ExtraPeers NtNAddr)
+                                                    Cardano.ExtraTrace NtNAddr))
+          sigPeerSelection = Signal.fromEvents $ selectDiffusionPeerSelectionEvents evs
+
+          sigDiffusionSimulation :: Signal (Maybe DiffusionSimulationTrace)
+          sigDiffusionSimulation = Signal.fromEvents $ selectDiffusionSimulationTrace evs
+
+          govBootstrapTimeout :: Signal (Maybe Time)
+          govBootstrapTimeout =
+            selectDiffusionPeerSelectionState
+              (Cardano.ExtraState.bootstrapPeersTimeout . Governor.extraState)
+              evs
+
+          criticalTimeoutError :: [Governor.TracePeerSelection Cardano.ExtraState PeerTrustable
+                                                    (Cardano.ExtraPeers NtNAddr)
+                                                    Cardano.ExtraTrace NtNAddr]
+          criticalTimeoutError =
+               filter (\case
+                         TraceOutboundGovernorCriticalFailure reason
+                           | Just BootstrapPeersCriticalTimeoutError <- fromException reason
+                                    -> True
+                         _otherwise -> False)
+            . mapMaybe snd
+            . Signal.eventsToList
+            . Signal.toChangeEvents
+            $ sigPeerSelection
+
+          timeoutExceeded :: Signal Bool
+          timeoutExceeded =
+            not . Set.null <$> keyedTimeout' (15*60+1)
+              (\case
+                (_, Just (TrErrored{}), _) -> Nothing
+                (True, _, e)
+                  | Just (TraceOutboundGovernorCriticalFailure e') <- e
+                  , Just BootstrapPeersCriticalTimeoutError <- fromException e'
+                     -> Nothing
+                  | otherwise -> Just (Set.singleton ())
+                (False, _, _)              -> Nothing
+                )
+              ((,,) . isJust <$> govBootstrapTimeout <*> sigDiffusionSimulation <*> sigPeerSelection)
+
+          -- Node exiting with a critical timeout error makes this test succeed because
+          -- the point here is that the node should always be able to exit one way or another
+          -- but that indicates a problem elsewhere.
+      in  classify (not . null $ criticalTimeoutError) "Passed with BootstrapPeersCriticalTimeoutError"
+        . counterexample
+            "\nSignal key: (ledger state judgement, use bootstrap peers, timeout at, exceeded?)\n"
+        $ signalProperty 20 show
+              (\(_, _, _, timedOut) -> not timedOut)
+              ((,,,) <$> govLedgerStateJudgement
+                     <*> govUseBootstrapPeers
+                     <*> govBootstrapTimeout
+                     <*> timeoutExceeded
+              )
 
 
 -- | Unit test which covers issue #4177
@@ -4008,7 +4112,7 @@ prop_unit_reconnect =
     verify_consistency events =
       let govEstablishedPeersSig :: Signal (Set NtNAddr)
           govEstablishedPeersSig =
-            selectDiffusionPeerSelectionState'
+            selectDiffusionPeerSelectionState
               (EstablishedPeers.toSet . Governor.establishedPeers)
               (wnEvent <$> events)
 
@@ -5071,58 +5175,44 @@ selectDiffusionSimulationTrace :: Events DiffusionTestTrace
                                -> Events DiffusionSimulationTrace
 selectDiffusionSimulationTrace = Signal.selectEvents
                     (\case DiffusionSimulationTrace e -> Just e
-                           _                                   -> Nothing)
+                           _                          -> Nothing)
 
-selectDiffusionPeerSelectionState :: Eq a
-                                  => (forall peerconn.
-                                        Governor.PeerSelectionState Cardano.ExtraState
-                                                                    PeerTrustable
-                                                                    (Cardano.ExtraPeers NtNAddr)
-                                                                    NtNAddr peerconn
-                                        -> a)
-                                  -> Events DiffusionTestTrace
-                                  -> Signal a
+selectDiffusionPeerSelectionState
+  :: Eq a
+  => (forall peerconn.
+         Governor.PeerSelectionState Cardano.ExtraState PeerTrustable
+                                     (Cardano.ExtraPeers NtNAddr) NtNAddr peerconn
+      -> a)
+  -> Events DiffusionTestTrace
+  -> Signal a
 selectDiffusionPeerSelectionState f =
     Signal.nub
   -- TODO: #3182 Rng seed should come from quickcheck.
   . (\evs ->
        let evsList = Signal.eventsToList evs
-       in
-         case evsList of
-           [] -> Signal.fromChangeEvents (initialState PraosMode) (snd <$> evs)
-           (_, (consensusMode, _)):_ ->
-             Signal.fromChangeEvents (initialState consensusMode) (snd <$> evs)
+       in case evsList of
+            [] -> Signal.fromChangeEvents (initial PraosMode) mempty
+            ((_, Just govState0):rest) ->
+              Signal.fromChangeEvents
+                govState0
+                (Signal.eventsFromList $ second (fromMaybe govState0) <$> rest)
+            _otherwise -> error "impossible"
     )
-  . Signal.selectEvents
-      (\case
-        DiffusionDebugPeerSelectionTrace (TraceGovernorState _ _ st) ->
-          Just (Cardano.ExtraState.consensusMode (Governor.extraState st), f st)
-        _                                                            ->
-          Nothing)
+  . Signal.selectEvents (\case
+      DiffusionDebugPeerSelectionTrace (TraceGovernorState _ _ st) ->
+        Just . Just $! f st
+      -- don't let old state linger around when a node is restarted
+      DiffusionSimulationTrace TrKillingNode ->
+        Just Nothing
+      DiffusionSimulationTrace (TrJoiningNetwork consensusMode) ->
+        Just . Just $! initial consensusMode
+      _                                                         -> Nothing)
   where
-    initialState consensusMode =
-      f $ Governor.emptyPeerSelectionState
-            (mkStdGen 42)
-            (Cardano.ExtraState.empty consensusMode (NumberOfBigLedgerPeers 0)) -- ^ todo: fix
-            Cardano.ExtraPeers.empty
-
-selectDiffusionPeerSelectionState' :: (forall peerconn. Governor.PeerSelectionState Cardano.ExtraState PeerTrustable (Cardano.ExtraPeers NtNAddr) NtNAddr peerconn -> a)
-                                  -> Events DiffusionTestTrace
-                                  -> Signal a
-selectDiffusionPeerSelectionState' f =
-  -- TODO: #3182 Rng seed should come from quickcheck.
-    Signal.fromChangeEvents initial
-  . Signal.selectEvents
-      (\case
-        DiffusionDebugPeerSelectionTrace (TraceGovernorState _ _ st) -> Just (f st)
-        -- don't let old state linger around when a node is restarted
-        DiffusionSimulationTrace         TrKillingNode               -> Just initial
-        _                                                            -> Nothing)
-  where
-    initial = f $ Governor.emptyPeerSelectionState
-                    (mkStdGen 42)
-                    (Cardano.ExtraState.empty PraosMode (NumberOfBigLedgerPeers 0))
-                    Cardano.ExtraPeers.empty
+    initial consensusMode =
+      f $! Governor.emptyPeerSelectionState
+                      (mkStdGen 42)
+                      (Cardano.ExtraState.empty consensusMode (NumberOfBigLedgerPeers 0))
+                      Cardano.ExtraPeers.empty
 
 selectDiffusionConnectionManagerEvents
   :: Trace () DiffusionTestTrace
