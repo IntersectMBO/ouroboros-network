@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
@@ -8,15 +9,38 @@
 -- peer awaiting for messages needs an incremental decoder to assemple messages
 -- back.
 --
-module Test.Mux.ReqResp where
+module Test.Mux.ReqResp
+  ( MsgReqResp (..)
+  , TraceSendRecv (..)
+    -- * Normal Request-Response Client & Server
+    -- ** Client
+  , ReqRespClient (..)
+  , runClientCBOR
+  , runClientBin
+    -- ** Server
+  , ReqRespServer (..)
+  , runServerCBOR
+  , runServerBin
+    -- * Passive Client & Active Server
+    -- ** Passive Client
+  , ReqRespClientBurst (..)
+  , ReqRespClientLoop (..)
+  , runClientBurstCBOR
+  , runClientBurstBin
+    -- ** Active Server
+  , ReqRespServerBurst (..)
+  , ReqRespServerLoop (..)
+  , runServerBurstCBOR
+  , runServerBurstBin
+  ) where
 
 import Codec.CBOR.Decoding qualified as CBOR hiding (Done, Fail)
 import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
 import Codec.Serialise (Serialise (..), serialise)
 
-import Data.Binary.Put qualified as Bin
 import Data.Binary.Get qualified as Bin
+import Data.Binary.Put qualified as Bin
 
 import Control.Monad.Primitive
 import Data.ByteString qualified as BS
@@ -319,3 +343,180 @@ runServerBin
   -> ReqRespServer BS.ByteString BS.ByteString m a
   -> m (a, Maybe LBS.ByteString)
 runServerBin = runServer (Bin.runPut . encodeBin) (\chann trailing -> runBinDecoderWithChannel chann trailing decodeBin)
+
+
+--
+-- Passive Client / Active Server
+--
+
+
+-- | A bursty client, which sends one request and then awaits for responses from
+-- the server.  The server terminates the protocol with `MsgDone`.
+--
+-- TODO: the client should ask for n messages and terminate the protocol.
+--
+data ReqRespClientBurst req resp m a =
+  SendMsgReqBurst req (ReqRespClientLoop resp m a)
+
+data ReqRespClientLoop resp m a =
+  AwaitResp { handleMsgDone :: m a
+            , handleMsgResp :: resp -> m (ReqRespClientLoop resp m a)
+            }
+
+
+runClientBurst
+  :: forall req resp failure m a.
+     ( Monad m
+     , Show req
+     , Show resp
+     , Show failure
+     )
+  => (MsgReqResp req resp -> LBS.ByteString)
+  -> (    ByteChannel m
+       -> Maybe LBS.ByteString
+       -> m (Either failure (MsgReqResp req resp, Maybe LBS.ByteString))
+     )
+  -> Tracer m (TraceSendRecv (MsgReqResp req resp))
+  -> ByteChannel m
+  -> ReqRespClientBurst req resp m a
+  -> m (a, Maybe LBS.ByteString)
+
+runClientBurst runEncoder runDecoder tracer
+               channel@Channel {send}
+               (SendMsgReqBurst req loop) = do
+    let msg :: MsgReqResp req resp
+        msg = MsgReq req
+    send (runEncoder msg)
+    go Nothing loop
+  where
+    go :: Maybe LBS.ByteString
+       -> ReqRespClientLoop resp m a
+       -> m (a, Maybe LBS.ByteString)
+    go trailing AwaitResp { handleMsgDone, handleMsgResp } = do
+      res <- runDecoder channel trailing
+
+      case res of
+        Left err -> do
+          traceWith tracer (TraceFailure $ show err)
+          error $ "runClient: deserialise error: " ++ show err
+
+        Right (msg'@(MsgResp resp), trailing') -> do
+          traceWith tracer (TraceRecv msg')
+          handleMsgResp resp >>= go trailing'
+
+        Right (msg'@MsgDone, trailing') -> do
+          traceWith tracer (TraceRecv msg')
+          a <- handleMsgDone
+          return (a, trailing')
+
+        Right (msg', _) -> error $ "runClient: wrong message " ++ show msg'
+
+
+runClientBurstCBOR
+  :: forall req resp m a.
+     ( MonadST m
+     , Serialise req
+     , Serialise resp
+     , Show req
+     , Show resp
+     )
+  => Tracer m (TraceSendRecv (MsgReqResp req resp))
+  -> ByteChannel m
+  -> ReqRespClientBurst req resp m a
+  -> m (a, Maybe LBS.ByteString)
+runClientBurstCBOR = runClientBurst serialise (\chan trailing -> runCBORDecoderWithChannel chan trailing decode)
+
+
+runClientBurstBin
+  :: forall m a. Monad m
+  => Tracer m (TraceSendRecv (MsgReqResp BS.ByteString BS.ByteString))
+  -> ByteChannel m
+  -> ReqRespClientBurst BS.ByteString BS.ByteString m a
+  -> m (a, Maybe LBS.ByteString)
+runClientBurstBin = runClientBurst (Bin.runPut . encodeBin) (\chan trailing -> runBinDecoderWithChannel chan trailing decodeBin)
+
+
+-- | Server dual to `ReqRespClientBurst`.
+--
+newtype ReqRespServerBurst req resp m a where
+  ReqRespServerBurst :: (req -> m (ReqRespServerLoop resp m a))
+                     -> ReqRespServerBurst req resp m a
+
+data ReqRespServerLoop resp m a where
+  SendMsgResp :: resp
+           -> m (ReqRespServerLoop resp m a)
+           -> ReqRespServerLoop resp m a
+
+  SendMsgDoneServer :: m a
+                    -> ReqRespServerLoop resp m a
+
+
+runServerBurst
+  :: forall req resp failure m a.
+     ( Monad m
+     , Show req
+     , Show resp
+     , Show failure
+     )
+  => (MsgReqResp req resp -> LBS.ByteString)
+  -> (    ByteChannel m
+       -> Maybe LBS.ByteString
+       -> m (Either failure (MsgReqResp req resp, Maybe LBS.ByteString))
+     )
+  -> Tracer m (TraceSendRecv (MsgReqResp req resp))
+  -> ByteChannel m
+  -> ReqRespServerBurst req resp m a
+  -> m (a, Maybe LBS.ByteString)
+
+runServerBurst runEncoder runDecoder
+               tracer channel@Channel {send}
+               (ReqRespServerBurst k) = do
+    res <- runDecoder channel Nothing
+    case res of
+      Right (MsgReq req, trailing) -> k req >>= go trailing
+      Right (msg, _) -> error $ "runClient: wrong message " ++ show msg
+      Left err -> do
+        traceWith tracer (TraceFailure $ show err)
+        error $ "runClient: deserialise error: " ++ show err
+  where
+    go :: Maybe LBS.ByteString
+       -> ReqRespServerLoop resp m a
+       -> m (a, Maybe LBS.ByteString)
+    go !trailing (SendMsgResp resp server) = do
+      let msg :: MsgReqResp req resp
+          msg = MsgResp resp
+      traceWith tracer (TraceSend msg)
+      send $ runEncoder msg
+      server >>= go trailing
+
+    go !trailing (SendMsgDoneServer ma) = do
+      let msg = MsgDone
+      traceWith tracer (TraceSend msg)
+      send (runEncoder msg)
+      a <- ma
+      return (a, trailing)
+
+runServerBurstCBOR
+  :: forall req resp m a.
+     ( MonadST m
+     , Show req
+     , Show resp
+     , Serialise req
+     , Serialise resp
+     )
+  => Tracer m (TraceSendRecv (MsgReqResp req resp))
+  -> ByteChannel m
+  -> ReqRespServerBurst req resp m a
+  -> m (a, Maybe LBS.ByteString)
+runServerBurstCBOR = runServerBurst serialise
+                                    (\chan trailing -> runCBORDecoderWithChannel chan trailing decode)
+
+runServerBurstBin
+  :: forall m a.
+     Monad m
+  => Tracer m (TraceSendRecv (MsgReqResp BS.ByteString BS.ByteString))
+  -> ByteChannel m
+  -> ReqRespServerBurst BS.ByteString BS.ByteString m a
+  -> m (a, Maybe LBS.ByteString)
+runServerBurstBin = runServerBurst (Bin.runPut . encodeBin)
+                                   (\chan trailing -> runBinDecoderWithChannel chan trailing decodeBin)
