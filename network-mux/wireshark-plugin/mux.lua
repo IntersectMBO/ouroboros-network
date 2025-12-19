@@ -9,9 +9,14 @@
 -- ls -s $(pwd)/network-mux/demo/mux-leios-demo.lua $HOME/.config/wireshark/plugins/mux-leios-demo.lua
 -- ```
 
--- the port used by `./network-mux/demo/mux-leios-demo.sh`
 local default_settings = {
-  port = 9001
+  -- the port used by `./network-mux/demo/mux-leios-demo.sh`
+  port = 9001,
+  -- a range of mini-protocol numbers is used to check if we parsed a valid
+  -- MuxSDU header.  This is important when TCP segments are lost, and we need
+  -- to skip bytes until we find a begining of a new MuxSDU.
+  min_mini_protocol_num = 2,
+  max_mini_protocol_num = 3,
 }
 
 local MUX_HDR_LEN = 8
@@ -39,7 +44,7 @@ function mux.dissector(tvbuf, pktinfo, root)
 
   -- Parse possibly multiple MuxSDU's in the TCP segment.
   while offset < pktlen do
-    local result = dissectMux(tvbuf, pktinfo, root, offset)
+    local result = dissectMux(tvbuf, pktinfo, offset, false)
     if result.mux_length > 0 then
       -- A compate MuxSDU was parsed.
       pktinfo.cols.protocol = mux.name
@@ -84,14 +89,21 @@ end
 -- * positive length of used input bytes on success
 -- * negative number of needed bytes if more data is required
 --
-dissectMux = function (tvbuf, pktinfo, root, offset)
+dissectMux = function (tvbuf, pktinfo, offset, skipping_bytes)
   local pktlen = tvbuf:len()
   local msglen = pktlen - offset
 
   if msglen < MUX_HDR_LEN then
-    -- Not enough data to read the header, we need at least one more segmet.
-    local need = MUX_HDR_LEN - msglen
-    return { mux_length = -need }
+    if skipping_bytes then
+      -- we tried to resync by skipping bytes, but we didn't get it right.
+      -- We'll skip this packet.  There's still a chance that we just missed
+      -- a few bytes...
+      return { mux_length = 0 }
+    else
+      -- Not enough data to read the header, we need at least one more segmet.
+      local need = MUX_HDR_LEN - msglen
+      return { mux_length = -need }
+    end
   end
 
   local transmission_time_buf = tvbuf:range(offset, 4)     -- 4-byte timestamp
@@ -99,15 +111,14 @@ dissectMux = function (tvbuf, pktinfo, root, offset)
   local len_buf               = tvbuf:range(offset + 6, 2) -- 2-byte SDU payload length
   local len                   = len_buf:uint()
 
-  -- a simply sanity check on mini-protocol number, currently we don't have
-  -- mini-protocols numbers above 20
+  -- A simple sanity check on mini-protocol numbers.
   --
-  -- TODO: this was added to ignore TCP frames after a segment was lost, and
-  -- parsing got out of sync.  It only get's up to sync again, when a new TCP
-  -- frame starts with a new MuxSDU.
+  -- When TCP segments are lost, we need to skip until we find the begining of
+  -- next MuxSDU.
   local mini_protocol_num = mini_protocol_num_buf:uint() & 0x7fff
-  if mini_protocol_num > 20 then
-    return { mux_length = 0 }
+  if   mini_protocol_num < default_settings.min_mini_protocol_num
+    or mini_protocol_num > default_settings.max_mini_protocol_num then
+    return dissectMux(tvbuf, pktinfo, offset + 1, true)
   end
 
   local mux_length = MUX_HDR_LEN + len
