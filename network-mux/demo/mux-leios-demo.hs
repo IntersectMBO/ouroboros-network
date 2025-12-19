@@ -42,6 +42,11 @@ import Network.Mux.Bearer qualified as Mx
 import Test.Mux.ReqResp
 
 
+data ClientType = Sequential | Bursty
+
+unusedValue :: a
+unusedValue = error "unused"
+
 main :: IO ()
 main = do
   args <- SysEnv.getArgs
@@ -51,26 +56,47 @@ main = do
       , Just port' <- readMaybe port
       , Just len1' <- readMaybe len1
       , Just len2' <- readMaybe len2
-      -> server ip' port' len1' len2'
+      -> server Sequential ip' port' unusedValue len1' len2'
+
     ["client", ip, port, len, n1, n2]
       | Just ip'   <- readMaybe ip
       , Just port' <- readMaybe port
       , Just len'  <- readMaybe len
-      , Just n1'    <- readMaybe n1
-      , Just n2'    <- readMaybe n2
-      -> client ip' port' len' n1' n2'
+      , Just n1'   <- readMaybe n1
+      , Just n2'   <- readMaybe n2
+      -> client Sequential ip' port' len' n1' n2'
+
+    ["server-burst", ip, port, n1, len1, n2, len2]
+      | Just ip'   <- readMaybe ip
+      , Just port' <- readMaybe port
+      , Just n1'   <- readMaybe n1
+      , Just len1' <- readMaybe len1
+      , Just n2'   <- readMaybe n2
+      , Just len2' <- readMaybe len2
+      -> server Bursty ip' port' (n1', n2') len1' len2'
+
+    ["client-burst", ip, port]
+      | Just ip'   <- readMaybe ip
+      , Just port' <- readMaybe port
+      -> client Bursty ip' port' unusedValue unusedValue unusedValue
     _ -> usage
 
 
 usage :: IO ()
 usage = do
-  hPutStrLn stderr $ "usage: mux-demo server addr port <resp-length> <resp-length>\n"
-                  ++ "       mux-demo client addr port <req-length> <num-requests> <num-requests>"
+  hPutStrLn stderr $ "usage: mux-demo server       addr port <resp-length> <resp-length>\n"
+                  ++ "       mux-demo client       addr port <req-length> <num-requests> <num-requests>\n"
+                  ++ "       mux-demo server-burst addr port <num-responses> <resp-length> <num-responses> <resp-length>\n"
+                  ++ "       mux-demo client-burst addr port"
   exitFailure
 
 
 putStrLn_ :: String -> IO ()
-putStrLn_ = mempty -- BSC.putStrLn . BSC.pack
+putStrLn_ = mempty
+-- putStrLn_ = BSC.putStrLn . BSC.pack
+
+debugPutStrLn_ :: String -> IO ()
+debugPutStrLn_ = BSC.putStrLn . BSC.pack
 
 reqrespTracer
   :: String
@@ -84,7 +110,7 @@ reqrespTracer tag = Tracer $ \case
   TraceRecv (MsgResp a) -> putStrLn_ $ tag ++ " Recv MsgResp " ++ show (BSC.length a)
   TraceRecv MsgDone     -> putStrLn_ $ tag ++ " Recv MsgDone"
   TraceEarlyExit        -> putStrLn_ $ tag ++ " EarlyExit"
-  TraceFailure err      -> putStrLn_ $ tag ++ " Failure: " ++ show err
+  TraceFailure err      -> debugPutStrLn_ $ tag ++ " Failure: " ++ show err
 
 --
 -- Protocols
@@ -119,8 +145,8 @@ protocols miniProtocolDir =
 
 -- | Server accept loop.
 --
-server :: IP.IP -> PortNumber -> Int -> Int -> IO ()
-server ip port len1 len2 =
+server :: ClientType -> IP.IP -> PortNumber -> (Int, Int) -> Int -> Int -> IO ()
+server ct ip port num len1 len2 =
   withIOManager $ \ioManager -> do
     let hints = Socket.defaultHints
                   { Socket.addrFlags = [Socket.AI_ADDRCONFIG ]
@@ -130,7 +156,7 @@ server ip port len1 len2 =
     addr:_ <- Socket.getAddrInfo (Just hints) (Just $ show ip) (Just $ show port)
     sock <- Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol
     associateWithIOManager ioManager sock
-    putStrLn_ $ "server: " ++ show addr
+    debugPutStrLn_ $ "server: " ++ show addr
     Socket.setSocketOption sock Socket.ReuseAddr 1
     Socket.bind sock (Socket.addrAddress addr)
     Socket.listen sock 10
@@ -138,8 +164,14 @@ server ip port len1 len2 =
       (sock', _addr) <- Socket.accept sock
       void $ forkIO $ do
         bearer <- getBearer Mx.makeSocketBearer 1.0 sock' Nothing
-        serverWorker bearer len1 len2
-          `finally` Socket.close sock'
+        case ct of
+          Sequential ->
+            serverWorkerSequential bearer len1 len2
+              `finally` Socket.close sock'
+          Bursty ->
+            serverWorkerBursty bearer num len1 len2
+              `finally` Socket.close sock'
+
   `catch` \e -> do
     case fromException e of
       Just SomeAsyncException{} -> return ()
@@ -147,9 +179,9 @@ server ip port len1 len2 =
     throwIO e
 
 
-serverWorker :: Bearer IO -> Int -> Int -> IO ()
-serverWorker bearer len1 len2 = do
-    putStrLn_ $ "server: " ++ show (len1, len2)
+serverWorkerSequential :: Bearer IO -> Int -> Int -> IO ()
+serverWorkerSequential bearer len1 len2 = do
+    debugPutStrLn_ $ "server: " ++ show (len1, len2)
     mux <- Mx.new Mx.nullTracers (protocols ResponderDirectionOnly)
     void $ forkIO $
       do awaitResult1 <-
@@ -169,25 +201,64 @@ serverWorker bearer len1 len2 = do
          -- wait for both mini-protocols to finish
          results <- atomically $ (,) <$> awaitResult1
                                      <*> awaitResult2
-         putStrLn $ "server results: " ++ show results
+         debugPutStrLn_ $ "server results: " ++ show results
       `finally`
         Mx.stop mux
     Mx.run mux bearer
-
-
-serverReqResp
-  :: Int
-  -> ReqRespServer ByteString ByteString IO Int
-serverReqResp n = go minBound
   where
-    go :: Char -> ReqRespServer ByteString ByteString IO Int
-    go c =
-      ReqRespServer {
-        recvMsgReq  = \(!_) ->
-          let msg = BSC.replicate n c in
-          pure (msg, go (succ c)),
-        recvMsgDone = pure n
-      }
+    serverReqResp
+      :: Int
+      -> ReqRespServer ByteString ByteString IO Int
+    serverReqResp n = go minBound
+      where
+        go :: Char -> ReqRespServer ByteString ByteString IO Int
+        go c =
+          ReqRespServer {
+            recvMsgReq  = \(!_) ->
+              let msg = BSC.replicate n c in
+              pure (msg, go (succ c)),
+            recvMsgDone = pure n
+          }
+
+
+serverWorkerBursty :: Bearer IO -> (Int, Int) -> Int -> Int -> IO ()
+serverWorkerBursty bearer (n1, n2) len1 len2 = do
+    debugPutStrLn_ $ "server: " ++ show (len1, len2)
+    mux <- Mx.new Mx.nullTracers (protocols ResponderDirectionOnly)
+    void $ forkIO $
+      do awaitResult1 <-
+          runMiniProtocol
+            mux
+            (MiniProtocolNum 2)
+            ResponderDirectionOnly
+            StartOnDemand
+            (\chan -> runServerBurstBin (reqrespTracer "server:praos") chan (serverReqResp n1 len1))
+         awaitResult2 <-
+           runMiniProtocol
+             mux
+             (MiniProtocolNum 3)
+             ResponderDirectionOnly
+             StartOnDemand
+             (\chan -> runServerBurstBin (reqrespTracer "server:leios") chan (serverReqResp n2 len2))
+         -- wait for both mini-protocols to finish
+         results <- atomically $ (,) <$> awaitResult1
+                                     <*> awaitResult2
+         debugPutStrLn_ $ "server results: " ++ show results
+      `finally`
+        Mx.stop mux
+    Mx.run mux bearer
+  where
+    serverReqResp
+      :: Int
+      -> Int
+      -> ReqRespServerBurst ByteString ByteString IO Int
+    serverReqResp n len = ReqRespServerBurst $ \_ -> pure (go n minBound)
+      where
+        go :: Int -> Char -> ReqRespServerLoop ByteString IO Int
+        go m c | m > 0 =
+          SendMsgResp (BSC.replicate len c) (return $ go (m-1) (succ c))
+               | otherwise =
+          SendMsgDoneServer (pure n)
 
 
 --
@@ -195,31 +266,41 @@ serverReqResp n = go minBound
 --
 
 
-client :: IP -> PortNumber -> Int -> Int -> Int -> IO ()
-client ip port len n1 n2 =
+client :: ClientType -> IP -> PortNumber -> Int -> Int -> Int -> IO ()
+client ct ip port len n1 n2 =
   withIOManager $ \ioManager -> do
     addr:_ <- Socket.getAddrInfo Nothing (Just $ show ip) (Just $ show port)
     sock <- Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol
     associateWithIOManager ioManager sock
     Socket.connect sock (Socket.addrAddress addr)
     bearer <- getBearer Mx.makeSocketBearer 1.0 sock Nothing
-    clientWorker bearer len n1 n2
-  `catch` \e -> do
-    case fromException e of
-      Just SomeAsyncException{} -> return ()
-      Nothing -> hPutStrLn stderr $ "client: exception: " ++ show e
-    throwIO e
+    case ct of
+      Sequential ->
+        clientWorkerSequential bearer len n1 n2
+          `catch` \e -> do
+            case fromException e of
+              Just SomeAsyncException{} -> return ()
+              Nothing -> hPutStrLn stderr $ "client: exception: " ++ show e
+            throwIO e
+      Bursty ->
+        clientWorkerBursty bearer
+          `catch` \e -> do
+            case fromException e of
+              Just SomeAsyncException{} -> return ()
+              Nothing -> hPutStrLn stderr $ "client: exception: " ++ show e
+            throwIO e
 
 
-clientWorker :: Mx.Bearer IO
-             -> Int
-             -- ^ length of request message
-             -> Int
-             -- ^ number of requests to send over `MiniProtocolNum 2`
-             -> Int
-             -- ^ number of requests to send over `MiniProtocolNum 3`
-             -> IO ()
-clientWorker bearer len n1 n2 = do
+clientWorkerSequential
+  :: Mx.Bearer IO
+  -> Int
+  -- ^ length of request message
+  -> Int
+  -- ^ number of requests to send over `MiniProtocolNum 2`
+  -> Int
+  -- ^ number of requests to send over `MiniProtocolNum 3`
+  -> IO ()
+clientWorkerSequential bearer len n1 n2 = do
     mux <- Mx.new Mx.nullTracers (protocols InitiatorDirectionOnly)
     void $ forkIO $
       do awaitResult1 <-
@@ -228,33 +309,68 @@ clientWorker bearer len n1 n2 = do
              (MiniProtocolNum 2)
              InitiatorDirectionOnly
              StartEagerly
-             (\chan -> runClientBin (reqrespTracer "client:praos") chan (clientReqResp '0' len n1))
+             (\chan -> runClientBin (reqrespTracer "client:praos") chan (clientReqResp '0' n1))
          awaitResult2 <-
            runMiniProtocol
              mux
              (MiniProtocolNum 3)
              InitiatorDirectionOnly
              StartEagerly
-             (\chan -> runClientBin (reqrespTracer "client:leios") chan (clientReqResp '1' len n2))
+             (\chan -> runClientBin (reqrespTracer "client:leios") chan (clientReqResp '1' n2))
          -- wait for both mini-protocols to finish
          results <- atomically $ (,) <$> awaitResult1
                                      <*> awaitResult2
-         putStrLn $ "client results: " ++ show results
+         debugPutStrLn_ $ "client results: " ++ show results
       `finally`
         Mx.stop mux
     Mx.run mux bearer
-
-
-clientReqResp
-  :: Char
-  -> Int
-  -> Int
-  -> ReqRespClient ByteString ByteString IO Int
-clientReqResp c len n = go n
   where
-    !msg = BSC.replicate len c
+    clientReqResp
+      :: Char
+      -> Int
+      -> ReqRespClient ByteString ByteString IO Int
+    clientReqResp c n = go n
+      where
+        !msg = BSC.replicate len c
 
-    go :: Int -> ReqRespClient ByteString ByteString IO Int
-    go m | m <= 0
-         = SendMsgDone (pure n)
-    go m = SendMsgReq msg (\_ -> pure $ go (m-1))
+        go :: Int -> ReqRespClient ByteString ByteString IO Int
+        go m | m <= 0
+             = SendMsgDone (pure n)
+        go m = SendMsgReq msg (\_ -> pure $ go (m-1))
+
+
+clientWorkerBursty :: Mx.Bearer IO -> IO ()
+clientWorkerBursty bearer = do
+    mux <- Mx.new Mx.nullTracers (protocols InitiatorDirectionOnly)
+    void $ forkIO $
+      do awaitResult1 <-
+           runMiniProtocol
+             mux
+             (MiniProtocolNum 2)
+             InitiatorDirectionOnly
+             StartEagerly
+             (\chan -> runClientBurstBin (reqrespTracer "client:praos") chan clientReqResp)
+         awaitResult2 <-
+           runMiniProtocol
+             mux
+             (MiniProtocolNum 3)
+             InitiatorDirectionOnly
+             StartEagerly
+             (\chan -> runClientBurstBin (reqrespTracer "client:leios") chan clientReqResp)
+         -- wait for both mini-protocols to finish
+         results <- atomically $ (,) <$> awaitResult1
+                                     <*> awaitResult2
+         debugPutStrLn_ $ "client results: " ++ show results
+      `finally`
+        Mx.stop mux
+    Mx.run mux bearer
+  where
+    clientReqResp
+      :: ReqRespClientBurst ByteString ByteString IO Int
+    clientReqResp = SendMsgReqBurst (BSC.replicate 10 '\NUL') (go 0)
+      where
+        go :: Int -> ReqRespClientLoop ByteString IO Int
+        go !count =
+          AwaitResp { handleMsgDone = pure count
+                    , handleMsgResp = \(!_) -> pure (go (count + 1))
+                    }
