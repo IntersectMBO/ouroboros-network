@@ -99,9 +99,11 @@ cabal build mux-leios-demo
 CMD=$(cabal list-bin exe:mux-leios-demo)
 
 # client is executed in `ns1`
-CLIENT_CMD="$CMD client $SERVER_ADDR $SERVER_PORT $REQUEST_SIZE $NUM_PRAOS_REQUESTS $NUM_LEIOS_REQUESTS 2>$TMP_DIR/client.stderr | tee $TMP_DIR/client.stdout"
+# CLIENT_CMD="$CMD client $SERVER_ADDR $SERVER_PORT $REQUEST_SIZE $NUM_PRAOS_REQUESTS $NUM_LEIOS_REQUESTS 2>$TMP_DIR/client.stderr | tee $TMP_DIR/client.stdout"
+CLIENT_CMD="$CMD client-burst $SERVER_ADDR $SERVER_PORT 2>$TMP_DIR/client.stderr | tee $TMP_DIR/client.stdout"
 # server is executed in `ns2`
-SERVER_CMD="$CMD server $SERVER_ADDR $SERVER_PORT $PRAOS_BLOCK_SIZE $LEIOS_BLOCK_SIZE 2>$TMP_DIR/server.stderr 1>$TMP_DIR/server.stdout"
+# SERVER_CMD="$CMD server $SERVER_ADDR $SERVER_PORT $PRAOS_BLOCK_SIZE $LEIOS_BLOCK_SIZE 2>$TMP_DIR/server.stderr 1>$TMP_DIR/server.stdout"
+SERVER_CMD="$CMD server-burst $SERVER_ADDR $SERVER_PORT $NUM_PRAOS_REQUESTS $PRAOS_BLOCK_SIZE $NUM_LEIOS_REQUESTS $LEIOS_BLOCK_SIZE 2>$TMP_DIR/server.stderr 1>$TMP_DIR/server.stdout"
 
 echo "Server command: $SERVER_CMD"
 echo "Client command: $CLIENT_CMD"
