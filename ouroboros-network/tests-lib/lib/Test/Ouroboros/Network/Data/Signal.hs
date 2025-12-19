@@ -1,7 +1,9 @@
-{-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE DeriveFoldable      #-}
-{-# LANGUAGE DeriveFunctor       #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE BangPatterns               #-}
+{-# LANGUAGE DeriveFoldable             #-}
+{-# LANGUAGE DeriveFunctor              #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 
 module Test.Ouroboros.Network.Data.Signal
   ( -- * Events
@@ -44,6 +46,7 @@ module Test.Ouroboros.Network.Data.Signal
   , latch
     -- * Set-based temporal operations
   , keyedTimeout
+  , keyedTimeout'
   , keyedLinger
   , keyedLinger'
   , keyedUntil
@@ -104,6 +107,7 @@ data E a = E {-# UNPACK #-} !TS a
 --
 newtype Events a = Events [E a]
   deriving (Show, Functor, Foldable)
+  deriving newtype (Semigroup, Monoid)
 
 -- | Construct 'Events' from a time series.
 --
@@ -420,7 +424,18 @@ keyedTimeout :: forall a b. Ord b
              -> (a -> Set b)  -- ^ The timeout arming set signal
              -> Signal a
              -> Signal (Set b)
-keyedTimeout d arm =
+keyedTimeout dt arm = keyedTimeout' dt (Just . arm)
+
+
+keyedTimeout' :: forall a b. Ord b
+             => DiffTime
+             -> (a -> Maybe (Set b))
+                -- ^ The timeout arming set signal
+                -- Just b: arming timeout
+                -- Nothing: reset all timeouts
+             -> Signal a
+             -> Signal (Set b)
+keyedTimeout' d arm =
     Signal Set.empty
   . go Set.empty PSQ.empty Set.empty
   . toTimeSeries
@@ -429,10 +444,10 @@ keyedTimeout d arm =
     go :: Set b
        -> OrdPSQ b Time ()
        -> Set b
-       -> [E (Set b)]
+       -> [E (Maybe (Set b))]
        -> [E (Set b)]
     go !_ !_ !_ [] = []
-
+    go !armedSet !_ !_ (E _ts Nothing : txs) = go armedSet PSQ.empty mempty txs
     go !armedSet !armedPSQ !timedout (E ts@(TS t _) x : txs)
       | Just (y, t', _, armedPSQ') <- PSQ.minView armedPSQ
       , t' < t
@@ -442,7 +457,7 @@ keyedTimeout d arm =
             timedout' = timedout <> armed
       = E (TS t' 0) timedout' : go armedSet' armedPSQ'' timedout' (E ts x : txs)
 
-    go !armedSet !armedPSQ !timedout (E ts@(TS t _) x : txs) =
+    go !armedSet !armedPSQ !timedout (E ts@(TS t _) (Just x) : txs) =
       let armedAdd  = x        Set.\\ armedSet
           armedDel  = armedSet Set.\\ x
           t'        = addTime d t

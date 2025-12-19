@@ -932,7 +932,7 @@ prop_diffusionScript_commandScript_valid (DiffusionScript sa dnsMap ((_, cmds): 
 -- running
 --
 data DiffusionSimulationTrace
-  = TrJoiningNetwork
+  = TrJoiningNetwork ConsensusMode
   | TrKillingNode
   | TrReconfiguringNode
   | TrUpdatingDNS
@@ -1080,7 +1080,7 @@ diffusionSimulationM
          -- TVar.
       -> [Command] -- ^ List of commands/actions to perform for a single node
       -> m Void
-    runCommand ntnSocket ntcSocket dnsMapVar sArgs nArgs@NodeArgs { naAddr }
+    runCommand ntnSocket ntcSocket dnsMapVar sArgs nArgs@NodeArgs { naAddr, naConsensusMode }
                connStateIdSupply nodeId hostAndLRP cmds = do
       traceWith (diffSimTracer naAddr) . TrSay $ show nodeId ++ " @ " ++ ppNtNAddr naAddr
       runCommand' hostAndLRP cmds
@@ -1099,7 +1099,7 @@ diffusionSimulationM
         runCommand' Nothing
                    (JoinNetwork delay :cs) = do
           threadDelay delay
-          traceWith (diffSimTracer naAddr) TrJoiningNetwork
+          traceWith (diffSimTracer naAddr) (TrJoiningNetwork naConsensusMode)
           lrpVar <- newTVarIO $ naLocalRootPeers nArgs
           withAsync (runNode sArgs nArgs ntnSocket ntcSocket connStateIdSupply lrpVar dnsMapVar nodeId) $ \nodeAsync ->
             runCommand' (Just (nodeAsync, lrpVar)) cs

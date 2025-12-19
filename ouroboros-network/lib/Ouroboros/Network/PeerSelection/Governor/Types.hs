@@ -464,7 +464,7 @@ data ExtraGuardedDecisions extraState extraDebugState extraFlags
       :: MonitoringAction extraState extraDebugState extraFlags
                           extraPeers extraAPI extraCounters extraTrace peeraddr peerconn m
 
-    -- | This guarded decision will come before all default non-blocking
+    -- | This guarded decision follows all default non-blocking
     -- decisions. The order matters; first decisions have priority over
     -- the later ones.
     --
