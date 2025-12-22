@@ -5,6 +5,7 @@
 module Main (main) where
 
 import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Concurrent.Class.MonadChan qualified as Chan
 import Control.Exception (bracket)
 import Control.Monad (forever, replicateM_, unless, when)
 import Control.Monad.Class.MonadAsync
@@ -208,9 +209,9 @@ startServerEgresss pollInterval sndSizeV ad = forever $ do
     withReadBufferIO (\buffer -> do
       bearer <- getBearer (makeSocketBearer' pollInterval) sduTimeout sd buffer
       sndSize <- atomically $ takeTMVar sndSizeV
-      eq <- atomically $ newTBQueue 100
-      w42 <- newTVarIO BL.empty
-      w41 <- newTVarIO BL.empty
+      eq <- Chan.newChan
+      w42 <- newWanton 0x3ffff
+      w41 <- newWanton 0x3ffff
 
       let maxData = totalPayloadLen sndSize
           numberOfSdus = fromIntegral $ maxData `div` sndSize
@@ -243,18 +244,15 @@ startServerEgresss pollInterval sndSizeV ad = forever $ do
         cancel aid
      )
   where
-    sendToMux :: StrictTVar IO BL.ByteString -> EgressQueue IO -> MiniProtocolNum -> MiniProtocolDir
+    sendToMux :: Wanton IO -> EgressQueue IO -> MiniProtocolNum -> MiniProtocolDir
               -> BL.ByteString -> IO ()
     sendToMux w eq mc md msg = do
-     atomically $ do
-      buf <- readTVar w
-      if BL.length buf < 0x3ffff
-         then do
-           let wasEmpty = BL.null buf
-           writeTVar w (BL.append buf msg)
-           when wasEmpty $
-             writeTBQueue eq (TLSRDemand mc md $ Wanton w)
-         else retry
+      modifyWanton w $ \buf -> do
+        let wasEmpty = BL.null buf
+            buf' = buf <> msg
+        when wasEmpty $
+          Chan.writeChan eq (TLSRDemand mc md w)
+        return buf'
 
 setupServer :: Socket -> IO Socket.SockAddr
 setupServer ad = do

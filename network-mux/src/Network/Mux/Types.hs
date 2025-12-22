@@ -364,6 +364,7 @@ data BearerTrace =
     | TraceSDUReadTimeoutException
     | TraceSDUWriteTimeoutException
     | TraceTCPInfo StructTCPInfo Word16
+    | TraceDebug String
 
 instance Show BearerTrace where
     show TraceRecvHeaderStart = printf "Bearer Receive Header Start"
@@ -397,3 +398,4 @@ instance Show BearerTrace where
 #else
     show (TraceTCPInfo _ len) = printf "TCPInfo len %d" len
 #endif
+    show (TraceDebug msg) = printf "Bearer %s" msg

@@ -139,6 +139,7 @@ data ChannelTrace =
     | TraceChannelRecvEnd MiniProtocolNum Int
     | TraceChannelSendStart MiniProtocolNum Int
     | TraceChannelSendEnd MiniProtocolNum
+    | TraceChannelDebug String
 
 instance Show ChannelTrace where
     show (TraceChannelRecvStart mid) = printf "Channel Receive Start on %s" (show mid)
@@ -147,6 +148,7 @@ instance Show ChannelTrace where
     show (TraceChannelSendStart mid len) = printf "Channel Send Start on (%s) %d" (show mid)
         len
     show (TraceChannelSendEnd mid) = printf "Channel Send End on %s" (show mid)
+    show (TraceChannelDebug msg) = printf "Channel Debug: %s" msg
 
 
 data State = Mature
