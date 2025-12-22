@@ -48,6 +48,7 @@ module Network.Mux
   , Tracers' (..)
   , Tracers
   , nullTracers
+  , debugTracers
   , contramapTracers'
   , Trace (..)
   , BearerTrace (..)
@@ -64,11 +65,13 @@ import Data.ByteString.Lazy qualified as BL
 import Data.Int (Int64)
 import Data.Map (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (isNothing)
+-- import Data.Maybe (isNothing)
 import Data.Monoid.Synchronisation (FirstToFinish (..))
 import Data.Strict.Tuple (pattern (:!:))
 
 import Control.Applicative
+import Control.Concurrent.Class.MonadChan (MonadChan)
+import Control.Concurrent.Class.MonadChan qualified as Chan
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Concurrent.JobPool qualified as JobPool
 import Control.Exception (SomeAsyncException (..), assert)
@@ -220,6 +223,7 @@ data Group = MuxJob
 --
 run :: forall m (mode :: Mode).
        ( MonadAsync m
+       , MonadChan m
        , MonadDelay m
        , MonadFork m
        , MonadLabelledSTM m
@@ -242,10 +246,10 @@ run Mux { muxMiniProtocols,
     bearer@Bearer{name} = do
 
     traceWith tracer_ TraceStarting
-    egressQueue <- atomically $ newTBQueue 100
+    egressQueue <- Chan.newChan
 
     -- label shared variables
-    labelTBQueueIO egressQueue (name ++ "-mux-egress")
+    -- labelTBQueueIO egressQueue (name ++ "-mux-egress")
     labelTVarIO muxStatus (name ++ "-mux-status")
     labelTQueueIO muxControlCmdQueue (name ++ "-mux-ctrl")
 
@@ -286,11 +290,18 @@ run Mux { muxMiniProtocols,
                   MuxJob
                   (name ++ "-demuxer")
 
+-- | Limit for the message buffer between send and mux thread.
+perMiniProtocolBufferSize :: Int64
+perMiniProtocolBufferSize = 0x3ffff
+
 -- | Mini-protocol thread executed by `JobPool` which executes `protocolAction`.
 --
 miniProtocolJob
   :: forall mode m.
-     ( MonadSTM m
+     ( MonadChan m
+     , MonadDelay m
+     , MonadMask m
+     , MonadSTM m
      , MonadThread m
      , MonadThrow (STM m)
      )
@@ -325,18 +336,21 @@ miniProtocolJob TracersI {
     jobAction = do
       labelThisThread (case miniProtocolNum of
                         MiniProtocolNum a -> "prtcl-" ++ show a)
-      w <- newTVarIO BL.empty
-      let chan = muxChannel channelTracer_ egressQueue (Wanton w)
+      w <- newWanton perMiniProtocolBufferSize
+
+      let chan = muxChannel channelTracer_ egressQueue w
                             miniProtocolNum miniProtocolDirEnum
                             miniProtocolIngressQueue
       (result, remainder) <- miniProtocolAction chan
       traceWith tracer_ (TraceTerminating miniProtocolNum miniProtocolDirEnum)
+      threadDelay 1 -- TODO (see below) wait for sending all SDUs
       atomically $ do
         -- The Wanton w is the SDUs that are queued but not yet sent for this job.
         -- Job threads will be prevented from exiting until all their SDUs have been
         -- transmitted unless an exception/error is encountered. In that case all
         -- jobs will be cancelled directly.
-        readTVar w >>= check . BL.null
+        -- TODO: wanton doesn't support blocking until it is empty
+        -- readTVar w >>= check . BL.null
         writeTVar miniProtocolStatusVar StatusIdle
         putTMVar completionVar (Right result)
           `orElse` throwSTM (BlockedOnCompletionVar miniProtocolNum)
@@ -399,6 +413,8 @@ data MonitorCtx m mode = MonitorCtx {
 --
 monitor :: forall mode m.
            ( MonadAsync m
+           , MonadChan m
+           , MonadDelay m
            , MonadMask m
            , Alternative (STM m)
            , MonadThrow (STM m)
@@ -414,7 +430,7 @@ monitor tracers@TracersI {
           tracer_       = tracer,
           bearerTracer_ = bearerTracer
         }
-        timeout jobpool egressQueue cmdQueue muxStatus =
+        _timeout jobpool egressQueue cmdQueue muxStatus =
     go (MonitorCtx Map.empty Map.empty)
   where
     go :: MonitorCtx m mode -> m ()
@@ -550,11 +566,8 @@ monitor tracers@TracersI {
           traceWith tracer TraceStopping
           atomically $ writeTVar muxStatus Stopping
           JobPool.cancelGroup jobpool MiniProtocolJob
-          -- wait for 2 seconds before the egress queue is drained
-          _ <- timeout 2 $
-            atomically $
-                  tryPeekTBQueue egressQueue
-              >>= check . isNothing
+          -- TODO: `Chan` doesn't support blocking until it is empty
+          threadDelay 2
           atomically $ writeTVar muxStatus Stopped
           traceWith tracer TraceStopped
           -- by exiting the 'monitor' loop we let the job pool kill demuxer and
@@ -663,7 +676,9 @@ data JobResult =
 --
 muxChannel
     :: forall m.
-       ( MonadSTM m
+       ( MonadChan m
+       , MonadMask m
+       , MonadSTM m
        )
     => Tracer m ChannelTrace
     -> EgressQueue m
@@ -672,13 +687,9 @@ muxChannel
     -> MiniProtocolDir
     -> IngressQueue m
     -> ByteChannel m
-muxChannel tracer egressQueue want@(Wanton w) mc md q =
+muxChannel tracer egressQueue w mc md q =
     Channel { send, recv }
   where
-    -- Limit for the message buffer between send and mux thread.
-    perMiniProtocolBufferSize :: Int64
-    perMiniProtocolBufferSize = 0x3ffff
-
     send :: BL.ByteString -> m ()
     send encoding = do
         -- We send CBOR encoded messages by encoding them into by ByteString
@@ -686,15 +697,16 @@ muxChannel tracer egressQueue want@(Wanton w) mc md q =
 
         traceWith tracer $ TraceChannelSendStart mc (fromIntegral $ BL.length encoding)
 
-        atomically $ do
-            buf <- readTVar w
-            if BL.length buf < perMiniProtocolBufferSize
-               then do
-                   let wasEmpty = BL.null buf
-                   writeTVar w (BL.append buf encoding)
-                   when wasEmpty $
-                     writeTBQueue egressQueue (TLSRDemand mc md want)
-               else retry
+        modifyWanton w $ \bs -> do
+          traceWith tracer $ TraceChannelDebug $ "send:modifyWanton start " ++ show (mc, md)
+          let wasEmpty = BL.null bs
+              bs' = bs <> encoding
+          if wasEmpty then do
+            Chan.writeChan egressQueue (TLSRDemand mc md w)
+            traceWith tracer $ TraceChannelDebug $ "send:modifyWanton TLSR enqueued " ++ show (mc, md)
+            else
+            traceWith tracer $ TraceChannelDebug $ "send:modifyWanton TLSR not needed " ++ show (mc, md)
+          return bs'
 
         traceWith tracer $ TraceChannelSendEnd mc
 
