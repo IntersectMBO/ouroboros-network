@@ -6,6 +6,7 @@
 {-# LANGUAGE NamedFieldPuns            #-}
 {-# LANGUAGE PatternSynonyms           #-}
 {-# LANGUAGE RankNTypes                #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE ViewPatterns              #-}
 
 -- TODO: needed with GHC-8.10
@@ -23,6 +24,7 @@ module Network.Mux.Trace
   , contramapTracers'
   , Tracers
   , nullTracers
+  , debugTracers
   , tracersWith
   , TracersWithBearer
   , tracersWithBearer
@@ -38,8 +40,9 @@ import Prelude hiding (read)
 import Text.Printf
 
 import Control.Exception hiding (throwIO)
+import Control.Monad.Class.MonadSay
 import Control.Monad.Class.MonadThrow
-import Control.Tracer (Tracer, nullTracer)
+import Control.Tracer (Tracer (..), nullTracer)
 import Data.Bifunctor (Bifunctor (..))
 import Data.Functor.Contravariant (contramap, (>$<))
 import Data.Functor.Identity
@@ -212,6 +215,16 @@ tracersWith tr = Tracers {
 nullTracers :: Applicative m => Tracers' m f
 nullTracers = tracersWith nullTracer
 
+debugTracers :: forall m. MonadSay m => Tracers m
+debugTracers =
+    Tracers {
+      tracer        = sayTracer,
+      channelTracer = sayTracer,
+      bearerTracer  = sayTracer
+    }
+  where
+    sayTracer :: Show a => Tracer m (Identity a)
+    sayTracer = Tracer (say . show. runIdentity)
 
 -- | A convenient bidirectional pattern synonym which (un)wraps the `Identity`
 -- functor in the `Tracer` type.
