@@ -73,6 +73,7 @@ library
     cpp-options: -DMUX_TRACE_TCPINFO
   hs-source-dirs: src
   exposed-modules:
+    Control.Concurrent.Class.MonadChan
     Control.Concurrent.JobPool
     Network.Mux
     Network.Mux.Bearer
