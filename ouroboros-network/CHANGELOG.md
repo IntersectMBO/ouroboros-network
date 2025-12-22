@@ -6,6 +6,13 @@
 
 ### Non-breaking changes
 
+* Limit the number of faulures to 5 before a peer that isn't a localroot, bootstrap peer or public root peer is forgotten.
+* Decrease the time blockfetch waits for chainsync to exit in case of an error
+* Increase the timeout for chainsync in state StMustReply to between 601 and 911 seconds.
+* Ensure timeout to enter safe mode when enabling bootstrap peers is respected
+* bugfix async demotion
+* Add hot connection duration traces and sigusr1 debug handler
+
 ## 0.21.4.0 -- 2025-10-05
 
 ### Non-breaking changes

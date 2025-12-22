@@ -44,13 +44,13 @@ closeConnectionTimeout = 120
 -- | Chain sync `mustReplayTimeout` lower bound.
 --
 minChainSyncTimeout :: DiffTime
-minChainSyncTimeout = 135
+minChainSyncTimeout = 601
 
 
 -- | Chain sync `mustReplayTimeout` upper bound.
 --
 maxChainSyncTimeout :: DiffTime
-maxChainSyncTimeout = 269
+maxChainSyncTimeout = 911
 
 -- | Churn timeouts after 60s trying to establish a connection.
 --
@@ -126,6 +126,8 @@ simplePeerSelectionPolicy rngVar metrics errorDelay = PeerSelectionPolicy {
       policyPeerShareBatchWaitTime     = 3,    -- seconds
       policyPeerShareOverallTimeout    = 10,   -- seconds
       policyPeerShareActivationDelay   = 300,  -- seconds
+      policyMaxConnectionRetries       = 5,
+      policyClearFailCountDelay        = 120,  -- seconds
 
       policyErrorDelay = ExitPolicy.repromoteDelay errorDelay
     }
