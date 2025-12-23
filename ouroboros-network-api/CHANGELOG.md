@@ -4,6 +4,14 @@
 
 ### Breaking changes
 
+* Added `Show` instance for `IsBigLedgerPeer`
+
+### Non-breaking changes
+
+## 0.14.2.0 -- 2025-12-23
+
+### Breaking changes
+
 ### Non-breaking changes
 
 ## 0.14.1.0 -- 2025-07-15

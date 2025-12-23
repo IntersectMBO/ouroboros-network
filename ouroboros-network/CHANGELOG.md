@@ -6,6 +6,12 @@
 
 ### Non-breaking changes
 
+## 0.21.5.0 -- 2025-12-23
+
+### Breaking changes
+
+### Non-breaking changes
+
 * Limit the number of faulures to 5 before a peer that isn't a localroot, bootstrap peer or public root peer is forgotten.
 * Decrease the time blockfetch waits for chainsync to exit in case of an error
 * Increase the timeout for chainsync in state StMustReply to between 601 and 911 seconds.
