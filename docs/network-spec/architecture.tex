@@ -103,3 +103,32 @@ local clock time, it may encounter blocks that are created in the future with
 respect to the local clock of the node.  The node must then decide whether this
 is because of a clock skew or whether the node considers this as adversarial
 behaviour of another node.
+
+\section{Nodes behind NAT firewalls}
+
+Many end-user systems, as well as enterprise systems, operate behind firewalls,
+in particular
+\href{https://en.wikipedia.org/wiki/Network_address_translation}{NATs}.  Such
+environments require specific support from the software to operate
+a P2P distributed system on equal terms. One of the requirements for
+\texttt{cardano-node} was for nodes operating behind a NAT to be able to
+contribute to the network. This includes full-node wallets (e.g. Daedalus) or
+enterprise deployments of relays/BPs to supply blocks, instead of only
+submitting transactions and consuming the blockchain.  This requires a way for
+the outside world to traverse through the NAT. \texttt{ouroboros-network} uses
+a hole-punching method for this purpose.
+
+\subsection{Implementation details}
+\texttt{ouroboros-network} allows for promoting an inbound (or outbound)
+connection to be used as an outbound (inbound) connection.  This way, an
+outgoing connection from behind a NAT can be reused as an inbound one, allowing
+access to blocks produced (or relayed) behind the firewall.  Collected data
+shows that such nodes (primarily coming from Daedalus users) meaningfully
+contribute to the network.
+
+\texttt{ouroboros-network} goes one step forward and binds all outbound
+connections to the same port as inbound connections (with some exceptions,
+controlled by a topology file).  This allows us to reduce the number of open
+file-descriptors used by the node (at most by the number of all established
+outbound connections, e.g. 70 by default, and much more for some specific
+configurations).

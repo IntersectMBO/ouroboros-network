@@ -9,6 +9,7 @@ on:
   merge_group:
   push:
     branches:
+      - main
       - "release/*"
 
 jobs:
@@ -18,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ghc: ["8.10.7", "9.6", "9.8", "9.10", "9.12"]
+        ghc: ["9.6", "9.8", "9.10", "9.12"]
         os: [windows-latest]
 
     env:
@@ -44,7 +45,7 @@ jobs:
         ghc-version: ${{ matrix.ghc }}
         cabal-version: "3.12.1.0"
 
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
 
     - name: "Configure cabal.project.local"
       run: |
@@ -65,7 +66,7 @@ jobs:
         cabal build all --dry-run
         cat dist-newstyle/cache/plan.json | jq -L .github/workflows/jq-install-plan | sort | uniq > dependencies.txt
 
-    - uses: actions/cache/restore@v4
+    - uses: actions/cache/restore@v5
       name: "Restore cache: `cabal store`"
       id: cache-dependencies
       with:
@@ -73,7 +74,7 @@ jobs:
         key: cache-dependencies-${{ env.CABAL_CACHE_VERSION }}-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('dependencies.txt') }}
         restore-keys: cache-dependencies-${{ env.CABAL_CACHE_VERSION }}-${{ env.CACHE_VERSION }}-${{ runner.os }}-${{ matrix.ghc }}
 
-    - uses: actions/cache@v4
+    - uses: actions/cache@v5
       name: "Cache `dist-newstyle`"
       with:
         path: |
@@ -85,14 +86,14 @@ jobs:
     - name: Build dependencies
       run: cabal build --only-dependencies all -j
 
-    - uses: actions/cache/save@v4
+    - uses: actions/cache/save@v5
       name: "Save cache: `cabal store`"
       if: always() && steps.cache-dependencies.outputs.cache-hit != 'true'
       with:
         path: ${{ steps.setup-haskell.outputs.cabal-store }}
         key: ${{ steps.cache-dependencies.outputs.cache-primary-key }}
 
-    - name: Build projects [build]
+    - name: Build all packages
       run: cabal build all -j
 
     # Test network packages
@@ -107,26 +108,45 @@ jobs:
       # TODO: issue #4635 to enable `+RTS -N`
       run: cabal run network-mux:test
 
-    - name: ourobors-network-testing [test]
-      run: cabal run ouroboros-network-testing:test -- +RTS -maxN2 -RTS
+    - name: ouroboros-network [api-tests]
+      run: cabal run ouroboros-network:api-tests
 
-    - name: ourobors-network-framework [io-tests]
+    - name: ourobors-network [tests-lib-tests]
+      run: cabal run ouroboros-network:tests-lib-tests -- +RTS -maxN2 -RTS
+
+    - name: ourobors-network [framework-io-tests]
       # TODO: enable `+RTS -N`
-      run: cabal run ouroboros-network-framework:io-tests
+      run: cabal run ouroboros-network:framework-io-tests
 
-    - name: ourobors-network-framework [sim-tests]
+    - name: ourobors-network [framework-sim-tests]
       if: runner.os != 'Windows'
-      run: cabal run ouroboros-network-framework:sim-tests -- +RTS -maxN2 -RTS
+      run: cabal run ouroboros-network:framework-sim-tests -- +RTS -maxN2 -RTS
 
-    - name: ouroboros-network-protocols [test]
-      run: cabal run ouroboros-network-protocols:test -- +RTS -maxN2 -RTS
+    - name: ouroboros-network [protocols-tests]
+      run: cabal run ouroboros-network:protocols-tests -- +RTS -maxN2 -RTS
 
-    - name: ouroboros-network [io-tests]
-      run: cabal run ouroboros-network:io-tests -- +RTS -maxN2 -RTS
+    - name: ouroboros-network [ouroboros-network-io-tests]
+      run: cabal run ouroboros-network:ouroboros-network-io-tests -- +RTS -maxN2 -RTS
 
-    - name: ouroboros-network [sim-tests]
+    - name: ouroboros-network [ouroboros-network-sim-tests]
       if: runner.os != 'Windows'
-      run: cabal run ouroboros-network:sim-tests -- +RTS -maxN2 -RTS
+      run: cabal run ouroboros-network:ouroboros-network-sim-tests -- +RTS -maxN2 -RTS
+
+    - name: cardano-diffusion [protocols-tests]
+      if: runner.os != 'Windows'
+      run: cabal run cardano-diffusion:protocols-tests -- +RTS -maxN2 -RTS
+
+    - name: cardano-diffusion [api-tests]
+      if: runner.os != 'Windows'
+      run: cabal run cardano-diffusion:api-tests -- +RTS -maxN2 -RTS
+
+    - name: cardano-diffusion:protocols-tests
+      if: runner.os != 'Windows'
+      run: cabal run cardano-diffusion:protocols-tests -- +RTS -maxN2 -RTS
+
+    - name: cardano-diffusion [cardano-diffusion-sim-test]
+      if: runner.os != 'Windows'
+      run: cabal run cardano-diffusion:cardano-diffusion-sim-tests -- +RTS -maxN2 -RTS
 
     # Uncomment the following back in for debugging. Remember to launch a `pwsh` from
     # the tmux session to debug `pwsh` issues. And be reminded that the `/msys2` and

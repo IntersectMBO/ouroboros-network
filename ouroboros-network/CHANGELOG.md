@@ -1,15 +1,51 @@
-# Revision history for ouroboros-network
+# ouroboros-network changelog
 
-## next release
+<!-- scriv-insert-here -->
+<!-- scriv-end-here -->
+
+## 0.23.0.0 -- 2025-09-10
+
+### Breaking changes
+
+* `Ouroboros.Network.NodeTo{Client,Node}` modules moved to
+  `ouroboros-network:cardano-diffusion` (as `Cardano.Network.NodeTo{Node,Client}`)
+* Adapt to simplified type of `headerForgeUTCTime` in `BlockFetchConsensusInterface`.
+* Type of `defaultSyncTargets` changed.
+* Type of `defaultPeerSharing` changed.
+* Adapted to changes of `BlockFetchConsensusInterface`.
+* `Ouroboros.Network.TxSubmission.Inbound` moved to `Ouroboros.Network.TxSubmission.Inbound.V1`
+* `Ouroboros.Network.TxSubmission.Inbound.V1.txSubmissionInbound` takes extra argument: `TxSubmissionInitDelay` (previously configurable through `cabal` flags).
+* Removed the `txsubmission-delay` cabal flag.
+* `ProtocolErrorRequestedTooManyTxids` includes number of unacked txids.
+* Renamed `PeerChurnArgs` field: `getOriginalPeerSelectionTargets` -> `pcaPeerSelectionTargets`
+* Renamed `genesisPeerTargets` -> `genesisPeerSelectionTargets` in the following types:
+  * `Cardano.Network.Diffusion.Types.CardanoNodeArguments`
+  * `Cardano.Network.Diffusion.Types.ExtraPeerSelectionActions`
+  * `Cardano.Network.PeerSelection.Churn.ExtraArguments`
+  * `Cardano.Network.PeerSelection.Governor.PeerSelectionActions.ExtraPeerSelectionActions`
+* Added `localRootPeersGroupToJSON`, `localRootPeersGroupsToJSON`,
+`networkToplogogyToJSON` to `Ouroboros.Network.OrphanInstances`
+* Removed `ToJSON` and `FromJSON` instances for `NetworkTopology extraConfig
+  extraFlags` from `Ouroboros.Network.OrphanInstances`.
+* Addded `ToJSON` and `FromJSON` instances for `NetworkTopology
+  UseBootstrapPeers PeerTrustable` to `Cardano.Network.OrphanInstances`
+* Added `localRootPeersGroupFromJSON`, localRootPeersGroupsFromJSON`,
+  `networkTopologyFromJSON to `Ouroboros.Network.OrphanInstances`
 
 ### Non-breaking changes
 
-* Tracing of DNS results is now directly performed by `dnsLookupWithTTL`,
-  which is captured by the new `DNSTrace` type. Results are tagged with
-  the new `DNSLookupResult` type. The type of peer that traces are tagged with
-  are captured by the `DNSPeersKind` type, which also distinguishes the type
-  of ledger peer.
-* Added `dispatchLookupWithTTL`
+* Added `IsBlockProducer` type in `Ouroboros.Network.Diffusion.Configuration`.
+* Added `Ouroboros.Network.TxSubmission.Inbound.V2`.
+
+## 0.22.1.0 -- 28.07.2025
+
+### Non-breaking changes
+
+- Added `pchPromotedHotVar` to `PeerConnectionHandle` to track when a peer has been promoted to hot
+- Added tag `PeerHotDuration` to `PeerSelectionActionsTrace` to indicate how long a remote
+  peer has been in hot mode until it was either demoted or closed.
+
+## 0.22.0.0 -- 28.06.2025
 
 ### Breaking changes
 
@@ -20,6 +56,87 @@
 - Removed `TracePublicRootResult` and `TracePublicRootFailure`
 - Changed signature of `resolveLedgerPeers`, `localRootPeersProvider`, `publicRootPeersProvider`,
   `withPeerSelectionActions` to accept random seed for DNS SRV lookup.
+- `TraceChurnMode` removed from `TracePeerSelection`
+- `ChurnMode` moved to new `cardano-diffusion` sublibrary
+- Created `cardano-diffusion` sublibrary with all cardano specific
+  implementation details.
+- Removed `Cardano.Network.ExtraArguments` module as it is no longer needed
+- Created `Cardano.Network.Diffusion` with its own run function. This function
+  initializes the cardano diffusion with all its specific parameters and
+  provides a cleaner API that makes explicit what locally configured values it
+  depends on.
+- Created Cardano `LocalConfiguration` data type
+- Simplified `Arguments` / `Applications` / `Interfaces data` type. No longer
+  receives a lot of type parameters as some of their fields were moved to
+  `DiffusionArguments`
+- Removed `readFetchMode` from `Churn.ExtraArguments` and moved it to `LedgerPeersConsensusInterface`.
+- Renamed `Arguments` to `DiffusionConfiguration`
+- Renamed `Applications` to `DiffusionApplications`
+- `runM` function now receives `ExtraParameters` as an argument
+- Configurable Mux Egress Poll Interval
+- New data type `LedgerRelayAccessPoint`, similar to `RelayAccessPoint` but using unqualified srv domain names (according to CIP#155).
+- CBOR encoding of `LedgerRelayAccessPoint` changed (compared to `RelayAccessPoint`).
+- JSON encoding of `LedgerRelayAccessPoint` changed (compared to `RelayAccessPoint`), `LedgerRelayAccessPointV1` newtype wrapper is provided.
+- CBOR encoding of `RelayAccessPont` changed.
+- JSON encoding of `RelayAccessPont` changed.
+
+### Non-breaking changes
+
+* Tracing of DNS results is now directly performed by `dnsLookupWithTTL`,
+  which is captured by the new `DNSTrace` type. Results are tagged with
+  the new `DNSLookupResult` type. The type of peer that traces are tagged with
+  are captured by the `DNSPeersKind` type, which also distinguishes the type
+  of ledger peer.
+* Added `dispatchLookupWithTTL`
+* Fixed CBOR encoding of the `LedgerPeerSnapshot`.
+
+## 0.21.3.0 -- 2025-07-17
+
+### Breaking changes
+
+### Non-breaking changes
+
+* Lower the time to cache DNS errors to at most 15min.
+
+## 0.21.2.0 -- 2025-06-02
+
+### Breaking changes
+
+### Non-breaking changes
+
+* Bugfix retrieve ledger peers from snapshot when `useLedgerPeers: 0`
+  in the topology file
+* Explicitly provide the following peer selection sync target defaults:
+  targetNumberOfRootPeers, targetNumberOfKnownPeers, targetNumberOfEstablishedPeers,
+  targetNumberOfActivePeers
+* Update peer selection deadline default targets to match agreed upon
+  values which the node has been released with in the configuration files
+* minor churn bugfixes and improvements
+
+## 0.21.1.0 -- 2025-05-26
+
+### Non-breaking changes
+
+* Lowered default established targets:
+  - ledger peers:     30 (deadline mode)
+  - big ledgerp pers: 40 (syncing mode)
+
+## 0.21.0.0 -- 2025-05-13
+
+### Breaking changes
+
+* added `diWithBuffer` to `Interfaces` record which integrates
+  support for mux buffered socket bearers
+* added `daEgressPollInterval` to diffusion `Arguments` record
+  which specifies the cork duration of mux egress queue at the
+  application layer. This provides a configurable latency/efficieny
+  tradeoff.
+
+### Non-breaking changes
+
+## 0.20.1.0 -- 2025-03-13
+
+* Fixed type signature of `sigUsr1Handler` on `Windows`.
 
 ## 0.20.0.0 -- 2025-02-25
 

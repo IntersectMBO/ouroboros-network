@@ -31,11 +31,11 @@ jobs:
 
     steps:
     - name: Checkout ouroboros-network repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
 
       # we need nix to later build the spec documents
     - name: Install Nix
-      uses: cachix/install-nix-action@v30
+      uses: cachix/install-nix-action@v31
       with:
         nix_path: nixpkgs=channel:nixos-unstable
         extra_nix_config: |
@@ -44,13 +44,18 @@ jobs:
           experimental-features = nix-command flakes
 
     - name: Install Haskell
-      uses: haskell-actions/setup@v2
+      uses: input-output-hk/actions/haskell@latest
       id: setup-haskell
       with:
         ghc-version: ${{ matrix.ghc }}
         cabal-version: '3.14.1.1'
 
-    - uses: actions/cache@v4
+    - name: Install base libraries
+      uses: input-output-hk/actions/base@latest
+      with:
+        use-sodium-vrf: false
+
+    - uses: actions/cache@v5
       name: Cache cabal store
       with:
         path: ${{ steps.setup-haskell.outputs.cabal-store }}
@@ -85,7 +90,7 @@ jobs:
         done
 
     - name: Upload artifacts
-      uses: actions/upload-pages-artifact@v3
+      uses: actions/upload-pages-artifact@v4
       with:
         path: ./haddocks
 

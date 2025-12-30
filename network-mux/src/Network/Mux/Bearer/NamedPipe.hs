@@ -28,33 +28,35 @@ import System.Win32.Async qualified as Win32.Async
 -- using 'System.Win32.Async.associateWithIOCompletionPort'.
 --
 namedPipeAsBearer :: Mx.SDUSize
-                  -> Tracer IO Mx.Trace
                   -> HANDLE
                   -> Mx.Bearer IO
-namedPipeAsBearer sduSize tracer h =
+namedPipeAsBearer sduSize h =
     Mx.Bearer {
-        Mx.read    = readNamedPipe,
-        Mx.write   = writeNamedPipe,
-        Mx.sduSize = sduSize,
-        Mx.name    = "named-pipe"
+        Mx.read           = readNamedPipe,
+        Mx.write          = writeNamedPipe,
+        Mx.writeMany      = writeNamedPipeMany,
+        Mx.sduSize        = sduSize,
+        Mx.batchSize      = fromIntegral $ Mx.getSDUSize sduSize,
+        Mx.name           = "named-pipe",
+        Mx.egressInterval = 0
       }
   where
-    readNamedPipe :: Mx.TimeoutFn IO -> IO (Mx.SDU, Time)
-    readNamedPipe _ = do
+    readNamedPipe :: Tracer IO Mx.BearerTrace -> Mx.TimeoutFn IO -> IO (Mx.SDU, Time)
+    readNamedPipe tracer _ = do
       traceWith tracer Mx.TraceRecvHeaderStart
-      hbuf <- recvLen' True 8 []
+      hbuf <- recvLen' tracer True Mx.msHeaderLength []
       case Mx.decodeSDU hbuf of
         Left e -> throwIO e
         Right header@Mx.SDU { Mx.msHeader } -> do
           traceWith tracer $ Mx.TraceRecvHeaderEnd msHeader
-          blob <- recvLen' False (fromIntegral $ Mx.mhLength msHeader) []
+          blob <- recvLen' tracer False (fromIntegral $ Mx.mhLength msHeader) []
           ts <- getMonotonicTime
           traceWith tracer (Mx.TraceRecvDeltaQObservation msHeader ts)
           return (header {Mx.msBlob = blob}, ts)
 
-    recvLen' :: Bool -> Int64 -> [BL.ByteString] -> IO BL.ByteString
-    recvLen' _ 0 bufs = return (BL.concat $ reverse bufs)
-    recvLen' waitingOnNextHeader l bufs = do
+    recvLen' :: Tracer IO Mx.BearerTrace -> Bool -> Int64 -> [BL.ByteString] -> IO BL.ByteString
+    recvLen' _tracer _ 0 bufs = return (BL.concat $ reverse bufs)
+    recvLen' tracer waitingOnNextHeader l bufs = do
       traceWith tracer $ Mx.TraceRecvStart $ fromIntegral l
       buf <- BL.fromStrict <$> Win32.Async.readHandle h (fromIntegral l)
                 `catch` Mx.handleIOException "readHandle errored"
@@ -67,10 +69,10 @@ namedPipeAsBearer sduSize tracer h =
               show waitingOnNextHeader)
         else do
           traceWith tracer (Mx.TraceRecvEnd (fromIntegral $ BL.length buf))
-          recvLen' False (l - BL.length buf) (buf : bufs)
+          recvLen' tracer False (l - BL.length buf) (buf : bufs)
 
-    writeNamedPipe :: Mx.TimeoutFn IO -> Mx.SDU -> IO Time
-    writeNamedPipe _ sdu = do
+    writeNamedPipe :: Tracer IO Mx.BearerTrace -> Mx.TimeoutFn IO -> Mx.SDU -> IO Time
+    writeNamedPipe tracer _ sdu = do
       ts <- getMonotonicTime
       let ts32 = Mx.timestampMicrosecondsLow32Bits ts
           sdu' = Mx.setTimestamp sdu (Mx.RemoteClockModel ts32)
@@ -79,4 +81,10 @@ namedPipeAsBearer sduSize tracer h =
       traverse_ (Win32.Async.writeHandle h) (BL.toChunks buf)
         `catch` Mx.handleIOException "writeHandle errored"
       traceWith tracer Mx.TraceSendEnd
+      return ts
+
+    writeNamedPipeMany :: Tracer IO Mx.BearerTrace -> Mx.TimeoutFn IO -> [Mx.SDU] -> IO Time
+    writeNamedPipeMany tracer timeoutFn sdus = do
+      ts <- getMonotonicTime
+      mapM_ (writeNamedPipe tracer timeoutFn) sdus
       return ts

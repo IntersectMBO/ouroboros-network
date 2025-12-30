@@ -20,7 +20,9 @@ jobs:
     - name: Install dependencies
       run: sudo apt install -y fd-find
 
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
 
     - name: Check changelogs
       run: ./scripts/ci/check-changelogs.sh

@@ -1,10 +1,60 @@
-# Revision history for mux
+# network-mux changelog
 
-## next release
+<!-- scriv-insert-here -->
+<!-- scriv-end-here -->
+
+## 0.9.1.0 -- 2025-09-10
+
+### Non-breaking changes
+
+* Exposed `MakeBearerCb` to expose its haddocks.
+
+## 0.9.0.0 -- 2025-06-28
+
+### Breaking changes
+
+* run, miniProtocolJob, monitor now accept Tracers record
+  instead of `Tracer m Trace` type.
+* Removed handshake trace events from mux trace.
+* `Trace` was split into three traces: `Trace` of mux events, `ChannelTrace`
+   & `BearerTrace`.  As a result `run` & `Bearer` API were modified.
+
+## 0.8.0.2 -- 2025-07-17
+
+### Breaking changes
+
+* `IngressQueue` is using strict `Pair` type
+
+### Non-breaking changes
+
+## 0.8.0.1 -- 2025-06-02
 
 ### Breaking changes
 
 ### Non-breaking changes
+
+* Properly unmask async exceptions in the job pool
+
+## 0.8.0.0 -- 2025-05-13
+
+### Breaking changes
+
+* `MakeBearer` accepts optional `ReadBuffer`
+* added fields `egressInterval`, `writeMany`, `batchSize` to `Bearer`
+  * writeMany provides vector IO, egressInterval supports polling of egress queue
+    for tuning latency vs. network efficiency
+* `socketAsBearer` additionally takes `ReadBuffer`, egress
+  interval `DiffTime` for egress polling, and batchSize
+* changed `IngressQueue` type synonym
+* Added `TraceRecvRaw` tag to `Trace`
+
+### Non-breaking changes
+
+* added `makeSocketBearer'`, `ReadBuffer`, `withReadBufferIO`
+* Define msHeaderLength instead of using '8'
+* Benchmark for Socket Bearer
+* Use ByteString.Builder for the ingress queues
+* Signal the kernal that we require at least the full SDU's worth of data
 
 ## 0.7.0.0 -- 2025-02-25
 
@@ -28,7 +78,7 @@
 ### Breaking changes
 
 * Removed `Network.Mux.Compat` module with legacy API.
-* `Ouroboros.Network.Mux.toApplication` was removed. 
+* `Ouroboros.Network.Mux.toApplication` was removed.
 * `Ouroboros.Network.Mux.mkMiniProtocolBundle` was renamed to
   `mkMiniProtocolInfos`, its type changed.
 * Removed `MiniProtocolBundle` newtype wrapper.

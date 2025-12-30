@@ -1,0 +1,23 @@
+;
+; BlockFetch mini-protocol
+;
+
+; reference implementation of the codec in :
+; ouroboros-network/src/Ouroboros/Network/Protocol/BlockFetch/Codec.hs
+
+blockFetchMessage
+     = msgRequestRange
+     / msgClientDone
+     / msgStartBatch
+     / msgNoBlocks
+     / msgBlock
+     / msgBatchDone
+
+msgRequestRange = [0, base.point, base.point]
+msgClientDone   = [1]
+msgStartBatch   = [2]
+msgNoBlocks     = [3]
+msgBlock        = [4, base.block]
+msgBatchDone    = [5]
+
+;# import network.base as base

@@ -1,10 +1,9 @@
-# Revision history for monoidal-synchronisation
+# monoidal-synchronisation changelog
 
-## next version
+<!-- scriv-insert-here -->
+<!-- scriv-end-here -->
 
 ## 0.1.0.6 - 2024-08-07
-
-### Breaking changes
 
 ### Non-breaking changes
 

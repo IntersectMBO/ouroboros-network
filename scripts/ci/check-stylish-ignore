@@ -1,9 +1,7 @@
 */Setup.hs
-ouroboros-network-api/src/Ouroboros/Network/Protocol/Type.hs
-ouroboros-network/src/Ouroboros/Network/BlockFetch/Decision/Genesis.hs
-ouroboros-network/src/Ouroboros/Network/Diffusion/P2P.hs
-ouroboros-network/src/Ouroboros/Network/PeerSelection/Governor/Types.hs
-ouroboros-network/sim-tests-lib/Test/Ouroboros/Network/Testnet.hs
+ouroboros-network/api/lib/Ouroboros/Network/Protocol/Type.hs
+ouroboros-network/lib/Ouroboros/Network/BlockFetch/Decision/Genesis.hs
+ouroboros-network/lib/Ouroboros/Network/PeerSelection/Governor/Types.hs
 network-mux/src/Network/Mux/TCPInfo.hs
 network-mux/src/Network/Mux/Bearer.hs
 network-mux/src/Network/Mux/Bearer/Pipe.hs

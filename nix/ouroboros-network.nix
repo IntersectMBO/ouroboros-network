@@ -6,27 +6,34 @@ let
   inherit (prev) pkgs;
   inherit (final) haskell-nix;
   buildSystem = pkgs.buildPlatform.system;
+  onLinux = buildSystem == "x86_64-linux";
 
   # default compiler used on all systems, also provided within the shell
-  defaultCompiler = "ghc982";
+  defaultCompiler = "ghc966";
 
   # the compiler used for cross compilation
   # alternative compilers only used on Linux
   #
   # NOTE: cross compilation with `ghc-9.6.2` doesn't currently work
   # https://ci.iog.io/build/623082/nixlog/2
-  crossGHCVersion = "ghc8107";
+  crossGHCVersion = "ghc966";
 
   # alternative compilers
-  otherCompilers = [ "ghc810" ];
+  otherCompilers =
+    if onLinux then [ "ghc982" ] else [ ];
 
   # from https://github.com/input-output-hk/haskell.nix/issues/298#issuecomment-767936405
-  forAllProjectPackages = cfg: args@{ lib, ... }: {
-    options.packages = lib.mkOption {
-      type = lib.types.attrsOf (lib.types.submodule ({ config, ... }: {
-        config = lib.mkIf config.package.isProject (cfg args);
-      }));
-    };
+  forAllProjectPackages = cfg: args@{ config, lib, ... }: {
+    options.packages =
+      lib.genAttrs config.package-keys (_:
+        lib.mkOption {
+          type = lib.types.submodule ({ config, ... }:
+            {
+              config = lib.mkIf config.package.isProject (cfg args);
+            }
+          );
+        }
+      );
   };
 
   # We use cabalProject' to ensure we don't build the plan for
@@ -48,7 +55,7 @@ let
 
     # we also want cross compilation to windows on linux (and only with default compiler).
     crossPlatforms =
-      p: lib.optionals (pkgs.stdenv.hostPlatform.isLinux && config.compiler-nix-name == crossGHCVersion) [ p.mingwW64 ];
+      p: lib.optionals (pkgs.stdenv.hostPlatform.isLinux && config.compiler-nix-name == crossGHCVersion) [ p.ucrt64 ];
 
     #
     # VARIANTS
@@ -95,14 +102,23 @@ let
         doCheck = !pkgs.stdenv.hostPlatform.isWindows;
 
         # pkgs are instantiated for the host platform
-        packages.ouroboros-network-protocols.components.tests.cddl.build-tools = [ pkgs.cddl pkgs.cbor-diag ];
-        packages.ouroboros-network-protocols.components.tests.cddl.preCheck = "export HOME=`pwd`";
+        packages.cardano-diffusion.components.tests.protocols-cddl.build-tools = [ pkgs.cddl pkgs.cbor-diag pkgs.cddlc ];
+        packages.cardano-diffusion.components.tests.protocols-cddl.preCheck = "export HOME=`pwd`";
+        # note: protocols-cddl is disabled on Windows in ./scripts/ci/cabal.project.local.Windows
 
-        # don't run checks using Wine when cross compiling
+        # pkgs are disabled since we don't have enough CPU bandwidth on MacOS machines
+        packages.ouroboros-network.components.tests.framework-sim-tests.doCheck = onLinux;
+        packages.ouroboros-network.components.tests.ouroboros-network-sim-tests.doCheck = onLinux;
+
         packages.network-mux.components.tests.test.preCheck =
-          if buildSystem == "x86_64-linux" then "export GHCRTS=-M500M" else "";
-        packages.ouroboros-network.components.tests.sim-tests.preCheck =
-          if buildSystem == "x86_64-linux" then "export GHCRTS=-M600M" else "";
+          if buildSystem == "x86_64-linux" then "export GHCRTS=-M800M" else "";
+        packages.ouroboros-network.components.tests.protocols-test.preCheck =
+          if buildSystem == "x86_64-linux" then "export GHCRTS=-M800M" else "";
+        packages.cardano-diffusion.components.tests.cardano-diffusion-sim-tests.preCheck =
+          if buildSystem == "x86_64-linux" then "export GHCRTS=-M7000M" else "";
+      })
+      ({ pkgs, ... }: lib.mkIf pkgs.stdenv.hostPlatform.isWindows {
+        packages.basement.configureFlags = [ "--hsc2hs-options=--cflag=-Wno-int-conversion" ];
       })
     ];
   });

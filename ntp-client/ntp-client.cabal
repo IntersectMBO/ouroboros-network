@@ -30,13 +30,13 @@ library
   build-depends:
     Win32-network >=0.1 && <0.3,
     async >=2.2 && <2.3,
-    base >=4.14 && <4.22,
+    base >=4.14 && <4.23,
     binary >=0.8 && <0.11,
     bytestring >=0.10 && <0.13,
     contra-tracer >=0.1 && <0.2,
     network ^>=3.2.7,
     stm >=2.4 && <2.6,
-    time >=1.9.1 && <1.14,
+    time >=1.9.1 && <1.16,
 
   hs-source-dirs: src
   default-language: Haskell2010
@@ -63,11 +63,11 @@ test-suite test
   type: exitcode-stdio-1.0
   build-depends:
     QuickCheck,
-    base >=4.14 && <4.22,
+    base >=4.14 && <4.23,
     binary >=0.8 && <0.11,
     tasty,
     tasty-quickcheck,
-    time >=1.9.1 && <1.14,
+    time >=1.9.1 && <1.16,
 
   default-language: Haskell2010
   default-extensions: ImportQualifiedPost
@@ -89,7 +89,7 @@ executable demo-ntp-client
   build-depends:
     Win32-network >=0.1 && <0.3,
     async >=2.2 && <2.3,
-    base >=4.14 && <4.22,
+    base >=4.14 && <4.23,
     contra-tracer >=0.1 && <0.2,
     ntp-client,
 

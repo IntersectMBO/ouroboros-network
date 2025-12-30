@@ -45,15 +45,19 @@ fi
 cabal_files=$(fd -ae 'cabal')
 for cf in $cabal_files; do
   name=$(cat $cf | grep '^name:' | awk '{ print $2 }')
-  version=$(ls -1 $CHAP_DIR/_sources/$name | sort -V | tail -1)
-  rev=$(yq .github.rev $CHAP_DIR/_sources/$name/$version/meta.toml)
-  git restore --source=$rev -- $name
-  tb=0
-  revdir="$CHAP_DIR/_sources/$name/$version/revisions"
-  if [[ -d $revdir ]]; then
-    rev=$(ls $revdir | sort -V | tail -1)
-    echo "copy revision $revdir/$rev to $name/$name.cabal"
-    cp $revdir/$rev "$name/$name.cabal"
+  if [[ -d "$CHAP_DIR/_sources/$name" ]]; then
+    version=$(ls -1 $CHAP_DIR/_sources/$name | sort -V | tail -1)
+    rev=$(yq .github.rev $CHAP_DIR/_sources/$name/$version/meta.toml)
+    git restore --source=$rev -- $name
+    tb=0
+    revdir="$CHAP_DIR/_sources/$name/$version/revisions"
+    if [[ -d $revdir ]]; then
+      rev=$(ls $revdir | sort -V | tail -1)
+      echo "copy revision $revdir/$rev to $name/$name.cabal"
+      cp $revdir/$rev "$name/$name.cabal"
+    fi
+  else
+    echo "WARNING: $name not in cardano-haskell-packages"
   fi
 done
 
@@ -64,12 +68,14 @@ git reset --hard HEAD
 if [[ $TEST == 0 ]]; then
   for cf in $cabal_files; do
     name=$(cat $cf | grep '^name:' | awk '{ print $2 }')
-    version=$(ls -1 $CHAP_DIR/_sources/$name | sort -V | tail -1)
-    rev=$(yq .github.rev $CHAP_DIR/_sources/$name/$version/meta.toml)
-    ! { git branch -l --contains $rev --format="%(refname:short)" | grep -e '^\(main$\|release/\)'; }
-    if [[ $? == 0 ]]; then
-      echo "$name: revision $rev is not on the main or a 'release/*' branch."
-      exit 1
+    if [[ -d "$CHAP_DIR/_sources/$name" ]]; then
+      version=$(ls -1 $CHAP_DIR/_sources/$name | sort -V | tail -1)
+      rev=$(yq .github.rev $CHAP_DIR/_sources/$name/$version/meta.toml)
+      ! { git branch -l --contains $rev --format="%(refname:short)" | grep -e '^\(main$\|release/\)'; }
+      if [[ $? == 0 ]]; then
+        echo "$name: revision $rev is not on the main or a 'release/*' branch."
+        exit 1
+      fi
     fi
   done
 fi

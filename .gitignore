@@ -77,3 +77,6 @@ cabal.project.consensus
 /*.html
 /*.eventlog
 /*.prof
+
+# neovim Session
+*.vim

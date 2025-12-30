@@ -268,24 +268,26 @@ attenuationChannelAsBearer :: forall m.
                               )
                            => SDUSize
                            -> DiffTime
-                           -> Tracer m Trace
                            -> AttenuatedChannel m
                            -> Bearer m
-attenuationChannelAsBearer sduSize sduTimeout muxTracer chan =
+attenuationChannelAsBearer sduSize sduTimeout chan =
     Bearer {
-      read    = readMux,
-      write   = writeMux,
+      read           = readMux,
+      write          = writeMux,
+      writeMany      = writeMuxMany,
       sduSize,
-      name    = "attenuation-channel"
+      batchSize      = fromIntegral $ getSDUSize sduSize,
+      name           = "attenuation-channel",
+      egressInterval = 0
     }
   where
-    readMux :: TimeoutFn m -> m (SDU, Time)
-    readMux timeoutFn = do
-      traceWith muxTracer TraceRecvHeaderStart
+    readMux :: Tracer m BearerTrace -> TimeoutFn m -> m (SDU, Time)
+    readMux tracer timeoutFn = do
+      traceWith tracer TraceRecvHeaderStart
       mbuf <- timeoutFn sduTimeout $ acRead chan
       case mbuf of
         Nothing -> do
-          traceWith muxTracer TraceSDUReadTimeoutException
+          traceWith tracer TraceSDUReadTimeoutException
           throwIO SDUReadTimeout
 
         Just buf -> do
@@ -294,21 +296,27 @@ attenuationChannelAsBearer sduSize sduTimeout muxTracer chan =
             Left  e      -> throwIO e
             Right muxsdu -> do
               let header = msHeader muxsdu
-              traceWith muxTracer $ TraceRecvHeaderEnd header
+              traceWith tracer $ TraceRecvHeaderEnd header
               ts <- getMonotonicTime
-              traceWith muxTracer $ TraceRecvDeltaQObservation header ts
+              traceWith tracer $ TraceRecvDeltaQObservation header ts
               return (muxsdu {msBlob = payload}, ts)
 
-    writeMux :: TimeoutFn m -> SDU -> m Time
-    writeMux _ sdu = do
+    writeMux :: Tracer m BearerTrace -> TimeoutFn m -> SDU -> m Time
+    writeMux tracer _ sdu = do
       ts <- getMonotonicTime
       let ts32 = timestampMicrosecondsLow32Bits ts
           sdu' = setTimestamp sdu (RemoteClockModel ts32)
           buf  = encodeSDU sdu'
-      traceWith muxTracer $ TraceSendStart (msHeader sdu')
+      traceWith tracer $ TraceSendStart (msHeader sdu')
       acWrite chan buf
 
-      traceWith muxTracer TraceSendEnd
+      traceWith tracer TraceSendEnd
+      return ts
+
+    writeMuxMany :: Tracer m BearerTrace -> TimeoutFn m -> [SDU] -> m Time
+    writeMuxMany tracer timeoutFn sdus = do
+      ts <- getMonotonicTime
+      mapM_ (writeMux tracer timeoutFn) sdus
       return ts
 
 --

@@ -1,18 +1,36 @@
-{-# LANGUAGE CPP                       #-}
 {-# LANGUAGE DeriveFunctor             #-}
 {-# LANGUAGE DeriveGeneric             #-}
 {-# LANGUAGE DerivingVia               #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE NamedFieldPuns            #-}
+{-# LANGUAGE PatternSynonyms           #-}
+{-# LANGUAGE RankNTypes                #-}
+{-# LANGUAGE ViewPatterns              #-}
 
+-- TODO: needed with GHC-8.10
+{-# OPTIONS_GHC -Wno-name-shadowing #-}
 module Network.Mux.Trace
-  ( Error (..)
+  ( -- * Exceptions
+    Error (..)
   , handleIOException
+    -- * Trace events
   , Trace (..)
-  , BearerState (..)
+  , ChannelTrace (..)
+  , BearerTrace (..)
+    -- * Tracers
+  , Tracers' (.., TracersI, tracer_, channelTracer_, bearerTracer_)
+  , contramapTracers'
+  , Tracers
+  , nullTracers
+  , tracersWith
+  , TracersWithBearer
+  , tracersWithBearer
+    -- * Tracing wrappers
   , WithBearer (..)
   , TraceLabelPeer (..)
+    -- * State
+  , State (..)
   ) where
 
 import Prelude hiding (read)
@@ -21,13 +39,13 @@ import Text.Printf
 
 import Control.Exception hiding (throwIO)
 import Control.Monad.Class.MonadThrow
-import Control.Monad.Class.MonadTime.SI
+import Control.Tracer (Tracer, nullTracer)
 import Data.Bifunctor (Bifunctor (..))
-import Data.Word
+import Data.Functor.Contravariant (contramap, (>$<))
+import Data.Functor.Identity
 import GHC.Generics (Generic (..))
 import Quiet (Quiet (..))
 
-import Network.Mux.TCPInfo
 import Network.Mux.Types
 
 
@@ -111,98 +129,131 @@ data WithBearer peerid a = WithBearer {
 --TODO: probably remove this type
 
 
-data BearerState = Mature
-                 -- ^ `Bearer` has successfully completed the handshake.
-                 | Dead
-                 -- ^ `Bearer` is dead and the underlying bearer has been
-                 -- closed.
-                 deriving (Eq, Show)
-
--- | Enumeration of Mux events that can be traced.
+-- | Mid-level channel events traced independently by each mini protocol job.
 --
-data Trace =
-      TraceRecvHeaderStart
-    | TraceRecvHeaderEnd SDUHeader
-    | TraceRecvDeltaQObservation SDUHeader Time
-    | TraceRecvDeltaQSample Double Int Int Double Double Double Double String
-    | TraceRecvStart Int
-    | TraceRecvEnd Int
-    | TraceSendStart SDUHeader
-    | TraceSendEnd
-    | TraceState BearerState
-    | TraceCleanExit MiniProtocolNum MiniProtocolDir
-    | TraceExceptionExit MiniProtocolNum MiniProtocolDir SomeException
-    | TraceChannelRecvStart MiniProtocolNum
+data ChannelTrace =
+      TraceChannelRecvStart MiniProtocolNum
     | TraceChannelRecvEnd MiniProtocolNum Int
     | TraceChannelSendStart MiniProtocolNum Int
     | TraceChannelSendEnd MiniProtocolNum
-    | TraceHandshakeStart
-    | TraceHandshakeClientEnd DiffTime
-    | TraceHandshakeServerEnd
-    | forall e. Exception e => TraceHandshakeClientError e DiffTime
-    | forall e. Exception e => TraceHandshakeServerError e
-    | TraceSDUReadTimeoutException
-    | TraceSDUWriteTimeoutException
-    | TraceStartEagerly MiniProtocolNum MiniProtocolDir
-    | TraceStartOnDemand MiniProtocolNum MiniProtocolDir
-    | TraceStartOnDemandAny MiniProtocolNum MiniProtocolDir
-    | TraceStartedOnDemand MiniProtocolNum MiniProtocolDir
-    | TraceTerminating MiniProtocolNum MiniProtocolDir
-    | TraceStopping
-    | TraceStopped
-    | TraceTCPInfo StructTCPInfo Word16
 
-instance Show Trace where
-    show TraceRecvHeaderStart = printf "Bearer Receive Header Start"
-    show (TraceRecvHeaderEnd SDUHeader { mhTimestamp, mhNum, mhDir, mhLength }) = printf "Bearer Receive Header End: ts: 0x%08x (%s) %s len %d"
-        (unRemoteClockModel mhTimestamp) (show mhNum) (show mhDir) mhLength
-    show (TraceRecvDeltaQObservation SDUHeader { mhTimestamp, mhLength } ts) = printf "Bearer DeltaQ observation: remote ts %d local ts %s length %d"
-        (unRemoteClockModel mhTimestamp) (show ts) mhLength
-    show (TraceRecvDeltaQSample d sp so dqs dqvm dqvs estR sdud) = printf "Bearer DeltaQ Sample: duration %.3e packets %d sumBytes %d DeltaQ_S %.3e DeltaQ_VMean %.3e DeltaQ_VVar %.3e DeltaQ_estR %.3e sizeDist %s"
-         d sp so dqs dqvm dqvs estR sdud
-    show (TraceRecvStart len) = printf "Bearer Receive Start: length %d" len
-    show (TraceRecvEnd len) = printf "Bearer Receive End: length %d" len
-    show (TraceSendStart SDUHeader { mhTimestamp, mhNum, mhDir, mhLength }) = printf "Bearer Send Start: ts: 0x%08x (%s) %s length %d"
-        (unRemoteClockModel mhTimestamp) (show mhNum) (show mhDir) mhLength
-    show TraceSendEnd = printf "Bearer Send End"
-    show (TraceState new) = printf "State: %s" (show new)
-    show (TraceCleanExit mid dir) = printf "Miniprotocol (%s) %s terminated cleanly" (show mid) (show dir)
-    show (TraceExceptionExit mid dir e) = printf "Miniprotocol %s %s terminated with exception %s" (show mid) (show dir) (show e)
+instance Show ChannelTrace where
     show (TraceChannelRecvStart mid) = printf "Channel Receive Start on %s" (show mid)
     show (TraceChannelRecvEnd mid len) = printf "Channel Receive End on (%s) %d" (show mid)
         len
     show (TraceChannelSendStart mid len) = printf "Channel Send Start on (%s) %d" (show mid)
         len
     show (TraceChannelSendEnd mid) = printf "Channel Send End on %s" (show mid)
-    show TraceHandshakeStart = "Handshake start"
-    show (TraceHandshakeClientEnd duration) = printf "Handshake Client end, duration %s" (show duration)
-    show TraceHandshakeServerEnd = "Handshake Server end"
-    show (TraceHandshakeClientError e duration) =
-         -- Client Error can include an error string from the peer which could be very large.
-        printf "Handshake Client Error %s duration %s" (take 256 $ show e) (show duration)
-    show (TraceHandshakeServerError e) = printf "Handshake Server Error %s" (show e)
-    show TraceSDUReadTimeoutException = "Timed out reading SDU"
-    show TraceSDUWriteTimeoutException = "Timed out writing SDU"
+
+
+data State = Mature
+             -- ^ `Mux started ingress, and egress threads
+           | Dead
+             -- ^ Mux is being shutdown.
+           deriving (Eq, Show)
+
+-- | High-level mux events.
+--
+data Trace =
+      TraceState State
+    | TraceCleanExit MiniProtocolNum MiniProtocolDir
+    | TraceExceptionExit MiniProtocolNum MiniProtocolDir SomeException
+    | TraceStartEagerly MiniProtocolNum MiniProtocolDir
+    | TraceStartOnDemand MiniProtocolNum MiniProtocolDir
+    | TraceStartOnDemandAny MiniProtocolNum MiniProtocolDir
+    | TraceStartedOnDemand MiniProtocolNum MiniProtocolDir
+    | TraceTerminating MiniProtocolNum MiniProtocolDir
+    | forall mode. TraceNewMux [MiniProtocolInfo mode]
+    | TraceStarting
+    | TraceStopping
+    | TraceStopped
+
+instance Show Trace where
+    show (TraceState new) = printf "State: %s" (show new)
+    show (TraceCleanExit mid dir) = printf "Miniprotocol (%s) %s terminated cleanly" (show mid) (show dir)
+    show (TraceExceptionExit mid dir e) = printf "Miniprotocol %s %s terminated with exception %s" (show mid) (show dir) (show e)
     show (TraceStartEagerly mid dir) = printf "Eagerly started (%s) in %s" (show mid) (show dir)
     show (TraceStartOnDemand mid dir) = printf "Preparing to start (%s) in %s" (show mid) (show dir)
     show (TraceStartOnDemandAny mid dir) = printf "Preparing to start on any (%s) in %s" (show mid) (show dir)
     show (TraceStartedOnDemand mid dir) = printf "Started on demand (%s) in %s" (show mid) (show dir)
     show (TraceTerminating mid dir) = printf "Terminating (%s) in %s" (show mid) (show dir)
+    show (TraceNewMux infos) = printf "New mux with protocols: %s" (show infos)
+    show TraceStarting = "Mux starting"
     show TraceStopping = "Mux stopping"
     show TraceStopped  = "Mux stoppped"
-#ifdef linux_HOST_OS
-    show (TraceTCPInfo StructTCPInfo
-            { tcpi_snd_mss, tcpi_rcv_mss, tcpi_lost, tcpi_retrans
-            , tcpi_rtt, tcpi_rttvar, tcpi_snd_cwnd }
-            len)
-                                     =
-      printf "TCPInfo rtt %d rttvar %d cwnd %d smss %d rmss %d lost %d retrans %d len %d"
-        (fromIntegral tcpi_rtt :: Word) (fromIntegral tcpi_rttvar :: Word)
-        (fromIntegral tcpi_snd_cwnd :: Word) (fromIntegral tcpi_snd_mss :: Word)
-        (fromIntegral tcpi_rcv_mss :: Word) (fromIntegral tcpi_lost :: Word)
-        (fromIntegral tcpi_retrans :: Word)
-        len
-#else
-    show (TraceTCPInfo _ len) = printf "TCPInfo len %d" len
-#endif
 
+
+-- | Bundle of tracers used directly by mux.
+--
+data Tracers' m f = Tracers {
+    tracer        :: Tracer m (f Trace),
+    -- ^ high-level tracer of mux state events
+
+    channelTracer :: Tracer m (f ChannelTrace),
+    -- ^ channel tracer
+
+    bearerTracer  :: Tracer m (f BearerTrace)
+    -- ^ high-frequency tracer
+  }
+
+type Tracers m = Tracers' m Identity
+
+
+-- | Trace all events through one polymorphic tracer.
+--
+tracersWith :: (forall x. Tracer m x) -> Tracers' m f
+tracersWith tr = Tracers {
+    tracer        = tr,
+    channelTracer = tr,
+    bearerTracer  = tr
+  }
+
+
+nullTracers :: Applicative m => Tracers' m f
+nullTracers = tracersWith nullTracer
+
+
+-- | A convenient bidirectional pattern synonym which (un)wraps the `Identity`
+-- functor in the `Tracer` type.
+--
+pattern TracersI :: forall m.
+                    Tracer m Trace
+                 -> Tracer m ChannelTrace
+                 -> Tracer m BearerTrace
+                 -> Tracers m
+pattern TracersI { tracer_, channelTracer_, bearerTracer_ } <-
+    Tracers { tracer        = contramap Identity -> tracer_,
+              channelTracer = contramap Identity -> channelTracer_,
+              bearerTracer  = contramap Identity -> bearerTracer_
+            }
+  where
+    TracersI tracer' channelTracer' bearerTracer' =
+      Tracers {
+         tracer        = runIdentity >$< tracer',
+         channelTracer = runIdentity >$< channelTracer',
+         bearerTracer  = runIdentity >$< bearerTracer'
+       }
+
+{-# COMPLETE TracersI #-}
+
+-- | Contravariant natural transformation of `Tracers' m`.
+--
+contramapTracers' :: (forall x. f' x -> f x)
+                  -> Tracers' m f -> Tracers' m f'
+contramapTracers'
+  f
+  Tracers { tracer,
+            channelTracer,
+            bearerTracer
+          }
+  =
+  Tracers { tracer        = f >$< tracer,
+            channelTracer = f >$< channelTracer,
+            bearerTracer  = f >$< bearerTracer
+          }
+
+
+type TracersWithBearer connId m = Tracers' m (WithBearer connId)
+
+tracersWithBearer :: peerId -> TracersWithBearer peerId m -> Tracers m
+tracersWithBearer peerId = contramapTracers' (WithBearer peerId . runIdentity)

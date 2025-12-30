@@ -17,7 +17,7 @@ import Control.Concurrent (forkIO)
 import Control.Concurrent.STM (atomically)
 import Control.Exception (finally)
 import Control.Monad
-import Control.Tracer (Tracer (..), nullTracer, showTracing)
+import Control.Tracer (Tracer (..), showTracing)
 
 import System.Environment qualified as SysEnv
 import System.Exit
@@ -101,7 +101,7 @@ server =
     associateWithIOManager ioManager (Left hpipe)
     Win32.Async.connectNamedPipe hpipe
     void $ forkIO $ do
-      bearer <- getBearer Mx.makeNamedPipeBearer (-1) nullTracer hpipe
+      bearer <- getBearer Mx.makeNamedPipeBearer (-1) hpipe Nothing
       serverWorker bearer
         `finally` closeHandle hpipe
 #else
@@ -113,7 +113,7 @@ server = do
     forever $ do
       (sock', _addr) <- Socket.accept sock
       void $ forkIO $ do
-        bearer <- getBearer Mx.makeSocketBearer 1.0 nullTracer sock'
+        bearer <- getBearer Mx.makeSocketBearer 1.0 sock' Nothing
         serverWorker bearer
           `finally` Socket.close sock'
 #endif
@@ -121,7 +121,7 @@ server = do
 
 serverWorker :: Bearer IO -> IO ()
 serverWorker bearer = do
-    mux <- Mx.new ptcls
+    mux <- Mx.new Mx.nullTracers ptcls
 
     void $ forkIO $ do
       awaitResult <-
@@ -133,7 +133,7 @@ serverWorker bearer = do
       putStrLn $ "Result: " ++ show result
       Mx.stop mux
 
-    Mx.run nullTracer mux bearer
+    Mx.run mux bearer
   where
     ptcls :: [MiniProtocolInfo ResponderMode]
     ptcls = [ MiniProtocolInfo {
@@ -168,20 +168,20 @@ client n msg =
                         fILE_FLAG_OVERLAPPED
                         Nothing
     associateWithIOManager ioManager (Left hpipe)
-    bearer <- getBearer Mx.makeNamedPipeBearer (-1) nullTracer hpipe
+    bearer <- getBearer Mx.makeNamedPipeBearer (-1) hpipe Nothing
     clientWorker bearer n msg
 #else
 client n msg = do
     sock <- Socket.socket AF_UNIX Socket.Stream Socket.defaultProtocol
     Socket.connect sock (SockAddrUnix pipeName)
-    bearer <- getBearer Mx.makeSocketBearer 1.0 nullTracer sock
+    bearer <- getBearer Mx.makeSocketBearer 1.0 sock Nothing
     clientWorker bearer n msg
 #endif
 
 
 clientWorker :: Mx.Bearer IO -> Int -> String -> IO ()
 clientWorker bearer n msg = do
-    mux <- Mx.new ptcls
+    mux <- Mx.new Mx.nullTracers ptcls
 
     void $ forkIO $ do
       awaitResult <-
@@ -193,7 +193,7 @@ clientWorker bearer n msg = do
       putStrLn $ "Result: " ++ show result
       Mx.stop mux
 
-    Mx.run nullTracer mux bearer
+    Mx.run mux bearer
   where
     ptcls :: [MiniProtocolInfo Mx.InitiatorMode]
     ptcls = [ MiniProtocolInfo {
@@ -208,4 +208,3 @@ echoClient :: Int -> Int -> ByteString
            -> ReqRespClient ByteString ByteString IO Int
 echoClient !n 0 _      = SendMsgDone (pure n)
 echoClient !n m rawmsg = SendMsgReq rawmsg (pure . echoClient (n+1) (m-1))
-

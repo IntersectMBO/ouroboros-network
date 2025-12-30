@@ -18,12 +18,21 @@ import Network.Mux.Types
 -- >  0                   1                   2                   3
 -- >  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 -- > +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
--- > |              transmission time                                |
+-- > |                        transmission time                      |
 -- > +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
--- > |M|    conversation id          |              length           |
+-- > |d|    mini-protocol number     |             length            |
 -- > +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 --
 -- All fields are in big endian byte order.
+--
+-- * transmission time: time when the SDU was sent
+-- * @d@: mini-protocol direction (`MiniProtocolDir`):
+--
+--     * 1 - initiator direction
+--     * 0 - responder direction
+--
+-- * mini-protocol number (`MiniProtocolNum`)
+-- * length: length of the payload
 --
 encodeSDU :: SDU -> BL.ByteString
 encodeSDU sdu =
@@ -47,10 +56,13 @@ decodeSDU buf =
     case Bin.runGetOrFail dec buf of
          Left  (_, _, e)  -> Left $ SDUDecodeError e
          Right (_, _, h) ->
-             Right $ SDU {
-                   msHeader = h
-                 , msBlob   = BL.empty
-                 }
+           if mhLength h > 0
+             then
+               Right $ SDU {
+                     msHeader = h
+                   , msBlob   = BL.empty
+                   }
+             else Left $ SDUDecodeError "short SDU"
   where
     dec = do
         mhTimestamp <- RemoteClockModel <$> Bin.getWord32be

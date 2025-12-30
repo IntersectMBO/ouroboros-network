@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE PatternSynonyms       #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeFamilies          #-}
@@ -12,14 +13,18 @@ module Network.Mux.Ingress
   ) where
 
 import Data.Array
+import Data.ByteString.Builder.Internal (lazyByteStringInsert,
+           lazyByteStringThreshold)
 import Data.ByteString.Lazy qualified as BL
 import Data.List (nub)
+import Data.Strict.Tuple (pattern (:!:))
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTimer.SI hiding (timeout)
+import Control.Tracer (Tracer)
 
 import Network.Mux.Timeout
 import Network.Mux.Trace
@@ -97,13 +102,14 @@ data MiniProtocolDispatchInfo m =
 demuxer :: (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
             MonadTimer m)
       => [MiniProtocolState mode m]
+      -> Tracer m BearerTrace
       -> Bearer m
       -> m void
-demuxer ptcls bearer =
+demuxer ptcls tracer bearer =
   let !dispatchTable = setupDispatchTable ptcls in
   withTimeoutSerial $ \timeout ->
   forever $ do
-    (sdu, _) <- Mx.read bearer timeout
+    (sdu, _) <- Mx.read bearer tracer timeout
     -- say $ printf "demuxing sdu on mid %s mode %s lenght %d " (show $ msId sdu) (show $ msDir sdu)
     --             (BL.length $ msBlob sdu)
     case lookupMiniProtocol dispatchTable (msNum sdu)
@@ -115,9 +121,16 @@ demuxer ptcls bearer =
                    throwIO (InitiatorOnly (msNum sdu))
       Just (MiniProtocolDispatchInfo q qMax) ->
         atomically $ do
-          buf <- readTVar q
-          if BL.length buf + BL.length (msBlob sdu) <= fromIntegral qMax
-              then writeTVar q $ BL.append buf (msBlob sdu)
+          len :!: buf <- readTVar q
+          let !len' = len + BL.length (msBlob sdu)
+          if len' <= fromIntegral qMax
+              then do
+                let !buf' = if len == 0
+                               then -- Don't copy the payload if the queue was empty
+                                 lazyByteStringInsert $ msBlob sdu
+                               else -- Copy payloads smaller than 128 bytes
+                                 buf <> lazyByteStringThreshold 128 (msBlob sdu)
+                writeTVar q $ len' :!: buf'
               else throwSTM $ IngressQueueOverRun (msNum sdu) (msDir sdu)
 
 lookupMiniProtocol :: MiniProtocolDispatch m
@@ -199,4 +212,3 @@ setupDispatchTable ptcls =
     minpnum, maxpnum :: MiniProtocolNum
     minpnum = minimum pnums
     maxpnum = maximum pnums
-

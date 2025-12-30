@@ -19,6 +19,10 @@ let
     else ouroboros-network;
 in
 hsPkgs.shellFor {
+  buildInputs = [
+    pkgs.bashInteractive
+  ];
+
   nativeBuildInputs = [
     pkgs.cabal
     pkgs.cabal-gild
@@ -37,6 +41,7 @@ hsPkgs.shellFor {
     pkgs.jq
     pkgs.yq-go
     pkgs.gh
+    pkgs.scriv
   ];
 
   # This is the place for tools that are required to be built with the same GHC
@@ -45,12 +50,13 @@ hsPkgs.shellFor {
     lib.optionalAttrs hls
       {
         haskell-language-server = {
-          src = inputs.haskellNix.inputs."hls-2.7";
+          src = inputs.haskellNix.inputs."hls-2.11";
           configureArgs = "--disable-benchmarks --disable-tests";
         };
       };
 
   shellHook = ''
+    export SHELL=/run/current-system/sw/bin/bash
     export LANG="en_US.UTF-8"
   '' + lib.optionalString
     (pkgs.glibcLocales != null && pkgs.stdenv.hostPlatform.libc == "glibc") ''
