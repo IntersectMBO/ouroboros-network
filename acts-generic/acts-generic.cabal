@@ -9,7 +9,7 @@ license-files:
 
 author: Marcin Szamotulski
 maintainer: coot@coot.me
-copyright: 2025 Intersect
+copyright: 2025-2026 Intersect
 category: Data
 build-type: Simple
 extra-doc-files: CHANGELOG.md
