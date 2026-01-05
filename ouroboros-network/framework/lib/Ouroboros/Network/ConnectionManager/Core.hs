@@ -358,7 +358,7 @@ data DemoteToColdLocal peerAddr handlerTrace handle handleError version m
 -- is responsible for the resource.
 --
 with
-    :: forall (muxMode :: Mx.Mode) peerAddr socket initiatorCtx handlerTrace handle handleError version versionData m a b x.
+    :: forall (muxMode :: Mx.Mode) peerAddr socket initiatorCtx networkState handlerTrace handle handleError version versionData m a b x.
        ( Alternative (STM m)
        , MonadLabelledSTM   m
        , MonadTraceSTM      m
@@ -377,7 +377,7 @@ with
        , Typeable peerAddr
        )
     => Arguments handlerTrace socket peerAddr handle handleError version versionData m a b
-    -> InResponderMode muxMode (InformationChannel (Event muxMode handle initiatorCtx peerAddr versionData m a b) m)
+    -> InResponderMode muxMode (InformationChannel (Event muxMode handle initiatorCtx networkState peerAddr versionData m a b) m)
     -- ^ On outbound duplex connections we need to notify the server about
     -- a new connection.
     -> ConnectionHandler muxMode handlerTrace socket peerAddr handle handleError version versionData m

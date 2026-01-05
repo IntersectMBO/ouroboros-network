@@ -19,15 +19,18 @@ module Ouroboros.Network.Diffusion.Types
   , Mx.noBindForkPolicy
   , Mx.responderForkPolicy
     -- * NodeToClient type aliases
+  , NodeToClientApplication
   , NodeToClientHandle
   , NodeToClientHandleError
   , NodeToClientHandlerError
   , MkNodeToClientConnectionHandler
     -- * NodeToNode type aliases
+  , NodeToNodeApplication
   , NodeToNodeHandle
   , NodeToNodeConnectionManager
   , NodeToNodePeerConnectionHandle
   , NodeToNodePeerSelectionActions
+  , UnitNetworkState
     -- * Re-exports
   , AbstractTransitionTrace
   , IG.RemoteTransitionTrace
@@ -54,11 +57,6 @@ import Network.Mux qualified as Mx
 import Network.Mux.Types (ReadBuffer)
 import Network.Socket qualified as Socket
 
-import Ouroboros.Network.Mux (OuroborosApplicationWithMinimalCtx,
-           OuroborosBundleWithExpandedCtx)
-
-import Ouroboros.Network.PeerSharing (PeerSharingRegistry (..))
-
 import Ouroboros.Network.ConnectionHandler
 import Ouroboros.Network.ConnectionManager.Core qualified as CM
 import Ouroboros.Network.ConnectionManager.State qualified as CM
@@ -68,7 +66,10 @@ import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.Driver.Simple (TraceSendRecv)
 import Ouroboros.Network.ExitPolicy
 import Ouroboros.Network.InboundGovernor qualified as IG
+import Ouroboros.Network.Mux (OuroborosApplicationWithMinimalCtx,
+           OuroborosBundleWithExpandedCtx)
 import Ouroboros.Network.Mux qualified as Mx
+import Ouroboros.Network.PeerSharing (PeerSharingRegistry (..))
 import Ouroboros.Network.Protocol.Handshake (Handshake, HandshakeArguments,
            Versions)
 import Ouroboros.Network.RethrowPolicy
@@ -78,7 +79,9 @@ import Ouroboros.Network.Socket (SystemdSocketTracer)
 
 import Ouroboros.Network.PeerSelection as PeerSelection
 import Ouroboros.Network.PeerSelection.Churn as PeerSelection
+import Ouroboros.Network.PeerSelection.Governor.Types as Governor
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
+import Ouroboros.Network.PublicState qualified as Public
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit)
 
 -- | The 'DiffusionTracer' logs
@@ -353,7 +356,7 @@ data Arguments extraState extraDebugState extraFlags extraPeers
            extraState extraDebugState extraFlags extraPeers
            extraAPI extraCounters extraTrace
            ntnAddr
-           (PeerConnectionHandle muxMode responderCtx
+           (PeerConnectionHandle muxMode responderCtx UnitNetworkState
                                  ntnAddr ntnVersionData bytes m a b)
            exception m
 
@@ -363,8 +366,8 @@ data Arguments extraState extraDebugState extraFlags extraPeers
       :: forall muxMode responderCtx bytes a b .
          PeerSelectionState extraState extraFlags extraPeers
                             ntnAddr (PeerConnectionHandle
-                                       muxMode responderCtx ntnAddr
-                                       ntnVersionData bytes m a b)
+                                       muxMode responderCtx UnitNetworkState
+                                       ntnAddr ntnVersionData bytes m a b)
       -> extraCounters
 
     -- | Function that constructs a 'extraPeers' set from a map of dns
@@ -460,7 +463,7 @@ data Configuration extraFlags m ntnFd ntnAddr ntcFd ntcAddr = Configuration {
       -- It is created outside of diffusion, since it is needed to create some
       -- apps (e.g. peer sharing).
       --
-    , dcPublicPeerSelectionVar   :: StrictTVar m (PublicPeerSelectionState ntnAddr)
+    , dcCapturePublicStateVar  :: Governor.CapturePublicStateVar ntnAddr m
 
       -- | selection targets for the peer governor
       --
@@ -532,7 +535,6 @@ data Configuration extraFlags m ntnFd ntnAddr ntcFd ntcAddr = Configuration {
 
   }
 
-
 -- | Versioned mini-protocol bundles run on a negotiated connection.
 --
 data Applications ntnAddr ntnVersion ntnVersionData
@@ -547,9 +549,8 @@ data Applications ntnAddr ntnVersion ntnVersionData
       daApplicationInitiatorMode
         :: Versions ntnVersion
                     ntnVersionData
-                      (OuroborosBundleWithExpandedCtx
-                      Mx.InitiatorMode ntnAddr
-                      ByteString m a Void)
+                    (NodeToNodeApplication
+                      Mx.InitiatorMode ntnAddr ByteString m a Void)
 
       -- | NodeToNode initiator & responder applications for bidirectional mode.
       --
@@ -557,9 +558,8 @@ data Applications ntnAddr ntnVersion ntnVersionData
            -- Peer Sharing result computation callback
         :: Versions ntnVersion
                     ntnVersionData
-                    (OuroborosBundleWithExpandedCtx
-                      Mx.InitiatorResponderMode ntnAddr
-                      ByteString m a ())
+                    (NodeToNodeApplication
+                      Mx.InitiatorResponderMode ntnAddr ByteString m a ())
 
       -- | NodeToClient responder application (server role)
       --
@@ -568,9 +568,7 @@ data Applications ntnAddr ntnVersion ntnVersionData
     , daLocalResponderApplication
         :: Versions ntcVersion
                     ntcVersionData
-                     (OuroborosApplicationWithMinimalCtx
-                      Mx.ResponderMode ntcAddr
-                      ByteString m Void ())
+                    (NodeToClientApplication Mx.ResponderMode ntnAddr ntcAddr ByteString m Void ())
 
       -- | /node-to-node/ rethrow policy.
       --
@@ -607,11 +605,13 @@ data Applications ntnAddr ntnVersion ntnVersionData
 --
 -- Node-To-Client type aliases
 --
--- Node-To-Client diffusion is only used in 'ResponderMode'.
+-- Node-To-Client diffusion is only used in 'ResponderMode', it has access to
+-- `Public.NetworkState` for the purpose of making it available through one of
+-- the mini-protocols.
 --
 
-type NodeToClientHandle ntcAddr versionData m =
-    HandleWithMinimalCtx Mx.ResponderMode ntcAddr versionData ByteString m Void ()
+type NodeToClientHandle ntnAddr ntcAddr versionData m =
+    HandleWithMinimalCtx Mx.ResponderMode (Public.NetworkState ntnAddr) ntcAddr versionData ByteString m Void ()
 
 type NodeToClientHandleError ntcVersion =
     HandlerError ntcVersion
@@ -621,7 +621,7 @@ type NodeToClientHandlerError ntcVersion =
     HandlerError ntcVersion
 
 type MkNodeToClientConnectionHandler
-      ntcFd ntcAddr ntcVersion ntcVersionData m =
+      ntcFd ntnAddr ntcAddr ntcVersion ntcVersionData m =
        (   StrictTVar m (StrictMaybe IG.ResponderCounters)
         -> Tracer m (Mx.WithBearer (ConnectionId ntcAddr) Mx.Trace))
     -> ConnectionHandler
@@ -629,22 +629,42 @@ type MkNodeToClientConnectionHandler
          (ConnectionHandlerTrace ntcVersion ntcVersionData)
          ntcFd
          ntcAddr
-         (NodeToClientHandle ntcAddr ntcVersionData m)
+         (NodeToClientHandle ntnAddr ntcAddr ntcVersionData m)
          (NodeToClientHandlerError ntcVersion)
          ntcVersion
          ntcVersionData
          m
 
+-- | A type alias for the node-to-client protocol bundle used by diffusion.  It
+-- is more general what we need in `Applications` type so it can be used in
+-- `ouroboros-cosnensus-diffusion` (polymorphic `bytes` and result type `a`).
+--
+type NodeToClientApplication muxMode ntnAddr ntcAddr bytes m a b =
+    OuroborosApplicationWithMinimalCtx
+      muxMode
+      (Public.NetworkState ntnAddr)
+      ntcAddr
+      bytes
+      m a b
+
 --
 -- Node-To-Node type aliases
 --
 -- Node-To-Node diffusion runs in either 'InitiatorMode' or 'InitiatorResponderMode'.
+-- We don't expose network state through Node-to-Node Protocol, hence
+-- `UnitNetworkState`.
 --
 
 type NodeToNodeHandle
        (mode :: Mx.Mode)
        ntnAddr ntnVersionData m a b =
-    HandleWithExpandedCtx mode ntnAddr ntnVersionData ByteString m a b
+    HandleWithExpandedCtx
+        mode
+        UnitNetworkState
+        ntnAddr
+        ntnVersionData
+        ByteString
+        m a b
 
 type NodeToNodeConnectionManager
        (mode :: Mx.Mode)
@@ -657,6 +677,17 @@ type NodeToNodeConnectionManager
       (HandlerError ntnVersion)
       m
 
+-- We don't expose network state over node-t-node protocol.
+type UnitNetworkState = ()
+
+-- | A type alias for the node-to-node protocol bundle used by diffusion.  It
+-- is more general what we need in `Applications` type so it can be used in
+-- `ouroboros-cosnensus-diffusion` (polymorphic `bytes`).
+--
+type NodeToNodeApplication mode ntnAddr bytes m a b =
+    OuroborosBundleWithExpandedCtx
+      mode UnitNetworkState ntnAddr bytes m a b
+
 --
 -- Governor type aliases
 --
@@ -665,6 +696,7 @@ type NodeToNodePeerConnectionHandle (mode :: Mx.Mode) ntnAddr ntnVersionData m a
     PeerConnectionHandle
       mode
       (ResponderContext ntnAddr)
+      UnitNetworkState
       ntnAddr
       ntnVersionData
       ByteString

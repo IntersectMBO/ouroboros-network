@@ -77,8 +77,7 @@ import Ouroboros.Network.Mock.ProducerState
 import Simulation.Network.Snocket (AddressType (..), GlobalAddressScheme (..))
 
 import Ouroboros.Network.PeerSelection (PeerSharing, RelayAccessPoint (..))
-import Ouroboros.Network.PeerSelection.Governor (PublicPeerSelectionState,
-           makePublicPeerSelectionStateVar)
+import Ouroboros.Network.PeerSelection.Governor qualified as Governor
 import Ouroboros.Network.PeerSharing (PeerSharingAPI, PeerSharingRegistry (..),
            newPeerSharingAPI, newPeerSharingRegistry,
            ps_POLICY_PEER_SHARE_MAX_PEERS, ps_POLICY_PEER_SHARE_STICKY_TIME)
@@ -306,8 +305,8 @@ data NodeKernel header block s txid m = NodeKernel {
       nkPeerSharingAPI
         :: PeerSharingAPI NtNAddr s m,
 
-      nkPublicPeerSelectionVar
-        :: StrictTVar m (PublicPeerSelectionState NtNAddr),
+      nkCapturePublicStateVar
+        :: Governor.CapturePublicStateVar NtNAddr m,
 
       nkMempool
         :: Mempool m txid (Tx txid),
@@ -334,19 +333,20 @@ newNodeKernel :: ( MonadTraceSTM m
               -> [Tx txid]
               -> m (NodeKernel header block rng txid m)
 newNodeKernel psRng txSeed txs = do
-    publicStateVar <- makePublicPeerSelectionStateVar
-    labelTVarIO publicStateVar "public-peer-selection-state-var"
-    traceTVarIO publicStateVar (\_ a -> return $ TraceString (show a))
+    capturePublicStateVar <- Governor.newCapturePublicStateVar
+    -- TODO CapturePublicStateVar is opaque
+    -- labelTVarIO capturePublicStateVar "public-peer-selection-state-var"
+    -- traceTVarIO capturePublicStateVar (\_ a -> return $ TraceString (show a))
     NodeKernel
       <$> newTVarIO Map.empty
       <*> newTVarIO (ChainProducerState Chain.Genesis Map.empty 0)
       <*> newFetchClientRegistry
       <*> newPeerSharingRegistry
       <*> ChainDB.newChainDB
-      <*> newPeerSharingAPI publicStateVar psRng
+      <*> newPeerSharingAPI capturePublicStateVar psRng
                             ps_POLICY_PEER_SHARE_STICKY_TIME
                             ps_POLICY_PEER_SHARE_MAX_PEERS
-      <*> pure publicStateVar
+      <*> pure capturePublicStateVar
       <*> newMempool txs
       <*> Strict.newMVar (TxChannels Map.empty)
       <*> newTxMempoolSem

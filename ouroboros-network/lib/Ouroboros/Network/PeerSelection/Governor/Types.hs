@@ -61,6 +61,13 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   , peerSelectionStateToView
     -- * Peer Sharing Auxiliary data type
   , PeerSharingResult (..)
+    -- * Capture public state
+  , CapturePublicState (..)
+  , CapturePublicStateVar
+  , newCapturePublicStateVar
+  , requestPublicState
+  , handlePublicStateRequest
+  , toOutboundState
     -- * Traces
   , TracePeerSelection (..)
   , ChurnAction (..)
@@ -104,6 +111,9 @@ import Ouroboros.Network.PeerSelection.Types (PeerSource (..),
            PeerStatus (PeerHot, PeerWarm), PublicExtraPeersAPI)
 import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount,
            PeerSharingResult (..))
+
+import Ouroboros.Network.PublicState qualified as PS
+
 
 -- | A peer pick policy is an action that picks a subset of elements from a
 -- map of peers.
@@ -363,9 +373,10 @@ data PeerSelectionInterfaces extraState extraFlags extraPeers extraCounters peer
       --
       countersVar        :: StrictTVar m (PeerSelectionCounters extraCounters),
 
-      -- | PublicPeerSelectionState var.
+      -- | An interface to request / receive `PublicPeerSelectionState`
       --
-      publicStateVar     :: StrictTVar m (PublicPeerSelectionState peeraddr),
+      capturePublicStateVar
+                         :: CapturePublicStateVar peeraddr m,
 
       -- | PeerSelectionState shared for debugging purposes (to support SIGUSR1
       -- debug event tracing)
@@ -768,17 +779,23 @@ makeDebugPeerSelectionState PeerSelectionState {..} up bp es am getPromotedHotTi
 -- This data type should not expose too much information and keep only
 -- essential data needed for computing the peer sharing request result
 --
-newtype PublicPeerSelectionState peeraddr =
+data PublicPeerSelectionState peeraddr =
   PublicPeerSelectionState {
-    availableToShare :: Set peeraddr
-  }
+    availableToShare :: Set peeraddr,
+    knownSet         :: Set peeraddr,
+    establishedSet   :: Set peeraddr,
+    activeSet        :: Set peeraddr
+  } 
   deriving Show
 
 emptyPublicPeerSelectionState :: Ord peeraddr
                               => PublicPeerSelectionState peeraddr
 emptyPublicPeerSelectionState =
   PublicPeerSelectionState {
-    availableToShare = mempty
+    availableToShare = mempty,
+    knownSet         = mempty,
+    establishedSet   = mempty,
+    activeSet        = mempty
   }
 
 makePublicPeerSelectionStateVar
@@ -793,10 +810,13 @@ makePublicPeerSelectionStateVar = newTVarIO emptyPublicPeerSelectionState
 --
 toPublicState :: PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
               -> PublicPeerSelectionState peeraddr
-toPublicState PeerSelectionState { knownPeers } =
+toPublicState PeerSelectionState { knownPeers, establishedPeers, activePeers } =
    PublicPeerSelectionState {
      availableToShare =
-       KnownPeers.getPeerSharingResponsePeers knownPeers
+       KnownPeers.getPeerSharingResponsePeers knownPeers,
+     knownSet         = KnownPeers.toSet knownPeers,
+     establishedSet   = EstablishedPeers.toSet establishedPeers,
+     activeSet        = activePeers
    }
 
 -- | Peer selection view.
@@ -1784,6 +1804,8 @@ data TracePeerSelection extraDebugState extraFlags extraPeers extraTrace peeradd
      | TraceBootstrapPeersFlagChangedWhilstInSensitiveState
      | TraceVerifyPeerSnapshot Bool
 
+     | TracePublicPeerSelectionState (PublicPeerSelectionState peeraddr)
+
      --
      -- Critical Failures
      --
@@ -1841,3 +1863,59 @@ deriving instance ( Show extraState
                   , Ord peeraddr
                   , Show peeraddr
                   ) => Show (DebugPeerSelection extraState extraFlags extraPeers peeraddr)
+
+-- | Request / response for capturing public state.  Internal.
+--
+data CapturePublicState peeraddr
+  = RequestState
+  | CapturedState (PublicPeerSelectionState peeraddr)
+
+newtype CapturePublicStateVar peeraddr m =
+    CapturePublicStateVar (StrictTMVar m (CapturePublicState peeraddr))
+
+newCapturePublicStateVar :: MonadSTM m
+                         => m (CapturePublicStateVar peeraddr m)
+newCapturePublicStateVar = CapturePublicStateVar <$> newEmptyTMVarIO
+
+-- | Put a request in `CaptureStateVar`.
+--
+requestPublicState :: MonadSTM m
+                   => CapturePublicStateVar peeraddr m
+                   -> m (PublicPeerSelectionState peeraddr)
+requestPublicState (CapturePublicStateVar v) = do
+    -- `putTMVar` and `writePublicState` guard that there's only one request in
+    -- flight, since it is `requestPublicState` that empties the
+    -- `CaptureStateVar`.
+    atomically $ putTMVar v RequestState
+    atomically $ do
+      a <- takeTMVar v
+      case a of
+        RequestState     -> retry -- request in progress
+        CapturedState ps -> return ps
+
+-- | Block for a `RequestState`, then write public state back.
+--
+handlePublicStateRequest
+  :: MonadSTM m
+  => CapturePublicStateVar peeraddr m
+  -> PublicPeerSelectionState peeraddr
+  -> STM m ()
+handlePublicStateRequest (CapturePublicStateVar v) st = do
+    a <- readTMVar v
+    case a of
+      RequestState      -> writeTMVar v (CapturedState st)
+      (CapturedState _) -> retry
+
+toOutboundState :: Ord peeraddr
+                => PublicPeerSelectionState peeraddr
+                -> PS.OutboundState peeraddr
+toOutboundState PublicPeerSelectionState {
+    knownSet,
+    establishedSet,
+    activeSet
+  } =
+  PS.OutboundState {
+    PS.coldPeers = knownSet `Set.difference` establishedSet,
+    PS.warmPeers = establishedSet `Set.difference` activeSet,
+    PS.hotPeers  = activeSet
+  }

@@ -1844,6 +1844,8 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
         show a
       peerSelectionTraceMap (TraceVerifyPeerSnapshot result)         =
         "TraceVerifyPeerSnapshot " <> show result
+      peerSelectionTraceMap TracePublicPeerSelectionState {}         =
+        "TracePublicPeerSelectionState"
       eventsSeenNames = map peerSelectionTraceMap events
 
    -- TODO: Add checkCoverage here
@@ -4447,13 +4449,13 @@ unit_peer_sharing =
              counterexample (concat [ show ip_0
                                     , " is not a member of received peers "
                                     , show receivedPeers
+                                    , " for "
+                                    , show addr
                                     ]) $
              ip_0 `Set.member` receivedPeers
         verify _ _ = Every True
 
     in
-      -- counterexample (ppTrace_ trace) $
-      -- counterexample (foldr (\as out -> "===\n" ++ unlines (show <$> as) ++ out) "" events') $
       counterexample (Map.foldrWithKey (\addr evs s -> concat [ "\n\n===== "
                                                               , show addr
                                                               , " =====\n\n"

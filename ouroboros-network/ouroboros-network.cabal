@@ -69,6 +69,8 @@ library api
     Ouroboros.Network.Block
     Ouroboros.Network.BlockFetch.ConsensusInterface
     Ouroboros.Network.CodecCBORTerm
+    Ouroboros.Network.ConnectionId
+    Ouroboros.Network.ConnectionManager.Public
     Ouroboros.Network.ControlMessage
     Ouroboros.Network.DiffusionMode
     Ouroboros.Network.Handshake
@@ -84,6 +86,8 @@ library api
     Ouroboros.Network.PeerSelection.RelayAccessPoint
     Ouroboros.Network.Point
     Ouroboros.Network.Protocol.Limits
+    Ouroboros.Network.PublicState
+    Ouroboros.Network.RemoteAddress.Codec
     Ouroboros.Network.SizeInBytes
     Ouroboros.Network.Util.ShowProxy
 
@@ -100,6 +104,7 @@ library api
     contra-tracer,
     deepseq,
     dns,
+    hashable,
     io-classes:{io-classes, si-timers, strict-stm} ^>=1.8.0.1,
     iproute ^>=1.7.15,
     measures,
@@ -320,7 +325,6 @@ library framework
     NoThunks.Class.Orphans
     Ouroboros.Network.Channel
     Ouroboros.Network.ConnectionHandler
-    Ouroboros.Network.ConnectionId
     Ouroboros.Network.ConnectionManager.ConnMap
     Ouroboros.Network.ConnectionManager.Core
     Ouroboros.Network.ConnectionManager.State
@@ -355,7 +359,6 @@ library framework
 
   -- other-extensions:
   build-depends:
-    -- ^ only to derive nothunk instances
     Win32-network ^>=0.2,
     base >=4.12 && <4.23,
     bytestring >=0.10 && <0.13,

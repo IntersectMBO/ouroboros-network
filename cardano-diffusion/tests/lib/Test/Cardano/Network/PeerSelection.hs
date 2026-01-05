@@ -916,64 +916,64 @@ collectTraces trace =
     Set.fromList [ traceNum e | (_, GovernorEvent e) <- trace ]
 
 traceNum :: TracePeerSelection extraDebugState extraFlags extraPeers Cardano.ExtraTrace peeraddr -> Int
-traceNum TraceLocalRootPeersChanged{}                         = 00
-traceNum TraceTargetsChanged{}                                = 01
-traceNum TracePublicRootsRequest{}                            = 02
-traceNum TracePublicRootsResults{}                            = 03
-traceNum TracePublicRootsFailure{}                            = 04
-traceNum TracePeerShareRequests{}                             = 05
-traceNum TracePeerShareResults{}                              = 06
-traceNum TracePeerShareResultsFiltered{}                      = 07
-traceNum TraceForgetColdPeers{}                               = 08
-traceNum TracePromoteColdPeers{}                              = 09
-traceNum TracePromoteColdLocalPeers{}                         = 10
-traceNum TracePromoteColdFailed{}                             = 11
-traceNum TracePromoteColdDone{}                               = 12
-traceNum TracePromoteWarmPeers{}                              = 13
-traceNum TracePromoteWarmLocalPeers{}                         = 14
-traceNum TracePromoteWarmFailed{}                             = 15
-traceNum TracePromoteWarmDone{}                               = 16
-traceNum TraceDemoteWarmPeers{}                               = 17
-traceNum TraceDemoteWarmFailed{}                              = 18
-traceNum TraceDemoteWarmDone{}                                = 19
-traceNum TraceDemoteHotPeers{}                                = 20
-traceNum TraceDemoteLocalHotPeers{}                           = 21
-traceNum TraceDemoteHotFailed{}                               = 22
-traceNum TraceDemoteHotDone{}                                 = 23
-traceNum TraceDemoteAsynchronous{}                            = 24
-traceNum TraceGovernorWakeup{}                                = 25
-traceNum TraceChurnWait{}                                     = 26
-traceNum TracePromoteWarmAborted{}                            = 27
-traceNum TraceDemoteLocalAsynchronous{}                       = 28
-traceNum TraceBigLedgerPeersRequest{}                         = 29
-traceNum TraceBigLedgerPeersResults{}                         = 30
-traceNum TraceBigLedgerPeersFailure{}                         = 31
-traceNum TraceForgetBigLedgerPeers{}                          = 32
-traceNum TracePromoteColdBigLedgerPeers{}                     = 33
-traceNum TracePromoteColdBigLedgerPeerFailed{}                = 34
-traceNum TracePromoteColdBigLedgerPeerDone{}                  = 35
-traceNum TracePromoteWarmBigLedgerPeers{}                     = 36
-traceNum TracePromoteWarmBigLedgerPeerFailed{}                = 37
-traceNum TracePromoteWarmBigLedgerPeerDone{}                  = 38
-traceNum TracePromoteWarmBigLedgerPeerAborted{}               = 39
-traceNum TraceDemoteWarmBigLedgerPeers{}                      = 40
-traceNum TraceDemoteWarmBigLedgerPeerFailed{}                 = 41
-traceNum TraceDemoteWarmBigLedgerPeerDone{}                   = 42
-traceNum TraceDemoteHotBigLedgerPeers{}                       = 43
-traceNum TraceDemoteHotBigLedgerPeerFailed{}                  = 44
-traceNum TraceDemoteHotBigLedgerPeerDone{}                    = 45
-traceNum TracePickInboundPeers{}                              = 46
-traceNum TraceDemoteBigLedgerPeersAsynchronous{}              = 47
-traceNum (ExtraTrace Cardano.TraceLedgerStateJudgementChanged{})
-                                                              = 48
-traceNum TraceOnlyBootstrapPeers{}                            = 49
-traceNum TraceBootstrapPeersFlagChangedWhilstInSensitiveState = 50
-traceNum (ExtraTrace Cardano.TraceUseBootstrapPeersChanged {})= 51
-traceNum TraceOutboundGovernorCriticalFailure {}              = 52
-traceNum TraceDebugState {}                                   = 53
-traceNum TraceChurnAction {}                                  = 54
-traceNum TraceChurnTimeout {}                                 = 55
-traceNum TraceVerifyPeerSnapshot {}                           = 56
+traceNum TraceLocalRootPeersChanged{}                            = 00
+traceNum TraceTargetsChanged{}                                   = 01
+traceNum TracePublicRootsRequest{}                               = 02
+traceNum TracePublicRootsResults{}                               = 03
+traceNum TracePublicRootsFailure{}                               = 04
+traceNum TracePeerShareRequests{}                                = 05
+traceNum TracePeerShareResults{}                                 = 06
+traceNum TracePeerShareResultsFiltered{}                         = 07
+traceNum TraceForgetColdPeers{}                                  = 08
+traceNum TracePromoteColdPeers{}                                 = 09
+traceNum TracePromoteColdLocalPeers{}                            = 10
+traceNum TracePromoteColdFailed{}                                = 11
+traceNum TracePromoteColdDone{}                                  = 12
+traceNum TracePromoteWarmPeers{}                                 = 13
+traceNum TracePromoteWarmLocalPeers{}                            = 14
+traceNum TracePromoteWarmFailed{}                                = 15
+traceNum TracePromoteWarmDone{}                                  = 16
+traceNum TraceDemoteWarmPeers{}                                  = 17
+traceNum TraceDemoteWarmFailed{}                                 = 18
+traceNum TraceDemoteWarmDone{}                                   = 19
+traceNum TraceDemoteHotPeers{}                                   = 20
+traceNum TraceDemoteLocalHotPeers{}                              = 21
+traceNum TraceDemoteHotFailed{}                                  = 22
+traceNum TraceDemoteHotDone{}                                    = 23
+traceNum TraceDemoteAsynchronous{}                               = 24
+traceNum TraceGovernorWakeup{}                                   = 25
+traceNum TraceChurnWait{}                                        = 26
+traceNum TracePromoteWarmAborted{}                               = 27
+traceNum TraceDemoteLocalAsynchronous{}                          = 28
+traceNum TraceBigLedgerPeersRequest{}                            = 29
+traceNum TraceBigLedgerPeersResults{}                            = 30
+traceNum TraceBigLedgerPeersFailure{}                            = 31
+traceNum TraceForgetBigLedgerPeers{}                             = 32
+traceNum TracePromoteColdBigLedgerPeers{}                        = 33
+traceNum TracePromoteColdBigLedgerPeerFailed{}                   = 34
+traceNum TracePromoteColdBigLedgerPeerDone{}                     = 35
+traceNum TracePromoteWarmBigLedgerPeers{}                        = 36
+traceNum TracePromoteWarmBigLedgerPeerFailed{}                   = 37
+traceNum TracePromoteWarmBigLedgerPeerDone{}                     = 38
+traceNum TracePromoteWarmBigLedgerPeerAborted{}                  = 39
+traceNum TraceDemoteWarmBigLedgerPeers{}                         = 40
+traceNum TraceDemoteWarmBigLedgerPeerFailed{}                    = 41
+traceNum TraceDemoteWarmBigLedgerPeerDone{}                      = 42
+traceNum TraceDemoteHotBigLedgerPeers{}                          = 43
+traceNum TraceDemoteHotBigLedgerPeerFailed{}                     = 44
+traceNum TraceDemoteHotBigLedgerPeerDone{}                       = 45
+traceNum TracePickInboundPeers{}                                 = 46
+traceNum TraceDemoteBigLedgerPeersAsynchronous{}                 = 47
+traceNum (ExtraTrace Cardano.TraceLedgerStateJudgementChanged{}) = 48
+traceNum TraceOnlyBootstrapPeers{}                               = 49
+traceNum TraceBootstrapPeersFlagChangedWhilstInSensitiveState    = 50
+traceNum (ExtraTrace Cardano.TraceUseBootstrapPeersChanged {})   = 51
+traceNum TraceOutboundGovernorCriticalFailure {}                 = 52
+traceNum TraceDebugState {}                                      = 53
+traceNum TraceChurnAction {}                                     = 54
+traceNum TraceChurnTimeout {}                                    = 55
+traceNum TraceVerifyPeerSnapshot {}                              = 56
+traceNum TracePublicPeerSelectionState {}                        = 57
 
 allTraceNames :: Map Int String
 allTraceNames =
@@ -1005,36 +1005,38 @@ allTraceNames =
    , (24, "TraceDemoteAsynchronous")
    , (25, "TraceGovernorWakeup")
    , (26, "TraceChurnWait")
-   , (27, "TracePromoteWarmAborted")
-   , (28, "TraceDemoteAsynchronous")
-   , (29, "TraceBigLedgerPeersRequest")
-   , (30, "TraceBigLedgerPeersResults")
-   , (31, "TraceBigLedgerPeersFailure")
-   , (32, "TraceForgetBigLedgerPeers")
-   , (33, "TracePromoteColdBigLedgerPeers")
-   , (34, "TracePromoteColdBigLedgerPeerFailed")
-   , (35, "TracePromoteColdBigLedgerPeerDone")
-   , (36, "TracePromoteWarmBigLedgerPeers")
-   , (37, "TracePromoteWarmBigLedgerPeerFailed")
-   , (38, "TracePromoteWarmBigLedgerPeerDone")
-   , (39, "TracePromoteWarmBigLedgerPeerAborted")
-   , (40, "TraceDemoteWarmBigLedgerPeers")
-   , (41, "TraceDemoteWarmBigLedgerPeerFailed")
-   , (42, "TraceDemoteWarmBigLedgerPeerDone")
-   , (43, "TraceDemoteHotBigLedgerPeers")
-   , (44, "TraceDemoteHotBigLedgerPeerFailed")
-   , (45, "TraceDemoteHotBigLedgerPeerDone")
-   , (46, "TracePickInboundPeers")
-   , (47, "TraceDemoteBigLedgerPeersAsynchronous")
-   , (48, "TraceLedgerStateJudgementChanged")
-   , (49, "TraceOnlyBootstrapPeers")
-   , (50, "TraceBootstrapPeersFlagChangedWhilstInSensitiveState")
-   , (51, "TraceUseBootstrapPeersChanged")
-   , (52, "TraceOutboundGovernorCriticalFailure")
-   , (53, "TraceDebugState")
-   , (54, "TraceChurnAction")
-   , (55, "TraceChurnTimeout")
-   , (56, "TraceVerifyPeerSnapshot")
+   , (27, "TraceChurnMode")
+   , (28, "TracePromoteWarmAborted")
+   , (29, "TraceDemoteAsynchronous")
+   , (30, "TraceBigLedgerPeersRequest")
+   , (31, "TraceBigLedgerPeersResults")
+   , (32, "TraceBigLedgerPeersFailure")
+   , (33, "TraceForgetBigLedgerPeers")
+   , (34, "TracePromoteColdBigLedgerPeers")
+   , (35, "TracePromoteColdBigLedgerPeerFailed")
+   , (36, "TracePromoteColdBigLedgerPeerDone")
+   , (37, "TracePromoteWarmBigLedgerPeers")
+   , (38, "TracePromoteWarmBigLedgerPeerFailed")
+   , (39, "TracePromoteWarmBigLedgerPeerDone")
+   , (40, "TracePromoteWarmBigLedgerPeerAborted")
+   , (41, "TraceDemoteWarmBigLedgerPeers")
+   , (42, "TraceDemoteWarmBigLedgerPeerFailed")
+   , (43, "TraceDemoteWarmBigLedgerPeerDone")
+   , (44, "TraceDemoteHotBigLedgerPeers")
+   , (45, "TraceDemoteHotBigLedgerPeerFailed")
+   , (46, "TraceDemoteHotBigLedgerPeerDone")
+   , (47, "TracePickInboundPeers")
+   , (48, "TraceDemoteBigLedgerPeersAsynchronous")
+   , (49, "TraceLedgerStateJudgementChanged")
+   , (50, "TraceOnlyBootstrapPeers")
+   , (51, "TraceBootstrapPeersFlagChangedWhilstInSensitiveState")
+   , (52, "TraceUseBootstrapPeersChanged")
+   , (53, "TraceOutboundGovernorCriticalFailure")
+   , (54, "TraceDebugState")
+   , (55, "TraceChurnAction")
+   , (56, "TraceChurnTimeout")
+   , (57, "TraceVerifyPeerSnapshot")
+   , (58, "TracePublicPeerSelectionState")
    ]
 
 
@@ -4288,7 +4290,7 @@ _governorFindingPublicRoots :: Int
 _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrapPeers
                             readLedgerStateJudgement peerSharing olocVar consensusMode = do
     countersVar <- newTVarIO (emptyPeerSelectionCounters Cardano.ExtraSizes.empty)
-    publicStateVar <- makePublicPeerSelectionStateVar
+    capturePublicStateVar <- Governor.newCapturePublicStateVar
     debugStateVar <- newTVarIO $
       emptyPeerSelectionState (mkStdGen 42)
                               (Cardano.ExtraState.empty consensusMode (NumberOfBigLedgerPeers 0))
@@ -4296,7 +4298,7 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
     dnsSemaphore <- newLedgerAndPublicRootDNSSemaphore
     let interfaces = PeerSelectionInterfaces {
             countersVar,
-            publicStateVar,
+            capturePublicStateVar,
             debugStateVar,
             readUseLedgerPeers = return DontUseLedgerPeers
           }

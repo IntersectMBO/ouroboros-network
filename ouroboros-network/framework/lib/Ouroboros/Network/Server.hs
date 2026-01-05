@@ -67,13 +67,13 @@ import Ouroboros.Network.Snocket
 
 -- | Server static configuration.
 --
-data Arguments muxMode socket peerAddr initiatorCtx responderCtx handle handlerTrace handleError versionNumber versionData bytes m a b x =
+data Arguments muxMode socket peerAddr initiatorCtx responderCtx networkState handle handlerTrace handleError versionNumber versionData bytes m a b x =
     Arguments {
       sockets               :: NonEmpty socket,
       snocket               :: Snocket m socket peerAddr,
       tracer                :: Tracer m (Trace peerAddr),
       connectionLimits      :: AcceptedConnectionsLimit,
-      inboundGovernorArgs   :: InboundGovernor.Arguments muxMode handlerTrace socket peerAddr initiatorCtx responderCtx handle handleError versionNumber versionData bytes m a b x
+      inboundGovernorArgs   :: InboundGovernor.Arguments muxMode handlerTrace socket peerAddr initiatorCtx responderCtx networkState handle handleError versionNumber versionData bytes m a b x
     }
 
 -- | Server pauses accepting connections after an 'CONNABORTED' error.
@@ -96,7 +96,7 @@ server_CONNABORTED_DELAY = 0.5
 -- The first one is used in data diffusion for /Node-To-Node protocol/, while the
 -- other is useful for running a server for the /Node-To-Client protocol/.
 --
-with :: forall muxMode socket peerAddr initiatorCtx responderCtx handle handlerTrace handleError versionNumber versionData bytes m a b x.
+with :: forall muxMode socket peerAddr initiatorCtx responderCtx networkState handle handlerTrace handleError versionNumber versionData bytes m a b x.
        ( Alternative (STM m)
        , MonadAsync    m
        , MonadDelay    m
@@ -114,11 +114,11 @@ with :: forall muxMode socket peerAddr initiatorCtx responderCtx handle handlerT
        , MonadFork m
        , MonadFix m
        )
-    => Arguments muxMode socket peerAddr initiatorCtx responderCtx handle handlerTrace
+    => Arguments muxMode socket peerAddr initiatorCtx responderCtx networkState handle handlerTrace
                  handleError versionNumber versionData bytes m a b x
     -- ^ record which holds all server arguments
     -> (   Async m Void
-        -> m (InboundGovernor.PublicState peerAddr versionData)
+        -> STM m (InboundGovernor.PublicState peerAddr versionData)
         -> ConnectionManager
               muxMode socket peerAddr handle handleError m
         -> m x)
@@ -141,10 +141,10 @@ with Arguments {
       let sockets = NonEmpty.toList socks
       localAddresses <- traverse (getLocalAddr snocket) sockets
       InboundGovernor.with inboundGovernorArgs
-        \inboundGovernorThread readPublicInboundState connectionManager ->
+        \inboundGovernorThread readInboundGovState connectionManager ->
           withAsync do
             labelThisThread "Server2 (ouroboros-network-framework)"
-            k inboundGovernorThread readPublicInboundState connectionManager
+            k inboundGovernorThread readInboundGovState connectionManager
           \actionThread -> do
             traceWith tracer (TrServerStarted localAddresses)
             let acceptLoops :: [m Void]

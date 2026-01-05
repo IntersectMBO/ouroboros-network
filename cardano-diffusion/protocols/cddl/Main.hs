@@ -121,6 +121,8 @@ import Ouroboros.Network.Mock.ChainGenerators ()
 import Ouroboros.Network.Mock.ConcreteBlock qualified as Concrete (Block)
 import Test.Data.CDDL (Any (..))
 
+import Ouroboros.Network.RemoteAddress.Codec (decodeRemoteAddress,
+           encodeRemoteAddress)
 
 import Test.QuickCheck hiding (Result (..))
 import Test.QuickCheck.Instances.ByteString ()

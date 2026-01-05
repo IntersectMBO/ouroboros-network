@@ -8,6 +8,7 @@ module Ouroboros.Network.ConnectionManager.ConnMap
   , LocalAddr (..)
   , toList
   , toMap
+  , unknownSet
   , empty
   , insert
   , insertUnknownLocalAddr
@@ -25,6 +26,7 @@ import Prelude hiding (lookup)
 import Data.Foldable qualified as Foldable
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
+import Data.Set (Set)
 import System.Random (RandomGen, uniformR)
 
 import Ouroboros.Network.ConnectionId
@@ -83,6 +85,12 @@ toMap =
       )
       []
   . getConnMap
+
+
+unknownSet :: Ord peerAddr => ConnMap peerAddr a -> Set peerAddr
+unknownSet = Map.keysSet
+           . Map.filter (UnknownLocalAddr `Map.member`)
+           . getConnMap
 
 
 empty :: ConnMap peerAddr a

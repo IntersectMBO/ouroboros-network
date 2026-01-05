@@ -91,7 +91,7 @@ inactionTimeout :: DiffTime
 inactionTimeout = 31.415927
 
 
-data Arguments muxMode handlerTrace socket peerAddr initiatorCtx responderCtx
+data Arguments muxMode handlerTrace socket peerAddr initiatorCtx responderCtx networkState
                handle handleError versionNumber versionData bytes m a b x =
   Arguments {
       transitionTracer   :: Tracer m (RemoteTransitionTrace peerAddr),
@@ -102,7 +102,7 @@ data Arguments muxMode handlerTrace socket peerAddr initiatorCtx responderCtx
       -- ^ debug inbound governor tracer
       connectionDataFlow :: versionData -> DataFlow,
       -- ^ connection data flow
-      infoChannel        :: InboundGovernorInfoChannel muxMode initiatorCtx peerAddr versionData ByteString m a b,
+      infoChannel        :: InboundGovernorInfoChannel muxMode initiatorCtx networkState peerAddr versionData ByteString m a b,
       -- ^ 'InformationChannel' which passes 'NewConnectionInfo' for outbound
       -- connections from connection manager to the inbound governor.
       idleTimeout        :: Maybe DiffTime,
@@ -116,12 +116,13 @@ data Arguments muxMode handlerTrace socket peerAddr initiatorCtx responderCtx
       mkConnectionHandler
         :: (   StrictTVar m (StrictMaybe ResponderCounters)
             -> Tracer m (Mux.WithBearer (ConnectionId peerAddr) Mux.Trace))
-        -> ConnectionHandler muxMode handlerTrace socket peerAddr handle handleError versionNumber versionData m
+        -> ConnectionHandler muxMode handlerTrace socket peerAddr handle handleError versionNumber versionData m,
       -- ^ Connection handler builder, which injects a special tracer
       -- created here and routed into the muxer via the connection manager.
       -- The purpose is to inform the IG loop
       -- of miniprotocol responder activity such that proper and efficient
       -- peer cold/warm/hot transitions can be tracked.
+      readNetworkState   :: m networkState
     }
 
 
@@ -140,7 +141,7 @@ data Arguments muxMode handlerTrace socket peerAddr initiatorCtx responderCtx
 -- The first one is used in data diffusion for /Node-To-Node protocol/, while the
 -- other is useful for running a server for the /Node-To-Client protocol/.
 --
-with :: forall (muxMode :: Mux.Mode) socket peerAddr initiatorCtx responderCtx
+with :: forall (muxMode :: Mux.Mode) socket peerAddr initiatorCtx responderCtx networkState
                handle handlerTrace handleError versionData versionNumber bytes m a b x.
         ( Alternative (STM m)
         , MonadAsync       m
@@ -158,10 +159,10 @@ with :: forall (muxMode :: Mux.Mode) socket peerAddr initiatorCtx responderCtx
         , MonadDelay m
         , Show peerAddr
         )
-     => Arguments muxMode handlerTrace socket peerAddr initiatorCtx responderCtx
+     => Arguments muxMode handlerTrace socket peerAddr initiatorCtx responderCtx networkState
                   handle handleError versionNumber versionData bytes m a b x
      -> (   Async m Void
-         -> m (PublicState peerAddr versionData)
+         -> STM m (PublicState peerAddr versionData)
          -> ConnectionManager muxMode socket peerAddr handle handleError m
          -> m x)
      -> m x
@@ -174,10 +175,12 @@ with
       idleTimeout,
       infoChannel,
       withConnectionManager,
-      mkConnectionHandler
+      mkConnectionHandler,
+      readNetworkState
     }
     k
     = do
+    -- TODO: avoid a `TVar`.
     stateVar <- newTVarIO emptyState
     labelTVarIO stateVar "inbound-governor-state-var"
     active   <- newTVarIO True -- ^ inbound governor status: True = Active
@@ -199,23 +202,15 @@ with
            -- we drain it here just in case one last time.
            _ <- atomically $ InfoChannel.readMessages infoChannel
            handleError stateVar e)
-      \thread ->
-        k thread (mkPublicState <$> readTVarIO stateVar) connectionManager
+        (  \thread ->
+             k thread (mkPublicState <$> readTVar stateVar) connectionManager)
   where
-    emptyState :: State muxMode initiatorCtx peerAddr versionData m a b
-    emptyState = State {
-        connections       = Map.empty,
-        matureDuplexPeers = Map.empty,
-        freshDuplexPeers  = OrdPSQ.empty,
-        countersCache     = mempty
-      }
-
     -- Trace final transition mostly for testing purposes.
     --
     -- NOTE: `inboundGovernorLoop` doesn't throw synchronous exceptions, this is
     -- just need to handle asynchronous exceptions.
     handleError
-      :: StrictTVar m (State muxMode initiatorCtx peerAddr versionData m a b)
+      :: StrictTVar m (State muxMode initiatorCtx networkState peerAddr versionData m a b)
       -> SomeException
       -> m Void
     handleError var e = do
@@ -234,7 +229,7 @@ with
     -- process multipe events from the information channel
     inboundGovernorStep
       :: ConnectionManager muxMode socket peerAddr handle handleError m
-      -> StrictTVar m (State muxMode initiatorCtx peerAddr versionData m a b)
+      -> StrictTVar m (State muxMode initiatorCtx networkState peerAddr versionData m a b)
       -> m ()
     inboundGovernorStep connectionManager stateVar = do
       time <- getMonotonicTime
@@ -319,7 +314,7 @@ with
                         <-
                         foldM
                           (\acc mpd@MiniProtocolData { mpdMiniProtocol } ->
-                            runResponder csMux mpd >>= \case
+                            runResponder csMux readNetworkState mpd >>= \case
                               -- synchronous exceptions when starting
                               -- a mini-protocol are non-recoverable; we
                               -- close the connection and allow the server
@@ -424,7 +419,7 @@ with
                 return Nothing
 
               Right _ ->
-                runResponder tMux mpd >>= \case
+                runResponder tMux readNetworkState mpd >>= \case
                   Right completionAction -> do
                     traceWith tracer (TrResponderRestarted tConnId num)
                     let state' = updateMiniProtocol tConnId num completionAction state
@@ -593,9 +588,9 @@ with
 --
 inboundGovernorMuxTracer
   :: (MonadSTM m, Ord peerAddr)
-  => InboundGovernorInfoChannel muxMode initiatorCtx peerAddr versionData ByteString m a b
+  => InboundGovernorInfoChannel muxMode initiatorCtx networkState peerAddr versionData ByteString m a b
   -> (versionData -> DataFlow)
-  -> StrictTVar m (State muxMode initiatorCtx peerAddr versionData m a b)
+  -> StrictTVar m (State muxMode initiatorCtx networkState peerAddr versionData m a b)
   -> StrictTVar m Bool
   -> StrictTVar m (StrictMaybe ResponderCounters)
   -> Tracer m (Mux.WithBearer (ConnectionId peerAddr) Mux.Trace)
@@ -723,7 +718,7 @@ inboundGovernorMuxTracer infoChannel connectionDataFlow stateVar activeVar count
 -- @'HasResponder' mode ~ True@ is used to rule out
 -- 'InitiatorProtocolOnly' case.
 --
-runResponder :: forall (mode :: Mux.Mode) initiatorCtx peerAddr m a b.
+runResponder :: forall (mode :: Mux.Mode) initiatorCtx networkState peerAddr m a b.
                  ( Alternative (STM m)
                  , HasResponder mode ~ True
                  , MonadAsync       m
@@ -733,9 +728,10 @@ runResponder :: forall (mode :: Mux.Mode) initiatorCtx peerAddr m a b.
                  , MonadThrow  (STM m)
                  )
               => Mux.Mux mode m
-              -> MiniProtocolData mode initiatorCtx peerAddr m a b
+              -> m networkState
+              -> MiniProtocolData mode initiatorCtx networkState peerAddr m a b
               -> m (Either SomeException (STM m (Either SomeException b)))
-runResponder mux
+runResponder mux readNetworkState
              MiniProtocolData {
                mpdMiniProtocol     = miniProtocol,
                mpdResponderContext = responderContext
@@ -751,6 +747,13 @@ runResponder mux
             Mux.ResponderDirectionOnly
             (miniProtocolStart miniProtocol)
             (runMiniProtocolCb responder responderContext)
+
+        ResponderProtocolOnlyWithState responder ->
+          Mux.runMiniProtocol
+            mux (miniProtocolNum miniProtocol)
+            Mux.ResponderDirectionOnly
+            (miniProtocolStart miniProtocol)
+            (runMiniProtocolCb responder (readNetworkState, responderContext))
 
         InitiatorAndResponderProtocol _ responder ->
           Mux.runMiniProtocol
@@ -782,8 +785,8 @@ type RemoteTransitionTrace peerAddr = TransitionTrace' peerAddr (Maybe RemoteSt)
 
 mkRemoteTransitionTrace :: Ord peerAddr
                         => ConnectionId peerAddr
-                        -> State muxMode initiatorCtx peerAddr versionData m a b
-                        -> State muxMode initiatorCtx peerAddr versionData m a b
+                        -> State muxMode initiatorCtx networkState peerAddr versionData m a b
+                        -> State muxMode initiatorCtx networkState peerAddr versionData m a b
                         -> RemoteTransitionTrace peerAddr
 mkRemoteTransitionTrace connId fromState toState =
     TransitionTrace
@@ -803,8 +806,8 @@ mkRemoteTransitionTrace connId fromState toState =
 -- * /Producer:/ connection manger for duplex outbound connections.
 -- * /Consumer:/ inbound governor.
 --
-type InboundGovernorInfoChannel (muxMode :: Mux.Mode) initiatorCtx peerAddr versionData bytes m a b =
-    InformationChannel (Event (muxMode :: Mux.Mode) (Handle muxMode initiatorCtx (ResponderContext peerAddr) versionData bytes m a b) initiatorCtx peerAddr versionData m a b) m
+type InboundGovernorInfoChannel (muxMode :: Mux.Mode) initiatorCtx networkState peerAddr versionData bytes m a b =
+    InformationChannel (Event (muxMode :: Mux.Mode) (Handle muxMode initiatorCtx (ResponderContext peerAddr) networkState versionData bytes m a b) initiatorCtx networkState peerAddr versionData m a b) m
 
 
 -- | Announcement message for a new connection.
@@ -835,7 +838,7 @@ instance Show peerAddr
 
 -- | Edge triggered events to which the /inbound protocol governor/ reacts.
 --
-data Event (muxMode :: Mux.Mode) handle initiatorCtx peerAddr versionData m a b
+data Event (muxMode :: Mux.Mode) handle initiatorCtx networkState peerAddr versionData m a b
     -- | A request to start mini-protocol bundle, either from the server or from
     -- connection manager after a duplex connection was negotiated.
     --
@@ -847,7 +850,7 @@ data Event (muxMode :: Mux.Mode) handle initiatorCtx peerAddr versionData m a b
 
     -- | A mini-protocol terminated either cleanly or abruptly.
     --
-    | MiniProtocolTerminated !(Terminated muxMode initiatorCtx peerAddr m a b)
+    | MiniProtocolTerminated !(Terminated muxMode initiatorCtx networkState peerAddr m a b)
 
     -- | Transition from 'RemoteEstablished' to 'RemoteIdle'.
     --
@@ -886,20 +889,20 @@ data Event (muxMode :: Mux.Mode) handle initiatorCtx peerAddr versionData m a b
 -- | A signal which returns an 'Event'.  Signals are combined together and
 -- passed used to fold the current state map.
 --
-type EventSignal (muxMode :: Mux.Mode) handle initiatorCtx peerAddr versionData m a b =
+type EventSignal (muxMode :: Mux.Mode) handle initiatorCtx networkState peerAddr versionData m a b =
         ConnectionId peerAddr
-     -> ConnectionState muxMode initiatorCtx peerAddr versionData m a b
-     -> FirstToFinish (STM m) (Event muxMode handle initiatorCtx peerAddr versionData m a b)
+     -> ConnectionState muxMode initiatorCtx networkState peerAddr versionData m a b
+     -> FirstToFinish (STM m) (Event muxMode handle initiatorCtx networkState peerAddr versionData m a b)
 
 
 -- | When a mini-protocol terminates we take 'Terminated' out of 'ConnectionState
 -- and pass it to the main loop.  This is just enough to decide if we need to
 -- restart a mini-protocol and to do the restart.
 --
-data Terminated muxMode initiatorCtx peerAddr m a b = Terminated {
+data Terminated muxMode initiatorCtx networkState peerAddr m a b = Terminated {
     tConnId           :: !(ConnectionId peerAddr),
     tMux              :: !(Mux.Mux muxMode m),
-    tMiniProtocolData :: !(MiniProtocolData muxMode initiatorCtx peerAddr m a b),
+    tMiniProtocolData :: !(MiniProtocolData muxMode initiatorCtx networkState peerAddr m a b),
     tDataFlow         :: !DataFlow,
     tResult           :: STM m (Either SomeException b) -- !(Either SomeException b)
   }
@@ -908,7 +911,7 @@ data Terminated muxMode initiatorCtx peerAddr m a b = Terminated {
 -- | First peer for which the 'RemoteIdle' timeout expires.
 --
 firstPeerCommitRemote :: (Alternative (STM m), MonadSTM m)
-                      => EventSignal muxMode handle initiatorCtx peerAddr versionData m a b
+                      => EventSignal muxMode handle initiatorCtx networkState peerAddr versionData m a b
 firstPeerCommitRemote
     connId ConnectionState { csRemoteState }
     = case csRemoteState of
@@ -950,8 +953,8 @@ data Trace peerAddr
   deriving Show
 
 
-data Debug peerAddr versionData = forall muxMode initiatorCtx m a b.
-    Debug (State muxMode initiatorCtx peerAddr versionData m a b)
+data Debug peerAddr versionData = forall muxMode initiatorCtx networkState m a b.
+    Debug (State muxMode initiatorCtx networkState peerAddr versionData m a b)
 
 data LoopDecision state peer = OnlyStateChange         !state
                              | StateWithPeerTransition !state !peer

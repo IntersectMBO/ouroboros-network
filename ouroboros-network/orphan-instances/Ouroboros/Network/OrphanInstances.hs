@@ -61,8 +61,8 @@ import Ouroboros.Network.ConnectionId (ConnectionId (..))
 import Ouroboros.Network.ConnectionManager.Core as ConnMgr
 import Ouroboros.Network.ConnectionManager.State (ConnMap (..),
            ConnStateId (..), LocalAddr (..))
-import Ouroboros.Network.ConnectionManager.Types (AbstractState (..),
-           ConnectionManagerCounters (..), MaybeUnknown (..),
+import Ouroboros.Network.ConnectionManager.Types
+           (ConnectionManagerCounters (..), MaybeUnknown (..),
            OperationResult (..))
 import Ouroboros.Network.ConnectionManager.Types qualified as ConnMgr
 import Ouroboros.Network.DeltaQ (GSV (GSV),
@@ -349,26 +349,6 @@ instance Show vNumber => ToJSON (HandshakeException vNumber) where
     HandshakeProtocolLimit plf -> kindObject "HandshakeProtocolLimit" [ "handshakeProtocolLimit" .= toJSON plf ]
     HandshakeProtocolError err -> kindObject "HandshakeProtocolError" [ "reason" .= show err ]
 
-instance ToJSON AbstractState where
-  toJSON = \case
-    UnknownConnectionSt          -> kindObject "UnknownConnectionSt" []
-    ReservedOutboundSt           -> kindObject "ReservedOutboundSt" []
-    UnnegotiatedSt provenance    -> kindObject "UnnegotiatedSt"
-      [ "provenance" .= String (pack . show $ provenance) ]
-    InboundIdleSt dataFlow       -> kindObject "InboundIdleSt"
-      [ "dataFlow" .= String (pack . show $ dataFlow) ]
-    InboundSt dataFlow           -> kindObject "InboundSt"
-      [ "dataFlow" .= String (pack . show $ dataFlow) ]
-    OutboundUniSt                -> kindObject "OutboundUniSt" []
-    OutboundDupSt timeoutExpired -> kindObject "OutboundDupSt"
-      [ "timeoutState" .= String (pack . show $ timeoutExpired) ]
-    OutboundIdleSt dataFlow      -> kindObject "OutboundIdleSt"
-      [ "dataFlow" .= String (pack . show $ dataFlow) ]
-    DuplexSt                     -> kindObject "DuplexSt" []
-    WaitRemoteIdleSt             -> kindObject "WaitRemoteIdleSt" []
-    TerminatingSt                -> kindObject "TerminatingSt" []
-    TerminatedSt                 -> kindObject "TerminatedSt" []
-
 instance ToJSON KnownPeerInfo where
   toJSON (KnownPeerInfo
             nKnownPeerFailCount
@@ -458,12 +438,6 @@ instance ToJSON PeerGSV where
 instance ToJSON LocalAddress where
   toJSON (LocalAddress path) = String (pack path)
 
-instance ToJSON peerAddr => ToJSON (ConnectionId peerAddr) where
-  toJSON ConnectionId { localAddress, remoteAddress } = object
-    [ "localAddress"  .= toJSON localAddress
-    , "remoteAddress" .= toJSON remoteAddress
-    ]
-
 instance ToJSON ConnectionManagerCounters where
   toJSON ConnectionManagerCounters
     { fullDuplexConns
@@ -484,8 +458,6 @@ instance ToJSONKey RelayAccessPoint where
 instance ToJSONKey RemoteAddress where
 
 instance ToJSONKey LocalAddress where
-
-instance (ToJSON addr, ToJSONKey addr) => ToJSONKey (ConnectionId addr) where
 
 instance ToJSON PortNumber where
   toJSON = toJSON . fromIntegral @_ @Int
@@ -851,6 +823,13 @@ instance ( ToJSON extraDebugState
     object [ "kind" .= String "TargetsChanged"
            , "previous" .= pst
            , "current" .= pst'
+           ]
+  toJSON (TracePublicPeerSelectionState (PublicPeerSelectionState atsps kps eps aps)) =
+    object [ "kind" .= String "PublicPeerSelectionState"
+           , "availableToShare" .= atsps
+           , "knownPeers" .= kps
+           , "establishedPeers" .= eps
+           , "activePeers" .= aps
            ]
   toJSON (TracePublicRootsRequest tRootPeers nRootPeers) =
     object [ "kind" .= String "PublicRootsRequest"

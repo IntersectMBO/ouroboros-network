@@ -113,10 +113,10 @@ sduHandshakeTimeout = 10
 -- * 'HandlerError'
 --                - the multiplexer thrown 'MuxError'.
 --
-data Handle (muxMode :: Mx.Mode) initiatorCtx responderCtx versionData bytes m a b =
+data Handle (muxMode :: Mx.Mode) initiatorCtx responderCtx networkState versionData bytes m a b =
     Handle {
         hMux            :: !(Mux muxMode m),
-        hMuxBundle      :: !(OuroborosBundle muxMode initiatorCtx responderCtx bytes m a b),
+        hMuxBundle      :: !(OuroborosBundle muxMode initiatorCtx responderCtx networkState bytes m a b),
         hControlMessage :: !(TemperatureBundle (StrictTVar m ControlMessage)),
         hVersionData    :: !versionData
       }
@@ -140,20 +140,20 @@ data MkMuxConnectionHandler (muxMode :: Mx.Mode) socket initiatorCtx responderCt
 
 -- | 'Handle' used by `node-to-node` P2P connections.
 --
-type HandleWithExpandedCtx muxMode peerAddr versionData bytes m a b =
+type HandleWithExpandedCtx muxMode networkState peerAddr versionData bytes m a b =
      Handle    muxMode (ExpandedInitiatorContext peerAddr m)
                        (ResponderContext peerAddr)
-                       versionData bytes m a b
+                       networkState versionData bytes m a b
 
 -- | 'Handle' used by:
 --
 -- * `node-to-node` non P2P mode;
 -- * `node-to-client` connections.
 --
-type HandleWithMinimalCtx muxMode peerAddr versionData bytes m a b =
+type HandleWithMinimalCtx muxMode networkState peerAddr versionData bytes m a b =
      Handle       muxMode (MinimalInitiatorContext peerAddr)
                           (ResponderContext peerAddr)
-                          versionData bytes m a b
+                          networkState versionData bytes m a b
 
 -- | A connection handler error.
 --
@@ -200,12 +200,12 @@ classifyHandlerError (HandlerError _) =
 
 -- | Type of 'ConnectionHandler' implemented in this module.
 --
-type MuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr versionNumber versionData bytes m a b =
+type MuxConnectionHandler muxMode socket initiatorCtx responderCtx networkState peerAddr versionNumber versionData bytes m a b =
     ConnectionHandler muxMode
                       (ConnectionHandlerTrace versionNumber versionData)
                       socket
                       peerAddr
-                      (Handle muxMode initiatorCtx responderCtx versionData bytes m a b)
+                      (Handle muxMode initiatorCtx responderCtx networkState versionData bytes m a b)
                       (HandlerError versionNumber)
                       versionNumber
                       versionData
@@ -213,17 +213,17 @@ type MuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr vers
 
 -- | Type alias for 'ConnectionManager' using 'Handle'.
 --
-type MuxConnectionManager muxMode socket initiatorCtx responderCtx peerAddr versionData versionNumber bytes m a b =
+type MuxConnectionManager muxMode socket initiatorCtx responderCtx networkState peerAddr versionData versionNumber bytes m a b =
     ConnectionManager muxMode socket peerAddr
-                      (Handle muxMode initiatorCtx responderCtx versionData bytes m a b)
+                      (Handle muxMode initiatorCtx responderCtx networkState versionData bytes m a b)
                       (HandlerError versionNumber)
                       m
 
 -- | Type alias for 'ConnectionManager' which is using expanded context.
 --
-type ConnectionManagerWithExpandedCtx muxMode socket peerAddr versionData versionNumber bytes m a b =
+type ConnectionManagerWithExpandedCtx muxMode socket networkState peerAddr versionData versionNumber bytes m a b =
     ConnectionManager muxMode socket peerAddr
-                      (HandleWithExpandedCtx muxMode peerAddr versionData bytes m a b)
+                      (HandleWithExpandedCtx muxMode networkState peerAddr versionData bytes m a b)
                       (HandlerError versionNumber)
                       m
 
@@ -239,7 +239,7 @@ type ConnectionManagerWithExpandedCtx muxMode socket peerAddr versionData versio
 -- efficiently informs the IG loop of miniprotocol activity.
 --
 makeConnectionHandler
-    :: forall initiatorCtx responderCtx peerAddr muxMode socket versionNumber versionData m a b.
+    :: forall initiatorCtx responderCtx networkState peerAddr muxMode socket versionNumber versionData m a b.
        ( Alternative (STM m)
        , MonadAsync m
        , MonadDelay m
@@ -256,13 +256,12 @@ makeConnectionHandler
     -> ForkPolicy peerAddr
     -> HandshakeArguments (ConnectionId peerAddr) versionNumber versionData m
     -> Versions versionNumber versionData
-                (OuroborosBundle muxMode initiatorCtx responderCtx ByteString m a b)
+                (OuroborosBundle muxMode initiatorCtx responderCtx networkState ByteString m a b)
     -> (ThreadId m, RethrowPolicy)
     -- ^ 'ThreadId' and rethrow policy.  Rethrow policy might throw an async
     -- exception to that thread, when trying to terminate the process.
     -> MkMuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr versionNumber versionData ByteString m a b
-    -> MuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr
-                            versionNumber versionData ByteString m a b
+    -> MuxConnectionHandler muxMode socket initiatorCtx responderCtx networkState peerAddr versionNumber versionData ByteString m a b
 makeConnectionHandler muxTracers forkPolicy
                       handshakeArguments
                       versionedApplication
@@ -308,7 +307,7 @@ makeConnectionHandler muxTracers forkPolicy
       -> ConnectionHandlerFn (ConnectionHandlerTrace versionNumber versionData)
                              socket
                              peerAddr
-                             (Handle muxMode initiatorCtx responderCtx versionData ByteString m a b)
+                             (Handle muxMode initiatorCtx responderCtx networkState versionData ByteString m a b)
                              (HandlerError versionNumber)
                              versionNumber
                              versionData
@@ -390,7 +389,7 @@ makeConnectionHandler muxTracers forkPolicy
       -> ConnectionHandlerFn (ConnectionHandlerTrace versionNumber versionData)
                              socket
                              peerAddr
-                             (Handle muxMode initiatorCtx responderCtx versionData ByteString m a b)
+                             (Handle muxMode initiatorCtx responderCtx networkState versionData ByteString m a b)
                              (HandlerError versionNumber)
                              versionNumber
                              versionData
