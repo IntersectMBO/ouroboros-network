@@ -221,7 +221,7 @@ newtype AccPoolStakeCoded = AccPoolStakeCoded AccPoolStake
 data IsBigLedgerPeer
    = IsBigLedgerPeer
    | IsNotBigLedgerPeer
-  deriving (Eq, Show)
+  deriving Eq
 
 -- | Return ledger state information and ledger peers.
 --
