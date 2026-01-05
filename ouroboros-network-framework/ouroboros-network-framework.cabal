@@ -96,7 +96,7 @@ library
     ouroboros-network-testing,
     psqueues,
     quiet,
-    random,
+    random <1.3,
     si-timers,
     stm,
     strict-stm,
