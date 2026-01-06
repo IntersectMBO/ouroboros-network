@@ -1338,12 +1338,12 @@ with args@Arguments {
         -> ConnectionHandlerFn handlerTrace socket peerAddr handle handleError version versionData m
         -> DiffusionMode
         -> peerAddr
+        -> Provenance
         -> m (Connected peerAddr handle handleError)
-    acquireOutboundConnectionImpl stateVar stdGenVar handler diffusionMode peerAddr = do
+    acquireOutboundConnectionImpl stateVar stdGenVar handler diffusionMode peerAddr connProv = do
         let provenance = Outbound
         traceWith tracer (TrIncludeConnection provenance peerAddr)
-        (trace, mutableConnState@MutableConnState { connVar, connStateId }
-              , eHandleWedge) <- atomically $ do
+        (trace, eHandleWedge) <- atomically $ do
           state <- readTMVar stateVar
           stdGen <- stateTVar stdGenVar Random.split
           case State.lookupByRemoteAddr stdGen peerAddr state of
@@ -1353,14 +1353,12 @@ with args@Arguments {
               case connState of
                 ReservedOutboundState ->
                   return ( Just (Right (TrConnectionExists provenance peerAddr st))
-                         , mutableConnState
                          , Left (withCallStack
                                   (ConnectionExists provenance peerAddr))
                          )
 
                 UnnegotiatedState Outbound _connId _connThread -> do
                   return ( Just (Right (TrConnectionExists provenance peerAddr st))
-                         , mutableConnState
                          , Left (withCallStack
                                   (ConnectionExists provenance peerAddr))
                          )
@@ -1370,20 +1368,17 @@ with args@Arguments {
                   -- return 'There' to indicate that we need to block on
                   -- the connection state.
                   return ( Nothing
-                         , mutableConnState
-                         , Right (There connId)
+                         , Right (mutableConnState, There connId)
                          )
 
                 OutboundUniState {} -> do
                   return ( Just (Right (TrConnectionExists provenance peerAddr st))
-                         , mutableConnState
                          , Left (withCallStack
                                   (ConnectionExists provenance peerAddr))
                          )
 
                 OutboundDupState {} -> do
                   return ( Just (Right (TrConnectionExists provenance peerAddr st))
-                         , mutableConnState
                          , Left (withCallStack
                                   (ConnectionExists provenance peerAddr))
                          )
@@ -1391,13 +1386,11 @@ with args@Arguments {
                 OutboundIdleState _connId _connThread _handle _dataFlow ->
                   let tr = State.abstractState (Known connState) in
                   return ( Just (Right (TrForbiddenOperation peerAddr tr))
-                         , mutableConnState
                          , Left (withCallStack (ForbiddenOperation peerAddr tr))
                          )
 
                 InboundIdleState connId _connThread _handle Unidirectional -> do
                   return ( Just (Right (TrForbiddenConnection connId))
-                         , mutableConnState
                          , Left (withCallStack
                                   (ForbiddenConnection connId))
                          )
@@ -1412,15 +1405,13 @@ with args@Arguments {
                   return ( Just (Left (TransitionTrace
                                          connStateId
                                          (mkTransition connState connState')))
-                         , mutableConnState
-                         , Right (Here (Connected connId dataFlow handle))
+                         , Right (mutableConnState, Here (Connected connId dataFlow handle))
                          )
 
                 InboundState connId _connThread _handle Unidirectional -> do
                   -- the remote side negotiated unidirectional connection, we
                   -- cannot re-use it.
                   return ( Just (Right (TrForbiddenConnection connId))
-                         , mutableConnState
                          , Left (withCallStack
                                   (ForbiddenConnection connId))
                          )
@@ -1435,13 +1426,11 @@ with args@Arguments {
                   return ( Just (Left (TransitionTrace
                                         connStateId
                                         (mkTransition connState connState')))
-                         , mutableConnState
-                         , Right (Here (Connected connId dataFlow handle))
+                         , Right (mutableConnState, Here (Connected connId dataFlow handle))
                          )
 
                 DuplexState _connId _connThread  _handle ->
                   return ( Just (Right (TrConnectionExists provenance peerAddr st))
-                         , mutableConnState
                          , Left (withCallStack
                                   (ConnectionExists provenance peerAddr))
                          )
@@ -1458,25 +1447,33 @@ with args@Arguments {
                   retry
 
             Nothing -> do
-              let connState' = ReservedOutboundState
-              (mutableConnState@MutableConnState { connVar, connStateId }
-                :: MutableConnState peerAddr handle handleError
-                                    version m)
-                <- State.newMutableConnState peerAddr connStateIdSupply connState'
-              -- TODO: label `connVar` using 'ConnectionId'
-              labelTVar connVar ("conn-state-" ++ show peerAddr)
+              -- Only proceed if creating a new connection is allowed
+              if connProv == Inbound
+              then do
+                return ( Just (Right (TrInboundConnectionNotFound peerAddr))
+                       , Left (withCallStack
+                                (InboundConnectionNotFound peerAddr))
+                       )
+              else do
+                let connState' = ReservedOutboundState
+                (mutableConnState@MutableConnState { connVar, connStateId }
+                  :: MutableConnState peerAddr handle handleError
+                                      version m)
+                  <- State.newMutableConnState peerAddr connStateIdSupply connState'
 
-              writeTMVar stateVar
-                        (State.insertUnknownLocalAddr peerAddr mutableConnState state)
-              return ( Just (Left (TransitionTrace
-                                    connStateId
-                                    Transition {
-                                        fromState = Unknown,
-                                        toState   = Known connState'
-                                      }))
-                     , mutableConnState
-                     , Right Nowhere
-                     )
+                -- TODO: label `connVar` using 'ConnectionId'
+                labelTVar connVar ("conn-state-" ++ show peerAddr)
+
+                writeTMVar stateVar
+                          (State.insertUnknownLocalAddr peerAddr mutableConnState state)
+                return ( Just (Left (TransitionTrace
+                                      connStateId
+                                      Transition {
+                                          fromState = Unknown,
+                                          toState   = Known connState'
+                                        }))
+                       , Right (mutableConnState, Nowhere)
+                       )
 
         traverse_ (either (traceWith trTracer) (traceWith tracer)) trace
         traceCounters stateVar
@@ -1485,7 +1482,7 @@ with args@Arguments {
             throwIO e
 
           -- connection manager does not have a connection with @peerAddr@.
-          Right Nowhere -> do
+          Right (mutableConnState@MutableConnState { connVar, connStateId }, Nowhere) -> do
             (reader, writer) <- newEmptyPromiseIO
 
             (connId, connThread) <-
@@ -1719,7 +1716,7 @@ with args@Arguments {
                   Right _  -> Connected    connId dataFlow handle
                   Left err -> Disconnected connId err
 
-          Right (There connId) -> do
+          Right (MutableConnState { connVar, connStateId }, There connId) -> do
             -- We can only enter the 'There' case if there is an inbound
             -- connection, and we are about to reuse it, but we need to wait
             -- for handshake.
@@ -1811,7 +1808,7 @@ with args@Arguments {
             return connected
 
           -- Connection manager has a connection which can be reused.
-          Right (Here connected) -> do
+          Right (_, Here connected) -> do
             traceCounters stateVar
             return connected
 
@@ -2468,6 +2465,7 @@ withCallStack k = k callStack
 --
 data Trace peerAddr handlerTrace
   = TrIncludeConnection            Provenance peerAddr
+  | TrInboundConnectionNotFound    peerAddr
   | TrReleaseConnection            Provenance (ConnectionId peerAddr)
   | TrConnect                      (Maybe peerAddr) -- ^ local address
                                    peerAddr         -- ^ remote address

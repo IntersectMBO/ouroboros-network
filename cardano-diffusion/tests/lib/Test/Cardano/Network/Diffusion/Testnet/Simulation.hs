@@ -137,8 +137,7 @@ import Test.Ouroboros.Network.Diffusion.Node.Kernel (NtCAddr, NtCVersion,
            NtNVersionData, ppNtNAddr)
 import Test.Ouroboros.Network.LedgerPeers (LedgerPools (..), cardanoSRVPrefix,
            genLedgerPoolsFrom)
-import Test.Ouroboros.Network.PeerSelection.Instances (PeerAddr (..))
-import Test.Ouroboros.Network.PeerSelection.Instances qualified as PeerSelection
+import Test.Ouroboros.Network.OrphanInstances (genIPv4, genIPv6)
 import Test.Ouroboros.Network.PeerSelection.LocalRootPeers ()
 import Test.Ouroboros.Network.PeerSelection.RootPeersDNS (DNSLookupDelay (..),
            DNSTimeout (..), DomainAccessPoint (..), MockDNSMap, genDomainName)
@@ -546,9 +545,9 @@ genDomainMapScript relays = do
           case v of
             Left _ipsttls -> case relays of
               TestnetRelays4 {} ->
-                (k,) . Left . singleton . (, ttl) <$> PeerSelection.genIPv4
+                (k,) . Left . singleton . (, ttl) <$> genIPv4
               TestnetRelays6 {} ->
-                (k,) . Left . singleton . (, ttl) <$> PeerSelection.genIPv6
+                (k,) . Left . singleton . (, ttl) <$> genIPv6
             Right doms -> do
               (k,) . Right . singleton <$> do
                 case listToMaybe doms of
@@ -746,8 +745,8 @@ data TestnetRelayInfos = TestnetRelays4 { unTestnetRelays :: [TestnetRelayInfo] 
                        | TestnetRelays6 { unTestnetRelays :: [TestnetRelayInfo] }
 
 instance Arbitrary TestnetRelayInfos where
-  arbitrary = oneof [ TestnetRelays4 <$> gen PeerSelection.genIPv4
-                    , TestnetRelays6 <$> gen PeerSelection.genIPv6
+  arbitrary = oneof [ TestnetRelays4 <$> gen genIPv4
+                    , TestnetRelays6 <$> gen genIPv6
                     ]
     where
       uniqueIps xs =

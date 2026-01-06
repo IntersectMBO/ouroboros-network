@@ -26,10 +26,10 @@ import Control.Monad.Class.MonadTime.SI (Time (..))
 import Data.Aeson
 import Data.Aeson.Types (Pair, Parser, listValue)
 import Data.Bifunctor (first)
+import Data.Bool (bool)
 import Data.Foldable (toList)
 import Data.IP (fromHostAddress, fromHostAddress6)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromMaybe)
 import Data.Set qualified as Set
 import Data.Text (Text, pack)
 import Data.Text.Encoding qualified as Text
@@ -63,12 +63,12 @@ import Ouroboros.Network.ConnectionManager.State (ConnMap (..),
            ConnStateId (..), LocalAddr (..))
 import Ouroboros.Network.ConnectionManager.Types (AbstractState (..),
            ConnectionManagerCounters (..), MaybeUnknown (..),
-           OperationResult (..))
+           OperationResult (..), Provenance (..))
 import Ouroboros.Network.ConnectionManager.Types qualified as ConnMgr
 import Ouroboros.Network.DeltaQ (GSV (GSV),
            PeerGSV (PeerGSV, inboundGSV, outboundGSV))
 import Ouroboros.Network.Diffusion.Topology (LocalRootPeersGroup (..),
-           LocalRootPeersGroups (..), NetworkTopology (..),
+           LocalRootPeersGroups (..), LocalRoots (..), NetworkTopology (..),
            PublicRootPeers (..), RootConfig (..))
 import Ouroboros.Network.Diffusion.Types (DiffusionTracer (..))
 import Ouroboros.Network.DiffusionMode
@@ -130,12 +130,17 @@ localRootPeersGroupFromJSON
 localRootPeersGroupFromJSON parseExtraFlags o = do
     hv@(HotValency v) <- o .: "valency"
                      <|> o .: "hotValency"
+    accessPoint <- o .:  "accessPoints"
+    ad <- o .:? "advertise" .!= DoNotAdvertisePeer
+    behindFirewall <- o .:? "behindFirewall" .!= False
     LocalRootPeersGroup
-      <$> parseJSON (Object o)
-      <*> pure hv
+      (LocalRoots
+        (RootConfig accessPoint ad)
+        (bool Outbound Inbound behindFirewall)
+      )
+      <$> pure hv
       <*> o .:? "warmValency" .!= WarmValency v
-      <*> (fromMaybe InitiatorAndResponderDiffusionMode
-            <$> o .:? "diffusionMode")
+      <*> o .:? "diffusionMode" .!= InitiatorAndResponderDiffusionMode
       <*> parseExtraFlags o
 
 localRootPeersGroupToJSON :: (extraFlags -> Maybe (Key, Value))
@@ -145,8 +150,11 @@ localRootPeersGroupToJSON :: (extraFlags -> Maybe (Key, Value))
                           -> Value
 localRootPeersGroupToJSON extraFlagsToJSON lrpg@LocalRootPeersGroup {extraFlags} =
     Object $
-         ("accessPoints"   .?= rootAccessPoints (localRoots lrpg))
-      <> ("advertise"      .?= rootAdvertise (localRoots lrpg))
+         ("accessPoints"   .?= rootAccessPoints (rootConfig . localRoots $ lrpg))
+      <> ("advertise"      .?= rootAdvertise (rootConfig . localRoots  $ lrpg))
+      <> ("behindFirewall" .?= case provenance (localRoots lrpg) of
+                                 Outbound -> False
+                                 Inbound  -> True)
       <> ("hotValency"     .?= hotValency lrpg)
       <> ("warmValency"    .?= warmValency lrpg)
       <> foldMap (uncurry (.?=)) (extraFlagsToJSON extraFlags)
@@ -1268,6 +1276,11 @@ instance (Show addr, Show versionNumber, Show agreedOptions,
           ToJSON addr, ToJSON versionNumber, ToJSON agreedOptions)
       => ToJSON (ConnMgr.Trace addr (ConnectionHandlerTrace versionNumber agreedOptions)) where
   toJSON = \case
+    TrInboundConnectionNotFound peerAddr ->
+      object
+        [ "kind" .= String "InboundConnectionNotFound"
+        , "remoteAddress" .= peerAddr
+        ]
     TrIncludeConnection prov peerAddr ->
       object
         [ "kind" .= String "IncludeConnection"

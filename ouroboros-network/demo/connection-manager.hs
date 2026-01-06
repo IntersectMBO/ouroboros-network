@@ -569,9 +569,9 @@ bidirectionalExperiment
                             (HandlerError
                               UnversionedProtocol))
     connect n cm | n <= 1 =
-      acquireOutboundConnection cm InitiatorAndResponderDiffusionMode remoteAddr
+      acquireOutboundConnection cm InitiatorAndResponderDiffusionMode remoteAddr Outbound
     connect n cm =
-      acquireOutboundConnection cm InitiatorAndResponderDiffusionMode remoteAddr
+      acquireOutboundConnection cm InitiatorAndResponderDiffusionMode remoteAddr Outbound
         `catch` \(_ :: IOException) -> threadDelay 1
                                     >> connect (pred n) cm
         `catch` \(_ :: Mux.Error)   -> threadDelay 1

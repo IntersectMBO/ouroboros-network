@@ -54,6 +54,7 @@ import Cardano.Network.PeerSelection
 -- import Cardano.Network.PeerSelection.PublicRootPeers (PublicRootPeers (..))
 import Cardano.Network.PeerSelection.PublicRootPeers qualified as Cardano.PublicRootPeers
 
+import Ouroboros.Network.ConnectionManager.Types (Provenance (Outbound))
 import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
 import Ouroboros.Network.PeerSelection
@@ -3201,7 +3202,6 @@ prop_governor_target_established_above (MaxTime maxTime) env =
                      <*> govInProgressIneligibleSig
                      <*> demotionOpportunitiesIgnoredTooLong)
 
-
 -- | Like 'prop_governor_target_established_above' but for big ledger peers.
 --
 prop_governor_target_established_big_ledger_peers_above
@@ -4423,8 +4423,8 @@ prop_issue_3550 = prop_governor_target_established_below defaultMaxTime $
           (PeerAddr 29,[],GovernorScripts {peerShareScript = Script (Nothing :| []), peerSharingScript = Script (PeerSharingDisabled :| []), connectionScript = Script ((ToWarm,NoDelay) :| [(ToCold,NoDelay),(Noop,NoDelay)])})
         ],
       localRootPeers = LocalRootPeers.fromGroups
-        [ (1, 1, Map.fromList [(PeerAddr 16, LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)])
-        , (1, 1, Map.fromList [(PeerAddr 4, LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)])
+        [ (1, 1, Map.fromList [(PeerAddr 16, LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode Outbound IsNotTrustable)])
+        , (1, 1, Map.fromList [(PeerAddr 4, LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode Outbound IsNotTrustable)])
         ],
       publicRootPeers = Cardano.PublicRootPeers.fromPublicRootPeers
         (Map.fromList [ (PeerAddr 14, DoNotAdvertisePeer)
@@ -4471,7 +4471,7 @@ prop_issue_3515 = prop_governor_nolivelock $
                            peerSharingScript = Script (PeerSharingDisabled :| []),
                            connectionScript = Script ((ToCold,NoDelay) :| [(Noop,NoDelay)])
                          })],
-      localRootPeers = LocalRootPeers.fromGroups [(1,1,Map.fromList [(PeerAddr 10, LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)])],
+      localRootPeers = LocalRootPeers.fromGroups [(1,1,Map.fromList [(PeerAddr 10, LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode Outbound IsNotTrustable)])],
       publicRootPeers = PublicRootPeers.empty Cardano.ExtraPeers.empty,
       targets = Script . NonEmpty.fromList $ targets'',
       pickKnownPeersForPeerShare = Script (PickFirst :| []),
@@ -4513,7 +4513,7 @@ prop_issue_3494 = prop_governor_nofail $
                                                 peerSharingScript = Script (PeerSharingDisabled :| []),
                                                 connectionScript = Script ((ToCold,NoDelay) :| [(Noop,NoDelay)])
                                               })],
-      localRootPeers = LocalRootPeers.fromGroups [(1,1,Map.fromList [(PeerAddr 64, LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)])],
+      localRootPeers = LocalRootPeers.fromGroups [(1,1,Map.fromList [(PeerAddr 64, LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode Outbound IsNotTrustable)])],
       publicRootPeers = PublicRootPeers.empty Cardano.ExtraPeers.empty,
       targets = Script . NonEmpty.fromList $ targets'',
       pickKnownPeersForPeerShare = Script (PickFirst :| []),
@@ -4563,8 +4563,8 @@ prop_issue_3233 = prop_governor_nolivelock $
          (PeerAddr 15,[],GovernorScripts {peerShareScript = Script (Just ([],PeerShareTimeSlow) :| []), peerSharingScript = Script (PeerSharingDisabled :| []), connectionScript = Script ((Noop,NoDelay) :| [])})
         ],
       localRootPeers = LocalRootPeers.fromGroups
-        [ (1, 1, Map.fromList [(PeerAddr 15, LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)])
-        , (1, 1, Map.fromList [(PeerAddr 13, LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode IsNotTrustable)])
+        [ (1, 1, Map.fromList [(PeerAddr 15, LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode Outbound IsNotTrustable)])
+        , (1, 1, Map.fromList [(PeerAddr 13, LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode Outbound IsNotTrustable)])
         ],
       publicRootPeers = Cardano.PublicRootPeers.fromPublicRootPeers
         (Map.fromList [(PeerAddr 4, DoNotAdvertisePeer)]),

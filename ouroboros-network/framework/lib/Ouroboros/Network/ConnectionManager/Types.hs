@@ -488,9 +488,13 @@ data Connected peerAddr handle handleError =
     --
   | Disconnected !(ConnectionId peerAddr) !(DisconnectionException handleError)
 
-
+-- | Acquire outbound connection
+-- 'Inbound' provenance restricts acquiring an outbound connection to those
+-- initiated by a remote peer.
+-- 'Outbound' provenance doesn't require any additional pre-conditions.
 type AcquireOutboundConnection peerAddr handle handleError m
-    = DiffusionMode -> peerAddr -> m (Connected peerAddr handle handleError)
+    = DiffusionMode -> peerAddr -> Provenance -> m (Connected peerAddr handle handleError)
+
 type IncludeInboundConnection socket peerAddr handle handleError m
     = Word32
     -- ^ inbound connections hard limit.
@@ -714,6 +718,11 @@ data ConnectionManagerError peerAddr
     --
     | ForbiddenConnection   !(ConnectionId peerAddr) !CallStack
 
+    -- | No matching inbound connection found while establishing a new connection is
+    -- not allowed.
+    --
+    | InboundConnectionNotFound !peerAddr !CallStack
+
     -- | Connections that would be forbidden by the kernel (@TCP@ semantics).
     --
     | ImpossibleConnection  !(ConnectionId peerAddr) !CallStack
@@ -762,6 +771,12 @@ instance ( Show peerAddr
     displayException (ImpossibleConnection connId cs) =
       concat [ "Impossible connection with peer "
              , show connId
+             , "\n"
+             , prettyCallStack cs
+             ]
+    displayException (InboundConnectionNotFound peerAddr cs) =
+      concat [ "No matching inbound connection found and creating new connection is not allowed with peer "
+             , show peerAddr
              , "\n"
              , prettyCallStack cs
              ]

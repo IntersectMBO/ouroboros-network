@@ -879,7 +879,7 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer debugTracer cmTracer
                                        case fromException e of
                                          Just SomeAsyncException {} -> Nothing
                                          _                          -> Just e)
-                          $ acquireOutboundConnection cm InitiatorAndResponderDiffusionMode remoteAddr
+                          $ acquireOutboundConnection cm InitiatorAndResponderDiffusionMode remoteAddr Outbound
             case connHandle of
               Left _ ->
                 go connMap
