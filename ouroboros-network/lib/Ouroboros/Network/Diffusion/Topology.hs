@@ -5,6 +5,7 @@ module Ouroboros.Network.Diffusion.Topology where
 import Data.Map qualified as Map
 import Data.Map.Strict (Map)
 
+import Ouroboros.Network.ConnectionManager.Types (Provenance)
 import Ouroboros.Network.Diffusion.Configuration (DiffusionMode)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type (UseLedgerPeers)
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
@@ -32,7 +33,7 @@ newtype LocalRootPeersGroups extraFlags = LocalRootPeersGroups
 -- will attempt to maintain. By default this value will be equal to 'hotValency'.
 --
 data LocalRootPeersGroup extraFlags = LocalRootPeersGroup
-  { localRoots        :: RootConfig
+  { localRoots        :: LocalRoots
   , hotValency        :: HotValency
   , warmValency       :: WarmValency
   , rootDiffusionMode :: DiffusionMode
@@ -42,6 +43,11 @@ data LocalRootPeersGroup extraFlags = LocalRootPeersGroup
 
 newtype PublicRootPeers = PublicRootPeers
   { publicRoots :: RootConfig
+  } deriving (Eq, Show)
+
+data LocalRoots = LocalRoots
+  { rootConfig :: RootConfig
+  , provenance :: Provenance
   } deriving (Eq, Show)
 
 -- | Each root peer consists of a list of access points and a shared
@@ -63,8 +69,15 @@ data RootConfig = RootConfig
 rootConfigToRelayAccessPoint
   :: RootConfig
   -> [(RelayAccessPoint, PeerAdvertise)]
-rootConfigToRelayAccessPoint RootConfig { rootAccessPoints, rootAdvertise  } =
+rootConfigToRelayAccessPoint RootConfig { rootAccessPoints, rootAdvertise } =
     [ (ap, rootAdvertise) | ap <- rootAccessPoints ]
+
+localRootsToRelayAccessPoint
+  :: LocalRoots
+  -> [(RelayAccessPoint, PeerAdvertise, Provenance)]
+localRootsToRelayAccessPoint LocalRoots {rootConfig, provenance} =
+      (\(accessPoint, advertise) -> (accessPoint, advertise, provenance))
+  <$> rootConfigToRelayAccessPoint rootConfig
 
 producerAddresses
   :: NetworkTopology extraConfig extraFlags
@@ -78,16 +91,17 @@ producerAddresses NetworkTopology { localRootPeersGroups
   ( map (\lrp -> ( hotValency lrp
                  , warmValency lrp
                  , Map.fromList
-                 . map (\(addr, peerAdvertise) ->
+                 . map (\(addr, peerAdvertise, localProvenance) ->
                          ( addr
                          , LocalRootConfig {
                              diffusionMode = rootDiffusionMode lrp,
                              peerAdvertise,
+                             localProvenance,
                              extraLocalRootFlags = extraFlags lrp
                            }
                          )
                        )
-                 . rootConfigToRelayAccessPoint
+                 . localRootsToRelayAccessPoint
                  $ localRoots lrp
                  )
         )

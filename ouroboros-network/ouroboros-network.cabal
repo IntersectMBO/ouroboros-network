@@ -153,8 +153,7 @@ test-suite api-tests
     bytestring,
     cardano-binary,
     cborg,
-    iproute,
-    ouroboros-network:{api, api-tests-lib, tests-lib},
+    ouroboros-network:{api, api-tests-lib, ouroboros-network-tests-lib, tests-lib},
     tasty,
     tasty-quickcheck,
     with-utf8,
@@ -842,7 +841,7 @@ library ouroboros-network-tests-lib
     network,
     network-mux,
     nothunks,
-    ouroboros-network:{ouroboros-network, api, api-tests-lib, framework, framework-tests-lib, protocols, protocols-tests-lib, tests-lib},
+    ouroboros-network:{ouroboros-network, api, api-tests-lib, framework, protocols, protocols-tests-lib, tests-lib},
     pretty-simple,
     random,
     serialise,
@@ -865,7 +864,7 @@ library ouroboros-network-tests-lib
     Test.Ouroboros.Network.LedgerPeers
     Test.Ouroboros.Network.MockNode
     Test.Ouroboros.Network.Mux
-    Test.Ouroboros.Network.Orphans
+    Test.Ouroboros.Network.OrphanInstances
     Test.Ouroboros.Network.PeerSelection.Instances
     Test.Ouroboros.Network.PeerSelection.KnownPeers
     Test.Ouroboros.Network.PeerSelection.LocalRootPeers

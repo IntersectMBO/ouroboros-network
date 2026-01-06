@@ -70,10 +70,12 @@ import Control.Monad.Class.MonadTimer.SI qualified as MonadTimer
 import Control.Monad.IOSim
 import Control.Tracer (Tracer (Tracer), contramap, nullTracer, traceWith)
 
+import Ouroboros.Network.ConnectionManager.Types (Provenance (Outbound))
 import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.PeerSelection
 import Test.Ouroboros.Network.Data.Script (Script (Script), initScript',
            scriptHead, singletonScript, stepScript')
+import Test.Ouroboros.Network.OrphanInstances (genIPv4)
 import Test.Ouroboros.Network.PeerSelection.Instances
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
@@ -344,10 +346,10 @@ simpleMockRoots = MockRoots localRootPeers dnsMap Map.empty (singletonScript Map
       [ ( 2, 2
         , Map.fromList
           [ ( RelayAccessAddress (read "192.0.2.1") (read "3333")
-            , LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode ()
+            , LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode Outbound ()
             )
           , ( RelayAccessDomain  "test.domain"      (read "4444")
-            , LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode ()
+            , LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode Outbound ()
             )
           ]
         )

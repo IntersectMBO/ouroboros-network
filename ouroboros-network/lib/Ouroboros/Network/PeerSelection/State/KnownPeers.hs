@@ -79,6 +79,9 @@ data KnownPeers peeraddr = KnownPeers {
        -- establish a connection to now. This is because we have not connected
        -- with them before or because any failure backoff time has expired.
        --
+       -- Note: Some peers may be behind a firewall. Local root peers with
+       -- inbound provenance are not excluded from this list.
+       --
        availableToConnect :: !(Set peeraddr),
 
        -- | The subset of known peers that we cannot connect to for the moment.

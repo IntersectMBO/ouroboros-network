@@ -449,7 +449,7 @@ library cardano-diffusion-tests-lib
     monoidal-synchronisation,
     network,
     network-mux,
-    ouroboros-network:{ouroboros-network, api, api-tests-lib, framework, framework-tests-lib, orphan-instances, ouroboros-network-tests-lib, protocols, protocols-tests-lib, tests-lib},
+    ouroboros-network:{ouroboros-network, api, api-tests-lib, framework, framework-tests-lib, ouroboros-network-tests-lib, protocols, protocols-tests-lib, tests-lib},
     pipes,
     pretty-simple,
     psqueues,

@@ -763,9 +763,10 @@ withPeerStateActions PeerStateActionsArguments {
     establishPeerConnection :: JobPool () m (Maybe SomeException)
                             -> IsBigLedgerPeer
                             -> DiffusionMode
+                            -> Provenance
                             -> peerAddr
                             -> m (PeerConnectionHandle muxMode responderCtx peerAddr versionData ByteString m a b)
-    establishPeerConnection jobPool isBigLedgerPeer diffusionMode remotePeerAddr =
+    establishPeerConnection jobPool isBigLedgerPeer diffusionMode provenance remotePeerAddr =
       -- Protect consistency of the peer state with 'bracketOnError' if
       -- opening a connection fails.
       bracketOnError
@@ -776,6 +777,7 @@ withPeerStateActions PeerStateActionsArguments {
                          spsConnectionManager
                          diffusionMode
                          remotePeerAddr
+                         provenance
           case res of
             Left e -> do
               when (isNothing $ fromException @SomeAsyncException e) $

@@ -91,12 +91,6 @@ arbitraryLocalRootPeers peeraddrs = do
                                                targets
                                                groups))
 
-instance Arbitrary HotValency where
-  arbitrary = HotValency <$> arbitrary
-
-instance Arbitrary WarmValency where
-  arbitrary = WarmValency <$> arbitrary
-
 instance (Arbitrary extraFlags, Arbitrary peeraddr, Ord peeraddr) =>
          Arbitrary (LocalRootPeers extraFlags peeraddr) where
     arbitrary = do

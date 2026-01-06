@@ -35,6 +35,7 @@ import Data.Map.Strict qualified as Map
 import Data.Set (Set)
 import Data.Set qualified as Set
 
+import Ouroboros.Network.ConnectionManager.Types (Provenance)
 import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
 
@@ -46,6 +47,7 @@ import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise)
 data LocalRootConfig extraFlags = LocalRootConfig {
     peerAdvertise       :: !PeerAdvertise,
     diffusionMode       :: !DiffusionMode,
+    localProvenance     :: !Provenance,
     extraLocalRootFlags :: !extraFlags
   }
   deriving (Show, Eq)

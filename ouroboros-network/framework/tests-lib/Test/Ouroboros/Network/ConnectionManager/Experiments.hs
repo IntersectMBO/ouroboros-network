@@ -770,7 +770,7 @@ unidirectionalExperiment stdGen timeouts snocket makeBearer confSock socket clie
                 replicateM
                   (numberOfRounds clientAndServerData)
                   (bracket
-                     (acquireOutboundConnection connectionManager InitiatorOnlyDiffusionMode serverAddr)
+                     (acquireOutboundConnection connectionManager InitiatorOnlyDiffusionMode serverAddr Outbound)
                      (\case
                         Connected connId _ _ -> releaseOutboundConnection connectionManager connId
                         Disconnected {} -> error "unidirectionalExperiment: impossible happened")
@@ -876,7 +876,8 @@ bidirectionalExperiment
                       (acquireOutboundConnection
                         connectionManager0
                         InitiatorAndResponderDiffusionMode
-                        localAddr1))
+                        localAddr1
+                        Outbound))
                     (\case
                       Connected connId _ _ ->
                         releaseOutboundConnection
@@ -902,7 +903,8 @@ bidirectionalExperiment
                       (acquireOutboundConnection
                         connectionManager1
                         InitiatorAndResponderDiffusionMode
-                        localAddr0))
+                        localAddr0
+                        Outbound))
                     (\case
                       Connected connId _ _ ->
                         releaseOutboundConnection

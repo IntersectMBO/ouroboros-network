@@ -300,6 +300,8 @@ connectionManagerTraceMap
       ntnAddr
       (ConnectionHandlerTrace ntnVersion ntnVersionData)
   -> String
+connectionManagerTraceMap (TrInboundConnectionNotFound _)  =
+  "TrInboundConnectionNotFound"
 connectionManagerTraceMap (TrIncludeConnection p _)        =
   "TrIncludeConnection " ++ show p
 connectionManagerTraceMap (TrReleaseConnection p _)        =

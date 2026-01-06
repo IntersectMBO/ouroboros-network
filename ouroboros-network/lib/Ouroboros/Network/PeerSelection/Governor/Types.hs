@@ -87,6 +87,7 @@ import Control.Concurrent.JobPool (Job)
 import Control.Exception (Exception (..), SomeException, assert)
 import Control.Monad.Class.MonadTime.SI
 
+import Ouroboros.Network.ConnectionManager.Types (Provenance)
 import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.ExitPolicy
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
@@ -393,7 +394,9 @@ data PeerStateActions peeraddr peerconn m = PeerStateActions {
     --
     establishPeerConnection  :: IsBigLedgerPeer
                              -> DiffusionMode
-                             -> peeraddr -> m peerconn,
+                             -> Provenance
+                             -> peeraddr
+                             -> m peerconn,
 
     -- | Activate a connection: warm to hot promotion.
     --
