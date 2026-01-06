@@ -35,7 +35,7 @@ import Control.Monad.Class.MonadTime.SI (Time (..))
 import Control.Tracer
 
 import System.Directory
-import System.Random (RandomGen, StdGen)
+import System.Random (RandomGen, SplitGen, StdGen)
 import System.Random qualified as Random
 
 import Options.Applicative qualified as Opts
@@ -764,12 +764,12 @@ selectBlockRange :: BlockFetch.ChainRange (Point Block)
                  -> Infinite Block
                  -> Maybe ([Block], Infinite Block)
 selectBlockRange (BlockFetch.ChainRange lower upper) blocks0 = do
-    (_,  blocks1)     <- splitBeforePoint lower blocks0
-    (bs, b :< remaining) <- splitBeforePoint upper blocks1
+    (_,  blocks1)     <- splitGenBeforePoint lower blocks0
+    (bs, b :< remaining) <- splitGenBeforePoint upper blocks1
     return (bs ++ [b], remaining)
 
-splitBeforePoint :: Point Block -> Infinite Block -> Maybe ([Block], Infinite Block)
-splitBeforePoint pt = go []
+splitGenBeforePoint :: Point Block -> Infinite Block -> Maybe ([Block], Infinite Block)
+splitGenBeforePoint pt = go []
   where
     go acc (b :< bs) =
       case compare (At (blockSlot b)) (pointSlot pt) of
@@ -783,31 +783,31 @@ splitBeforePoint pt = go []
 -- Block generator
 --
 
-prop_chainGenerator :: RandomGen g => g -> Bool
+prop_chainGenerator :: SplitGen g => g -> Bool
 prop_chainGenerator =
     Chain.valid
   . Chain.fromOldestFirst
   . Inf.take 1000
   . chainGenerator
 
-chainGenerator :: RandomGen g => g -> Infinite Block
+chainGenerator :: SplitGen g => g -> Infinite Block
 chainGenerator g =
     genBlockChain g Nothing
 
-genBlockChain :: RandomGen g => g -> Maybe BlockHeader -> Infinite Block
+genBlockChain :: SplitGen g => g -> Maybe BlockHeader -> Infinite Block
 genBlockChain !g prevHeader =
     block :< genBlockChain g'' (Just (blockHeader block))
   where
     block     = genBlock g' prevHeader
-    (g', g'') = Random.split g
+    (g', g'') = Random.splitGen g
 
-genBlock :: RandomGen g => g -> Maybe BlockHeader -> Block
+genBlock :: SplitGen g => g -> Maybe BlockHeader -> Block
 genBlock g prevHeader =
     Block { blockBody, blockHeader }
   where
     blockBody   = genBlockBody g'
     blockHeader = genBlockHeader g'' prevHeader blockBody
-    (g', g'')   = Random.split g
+    (g', g'')   = Random.splitGen g
 
 genBlockHeader :: RandomGen g
                => g -> Maybe BlockHeader -> BlockBody -> BlockHeader
@@ -902,3 +902,4 @@ shiftAnchoredFragment :: HasHeader block
                       -> AF.AnchoredFragment block
 shiftAnchoredFragment n b af =
   AF.anchorNewest (fromIntegral (AF.length af - n)) af AF.:> b
+
