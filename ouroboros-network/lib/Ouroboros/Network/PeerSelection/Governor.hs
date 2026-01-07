@@ -553,6 +553,7 @@ peerSelectionGovernorLoop tracer
                             , enableProgressMakingActions
                             , ledgerPeerSnapshotExtraStateChange
                             }
+                          , defaultExtraFlags
                           }
                           actions@PeerSelectionActions {
                             extraPeersAPI = PublicExtraPeersAPI {
@@ -706,11 +707,11 @@ peerSelectionGovernorLoop tracer
       <> KnownPeers.aboveTarget  actions                        policy st
 
       <> EstablishedPeers.belowTarget enableProgressMakingActions
-                                      actions policy st
+                                      defaultExtraFlags actions policy st
       <> EstablishedPeers.aboveTarget actions policy st
 
       <> ActivePeers.belowTarget enableProgressMakingActions
-                                 actions policy st
+                                 defaultExtraFlags actions policy st
       <> ActivePeers.aboveTarget actions policy st
 
          -- Make sure postNonBlocking set is in the right place

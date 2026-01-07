@@ -119,6 +119,7 @@ type CardanoApplications m a =
     LocalAddress
     NodeToClientVersion
     NodeToClientVersionData
+    PeerTrustable
     m a
 
 
