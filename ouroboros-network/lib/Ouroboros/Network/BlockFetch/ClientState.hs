@@ -400,7 +400,9 @@ data TraceFetchClientState header =
          (PeerFetchStatus header)
 
        -- | Mark the completion of of receiving a single block within a
-       -- streaming batch of blocks.
+       -- streaming batch of blocks.  The `NominalDiffTime` measures time since
+       -- the block was forged (according to the header) until it was
+       -- downloaded.
        --
      | CompletedBlockFetch
          (Point header)

@@ -801,7 +801,7 @@ mkSnocket state tr = Snocket { getLocalAddr
                   -> m (Either (FD_ m (TestAddress addr))
                                (TestAddress addr))
     getLocalAddrM FD { fdVar } = do
-        fd_ <- atomically (readTVar fdVar)
+        fd_ <- readTVarIO fdVar
         return $ case fd_ of
           FDUninitialised Nothing         -> Left fd_
           FDUninitialised (Just peerAddr) -> Right peerAddr
@@ -816,7 +816,7 @@ mkSnocket state tr = Snocket { getLocalAddr
                    -> m (Either (FD_ m (TestAddress addr))
                                 (TestAddress addr))
     getRemoteAddrM FD { fdVar } = do
-        fd_ <- atomically (readTVar fdVar)
+        fd_ <- readTVarIO fdVar
         return $ case fd_ of
           FDUninitialised {}         -> Left fd_
           FDListening {}             -> Left fd_
@@ -896,7 +896,7 @@ mkSnocket state tr = Snocket { getLocalAddr
 
     connect :: FD m (TestAddress addr) -> TestAddress addr -> m ()
     connect fd@FD { fdVar = fdVarLocal } remoteAddress = do
-        fd_ <- atomically (readTVar fdVarLocal)
+        fd_ <- readTVarIO fdVarLocal
         traceWith' fd (STConnecting fd_ remoteAddress)
         case fd_ of
           -- Mask asynchronous exceptions.  Only unmask when we really block
