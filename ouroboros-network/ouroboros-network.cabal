@@ -726,7 +726,6 @@ library protocols
     nothunks,
     ouroboros-network:api,
     quiet,
-    random,
     serialise,
     singletons,
     text,

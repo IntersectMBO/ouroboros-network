@@ -217,9 +217,9 @@ type OuroborosBundle   (mode :: Mux.Mode) initiatorCtx responderCtx bytes m a b 
 
 -- | 'OuroborosBundle' used in P2P.
 --
-type OuroborosBundleWithExpandedCtx (mode :: Mux.Mode) peerAddr bytes m a b =
+type OuroborosBundleWithExpandedCtx (mode :: Mux.Mode) peerAddr extraFlags bytes m a b =
      OuroborosBundle mode
-                     (ExpandedInitiatorContext peerAddr m)
+                     (ExpandedInitiatorContext peerAddr extraFlags m)
                      (ResponderContext peerAddr)
                      bytes m a b
 
@@ -276,8 +276,8 @@ mkMiniProtocolInfo forkPolicy MiniProtocol {
 
 -- | 'MiniProtocol' type used in P2P.
 --
-type MiniProtocolWithExpandedCtx mode peerAddr bytes m a b =
-     MiniProtocol mode (ExpandedInitiatorContext peerAddr m)
+type MiniProtocolWithExpandedCtx mode peerAddr extraFlags bytes m a b =
+     MiniProtocol mode (ExpandedInitiatorContext peerAddr extraFlags m)
                        (ResponderContext peerAddr)
                        bytes m a b
 
@@ -311,9 +311,9 @@ data RunMiniProtocol (mode :: Mux.Mode) initiatorCtx responderCtx bytes m a b wh
 --
 -- Used to run P2P node-to-node applications.
 --
-type RunMiniProtocolWithExpandedCtx mode peerAddr bytes m a b =
+type RunMiniProtocolWithExpandedCtx mode peerAddr extraFlags bytes m a b =
      RunMiniProtocol mode
-                     (ExpandedInitiatorContext peerAddr m)
+                     (ExpandedInitiatorContext peerAddr extraFlags m)
                      (ResponderContext peerAddr)
                      bytes m a b
 
