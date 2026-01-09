@@ -1,6 +1,6 @@
 # Revision history for ouroboros-network
 
-## next release
+## 0.22.5.0 -- 09.01.2026
 ### Breaking changes
 
 ### Non-breaking changes
