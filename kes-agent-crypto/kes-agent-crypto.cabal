@@ -1,6 +1,6 @@
 cabal-version:      3.0
 name:               kes-agent-crypto
-version:            0.1.0.0
+version:            1.0.0.0
 synopsis: KES agent crypto library
 -- description:
 license:            Apache-2.0
