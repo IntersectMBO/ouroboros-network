@@ -110,26 +110,14 @@ instance Arbitrary ArbitraryNodeToNodeVersion where
 newtype ArbitraryNodeToNodeVersionData =
         ArbitraryNodeToNodeVersionData
           { getNodeToNodeVersionData :: NodeToNodeVersionData }
-    deriving Show
+    deriving (Eq, Show)
     deriving Acceptable via NodeToNodeVersionData
-
--- | With the introduction of PeerSharing to 'NodeToNodeVersionData' this type's
--- 'Acceptable' instance is no longer symmetric. Because when handshake is
--- performed we keep only the remote's side PeerSharing information. Due to this,
--- the 'ArbitraryNodeToNodeVersionData' needs to have a custom 'Eq' type that
--- ignores this parameter. We also ignore the query field which may differ
--- between parties.
---
-instance Eq ArbitraryNodeToNodeVersionData where
-  (==) (ArbitraryNodeToNodeVersionData (NodeToNodeVersionData nm dm ps _))
-       (ArbitraryNodeToNodeVersionData (NodeToNodeVersionData nm' dm' ps' _))
-    = nm == nm' && dm == dm' && ps == ps'
 
 instance Queryable ArbitraryNodeToNodeVersionData where
     queryVersion = queryVersion . getNodeToNodeVersionData
 
 instance Arbitrary ArbitraryNodeToNodeVersionData where
-    arbitrary = fmap (fmap (fmap ArbitraryNodeToNodeVersionData))
+    arbitrary = fmap (fmap (fmap (fmap ArbitraryNodeToNodeVersionData)))
               . NodeToNodeVersionData
              <$> (NetworkMagic <$> arbitrary)
              <*> elements [ InitiatorOnlyDiffusionMode
@@ -139,21 +127,27 @@ instance Arbitrary ArbitraryNodeToNodeVersionData where
                           , PeerSharingEnabled
                           ]
              <*> arbitrary
+             <*> elements [ PerasUnsupported
+                          , PerasSupported
+                          ]
     shrink (ArbitraryNodeToNodeVersionData
-             (NodeToNodeVersionData magic mode peerSharing query)) =
-        [ ArbitraryNodeToNodeVersionData (NodeToNodeVersionData magic' mode peerSharing' query)
+             (NodeToNodeVersionData magic mode peerSharing query perasSupportStatus)) =
+        [ ArbitraryNodeToNodeVersionData (NodeToNodeVersionData magic' mode peerSharing' query perasSupportStatus')
         | magic' <- NetworkMagic <$> shrink (unNetworkMagic magic)
         , peerSharing' <- shrinkPeerSharing peerSharing
+        , perasSupportStatus' <- shrinkPerasSupportStatus perasSupportStatus
         ]
         ++
-        [ ArbitraryNodeToNodeVersionData (NodeToNodeVersionData magic mode' peerSharing' query)
+        [ ArbitraryNodeToNodeVersionData (NodeToNodeVersionData magic mode' peerSharing' query perasSupportStatus')
         | mode' <- shrinkMode mode
         , peerSharing' <- shrinkPeerSharing peerSharing
+        , perasSupportStatus' <- shrinkPerasSupportStatus perasSupportStatus
         ]
         ++
-        [ ArbitraryNodeToNodeVersionData (NodeToNodeVersionData magic mode peerSharing' query')
+        [ ArbitraryNodeToNodeVersionData (NodeToNodeVersionData magic mode peerSharing' query' perasSupportStatus')
         | query' <- shrink query
         , peerSharing' <- shrinkPeerSharing peerSharing
+        , perasSupportStatus' <- shrinkPerasSupportStatus perasSupportStatus
         ]
       where
         shrinkMode :: DiffusionMode -> [DiffusionMode]
@@ -162,6 +156,9 @@ instance Arbitrary ArbitraryNodeToNodeVersionData where
 
         shrinkPeerSharing PeerSharingDisabled = []
         shrinkPeerSharing PeerSharingEnabled  = [PeerSharingDisabled]
+
+        shrinkPerasSupportStatus PerasUnsupported = []
+        shrinkPerasSupportStatus PerasSupported   = [PerasUnsupported]
 
 newtype ArbitraryNodeToNodeVersions =
         ArbitraryNodeToNodeVersions
@@ -174,8 +171,9 @@ instance Show ArbitraryNodeToNodeVersions where
 
 instance Arbitrary ArbitraryNodeToNodeVersions where
     arbitrary = do
+      let compatibleWith v = isValidNtnVersionDataForVersion v . getNodeToNodeVersionData
       vs <- listOf (getNodeToNodeVersion <$> arbitrary)
-      ds <- vectorOf (length vs) arbitrary
+      ds <- traverse (\v -> arbitrary `suchThat` compatibleWith v) vs
       r  <- arbitrary
       return $ ArbitraryNodeToNodeVersions
              $ Versions

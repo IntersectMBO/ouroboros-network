@@ -67,12 +67,14 @@ instance FromJSON NodeToNodeVersion where
   parseJSON = \case
     Number 14 -> pure NodeToNodeV_14
     Number 15 -> pure NodeToNodeV_15
+    Number 16 -> pure NodeToNodeV_16
     Number x  -> fail $ "FromJSON.NodeToNodeVersion: unsupported node-to-node protocol version " ++ show x
     x         -> fail $ "FromJSON.NodeToNodeVersion: error parsing NodeToNodeVersion: " ++ show x
 
 instance ToJSON NodeToNodeVersion where
   toJSON NodeToNodeV_14 = Number 14
   toJSON NodeToNodeV_15 = Number 15
+  toJSON NodeToNodeV_16 = Number 16
 
 instance FromJSON NodeToClientVersion where
   parseJSON = \case
@@ -99,11 +101,12 @@ instance ToJSON NodeToClientVersion where
     NodeToClientV_23 -> Number 23
 
 instance ToJSON NodeToNodeVersionData where
-  toJSON (NodeToNodeVersionData (NetworkMagic m) dm ps q) = object
+  toJSON (NodeToNodeVersionData (NetworkMagic m) dm ps q pss) = object
     [ "networkMagic"  .= toJSON m
     , "diffusionMode" .= show dm
     , "peerSharing"   .= show ps
     , "query"         .= toJSON q
+    , "perasSupportStatus" .= show pss
     ]
 
 instance ToJSON NodeToClientVersionData where
