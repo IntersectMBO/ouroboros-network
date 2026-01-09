@@ -91,8 +91,11 @@ bracketFetchClient (FetchClientRegistry ctxVar
                       fetchRegistry syncRegistry dqRegistry keepRegistry dyingRegistry)
                    _version peer action = do
     ksVar <- newEmptyTMVarIO
-    bracket (register ksVar) (uncurry (unregister ksVar)) (action . fst)
+    fst <$> generalBracket (register ksVar) (unregister ksVar) (action . fst)
   where
+    onExceptionTimeout :: DiffTime
+    onExceptionTimeout = 1
+
     register :: StrictTMVar m ()
              -> m ( FetchClientContext header block m
                   , (ThreadId m, StrictTMVar m ()) )
@@ -157,11 +160,15 @@ bracketFetchClient (FetchClientRegistry ctxVar
          )
 
     unregister :: StrictTMVar m ()
-               -> FetchClientContext header block m
-               -> (ThreadId m, StrictTMVar m ())
+               -> ( FetchClientContext header block m
+                  , (ThreadId m, StrictTMVar m ()) )
+               -> ExitCase a
                -> m ()
-    unregister ksVar FetchClientContext { fetchClientCtxStateVars = stateVars }
-               (tid, doneVar)  = uninterruptibleMask $ \unmask -> do
+    unregister ksVar (FetchClientContext { fetchClientCtxStateVars = stateVars },
+                      (tid, doneVar)) exitCase  = uninterruptibleMask $ \unmask -> do
+      let timeoutLimit = case exitCase of
+                              ExitCaseSuccess _ -> deactivateTimeout
+                              _                 -> onExceptionTimeout
       dead <- do
         -- Signal we are shutting down
         dieFast <- atomically $ do
@@ -183,7 +190,7 @@ bracketFetchClient (FetchClientRegistry ctxVar
          else do
            -- Give the sync client a chance to exit cleanly before killing it.
            res <- onException
-                   (unmask $ timeout deactivateTimeout $ atomically $ readTMVar doneVar)
+                   (unmask $ timeout timeoutLimit $ atomically $ readTMVar doneVar)
                    (-- no time to wait, die die die!
                     uninterruptibleMask_ $ do
                     throwTo tid AsyncCancelled

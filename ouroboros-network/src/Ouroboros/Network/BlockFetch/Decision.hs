@@ -991,10 +991,10 @@ fetchRequestDecisions fetchDecisionPolicy fetchMode chains =
     nActivePeers :: Set peer
     nActivePeers =
         Set.fromList
-      . map snd
-      . filter (\(inFlight, _) -> inFlight > 0)
-      . map (\(_, _, PeerFetchInFlight{peerFetchReqsInFlight}, _, p, _) ->
-                       (peerFetchReqsInFlight, p))
+      . map (\(_,_,e) -> e)
+      . filter (\(s, inFlight, _) -> inFlight > 0 && s /= PeerFetchStatusShutdown)
+      . map (\(_, s, PeerFetchInFlight{peerFetchReqsInFlight}, _, p, _) ->
+                       (s, peerFetchReqsInFlight, p))
       $ chains
 
     -- Order the peers based on current PeerGSV. The top performing peers will be
@@ -1009,6 +1009,7 @@ fetchRequestDecisions fetchDecisionPolicy fetchMode chains =
       . take (fromIntegral maxConcurrentFetchPeers)
       . sortBy (\a b -> comparePeerGSV nActivePeers (peerSalt fetchDecisionPolicy) a b)
       . map (\(_, _, _, gsv, p, _) -> (gsv, p))
+      . filter (\(_, s, _, _, _, _) -> s /= PeerFetchStatusShutdown)
       $ chains
 
     maxConcurrentFetchPeers :: Word

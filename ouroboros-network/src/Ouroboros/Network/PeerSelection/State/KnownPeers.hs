@@ -21,8 +21,7 @@ module Ouroboros.Network.PeerSelection.State.KnownPeers
   , member
     -- * Special operations
   , setCurrentTime
-  , incrementFailCount
-  , resetFailCount
+  , reportFailures
   , lookupFailCount
   , lookupTepidFlag
   , setTepidFlag
@@ -30,8 +29,11 @@ module Ouroboros.Network.PeerSelection.State.KnownPeers
   , setSuccessfulConnectionFlag
     -- ** Tracking when we can (re)connect
   , minConnectTime
-  , setConnectTimes
   , availableToConnect
+  , lookupConnectTime
+    -- ** Tracking when we can clear fail counter
+  , minClearFailCountTime
+  , setClearFailCountTime
     -- ** Selecting peers to ask
   , canPeerShareRequest
   , getPeerSharingRequestPeers
@@ -73,18 +75,22 @@ data KnownPeers peeraddr = KnownPeers {
 
        -- | All the known peers.
        --
-       allPeers           :: !(Map peeraddr KnownPeerInfo),
+       allPeers            :: !(Map peeraddr KnownPeerInfo),
 
        -- | The subset of known peers that we would be allowed to try to
        -- establish a connection to now. This is because we have not connected
        -- with them before or because any failure backoff time has expired.
        --
-       availableToConnect :: !(Set peeraddr),
+       availableToConnect  :: !(Set peeraddr),
 
        -- | The subset of known peers that we cannot connect to for the moment.
        -- It keeps track of the next time we are allowed to make the next
        -- connection attempt.
-       nextConnectTimes   :: !(OrdPSQ peeraddr Time ())
+       nextConnectTimes    :: !(OrdPSQ peeraddr Time ()),
+
+       -- | The subset of known peers that are currently hot, has failed previously
+       -- and we should reset that fail counter some time in the future.
+       clearFailCountTimes :: !(OrdPSQ peeraddr Time ())
      }
   deriving (Eq, Show)
 
@@ -186,9 +192,10 @@ alterKnownPeerInfo (peerSharing, peerAdvertise) peerLookupResult =
 empty :: KnownPeers peeraddr
 empty =
     KnownPeers {
-      allPeers           = Map.empty,
-      availableToConnect = Set.empty,
-      nextConnectTimes   = PSQ.empty
+      allPeers            = Map.empty,
+      availableToConnect  = Set.empty,
+      nextConnectTimes    = PSQ.empty,
+      clearFailCountTimes = PSQ.empty
     }
 
 size :: KnownPeers peeraddr -> Int
@@ -259,9 +266,9 @@ alter f ks knownPeers@KnownPeers {
       newNextConnectTimes =
         Set.foldl' (flip PSQ.delete) nextConnectTimes ks
    in knownPeers {
-        allPeers           = newAllPeers
-      , availableToConnect = newAvailableToConnect
-      , nextConnectTimes   = newNextConnectTimes
+        allPeers            = newAllPeers
+      , availableToConnect  = newAvailableToConnect
+      , nextConnectTimes    = newNextConnectTimes
       }
 
 delete :: Ord peeraddr
@@ -272,7 +279,8 @@ delete peeraddrs
        knownPeers@KnownPeers {
          allPeers,
          availableToConnect,
-         nextConnectTimes
+         nextConnectTimes,
+         clearFailCountTimes
        } =
     knownPeers {
       allPeers =
@@ -282,7 +290,10 @@ delete peeraddrs
         Set.difference availableToConnect peeraddrs,
 
       nextConnectTimes =
-        List.foldl' (flip PSQ.delete) nextConnectTimes peeraddrs
+        List.foldl' (flip PSQ.delete) nextConnectTimes peeraddrs,
+
+      clearFailCountTimes =
+        List.foldl' (flip PSQ.delete) clearFailCountTimes peeraddrs
     }
 
 
@@ -296,13 +307,15 @@ setCurrentTime :: Ord peeraddr
                -> KnownPeers peeraddr
 setCurrentTime now knownPeers@KnownPeers {
                      availableToConnect,
-                     nextConnectTimes
+                     nextConnectTimes,
+                     clearFailCountTimes
                    } =
-  let knownPeers' =
-        knownPeers {
+  let knownPeers' = List.foldl' (\kp (p,_,_) -> resetFailCount p kp)
+        (knownPeers {
           availableToConnect = availableToConnect',
-          nextConnectTimes   = nextConnectTimes'
-        }
+          nextConnectTimes   = nextConnectTimes',
+          clearFailCountTimes   = clearFailCountTimes'
+        }) nowClear
    in assert (invariant knownPeers') knownPeers'
   where
     (nowAvailableToConnect, nextConnectTimes') =
@@ -312,18 +325,21 @@ setCurrentTime now knownPeers@KnownPeers {
          availableToConnect
       <> Set.fromList [ peeraddr | (peeraddr, _, _) <- nowAvailableToConnect ]
 
+    (nowClear, clearFailCountTimes') =
+      PSQ.atMostView now clearFailCountTimes
 
 incrementFailCount :: Ord peeraddr
                    => peeraddr
                    -> KnownPeers peeraddr
                    -> (Int, KnownPeers peeraddr)
-incrementFailCount peeraddr knownPeers@KnownPeers{allPeers} =
+incrementFailCount peeraddr knownPeers@KnownPeers{allPeers, clearFailCountTimes} =
     assert (peeraddr `Map.member` allPeers) $
     let allPeers' = Map.update (Just . incr) peeraddr allPeers
     in ( -- since the `peeraddr` is assumed to be part of `allPeers` the `Map.!`
          -- is safe
          knownPeerFailCount (allPeers' Map.! peeraddr)
-       , knownPeers { allPeers = allPeers' }
+       , knownPeers { allPeers = allPeers'
+                    , clearFailCountTimes = PSQ.delete peeraddr clearFailCountTimes }
        )
   where
     incr kpi = kpi { knownPeerFailCount = knownPeerFailCount kpi + 1 }
@@ -405,30 +421,103 @@ minConnectTime KnownPeers { nextConnectTimes } fn =
                            | otherwise -> go psq'
       Nothing                          -> Nothing
 
+lookupConnectTime :: Ord peeraddr
+                  => peeraddr
+                  -> KnownPeers peeraddr
+                  -> Maybe Time
+lookupConnectTime peeraddr KnownPeers { nextConnectTimes } =
+    fst <$> PSQ.lookup peeraddr nextConnectTimes
 
-setConnectTimes :: Ord peeraddr
-                => Map peeraddr Time --TODO: make this a single entry
-                -> KnownPeers peeraddr
-                -> KnownPeers peeraddr
-setConnectTimes times
-                knownPeers@KnownPeers {
-                  allPeers,
-                  availableToConnect,
-                  nextConnectTimes
-                } =
-    assert (all (`Map.member` allPeers) (Map.keysSet times)) $
-    let knownPeers' = knownPeers {
+
+-- | Report failures for a set of peers.
+--
+-- Returns the new KnowPeers and a set of peers that where forgotten.
+--
+reportFailures :: Ord peeraddr
+               => Time
+               -- ^ current time
+               -> Int
+               -- ^ Max number of failures before a peer is forgotten
+               -> Set peeraddr
+               -- ^ peers with failure
+               -> (peeraddr -> Bool)
+               -- ^ do we have to remember the peer?
+               -> (peeraddr -> Int -> DiffTime)
+               -- ^ calculate delay from failure count
+               -> KnownPeers peeraddr
+               -> (KnownPeers peeraddr, Set peeraddr)
+reportFailures now
+               maxFail
+               peers
+               unforgetable
+               calcDelay
+               knownPeers@KnownPeers {
+                 allPeers,
+                 availableToConnect,
+                 nextConnectTimes
+               } =
+    assert (all (`Map.member` allPeers) peers) $
+
+    -- increment fail counts
+    let (peers', knownPeers') = Set.foldl' incFail (Map.empty, knownPeers) peers
+    -- filter out peers with too high fail count
+        (peers'', forgets) = Map.partitionWithKey partFn peers'
+    -- calculate reconnect times
+        times = Map.mapWithKey (\p fc -> (calcDelay p fc) `addTime` now) peers''
+    -- set next connect times.
+        knownPeers'' = delete (Map.keysSet forgets) knownPeers' {
           availableToConnect =
                    availableToConnect
             Set.\\ Map.keysSet times,
-
           nextConnectTimes =
             Map.foldlWithKey' (\psq peeraddr time -> PSQ.insert peeraddr time () psq)
                               nextConnectTimes
                               times
         }
-    in assert (invariant knownPeers') knownPeers'
+    in assert (invariant knownPeers'') (knownPeers'', Map.keysSet forgets)
+  where
 
+    incFail (m,kp) p =
+      let (fc, kp') = incrementFailCount p kp in
+      (Map.insert p fc m, kp')
+
+    partFn p _ =
+      case Map.lookup p allPeers of
+           Just k -> if knownPeerFailCount k < maxFail || unforgetable p
+                        then True
+                        else False
+           Nothing -> False -- Impossible
+
+-----------------------------------
+-- Tracking when we should clear the fail counter
+--
+
+minClearFailCountTime :: Ord peeraddr
+                    => KnownPeers peeraddr
+                    -> Maybe Time
+minClearFailCountTime KnownPeers { clearFailCountTimes } =
+    go clearFailCountTimes
+  where
+    go psq = case PSQ.minView psq of
+      Just (_, t, _, _) -> Just t
+      Nothing           -> Nothing
+
+
+setClearFailCountTime :: Ord peeraddr
+                    => peeraddr
+                    -> Time
+                    -> KnownPeers peeraddr
+                    -> KnownPeers peeraddr
+setClearFailCountTime peer time
+                    knownPeers@KnownPeers {
+                        allPeers,
+                        clearFailCountTimes
+                    } =
+    assert (Map.member peer allPeers ) $
+    let knownPeers' = knownPeers {
+          clearFailCountTimes = PSQ.insert peer time () clearFailCountTimes
+        }
+    in assert (invariant knownPeers') knownPeers'
 
 ---------------------------------
 -- Selecting peers to ask

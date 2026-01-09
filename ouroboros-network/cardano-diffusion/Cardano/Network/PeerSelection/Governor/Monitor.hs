@@ -633,6 +633,7 @@ waitForSystemToQuiesce st@PeerSelectionState{
                           , extraState = cpst@Cardano.ExtraState {
                               Cardano.ledgerStateJudgement
                             , Cardano.bootstrapPeersFlag
+                            , Cardano.bootstrapPeersTimeout
                             , Cardano.hasOnlyBootstrapPeers
                             }
                           }
@@ -669,4 +670,10 @@ waitForSystemToQuiesce st@PeerSelectionState{
                                         }
                                       }
         }
-  | otherwise = GuardedSkip Nothing
+  -- We install this timeout here for the corner case where following all hold:
+  -- a) The timeout expires
+  -- b) There is nothing else that the governor needs to wake up for to handle
+  -- This is necessary since this timeout is a pure value which is handled in the
+  -- governor loop, and otherwise it is inert and its expiration cannot cause
+  -- an iteration of the loop by itself.
+  | otherwise = GuardedSkip bootstrapPeersTimeout

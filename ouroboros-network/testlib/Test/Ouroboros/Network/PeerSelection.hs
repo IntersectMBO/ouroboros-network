@@ -2509,7 +2509,7 @@ prop_governor_target_established_below (MaxTime maxTime) env =
               (fromMaybe Set.empty)
           . Signal.fromEvents
           . Signal.selectEvents
-              (\case TracePromoteColdFailed _ _ peer _ _ ->
+              (\case TracePromoteColdFailed _ _ peer _ _ _ ->
                        --TODO: the environment does not yet cause this to happen
                        -- it requires synchronous failure in the establish action
                        Just $! Set.singleton peer
@@ -2618,7 +2618,7 @@ prop_governor_target_established_big_ledger_peers_below (MaxTime maxTime) env =
               (fromMaybe Set.empty)
           . Signal.fromEvents
           . Signal.selectEvents
-              (\case TracePromoteColdBigLedgerPeerFailed _ _ peer _ _ ->
+              (\case TracePromoteColdBigLedgerPeerFailed _ _ peer _ _ _ ->
                        --TODO: the environment does not yet cause this to happen
                        -- it requires synchronous failure in the establish action
                        Just (Set.singleton peer)
@@ -3256,7 +3256,7 @@ prop_governor_target_established_local (MaxTime maxTime) env =
               (fromMaybe Set.empty)
           . Signal.fromEvents
           . Signal.selectEvents
-              (\case TracePromoteColdFailed _ _ peer _ _ ->
+              (\case TracePromoteColdFailed _ _ peer _ _ _ ->
                        --TODO: the environment does not yet cause this to happen
                        -- it requires synchronous failure in the establish action
                        Just (Set.singleton peer)
@@ -4047,7 +4047,9 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
                 policyPeerShareRetryTime         = 0, -- seconds
                 policyPeerShareBatchWaitTime     = 0, -- seconds
                 policyPeerShareOverallTimeout    = 0, -- seconds
-                policyPeerShareActivationDelay   = 2  -- seconds
+                policyPeerShareActivationDelay   = 2, -- seconds
+                policyMaxConnectionRetries       = 5,
+                policyClearFailCountDelay        = 120 --seconds
               }
     pickTrivially :: Applicative m => Set SockAddr -> Int -> m (Set SockAddr)
     pickTrivially m n = pure . Set.take n $ m
