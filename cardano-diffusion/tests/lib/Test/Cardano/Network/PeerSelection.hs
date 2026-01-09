@@ -221,7 +221,7 @@ prop_peerSelectionView_sizes env =
                   @_
                   @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
                   @Cardano.ExtraTrace
-                  (Time (10 * 3600)) trace
+                  10000 (Time (10 * 3600)) trace
     in property $
        foldMap (\(_, TraceGovernorState _ _ st) ->
                      let view = peerSelectionStateToView Cardano.ExtraPeers.toSet Cardano.ExtraSizes.cardanoPeerSelectionStatetoCounters st in
@@ -446,6 +446,7 @@ prop_governor_hasoutput env =
                   @(Cardano.ExtraPeers PeerAddr)
                   @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
                   @Cardano.ExtraTrace
+                  10000
                   trace
 
      in counterexample (unlines ["\nSIM TRACE", ppTrace trace])
@@ -510,6 +511,7 @@ prop_governor_nofail env =
                   @(Cardano.ExtraPeers PeerAddr)
                   @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
                   @Cardano.ExtraTrace
+                  10000
               $ ioSimTrace
 
     -- run in `IO` so we can catch the pure 'AssertionFailed' exception
@@ -581,6 +583,7 @@ check_governor_nolivelock n trace0 =
                   @(Cardano.ExtraPeers PeerAddr)
                   @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
                   @Cardano.ExtraTrace
+                  10000
                 $ trace0
      in case tooManyEventsBeforeTimeAdvances 1000 trace of
           Nothing -> property True
@@ -674,6 +677,7 @@ prop_governor_nobusyness env =
                   @(Cardano.ExtraPeers PeerAddr)
                   @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
                   @Cardano.ExtraTrace
+                  10000
               $ runGovernorInMockEnvironment env
 
      in case tooBusyForTooLong (takeFirstNHours 10 trace) of
@@ -872,6 +876,7 @@ prop_governor_events_coverage env =
                   @(Cardano.ExtraPeers PeerAddr)
                   @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
                   @Cardano.ExtraTrace
+                  10000
               . runGovernorInMockEnvironment
               $ env
 
@@ -899,6 +904,7 @@ prop_governor_trace_coverage env =
                   @(Cardano.ExtraPeers PeerAddr)
                   @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
                   @Cardano.ExtraTrace
+                  10000
                 $ runGovernorInMockEnvironment env
 
         traceNumsSeen  = collectTraces trace
@@ -1067,6 +1073,7 @@ prop_governor_peershare_1hr env@GovernorMockEnvironment {
                        @(Cardano.ExtraPeers PeerAddr)
                        @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
                        @Cardano.ExtraTrace
+                       10000
                        ioSimTrace
         Just found = knownPeersAfter1Hour trace
         reachable  = peerShareReachablePeers peerGraph
@@ -1130,6 +1137,7 @@ check_governor_connstatus _ trace0 =
                   @(Cardano.ExtraPeers PeerAddr)
                   @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
                   @Cardano.ExtraTrace
+                  10000
               $ trace0
         --TODO: check any actually get a true status output and try some deliberate bugs
      in
@@ -1190,6 +1198,7 @@ prop_governor_target_root_below env =
                   @(Cardano.ExtraPeers PeerAddr)
                   @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
                   @Cardano.ExtraTrace
+                  10000
                . runGovernorInMockEnvironment
                $ env
 
@@ -1271,6 +1280,7 @@ prop_governor_target_established_public (MaxTime maxTime) env =
                   @(Cardano.ExtraPeers PeerAddr)
                   @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
                   @Cardano.ExtraTrace
+                  10000
                . runGovernorInMockEnvironment
                $ env
 
@@ -1343,6 +1353,7 @@ prop_governor_target_established_big_ledger_peers (MaxTime maxTime) env =
                   @(Cardano.ExtraPeers PeerAddr)
                   @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
                   @Cardano.ExtraTrace
+                  10000
                . runGovernorInMockEnvironment
                $ env
 
@@ -1424,6 +1435,7 @@ prop_governor_target_active_public (MaxTime maxTime) env =
                   @(Cardano.ExtraPeers PeerAddr)
                   @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
                   @Cardano.ExtraTrace
+                  10000
                . runGovernorInMockEnvironment
                $ env
 
@@ -1633,6 +1645,7 @@ prop_governor_target_known_1_valid_subset (MaxTime maxTime) env =
                   @(Cardano.ExtraPeers PeerAddr)
                   @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
                   @Cardano.ExtraTrace
+                  10000
                . runGovernorInMockEnvironment
                $ env
 
@@ -1712,6 +1725,7 @@ prop_governor_target_known_2_opportunity_taken (MaxTime maxTime) env =
                   @(Cardano.ExtraPeers PeerAddr)
                   @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
                   @Cardano.ExtraTrace
+                  10000
                . runGovernorInMockEnvironment
                $ env
 
@@ -1881,6 +1895,7 @@ prop_governor_target_known_3_not_too_chatty (MaxTime maxTime) env =
                   @(Cardano.ExtraPeers PeerAddr)
                   @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
                   @Cardano.ExtraTrace
+                  10000
                . runGovernorInMockEnvironment
                $ env
 
@@ -2095,6 +2110,7 @@ prop_governor_target_known_4_results_used (MaxTime maxTime) env =
                   @(Cardano.ExtraPeers PeerAddr)
                   @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
                   @Cardano.ExtraTrace
+                  10000
                . runGovernorInMockEnvironment
                $ env
 
@@ -2182,6 +2198,7 @@ prop_governor_target_known_5_no_shrink_below (MaxTime maxTime) env =
                    @(Cardano.ExtraPeers PeerAddr)
                    @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
                    @Cardano.ExtraTrace
+                   10000
                . runGovernorInMockEnvironment
                $ env
 
@@ -2273,6 +2290,7 @@ prop_governor_target_known_5_no_shrink_big_ledger_peers_below (MaxTime maxTime) 
                    @(Cardano.ExtraPeers PeerAddr)
                    @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
                    @Cardano.ExtraTrace
+                   10000
                . runGovernorInMockEnvironment
                $ env
 
@@ -2361,6 +2379,7 @@ prop_governor_target_known_above (MaxTime maxTime) env =
                    @(Cardano.ExtraPeers PeerAddr)
                    @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
                    @Cardano.ExtraTrace
+                   10000
                . runGovernorInMockEnvironment
                $ env
 
@@ -2483,6 +2502,7 @@ prop_governor_target_known_big_ledger_peers_above (MaxTime maxTime) env =
                    @(Cardano.ExtraPeers PeerAddr)
                    @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
                    @Cardano.ExtraTrace
+                   10000
                . runGovernorInMockEnvironment
                $ env
 
@@ -2598,6 +2618,7 @@ prop_governor_target_established_below (MaxTime maxTime) env =
                    @(Cardano.ExtraPeers PeerAddr)
                    @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
                    @Cardano.ExtraTrace
+                   10000
                . runGovernorInMockEnvironment
                $ env
 
@@ -2724,6 +2745,7 @@ prop_governor_target_established_big_ledger_peers_below (MaxTime maxTime) env =
                    @(Cardano.ExtraPeers PeerAddr)
                    @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
                    @Cardano.ExtraTrace
+                   10000
                . runGovernorInMockEnvironment
                $ env
 
@@ -2840,6 +2862,7 @@ prop_governor_target_active_below (MaxTime maxTime) env =
                    @(Cardano.ExtraPeers PeerAddr)
                    @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
                    @Cardano.ExtraTrace
+                   10000
                . runGovernorInMockEnvironment
                $ env
 
@@ -2981,6 +3004,7 @@ prop_governor_target_active_big_ledger_peers_below (MaxTime maxTime) env =
                    @(Cardano.ExtraPeers PeerAddr)
                    @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
                    @Cardano.ExtraTrace
+                   10000
                . runGovernorInMockEnvironment
                $ env
 
@@ -3097,6 +3121,7 @@ prop_governor_target_established_above (MaxTime maxTime) env =
                    @(Cardano.ExtraPeers PeerAddr)
                    @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
                    @Cardano.ExtraTrace
+                   10000
                . runGovernorInMockEnvironment
                $ env
 
@@ -3214,6 +3239,7 @@ prop_governor_target_established_big_ledger_peers_above (MaxTime maxTime) env =
                    @(Cardano.ExtraPeers PeerAddr)
                    @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
                    @Cardano.ExtraTrace
+                   10000
                . runGovernorInMockEnvironment
                $ env
 
@@ -3303,6 +3329,7 @@ prop_governor_target_active_above (MaxTime maxTime) env =
                    @(Cardano.ExtraPeers PeerAddr)
                    @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
                    @Cardano.ExtraTrace
+                   10000
                . runGovernorInMockEnvironment
                $ env
 
@@ -3387,6 +3414,7 @@ prop_governor_target_active_big_ledger_peers_above (MaxTime maxTime) env =
                    @(Cardano.ExtraPeers PeerAddr)
                    @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
                    @Cardano.ExtraTrace
+                   100000
                . runGovernorInMockEnvironment
                $ env
 
@@ -3464,6 +3492,7 @@ prop_governor_target_established_local (MaxTime maxTime) env =
                    @(Cardano.ExtraPeers PeerAddr)
                    @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
                    @Cardano.ExtraTrace
+                   100000
                $ trace
 
         govLocalRootPeersSig :: Signal (LocalRootPeers PeerTrustable PeerAddr)
@@ -3591,6 +3620,7 @@ prop_governor_target_active_local_below (MaxTime maxTime) env =
                    @(Cardano.ExtraPeers PeerAddr)
                    @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
                    @Cardano.ExtraTrace
+                   100000
                . runGovernorInMockEnvironment
                $ env
 
@@ -3726,6 +3756,7 @@ prop_governor_target_active_local_above (MaxTime maxTime) env =
                    @(Cardano.ExtraPeers PeerAddr)
                    @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
                    @Cardano.ExtraTrace
+                   100000
                . runGovernorInMockEnvironment
                $ env
 
@@ -3797,6 +3828,7 @@ prop_governor_only_bootstrap_peers_in_fallback_state env =
                   @_ @_ @_
                   @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
                   @Cardano.ExtraTrace
+                  10000
                . runGovernorInMockEnvironment
                $ env
 
@@ -3864,6 +3896,7 @@ prop_governor_no_non_trustable_peers_before_caught_up_state env =
                   @_ @_ @_
                   @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
                   @Cardano.ExtraTrace
+                  10000
                . runGovernorInMockEnvironment
                $ env
 
@@ -3942,6 +3975,7 @@ prop_governor_only_bootstrap_peers_in_clean_state env =
                   @_ @_ @_
                   @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
                   @Cardano.ExtraTrace
+                  10000
                . runGovernorInMockEnvironment
                $ env
 
@@ -4054,6 +4088,7 @@ prop_governor_stops_using_bootstrap_peers env =
                   @_ @_ @_
                   @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
                   @Cardano.ExtraTrace
+                  10000
                . runGovernorInMockEnvironment
                $ env
 
@@ -4134,6 +4169,7 @@ prop_governor_uses_ledger_peers env =
                    @(Cardano.ExtraPeers PeerAddr)
                    @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
                    @Cardano.ExtraTrace
+                   10000
                . runGovernorInMockEnvironment
                $ env
 
@@ -4189,6 +4225,7 @@ prop_governor_association_mode env =
                    @(Cardano.ExtraPeers PeerAddr)
                    @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
                    @Cardano.ExtraTrace
+                   10000
                . runGovernorInMockEnvironment
                $ env
 
@@ -4614,6 +4651,7 @@ prop_governor_repromote_delay (MaxTime maxTime) env =
                 @(Cardano.ExtraPeers PeerAddr)
                 @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
                 @Cardano.ExtraTrace
+                10000
             . runGovernorInMockEnvironment
             $ env
     in  property

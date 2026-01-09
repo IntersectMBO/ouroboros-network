@@ -857,21 +857,23 @@ selectPeerSelectionTraceEvents
      , Typeable extraCounters
      , Typeable extraTrace
      )
-  => SimTrace a -> [(Time, (TestTraceEvent extraState extraFlags extraPeers extraCounters extraTrace))]
-selectPeerSelectionTraceEvents = go
+  => Int -> SimTrace a -> [(Time, (TestTraceEvent extraState extraFlags extraPeers extraCounters extraTrace))]
+selectPeerSelectionTraceEvents maxLen = go 0
   where
-    go (SimTrace t _ _ (EventLog e) trace)
-     | Just x <- fromDynamic e       = (t,x) : go trace
-    go (SimPORTrace t _ _ _ (EventLog e) trace)
-     | Just x <- fromDynamic e       = (t,x) : go trace
-    go (SimTrace _ _ _ _ trace)      =         go trace
-    go (SimPORTrace _ _ _ _ _ trace) =         go trace
-    go (TraceRacesFound _ trace)     =         go trace
-    go (TraceMainException _ _ e _)  = throw e
-    go (TraceDeadlock      _   _)    = [] -- expected result in many cases
-    go  TraceMainReturn {}           = []
-    go (TraceInternalError e)        = error ("IOSim: " ++ e)
-    go TraceLoop                     = error "Step time limit exceeded"
+    go len _
+     | len > maxLen                      = []
+    go len (SimTrace t _ _ (EventLog e) trace)
+     | Just x <- fromDynamic e           = (t,x) : go (len + 1) trace
+    go len (SimPORTrace t _ _ _ (EventLog e) trace)
+     | Just x <- fromDynamic e       = (t,x) : go (len + 1) trace
+    go len (SimTrace _ _ _ _ trace)      =         go (len + 1) trace
+    go len (SimPORTrace _ _ _ _ _ trace) =         go (len + 1) trace
+    go len (TraceRacesFound _ trace)     =         go (len + 1) trace
+    go _ (TraceMainException _ _ e _)      = throw e
+    go _ (TraceDeadlock      _   _)        = [] -- expected result in many cases
+    go _  TraceMainReturn {}               = []
+    go _ (TraceInternalError e)            = error ("IOSim: " ++ e)
+    go _ TraceLoop                         = error "Step time limit exceeded"
 
 selectPeerSelectionTraceEventsUntil
   :: ( Typeable extraState
@@ -880,25 +882,28 @@ selectPeerSelectionTraceEventsUntil
      , Typeable extraCounters
      , Typeable extraTrace
      )
-  => Time -> SimTrace a -> [(Time, TestTraceEvent extraState extraFlags extraPeers extraCounters extraTrace)]
-selectPeerSelectionTraceEventsUntil tmax = go
+  => Int -> Time -> SimTrace a -> [(Time, TestTraceEvent extraState extraFlags extraPeers extraCounters extraTrace)]
+selectPeerSelectionTraceEventsUntil maxLen tmax = go 0
   where
-    go (SimTrace t _ _ _ _)
-     | t > tmax                      = []
-    go (SimTrace t _ _ (EventLog e) trace)
-     | Just x <- fromDynamic e       = (t,x) : go trace
-    go (SimPORTrace t _ _ _ _ _)
-     | t > tmax                      = []
-    go (SimPORTrace t _ _ _ (EventLog e) trace)
-     | Just x <- fromDynamic e       = (t,x) : go trace
-    go (SimTrace _ _ _ _ trace)      =         go trace
-    go (SimPORTrace _ _ _ _ _ trace) =         go trace
-    go (TraceRacesFound _ trace)     =         go trace
-    go (TraceMainException _ _ e _)  = throw e
-    go (TraceDeadlock      _   _)    = [] -- expected result in many cases
-    go  TraceMainReturn {}           = []
-    go (TraceInternalError e)        = error ("IOSim: " ++ e)
-    go TraceLoop                     = error "Step time limit exceeded"
+    -- go :: SimTrace a -> [(Time, TestTraceEvent extraState extraFlags extraPeers extraCounters extraTrace)]
+    go len _
+      | len > maxLen                   = []
+    go _ (SimTrace t _ _ _ _)
+     | t > tmax                        = []
+    go len (SimTrace t _ _ (EventLog e) trace)
+     | Just x <- fromDynamic e         = (t,x) : go (len + 1) trace
+    go _ (SimPORTrace t _ _ _ _ _)
+     | t > tmax                        = []
+    go len (SimPORTrace t _ _ _ (EventLog e) trace)
+     | Just x <- fromDynamic e         = (t,x) : go (len + 1) trace
+    go len (SimTrace _ _ _ _ trace)      =         go (len + 1) trace
+    go len (SimPORTrace _ _ _ _ _ trace) =         go (len + 1) trace
+    go len (TraceRacesFound _ trace)     =         go (len + 1) trace
+    go _ (TraceMainException _ _ e _)  = throw e
+    go _ (TraceDeadlock      _   _)    = [] -- expected result in many cases
+    go _ TraceMainReturn {}            = []
+    go _ (TraceInternalError e)        = error ("IOSim: " ++ e)
+    go _ TraceLoop                     = error "Step time limit exceeded"
 
 selectGovernorEvents :: [(Time, TestTraceEvent extraState extraFlags extraPeers extraCounters extraTrace)]
                      -> [(Time, TracePeerSelection extraState extraFlags extraPeers extraTrace PeerAddr)]
