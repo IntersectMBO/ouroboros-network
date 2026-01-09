@@ -6,6 +6,8 @@
 
 ### Non-breaking changes
 
+* Increase the timeout for chainsync in state StMustReply to between 601 and 911 seconds.
+
 ## 0.15.0.0 -- 28.06.2025
 
 ### Breaking changes
