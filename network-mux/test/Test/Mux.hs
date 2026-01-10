@@ -657,7 +657,7 @@ setupMiniReqRspCompat serverAction mpsEndVar (DummyTrace msgs) = do
               -> Mx.ByteChannel IO
               -> IO ((), Maybe BL.ByteString)
     clientApp clientResultVar clientChan = do
-        (result, trailing) <- runClient nullTracer clientChan (reqRespClient requests)
+        (result, trailing) <- runClientCBOR nullTracer clientChan (reqRespClient requests)
         atomically (putTMVar clientResultVar result)
         (,trailing) <$> end
 
@@ -665,7 +665,7 @@ setupMiniReqRspCompat serverAction mpsEndVar (DummyTrace msgs) = do
               -> Mx.ByteChannel IO
               -> IO ((), Maybe BL.ByteString)
     serverApp serverResultVar serverChan = do
-        (result, trailing) <- runServer nullTracer serverChan (reqRespServer responses)
+        (result, trailing) <- runServerCBOR nullTracer serverChan (reqRespServer responses)
         atomically (putTMVar serverResultVar result)
         (,trailing) <$> end
 
@@ -723,11 +723,11 @@ setupMiniReqRsp serverAction (DummyTrace msgs) = do
 
     clientApp :: Mx.ByteChannel IO
               -> IO (Bool, Maybe BL.ByteString)
-    clientApp clientChan = runClient nullTracer clientChan (reqRespClient requests)
+    clientApp clientChan = runClientCBOR nullTracer clientChan (reqRespClient requests)
 
     serverApp :: Mx.ByteChannel IO
               -> IO (Bool, Maybe BL.ByteString)
-    serverApp serverChan = runServer nullTracer serverChan (reqRespServer responses)
+    serverApp serverChan = runServerCBOR nullTracer serverChan (reqRespServer responses)
 
 --
 -- Running with queues and pipes
@@ -2015,7 +2015,7 @@ close_experiment
                 Mx.runMiniProtocol
                   mux miniProtocolNum
                   Mx.InitiatorDirectionOnly Mx.StartEagerly
-                  (\chan -> mkClient >>= runClient clientTracer chan)
+                  (\chan -> mkClient >>= runClientCBOR clientTracer chan)
             >>= atomically
       )
       $ \clientAsync ->
@@ -2035,7 +2035,7 @@ close_experiment
                   Mx.runMiniProtocol
                     mux miniProtocolNum
                     Mx.ResponderDirectionOnly Mx.StartOnDemand
-                    (\chan -> runServer serverTracer chan (server acc0))
+                    (\chan -> runServerCBOR serverTracer chan (server acc0))
               >>= atomically
           )
           $ \serverAsync -> do
