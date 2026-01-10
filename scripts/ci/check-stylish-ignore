@@ -1,5 +1,6 @@
 */Setup.hs
 ouroboros-network/api/lib/Ouroboros/Network/Protocol/Type.hs
+cardano-diffusion/lib/Cardano/Network/NodeToClient.hs
 ouroboros-network/lib/Ouroboros/Network/BlockFetch/Decision/Genesis.hs
 ouroboros-network/lib/Ouroboros/Network/PeerSelection/Governor/Types.hs
 network-mux/src/Network/Mux/TCPInfo.hs
