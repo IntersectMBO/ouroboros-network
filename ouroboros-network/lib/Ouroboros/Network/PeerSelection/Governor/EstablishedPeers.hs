@@ -492,11 +492,16 @@ jobPromoteColdPeer PeerSelectionActions {
                      peerStateActions = PeerStateActions {establishPeerConnection},
                      peerConnToPeerSharing,
                      extraPeersAPI = PublicExtraPeersAPI {
-                       extraPeersToSet
+                       extraPeersToSet,
+                       memberExtraPeers,
+                       differenceExtraPeers
                      },
                      extraStateToExtraCounters
                    }
-                   PeerSelectionPolicy { policyPeerShareActivationDelay }
+                   PeerSelectionPolicy {
+                     policyPeerShareActivationDelay,
+                     policyMaxConnectionRetries
+                   }
                    peeraddr isBigLedgerPeer diffusionMode provenance =
     Job job handler () "promoteColdPeer"
   where
@@ -505,6 +510,7 @@ jobPromoteColdPeer PeerSelectionActions {
                                extraTrace peeraddr peerconn)
     handler e = return $
       Completion $ \st@PeerSelectionState {
+                      localRootPeers,
                       publicRootPeers,
                       stdGen,
                       targets = PeerSelectionTargets {
@@ -513,26 +519,33 @@ jobPromoteColdPeer PeerSelectionActions {
                                 }
                     }
                     now ->
-        let (failCount, knownPeers') = KnownPeers.incrementFailCount
-                                         peeraddr
-                                         (knownPeers st)
-            (fuzz, stdGen') = randomR (-2, 2 :: Double) stdGen
+        let (fuzz, stdGen') = randomR (-2, 2 :: Double) stdGen
 
             -- exponential backoff: 5s, 10s, 20s, 40s, 80s, 160s.
             -- Don't forget to change in diffusion tests if changed here
-            delay :: DiffTime
-            delay = realToFrac fuzz
+            delay :: Int -> DiffTime
+            delay failCount = realToFrac fuzz
                   + fromIntegral
                       ( baseColdPeerRetryDiffTime
                       * 2 ^ (pred failCount `min` maxColdPeerRetryBackoff)
                       )
             bigLedgerPeersSet = PublicRootPeers.getBigLedgerPeers publicRootPeers
-
-            st' = st { knownPeers            = KnownPeers.setConnectTimes
-                                                 (Map.singleton
-                                                   peeraddr
-                                                   (delay `addTime` now))
-                                                 knownPeers',
+            (knownPeers', forgottenPeers) =
+                      KnownPeers.reportFailures
+                          now
+                          policyMaxConnectionRetries
+                          (Set.singleton peeraddr)
+                          (\p -> LocalRootPeers.member p localRootPeers ||
+                           (memberExtraPeers p (PublicRootPeers.getExtraPeers publicRootPeers)))
+                          (const delay)
+                          (knownPeers st)
+            publicRootPeers' = PublicRootPeers.difference differenceExtraPeers publicRootPeers
+                                                          forgottenPeers
+            (delayVal, forgotten) = case KnownPeers.lookupConnectTime peeraddr knownPeers' of
+                                         Nothing -> (0, True)
+                                         Just t  -> (t `diffTime` now, False)
+            st' = st { knownPeers            = knownPeers',
+                       publicRootPeers       = publicRootPeers',
                        inProgressPromoteCold = Set.delete peeraddr
                                                  (inProgressPromoteCold st),
                        stdGen = stdGen'
@@ -545,12 +558,12 @@ jobPromoteColdPeer PeerSelectionActions {
                                    targetNumberOfEstablishedBigLedgerPeers
                                    (case cs' of
                                      PeerSelectionCounters { numberOfEstablishedBigLedgerPeers = a } -> a)
-                                   peeraddr delay e]
+                                   peeraddr delayVal e forgotten]
                             else [TracePromoteColdFailed
                                    targetNumberOfEstablishedPeers
                                    (case cs' of
                                      PeerSelectionCounters { numberOfEstablishedPeers = a } -> a)
-                                   peeraddr delay e],
+                                   peeraddr delayVal e forgotten],
             decisionState = st',
             decisionJobs  = []
           }
@@ -593,10 +606,7 @@ jobPromoteColdPeer PeerSelectionActions {
                                   )
                                   (Set.singleton peeraddr)
                               $ KnownPeers.setSuccessfulConnectionFlag (Set.singleton peeraddr)
-                              $ KnownPeers.clearTepidFlag peeraddr $
-                                    KnownPeers.resetFailCount
-                                        peeraddr
-                                        knownPeers
+                              $ KnownPeers.clearTepidFlag peeraddr knownPeers
             bigLedgerPeersSet = PublicRootPeers.getBigLedgerPeers publicRootPeers
 
             st' = st { establishedPeers      = establishedPeers',

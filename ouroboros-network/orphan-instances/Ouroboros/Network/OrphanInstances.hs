@@ -933,13 +933,14 @@ instance ( ToJSON extraDebugState
            , "targetLocalEstablished" .= tLocalEst
            , "selectedPeers" .= toList sp
            ]
-  toJSON (TracePromoteColdFailed tEst aEst p d err) =
+  toJSON (TracePromoteColdFailed tEst aEst p d err forgotten) =
     object [ "kind" .= String "PromoteColdFailed"
            , "targetEstablished" .= tEst
            , "actualEstablished" .= aEst
            , "peer" .= p
            , "delay" .= d
            , "reason" .= show err
+           , "reason" .= show forgotten
            ]
   toJSON (TracePromoteColdDone tEst aEst p) =
     object [ "kind" .= String "PromoteColdDone"
@@ -953,13 +954,14 @@ instance ( ToJSON extraDebugState
            , "actualEstablished" .= actualKnown
            , "selectedPeers" .= toList sp
            ]
-  toJSON (TracePromoteColdBigLedgerPeerFailed tEst aEst p d err) =
+  toJSON (TracePromoteColdBigLedgerPeerFailed tEst aEst p d err forgotten) =
     object [ "kind" .= String "PromoteColdBigLedgerPeerFailed"
            , "targetEstablished" .= tEst
            , "actualEstablished" .= aEst
            , "peer" .= p
            , "delay" .= d
            , "reason" .= show err
+           , "forgotten" .= show forgotten
            ]
   toJSON (TracePromoteColdBigLedgerPeerDone tEst aEst p) =
     object [ "kind" .= String "PromoteColdBigLedgerPeerDone"
