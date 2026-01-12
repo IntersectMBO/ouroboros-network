@@ -47,9 +47,16 @@ common ghc-options
 -- in tests librararies redundant constraints are sometimes useful (e.g.
 -- by default truned off debug tracing might require extra constraints like
 -- `Show` or `MonadSay`).
+--
+-- TODO: '-Wno-redundant-constraints' remove when we support
+-- `quickcheck-monoids`. For now, it is needed to prevent
+-- false-positives that lead to build errors with `-Werror`.
+-- See https://gitlab.haskell.org/ghc/ghc/-/issues/24173 for details.
 common ghc-options-tests
   import: ghc-options
-  ghc-options: -Wno-redundant-constraints
+  ghc-options:
+    -Wno-redundant-constraints
+    -Wno-unused-packages
 
 library api
   import: ghc-options
