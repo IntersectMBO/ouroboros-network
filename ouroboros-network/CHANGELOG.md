@@ -1,5 +1,14 @@
 # Revision history for ouroboros-network
 
+## 0.22.5.0 -- 09.01.2026
+### Breaking changes
+
+### Non-breaking changes
+
+* Limit the number of faulures to 5 before a peer that isn't a localroot, bootstrap peer or public root peer is forgotten.
+* Decrease the time blockfetch waits for chainsync to exit in case of an error
+* Ensure timeout to enter safe mode when enabling bootstrap peers is respected
+
 ## 0.22.4.0 -- 04.11.2025
 
 ### Non-breaking changes
