@@ -1615,23 +1615,27 @@ instance (Show txid, Show tx)
     object
       [ "kind" .= String "MsgRequestTxs"
       , "agency" .= String (pack $ show stok)
-      , "txIds" .= String (pack $ show txids)
+      , "txIds" .= (show <$> toList txids)
       ]
   toJSON (AnyMessageAndAgency stok (Tx.MsgReplyTxs txs)) =
     object
       [ "kind" .= String "MsgReplyTxs"
       , "agency" .= String (pack $ show stok)
-      , "txs" .= String (pack $ show txs)
+      , "txs" .= (show <$> toList txs)
       ]
-  toJSON (AnyMessageAndAgency stok Tx.MsgRequestTxIds{}) =
+  toJSON (AnyMessageAndAgency stok (Tx.MsgRequestTxIds blocking numToAcknowledge numToRequest)) =
     object
       [ "kind" .= String "MsgRequestTxIds"
       , "agency" .= String (pack $ show stok)
+      , "numToAcknowledge" .= Tx.getNumTxIdsToAck numToAcknowledge
+      , "numToRequest" .= Tx.getNumTxIdsToReq numToRequest
+      , "blocking" .= (case blocking of { Tx.SingBlocking -> True; Tx.SingNonBlocking -> False } :: Bool)
       ]
-  toJSON (AnyMessageAndAgency stok (Tx.MsgReplyTxIds _)) =
+  toJSON (AnyMessageAndAgency stok (Tx.MsgReplyTxIds txids)) =
     object
       [ "kind" .= String "MsgReplyTxIds"
       , "agency" .= String (pack $ show stok)
+      , "txIds" .= (show <$> toList txids)
       ]
   toJSON (AnyMessageAndAgency stok Tx.MsgDone) =
     object
