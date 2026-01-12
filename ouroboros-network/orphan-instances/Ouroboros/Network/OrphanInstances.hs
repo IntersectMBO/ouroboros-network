@@ -1659,15 +1659,17 @@ instance (Show txid, Show tx)
       ]
 
 instance ToJSON (AnyMessage KeepAlive) where
-  toJSON (AnyMessageAndAgency stok KeepAlive.MsgKeepAlive {}) =
+  toJSON (AnyMessageAndAgency stok (KeepAlive.MsgKeepAlive cookie)) =
     object
       [ "kind" .= String "MsgKeepAlive"
       , "agency" .= String (pack $ show stok)
+      , "cookie" .= KeepAlive.unCookie cookie
       ]
-  toJSON (AnyMessageAndAgency stok KeepAlive.MsgKeepAliveResponse {}) =
+  toJSON (AnyMessageAndAgency stok (KeepAlive.MsgKeepAliveResponse cookie)) =
     object
       [ "kind" .= String "MsgKeepAliveResponse"
       , "agency" .= String (pack $ show stok)
+      , "cookie" .= KeepAlive.unCookie cookie
       ]
   toJSON (AnyMessageAndAgency stok KeepAlive.MsgDone) =
     object
