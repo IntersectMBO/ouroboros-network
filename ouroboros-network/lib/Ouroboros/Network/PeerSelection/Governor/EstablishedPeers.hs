@@ -76,6 +76,7 @@ belowTarget
   -- This might be useful if the user requires its diffusion layer to
   -- stop making progress during a sensitive/vulnerable situation and
   -- quarantine it and make sure it is only connected to trusted peers.
+  -> extraFlags
   -> PeerSelectionActions
       extraState
       extraFlags
@@ -94,10 +95,10 @@ belowTarget
       peeraddr
       peerconn
       m
-belowTarget enableAction =
-     belowTargetBigLedgerPeers enableAction
+belowTarget enableAction defaultExtraFlags =
+     belowTargetBigLedgerPeers enableAction defaultExtraFlags
   <> belowTargetLocal
-  <> belowTargetOther
+  <> belowTargetOther defaultExtraFlags
 
 
 -- | For locally configured root peers we have the explicit target that comes from local
@@ -185,12 +186,15 @@ belowTargetLocal actions@PeerSelectionActions {
                           inProgressPromoteCold = inProgressPromoteCold
                                                <> selectedToPromote
                         },
-        decisionJobs  = [ jobPromoteColdPeer
-                            actions policy peer IsNotBigLedgerPeer diffusionMode
-                            (localRootConnectionProvenance peer)
+        decisionJobs  = [ jobPromoteColdPeer actions policy peer
+                                             extraFlags
+                                             IsNotBigLedgerPeer
+                                             diffusionMode
+                                             (localRootConnectionProvenance peer)
                         | peer <- Set.toList selectedToPromote
-                        , let diffusionMode = LocalRootPeers.diffusionMode
-                                            $ LocalRootPeers.toMap localRootPeers Map.! peer
+                        , let diffusionMode = LocalRootPeers.diffusionMode localRootConfig
+                              extraFlags = LocalRootPeers.extraLocalRootFlags localRootConfig
+                              localRootConfig = LocalRootPeers.toMap localRootPeers Map.! peer
                         ]
       }
 
@@ -245,7 +249,8 @@ belowTargetOther
      , Ord peeraddr
      , HasCallStack
      )
-  => PeerSelectionActions
+  => extraFlags
+  -> PeerSelectionActions
       extraState
       extraFlags
       extraPeers
@@ -263,7 +268,8 @@ belowTargetOther
       peeraddr
       peerconn
       m
-belowTargetOther actions@PeerSelectionActions {
+belowTargetOther defaultExtraFlags
+                 actions@PeerSelectionActions {
                    extraPeersAPI = PublicExtraPeersAPI {
                      memberExtraPeers,
                      extraPeersToSet
@@ -296,9 +302,11 @@ belowTargetOther actions@PeerSelectionActions {
                           inProgressPromoteCold = inProgressPromoteCold
                                                <> selectedToPromote
                         },
-        decisionJobs  = [ jobPromoteColdPeer
-                            actions policy peer IsNotBigLedgerPeer
-                            InitiatorAndResponderDiffusionMode Outbound
+        decisionJobs  = [ jobPromoteColdPeer actions policy peer
+                                             defaultExtraFlags
+                                             IsNotBigLedgerPeer
+                                             InitiatorAndResponderDiffusionMode
+                                             Outbound
                         | peer <- Set.toList selectedToPromote ]
       }
 
@@ -354,6 +362,7 @@ belowTargetBigLedgerPeers
   -- diffusion layer to stop making progress during a
   -- sensitive/vulnerable situation and quarantine it and
   -- make sure it is only connected to trusted peers.
+  -> extraFlags
   -> PeerSelectionActions
       extraState
       extraFlags
@@ -373,6 +382,7 @@ belowTargetBigLedgerPeers
       peerconn
       m
 belowTargetBigLedgerPeers enableAction
+                          defaultExtraFlags
                           actions@PeerSelectionActions {
                             extraPeersAPI = PublicExtraPeersAPI {
                               memberExtraPeers,
@@ -429,9 +439,12 @@ belowTargetBigLedgerPeers enableAction
                           inProgressPromoteCold = inProgressPromoteCold
                                                <> selectedToPromote
                         },
-        decisionJobs  = [ jobPromoteColdPeer actions policy peer IsBigLedgerPeer
-                          InitiatorAndResponderDiffusionMode Outbound
-                        | peer <- Set.toList selectedToPromote ]
+        decisionJobs  = [ jobPromoteColdPeer actions policy peer
+                                             defaultExtraFlags
+                                             IsBigLedgerPeer
+                                             InitiatorAndResponderDiffusionMode
+                                             Outbound
+                       | peer <- Set.toList selectedToPromote ]
       }
 
     -- If we could connect except that there are no peers currently available
@@ -483,6 +496,7 @@ jobPromoteColdPeer
       m
   -> PeerSelectionPolicy peeraddr m
   -> peeraddr
+  -> extraFlags
   -> IsBigLedgerPeer
   -> DiffusionMode
   -> Provenance
@@ -502,7 +516,7 @@ jobPromoteColdPeer PeerSelectionActions {
                      policyPeerShareActivationDelay,
                      policyMaxConnectionRetries
                    }
-                   peeraddr isBigLedgerPeer diffusionMode provenance =
+                   peeraddr extraFlags isBigLedgerPeer diffusionMode provenance =
     Job job handler () "promoteColdPeer"
   where
     handler :: SomeException
@@ -572,7 +586,7 @@ jobPromoteColdPeer PeerSelectionActions {
     job = do
       --TODO: decide if we should do timeouts here or if we should make that
       -- the responsibility of establishPeerConnection
-      peerconn <- establishPeerConnection isBigLedgerPeer diffusionMode provenance peeraddr
+      peerconn <- establishPeerConnection isBigLedgerPeer diffusionMode provenance peeraddr extraFlags
       let !peerSharing = peerConnToPeerSharing peerconn
 
       return $ Completion $ \st@PeerSelectionState {

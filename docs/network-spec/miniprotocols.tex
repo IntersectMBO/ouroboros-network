@@ -933,6 +933,7 @@ violated, the connection SHOULD be torn down.
 
 The table~\ref{table:chain-sync-timeouts} specifies message timeouts in a given
 state.  If a timeout is violated, the connection SHOULD be torn down.
+The timeout on state \StMustReply{} only applies if the peer is not trustable. Trusted peers are assumed to be honest and will send new headers as soon as they receive them. If a trusted peer has not sent new headers for an extended period, it is assumed that no new headers are available. Typically, trusted peers are operated by the same organisation, such as all nodes managed by a single SPO.
 
 \begin{table}[h!]
   \begin{center}

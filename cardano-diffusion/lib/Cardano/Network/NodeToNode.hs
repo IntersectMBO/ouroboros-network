@@ -81,6 +81,7 @@ import Network.Socket (Socket, StructLinger (..))
 import Network.Socket qualified as Socket
 
 import Cardano.Network.NodeToNode.Version
+import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable)
 import Cardano.Network.Protocol.Handshake.Codec
 
 import Ouroboros.Network.ConnectionManager.Types (DataFlow (..),
@@ -129,7 +130,7 @@ data NodeToNodeProtocols appType initiatorCtx responderCtx bytes m a b = NodeToN
   }
 
 type NodeToNodeProtocolsWithExpandedCtx appType ntnAddr bytes m a b =
-    NodeToNodeProtocols appType (ExpandedInitiatorContext ntnAddr m) (ResponderContext ntnAddr) bytes m a b
+    NodeToNodeProtocols appType (ExpandedInitiatorContext ntnAddr PeerTrustable m) (ResponderContext ntnAddr) bytes m a b
 type NodeToNodeProtocolsWithMinimalCtx  appType ntnAddr bytes m a b =
     NodeToNodeProtocols appType (MinimalInitiatorContext ntnAddr)  (ResponderContext ntnAddr) bytes m a b
 

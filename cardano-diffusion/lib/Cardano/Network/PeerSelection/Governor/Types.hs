@@ -26,7 +26,8 @@ import Cardano.Network.PeerSelection.Governor.PeerSelectionActions qualified as 
 import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano
 import Cardano.Network.PeerSelection.LocalRootPeers
            (OutboundConnectionsState (..))
-import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable)
+import Cardano.Network.PeerSelection.PeerTrustable
+           (PeerTrustable (IsNotTrustable))
 import Cardano.Network.PeerSelection.PublicRootPeers qualified as Cardano.PublicRootPeers
 import Cardano.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 import Control.Applicative (Alternative)
@@ -248,6 +249,7 @@ cardanoPeerSelectionGovernorArgs extraActions =
       , ledgerPeerSnapshotExtraStateChange = \st ->
           st { Cardano.ledgerStateJudgement = YoungEnough }
       }
+  , defaultExtraFlags = IsNotTrustable
   }
 
 

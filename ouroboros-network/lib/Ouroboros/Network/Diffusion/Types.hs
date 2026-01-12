@@ -336,14 +336,14 @@ data Arguments extraState extraDebugState extraFlags extraPeers
     -- | callback which is used to register @SIGUSR1@ signal handler.
   , daInstallSigUSR1Handler
       :: forall mode x y.
-         NodeToNodeConnectionManager mode ntnFd
-                                     ntnAddr ntnVersionData
+         NodeToNodeConnectionManager mode ntnFd ntnAddr
+                                     extraFlags ntnVersionData
                                      ntnVersion m x y
       -> StrictTVar m
            (PeerSelectionState extraState extraFlags extraPeers
                                ntnAddr
                                (NodeToNodePeerConnectionHandle
-                                   mode ntnAddr
+                                   mode ntnAddr extraFlags
                                    ntnVersionData m x y))
       -> m ()
 
@@ -353,8 +353,8 @@ data Arguments extraState extraDebugState extraFlags extraPeers
            extraState extraDebugState extraFlags extraPeers
            extraAPI extraCounters extraTrace
            ntnAddr
-           (PeerConnectionHandle muxMode responderCtx
-                                 ntnAddr ntnVersionData bytes m a b)
+           (PeerConnectionHandle muxMode responderCtx ntnAddr
+                                 extraFlags ntnVersionData bytes m a b)
            exception m
 
     -- | Function that computes extraCounters from PeerSelectionState
@@ -364,7 +364,8 @@ data Arguments extraState extraDebugState extraFlags extraPeers
          PeerSelectionState extraState extraFlags extraPeers
                             ntnAddr (PeerConnectionHandle
                                        muxMode responderCtx ntnAddr
-                                       ntnVersionData bytes m a b)
+                                       extraFlags ntnVersionData
+                                       bytes m a b)
       -> extraCounters
 
     -- | Function that constructs a 'extraPeers' set from a map of dns
@@ -537,7 +538,7 @@ data Configuration extraFlags m ntnFd ntnAddr ntcFd ntcAddr = Configuration {
 --
 data Applications ntnAddr ntnVersion ntnVersionData
                   ntcAddr ntcVersion ntcVersionData
-                  m a =
+                  extraFlags m a =
   Applications {
       -- | NodeToNode initiator applications for initiator only mode.
       --
@@ -548,7 +549,7 @@ data Applications ntnAddr ntnVersion ntnVersionData
         :: Versions ntnVersion
                     ntnVersionData
                       (OuroborosBundleWithExpandedCtx
-                      Mx.InitiatorMode ntnAddr
+                      Mx.InitiatorMode ntnAddr extraFlags
                       ByteString m a Void)
 
       -- | NodeToNode initiator & responder applications for bidirectional mode.
@@ -558,7 +559,7 @@ data Applications ntnAddr ntnVersion ntnVersionData
         :: Versions ntnVersion
                     ntnVersionData
                     (OuroborosBundleWithExpandedCtx
-                      Mx.InitiatorResponderMode ntnAddr
+                      Mx.InitiatorResponderMode ntnAddr extraFlags
                       ByteString m a ())
 
       -- | NodeToClient responder application (server role)
@@ -643,17 +644,17 @@ type MkNodeToClientConnectionHandler
 
 type NodeToNodeHandle
        (mode :: Mx.Mode)
-       ntnAddr ntnVersionData m a b =
-    HandleWithExpandedCtx mode ntnAddr ntnVersionData ByteString m a b
+       ntnAddr extraFlags ntnVersionData m a b =
+    HandleWithExpandedCtx mode ntnAddr extraFlags ntnVersionData ByteString m a b
 
 type NodeToNodeConnectionManager
        (mode :: Mx.Mode)
-       ntnFd ntnAddr ntnVersionData ntnVersion m a b =
+       ntnFd ntnAddr extraFlags ntnVersionData ntnVersion m a b =
     ConnectionManager
       mode
       ntnFd
       ntnAddr
-      (NodeToNodeHandle mode ntnAddr ntnVersionData m a b)
+      (NodeToNodeHandle mode ntnAddr extraFlags ntnVersionData m a b)
       (HandlerError ntnVersion)
       m
 
@@ -661,11 +662,12 @@ type NodeToNodeConnectionManager
 -- Governor type aliases
 --
 
-type NodeToNodePeerConnectionHandle (mode :: Mx.Mode) ntnAddr ntnVersionData m a b =
+type NodeToNodePeerConnectionHandle (mode :: Mx.Mode) ntnAddr extraFlags ntnVersionData m a b =
     PeerConnectionHandle
       mode
       (ResponderContext ntnAddr)
       ntnAddr
+      extraFlags
       ntnVersionData
       ByteString
       m a b
@@ -675,7 +677,7 @@ type NodeToNodePeerSelectionActions extraState extraFlags extraPeers extraAPI ex
     PeerSelectionActions
       extraState extraFlags extraPeers extraAPI extraCounters
       ntnAddr
-      (NodeToNodePeerConnectionHandle mode ntnAddr ntnVersionData m a b)
+      (NodeToNodePeerConnectionHandle mode ntnAddr extraFlags ntnVersionData m a b)
       m
 
 

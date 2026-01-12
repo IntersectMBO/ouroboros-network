@@ -89,6 +89,7 @@ import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Ca
 import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as ExtraState
 import Cardano.Network.PeerSelection.Governor.Types qualified as Cardano
 import Cardano.Network.PeerSelection.Governor.Types qualified as ExtraSizes
+import Cardano.Network.Protocol.ChainSync.Codec.TimeLimits (timeLimitsChainSync)
 
 import Ouroboros.Network.Block (BlockNo)
 import Ouroboros.Network.BlockFetch (FetchMode (..), PraosFetchMode (..),
@@ -111,8 +112,7 @@ import Ouroboros.Network.PeerSelection qualified as Governor
 import Ouroboros.Network.PeerSelection.LedgerPeers (accPoolStake)
 import Ouroboros.Network.Protocol.BlockFetch.Codec (byteLimitsBlockFetch,
            timeLimitsBlockFetch)
-import Ouroboros.Network.Protocol.ChainSync.Codec (byteLimitsChainSync,
-           timeLimitsChainSync)
+import Ouroboros.Network.Protocol.ChainSync.Codec (byteLimitsChainSync)
 import Ouroboros.Network.Protocol.KeepAlive.Codec (byteLimitsKeepAlive,
            timeLimitsKeepAlive)
 import Ouroboros.Network.Protocol.Limits (shortWait, smallByteLimit)

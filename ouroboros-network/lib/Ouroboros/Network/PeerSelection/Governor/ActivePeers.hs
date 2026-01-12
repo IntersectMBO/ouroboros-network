@@ -59,6 +59,7 @@ belowTarget
   -- This might be useful if the user requires its diffusion layer to
   -- stop making progress during a sensitive/vulnerable situation and
   -- quarantine it and make sure it is only connected to trusted peers.
+  -> extraFlags
   -> PeerSelectionActions
       extraState
       extraFlags
@@ -77,9 +78,9 @@ belowTarget
       peeraddr
       peerconn
       m
-belowTarget enableAction = belowTargetBigLedgerPeers enableAction
-                         <> belowTargetLocal
-                         <> belowTargetOther
+belowTarget enableAction defaultExtraFlags = belowTargetBigLedgerPeers enableAction defaultExtraFlags
+                                          <> belowTargetLocal
+                                          <> belowTargetOther defaultExtraFlags
 
 -- | If we are below the target of /hot big ledger peers peers/ we promote some
 -- of the /warm peers/ according to 'policyPickWarmPeersToPromote' policy.
@@ -102,6 +103,7 @@ belowTargetBigLedgerPeers
   -- diffusion layer to stop making progress during a
   -- sensitive/vulnerable situation and quarantine it
   -- and make sure it is only connected to trusted peers.
+  -> extraFlags
   -> PeerSelectionActions
       extraState
       extraFlags
@@ -121,6 +123,7 @@ belowTargetBigLedgerPeers
       peerconn
       m
 belowTargetBigLedgerPeers enableAction
+                          defaultExtraFlags
                           actions@PeerSelectionActions {
                             extraPeersAPI = PublicExtraPeersAPI {
                               memberExtraPeers,
@@ -178,7 +181,8 @@ belowTargetBigLedgerPeers enableAction
                           inProgressPromoteWarm = inProgressPromoteWarm
                                                <> selectedToPromote
                         },
-        decisionJobs  = [ jobPromoteWarmPeer actions policy peeraddr IsBigLedgerPeer peerconn
+        decisionJobs  = [ jobPromoteWarmPeer actions policy peeraddr defaultExtraFlags
+                          IsBigLedgerPeer peerconn
                         | (peeraddr, peerconn) <- Map.assocs selectedToPromote' ]
       }
 
@@ -294,8 +298,11 @@ belowTargetLocal actions@PeerSelectionActions {
                           inProgressPromoteWarm = inProgressPromoteWarm
                                                <> selectedToPromote
                         },
-        decisionJobs  = [ jobPromoteWarmPeer actions policy peeraddr IsNotBigLedgerPeer peerconn
-                        | (peeraddr, peerconn) <- Map.assocs selectedToPromote' ]
+        decisionJobs  = [ jobPromoteWarmPeer actions policy peeraddr extraFlags IsNotBigLedgerPeer peerconn
+                        | (peeraddr, peerconn) <- Map.assocs selectedToPromote'
+                        , let extraFlags      = LocalRootPeers.extraLocalRootFlags localRootConfig
+                              localRootConfig = LocalRootPeers.toMap localRootPeers Map.! peeraddr
+                        ]
       }
 
 
@@ -331,7 +338,8 @@ belowTargetOther
      , Ord peeraddr
      , HasCallStack
      )
-  => PeerSelectionActions
+  => extraFlags
+  -> PeerSelectionActions
       extraState
       extraFlags
       extraPeers
@@ -349,7 +357,8 @@ belowTargetOther
       peeraddr
       peerconn
       m
-belowTargetOther actions@PeerSelectionActions {
+belowTargetOther defaultExtraFlags
+                 actions@PeerSelectionActions {
                    extraPeersAPI = PublicExtraPeersAPI {
                      memberExtraPeers,
                      extraPeersToSet
@@ -404,7 +413,8 @@ belowTargetOther actions@PeerSelectionActions {
                           inProgressPromoteWarm = inProgressPromoteWarm
                                                <> selectedToPromote
                         },
-        decisionJobs  = [ jobPromoteWarmPeer actions policy peeraddr IsNotBigLedgerPeer peerconn
+        decisionJobs  = [ jobPromoteWarmPeer actions policy peeraddr defaultExtraFlags
+                          IsNotBigLedgerPeer peerconn
                         | (peeraddr, peerconn) <- Map.assocs selectedToPromote' ]
       }
 
@@ -442,6 +452,7 @@ jobPromoteWarmPeer
       m
   -> PeerSelectionPolicy peeraddr m
   -> peeraddr
+  -> extraFlags
   -> IsBigLedgerPeer
   -> peerconn
   -> Job () m (Completion m extraState extraDebugState extraFlags extraPeers extraTrace
@@ -457,7 +468,7 @@ jobPromoteWarmPeer PeerSelectionActions{ peerStateActions =
                                        }
                    PeerSelectionPolicy { policyMaxConnectionRetries,
                                          policyClearFailCountDelay }
-                   peeraddr isBigLedgerPeer peerconn =
+                   peeraddr extraFlags isBigLedgerPeer peerconn =
     Job job handler () "promoteWarmPeer"
   where
     handler :: SomeException
@@ -561,7 +572,7 @@ jobPromoteWarmPeer PeerSelectionActions{ peerStateActions =
 
     job :: m (Completion m extraState extraDebugState extraFlags extraPeers extraTrace peeraddr peerconn)
     job = do
-      activatePeerConnection isBigLedgerPeer peerconn
+      activatePeerConnection isBigLedgerPeer extraFlags peerconn
       return $ Completion $ \st@PeerSelectionState {
                                publicRootPeers,
                                activePeers,

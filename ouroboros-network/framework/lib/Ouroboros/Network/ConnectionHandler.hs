@@ -140,8 +140,8 @@ data MkMuxConnectionHandler (muxMode :: Mx.Mode) socket initiatorCtx responderCt
 
 -- | 'Handle' used by `node-to-node` P2P connections.
 --
-type HandleWithExpandedCtx muxMode peerAddr versionData bytes m a b =
-     Handle    muxMode (ExpandedInitiatorContext peerAddr m)
+type HandleWithExpandedCtx muxMode peerAddr extraFlags versionData bytes m a b =
+     Handle    muxMode (ExpandedInitiatorContext peerAddr extraFlags m)
                        (ResponderContext peerAddr)
                        versionData bytes m a b
 
@@ -221,9 +221,9 @@ type MuxConnectionManager muxMode socket initiatorCtx responderCtx peerAddr vers
 
 -- | Type alias for 'ConnectionManager' which is using expanded context.
 --
-type ConnectionManagerWithExpandedCtx muxMode socket peerAddr versionData versionNumber bytes m a b =
+type ConnectionManagerWithExpandedCtx muxMode socket peerAddr extraFlags versionData versionNumber bytes m a b =
     ConnectionManager muxMode socket peerAddr
-                      (HandleWithExpandedCtx muxMode peerAddr versionData bytes m a b)
+                      (HandleWithExpandedCtx muxMode peerAddr extraFlags versionData bytes m a b)
                       (HandlerError versionNumber)
                       m
 
