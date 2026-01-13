@@ -13,7 +13,9 @@ module Ouroboros.Network.TxSubmission.Mempool.Simple
   , new
   , read
   , getReader
+  , TxSubmissionMempoolReader (..)
   , getWriter
+  , TxSubmissionMempoolWriter (..)
   ) where
 
 import Prelude hiding (read, seq)
