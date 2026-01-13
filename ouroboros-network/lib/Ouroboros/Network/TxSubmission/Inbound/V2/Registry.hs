@@ -96,7 +96,7 @@ data TxMempoolResult = TxAccepted | TxRejected
 -- `PeerTxStateAPI` is only safe inside the  `withPeer` scope.
 --
 withPeer
-    :: forall tx peeraddr txid idx m a.
+    :: forall tx peeraddr txid idx m err a.
        ( MonadMask m
        , MonadMVar m
        , MonadSTM  m
@@ -113,7 +113,7 @@ withPeer
     -> TxDecisionPolicy
     -> SharedTxStateVar m peeraddr txid tx
     -> TxSubmissionMempoolReader txid tx idx m
-    -> TxSubmissionMempoolWriter txid tx idx m
+    -> TxSubmissionMempoolWriter txid tx idx m err
     -> (tx -> SizeInBytes)
     -> peeraddr
     --  ^ new peer

@@ -69,6 +69,7 @@ txSubmissionSimulation
      , MonadSay   m
      , MonadST    m
      , MonadSTM   m
+     , MonadTime  m
      , MonadTimer m
      , MonadThrow m
      , MonadThrow (STM m)

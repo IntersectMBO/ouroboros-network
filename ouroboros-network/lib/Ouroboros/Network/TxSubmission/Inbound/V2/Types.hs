@@ -355,7 +355,7 @@ data ProcessedTxCount = ProcessedTxCount {
 --
 -- This is provided to the tx submission logic by the consensus layer.
 --
-data TxSubmissionMempoolWriter txid tx idx m =
+data TxSubmissionMempoolWriter txid tx idx m err =
      TxSubmissionMempoolWriter {
 
        -- | Compute the transaction id from a transaction.
@@ -368,9 +368,10 @@ data TxSubmissionMempoolWriter txid tx idx m =
        -- | Supply a batch of transactions to the mempool. They are either
        -- accepted or rejected individually, but in the order supplied.
        --
-       -- The 'txid's of all transactions that were added successfully are
-       -- returned.
-       mempoolAddTxs :: [tx] -> m [txid]
+       -- Return list of valid tx's added to the mempool and a list of invalid
+       -- tx's with the corresponding error.
+       --
+       mempoolAddTxs :: [tx] -> m ([txid], [(txid, err)])
     }
 
 

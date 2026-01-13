@@ -141,6 +141,7 @@ runTxSubmission
      , MonadSay   m
      , MonadST    m
      , MonadLabelledSTM m
+     , MonadTime  m
      , MonadTimer m
      , MonadThrow m
      , MonadThrow (STM m)

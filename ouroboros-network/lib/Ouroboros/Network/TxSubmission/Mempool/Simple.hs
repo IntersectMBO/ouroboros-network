@@ -21,15 +21,13 @@ module Ouroboros.Network.TxSubmission.Mempool.Simple
 import Prelude hiding (read, seq)
 
 import Control.Concurrent.Class.MonadSTM.Strict
-import Control.Monad (when)
 import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
 
-import Data.Bifunctor (bimap)
 import Data.Either (partitionEithers)
 import Data.Foldable (toList)
 import Data.Foldable qualified as Foldable
-import Data.Function (on)
-import Data.List (find, nubBy)
+import Data.List (find)
 import Data.Maybe (isJust)
 import Data.Sequence (Seq)
 import Data.Sequence qualified as Seq
@@ -124,52 +122,52 @@ instance Exception InvalidTxsError
 
 -- | A simple mempool writer.
 --
-getWriter :: forall tx txid ctx failure m.
+getWriter :: forall tx txid failure m.
              ( MonadSTM m
-             , MonadThrow m
+             , MonadTime m
              , Ord txid
-             , Typeable txid
-             , Typeable failure
-             , Show txid
-             , Show failure
              )
-          => (tx -> txid)
-          -- ^ get txid of a tx
-          -> m ctx
-          -- ^ monadic validation ctx
-          -> (ctx -> tx -> Either failure ())
-          -- ^ validate a tx, any failing `tx` throws an exception.
-          -> (failure -> Bool)
-          -- ^ return `True` when a failure should throw an exception
+          => failure
+          -- ^ duplicate tx error
+          -> (tx -> txid)
+          -- ^ get transaction hash
+          -> (UTCTime -> [tx] -> STM m [Either (txid, failure) tx])
+          -- ^ validate a tx in an `STM` transaction, this allows acquiring and
+          -- updating validation context. 
+          -> ([(txid, failure)] -> m ())
+          -- ^ handle invalid txs, e.g. logging, throwing exceptions, etc
           -> Mempool m txid tx
-          -> TxSubmissionMempoolWriter txid tx Int m
-getWriter getTxId getValidationCtx validateTx failureFilterFn (Mempool mempool) =
+          -- ^ mempool
+          -> TxSubmissionMempoolWriter txid tx Int m failure
+getWriter duplicateTx getTxId validateTx handleInvalidTxs (Mempool mempool) =
     TxSubmissionMempoolWriter {
         txId = getTxId,
 
         mempoolAddTxs = \txs -> do
-          ctx <- getValidationCtx
+          now <- getCurrentTime
           (invalidTxIds, validTxs) <- atomically $ do
             MempoolSeq { mempoolSet, mempoolSeq } <- readTVar mempool
-            let (invalidTxIds, validTxs) =
-                    bimap (filter (failureFilterFn . snd))
-                          (nubBy (on (==) getTxId))
-                  . partitionEithers
-                  . map (\tx -> case validateTx ctx tx of
-                                 Left  e -> Left (getTxId tx, e)
-                                 Right _ -> Right tx
-                        )
-                  . filter (\tx -> getTxId tx `Set.notMember` mempoolSet)
-                  $ txs
-                mempoolTxs' = MempoolSeq {
+            (invalidTxIds, validTxs) <-
+                fmap partitionEithers
+              . validateTx now
+              . filter (\tx -> getTxId tx `Set.notMember` mempoolSet)
+              $ txs
+            let mempoolTxs' = MempoolSeq {
                     mempoolSet = Foldable.foldl' (\s tx -> getTxId tx `Set.insert` s)
                                                  mempoolSet
                                                  validTxs,
                     mempoolSeq = Foldable.foldl' (Seq.|>) mempoolSeq validTxs
                   }
             writeTVar mempool mempoolTxs'
-            return (invalidTxIds, map getTxId validTxs)
-          when (not (null invalidTxIds)) $
-            throwIO (InvalidTxsError invalidTxIds)
-          return validTxs
+            return ( invalidTxIds
+                     ++
+                     [ (txid, duplicateTx)
+                     | txid <- filter (`Set.notMember` mempoolSet)
+                             . map getTxId
+                             $ txs
+                     ]
+                   , map getTxId validTxs
+                   )
+          handleInvalidTxs invalidTxIds
+          return (validTxs, invalidTxIds)
       }

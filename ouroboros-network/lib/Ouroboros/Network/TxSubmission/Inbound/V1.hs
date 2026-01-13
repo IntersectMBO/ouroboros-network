@@ -121,7 +121,7 @@ initialServerState = ServerState 0 Seq.empty Map.empty Map.empty 0
 
 
 txSubmissionInbound
-  :: forall txid tx idx m version.
+  :: forall txid tx idx m err version.
      ( Ord txid
      , NoThunks txid
      , NoThunks tx
@@ -133,7 +133,7 @@ txSubmissionInbound
   -> TxSubmissionInitDelay
   -> NumTxIdsToAck  -- ^ Maximum number of unacknowledged txids allowed
   -> TxSubmissionMempoolReader txid tx idx m
-  -> TxSubmissionMempoolWriter txid tx idx m
+  -> TxSubmissionMempoolWriter txid tx idx m err
   -> version
   -> TxSubmissionServerPipelined txid tx m ()
 txSubmissionInbound tracer initDelay (NumTxIdsToAck maxUnacked) mpReader mpWriter _version =
@@ -311,11 +311,15 @@ txSubmissionInbound tracer initDelay (NumTxIdsToAck maxUnacked) mpReader mpWrite
           TraceTxSubmissionCollected (txId `map` txs)
 
         !start <- getMonotonicTime
-        txidsAccepted <- mempoolAddTxs txsReady
+        (txidsAccepted, txidsRejected) <- mempoolAddTxs txsReady
         !end <- getMonotonicTime
         let duration = diffTime end start
-        traceWith tracer $
-          TraceTxInboundAddedToMempool txidsAccepted duration
+        unless (null txidsAccepted) $
+          traceWith tracer $
+            TraceTxInboundAddedToMempool txidsAccepted duration
+        unless (null txidsRejected) $
+          traceWith tracer $
+            TraceTxInboundRejectedFromMempool (fst <$> txidsRejected) duration
         let !accepted = length txidsAccepted
 
         traceWith tracer $ TraceTxSubmissionProcessed ProcessedTxCount {
