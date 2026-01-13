@@ -123,8 +123,12 @@ getMempoolReader :: forall txid m.
 getMempoolReader = Mempool.getReader getTxId getTxAdvSize
 
 
+data InvalidTx = InvalidTx
+  deriving Show
+
 getMempoolWriter :: forall txid m.
                     ( MonadSTM m
+                    , MonadTime m
                     , MonadThrow m
                     , Ord txid
                     , Eq txid
@@ -132,14 +136,17 @@ getMempoolWriter :: forall txid m.
                     , Show txid
                     )
                  => Mempool m txid (Tx txid)
-                 -> TxSubmissionMempoolWriter txid (Tx txid) Int m
-getMempoolWriter = Mempool.getWriter getTxId
-                                     (pure ())
-                                     (\_ tx -> if getTxValid tx
-                                               then Right ()
-                                               else Left ()
+                 -> TxSubmissionMempoolWriter txid (Tx txid) Int m InvalidTx
+getMempoolWriter = Mempool.getWriter InvalidTx
+                                     getTxId
+                                     (\_ txs -> return
+                                                 [ if getTxValid tx
+                                                   then Right tx
+                                                   else Left (getTxId tx, InvalidTx)
+                                                 | tx <- txs
+                                                 ]
                                      )
-                                     (\_ -> False)
+                                     (\_ -> return ())
 
 
 txSubmissionCodec2 :: MonadST m

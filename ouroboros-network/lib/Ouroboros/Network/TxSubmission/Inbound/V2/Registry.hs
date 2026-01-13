@@ -96,7 +96,7 @@ data TxMempoolResult = TxAccepted | TxRejected
 -- `PeerTxStateAPI` is only safe inside the  `withPeer` scope.
 --
 withPeer
-    :: forall tx peeraddr txid idx m a.
+    :: forall tx peeraddr txid idx m err a.
        ( MonadMask m
        , MonadMVar m
        , MonadSTM  m
@@ -113,7 +113,7 @@ withPeer
     -> TxDecisionPolicy
     -> SharedTxStateVar m peeraddr txid tx
     -> TxSubmissionMempoolReader txid tx idx m
-    -> TxSubmissionMempoolWriter txid tx idx m
+    -> TxSubmissionMempoolWriter txid tx idx m err
     -> (tx -> SizeInBytes)
     -> peeraddr
     --  ^ new peer
@@ -285,10 +285,10 @@ withPeer tracer
                   }
                return TxRejected
              else do
-               acceptedTxs <- mempoolAddTxs [tx]
+               (acceptedTxs, _) <- mempoolAddTxs [tx]
                end <- getMonotonicTime
-               if null acceptedTxs
-                  then do
+               case acceptedTxs of
+                 [] -> do
                       !s <- countRejectedTxs end 1
                       traceWith txTracer $ TraceTxSubmissionProcessed ProcessedTxCount {
                           ptxcAccepted = 0
@@ -296,7 +296,7 @@ withPeer tracer
                         , ptxcScore    = s
                         }
                       return TxRejected
-                  else do
+                 (_:_) -> do
                       !s <- countRejectedTxs end 0
                       traceWith txTracer $ TraceTxSubmissionProcessed ProcessedTxCount {
                           ptxcAccepted = 1

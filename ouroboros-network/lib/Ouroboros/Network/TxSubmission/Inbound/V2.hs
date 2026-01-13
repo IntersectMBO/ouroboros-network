@@ -42,14 +42,14 @@ import Ouroboros.Network.TxSubmission.Inbound.V2.Types as V2
 -- non-blocking request for txid's.
 --
 txSubmissionInboundV2
-  :: forall txid tx idx m.
+  :: forall txid tx idx m err.
      ( MonadDelay m
      , MonadThrow m
      , Ord txid
      )
   => Tracer m (TraceTxSubmissionInbound txid tx)
   -> TxSubmissionInitDelay
-  -> TxSubmissionMempoolWriter txid tx idx m
+  -> TxSubmissionMempoolWriter txid tx idx m err
   -> PeerTxAPI m txid tx
   -> TxSubmissionServerPipelined txid tx m ()
 txSubmissionInboundV2
