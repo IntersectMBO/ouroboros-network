@@ -54,7 +54,7 @@ library
     bytestring >=0.10 && <0.13,
     containers >=0.5 && <0.8,
     contra-tracer >=0.1 && <0.2,
-    io-classes:{io-classes, si-timers, strict-stm} ^>=1.8.0.1,
+    io-classes:{io-classes, si-timers, strict-mvar, strict-stm} ^>=1.9,
     monoidal-synchronisation >=0.1 && <0.2,
     network ^>=3.2.7,
     process ^>=1.6,
@@ -73,6 +73,7 @@ library
     cpp-options: -DMUX_TRACE_TCPINFO
   hs-source-dirs: src
   exposed-modules:
+    Control.Concurrent.Class.MonadChan
     Control.Concurrent.JobPool
     Network.Mux
     Network.Mux.Bearer
@@ -176,6 +177,7 @@ executable mux-demo
   other-modules: Test.Mux.ReqResp
   build-depends:
     base >=4.14 && <4.23,
+    binary,
     bytestring,
     cborg,
     contra-tracer,
@@ -193,6 +195,39 @@ executable mux-demo
     build-depends:
       directory,
       network,
+
+executable mux-leios-demo
+  import: demo-deps
+  hs-source-dirs:
+    demo
+    test
+
+  main-is: mux-leios-demo.hs
+  other-modules: Test.Mux.ReqResp
+  build-depends:
+    Win32-network,
+    base >=4.14 && <4.23,
+    binary,
+    bytestring,
+    cborg,
+    contra-tracer,
+    io-classes,
+    iproute,
+    network-mux,
+    primitive,
+    serialise,
+    stm,
+
+  if !os(windows)
+    build-depends:
+      network
+  ghc-options:
+    -rtsopts
+    -threaded
+
+  ghc-options:
+    -rtsopts
+    -threaded
 
 benchmark socket-read-write-benchmarks
   type: exitcode-stdio-1.0
