@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE NamedFieldPuns      #-}
@@ -77,7 +78,11 @@ import Data.ByteString.Lazy qualified as BL
 import Data.Word
 
 import Network.Mux qualified as Mx
+#if !defined(wasm32_HOST_ARCH)
 import Network.Socket (Socket, StructLinger (..))
+#else
+import Network.Socket (Socket)
+#endif
 import Network.Socket qualified as Socket
 
 import Cardano.Network.NodeToNode.Version
@@ -402,6 +407,7 @@ connectTo
   -> Maybe Socket.SockAddr
   -> Socket.SockAddr
   -> IO (Either SomeException (Either a b))
+#if !defined(wasm32_HOST_ARCH)
 connectTo sn tr =
     connectToNode sn makeSocketBearer
                   ConnectToArgs {
@@ -419,6 +425,9 @@ connectTo sn tr =
         Socket.setSockOpt sock Socket.Linger
                               (StructLinger { sl_onoff  = 1,
                                               sl_linger = 0 })
+#else
+connectTo _ _ = error "connecTo not supported in wasm"
+#endif
 
 -- | Node-To-Node protocol connections which negotiated
 -- `InitiatorAndResponderDiffusionMode` are `Duplex`.

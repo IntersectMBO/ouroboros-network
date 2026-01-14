@@ -313,6 +313,8 @@ socketAsChannel socket =
 ---
 --- This is primarily for testing purposes since it does not allow actual IPC.
 ---
+-- __Exceptions:__
+-- May throw 'IOError' when running on @wasm@.
 createSocketConnectedChannels :: Socket.Family -- ^ Usually AF_UNIX or AF_INET
                               -> IO (ByteChannel IO,
                                      ByteChannel IO)

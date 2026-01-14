@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
@@ -129,7 +130,11 @@ testVersionCodecCBORTerm !_ =
     decodeTerm :: CBOR.Term -> Either Text TestVersionData
     decodeTerm (CBOR.TList [CBOR.TInt x])
       | x >= 0
+#if !defined(wasm32_HOST_ARCH)
       , x <= 0xffffffff
+#else
+      , x <= 0x7fffffff
+#endif
       = Right
           TestVersionData {
               networkMagic = NetworkMagic (fromIntegral x)
@@ -180,7 +185,8 @@ prop_socket_demo :: TestBlockChainAndUpdates -> Property
 prop_socket_demo (TestBlockChainAndUpdates chain updates) =
     ioProperty $ demo chain updates
 
-
+-- | __Exceptions:__
+-- May throw 'IOError' when running on @wasm@.
 demo :: forall block .
         ( Chain.HasHeader block
         , Serialise (Chain.HeaderHash block)
