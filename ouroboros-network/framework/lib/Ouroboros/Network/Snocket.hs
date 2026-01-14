@@ -347,7 +347,7 @@ type SocketSnocket = Snocket IO Socket SockAddr
 -- 'Socket.ReuseAddr` and 'Socket.ReusePort'.
 --
 -- __Exceptions:__
--- May throw 'IOError' when compiling to @wasm@.
+-- May throw 'IOError' when running on @wasm@.
 socketSnocket
   :: IOManager
   -- ^ 'IOManager' interface.  We use it when we create a new socket and when we
