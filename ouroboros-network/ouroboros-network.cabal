@@ -55,9 +55,16 @@ common ghc-options
 -- in tests librararies redundant constraints are sometimes useful (e.g.
 -- by default truned off debug tracing might require extra constraints like
 -- `Show` or `MonadSay`).
+--
+-- TODO: '-Wno-redundant-constraints' remove when we support
+-- `quickcheck-monoids`. For now, it is needed to prevent
+-- false-positives that lead to build errors with `-Werror`.
+-- See https://gitlab.haskell.org/ghc/ghc/-/issues/24173 for details.
 common ghc-options-tests
   import: ghc-options
-  ghc-options: -Wno-redundant-constraints
+  ghc-options:
+    -Wno-redundant-constraints
+    -Wno-unused-packages
 
 library api
   import: ghc-options
@@ -450,7 +457,7 @@ library tests-lib
     cpp-options: -DNIGHTLY
 
 test-suite tests-lib-tests
-  import: ghc-options
+  import: ghc-options-tests
   type: exitcode-stdio-1.0
   main-is: Main.hs
   hs-source-dirs: tests-lib/tests
@@ -467,7 +474,10 @@ test-suite tests-lib-tests
     -threaded
 
 library framework-tests-lib
-  import: ghc-options
+  import: ghc-options-tests
+  mixins:
+    QuickCheck hiding (Test.QuickCheck.Monoids)
+
   visibility: public
   hs-source-dirs: framework/tests-lib
   exposed-modules:
@@ -479,7 +489,7 @@ library framework-tests-lib
     Test.Ouroboros.Network.RawBearer.Utils
 
   build-depends:
-    QuickCheck >=2.16,
+    QuickCheck,
     base >=4.14 && <4.23,
     bytestring,
     cborg,
@@ -490,12 +500,16 @@ library framework-tests-lib
     io-sim,
     network-mux,
     ouroboros-network:{api, framework, tests-lib},
+    quickcheck-monoids,
     random,
     serialise,
     typed-protocols:{typed-protocols, examples},
 
 test-suite framework-sim-tests
-  import: ghc-options
+  import: ghc-options-tests
+  mixins:
+    QuickCheck hiding (Test.QuickCheck.Monoids)
+
   type: exitcode-stdio-1.0
   main-is: Main.hs
   hs-source-dirs: framework/sim-tests
@@ -507,7 +521,7 @@ test-suite framework-sim-tests
     Test.Simulation.Network.Snocket
 
   build-depends:
-    QuickCheck >=2.16,
+    QuickCheck,
     base >=4.14 && <4.23,
     bytestring,
     cborg,
@@ -521,6 +535,7 @@ test-suite framework-sim-tests
     pretty-simple,
     psqueues,
     quickcheck-instances,
+    quickcheck-monoids,
     quiet,
     random,
     serialise,
@@ -538,7 +553,7 @@ test-suite framework-sim-tests
     cpp-options: -DOUROBOROS_NETWORK_IPV6
 
 test-suite framework-io-tests
-  import: ghc-options
+  import: ghc-options-tests
   type: exitcode-stdio-1.0
   main-is: Main.hs
   hs-source-dirs: framework/io-tests
@@ -549,7 +564,7 @@ test-suite framework-io-tests
     Test.Ouroboros.Network.Socket
 
   build-depends:
-    QuickCheck >=2.16,
+    QuickCheck,
     base >=4.14 && <4.23,
     bytestring,
     contra-tracer,
@@ -574,7 +589,7 @@ test-suite framework-io-tests
     -threaded
 
 library orphan-instances
-  import: ghc-options
+  import: ghc-options-tests
   visibility: public
   hs-source-dirs: orphan-instances
   exposed-modules:
@@ -733,7 +748,7 @@ library protocols
     typed-protocols:{typed-protocols, cborg, stateful, stateful-cborg} ^>=1.1,
 
 library protocols-tests-lib
-  import: ghc-options
+  import: ghc-options-tests
   visibility: public
   hs-source-dirs: protocols/tests-lib
   exposed-modules:
@@ -817,10 +832,13 @@ test-suite protocols-tests
 -- Simulation Test Library
 library ouroboros-network-tests-lib
   import: ghc-options-tests
+  mixins:
+    QuickCheck hiding (Test.QuickCheck.Monoids)
+
   visibility: public
   hs-source-dirs: tests/lib
   build-depends:
-    QuickCheck >=2.16,
+    QuickCheck,
     aeson,
     array,
     base >=4.14 && <4.23,
@@ -843,6 +861,7 @@ library ouroboros-network-tests-lib
     nothunks,
     ouroboros-network:{ouroboros-network, api, api-tests-lib, framework, protocols, protocols-tests-lib, tests-lib},
     pretty-simple,
+    quickcheck-monoids,
     random,
     serialise,
     splitmix,
@@ -851,6 +870,7 @@ library ouroboros-network-tests-lib
     tasty-quickcheck,
     text,
     time >=1.9.1 && <1.16,
+    transformers-except,
     typed-protocols,
 
   exposed-modules:
@@ -913,7 +933,7 @@ test-suite ouroboros-network-io-tests
     Test.Ouroboros.Network.Socket
 
   build-depends:
-    QuickCheck >=2.16,
+    QuickCheck,
     base >=4.14 && <4.23,
     bytestring,
     cborg,
