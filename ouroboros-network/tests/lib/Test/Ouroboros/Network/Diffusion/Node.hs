@@ -219,7 +219,7 @@ run :: forall extraState extraDebugState extraAPI
           extraTrace
           NtNAddr
           (PeerConnectionHandle
-             muxMode responderCtx NtNAddr ntnVersionData bytes m a b)
+             muxMode responderCtx NtNAddr extraFlags ntnVersionData bytes m a b)
           exception
           m)
     -> (forall muxMode responderCtx ntnVersionData bytes a b.
@@ -229,7 +229,7 @@ run :: forall extraState extraDebugState extraAPI
           extraPeers
           NtNAddr
           (PeerConnectionHandle
-             muxMode responderCtx NtNAddr ntnVersionData bytes m a b)
+             muxMode responderCtx NtNAddr extraFlags ntnVersionData bytes m a b)
         -> extraCounters)
     -> (Map NtNAddr PeerAdvertise -> extraPeers)
     -> (   PeerActionsDNS NtNAddr resolver m
@@ -261,7 +261,7 @@ run :: forall extraState extraDebugState extraAPI
         -> StdGen
         -> Diffusion.Applications NtNAddr NtNVersion NtNVersionData
                                   NtCAddr NtCVersion NtCVersionData
-                                  m ()
+                                  extraFlags m ()
        )
     -> m Void
 run blockGeneratorArgs ni na

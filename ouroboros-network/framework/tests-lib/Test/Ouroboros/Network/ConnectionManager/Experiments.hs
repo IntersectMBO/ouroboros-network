@@ -269,7 +269,7 @@ withInitiatorOnlyConnectionManager
     -- ^ Handshake time limits
     -> AcceptedConnectionsLimit
     -> (ConnectionManagerWithExpandedCtx
-          Mx.InitiatorMode socket peerAddr
+          Mx.InitiatorMode socket peerAddr ()
           DataFlowProtocolData UnversionedProtocol ByteString m [resp] Void
        -> m a)
     -> m a
@@ -335,7 +335,7 @@ withInitiatorOnlyConnectionManager name timeouts trTracer tracer stdGen snocket 
   where
     clientApplication :: TemperatureBundle
                            [MiniProtocol Mx.InitiatorMode
-                                         (ExpandedInitiatorContext peerAddr m)
+                                         (ExpandedInitiatorContext peerAddr () m)
                                          (ResponderContext peerAddr)
                                          ByteString m [resp] Void]
     clientApplication = mkProto <$> (Mx.MiniProtocolNum <$> nums)
@@ -354,7 +354,7 @@ withInitiatorOnlyConnectionManager name timeouts trTracer tracer stdGen snocket 
     reqRespInitiator :: Mx.MiniProtocolNum
                      -> (ConnectionId peerAddr -> STM m [req])
                      -> RunMiniProtocol Mx.InitiatorMode
-                                        (ExpandedInitiatorContext peerAddr m)
+                                        (ExpandedInitiatorContext peerAddr () m)
                                         (ResponderContext peerAddr)
                                         ByteString m [resp] Void
     reqRespInitiator protocolNum nextRequest =
@@ -460,7 +460,7 @@ withBidirectionalConnectionManager
     -- ^ Handshake time limits
     -> AcceptedConnectionsLimit
     -> (ConnectionManagerWithExpandedCtx
-          Mx.InitiatorResponderMode socket peerAddr
+          Mx.InitiatorResponderMode socket peerAddr ()
           DataFlowProtocolData UnversionedProtocol ByteString m [resp] acc
        -> peerAddr
        -> Async m Void
@@ -561,7 +561,7 @@ withBidirectionalConnectionManager name timeouts
   where
     serverApplication :: TemperatureBundle
                           [MiniProtocol Mx.InitiatorResponderMode
-                                        (ExpandedInitiatorContext peerAddr m)
+                                        (ExpandedInitiatorContext peerAddr () m)
                                         (ResponderContext peerAddr)
                                         ByteString m [resp] acc]
     serverApplication = mkProto <$> (Mx.MiniProtocolNum <$> nums) <*> nextRequests
@@ -582,7 +582,7 @@ withBidirectionalConnectionManager name timeouts
       -> acc
       -> (ConnectionId peerAddr -> STM m [req])
       -> RunMiniProtocol Mx.InitiatorResponderMode
-                         (ExpandedInitiatorContext peerAddr m)
+                         (ExpandedInitiatorContext peerAddr () m)
                          (ResponderContext peerAddr)
                          ByteString m [resp] acc
     reqRespInitiatorAndResponder protocolNum accInit nextRequest =
@@ -667,7 +667,7 @@ runInitiatorProtocols
        )
     => SingMuxMode muxMode
     -> Mx.Mux muxMode m
-    -> OuroborosBundle muxMode (ExpandedInitiatorContext addr m)
+    -> OuroborosBundle muxMode (ExpandedInitiatorContext addr () m)
                                (ResponderContext addr)
                                ByteString m a b
     -> TemperatureBundle (StrictTVar m ControlMessage)
@@ -681,7 +681,7 @@ runInitiatorProtocols singMuxMode mux bundle controlBundle connId = do
     traverse (atomically >=> either throwIO return)
              bundle'
   where
-    runInitiator :: MiniProtocolWithExpandedCtx muxMode addr ByteString m a b
+    runInitiator :: MiniProtocolWithExpandedCtx muxMode addr () ByteString m a b
                  -> ControlMessageSTM m
                  -> m (STM m (Either SomeException a))
     runInitiator ptcl controlMessage =
@@ -701,7 +701,8 @@ runInitiatorProtocols singMuxMode mux bundle controlBundle connId = do
         initiatorCtx = ExpandedInitiatorContext {
             eicConnectionId    = connId,
             eicControlMessage  = controlMessage,
-            eicIsBigLedgerPeer = IsNotBigLedgerPeer
+            eicIsBigLedgerPeer = IsNotBigLedgerPeer,
+            eicExtraFlags      = ()
           }
 
 --
@@ -777,7 +778,7 @@ unidirectionalExperiment stdGen timeouts snocket makeBearer confSock socket clie
                      (\connHandle -> do
                       case connHandle of
                         Connected connId _ (Handle mux muxBundle controlBundle _
-                                        :: HandleWithExpandedCtx Mx.InitiatorMode peerAddr
+                                        :: HandleWithExpandedCtx Mx.InitiatorMode peerAddr ()
                                               DataFlowProtocolData ByteString m [resp] Void) ->
                           try @_ @SomeException $
                             (runInitiatorProtocols

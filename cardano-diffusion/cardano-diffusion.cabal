@@ -243,6 +243,7 @@ library protocols
   visibility: public
   hs-source-dirs: protocols/lib
   exposed-modules:
+    Cardano.Network.Protocol.ChainSync.Codec.TimeLimits
     Cardano.Network.Protocol.Handshake.Codec
     Cardano.Network.Protocol.LocalStateQuery.Codec
     Cardano.Network.Protocol.LocalTxMonitor.Codec
@@ -290,15 +291,17 @@ library protocols
     bytestring >=0.10 && <0.13,
     cardano-diffusion:api,
     cborg >=0.2.1 && <0.3,
-    io-classes ^>=1.8.0.1,
+    io-classes:{io-classes, si-timers} ^>=1.8.0.1,
     ouroboros-network:{api, framework, protocols},
-    typed-protocols:{typed-protocols, stateful} ^>=1.1,
+    random,
+    typed-protocols:{typed-protocols, cborg, stateful} ^>=1.1,
 
 library protocols-tests-lib
   import: ghc-options
   visibility: public
   hs-source-dirs: protocols/tests-lib
   exposed-modules:
+    Cardano.Network.Protocol.ChainSync.Codec.TimeLimits.Test
     Cardano.Network.Protocol.Handshake.Test
 
   reexported-modules:
@@ -340,13 +343,14 @@ library protocols-tests-lib
     QuickCheck,
     base >=4.14 && <4.23,
     bytestring,
-    cardano-diffusion:api,
+    cardano-diffusion:{api, protocols},
     cborg,
     containers,
     contra-tracer,
-    io-classes,
+    io-classes:{io-classes, si-timers},
     io-sim,
-    ouroboros-network:{api, framework, protocols-tests-lib},
+    ouroboros-network:{api, framework, protocols, protocols-tests-lib},
+    random,
     tasty,
     tasty-quickcheck,
     text,
@@ -447,7 +451,7 @@ library cardano-diffusion-tests-lib
     aeson,
     base >=4.14 && <4.23,
     bytestring,
-    cardano-diffusion:{cardano-diffusion, api, orphan-instances, protocols-tests-lib},
+    cardano-diffusion:{cardano-diffusion, api, orphan-instances, protocols, protocols-tests-lib},
     cardano-slotting,
     cborg,
     containers,
