@@ -115,11 +115,11 @@ readMempool  = Mempool.read
 
 getMempoolReader :: forall txid m.
                     ( MonadSTM m
-                    , Eq txid
+                    , Ord txid
                     , Show txid
                     )
                  => Mempool m txid (Tx txid)
-                 -> TxSubmissionMempoolReader txid (Tx txid) Int m
+                 -> TxSubmissionMempoolReader txid (Tx txid) Integer m
 getMempoolReader = Mempool.getReader getTxId getTxAdvSize
 
 
@@ -136,7 +136,7 @@ getMempoolWriter :: forall txid m.
                     , Show txid
                     )
                  => Mempool m txid (Tx txid)
-                 -> TxSubmissionMempoolWriter txid (Tx txid) Int m InvalidTx
+                 -> TxSubmissionMempoolWriter txid (Tx txid) Integer m InvalidTx
 getMempoolWriter = Mempool.getWriter InvalidTx
                                      getTxId
                                      (\_ txs -> return
