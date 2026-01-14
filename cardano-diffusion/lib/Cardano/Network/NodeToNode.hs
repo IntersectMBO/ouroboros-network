@@ -427,6 +427,7 @@ connectTo sn tr =
 #else
 connectTo _ _ = error "connecTo not supported in wasm"
 #endif
+
 -- | Node-To-Node protocol connections which negotiated
 -- `InitiatorAndResponderDiffusionMode` are `Duplex`.
 --
