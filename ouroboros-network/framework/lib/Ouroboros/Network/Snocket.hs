@@ -455,7 +455,7 @@ type LocalSnocket = Snocket IO LocalSocket LocalAddress
 -- referenced by 'LocalSocket'.
 --
 -- __Exceptions:__
--- May throw 'IOError' when compiling to @wasm@.
+-- May throw 'IOError' when running on @wasm@.
 localSnocket :: IOManager -> LocalSnocket
 #if defined(mingw32_HOST_OS)
 localSnocket ioManager = Snocket {
