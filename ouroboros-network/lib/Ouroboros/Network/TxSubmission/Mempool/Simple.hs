@@ -9,6 +9,7 @@
 module Ouroboros.Network.TxSubmission.Mempool.Simple
   ( Mempool (..)
   , MempoolSeq (..)
+  , WithIndex (..)
   , empty
   , new
   , read
@@ -28,7 +29,6 @@ import Data.Either (partitionEithers)
 import Data.Foldable (toList)
 import Data.Foldable qualified as Foldable
 import Data.List (find)
-import Data.Maybe (isJust)
 import Data.Sequence (Seq)
 import Data.Sequence qualified as Seq
 import Data.Set (Set)
@@ -39,12 +39,18 @@ import Ouroboros.Network.SizeInBytes
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
 import Ouroboros.Network.TxSubmission.Mempool.Reader
 
+data WithIndex tx = WithIndex { getIdx :: !Integer,
+                                getTx  :: !tx }
 
 data MempoolSeq txid tx = MempoolSeq {
     mempoolSet :: !(Set txid),
     -- ^ cached set of `txid`s in the mempool
-    mempoolSeq :: !(Seq tx)
+    mempoolSeq :: !(Seq (WithIndex tx)),
     -- ^ sequence of all `tx`s
+    nextIdx    :: !Integer
+    -- ^ next available index
+    --
+    -- Invariant: larger than the index of the last element of `mempoolSeq`.
   }
 
 -- | A simple in-memory mempool implementation.
@@ -53,7 +59,7 @@ newtype Mempool m txid tx = Mempool (StrictTVar m (MempoolSeq txid tx))
 
 
 empty :: MonadSTM m => m (Mempool m txid tx)
-empty = Mempool <$> newTVarIO (MempoolSeq Set.empty Seq.empty)
+empty = Mempool <$> newTVarIO (MempoolSeq Set.empty Seq.empty (-1))
 
 
 new :: ( MonadSTM m
@@ -63,25 +69,28 @@ new :: ( MonadSTM m
     -> [tx]
     -> m (Mempool m txid tx)
 new getTxId txs =
-    fmap Mempool
-  . newTVarIO
-  $ MempoolSeq { mempoolSet = Set.fromList (getTxId <$> txs),
-                 mempoolSeq = Seq.fromList txs
-               }
+      fmap Mempool
+    . newTVarIO
+    $ MempoolSeq { mempoolSet = Set.fromList (getTxId <$> txs),
+                   mempoolSeq,
+                   nextIdx = fromIntegral (Seq.length mempoolSeq) + 1
+                 }
+  where
+    mempoolSeq = Seq.fromList $ zipWith WithIndex [0..] txs
 
 
 read :: MonadSTM m => Mempool m txid tx -> m [tx]
-read (Mempool mempool) = toList . mempoolSeq <$> readTVarIO mempool
+read (Mempool mempool) = map getTx . toList . mempoolSeq <$> readTVarIO mempool
 
 
 getReader :: forall tx txid m.
              ( MonadSTM m
-             , Eq txid
+             , Ord txid
              )
           => (tx -> txid)
           -> (tx -> SizeInBytes)
           -> Mempool m txid tx
-          -> TxSubmissionMempoolReader txid tx Int m
+          -> TxSubmissionMempoolReader txid tx Integer m
 getReader getTxId getTxSize (Mempool mempool) =
     -- Using `0`-based index.  `mempoolZeroIdx = -1` so that
     -- `mempoolTxIdsAfter mempoolZeroIdx` returns all txs.
@@ -89,21 +98,28 @@ getReader getTxId getTxSize (Mempool mempool) =
                                 mempoolZeroIdx = -1
                               }
   where
-    mempoolGetSnapshot :: STM m (MempoolSnapshot txid tx Int)
-    mempoolGetSnapshot = getSnapshot . mempoolSeq <$> readTVar mempool
+    mempoolGetSnapshot :: STM m (MempoolSnapshot txid tx Integer)
+    mempoolGetSnapshot = getSnapshot <$> readTVar mempool
 
-    getSnapshot :: Seq tx
-                -> MempoolSnapshot txid tx Int
-    getSnapshot seq =
+    getSnapshot :: MempoolSeq txid tx
+                -> MempoolSnapshot txid tx Integer
+    getSnapshot MempoolSeq { mempoolSeq = seq, mempoolSet } =
       MempoolSnapshot {
-          mempoolTxIdsAfter = \idx -> zipWith f [idx + 1..]
-                                                (toList $ Seq.drop (idx + 1) seq),
-          mempoolLookupTx   = \idx -> Seq.lookup idx seq,
-          mempoolHasTx      = \txid -> isJust $ find (\tx -> getTxId tx == txid) seq
-       }
-
-    f :: Int -> tx -> (txid, Int, SizeInBytes)
-    f idx tx = (getTxId tx, idx, getTxSize tx)
+          mempoolTxIdsAfter =
+            \idx ->
+              foldr
+                (\WithIndex {getIdx, getTx} acc ->
+                  if getIdx > idx
+                  then (getTxId getTx, getIdx, getTxSize getTx) : acc
+                  else acc
+                )
+                []
+                seq,
+          mempoolLookupTx =
+            \idx -> getTx <$> find (\WithIndex {getIdx} -> getIdx == idx) seq,
+          mempoolHasTx =
+            \txid -> txid `Set.member` mempoolSet
+        }
 
 
 data InvalidTxsError where
@@ -138,7 +154,7 @@ getWriter :: forall tx txid failure m.
           -- ^ handle invalid txs, e.g. logging, throwing exceptions, etc
           -> Mempool m txid tx
           -- ^ mempool
-          -> TxSubmissionMempoolWriter txid tx Int m failure
+          -> TxSubmissionMempoolWriter txid tx Integer m failure
 getWriter duplicateTx getTxId validateTx handleInvalidTxs (Mempool mempool) =
     TxSubmissionMempoolWriter {
         txId = getTxId,
@@ -146,7 +162,7 @@ getWriter duplicateTx getTxId validateTx handleInvalidTxs (Mempool mempool) =
         mempoolAddTxs = \txs -> do
           now <- getCurrentTime
           (invalidTxIds, validTxs) <- atomically $ do
-            MempoolSeq { mempoolSet, mempoolSeq } <- readTVar mempool
+            MempoolSeq { mempoolSet, mempoolSeq, nextIdx } <- readTVar mempool
             (invalidTxIds, validTxs) <-
                 fmap partitionEithers
               . validateTx now
@@ -156,7 +172,8 @@ getWriter duplicateTx getTxId validateTx handleInvalidTxs (Mempool mempool) =
                     mempoolSet = Foldable.foldl' (\s tx -> getTxId tx `Set.insert` s)
                                                  mempoolSet
                                                  validTxs,
-                    mempoolSeq = Foldable.foldl' (Seq.|>) mempoolSeq validTxs
+                    mempoolSeq = Foldable.foldl' (Seq.|>) mempoolSeq (zipWith WithIndex [nextIdx..] validTxs),
+                    nextIdx    = nextIdx + fromIntegral (length validTxs)
                   }
             writeTVar mempool mempoolTxs'
             return ( invalidTxIds
