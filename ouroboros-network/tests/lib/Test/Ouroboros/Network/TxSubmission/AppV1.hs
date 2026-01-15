@@ -131,7 +131,7 @@ txSubmissionSimulation tracer maxUnacked outboundTxs
     inboundPeer :: Mempool m txid (Tx txid) -> TxSubmissionServerPipelined txid (Tx txid) m ()
     inboundPeer inboundMempool =
       txSubmissionInbound
-        nullTracer
+        (("INBOUND",) `contramap` verboseTracer)
         NoTxSubmissionInitDelay
         maxUnacked
         (getMempoolReader inboundMempool)
@@ -147,20 +147,20 @@ prop_txSubmission :: Positive Word16
                   -> Property
 prop_txSubmission (Positive maxUnacked) (NonEmpty outboundTxs) delay =
     let mbDelayTime = getSmallDelay . getPositive <$> delay
-        tr = (runSimTrace $ do
-            controlMessageVar <- newTVarIO Continue
-            _ <-
-              async $ do
-                threadDelay
-                  (fromMaybe 1 mbDelayTime
-                    * realToFrac (length outboundTxs `div` 4))
-                atomically (writeTVar controlMessageVar Terminate)
-            txSubmissionSimulation
-              verboseTracer
-              (NumTxIdsToAck maxUnacked) outboundTxs
-              (readTVar controlMessageVar)
-              mbDelayTime mbDelayTime
-            ) in
+        tr = runSimTrace $ do
+               controlMessageVar <- newTVarIO Continue
+               _ <-
+                 async $ do
+                   threadDelay
+                     (fromMaybe 1 mbDelayTime
+                       * realToFrac (length outboundTxs `div` 4))
+                   atomically (writeTVar controlMessageVar Terminate)
+               txSubmissionSimulation
+                 verboseTracer
+                 (NumTxIdsToAck maxUnacked) outboundTxs
+                 (readTVar controlMessageVar)
+                 mbDelayTime mbDelayTime
+    in
     ioProperty $ do
         tr' <- evaluateTrace tr
         case tr' of
@@ -168,25 +168,31 @@ prop_txSubmission (Positive maxUnacked) (NonEmpty outboundTxs) delay =
                 return $ counterexample (intercalate "\n" $ show e : trace) False
              SimDeadLock trace -> do
                  return $ counterexample (intercalate "\n" $ "Deadlock" : trace) False
-             SimReturn (inmp, outmp) _trace -> do
-                 -- printf "Log: %s\n" (intercalate "\n" _trace)
+             SimReturn (inmp, outmp) trace -> do
                  let outUniqueTxIds = nubBy (on (==) getTxId) outmp
                      outValidTxs    = filter getTxValid outmp
                  case (length outUniqueTxIds == length outmp, length outValidTxs == length outmp) of
-                      (True, True) ->
+                      a@(True, True) ->
                           -- If we are presented with a stream of unique txids for valid
                           -- transactions the inbound transactions should match the outbound
                           -- transactions exactly.
-                          return $ inmp === take (length inmp) outValidTxs
-                      (True, False) ->
+                          return $ counterexample (intercalate "\n" trace)
+                                 $ counterexample (show a)
+                                 $ inmp === take (length inmp) outValidTxs
+                      a@(True, False) ->
                           -- If we are presented with a stream of unique txids then we should have
                           -- fetched all valid transactions.
-                          return $ inmp === take (length inmp) outValidTxs
-                      (False, True) ->
+                          return $ counterexample (intercalate "\n" trace)
+                                 $ counterexample (show a)
+                                 $ inmp === take (length inmp) outValidTxs
+                      a@(False, True) ->
                           -- If we are presented with a stream of valid txids then we should have
                           -- fetched some version of those transactions.
-                          return $ map getTxId inmp === take (length inmp) (map getTxId $
-                              filter getTxValid outUniqueTxIds)
+                          return $ counterexample (intercalate "\n" trace)
+                                 $ counterexample (show a)
+                                 $ counterexample (show (inmp, outmp))
+                                 $ map getTxId inmp === take (length inmp)
+                                                             (map getTxId $ filter getTxValid outUniqueTxIds)
                       (False, False)
                            -- If we are presented with a stream of valid and invalid Txs with
                            -- duplicate txids we're content with completing the protocol
