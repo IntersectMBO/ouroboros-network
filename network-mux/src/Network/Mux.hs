@@ -64,7 +64,7 @@ import Data.ByteString.Lazy qualified as BL
 import Data.Int (Int64)
 import Data.Map (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (isNothing)
+import Data.Maybe (fromMaybe, isNothing)
 import Data.Monoid.Synchronisation (FirstToFinish (..))
 import Data.Strict.Tuple (pattern (:!:))
 
@@ -308,7 +308,8 @@ miniProtocolJob TracersI {
                   miniProtocolInfo =
                     MiniProtocolInfo {
                       miniProtocolNum,
-                      miniProtocolDir
+                      miniProtocolDir,
+                      miniProtocolLimits
                     },
                   miniProtocolIngressQueue,
                   miniProtocolStatusVar
@@ -328,7 +329,7 @@ miniProtocolJob TracersI {
       w <- newTVarIO BL.empty
       let chan = muxChannel channelTracer_ egressQueue (Wanton w)
                             miniProtocolNum miniProtocolDirEnum
-                            miniProtocolIngressQueue
+                            miniProtocolIngressQueue (burst miniProtocolLimits)
       (result, remainder) <- miniProtocolAction chan
       traceWith tracer_ (TraceTerminating miniProtocolNum miniProtocolDirEnum)
       atomically $ do
@@ -671,13 +672,16 @@ muxChannel
     -> MiniProtocolNum
     -> MiniProtocolDir
     -> IngressQueue m
+    -> Maybe ProtocolBurst
     -> ByteChannel m
-muxChannel tracer egressQueue want@(Wanton w) mc md q =
+muxChannel tracer egressQueue want@(Wanton w) mc md q mBurst =
     Channel { send, recv }
   where
     -- Limit for the message buffer between send and mux thread.
     perMiniProtocolBufferSize :: Int64
     perMiniProtocolBufferSize = 0x3ffff
+
+    burst = fromMaybe (ProtocolBurst 1) mBurst
 
     send :: BL.ByteString -> m ()
     send encoding = do
@@ -693,7 +697,7 @@ muxChannel tracer egressQueue want@(Wanton w) mc md q =
                    let wasEmpty = BL.null buf
                    writeTVar w (BL.append buf encoding)
                    when wasEmpty $
-                     writeTBQueue egressQueue (TLSRDemand mc md want)
+                     writeTBQueue egressQueue (TLSRDemand mc md want burst)
                else retry
 
         traceWith tracer $ TraceChannelSendEnd mc

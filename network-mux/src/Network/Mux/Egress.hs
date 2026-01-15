@@ -15,7 +15,10 @@ module Network.Mux.Egress
   ) where
 
 import Control.Monad
+import Control.Monad.Trans.Class
+import Control.Monad.Trans.Except
 import Data.ByteString.Lazy qualified as BL
+import Data.Maybe (fromMaybe)
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadAsync
@@ -121,7 +124,7 @@ type EgressQueue m = StrictTBQueue m (TranslocationServiceRequest m)
 --  responsible for the segmentation of concrete representation into
 --  appropriate SDU's for onward transmission.
 data TranslocationServiceRequest m =
-     TLSRDemand !MiniProtocolNum !MiniProtocolDir !(Wanton m)
+     TLSRDemand !MiniProtocolNum !MiniProtocolDir !(Wanton m) !ProtocolBurst
 
 -- | A Wanton represent the concrete data to be translocated, note that the
 --  TVar becoming empty indicates -- that the last fragment of the data has
@@ -150,9 +153,16 @@ muxer egressQueue tracer Bearer { writeMany, sduSize, batchSize, egressInterval 
     withTimeoutSerial $ \timeout ->
     forever $ do
       start <- getMonotonicTime
-      TLSRDemand mpc md d <- atomically $ readTBQueue egressQueue
-      sdu <- processSingleWanton egressQueue sduSize mpc md d
-      sdus <- buildBatch [sdu] (sduLength sdu)
+      (sdu, mBurst) <- atomically $ do
+        demand@(TLSRDemand mpc md d (ProtocolBurst burst)) <- readTBQueue egressQueue
+        eSdu <- processSingleWanton sduSize mpc md d
+        case eSdu of
+          Right sdu | burst > 1 -> do
+                          (sdu, Just $ burst - 1) <$ unGetTBQueue egressQueue demand
+                    | otherwise -> (sdu, Nothing) <$ writeTBQueue egressQueue demand
+          Left sdu -> pure (sdu, Nothing)
+
+      sdus <- buildBatch [sdu] (sduLength sdu) (fromIntegral <$> mBurst)
       void $ writeMany tracer timeout sdus
       end <- getMonotonicTime
       empty <- atomically $ isEmptyTBQueue egressQueue
@@ -168,59 +178,76 @@ muxer egressQueue tracer Bearer { writeMany, sduSize, batchSize, egressInterval 
     sduLength sdu = fromIntegral msHeaderLength + fromIntegral (msLength sdu)
 
     -- Build a batch of SDUs to submit in one go to the bearer.
-    -- The egress queue is still processed one SDU at the time
-    -- to ensure that we don't cause starvation.
+    -- Streams which are permitted to burst will have that many
+    -- sdu's serviced back-to-back before the scheduler moves to process the
+    -- next request on the queue. Any remaining sdu's which did not
+    -- fit in the burst allowance are placed on the back of the queue
+    -- to ensure that we don't cause starvation. In particular, a burst
+    -- of 1 will have the muxer process one sdu at a time from the queue,
+    -- and any remaining work is put on the back of the queue.
     -- The batch size is either limited by the bearer
     -- (e.g the SO_SNDBUF for Socket) or number of SDUs.
     --
-    buildBatch s sl = reverse <$> go s sl
+    buildBatch s sl mBurst0 = reverse <$> go 1 s sl mBurst0
      where
-      go sdus _ | length sdus >= maxSDUsPerBatch   = return sdus
-      go sdus sdusLength | sdusLength >= batchSize = return sdus
-      go sdus !sdusLength = do
-        demand_m <- atomically $ tryReadTBQueue egressQueue
-        case demand_m of
-             Just (TLSRDemand mpc md d) -> do
-               sdu <- processSingleWanton egressQueue sduSize mpc md d
-               go (sdu:sdus) (sdusLength + sduLength sdu)
-             Nothing -> return sdus
+      go !count sdus _ _ | count >= maxSDUsPerBatch      = return sdus
+      go _ sdus sdusLength _  | sdusLength >= batchSize  = return sdus
+      go count  sdus !sdusLength mBurst = do
+        mResult <- atomically $ tryReadTBQueue egressQueue
+        case mResult of
+          Nothing -> return sdus
+          Just demand@(TLSRDemand mpc md d (ProtocolBurst burst)) -> do
+            let burst' = fromMaybe (fromIntegral burst) mBurst
+                step (!count', !sdusLength', !sdus') mx = do
+                  x <- lift mx
+                  case x of
+                    Left sdu -> do
+                      let sdusLength'' = sdusLength' + sduLength sdu
+                      throwE (succ count', sdusLength'', sdu:sdus')
+                    Right sdu -> do
+                      let sdusLength'' = sdusLength' + sduLength sdu
+                      pure (succ count', sdusLength'', sdu:sdus')
+            (count', sdusLength', sdus') <- atomically $
+              runExceptT (foldM step (count, sdusLength, sdus)
+                                     (replicate burst'
+                                                (processSingleWanton sduSize mpc md d)))
+              >>= either pure (<$ writeTBQueue egressQueue demand)
+            go count' sdus' sdusLength' Nothing
+
 
 -- | Pull a `maxSDU`s worth of data out out the `Wanton` - if there is
 -- data remaining requeue the `TranslocationServiceRequest` (this
 -- ensures that any other items on the queue will get some service
 -- first.
-processSingleWanton :: MonadSTM m
-                    => EgressQueue m
-                    -> SDUSize
+processSingleWanton :: (MonadSTM m)
+                    => SDUSize
                     -> MiniProtocolNum
                     -> MiniProtocolDir
                     -> Wanton m
-                    -> m SDU
-processSingleWanton egressQueue (SDUSize sduSize)
+                       -- Right: more sdu's remain; Left: finished
+                    -> STM m (Either SDU SDU)
+processSingleWanton (SDUSize sduSize)
                     mpc md wanton = do
-    blob <- atomically $ do
+    (blob, wrap) <- do
       -- extract next SDU
       d <- readTVar (want wanton)
       let (frag, rest) = BL.splitAt (fromIntegral sduSize) d
       -- if more to process then enqueue remaining work
       if BL.null rest
-        then writeTVar (want wanton) BL.empty
+        then (frag, Left) <$ writeTVar (want wanton) BL.empty
         else do
           -- Note that to preserve bytestream ordering within a given
           -- miniprotocol the readTVar and writeTVar operations
           -- must be inside the same STM transaction.
-          writeTVar (want wanton) rest
-          writeTBQueue egressQueue (TLSRDemand mpc md wanton)
-      -- return data to send
-      pure frag
+          (frag, Right) <$ writeTVar (want wanton) rest
     let sdu = SDU {
                 msHeader = SDUHeader {
-                    mhTimestamp = (RemoteClockModel 0),
+                    mhTimestamp = RemoteClockModel 0,
                     mhNum       = mpc,
                     mhDir       = md,
                     mhLength    = fromIntegral $ BL.length blob
                   },
                 msBlob = blob
               }
-    return sdu
+    pure $ wrap sdu
     --paceTransmission tNow
