@@ -136,6 +136,7 @@ supportedNodeToNodeVersions magic =
   , NodeToNodeVersionV12 magic InitiatorOnly
   , NodeToNodeVersionV13 magic InitiatorOnly PeerSharingDisabled
   , NodeToNodeVersionV14 magic InitiatorOnly PeerSharingDisabled
+  , NodeToNodeVersionV15 magic InitiatorOnly PeerSharingDisabled
   ]
 
 supportedNodeToClientVersions :: Word32 -> [NodeVersion]
@@ -209,6 +210,7 @@ data NodeVersion
   | NodeToNodeVersionV12   Word32 InitiatorOnly
   | NodeToNodeVersionV13   Word32 InitiatorOnly PeerSharing
   | NodeToNodeVersionV14   Word32 InitiatorOnly PeerSharing
+  | NodeToNodeVersionV15   Word32 InitiatorOnly PeerSharing
   deriving (Eq, Ord, Show)
 
 instance ToJSON NodeVersion where
@@ -243,6 +245,7 @@ instance ToJSON NodeVersion where
       NodeToNodeVersionV12   m i    -> go3 "NodeToNodeVersionV12" m i
       NodeToNodeVersionV13   m i ps -> go4 "NodeToNodeVersionV13" m i ps
       NodeToNodeVersionV14   m i ps -> go4 "NodeToNodeVersionV14" m i ps
+      NodeToNodeVersionV15   m i ps -> go4 "NodeToNodeVersionV15" m i ps
       where
         go2 (version :: String) magic = ["version" .= version, "magic" .= magic]
         go3 version magic initiator = go2 version magic <> ["initiator" .= toJSON initiator]
@@ -405,6 +408,7 @@ handshakeReqEnc versions query =
     encodeVersion (NodeToNodeVersionV12 magic mode) = encodeWithMode 12 magic mode
     encodeVersion (NodeToNodeVersionV13 magic mode _) = encodeWithMode 13 magic mode
     encodeVersion (NodeToNodeVersionV14 magic mode _) = encodeWithMode 14 magic mode
+    encodeVersion (NodeToNodeVersionV15 magic mode _) = encodeWithMode 15 magic mode
 
     nodeToClientDataWithQuery :: Word32 -> CBOR.Encoding
     nodeToClientDataWithQuery magic
@@ -519,6 +523,7 @@ handshakeDec = do
         (12, False) -> decodeWithModeAndQuery NodeToNodeVersionV12
         (13, False) -> decodeWithModeQueryAndPeerSharing NodeToNodeVersionV13
         (14, False) -> decodeWithModeQueryAndPeerSharing NodeToNodeVersionV14
+        (15, False) -> decodeWithModeQueryAndPeerSharing NodeToNodeVersionV15
 
         (9,  True)  -> Right . NodeToClientVersionV9 <$> CBOR.decodeWord32
         (10, True)  -> Right . NodeToClientVersionV10 <$> CBOR.decodeWord32
@@ -875,3 +880,4 @@ isSameVersionAndMagic v1 v2 = extract v1 == extract v2
         extract (NodeToNodeVersionV12 m _)   = (12, m)
         extract (NodeToNodeVersionV13 m _ _) = (13, m)
         extract (NodeToNodeVersionV14 m _ _) = (14, m)
+        extract (NodeToNodeVersionV15 m _ _) = (15, m)
