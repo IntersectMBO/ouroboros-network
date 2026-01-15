@@ -25,6 +25,7 @@ module Network.Mux.Types
   , IngressQueue
   , MiniProtocolIx
   , MiniProtocolDir (..)
+  , ProtocolBurst (..)
   , protocolDirEnum
   , MiniProtocolState (..)
   , MiniProtocolStatus (..)
@@ -93,14 +94,19 @@ newtype MiniProtocolNum = MiniProtocolNum Word16
   deriving (Eq, Ord, Enum, Ix, Show)
 
 -- | Per Miniprotocol limits
-newtype MiniProtocolLimits =
+data MiniProtocolLimits =
      MiniProtocolLimits {
        -- | Limit on the maximum number of bytes that can be queued in the
        -- miniprotocol's ingress queue.
        --
-       maximumIngressQueue :: Int
+       maximumIngressQueue :: !Int,
+       burst               :: !(Maybe ProtocolBurst)
      }
   deriving Show
+
+
+newtype ProtocolBurst = ProtocolBurst { getProtocolBurst :: Word8 }
+  deriving (Eq, Show)
 
 -- $interface
 --
