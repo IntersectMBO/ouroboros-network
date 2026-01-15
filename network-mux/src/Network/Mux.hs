@@ -64,7 +64,7 @@ import Data.ByteString.Lazy qualified as BL
 import Data.Int (Int64)
 import Data.Map (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (isNothing)
+import Data.Maybe (fromMaybe, isNothing)
 import Data.Monoid.Synchronisation (FirstToFinish (..))
 import Data.Strict.Tuple (pattern (:!:))
 
@@ -76,6 +76,7 @@ import Control.Monad
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI (Time (..))
 import Control.Monad.Class.MonadTimer.SI hiding (timeout)
 import Control.Tracer
 
@@ -307,7 +308,8 @@ miniProtocolJob TracersI {
                   miniProtocolInfo =
                     MiniProtocolInfo {
                       miniProtocolNum,
-                      miniProtocolDir
+                      miniProtocolDir,
+                      miniProtocolLimits
                     },
                   miniProtocolIngressQueue,
                   miniProtocolStatusVar
@@ -323,9 +325,11 @@ miniProtocolJob TracersI {
   where
     jobAction = do
       w <- newTVarIO BL.empty
-      let chan = muxChannel channelTracer_ egressQueue (Wanton w)
+      lastSent <- newTVarIO (Time 0)
+      bucket   <- newTVarIO 0
+      let chan = muxChannel channelTracer_ egressQueue (Wanton w lastSent bucket)
                             miniProtocolNum miniProtocolDirEnum
-                            miniProtocolIngressQueue
+                            miniProtocolIngressQueue (burst miniProtocolLimits)
       (result, remainder) <- miniProtocolAction chan
       traceWith tracer_ (TraceTerminating miniProtocolNum miniProtocolDirEnum)
       atomically $ do
@@ -668,8 +672,9 @@ muxChannel
     -> MiniProtocolNum
     -> MiniProtocolDir
     -> IngressQueue m
+    -> Maybe ProtocolBurst
     -> ByteChannel m
-muxChannel tracer egressQueue want@(Wanton w) mc md q =
+muxChannel tracer egressQueue want@(Wanton w _ _) mc md q mBurst =
     Channel { send, recv }
   where
     -- A soft limit on the egress buffer (Wanton) size.
@@ -681,6 +686,8 @@ muxChannel tracer egressQueue want@(Wanton w) mc md q =
     --
     egressSoftBufferLimit :: Int64
     egressSoftBufferLimit = 0x3ffff
+
+    burst = fromMaybe (ProtocolBurst 0 0) mBurst
 
     send :: BL.ByteString -> m ()
     send encoding = do
@@ -696,7 +703,7 @@ muxChannel tracer egressQueue want@(Wanton w) mc md q =
                    let wasEmpty = BL.null buf
                    writeTVar w (BL.append buf encoding)
                    when wasEmpty $
-                     writeTBQueue egressQueue (TLSRDemand mc md want)
+                     writeTBQueue egressQueue (TLSRDemand mc md want burst)
                else retry
 
         traceWith tracer $ TraceChannelSendEnd mc
