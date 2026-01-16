@@ -976,7 +976,7 @@ prop_collectTxsImpl (ArbCollectTxs _mempoolHasTxFun txidsRequested txsReceived p
         Left e ->
           counterexample ("unexpected error: " ++ show e) False
   where
-    hasTxSizeErr = any (\tx -> getTxSize tx /= getTxAdvSize tx) txsReceived
+    hasTxSizeErr = any (\tx -> abs (getTxSize tx - getTxAdvSize tx) > TXS.const_MAX_TX_SIZE_DISCREPENCY) txsReceived
 
     -- The `ProtocolErrorTxSizeError` type is an existential type.  We know that
     -- the type of `txid` is `TxId`, we just don't have evidence for it.

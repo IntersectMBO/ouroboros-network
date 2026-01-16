@@ -436,10 +436,7 @@ collectTxsImpl txSize peeraddr requestedTxIdsMap receivedTxs
                     -> SizeInBytes
                     -> Bool
         checkTxSize received advertised
-          | received > advertised
-          = received - advertised <= const_MAX_TX_SIZE_DISCREPENCY
-          | otherwise
-          = advertised - received <= const_MAX_TX_SIZE_DISCREPENCY
+          = abs (received - advertised) <= const_MAX_TX_SIZE_DISCREPENCY
 
         requestedTxIds = Map.keysSet requestedTxIdsMap
         notReceived    = requestedTxIds Set.\\ Map.keysSet receivedTxs
