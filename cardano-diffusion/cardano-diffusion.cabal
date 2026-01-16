@@ -5,7 +5,7 @@ synopsis: A networking layer for the cardano blockchain protocol
 description: A networking layer for the cardano blockchain protocol.
 license: Apache-2.0
 license-file: LICENSE
-author: Alexander Vieth, Marcin Szamotulski, Duncan Coutts
+author: Alexander Vieth, Marcin Szamotulski, Karl Knutsson, Duncan Coutts
 maintainer: marcin.szamotulski@iohk.io
 copyright: 2019-2023 Input Output Global Inc (IOG), 2023-2026 Intersect
 license-files:
@@ -353,7 +353,6 @@ library protocols-tests-lib
     random,
     tasty,
     tasty-quickcheck,
-    text,
     typed-protocols,
 
 test-suite protocols-tests
@@ -528,3 +527,27 @@ library subscription
     io-classes:si-timers ^>=1.8.0.1,
     network-mux ^>=0.9,
     ouroboros-network:{api, framework} ^>=0.23,
+
+library ping
+  import: ghc-options
+  visibility: public
+  hs-source-dirs: ping
+  exposed-modules: Cardano.Network.Ping
+  build-depends:
+    aeson >=2.1.1.0 && <3,
+    base >=4.14 && <4.23,
+    bytestring >=0.10 && <0.13,
+    cardano-diffusion:{cardano-diffusion, api, orphan-instances, protocols},
+    cborg >=0.2.8 && <0.3,
+    containers,
+    contra-tracer >=0.1 && <0.3,
+    io-classes:{io-classes, si-timers, strict-stm} ^>=1.8.0.1,
+    iproute ^>=1.7.15,
+    network ^>=3.2.7,
+    network-mux ^>=0.9,
+    ouroboros-network:{api, framework} ^>=0.23,
+    random,
+    serialise,
+    tdigest ^>=0.3,
+    text >=1.2.4 && <2.2,
+    time >=1.9.1 && <1.16,
