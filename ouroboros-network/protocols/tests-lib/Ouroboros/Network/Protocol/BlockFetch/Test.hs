@@ -336,7 +336,7 @@ codecWrapped :: MonadST m
                       m ByteString
 codecWrapped =
     codecBlockFetch
-      (wrapCBORinCBOR S.encode) (unwrapCBORinCBOR (const <$> S.decode))
+      (wrapCBORinCBOR S.encode) (unwrapCBORinCBOR (const . Right <$> S.decode))
       S.encode                  S.decode
 
 codecSerialised :: MonadST m
