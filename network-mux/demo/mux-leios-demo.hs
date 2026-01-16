@@ -119,7 +119,8 @@ reqrespTracer tag = Tracer $ \case
 defaultProtocolLimits :: MiniProtocolLimits
 defaultProtocolLimits =
     MiniProtocolLimits {
-      maximumIngressQueue = 10_000_000
+      maximumIngressQueue = 10_000_000,
+      burst = Nothing
     }
 
 
@@ -165,7 +166,7 @@ server ct ip port num len1 len2 =
       void $ forkIO $ do
         bearer <- getBearer Mx.makeSocketBearer 1.0 sock' Nothing
         case ct of
-          Sequential -> 
+          Sequential ->
             serverWorkerSequential bearer len1 len2
               `finally` Socket.close sock'
           Bursty ->

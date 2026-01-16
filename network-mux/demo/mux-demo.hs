@@ -75,7 +75,8 @@ debugTracer = showTracing (Tracer putStrLn_)
 defaultProtocolLimits :: MiniProtocolLimits
 defaultProtocolLimits =
     MiniProtocolLimits {
-      maximumIngressQueue = 64_000
+      maximumIngressQueue = 64_000,
+      burst = Nothing
     }
 
 --
