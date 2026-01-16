@@ -144,7 +144,7 @@ mkMiniProtocolState num = do
   mpv    <- newTVarIO StatusRunning
 
   let mpi = MiniProtocolInfo (MiniProtocolNum num) InitiatorDirectionOnly
-                             (MiniProtocolLimits maxBound) Nothing
+                             (MiniProtocolLimits maxBound Nothing) Nothing
   return $ MiniProtocolState mpi mpq mpv
 
 -- | Run a server that accept connections on `ad`.
@@ -253,7 +253,7 @@ startServerEgresss pollInterval sndSizeV ad = forever $ do
            let wasEmpty = BL.null buf
            writeTVar w (BL.append buf msg)
            when wasEmpty $
-             writeTBQueue eq (TLSRDemand mc md $ Wanton w)
+             writeTBQueue eq (TLSRDemand mc md (Wanton w) $ ProtocolBurst 1)
          else retry
 
 setupServer :: Socket -> IO Socket.SockAddr
