@@ -119,39 +119,8 @@ jobs:
 
     # Test network packages
 
-    - name: ntp-client [test]
-      run: cabal run ntp-client:test -- +RTS -maxN2 -RTS
-
-    - name: monoidal-synchronisation [test]
-      run: cabal run monoidal-synchronisation:test -- +RTS -maxN2 -RTS
-
-    - name: network-mux [test]
-      # TODO: issue #4635 to enable `+RTS -N`
-      run: cabal run network-mux:test
-
-    - name: ourobors-network-testing [test]
-      run: cabal run ouroboros-network-testing:test -- +RTS -maxN2 -RTS
-
-    - name: ourobors-network-framework [sim-tests]
-      # TODO: enable `+RTS -N`
-      run: cabal run ouroboros-network-framework:sim-tests
-
-    - name: ourobors-network-framework [io-tests]
-      # TODO: enable `+RTS -N`
-      run: cabal run ouroboros-network-framework:io-tests
-
-    - name: ouroboros-network-protocols [test]
-      run: cabal run ouroboros-network-protocols:test -- +RTS -maxN2 -RTS
-
-    - name: ouroboros-netowrk-protocols [cddl]
-      if: runner.os == 'Linux'
-      run: cabal run ouroboros-network-protocols:cddl -- +RTS -maxN2 -RTS
-
-    - name: ouroboros-network [io-tests]
-      run: cabal run ouroboros-network:io-tests -- +RTS -maxN2 -RTS
-
-    - name: ouroboros-network [sim-tests]
-      run: cabal run ouroboros-network:sim-tests -- +RTS -maxN2 -RTS
+    - name: test all components
+      run: cabal test all
 
     # Uncomment the following back in for debugging. Remember to launch a `pwsh` from
     # the tmux session to debug `pwsh` issues. And be reminded that the `/msys2` and
