@@ -1016,8 +1016,8 @@ instance Arbitrary ArbTxDecisionPolicy where
             <*> (SizeInBytes . getPositive <$> arbitrary)
             <*> (getSmall . getPositive <$> arbitrary)
             <*> (realToFrac <$> choose (0 :: Double, 2))
-            <*> (choose (0, 1))
-            <*> (choose (0, 1800)))
+            <*> choose (0, 1)
+            <*> choose (0, 1800))
 
     shrink (ArbTxDecisionPolicy a@TxDecisionPolicy {
               maxNumTxIdsToRequest,
