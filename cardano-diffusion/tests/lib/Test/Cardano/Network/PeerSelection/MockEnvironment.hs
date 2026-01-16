@@ -486,6 +486,7 @@ mockPeerSelectionActions' tracer
           lpExtraAPI = Cardano.LedgerPeersConsensusInterface {
             readFetchMode = pure (PraosFetchMode FetchModeDeadline),
             getLedgerStateJudgement = readLedgerStateJudgement,
+            getBlockHash = error "getBlockHash not implemented",
             updateOutboundConnectionsState = \a -> do
               a' <- readTVar outboundConnectionsStateVar
               when (a /= a') $

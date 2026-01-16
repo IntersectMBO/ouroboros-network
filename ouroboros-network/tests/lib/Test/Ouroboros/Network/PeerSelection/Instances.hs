@@ -87,4 +87,3 @@ prop_shrink_PeerSelectionTargets :: ShrinkCarefully PeerSelectionTargets -> Prop
 prop_shrink_PeerSelectionTargets x =
       prop_shrink_valid sanePeerSelectionTargets x
  .&&. prop_shrink_nonequal x
-

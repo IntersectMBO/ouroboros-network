@@ -1244,6 +1244,7 @@ diffusionSimulationM
                     Cardano.LedgerPeersConsensusInterface {
                       Cardano.readFetchMode = pure (PraosFetchMode FetchModeDeadline)
                     , Cardano.getLedgerStateJudgement = pure TooOld
+                    , Cardano.getBlockHash = error "getBlockHash not implemented"
                     , Cardano.updateOutboundConnectionsState =
                         \a -> do
                           a' <- readTVar onlyOutboundConnectionsStateVar
