@@ -71,6 +71,7 @@ module Ouroboros.Network.Block
   , fromSerialised
   ) where
 
+import Cardano.Binary (DecoderError)
 import Codec.CBOR.Decoding (Decoder)
 import Codec.CBOR.Decoding qualified as Dec
 import Codec.CBOR.Encoding (Encoding)
@@ -455,7 +456,7 @@ wrapCBORinCBOR enc = encode . mkSerialised enc
 -- It is non-incremental: see
 -- https://github.com/IntersectMBO/ouroboros-network/issues/5114
 --
-unwrapCBORinCBOR :: (forall s. Decoder s (Lazy.ByteString -> a))
+unwrapCBORinCBOR :: (forall s. Decoder s (Lazy.ByteString -> Either DecoderError a))
                  -> (forall s. Decoder s a)
 unwrapCBORinCBOR dec = fromSerialised dec =<< decode
 
@@ -467,14 +468,16 @@ mkSerialised enc = Serialised . Write.toLazyByteString . enc
 --
 -- Unlike a regular 'Decoder', which has an implicit input stream,
 -- 'fromSerialised' takes the 'Serialised' value as an argument.
-fromSerialised :: (forall s. Decoder s (Lazy.ByteString -> a))
+fromSerialised :: (forall s. Decoder s (Lazy.ByteString -> Either DecoderError a))
                -> Serialised a -> (forall s. Decoder s a)
 fromSerialised dec (Serialised payload) =
     case Read.deserialiseFromBytes dec payload of
       Left (Read.DeserialiseFailure _ reason) -> fail reason
       Right (trailing, mkA)
         | not (Lazy.null trailing) -> fail "trailing bytes in CBOR-in-CBOR"
-        | otherwise                -> return (mkA payload)
+        | otherwise                -> case mkA payload of
+                                        Left err  -> fail $ show err
+                                        Right res -> pure res
 
 -- | CBOR-in-CBOR
 --
