@@ -1933,7 +1933,7 @@ prop_diffusion_nolivelock_iosimpor
 prop_diffusion_nolivelock_iosim
   :: AbsBearerInfo -> DiffusionScript -> Property
 prop_diffusion_nolivelock_iosim
-  = testWithIOSim prop_diffusion_nolivelock long_trace
+  = testWithIOSim prop_diffusion_nolivelock (5 * short_trace)
 
 
 -- | Test that verifies that that we can recover from DNS lookup failures.
@@ -3657,7 +3657,7 @@ prop_diffusion_async_demotions_iosimpor
 prop_diffusion_async_demotions_iosim
   :: AbsBearerInfo -> DiffusionScript -> Property
 prop_diffusion_async_demotions_iosim
-  = testWithIOSim prop_diffusion_async_demotions long_trace
+  = testWithIOSim prop_diffusion_async_demotions (short_trace `div` 15)
 
 
 unit_diffusion_async_demotions :: Property

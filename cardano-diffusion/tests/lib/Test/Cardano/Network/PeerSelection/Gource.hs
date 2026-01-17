@@ -40,7 +40,7 @@ visualisationTrace :: GovernorMockEnvironment
 visualisationTrace =
     takeFirstNHours 24
   . selectGovernorEvents
-  . selectPeerSelectionTraceEvents @() @() @() @()
+  . selectPeerSelectionTraceEvents @() @() @() @() 10000
   . runGovernorInMockEnvironment
 
 toGourceScript :: Map PeerAddr (PeerSource, [PeerAddr])
