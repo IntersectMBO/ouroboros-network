@@ -526,5 +526,5 @@ library subscription
     containers >=0.5 && <0.9,
     contra-tracer >=0.1 && <0.3,
     io-classes:si-timers ^>=1.8.0.1,
-    network-mux ^>=0.9,
-    ouroboros-network:{api, framework} ^>=0.23,
+    network-mux ^>=0.10,
+    ouroboros-network:{api, framework} ^>=0.24,
