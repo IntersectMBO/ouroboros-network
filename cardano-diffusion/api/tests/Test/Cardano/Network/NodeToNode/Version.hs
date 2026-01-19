@@ -6,7 +6,6 @@ module Test.Cardano.Network.NodeToNode.Version (tests) where
 import Cardano.Network.NodeToNode.Version
 
 import Ouroboros.Network.CodecCBORTerm
-import Ouroboros.Network.Magic
 
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Test.QuickCheck
@@ -52,9 +51,9 @@ prop_nodeToNodeVersionCodec version =
 
 prop_nodeToNodeCodec :: NodeToNodeVersion -> NodeToNodeVersionData -> Bool
 prop_nodeToNodeCodec ntnVersion ntnData =
-      case decodeTerm (encodeTerm ntnData) of
+      case decodeData ntnVersion (encodeData ntnVersion ntnData) of
         Right ntnData' -> networkMagic  ntnData' == networkMagic  ntnData
                        && diffusionMode ntnData' == diffusionMode ntnData
         Left {}        -> False
     where
-      CodecCBORTerm { encodeTerm, decodeTerm } = nodeToNodeCodecCBORTerm ntnVersion
+      VersionDataCodec { encodeData, decodeData } = nodeToNodeVersionDataCodec

@@ -15,7 +15,6 @@ module Cardano.Network.Protocol.Handshake.Test where
 
 import Data.ByteString.Lazy (ByteString)
 import Data.Map qualified as Map
-import Data.Text (Text)
 
 import Codec.CBOR.Read qualified as CBOR
 import Codec.CBOR.Term qualified as CBOR
@@ -33,7 +32,6 @@ import Cardano.Network.NodeToNode.Version as NTN
 import Ouroboros.Network.Channel
 import Ouroboros.Network.CodecCBORTerm
 import Ouroboros.Network.Driver.Simple (runConnectedPeers)
-import Ouroboros.Network.Magic
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 
 import Ouroboros.Network.Protocol.Handshake.Client
@@ -111,7 +109,6 @@ newtype ArbitraryNodeToNodeVersionData =
         ArbitraryNodeToNodeVersionData
           { getNodeToNodeVersionData :: NodeToNodeVersionData }
     deriving Show
-    deriving Acceptable via NodeToNodeVersionData
 
 -- | With the introduction of PeerSharing to 'NodeToNodeVersionData' this type's
 -- 'Acceptable' instance is no longer symmetric. Because when handshake is
@@ -124,9 +121,6 @@ instance Eq ArbitraryNodeToNodeVersionData where
   (==) (ArbitraryNodeToNodeVersionData (NodeToNodeVersionData nm dm ps _))
        (ArbitraryNodeToNodeVersionData (NodeToNodeVersionData nm' dm' ps' _))
     = nm == nm' && dm == dm' && ps == ps'
-
-instance Queryable ArbitraryNodeToNodeVersionData where
-    queryVersion = queryVersion . getNodeToNodeVersionData
 
 instance Arbitrary ArbitraryNodeToNodeVersionData where
     arbitrary = fmap (fmap (fmap ArbitraryNodeToNodeVersionData))
@@ -166,7 +160,7 @@ instance Arbitrary ArbitraryNodeToNodeVersionData where
 newtype ArbitraryNodeToNodeVersions =
         ArbitraryNodeToNodeVersions
           { getArbitraryNodeToNodeVersiosn :: Versions NodeToNodeVersion
-                                                       ArbitraryNodeToNodeVersionData Bool }
+                                                       NodeToNodeVersionData Bool }
 
 instance Show ArbitraryNodeToNodeVersions where
     show (ArbitraryNodeToNodeVersions (Versions vs))
@@ -175,7 +169,7 @@ instance Show ArbitraryNodeToNodeVersions where
 instance Arbitrary ArbitraryNodeToNodeVersions where
     arbitrary = do
       vs <- listOf (getNodeToNodeVersion <$> arbitrary)
-      ds <- vectorOf (length vs) arbitrary
+      ds <- map getNodeToNodeVersionData <$> vectorOf (length vs) arbitrary
       r  <- arbitrary
       return $ ArbitraryNodeToNodeVersions
              $ Versions
@@ -245,7 +239,7 @@ prop_acceptable_symmetric_NodeToNode
   :: ArbitraryNodeToNodeVersionData
   -> ArbitraryNodeToNodeVersionData
   -> Bool
-prop_acceptable_symmetric_NodeToNode a b =
+prop_acceptable_symmetric_NodeToNode (ArbitraryNodeToNodeVersionData a) (ArbitraryNodeToNodeVersionData b) =
     prop_acceptable_symmetric a b
 
 
@@ -269,11 +263,10 @@ prop_query_version_NodeToNode_ST
    runSimOrThrow $ prop_query_version
                     createConnectedChannels
                     (codecHandshake nodeToNodeVersionCodec)
-                    (cborTermVersionDataCodec (fmap transformNodeToNodeVersionData nodeToNodeCodecCBORTerm))
+                    nodeToNodeVersionDataCodec
                     clientVersions
                     serverVersions
-                    (\(ArbitraryNodeToNodeVersionData vd) ->
-                      ArbitraryNodeToNodeVersionData $
+                    (\vd ->
                         vd { NTN.query = True
                            , NTN.peerSharing = PeerSharingEnabled
                            })
@@ -289,11 +282,10 @@ prop_query_version_NodeToNode_IO
    ioProperty $ prop_query_version
                     createConnectedChannels
                     (codecHandshake nodeToNodeVersionCodec)
-                    (cborTermVersionDataCodec (fmap transformNodeToNodeVersionData nodeToNodeCodecCBORTerm))
+                    nodeToNodeVersionDataCodec
                     clientVersions
                     serverVersions
-                    (\(ArbitraryNodeToNodeVersionData vd) ->
-                      ArbitraryNodeToNodeVersionData $
+                    (\vd ->
                         vd { NTN.query = True
                            , NTN.peerSharing = PeerSharingEnabled
                            })
@@ -309,11 +301,10 @@ prop_query_version_NodeToNode_SimNet
    runSimOrThrow $ prop_query_version
                     createConnectedChannels
                     (codecHandshake nodeToNodeVersionCodec)
-                    (cborTermVersionDataCodec (fmap transformNodeToNodeVersionData nodeToNodeCodecCBORTerm))
+                    nodeToNodeVersionDataCodec
                     clientVersions
                     serverVersions
-                    (\(ArbitraryNodeToNodeVersionData vd) ->
-                      ArbitraryNodeToNodeVersionData $
+                    (\vd ->
                         vd { NTN.query = True
                            , NTN.peerSharing = PeerSharingEnabled
                            })
@@ -329,7 +320,7 @@ prop_query_version_NodeToClient_ST
    runSimOrThrow $ prop_query_version
                     createConnectedChannels
                     (codecHandshake nodeToClientVersionCodec)
-                    (cborTermVersionDataCodec nodeToClientCodecCBORTerm)
+                    nodeToClientVersionDataCodec
                     clientVersions
                     serverVersions
                     (\vd -> vd {NTC.query = True})
@@ -345,7 +336,7 @@ prop_query_version_NodeToClient_IO
    ioProperty $ prop_query_version
                     createConnectedChannels
                     (codecHandshake nodeToClientVersionCodec)
-                    (cborTermVersionDataCodec nodeToClientCodecCBORTerm)
+                    nodeToClientVersionDataCodec
                     clientVersions
                     serverVersions
                     (\vd -> vd {NTC.query = True})
@@ -361,7 +352,7 @@ prop_query_version_NodeToClient_SimNet
    runSimOrThrow $ prop_query_version
                     createConnectedChannels
                     (codecHandshake nodeToClientVersionCodec)
-                    (cborTermVersionDataCodec nodeToClientCodecCBORTerm)
+                    nodeToClientVersionDataCodec
                     clientVersions
                     serverVersions
                     (\vd -> vd {NTC.query = True})
@@ -376,9 +367,9 @@ prop_peerSharing_symmetric ::
                            => m (Channel m ByteString, Channel m ByteString)
                            -> Codec (Handshake NodeToNodeVersion CBOR.Term)
                                      CBOR.DeserialiseFailure m ByteString
-                           -> VersionDataCodec CBOR.Term NodeToNodeVersion ArbitraryNodeToNodeVersionData
-                           -> Versions NodeToNodeVersion ArbitraryNodeToNodeVersionData Bool
-                           -> Versions NodeToNodeVersion ArbitraryNodeToNodeVersionData Bool
+                           -> VersionDataCodec NodeToNodeVersion NodeToNodeVersionData
+                           -> Versions NodeToNodeVersion NodeToNodeVersionData Bool
+                           -> Versions NodeToNodeVersion NodeToNodeVersionData Bool
                            -> m Property
 prop_peerSharing_symmetric createChannels codec versionDataCodec clientVersions serverVersions = do
   (clientRes, serverRes) <-
@@ -396,8 +387,8 @@ prop_peerSharing_symmetric createChannels codec versionDataCodec clientVersions 
   pure $ case (clientRes, serverRes) of
     -- TODO: make this return ArbitraryNodeToNodeVersionData rather than a pair
     -- of NodeToNodeVersionData
-    (  Right (HandshakeNegotiationResult _ v (ArbitraryNodeToNodeVersionData clientResult))
-     , Right (HandshakeNegotiationResult _ v' (ArbitraryNodeToNodeVersionData serverResult))
+    (  Right (HandshakeNegotiationResult _ v clientResult)
+     , Right (HandshakeNegotiationResult _ v' serverResult)
      ) | v == v'
        , v >= NodeToNodeV_14 ->
          counterexample
@@ -422,7 +413,7 @@ prop_peerSharing_symmetric_NodeToNode_SimNet
    runSimOrThrow $ prop_peerSharing_symmetric
                     createConnectedChannels
                     (codecHandshake nodeToNodeVersionCodec)
-                    (cborTermVersionDataCodec (fmap transformNodeToNodeVersionData nodeToNodeCodecCBORTerm))
+                    nodeToNodeVersionDataCodec
                     clientVersions
                     serverVersions
 
@@ -434,7 +425,7 @@ prop_acceptOrRefuse_symmetric_NodeToNode
 prop_acceptOrRefuse_symmetric_NodeToNode (ArbitraryNodeToNodeVersions a)
                                          (ArbitraryNodeToNodeVersions b) =
 
-  prop_acceptOrRefuse_symmetric a b
+  prop_acceptOrRefuse_symmetric nodeToNodeVersionDataCodec a b
 
 
 prop_acceptOrRefuse_symmetric_NodeToClient
@@ -444,7 +435,7 @@ prop_acceptOrRefuse_symmetric_NodeToClient
 prop_acceptOrRefuse_symmetric_NodeToClient (ArbitraryNodeToClientVersions a)
                                            (ArbitraryNodeToClientVersions b) =
 
-  prop_acceptOrRefuse_symmetric a b
+  prop_acceptOrRefuse_symmetric nodeToClientVersionDataCodec a b
 
 
 prop_channel_simultaneous_open_NodeToNode_ST :: ArbitraryNodeToNodeVersions
@@ -456,16 +447,9 @@ prop_channel_simultaneous_open_NodeToNode_ST
   runSimOrThrow $ prop_channel_simultaneous_open
                     createConnectedChannels
                     (codecHandshake nodeToNodeVersionCodec)
-                    (cborTermVersionDataCodec (fmap transformNodeToNodeVersionData nodeToNodeCodecCBORTerm))
+                    nodeToNodeVersionDataCodec
                     clientVersions
                     serverVersions
-
-transformNodeToNodeVersionData :: CodecCBORTerm Text NodeToNodeVersionData
-          -> CodecCBORTerm Text ArbitraryNodeToNodeVersionData
-transformNodeToNodeVersionData (CodecCBORTerm g h) =
-  CodecCBORTerm { encodeTerm = \(ArbitraryNodeToNodeVersionData a) -> g a
-                , decodeTerm = fmap (fmap ArbitraryNodeToNodeVersionData) h
-                }
 
 
 prop_channel_simultaneous_open_NodeToNode_IO :: ArbitraryNodeToNodeVersions
@@ -477,7 +461,7 @@ prop_channel_simultaneous_open_NodeToNode_IO
   ioProperty $ prop_channel_simultaneous_open
                     createConnectedChannels
                     (codecHandshake nodeToNodeVersionCodec)
-                    (cborTermVersionDataCodec (fmap transformNodeToNodeVersionData nodeToNodeCodecCBORTerm))
+                    nodeToNodeVersionDataCodec
                     clientVersions
                     serverVersions
 
@@ -491,7 +475,7 @@ prop_channel_simultaneous_open_NodeToClient_ST
   runSimOrThrow $ prop_channel_simultaneous_open
                     createConnectedChannels
                     (codecHandshake nodeToClientVersionCodec)
-                    (cborTermVersionDataCodec nodeToClientCodecCBORTerm)
+                    nodeToClientVersionDataCodec
                     clientVersions
                     serverVersions
 
@@ -505,7 +489,7 @@ prop_channel_simultaneous_open_NodeToClient_IO
   ioProperty $ prop_channel_simultaneous_open
                     createConnectedChannels
                     (codecHandshake nodeToClientVersionCodec)
-                    (cborTermVersionDataCodec nodeToClientCodecCBORTerm)
+                    nodeToClientVersionDataCodec
                     clientVersions
                     serverVersions
 
@@ -518,7 +502,7 @@ prop_channel_simultaneous_open_NodeToNode_SimNet
     (ArbitraryNodeToNodeVersions serverVersions) =
       runSimOrThrow $ prop_channel_simultaneous_open_sim
         (codecHandshake nodeToNodeVersionCodec)
-        (cborTermVersionDataCodec (fmap transformNodeToNodeVersionData nodeToNodeCodecCBORTerm))
+        nodeToNodeVersionDataCodec
         clientVersions
         serverVersions
 
@@ -530,6 +514,6 @@ prop_channel_simultaneous_open_NodeToClient_SimNet
     (ArbitraryNodeToClientVersions serverVersions) =
       runSimOrThrow $ prop_channel_simultaneous_open_sim
         (codecHandshake nodeToClientVersionCodec)
-        (cborTermVersionDataCodec nodeToClientCodecCBORTerm)
+        nodeToClientVersionDataCodec
         clientVersions
         serverVersions

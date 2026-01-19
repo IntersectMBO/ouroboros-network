@@ -46,8 +46,7 @@ import Ouroboros.Network.Protocol.ChainSync.Codec qualified as ChainSync
 import Ouroboros.Network.Protocol.ChainSync.Examples qualified as ChainSync
 import Ouroboros.Network.Protocol.ChainSync.Server qualified as ChainSync
 import Ouroboros.Network.Protocol.Handshake (HandshakeArguments (..))
-import Ouroboros.Network.Protocol.Handshake.Codec (cborTermVersionDataCodec,
-           noTimeLimitsHandshake)
+import Ouroboros.Network.Protocol.Handshake.Codec (noTimeLimitsHandshake)
 import Ouroboros.Network.Protocol.Handshake.Version (simpleSingletonVersions)
 import Ouroboros.Network.Server.Simple qualified as Server.Simple
 import Ouroboros.Network.Util.ShowProxy
@@ -144,6 +143,8 @@ testVersionCodecCBORTerm !_ =
     decodeTerm t
       = Left $ T.pack $ "unknown encoding: " ++ show t
 
+testVersionDataCodec :: VersionDataCodec TestVersion TestVersionData
+testVersionDataCodec = mkVersionedCodecCBORTerm testVersionCodecCBORTerm
 
 --
 -- The list of all tests
@@ -254,7 +255,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
         haHandshakeTracer  = nullTracer,
         haBearerTracer     = nullTracer,
         haHandshakeCodec   = handshakeCodec,
-        haVersionDataCodec = cborTermVersionDataCodec testVersionCodecCBORTerm,
+        haVersionDataCodec = testVersionDataCodec,
         haAcceptVersion    = acceptableVersion,
         haQueryVersion     = queryVersion,
         haTimeLimits       = noTimeLimitsHandshake
@@ -272,7 +273,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
           ConnectToArgs {
             ctaHandshakeCodec      = handshakeCodec,
             ctaHandshakeTimeLimits = noTimeLimitsHandshake,
-            ctaVersionDataCodec    = cborTermVersionDataCodec testVersionCodecCBORTerm,
+            ctaVersionDataCodec    = testVersionDataCodec,
             ctaConnectTracers      = nullNetworkConnectTracers,
             ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
           }

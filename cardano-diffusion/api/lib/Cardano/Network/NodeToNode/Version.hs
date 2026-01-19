@@ -9,7 +9,8 @@ module Cardano.Network.NodeToNode.Version
   , DiffusionMode (..)
   , ConnectionMode (..)
   , nodeToNodeVersionCodec
-  , nodeToNodeCodecCBORTerm
+  , nodeToNodeVersionDataCodec
+  , NetworkMagic (..)
   ) where
 
 import Data.Text (Text)
@@ -168,5 +169,8 @@ nodeToNodeCodecCBORTerm =
     decodeTerm t
       = Left $ T.pack $ "unknown encoding: " ++ show t
 
+
+nodeToNodeVersionDataCodec :: VersionDataCodec NodeToNodeVersion NodeToNodeVersionData
+nodeToNodeVersionDataCodec = mkVersionedCodecCBORTerm nodeToNodeCodecCBORTerm
 
 data ConnectionMode = UnidirectionalMode | DuplexMode
