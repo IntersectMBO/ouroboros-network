@@ -41,7 +41,7 @@ import Ouroboros.Network.BlockFetch (FetchMode (..), PraosFetchMode (..))
 import Ouroboros.Network.Diffusion.Policies (churnEstablishConnectionTimeout,
            closeConnectionTimeout, deactivateTimeout)
 import Ouroboros.Network.PeerSelection.Churn (CheckPeerSelectionCounters,
-           ChurnCounters (..), ModifyPeerSelectionTargets, PeerChurnArgs (..))
+           ModifyPeerSelectionTargets, PeerChurnArgs (..))
 import Ouroboros.Network.PeerSelection.Governor.Types hiding (targets)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..))
@@ -127,7 +127,6 @@ peerChurnGovernor
   -> m Void
 peerChurnGovernor PeerChurnArgs {
                     pcaPeerSelectionTracer = tracer,
-                    pcaChurnTracer         = churnTracer,
                     pcaDeadlineInterval    = deadlineChurnInterval,
                     pcaBulkInterval        = bulkChurnInterval,
                     pcaPeerRequestTimeout  = requestPeersTimeout,
@@ -240,14 +239,12 @@ peerChurnGovernor PeerChurnArgs {
                              let r = c' - c
                              endTime <- getMonotonicTime
                              traceWith tracer (TraceChurnAction (endTime `diffTime` startTime) churnAction r)
-                             traceWith churnTracer (ChurnCounter churnAction r)
                              return $ abs r
                            Left c' -> do
                              endTime <- getMonotonicTime
                              cancelTimeout
                              let r = c' - c
                              traceWith tracer (TraceChurnTimeout (endTime `diffTime` startTime) churnAction r)
-                             traceWith churnTracer (ChurnCounter churnAction r)
                              return $ abs r
                      )
 

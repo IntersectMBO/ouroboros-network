@@ -196,9 +196,6 @@ data Tracers ntnAddr ntnVersion ntnVersionData
     , dtTracePeerSelectionCounters
         :: Tracer m (PeerSelectionCounters extraCounters)
 
-    , dtTraceChurnCounters
-        :: Tracer m PeerSelection.ChurnCounters
-
     , dtPeerSelectionActionsTracer
         :: Tracer m (PeerSelectionActionsTrace ntnAddr ntnVersion)
 
@@ -266,7 +263,6 @@ nullTracers = Tracers {
   , dtTracePublicRootPeersTracer                 = nullTracer
   , dtTraceLedgerPeersTracer                     = nullTracer
   , dtTracePeerSelectionTracer                   = nullTracer
-  , dtTraceChurnCounters                         = nullTracer
   , dtDebugPeerSelectionInitiatorTracer          = nullTracer
   , dtDebugPeerSelectionInitiatorResponderTracer = nullTracer
   , dtTracePeerSelectionCounters                 = nullTracer

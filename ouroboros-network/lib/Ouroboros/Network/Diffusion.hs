@@ -174,7 +174,6 @@ runM Interfaces
        , dtLocalBearerTracer
        , dtDiffusionTracer = tracer
        , dtTracePeerSelectionTracer
-       , dtTraceChurnCounters
        , dtDebugPeerSelectionInitiatorTracer
        , dtDebugPeerSelectionInitiatorResponderTracer
        , dtTracePeerSelectionCounters
@@ -690,7 +689,6 @@ runM Interfaces
             daPeerChurnGovernor
               PeerChurnArgs {
                 pcaPeerSelectionTracer = dtTracePeerSelectionTracer
-              , pcaChurnTracer         = dtTraceChurnCounters
               , pcaDeadlineInterval    = dcDeadlineChurnInterval
               , pcaBulkInterval        = dcBulkChurnInterval
               , pcaPeerRequestTimeout  = policyPeerShareOverallTimeout daPeerSelectionPolicy

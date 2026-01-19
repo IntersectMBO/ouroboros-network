@@ -13,7 +13,6 @@
 --
 module Ouroboros.Network.PeerSelection.Churn
   ( PeerChurnArgs (..)
-  , ChurnCounters (..)
   , ModifyPeerSelectionTargets
   , CheckPeerSelectionCounters
   , peerChurnGovernor
@@ -41,14 +40,10 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..))
 type ModifyPeerSelectionTargets = PeerSelectionTargets -> PeerSelectionTargets
 type CheckPeerSelectionCounters extraCounters = PeerSelectionCounters extraCounters -> PeerSelectionTargets -> Bool
 
-data ChurnCounters = ChurnCounter ChurnAction Int
-  deriving Show
-
 -- | Record of arguments for peer churn governor
 --
 data PeerChurnArgs m extraArgs extraDebugState extraFlags extraPeers extraAPI extraCounters extraTrace peeraddr = PeerChurnArgs {
   pcaPeerSelectionTracer :: Tracer m (TracePeerSelection extraDebugState extraFlags extraPeers extraTrace peeraddr),
-  pcaChurnTracer         :: Tracer m ChurnCounters,
   pcaDeadlineInterval    :: DiffTime,
   pcaBulkInterval        :: DiffTime,
   pcaPeerRequestTimeout  :: DiffTime,
@@ -82,7 +77,6 @@ peerChurnGovernor :: forall m extraArgs extraDebugState extraFlags extraPeers ex
 peerChurnGovernor
   PeerChurnArgs {
     pcaPeerSelectionTracer  = tracer,
-    pcaChurnTracer          = churnTracer,
     pcaBulkInterval         = bulkChurnInterval,
     pcaPeerRequestTimeout   = requestPeersTimeout,
     pcaRng                  = inRng,
@@ -150,14 +144,12 @@ peerChurnGovernor
                              let r = c' - c
                              endTime <- getMonotonicTime
                              traceWith tracer (TraceChurnAction (endTime `diffTime` startTime) churnAction r)
-                             traceWith churnTracer (ChurnCounter churnAction r)
                              return $ abs r
                            Left c' -> do
                              endTime <- getMonotonicTime
                              cancelTimeout
                              let r = c' - c
                              traceWith tracer (TraceChurnTimeout (endTime `diffTime` startTime) churnAction r)
-                             traceWith churnTracer (ChurnCounter churnAction r)
                              return $ abs r
                      )
 
