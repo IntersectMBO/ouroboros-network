@@ -1,0 +1,32 @@
+;
+; ObjectDiffusion mini-protocol
+;
+
+; reference implementation of the codec in :
+; ouroboros-network/src/Ouroboros/Network/Protocol/ObjectDiffusion/Codec.hs
+
+objectDiffusion2Message
+    = msgInit
+    ; corresponds to either MsgRequestObjectIdsBlocking or
+    ; MsgRequestObjectIdsNonBlocking in the spec
+    / msgRequestObjectIds
+    / msgReplyObjectIds
+    / msgRequestObjects
+    / msgReplyObjects
+    / msgDone
+
+
+msgInit             = [0]
+msgRequestObjectIds = [1, tsBlocking, objectCount, objectCount]
+msgReplyObjectIds   = [2, objectIdList ]
+msgRequestObjects   = [3, objectIdList ]
+msgReplyObjects     = [4, objectList ]
+msgDone             = [5]
+
+tsBlocking          = false / true
+objectCount         = base.word16
+; The codec only accepts indefinite-length lists.
+objectIdList        = [ *base.objectId ]
+objectList          = [ *base.object ]
+
+;# import network.base as base
