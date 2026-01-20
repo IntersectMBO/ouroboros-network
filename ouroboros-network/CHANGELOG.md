@@ -1,6 +1,205 @@
 # ouroboros-network changelog
 
 <!-- scriv-insert-here -->
+
+<a id='changelog-0.24.0.0'></a>
+## 0.24.0.0 -- 2026-01-20
+
+### Breaking
+
+- All `ouroboros-*` where incorporated into `ouroboros-network`, at the same
+  time all **Cardano** specific components were pulled into `cardano-diffusion`:
+
+  * `ouroboros-network-protocols`                         -> `ouroboros-network:protocols`
+  * `ouroboros-network-protocols:testlib`                 -> `ouroboros-network:protocols-tests-lib`
+  * `ouroboros-network-protocols:test`                    -> `ouroboros-network:protocols-tests`
+  * `ouroboros-network-protocols:bench`                   -> `ouroboros-network:protocols-bench`
+  * `ouroboros-network-framework`                         -> `ouroboros-network:framework`
+  * `ouroboros-network-framework:testlib`                 -> `ouroboros-network:framework-tests-lib`
+  * `ouroboros-network-framework:sim-tests`               -> `ouroboros-network:framework-sim-tests`
+  * `ouroboros-network-framework:io-tests`                -> `ouroboros-network:framework-io-tests`
+  * `ouroboros-network-framework:demo-connection-manager` -> `ouroboros-network:demo-connection-manager`
+  * `ouroboros-network-framework:demo-ping-pong`          -> `ouroboros-network:demo-ping-pong`
+  * `ouroboros-newtork-mock`                              -> `ouroboros-network:mock`
+  * `ouroboros-network:testlib`                           -> `ouroboros-network:ouroboros-network-tests-lib`
+  * `ouroboros-network:sim-tests`                         -> `ouroboros-network:ouroboros-network-sim-tests`
+  * `ouroboros-network:io-tests`                          -> `ouroboros-network:ouroboros-network-io-tests`
+  * `ouroboros-network-testing`                           -> `ouroboros-network:tests-lib`
+  * `ouroboros-network-testing:test`                      -> `ouroboros-network:tests-lib`
+  * `ouroboros-network-api`                               -> `ouroboros-network:api`
+  * `ouroboros-network-api:test`                          -> `ouroboros-network:api-tests`
+  * `ouroboros-network-api:bench-anchored-fragment`       -> `ouroboros-network:api-bench`
+
+- The following modules were moved to a different namespace:
+  * `ouroboros-network:api` - moved `NodeTo{Node,Client}` modules under `Cardano` namespace
+  * `ouroboros-network:api-tests` - moved `NodeTo{Client,Node}.Version` tests
+  * `ouroboros-network:api-tests` - moved Test.Cardano.Network.Version
+  * `ouroboros-network:mock` - moved its last module to protocols-tests-lib
+
+- Introduced `cardano-diffusion` package.  It contains all `Cardano.Network`
+  namespace.
+
+- Added exports to `Ouroboros.Network.PeerSelection`, quite likely you can
+  simplify your imports.  If you need Cardano-specific peer selection, try
+  importing from `Cardano.Network.PeerSelection` from `cardano-diffusion`
+  package.  It re-exports almost all of `Ouroboros.Network.PeerSelection`.
+
+- `PeerChurnArgs{getLedgerStateCtx}` was renamed to
+  `PeerChurnArgs{getLedgerPeersAPI}`, to avoid a name clash with
+  `PeerSelectionActions{getLedgerStateCtx}`.
+
+- `LocalRootConfig{extraFlags}` was renamed to
+  `LocalRootConfig{extraLocalRootFlags}` to avoid a name clash with
+  `LocalRootPeersGroup{extraFlags}` field in the `Ouroboros.Network.Topology`
+  module.
+
+- `Ouroboros.Network.PeerSelection.PeerSelectionActions.requestPublicRootPeers`
+   was renamed as `requestPublicRootPeersImpl` to avoid a name clash with
+   `PeerSelectionActions{requestPublicRootPeers}`.
+
+- `linger` function's arm callback now returns a `Maybe Bool`
+- `keyedLinger'`s arm callback now returns a `Maybe (Set b)`
+- `keyedLinger'`'s arm callback now returns a `Maybe (Set b, DiffTime))`
+- The above changes allow those functions to reset signal state on `Nothing`
+
+- `Ouroboros.Network.Server.Simple.with` now requires tracers as argument,
+  these should not be nullTracers in production code, although
+  `Network.Mux.Trace.ChannelTrace` and `Network.Mux.Trace.BearerTrace` should
+  be off by default as they can be extensive, the `Network.Mux.Trace.Trace` can
+  be on by default, while `Ouroboros.Network.Server.Simple.ServerTrace` must be
+  on as it traces important exception.
+
+- Ouroboros.Network.TxSubmission.Mempool.Simple API changes:
+  - `Mempool` is parametrised over `txid` and `tx` types
+  - `new` takes `tx -> txid` getter function
+
+ouroboros-network:api:
+- Added `LedgerBigPeerSnapshotV23` and `LedgerAllPeerSnapshotV23` constructors to `LedgerPeerSnapshot` type
+  to identify network magic and tip block hash when snapshot was recorded
+- removed compareLedgerPeerSnapshotApproximate
+
+- Changed the type of `localRoots` to `LocalRoots`.
+- Modified `AcquireOutboundConnection` to include an additional parameter: `Provenance`.
+- `acquireOutboundConnectionImpl` only creates a new connection if `Provenance` permits it.
+- `jobPromoteColdPeer` only creates a new connection if no inbound connection is found and provenance is set to `Outbound`.
+
+- Changed ToJSON for DiffusionMode to agree with the topology file syntax. ReadJSON was already correct.
+
+- Moved `timeLimitsChainSync` from `Ouroboros.Network.Protocol.ChainSync.Codec` to `Cardano.Network.Protocol.ChainSync.Codec.TimeLimits`.
+- Added type variable `extraFlag` to `HandleWithExpandedCtx`.
+- Added type variable `extraFlag` to `ConnectionManagerWithExpandedCtx`.
+- Added type variable `extraFlag` to `ExpandedInitiatorContext`.
+- Added type variable `extraFlag` to `OuroborosBundleWithExpandedCtx`.
+- Added type variable `extraFlag` to `MiniProtocolWithExpandedCtx`.
+- Added type variable `extraFlag` to `RunMiniProtocolWithExpandedCtx`.
+- Added type variable `extraFlag` to `Applications`.
+- Added type variable `extraFlag` to `NodeToNodeHandle`.
+- Added type variable `extraFlag` to `NodeToNodeConnectionManager`.
+- Added type variable `extraFlag` to `NodeToNodePeerConnectionHandle`.
+- Added type variable `extraFlag` to `PeerStateActions`.
+- Added type variable `extraFlag` to `ApplicationHandle`.
+- Added type variable `extraFlag` to `PeerConnectionHandle`.
+- Added type variable `extraFlag` to `PeerStateActionsArguments`.
+- Added parameter `extraFlags` to `PeerSelection.Governor.ActivePeers.belowTarget`.
+- Added parameter `extraFlags` to `PeerSelection.Governor.ActivePeers.jobPromoteWarmPeer`.
+- Added parameter `extraFlags` to `PeerSelection.Governor.EstablishedPeers.belowTarget`.
+- Added parameter `extraFlags` to `PeerSelection.Governor.EstablishedPeers.jobPromoteColdPeer`.
+- Added parameter `extraFlags` to `PeerStateActions.establishPeerConnection`.
+- Added parameter `extraFlags` to `PeerStateActions.activatePeerConnection`.
+
+- `TxSubmissionMempoolWriter` added tx validation error type parameter,
+  `mempoolAddTxs` returns a list of accepted `txids` and a list of rejected
+  `txids` with errors.
+- `Ouroboros.Network.TxSubmission.Mempool.Simple.getMempoolWriter` changes:
+  - supplies the current time to the validation function,
+  - removed `ctx` paramenter,
+  - validation happens in an `STM` transaction, which allows acquiring and
+    updating validation `ctx`.
+
+- Change the type of `unwrapCBORinCBOR` and `fromSerialised` to allow inner decoders that may fail.
+
+### Non-Breaking
+
+- Added latch function to `Signal`
+- bugfix missed promotion/demotion opportunities in:
+  - `ActivePeers.aboveTargetBigLedgerPeers`
+  - `ActivePeers.aboveTargetOther`
+  - `EstablishedPeers.aboveTargetOther`
+  - `EstablishedPeers.aboveTargetBigLedgerPeers`
+  - `EstablishedPeers.belowTargetLocal`
+  - `EstablishedPeers.belowTargetOther`
+  - `ActivePeers.belowTargetLocal`
+
+- `PublicPeerSelectionState`: added `Show` instance.
+- `showSignalValue`: cleaner counterexample output.
+- `Test.Ouroboros.Network.Utils.dynamicTracer`: added, using  `IOSim`'s `traceM` API.
+
+- The `FromJSON RelayAccessPoints` instance has changed: `0.0.0.0` and `::`
+  addresses are forbidden in topology file, they are not valid destination
+  addresses and can lead to confusing situations.
+
+- Added `NoThunks` instance for `NodeToNodeVersion`.
+
+- Patched so that it compiles to wasm
+
+- framework: improved handling of `ECONNABORTED` in the simple server.
+
+ouroboros-network:api:
+- Added {To,From}JSON instances to `Point` and `Block`
+- added {encode,decode}LedgerPeerSnapshotPoint
+- added {encode,decode}StakePools
+
+ouroboros-network:
+- Removed cardano-slotting dependency
+- moved `jobVerifyPeerSnapshot` to cardano-diffusion
+
+- Enforce a minimum churn of established peers based on churned active peers.
+- Enforce a minimum churn of known peers based on churned established peers.
+
+- Added `LocalRoots` type in `Ouroboros.Network.PeerSelection.State.LocalRootPeers` with the following fields:
+  - `rootConfig` of type `RootConfig`
+  - `provenance` of type `Provenance`
+- Added `localProvenance` field to `LocalRootConfig`.
+- Added a new constructor `InboundConnectionNotFound` for `ConnectionManagerError`.
+- Renamed `Test.Ouroboros.Network.Orphans` to `Test.Ouroboros.Network.OrphanInstances`.
+- Moved the following instances from `Test.Ouroboros.Network.PeerSelection.LocalRootPeers` to `Test.Ouroboros.Network.OrphanInstances`:
+  - `Arbitrary WarmValency`
+  - `Arbitrary HotValency`
+- Removed duplicated code from `Test.Ouroboros.Network.PeerSelection.Instances` and `Test.Ouroboros.Network.PeerSelection.RelayAccessPoint`, and moved it to `Test.Ouroboros.Network.OrphanInstances`:
+  - `genIPv4`
+  - `genIPv6`
+  - `Arbitrary SlotNo`
+  - `Arbitrary PeerAdvertise`
+  - `Arbitrary PeerSharing`
+  - `Arbitrary AfterSlot`
+  - `Arbitrary UseLedgerPeers`
+  - `Arbitrary PortNumber`
+  - `Arbitrary RelayAccessPoint`
+  - `Arbitrary LedgerRelayAccessPoint`
+  - `Arbitrary (LocalRootConfig extraFlags)`
+
+- Add support for nothunks == 0.3.*.
+
+- Update dependencies.
+
+- Make dissecting of mux segments in wireshark more robust
+
+- Added keyedTimeout', which allows to reset the timeouts
+  when an arbitrary condition is met
+
+- Added field `eicExtraFlags` to `ExpandedInitiatorContext`.
+- Added field `defaultExtraFlags` to `PeerSelectionGovernorArgs`.
+
+* Limit the number of faulures to 5 before a peer that isn't a localroot, bootstrap peer or public root peer is forgotten.
+* Decrease the time blockfetch waits for chainsync to exit in case of an error
+* Increase the timeout for chainsync in state StMustReply to between 601 and 911 seconds.
+
+- Compatibility with both `QuickCheck` < 2.15 and >= 2.16
+
+- Improved `Message TxSubmission` ToJSON instance
+- Improved `Message KeepAlived` ToJSON instance
+- `Ouroboros.Network.TxSubmission.Mempool.Simple` re-export `TxSubmissionMempool{Reader,Writer}` data types.
+- `Ouroboros.Network.TxSubmission.Mempool.Simple` is assiging stable `idx`s to `tx`s.
 <!-- scriv-end-here -->
 
 ## 0.23.0.0 -- 2025-09-10

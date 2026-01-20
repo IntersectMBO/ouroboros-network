@@ -1,6 +1,13 @@
 # monoidal-synchronisation changelog
 
 <!-- scriv-insert-here -->
+
+<a id='changelog-0.1.0.7'></a>
+## 0.1.0.7 -- 2026-01-15
+
+### Non-Breaking
+
+- Update dependencies.
 <!-- scriv-end-here -->
 
 ## 0.1.0.6 - 2024-08-07

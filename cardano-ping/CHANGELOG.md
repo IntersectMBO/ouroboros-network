@@ -1,6 +1,19 @@
 # cardano-ping changelog
 
 <!-- scriv-insert-here -->
+
+<a id='changelog-0.10.0.0'></a>
+## 0.10.0.0 -- 2026-01-20
+
+### Breaking
+
+- Added `NodeToClientVersionV23`
+
+- Support `NodeToNodeV_15`
+
+### Non-Breaking
+
+- Update dependencies.
 <!-- scriv-end-here -->
 
 ## 0.9.0.0 -- 2026-06-28

@@ -1,6 +1,24 @@
 # network-mux changelog
 
 <!-- scriv-insert-here -->
+
+<a id='changelog-0.10.0.0'></a>
+## 0.10.0.0 -- 2026-01-20
+
+### Breaking
+
+- Tracers are now passed to `Network.Mux.new` rather than `Network.Mux.run`.
+- Added new trace points to `Network.Mux.Trace.Trace`:
+  - `NewMux` which logs all `MiniProtocolInfo`s used to create the new `Mux` interface.
+  - `MuxStarting` which logs that `Mux` is starting.
+
+### Non-Breaking
+
+- Patched so that it compiles to wasm
+
+- Update dependencies.
+
+- Fixed handling of trailing bytes in presence of received data.
 <!-- scriv-end-here -->
 
 ## 0.9.1.0 -- 2025-09-10

@@ -1,6 +1,13 @@
 # ntp-client changelog
 
 <!-- scriv-insert-here -->
+
+<a id='changelog-0.0.1.7'></a>
+## 0.0.1.7 -- 2026-01-15
+
+### Non-Breaking
+
+- Update dependencies.
 <!-- scriv-end-here -->
 
 ## 0.0.1.6 -- 2024-08-07
