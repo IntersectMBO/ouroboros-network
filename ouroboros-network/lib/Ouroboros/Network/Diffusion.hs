@@ -33,7 +33,6 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.Fix (MonadFix)
 import Control.Tracer (Tracer, contramap, nullTracer, traceWith)
 import Data.ByteString.Lazy (ByteString)
-import Data.Function ((&))
 import Data.Hashable (Hashable)
 import Data.IP qualified as IP
 import Data.List.NonEmpty (NonEmpty (..))
@@ -246,11 +245,14 @@ runM Interfaces
 
     -- If we have a local address, race the remote and local threads. Otherwise
     -- just launch the remote thread.
-    mkRemoteThread mainThreadId &
-      (case dcLocalAddress of
-         Nothing -> id
-         Just addr -> fmap (either id id) . (`Async.race` mkLocalThread mainThreadId addr)
-      )
+    case dcLocalAddress of
+      Just addr ->
+        fmap (either id id) $
+          mkRemoteThread mainThreadId
+          `Async.race`
+          mkLocalThread mainThreadId addr
+      Nothing ->
+          mkRemoteThread mainThreadId
 
   where
     (ledgerPeersRng, rng1) = split diRng
@@ -309,7 +311,7 @@ runM Interfaces
 
 
     -- | mkLocalThread - create local connection manager
-
+    --
     mkLocalThread :: ThreadId m -> Either ntcFd ntcAddr -> m Void
     mkLocalThread mainThreadId localAddr = do
      labelThisThread "local connection manager"
@@ -397,7 +399,7 @@ runM Interfaces
 
 
     -- | mkRemoteThread - create remote connection manager
-
+    --
     mkRemoteThread :: ThreadId m -> m Void
     mkRemoteThread mainThreadId = do
       labelThisThread "remote connection manager"

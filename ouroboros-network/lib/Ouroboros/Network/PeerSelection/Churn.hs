@@ -135,7 +135,7 @@ peerChurnGovernor
                          a <- atomically $ do
                                 counters <- readCounters
                                 runFirstToFinish $
-                                  FirstToFinish (check (checkCounters counters targets) $> (Right $ getCounter counters ))
+                                  FirstToFinish (check (checkCounters counters targets) $> Right (getCounter counters))
                                   <>
                                   FirstToFinish (readTimeout >>= \case TimeoutPending -> retry
                                                                        _              -> pure (Left $ getCounter counters))

@@ -115,11 +115,13 @@ data Target point = -- | The tip of the volatile chain
                     --
                     -- Cannot fail to be acquired.
                     VolatileTip
+
                   | -- | A specified point
                     --
                     -- Fails to be acquired if the point is not between
                     -- 'VolatileTip' and 'ImmutableTip' (inclusive).
                     SpecificPoint point
+
                     -- | The tip of the immutable chain
                     --
                     -- Cannot fail to be acquired.
