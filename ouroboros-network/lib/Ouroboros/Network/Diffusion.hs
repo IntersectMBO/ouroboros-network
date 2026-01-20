@@ -174,8 +174,7 @@ runM Interfaces
        , dtLocalBearerTracer
        , dtDiffusionTracer = tracer
        , dtTracePeerSelectionTracer
-       , dtDebugPeerSelectionInitiatorTracer
-       , dtDebugPeerSelectionInitiatorResponderTracer
+       , dtDebugPeerSelectionTracer
        , dtTracePeerSelectionCounters
        , dtPeerSelectionActionsTracer
        , dtTraceLocalRootPeersTracer
@@ -762,7 +761,7 @@ runM Interfaces
               \(ledgerPeersThread, localRootPeersProviderThread) peerSelectionActions->
                 Async.withAsync
                   (peerSelectionGovernor'
-                    dtDebugPeerSelectionInitiatorTracer
+                    dtDebugPeerSelectionTracer
                     debugStateVar
                     peerSelectionActions) $ \governorThread ->
                     Async.withAsync
@@ -797,7 +796,7 @@ runM Interfaces
                           Async.withAsync
                             (do
                               labelThisThread "Peer selection governor"
-                              peerSelectionGovernor' dtDebugPeerSelectionInitiatorResponderTracer debugStateVar peerSelectionActions) $
+                              peerSelectionGovernor' dtDebugPeerSelectionTracer debugStateVar peerSelectionActions) $
                                 \governorThread -> do
                                   Async.withAsync (do
                                                       labelThisThread "Peer churn governor"
