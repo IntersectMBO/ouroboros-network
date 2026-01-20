@@ -14,6 +14,8 @@ module Main (main) where
 
 import Data.ByteString (ByteString)
 import Data.ByteString.Char8 qualified as BSC
+import Data.Functor.Contravariant ((>$<))
+import Data.Functor.Identity
 import Data.IP (IP)
 import Data.IP qualified as IP
 import Text.Read (readMaybe)
@@ -22,6 +24,7 @@ import Control.Concurrent (forkIO)
 import Control.Concurrent.STM (atomically)
 import Control.Exception
 import Control.Monad
+import Control.Monad.Class.MonadTime.SI
 import Control.Tracer
 
 import System.Environment qualified as SysEnv
@@ -38,9 +41,10 @@ import Network.Socket qualified as Socket
 
 import Network.Mux as Mx
 import Network.Mux.Bearer qualified as Mx
+import Network.Mux.Time
+import Network.Mux.Types (ProtocolBurst(..))
 
 import Test.Mux.ReqResp
-
 
 data ClientType = Sequential | Bursty
 
@@ -49,6 +53,7 @@ unusedValue = error "unused"
 
 main :: IO ()
 main = do
+  hSetBuffering stdout LineBuffering
   args <- SysEnv.getArgs
   case args of
     ["server", ip, port, len1, len2]
@@ -80,6 +85,7 @@ main = do
       , Just port' <- readMaybe port
       -> client Bursty ip' port' unusedValue unusedValue unusedValue
     _ -> usage
+  `catch` (\(SomeException e) -> hPutStrLn stderr $ "Error: " <> displayException e)
 
 
 usage :: IO ()
@@ -112,6 +118,14 @@ reqrespTracer tag = Tracer $ \case
   TraceEarlyExit        -> putStrLn_ $ tag ++ " EarlyExit"
   TraceFailure err      -> debugPutStrLn_ $ tag ++ " Failure: " ++ show err
 
+timeTrace :: Show a => Tracer IO a
+timeTrace = f `contramapM` stdoutTracer
+  where
+    f a = do
+      ts <- getMonotonicTime
+      let ts32 = timestampMicrosecondsLow32Bits ts
+      return $ show ts32 <> " " <> show a
+
 --
 -- Protocols
 --
@@ -129,7 +143,7 @@ protocols miniProtocolDir =
   [ MiniProtocolInfo {
       miniProtocolNum        = MiniProtocolNum 2,
       miniProtocolDir,
-      miniProtocolLimits     = defaultProtocolLimits,
+      miniProtocolLimits     = defaultProtocolLimits { burst = Just (ProtocolBurst 10)},
       miniProtocolCapability = Nothing
     }
   , MiniProtocolInfo {
@@ -147,7 +161,7 @@ protocols miniProtocolDir =
 -- | Server accept loop.
 --
 server :: ClientType -> IP.IP -> PortNumber -> (Int, Int) -> Int -> Int -> IO ()
-server ct ip port num len1 len2 =
+server ct ip port num len1 len2 = do
   withIOManager $ \ioManager -> do
     let hints = Socket.defaultHints
                   { Socket.addrFlags = [Socket.AI_ADDRCONFIG ]
@@ -225,7 +239,7 @@ serverWorkerSequential bearer len1 len2 = do
 serverWorkerBursty :: Bearer IO -> (Int, Int) -> Int -> Int -> IO ()
 serverWorkerBursty bearer (n1, n2) len1 len2 = do
     debugPutStrLn_ $ "server: " ++ show (len1, len2)
-    mux <- Mx.new Mx.nullTracers (protocols ResponderDirectionOnly)
+    mux <- Mx.new Mx.nullTracers { channelTracer = runIdentity >$< timeTrace } (protocols ResponderDirectionOnly)
     void $ forkIO $
       do awaitResult1 <-
           runMiniProtocol

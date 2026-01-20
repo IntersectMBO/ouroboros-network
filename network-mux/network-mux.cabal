@@ -210,7 +210,7 @@ executable mux-leios-demo
     bytestring,
     cborg,
     contra-tracer,
-    io-classes,
+    io-classes:{io-classes, si-timers},
     iproute,
     network,
     network-mux,
