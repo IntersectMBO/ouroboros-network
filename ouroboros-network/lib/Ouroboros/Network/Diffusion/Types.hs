@@ -474,7 +474,7 @@ data Configuration extraFlags m ntnFd ntnAddr ntcFd ntcAddr = Configuration {
     -- These peers may be selected by ledgerPeersThread when requested
     -- by the peer selection governor when the node is syncing up.
     -- This is especially useful for Genesis consensus mode.
-    , dcReadLedgerPeerSnapshot :: STM m (Maybe LedgerPeerSnapshot)
+    , dcReadLedgerPeerSnapshot :: STM m (Maybe (LedgerPeerSnapshot BigLedgerPeers))
 
     -- | `UseLedgerPeers` from topology file.
     --

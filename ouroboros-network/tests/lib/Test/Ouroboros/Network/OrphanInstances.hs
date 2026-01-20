@@ -15,9 +15,7 @@ module Test.Ouroboros.Network.OrphanInstances
 import Data.ByteString.Char8 qualified as BSC
 import Data.Hashable (Hashable (hashWithSalt), hashUsing)
 import Data.IP qualified as IP
-import Data.Word (Word16, Word32, Word64)
-
-import Cardano.Slotting.Slot (SlotNo (..))
+import Data.Word (Word16, Word32)
 
 import Ouroboros.Network.ConnectionManager.Types (Provenance (..))
 import Ouroboros.Network.Diffusion.Topology (LocalRootPeersGroup (..),
@@ -36,6 +34,9 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
 
 import Test.QuickCheck (Arbitrary (..), Gen, elements, frequency, oneof, resize,
            suchThat)
+
+-- Arbitrary instance for SlotNo
+import Ouroboros.Network.Mock.ChainGenerators ()
 
 -- * Generators
 
@@ -63,8 +64,6 @@ instance Hashable IP.IP
 instance Hashable PortNumber where
   hashWithSalt salt pn =
     hashUsing (fromIntegral :: PortNumber -> Word16) salt pn
-
-deriving via Word64 instance Arbitrary SlotNo
 
 instance Arbitrary PeerAdvertise where
   arbitrary = elements [ DoAdvertisePeer, DoNotAdvertisePeer ]
