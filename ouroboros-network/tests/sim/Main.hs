@@ -14,6 +14,7 @@ import Test.Ouroboros.Network.PeerSelection.LocalRootPeers qualified
 import Test.Ouroboros.Network.PeerSelection.PeerMetric qualified
 import Test.Ouroboros.Network.PeerSelection.RootPeersDNS qualified
 import Test.Ouroboros.Network.TxSubmission qualified (tests)
+import Test.Ouroboros.Network.TxSubmission.Mempool.Simple qualified (tests)
 
 main :: IO ()
 main = withUtf8 $ defaultMain tests
@@ -29,6 +30,7 @@ tests =
   , Test.Ouroboros.Network.BlockFetch.tests
   , Test.Ouroboros.Network.KeepAlive.tests
   , Test.Ouroboros.Network.TxSubmission.tests
+  , Test.Ouroboros.Network.TxSubmission.Mempool.Simple.tests
   , Test.Ouroboros.Network.PeerSelection.KnownPeers.tests
   , Test.Ouroboros.Network.PeerSelection.LocalRootPeers.tests
   , Test.Ouroboros.Network.PeerSelection.PeerMetric.tests

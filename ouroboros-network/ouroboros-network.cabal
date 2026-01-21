@@ -888,6 +888,7 @@ library ouroboros-network-tests-lib
     Test.Ouroboros.Network.TxSubmission.AppV2
     Test.Ouroboros.Network.TxSubmission.TxLogic
     Test.Ouroboros.Network.TxSubmission.Types
+    Test.Ouroboros.Network.TxSubmission.Mempool.Simple
 
   ghc-options:
     -Wno-unused-packages
