@@ -76,6 +76,7 @@ import Control.Monad
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI (Time (..))
 import Control.Monad.Class.MonadTimer.SI hiding (timeout)
 import Control.Tracer
 
@@ -327,7 +328,9 @@ miniProtocolJob TracersI {
       labelThisThread (case miniProtocolNum of
                         MiniProtocolNum a -> "prtcl-" ++ show a)
       w <- newTVarIO BL.empty
-      let chan = muxChannel channelTracer_ egressQueue (Wanton w)
+      lastSent <- newTVarIO (Time 0)
+      bucket   <- newTVarIO 0
+      let chan = muxChannel channelTracer_ egressQueue (Wanton w lastSent bucket)
                             miniProtocolNum miniProtocolDirEnum
                             miniProtocolIngressQueue (burst miniProtocolLimits)
       (result, remainder) <- miniProtocolAction chan
@@ -674,14 +677,14 @@ muxChannel
     -> IngressQueue m
     -> Maybe ProtocolBurst
     -> ByteChannel m
-muxChannel tracer egressQueue want@(Wanton w) mc md q mBurst =
+muxChannel tracer egressQueue want@(Wanton w _ _) mc md q mBurst =
     Channel { send, recv }
   where
     -- Limit for the message buffer between send and mux thread.
     perMiniProtocolBufferSize :: Int64
-    perMiniProtocolBufferSize = 0x3ffff
+    perMiniProtocolBufferSize = 0xfffff
 
-    burst = fromMaybe (ProtocolBurst 1) mBurst
+    burst = fromMaybe (ProtocolBurst 0 0) mBurst
 
     send :: BL.ByteString -> m ()
     send encoding = do

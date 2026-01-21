@@ -105,7 +105,10 @@ data MiniProtocolLimits =
   deriving Show
 
 
-newtype ProtocolBurst = ProtocolBurst { getProtocolBurst :: Word8 }
+data ProtocolBurst = ProtocolBurst {
+  pbMaxBytes   :: !Word32,
+  pbRefillRate :: !Word32
+  }
   deriving (Eq, Show)
 
 -- $interface
