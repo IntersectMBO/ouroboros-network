@@ -25,11 +25,12 @@ import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 
+import Data.Bifunctor (first)
 import Data.Either (partitionEithers)
 import Data.Foldable (toList)
 import Data.Foldable qualified as Foldable
-import Data.Function (on)
-import Data.List (find, nubBy)
+import Data.List (find)
+import Data.List qualified as List
 import Data.Sequence (Seq)
 import Data.Sequence qualified as Seq
 import Data.Set (Set)
@@ -156,37 +157,66 @@ getWriter :: forall tx txid failure m.
           -> Mempool m txid tx
           -- ^ mempool
           -> TxSubmissionMempoolWriter txid tx Integer m failure
-getWriter duplicateTx getTxId validateTx handleInvalidTxs (Mempool mempool) =
+getWriter duplicateTxError getTxId validateTx handleInvalidTxs (Mempool mempoolVar) =
     TxSubmissionMempoolWriter {
         txId = getTxId,
 
         mempoolAddTxs = \txs -> do
           now <- getCurrentTime
-          (invalidTxIds, validTxs) <- atomically $ do
-            MempoolSeq { mempoolSet, mempoolSeq, nextIdx } <- readTVar mempool
+          (rejectedTxIds, acceptedTxs) <- atomically $ do
+            MempoolSeq { mempoolSet, mempoolSeq, nextIdx } <- readTVar mempoolVar
+
+            -- remove txs that are already in the mempool
+            -- so we don't validate txs which are already in the mempool
+            let duplicateTxIds :: [txid]
+                (duplicateTxIds, txs') =
+                    first (map getTxId)
+                  $ List.partition (\tx -> getTxId tx `Set.member` mempoolSet) txs
+
+            -- validate `txs'`
+            -- NOTE: we might have duplicates in the `txs'` list
             (invalidTxIds, validTxs) <-
                 fmap partitionEithers
               . validateTx now
-              . filter (\tx -> getTxId tx `Set.notMember` mempoolSet)
-              . nubBy (on (==) getTxId)
-              $ txs
-            let mempoolTxs' = MempoolSeq {
-                    mempoolSet = Foldable.foldl' (\s tx -> getTxId tx `Set.insert` s)
-                                                 mempoolSet
-                                                 validTxs,
-                    mempoolSeq = Foldable.foldl' (Seq.|>) mempoolSeq (zipWith WithIndex [nextIdx..] validTxs),
-                    nextIdx    = nextIdx + fromIntegral (length validTxs)
-                  }
-            writeTVar mempool mempoolTxs'
+              $ txs'
+
+            let acceptedTxs     :: [txid]
+                -- duplicate txids in the submitted list `txs`
+                duplicateTxIds' :: [txid]
+
+                -- delta - set of newly accepted txids
+                -- NOTE: `validTxs` are not in the mempool, we just need to
+                -- check that we are not adding multiple copies of the same tx.
+                (delta, mempoolSeq', nextIdx', acceptedTxs, duplicateTxIds') =
+                  Foldable.foldl'
+                    (\(set, seq, idx, as, rs) tx ->
+                      if getTxId tx `Set.member` set
+                      then ( set
+                           , seq
+                           , idx
+                           , as
+                           , getTxId tx : rs
+                           )
+                      else ( Set.insert (getTxId tx) set
+                           , seq Seq.|> WithIndex idx tx
+                           , succ idx
+                           , getTxId tx : as
+                           , rs
+                           )
+                    )
+                    (Set.empty, mempoolSeq, nextIdx, [], [])
+                  validTxs
+            writeTVar mempoolVar MempoolSeq { mempoolSet = mempoolSet `Set.union` delta
+                                            , mempoolSeq = mempoolSeq'
+                                            , nextIdx    = nextIdx'
+                                            }
             return ( invalidTxIds
                      ++
-                     [ (txid, duplicateTx)
-                     | txid <- filter (`Set.notMember` mempoolSet)
-                             . map getTxId
-                             $ txs
+                     [ (txid, duplicateTxError)
+                     | txid <- duplicateTxIds ++ duplicateTxIds'
                      ]
-                   , map getTxId validTxs
+                   , acceptedTxs
                    )
-          handleInvalidTxs invalidTxIds
-          return (validTxs, invalidTxIds)
+          handleInvalidTxs rejectedTxIds
+          return (acceptedTxs, rejectedTxIds)
       }
