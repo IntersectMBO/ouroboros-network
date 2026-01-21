@@ -87,7 +87,9 @@ data Channel m a = Channel {
     recv :: m (Maybe (Reception a))
   }
 
-data Reception a = MkReception !(IntMap Time) !a
+data Reception a = MkReception { receivalTimes :: !(IntMap Time)
+                               , received :: !a
+                               }
   deriving (Foldable, Functor, Traversable)
 
 -- | Given an isomorphism between @a@ and @b@ (in Kleisli category), transform
