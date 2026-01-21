@@ -75,7 +75,7 @@ new getTxId txs =
     . newTVarIO
     $ MempoolSeq { mempoolSet = Set.fromList (getTxId <$> txs),
                    mempoolSeq,
-                   nextIdx = fromIntegral (Seq.length mempoolSeq) + 1
+                   nextIdx = fromIntegral (Seq.length mempoolSeq)
                  }
   where
     mempoolSeq = Seq.fromList $ zipWith WithIndex [0..] txs
