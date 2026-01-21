@@ -6,9 +6,12 @@ import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadTime (MonadTime)
 import Control.Monad.IOSim
 
+import Data.Foldable qualified as Foldable
 import Data.Function (on)
 import Data.List (nub, nubBy)
 import Data.Set qualified as Set
+import Ouroboros.Network.TxSubmission.Mempool.Simple (Mempool (..),
+           MempoolSeq (..))
 import Ouroboros.Network.TxSubmission.Mempool.Simple qualified as Mempool
 
 import Test.Tasty
@@ -68,7 +71,7 @@ prop_mempool_writer (MempoolTxs mempoolTxs) candidateTxs =
     sim :: (MonadSTM m, MonadTime m)
         => m Property
     sim = do
-      mempool <- Mempool.new getTxId mempoolTxs
+      mempool@(Mempool mempoolVar) <- Mempool.new getTxId mempoolTxs
       let writer = Mempool.getWriter
                      DuplicateTxId
                      getTxId
@@ -83,6 +86,8 @@ prop_mempool_writer (MempoolTxs mempoolTxs) candidateTxs =
       let acceptedSet = Set.fromList accepted
           rejectedSet = Set.fromList (fst <$> rejected)
       mempoolTxs' <- Mempool.read mempool
+      MempoolSeq { mempoolSeq, nextIdx } <- readTVarIO mempoolVar
+      let indices = Mempool.getIdx <$> Foldable.toList mempoolSeq
       return . counterexample ("accepted " ++ show accepted)
              . counterexample ("rejected " ++ show rejected)
              . counterexample ("mempoolTxs' " ++ show mempoolTxs')
@@ -105,12 +110,20 @@ prop_mempool_writer (MempoolTxs mempoolTxs) candidateTxs =
                               ((acceptedSet `Set.union` rejectedSet) === candidateTxIdsSet)
           .&&. counterexample "number of accepted and rejected txs is not equal to the number of candidate txs"
                               (length accepted + length rejected === length candidateTxs)
-          -- 
+          --
           -- mempool properties
           --
           .&&. counterexample "all txs in the mempool are valid"
                               (all getTxValid mempoolTxs')
           .&&. counterexample "no duplicate txids in the mempool"
                               (nubBy (on (==) getTxId) mempoolTxs' === mempoolTxs')
-          .&&. counterexample "number of accepted and rejected txs is not equal to the number of candidate txs"
-                              (length accepted + length rejected === length candidateTxs)
+          --
+          -- mempool indices
+          --
+          .&&. counterexample "indices are distinct"
+                              (indices === nub indices)
+          .&&. counterexample "nextIdx is correct"
+                              (if null mempoolSeq
+                                 then nextIdx === 0
+                                 else nextIdx === maximum indices + 1
+                              )
