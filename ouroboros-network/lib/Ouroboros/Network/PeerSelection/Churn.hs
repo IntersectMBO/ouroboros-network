@@ -128,10 +128,8 @@ peerChurnGovernor
       -- update targets, and return the new targets
       startTime <- getMonotonicTime
       (c, targets) <- atomically $ do
-        targets <- readTVar peerSelectionVar
-
         (,) <$> (getCounter <$> readCounters)
-            <*> stateTVar peerSelectionVar ((\a -> (a, a)) . modifyTargets targets)
+            <*> stateTVar peerSelectionVar ((\a -> (a, a)) . modifyTargets peerSelectionTargets)
 
       -- create timeout and block on counters
       bracketOnError (registerDelayCancellable timeoutDelay)
