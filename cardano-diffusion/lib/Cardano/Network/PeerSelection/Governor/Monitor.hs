@@ -178,7 +178,7 @@ targetPeers Cardano.ExtraPeerSelectionActions {
               publicRootPeers (LocalRootPeers.keysSet localRootPeers')
 
       return $ \_now -> Decision {
-        decisionTrace = [TraceTargetsChanged targets targets'],
+        decisionTrace = [TraceTargetsChanged targets'],
         decisionJobs  = [],
         decisionState = st {
                           targets        = targets',
