@@ -310,14 +310,16 @@ peerChurnGovernor
       -> ModifyPeerSelectionTargets
     decreaseKnownPeers minDecrease base targets =
       targets {
-        targetNumberOfRootPeers =
-          decrease (targetNumberOfRootPeers base - targetNumberOfEstablishedPeers base)
-          + targetNumberOfEstablishedPeers base
-      , targetNumberOfKnownPeers =
-          decreaseWithMin minDecrease
-            (targetNumberOfKnownPeers base - targetNumberOfEstablishedPeers base)
-          + targetNumberOfEstablishedPeers base
-      }
+          -- we clamp from above to not accidentally actually increase
+          -- the number of root peers
+          targetNumberOfRootPeers = min (targetNumberOfRootPeers base) $
+            decrease (targetNumberOfRootPeers base - targetNumberOfEstablishedPeers base)
+            + targetNumberOfEstablishedPeers base
+        , targetNumberOfKnownPeers =
+            decreaseWithMin minDecrease
+                            (targetNumberOfKnownPeers base - targetNumberOfEstablishedPeers base)
+            + targetNumberOfEstablishedPeers base
+        }
 
     checkKnownPeersDecreased
       :: PeerSelectionCounters extraCounters -> PeerSelectionTargets -> Bool
