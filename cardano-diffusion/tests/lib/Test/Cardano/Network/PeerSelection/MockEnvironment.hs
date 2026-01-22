@@ -748,7 +748,7 @@ tracerTracePeerSelection = contramap f tracerTestTraceEvent
     f :: TracePeerSelection extraState extraFlags extraPeers ExtraTrace PeerAddr
       -> TestTraceEvent extraState extraFlags extraPeers extraCounters ExtraTrace
     f a@(TraceLocalRootPeersChanged !_ !_)                      = GovernorEvent a
-    f a@(TraceTargetsChanged !_ !_)                             = GovernorEvent a
+    f a@(TraceTargetsChanged !_)                                = GovernorEvent a
     f a@(TracePublicRootsRequest !_ !_)                         = GovernorEvent a
     f a@(TracePublicRootsResults !_ !_ !_)                      = GovernorEvent a
     f a@(TracePublicRootsFailure !_ !_ !_)                      = GovernorEvent a

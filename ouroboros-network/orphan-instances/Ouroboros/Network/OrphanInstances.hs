@@ -400,24 +400,31 @@ instance (ToJSON extraFlags, ToJSONKey peerAddr, ToJSON peerAddr, Ord peerAddr)
   toJSON lrp = kindObject "LocalRootPeers"
     [ "groups" .= toJSONList (LocalRootPeers.toGroups lrp) ]
 
+
+peerSelectionTargetsToJSONHelper :: PeerSelectionTargets -> [Pair]
+peerSelectionTargetsToJSONHelper
+  PeerSelectionTargets {
+    targetNumberOfRootPeers,
+    targetNumberOfKnownPeers,
+    targetNumberOfEstablishedPeers,
+    targetNumberOfActivePeers,
+    targetNumberOfKnownBigLedgerPeers,
+    targetNumberOfEstablishedBigLedgerPeers,
+    targetNumberOfActiveBigLedgerPeers
+  }
+  =
+  [ "targetRootPeers"                 .= targetNumberOfRootPeers
+  , "targetKnownPeers"                .= targetNumberOfKnownPeers
+  , "targetEstablishedPeers"          .= targetNumberOfEstablishedPeers
+  , "targetActivePeers"               .= targetNumberOfActivePeers
+  , "targetKnownBigLedgerPeers"       .= targetNumberOfKnownBigLedgerPeers
+  , "targetEstablishedBigLedgerPeers" .= targetNumberOfEstablishedBigLedgerPeers
+  , "targetActiveBigLedgerPeers"      .= targetNumberOfActiveBigLedgerPeers
+  ]
+
 instance ToJSON PeerSelectionTargets where
-  toJSON (PeerSelectionTargets
-            nRootPeers
-            nKnownPeers
-            nEstablishedPeers
-            nActivePeers
-            nKnownBigLedgerPeers
-            nEstablishedBigLedgerPeers
-            nActiveBigLedgerPeers
-         ) = kindObject "PeerSelectionTargets"
-           [ "targetRootPeers"                 .= nRootPeers
-           , "targetKnownPeers"                .= nKnownPeers
-           , "targetEstablishedPeers"          .= nEstablishedPeers
-           , "targetActivePeers"               .= nActivePeers
-           , "targetKnownBigLedgerPeers"       .= nKnownBigLedgerPeers
-           , "targetEstablishedBigLedgerPeers" .= nEstablishedBigLedgerPeers
-           , "targetActiveBigLedgerPeers"      .= nActiveBigLedgerPeers
-           ]
+  toJSON targets = kindObject "PeerSelectionTargets"
+                 $ peerSelectionTargetsToJSONHelper targets
 
 instance ToJSON RepromoteDelay where
   toJSON = toJSON . repromoteDelay
@@ -855,11 +862,9 @@ instance ( ToJSON extraDebugState
            , "previous" .= lrp
            , "current" .= lrp'
            ]
-  toJSON (TraceTargetsChanged pst pst') =
-    object [ "kind" .= String "TargetsChanged"
-           , "previous" .= pst
-           , "current" .= pst'
-           ]
+  toJSON (TraceTargetsChanged pst) =
+      kindObject "TargetsChanged"
+    $ peerSelectionTargetsToJSONHelper pst
   toJSON (TracePublicRootsRequest tRootPeers nRootPeers) =
     object [ "kind" .= String "PublicRootsRequest"
            , "targetNumberOfRootPeers" .= tRootPeers
