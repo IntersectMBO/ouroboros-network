@@ -17,7 +17,7 @@ import Cardano.Network.PeerSelection.LocalRootPeers as Cardano.PeerSelection
 import Cardano.Network.PeerSelection.PeerSelectionActions as Cardano.PeerSelection
 import Cardano.Network.PeerSelection.PeerTrustable as Cardano.PeerSelection
 import Cardano.Network.PeerSelection.PublicRootPeers as Cardano.PeerSelection
-           (CardanoPublicRootPeers)
+           (CardanoPublicRootPeers, PublicRootPeers (..))
 
 import Ouroboros.Network.PeerSelection as Ouroboros.PeerSelection hiding
            (DebugPeerSelectionState (..), LedgerPeersConsensusInterface)
