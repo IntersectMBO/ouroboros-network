@@ -45,6 +45,11 @@ timeLimitsChainSync :: forall (header :: Type) (point :: Type) (tip :: Type).
                     -- ^ idle timeout, the default value
                     -- `Configuration.defaultChainSyncIdleTimeout`.
                     -> PeerTrustable
+                    -- ^ NOTE:
+                    -- * All inbound peers are `IsNotTrustable` in
+                    --   `ouroboros-consensus-diffusion`
+                    -- * Only outbound peers declared in the topology as
+                    --   trustable have `IsTrustable` set.
                     -> ProtocolTimeLimitsWithRnd (ChainSync header point tip)
 timeLimitsChainSync idleTimeout peerTrustable = ProtocolTimeLimitsWithRnd stateToLimit
   where
