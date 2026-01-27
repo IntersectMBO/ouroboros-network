@@ -141,7 +141,14 @@ instance ToJSON SomeHashableBlock where
 
 -- | facility for encoding the snapshot in CBOR for backwards compatibility
 --
-data SomeLedgerPeerSnapshot = forall k. SomeLedgerPeerSnapshot (LedgerPeerSnapshot k)
+
+data SomeLedgerPeerSnapshot = forall k. Typeable k => SomeLedgerPeerSnapshot !(LedgerPeerSnapshot k)
+
+instance Eq SomeLedgerPeerSnapshot where
+  (==) (SomeLedgerPeerSnapshot @k1 s1) (SomeLedgerPeerSnapshot @k2 s2) =
+    case eqT :: Maybe (k1 :~: k2) of
+      Just Refl -> s1 == s2
+      Nothing   -> error "impossible! Distinct k types"
 
 deriving instance Show SomeLedgerPeerSnapshot
 
