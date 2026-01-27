@@ -542,11 +542,11 @@ prop_ledgerPeerSnapshotCBORV2 srvSupport slotNo
     decoded = unwrap <$> fromFlatTerm (decodeLedgerPeerSnapshot (Proxy :: Proxy MockBlock)) encoded
     unwrap :: SomeLedgerPeerSnapshot -> LedgerPeerSnapshot BigLedgerPeers
     unwrap = \case
-      SomeLedgerPeerSnapshot lps@LedgerPeerSnapshotV2{} -> lps
+      SomeLedgerPeerSnapshot _ lps@LedgerPeerSnapshotV2{} -> lps
       _otherwise -> error "impossible"
 
     result = case someSnapshot of
-      SomeLedgerPeerSnapshot lps@(LedgerPeerSnapshotV2 (slotNo', peers)) ->
+      SomeLedgerPeerSnapshot _ lps@(LedgerPeerSnapshotV2 (slotNo', peers)) ->
         case srvSupport of
           LedgerPeerSnapshotSupportsSRV      -> lps
           LedgerPeerSnapshotDoesntSupportSRV ->
@@ -580,8 +580,8 @@ prop_ledgerPeerSnapshotCBORV3 slotNo magic ledgerPools big =
     encoded = toFlatTerm . encodeLedgerPeerSnapshot' LedgerPeerSnapshotSupportsSRV $ someSnapshot
     decoded = fromFlatTerm (decodeLedgerPeerSnapshot (Proxy :: Proxy MockBlock)) encoded
     cmp decoded' = case (someSnapshot, decoded') of
-      (SomeLedgerPeerSnapshot someSnapshot',
-       SomeLedgerPeerSnapshot decoded'')-> case (someSnapshot', decoded'') of
+      (SomeLedgerPeerSnapshot _ someSnapshot',
+       SomeLedgerPeerSnapshot _ decoded'')-> case (someSnapshot', decoded'') of
         (lps@LedgerBigPeerSnapshotV23{}, lps'@LedgerBigPeerSnapshotV23{}) -> lps == lps'
         (lps@LedgerAllPeerSnapshotV23{}, lps'@LedgerAllPeerSnapshotV23{}) -> lps == lps'
         _otherwise -> False
@@ -605,7 +605,7 @@ prop_ledgerPeerSnapshotJSON slotNo (v3, big) pureMagic ledgerPools =
     renderMsg msg = mconcat ["JSON decode failed: "
                             , show msg
                             , "\nNB. JSON encoding: ", show $ case someSnapshot of
-                                                                SomeLedgerPeerSnapshot lps -> toJSON lps
+                                                                SomeLedgerPeerSnapshot _ lps -> toJSON lps
                             ]
 
     someSnapshot =
@@ -614,15 +614,15 @@ prop_ledgerPeerSnapshotJSON slotNo (v3, big) pureMagic ledgerPools =
         else snapshotV2 slotNo ledgerPools
 
     jsonResult = case someSnapshot of
-      SomeLedgerPeerSnapshot lps -> case lps of
+      SomeLedgerPeerSnapshot _ lps -> case lps of
         lps'@LedgerBigPeerSnapshotV23{} ->
-          SomeLedgerPeerSnapshot <$>
+          SomeLedgerPeerSnapshot Proxy <$>
             (fmap (parseLedgerPeerSnapshotWithBlock @MockBlock @BigLedgerPeers) . fromJSON . toJSON $ lps')
         lps'@LedgerAllPeerSnapshotV23{} ->
-          SomeLedgerPeerSnapshot <$>
+          SomeLedgerPeerSnapshot Proxy <$>
             (fmap (parseLedgerPeerSnapshotWithBlock @MockBlock @AllLedgerPeers) . fromJSON . toJSON $ lps')
         lps'@LedgerPeerSnapshotV2{}     ->
-          SomeLedgerPeerSnapshot <$>
+          SomeLedgerPeerSnapshot Proxy <$>
             (fmap (parseLedgerPeerSnapshotWithBlock @MockBlock @BigLedgerPeers) . fromJSON . toJSON $ lps')
 
     someRoundTrip = case jsonResult of
@@ -630,9 +630,9 @@ prop_ledgerPeerSnapshotJSON slotNo (v3, big) pureMagic ledgerPools =
       Error str       -> Left str
 
     nearlyEqualModuloFullyQualified :: SomeLedgerPeerSnapshot -> SomeLedgerPeerSnapshot -> Property
-    nearlyEqualModuloFullyQualified (SomeLedgerPeerSnapshot
+    nearlyEqualModuloFullyQualified (SomeLedgerPeerSnapshot _
                                       (LedgerPeerSnapshotV2 (wOrigin, relaysWithAccStake)))
-                                    (SomeLedgerPeerSnapshot
+                                    (SomeLedgerPeerSnapshot _
                                       (LedgerPeerSnapshotV2 (wOrigin', relaysWithAccStake'))) =
       let strippedRelaysWithAccStake = stripFQN <$> relaysWithAccStake
           strippedRelaysWithAccStake' = stripFQN <$> relaysWithAccStake'
@@ -643,9 +643,9 @@ prop_ledgerPeerSnapshotJSON slotNo (v3, big) pureMagic ledgerPools =
         .&&. counterexample "approximation error"
                             (compareApprox relaysWithAccStake relaysWithAccStake')
 
-    nearlyEqualModuloFullyQualified (SomeLedgerPeerSnapshot
+    nearlyEqualModuloFullyQualified (SomeLedgerPeerSnapshot _
                                       (LedgerBigPeerSnapshotV23 point magic relaysWithAccStake))
-                                    (SomeLedgerPeerSnapshot
+                                    (SomeLedgerPeerSnapshot _
                                       (LedgerBigPeerSnapshotV23 point' magic' relaysWithAccStake')) =
       let strippedRelaysWithAccStake = stripFQN <$> relaysWithAccStake
           strippedRelaysWithAccStake' = stripFQN <$> relaysWithAccStake'
@@ -657,9 +657,9 @@ prop_ledgerPeerSnapshotJSON slotNo (v3, big) pureMagic ledgerPools =
         .&&. counterexample "approximation error"
                             (compareApprox relaysWithAccStake relaysWithAccStake')
 
-    nearlyEqualModuloFullyQualified (SomeLedgerPeerSnapshot
+    nearlyEqualModuloFullyQualified (SomeLedgerPeerSnapshot _
                                       (LedgerAllPeerSnapshotV23 point magic relays))
-                                    (SomeLedgerPeerSnapshot
+                                    (SomeLedgerPeerSnapshot _
                                       (LedgerAllPeerSnapshotV23 point' magic' relays')) =
       let strippedRelays  = stripFQN <$> zip (repeat (0 :: Int)) relays
           strippedRelays' = stripFQN <$> zip (repeat (0 :: Int)) relays'
@@ -703,7 +703,7 @@ snapshotV2 :: SlotNo
            -> SomeLedgerPeerSnapshot
 snapshotV2 slot
            (LedgerPools pools) =
-  SomeLedgerPeerSnapshot $ LedgerPeerSnapshotV2 (originOrSlot, poolStakeWithAccumulation)
+  SomeLedgerPeerSnapshot Proxy $ LedgerPeerSnapshotV2 (originOrSlot, poolStakeWithAccumulation)
   where
     poolStakeWithAccumulation = Map.assocs . accPoolStake $ pools
     originOrSlot = if slot == 0
@@ -718,10 +718,10 @@ snapshotV3 slotNo magic (LedgerPools pools) big = snapshot
         then let point = BlockPoint slotNo (SomeHashableBlock (Proxy :: Proxy MockBlock) (unSlotNo slotNo))
                  bigPools = Map.assocs . accPoolStake $ pools
                  lps  = LedgerBigPeerSnapshotV23 point magic bigPools
-              in SomeLedgerPeerSnapshot lps
+              in SomeLedgerPeerSnapshot Proxy lps
         else let point = BlockPoint slotNo (SomeHashableBlock (Proxy :: Proxy MockBlock) (unSlotNo slotNo))
                  lps = LedgerAllPeerSnapshotV23 point magic pools
-              in SomeLedgerPeerSnapshot lps
+              in SomeLedgerPeerSnapshot Proxy lps
 
 
 -- TODO: Belongs in iosim.

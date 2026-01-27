@@ -141,7 +141,14 @@ instance ToJSON SomeHashableBlock where
 
 -- | facility for encoding the snapshot in CBOR for backwards compatibility
 --
-data SomeLedgerPeerSnapshot = forall k. SomeLedgerPeerSnapshot (LedgerPeerSnapshot k)
+
+data SomeLedgerPeerSnapshot = forall k. Typeable k => SomeLedgerPeerSnapshot !(Proxy k) !(LedgerPeerSnapshot k)
+
+instance Eq SomeLedgerPeerSnapshot where
+  (==) (SomeLedgerPeerSnapshot (_ :: Proxy k1) s1) (SomeLedgerPeerSnapshot (_ :: Proxy k2) s2) =
+    case eqT :: Maybe (k1 :~: k2) of
+      Just Refl -> s1 == s2
+      Nothing   -> error "impossible! Distinct k types"
 
 deriving instance Show SomeLedgerPeerSnapshot
 
@@ -304,7 +311,7 @@ data LedgerPeerSnapshotSRVSupport
 
 
 encodeLedgerPeerSnapshot' :: LedgerPeerSnapshotSRVSupport -> SomeLedgerPeerSnapshot -> Codec.Encoding
-encodeLedgerPeerSnapshot' srvSupport (SomeLedgerPeerSnapshot lps) = encodeLedgerPeerSnapshot srvSupport lps
+encodeLedgerPeerSnapshot' srvSupport (SomeLedgerPeerSnapshot _ lps) = encodeLedgerPeerSnapshot srvSupport lps
 {-# INLINE encodeLedgerPeerSnapshot' #-}
 
 
@@ -367,15 +374,15 @@ decodeLedgerPeerSnapshot proxy = do
     version <- Codec.decodeWord8
     case version of
       1 -> Codec.decodeListLenOf 2 >>
-             SomeLedgerPeerSnapshot .
+             SomeLedgerPeerSnapshot Proxy .
              LedgerPeerSnapshotV2 <$> ((,) <$> decodeWithOrigin <*> fromCBOR)
       2 -> Codec.decodeListLenOf 3 >>
-             SomeLedgerPeerSnapshot <$>
+             SomeLedgerPeerSnapshot Proxy <$>
              (LedgerBigPeerSnapshotV23 <$> decodeLedgerPeerSnapshotPoint proxy
                                        <*> (NetworkMagic <$> Codec.decodeWord32)
                                        <*> decodeBigStakePools)
       3 -> Codec.decodeListLenOf 3 >>
-             SomeLedgerPeerSnapshot <$>
+             SomeLedgerPeerSnapshot Proxy <$>
              (LedgerAllPeerSnapshotV23 <$> decodeLedgerPeerSnapshotPoint proxy
                                        <*> (NetworkMagic <$> Codec.decodeWord32)
                                        <*> decodeAllStakePools)
