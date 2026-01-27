@@ -706,7 +706,7 @@ jobVerifyPeerSnapshot (slotNo, fileHash)
         decisionState = st,
         decisionJobs  = [] }
 
-    job = getBlockHash slotNo $ \promise -> do
+    job = getBlockHash (BlockPoint slotNo fileHash) $ \promise -> do
       waited <- promise
       case waited of
         Just (BlockPoint { withHash }) -> do
