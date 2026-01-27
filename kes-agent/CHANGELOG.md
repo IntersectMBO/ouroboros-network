@@ -1,5 +1,9 @@
 # Changelog - Kes Agent
 
+## [v1.1.0.0]
+
+- This version adds support for `ouroboros-network-0.24.0.0`. Older versions of `ouroboros-network` (and its associated packages) are no longer supported.
+
 ## [v1.0.0.0]
 
 This is the first major release of the Kes Agent, intended for experimental purposes alongside `cardano-node` version 10.7. This version includes significant dependency updates, improved control handling, and enhanced deployment assets. This release is suitable for testnets, but is not currently recommended for full production use.
