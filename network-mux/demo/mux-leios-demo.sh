@@ -1,7 +1,7 @@
 #!/bin/env bash
 
 addr() {
-  echo "10.1.0.$1"
+  echo "10.0.0.$1"
 }
 
 # server's configuration
@@ -17,7 +17,7 @@ NUM_LEIOS_REQUESTS=20
 NUM_PRAOS_REQUESTS=1000 # $(($NUM_LEIOS_REQUESTS * $LEIOS_BLOCK_SIZE / $PRAOS_BLOCK_SIZE))
 
 EGRESS_THROUPUT="100mbit"
-INGRESS_DELAY="20ms"
+INGRESS_DELAY="10ms"
 
 RTS_OPTIONS="-N2"
 
@@ -31,13 +31,13 @@ echo "PRAOS_BLOCK_SIZE: $(bc <<< "scale=2; $PRAOS_BLOCK_SIZE / 1000")KB" >> $TMP
 echo "LEIOS_BLOCK_SIZE: $(bc <<< "scale=2; $LEIOS_BLOCK_SIZE / 1000000")MB" >> $TMP_DIR/config
 
 cleanup_netns() {
-  for i in 1 2; do
+  for i in 1 2 3; do
     for pid in $(sudo ip netns pids ns$i); do
       # kill server and tcpdump
       sudo kill -9 $pid
     done
   done
-  for i in 1 2; do sudo ip netns del ns$i; done
+  # for i in 1 2 3; do sudo ip netns del ns$i; done
 
   # no need to cleanup links, since deleting the namespace deletes those
   # links
@@ -48,7 +48,31 @@ cleanup_netns() {
 }
 trap cleanup_netns EXIT INT TERM
 
-for i in 1 2; do
+# Network topology:
+#
+# +----------------+         +-----------------------+         +----------------+
+# |   Namespace    |         |    Namespace ns3      |         |   Namespace    |
+# |      ns1       |         |  (bridge namespace)   |         |      ns2       |
+# |                |         |                       |         |                |
+# |  veth1         |         |  veth1-br    veth2-br |         |   veth2        |
+# |  10.0.0.1/24   |<------->|     |           |     |<------->|  10.0.0.2/24   |
+# |                |         |     +-----+-----+     |         |                |
+# |                |         |           |           |         |                |
+# |                |         |         [ br ]        |         |                |
+# |                |         |       (Linux Bridge)  |         |                |
+# +----------------+         +-----------------------+         +----------------+
+# 
+# Legend:
+#   veth1 <--> veth1-br  : veth pair #1
+#   veth2 <--> veth2-br  : veth pair #2
+#   br                   : Layer-2 bridge connecting veth1-br and veth2-br
+#
+#   veth1 addr 10.0.0.1/24
+#   veth2 addr 10.0.0.2/24
+
+
+# create nemaspaces
+for i in 1 2 3; do
   set -x;
   sudo ip netns add ns$i;
   { set +x; } 2>/dev/null
@@ -57,49 +81,65 @@ done
 # adapted from https://unix.stackexchange.com/a/558427
 add_edge() {
   i=$1
-  j=$2
   set -x
-  sudo ip link add veth$i$j netns ns$i type veth peer name veth$j$i netns ns$j
-
-  # Assign IP address to the veth interface.
-  sudo ip -n ns$i addr add $(addr $i)/32 dev veth$i$j
-
-  # Setup routing rules.
-  sudo ip -n ns$i addr add local $(addr $i) peer $(addr $j) dev veth$i$j
-
-  # Allocate IFBs for applying qdiscs ingress policing.
-  sudo ip -n ns$i link add ifb$i$j type ifb
+  # create veth pair to connect ns${i} to ns3
+  sudo ip link add veth${i} netns ns$i type veth peer name veth${i}-br netns ns3
 
   # Bring the devices up.
-  sudo ip -n ns$i link set veth$i$j up
-  sudo ip -n ns$i link set ifb$i$j up
+  sudo ip -n ns$i link set lo up
+  sudo ip -n ns$i link set veth${i} up
+  sudo ip -n ns3  link set veth${i}-br up
+
+  # Assign IP address to the veth interface.
+  sudo ip -n ns$i addr add $(addr $i)/24 dev veth${i}
 
   { set +x; } 2>/dev/null
 }
 
-add_edge 1 2
-add_edge 2 1
+add_edge 1
+add_edge 2
 
 add_qdiscs() {
   i=$1
-  j=$2
   set -x
 
   # Limit bandwidth of and pace outgoing traffic.
-  sudo tc -n ns$i qdisc add dev veth$i$j root handle 1: htb default 1
-  sudo tc -n ns$i class add dev veth$i$j parent 1: classid 1:1 htb rate $EGRESS_THROUPUT
-  sudo tc -n ns$i qdisc add dev veth$i$j parent 1:1 handle 10: fq_codel
-
-  # Delay incoming traffic.
-  sudo tc -n ns$j qdisc add dev veth$j$i handle ffff: ingress
-  sudo tc -n ns$j filter add dev veth$j$i parent ffff: protocol ip u32 match u32 0 0 action mirred egress redirect dev ifb$j$i
-  sudo tc -n ns$j qdisc add dev ifb$j$i root netem delay $INGRESS_DELAY
+  sudo tc -n ns$i qdisc add dev veth${i} root handle 1: htb default 1
+  sudo tc -n ns$i class add dev veth${i} parent 1: classid 1:1 htb rate $EGRESS_THROUPUT
+  sudo tc -n ns$i qdisc add dev veth${i} parent 1:1 handle 10: fq_codel
 
   { set +x; } 2>/dev/null
 }
 
-add_qdiscs 1 2
-add_qdiscs 2 1
+add_qdiscs 1
+add_qdiscs 2
+
+# Create a bridge in ns3 and connect veth1-ns2 and veth2-br through it.
+setup_bridge() {
+  set -x
+  sudo ip -n ns3 link add name br type bridge
+  sudo ip -n ns3 link set lo up
+  sudo ip -n ns3 link set dev br up
+  # disable STP on the bridge, since we don't have loops in our setup
+  sudo ip -n ns3 link set br type bridge stp_state 0
+
+  for i in 1 2; do
+    sudo ip -n ns3 link set veth${i}-br master br;
+  done
+
+  # Create ifb device for traffic shaping on the bridge
+  sudo ip -n ns3 link add ifb-br type ifb
+  sudo ip -n ns3 link set ifb-br up
+
+  for i in 1 2; do
+    # delay egress traffic on veth${i}-br interface
+    sudo tc -n ns3 qdisc add dev veth${i}-br root netem delay $INGRESS_DELAY
+  done;
+
+  { set +x; } 2>/dev/null
+}
+
+setup_bridge
 
 cabal build mux-leios-demo
 CMD=$(cabal list-bin exe:mux-leios-demo)
@@ -114,11 +154,13 @@ SERVER_CMD="$CMD server-burst $SERVER_ADDR $SERVER_PORT $NUM_PRAOS_REQUESTS $PRA
 echo "Server command: $SERVER_CMD" | tee -a $TMP_DIR/config
 echo "Client command: $CLIENT_CMD" | tee -a $TMP_DIR/config
 
-sudo ip netns exec ns1 bash -c "{ echo "ns1"; ip addr show veth12; }"
-sudo ip netns exec ns2 bash -c "{ echo "ns2"; ip addr show veth21; }"
-# run tcpdump in `ns1` to capture packats from the client side
-sudo ip netns exec ns1 tcpdump -i veth12 -w $TMP_DIR/ns1-veth12.pcap &
-sudo ip netns exec ns2 tcpdump -i veth21 -w $TMP_DIR/ns2-veth21.pcap &
+sudo ip netns exec ns1 bash -c "{ echo "ns1"; ip link show; tc qdisc show dev veth1; }"
+sudo ip netns exec ns2 bash -c "{ echo "ns2"; ip link show; tc qdisc show dev veth2; }"
+sudo ip netns exec ns3 bash -c "{ echo "ns3"; ip link show; tc qdisc show dev br; }"
+
+# run tcpdump in `ns1` to capture packets from the client side
+sudo ip netns exec ns1 tcpdump -i veth1 -w $TMP_DIR/ns1-veth1.pcap &
+sudo ip netns exec ns2 tcpdump -i veth2 -w $TMP_DIR/ns2-veth2.pcap &
 
 # run the server asynchronously
 sudo ip netns exec ns2 bash -c "$SERVER_CMD" &
