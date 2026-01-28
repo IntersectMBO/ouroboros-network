@@ -16,8 +16,9 @@ PRAOS_BLOCK_SIZE=$((($MUX_SDU - 5) * 10))
 NUM_LEIOS_REQUESTS=20
 NUM_PRAOS_REQUESTS=1000 # $(($NUM_LEIOS_REQUESTS * $LEIOS_BLOCK_SIZE / $PRAOS_BLOCK_SIZE))
 
-EGRESS_THROUPUT="100mbit"
-INGRESS_DELAY="10ms"
+# network shaping parameters
+THROUPUT="100mbit"
+DELAY="10ms"
 
 RTS_OPTIONS="-N2"
 
@@ -50,25 +51,36 @@ trap cleanup_netns EXIT INT TERM
 
 # Network topology:
 #
-# +----------------+         +-----------------------+         +----------------+
-# |   Namespace    |         |    Namespace ns3      |         |   Namespace    |
-# |      ns1       |         |  (bridge namespace)   |         |      ns2       |
-# |                |         |                       |         |                |
-# |  veth1         |         |  veth1-br    veth2-br |         |   veth2        |
-# |  10.0.0.1/24   |<------->|     |           |     |<------->|  10.0.0.2/24   |
-# |                |         |     +-----+-----+     |         |                |
-# |                |         |           |           |         |                |
-# |                |         |         [ br ]        |         |                |
-# |                |         |       (Linux Bridge)  |         |                |
-# +----------------+         +-----------------------+         +----------------+
+# ┌──────────────────────┐      ┌────────────────────────────┐      ┌──────────────────────┐
+# │    Namespace ns1     │      │      Namespace ns3         │      │    Namespace ns2     │
+# │  (client namespace)  │      │    (bridge namespace)      │      │  (server namespace)  │
+# │                      │      │                            │      │                      │
+# │  veth1               │◄––––►│  veth1-br        veth2-br  │◄––––►│  veth2               │
+# │  10.0.0.1 / 24       │      │  [netem]         [netem]   │      │  10.0.0.2 / 24       │
+# │  [HTB + fq_codel]    │      │      │               │     │      │  [HTB + fq_codel]    │
+# │                      │      │      └──────┬────────┘     │      │                      │
+# └──────────────────────┘      │             │              │      └──────────────────────┘ 
+#                               │           [ br ]           │
+#                               │        Linux Bridge        │
+#                               │                            │
+#                               └────────────────────────────┘
 # 
 # Legend:
-#   veth1 <--> veth1-br  : veth pair #1
-#   veth2 <--> veth2-br  : veth pair #2
+#   veth1 ◄––► veth1-br  : veth pair #1
+#   veth2 ◄––► veth2-br  : veth pair #2
 #   br                   : Layer-2 bridge connecting veth1-br and veth2-br
 #
-#   veth1 addr 10.0.0.1/24
-#   veth2 addr 10.0.0.2/24
+#
+# veth{1,2} egress shapring:
+# veth{1,2}
+#  └─ htb 1:
+#      └─ class 1:1 $THROUPUT
+#          └─ class 1:10
+#              └─ fq_codel
+#
+# veth{1,2}-br egress shaping:
+# veth{1,2}-br
+#  └─ netem delay $DELAY
 
 
 # create nemaspaces
@@ -105,7 +117,7 @@ add_qdiscs() {
 
   # Limit bandwidth of and pace outgoing traffic.
   sudo tc -n ns$i qdisc add dev veth${i} root handle 1: htb default 1
-  sudo tc -n ns$i class add dev veth${i} parent 1: classid 1:1 htb rate $EGRESS_THROUPUT
+  sudo tc -n ns$i class add dev veth${i} parent 1: classid 1:1 htb rate $THROUPUT
   sudo tc -n ns$i qdisc add dev veth${i} parent 1:1 handle 10: fq_codel
 
   { set +x; } 2>/dev/null
@@ -128,12 +140,12 @@ setup_bridge() {
   done
 
   # Create ifb device for traffic shaping on the bridge
-  sudo ip -n ns3 link add ifb-br type ifb
-  sudo ip -n ns3 link set ifb-br up
+  # sudo ip -n ns3 link add ifb-br type ifb
+  # sudo ip -n ns3 link set ifb-br up
 
   for i in 1 2; do
     # delay egress traffic on veth${i}-br interface
-    sudo tc -n ns3 qdisc add dev veth${i}-br root netem delay $INGRESS_DELAY
+    sudo tc -n ns3 qdisc add dev veth${i}-br root netem delay $DELAY
   done;
 
   { set +x; } 2>/dev/null
