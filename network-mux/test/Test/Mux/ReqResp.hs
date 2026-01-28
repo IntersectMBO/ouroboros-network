@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
@@ -8,13 +9,39 @@
 -- peer awaiting for messages needs an incremental decoder to assemple messages
 -- back.
 --
-module Test.Mux.ReqResp where
+module Test.Mux.ReqResp
+  ( MsgReqResp (..)
+  , TraceSendRecv (..)
+    -- * Normal Request-Response Client & Server
+    -- ** Client
+  , ReqRespClient (..)
+  , runClientCBOR
+  , runClientBin
+    -- ** Server
+  , ReqRespServer (..)
+  , runServerCBOR
+  , runServerBin
+    -- * Passive Client & Active Server
+    -- ** Passive Client
+  , ReqRespClientBurst (..)
+  , ReqRespClientLoop (..)
+  , runClientBurstCBOR
+  , runClientBurstBin
+    -- ** Active Server
+  , ReqRespServerBurst (..)
+  , ReqRespServerLoop (..)
+  , runServerBurstCBOR
+  , runServerBurstBin
+  ) where
 
-import Codec.CBOR.Decoding (Decoder)
 import Codec.CBOR.Decoding qualified as CBOR hiding (Done, Fail)
 import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
 import Codec.Serialise (Serialise (..), serialise)
+
+import Data.Binary.Get qualified as Bin
+import Data.Binary.Put qualified as Bin
+
 import Control.Monad.Primitive
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
@@ -56,7 +83,6 @@ instance (Serialise req, Serialise resp) => Serialise (MsgReqResp req resp) wher
         (1, 2) -> pure MsgDone
         _      -> fail $ "decode MsgReqResp: unknown tag " ++ show tag
 
-
 -- | A Client which requests 'req' data and receives 'resp'.
 --
 data ReqRespClient req resp m a where
@@ -68,23 +94,23 @@ data ReqRespClient req resp m a where
 
   EarlyExit   ::   a -> ReqRespClient req resp m a
 
-
 data TraceSendRecv msg
   = TraceSend msg
   | TraceRecv msg
   | TraceEarlyExit
-  | TraceFailure CBOR.DeserialiseFailure
+  | TraceFailure String
   deriving Show
 
 
-runDecoderWithChannel :: forall m a.
-                         MonadST m
-                      => ByteChannel m
-                      -> Maybe LBS.ByteString
-                      -> Decoder (PrimState m) a
-                      -> m (Either CBOR.DeserialiseFailure (a, Maybe LBS.ByteString))
+runCBORDecoderWithChannel
+  :: forall m a.
+     MonadST m
+  => ByteChannel m
+  -> Maybe LBS.ByteString
+  -> CBOR.Decoder (PrimState m) a
+  -> m (Either CBOR.DeserialiseFailure (a, Maybe LBS.ByteString))
 
-runDecoderWithChannel Channel{recv} trailing decoder =
+runCBORDecoderWithChannel Channel{recv} trailing decoder =
     stToIO (CBOR.deserialiseIncremental decoder) >>= go (LBS.toStrict <$> trailing)
   where
 
@@ -104,21 +130,76 @@ runDecoderWithChannel Channel{recv} trailing decoder =
 
 
 
+encodeBin :: MsgReqResp BS.ByteString BS.ByteString -> Bin.Put
+encodeBin (MsgReq req)   = Bin.putWord8 0
+                        >> Bin.putWord32be (fromIntegral $ BS.length req)
+                        >> Bin.putByteString req
+encodeBin (MsgResp resp) = Bin.putWord8 1
+                        >> Bin.putWord32be (fromIntegral $ BS.length resp)
+                        >> Bin.putByteString resp
+encodeBin MsgDone        = Bin.putWord8 2
+
+
+decodeBin :: Bin.Get (MsgReqResp BS.ByteString BS.ByteString)
+decodeBin = do
+  tag <- Bin.getWord8
+  case tag of
+    0 -> do
+      len <- Bin.getWord32be
+      MsgReq <$> Bin.getByteString (fromIntegral len)
+    1 -> do
+      len <- Bin.getWord32be
+      MsgResp <$> Bin.getByteString (fromIntegral len)
+    2 -> return MsgDone
+    _ -> fail $ "unexpected tag: " ++ show tag
+
+
+
+runBinDecoderWithChannel
+  :: forall m a.
+     Monad m
+  => ByteChannel m
+  -> Maybe LBS.ByteString
+  -> Bin.Get a
+  -> m (Either String (a, Maybe LBS.ByteString))
+runBinDecoderWithChannel Channel{recv} trailing decoder =
+    go (LBS.toStrict <$> trailing) (Bin.runGetIncremental decoder)
+  where
+    go :: Maybe BS.ByteString
+       -> Bin.Decoder a
+       -> m (Either String (a, Maybe LBS.ByteString))
+    go Nothing (Bin.Partial k) =
+      k . fmap LBS.toStrict <$> recv >>= go Nothing
+    go (Just bs) (Bin.Partial k) =
+      go Nothing (k (Just bs))
+    go _ (Bin.Done trailing' _ a) | BS.null trailing'
+                                  = return (Right (a, Nothing))
+                                  | otherwise
+                                  = return (Right (a, Just $ LBS.fromStrict trailing'))
+    go _ (Bin.Fail _ _ failure)   = return $ Left failure
+
+
+
 -- | Run a client using a byte 'ByteChannel'.
 --
-runClient :: forall req resp m a.
-             ( MonadST m
-             , Serialise req
-             , Serialise resp
-             , Show req
-             , Show resp
-             )
-          => Tracer m (TraceSendRecv (MsgReqResp req resp))
-          -> ByteChannel m
-          -> ReqRespClient req resp m a
-          -> m (a, Maybe LBS.ByteString)
+runClient
+  :: forall req resp failure m a.
+     ( Monad m
+     , Show req
+     , Show resp
+     , Show failure
+     )
+  => (MsgReqResp req resp -> LBS.ByteString)
+  -> (    ByteChannel m
+       -> Maybe LBS.ByteString
+       -> m (Either failure (MsgReqResp req resp, Maybe LBS.ByteString))
+     )
+  -> Tracer m (TraceSendRecv (MsgReqResp req resp))
+  -> ByteChannel m
+  -> ReqRespClient req resp m a
+  -> m (a, Maybe LBS.ByteString)
 
-runClient tracer channel@Channel {send} =
+runClient runEncoder runDecoder tracer channel@Channel {send} =
     go Nothing
   where
     go :: Maybe LBS.ByteString
@@ -128,13 +209,13 @@ runClient tracer channel@Channel {send} =
       let msg :: MsgReqResp req resp
           msg = MsgReq req
       traceWith tracer (TraceSend msg)
-      send $ serialise msg
+      send $ runEncoder msg
 
-      res <- runDecoderWithChannel channel trailing decode
+      res <- runDecoder channel trailing
 
       case res of
         Left err -> do
-          traceWith tracer (TraceFailure err)
+          traceWith tracer (TraceFailure $ show err)
           error $ "runClient: deserialise error: " ++ show err
 
         Right (msg'@(MsgResp resp), trailing') -> do
@@ -147,13 +228,37 @@ runClient tracer channel@Channel {send} =
         let msg :: MsgReqResp req resp
             msg = MsgDone
         traceWith tracer (TraceSend msg)
-        send (serialise msg)
+        send (runEncoder msg)
         a <- ma
         return (a, trailing)
 
     go trailing (EarlyExit a) = do
       traceWith tracer TraceEarlyExit
       return (a, trailing)
+
+
+runClientCBOR
+  :: forall req resp m a.
+     ( MonadST m
+     , Serialise req
+     , Serialise resp
+     , Show req
+     , Show resp
+     )
+  => Tracer m (TraceSendRecv (MsgReqResp req resp))
+  -> ByteChannel m
+  -> ReqRespClient req resp m a
+  -> m (a, Maybe LBS.ByteString)
+runClientCBOR = runClient serialise (\chan trailing -> runCBORDecoderWithChannel chan trailing decode)
+
+
+runClientBin
+  :: forall m a. Monad m
+  => Tracer m (TraceSendRecv (MsgReqResp BS.ByteString BS.ByteString))
+  -> ByteChannel m
+  -> ReqRespClient BS.ByteString BS.ByteString m a
+  -> m (a, Maybe LBS.ByteString)
+runClientBin = runClient (Bin.runPut . encodeBin) (\chan trailing -> runBinDecoderWithChannel chan trailing decodeBin)
 
 
 -- | Server which receives 'req' and responds with 'resp'.
@@ -169,29 +274,34 @@ data ReqRespServer req resp m a = ReqRespServer {
   }
 
 
-runServer :: forall req resp m a.
-             ( MonadST m
-             , Serialise req
-             , Serialise resp
-             , Show req
-             , Show resp
-             )
-          => Tracer m (TraceSendRecv (MsgReqResp req resp))
-          -> ByteChannel m
-          -> ReqRespServer req resp m a
-          -> m (a, Maybe LBS.ByteString)
+runServer
+  :: forall req resp failure m a.
+     ( Monad m
+     , Show req
+     , Show resp
+     , Show failure
+     )
+  => (MsgReqResp req resp -> LBS.ByteString)
+  -> (    ByteChannel m
+       -> Maybe LBS.ByteString
+       -> m (Either failure (MsgReqResp req resp, Maybe LBS.ByteString))
+     )
+  -> Tracer m (TraceSendRecv (MsgReqResp req resp))
+  -> ByteChannel m
+  -> ReqRespServer req resp m a
+  -> m (a, Maybe LBS.ByteString)
 
-runServer tracer channel@Channel {send} =
+runServer runEncoder runDecoder tracer channel@Channel {send} =
     go Nothing
   where
     go :: Maybe LBS.ByteString
        -> ReqRespServer req resp m a
        -> m (a, Maybe LBS.ByteString)
     go trailing ReqRespServer {recvMsgReq, recvMsgDone} = do
-      res <- runDecoderWithChannel channel trailing decode
+      res <- runDecoder channel trailing
       case res of
         Left err -> do
-          traceWith tracer (TraceFailure err)
+          traceWith tracer (TraceFailure $ show err)
           error $ "runServer: deserialise error " ++ show err
 
         Right (msg@(MsgReq req), trailing') -> do
@@ -200,7 +310,7 @@ runServer tracer channel@Channel {send} =
           let msg' :: MsgReqResp req resp
               msg' = MsgResp resp
           traceWith tracer (TraceSend msg')
-          send $ serialise msg'
+          send $ runEncoder msg'
           go trailing' server
 
         Right (msg@MsgDone, trailing') -> do
@@ -211,3 +321,202 @@ runServer tracer channel@Channel {send} =
         Right (msg, _) -> do
           traceWith tracer (TraceRecv msg)
           error $ "runServer: unexpected message " ++ show msg
+
+runServerCBOR
+  :: forall req resp m a.
+     ( MonadST m
+     , Serialise req
+     , Serialise resp
+     , Show req
+     , Show resp
+     )
+  => Tracer m (TraceSendRecv (MsgReqResp req resp))
+  -> ByteChannel m
+  -> ReqRespServer req resp m a
+  -> m (a, Maybe LBS.ByteString)
+runServerCBOR = runServer serialise (\chann trailing -> runCBORDecoderWithChannel chann trailing decode)
+
+runServerBin
+  :: forall m a. Monad m
+  => Tracer m (TraceSendRecv (MsgReqResp BS.ByteString BS.ByteString))
+  -> ByteChannel m
+  -> ReqRespServer BS.ByteString BS.ByteString m a
+  -> m (a, Maybe LBS.ByteString)
+runServerBin = runServer (Bin.runPut . encodeBin) (\chann trailing -> runBinDecoderWithChannel chann trailing decodeBin)
+
+
+--
+-- Passive Client / Active Server
+--
+
+
+-- | A bursty client, which sends one request and then awaits for responses from
+-- the server.  The server terminates the protocol with `MsgDone`.
+--
+-- TODO: the client should ask for n messages and terminate the protocol.
+--
+data ReqRespClientBurst req resp m a =
+  SendMsgReqBurst req (ReqRespClientLoop resp m a)
+
+data ReqRespClientLoop resp m a =
+  AwaitResp { handleMsgDone :: m a
+            , handleMsgResp :: resp -> m (ReqRespClientLoop resp m a)
+            }
+
+
+runClientBurst
+  :: forall req resp failure m a.
+     ( Monad m
+     , Show req
+     , Show resp
+     , Show failure
+     )
+  => (MsgReqResp req resp -> LBS.ByteString)
+  -> (    ByteChannel m
+       -> Maybe LBS.ByteString
+       -> m (Either failure (MsgReqResp req resp, Maybe LBS.ByteString))
+     )
+  -> Tracer m (TraceSendRecv (MsgReqResp req resp))
+  -> ByteChannel m
+  -> ReqRespClientBurst req resp m a
+  -> m (a, Maybe LBS.ByteString)
+
+runClientBurst runEncoder runDecoder tracer
+               channel@Channel {send}
+               (SendMsgReqBurst req loop) = do
+    let msg :: MsgReqResp req resp
+        msg = MsgReq req
+    send (runEncoder msg)
+    go Nothing loop
+  where
+    go :: Maybe LBS.ByteString
+       -> ReqRespClientLoop resp m a
+       -> m (a, Maybe LBS.ByteString)
+    go trailing AwaitResp { handleMsgDone, handleMsgResp } = do
+      res <- runDecoder channel trailing
+
+      case res of
+        Left err -> do
+          traceWith tracer (TraceFailure $ show err)
+          error $ "runClient: deserialise error: " ++ show err
+
+        Right (msg'@(MsgResp resp), trailing') -> do
+          traceWith tracer (TraceRecv msg')
+          handleMsgResp resp >>= go trailing'
+
+        Right (msg'@MsgDone, trailing') -> do
+          traceWith tracer (TraceRecv msg')
+          a <- handleMsgDone
+          return (a, trailing')
+
+        Right (msg', _) -> error $ "runClient: wrong message " ++ show msg'
+
+
+runClientBurstCBOR
+  :: forall req resp m a.
+     ( MonadST m
+     , Serialise req
+     , Serialise resp
+     , Show req
+     , Show resp
+     )
+  => Tracer m (TraceSendRecv (MsgReqResp req resp))
+  -> ByteChannel m
+  -> ReqRespClientBurst req resp m a
+  -> m (a, Maybe LBS.ByteString)
+runClientBurstCBOR = runClientBurst serialise (\chan trailing -> runCBORDecoderWithChannel chan trailing decode)
+
+
+runClientBurstBin
+  :: forall m a. Monad m
+  => Tracer m (TraceSendRecv (MsgReqResp BS.ByteString BS.ByteString))
+  -> ByteChannel m
+  -> ReqRespClientBurst BS.ByteString BS.ByteString m a
+  -> m (a, Maybe LBS.ByteString)
+runClientBurstBin = runClientBurst (Bin.runPut . encodeBin) (\chan trailing -> runBinDecoderWithChannel chan trailing decodeBin)
+
+
+-- | Server dual to `ReqRespClientBurst`.
+--
+newtype ReqRespServerBurst req resp m a where
+  ReqRespServerBurst :: (req -> m (ReqRespServerLoop resp m a))
+                     -> ReqRespServerBurst req resp m a
+
+data ReqRespServerLoop resp m a where
+  SendMsgResp :: resp
+           -> m (ReqRespServerLoop resp m a)
+           -> ReqRespServerLoop resp m a
+
+  SendMsgDoneServer :: m a
+                    -> ReqRespServerLoop resp m a
+
+
+runServerBurst
+  :: forall req resp failure m a.
+     ( Monad m
+     , Show req
+     , Show resp
+     , Show failure
+     )
+  => (MsgReqResp req resp -> LBS.ByteString)
+  -> (    ByteChannel m
+       -> Maybe LBS.ByteString
+       -> m (Either failure (MsgReqResp req resp, Maybe LBS.ByteString))
+     )
+  -> Tracer m (TraceSendRecv (MsgReqResp req resp))
+  -> ByteChannel m
+  -> ReqRespServerBurst req resp m a
+  -> m (a, Maybe LBS.ByteString)
+
+runServerBurst runEncoder runDecoder
+               tracer channel@Channel {send}
+               (ReqRespServerBurst k) = do
+    res <- runDecoder channel Nothing
+    case res of
+      Right (MsgReq req, trailing) -> k req >>= go trailing
+      Right (msg, _) -> error $ "runClient: wrong message " ++ show msg
+      Left err -> do
+        traceWith tracer (TraceFailure $ show err)
+        error $ "runClient: deserialise error: " ++ show err
+  where
+    go :: Maybe LBS.ByteString
+       -> ReqRespServerLoop resp m a
+       -> m (a, Maybe LBS.ByteString)
+    go !trailing (SendMsgResp resp server) = do
+      let msg :: MsgReqResp req resp
+          msg = MsgResp resp
+      traceWith tracer (TraceSend msg)
+      send $ runEncoder msg
+      server >>= go trailing
+
+    go !trailing (SendMsgDoneServer ma) = do
+      let msg = MsgDone
+      traceWith tracer (TraceSend msg)
+      send (runEncoder msg)
+      a <- ma
+      return (a, trailing)
+
+runServerBurstCBOR
+  :: forall req resp m a.
+     ( MonadST m
+     , Show req
+     , Show resp
+     , Serialise req
+     , Serialise resp
+     )
+  => Tracer m (TraceSendRecv (MsgReqResp req resp))
+  -> ByteChannel m
+  -> ReqRespServerBurst req resp m a
+  -> m (a, Maybe LBS.ByteString)
+runServerBurstCBOR = runServerBurst serialise
+                                    (\chan trailing -> runCBORDecoderWithChannel chan trailing decode)
+
+runServerBurstBin
+  :: forall m a.
+     Monad m
+  => Tracer m (TraceSendRecv (MsgReqResp BS.ByteString BS.ByteString))
+  -> ByteChannel m
+  -> ReqRespServerBurst BS.ByteString BS.ByteString m a
+  -> m (a, Maybe LBS.ByteString)
+runServerBurstBin = runServerBurst (Bin.runPut . encodeBin)
+                                   (\chan trailing -> runBinDecoderWithChannel chan trailing decodeBin)

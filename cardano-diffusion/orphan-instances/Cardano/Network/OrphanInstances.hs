@@ -24,7 +24,6 @@ import Ouroboros.Network.Diffusion.Topology
 import Ouroboros.Network.Magic (NetworkMagic (..))
 import Ouroboros.Network.OrphanInstances (localRootPeersGroupsFromJSON,
            networkTopologyFromJSON, networkTopologyToJSON)
-import Ouroboros.Network.PeerSelection.PublicRootPeers
 
 instance ToJSON LedgerStateJudgement where
   toJSON YoungEnough = String "YoungEnough"
