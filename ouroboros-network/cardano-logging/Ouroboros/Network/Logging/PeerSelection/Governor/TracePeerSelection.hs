@@ -8,7 +8,7 @@
 -- Orphan instances module for Cardano tracer.
 {-# OPTIONS_GHC -Wno-orphans #-}
 -- Extracted from "cardano-node" `Cardano.Node.Tracing.Tracers.P2P`.
--- Branch "master" (2025-02-28, 8c6a9f89fd8bb5b97dba2ae3a4c50873566fe14e).
+-- Branch "master" (2026-02-11, 85869e9dd21d9dac7c4381418346e97259c3303b).
 
 {- TODO: All references to package "cardano-diffusion" were removed.
 --       See all the TODO annotations.
@@ -98,10 +98,13 @@ instance ( Ord ntnAddr
              , "previous" .= toJSON lrp
              , "current" .= toJSON lrp'
              ]
-  forMachine _dtal (TraceTargetsChanged pst pst') =
+  forMachine _dtal (TraceTargetsChanged pst) =
     mconcat [ "kind" .= String "TargetsChanged"
              , "previous" .= toJSON pst
+{-- TODO: Field was removed here but not in cardano-node master
+ -- See: ouroboros-network/changelog.d/20260122_220351_coot_ouroboros_churn_fix.md
              , "current" .= toJSON pst'
+--}
              ]
   forMachine _dtal (TracePublicRootsRequest tRootPeers nRootPeers) =
     mconcat [ "kind" .= String "PublicRootsRequest"
@@ -444,6 +447,7 @@ instance ( Ord ntnAddr
 107 |   forMachine _dtal (TraceLocalRootPeersChanged lrp lrp') =
 --}
   forMachine _ _ = mempty
+
   forHuman = pack . show
 
   asMetrics (TraceChurnAction duration action _) =
@@ -452,7 +456,10 @@ instance ( Ord ntnAddr
     ]
   asMetrics _ = []
 
-instance MetaTrace (TracePeerSelection extraDebugState extraFlags extraPeers SockAddr) where
+{-- TODO: `extraTrace` was added here but no in cardano-node master:
+-- instance MetaTrace (TracePeerSelection extraDebugState extraFlags extraPeers SockAddr) where
+--}
+instance MetaTrace (TracePeerSelection extraDebugState extraFlags extraPeers extraTrace SockAddr) where
     namespaceFor TraceLocalRootPeersChanged {} =
       Namespace [] ["LocalRootPeersChanged"]
     namespaceFor TraceTargetsChanged {}        =

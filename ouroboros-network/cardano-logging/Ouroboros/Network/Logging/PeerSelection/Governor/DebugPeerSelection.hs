@@ -8,7 +8,7 @@
 -- Orphan instances module for Cardano tracer.
 {-# OPTIONS_GHC -Wno-orphans #-}
 -- Extracted from "cardano-node" `Cardano.Node.Tracing.Tracers.P2P`.
--- Branch "master" (2025-02-28, 8c6a9f89fd8bb5b97dba2ae3a4c50873566fe14e).
+-- Branch "master" (2026-02-11, 85869e9dd21d9dac7c4381418346e97259c3303b).
 
 {- TODO: All references to package "cardano-diffusion" were removed.
 --       See all the TODO annotations.
@@ -43,6 +43,9 @@ import "ouroboros-network" -- "ouroboros-network:ouroboros-network"
   Ouroboros.Network.PeerSelection.Governor.Types
     ( DebugPeerSelection (..)
     , PeerSelectionState (..)
+    {-- TODO: use this
+    , peerSelectionStateToCounters
+    --}
     )
 --------------------
 -- Package: "text" -
@@ -79,7 +82,7 @@ instance ( Show extraState
              , "blockedAt" .= String (pack $ show blockedAt)
              , "wakeupAfter" .= String (pack $ show wakeupAfter)
              , "targets" .= peerSelectionTargetsToObject targets
-{-- TODO:Before "cardano-diffusion" removal:
+{-- TODO: Before "cardano-diffusion" removal:
  
              , "counters" .= forMachine dtal (peerSelectionStateToCounters Cardano.PublicRootPeers.toSet Cardano.cardanoPeerSelectionStatetoCounters st)
 --}
