@@ -15,7 +15,7 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.State
   , acknowledgeTxIds
   , splitAcknowledgedTxIds
   , tickTimedTxs
-  , const_MAX_TX_SIZE_DISCREPENCY
+  , const_MAX_TX_SIZE_DISCREPANCY
     -- * Internals, only exported for testing purposes:
   , RefCountDiff (..)
   , updateRefCounts
@@ -366,10 +366,10 @@ receivedTxIdsImpl
                    requestedTxIdsInflight = requestedTxIdsInflight - reqNo }
 
 -- | We check advertised sizes up in a fuzzy way.  The advertised and received
--- sizes need to agree up to `const_MAX_TX_SIZE_DISCREPENCY`.
+-- sizes need to agree up to `const_MAX_TX_SIZE_DISCREPANCY`.
 --
-const_MAX_TX_SIZE_DISCREPENCY :: SizeInBytes
-const_MAX_TX_SIZE_DISCREPENCY = 32
+const_MAX_TX_SIZE_DISCREPANCY :: SizeInBytes
+const_MAX_TX_SIZE_DISCREPANCY = 32
 
 collectTxsImpl
     :: forall peeraddr tx txid.
@@ -436,7 +436,7 @@ collectTxsImpl txSize peeraddr requestedTxIdsMap receivedTxs
                     -> SizeInBytes
                     -> Bool
         checkTxSize received advertised
-          = abs (received - advertised) <= const_MAX_TX_SIZE_DISCREPENCY
+          = abs (received - advertised) <= const_MAX_TX_SIZE_DISCREPANCY
 
         requestedTxIds = Map.keysSet requestedTxIdsMap
         notReceived    = requestedTxIds Set.\\ Map.keysSet receivedTxs
