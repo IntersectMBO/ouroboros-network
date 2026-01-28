@@ -122,10 +122,8 @@ peerChurnGovernor
       -- update targets, and return the new targets
       startTime <- getMonotonicTime
       (c, targets) <- atomically $ do
-        targets <- readTVar peerSelectionVar
-
         (,) <$> (getCounter <$> readCounters)
-            <*> stateTVar peerSelectionVar ((\a -> (a, a)) . modifyTargets targets)
+            <*> stateTVar peerSelectionVar ((\a -> (a, a)) . modifyTargets peerSelectionTargets)
 
       -- create timeout and block on counters
       bracketOnError (registerDelayCancellable timeoutDelay)
@@ -302,14 +300,16 @@ peerChurnGovernor
       -> ModifyPeerSelectionTargets
     decreaseKnownPeers minDecrease base targets =
       targets {
-        targetNumberOfRootPeers =
-          decrease (targetNumberOfRootPeers base - targetNumberOfEstablishedPeers base)
-          + targetNumberOfEstablishedPeers base
-      , targetNumberOfKnownPeers =
-          decreaseWithMin minDecrease
-            (targetNumberOfKnownPeers base - targetNumberOfEstablishedPeers base)
-          + targetNumberOfEstablishedPeers base
-      }
+          -- we clamp from above to not accidentally actually increase
+          -- the number of root peers
+          targetNumberOfRootPeers = min (targetNumberOfRootPeers base) $
+            decrease (targetNumberOfRootPeers base - targetNumberOfEstablishedPeers base)
+            + targetNumberOfEstablishedPeers base
+        , targetNumberOfKnownPeers =
+            decreaseWithMin minDecrease
+                            (targetNumberOfKnownPeers base - targetNumberOfEstablishedPeers base)
+            + targetNumberOfEstablishedPeers base
+        }
 
     checkKnownPeersDecreased
       :: PeerSelectionCounters extraCounters -> PeerSelectionTargets -> Bool

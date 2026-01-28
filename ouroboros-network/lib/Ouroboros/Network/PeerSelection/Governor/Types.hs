@@ -1629,8 +1629,8 @@ data TracePeerSelection extraDebugState extraFlags extraPeers extraTrace peeradd
      -- Churn
      --
 
-     -- | Peer selection targets changed: old targets, new targets.
-     | TraceTargetsChanged     PeerSelectionTargets PeerSelectionTargets
+     -- | Peer selection targets changed: new targets.
+     | TraceTargetsChanged PeerSelectionTargets
 
      --
      -- Ledger Peers
