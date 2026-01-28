@@ -98,10 +98,13 @@ instance ( Ord ntnAddr
              , "previous" .= toJSON lrp
              , "current" .= toJSON lrp'
              ]
-  forMachine _dtal (TraceTargetsChanged pst pst') =
+  forMachine _dtal (TraceTargetsChanged pst) =
     mconcat [ "kind" .= String "TargetsChanged"
              , "previous" .= toJSON pst
+{-- TODO: Was removed here but not in cardano-node master
+ -- See: ouroboros-network/changelog.d/20260122_220351_coot_ouroboros_churn_fix.md
              , "current" .= toJSON pst'
+--}
              ]
   forMachine _dtal (TracePublicRootsRequest tRootPeers nRootPeers) =
     mconcat [ "kind" .= String "PublicRootsRequest"
@@ -452,7 +455,7 @@ instance ( Ord ntnAddr
     ]
   asMetrics _ = []
 
-instance MetaTrace (TracePeerSelection extraDebugState extraFlags extraPeers SockAddr) where
+instance MetaTrace (TracePeerSelection extraDebugState extraFlags extraPeers extraTrace SockAddr) where
     namespaceFor TraceLocalRootPeersChanged {} =
       Namespace [] ["LocalRootPeersChanged"]
     namespaceFor TraceTargetsChanged {}        =
