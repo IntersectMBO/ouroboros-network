@@ -186,18 +186,11 @@ data Tracers ntnAddr ntnVersion ntnVersionData
     , dtTracePeerSelectionTracer
         :: Tracer m (TracePeerSelection extraDebugState extraFlags extraPeers extraTrace ntnAddr)
 
-    , dtDebugPeerSelectionInitiatorTracer
-        :: Tracer m (DebugPeerSelection extraState extraFlags extraPeers ntnAddr)
-
-      -- TODO: can be unified with the previous one
-    , dtDebugPeerSelectionInitiatorResponderTracer
+    , dtDebugPeerSelectionTracer
         :: Tracer m (DebugPeerSelection extraState extraFlags extraPeers ntnAddr)
 
     , dtTracePeerSelectionCounters
         :: Tracer m (PeerSelectionCounters extraCounters)
-
-    , dtTraceChurnCounters
-        :: Tracer m PeerSelection.ChurnCounters
 
     , dtPeerSelectionActionsTracer
         :: Tracer m (PeerSelectionActionsTrace ntnAddr ntnVersion)
@@ -266,9 +259,7 @@ nullTracers = Tracers {
   , dtTracePublicRootPeersTracer                 = nullTracer
   , dtTraceLedgerPeersTracer                     = nullTracer
   , dtTracePeerSelectionTracer                   = nullTracer
-  , dtTraceChurnCounters                         = nullTracer
-  , dtDebugPeerSelectionInitiatorTracer          = nullTracer
-  , dtDebugPeerSelectionInitiatorResponderTracer = nullTracer
+  , dtDebugPeerSelectionTracer                   = nullTracer
   , dtTracePeerSelectionCounters                 = nullTracer
   , dtPeerSelectionActionsTracer                 = nullTracer
   , dtConnectionManagerTracer                    = nullTracer

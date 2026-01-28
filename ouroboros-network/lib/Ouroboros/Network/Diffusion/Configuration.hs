@@ -102,7 +102,7 @@ defaultBulkChurnInterval = 900
 local_PROTOCOL_IDLE_TIMEOUT :: DiffTime
 local_PROTOCOL_IDLE_TIMEOUT = 2 -- 2 seconds
 
--- | Used to set 'cmWaitTimeout' for local (e.g. /node-to-client/) connections.
+-- | Used to set 'timeWaitTimeout' for local (e.g. /node-to-client/) connections.
 --
 local_TIME_WAIT_TIMEOUT :: DiffTime
 local_TIME_WAIT_TIMEOUT = 0

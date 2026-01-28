@@ -1476,20 +1476,12 @@ diffusionSimulationM
                                                  . tracerWithName ntnAddr
                                                  . tracerWithTime
                                                  $ nodeTracer' -- <> sayTracer'
-        , Diffusion.dtDebugPeerSelectionInitiatorTracer
-                                                 = contramap
-                                                     DiffusionDebugPeerSelectionTrace
-                                                 . tracerWithName ntnAddr
-                                                 . tracerWithTime
-                                                 $ nodeTracer' -- <> sayTracer'
-        , Diffusion.dtDebugPeerSelectionInitiatorResponderTracer
-                                                 = contramap
+        , Diffusion.dtDebugPeerSelectionTracer   = contramap
                                                      DiffusionDebugPeerSelectionTrace
                                                  . tracerWithName ntnAddr
                                                  . tracerWithTime
                                                  $ nodeTracer' -- <> sayTracer'
         , Diffusion.dtTracePeerSelectionCounters = nullTracer -- <> sayTracer'
-        , Diffusion.dtTraceChurnCounters         = nullTracer -- <> sayTracer'
         , Diffusion.dtPeerSelectionActionsTracer = contramap
                                                      DiffusionPeerSelectionActionsTrace
                                                  . tracerWithName ntnAddr

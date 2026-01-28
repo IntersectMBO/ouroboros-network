@@ -134,17 +134,17 @@ simplePeerSelectionPolicy rngVar metrics = PeerSelectionPolicy {
 
         available' <- addRand rngVar available (,)
         return $ Set.fromList
-             . map fst
-             . take pickNum
-               -- order the results, resolve the ties using slot number when
-               -- a peer joined the leader board.
-               --
-               -- note: this will prefer to preserve newer peers, whose results
-               -- less certain than peers who entered leader board earlier.
-             . sortOn (\(peer, rn) ->
-                          (Map.findWithDefault (0, Nothing) peer scores, rn))
-             . Map.assocs
-             $ available'
+               . map fst
+               . take pickNum
+                 -- order the results, resolve the ties using slot number when
+                 -- a peer joined the leader board.
+                 --
+                 -- note: this will prefer to preserve newer peers, whose results
+                 -- less certain than peers who entered leader board earlier.
+               . sortOn (\(peer, rn) ->
+                            (Map.findWithDefault (0, Nothing) peer scores, rn))
+               . Map.assocs
+               $ available'
 
     -- Randomly pick peers to demote, peers with knownPeerTepid set are twice
     -- as likely to be demoted.

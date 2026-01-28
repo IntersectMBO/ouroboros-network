@@ -79,7 +79,6 @@ import Ouroboros.Network.InboundGovernor.State (RemoteSt)
 import Ouroboros.Network.InboundGovernor.State qualified as InboundGovernor
 import Ouroboros.Network.Mux (MiniProtocolNum (..))
 import Ouroboros.Network.PeerSelection hiding (PublicRootPeers)
-import Ouroboros.Network.PeerSelection.Churn
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
@@ -1202,12 +1201,6 @@ peerSelectionTargetsToObject
        , "establishedBigLedgerPeers" .= targetNumberOfEstablishedBigLedgerPeers
        , "activeBigLedgerPeers" .= targetNumberOfActiveBigLedgerPeers
        ]
-
-instance ToJSON ChurnCounters where
-  toJSON (ChurnCounter action cnt) =
-    object [ "action"  .= show action
-           , "counter" .= cnt
-           ]
 
 instance (ToJSON peerAddr, Show peerAddr, Show versionNumber)
       => ToJSON (PeerSelectionActionsTrace peerAddr versionNumber) where
