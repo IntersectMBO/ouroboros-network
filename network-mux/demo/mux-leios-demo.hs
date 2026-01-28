@@ -28,13 +28,9 @@ import System.Environment qualified as SysEnv
 import System.Exit
 import System.IO
 
-import System.IOManager
-#if defined(mingw32_HOST_OS)
-import System.Win32 qualified Win32
-import System.Win32.Async qualified as Win32.Async
-#endif
 import Network.Socket (PortNumber)
 import Network.Socket qualified as Socket
+import System.IOManager
 
 import Network.Mux as Mx
 import Network.Mux.Bearer qualified as Mx
@@ -155,7 +151,7 @@ server ct ip port num len1 len2 =
                   }
     addr:_ <- Socket.getAddrInfo (Just hints) (Just $ show ip) (Just $ show port)
     sock <- Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol
-    associateWithIOManager ioManager sock
+    associateWithIOManager ioManager (Right sock)
     debugPutStrLn_ $ "server: " ++ show addr
     Socket.setSocketOption sock Socket.ReuseAddr 1
     Socket.bind sock (Socket.addrAddress addr)
@@ -271,7 +267,7 @@ client ct ip port len n1 n2 =
   withIOManager $ \ioManager -> do
     addr:_ <- Socket.getAddrInfo Nothing (Just $ show ip) (Just $ show port)
     sock <- Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol
-    associateWithIOManager ioManager sock
+    associateWithIOManager ioManager (Right sock)
     Socket.connect sock (Socket.addrAddress addr)
     bearer <- getBearer Mx.makeSocketBearer 1.0 sock Nothing
     case ct of
