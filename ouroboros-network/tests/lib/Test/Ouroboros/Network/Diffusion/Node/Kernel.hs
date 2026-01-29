@@ -56,7 +56,7 @@ import Data.Monoid.Synchronisation
 import Data.Void (Void)
 import GHC.Generics (Generic)
 import Numeric.Natural (Natural)
-import System.Random (RandomGen, StdGen)
+import System.Random (RandomGen, SplitGen, StdGen)
 import System.Random qualified as Random
 
 import Network.Socket (PortNumber)
@@ -431,6 +431,7 @@ withNodeKernelThread
      , Strict.MonadMVar   m
      , HasFullHeader block
      , RandomGen seed
+     , SplitGen seed
      , Eq txid
      , Ord txid
      )
@@ -449,7 +450,7 @@ withNodeKernelThread addr BlockGeneratorArgs { bgaSlotDuration, bgaBlockGenerato
     withSlotTime bgaSlotDuration $ \waitForSlot ->
       withAsync (blockProducerThread kernel waitForSlot) (k kernel)
   where
-    (bpSeed, rng) = Random.split bgaSeed
+    (bpSeed, rng) = Random.splitGen bgaSeed
     (txSeed, psSeed) = Random.random rng
 
     blockProducerThread :: NodeKernel header block seed txid m
