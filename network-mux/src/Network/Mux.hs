@@ -291,7 +291,6 @@ run Mux { muxMiniProtocols,
 miniProtocolJob
   :: forall mode m.
      ( MonadSTM m
-     , MonadThread m
      , MonadThrow (STM m)
      )
   => Tracers m
@@ -320,11 +319,9 @@ miniProtocolJob TracersI {
     JobPool.Job jobAction
                 jobHandler
                 MiniProtocolJob
-                (show miniProtocolNum ++ "." ++ show miniProtocolDirEnum)
+                ("prtcl-" ++ (case miniProtocolNum of { MiniProtocolNum a -> show a}) ++ "." ++ show miniProtocolDirEnum)
   where
     jobAction = do
-      labelThisThread (case miniProtocolNum of
-                        MiniProtocolNum a -> "prtcl-" ++ show a)
       w <- newTVarIO BL.empty
       let chan = muxChannel channelTracer_ egressQueue (Wanton w)
                             miniProtocolNum miniProtocolDirEnum

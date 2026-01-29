@@ -215,7 +215,7 @@ processSingleWanton egressQueue (SDUSize sduSize)
       pure frag
     let sdu = SDU {
                 msHeader = SDUHeader {
-                    mhTimestamp = (RemoteClockModel 0),
+                    mhTimestamp = RemoteClockModel 0,
                     mhNum       = mpc,
                     mhDir       = md,
                     mhLength    = fromIntegral $ BL.length blob

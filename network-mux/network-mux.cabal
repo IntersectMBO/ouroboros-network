@@ -176,6 +176,7 @@ executable mux-demo
   other-modules: Test.Mux.ReqResp
   build-depends:
     base >=4.14 && <4.23,
+    binary,
     bytestring,
     cborg,
     contra-tracer,
@@ -193,6 +194,33 @@ executable mux-demo
     build-depends:
       directory,
       network,
+
+executable mux-leios-demo
+  import: demo-deps
+  hs-source-dirs:
+    demo
+    test
+
+  main-is: mux-leios-demo.hs
+  other-modules: Test.Mux.ReqResp
+  build-depends:
+    Win32-network,
+    base >=4.14 && <4.23,
+    binary,
+    bytestring,
+    cborg,
+    contra-tracer,
+    io-classes,
+    iproute,
+    network,
+    network-mux,
+    primitive,
+    serialise,
+    stm,
+
+  ghc-options:
+    -rtsopts
+    -threaded
 
 benchmark socket-read-write-benchmarks
   type: exitcode-stdio-1.0
