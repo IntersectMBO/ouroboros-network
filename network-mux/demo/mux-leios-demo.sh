@@ -115,10 +115,13 @@ add_qdiscs() {
   i=$1
   set -x
 
-  # Limit bandwidth of and pace outgoing traffic.
-  sudo tc -n ns$i qdisc add dev veth${i} root handle 1: htb default 1
-  sudo tc -n ns$i class add dev veth${i} parent 1: classid 1:1 htb rate $THROUPUT
-  sudo tc -n ns$i qdisc add dev veth${i} parent 1:1 handle 10: fq_codel
+  # Limit bandwidth and pace outgoing traffic.
+  sudo tc -n ns$i qdisc del dev veth${i} root
+  sudo tc -n ns$i qdisc add dev veth${i} root handle 1: htb default 10
+  sudo tc -n ns$i class add dev veth${i} parent 1: classid 1:1 htb rate $THROUPUT ceil $THROUPUT
+  sudo tc -n ns$i class add dev veth${i} parent 1:1 classid 1:10 htb rate $THROUPUT ceil $THROUPUT
+  sudo tc -n ns$i qdisc add dev veth${i} parent 1:10 handle 10: fq_codel
+  sudo tc -n ns$i class show dev veth${i}
 
   { set +x; } 2>/dev/null
 }
@@ -155,6 +158,11 @@ setup_bridge
 
 cabal build mux-leios-demo
 CMD=$(cabal list-bin exe:mux-leios-demo)
+
+# For debuging throuput shaping
+# sudo ip netns exec ns2 iperf3 -s &
+# sudo ip netns exec ns1 iperf3 -c 10.0.0.2
+# exit 0
 
 # client is executed in `ns1`
 # CLIENT_CMD="$CMD client $SERVER_ADDR $SERVER_PORT $REQUEST_SIZE $NUM_PRAOS_REQUESTS $NUM_LEIOS_REQUESTS +RTS ${RTS_OPTIONS} -RTS 2>$TMP_DIR/client.stderr | tee $TMP_DIR/client.stdout"
