@@ -43,8 +43,8 @@ let
     # stdenv.hostPlatform.isWindows will work as expected
     src = ./..;
     name = "ouroboros-network";
-    index-state = "2025-07-16T09:24:19Z";
-    index-sha256 = "sha256-fmnSRF68/UIQYzzdmNs3UT0cbYhn9d5nlhb3BnVXe48=";
+    index-state = "2025-11-10T01:36:00Z";
+    index-sha256 = "sha256-tbB36Ds2VRRRBoDZVXa7Ts4e9Gu3gWQUVylkHgOWV0k=";
     compiler-nix-name = lib.mkDefault defaultCompiler;
     cabalProjectLocal =
       if pkgs.stdenv.hostPlatform.isWindows
