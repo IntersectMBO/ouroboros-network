@@ -818,7 +818,7 @@ with args@Arguments {
               Just a  -> Map.insert connId (a, connThread, connVar)
                                     choiceMap'
 
-      stdGen <- stateTVar stdGenVar Random.split
+      stdGen <- stateTVar stdGenVar Random.splitGen
       let pruneSet = prunePolicy
                        stdGen
                        ((\(a,_,_) -> a) <$> choiceMap)
@@ -1345,7 +1345,7 @@ with args@Arguments {
         traceWith tracer (TrIncludeConnection provenance peerAddr)
         (trace, eHandleWedge) <- atomically $ do
           state <- readTMVar stateVar
-          stdGen <- stateTVar stdGenVar Random.split
+          stdGen <- stateTVar stdGenVar Random.splitGen
           case State.lookupByRemoteAddr stdGen peerAddr state of
             Just mutableConnState@MutableConnState { connVar, connStateId } -> do
               connState <- readTVar connVar
