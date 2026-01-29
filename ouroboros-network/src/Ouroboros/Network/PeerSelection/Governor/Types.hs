@@ -1719,7 +1719,7 @@ data TracePeerSelection extraDebugState extraFlags extraPeers peeraddr =
      -- | target local established, actual local established, selected peers
      | TracePromoteColdLocalPeers [(WarmValency, Int)] (Set peeraddr)
      -- promotion, reason, forgotten?
-     | TracePromoteColdFailed  Int Int peeraddr DiffTime SomeException Bool
+     | TracePromoteColdFailed  Int Int peeraddr DiffTime SomeException
      -- | target established, actual established, peer
      | TracePromoteColdDone    Int Int peeraddr
 
@@ -1728,7 +1728,7 @@ data TracePeerSelection extraDebugState extraFlags extraPeers peeraddr =
      | TracePromoteColdBigLedgerPeers   Int Int (Set peeraddr)
      -- | target established big ledger peers, actual established big ledger
      -- peers, peer, delay until next promotion, reason, forgotten?
-     | TracePromoteColdBigLedgerPeerFailed  Int Int peeraddr DiffTime SomeException Bool
+     | TracePromoteColdBigLedgerPeerFailed  Int Int peeraddr DiffTime SomeException
      -- | target established big ledger peers, actual established big ledger
      -- peers, peer
      | TracePromoteColdBigLedgerPeerDone    Int Int peeraddr

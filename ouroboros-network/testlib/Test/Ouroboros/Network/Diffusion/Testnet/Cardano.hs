@@ -2419,7 +2419,7 @@ prop_diffusion_target_established_local ioSimTrace traceNumber =
                 (fromMaybe Set.empty)
             . Signal.fromEvents
             . Signal.selectEvents
-                (\case TracePromoteColdFailed _ _ peer _ _ _ ->
+                (\case TracePromoteColdFailed _ _ peer _ _ ->
                          Just (Set.singleton peer)
                        --TODO: what about TraceDemoteWarmDone ?
                        -- these are also not immediate candidates
@@ -3089,7 +3089,7 @@ prop_diffusion_async_demotions ioSimTrace traceNumber =
                           Just $ Stop failures
                         where
                           failures = Set.singleton peeraddr
-                      TracePromoteColdFailed _ _ peeraddr _ _ _ ->
+                      TracePromoteColdFailed _ _ peeraddr _ _ ->
                           Just $ Stop failures
                         where
                           failures = Set.singleton peeraddr
@@ -3101,7 +3101,7 @@ prop_diffusion_async_demotions ioSimTrace traceNumber =
                           Just $ Stop failures
                         where
                           failures = Set.singleton peeraddr
-                      TracePromoteColdBigLedgerPeerFailed _ _ peeraddr _ _ _ ->
+                      TracePromoteColdBigLedgerPeerFailed _ _ peeraddr _ _ ->
                           Just $ Stop failures
                         where
                           failures = Set.singleton peeraddr
