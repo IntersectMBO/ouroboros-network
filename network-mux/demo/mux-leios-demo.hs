@@ -139,7 +139,9 @@ protocols miniProtocolDir =
 -- server: accept loop, server loop
 --
 
--- | Server accept loop.
+-- | Server, it only responds to a single connection and then exits.  This make
+-- sure the process cleanly shuts down when the client disconnects, which
+-- allows for the RTS to write the eventlog file.
 --
 server :: ClientType -> IP.IP -> PortNumber -> (Int, Int) -> Int -> Int -> IO ()
 server ct ip port num len1 len2 =
@@ -150,15 +152,17 @@ server ct ip port num len1 len2 =
                   , Socket.addrSocketType = Socket.Stream
                   }
     addr:_ <- Socket.getAddrInfo (Just hints) (Just $ show ip) (Just $ show port)
-    sock <- Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol
-    associateWithIOManager ioManager (Right sock)
-    debugPutStrLn_ $ "server: " ++ show addr
-    Socket.setSocketOption sock Socket.ReuseAddr 1
-    Socket.bind sock (Socket.addrAddress addr)
-    Socket.listen sock 10
-    forever $ do
-      (sock', _addr) <- Socket.accept sock
-      void $ forkIO $ do
+    bracket (Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol)
+            Socket.close
+          $ \sock -> do
+      associateWithIOManager ioManager (Right sock)
+      debugPutStrLn_ $ "server: " ++ show addr
+      Socket.setSocketOption sock Socket.ReuseAddr 1
+      Socket.bind sock (Socket.addrAddress addr)
+      Socket.listen sock 10
+      bracket (Socket.accept sock)
+              (Socket.close . fst)
+            $ \(sock', _addr) -> do
         bearer <- getBearer Mx.makeSocketBearer 1.0 sock' Nothing
         case ct of
           Sequential ->
