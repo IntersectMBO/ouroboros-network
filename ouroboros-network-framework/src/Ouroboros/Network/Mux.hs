@@ -57,6 +57,7 @@ module Ouroboros.Network.Mux
   , Mux.StartOnDemandOrEagerly (..)
   ) where
 
+import Control.DeepSeq (NFData)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
 import Control.Tracer (Tracer)
@@ -346,9 +347,11 @@ newtype MiniProtocolCb ctx bytes m a =
 --
 mkMiniProtocolCbFromPeer
   :: forall (pr :: PeerRole) ps (st :: ps) failure bytes ctx m a.
-     ( MonadThrow m
+     ( MonadEvaluate m
+     , MonadThrow    m
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
+     , NFData failure
      , Show failure
      )
   => (ctx -> ( Tracer m (TraceSendRecv ps)
@@ -367,10 +370,12 @@ mkMiniProtocolCbFromPeer fn =
 --
 mkMiniProtocolCbFromPeerSt
   :: forall (pr :: PeerRole) ps (f :: ps -> Type) (st :: ps) failure bytes ctx m a.
-     ( MonadAsync m
-     , MonadMask  m
+     ( MonadAsync    m
+     , MonadEvaluate m
+     , MonadMask     m
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
+     , NFData failure
      , Show failure
      )
   => (ctx -> ( Tracer m (Stateful.TraceSendRecv ps f)
@@ -391,10 +396,12 @@ mkMiniProtocolCbFromPeerSt fn =
 --
 mkMiniProtocolCbFromPeerPipelined
   :: forall (pr :: PeerRole) ps (st :: ps) failure ctx bytes m a.
-     ( MonadAsync m
-     , MonadThrow m
+     ( MonadAsync    m
+     , MonadEvaluate m
+     , MonadThrow    m
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
+     , NFData failure
      , Show failure
      )
   => (ctx -> ( Tracer m (TraceSendRecv ps)

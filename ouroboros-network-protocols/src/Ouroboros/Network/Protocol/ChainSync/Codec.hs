@@ -238,18 +238,26 @@ codecChainSync encodeHeader decodeHeader
 
         (_, _, SingIdle) ->
           fail (printf "codecChainSync (%s, %s) unexpected key (%d, %d)"
-                       (show (activeAgency :: ActiveAgency st)) (show stok) key len)
+                       (show (activeAgency :: ActiveAgency st))
+                       (show stok)
+                       key len)
         (_, _, SingNext next) ->
           case next of
             SingCanAwait ->
-              fail (printf "codecChainSync (%s) unexpected key (%d, %d)"
-                           (show (activeAgency :: ActiveAgency st)) (show stok) key len)
+              fail (printf "codecChainSync (%s, %s) unexpected key (%d, %d)"
+                           (show (activeAgency :: ActiveAgency st))
+                           (show stok)
+                           key len)
             SingMustReply ->
-              fail (printf "codecChainSync (%s) unexpected key (%d, %d)"
-                           (show (activeAgency :: ActiveAgency st)) (show stok) key len)
+              fail (printf "codecChainSync (%s, %s) unexpected key (%d, %d)"
+                           (show (activeAgency :: ActiveAgency st))
+                           (show stok)
+                           key len)
         (_, _, SingIntersect) ->
-          fail (printf "codecChainSync (%s) unexpected key (%d, %d)"
-                       (show (activeAgency :: ActiveAgency st)) (show stok) key len)
+          fail (printf "codecChainSync (%s, %s) unexpected key (%d, %d)"
+                       (show (activeAgency :: ActiveAgency st))
+                       (show stok)
+                       key len)
         (_, _, SingDone) -> notActiveState stok
 
 encodeList :: (a -> CBOR.Encoding) -> [a] -> CBOR.Encoding

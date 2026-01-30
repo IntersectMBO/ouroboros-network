@@ -609,6 +609,7 @@ chainSyncDemo
   :: forall m.
      ( MonadST m
      , MonadSTM m
+     , MonadEvaluate m
      , MonadFork m
      , MonadThrow m
      )
@@ -673,6 +674,7 @@ chainSyncDemoPipelined
   :: forall m.
      ( MonadST    m
      , MonadSTM   m
+     , MonadEvaluate m
      , MonadFork  m
      , MonadAsync m
      , MonadThrow m

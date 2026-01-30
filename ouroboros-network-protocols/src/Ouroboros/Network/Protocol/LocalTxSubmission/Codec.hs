@@ -83,7 +83,10 @@ codecLocalTxSubmission encodeTx decodeTx encodeReject decodeReject =
         (SingDone, _, _) -> notActiveState stok
 
         (_, _, _) -> fail (printf "codecLocalTxSubmission (%s, %s) unexpected key (%d, %d)"
-                                  (show (activeAgency :: ActiveAgency st)) (show stok) key len)
+                                  (show (activeAgency :: ActiveAgency st))
+                                  (show stok)
+                                  key
+                                  len)
 
 codecLocalTxSubmissionId
   :: forall tx reject m.

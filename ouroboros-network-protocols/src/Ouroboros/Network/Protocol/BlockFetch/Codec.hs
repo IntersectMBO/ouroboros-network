@@ -127,13 +127,19 @@ codecBlockFetch encodeBlock decodeBlock
 
       (SingBFIdle, _, _) ->
         fail (printf "codecBlockFetch (%s, %s) unexpected key (%d, %d)"
-                     (show (activeAgency :: ActiveAgency st)) (show stok) key len)
+                     (show (activeAgency :: ActiveAgency st))
+                     (show stok)
+                     key len)
       (SingBFStreaming, _ , _) ->
         fail (printf "codecBlockFetch (%s, %s) unexpected key (%d, %d)"
-                     (show (activeAgency :: ActiveAgency st)) (show stok) key len)
+                     (show (activeAgency :: ActiveAgency st))
+                     (show stok)
+                     key len)
       (SingBFBusy, _, _) ->
         fail (printf "codecBlockFetch (%s, %s) unexpected key (%d, %d)"
-                     (show (activeAgency :: ActiveAgency st)) (show stok) key len)
+                     (show (activeAgency :: ActiveAgency st))
+                     (show stok)
+                     key len)
 
       (SingBFDone, _, _) -> notActiveState stok
 

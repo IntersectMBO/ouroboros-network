@@ -370,9 +370,12 @@ instance Show BearerTrace where
             len)
                                      =
       printf "TCPInfo rtt %d rttvar %d cwnd %d smss %d rmss %d lost %d retrans %d len %d"
-        (fromIntegral tcpi_rtt :: Word) (fromIntegral tcpi_rttvar :: Word)
-        (fromIntegral tcpi_snd_cwnd :: Word) (fromIntegral tcpi_snd_mss :: Word)
-        (fromIntegral tcpi_rcv_mss :: Word) (fromIntegral tcpi_lost :: Word)
+        (fromIntegral tcpi_rtt :: Word)
+        (fromIntegral tcpi_rttvar :: Word)
+        (fromIntegral tcpi_snd_cwnd :: Word)
+        (fromIntegral tcpi_snd_mss :: Word)
+        (fromIntegral tcpi_rcv_mss :: Word)
+        (fromIntegral tcpi_lost :: Word)
         (fromIntegral tcpi_retrans :: Word)
         len
 #else

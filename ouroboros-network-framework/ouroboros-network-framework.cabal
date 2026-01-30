@@ -221,6 +221,7 @@ test-suite io-tests
     base >=4.14 && <4.22,
     bytestring,
     contra-tracer,
+    deepseq,
     directory,
     io-classes:{io-classes, si-timers, strict-stm},
     io-sim,

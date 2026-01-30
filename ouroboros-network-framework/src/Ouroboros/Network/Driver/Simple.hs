@@ -41,10 +41,13 @@ import Network.TypedProtocol.Peer
 import Ouroboros.Network.Channel
 import Ouroboros.Network.Util.ShowProxy
 
+import Control.DeepSeq (NFData, force)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
 import Control.Tracer (Tracer (..), contramap, traceWith)
+
+import Data.Functor (($>))
 
 
 -- $intro
@@ -112,9 +115,11 @@ instance Exception DecoderFailure where
 
 
 driverSimple :: forall ps (pr :: PeerRole) failure bytes m.
-                ( MonadThrow m
+                ( MonadEvaluate m
+                , MonadThrow m
                 , ShowProxy ps
                 , forall (st' :: ps) tok. tok ~ StateToken st' => Show tok
+                , NFData failure
                 , Show failure
                 )
              => Tracer m (TraceSendRecv ps)
@@ -158,9 +163,11 @@ driverSimple tracer Codec{encode, decode} channel@Channel{send} =
 --
 runPeer
   :: forall ps (st :: ps) pr failure bytes m a .
-     ( MonadThrow m
+     ( MonadEvaluate m
+     , MonadThrow m
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
+     , NFData failure
      , Show failure
      )
   => Tracer m (TraceSendRecv ps)
@@ -184,9 +191,11 @@ runPeer tracer codec channel peer =
 runPipelinedPeer
   :: forall ps (st :: ps) pr failure bytes m a.
      ( MonadAsync m
+     , MonadEvaluate m
      , MonadThrow m
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
+     , NFData failure
      , Show failure
      )
   => Tracer m (TraceSendRecv ps)
@@ -206,7 +215,10 @@ runPipelinedPeer tracer codec channel peer =
 -- | Run a codec incremental decoder 'DecodeStep' against a channel. It also
 -- takes any extra input data and returns any unused trailing data.
 --
-runDecoderWithChannel :: Monad m
+runDecoderWithChannel :: ( Monad m
+                         , MonadEvaluate m
+                         , NFData failure
+                         )
                       => Channel m bytes
                       -> Maybe bytes
                       -> DecodeStep bytes failure m a
@@ -215,7 +227,8 @@ runDecoderWithChannel :: Monad m
 runDecoderWithChannel Channel{recv} = go
   where
     go _ (DecodeDone x trailing)         = return (Right (x, trailing))
-    go _ (DecodeFail failure)            = return (Left failure)
+    go _ (DecodeFail failure)            =  evaluate (force failure)
+                                         $> Left failure
     go Nothing         (DecodePartial k) = recv >>= k        >>= go Nothing
     go (Just trailing) (DecodePartial k) = k (Just trailing) >>= go Nothing
 
@@ -232,9 +245,11 @@ data Role = Client | Server
 --
 runConnectedPeers :: forall ps pr st failure bytes m a b.
                      ( MonadAsync m
+                     , MonadEvaluate m
                      , MonadThrow m
                      , ShowProxy ps
                      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
+                     , NFData failure
                      , Show failure
                      )
                   => m (Channel m bytes, Channel m bytes)
@@ -260,8 +275,10 @@ runConnectedPeers createChannels tracer codec client server =
 
 runConnectedPeersPipelined :: ( MonadAsync m
                               , MonadCatch m
+                              , MonadEvaluate m
                               , ShowProxy ps
                               , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
+                              , NFData failure
                               , Show failure
                               )
                            => m (Channel m bytes, Channel m bytes)
@@ -286,9 +303,11 @@ runConnectedPeersPipelined createChannels tracer codec client server =
 --
 runConnectedPeersAsymmetric
     :: ( MonadAsync m
+       , MonadEvaluate m
        , MonadMask  m
        , ShowProxy ps
        , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
+       , NFData failure
        , Show failure
        )
     => m (Channel m bytes, Channel m bytes)
