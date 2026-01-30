@@ -241,13 +241,14 @@ type ConnectionManagerWithExpandedCtx muxMode socket peerAddr extraFlags version
 makeConnectionHandler
     :: forall initiatorCtx responderCtx peerAddr muxMode socket versionNumber versionData m a b.
        ( Alternative (STM m)
-       , MonadAsync m
-       , MonadDelay m
-       , MonadFork  m
+       , MonadAsync    m
+       , MonadDelay    m
+       , MonadEvaluate m
+       , MonadFork     m
        , MonadLabelledSTM m
        , MonadThrow (STM m)
-       , MonadTimer m
-       , MonadMask  m
+       , MonadTimer    m
+       , MonadMask     m
        , Ord      versionNumber
        , Show     peerAddr
        , Typeable peerAddr

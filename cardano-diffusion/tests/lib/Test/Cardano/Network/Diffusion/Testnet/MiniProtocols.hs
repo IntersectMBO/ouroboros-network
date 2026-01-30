@@ -250,6 +250,7 @@ applications :: forall block header s m.
                 ( Alternative (STM m)
                 , MonadAsync m
                 , MonadDelay m
+                , MonadEvaluate m
                 , MonadFork  m
                 , MonadMask  m
                 , MonadMVar  m

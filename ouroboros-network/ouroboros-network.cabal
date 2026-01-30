@@ -127,6 +127,7 @@ library api-tests-lib
     Ouroboros.Network.Mock.Chain
     Ouroboros.Network.Mock.ChainGenerators
     Ouroboros.Network.Mock.ConcreteBlock
+    Ouroboros.Network.Mock.OrphanedInstances
 
   build-depends:
     QuickCheck,
@@ -134,6 +135,7 @@ library api-tests-lib
     bytestring,
     cardano-slotting:testlib ^>=0.2.0,
     cborg,
+    deepseq,
     hashable,
     nothunks,
     ouroboros-network:api,
@@ -142,6 +144,7 @@ library api-tests-lib
     tasty,
     tasty-quickcheck,
     time,
+    typed-protocols,
 
 test-suite api-tests
   import: ghc-options
@@ -573,7 +576,7 @@ test-suite framework-io-tests
     monoidal-synchronisation,
     network,
     network-mux,
-    ouroboros-network:{api, framework, framework-tests-lib},
+    ouroboros-network:{api, api-tests-lib, framework, framework-tests-lib},
     random,
     tasty,
     tasty-quickcheck,

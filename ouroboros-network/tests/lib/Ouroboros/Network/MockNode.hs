@@ -51,6 +51,7 @@ import Ouroboros.Network.Mock.Chain (Chain (..))
 import Ouroboros.Network.Mock.Chain qualified as Chain
 import Ouroboros.Network.Mock.ConcreteBlock hiding (fixupBlock)
 import Ouroboros.Network.Mock.ConcreteBlock qualified as Concrete
+import Ouroboros.Network.Mock.OrphanedInstances ()
 import Ouroboros.Network.Mock.ProducerState (ChainProducerState (..),
            initChainProducerState, producerChain, switchFork)
 
@@ -268,7 +269,8 @@ forkRelayKernel upstream cpsVar = do
 -- @StrictTVar ('ChainProducerState' block)@. This allows to extend the relay
 -- node to a core node.
 relayNode :: forall m block.
-             ( MonadFork m
+             ( MonadEvaluate m
+             , MonadFork m
              , MonadTimer m
              , MonadThrow m
              , MonadSay m
@@ -386,6 +388,7 @@ forkCoreKernel slotDuration gchain fixupBlock cpsVar = do
 coreNode :: forall m.
         ( MonadDelay m
         , MonadLabelledSTM m
+        , MonadEvaluate m
         , MonadFork m
         , MonadThrow m
         , MonadTimer m

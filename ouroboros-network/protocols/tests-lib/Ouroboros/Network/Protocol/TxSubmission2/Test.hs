@@ -26,9 +26,9 @@ import Data.ByteString.Lazy (ByteString)
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Word (Word16)
 
-import Control.Monad.Class.MonadAsync (MonadAsync)
-import Control.Monad.Class.MonadST (MonadST)
-import Control.Monad.Class.MonadThrow (MonadCatch)
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadST
+import Control.Monad.Class.MonadThrow
 import Control.Monad.IOSim
 import Control.Monad.ST (runST)
 import Control.Tracer (Tracer (..), contramap, nullTracer)
@@ -212,7 +212,11 @@ prop_connect2 params@TxSubmissionTestParams{testTransactions}
 
 -- | Run a simple tx-submission client and server using connected channels.
 --
-prop_channel :: (MonadAsync m, MonadCatch m, MonadST m)
+prop_channel :: ( MonadAsync m
+                , MonadCatch m
+                , MonadEvaluate m
+                , MonadST m
+                )
              => m (Channel m ByteString, Channel m ByteString)
              -> TxSubmissionTestParams
              -> m Bool

@@ -134,6 +134,7 @@ runTxSubmission
   :: forall m peeraddr txid.
      ( MonadAsync m
      , MonadDelay m
+     , MonadEvaluate m
      , MonadFork  m
      , MonadMask  m
      , MonadMVar  m

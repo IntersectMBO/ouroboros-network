@@ -64,7 +64,7 @@ data NodeToNodeVersion = NodeToNodeTestVersion
 -- | Run a single block fetch protocol until the chain is downloaded.
 --
 blockFetchExample0 :: forall m.
-                      (MonadST m, MonadAsync m, MonadDelay m, MonadFork m,
+                      (MonadST m, MonadAsync m, MonadDelay m, MonadEvaluate m, MonadFork m,
                        MonadTime m, MonadTimer m, MonadMask m, MonadThrow (STM m))
                    => FetchMode
                    -> Tracer m (TraceDecisionEvent Int BlockHeader)
@@ -178,7 +178,7 @@ blockFetchExample0 fetchMode decisionTracer clientStateTracer clientMsgTracer
 -- will be interested in downloading them all.
 --
 blockFetchExample1 :: forall m.
-                      (MonadST m, MonadAsync m, MonadDelay m, MonadFork m,
+                      (MonadST m, MonadAsync m, MonadDelay m, MonadEvaluate m, MonadFork m,
                        MonadTime m, MonadTimer m, MonadMask m, MonadThrow (STM m))
                    => FetchMode
                    -> Tracer m (TraceDecisionEvent Int BlockHeader)
@@ -338,6 +338,7 @@ exampleFixedPeerGSVs =
 --
 
 runFetchClient :: ( MonadAsync m
+                  , MonadEvaluate m
                   , MonadFork m
                   , MonadMask m
                   , MonadThrow (STM m)
@@ -367,6 +368,7 @@ runFetchClient tracer version registry peerid channel client =
 
 runFetchServer :: forall block point m a.
                   ( MonadAsync m
+                  , MonadEvaluate m
                   , MonadFork m
                   , MonadMask m
                   , MonadThrow (STM m)
@@ -392,6 +394,7 @@ runFetchClientAndServerAsync
                :: forall peerid block header version m a b.
                   ( MonadAsync m
                   , MonadDelay m
+                  , MonadEvaluate m
                   , MonadFork m
                   , MonadMask m
                   , MonadThrow (STM m)
