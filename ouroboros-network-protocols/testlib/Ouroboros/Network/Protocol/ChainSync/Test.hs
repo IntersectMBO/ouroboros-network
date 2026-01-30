@@ -606,6 +606,7 @@ chainSyncDemo
   :: forall m.
      ( MonadST m
      , MonadSTM m
+     , MonadEvaluate m
      , MonadFork m
      , MonadThrow m
      )
@@ -668,12 +669,13 @@ propChainSyncPipe cps =
 
 chainSyncDemoPipelined
   :: forall m.
-     ( MonadST    m
-     , MonadSTM   m
-     , MonadFork  m
-     , MonadAsync m
-     , MonadThrow m
-     , MonadSay   m
+     ( MonadST       m
+     , MonadSTM      m
+     , MonadEvaluate m
+     , MonadFork     m
+     , MonadAsync    m
+     , MonadThrow    m
+     , MonadSay      m
      )
   => Channel m ByteString
   -> Channel m ByteString

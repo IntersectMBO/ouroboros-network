@@ -269,6 +269,7 @@ test-suite io-tests
     ouroboros-network-api,
     ouroboros-network-framework,
     ouroboros-network-framework:testlib,
+    ouroboros-network-mock,
     random,
     si-timers,
     strict-stm,

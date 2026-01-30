@@ -24,7 +24,7 @@ import Data.Map qualified as Map
 
 import Control.Monad.Class.MonadAsync (MonadAsync)
 import Control.Monad.Class.MonadST (MonadST)
-import Control.Monad.Class.MonadThrow (MonadCatch, MonadMask)
+import Control.Monad.Class.MonadThrow
 import Control.Monad.IOSim
 import Control.Monad.ST (runST)
 import Control.Tracer (nullTracer)
@@ -204,7 +204,8 @@ prop_connect input =
 --
 prop_channel :: ( MonadAsync m
                 , MonadCatch m
-                , MonadMask  m
+                , MonadEvaluate m
+                , MonadMask m
                 , MonadST m
                 )
              => m (Channel m ByteString, Channel m ByteString)

@@ -32,8 +32,7 @@ import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadST (MonadST)
-import Control.Monad.Class.MonadThrow (MonadCatch, MonadMask, MonadThrow,
-           bracket)
+import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.IOSim (runSimOrThrow)
@@ -470,6 +469,7 @@ prop_connect (ArbitraryVersions clientVersions serverVersions) =
 --
 prop_channel :: ( MonadAsync m
                 , MonadCatch m
+                , MonadEvaluate m
                 , MonadST m
                 )
              => m (Channel m ByteString, Channel m ByteString)
@@ -548,6 +548,7 @@ prop_pipe_IO (ArbitraryVersions clientVersions serverVersions) =
 prop_channel_asymmetric
     :: ( MonadAsync m
        , MonadCatch m
+       , MonadEvaluate m
        , MonadLabelledSTM m
        , MonadMask  m
        , MonadST m
@@ -931,6 +932,7 @@ prop_query_version_NodeToClient_SimNet
 --
 prop_query_version :: ( MonadAsync m
                       , MonadCatch m
+                      , MonadEvaluate m
                       , MonadST m
                       , Eq vData
                       , Acceptable vData
@@ -980,9 +982,10 @@ prop_query_version createChannels codec versionDataCodec clientVersions serverVe
 -- | Run a query for the server's supported version.
 --
 prop_peerSharing_symmetric :: ( MonadAsync m
-                           , MonadCatch m
-                           , MonadST m
-                           )
+                              , MonadCatch m
+                              , MonadEvaluate m
+                              , MonadST m
+                              )
                            => m (Channel m ByteString, Channel m ByteString)
                            -> Codec (Handshake NodeToNodeVersion CBOR.Term)
                                      CBOR.DeserialiseFailure m ByteString
@@ -1125,6 +1128,7 @@ prop_acceptOrRefuse_symmetric_NodeToClient (ArbitraryNodeToClientVersions a)
 prop_channel_simultaneous_open
     :: ( MonadAsync m
        , MonadCatch m
+       , MonadEvaluate m
        , MonadST m
        , Acceptable vData
        , Ord vNumber
@@ -1272,6 +1276,7 @@ prop_channel_simultaneous_open_sim
        , MonadAsync       m
        , MonadCatch       m
        , MonadDelay       m
+       , MonadEvaluate    m
        , MonadFork        m
        , MonadLabelledSTM m
        , MonadMask        m

@@ -94,10 +94,11 @@ prop_connect f (NonNegative n) =
 -- Properties using channels, codecs and drivers.
 --
 
-prop_channel :: ( MonadST    m
-                , MonadSTM   m
-                , MonadAsync m
-                , MonadCatch m
+prop_channel :: ( MonadST       m
+                , MonadSTM      m
+                , MonadAsync    m
+                , MonadCatch    m
+                , MonadEvaluate m
                 )
              => (Int -> Int)
              -> Int

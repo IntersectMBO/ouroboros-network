@@ -198,6 +198,7 @@ txSubmissionSimulation
   :: forall m txid.
      ( MonadAsync m
      , MonadDelay m
+     , MonadEvaluate  m
      , MonadFork  m
      , MonadLabelledSTM m
      , MonadMask  m

@@ -211,6 +211,7 @@ data AppArgs extraAPI header block m = AppArgs
 applications :: forall extraAPI block header s m.
                 ( Alternative (STM m)
                 , MonadAsync m
+                , MonadEvaluate m
                 , MonadFork  m
                 , MonadMask  m
                 , MonadMVar  m
