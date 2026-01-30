@@ -2509,7 +2509,7 @@ prop_governor_target_established_below (MaxTime maxTime) env =
               (fromMaybe Set.empty)
           . Signal.fromEvents
           . Signal.selectEvents
-              (\case TracePromoteColdFailed _ _ peer _ _ _ ->
+              (\case TracePromoteColdFailed _ _ peer _ _ ->
                        --TODO: the environment does not yet cause this to happen
                        -- it requires synchronous failure in the establish action
                        Just $! Set.singleton peer
@@ -2618,7 +2618,7 @@ prop_governor_target_established_big_ledger_peers_below (MaxTime maxTime) env =
               (fromMaybe Set.empty)
           . Signal.fromEvents
           . Signal.selectEvents
-              (\case TracePromoteColdBigLedgerPeerFailed _ _ peer _ _ _ ->
+              (\case TracePromoteColdBigLedgerPeerFailed _ _ peer _ _ ->
                        --TODO: the environment does not yet cause this to happen
                        -- it requires synchronous failure in the establish action
                        Just (Set.singleton peer)
@@ -3256,7 +3256,7 @@ prop_governor_target_established_local (MaxTime maxTime) env =
               (fromMaybe Set.empty)
           . Signal.fromEvents
           . Signal.selectEvents
-              (\case TracePromoteColdFailed _ _ peer _ _ _ ->
+              (\case TracePromoteColdFailed _ _ peer _ _ ->
                        --TODO: the environment does not yet cause this to happen
                        -- it requires synchronous failure in the establish action
                        Just (Set.singleton peer)

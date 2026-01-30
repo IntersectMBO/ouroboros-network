@@ -524,7 +524,7 @@ jobPromoteColdPeer PeerSelectionActions {
                           (knownPeers st)
             publicRootPeers' = PublicRootPeers.difference differenceExtraPeers publicRootPeers
                                                           forgottenPeers
-            (delayVal, forgotten) = case KnownPeers.lookupConnectTime peeraddr knownPeers' of
+            (delayVal, _forgotten) = case KnownPeers.lookupConnectTime peeraddr knownPeers' of
                                          Nothing -> (0, True)
                                          Just t  -> (t `diffTime` now, False)
             st' = st { knownPeers            = knownPeers',
@@ -541,12 +541,12 @@ jobPromoteColdPeer PeerSelectionActions {
                                    targetNumberOfEstablishedBigLedgerPeers
                                    (case cs' of
                                      PeerSelectionCounters { numberOfEstablishedBigLedgerPeers = a } -> a)
-                                   peeraddr delayVal e forgotten]
+                                   peeraddr delayVal e]
                             else [TracePromoteColdFailed
                                    targetNumberOfEstablishedPeers
                                    (case cs' of
                                      PeerSelectionCounters { numberOfEstablishedPeers = a } -> a)
-                                   peeraddr delayVal e forgotten],
+                                   peeraddr delayVal e],
             decisionState = st',
             decisionJobs  = []
           }
