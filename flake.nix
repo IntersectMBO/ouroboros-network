@@ -10,12 +10,13 @@
   };
   inputs = {
     haskellNix = {
-      url = "github:input-output-hk/haskell.nix";
-      inputs.nixpkgs.follows = "nixpkgs";
+      # GHC 8.10.7 cross compilation for windows is broken in newer versions of haskell.nix.
+      # Unpin this once we no longer need GHC 8.10.7.
+      url = "github:input-output-hk/haskell.nix/34984e0e9ee98c9b7c12d033c870abf434228c54";
       inputs.hackage.follows = "hackageNix";
     };
     hackageNix = {
-      url = "github:input-output-hk/hackage.nix";
+      url = "github:input-output-hk/hackage.nix?ref=for-stackage";
       flake = false;
     };
     nixpkgs.follows = "haskellNix/nixpkgs-unstable";
