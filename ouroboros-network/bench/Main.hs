@@ -1,14 +1,20 @@
 {-# LANGUAGE NumericUnderscores #-}
 
+-- pPrint
+{-# OPTIONS_GHC -Wno-unused-imports #-}
+
 module Main (main) where
 
 import Control.DeepSeq
 import Control.Exception (evaluate)
 import Debug.Trace (traceMarkerIO)
+import System.Mem (performMajorGC)
 import System.Random.SplitMix qualified as SM
 import Test.Tasty.Bench
+import Text.Pretty.Simple (pPrint)
 
 import Ouroboros.Network.TxSubmission.Inbound.V2.Decision qualified as Tx
+import Ouroboros.Network.TxSubmission.Inbound.V2.State (SharedTxState (..))
 import Test.Ouroboros.Network.TxSubmission.TxLogic qualified as TX
            (mkDecisionContext)
 
@@ -30,30 +36,44 @@ main =
         , bgroup "TxLogic"
           [ env (do let a = TX.mkDecisionContext (SM.mkSMGen 131) 10
                     evaluate (rnf a)
+                    -- pPrint a
+                    performMajorGC
                     traceMarkerIO "evaluated decision context"
                     return a
                 )
-                (\a ->
+                (\(~a@(_policy, state)) ->
                      bench "makeDecisions: 10"
-                   $ nf (uncurry Tx.makeDecisions) a
+                   $ let f :: ( Tx.TxDeicisionPolicy
+                              , SharedTxState PeerAddr TxId (Tx TxId)
+                              )
+                          ->  ( SharedTxState PeerAddr TxId (Tx TxId)
+                              , Map PeerAddr (TxDecision TxId (Tx TxId))
+                              )
+                         f = flip (uncurry Tx.makeDecisions) (peerTxStates state)
+                     in nf f a
+
                 )
           , env (do let a = TX.mkDecisionContext (SM.mkSMGen 131) 100
                     evaluate (rnf a)
+                    -- pPrint a
+                    performMajorGC
                     traceMarkerIO "evaluated decision context"
                     return a
                 )
-                (\a ->
+                (\(~a@(_policy, state)) ->
                      bench "makeDecisions: 100"
-                   $ nf (uncurry Tx.makeDecisions) a
+                   $ nf (flip (uncurry Tx.makeDecisions) (peerTxStates state)) a
                 )
           , env (do let a = TX.mkDecisionContext (SM.mkSMGen 361) 1_000
                     evaluate (rnf a)
+                    -- pPrint a
+                    performMajorGC
                     traceMarkerIO "evaluated decision context"
                     return a
                 )
-                (\a ->
+                (\(~a@(_policy, state)) ->
                      bench "makeDecisions: 1000"
-                   $ nf (uncurry Tx.makeDecisions) a
+                   $ nf (flip (uncurry Tx.makeDecisions) (peerTxStates state)) a
                 )
 {-
           , env (do
