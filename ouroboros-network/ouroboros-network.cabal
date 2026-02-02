@@ -971,6 +971,7 @@ benchmark sim-benchmarks
     base,
     deepseq,
     ouroboros-network:{ouroboros-network, ouroboros-network-tests-lib},
+    pretty-simple,
     splitmix,
     tasty-bench >=0.3.5,
 
@@ -982,8 +983,5 @@ benchmark sim-benchmarks
     -fno-ignore-asserts
     -threaded
     -rtsopts
-    -with-rtsopts=-A32m
+    "-with-rtsopts=-A32m -T"
     -fproc-alignment=64
-    +RTS
-    -T
-    -RTS
