@@ -196,14 +196,15 @@ txSubmissionCodec2 =
 
 txSubmissionSimulation
   :: forall m txid.
-     ( MonadAsync m
-     , MonadDelay m
-     , MonadFork  m
+     ( MonadAsync       m
+     , MonadDelay       m
+     , MonadEvaluate    m
+     , MonadFork        m
      , MonadLabelledSTM m
-     , MonadMask  m
-     , MonadSay   m
-     , MonadST    m
-     , MonadTimer m
+     , MonadMask        m
+     , MonadSay         m
+     , MonadST          m
+     , MonadTimer       m
      , MonadThrow (STM m)
      , Ord txid
      , ShowProxy txid

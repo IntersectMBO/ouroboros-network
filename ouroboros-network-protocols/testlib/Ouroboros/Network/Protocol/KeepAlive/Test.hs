@@ -98,6 +98,7 @@ prop_channel :: ( MonadST    m
                 , MonadSTM   m
                 , MonadAsync m
                 , MonadCatch m
+                , MonadEvaluate m
                 )
              => (Int -> Int)
              -> Int

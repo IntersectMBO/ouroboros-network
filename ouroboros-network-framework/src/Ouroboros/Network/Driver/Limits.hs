@@ -38,6 +38,7 @@ import Data.Bifunctor (first)
 import Data.Maybe (fromMaybe)
 import System.Random
 
+import Control.DeepSeq (NFData, force)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadSTM
@@ -58,10 +59,12 @@ import Ouroboros.Network.Util.ShowProxy
 
 
 driverWithLimits :: forall ps (pr :: PeerRole) failure bytes m.
-                    ( MonadThrow m
+                    ( MonadEvaluate m
+                    , MonadThrow m
                     , ShowProxy ps
                     , forall (st' :: ps) tok. tok ~ StateToken st' => Show tok
                     , Show failure
+                    , NFData failure
                     )
                  => Tracer m (TraceSendRecv ps)
                  -> TimeoutFn m
@@ -116,10 +119,12 @@ driverWithLimits tracer timeoutFn
 -- `ProtocolTimeouts` for the next state.
 --
 driverWithLimitsRnd :: forall ps (pr :: PeerRole) failure bytes m.
-                       ( MonadThrow m
+                       ( MonadEvaluate m
+                       , MonadThrow m
                        , ShowProxy ps
                        , forall (st' :: ps) tok. tok ~ StateToken st' => Show tok
                        , Show failure
+                       , NFData failure
                        )
                     => Tracer m (TraceSendRecv ps)
                     -> TimeoutFn m
@@ -173,7 +178,11 @@ driverWithLimitsRnd tracer timeoutFn rnd0
 
 
 runDecoderWithLimit
-    :: forall m bytes failure a. Monad m
+    :: forall m bytes failure a.
+       ( Monad m
+       , MonadEvaluate m
+       , NFData failure
+       )
     => Word
     -- ^ message size limit
     -> (bytes -> Word)
@@ -208,7 +217,8 @@ runDecoderWithLimit limit size Channel{recv} =
       , sz' > limit = return (Left Nothing)
       | otherwise   = return (Right (x, trailing))
 
-    go !_ !_ (DecodeFail failure) = return (Left (Just failure))
+    go !_ !_ (DecodeFail failure) =
+      Left . Just <$> evaluate (force failure)
 
     go !sz trailing (DecodePartial k)
       | sz > limit = return (Left Nothing)
@@ -224,6 +234,7 @@ runDecoderWithLimit limit size Channel{recv} =
 runPeerWithLimits
   :: forall ps (st :: ps) pr failure bytes m a .
      ( MonadAsync m
+     , MonadEvaluate m
      , MonadFork m
      , MonadMask m
      , MonadThrow (STM m)
@@ -231,6 +242,7 @@ runPeerWithLimits
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
      , Show failure
+     , NFData failure
      )
   => Tracer m (TraceSendRecv ps)
   -> Codec ps failure m bytes
@@ -251,12 +263,14 @@ runPeerWithLimits tracer codec slimits tlimits channel peer =
 runPeerWithLimitsRnd
   :: forall ps (st :: ps) pr failure bytes m a .
      ( MonadAsync m
+     , MonadEvaluate m
      , MonadFork m
      , MonadMask m
      , MonadThrow (STM m)
      , MonadTimer m
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
+     , NFData failure
      , Show failure
      )
   => Tracer m (TraceSendRecv ps)
@@ -284,12 +298,14 @@ runPeerWithLimitsRnd tracer rnd codec slimits tlimits channel peer =
 runPipelinedPeerWithLimits
   :: forall ps (st :: ps) pr failure bytes m a.
      ( MonadAsync m
+     , MonadEvaluate m
      , MonadFork m
      , MonadMask m
      , MonadTimer m
      , MonadThrow (STM m)
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
+     , NFData failure
      , Show failure
      )
   => Tracer m (TraceSendRecv ps)
@@ -311,12 +327,14 @@ runPipelinedPeerWithLimits tracer codec slimits tlimits channel peer =
 runPipelinedPeerWithLimitsRnd
   :: forall ps (st :: ps) pr failure bytes m a.
      ( MonadAsync m
+     , MonadEvaluate m
      , MonadFork m
      , MonadMask m
      , MonadTimer m
      , MonadThrow (STM m)
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
+     , NFData failure
      , Show failure
      )
   => Tracer m (TraceSendRecv ps)
@@ -345,11 +363,13 @@ runPipelinedPeerWithLimitsRnd tracer rnd codec slimits tlimits channel peer =
 runConnectedPeersWithLimits
   :: forall ps pr st failure bytes m a b.
      ( MonadAsync       m
+     , MonadEvaluate    m
      , MonadFork        m
      , MonadMask        m
      , MonadTimer       m
      , MonadThrow  (STM m)
      , Exception failure
+     , NFData failure
      , ShowProxy ps
      , forall (st' :: ps) sing. sing ~ StateToken st' => Show sing
      )
@@ -379,11 +399,13 @@ runConnectedPeersWithLimits createChannels tracer codec slimits tlimits client s
 runConnectedPeersWithLimitsRnd
   :: forall ps pr st failure bytes m a b.
      ( MonadAsync       m
+     , MonadEvaluate    m
      , MonadFork        m
      , MonadMask        m
      , MonadTimer       m
      , MonadThrow  (STM m)
      , Exception failure
+     , NFData failure
      , ShowProxy ps
      , forall (st' :: ps) sing. sing ~ StateToken st' => Show sing
      )
@@ -422,11 +444,13 @@ runConnectedPeersWithLimitsRnd createChannels tracer rnd codec slimits tlimits c
 runConnectedPipelinedPeersWithLimits
   :: forall ps pr st failure bytes m a b.
      ( MonadAsync      m
+     , MonadEvaluate   m
      , MonadFork       m
      , MonadMask       m
      , MonadTimer      m
      , MonadThrow (STM m)
      , Exception failure
+     , NFData failure
      , ShowProxy ps
      , forall (st' :: ps) sing. sing ~ StateToken st' => Show sing
      )
@@ -454,11 +478,13 @@ runConnectedPipelinedPeersWithLimits createChannels tracer codec slimits tlimits
 runConnectedPipelinedPeersWithLimitsRnd
   :: forall ps pr st failure bytes m a b.
      ( MonadAsync      m
+     , MonadEvaluate   m
      , MonadFork       m
      , MonadMask       m
      , MonadTimer      m
      , MonadThrow (STM m)
      , Exception failure
+     , NFData failure
      , ShowProxy ps
      , forall (st' :: ps) sing. sing ~ StateToken st' => Show sing
      )

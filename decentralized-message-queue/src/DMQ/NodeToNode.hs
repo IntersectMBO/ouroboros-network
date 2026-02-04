@@ -24,7 +24,7 @@ import Control.Concurrent.Class.MonadSTM (MonadSTM (..))
 import Control.Monad.Class.MonadAsync (MonadAsync)
 import Control.Monad.Class.MonadFork (MonadFork, MonadThread, labelThisThread)
 import Control.Monad.Class.MonadST (MonadST)
-import Control.Monad.Class.MonadThrow (MonadMask, MonadThrow)
+import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTimer.SI (MonadTimer)
 import Control.Tracer (Tracer, nullTracer)
 import Data.ByteString.Lazy qualified as BL
@@ -222,6 +222,7 @@ ntnApps
   :: forall m addr .
     ( Alternative (STM m)
     , MonadAsync m
+    , MonadEvaluate m
     , MonadFork m
     , MonadMask m
     , MonadMVar m

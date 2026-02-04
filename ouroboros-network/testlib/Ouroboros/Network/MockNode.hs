@@ -25,6 +25,7 @@ import Data.Tuple (swap)
 import GHC.Generics (Generic)
 
 import Control.Concurrent.Class.MonadSTM.Strict
+import Control.DeepSeq (NFData (..))
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadSay
 import Control.Monad.Class.MonadThrow
@@ -51,6 +52,7 @@ import Ouroboros.Network.Mock.Chain (Chain (..))
 import Ouroboros.Network.Mock.Chain qualified as Chain
 import Ouroboros.Network.Mock.ConcreteBlock hiding (fixupBlock)
 import Ouroboros.Network.Mock.ConcreteBlock qualified as Concrete
+import Ouroboros.Network.Mock.OrphanedInstances
 import Ouroboros.Network.Mock.ProducerState (ChainProducerState (..),
            initChainProducerState, producerChain, switchFork)
 
@@ -268,7 +270,8 @@ forkRelayKernel upstream cpsVar = do
 -- @StrictTVar ('ChainProducerState' block)@. This allows to extend the relay
 -- node to a core node.
 relayNode :: forall m block.
-             ( MonadFork m
+             ( MonadEvaluate m
+             , MonadFork m
              , MonadTimer m
              , MonadThrow m
              , MonadSay m
@@ -307,9 +310,9 @@ relayNode _nid initChain chans = do
       chainVar <- atomically $ newTVar Genesis
       let consumer = chainSyncClientPeer (chainSyncClientExample chainVar pureClient)
       void $ forkIO $ void $ runPeer nullTracer
-                                   codecChainSyncId
-                                   channel
-                                   consumer
+                                     codecChainSyncId
+                                     channel
+                                     consumer
       return chainVar
 
     startProducer :: Server (ChainSync block (Point block) (Tip block)) NonPipelined StIdle m ()
@@ -339,6 +342,7 @@ forkCoreKernel :: forall block m.
                   ( HasFullHeader block
                   , MonadDelay m
                   , MonadLabelledSTM m
+                  , MonadEvaluate m
                   , MonadFork m
                   , MonadTimer m
                   )
@@ -386,6 +390,7 @@ forkCoreKernel slotDuration gchain fixupBlock cpsVar = do
 coreNode :: forall m.
         ( MonadDelay m
         , MonadLabelledSTM m
+        , MonadEvaluate m
         , MonadFork m
         , MonadThrow m
         , MonadTimer m
