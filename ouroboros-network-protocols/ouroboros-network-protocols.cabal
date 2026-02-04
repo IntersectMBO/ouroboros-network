@@ -180,7 +180,7 @@ library testlib
     QuickCheck,
     base >=4.14 && <4.21,
     bytestring,
-    cardano-slotting:testlib ^>=0.2.0,
+    cardano-slotting:testlib ^>=0.2.0 || <0.2.0.2,
     cardano-strict-containers,
     cborg,
     containers,
