@@ -113,6 +113,7 @@ data HandshakeArguments connectionId vNumber vData m = HandshakeArguments {
 --
 runHandshakeClient
     :: ( MonadAsync m
+       , MonadEvaluate m
        , MonadFork m
        , MonadTimer m
        , MonadMask m
@@ -150,6 +151,7 @@ runHandshakeClient bearer
 --
 runHandshakeServer
     :: ( MonadAsync m
+       , MonadEvaluate m
        , MonadFork m
        , MonadTimer m
        , MonadMask m

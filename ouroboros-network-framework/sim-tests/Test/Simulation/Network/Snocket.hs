@@ -171,6 +171,7 @@ clientServerSimulation
        ( Alternative (STM m)
        , MonadAsync       m
        , MonadDelay       m
+       , MonadEvaluate    m
        , MonadFork        m
        , MonadLabelledSTM m
        , MonadMask        m

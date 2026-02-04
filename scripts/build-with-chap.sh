@@ -45,7 +45,7 @@ fi
 cabal_files=$(fd -ae 'cabal')
 for cf in $cabal_files; do
   name=$(cat $cf | grep '^name:' | awk '{ print $2 }')
-  version=$(ls -1 $CHAP_DIR/_sources/$name | sort -V | tail -1)
+  version=$(cat $cf | grep '^version:' | awk '{ print $2 }')
   rev=$(yq .github.rev $CHAP_DIR/_sources/$name/$version/meta.toml)
   git restore --source=$rev -- $name
   tb=0
