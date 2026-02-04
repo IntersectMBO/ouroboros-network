@@ -92,17 +92,18 @@ let
             (if buildSystem == "x86_64-linux"
             then "export GHCRTS=-M1000M"
             else "");
+        # don't run checks using Wine when cross compiling
         doCheck = !pkgs.stdenv.hostPlatform.isWindows;
 
         # pkgs are instantiated for the host platform
         packages.ouroboros-network-protocols.components.tests.cddl.build-tools = [ pkgs.cddl pkgs.cbor-diag ];
         packages.ouroboros-network-protocols.components.tests.cddl.preCheck = "export HOME=`pwd`";
 
-        # don't run checks using Wine when cross compiling
         packages.network-mux.components.tests.test.preCheck =
           if buildSystem == "x86_64-linux" then "export GHCRTS=-M800M" else "";
         packages.ouroboros-network.components.tests.sim-tests.preCheck =
           if buildSystem == "x86_64-linux" then "export GHCRTS=-M1000M" else "";
+        packages.ouroboros-network-protocols.components.tests.bench.doCheck = lib.mkForce (buildSystem != "aarch64-darwin");
       })
     ];
   });
