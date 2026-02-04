@@ -177,7 +177,7 @@ library testlib
     Test.Ouroboros.Network.Protocol.Utils
 
   build-depends:
-    QuickCheck,
+    QuickCheck >=2.14 && <2.16,
     base >=4.14 && <4.21,
     bytestring,
     cardano-slotting:testlib ^>=0.2.0 || <0.2.0.2,
