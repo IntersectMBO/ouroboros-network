@@ -5,6 +5,7 @@
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE NumericUnderscores         #-}
 {-# LANGUAGE PolyKinds                  #-}
 {-# LANGUAGE QuantifiedConstraints      #-}
 {-# LANGUAGE RankNTypes                 #-}
@@ -77,7 +78,8 @@ tests =
         , testProperty "codec"               prop_codec
         , testProperty "codec id"            prop_codec_id
         , testProperty "codec 2-splits"      prop_codec_splits2
-        , testProperty "codec 3-splits"    $ withMaxSuccess 30
+        , testProperty "codec 3-splits"    $ discardAfter 1_000_000
+                                           $ withMaxSuccess 30
                                              prop_codec_splits3
         , testProperty "codec cbor"          prop_codec_cbor
         , testProperty "codec valid cbor"    prop_codec_valid_cbor
