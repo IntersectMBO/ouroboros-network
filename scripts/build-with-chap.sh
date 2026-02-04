@@ -45,8 +45,8 @@ fi
 cabal_files=$(fd -ae 'cabal')
 for cf in $cabal_files; do
   name=$(cat $cf | grep '^name:' | awk '{ print $2 }')
-  if [[ -d "$CHAP_DIR/_sources/$name" ]]; then
-    version=$(ls -1 $CHAP_DIR/_sources/$name | sort -V | tail -1)
+  version=$(cat $cf | grep '^version:' | awk '{ print $2 }')
+  if [[ -d "$CHAP_DIR/_sources/$name/$version" ]]; then
     rev=$(yq .github.rev $CHAP_DIR/_sources/$name/$version/meta.toml)
     git restore --source=$rev -- $name
     tb=0
@@ -57,7 +57,7 @@ for cf in $cabal_files; do
       cp $revdir/$rev "$name/$name.cabal"
     fi
   else
-    echo "WARNING: $name not in cardano-haskell-packages"
+    echo "WARNING: $name-$version not in cardano-haskell-packages"
   fi
 done
 
