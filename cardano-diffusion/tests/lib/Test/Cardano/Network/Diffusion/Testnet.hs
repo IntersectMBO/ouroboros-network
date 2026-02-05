@@ -21,6 +21,7 @@ module Test.Cardano.Network.Diffusion.Testnet (tests) where
 import Control.Arrow ((&&&))
 import Control.Exception (AssertionFailed (..), catch, displayException,
            evaluate, fromException)
+import Control.Monad (join)
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadTest (exploreRaces)
 import Control.Monad.Class.MonadTime.SI
@@ -268,6 +269,7 @@ tests =
     , testGroup "Churn"
       [ testProperty "no timeouts" prop_churn_notimeouts_iosim
       , testProperty "steps" prop_churn_steps_iosim
+      , testProperty "targets bounds" prop_churn_targets_bounds_iosim
       ]
     , testGroup "coverage"
       [ testProperty "server trace coverage"
@@ -4730,6 +4732,113 @@ prop_churn_notimeouts_iosim
 prop_churn_notimeouts_iosim
   = testWithIOSim prop_churn_notimeouts long_trace
 
+
+-- Property that verifies target changes stay within acceptable bounds
+--
+-- This function checks that after churn:
+-- 1. New targets never exceed original targets
+-- 2. New targets never decrease by more than 20%
+prop_churn_targets_bounds :: [(NtNAddr, (PeerSelectionTargets, PeerSelectionTargets))]
+                                -> SimTrace Void
+                                -> Int
+                                -> Property
+prop_churn_targets_bounds baseTargetsMap ioSimTrace traceNumber =
+   let events :: [(NtNAddr, Time, DiffusionTestTrace)]
+       events = join . Trace.toList
+              . fmap (
+                     fmap (\(WithName node (WithTime t b)) -> (node, t, b))
+                    )
+              . splitWithNameTrace
+              . fmap (\(WithTime t (WithName name b)) -> WithName name (WithTime t b))
+              . withTimeNameTraceEvents
+                 @DiffusionTestTrace
+                 @NtNAddr
+              . Trace.take traceNumber
+              $ ioSimTrace
+
+       baseTargetsLookup = Map.fromList baseTargetsMap
+
+       -- Group events by node address
+       eventMap :: Map NtNAddr [(Time, DiffusionTestTrace)]
+       eventMap = foldr (\(node, t, trace) m ->
+                           case Map.lookup node m of
+                             Just ts -> Map.insert node ((t, trace):ts) m
+                             Nothing -> Map.insert node [(t, trace)] m
+                        ) Map.empty events
+
+       targetsChangeEventMap :: Map NtNAddr [PeerSelectionTargets]
+       targetsChangeEventMap =
+         catMaybes . fmap (\case
+                            (_, DiffusionPeerSelectionTrace (TraceTargetsChanged new))
+                                   -> Just new
+                            _other -> Nothing
+             ) <$> eventMap
+
+       -- Property that verifies target changes stay within acceptable bounds
+       --
+       -- This function checks that after churn:
+       -- 1. New targets never exceed original targets
+       -- 2. New targets never decrease by more than 20%
+       targetsChangeProperty :: PeerSelectionTargets -> PeerSelectionTargets -> Property
+       targetsChangeProperty
+         PeerSelectionTargets {
+           targetNumberOfKnownPeers                = knowns,
+           targetNumberOfEstablishedPeers          = establisheds,
+           targetNumberOfActivePeers               = actives,
+           targetNumberOfKnownBigLedgerPeers       = knownBigLedgers,
+           targetNumberOfEstablishedBigLedgerPeers = establishedBigLedgers,
+           targetNumberOfActiveBigLedgerPeers      = activeBigLedgers
+         }
+         PeerSelectionTargets {
+           targetNumberOfKnownPeers                = knowns',
+           targetNumberOfEstablishedPeers          = establisheds',
+           targetNumberOfActivePeers               = actives',
+           targetNumberOfKnownBigLedgerPeers       = knownBigLedgers',
+           targetNumberOfEstablishedBigLedgerPeers = establishedBigLedgers',
+           targetNumberOfActiveBigLedgerPeers      = activeBigLedgers'
+         }
+         = let -- 20% or at least one
+               decrease :: Int -> Int
+               decrease v = max 0 $ v - max 1 (v `div` 5)
+            in property (  actives' <= actives
+                        && actives' >= decrease actives
+                        && activeBigLedgers' <= activeBigLedgers
+                        && activeBigLedgers' >= decrease activeBigLedgers
+                        && knowns' <= knowns
+                        && knowns' >= decrease knowns
+                        && knownBigLedgers' <= knownBigLedgers
+                        && knownBigLedgers' >= decrease knownBigLedgers
+                        && establisheds' <= establisheds
+                        && establisheds' >= decrease establisheds
+                        && establishedBigLedgers' <= establishedBigLedgers
+                        && establishedBigLedgers' >= decrease establishedBigLedgers
+                        )
+
+       checks =
+         Map.foldrWithKey
+           (\ node targets p -> case Map.lookup node baseTargetsLookup of
+             Just bs@(base0, base1) ->
+               foldr (\ts p' -> counterexample ("Node: " ++ show node ++
+                                                "\nExpected: " ++ show bs ++
+                                                "\nActual: " ++ show ts ++
+                                                "\nAll rounds: " ++ show targets
+                                                ) (     targetsChangeProperty base0 ts
+                                                   .||. targetsChangeProperty base1 ts) .&&. p'
+                     ) p targets
+             Nothing -> counterexample ("No base targets for " <> show node) (property False)
+           )
+           (property True) targetsChangeEventMap
+
+
+   in checks
+
+prop_churn_targets_bounds_iosim
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_churn_targets_bounds_iosim bi ds@(DiffusionScript _ _ nodes) =
+  let baseTargets = [ (naAddr nodeArgs, naPeerTargets nodeArgs)
+                    | (nodeArgs, _) <- nodes
+                    ]
+  in testWithIOSim (prop_churn_targets_bounds baseTargets) long_trace bi ds
 
 -- | Verify that churn trace consists of repeated list of actions:
 --
