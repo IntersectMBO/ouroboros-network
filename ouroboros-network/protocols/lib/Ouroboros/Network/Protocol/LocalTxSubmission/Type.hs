@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds                #-}
+{-# LANGUAGE DeriveAnyClass           #-}
 {-# LANGUAGE DeriveFunctor            #-}
-{-# LANGUAGE EmptyCase                #-}
+{-# LANGUAGE DeriveGeneric            #-}
 {-# LANGUAGE FlexibleInstances        #-}
 {-# LANGUAGE GADTs                    #-}
 {-# LANGUAGE PolyKinds                #-}
@@ -19,7 +20,8 @@ module Ouroboros.Network.Protocol.LocalTxSubmission.Type where
 
 import Data.Kind (Type)
 
-import Control.DeepSeq
+import Control.DeepSeq (NFData (..))
+import GHC.Generics (Generic)
 import Network.TypedProtocol.Core
 import Ouroboros.Network.Util.ShowProxy
 
@@ -84,7 +86,7 @@ deriving instance Show (SingLocalTxSubmission k)
 data SubmitResult reason
   = SubmitSuccess
   | SubmitFail reason
-  deriving (Eq, Functor)
+  deriving (Eq, Functor, Generic, NFData)
 
 instance Protocol (LocalTxSubmission tx reject) where
 

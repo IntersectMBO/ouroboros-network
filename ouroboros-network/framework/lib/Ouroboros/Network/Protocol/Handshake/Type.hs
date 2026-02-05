@@ -25,13 +25,13 @@ module Ouroboros.Network.Protocol.Handshake.Type
   ) where
 
 
+import Control.DeepSeq
 import Control.Exception
 import Data.Map (Map)
 import Data.Text (Text)
 import Data.Typeable (Typeable)
-
-import Control.DeepSeq
 import GHC.Generics
+
 import Network.TypedProtocol.Core
 import Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 
@@ -162,13 +162,21 @@ data HandshakeProtocolError vNumber
   | NotRecognisedVersion vNumber
   | InvalidServerSelection vNumber Text
   | QueryNotSupported
-  deriving (Eq, Show)
+  deriving (Eq, Generic, NFData, Show)
 
 -- | The result of a handshake.
 --
 data HandshakeResult r vNumber vData
   = HandshakeNegotiationResult r vNumber vData
   | HandshakeQueryResult (Map vNumber (Either Text vData))
+
+instance (NFData vNumber, NFData vData)
+      => NFData (HandshakeResult r vNumber vData) where
+  rnf (HandshakeNegotiationResult r vNumber vData)
+    -- evaluate the continuation to WHNF
+    = r `seq` rnf vNumber `seq` rnf vData
+  rnf (HandshakeQueryResult m)
+    = rnf m
 
 instance (Typeable vNumber, Show vNumber)
     => Exception (HandshakeProtocolError vNumber)

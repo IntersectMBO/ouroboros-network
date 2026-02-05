@@ -60,7 +60,6 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.IOSim
 import Control.Tracer
 
-import Ouroboros.Network.Mock.OrphanedInstances ()
 import Test.Ouroboros.Network.Orphans ()
 
 import Test.QuickCheck

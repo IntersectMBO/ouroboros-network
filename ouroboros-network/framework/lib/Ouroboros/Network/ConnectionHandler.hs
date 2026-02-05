@@ -44,6 +44,7 @@ module Ouroboros.Network.ConnectionHandler
 
 import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM.Strict
+import Control.DeepSeq (NFData)
 import Control.Exception (SomeAsyncException)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
@@ -249,6 +250,8 @@ makeConnectionHandler
        , MonadThrow (STM m)
        , MonadTimer    m
        , MonadMask     m
+       , NFData   versionData
+       , NFData   versionNumber
        , Ord      versionNumber
        , Show     peerAddr
        , Typeable peerAddr

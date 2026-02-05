@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveAnyClass    #-}
+{-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE NamedFieldPuns    #-}
 {-# LANGUAGE OverloadedStrings #-}
 
@@ -14,6 +16,7 @@ module Ouroboros.Network.Protocol.Handshake.Unversioned
   , dataFlowProtocol
   ) where
 
+import Control.DeepSeq (NFData (..))
 import Control.Monad.Class.MonadST
 
 import Codec.CBOR.Read qualified as CBOR
@@ -22,6 +25,7 @@ import Codec.CBOR.Term qualified as CBOR
 import Data.ByteString.Lazy (ByteString)
 import Data.Text (Text)
 import Data.Text qualified as T
+import GHC.Generics
 
 import Network.TypedProtocol.Codec
 
@@ -37,11 +41,11 @@ import Ouroboros.Network.Protocol.Handshake.Version
 -- tests and demos where proper versioning is excessive.
 --
 data UnversionedProtocol = UnversionedProtocol
-  deriving (Eq, Ord, Bounded, Show)
+  deriving (Eq, Ord, Bounded, Show, Generic, NFData)
 
 
 data UnversionedProtocolData = UnversionedProtocolData
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic, NFData)
 
 instance Acceptable UnversionedProtocolData where
   acceptableVersion UnversionedProtocolData
@@ -83,7 +87,7 @@ data DataFlowProtocolData =
       getProtocolDataFlow    :: DataFlow,
       getProtocolPeerSharing :: PeerSharing
     }
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic, NFData)
 
 instance Acceptable DataFlowProtocolData where
   acceptableVersion (DataFlowProtocolData local lps) (DataFlowProtocolData remote rps) =

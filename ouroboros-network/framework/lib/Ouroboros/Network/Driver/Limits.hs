@@ -407,6 +407,7 @@ runPeerWithLimits
      , MonadTimer m
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
+     , NFData a
      , NFData failure
      , Show failure
      )
@@ -436,6 +437,7 @@ runAnnotatedPeerWithLimits
      , Monoid bytes
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
+     , NFData a
      , NFData failure
      , Show failure
      )
@@ -465,8 +467,9 @@ runPeerWithLimitsRnd
      , MonadTimer m
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
-     , Show failure
+     , NFData a
      , NFData failure
+     , Show failure
      , HasCallStack
      )
   => Tracer m (TraceSendRecv ps)
@@ -501,6 +504,7 @@ runPipelinedPeerWithLimits
      , MonadThrow (STM m)
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
+     , NFData a
      , NFData failure
      , Show failure
      )
@@ -528,6 +532,7 @@ runPipelinedAnnotatedPeerWithLimits
      , Monoid bytes
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
+     , NFData a
      , NFData failure
      , Show failure
      )
@@ -557,8 +562,9 @@ runPipelinedPeerWithLimitsRnd
      , MonadThrow (STM m)
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
-     , Show failure
+     , NFData a
      , NFData failure
+     , Show failure
      )
   => Tracer m (TraceSendRecv ps)
   -> StdGen
@@ -591,6 +597,8 @@ runConnectedPeersWithLimits
      , MonadMask        m
      , MonadTimer       m
      , MonadThrow  (STM m)
+     , NFData a
+     , NFData b
      , Exception failure
      , NFData failure
      , ShowProxy ps
@@ -627,6 +635,8 @@ runConnectedPeersWithLimitsRnd
      , MonadMask        m
      , MonadTimer       m
      , MonadThrow  (STM m)
+     , NFData a
+     , NFData b
      , Exception failure
      , NFData failure
      , ShowProxy ps
@@ -674,6 +684,8 @@ runConnectedPipelinedPeersWithLimits
      , MonadTimer      m
      , MonadThrow (STM m)
      , Exception failure
+     , NFData a
+     , NFData b
      , NFData failure
      , ShowProxy ps
      , forall (st' :: ps) sing. sing ~ StateToken st' => Show sing
@@ -708,6 +720,8 @@ runConnectedPipelinedPeersWithLimitsRnd
      , MonadTimer      m
      , MonadThrow (STM m)
      , Exception failure
+     , NFData a
+     , NFData b
      , NFData failure
      , ShowProxy ps
      , forall (st' :: ps) sing. sing ~ StateToken st' => Show sing

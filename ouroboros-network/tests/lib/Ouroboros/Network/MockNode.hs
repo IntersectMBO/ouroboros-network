@@ -32,6 +32,7 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (nullTracer)
 
 import Network.TypedProtocol.Codec
+import Network.TypedProtocol.Peer.Client qualified as TP
 import Network.TypedProtocol.Peer.Server
 
 import Ouroboros.Network.Block
@@ -51,7 +52,6 @@ import Ouroboros.Network.Mock.Chain (Chain (..))
 import Ouroboros.Network.Mock.Chain qualified as Chain
 import Ouroboros.Network.Mock.ConcreteBlock hiding (fixupBlock)
 import Ouroboros.Network.Mock.ConcreteBlock qualified as Concrete
-import Ouroboros.Network.Mock.OrphanedInstances ()
 import Ouroboros.Network.Mock.ProducerState (ChainProducerState (..),
            initChainProducerState, producerChain, switchFork)
 
@@ -307,11 +307,12 @@ relayNode _nid initChain chans = do
                   -> m (StrictTVar m (Chain block))
     startConsumer _cid channel = do
       chainVar <- atomically $ newTVar Genesis
-      let consumer = chainSyncClientPeer (chainSyncClientExample chainVar pureClient)
+      let consumer :: TP.Client (ChainSync block (Point block) tip) NonPipelined StIdle m ()
+          consumer = chainSyncClientPeer (chainSyncClientExample chainVar pureClient)
       void $ forkIO $ void $ runPeer nullTracer
-                                   codecChainSyncId
-                                   channel
-                                   consumer
+                                     codecChainSyncId
+                                     channel
+                                     consumer
       return chainVar
 
     startProducer :: Server (ChainSync block (Point block) (Tip block)) NonPipelined StIdle m ()

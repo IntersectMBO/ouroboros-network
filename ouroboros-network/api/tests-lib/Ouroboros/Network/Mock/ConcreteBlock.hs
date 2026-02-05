@@ -1,4 +1,6 @@
+{-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns             #-}
@@ -43,6 +45,7 @@ module Ouroboros.Network.Mock.ConcreteBlock
   , fixupAnchoredFragmentFrom
   ) where
 
+import Control.DeepSeq (NFData (..))
 import Data.ByteString (ByteString)
 import Data.Function (fix)
 import Data.Hashable
@@ -78,12 +81,14 @@ data Block = Block {
        blockHeader :: BlockHeader,
        blockBody   :: BlockBody
      }
-   deriving (Show, Eq, Generic)
+   deriving (Show, Eq, Generic, NFData)
 
 instance ShowProxy Block where
 
 newtype BlockBody = BlockBody ByteString
-  deriving (Show, Eq, Ord, IsString, Generic)
+  deriving (Show, Eq, Ord, Generic)
+  deriving newtype  IsString
+  deriving anyclass NFData
 
 instance Hashable BlockBody where
     hash (BlockBody body) = hash body
@@ -103,6 +108,27 @@ data BlockHeader = BlockHeader {
      }
    deriving (Show, Eq, Generic)
 
+instance NFData BlockHeader where
+  rnf BlockHeader {
+        headerHash,
+        headerPrevHash,
+        headerSlot,
+        headerBlockNo,
+        headerBodyHash
+      }
+      =
+      headerHash
+      `seq`
+      headerPrevHash
+      `seq`
+      rnf headerSlot
+      `seq`
+      rnf headerBlockNo
+      `seq`
+      headerBodyHash
+      `seq`
+      ()
+
 instance ShowProxy BlockHeader where
 
 -- | Compute the 'HeaderHash' of the 'BlockHeader'.
@@ -110,8 +136,8 @@ instance ShowProxy BlockHeader where
 hashHeader :: BlockHeader -> ConcreteHeaderHash
 hashHeader (BlockHeader _ b c d e) = HeaderHash (hash (b, c, d, e))
 
-deriving instance Hashable SlotNo
-deriving instance Hashable BlockNo
+deriving newtype instance Hashable SlotNo
+deriving newtype instance Hashable BlockNo
 
 -- | 'Hashable' instance for 'Hash'
 --
@@ -126,12 +152,14 @@ instance (StandardHash b, Hashable (HeaderHash b)) => Hashable (ChainHash b)
 -- | The hash of all the information in a 'BlockHeader'.
 --
 newtype ConcreteHeaderHash = HeaderHash Int
-  deriving (Show, Eq, Ord, Generic, Hashable, NoThunks)
+  deriving stock   (Show, Eq, Ord, Generic)
+  deriving newtype (Hashable, NoThunks)
 
 -- | The hash of all the information in a 'BlockBody'.
 --
 newtype BodyHash = BodyHash Int
-  deriving (Show, Eq, Ord, Generic, Hashable)
+  deriving stock  (Show, Eq, Ord, Generic)
+  deriving newtype Hashable
 
 {-------------------------------------------------------------------------------
   HasHeader instances

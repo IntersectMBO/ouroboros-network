@@ -351,6 +351,7 @@ mkMiniProtocolCbFromPeer
      , MonadEvaluate m
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
+     , NFData a
      , NFData failure
      , Show failure
      )
@@ -375,6 +376,7 @@ mkMiniProtocolCbFromPeerSt
      , MonadMask     m
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
+     , NFData a
      , NFData failure
      , Show failure
      )
@@ -401,6 +403,7 @@ mkMiniProtocolCbFromPeerPipelined
      , MonadThrow    m
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
+     , NFData a
      , NFData failure
      , Show failure
      )

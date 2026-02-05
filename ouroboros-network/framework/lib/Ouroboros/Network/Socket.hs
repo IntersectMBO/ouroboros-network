@@ -61,6 +61,7 @@ import Codec.CBOR.Read qualified as CBOR
 import Codec.CBOR.Term qualified as CBOR
 import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM.Strict
+import Control.DeepSeq (NFData)
 #if !defined(wasm32_HOST_ARCH)
 import Control.Monad (unless, when)
 #endif
@@ -258,10 +259,14 @@ data ConnectToArgs fd addr vNumber vData = ConnectToArgs {
 -- Exceptions thrown by 'MuxApplication' are rethrown by 'connectToNode'.
 connectToNode
   :: forall muxMode vNumber vData fd addr a b.
-     ( Ord vNumber
+     ( NFData vData
+     , NFData vNumber
+     , Ord vNumber
      , Typeable vNumber
      , Show vNumber
      , Mx.HasInitiator muxMode ~ True
+     , NFData a
+     , NFData b
      )
   => Snocket IO fd addr
   -> Mx.MakeBearer IO fd
@@ -281,7 +286,9 @@ connectToNode sn mkBearer args configureSock versions localAddr remoteAddr =
 -- to execute on a given connection.
 connectToNodeWithMux
   :: forall muxMode vNumber vData fd addr a b x.
-     ( Ord vNumber
+     ( NFData vData
+     , NFData vNumber
+     , Ord vNumber
      , Typeable vNumber
      , Show vNumber
      , Mx.HasInitiator muxMode ~ True
@@ -330,10 +337,14 @@ connectToNodeWithMux sn mkBearer args configureSock versions localAddr remoteAdd
 -- Exceptions thrown by @'MuxApplication'@ are rethrown by @'connectTo'@.
 connectToNode'
   :: forall muxMode vNumber vData fd addr a b.
-     ( Ord vNumber
+     ( NFData vData
+     , NFData vNumber
+     , Ord vNumber
      , Typeable vNumber
      , Show vNumber
      , Mx.HasInitiator muxMode ~ True
+     , NFData a
+     , NFData b
      )
   => Snocket IO fd addr
   -> Mx.MakeBearer IO fd
@@ -349,7 +360,9 @@ connectToNode' sn mkBearer args versions as =
 
 connectToNodeWithMux'
   :: forall muxMode vNumber vData fd addr a b x.
-     ( Ord vNumber
+     ( NFData vData
+     , NFData vNumber
+     , Ord vNumber
      , Typeable vNumber
      , Show vNumber
      , Mx.HasInitiator muxMode ~ True
@@ -438,6 +451,8 @@ simpleMuxCallback
      , MonadSTM   m
      , MonadThrow m
      , MonadThrow (STM m)
+     , NFData a
+     , NFData b
      )
   => ConnectionId addr
   -> vNumber
@@ -483,10 +498,14 @@ simpleMuxCallback connectionId _ _ app mux aid = do
 -- Wraps a Socket inside a Snocket and calls connectToNode'
 connectToNodeSocket
   :: forall muxMode vNumber vData a b.
-     ( Ord vNumber
+     ( NFData vData
+     , NFData vNumber
+     , Ord vNumber
      , Typeable vNumber
      , Show vNumber
      , Mx.HasInitiator muxMode ~ True
+     , NFData a
+     , NFData b
      )
   => IOManager
   -> ConnectToArgs Socket.Socket Socket.SockAddr vNumber vData
@@ -502,12 +521,14 @@ connectToNodeSocket iocp args versions sd =
       versions
       sd
 
--- |
--- Wrapper for OuroborosResponderApplication and OuroborosInitiatorAndResponderApplication.
+-- | Wrapper for OuroborosResponderApplication and
+-- OuroborosInitiatorAndResponderApplication.
 --
 data SomeResponderApplication addr bytes m b where
      SomeResponderApplication
        :: forall muxMode addr bytes m a b.
-          Mx.HasResponder muxMode ~ True
+          ( Mx.HasResponder muxMode ~ True
+          , NFData a
+          )
        => (OuroborosApplicationWithMinimalCtx muxMode addr bytes m a b)
        -> SomeResponderApplication addr bytes m b

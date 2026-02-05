@@ -1,4 +1,7 @@
 {-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveAnyClass             #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
@@ -13,7 +16,9 @@ import Codec.Serialise (Serialise)
 import Codec.Serialise qualified as S
 import Data.ByteString.Lazy (ByteString)
 import Data.Text qualified as Text
+import GHC.Generics (Generic)
 
+import Control.DeepSeq (NFData)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow
@@ -200,13 +205,18 @@ prop_pipe_IO txs =
 --
 
 newtype Tx = Tx { txId :: TxId }
-  deriving (Eq, Show, Arbitrary, Serialise)
+  deriving stock   (Eq, Show, Generic)
+  deriving newtype (Arbitrary, Serialise)
+  deriving anyclass NFData
 
 instance ShowProxy Tx where
     showProxy _ = "Tx"
 
 newtype TxId = TxId Int
-  deriving (Eq, Ord, Show, Arbitrary, Serialise)
+  deriving stock    (Eq, Ord, Show, Generic)
+  deriving newtype  (Arbitrary, Serialise)
+  deriving anyclass NFData
+
 
 instance ShowProxy TxId where
     showProxy _ = "TxId"

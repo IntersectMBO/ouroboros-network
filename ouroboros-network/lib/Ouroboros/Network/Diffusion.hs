@@ -23,6 +23,7 @@ module Ouroboros.Network.Diffusion
 import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadMVar (MonadMVar)
 import Control.Concurrent.Class.MonadSTM.Strict
+import Control.DeepSeq (NFData)
 import Control.Exception (IOException)
 import Control.Monad.Class.MonadAsync (Async, MonadAsync)
 import Control.Monad.Class.MonadAsync qualified as Async
@@ -113,18 +114,23 @@ runM
        , Ord       ntnAddr
        , Show      ntnAddr
        , Hashable  ntnAddr
+       , NFData    ntnVersion
        , Typeable  ntnVersion
        , Ord       ntnVersion
        , Show      ntnVersion
+       , NFData    ntnVersionData
        , Show      ntnVersionData
        , Typeable  ntcAddr
        , Ord       ntcAddr
        , Show      ntcAddr
+       , NFData    ntcVersion
        , Ord       ntcVersion
+       , NFData    ntcVersionData
        , Monoid extraPeers
        , Eq extraFlags
        , Eq extraCounters
        , Exception exception
+       , NFData a
        )
        -- | interfaces
     => Interfaces ntnFd ntnAddr ntcFd ntcAddr
@@ -552,7 +558,8 @@ runM Interfaces
       let -- | parameterized version of 'withPeerStateActions'
           withPeerStateActions'
             :: forall (muxMode :: Mx.Mode) responderCtx socket b c.
-               HasInitiator muxMode ~ True
+               NFData b
+            => HasInitiator muxMode ~ True
             => MuxConnectionManager
                  muxMode socket (ExpandedInitiatorContext ntnAddr extraFlags m)
                  responderCtx ntnAddr ntnVersionData ntnVersion
@@ -822,14 +829,19 @@ runM Interfaces
 --   a wallet and a like local services.
 --
 run :: ( Monoid extraPeers
-       , Eq extraFlags
-       , Eq extraCounters
+       , Eq     extraFlags
+       , Eq     extraCounters
        , Exception exception
+       , NFData   ntnVersion
        , Typeable ntnVersion
-       , Ord ntnVersion
-       , Show ntnVersion
-       , Show ntnVersionData
-       , Ord ntcVersion
+       , Ord      ntnVersion
+       , Show     ntnVersion
+       , NFData   ntnVersionData
+       , Show     ntnVersionData
+       , NFData   ntcVersion
+       , Ord      ntcVersion
+       , NFData   ntcVersionData
+       , NFData   a
        )
     => Arguments
         extraState

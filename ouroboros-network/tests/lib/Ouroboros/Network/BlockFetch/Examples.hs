@@ -23,6 +23,7 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 
 import Control.Concurrent.Class.MonadSTM.Strict
+import Control.DeepSeq (NFData)
 import Control.Exception (assert)
 import Control.Monad (forever)
 import Control.Monad.Class.MonadAsync
@@ -349,6 +350,7 @@ runFetchClient :: ( MonadAsync m
                   , Serialise block
                   , Serialise point
                   , ShowProxy block
+                  , NFData a
                   )
                 => Tracer m (TraceSendRecv (BlockFetch block point))
                 -> version
@@ -378,6 +380,7 @@ runFetchServer :: forall block point m a.
                   , Serialise block
                   , Serialise point
                   , ShowProxy block
+                  , NFData a
                   )
                 => Tracer m (TraceSendRecv (BlockFetch block point))
                 -> Channel m LBS.ByteString
@@ -406,6 +409,8 @@ runFetchClientAndServerAsync
                   , Serialise block
                   , Serialise (HeaderHash block)
                   , ShowProxy block
+                  , NFData a
+                  , NFData b
                   )
                 => Tracer m (TraceSendRecv (BlockFetch block (Point block)))
                 -> Tracer m (TraceSendRecv (BlockFetch block (Point block)))

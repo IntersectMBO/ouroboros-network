@@ -1,10 +1,12 @@
-{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric  #-}
+{-# LANGUAGE InstanceSigs   #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
-{-# LANGUAGE InstanceSigs  #-}
 
 module Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..)) where
 
+import Control.DeepSeq (NFData)
 import GHC.Generics (Generic)
 
 -- | Is a peer willing to participate in Peer Sharing? If yes are others allowed
@@ -17,7 +19,7 @@ import GHC.Generics (Generic)
 data PeerSharing = PeerSharingDisabled -- ^ Peer does not participate in Peer Sharing
                                        -- at all
                  | PeerSharingEnabled -- ^ Peer participates in Peer Sharing
-  deriving  (Eq, Show, Read, Generic)
+  deriving  (Eq, Show, Read, Generic, NFData)
 
 -- | The combination of two 'PeerSharing' values forms a Monoid where the unit
 -- is 'PeerSharingEnabled'.

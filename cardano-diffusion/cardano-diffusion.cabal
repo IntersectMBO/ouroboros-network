@@ -161,6 +161,7 @@ library
     cardano-diffusion:{api, protocols},
     containers,
     contra-tracer,
+    deepseq,
     dns,
     io-classes:{io-classes, si-timers, strict-stm} ^>=1.8,
     monoidal-synchronisation,
@@ -168,7 +169,7 @@ library
     network-mux,
     ouroboros-network:{ouroboros-network, api, framework, protocols},
     random,
-    typed-protocols:{typed-protocols, stateful} ^>=1.1,
+    typed-protocols:{typed-protocols, stateful} ^>=1.2,
 
   if !os(windows)
     build-depends:
@@ -294,7 +295,7 @@ library protocols
     io-classes:{io-classes, si-timers} ^>=1.8.0.1,
     ouroboros-network:{api, framework, protocols},
     random,
-    typed-protocols:{typed-protocols, cborg, stateful} ^>=1.1,
+    typed-protocols:{typed-protocols, cborg, stateful} ^>=1.2,
 
 library protocols-tests-lib
   import: ghc-options
@@ -347,6 +348,7 @@ library protocols-tests-lib
     cborg,
     containers,
     contra-tracer,
+    deepseq,
     io-classes:{io-classes, si-timers},
     io-sim,
     ouroboros-network:{api, framework, protocols, protocols-tests-lib},
@@ -456,6 +458,7 @@ library cardano-diffusion-tests-lib
     cborg,
     containers,
     contra-tracer,
+    deepseq,
     dns,
     io-classes:{io-classes, si-timers, strict-stm},
     io-sim,
@@ -525,6 +528,7 @@ library subscription
     cborg >=0.2.8 && <0.3,
     containers >=0.5 && <0.9,
     contra-tracer >=0.1 && <0.3,
+    deepseq,
     io-classes:si-timers ^>=1.8.0.1,
     network-mux ^>=0.10,
     ouroboros-network:{api, framework} ^>=0.24,

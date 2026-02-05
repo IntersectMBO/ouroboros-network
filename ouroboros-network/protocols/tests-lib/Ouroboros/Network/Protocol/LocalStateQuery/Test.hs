@@ -1,3 +1,6 @@
+{-# LANGUAGE DeriveAnyClass             #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
@@ -21,7 +24,9 @@ import Codec.CBOR.Encoding qualified as CBOR
 import Data.ByteString.Lazy (ByteString)
 import Data.Map (Map)
 import Data.Map qualified as Map
+import GHC.Generics (Generic)
 
+import Control.DeepSeq (NFData)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow
@@ -108,7 +113,9 @@ deriving instance Show (Query result)
 instance ShowProxy Query where
 
 newtype MockLedgerState = MockLedgerState (Target (Point Block))
-  deriving (Arbitrary, Eq, Show, SerialiseClass.Serialise)
+  deriving stock    (Eq, Show, Generic)
+  deriving newtype  (Arbitrary, SerialiseClass.Serialise)
+  deriving anyclass NFData
 
 -- | Information to test an example server and client.
 data Setup = Setup

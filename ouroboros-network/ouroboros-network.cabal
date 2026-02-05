@@ -117,7 +117,7 @@ library api
     random,
     serialise >=0.2 && <0.3,
     text >=1.2 && <2.2,
-    typed-protocols ^>=1.1,
+    typed-protocols ^>=1.2,
 
 library api-tests-lib
   import: ghc-options
@@ -127,7 +127,6 @@ library api-tests-lib
     Ouroboros.Network.Mock.Chain
     Ouroboros.Network.Mock.ChainGenerators
     Ouroboros.Network.Mock.ConcreteBlock
-    Ouroboros.Network.Mock.OrphanedInstances
 
   build-depends:
     QuickCheck,
@@ -144,7 +143,6 @@ library api-tests-lib
     tasty,
     tasty-quickcheck,
     time,
-    typed-protocols,
 
 test-suite api-tests
   import: ghc-options
@@ -312,7 +310,7 @@ library
     random,
     strict-checked-vars ^>=0.2,
     transformers,
-    typed-protocols ^>=1.1,
+    typed-protocols ^>=1.2,
 
   if !os(windows)
     build-depends:
@@ -383,7 +381,7 @@ library framework
     quiet,
     random ^>=1.2,
     text,
-    typed-protocols:{typed-protocols, cborg, stateful} ^>=1.1,
+    typed-protocols:{typed-protocols, cborg, stateful} ^>=1.2,
 
   if os(windows)
     build-depends: Win32 >=2.5.4.1 && <3.0
@@ -497,6 +495,7 @@ library framework-tests-lib
     cborg,
     containers,
     contra-tracer,
+    deepseq,
     hashable,
     io-classes:{io-classes, si-timers, strict-stm},
     io-sim,
@@ -529,6 +528,7 @@ test-suite framework-sim-tests
     cborg,
     containers,
     contra-tracer,
+    deepseq,
     io-classes:{io-classes, si-timers, strict-stm},
     io-sim,
     monoidal-synchronisation,
@@ -746,7 +746,7 @@ library protocols
     serialise,
     singletons,
     text,
-    typed-protocols:{typed-protocols, cborg, stateful, stateful-cborg} ^>=1.1,
+    typed-protocols:{typed-protocols, cborg, stateful, stateful-cborg} ^>=1.2,
 
 library protocols-tests-lib
   import: ghc-options-tests
@@ -939,6 +939,7 @@ test-suite ouroboros-network-io-tests
     bytestring,
     cborg,
     contra-tracer,
+    deepseq,
     io-classes:{io-classes, si-timers, strict-stm},
     monoidal-synchronisation,
     network,

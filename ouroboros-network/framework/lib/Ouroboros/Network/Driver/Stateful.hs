@@ -137,6 +137,7 @@ runPeer
      ( MonadAsync    m
      , MonadEvaluate m
      , MonadMask     m
+     , NFData a
      , NFData failure
      , Show failure
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
@@ -190,6 +191,8 @@ runConnectedPeers :: forall ps pr st failure bytes f m a b.
                      ( MonadAsync    m
                      , MonadEvaluate m
                      , MonadMask     m
+                     , NFData a
+                     , NFData b
                      , NFData failure
                      , Show failure
                      , forall (st' :: ps) tok. tok ~ StateToken st' => Show tok
@@ -224,6 +227,8 @@ runConnectedPeersAsymmetric
     :: ( MonadAsync    m
        , MonadEvaluate m
        , MonadMask     m
+       , NFData a
+       , NFData b
        , NFData failure
        , Show failure
        , forall (st' :: ps) tok. tok ~ StateToken st' => Show tok

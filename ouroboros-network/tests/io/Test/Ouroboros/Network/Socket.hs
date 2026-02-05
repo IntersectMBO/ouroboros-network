@@ -1,11 +1,13 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE DeriveAnyClass      #-}
+{-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE DerivingStrategies  #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeFamilies        #-}
 
 {-# OPTIONS_GHC -Wno-orphans                 #-}
@@ -13,12 +15,13 @@
 module Test.Ouroboros.Network.Socket (tests) where
 
 import Data.ByteString.Lazy qualified as BL
-
 import Data.Void (Void)
+import GHC.Generics (Generic)
 import Network.Socket qualified as Socket
 
 import Control.Concurrent (ThreadId)
 import Control.Concurrent.Class.MonadSTM.Strict
+import Control.DeepSeq (NFData)
 import Control.Monad
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork hiding (ThreadId)
@@ -77,10 +80,12 @@ import Ouroboros.Network.Protocol.Handshake.Type (Handshake)
 --
 
 data TestVersion = TestVersion
-  deriving (Eq, Ord, Enum, Bounded, Show)
+  deriving stock    (Eq, Ord, Enum, Bounded, Show, Generic)
+  deriving anyclass NFData
 
 newtype TestVersionData = TestVersionData { networkMagic :: NetworkMagic }
-  deriving (Show, Eq)
+  deriving stock    (Show, Eq, Generic)
+  deriving anyclass NFData
 
 instance Acceptable TestVersionData where
     -- | Check that both side use the same 'networkMagic'.  Choose smaller one

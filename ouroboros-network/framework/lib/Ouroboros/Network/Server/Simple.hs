@@ -16,6 +16,7 @@ module Ouroboros.Network.Server.Simple
 
 import Control.Applicative (Alternative)
 import Control.Concurrent.JobPool qualified as JobPool
+import Control.DeepSeq (NFData)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
@@ -51,9 +52,12 @@ with :: forall fd addr vNumber vData m a b.
           MonadMask  m,
           MonadTimer m,
           MonadThrow (STM m),
+          NFData vData,
+          NFData vNumber,
           Ord vNumber,
           Typeable vNumber,
-          Show vNumber
+          Show vNumber,
+          NFData b
         )
      => Snocket m fd addr
      -- ^ low level snocket API

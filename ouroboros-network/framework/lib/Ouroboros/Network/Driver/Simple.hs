@@ -213,6 +213,7 @@ runPeer
      , MonadThrow m
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
+     , NFData a
      , NFData failure
      , Show failure
      )
@@ -238,6 +239,7 @@ runAnnotatedPeer
      , Monoid bytes
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
+     , NFData a
      , NFData failure
      , Show failure
      )
@@ -266,6 +268,7 @@ runPipelinedPeer
      , MonadThrow m
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
+     , NFData a
      , NFData failure
      , Show failure
      )
@@ -295,6 +298,7 @@ runPipelinedAnnotatedPeer
      , Monoid bytes
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
+     , NFData a
      , NFData failure
      , Show failure
      )
@@ -372,6 +376,8 @@ runConnectedPeers :: forall ps pr st failure bytes m a b.
                      , MonadThrow m
                      , ShowProxy ps
                      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
+                     , NFData a
+                     , NFData b
                      , NFData failure
                      , Show failure
                      )
@@ -403,6 +409,8 @@ runAnnotatedConnectedPeers
      , MonadThrow m
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
+     , NFData a
+     , NFData b
      , NFData failure
      , Show failure
      , Monoid bytes
@@ -433,6 +441,8 @@ runConnectedPeersPipelined :: ( MonadAsync m
                               , MonadEvaluate m
                               , ShowProxy ps
                               , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
+                              , NFData a
+                              , NFData b
                               , NFData failure
                               , Show failure
                               )
@@ -462,6 +472,8 @@ runConnectedPeersAsymmetric
        , MonadMask  m
        , ShowProxy ps
        , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
+       , NFData a
+       , NFData b
        , NFData failure
        , Show failure
        )

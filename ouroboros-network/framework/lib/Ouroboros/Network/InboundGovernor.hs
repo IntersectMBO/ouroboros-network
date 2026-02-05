@@ -43,6 +43,7 @@ module Ouroboros.Network.InboundGovernor
 import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM qualified as LazySTM
 import Control.Concurrent.Class.MonadSTM.Strict
+import Control.DeepSeq (NFData)
 import Control.Exception (SomeAsyncException (..))
 import Control.Monad (foldM, forM_, forever, when)
 import Control.Monad.Class.MonadAsync
@@ -157,6 +158,8 @@ with :: forall (muxMode :: Mux.Mode) socket peerAddr initiatorCtx responderCtx
         , MonadFork m
         , MonadDelay m
         , Show peerAddr
+        , NFData a
+        , NFData b
         )
      => Arguments muxMode handlerTrace socket peerAddr initiatorCtx responderCtx
                   handle handleError versionNumber versionData bytes m a b x
@@ -731,6 +734,8 @@ runResponder :: forall (mode :: Mux.Mode) initiatorCtx peerAddr m a b.
                  , MonadCatch       m
                  , MonadMask        m
                  , MonadThrow  (STM m)
+                 , NFData a
+                 , NFData b
                  )
               => Mux.Mux mode m
               -> MiniProtocolData mode initiatorCtx peerAddr m a b

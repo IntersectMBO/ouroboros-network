@@ -53,6 +53,7 @@ module Cardano.Network.NodeToClient
   ) where
 
 import Control.Exception (SomeException)
+import Control.DeepSeq (NFData)
 import Control.Monad (forever)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadTimer.SI
@@ -200,7 +201,8 @@ versionedNodeToClientProtocols versionNumber versionData protocols =
 -- protocol.  This is mostly useful for future enhancements.
 --
 connectTo
-  :: LocalSnocket
+  :: NFData a
+  => LocalSnocket
   -- ^ callback constructed by 'Ouroboros.Network.IOManager.withIOManager'
   -> NetworkConnectTracers LocalAddress NodeToClientVersion
   -> Versions NodeToClientVersion

@@ -28,6 +28,7 @@ module Cardano.Client.Subscription
   ) where
 
 import Codec.CBOR.Term qualified as CBOR
+import Control.DeepSeq (NFData)
 import Control.Exception
 import Control.Monad (join)
 import Control.Monad.Class.MonadTime.SI
@@ -100,7 +101,8 @@ data SubscriptionTrace a =
 --
 subscribe
   :: forall blockVersion a.
-     Snocket.LocalSnocket
+     NFData a
+  => Snocket.LocalSnocket
   -> NetworkMagic
   -> Map NodeToClientVersion blockVersion
   -- ^ Use `supportedNodeToClientVersions` from `ouroboros-consensus`.

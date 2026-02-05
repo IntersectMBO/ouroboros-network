@@ -33,6 +33,7 @@ module Ouroboros.Network.Server
 
 import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM.Strict
+import Control.DeepSeq (NFData)
 import Control.Monad (when)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
@@ -113,6 +114,8 @@ with :: forall muxMode socket peerAddr initiatorCtx responderCtx handle handlerT
        , MonadTraceSTM m
        , MonadFork m
        , MonadFix m
+       , NFData a
+       , NFData b
        )
     => Arguments muxMode socket peerAddr initiatorCtx responderCtx handle handlerTrace
                  handleError versionNumber versionData bytes m a b x

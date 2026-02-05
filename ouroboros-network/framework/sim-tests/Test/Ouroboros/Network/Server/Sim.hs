@@ -27,6 +27,7 @@ module Test.Ouroboros.Network.Server.Sim (tests) where
 import Control.Applicative (Alternative ((<|>)))
 import Control.Concurrent.Class.MonadSTM qualified as LazySTM
 import Control.Concurrent.Class.MonadSTM.Strict
+import Control.DeepSeq (NFData)
 import Control.Exception (SomeAsyncException (..), SomeException (..))
 import Control.Monad (replicateM)
 import Control.Monad.Class.MonadAsync
@@ -627,7 +628,7 @@ multinodeExperiment
        , MonadSay m
        , acc ~ [req], resp ~ [req]
        , Ord peerAddr, Show peerAddr, Typeable peerAddr, Eq peerAddr
-       , Serialise req, Show req
+       , Serialise req, Show req, NFData req
        , Serialise resp, Show resp, Eq resp
        , Typeable req, Typeable resp
        )
@@ -2264,6 +2265,7 @@ multiNodeSimTracer :: ( Alternative (STM m), Monad m, MonadFix m
                       , MonadThrow (STM m), MonadSay m, MonadAsync m
                       , MonadEvaluate m, MonadFork m, MonadST m
                       , Serialise req, Show req, Eq req, Typeable req
+                      , NFData req
                       )
                    => StdGen
                    -> req
@@ -2332,7 +2334,12 @@ multiNodeSimTracer stdGen serverAcc dataFlow defaultBearerInfo
     mainServerAddr = Snocket.TestAddress 0
 
 
-multiNodeSim :: (Serialise req, Show req, Eq req, Typeable req)
+multiNodeSim :: ( Serialise req
+                , Show req
+                , Eq req
+                , Typeable req
+                , NFData req
+                )
              => StdGen
              -> req
              -> DataFlow

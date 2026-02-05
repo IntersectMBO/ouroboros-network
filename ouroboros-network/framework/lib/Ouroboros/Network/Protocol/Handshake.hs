@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveAnyClass      #-}
+{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
@@ -24,16 +26,18 @@ module Ouroboros.Network.Protocol.Handshake
   , Queryable (..)
   ) where
 
+import Control.DeepSeq (NFData (..))
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTimer.SI
+import Control.Tracer (Tracer, contramap)
 
 import Codec.CBOR.Read qualified as CBOR
 import Codec.CBOR.Term qualified as CBOR
-import Control.Tracer (Tracer, contramap)
 import Data.ByteString.Lazy qualified as BL
 import Data.Typeable (Typeable)
+import GHC.Generics
 
 import Network.Mux.Trace qualified as Mx
 import Network.Mux.Types qualified as Mx
@@ -61,7 +65,7 @@ handshakeProtocolNum = Mx.MiniProtocolNum 0
 data HandshakeException vNumber =
     HandshakeProtocolLimit ProtocolLimitFailure
   | HandshakeProtocolError (HandshakeProtocolError vNumber)
-  deriving Show
+  deriving (Show, Generic, NFData)
 
 instance ( Typeable versionNumber
          , Show versionNumber
@@ -141,6 +145,8 @@ runHandshakeClient
        , MonadMask m
        , MonadThrow (STM m)
        , Ord vNumber
+       , NFData vNumber
+       , NFData vData
        )
     => Mx.Bearer m
     -> connectionId
@@ -181,6 +187,8 @@ runHandshakeServer
        , MonadMask m
        , MonadThrow (STM m)
        , Ord vNumber
+       , NFData vNumber
+       , NFData vData
        )
     => Mx.Bearer m
     -> connectionId

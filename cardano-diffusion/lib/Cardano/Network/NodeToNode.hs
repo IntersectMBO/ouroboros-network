@@ -72,6 +72,7 @@ module Cardano.Network.NodeToNode
   , peerSharingMiniProtocolNum
   ) where
 
+import Control.DeepSeq (NFData)
 import Control.Exception (SomeException)
 
 import Data.ByteString.Lazy qualified as BL
@@ -398,7 +399,10 @@ peerSharingMiniProtocolNum = MiniProtocolNum 10
 -- | A specialised version of @'Ouroboros.Network.Socket.connectToNode'@.
 --
 connectTo
-  :: Snocket IO Socket.Socket Socket.SockAddr
+  :: ( NFData a
+     , NFData b
+     )
+  => Snocket IO Socket.Socket Socket.SockAddr
   -> NetworkConnectTracers Socket.SockAddr NodeToNodeVersion
   -> Versions NodeToNodeVersion
               NodeToNodeVersionData

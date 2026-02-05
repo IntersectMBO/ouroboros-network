@@ -1,11 +1,12 @@
-{-# LANGUAGE DeriveGeneric       #-}
-{-# LANGUAGE DerivingVia         #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE PolyKinds           #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE DerivingVia                #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE PolyKinds                  #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 
 -- TODO: Needed for PeerSharing arbitrary instance see
 -- todo there.
@@ -20,6 +21,7 @@ import Data.Text (Text)
 import Codec.CBOR.Read qualified as CBOR
 import Codec.CBOR.Term qualified as CBOR
 
+import Control.DeepSeq (NFData)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
 import Control.Monad.IOSim (runSimOrThrow)
@@ -102,7 +104,8 @@ tests =
 
 newtype ArbitraryNodeToNodeVersion =
         ArbitraryNodeToNodeVersion { getNodeToNodeVersion :: NodeToNodeVersion }
-  deriving Show
+  deriving stock   Show
+  deriving newtype NFData
 
 instance Arbitrary ArbitraryNodeToNodeVersion where
     arbitrary = elements (ArbitraryNodeToNodeVersion <$> [minBound .. maxBound])
@@ -110,8 +113,9 @@ instance Arbitrary ArbitraryNodeToNodeVersion where
 newtype ArbitraryNodeToNodeVersionData =
         ArbitraryNodeToNodeVersionData
           { getNodeToNodeVersionData :: NodeToNodeVersionData }
-    deriving Show
-    deriving Acceptable via NodeToNodeVersionData
+    deriving stock   Show
+    deriving         Acceptable via NodeToNodeVersionData
+    deriving newtype NFData
 
 -- | With the introduction of PeerSharing to 'NodeToNodeVersionData' this type's
 -- 'Acceptable' instance is no longer symmetric. Because when handshake is
