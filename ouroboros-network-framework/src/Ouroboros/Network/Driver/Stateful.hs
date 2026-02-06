@@ -42,6 +42,7 @@ import Ouroboros.Network.Channel
 import Ouroboros.Network.Driver.Simple (DecoderFailure (..), Role (..))
 import Ouroboros.Network.Util.ShowProxy
 
+import Control.DeepSeq (NFData, force)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
@@ -76,7 +77,9 @@ import Control.Tracer (Tracer (..), contramap, traceWith)
 
 driverStateful :: forall ps (pr :: PeerRole) failure bytes (f :: ps -> Type) m.
                 ( MonadAsync       m
+                , MonadEvaluate    m
                 , MonadMask        m
+                , NFData failure
                 , Show failure
                 , forall (st' :: ps) tok. tok ~ StateToken st' => Show tok
                 , ShowProxy ps
@@ -132,7 +135,9 @@ driverStateful tracer Codec{encode, decode} channel@Channel{send} = do
 runPeer
   :: forall ps (st :: ps) pr failure bytes f m a .
      ( MonadAsync       m
+     , MonadEvaluate    m
      , MonadMask        m
+     , NFData failure
      , Show failure
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
      , ShowProxy ps
@@ -157,7 +162,10 @@ runPeer tracer codec channel f peer =
 -- | Run a codec incremental decoder 'DecodeStep' against a channel. It also
 -- takes any extra input data and returns any unused trailing data.
 --
-runDecoderWithChannel :: Monad m
+runDecoderWithChannel :: ( Monad m
+                         , MonadEvaluate m
+                         , NFData failure
+                         )
                       => Channel m bytes
                       -> Maybe bytes
                       -> DecodeStep bytes failure m a
@@ -165,8 +173,8 @@ runDecoderWithChannel :: Monad m
 
 runDecoderWithChannel Channel{recv} = go
   where
-    go _ (DecodeDone x trailing)         = return (Right (x, trailing))
-    go _ (DecodeFail failure)            = return (Left failure)
+    go _ (DecodeDone x trailing)         = return (Right (x ,trailing))
+    go _ (DecodeFail failure)            = Left <$> evaluate (force failure)
     go Nothing         (DecodePartial k) = recv >>= k        >>= go Nothing
     go (Just trailing) (DecodePartial k) = k (Just trailing) >>= go Nothing
 
@@ -180,7 +188,9 @@ runDecoderWithChannel Channel{recv} = go
 --
 runConnectedPeers :: forall ps pr st failure bytes f m a b.
                      ( MonadAsync       m
+                     , MonadEvaluate    m
                      , MonadMask        m
+                     , NFData failure
                      , Show failure
                      , forall (st' :: ps) tok. tok ~ StateToken st' => Show tok
                      , ShowProxy ps
@@ -212,7 +222,9 @@ runConnectedPeers createChannels tracer codec f client server =
 --
 runConnectedPeersAsymmetric
     :: ( MonadAsync       m
+       , MonadEvaluate    m
        , MonadMask        m
+       , NFData failure
        , Show failure
        , forall (st' :: ps) tok. tok ~ StateToken st' => Show tok
        , ShowProxy ps

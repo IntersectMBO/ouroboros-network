@@ -45,6 +45,7 @@ tests = testGroup "KeepAlive"
 runKeepAliveClient
     :: forall m peer header block.
         ( MonadAsync m
+        , MonadEvaluate m
         , MonadFork m
         , MonadMask m
         , MonadST m
@@ -73,6 +74,7 @@ runKeepAliveClient tracer rng controlMessageSTM registry peer channel keepAliveI
 runKeepAliveServer
     :: forall m.
         ( MonadAsync m
+        , MonadEvaluate m
         , MonadFork m
         , MonadMask m
         , MonadST m
@@ -95,6 +97,7 @@ runKeepAliveClientAndServer
     :: forall m peer header block.
         ( MonadAsync m
         , MonadDelay m
+        , MonadEvaluate m
         , MonadFork m
         , MonadMask m
         , MonadSay m
@@ -132,6 +135,7 @@ prop_keepAlive_convergenceM
     :: forall m.
         ( MonadAsync m
         , MonadDelay m
+        , MonadEvaluate m
         , MonadFork m
         , MonadLabelledSTM m
         , MonadMask m

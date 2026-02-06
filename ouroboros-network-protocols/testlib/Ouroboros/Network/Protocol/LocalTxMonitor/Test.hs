@@ -162,7 +162,7 @@ prop_connect (slot, txs) =
 
 -- | Run a local tx-monitor client and server using connected channels.
 --
-prop_channel :: (MonadAsync m, MonadCatch m, MonadST m)
+prop_channel :: (MonadAsync m, MonadCatch m, MonadEvaluate m, MonadST m)
              => m (Channel m ByteString, Channel m ByteString)
              -> (SlotNo, [Tx])
              -> m Bool

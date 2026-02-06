@@ -217,14 +217,15 @@ data AppArgs header block m = AppArgs
 --
 applications :: forall block header s m.
                 ( Alternative (STM m)
-                , MonadAsync m
-                , MonadFork  m
-                , MonadMask  m
-                , MonadMVar  m
-                , MonadSay   m
-                , MonadThrow m
-                , MonadTime  m
-                , MonadTimer m
+                , MonadAsync    m
+                , MonadEvaluate m
+                , MonadFork     m
+                , MonadMask     m
+                , MonadMVar     m
+                , MonadSay      m
+                , MonadThrow    m
+                , MonadTime     m
+                , MonadTimer    m
                 , MonadThrow (STM m)
                 , HasHeader header
                 , HasHeader block

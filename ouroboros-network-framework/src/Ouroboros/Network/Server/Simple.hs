@@ -38,6 +38,7 @@ with :: forall fd addr vNumber vData m a b.
         ( Alternative (STM m),
           MonadAsync m,
           MonadDelay m,
+          MonadEvaluate m,
           MonadFork  m,
           MonadLabelledSTM m,
           MonadMask  m,

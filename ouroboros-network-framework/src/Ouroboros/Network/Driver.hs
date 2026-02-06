@@ -5,7 +5,9 @@ module Ouroboros.Network.Driver
   ( runPeer
   , runPipelinedPeer
   , runPeerWithLimits
+  , runPeerWithLimitsRnd
   , runPipelinedPeerWithLimits
+  , runPipelinedPeerWithLimitsRnd
   , TraceSendRecv (..)
   ) where
 

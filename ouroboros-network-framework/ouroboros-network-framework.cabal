@@ -1,6 +1,6 @@
 cabal-version: 3.0
 name: ouroboros-network-framework
-version: 0.19.2.0
+version: 0.19.3.0
 synopsis: Ouroboros network framework
 description: Ouroboros network framework.
 license: Apache-2.0
@@ -221,6 +221,7 @@ test-suite io-tests
     base >=4.14 && <4.22,
     bytestring,
     contra-tracer,
+    deepseq,
     directory,
     io-classes:{io-classes, si-timers, strict-stm},
     io-sim,

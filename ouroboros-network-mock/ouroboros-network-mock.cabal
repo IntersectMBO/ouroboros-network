@@ -1,6 +1,6 @@
 cabal-version: 3.0
 name: ouroboros-network-mock
-version: 0.1.1.2
+version: 0.1.2.0
 synopsis: Ouroboros Network Chain for testing purposes
 description: Ouroboros Network Chain for testing purposes.
 license: Apache-2.0
@@ -29,6 +29,7 @@ library
   exposed-modules:
     Ouroboros.Network.Mock.Chain
     Ouroboros.Network.Mock.ConcreteBlock
+    Ouroboros.Network.Mock.OrphanedInstances
     Ouroboros.Network.Mock.ProducerState
 
   default-language: Haskell2010
@@ -38,11 +39,13 @@ library
     bytestring,
     cborg,
     containers,
+    deepseq,
     hashable,
     nothunks,
     ouroboros-network-api,
     serialise,
     time,
+    typed-protocols,
 
   ghc-options:
     -Wall
