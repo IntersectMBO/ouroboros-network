@@ -152,7 +152,7 @@ chainSyncForkExperiment run (ChainProducerStateForkTest cps chain) = do
       client = ChainSyncExamples.chainSyncClientExample chainVar (testClient doneVar (Chain.headPoint pchain))
   _ <- run server client
 
-  cchain <- atomically $ readTVar chainVar
+  cchain <- readTVarIO chainVar
   return (pchain === cchain)
 
 propChainSyncDirectST :: ChainProducerStateForkTest -> Property
@@ -634,7 +634,7 @@ chainSyncDemo clientChan serverChan (ChainProducerStateForkTest cps chain) = do
     done <- readTVar doneVar
     unless done retry
 
-  cchain <- atomically $ readTVar chainVar
+  cchain <- readTVarIO chainVar
   return (pchain === cchain)
 
 propChainSyncDemoST
