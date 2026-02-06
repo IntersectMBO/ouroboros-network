@@ -269,7 +269,10 @@ tests =
     , testGroup "Churn"
       [ testProperty "no timeouts" prop_churn_notimeouts_iosim
       , testProperty "steps" prop_churn_steps_iosim
-      , testProperty "targets bounds" prop_churn_targets_bounds_iosim
+      , testProperty "targets bounds on Cardano"
+                     prop_churn_targets_bounds_cardano_iosim
+      , testProperty "targets bounds on Ouroboros"
+                     prop_churn_targets_bounds_ouroboros_iosim
       ]
     , testGroup "coverage"
       [ testProperty "server trace coverage"
@@ -330,9 +333,22 @@ testWithIOSim :: (SimTrace Void -> Int -> Property)
               -> DiffusionScript
               -- ^ sim-net configuration
               -> Property
-testWithIOSim prop traceNumber bi ds =
+testWithIOSim = testWithIOSim' diffusionSimulation
+
+testWithIOSim' :: (forall s. BearerInfo -> DiffusionScript -> IOSim s Void)
+               -- ^ diffusion simulation
+               -> (SimTrace Void -> Int -> Property)
+               -- ^ property to verify
+               -> Int
+               -- ^ number of trace events to analyse
+               -> AbsBearerInfo
+               -- ^ bearer configuration
+               -> DiffusionScript
+               -- ^ sim-net configuration
+               -> Property
+testWithIOSim' simulation prop traceNumber bi ds =
   let sim :: forall s . IOSim s Void
-      sim = diffusionSimulation (toBearerInfo bi)
+      sim = simulation (toBearerInfo bi)
                                 ds
       trace = runSimTrace sim
    in labelDiffusionScript ds $
@@ -4832,13 +4848,21 @@ prop_churn_targets_bounds baseTargetsMap ioSimTrace traceNumber =
 
    in checks
 
-prop_churn_targets_bounds_iosim
+prop_churn_targets_bounds_cardano_iosim
   :: AbsBearerInfo -> DiffusionScript -> Property
-prop_churn_targets_bounds_iosim bi ds@(DiffusionScript _ _ nodes) =
+prop_churn_targets_bounds_cardano_iosim bi ds@(DiffusionScript _ _ nodes) =
   let baseTargets = [ (naAddr nodeArgs, naPeerTargets nodeArgs)
                     | (nodeArgs, _) <- nodes
                     ]
   in testWithIOSim (prop_churn_targets_bounds baseTargets) long_trace bi ds
+
+prop_churn_targets_bounds_ouroboros_iosim
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_churn_targets_bounds_ouroboros_iosim bi ds@(DiffusionScript _ _ nodes) =
+  let baseTargets = [ (naAddr nodeArgs, naPeerTargets nodeArgs)
+                    | (nodeArgs, _) <- nodes
+                    ]
+  in testWithIOSim' diffusionSimulation' (prop_churn_targets_bounds baseTargets) long_trace bi ds
 
 -- | Verify that churn trace consists of repeated list of actions:
 --
