@@ -11,18 +11,17 @@
 module Ouroboros.Network.Protocol.ChainSync.Test (tests) where
 
 import Codec.Serialise qualified as S
-import Control.Monad (unless, void)
-import Control.Monad.ST qualified as ST
 import Data.ByteString.Lazy (ByteString)
 
 import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad (unless, void)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow
-import Control.Tracer (nullTracer)
-
 import Control.Monad.IOSim (runSimOrThrow)
+import Control.Monad.ST qualified as ST
+import Control.Tracer (nullTracer)
 
 import Network.TypedProtocol.Codec
 import Network.TypedProtocol.Codec.Properties
@@ -152,7 +151,7 @@ chainSyncForkExperiment run (ChainProducerStateForkTest cps chain) = do
       client = ChainSyncExamples.chainSyncClientExample chainVar (testClient doneVar (Chain.headPoint pchain))
   _ <- run server client
 
-  cchain <- atomically $ readTVar chainVar
+  cchain <- readTVarIO chainVar
   return (pchain === cchain)
 
 propChainSyncDirectST :: ChainProducerStateForkTest -> Property
@@ -605,6 +604,7 @@ chainSyncDemo
   :: forall m.
      ( MonadST m
      , MonadSTM m
+     , MonadEvaluate m
      , MonadFork m
      , MonadThrow m
      )
@@ -618,7 +618,7 @@ chainSyncDemo clientChan serverChan (ChainProducerStateForkTest cps chain) = do
   chainVar <- atomically $ newTVar chain
   doneVar  <- atomically $ newTVar False
 
-  let server :: ChainSyncServer Block (Point Block) (Tip Block) m a
+  let server :: ChainSyncServer Block (Point Block) (Tip Block) m ()
       server = ChainSyncExamples.chainSyncServerExample
         (error "chainSyncServerExample: lazy in the result type")
         cpsVar
@@ -634,7 +634,7 @@ chainSyncDemo clientChan serverChan (ChainProducerStateForkTest cps chain) = do
     done <- readTVar doneVar
     unless done retry
 
-  cchain <- atomically $ readTVar chainVar
+  cchain <- readTVarIO chainVar
   return (pchain === cchain)
 
 propChainSyncDemoST
@@ -667,10 +667,11 @@ propChainSyncPipe cps =
 
 chainSyncDemoPipelined
   :: forall m.
-     ( MonadST    m
-     , MonadFork  m
-     , MonadAsync m
-     , MonadThrow m
+     ( MonadST       m
+     , MonadEvaluate m
+     , MonadFork     m
+     , MonadAsync    m
+     , MonadThrow    m
      )
   => Channel m ByteString
   -> Channel m ByteString
@@ -685,7 +686,7 @@ chainSyncDemoPipelined clientChan serverChan mkClient (ChainProducerStateForkTes
   chainVar <- atomically $ newTVar chain
   doneVar  <- atomically $ newTVar False
 
-  let server :: ChainSyncServer Block (Point Block) (Tip Block) m a
+  let server :: ChainSyncServer Block (Point Block) (Tip Block) m ()
       server = ChainSyncExamples.chainSyncServerExample
         (error "chainSyncServerExample: lazy in the result type")
         cpsVar
@@ -701,7 +702,7 @@ chainSyncDemoPipelined clientChan serverChan mkClient (ChainProducerStateForkTes
     done <- readTVar doneVar
     unless done retry
 
-  cchain <- atomically $ readTVar chainVar
+  cchain <- readTVarIO chainVar
   return (pchain === cchain)
 
 propChainSyncDemoPipelinedMaxST

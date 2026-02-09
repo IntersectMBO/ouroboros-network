@@ -150,7 +150,7 @@ data NtNVersionData = NtNVersionData
   { ntnDiffusionMode :: DiffusionMode
   , ntnPeerSharing   :: PeerSharing
   }
-  deriving Show
+  deriving (Show, Generic, NFData)
 
 ppNtNAddr :: NtNAddr -> String
 ppNtNAddr (TestAddress addr) = ppNtNAddr_ addr

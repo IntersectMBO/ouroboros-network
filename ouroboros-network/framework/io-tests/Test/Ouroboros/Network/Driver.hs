@@ -147,7 +147,12 @@ data ShouldFail
 -- with the given payloads.
 --
 prop_channel_simple_reqresp
-  :: forall m. (MonadAsync m, MonadDelay m, MonadMask m)
+  :: forall m.
+     ( MonadAsync    m
+     , MonadDelay    m
+     , MonadEvaluate m
+     , MonadMask     m
+     )
   => Tracer m (TraceSendRecv (ReqResp String ()))
   -> [(String, DiffTime)]
   -- ^ request payloads
@@ -202,6 +207,7 @@ prop_channel_simple_reqresp_ST (ReqRespPayloadWithLimit _limit payload) =
 prop_channel_ping_pong
   :: ( MonadAsync       m
      , MonadDelay       m
+     , MonadEvaluate    m
      , MonadMask        m
      , MonadTest        m
      )
@@ -363,8 +369,15 @@ labelLimits timelimit sizelimit =
 -- with the given payloads.
 --
 prop_channel_reqresp
-  :: forall m. ( MonadAsync m, MonadDelay m, MonadFork m, MonadMask m,
-                 MonadThrow (STM m), MonadTimer m)
+  :: forall m.
+     ( MonadAsync    m
+     , MonadDelay    m
+     , MonadEvaluate m
+     , MonadFork     m
+     , MonadMask     m
+     , MonadThrow (STM m)
+     , MonadTimer    m
+     )
   => Tracer m (TraceSendRecv (ReqResp String ()))
   -> Word
   -- ^ byte limit
@@ -462,6 +475,7 @@ prop_channel_reqresp_IO (ReqRespPayloadWithLimit limit payload) =
 prop_channel_ping_pong_with_limits
   :: ( MonadAsync      m
      , MonadDelay      m
+     , MonadEvaluate   m
      , MonadFork       m
      , MonadMask       m
      , MonadTest       m
@@ -553,7 +567,13 @@ instance Show (Stateful.AnyMessage (Stateful.ReqResp API) Stateful.State) where
 -- with the given payloads.
 --
 prop_channel_stateful_reqresp
-  :: forall m. (MonadAsync m, MonadDelay m, MonadMask m, MonadSay m)
+  :: forall m.
+     ( MonadAsync    m
+     , MonadDelay    m
+     , MonadEvaluate m
+     , MonadMask     m
+     , MonadSay      m
+     )
   => Bool -- turn on logging for channels
   -> Tracer m (Stateful.TraceSendRecv
                 (Stateful.ReqResp API)

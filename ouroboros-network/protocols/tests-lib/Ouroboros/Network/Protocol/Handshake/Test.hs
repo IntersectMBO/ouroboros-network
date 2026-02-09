@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE DerivingVia         #-}
 {-# LANGUAGE FlexibleContexts    #-}
@@ -29,10 +30,10 @@ import Codec.CBOR.Term qualified as CBOR
 
 import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM.Strict
+import Control.DeepSeq (NFData)
 import Control.Monad.Class.MonadAsync
-import Control.Monad.Class.MonadST (MonadST)
-import Control.Monad.Class.MonadThrow (MonadCatch, MonadMask, MonadThrow,
-           bracket)
+import Control.Monad.Class.MonadST
+import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.IOSim (runSimOrThrow)
@@ -126,7 +127,7 @@ data VersionNumber
   = Version_0
   | Version_1
   | Version_2
-  deriving (Eq, Ord, Enum, Bounded, Show)
+  deriving (Eq, Ord, Enum, Bounded, Show, Generic, NFData)
 
 instance Arbitrary VersionNumber where
   arbitrary = elements [minBound .. maxBound]
@@ -155,7 +156,7 @@ data VersionData = VersionData {
     dataVersion1 :: Bool,
     dataVersion2 :: Bool
   }
-  deriving (Eq, Show, Generic)
+  deriving (Eq, Show, Generic, NFData)
 
 instance Acceptable VersionData where
     acceptableVersion d d' =
@@ -315,7 +316,7 @@ prop_arbitrary_ArbitraryValidVersions (ArbitraryValidVersions vs) =
 prop_shrink_ArbitraryValidVersions
   :: ArbitraryValidVersions
   -> Bool
-prop_shrink_ArbitraryValidVersions a = all id
+prop_shrink_ArbitraryValidVersions a = and
   [ Map.foldlWithKey' (\r vn s -> r && validVersion vn s) True (getVersions vs')
   | ArbitraryValidVersions vs' <- shrink a
   ]
@@ -421,8 +422,9 @@ prop_connect (ArbitraryVersions clientVersions serverVersions) =
 
 -- | Run a simple block-fetch client and server using connected channels.
 --
-prop_channel :: ( MonadAsync m
-                , MonadCatch m
+prop_channel :: ( MonadAsync    m
+                , MonadCatch    m
+                , MonadEvaluate m
                 , MonadST m
                 )
              => m (Channel m ByteString, Channel m ByteString)
@@ -499,9 +501,10 @@ prop_pipe_IO (ArbitraryVersions clientVersions serverVersions) =
 -- a single version 'Version_1' (it cannot decode any other version).
 --
 prop_channel_asymmetric
-    :: ( MonadAsync m
-       , MonadMask  m
-       , MonadST m
+    :: ( MonadAsync    m
+       , MonadEvaluate m
+       , MonadMask     m
+       , MonadST       m
        )
     => m (Channel m ByteString, Channel m ByteString)
     -> Versions VersionNumber VersionData Bool
@@ -611,10 +614,13 @@ prop_acceptable_symmetric_VersionData a b =
 --
 prop_query_version :: ( MonadAsync m
                       , MonadCatch m
+                      , MonadEvaluate m
                       , Eq vData
                       , Acceptable vData
+                      , NFData vData
                       , Queryable vData
                       , Show vData
+                      , NFData vNumber
                       , Ord vNumber
                       , Show vNumber
                       )
@@ -725,7 +731,10 @@ prop_acceptOrRefuse_symmetric_VersionData (ArbitraryVersions a b) =
 prop_channel_simultaneous_open
     :: ( MonadAsync m
        , MonadCatch m
+       , MonadEvaluate m
        , Acceptable vData
+       , NFData vData
+       , NFData vNumber
        , Ord vNumber
        )
     => m (Channel m ByteString, Channel m ByteString)
@@ -808,11 +817,14 @@ prop_channel_simultaneous_open_sim
        , MonadAsync       m
        , MonadDelay       m
        , MonadLabelledSTM m
+       , MonadEvaluate    m
        , MonadMask        m
        , MonadThrow  (STM m)
        , MonadTime        m
        , MonadTimer       m
        , Acceptable vData
+       , NFData vData
+       , NFData vNumber
        , Ord vNumber
        )
     => Codec (Handshake vNumber CBOR.Term)
@@ -866,13 +878,12 @@ prop_channel_simultaneous_open_sim codec versionDataCodec
                         Nothing
             let chann  = bearerAsChannel nullTracer bearer  (MiniProtocolNum 0) InitiatorDir
                 chann' = bearerAsChannel nullTracer bearer' (MiniProtocolNum 0) InitiatorDir
-            res <- prop_channel_simultaneous_open
+            prop_channel_simultaneous_open
               (pure (chann, chann'))
               codec
               versionDataCodec
               clientVersions
               serverVersions
-            return res
 
 
 prop_channel_simultaneous_open_SimNet :: ArbitraryVersions

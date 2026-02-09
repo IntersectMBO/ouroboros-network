@@ -36,6 +36,7 @@ module Ouroboros.Network.PeerSelection.PeerStateActions
 
 import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM.Strict
+import Control.DeepSeq (NFData)
 import Control.Exception (SomeAsyncException (..), assert)
 import Control.Monad (join, when, (<=<))
 import Control.Monad.Class.MonadAsync
@@ -596,6 +597,8 @@ withPeerStateActions
        , Ord      peerAddr
        , Typeable peerAddr
        , Show     peerAddr
+       , NFData a
+       , NFData b
        )
     => PeerStateActionsArguments muxMode socket responderCtx peerAddr extraFlags versionData versionNumber m a b
     -> (PeerStateActions
@@ -1144,6 +1147,8 @@ startProtocols :: forall (muxMode :: Mux.Mode) (pt :: ProtocolTemperature)
                   , MonadCatch m
                   , MonadThrow (STM m)
                   , HasInitiator muxMode ~ True
+                  , NFData a
+                  , NFData b
                   )
                => SingProtocolTemperature pt
                -> IsBigLedgerPeer

@@ -98,7 +98,7 @@ data NodeToNodeVersionData = NodeToNodeVersionData
   , peerSharing   :: !PeerSharing
   , query         :: !Bool
   }
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic, NFData)
   -- 'Eq' instance is not provided, it is not what we need in version
   -- negotiation (see 'Acceptable' instance below).
 

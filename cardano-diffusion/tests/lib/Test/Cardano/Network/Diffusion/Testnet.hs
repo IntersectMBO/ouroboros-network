@@ -1685,7 +1685,7 @@ prop_peer_selection_action_trace_coverage defaultBearerInfo diffScript =
         | Just ioe <- fromException e
         = "AcquireConnectionError: " ++ show (ioe_type ioe)
         | otherwise
-        = "AcquireConnectionError: " ++ show e
+        = "AcquireConnectionError"
       peerSelectionActionsTraceMap (PeerHotDuration _id _dt) =
         "PeerHotDuration"
 

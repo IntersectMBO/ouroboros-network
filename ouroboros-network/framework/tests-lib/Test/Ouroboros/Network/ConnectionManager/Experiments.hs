@@ -37,6 +37,7 @@ module Test.Ouroboros.Network.ConnectionManager.Experiments
 
 import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM.Strict
+import Control.DeepSeq (NFData)
 import Control.Exception (AssertionFailed)
 import Control.Monad (replicateM, (>=>))
 import Control.Monad.Class.MonadAsync
@@ -239,13 +240,16 @@ withInitiatorOnlyConnectionManager
 
        , resp ~ [req]
        , Ord peerAddr, Show peerAddr, Typeable peerAddr
-       , Serialise req, Typeable req
+       , Serialise req
+       , Typeable req
+       , NFData req
+       , Show req
        , MonadAsync m
        , MonadDelay m
        , MonadFix m
        , MonadLabelledSTM m
        , MonadTraceSTM m
-       , MonadSay m, Show req
+       , MonadSay m
        , Show name
        )
     => name
@@ -428,6 +432,7 @@ withBidirectionalConnectionManager
        , MonadLabelledSTM m
        , MonadTraceSTM m
        , MonadSay m, Show req
+       , NFData req
        , Show name
        )
     => name
@@ -527,7 +532,7 @@ withBidirectionalConnectionManager name timeouts
                                                     InitiatorAndResponderDiffusionMode -> Duplex
                                               },
             connStateIdSupply,
-            classifyHandlerError = (\_ -> HandshakeFailure)
+            classifyHandlerError = \_ -> HandshakeFailure
             }
             (InResponderMode inbgovInfoChannel)
             connectionHandler
@@ -735,7 +740,7 @@ unidirectionalExperiment
        , acc ~ [req], resp ~ [req]
        , Ord peerAddr, Show peerAddr, Typeable peerAddr, Eq peerAddr
        , Hashable peerAddr
-       , Serialise req, Show req
+       , Serialise req, Show req, NFData req
        , Serialise resp, Show resp, Eq resp
        , Typeable req, Typeable resp
        )
@@ -814,7 +819,7 @@ bidirectionalExperiment
        , Ord peerAddr, Show peerAddr, Typeable peerAddr, Eq peerAddr
        , Hashable peerAddr
 
-       , Serialise req, Show req
+       , Serialise req, Show req, NFData req
        , Serialise resp, Show resp, Eq resp
        , Typeable req, Typeable resp
        , Show acc

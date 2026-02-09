@@ -16,6 +16,7 @@ module Cardano.Network.Diffusion
   , run
   ) where
 
+import Control.DeepSeq (NFData)
 import Control.Monad.Class.MonadThrow
 import Control.Tracer (traceWith)
 import Data.Set qualified as Set
@@ -50,7 +51,8 @@ import Ouroboros.Network.Protocol.Handshake
 --   information from the running system.  This is used by 'cardano-cli' or
 --   a wallet and a like local services.
 --
-run :: CardanoNodeArguments IO
+run :: NFData a
+    => CardanoNodeArguments IO
     -- ^ node API: instantiated in `cardano-node`.
     -> CardanoConsensusArguments RemoteAddress IO
     -- ^ consensus API; instantiated in `ouroboros-consensus-diffusion` (with

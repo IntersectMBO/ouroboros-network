@@ -44,6 +44,7 @@ module Ouroboros.Network.ConnectionHandler
 
 import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM.Strict
+import Control.DeepSeq (NFData)
 import Control.Exception (SomeAsyncException)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
@@ -241,13 +242,16 @@ type ConnectionManagerWithExpandedCtx muxMode socket peerAddr extraFlags version
 makeConnectionHandler
     :: forall initiatorCtx responderCtx peerAddr muxMode socket versionNumber versionData m a b.
        ( Alternative (STM m)
-       , MonadAsync m
-       , MonadDelay m
-       , MonadFork  m
+       , MonadAsync    m
+       , MonadDelay    m
+       , MonadEvaluate m
+       , MonadFork     m
        , MonadLabelledSTM m
        , MonadThrow (STM m)
-       , MonadTimer m
-       , MonadMask  m
+       , MonadTimer    m
+       , MonadMask     m
+       , NFData   versionData
+       , NFData   versionNumber
        , Ord      versionNumber
        , Show     peerAddr
        , Typeable peerAddr

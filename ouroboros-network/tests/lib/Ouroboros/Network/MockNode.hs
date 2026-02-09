@@ -32,6 +32,7 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (nullTracer)
 
 import Network.TypedProtocol.Codec
+import Network.TypedProtocol.Peer.Client qualified as TP
 import Network.TypedProtocol.Peer.Server
 
 import Ouroboros.Network.Block
@@ -268,7 +269,8 @@ forkRelayKernel upstream cpsVar = do
 -- @StrictTVar ('ChainProducerState' block)@. This allows to extend the relay
 -- node to a core node.
 relayNode :: forall m block.
-             ( MonadFork m
+             ( MonadEvaluate m
+             , MonadFork m
              , MonadTimer m
              , MonadThrow m
              , MonadSay m
@@ -305,11 +307,12 @@ relayNode _nid initChain chans = do
                   -> m (StrictTVar m (Chain block))
     startConsumer _cid channel = do
       chainVar <- atomically $ newTVar Genesis
-      let consumer = chainSyncClientPeer (chainSyncClientExample chainVar pureClient)
+      let consumer :: TP.Client (ChainSync block (Point block) tip) NonPipelined StIdle m ()
+          consumer = chainSyncClientPeer (chainSyncClientExample chainVar pureClient)
       void $ forkIO $ void $ runPeer nullTracer
-                                   codecChainSyncId
-                                   channel
-                                   consumer
+                                     codecChainSyncId
+                                     channel
+                                     consumer
       return chainVar
 
     startProducer :: Server (ChainSync block (Point block) (Tip block)) NonPipelined StIdle m ()
@@ -386,6 +389,7 @@ forkCoreKernel slotDuration gchain fixupBlock cpsVar = do
 coreNode :: forall m.
         ( MonadDelay m
         , MonadLabelledSTM m
+        , MonadEvaluate m
         , MonadFork m
         , MonadThrow m
         , MonadTimer m

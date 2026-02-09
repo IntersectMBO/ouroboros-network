@@ -1,5 +1,7 @@
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE DeriveFunctor       #-}
+{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
@@ -160,6 +162,7 @@ module Ouroboros.Network.ConnectionManager.Types
   ) where
 
 import Control.Concurrent.Class.MonadSTM.Strict
+import Control.DeepSeq (NFData)
 import Control.Monad (unless)
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI (DiffTime)
@@ -172,6 +175,7 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Typeable (Typeable, cast)
 import Data.Word (Word32)
+import GHC.Generics (Generic)
 import GHC.Stack (CallStack, prettyCallStack)
 import System.Random (StdGen)
 
@@ -215,7 +219,7 @@ data Provenance =
 data DataFlow
     = Unidirectional
     | Duplex
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show, Generic, NFData)
 
 
 -- | Boolean like type which indicates if the timeout on 'OutboundStateDuplex'

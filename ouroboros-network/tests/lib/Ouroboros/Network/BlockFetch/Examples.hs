@@ -23,6 +23,7 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 
 import Control.Concurrent.Class.MonadSTM.Strict
+import Control.DeepSeq (NFData)
 import Control.Exception (assert)
 import Control.Monad (forever)
 import Control.Monad.Class.MonadAsync
@@ -64,7 +65,7 @@ data NodeToNodeVersion = NodeToNodeTestVersion
 -- | Run a single block fetch protocol until the chain is downloaded.
 --
 blockFetchExample0 :: forall m.
-                      (MonadST m, MonadAsync m, MonadDelay m, MonadFork m,
+                      (MonadST m, MonadAsync m, MonadDelay m, MonadEvaluate m, MonadFork m,
                        MonadTime m, MonadTimer m, MonadMask m, MonadThrow (STM m))
                    => FetchMode
                    -> Tracer m (TraceDecisionEvent Int BlockHeader)
@@ -178,7 +179,7 @@ blockFetchExample0 fetchMode decisionTracer clientStateTracer clientMsgTracer
 -- will be interested in downloading them all.
 --
 blockFetchExample1 :: forall m.
-                      (MonadST m, MonadAsync m, MonadDelay m, MonadFork m,
+                      (MonadST m, MonadAsync m, MonadDelay m, MonadEvaluate m, MonadFork m,
                        MonadTime m, MonadTimer m, MonadMask m, MonadThrow (STM m))
                    => FetchMode
                    -> Tracer m (TraceDecisionEvent Int BlockHeader)
@@ -278,7 +279,10 @@ blockFetchExample1 fetchMode decisionTracer clientStateTracer clientMsgTracer
 -- Sample block fetch configurations
 --
 
-sampleBlockFetchPolicy1 :: (MonadSTM m, HasHeader header, HasHeader block)
+sampleBlockFetchPolicy1 :: ( MonadSTM m
+                           , HasHeader header
+                           , HasHeader block
+                           )
                         => FetchMode
                         -> (header -> UTCTime)
                         -> TestFetchedBlockHeap m block
@@ -334,9 +338,20 @@ exampleFixedPeerGSVs =
 -- Utils to run fetch clients and servers
 --
 
-runFetchClient :: (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
-                   MonadST m, MonadTime m, MonadTimer m, Ord peerid, Serialise
-                   block, Serialise point, ShowProxy block)
+runFetchClient :: ( MonadAsync m
+                  , MonadEvaluate m
+                  , MonadFork m
+                  , MonadMask m
+                  , MonadThrow (STM m)
+                  , MonadST m
+                  , MonadTime m
+                  , MonadTimer m
+                  , Ord peerid
+                  , Serialise block
+                  , Serialise point
+                  , ShowProxy block
+                  , NFData a
+                  )
                 => Tracer m (TraceSendRecv (BlockFetch block point))
                 -> version
                 -> FetchClientRegistry peerid header block m
@@ -353,10 +368,20 @@ runFetchClient tracer version registry peerid channel client =
   where
     codec = codecBlockFetch encode decode encode decode
 
-runFetchServer :: (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
-                   MonadST m, MonadTime m, MonadTimer m,
-                   Serialise block, Serialise point,
-                   ShowProxy block)
+runFetchServer :: forall block point m a.
+                  ( MonadAsync m
+                  , MonadEvaluate m
+                  , MonadFork m
+                  , MonadMask m
+                  , MonadThrow (STM m)
+                  , MonadST m
+                  , MonadTime m
+                  , MonadTimer m
+                  , Serialise block
+                  , Serialise point
+                  , ShowProxy block
+                  , NFData a
+                  )
                 => Tracer m (TraceSendRecv (BlockFetch block point))
                 -> Channel m LBS.ByteString
                 -> BlockFetchServer block point m a
@@ -370,11 +395,23 @@ runFetchServer tracer channel server =
 
 runFetchClientAndServerAsync
                :: forall peerid block header version m a b.
-                  (MonadAsync m, MonadDelay m, MonadFork m, MonadMask m,
-                   MonadThrow (STM m), MonadST m, MonadTime m, MonadTimer m,
-                   Ord peerid, Show peerid,
-                   Serialise block, Serialise (HeaderHash block),
-                   ShowProxy block)
+                  ( MonadAsync m
+                  , MonadDelay m
+                  , MonadEvaluate m
+                  , MonadFork m
+                  , MonadMask m
+                  , MonadThrow (STM m)
+                  , MonadST m
+                  , MonadTime m
+                  , MonadTimer m
+                  , Ord peerid
+                  , Show peerid
+                  , Serialise block
+                  , Serialise (HeaderHash block)
+                  , ShowProxy block
+                  , NFData a
+                  , NFData b
+                  )
                 => Tracer m (TraceSendRecv (BlockFetch block (Point block)))
                 -> Tracer m (TraceSendRecv (BlockFetch block (Point block)))
                 -> version

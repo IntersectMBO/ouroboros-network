@@ -45,6 +45,7 @@ import Network.TypedProtocol.Peer
 import Ouroboros.Network.Channel
 import Ouroboros.Network.Util.ShowProxy
 
+import Control.DeepSeq (NFData, force)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
@@ -171,9 +172,11 @@ mkSimpleDriver runDecodeSteps nat tracer Codec{encode, decode} channel@Channel{s
 
 
 simpleDriver :: forall ps (pr :: PeerRole) failure bytes m.
-                ( MonadThrow m
+                ( MonadEvaluate m
+                , MonadThrow m
                 , ShowProxy ps
                 , forall (st :: ps) stok. stok ~ StateToken st => Show stok
+                , NFData failure
                 , Show failure
                 )
              => Tracer m (TraceSendRecv ps)
@@ -186,9 +189,11 @@ simpleDriver = mkSimpleDriver runDecoderWithChannel Identity
 annotatedSimpleDriver
              :: forall ps (pr :: PeerRole) failure bytes m.
                 ( MonadThrow m
+                , MonadEvaluate m
                 , Monoid bytes
                 , ShowProxy ps
                 , forall (st :: ps) stok. stok ~ StateToken st => Show stok
+                , NFData failure
                 , Show failure
                 )
              => Tracer m (TraceSendRecv ps)
@@ -204,9 +209,12 @@ annotatedSimpleDriver = mkSimpleDriver runAnnotatedDecoderWithChannel runAnnotat
 --
 runPeer
   :: forall ps (st :: ps) pr failure bytes m a .
-     ( MonadThrow m
+     ( MonadEvaluate m
+     , MonadThrow m
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
+     , NFData a
+     , NFData failure
      , Show failure
      )
   => Tracer m (TraceSendRecv ps)
@@ -226,10 +234,13 @@ runPeer tracer codec channel peer =
 --
 runAnnotatedPeer
   :: forall ps (st :: ps) pr failure bytes m a .
-     ( MonadThrow m
+     ( MonadEvaluate m
+     , MonadThrow m
      , Monoid bytes
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
+     , NFData a
+     , NFData failure
      , Show failure
      )
   => Tracer m (TraceSendRecv ps)
@@ -253,9 +264,12 @@ runAnnotatedPeer tracer codec channel peer =
 runPipelinedPeer
   :: forall ps (st :: ps) pr failure bytes m a.
      ( MonadAsync m
+     , MonadEvaluate m
      , MonadThrow m
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
+     , NFData a
+     , NFData failure
      , Show failure
      )
   => Tracer m (TraceSendRecv ps)
@@ -279,10 +293,13 @@ runPipelinedPeer tracer codec channel peer =
 runPipelinedAnnotatedPeer
   :: forall ps (st :: ps) pr failure bytes m a.
      ( MonadAsync m
+     , MonadEvaluate m
      , MonadThrow m
      , Monoid bytes
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
+     , NFData a
+     , NFData failure
      , Show failure
      )
   => Tracer m (TraceSendRecv ps)
@@ -302,7 +319,10 @@ runPipelinedAnnotatedPeer tracer codec channel peer =
 -- | Run a codec incremental decoder 'DecodeStep' against a channel. It also
 -- takes any extra input data and returns any unused trailing data.
 --
-runDecoderWithChannel :: Monad m
+runDecoderWithChannel :: ( Monad m
+                         , MonadEvaluate m
+                         , NFData failure
+                         )
                       => Channel m bytes
                       -> Maybe bytes
                       -> DecodeStep bytes failure m (Identity a)
@@ -311,7 +331,7 @@ runDecoderWithChannel :: Monad m
 runDecoderWithChannel Channel{recv} = go
   where
     go _ (DecodeDone (Identity x) trailing) = return (Right (x, trailing))
-    go _ (DecodeFail failure)               = return (Left failure)
+    go _ (DecodeFail failure)               = Left <$> evaluate (force failure)
     go Nothing         (DecodePartial k)    = recv >>= k        >>= go Nothing
     go (Just trailing) (DecodePartial k)    = k (Just trailing) >>= go Nothing
 
@@ -319,7 +339,9 @@ runDecoderWithChannel Channel{recv} = go
 runAnnotatedDecoderWithChannel
   :: forall m bytes failure a.
      ( Monad m
+     , MonadEvaluate m
      , Monoid bytes
+     , NFData failure
      )
   => Channel m bytes
   -> Maybe bytes
@@ -335,7 +357,7 @@ runAnnotatedDecoderWithChannel Channel{recv} = go []
     go !bytes (Just trailing) (DecodePartial k) = k (Just trailing) >>= go (trailing : bytes) Nothing
     go !bytes Nothing         (DecodePartial k) = recv >>= \bs -> k bs >>= go (maybe bytes (: bytes) bs) Nothing
     go !bytes _ (DecodeDone f trailing)         = return $ Right (f $ mconcat (reverse bytes), trailing)
-    go _bytes _ (DecodeFail failure)            = return (Left failure)
+    go _bytes _ (DecodeFail failure)            = Left <$> evaluate (force failure)
 
 
 data Role = Client | Server
@@ -350,9 +372,13 @@ data Role = Client | Server
 --
 runConnectedPeers :: forall ps pr st failure bytes m a b.
                      ( MonadAsync m
+                     , MonadEvaluate m
                      , MonadThrow m
                      , ShowProxy ps
                      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
+                     , NFData a
+                     , NFData b
+                     , NFData failure
                      , Show failure
                      )
                   => m (Channel m bytes, Channel m bytes)
@@ -379,9 +405,13 @@ runConnectedPeers createChannels tracer codec client server =
 runAnnotatedConnectedPeers
   :: forall ps pr st failure bytes m a b.
      ( MonadAsync m
+     , MonadEvaluate m
      , MonadThrow m
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
+     , NFData a
+     , NFData b
+     , NFData failure
      , Show failure
      , Monoid bytes
      )
@@ -408,8 +438,12 @@ runAnnotatedConnectedPeers createChannels tracer codec client server =
 
 runConnectedPeersPipelined :: ( MonadAsync m
                               , MonadCatch m
+                              , MonadEvaluate m
                               , ShowProxy ps
                               , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
+                              , NFData a
+                              , NFData b
+                              , NFData failure
                               , Show failure
                               )
                            => m (Channel m bytes, Channel m bytes)
@@ -434,9 +468,13 @@ runConnectedPeersPipelined createChannels tracer codec client server =
 --
 runConnectedPeersAsymmetric
     :: ( MonadAsync m
+       , MonadEvaluate m
        , MonadMask  m
        , ShowProxy ps
        , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
+       , NFData a
+       , NFData b
+       , NFData failure
        , Show failure
        )
     => m (Channel m bytes, Channel m bytes)

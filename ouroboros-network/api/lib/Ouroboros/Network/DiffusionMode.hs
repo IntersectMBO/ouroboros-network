@@ -1,4 +1,10 @@
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric  #-}
+
 module Ouroboros.Network.DiffusionMode (DiffusionMode (..)) where
+
+import Control.DeepSeq (NFData)
+import GHC.Generics (Generic)
 
 
 -- | The flag which indicates whether the node runs only initiator or both
@@ -18,4 +24,4 @@ module Ouroboros.Network.DiffusionMode (DiffusionMode (..)) where
 data DiffusionMode
     = InitiatorOnlyDiffusionMode
     | InitiatorAndResponderDiffusionMode
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show, Generic, NFData)

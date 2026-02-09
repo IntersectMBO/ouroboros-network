@@ -69,7 +69,6 @@ module Ouroboros.Network.Block
   , fromSerialised
   ) where
 
-import Cardano.Binary (DecoderError)
 import Codec.CBOR.Decoding (Decoder)
 import Codec.CBOR.Decoding qualified as Dec
 import Codec.CBOR.Encoding (Encoding)
@@ -77,6 +76,7 @@ import Codec.CBOR.Encoding qualified as Enc
 import Codec.CBOR.Read qualified as Read
 import Codec.CBOR.Write qualified as Write
 import Codec.Serialise (Serialise (..))
+import Control.DeepSeq (NFData (..))
 import Control.Monad (when)
 import Data.Aeson (FromJSON, ToJSON)
 import Data.ByteString.Base16.Lazy qualified as B16
@@ -89,6 +89,7 @@ import GHC.Generics (Generic)
 import NoThunks.Class (NoThunks)
 import Quiet
 
+import Cardano.Binary (DecoderError)
 import Cardano.Slotting.Block
 import Cardano.Slotting.Slot (SlotNo (..))
 
@@ -210,6 +211,14 @@ newtype Point block = Point
     { getPoint :: WithOrigin (Point.Block SlotNo (HeaderHash block))
     }
   deriving (Generic)
+
+instance NFData (Point block) where
+  rnf point = rnf (pointSlot point)
+              `seq`
+              pointHash point
+              `seq`
+              ()
+
 
 deriving newtype instance StandardHash block => Eq       (Point block)
 deriving newtype instance StandardHash block => Ord      (Point block)

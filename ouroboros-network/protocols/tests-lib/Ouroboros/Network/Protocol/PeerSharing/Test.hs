@@ -12,9 +12,9 @@ module Ouroboros.Network.Protocol.PeerSharing.Test where
 
 import Codec.CBOR.Decoding qualified as CBOR
 import Codec.CBOR.Encoding qualified as CBOR
-import Control.Monad.Class.MonadAsync (MonadAsync)
-import Control.Monad.Class.MonadST (MonadST)
-import Control.Monad.Class.MonadThrow (MonadCatch)
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadST
+import Control.Monad.Class.MonadThrow
 import Control.Monad.IOSim (runSimOrThrow)
 import Control.Monad.ST (runST)
 import Control.Tracer (nullTracer)
@@ -74,8 +74,8 @@ prop_direct f l =
   runSimOrThrow
     (direct (peerSharingServerReplicate f)
             (peerSharingClientCollect l))
-  === (snd $ Foldable.foldl' (\(n, r) (PeerSharingAmount amount)
-                      -> (n + 1, replicate (applyFun f amount) n ++ r))
+  === snd (Foldable.foldl' (\  (n, r) (PeerSharingAmount amount)
+                            -> (n + 1, replicate (applyFun f amount) n ++ r))
              (0, [])
              l)
 
@@ -101,9 +101,10 @@ prop_connect f l =
 -- Properties using channels, codecs and drivers.
 --
 
-prop_channel :: ( MonadAsync m
-                , MonadCatch m
-                , MonadST    m
+prop_channel :: ( MonadAsync    m
+                , MonadCatch    m
+                , MonadEvaluate m
+                , MonadST       m
                 )
              => Fun Word8 Int
              -> [PeerSharingAmount]

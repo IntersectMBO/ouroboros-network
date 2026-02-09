@@ -1,14 +1,18 @@
 {-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE DeriveAnyClass        #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE PolyKinds             #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE TypeFamilies          #-}
 
 module Ouroboros.Network.Protocol.Limits where
 
+import Control.DeepSeq (NFData (..))
 import Control.Exception
 import Control.Monad.Class.MonadTime.SI
 import System.Random (StdGen)
@@ -74,6 +78,26 @@ instance Show ProtocolLimitFailure where
         ]
 
 instance Exception ProtocolLimitFailure where
+instance NFData ProtocolLimitFailure where
+  rnf = \case
+      -- for singletons WHNF => NF
+      (ExceededTimeLimit sing) -> sing
+                            `seq` rnf (showProxy (singToProxy sing))
+                            `seq` singToActiveAgency sing
+                            `seq` ()
+      (ExceededSizeLimit sing) -> sing
+                            `seq` rnf (showProxy (singToProxy sing))
+                            `seq` singToActiveAgency sing
+                            `seq` ()
+    where
+      singToProxy :: forall ps (st :: ps). StateToken st -> Proxy ps
+      singToProxy _ = Proxy
+
+      singToActiveAgency :: forall ps (st :: ps).
+                            ActiveState st
+                         => StateToken st
+                         -> ActiveAgency st
+      singToActiveAgency _ = activeAgency
 
 
 -- TODO: better limits

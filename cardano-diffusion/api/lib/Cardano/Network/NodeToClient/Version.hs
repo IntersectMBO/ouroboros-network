@@ -122,7 +122,7 @@ data NodeToClientVersionData = NodeToClientVersionData
   { networkMagic :: !NetworkMagic
   , query        :: !Bool
   }
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic, NFData)
 
 instance Acceptable NodeToClientVersionData where
     acceptableVersion local remote

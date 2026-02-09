@@ -1013,6 +1013,7 @@ diffusionSimulationM
                , MonadAsync       m
                , MonadDelay       m
                , MonadFix         m
+               , MonadEvaluate    m
                , MonadFork        m
                , MonadSay         m
                , MonadST          m
