@@ -18,7 +18,7 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer, traceWith)
 import Data.Map.Strict qualified as M
-import Data.Maybe (fromJust)
+
 import System.Random (StdGen, random)
 
 import Ouroboros.Network.ControlMessage (ControlMessage (..), ControlMessageSTM)
@@ -78,14 +78,16 @@ keepAliveClient tracer inRng controlMessageSTM peer dqCtx KeepAliveInterval { ke
           sample = fromSample startTime endTime payloadSize
       gsv' <- atomically $ do
           m <- readTVar dqCtx
-          assert (peer `M.member` m) $ do
-            let (gsv', m') = M.updateLookupWithKey
-                    (\_ a -> if sampleTime a == Time 0 -- Ignore the initial dummy value
-                                then Just sample
-                                else Just $ sample <> a
-                    ) peer m
-            writeTVar dqCtx m'
-            return $ fromJust gsv'
+     let (gsvMaybe, m') = M.updateLookupWithKey
+                (\_ a -> if sampleTime a == Time 0 -- Ignore the initial dummy value
+                            then Just sample
+                            else Just $ sample <> a
+                ) peer m
+              (gsvFinal, mFinal) = case gsvMaybe of
+                Just gsv -> (gsv, m')
+                Nothing  -> (sample, M.insert peer sample m)
+          assert (peer `M.member` mFinal) $ writeTVar dqCtx mFinal
+          return gsvFinal
       traceWith tracer $ AddSample peer rtt gsv'
 
       delayVar <- registerDelay keepAliveInterval
