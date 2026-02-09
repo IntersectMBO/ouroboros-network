@@ -15,7 +15,7 @@ repository cardano-haskell-packages
 -- repeat the index-state for hackage to work around haskell.nix parsing limitation
 index-state:
   -- Bump this if you need newer packages from Hackage
-  , hackage.haskell.org 2025-11-10T01:36:00Z
+  , hackage.haskell.org 2026-02-06T18:13:59Z
 
   -- Bump this if you need newer packages from CHaP
   , cardano-haskell-packages 2025-11-07T15:42:47Z
@@ -53,10 +53,3 @@ package acts
   flags: -finitary
 
 allow-newer: quickcheck-instances:QuickCheck
-
-source-repository-package
-  type: git
-  location: https://github.com/input-output-hk/typed-protocols
-  tag: 3cbc13762f8129d255552f0dfab6c18c6909d33a
-  --sha256: sha256-obHwd0CnZPmxWkBgYrubzOU0W069pijbztalvbDJOhI=
-  subdir: typed-protocols
