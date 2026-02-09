@@ -179,14 +179,16 @@ class ( Eq       (HeaderHash b)
       , Show     (HeaderHash b)
       , Typeable (HeaderHash b)
       , NoThunks (HeaderHash b)
+      , NFData   (HeaderHash b)
       ) => StandardHash (b :: k)
 
 data ChainHash b = GenesisHash | BlockHash !(HeaderHash b)
   deriving (Generic)
 
-deriving instance StandardHash block => Eq   (ChainHash block)
-deriving instance StandardHash block => Ord  (ChainHash block)
-deriving instance StandardHash block => Show (ChainHash block)
+deriving instance StandardHash block => Eq     (ChainHash block)
+deriving instance StandardHash block => Ord    (ChainHash block)
+deriving instance StandardHash block => Show   (ChainHash block)
+deriving instance StandardHash block => NFData (ChainHash block)
 
 instance (StandardHash block, Typeable block) => NoThunks (ChainHash block)
   -- use generic instance
@@ -210,21 +212,14 @@ castHash (BlockHash h) = BlockHash (coerce h)
 newtype Point block = Point
     { getPoint :: WithOrigin (Point.Block SlotNo (HeaderHash block))
     }
-  deriving (Generic)
-
-instance NFData (Point block) where
-  rnf point = rnf (pointSlot point)
-              `seq`
-              pointHash point
-              `seq`
-              ()
-
+  deriving Generic
 
 deriving newtype instance StandardHash block => Eq       (Point block)
 deriving newtype instance StandardHash block => Ord      (Point block)
 deriving via (Quiet (Point block))
                  instance StandardHash block => Show     (Point block)
 deriving newtype instance StandardHash block => NoThunks (Point block)
+deriving newtype instance StandardHash block => NFData   (Point block)
 deriving newtype instance ToJSON (Point.Block SlotNo (HeaderHash block)) => ToJSON (Point block)
 deriving newtype instance FromJSON (Point.Block SlotNo (HeaderHash block)) => FromJSON (Point block)
 
@@ -273,6 +268,7 @@ data Tip b =
 deriving instance StandardHash b => Eq       (Tip b)
 deriving instance StandardHash b => Show     (Tip b)
 deriving instance StandardHash b => NoThunks (Tip b)
+deriving instance StandardHash b => NFData   (Tip b)
 instance ShowProxy b => ShowProxy (Tip b) where
     showProxy _ = "Tip " ++ showProxy (Proxy :: Proxy b)
 

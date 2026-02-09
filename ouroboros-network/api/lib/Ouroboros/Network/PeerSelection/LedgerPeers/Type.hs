@@ -107,9 +107,14 @@ data SomeHashableBlock =
               , ToCBOR (HeaderHash blk)
               , FromCBOR (HeaderHash blk)
               , ToJSON (HeaderHash blk)
-              , Typeable blk) => SomeHashableBlock !(Proxy blk) !(HeaderHash blk)
+              , Typeable blk
+              , NFData (HeaderHash blk)
+              ) => SomeHashableBlock !(Proxy blk) !(HeaderHash blk)
 
 type instance HeaderHash SomeHashableBlock = SomeHashableBlock
+instance NFData SomeHashableBlock where
+    rnf (SomeHashableBlock point hash) = rnf point
+                                   `seq` rnf hash
 
 -- we need this since `Point` is parameterised with `SomeHashableBlock`
 -- in the snapshot

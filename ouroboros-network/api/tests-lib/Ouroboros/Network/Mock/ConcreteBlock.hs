@@ -153,13 +153,13 @@ instance (StandardHash b, Hashable (HeaderHash b)) => Hashable (ChainHash b)
 --
 newtype ConcreteHeaderHash = HeaderHash Int
   deriving stock   (Show, Eq, Ord, Generic)
-  deriving newtype (Hashable, NoThunks)
+  deriving newtype (Hashable, NoThunks, NFData)
 
 -- | The hash of all the information in a 'BlockBody'.
 --
 newtype BodyHash = BodyHash Int
   deriving stock  (Show, Eq, Ord, Generic)
-  deriving newtype Hashable
+  deriving newtype (Hashable, NFData)
 
 {-------------------------------------------------------------------------------
   HasHeader instances
