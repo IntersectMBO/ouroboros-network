@@ -8,6 +8,7 @@
 -- | A simple block for benchmarking 'AnchoredFragment's.
 module BenchBlock where
 
+import Control.DeepSeq (NFData)
 import Crypto.Hash.SHA256 qualified as SHA256
 import Data.ByteString.Builder
 import Data.ByteString.Short (ShortByteString)
@@ -20,7 +21,7 @@ import Ouroboros.Network.Block
 -- | A 32 byte hash, just like for Cardano mainnet.
 newtype BenchHash = BenchHash { getBenchHash :: ShortByteString }
   deriving stock (Generic)
-  deriving newtype (Eq, Ord)
+  deriving newtype (Eq, Ord, NFData)
   deriving anyclass (NoThunks)
 
 instance Show BenchHash where
