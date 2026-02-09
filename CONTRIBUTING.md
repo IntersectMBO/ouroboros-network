@@ -297,7 +297,10 @@ need to delete branch created in `cardano-haskell-packages`.
 * First run `./script/release-to-chap.sh -r` to see which changes can be
   published.
 * Update versions in `*.cabal` files according to changelog fragments in `changelog.d` directory
-  (using `scriv print` might be helpful to see the changes).
+  (using `scriv print` might be helpful to see the changes):
+  - for a breaking release from `main` branch, bump `x` in `x.y.z.w`
+  - for a breaking release from a `release/*` branch, bump `y` in `x.y.z.w`
+  This policy allows us to introduce breaking changes in already released packages.
 * Collect `CHANGELOG.md` using `scriv collect` (available in `nix develop`)
 * Run `./script/release-to-chap.sh` which will create a branch in
   `cardano-haskell-packages` repo (pointed by `CARDANO_HASKELL_PACKAGES_DIR`
