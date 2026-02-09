@@ -1173,7 +1173,7 @@ diffusionSimulationM
       policyStdGenVar <- newTVarIO (mkStdGen 12)
 
       let readUseBootstrapPeers = stepScriptSTM' useBootstrapPeersScriptVar
-          (bgaRng, rng) = Random.split $ mkStdGen seed
+          (bgaRng, rng) = Random.splitGen $ mkStdGen seed
           acceptedConnectionsLimit =
             Node.AcceptedConnectionsLimit maxBound maxBound 0
           readLocalRootPeers  = readTVar lrpVar

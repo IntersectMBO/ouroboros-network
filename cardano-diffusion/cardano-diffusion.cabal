@@ -168,7 +168,7 @@ library
     network ^>=3.2.7,
     network-mux,
     ouroboros-network:{ouroboros-network, api, framework, protocols},
-    random,
+    random ^>=1.3,
     typed-protocols:{typed-protocols, stateful} ^>=1.2,
 
   if !os(windows)
@@ -231,7 +231,7 @@ executable demo-chain-sync
     network-mux,
     optparse-applicative,
     ouroboros-network:{ouroboros-network, api, api-tests-lib, framework, protocols},
-    random,
+    random ^>=1.3,
     serialise,
     typed-protocols,
 
@@ -292,7 +292,7 @@ library protocols
     bytestring >=0.10 && <0.13,
     cardano-diffusion:api,
     cborg >=0.2.1 && <0.3,
-    io-classes:{io-classes, si-timers} ^>=1.8.0.1,
+    io-classes:{io-classes, si-timers} ^>=1.8,
     ouroboros-network:{api, framework, protocols},
     random,
     typed-protocols:{typed-protocols, cborg, stateful} ^>=1.2,
@@ -471,7 +471,7 @@ library cardano-diffusion-tests-lib
     pretty-simple,
     psqueues,
     quickcheck-monoids,
-    random,
+    random ^>=1.3,
     serialise,
     tasty,
     tasty-quickcheck,
