@@ -625,7 +625,6 @@ library cardano-logging
   exposed-modules:
     Ouroboros.Network.Logging
   other-modules:
-    Ouroboros.Network.Logging.PeerSelection.ChurnCounters
     Ouroboros.Network.Logging.PeerSelection.Governor
     Ouroboros.Network.Logging.PeerSelection.Governor.DebugPeerSelection
     Ouroboros.Network.Logging.PeerSelection.Governor.PeerSelectionCounters

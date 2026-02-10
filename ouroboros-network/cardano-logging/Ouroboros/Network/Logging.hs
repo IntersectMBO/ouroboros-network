@@ -47,7 +47,6 @@ import "trace-dispatcher" Cardano.Logging
 ---------
 -- Self -
 ---------
-import Ouroboros.Network.Logging.PeerSelection.ChurnCounters ()
 import Ouroboros.Network.Logging.PeerSelection.Governor ()
 import Ouroboros.Network.Logging.PeerSelection.PeerStateActions ()
 import Ouroboros.Network.Logging.PeerSelection.RootPeersDNS.DNSActions ()
