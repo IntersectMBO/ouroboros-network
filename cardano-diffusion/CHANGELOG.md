@@ -8,7 +8,7 @@
 ### Breaking
 
 - Initial release of the `cardano-diffusion` package, which is based on
-  `ourorboros-network:cardano-diffusion` with the following modifications:
+  `ouroboros-network:cardano-diffusion` with the following modifications:
   - Removed `Cardano.Network.Types` module. `LedgerStateJudgement` is available
     from the `cardano-diffusion:api` package in
     `Cardano.Network.LedgerStateJudgement` module. `NumberOfBigLedgerPeers` is
@@ -55,7 +55,7 @@ cardano-diffusion:
 - improved approach in general to target-chasing tests in diffusion testnet
   and PeerSelection mock environment tests.
 
-- Addapted tests to changes in the `Ouroboros.Network.TxSubmission.Mempool.Simple` API
+- Adapted tests to changes in the `Ouroboros.Network.TxSubmission.Mempool.Simple` API
 
 - Patched so that it compiles to wasm
 

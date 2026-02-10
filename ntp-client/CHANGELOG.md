@@ -48,7 +48,7 @@
 
 ### Non-breaking changes
 
-* `ghc-9.4` and `ghc-9.6` compatiblity.
+* `ghc-9.4` and `ghc-9.6` compatibility.
 
 ## 0.0.1.0 -- 2022-12-13
 

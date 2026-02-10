@@ -4,10 +4,10 @@ To use it copy `ouroboros_network.lua` to `$HOME/.config/wireshark/plugins`, or
 create a symbolic link:
 
 ```bash
-ls -s $(pwd)/ouroboros_network/wireshark-plugin/ouroboros_network.lua $HOME/.config/wireshark/plugins/ouroboros_network.lua
+ln -s $(pwd)/ouroboros_network/wireshark-plugin/ouroboros_network.lua $HOME/.config/wireshark/plugins/ouroboros_network.lua
 ```
 
-## Mux disector
+## Mux dissector
 
 There is also another dissector for the mux protocol in
 `./network-mux/demo/mux-leios-demo.lua`.

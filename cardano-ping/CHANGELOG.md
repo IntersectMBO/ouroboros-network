@@ -98,7 +98,7 @@
 
 ### Breaking changes
 
-* Addapted to `network-mux` changes in https://github.com/IntersectMBO/ouroboros-network/pull/4997
+* Adapted to `network-mux` changes in https://github.com/IntersectMBO/ouroboros-network/pull/4997
 
 ### Non-breaking changes
 
@@ -169,14 +169,14 @@
 ## 0.2.0.3 -- 2023-06-09
 
 * For versions strictly lower than `NodeToNodeV_11`, send
-  `InitiatorAndResponder` flag when quering.  For these versions querying is
+  `InitiatorAndResponder` flag when querying.  For these versions querying is
   not recognised by the remote side, and thus it will do handshake negotiation.
 * Only print the query result if querying is supported by the remote side.
 
 ## 0.2.0.2 -- 2023-06-08
 
 * Support `NodeToNodeV_11`, `NodeToNodeV_12` and `NodeToClientV_16`.
-* Fix delay/timeout bugs (miliseconds were used instead of seconds).
+* Fix delay/timeout bugs (milliseconds were used instead of seconds).
 * Print query even if --quiet flag is given.
 * Instead of a boolean flag print `InitiatorOnly` or `InitiatorAndResponder`.
 * Fixed encoding of `NodeToNodeV_11`.

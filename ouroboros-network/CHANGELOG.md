@@ -7,7 +7,7 @@
 
 ### Breaking
 
-- All `ouroboros-*` where incorporated into `ouroboros-network`, at the same
+- All `ouroboros-*` were incorporated into `ouroboros-network`, at the same
   time all **Cardano** specific components were pulled into `cardano-diffusion`:
 
   * `ouroboros-network-protocols`                         -> `ouroboros-network:protocols`
@@ -20,7 +20,7 @@
   * `ouroboros-network-framework:io-tests`                -> `ouroboros-network:framework-io-tests`
   * `ouroboros-network-framework:demo-connection-manager` -> `ouroboros-network:demo-connection-manager`
   * `ouroboros-network-framework:demo-ping-pong`          -> `ouroboros-network:demo-ping-pong`
-  * `ouroboros-newtork-mock`                              -> `ouroboros-network:mock`
+  * `ouroboros-network-mock`                              -> `ouroboros-network:mock`
   * `ouroboros-network:testlib`                           -> `ouroboros-network:ouroboros-network-tests-lib`
   * `ouroboros-network:sim-tests`                         -> `ouroboros-network:ouroboros-network-sim-tests`
   * `ouroboros-network:io-tests`                          -> `ouroboros-network:ouroboros-network-io-tests`
@@ -112,7 +112,7 @@ ouroboros-network:api:
   `txids` with errors.
 - `Ouroboros.Network.TxSubmission.Mempool.Simple.getMempoolWriter` changes:
   - supplies the current time to the validation function,
-  - removed `ctx` paramenter,
+  - removed `ctx` parameter,
   - validation happens in an `STM` transaction, which allows acquiring and
     updating validation `ctx`.
 
@@ -190,7 +190,7 @@ ouroboros-network:
 - Added field `eicExtraFlags` to `ExpandedInitiatorContext`.
 - Added field `defaultExtraFlags` to `PeerSelectionGovernorArgs`.
 
-* Limit the number of faulures to 5 before a peer that isn't a localroot, bootstrap peer or public root peer is forgotten.
+* Limit the number of failures to 5 before a peer that isn't a localroot, bootstrap peer or public root peer is forgotten.
 * Decrease the time blockfetch waits for chainsync to exit in case of an error
 * Increase the timeout for chainsync in state StMustReply to between 601 and 911 seconds.
 
@@ -199,7 +199,7 @@ ouroboros-network:
 - Improved `Message TxSubmission` ToJSON instance
 - Improved `Message KeepAlived` ToJSON instance
 - `Ouroboros.Network.TxSubmission.Mempool.Simple` re-export `TxSubmissionMempool{Reader,Writer}` data types.
-- `Ouroboros.Network.TxSubmission.Mempool.Simple` is assiging stable `idx`s to `tx`s.
+- `Ouroboros.Network.TxSubmission.Mempool.Simple` is assigning stable `idx`s to `tx`s.
 <!-- scriv-end-here -->
 
 ## 0.23.0.0 -- 2025-09-10
@@ -226,10 +226,10 @@ ouroboros-network:
 `networkToplogogyToJSON` to `Ouroboros.Network.OrphanInstances`
 * Removed `ToJSON` and `FromJSON` instances for `NetworkTopology extraConfig
   extraFlags` from `Ouroboros.Network.OrphanInstances`.
-* Addded `ToJSON` and `FromJSON` instances for `NetworkTopology
+* Added `ToJSON` and `FromJSON` instances for `NetworkTopology
   UseBootstrapPeers PeerTrustable` to `Cardano.Network.OrphanInstances`
-* Added `localRootPeersGroupFromJSON`, localRootPeersGroupsFromJSON`,
-  `networkTopologyFromJSON to `Ouroboros.Network.OrphanInstances`
+* Added `localRootPeersGroupFromJSON`, `localRootPeersGroupsFromJSON`,
+  `networkTopologyFromJSON` to `Ouroboros.Network.OrphanInstances`
 
 ### Non-breaking changes
 
@@ -318,7 +318,7 @@ ouroboros-network:
 
 * Lowered default established targets:
   - ledger peers:     30 (deadline mode)
-  - big ledgerp pers: 40 (syncing mode)
+  - big ledger peers: 40 (syncing mode)
 
 ## 0.21.0.0 -- 2025-05-13
 
@@ -328,7 +328,7 @@ ouroboros-network:
   support for mux buffered socket bearers
 * added `daEgressPollInterval` to diffusion `Arguments` record
   which specifies the cork duration of mux egress queue at the
-  application layer. This provides a configurable latency/efficieny
+  application layer. This provides a configurable latency/efficiency
   tradeoff.
 
 ### Non-breaking changes
@@ -552,8 +552,8 @@ ouroboros-network:
   * dnsSubscriptionWorker
 * Added `AcquireConnectionError` to `PeerSelectionActionsTrace`
 * Removed deprecated `ReconnectDelay` type alias.
-* Addapted to `network-mux` changes in https://github.com/IntersectMBO/ouroboros-network/pull/4999
-* Addapted to `network-mux` changes in https://github.com/IntersectMBO/ouroboros-network/pull/4997
+* Adapted to `network-mux` changes in https://github.com/IntersectMBO/ouroboros-network/pull/4999
+* Adapted to `network-mux` changes in https://github.com/IntersectMBO/ouroboros-network/pull/4997
 * Use `LocalRootConfig` instead of a tuple.
 * Extended `LocalRootConfig` with `diffusionMode :: DiffusionMode` field.
 * Added `diConnStateSupply` record field to `Ouroboros.Network.Diffusion.P2P.Interfaces`.
@@ -572,7 +572,7 @@ ouroboros-network:
   bootstrapping a node in Genesis consensus mode, or in general when
   LedgerStateJudgement = TooOld, subject to conditions in
   `LedgerPeers.ledgerPeersThread`.
-* Diffusion run function in P2P mode has new paramaters:
+* Diffusion run function in P2P mode has new parameters:
     * `daPeerTargets` - replaces daPeerSelectionTargets. `Configuration`
         module provides an API. Used by peer selection & churn governors. Given
         required arguments, it returns the correct target basis to use for churn
@@ -589,7 +589,7 @@ ouroboros-network:
 * `Ouroboros.Network.NodeToClient.connectTo` takes
   `OuroborosApplicationWithMinimalCtx` which is using `Void` type for responder
   protocols.  It anyway only accepts `InitiatorMode`, and thus no responder
-  protocols can be specified, nontheless this might require changing type
+  protocols can be specified, nonetheless this might require changing type
   signature of the applications passed to it.  `connectTo` returns now either
   an error or the result of the first terminated mini-protocol.
 * `Ouroboros.Network.NodeToNode.connectTo` returns either an error or the
@@ -712,7 +712,7 @@ ouroboros-network:
 * Update the bigledger retry state in case of an exception
 * Reset public root retry state when transition between `LedgerStateJudgements`.
 * Reduce public root retry timer.
-* Don't classify a config file with publicRoot/bootstrapPeers IP addresss only
+* Don't classify a config file with publicRoot/bootstrapPeers IP addresses only
   as a DNS error.
 * Renamed `fuzzRnd` to `stdGen` in `PeerSelectionState`
 * split `stdGen` in `PeerSelection.Governor.wakeupAction`
@@ -799,7 +799,7 @@ ouroboros-network:
   involves the bootstrap peers flag and the ledger state judgement value.
 
 * Improved tracing when peersharing
-* set knownSuccessfulConnection for incomming peers
+* set knownSuccessfulConnection for incoming peers
 * Don't use minPeerShareTime with GuardedSkip
 
 * `PeerSharingController` is now private and `requestPeers` is exported
@@ -823,7 +823,7 @@ ouroboros-network:
 
 ### Breaking changes
 
-* Renamed `ReconnectDelay` to `RepromoteDelay` - the dalay is used after
+* Renamed `ReconnectDelay` to `RepromoteDelay` - the delay is used after
   demotion to `cold` as well as `warm` state.  A `ReconnectDelay` type alias is
   still provided but deprecated.
 
@@ -921,7 +921,7 @@ Deprecated release.
 ### Non-breaking changes
 
 * Updated KeepAlive client to collect a rtt sample for the first packet.
-* Less aggresive churning of established and known peers.
+* Less aggressive churning of established and known peers.
 * Added peer sharing to wireshark dissector.
 * Added ledger peers to diffusion simulation
 * Fixed diffusion tests.
@@ -1109,7 +1109,7 @@ Deprecated release.
 
 ### Non-breaking changes
 
-* `ghc-9.4` and `ghc-9.6` compatiblity.
+* `ghc-9.4` and `ghc-9.6` compatibility.
 
 ## 0.5.0.0 -- 2023-04-19
 
