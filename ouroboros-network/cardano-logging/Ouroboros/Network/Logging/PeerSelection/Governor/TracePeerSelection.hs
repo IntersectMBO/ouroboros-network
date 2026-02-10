@@ -179,13 +179,17 @@ instance ( Ord ntnAddr
              , "targetLocalEstablished" .= tLocalEst
              , "selectedPeers" .= toJSONList (toList sp)
              ]
-  forMachine _dtal (TracePromoteColdFailed tEst aEst p d err) =
+  {-- TODO: `forgotten` added here but not in cardano-node master 
+   -- See: f9ae41a8962174e4f7d7e93d81f70f1c88cef263
+  --}
+  forMachine _dtal (TracePromoteColdFailed tEst aEst p d err forgotten) =
     mconcat [ "kind" .= String "PromoteColdFailed"
              , "targetEstablished" .= tEst
              , "actualEstablished" .= aEst
              , "peer" .= toJSON p
              , "delay" .= toJSON d
              , "reason" .= show err
+             , "forgotten" .= forgotten
              ]
   forMachine _dtal (TracePromoteColdDone tEst aEst p) =
     mconcat [ "kind" .= String "PromoteColdDone"
@@ -199,13 +203,17 @@ instance ( Ord ntnAddr
              , "actualEstablished" .= actualKnown
              , "selectedPeers" .= toJSONList (toList sp)
              ]
-  forMachine _dtal (TracePromoteColdBigLedgerPeerFailed tEst aEst p d err) =
+  {-- TODO: `forgotten` added here but not in cardano-node master 
+   -- See: f9ae41a8962174e4f7d7e93d81f70f1c88cef263
+  --}
+  forMachine _dtal (TracePromoteColdBigLedgerPeerFailed tEst aEst p d err forgotten) =
     mconcat [ "kind" .= String "PromoteColdBigLedgerPeerFailed"
              , "targetEstablished" .= tEst
              , "actualEstablished" .= aEst
              , "peer" .= toJSON p
              , "delay" .= toJSON d
              , "reason" .= show err
+             , "forgotten" .= forgotten
              ]
   forMachine _dtal (TracePromoteColdBigLedgerPeerDone tEst aEst p) =
     mconcat [ "kind" .= String "PromoteColdBigLedgerPeerDone"
