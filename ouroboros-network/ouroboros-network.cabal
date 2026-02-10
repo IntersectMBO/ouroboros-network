@@ -393,6 +393,7 @@ library framework-cardano-logging
   visibility: public
   hs-source-dirs: framework/cardano-logging
   exposed-modules:
+    Network.Mux.Logging
     Ouroboros.Network.Logging.Framework
   other-modules:
     Ouroboros.Network.Logging.Framework.ConnectionId

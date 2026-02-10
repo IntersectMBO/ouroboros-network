@@ -113,30 +113,6 @@ library
     -Wredundant-constraints
     -Wunused-packages
 
-library cardano-logging
-  build-depends:
-    aeson,
-    base >=4.14 && <4.22,
-    formatting,
-    network-mux,
-    trace-dispatcher ^>= 2.11.0
-  hs-source-dirs: cardano-logging
-  visibility: public
-  exposed-modules:
-    Network.Mux.Logging
-  default-language: Haskell2010
-  default-extensions: ImportQualifiedPost
-  ghc-options:
-    -Wall
-    -Wcompat
-    -Widentities
-    -Wincomplete-record-updates
-    -Wincomplete-uni-patterns
-    -Wno-unticked-promoted-constructors
-    -Wpartial-fields
-    -Wredundant-constraints
-    -Wunused-packages
-
 test-suite test
   type: exitcode-stdio-1.0
   hs-source-dirs: test
