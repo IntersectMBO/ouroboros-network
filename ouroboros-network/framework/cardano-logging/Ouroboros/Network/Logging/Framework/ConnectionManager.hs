@@ -80,6 +80,11 @@ instance (Show addr, LogFormatting addr, ToJSON addr, LogFormatting handler, Sho
           , "remoteAddress" .= forMachine dtal peerAddr
           , "provenance" .= String (pack . show $ prov)
           ]
+    forMachine dtal (TrInboundConnectionNotFound peerAddr) =
+        mconcat $ reverse
+          [ "kind" .= String "InboundConnectionNotFound"
+          , "remoteAddress" .= forMachine dtal peerAddr
+          ]
     forMachine _dtal (TrReleaseConnection prov connId) =
         mconcat $ reverse
           [ "kind" .= String "UnregisterConnection"
@@ -267,6 +272,7 @@ instance (Show versionNumber, ToJSON versionNumber, ToJSON agreedOptions)
 
 instance MetaTrace handler => MetaTrace (ConnectionManager.Trace addr handler) where
     namespaceFor TrIncludeConnection {}  = Namespace [] ["IncludeConnection"]
+    namespaceFor TrInboundConnectionNotFound {} = Namespace [] ["InboundConnectionNotFound"]
     namespaceFor TrReleaseConnection {}  = Namespace [] ["UnregisterConnection"]
     namespaceFor TrConnect {}  = Namespace [] ["Connect"]
     namespaceFor TrConnectError {}  = Namespace [] ["ConnectError"]
