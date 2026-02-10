@@ -1,6 +1,6 @@
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE NamedFieldPuns    #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE PackageImports #-}
+{-# LANGUAGE PackageImports    #-}
 
 --------------------------------------------------------------------------------
 
@@ -9,10 +9,7 @@
 
 --------------------------------------------------------------------------------
 
-module Ouroboros.Network.Logging.PeerSelection.Governor.Utils 
-  ( peerSelectionTargetsToObject
-  )
-  where
+module Ouroboros.Network.Logging.PeerSelection.Governor.Utils (peerSelectionTargetsToObject) where
 
 --------------------------------------------------------------------------------
 
@@ -28,12 +25,9 @@ import "aeson" Data.Aeson (Value (Object), (.=))
 -- Package: "ouroboros-network" -
 ---------------------------------
 -- Needed for `ToJSON Network.Socket.Types.PortNumber`
-import qualified "ouroboros-network" -- "ouroboros-network:orphan-instances"
-  Ouroboros.Network.OrphanInstances ()
-import           "ouroboros-network" -- "ouroboros-network:ouroboros-network"
-  Ouroboros.Network.PeerSelection.Governor.Types
-    ( PeerSelectionTargets (..)
-    )
+import "ouroboros-network" Ouroboros.Network.OrphanInstances qualified ()
+import "ouroboros-network" Ouroboros.Network.PeerSelection.Governor.Types
+           (PeerSelectionTargets (..))
 
 --------------------------------------------------------------------------------
 

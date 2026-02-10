@@ -1,5 +1,5 @@
-{-# LANGUAGE PackageImports #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PackageImports    #-}
 
 -------------------------------------------------------------------------------
 
@@ -21,17 +21,14 @@ module Ouroboros.Network.Logging.PeerSelection.RootPeersDNS.PublicRootPeers () w
 ---------------------
 -- Package: "aeson" -
 ---------------------
-import "aeson" Data.Aeson (toJSON, toJSONList, Value (String), (.=))
+import "aeson" Data.Aeson (Value (String), toJSON, toJSONList, (.=))
 ---------------------------------
 -- Package: "ouroboros-network" -
 ---------------------------------
 -- Needed for `ToJSONKey PeerSelection.RelayAccessPoint.RelayAccessPoint`
-import qualified "ouroboros-network" -- "ouroboros-network:orphan-instances"
-  Ouroboros.Network.OrphanInstances ()
-import           "ouroboros-network" -- "ouroboros-newtwork:ouroboros-newtwork"
-  Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
-    ( TracePublicRootPeers (..)
-    )
+import "ouroboros-network" Ouroboros.Network.OrphanInstances qualified ()
+import "ouroboros-network" Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
+           (TracePublicRootPeers (..))
 --------------------
 -- Package: "text" -
 --------------------
@@ -61,8 +58,8 @@ instance MetaTrace TracePublicRootPeers where
   namespaceFor TracePublicRootDomains {} = Namespace [] ["PublicRootDomains"]
 
   severityFor (Namespace [] ["PublicRootRelayAccessPoint"]) _ = Just Info
-  severityFor (Namespace [] ["PublicRootDomains"]) _ = Just Info
-  severityFor _ _ = Nothing
+  severityFor (Namespace [] ["PublicRootDomains"]) _          = Just Info
+  severityFor _ _                                             = Nothing
 
   documentFor (Namespace [] ["PublicRootRelayAccessPoint"]) = Just
     ""

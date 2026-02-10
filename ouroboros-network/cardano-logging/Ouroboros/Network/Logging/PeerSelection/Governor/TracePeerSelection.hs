@@ -1,7 +1,7 @@
+{-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE PackageImports #-}
+{-# LANGUAGE PackageImports    #-}
 
 --------------------------------------------------------------------------------
 
@@ -33,7 +33,8 @@ import Data.Foldable (toList)
 ---------------------
 -- Package: "aeson" -
 ---------------------
-import "aeson" Data.Aeson (ToJSON, ToJSONKey, toJSON, toJSONList, Value (String), (.=))
+import "aeson" Data.Aeson (ToJSON, ToJSONKey, Value (String), toJSON,
+           toJSONList, (.=))
 -----------------------
 -- Package: "network" -
 -----------------------
@@ -41,22 +42,14 @@ import "network" Network.Socket (SockAddr)
 ---------------------------------
 -- Package: "ouroboros-network" -
 ---------------------------------
-import           "ouroboros-network" -- "ouroboros-network:ouroboros-network"
-  Ouroboros.Network.PeerSelection.Governor.Types
-    ( DebugPeerSelectionState (..)
-    , DemotionTimeoutException
-    , TracePeerSelection (..)
-    )
-import           "ouroboros-network" -- "ouroboros-network:ouroboros-network"
-  Ouroboros.Network.PeerSelection.PublicRootPeers
-    ( PublicRootPeers
-    )
-import qualified "ouroboros-network" -- "ouroboros-newtwork:ouroboros-network"
-  Ouroboros.Network.PeerSelection.State.KnownPeers as KnownPeers
-import           "ouroboros-network" -- "ouroboros-newtwork:protocols"
-  Ouroboros.Network.Protocol.PeerSharing.Type
-    ( PeerSharingAmount (PeerSharingAmount)
-    )
+import "ouroboros-network" Ouroboros.Network.PeerSelection.Governor.Types
+           (DebugPeerSelectionState (..), DemotionTimeoutException,
+           TracePeerSelection (..))
+import "ouroboros-network" Ouroboros.Network.PeerSelection.PublicRootPeers
+           (PublicRootPeers)
+import "ouroboros-network" Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
+import "ouroboros-network" Ouroboros.Network.Protocol.PeerSharing.Type
+           (PeerSharingAmount (PeerSharingAmount))
 --------------------
 -- Package: "text" -
 --------------------
@@ -68,9 +61,8 @@ import "trace-dispatcher" Cardano.Logging
 ---------
 -- Self -
 ---------
-import Ouroboros.Network.Logging.PeerSelection.Governor.Utils 
-  ( peerSelectionTargetsToObject
-  )
+import Ouroboros.Network.Logging.PeerSelection.Governor.Utils
+           (peerSelectionTargetsToObject)
 
 --------------------------------------------------------------------------------
 -- PeerSelection Tracer

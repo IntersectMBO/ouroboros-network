@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE PackageImports #-}
+{-# LANGUAGE PackageImports    #-}
 
 --------------------------------------------------------------------------------
 
@@ -25,8 +25,7 @@ import "aeson" Data.Aeson (Value (String), (.=))
 ---------------------------------
 -- Package: "ouroboros-network" -
 ---------------------------------
-import "ouroboros-network" -- "ouroboros-newtwork:framework"
-  Ouroboros.Network.ConnectionId (ConnectionId (..))
+import "ouroboros-network" Ouroboros.Network.ConnectionId (ConnectionId (..))
 --------------------------------
 -- Package: "trace-dispatcher" -
 --------------------------------

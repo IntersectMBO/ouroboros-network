@@ -1,7 +1,7 @@
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE PackageImports #-}
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE OverloadedStrings    #-}
+{-# LANGUAGE PackageImports       #-}
+{-# LANGUAGE RecordWildCards      #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 
 --------------------------------------------------------------------------------
@@ -24,7 +24,8 @@ module Ouroboros.Network.Logging.Framework.InboundGovernor () where
 ---------------------
 -- Package: "aeson" -
 ---------------------
-import "aeson" Data.Aeson (ToJSON, ToJSONKey, toJSON, Value (String), Object, (.=))
+import "aeson" Data.Aeson (Object, ToJSON, ToJSONKey, Value (String), toJSON,
+           (.=))
 -----------------------
 -- Package: "network" -
 -----------------------
@@ -32,12 +33,10 @@ import "network" Network.Socket (SockAddr (..))
 ---------------------------------
 -- Package: "ouroboros-network" -
 ---------------------------------
-import qualified "ouroboros-network" -- "ouroboros-newtwork:framework"
-  Ouroboros.Network.ConnectionManager.Types as ConnectionManager
-import           "ouroboros-network" -- "ouroboros-newtwork:framework"
-  Ouroboros.Network.InboundGovernor as InboundGovernor (Trace (..))
-import qualified "ouroboros-network" -- "ouroboros-newtwork:framework"
-  Ouroboros.Network.InboundGovernor as InboundGovernor
+import "ouroboros-network" Ouroboros.Network.ConnectionManager.Types qualified as ConnectionManager
+import "ouroboros-network" Ouroboros.Network.InboundGovernor as InboundGovernor
+           (Trace (..))
+import "ouroboros-network" Ouroboros.Network.InboundGovernor qualified as InboundGovernor
 -- Needed for `ToJSON SockAddr`.
 -- Needed for `ToJSON LocalAddress`
 -- Needed for `ToJSON (ConnectionId adr)`
@@ -45,13 +44,10 @@ import qualified "ouroboros-network" -- "ouroboros-newtwork:framework"
 -- Needed for `ToJSON (ConnectionManager.OperationResult, ConnectionManager.AbstractState)`
 -- Needed for `ToJSONKey (ConnectionId adr)`
 -- Needed for `ToJSON InboundGovernor.RemoteSt`
-import qualified "ouroboros-network" -- "ouroboros-network:orphan-instances"
-  Ouroboros.Network.OrphanInstances ()
-import           "ouroboros-network" -- "ouroboros-newtwork:framework"
-  Ouroboros.Network.Snocket (LocalAddress (..))
-import           "ouroboros-network" -- "ouroboros-newtwork:framework"
-  Ouroboros.Network.InboundGovernor.State as InboundGovernor
-    ( Counters (..) )
+import "ouroboros-network" Ouroboros.Network.InboundGovernor.State as InboundGovernor
+           (Counters (..))
+import "ouroboros-network" Ouroboros.Network.OrphanInstances qualified ()
+import "ouroboros-network" Ouroboros.Network.Snocket (LocalAddress (..))
 --------------------
 -- Package: "text" -
 --------------------
@@ -223,26 +219,26 @@ instance MetaTrace (InboundGovernor.Trace addr) where
     namespaceFor InboundGovernor.TrInactive {} =
                                 Namespace [] ["Inactive"]
 
-    severityFor (Namespace _ ["NewConnection"]) _ = Just Debug
-    severityFor (Namespace _ ["ResponderRestarted"]) _ = Just Debug
-    severityFor (Namespace _ ["ResponderStartFailure"]) _ = Just Info
-    severityFor (Namespace _ ["ResponderErrored"]) _ = Just Info
-    severityFor (Namespace _ ["ResponderStarted"]) _ = Just Debug
-    severityFor (Namespace _ ["ResponderTerminated"]) _ = Just Debug
-    severityFor (Namespace _ ["PromotedToWarmRemote"]) _ = Just Info
-    severityFor (Namespace _ ["PromotedToHotRemote"]) _ = Just Info
-    severityFor (Namespace _ ["DemotedToColdRemote"]) _ = Just Info
-    severityFor (Namespace _ ["DemotedToWarmRemote"]) _ = Just Info
-    severityFor (Namespace _ ["WaitIdleRemote"]) _ = Just Debug
-    severityFor (Namespace _ ["MuxCleanExit"]) _ = Just Debug
-    severityFor (Namespace _ ["MuxErrored"]) _ = Just Info
-    severityFor (Namespace _ ["InboundGovernorCounters"]) _ = Just Info
-    severityFor (Namespace _ ["RemoteState"]) _ = Just Debug
+    severityFor (Namespace _ ["NewConnection"]) _              = Just Debug
+    severityFor (Namespace _ ["ResponderRestarted"]) _         = Just Debug
+    severityFor (Namespace _ ["ResponderStartFailure"]) _      = Just Info
+    severityFor (Namespace _ ["ResponderErrored"]) _           = Just Info
+    severityFor (Namespace _ ["ResponderStarted"]) _           = Just Debug
+    severityFor (Namespace _ ["ResponderTerminated"]) _        = Just Debug
+    severityFor (Namespace _ ["PromotedToWarmRemote"]) _       = Just Info
+    severityFor (Namespace _ ["PromotedToHotRemote"]) _        = Just Info
+    severityFor (Namespace _ ["DemotedToColdRemote"]) _        = Just Info
+    severityFor (Namespace _ ["DemotedToWarmRemote"]) _        = Just Info
+    severityFor (Namespace _ ["WaitIdleRemote"]) _             = Just Debug
+    severityFor (Namespace _ ["MuxCleanExit"]) _               = Just Debug
+    severityFor (Namespace _ ["MuxErrored"]) _                 = Just Info
+    severityFor (Namespace _ ["InboundGovernorCounters"]) _    = Just Info
+    severityFor (Namespace _ ["RemoteState"]) _                = Just Debug
     severityFor (Namespace _ ["UnexpectedlyFalseAssertion"]) _ = Just Error
-    severityFor (Namespace _ ["InboundGovernorError"]) _ = Just Error
-    severityFor (Namespace _ ["MaturedConnections"]) _ = Just Info
-    severityFor (Namespace _ ["Inactive"]) _ = Just Debug
-    severityFor _ _ = Nothing
+    severityFor (Namespace _ ["InboundGovernorError"]) _       = Just Error
+    severityFor (Namespace _ ["MaturedConnections"]) _         = Just Info
+    severityFor (Namespace _ ["Inactive"]) _                   = Just Debug
+    severityFor _ _                                            = Nothing
 
     documentFor (Namespace _ ["NewConnection"]) = Just ""
     documentFor (Namespace _ ["ResponderRestarted"]) = Just ""
@@ -341,9 +337,9 @@ instance MetaTrace (InboundGovernor.RemoteTransitionTrace peerAddr) where
     namespaceFor InboundGovernor.TransitionTrace {} = Namespace [] ["Transition"]
 
     severityFor  (Namespace [] ["Transition"]) _ = Just Debug
-    severityFor _ _ = Nothing
+    severityFor _ _                              = Nothing
 
     documentFor  (Namespace [] ["Transition"]) = Just ""
-    documentFor _ = Nothing
+    documentFor _                              = Nothing
 
     allNamespaces = [Namespace [] ["Transition"]]

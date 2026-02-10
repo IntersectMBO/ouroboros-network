@@ -395,12 +395,14 @@ library framework-cardano-logging
   exposed-modules:
     Network.Mux.Logging
     Ouroboros.Network.Logging.Framework
+
   other-modules:
     Ouroboros.Network.Logging.Framework.ConnectionId
     Ouroboros.Network.Logging.Framework.ConnectionManager
     Ouroboros.Network.Logging.Framework.Driver
     Ouroboros.Network.Logging.Framework.InboundGovernor
     Ouroboros.Network.Logging.Framework.Server
+
   build-depends:
     aeson,
     base >=4.14 && <4.23,
@@ -412,8 +414,8 @@ library framework-cardano-logging
     ouroboros-network:framework,
     ouroboros-network:orphan-instances,
     text,
-    trace-dispatcher ^>= 2.11.0,
-    typed-protocols:{typed-protocols, stateful} ^>= 1.2,
+    trace-dispatcher ^>=2.11.0,
+    typed-protocols:{typed-protocols, stateful} ^>=1.2,
 
 library tests-lib
   import: ghc-options
@@ -624,6 +626,7 @@ library cardano-logging
   hs-source-dirs: cardano-logging
   exposed-modules:
     Ouroboros.Network.Logging
+
   other-modules:
     Ouroboros.Network.Logging.PeerSelection.Governor
     Ouroboros.Network.Logging.PeerSelection.Governor.DebugPeerSelection
@@ -634,6 +637,7 @@ library cardano-logging
     Ouroboros.Network.Logging.PeerSelection.RootPeersDNS.DNSActions
     Ouroboros.Network.Logging.PeerSelection.RootPeersDNS.LocalRootPeers
     Ouroboros.Network.Logging.PeerSelection.RootPeersDNS.PublicRootPeers
+
   reexported-modules:
   default-language: Haskell2010
   other-extensions:
@@ -646,7 +650,8 @@ library cardano-logging
     ouroboros-network:orphan-instances,
     ouroboros-network:protocols,
     text,
-    trace-dispatcher ^>= 2.11.0
+    trace-dispatcher ^>=2.11.0,
+
   if flag(asserts)
     ghc-options: -fno-ignore-asserts
 

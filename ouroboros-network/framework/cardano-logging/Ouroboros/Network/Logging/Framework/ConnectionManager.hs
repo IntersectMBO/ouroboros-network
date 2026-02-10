@@ -1,9 +1,9 @@
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE PackageImports #-}
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE NamedFieldPuns       #-}
+{-# LANGUAGE OverloadedStrings    #-}
+{-# LANGUAGE PackageImports       #-}
+{-# LANGUAGE RecordWildCards      #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 
 --------------------------------------------------------------------------------
@@ -26,39 +26,29 @@ module Ouroboros.Network.Logging.Framework.ConnectionManager () where
 ---------------------
 -- Package: "aeson" -
 ---------------------
-import "aeson" Data.Aeson (ToJSON, toJSON, Value (String), object, (.=))
+import "aeson" Data.Aeson (ToJSON, Value (String), object, toJSON, (.=))
 import "aeson" Data.Aeson.Types (listValue)
 --------------------------
 -- Package: "containers" -
 --------------------------
-import qualified "containers" Data.Map.Strict as Map
-import qualified "containers" Data.Set as Set
+import "containers" Data.Map.Strict qualified as Map
+import "containers" Data.Set qualified as Set
 ---------------------------------
 -- Package: "ouroboros-network" -
 ---------------------------------
-import           "ouroboros-network" -- "ouroboros-newtwork:framework"
-  Ouroboros.Network.ConnectionHandler
-    ( ConnectionHandlerTrace (..) )
-import           "ouroboros-network" -- "ouroboros-newtwork:framework"
-  Ouroboros.Network.ConnectionId
-    ( ConnectionId (..) )
-import           "ouroboros-network" -- "ouroboros-newtwork:framework"
-  Ouroboros.Network.ConnectionManager.ConnMap
-    ( ConnMap (..) )
-import           "ouroboros-network" -- "ouroboros-newtwork:framework"
-  Ouroboros.Network.ConnectionManager.Core as ConnectionManager
-    ( Trace (..) )
-import           "ouroboros-network" -- "ouroboros-newtwork:framework"
-  Ouroboros.Network.ConnectionManager.Types
-    ( ConnectionManagerCounters (..) )
-import qualified "ouroboros-network" -- "ouroboros-newtwork:framework"
-  Ouroboros.Network.ConnectionManager.Types as ConnectionManager
-import           "ouroboros-network" -- "ouroboros-newtwork:framework"
-  Ouroboros.Network.RethrowPolicy
-    ( ErrorCommand (..) )
+import "ouroboros-network" Ouroboros.Network.ConnectionHandler
+           (ConnectionHandlerTrace (..))
+import "ouroboros-network" Ouroboros.Network.ConnectionId (ConnectionId (..))
+import "ouroboros-network" Ouroboros.Network.ConnectionManager.ConnMap
+           (ConnMap (..))
+import "ouroboros-network" Ouroboros.Network.ConnectionManager.Core as ConnectionManager
+           (Trace (..))
+import "ouroboros-network" Ouroboros.Network.ConnectionManager.Types
+           (ConnectionManagerCounters (..))
+import "ouroboros-network" Ouroboros.Network.ConnectionManager.Types qualified as ConnectionManager
+import "ouroboros-network" Ouroboros.Network.RethrowPolicy (ErrorCommand (..))
 -- Needed for `instance ToJSON ConnectionManager.AbstractState where`.
-import qualified "ouroboros-network" -- "ouroboros-network:orphan-instances"
-  Ouroboros.Network.OrphanInstances ()
+import "ouroboros-network" Ouroboros.Network.OrphanInstances qualified ()
 --------------------
 -- Package: "text" -
 --------------------
@@ -278,8 +268,8 @@ instance MetaTrace handler => MetaTrace (ConnectionManager.Trace addr handler) w
     namespaceFor TrConnectError {}  = Namespace [] ["ConnectError"]
     namespaceFor TrTerminatingConnection {}  = Namespace [] ["TerminatingConnection"]
     namespaceFor TrTerminatedConnection {}  = Namespace [] ["TerminatedConnection"]
-    namespaceFor (TrConnectionHandler _ hdl)  = 
-      nsPrependInner "ConnectionHandler" (namespaceFor hdl)      
+    namespaceFor (TrConnectionHandler _ hdl)  =
+      nsPrependInner "ConnectionHandler" (namespaceFor hdl)
     namespaceFor TrShutdown {}  = Namespace [] ["Shutdown"]
     namespaceFor TrConnectionExists {}  = Namespace [] ["ConnectionExists"]
     namespaceFor TrForbiddenConnection {}  = Namespace [] ["ForbiddenConnection"]
@@ -303,7 +293,7 @@ instance MetaTrace handler => MetaTrace (ConnectionManager.Trace addr handler) w
     severityFor (Namespace _  ["TerminatedConnection"]) _ = Just Debug
     severityFor (Namespace out ("ConnectionHandler" : tl)) (Just (TrConnectionHandler _ hdl)) =
       severityFor (Namespace out tl) (Just hdl)
-    severityFor (Namespace _  ("ConnectionHandler" : _)) Nothing = Just Info  
+    severityFor (Namespace _  ("ConnectionHandler" : _)) Nothing = Just Info
     severityFor (Namespace _  ["Shutdown"]) _ = Just Info
     severityFor (Namespace _  ["ConnectionExists"]) _ = Just Info
     severityFor (Namespace _  ["ForbiddenConnection"]) _ = Just Info
@@ -326,7 +316,7 @@ instance MetaTrace handler => MetaTrace (ConnectionManager.Trace addr handler) w
     documentFor (Namespace _  ["TerminatingConnection"]) = Just ""
     documentFor (Namespace _  ["TerminatedConnection"]) = Just ""
     documentFor (Namespace out ("ConnectionHandler" : tl)) =
-      documentFor (Namespace out tl :: Namespace handler) 
+      documentFor (Namespace out tl :: Namespace handler)
     documentFor (Namespace _  ["Shutdown"]) = Just ""
     documentFor (Namespace _  ["ConnectionExists"]) = Just ""
     documentFor (Namespace _  ["ForbiddenConnection"]) = Just ""
@@ -376,7 +366,7 @@ instance MetaTrace handler => MetaTrace (ConnectionManager.Trace addr handler) w
                   (allNamespaces :: [Namespace handler])
 
 
-instance MetaTrace (ConnectionHandlerTrace versionNumber agreedOptions) where     
+instance MetaTrace (ConnectionHandlerTrace versionNumber agreedOptions) where
     namespaceFor TrHandshakeSuccess {} = Namespace [] ["HandshakeSuccess"]
     namespaceFor TrHandshakeQuery {} = Namespace [] ["HandshakeQuery"]
     namespaceFor TrHandshakeClientError {} = Namespace [] ["HandshakeClientError"]
@@ -392,12 +382,12 @@ instance MetaTrace (ConnectionHandlerTrace versionNumber agreedOptions) where
     severityFor (Namespace _ ["Error"]) Nothing = Just Info
     severityFor _ _ = Nothing
 
-    documentFor (Namespace _ ["HandshakeSuccess"]) = Just ""
-    documentFor (Namespace _ ["HandshakeQuery"]) = Just ""
+    documentFor (Namespace _ ["HandshakeSuccess"])     = Just ""
+    documentFor (Namespace _ ["HandshakeQuery"])       = Just ""
     documentFor (Namespace _ ["HandshakeClientError"]) = Just ""
     documentFor (Namespace _ ["HandshakeServerError"]) = Just ""
-    documentFor (Namespace _ ["Error"]) = Just ""
-    documentFor _ = Nothing
+    documentFor (Namespace _ ["Error"])                = Just ""
+    documentFor _                                      = Nothing
 
     allNamespaces = [
         Namespace [] ["HandshakeSuccess"]
@@ -430,9 +420,9 @@ instance MetaTrace (ConnectionManager.AbstractTransitionTrace peerAddr) where
       Namespace [] ["Transition"]
 
     severityFor (Namespace _  ["Transition"]) _ = Just Debug
-    severityFor _ _ = Nothing
+    severityFor _ _                             = Nothing
 
     documentFor (Namespace _  ["Transition"]) = Just ""
-    documentFor _ = Nothing
+    documentFor _                             = Nothing
 
     allNamespaces = [Namespace [] ["Transition"]]
