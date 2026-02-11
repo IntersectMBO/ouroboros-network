@@ -1,4 +1,7 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE EmptyCase #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -26,11 +29,13 @@ import Cardano.KESAgent.Protocols.VersionedProtocol
 import Cardano.Crypto.DSIGN.Class
 import Cardano.Crypto.KES.Class
 
+import Control.DeepSeq (NFData)
 import Data.Kind (Type)
 import Data.SerDoc.Info (Description (..))
 import Data.Text (Text)
 import Data.Time (UTCTime)
 import Data.Word
+import GHC.Generics
 import Network.TypedProtocol.Core
 
 data AgentInfo
@@ -41,22 +46,20 @@ data AgentInfo
   , agentInfoCurrentKESPeriod :: !KESPeriod
   , agentInfoBootstrapConnections :: ![BootstrapInfo]
   }
-  deriving (Show)
-
-deriving instance Eq (VerKeyKES (KES StandardCrypto)) => Eq AgentInfo
+  deriving (Show, Generic, NFData)
 
 data BootstrapInfo
   = BootstrapInfo
   { bootstrapInfoAddress :: !Text
   , bootstrapInfoStatus :: !ConnectionStatus
   }
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic, NFData)
 
 data ConnectionStatus
   = ConnectionUp
   | ConnectionConnecting
   | ConnectionDown
-  deriving (Show, Read, Eq, Ord, Enum, Bounded)
+  deriving (Show, Read, Eq, Ord, Enum, Bounded, Generic, NFData)
 
 data BundleInfo
   = BundleInfo
@@ -66,13 +69,14 @@ data BundleInfo
   , bundleInfoVK :: !(VerKeyKES (KES StandardCrypto))
   , bundleInfoSigma :: !(SignedDSIGN (DSIGN StandardCrypto) (OCertSignable StandardCrypto))
   }
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic, NFData)
 
 newtype KeyInfo
   = KeyInfo
   { keyInfoVK :: VerKeyKES (KES StandardCrypto)
   }
   deriving (Show)
+  deriving newtype (NFData)
 
 instance Eq (VerKeyKES (KES StandardCrypto)) => Eq KeyInfo where
   KeyInfo a == KeyInfo b = a == b

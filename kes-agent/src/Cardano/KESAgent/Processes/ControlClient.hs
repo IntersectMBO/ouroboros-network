@@ -56,6 +56,7 @@ import Cardano.KESAgent.Serialization.DirectCodec
 import Cardano.KESAgent.Util.Pretty (Pretty (..))
 import Cardano.KESAgent.Util.RetrySocket (retrySocketWith)
 
+import Cardano.Crypto.DSIGN.Class
 import Cardano.Crypto.DirectSerialise
 import Cardano.Crypto.KES.Class
 
@@ -63,9 +64,16 @@ import Ouroboros.Network.RawBearer
 import Ouroboros.Network.Snocket (Snocket (..))
 
 import Control.Concurrent.Class.MonadMVar (MonadMVar)
+import Control.DeepSeq (NFData)
 import Control.Monad.Class.MonadST (MonadST)
 import Control.Monad.Class.MonadSTM (MonadSTM)
-import Control.Monad.Class.MonadThrow (MonadCatch, MonadThrow, SomeException, bracket)
+import Control.Monad.Class.MonadThrow (
+  MonadCatch,
+  MonadEvaluate,
+  MonadThrow,
+  SomeException,
+  bracket,
+ )
 import Control.Monad.Class.MonadTimer (MonadDelay)
 import Control.Tracer (Tracer, traceWith)
 import Data.Char (toLower)
@@ -131,6 +139,7 @@ type ControlHandler m a =
 -- | Monadic typeclasses needed to run control client actions.
 type MonadControlClient m =
   ( Monad m
+  , MonadEvaluate m
   , MonadThrow m
   , MonadCatch m
   , MonadDelay m
@@ -154,6 +163,8 @@ type ControlClientContext m c =
   , Serializable (DirectCodec m) (VerKeyKES (KES c))
   , DirectSerialise (SignKeyKES (KES c))
   , DirectDeserialise (SignKeyKES (KES c))
+  , NFData (VerKeyKES (KES c))
+  , NFData (SigDSIGN (DSIGN c))
   )
 
 -- | Connect to a KES agent as a control client, send one command, handle the
@@ -219,7 +230,8 @@ constHandler a _ _ = a
 
 -- | Typeclasses needed to run a control handler.
 type MonadControlHandler m =
-  ( MonadThrow m
+  ( MonadEvaluate m
+  , MonadThrow m
   , MonadST m
   , MonadSTM m
   , MonadMVar m
@@ -233,6 +245,7 @@ instance
   , NamedCrypto c
   , DirectSerialise (SignKeyKES (KES c))
   , DirectDeserialise (SignKeyKES (KES c))
+  , NFData a
   ) =>
   IsControlHandler (CP0.ControlProtocol m c) m a
   where
@@ -243,7 +256,12 @@ instance
         (CP0.controlDriver bearer $ ControlClientDriverTrace >$< tracer)
         peer
 
-instance MonadControlHandler m => IsControlHandler (CP1.ControlProtocol m) m a where
+instance
+  ( MonadControlHandler m
+  , NFData a
+  ) =>
+  IsControlHandler (CP1.ControlProtocol m) m a
+  where
   type InitialState (CP1.ControlProtocol m) = CP1.InitialState
   toHandler peer bearer tracer = do
     fst
@@ -251,7 +269,12 @@ instance MonadControlHandler m => IsControlHandler (CP1.ControlProtocol m) m a w
         (CP1.controlDriver bearer $ ControlClientDriverTrace >$< tracer)
         peer
 
-instance MonadControlHandler m => IsControlHandler (CP2.ControlProtocol m) m a where
+instance
+  ( MonadControlHandler m
+  , NFData a
+  ) =>
+  IsControlHandler (CP2.ControlProtocol m) m a
+  where
   type InitialState (CP2.ControlProtocol m) = CP2.InitialState
   toHandler peer bearer tracer = do
     fst
@@ -259,7 +282,12 @@ instance MonadControlHandler m => IsControlHandler (CP2.ControlProtocol m) m a w
         (CP2.controlDriver bearer $ ControlClientDriverTrace >$< tracer)
         peer
 
-instance MonadControlHandler m => IsControlHandler (CP3.ControlProtocol m) m a where
+instance
+  ( MonadControlHandler m
+  , NFData a
+  ) =>
+  IsControlHandler (CP3.ControlProtocol m) m a
+  where
   type InitialState (CP3.ControlProtocol m) = CP3.InitialState
   toHandler peer bearer tracer = do
     fst

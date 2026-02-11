@@ -115,6 +115,7 @@ library
                  , contra-tracer ==0.1.0.1 || ==0.1.0.2
                  , containers >=0.6.5.1 && <0.9
                  , casing >=0.1.4.1 && <0.2
+                 , deepseq
                  , extra >=1.7.12 && <1.9
                  , formatting
                  , ghc-prim
@@ -130,7 +131,7 @@ library
                  , text
                  , template-haskell >=2.18.0.0
                  , time >=1.10
-                 , typed-protocols ^>=1.0 || ^>=1.1
+                 , typed-protocols ^>=1.0 || ^>=1.1 || ^>=1.2
                  -- , typed-protocols-doc
     if !arch(wasm32)
         build-depends: socket >= 0.8.3 && <0.9
@@ -256,6 +257,7 @@ test-suite kes-agent-tests
                  , cardano-crypto-tests
                  , contra-tracer
                  , containers
+                 , deepseq
                  , directory >=1.3.6.1 && <1.4.0.0
                  , filepath >= 1.4.2 && <1.5
                  , ghc-prim

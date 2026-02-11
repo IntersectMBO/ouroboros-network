@@ -16,7 +16,7 @@ import Cardano.Crypto.DirectSerialise (
 import Control.Concurrent.Class.MonadMVar (MonadMVar)
 import Control.Monad.Class.MonadAsync (MonadAsync)
 import Control.Monad.Class.MonadST (MonadST)
-import Control.Monad.Class.MonadThrow (MonadCatch)
+import Control.Monad.Class.MonadThrow (MonadCatch, MonadEvaluate)
 import Control.Monad.Class.MonadTime (MonadTime)
 import Control.Monad.Class.MonadTimer (MonadTimer)
 import Data.Typeable (Typeable)
@@ -31,6 +31,7 @@ type MonadAgent m =
   ( Monad m
   , MonadAsync m
   , MonadCatch m
+  , MonadEvaluate m
   , MonadFail m
   , MonadMVar m
   , MonadST m

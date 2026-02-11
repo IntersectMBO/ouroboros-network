@@ -69,11 +69,13 @@ import Control.Concurrent.Class.MonadMVar (
   takeMVar,
   tryReadMVar,
  )
+import Control.DeepSeq (NFData)
 import Control.Monad (when)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadST (MonadST)
 import Control.Monad.Class.MonadThrow (
   MonadCatch,
+  MonadEvaluate,
   MonadThrow,
   SomeException,
   bracket,
@@ -160,6 +162,7 @@ type MonadTestNetwork m =
   ( Monad m
   , MonadAsync m
   , MonadCatch m
+  , MonadEvaluate m
   , MonadFail m
   , MonadMVar m
   , MonadST m
@@ -182,6 +185,8 @@ type TestNetworkCrypto c =
   , ServiceCrypto c
   , ServiceClientCrypto c
   , Typeable c
+  , NFData (VerKeyKES (KES c))
+  , NFData (SigDSIGN (DSIGN c))
   )
 
 type TestNetworkContext m c =
@@ -765,19 +770,19 @@ iosimProperty ::
 iosimProperty sim =
   let tr = runSimTrace sim
   in case traceResult True tr of
-      Left e ->
-        counterexample
-          ( unlines
-              [ "=== Say Events ==="
-              , unlines (selectTraceEventsSay' tr)
-              , "=== Trace Events ==="
-              , unlines (show `map` traceEvents tr)
-              , "=== Error ==="
-              , show e ++ "\n"
-              ]
-          )
-          False
-      Right prop -> prop
+       Left e ->
+         counterexample
+           ( unlines
+               [ "=== Say Events ==="
+               , unlines (selectTraceEventsSay' tr)
+               , "=== Trace Events ==="
+               , unlines (show `map` traceEvents tr)
+               , "=== Error ==="
+               , show e ++ "\n"
+               ]
+           )
+           False
+       Right prop -> prop
 
 -- TODO: should be defined where 'AbsBearerInfo' is defined, but it also
 -- requires access to 'ouroboros-network-framework' where 'BearerInfo' is

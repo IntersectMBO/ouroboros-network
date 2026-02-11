@@ -413,9 +413,9 @@ isTaggedBundleAgeValid
         let snCurrentMay = (ocertN . bundleOC) <$> taggedBundle current
             snNewMay = (ocertN . bundleOC) <$> taggedBundle new
         in case (snCurrentMay, snNewMay) of
-            (Just snCurrent, Just snNew) ->
-              snCurrent <= snNew
-            _ -> True
+             (Just snCurrent, Just snNew) ->
+               snCurrent <= snNew
+             _ -> True
 
 -- | Handle an incoming 'TaggedBundle'. This will perform the following steps:
 -- - Validate the tagged bundle against the currently installed bundle, if any.

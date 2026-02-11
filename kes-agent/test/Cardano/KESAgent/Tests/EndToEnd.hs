@@ -174,7 +174,7 @@ kesAgentFails = do
     ("KES Agent did not terminate with expected platform-specific exception.")
     ( exitCode /= ExitSuccess
         && ( matchOutputLines 1 expectedMsg agentErrLines
-              || any (uncaughtExceptionPrefix `Text.isPrefixOf`) (agentOutLines <> agentErrLines)
+               || any (uncaughtExceptionPrefix `Text.isPrefixOf`) (agentOutLines <> agentErrLines)
            )
     )
 
@@ -1508,12 +1508,12 @@ withAgentPID controlAddr serviceAddr bootstrapAddrs coldVerKeyFile extraAgentArg
         ++ maybe [] (\a -> ["--control-address", a]) controlAddr
         ++ maybe [] (\a -> ["--service-address", a]) serviceAddr
         ++ ( if "--config-file" `elem` extraAgentArgs
-              then
-                []
-              else
-                [ "--config-file"
-                , "/dev/null"
-                ]
+               then
+                 []
+               else
+                 [ "--config-file"
+                 , "/dev/null"
+                 ]
            )
         ++ concat [["--bootstrap-address", a] | a <- bootstrapAddrs]
         ++ extraAgentArgs

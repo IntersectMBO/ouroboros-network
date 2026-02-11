@@ -50,12 +50,14 @@ import Ouroboros.Network.Snocket (Snocket (..))
 import Control.Concurrent.Async (AsyncCancelled)
 import Control.Concurrent.Class.MonadMVar
 import Control.Concurrent.Class.MonadSTM
+import Control.DeepSeq ()
 import Control.Exception (AsyncException)
 import Control.Monad (unless, void)
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow (
   Handler (..),
   MonadCatch,
+  MonadEvaluate,
   MonadThrow,
   SomeException,
   bracket,
@@ -142,6 +144,7 @@ instance Pretty ServiceClientTrace where
 -- | Monadic typeclasses required to run service client actions.
 type MonadServiceClient m =
   ( Monad m
+  , MonadEvaluate m
   , MonadFail m
   , MonadThrow m
   , MonadCatch m

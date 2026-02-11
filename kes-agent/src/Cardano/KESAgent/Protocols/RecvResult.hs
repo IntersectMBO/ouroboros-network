@@ -1,8 +1,13 @@
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
+
 -- | Representing the result of receiving a key bundle.
 module Cardano.KESAgent.Protocols.RecvResult
 where
 
 import Cardano.KESAgent.Util.Pretty
+import Control.DeepSeq (NFData)
+import GHC.Generics
 
 data RecvResult
   = RecvOK
@@ -16,7 +21,7 @@ data RecvResult
     RecvErrorUnsupportedOperation
   | -- | Something else went wrong, we don't know what
     RecvErrorUnknown
-  deriving (Show, Read, Eq, Ord, Bounded, Enum)
+  deriving (Show, Read, Eq, Ord, Bounded, Enum, Generic, NFData)
 
 instance Pretty RecvResult where
   pretty RecvOK = "OK"

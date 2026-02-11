@@ -30,6 +30,7 @@ import Cardano.Crypto.DSIGN.Class as DSIGN
 import Cardano.Crypto.KES.Class
 import Cardano.Crypto.Util (SignableRepresentation (..))
 
+import Control.DeepSeq (NFData)
 import Control.Monad (when)
 import Data.ByteString.Builder qualified as BSB
 import Data.ByteString.Builder.Extra qualified as BSB
@@ -44,7 +45,7 @@ import Quiet (Quiet (..))
 -- which starts at some specific KESPeriod (see `ocertKESPeriod`).
 newtype KESPeriod = KESPeriod {unKESPeriod :: Word}
   deriving (Eq, Generic, Ord, Typeable)
-  deriving newtype (NoThunks, FromCBOR, ToCBOR)
+  deriving newtype (NoThunks, FromCBOR, ToCBOR, NFData)
   deriving (Show) via Quiet KESPeriod
 
 -- | Signable part of an operational certificate

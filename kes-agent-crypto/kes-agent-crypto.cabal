@@ -50,6 +50,7 @@ library
                    -- packages have the same name, we can only disambiguate
                    -- them by demanding a version that only one of them has.
                  , contra-tracer ==0.1.0.1 || ==0.1.0.2
+                 , deepseq
                  , io-classes
                  , nothunks
                  , quiet

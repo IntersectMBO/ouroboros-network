@@ -24,12 +24,12 @@ versionHandshakeClient acceptableVersions =
     VersionOfferMessage availableVersions ->
       let commonVersions = [v | v <- acceptableVersions, w <- availableVersions, v == w]
       in case commonVersions of
-          [] ->
-            Client.Yield VersionRejectedMessage $
-              Client.Done Nothing
-          (v : _) ->
-            Client.Yield (VersionAcceptMessage v) $
-              Client.Done (Just v)
+           [] ->
+             Client.Yield VersionRejectedMessage $
+               Client.Done Nothing
+           (v : _) ->
+             Client.Yield (VersionAcceptMessage v) $
+               Client.Done (Just v)
 
 versionHandshakeServer ::
   Monad m =>

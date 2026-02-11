@@ -10,8 +10,8 @@ repository cardano-haskell-packages
     d4a35cd3121aa00d18544bb0ac01c3e1691d618f462c46129271bccf39f7e8ee
 
 index-state:
-  hackage.haskell.org 2025-08-05T15:28:56Z,
-  cardano-haskell-packages 2026-01-20T18:32:46Z,
+  hackage.haskell.org 2026-02-06T18:13:59Z,
+  cardano-haskell-packages 2026-02-11T11:49:13Z,
 
 packages:
   kes-agent
@@ -39,3 +39,11 @@ package kes-agent
 
 package cardano-crypto-class
   flags: +secp256k1-support
+
+source-repository-package
+  type: git
+  location: https://github.com/IntersectMBO/ouroboros-network
+  tag: 892ba32f890c2558dc1dec008844779c83bf899a
+  --sha256: sha256-ZCXLc+som28/iwMBcKJhA79y49t0DamfpXHqeMyCe8g=
+  subdir: network-mux
+          ouroboros-network

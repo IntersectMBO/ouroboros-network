@@ -10,6 +10,7 @@ module Cardano.KESAgent.Protocols.VersionedProtocol
 where
 
 import Cardano.KESAgent.Util.Pretty
+import Control.DeepSeq (NFData)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Data.Kind
@@ -29,7 +30,7 @@ class VersionedProtocol (p :: Type) where
 -- 'Cardano.KESAgent.Protocols.VersionHandshake.Protocol').
 newtype VersionIdentifier
   = VersionIdentifier {unVersionIdentifier :: ByteString}
-  deriving newtype (Show, Eq)
+  deriving newtype (Show, Eq, NFData)
 
 -- | Type-level version identifier length.
 type VersionIdentifierLength = 32

@@ -1,9 +1,13 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE EmptyCase #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PolyKinds #-}
@@ -11,6 +15,7 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Cardano.KESAgent.Protocols.Control.V0.Protocol
@@ -24,12 +29,14 @@ import Cardano.KESAgent.Protocols.VersionedProtocol
 import Cardano.Crypto.DSIGN.Class
 import Cardano.Crypto.KES.Class
 
+import Control.DeepSeq (NFData)
 import Data.Kind (Type)
 import Data.SerDoc.Info (Description (..))
 import Data.Text (Text)
 import Data.Time (UTCTime)
 import Data.Typeable
 import Data.Word
+import GHC.Generics
 import Network.TypedProtocol.Core
 
 data AgentInfo c
@@ -40,6 +47,15 @@ data AgentInfo c
   , agentInfoCurrentKESPeriod :: !KESPeriod
   , agentInfoBootstrapConnections :: ![BootstrapInfo]
   }
+  deriving (Generic)
+
+instance
+  ( NFData (VerKeyKES kes)
+  , kes ~ KES c
+  , NFData (SigDSIGN dsign)
+  , dsign ~ DSIGN c
+  ) =>
+  NFData (AgentInfo c)
 
 deriving instance
   ( DSIGNAlgorithm (DSIGN c)
@@ -57,13 +73,13 @@ data BootstrapInfo
   { bootstrapInfoAddress :: !Text
   , bootstrapInfoStatus :: !ConnectionStatus
   }
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic, NFData)
 
 data ConnectionStatus
   = ConnectionUp
   | ConnectionConnecting
   | ConnectionDown
-  deriving (Show, Read, Eq, Ord, Enum, Bounded)
+  deriving (Show, Read, Eq, Ord, Enum, Bounded, Generic, NFData)
 
 data BundleInfo c
   = BundleInfo
@@ -73,6 +89,15 @@ data BundleInfo c
   , bundleInfoVK :: !(VerKeyKES (KES c))
   , bundleInfoSigma :: !(SignedDSIGN (DSIGN c) (OCertSignable c))
   }
+  deriving (Generic)
+
+instance
+  ( NFData (VerKeyKES kes)
+  , kes ~ KES c
+  , NFData (SignedDSIGN dsign (OCertSignable c))
+  , dsign ~ DSIGN c
+  ) =>
+  NFData (BundleInfo c)
 
 deriving instance
   ( DSIGNAlgorithm (DSIGN c)
@@ -89,6 +114,7 @@ newtype KeyInfo c
   = KeyInfo
   { keyInfoVK :: VerKeyKES (KES c)
   }
+  deriving (Generic)
 
 deriving instance
   KESAlgorithm (KES c) =>
@@ -98,6 +124,12 @@ deriving instance
   , KESAlgorithm (KES c)
   ) =>
   Eq (KeyInfo c)
+
+instance
+  ( NFData (VerKeyKES kes)
+  , kes ~ KES c
+  ) =>
+  NFData (KeyInfo c)
 
 -- | The protocol for pushing KES keys.
 --

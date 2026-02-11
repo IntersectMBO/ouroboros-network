@@ -1,3 +1,11 @@
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE UndecidableInstances #-}
+
 -- | Data types to represent agent state information to display to a user via
 -- a control client.
 module Cardano.KESAgent.Protocols.AgentInfo
@@ -5,9 +13,11 @@ where
 
 import qualified Cardano.Crypto.DSIGN.Class as DSIGN
 import Cardano.Crypto.KES.Class (KESAlgorithm (..))
+import Control.DeepSeq (NFData)
 import Data.Text (Text)
 import Data.Time (UTCTime)
 import Data.Word
+import GHC.Generics
 
 import Cardano.KESAgent.KES.Crypto (Crypto (..))
 import Cardano.KESAgent.KES.OCert (
@@ -44,6 +54,15 @@ data AgentInfo c
   -- keys out. For a two-way redundant setup, all agents must have
   -- boostrapping connections to the respective other agent(s).
   }
+  deriving (Generic)
+
+instance
+  ( NFData (VerKeyKES kes)
+  , kes ~ KES c
+  , NFData (DSIGN.SigDSIGN dsign)
+  , dsign ~ DSIGN c
+  ) =>
+  NFData (AgentInfo c)
 
 -- | Information about a bootstrapping connection.
 data BootstrapInfo
@@ -53,7 +72,7 @@ data BootstrapInfo
   , bootstrapInfoStatus :: !ConnectionStatus
   -- ^ Connection status
   }
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic, NFData)
 
 data BundleInfo c
   = BundleInfo
@@ -68,6 +87,15 @@ data BundleInfo c
   , bundleInfoSigma :: !(DSIGN.SignedDSIGN (DSIGN c) (OCertSignable c))
   -- ^ Signature
   }
+  deriving (Generic)
+
+instance
+  ( NFData (VerKeyKES kes)
+  , kes ~ KES c
+  , NFData (DSIGN.SigDSIGN dsign)
+  , dsign ~ DSIGN c
+  ) =>
+  NFData (BundleInfo c)
 
 -- | Information about a \"tagged bundle\". A tagged bundle is always tagged
 -- with a timestamp, and may hold an active key bundle, or be empty. If it is
@@ -77,16 +105,28 @@ data TaggedBundleInfo c
   { taggedBundleInfo :: !(Maybe (BundleInfo c))
   , taggedBundleInfoTimestamp :: !(Maybe UTCTime)
   }
+  deriving (Generic)
+
+instance
+  ( NFData (VerKeyKES kes)
+  , kes ~ KES c
+  , NFData (DSIGN.SigDSIGN dsign)
+  , dsign ~ DSIGN c
+  ) =>
+  NFData (TaggedBundleInfo c)
 
 -- | Information about a KES signing key.
 newtype KeyInfo c
   = KeyInfo
   { keyInfoVK :: VerKeyKES (KES c)
   }
+  deriving (Generic)
+
+instance (NFData (VerKeyKES kes), kes ~ KES c) => NFData (KeyInfo c)
 
 -- | Status of a (bootstrapping) connection.
 data ConnectionStatus
   = ConnectionUp
   | ConnectionConnecting
   | ConnectionDown
-  deriving (Show, Read, Eq, Ord, Enum, Bounded)
+  deriving (Show, Read, Eq, Ord, Enum, Bounded, Generic, NFData)
