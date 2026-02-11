@@ -4,6 +4,7 @@
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE PackageImports             #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TupleSections              #-}
@@ -53,7 +54,11 @@ import Control.Tracer
 #if defined(mingw32_HOST_OS)
 import System.Win32.Async qualified as Win32.Async
 import System.Win32.File qualified as Win32.File
-import System.Win32.NamedPipes qualified as Win32.NamedPipes
+#if MIN_VERSION_Win32_network(0,2,0)
+import "Win32" System.Win32.NamedPipes qualified as Win32.NamedPipes
+#else
+import "Win32-network" System.Win32.NamedPipes qualified as Win32.NamedPipes
+#endif
 #else
 import System.IO (hClose)
 import System.Process (createPipe)

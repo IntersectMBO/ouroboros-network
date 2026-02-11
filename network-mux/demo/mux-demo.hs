@@ -3,6 +3,7 @@
 {-# LANGUAGE DataKinds          #-}
 {-# LANGUAGE NamedFieldPuns     #-}
 {-# LANGUAGE NumericUnderscores #-}
+{-# LANGUAGE PackageImports     #-}
 
 {-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
 
@@ -28,7 +29,11 @@ import Data.Bits
 import System.IOManager
 import System.Win32
 import System.Win32.Async qualified as Win32.Async
-import System.Win32.NamedPipes
+#if MIN_VERSION_Win32_network(0,2,0)
+import "Win32" System.Win32.NamedPipes
+#else
+import "Win32-network" System.Win32.NamedPipes
+#endif
 #else
 import Network.Socket (Family (AF_UNIX), SockAddr (..))
 import Network.Socket qualified as Socket

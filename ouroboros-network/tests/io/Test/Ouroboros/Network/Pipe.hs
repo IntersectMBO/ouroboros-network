@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE PackageImports      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
 
@@ -38,7 +39,11 @@ import Data.Bits ((.|.))
 import System.IOManager
 import System.Win32 qualified as Win32
 import System.Win32.Async qualified as Win32.Async
-import System.Win32.NamedPipes qualified as Win32.NamedPipes
+#if MIN_VERSION_Win32_network(0,2,0)
+import "Win32" System.Win32.NamedPipes qualified as Win32.NamedPipes
+#else
+import "Win32-network" System.Win32.NamedPipes qualified as Win32.NamedPipes
+#endif
 #else
 import System.IO (hClose)
 import System.Process (createPipe)
