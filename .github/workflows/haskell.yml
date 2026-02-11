@@ -45,7 +45,7 @@ jobs:
 
     - name: Install fourmolu
       run: |
-        FOURMOLU_VERSION="0.16.2.0"
+        FOURMOLU_VERSION="0.17.0.0"
         mkdir -p "$HOME/.local/bin"
         curl -sL "https://github.com/fourmolu/fourmolu/releases/download/v${FOURMOLU_VERSION}/fourmolu-${FOURMOLU_VERSION}-linux-x86_64" -o "$HOME/.local/bin/fourmolu"
         chmod a+x "$HOME/.local/bin/fourmolu"
