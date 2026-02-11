@@ -8,7 +8,7 @@
 -- Orphan instances module for Cardano tracer.
 {-# OPTIONS_GHC -Wno-orphans #-}
 -- Extracted from "cardano-node" `Cardano.Node.Tracing.Tracers.Diffusion`.
--- Branch "master" (2025-02-28, 8c6a9f89fd8bb5b97dba2ae3a4c50873566fe14e).
+-- Branch "master" (2026-02-11, 85869e9dd21d9dac7c4381418346e97259c3303b).
 
 --------------------------------------------------------------------------------
 
@@ -122,11 +122,11 @@ instance MetaTrace (AnyMessage (HS.Handshake a b)) where
     HS.MsgRefuse          {} -> ["Refuse"]
 
   severityFor (Namespace _ [sym]) _ = case sym of
-    "ProposeVersions" -> Just Info
-    "ReplyVersions"   -> Just Info
-    "QueryReply"      -> Just Info
-    "AcceptVersion"   -> Just Info
-    "Refuse"          -> Just Info
+    "ProposeVersions" -> Just Debug
+    "ReplyVersions"   -> Just Debug
+    "QueryReply"      -> Just Debug
+    "AcceptVersion"   -> Just Debug
+    "Refuse"          -> Just Debug
     _otherwise        -> Nothing
   severityFor _ _ = Nothing
 

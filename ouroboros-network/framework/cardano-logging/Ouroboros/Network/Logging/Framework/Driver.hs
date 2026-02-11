@@ -9,7 +9,7 @@
 -- Orphan instances module for Cardano tracer.
 {-# OPTIONS_GHC -Wno-orphans #-}
 -- Extracted from "cardano-node" `Cardano.Node.Tracing.Tracers.NodeToClient`.
--- Branch "master" (2025-02-28, 8c6a9f89fd8bb5b97dba2ae3a4c50873566fe14e).
+-- Branch "master" (2026-02-11, 85869e9dd21d9dac7c4381418346e97259c3303b).
 
 --------------------------------------------------------------------------------
 
@@ -178,3 +178,4 @@ instance MetaTrace (Stateful.AnyMessage ps f) =>
   allNamespaces =
     let cn = allNamespaces :: [Namespace (Stateful.AnyMessage ps f)]
     in fmap (nsPrependInner "Send") cn ++ fmap (nsPrependInner "Receive") cn
+

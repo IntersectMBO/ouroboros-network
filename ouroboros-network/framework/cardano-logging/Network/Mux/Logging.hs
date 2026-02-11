@@ -1,15 +1,21 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PackageImports #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 
 --------------------------------------------------------------------------------
 
 -- Orphan instances module for Cardano tracer.
 {-# OPTIONS_GHC -Wno-orphans #-}
 -- Extracted from "cardano-node" `Cardano.Node.Tracing.Tracers.Diffusion`.
--- Branch "master" (2025-02-28, 8c6a9f89fd8bb5b97dba2ae3a4c50873566fe14e).
+-- Branch "master" (2026-02-11, 85869e9dd21d9dac7c4381418346e97259c3303b).
+
+{-- TODO: All references to `ExnMempoolTimeout` were removed.
+--        See all TODO annotations.
+--}
 
 --------------------------------------------------------------------------------
 
@@ -20,6 +26,7 @@ module Network.Mux.Logging () where
 ---------
 -- base -
 ---------
+import Data.List (isPrefixOf)
 import Data.Typeable
 ---------------------
 -- Package: "aeson" -
@@ -42,6 +49,10 @@ import           "network-mux" -- "network-mux:network-mux"
   Network.Mux.Types
     ( SDUHeader (..), unRemoteClockModel
     )
+--------------------
+-- Package: "text" -
+--------------------
+import "text" Data.Text (Text)
 --------------------------------
 -- Package: "trace-dispatcher" -
 --------------------------------
@@ -368,6 +379,23 @@ instance MetaTrace Mux.ChannelTrace where
       , Namespace [] ["ChannelSendEnd"]
       ]
 
+txsMempoolTimeoutHardCounterName :: Text
+txsMempoolTimeoutHardCounterName = "txsMempoolTimeoutHard"
+
+impliesMempoolTimeoutHard :: Mux.Trace -> Bool
+impliesMempoolTimeoutHard = \case
+  Mux.TraceExceptionExit _mid _dir e
+{-- TODO: In cardano-node master this is implemented as:
+ --
+ -- > | Just _ <- fromException @ExnMempoolTimeout e
+ -- >   -> True
+ --
+ -- but `ExnMempoolTimeout` is defined in `ouroboros-consensus` which is not a
+ -- dependency of `ouroboros-network`.
+ --}
+    | isPrefixOf "ExnMempoolTimeout " (show e) -> True
+  _ -> False
+
 instance LogFormatting Mux.Trace where
     forMachine _dtal (Mux.TraceState new) = mconcat
       [ "kind" .= String "Mux.TraceState"
@@ -425,6 +453,18 @@ instance LogFormatting Mux.Trace where
       [ "kind" .= String "Mux.TraceStopped"
       , "msg"  .= String "Mux stoppped"
       ]
+{-- TODO:
+framework/cardano-logging/Network/Mux/Logging.hs:400:5: warning: [GHC-62161] [-Wincomplete-patterns]
+    Pattern match(es) are non-exhaustive
+    In an equation for ‘forMachine’:
+        Patterns of type ‘DetailLevel’, ‘Mux.Trace’ not matched:
+            _ (Mux.TraceNewMux _)
+            _ Mux.TraceStarting
+    |
+400 |     forMachine _dtal (Mux.TraceState new) = mconcat
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
+--}
+    forMachine _dtal _ = mconcat []
 
     forHuman (Mux.TraceState new) =
       sformat ("State: " % shown) new
@@ -446,6 +486,48 @@ instance LogFormatting Mux.Trace where
       sformat ("Terminating (" % shown % ") in " % shown) mid dir
     forHuman Mux.TraceStopping = "Mux stopping"
     forHuman Mux.TraceStopped  = "Mux stoppped"
+{-- TODO:
+framework/cardano-logging/Network/Mux/Logging.hs:469:5: warning: [GHC-62161] [-Wincomplete-patterns]
+    Pattern match(es) are non-exhaustive
+    In an equation for ‘forHuman’:
+        Patterns of type ‘Mux.Trace’ not matched:
+            Mux.TraceNewMux _
+            Mux.TraceStarting
+    |
+469 |     forHuman (Mux.TraceState new) =
+    |
+--}
+    forHuman _ = ""
+
+    asMetrics = \case
+      Mux.TraceState{} -> []
+      Mux.TraceCleanExit{} -> []
+      ev@Mux.TraceExceptionExit{} ->
+        -- Somewhat awkward to "catch" this Consensus exception here, but
+        -- Diffusion Layer is indeed the ultimate manager of the per-peer
+        -- threads.
+        [ CounterM txsMempoolTimeoutHardCounterName Nothing
+        | impliesMempoolTimeoutHard ev
+        ]
+      Mux.TraceStartEagerly{} -> []
+      Mux.TraceStartOnDemand{} -> []
+      Mux.TraceStartOnDemandAny{} -> []
+      Mux.TraceStartedOnDemand{} -> []
+      Mux.TraceTerminating{} -> []
+      Mux.TraceStopping{} -> []
+      Mux.TraceStopped{} -> []
+{-- TODO:
+framework/cardano-logging/Network/Mux/Logging.hs:502:17: warning: [GHC-62161] [-Wincomplete-patterns]
+    Pattern match(es) are non-exhaustive
+    In a \case alternative:
+        Patterns of type ‘Mux.Trace’ not matched:
+            Mux.TraceNewMux _
+            Mux.TraceStarting
+    |
+502 |     asMetrics = \case
+    |
+--}
+      _ -> []
 
 instance MetaTrace Mux.Trace where
     namespaceFor Mux.TraceState {}                 =
@@ -468,6 +550,18 @@ instance MetaTrace Mux.Trace where
       Namespace [] ["Stopping"]
     namespaceFor Mux.TraceStopped                  =
       Namespace [] ["Stopped"]
+{-- TODO:
+framework/cardano-logging/Network/Mux/Logging.hs:533:5: warning: [GHC-62161] [-Wincomplete-patterns]
+    Pattern match(es) are non-exhaustive
+    In an equation for ‘namespaceFor’:
+        Patterns of type ‘Mux.Trace’ not matched:
+            Mux.TraceNewMux _
+            Mux.TraceStarting
+    |
+533 |     namespaceFor Mux.TraceState {}                 =
+    |
+--}
+    namespaceFor _  = Namespace [] []
 
     severityFor (Namespace _ ["State"]) _                 = Just Info
     severityFor (Namespace _ ["CleanExit"]) _             = Just Notice
@@ -503,6 +597,20 @@ instance MetaTrace Mux.Trace where
       "Mux shutdown."
     documentFor _ = Nothing
 
+    metricsDocFor (Namespace _ ["State"])               = []
+    metricsDocFor (Namespace _ ["CleanExit"])           = []
+    metricsDocFor (Namespace _ ["ExceptionExit"])       =
+      [ (txsMempoolTimeoutHardCounterName, "Transactions that hard timed out in mempool")
+      ]
+    metricsDocFor (Namespace _ ["StartEagerly"])        = []
+    metricsDocFor (Namespace _ ["StartOnDemand"])       = []
+    metricsDocFor (Namespace _ ["StartedOnDemand"])     = []
+    metricsDocFor (Namespace _ ["StartOnDemandAny"])    = []
+    metricsDocFor (Namespace _ ["Terminating"])         = []
+    metricsDocFor (Namespace _ ["Stopping"])            = []
+    metricsDocFor (Namespace _ ["Stopped"])             = []
+    metricsDocFor _                                     = []
+
     allNamespaces = [
         Namespace [] ["State"]
       , Namespace [] ["CleanExit"]
@@ -515,4 +623,3 @@ instance MetaTrace Mux.Trace where
       , Namespace [] ["Stopping"]
       , Namespace [] ["Stopped"]
       ]
-
