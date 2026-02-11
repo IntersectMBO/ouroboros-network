@@ -103,7 +103,7 @@ library
                  , binary
                  , blaze-html >=0.9 && <0.10
                  , bytestring >=0.11
-                 , cardano-crypto-class ^>=2.2.3.2
+                 , cardano-crypto-class:cardano-crypto-class ^>=2.3.1.0
                  , cardano-binary
                    -- We need to pin this down to this exact version, because
                    -- there are two independent packages named contra-tracer:
@@ -155,7 +155,7 @@ executable kes-agent
                  , kes-agent-crypto
                  , async
                  , bytestring
-                 , cardano-crypto-class
+                 , cardano-crypto-class:cardano-crypto-class
                  , contra-tracer
                  , containers
                  , directory
@@ -187,7 +187,7 @@ executable kes-service-client-demo
     build-depends: kes-agent
                  , kes-agent-crypto
                  , bytestring
-                 , cardano-crypto-class
+                 , cardano-crypto-class:cardano-crypto-class
                  , contra-tracer
                  , io-classes
                  , network
@@ -213,7 +213,7 @@ executable kes-agent-control
                  , kes-agent-crypto
                  , aeson >=2.0
                  , bytestring
-                 , cardano-crypto-class
+                 , cardano-crypto-class:cardano-crypto-class
                  , contra-tracer
                  , extra >=1.7.12 && <1.9
                  , io-classes
@@ -253,8 +253,7 @@ test-suite kes-agent-tests
                  , async
                  , bytestring
                  , cardano-binary
-                 , cardano-crypto-class
-                 , cardano-crypto-tests
+                 , cardano-crypto-class:{cardano-crypto-class, testlib}
                  , contra-tracer
                  , containers
                  , deepseq

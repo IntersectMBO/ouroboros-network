@@ -341,7 +341,7 @@ instance
     aliasField ("Hash<" ++ hashAlgorithmName (Proxy @h) ++ ">") $
       basicField
         "bytes"
-        (FixedSize . fromIntegral $ sizeHash (Proxy @h))
+        (FixedSize . fromIntegral $ hashSize (Proxy @h))
 
 -- ** DSIGN
 
@@ -350,7 +350,7 @@ instance DSIGNAlgorithm dsign => HasInfo (DirectCodec m) (VerKeyDSIGN dsign) whe
     aliasField ("VerKeyDSIGN " ++ algorithmNameDSIGN (Proxy @dsign)) $
       basicField
         "bytes"
-        (FixedSize . fromIntegral $ sizeVerKeyDSIGN (Proxy @dsign))
+        (FixedSize . fromIntegral $ verKeySizeDSIGN (Proxy @dsign))
 
 instance
   ( MonadST m
@@ -361,10 +361,10 @@ instance
   Serializable (DirectCodec m) (VerKeyDSIGN dsign)
   where
   encode codec val =
-    encodeSized (sizeVerKeyDSIGN (Proxy @dsign)) (rawSerialiseVerKeyDSIGN val)
+    encodeSized (verKeySizeDSIGN (Proxy @dsign)) (rawSerialiseVerKeyDSIGN val)
 
   decode codec = do
-    raw <- decodeSized (fromIntegral $ sizeVerKeyDSIGN (Proxy @dsign))
+    raw <- decodeSized (fromIntegral $ verKeySizeDSIGN (Proxy @dsign))
     let deser = rawDeserialiseVerKeyDSIGN raw
     case deser of
       Nothing -> lift . ReadResultT . return $ ReadMalformed "Invalid serialised VerKeyDSIGN"
@@ -379,7 +379,7 @@ instance
       ("SignKeyDSIGN<" ++ algorithmNameDSIGN (Proxy @dsign) ++ ">")
       $ basicField
         "bytes"
-        (FixedSize . fromIntegral $ sizeSignKeyDSIGN (Proxy @dsign))
+        (FixedSize . fromIntegral $ signKeySizeDSIGN (Proxy @dsign))
 
 instance
   ( MonadST m
@@ -390,10 +390,10 @@ instance
   Serializable (DirectCodec m) (SignKeyDSIGN dsign)
   where
   encode codec val =
-    encodeSized (fromIntegral $ sizeSignKeyDSIGN (Proxy @dsign)) (rawSerialiseSignKeyDSIGN val)
+    encodeSized (fromIntegral $ signKeySizeDSIGN (Proxy @dsign)) (rawSerialiseSignKeyDSIGN val)
 
   decode codec = do
-    raw <- decodeSized (fromIntegral $ sizeSignKeyDSIGN (Proxy @dsign))
+    raw <- decodeSized (fromIntegral $ signKeySizeDSIGN (Proxy @dsign))
     let deser = rawDeserialiseSignKeyDSIGN raw
     case deser of
       Nothing -> lift . ReadResultT . return $ ReadMalformed "Invalid serialised SignKeyDSIGN"
@@ -464,10 +464,10 @@ instance
   Serializable (DirectCodec m) (VerKeyKES kes)
   where
   encode codec val =
-    encodeSized (sizeVerKeyKES (Proxy @kes)) (rawSerialiseVerKeyKES val)
+    encodeSized (verKeySizeKES (Proxy @kes)) (rawSerialiseVerKeyKES val)
 
   decode codec = do
-    raw <- decodeSized (fromIntegral $ sizeVerKeyKES (Proxy @kes))
+    raw <- decodeSized (fromIntegral $ verKeySizeKES (Proxy @kes))
     let deser = rawDeserialiseVerKeyKES raw
     case deser of
       Nothing -> lift . ReadResultT . return $ ReadMalformed "Invalid serialised VerKeyKES"
@@ -545,12 +545,12 @@ instance
   , KESAlgorithm kes
   , HasInfo (DirectCodec m) (SignKeyKES kes)
   , HasInfo (DirectCodec m) (VerKeyKES kes)
-  , SizeHash h ~ SeedSizeKES kes
-  , KnownNat (SizeSignKeyKES kes)
-  , KnownNat (SizeVerKeyKES kes)
+  , HashSize h ~ SeedSizeKES kes
+  , KnownNat (SignKeySizeKES kes)
+  , KnownNat (VerKeySizeKES kes)
   , KnownNat (SeedSizeKES kes)
-  , KnownNat ((SizeSignKeyKES kes + SeedSizeKES kes) + (2 * SizeVerKeyKES kes))
-  , KnownNat (SizeSigKES kes + (SizeVerKeyKES kes * 2))
+  , KnownNat ((SignKeySizeKES kes + SeedSizeKES kes) + (2 * VerKeySizeKES kes))
+  , KnownNat (SigSizeKES kes + (VerKeySizeKES kes * 2))
   , forall a. HasInfo (DirectCodec m) (Hash h a)
   ) =>
   HasInfo (DirectCodec m) (SignKeyKES (SumKES h kes))
@@ -612,12 +612,12 @@ instance
   , OptimizedKESAlgorithm kes
   , HasInfo (DirectCodec m) (SignKeyKES kes)
   , HasInfo (DirectCodec m) (VerKeyKES kes)
-  , SizeHash h ~ SeedSizeKES kes
-  , KnownNat (SizeSignKeyKES kes)
-  , KnownNat (SizeVerKeyKES kes)
+  , HashSize h ~ SeedSizeKES kes
+  , KnownNat (SignKeySizeKES kes)
+  , KnownNat (VerKeySizeKES kes)
   , KnownNat (SeedSizeKES kes)
-  , KnownNat ((SizeSignKeyKES kes + SeedSizeKES kes) + (SizeVerKeyKES kes * 2))
-  , KnownNat (SizeSigKES kes + SizeVerKeyKES kes)
+  , KnownNat ((SignKeySizeKES kes + SeedSizeKES kes) + (VerKeySizeKES kes * 2))
+  , KnownNat (SigSizeKES kes + VerKeySizeKES kes)
   , forall a. HasInfo (DirectCodec m) (Hash h a)
   ) =>
   HasInfo (DirectCodec m) (SignKeyKES (CompactSumKES h kes))
@@ -837,7 +837,7 @@ instance DSIGNAlgorithm dsign => HasInfo (DirectCodec m) (SigDSIGN dsign) where
       ("SigDSIGN " ++ algorithmNameDSIGN (Proxy @dsign))
       $ basicField
         "bytes"
-        (FixedSize . fromIntegral $ sizeSigDSIGN (Proxy @dsign))
+        (FixedSize . fromIntegral $ sigSizeDSIGN (Proxy @dsign))
 instance
   ( MonadST m
   , MonadSTM m
@@ -847,10 +847,10 @@ instance
   Serializable (DirectCodec m) (SigDSIGN dsign)
   where
   encode codec val =
-    encodeSized (fromIntegral $ sizeSigDSIGN (Proxy @dsign)) (rawSerialiseSigDSIGN val)
+    encodeSized (fromIntegral $ sigSizeDSIGN (Proxy @dsign)) (rawSerialiseSigDSIGN val)
 
   decode codec = do
-    raw <- decodeSized (fromIntegral $ sizeSigDSIGN (Proxy @dsign))
+    raw <- decodeSized (fromIntegral $ sigSizeDSIGN (Proxy @dsign))
     let deser = rawDeserialiseSigDSIGN raw
     case deser of
       Nothing -> lift . ReadResultT . return $ ReadMalformed "Invalid serialised SigDSIGN"
