@@ -56,7 +56,7 @@ To build all the required jobs (which are necessary to pass through CI), you can
 nix build -j auto .\#hydraJobs.required
 ```
 
-To inspect what can be build use `nix repl` , for example:
+To inspect what can be built use `nix repl` , for example:
 ```
 nix-repl> :lf .
 nix-repl> hydraJobs.<TAB>
@@ -189,7 +189,7 @@ comes with [`io-sim`]: `io-classes` expose a very similar API that the `base`,
   They all use `DiffTime` rather than `Int`, so you can use fractional values
   if needed.
 
-  Failing to notice this, might lead to bugs where delays which supposed to
+  Failing to notice this, might lead to bugs where delays which are supposed to
   be in the order of seconds will be measured in months (`3*10^6` seconds ~ one
   month)!
 
@@ -294,7 +294,7 @@ need to delete branch created in `cardano-haskell-packages`.
 
 ### Release from master or release/* branch
 
-* First run `./script/release-to-chap.sh -r` to see which changes can be
+* First run `./scripts/release-to-chap.sh -r` to see which changes can be
   published.
 * Update versions in `*.cabal` files according to changelog fragments in `changelog.d` directory
   (using `scriv print` might be helpful to see the changes):
@@ -302,14 +302,14 @@ need to delete branch created in `cardano-haskell-packages`.
   - for a breaking release from a `release/*` branch, bump `y` in `x.y.z.w`
   This policy allows us to introduce breaking changes in already released packages.
 * Collect `CHANGELOG.md` using `scriv collect` (available in `nix develop`)
-* Run `./script/release-to-chap.sh` which will create a branch in
+* Run `./scripts/release-to-chap.sh` which will create a branch in
   `cardano-haskell-packages` repo (pointed by `CARDANO_HASKELL_PACKAGES_DIR`
   environment variable or `/tmp/chap` if it's not defined).
   * To enable pushing this branch, cd to the chap repo and execute:
     `git remote set-url origin git@github.com:IntersectMBO/cardano-haskell-packages.git`
     then return to the previous repo (`cd -`)
-* Before merging that branch, run `./script/build-with-chap.sh`.  It will use the new branch in
-  `cardano-haskell-packages` to restore the `ourobors-network` repository to the
+* Before merging that branch, run `./scripts/build-with-chap.sh`.  It will use the new branch in
+  `cardano-haskell-packages` to restore the `ouroboros-network` repository to the
   state published in `CHaP`.
   * If you need to re-run this script after fixing errors, you will need to delete the tags created
     by the previous run. You can do so with the following command:

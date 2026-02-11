@@ -1,4 +1,4 @@
 ### Breaking
 
-- Removed previuos targets from `TraceTargetsChanged`.
+- Removed previous targets from `TraceTargetsChanged`.
 
