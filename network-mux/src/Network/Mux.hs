@@ -672,9 +672,15 @@ muxChannel
 muxChannel tracer egressQueue want@(Wanton w) mc md q =
     Channel { send, recv }
   where
-    -- Limit for the message buffer between send and mux thread.
-    perMiniProtocolBufferSize :: Int64
-    perMiniProtocolBufferSize = 0x3ffff
+    -- A soft limit on the egress buffer (Wanton) size.
+    --
+    -- We can only append to `Wanton` if the current size is below the soft
+    -- limit, but we don't have a hard limit.  An investigation showed that
+    -- would only limit performance of data intensive mini-protocols.  Mux is
+    -- already fair, when the bandwidth is limited. See issue #5271.
+    --
+    egressSoftBufferLimit :: Int64
+    egressSoftBufferLimit = 0x3ffff
 
     send :: BL.ByteString -> m ()
     send encoding = do
@@ -685,7 +691,7 @@ muxChannel tracer egressQueue want@(Wanton w) mc md q =
 
         atomically $ do
             buf <- readTVar w
-            if BL.length buf < perMiniProtocolBufferSize
+            if BL.length buf < egressSoftBufferLimit
                then do
                    let wasEmpty = BL.null buf
                    writeTVar w (BL.append buf encoding)

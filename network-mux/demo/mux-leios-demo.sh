@@ -20,16 +20,20 @@ NUM_PRAOS_REQUESTS=1000 # $(($NUM_LEIOS_REQUESTS * $LEIOS_BLOCK_SIZE / $PRAOS_BL
 THROUPUT="100mbit"
 DELAY="10ms"
 
-RTS_OPTIONS="-N2"
 
 TMP_DIR=$(mktemp -d ${TMPDIR:-/tmp}/mux-leios-demo.XXXXXX)
 rm -f ./mux-leios-tmp-dir
 ln -s "$TMP_DIR" ./mux-leios-tmp-dir
 echo "Using temporary directory: $TMP_DIR"
 
+RTS_CLIENT_OPTIONS="-N2 -l-asgu -ol${TMP_DIR}/client.eventlog"
+RTS_SERVER_OPTIONS="-N2 -l-asgu -ol${TMP_DIR}/server.eventlog"
+
 echo "REQUEST_SIZE: ${REQUEST_SIZE}B" >> $TMP_DIR/config
 echo "PRAOS_BLOCK_SIZE: $(bc <<< "scale=2; $PRAOS_BLOCK_SIZE / 1000")KB" >> $TMP_DIR/config
 echo "LEIOS_BLOCK_SIZE: $(bc <<< "scale=2; $LEIOS_BLOCK_SIZE / 1000000")MB" >> $TMP_DIR/config
+echo "THROUPUT: ${THROUPUT}" >> $TMP_DIR/config
+echo "DELAY: ${DELAY}" >> $TMP_DIR/config
 
 cleanup_netns() {
   for i in 1 2 3; do
@@ -115,10 +119,13 @@ add_qdiscs() {
   i=$1
   set -x
 
-  # Limit bandwidth of and pace outgoing traffic.
-  sudo tc -n ns$i qdisc add dev veth${i} root handle 1: htb default 1
-  sudo tc -n ns$i class add dev veth${i} parent 1: classid 1:1 htb rate $THROUPUT
-  sudo tc -n ns$i qdisc add dev veth${i} parent 1:1 handle 10: fq_codel
+  # Limit bandwidth and pace outgoing traffic.
+  sudo tc -n ns$i qdisc del dev veth${i} root
+  sudo tc -n ns$i qdisc add dev veth${i} root handle 1: htb default 10
+  sudo tc -n ns$i class add dev veth${i} parent 1: classid 1:1 htb rate $THROUPUT ceil $THROUPUT
+  sudo tc -n ns$i class add dev veth${i} parent 1:1 classid 1:10 htb rate $THROUPUT ceil $THROUPUT
+  sudo tc -n ns$i qdisc add dev veth${i} parent 1:10 handle 10: fq_codel
+  sudo tc -n ns$i class show dev veth${i}
 
   { set +x; } 2>/dev/null
 }
@@ -148,20 +155,26 @@ setup_bridge() {
     sudo tc -n ns3 qdisc add dev veth${i}-br root netem delay $DELAY
   done;
 
+  sudo ip -n ns1 route get 10.0.0.2
+  sudo ip -n ns2 route get 10.0.0.1
+
   { set +x; } 2>/dev/null
 }
 
 setup_bridge
 
-cabal build mux-leios-demo
+cabal build exe:mux-leios-demo
 CMD=$(cabal list-bin exe:mux-leios-demo)
 
+# For debuging throuput shaping
+# sudo ip netns exec ns2 iperf3 -s &
+# sudo ip netns exec ns1 iperf3 -c 10.0.0.2
+# exit 0
+
 # client is executed in `ns1`
-# CLIENT_CMD="$CMD client $SERVER_ADDR $SERVER_PORT $REQUEST_SIZE $NUM_PRAOS_REQUESTS $NUM_LEIOS_REQUESTS +RTS ${RTS_OPTIONS} -RTS 2>$TMP_DIR/client.stderr | tee $TMP_DIR/client.stdout"
-CLIENT_CMD="$CMD client-burst $SERVER_ADDR $SERVER_PORT +RTS ${RTS_OPTIONS} -RTS 2>$TMP_DIR/client.stderr | tee $TMP_DIR/client.stdout"
+CLIENT_CMD="${CMD} client-burst ${SERVER_ADDR} ${SERVER_PORT} +RTS ${RTS_CLIENT_OPTIONS} -RTS 2>${TMP_DIR}/client.stderr | tee ${TMP_DIR}/client.stdout"
 # server is executed in `ns2`
-# SERVER_CMD="$CMD server $SERVER_ADDR $SERVER_PORT $PRAOS_BLOCK_SIZE $LEIOS_BLOCK_SIZE +RTS ${RTS_OPTIONS} -RTS 2>$TMP_DIR/server.stderr 1>$TMP_DIR/server.stdout"
-SERVER_CMD="$CMD server-burst $SERVER_ADDR $SERVER_PORT $NUM_PRAOS_REQUESTS $PRAOS_BLOCK_SIZE $NUM_LEIOS_REQUESTS $LEIOS_BLOCK_SIZE +RTS $RTS_OPTIONS -RTS 2>$TMP_DIR/server.stderr 1>$TMP_DIR/server.stdout"
+SERVER_CMD="${CMD} server-burst ${SERVER_ADDR} ${SERVER_PORT} ${NUM_PRAOS_REQUESTS} ${PRAOS_BLOCK_SIZE} ${NUM_LEIOS_REQUESTS} ${LEIOS_BLOCK_SIZE} +RTS ${RTS_SERVER_OPTIONS} -RTS 2>${TMP_DIR}/server.stderr | tee ${TMP_DIR}/server.stdout"
 
 echo "Server command: $SERVER_CMD" | tee -a $TMP_DIR/config
 echo "Client command: $CLIENT_CMD" | tee -a $TMP_DIR/config
