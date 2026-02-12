@@ -432,21 +432,13 @@ instance ( Ord ntnAddr
             , "upstreamyness" .= dpssUpstreamyness ds
             , "fetchynessBlocks" .= dpssFetchynessBlocks ds
             ]
-{-- TODO:
-    Pattern match(es) are non-exhaustive
-    In an equation for ‘forMachine’:
-        Patterns of type ‘DetailLevel’,
-                         ‘TracePeerSelection
-                            extraDebugState
-                            extraFlags
-                            extraPeers
-                            extraTrace
-                            ntnAddr’ not matched:
-            _ (ExtraTrace _)
-    |
-107 |   forMachine _dtal (TraceLocalRootPeersChanged lrp lrp') =
---}
-  forMachine _ _ = mempty
+  {-- TODO: Implementation for `ExtraTrace` was added here but it's not present
+   -- in cardano-node master.
+   --}
+  forMachine _dtal (ExtraTrace tr) =
+    mconcat [ "kind" .= String "ExtraTrace"
+            , "event" .= String (pack $ show tr)
+            ]
 
   forHuman = pack . show
 
@@ -586,21 +578,8 @@ instance MetaTrace (TracePeerSelection extraDebugState extraFlags extraPeers ext
       Namespace [] ["ChurnTimeout"]
     namespaceFor TraceDebugState {} =
       Namespace [] ["DebugState"]
-{-- TODO:
-       >     Pattern match(es) are non-exhaustive
-       >     In an equation for ‘namespaceFor’:
-       >         Patterns of type ‘TracePeerSelection
-       >                             extraDebugState
-       >                             extraFlags
-       >                             extraPeers
-       >                             extraTrace
-       >                             SockAddr’ not matched:
-       >             ExtraTrace _
-       >     |
-       > 467 |     namespaceFor TraceLocalRootPeersChanged {} =
---}
-    namespaceFor _ =
-      Namespace [] []
+    namespaceFor (ExtraTrace _) =
+      Namespace [] ["ExtraTrace"]
 
     severityFor (Namespace [] ["LocalRootPeersChanged"]) _ = Just Notice
     severityFor (Namespace [] ["TargetsChanged"]) _ = Just Notice
@@ -663,6 +642,7 @@ instance MetaTrace (TracePeerSelection extraDebugState extraFlags extraPeers ext
     severityFor (Namespace [] ["ChurnAction"]) _ = Just Info
     severityFor (Namespace [] ["ChurnTimeout"]) _ = Just Notice
     severityFor (Namespace [] ["DebugState"]) _ = Just Info
+    severityFor (Namespace [] ["ExtraTrace"]) _ = Just Debug
     severityFor _ _ = Nothing
 
     documentFor (Namespace [] ["LocalRootPeersChanged"]) = Just  ""
@@ -728,8 +708,10 @@ instance MetaTrace (TracePeerSelection extraDebugState extraFlags extraPeers ext
       "Outbound Governor was killed unexpectedly"
     documentFor (Namespace [] ["DebugState"]) = Just
       "peer selection internal state"
-    documentFor (Namespace [] ["VerifyPeerSnapshot"]) = Just
-      "Verification outcome of big ledger peer snapshot"
+    {-- TODO: Implementation for `ExtraTrace` was added here but it's not present
+     -- in cardano-node master.
+     --}
+    documentFor (Namespace [] ["ExtraTrace"]) = Just ""
     documentFor _ = Nothing
 
     metricsDocFor (Namespace [] ["ChurnAction"]) =
@@ -804,5 +786,6 @@ instance MetaTrace (TracePeerSelection extraDebugState extraFlags extraPeers ext
       , Namespace [] ["VerifyPeerSnapshot"]
       , Namespace [] ["OutboundGovernorCriticalFailure"]
       , Namespace [] ["DebugState"]
+      , Namespace [] ["ExtraTrace"]
       ]
 
