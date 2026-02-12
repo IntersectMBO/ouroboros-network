@@ -4790,11 +4790,6 @@ prop_churn_targets_bounds baseTargetsMap ioSimTrace traceNumber =
                             _other -> Nothing
              ) <$> eventMap
 
-       -- Property that verifies target changes stay within acceptable bounds
-       --
-       -- This function checks that after churn:
-       -- 1. New targets never exceed original targets
-       -- 2. New targets never decrease by more than 20%
        targetsChangeProperty :: PeerSelectionTargets -> PeerSelectionTargets -> Property
        targetsChangeProperty
          PeerSelectionTargets {
