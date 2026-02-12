@@ -4811,18 +4811,19 @@ prop_churn_targets_bounds baseTargetsMap ioSimTrace traceNumber =
          = let -- 20% or at least one
                decrease :: Int -> Int
                decrease v = max 0 $ v - max 1 (v `div` 5)
-            in property (  actives' <= actives
-                        && actives' >= decrease actives
-                        && activeBigLedgers' <= activeBigLedgers
-                        && activeBigLedgers' >= decrease activeBigLedgers
-                        && knowns' <= knowns
-                        && knowns' >= decrease knowns
-                        && knownBigLedgers' <= knownBigLedgers
-                        && knownBigLedgers' >= decrease knownBigLedgers
-                        && establisheds' <= establisheds
-                        && establisheds' >= decrease establisheds
-                        && establishedBigLedgers' <= establishedBigLedgers
-                        && establishedBigLedgers' >= decrease establishedBigLedgers
+            in      counterexample "active upper bound violation" (actives' <= actives)
+               .&&. counterexample "active lower bound violation" (actives' >= decrease actives)
+               .&&. counterexample "active big ledger peers upper bound violation" (activeBigLedgers' <= activeBigLedgers)
+               .&&. counterexample "active big ledger peers lower bound violation" (activeBigLedgers' >= decrease activeBigLedgers)
+               .&&. counterexample "known upper bound violation" (knowns' <= knowns)
+               .&&. counterexample "known lower bound violation" (knowns' >= decrease knowns)
+               .&&. counterexample "known big ledger peers upper bound violation" (knownBigLedgers' <= knownBigLedgers)
+               .&&. counterexample "known big ledger peers lower bound violation" (knownBigLedgers' >= decrease knownBigLedgers)
+               .&&. counterexample "established upper bound violation" (establisheds' <= establisheds)
+               .&&. counterexample "established lower bound violation" (establisheds' >= decrease establisheds)
+               .&&. counterexample "established big ledger peers upper bound violation" (establishedBigLedgers' <= establishedBigLedgers)
+               .&&. counterexample "established big ledger peers lower bound violation" (establishedBigLedgers' >= decrease establishedBigLedgers)
+
                         )
 
        checks =
