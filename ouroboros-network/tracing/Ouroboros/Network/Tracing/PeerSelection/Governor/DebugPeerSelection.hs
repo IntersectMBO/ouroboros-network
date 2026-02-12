@@ -1,7 +1,7 @@
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE NamedFieldPuns    #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE PackageImports #-}
+{-# LANGUAGE PackageImports    #-}
 
 --------------------------------------------------------------------------------
 
@@ -39,14 +39,8 @@ import "network" Network.Socket (SockAddr)
 ---------------------------------
 -- Package: "ouroboros-network" -
 ---------------------------------
-import "ouroboros-network" -- "ouroboros-network:ouroboros-network"
-  Ouroboros.Network.PeerSelection.Governor.Types
-    ( DebugPeerSelection (..)
-    , PeerSelectionState (..)
-    {-- TODO: use this
-    , peerSelectionStateToCounters
-    --}
-    )
+import "ouroboros-network" Ouroboros.Network.PeerSelection.Governor.Types
+           (DebugPeerSelection (..), PeerSelectionState (..))
 --------------------
 -- Package: "text" -
 --------------------
@@ -59,8 +53,7 @@ import "trace-dispatcher" Cardano.Logging
 -- Self -
 ---------
 import Ouroboros.Network.Tracing.PeerSelection.Governor.Utils
-  ( peerSelectionTargetsToObject
-  )
+           (peerSelectionTargetsToObject)
 
 --------------------------------------------------------------------------------
 -- DebugPeerSelection Tracer
@@ -83,7 +76,7 @@ instance ( Show extraState
              , "wakeupAfter" .= String (pack $ show wakeupAfter)
              , "targets" .= peerSelectionTargetsToObject targets
 {-- TODO: Before "cardano-diffusion" removal:
- 
+
              , "counters" .= forMachine dtal (peerSelectionStateToCounters Cardano.PublicRootPeers.toSet Cardano.cardanoPeerSelectionStatetoCounters st)
 --}
              ]
@@ -99,10 +92,10 @@ instance MetaTrace (DebugPeerSelection extraState extraFlags extraPeers SockAddr
     namespaceFor TraceGovernorState {} = Namespace [] ["GovernorState"]
 
     severityFor (Namespace _ ["GovernorState"]) _ = Just Debug
-    severityFor _ _ = Nothing
+    severityFor _ _                               = Nothing
 
     documentFor (Namespace _ ["GovernorState"]) = Just ""
-    documentFor _ = Nothing
+    documentFor _                               = Nothing
 
     allNamespaces = [
       Namespace [] ["GovernorState"]

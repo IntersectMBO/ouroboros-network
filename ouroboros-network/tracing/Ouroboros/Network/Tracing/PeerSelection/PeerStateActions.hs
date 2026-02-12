@@ -1,6 +1,6 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE PackageImports #-}
+{-# LANGUAGE PackageImports    #-}
 
 --------------------------------------------------------------------------------
 
@@ -18,11 +18,11 @@ module Ouroboros.Network.Tracing.PeerSelection.PeerStateActions () where
 ---------
 -- base -
 ---------
-import           Control.Exception (displayException)
+import Control.Exception (displayException)
 ---------------------
 -- Package: "aeson" -
 ---------------------
-import "aeson" Data.Aeson (toJSON, Value (String), (.=))
+import "aeson" Data.Aeson (Value (String), toJSON, (.=))
 -----------------------
 -- Package: "network" -
 -----------------------
@@ -30,12 +30,10 @@ import "network" Network.Socket (SockAddr)
 ---------------------------------
 -- Package: "ouroboros-network" -
 ---------------------------------
-import "ouroboros-network" -- "ouroboros-network:ouroboros-network"
-  Ouroboros.Network.PeerSelection.PeerStateActions
-    ( PeerSelectionActionsTrace (..) )
+import "ouroboros-network" Ouroboros.Network.PeerSelection.PeerStateActions
+           (PeerSelectionActionsTrace (..))
 -- Needed for `instance ToJSON ConnectionId`.
-import "ouroboros-network" -- "ouroboros-network:orphan-instances"
-  Ouroboros.Network.OrphanInstances ()
+import "ouroboros-network" Ouroboros.Network.OrphanInstances ()
 --------------------
 -- Package: "text" -
 --------------------
@@ -89,13 +87,13 @@ instance MetaTrace (PeerSelectionActionsTrace SockAddr lAddr) where
     namespaceFor AcquireConnectionError {} = Namespace [] ["ConnectionError"]
     namespaceFor PeerHotDuration {} = Namespace [] ["PeerHotDuration"]
 
-    severityFor (Namespace _ ["StatusChanged"]) _ = Just Info
+    severityFor (Namespace _ ["StatusChanged"]) _       = Just Info
     severityFor (Namespace _ ["StatusChangeFailure"]) _ = Just Error
-    severityFor (Namespace _ ["MonitoringError"]) _ = Just Error
-    severityFor (Namespace _ ["MonitoringResult"]) _ = Just Debug
-    severityFor (Namespace _ ["ConnectionError"]) _ = Just Error
-    severityFor (Namespace _ ["PeerHotDuration"]) _ = Just Info
-    severityFor _ _ = Nothing
+    severityFor (Namespace _ ["MonitoringError"]) _     = Just Error
+    severityFor (Namespace _ ["MonitoringResult"]) _    = Just Debug
+    severityFor (Namespace _ ["ConnectionError"]) _     = Just Error
+    severityFor (Namespace _ ["PeerHotDuration"]) _     = Just Info
+    severityFor _ _                                     = Nothing
 
     documentFor (Namespace _ ["StatusChanged"]) = Just
       ""

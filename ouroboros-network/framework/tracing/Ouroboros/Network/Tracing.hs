@@ -1,7 +1,7 @@
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GADTs #-}
+{-# LANGUAGE GADTs             #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE PackageImports #-}
+{-# LANGUAGE PackageImports    #-}
 
 --------------------------------------------------------------------------------
 
@@ -27,7 +27,7 @@ import "aeson" Data.Aeson (Value (String), (.=))
 -----------------------
 -- Package: "iproute" -
 -----------------------
-import qualified "iproute" Data.IP as IP
+import "iproute" Data.IP qualified as IP
 -----------------------
 -- Package: "network" -
 -----------------------
@@ -39,17 +39,13 @@ import "text" Data.Text (Text, pack)
 ---------------------------------
 -- Package: "ouroboros-network" -
 ---------------------------------
-import qualified "ouroboros-network" -- "ouroboros-newtwork:framework"
-  Ouroboros.Network.Protocol.Handshake.Type as HS
-import           "ouroboros-network" -- "ouroboros-newtwork:framework"
-  Ouroboros.Network.Snocket
-    ( LocalAddress (..)
-    , RemoteAddress
-    )
+import "ouroboros-network" Ouroboros.Network.Protocol.Handshake.Type qualified as HS
+import "ouroboros-network" Ouroboros.Network.Snocket (LocalAddress (..),
+           RemoteAddress)
 -------------------------------
 -- Package: "typed-protocols" -
 -------------------------------
-import "typed-protocols" Network.TypedProtocol.Codec ( AnyMessage (..) )
+import "typed-protocols" Network.TypedProtocol.Codec (AnyMessage (..))
 --------------------------------
 -- Package: "trace-dispatcher" -
 --------------------------------
@@ -57,11 +53,11 @@ import "trace-dispatcher" Cardano.Logging
 ---------
 -- Self -
 ---------
-import          Ouroboros.Network.Tracing.ConnectionId ()
-import          Ouroboros.Network.Tracing.ConnectionManager ()
-import          Ouroboros.Network.Tracing.Driver ()
-import          Ouroboros.Network.Tracing.InboundGovernor ()
-import          Ouroboros.Network.Tracing.Server ()
+import Ouroboros.Network.Tracing.ConnectionId ()
+import Ouroboros.Network.Tracing.ConnectionManager ()
+import Ouroboros.Network.Tracing.Driver ()
+import Ouroboros.Network.Tracing.InboundGovernor ()
+import Ouroboros.Network.Tracing.Server ()
 
 --------------------------------------------------------------------------------
 -- Addresses.

@@ -1,6 +1,6 @@
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE PackageImports #-}
+{-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PackageImports    #-}
 
 --------------------------------------------------------------------------------
 
@@ -26,17 +26,14 @@ import Control.Exception (displayException)
 ---------------------
 -- Package: "aeson" -
 ---------------------
-import "aeson" Data.Aeson (ToJSON, ToJSONKey, toJSON, Value (String), (.=))
+import "aeson" Data.Aeson (ToJSON, ToJSONKey, Value (String), toJSON, (.=))
 ---------------------------------
 -- Package: "ouroboros-network" -
 ---------------------------------
 -- Needed for `ToJSON PeerSelection.State.LocalRootPeers.LocalRootConfig`
-import qualified "ouroboros-network" -- "ouroboros-network:orphan-instances"
-  Ouroboros.Network.OrphanInstances ()
-import           "ouroboros-network" -- "ouroboros-newtwork:ouroboros-newtwork"
-  Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
-    ( TraceLocalRootPeers (..)
-    )
+import "ouroboros-network" Ouroboros.Network.OrphanInstances qualified ()
+import "ouroboros-network" Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
+           (TraceLocalRootPeers (..))
 --------------------
 -- Package: "text" -
 --------------------
@@ -112,14 +109,14 @@ instance MetaTrace (TraceLocalRootPeers ntnAddr extraFlags) where
     TraceLocalRootReconfigured {} -> Namespace [] ["LocalRootReconfigured"]
     TraceLocalRootDNSMap {}       -> Namespace [] ["LocalRootDNSMap"]
 
-  severityFor (Namespace [] ["LocalRootDomains"]) _ = Just Info
-  severityFor (Namespace [] ["LocalRootWaiting"]) _ = Just Info
-  severityFor (Namespace [] ["LocalRootGroups"]) _ = Just Info
-  severityFor (Namespace [] ["LocalRootFailure"]) _ = Just Info
-  severityFor (Namespace [] ["LocalRootError"]) _ = Just Info
+  severityFor (Namespace [] ["LocalRootDomains"]) _      = Just Info
+  severityFor (Namespace [] ["LocalRootWaiting"]) _      = Just Info
+  severityFor (Namespace [] ["LocalRootGroups"]) _       = Just Info
+  severityFor (Namespace [] ["LocalRootFailure"]) _      = Just Info
+  severityFor (Namespace [] ["LocalRootError"]) _        = Just Info
   severityFor (Namespace [] ["LocalRootReconfigured"]) _ = Just Info
-  severityFor (Namespace [] ["LocalRootDNSMap"]) _ = Just Info
-  severityFor _ _ = Nothing
+  severityFor (Namespace [] ["LocalRootDNSMap"]) _       = Just Info
+  severityFor _ _                                        = Nothing
 
   documentFor (Namespace [] ["LocalRootDomains"]) = Just
     ""

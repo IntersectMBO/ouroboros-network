@@ -1,5 +1,5 @@
-{-# LANGUAGE PackageImports #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PackageImports    #-}
 
 --------------------------------------------------------------------------------
 
@@ -21,20 +21,18 @@ module Ouroboros.Network.Tracing.PeerSelection.RootPeersDNS.DNSActions () where
 ---------------------
 -- Package: "aeson" -
 ---------------------
-import "aeson" Data.Aeson (ToJSON, toJSON, Value (String), (.=))
+import "aeson" Data.Aeson (ToJSON, Value (String), toJSON, (.=))
 -----------------------
 -- Package: "iproute" -
 -----------------------
-import qualified "iproute" Data.IP as IP
+import "iproute" Data.IP qualified as IP
 ---------------------------------
 -- Package: "ouroboros-network" -
 ---------------------------------
 -- Needed for `ToJSON Network.Socket.Types.PortNumber`
-import qualified "ouroboros-network" -- "ouroboros-network:orphan-instances"
-  Ouroboros.Network.OrphanInstances ()
-import           "ouroboros-network" -- "ouroboros-newtwork:ouroboros-network"
-  Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
-    ( DNSTrace (..) )
+import "ouroboros-network" Ouroboros.Network.OrphanInstances qualified ()
+import "ouroboros-network" Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
+           (DNSTrace (..))
 --------------------
 -- Package: "text" -
 --------------------
@@ -102,10 +100,10 @@ instance MetaTrace DNSTrace where
     Namespace [] ["SRVLookupError"]
 
   severityFor _ (Just DNSLookupResult {}) = Just Info
-  severityFor _ (Just DNSLookupError {}) = Just Info
-  severityFor _ (Just SRVLookupResult{}) = Just Info
-  severityFor _ (Just SRVLookupError{}) = Just Info
-  severityFor _ Nothing = Nothing
+  severityFor _ (Just DNSLookupError {})  = Just Info
+  severityFor _ (Just SRVLookupResult{})  = Just Info
+  severityFor _ (Just SRVLookupError{})   = Just Info
+  severityFor _ Nothing                   = Nothing
 
   documentFor _ = Nothing
 

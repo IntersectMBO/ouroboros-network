@@ -1,10 +1,10 @@
-{-# LANGUAGE CPP #-}
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE PackageImports #-}
+{-# LANGUAGE CPP                 #-}
+{-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE PackageImports      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeApplications    #-}
 
 --------------------------------------------------------------------------------
 
@@ -39,16 +39,11 @@ import "formatting" Formatting
 ---------------------------
 -- Package: "network-mux" -
 ---------------------------
-import qualified "network-mux" -- "network-mux:network-mux"
-  Network.Mux as Mux
+import "network-mux" Network.Mux qualified as Mux
 #ifdef linux_HOST_OS
-import           "network-mux" -- "network-mux:network-mux"
-  Network.Mux.TCPInfo (StructTCPInfo (..))
+import "network-mux" Network.Mux.TCPInfo (StructTCPInfo (..))
 #endif
-import           "network-mux" -- "network-mux:network-mux"
-  Network.Mux.Types
-    ( SDUHeader (..), unRemoteClockModel
-    )
+import "network-mux" Network.Mux.Types (SDUHeader (..), unRemoteClockModel)
 --------------------
 -- Package: "text" -
 --------------------
@@ -255,20 +250,20 @@ instance MetaTrace Mux.BearerTrace where
     namespaceFor Mux.TraceTCPInfo {}               =
       Namespace [] ["TCPInfo"]
 
-    severityFor (Namespace _ ["RecvHeaderStart"]) _       = Just Debug
-    severityFor (Namespace _ ["RecvRaw"]) _               = Just Debug
-    severityFor (Namespace _ ["RecvHeaderEnd"]) _         = Just Debug
-    severityFor (Namespace _ ["RecvStart"]) _             = Just Debug
-    severityFor (Namespace _ ["RecvEnd"]) _               = Just Debug
-    severityFor (Namespace _ ["SendStart"]) _             = Just Debug
-    severityFor (Namespace _ ["SendEnd"]) _               = Just Debug
-    severityFor (Namespace _ ["RecvDeltaQObservation"]) _ = Just Debug
-    severityFor (Namespace _ ["RecvDeltaQSample"]) _      = Just Debug
+    severityFor (Namespace _ ["RecvHeaderStart"]) _          = Just Debug
+    severityFor (Namespace _ ["RecvRaw"]) _                  = Just Debug
+    severityFor (Namespace _ ["RecvHeaderEnd"]) _            = Just Debug
+    severityFor (Namespace _ ["RecvStart"]) _                = Just Debug
+    severityFor (Namespace _ ["RecvEnd"]) _                  = Just Debug
+    severityFor (Namespace _ ["SendStart"]) _                = Just Debug
+    severityFor (Namespace _ ["SendEnd"]) _                  = Just Debug
+    severityFor (Namespace _ ["RecvDeltaQObservation"]) _    = Just Debug
+    severityFor (Namespace _ ["RecvDeltaQSample"]) _         = Just Debug
     severityFor (Namespace _ ["SDUReadTimeoutException"]) _  = Just Notice
     severityFor (Namespace _ ["SDUWriteTimeoutException"]) _ = Just Notice
-    severityFor (Namespace _ ["TCPInfo"]) _               = Just Debug
-    severityFor (Namespace _ ["TraceEmitDeltaQ"]) _       = Nothing
-    severityFor _ _                                       = Nothing
+    severityFor (Namespace _ ["TCPInfo"]) _                  = Just Debug
+    severityFor (Namespace _ ["TraceEmitDeltaQ"]) _          = Nothing
+    severityFor _ _                                          = Nothing
 
     documentFor (Namespace _ ["RecvHeaderStart"])       = Just
       "Bearer receive header start."
@@ -356,11 +351,11 @@ instance MetaTrace Mux.ChannelTrace where
     namespaceFor Mux.TraceChannelSendEnd {}        =
       Namespace [] ["ChannelSendEnd"]
 
-    severityFor (Namespace _ ["ChannelRecvStart"]) _      = Just Debug
-    severityFor (Namespace _ ["ChannelRecvEnd"]) _        = Just Debug
-    severityFor (Namespace _ ["ChannelSendStart"]) _      = Just Debug
-    severityFor (Namespace _ ["ChannelSendEnd"]) _        = Just Debug
-    severityFor _ _                                       = Nothing
+    severityFor (Namespace _ ["ChannelRecvStart"]) _ = Just Debug
+    severityFor (Namespace _ ["ChannelRecvEnd"]) _   = Just Debug
+    severityFor (Namespace _ ["ChannelSendStart"]) _ = Just Debug
+    severityFor (Namespace _ ["ChannelSendEnd"]) _   = Just Debug
+    severityFor _ _                                  = Nothing
 
     documentFor (Namespace _ ["ChannelRecvStart"])      = Just
       "Channel receive start."
@@ -563,17 +558,17 @@ framework/cardano-logging/Network/Mux/Logging.hs:533:5: warning: [GHC-62161] [-W
 --}
     namespaceFor _  = Namespace [] []
 
-    severityFor (Namespace _ ["State"]) _                 = Just Info
-    severityFor (Namespace _ ["CleanExit"]) _             = Just Notice
-    severityFor (Namespace _ ["ExceptionExit"]) _         = Just Notice
-    severityFor (Namespace _ ["StartEagerly"]) _          = Just Debug
-    severityFor (Namespace _ ["StartOnDemand"]) _         = Just Debug
-    severityFor (Namespace _ ["StartOnDemandAny"]) _       = Just Debug
-    severityFor (Namespace _ ["StartedOnDemand"]) _       = Just Debug
-    severityFor (Namespace _ ["Terminating"]) _           = Just Debug
-    severityFor (Namespace _ ["Stopping"]) _              = Just Debug
-    severityFor (Namespace _ ["Stopped"]) _               = Just Debug
-    severityFor _ _ = Nothing
+    severityFor (Namespace _ ["State"]) _            = Just Info
+    severityFor (Namespace _ ["CleanExit"]) _        = Just Notice
+    severityFor (Namespace _ ["ExceptionExit"]) _    = Just Notice
+    severityFor (Namespace _ ["StartEagerly"]) _     = Just Debug
+    severityFor (Namespace _ ["StartOnDemand"]) _    = Just Debug
+    severityFor (Namespace _ ["StartOnDemandAny"]) _ = Just Debug
+    severityFor (Namespace _ ["StartedOnDemand"]) _  = Just Debug
+    severityFor (Namespace _ ["Terminating"]) _      = Just Debug
+    severityFor (Namespace _ ["Stopping"]) _         = Just Debug
+    severityFor (Namespace _ ["Stopped"]) _          = Just Debug
+    severityFor _ _                                  = Nothing
 
     documentFor (Namespace _ ["State"])                 = Just
       "State."

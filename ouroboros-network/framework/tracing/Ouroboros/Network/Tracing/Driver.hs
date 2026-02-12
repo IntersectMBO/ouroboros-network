@@ -1,7 +1,7 @@
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE PackageImports #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE OverloadedStrings    #-}
+{-# LANGUAGE PackageImports       #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 --------------------------------------------------------------------------------
@@ -28,10 +28,8 @@ import "aeson" Data.Aeson (Value (String), (.=))
 ---------------------------------
 -- Package: "ouroboros-network" -
 ---------------------------------
-import qualified "ouroboros-network" -- "ouroboros-newtwork:framework"
-  Ouroboros.Network.Driver.Simple as Simple
-import qualified "ouroboros-network" -- "ouroboros-newtwork:framework"
-  Ouroboros.Network.Driver.Stateful as Stateful
+import "ouroboros-network" Ouroboros.Network.Driver.Simple qualified as Simple
+import "ouroboros-network" Ouroboros.Network.Driver.Stateful qualified as Stateful
 --------------------------------
 -- Package: "trace-dispatcher" -
 --------------------------------
@@ -39,8 +37,8 @@ import "trace-dispatcher" Cardano.Logging
 -------------------------------
 -- Package: "typed-protocols" -
 -------------------------------
-import qualified "typed-protocols" Network.TypedProtocol.Codec as Simple
-import qualified "typed-protocols" Network.TypedProtocol.Stateful.Codec as Stateful
+import "typed-protocols" Network.TypedProtocol.Codec qualified as Simple
+import "typed-protocols" Network.TypedProtocol.Stateful.Codec qualified as Stateful
 
 -------------------------------------------------------------------------------
 -- Driver Simple.

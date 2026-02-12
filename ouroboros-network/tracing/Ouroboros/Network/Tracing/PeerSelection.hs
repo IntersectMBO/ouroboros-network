@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE PackageImports #-}
+{-# LANGUAGE PackageImports    #-}
 
 --------------------------------------------------------------------------------
 
@@ -17,7 +17,7 @@ module Ouroboros.Network.Tracing.PeerSelection () where
 ---------
 -- base -
 ---------
-import qualified Data.List as List
+import Data.List qualified as List
 ---------------------
 -- Package: "aeson" -
 ---------------------
@@ -25,17 +25,11 @@ import "aeson" Data.Aeson (Value (String), (.=))
 ---------------------------------
 -- Package: "ouroboros-network" -
 ---------------------------------
-import qualified "ouroboros-network" -- "ouroboros-network:ouroboros-network"
-  Ouroboros.Network.Diffusion.Types as Diff
+import "ouroboros-network" Ouroboros.Network.Diffusion.Types qualified as Diff
 -- Needed for `instance ToJSON UseLedgerPeers`.
-import           "ouroboros-network" -- "ouroboros-network:orphan-instances"
-  Ouroboros.Network.OrphanInstances ()
-import           "ouroboros-network" -- "ouroboros-network:ouroboros-network"
-  Ouroboros.Network.PeerSelection.LedgerPeers
-    ( NumberOfPeers (..)
-    , PoolStake (..)
-    , TraceLedgerPeers (..)
-    )
+import "ouroboros-network" Ouroboros.Network.OrphanInstances ()
+import "ouroboros-network" Ouroboros.Network.PeerSelection.LedgerPeers
+           (NumberOfPeers (..), PoolStake (..), TraceLedgerPeers (..))
 --------------------
 -- Package: "text" -
 --------------------
@@ -352,22 +346,22 @@ instance MetaTrace TraceLedgerPeers where
     namespaceFor UsingBigLedgerPeerSnapshot {} =
       Namespace [] ["UsingBigLedgerPeerSnapshot"]
 
-    severityFor (Namespace _ ["PickedLedgerPeer"]) _ = Just Debug
-    severityFor (Namespace _ ["PickedLedgerPeers"]) _ = Just Info
-    severityFor (Namespace _ ["PickedBigLedgerPeer"]) _ = Just Debug
-    severityFor (Namespace _ ["PickedBigLedgerPeers"]) _ = Just Info
-    severityFor (Namespace _ ["FetchingNewLedgerState"]) _ = Just Info
-    severityFor (Namespace _ ["DisabledLedgerPeers"]) _ = Just Info
-    severityFor (Namespace _ ["TraceUseLedgerAfter"]) _ = Just Info
-    severityFor (Namespace _ ["WaitingOnRequest"]) _ = Just Debug
-    severityFor (Namespace _ ["RequestForPeers"]) _ = Just Debug
-    severityFor (Namespace _ ["ReusingLedgerState"]) _ = Just Debug
+    severityFor (Namespace _ ["PickedLedgerPeer"]) _             = Just Debug
+    severityFor (Namespace _ ["PickedLedgerPeers"]) _            = Just Info
+    severityFor (Namespace _ ["PickedBigLedgerPeer"]) _          = Just Debug
+    severityFor (Namespace _ ["PickedBigLedgerPeers"]) _         = Just Info
+    severityFor (Namespace _ ["FetchingNewLedgerState"]) _       = Just Info
+    severityFor (Namespace _ ["DisabledLedgerPeers"]) _          = Just Info
+    severityFor (Namespace _ ["TraceUseLedgerAfter"]) _          = Just Info
+    severityFor (Namespace _ ["WaitingOnRequest"]) _             = Just Debug
+    severityFor (Namespace _ ["RequestForPeers"]) _              = Just Debug
+    severityFor (Namespace _ ["ReusingLedgerState"]) _           = Just Debug
     severityFor (Namespace _ ["FallingBackToPublicRootPeers"]) _ = Just Info
-    severityFor (Namespace _ ["NotEnoughLedgerPeers"]) _ = Just Warning
-    severityFor (Namespace _ ["NotEnoughBigLedgerPeers"]) _ = Just Warning
-    severityFor (Namespace _ ["TraceLedgerPeersDomains"]) _ = Just Debug
-    severityFor (Namespace _ ["UsingBigLedgerPeerSnapshot"]) _ = Just Debug
-    severityFor _ _ = Nothing
+    severityFor (Namespace _ ["NotEnoughLedgerPeers"]) _         = Just Warning
+    severityFor (Namespace _ ["NotEnoughBigLedgerPeers"]) _      = Just Warning
+    severityFor (Namespace _ ["TraceLedgerPeersDomains"]) _      = Just Debug
+    severityFor (Namespace _ ["UsingBigLedgerPeerSnapshot"]) _   = Just Debug
+    severityFor _ _                                              = Nothing
 
     documentFor (Namespace _ ["PickedLedgerPeer"]) = Just
       "Trace for a peer picked with accumulated and relative stake of its pool."

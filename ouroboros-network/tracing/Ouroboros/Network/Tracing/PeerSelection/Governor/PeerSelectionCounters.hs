@@ -1,7 +1,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE PackageImports #-}
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE PackageImports    #-}
+{-# LANGUAGE RecordWildCards   #-}
 
 --------------------------------------------------------------------------------
 
@@ -35,11 +35,8 @@ import "aeson" Data.Aeson (Value (String), (.=))
 ---------------------------------
 -- Package: "ouroboros-network" -
 ---------------------------------
-import "ouroboros-network" -- "ouroboros-network:ouroboros-network"
-  Ouroboros.Network.PeerSelection.Governor.Types
-    ( PeerSelectionCounters
-    , PeerSelectionView (..)
-    )
+import "ouroboros-network" Ouroboros.Network.PeerSelection.Governor.Types
+           (PeerSelectionCounters, PeerSelectionView (..))
 --------------------------------
 -- Package: "trace-dispatcher" -
 --------------------------------
@@ -177,7 +174,7 @@ instance MetaTrace (PeerSelectionCounters extraCounters) where
     namespaceFor PeerSelectionCounters {} = Namespace [] ["Counters"]
 
     severityFor (Namespace _ ["Counters"]) _ = Just Debug
-    severityFor _ _ = Nothing
+    severityFor _ _                          = Nothing
 
     documentFor (Namespace _ ["Counters"]) = Just
       "Counters of selected peers"

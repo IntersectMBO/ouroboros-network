@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE PackageImports #-}
+{-# LANGUAGE PackageImports    #-}
 
 --------------------------------------------------------------------------------
 
@@ -21,17 +21,14 @@ module Ouroboros.Network.Tracing.Server () where
 ---------------------
 -- Package: "aeson" -
 ---------------------
-import "aeson" Data.Aeson (ToJSON, toJSON, Value (String), (.=))
+import "aeson" Data.Aeson (ToJSON, Value (String), toJSON, (.=))
 ---------------------------------
 -- Package: "ouroboros-network" -
 ---------------------------------
-import           "ouroboros-network" -- "ouroboros-newtwork:framework"
-  Ouroboros.Network.Server as Server
-import qualified "ouroboros-network" -- "ouroboros-newtwork:framework"
-  Ouroboros.Network.Server.RateLimiting as SRL
+import "ouroboros-network" Ouroboros.Network.Server as Server
+import "ouroboros-network" Ouroboros.Network.Server.RateLimiting qualified as SRL
 -- Needed for `instance ToJSON (ConnectionId addr) where`
-import qualified "ouroboros-network" -- "ouroboros-network:orphan-instances"
-  Ouroboros.Network.OrphanInstances ()
+import "ouroboros-network" Ouroboros.Network.OrphanInstances qualified ()
 --------------------
 -- Package: "text" -
 --------------------
@@ -74,9 +71,9 @@ instance MetaTrace SRL.AcceptConnectionsPolicyTrace where
       Namespace [] ["ConnectionLimitResume"]
 
     severityFor (Namespace _ ["ConnectionRateLimiting"]) _ = Just Info
-    severityFor (Namespace _ ["ConnectionHardLimit"]) _ = Just Warning
-    severityFor (Namespace _ ["ConnectionLimitResume"]) _ = Just Info
-    severityFor _ _ = Nothing
+    severityFor (Namespace _ ["ConnectionHardLimit"]) _    = Just Warning
+    severityFor (Namespace _ ["ConnectionLimitResume"]) _  = Just Info
+    severityFor _ _                                        = Nothing
 
     documentFor (Namespace _ ["ConnectionRateLimiting"]) = Just $ mconcat
       [ "Rate limiting accepting connections,"
@@ -128,28 +125,28 @@ instance (Show addr, LogFormatting addr, ToJSON addr)
   forHuman = pack . show
 
 instance MetaTrace (Server.Trace addr) where
-    namespaceFor TrAcceptConnection {} = Namespace [] ["AcceptConnection"]
-    namespaceFor TrAcceptError {} = Namespace [] ["AcceptError"]
+    namespaceFor TrAcceptConnection {}  = Namespace [] ["AcceptConnection"]
+    namespaceFor TrAcceptError {}       = Namespace [] ["AcceptError"]
     namespaceFor TrAcceptPolicyTrace {} = Namespace [] ["AcceptPolicy"]
-    namespaceFor TrServerStarted {} = Namespace [] ["Started"]
-    namespaceFor TrServerStopped {} = Namespace [] ["Stopped"]
-    namespaceFor TrServerError {} = Namespace [] ["Error"]
+    namespaceFor TrServerStarted {}     = Namespace [] ["Started"]
+    namespaceFor TrServerStopped {}     = Namespace [] ["Stopped"]
+    namespaceFor TrServerError {}       = Namespace [] ["Error"]
 
     severityFor (Namespace _ ["AcceptConnection"]) _ = Just Debug
-    severityFor (Namespace _ ["AcceptError"]) _ = Just Error
-    severityFor (Namespace _ ["AcceptPolicy"]) _ = Just Notice
-    severityFor (Namespace _ ["Started"]) _ = Just Notice
-    severityFor (Namespace _ ["Stopped"]) _ = Just Notice
-    severityFor (Namespace _ ["Error"]) _ = Just Critical
-    severityFor _ _ = Nothing
+    severityFor (Namespace _ ["AcceptError"]) _      = Just Error
+    severityFor (Namespace _ ["AcceptPolicy"]) _     = Just Notice
+    severityFor (Namespace _ ["Started"]) _          = Just Notice
+    severityFor (Namespace _ ["Stopped"]) _          = Just Notice
+    severityFor (Namespace _ ["Error"]) _            = Just Critical
+    severityFor _ _                                  = Nothing
 
     documentFor (Namespace _ ["AcceptConnection"]) = Just ""
-    documentFor (Namespace _ ["AcceptError"]) = Just ""
-    documentFor (Namespace _ ["AcceptPolicy"]) = Just ""
-    documentFor (Namespace _ ["Started"]) = Just ""
-    documentFor (Namespace _ ["Stopped"]) = Just ""
-    documentFor (Namespace _ ["Error"]) = Just ""
-    documentFor _ = Nothing
+    documentFor (Namespace _ ["AcceptError"])      = Just ""
+    documentFor (Namespace _ ["AcceptPolicy"])     = Just ""
+    documentFor (Namespace _ ["Started"])          = Just ""
+    documentFor (Namespace _ ["Stopped"])          = Just ""
+    documentFor (Namespace _ ["Error"])            = Just ""
+    documentFor _                                  = Nothing
 
     allNamespaces = [
         Namespace [] ["AcceptConnection"]
