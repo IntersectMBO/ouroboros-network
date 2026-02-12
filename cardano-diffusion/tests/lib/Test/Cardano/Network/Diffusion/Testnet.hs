@@ -4824,8 +4824,6 @@ prop_churn_targets_bounds baseTargetsMap ioSimTrace traceNumber =
                .&&. counterexample "established big ledger peers upper bound violation" (establishedBigLedgers' <= establishedBigLedgers)
                .&&. counterexample "established big ledger peers lower bound violation" (establishedBigLedgers' >= decrease establishedBigLedgers)
 
-                        )
-
        checks =
          Map.foldrWithKey
            (\ node targets p -> case Map.lookup node baseTargetsLookup of
