@@ -21,7 +21,6 @@ module Test.Cardano.Network.Diffusion.Testnet (tests) where
 import Control.Arrow ((&&&))
 import Control.Exception (AssertionFailed (..), catch, displayException,
            evaluate, fromException)
-import Control.Monad (join)
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadTest (exploreRaces)
 import Control.Monad.Class.MonadTime.SI
