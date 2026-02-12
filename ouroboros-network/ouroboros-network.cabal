@@ -363,7 +363,7 @@ library framework
   -- other-extensions:
   build-depends:
     -- ^ only to derive nothunk instances
-    Win32-network ^>=0.2,
+    Win32-network >=0.1 && <0.3,
     base >=4.12 && <4.23,
     bytestring >=0.10 && <0.13,
     cardano-strict-containers,

@@ -6,6 +6,7 @@
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE PackageImports             #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
@@ -64,7 +65,13 @@ import Data.Bits
 import Foreign.Ptr (IntPtr (..), ptrToIntPtr)
 import System.Win32 qualified as Win32
 import System.Win32.Async qualified as Win32.Async
-import System.Win32.NamedPipes qualified as Win32
+#if MIN_VERSION_Win32_network(0,2,0)
+-- Win32-network, comes with Win32 ^>2.14 which has `NamedPipes` APIs
+import "Win32" System.Win32.NamedPipes qualified as Win32.NamedPipes
+#else
+-- earlier version of Win32-network comes with `NamedPipes` APIs
+import "Win32-network" System.Win32.NamedPipes qualified as Win32.NamedPipes
+#endif
 #endif
 
 import NoThunks.Class
@@ -464,11 +471,11 @@ localSnocket ioManager = Snocket {
     , addrFamily    = LocalFamily
 
     , open = \(LocalFamily addr) -> do
-        hpipe <- Win32.createNamedPipe
+        hpipe <- Win32.NamedPipes.createNamedPipe
                    (getFilePath addr)
-                   (Win32.pIPE_ACCESS_DUPLEX .|. Win32.fILE_FLAG_OVERLAPPED)
-                   (Win32.pIPE_TYPE_BYTE     .|. Win32.pIPE_READMODE_BYTE)
-                   Win32.pIPE_UNLIMITED_INSTANCES
+                   (Win32.NamedPipes.pIPE_ACCESS_DUPLEX .|. Win32.NamedPipes.fILE_FLAG_OVERLAPPED)
+                   (Win32.NamedPipes.pIPE_TYPE_BYTE     .|. Win32.NamedPipes.pIPE_READMODE_BYTE)
+                   Win32.NamedPipes.pIPE_UNLIMITED_INSTANCES
                    65536   -- outbound pipe size
                    16384   -- inbound pipe size
                    0       -- default timeout
@@ -484,12 +491,12 @@ localSnocket ioManager = Snocket {
 
     -- To connect, simply create a file whose name is the named pipe name.
     , openToConnect  = \(LocalAddress pipeName) -> do
-        hpipe <- Win32.connect pipeName
+        hpipe <- Win32.NamedPipes.connect pipeName
                    (Win32.gENERIC_READ .|. Win32.gENERIC_WRITE )
                    Win32.fILE_SHARE_NONE
                    Nothing
                    Win32.oPEN_EXISTING
-                   Win32.fILE_FLAG_OVERLAPPED
+                   Win32.NamedPipes.fILE_FLAG_OVERLAPPED
                    Nothing
         associateWithIOManager ioManager (Left hpipe)
           `catch` \(e :: IOException) -> do
@@ -532,11 +539,11 @@ localSnocket ioManager = Snocket {
                 )
         acceptOne =
           bracketOnError
-            (Win32.createNamedPipe
+            (Win32.NamedPipes.createNamedPipe
                  (getFilePath addr)
-                 (Win32.pIPE_ACCESS_DUPLEX .|. Win32.fILE_FLAG_OVERLAPPED)
-                 (Win32.pIPE_TYPE_BYTE     .|. Win32.pIPE_READMODE_BYTE)
-                 Win32.pIPE_UNLIMITED_INSTANCES
+                 (Win32.NamedPipes.pIPE_ACCESS_DUPLEX .|. Win32.NamedPipes.fILE_FLAG_OVERLAPPED)
+                 (Win32.NamedPipes.pIPE_TYPE_BYTE     .|. Win32.NamedPipes.pIPE_READMODE_BYTE)
+                 Win32.NamedPipes.pIPE_UNLIMITED_INSTANCES
                  65536    -- outbound pipe size
                  16384    -- inbound pipe size
                  0        -- default timeout
@@ -545,11 +552,9 @@ localSnocket ioManager = Snocket {
              $ \hpipe -> do
               associateWithIOManager ioManager (Left hpipe)
               Win32.Async.connectNamedPipe hpipe
-              -- InboundGovernor/Server requires a unique address for the
-              -- remote end one in order to track connections.
-              -- So to differentiate clients we use a simple counter as the
-              -- remote end's address.
-              --
+              -- InboundGovernor/Server requires unique addresses of the remote
+              -- end in order to track connections. To differentiate clients
+              -- we use a simple counter as the remote end's address.
               let addr' = LocalAddress $ getFilePath addr ++ "@" ++ show cnt
               return (Accepted (LocalSocket hpipe addr addr') addr', acceptNext (succ cnt) addr)
 
