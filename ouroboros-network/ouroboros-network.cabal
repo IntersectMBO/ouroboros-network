@@ -49,6 +49,17 @@ common ghc-options
     -Wredundant-constraints
     -Wunused-packages
 
+  -- In ghc-9.14 the `pattern` namespace specifier is deprecated.
+  if impl(ghc >=9.14)
+    ghc-options:
+      -Wno-pattern-namespace-specifier
+
+  -- GHC-9.14 warns on constraints that it considers dedundant
+  -- but are necessary for earlier compilers.
+  if impl(ghc >=9.14)
+    ghc-options:
+      -Wno-redundant-constraints
+
   if flag(asserts)
     ghc-options: -fno-ignore-asserts
 
@@ -927,6 +938,9 @@ test-suite ouroboros-network-sim-tests
 -- aarch64-darwin.
 test-suite ouroboros-network-io-tests
   import: ghc-options-tests
+  ghc-options:
+    -Wno-redundant-constraints
+
   type: exitcode-stdio-1.0
   hs-source-dirs: tests/io
   main-is: Main.hs

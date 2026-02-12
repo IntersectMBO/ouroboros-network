@@ -1079,7 +1079,11 @@ prop_governor_peershare_1hr env@GovernorMockEnvironment {
                        )
      in counterexample ( intercalate "\n"
                        . map (ppSimEvent 20 20 20)
-                       . takeWhile (\e -> seTime e <= Time (60*60))
+                       . takeWhile (\e ->
+                            case e of
+                              SimEvent    {seTime} -> seTime < Time (60*60)
+                              SimPOREvent {seTime} -> seTime < Time (60*60)
+                              _                    -> False)
                        . Trace.toList
                        $ ioSimTrace) $
         subsetProperty    found reachable
@@ -3559,7 +3563,14 @@ prop_governor_target_established_local (MaxTime maxTime) env =
             id
             promotionOpportunities
 
-     in counterexample (ppTrace_ (Trace.takeWhile (\e -> seTime e <= maxTime) trace)) $
+     in counterexample (ppTrace_ (Trace.takeWhile
+                                    (\e ->
+                                      case e of
+                                        SimEvent    {seTime} -> seTime < maxTime
+                                        SimPOREvent {seTime} -> seTime < maxTime
+                                        _                    -> False) trace)) $
+
+
         counterexample
           ("\nSignal key: (local root peers, established peers, " ++
            "recent failures, opportunities, ignored too long)") $

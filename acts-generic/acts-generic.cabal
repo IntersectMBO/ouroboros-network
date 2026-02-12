@@ -23,8 +23,13 @@ common ghc-options
     -Wincomplete-record-updates
     -Wpartial-fields
     -Widentities
-    -Wredundant-constraints
     -Wunused-packages
+
+  -- ghc-9.14 gives redundant constraint warnings on some constraints
+  -- that are needed for earlier compilers.
+  if impl(ghc <9.14)
+    ghc-options:
+      -Wredundant-constraints
 
 library
   import: ghc-options
