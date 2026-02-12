@@ -4755,9 +4755,9 @@ prop_churn_notimeouts_iosim
 -- 1. New targets never exceed original targets
 -- 2. New targets never decrease by more than 20%
 prop_churn_targets_bounds :: [(NtNAddr, (PeerSelectionTargets, PeerSelectionTargets))]
-                                -> SimTrace Void
-                                -> Int
-                                -> Property
+                          -> SimTrace Void
+                          -> Int
+                          -> Property
 prop_churn_targets_bounds baseTargetsMap ioSimTrace traceNumber =
    let events :: [(NtNAddr, Time, DiffusionTestTrace)]
        events = join . Trace.toList
