@@ -121,7 +121,7 @@ tests =
   testGroup "Ouroboros.Network.Testnet"
   [ testGroup "generators"
     [ testProperty "diffusionScript fixupCommands idempotent"
-                    prop_diffusionScript_fixupCommands
+                   prop_diffusionScript_fixupCommands
     , testProperty "diffusionScript command script valid"
                    prop_diffusionScript_commandScript_valid
     ]
@@ -4759,10 +4759,10 @@ prop_churn_targets_bounds :: [(NtNAddr, (PeerSelectionTargets, PeerSelectionTarg
                           -> Int
                           -> Property
 prop_churn_targets_bounds baseTargetsMap ioSimTrace traceNumber =
-   let events :: [(NtNAddr, Time, DiffusionTestTrace)]
-       events = join . Trace.toList
-              . fmap (
-                     fmap (\(WithName node (WithTime t b)) -> (node, t, b))
+   let events :: [Events (NtNAddr, DiffusionTestTrace)]
+       events = Trace.toList
+              . fmap ( Signal.eventsFromList
+                    . fmap (\(WithName node (WithTime t b)) -> (t, (node, b)))
                     )
               . splitWithNameTrace
               . fmap (\(WithTime t (WithName name b)) -> WithName name (WithTime t b))
@@ -4773,22 +4773,6 @@ prop_churn_targets_bounds baseTargetsMap ioSimTrace traceNumber =
               $ ioSimTrace
 
        baseTargetsLookup = Map.fromList baseTargetsMap
-
-       -- Group events by node address
-       eventMap :: Map NtNAddr [(Time, DiffusionTestTrace)]
-       eventMap = foldr (\(node, t, trace) m ->
-                           case Map.lookup node m of
-                             Just ts -> Map.insert node ((t, trace):ts) m
-                             Nothing -> Map.insert node [(t, trace)] m
-                        ) Map.empty events
-
-       targetsChangeEventMap :: Map NtNAddr [PeerSelectionTargets]
-       targetsChangeEventMap =
-         catMaybes . fmap (\case
-                            (_, DiffusionPeerSelectionTrace (TraceTargetsChanged new))
-                                   -> Just new
-                            _other -> Nothing
-             ) <$> eventMap
 
        targetsChangeProperty :: PeerSelectionTargets -> PeerSelectionTargets -> Property
        targetsChangeProperty
@@ -4824,23 +4808,27 @@ prop_churn_targets_bounds baseTargetsMap ioSimTrace traceNumber =
                .&&. counterexample "established big ledger peers upper bound violation" (establishedBigLedgers' <= establishedBigLedgers)
                .&&. counterexample "established big ledger peers lower bound violation" (establishedBigLedgers' >= decrease establishedBigLedgers)
 
-       checks =
-         Map.foldrWithKey
-           (\ node targets p -> case Map.lookup node baseTargetsLookup of
-             Just bs@(base0, base1) ->
-               foldr (\ts p' -> counterexample ("Node: " ++ show node ++
-                                                "\nExpected: " ++ show bs ++
-                                                "\nActual: " ++ show ts ++
-                                                "\nAll rounds: " ++ show targets
-                                                ) (     targetsChangeProperty base0 ts
-                                                   .||. targetsChangeProperty base1 ts) .&&. p'
-                     ) p targets
-             Nothing -> counterexample ("No base targets for " <> show node) (property False)
-           )
-           (property True) targetsChangeEventMap
+   in conjoin
+      $ (\evs ->
+           let targetsChangeEvents =
+                 Signal.eventsToList
+                 . Signal.selectEvents
+                   (\case
+                       (node, DiffusionPeerSelectionTrace (TraceTargetsChanged new))
+                              -> Just (node, new)
+                       _other -> Nothing
+                   )
+                 $ evs
 
-
-   in checks
+            in foldr (\(_, (node, targets)) p -> case Map.lookup node baseTargetsLookup of
+                      Just bs@(base0, base1) -> counterexample ("Node: " ++ show node ++
+                                                                "\nExpected: " ++ show bs ++
+                                                                "\nActual: " ++ show targets
+                                                                ) (     targetsChangeProperty base0 targets
+                                                                   .||. targetsChangeProperty base1 targets) .&&. p
+                      Nothing                -> error ("No base targets for " <> show node)
+                     ) (property True) targetsChangeEvents
+        ) <$> events
 
 prop_churn_targets_bounds_cardano_iosim
   :: AbsBearerInfo -> DiffusionScript -> Property
