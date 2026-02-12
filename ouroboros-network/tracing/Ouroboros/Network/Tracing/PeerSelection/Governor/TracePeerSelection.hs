@@ -20,7 +20,7 @@ import           "cardano-diffusion" -- "cardano-diffusion:???"
 
 --------------------------------------------------------------------------------
 
-module Ouroboros.Network.Logging.PeerSelection.Governor.TracePeerSelection () where
+module Ouroboros.Network.Tracing.PeerSelection.Governor.TracePeerSelection () where
 
 --------------------------------------------------------------------------------
 
@@ -68,7 +68,7 @@ import "trace-dispatcher" Cardano.Logging
 ---------
 -- Self -
 ---------
-import Ouroboros.Network.Logging.PeerSelection.Governor.Utils 
+import Ouroboros.Network.Tracing.PeerSelection.Governor.Utils
   ( peerSelectionTargetsToObject
   )
 

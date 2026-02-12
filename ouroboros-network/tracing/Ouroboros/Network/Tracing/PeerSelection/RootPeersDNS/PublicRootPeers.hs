@@ -10,7 +10,7 @@
 
 --------------------------------------------------------------------------------
 
-module Ouroboros.Network.Logging.PeerSelection.RootPeersDNS.PublicRootPeers () where
+module Ouroboros.Network.Tracing.PeerSelection.RootPeersDNS.PublicRootPeers () where
 
 --------------------------------------------------------------------------------
 

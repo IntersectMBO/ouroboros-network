@@ -15,7 +15,7 @@
 
 --------------------------------------------------------------------------------
 
-module Ouroboros.Network.Logging.PeerSelection.RootPeersDNS.LocalRootPeers () where
+module Ouroboros.Network.Tracing.PeerSelection.RootPeersDNS.LocalRootPeers () where
 
 --------------------------------------------------------------------------------
 

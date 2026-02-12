@@ -12,7 +12,7 @@
 
 --------------------------------------------------------------------------------
 
-module Ouroboros.Network.Logging.Framework () where
+module Ouroboros.Network.Tracing () where
 
 --------------------------------------------------------------------------------
 
@@ -57,11 +57,11 @@ import "trace-dispatcher" Cardano.Logging
 ---------
 -- Self -
 ---------
-import          Ouroboros.Network.Logging.Framework.ConnectionId ()
-import          Ouroboros.Network.Logging.Framework.ConnectionManager () 
-import          Ouroboros.Network.Logging.Framework.Driver ()
-import          Ouroboros.Network.Logging.Framework.InboundGovernor ()
-import          Ouroboros.Network.Logging.Framework.Server ()
+import          Ouroboros.Network.Tracing.ConnectionId ()
+import          Ouroboros.Network.Tracing.ConnectionManager ()
+import          Ouroboros.Network.Tracing.Driver ()
+import          Ouroboros.Network.Tracing.InboundGovernor ()
+import          Ouroboros.Network.Tracing.Server ()
 
 --------------------------------------------------------------------------------
 -- Addresses.

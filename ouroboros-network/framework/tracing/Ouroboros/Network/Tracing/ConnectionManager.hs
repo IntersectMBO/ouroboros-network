@@ -15,7 +15,7 @@
 
 --------------------------------------------------------------------------------
 
-module Ouroboros.Network.Logging.Framework.ConnectionManager () where
+module Ouroboros.Network.Tracing.ConnectionManager () where
 
 --------------------------------------------------------------------------------
 

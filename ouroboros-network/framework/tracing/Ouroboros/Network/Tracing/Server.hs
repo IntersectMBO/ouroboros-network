@@ -10,7 +10,7 @@
 
 --------------------------------------------------------------------------------
 
-module Ouroboros.Network.Logging.Framework.Server () where
+module Ouroboros.Network.Tracing.Server () where
 
 --------------------------------------------------------------------------------
 
@@ -43,7 +43,7 @@ import "trace-dispatcher" Cardano.Logging
 ---------
 -- Self -
 ---------
-import Ouroboros.Network.Logging.Framework.ConnectionId ()
+import Ouroboros.Network.Tracing.ConnectionId ()
 
 --------------------------------------------------------------------------------
 -- AcceptPolicy Tracer

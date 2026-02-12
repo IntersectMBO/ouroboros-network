@@ -10,7 +10,7 @@
 
 --------------------------------------------------------------------------------
 
-module Ouroboros.Network.Logging.Framework.ConnectionId () where
+module Ouroboros.Network.Tracing.ConnectionId () where
 
 --------------------------------------------------------------------------------
 

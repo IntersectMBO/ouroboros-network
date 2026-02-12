@@ -20,7 +20,7 @@ import           "cardano-diffusion" -- "cardano-diffusion:???"
 
 --------------------------------------------------------------------------------
 
-module Ouroboros.Network.Logging.PeerSelection.Governor.PeerSelectionCounters () where
+module Ouroboros.Network.Tracing.PeerSelection.Governor.PeerSelectionCounters () where
 
 --------------------------------------------------------------------------------
 

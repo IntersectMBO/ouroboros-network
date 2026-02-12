@@ -10,7 +10,7 @@
 
 --------------------------------------------------------------------------------
 
-module Ouroboros.Network.Logging.PeerSelection.RootPeersDNS.DNSActions () where
+module Ouroboros.Network.Tracing.PeerSelection.RootPeersDNS.DNSActions () where
 
 --------------------------------------------------------------------------------
 

@@ -9,7 +9,7 @@
 
 --------------------------------------------------------------------------------
 
-module Ouroboros.Network.Logging.PeerSelection.Governor.Utils 
+module Ouroboros.Network.Tracing.PeerSelection.Governor.Utils
   ( peerSelectionTargetsToObject
   )
   where

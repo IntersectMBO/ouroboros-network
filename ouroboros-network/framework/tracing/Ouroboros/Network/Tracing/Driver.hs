@@ -13,7 +13,7 @@
 
 --------------------------------------------------------------------------------
 
-module Ouroboros.Network.Logging.Framework.Driver () where
+module Ouroboros.Network.Tracing.Driver () where
 
 --------------------------------------------------------------------------------
 

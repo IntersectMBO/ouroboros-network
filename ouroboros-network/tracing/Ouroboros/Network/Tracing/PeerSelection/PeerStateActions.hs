@@ -11,7 +11,7 @@
 
 --------------------------------------------------------------------------------
 
-module Ouroboros.Network.Logging.PeerSelection.PeerStateActions () where
+module Ouroboros.Network.Tracing.PeerSelection.PeerStateActions () where
 
 --------------------------------------------------------------------------------
 

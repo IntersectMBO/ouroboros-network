@@ -13,7 +13,7 @@
 
 --------------------------------------------------------------------------------
 
-module Ouroboros.Network.Logging.Framework.InboundGovernor () where
+module Ouroboros.Network.Tracing.InboundGovernor () where
 
 --------------------------------------------------------------------------------
 

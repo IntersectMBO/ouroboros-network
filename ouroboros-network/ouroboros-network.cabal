@@ -388,19 +388,19 @@ library framework
     build-depends: Win32 >=2.5.4.1 && <3.0
   hs-source-dirs: framework
 
-library framework-cardano-logging
+library framework-tracing
   import: ghc-options
   visibility: public
-  hs-source-dirs: framework/cardano-logging
+  hs-source-dirs: framework/tracing
   exposed-modules:
-    Network.Mux.Logging
-    Ouroboros.Network.Logging.Framework
+    Network.Mux.Tracing
+    Ouroboros.Network.Tracing
   other-modules:
-    Ouroboros.Network.Logging.Framework.ConnectionId
-    Ouroboros.Network.Logging.Framework.ConnectionManager
-    Ouroboros.Network.Logging.Framework.Driver
-    Ouroboros.Network.Logging.Framework.InboundGovernor
-    Ouroboros.Network.Logging.Framework.Server
+    Ouroboros.Network.Tracing.ConnectionId
+    Ouroboros.Network.Tracing.ConnectionManager
+    Ouroboros.Network.Tracing.Driver
+    Ouroboros.Network.Tracing.InboundGovernor
+    Ouroboros.Network.Tracing.Server
   build-depends:
     aeson,
     base >=4.14 && <4.23,
@@ -618,22 +618,22 @@ test-suite framework-io-tests
     -rtsopts
     -threaded
 
-library cardano-logging
+library tracing
   import: ghc-options
   visibility: public
-  hs-source-dirs: cardano-logging
+  hs-source-dirs: tracing
   exposed-modules:
-    Ouroboros.Network.Logging
+    Ouroboros.Network.Tracing.PeerSelection
   other-modules:
-    Ouroboros.Network.Logging.PeerSelection.Governor
-    Ouroboros.Network.Logging.PeerSelection.Governor.DebugPeerSelection
-    Ouroboros.Network.Logging.PeerSelection.Governor.PeerSelectionCounters
-    Ouroboros.Network.Logging.PeerSelection.Governor.TracePeerSelection
-    Ouroboros.Network.Logging.PeerSelection.Governor.Utils
-    Ouroboros.Network.Logging.PeerSelection.PeerStateActions
-    Ouroboros.Network.Logging.PeerSelection.RootPeersDNS.DNSActions
-    Ouroboros.Network.Logging.PeerSelection.RootPeersDNS.LocalRootPeers
-    Ouroboros.Network.Logging.PeerSelection.RootPeersDNS.PublicRootPeers
+    Ouroboros.Network.Tracing.PeerSelection.Governor
+    Ouroboros.Network.Tracing.PeerSelection.Governor.DebugPeerSelection
+    Ouroboros.Network.Tracing.PeerSelection.Governor.PeerSelectionCounters
+    Ouroboros.Network.Tracing.PeerSelection.Governor.TracePeerSelection
+    Ouroboros.Network.Tracing.PeerSelection.Governor.Utils
+    Ouroboros.Network.Tracing.PeerSelection.PeerStateActions
+    Ouroboros.Network.Tracing.PeerSelection.RootPeersDNS.DNSActions
+    Ouroboros.Network.Tracing.PeerSelection.RootPeersDNS.LocalRootPeers
+    Ouroboros.Network.Tracing.PeerSelection.RootPeersDNS.PublicRootPeers
   reexported-modules:
   default-language: Haskell2010
   other-extensions:

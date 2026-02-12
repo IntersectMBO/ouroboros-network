@@ -10,7 +10,7 @@
 
 --------------------------------------------------------------------------------
 
-module Ouroboros.Network.Logging () where
+module Ouroboros.Network.Tracing.PeerSelection () where
 
 --------------------------------------------------------------------------------
 
@@ -47,11 +47,11 @@ import "trace-dispatcher" Cardano.Logging
 ---------
 -- Self -
 ---------
-import Ouroboros.Network.Logging.PeerSelection.Governor ()
-import Ouroboros.Network.Logging.PeerSelection.PeerStateActions ()
-import Ouroboros.Network.Logging.PeerSelection.RootPeersDNS.DNSActions ()
-import Ouroboros.Network.Logging.PeerSelection.RootPeersDNS.LocalRootPeers ()
-import Ouroboros.Network.Logging.PeerSelection.RootPeersDNS.PublicRootPeers ()
+import Ouroboros.Network.Tracing.PeerSelection.Governor ()
+import Ouroboros.Network.Tracing.PeerSelection.PeerStateActions ()
+import Ouroboros.Network.Tracing.PeerSelection.RootPeersDNS.DNSActions ()
+import Ouroboros.Network.Tracing.PeerSelection.RootPeersDNS.LocalRootPeers ()
+import Ouroboros.Network.Tracing.PeerSelection.RootPeersDNS.PublicRootPeers ()
 
 --------------------------------------------------------------------------------
 -- DiffusionInit Tracer.
