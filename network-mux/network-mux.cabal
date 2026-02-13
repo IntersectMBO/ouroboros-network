@@ -215,6 +215,7 @@ executable mux-leios-demo
     network,
     network-mux,
     primitive,
+    random,
     serialise,
     stm,
     Win32-network,

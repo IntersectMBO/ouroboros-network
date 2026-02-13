@@ -40,6 +40,7 @@ module Test.Mux.ReqResp
   )
   where
 
+import Control.Monad
 import Codec.CBOR.Decoding qualified as CBOR hiding (Done, Fail)
 import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
@@ -56,6 +57,9 @@ import Control.Monad.Class.MonadST
 import Control.Tracer (Tracer, traceWith)
 
 import Network.Mux.Channel
+import Control.Monad.Class.MonadTimer.SI
+
+import System.Random
 
 -- | Protocol messages.
 --
@@ -449,9 +453,9 @@ newtype ReqRespServerBurst req resp m a where
                      -> ReqRespServerBurst req resp m a
 
 data ReqRespServerLoop resp m a where
-  SendMsgResp :: resp
-           -> m (ReqRespServerLoop resp m a)
-           -> ReqRespServerLoop resp m a
+  SendMsgResp :: [resp]
+              -> m (ReqRespServerLoop resp m a)
+              -> ReqRespServerLoop resp m a
 
   SendMsgDoneServer :: m a
                     -> ReqRespServerLoop resp m a
@@ -459,7 +463,7 @@ data ReqRespServerLoop resp m a where
 
 runServerBurst
   :: forall req resp failure m a.
-     ( Monad m
+     ( MonadDelay m
      , Show req
      , Show resp
      , Show failure
@@ -478,24 +482,31 @@ runServerBurst runEncoder runDecoder
                tracer channel@Channel {send}
                (ReqRespServerBurst k) = do
     res <- runDecoder channel Nothing
+    let rng = mkStdGen 42
     case res of
-      Right (MsgReq req, trailing) -> k req >>= go trailing
+      Right (MsgReq req, trailing) -> k req >>= go rng trailing
       Right (msg, _) -> error $ "runClient: wrong message " ++ show msg
       Left err -> do
         traceWith tracer (TraceFailure $ show err)
         error $ "runClient: deserialise error: " ++ show err
   where
-    go :: Maybe LBS.ByteString
+    go :: StdGen
+       -> Maybe LBS.ByteString
        -> ReqRespServerLoop resp m a
        -> m (a, Maybe LBS.ByteString)
-    go !trailing (SendMsgResp resp server) = do
-      let msg :: MsgReqResp req resp
-          msg = MsgResp resp
-      traceWith tracer (TraceSend msg)
-      send $ runEncoder msg
-      server >>= go trailing
+    go rng !trailing (SendMsgResp resp server) = do
+      let msgs :: [MsgReqResp req resp]
+          msgs = map MsgResp resp
+      rng' <- flip (flip foldM rng) msgs $ \rng msg -> do
+        -- forM_ msgs $ \msg -> do
+        traceWith tracer (TraceSend msg)
+        send $ runEncoder msg
+        let (delay :: Double, rng') = uniformR (0.005, 0.015) rng
+        threadDelay (realToFrac delay)
+        pure rng'
+      server >>= go rng' trailing
 
-    go !trailing (SendMsgDoneServer ma) = do
+    go _rng !trailing (SendMsgDoneServer ma) = do
       let msg = MsgDone
       traceWith tracer (TraceSend msg)
       send (runEncoder msg)
@@ -505,6 +516,7 @@ runServerBurst runEncoder runDecoder
 runServerBurstCBOR
   :: forall req resp m a.
      ( MonadST m
+     , MonadDelay m
      , Show req
      , Show resp
      , Serialise req
@@ -519,7 +531,7 @@ runServerBurstCBOR = runServerBurst serialise
 
 runServerBurstBin
   :: forall m a.
-     Monad m
+     MonadDelay m
   => Tracer m (TraceSendRecv (MsgReqResp BS.ByteString BS.ByteString))
   -> ByteChannel m
   -> ReqRespServerBurst BS.ByteString BS.ByteString m a
