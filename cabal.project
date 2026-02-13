@@ -54,3 +54,13 @@ package acts
 
 allow-newer:
   , quickcheck-instances:QuickCheck
+
+
+source-repository-package
+  type: git
+  location: https://github.com/IntersectMBO/cardano-base.git
+  --sha256: sha256-13DXeYP6hmmC3NQa9hevhalScal+eO9Pw/dnYqo7nC0=
+  tag: c3169a9fc24f702fa4b3ab1b75d47ffff6a42067
+  subdir:
+    cardano-binary
+    cardano-slotting
