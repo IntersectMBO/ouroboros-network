@@ -101,6 +101,7 @@ import Ouroboros.Network.Server qualified as Server
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket (Snocket)
 import Ouroboros.Network.Snocket qualified as Snocket
+import Ouroboros.Network.Util (PrettyShow (..))
 
 import Test.Ouroboros.Network.ConnectionManager.Timeouts
 import Test.Ouroboros.Network.Orphans ()
@@ -237,9 +238,10 @@ type ConnectionManagerMonad m =
 withInitiatorOnlyConnectionManager
     :: forall name peerAddr socket req resp m a.
        ( ConnectionManagerMonad m
-
        , resp ~ [req]
-       , Ord peerAddr, Show peerAddr, Typeable peerAddr
+       , Ord peerAddr
+       , PrettyShow peerAddr
+       , Typeable peerAddr
        , Serialise req
        , Typeable req
        , NFData req
@@ -422,8 +424,11 @@ withBidirectionalConnectionManager
        ( ConnectionManagerMonad m
 
        , acc ~ [req], resp ~ [req]
-       , Ord peerAddr, Show peerAddr, Typeable peerAddr
-       , Serialise req, Typeable req
+       , Ord peerAddr
+       , PrettyShow peerAddr
+       , Typeable peerAddr
+       , Serialise req
+       , Typeable req
 
        -- debugging
        , MonadAsync m
@@ -738,7 +743,10 @@ unidirectionalExperiment
        , MonadSay m
 
        , acc ~ [req], resp ~ [req]
-       , Ord peerAddr, Show peerAddr, Typeable peerAddr, Eq peerAddr
+       , Ord peerAddr
+       , PrettyShow peerAddr
+       , Typeable peerAddr
+       , Eq peerAddr
        , Hashable peerAddr
        , Serialise req, Show req, NFData req
        , Serialise resp, Show resp, Eq resp
@@ -816,7 +824,10 @@ bidirectionalExperiment
        , MonadSay m
 
        , acc ~ [req], resp ~ [req]
-       , Ord peerAddr, Show peerAddr, Typeable peerAddr, Eq peerAddr
+       , Ord peerAddr
+       , PrettyShow peerAddr
+       , Typeable peerAddr
+       , Eq peerAddr
        , Hashable peerAddr
 
        , Serialise req, Show req, NFData req

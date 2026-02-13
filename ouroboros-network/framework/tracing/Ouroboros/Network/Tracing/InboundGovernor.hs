@@ -48,6 +48,7 @@ import "ouroboros-network" Ouroboros.Network.InboundGovernor.State as InboundGov
            (Counters (..))
 import "ouroboros-network" Ouroboros.Network.OrphanInstances qualified ()
 import "ouroboros-network" Ouroboros.Network.Snocket (LocalAddress (..))
+import Ouroboros.Network.Util (PrettyShow)
 --------------------
 -- Package: "text" -
 --------------------
@@ -321,7 +322,7 @@ instance MetaTrace (InboundGovernor.Trace addr) where
 -- InboundGovernor Transition Tracer
 --------------------------------------------------------------------------------
 
-instance (Show peerAddr, ToJSON peerAddr)
+instance (PrettyShow peerAddr, ToJSON peerAddr)
       => LogFormatting (InboundGovernor.RemoteTransitionTrace peerAddr) where
     forMachine _dtal (InboundGovernor.TransitionTrace peerAddr tr) =
       mconcat $ reverse

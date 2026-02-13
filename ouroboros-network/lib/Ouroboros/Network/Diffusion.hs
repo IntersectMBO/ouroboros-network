@@ -81,6 +81,7 @@ import Ouroboros.Network.Snocket (LocalAddress, LocalSocket (..), RemoteAddress,
            localSocketFileDescriptor, makeLocalBearer, makeSocketBearer')
 import Ouroboros.Network.Snocket qualified as Snocket
 import Ouroboros.Network.Socket (configureSocket, configureSystemdSocket)
+import Ouroboros.Network.Util (PrettyShow (..))
 
 
 socketAddressType :: Socket.SockAddr -> Maybe AddressType
@@ -110,22 +111,22 @@ runM
        , MonadTime        m
        , MonadTimer       m
        , MonadMVar        m
-       , Typeable  ntnAddr
-       , Ord       ntnAddr
-       , Show      ntnAddr
-       , Hashable  ntnAddr
-       , NFData    ntnVersion
-       , Typeable  ntnVersion
-       , Ord       ntnVersion
-       , Show      ntnVersion
-       , NFData    ntnVersionData
-       , Show      ntnVersionData
-       , Typeable  ntcAddr
-       , Ord       ntcAddr
-       , Show      ntcAddr
-       , NFData    ntcVersion
-       , Ord       ntcVersion
-       , NFData    ntcVersionData
+       , Typeable   ntnAddr
+       , Ord        ntnAddr
+       , PrettyShow ntnAddr
+       , Hashable   ntnAddr
+       , NFData     ntnVersion
+       , Typeable   ntnVersion
+       , Ord        ntnVersion
+       , Show       ntnVersion
+       , NFData     ntnVersionData
+       , Show       ntnVersionData
+       , Typeable   ntcAddr
+       , Ord        ntcAddr
+       , PrettyShow ntcAddr
+       , NFData     ntcVersion
+       , Ord        ntcVersion
+       , NFData     ntcVersionData
        , Monoid extraPeers
        , Eq extraFlags
        , Eq extraCounters
@@ -832,15 +833,15 @@ run :: ( Monoid extraPeers
        , Eq     extraFlags
        , Eq     extraCounters
        , Exception exception
-       , NFData   ntnVersion
-       , Typeable ntnVersion
-       , Ord      ntnVersion
-       , Show     ntnVersion
-       , NFData   ntnVersionData
-       , Show     ntnVersionData
-       , NFData   ntcVersion
-       , Ord      ntcVersion
-       , NFData   ntcVersionData
+       , NFData     ntnVersion
+       , Typeable   ntnVersion
+       , Ord        ntnVersion
+       , PrettyShow ntnVersion
+       , NFData     ntnVersionData
+       , PrettyShow ntnVersionData
+       , NFData     ntcVersion
+       , Ord        ntcVersion
+       , NFData     ntcVersionData
        , NFData   a
        )
     => Arguments

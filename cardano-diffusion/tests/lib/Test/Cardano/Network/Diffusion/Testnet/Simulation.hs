@@ -125,6 +125,7 @@ import Ouroboros.Network.Snocket (Snocket, TestAddress (..))
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy (TxDecisionPolicy)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types (TraceTxLogic,
            TraceTxSubmissionInbound)
+import Ouroboros.Network.Util (PrettyShow (..))
 
 import Ouroboros.Network.Mock.ConcreteBlock (Block (..), BlockHeader (..))
 import Simulation.Network.Snocket (BearerInfo (..), FD, SnocketTrace,
@@ -134,7 +135,7 @@ import Test.Ouroboros.Network.Data.Script
 import Test.Ouroboros.Network.Diffusion.Node qualified as Node
 import Test.Ouroboros.Network.Diffusion.Node.Kernel (NtCAddr, NtCVersion,
            NtCVersionData, NtNAddr, NtNAddr_ (IPAddr), NtNVersion,
-           NtNVersionData, ppNtNAddr)
+           NtNVersionData)
 import Test.Ouroboros.Network.LedgerPeers (LedgerPools (..), cardanoSRVPrefix,
            genLedgerPoolsFrom)
 import Test.Ouroboros.Network.OrphanInstances (genIPv4, genIPv6)
@@ -1082,7 +1083,7 @@ diffusionSimulationM
       -> m Void
     runCommand ntnSocket ntcSocket dnsMapVar sArgs nArgs@NodeArgs { naAddr, naConsensusMode }
                connStateIdSupply nodeId hostAndLRP cmds = do
-      traceWith (diffSimTracer naAddr) . TrSay $ show nodeId ++ " @ " ++ ppNtNAddr naAddr
+      traceWith (diffSimTracer naAddr) . TrSay $ show nodeId ++ "@" ++ prettyShow naAddr
       runCommand' hostAndLRP cmds
       where
         runCommand' Nothing [] = do
