@@ -41,6 +41,11 @@ common ghc-options
     -Wredundant-constraints
     -Wunused-packages
 
+  -- In ghc-9.14 the `pattern` namespace specifier is deprecated.
+  if impl(ghc >=9.14)
+    ghc-options:
+      -Wno-pattern-namespace-specifier
+
   if flag(asserts)
     ghc-options: -fno-ignore-asserts
 

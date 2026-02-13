@@ -43,6 +43,11 @@ common demo-deps
     -Wredundant-constraints
     -Wunused-packages
 
+  -- In ghc-9.14 the `pattern` namespace specifier is deprecated.
+  if impl(ghc >=9.14)
+    ghc-options:
+      -Wno-pattern-namespace-specifier
+
 library
   build-depends:
     -- The Windows version of network-3.1.2 is missing
@@ -53,7 +58,7 @@ library
     binary >=0.8 && <0.11,
     bytestring >=0.10 && <0.13,
     containers >=0.5 && <0.9,
-    contra-tracer >=0.1 && <0.2,
+    contra-tracer >=0.1 && <0.3,
     io-classes:{io-classes, si-timers, strict-stm} ^>=1.8,
     monoidal-synchronisation >=0.1 && <0.2,
     network ^>=3.2.7,
@@ -112,6 +117,11 @@ library
     -Wpartial-fields
     -Wredundant-constraints
     -Wunused-packages
+
+  -- In ghc-9.14 the `pattern` namespace specifier is deprecated.
+  if impl(ghc >=9.14)
+    ghc-options:
+      -Wno-pattern-namespace-specifier
 
 test-suite test
   type: exitcode-stdio-1.0
