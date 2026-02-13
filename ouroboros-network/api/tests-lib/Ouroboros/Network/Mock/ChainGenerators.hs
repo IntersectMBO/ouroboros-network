@@ -97,16 +97,6 @@ tests = testGroup "Chain"
                              (mapSize (min 40) prop_shrink_TestChainFork)
   ]
 
-
-instance Arbitrary BlockNo where
-  arbitrary = BlockNo <$>
-                ((getPositive <$> arbitrary)
-                   `suchThat`
-                 (\n -> n < maxBound - 2^(32 :: Int)))
-               -- need some room, we're assuming we'll never wrap around 64bits
-
-  shrink (BlockNo n) = [ BlockNo n' | n' <- shrink n, n' > 0 ]
-
 instance Arbitrary ConcreteHeaderHash where
   arbitrary = HeaderHash <$> arbitrary
 
