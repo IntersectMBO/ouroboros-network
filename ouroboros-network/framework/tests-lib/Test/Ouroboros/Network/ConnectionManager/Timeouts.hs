@@ -53,9 +53,10 @@ import Ouroboros.Network.Driver.Limits (ProtocolTimeLimits (..))
 import Ouroboros.Network.Protocol.Handshake.Codec (timeLimitsHandshake)
 import Ouroboros.Network.Protocol.Handshake.Type
 import Ouroboros.Network.Snocket qualified as Snocket
+import Ouroboros.Network.Util (PrettyShow (..))
 
 
-verifyAllTimeouts :: Show addr
+verifyAllTimeouts :: PrettyShow addr
                   => Bool
                   -> Trace (SimResult ()) [(Time, AbstractTransitionTrace addr)]
                   -> Every

@@ -64,16 +64,17 @@ import Ouroboros.Network.ConnectionManager.Core qualified as CM
 import Ouroboros.Network.ConnectionManager.State qualified as CM
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.DiffusionMode
+import Ouroboros.Network.InboundGovernor.InformationChannel
+           (newInformationChannel)
+import Ouroboros.Network.InboundGovernor.InformationChannel qualified as InfoChannel
 import Ouroboros.Network.MuxMode
 import Ouroboros.Network.Server.RateLimiting
 import Ouroboros.Network.Snocket (Accept (..), Accepted (..),
            AddressFamily (TestFamily), Snocket (..), TestAddress (..))
+import Ouroboros.Network.Util (PrettyShow (..))
 
 import Test.Ouroboros.Network.ConnectionManager.Utils (verifyAbstractTransition)
 
-import Ouroboros.Network.InboundGovernor.InformationChannel
-           (newInformationChannel)
-import Ouroboros.Network.InboundGovernor.InformationChannel qualified as InfoChannel
 
 
 
@@ -623,7 +624,7 @@ mkConnectionHandler snocket =
         do threadId <- myThreadId
            let addr = getTestAddress remoteAddress
            Just se <- atomically $ fdScheduleEntry <$> readTVar (fdState fd)
-           labelThisThread ("handler-" ++ show addr ++ "-" ++ show (seIdx se))
+           labelThisThread ("handler-" ++ prettyShow addr ++ "-" ++ show (seIdx se))
            unmask (threadDelay (seHandshakeDelay se))
            atomically (writePromise promise
                         (Right (HandshakeConnectionResult
@@ -813,7 +814,7 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
                       thread <-
                         asyncWithUnmask $ \unmask -> unmask $ do
                           labelThisThread ("th-outbound-"
-                                           ++ show (getTestAddress addr))
+                                           ++ prettyShow (getTestAddress addr))
                           r <-
                             (Right <$>
                                 -- 1s is the longest delay for `connect` call,
@@ -893,7 +894,7 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
                               let connId = ConnectionId { localAddress,
                                                           remoteAddress = addr' }
                               labelThisThread ("th-inbound-"
-                                                ++ show (getTestAddress addr))
+                                                ++ prettyShow (getTestAddress addr))
                               Just conn' <-
                                 fdScheduleEntry
                                   <$> readTVarIO (fdState fd')
