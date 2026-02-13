@@ -30,6 +30,7 @@ module Test.Ouroboros.Network.Data.Signal
   , fromEventsWith
     -- ** QuickCheck
   , signalProperty
+  , signalProperty'
     -- * Simple signal transformations
   , truncateAt
   , stable
@@ -559,6 +560,31 @@ signalProperty atMost showSignalValue p =
 
     go !_ !recent ((Time t, x) : _) = counterexample details False
       where
+        details =
+          unlines [ "Last " ++ show atMost ++ " signal values:"
+                  , unlines [ show t' ++ "\t@ " ++ showSignalValue x'
+                            | (Time t',x') <- Deque.toList recent ]
+                  , "Property violated at: " ++ show t
+                  , "Invalid signal value:"
+                  , showSignalValue x
+                  ]
+
+-- | A variant of 'signalProperty' that takes a property-producing function
+-- instead of a boolean predicate.
+--
+signalProperty' :: forall a. Int -> (a -> String)
+                   -> (a -> Property) -> Signal a -> Property
+signalProperty' atMost showSignalValue p =
+    go 0 mempty . eventsToList . toChangeEvents
+  where
+    go :: Int -> Deque (Time, a) -> [(Time, a)] -> Property
+    go !_ !_ []                  = property True
+    go !n !recent ((t, x) : txs) = counterexample details (p x) .&&. next
+      where
+        next
+          | n < atMost = go (n+1) (              Deque.snoc (t,x)  recent) txs
+          | otherwise  = go n     ((Deque.tail . Deque.snoc (t,x)) recent) txs
+
         details =
           unlines [ "Last " ++ show atMost ++ " signal values:"
                   , unlines [ show t' ++ "\t@ " ++ showSignalValue x'

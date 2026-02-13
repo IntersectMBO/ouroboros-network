@@ -4809,8 +4809,8 @@ prop_churn_targets_bounds baseTargetsMap ioSimTrace traceNumber =
 
    in conjoin
       $ (\evs ->
-           let targetsChangeEvents =
-                 Signal.eventsToList
+           let targetsChangeSig =
+                 Signal.fromEvents
                  . Signal.selectEvents
                    (\case
                        (node, DiffusionPeerSelectionTrace (TraceTargetsChanged new))
@@ -4819,14 +4819,63 @@ prop_churn_targets_bounds baseTargetsMap ioSimTrace traceNumber =
                    )
                  $ evs
 
-            in foldr (\(_, (node, targets)) p -> case Map.lookup node baseTargetsLookup of
-                      Just bs@(base0, base1) -> counterexample ("Node: " ++ show node ++
-                                                                "\nExpected: " ++ show bs ++
-                                                                "\nActual: " ++ show targets
-                                                                ) (     targetsChangeProperty base0 targets
-                                                                   .||. targetsChangeProperty base1 targets) .&&. p
-                      Nothing                -> error ("No base targets for " <> show node)
-                     ) (property True) targetsChangeEvents
+               -- The last known consensus mode
+               consensusModeSig =
+                 Signal.scanl (\cmap ->
+                                 maybe cmap (\mode -> uncurry Map.insert mode cmap)
+                              ) Map.empty
+                 . Signal.fromEvents
+                 . Signal.selectEvents
+                   (\case
+                       (node, DiffusionSimulationTrace (TrJoiningNetwork consensusMode))
+                              -> Just (node, consensusMode)
+                       _other -> Nothing
+                   )
+                 $ evs
+
+               -- The last known judgment
+               judgmentSig =
+                 Signal.scanl (\jmap ->
+                                 maybe jmap (\judgment -> uncurry Map.insert judgment jmap)
+                              ) Map.empty
+                 . Signal.fromEvents
+                 . Signal.selectEvents
+                   (\case
+                       (node, DiffusionPeerSelectionTrace (ExtraTrace (Cardano.TraceLedgerStateJudgementChanged judgment)))
+                              -> Just (node, judgment)
+                       _other -> Nothing
+                   )
+                 $ evs
+
+            in signalProperty' 20 show
+                  (\case
+                      (Just (node, targets), modeMap, judgmentMap) ->
+                        case Map.lookup node baseTargetsLookup of
+                          Nothing                                ->
+                            error ("No base targets for " <> show node)
+                          Just bs@(deadlineTargets, syncTargets) ->
+                            let mbase = do
+                                  mode <- Map.lookup node modeMap
+                                  judg <- Map.lookup node judgmentMap
+                                  pure $
+                                    case (mode, judg) of
+                                      (GenesisMode, TooOld) -> syncTargets
+                                      _otherwise            -> deadlineTargets
+                             in maybe
+                                  (property True)
+                                  (\base ->
+                                      counterexample ("Node: " ++ show node ++
+                                                      "\nExpected: " ++ show bs ++
+                                                      "\nActual: " ++ show targets
+                                                      ) (targetsChangeProperty base targets)
+                                  )
+                                  mbase
+                      _ignore -> property True
+                  )
+                  ( (,,) <$> targetsChangeSig
+                         <*> consensusModeSig
+                         <*> judgmentSig
+                  )
         ) <$> events
 
 prop_churn_targets_bounds_cardano_iosim
