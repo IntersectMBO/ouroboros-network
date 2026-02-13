@@ -399,6 +399,35 @@ library framework
     build-depends: Win32 >=2.5.4.1 && <3.0
   hs-source-dirs: framework
 
+library framework-tracing
+  import: ghc-options
+  visibility: public
+  hs-source-dirs: framework/tracing
+  exposed-modules:
+    Network.Mux.Tracing
+    Ouroboros.Network.Tracing
+
+  other-modules:
+    Ouroboros.Network.Tracing.ConnectionId
+    Ouroboros.Network.Tracing.ConnectionManager
+    Ouroboros.Network.Tracing.Driver
+    Ouroboros.Network.Tracing.InboundGovernor
+    Ouroboros.Network.Tracing.Server
+
+  build-depends:
+    aeson,
+    base >=4.14 && <4.23,
+    containers,
+    formatting,
+    iproute,
+    network,
+    network-mux,
+    ouroboros-network:framework,
+    ouroboros-network:orphan-instances,
+    text,
+    trace-dispatcher ^>=2.11.0,
+    typed-protocols:{typed-protocols, stateful} ^>=1.2,
+
 library tests-lib
   import: ghc-options
   visibility: public
@@ -601,6 +630,41 @@ test-suite framework-io-tests
   ghc-options:
     -rtsopts
     -threaded
+
+library tracing
+  import: ghc-options
+  visibility: public
+  hs-source-dirs: tracing
+  exposed-modules:
+    Ouroboros.Network.Tracing.PeerSelection
+
+  other-modules:
+    Ouroboros.Network.Tracing.PeerSelection.Governor
+    Ouroboros.Network.Tracing.PeerSelection.Governor.DebugPeerSelection
+    Ouroboros.Network.Tracing.PeerSelection.Governor.PeerSelectionCounters
+    Ouroboros.Network.Tracing.PeerSelection.Governor.TracePeerSelection
+    Ouroboros.Network.Tracing.PeerSelection.Governor.Utils
+    Ouroboros.Network.Tracing.PeerSelection.PeerStateActions
+    Ouroboros.Network.Tracing.PeerSelection.RootPeersDNS.DNSActions
+    Ouroboros.Network.Tracing.PeerSelection.RootPeersDNS.LocalRootPeers
+    Ouroboros.Network.Tracing.PeerSelection.RootPeersDNS.PublicRootPeers
+
+  reexported-modules:
+  default-language: Haskell2010
+  other-extensions:
+  build-depends:
+    aeson,
+    base >=4.14 && <4.23,
+    iproute,
+    network,
+    ouroboros-network,
+    ouroboros-network:orphan-instances,
+    ouroboros-network:protocols,
+    text,
+    trace-dispatcher ^>=2.11.0,
+
+  if flag(asserts)
+    ghc-options: -fno-ignore-asserts
 
 library orphan-instances
   import: ghc-options-tests
