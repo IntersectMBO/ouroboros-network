@@ -25,6 +25,7 @@ import Control.Concurrent.STM (atomically)
 import Control.Exception
 import Control.Monad
 import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer
 
 import System.Environment qualified as SysEnv
@@ -143,7 +144,7 @@ protocols miniProtocolDir =
   [ MiniProtocolInfo {
       miniProtocolNum        = MiniProtocolNum 2,
       miniProtocolDir,
-      miniProtocolLimits     = defaultProtocolLimits { burst = Just (ProtocolBurst 10)},
+      miniProtocolLimits     = defaultProtocolLimits { burst = Just (ProtocolBurst 131070 131070)},
       miniProtocolCapability = Nothing
     }
   , MiniProtocolInfo {
@@ -247,14 +248,14 @@ serverWorkerBursty bearer (n1, n2) len1 len2 = do
             (MiniProtocolNum 2)
             ResponderDirectionOnly
             StartOnDemand
-            (\chan -> runServerBurstBin (reqrespTracer "server:praos") chan (serverReqResp n1 len1))
+            (\chan -> runServerBurstBin (reqrespTracer "server:praos") chan (serverReqResp n1 len1 0.200))
          awaitResult2 <-
            runMiniProtocol
              mux
              (MiniProtocolNum 3)
              ResponderDirectionOnly
              StartOnDemand
-             (\chan -> runServerBurstBin (reqrespTracer "server:leios") chan (serverReqResp n2 len2))
+             (\chan -> runServerBurstBin (reqrespTracer "server:leios") chan (serverReqResp n2 len2 0))
          -- wait for both mini-protocols to finish
          results <- atomically $ (,) <$> awaitResult1
                                      <*> awaitResult2
@@ -266,15 +267,19 @@ serverWorkerBursty bearer (n1, n2) len1 len2 = do
     serverReqResp
       :: Int
       -> Int
+      -> DiffTime
       -> ReqRespServerBurst ByteString ByteString IO Int
-    serverReqResp n len = ReqRespServerBurst $ \_ -> pure (go n minBound)
+    serverReqResp n len delay = ReqRespServerBurst $ \_ -> pure (go n minBound)
       where
         go :: Int -> Char -> ReqRespServerLoop ByteString IO Int
-        go m c | m > 0 =
-          SendMsgResp (BSC.replicate len c) (return $ go (m-1) (succ c))
-               | otherwise =
-          SendMsgDoneServer (pure n)
-
+        go m c   | m > 0 =
+                     SendMsgResp s $ do
+                       threadDelay delay
+                       return $ go (m - 1) (succ c)
+                 | otherwise =
+            SendMsgDoneServer (pure n)
+          where
+            s = replicate 10 (BSC.replicate len c)
 
 --
 -- client
