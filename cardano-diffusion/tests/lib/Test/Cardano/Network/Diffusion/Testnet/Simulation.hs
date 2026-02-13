@@ -25,6 +25,7 @@ module Test.Cardano.Network.Diffusion.Testnet.Simulation
   , prop_diffusionScript_commandScript_valid
   , fixupCommands
   , diffusionSimulation
+  , diffusionSimulation'
   , Command (..)
     -- * Tracing
   , DiffusionTestTrace (..)
@@ -81,7 +82,7 @@ import Cardano.Network.Diffusion.Configuration qualified as Cardano
 import Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
 import Cardano.Network.LedgerStateJudgement
 import Cardano.Network.PeerSelection hiding (requestPublicRootPeers)
-import Cardano.Network.PeerSelection.Churn qualified as Churn
+import Cardano.Network.PeerSelection.Churn qualified as CardanoChurn
 import Cardano.Network.PeerSelection.ExtraRootPeers qualified as Cardano
 import Cardano.Network.PeerSelection.Governor.PeerSelectionActions qualified as Cardano
 import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano hiding
@@ -109,6 +110,7 @@ import Ouroboros.Network.InboundGovernor qualified as IG
 import Ouroboros.Network.Mux (MiniProtocolLimits (..))
 import Ouroboros.Network.PeerSelection
 import Ouroboros.Network.PeerSelection qualified as Governor
+import Ouroboros.Network.PeerSelection.Churn qualified as OuroborosChurn
 import Ouroboros.Network.PeerSelection.LedgerPeers (accPoolStake)
 import Ouroboros.Network.Protocol.BlockFetch.Codec (byteLimitsBlockFetch,
            timeLimitsBlockFetch)
@@ -998,13 +1000,24 @@ ppDiffusionTestTrace (DiffusionMuxTrace tr)                         = show tr
 
 
 -- | Run an arbitrary topology in `IOSim`.
---
+-- This runs the simulator with the Cardano churn mechanism.
 diffusionSimulation
   :: BearerInfo
   -> DiffusionScript
   -> IOSim s Void
 diffusionSimulation bearerInfo diffusionScript =
-  diffusionSimulationM bearerInfo diffusionScript dynamicTracer
+  diffusionSimulationM bearerInfo diffusionScript dynamicTracer CardanoChurn
+
+-- | Run an arbitrary topology in `IOSim`.
+-- This runs the simulator with the Ouroboros churn mechanism.
+diffusionSimulation'
+  :: BearerInfo
+  -> DiffusionScript
+  -> IOSim s Void
+diffusionSimulation' bearerInfo diffusionScript =
+  diffusionSimulationM bearerInfo diffusionScript dynamicTracer OuroborosChurn
+
+data Churn = CardanoChurn | OuroborosChurn
 
 -- | Run an arbitrary topology in a generic monad `m`.
 --
@@ -1031,11 +1044,12 @@ diffusionSimulationM
   -> DiffusionScript
   -> Tracer m (WithTime (WithName NtNAddr DiffusionTestTrace))
   -- ^ timed trace of nodes in the system
+  -> Churn
   -> m Void
 diffusionSimulationM
   defaultBearerInfo
   (DiffusionScript simArgs dnsMapScript nodeArgs)
-  nodeTracer = do
+  nodeTracer churn = do
     connStateIdSupply <- atomically $ CM.newConnStateIdSupply Proxy
     -- TODO: we should use `snocket` per node, this will allow us to set up
     -- bearer info per node
@@ -1271,19 +1285,19 @@ diffusionSimulationM
                            | otherwise ->
                 return False
 
-          cardanoChurnArgs :: Churn.ExtraArguments m
+          cardanoChurnArgs :: CardanoChurn.ExtraArguments m
           cardanoChurnArgs =
-            Churn.ExtraArguments {
-              Churn.modeVar             = churnModeVar
-            , Churn.genesisPeerSelectionTargets
+            CardanoChurn.ExtraArguments {
+              CardanoChurn.modeVar             = churnModeVar
+            , CardanoChurn.genesisPeerSelectionTargets
                                         = snd peerTargets
-            , Churn.readUseBootstrap    = readUseBootstrapPeers
-            , Churn.consensusMode       = consensusMode
-            , Churn.tracerChurnMode     = (\s -> WithTime (Time (-1)) (WithName addr (DiffusionChurnModeTrace s)))
+            , CardanoChurn.readUseBootstrap    = readUseBootstrapPeers
+            , CardanoChurn.consensusMode       = consensusMode
+            , CardanoChurn.tracerChurnMode     = (\s -> WithTime (Time (-1)) (WithName addr (DiffusionChurnModeTrace s)))
                                             `contramap` nodeTracer
             }
 
-          arguments :: Node.Arguments (Churn.ExtraArguments m) PeerTrustable m
+          arguments :: Node.Arguments (CardanoChurn.ExtraArguments m) PeerTrustable m
           arguments =
             Node.Arguments
               { Node.aIPAddress            = addr
@@ -1305,7 +1319,7 @@ diffusionSimulationM
               , Node.aDebugTracer          = Tracer (\s -> do
                                               t <- getMonotonicTime
                                               traceWith nodeTracer $ WithTime t (WithName addr (DiffusionDebugTrace s)))
-              , Node.aExtraChurnArgs = cardanoChurnArgs
+              , Node.aExtraChurnArgs       = cardanoChurnArgs
               , Node.aTxDecisionPolicy     = txDecisionPolicy
               , Node.aTxs                  = txs
               }
@@ -1376,7 +1390,7 @@ diffusionSimulationM
           Cardano.cardanoPeerSelectionStatetoCounters
           (flip Cardano.ExtraPeers Set.empty)
           requestPublicRootPeers'
-          peerChurnGovernor
+          peerChurnGovernor'
           tracers
           ( contramap (DiffusionFetchTrace . (\(TraceLabelPeer _ a) -> a))
           . tracerWithName addr
@@ -1387,6 +1401,10 @@ diffusionSimulationM
         `catch` \e -> traceWith (diffSimTracer addr) (TrErrored e)
                    >> throwIO e
         `finally`     traceWith (diffSimTracer addr) TrTerminated
+
+    peerChurnGovernor' = case churn of
+      OuroborosChurn -> OuroborosChurn.peerChurnGovernor
+      CardanoChurn   -> CardanoChurn.peerChurnGovernor
 
     domainResolver :: StrictTVar m MockDNSMap
                    -> DNSLookupType
