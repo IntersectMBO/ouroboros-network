@@ -89,6 +89,7 @@ if impl (ghc >= 9.14)
     -- https://github.com/well-typed/cborg/issues/373
     , cborg:base
     , cborg:containers
+    , cborg-json:base
 
     -- https://github.com/haskellari/indexed-traversable/issues/50
     , indexed-traversable:base
