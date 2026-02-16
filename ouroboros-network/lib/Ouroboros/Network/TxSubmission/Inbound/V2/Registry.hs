@@ -20,6 +20,7 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Registry
 import Control.Concurrent.Class.MonadMVar.Strict
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Concurrent.Class.MonadSTM.TSem
+import Control.Exception (assert)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
@@ -495,7 +496,12 @@ decisionLogicThread tracer counterTracer policy txChannelsVar sharedStateVar = d
       traceWith tracer (TraceTxDecisions decisions)
       TxChannels { txChannelMap } <- readMVar txChannelsVar
       traverse_
-        (\(mvar, d) -> modifyMVarWithDefault_ mvar d (\d' -> pure (d' <> d)))
+        (\(mvar, d) ->
+           modifyMVarWithDefault_ mvar d (\d' ->
+             let left  = Set.fromList . fmap fst $ listOfTxsToMempool (txdTxsToMempool d)
+                 right = Set.fromList . fmap fst $ listOfTxsToMempool (txdTxsToMempool d')
+                 shared = Set.intersection left right
+              in assert (Set.null shared) $ pure (d' <> d)))
         (Map.intersectionWith (,)
           txChannelMap
           decisions)
