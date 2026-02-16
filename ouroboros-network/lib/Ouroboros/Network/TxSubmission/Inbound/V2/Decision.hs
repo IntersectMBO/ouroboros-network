@@ -215,6 +215,7 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
                else
                  -- there are no `txid`s to request, nor we can request `tx`s due
                  -- to in-flight size limits
+                 assert (null listOfTxsToMempool)
                  ( st
                  , ( (peeraddr, peerTxState')
                    , emptyTxDecision

@@ -37,7 +37,7 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Types
   ) where
 
 import Control.DeepSeq
-import Control.Exception (Exception (..))
+import Control.Exception (Exception (..), assert)
 import Control.Monad.Class.MonadTime.SI
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -318,7 +318,11 @@ instance Ord txid => Semigroup (TxDecision txid tx) where
                    txdTxIdsToRequest     = txdTxIdsToRequest + txdTxIdsToRequest',
                    txdPipelineTxIds      = txdPipelineTxIds',
                    txdTxsToRequest       = txdTxsToRequest <> txdTxsToRequest',
-                   txdTxsToMempool       = txdTxsToMempool <> txdTxsToMempool'
+                   txdTxsToMempool       =
+                     let left  = Set.fromList . fmap fst $ listOfTxsToMempool txdTxsToMempool
+                         right = Set.fromList . fmap fst $ listOfTxsToMempool txdTxsToMempool'
+                         shared = Set.intersection left right
+                     in assert (Set.null shared) $ txdTxsToMempool <> txdTxsToMempool'
                  }
 
 -- | A no-op decision.
