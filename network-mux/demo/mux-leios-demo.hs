@@ -12,16 +12,25 @@
 --
 module Main (main) where
 
+import Data.Binary.Get qualified as Bin
+import Data.Binary.Put qualified as Bin
 import Data.ByteString (ByteString)
+import Data.ByteString qualified as BS
 import Data.ByteString.Char8 qualified as BSC
+import Data.ByteString.Lazy qualified as BL
 import Data.IP (IP)
 import Data.IP qualified as IP
+import Data.TDigest (TDigest, insert, maximumValue, mean, minimumValue, quantile, stddev, tdigest)
+import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
+import Data.Word (Word64)
+import Text.Printf (printf)
 import Text.Read (readMaybe)
 
 import Control.Concurrent (forkIO)
-import Control.Concurrent.STM (atomically)
+import Control.Concurrent.STM (TVar, atomically, modifyTVar', newTVarIO, readTVar)
 import Control.Exception
 import Control.Monad
+import Control.Monad.Class.MonadTime.SI (getCurrentTime)
 import Control.Tracer
 
 import System.Environment qualified as SysEnv
@@ -42,6 +51,11 @@ data ClientType = Sequential | Bursty
 
 unusedValue :: a
 unusedValue = error "unused"
+
+data LatencyStats = LatencyStats {
+  lsCount  :: !Int,
+  lsDigest :: !(TDigest 5)
+  }
 
 main :: IO ()
 main = do
@@ -210,8 +224,8 @@ serverWorkerSequential bearer len1 len2 = do
         go :: Char -> ReqRespServer ByteString ByteString IO Int
         go c =
           ReqRespServer {
-            recvMsgReq  = \(!_) ->
-              let msg = BSC.replicate n c in
+            recvMsgReq  = \(!_) -> do
+              msg <- makeTimestampedPayload n c
               pure (msg, go (succ c)),
             recvMsgDone = pure n
           }
@@ -248,13 +262,14 @@ serverWorkerBursty bearer (n1, n2) len1 len2 = do
       :: Int
       -> Int
       -> ReqRespServerBurst ByteString ByteString IO Int
-    serverReqResp n len = ReqRespServerBurst $ \_ -> pure (go n minBound)
+    serverReqResp n len = ReqRespServerBurst $ \_ -> go n minBound
       where
-        go :: Int -> Char -> ReqRespServerLoop ByteString IO Int
-        go m c | m > 0 =
-          SendMsgResp (BSC.replicate len c) (return $ go (m-1) (succ c))
+        go :: Int -> Char -> IO (ReqRespServerLoop ByteString IO Int)
+        go m c | m > 0 = do
+          msg <- makeTimestampedPayload len c
+          return $ SendMsgResp msg (go (m - 1) (succ c))
                | otherwise =
-          SendMsgDoneServer (pure n)
+          return $ SendMsgDoneServer (pure n)
 
 
 --
@@ -297,6 +312,10 @@ clientWorkerSequential
   -- ^ number of requests to send over `MiniProtocolNum 3`
   -> IO ()
 clientWorkerSequential bearer len n1 n2 = do
+    praosStats <- newTVarIO newLatencyStats
+    praosMissing <- newTVarIO 0
+    leiosStats <- newTVarIO newLatencyStats
+    leiosMissing <- newTVarIO 0
     mux <- Mx.new Mx.nullTracers (protocols InitiatorDirectionOnly)
     void $ forkIO $
       do awaitResult1 <-
@@ -305,38 +324,51 @@ clientWorkerSequential bearer len n1 n2 = do
              (MiniProtocolNum 2)
              InitiatorDirectionOnly
              StartEagerly
-             (\chan -> runClientBin (reqrespTracer "client:praos") chan (clientReqResp '0' n1))
+             (\chan -> runClientBin (reqrespTracer "client:praos") chan
+                                    (clientReqResp praosStats praosMissing '0' n1))
          awaitResult2 <-
            runMiniProtocol
              mux
              (MiniProtocolNum 3)
              InitiatorDirectionOnly
              StartEagerly
-             (\chan -> runClientBin (reqrespTracer "client:leios") chan (clientReqResp '1' n2))
+             (\chan -> runClientBin (reqrespTracer "client:leios") chan
+                                    (clientReqResp leiosStats leiosMissing '1' n2))
          -- wait for both mini-protocols to finish
          results <- atomically $ (,) <$> awaitResult1
                                      <*> awaitResult2
          debugPutStrLn_ $ "client results: " ++ show results
+         reportLatencyStats "praos" praosStats praosMissing
+         reportLatencyStats "leios" leiosStats leiosMissing
       `finally`
         Mx.stop mux
     Mx.run mux bearer
   where
     clientReqResp
-      :: Char
+      :: TVar LatencyStats
+      -> TVar Int
+      -> Char
       -> Int
       -> ReqRespClient ByteString ByteString IO Int
-    clientReqResp c n = go n
+    clientReqResp statsVar missingVar c n = go n
       where
         !msg = BSC.replicate len c
 
         go :: Int -> ReqRespClient ByteString ByteString IO Int
         go m | m <= 0
              = SendMsgDone (pure n)
-        go m = SendMsgReq msg (\_ -> pure $ go (m-1))
+        go m =
+          SendMsgReq msg (\rsp -> do
+            recordLatency statsVar missingVar rsp
+            pure $ go (m-1))
 
 
 clientWorkerBursty :: Mx.Bearer IO -> IO ()
 clientWorkerBursty bearer = do
+    praosStats <- newTVarIO newLatencyStats
+    praosMissing <- newTVarIO 0
+    leiosStats <- newTVarIO newLatencyStats
+    leiosMissing <- newTVarIO 0
     mux <- Mx.new Mx.nullTracers (protocols InitiatorDirectionOnly)
     void $ forkIO $
       do awaitResult1 <-
@@ -345,28 +377,117 @@ clientWorkerBursty bearer = do
              (MiniProtocolNum 2)
              InitiatorDirectionOnly
              StartEagerly
-             (\chan -> runClientBurstBin (reqrespTracer "client:praos") chan clientReqResp)
+             (\chan -> runClientBurstBin (reqrespTracer "client:praos") chan
+                                         (clientReqResp praosStats praosMissing))
          awaitResult2 <-
            runMiniProtocol
              mux
              (MiniProtocolNum 3)
              InitiatorDirectionOnly
              StartEagerly
-             (\chan -> runClientBurstBin (reqrespTracer "client:leios") chan clientReqResp)
+             (\chan -> runClientBurstBin (reqrespTracer "client:leios") chan
+                                         (clientReqResp leiosStats leiosMissing))
          -- wait for both mini-protocols to finish
          results <- atomically $ (,) <$> awaitResult1
                                      <*> awaitResult2
          debugPutStrLn_ $ "client results: " ++ show results
+         reportLatencyStats "praos" praosStats praosMissing
+         reportLatencyStats "leios" leiosStats leiosMissing
       `finally`
         Mx.stop mux
     Mx.run mux bearer
   where
     clientReqResp
-      :: ReqRespClientBurst ByteString ByteString IO Int
-    clientReqResp = SendMsgReqBurst (BSC.replicate 10 '\NUL') (go 0)
+      :: TVar LatencyStats
+      -> TVar Int
+      -> ReqRespClientBurst ByteString ByteString IO Int
+    clientReqResp statsVar missingVar = SendMsgReqBurst (BSC.replicate 10 '\NUL') (go 0)
       where
         go :: Int -> ReqRespClientLoop ByteString IO Int
         go !count =
           AwaitResp { handleMsgDone = pure count
-                    , handleMsgResp = \(!_) -> pure (go (count + 1))
+                    , handleMsgResp = \(!rsp) -> do
+                      recordLatency statsVar missingVar rsp
+                      return $ go (count + 1)
                     }
+
+newLatencyStats :: LatencyStats
+newLatencyStats =
+  LatencyStats {
+      lsCount = 0
+    , lsDigest = tdigest []
+    }
+
+updateLatencyStats :: Word64 -> LatencyStats -> LatencyStats
+updateLatencyStats us LatencyStats{lsCount, lsDigest} =
+  let !lsCount' = lsCount + 1
+      !lsDigest' = insert (fromIntegral us :: Double) lsDigest in
+  LatencyStats {
+      lsCount = lsCount'
+    , lsDigest = lsDigest'
+    }
+
+timestampSize :: Int
+timestampSize = 8
+
+getWallClockTimeUs :: IO Word64
+getWallClockTimeUs = do
+  now <- getCurrentTime
+  let ns = floor (utcTimeToPOSIXSeconds now * 1_000_000) :: Integer
+  return $ fromInteger ns
+
+encodeTimeStamp :: Word64 -> ByteString
+encodeTimeStamp ts =
+  BL.toStrict (Bin.runPut (Bin.putWord64be ts))
+
+extractTimestamp :: ByteString -> Maybe Word64
+extractTimestamp bs
+  | BS.length bs < timestampSize = Nothing
+  | otherwise =
+      Just $ Bin.runGet Bin.getWord64be
+                        (BL.fromStrict (BS.take timestampSize bs))
+
+makeTimestampedPayload :: Int -> Char -> IO ByteString
+makeTimestampedPayload len c
+  | len < timestampSize = pure (BSC.replicate len c)
+  | otherwise = do
+      ts <- getWallClockTimeUs
+      let tsBytes = encodeTimeStamp ts
+      return $ tsBytes <> BSC.replicate (len - timestampSize) c
+
+recordLatency :: TVar LatencyStats -> TVar Int -> ByteString -> IO ()
+recordLatency statsVar missingVar rsp =
+  case extractTimestamp rsp of
+       Nothing -> atomically $ modifyTVar' missingVar succ
+       Just ts -> do
+         now <- getWallClockTimeUs
+         let latency = max 0 $ now - ts
+         atomically $ modifyTVar' statsVar (updateLatencyStats latency)
+
+reportLatencyStats :: String -> TVar LatencyStats -> TVar Int -> IO ()
+reportLatencyStats label statsVar missingVar = do
+  (stats, missing) <- atomically $ (,) <$> readTVar statsVar <*> readTVar missingVar
+  let count = lsCount stats 
+  if count <= 0
+     then printf "%s latency: count=0 missing=%d\n" label missing
+     else do
+       let td       = lsDigest stats
+           minMs    = minimumValue td / 1000
+           maxMs    = maximumValue td / 1000
+           stddevMs = case stddev td of
+                           Nothing -> 0
+                           Just sd -> sd / 1000
+           meanMs   = case mean td of
+                           Nothing -> 0
+                           Just m  -> m / 1000
+           medianMs = quantile' 0.5 td
+           p90Ms    = quantile' 0.9 td
+           p95Ms    = quantile' 0.95 td
+           p99Ms    = quantile' 0.99 td
+       printf "%s latency: count=%d min=%.3fms mean=%.3fms median=%.3fms p90=%.3fms p95=%.3fms p99=%.3fms max=%.3fms stddev=%.3fms missing=%d\n"
+         label count minMs meanMs medianMs p90Ms p95Ms p99Ms maxMs stddevMs missing
+  where
+    quantile' q td = case quantile q td of
+                       Nothing -> 0
+                       Just w  -> w / 1000
+
