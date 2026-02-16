@@ -94,6 +94,7 @@ txSubmissionSimulation tracer maxUnacked outboundTxs
                        inboundDelay outboundDelay = do
 
     inboundMempool  <- emptyMempool
+    duplicateTxIdsVar <- newTVarIO []
     outboundMempool <- newMempool outboundTxs
     (outboundChannel, inboundChannel) <- createConnectedChannels
     outboundAsync <-
@@ -112,7 +113,7 @@ txSubmissionSimulation tracer maxUnacked outboundTxs
                 (byteLimitsTxSubmission2 (fromIntegral . BSL.length))
                 timeLimitsTxSubmission2
                 (maybe id delayChannel inboundDelay inboundChannel)
-                (txSubmissionServerPeerPipelined (inboundPeer inboundMempool))
+                (txSubmissionServerPeerPipelined (inboundPeer duplicateTxIdsVar inboundMempool))
 
     _ <- waitAnyCancel [ outboundAsync, inboundAsync ]
 
@@ -130,14 +131,16 @@ txSubmissionSimulation tracer maxUnacked outboundTxs
         (maxBound :: TestVersion)
         controlMessageSTM
 
-    inboundPeer :: Mempool m txid (Tx txid) -> TxSubmissionServerPipelined txid (Tx txid) m ()
-    inboundPeer inboundMempool =
+    inboundPeer :: TVar m [txid]
+                -> Mempool m txid (Tx txid)
+                -> TxSubmissionServerPipelined txid (Tx txid) m ()
+    inboundPeer duplicateTxIdsVar inboundMempool =
       txSubmissionInbound
         (("INBOUND",) `contramap` verboseTracer)
         NoTxSubmissionInitDelay
         maxUnacked
         (getMempoolReader inboundMempool)
-        (getMempoolWriter inboundMempool)
+        (getMempoolWriter duplicateTxIdsVar inboundMempool)
         (maxBound :: TestVersion)
 
 prop_txSubmission :: Positive Word16

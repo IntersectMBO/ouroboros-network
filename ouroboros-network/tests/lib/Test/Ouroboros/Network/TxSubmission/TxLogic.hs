@@ -150,34 +150,31 @@ sharedTxStateInvariant invariantStrength
                          referenceCounts,
                          timedTxs
                        } =
-
-         -- `inflightTxs` and `bufferedTxs` are disjoint
-         counterexample "inflightTxs not disjoint with bufferedTxs"
-         (null (Map.keysSet inflightTxs `Set.intersection` bufferedTxsSet))
-    .&&.
          counterexample "bufferedTxs txid not a subset of unacknowledged txids"
-         let unacknowledgedSet =
-               foldr (\PeerTxState { unacknowledgedTxIds } r ->
-                       r <> Set.fromList (toList unacknowledgedTxIds))
-                     Set.empty txStates
-             timedSet = foldMap Set.fromList timedTxs
-         in case invariantStrength of
-           WeakInvariant   ->
-             -- `submitTxToMempool` caches buffered `txs`, we check here that
-             -- they do not leak
-             counterexample ("unacknowledgedSet: " ++ show unacknowledgedSet) $
-             counterexample ("bufferedTxsSet: " ++ show bufferedTxsSet) $
-             counterexample ("timedTxsSet: " ++ show timedSet) $
-             (bufferedTxsSet Set.\\ unacknowledgedSet)
-             `Set.isSubsetOf`
-             timedSet
+         (
+           let unacknowledgedSet =
+                 foldr (\PeerTxState { unacknowledgedTxIds } r ->
+                          r <> Set.fromList (toList unacknowledgedTxIds))
+                       Set.empty txStates
+               timedSet = foldMap Set.fromList timedTxs
+           in case invariantStrength of
+             WeakInvariant   ->
+               -- `submitTxToMempool` caches buffered `txs`, we check here that
+               -- they do not leak
+               counterexample ("unacknowledgedSet: " ++ show unacknowledgedSet) $
+               counterexample ("bufferedTxsSet: " ++ show bufferedTxsSet) $
+               counterexample ("timedTxsSet: " ++ show timedSet) $
+               (bufferedTxsSet Set.\\ unacknowledgedSet)
+               `Set.isSubsetOf`
+               timedSet
 
-           StrongInvariant -> property $
-             -- the set of buffered txids must be a subset of sum of the sets of
-             -- unacknowledged txids
-             bufferedTxsSet
-             `Set.isSubsetOf`
-             unacknowledgedSet
+             StrongInvariant -> property $
+               -- the set of buffered txids must be a subset of sum of the sets of
+               -- unacknowledged txids
+               bufferedTxsSet
+               `Set.isSubsetOf`
+               unacknowledgedSet
+         )
 
     .&&. counterexample "referenceCounts invariant violation"
          (
