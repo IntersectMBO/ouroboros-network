@@ -118,9 +118,10 @@ acknowledgeTxIds
                    , txid `Map.notMember` bufferedTxs sharedTxState
                    , tx <- maybeToList $ txid `Map.lookup` downloadedTxs
                    ]
-    (toMempoolTxIds, _) =
-      StrictSeq.spanl (`Map.member` downloadedTxs) acknowledgedTxIds
-
+    -- Select downloaded txs from the prefix of `acknowledgedTxIds`, ignoring
+    -- unknown and buffered txs.
+    toMempoolTxIds =
+      StrictSeq.filter (`Map.member` downloadedTxs) acknowledgedTxIds
 
     txsToMempoolMap = Map.fromList txsToMempool
 
