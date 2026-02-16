@@ -41,6 +41,7 @@ cleanup_netns() {
       # kill server and tcpdump
       sudo kill -9 $pid
     done
+    sudo ip netns delete ns$i
   done
   # for i in 1 2 3; do sudo ip netns del ns$i; done
 
