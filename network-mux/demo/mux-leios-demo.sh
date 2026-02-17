@@ -164,7 +164,10 @@ setup_bridge() {
 
 setup_bridge
 
-cabal build exe:mux-leios-demo
+if ! cabal build exe:mux-leios-demo; then
+  echo "cabal build failed; exiting." >&2
+  exit 1
+fi
 CMD=$(cabal list-bin exe:mux-leios-demo)
 
 # For debuging throuput shaping
