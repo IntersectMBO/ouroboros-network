@@ -239,7 +239,7 @@ pickTxsToDownload now policy@TxDecisionPolicy { txsSizeInflightPerPeer,
                 foldWithState
                   (\(txid, (txSize, inflightSt)) sizeInflight ->
                     let inflightMultiplicity = inFlightCount inflightSt
-                        inflightSpace        = inFlightLastReq inflightSt in
+                        inflightSpace        = inFlightNextReq inflightSt in
                     if -- note that we pick `txid`'s as long the `s` is
                        -- smaller or equal to `txsSizeInflightPerPeer`.
                        sizeInflight <= txsSizeInflightPerPeer
@@ -442,8 +442,8 @@ filterActivePeers
   where
 
     unrequestableFilter :: InFlightState -> Bool
-    unrequestableFilter InFlightState{inFlightCount, inFlightLastReq} =
-      inFlightCount >= txInflightMultiplicity || inFlightLastReq  >= now
+    unrequestableFilter InFlightState{inFlightCount, inFlightNextReq} =
+      inFlightCount >= txInflightMultiplicity || inFlightNextReq >= now
 
     unrequestable :: Set txid
     unrequestable = Map.keysSet (Map.filter unrequestableFilter inflightTxs)

@@ -143,7 +143,7 @@ instance ( NoThunks txid
 
 data InFlightState = InFlightState {
       inFlightCount   :: !Int
-    , inFlightLastReq :: !Time
+    , inFlightNextReq :: !Time
     }
     deriving (Eq, Ord, Show, Generic)
 
