@@ -456,7 +456,7 @@ drainRejectionThread tracer policy sharedStateVar = do
          else go nextDrain
 
     filterStaleReq :: Time -> InFlightState -> Bool
-    filterStaleReq now e = inFlightCount e > 0 || inFlightLastReq e > now
+    filterStaleReq now e = inFlightCount e > 0 || inFlightNextReq e > now
 
 decisionLogicThread
     :: forall m peeraddr txid tx.
