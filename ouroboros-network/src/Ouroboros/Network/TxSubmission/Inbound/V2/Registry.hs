@@ -486,7 +486,10 @@ decisionLogicThread tracer counterTracer policy txChannelsVar sharedStateVar = d
       threadDelay _DECISION_LOOP_DELAY
 
       now <- getMonotonicTime
-      delayVar <- registerDelay $ 2 * _DECISION_LOOP_DELAY
+      nextDelay <- atomically $ do
+        sharedTxState <- readTVar sharedStateVar
+        return $ nextDecisionDelay now sharedTxState
+      delayVar <- registerDelay nextDelay
       res_m <- atomically do
         sharedTxState <- readTVar sharedStateVar
         let activePeers = filterActivePeers now policy sharedTxState
@@ -515,6 +518,31 @@ decisionLogicThread tracer counterTracer policy txChannelsVar sharedStateVar = d
                decisions)
              traceWith counterTracer (mkTxSubmissionCounters st)
              go
+
+    nextDecisionDelay
+      :: Time
+      -> SharedTxState peeraddr txid tx
+      -> DiffTime
+    nextDecisionDelay now SharedTxState { inflightTxs } =
+      fromMaybe maxDelay (diffTimeNow <$> nextWake)
+      where
+        -- If there are no outstanding TXs we wait for a long time
+        -- or until an STM value changes.
+        maxDelay :: DiffTime
+        maxDelay = 120
+
+        nextWake :: Maybe Time
+        nextWake =
+          Foldable.foldl' step Nothing inflightTxs
+
+        step :: Maybe Time -> InFlightState -> Maybe Time
+        step acc InFlightState { inFlightNextReq } =
+          if inFlightNextReq <= now
+             then acc
+             else Just $ maybe inFlightNextReq (min inFlightNextReq) acc
+
+        diffTimeNow :: Time -> DiffTime
+        diffTimeNow t = t `diffTime` now
 
     -- Variant of modifyMVar_ that puts a default value if the MVar is empty.
     modifyMVarWithDefault_ :: StrictMVar m a -> a -> (a -> m a) -> m ()
