@@ -486,21 +486,35 @@ decisionLogicThread tracer counterTracer policy txChannelsVar sharedStateVar = d
       threadDelay _DECISION_LOOP_DELAY
 
       now <- getMonotonicTime
-      delayVar <- registerDelay $ 2 * _DECISION_LOOP_DELAY
-      res_m <- atomically do
+      nextDelay <- atomically $ do
+        sharedTxState <- readTVar sharedStateVar
+        return $ nextDecisionDelay now sharedTxState
+      delayVar <- registerDelay nextDelay
+      -- Wait until there is potentially some work to do or the timer expires.
+      atomically do
         sharedTxState <- readTVar sharedStateVar
         let activePeers = filterActivePeers now policy sharedTxState
         timerExpired <- Lazy.readTVar delayVar
 
         -- block until at least one peer is active or the timer expires
         if not (Map.null activePeers)
-           then do
-             let (sharedState, decisions) = makeDecisions now policy sharedTxState activePeers
+           then return ()
+        else if timerExpired
+           then return ()
+           else retry
+
+      -- Use a fresh timestamp for decisions
+      now' <- getMonotonicTime
+      res_m <- atomically do
+        sharedTxState <- readTVar sharedStateVar
+        let activePeers = filterActivePeers now' policy sharedTxState
+
+        if Map.null activePeers
+           then return Nothing
+           else do
+             let (sharedState, decisions) = makeDecisions now' policy sharedTxState activePeers
              writeTVar sharedStateVar sharedState
              return $ Just (decisions, sharedState)
-        else if timerExpired
-           then return Nothing
-           else retry
 
       case res_m of
            Nothing              -> go
@@ -515,6 +529,31 @@ decisionLogicThread tracer counterTracer policy txChannelsVar sharedStateVar = d
                decisions)
              traceWith counterTracer (mkTxSubmissionCounters st)
              go
+
+    nextDecisionDelay
+      :: Time
+      -> SharedTxState peeraddr txid tx
+      -> DiffTime
+    nextDecisionDelay now SharedTxState { inflightTxs } =
+      fromMaybe maxDelay (diffTimeNow <$> nextWake)
+      where
+        -- If there are no outstanding TXs we wait for a long time
+        -- or until an STM value changes.
+        maxDelay :: DiffTime
+        maxDelay = 120
+
+        nextWake :: Maybe Time
+        nextWake =
+          Foldable.foldl' step Nothing inflightTxs
+
+        step :: Maybe Time -> InFlightState -> Maybe Time
+        step acc InFlightState { inFlightNextReq } =
+          if inFlightNextReq <= now
+             then acc
+             else Just $ maybe inFlightNextReq (min inFlightNextReq) acc
+
+        diffTimeNow :: Time -> DiffTime
+        diffTimeNow t = t `diffTime` now
 
     -- Variant of modifyMVar_ that puts a default value if the MVar is empty.
     modifyMVarWithDefault_ :: StrictMVar m a -> a -> (a -> m a) -> m ()
