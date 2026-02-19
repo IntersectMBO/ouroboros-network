@@ -22,6 +22,7 @@ import Codec.CBOR.Encoding as CBOR
 import Codec.Serialise (Serialise (..))
 import Control.Applicative
 import Control.Arrow ((&&&))
+import Control.Exception (ErrorCall (..))
 import Control.Monad
 import Data.Binary.Put qualified as Bin
 import Data.Bits
@@ -103,6 +104,8 @@ tests =
   , testProperty "mux close (IO)"               (withMaxSuccess 50 prop_mux_close_io)
   , testProperty "trailing bytes (Sim)"         prop_mux_trailing_bytes_iosim
   , testProperty "trailing bytes (IO)"          prop_mux_trailing_bytes_io
+  , testProperty "pure exception (Sim)"         prop_mux_pure_exception_iosim
+  , testProperty "pure exception (IO)"          prop_mux_pure_exception_io
   , testGroup "Generators"
     [ testProperty "genByteString"              prop_arbitrary_genByteString
     , testProperty "genLargeByteString"         prop_arbitrary_genLargeByteString
@@ -1153,6 +1156,7 @@ prop_demux_sdu :: forall m.
                     ( Alternative (STM m)
                     , MonadAsync m
                     , MonadDelay m
+                    , MonadEvaluate m
                     , MonadFork m
                     , MonadLabelledSTM m
                     , MonadMask m
@@ -1492,6 +1496,7 @@ prop_mux_start_mX :: forall m.
                        ( Alternative (STM m)
                        , MonadAsync m
                        , MonadDelay m
+                       , MonadEvaluate m
                        , MonadFork m
                        , MonadLabelledSTM m
                        , MonadMask m
@@ -1555,6 +1560,7 @@ prop_mux_restart_m :: forall m.
                        ( Alternative (STM m)
                        , MonadAsync m
                        , MonadDelay m
+                       , MonadEvaluate m
                        , MonadFork m
                        , MonadLabelledSTM m
                        , MonadMask m
@@ -1725,6 +1731,7 @@ prop_mux_start_m :: forall m.
                        ( Alternative (STM m)
                        , MonadAsync m
                        , MonadDelay m
+                       , MonadEvaluate m
                        , MonadFork  m
                        , MonadLabelledSTM m
                        , MonadMask m
@@ -1971,6 +1978,7 @@ close_experiment
        ( Alternative (STM m)
        , MonadAsync       m
        , MonadDelay       m
+       , MonadEvaluate    m
        , MonadFork        m
        , MonadLabelledSTM m
        , MonadMask        m
@@ -2368,6 +2376,7 @@ prop_mux_trailing_bytes
   :: ( Alternative   (STM m)
      , MonadAsync         m
      , MonadDelay         m
+     , MonadEvaluate      m
      , MonadFork          m
      , MonadLabelledSTM   m
      , MonadMask          m
@@ -2461,6 +2470,67 @@ prop_mux_trailing_bytes_io :: BL.ByteString
                            -> Property
 prop_mux_trailing_bytes_io reminder received =
   ioProperty $ prop_mux_trailing_bytes reminder received
+
+
+prop_mux_pure_exception
+  :: ( Alternative   (STM m)
+     , MonadAsync         m
+     , MonadDelay         m
+     , MonadEvaluate      m
+     , MonadFork          m
+     , MonadLabelledSTM   m
+     , MonadMask          m
+     , MonadTimer         m
+     , MonadThrow    (STM m)
+     )
+  => m Property
+prop_mux_pure_exception = do
+    mux_w <- atomically $ newTBQueue 10
+    mux_r <- atomically $ newTBQueue 10
+    bearer <- getBearer Mx.makeQueueChannelBearer
+                (-1)
+                QueueChannel { writeQueue = mux_w, readQueue = mux_r }
+                Nothing
+    mux <- Mx.new Mx.nullTracers -- { Mx.tracer = Tracer Debug.traceShowM }
+                  [ MiniProtocolInfo {
+                      miniProtocolNum,
+                      miniProtocolDir = Mx.ResponderDirectionOnly,
+                      miniProtocolLimits = Mx.MiniProtocolLimits maxBound,
+                      miniProtocolCapability = Nothing
+                    }
+                  ]
+    withAsync (Mx.run mux bearer) $ \_ -> do
+      r <- atomically =<< Mx.runMiniProtocol
+              mux
+              miniProtocolNum
+              Mx.ResponderDirectionOnly
+              Mx.StartEagerly
+              (\_ -> do
+                labelThisThread "resp:1"
+                throwIO (error "pure exception" :: IOError))
+
+      return $ case r of
+        Left e   | Just (_ :: ErrorCall) <- fromException e
+                 -> property True
+                 | Just (_ :: IOError) <- fromException e
+                 -> counterexample "unexpected IOError" False
+                 | otherwise
+                 -> counterexample "unexpected error" False
+        Right {} -> counterexample "unexpected result" False
+  where
+    miniProtocolNum :: Mx.MiniProtocolNum
+    miniProtocolNum = Mx.MiniProtocolNum 1
+
+
+prop_mux_pure_exception_iosim :: Property
+prop_mux_pure_exception_iosim = once $
+  let trace = runSimTrace $ prop_mux_pure_exception
+  in counterexample (ppTrace_ trace) (case traceResult True trace of
+                                       Left e  -> counterexample (show e) False
+                                       Right r -> r)
+
+prop_mux_pure_exception_io :: Property
+prop_mux_pure_exception_io = once $ ioProperty $ prop_mux_pure_exception
 
 -- compare error types, not the payloads
 compareErrors :: Mx.Error -> Mx.Error -> Bool
