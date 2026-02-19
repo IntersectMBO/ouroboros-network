@@ -317,7 +317,7 @@ runM Interfaces
     --
     mkLocalThread :: ThreadId m -> Either ntcFd ntcAddr -> m Void
     mkLocalThread mainThreadId localAddr = do
-     labelThisThread "local connection manager"
+     labelThisThread "diffusion-local"
      withLocalSocket tracer diNtcGetFileDescriptor diNtcSnocket localAddr
       $ \localSocket -> do
         localInbInfoChannel <- newInformationChannel
@@ -405,7 +405,7 @@ runM Interfaces
     --
     mkRemoteThread :: ThreadId m -> m Void
     mkRemoteThread mainThreadId = do
-      labelThisThread "remote connection manager"
+      labelThisThread "diffusion-remote"
       let
         exitPolicy :: ExitPolicy a
         exitPolicy = ExitPolicy {
