@@ -93,10 +93,7 @@ orderByRejections salt =
 -- | Internal state of `pickTxsToDownload` computation.
 --
 data St peeraddr txid tx =
-   St { stInflightSize             :: !SizeInBytes,
-        -- ^ size of all `tx`s in-flight.
-
-        stInflight                 :: !(Map txid Int),
+   St { stInflight                 :: !(Map txid Int),
         -- ^ `txid`s in-flight.
 
         stAcknowledged             :: !(Map txid Int),
@@ -116,8 +113,6 @@ data St peeraddr txid tx =
 --   might be different for different peers).
 -- * pick txs until the peers in-flight limit (we can go over the limit by one tx)
 --   (`txsSizeInflightPerPeer` limit)
--- * pick txs until the overall in-flight limit (we can go over the limit by one tx)
---   (`maxTxsSizeInflight` limit)
 -- * each tx can be downloaded simultaneously from at most
 --   `txInflightMultiplicity` peers.
 --
@@ -137,11 +132,9 @@ pickTxsToDownload
      )
 
 pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
-                                            maxTxsSizeInflight,
                                             txInflightMultiplicity }
                   sharedState@SharedTxState { peerTxStates,
                                               inflightTxs,
-                                              inflightTxsSize,
                                               bufferedTxs,
                                               inSubmissionToMempoolTxs,
                                               referenceCounts } =
@@ -150,7 +143,6 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
       accumFn
       -- initial state
       St { stInflight                 = inflightTxs,
-           stInflightSize             = inflightTxsSize,
            stAcknowledged             = Map.empty,
            stInSubmissionToMempoolTxs = Map.keysSet inSubmissionToMempoolTxs }
 
@@ -166,7 +158,6 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
                )
     accumFn
       st@St { stInflight,
-              stInflightSize,
               stAcknowledged,
               stInSubmissionToMempoolTxs }
       ( peeraddr
@@ -177,157 +168,107 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
                                 }
       )
       =
-      let sizeInflightAll   :: SizeInBytes
-          sizeInflightOther :: SizeInBytes
+      let requestedTxsInflightSize' :: SizeInBytes
+          txsToRequestMap :: Map txid SizeInBytes
 
-          sizeInflightAll   = stInflightSize
-          sizeInflightOther = sizeInflightAll - requestedTxsInflightSize
+          (requestedTxsInflightSize', txsToRequestMap) =
+            -- inner fold: fold available `txid`s
+            --
+            -- Note: although `Map.foldrWithKey` could be used here, it
+            -- does not allow to short circuit the fold, unlike
+            -- `foldWithState`.
+            foldWithState
+              (\(txid, (txSize, inflightMultiplicity)) sizeInflight ->
+                if -- note that we pick `txid`'s as long the `s` is
+                   -- smaller or equal to `txsSizeInflightPerPeer`.
+                   sizeInflight <= txsSizeInflightPerPeer
+                   -- the transaction must not be downloaded from more
+                   -- than `txInflightMultiplicity` peers simultaneously
+                && inflightMultiplicity < txInflightMultiplicity
+                -- TODO: we must validate that `txSize` is smaller than
+                -- maximum txs size
+                then Just (sizeInflight + txSize, (txid, txSize))
+                else Nothing
+              )
+              (Map.assocs $
+                -- merge `availableTxIds` with `stInflight`, so we don't
+                -- need to lookup into `stInflight` on every `txid` which
+                -- is in `availableTxIds`.
+                Map.merge (Map.mapMaybeMissing \_txid -> Just . (,0))
+                           Map.dropMissing
+                          (Map.zipWithMatched \_txid -> (,))
 
-      in if sizeInflightAll >= maxTxsSizeInflight
-        then let ( numTxIdsToAck
-                   , numTxIdsToReq
-                   , txsToMempool@TxsToMempool { listOfTxsToMempool }
-                   , RefCountDiff { txIdsToAck }
-                   , peerTxState'
-                   ) = acknowledgeTxIds policy sharedState peerTxState
-
-                 stAcknowledged' = Map.unionWith (+) stAcknowledged txIdsToAck
-                 stInSubmissionToMempoolTxs' = stInSubmissionToMempoolTxs
-                                            <> Set.fromList (map fst listOfTxsToMempool)
-             in
-             if requestedTxIdsInflight peerTxState' > 0
-               then
-                 -- we have txids to request
-                 ( st { stAcknowledged             = stAcknowledged'
-                      , stInSubmissionToMempoolTxs = stInSubmissionToMempoolTxs' }
-                 , ( (peeraddr, peerTxState')
-                     , TxDecision { txdTxIdsToAcknowledge = numTxIdsToAck,
-                                    txdTxIdsToRequest     = numTxIdsToReq,
-                                    txdPipelineTxIds      = not
-                                                          . StrictSeq.null
-                                                          . unacknowledgedTxIds
-                                                          $ peerTxState',
-                                    txdTxsToRequest       = Map.empty,
-                                    txdTxsToMempool       = txsToMempool
-                                  }
-                     )
-                 )
-               else
-                 -- there are no `txid`s to request, nor we can request `tx`s due
-                 -- to in-flight size limits
-                 assert (null listOfTxsToMempool)
-                 ( st
-                 , ( (peeraddr, peerTxState')
-                   , emptyTxDecision
-                   )
-                 )
-        else
-          let requestedTxsInflightSize' :: SizeInBytes
-              txsToRequestMap :: Map txid SizeInBytes
-
-              (requestedTxsInflightSize', txsToRequestMap) =
-                -- inner fold: fold available `txid`s
-                --
-                -- Note: although `Map.foldrWithKey` could be used here, it
-                -- does not allow to short circuit the fold, unlike
-                -- `foldWithState`.
-                foldWithState
-                  (\(txid, (txSize, inflightMultiplicity)) sizeInflight ->
-                    if -- note that we pick `txid`'s as long the `s` is
-                       -- smaller or equal to `txsSizeInflightPerPeer`.
-                       sizeInflight <= txsSizeInflightPerPeer
-                       -- overall `tx`'s in-flight must be smaller than
-                       -- `maxTxsSizeInflight`
-                    && sizeInflight + sizeInflightOther <= maxTxsSizeInflight
-                       -- the transaction must not be downloaded from more
-                       -- than `txInflightMultiplicity` peers simultaneously
-                    && inflightMultiplicity < txInflightMultiplicity
-                    -- TODO: we must validate that `txSize` is smaller than
-                    -- maximum txs size
-                    then Just (sizeInflight + txSize, (txid, txSize))
-                    else Nothing
-                  )
-                  (Map.assocs $
-                    -- merge `availableTxIds` with `stInflight`, so we don't
-                    -- need to lookup into `stInflight` on every `txid` which
-                    -- is in `availableTxIds`.
-                    Map.merge (Map.mapMaybeMissing \_txid -> Just . (,0))
-                               Map.dropMissing
-                              (Map.zipWithMatched \_txid -> (,))
-
-                              availableTxIds
-                              stInflight
-                    -- remove `tx`s which were already downloaded by some
-                    -- other peer or are in-flight or unknown by this peer.
-                    `Map.withoutKeys` (
-                         Map.keysSet bufferedTxs
-                      <> requestedTxsInflight
-                      <> unknownTxs
-                      <> stInSubmissionToMempoolTxs
-                    )
-                  )
-                  requestedTxsInflightSize
-                  -- pick from `txid`'s which are available from that given
-                  -- peer.  Since we are folding a dictionary each `txid`
-                  -- will be selected only once from a given peer (at least
-                  -- in each round).
-
-              txsToRequest = Map.keysSet txsToRequestMap
-              peerTxState' = peerTxState {
-                  requestedTxsInflightSize = requestedTxsInflightSize',
-                  requestedTxsInflight     = requestedTxsInflight
-                                          <> txsToRequest
-                }
-
-              ( numTxIdsToAck
-                , numTxIdsToReq
-                , txsToMempool@TxsToMempool { listOfTxsToMempool }
-                , RefCountDiff { txIdsToAck }
-                , peerTxState''
-                ) = acknowledgeTxIds policy sharedState peerTxState'
-
-              stAcknowledged' = Map.unionWith (+) stAcknowledged txIdsToAck
-
-              stInflightDelta :: Map txid Int
-              stInflightDelta = Map.fromSet (\_ -> 1) txsToRequest
-                                -- note: this is right since every `txid`
-                                -- could be picked at most once
-
-              stInflight' :: Map txid Int
-              stInflight' = Map.unionWith (+) stInflightDelta stInflight
-
-              stInSubmissionToMempoolTxs' = stInSubmissionToMempoolTxs
-                                         <> Set.fromList (map fst listOfTxsToMempool)
-          in
-            if requestedTxIdsInflight peerTxState'' > 0
-              then
-                -- we can request `txid`s & `tx`s
-                ( St { stInflight                 = stInflight',
-                       stInflightSize             = sizeInflightOther + requestedTxsInflightSize',
-                       stAcknowledged             = stAcknowledged',
-                       stInSubmissionToMempoolTxs = stInSubmissionToMempoolTxs' }
-                , ( (peeraddr, peerTxState'')
-                  , TxDecision { txdTxIdsToAcknowledge = numTxIdsToAck,
-                                 txdPipelineTxIds      = not
-                                                       . StrictSeq.null
-                                                       . unacknowledgedTxIds
-                                                       $ peerTxState'',
-                                 txdTxIdsToRequest     = numTxIdsToReq,
-                                 txdTxsToRequest       = txsToRequestMap,
-                                 txdTxsToMempool       = txsToMempool
-                               }
-                  )
+                          availableTxIds
+                          stInflight
+                -- remove `tx`s which were already downloaded by some
+                -- other peer or are in-flight or unknown by this peer.
+                `Map.withoutKeys` (
+                     Map.keysSet bufferedTxs
+                  <> requestedTxsInflight
+                  <> unknownTxs
+                  <> stInSubmissionToMempoolTxs
                 )
-              else
-                -- there are no `txid`s to request, only `tx`s.
-                ( st { stInflight                 = stInflight',
-                       stInflightSize             = sizeInflightOther + requestedTxsInflightSize',
-                       stInSubmissionToMempoolTxs = stInSubmissionToMempoolTxs'
-                     }
-                , ( (peeraddr, peerTxState'')
-                  , emptyTxDecision { txdTxsToRequest = txsToRequestMap }
-                  )
-                )
+              )
+              requestedTxsInflightSize
+              -- pick from `txid`'s which are available from that given
+              -- peer.  Since we are folding a dictionary each `txid`
+              -- will be selected only once from a given peer (at least
+              -- in each round).
+
+          txsToRequest = Map.keysSet txsToRequestMap
+          peerTxState' = peerTxState {
+              requestedTxsInflightSize = requestedTxsInflightSize',
+              requestedTxsInflight     = requestedTxsInflight
+                                      <> txsToRequest
+            }
+
+          ( numTxIdsToAck
+            , numTxIdsToReq
+            , txsToMempool@TxsToMempool { listOfTxsToMempool }
+            , RefCountDiff { txIdsToAck }
+            , peerTxState''
+            ) = acknowledgeTxIds policy sharedState peerTxState'
+
+          stAcknowledged' = Map.unionWith (+) stAcknowledged txIdsToAck
+
+          stInflightDelta :: Map txid Int
+          stInflightDelta = Map.fromSet (\_ -> 1) txsToRequest
+                            -- note: this is right since every `txid`
+                            -- could be picked at most once
+
+          stInflight' :: Map txid Int
+          stInflight' = Map.unionWith (+) stInflightDelta stInflight
+
+          stInSubmissionToMempoolTxs' = stInSubmissionToMempoolTxs
+                                     <> Set.fromList (map fst listOfTxsToMempool)
+      in
+        if requestedTxIdsInflight peerTxState'' > 0
+          then
+            -- we can request `txid`s & `tx`s
+            ( St { stInflight                 = stInflight',
+                   stAcknowledged             = stAcknowledged',
+                   stInSubmissionToMempoolTxs = stInSubmissionToMempoolTxs' }
+            , ( (peeraddr, peerTxState'')
+              , TxDecision { txdTxIdsToAcknowledge = numTxIdsToAck,
+                             txdPipelineTxIds      = not
+                                                   . StrictSeq.null
+                                                   . unacknowledgedTxIds
+                                                   $ peerTxState'',
+                             txdTxIdsToRequest     = numTxIdsToReq,
+                             txdTxsToRequest       = txsToRequestMap,
+                             txdTxsToMempool       = txsToMempool
+                           }
+              )
+            )
+          else
+            -- there are no `txid`s to request, only `tx`s.
+            ( st { stInflight                 = stInflight',
+                   stInSubmissionToMempoolTxs = stInSubmissionToMempoolTxs'
+                 }
+            , ( (peeraddr, peerTxState'')
+              , emptyTxDecision { txdTxsToRequest = txsToRequestMap }
+              )
+            )
 
     gn :: ( St peeraddr txid tx
           , [((peeraddr, PeerTxState txid tx), TxDecision txid tx)]
@@ -337,7 +278,6 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
           )
     gn
       ( St { stInflight,
-             stInflightSize,
              stAcknowledged }
       , as
       )
@@ -365,7 +305,6 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
       in ( sharedState {
              peerTxStates             = peerTxStates',
              inflightTxs              = stInflight,
-             inflightTxsSize          = stInflightSize,
              bufferedTxs              = bufferedTxs',
              referenceCounts          = referenceCounts',
              inSubmissionToMempoolTxs = inSubmissionToMempoolTxs'}
@@ -412,39 +351,17 @@ filterActivePeers
     policy@TxDecisionPolicy {
       maxUnacknowledgedTxIds,
       txsSizeInflightPerPeer,
-      maxTxsSizeInflight,
       txInflightMultiplicity
     }
     sharedTxState@SharedTxState {
       peerTxStates,
       bufferedTxs,
       inflightTxs,
-      inflightTxsSize,
       inSubmissionToMempoolTxs
-    }
-    | inflightTxsSize > maxTxsSizeInflight
-      -- we might be able to request txids, we cannot download txs
-    = Map.filter fn peerTxStates
-    | otherwise
-      -- we might be able to request txids or txs.
-    = Map.filter gn peerTxStates
+    } = Map.filter gn peerTxStates
   where
     unrequestable = Map.keysSet (Map.filter (>= txInflightMultiplicity) inflightTxs)
                  <> Map.keysSet bufferedTxs
-
-    fn :: PeerTxState txid tx -> Bool
-    fn peerTxState@PeerTxState {
-        requestedTxIdsInflight
-       } =
-           requestedTxIdsInflight == 0
-           -- if a peer has txids in-flight, we cannot request more txids or txs.
-        && requestedTxIdsInflight + numOfUnacked <= maxUnacknowledgedTxIds
-        && txIdsToRequest > 0
-      where
-        -- Split `unacknowledgedTxIds'` into the longest prefix of `txid`s which
-        -- can be acknowledged and the unacknowledged `txid`s.
-        (txIdsToRequest, _, unackedTxIds) = splitAcknowledgedTxIds policy sharedTxState peerTxState
-        numOfUnacked = fromIntegral (StrictSeq.length unackedTxIds)
 
     gn :: PeerTxState txid tx -> Bool
     gn peerTxState@PeerTxState { unacknowledgedTxIds,

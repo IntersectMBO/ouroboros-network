@@ -45,10 +45,6 @@ data TxDecisionPolicy = TxDecisionPolicy {
       -- ^ a limit of tx size in-flight from a single peer.
       -- It can be exceed by max tx size.
 
-      maxTxsSizeInflight     :: !SizeInBytes,
-      -- ^ a limit of tx size in-flight from all peers.
-      -- It can be exceed by max tx size.
-
       txInflightMultiplicity :: !Int,
       -- ^ from how many peers download the `txid` simultaneously
 
@@ -74,7 +70,6 @@ defaultTxDecisionPolicy =
     maxNumTxIdsToRequest   = 3,
     maxUnacknowledgedTxIds = 10, -- must be the same as txSubmissionMaxUnacked
     txsSizeInflightPerPeer = max_TX_SIZE * 6,
-    maxTxsSizeInflight     = max_TX_SIZE * 20,
     txInflightMultiplicity = 2,
     bufferedTxsMinLifetime = 2,
     scoreRate              = 0.1,

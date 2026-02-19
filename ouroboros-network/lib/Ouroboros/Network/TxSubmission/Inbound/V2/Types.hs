@@ -86,8 +86,7 @@ data PeerTxState txid tx = PeerTxState {
        requestedTxIdsInflight   :: !NumTxIdsToReq,
 
        -- | The size in bytes of transactions that we have requested but which
-       -- have not yet been replied to. We need to track this to keep our
-       -- requests within the `maxTxsSizeInflight` limit.
+       -- have not yet been replied to.
        --
        requestedTxsInflightSize :: !SizeInBytes,
 
@@ -177,10 +176,6 @@ data SharedTxState peeraddr txid tx = SharedTxState {
       -- This set can intersect with `availableTxIds`.
       --
       inflightTxs              :: !(Map txid Int),
-
-      -- | Overall size of all `tx`s in-flight.
-      --
-      inflightTxsSize          :: !SizeInBytes,
 
       -- | Map of `tx` which:
       --
