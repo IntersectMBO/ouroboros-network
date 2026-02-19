@@ -190,18 +190,15 @@ withPeer tracer
                                       bufferedTxs,
                                       referenceCounts,
                                       inflightTxs,
-                                      inflightTxsSize,
                                       inSubmissionToMempoolTxs } =
         st { peerTxStates             = peerTxStates',
              bufferedTxs              = bufferedTxs',
              referenceCounts          = referenceCounts',
              inflightTxs              = inflightTxs',
-             inflightTxsSize          = inflightTxsSize',
              inSubmissionToMempoolTxs = inSubmissionToMempoolTxs' }
       where
         (PeerTxState { unacknowledgedTxIds,
                        requestedTxsInflight,
-                       requestedTxsInflightSize,
                        toMempoolTxs }
           , peerTxStates')
           =
@@ -229,7 +226,6 @@ withPeer tracer
                        liveSet
 
         inflightTxs' = Foldable.foldl' purgeInflightTxs inflightTxs requestedTxsInflight
-        inflightTxsSize' = inflightTxsSize - requestedTxsInflightSize
 
         -- When we unregister a peer, we need to subtract all txs in the
         -- `toMempoolTxs`, as they will not be submitted to the mempool.

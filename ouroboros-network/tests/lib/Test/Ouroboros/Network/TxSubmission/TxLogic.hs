@@ -145,7 +145,6 @@ sharedTxStateInvariant invariantStrength
                        SharedTxState {
                          peerTxStates,
                          inflightTxs,
-                         inflightTxsSize,
                          bufferedTxs,
                          referenceCounts,
                          timedTxs
@@ -227,11 +226,6 @@ sharedTxStateInvariant invariantStrength
                         $ ps
                   )
                   peerTxStates)
-
-    .&&. counterexample "inflightTxsSize invariant violation"
-         (inflightTxsSize === foldMap requestedTxsInflightSize peerTxStates)
-
-
 
   where
     peerTxStateInvariant :: PeerTxState txid tx -> Property
@@ -458,7 +452,6 @@ genSharedTxState maxTxIdsInflight = do
                                  | ArbPeerTxState { arbInflightSet }
                                    <- pss
                                  ],
-                 inflightTxsSize = 0, -- It is set by fixupSharedTxState
                  bufferedTxs     = fold
                                  [ arbBufferedMap
                                  | ArbPeerTxState { arbBufferedMap }
@@ -488,7 +481,6 @@ fixupSharedTxState
 fixupSharedTxState _mempoolHasTx st@SharedTxState { peerTxStates } =
     st { peerTxStates    = peerTxStates',
          inflightTxs     = inflightTxs',
-         inflightTxsSize = foldMap requestedTxsInflightSize peerTxStates',
          bufferedTxs     = bufferedTxs',
          referenceCounts = referenceCounts'
        }
@@ -887,8 +879,6 @@ prop_collectTxs_generator (ArbCollectTxs _ requestedTxIds receivedTxs peeraddr
                                             st) =
          counterexample "size of requested txs must not be larger than requestedTxsInflightSize"
          (requestedSize <= requestedTxsInflightSize)
-    .&&. counterexample "inflightTxsSize must be greater than requestedSize"
-         (inflightTxsSize st >= requestedSize)
     .&&. counterexample ("receivedTxs must be a subset of requestedTxIds "
                          ++ show (Map.keysSet receivedTxs Set.\\ requestedTxIdsSet))
          (Map.keysSet receivedTxs `Set.isSubsetOf` requestedTxIdsSet)
@@ -1402,27 +1392,13 @@ prop_makeDecisions_policy
   -> Property
 prop_makeDecisions_policy
     ArbDecisionContexts {
-      arbDecisionPolicy = policy@TxDecisionPolicy { maxTxsSizeInflight,
-                                                    txsSizeInflightPerPeer,
+      arbDecisionPolicy = policy@TxDecisionPolicy { txsSizeInflightPerPeer,
                                                     txInflightMultiplicity },
       arbSharedState    = sharedTxState
     } =
     let (sharedState', _decisions) = TXS.makeDecisions policy sharedTxState (peerTxStates sharedTxState)
-        maxTxsSizeInflightEff      = maxTxsSizeInflight + maxTxSize
         txsSizeInflightPerPeerEff  = txsSizeInflightPerPeer + maxTxSize
-
-        sizeInflight =
-          foldMap (\PeerTxState { availableTxIds, requestedTxsInflight } ->
-                     fold (availableTxIds `Map.restrictKeys` requestedTxsInflight))
-                  (peerTxStates sharedState')
-
-    in counterexample (show sharedState') $
-
-         -- size of txs inflight cannot exceed `maxTxsSizeInflight` by more
-         -- than maximal tx size.
-         counterexample ("txs inflight exceed limit " ++ show (sizeInflight, maxTxsSizeInflightEff))
-         (sizeInflight <= maxTxsSizeInflightEff)
-    .&&.
+    in
          -- size in flight for each peer cannot exceed `txsSizeInflightPerPeer`
          counterexample "size in flight per peer vaiolation" (
            foldMap

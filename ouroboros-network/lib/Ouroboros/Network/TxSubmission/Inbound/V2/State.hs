@@ -475,12 +475,7 @@ collectTxsImpl txSize peeraddr requestedTxIdsMap receivedTxs
             (inflightTxs st)
             (Map.fromSet (const 1) requestedTxIds)
 
-        inflightTxsSize'' = assert (inflightTxsSize st >= requestedSize) $
-                            inflightTxsSize st - requestedSize
-
-        st' = st { inflightTxs     = inflightTxs'',
-                   inflightTxsSize = inflightTxsSize''
-                 }
+        st' = st { inflightTxs     = inflightTxs'' }
 
         --
         -- Update PeerTxState
@@ -525,7 +520,6 @@ newSharedTxStateVar :: MonadSTM m
 newSharedTxStateVar rng = newTVarIO SharedTxState {
     peerTxStates             = Map.empty,
     inflightTxs              = Map.empty,
-    inflightTxsSize          = 0,
     bufferedTxs              = Map.empty,
     referenceCounts          = Map.empty,
     timedTxs                 = Map.empty,

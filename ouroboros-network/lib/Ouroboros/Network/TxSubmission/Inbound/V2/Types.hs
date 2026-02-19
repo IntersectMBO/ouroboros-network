@@ -178,10 +178,6 @@ data SharedTxState peeraddr txid tx = SharedTxState {
       --
       inflightTxs              :: !(Map txid Int),
 
-      -- | Overall size of all `tx`s in-flight.
-      --
-      inflightTxsSize          :: !SizeInBytes,
-
       -- | Map of `tx` which:
       --
       --    * were downloaded and added to the mempool,
