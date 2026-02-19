@@ -191,7 +191,7 @@ with
                                                          active
     withConnectionManager connectionHandler \connectionManager ->
       withAsync
-        (  labelThisThread "inbound-governor-loop" >>
+        (  labelThisThread "inbound-governor" >>
            forever (inboundGovernorStep connectionManager stateVar >> yield)
          `catch` \e -> do
            -- following the next statement, the ig tracer will no longer

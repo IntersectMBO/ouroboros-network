@@ -147,7 +147,7 @@ with Arguments {
       InboundGovernor.with inboundGovernorArgs
         \inboundGovernorThread readPublicInboundState connectionManager ->
           withAsync do
-            labelThisThread "Server2 (ouroboros-network-framework)"
+            labelThisThread "server"
             k inboundGovernorThread readPublicInboundState connectionManager
           \actionThread -> do
             traceWith tracer (TrServerStarted localAddresses)
