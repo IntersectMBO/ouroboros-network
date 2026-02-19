@@ -25,6 +25,7 @@ module Test.Cardano.Network.Diffusion.Testnet.Simulation
   , prop_diffusionScript_commandScript_valid
   , fixupCommands
   , diffusionSimulation
+  , DiffSimResult
   , Command (..)
     -- * Tracing
   , DiffusionTestTrace (..)
@@ -998,12 +999,14 @@ ppDiffusionTestTrace (DiffusionDNSTrace tr)                         = show tr
 ppDiffusionTestTrace (DiffusionMuxTrace tr)                         = show tr
 
 
+type DiffSimResult = Void
+
 -- | Run an arbitrary topology in `IOSim`.
 --
 diffusionSimulation
   :: BearerInfo
   -> DiffusionScript
-  -> IOSim s Void
+  -> IOSim s DiffSimResult
 diffusionSimulation bearerInfo diffusionScript =
   diffusionSimulationM bearerInfo diffusionScript dynamicTracer
 
@@ -1032,7 +1035,7 @@ diffusionSimulationM
   -> DiffusionScript
   -> Tracer m (WithTime (WithName NtNAddr DiffusionTestTrace))
   -- ^ timed trace of nodes in the system
-  -> m Void
+  -> m DiffSimResult
 diffusionSimulationM
   defaultBearerInfo
   (DiffusionScript simArgs dnsMapScript nodeArgs)
@@ -1051,10 +1054,12 @@ diffusionSimulationM
               labelThisThread ("ctrl-" ++ show nodeId)
               runCommand ntnSnocket ntcSnocket dnsMapVar simArgs args connStateIdSupply nodeId Nothing commands)
             nodeArgs
-            [NodeId 1..])
-          $ \nodes -> do
+            [NodeId 1..]
+          )
+          (\nodes -> do
             (_, x) <- waitAny nodes
             return x
+          )
   where
     netSimTracer :: Tracer m (WithAddr NtNAddr (SnocketTrace m NtNAddr))
     netSimTracer = (\(WithAddr l _ a) -> WithName (fromMaybe (TestAddress $ IPAddr (read "0.0.0.0") 0) l) (show a))
