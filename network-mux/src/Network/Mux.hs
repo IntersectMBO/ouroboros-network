@@ -71,7 +71,7 @@ import Data.Strict.Tuple (pattern (:!:))
 import Control.Applicative
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Concurrent.JobPool qualified as JobPool
-import Control.Exception (SomeAsyncException (..), assert)
+import Control.Exception (SomeAsyncException (..), SomeException (..), assert)
 import Control.Monad
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
@@ -221,6 +221,7 @@ data Group = MuxJob
 run :: forall m (mode :: Mode).
        ( MonadAsync m
        , MonadDelay m
+       , MonadEvaluate m
        , MonadFork m
        , MonadLabelledSTM m
        , Alternative (STM m)
@@ -290,7 +291,9 @@ run Mux { muxMiniProtocols,
 --
 miniProtocolJob
   :: forall mode m.
-     ( MonadSTM m
+     ( MonadCatch m
+     , MonadEvaluate m
+     , MonadSTM m
      , MonadThrow (STM m)
      )
   => Tracers m
@@ -347,8 +350,13 @@ miniProtocolJob TracersI {
 
       return (MiniProtocolShutdown miniProtocolNum miniProtocolDirEnum)
 
+    -- NOTE: `jobHandler` is never executed on asynchronous exceptions (see
+    -- `Control.Concurrent.JobPool.forkJob')`.
     jobHandler :: SomeException -> m JobResult
-    jobHandler e = do
+    jobHandler (SomeException err) = do
+      -- evaluate error to WHNF; Note that this happens in the mini-protocol
+      -- handler thread.
+      e <- (toException <$> evaluate err) `catch` return
       _ <- atomically $ tryPutTMVar completionVar (Left e)
       return (MiniProtocolException miniProtocolNum miniProtocolDirEnum e)
 
@@ -393,6 +401,7 @@ data MonitorCtx m mode = MonitorCtx {
 --
 monitor :: forall mode m.
            ( MonadAsync m
+           , MonadEvaluate m
            , MonadMask m
            , Alternative (STM m)
            , MonadThrow (STM m)
@@ -811,6 +820,8 @@ runMiniProtocol Mux { muxMiniProtocols,
     -- If the mux was stopped through a call to 'stop' (Stopped)
     -- or in case of an error (Failed) we return the result of
     -- the miniprotocol, or a `Error` if it was still running.
+    completionAction :: StrictTMVar m (Either SomeException b)
+                     -> STM m (Either SomeException b)
     completionAction completionVar = do
       st <- readTVar muxStatus
       case st of
