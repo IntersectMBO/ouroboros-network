@@ -97,7 +97,7 @@ let
         preCheck =
           lib.mkForce
             (if buildSystem == "x86_64-linux"
-            then "export GHCRTS=-M300M"
+            then "export GHCRTS=-M900M"
             else "");
         doCheck = !pkgs.stdenv.hostPlatform.isWindows;
 
@@ -109,13 +109,6 @@ let
         # pkgs are disabled since we don't have enough CPU bandwidth on MacOS machines
         packages.ouroboros-network.components.tests.framework-sim-tests.doCheck = onLinux;
         packages.ouroboros-network.components.tests.ouroboros-network-sim-tests.doCheck = onLinux;
-
-        packages.network-mux.components.tests.test.preCheck =
-          if buildSystem == "x86_64-linux" then "export GHCRTS=-M800M" else "";
-        packages.ouroboros-network.components.tests.protocols-test.preCheck =
-          if buildSystem == "x86_64-linux" then "export GHCRTS=-M800M" else "";
-        packages.cardano-diffusion.components.tests.cardano-diffusion-sim-tests.preCheck =
-          if buildSystem == "x86_64-linux" then "export GHCRTS=-M7000M" else "";
       })
       ({ pkgs, ... }: lib.mkIf pkgs.stdenv.hostPlatform.isWindows {
         packages.basement.configureFlags = [ "--hsc2hs-options=--cflag=-Wno-int-conversion" ];

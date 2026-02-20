@@ -113,8 +113,9 @@ import Test.Ouroboros.Network.InboundGovernor.Utils
            validRemoteTransitionMap, verifyRemoteTransition,
            verifyRemoteTransitionOrder)
 import Test.Ouroboros.Network.Orphans ()
-import Test.Ouroboros.Network.Utils (WithName (..), WithTime (..), dynamicTracer,
-           genDelayWithPrecision, nightlyTest, sayTracer, tracerWithTime)
+import Test.Ouroboros.Network.Utils (WithName (..), WithTime (..),
+           dynamicTracer, genDelayWithPrecision, nightlyTest, renderRanges,
+           sayTracer, tracerWithTime)
 import Test.Simulation.Network.Snocket hiding (tests)
 
 tests :: TestTree
@@ -1468,6 +1469,12 @@ prop_connection_manager_counters (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
         Just a  -> return a
 
 
+-- | Events for the `prop_timeouts_enforced` test.
+--
+-- Using type alias enforces an invariant between event tracer & event selector
+-- to trace / select the same type.
+type TimedTransitionEvents = WithTime (WithName (Name SimAddr) (AbstractTransitionTrace CM.ConnStateId))
+
 -- | Property wrapping `multinodeExperiment`.
 --
 -- Note: this test verifies for for all \tau state we do not stay longer than
@@ -1486,29 +1493,50 @@ prop_timeouts_enforced (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
                        (MultiNodeScript events attenuationMap) =
   let trace = runSimTrace sim
 
-      transitionSignal :: Trace (SimResult ()) [(Time, AbstractTransitionTrace SimAddr)]
-      transitionSignal = fmap (map ((,) <$> wtTime <*> wtEvent))
-                       . groupConns wtEvent abstractStateIsFinalTransition
-                       . withTimeNameTraceEvents
-                       $ trace
+      transitionSignal
+        :: Trace (SimResult ()) [(Time, AbstractTransitionTrace CM.ConnStateId)]
+      transitionSignal
+        = fmap (fmap (\(WithTime t (WithName _ ev)) -> (t, ev)))
+        . groupConns (\(WithTime _ (WithName _ ev)) -> ev)
+                     abstractStateIsFinalTransition
+        . eventsSelector
+        $ trace
+
+      numTransitions = getSum $ bifoldMap (const mempty) (Sum . length) transitionSignal
 
   in counterexample (ppTrace trace)
-   $ verifyAllTimeouts False transitionSignal
+   $ label ("number-of-transitions: " ++ renderRanges 10 numTransitions)
+   $ counterexample ("transitionSignal: " ++ Trace.ppTrace (const "") show transitionSignal)
+   $ if numTransitions < 1
+     then discard
+     else verifyAllTimeouts False transitionSignal
   where
+    tracer :: (Typeable a, Show a)
+           => Tracer (IOSim s) a
+    tracer = dynamicTracer <> sayTracer
+
+    eventsTracer
+      :: Tracer (IOSim s) TimedTransitionEvents
+    eventsTracer = dynamicTracer
+
+    eventsSelector
+      :: SimTrace ()
+      -> Trace (SimResult ()) TimedTransitionEvents
+    eventsSelector = withTimeNameTraceEvents
+
     sim :: IOSim s ()
     sim = multiNodeSimTracer (mkStdGen rnd) serverAcc dataFlow
                              absNoAttenuation
                              maxAcceptedConnectionsLimit
                              events
                              attenuationMap
-                             (dynamicTracer <> sayTracer)
-                             (tracerWithTime (Tracer traceM) <> dynamicTracer)
-                             (dynamicTracer <> sayTracer)
-                             nullTracer
-                             (Mux.Tracers (dynamicTracer <> sayTracer)
-                                          (dynamicTracer <> sayTracer)
-                                          (dynamicTracer <> sayTracer))
-                             (dynamicTracer <> sayTracer)
+                             tracer
+                             (tracerWithTime eventsTracer <> sayTracer)
+                             tracer
+                             dynamicTracer
+                             (Mux.Tracers tracer tracer tracer)
+                             tracer
+
 
 -- | Property wrapping `multinodeExperiment`.
 --
@@ -2360,9 +2388,14 @@ multiNodeSim :: ( Serialise req
              -> IOSim s ()
 multiNodeSim stdGen serverAcc dataFlow defaultBearerInfo
                    acceptedConnLimit events attenuationMap = do
-  multiNodeSimTracer stdGen serverAcc dataFlow defaultBearerInfo acceptedConnLimit
-                     events attenuationMap dynamicTracer dynamicTracer dynamicTracer
-                     (Tracer traceM) (Mux.Tracers dynamicTracer dynamicTracer dynamicTracer) dynamicTracer --debugTracerG
+    multiNodeSimTracer stdGen serverAcc dataFlow defaultBearerInfo acceptedConnLimit
+                       events attenuationMap tracer tracer tracer
+                       dynamicTracer (Mux.Tracers tracer tracer tracer) tracer
+  where
+    tracer :: (Typeable a, Show a)
+           => Tracer (IOSim s) a
+    tracer = dynamicTracer <> sayTracer
+
 
 
 -- | Connection terminated while negotiating it.
@@ -2465,10 +2498,9 @@ withNameTraceEvents = fmap wnEvent
 
 withTimeNameTraceEvents :: forall b. Typeable b
                         => SimTrace ()
-                        -> Trace (SimResult ()) (WithTime b)
-withTimeNameTraceEvents = fmap (\(WithTime t (WithName _ e)) -> WithTime t e)
-          . Trace.filter ((MainServer ==) . wnName . wtEvent)
-          . traceSelectTraceEventsDynamic
+                        -> Trace (SimResult ()) (WithTime (WithName (Name SimAddr) b))
+withTimeNameTraceEvents =
+            traceSelectTraceEventsDynamic
               @(SimResult ())
               @(WithTime (WithName (Name SimAddr) b))
 
