@@ -113,7 +113,7 @@ import Test.Ouroboros.Network.InboundGovernor.Utils
            validRemoteTransitionMap, verifyRemoteTransition,
            verifyRemoteTransitionOrder)
 import Test.Ouroboros.Network.Orphans ()
-import Test.Ouroboros.Network.Utils (WithName (..), WithTime (..), debugTracerG,
+import Test.Ouroboros.Network.Utils (WithName (..), WithTime (..), dynamicTracer,
            genDelayWithPrecision, nightlyTest, sayTracer, tracerWithTime)
 import Test.Simulation.Network.Snocket hiding (tests)
 
@@ -1447,7 +1447,9 @@ prop_connection_manager_counters (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
                                     (   sayTracer
                                      <> Tracer traceM
                                      <> networkStateTracer getState)
-                                    (Mux.Tracers debugTracerG debugTracerG debugTracerG)
+                                    (Mux.Tracers (dynamicTracer <> sayTracer)
+                                                 (dynamicTracer <> sayTracer)
+                                                 (dynamicTracer <> sayTracer))
                                     (mkStdGen rnd)
                                     snocket
                                     makeFDBearer
@@ -1499,12 +1501,14 @@ prop_timeouts_enforced (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
                              maxAcceptedConnectionsLimit
                              events
                              attenuationMap
-                             dynamicTracer
+                             (dynamicTracer <> sayTracer)
                              (tracerWithTime (Tracer traceM) <> dynamicTracer)
-                             dynamicTracer
+                             (dynamicTracer <> sayTracer)
                              nullTracer
-                             (Mux.Tracers dynamicTracer dynamicTracer dynamicTracer)
-                             debugTracerG
+                             (Mux.Tracers (dynamicTracer <> sayTracer)
+                                          (dynamicTracer <> sayTracer)
+                                          (dynamicTracer <> sayTracer))
+                             (dynamicTracer <> sayTracer)
 
 -- | Property wrapping `multinodeExperiment`.
 --
@@ -2438,10 +2442,6 @@ ppScript (MultiNodeScript script _) = intercalate "\n" $ go 0 script
 --
 -- Utils
 --
-
-
-dynamicTracer :: (Typeable a, Show a) => Tracer (IOSim s) a
-dynamicTracer = Tracer traceM <> sayTracer
 
 toNonFailing :: Script AbsBearerInfo -> Script AbsBearerInfo
 toNonFailing = unNFBIScript
