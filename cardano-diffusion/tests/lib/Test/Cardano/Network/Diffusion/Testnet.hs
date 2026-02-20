@@ -120,7 +120,7 @@ tests =
   testGroup "Ouroboros.Network.Testnet"
   [ testGroup "generators"
     [ testProperty "diffusionScript fixupCommands idempotent"
-                    prop_diffusionScript_fixupCommands
+                   prop_diffusionScript_fixupCommands
     , testProperty "diffusionScript command script valid"
                    prop_diffusionScript_commandScript_valid
     ]
@@ -268,6 +268,10 @@ tests =
     , testGroup "Churn"
       [ testProperty "no timeouts" prop_churn_notimeouts_iosim
       , testProperty "steps" prop_churn_steps_iosim
+      , testProperty "targets bounds on Cardano"
+                     prop_churn_targets_bounds_cardano_iosim
+      , testProperty "targets bounds on Ouroboros"
+                     prop_churn_targets_bounds_ouroboros_iosim
       ]
     , testGroup "coverage"
       [ testProperty "server trace coverage"
@@ -328,9 +332,22 @@ testWithIOSim :: (SimTrace Void -> Int -> Property)
               -> DiffusionScript
               -- ^ sim-net configuration
               -> Property
-testWithIOSim prop traceNumber bi ds =
+testWithIOSim = testWithIOSim' diffusionSimulation
+
+testWithIOSim' :: (forall s. BearerInfo -> DiffusionScript -> IOSim s Void)
+               -- ^ diffusion simulation
+               -> (SimTrace Void -> Int -> Property)
+               -- ^ property to verify
+               -> Int
+               -- ^ number of trace events to analyse
+               -> AbsBearerInfo
+               -- ^ bearer configuration
+               -> DiffusionScript
+               -- ^ sim-net configuration
+               -> Property
+testWithIOSim' simulation prop traceNumber bi ds =
   let sim :: forall s . IOSim s Void
-      sim = diffusionSimulation (toBearerInfo bi)
+      sim = simulation (toBearerInfo bi)
                                 ds
       trace = runSimTrace sim
    in labelDiffusionScript ds $
@@ -4730,6 +4747,152 @@ prop_churn_notimeouts_iosim
 prop_churn_notimeouts_iosim
   = testWithIOSim prop_churn_notimeouts long_trace
 
+
+-- Property that verifies target changes stay within acceptable bounds
+--
+-- This function checks that after churn:
+-- 1. New targets never exceed original targets
+-- 2. New targets never decrease by more than 20%
+prop_churn_targets_bounds :: [(NtNAddr, (PeerSelectionTargets, PeerSelectionTargets))]
+                          -> SimTrace Void
+                          -> Int
+                          -> Property
+prop_churn_targets_bounds baseTargetsMap ioSimTrace traceNumber =
+   let events :: [Events (NtNAddr, DiffusionTestTrace)]
+       events = Trace.toList
+              . fmap ( Signal.eventsFromList
+                    . fmap (\(WithName node (WithTime t b)) -> (t, (node, b)))
+                    )
+              . splitWithNameTrace
+              . fmap (\(WithTime t (WithName name b)) -> WithName name (WithTime t b))
+              . withTimeNameTraceEvents
+                 @DiffusionTestTrace
+                 @NtNAddr
+              . Trace.take traceNumber
+              $ ioSimTrace
+
+       baseTargetsLookup = Map.fromList baseTargetsMap
+
+       targetsChangeProperty :: PeerSelectionTargets -> PeerSelectionTargets -> Property
+       targetsChangeProperty
+         PeerSelectionTargets {
+           targetNumberOfKnownPeers                = knowns,
+           targetNumberOfEstablishedPeers          = establisheds,
+           targetNumberOfActivePeers               = actives,
+           targetNumberOfKnownBigLedgerPeers       = knownBigLedgers,
+           targetNumberOfEstablishedBigLedgerPeers = establishedBigLedgers,
+           targetNumberOfActiveBigLedgerPeers      = activeBigLedgers
+         }
+         PeerSelectionTargets {
+           targetNumberOfKnownPeers                = knowns',
+           targetNumberOfEstablishedPeers          = establisheds',
+           targetNumberOfActivePeers               = actives',
+           targetNumberOfKnownBigLedgerPeers       = knownBigLedgers',
+           targetNumberOfEstablishedBigLedgerPeers = establishedBigLedgers',
+           targetNumberOfActiveBigLedgerPeers      = activeBigLedgers'
+         }
+         = let -- 20% or at least one
+               decrease :: Int -> Int
+               decrease v = max 0 $ v - max 1 (v `div` 5)
+            in      counterexample "active upper bound violation" (actives' <= actives)
+               .&&. counterexample "active lower bound violation" (actives' >= decrease actives)
+               .&&. counterexample "active big ledger peers upper bound violation" (activeBigLedgers' <= activeBigLedgers)
+               .&&. counterexample "active big ledger peers lower bound violation" (activeBigLedgers' >= decrease activeBigLedgers)
+               .&&. counterexample "known upper bound violation" (knowns' <= knowns)
+               .&&. counterexample "known lower bound violation" (knowns' >= decrease knowns)
+               .&&. counterexample "known big ledger peers upper bound violation" (knownBigLedgers' <= knownBigLedgers)
+               .&&. counterexample "known big ledger peers lower bound violation" (knownBigLedgers' >= decrease knownBigLedgers)
+               .&&. counterexample "established upper bound violation" (establisheds' <= establisheds)
+               .&&. counterexample "established lower bound violation" (establisheds' >= decrease establisheds)
+               .&&. counterexample "established big ledger peers upper bound violation" (establishedBigLedgers' <= establishedBigLedgers)
+               .&&. counterexample "established big ledger peers lower bound violation" (establishedBigLedgers' >= decrease establishedBigLedgers)
+
+   in conjoin
+      $ (\evs ->
+           let targetsChangeSig =
+                 Signal.fromEvents
+                 . Signal.selectEvents
+                   (\case
+                       (node, DiffusionPeerSelectionTrace (TraceTargetsChanged new))
+                              -> Just (node, new)
+                       _other -> Nothing
+                   )
+                 $ evs
+
+               -- The last known consensus mode
+               consensusModeSig =
+                 Signal.scanl (\cmap ->
+                                 maybe cmap (\mode -> uncurry Map.insert mode cmap)
+                              ) Map.empty
+                 . Signal.fromEvents
+                 . Signal.selectEvents
+                   (\case
+                       (node, DiffusionSimulationTrace (TrJoiningNetwork consensusMode))
+                              -> Just (node, consensusMode)
+                       _other -> Nothing
+                   )
+                 $ evs
+
+               -- The last known judgment
+               judgmentSig =
+                 Signal.scanl (\jmap ->
+                                 maybe jmap (\judgment -> uncurry Map.insert judgment jmap)
+                              ) Map.empty
+                 . Signal.fromEvents
+                 . Signal.selectEvents
+                   (\case
+                       (node, DiffusionPeerSelectionTrace (ExtraTrace (Cardano.TraceLedgerStateJudgementChanged judgment)))
+                              -> Just (node, judgment)
+                       _other -> Nothing
+                   )
+                 $ evs
+
+            in signalProperty' 20 show
+                  (\case
+                      (Just (node, targets), modeMap, judgmentMap) ->
+                        case Map.lookup node baseTargetsLookup of
+                          Nothing                                ->
+                            error ("No base targets for " <> show node)
+                          Just bs@(deadlineTargets, syncTargets) ->
+                            let mbase = do
+                                  mode <- Map.lookup node modeMap
+                                  judg <- Map.lookup node judgmentMap
+                                  pure $
+                                    case (mode, judg) of
+                                      (GenesisMode, TooOld) -> syncTargets
+                                      _otherwise            -> deadlineTargets
+                             in maybe
+                                  (property True)
+                                  (\base ->
+                                      counterexample ("Node: " ++ show node ++
+                                                      "\nExpected: " ++ show bs ++
+                                                      "\nActual: " ++ show targets
+                                                      ) (targetsChangeProperty base targets)
+                                  )
+                                  mbase
+                      _ignore -> property True
+                  )
+                  ( (,,) <$> targetsChangeSig
+                         <*> consensusModeSig
+                         <*> judgmentSig
+                  )
+        ) <$> events
+
+prop_churn_targets_bounds_cardano_iosim
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_churn_targets_bounds_cardano_iosim bi ds@(DiffusionScript _ _ nodes) =
+  let baseTargets = [ (naAddr nodeArgs, naPeerTargets nodeArgs)
+                    | (nodeArgs, _) <- nodes
+                    ]
+  in testWithIOSim (prop_churn_targets_bounds baseTargets) long_trace bi ds
+
+prop_churn_targets_bounds_ouroboros_iosim
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_churn_targets_bounds_ouroboros_iosim bi ds@(DiffusionScript _ _ nodes) =
+  let baseTargets = [ (naAddr nodeArgs, naPeerTargets nodeArgs)
+                    | (nodeArgs, _) <- nodes
+                    ]
+  in testWithIOSim' diffusionSimulation' (prop_churn_targets_bounds baseTargets) long_trace bi ds
 
 -- | Verify that churn trace consists of repeated list of actions:
 --

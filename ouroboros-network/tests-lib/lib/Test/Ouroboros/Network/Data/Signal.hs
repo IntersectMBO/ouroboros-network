@@ -30,6 +30,7 @@ module Test.Ouroboros.Network.Data.Signal
   , fromEventsWith
     -- ** QuickCheck
   , signalProperty
+  , signalProperty'
     -- * Simple signal transformations
   , truncateAt
   , stable
@@ -546,19 +547,25 @@ eventually (TS time i) p (Signal x0 txs0)
 --
 signalProperty :: forall a. Int -> (a -> String)
                -> (a -> Bool) -> Signal a -> Property
-signalProperty atMost showSignalValue p =
+signalProperty atMost showSignalValue predicate =
+  signalProperty' atMost showSignalValue (property . predicate)
+
+-- | A variant of 'signalProperty' that takes a property-producing function
+-- instead of a boolean predicate.
+--
+signalProperty' :: forall a. Int -> (a -> String)
+                   -> (a -> Property) -> Signal a -> Property
+signalProperty' atMost showSignalValue p =
     go 0 mempty . eventsToList . toChangeEvents
   where
     go :: Int -> Deque (Time, a) -> [(Time, a)] -> Property
-    go !_ !_ []                   = property True
-    go !n !recent ((t, x) : txs) | p x = next
+    go !_ !_ []                  = property True
+    go !n !recent ((t, x) : txs) = counterexample details (p x) .&&. next
       where
         next
           | n < atMost = go (n+1) (              Deque.snoc (t,x)  recent) txs
           | otherwise  = go n     ((Deque.tail . Deque.snoc (t,x)) recent) txs
 
-    go !_ !recent ((Time t, x) : _) = counterexample details False
-      where
         details =
           unlines [ "Last " ++ show atMost ++ " signal values:"
                   , unlines [ show t' ++ "\t@ " ++ showSignalValue x'
