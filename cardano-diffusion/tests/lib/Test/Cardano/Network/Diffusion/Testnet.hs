@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE MultiWayIf          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE NumericUnderscores  #-}
 {-# LANGUAGE OverloadedStrings   #-}
@@ -5037,12 +5038,15 @@ prop_diffusion_ig_valid_transition_order_iosim
 -- This test tests simultaneously the ConnectionManager and InboundGovernor's
 -- timeouts.
 --
+-- NOTE: we will get multiple groups of labels `simulated time` and `Nº Events`,
+-- one per node in the simulation.
 prop_diffusion_timeouts_enforced :: forall r.
                                     SimTrace r
                                  -> Int
                                  -> Property
 prop_diffusion_timeouts_enforced ioSimTrace traceNumber =
-    let events :: [Trace () (Time, DiffusionTestTrace)]
+    let -- list of traces grouped by node
+        events :: [Trace () (Time, DiffusionTestTrace)]
         events = Trace.toList
                . fmap ( Trace.fromList ()
                       . fmap (\(WithName _ (WithTime t b)) -> (t, b)))
@@ -5061,7 +5065,8 @@ prop_diffusion_timeouts_enforced ioSimTrace traceNumber =
             lastTime = fst
                      . last
                      $ evsList
-         in classifySimulatedTime lastTime
+         in
+            classifySimulatedTime lastTime
           $ classifyNumberOfEvents (length evsList)
           $ verify_timeouts
             ev
@@ -5267,21 +5272,23 @@ getTime (t, _, _, _) = t
 
 classifySimulatedTime :: Time -> Property -> Property
 classifySimulatedTime lastTime =
-        classify (lastTime <= Time (10 * 60)) "simulation time <= 10min"
-      . classify (lastTime >  Time (10 * 60)      && lastTime <= Time (20 * 60)) "10min < simulation time <= 20min"
-      . classify (lastTime >  Time (20 * 60)      && lastTime <= Time (40 * 60)) "20min < simulation time <= 40min"
-      . classify (lastTime >  Time (40 * 60)      && lastTime <= Time (60 * 60)) "40min < simulation time <= 1H"
-      . classify (lastTime >  Time (60 * 60)      && lastTime <= Time (5 * 60 * 60)) "1H < simulation time <= 5H"
-      . classify (lastTime >  Time (5 * 60 * 60)  && lastTime <= Time (10 * 60 * 60)) "5H < simulation time <= 10H"
-      . classify (lastTime >  Time (10 * 60 * 60) && lastTime <= Time (24 * 60 * 60)) "10H < simulation time <= 1 Day"
-      . classify (lastTime >= Time (24 * 60 * 60)) "simulation time >= 1 Day"
+  label
+    if | lastTime <= Time (10 * 60)                                         -> "simulation time [0, 10min)"
+       | lastTime >  Time (10 * 60) && lastTime <= Time (20 * 60)           -> "simulation time (10min, 20min]"
+       | lastTime >  Time (20 * 60) && lastTime <= Time (40 * 60)           -> "simulation time (20min, 40min]"
+       | lastTime >  Time (40 * 60) && lastTime <= Time (60 * 60)           -> "simulation time (40min, 1H)"
+       | lastTime >  Time (60 * 60)      && lastTime <= Time (5 * 60 * 60)  -> "simulation time (1H, 5H]"
+       | lastTime >  Time (5 * 60 * 60)  && lastTime <= Time (10 * 60 * 60) -> "simulation time (5H, 10H]"
+       | lastTime >  Time (10 * 60 * 60) && lastTime <= Time (24 * 60 * 60) -> "simulation time (10H, 1 Day]"
+       | otherwise                                                          -> "simulation time >= 1 Day"
 
 classifyNumberOfEvents :: Int -> Property -> Property
 classifyNumberOfEvents nEvents =
-        classify (nEvents <=    100) "Nº Events <=    100"
-      . classify (nEvents >=  1_000) "Nº Events >=  1_000"
-      . classify (nEvents >= 10_000) "Nº Events >= 10_000"
-      . classify (nEvents >= 50_000) "Nº Events >= 50_000"
+  label
+    if | nEvents < 1_000                       -> "Nº Events [0, 1k]"
+       | nEvents >=  1_000 && nEvents < 10_000 -> "Nº Events [1k, 10k)"
+       | nEvents >= 10_000 && nEvents < 50_000 -> "Nº Events [10k, 50k)"
+       | otherwise                             -> "Nº Events [50k, +∞)"
 
 withTimeNameTraceEvents :: forall b name r. (Typeable b, Typeable name)
                         => Trace r SimEvent
