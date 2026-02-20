@@ -5082,9 +5082,12 @@ prop_diffusion_timeouts_enforced ioSimTrace traceNumber =
                            . groupConns snd abstractStateIsFinalTransition
                            . selectDiffusionConnectionManagerTransitionEventsTime
                            $ events
+          numTransitions = getSum $ bifoldMap (const mempty) (Sum . length) transitionSignal
 
-       in property
-        $ verifyAllTimeouts True transitionSignal
+      in label ("num-transitions: " ++ renderRanges 50 numTransitions)
+        $ if numTransitions < 1
+            then discard
+            else verifyAllTimeouts True transitionSignal
 
 prop_diffusion_timeouts_enforced_iosimpor
   :: AbsBearerInfo -> DiffusionScript -> Property
