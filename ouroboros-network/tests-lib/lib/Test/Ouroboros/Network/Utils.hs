@@ -34,7 +34,6 @@ module Test.Ouroboros.Network.Utils
   , splitWithNameTrace
     -- * Tracers
   , debugTracer
-  , debugTracerG
   , sayTracer
   , dynamicTracer
     -- * Tasty Utils
@@ -67,7 +66,7 @@ import Text.Printf
 
 import Ouroboros.Network.Util (PrettyShow (..))
 
-import Debug.Trace (traceShowM)
+import Debug.Trace qualified as Debug (traceShowM)
 import Test.QuickCheck
 import Test.Tasty (TestTree)
 import Test.Tasty.ExpectedFailure (ignoreTest)
@@ -261,27 +260,21 @@ instance (Eq a, Arbitrary a) => Arbitrary (DistinctNEList a) where
     [ DistinctNEList (NE.fromList (nub xs')) | xs' <- shrink (NE.toList xs), not (null xs') ]
 
 --
--- Debugging tools
+-- Tracers
 --
 
+-- | Trace to `stderr` via `Debug.Tracer` API.
+--
 debugTracer :: ( Show a, Applicative m) => Tracer m a
-debugTracer = Tracer traceShowM
+debugTracer = Tracer Debug.traceShowM
 
+-- | Trace using `MonadSay` instance.
+--
 sayTracer :: ( Show a, MonadSay m) => Tracer m a
 sayTracer = Tracer (say . show)
 
--- | Redefine this tracer to get valuable tracing information from various
--- components:
+-- | Dynamic tracer for `IOSim` using `traceM`.
 --
--- * connection-manager
--- * inbound governor
--- * server
---
-debugTracerG :: (Show a, Typeable a) => Tracer (IOSim s) a
-debugTracerG =    Tracer (\msg -> getCurrentTime >>= say . show . (,msg))
-               <> Tracer traceM
-            -- <> Tracer Debug.traceShowM
-
 dynamicTracer :: Typeable a => Tracer (IOSim s) a
 dynamicTracer = Tracer traceM
 

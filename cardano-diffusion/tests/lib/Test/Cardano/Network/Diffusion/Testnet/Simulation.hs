@@ -1348,10 +1348,12 @@ diffusionSimulationM
 
 
           tracerTxLogic =
-              contramap DiffusionTxLogic
+            ( contramap DiffusionTxLogic
             . tracerWithName addr
             . tracerWithTime
             $ nodeTracer
+            )
+            <> sayTracer
 
           -- TODO: can we remove all `NodeArguments` fields that appear in
           -- this function
@@ -1371,10 +1373,11 @@ diffusionSimulationM
                    duplicateTxVar
             where
               tracerTxSubmissionInbound =
-                  contramap DiffusionTxSubmissionInbound
+                ( contramap DiffusionTxSubmissionInbound
                 . tracerWithName addr
                 . tracerWithTime
-                $ nodeTracer
+                $ nodeTracer )
+                <> sayTracer
 
               appArgs :: Node.AppArgs BlockHeader Block m
               appArgs = Node.AppArgs
@@ -1406,10 +1409,12 @@ diffusionSimulationM
           requestPublicRootPeers'
           peerChurnGovernor'
           tracers
-          ( contramap (DiffusionFetchTrace . (\(TraceLabelPeer _ a) -> a))
-          . tracerWithName addr
-          . tracerWithTime
-          $ nodeTracer)
+          (  ( contramap (DiffusionFetchTrace . (\(TraceLabelPeer _ a) -> a))
+             . tracerWithName addr
+             . tracerWithTime
+             $ nodeTracer
+             )
+          <> sayTracer)
           tracerTxLogic
           mkApps
         `catch` \e -> traceWith (diffSimTracer addr) (TrErrored e)
@@ -1455,10 +1460,13 @@ diffusionSimulationM
            in fst <$> ipsttls
 
     diffSimTracer :: NtNAddr -> Tracer m DiffusionSimulationTrace
-    diffSimTracer ntnAddr = contramap DiffusionSimulationTrace
-                          . tracerWithName ntnAddr
-                          . tracerWithTime
-                          $ nodeTracer <> sayTracer
+    diffSimTracer ntnAddr =
+      ( contramap DiffusionSimulationTrace
+      . tracerWithName ntnAddr
+      . tracerWithTime
+      $ nodeTracer
+      )
+      <> sayTracer
 
     mkTracers
       :: NtNAddr
@@ -1482,12 +1490,14 @@ diffusionSimulationM
                      -- enable it below in one of the specific tracers
       in
       Diffusion.nullTracers {
-          -- Diffusion.dtMuxTracer = contramap
-          --                           DiffusionMuxTrace
-          --                       . tracerWithName ntnAddr
-          --                       . tracerWithTime
-          --                       $ nodeTracer
-          Diffusion.dtTraceLocalRootPeersTracer  = contramap
+          Diffusion.dtMuxTracer                  = contramap
+                                                     DiffusionMuxTrace
+                                                 . tracerWithName ntnAddr
+                                                 . tracerWithTime
+                                                 $ nodeTracer' -- sayTracer'
+        , Diffusion.dtDiffusionTracer            = nullTracer -- sayTracer'
+        , Diffusion.dtHandshakeTracer            = nullTracer -- sayTracer'
+        , Diffusion.dtTraceLocalRootPeersTracer  = contramap
                                                      DiffusionLocalRootPeerTrace
                                                  . tracerWithName ntnAddr
                                                  . tracerWithTime
