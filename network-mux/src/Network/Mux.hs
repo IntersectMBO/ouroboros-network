@@ -349,10 +349,7 @@ miniProtocolJob TracersI {
 
     jobHandler :: SomeException -> m JobResult
     jobHandler e = do
-      atomically $
-        putTMVar completionVar (Left e)
-        `orElse`
-        throwSTM (BlockedOnCompletionVar miniProtocolNum)
+      _ <- atomically $ tryPutTMVar completionVar (Left e)
       return (MiniProtocolException miniProtocolNum miniProtocolDirEnum e)
 
     miniProtocolDirEnum :: MiniProtocolDir
