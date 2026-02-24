@@ -34,7 +34,7 @@ module Ouroboros.Network.PeerSelection.LedgerPeers.Type
   , LedgerPeerSnapshot (..)
   , LedgerPeerSnapshotWithBlock (..)
   , SomeLedgerPeerSnapshot (..)
-  , SomeHashableBlock (..)
+  , RawBlockHash (..)
   , LedgerPeerSnapshotSRVSupport (..)
   , encodeLedgerPeerSnapshot
   , encodeLedgerPeerSnapshot'
@@ -64,12 +64,15 @@ import Control.DeepSeq (NFData (..))
 import Control.Monad (forM)
 import Data.Aeson hiding (decode, encode)
 import Data.Bifunctor (second)
-import Data.Functor ((<&>))
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Typeable
 import GHC.Generics (Generic)
 import NoThunks.Class
+import qualified Data.ByteString.Base16 as Base16
+import qualified Data.ByteString.Short as SBS
+import Data.ByteString.Short (ShortByteString)
+import qualified Data.Text.Encoding as Text
 
 -- TODO: remove `FromCBOR` and `ToCBOR` instances when ntc V22 is no longer supported
 import Cardano.Binary (FromCBOR (..), ToCBOR (..))
@@ -86,12 +89,12 @@ data LedgerPeerSnapshot (a :: LedgerPeersKind) where
     :: (WithOrigin SlotNo, [(AccPoolStake, (PoolStake, NonEmpty LedgerRelayAccessPoint))])
     -> LedgerPeerSnapshot BigLedgerPeers
   LedgerBigPeerSnapshotV23
-    :: !(Point SomeHashableBlock)
+    :: !(Point RawBlockHash)
     -> !NetworkMagic
     -> ![(AccPoolStake, (PoolStake, NonEmpty LedgerRelayAccessPoint))]
     -> LedgerPeerSnapshot BigLedgerPeers
   LedgerAllPeerSnapshotV23
-    :: !(Point SomeHashableBlock)
+    :: !(Point RawBlockHash)
     -> !NetworkMagic
     -> ![(PoolStake, NonEmpty LedgerRelayAccessPoint)]
     -> LedgerPeerSnapshot AllLedgerPeers
@@ -100,49 +103,28 @@ deriving instance Eq (LedgerPeerSnapshot a)
 deriving instance Show (LedgerPeerSnapshot a)
 
 
--- | We hide the block type to avoid parametrizing ouroboros-network with it
+-- | The raw block hash to be passed into the Consensus layer and
+--   reified into a 'HeaderHash blk' using the 'ConvertRawHash'
+--   type class from the 'Ouroboros.Consensus.Block.Abstract' module.
+newtype RawBlockHash = RawBlockHash ShortByteString
+  deriving newtype (NFData, Eq, Ord, Show, NoThunks, FromCBOR)
+
+
 --
-data SomeHashableBlock =
-  forall blk. ( StandardHash blk
-              , ToCBOR (HeaderHash blk)
-              , FromCBOR (HeaderHash blk)
-              , ToJSON (HeaderHash blk)
-              , Typeable blk
-              , NFData (HeaderHash blk)
-              ) => SomeHashableBlock !(Proxy blk) !(HeaderHash blk)
+instance ToJSON RawBlockHash where
+  toJSON (RawBlockHash sbs) =
+    String . Text.decodeUtf8 . Base16.encode $ SBS.fromShort sbs
 
-type instance HeaderHash SomeHashableBlock = SomeHashableBlock
-instance NFData SomeHashableBlock where
-    rnf (SomeHashableBlock point hash) = rnf point
-                                   `seq` rnf hash
+instance FromJSON RawBlockHash where
+  parseJSON = withText "RawBlockHash" $ \t ->
+    case Base16.decode (Text.encodeUtf8 t) of
+      Right bs -> pure $ RawBlockHash (SBS.toShort bs)
+      Left err -> fail $ "Invalid hex string for RawBlockHash: " <> err
 
--- we need this since `Point` is parameterised with `SomeHashableBlock`
--- in the snapshot
-instance StandardHash SomeHashableBlock
-
--- superclass constraints of `StandardHash` require the following
-instance Eq SomeHashableBlock where
-  (==) (SomeHashableBlock (_ :: Proxy blk1) h1) (SomeHashableBlock (_ :: Proxy blk2) h2) =
-    case eqT :: Maybe (HeaderHash blk1 :~: HeaderHash blk2) of
-      Just Refl -> h1 == h2
-      Nothing   -> error "impossible! Distinct (HeaderHash blk) types"
-
-instance Show SomeHashableBlock where
-  show (SomeHashableBlock _ sbh) = show sbh
-
-instance Ord SomeHashableBlock where
-  compare (SomeHashableBlock (_ :: Proxy blk1) h1) (SomeHashableBlock (_ :: Proxy blk2) h2) =
-    case eqT :: Maybe (blk1 :~: blk2) of
-      Just Refl -> compare h1 h2
-      Nothing   -> error "impossible! Distinct (HeaderHash blk) types"
-
-instance NoThunks SomeHashableBlock where
-  wNoThunks ctx (SomeHashableBlock _ sbh) = wNoThunks ctx sbh
-  showTypeOf _proxy = "SomeHashableBlock"
-
-instance ToJSON SomeHashableBlock where
-  toJSON (SomeHashableBlock _proxy hash) = toJSON hash
-
+--- we need these since `Point` is parameterised with `RawBlockHash`
+--- in the snapshot
+type instance HeaderHash RawBlockHash = RawBlockHash
+instance StandardHash RawBlockHash
 
 -- | facility for encoding the snapshot in CBOR for backwards compatibility
 --
@@ -159,7 +141,7 @@ deriving instance Show SomeLedgerPeerSnapshot
 
 -- | facility to aid JSON decode instances
 --
-newtype LedgerPeerSnapshotWithBlock blk a =
+newtype LedgerPeerSnapshotWithBlock a =
   LedgerPeerSnapshotWithBlock { parseLedgerPeerSnapshotWithBlock :: LedgerPeerSnapshot a }
 
 
@@ -221,22 +203,14 @@ instance ToJSON (LedgerPeerSnapshot a) where
                                  ]
            ]
 
-instance ( StandardHash blk
-         , ToJSON (HeaderHash blk)
-         , FromJSON (HeaderHash blk)
-         , FromCBOR (HeaderHash blk)
-         , ToCBOR (HeaderHash blk)
-         , Typeable blk
-         ) => FromJSON (LedgerPeerSnapshotWithBlock blk AllLedgerPeers) where
+instance FromJSON (LedgerPeerSnapshotWithBlock AllLedgerPeers) where
   parseJSON = withObject "LedgerPeerSnapshot" \v -> do
     -- TODO: remove "version" key after NtC V22 support is removed
     vNum :: Int <- v .: "version" <|> v .: "NodeToClientVersion"
     allPools    <- v .: "allLedgerPools"
     case vNum of
       23 -> do
-       point     <- v .: "Point" <&> \(pt :: Point blk) ->
-         Point $ getPoint pt <&> \blk->
-           blk { blockPointHash = SomeHashableBlock (Proxy :: Proxy blk) (blockPointHash blk) }
+       point     <- v .: "Point"
        magic     <- v .: "NetworkMagic"
        allPools' <- forM (zip [0 :: Int ..] allPools) \(idx, poolO) -> do
                       let f poolV = do
@@ -250,15 +224,7 @@ instance ( StandardHash blk
         fail $ "Network.LedgerPeers.Type: parseJSON: failed to parse unsupported version "
             <> show vNum
 
-instance ( StandardHash blk
-         , FromJSON (HeaderHash blk)
-         , ToJSON (HeaderHash blk)
-         -- The CBOR instances are only needed to satisfy these constraints
-         -- when constructing `SomeHashableBlock` here.
-         , FromCBOR (HeaderHash blk)
-         , ToCBOR (HeaderHash blk)
-         , Typeable blk
-         ) => FromJSON (LedgerPeerSnapshotWithBlock blk BigLedgerPeers) where
+instance FromJSON (LedgerPeerSnapshotWithBlock BigLedgerPeers) where
   parseJSON = withObject "LedgerPeerSnapshot" \v -> do
     -- TODO: remove "version" key after NtC V22 support is removed
     vNum :: Int <- v .: "version" <|> v .: "NodeToClientVersion"
@@ -289,9 +255,7 @@ instance ( StandardHash blk
 
         return . LedgerPeerSnapshotWithBlock $ LedgerPeerSnapshotV2 (slot, bigPools')
       23 -> do
-        point     <- v .: "Point" <&> \(pt :: Point blk) ->
-          Point $ getPoint pt <&> \blk->
-            blk { blockPointHash = SomeHashableBlock (Proxy :: Proxy blk) (blockPointHash blk) }
+        point     <- v .: "Point"
         magic     <- v .: "NetworkMagic"
         bigPools  <- v .: "bigLedgerPools"
         bigPools' <- forM (zip [0 :: Int ..] bigPools) \(idx, poolO) -> do
@@ -366,15 +330,9 @@ encodeLedgerPeerSnapshot _LedgerPeerSnapshotSupportsSRV (LedgerAllPeerSnapshotV2
   <> encodeAllStakePools pools
 
 
-decodeLedgerPeerSnapshot :: forall s blk.
-                            ( FromCBOR (HeaderHash blk)
-                            , ToCBOR (HeaderHash blk)
-                            , ToJSON (HeaderHash blk)
-                            , StandardHash blk
-                            , Typeable blk)
-                         => Proxy blk
-                         -> Codec.Decoder s (SomeLedgerPeerSnapshot)
-decodeLedgerPeerSnapshot proxy = do
+decodeLedgerPeerSnapshot :: forall s.
+                            Codec.Decoder s (SomeLedgerPeerSnapshot)
+decodeLedgerPeerSnapshot = do
     Codec.decodeListLenOf 2
     version <- Codec.decodeWord8
     case version of
@@ -383,12 +341,12 @@ decodeLedgerPeerSnapshot proxy = do
              LedgerPeerSnapshotV2 <$> ((,) <$> decodeWithOrigin <*> fromCBOR)
       2 -> Codec.decodeListLenOf 3 >>
              SomeLedgerPeerSnapshot Proxy <$>
-             (LedgerBigPeerSnapshotV23 <$> decodeLedgerPeerSnapshotPoint proxy
+             (LedgerBigPeerSnapshotV23 <$> decodeLedgerPeerSnapshotPoint
                                        <*> (NetworkMagic <$> Codec.decodeWord32)
                                        <*> decodeBigStakePools)
       3 -> Codec.decodeListLenOf 3 >>
              SomeLedgerPeerSnapshot Proxy <$>
-             (LedgerAllPeerSnapshotV23 <$> decodeLedgerPeerSnapshotPoint proxy
+             (LedgerAllPeerSnapshotV23 <$> decodeLedgerPeerSnapshotPoint
                                        <*> (NetworkMagic <$> Codec.decodeWord32)
                                        <*> decodeAllStakePools)
       _ -> fail $ "LedgerPeers.Type: no decoder could be found for version " <> show version
@@ -411,29 +369,24 @@ decodeWithOrigin = do
       _      -> fail "LedgerPeers.Type: Unrecognized list length while decoding WithOrigin SlotNo"
 
 
-encodeLedgerPeerSnapshotPoint :: Point SomeHashableBlock
+encodeLedgerPeerSnapshotPoint :: Point RawBlockHash
                               -> Codec.Encoding
 encodeLedgerPeerSnapshotPoint = \case
   GenesisPoint -> Codec.encodeListLen 1 <> Codec.encodeWord8 0
-  BlockPoint { atSlot, withHash = SomeHashableBlock (Proxy :: Proxy blk) hash} ->
+  BlockPoint { atSlot, withHash = RawBlockHash hash} ->
        Codec.encodeListLen 3 <> Codec.encodeWord8 1
     <> Codec.toCBOR atSlot <> toCBOR hash
 
 
-decodeLedgerPeerSnapshotPoint :: forall blk s.
-                                 ( FromCBOR (HeaderHash blk)
-                                 , ToCBOR (HeaderHash blk)
-                                 , ToJSON (HeaderHash blk)
-                                 , Typeable blk
-                                 , StandardHash blk)
-                              => Proxy blk -> Codec.Decoder s (Point SomeHashableBlock)
-decodeLedgerPeerSnapshotPoint _proxy = do
+decodeLedgerPeerSnapshotPoint :: forall s.
+                                 Codec.Decoder s (Point RawBlockHash)
+decodeLedgerPeerSnapshotPoint = do
   listLen <- Codec.decodeListLen
   tag     <- Codec.decodeWord8
   case (tag, listLen) of
     (0, 1) -> pure $ Point Origin
     (0, n) -> fail $ "LedgerPeers.Type: invalid listLen for Origin tag, expected 1 got " <> show n
-    (1, 3) -> Point . At <$> (Block <$> fromCBOR <*> (SomeHashableBlock (Proxy :: Proxy blk) <$> fromCBOR))
+    (1, 3) -> Point . At <$> (Block <$> fromCBOR <*> fromCBOR)
     (1, n) -> fail $ "LedgerPeers.Type: invalid listLen for At tag, expected 3 got " <> show n
     _      -> fail "LedgerPeers.Type: Unrecognized CBOR encoding of Point for LedgerPeerSnapshot"
 

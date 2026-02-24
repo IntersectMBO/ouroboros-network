@@ -45,6 +45,9 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Word
 import System.Random
+import Data.ByteString.Short (ShortByteString, toShort)
+import Data.ByteString.Builder (toLazyByteString, word64BE)
+import qualified Data.ByteString.Lazy as BL
 
 import Network.DNS (Domain)
 
@@ -539,7 +542,7 @@ prop_ledgerPeerSnapshotCBORV2 srvSupport slotNo
   where
     someSnapshot = snapshotV2 slotNo ledgerPools
     encoded = toFlatTerm . encodeLedgerPeerSnapshot' srvSupport $ someSnapshot
-    decoded = unwrap <$> fromFlatTerm (decodeLedgerPeerSnapshot (Proxy :: Proxy MockBlock)) encoded
+    decoded = unwrap <$> fromFlatTerm decodeLedgerPeerSnapshot encoded
     unwrap :: SomeLedgerPeerSnapshot -> LedgerPeerSnapshot BigLedgerPeers
     unwrap = \case
       SomeLedgerPeerSnapshot _ lps@LedgerPeerSnapshotV2{} -> lps
@@ -578,7 +581,7 @@ prop_ledgerPeerSnapshotCBORV3 slotNo magic ledgerPools big =
   where
     someSnapshot = snapshotV3 slotNo (NetworkMagic magic) ledgerPools big
     encoded = toFlatTerm . encodeLedgerPeerSnapshot' LedgerPeerSnapshotSupportsSRV $ someSnapshot
-    decoded = fromFlatTerm (decodeLedgerPeerSnapshot (Proxy :: Proxy MockBlock)) encoded
+    decoded = fromFlatTerm decodeLedgerPeerSnapshot encoded
     cmp decoded' = case (someSnapshot, decoded') of
       (SomeLedgerPeerSnapshot _ someSnapshot',
        SomeLedgerPeerSnapshot _ decoded'')-> case (someSnapshot', decoded'') of
@@ -617,13 +620,13 @@ prop_ledgerPeerSnapshotJSON slotNo (v3, big) pureMagic ledgerPools =
       SomeLedgerPeerSnapshot _ lps -> case lps of
         lps'@LedgerBigPeerSnapshotV23{} ->
           SomeLedgerPeerSnapshot Proxy <$>
-            (fmap (parseLedgerPeerSnapshotWithBlock @MockBlock @BigLedgerPeers) . fromJSON . toJSON $ lps')
+            (fmap (parseLedgerPeerSnapshotWithBlock @BigLedgerPeers) . fromJSON . toJSON $ lps')
         lps'@LedgerAllPeerSnapshotV23{} ->
           SomeLedgerPeerSnapshot Proxy <$>
-            (fmap (parseLedgerPeerSnapshotWithBlock @MockBlock @AllLedgerPeers) . fromJSON . toJSON $ lps')
+            (fmap (parseLedgerPeerSnapshotWithBlock @AllLedgerPeers) . fromJSON . toJSON $ lps')
         lps'@LedgerPeerSnapshotV2{}     ->
           SomeLedgerPeerSnapshot Proxy <$>
-            (fmap (parseLedgerPeerSnapshotWithBlock @MockBlock @BigLedgerPeers) . fromJSON . toJSON $ lps')
+            (fmap (parseLedgerPeerSnapshotWithBlock @BigLedgerPeers) . fromJSON . toJSON $ lps')
 
     someRoundTrip = case jsonResult of
       Aeson.Success s -> Right s
@@ -715,13 +718,17 @@ snapshotV3 slotNo magic (LedgerPools pools) big = snapshot
   where
     snapshot =
       if big
-        then let point = BlockPoint slotNo (SomeHashableBlock (Proxy :: Proxy MockBlock) (unSlotNo slotNo))
+        then let point = BlockPoint slotNo (RawBlockHash (word64ToShortBS $ unSlotNo slotNo))
                  bigPools = Map.assocs . accPoolStake $ pools
                  lps  = LedgerBigPeerSnapshotV23 point magic bigPools
               in SomeLedgerPeerSnapshot Proxy lps
-        else let point = BlockPoint slotNo (SomeHashableBlock (Proxy :: Proxy MockBlock) (unSlotNo slotNo))
+        else let point = BlockPoint slotNo (RawBlockHash (word64ToShortBS $ unSlotNo slotNo))
                  lps = LedgerAllPeerSnapshotV23 point magic pools
               in SomeLedgerPeerSnapshot Proxy lps
+
+    -- Converts Word64 of the slot number to ShortByteString using Big-Endian encoding
+    word64ToShortBS :: Word64 -> ShortByteString
+    word64ToShortBS = toShort . BL.toStrict . toLazyByteString . word64BE
 
 
 -- TODO: Belongs in iosim.

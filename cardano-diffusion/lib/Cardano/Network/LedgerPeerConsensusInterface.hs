@@ -15,7 +15,7 @@ import Cardano.Network.PeerSelection.LocalRootPeers
            (OutboundConnectionsState (..))
 import Ouroboros.Network.Block (Point)
 import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode (..))
-import Ouroboros.Network.PeerSelection.LedgerPeers.Type (SomeHashableBlock)
+import Ouroboros.Network.PeerSelection.LedgerPeers.Type (RawBlockHash)
 
 
 -- | Cardano Node specific consensus interface actions.
@@ -36,6 +36,9 @@ data LedgerPeersConsensusInterface m =
     --
   , updateOutboundConnectionsState :: OutboundConnectionsState -> STM m ()
 
+  -- | Ask the Consensus layer's immutable DB for a point. The callback will yield either:
+  --   - the block at the target slot if there is a block in the immutable DB at that slot;
+  --   - or the block from the next occupied slot.
   , getBlockHash
-      :: forall r. Point SomeHashableBlock -> (m (Maybe (Point SomeHashableBlock)) -> m r) -> m r
+      :: forall r. Point RawBlockHash -> (m (Maybe (Point RawBlockHash)) -> m r) -> m r
   }
