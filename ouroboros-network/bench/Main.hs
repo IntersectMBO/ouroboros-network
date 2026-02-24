@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                #-}
 {-# LANGUAGE NumericUnderscores #-}
 
 -- pPrint
@@ -9,14 +10,13 @@ import Control.DeepSeq
 import Control.Exception (evaluate)
 import Debug.Trace (traceMarkerIO)
 import System.Mem (performMajorGC)
-import System.Random.SplitMix qualified as SM
 import Test.Tasty.Bench
 import Text.Pretty.Simple (pPrint)
 
 import Ouroboros.Network.TxSubmission.Inbound.V2.Decision qualified as Tx
 import Ouroboros.Network.TxSubmission.Inbound.V2.State (SharedTxState (..))
 import Test.Ouroboros.Network.TxSubmission.TxLogic qualified as TX
-           (mkDecisionContext)
+           (mkDecisionContexts, printTxLogicBenchmarkContexts)
 
 import Test.Ouroboros.Network.PeerSelection.PeerMetric
            (microbenchmark1GenerateInput, microbenchmark1ProcessInput)
@@ -34,59 +34,66 @@ main =
                 bench "100k" $ nfAppIO microbenchmark1ProcessInput i
           ]
         , bgroup "TxLogic"
-          [ env (do let a = TX.mkDecisionContext (SM.mkSMGen 131) 10
+          [ env (do let a = TX.mkDecisionContexts 131 100 10
                     evaluate (rnf a)
+#ifdef TXLOGIC_PRINT
+                    TX.printTxLogicBenchmarkContexts a
+#endif
                     -- pPrint a
                     performMajorGC
                     traceMarkerIO "evaluated decision context"
                     return a
                 )
-                (\(~a@(_policy, state)) ->
-                     bench "makeDecisions: 10"
-                   $ let f :: ( Tx.TxDeicisionPolicy
-                              , SharedTxState PeerAddr TxId (Tx TxId)
-                              )
-                          ->  ( SharedTxState PeerAddr TxId (Tx TxId)
-                              , Map PeerAddr (TxDecision TxId (Tx TxId))
-                              )
-                         f = flip (uncurry Tx.makeDecisions) (peerTxStates state)
-                     in nf f a
-
+                (\as ->
+                     bench "makeDecisions: 100 x 10"
+                   $ let run (policy, state) =
+                           Tx.makeDecisions policy state (peerTxStates state)
+                     in nf (map run) as
                 )
-          , env (do let a = TX.mkDecisionContext (SM.mkSMGen 131) 100
+          , env (do let a = TX.mkDecisionContexts 131 100 100
                     evaluate (rnf a)
+#ifdef TXLOGIC_PRINT
+                    TX.printTxLogicBenchmarkContexts a
+#endif
                     -- pPrint a
                     performMajorGC
                     traceMarkerIO "evaluated decision context"
                     return a
                 )
-                (\(~a@(_policy, state)) ->
-                     bench "makeDecisions: 100"
-                   $ nf (flip (uncurry Tx.makeDecisions) (peerTxStates state)) a
+                (\as ->
+                     bench "makeDecisions: 100 x 100"
+                   $ let run (policy, state) =
+                           Tx.makeDecisions policy state (peerTxStates state)
+                     in nf (map run) as
                 )
-          , env (do let a = TX.mkDecisionContext (SM.mkSMGen 361) 1_000
+          , env (do let a = TX.mkDecisionContexts 361 100 1_000
                     evaluate (rnf a)
+#ifdef TXLOGIC_PRINT
+                    TX.printTxLogicBenchmarkContexts a
+#endif
                     -- pPrint a
                     performMajorGC
                     traceMarkerIO "evaluated decision context"
                     return a
                 )
-                (\(~a@(_policy, state)) ->
-                     bench "makeDecisions: 1000"
-                   $ nf (flip (uncurry Tx.makeDecisions) (peerTxStates state)) a
+                (\as ->
+                     bench "makeDecisions: 100 x 1000"
+                   $ let run (policy, state) =
+                           Tx.makeDecisions policy state (peerTxStates state)
+                     in nf (map run) as
                 )
 {-
           , env (do
-                    smGen <- SM.initSMGen
-                    print smGen
-                    let a = TX.mkDecisionContext smGen 1000
+                    let a = TX.mkDecisionContexts 42 100 1000
                     evaluate (rnf a)
                     traceMarkerIO "evaluated decision context"
                     return a
                 )
                 (\a ->
                      bench "makeDecisions: random"
-                   $ nf (uncurry Tx.makeDecisions) a
+                   $ let run (policy, state) =
+                           Tx.makeDecisions policy state (peerTxStates state)
+                     in nf (map run) a
                 )
 -}
           ]

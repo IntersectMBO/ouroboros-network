@@ -31,6 +31,11 @@ flag nightly
   manual: False
   default: False
 
+flag txlogic-print
+  description: Enable TxLogic benchmark context printing
+  manual: True
+  default: False
+
 source-repository head
   type: git
   location: https://github.com/intersectmbo/ouroboros-network
@@ -1055,9 +1060,12 @@ benchmark sim-benchmarks
     deepseq,
     ouroboros-network:{ouroboros-network, ouroboros-network-tests-lib},
     pretty-simple,
+    random,
     splitmix,
     tasty-bench >=0.3.5,
 
+  if flag(txlogic-print)
+    cpp-options: -DTXLOGIC_PRINT
   -- We use `-fproc-alignemtn` option to avoid skewed results due to changes in cache-line
   -- alignment. See https://github.com/Bodigrim/tasty-bench#comparison-against-baseline
   -- We use threaded RTS, because of
