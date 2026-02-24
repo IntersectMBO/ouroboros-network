@@ -1015,7 +1015,13 @@ diffusionSimulation'
   -> DiffusionScript
   -> IOSim s Void
 diffusionSimulation' bearerInfo diffusionScript =
-  diffusionSimulationM bearerInfo diffusionScript dynamicTracer OuroborosChurn
+    diffusionSimulationM bearerInfo diffusionScript' dynamicTracer OuroborosChurn
+  where
+    diffusionScript' = case diffusionScript of
+      DiffusionScript sa dm nodes ->
+        DiffusionScript sa dm [ (na { naConsensusMode = PraosMode }, cmds)
+                              | (na, cmds) <- nodes
+                              ]
 
 data Churn = CardanoChurn | OuroborosChurn
 
@@ -1444,7 +1450,7 @@ diffusionSimulationM
     diffSimTracer ntnAddr = contramap DiffusionSimulationTrace
                           . tracerWithName ntnAddr
                           . tracerWithTime
-                          $ nodeTracer
+                          $ nodeTracer <> sayTracer
 
     mkTracers
       :: NtNAddr

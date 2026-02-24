@@ -101,6 +101,7 @@ data NtNAddr_
   = EphemeralIPv4Addr Natural
   | EphemeralIPv6Addr Natural
   | IPAddr IP.IP PortNumber
+  | UnusedAddr
   deriving (Eq, Ord, Generic)
 
 -- we need to work around the lack of the `NFData IP` instance
@@ -109,6 +110,7 @@ instance NFData NtNAddr_ where
     rnf (EphemeralIPv6Addr p)      = p `seq` ()
     rnf (IPAddr (IP.IPv4 ip) port) = ip `seq` port `seq` ()
     rnf (IPAddr (IP.IPv6 ip) port) = rnf (IP.fromIPv6w ip) `seq` port `seq` ()
+    rnf UnusedAddr                 = ()
 
 instance Arbitrary NtNAddr_ where
   arbitrary = do
@@ -126,11 +128,13 @@ instance Show NtNAddr_ where
     show (EphemeralIPv4Addr n) = "EphemeralIPv4Addr " ++ show n
     show (EphemeralIPv6Addr n) = "EphemeralIPv6Addr " ++ show n
     show (IPAddr ip port)      = "IPAddr (read \"" ++ show ip ++ "\") " ++ show port
+    show UnusedAddr            = "UnusedAddr"
 
 ppNtNAddr_ :: NtNAddr_ -> String
 ppNtNAddr_ (EphemeralIPv4Addr n) = "eph.v4." ++ show n
 ppNtNAddr_ (EphemeralIPv6Addr n) = "eph.v6." ++ show n
 ppNtNAddr_ (IPAddr ip port)      = show ip ++ ":" ++ show port
+ppNtNAddr_ UnusedAddr            = "UnusedAddr"
 
 instance GlobalAddressScheme NtNAddr_ where
     getAddressType (TestAddress addr) =
@@ -139,6 +143,7 @@ instance GlobalAddressScheme NtNAddr_ where
         EphemeralIPv6Addr _   -> IPv6Address
         IPAddr (IP.IPv4 {}) _ -> IPv4Address
         IPAddr (IP.IPv6 {}) _ -> IPv6Address
+        UnusedAddr            -> IPv4Address
     ephemeralAddress IPv4Address = TestAddress . EphemeralIPv4Addr
     ephemeralAddress IPv6Address = TestAddress . EphemeralIPv6Addr
 
@@ -195,6 +200,7 @@ encodeNtNAddr (TestAddress (IPAddr ip pn)) = CBOR.encodeListLen 3
                                           <> CBOR.encodeWord 2
                                           <> encodeIP ip
                                           <> encodePortNumber pn
+encodeNtNAddr (TestAddress UnusedAddr) = error "impossible"
 
 decodeNtNAddr :: CBOR.Decoder s NtNAddr
 decodeNtNAddr = do

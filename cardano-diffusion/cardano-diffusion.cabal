@@ -481,6 +481,7 @@ library cardano-diffusion-tests-lib
     tasty,
     tasty-quickcheck,
     time,
+    transformers,
     typed-protocols:{typed-protocols, examples},
 
   exposed-modules:

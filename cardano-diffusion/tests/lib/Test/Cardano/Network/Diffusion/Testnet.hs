@@ -1,3 +1,4 @@
+{-# LANGUAGE BlockArguments      #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
@@ -6,6 +7,7 @@
 {-# LANGUAGE PackageImports      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeApplications    #-}
 
 #if defined(mingw32_HOST_OS)
@@ -18,13 +20,15 @@
 
 module Test.Cardano.Network.Diffusion.Testnet (tests) where
 
-import Control.Arrow ((&&&))
+import Control.Arrow ((&&&), (>>>))
 import Control.Exception (AssertionFailed (..), catch, displayException,
            evaluate, fromException)
+import Control.Monad (when)
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadTest (exploreRaces)
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.IOSim
+import Control.Monad.Trans.State
 
 import Data.Bifoldable (bifoldMap)
 import Data.Bifunctor (bimap, first, second)
@@ -49,6 +53,7 @@ import Data.Void (Void)
 import Data.Word (Word32)
 import GHC.IO.Exception (IOErrorType (..), IOException (..))
 import System.Random (mkStdGen)
+import Text.Printf as Text
 
 import Network.DNS.Types qualified as DNS
 import Network.Mux.Trace qualified as Mx
@@ -108,6 +113,7 @@ import Test.Ouroboros.Network.TxSubmission.Types (Tx (..), TxId)
 import Test.Ouroboros.Network.Utils hiding (SmallDelay, debugTracer)
 
 import Test.QuickCheck
+import Test.QuickCheck.Monadic as QC
 #if !MIN_VERSION_QuickCheck(2,16,0)
 import "quickcheck-monoids" Test.QuickCheck.Monoids
 #endif
@@ -4748,11 +4754,16 @@ prop_churn_notimeouts_iosim
   = testWithIOSim prop_churn_notimeouts long_trace
 
 
--- Property that verifies target changes stay within acceptable bounds
+-- | Property that verifies target changes stay within acceptable bounds
 --
 -- This function checks that after churn:
--- 1. New targets never exceed original targets
--- 2. New targets never decrease by more than 20%
+-- 1. Increased targets never exceed the configuration values
+-- 2. a. Targets are decreased by 20% or at least 1, whichever is greater.
+--    b. Established/Known targets churn at least as many as # of active/established peers which were churned, or value in a,
+--       whichever is greater. The maximum number of churned peers never exceeds the
+--       excess (established - active) or (known - established), whichever is applicable.
+-- 3. Checks that targets change when in 'GenesisMode' and 'LedgerStateJudgement' changes.
+--
 prop_churn_targets_bounds :: [(NtNAddr, (PeerSelectionTargets, PeerSelectionTargets))]
                           -> SimTrace Void
                           -> Int
@@ -4773,110 +4784,148 @@ prop_churn_targets_bounds baseTargetsMap ioSimTrace traceNumber =
 
        baseTargetsLookup = Map.fromList baseTargetsMap
 
-       targetsChangeProperty :: PeerSelectionTargets -> PeerSelectionTargets -> Property
        targetsChangeProperty
+         :: (PeerSelectionTargets, PeerSelectionTargets) -> PeerSelectionTargets -> Bool -> Property
+       targetsChangeProperty
+         -- design targets
+         (PeerSelectionTargets {
+           targetNumberOfKnownPeers                = known,
+           targetNumberOfEstablishedPeers          = established,
+           targetNumberOfActivePeers               = active,
+           targetNumberOfKnownBigLedgerPeers       = knownBigLedger,
+           targetNumberOfEstablishedBigLedgerPeers = establishedBigLedger,
+           targetNumberOfActiveBigLedgerPeers      = activeBigLedger
+           },
+          alternate
+         )
+         -- candidate targets
          PeerSelectionTargets {
-           targetNumberOfKnownPeers                = knowns,
-           targetNumberOfEstablishedPeers          = establisheds,
-           targetNumberOfActivePeers               = actives,
-           targetNumberOfKnownBigLedgerPeers       = knownBigLedgers,
-           targetNumberOfEstablishedBigLedgerPeers = establishedBigLedgers,
-           targetNumberOfActiveBigLedgerPeers      = activeBigLedgers
+           targetNumberOfKnownPeers                = known',
+           targetNumberOfEstablishedPeers          = established',
+           targetNumberOfActivePeers               = active',
+           targetNumberOfKnownBigLedgerPeers       = knownBigLedger',
+           targetNumberOfEstablishedBigLedgerPeers = establishedBigLedger',
+           targetNumberOfActiveBigLedgerPeers      = activeBigLedger'
          }
-         PeerSelectionTargets {
-           targetNumberOfKnownPeers                = knowns',
-           targetNumberOfEstablishedPeers          = establisheds',
-           targetNumberOfActivePeers               = actives',
-           targetNumberOfKnownBigLedgerPeers       = knownBigLedgers',
-           targetNumberOfEstablishedBigLedgerPeers = establishedBigLedgers',
-           targetNumberOfActiveBigLedgerPeers      = activeBigLedgers'
-         }
-         = let -- 20% or at least one
-               decrease :: Int -> Int
-               decrease v = max 0 $ v - max 1 (v `div` 5)
-            in      counterexample "active upper bound violation" (actives' <= actives)
-               .&&. counterexample "active lower bound violation" (actives' >= decrease actives)
-               .&&. counterexample "active big ledger peers upper bound violation" (activeBigLedgers' <= activeBigLedgers)
-               .&&. counterexample "active big ledger peers lower bound violation" (activeBigLedgers' >= decrease activeBigLedgers)
-               .&&. counterexample "known upper bound violation" (knowns' <= knowns)
-               .&&. counterexample "known lower bound violation" (knowns' >= decrease knowns)
-               .&&. counterexample "known big ledger peers upper bound violation" (knownBigLedgers' <= knownBigLedgers)
-               .&&. counterexample "known big ledger peers lower bound violation" (knownBigLedgers' >= decrease knownBigLedgers)
-               .&&. counterexample "established upper bound violation" (establisheds' <= establisheds)
-               .&&. counterexample "established lower bound violation" (establisheds' >= decrease establisheds)
-               .&&. counterexample "established big ledger peers upper bound violation" (establishedBigLedgers' <= establishedBigLedgers)
-               .&&. counterexample "established big ledger peers lower bound violation" (establishedBigLedgers' >= decrease establishedBigLedgers)
+         fuzzy =
+           let activeChurned = decreaseWithMin 1 active
+               activeChurned' = decreaseWithMin 1 (targetNumberOfActivePeers alternate)
+               establishedChurned = decreaseWithMin (active - activeChurned) established
+               establishedChurned' = decreaseWithMin (targetNumberOfActivePeers alternate - activeChurned') established
+               knownChurned = decreaseWithMin (established - establishedChurned) known
+               knownChurned' = decreaseWithMin (targetNumberOfEstablishedPeers alternate - establishedChurned') known
+               activeBigChurned = decreaseWithMin 1 activeBigLedger
+               activeBigChurned' = decreaseWithMin 1 (targetNumberOfActiveBigLedgerPeers alternate)
+               establishedBigChurned = decreaseWithMin (activeBigLedger - activeBigChurned) establishedBigLedger
+               establishedBigChurned' = decreaseWithMin (targetNumberOfActiveBigLedgerPeers alternate - activeBigChurned') establishedBigLedger
+               knownBigChurned = decreaseWithMin (establishedBigLedger - establishedBigChurned) knownBigLedger
+               knownBigChurned' = decreaseWithMin (targetNumberOfEstablishedBigLedgerPeers alternate - establishedBigChurned) knownBigLedger
+
+               decreaseWithMin :: Int -> Int -> Int
+               decreaseWithMin u v =  max 0 $ v - max u (max 1 (v `div` 5))
+               render :: String -> Int -> Int -> Int -> String
+               render which low high actual = Text.printf "expected %d or %d %s peers, got %d" low high which actual
+
+           in counterexample ("Genesis target swap while churning? " <> show fuzzy) $
+                 counterexample (render "active" activeChurned active active') (active' == activeChurned || active' == active)
+            .&&. (     counterexample (render "established" establishedChurned established established')
+                         (established' == established || established' == establishedChurned)
+                  .||. fuzzy .&&.
+                         counterexample (render "established" establishedChurned' established established')
+                           (established' == establishedChurned'))
+            .&&. (     counterexample (render "known" knownChurned known known')
+                         (known' == knownChurned || known' == known)
+                  .||. fuzzy .&&.
+                         counterexample (render "known" knownChurned' established established')
+                           (established' == establishedChurned'))
+            .&&. counterexample (render "active big" activeBigChurned activeBigLedger activeBigLedger')
+                   (activeBigLedger' == activeBigChurned || activeBigLedger' == activeBigLedger)
+            .&&. (     counterexample (render "established big" establishedBigChurned establishedBigLedger establishedBigLedger')
+                         (establishedBigLedger' == establishedBigLedger || establishedBigLedger' == establishedBigChurned)
+                  .||. fuzzy .&&.
+                         counterexample (render "established big" establishedBigChurned' establishedBigLedger establishedBigLedger')
+                           (establishedBigLedger' == establishedBigChurned'))
+            .&&. (     counterexample (render "known big" knownBigChurned knownBigLedger knownBigLedger')
+                         (knownBigLedger' == knownBigChurned || knownBigLedger' == knownBigLedger)
+                  .||. fuzzy .&&.
+                         counterexample (render "known big" knownBigChurned' establishedBigLedger establishedBigLedger')
+                           (establishedBigLedger' == establishedBigChurned'))
 
    in conjoin
       $ (\evs ->
-           let targetsChangeSig =
-                 Signal.fromEvents
-                 . Signal.selectEvents
-                   (\case
-                       (node, DiffusionPeerSelectionTrace (TraceTargetsChanged new))
-                              -> Just (node, new)
-                       _other -> Nothing
-                   )
-                 $ evs
+           let targetsChangeSig :: Signal (NtNAddr, PeerSelectionTargets)
+               targetsChangeSig =
+                 selectDiffusionPeerSelectionStateWithName
+                   targets evs
 
                -- The last known consensus mode
+               consensusModeSig :: Signal ConsensusMode
                consensusModeSig =
-                 Signal.scanl (\cmap ->
-                                 maybe cmap (\mode -> uncurry Map.insert mode cmap)
-                              ) Map.empty
-                 . Signal.fromEvents
-                 . Signal.selectEvents
-                   (\case
-                       (node, DiffusionSimulationTrace (TrJoiningNetwork consensusMode))
-                              -> Just (node, consensusMode)
-                       _other -> Nothing
-                   )
-                 $ evs
+                 selectDiffusionPeerSelectionState
+                   (Cardano.ExtraState.consensusMode . Governor.extraState)
+                   (snd <$> evs)
 
-               -- The last known judgment
-               judgmentSig =
-                 Signal.scanl (\jmap ->
-                                 maybe jmap (\judgment -> uncurry Map.insert judgment jmap)
-                              ) Map.empty
-                 . Signal.fromEvents
-                 . Signal.selectEvents
-                   (\case
-                       (node, DiffusionPeerSelectionTrace (ExtraTrace (Cardano.TraceLedgerStateJudgementChanged judgment)))
-                              -> Just (node, judgment)
-                       _other -> Nothing
+               govUseBootstrapPeersSig :: Signal (LedgerStateJudgement, Bool, Bool)
+               govUseBootstrapPeersSig =
+                 selectDiffusionPeerSelectionState
+                   (\psState ->
+                      let bpf = Cardano.ExtraState.bootstrapPeersFlag $ Governor.extraState psState
+                          lsj = Cardano.ExtraState.ledgerStateJudgement $ Governor.extraState psState
+                          hbp = Cardano.ExtraState.hasOnlyBootstrapPeers $ Governor.extraState psState
+                      in (lsj,hbp,) case (bpf, lsj) of
+                        (UseBootstrapPeers{}, TooOld) -> True
+                        _otherwise                    -> False
                    )
-                 $ evs
+                   (snd <$> evs)
 
-            in signalProperty' 20 show
-                  (\case
-                      (Just (node, targets), modeMap, judgmentMap) ->
+               first' f (a, b, c) = (f a, b, c)
+               second' f (a, b, c) = (a, f b, c)
+               third' f (a, b, c) = (a, b, f c)
+
+               initialState = (TooOld, 0 :: Int, True)
+
+               checkValid = QC.run $
+                 signalProperty' 20 show
+                   (\((node, newTargets), mode, (judgement, hasOnlyBootstrapPeers, safeMode)) ->
                         case Map.lookup node baseTargetsLookup of
-                          Nothing                                ->
-                            error ("No base targets for " <> show node)
-                          Just bs@(deadlineTargets, syncTargets) ->
-                            let mbase = do
-                                  mode <- Map.lookup node modeMap
-                                  judg <- Map.lookup node judgmentMap
-                                  pure $
-                                    case (mode, judg) of
-                                      (GenesisMode, TooOld) -> syncTargets
-                                      _otherwise            -> deadlineTargets
-                             in maybe
-                                  (property True)
-                                  (\base ->
-                                      counterexample ("Node: " ++ show node ++
-                                                      "\nExpected: " ++ show bs ++
-                                                      "\nActual: " ++ show targets
-                                                      ) (targetsChangeProperty base targets)
-                                  )
-                                  mbase
-                      _ignore -> property True
-                  )
-                  ( (,,) <$> targetsChangeSig
-                         <*> consensusModeSig
-                         <*> judgmentSig
-                  )
+                          Nothing -> property True <$ put initialState -- node restarted
+                          Just (deadlineTargets, syncTargets) -> do
+                             let tgts@(baselineTargets, _alts) =
+                                   case (mode, judgement) of
+                                     (GenesisMode, TooOld) -> (syncTargets, deadlineTargets)
+                                     (GenesisMode, YoungEnough) -> (deadlineTargets, syncTargets)
+                                     _otherwise            -> (deadlineTargets, deadlineTargets)
+                             (prevJudgement, fuzzyCount, warmUp) <- get
+                             modify' (first' (const judgement))
+                             counterexample ("\nBaseline: " ++ show baselineTargets ++
+                                             "\nActual: " ++ show newTargets
+                                            ) <$> if prevJudgement /= judgement && mode == GenesisMode
+                                                     then property True <$ modify' (second' (const 3))
+                                                          -- fuzzy target checking for next 3 churn steps
+                                                          -- in case target change occurred simultanously
+                                                          -- with churning. Churn itself caches some values
+                                                          -- which will result in a brief deviation from
+                                                          -- the design changes.
+                                                          -- TODO: Script ledger state judgment changing
+                                                     else
+                                                       if safeMode || warmUp
+                                                         then do
+                                                           -- exit warmup?
+                                                           when (newTargets == baselineTargets) (modify' (third' (const False)))
+                                                           if safeMode && not hasOnlyBootstrapPeers && newTargets /= nullPeerSelectionTargets
+                                                             then pure $ property False
+                                                             else pure $ property True
+                                                         else do
+                                                           modify' (second' (max 0 . pred)) -- reduce fuzzy count allowance
+                                                           pure $ targetsChangeProperty tgts newTargets (fuzzyCount > 0)
+                   )
+                   ( (,,) <$> targetsChangeSig
+                          <*> consensusModeSig
+                          <*> govUseBootstrapPeersSig
+                   )
+           in QC.monadic (`evalState` initialState) checkValid
         ) <$> events
+
 
 prop_churn_targets_bounds_cardano_iosim
   :: AbsBearerInfo -> DiffusionScript -> Property
@@ -5436,11 +5485,45 @@ selectDiffusionPeerSelectionEvents = Signal.selectEvents
                     (\case DiffusionPeerSelectionTrace e -> Just e
                            _                             -> Nothing)
 
+
 selectDiffusionSimulationTrace :: Events DiffusionTestTrace
                                -> Events DiffusionSimulationTrace
 selectDiffusionSimulationTrace = Signal.selectEvents
                     (\case DiffusionSimulationTrace e -> Just e
                            _                          -> Nothing)
+
+selectDiffusionPeerSelectionStateWithName
+  :: Eq a
+  => (forall peerconn.
+         Governor.PeerSelectionState Cardano.ExtraState PeerTrustable
+                                     (Cardano.ExtraPeers NtNAddr) NtNAddr peerconn
+      -> a)
+  -> Events (NtNAddr, DiffusionTestTrace)
+  -> Signal (NtNAddr, a)
+selectDiffusionPeerSelectionStateWithName f =
+    Signal.nub
+  -- TODO: #3182 Rng seed should come from quickcheck.
+  . Signal.scanl (\z ->
+                    maybe z \(addr, trace) -> either (TestAddress UnusedAddr,) (addr,) trace)
+                 offState
+  . Signal.fromEvents
+  . Signal.selectEvents (
+      fst &&& (snd >>>
+                 \case
+                   DiffusionDebugPeerSelectionTrace (TraceGovernorState _ _ st) ->
+                     Just . Right $! f st
+                   DiffusionSimulationTrace (TrJoiningNetwork consensusMode) ->
+                     Just . Left $! initial consensusMode
+                   _                                                         -> Nothing)
+      >>> \(addr, tr) -> (addr,) <$> tr)
+  where
+    offState = (TestAddress UnusedAddr, initial PraosMode)
+    initial consensusMode =
+      f $! Governor.emptyPeerSelectionState
+                      (mkStdGen 42)
+                      (Cardano.ExtraState.empty consensusMode (NumberOfBigLedgerPeers 0))
+                      Cardano.ExtraPeers.empty
+
 
 selectDiffusionPeerSelectionState
   :: Eq a
@@ -5453,26 +5536,16 @@ selectDiffusionPeerSelectionState
 selectDiffusionPeerSelectionState f =
     Signal.nub
   -- TODO: #3182 Rng seed should come from quickcheck.
-  . (\evs ->
-       let evsList = Signal.eventsToList evs
-       in case evsList of
-            [] -> Signal.fromChangeEvents (initial PraosMode) mempty
-            ((_, Just govState0):rest) ->
-              Signal.fromChangeEvents
-                govState0
-                (Signal.eventsFromList $ second (fromMaybe govState0) <$> rest)
-            _otherwise -> error "impossible"
-    )
+  . Signal.scanl fromMaybe offState
+  . Signal.fromEvents
   . Signal.selectEvents (\case
       DiffusionDebugPeerSelectionTrace (TraceGovernorState _ _ st) ->
-        Just . Just $! f st
-      -- don't let old state linger around when a node is restarted
-      DiffusionSimulationTrace TrKillingNode ->
-        Just Nothing
+        Just $! f st
       DiffusionSimulationTrace (TrJoiningNetwork consensusMode) ->
-        Just . Just $! initial consensusMode
+        Just $! initial consensusMode
       _                                                         -> Nothing)
   where
+    offState = initial PraosMode
     initial consensusMode =
       f $! Governor.emptyPeerSelectionState
                       (mkStdGen 42)

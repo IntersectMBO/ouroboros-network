@@ -441,6 +441,7 @@ run blockGeneratorArgs ni na
     ntnAddressType (TestAddress (Node.EphemeralIPv6Addr _)) = Just IPv6Address
     ntnAddressType (TestAddress (Node.IPAddr (IPv4 _) _))   = Just IPv4Address
     ntnAddressType (TestAddress (Node.IPAddr (IPv6 _) _))   = Just IPv6Address
+    ntnAddressType (TestAddress  Node.UnusedAddr)           = Just IPv4Address
 
     -- various pseudo random generators
     (diffStgGen, keepAliveStdGen) = splitGen (iRng ni)
