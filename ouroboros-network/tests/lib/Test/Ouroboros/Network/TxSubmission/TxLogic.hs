@@ -138,6 +138,7 @@ data InvariantStrength = WeakInvariant
 sharedTxStateInvariant
   :: forall peeraddr txid tx.
      ( Ord txid
+     , Ord peeraddr
      , Show txid
      , Show tx
      )
@@ -150,7 +151,8 @@ sharedTxStateInvariant invariantStrength
                          inflightTxs,
                          bufferedTxs,
                          referenceCounts,
-                         timedTxs
+                         timedTxs,
+                         pendingDecisions
                        } =
          counterexample "bufferedTxs txid not a subset of unacknowledged txids"
          (
@@ -222,6 +224,9 @@ sharedTxStateInvariant invariantStrength
                  Map.unionWith (<>) (Map.fromSet (\_ -> TXS.InFlightState 1 (Time 0)) requestedTxsInflight) m)
                 Map.empty
                 peerTxStates))
+
+    .&&. counterexample "pendingDecisions must be a subset of peers"
+        (pendingDecisions `Set.isSubsetOf` Map.keysSet peerTxStates)
 
          -- PeerTxState invariants
     .&&. counterexample "PeerTxState invariant violation"
@@ -549,6 +554,8 @@ genSharedTxStateWithPeerGen genPeerState maxTxIdsInflight = do
                  timedTxs        = Map.empty,
                  inSubmissionToMempoolTxs
                                  = Map.empty,
+                 pendingDecisions
+                                 = Set.empty,
                  peerRng         = mkStdGen seed
                }
 

@@ -523,6 +523,7 @@ newSharedTxStateVar rng = newTVarIO SharedTxState {
     referenceCounts          = Map.empty,
     timedTxs                 = Map.empty,
     inSubmissionToMempoolTxs = Map.empty,
+    pendingDecisions         = Set.empty,
     peerRng                  = rng
   }
 

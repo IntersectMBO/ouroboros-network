@@ -1057,7 +1057,9 @@ benchmark sim-benchmarks
   main-is: Main.hs
   build-depends:
     base,
+    containers,
     deepseq,
+    io-classes:{io-classes, si-timers},
     ouroboros-network:{ouroboros-network, ouroboros-network-tests-lib},
     pretty-simple,
     random,

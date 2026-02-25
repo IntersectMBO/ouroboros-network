@@ -144,7 +144,12 @@ withPeer tracer
                                  txChannelMap
                 return
                   ( TxChannels { txChannelMap = txChannelMap' }
-                  , PeerTxAPI { readTxDecision = takeMVar chann',
+                  , PeerTxAPI { readTxDecision = do
+                                  d <- takeMVar chann'
+                                  atomically $ modifyTVar sharedStateVar $ \st ->
+                                    st { pendingDecisions =
+                                           Set.delete peeraddr (pendingDecisions st) }
+                                  return d,
                                 handleReceivedTxIds,
                                 handleReceivedTxs,
                                 submitTxToMempool }
@@ -191,12 +196,14 @@ withPeer tracer
                                       bufferedTxs,
                                       referenceCounts,
                                       inflightTxs,
-                                      inSubmissionToMempoolTxs } =
+                                      inSubmissionToMempoolTxs,
+                                      pendingDecisions } =
         st { peerTxStates             = peerTxStates',
              bufferedTxs              = bufferedTxs',
              referenceCounts          = referenceCounts',
              inflightTxs              = inflightTxs',
-             inSubmissionToMempoolTxs = inSubmissionToMempoolTxs' }
+             inSubmissionToMempoolTxs = inSubmissionToMempoolTxs',
+             pendingDecisions         = Set.delete peeraddr pendingDecisions }
       where
         (PeerTxState { unacknowledgedTxIds,
                        requestedTxsInflight,
@@ -508,6 +515,9 @@ decisionLogicThread tracer counterTracer policy txChannelsVar sharedStateVar = d
              traceWith tracer (TraceSharedTxState "decisionLogicThread" st)
              traceWith tracer (TraceTxDecisions decisions)
              TxChannels { txChannelMap } <- readMVar txChannelsVar
+             let deliverable = Map.intersection txChannelMap decisions
+             atomically $ modifyTVar sharedStateVar $ \st' ->
+                 st' { pendingDecisions = pendingDecisions st' <> Map.keysSet deliverable }
              traverse_
                (\(mvar, d) -> modifyMVarWithDefault_ mvar d (\d' -> pure (d' <> d)))
                (Map.intersectionWith (,)
