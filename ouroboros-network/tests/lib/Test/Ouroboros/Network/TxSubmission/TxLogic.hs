@@ -695,19 +695,32 @@ prop_acknowledgeTxIds (ArbDecisionContextWithReceivedTxIds policy st ps _ _ _) =
              )
 
         .&&. counterexample "acknowledged txs must form a prefix"
-             let unacked  = toList (unacknowledgedTxIds ps)
-                 unacked' = toList (unacknowledgedTxIds ps')
+             (let unacked  = toList (unacknowledgedTxIds ps)
+                  unacked' = toList (unacknowledgedTxIds ps')
              in case unacked `stripSuffix` unacked' of
                Nothing -> counterexample "acknowledged txs are not a prefix" False
                Just txIdsToAck' ->
                     txIdsToAck
                     ===
-                    Map.fromListWith (+) ((,1) <$> txIdsToAck')
+                    Map.fromListWith (+) ((,1) <$> txIdsToAck'))
 
-        .&&. counterexample "acknowledged txs" (counterexample ("numTxIdsToAck = " ++ show numTxIdsToAck)
-             let acked :: Set TxId
-                 acked = Set.fromList $ take (fromIntegral numTxIdsToAck) (toList $ unacknowledgedTxIds ps)
-             in property $ Set.isSubsetOf (Set.fromList $ map fst txIdsTxs) acked)
+        .&&. counterexample "acknowledged txs"
+             (let acked, txsToMempool :: Set TxId
+                  acked = Set.fromList $ take (fromIntegral numTxIdsToAck) (toList $ unacknowledgedTxIds ps)
+                  txsToMempool = Set.fromList $ map fst txIdsTxs
+              in counterexample ("numTxIdsToAck = " ++ show numTxIdsToAck)
+                   (Set.isSubsetOf txsToMempool acked))
+        .&&. counterexample "to mempool"
+             let dlTxs, txsToMempool, unacked' :: Set TxId
+                 dlTxs = Map.keysSet $ downloadedTxs ps
+                 txsToMempool = Set.fromList $ map fst txIdsTxs
+                 unacked' = Set.fromList $ toList (unacknowledgedTxIds ps')
+             in      counterexample ("txsToMempool " ++ show txsToMempool ++
+                                     " not a subset of dlTxs " ++ show dlTxs)
+                       (Set.isSubsetOf txsToMempool dlTxs)
+                .&&. counterexample ("txsToMempool" ++ show txsToMempool ++
+                                     " not disjoint following decision from unacked " ++ show unacked')
+                       (Set.null (Set.intersection unacked' txsToMempool))
 
       _otherwise -> property True
   where
