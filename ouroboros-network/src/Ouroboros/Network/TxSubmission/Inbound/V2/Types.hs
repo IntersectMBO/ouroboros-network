@@ -256,6 +256,13 @@ data SharedTxState peeraddr txid tx = SharedTxState {
       --
       inSubmissionToMempoolTxs :: !(Map txid Int),
 
+      -- | Peers with a pending decision in their channel.
+      --
+      -- We use this to avoid recomputing decisions for peers that haven't yet
+      -- consumed their previous decision (e.g. blocked on mempool submission).
+      pendingDecisions         :: !(Set peeraddr),
+
+
       -- | Rng used to randomly order peers
       peerRng                  :: !StdGen
     }

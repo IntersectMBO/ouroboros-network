@@ -413,7 +413,9 @@ pickTxsToDownload now policy@TxDecisionPolicy { txsSizeInflightPerPeer,
 --
 filterActivePeers
     :: forall peeraddr txid tx.
-       Ord txid
+       ( Ord txid
+       , Ord peeraddr
+       )
     => HasCallStack
     => Time
     -> TxDecisionPolicy
@@ -432,15 +434,20 @@ filterActivePeers
       bufferedTxs,
       inflightTxs,
       inflightTxsSize,
-      inSubmissionToMempoolTxs
+      inSubmissionToMempoolTxs,
+      pendingDecisions
     }
     | inflightTxsSize > maxTxsSizeInflight
       -- we might be able to request txids, we cannot download txs
-    = Map.filter fn peerTxStates
+    = Map.filter fn activePeers
     | otherwise
       -- we might be able to request txids or txs.
-    = Map.filter gn peerTxStates
+    = Map.filter gn activePeers
   where
+    activePeers :: Map peeraddr (PeerTxState txid tx)
+    activePeers =
+      Map.filterWithKey (\peer _ -> peer `Set.notMember` pendingDecisions) peerTxStates
+
 
     unrequestableFilter :: InFlightState -> Bool
     unrequestableFilter InFlightState{inFlightCount, inFlightNextReq} =
