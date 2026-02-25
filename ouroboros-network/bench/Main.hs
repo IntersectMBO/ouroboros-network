@@ -46,8 +46,8 @@ main =
                 )
                 (\as ->
                      bench "makeDecisions: 100 x 10"
-                   $ let run (policy, state) =
-                           Tx.makeDecisions policy state (peerTxStates state)
+                   $ let run (now, policy, state) =
+                           Tx.makeDecisions now policy state (peerTxStates state)
                      in nf (map run) as
                 )
           , env (do let a = TX.mkDecisionContexts 131 100 100
@@ -62,8 +62,8 @@ main =
                 )
                 (\as ->
                      bench "makeDecisions: 100 x 100"
-                   $ let run (policy, state) =
-                           Tx.makeDecisions policy state (peerTxStates state)
+                   $ let run (now, policy, state) =
+                           Tx.makeDecisions now policy state (peerTxStates state)
                      in nf (map run) as
                 )
           , env (do let a = TX.mkDecisionContexts 361 100 1_000
@@ -78,8 +78,8 @@ main =
                 )
                 (\as ->
                      bench "makeDecisions: 100 x 1000"
-                   $ let run (policy, state) =
-                           Tx.makeDecisions policy state (peerTxStates state)
+                   $ let run (now, policy, state) =
+                           Tx.makeDecisions now policy state (peerTxStates state)
                      in nf (map run) as
                 )
 {-
@@ -91,8 +91,8 @@ main =
                 )
                 (\a ->
                      bench "makeDecisions: random"
-                   $ let run (policy, state) =
-                           Tx.makeDecisions policy state (peerTxStates state)
+                   $ let run (now, policy, state) =
+                           Tx.makeDecisions now policy state (peerTxStates state)
                      in nf (map run) a
                 )
 -}

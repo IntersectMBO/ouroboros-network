@@ -30,7 +30,7 @@ module Test.Ouroboros.Network.TxSubmission.TxLogic
 import Prelude hiding (seq)
 
 import Control.Exception (assert)
-import Control.Monad.Class.MonadTime.SI (Time (..))
+import Control.Monad.Class.MonadTime.SI (Time (..), addTime)
 
 import Data.Foldable as Foldable (fold, foldl', toList)
 import Data.List (intercalate, isPrefixOf, isSuffixOf, mapAccumR, nub,
@@ -45,7 +45,7 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Typeable
 import Data.Word (Word32)
-import System.Random (StdGen, mkStdGen, randoms)
+import System.Random (StdGen, mkStdGen, randomR, randoms, splitGen)
 import System.Random.SplitMix qualified as SM
 
 import NoThunks.Class
@@ -213,13 +213,15 @@ sharedTxStateInvariant invariantStrength
                          ++ show (Map.keysSet bufferedTxs `Set.difference` liveSet))
          (Map.keysSet bufferedTxs `Set.isSubsetOf` liveSet)
 
-    .&&. counterexample "inflightTxs must be a sum of requestedTxInflight sets"
-        (inflightTxs
+    -- Note: inflightTxs can keep zero-count entries to track inter TX spacing
+    -- (inFlightNextReq); the invariant only applies to positive-count entries.
+    .&&. counterexample "inflightTxs (count>0) must be a sum of requestedTxInflight sets"
+        (Map.filter (> 0) (Map.map TXS.inFlightCount inflightTxs)
           ===
-          foldr (\PeerTxState { requestedTxsInflight } m ->
-                 Map.unionWith (+) (Map.fromSet (\_ -> 1) requestedTxsInflight) m)
+          Map.map TXS.inFlightCount (foldr (\PeerTxState { requestedTxsInflight } m ->
+                 Map.unionWith (<>) (Map.fromSet (\_ -> TXS.InFlightState 1 (Time 0)) requestedTxsInflight) m)
                 Map.empty
-                peerTxStates)
+                peerTxStates))
 
          -- PeerTxState invariants
     .&&. counterexample "PeerTxState invariant violation"
@@ -533,8 +535,8 @@ genSharedTxStateWithPeerGen genPeerState maxTxIdsInflight = do
                                  | (peeraddr, ArbPeerTxState { arbPeerTxState })
                                    <- pss'
                                  ],
-                 inflightTxs     = Foldable.foldl' (Map.unionWith (+)) Map.empty
-                                 [ Map.fromSet (const 1) (Set.map getTxId arbInflightSet)
+                 inflightTxs     = Foldable.foldl' (Map.unionWith (<>)) Map.empty
+                                 [ Map.fromSet (const $ TXS.InFlightState 1 (Time 0)) (Set.map getTxId arbInflightSet)
                                  | ArbPeerTxState { arbInflightSet }
                                    <- pss
                                  ],
@@ -610,8 +612,8 @@ fixupSharedTxState _mempoolHasTx st@SharedTxState { peerTxStates } =
       peerTxStates
 
     inflightTxs' = foldr (\PeerTxState { requestedTxsInflight } m ->
-                           Map.unionWith (+)
-                             (Map.fromSet (const 1) requestedTxsInflight)
+                           Map.unionWith (<>)
+                             (Map.fromSet (const $ TXS.InFlightState 1 (Time 0)) requestedTxsInflight)
                              m
                          )
                          Map.empty
@@ -1112,7 +1114,8 @@ instance Arbitrary ArbTxDecisionPolicy where
             <*> (getSmall . getPositive <$> arbitrary)
             <*> (realToFrac <$> choose (0 :: Double, 2))
             <*> choose (0, 1)
-            <*> choose (0, 1800))
+            <*> choose (0, 1800)
+            <*> (realToFrac <$> choose (0 :: Double, 1)))
 
     shrink (ArbTxDecisionPolicy a@TxDecisionPolicy {
               maxNumTxIdsToRequest,
@@ -1185,15 +1188,18 @@ data ArbDecisionContexts txid = ArbDecisionContexts {
 
     arbSharedState    :: SharedTxState PeerAddr txid (Tx txid),
 
-    arbMempoolHasTx   :: Fun txid Bool
+    arbMempoolHasTx   :: Fun txid Bool,
     -- ^ needed just for shrinking
+
+    arbTime           :: Time
   }
 
 instance Show txid => Show (ArbDecisionContexts txid) where
   show ArbDecisionContexts {
       arbDecisionPolicy,
       arbSharedState = st,
-      arbMempoolHasTx
+      arbMempoolHasTx,
+      arbTime
     }
     =
     intercalate "\n\t"
@@ -1201,6 +1207,7 @@ instance Show txid => Show (ArbDecisionContexts txid) where
     , show arbDecisionPolicy
     , show st
     , show arbMempoolHasTx
+    , show arbTime
     ]
 
 -- | Fix-up `PeerTxState` according to `TxDecisionPolicy`.
@@ -1249,11 +1256,13 @@ fixupSharedTxStateForPolicy
   :: forall peeraddr txid tx.
      Ord txid
   => (txid -> Bool) -- ^ mempoolHasTx
+  -> Time
   -> TxDecisionPolicy
   -> SharedTxState peeraddr txid tx
   -> SharedTxState peeraddr txid tx
 fixupSharedTxStateForPolicy
     mempoolHasTx
+    now
     policy@TxDecisionPolicy {
       txsSizeInflightPerPeer,
       maxTxsSizeInflight,
@@ -1261,9 +1270,12 @@ fixupSharedTxStateForPolicy
     }
     st@SharedTxState { peerTxStates }
     =
-    fixupSharedTxState
-      mempoolHasTx
-      st { peerTxStates = snd . mapAccumR fn (0, Map.empty) $ peerTxStates }
+    let st' =
+          fixupSharedTxState
+            mempoolHasTx
+            st { peerTxStates = snd . mapAccumR fn (0, Map.empty) $ peerTxStates }
+        (rng', inflightTxs') = assignInflightTimes now (peerRng st') (inflightTxs st')
+    in st' { inflightTxs = inflightTxs', peerRng = rng' }
   where
     -- fixup `PeerTxState` and accumulate size of all `tx`'s in-flight across
     -- all peers.
@@ -1302,6 +1314,20 @@ fixupSharedTxStateForPolicy
             (0, Set.empty, inflightMap)
             (availableTxIds ps' `Map.restrictKeys` requestedTxsInflight ps')
 
+    assignInflightTimes
+      :: Time
+      -> StdGen
+      -> Map txid TXS.InFlightState
+      -> (StdGen, Map txid TXS.InFlightState)
+    assignInflightTimes now' =
+      Map.mapAccum
+        (\g inflightSt ->
+          let (delta, g') = randomR (-10.0, 10.0 :: Double) g
+              nextReq = addTime (realToFrac delta) now'
+          in (g', inflightSt { TXS.inFlightNextReq = nextReq })
+        )
+
+
 instance (Arbitrary txid, Ord txid, Function txid, CoArbitrary txid)
       => Arbitrary (ArbDecisionContexts txid) where
 
@@ -1309,25 +1335,28 @@ instance (Arbitrary txid, Ord txid, Function txid, CoArbitrary txid)
       ArbTxDecisionPolicy policy <- arbitrary
       (mempoolHasTx, _ps, st, _) <-
         genSharedTxState (fromIntegral $ maxNumTxIdsToRequest policy)
+      arbTime <- Time . realToFrac <$> choose (1 :: Double, 1000)
       let st' = fixupSharedTxStateForPolicy
-                  (apply mempoolHasTx) policy st
+                  (apply mempoolHasTx) arbTime policy st
 
       return $ ArbDecisionContexts {
           arbDecisionPolicy    = policy,
           arbMempoolHasTx      = mempoolHasTx,
-          arbSharedState       = st'
+          arbSharedState       = st',
+          arbTime              = arbTime
         }
 
     shrink a@ArbDecisionContexts {
                arbDecisionPolicy = policy,
                arbMempoolHasTx   = mempoolHasTx,
-               arbSharedState    = sharedState
+               arbSharedState    = sharedState,
+               arbTime           = now
              } =
         -- shrink shared state
         [ a { arbSharedState = sharedState'' }
         | sharedState' <- shrinkSharedTxState (apply mempoolHasTx) sharedState
         , let sharedState'' = fixupSharedTxStateForPolicy
-                                (apply mempoolHasTx) policy sharedState'
+                                (apply mempoolHasTx) now policy sharedState'
         , sharedState'' /= sharedState
         ]
 
@@ -1380,31 +1409,35 @@ mkDecisionContexts :: Int
                    -- ^ number of contexts to generate
                    -> Int
                    -- ^ size
-                   -> [ (TxDecisionPolicy, SharedTxState PeerAddr TxId (Tx TxId)) ]
+                   -> [ (Time, TxDecisionPolicy, SharedTxState PeerAddr TxId (Tx TxId)) ]
 mkDecisionContexts seed count size =
     map mkContext subSeeds
   where
     subSeeds :: [Int]
     subSeeds = take count (randoms (mkStdGen seed) :: [Int])
 
-    mkContext :: Int -> (TxDecisionPolicy, SharedTxState PeerAddr TxId (Tx TxId))
+    mkContext :: Int -> (Time, TxDecisionPolicy, SharedTxState PeerAddr TxId (Tx TxId))
     mkContext subSeed =
       let smGen = SM.mkSMGen (fromIntegral subSeed)
-      in unGen gen (QCGen smGen) size
+          (smGenState, smGenTimePick) = splitGen smGen
+          qcGenState = QCGen smGenState
+          qcGenPick  = QCGen smGenTimePick
+          (policy, st, mempoolHasTx) = unGen gen qcGenState size
+          now = unGen (Time . realToFrac <$> choose (1 :: Double, 1000)) qcGenPick size
+          st' = fixupSharedTxStateForPolicy
+                  (apply mempoolHasTx) now policy st
+      in (now, policy, st')
 
-    gen :: Gen (TxDecisionPolicy, SharedTxState PeerAddr TxId (Tx TxId))
+    gen :: Gen (TxDecisionPolicy, SharedTxState PeerAddr TxId (Tx TxId), Fun TxId Bool)
     gen = do
       let policy = defaultTxDecisionPolicy
       (mempoolHasTx, _ps, st, _) <-
         genSharedTxStateBenchWith genTxRealistic (fromIntegral $ maxNumTxIdsToRequest policy)
-      let st' = fixupSharedTxStateForPolicy
-                  (apply mempoolHasTx) policy st
-
-      return (policy, st')
+      return (policy, st, mempoolHasTx)
 
 
 summarizeTxLogicBenchmarkContext
-  :: [ (TxDecisionPolicy, SharedTxState PeerAddr TxId (Tx TxId)) ]
+  :: [ (Time, TxDecisionPolicy, SharedTxState PeerAddr TxId (Tx TxId)) ]
   -> String
 summarizeTxLogicBenchmarkContext contexts =
     case contexts of
@@ -1431,25 +1464,25 @@ summarizeTxLogicBenchmarkContext contexts =
     policySummary =
       intercalate " "
         [ "maxReq=" ++ fmtMean0 (mean [ fromIntegral (getNumTxIdsToReq $ maxNumTxIdsToRequest p)
-                                      | (p, _) <- contexts
+                                      | (_, p, _) <- contexts
                                       ])
         , "maxUnacked=" ++ fmtMean0 (mean [ fromIntegral (getNumTxIdsToReq $ maxUnacknowledgedTxIds p)
-                                          | (p, _) <- contexts
+                                          | (_, p, _) <- contexts
                                           ])
         , "inflightPerPeer=" ++ fmtBytes (mean [ fromIntegral (getSizeInBytes $ txsSizeInflightPerPeer p)
-                                               | (p, _) <- contexts
+                                               | (_, p, _) <- contexts
                                                ])
         , "inflightTotal=" ++ fmtBytes (mean [ fromIntegral (getSizeInBytes $ maxTxsSizeInflight p)
-                                             | (p, _) <- contexts
+                                             | (_, p, _) <- contexts
                                              ])
         , "inflightMult=" ++ fmtMean2 (mean [ fromIntegral (txInflightMultiplicity p)
-                                            | (p, _) <- contexts
+                                            | (_, p, _) <- contexts
                                             ])
         , "bufferedMin=" ++ fmtSeconds (mean [ realToFrac (bufferedTxsMinLifetime p) :: Double
-                                             | (p, _) <- contexts
+                                             | (_, p, _) <- contexts
                                              ])
-        , "scoreRate=" ++ printf "%.3f" (mean [ scoreRate p | (p, _) <- contexts ])
-        , "scoreMax=" ++ fmtSeconds (mean [ scoreMax p | (p, _) <- contexts ])
+        , "scoreRate=" ++ printf "%.3f" (mean [ scoreRate p | (_, p, _) <- contexts ])
+        , "scoreMax=" ++ fmtSeconds (mean [ scoreMax p | (_, p, _) <- contexts ])
         ]
 
     stateMetrics =
@@ -1457,7 +1490,7 @@ summarizeTxLogicBenchmarkContext contexts =
             peers = length peerStates
             bufferedCount = Map.size (bufferedTxs st)
             inflightUnique = Map.size (inflightTxs st)
-            inflightTotal = sum (Map.elems (inflightTxs st))
+            inflightTotal = Map.foldl (\s e -> s + TXS.inFlightCount e) 0 (inflightTxs st)
             totalInflightTxs =
               sum [ Set.size (requestedTxsInflight ps) | ps <- peerStates ]
             totalInflightBytes =
@@ -1484,7 +1517,7 @@ summarizeTxLogicBenchmarkContext contexts =
            , perPeer totalUnacked
            , perPeer totalUnknown
            )
-      | (_, st) <- contexts
+      | (_, _, st) <- contexts
       ]
 
     meanMetric f = mean (map f stateMetrics)
@@ -1516,7 +1549,7 @@ summarizeTxLogicBenchmarkContext contexts =
 
 
 printTxLogicBenchmarkContexts
-  :: [ (TxDecisionPolicy, SharedTxState PeerAddr TxId (Tx TxId)) ]
+  :: [ (Time, TxDecisionPolicy, SharedTxState PeerAddr TxId (Tx TxId)) ]
   -> IO ()
 printTxLogicBenchmarkContexts contexts =
     putStrLn (summarizeTxLogicBenchmarkContext contexts)
@@ -1554,8 +1587,9 @@ prop_makeDecisions_sharedstate
   -> Property
 prop_makeDecisions_sharedstate
     ArbDecisionContexts { arbDecisionPolicy = policy,
-                          arbSharedState    = sharedTxState } =
-    let (sharedState, decisions) = TXS.makeDecisions policy sharedTxState (peerTxStates sharedTxState)
+                          arbSharedState    = sharedTxState,
+                          arbTime           = now } =
+    let (sharedState, decisions) = TXS.makeDecisions now policy sharedTxState (peerTxStates sharedTxState)
     in counterexample (show sharedState)
      $ counterexample (show decisions)
      $ sharedTxStateInvariant StrongInvariant sharedState
@@ -1574,10 +1608,11 @@ prop_makeDecisions_inflight
 prop_makeDecisions_inflight
     ArbDecisionContexts {
       arbDecisionPolicy = policy,
-      arbSharedState    = sharedTxState
+      arbSharedState    = sharedTxState,
+      arbTime           = now
     }
     =
-    let (sharedState', decisions) = TXS.makeDecisions policy sharedTxState (peerTxStates sharedTxState)
+    let (sharedState', decisions) = TXS.makeDecisions now policy sharedTxState (peerTxStates sharedTxState)
 
         inflightSet :: Set TxId
         inflightSet = foldMap (Map.keysSet . txdTxsToRequest) decisions
@@ -1673,9 +1708,10 @@ prop_makeDecisions_policy
     ArbDecisionContexts {
       arbDecisionPolicy = policy@TxDecisionPolicy { txsSizeInflightPerPeer,
                                                     txInflightMultiplicity },
-      arbSharedState    = sharedTxState
+      arbSharedState    = sharedTxState,
+      arbTime           = now
     } =
-    let (sharedState', _decisions) = TXS.makeDecisions policy sharedTxState (peerTxStates sharedTxState)
+    let (sharedState', _decisions) = TXS.makeDecisions now policy sharedTxState (peerTxStates sharedTxState)
         txsSizeInflightPerPeerEff  = txsSizeInflightPerPeer + maxTxSize
     in
          -- size in flight for each peer cannot exceed `txsSizeInflightPerPeer`
@@ -1698,7 +1734,7 @@ prop_makeDecisions_policy
          let inflight = inflightTxs sharedState'
          in
               counterexample ("multiplicities violation: " ++ show inflight)
-            . foldMap (Every . (<= txInflightMultiplicity))
+            . foldMap (Every . (\e -> TXS.inFlightCount e <= txInflightMultiplicity))
             $ inflight
          )
 
@@ -1710,10 +1746,11 @@ prop_makeDecisions_acknowledged
   -> Property
 prop_makeDecisions_acknowledged
     ArbDecisionContexts { arbDecisionPolicy = policy,
-                          arbSharedState    = sharedTxState
+                          arbSharedState    = sharedTxState,
+                          arbTime           = now
                         } =
     whenFail (pPrintOpt CheckColorTty defaultOutputOptionsDarkBg { outputOptionsCompact = True } sharedTxState) $
-    let (_, decisions) = TXS.makeDecisions policy sharedTxState (peerTxStates sharedTxState)
+    let (_, decisions) = TXS.makeDecisions now policy sharedTxState (peerTxStates sharedTxState)
 
         ackFromDecisions :: Map PeerAddr NumTxIdsToAck
         ackFromDecisions = Map.fromList
@@ -1754,15 +1791,18 @@ prop_makeDecisions_exhaustive
 prop_makeDecisions_exhaustive
   ArbDecisionContexts {
     arbDecisionPolicy = policy,
-    arbSharedState    = sharedTxState
+    arbSharedState    = sharedTxState,
+    arbTime           = now
   }
   =
   let (sharedTxState',  decisions')
-        = TXS.makeDecisions policy
+        = TXS.makeDecisions now
+                            policy
                             sharedTxState
                             (peerTxStates sharedTxState)
       (sharedTxState'', decisions'')
-        = TXS.makeDecisions policy
+        = TXS.makeDecisions now
+                            policy
                             sharedTxState'
                             (peerTxStates sharedTxState')
   in counterexample ("decisions':  " ++ show decisions')
@@ -1795,9 +1835,10 @@ instance Arbitrary ArbDecisionContextWithReceivedTxIds where
                        st
         <- arbitrary
 
+      now <- Time . realToFrac <$> choose (1 :: Double, 1000)
       let st' = fixupSharedTxStateForPolicy
                   (apply mempoolHasTx)
-                  policy st
+                  now policy st
           ps' = fixupPeerTxStateWithPolicy policy ps
           txIdsToAck' = take (fromIntegral (TXS.requestedTxIdsInflight $ peerTxStates st' Map.! peeraddr)) txIdsToAck
 
@@ -1843,7 +1884,8 @@ instance Arbitrary ArbDecisionContextWithReceivedTxIds where
           <- shrink ArbDecisionContexts {
                  arbDecisionPolicy = policy,
                  arbSharedState    = st,
-                 arbMempoolHasTx   = mempoolHasTx
+                 arbMempoolHasTx   = mempoolHasTx,
+                 arbTime           = arbTimeFromState st
                }
       , peeraddr `Map.member` peerTxStates st'
       , let txIdsToAck' = take ( fromIntegral
@@ -1852,6 +1894,11 @@ instance Arbitrary ArbDecisionContextWithReceivedTxIds where
                                )
                                txIdsToAck
       ]
+      where
+        arbTimeFromState st' =
+          case Map.elems (inflightTxs st') of
+            [] -> Time 0
+            inflights -> minimum (map TXS.inFlightNextReq inflights)
 
 
 -- | `filterActivePeers` should not change decisions made by `makeDecisions`
@@ -1862,7 +1909,8 @@ prop_filterActivePeers_not_limitting_decisions
 prop_filterActivePeers_not_limitting_decisions
     ArbDecisionContexts {
         arbDecisionPolicy = policy,
-        arbSharedState    = st
+        arbSharedState    = st,
+        arbTime           = now
     }
     =
     counterexample (unlines
@@ -1876,12 +1924,12 @@ prop_filterActivePeers_not_limitting_decisions
                    )
                    (Map.keysSet decisionsOfActivePeers  `Set.isSubsetOf` Map.keysSet decisions)
   where
-    activePeersMap    = TXS.filterActivePeers policy st
+    activePeersMap    = TXS.filterActivePeers now policy st
     activePeers       = Map.keysSet activePeersMap
     (_, decisionsOfActivePeers)
-                      = TXS.makeDecisions policy st activePeersMap
+                      = TXS.makeDecisions now policy st activePeersMap
 
-    (_, decisions)    = TXS.makeDecisions policy st (peerTxStates st)
+    (_, decisions)    = TXS.makeDecisions now policy st (peerTxStates st)
     decisionPeers     = Map.keysSet decisions
 
 

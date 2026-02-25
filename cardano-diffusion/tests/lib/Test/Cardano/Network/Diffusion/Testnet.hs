@@ -1090,10 +1090,14 @@ prop_check_inflight_ratio bi ds@(DiffusionScript simArgs _ _) =
       txDecisionPolicy = saTxDecisionPolicy simArgs
 
    in tabulate "Max observeed ratio of inflight multiplicity by the max stipulated by the policy"
-               (map (\m -> "has " ++ show m ++ " in flight - ratio: "
-                    ++ show @(Ratio Int) (fromIntegral m / fromIntegral (txInflightMultiplicity txDecisionPolicy))
-                    )
-                    (Map.elems inflightTxsMap))
+               (let maxAllowed = txInflightMultiplicity txDecisionPolicy
+                    inflightCounts = map inFlightCount (Map.elems inflightTxsMap)
+                in map (\m -> "has " ++ show m ++ " in flight - ratio: "
+                           ++ if maxAllowed > 0
+                                 then show @(Ratio Int) (m % maxAllowed)
+                                 else "n/a"
+                        )
+                        inflightCounts)
       True
 
 -- | This test coverage of InboundGovernor transitions.
