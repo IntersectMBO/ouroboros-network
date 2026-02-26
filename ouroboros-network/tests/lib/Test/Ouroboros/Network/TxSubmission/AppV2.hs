@@ -447,6 +447,7 @@ prop_txSubmission_inflight st@(TxSubmissionState state policy) =
                          (mapMissing \_txid _right -> True)
                          (zipWithMatched \_txid left right ->
                              left <= right `min` txInflightMultiplicity policy
+                          )
                          resultRepeatedValidTxs
                          maxRepeatedValidTxs
               else merge (mapMissing \_txid _left  -> error "impossible")
@@ -454,7 +455,8 @@ prop_txSubmission_inflight st@(TxSubmissionState state policy) =
                          (zipWithMatched \_txid left right ->
                             if txInflightMultiplicity policy >= right
                               then left <= right
-                              else left <= txInflightMultiplicity policy)
+                              else left <= txInflightMultiplicity policy
+                          )
                          resultRepeatedValidTxs
                          maxRepeatedValidTxs
   where

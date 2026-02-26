@@ -467,11 +467,10 @@ collectTxsImpl txSize peeraddr requestedTxIdsMap receivedTxs
           Map.merge
             (Map.mapMaybeMissing \_ x -> Just x)
             (Map.mapMaybeMissing \_ _ -> assert False Nothing)
-            (Map.zipWithMaybeMatched \_ x y -> assert (x >= y)
-                                               let z = x - y in
-                                               if z > 0
-                                               then Just z
-                                               else Nothing)
+            (Map.zipWithMaybeMatched \_ x y ->
+              assert (inFlightCount x >= y)
+              let cnt' = inFlightCount x - y in
+              Just $ x { inFlightCount = cnt' })
             (inflightTxs st)
             (Map.fromSet (const 1) requestedTxIds)
 
@@ -524,6 +523,7 @@ newSharedTxStateVar rng = newTVarIO SharedTxState {
     referenceCounts          = Map.empty,
     timedTxs                 = Map.empty,
     inSubmissionToMempoolTxs = Map.empty,
+    pendingDecisions         = Set.empty,
     peerRng                  = rng
   }
 

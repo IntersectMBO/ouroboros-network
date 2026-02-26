@@ -18,6 +18,7 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Decision
 
 import Control.Arrow ((>>>))
 import Control.Exception (assert)
+import Control.Monad.Class.MonadTime.SI (addTime, Time)
 
 import Data.Bifunctor (second)
 import Data.Hashable
@@ -46,7 +47,9 @@ makeDecisions
        , Ord txid
        , Hashable peeraddr
        )
-    => TxDecisionPolicy
+    => Time
+    -- ^ current time
+    -> TxDecisionPolicy
     -- ^ decision policy
     -> SharedTxState peeraddr txid tx
     -- ^ decision context
@@ -60,11 +63,11 @@ makeDecisions
     -> ( SharedTxState peeraddr txid tx
        , Map peeraddr (TxDecision txid tx)
        )
-makeDecisions policy st =
+makeDecisions now policy st =
     let (salt, rng') = random (peerRng st)
         st' = st { peerRng = rng' }
     in  fn
-      . pickTxsToDownload policy st'
+      . pickTxsToDownload now policy st'
       . orderByRejections salt
   where
     fn :: forall a.
@@ -93,7 +96,7 @@ orderByRejections salt =
 -- | Internal state of `pickTxsToDownload` computation.
 --
 data St peeraddr txid tx =
-   St { stInflight                 :: !(Map txid Int),
+   St { stInflight                 :: !(Map txid InFlightState),
         -- ^ `txid`s in-flight.
 
         stAcknowledged             :: !(Map txid Int),
@@ -123,7 +126,9 @@ pickTxsToDownload
      ( Ord peeraddr
      , Ord txid
      )
-  => TxDecisionPolicy
+  => Time
+  -- ^ current time
+  -> TxDecisionPolicy
   -- ^ decision policy
   -> SharedTxState peeraddr txid tx
   -- ^ shared state
@@ -133,8 +138,9 @@ pickTxsToDownload
      , [(peeraddr, TxDecision txid tx)]
      )
 
-pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
-                                            txInflightMultiplicity }
+pickTxsToDownload now policy@TxDecisionPolicy { txsSizeInflightPerPeer,
+                                                txInflightMultiplicity,
+                                                interTxSpace }
                   sharedState@SharedTxState { peerTxStates,
                                               inflightTxs,
                                               bufferedTxs,
@@ -180,7 +186,8 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
             -- does not allow to short circuit the fold, unlike
             -- `foldWithState`.
             foldWithState
-              (\(txid, (txSize, inflightMultiplicity)) sizeInflight ->
+              (\(txid, (txSize, inflightSt)) sizeInflight ->
+                let inflightMultiplicity = inFlightCount inflightSt in
                 if -- note that we pick `txid`'s as long the `s` is
                    -- smaller or equal to `txsSizeInflightPerPeer`.
                    sizeInflight <= txsSizeInflightPerPeer
@@ -196,7 +203,7 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
                 -- merge `availableTxIds` with `stInflight`, so we don't
                 -- need to lookup into `stInflight` on every `txid` which
                 -- is in `availableTxIds`.
-                Map.merge (Map.mapMaybeMissing \_txid -> Just . (,0))
+                Map.merge (Map.mapMaybeMissing \_txid -> Just . (, mempty))
                            Map.dropMissing
                           (Map.zipWithMatched \_txid -> (,))
 
@@ -233,13 +240,14 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
 
           stAcknowledged' = Map.unionWith (+) stAcknowledged txIdsToAck
 
-          stInflightDelta :: Map txid Int
-          stInflightDelta = Map.fromSet (\_ -> 1) txsToRequest
+          stInflightDelta :: Map txid InFlightState
+          stInflightDelta = Map.fromSet (\_ -> InFlightState 1 $ addTime interTxSpace now)
+                                        txsToRequest
                             -- note: this is right since every `txid`
                             -- could be picked at most once
 
-          stInflight' :: Map txid Int
-          stInflight' = Map.unionWith (+) stInflightDelta stInflight
+          stInflight' :: Map txid InFlightState
+          stInflight' = Map.unionWith (<>) stInflightDelta stInflight
 
           stInSubmissionToMempoolTxs' = stInSubmissionToMempoolTxs
                                      <> Set.fromList (map fst listOfTxsToMempool)
@@ -344,12 +352,16 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
 --
 filterActivePeers
     :: forall peeraddr txid tx.
-       Ord txid
+       ( Ord txid
+       , Ord peeraddr
+       )
     => HasCallStack
-    => TxDecisionPolicy
+    => Time
+    -> TxDecisionPolicy
     -> SharedTxState peeraddr txid tx
     -> Map peeraddr (PeerTxState txid tx)
 filterActivePeers
+    now
     policy@TxDecisionPolicy {
       maxUnacknowledgedTxIds,
       txsSizeInflightPerPeer,
@@ -359,10 +371,18 @@ filterActivePeers
       peerTxStates,
       bufferedTxs,
       inflightTxs,
-      inSubmissionToMempoolTxs
-    } = Map.filter gn peerTxStates
+      inSubmissionToMempoolTxs,
+      pendingDecisions
+    } = Map.filterWithKey (\peer ps -> peer `Set.notMember` pendingDecisions && gn ps)
+                          peerTxStates
   where
-    unrequestable = Map.keysSet (Map.filter (>= txInflightMultiplicity) inflightTxs)
+
+    unrequestableFilter :: InFlightState -> Bool
+    unrequestableFilter InFlightState{inFlightCount, inFlightNextReq} =
+      inFlightCount >= txInflightMultiplicity || inFlightNextReq > now
+
+    unrequestable :: Set txid
+    unrequestable = Map.keysSet (Map.filter unrequestableFilter inflightTxs)
                  <> Map.keysSet bufferedTxs
 
     gn :: PeerTxState txid tx -> Bool
