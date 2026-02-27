@@ -1,4 +1,6 @@
 {-# LANGUAGE FlexibleInstances    #-}
+-- monolocalbinds warning
+{-# LANGUAGE GADTs                #-}
 {-# LANGUAGE NamedFieldPuns       #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 

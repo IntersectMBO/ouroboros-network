@@ -129,7 +129,7 @@ run CardanoNodeArguments {
                     Cardano.PeerSelectionState.empty
                       consensusMode
                       minNumOfBigLedgerPeers,
-                  daEmptyExtraCounters                = Cardano.Types.empty,
+                  daEmptyExtraCounters                = Just Cardano.Types.empty,
                   daExtraPeersAPI                     = Cardano.cardanoPublicRootPeersAPI,
                   daInstallSigUSR1Handler             =
                     Cardano.sigUSR1Handler
@@ -146,7 +146,6 @@ run CardanoNodeArguments {
                         Cardano.genesisPeerSelectionTargets = genesisPeerSelectionTargets,
                         Cardano.readUseBootstrapPeers       = readUseBootstrapPeers
                       },
-                  daPeerSelectionStateToExtraCounters = Cardano.Types.cardanoPeerSelectionStatetoCounters,
                   daToExtraPeers                      = flip Cardano.ExtraPeers Set.empty,
                   daRequestPublicRootPeers            =
                       Just $ Cardano.requestPublicRootPeersImpl
