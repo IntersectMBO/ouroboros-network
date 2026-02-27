@@ -318,7 +318,7 @@ data Arguments extraState extraDebugState extraFlags extraPeers
 
     -- | Extra Counters empty value
     --
-  , daEmptyExtraCounters     :: extraCounters
+  , daEmptyExtraCounters     :: Maybe (ViewExtraPeers extraPeers)
 
     -- | Provide Public Extra Actions for extraPeers to be
     --
