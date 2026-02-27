@@ -14,7 +14,6 @@ import Control.Monad.Class.MonadTime.SI
 import Cardano.Network.LedgerStateJudgement
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers)
 import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano
-import Cardano.Network.PeerSelection.Governor.Types qualified as Cardano
 
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.Diffusion.Types (Tracers (..))
@@ -25,6 +24,8 @@ import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 
 #ifdef POSIX
 import Control.Tracer (traceWith)
+
+import Cardano.Network.PeerSelection.Governor.Types qualified as Cardano
 import Ouroboros.Network.ConnectionManager.Core (Trace (..))
 import Ouroboros.Network.PeerSelection.Governor.Types
            (makeDebugPeerSelectionState)
@@ -37,8 +38,7 @@ sigUSR1Handler
              ntcAddr ntcVersion ntcVersionData
              extraState
              Cardano.DebugPeerSelectionState
-             extraFlags extraPeers extraCounters
-             Cardano.ExtraTrace
+             extraFlags extraPeers
              IO
   -> STM IO UseLedgerPeers
   -> PeerSharing

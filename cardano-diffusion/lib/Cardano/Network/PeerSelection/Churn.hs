@@ -4,6 +4,7 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeOperators       #-}
 
 #if __GLASGOW_HASKELL__ < 904
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
@@ -35,7 +36,6 @@ import Cardano.Network.ConsensusMode (ConsensusMode (..))
 import Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
 import Cardano.Network.LedgerStateJudgement
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
-import Cardano.Network.PeerSelection.Governor.Types qualified as Cardano
 
 import Ouroboros.Network.BlockFetch (FetchMode (..), PraosFetchMode (..))
 import Ouroboros.Network.Diffusion.Policies (churnEstablishConnectionTimeout,
@@ -108,11 +108,12 @@ pickChurnRegime consensus churn ubp =
 -- root peers.
 --
 peerChurnGovernor
-  :: forall m extraState extraFlags extraCounters extraPeers peeraddr.
+  :: forall m extraState extraFlags extraPeers extraCounters peeraddr.
      ( MonadDelay m
      , Alternative (STM m)
      , MonadTimer m
      , MonadCatch m
+     , extraCounters ~ ViewExtraPeers extraPeers
      )
   => PeerChurnArgs
       m
@@ -121,8 +122,6 @@ peerChurnGovernor
       extraFlags
       extraPeers
       (Cardano.LedgerPeersConsensusInterface m)
-      extraCounters
-      Cardano.ExtraTrace
       peeraddr
   -> m Void
 peerChurnGovernor PeerChurnArgs {
