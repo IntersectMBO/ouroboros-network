@@ -11,6 +11,8 @@
 {-# LANGUAGE RecordWildCards           #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE StandaloneDeriving        #-}
+{-# LANGUAGE TypeFamilies              #-}
+{-# LANGUAGE TypeOperators             #-}
 {-# LANGUAGE UndecidableInstances      #-}
 {-# LANGUAGE ViewPatterns              #-}
 
@@ -39,6 +41,7 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   , MonitoringAction
   , ExtraGuardedDecisions (..)
   , PeerSelectionGovernorArgs (..)
+  , SupportsPeerSelectionState (..)
     -- * P2P governor internals
   , PeerSelectionState (..)
   , emptyPeerSelectionState
@@ -55,7 +58,7 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   , TimedDecision
   , MkGuardedDecision
   , Completion (..)
-  , PeerSelectionView (.., PeerSelectionCounters, numberOfRootPeers, numberOfKnownPeers, numberOfAvailableToConnectPeers, numberOfColdPeersPromotions, numberOfEstablishedPeers, numberOfWarmPeersDemotions, numberOfWarmPeersPromotions, numberOfActivePeers, numberOfActivePeersDemotions, numberOfKnownBigLedgerPeers, numberOfAvailableToConnectBigLedgerPeers, numberOfColdBigLedgerPeersPromotions, numberOfEstablishedBigLedgerPeers, numberOfWarmBigLedgerPeersDemotions, numberOfWarmBigLedgerPeersPromotions, numberOfActiveBigLedgerPeers, numberOfActiveBigLedgerPeersDemotions, numberOfKnownLocalRootPeers, numberOfAvailableToConnectLocalRootPeers, numberOfColdLocalRootPeersPromotions, numberOfEstablishedLocalRootPeers, numberOfWarmLocalRootPeersPromotions, numberOfActiveLocalRootPeers, numberOfActiveLocalRootPeersDemotions, numberOfKnownNonRootPeers, numberOfColdNonRootPeersPromotions, numberOfEstablishedNonRootPeers, numberOfWarmNonRootPeersDemotions, numberOfWarmNonRootPeersPromotions, numberOfActiveNonRootPeers, numberOfActiveNonRootPeersDemotions, extraCounters, PeerSelectionCountersHWC, numberOfColdPeers, numberOfWarmPeers, numberOfHotPeers, numberOfColdBigLedgerPeers, numberOfWarmBigLedgerPeers, numberOfHotBigLedgerPeers, numberOfColdLocalRootPeers, numberOfWarmLocalRootPeers, numberOfHotLocalRootPeers)
+  , PeerSelectionView (.., PeerSelectionCounters, numberOfRootPeers, numberOfKnownPeers, numberOfAvailableToConnectPeers, numberOfColdPeersPromotions, numberOfEstablishedPeers, numberOfWarmPeersDemotions, numberOfWarmPeersPromotions, numberOfActivePeers, numberOfActivePeersDemotions, numberOfAvailableToConnectBigLedgerPeers, numberOfColdBigLedgerPeersPromotions, numberOfEstablishedBigLedgerPeers, numberOfWarmBigLedgerPeersDemotions, numberOfWarmBigLedgerPeersPromotions, numberOfActiveBigLedgerPeersDemotions, numberOfAvailableToConnectLocalRootPeers, numberOfColdLocalRootPeersPromotions, numberOfEstablishedLocalRootPeers, numberOfWarmLocalRootPeersPromotions, numberOfActiveLocalRootPeersDemotions, numberOfKnownNonRootPeers, numberOfColdNonRootPeersPromotions, numberOfEstablishedNonRootPeers, numberOfWarmNonRootPeersDemotions, numberOfWarmNonRootPeersPromotions, numberOfActiveNonRootPeers, numberOfActiveNonRootPeersDemotions, extraCounters, numberOfActiveBigLedgerPeers, numberOfKnownBigLedgerPeers, numberOfKnownLocalRootPeers, numberOfActiveLocalRootPeers)
   , PeerSelectionCounters
   , PeerSelectionSetsWithSizes
   , emptyPeerSelectionCounters
@@ -104,7 +107,7 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency (..),
            LocalRootPeers, WarmValency (..))
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 import Ouroboros.Network.PeerSelection.Types (PeerSource (..),
-           PeerStatus (PeerHot, PeerWarm), PublicExtraPeersAPI)
+           PeerStatus (PeerHot, PeerWarm), PublicExtraPeersAPI (..))
 import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount,
            PeerSharingResult (..))
 
@@ -271,7 +274,7 @@ c_PEER_DEMOTION_TIMEOUT = 10*60
 -- * choice of known peer root sets
 -- * running both in simulation and for real
 --
-data PeerSelectionActions extraState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m =
+data PeerSelectionActions extraState extraFlags extraPeers extraAPI peeraddr peerconn m =
   PeerSelectionActions {
        -- | These are the targets as seen in the static configuration
        --
@@ -323,12 +326,6 @@ data PeerSelectionActions extraState extraFlags extraPeers extraAPI extraCounter
        --
        extraPeersAPI :: PublicExtraPeersAPI extraPeers peeraddr,
 
-       -- | Compute extraCounters from PeerSelectionState
-       --
-       extraStateToExtraCounters
-         :: PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
-         -> extraCounters,
-
        -- | Request a sample of public root peers.
        --
        -- It is intended to cover use cases including:
@@ -364,11 +361,11 @@ data PeerSelectionActions extraState extraFlags extraPeers extraAPI extraCounter
 -- | Interfaces required by the peer selection governor, which do not need to
 -- be shared with actions and thus are not part of `PeerSelectionActions`.
 --
-data PeerSelectionInterfaces extraState extraFlags extraPeers extraCounters peeraddr peerconn m =
+data PeerSelectionInterfaces extraState extraFlags extraPeers peeraddr peerconn m =
   PeerSelectionInterfaces {
       -- | PeerSelectionCounters are shared with churn through a `StrictTVar`.
       --
-      countersVar        :: StrictTVar m (PeerSelectionCounters extraCounters),
+      countersVar        :: StrictTVar m (PeerSelectionCounters (ViewExtraPeers extraPeers)),
 
       -- | PublicPeerSelectionState var.
       --
@@ -433,14 +430,13 @@ data PeerStateActions peeraddr extraFlags peerconn m = PeerStateActions {
 -- Extra Guarded Decisions
 --
 type MonitoringAction extraState extraDebugState extraFlags
-                      extraPeers extraAPI extraCounters extraTrace peeraddr peerconn m =
+                      extraPeers extraAPI peeraddr peerconn m =
      PeerSelectionPolicy peeraddr m
   -> PeerSelectionActions
       extraState
       extraFlags
       extraPeers
       extraAPI
-      extraCounters
       peeraddr
       peerconn
       m
@@ -451,11 +447,11 @@ type MonitoringAction extraState extraDebugState extraFlags
       peeraddr
       peerconn
   -> Guarded (STM m)
-            (TimedDecision m extraState extraDebugState extraFlags extraPeers extraTrace
+            (TimedDecision m extraState extraDebugState extraFlags extraPeers
                            peeraddr peerconn)
 
 data ExtraGuardedDecisions extraState extraDebugState extraFlags
-                           extraPeers extraAPI extraCounters extraTrace peeraddr peerconn m =
+                           extraPeers extraAPI peeraddr peerconn m =
   ExtraGuardedDecisions {
 
     -- | This guarded decision will come before all default possibly
@@ -465,7 +461,7 @@ data ExtraGuardedDecisions extraState extraDebugState extraFlags
     -- Note that this action should be blocking.
     preBlocking
       :: MonitoringAction extraState extraDebugState extraFlags
-                          extraPeers extraAPI extraCounters extraTrace peeraddr peerconn m
+                          extraPeers extraAPI peeraddr peerconn m
 
     -- | This guarded decision will come after all possibly preBlocking
     -- and default blocking decisions. The order matters; first decisions
@@ -474,7 +470,7 @@ data ExtraGuardedDecisions extraState extraDebugState extraFlags
     -- Note that these actions can be either blocking or non-blocking.
   , postBlocking
       :: MonitoringAction extraState extraDebugState extraFlags
-                          extraPeers extraAPI extraCounters extraTrace peeraddr peerconn m
+                          extraPeers extraAPI peeraddr peerconn m
 
     -- | This guarded decision follows all default non-blocking
     -- decisions. The order matters; first decisions have priority over
@@ -483,7 +479,7 @@ data ExtraGuardedDecisions extraState extraDebugState extraFlags
     -- Note that these actions should not be blocking.
   , postNonBlocking
       :: MonitoringAction extraState extraDebugState extraFlags
-                          extraPeers extraAPI extraCounters extraTrace peeraddr peerconn m
+                          extraPeers extraAPI peeraddr peerconn m
 
     -- | This action is necessary to the well functioning of the Outbound
     -- Governor. In particular this action should monitor 'PeerSelectionTargets',
@@ -497,8 +493,8 @@ data ExtraGuardedDecisions extraState extraDebugState extraFlags
     -- 'Ouroboros.Network.PeerSelection.Governor.Monitor.targetPeers'
   , customTargetsAction
       :: Maybe (MonitoringAction extraState extraDebugState
-                                 extraFlags extraPeers extraAPI extraCounters
-                                 extraTrace peeraddr peerconn m)
+                                 extraFlags extraPeers extraAPI
+                                 peeraddr peerconn m)
 
     -- | This action is necessary to the well functioning of the Outbound
     -- Governor. In particular this action should monitor Monitor local roots
@@ -512,10 +508,10 @@ data ExtraGuardedDecisions extraState extraDebugState extraFlags
     -- 'Ouroboros.Network.PeerSelection.Governor.Monitor.localRoots'
   , customLocalRootsAction
       :: Maybe (MonitoringAction extraState extraDebugState
-                                 extraFlags extraPeers extraAPI extraCounters
-                                 extraTrace peeraddr peerconn m)
+                                 extraFlags extraPeers extraAPI
+                                 peeraddr peerconn m)
 
-    -- | This enables third party users to add extra guards to the following monitoring
+    -- | THIS enables third party users to add extra guards to the following monitoring
     -- actions that make progress towards targets:
     --
     -- * BigLedgerPeers.belowTarget
@@ -543,7 +539,7 @@ data ExtraGuardedDecisions extraState extraDebugState extraFlags
 --
 
 data PeerSelectionGovernorArgs extraState extraDebugState extraFlags
-                               extraPeers extraAPI extraCounters extraTrace peeraddr peerconn
+                               extraPeers extraAPI peeraddr peerconn
                                exception m =
   PeerSelectionGovernorArgs {
     abortGovernor
@@ -551,14 +547,14 @@ data PeerSelectionGovernorArgs extraState extraDebugState extraFlags
       -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
       -> Maybe exception
   , updateWithState
-      :: PeerSelectionInterfaces extraState extraFlags extraPeers extraCounters peeraddr peerconn m
-      -> PeerSelectionActions extraState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m
-      -> PeerSelectionSetsWithSizes extraCounters peeraddr
+      :: PeerSelectionInterfaces extraState extraFlags extraPeers peeraddr peerconn m
+      -> PeerSelectionActions extraState extraFlags extraPeers extraAPI peeraddr peerconn m
+      -> PeerSelectionSetsWithSizes (ViewExtraPeers extraPeers) peeraddr
       -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
       -> STM m ()
   , extraDecisions
       :: ExtraGuardedDecisions extraState extraDebugState extraFlags
-                               extraPeers extraAPI extraCounters extraTrace peeraddr peerconn m
+                               extraPeers extraAPI peeraddr peerconn m
   -- | Some 'extraFlags' specializations require a default fallback value.
   , defaultExtraFlags :: extraFlags
   }
@@ -1606,9 +1602,9 @@ instance Alternative m => Monoid (Guarded m a) where
   mappend = (<>)
 
 
-data Decision m extraState extraDebugState extraFlags extraPeers extraTrace peeraddr peerconn = Decision {
+data Decision m extraState extraDebugState extraFlags extraPeers peeraddr peerconn = Decision {
          -- | A trace event to classify the decision and action
-       decisionTrace :: [TracePeerSelection extraDebugState extraFlags extraPeers extraTrace peeraddr],
+       decisionTrace :: [TracePeerSelection extraDebugState extraFlags extraPeers peeraddr],
 
          -- | An updated state to use immediately
        decisionState :: PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn,
@@ -1617,29 +1613,29 @@ data Decision m extraState extraDebugState extraFlags extraPeers extraTrace peer
        -- a further 'Decision'. This gives a state update to apply upon
        -- completion, but also allows chaining further job actions.
        --
-       decisionJobs  :: [Job () m (Completion m extraState extraDebugState extraFlags extraPeers extraTrace peeraddr peerconn)]
+       decisionJobs  :: [Job () m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)]
      }
 
 -- | Decision which has access to the current time, rather than the time when
 -- the governor's loop blocked to make a decision.
 --
-type TimedDecision m extraState extraDebugState extraFlags extraPeers extraTrace peeraddr peerconn =
-  Time -> Decision m extraState extraDebugState extraFlags extraPeers extraTrace peeraddr peerconn
+type TimedDecision m extraState extraDebugState extraFlags extraPeers peeraddr peerconn =
+  Time -> Decision m extraState extraDebugState extraFlags extraPeers peeraddr peerconn
 
 -- | Type alias for function types which are used to create governor decisions.
 -- Almost all decisions are following this pattern.
 --
-type MkGuardedDecision extraState extraDebugState extraFlags extraPeers extraTrace peeraddr peerconn m
+type MkGuardedDecision extraState extraDebugState extraFlags extraPeers peeraddr peerconn m
      = PeerSelectionPolicy peeraddr m
     -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
-    -> Guarded (STM m) (TimedDecision m extraState extraDebugState extraFlags extraPeers extraTrace peeraddr peerconn)
+    -> Guarded (STM m) (TimedDecision m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
 
 
-newtype Completion m extraState extraDebugState extraFlags extraPeers extraTrace peeraddr peerconn =
+newtype Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn =
         Completion (PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
-                 -> Time -> Decision m extraState extraDebugState extraFlags extraPeers extraTrace peeraddr peerconn)
+                 -> Time -> Decision m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
 
-data TracePeerSelection extraDebugState extraFlags extraPeers extraTrace peeraddr =
+data TracePeerSelection extraDebugState extraFlags extraPeers peeraddr =
        TraceLocalRootPeersChanged (LocalRootPeers extraFlags peeraddr)
                                   (LocalRootPeers extraFlags peeraddr)
      --
@@ -1825,8 +1821,12 @@ data TracePeerSelection extraDebugState extraFlags extraPeers extraTrace peeradd
 
      | TraceDebugState Time (DebugPeerSelectionState extraDebugState extraFlags extraPeers peeraddr)
 
-     | ExtraTrace extraTrace
-  deriving Show
+     | ExtraTrace (ToExtraTrace extraPeers)
+
+deriving instance ( SupportsPeerSelectionState extraPeers peeraddr
+                  , Show extraFlags
+                  , Show extraDebugState)
+  => Show (TracePeerSelection extraDebugState extraFlags extraPeers peeraddr)
 
 
 data ChurnAction = DecreasedActivePeers
