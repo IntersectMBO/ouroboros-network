@@ -25,7 +25,7 @@ module Cardano.Network.Diffusion.Types
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Tracer (Tracer)
-import Network.Socket (SockAddr, Socket)
+import Network.Socket (Socket)
 
 import Cardano.Network.ConsensusMode as Reexports (ConsensusMode (..))
 import Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
@@ -41,7 +41,7 @@ import Cardano.Network.PeerSelection.Churn qualified as Cardano.Churn
 import Ouroboros.Network.Diffusion qualified as Diffusion
 import Ouroboros.Network.PeerSelection as Reexports
            (LedgerPeersConsensusInterface (..), PeerMetrics,
-           PeerSelectionTargets)
+           PeerSelectionTargets, SupportsPeerSelectionState (..))
 
 -- | Arguments required to instantiate Cardano Node Diffusion
 --
@@ -96,8 +96,6 @@ type CardanoTracers m =
     Cardano.DebugPeerSelectionState
     PeerTrustable
     (Cardano.ExtraPeers RemoteAddress)
-    (Cardano.ExtraPeerSelectionSetsWithSizes RemoteAddress)
-    Cardano.ExtraTrace
     m
 
 
@@ -134,7 +132,7 @@ type CardanoTraceLocalRootPeers =
 type CardanoTracePeerSelection =
   Cardano.TracePeerSelection Cardano.DebugPeerSelectionState
                              PeerTrustable
-                             (Cardano.ExtraPeers SockAddr)
+                             (Cardano.ExtraPeers RemoteAddress)
                              RemoteAddress
 
 
@@ -146,4 +144,4 @@ type CardanoDebugPeerSelection =
 
 
 type CardanoPeerSelectionCounters =
-  Cardano.PeerSelectionCounters (Cardano.ExtraPeerSelectionSetsWithSizes RemoteAddress)
+  Cardano.PeerSelectionCounters (Cardano.ViewExtraPeers (Cardano.ExtraPeers RemoteAddress))

@@ -19,7 +19,6 @@ module Cardano.Network.PeerSelection.Governor.Monitor
   , monitorLedgerStateJudgement
   , monitorBootstrapPeersFlag
   , waitForSystemToQuiesce
-  , ExtraTrace (..)
   ) where
 
 import Control.Concurrent.JobPool (Job (..))
@@ -35,7 +34,7 @@ import Data.Set qualified as Set
 import Cardano.Network.ConsensusMode
 import Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
 import Cardano.Network.LedgerStateJudgement
-import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..),
+import Cardano.Network.PeerSelection.Bootstrap (
            isBootstrapPeersEnabled, isNodeAbleToMakeProgress,
            requiresBootstrapPeers)
 import Cardano.Network.PeerSelection.ExtraRootPeers qualified as Cardano
@@ -85,7 +84,6 @@ targetPeers
       extraFlags
       extraPeers
       extraAPI
-      extraCounters
       peeraddr
       peerconn
       m
@@ -97,7 +95,7 @@ targetPeers
       peerconn
   -> Guarded (STM m)
             (TimedDecision m Cardano.ExtraState extraDebugState PeerTrustable
-                             extraPeers ExtraTrace peeraddr peerconn)
+                             extraPeers peeraddr peerconn)
 targetPeers Cardano.ExtraPeerSelectionActions {
               Cardano.genesisPeerSelectionTargets
             }
@@ -198,14 +196,13 @@ targetPeers Cardano.ExtraPeerSelectionActions {
 -- trusted, however we will keep a connection to it until the outbound
 -- governor notices it and disconnects from it.
 localRoots
-  :: forall extraDebugState extraAPI extraCounters peeraddr peerconn m.
+  :: forall extraDebugState extraAPI peeraddr peerconn m.
     (MonadTimer m, Ord peeraddr)
   => PeerSelectionActions
       Cardano.ExtraState
       PeerTrustable
       (Cardano.ExtraPeers peeraddr)
       extraAPI
-      extraCounters
       peeraddr
       peerconn
       m
@@ -218,7 +215,6 @@ localRoots
   -> Guarded (STM m)
             (TimedDecision m Cardano.ExtraState extraDebugState
                            PeerTrustable (Cardano.ExtraPeers peeraddr)
-                           ExtraTrace
                            peeraddr peerconn)
 localRoots actions@PeerSelectionActions{ readLocalRootPeers
                                        , extraPeersAPI
@@ -341,7 +337,7 @@ localRoots actions@PeerSelectionActions{ readLocalRootPeers
 
         $ Decision {
             decisionTrace = TraceLocalRootPeersChanged localRootPeers localRootPeers'
-                            : [ ExtraTrace (TraceLedgerStateJudgementChanged YoungEnough)
+                            : [ ExtraTrace (Cardano.TraceLedgerStateJudgementChanged YoungEnough)
                             | ledgerStateJudgement /= ledgerStateJudgement'
                             ],
             decisionState = st {
@@ -402,7 +398,6 @@ monitorBootstrapPeersFlag
       extraFlags
       (Cardano.ExtraPeers peeraddr)
       extraAPI
-      extraCounters
       peeraddr
       peerconn
       m
@@ -414,7 +409,8 @@ monitorBootstrapPeersFlag
       peerconn
   -> Guarded (STM m)
             (TimedDecision m Cardano.ExtraState extraDebugState extraFlags
-                             (Cardano.ExtraPeers peeraddr) ExtraTrace peeraddr peerconn)
+                             (Cardano.ExtraPeers peeraddr)
+                             peeraddr peerconn)
 monitorBootstrapPeersFlag Cardano.ExtraPeerSelectionActions { Cardano.readUseBootstrapPeers }
                           PeerSelectionActions { extraPeersAPI }
                           st@PeerSelectionState { knownPeers
@@ -440,7 +436,7 @@ monitorBootstrapPeersFlag Cardano.ExtraPeerSelectionActions { Cardano.readUseBoo
           (inProgressPromoteCold <> inProgressPromoteWarm)
     return $ \_now ->
       Decision {
-        decisionTrace = [ExtraTrace (TraceUseBootstrapPeersChanged ubp)],
+        decisionTrace = [ExtraTrace (Cardano.TraceUseBootstrapPeersChanged ubp)],
         decisionJobs  = [],
         decisionState =
           st { knownPeers =
@@ -485,7 +481,6 @@ monitorLedgerStateJudgement
       extraFlags
       (Cardano.ExtraPeers peeraddr)
       (Cardano.LedgerPeersConsensusInterface m)
-      extraCounters
       peeraddr
       peerconn
       m
@@ -497,7 +492,7 @@ monitorLedgerStateJudgement
       peerconn
   -> Guarded (STM m)
             (TimedDecision m Cardano.ExtraState extraDebugState extraFlags
-                             (Cardano.ExtraPeers peeraddr) ExtraTrace peeraddr peerconn)
+                             (Cardano.ExtraPeers peeraddr) peeraddr peerconn)
 monitorLedgerStateJudgement PeerSelectionActions{
                               getLedgerStateCtx = LedgerPeersConsensusInterface {
                                 lpExtraAPI = lpExtraAPI@Cardano.LedgerPeersConsensusInterface {
@@ -525,7 +520,7 @@ monitorLedgerStateJudgement PeerSelectionActions{
 
       return $ \_now ->
         Decision {
-          decisionTrace = [ExtraTrace (TraceLedgerStateJudgementChanged lsj)],
+          decisionTrace = [ExtraTrace (Cardano.TraceLedgerStateJudgementChanged lsj)],
           decisionJobs = case (lsj, ledgerPeerSnapshot) of
                            (TooOld, Just (LedgerBigPeerSnapshotV23 point _magic _pools))
                              | BlockPoint { atSlot, withHash } <- point ->
@@ -594,7 +589,7 @@ monitorLedgerStateJudgement PeerSelectionActions{
             })
       return $ \now ->
         Decision {
-          decisionTrace = [ExtraTrace (TraceLedgerStateJudgementChanged lsj)],
+          decisionTrace = [ExtraTrace (Cardano.TraceLedgerStateJudgementChanged lsj)],
           decisionJobs  = [],
           decisionState = st' now
         }
@@ -628,7 +623,7 @@ waitForSystemToQuiesce
       peerconn
   -> Guarded (STM m)
             (TimedDecision m Cardano.ExtraState extraDebugState PeerTrustable
-                             (Cardano.ExtraPeers peeraddr) ExtraTrace peeraddr peerconn)
+                             (Cardano.ExtraPeers peeraddr) peeraddr peerconn)
 waitForSystemToQuiesce st@PeerSelectionState{
                             knownPeers
                           , localRootPeers
@@ -695,7 +690,7 @@ waitForSystemToQuiesce st@PeerSelectionState{
 jobVerifyPeerSnapshot :: MonadSTM m
                       => (SlotNo, RawBlockHash)
                       -> Cardano.LedgerPeersConsensusInterface m
-                      -> Job () m (Completion m extraState extraDebugState extraFlags extraPeers extraTrace peeraddr peerconn)
+                      -> Job () m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
 jobVerifyPeerSnapshot (slotNo, fileHash)
                       Cardano.LedgerPeersConsensusInterface { getBlockHash }
   = Job job (const (completion False)) () "jobVerifyPeerSnapshot"
@@ -712,13 +707,3 @@ jobVerifyPeerSnapshot (slotNo, fileHash)
         Just (BlockPoint { withHash }) -> do
           completion $ fileHash == withHash
         _otherwise -> completion False
-
-
--- | Extra trace points for `TracePeerSelection`.
---
--- TODO: it ought to be moved to `Types`, but that introduces a circular
--- dependency.
-data ExtraTrace =
-       TraceLedgerStateJudgementChanged LedgerStateJudgement
-     | TraceUseBootstrapPeersChanged UseBootstrapPeers
-  deriving Show
