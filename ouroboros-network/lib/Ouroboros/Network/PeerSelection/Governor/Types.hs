@@ -5,6 +5,7 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE GADTs                     #-}
+{-# LANGUAGE MultiParamTypeClasses     #-}
 {-# LANGUAGE NamedFieldPuns            #-}
 {-# LANGUAGE PatternSynonyms           #-}
 {-# LANGUAGE RecordWildCards           #-}
@@ -562,6 +563,32 @@ data PeerSelectionGovernorArgs extraState extraDebugState extraFlags
   , defaultExtraFlags :: extraFlags
   }
 
+
+class ( Ord peeraddr
+      , Show peeraddr
+      , Eq (ViewExtraPeers extraPeers)
+      , Show extraPeers
+      , Show (ToExtraTrace extraPeers)
+      ) => SupportsPeerSelectionState extraPeers peeraddr where
+  data ToExtraTrace extraPeers
+
+  -- | Peer selection view.
+  --
+  -- This is a functor which is used to hold computation of various peer sets and
+  -- their sizes.  See `peerSelectionStateToView`, `peerSelectionStateToCounters`.
+  --
+  data ViewExtraPeers extraPeers
+
+  publicExtraPeersAPI :: PublicExtraPeersAPI extraPeers peeraddr
+
+  -- TODO: this function should probably also accept a result of obtaining
+  -- the base values (eg. establishedSet, etc) used to calculate the base counters
+  -- to avoid recomputing them again for the extra peers.
+  mkViewExtraPeers
+    :: PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
+    -> Maybe (ViewExtraPeers extraPeers)
+
+
 -----------------------
 -- Peer Selection State
 --
@@ -895,7 +922,7 @@ data PeerSelectionView extraViews a = PeerSelectionView {
       viewActiveNonRootPeers               :: a,
       viewActiveNonRootPeersDemotions      :: a,
 
-      viewExtraViews                       :: extraViews
+      viewExtraViews                       :: Maybe extraViews
     } deriving (Eq, Functor, Show)
 
 
@@ -906,7 +933,7 @@ pattern PeerSelectionCounters
           -> Int -> Int -> Int -> Int -> Int -> Int -> Int -> Int
           -> Int -> Int -> Int -> Int -> Int -> Int -> Int
           -> Int -> Int -> Int -> Int -> Int -> Int -> Int
-          -> extraCounters
+          -> Maybe extraCounters
           -> PeerSelectionCounters extraCounters
 pattern PeerSelectionCounters {
       numberOfRootPeers,
@@ -1110,7 +1137,7 @@ emptyPeerSelectionState rng es ep =
       extraState                  = es
     }
 
-emptyPeerSelectionCounters :: extraCounters -> PeerSelectionCounters extraCounters
+emptyPeerSelectionCounters :: Maybe extraCounters -> PeerSelectionCounters extraCounters
 emptyPeerSelectionCounters emptyEC =
   PeerSelectionCounters {
     numberOfRootPeers                        = 0,
@@ -1173,14 +1200,10 @@ establishedPeersStatus PeerSelectionState{establishedPeers, activePeers} =
 -- function, as it will affect the outbound governor behaviour.
 --
 peerSelectionStateToView
-  :: Ord peeraddr
-  => (extraPeers -> Set peeraddr)
-  -> (PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn -> extraViews)
-  -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
-  -> PeerSelectionSetsWithSizes extraViews peeraddr
+  :: SupportsPeerSelectionState extraPeers peeraddr
+  => PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
+  -> PeerSelectionSetsWithSizes (Maybe (ViewExtraPeers extraPeers)) peeraddr
 peerSelectionStateToView
-    extraPeersToSet
-    extraStateToExtraViews
     st@PeerSelectionState {
         knownPeers,
         establishedPeers,
@@ -1250,7 +1273,7 @@ peerSelectionStateToView
       viewActiveNonRootPeers                  = size   activeNonRootPeersSet,
       viewActiveNonRootPeersDemotions         = size $ activeNonRootPeersSet
                                                       `Set.intersection` inProgressDemoteHot,
-      viewExtraViews = extraStateToExtraViews st
+      viewExtraViews = mkViewExtraPeers st
     }
   where
     size s = (s, Set.size s)
@@ -1262,7 +1285,7 @@ peerSelectionStateToView
     availableToConnectSet = KnownPeers.availableToConnect knownPeers
 
     -- root peers
-    rootPeersSet   = PublicRootPeers.toSet extraPeersToSet publicRootPeers
+    rootPeersSet   = PublicRootPeers.toSet (extraPeersToSet publicExtraPeersAPI) publicRootPeers
                   <> localRootSet
 
     -- non big ledger peers
@@ -1291,18 +1314,12 @@ peerSelectionStateToView
 
 
 peerSelectionStateToCounters
-  :: Ord peeraddr
-  => (extraPeers -> Set peeraddr) -- ^ This function comes from 'PublicExtraPeersAPI'
-                                -- It is needed to compute the set of all
-                                -- extraPeers and use that information to
-                                -- compute the counters.
-  -> (PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn -> extraCounters)
-  -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
-  -> PeerSelectionCounters extraCounters
-peerSelectionStateToCounters extraPeersToSet extraStateToExtraCounters =
+  :: SupportsPeerSelectionState extraPeers peeraddr
+  => PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
+  -> PeerSelectionCounters (Maybe (ViewExtraPeers extraPeers))
+peerSelectionStateToCounters =
     fmap snd
-  . peerSelectionStateToView extraPeersToSet
-                             extraStateToExtraCounters
+  . peerSelectionStateToView
 
 assertPeerSelectionState :: Ord peeraddr
                          => (extraPeers -> Set peeraddr)
