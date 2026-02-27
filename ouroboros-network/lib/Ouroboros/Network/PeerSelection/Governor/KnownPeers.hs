@@ -3,6 +3,7 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeOperators       #-}
 
 module Ouroboros.Network.PeerSelection.Governor.KnownPeers
   ( belowTarget
@@ -51,7 +52,8 @@ import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount)
 -- state) then this monitoring action will be disabled.
 --
 belowTarget
-  :: (MonadAsync m, MonadTimer m, Ord peeraddr, Hashable peeraddr)
+  :: ( MonadAsync m, MonadTimer m, Hashable peeraddr
+     , SupportsPeerSelectionState extraPeers peeraddr)
   => (extraState -> Bool)
   -- ^ This argument enables or disables this monitoring action based on an
   -- 'extraState' flag.
@@ -59,18 +61,16 @@ belowTarget
   -- This might be useful if the user requires its diffusion layer to stop
   -- making progress during a sensitive/vulnerable situation and quarantine
   -- it and make sure it is only connected to trusted peers.
-  -> PeerSelectionActions extraState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m
+  -> PeerSelectionActions extraState extraFlags extraPeers extraAPI peeraddr peerconn m
   -> Time -- ^ blocked at
   -> Map peeraddr PeerSharing
-  -> MkGuardedDecision extraState extraDebugState extraFlags extraPeers extraTrace peeraddr peerconn m
+  -> MkGuardedDecision extraState extraDebugState extraFlags extraPeers peeraddr peerconn m
 belowTarget enableAction
             actions@PeerSelectionActions {
               peerSharing,
               extraPeersAPI = PublicExtraPeersAPI {
-                memberExtraPeers,
-                extraPeersToSet
-              },
-              extraStateToExtraCounters
+                memberExtraPeers
+              }
             }
             blockedAt
             inboundPeers
@@ -216,7 +216,7 @@ belowTarget enableAction
         numberOfKnownPeers = numKnownPeers
       }
       =
-      peerSelectionStateToCounters extraPeersToSet extraStateToExtraCounters st
+      peerSelectionStateToCounters st
     numPeerShareReqsPossible = policyMaxInProgressPeerShareReqs
                              - inProgressPeerShareReqs
     -- Only peer which permit peersharing are available
@@ -242,14 +242,13 @@ belowTarget enableAction
 -- is used.
 jobPeerShare
   :: forall m extraState extraDebugState extraFlags extraPeers
-              extraAPI extraCounters extraTrace peeraddr peerconn.
+              extraAPI peeraddr peerconn.
     (MonadAsync m, MonadTimer m, Ord peeraddr, Hashable peeraddr)
   => PeerSelectionActions
       extraState
       extraFlags
       extraPeers
       extraAPI
-      extraCounters
       peeraddr
       peerconn
       m
@@ -259,7 +258,7 @@ jobPeerShare
   -> PeerSharingAmount
   -> [peeraddr]
   -> Job () m (Completion m extraState extraDebugState extraFlags extraPeers
-                            extraTrace peeraddr peerconn)
+                            peeraddr peerconn)
 jobPeerShare PeerSelectionActions{requestPeerShare}
              PeerSelectionPolicy { policyPeerShareBatchWaitTime
                                  , policyPeerShareOverallTimeout
@@ -278,7 +277,7 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
       sortBy (\a b -> compare (hashWithSalt salt a) (hashWithSalt salt b))
       addrs
 
-    handler :: [peeraddr] -> SomeException -> m (Completion m extraState extraDebugState extraFlags extraPeers extraTrace peeraddr peerconn)
+    handler :: [peeraddr] -> SomeException -> m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
     handler peers e = return $
       Completion $ \st _ ->
       Decision { decisionTrace = [TracePeerShareResults [ (p, Left e) | p <- peers ]],
@@ -289,7 +288,7 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
                  decisionJobs = []
                }
 
-    jobPhase1 :: [peeraddr] -> m (Completion m extraState extraDebugState extraFlags extraPeers extraTrace peeraddr peerconn)
+    jobPhase1 :: [peeraddr] -> m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
     jobPhase1 peers = do
       -- In the typical case, where most requests return within a short
       -- timeout we want to collect all the responses into a batch and
@@ -384,7 +383,7 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
                          }
 
     jobPhase2 :: Int -> [peeraddr] -> [Async m (PeerSharingResult peeraddr)]
-              -> m (Completion m extraState extraDebugState extraFlags extraPeers extraTrace peeraddr peerconn)
+              -> m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
     jobPhase2 maxRemaining peers peerShares = do
 
       -- Wait again, for all remaining to finish or a timeout.
@@ -456,7 +455,7 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
 --
 aboveTarget
   :: ( MonadSTM m
-     , Ord peeraddr
+     , SupportsPeerSelectionState extraPeers peeraddr
      , HasCallStack
      )
   => PeerSelectionActions
@@ -464,7 +463,6 @@ aboveTarget
       extraFlags
       extraPeers
       extraAPI
-      extraCounters
       peeraddr
       peerconn
       m
@@ -473,7 +471,6 @@ aboveTarget
       extraDebugState
       extraFlags
       extraPeers
-      extraTrace
       peeraddr
       peerconn
       m
@@ -483,8 +480,7 @@ aboveTarget PeerSelectionActions {
                 extraPeersToSet,
                 sizeExtraPeers,
                 differenceExtraPeers
-              },
-              extraStateToExtraCounters
+              }
             }
             PeerSelectionPolicy {
               policyPickColdPeersToForget
@@ -575,7 +571,7 @@ aboveTarget PeerSelectionActions {
         numberOfEstablishedPeers = numEstablishedPeers
       }
       =
-      peerSelectionStateToCounters extraPeersToSet extraStateToExtraCounters st
+      peerSelectionStateToCounters st
 
 
 -------------------------------

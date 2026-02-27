@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeOperators       #-}
 
 module Ouroboros.Network.PeerSelection.Governor.BigLedgerPeers
   ( belowTarget
@@ -30,7 +31,8 @@ import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersAPI (..))
 import System.Random
 
 belowTarget
-  :: (MonadSTM m, Ord peeraddr, Semigroup extraPeers)
+  :: ( MonadSTM m, Semigroup extraPeers
+     , SupportsPeerSelectionState extraPeers peeraddr)
   => (extraState -> Bool)
   -- ^ This argument enables or disables this monitoring action based
   -- on an 'extraState' flag.
@@ -43,7 +45,6 @@ belowTarget
       extraFlags
       extraPeers
       extraAPI
-      extraCounters
       peeraddr
       peerconn
       m
@@ -56,14 +57,9 @@ belowTarget
       peerconn
   -> Guarded (STM m)
             (TimedDecision m extraState extraDebugState extraFlags extraPeers
-                             extraTrace peeraddr peerconn)
+                             peeraddr peerconn)
 belowTarget enableAction
-            actions@PeerSelectionActions {
-              extraPeersAPI = PublicExtraPeersAPI {
-                extraPeersToSet
-              },
-              extraStateToExtraCounters
-            }
+            actions
             blockedAt
             st@PeerSelectionState {
               bigLedgerPeerRetryTime,
@@ -99,7 +95,7 @@ belowTarget enableAction
         numberOfKnownBigLedgerPeers = numBigLedgerPeers
       }
       =
-      peerSelectionStateToCounters extraPeersToSet extraStateToExtraCounters st
+      peerSelectionStateToCounters st
 
     maxExtraBigLedgerPeers = targetNumberOfKnownBigLedgerPeers
                            - numBigLedgerPeers
@@ -107,7 +103,7 @@ belowTarget enableAction
 
 jobReqBigLedgerPeers
   :: forall m extraState extraDebugState extraFlags extraAPI extraPeers
-              extraCounters extraTrace peeraddr peerconn.
+              peeraddr peerconn.
      ( MonadSTM m
      , Ord peeraddr
      , Semigroup extraPeers
@@ -117,13 +113,12 @@ jobReqBigLedgerPeers
       extraFlags
       extraPeers
       extraAPI
-      extraCounters
       peeraddr
       peerconn
       m
   -> StdGen
   -> Int
-  -> Job () m (Completion m extraState extraDebugState extraFlags extraPeers extraTrace
+  -> Job () m (Completion m extraState extraDebugState extraFlags extraPeers
                             peeraddr peerconn)
 jobReqBigLedgerPeers PeerSelectionActions {
                        extraPeersAPI = PublicExtraPeersAPI {
@@ -137,7 +132,7 @@ jobReqBigLedgerPeers PeerSelectionActions {
                      numExtraAllowed =
     Job job (return . handler) () "reqBigLedgerPeers"
   where
-    handler :: SomeException -> Completion m extraState extraDebugState extraFlags extraPeers extraTrace peeraddr peerconn
+    handler :: SomeException -> Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn
     handler e =
       Completion $ \st now ->
       -- This is a failure, so move the backoff counter one in the failure
@@ -165,7 +160,7 @@ jobReqBigLedgerPeers PeerSelectionActions {
             decisionJobs  = []
           }
 
-    job :: m (Completion m extraState extraDebugState extraFlags extraPeers extraTrace peeraddr peerconn)
+    job :: m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
     job = do
       (results, ttl) <- requestPublicRootPeers BigLedgerPeers rng numExtraAllowed
       return $ Completion $ \st now ->
@@ -232,10 +227,10 @@ jobReqBigLedgerPeers PeerSelectionActions {
 
 aboveTarget
   :: forall m extraState extraDebugState extraFlags extraAPI extraPeers
-              extraCounters extraTrace peeraddr peerconn.
+              peeraddr peerconn.
      ( Alternative (STM m)
      , MonadSTM m
-     , Ord peeraddr
+     , SupportsPeerSelectionState extraPeers peeraddr
      , HasCallStack
      )
   => PeerSelectionActions
@@ -243,7 +238,6 @@ aboveTarget
       extraFlags
       extraPeers
       extraAPI
-      extraCounters
       peeraddr
       peerconn
       m
@@ -252,17 +246,14 @@ aboveTarget
       extraDebugState
       extraFlags
       extraPeers
-      extraTrace
       peeraddr
       peerconn
       m
 aboveTarget PeerSelectionActions {
               extraPeersAPI = PublicExtraPeersAPI {
-                extraPeersToSet,
                 differenceExtraPeers,
                 memberExtraPeers
-              },
-                extraStateToExtraCounters
+              }
             }
             PeerSelectionPolicy {policyPickColdPeersToForget}
             st@PeerSelectionState {
@@ -317,4 +308,4 @@ aboveTarget PeerSelectionActions {
     PeerSelectionView {
         viewKnownBigLedgerPeers       = (_, numKnownBigLedgerPeers),
         viewEstablishedBigLedgerPeers = (establishedBigLedgerPeers, numEstablishedBigLedgerPeers)
-      } = peerSelectionStateToView extraPeersToSet extraStateToExtraCounters st
+      } = peerSelectionStateToView st

@@ -94,8 +94,7 @@ runM
                 ntcFd ntcAddr ntcVersion ntcVersionData
                 resolver exception a
                 extraState extraDebugState extraPeers
-                extraAPI extraFlags extraChurnArgs
-                extraCounters extraTrace.
+                extraAPI extraFlags extraChurnArgs.
 
        ( Alternative (STM m)
        , MonadAsync       m
@@ -111,8 +110,6 @@ runM
        , MonadTimer       m
        , MonadMVar        m
        , Typeable  ntnAddr
-       , Ord       ntnAddr
-       , Show      ntnAddr
        , Hashable  ntnAddr
        , NFData    ntnVersion
        , Typeable  ntnVersion
@@ -128,9 +125,9 @@ runM
        , NFData    ntcVersionData
        , Monoid extraPeers
        , Eq extraFlags
-       , Eq extraCounters
        , Exception exception
        , NFData a
+       , SupportsPeerSelectionState extraPeers ntnAddr
        )
        -- | interfaces
     => Interfaces ntnFd ntnAddr ntcFd ntcAddr
@@ -139,11 +136,10 @@ runM
        Tracers ntnAddr ntnVersion ntnVersionData
                ntcAddr ntcVersion ntcVersionData
                extraState extraDebugState extraFlags
-               extraPeers extraCounters extraTrace m
+               extraPeers m
        -- | arguments
     -> Arguments extraState extraDebugState extraFlags
                  extraPeers extraAPI extraChurnArgs
-                 extraCounters extraTrace
                  exception resolver m
                  ntnFd ntnAddr ntnVersion ntnVersionData
                        ntcAddr ntcVersion ntcVersionData
@@ -207,7 +203,6 @@ runM Interfaces
        , daExtraPeersAPI
        , daInstallSigUSR1Handler
        , daPeerSelectionGovernorArgs
-       , daPeerSelectionStateToExtraCounters
        , daToExtraPeers
        , daRequestPublicRootPeers
        , daPeerChurnGovernor
@@ -608,7 +603,6 @@ runM Interfaces
                      extraFlags
                      extraPeers
                      extraAPI
-                     extraCounters
                      ntnAddr
                      (PeerConnectionHandle
                         muxMode responderCtx ntnAddr extraFlags ntnVersionData bytes m a b)
@@ -647,7 +641,6 @@ runM Interfaces
                                              PeerSharingEnabled  -> readInboundPeers,
                                          readLedgerPeerSnapshot = dcReadLedgerPeerSnapshot,
                                          extraPeersAPI             = daExtraPeersAPI,
-                                         extraStateToExtraCounters = daPeerSelectionStateToExtraCounters,
                                          peerStateActions
                                        })
                                        WithLedgerPeersArgs {
@@ -667,7 +660,7 @@ runM Interfaces
                 (PeerConnectionHandle muxMode responderCtx ntnAddr extraFlags ntnVersionData ByteString m a b))
             -> PeerSelectionActions
                 extraState extraFlags extraPeers
-                extraAPI extraCounters ntnAddr
+                extraAPI ntnAddr
                 (PeerConnectionHandle muxMode responderCtx ntnAddr extraFlags ntnVersionData ByteString m a b)
                 m
             -> m Void
@@ -830,7 +823,6 @@ runM Interfaces
 --
 run :: ( Monoid extraPeers
        , Eq     extraFlags
-       , Eq     extraCounters
        , Exception exception
        , NFData   ntnVersion
        , Typeable ntnVersion
@@ -842,6 +834,7 @@ run :: ( Monoid extraPeers
        , Ord      ntcVersion
        , NFData   ntcVersionData
        , NFData   a
+       , SupportsPeerSelectionState extraPeers RemoteAddress
        )
     => Arguments
         extraState
@@ -850,8 +843,6 @@ run :: ( Monoid extraPeers
         extraPeers
         extraAPI
         extraChurnArgs
-        extraCounters
-        extraTrace
         exception
         Resolver
         IO
@@ -873,8 +864,6 @@ run :: ( Monoid extraPeers
         extraDebugState
         extraFlags
         extraPeers
-        extraCounters
-        extraTrace
         IO
     -> Configuration
         extraFlags
