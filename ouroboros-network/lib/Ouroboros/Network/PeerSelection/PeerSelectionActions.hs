@@ -47,7 +47,7 @@ import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount (..))
 import System.Random
 
 withPeerSelectionActions
-  :: forall extraState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn resolver m a.
+  :: forall extraState extraFlags extraPeers extraAPI peeraddr peerconn resolver m a.
      ( Alternative (STM m)
      , MonadAsync m
      , MonadDelay m
@@ -62,13 +62,13 @@ withPeerSelectionActions
            -> LedgerPeersKind
            -> m (Maybe (Set peeraddr, DiffTime))
          )
-      -> PeerSelectionActions extraState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m)
+      -> PeerSelectionActions extraState extraFlags extraPeers extraAPI peeraddr peerconn m)
   -- ^ construct PeerSelectionActions given a function which obtains ledger
   -- peers that is supplied by `withLedgerPeers`.
   -> WithLedgerPeersArgs extraAPI m
   -> StdGen
   -> (   (Async m Void, Async m Void)
-      -> PeerSelectionActions extraState extraFlags extraPeers extraAPI extraCounters peeraddr peerconn m
+      -> PeerSelectionActions extraState extraFlags extraPeers extraAPI peeraddr peerconn m
       -> m a)
   -- ^ continuation, receives a handle to the local roots peer provider thread
   -- (only if local root peers were non-empty).

@@ -849,13 +849,13 @@ instance ToJSON Time where
 instance ( ToJSON extraDebugState
          , ToJSON extraFlags
          , ToJSON extraPeers
-         , ToJSON extraTracer
+         , ToJSON (ToExtraTrace extraPeers)
          , ToJSON peerAddr
          , ToJSONKey peerAddr
          , Ord peerAddr
          , ToJSON (PublicRootPeers.PublicRootPeers extraPeers peerAddr)
          )
-       => ToJSON (TracePeerSelection extraDebugState extraFlags extraPeers extraTracer peerAddr) where
+       => ToJSON (TracePeerSelection extraDebugState extraFlags extraPeers peerAddr) where
   toJSON (TraceLocalRootPeersChanged lrp lrp') =
     object [ "kind" .= String "LocalRootPeersChanged"
            , "previous" .= lrp
