@@ -72,14 +72,12 @@ instance ( Show extraState
   forMachine _dtal@DNormal (TraceGovernorState blockedAt wakeupAfter
                    _st@PeerSelectionState { targets }) =
     mconcat [ "kind" .= String "DebugPeerSelection"
-             , "blockedAt" .= String (pack $ show blockedAt)
-             , "wakeupAfter" .= String (pack $ show wakeupAfter)
-             , "targets" .= peerSelectionTargetsToObject targets
-{-- TODO: Before "cardano-diffusion" removal:
+            , "blockedAt" .= String (pack $ show blockedAt)
+            , "wakeupAfter" .= String (pack $ show wakeupAfter)
+            , "targets" .= peerSelectionTargetsToObject targets
+            , "counters" .= forMachine dtal (peerSelectionStateToCounters st)
+            ]
 
-             , "counters" .= forMachine dtal (peerSelectionStateToCounters Cardano.PublicRootPeers.toSet Cardano.cardanoPeerSelectionStatetoCounters st)
---}
-             ]
   forMachine _ (TraceGovernorState blockedAt wakeupAfter ev) =
     mconcat [ "kind" .= String "DebugPeerSelection"
              , "blockedAt" .= String (pack $ show blockedAt)
