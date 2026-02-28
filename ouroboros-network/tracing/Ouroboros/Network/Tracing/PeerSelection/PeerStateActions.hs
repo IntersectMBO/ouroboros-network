@@ -49,7 +49,8 @@ import "trace-dispatcher" Cardano.Logging
 
 -- TODO: Write PeerStatusChangeType ToJSON at ouroboros-network
 -- For that an export is needed at ouroboros-network
-instance Show lAddr => LogFormatting (PeerSelectionActionsTrace SockAddr lAddr) where
+instance (Show lAddr, Show peeraddr, ToJSON peeraddr)
+      => LogFormatting (PeerSelectionActionsTrace peeraddr lAddr) where
   forMachine _dtal (PeerStatusChanged ps) =
     mconcat [ "kind" .= String "PeerStatusChanged"
              , "peerStatusChangeType" .= show ps
@@ -79,7 +80,7 @@ instance Show lAddr => LogFormatting (PeerSelectionActionsTrace SockAddr lAddr) 
             , "time" .= show dt]
   forHuman = pack . show
 
-instance MetaTrace (PeerSelectionActionsTrace SockAddr lAddr) where
+instance MetaTrace (PeerSelectionActionsTrace peeraddr lAddr) where
     namespaceFor PeerStatusChanged {} = Namespace [] ["StatusChanged"]
     namespaceFor PeerStatusChangeFailure {} = Namespace [] ["StatusChangeFailure"]
     namespaceFor PeerMonitoringError {} = Namespace [] ["MonitoringError"]
@@ -117,4 +118,3 @@ instance MetaTrace (PeerSelectionActionsTrace SockAddr lAddr) where
       , Namespace [] ["ConnectionError"]
       , Namespace [] ["PeerHotDuration"]
       ]
-
