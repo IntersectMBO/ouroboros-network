@@ -46,6 +46,7 @@ import Ouroboros.Network.Tracing.PeerSelection.PeerStateActions ()
 import Ouroboros.Network.Tracing.PeerSelection.RootPeersDNS.DNSActions ()
 import Ouroboros.Network.Tracing.PeerSelection.RootPeersDNS.LocalRootPeers ()
 import Ouroboros.Network.Tracing.PeerSelection.RootPeersDNS.PublicRootPeers ()
+import Ouroboros.Network.Tracing.TxSubmission ()
 
 --------------------------------------------------------------------------------
 -- DiffusionInit Tracer.
@@ -411,4 +412,3 @@ instance MetaTrace TraceLedgerPeers where
       , Namespace [] ["TraceLedgerPeersDomains"]
       , Namespace [] ["UsingBigLedgerPeerSnapshot"]
       ]
-
