@@ -1,7 +1,9 @@
-{-# LANGUAGE FlexibleContexts  #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE PackageImports    #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE OverloadedStrings    #-}
+{-# LANGUAGE PackageImports       #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 --------------------------------------------------------------------------------
 
@@ -30,6 +32,7 @@ module Ouroboros.Network.Tracing.PeerSelection.Governor.TracePeerSelection () wh
 import Control.Exception (fromException)
 import Data.Bifunctor (first)
 import Data.Foldable (toList)
+import "text" Data.Text (pack)
 ---------------------
 -- Package: "aeson" -
 ---------------------
@@ -44,7 +47,7 @@ import "network" Network.Socket (SockAddr)
 ---------------------------------
 import "ouroboros-network" Ouroboros.Network.PeerSelection.Governor.Types
            (DebugPeerSelectionState (..), DemotionTimeoutException,
-           TracePeerSelection (..))
+           TracePeerSelection (..), SupportsPeerSelectionState (..))
 import "ouroboros-network" Ouroboros.Network.PeerSelection.PublicRootPeers
            (PublicRootPeers)
 import "ouroboros-network" Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
@@ -73,18 +76,16 @@ instance LogFormatting (TracePeerSelection Cardano.DebugPeerSelectionState PeerT
  -- TODO: That later changed in f550a6eb503cc81807419795ab2360e6042ce9d5:
 instance LogFormatting CardanoTracePeerSelection where
 --}
-instance ( Ord ntnAddr
-         , Show extraDebugState
+instance ( Show extraDebugState
          , Show extraFlags
-         , Show extraPeers
-         , Show extraTrace
-         , Show ntnAddr
          , ToJSON extraFlags
          , ToJSON ntnAddr
          , ToJSON (PublicRootPeers extraPeers ntnAddr)
          , ToJSONKey ntnAddr
-         )
-      => LogFormatting (TracePeerSelection extraDebugState extraFlags extraPeers extraTrace ntnAddr) where
+         , SupportsPeerSelectionState extraPeers ntnAddr
+         , LogFormatting (ToExtraTrace extraPeers)
+         ) => LogFormatting (TracePeerSelection extraDebugState extraFlags
+                               extraPeers ntnAddr) where
   forMachine _dtal (TraceLocalRootPeersChanged lrp lrp') =
     mconcat [ "kind" .= String "LocalRootPeersChanged"
              , "previous" .= toJSON lrp
@@ -432,13 +433,8 @@ instance ( Ord ntnAddr
             , "upstreamyness" .= dpssUpstreamyness ds
             , "fetchynessBlocks" .= dpssFetchynessBlocks ds
             ]
-  {-- TODO: Implementation for `ExtraTrace` was added here but it's not present
-   -- in cardano-node master.
-   --}
-  forMachine _dtal (ExtraTrace tr) =
-    mconcat [ "kind" .= String "ExtraTrace"
-            , "event" .= String (pack $ show tr)
-            ]
+
+  forMachine dtal (ExtraTrace tr) = forMachine dtal tr
 
   forHuman = pack . show
 
@@ -448,10 +444,10 @@ instance ( Ord ntnAddr
     ]
   asMetrics _ = []
 
-{-- TODO: `extraTrace` was added here but no in cardano-node master:
--- instance MetaTrace (TracePeerSelection extraDebugState extraFlags extraPeers SockAddr) where
---}
-instance MetaTrace (TracePeerSelection extraDebugState extraFlags extraPeers extraTrace SockAddr) where
+
+instance MetaTrace (ToExtraTrace extraPeers)
+      => MetaTrace (TracePeerSelection extraDebugState extraFlags
+                          extraPeers ntnAddr) where
     namespaceFor TraceLocalRootPeersChanged {} =
       Namespace [] ["LocalRootPeersChanged"]
     namespaceFor TraceTargetsChanged {}        =
@@ -579,7 +575,7 @@ instance MetaTrace (TracePeerSelection extraDebugState extraFlags extraPeers ext
     namespaceFor TraceDebugState {} =
       Namespace [] ["DebugState"]
     namespaceFor (ExtraTrace _) =
-      Namespace [] ["ExtraTrace"]
+      Namespace [] []
 
     severityFor (Namespace [] ["LocalRootPeersChanged"]) _ = Just Notice
     severityFor (Namespace [] ["TargetsChanged"]) _ = Just Notice
@@ -711,7 +707,6 @@ instance MetaTrace (TracePeerSelection extraDebugState extraFlags extraPeers ext
     {-- TODO: Implementation for `ExtraTrace` was added here but it's not present
      -- in cardano-node master.
      --}
-    documentFor (Namespace [] ["ExtraTrace"]) = Just ""
     documentFor _ = Nothing
 
     metricsDocFor (Namespace [] ["ChurnAction"]) =
@@ -786,6 +781,4 @@ instance MetaTrace (TracePeerSelection extraDebugState extraFlags extraPeers ext
       , Namespace [] ["VerifyPeerSnapshot"]
       , Namespace [] ["OutboundGovernorCriticalFailure"]
       , Namespace [] ["DebugState"]
-      , Namespace [] ["ExtraTrace"]
-      ]
-
+      ] ++ map nsCast (allNamespaces :: [Namespace (ToExtraTrace extraPeers)])
