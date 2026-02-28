@@ -1,8 +1,11 @@
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE NamedFieldPuns    #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE PackageImports    #-}
-
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE PackageImports        #-}
+{-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE TypeOperators         #-}
+{-# LANGUAGE UndecidableInstances  #-}
 --------------------------------------------------------------------------------
 
 -- Orphan instances module for Cardano tracer.
@@ -67,10 +70,13 @@ instance LogFormatting CardanoDebugPeerSelection where
 instance ( Show extraState
          , Show extraFlags
          , Show extraPeers
+         , Show peeraddr
+         , SupportsPeerSelectionState extraPeers peeraddr
+         , forall extraCounters. LogFormatting (PeerSelectionCounters extraCounters)
          )
-      => LogFormatting (DebugPeerSelection extraState extraFlags extraPeers SockAddr) where
-  forMachine _dtal@DNormal (TraceGovernorState blockedAt wakeupAfter
-                   _st@PeerSelectionState { targets }) =
+      => LogFormatting (DebugPeerSelection extraState extraFlags extraPeers peeraddr) where
+  forMachine dtal@DNormal (TraceGovernorState blockedAt wakeupAfter
+                   st@PeerSelectionState { targets }) =
     mconcat [ "kind" .= String "DebugPeerSelection"
             , "blockedAt" .= String (pack $ show blockedAt)
             , "wakeupAfter" .= String (pack $ show wakeupAfter)
@@ -86,7 +92,7 @@ instance ( Show extraState
              ]
   forHuman = pack . show
 
-instance MetaTrace (DebugPeerSelection extraState extraFlags extraPeers SockAddr) where
+instance MetaTrace (DebugPeerSelection extraState extraFlags extraPeers peeraddr) where
     namespaceFor TraceGovernorState {} = Namespace [] ["GovernorState"]
 
     severityFor (Namespace _ ["GovernorState"]) _ = Just Debug
@@ -98,4 +104,3 @@ instance MetaTrace (DebugPeerSelection extraState extraFlags extraPeers SockAddr
     allNamespaces = [
       Namespace [] ["GovernorState"]
       ]
-
