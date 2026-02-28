@@ -648,6 +648,7 @@ library tracing
     Ouroboros.Network.Tracing.PeerSelection.RootPeersDNS.DNSActions
     Ouroboros.Network.Tracing.PeerSelection.RootPeersDNS.LocalRootPeers
     Ouroboros.Network.Tracing.PeerSelection.RootPeersDNS.PublicRootPeers
+    Ouroboros.Network.Tracing.TxSubmission
 
   reexported-modules:
   default-language: Haskell2010
@@ -655,6 +656,8 @@ library tracing
   build-depends:
     aeson,
     base >=4.14 && <4.23,
+    containers,
+    io-classes:si-timers,
     iproute,
     network,
     ouroboros-network,
