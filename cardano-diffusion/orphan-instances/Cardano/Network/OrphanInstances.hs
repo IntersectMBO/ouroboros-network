@@ -34,10 +34,6 @@ instance FromJSON LedgerStateJudgement where
   parseJSON (String "TooOld")      = pure TooOld
   parseJSON _                      = fail "Invalid JSON for LedgerStateJudgement"
 
-instance ToJSON UseBootstrapPeers where
-  toJSON DontUseBootstrapPeers   = Null
-  toJSON (UseBootstrapPeers dps) = toJSON dps
-
 instance FromJSON UseBootstrapPeers where
   parseJSON Null = pure DontUseBootstrapPeers
   parseJSON v    = UseBootstrapPeers <$> parseJSON v
