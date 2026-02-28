@@ -637,6 +637,9 @@ library tracing
   hs-source-dirs: tracing
   exposed-modules:
     Ouroboros.Network.Tracing.PeerSelection
+    Ouroboros.Network.Tracing.TxSubmission
+    Ouroboros.Network.Tracing.TxSubmission.Inbound
+    Ouroboros.Network.Tracing.TxSubmission.Outbound
 
   other-modules:
     Ouroboros.Network.Tracing.PeerSelection.Governor
