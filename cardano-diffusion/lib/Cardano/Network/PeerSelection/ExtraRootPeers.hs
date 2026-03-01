@@ -5,7 +5,24 @@
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeFamilies          #-}
 
-module Cardano.Network.PeerSelection.ExtraRootPeers where
+module Cardano.Network.PeerSelection.ExtraRootPeers
+  ( ExtraPeers (..)
+  , ToExtraTrace (..)
+  , ViewExtraPeers (..)
+  , toAdvertisePeersMap
+  , intersection
+  , difference
+  , size
+  , toSet
+  , member
+  , nullAll
+  , nullBootstrap
+  , nullPublicConfig
+  , empty
+  , fromMapAndSet
+  , invariant
+  , cardanoPublicRootPeersAPI
+  ) where
 
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -14,12 +31,12 @@ import Data.Set qualified as Set
 
 import Cardano.Network.LedgerStateJudgement
 import Cardano.Network.PeerSelection.Bootstrap
+import Ouroboros.Network.PeerSelection.Governor.Types (PeerSelectionState (..),
+           SupportsPeerSelectionState (..))
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
-import Ouroboros.Network.PeerSelection.Types
-import Ouroboros.Network.PeerSelection.Governor.Types (
-  SupportsPeerSelectionState (..), PeerSelectionState (..))
-import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
 import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers (..))
+import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
+import Ouroboros.Network.PeerSelection.Types
 
 data ExtraPeers peeraddr =
   ExtraPeers

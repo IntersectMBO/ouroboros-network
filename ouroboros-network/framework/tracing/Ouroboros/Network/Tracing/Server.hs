@@ -1,45 +1,17 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE PackageImports    #-}
 
---------------------------------------------------------------------------------
-
--- Orphan instances module for Cardano tracer.
 {-# OPTIONS_GHC -Wno-orphans #-}
--- Extracted from "cardano-node" `Cardano.Node.Tracing.Tracers.P2P`.
--- Branch "master" (2026-02-11, 85869e9dd21d9dac7c4381418346e97259c3303b).
-
---------------------------------------------------------------------------------
-
 module Ouroboros.Network.Tracing.Server () where
 
---------------------------------------------------------------------------------
+import Data.Aeson (ToJSON, Value (String), toJSON, (.=))
+import Data.Text (pack)
 
----------
--- base -
----------
---
----------------------
--- Package: "aeson" -
----------------------
-import "aeson" Data.Aeson (ToJSON, Value (String), toJSON, (.=))
----------------------------------
--- Package: "ouroboros-network" -
----------------------------------
-import "ouroboros-network" Ouroboros.Network.Server as Server
-import "ouroboros-network" Ouroboros.Network.Server.RateLimiting qualified as SRL
+import Cardano.Logging
+import Ouroboros.Network.Server as Server
+import Ouroboros.Network.Server.RateLimiting qualified as SRL
 -- Needed for `instance ToJSON (ConnectionId addr) where`
-import "ouroboros-network" Ouroboros.Network.OrphanInstances qualified ()
---------------------
--- Package: "text" -
---------------------
-import "text" Data.Text (pack)
---------------------------------
--- Package: "trace-dispatcher" -
---------------------------------
-import "trace-dispatcher" Cardano.Logging
----------
--- Self -
----------
+import Ouroboros.Network.OrphanInstances qualified ()
+
 import Ouroboros.Network.Tracing.ConnectionId ()
 
 --------------------------------------------------------------------------------
@@ -156,4 +128,3 @@ instance MetaTrace (Server.Trace addr) where
       , Namespace [] ["Stopped"]
       , Namespace [] ["Error"]
       ]
-

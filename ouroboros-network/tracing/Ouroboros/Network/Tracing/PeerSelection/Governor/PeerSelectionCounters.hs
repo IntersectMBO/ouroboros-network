@@ -1,57 +1,26 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE PackageImports      #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 --------------------------------------------------------------------------------
-
 -- Orphan instances module for Cardano tracer.
 {-# OPTIONS_GHC -Wno-orphans #-}
--- Extracted from "cardano-node" `Cardano.Node.Tracing.Tracers.P2P`.
--- Branch "master" (2026-02-11, 85869e9dd21d9dac7c4381418346e97259c3303b).
-
-{- TODO: All references to package "cardano-diffusion" were removed.
---       See all the TODO annotations.
-import           "cardano-diffusion" -- "cardano-diffusion:???"
-  Cardano.Network.PeerSelection.Governor.Monitor
-    ( ExtraTrace (TraceLedgerStateJudgementChanged, TraceUseBootstrapPeersChanged)
-    )
---}
-
 --------------------------------------------------------------------------------
 
 module Ouroboros.Network.Tracing.PeerSelection.Governor.PeerSelectionCounters () where
 
 --------------------------------------------------------------------------------
-
----------
--- base -
----------
---
----------------------
--- Package: "aeson" -
----------------------
-import "aeson" Data.Aeson (Value (String), (.=))
----------------------------------
--- Package: "ouroboros-network" -
----------------------------------
-import "aeson" Data.Aeson
-import "ouroboros-network" Ouroboros.Network.PeerSelection.Governor.Types
-           (PeerSelectionCounters, PeerSelectionView (..), SupportsPeerSelectionState (..))
---------------------------------
--- Package: "trace-dispatcher" -
---------------------------------
-import "trace-dispatcher" Cardano.Logging
+import Cardano.Logging
+import Data.Aeson
+import Ouroboros.Network.PeerSelection.Governor.Types (PeerSelectionCounters,
+           PeerSelectionView (..), SupportsPeerSelectionState (..))
 
 --------------------------------------------------------------------------------
 -- PeerSelectionCounters
 --------------------------------------------------------------------------------
 
-{-- TODO: Before "cardano-diffusion" removal:
-instance LogFormatting (PeerSelectionCounters (Cardano.ExtraPeerSelectionSetsWithSizes addr)) where
---}
 instance LogFormatting (ViewExtraPeers extraPeers)
       => LogFormatting (PeerSelectionCounters (ViewExtraPeers extraPeers)) where
   forMachine dtal PeerSelectionCounters {..} =
