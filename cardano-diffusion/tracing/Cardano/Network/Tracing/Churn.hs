@@ -25,7 +25,7 @@ instance MetaTrace TraceChurnMode where
     Namespace [] ["PeerSelection", "ChurnMode"]
 
   severityFor _ (Just TraceChurnMode {}) = Just Info
-  severityFor _ Nothing = Nothing
+  severityFor _ Nothing                  = Nothing
 
   documentFor (Namespace _ ["PeerSelection", "ChurnMode"]) = Just $ mconcat
     [ "Affects churning strategy. For a synced node or operating in GenesisMode "

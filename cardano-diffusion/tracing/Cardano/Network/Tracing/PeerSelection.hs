@@ -5,11 +5,11 @@
 module Cardano.Network.Tracing.PeerSelection () where
 
 import Data.Aeson
-import Data.Text qualified  as Text
+import Data.Text qualified as Text
 
 import Cardano.Logging
-import Cardano.Network.PeerSelection.ExtraRootPeers
 import Cardano.Network.LedgerPeerConsensusInterface
+import Cardano.Network.PeerSelection.ExtraRootPeers
 import Cardano.Network.Tracing.Churn ()
 
 instance LogFormatting (ToExtraTrace (ExtraPeers peeraddr)) where

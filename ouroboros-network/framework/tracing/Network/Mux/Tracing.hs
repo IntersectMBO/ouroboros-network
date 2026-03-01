@@ -2,56 +2,24 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE PackageImports      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
 
---------------------------------------------------------------------------------
-
--- Orphan instances module for Cardano tracer.
 {-# OPTIONS_GHC -Wno-orphans #-}
--- Extracted from "cardano-node" `Cardano.Node.Tracing.Tracers.Diffusion`.
--- Branch "master" (2026-02-11, 85869e9dd21d9dac7c4381418346e97259c3303b).
-
-{-- TODO: All references to `ExnMempoolTimeout` were removed.
---        See all TODO annotations.
---}
-
---------------------------------------------------------------------------------
 
 module Network.Mux.Tracing () where
 
---------------------------------------------------------------------------------
-
----------
--- base -
----------
+import Data.Aeson (Value (String), (.=))
 import Data.List (isPrefixOf)
+import Data.Text (Text)
 import Data.Typeable
----------------------
--- Package: "aeson" -
----------------------
-import "aeson" Data.Aeson (Value (String), (.=))
---------------------------
--- Package: "formatting" -
---------------------------
-import "formatting" Formatting
----------------------------
--- Package: "network-mux" -
----------------------------
-import "network-mux" Network.Mux qualified as Mux
+import Formatting
+
+import Cardano.Logging
+import Network.Mux qualified as Mux
 #ifdef linux_HOST_OS
-import "network-mux" Network.Mux.TCPInfo (StructTCPInfo (..))
+import Network.Mux.TCPInfo (StructTCPInfo (..))
 #endif
-import "network-mux" Network.Mux.Types (SDUHeader (..), unRemoteClockModel)
---------------------
--- Package: "text" -
---------------------
-import "text" Data.Text (Text)
---------------------------------
--- Package: "trace-dispatcher" -
---------------------------------
-import "trace-dispatcher" Cardano.Logging
+import Network.Mux.Types (SDUHeader (..), unRemoteClockModel)
 
 --------------------------------------------------------------------------------
 -- Mux Tracer
