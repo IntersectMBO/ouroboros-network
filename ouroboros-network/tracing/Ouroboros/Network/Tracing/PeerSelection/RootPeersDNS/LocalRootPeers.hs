@@ -1,62 +1,20 @@
 {-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE PackageImports    #-}
 
---------------------------------------------------------------------------------
-
--- Orphan instances module for Cardano tracer.
 {-# OPTIONS_GHC -Wno-orphans #-}
--- Extracted from "cardano-node" `Cardano.Node.Tracing.Tracers.P2P`.
--- Branch "master" (2026-02-11, 85869e9dd21d9dac7c4381418346e97259c3303b).
-
-{- TODO: All references to package "cardano-diffusion" were removed.
---       See all the TODO annotations.
---}
-
---------------------------------------------------------------------------------
-
 module Ouroboros.Network.Tracing.PeerSelection.RootPeersDNS.LocalRootPeers () where
 
---------------------------------------------------------------------------------
-
----------
--- base -
----------
 import Control.Exception (displayException)
----------------------
--- Package: "aeson" -
----------------------
-import "aeson" Data.Aeson (ToJSON, ToJSONKey, Value (String), toJSON, (.=))
----------------------------------
--- Package: "ouroboros-network" -
----------------------------------
+
+import Data.Aeson (ToJSON, ToJSONKey, Value (String), toJSON, (.=))
+import Data.Text (pack)
+
 -- Needed for `ToJSON PeerSelection.State.LocalRootPeers.LocalRootConfig`
-import "ouroboros-network" Ouroboros.Network.OrphanInstances qualified ()
-import "ouroboros-network" Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
+import Cardano.Logging
+import Ouroboros.Network.OrphanInstances qualified ()
+import Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
            (TraceLocalRootPeers (..))
---------------------
--- Package: "text" -
---------------------
-import "text" Data.Text (pack)
---------------------------------
--- Package: "trace-dispatcher" -
---------------------------------
-import "trace-dispatcher" Cardano.Logging
 
---------------------------------------------------------------------------------
--- LocalRootPeers Tracer
---------------------------------------------------------------------------------
-
-{-- TODO: Before "cardano-diffusion" removal:
-instance
-  ( ToJSONKey ntnAddr
-  , ToJSON ntnAddr
-  , ToJSONKey RelayAccessPoint
-  , Show ntnAddr
-  ) => LogFormatting (TraceLocalRootPeers PeerTrustable ntnAddr) where
- -- TODO: That later changed in f550a6eb503cc81807419795ab2360e6042ce9d5:
-instance LogFormatting CardanoTraceLocalRootPeers where
---}
 instance
   ( ToJSONKey ntnAddr
   , ToJSON ntnAddr
@@ -97,6 +55,7 @@ instance
       [ "kind" .= String "TraceLocalRootDNSMap"
       , "dnsMap" .= dnsMap
       ]
+
   forHuman = pack . show
 
 instance MetaTrace (TraceLocalRootPeers ntnAddr extraFlags) where
@@ -143,4 +102,3 @@ instance MetaTrace (TraceLocalRootPeers ntnAddr extraFlags) where
     , Namespace [] ["LocalRootReconfigured"]
     , Namespace [] ["LocalRootDNSMap"]
     ]
-

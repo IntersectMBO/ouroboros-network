@@ -537,3 +537,27 @@ library subscription
     io-classes:si-timers ^>=1.8.0.1,
     network-mux ^>=0.10,
     ouroboros-network:{api, framework} ^>=0.24,
+
+library tracing
+  import: ghc-options
+  visibility: public
+  hs-source-dirs: tracing
+  exposed-modules:
+    Cardano.Network.Tracing.PeerSelection
+    Cardano.Network.Tracing.PeerSelectionCounters
+
+  other-modules:
+    Cardano.Network.Tracing.Churn
+
+  reexported-modules:
+  default-language: Haskell2010
+  other-extensions:
+  build-depends:
+    aeson,
+    base >=4.14 && <4.23,
+    cardano-diffusion,
+    text,
+    trace-dispatcher ^>=2.11.0,
+
+  if flag(asserts)
+    ghc-options: -fno-ignore-asserts

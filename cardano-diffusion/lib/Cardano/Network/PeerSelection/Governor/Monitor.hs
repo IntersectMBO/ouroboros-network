@@ -34,9 +34,8 @@ import Data.Set qualified as Set
 import Cardano.Network.ConsensusMode
 import Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
 import Cardano.Network.LedgerStateJudgement
-import Cardano.Network.PeerSelection.Bootstrap (
-           isBootstrapPeersEnabled, isNodeAbleToMakeProgress,
-           requiresBootstrapPeers)
+import Cardano.Network.PeerSelection.Bootstrap (isBootstrapPeersEnabled,
+           isNodeAbleToMakeProgress, requiresBootstrapPeers)
 import Cardano.Network.PeerSelection.ExtraRootPeers qualified as Cardano
 import Cardano.Network.PeerSelection.Governor.PeerSelectionActions qualified as Cardano
 import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano

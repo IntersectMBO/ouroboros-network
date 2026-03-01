@@ -1,5 +1,5 @@
-{-# LANGUAGE OverloadedStrings    #-}
-{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -20,13 +20,13 @@ instance (Show txid, Show tx)
   forMachine dtal (TraceTxSubmissionOutboundRecvMsgRequestTxs txids) =
        ("kind" .= String "TraceTxSubmissionOutboundRecvMsgRequestTxs")
     <> case dtal of
-         DDetailed -> "txIds" .= Text.pack (show txids)
+         DDetailed  -> "txIds" .= Text.pack (show txids)
          _otherwise -> mempty
 
   forMachine dtal (TraceTxSubmissionOutboundSendMsgReplyTxs txs) =
        ("kind" .= String "TraceTxSubmissionOutboundSendMsgReplyTxs")
     <> case dtal of
-             DDetailed -> "txs" .= String (Text.pack $ show txs)
+             DDetailed  -> "txs" .= String (Text.pack $ show txs)
              _otherwise -> mempty
 
   forMachine _dtal (TraceControlMessage msg) =

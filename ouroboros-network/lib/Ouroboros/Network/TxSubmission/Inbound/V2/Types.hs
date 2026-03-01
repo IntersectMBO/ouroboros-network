@@ -403,7 +403,7 @@ data TxSubmissionCounters =
       numOfOutstandingTxIds         :: Int,
       -- ^ txids which are not yet downloaded.  This is a diff of keys sets of
       -- `referenceCounts` and a sum of `bufferedTxs` and
-      -- `inbubmissionToMempoolTxs` maps.
+      -- `insubmissionToMempoolTxs` maps.
       numOfBufferedTxs              :: Int,
       -- ^ number of all buffered txs (downloaded or not available)
       numOfInSubmissionToMempoolTxs :: Int,

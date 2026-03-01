@@ -1,52 +1,18 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE PackageImports    #-}
 
---------------------------------------------------------------------------------
 
--- Orphan instances module for Cardano tracer.
 {-# OPTIONS_GHC -Wno-orphans #-}
--- Extracted from "cardano-node" `Cardano.Node.Tracing.Tracers.P2P`.
--- Branch "master" (2026-02-11, 85869e9dd21d9dac7c4381418346e97259c3303b).
-
---------------------------------------------------------------------------------
-
 module Ouroboros.Network.Tracing.PeerSelection.RootPeersDNS.DNSActions () where
 
---------------------------------------------------------------------------------
+import Data.Aeson (ToJSON, Value (String), toJSON, (.=))
+import Data.IP qualified as IP
+import Data.Text (pack)
 
----------
--- base -
----------
---
----------------------
--- Package: "aeson" -
----------------------
-import "aeson" Data.Aeson (ToJSON, Value (String), toJSON, (.=))
------------------------
--- Package: "iproute" -
------------------------
-import "iproute" Data.IP qualified as IP
----------------------------------
--- Package: "ouroboros-network" -
----------------------------------
--- Needed for `ToJSON Network.Socket.Types.PortNumber`
-import "ouroboros-network" Ouroboros.Network.OrphanInstances qualified ()
-import "ouroboros-network" Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
-           (DNSTrace (..))
---------------------
--- Package: "text" -
---------------------
-import "text" Data.Text (pack)
---------------------------------
--- Package: "trace-dispatcher" -
---------------------------------
-import "trace-dispatcher" Cardano.Logging
+import Cardano.Logging
+import Ouroboros.Network.OrphanInstances qualified ()
+import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions (DNSTrace (..))
 
--------------------------------------------------------------------------------
--- Types.
--------------------------------------------------------------------------------
 
--- From: `Cardano.Tracing.OrphanInstances.Network`.
 instance ToJSON IP.IP where
   toJSON ip = String (pack . show $ ip)
 
@@ -113,4 +79,3 @@ instance MetaTrace DNSTrace where
     , Namespace [] ["SRVLookupResult"]
     , Namespace [] ["SRVLookupError"]
     ]
-

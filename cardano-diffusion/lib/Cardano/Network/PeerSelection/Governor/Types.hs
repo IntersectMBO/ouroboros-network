@@ -41,7 +41,8 @@ import Ouroboros.Network.PeerSelection.Governor.Types (AssociationMode (..),
            BootstrapPeersCriticalTimeoutError (..), ExtraGuardedDecisions (..),
            PeerSelectionActions (..), PeerSelectionGovernorArgs (..),
            PeerSelectionInterfaces (..), PeerSelectionSetsWithSizes,
-           PeerSelectionState (..), PeerSelectionView (..), SupportsPeerSelectionState (..))
+           PeerSelectionState (..), PeerSelectionView (..),
+           SupportsPeerSelectionState (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers
            (LedgerPeersConsensusInterface (lpExtraAPI))
 
