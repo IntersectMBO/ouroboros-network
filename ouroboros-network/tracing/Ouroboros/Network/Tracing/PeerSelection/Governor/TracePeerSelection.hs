@@ -45,6 +45,7 @@ import "network" Network.Socket (SockAddr)
 ---------------------------------
 -- Package: "ouroboros-network" -
 ---------------------------------
+import "ouroboros-network" Ouroboros.Network.Diffusion.Types
 import "ouroboros-network" Ouroboros.Network.PeerSelection.Governor.Types
            (DebugPeerSelectionState (..), DemotionTimeoutException,
            TracePeerSelection (..), SupportsPeerSelectionState (..))
@@ -782,3 +783,33 @@ instance MetaTrace (ToExtraTrace extraPeers)
       , Namespace [] ["OutboundGovernorCriticalFailure"]
       , Namespace [] ["DebugState"]
       ] ++ map nsCast (allNamespaces :: [Namespace (ToExtraTrace extraPeers)])
+
+
+-- satisfy superclass constraints for plain-Ouroboros instantiation
+
+instance LogFormatting (ToExtraTrace (NoExtraPeers peeraddr)) where
+  forMachine _dtal _ =
+    mconcat [ "kind" .= String "ExtraTrace"
+            , "error" .= String "impossible ouroboros-network error: Unexpected trace for NoExtraPeers"
+            ]
+
+  forHuman _ = "impossible ouroboros-network error: Unexpected ExtraTrace tag for NoExtraPeers"
+
+instance MetaTrace (ToExtraTrace (NoExtraPeers peeraddr)) where
+  namespaceFor _ = Namespace [] ["Error"]
+  severityFor _ _ = Just Error
+  documentFor _ = Just "This should just never happen"
+  allNamespaces = [Namespace [] ["Error"]]
+
+
+instance LogFormatting (ViewExtraPeers (NoExtraPeers peeraddr)) where
+  forMachine _dtal _ =
+    "error" .= String "impossible ouroboros-network error: sorry, there's just no counters NoExtraPeers"
+
+  forHuman _ = "impossible ouroboros-network error: sorry, there's just no counters for NoExtraPeers"
+
+instance MetaTrace (ViewExtraPeers (NoExtraPeers peeraddr)) where
+  namespaceFor _ = Namespace [] ["Error"]
+  severityFor _ _ = Just Error
+  documentFor _ = Just "This should just never happen"
+  allNamespaces = [Namespace [] ["Error"]]
