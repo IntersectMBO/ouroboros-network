@@ -1,62 +1,33 @@
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE NamedFieldPuns       #-}
 {-# LANGUAGE OverloadedStrings    #-}
-{-# LANGUAGE PackageImports       #-}
 {-# LANGUAGE RecordWildCards      #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 
---------------------------------------------------------------------------------
 
--- Orphan instances module for Cardano tracer.
 {-# OPTIONS_GHC -Wno-orphans #-}
--- Extracted from "cardano-node" `Cardano.Node.Tracing.Tracers.P2P`.
--- Branch "master" (2026-02-11, 85869e9dd21d9dac7c4381418346e97259c3303b).
-
---------------------------------------------------------------------------------
 
 module Ouroboros.Network.Tracing.ConnectionManager () where
 
---------------------------------------------------------------------------------
+import Data.Aeson (ToJSON, Value (String), object, toJSON, (.=))
+import Data.Aeson.Types (listValue)
+import Data.Map.Strict qualified as Map
+import Data.Set qualified as Set
+import Data.Text (pack)
 
----------
--- base -
----------
---
----------------------
--- Package: "aeson" -
----------------------
-import "aeson" Data.Aeson (ToJSON, Value (String), object, toJSON, (.=))
-import "aeson" Data.Aeson.Types (listValue)
---------------------------
--- Package: "containers" -
---------------------------
-import "containers" Data.Map.Strict qualified as Map
-import "containers" Data.Set qualified as Set
----------------------------------
--- Package: "ouroboros-network" -
----------------------------------
-import "ouroboros-network" Ouroboros.Network.ConnectionHandler
-           (ConnectionHandlerTrace (..))
-import "ouroboros-network" Ouroboros.Network.ConnectionId (ConnectionId (..))
-import "ouroboros-network" Ouroboros.Network.ConnectionManager.ConnMap
-           (ConnMap (..))
-import "ouroboros-network" Ouroboros.Network.ConnectionManager.Core as ConnectionManager
+import Cardano.Logging
+import Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace (..))
+import Ouroboros.Network.ConnectionId (ConnectionId (..))
+import Ouroboros.Network.ConnectionManager.ConnMap (ConnMap (..))
+import Ouroboros.Network.ConnectionManager.Core as ConnectionManager
            (Trace (..))
-import "ouroboros-network" Ouroboros.Network.ConnectionManager.Types
+import Ouroboros.Network.ConnectionManager.Types
            (ConnectionManagerCounters (..))
-import "ouroboros-network" Ouroboros.Network.ConnectionManager.Types qualified as ConnectionManager
-import "ouroboros-network" Ouroboros.Network.RethrowPolicy (ErrorCommand (..))
+import Ouroboros.Network.ConnectionManager.Types qualified as ConnectionManager
+import Ouroboros.Network.RethrowPolicy (ErrorCommand (..))
 -- Needed for `instance ToJSON ConnectionManager.AbstractState where`.
-import "ouroboros-network" Ouroboros.Network.OrphanInstances qualified ()
---------------------
--- Package: "text" -
---------------------
-import "text" Data.Text (pack)
---------------------------------
--- Package: "trace-dispatcher" -
---------------------------------
-import "trace-dispatcher" Cardano.Logging
+import Ouroboros.Network.OrphanInstances qualified ()
 
 --------------------------------------------------------------------------------
 -- Connection Manager Tracer.
@@ -426,4 +397,3 @@ instance MetaTrace (ConnectionManager.AbstractTransitionTrace peerAddr) where
     documentFor _                             = Nothing
 
     allNamespaces = [Namespace [] ["Transition"]]
-

@@ -1,42 +1,16 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE PackageImports    #-}
 
--------------------------------------------------------------------------------
-
--- Orphan instances module for Cardano tracer.
 {-# OPTIONS_GHC -Wno-orphans #-}
--- Extracted from "cardano-node" `Cardano.Node.Tracing.Tracers.P2P`.
--- Branch "master" (2026-02-11, 85869e9dd21d9dac7c4381418346e97259c3303b).
-
---------------------------------------------------------------------------------
-
 module Ouroboros.Network.Tracing.PeerSelection.RootPeersDNS.PublicRootPeers () where
 
---------------------------------------------------------------------------------
+import Data.Aeson (Value (String), toJSON, toJSONList, (.=))
+import Data.Text (pack)
 
----------
--- base -
----------
---
----------------------
--- Package: "aeson" -
----------------------
-import "aeson" Data.Aeson (Value (String), toJSON, toJSONList, (.=))
----------------------------------
--- Package: "ouroboros-network" -
----------------------------------
--- Needed for `ToJSONKey PeerSelection.RelayAccessPoint.RelayAccessPoint`
-import "ouroboros-network" Ouroboros.Network.OrphanInstances qualified ()
-import "ouroboros-network" Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
+import Cardano.Logging
+import Ouroboros.Network.OrphanInstances qualified ()
+import Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
            (TracePublicRootPeers (..))
---------------------
--- Package: "text" -
---------------------
-import "text" Data.Text (pack)
---------------------------------
--- Package: "trace-dispatcher" -
---------------------------------
-import "trace-dispatcher" Cardano.Logging
+
 
 --------------------------------------------------------------------------------
 -- PublicRootPeers Tracer
@@ -71,4 +45,3 @@ instance MetaTrace TracePublicRootPeers where
       Namespace [] ["PublicRootRelayAccessPoint"]
     , Namespace [] ["PublicRootDomains"]
     ]
-

@@ -1,5 +1,5 @@
-{-# LANGUAGE OverloadedStrings    #-}
-{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Network.Tracing.TxSubmission.Inbound () where
@@ -109,17 +109,17 @@ instance MetaTrace (TraceTxSubmissionInbound txid tx) where
     namespaceFor TraceTxInboundDecision {} =
       Namespace [] ["Decision"]
 
-    severityFor (Namespace _ ["Collected"]) _ = Just Debug
-    severityFor (Namespace _ ["Processed"]) _ = Just Debug
-    severityFor (Namespace _ ["Terminated"]) _ = Just Notice
-    severityFor (Namespace _ ["CanRequestMoreTxs"]) _ = Just Debug
+    severityFor (Namespace _ ["Collected"]) _            = Just Debug
+    severityFor (Namespace _ ["Processed"]) _            = Just Debug
+    severityFor (Namespace _ ["Terminated"]) _           = Just Notice
+    severityFor (Namespace _ ["CanRequestMoreTxs"]) _    = Just Debug
     severityFor (Namespace _ ["CannotRequestMoreTxs"]) _ = Just Debug
-    severityFor (Namespace _ ["AddedToMempool"]) _ = Just Debug
-    severityFor (Namespace _ ["RejectedFromMempool"]) _ = Just Debug
-    severityFor (Namespace _ ["Error"]) _ = Just Debug
-    severityFor (Namespace _ ["Decision"]) _ = Just Debug
+    severityFor (Namespace _ ["AddedToMempool"]) _       = Just Debug
+    severityFor (Namespace _ ["RejectedFromMempool"]) _  = Just Debug
+    severityFor (Namespace _ ["Error"]) _                = Just Debug
+    severityFor (Namespace _ ["Decision"]) _             = Just Debug
 
-    severityFor _ _ = Nothing
+    severityFor _ _                                      = Nothing
 
     metricsDocFor (Namespace _ ["Collected"]) =
       [ ("submissions.submitted", "")]

@@ -1,15 +1,14 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE PackageImports    #-}
 {-# LANGUAGE RecordWildCards   #-}
 
 -- Orphan instances module for Cardano tracer.
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Cardano.Network.Tracing.PeerSelectionCounters () where
 
-import "aeson" Data.Aeson
-import "trace-dispatcher" Cardano.Logging
-import "text" Data.Text qualified as Text
+import Cardano.Logging
+import Data.Aeson
+import Data.Text qualified as Text
 
 import Cardano.Network.PeerSelection.ExtraRootPeers
 --------------------------------------------------------------------------------
@@ -43,7 +42,7 @@ instance MetaTrace (ViewExtraPeers (ExtraPeers peeraddr)) where
     namespaceFor ExtraPeerSelectionSetsWithSizes {}  = Namespace [] ["Counters"]
 
     severityFor (Namespace [] ["Counters"]) _ = Just Debug
-    severityFor _ _ = Nothing
+    severityFor _ _                           = Nothing
 
     documentFor (Namespace [] ["Counters"]) =
       Just "Cardano-specific extensions to peer types"

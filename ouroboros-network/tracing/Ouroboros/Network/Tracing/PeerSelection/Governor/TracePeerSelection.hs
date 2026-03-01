@@ -1,70 +1,31 @@
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE OverloadedStrings    #-}
-{-# LANGUAGE PackageImports       #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE UndecidableInstances #-}
 
---------------------------------------------------------------------------------
-
--- Orphan instances module for Cardano tracer.
 {-# OPTIONS_GHC -Wno-orphans #-}
--- Extracted from "cardano-node" `Cardano.Node.Tracing.Tracers.P2P`.
--- Branch "master" (2026-02-11, 85869e9dd21d9dac7c4381418346e97259c3303b).
-
-{- TODO: All references to package "cardano-diffusion" were removed.
---       See all the TODO annotations.
-import           "cardano-diffusion" -- "cardano-diffusion:???"
-  Cardano.Network.PeerSelection.Governor.Monitor
-    ( ExtraTrace (TraceLedgerStateJudgementChanged, TraceUseBootstrapPeersChanged)
-    )
---}
-
---------------------------------------------------------------------------------
 
 module Ouroboros.Network.Tracing.PeerSelection.Governor.TracePeerSelection () where
 
 --------------------------------------------------------------------------------
 
----------
--- base -
----------
+
 import Control.Exception (fromException)
+import Data.Aeson (ToJSON, ToJSONKey, Value (String), toJSON, toJSONList, (.=))
 import Data.Bifunctor (first)
 import Data.Foldable (toList)
-import "text" Data.Text (pack)
----------------------
--- Package: "aeson" -
----------------------
-import "aeson" Data.Aeson (ToJSON, ToJSONKey, Value (String), toJSON,
-           toJSONList, (.=))
------------------------
--- Package: "network" -
------------------------
-import "network" Network.Socket (SockAddr)
----------------------------------
--- Package: "ouroboros-network" -
----------------------------------
-import "ouroboros-network" Ouroboros.Network.Diffusion.Types
-import "ouroboros-network" Ouroboros.Network.PeerSelection.Governor.Types
+import Data.Text (pack)
+
+import Cardano.Logging
+import Ouroboros.Network.Diffusion.Types
+import Ouroboros.Network.PeerSelection.Governor.Types
            (DebugPeerSelectionState (..), DemotionTimeoutException,
-           TracePeerSelection (..), SupportsPeerSelectionState (..))
-import "ouroboros-network" Ouroboros.Network.PeerSelection.PublicRootPeers
-           (PublicRootPeers)
-import "ouroboros-network" Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
-import "ouroboros-network" Ouroboros.Network.Protocol.PeerSharing.Type
+           SupportsPeerSelectionState (..), TracePeerSelection (..))
+import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers)
+import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
+import Ouroboros.Network.Protocol.PeerSharing.Type
            (PeerSharingAmount (PeerSharingAmount))
---------------------
--- Package: "text" -
---------------------
-import "text" Data.Text (pack)
---------------------------------
--- Package: "trace-dispatcher" -
---------------------------------
-import "trace-dispatcher" Cardano.Logging
----------
--- Self -
----------
 import Ouroboros.Network.Tracing.PeerSelection.Governor.Utils
            (peerSelectionTargetsToObject)
 
@@ -72,11 +33,6 @@ import Ouroboros.Network.Tracing.PeerSelection.Governor.Utils
 -- PeerSelection Tracer
 --------------------------------------------------------------------------------
 
-{-- TODO: Before "cardano-diffusion" removal:
-instance LogFormatting (TracePeerSelection Cardano.DebugPeerSelectionState PeerTrustable (Cardano.PublicRootPeers.ExtraPeers SockAddr) SockAddr) where
- -- TODO: That later changed in f550a6eb503cc81807419795ab2360e6042ce9d5:
-instance LogFormatting CardanoTracePeerSelection where
---}
 instance ( Show extraDebugState
          , Show extraFlags
          , ToJSON extraFlags
@@ -94,11 +50,7 @@ instance ( Show extraDebugState
              ]
   forMachine _dtal (TraceTargetsChanged pst) =
     mconcat [ "kind" .= String "TargetsChanged"
-             , "previous" .= toJSON pst
-{-- TODO: Field was removed here but not in cardano-node master
- -- See: ouroboros-network/changelog.d/20260122_220351_coot_ouroboros_churn_fix.md
-             , "current" .= toJSON pst'
---}
+             , "current" .= toJSON pst
              ]
   forMachine _dtal (TracePublicRootsRequest tRootPeers nRootPeers) =
     mconcat [ "kind" .= String "PublicRootsRequest"
@@ -173,9 +125,6 @@ instance ( Show extraDebugState
              , "targetLocalEstablished" .= tLocalEst
              , "selectedPeers" .= toJSONList (toList sp)
              ]
-  {-- TODO: `forgotten` added here but not in cardano-node master
-   -- See: f9ae41a8962174e4f7d7e93d81f70f1c88cef263
-  --}
   forMachine _dtal (TracePromoteColdFailed tEst aEst p d err forgotten) =
     mconcat [ "kind" .= String "PromoteColdFailed"
              , "targetEstablished" .= tEst
@@ -197,9 +146,6 @@ instance ( Show extraDebugState
              , "actualEstablished" .= actualKnown
              , "selectedPeers" .= toJSONList (toList sp)
              ]
-  {-- TODO: `forgotten` added here but not in cardano-node master
-   -- See: f9ae41a8962174e4f7d7e93d81f70f1c88cef263
-  --}
   forMachine _dtal (TracePromoteColdBigLedgerPeerFailed tEst aEst p d err forgotten) =
     mconcat [ "kind" .= String "PromoteColdBigLedgerPeerFailed"
              , "targetEstablished" .= tEst
@@ -377,18 +323,8 @@ instance ( Show extraDebugState
             , "selected" .= selected
             , "available" .= available
             ]
-{-- TODO: Before "cardano-diffusion" removal:
-  forMachine _dtal (TraceLedgerStateJudgementChanged new) =
-    mconcat [ "kind" .= String "LedgerStateJudgementChanged"
-            , "new" .= show new ]
---}
   forMachine _dtal TraceOnlyBootstrapPeers =
     mconcat [ "kind" .= String "LedgerStateJudgementChanged" ]
-{-- TODO: Before "cardano-diffusion" removal:
-  forMachine _dtal (TraceUseBootstrapPeersChanged ubp) =
-    mconcat [ "kind" .= String "UseBootstrapPeersChanged"
-            , "useBootstrapPeers" .= toJSON ubp ]
---}
   forMachine _dtal TraceBootstrapPeersFlagChangedWhilstInSensitiveState =
     mconcat [ "kind" .= String "BootstrapPeersFlagChangedWhilstInSensitiveState"
             ]
@@ -553,16 +489,8 @@ instance MetaTrace (ToExtraTrace extraPeers)
       Namespace [] ["GovernorWakeup"]
     namespaceFor TraceChurnWait {}             =
       Namespace [] ["ChurnWait"]
-{-- TODO: Before "cardano-diffusion" removal:
-    namespaceFor TraceLedgerStateJudgementChanged {} =
-      Namespace [] ["LedgerStateJudgementChanged"]
---}
     namespaceFor TraceOnlyBootstrapPeers {} =
       Namespace [] ["OnlyBootstrapPeers"]
-{-- TODO: Before "cardano-diffusion" removal:
-    namespaceFor TraceUseBootstrapPeersChanged {} =
-      Namespace [] ["UseBootstrapPeersChanged"]
---}
     namespaceFor TraceVerifyPeerSnapshot {} =
       Namespace [] ["VerifyPeerSnapshot"]
     namespaceFor TraceBootstrapPeersFlagChangedWhilstInSensitiveState =
@@ -639,7 +567,7 @@ instance MetaTrace (ToExtraTrace extraPeers)
     severityFor (Namespace [] ["ChurnAction"]) _ = Just Info
     severityFor (Namespace [] ["ChurnTimeout"]) _ = Just Notice
     severityFor (Namespace [] ["DebugState"]) _ = Just Info
-    severityFor (Namespace [] ["ExtraTrace"]) _ = Just Debug
+    severityFor (Namespace [] ["ExtraTrace"]) _ = Just Info
     severityFor _ _ = Nothing
 
     documentFor (Namespace [] ["LocalRootPeersChanged"]) = Just  ""
@@ -705,9 +633,6 @@ instance MetaTrace (ToExtraTrace extraPeers)
       "Outbound Governor was killed unexpectedly"
     documentFor (Namespace [] ["DebugState"]) = Just
       "peer selection internal state"
-    {-- TODO: Implementation for `ExtraTrace` was added here but it's not present
-     -- in cardano-node master.
-     --}
     documentFor _ = Nothing
 
     metricsDocFor (Namespace [] ["ChurnAction"]) =
