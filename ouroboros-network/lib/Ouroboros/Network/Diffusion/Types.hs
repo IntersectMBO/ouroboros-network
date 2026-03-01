@@ -1,9 +1,11 @@
--- Common things between P2P and NonP2P Diffusion modules
-{-# LANGUAGE DataKinds          #-}
-{-# LANGUAGE GADTs              #-}
-{-# LANGUAGE KindSignatures     #-}
-{-# LANGUAGE RankNTypes         #-}
-{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE EmptyDataDeriving     #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE StandaloneDeriving    #-}
+{-# LANGUAGE TypeFamilies          #-}
 
 module Ouroboros.Network.Diffusion.Types
   ( DiffusionTracer (..)
@@ -14,6 +16,16 @@ module Ouroboros.Network.Diffusion.Types
   , Applications (..)
   , Arguments (..)
   , Interfaces (..)
+    -- | Convenience types for plain Ouroboros Network instantiation
+    -- without any extra peers configured. This is supported by
+    -- the bundled trace-dispatcher instances in the tracing libraries.
+  , NoExtraFlags (..)
+  , NoExtraState (..)
+  , NoExtraDebugState (..)
+  , NoExtraPeers (..)
+  , OuroborosPeerSelectionCounters
+  , OuroborosDebugPeerSelection
+  , OuroborosTracePeerSelection
     -- * ForkPolicy
   , Mx.ForkPolicy
   , Mx.noBindForkPolicy
@@ -69,6 +81,7 @@ import Ouroboros.Network.Driver.Simple (TraceSendRecv)
 import Ouroboros.Network.ExitPolicy
 import Ouroboros.Network.InboundGovernor qualified as IG
 import Ouroboros.Network.Mux qualified as Mx
+import Ouroboros.Network.PeerSelection.Governor.Types
 import Ouroboros.Network.Protocol.Handshake (Handshake, HandshakeArguments,
            Versions)
 import Ouroboros.Network.RethrowPolicy
@@ -121,12 +134,50 @@ data Failure where
 deriving instance Show Failure
 instance Exception Failure
 
+-- for Ourobors Network instantiation without any extra state/peers/flags
+data NoExtraFlags = NoExtraFlags
+  deriving (Eq, Show)
+data NoExtraState = NoExtraState
+  deriving (Eq, Show)
+data NoExtraDebugState = NoExtraDebugState
+  deriving (Eq, Show)
+data NoExtraPeers peeraddr = NoExtraPeers
+  deriving (Eq, Show)
+
+instance Monoid (NoExtraPeers peeraddr) where
+  mempty = NoExtraPeers
+
+instance Semigroup (NoExtraPeers peeraddr) where
+  _ <> _ = NoExtraPeers
+
+instance ( Ord peeraddr
+         , Show peeraddr
+         ) => SupportsPeerSelectionState (NoExtraPeers peeraddr) peeraddr where
+  data ToExtraTrace (NoExtraPeers peeraddr)
+    deriving Show
+  data ViewExtraPeers (NoExtraPeers peeraddr)
+    deriving Eq
+
+  publicExtraPeersAPI = nullPublicExtraPeersAPI
+
+  mkViewExtraPeers _ = Nothing
+
+type OuroborosPeerSelectionCounters peeraddr =
+  PeerSelectionCounters (ViewExtraPeers (NoExtraPeers peeraddr))
+
+type OuroborosDebugPeerSelection extraState extraFlags peeraddr =
+  DebugPeerSelection extraState extraFlags (NoExtraPeers peeraddr) peeraddr
+
+type OuroborosTracePeerSelection extraDebugState extraFlags peeraddr =
+  TracePeerSelection extraDebugState extraFlags (NoExtraPeers peeraddr) peeraddr
+
+
 -- | Diffusion Tracers
 --
 data Tracers ntnAddr ntnVersion ntnVersionData
              ntcAddr ntcVersion ntcVersionData
              extraState extraDebugState
-             extraFlags extraPeers extraTrace m = Tracers {
+             extraFlags extraPeers m = Tracers {
       -- | Mux tracer
       dtMuxTracer
         :: Tracer m (Mx.WithBearer (ConnectionId ntnAddr) Mx.Trace)
