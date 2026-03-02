@@ -3,7 +3,6 @@
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingVia                #-}
-{-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -14,8 +13,6 @@
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
-{-# LANGUAGE TypeOperators              #-}
-{-# LANGUAGE UndecidableInstances       #-}
 
 -- | Various types related to ledger peers.  This module is re-exported from
 -- "Ouroboros.Network.PeerSelection.LedgerPeers".
@@ -32,7 +29,6 @@ module Ouroboros.Network.PeerSelection.LedgerPeers.Type
   , AfterSlot (..)
   , LedgerPeersKind (..)
   , LedgerPeerSnapshot (..)
-  , LedgerPeerSnapshotWithBlock (..)
   , SomeLedgerPeerSnapshot (..)
   , RawBlockHash (..)
   , LedgerPeerSnapshotSRVSupport (..)
@@ -64,15 +60,14 @@ import Control.DeepSeq (NFData (..))
 import Control.Monad (forM)
 import Data.Aeson hiding (decode, encode)
 import Data.Bifunctor (second)
+import Data.ByteString.Base16 qualified as Base16
+import Data.ByteString.Short (ShortByteString)
+import Data.ByteString.Short qualified as SBS
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NonEmpty
-import Data.Typeable
+import Data.Text.Encoding qualified as Text
 import GHC.Generics (Generic)
 import NoThunks.Class
-import qualified Data.ByteString.Base16 as Base16
-import qualified Data.ByteString.Short as SBS
-import Data.ByteString.Short (ShortByteString)
-import qualified Data.Text.Encoding as Text
 
 -- TODO: remove `FromCBOR` and `ToCBOR` instances when ntc V22 is no longer supported
 import Cardano.Binary (FromCBOR (..), ToCBOR (..))
@@ -106,11 +101,10 @@ deriving instance Show (LedgerPeerSnapshot a)
 -- | The raw block hash to be passed into the Consensus layer and
 --   reified into a 'HeaderHash blk' using the 'ConvertRawHash'
 --   type class from the 'Ouroboros.Consensus.Block.Abstract' module.
+--
 newtype RawBlockHash = RawBlockHash ShortByteString
   deriving newtype (NFData, Eq, Ord, Show, NoThunks, FromCBOR)
 
-
---
 instance ToJSON RawBlockHash where
   toJSON (RawBlockHash sbs) =
     String . Text.decodeUtf8 . Base16.encode $ SBS.fromShort sbs
@@ -128,21 +122,17 @@ instance StandardHash RawBlockHash
 
 -- | facility for encoding the snapshot in CBOR for backwards compatibility
 --
-
-data SomeLedgerPeerSnapshot = forall k. Typeable k => SomeLedgerPeerSnapshot !(Proxy k) !(LedgerPeerSnapshot k)
+data SomeLedgerPeerSnapshot = forall k. SomeLedgerPeerSnapshot !(LedgerPeerSnapshot k)
 
 instance Eq SomeLedgerPeerSnapshot where
-  (==) (SomeLedgerPeerSnapshot (_ :: Proxy k1) s1) (SomeLedgerPeerSnapshot (_ :: Proxy k2) s2) =
-    case eqT :: Maybe (k1 :~: k2) of
-      Just Refl -> s1 == s2
-      Nothing   -> error "impossible! Distinct k types"
+  (SomeLedgerPeerSnapshot u) == (SomeLedgerPeerSnapshot v) =
+    case (u, v) of
+      (LedgerPeerSnapshotV2 {}, LedgerPeerSnapshotV2 {})         -> u == v
+      (LedgerAllPeerSnapshotV23 {}, LedgerAllPeerSnapshotV23 {}) -> u == v
+      (LedgerBigPeerSnapshotV23 {}, LedgerBigPeerSnapshotV23 {}) -> u == v
+      _otherwise                                                 -> False
 
 deriving instance Show SomeLedgerPeerSnapshot
-
--- | facility to aid JSON decode instances
---
-newtype LedgerPeerSnapshotWithBlock a =
-  LedgerPeerSnapshotWithBlock { parseLedgerPeerSnapshotWithBlock :: LedgerPeerSnapshot a }
 
 
 getRelayAccessPointsFromBigLedgerPeersSnapshot
@@ -203,7 +193,7 @@ instance ToJSON (LedgerPeerSnapshot a) where
                                  ]
            ]
 
-instance FromJSON (LedgerPeerSnapshotWithBlock AllLedgerPeers) where
+instance FromJSON (LedgerPeerSnapshot AllLedgerPeers) where
   parseJSON = withObject "LedgerPeerSnapshot" \v -> do
     -- TODO: remove "version" key after NtC V22 support is removed
     vNum :: Int <- v .: "version" <|> v .: "NodeToClientVersion"
@@ -219,12 +209,12 @@ instance FromJSON (LedgerPeerSnapshotWithBlock AllLedgerPeers) where
                               return (reStake, relays)
                       withObject ("allLedgerPools[" <> show idx <> "]") f (Object poolO)
 
-       return . LedgerPeerSnapshotWithBlock $ LedgerAllPeerSnapshotV23 point (NetworkMagic magic) allPools'
+       return $ LedgerAllPeerSnapshotV23 point (NetworkMagic magic) allPools'
       _ ->
         fail $ "Network.LedgerPeers.Type: parseJSON: failed to parse unsupported version "
             <> show vNum
 
-instance FromJSON (LedgerPeerSnapshotWithBlock BigLedgerPeers) where
+instance FromJSON (LedgerPeerSnapshot BigLedgerPeers) where
   parseJSON = withObject "LedgerPeerSnapshot" \v -> do
     -- TODO: remove "version" key after NtC V22 support is removed
     vNum :: Int <- v .: "version" <|> v .: "NodeToClientVersion"
@@ -237,11 +227,11 @@ instance FromJSON (LedgerPeerSnapshotWithBlock BigLedgerPeers) where
                                accStake <- poolV .: "accumulatedStake"
                                reStake  <- poolV .: "relativeStake"
                                -- decode using `LedgerRelayAccessPointV1` instance
-                               relays <- fmap getLedgerReelayAccessPointV1 <$> poolV .: "relays"
+                               relays <- fmap getLedgerRelayAccessPointV1 <$> poolV .: "relays"
                                return (accStake, (reStake, relays))
                        withObject ("bigLedgerPools[" <> show idx <> "]") f (Object poolO)
 
-        return . LedgerPeerSnapshotWithBlock $ LedgerPeerSnapshotV2 (slot, bigPools')
+        return $ LedgerPeerSnapshotV2 (slot, bigPools')
       2 -> do
         slot      <- v .: "slotNo"
         bigPools  <- v .: "bigLedgerPools"
@@ -253,7 +243,7 @@ instance FromJSON (LedgerPeerSnapshotWithBlock BigLedgerPeers) where
                                return (accStake, (reStake, relays))
                        withObject ("bigLedgerPools[" <> show idx <> "]") f (Object poolO)
 
-        return . LedgerPeerSnapshotWithBlock $ LedgerPeerSnapshotV2 (slot, bigPools')
+        return $ LedgerPeerSnapshotV2 (slot, bigPools')
       23 -> do
         point     <- v .: "Point"
         magic     <- v .: "NetworkMagic"
@@ -266,7 +256,7 @@ instance FromJSON (LedgerPeerSnapshotWithBlock BigLedgerPeers) where
                                return (accStake, (reStake, relays))
                        withObject ("bigLedgerPools[" <> show idx <> "]") f (Object poolO)
 
-        return . LedgerPeerSnapshotWithBlock $ LedgerBigPeerSnapshotV23 point (NetworkMagic magic) bigPools'
+        return $ LedgerBigPeerSnapshotV23 point (NetworkMagic magic) bigPools'
       _ ->
         fail $ "Network.LedgerPeers.Type: parseJSON: failed to parse unsupported version "
             <> show vNum
@@ -280,7 +270,7 @@ data LedgerPeerSnapshotSRVSupport
 
 
 encodeLedgerPeerSnapshot' :: LedgerPeerSnapshotSRVSupport -> SomeLedgerPeerSnapshot -> Codec.Encoding
-encodeLedgerPeerSnapshot' srvSupport (SomeLedgerPeerSnapshot _ lps) = encodeLedgerPeerSnapshot srvSupport lps
+encodeLedgerPeerSnapshot' srvSupport (SomeLedgerPeerSnapshot lps) = encodeLedgerPeerSnapshot srvSupport lps
 {-# INLINE encodeLedgerPeerSnapshot' #-}
 
 
@@ -331,21 +321,21 @@ encodeLedgerPeerSnapshot _LedgerPeerSnapshotSupportsSRV (LedgerAllPeerSnapshotV2
 
 
 decodeLedgerPeerSnapshot :: forall s.
-                            Codec.Decoder s (SomeLedgerPeerSnapshot)
+                            Codec.Decoder s SomeLedgerPeerSnapshot
 decodeLedgerPeerSnapshot = do
     Codec.decodeListLenOf 2
     version <- Codec.decodeWord8
     case version of
       1 -> Codec.decodeListLenOf 2 >>
-             SomeLedgerPeerSnapshot Proxy .
+             SomeLedgerPeerSnapshot .
              LedgerPeerSnapshotV2 <$> ((,) <$> decodeWithOrigin <*> fromCBOR)
       2 -> Codec.decodeListLenOf 3 >>
-             SomeLedgerPeerSnapshot Proxy <$>
+             SomeLedgerPeerSnapshot <$>
              (LedgerBigPeerSnapshotV23 <$> decodeLedgerPeerSnapshotPoint
                                        <*> (NetworkMagic <$> Codec.decodeWord32)
                                        <*> decodeBigStakePools)
       3 -> Codec.decodeListLenOf 3 >>
-             SomeLedgerPeerSnapshot Proxy <$>
+             SomeLedgerPeerSnapshot <$>
              (LedgerAllPeerSnapshotV23 <$> decodeLedgerPeerSnapshotPoint
                                        <*> (NetworkMagic <$> Codec.decodeWord32)
                                        <*> decodeAllStakePools)
@@ -373,7 +363,7 @@ encodeLedgerPeerSnapshotPoint :: Point RawBlockHash
                               -> Codec.Encoding
 encodeLedgerPeerSnapshotPoint = \case
   GenesisPoint -> Codec.encodeListLen 1 <> Codec.encodeWord8 0
-  BlockPoint { atSlot, withHash = RawBlockHash hash} ->
+  BlockPoint { atSlot, withHash = RawBlockHash hash } ->
        Codec.encodeListLen 3 <> Codec.encodeWord8 1
     <> Codec.toCBOR atSlot <> toCBOR hash
 
