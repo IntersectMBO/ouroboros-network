@@ -36,15 +36,15 @@ gourceVisualisationScript =
   . visualisationTrace
 
 visualisationTrace :: GovernorMockEnvironment
-                   -> [(Time, TracePeerSelection () () () () PeerAddr)]
+                   -> [(Time, TracePeerSelection () () () PeerAddr)]
 visualisationTrace =
     takeFirstNHours 24
   . selectGovernorEvents
-  . selectPeerSelectionTraceEvents @() @() @() @()
+  . selectPeerSelectionTraceEvents @() @() @()
   . runGovernorInMockEnvironment
 
 toGourceScript :: Map PeerAddr (PeerSource, [PeerAddr])
-               -> [(Time, TracePeerSelection () () () () PeerAddr)]
+               -> [(Time, TracePeerSelection () () () PeerAddr)]
                -> [GourceEntry]
 toGourceScript peers ((ts, TraceLocalRootPeersChanged _ new):trace) =
     -- link new root peers directly to the root as cold
@@ -177,4 +177,3 @@ renderGourceEntry GourceEntry {
 
 --    renderColour ColourLocalRoot  = "FFFFFF"
 --    renderColour ColourPublicRoot = "FFFF00"
-

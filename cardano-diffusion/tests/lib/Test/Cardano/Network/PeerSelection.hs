@@ -39,7 +39,7 @@ import Data.List.NonEmpty qualified as NonEmpty
 import Data.List.Trace qualified as Trace
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromMaybe, isNothing, listToMaybe)
+import Data.Maybe (fromJust, fromMaybe, isNothing, listToMaybe)
 import Data.OrdPSQ qualified as PSQ
 import Data.Set (Set)
 import Data.Set qualified as Set
@@ -222,20 +222,18 @@ prop_peerSelectionView_sizes env =
               $ selectPeerSelectionTraceEventsUntil
                   @Cardano.ExtraState
                   @PeerTrustable
-                  @_
-                  @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
-                  @Cardano.ExtraTrace
+                  @(ExtraPeers PeerAddr)
                   (Time (10 * 3600)) trace
     in property $
        foldMap (\(_, TraceGovernorState _ _ st) ->
-                     let view = peerSelectionStateToView Cardano.ExtraPeers.toSet Cardano.ExtraSizes.cardanoPeerSelectionStatetoCounters st in
+                     let view = peerSelectionStateToView st in
                         Every (viewInvariant (fst <$> view))
                      <> Every (viewSizeInvariant view))
                evs
   where
-    viewInvariant :: PeerSelectionView (Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr) (Set PeerAddr)
+    viewInvariant :: PeerSelectionView (ViewExtraPeers (ExtraPeers PeerAddr)) (Set PeerAddr)
                   -> Property
-    viewInvariant PeerSelectionView {..} =
+    viewInvariant PeerSelectionView {viewExtraViews = fromJust -> viewExtraViews, ..} =
            isSubsetProperty "viewActivePeersDemotions" viewActivePeersDemotions viewActivePeers
       .&&. isSubsetProperty "viewActivePeers" viewActivePeers viewEstablishedPeers
       .&&. isSubsetProperty "viewEstablishedPeers" viewEstablishedPeers viewKnownPeers
@@ -266,36 +264,42 @@ prop_peerSelectionView_sizes env =
       .&&. isSubsetProperty "viewWarmNonRootPeersPromotions" viewWarmNonRootPeersPromotions (viewEstablishedNonRootPeers Set.\\ viewActiveNonRootPeers)
       .&&. isSubsetProperty "viewWarmNonRootPeersDemotions" viewWarmNonRootPeersDemotions (viewEstablishedNonRootPeers Set.\\ viewActiveNonRootPeers)
 
-      .&&. isSubsetProperty "viewActiveBootstrapPeersDemotions" (fst $ Cardano.viewActiveBootstrapPeersDemotions viewExtraViews)
-                                                                (fst $ Cardano.viewActiveBootstrapPeers viewExtraViews)
-      .&&. isSubsetProperty "viewActiveBootstrapPeers" (fst $ Cardano.viewActiveBootstrapPeers viewExtraViews)
-                                                       (fst $ Cardano.viewEstablishedBootstrapPeers viewExtraViews)
-      .&&. isSubsetProperty "viewEstablishedBootstrapPeers" (fst $ Cardano.viewEstablishedBootstrapPeers viewExtraViews)
-                                                            (fst $ Cardano.viewKnownBootstrapPeers viewExtraViews)
-      .&&. isSubsetProperty "viewColdBootstrapPeersPromotions" (fst $ Cardano.viewColdBootstrapPeersPromotions viewExtraViews)
-                                                               (fst $ Cardano.viewKnownBootstrapPeers viewExtraViews)
-      .&&. isSubsetProperty "viewWarmBootstrapPeersPromotions" (fst $ Cardano.viewWarmBootstrapPeersPromotions viewExtraViews)
-                                                               ((fst $ Cardano.viewEstablishedBootstrapPeers viewExtraViews)
-                                                                  Set.\\ (fst $ Cardano.viewActiveBootstrapPeers viewExtraViews))
-      .&&. isSubsetProperty "viewWarmBootstrapPeersDemotions" (fst $ Cardano.viewWarmBootstrapPeersDemotions viewExtraViews)
-                                                              ((fst $ Cardano.viewEstablishedBootstrapPeers viewExtraViews)
-                                                                  Set.\\ (fst $ Cardano.viewActiveBootstrapPeers viewExtraViews))
+      .&&. isSubsetProperty "viewActiveBootstrapPeersDemotions" (fst $ Cardano.ExtraPeers.viewActiveBootstrapPeersDemotions viewExtraViews)
+                                                                (fst $ Cardano.ExtraPeers.viewActiveBootstrapPeers viewExtraViews)
+      .&&. isSubsetProperty "viewActiveBootstrapPeers" (fst $ Cardano.ExtraPeers.viewActiveBootstrapPeers viewExtraViews)
+                                                       (fst $ Cardano.ExtraPeers.viewEstablishedBootstrapPeers viewExtraViews)
+      .&&. isSubsetProperty "viewEstablishedBootstrapPeers" (fst $ Cardano.ExtraPeers.viewEstablishedBootstrapPeers viewExtraViews)
+                                                            (fst $ Cardano.ExtraPeers.viewKnownBootstrapPeers viewExtraViews)
+      .&&. isSubsetProperty "viewColdBootstrapPeersPromotions" (fst $ Cardano.ExtraPeers.viewColdBootstrapPeersPromotions viewExtraViews)
+                                                               (fst $ Cardano.ExtraPeers.viewKnownBootstrapPeers viewExtraViews)
+      .&&. isSubsetProperty "viewWarmBootstrapPeersPromotions" (fst $ Cardano.ExtraPeers.viewWarmBootstrapPeersPromotions viewExtraViews)
+                                                               ((fst $ Cardano.ExtraPeers.viewEstablishedBootstrapPeers viewExtraViews)
+                                                                  Set.\\ (fst $ Cardano.ExtraPeers.viewActiveBootstrapPeers viewExtraViews))
+      .&&. isSubsetProperty "viewWarmBootstrapPeersDemotions" (fst $ Cardano.ExtraPeers.viewWarmBootstrapPeersDemotions viewExtraViews)
+                                                              ((fst $ Cardano.ExtraPeers.viewEstablishedBootstrapPeers viewExtraViews)
+                                                                  Set.\\ (fst $ Cardano.ExtraPeers.viewActiveBootstrapPeers viewExtraViews))
 
       .&&. disjointSetsProperty "viewKnownPeers viewKnownBigLedgerPeers" viewKnownPeers viewKnownBigLedgerPeers
       .&&. isSubsetProperty "viewKnownLocalRootPeers" viewKnownLocalRootPeers viewKnownPeers
       .&&. isSubsetProperty "viewKnownNonRootPeers" viewKnownNonRootPeers viewKnownPeers
-      .&&. isSubsetProperty "viewKnownBootstrapPeers" (fst $ Cardano.viewKnownBootstrapPeers viewExtraViews) viewKnownPeers
+      .&&. isSubsetProperty "viewKnownBootstrapPeers"
+             (fst $ Cardano.ExtraPeers.viewKnownBootstrapPeers viewExtraViews) viewKnownPeers
 
-      .&&. disjointSetsProperty "viewKnownLocalRootPeers-viewKnownBigLedgerPeers" viewKnownLocalRootPeers viewKnownBigLedgerPeers
-      .&&. disjointSetsProperty "viewKnownLocalRootPeers-viewKnownNonRootPeers" viewKnownLocalRootPeers viewKnownNonRootPeers
-      .&&. disjointSetsProperty "viewKnownLocalRootPeers-viewKnownBootstrapPeers" viewKnownLocalRootPeers (fst $ Cardano.viewKnownBootstrapPeers viewExtraViews)
+      .&&. disjointSetsProperty "viewKnownLocalRootPeers-viewKnownBigLedgerPeers"
+             viewKnownLocalRootPeers viewKnownBigLedgerPeers
+      .&&. disjointSetsProperty "viewKnownLocalRootPeers-viewKnownNonRootPeers"
+             viewKnownLocalRootPeers viewKnownNonRootPeers
+      .&&. disjointSetsProperty "viewKnownLocalRootPeers-viewKnownBootstrapPeers"
+             viewKnownLocalRootPeers (fst $ Cardano.ExtraPeers.viewKnownBootstrapPeers viewExtraViews)
 
-      .&&. disjointSetsProperty "viewKnownNonRootPeers-viewKnownBigLedgerPeers" viewKnownNonRootPeers viewKnownBigLedgerPeers
-      .&&. disjointSetsProperty "viewKnownBootstrapPeers-viewKnownBigLedgerPeers" (fst $ Cardano.viewKnownBootstrapPeers viewExtraViews) viewKnownBigLedgerPeers
+      .&&. disjointSetsProperty "viewKnownNonRootPeers-viewKnownBigLedgerPeers"
+             viewKnownNonRootPeers viewKnownBigLedgerPeers
+      .&&. disjointSetsProperty "viewKnownBootstrapPeers-viewKnownBigLedgerPeers"
+             (fst $ Cardano.ExtraPeers.viewKnownBootstrapPeers viewExtraViews) viewKnownBigLedgerPeers
 
-    viewSizeInvariant :: PeerSelectionSetsWithSizes (Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr) PeerAddr
+    viewSizeInvariant :: PeerSelectionSetsWithSizes (ViewExtraPeers (ExtraPeers PeerAddr)) PeerAddr
                       -> Property
-    viewSizeInvariant PeerSelectionView {..} =
+    viewSizeInvariant PeerSelectionView {viewExtraViews = fromJust -> viewExtraViews, ..} =
             counterexample "viewRootPeers"
             (Set.size (fst viewRootPeers) === snd viewRootPeers)
 
@@ -365,19 +369,19 @@ prop_peerSelectionView_sizes env =
            (Set.size (fst viewActiveNonRootPeersDemotions) === snd viewActiveNonRootPeersDemotions)
 
       .&&. counterexample "viewKnownBootstrapPeers"
-           (Set.size (fst $ Cardano.viewKnownBootstrapPeers viewExtraViews) === snd (Cardano.viewKnownBootstrapPeers viewExtraViews))
+           (Set.size (fst $ Cardano.ExtraPeers.viewKnownBootstrapPeers viewExtraViews) === snd (Cardano.ExtraPeers.viewKnownBootstrapPeers viewExtraViews))
       .&&. counterexample "viewColdBootstrapPeersPromotions"
-           (Set.size (fst $ Cardano.viewColdBootstrapPeersPromotions viewExtraViews) === snd (Cardano.viewColdBootstrapPeersPromotions viewExtraViews))
+           (Set.size (fst $ Cardano.ExtraPeers.viewColdBootstrapPeersPromotions viewExtraViews) === snd (Cardano.ExtraPeers.viewColdBootstrapPeersPromotions viewExtraViews))
       .&&. counterexample "viewEstablishedBootstrapPeers"
-           (Set.size (fst $ Cardano.viewEstablishedBootstrapPeers viewExtraViews) === snd (Cardano.viewEstablishedBootstrapPeers viewExtraViews))
+           (Set.size (fst $ Cardano.ExtraPeers.viewEstablishedBootstrapPeers viewExtraViews) === snd (Cardano.ExtraPeers.viewEstablishedBootstrapPeers viewExtraViews))
       .&&. counterexample "viewWarmBootstrapPeersDemotions"
-           (Set.size (fst $ Cardano.viewWarmBootstrapPeersDemotions viewExtraViews) === snd (Cardano.viewWarmBootstrapPeersDemotions viewExtraViews))
+           (Set.size (fst $ Cardano.ExtraPeers.viewWarmBootstrapPeersDemotions viewExtraViews) === snd (Cardano.ExtraPeers.viewWarmBootstrapPeersDemotions viewExtraViews))
       .&&. counterexample "viewWarmBootstrapPeersPromotions"
-           (Set.size (fst $ Cardano.viewWarmBootstrapPeersPromotions viewExtraViews) === snd (Cardano.viewWarmBootstrapPeersPromotions viewExtraViews))
+           (Set.size (fst $ Cardano.ExtraPeers.viewWarmBootstrapPeersPromotions viewExtraViews) === snd (Cardano.ExtraPeers.viewWarmBootstrapPeersPromotions viewExtraViews))
       .&&. counterexample "viewActiveBootstrapPeers"
-           (Set.size (fst $ Cardano.viewActiveBootstrapPeers viewExtraViews) === snd (Cardano.viewActiveBootstrapPeers viewExtraViews))
+           (Set.size (fst $ Cardano.ExtraPeers.viewActiveBootstrapPeers viewExtraViews) === snd (Cardano.ExtraPeers.viewActiveBootstrapPeers viewExtraViews))
       .&&. counterexample "viewActiveBootstrapPeersDemotions"
-           (Set.size (fst $ Cardano.viewActiveBootstrapPeersDemotions viewExtraViews) === snd (Cardano.viewActiveBootstrapPeersDemotions viewExtraViews))
+           (Set.size (fst $ Cardano.ExtraPeers.viewActiveBootstrapPeersDemotions viewExtraViews) === snd (Cardano.ExtraPeers.viewActiveBootstrapPeersDemotions viewExtraViews))
 
 
 -- We start with basic properties in the style of "never does bad things"
@@ -447,9 +451,7 @@ prop_governor_hasoutput env =
         evs   = selectPeerSelectionTraceEvents
                   @Cardano.ExtraState
                   @PeerTrustable
-                  @(Cardano.ExtraPeers PeerAddr)
-                  @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
-                  @Cardano.ExtraTrace
+                  @(ExtraPeers PeerAddr)
                   trace
 
      in counterexample (unlines ["\nSIM TRACE", ppTrace trace])
@@ -458,7 +460,7 @@ prop_governor_hasoutput env =
 
 hasOutput :: GovernorMockEnvironment
           -> [(Time, TracePeerSelection extraDebugState extraFlags
-                                        extraPeers extraTrace PeerAddr)]
+                                        extraPeers PeerAddr)]
           -> Bool
 hasOutput _   (_:_) = True
 hasOutput env []    = isEmptyEnv env
@@ -511,9 +513,7 @@ prop_governor_nofail env =
               . selectPeerSelectionTraceEvents
                   @Cardano.ExtraState
                   @PeerTrustable
-                  @(Cardano.ExtraPeers PeerAddr)
-                  @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
-                  @Cardano.ExtraTrace
+                  @(ExtraPeers PeerAddr)
               $ ioSimTrace
 
     -- run in `IO` so we can catch the pure 'AssertionFailed' exception
@@ -583,8 +583,6 @@ check_governor_nolivelock n trace0 =
                   @Cardano.ExtraState
                   @PeerTrustable
                   @(Cardano.ExtraPeers PeerAddr)
-                  @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
-                  @Cardano.ExtraTrace
                 $ trace0
      in case tooManyEventsBeforeTimeAdvances 1000 trace of
           Nothing -> property True
@@ -676,8 +674,6 @@ prop_governor_nobusyness env =
                   @Cardano.ExtraState
                   @PeerTrustable
                   @(Cardano.ExtraPeers PeerAddr)
-                  @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
-                  @Cardano.ExtraTrace
               $ runGovernorInMockEnvironment env
 
      in case tooBusyForTooLong (takeFirstNHours 10 trace) of
@@ -693,11 +689,9 @@ prop_governor_nobusyness env =
             property False
 
 --
-tooBusyForTooLong :: [(Time, TestTraceEvent extraState extraFlags extraPeers
-                                            extraCounters extraTrace)]
+tooBusyForTooLong :: [(Time, TestTraceEvent extraState extraFlags extraPeers)]
                   -> Maybe (Time, Time, DiffTime,
-                            [(Time, TestTraceEvent extraState extraFlags extraPeers
-                                                   extraCounters extraTrace)])
+                            [(Time, TestTraceEvent extraState extraFlags extraPeers)])
 tooBusyForTooLong trace0 =
     -- Pass in each timed event, with the diff-time to the next event
     idle [ (t, diffTime t' t, e)
@@ -721,13 +715,11 @@ tooBusyForTooLong trace0 =
     idle :: [( Time
              , DiffTime
              , TestTraceEvent extraState extraFlags extraPeers
-                              extraCounters extraTrace
              )]
          -> Maybe ( Time
                   , Time
                   , DiffTime
-                  , [(Time, TestTraceEvent extraState extraFlags extraPeers
-                                           extraCounters extraTrace)]
+                  , [(Time, TestTraceEvent extraState extraFlags extraPeers)]
                   )
     idle [] = Nothing
     idle ((_, _, GovernorDebug{}):trace') = idle trace'
@@ -747,11 +739,9 @@ tooBusyForTooLong trace0 =
 
     busy :: Time
          -> DiffTime
-         -> [(Time, DiffTime, TestTraceEvent extraState extraFlags extraPeers
-                                             extraCounters extraTrace)]
+         -> [(Time, DiffTime, TestTraceEvent extraState extraFlags extraPeers)]
          -> Either (Time, DiffTime)
-                   [(Time, DiffTime, TestTraceEvent extraState extraFlags extraPeers
-                                                    extraCounters extraTrace)]
+                   [(Time, DiffTime, TestTraceEvent extraState extraFlags extraPeers)]
 
     -- For normal governor events we check if the length of the busy time span
     -- is now too big (adjusted for any perturbation credits). If so we've
@@ -874,8 +864,6 @@ prop_governor_events_coverage env =
                   @Cardano.ExtraState
                   @PeerTrustable
                   @(Cardano.ExtraPeers PeerAddr)
-                  @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
-                  @Cardano.ExtraTrace
               . runGovernorInMockEnvironment
               $ env
 
@@ -901,8 +889,6 @@ prop_governor_trace_coverage env =
                   @Cardano.ExtraState
                   @PeerTrustable
                   @(Cardano.ExtraPeers PeerAddr)
-                  @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
-                  @Cardano.ExtraTrace
                 $ runGovernorInMockEnvironment env
 
         traceNumsSeen  = collectTraces trace
@@ -914,13 +900,15 @@ prop_governor_trace_coverage env =
         --TODO: use cover to check we do indeed get them all. There are a few
         -- cases we do not cover yet. These should be fixed first.
 
-collectTraces :: [(Time, TestTraceEvent extraState extraFlags extraPeers
-                                        extraCounters Cardano.ExtraTrace)]
+collectTraces :: [(Time, TestTraceEvent extraState extraFlags (Cardano.ExtraPeers PeerAddr))]
               -> Set Int
 collectTraces trace =
     Set.fromList [ traceNum e | (_, GovernorEvent e) <- trace ]
 
-traceNum :: TracePeerSelection extraDebugState extraFlags extraPeers Cardano.ExtraTrace peeraddr -> Int
+traceNum :: TracePeerSelection extraDebugState extraFlags
+                               (Cardano.ExtraPeers peeraddr)
+                               peeraddr
+         -> Int
 traceNum TraceLocalRootPeersChanged{}                         = 00
 traceNum TraceTargetsChanged{}                                = 01
 traceNum TracePublicRootsRequest{}                            = 02
@@ -969,11 +957,11 @@ traceNum TraceDemoteHotBigLedgerPeerFailed{}                  = 44
 traceNum TraceDemoteHotBigLedgerPeerDone{}                    = 45
 traceNum TracePickInboundPeers{}                              = 46
 traceNum TraceDemoteBigLedgerPeersAsynchronous{}              = 47
-traceNum (ExtraTrace Cardano.TraceLedgerStateJudgementChanged{})
+traceNum (ExtraTrace Cardano.ExtraPeers.TraceLedgerStateJudgementChanged{})
                                                               = 48
 traceNum TraceOnlyBootstrapPeers{}                            = 49
 traceNum TraceBootstrapPeersFlagChangedWhilstInSensitiveState = 50
-traceNum (ExtraTrace Cardano.TraceUseBootstrapPeersChanged {})= 51
+traceNum (ExtraTrace Cardano.ExtraPeers.TraceUseBootstrapPeersChanged {})= 51
 traceNum TraceOutboundGovernorCriticalFailure {}              = 52
 traceNum TraceDebugState {}                                   = 53
 traceNum TraceChurnAction {}                                  = 54
@@ -1069,8 +1057,6 @@ prop_governor_peershare_1hr env@GovernorMockEnvironment {
                        @Cardano.ExtraState
                        @PeerTrustable
                        @(Cardano.ExtraPeers PeerAddr)
-                       @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
-                       @Cardano.ExtraTrace
                        ioSimTrace
         Just found = knownPeersAfter1Hour trace
         reachable  = peerShareReachablePeers peerGraph
@@ -1093,8 +1079,7 @@ prop_governor_peershare_1hr env@GovernorMockEnvironment {
     targets' :: (PeerSelectionTargets, PeerSelectionTargets)
     targets' = fst (scriptHead targets)
 
-    knownPeersAfter1Hour :: [(Time, TestTraceEvent extraState extraFlags extraPeers
-                                                   extraCounters extraTrace)]
+    knownPeersAfter1Hour :: [(Time, TestTraceEvent extraState extraFlags extraPeers)]
                          -> Maybe (Set PeerAddr)
     knownPeersAfter1Hour trace =
       listToMaybe
@@ -1136,8 +1121,6 @@ check_governor_connstatus _ trace0 =
                   @Cardano.ExtraState
                   @PeerTrustable
                   @(Cardano.ExtraPeers PeerAddr)
-                  @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
-                  @Cardano.ExtraTrace
               $ trace0
         --TODO: check any actually get a true status output and try some deliberate bugs
      in
@@ -1152,11 +1135,8 @@ check_governor_connstatus _ trace0 =
     -- governor state event before time moves on.
     ok :: ( Show extraState
           , Show extraFlags
-          , Show extraPeers
-          , Show extraCounters
-          , Show extraTrace
           )
-       => [(Time, TestTraceEvent extraState extraFlags extraPeers extraCounters extraTrace)] -> Property
+       => [(Time, TestTraceEvent extraState extraFlags (Cardano.ExtraPeers PeerAddr))] -> Property
     ok trace =
         counterexample ("last few events:\n" ++ (unlines . map show) trace) $
         case (lastEnvStatus, lastGovStatus) of
@@ -1196,8 +1176,6 @@ prop_governor_target_root_below env =
                   @Cardano.ExtraState
                   @PeerTrustable
                   @(Cardano.ExtraPeers PeerAddr)
-                  @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
-                  @Cardano.ExtraTrace
                . runGovernorInMockEnvironment
                $ env
 
@@ -1277,8 +1255,6 @@ prop_governor_target_established_public (MaxTime maxTime) env =
                   @Cardano.ExtraState
                   @PeerTrustable
                   @(Cardano.ExtraPeers PeerAddr)
-                  @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
-                  @Cardano.ExtraTrace
                . runGovernorInMockEnvironment
                $ env
 
@@ -1349,8 +1325,6 @@ prop_governor_target_established_big_ledger_peers (MaxTime maxTime) env =
                   @Cardano.ExtraState
                   @PeerTrustable
                   @(Cardano.ExtraPeers PeerAddr)
-                  @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
-                  @Cardano.ExtraTrace
                . runGovernorInMockEnvironment
                $ env
 
@@ -1430,8 +1404,6 @@ prop_governor_target_active_public (MaxTime maxTime) env =
                   @Cardano.ExtraState
                   @PeerTrustable
                   @(Cardano.ExtraPeers PeerAddr)
-                  @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
-                  @Cardano.ExtraTrace
                . runGovernorInMockEnvironment
                $ env
 
@@ -1639,8 +1611,6 @@ prop_governor_target_known_1_valid_subset (MaxTime maxTime) env =
                   @Cardano.ExtraState
                   @PeerTrustable
                   @(Cardano.ExtraPeers PeerAddr)
-                  @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
-                  @Cardano.ExtraTrace
                . runGovernorInMockEnvironment
                $ env
 
@@ -1718,8 +1688,6 @@ prop_governor_target_known_2_opportunity_taken (MaxTime maxTime) env =
                   @Cardano.ExtraState
                   @PeerTrustable
                   @(Cardano.ExtraPeers PeerAddr)
-                  @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
-                  @Cardano.ExtraTrace
                . runGovernorInMockEnvironment
                $ env
 
@@ -1887,8 +1855,6 @@ prop_governor_target_known_3_not_too_chatty (MaxTime maxTime) env =
                   @Cardano.ExtraState
                   @PeerTrustable
                   @(Cardano.ExtraPeers PeerAddr)
-                  @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
-                  @Cardano.ExtraTrace
                . runGovernorInMockEnvironment
                $ env
 
@@ -1901,8 +1867,7 @@ prop_governor_target_known_3_not_too_chatty (MaxTime maxTime) env =
 
 
 recentPeerShareActivity :: DiffTime
-                        -> Events (TestTraceEvent extraState extraFlags extraPeers
-                                                  extraCounters extraTrace)
+                        -> Events (TestTraceEvent extraState extraFlags extraPeers)
                         -> Signal (Maybe (Set PeerAddr), Set PeerAddr)
 recentPeerShareActivity d =
     Signal.fromChangeEvents (Nothing, Set.empty)
@@ -1912,7 +1877,7 @@ recentPeerShareActivity d =
   where
     go :: Set PeerAddr -- ^ Recently shared with peers
        -> PSQ.OrdPSQ PeerAddr Time () -- ^ PSQ with next time to request to peers
-       -> [E (TestTraceEvent extraState extraFlags extraPeers extraCounters extraTrace)]
+       -> [E (TestTraceEvent extraState extraFlags extraPeers)]
        -> [E (Maybe (Set PeerAddr), Set PeerAddr)]
     go !recentSet !recentPSQ txs@(E (TS t _) _ : _)
       | Just (k, t', _, recentPSQ') <- PSQ.minView recentPSQ
@@ -2101,8 +2066,6 @@ prop_governor_target_known_4_results_used (MaxTime maxTime) env =
                   @Cardano.ExtraState
                   @PeerTrustable
                   @(Cardano.ExtraPeers PeerAddr)
-                  @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
-                  @Cardano.ExtraTrace
                . runGovernorInMockEnvironment
                $ env
 
@@ -2188,8 +2151,6 @@ prop_governor_target_known_5_no_shrink_below (MaxTime maxTime) env =
                    @Cardano.ExtraState
                    @PeerTrustable
                    @(Cardano.ExtraPeers PeerAddr)
-                   @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
-                   @Cardano.ExtraTrace
                . runGovernorInMockEnvironment
                $ env
 
@@ -2279,8 +2240,6 @@ prop_governor_target_known_5_no_shrink_big_ledger_peers_below (MaxTime maxTime) 
                    @Cardano.ExtraState
                    @PeerTrustable
                    @(Cardano.ExtraPeers PeerAddr)
-                   @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
-                   @Cardano.ExtraTrace
                . runGovernorInMockEnvironment
                $ env
 
@@ -2367,8 +2326,6 @@ prop_governor_target_known_above (MaxTime maxTime) env =
                    @Cardano.ExtraState
                    @PeerTrustable
                    @(Cardano.ExtraPeers PeerAddr)
-                   @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
-                   @Cardano.ExtraTrace
                . runGovernorInMockEnvironment
                $ env
 
@@ -2489,8 +2446,6 @@ prop_governor_target_known_big_ledger_peers_above (MaxTime maxTime) env =
                    @Cardano.ExtraState
                    @PeerTrustable
                    @(Cardano.ExtraPeers PeerAddr)
-                   @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
-                   @Cardano.ExtraTrace
                . runGovernorInMockEnvironment
                $ env
 
@@ -2604,8 +2559,6 @@ prop_governor_target_established_below (MaxTime maxTime) env =
                    @Cardano.ExtraState
                    @PeerTrustable
                    @(Cardano.ExtraPeers PeerAddr)
-                   @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
-                   @Cardano.ExtraTrace
                . runGovernorInMockEnvironment
                $ env
 
@@ -2730,8 +2683,6 @@ prop_governor_target_established_big_ledger_peers_below (MaxTime maxTime) env =
                    @Cardano.ExtraState
                    @PeerTrustable
                    @(Cardano.ExtraPeers PeerAddr)
-                   @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
-                   @Cardano.ExtraTrace
                . runGovernorInMockEnvironment
                $ env
 
@@ -2846,8 +2797,6 @@ prop_governor_target_active_below (MaxTime maxTime) env =
                    @Cardano.ExtraState
                    @PeerTrustable
                    @(Cardano.ExtraPeers PeerAddr)
-                   @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
-                   @Cardano.ExtraTrace
                . runGovernorInMockEnvironment
                $ env
 
@@ -2987,8 +2936,6 @@ prop_governor_target_active_big_ledger_peers_below (MaxTime maxTime) env =
                    @Cardano.ExtraState
                    @PeerTrustable
                    @(Cardano.ExtraPeers PeerAddr)
-                   @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
-                   @Cardano.ExtraTrace
                . runGovernorInMockEnvironment
                $ env
 
@@ -3103,8 +3050,6 @@ prop_governor_target_established_above (MaxTime maxTime) env =
                    @Cardano.ExtraState
                    @PeerTrustable
                    @(Cardano.ExtraPeers PeerAddr)
-                   @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
-                   @Cardano.ExtraTrace
                . runGovernorInMockEnvironment
                $ env
 
@@ -3220,8 +3165,6 @@ prop_governor_target_established_big_ledger_peers_above (MaxTime maxTime) env =
                    @Cardano.ExtraState
                    @PeerTrustable
                    @(Cardano.ExtraPeers PeerAddr)
-                   @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
-                   @Cardano.ExtraTrace
                . runGovernorInMockEnvironment
                $ env
 
@@ -3309,8 +3252,6 @@ prop_governor_target_active_above (MaxTime maxTime) env =
                    @Cardano.ExtraState
                    @PeerTrustable
                    @(Cardano.ExtraPeers PeerAddr)
-                   @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
-                   @Cardano.ExtraTrace
                . runGovernorInMockEnvironment
                $ env
 
@@ -3393,8 +3334,6 @@ prop_governor_target_active_big_ledger_peers_above (MaxTime maxTime) env =
                    @Cardano.ExtraState
                    @PeerTrustable
                    @(Cardano.ExtraPeers PeerAddr)
-                   @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
-                   @Cardano.ExtraTrace
                . runGovernorInMockEnvironment
                $ env
 
@@ -3470,8 +3409,6 @@ prop_governor_target_established_local (MaxTime maxTime) env =
                    @Cardano.ExtraState
                    @PeerTrustable
                    @(Cardano.ExtraPeers PeerAddr)
-                   @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
-                   @Cardano.ExtraTrace
                $ trace
 
         govLocalRootPeersSig :: Signal (LocalRootPeers PeerTrustable PeerAddr)
@@ -3604,8 +3541,6 @@ prop_governor_target_active_local_below (MaxTime maxTime) env =
                    @Cardano.ExtraState
                    @PeerTrustable
                    @(Cardano.ExtraPeers PeerAddr)
-                   @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
-                   @Cardano.ExtraTrace
                . runGovernorInMockEnvironment
                $ env
 
@@ -3739,8 +3674,6 @@ prop_governor_target_active_local_above (MaxTime maxTime) env =
                    @Cardano.ExtraState
                    @PeerTrustable
                    @(Cardano.ExtraPeers PeerAddr)
-                   @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
-                   @Cardano.ExtraTrace
                . runGovernorInMockEnvironment
                $ env
 
@@ -3810,8 +3743,6 @@ prop_governor_only_bootstrap_peers_in_fallback_state env =
     let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
                . selectPeerSelectionTraceEvents
                   @_ @_ @_
-                  @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
-                  @Cardano.ExtraTrace
                . runGovernorInMockEnvironment
                $ env
 
@@ -3877,8 +3808,6 @@ prop_governor_no_non_trustable_peers_before_caught_up_state env =
     let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
                . selectPeerSelectionTraceEvents
                   @_ @_ @_
-                  @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
-                  @Cardano.ExtraTrace
                . runGovernorInMockEnvironment
                $ env
 
@@ -3955,8 +3884,6 @@ prop_governor_only_bootstrap_peers_in_clean_state env =
     let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
                . selectPeerSelectionTraceEvents
                   @_ @_ @_
-                  @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
-                  @Cardano.ExtraTrace
                . runGovernorInMockEnvironment
                $ env
 
@@ -4067,8 +3994,6 @@ prop_governor_stops_using_bootstrap_peers env =
     let events = Signal.eventsFromListUpToTime (Time (10 * 60 * 60))
                . selectPeerSelectionTraceEvents
                   @_ @_ @_
-                  @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
-                  @Cardano.ExtraTrace
                . runGovernorInMockEnvironment
                $ env
 
@@ -4147,8 +4072,6 @@ prop_governor_uses_ledger_peers env =
                    @Cardano.ExtraState
                    @PeerTrustable
                    @(Cardano.ExtraPeers PeerAddr)
-                   @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
-                   @Cardano.ExtraTrace
                . runGovernorInMockEnvironment
                $ env
 
@@ -4202,17 +4125,13 @@ prop_governor_association_mode env =
                    @Cardano.ExtraState
                    @PeerTrustable
                    @(Cardano.ExtraPeers PeerAddr)
-                   @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
-                   @Cardano.ExtraTrace
                . runGovernorInMockEnvironment
                $ env
 
         counters
-          :: Signal (PeerSelectionSetsWithSizes
-                     (Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr) PeerAddr)
+          :: Signal (PeerSelectionSetsWithSizes (ViewExtraPeers (Cardano.ExtraPeers PeerAddr)) PeerAddr)
         counters =
-          selectGovState (peerSelectionStateToView Cardano.ExtraPeers.toSet
-                                                   Cardano.ExtraSizes.cardanoPeerSelectionStatetoCounters)
+          selectGovState peerSelectionStateToView
                          (Cardano.ExtraState.empty (consensusMode env)
                                                    (NumberOfBigLedgerPeers 0))
                          Cardano.ExtraPeers.empty
@@ -4265,7 +4184,7 @@ prop_governor_association_mode env =
               -- all.
               --
               -- TODO: write a more effective test.
-                 Set.null (fst (Cardano.viewKnownBootstrapPeers (viewExtraViews cs))
+                 Set.null (fst (Cardano.ExtraPeers.viewKnownBootstrapPeers (fromJust $ viewExtraViews cs))
                             Set.\\ localRootSet
                             Set.\\ publicRootSet)
               && Set.null (fst (viewKnownBigLedgerPeers cs)
@@ -4302,7 +4221,7 @@ _governorFindingPublicRoots :: Int
                             -> IO Void
 _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrapPeers
                             readLedgerStateJudgement peerSharing olocVar consensusMode = do
-    countersVar <- newTVarIO (emptyPeerSelectionCounters Cardano.ExtraSizes.empty)
+    countersVar <- newTVarIO (emptyPeerSelectionCounters $ Just Cardano.ExtraSizes.empty)
     publicStateVar <- makePublicPeerSelectionStateVar
     debugStateVar <- newTVarIO $
       emptyPeerSelectionState (mkStdGen 42)
@@ -4348,7 +4267,6 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
     tracer' :: Tracer IO (TracePeerSelection Cardano.DebugPeerSelectionState
                                              PeerTrustable
                                              (Cardano.ExtraPeers SockAddr)
-                                             Cardano.ExtraTrace
                                              SockAddr)
     tracer' = tracer
 
@@ -4361,7 +4279,6 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
           PeerTrustable
           (Cardano.ExtraPeers SockAddr)
           (Cardano.LedgerPeersConsensusInterface IO)
-          (Cardano.ExtraPeerSelectionSetsWithSizes SockAddr)
           SockAddr
           PeerSharing
           IO
@@ -4398,7 +4315,6 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
                   },
                 peerSelectionTargets = targets,
                 readLedgerPeerSnapshot = pure Nothing,
-                extraStateToExtraCounters = Cardano.ExtraSizes.cardanoPeerSelectionStatetoCounters,
                 extraPeersAPI = Cardano.ExtraPeers.cardanoPublicRootPeersAPI
               }
 
@@ -4630,8 +4546,6 @@ prop_governor_repromote_delay (MaxTime maxTime) env =
                 @Cardano.ExtraState
                 @PeerTrustable
                 @(Cardano.ExtraPeers PeerAddr)
-                @(Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
-                @Cardano.ExtraTrace
             . runGovernorInMockEnvironment
             $ env
     in  property
