@@ -24,7 +24,6 @@ module Test.Ouroboros.Network.TxSubmission.Types
   , txSubmissionCodec2
   , evaluateTrace
   , verboseTracer
-  , debugTracer
   ) where
 
 import Prelude hiding (seq)
@@ -49,7 +48,6 @@ import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
 
 import Data.ByteString.Lazy (ByteString)
-import Data.Functor.Contravariant
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 
@@ -227,9 +225,6 @@ verboseTracer :: forall a m.
                        )
                => Tracer m a
 verboseTracer = threadAndTimeTracer $ showTracing $ Tracer say
-
-debugTracer :: forall a s. Show a => Tracer (IOSim s) a
-debugTracer = threadAndTimeTracer $ show >$< Tracer traceM
 
 threadAndTimeTracer :: forall a m.
                        ( MonadAsync m
