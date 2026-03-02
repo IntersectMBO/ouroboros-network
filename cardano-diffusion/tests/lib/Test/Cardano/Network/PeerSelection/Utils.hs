@@ -25,30 +25,25 @@ takeFirstNHours :: DiffTime -> [(Time, a)] -> [(Time, a)]
 takeFirstNHours h = takeWhile (\(t,_) -> t < Time (60*60*h))
 
 
-selectEnvEvents :: Events (TestTraceEvent extraState extraFlags extraPeers
-                                          extraCounters extraTrace)
+selectEnvEvents :: Events (TestTraceEvent extraState extraFlags extraPeers)
                 -> Events TraceMockEnv
 selectEnvEvents = Signal.selectEvents
                     (\case MockEnvEvent e -> Just $! e
                            _              -> Nothing)
 
-selectGovEvents :: Events (TestTraceEvent extraState extraFlags extraPeers
-                                          extraCounters extraTrace)
-                -> Events (TracePeerSelection extraState extraFlags extraPeers
-                                              extraTrace PeerAddr)
+selectGovEvents :: Events (TestTraceEvent extraState extraFlags extraPeers)
+                -> Events (TracePeerSelection extraState extraFlags extraPeers PeerAddr)
 selectGovEvents = Signal.selectEvents
                     (\case GovernorEvent e -> Just $! e
                            _               -> Nothing)
 
-selectGovCounters :: Events (TestTraceEvent extraState extraFlags extraPeers
-                                            extraCounters extraTrace)
-                  -> Events (Governor.PeerSelectionCounters extraCounters)
+selectGovCounters :: Events (TestTraceEvent extraState extraFlags extraPeers)
+                  -> Events (Governor.PeerSelectionCounters (Governor.ViewExtraPeers extraPeers))
 selectGovCounters = Signal.selectEvents
                       (\case GovernorCounters e -> Just $! e
                              _                  -> Nothing)
 
-selectGovAssociationMode :: Events (TestTraceEvent extraState extraFlags extraPeers
-                                                   extraCounters extraTrace)
+selectGovAssociationMode :: Events (TestTraceEvent extraState extraFlags extraPeers)
                          -> Events AssociationMode
 selectGovAssociationMode = Signal.selectEvents
                              (\case GovernorAssociationMode e -> Just $! e
@@ -62,8 +57,7 @@ selectGovState :: Eq a
                   )
                -> extraState
                -> extraPeers
-               -> Events (TestTraceEvent extraState extraFlags extraPeers
-                                         extraCounters extraTrace)
+               -> Events (TestTraceEvent extraState extraFlags extraPeers)
                -> Signal a
 selectGovState f es ep =
     Signal.nub
@@ -76,8 +70,7 @@ selectGovState f es ep =
 
 selectEnvTargets :: Eq a
                  => (PeerSelectionTargets -> a)
-                 -> Events (TestTraceEvent extraState extraFlags extraPeers
-                                           extraCounters extraTrace)
+                 -> Events (TestTraceEvent extraState extraFlags extraPeers)
                  -> Signal a
 selectEnvTargets f =
     Signal.nub
