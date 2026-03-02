@@ -116,13 +116,3 @@ instance ToJSON (NetworkTopology UseBootstrapPeers PeerTrustable) where
   toJSON = networkTopologyToJSON
              (\useBootstrapPeers -> Just ("bootstrapPeers", toJSON useBootstrapPeers))
              (\peerTrustable     -> Just ("trustable", toJSON peerTrustable))
-
-instance ToJSON ExtraTrace where
-  toJSON (TraceLedgerStateJudgementChanged new) =
-    object [ "kind" .= String "LedgerStateJudgementChanged"
-           , "LedgerStateJudgement" .= show new
-           ]
-  toJSON (TraceUseBootstrapPeersChanged ubp) =
-    object [ "kind" .= String "UseBootstrapPeersChanged"
-           , "UseBootstrapPeers" .= show ubp
-           ]
