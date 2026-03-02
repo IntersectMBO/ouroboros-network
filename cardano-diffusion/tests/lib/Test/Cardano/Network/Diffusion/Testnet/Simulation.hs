@@ -955,7 +955,7 @@ data DiffusionTestTrace =
       DiffusionLocalRootPeerTrace (TraceLocalRootPeers PeerTrustable NtNAddr)
     | DiffusionPublicRootPeerTrace TracePublicRootPeers
     | DiffusionLedgerPeersTrace TraceLedgerPeers
-    | DiffusionPeerSelectionTrace (Governor.TracePeerSelection Cardano.ExtraState PeerTrustable (Cardano.ExtraPeers NtNAddr) Cardano.ExtraTrace NtNAddr)
+    | DiffusionPeerSelectionTrace (Governor.TracePeerSelection Cardano.ExtraState PeerTrustable (Cardano.ExtraPeers NtNAddr) NtNAddr)
     | DiffusionPeerSelectionActionsTrace (PeerSelectionActionsTrace NtNAddr NtNVersion)
     | DiffusionDebugPeerSelectionTrace (DebugPeerSelection Cardano.ExtraState PeerTrustable (Cardano.ExtraPeers NtNAddr) NtNAddr)
     | DiffusionConnectionManagerTrace
@@ -1396,7 +1396,6 @@ diffusionSimulationM
               (snd peerTargets)
               readUseBootstrapPeers)
           )
-          Cardano.cardanoPeerSelectionStatetoCounters
           (flip Cardano.ExtraPeers Set.empty)
           requestPublicRootPeers'
           peerChurnGovernor'
@@ -1463,8 +1462,6 @@ diffusionSimulationM
                            Cardano.ExtraState
                            Cardano.ExtraState PeerTrustable
                            (Cardano.ExtraPeers NtNAddr)
-                           (Cardano.ExtraPeerSelectionSetsWithSizes NtNAddr)
-                           Cardano.ExtraTrace
                            m
     mkTracers ntnAddr nodeId =
       let sayTracer' :: Show event => Tracer m event
