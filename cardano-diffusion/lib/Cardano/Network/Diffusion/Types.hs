@@ -25,7 +25,7 @@ module Cardano.Network.Diffusion.Types
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Tracer (Tracer)
-import Network.Socket (SockAddr, Socket)
+import Network.Socket (Socket)
 
 import Cardano.Network.ConsensusMode as Reexports (ConsensusMode (..))
 import Cardano.Network.LedgerPeerConsensusInterface qualified as Cardano
@@ -134,7 +134,8 @@ type CardanoTraceLocalRootPeers =
 type CardanoTracePeerSelection =
   Cardano.TracePeerSelection Cardano.DebugPeerSelectionState
                              PeerTrustable
-                             (Cardano.ExtraPeers SockAddr)
+                             (Cardano.ExtraPeers RemoteAddress)
+                             Cardano.ExtraTrace
                              RemoteAddress
 
 
