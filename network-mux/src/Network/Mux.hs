@@ -37,6 +37,8 @@ module Network.Mux
     -- * Bearer
   , Bearer
   , MakeBearer (..)
+  , ReadBuffer
+  , MonadReadBuffer (..)
   , SDUSize (..)
     -- * Monitoring
   , miniProtocolStateMap
