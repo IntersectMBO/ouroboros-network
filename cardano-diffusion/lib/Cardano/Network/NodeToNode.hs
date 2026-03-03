@@ -403,7 +403,7 @@ connectTo
      , NFData b
      )
   => Snocket IO Socket.Socket Socket.SockAddr
-  -> NetworkConnectTracers Socket.SockAddr NodeToNodeVersion
+  -> NetworkConnectTracers IO Socket.SockAddr NodeToNodeVersion
   -> Versions NodeToNodeVersion
               NodeToNodeVersionData
               (OuroborosApplicationWithMinimalCtx
