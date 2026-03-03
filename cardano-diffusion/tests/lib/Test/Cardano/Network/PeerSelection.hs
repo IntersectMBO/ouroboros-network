@@ -39,7 +39,7 @@ import Data.List.NonEmpty qualified as NonEmpty
 import Data.List.Trace qualified as Trace
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromJust, fromMaybe, isNothing, listToMaybe)
+import Data.Maybe (fromMaybe, isNothing, listToMaybe)
 import Data.OrdPSQ qualified as PSQ
 import Data.Set (Set)
 import Data.Set qualified as Set
@@ -233,7 +233,7 @@ prop_peerSelectionView_sizes env =
   where
     viewInvariant :: PeerSelectionView (ViewExtraPeers (ExtraPeers PeerAddr)) (Set PeerAddr)
                   -> Property
-    viewInvariant PeerSelectionView {viewExtraViews = fromJust -> viewExtraViews, ..} =
+    viewInvariant PeerSelectionView {..} =
            isSubsetProperty "viewActivePeersDemotions" viewActivePeersDemotions viewActivePeers
       .&&. isSubsetProperty "viewActivePeers" viewActivePeers viewEstablishedPeers
       .&&. isSubsetProperty "viewEstablishedPeers" viewEstablishedPeers viewKnownPeers
@@ -299,7 +299,7 @@ prop_peerSelectionView_sizes env =
 
     viewSizeInvariant :: PeerSelectionSetsWithSizes (ViewExtraPeers (ExtraPeers PeerAddr)) PeerAddr
                       -> Property
-    viewSizeInvariant PeerSelectionView {viewExtraViews = fromJust -> viewExtraViews, ..} =
+    viewSizeInvariant PeerSelectionView {..} =
             counterexample "viewRootPeers"
             (Set.size (fst viewRootPeers) === snd viewRootPeers)
 
@@ -4184,7 +4184,7 @@ prop_governor_association_mode env =
               -- all.
               --
               -- TODO: write a more effective test.
-                 Set.null (fst (Cardano.ExtraPeers.viewKnownBootstrapPeers (fromJust $ viewExtraViews cs))
+                 Set.null (fst (Cardano.ExtraPeers.viewKnownBootstrapPeers (viewExtraViews cs))
                             Set.\\ localRootSet
                             Set.\\ publicRootSet)
               && Set.null (fst (viewKnownBigLedgerPeers cs)
@@ -4221,7 +4221,7 @@ _governorFindingPublicRoots :: Int
                             -> IO Void
 _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrapPeers
                             readLedgerStateJudgement peerSharing olocVar consensusMode = do
-    countersVar <- newTVarIO (emptyPeerSelectionCounters $ Just Cardano.ExtraSizes.empty)
+    countersVar <- newTVarIO (emptyPeerSelectionCounters Cardano.ExtraSizes.empty)
     publicStateVar <- makePublicPeerSelectionStateVar
     debugStateVar <- newTVarIO $
       emptyPeerSelectionState (mkStdGen 42)

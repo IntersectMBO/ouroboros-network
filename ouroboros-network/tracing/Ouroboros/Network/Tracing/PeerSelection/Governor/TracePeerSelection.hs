@@ -728,13 +728,10 @@ instance MetaTrace (ToExtraTrace (NoExtraPeers peeraddr)) where
 
 
 instance LogFormatting (ViewExtraPeers (NoExtraPeers peeraddr)) where
-  forMachine _dtal _ =
-    "error" .= String "impossible ouroboros-network error: sorry, there's just no counters NoExtraPeers"
-
-  forHuman _ = "impossible ouroboros-network error: sorry, there's just no counters for NoExtraPeers"
+  forMachine _dtal _ = mempty
 
 instance MetaTrace (ViewExtraPeers (NoExtraPeers peeraddr)) where
-  namespaceFor _ = Namespace [] ["Error"]
-  severityFor _ _ = Just Error
-  documentFor _ = Just "This should just never happen"
-  allNamespaces = [Namespace [] ["Error"]]
+  namespaceFor _ = Namespace [] ["Counters"]
+  severityFor _ _ = Nothing
+  documentFor _ = Nothing
+  allNamespaces = [Namespace [] ["Counters"]]

@@ -582,7 +582,7 @@ class ( Ord peeraddr
   -- to avoid recomputing them again for the extra peers.
   mkViewExtraPeers
     :: PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
-    -> Maybe (ViewExtraPeers extraPeers)
+    -> ViewExtraPeers extraPeers
 
 
 -----------------------
@@ -918,7 +918,7 @@ data PeerSelectionView extraViews a = PeerSelectionView {
       viewActiveNonRootPeers               :: a,
       viewActiveNonRootPeersDemotions      :: a,
 
-      viewExtraViews                       :: Maybe extraViews
+      viewExtraViews                       :: extraViews
     } deriving (Eq, Functor, Show)
 
 
@@ -929,7 +929,7 @@ pattern PeerSelectionCounters
           -> Int -> Int -> Int -> Int -> Int -> Int -> Int -> Int
           -> Int -> Int -> Int -> Int -> Int -> Int -> Int
           -> Int -> Int -> Int -> Int -> Int -> Int -> Int
-          -> Maybe extraCounters
+          -> extraCounters
           -> PeerSelectionCounters extraCounters
 pattern PeerSelectionCounters {
       numberOfRootPeers,
@@ -1133,7 +1133,7 @@ emptyPeerSelectionState rng es ep =
       extraState                  = es
     }
 
-emptyPeerSelectionCounters :: Maybe extraCounters -> PeerSelectionCounters extraCounters
+emptyPeerSelectionCounters :: extraCounters -> PeerSelectionCounters extraCounters
 emptyPeerSelectionCounters emptyEC =
   PeerSelectionCounters {
     numberOfRootPeers                        = 0,
@@ -1198,7 +1198,7 @@ establishedPeersStatus PeerSelectionState{establishedPeers, activePeers} =
 peerSelectionStateToView
   :: SupportsPeerSelectionState extraPeers peeraddr
   => PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
-  -> PeerSelectionSetsWithSizes (Maybe (ViewExtraPeers extraPeers)) peeraddr
+  -> PeerSelectionSetsWithSizes (ViewExtraPeers extraPeers) peeraddr
 peerSelectionStateToView
     st@PeerSelectionState {
         knownPeers,
@@ -1312,7 +1312,7 @@ peerSelectionStateToView
 peerSelectionStateToCounters
   :: SupportsPeerSelectionState extraPeers peeraddr
   => PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
-  -> PeerSelectionCounters (Maybe (ViewExtraPeers extraPeers))
+  -> PeerSelectionCounters (ViewExtraPeers extraPeers)
 peerSelectionStateToCounters =
     fmap snd
   . peerSelectionStateToView

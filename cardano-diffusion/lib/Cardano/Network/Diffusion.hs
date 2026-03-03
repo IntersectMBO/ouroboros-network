@@ -129,7 +129,7 @@ run CardanoNodeArguments {
                     Cardano.PeerSelectionState.empty
                       consensusMode
                       minNumOfBigLedgerPeers,
-                  daEmptyExtraCounters                = Just Cardano.Types.empty,
+                  daEmptyExtraCounters                = Cardano.Types.empty,
                   daExtraPeersAPI                     = Cardano.cardanoPublicRootPeersAPI,
                   daInstallSigUSR1Handler             =
                     Cardano.sigUSR1Handler
