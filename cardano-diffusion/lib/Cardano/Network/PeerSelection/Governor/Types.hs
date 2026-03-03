@@ -1,7 +1,6 @@
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE FlexibleContexts         #-}
 {-# LANGUAGE NamedFieldPuns           #-}
-{-# LANGUAGE ViewPatterns             #-}
 
 module Cardano.Network.PeerSelection.Governor.Types
   ( empty
@@ -15,7 +14,6 @@ module Cardano.Network.PeerSelection.Governor.Types
 import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM
 import Control.Monad.Class.MonadTimer.SI
-import Data.Maybe (fromJust)
 import Data.Set qualified as Set
 
 import Cardano.Network.ConsensusMode (ConsensusMode (..))
@@ -69,7 +67,7 @@ outboundConnectionsState
     PeerSelectionView {
       viewEstablishedPeers       = (viewEstablishedPeers, _),
         viewActiveBigLedgerPeers = (_, activeNumBigLedgerPeers),
-      viewExtraViews = fromJust -> Cardano.ExtraPeerSelectionSetsWithSizes {
+      viewExtraViews = Cardano.ExtraPeerSelectionSetsWithSizes {
         viewEstablishedBootstrapPeers = (viewEstablishedBootstrapPeers, _),
         viewActiveBootstrapPeers      = (viewActiveBootstrapPeers, _)
       }

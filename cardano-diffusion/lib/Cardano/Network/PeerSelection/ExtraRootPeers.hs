@@ -67,19 +67,19 @@ instance ( Ord peeraddr
   publicExtraPeersAPI = cardanoPublicRootPeersAPI
 
   mkViewExtraPeers PeerSelectionState {..} =
-      Just ExtraPeerSelectionSetsWithSizes {
-        viewKnownBootstrapPeers           = size'   knownBootstrapPeersSet
-      , viewColdBootstrapPeersPromotions  = size' $ knownBootstrapPeersSet
-                                            `Set.intersection` inProgressPromoteCold
-      , viewEstablishedBootstrapPeers     = size'   establishedBootstrapPeersSet
-      , viewWarmBootstrapPeersDemotions   = size' $ establishedBootstrapPeersSet
-                                            `Set.intersection` inProgressDemoteWarm
-      , viewWarmBootstrapPeersPromotions  = size' $ establishedBootstrapPeersSet
-                                            `Set.intersection` inProgressPromoteWarm
-      , viewActiveBootstrapPeers          = size'   activeBootstrapPeersSet
-      , viewActiveBootstrapPeersDemotions = size' $ activeBootstrapPeersSet
-                                            `Set.intersection` inProgressDemoteHot
-      }
+      ExtraPeerSelectionSetsWithSizes {
+          viewKnownBootstrapPeers           = size'   knownBootstrapPeersSet
+        , viewColdBootstrapPeersPromotions  = size' $ knownBootstrapPeersSet
+                                              `Set.intersection` inProgressPromoteCold
+        , viewEstablishedBootstrapPeers     = size'   establishedBootstrapPeersSet
+        , viewWarmBootstrapPeersDemotions   = size' $ establishedBootstrapPeersSet
+                                              `Set.intersection` inProgressDemoteWarm
+        , viewWarmBootstrapPeersPromotions  = size' $ establishedBootstrapPeersSet
+                                              `Set.intersection` inProgressPromoteWarm
+        , viewActiveBootstrapPeers          = size'   activeBootstrapPeersSet
+        , viewActiveBootstrapPeersDemotions = size' $ activeBootstrapPeersSet
+                                              `Set.intersection` inProgressDemoteHot
+        }
     where
       size' s = (s, Set.size s)
 
