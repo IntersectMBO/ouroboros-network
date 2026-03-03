@@ -321,7 +321,7 @@ run blockGeneratorArgs ni na
                     }
               , Diffusion.daLedgerPeersCtx                    = iLedgerPeersConsensusInterface ni
               , Diffusion.daEmptyExtraState                   = emptyExtraState
-              , Diffusion.daEmptyExtraCounters                = Just emptyExtraCounters
+              , Diffusion.daEmptyExtraCounters                = emptyExtraCounters
               , Diffusion.daExtraPeersAPI                     = extraPeersAPI
               , Diffusion.daInstallSigUSR1Handler             = \_ _ -> pure ()
               , Diffusion.daPeerSelectionGovernorArgs         = psArgs

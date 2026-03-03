@@ -23,40 +23,38 @@ import Ouroboros.Network.PeerSelection.Governor.Types
 
 instance LogFormatting extraCounters => LogFormatting (PeerSelectionCounters extraCounters) where
   forMachine dtal PeerSelectionCounters {..} =
-    let base =
-          mconcat [ "kind" .= String "PeerSelectionCounters"
-                  , "knownPeers" .= numberOfKnownPeers
-                  , "rootPeers" .= numberOfRootPeers
-                  , "coldPeersPromotions" .= numberOfColdPeersPromotions
-                  , "establishedPeers" .= numberOfEstablishedPeers
-                  , "warmPeersDemotions" .= numberOfWarmPeersDemotions
-                  , "warmPeersPromotions" .= numberOfWarmPeersPromotions
-                  , "activePeers" .= numberOfActivePeers
-                  , "activePeersDemotions" .= numberOfActivePeersDemotions
+    mconcat [ "kind" .= String "PeerSelectionCounters"
+            , "knownPeers" .= numberOfKnownPeers
+            , "rootPeers" .= numberOfRootPeers
+            , "coldPeersPromotions" .= numberOfColdPeersPromotions
+            , "establishedPeers" .= numberOfEstablishedPeers
+            , "warmPeersDemotions" .= numberOfWarmPeersDemotions
+            , "warmPeersPromotions" .= numberOfWarmPeersPromotions
+            , "activePeers" .= numberOfActivePeers
+            , "activePeersDemotions" .= numberOfActivePeersDemotions
 
-                  , "knownBigLedgerPeers" .= numberOfKnownBigLedgerPeers
-                  , "coldBigLedgerPeersPromotions" .= numberOfColdBigLedgerPeersPromotions
-                  , "establishedBigLedgerPeers" .= numberOfEstablishedBigLedgerPeers
-                  , "warmBigLedgerPeersDemotions" .= numberOfWarmBigLedgerPeersDemotions
-                  , "warmBigLedgerPeersPromotions" .= numberOfWarmBigLedgerPeersPromotions
-                  , "activeBigLedgerPeers" .= numberOfActiveBigLedgerPeers
-                  , "activeBigLedgerPeersDemotions" .= numberOfActiveBigLedgerPeersDemotions
+            , "knownBigLedgerPeers" .= numberOfKnownBigLedgerPeers
+            , "coldBigLedgerPeersPromotions" .= numberOfColdBigLedgerPeersPromotions
+            , "establishedBigLedgerPeers" .= numberOfEstablishedBigLedgerPeers
+            , "warmBigLedgerPeersDemotions" .= numberOfWarmBigLedgerPeersDemotions
+            , "warmBigLedgerPeersPromotions" .= numberOfWarmBigLedgerPeersPromotions
+            , "activeBigLedgerPeers" .= numberOfActiveBigLedgerPeers
+            , "activeBigLedgerPeersDemotions" .= numberOfActiveBigLedgerPeersDemotions
 
-                  , "knownLocalRootPeers" .= numberOfKnownLocalRootPeers
-                  , "establishedLocalRootPeers" .= numberOfEstablishedLocalRootPeers
-                  , "warmLocalRootPeersPromotions" .= numberOfWarmLocalRootPeersPromotions
-                  , "activeLocalRootPeers" .= numberOfActiveLocalRootPeers
-                  , "activeLocalRootPeersDemotions" .= numberOfActiveLocalRootPeersDemotions
+            , "knownLocalRootPeers" .= numberOfKnownLocalRootPeers
+            , "establishedLocalRootPeers" .= numberOfEstablishedLocalRootPeers
+            , "warmLocalRootPeersPromotions" .= numberOfWarmLocalRootPeersPromotions
+            , "activeLocalRootPeers" .= numberOfActiveLocalRootPeers
+            , "activeLocalRootPeersDemotions" .= numberOfActiveLocalRootPeersDemotions
 
-                  , "knownNonRootPeers" .= numberOfKnownNonRootPeers
-                  , "coldNonRootPeersPromotions" .= numberOfColdNonRootPeersPromotions
-                  , "establishedNonRootPeers" .= numberOfEstablishedNonRootPeers
-                  , "warmNonRootPeersDemotions" .= numberOfWarmNonRootPeersDemotions
-                  , "warmNonRootPeersPromotions" .= numberOfWarmNonRootPeersPromotions
-                  , "activeNonRootPeers" .= numberOfActiveNonRootPeers
-                  , "activeNonRootPeersDemotions" .= numberOfActiveNonRootPeersDemotions
-                  ]
-        in maybe base ((base <>) . forMachine dtal) extraCounters
+            , "knownNonRootPeers" .= numberOfKnownNonRootPeers
+            , "coldNonRootPeersPromotions" .= numberOfColdNonRootPeersPromotions
+            , "establishedNonRootPeers" .= numberOfEstablishedNonRootPeers
+            , "warmNonRootPeersDemotions" .= numberOfWarmNonRootPeersDemotions
+            , "warmNonRootPeersPromotions" .= numberOfWarmNonRootPeersPromotions
+            , "activeNonRootPeers" .= numberOfActiveNonRootPeers
+            , "activeNonRootPeersDemotions" .= numberOfActiveNonRootPeersDemotions
+            ] <> forMachine dtal extraCounters
 
   asMetrics PeerSelectionCounters {..} =
     let base =
@@ -92,7 +90,7 @@ instance LogFormatting extraCounters => LogFormatting (PeerSelectionCounters ext
           , IntM "peerSelection.ActiveNonRootPeers" (fromIntegral numberOfActiveNonRootPeers)
           , IntM "peerSelection.ActiveNonRootPeersDemotions" (fromIntegral numberOfActiveNonRootPeersDemotions)
           ]
-     in maybe base ((<> base) . asMetrics) extraCounters
+     in asMetrics extraCounters <> base
 
 
 instance MetaTrace extraCounters => MetaTrace (PeerSelectionCounters extraCounters) where
@@ -144,7 +142,7 @@ instance MetaTrace extraCounters => MetaTrace (PeerSelectionCounters extraCounte
      , ("peerSelection.WarmNonRootPeersPromotions", "Number of warm non root peers promotions")
      , ("peerSelection.ActiveNonRootPeers", "Number of active non root peers")
      , ("peerSelection.ActiveNonRootPeersDemotions", "Number of active non root peers demotions")
-     ] <> metricsDocFor (Namespace [] ["Counters", "Extra"] :: Namespace extraCounters)
+     ] <> metricsDocFor (Namespace [] ["Counters"] :: Namespace extraCounters)
 
     metricsDocFor _ = []
 

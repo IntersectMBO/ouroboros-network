@@ -155,12 +155,12 @@ instance ( Ord peeraddr
          ) => SupportsPeerSelectionState (NoExtraPeers peeraddr) peeraddr where
   data ToExtraTrace (NoExtraPeers peeraddr)
     deriving Show
-  data ViewExtraPeers (NoExtraPeers peeraddr)
+  data ViewExtraPeers (NoExtraPeers peeraddr) = NoExtraView
     deriving Eq
 
   publicExtraPeersAPI = nullPublicExtraPeersAPI
 
-  mkViewExtraPeers _ = Nothing
+  mkViewExtraPeers _ = NoExtraView
 
 type OuroborosPeerSelectionCounters peeraddr =
   PeerSelectionCounters (ViewExtraPeers (NoExtraPeers peeraddr))
@@ -368,7 +368,7 @@ data Arguments extraState extraDebugState extraFlags extraPeers
 
     -- | Extra Counters empty value
     --
-  , daEmptyExtraCounters     :: Maybe (ViewExtraPeers extraPeers)
+  , daEmptyExtraCounters     :: ViewExtraPeers extraPeers
 
     -- | Provide Public Extra Actions for extraPeers to be
     --
