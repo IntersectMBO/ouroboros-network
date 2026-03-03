@@ -244,7 +244,7 @@ governorAction mockEnv@GovernorMockEnvironment {
     let readUseBootstrapPeers = readTVar usbVar
     -- todo: make NumberOfBigLedgerPeers come from quickcheck
     debugStateVar <- StrictTVar.newTVarIO (emptyPeerSelectionState (mkStdGen seed') (Cardano.ExtraState.empty consensusMode (NumberOfBigLedgerPeers 0)) Cardano.ExtraPeers.empty)
-    countersVar <- StrictTVar.newTVarIO . emptyPeerSelectionCounters $ Just Cardano.ExtraSizes.empty
+    countersVar <- StrictTVar.newTVarIO $ emptyPeerSelectionCounters Cardano.ExtraSizes.empty
     policy  <- mockPeerSelectionPolicy mockEnv
     let initialPeerTargets = fst . NonEmpty.head $ targets'
 
