@@ -51,7 +51,7 @@ import Ouroboros.Network.PeerSelection.Governor.Types hiding
            (PeerSelectionCounters)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
            (LedgerPeerSnapshot (..), LedgerPeersConsensusInterface (..),
-           SomeHashableBlock (..))
+           RawBlockHash (..))
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
@@ -693,7 +693,7 @@ waitForSystemToQuiesce st@PeerSelectionState{
 -- snapshot was ostensibly taken
 --
 jobVerifyPeerSnapshot :: MonadSTM m
-                      => (SlotNo, SomeHashableBlock)
+                      => (SlotNo, RawBlockHash)
                       -> Cardano.LedgerPeersConsensusInterface m
                       -> Job () m (Completion m extraState extraDebugState extraFlags extraPeers extraTrace peeraddr peerconn)
 jobVerifyPeerSnapshot (slotNo, fileHash)

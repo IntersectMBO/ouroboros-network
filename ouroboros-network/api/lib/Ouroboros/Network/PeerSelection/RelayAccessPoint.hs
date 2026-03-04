@@ -281,7 +281,7 @@ instance FromCBOR LedgerRelayAccessPoint where
 -- | A new type wrapper which provides backward compatible `FromJSON` instance
 -- for `LedgerRelayAccessPoint`.
 --
-newtype LedgerRelayAccessPointV1 = LedgerRelayAccessPointV1 { getLedgerReelayAccessPointV1 :: LedgerRelayAccessPoint }
+newtype LedgerRelayAccessPointV1 = LedgerRelayAccessPointV1 { getLedgerRelayAccessPointV1 :: LedgerRelayAccessPoint }
 
 instance FromJSON LedgerRelayAccessPointV1 where
   parseJSON = withObject "RelayAccessPoint" $ \o -> do

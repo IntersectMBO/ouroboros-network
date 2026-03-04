@@ -9,6 +9,9 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE ViewPatterns        #-}
+#if !MIN_VERSION_QuickCheck(2,16,0)
+{-# LANGUAGE PackageImports      #-}
+#endif
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}

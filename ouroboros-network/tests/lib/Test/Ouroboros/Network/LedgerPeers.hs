@@ -1,17 +1,14 @@
-{-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE DerivingVia         #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE NumericUnderscores  #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE PatternSynonyms     #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
-{-# LANGUAGE TypeData            #-}
-{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE BangPatterns       #-}
+{-# LANGUAGE DataKinds          #-}
+{-# LANGUAGE DerivingVia        #-}
+{-# LANGUAGE LambdaCase         #-}
+{-# LANGUAGE NamedFieldPuns     #-}
+{-# LANGUAGE NumericUnderscores #-}
+{-# LANGUAGE OverloadedStrings  #-}
+{-# LANGUAGE RankNTypes         #-}
+{-# LANGUAGE TypeApplications   #-}
+{-# LANGUAGE TypeData           #-}
+{-# LANGUAGE TypeFamilies       #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -31,7 +28,10 @@ import Control.Monad.IOSim hiding (SimResult)
 import Control.Tracer (Tracer (..), nullTracer, traceWith)
 import Data.Aeson
 import Data.Aeson.Types as Aeson
+import Data.ByteString.Builder (toLazyByteString, word64BE)
 import Data.ByteString.Char8 qualified as BS
+import Data.ByteString.Lazy qualified as BL
+import Data.ByteString.Short (ShortByteString, toShort)
 import Data.IP qualified as IP
 import Data.List as List (foldl', intercalate, isPrefixOf, nub, sortOn)
 import Data.List.NonEmpty qualified as NonEmpty
@@ -39,7 +39,6 @@ import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Monoid (Sum (..))
 import Data.Ord (Down (..))
-import Data.Proxy
 import Data.Ratio
 import Data.Set (Set)
 import Data.Set qualified as Set
@@ -539,14 +538,14 @@ prop_ledgerPeerSnapshotCBORV2 srvSupport slotNo
   where
     someSnapshot = snapshotV2 slotNo ledgerPools
     encoded = toFlatTerm . encodeLedgerPeerSnapshot' srvSupport $ someSnapshot
-    decoded = unwrap <$> fromFlatTerm (decodeLedgerPeerSnapshot (Proxy :: Proxy MockBlock)) encoded
+    decoded = unwrap <$> fromFlatTerm decodeLedgerPeerSnapshot encoded
     unwrap :: SomeLedgerPeerSnapshot -> LedgerPeerSnapshot BigLedgerPeers
     unwrap = \case
-      SomeLedgerPeerSnapshot _ lps@LedgerPeerSnapshotV2{} -> lps
+      SomeLedgerPeerSnapshot lps@LedgerPeerSnapshotV2{} -> lps
       _otherwise -> error "impossible"
 
     result = case someSnapshot of
-      SomeLedgerPeerSnapshot _ lps@(LedgerPeerSnapshotV2 (slotNo', peers)) ->
+      SomeLedgerPeerSnapshot lps@(LedgerPeerSnapshotV2 (slotNo', peers)) ->
         case srvSupport of
           LedgerPeerSnapshotSupportsSRV      -> lps
           LedgerPeerSnapshotDoesntSupportSRV ->
@@ -573,18 +572,12 @@ prop_ledgerPeerSnapshotCBORV3 slotNo magic ledgerPools big =
          counterexample ("Invalid CBOR encoding" <> show encoded)
                         (validFlatTerm encoded)
     .&&. either ((`counterexample` False) . ("CBOR decode failed: " <>))
-                (counterexample . ("CBOR round trip failed: " <>) . show <*> cmp)
+                (counterexample . ("CBOR round trip failed: " <>) . show <*> (== someSnapshot))
                 decoded
   where
     someSnapshot = snapshotV3 slotNo (NetworkMagic magic) ledgerPools big
     encoded = toFlatTerm . encodeLedgerPeerSnapshot' LedgerPeerSnapshotSupportsSRV $ someSnapshot
-    decoded = fromFlatTerm (decodeLedgerPeerSnapshot (Proxy :: Proxy MockBlock)) encoded
-    cmp decoded' = case (someSnapshot, decoded') of
-      (SomeLedgerPeerSnapshot _ someSnapshot',
-       SomeLedgerPeerSnapshot _ decoded'')-> case (someSnapshot', decoded'') of
-        (lps@LedgerBigPeerSnapshotV23{}, lps'@LedgerBigPeerSnapshotV23{}) -> lps == lps'
-        (lps@LedgerAllPeerSnapshotV23{}, lps'@LedgerAllPeerSnapshotV23{}) -> lps == lps'
-        _otherwise -> False
+    decoded = fromFlatTerm decodeLedgerPeerSnapshot encoded
 
 
 -- | Tests if LedgerPeerSnapshot JSON round trip is the identity function
@@ -605,7 +598,7 @@ prop_ledgerPeerSnapshotJSON slotNo (v3, big) pureMagic ledgerPools =
     renderMsg msg = mconcat ["JSON decode failed: "
                             , show msg
                             , "\nNB. JSON encoding: ", show $ case someSnapshot of
-                                                                SomeLedgerPeerSnapshot _ lps -> toJSON lps
+                                                                SomeLedgerPeerSnapshot lps -> toJSON lps
                             ]
 
     someSnapshot =
@@ -614,25 +607,25 @@ prop_ledgerPeerSnapshotJSON slotNo (v3, big) pureMagic ledgerPools =
         else snapshotV2 slotNo ledgerPools
 
     jsonResult = case someSnapshot of
-      SomeLedgerPeerSnapshot _ lps -> case lps of
+      SomeLedgerPeerSnapshot lps -> case lps of
         lps'@LedgerBigPeerSnapshotV23{} ->
-          SomeLedgerPeerSnapshot Proxy <$>
-            (fmap (parseLedgerPeerSnapshotWithBlock @MockBlock @BigLedgerPeers) . fromJSON . toJSON $ lps')
+          SomeLedgerPeerSnapshot <$>
+            (fromJSON @(LedgerPeerSnapshot BigLedgerPeers) . toJSON $ lps')
         lps'@LedgerAllPeerSnapshotV23{} ->
-          SomeLedgerPeerSnapshot Proxy <$>
-            (fmap (parseLedgerPeerSnapshotWithBlock @MockBlock @AllLedgerPeers) . fromJSON . toJSON $ lps')
+          SomeLedgerPeerSnapshot <$>
+            (fromJSON @(LedgerPeerSnapshot AllLedgerPeers) . toJSON $ lps')
         lps'@LedgerPeerSnapshotV2{}     ->
-          SomeLedgerPeerSnapshot Proxy <$>
-            (fmap (parseLedgerPeerSnapshotWithBlock @MockBlock @BigLedgerPeers) . fromJSON . toJSON $ lps')
+          SomeLedgerPeerSnapshot <$>
+            (fromJSON @(LedgerPeerSnapshot BigLedgerPeers) . toJSON $ lps')
 
     someRoundTrip = case jsonResult of
       Aeson.Success s -> Right s
       Error str       -> Left str
 
     nearlyEqualModuloFullyQualified :: SomeLedgerPeerSnapshot -> SomeLedgerPeerSnapshot -> Property
-    nearlyEqualModuloFullyQualified (SomeLedgerPeerSnapshot _
+    nearlyEqualModuloFullyQualified (SomeLedgerPeerSnapshot
                                       (LedgerPeerSnapshotV2 (wOrigin, relaysWithAccStake)))
-                                    (SomeLedgerPeerSnapshot _
+                                    (SomeLedgerPeerSnapshot
                                       (LedgerPeerSnapshotV2 (wOrigin', relaysWithAccStake'))) =
       let strippedRelaysWithAccStake = stripFQN <$> relaysWithAccStake
           strippedRelaysWithAccStake' = stripFQN <$> relaysWithAccStake'
@@ -643,9 +636,9 @@ prop_ledgerPeerSnapshotJSON slotNo (v3, big) pureMagic ledgerPools =
         .&&. counterexample "approximation error"
                             (compareApprox relaysWithAccStake relaysWithAccStake')
 
-    nearlyEqualModuloFullyQualified (SomeLedgerPeerSnapshot _
+    nearlyEqualModuloFullyQualified (SomeLedgerPeerSnapshot
                                       (LedgerBigPeerSnapshotV23 point magic relaysWithAccStake))
-                                    (SomeLedgerPeerSnapshot _
+                                    (SomeLedgerPeerSnapshot
                                       (LedgerBigPeerSnapshotV23 point' magic' relaysWithAccStake')) =
       let strippedRelaysWithAccStake = stripFQN <$> relaysWithAccStake
           strippedRelaysWithAccStake' = stripFQN <$> relaysWithAccStake'
@@ -657,9 +650,9 @@ prop_ledgerPeerSnapshotJSON slotNo (v3, big) pureMagic ledgerPools =
         .&&. counterexample "approximation error"
                             (compareApprox relaysWithAccStake relaysWithAccStake')
 
-    nearlyEqualModuloFullyQualified (SomeLedgerPeerSnapshot _
+    nearlyEqualModuloFullyQualified (SomeLedgerPeerSnapshot
                                       (LedgerAllPeerSnapshotV23 point magic relays))
-                                    (SomeLedgerPeerSnapshot _
+                                    (SomeLedgerPeerSnapshot
                                       (LedgerAllPeerSnapshotV23 point' magic' relays')) =
       let strippedRelays  = stripFQN <$> zip (repeat (0 :: Int)) relays
           strippedRelays' = stripFQN <$> zip (repeat (0 :: Int)) relays'
@@ -703,7 +696,7 @@ snapshotV2 :: SlotNo
            -> SomeLedgerPeerSnapshot
 snapshotV2 slot
            (LedgerPools pools) =
-  SomeLedgerPeerSnapshot Proxy $ LedgerPeerSnapshotV2 (originOrSlot, poolStakeWithAccumulation)
+  SomeLedgerPeerSnapshot $ LedgerPeerSnapshotV2 (originOrSlot, poolStakeWithAccumulation)
   where
     poolStakeWithAccumulation = Map.assocs . accPoolStake $ pools
     originOrSlot = if slot == 0
@@ -715,13 +708,17 @@ snapshotV3 slotNo magic (LedgerPools pools) big = snapshot
   where
     snapshot =
       if big
-        then let point = BlockPoint slotNo (SomeHashableBlock (Proxy :: Proxy MockBlock) (unSlotNo slotNo))
+        then let point = BlockPoint slotNo (RawBlockHash (word64ToShortBS $ unSlotNo slotNo))
                  bigPools = Map.assocs . accPoolStake $ pools
                  lps  = LedgerBigPeerSnapshotV23 point magic bigPools
-              in SomeLedgerPeerSnapshot Proxy lps
-        else let point = BlockPoint slotNo (SomeHashableBlock (Proxy :: Proxy MockBlock) (unSlotNo slotNo))
+              in SomeLedgerPeerSnapshot lps
+        else let point = BlockPoint slotNo (RawBlockHash (word64ToShortBS $ unSlotNo slotNo))
                  lps = LedgerAllPeerSnapshotV23 point magic pools
-              in SomeLedgerPeerSnapshot Proxy lps
+              in SomeLedgerPeerSnapshot lps
+
+    -- Converts Word64 of the slot number to ShortByteString using Big-Endian encoding
+    word64ToShortBS :: Word64 -> ShortByteString
+    word64ToShortBS = toShort . BL.toStrict . toLazyByteString . word64BE
 
 
 -- TODO: Belongs in iosim.
