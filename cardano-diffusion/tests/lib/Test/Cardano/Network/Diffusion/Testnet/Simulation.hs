@@ -25,6 +25,7 @@ module Test.Cardano.Network.Diffusion.Testnet.Simulation
   , prop_diffusionScript_commandScript_valid
   , fixupCommands
   , diffusionSimulation
+  , DiffSimResult
   , Command (..)
     -- * Tracing
   , DiffusionTestTrace (..)
@@ -125,6 +126,7 @@ import Ouroboros.Network.Snocket (Snocket, TestAddress (..))
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy (TxDecisionPolicy)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types (TraceTxLogic,
            TraceTxSubmissionInbound)
+import Ouroboros.Network.Util (PrettyShow (..))
 
 import Ouroboros.Network.Mock.ConcreteBlock (Block (..), BlockHeader (..))
 import Simulation.Network.Snocket (BearerInfo (..), FD, SnocketTrace,
@@ -134,7 +136,7 @@ import Test.Ouroboros.Network.Data.Script
 import Test.Ouroboros.Network.Diffusion.Node qualified as Node
 import Test.Ouroboros.Network.Diffusion.Node.Kernel (NtCAddr, NtCVersion,
            NtCVersionData, NtNAddr, NtNAddr_ (IPAddr), NtNVersion,
-           NtNVersionData, ppNtNAddr)
+           NtNVersionData)
 import Test.Ouroboros.Network.LedgerPeers (LedgerPools (..), cardanoSRVPrefix,
            genLedgerPoolsFrom)
 import Test.Ouroboros.Network.OrphanInstances (genIPv4, genIPv6)
@@ -997,12 +999,14 @@ ppDiffusionTestTrace (DiffusionDNSTrace tr)                         = show tr
 ppDiffusionTestTrace (DiffusionMuxTrace tr)                         = show tr
 
 
+type DiffSimResult = Void
+
 -- | Run an arbitrary topology in `IOSim`.
 --
 diffusionSimulation
   :: BearerInfo
   -> DiffusionScript
-  -> IOSim s Void
+  -> IOSim s DiffSimResult
 diffusionSimulation bearerInfo diffusionScript =
   diffusionSimulationM bearerInfo diffusionScript dynamicTracer
 
@@ -1031,7 +1035,7 @@ diffusionSimulationM
   -> DiffusionScript
   -> Tracer m (WithTime (WithName NtNAddr DiffusionTestTrace))
   -- ^ timed trace of nodes in the system
-  -> m Void
+  -> m DiffSimResult
 diffusionSimulationM
   defaultBearerInfo
   (DiffusionScript simArgs dnsMapScript nodeArgs)
@@ -1050,10 +1054,12 @@ diffusionSimulationM
               labelThisThread ("ctrl-" ++ show nodeId)
               runCommand ntnSnocket ntcSnocket dnsMapVar simArgs args connStateIdSupply nodeId Nothing commands)
             nodeArgs
-            [NodeId 1..])
-          $ \nodes -> do
+            [NodeId 1..]
+          )
+          (\nodes -> do
             (_, x) <- waitAny nodes
             return x
+          )
   where
     netSimTracer :: Tracer m (WithAddr NtNAddr (SnocketTrace m NtNAddr))
     netSimTracer = (\(WithAddr l _ a) -> WithName (fromMaybe (TestAddress $ IPAddr (read "0.0.0.0") 0) l) (show a))
@@ -1082,7 +1088,7 @@ diffusionSimulationM
       -> m Void
     runCommand ntnSocket ntcSocket dnsMapVar sArgs nArgs@NodeArgs { naAddr, naConsensusMode }
                connStateIdSupply nodeId hostAndLRP cmds = do
-      traceWith (diffSimTracer naAddr) . TrSay $ show nodeId ++ " @ " ++ ppNtNAddr naAddr
+      traceWith (diffSimTracer naAddr) . TrSay $ show nodeId ++ "@" ++ prettyShow naAddr
       runCommand' hostAndLRP cmds
       where
         runCommand' Nothing [] = do
@@ -1320,10 +1326,12 @@ diffusionSimulationM
 
 
           tracerTxLogic =
-              contramap DiffusionTxLogic
+            ( contramap DiffusionTxLogic
             . tracerWithName addr
             . tracerWithTime
             $ nodeTracer
+            )
+            <> sayTracer
 
           -- TODO: can we remove all `NodeArguments` fields that appear in
           -- this function
@@ -1342,10 +1350,11 @@ diffusionSimulationM
                    blockHeader
             where
               tracerTxSubmissionInbound =
-                  contramap DiffusionTxSubmissionInbound
+                ( contramap DiffusionTxSubmissionInbound
                 . tracerWithName addr
                 . tracerWithTime
-                $ nodeTracer
+                $ nodeTracer )
+                <> sayTracer
 
               appArgs :: Node.AppArgs BlockHeader Block m
               appArgs = Node.AppArgs
@@ -1378,10 +1387,12 @@ diffusionSimulationM
           requestPublicRootPeers'
           peerChurnGovernor
           tracers
-          ( contramap (DiffusionFetchTrace . (\(TraceLabelPeer _ a) -> a))
-          . tracerWithName addr
-          . tracerWithTime
-          $ nodeTracer)
+          (  ( contramap (DiffusionFetchTrace . (\(TraceLabelPeer _ a) -> a))
+             . tracerWithName addr
+             . tracerWithTime
+             $ nodeTracer
+             )
+          <> sayTracer)
           tracerTxLogic
           mkApps
         `catch` \e -> traceWith (diffSimTracer addr) (TrErrored e)
@@ -1423,10 +1434,13 @@ diffusionSimulationM
            in fst <$> ipsttls
 
     diffSimTracer :: NtNAddr -> Tracer m DiffusionSimulationTrace
-    diffSimTracer ntnAddr = contramap DiffusionSimulationTrace
-                          . tracerWithName ntnAddr
-                          . tracerWithTime
-                          $ nodeTracer
+    diffSimTracer ntnAddr =
+      ( contramap DiffusionSimulationTrace
+      . tracerWithName ntnAddr
+      . tracerWithTime
+      $ nodeTracer
+      )
+      <> sayTracer
 
     mkTracers
       :: NtNAddr
@@ -1452,12 +1466,14 @@ diffusionSimulationM
                      -- enable it below in one of the specific tracers
       in
       Diffusion.nullTracers {
-          -- Diffusion.dtMuxTracer = contramap
-          --                           DiffusionMuxTrace
-          --                       . tracerWithName ntnAddr
-          --                       . tracerWithTime
-          --                       $ nodeTracer
-          Diffusion.dtTraceLocalRootPeersTracer  = contramap
+          Diffusion.dtMuxTracer                  = contramap
+                                                     DiffusionMuxTrace
+                                                 . tracerWithName ntnAddr
+                                                 . tracerWithTime
+                                                 $ nodeTracer' -- <> sayTracer'
+        , Diffusion.dtDiffusionTracer            = sayTracer'
+        , Diffusion.dtHandshakeTracer            = sayTracer'
+        , Diffusion.dtTraceLocalRootPeersTracer  = contramap
                                                      DiffusionLocalRootPeerTrace
                                                  . tracerWithName ntnAddr
                                                  . tracerWithTime

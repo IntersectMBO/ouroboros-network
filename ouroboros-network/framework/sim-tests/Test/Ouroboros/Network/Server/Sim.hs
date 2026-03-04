@@ -97,6 +97,7 @@ import Ouroboros.Network.Server qualified as Server
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket (Snocket, TestAddress (..))
 import Ouroboros.Network.Snocket qualified as Snocket
+import Ouroboros.Network.Util (PrettyShow (..))
 
 import Simulation.Network.Snocket
 
@@ -112,8 +113,9 @@ import Test.Ouroboros.Network.InboundGovernor.Utils
            validRemoteTransitionMap, verifyRemoteTransition,
            verifyRemoteTransitionOrder)
 import Test.Ouroboros.Network.Orphans ()
-import Test.Ouroboros.Network.Utils (WithName (..), WithTime (..), debugTracerG,
-           genDelayWithPrecision, nightlyTest, sayTracer, tracerWithTime)
+import Test.Ouroboros.Network.Utils (WithName (..), WithTime (..),
+           dynamicTracer, genDelayWithPrecision, nightlyTest, renderRanges,
+           sayTracer, tracerWithTime)
 import Test.Simulation.Network.Snocket hiding (tests)
 
 tests :: TestTree
@@ -600,12 +602,12 @@ data ConnectionHandlerMessage peerAddr req
 data Name addr = Client addr
                | Node addr
                | MainServer
-  deriving Eq
+  deriving (Eq, Show)
 
-instance Show addr => Show (Name addr) where
-    show (Client addr) = "client-" ++ show addr
-    show (Node   addr) = "node-"   ++ show addr
-    show  MainServer   = "main-server"
+instance PrettyShow addr => PrettyShow (Name addr) where
+  prettyShow (Client addr) = "client-" ++ prettyShow addr
+  prettyShow (Node   addr) = "node-"   ++ prettyShow addr
+  prettyShow  MainServer   = "main-server"
 
 
 data ExperimentError =
@@ -627,8 +629,13 @@ multinodeExperiment
        , MonadTraceSTM m
        , MonadSay m
        , acc ~ [req], resp ~ [req]
-       , Ord peerAddr, Show peerAddr, Typeable peerAddr, Eq peerAddr
-       , Serialise req, Show req, NFData req
+       , Ord peerAddr
+       , PrettyShow peerAddr
+       , Typeable peerAddr
+       , Eq peerAddr
+       , Serialise req
+       , Show req
+       , NFData req
        , Serialise resp, Show resp, Eq resp
        , Typeable req, Typeable resp
        )
@@ -1441,7 +1448,9 @@ prop_connection_manager_counters (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
                                     (   sayTracer
                                      <> Tracer traceM
                                      <> networkStateTracer getState)
-                                    (Mux.Tracers debugTracerG debugTracerG debugTracerG)
+                                    (Mux.Tracers (dynamicTracer <> sayTracer)
+                                                 (dynamicTracer <> sayTracer)
+                                                 (dynamicTracer <> sayTracer))
                                     (mkStdGen rnd)
                                     snocket
                                     makeFDBearer
@@ -1459,6 +1468,12 @@ prop_connection_manager_counters (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
         Nothing -> throwIO SimulationTimeout
         Just a  -> return a
 
+
+-- | Events for the `prop_timeouts_enforced` test.
+--
+-- Using type alias enforces an invariant between event tracer & event selector
+-- to trace / select the same type.
+type TimedTransitionEvents = WithTime (WithName (Name SimAddr) (AbstractTransitionTrace CM.ConnStateId))
 
 -- | Property wrapping `multinodeExperiment`.
 --
@@ -1478,27 +1493,50 @@ prop_timeouts_enforced (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
                        (MultiNodeScript events attenuationMap) =
   let trace = runSimTrace sim
 
-      transitionSignal :: Trace (SimResult ()) [(Time, AbstractTransitionTrace SimAddr)]
-      transitionSignal = fmap (map ((,) <$> wtTime <*> wtEvent))
-                       . groupConns wtEvent abstractStateIsFinalTransition
-                       . withTimeNameTraceEvents
-                       $ trace
+      transitionSignal
+        :: Trace (SimResult ()) [(Time, AbstractTransitionTrace CM.ConnStateId)]
+      transitionSignal
+        = fmap (fmap (\(WithTime t (WithName _ ev)) -> (t, ev)))
+        . groupConns (\(WithTime _ (WithName _ ev)) -> ev)
+                     abstractStateIsFinalTransition
+        . eventsSelector
+        $ trace
+
+      numTransitions = getSum $ bifoldMap (const mempty) (Sum . length) transitionSignal
 
   in counterexample (ppTrace trace)
-   $ verifyAllTimeouts False transitionSignal
+   $ label ("number-of-transitions: " ++ renderRanges 10 numTransitions)
+   $ counterexample ("transitionSignal: " ++ Trace.ppTrace (const "") show transitionSignal)
+   $ if numTransitions < 1
+     then discard
+     else verifyAllTimeouts False transitionSignal
   where
+    tracer :: (Typeable a, Show a)
+           => Tracer (IOSim s) a
+    tracer = dynamicTracer <> sayTracer
+
+    eventsTracer
+      :: Tracer (IOSim s) TimedTransitionEvents
+    eventsTracer = dynamicTracer
+
+    eventsSelector
+      :: SimTrace ()
+      -> Trace (SimResult ()) TimedTransitionEvents
+    eventsSelector = withTimeNameTraceEvents
+
     sim :: IOSim s ()
     sim = multiNodeSimTracer (mkStdGen rnd) serverAcc dataFlow
                              absNoAttenuation
                              maxAcceptedConnectionsLimit
                              events
                              attenuationMap
+                             tracer
+                             (tracerWithTime eventsTracer <> sayTracer)
+                             tracer
                              dynamicTracer
-                             (tracerWithTime (Tracer traceM) <> dynamicTracer)
-                             dynamicTracer
-                             nullTracer
-                             (Mux.Tracers dynamicTracer dynamicTracer dynamicTracer)
-                             debugTracerG
+                             (Mux.Tracers tracer tracer tracer)
+                             tracer
+
 
 -- | Property wrapping `multinodeExperiment`.
 --
@@ -2350,9 +2388,14 @@ multiNodeSim :: ( Serialise req
              -> IOSim s ()
 multiNodeSim stdGen serverAcc dataFlow defaultBearerInfo
                    acceptedConnLimit events attenuationMap = do
-  multiNodeSimTracer stdGen serverAcc dataFlow defaultBearerInfo acceptedConnLimit
-                     events attenuationMap dynamicTracer dynamicTracer dynamicTracer
-                     (Tracer traceM) (Mux.Tracers dynamicTracer dynamicTracer dynamicTracer) dynamicTracer --debugTracerG
+    multiNodeSimTracer stdGen serverAcc dataFlow defaultBearerInfo acceptedConnLimit
+                       events attenuationMap tracer tracer tracer
+                       dynamicTracer (Mux.Tracers tracer tracer tracer) tracer
+  where
+    tracer :: (Typeable a, Show a)
+           => Tracer (IOSim s) a
+    tracer = dynamicTracer <> sayTracer
+
 
 
 -- | Connection terminated while negotiating it.
@@ -2433,10 +2476,6 @@ ppScript (MultiNodeScript script _) = intercalate "\n" $ go 0 script
 -- Utils
 --
 
-
-dynamicTracer :: (Typeable a, Show a) => Tracer (IOSim s) a
-dynamicTracer = Tracer traceM <> sayTracer
-
 toNonFailing :: Script AbsBearerInfo -> Script AbsBearerInfo
 toNonFailing = unNFBIScript
              . toNonFailingAbsBearerInfoScript
@@ -2459,10 +2498,9 @@ withNameTraceEvents = fmap wnEvent
 
 withTimeNameTraceEvents :: forall b. Typeable b
                         => SimTrace ()
-                        -> Trace (SimResult ()) (WithTime b)
-withTimeNameTraceEvents = fmap (\(WithTime t (WithName _ e)) -> WithTime t e)
-          . Trace.filter ((MainServer ==) . wnName . wtEvent)
-          . traceSelectTraceEventsDynamic
+                        -> Trace (SimResult ()) (WithTime (WithName (Name SimAddr) b))
+withTimeNameTraceEvents =
+            traceSelectTraceEventsDynamic
               @(SimResult ())
               @(WithTime (WithName (Name SimAddr) b))
 
