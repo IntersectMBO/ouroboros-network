@@ -30,6 +30,7 @@ module Test.Ouroboros.Network.Data.Signal
   , fromEventsWith
     -- ** QuickCheck
   , signalProperty
+  , signalProperty'
     -- * Simple signal transformations
   , truncateAt
   , stable
@@ -56,6 +57,7 @@ import Prelude hiding (scanl, until)
 
 import Data.Bool (bool)
 import Data.Foldable qualified as Deque (toList)
+import Data.Functor.Identity
 import Data.List (groupBy)
 import Data.Maybe (fromMaybe, maybeToList)
 import Data.OrdPSQ (OrdPSQ)
@@ -546,19 +548,27 @@ eventually (TS time i) p (Signal x0 txs0)
 --
 signalProperty :: forall a. Int -> (a -> String)
                -> (a -> Bool) -> Signal a -> Property
-signalProperty atMost showSignalValue p =
+signalProperty atMost showSignalValue predicate =
+  runIdentity . signalProperty' atMost showSignalValue (Identity . property . predicate)
+
+-- | A variant of 'signalProperty' that takes a property-producing function
+-- instead of a boolean predicate.
+-- NB: m should be a lazy monad
+--
+signalProperty' :: forall m a. Monad m
+                => Int -> (a -> String)
+                -> (a -> m Property) -> Signal a -> m Property
+signalProperty' atMost showSignalValue p =
     go 0 mempty . eventsToList . toChangeEvents
   where
-    go :: Int -> Deque (Time, a) -> [(Time, a)] -> Property
-    go !_ !_ []                   = property True
-    go !n !recent ((t, x) : txs) | p x = next
+    go :: Int -> Deque (Time, a) -> [(Time, a)] -> m Property
+    go !_ !_ []                  = pure $ property True
+    go !n !recent ((t, x) : txs) = (.&&.) . counterexample details <$> p x <*> next
       where
         next
           | n < atMost = go (n+1) (              Deque.snoc (t,x)  recent) txs
           | otherwise  = go n     ((Deque.tail . Deque.snoc (t,x)) recent) txs
 
-    go !_ !recent ((Time t, x) : _) = counterexample details False
-      where
         details =
           unlines [ "Last " ++ show atMost ++ " signal values:"
                   , unlines [ show t' ++ "\t@ " ++ showSignalValue x'
