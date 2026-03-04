@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE PatternSynonyms     #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -14,8 +15,8 @@ module Ouroboros.Network.Tracing.PeerSelection.Governor.PeerSelectionCounters ()
 
 import Cardano.Logging
 import Data.Aeson
-import Ouroboros.Network.PeerSelection.Governor.Types
-           (PeerSelectionCounters, PeerSelectionView (..))
+import Ouroboros.Network.PeerSelection.Governor.Types (PeerSelectionCounters,
+           PeerSelectionView (..), pattern PeerSelectionCountersHWC)
 
 --------------------------------------------------------------------------------
 -- PeerSelectionCounters
@@ -56,41 +57,72 @@ instance LogFormatting extraCounters => LogFormatting (PeerSelectionCounters ext
             , "activeNonRootPeersDemotions" .= numberOfActiveNonRootPeersDemotions
             ] <> forMachine dtal extraCounters
 
-  asMetrics PeerSelectionCounters {..} =
-    let base =
-          [ IntM "peerSelection.RootPeers" (fromIntegral numberOfRootPeers)
+  asMetrics psc =
+    let base = case psc of
+            PeerSelectionCountersHWC {..} ->
+              -- Deprecated metrics; they will be removed in a future version.
+              [ IntM
+                  "peerSelection.Cold"
+                  (fromIntegral numberOfColdPeers)
+              , IntM
+                  "peerSelection.Warm"
+                  (fromIntegral numberOfWarmPeers)
+              , IntM
+                  "peerSelection.Hot"
+                  (fromIntegral numberOfHotPeers)
+              , IntM
+                  "peerSelection.ColdBigLedgerPeers"
+                  (fromIntegral numberOfColdBigLedgerPeers)
+              , IntM
+                  "peerSelection.WarmBigLedgerPeers"
+                  (fromIntegral numberOfWarmBigLedgerPeers)
+              , IntM
+                  "peerSelection.HotBigLedgerPeers"
+                  (fromIntegral numberOfHotBigLedgerPeers)
 
-          , IntM "peerSelection.KnownPeers" (fromIntegral numberOfKnownPeers)
-          , IntM "peerSelection.ColdPeersPromotions" (fromIntegral numberOfColdPeersPromotions)
-          , IntM "peerSelection.EstablishedPeers" (fromIntegral numberOfEstablishedPeers)
-          , IntM "peerSelection.WarmPeersDemotions" (fromIntegral numberOfWarmPeersDemotions)
-          , IntM "peerSelection.WarmPeersPromotions" (fromIntegral numberOfWarmPeersPromotions)
-          , IntM "peerSelection.ActivePeers" (fromIntegral numberOfActivePeers)
-          , IntM "peerSelection.ActivePeersDemotions" (fromIntegral numberOfActivePeersDemotions)
+              , IntM
+                  "peerSelection.WarmLocalRoots"
+                  (fromIntegral $ numberOfActiveLocalRootPeers psc)
+              , IntM
+                  "peerSelection.HotLocalRoots"
+                  (fromIntegral $ numberOfEstablishedLocalRootPeers psc
+                                - numberOfActiveLocalRootPeers psc)
+              ]
+          ++
+          case psc of
+            PeerSelectionCounters {..} ->
+              [ IntM "peerSelection.RootPeers" (fromIntegral numberOfRootPeers)
+              , IntM "peerSelection.KnownPeers" (fromIntegral numberOfKnownPeers)
+              , IntM "peerSelection.ColdPeersPromotions" (fromIntegral numberOfColdPeersPromotions)
+              , IntM "peerSelection.EstablishedPeers" (fromIntegral numberOfEstablishedPeers)
+              , IntM "peerSelection.WarmPeersDemotions" (fromIntegral numberOfWarmPeersDemotions)
+              , IntM "peerSelection.WarmPeersPromotions" (fromIntegral numberOfWarmPeersPromotions)
+              , IntM "peerSelection.ActivePeers" (fromIntegral numberOfActivePeers)
+              , IntM "peerSelection.ActivePeersDemotions" (fromIntegral numberOfActivePeersDemotions)
 
-          , IntM "peerSelection.KnownBigLedgerPeers" (fromIntegral numberOfKnownBigLedgerPeers)
-          , IntM "peerSelection.ColdBigLedgerPeersPromotions" (fromIntegral numberOfColdBigLedgerPeersPromotions)
-          , IntM "peerSelection.EstablishedBigLedgerPeers" (fromIntegral numberOfEstablishedBigLedgerPeers)
-          , IntM "peerSelection.WarmBigLedgerPeersDemotions" (fromIntegral numberOfWarmBigLedgerPeersDemotions)
-          , IntM "peerSelection.WarmBigLedgerPeersPromotions" (fromIntegral numberOfWarmBigLedgerPeersPromotions)
-          , IntM "peerSelection.ActiveBigLedgerPeers" (fromIntegral numberOfActiveBigLedgerPeers)
-          , IntM "peerSelection.ActiveBigLedgerPeersDemotions" (fromIntegral numberOfActiveBigLedgerPeersDemotions)
+              , IntM "peerSelection.KnownBigLedgerPeers" (fromIntegral numberOfKnownBigLedgerPeers)
+              , IntM "peerSelection.ColdBigLedgerPeersPromotions" (fromIntegral numberOfColdBigLedgerPeersPromotions)
+              , IntM "peerSelection.EstablishedBigLedgerPeers" (fromIntegral numberOfEstablishedBigLedgerPeers)
+              , IntM "peerSelection.WarmBigLedgerPeersDemotions" (fromIntegral numberOfWarmBigLedgerPeersDemotions)
+              , IntM "peerSelection.WarmBigLedgerPeersPromotions" (fromIntegral numberOfWarmBigLedgerPeersPromotions)
+              , IntM "peerSelection.ActiveBigLedgerPeers" (fromIntegral numberOfActiveBigLedgerPeers)
+              , IntM "peerSelection.ActiveBigLedgerPeersDemotions" (fromIntegral numberOfActiveBigLedgerPeersDemotions)
 
-          , IntM "peerSelection.KnownLocalRootPeers" (fromIntegral numberOfKnownLocalRootPeers)
-          , IntM "peerSelection.EstablishedLocalRootPeers" (fromIntegral numberOfEstablishedLocalRootPeers)
-          , IntM "peerSelection.WarmLocalRootPeersPromotions" (fromIntegral numberOfWarmLocalRootPeersPromotions)
-          , IntM "peerSelection.ActiveLocalRootPeers" (fromIntegral numberOfActiveLocalRootPeers)
-          , IntM "peerSelection.ActiveLocalRootPeersDemotions" (fromIntegral numberOfActiveLocalRootPeersDemotions)
+              , IntM "peerSelection.KnownLocalRootPeers" (fromIntegral numberOfKnownLocalRootPeers)
+              , IntM "peerSelection.EstablishedLocalRootPeers" (fromIntegral numberOfEstablishedLocalRootPeers)
+              , IntM "peerSelection.WarmLocalRootPeersPromotions" (fromIntegral numberOfWarmLocalRootPeersPromotions)
+              , IntM "peerSelection.ActiveLocalRootPeers" (fromIntegral numberOfActiveLocalRootPeers)
+              , IntM "peerSelection.ActiveLocalRootPeersDemotions" (fromIntegral numberOfActiveLocalRootPeersDemotions)
 
-          , IntM "peerSelection.KnownNonRootPeers" (fromIntegral numberOfKnownNonRootPeers)
-          , IntM "peerSelection.ColdNonRootPeersPromotions" (fromIntegral numberOfColdNonRootPeersPromotions)
-          , IntM "peerSelection.EstablishedNonRootPeers" (fromIntegral numberOfEstablishedNonRootPeers)
-          , IntM "peerSelection.WarmNonRootPeersDemotions" (fromIntegral numberOfWarmNonRootPeersDemotions)
-          , IntM "peerSelection.WarmNonRootPeersPromotions" (fromIntegral numberOfWarmNonRootPeersPromotions)
-          , IntM "peerSelection.ActiveNonRootPeers" (fromIntegral numberOfActiveNonRootPeers)
-          , IntM "peerSelection.ActiveNonRootPeersDemotions" (fromIntegral numberOfActiveNonRootPeersDemotions)
-          ]
-     in asMetrics extraCounters <> base
+              , IntM "peerSelection.KnownNonRootPeers" (fromIntegral numberOfKnownNonRootPeers)
+              , IntM "peerSelection.ColdNonRootPeersPromotions" (fromIntegral numberOfColdNonRootPeersPromotions)
+              , IntM "peerSelection.EstablishedNonRootPeers" (fromIntegral numberOfEstablishedNonRootPeers)
+              , IntM "peerSelection.WarmNonRootPeersDemotions" (fromIntegral numberOfWarmNonRootPeersDemotions)
+              , IntM "peerSelection.WarmNonRootPeersPromotions" (fromIntegral numberOfWarmNonRootPeersPromotions)
+              , IntM "peerSelection.ActiveNonRootPeers" (fromIntegral numberOfActiveNonRootPeers)
+              , IntM "peerSelection.ActiveNonRootPeersDemotions" (fromIntegral numberOfActiveNonRootPeersDemotions)
+              ]
+     in asMetrics (extraCounters psc) <> base
 
 
 instance MetaTrace extraCounters => MetaTrace (PeerSelectionCounters extraCounters) where
