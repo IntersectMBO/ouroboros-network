@@ -276,6 +276,7 @@ applications :: forall block header s m.
              -> LimitsAndTimeouts header block
              -> AppArgs header block m
              -> (block -> header)
+             -> LazySTM.TVar m [TxId]
              -> Diffusion.Applications NtNAddr NtNVersion NtNVersionData
                                        NtCAddr NtCVersion NtCVersionData
                                        PeerTrustable m ()
@@ -298,7 +299,8 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
                , aaPeerMetrics
                , aaTxDecisionPolicy
                }
-             toHeader =
+             toHeader
+             duplicateTxVar =
     Diffusion.Applications
       { Diffusion.daApplicationInitiatorMode =
           simpleSingletonVersions UnversionedProtocol
@@ -727,13 +729,13 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
                    aaTxDecisionPolicy
                    sharedTxStateVar
                    (getMempoolReader mempool)
-                   (getMempoolWriter mempool)
+                   (getMempoolWriter duplicateTxVar mempool)
                    getTxSize
                    them $ \api -> do
             let server = txSubmissionInboundV2
                            txSubmissionInboundTracer
                            NoTxSubmissionInitDelay
-                           (getMempoolWriter mempool)
+                           (getMempoolWriter duplicateTxVar mempool)
                            api
             labelThisThread "TxSubmissionServer"
             runPipelinedPeerWithLimits

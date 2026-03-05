@@ -24,7 +24,6 @@ module Test.Ouroboros.Network.TxSubmission.Types
   , txSubmissionCodec2
   , evaluateTrace
   , verboseTracer
-  , debugTracer
   ) where
 
 import Prelude hiding (seq)
@@ -123,8 +122,8 @@ getMempoolReader :: forall txid m.
 getMempoolReader = Mempool.getReader getTxId getTxAdvSize
 
 
-data InvalidTx = InvalidTx
-  deriving Show
+data InvalidTx = InvalidTx | DuplicateTx
+  deriving (Eq, Show)
 
 getMempoolWriter :: forall txid m.
                     ( MonadSTM m
@@ -135,18 +134,21 @@ getMempoolWriter :: forall txid m.
                     , Typeable txid
                     , Show txid
                     )
-                 => Mempool m txid (Tx txid)
+                 => TVar m [txid]
+                 -> Mempool m txid (Tx txid)
                  -> TxSubmissionMempoolWriter txid (Tx txid) Integer m InvalidTx
-getMempoolWriter = Mempool.getWriter InvalidTx
-                                     getTxId
-                                     (\_ txs -> return
-                                                 [ if getTxValid tx
-                                                   then Right tx
-                                                   else Left (getTxId tx, InvalidTx)
-                                                 | tx <- txs
-                                                 ]
-                                     )
-                                     (\_ -> return ())
+getMempoolWriter duplicateVar =
+  Mempool.getWriter DuplicateTx
+                    getTxId
+                    (\_ txs -> return
+                                [ if getTxValid tx
+                                  then Right tx
+                                  else Left (getTxId tx, InvalidTx)
+                                | tx <- txs
+                                ]
+                    )
+                    (\t -> atomically $ modifyTVar' duplicateVar
+                      (map fst (filter ((== DuplicateTx) . snd) t) <>))
 
 
 txSubmissionCodec2 :: MonadST m
@@ -223,9 +225,6 @@ verboseTracer :: forall a m.
                        )
                => Tracer m a
 verboseTracer = threadAndTimeTracer $ showTracing $ Tracer say
-
-debugTracer :: forall a s. Show a => Tracer (IOSim s) a
-debugTracer = threadAndTimeTracer $ showTracing $ Tracer (traceM . show)
 
 threadAndTimeTracer :: forall a m.
                        ( MonadAsync m

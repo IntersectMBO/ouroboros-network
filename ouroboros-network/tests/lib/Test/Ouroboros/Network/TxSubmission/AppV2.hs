@@ -20,6 +20,7 @@ import Prelude hiding (seq)
 import NoThunks.Class
 
 import Control.Concurrent.Class.MonadMVar.Strict
+import Control.Concurrent.Class.MonadSTM qualified as Lazy
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
@@ -31,13 +32,14 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.IOSim
 import Control.Tracer (Tracer (..), contramap)
 
-import Data.Bifoldable
 import Data.ByteString.Lazy qualified as BSL
 import Data.Foldable (traverse_)
 import Data.Function (on)
 import Data.Hashable
 import Data.List (nubBy)
 import Data.List qualified as List
+import Data.List.Trace qualified as Trace
+import Data.Map.Merge.Strict
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, isJust)
@@ -104,7 +106,7 @@ instance Arbitrary TxSubmissionState where
     -- NOTE: using sortOn would forces tx-decision logic to download txs in the
     -- order of unacknowledgedTxIds.  This could be useful to get better
     -- properties when wrongly sized txs are present.
-    txs <- divvy txsN . nubBy (on (==) getTxId) {- . List.sortOn getTxId -} <$> vectorOf (peersN * txsN) arbitrary
+    txs <- fmap (nubBy (on (==) getTxId)) . divvy txsN {- . List.sortOn getTxId -} <$> vectorOf (peersN * txsN) arbitrary
     peers <- vectorOf peersN arbitrary
     peersState <- zipWith (curry (\(a, (b, c)) -> (a, b, c))) txs
               <$> vectorOf peersN arbitrary
@@ -177,9 +179,14 @@ runTxSubmission tracer tracerTxLogic st0 txDecisionPolicy = do
         ) st0
     inboundMempool <- emptyMempool
     let txRng = mkStdGen 42 -- TODO
+        txMap = Map.fromList [ (getTxId tx, tx)
+                             | (txs, _, _, _) <- Map.elems st0
+                             , tx <- txs]
+
 
     txChannelsVar <- newMVar (TxChannels Map.empty)
     txMempoolSem <- newTxMempoolSem
+    duplicateTxIdsVar <- Lazy.newTVarIO []
     sharedTxStateVar <- newSharedTxStateVar txRng
     traceTVarIO sharedTxStateVar \_ -> return . TraceDynamic . TxStateTrace
     labelTVarIO sharedTxStateVar "shared-tx-state"
@@ -212,15 +219,18 @@ runTxSubmission tracer tracerTxLogic st0 txDecisionPolicy = do
                                 txDecisionPolicy
                                 sharedTxStateVar
                                 (getMempoolReader inboundMempool)
-                                (getMempoolWriter inboundMempool)
+                                (getMempoolWriter duplicateTxIdsVar inboundMempool)
                                 getTxSize
                                 addr $ \api -> do
-                                  let server = txSubmissionInboundV2 verboseTracer
-                                                                     NoTxSubmissionInitDelay
-                                                                     (getMempoolWriter inboundMempool)
-                                                                     api
+                                  let server =
+                                        txSubmissionInboundV2 sayTracer --verboseTracer
+                                                              NoTxSubmissionInitDelay
+                                                              (getMempoolWriter duplicateTxIdsVar
+                                                                                inboundMempool)
+                                                              api
                                   runPipelinedPeerWithLimits
-                                    (("INBOUND " ++ show addr,) `contramap` verboseTracer)
+
+                                    (("INBOUND " ++ show addr,) `contramap` sayTracer)
                                     txSubmissionCodec2
                                     (byteLimitsTxSubmission2 (fromIntegral . BSL.length))
                                     timeLimitsTxSubmission2
@@ -235,10 +245,12 @@ runTxSubmission tracer tracerTxLogic st0 txDecisionPolicy = do
         cancel a
 
         inmp <- readMempool inboundMempool
+        dupTxIds <- Lazy.readTVarIO duplicateTxIdsVar
         let outmp = map (\(txs, _, _, _) -> txs)
                   $ Map.elems st0
+            dupTxs = [ txMap Map.! txid | txid <- dupTxIds]
 
-        return (inmp, outmp)
+        return (inmp <> dupTxs, outmp)
   where
     waitAllServers :: [(Async m x, Async m x)] -> m [Either SomeException x]
     waitAllServers [] = return []
@@ -299,9 +311,7 @@ txSubmissionSimulation (TxSubmissionState state txDecisionPolicy) = do
         atomically (traverse_ (`writeTVar` Terminate) controlMessageVars)
     ) \_ -> do
       let tracer :: forall a. (Show a, Typeable a) => Tracer (IOSim s) a
-          tracer = verboseTracer
-                <> debugTracer
-                <> Tracer traceM
+          tracer = dynamicTracer <> sayTracer -- <> verboseTracer <> debugTracer
       runTxSubmission tracer tracer state'' txDecisionPolicy
 
 filterValidTxs :: [Tx txid] -> [Tx txid]
@@ -344,6 +354,12 @@ prop_txSubmission st@(TxSubmissionState peers _) =
              counterexample (ppTrace tr)
            $ conjoin (validate inmp `map` outmps)
   where
+    checkMempools :: [Tx Int] -> [Tx Int] -> Bool
+    checkMempools consumer producer =
+      let producer' = Set.fromList $ getTxId <$> producer
+          consumer' = Set.fromList $ getTxId <$> consumer
+      in producer' `Set.isSubsetOf` consumer'
+
     validate :: [Tx Int] -- the inbound mempool
              -> [Tx Int] -- one of the outbound mempools
              -> Property
@@ -361,7 +377,7 @@ prop_txSubmission st@(TxSubmissionState peers _) =
              counterexample (show x)
            . counterexample (show inmp)
            . counterexample (show outmp)
-           $ checkMempools inmp (take (length inmp) outValidTxs)
+           $ checkMempools inmp outValidTxs
 
          x@(True, False) | Nothing <- List.find (\tx -> getTxAdvSize tx /= getTxSize tx) outmp  ->
            -- If we are presented with a stream of unique txids then we should have
@@ -370,7 +386,7 @@ prop_txSubmission st@(TxSubmissionState peers _) =
            . counterexample (show inmp)
            . counterexample (show outValidTxs)
 
-           $ checkMempools inmp (take (length inmp) outValidTxs)
+           $ checkMempools inmp outValidTxs
                          | otherwise ->
              -- If there's one tx with an invalid size, we will download only
              -- some of them, but we don't guarantee how many we will download.
@@ -385,9 +401,8 @@ prop_txSubmission st@(TxSubmissionState peers _) =
              counterexample (show x)
            . counterexample (show inmp)
            . counterexample (show outmp)
-           $ checkMempools (map getTxId inmp)
-                           (take (length inmp)
-                                 (getTxId <$> filterValidTxs outUniqueTxIds))
+           $ checkMempools inmp
+                           (filterValidTxs outUniqueTxIds)
 
          (False, False) ->
            -- If we are presented with a stream of valid and invalid Txs with
@@ -399,14 +414,11 @@ prop_txSubmission st@(TxSubmissionState peers _) =
 -- | This test checks that all txs are downloaded from all available peers if
 -- available.
 --
--- This test takes advantage of the fact that the mempool implementation
--- allows duplicates.
---
--- TODO: do we generated enough outbound mempools which intersect in interesting
+-- TODO: have we generated enough outbound mempools which interact in interesting
 -- ways?
 prop_txSubmission_inflight :: TxSubmissionState -> Property
-prop_txSubmission_inflight st@(TxSubmissionState state _) =
-  let maxRepeatedValidTxs = Map.foldr (\(txs, _, _) r -> foldr (fn r) r txs)
+prop_txSubmission_inflight st@(TxSubmissionState state policy) =
+  let maxRepeatedValidTxs = Map.foldr (\(txs, _, _) r -> foldr fn r txs)
                                       Map.empty
                                       state
       hasInvalidSize =
@@ -416,87 +428,95 @@ prop_txSubmission_inflight st@(TxSubmissionState state _) =
                   )
                   state
       trace = runSimTrace (txSubmissionSimulation st)
+      pTrace = List.intercalate "\n" $ map (\(Time t, ev) -> show t <> " " <> ev) $
+        selectTraceEventsSayWithTime' trace
   in case traceResult True trace of
-       Left err -> counterexample (ppTrace trace)
+       Left err -> counterexample pTrace --(ppTrace trace)
                  $ counterexample (show err)
                  $ property False
        Right (inmp, _) ->
          let resultRepeatedValidTxs =
-               foldr (fn Map.empty) Map.empty inmp
+               foldr fn Map.empty inmp
          in label (if hasInvalidSize then "has wrongly sized tx" else "has no wrongly sized tx")
-          . counterexample (ppTrace trace)
-          . counterexample (show resultRepeatedValidTxs)
-          . counterexample (show maxRepeatedValidTxs)
-          $ if hasInvalidSize
-              then resultRepeatedValidTxs `Map.isSubmapOf` maxRepeatedValidTxs
-              else resultRepeatedValidTxs == maxRepeatedValidTxs
+          . counterexample pTrace --(ppTrace trace)
+          . counterexample ("hasInvalidSize: " <> show hasInvalidSize)
+          . counterexample ("Result valid [(txid, repeated)]:\n" <> show resultRepeatedValidTxs)
+          . counterexample ("Testcase max valid [(txid, repeated)]:\n" <> show maxRepeatedValidTxs)
+          . conjoin . Map.elems $ if hasInvalidSize
+              then merge (mapMissing \_txid _left  -> error "impossible")
+                         (mapMissing \_txid _right -> True)
+                         (zipWithMatched \_txid left right ->
+                             left <= right `min` txInflightMultiplicity policy)
+                         resultRepeatedValidTxs
+                         maxRepeatedValidTxs
+              else merge (mapMissing \_txid _left  -> error "impossible")
+                         (mapMissing \_txid _right -> False)
+                         (zipWithMatched \_txid left right ->
+                             left <= right `min` txInflightMultiplicity policy)
+                         resultRepeatedValidTxs
+                         maxRepeatedValidTxs
   where
-    fn empty tx rr  | getTxAdvSize tx /= getTxSize tx
-                    = empty
-                    | Map.member tx rr
-                    , getTxValid tx
-                    = Map.update (Just . succ @Int) tx rr
-                    | getTxValid tx
-                    = Map.insert tx 1 rr
-                    | otherwise
-                    = rr
+    -- we work with txid's because a repeated tx may have different advertised/actual
+    -- byte size by different peers in this test, but otherwise multiplicity
+    -- should be determined by txid.
+    fn :: Tx TxId -> Map TxId Int -> Map TxId Int
+    fn tx r' -- | getTxAdvSize tx /= getTxSize tx
+             -- = empty
+             -- ^ that is too severe
+             | getTxValid tx
+             = Map.alter (Just . maybe 1 succ) (getTxId tx) r'
+             | otherwise
+             = r'
 
 
 prop_sharedTxStateInvariant :: TxSubmissionState -> Property
 prop_sharedTxStateInvariant initialState@(TxSubmissionState st0 _) =
   let tr = runSimTrace (() <$ txSubmissionSimulation initialState)
+      pTrace = List.intercalate "\n" $ map (\(Time t, ev) -> show t <> " " <> ev) $
+        selectTraceEventsSayWithTime' tr
   in case traceResult True tr of
-    Left err -> counterexample (ppTrace tr)
+    Left err -> counterexample pTrace --(ppTrace tr)
               . counterexample (show err)
               $ False
     Right _ ->
-      let tr' :: Trace (SimResult ()) TxStateTraceType
-          tr' = traceSelectTraceEventsDynamic tr
-      in case
-         bifoldMap (\_ -> (Every (property True), Sum 0))
-                   (\case
-                      (TxStateTrace st)-> ( Every $ counterexample (show st)
-                                                  $ sharedTxStateInvariant WeakInvariant st
-                                          , Sum 1
-                                          )
+      let lookBack, tr' :: [TxStateTraceType]
+          lookBack = Trace.toList $ traceSelectTraceEventsDynamic tr
+          tr' = drop 1 lookBack
+      in counterexample pTrace case
+           foldMap (\case
+                        (TxStateTrace stBack, TxStateTrace st)->
+                          (Every . counterexample (show st) $
+                                  sharedTxStateInvariant WeakInvariant st
+                             .&&. let inflight = Map.keysSet $ inflightTxs st
+                                      buffered = Map.keysSet $ bufferedTxs st
+                                      inflightBack = Map.keysSet $ inflightTxs stBack
+                                  in
+                                    -- here we account for a very slow peer from whom we requested
+                                    -- a transaction, but it didn't arrive until we have also requested
+                                    -- it from another peer, received it, and placed it into the mempool,
+                                    -- and so it ended up in bufferedTxs when the first one is still
+                                    -- in flight. It is an error when the opposite happens.
+                                    null $ (inflight Set.\\ inflightBack) `Set.intersection` buffered
+                          , Sum 1
+                          )
                    )
-                   tr'
-         of (p, Sum c) ->
-               label ("number of txs: "
-                       ++
-                       renderRanges 10
-                         ( Set.size
-                         . foldMap (Set.fromList . (\(txs, _, _) -> getTxId <$> txs))
-                         $ Map.elems st0
-                         ))
-             . label ("number of evaluated states: "
-                       ++ renderRanges 100 c)
-             $ p
+                   (zip lookBack tr')
+           of (p, Sum c) ->
+                 label ("number of txs: "
+                         ++
+                         renderRanges 10
+                           ( Set.size
+                           . foldMap (Set.fromList . (\(txs, _, _) -> getTxId <$> txs))
+                           $ Map.elems st0
+                           ))
+               . label ("number of evaluated states: "
+                         ++ renderRanges 100 c)
+               $ p
 
 
 --
 -- Utils
 --
-
--- | Check that the inbound mempool contains all outbound `tx`s as a proper
--- subsequence.  It might contain more `tx`s from other peers.
---
-checkMempools :: Eq tx
-              => [tx] -- inbound mempool
-              -> [tx] -- outbound mempool
-              -> Bool
-checkMempools _  []    = True  -- all outbound `tx` were found in the inbound
-                               -- mempool
-checkMempools [] (_:_) = False -- outbound mempool contains `tx`s which were
-                               -- not transferred to the inbound mempool
-checkMempools (i : is') os@(o : os')
-  | i == o
-  = checkMempools is' os'
-
-  | otherwise
-  -- `_i` is not present in the outbound mempool, we can skip it.
-  = checkMempools is' os
-
 
 -- | Split a list into sub list of at most `n` elements.
 --

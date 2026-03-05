@@ -34,7 +34,7 @@ import Data.Functor (($>))
 import Data.Map.Merge.Strict qualified as Map
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromJust, maybeToList)
+import Data.Maybe (fromJust)
 import Data.Sequence.Strict (StrictSeq)
 import Data.Sequence.Strict qualified as StrictSeq
 import Data.Set qualified as Set
@@ -111,24 +111,33 @@ acknowledgeTxIds
     (txIdsToRequest, acknowledgedTxIds, unacknowledgedTxIds')
       = splitAcknowledgedTxIds policy sharedTxState ps
 
-    txsToMempool = [ (txid, tx)
+    txsToMempool = [ (txid, downloadedTxs Map.! txid)
                    | txid <- toList toMempoolTxIds
                    , txid `Map.notMember` bufferedTxs sharedTxState
-                   , tx <- maybeToList $ txid `Map.lookup` downloadedTxs
+                   -- without the guard below we could potentially enqueue
+                   -- the same tx into the mempool multiple times over
+                   -- several decision loop iterations before the tx
+                   -- is finally in the mempool, or rejected.
+                   , txid `Map.notMember` toMempoolTxs
                    ]
-    (toMempoolTxIds, _) =
-      StrictSeq.spanl (`Map.member` downloadedTxs) acknowledgedTxIds
-
+    -- Select downloaded txs from the prefix of `acknowledgedTxIds`, ignoring
+    -- unknown and buffered txs.
+    toMempoolTxIds =
+      StrictSeq.filter (`Map.member` downloadedTxs) acknowledgedTxIds
 
     txsToMempoolMap = Map.fromList txsToMempool
 
     toMempoolTxs' = toMempoolTxs <> txsToMempoolMap
 
-    (downloadedTxs', ackedDownloadedTxs) = Map.partitionWithKey (\txid _ -> txid `Set.member` liveSet) downloadedTxs
+    (downloadedTxs', ackedDownloadedTxs) =
+      Map.partitionWithKey (\txid _ -> txid `Set.member` liveSet) downloadedTxs
+
     -- latexTxs: transactions which were downloaded by another peer before we
     -- downloaded them; it relies on that `txToMempool` filters out
     -- `bufferedTxs`.
-    lateTxs = Map.filterWithKey (\txid _ -> txid `Map.notMember` txsToMempoolMap) ackedDownloadedTxs
+    lateTxs =
+      Map.filterWithKey (\txid _ -> txid `Map.member` bufferedTxs sharedTxState) ackedDownloadedTxs
+
     score' = score + fromIntegral (Map.size lateTxs)
 
     -- the set of live `txids`
@@ -466,12 +475,7 @@ collectTxsImpl txSize peeraddr requestedTxIdsMap receivedTxs
             (inflightTxs st)
             (Map.fromSet (const 1) requestedTxIds)
 
-        inflightTxsSize'' = assert (inflightTxsSize st >= requestedSize) $
-                            inflightTxsSize st - requestedSize
-
-        st' = st { inflightTxs     = inflightTxs'',
-                   inflightTxsSize = inflightTxsSize''
-                 }
+        st' = st { inflightTxs     = inflightTxs'' }
 
         --
         -- Update PeerTxState
@@ -516,7 +520,6 @@ newSharedTxStateVar :: MonadSTM m
 newSharedTxStateVar rng = newTVarIO SharedTxState {
     peerTxStates             = Map.empty,
     inflightTxs              = Map.empty,
-    inflightTxsSize          = 0,
     bufferedTxs              = Map.empty,
     referenceCounts          = Map.empty,
     timedTxs                 = Map.empty,

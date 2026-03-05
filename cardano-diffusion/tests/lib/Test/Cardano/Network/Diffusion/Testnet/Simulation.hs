@@ -39,6 +39,7 @@ module Test.Cardano.Network.Diffusion.Testnet.Simulation
 
 import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadMVar (MonadMVar)
+import Control.Concurrent.Class.MonadSTM qualified as LazySTM
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad (forM, when)
 import Control.Monad.Class.MonadAsync
@@ -1191,6 +1192,7 @@ diffusionSimulationM
       churnModeVar <- newTVarIO ChurnModeNormal
       peerMetrics <- newPeerMetric PeerMetricsConfiguration { maxEntriesToTrack = 180 }
       policyStdGenVar <- newTVarIO (mkStdGen 12)
+      duplicateTxVar <- LazySTM.newTVarIO []
 
       let readUseBootstrapPeers = stepScriptSTM' useBootstrapPeersScriptVar
           (bgaRng, rng) = Random.splitGen $ mkStdGen seed
@@ -1360,6 +1362,7 @@ diffusionSimulationM
                    limitsAndTimeouts
                    appArgs
                    blockHeader
+                   duplicateTxVar
             where
               tracerTxSubmissionInbound =
                   contramap DiffusionTxSubmissionInbound
