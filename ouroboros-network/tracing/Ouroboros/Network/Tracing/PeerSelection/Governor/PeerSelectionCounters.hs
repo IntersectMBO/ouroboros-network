@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE PatternSynonyms     #-}
@@ -16,13 +17,15 @@ module Ouroboros.Network.Tracing.PeerSelection.Governor.PeerSelectionCounters ()
 import Cardano.Logging
 import Data.Aeson
 import Ouroboros.Network.PeerSelection.Governor.Types (PeerSelectionCounters,
-           PeerSelectionView (..), pattern PeerSelectionCountersHWC)
+           PeerSelectionView (..), SupportsPeerSelectionState (..),
+           pattern PeerSelectionCountersHWC)
 
 --------------------------------------------------------------------------------
 -- PeerSelectionCounters
 --------------------------------------------------------------------------------
 
-instance LogFormatting extraCounters => LogFormatting (PeerSelectionCounters extraCounters) where
+instance LogFormatting (ViewExtraPeers extraPeers)
+      => LogFormatting (PeerSelectionCounters (ViewExtraPeers extraPeers)) where
   forMachine dtal PeerSelectionCounters {..} =
     mconcat [ "kind" .= String "PeerSelectionCounters"
             , "knownPeers" .= numberOfKnownPeers
