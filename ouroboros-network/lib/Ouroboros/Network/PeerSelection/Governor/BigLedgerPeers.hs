@@ -20,7 +20,8 @@ import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadTime.SI
 
 import Ouroboros.Network.PeerSelection.Governor.Types
-import Ouroboros.Network.PeerSelection.LedgerPeers (LedgerPeersKind (..))
+import Ouroboros.Network.PeerSelection.LedgerPeers (SingLedgerPeersKind (..),
+           SomeLedgerPeersKind (..))
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers)
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
@@ -162,7 +163,7 @@ jobReqBigLedgerPeers PeerSelectionActions {
 
     job :: m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
     job = do
-      (results, ttl) <- requestPublicRootPeers BigLedgerPeers rng numExtraAllowed
+      (results, ttl) <- requestPublicRootPeers (SomeLedgerPeersKind SingBigLedgerPeers) rng numExtraAllowed
       return $ Completion $ \st now ->
         let -- We make sure the set of big ledger peers disjoint from the sum
             -- of local, public and ledger peers.

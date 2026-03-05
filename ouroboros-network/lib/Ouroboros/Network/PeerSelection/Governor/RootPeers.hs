@@ -15,7 +15,8 @@ import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadTime.SI
 
 import Ouroboros.Network.PeerSelection.Governor.Types
-import Ouroboros.Network.PeerSelection.LedgerPeers (LedgerPeersKind (..))
+import Ouroboros.Network.PeerSelection.LedgerPeers (SingLedgerPeersKind (..),
+           SomeLedgerPeersKind (..))
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
@@ -156,7 +157,7 @@ jobReqPublicRootPeers PeerSelectionActions{ requestPublicRootPeers,
     job :: m (Completion m extraState extraDebugState extraFlags extraPeers
                            peeraddr peerconn)
     job = do
-      (results, ttl) <- requestPublicRootPeers AllLedgerPeers rng numExtraAllowed
+      (results, ttl) <- requestPublicRootPeers (SomeLedgerPeersKind SingAllLedgerPeers) rng numExtraAllowed
       return $ Completion $ \st now ->
         let newPeers =
               PublicRootPeers.difference differenceExtraPeers

@@ -64,7 +64,7 @@ import Network.DNS (DNSError, DNSMessage)
 import Network.DNS qualified as DNS
 import System.Random
 
-import Ouroboros.Network.PeerSelection.LedgerPeers.Type (LedgerPeersKind)
+import Ouroboros.Network.PeerSelection.LedgerPeers.Type (SomeLedgerPeersKind)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint
 
 
@@ -72,8 +72,8 @@ import Ouroboros.Network.PeerSelection.RelayAccessPoint
 --
 data DNSPeersKind = DNSLocalPeer
                   | DNSPublicPeer
-                  | DNSLedgerPeer LedgerPeersKind
-  deriving (Show)
+                  | DNSLedgerPeer SomeLedgerPeersKind
+  deriving Show
 
 -- | Provides DNS lookup trace information
 --

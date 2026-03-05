@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DerivingStrategies  #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
@@ -32,7 +33,7 @@ import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore (DNSSemaphore,
 -- Concurrently resolve DNS names, respecting the 'maxDNSConcurrency' limit.
 --
 resolveLedgerPeers
-  :: forall m peerAddr resolver.
+  :: forall m peerAddr resolver (k :: LedgerPeersKind).
      ( Ord peerAddr
      , MonadThrow m
      , MonadAsync m
@@ -40,7 +41,7 @@ resolveLedgerPeers
   => DNSSemaphore m
   -> DNS.ResolvConf
   -> DNSActions peerAddr resolver m
-  -> LedgerPeersKind
+  -> SingLedgerPeersKind k
   -> [RelayAccessPoint]
   -> StdGen
   -> m (Map DNS.Domain (Set peerAddr))
@@ -72,7 +73,7 @@ resolveLedgerPeers dnsSemaphore
             let lookups =
                   [ (domain',) <$> withDNSSemaphore dnsSemaphore
                                      (dnsLookupWithTTL
-                                       (DNSLedgerPeer peerKind)
+                                       (DNSLedgerPeer (SomeLedgerPeersKind peerKind))
                                        domain
                                        resolvConf
                                        resolver

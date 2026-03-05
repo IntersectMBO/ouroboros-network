@@ -3,6 +3,7 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE DerivingStrategies  #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE OverloadedStrings   #-}
@@ -21,6 +22,8 @@ module Ouroboros.Network.PeerSelection.LedgerPeers
   , TraceLedgerPeers (..)
   , NumberOfPeers (..)
   , LedgerPeersKind (..)
+  , SingLedgerPeersKind (..)
+  , SomeLedgerPeersKind (..)
   , StakeMapOverSource (..)
     -- * Ledger Peers specific functions
   , accPoolStake
@@ -122,7 +125,7 @@ accPoolStake :: forall relayAccessPoint.
 accPoolStake =
       Map.fromList
     . List.foldl' fn []
-    . recomputeRelativeStake AllLedgerPeers
+    . recomputeRelativeStake SingAllLedgerPeers
   where
     fn :: [(AccPoolStake, (PoolStake, NonEmpty relayAccessPoint))]
        -> (PoolStake, NonEmpty relayAccessPoint)
@@ -151,7 +154,7 @@ newtype NumberOfPeers = NumberOfPeers { getNumberOfPeers :: Word16 }
 
 -- | Try to pick n random peers using stake distribution.
 --
-pickPeers :: forall m. Monad m
+pickPeers :: forall m (k :: LedgerPeersKind). Monad m
           => StdGen
           -> Tracer m TraceLedgerPeers
           -> Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint)
@@ -159,13 +162,13 @@ pickPeers :: forall m. Monad m
           -> Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint)
           -- ^ big ledger peers
           -> NumberOfPeers
-          -> LedgerPeersKind
+          -> SingLedgerPeersKind k
           -> m (StdGen, [RelayAccessPoint])
 
 pickPeers inRng _ pools _bigPools _ _ | Map.null pools = return (inRng, [])
 
 -- pick big ledger peers using ledger stake distribution
-pickPeers inRng tracer _pools bigPools (NumberOfPeers cnt) BigLedgerPeers =
+pickPeers inRng tracer _pools bigPools (NumberOfPeers cnt) SingBigLedgerPeers =
     go inRng cnt []
   where
     go :: StdGen -> Word16 -> [RelayAccessPoint] -> m (StdGen, [RelayAccessPoint])
@@ -188,7 +191,7 @@ pickPeers inRng tracer _pools bigPools (NumberOfPeers cnt) BigLedgerPeers =
 
 -- pick ledger peers (not necessarily big ones) using square root of the stake
 -- distribution
-pickPeers inRng tracer pools _bigPools (NumberOfPeers cnt) AllLedgerPeers = go inRng cnt []
+pickPeers inRng tracer pools _bigPools (NumberOfPeers cnt) SingAllLedgerPeers = go inRng cnt []
   where
     go :: StdGen -> Word16 -> [RelayAccessPoint] -> m (StdGen, [RelayAccessPoint])
     go rng 0 picked = return (rng, picked)
@@ -229,7 +232,7 @@ ledgerPeersThread :: forall m peerAddr resolver extraAPI.
                   => PeerActionsDNS peerAddr resolver m
                   -> WithLedgerPeersArgs extraAPI m
                   -- blocking request for ledger peers
-                  -> STM m (NumberOfPeers, LedgerPeersKind)
+                  -> STM m (NumberOfPeers, SomeLedgerPeersKind)
                   -- response with ledger peers
                   -> (Maybe (Set peerAddr, DiffTime) -> STM m ())
                   -> m Void
@@ -259,7 +262,7 @@ ledgerPeersThread PeerActionsDNS {
     go rng oldTs peerMap bigPeerMap cachedSlot = do
         traceWith wlpTracer WaitingOnRequest
         -- wait until next request of ledger peers
-        ((numRequested, ledgerPeersKind), useLedgerPeers) <- atomically $
+        ((numRequested, SomeLedgerPeersKind ledgerPeersKind), useLedgerPeers) <- atomically $
           (,) <$> getReq <*> wlpGetUseLedgerPeers
         traceWith wlpTracer (TraceUseLedgerPeers useLedgerPeers)
 
@@ -311,19 +314,20 @@ ledgerPeersThread PeerActionsDNS {
                let ttl = 5 -- TTL, used as re-request interval by the governor.
 
                (rng', !pickedPeers) <- pickPeers rng wlpTracer peerMap' bigPeerMap' numRequested ledgerPeersKind
-               case ledgerPeersKind of
-                 BigLedgerPeers -> do
+               (case ledgerPeersKind of
+                 SingBigLedgerPeers -> do
                    let numBigLedgerPeers = Map.size bigPeerMap'
                    when (getNumberOfPeers numRequested
                            > fromIntegral numBigLedgerPeers) $
                      traceWith wlpTracer (NotEnoughBigLedgerPeers numRequested numBigLedgerPeers)
                    traceWith wlpTracer (PickedBigLedgerPeers numRequested pickedPeers)
-                 AllLedgerPeers -> do
+                 SingAllLedgerPeers -> do
                    let numLedgerPeers = Map.size peerMap'
                    when (getNumberOfPeers numRequested
                            > fromIntegral numLedgerPeers) $
                      traceWith wlpTracer (NotEnoughLedgerPeers numRequested numLedgerPeers)
                    traceWith wlpTracer (PickedLedgerPeers numRequested pickedPeers)
+                   ) :: m () -- TODO: GHC-9.6 quirk, GHC-9.12 doesn't need the type signature
 
 
                let (plainAddrs, domains) =
@@ -466,7 +470,7 @@ withLedgerPeers :: forall peerAddr resolver extraAPI m a.
                    )
                 => PeerActionsDNS peerAddr resolver m
                 -> WithLedgerPeersArgs extraAPI m
-                -> ((NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set peerAddr, DiffTime)))
+                -> ((NumberOfPeers -> SomeLedgerPeersKind -> m (Maybe (Set peerAddr, DiffTime)))
                      -> Async m Void
                      -> m a )
                 -> m a
@@ -477,7 +481,7 @@ withLedgerPeers peerActionsDNS
     respVar <- newEmptyTMVarIO
     let getRequest  = takeTMVar reqVar
         putResponse = putTMVar  respVar
-        request :: NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set peerAddr, DiffTime))
+        request :: NumberOfPeers -> SomeLedgerPeersKind -> m (Maybe (Set peerAddr, DiffTime))
         request = \numberOfPeers ledgerPeersKind -> do
           atomically $ putTMVar reqVar (numberOfPeers, ledgerPeersKind)
           atomically $ takeTMVar respVar
