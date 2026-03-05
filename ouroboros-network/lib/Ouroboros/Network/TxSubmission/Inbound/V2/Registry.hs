@@ -494,20 +494,31 @@ decisionLogicThread tracer counterTracer policy txChannelsVar sharedStateVar = d
         sharedTxState <- readTVar sharedStateVar
         return $ nextDecisionDelay now sharedTxState
       delayVar <- registerDelay nextDelay
-      res_m <- atomically do
+      -- Wait until there is potentially some work to do or the timer expires.
+      atomically do
         sharedTxState <- readTVar sharedStateVar
         let activePeers = filterActivePeers now policy sharedTxState
         timerExpired <- Lazy.readTVar delayVar
 
         -- block until at least one peer is active or the timer expires
         if not (Map.null activePeers)
-           then do
-             let (sharedState, decisions) = makeDecisions now policy sharedTxState activePeers
+           then return ()
+        else if timerExpired
+           then return ()
+           else retry
+
+      -- Use a fresh timestamp for decisions
+      now' <- getMonotonicTime
+      res_m <- atomically do
+        sharedTxState <- readTVar sharedStateVar
+        let activePeers = filterActivePeers now' policy sharedTxState
+
+        if Map.null activePeers
+           then return Nothing
+           else do
+             let (sharedState, decisions) = makeDecisions now' policy sharedTxState activePeers
              writeTVar sharedStateVar sharedState
              return $ Just (decisions, sharedState)
-        else if timerExpired
-           then return Nothing
-           else retry
 
       case res_m of
            Nothing              -> go
