@@ -1,10 +1,7 @@
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE FlexibleInstances     #-}
-{-# LANGUAGE NamedFieldPuns        #-}
-{-# LANGUAGE OverloadedStrings     #-}
-{-# LANGUAGE QuantifiedConstraints #-}
-{-# LANGUAGE TypeOperators         #-}
-{-# LANGUAGE UndecidableInstances  #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE NamedFieldPuns       #-}
+{-# LANGUAGE OverloadedStrings    #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 -- Orphan instances module for Cardano tracer.
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -28,7 +25,7 @@ instance ( Show extraState
          , Show extraPeers
          , Show peeraddr
          , SupportsPeerSelectionState extraPeers peeraddr
-         , forall extraCounters. LogFormatting (PeerSelectionCounters extraCounters)
+         , LogFormatting (PeerSelectionCounters (ViewExtraPeers extraPeers))
          )
       => LogFormatting (DebugPeerSelection extraState extraFlags extraPeers peeraddr) where
   forMachine dtal@DNormal (TraceGovernorState blockedAt wakeupAfter
