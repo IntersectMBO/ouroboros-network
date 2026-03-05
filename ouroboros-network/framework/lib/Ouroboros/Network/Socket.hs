@@ -66,8 +66,10 @@ import Control.DeepSeq (NFData)
 import Control.Monad (unless, when)
 #endif
 import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
 import Data.Bifunctor (first)
 import Data.ByteString.Lazy qualified as BL
 import Data.Foldable (traverse_)
@@ -104,17 +106,19 @@ import Ouroboros.Network.Snocket qualified as Snocket
 -- 'Ouroboros.Network.NodeToNode.connectTo' or
 -- 'Ouroboros.Network.NodeToClient.connectTo).
 --
-data NetworkConnectTracers addr vNumber = NetworkConnectTracers {
-      nctMuxTracers        :: Mx.TracersWithBearer (ConnectionId addr) IO,
+data NetworkConnectTracers m addr vNumber = NetworkConnectTracers {
+      nctMuxTracers        :: Mx.TracersWithBearer (ConnectionId addr) m,
       -- ^ low level mux-network tracer, which logs mux sdu (send and received)
       -- and other low level multiplexing events.
-      nctHandshakeTracer   :: Tracer IO (Mx.WithBearer (ConnectionId addr)
-                                          (TraceSendRecv (Handshake vNumber CBOR.Term)))
+      nctHandshakeTracer   :: Tracer m (Mx.WithBearer
+                                         (ConnectionId addr)
+                                         (TraceSendRecv (Handshake vNumber CBOR.Term)))
       -- ^ handshake protocol tracer; it is important for analysing version
       -- negotiation mismatches.
     }
 
-nullNetworkConnectTracers :: NetworkConnectTracers addr vNumber
+nullNetworkConnectTracers :: Applicative m
+                          => NetworkConnectTracers m addr vNumber
 nullNetworkConnectTracers = NetworkConnectTracers {
       nctMuxTracers      = Mx.nullTracers,
       nctHandshakeTracer = nullTracer
@@ -122,7 +126,7 @@ nullNetworkConnectTracers = NetworkConnectTracers {
 
 
 debuggingNetworkConnectTracers :: (Show addr, Show vNumber)
-                               => NetworkConnectTracers addr vNumber
+                               => NetworkConnectTracers IO addr vNumber
 debuggingNetworkConnectTracers = NetworkConnectTracers {
       nctMuxTracers      = Mx.Tracers (showTracing stdoutTracer)
                                       (showTracing stdoutTracer)
@@ -240,11 +244,11 @@ sduHandshakeTimeout = 10
 
 -- | Common arguments of various variants of `connectToNode`.
 --
-data ConnectToArgs fd addr vNumber vData = ConnectToArgs {
-    ctaHandshakeCodec      :: Codec (Handshake vNumber CBOR.Term) CBOR.DeserialiseFailure IO BL.ByteString,
+data ConnectToArgs m fd addr vNumber vData = ConnectToArgs {
+    ctaHandshakeCodec      :: Codec (Handshake vNumber CBOR.Term) CBOR.DeserialiseFailure m BL.ByteString,
     ctaHandshakeTimeLimits :: ProtocolTimeLimits (Handshake vNumber CBOR.Term),
     ctaVersionDataCodec    :: VersionDataCodec CBOR.Term vNumber vData,
-    ctaConnectTracers      :: NetworkConnectTracers addr vNumber,
+    ctaConnectTracers      :: NetworkConnectTracers m addr vNumber,
     ctaHandshakeCallbacks  :: HandshakeCallbacks vData
   }
 
@@ -258,8 +262,20 @@ data ConnectToArgs fd addr vNumber vData = ConnectToArgs {
 --
 -- Exceptions thrown by 'MuxApplication' are rethrown by 'connectToNode'.
 connectToNode
-  :: forall muxMode vNumber vData fd addr a b.
-     ( NFData vData
+  :: forall muxMode vNumber vData fd addr m a b.
+     ( Alternative   (STM m)
+     , MonadAsync         m
+     , MonadDelay         m
+     , MonadEvaluate      m
+     , MonadFork          m
+     , MonadLabelledSTM   m
+     , MonadMask          m
+     , Mx.MonadReadBuffer m
+     , MonadSTM           m
+     , MonadTimer         m
+     , MonadThrow         m
+     , MonadThrow    (STM m)
+     , NFData vData
      , NFData vNumber
      , Ord vNumber
      , Typeable vNumber
@@ -268,16 +284,16 @@ connectToNode
      , NFData a
      , NFData b
      )
-  => Snocket IO fd addr
-  -> Mx.MakeBearer IO fd
-  -> ConnectToArgs fd addr vNumber vData
-  -> (fd -> IO ()) -- ^ configure socket
-  -> Versions vNumber vData (OuroborosApplicationWithMinimalCtx muxMode addr BL.ByteString IO a b)
+  => Snocket m fd addr
+  -> Mx.MakeBearer m fd
+  -> ConnectToArgs m fd addr vNumber vData
+  -> (fd -> m ()) -- ^ configure socket
+  -> Versions vNumber vData (OuroborosApplicationWithMinimalCtx muxMode addr BL.ByteString m a b)
   -> Maybe addr
   -- ^ local address; the created socket will bind to it
   -> addr
   -- ^ remote address
-  -> IO (Either SomeException (Either a b))
+  -> m (Either SomeException (Either a b))
 connectToNode sn mkBearer args configureSock versions localAddr remoteAddr =
   connectToNodeWithMux sn mkBearer args configureSock versions localAddr remoteAddr simpleMuxCallback
 
@@ -285,19 +301,31 @@ connectToNode sn mkBearer args configureSock versions localAddr remoteAddr =
 -- | A version `connectToNode` which allows one to control which mini-protocols
 -- to execute on a given connection.
 connectToNodeWithMux
-  :: forall muxMode vNumber vData fd addr a b x.
-     ( NFData vData
+  :: forall muxMode vNumber vData fd addr m a b x.
+     ( Alternative   (STM m)
+     , MonadAsync         m
+     , MonadDelay         m
+     , MonadEvaluate      m
+     , MonadFork          m
+     , MonadLabelledSTM   m
+     , MonadMask          m
+     , Mx.MonadReadBuffer m
+     , MonadSTM           m
+     , MonadTimer         m
+     , MonadThrow         m
+     , MonadThrow    (STM m)
+     , NFData vData
      , NFData vNumber
      , Ord vNumber
      , Typeable vNumber
      , Show vNumber
      , Mx.HasInitiator muxMode ~ True
      )
-  => Snocket IO fd addr
-  -> Mx.MakeBearer IO fd
-  -> ConnectToArgs fd addr vNumber vData
-  -> (fd -> IO ()) -- ^ configure socket
-  -> Versions vNumber vData (OuroborosApplicationWithMinimalCtx muxMode addr BL.ByteString IO a b)
+  => Snocket m fd addr
+  -> Mx.MakeBearer m fd
+  -> ConnectToArgs m fd addr vNumber vData
+  -> (fd -> m ()) -- ^ configure socket
+  -> Versions vNumber vData (OuroborosApplicationWithMinimalCtx muxMode addr BL.ByteString m a b)
   -- ^ application to run over the connection
   -- ^ remote address
   -> Maybe addr
@@ -305,16 +333,16 @@ connectToNodeWithMux
   -> (    ConnectionId addr
        -> vNumber
        -> vData
-       -> OuroborosApplicationWithMinimalCtx muxMode addr BL.ByteString IO a b
-       -> Mx.Mux muxMode IO
-       -> Async IO ()
-       -> IO x)
+       -> OuroborosApplicationWithMinimalCtx muxMode addr BL.ByteString m a b
+       -> Mx.Mux muxMode m
+       -> Async m ()
+       -> m x)
   -- ^ callback which has access to ConnectionId, negotiated protocols, mux
   -- handle created for that connection and an `Async` handle to the thread
   -- which runs `Mx.runMux`.  The `Mux` handle allows schedule mini-protocols.
   --
   -- NOTE: when the callback returns or errors, the mux thread will be killed.
-  -> IO x
+  -> m x
 connectToNodeWithMux sn mkBearer args configureSock versions localAddr remoteAddr k
   =
   bracket
@@ -336,8 +364,20 @@ connectToNodeWithMux sn mkBearer args configureSock versions localAddr remoteAdd
 --
 -- Exceptions thrown by @'MuxApplication'@ are rethrown by @'connectTo'@.
 connectToNode'
-  :: forall muxMode vNumber vData fd addr a b.
-     ( NFData vData
+  :: forall muxMode vNumber vData fd addr m a b.
+     ( Alternative   (STM m)
+     , MonadAsync         m
+     , MonadDelay         m
+     , MonadFork          m
+     , MonadEvaluate      m
+     , MonadLabelledSTM   m
+     , MonadMask          m
+     , Mx.MonadReadBuffer m
+     , MonadSTM           m
+     , MonadTimer         m
+     , MonadThrow         m
+     , MonadThrow   (STM m)
+     , NFData vData
      , NFData vNumber
      , Ord vNumber
      , Typeable vNumber
@@ -346,47 +386,59 @@ connectToNode'
      , NFData a
      , NFData b
      )
-  => Snocket IO fd addr
-  -> Mx.MakeBearer IO fd
-  -> ConnectToArgs fd addr vNumber vData
+  => Snocket m fd addr
+  -> Mx.MakeBearer m fd
+  -> ConnectToArgs m fd addr vNumber vData
   -- ^ a configured socket to use to connect to a remote service provider
-  -> Versions vNumber vData (OuroborosApplicationWithMinimalCtx muxMode addr BL.ByteString IO a b)
+  -> Versions vNumber vData (OuroborosApplicationWithMinimalCtx muxMode addr BL.ByteString m a b)
   -- ^ application to run over the connection
   -> fd
-  -> IO (Either SomeException (Either a b))
+  -> m (Either SomeException (Either a b))
 connectToNode' sn mkBearer args versions as =
   connectToNodeWithMux' sn mkBearer args versions as simpleMuxCallback
 
 
 connectToNodeWithMux'
-  :: forall muxMode vNumber vData fd addr a b x.
-     ( NFData vData
+  :: forall muxMode vNumber vData fd addr m a b x.
+     ( Alternative   (STM m)
+     , MonadAsync         m
+     , MonadDelay         m
+     , MonadFork          m
+     , MonadEvaluate      m
+     , MonadLabelledSTM   m
+     , MonadMask          m
+     , Mx.MonadReadBuffer m
+     , MonadSTM           m
+     , MonadTimer         m
+     , MonadThrow         m
+     , MonadThrow    (STM m)
+     , NFData vData
      , NFData vNumber
      , Ord vNumber
      , Typeable vNumber
      , Show vNumber
      , Mx.HasInitiator muxMode ~ True
      )
-  => Snocket IO fd addr
-  -> Mx.MakeBearer IO fd
-  -> ConnectToArgs fd addr vNumber vData
-  -> Versions vNumber vData (OuroborosApplicationWithMinimalCtx muxMode addr BL.ByteString IO a b)
+  => Snocket m fd addr
+  -> Mx.MakeBearer m fd
+  -> ConnectToArgs m fd addr vNumber vData
+  -> Versions vNumber vData (OuroborosApplicationWithMinimalCtx muxMode addr BL.ByteString m a b)
   -- ^ application to run over the connection
   -- ^ a configured socket to use to connect to a remote service provider
   -> fd
   -> (    ConnectionId addr
        -> vNumber
        -> vData
-       -> OuroborosApplicationWithMinimalCtx muxMode addr BL.ByteString IO a b
-       -> Mx.Mux muxMode IO
-       -> Async IO ()
-       -> IO x)
+       -> OuroborosApplicationWithMinimalCtx muxMode addr BL.ByteString m a b
+       -> Mx.Mux muxMode m
+       -> Async m ()
+       -> m x)
   -- ^ callback which has access to ConnectionId, negotiated protocols, mux
   -- handle created for that connection and an `Async` handle to the thread
   -- which runs `Mx.runMux`.  The `Mux` handle allows schedule mini-protocols.
   --
   -- NOTE: when the callback returns or errors, the mux thread will be killed.
-  -> IO x
+  -> m x
 connectToNodeWithMux'
   sn makeBearer
   ConnectToArgs {
@@ -428,13 +480,12 @@ connectToNodeWithMux'
        Left (HandshakeProtocolError err) -> do
          throwIO err
 
-       Right (HandshakeNegotiationResult app versionNumber agreedOptions) -> do
-         Mx.withReadBufferIO (\buffer -> do
-             bearer <- Mx.getBearer makeBearer sduTimeout sd buffer
-             mux <- Mx.new muxTracers (toMiniProtocolInfos (runForkPolicy noBindForkPolicy remoteAddress) app)
-             withAsync (Mx.run mux bearer) $ \aid ->
-               k connectionId versionNumber agreedOptions app mux aid
-           )
+       Right (HandshakeNegotiationResult app versionNumber agreedOptions) ->
+         Mx.withReadBufferIO $ \buffer -> do
+           bearer <- Mx.getBearer makeBearer sduTimeout sd buffer
+           mux <- Mx.new muxTracers (toMiniProtocolInfos (runForkPolicy noBindForkPolicy remoteAddress) app)
+           withAsync (Mx.run mux bearer) $ \aid ->
+             k connectionId versionNumber agreedOptions app mux aid
 
        Right (HandshakeQueryResult _vMap) -> do
          throwIO (QueryNotSupported @vNumber)
@@ -508,7 +559,7 @@ connectToNodeSocket
      , NFData b
      )
   => IOManager
-  -> ConnectToArgs Socket.Socket Socket.SockAddr vNumber vData
+  -> ConnectToArgs IO Socket.Socket Socket.SockAddr vNumber vData
   -> Versions vNumber vData (OuroborosApplicationWithMinimalCtx muxMode Socket.SockAddr BL.ByteString IO a b)
   -- ^ application to run over the connection
   -> Socket.Socket
