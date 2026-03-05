@@ -11,7 +11,9 @@
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE StandaloneKindSignatures   #-}
 {-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE TypeData                   #-}
 {-# LANGUAGE TypeFamilies               #-}
 
 -- | Various types related to ledger peers.  This module is re-exported from
@@ -28,12 +30,15 @@ module Ouroboros.Network.PeerSelection.LedgerPeers.Type
   , UseLedgerPeers (..)
   , AfterSlot (..)
   , LedgerPeersKind (..)
+  , SingLedgerPeersKind (..)
+  , SomeLedgerPeersKind (..)
   , LedgerPeerSnapshot (..)
+  , ledgerPeerSnapshotKind
   , SomeLedgerPeerSnapshot (..)
+  , someLedgerPeerSnapshotKind
   , RawBlockHash (..)
   , LedgerPeerSnapshotSRVSupport (..)
   , encodeLedgerPeerSnapshot
-  , encodeLedgerPeerSnapshot'
   , decodeLedgerPeerSnapshot
   , encodeWithOrigin
   , decodeWithOrigin
@@ -63,6 +68,7 @@ import Data.Bifunctor (second)
 import Data.ByteString.Base16 qualified as Base16
 import Data.ByteString.Short (ShortByteString)
 import Data.ByteString.Short qualified as SBS
+import Data.Kind (Type)
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Text.Encoding qualified as Text
@@ -97,6 +103,10 @@ data LedgerPeerSnapshot (a :: LedgerPeersKind) where
 deriving instance Eq (LedgerPeerSnapshot a)
 deriving instance Show (LedgerPeerSnapshot a)
 
+ledgerPeerSnapshotKind :: LedgerPeerSnapshot a -> SingLedgerPeersKind a
+ledgerPeerSnapshotKind LedgerPeerSnapshotV2 {}     = SingBigLedgerPeers
+ledgerPeerSnapshotKind LedgerBigPeerSnapshotV23 {} = SingBigLedgerPeers
+ledgerPeerSnapshotKind LedgerAllPeerSnapshotV23 {} = SingAllLedgerPeers
 
 -- | The raw block hash to be passed into the Consensus layer and
 --   reified into a 'HeaderHash blk' using the 'ConvertRawHash'
@@ -134,6 +144,8 @@ instance Eq SomeLedgerPeerSnapshot where
 
 deriving instance Show SomeLedgerPeerSnapshot
 
+someLedgerPeerSnapshotKind :: SomeLedgerPeerSnapshot -> SomeLedgerPeersKind
+someLedgerPeerSnapshotKind (SomeLedgerPeerSnapshot a) = SomeLedgerPeersKind (ledgerPeerSnapshotKind a)
 
 getRelayAccessPointsFromBigLedgerPeersSnapshot
   :: SRVPrefix
@@ -269,11 +281,6 @@ data LedgerPeerSnapshotSRVSupport
   deriving (Show, Eq)
 
 
-encodeLedgerPeerSnapshot' :: LedgerPeerSnapshotSRVSupport -> SomeLedgerPeerSnapshot -> Codec.Encoding
-encodeLedgerPeerSnapshot' srvSupport (SomeLedgerPeerSnapshot lps) = encodeLedgerPeerSnapshot srvSupport lps
-{-# INLINE encodeLedgerPeerSnapshot' #-}
-
-
 encodeLedgerPeerSnapshot :: LedgerPeerSnapshotSRVSupport -> LedgerPeerSnapshot a -> Codec.Encoding
 encodeLedgerPeerSnapshot LedgerPeerSnapshotDoesntSupportSRV (LedgerPeerSnapshotV2 (wOrigin, pools)) =
      Codec.encodeListLen 2
@@ -320,25 +327,26 @@ encodeLedgerPeerSnapshot _LedgerPeerSnapshotSupportsSRV (LedgerAllPeerSnapshotV2
   <> encodeAllStakePools pools
 
 
-decodeLedgerPeerSnapshot :: forall s.
-                            Codec.Decoder s SomeLedgerPeerSnapshot
-decodeLedgerPeerSnapshot = do
+decodeLedgerPeerSnapshot :: forall s (ledgerPeersKind :: LedgerPeersKind).
+                            SingLedgerPeersKind ledgerPeersKind
+                         -> Codec.Decoder s (LedgerPeerSnapshot ledgerPeersKind)
+decodeLedgerPeerSnapshot ledgerPeerKind = do
     Codec.decodeListLenOf 2
     version <- Codec.decodeWord8
-    case version of
-      1 -> Codec.decodeListLenOf 2 >>
-             SomeLedgerPeerSnapshot .
-             LedgerPeerSnapshotV2 <$> ((,) <$> decodeWithOrigin <*> fromCBOR)
-      2 -> Codec.decodeListLenOf 3 >>
-             SomeLedgerPeerSnapshot <$>
-             (LedgerBigPeerSnapshotV23 <$> decodeLedgerPeerSnapshotPoint
-                                       <*> (NetworkMagic <$> Codec.decodeWord32)
-                                       <*> decodeBigStakePools)
-      3 -> Codec.decodeListLenOf 3 >>
-             SomeLedgerPeerSnapshot <$>
-             (LedgerAllPeerSnapshotV23 <$> decodeLedgerPeerSnapshotPoint
-                                       <*> (NetworkMagic <$> Codec.decodeWord32)
-                                       <*> decodeAllStakePools)
+    case (ledgerPeerKind, version) of
+      (SingBigLedgerPeers, 1) -> do
+        _ <- Codec.decodeListLenOf 2
+        LedgerPeerSnapshotV2 <$> ((,) <$> decodeWithOrigin <*> fromCBOR)
+      (SingBigLedgerPeers, 2) -> do
+        _ <- Codec.decodeListLenOf 3
+        (LedgerBigPeerSnapshotV23 <$> decodeLedgerPeerSnapshotPoint
+                                  <*> (NetworkMagic <$> Codec.decodeWord32)
+                                  <*> decodeBigStakePools)
+      (SingAllLedgerPeers, 3) -> do
+        _ <- Codec.decodeListLenOf 3
+        (LedgerAllPeerSnapshotV23 <$> decodeLedgerPeerSnapshotPoint
+                                  <*> (NetworkMagic <$> Codec.decodeWord32)
+                                  <*> decodeAllStakePools)
       _ -> fail $ "LedgerPeers.Type: no decoder could be found for version " <> show version
 
 
@@ -435,8 +443,22 @@ decodeAllStakePools = do
 
 -- | Used by functions to indicate what kind of ledger peer to process
 --
-data LedgerPeersKind = AllLedgerPeers | BigLedgerPeers
-  deriving (Eq, Show)
+type data LedgerPeersKind = AllLedgerPeers | BigLedgerPeers
+
+type SingLedgerPeersKind :: LedgerPeersKind -> Type
+data SingLedgerPeersKind k where
+  SingAllLedgerPeers :: SingLedgerPeersKind AllLedgerPeers
+  SingBigLedgerPeers :: SingLedgerPeersKind BigLedgerPeers
+
+deriving instance Show (SingLedgerPeersKind k)
+deriving instance Eq   (SingLedgerPeersKind k)
+
+data SomeLedgerPeersKind where
+  SomeLedgerPeersKind :: forall (k :: LedgerPeersKind).
+                         SingLedgerPeersKind k
+                      -> SomeLedgerPeersKind
+
+deriving instance Show SomeLedgerPeersKind
 
 
 -- | Only use the ledger after the given slot number.

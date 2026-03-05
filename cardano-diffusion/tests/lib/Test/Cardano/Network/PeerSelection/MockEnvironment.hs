@@ -1,5 +1,6 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RecordWildCards     #-}
@@ -43,7 +44,7 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Typeable (Typeable)
 import Data.Void (Void)
-import System.Random (mkStdGen)
+import System.Random (StdGen, mkStdGen)
 
 import Data.IP (toIPv4w)
 
@@ -499,6 +500,11 @@ mockPeerSelectionActions' tracer
     }
   where
     -- TODO: make this dynamic
+    requestPublicRootPeers
+      :: SomeLedgerPeersKind
+      -> StdGen
+      -> Int
+      -> m (CardanoPublicRootPeers PeerAddr, DiffTime)
     requestPublicRootPeers ledgerPeersKind _rng _n = do
       traceWith tracer TraceEnvRequestPublicRootPeers
       let ttl :: DiffTime
@@ -524,12 +530,12 @@ mockPeerSelectionActions' tracer
                else case useLedgerPeers of
                  DontUseLedgerPeers -> PublicRootPeers.empty Cardano.ExtraPeers.empty
                  UseLedgerPeers _ -> case ledgerPeersKind of
-                   AllLedgerPeers
+                   SomeLedgerPeersKind SingAllLedgerPeers
                      | Set.null ledgerPeers ->
                        Cardano.PublicRootPeers.fromPublicRootPeers publicConfigPeers
                      | otherwise            ->
                        PublicRootPeers.fromLedgerPeers ledgerPeers
-                   BigLedgerPeers ->
+                   SomeLedgerPeersKind SingBigLedgerPeers ->
                        PublicRootPeers.fromBigLedgerPeers bigLedgerPeers
 
       traceWith tracer (TraceEnvRootsResult (Set.toList (PublicRootPeers.toSet Cardano.ExtraPeers.toSet result)))

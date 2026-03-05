@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 
@@ -38,7 +39,7 @@ accumulateBigLedgerStake =
     takeWhilePrev (\(acc, _) -> acc <= bigLedgerPeerQuota)
     . go 0
     . sortOn (Down . fst)
-    . recomputeRelativeStake BigLedgerPeers
+    . recomputeRelativeStake SingBigLedgerPeers
   where
     takeWhilePrev :: (a -> Bool) -> [a] -> [a]
     takeWhilePrev f as =
@@ -59,7 +60,7 @@ accumulateBigLedgerStake =
 -- we need to recalculate the relative stake for each pool.
 --
 recomputeRelativeStake
-  :: LedgerPeersKind
+  :: SingLedgerPeersKind k
   -> [(PoolStake, NonEmpty relayAccessPoint)]
   -> [(PoolStake, NonEmpty relayAccessPoint)]
 recomputeRelativeStake ledgerPeersKind pl =
@@ -68,18 +69,21 @@ recomputeRelativeStake ledgerPeersKind pl =
         pl''  = first (/ total) <$> pl'
     in
     assert (let total' = sum $ map fst pl''
-            in total == 0 || (total' > (PoolStake $ 999999 % 1000000) &&
-                  total' < (PoolStake $ 1000001 % 1000000))
+            in total == 0
+               ||
+               (total' > PoolStake (999999 % 1000000)
+                &&
+                total' < PoolStake (1000001 % 1000000))
            )
     pl''
   where
     adjustment :: PoolStake -> PoolStake
     adjustment =
       case ledgerPeersKind of
-        AllLedgerPeers ->
+        SingAllLedgerPeers ->
           -- We do loose some precision in the conversion. However we care about
           -- precision in the order of 1 block per year and for that a Double is
           -- good enough.
           PoolStake . toRational . sqrt @Double . fromRational . unPoolStake
-        BigLedgerPeers ->
+        SingBigLedgerPeers ->
           id

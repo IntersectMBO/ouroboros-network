@@ -93,7 +93,7 @@ import Ouroboros.Network.PeerSelection.Governor.Types
            (PeerSelectionGovernorArgs, SupportsPeerSelectionState (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers (NumberOfPeers)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
-           (LedgerPeersConsensusInterface, LedgerPeersKind, UseLedgerPeers)
+           (LedgerPeersConsensusInterface, SomeLedgerPeersKind, UseLedgerPeers)
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSelection.PeerStateActions (PeerConnectionHandle)
@@ -223,8 +223,8 @@ run :: forall extraState extraDebugState extraAPI
     -> (   PeerActionsDNS NtNAddr resolver m
         -> DNSSemaphore m
         -> (Map NtNAddr PeerAdvertise -> extraPeers)
-        -> (NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set NtNAddr, DiffTime)))
-        -> LedgerPeersKind
+        -> (NumberOfPeers -> SomeLedgerPeersKind -> m (Maybe (Set NtNAddr, DiffTime)))
+        -> SomeLedgerPeersKind
         -> StdGen
         -> Int
         -> m (PublicRootPeers extraPeers NtNAddr, DiffTime))

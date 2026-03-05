@@ -5,9 +5,11 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts          #-}
 {-# LANGUAGE GADTs                     #-}
+{-# LANGUAGE KindSignatures            #-}
 {-# LANGUAGE MultiParamTypeClasses     #-}
 {-# LANGUAGE NamedFieldPuns            #-}
 {-# LANGUAGE PatternSynonyms           #-}
+{-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE RecordWildCards           #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE StandaloneDeriving        #-}
@@ -339,7 +341,10 @@ data PeerSelectionActions extraState extraFlags extraPeers extraAPI peeraddr pee
        -- It also makes a distinction between normal and big ledger peers to be
        -- fetched.
        --
-       requestPublicRootPeers   :: LedgerPeersKind -> StdGen -> Int -> m (PublicRootPeers extraPeers peeraddr, DiffTime),
+       requestPublicRootPeers   :: SomeLedgerPeersKind
+                                -> StdGen
+                                -> Int
+                                -> m (PublicRootPeers extraPeers peeraddr, DiffTime),
 
        -- | The action to contact a known peer and request a sample of its
        -- known peers.

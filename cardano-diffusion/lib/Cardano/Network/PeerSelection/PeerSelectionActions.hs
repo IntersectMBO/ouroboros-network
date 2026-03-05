@@ -53,8 +53,8 @@ requestPublicRootPeersImpl
   -> DNSSemaphore m
   -> (Map peeraddr PeerAdvertise -> Cardano.ExtraPeers peeraddr)
   -- ^ Function to convert DNS result into extra peers
-  -> (NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set peeraddr, DiffTime)))
-  -> LedgerPeersKind
+  -> (NumberOfPeers -> SomeLedgerPeersKind -> m (Maybe (Set peeraddr, DiffTime)))
+  -> SomeLedgerPeersKind
   -> StdGen
   -> Int
   -> m (CardanoPublicRootPeers peeraddr, DiffTime)

@@ -2,6 +2,7 @@
 {-# LANGUAGE CPP                      #-}
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE FlexibleContexts         #-}
+{-# LANGUAGE GADTs                    #-}
 {-# LANGUAGE NamedFieldPuns           #-}
 {-# LANGUAGE RankNTypes               #-}
 {-# LANGUAGE ScopedTypeVariables      #-}
@@ -59,7 +60,7 @@ withPeerSelectionActions
   -> StrictTVar m (Config extraFlags peeraddr)
   -> PeerActionsDNS peeraddr resolver m
   -> (   (    NumberOfPeers
-           -> LedgerPeersKind
+           -> SomeLedgerPeersKind
            -> m (Maybe (Set peeraddr, DiffTime))
          )
       -> PeerSelectionActions extraState extraFlags extraPeers extraAPI peeraddr peerconn m)
@@ -142,8 +143,8 @@ requestPublicRootPeersImpl
   -> DNSSemaphore m
   -> (Map peeraddr PeerAdvertise -> extraPeers)
   -- ^ Function to convert DNS result into extra peers
-  -> (NumberOfPeers -> LedgerPeersKind -> m (Maybe (Set peeraddr, DiffTime)))
-  -> LedgerPeersKind
+  -> (NumberOfPeers -> SomeLedgerPeersKind -> m (Maybe (Set peeraddr, DiffTime)))
+  -> SomeLedgerPeersKind
   -> StdGen
   -> Int
   -> m (PublicRootPeers extraPeers peeraddr, DiffTime)
@@ -163,9 +164,9 @@ requestPublicRootPeersImpl
       pure (PublicRootPeers.empty extraPeers, dt)
     Just (ledgerPeers, dt) ->
       case ledgerPeersKind of
-        AllLedgerPeers ->
+        SomeLedgerPeersKind SingAllLedgerPeers ->
           pure (PublicRootPeers.fromLedgerPeers ledgerPeers, dt)
-        BigLedgerPeers ->
+        SomeLedgerPeersKind SingBigLedgerPeers ->
           pure (PublicRootPeers.fromBigLedgerPeers ledgerPeers, dt)
   where
     getExtraPeers :: Int -> m (Map peeraddr PeerAdvertise, DiffTime)
