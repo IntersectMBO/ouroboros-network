@@ -18,6 +18,7 @@ import Data.Word (Word32)
 import System.Random
 
 import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad (replicateM)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
@@ -73,13 +74,15 @@ publicRootPeersProvider tracer
     traceWith tracer (TracePublicRootRelayAccessPoint domains)
     rr <- dnsResolverResource resolvConf
     resourceVar <- newTVarIO rr
-    action (requestPublicRootPeers resourceVar)
+    rngVar <- newTVarIO rng
+    action (requestPublicRootPeers resourceVar rngVar)
   where
     requestPublicRootPeers
       :: StrictTVar m (Resource m (Either DNSorIOError resolver))
+      -> StrictTVar m StdGen
       -> Int
       -> m (Map peerAddr PeerAdvertise, DiffTime)
-    requestPublicRootPeers resourceVar _numRequested = do
+     requestPublicRootPeers resourceVar rngVar _numRequested = do
         domains <- atomically readDomains
         traceWith tracer (TracePublicRootRelayAccessPoint domains)
         rr <- readTVarIO resourceVar
@@ -93,6 +96,7 @@ publicRootPeersProvider tracer
                   flip partition (Map.assocs domains) $ \case
                     (RelayAccessAddress {}, _) -> False
                     _otherwise                 -> True
+            rngs <- atomically $ replicateM (length doms) (stateTVar rngVar split)
                 lookups =
                   [ (, pa)
                       <$> (do
@@ -104,7 +108,7 @@ publicRootPeersProvider tracer
                               resolvConf
                               resolver
                               rng))
-                  | (domain, pa) <- doms
+                  | ((domain, pa), rng) <- zip doms rngs
                   , case domain of
                       RelayAccessAddress {}   -> False
                       RelayAccessDomain  {}   -> True
