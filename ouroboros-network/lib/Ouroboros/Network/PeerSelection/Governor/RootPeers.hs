@@ -1,6 +1,8 @@
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE TypeOperators       #-}
 
 module Ouroboros.Network.PeerSelection.Governor.RootPeers (belowTarget) where
 
@@ -28,15 +30,14 @@ import System.Random
 
 belowTarget
   :: ( MonadSTM m
-     , Ord peeraddr
      , Semigroup extraPeers
+     , SupportsPeerSelectionState extraPeers peeraddr
      )
   => PeerSelectionActions
       extraState
       extraFlags
       extraPeers
       extraAPI
-      extraCounters
       peeraddr
       peerconn
       m
@@ -44,13 +45,8 @@ belowTarget
   -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
   -> Guarded (STM m)
             (TimedDecision m extraState extraDebugState extraFlags extraPeers
-                             extraTrace peeraddr peerconn)
-belowTarget actions@PeerSelectionActions {
-              extraPeersAPI = PublicExtraPeersAPI {
-                extraPeersToSet
-              },
-              extraStateToExtraCounters
-            }
+                             peeraddr peerconn)
+belowTarget actions
             blockedAt
             st@PeerSelectionState {
               publicRootRetryTime,
@@ -91,14 +87,14 @@ belowTarget actions@PeerSelectionActions {
         numberOfRootPeers = numRootPeers
       }
       =
-      peerSelectionStateToCounters extraPeersToSet extraStateToExtraCounters st
+      peerSelectionStateToCounters st
 
     maxExtraRootPeers = targetNumberOfRootPeers - numRootPeers
 
 
 jobReqPublicRootPeers
   :: forall m extraState extraDebugState extraFlags extraPeers
-           extraAPI extraCounters extraTrace peeraddr peerconn.
+           extraAPI peeraddr peerconn.
      ( MonadSTM m
      , Ord peeraddr
      , Semigroup extraPeers
@@ -108,14 +104,13 @@ jobReqPublicRootPeers
       extraFlags
       extraPeers
       extraAPI
-      extraCounters
       peeraddr
       peerconn
       m
   -> StdGen
   -> Int
   -> Job () m (Completion m extraState extraDebugState extraFlags extraPeers
-                            extraTrace peeraddr peerconn)
+                            peeraddr peerconn)
 jobReqPublicRootPeers PeerSelectionActions{ requestPublicRootPeers,
                                             extraPeersAPI = PublicExtraPeersAPI {
                                               differenceExtraPeers,
@@ -130,7 +125,7 @@ jobReqPublicRootPeers PeerSelectionActions{ requestPublicRootPeers,
   where
     handler :: SomeException
             -> Completion m extraState extraDebugState extraFlags extraPeers
-                            extraTrace peeraddr peerconn
+                            peeraddr peerconn
     handler e =
       Completion $ \st now ->
       -- This is a failure, so move the backoff counter one in the failure
@@ -159,7 +154,7 @@ jobReqPublicRootPeers PeerSelectionActions{ requestPublicRootPeers,
           }
 
     job :: m (Completion m extraState extraDebugState extraFlags extraPeers
-                           extraTrace peeraddr peerconn)
+                           peeraddr peerconn)
     job = do
       (results, ttl) <- requestPublicRootPeers AllLedgerPeers rng numExtraAllowed
       return $ Completion $ \st now ->

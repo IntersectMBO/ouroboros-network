@@ -1,58 +1,20 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs             #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE PackageImports    #-}
 
---------------------------------------------------------------------------------
-
--- Orphan instances module for Cardano tracer.
 {-# OPTIONS_GHC -Wno-orphans #-}
--- Extracted from "cardano-node" `Cardano.Node.Tracing.Tracers.Diffusion`.
--- Branch "master" (2026-02-11, 85869e9dd21d9dac7c4381418346e97259c3303b).
-
---------------------------------------------------------------------------------
-
 module Ouroboros.Network.Tracing () where
 
---------------------------------------------------------------------------------
+import Data.Aeson (Value (String), (.=))
+import Data.IP qualified as IP
+import Data.Text (Text, pack)
+import Network.Socket (SockAddr (..))
 
----------
--- base -
----------
---
----------------------
--- Package: "aeson" -
----------------------
-import "aeson" Data.Aeson (Value (String), (.=))
------------------------
--- Package: "iproute" -
------------------------
-import "iproute" Data.IP qualified as IP
------------------------
--- Package: "network" -
------------------------
-import "network" Network.Socket (SockAddr (..))
---------------------
--- Package: "text" -
---------------------
-import "text" Data.Text (Text, pack)
----------------------------------
--- Package: "ouroboros-network" -
----------------------------------
-import "ouroboros-network" Ouroboros.Network.Protocol.Handshake.Type qualified as HS
-import "ouroboros-network" Ouroboros.Network.Snocket (LocalAddress (..),
-           RemoteAddress)
--------------------------------
--- Package: "typed-protocols" -
--------------------------------
-import "typed-protocols" Network.TypedProtocol.Codec (AnyMessage (..))
---------------------------------
--- Package: "trace-dispatcher" -
---------------------------------
-import "trace-dispatcher" Cardano.Logging
----------
--- Self -
----------
+import Cardano.Logging
+import Network.TypedProtocol.Codec (AnyMessage (..))
+import Ouroboros.Network.Protocol.Handshake.Type qualified as HS
+import Ouroboros.Network.Snocket (LocalAddress (..), RemoteAddress)
+
 import Ouroboros.Network.Tracing.ConnectionId ()
 import Ouroboros.Network.Tracing.ConnectionManager ()
 import Ouroboros.Network.Tracing.Driver ()
@@ -62,9 +24,6 @@ import Ouroboros.Network.Tracing.Server ()
 --------------------------------------------------------------------------------
 -- Addresses.
 --------------------------------------------------------------------------------
-
--- From `Cardano.Node.Tracing.Tracers.P2P`
--- Branch "ana/10.6-final-integration-mix"
 
 instance LogFormatting LocalAddress where
     forMachine _dtal (LocalAddress path) =
@@ -87,9 +46,6 @@ instance LogFormatting RemoteAddress where
 --------------------------------------------------------------------------------
 -- Handshake Tracer.
 --------------------------------------------------------------------------------
-
--- From `Cardano.Node.Tracing.Tracers.Diffusion`
--- Branch "ana/10.6-final-integration-mix"
 
 instance (Show term, Show ntcVersion) =>
   LogFormatting (AnyMessage (HS.Handshake ntcVersion term)) where
@@ -159,4 +115,3 @@ instance MetaTrace (AnyMessage (HS.Handshake a b)) where
     , Namespace [] ["AcceptVersion"]
     , Namespace [] ["Refuse"]
     ]
-

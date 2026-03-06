@@ -1,44 +1,20 @@
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE OverloadedStrings    #-}
-{-# LANGUAGE PackageImports       #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE UndecidableInstances #-}
 
---------------------------------------------------------------------------------
-
--- Orphan instances module for Cardano tracer.
 {-# OPTIONS_GHC -Wno-orphans #-}
--- Extracted from "cardano-node" `Cardano.Node.Tracing.Tracers.NodeToClient`.
--- Branch "master" (2026-02-11, 85869e9dd21d9dac7c4381418346e97259c3303b).
-
---------------------------------------------------------------------------------
 
 module Ouroboros.Network.Tracing.Driver () where
 
---------------------------------------------------------------------------------
+import Data.Aeson (Value (String), (.=))
 
----------
--- base -
----------
---
----------------------
--- Package: "aeson" -
----------------------
-import "aeson" Data.Aeson (Value (String), (.=))
----------------------------------
--- Package: "ouroboros-network" -
----------------------------------
-import "ouroboros-network" Ouroboros.Network.Driver.Simple qualified as Simple
-import "ouroboros-network" Ouroboros.Network.Driver.Stateful qualified as Stateful
---------------------------------
--- Package: "trace-dispatcher" -
---------------------------------
-import "trace-dispatcher" Cardano.Logging
--------------------------------
--- Package: "typed-protocols" -
--------------------------------
-import "typed-protocols" Network.TypedProtocol.Codec qualified as Simple
-import "typed-protocols" Network.TypedProtocol.Stateful.Codec qualified as Stateful
+import Cardano.Logging
+import Ouroboros.Network.Driver.Simple qualified as Simple
+import Ouroboros.Network.Driver.Stateful qualified as Stateful
+
+import Network.TypedProtocol.Codec qualified as Simple
+import Network.TypedProtocol.Stateful.Codec qualified as Stateful
 
 -------------------------------------------------------------------------------
 -- Driver Simple.
@@ -176,4 +152,3 @@ instance MetaTrace (Stateful.AnyMessage ps f) =>
   allNamespaces =
     let cn = allNamespaces :: [Namespace (Stateful.AnyMessage ps f)]
     in fmap (nsPrependInner "Send") cn ++ fmap (nsPrependInner "Receive") cn
-

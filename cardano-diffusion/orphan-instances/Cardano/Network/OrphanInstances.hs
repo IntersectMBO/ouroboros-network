@@ -34,10 +34,6 @@ instance FromJSON LedgerStateJudgement where
   parseJSON (String "TooOld")      = pure TooOld
   parseJSON _                      = fail "Invalid JSON for LedgerStateJudgement"
 
-instance ToJSON UseBootstrapPeers where
-  toJSON DontUseBootstrapPeers   = Null
-  toJSON (UseBootstrapPeers dps) = toJSON dps
-
 instance FromJSON UseBootstrapPeers where
   parseJSON Null = pure DontUseBootstrapPeers
   parseJSON v    = UseBootstrapPeers <$> parseJSON v
@@ -120,13 +116,3 @@ instance ToJSON (NetworkTopology UseBootstrapPeers PeerTrustable) where
   toJSON = networkTopologyToJSON
              (\useBootstrapPeers -> Just ("bootstrapPeers", toJSON useBootstrapPeers))
              (\peerTrustable     -> Just ("trustable", toJSON peerTrustable))
-
-instance ToJSON ExtraTrace where
-  toJSON (TraceLedgerStateJudgementChanged new) =
-    object [ "kind" .= String "LedgerStateJudgementChanged"
-           , "LedgerStateJudgement" .= show new
-           ]
-  toJSON (TraceUseBootstrapPeersChanged ubp) =
-    object [ "kind" .= String "UseBootstrapPeersChanged"
-           , "UseBootstrapPeers" .= show ubp
-           ]

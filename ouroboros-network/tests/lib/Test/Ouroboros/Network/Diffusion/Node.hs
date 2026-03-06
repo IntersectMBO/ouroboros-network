@@ -87,10 +87,10 @@ import Ouroboros.Network.Mock.ConcreteBlock (Block (..), BlockHeader (..),
            convertSlotToTimeForTestsAssumingNoHardFork)
 import Ouroboros.Network.Mock.ProducerState (ChainProducerState (..))
 import Ouroboros.Network.PeerSelection.Churn (PeerChurnArgs)
-import Ouroboros.Network.PeerSelection.Governor (PeerSelectionState (..),
-           PeerSelectionTargets (..), PublicPeerSelectionState (..))
+import Ouroboros.Network.PeerSelection.Governor (PeerSelectionTargets (..),
+           PublicPeerSelectionState (..))
 import Ouroboros.Network.PeerSelection.Governor.Types
-           (PeerSelectionGovernorArgs)
+           (PeerSelectionGovernorArgs, SupportsPeerSelectionState (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers (NumberOfPeers)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
            (LedgerPeersConsensusInterface, LedgerPeersKind, UseLedgerPeers)
@@ -176,7 +176,6 @@ data Arguments extraChurnArgs extraFlags m = Arguments
 
 run :: forall extraState extraDebugState extraAPI
               extraPeers extraFlags extraChurnArgs
-              extraCounters extraTrace
               exception resolver m.
        ( Alternative (STM m)
        , MonadAsync       m
@@ -195,8 +194,8 @@ run :: forall extraState extraDebugState extraAPI
        , MonadMVar        m
 
        , Eq extraFlags
-       , Eq extraCounters
        , Monoid extraPeers
+       , SupportsPeerSelectionState extraPeers NtNAddr
        , Exception exception
 
        , resolver ~ ()
@@ -206,7 +205,7 @@ run :: forall extraState extraDebugState extraAPI
     -> Interfaces extraAPI m
     -> Arguments extraChurnArgs extraFlags m
     -> extraState
-    -> extraCounters
+    -> ViewExtraPeers extraPeers
     -> PublicExtraPeersAPI extraPeers NtNAddr
     -> (forall muxMode responderCtx ntnVersionData bytes a b .
         PeerSelectionGovernorArgs
@@ -215,22 +214,11 @@ run :: forall extraState extraDebugState extraAPI
           extraFlags
           extraPeers
           extraAPI
-          extraCounters
-          extraTrace
           NtNAddr
           (PeerConnectionHandle
              muxMode responderCtx NtNAddr extraFlags ntnVersionData bytes m a b)
           exception
           m)
-    -> (forall muxMode responderCtx ntnVersionData bytes a b.
-        PeerSelectionState
-          extraState
-          extraFlags
-          extraPeers
-          NtNAddr
-          (PeerConnectionHandle
-             muxMode responderCtx NtNAddr extraFlags ntnVersionData bytes m a b)
-        -> extraCounters)
     -> (Map NtNAddr PeerAdvertise -> extraPeers)
     -> (   PeerActionsDNS NtNAddr resolver m
         -> DNSSemaphore m
@@ -247,14 +235,12 @@ run :: forall extraState extraDebugState extraAPI
              extraFlags
              extraPeers
              extraAPI
-             extraCounters
-             extraTrace
              NtNAddr
         -> m Void)
     -> Diffusion.Tracers NtNAddr NtNVersion NtNVersionData
                          NtCAddr NtCVersion NtCVersionData
                          extraState extraDebugState extraFlags
-                         extraPeers extraCounters extraTrace m
+                         extraPeers m
     -> Tracer m (TraceLabelPeer NtNAddr (TraceFetchClientState BlockHeader))
     -> Tracer m (TraceTxLogic NtNAddr Int (Tx Int))
     -> (   NodeKernel BlockHeader Block StdGen Int m
@@ -266,7 +252,7 @@ run :: forall extraState extraDebugState extraAPI
     -> m Void
 run blockGeneratorArgs ni na
     emptyExtraState emptyExtraCounters
-    extraPeersAPI psArgs psToExtraCounters
+    extraPeersAPI psArgs
     toExtraPeers requestPublicRootPeers peerChurnGovernor
     tracers tracerBlockFetch
     tracerTxLogic mkApps = do
@@ -339,7 +325,6 @@ run blockGeneratorArgs ni na
               , Diffusion.daExtraPeersAPI                     = extraPeersAPI
               , Diffusion.daInstallSigUSR1Handler             = \_ _ -> pure ()
               , Diffusion.daPeerSelectionGovernorArgs         = psArgs
-              , Diffusion.daPeerSelectionStateToExtraCounters = psToExtraCounters
               , Diffusion.daToExtraPeers                      = toExtraPeers
               , Diffusion.daRequestPublicRootPeers            = Just requestPublicRootPeers
               , Diffusion.daPeerChurnGovernor                 = peerChurnGovernor

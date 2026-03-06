@@ -64,6 +64,7 @@ import Cardano.Network.NodeToNode (DiffusionMode (..))
 import Cardano.Network.PeerSelection (NumberOfBigLedgerPeers (..),
            PeerTrustable (..), UseBootstrapPeers (..))
 import Cardano.Network.PeerSelection qualified as Cardano
+import Cardano.Network.PeerSelection.ExtraRootPeers (ExtraPeers)
 import Cardano.Network.PeerSelection.ExtraRootPeers qualified as Cardano.ExtraPeers
 import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Cardano.ExtraState
 import Cardano.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
@@ -1240,7 +1241,7 @@ prop_only_bootstrap_peers_in_fallback_state ioSimTrace traceNumber =
               Signal.fromChangeEvents False
             . Signal.selectEvents
                 (\case
-                  ExtraTrace (Cardano.TraceUseBootstrapPeersChanged UseBootstrapPeers{})
+                  ExtraTrace (Cardano.ExtraPeers.TraceUseBootstrapPeersChanged UseBootstrapPeers{})
                     -> Just True
                   _ -> Nothing
                 )
@@ -1382,8 +1383,7 @@ prop_bootstrap_timeout_iosim = testWithIOSim prop long_trace
           sigPeerSelection
             :: Signal
                  (Maybe (Governor.TracePeerSelection Cardano.ExtraState PeerTrustable
-                                                    (Cardano.ExtraPeers NtNAddr)
-                                                    Cardano.ExtraTrace NtNAddr))
+                                                    (ExtraPeers NtNAddr) NtNAddr))
           sigPeerSelection = Signal.fromEvents $ selectDiffusionPeerSelectionEvents evs
 
           sigDiffusionSimulation :: Signal (Maybe DiffusionSimulationTrace)
@@ -1396,8 +1396,7 @@ prop_bootstrap_timeout_iosim = testWithIOSim prop long_trace
               evs
 
           criticalTimeoutError :: [Governor.TracePeerSelection Cardano.ExtraState PeerTrustable
-                                                    (Cardano.ExtraPeers NtNAddr)
-                                                    Cardano.ExtraTrace NtNAddr]
+                                                               (ExtraPeers NtNAddr) NtNAddr]
           criticalTimeoutError =
                filter (\case
                          TraceOutboundGovernorCriticalFailure reason
@@ -1739,8 +1738,7 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
 
       events :: [TracePeerSelection Cardano.ExtraState
                                     PeerTrustable
-                                    (Cardano.ExtraPeers NtNAddr)
-                                    Cardano.ExtraTrace
+                                    (ExtraPeers NtNAddr)
                                     NtNAddr]
       events = mapMaybe (\case DiffusionPeerSelectionTrace st -> Just st
                                _                              -> Nothing
@@ -1756,11 +1754,9 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
       peerSelectionTraceMap
         :: ( Show extraDebugState
            , Show extraFlags
-           , Show extraPeers
            )
         => TracePeerSelection extraDebugState extraFlags
-                              extraPeers Cardano.ExtraTrace
-                              NtNAddr
+                              (ExtraPeers NtNAddr) NtNAddr
         -> String
       peerSelectionTraceMap TraceLocalRootPeersChanged {}            =
         "TraceLocalRootPeersChanged"
@@ -1858,13 +1854,13 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
         "TraceDemoteHotBigLedgerPeerDone"
       peerSelectionTraceMap TraceDemoteBigLedgerPeersAsynchronous {} =
         "TraceDemoteBigLedgerPeersAsynchronous"
-      peerSelectionTraceMap (ExtraTrace (Cardano.TraceLedgerStateJudgementChanged lsj)) =
+      peerSelectionTraceMap (ExtraTrace (Cardano.ExtraPeers.TraceLedgerStateJudgementChanged lsj)) =
         "TraceLedgerStateJudgementChanged " ++ show lsj
       peerSelectionTraceMap TraceOnlyBootstrapPeers                  =
         "TraceOnlyBootstrapPeers"
       peerSelectionTraceMap TraceBootstrapPeersFlagChangedWhilstInSensitiveState =
         "TraceBootstrapPeersFlagChangedWhilstInSensitiveState"
-      peerSelectionTraceMap (ExtraTrace Cardano.TraceUseBootstrapPeersChanged {}) =
+      peerSelectionTraceMap (ExtraTrace Cardano.ExtraPeers.TraceUseBootstrapPeersChanged {}) =
         "TraceUseBootstrapPeersChanged"
       peerSelectionTraceMap (TraceOutboundGovernorCriticalFailure {}) =
         "TraceOutboundGovernorCriticalFailure"
@@ -4514,8 +4510,7 @@ unit_peer_sharing =
         -- TODO: we need `CardanoTracePeerSelection addr` type alias!
         events :: Map NtNAddr [TracePeerSelection Cardano.ExtraState
                                                   PeerTrustable
-                                                  (Cardano.ExtraPeers NtNAddr)
-                                                  Cardano.ExtraTrace
+                                                  (ExtraPeers NtNAddr)
                                                   NtNAddr]
         events = Map.fromList
                . map (\as -> case as of
@@ -4556,7 +4551,7 @@ unit_peer_sharing =
 
         verify :: NtNAddr
                -> [TracePeerSelection extraDebugState extraFlags
-                                      extraPeers extraTrace NtNAddr]
+                                      extraPeers NtNAddr]
                -> Every
         verify addr as | addr == ip_2 =
           let receivedPeers :: Set NtNAddr
@@ -4700,8 +4695,7 @@ prop_churn_notimeouts ioSimTrace traceNumber =
       $ (\evs ->
             let psSig :: Signal (TracePeerSelection Cardano.ExtraState
                                                     PeerTrustable
-                                                    (Cardano.ExtraPeers NtNAddr)
-                                                    Cardano.ExtraTrace
+                                                    (ExtraPeers NtNAddr)
                                                     NtNAddr)
                 psSig = fromChangeEvents TraceGovernorWakeup (selectDiffusionPeerSelectionEvents evs)
 
@@ -4977,8 +4971,7 @@ prop_churn_steps ioSimTrace traceNumber =
        $ (\evs ->
            let evsList :: [(Time, TracePeerSelection Cardano.ExtraState
                                                      PeerTrustable
-                                                     (Cardano.ExtraPeers NtNAddr)
-                                                     Cardano.ExtraTrace
+                                                     (ExtraPeers NtNAddr)
                                                      NtNAddr)]
                evsList = eventsToList (selectDiffusionPeerSelectionEvents evs)
            in  counterexample (List.intercalate "\n" (show <$> evsList))
@@ -5478,8 +5471,7 @@ withTimeNameTraceEvents = traceSelectTraceEventsDynamic
 selectDiffusionPeerSelectionEvents :: Events DiffusionTestTrace
                                    -> Events (TracePeerSelection Cardano.ExtraState
                                                                  PeerTrustable
-                                                                 (Cardano.ExtraPeers NtNAddr)
-                                                                 Cardano.ExtraTrace
+                                                                 (ExtraPeers NtNAddr)
                                                                  NtNAddr)
 selectDiffusionPeerSelectionEvents = Signal.selectEvents
                     (\case DiffusionPeerSelectionTrace e -> Just e
@@ -5529,7 +5521,7 @@ selectDiffusionPeerSelectionState
   :: Eq a
   => (forall peerconn.
          Governor.PeerSelectionState Cardano.ExtraState PeerTrustable
-                                     (Cardano.ExtraPeers NtNAddr) NtNAddr peerconn
+                                     (ExtraPeers NtNAddr) NtNAddr peerconn
       -> a)
   -> Events DiffusionTestTrace
   -> Signal a

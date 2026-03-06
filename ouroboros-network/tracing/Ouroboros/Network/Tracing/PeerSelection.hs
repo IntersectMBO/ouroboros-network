@@ -1,51 +1,25 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE PackageImports    #-}
 
---------------------------------------------------------------------------------
 
--- Orphan instances module for Cardano tracer.
 {-# OPTIONS_GHC -Wno-orphans #-}
--- Extracted from "cardano-node" `Cardano.Node.Tracing.Tracers.Diffusion`.
--- Branch "master" (2026-02-11, 85869e9dd21d9dac7c4381418346e97259c3303b).
-
---------------------------------------------------------------------------------
-
 module Ouroboros.Network.Tracing.PeerSelection () where
 
---------------------------------------------------------------------------------
-
----------
--- base -
----------
+import Data.Aeson (Value (String), (.=))
 import Data.List qualified as List
----------------------
--- Package: "aeson" -
----------------------
-import "aeson" Data.Aeson (Value (String), (.=))
----------------------------------
--- Package: "ouroboros-network" -
----------------------------------
-import "ouroboros-network" Ouroboros.Network.Diffusion.Types qualified as Diff
--- Needed for `instance ToJSON UseLedgerPeers`.
-import "ouroboros-network" Ouroboros.Network.OrphanInstances ()
-import "ouroboros-network" Ouroboros.Network.PeerSelection.LedgerPeers
-           (NumberOfPeers (..), PoolStake (..), TraceLedgerPeers (..))
---------------------
--- Package: "text" -
---------------------
-import "text" Data.Text (pack)
---------------------------------
--- Package: "trace-dispatcher" -
---------------------------------
-import "trace-dispatcher" Cardano.Logging
----------
--- Self -
----------
+import Data.Text (pack)
+
+import Cardano.Logging
+import Ouroboros.Network.Diffusion.Types qualified as Diff
+import Ouroboros.Network.OrphanInstances ()
+import Ouroboros.Network.PeerSelection.LedgerPeers (NumberOfPeers (..),
+           PoolStake (..), TraceLedgerPeers (..))
+
 import Ouroboros.Network.Tracing.PeerSelection.Governor ()
 import Ouroboros.Network.Tracing.PeerSelection.PeerStateActions ()
 import Ouroboros.Network.Tracing.PeerSelection.RootPeersDNS.DNSActions ()
 import Ouroboros.Network.Tracing.PeerSelection.RootPeersDNS.LocalRootPeers ()
 import Ouroboros.Network.Tracing.PeerSelection.RootPeersDNS.PublicRootPeers ()
+import Ouroboros.Network.Tracing.TxSubmission ()
 
 --------------------------------------------------------------------------------
 -- DiffusionInit Tracer.
@@ -411,4 +385,3 @@ instance MetaTrace TraceLedgerPeers where
       , Namespace [] ["TraceLedgerPeersDomains"]
       , Namespace [] ["UsingBigLedgerPeerSnapshot"]
       ]
-

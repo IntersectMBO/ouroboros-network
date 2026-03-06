@@ -54,7 +54,7 @@ common ghc-options
     ghc-options:
       -Wno-pattern-namespace-specifier
 
-  -- GHC-9.14 warns on constraints that it considers dedundant
+  -- GHC-9.14 warns on constraints that it considers redundant
   -- but are necessary for earlier compilers.
   if impl(ghc >=9.14)
     ghc-options:
@@ -63,7 +63,7 @@ common ghc-options
   if flag(asserts)
     ghc-options: -fno-ignore-asserts
 
--- in tests librararies redundant constraints are sometimes useful (e.g.
+-- redundant constraints are sometimes useful in test libraries (e.g.
 -- by default truned off debug tracing might require extra constraints like
 -- `Show` or `MonadSay`).
 --
@@ -422,8 +422,7 @@ library framework-tracing
     iproute,
     network,
     network-mux,
-    ouroboros-network:framework,
-    ouroboros-network:orphan-instances,
+    ouroboros-network:{framework, orphan-instances},
     text,
     trace-dispatcher ^>=2.11.0,
     typed-protocols:{typed-protocols, stateful} ^>=1.2,
@@ -637,6 +636,9 @@ library tracing
   hs-source-dirs: tracing
   exposed-modules:
     Ouroboros.Network.Tracing.PeerSelection
+    Ouroboros.Network.Tracing.TxSubmission
+    Ouroboros.Network.Tracing.TxSubmission.Inbound
+    Ouroboros.Network.Tracing.TxSubmission.Outbound
 
   other-modules:
     Ouroboros.Network.Tracing.PeerSelection.Governor
@@ -655,11 +657,10 @@ library tracing
   build-depends:
     aeson,
     base >=4.14 && <4.23,
+    containers,
+    io-classes:si-timers,
     iproute,
-    network,
-    ouroboros-network,
-    ouroboros-network:orphan-instances,
-    ouroboros-network:protocols,
+    ouroboros-network:{ouroboros-network, orphan-instances, protocols},
     text,
     trace-dispatcher ^>=2.11.0,
 

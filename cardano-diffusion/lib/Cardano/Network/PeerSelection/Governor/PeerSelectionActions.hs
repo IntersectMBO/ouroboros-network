@@ -1,6 +1,6 @@
 {-# LANGUAGE NamedFieldPuns #-}
 
-module Cardano.Network.PeerSelection.Governor.PeerSelectionActions where
+module Cardano.Network.PeerSelection.Governor.PeerSelectionActions (ExtraPeerSelectionActions (..)) where
 
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers)
 import Control.Concurrent.Class.MonadSTM
@@ -21,4 +21,3 @@ data ExtraPeerSelectionActions m =
     -- | Read the current bootstrap peers flag
   , readUseBootstrapPeers       :: STM m UseBootstrapPeers
   }
-

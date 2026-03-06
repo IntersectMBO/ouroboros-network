@@ -146,7 +146,6 @@ run CardanoNodeArguments {
                         Cardano.genesisPeerSelectionTargets = genesisPeerSelectionTargets,
                         Cardano.readUseBootstrapPeers       = readUseBootstrapPeers
                       },
-                  daPeerSelectionStateToExtraCounters = Cardano.Types.cardanoPeerSelectionStatetoCounters,
                   daToExtraPeers                      = flip Cardano.ExtraPeers Set.empty,
                   daRequestPublicRootPeers            =
                       Just $ Cardano.requestPublicRootPeersImpl

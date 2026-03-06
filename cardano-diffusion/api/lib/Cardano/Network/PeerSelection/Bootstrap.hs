@@ -8,6 +8,7 @@ module Cardano.Network.PeerSelection.Bootstrap
   , isNodeAbleToMakeProgress
   ) where
 
+import Data.Aeson (ToJSON (..), Value (..))
 import GHC.Generics (Generic)
 
 import Cardano.Network.LedgerStateJudgement
@@ -19,6 +20,13 @@ import Ouroboros.Network.PeerSelection.RelayAccessPoint (RelayAccessPoint)
 data UseBootstrapPeers = DontUseBootstrapPeers
                        | UseBootstrapPeers [RelayAccessPoint]
   deriving (Eq, Show, Ord, Generic)
+
+instance ToJSON UseBootstrapPeers where
+  toJSON DontUseBootstrapPeers   = Null
+  toJSON (UseBootstrapPeers dps) = toJSON dps
+
+  omitField DontUseBootstrapPeers = True
+  omitField UseBootstrapPeers{}   = False
 
 isBootstrapPeersEnabled :: UseBootstrapPeers -> Bool
 isBootstrapPeersEnabled DontUseBootstrapPeers = False

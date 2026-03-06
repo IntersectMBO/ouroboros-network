@@ -42,8 +42,8 @@ type CheckPeerSelectionCounters extraCounters = PeerSelectionCounters extraCount
 
 -- | Record of arguments for peer churn governor
 --
-data PeerChurnArgs m extraArgs extraDebugState extraFlags extraPeers extraAPI extraCounters extraTrace peeraddr = PeerChurnArgs {
-  pcaPeerSelectionTracer :: Tracer m (TracePeerSelection extraDebugState extraFlags extraPeers extraTrace peeraddr),
+data PeerChurnArgs m extraArgs extraDebugState extraFlags extraPeers extraAPI peeraddr = PeerChurnArgs {
+  pcaPeerSelectionTracer :: Tracer m (TracePeerSelection extraDebugState extraFlags extraPeers peeraddr),
   pcaDeadlineInterval    :: DiffTime,
   pcaBulkInterval        :: DiffTime,
   pcaPeerRequestTimeout  :: DiffTime,
@@ -51,7 +51,7 @@ data PeerChurnArgs m extraArgs extraDebugState extraFlags extraPeers extraAPI ex
   -- cold) peers through peer sharing mechanism.
   pcaRng                 :: StdGen,
   pcaPeerSelectionVar    :: StrictTVar m PeerSelectionTargets,
-  pcaReadCounters        :: STM m (PeerSelectionCounters extraCounters),
+  pcaReadCounters        :: STM m (PeerSelectionCounters (ViewExtraPeers extraPeers)),
   getLedgerPeersAPI      :: LedgerPeersConsensusInterface extraAPI m,
   getLocalRootHotTarget  :: STM m HotValency,
   pcaPeerSelectionTargets:: PeerSelectionTargets,
@@ -66,13 +66,13 @@ data PeerChurnArgs m extraArgs extraDebugState extraFlags extraPeers extraAPI ex
 -- On startup the churn governor gives a head start to local root peers over
 -- root peers.
 --
-peerChurnGovernor :: forall m extraArgs extraDebugState extraFlags extraPeers extraAPI extraCounters extraTrace peeraddr.
+peerChurnGovernor :: forall m extraArgs extraDebugState extraFlags extraPeers extraAPI peeraddr.
                      ( MonadDelay m
                      , Alternative (STM m)
                      , MonadTimer m
                      , MonadCatch m
                      )
-                  => PeerChurnArgs m extraArgs extraDebugState extraFlags extraPeers extraAPI extraCounters extraTrace peeraddr
+                  => PeerChurnArgs m extraArgs extraDebugState extraFlags extraPeers extraAPI peeraddr
                   -> m Void
 peerChurnGovernor
   PeerChurnArgs {
@@ -109,13 +109,13 @@ peerChurnGovernor
     updateTargets
       :: ChurnAction
       -- ^ churn actions for tracing
-      -> (PeerSelectionCounters extraCounters -> Int)
+      -> (PeerSelectionCounters (ViewExtraPeers extraPeers) -> Int)
       -- ^ counter getter
       -> DiffTime
       -- ^ timeout
       -> (PeerSelectionTargets -> ModifyPeerSelectionTargets)
       -- ^ update counters function
-      -> CheckPeerSelectionCounters extraCounters
+      -> CheckPeerSelectionCounters (ViewExtraPeers extraPeers)
       -- ^ check counters
       -> m Int
     updateTargets churnAction getCounter timeoutDelay modifyTargets checkCounters = do

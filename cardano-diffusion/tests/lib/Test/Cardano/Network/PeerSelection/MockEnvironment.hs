@@ -4,6 +4,7 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving  #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 {-# OPTIONS_GHC -Wno-deferred-out-of-scope-variables #-}
@@ -243,7 +244,7 @@ governorAction mockEnv@GovernorMockEnvironment {
     let readUseBootstrapPeers = readTVar usbVar
     -- todo: make NumberOfBigLedgerPeers come from quickcheck
     debugStateVar <- StrictTVar.newTVarIO (emptyPeerSelectionState (mkStdGen seed') (Cardano.ExtraState.empty consensusMode (NumberOfBigLedgerPeers 0)) Cardano.ExtraPeers.empty)
-    countersVar <- StrictTVar.newTVarIO (emptyPeerSelectionCounters Cardano.ExtraSizes.empty)
+    countersVar <- StrictTVar.newTVarIO $ emptyPeerSelectionCounters Cardano.ExtraSizes.empty
     policy  <- mockPeerSelectionPolicy mockEnv
     let initialPeerTargets = fst . NonEmpty.head $ targets'
 
@@ -360,7 +361,6 @@ mockPeerSelectionActions :: forall m.
                                 PeerTrustable
                                 (Cardano.ExtraPeers PeerAddr)
                                 (Cardano.LedgerPeersConsensusInterface m)
-                                (Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
                                 PeerAddr
                                 (PeerConn m)
                                 m)
@@ -438,7 +438,6 @@ mockPeerSelectionActions' :: forall m.
                                PeerTrustable
                                (Cardano.ExtraPeers PeerAddr)
                                (Cardano.LedgerPeersConsensusInterface m)
-                               (Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
                                PeerAddr
                                (PeerConn m)
                                m
@@ -496,8 +495,7 @@ mockPeerSelectionActions' tracer
       readInboundPeers = pure Map.empty,
       readLedgerPeerSnapshot = pure Nothing,
       peerSelectionTargets = originalPeerTargets,
-      extraPeersAPI = Cardano.ExtraPeers.cardanoPublicRootPeersAPI,
-      extraStateToExtraCounters = Cardano.cardanoPeerSelectionStatetoCounters
+      extraPeersAPI = Cardano.ExtraPeers.cardanoPublicRootPeersAPI
     }
   where
     -- TODO: make this dynamic
@@ -726,10 +724,10 @@ mockPeerSelectionPolicy GovernorMockEnvironment {
 -- Utils for properties
 --
 
-data TestTraceEvent extraState extraFlags extraPeers extraCounters extraTrace =
+data TestTraceEvent extraState extraFlags extraPeers =
     GovernorDebug           !(DebugPeerSelection extraState extraFlags extraPeers PeerAddr)
-  | GovernorEvent           !(TracePeerSelection extraState extraFlags extraPeers extraTrace PeerAddr)
-  | GovernorCounters        !(PeerSelectionCounters extraCounters)
+  | GovernorEvent           !(TracePeerSelection extraState extraFlags extraPeers PeerAddr)
+  | GovernorCounters        !(PeerSelectionCounters (ViewExtraPeers extraPeers))
   | GovernorAssociationMode !AssociationMode
   | MockEnvEvent            !TraceMockEnv
   -- Warning: be careful with writing properties that rely
@@ -739,71 +737,77 @@ data TestTraceEvent extraState extraFlags extraPeers extraCounters extraTrace =
   -- them for timeout/eventually properties, but not for
   -- properties that check conditions synchronously.
   -- The governor debug vs other events are fully ordered.
-  deriving Show
+deriving instance ( Show extraState
+                  , Show extraFlags
+                  , Show (ViewExtraPeers extraPeers)
+                  , SupportsPeerSelectionState extraPeers PeerAddr
+                  ) => Show (TestTraceEvent extraState extraFlags extraPeers)
 
-tracerTracePeerSelection :: Tracer (IOSim s) (TracePeerSelection Cardano.ExtraState PeerTrustable (Cardano.ExtraPeers PeerAddr) ExtraTrace PeerAddr)
+tracerTracePeerSelection :: Tracer (IOSim s) (TracePeerSelection Cardano.ExtraState PeerTrustable (Cardano.ExtraPeers PeerAddr) PeerAddr)
 tracerTracePeerSelection = contramap f tracerTestTraceEvent
   where
     -- make the tracer strict
-    f :: TracePeerSelection extraState extraFlags extraPeers ExtraTrace PeerAddr
-      -> TestTraceEvent extraState extraFlags extraPeers extraCounters ExtraTrace
-    f a@(TraceLocalRootPeersChanged !_ !_)                      = GovernorEvent a
-    f a@(TraceTargetsChanged !_)                                = GovernorEvent a
-    f a@(TracePublicRootsRequest !_ !_)                         = GovernorEvent a
-    f a@(TracePublicRootsResults !_ !_ !_)                      = GovernorEvent a
-    f a@(TracePublicRootsFailure !_ !_ !_)                      = GovernorEvent a
-    f a@(TraceForgetColdPeers !_ !_ !_)                         = GovernorEvent a
-    f a@(TraceBigLedgerPeersRequest !_ !_)                      = GovernorEvent a
-    f a@(TraceBigLedgerPeersResults !_ !_ !_)                   = GovernorEvent a
-    f a@(TraceBigLedgerPeersFailure !_ !_ !_)                   = GovernorEvent a
-    f a@(TraceForgetBigLedgerPeers !_ !_ !_)                    = GovernorEvent a
-    f a@(TracePickInboundPeers !_ !_ !_ !_)                     = GovernorEvent a
-    f a@(TracePeerShareRequests !_ !_ !_ !_ !_)                 = GovernorEvent a
-    f a@(TracePeerShareResults !_)                              = GovernorEvent a
-    f a@(TracePeerShareResultsFiltered !_)                      = GovernorEvent a
-    f a@(TracePromoteColdPeers !_ !_ !_)                        = GovernorEvent a
-    f a@(TracePromoteColdLocalPeers !_ !_)                      = GovernorEvent a
-    f a@(TracePromoteColdFailed !_ !_ !_ !_ !_ !_)              = GovernorEvent a
-    f a@(TracePromoteColdDone !_ !_ !_)                         = GovernorEvent a
-    f a@(TracePromoteColdBigLedgerPeers !_ !_ !_)               = GovernorEvent a
-    f a@(TracePromoteColdBigLedgerPeerFailed !_ !_ !_ !_ !_ !_) = GovernorEvent a
-    f a@(TracePromoteColdBigLedgerPeerDone !_ !_ !_)            = GovernorEvent a
-    f a@(TracePromoteWarmPeers !_ !_ !_)                        = GovernorEvent a
-    f a@(TracePromoteWarmLocalPeers !_ !_)                      = GovernorEvent a
-    f a@(TracePromoteWarmFailed !_ !_ !_ !_)                    = GovernorEvent a
-    f a@(TracePromoteWarmDone !_ !_ !_)                         = GovernorEvent a
-    f a@(TracePromoteWarmAborted !_ !_ !_)                      = GovernorEvent a
-    f a@(TracePromoteWarmBigLedgerPeers !_ !_ !_)               = GovernorEvent a
-    f a@(TracePromoteWarmBigLedgerPeerFailed !_ !_ !_ !_)       = GovernorEvent a
-    f a@(TracePromoteWarmBigLedgerPeerDone !_ !_ !_)            = GovernorEvent a
-    f a@(TracePromoteWarmBigLedgerPeerAborted !_ !_ !_)         = GovernorEvent a
-    f a@(TraceDemoteWarmPeers !_ !_ !_)                         = GovernorEvent a
-    f a@(TraceDemoteWarmFailed !_ !_ !_ !_)                     = GovernorEvent a
-    f a@(TraceDemoteWarmDone !_ !_ !_)                          = GovernorEvent a
-    f a@(TraceDemoteWarmBigLedgerPeers !_ !_ !_)                = GovernorEvent a
-    f a@(TraceDemoteWarmBigLedgerPeerFailed !_ !_ !_ !_)        = GovernorEvent a
-    f a@(TraceDemoteWarmBigLedgerPeerDone !_ !_ !_)             = GovernorEvent a
-    f a@(TraceDemoteHotPeers !_ !_ !_)                          = GovernorEvent a
-    f a@(TraceDemoteLocalHotPeers !_ !_)                        = GovernorEvent a
-    f a@(TraceDemoteHotFailed !_ !_ !_ !_)                      = GovernorEvent a
-    f a@(TraceDemoteHotDone !_ !_ !_)                           = GovernorEvent a
-    f a@(TraceDemoteHotBigLedgerPeers !_ !_ !_)                 = GovernorEvent a
-    f a@(TraceDemoteHotBigLedgerPeerFailed !_ !_ !_ !_)         = GovernorEvent a
-    f a@(TraceDemoteHotBigLedgerPeerDone !_ !_ !_)              = GovernorEvent a
-    f a@(TraceDemoteAsynchronous !_)                            = GovernorEvent a
-    f a@(TraceDemoteLocalAsynchronous !_)                       = GovernorEvent a
-    f a@(TraceDemoteBigLedgerPeersAsynchronous !_)              = GovernorEvent a
-    f a@TraceGovernorWakeup                                     = GovernorEvent a
-    f a@(TraceChurnWait !_)                                     = GovernorEvent a
-    f a@(ExtraTrace (TraceLedgerStateJudgementChanged !_))      = GovernorEvent a
-    f a@TraceOnlyBootstrapPeers                                 = GovernorEvent a
-    f a@TraceBootstrapPeersFlagChangedWhilstInSensitiveState    = GovernorEvent a
-    f a@(ExtraTrace (TraceUseBootstrapPeersChanged !_))         = GovernorEvent a
-    f a@(TraceOutboundGovernorCriticalFailure !_)               = GovernorEvent a
-    f a@(TraceDebugState !_ !_)                                 = GovernorEvent a
-    f a@(TraceChurnAction !_ !_ !_)                             = GovernorEvent a
-    f a@(TraceChurnTimeout !_ !_ !_)                            = GovernorEvent a
-    f a@(TraceVerifyPeerSnapshot !_)                            = GovernorEvent a
+    f :: TracePeerSelection extraState extraFlags (Cardano.ExtraPeers PeerAddr) PeerAddr
+      -> TestTraceEvent extraState extraFlags (Cardano.ExtraPeers PeerAddr)
+    f a@(TraceLocalRootPeersChanged !_ !_)                         = GovernorEvent a
+    f a@(TraceTargetsChanged !_)                                   = GovernorEvent a
+    f a@(TracePublicRootsRequest !_ !_)                            = GovernorEvent a
+    f a@(TracePublicRootsResults !_ !_ !_)                         = GovernorEvent a
+    f a@(TracePublicRootsFailure !_ !_ !_)                         = GovernorEvent a
+    f a@(TraceForgetColdPeers !_ !_ !_)                            = GovernorEvent a
+    f a@(TraceBigLedgerPeersRequest !_ !_)                         = GovernorEvent a
+    f a@(TraceBigLedgerPeersResults !_ !_ !_)                      = GovernorEvent a
+    f a@(TraceBigLedgerPeersFailure !_ !_ !_)                      = GovernorEvent a
+    f a@(TraceForgetBigLedgerPeers !_ !_ !_)                       = GovernorEvent a
+    f a@(TracePickInboundPeers !_ !_ !_ !_)                        = GovernorEvent a
+    f a@(TracePeerShareRequests !_ !_ !_ !_ !_)                    = GovernorEvent a
+    f a@(TracePeerShareResults !_)                                 = GovernorEvent a
+    f a@(TracePeerShareResultsFiltered !_)                         = GovernorEvent a
+    f a@(TracePromoteColdPeers !_ !_ !_)                           = GovernorEvent a
+    f a@(TracePromoteColdLocalPeers !_ !_)                         = GovernorEvent a
+    f a@(TracePromoteColdFailed !_ !_ !_ !_ !_ !_)                 = GovernorEvent a
+    f a@(TracePromoteColdDone !_ !_ !_)                            = GovernorEvent a
+    f a@(TracePromoteColdBigLedgerPeers !_ !_ !_)                  = GovernorEvent a
+    f a@(TracePromoteColdBigLedgerPeerFailed !_ !_ !_ !_ !_ !_)    = GovernorEvent a
+    f a@(TracePromoteColdBigLedgerPeerDone !_ !_ !_)               = GovernorEvent a
+    f a@(TracePromoteWarmPeers !_ !_ !_)                           = GovernorEvent a
+    f a@(TracePromoteWarmLocalPeers !_ !_)                         = GovernorEvent a
+    f a@(TracePromoteWarmFailed !_ !_ !_ !_)                       = GovernorEvent a
+    f a@(TracePromoteWarmDone !_ !_ !_)                            = GovernorEvent a
+    f a@(TracePromoteWarmAborted !_ !_ !_)                         = GovernorEvent a
+    f a@(TracePromoteWarmBigLedgerPeers !_ !_ !_)                  = GovernorEvent a
+    f a@(TracePromoteWarmBigLedgerPeerFailed !_ !_ !_ !_)          = GovernorEvent a
+    f a@(TracePromoteWarmBigLedgerPeerDone !_ !_ !_)               = GovernorEvent a
+    f a@(TracePromoteWarmBigLedgerPeerAborted !_ !_ !_)            = GovernorEvent a
+    f a@(TraceDemoteWarmPeers !_ !_ !_)                            = GovernorEvent a
+    f a@(TraceDemoteWarmFailed !_ !_ !_ !_)                        = GovernorEvent a
+    f a@(TraceDemoteWarmDone !_ !_ !_)                             = GovernorEvent a
+    f a@(TraceDemoteWarmBigLedgerPeers !_ !_ !_)                   = GovernorEvent a
+    f a@(TraceDemoteWarmBigLedgerPeerFailed !_ !_ !_ !_)           = GovernorEvent a
+    f a@(TraceDemoteWarmBigLedgerPeerDone !_ !_ !_)                = GovernorEvent a
+    f a@(TraceDemoteHotPeers !_ !_ !_)                             = GovernorEvent a
+    f a@(TraceDemoteLocalHotPeers !_ !_)                           = GovernorEvent a
+    f a@(TraceDemoteHotFailed !_ !_ !_ !_)                         = GovernorEvent a
+    f a@(TraceDemoteHotDone !_ !_ !_)                              = GovernorEvent a
+    f a@(TraceDemoteHotBigLedgerPeers !_ !_ !_)                    = GovernorEvent a
+    f a@(TraceDemoteHotBigLedgerPeerFailed !_ !_ !_ !_)            = GovernorEvent a
+    f a@(TraceDemoteHotBigLedgerPeerDone !_ !_ !_)                 = GovernorEvent a
+    f a@(TraceDemoteAsynchronous !_)                               = GovernorEvent a
+    f a@(TraceDemoteLocalAsynchronous !_)                          = GovernorEvent a
+    f a@(TraceDemoteBigLedgerPeersAsynchronous !_)                 = GovernorEvent a
+    f a@TraceGovernorWakeup                                        = GovernorEvent a
+    f a@(TraceChurnWait !_)                                        = GovernorEvent a
+    f a@(ExtraTrace
+         (Cardano.ExtraPeers.TraceLedgerStateJudgementChanged !_)) = GovernorEvent a
+    f a@TraceOnlyBootstrapPeers                                    = GovernorEvent a
+    f a@TraceBootstrapPeersFlagChangedWhilstInSensitiveState       = GovernorEvent a
+    f a@(ExtraTrace
+         (Cardano.ExtraPeers.TraceUseBootstrapPeersChanged !_))    = GovernorEvent a
+    f a@(TraceOutboundGovernorCriticalFailure !_)                  = GovernorEvent a
+    f a@(TraceDebugState !_ !_)                                    = GovernorEvent a
+    f a@(TraceChurnAction !_ !_ !_)                                = GovernorEvent a
+    f a@(TraceChurnTimeout !_ !_ !_)                               = GovernorEvent a
+    f a@(TraceVerifyPeerSnapshot !_)                               = GovernorEvent a
 
 tracerDebugPeerSelection :: Tracer (IOSim s) (DebugPeerSelection Cardano.ExtraState PeerTrustable (Cardano.ExtraPeers PeerAddr) PeerAddr)
 tracerDebugPeerSelection = GovernorDebug `contramap` tracerTestTraceEvent
@@ -813,7 +817,6 @@ traceAssociationMode
       Cardano.ExtraState
       extraFlags
       extraPeers
-      extraCounters
       PeerAddr
       (PeerConn (IOSim s))
       (IOSim s)
@@ -822,7 +825,6 @@ traceAssociationMode
        extraFlags
        extraPeers
        extraAPI
-       extraCounters
        PeerAddr
        (PeerConn (IOSim s))
        (IOSim s)
@@ -837,7 +839,7 @@ traceAssociationMode interfaces actions = Tracer $ \(TraceGovernorState _ _ st) 
     traceWith tracerTestTraceEvent (GovernorAssociationMode associationMode)
 
 tracerTracePeerSelectionCounters :: Tracer (IOSim s) (PeerSelectionCounters
-                                                       (Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr))
+                                                       (ViewExtraPeers (ExtraPeers PeerAddr)))
 tracerTracePeerSelectionCounters = contramap GovernorCounters tracerTestTraceEvent
 
 tracerMockEnv :: Tracer (IOSim s) TraceMockEnv
@@ -845,9 +847,7 @@ tracerMockEnv = contramap MockEnvEvent tracerTestTraceEvent
 
 tracerTestTraceEvent :: Tracer (IOSim s) (TestTraceEvent Cardano.ExtraState
                                                          PeerTrustable
-                                                         (Cardano.ExtraPeers PeerAddr)
-                                                         (Cardano.ExtraPeerSelectionSetsWithSizes PeerAddr)
-                                                         Cardano.ExtraTrace)
+                                                         (Cardano.ExtraPeers PeerAddr))
 tracerTestTraceEvent = dynamicTracer <> Tracer (say . show)
 
 dynamicTracer :: Typeable a => Tracer (IOSim s) a
@@ -857,10 +857,8 @@ selectPeerSelectionTraceEvents
   :: ( Typeable extraState
      , Typeable extraFlags
      , Typeable extraPeers
-     , Typeable extraCounters
-     , Typeable extraTrace
      )
-  => SimTrace a -> [(Time, (TestTraceEvent extraState extraFlags extraPeers extraCounters extraTrace))]
+  => SimTrace a -> [(Time, TestTraceEvent extraState extraFlags extraPeers)]
 selectPeerSelectionTraceEvents = go
   where
     go (SimTrace t _ _ (EventLog e) trace)
@@ -880,10 +878,8 @@ selectPeerSelectionTraceEventsUntil
   :: ( Typeable extraState
      , Typeable extraFlags
      , Typeable extraPeers
-     , Typeable extraCounters
-     , Typeable extraTrace
      )
-  => Time -> SimTrace a -> [(Time, TestTraceEvent extraState extraFlags extraPeers extraCounters extraTrace)]
+  => Time -> SimTrace a -> [(Time, TestTraceEvent extraState extraFlags extraPeers)]
 selectPeerSelectionTraceEventsUntil tmax = go
   where
     go (SimTrace t _ _ _ _)
@@ -903,11 +899,11 @@ selectPeerSelectionTraceEventsUntil tmax = go
     go (TraceInternalError e)        = error ("IOSim: " ++ e)
     go TraceLoop                     = error "Step time limit exceeded"
 
-selectGovernorEvents :: [(Time, TestTraceEvent extraState extraFlags extraPeers extraCounters extraTrace)]
-                     -> [(Time, TracePeerSelection extraState extraFlags extraPeers extraTrace PeerAddr)]
+selectGovernorEvents :: [(Time, TestTraceEvent extraState extraFlags extraPeers)]
+                     -> [(Time, TracePeerSelection extraState extraFlags extraPeers PeerAddr)]
 selectGovernorEvents trace = [ (t, e) | (t, GovernorEvent e) <- trace ]
 
-selectGovernorStateEvents :: [(Time, TestTraceEvent extraState extraFlags extraPeers extraCounters extraTrace)]
+selectGovernorStateEvents :: [(Time, TestTraceEvent extraState extraFlags extraPeers)]
                           -> [(Time, DebugPeerSelection extraState extraFlags extraPeers PeerAddr)]
 selectGovernorStateEvents trace = [ (t, e) | (t, GovernorDebug e) <- trace ]
 

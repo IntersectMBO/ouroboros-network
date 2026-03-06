@@ -1,42 +1,18 @@
-{-# LANGUAGE FlexibleInstances    #-}
-{-# LANGUAGE OverloadedStrings    #-}
-{-# LANGUAGE PackageImports       #-}
-{-# LANGUAGE RecordWildCards      #-}
-{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards   #-}
 
---------------------------------------------------------------------------------
-
--- Orphan instances module for Cardano tracer.
 {-# OPTIONS_GHC -Wno-orphans #-}
--- Extracted from "cardano-node" `Cardano.Node.Tracing.Tracers.P2P`.
--- Branch "master" (2026-02-11, 85869e9dd21d9dac7c4381418346e97259c3303b).
-
---------------------------------------------------------------------------------
 
 module Ouroboros.Network.Tracing.InboundGovernor () where
 
---------------------------------------------------------------------------------
+import Data.Aeson (Object, ToJSON, ToJSONKey, Value (String), toJSON, (.=))
+import Data.Text (pack)
 
----------
--- base -
----------
---
----------------------
--- Package: "aeson" -
----------------------
-import "aeson" Data.Aeson (Object, ToJSON, ToJSONKey, Value (String), toJSON,
-           (.=))
------------------------
--- Package: "network" -
------------------------
-import "network" Network.Socket (SockAddr (..))
----------------------------------
--- Package: "ouroboros-network" -
----------------------------------
-import "ouroboros-network" Ouroboros.Network.ConnectionManager.Types qualified as ConnectionManager
-import "ouroboros-network" Ouroboros.Network.InboundGovernor as InboundGovernor
-           (Trace (..))
-import "ouroboros-network" Ouroboros.Network.InboundGovernor qualified as InboundGovernor
+import Cardano.Logging
+import Ouroboros.Network.ConnectionManager.Types qualified as ConnectionManager
+import Ouroboros.Network.InboundGovernor as InboundGovernor (Trace (..))
+import Ouroboros.Network.InboundGovernor qualified as InboundGovernor
 -- Needed for `ToJSON SockAddr`.
 -- Needed for `ToJSON LocalAddress`
 -- Needed for `ToJSON (ConnectionId adr)`
@@ -44,24 +20,16 @@ import "ouroboros-network" Ouroboros.Network.InboundGovernor qualified as Inboun
 -- Needed for `ToJSON (ConnectionManager.OperationResult, ConnectionManager.AbstractState)`
 -- Needed for `ToJSONKey (ConnectionId adr)`
 -- Needed for `ToJSON InboundGovernor.RemoteSt`
-import "ouroboros-network" Ouroboros.Network.InboundGovernor.State as InboundGovernor
+import Ouroboros.Network.InboundGovernor.State as InboundGovernor
            (Counters (..))
-import "ouroboros-network" Ouroboros.Network.OrphanInstances qualified ()
-import "ouroboros-network" Ouroboros.Network.Snocket (LocalAddress (..))
---------------------
--- Package: "text" -
---------------------
-import "text" Data.Text (pack)
---------------------------------
--- Package: "trace-dispatcher" -
---------------------------------
-import "trace-dispatcher" Cardano.Logging
+import Ouroboros.Network.OrphanInstances qualified ()
+import Ouroboros.Network.Snocket (LocalAddress (..), RemoteAddress)
 
 --------------------------------------------------------------------------------
 -- InboundGovernor Tracer
 --------------------------------------------------------------------------------
 
-instance LogFormatting (InboundGovernor.Trace SockAddr) where
+instance LogFormatting (InboundGovernor.Trace RemoteAddress) where
   forMachine = forMachineGov
   forHuman = pack . show
   asMetrics (TrInboundGovernorCounters InboundGovernor.Counters {..}) =
@@ -343,4 +311,3 @@ instance MetaTrace (InboundGovernor.RemoteTransitionTrace peerAddr) where
     documentFor _                              = Nothing
 
     allNamespaces = [Namespace [] ["Transition"]]
-

@@ -1,47 +1,18 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE PackageImports    #-}
 
---------------------------------------------------------------------------------
-
--- Orphan instances module for Cardano tracer.
 {-# OPTIONS_GHC -Wno-orphans #-}
--- Extracted from "cardano-node" `Cardano.Node.Tracing.Tracers.P2P`.
--- Branch "master" (2026-02-11, 85869e9dd21d9dac7c4381418346e97259c3303b).
-
---------------------------------------------------------------------------------
-
 module Ouroboros.Network.Tracing.PeerSelection.PeerStateActions () where
 
---------------------------------------------------------------------------------
-
----------
--- base -
----------
 import Control.Exception (displayException)
----------------------
--- Package: "aeson" -
----------------------
-import "aeson" Data.Aeson (Value (String), toJSON, (.=))
------------------------
--- Package: "network" -
------------------------
-import "network" Network.Socket (SockAddr)
----------------------------------
--- Package: "ouroboros-network" -
----------------------------------
-import "ouroboros-network" Ouroboros.Network.PeerSelection.PeerStateActions
+import Data.Aeson (ToJSON (..), Value (String), (.=))
+import Data.Text (pack)
+
+import Cardano.Logging
+import Ouroboros.Network.PeerSelection.PeerStateActions
            (PeerSelectionActionsTrace (..))
 -- Needed for `instance ToJSON ConnectionId`.
-import "ouroboros-network" Ouroboros.Network.OrphanInstances ()
---------------------
--- Package: "text" -
---------------------
-import "text" Data.Text (pack)
---------------------------------
--- Package: "trace-dispatcher" -
---------------------------------
-import "trace-dispatcher" Cardano.Logging
+import Ouroboros.Network.OrphanInstances ()
 
 --------------------------------------------------------------------------------
 -- PeerSelectionActions Tracer.
@@ -49,7 +20,8 @@ import "trace-dispatcher" Cardano.Logging
 
 -- TODO: Write PeerStatusChangeType ToJSON at ouroboros-network
 -- For that an export is needed at ouroboros-network
-instance Show lAddr => LogFormatting (PeerSelectionActionsTrace SockAddr lAddr) where
+instance (Show lAddr, Show peeraddr, ToJSON peeraddr)
+      => LogFormatting (PeerSelectionActionsTrace peeraddr lAddr) where
   forMachine _dtal (PeerStatusChanged ps) =
     mconcat [ "kind" .= String "PeerStatusChanged"
              , "peerStatusChangeType" .= show ps
@@ -79,7 +51,7 @@ instance Show lAddr => LogFormatting (PeerSelectionActionsTrace SockAddr lAddr) 
             , "time" .= show dt]
   forHuman = pack . show
 
-instance MetaTrace (PeerSelectionActionsTrace SockAddr lAddr) where
+instance MetaTrace (PeerSelectionActionsTrace peeraddr lAddr) where
     namespaceFor PeerStatusChanged {} = Namespace [] ["StatusChanged"]
     namespaceFor PeerStatusChangeFailure {} = Namespace [] ["StatusChangeFailure"]
     namespaceFor PeerMonitoringError {} = Namespace [] ["MonitoringError"]
@@ -117,4 +89,3 @@ instance MetaTrace (PeerSelectionActionsTrace SockAddr lAddr) where
       , Namespace [] ["ConnectionError"]
       , Namespace [] ["PeerHotDuration"]
       ]
-
