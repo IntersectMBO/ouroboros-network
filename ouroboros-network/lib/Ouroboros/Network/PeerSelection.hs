@@ -22,6 +22,7 @@ import Ouroboros.Network.PeerSelection.LedgerPeers as PeerSelection.LedgerPeers
            (AfterSlot (..), IsBigLedgerPeer (..), LedgerPeerSnapshot (..),
            LedgerPeers (..), LedgerPeersConsensusInterface (..),
            LedgerPeersKind (..), NumberOfPeers (..), PoolStake (..),
+           SingLedgerPeersKind (..), SomeLedgerPeersKind (..),
            TraceLedgerPeers (..), UseLedgerPeers (..), WithLedgerPeersArgs (..),
            withLedgerPeers)
 import Ouroboros.Network.PeerSelection.PeerAdvertise as PeerSelection.PeerAdvertise

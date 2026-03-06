@@ -146,10 +146,12 @@ genLedgerPoolsFrom relays = do
   return (LedgerPools $ calculateRelativeStake stakePools)
 
 
-instance Arbitrary LedgerPeersKind where
-    arbitrary =  elements [AllLedgerPeers, BigLedgerPeers]
-    shrink AllLedgerPeers = [BigLedgerPeers]
-    shrink BigLedgerPeers = []
+instance Arbitrary SomeLedgerPeersKind where
+    arbitrary =  elements [ SomeLedgerPeersKind SingAllLedgerPeers
+                          , SomeLedgerPeersKind SingBigLedgerPeers
+                          ]
+    shrink (SomeLedgerPeersKind SingAllLedgerPeers) = [SomeLedgerPeersKind SingBigLedgerPeers]
+    shrink (SomeLedgerPeersKind SingBigLedgerPeers) = []
 
 instance Arbitrary StakeMapOverSource where
   arbitrary = do
@@ -259,7 +261,7 @@ prop_ledgerPeerSnapshot_requests
 -- | A pool with 100% stake should always be picked.
 prop_pick100 :: Word16
              -> NonNegative Int -- ^ number of pools with 0 stake
-             -> LedgerPeersKind
+             -> SomeLedgerPeersKind
              -> MockRoots
              -> DelayAndTimeoutScripts
              -> SlotNo
@@ -268,14 +270,17 @@ prop_pick100 seed (NonNegative n) ledgerPeersKind (MockRoots _ dnsMapScript _ _)
              (DelayAndTimeoutScripts dnsLookupDelayScript dnsTimeoutScript)
              slot =
     let rng = mkStdGen $ fromIntegral seed
+
+        sps :: [(PoolStake, NonEmpty LedgerRelayAccessPoint)]
         sps = [ (0, LedgerRelayAccessAddress (read $ "0.0.0." ++ show a) 1 :| [])
-              | a <- [0..n]
+              | a <- [0..n] :: [Int]
               ]
            ++ [ (1, LedgerRelayAccessAddress (read "1.1.1.1") 1  :| []) ]
 
+        accumulatedStakeMap :: Map AccPoolStake (PoolStake, NonEmpty LedgerRelayAccessPoint)
         accumulatedStakeMap = case ledgerPeersKind of
-          AllLedgerPeers -> accPoolStake sps
-          BigLedgerPeers -> accBigPoolStakeMap sps
+          SomeLedgerPeersKind SingAllLedgerPeers -> accPoolStake sps
+          SomeLedgerPeersKind SingBigLedgerPeers -> accBigPoolStakeMap sps
 
         sim :: IOSim s [RelayAccessPoint]
         sim = do
@@ -334,7 +339,7 @@ prop_pick100 seed (NonNegative n) ledgerPeersKind (MockRoots _ dnsMapScript _ _)
 
 -- | Verify that given at least one peer we manage to pick `count` peers.
 prop_pick :: LedgerPools
-          -> LedgerPeersKind
+          -> SomeLedgerPeersKind
           -> Word16
           -> Word16
           -> MockRoots
@@ -461,16 +466,23 @@ prop_accumulateBigLedgerStake  (LedgerPools lps@(_:_)) =
 prop_recomputeRelativeStake :: LedgerPools -> Property
 prop_recomputeRelativeStake (LedgerPools []) = property True
 prop_recomputeRelativeStake (LedgerPools lps) = property $ do
-  lpk <- genLedgerPeersKind
+  SomeLedgerPeersKind lpk <- genLedgerPeersKind
   let (accStake, relayAccessPointsUnchangedNonNegativeStake) = go (reStake lpk) lps (0, True)
   return $     counterexample "recomputeRelativeStake: relays modified or negative pool stake calculated"
                              relayAccessPointsUnchangedNonNegativeStake
           .&&. accStake === 1
           .&&. counterexample "violates idempotency"
-                              ((recomputeRelativeStake BigLedgerPeers . recomputeRelativeStake BigLedgerPeers $ lps) == recomputeRelativeStake BigLedgerPeers lps)
+                              ((recomputeRelativeStake SingBigLedgerPeers . recomputeRelativeStake SingBigLedgerPeers $ lps) == recomputeRelativeStake SingBigLedgerPeers lps)
   where
-    genLedgerPeersKind = elements [AllLedgerPeers, BigLedgerPeers]
+    genLedgerPeersKind = elements [ SomeLedgerPeersKind SingAllLedgerPeers
+                                  , SomeLedgerPeersKind SingBigLedgerPeers
+                                  ]
+
+    reStake :: forall (k :: LedgerPeersKind).
+               SingLedgerPeersKind k
+            -> [(PoolStake, NonEmpty LedgerRelayAccessPoint)]
     reStake lpk = recomputeRelativeStake lpk lps
+
     -- compare relay access points in both lists for equality
     -- where we assume that recomputerelativestake doesn't change
     -- the order, and sum up relative stake to make sure it adds up to 1
@@ -537,31 +549,32 @@ prop_ledgerPeerSnapshotCBORV2 srvSupport slotNo
                 decoded
   where
     someSnapshot = snapshotV2 slotNo ledgerPools
-    encoded = toFlatTerm . encodeLedgerPeerSnapshot' srvSupport $ someSnapshot
-    decoded = unwrap <$> fromFlatTerm decodeLedgerPeerSnapshot encoded
-    unwrap :: SomeLedgerPeerSnapshot -> LedgerPeerSnapshot BigLedgerPeers
-    unwrap = \case
-      SomeLedgerPeerSnapshot lps@LedgerPeerSnapshotV2{} -> lps
-      _otherwise -> error "impossible"
+    encoded = case someSnapshot of
+      SomeLedgerPeerSnapshot snapshot ->
+        toFlatTerm (encodeLedgerPeerSnapshot srvSupport snapshot)
+    decoded = case someLedgerPeerSnapshotKind someSnapshot of
+      SomeLedgerPeersKind ledgerPeersKind ->
+        fromFlatTerm (SomeLedgerPeerSnapshot <$> decodeLedgerPeerSnapshot ledgerPeersKind) encoded
 
     result = case someSnapshot of
       SomeLedgerPeerSnapshot lps@(LedgerPeerSnapshotV2 (slotNo', peers)) ->
-        case srvSupport of
-          LedgerPeerSnapshotSupportsSRV      -> lps
-          LedgerPeerSnapshotDoesntSupportSRV ->
-            LedgerPeerSnapshotV2
-              ( slotNo'
-              , [ (accStake, (stake, NonEmpty.fromList relays'))
-                | (accStake, (stake, relays)) <- peers
-                , let relays' = NonEmpty.filter
-                        (\case
-                           LedgerRelayAccessSRVDomain {} -> False
-                           _ -> True
-                        )
-                        relays
-                , not (null relays')
-                ]
-              )
+        SomeLedgerPeerSnapshot $
+          case srvSupport of
+            LedgerPeerSnapshotSupportsSRV      -> lps
+            LedgerPeerSnapshotDoesntSupportSRV ->
+              LedgerPeerSnapshotV2
+                ( slotNo'
+                , [ (accStake, (stake, NonEmpty.fromList relays'))
+                  | (accStake, (stake, relays)) <- peers
+                  , let relays' = NonEmpty.filter
+                          (\case
+                             LedgerRelayAccessSRVDomain {} -> False
+                             _ -> True
+                          )
+                          relays
+                  , not (null relays')
+                  ]
+                )
       _otherwise -> error "impossible"
 
 
@@ -576,8 +589,12 @@ prop_ledgerPeerSnapshotCBORV3 slotNo magic ledgerPools big =
                 decoded
   where
     someSnapshot = snapshotV3 slotNo (NetworkMagic magic) ledgerPools big
-    encoded = toFlatTerm . encodeLedgerPeerSnapshot' LedgerPeerSnapshotSupportsSRV $ someSnapshot
-    decoded = fromFlatTerm decodeLedgerPeerSnapshot encoded
+    encoded = case someSnapshot of
+      SomeLedgerPeerSnapshot snapshot ->
+        toFlatTerm (encodeLedgerPeerSnapshot LedgerPeerSnapshotSupportsSRV snapshot)
+    decoded = case someLedgerPeerSnapshotKind someSnapshot of
+      SomeLedgerPeersKind ledgerPeersKind ->
+        fromFlatTerm (SomeLedgerPeerSnapshot <$> decodeLedgerPeerSnapshot ledgerPeersKind) encoded
 
 
 -- | Tests if LedgerPeerSnapshot JSON round trip is the identity function

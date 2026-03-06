@@ -56,7 +56,6 @@ import Ouroboros.Network.TxSubmission.Mempool.Reader (MempoolSnapshot (..))
 acknowledgeTxIds
     :: forall peeraddr tx txid.
        Ord txid
-    => HasCallStack
     => TxDecisionPolicy
     -> SharedTxState peeraddr txid tx
     -> PeerTxState txid tx
@@ -170,7 +169,6 @@ acknowledgeTxIds
 --
 splitAcknowledgedTxIds
   :: Ord txid
-  => HasCallStack
   => TxDecisionPolicy
   -> SharedTxState peer txid tx
   -> PeerTxState  txid tx

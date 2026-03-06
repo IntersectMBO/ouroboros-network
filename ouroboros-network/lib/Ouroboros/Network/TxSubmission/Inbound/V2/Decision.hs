@@ -28,7 +28,6 @@ import Data.Map.Strict qualified as Map
 import Data.Maybe (mapMaybe)
 import Data.Set (Set)
 import Data.Set qualified as Set
-import GHC.Stack (HasCallStack)
 import System.Random (random)
 
 import Data.Sequence.Strict qualified as StrictSeq
@@ -343,7 +342,6 @@ pickTxsToDownload policy@TxDecisionPolicy { txsSizeInflightPerPeer,
 filterActivePeers
     :: forall peeraddr txid tx.
        Ord txid
-    => HasCallStack
     => TxDecisionPolicy
     -> SharedTxState peeraddr txid tx
     -> Map peeraddr (PeerTxState txid tx)

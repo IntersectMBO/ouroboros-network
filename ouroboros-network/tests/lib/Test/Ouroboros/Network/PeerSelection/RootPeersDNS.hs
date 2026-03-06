@@ -596,7 +596,7 @@ mockResolveLedgerPeers tracer (MockRoots _ _ publicRootPeers dnsMapScript)
                            dnsMapVar
                            dnsTimeoutScriptVar
                            dnsLookupDelayScriptVar)
-                         AllLedgerPeers
+                         SingAllLedgerPeers
                          relays
                          (mkStdGen dnsSeed)
 
