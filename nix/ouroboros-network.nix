@@ -88,7 +88,7 @@ let
     # specific enough, or doesn't allow setting these.
     modules = [
       (forAllProjectPackages ({ ... }: {
-        ghcOptions = [ "-Werror" "-fno-ignore-asserts" ];
+        ghcOptions = [ "-Werror" ];
       }))
       ({ pkgs, ... }: {
         # We impose limit heap size limit when running some of the tests
