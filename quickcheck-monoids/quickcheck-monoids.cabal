@@ -14,7 +14,6 @@ category: Testing
 copyright: 2024 Input Output Global Inc (IOG)
 build-type: Simple
 extra-doc-files: CHANGELOG.md
-extra-source-files: README.md
 
 common warnings
   ghc-options: -Wall
