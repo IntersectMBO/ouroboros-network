@@ -124,7 +124,11 @@ logger msgQueue json query tip = go True
 
           LBS.Char.putStr bs'
           go False
-        LogEnd -> when (json && not query) $ IO.putStrLn "] }"
+        -- Output valid JSON even when no pongs were received
+        LogEnd -> when (json && not query) $
+          if first
+            then IO.putStrLn $ if tip then "{ \"tip\": [] }" else "{ \"pongs\": [] }"
+            else IO.putStrLn "] }"
 
 supportedNodeToNodeVersions :: Word32 -> [NodeVersion]
 supportedNodeToNodeVersions magic =
