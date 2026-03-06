@@ -15,7 +15,7 @@ repository cardano-haskell-packages
 -- repeat the index-state for hackage to work around haskell.nix parsing limitation
 index-state:
   -- Bump this if you need newer packages from Hackage
-  , hackage.haskell.org 2026-02-12T02:18:13Z
+  , hackage.haskell.org 2026-03-04T10:56:45Z
 
   -- Bump this if you need newer packages from CHaP
   , cardano-haskell-packages 2026-02-17T21:19:19Z
@@ -61,7 +61,6 @@ if impl (ghc >= 9.14)
     , foldl >= 1.4.18
     , nothunks >= 0.3
 
-if impl (ghc >= 9.14)
   allow-newer:
     -- https://github.com/haskell/aeson/issues/1155
     , aeson:QuickCheck
@@ -74,12 +73,6 @@ if impl (ghc >= 9.14)
     , aeson:time
     , aeson:time-compat
 
-    -- Fixed on a branch, but do not have write permissions to repo
-    , kes-agent-crypto:base
-
--- cabal-allow-newer
-if impl (ghc >= 9.14)
-  allow-newer:
     -- https://github.com/phadej/boring/issues/48
     , boring:base
 
@@ -99,10 +92,6 @@ if impl (ghc >= 9.14)
     -- https://github.com/haskellari/qc-instances/issues/110
     , quickcheck-instances:base
     , quickcheck-instances:bytestring
-
-    -- https://github.com/recursion-schemes/recursion-schemes/pull/175
-    , recursion-schemes:containers
-    , recursion-schemes:template-haskell
 
     -- https://github.com/haskellari/these/issues/211
     , semialign:base

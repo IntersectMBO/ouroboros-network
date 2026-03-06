@@ -2,6 +2,59 @@
 
 <!-- scriv-insert-here -->
 
+<a id='changelog-1.0.0.0'></a>
+## 1.0.0.0 -- 2026-03-06
+
+### Breaking
+
+- Adapted to removal of `ChurnCounters` and `dtTraceChurnCounters` in
+  `ouroboros-network`.
+
+- `Ouroboros.Network.Diffusion.Tracers` changed in `ouroboros-network` package,
+  see it's changelog for details.
+
+- Change the type of `LedgerPeersConsensusInterface.getBlockHash` to accept a `Point` instead of only a `SlotNo`.
+
+- Integration with `typed-protocols-1.2.0.0`, `NFData` constraints are required in public API (e.g. `NodeTo{Node,Client}.connectTo`, etc.).
+
+- Replace `SomeHashableBlock` with the `RawBlockHash` type in `LedgerPeerConsensusInterface`
+
+- Added trace-dispatcher LogFormatting and MetaTrace instances
+  for Churn's TraceChurnMode tracer
+
+- Removed ToJSON UseBootstrapPeers oprhan instance from OrphanInstances module
+
+- Removed ExtraTrace from Monitor module, and moved its data constructors
+  to ToExtraTrace data instance of SupportsPeerSelectionState instance for
+  ExtraPeers type. Similarly, ExtraPeerSelectionSetsWithSizes was moved to
+  the instance as well.
+- removed cardanoPeerSelectionStateToCounters
+- Adjusted various types to integrate the changes related to the introduction
+  of SupportsPeerSelectionState class
+  - CardanoTracers, CardanoTraceLocalRootPeers, CardanoPeerSelectionCounters,
+  - peerChurnGovernor, cardanoPeerSelectionGovernorArgs
+
+- Removed orphan ToJSON ExtraTrace instance
+
+### Non-Breaking
+
+- Update dependencies.
+
+- Exported `PublicRootPeers (..)` from `Cardano.Network.PeerSelection` module.
+
+- Added property that verifies target changes stay within acceptable bounds.
+- Updated `diffusionSimulation` to run with either the Cardano churn and Ouroboros churn.
+
+- Fix an incomplete case match warning.
+
+- Integrate TVar to collect duplicate tx's in the mempool writer
+
+- Added SupportsPeerSelectionState instance for ExtraPeers
+
+### Non-breaking
+
+- Added ToJSON UseBootstraPeers instance to Bootstrap module
+
 <a id='changelog-0.1.0.0'></a>
 ## 0.1.0.0 -- 2026-01-20
 

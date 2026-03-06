@@ -2,6 +2,31 @@
 
 <!-- scriv-insert-here -->
 
+<a id='changelog-0.10.1.0'></a>
+## 0.10.1.0 -- 2026-03-06
+
+### Non-Breaking
+
+- Added `network-mux:mux-leios-demo`
+- Added binary encoding to `Test.Mux.ReqResp`:
+  * `runClient` renamed as `runClientCBOR`
+  * `runServer` renamed as `runServerCBOR`
+  added API:
+  * `runClientBin`
+  * `runServerBin`
+  * `runClientBurstBin`
+  * `runServerBurstBin`
+  * `runClientBurstCBOR`
+  * `runServerBurstCBOR`
+
+- Added `network-mux/wireshark-plugin/` - a WireShark dissector plugin for mux SDUs.
+
+- Update dependencies.
+
+- Support `Win32-network ^>=0.1`.
+
+- Add support for ghc-9.14.
+
 <a id='changelog-0.10.0.0'></a>
 ## 0.10.0.0 -- 2026-01-20
 
