@@ -2,6 +2,110 @@
 
 <!-- scriv-insert-here -->
 
+<a id='changelog-1.0.0.0'></a>
+## 1.0.0.0 -- 2026-03-06
+
+### Breaking
+
+- Removed `dtTraceChurnCounters` from `Ouroboros.Network.Diffusion.Tracers`, it
+  duplicated information already available in `dtTracePeerSelectionTracer`.  As
+  a consequence, `ChurnCounters` is removed as well as `pcaChurnTracer` record
+ field from `PeerChurnArgs`.
+
+- Unified two traces into one.  The following two records fields of
+  `Ouroboros.Network.Diffusion.Tracers` were removed:
+  - `dtDebugPeerSelectionInitiatorTracer`
+  - `dtDebugPeerSelectionInitiatorResponderTracer`
+  The were replaced with a single field `dtDebugPeerSelectionTracer` which
+  combines both traces.
+
+- Removed previous targets from `TraceTargetsChanged`.
+
+- Trace only current peer selection targets, the previous targets are easily
+  available in the log. The `ToJSON` instance for `PeerSelectionTargets` has
+  been changed, it now inlines the current targets in the event object, and
+  thus there's no `"kind":"PeerSelectionTargets"` any more, only
+  `"kind":"TargetsChanged"`.
+
+- Integration with `typed-protocols-1.2.0.0`, `NFData` constraints are required in public API (e.g. `connectToNode`, `connectToNodeWithMux`, `Server.with`, `Server.Simple.with`, etc.).
+
+- Added NFData constraint to `StandardHash`.
+
+- Remove `Arbitrary` instance for `BlockNo` from the `Ouroboros.Network.Mock.ChainGenerators` module. The instance is now provided by the `Test.Cardano.Slotting.Arbitrary` module of the `cardano-slotting` library.
+
+- Replace the existential type `SomeHashableBlock`, which hides the `blk` type varialbe, with `RawBlockHash`, which is simply a wrapper of a raw block hash, represented as `ShortByteString`.
+- Remove the `blk` type variable from the `LedgerPeerSnapshotWithBlock` type.
+- Remove the `Proxy blk` argument from the `decodeLedgerPeerSnapshot` function. The hash in the snapshot is now a concrete type.
+
+- Added trace-dispatcher LogFormatting and MetaTrace instances
+  for tx-submission decision logic and counters:
+  - TraceTxLogic
+  - TxSubmissionCounters
+
+- Added trace-dispatcher LogFormatting and MetaTrace instances
+  for tx-submission inbound and outbound tracers:
+  - TraceTxSubmissionInbound
+  - TraceTxSubmissionOutbound
+
+- Removed extraCounters type variable from various places in the library,
+  replacing its uses with 'ViewExtraPeers extraPeers'
+- Removed daPeerSelectionStateToExtraCounters field from Diffusion
+  Arguments record. This functionality was subsumed by the new
+  SupportsPeerSelectionState class.
+- Added SupportsPeerSelectionState constraint to required places.
+
+- Fix spelling of LedgerRelayAccessPointV1's getter
+
+- `LedgerPeersKind` is a type data, `SingLedgerPeersKind` it's singleton,
+  `SomeLedgerPeersKind` universally quantified wrapper. Low level api is using
+  `SingLedgerPeersKind`, higher level API (including diffusion) is using
+  `SomeLedgerPeersKind`.
+
+### Non-Breaking
+
+- Update dependencies.
+
+- Fixed some issues in the implementation of the simple mempool.
+
+- Fixed a bug in ouroboros churn (used by `dmq-node`), IntersectMBO/ouroboros-network#5290.
+
+- Add `Eq` instance for `SomeLedgerPeerSnapshot`
+
+- Support `Win32-network ^>=0.1`.
+
+- Moved `LogFormatting` and `MetaTrace` instances from `cardano-node` to `ouroboros-network`.
+- Added `framework-tracing` and `tracing` sub-libraries to `ouroboros-network.cabal` to support these instances with correct dependencies.
+- `framework-tracing` contains instances for lower-level components (e.g. `network-mux`) and depends only on `framework`.
+- `tracing` contains instances for higher-level components (e.g. PeerSelection) and depends on `ouroboros-network`.
+- Generalized `DebugPeerSelection` and `PeerSelectionCounters` tracing instances to use generic types, removing dependencies on `cardano-diffusion` and `ouroboros-consensus`.
+
+- Add support for ghc-9.14.
+- Fix an incomplete case match warning.
+
+- tx-submission: Ensure all eligible downloaded tx's will be submitted to the mempool
+- tx-submission: Enforce that no transaction is enqueued to the mempool more than once by the same peer
+- tx-submission: Improve testcase generation and inflight test
+- tx-submission: Remove global size limit for inflight tx's
+
+- Added a variant of `signalProperty` that takes a property-producing function
+  instead of a boolean predicate.
+
+- Introduced SupportsPeerSelectionState class which enhances
+  ouroboros-network as a reusable diffusion library.
+- The class collects the types of the extra peers and extra tracing.
+  It also provides a method to retrieve a view with counters of those
+  extra peers as well as exposes the PublicExtraPeersAPI type. The latter
+  motivates the removal of extraPeersAPI from PeerSelectionActions record.
+
+- Added types for running ouroboros-network without any extra peer types:
+  - NoExtraPeers, NoExtraDebugState, NoExtraState, NoExtraFlags
+- Added SupportsPeerSelectionState instance for NoExtraPeers.
+- Added some convenience type aliases for running diffusion using NoExtraPeers:
+  - OuroborosTracePeerSelection, OuroborosDebugPeerSelection,
+    OuroborosPeerSelectionCounters
+
+- Added ToJSON instance for SizeInBytes
+
 <a id='changelog-0.24.0.0'></a>
 ## 0.24.0.0 -- 2026-01-20
 

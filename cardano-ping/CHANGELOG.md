@@ -2,6 +2,15 @@
 
 <!-- scriv-insert-here -->
 
+<a id='changelog-0.10.1.0'></a>
+## 0.10.1.0 -- 2026-03-06
+
+### Non-Breaking
+
+- Update dependencies.
+
+- Add support for ghc-9.14.
+
 <a id='changelog-0.10.0.0'></a>
 ## 0.10.0.0 -- 2026-01-20
 
