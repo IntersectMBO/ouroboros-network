@@ -16,13 +16,13 @@ module Ouroboros.Network.Diffusion.Types
   , Applications (..)
   , Arguments (..)
   , Interfaces (..)
-    -- | Convenience types for plain Ouroboros Network instantiation
-    -- without any extra peers configured. This is supported by
-    -- the bundled trace-dispatcher instances in the tracing libraries.
+    -- * Plain Ouroboros Network
+    -- $plain-ouroboros-network
   , NoExtraFlags (..)
   , NoExtraState (..)
   , NoExtraDebugState (..)
   , NoExtraPeers (..)
+  , ViewExtraPeers (..)
   , OuroborosPeerSelectionCounters
   , OuroborosDebugPeerSelection
   , OuroborosTracePeerSelection
@@ -46,6 +46,7 @@ module Ouroboros.Network.Diffusion.Types
   , SRVPrefix
   , DiffusionMode (..)
   ) where
+
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (Exception, SomeException)
@@ -134,7 +135,13 @@ data Failure where
 deriving instance Show Failure
 instance Exception Failure
 
--- for Ourobors Network instantiation without any extra state/peers/flags
+
+-- $plain-ouroboros-network
+--
+-- Convenience types for plain Ouroboros Network instantiation without any
+-- extra peers configured. This is supported by the bundled trace-dispatcher
+-- instances in the tracing libraries.
+
 data NoExtraFlags = NoExtraFlags
   deriving (Eq, Show)
 data NoExtraState = NoExtraState
