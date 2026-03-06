@@ -500,11 +500,11 @@ decisionLogicThread tracer counterTracer policy txChannelsVar sharedStateVar = d
       -- Wait until there is potentially some work to do or the timer expires.
       atomically do
         sharedTxState <- readTVar sharedStateVar
-        let activePeers = filterActivePeers now policy sharedTxState
+        let hasActivePeers = activePeersNonEmpty now policy sharedTxState
         timerExpired <- Lazy.readTVar delayVar
 
         -- block until at least one peer is active or the timer expires
-        if not (Map.null activePeers)
+        if hasActivePeers
            then return ()
         else if timerExpired
            then return ()

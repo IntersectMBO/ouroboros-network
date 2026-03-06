@@ -13,6 +13,7 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Decision
     -- * Internal API exposed for testing
   , makeDecisions
   , filterActivePeers
+  , activePeersNonEmpty
   , pickTxsToDownload
   ) where
 
@@ -29,7 +30,6 @@ import Data.Map.Strict qualified as Map
 import Data.Maybe (mapMaybe)
 import Data.Set (Set)
 import Data.Set qualified as Set
-import GHC.Stack (HasCallStack)
 import System.Random (random)
 
 import Data.Sequence.Strict qualified as StrictSeq
@@ -416,7 +416,6 @@ filterActivePeers
        ( Ord txid
        , Ord peeraddr
        )
-    => HasCallStack
     => Time
     -> TxDecisionPolicy
     -> SharedTxState peeraddr txid tx
@@ -457,45 +456,155 @@ filterActivePeers
     unrequestable = Map.keysSet (Map.filter unrequestableFilter inflightTxs)
                  <> Map.keysSet bufferedTxs
 
+    inSubmissionSet :: Set txid
+    inSubmissionSet = Map.keysSet inSubmissionToMempoolTxs
+
     fn :: PeerTxState txid tx -> Bool
-    fn peerTxState@PeerTxState {
-        requestedTxIdsInflight
-       } =
-           requestedTxIdsInflight == 0
-           -- if a peer has txids in-flight, we cannot request more txids or txs.
-        && requestedTxIdsInflight + numOfUnacked <= maxUnacknowledgedTxIds
-        && txIdsToRequest > 0
-      where
-        -- Split `unacknowledgedTxIds'` into the longest prefix of `txid`s which
-        -- can be acknowledged and the unacknowledged `txid`s.
-        (txIdsToRequest, _, unackedTxIds) = splitAcknowledgedTxIds policy sharedTxState peerTxState
-        numOfUnacked = fromIntegral (StrictSeq.length unackedTxIds)
+    fn peerTxState =
+        canRequestTxIds policy sharedTxState maxUnacknowledgedTxIds peerTxState
 
     gn :: PeerTxState txid tx -> Bool
-    gn peerTxState@PeerTxState { unacknowledgedTxIds,
-                                 requestedTxIdsInflight,
-                                 requestedTxsInflight,
-                                 requestedTxsInflightSize,
-                                 availableTxIds,
-                                 unknownTxs
-                               } =
-          (    requestedTxIdsInflight == 0
-            && requestedTxIdsInflight + numOfUnacked <= maxUnacknowledgedTxIds
-            && txIdsToRequest > 0
-          )
-        || (underSizeLimit && not (Map.null downloadable))
-      where
-        numOfUnacked   = fromIntegral (StrictSeq.length unacknowledgedTxIds)
-        underSizeLimit = requestedTxsInflightSize <= txsSizeInflightPerPeer
-        downloadable   = availableTxIds
-            `Map.withoutKeys` requestedTxsInflight
-            `Map.withoutKeys` unknownTxs
-            `Map.withoutKeys` unrequestable
-            `Map.withoutKeys` Map.keysSet inSubmissionToMempoolTxs
+    gn peerTxState@PeerTxState {
+           requestedTxsInflight,
+           unknownTxs
+         } =
+          canRequestTxIds policy sharedTxState maxUnacknowledgedTxIds peerTxState
+       || canDownloadTxs policy txsSizeInflightPerPeer unrequestable
+                         inSubmissionSet
+                         requestedTxsInflight unknownTxs peerTxState
 
-        -- Split `unacknowledgedTxIds'` into the longest prefix of `txid`s which
-        -- can be acknowledged and the unacknowledged `txid`s.
-        (txIdsToRequest, _, _) = splitAcknowledgedTxIds policy sharedTxState peerTxState
+
+activePeersNonEmpty
+    :: forall peeraddr txid tx.
+       ( Ord txid
+       , Ord peeraddr
+       )
+    => Time
+    -> TxDecisionPolicy
+    -> SharedTxState peeraddr txid tx
+    -> Bool
+activePeersNonEmpty
+    now
+    policy@TxDecisionPolicy {
+      maxUnacknowledgedTxIds,
+      txsSizeInflightPerPeer,
+      maxTxsSizeInflight,
+      txInflightMultiplicity
+    }
+    sharedTxState@SharedTxState {
+      peerTxStates,
+      bufferedTxs,
+      inflightTxs,
+      inflightTxsSize,
+      inSubmissionToMempoolTxs,
+      pendingDecisions
+    }
+  | inflightTxsSize > maxTxsSizeInflight
+  = Map.foldrWithKey
+      (\peer ps acc ->
+          acc || (peer `Set.notMember` pendingDecisions
+               && canRequestTxIds policy sharedTxState maxUnacknowledgedTxIds ps)
+      )
+      False
+      peerTxStates
+  | otherwise
+  = Map.foldrWithKey
+      (\peer ps acc ->
+          acc || (peer `Set.notMember` pendingDecisions
+               && (    canRequestTxIds policy sharedTxState maxUnacknowledgedTxIds ps
+                   || canDownloadTxs policy txsSizeInflightPerPeer unrequestable
+                                     inSubmissionSet
+                                     (requestedTxsInflight ps)
+                                     (unknownTxs ps)
+                                     ps
+                  ))
+      )
+      False
+      peerTxStates
+  where
+    unrequestableFilter :: InFlightState -> Bool
+    unrequestableFilter InFlightState{inFlightCount, inFlightNextReq} =
+      inFlightCount >= txInflightMultiplicity || inFlightNextReq >= now
+
+    unrequestable :: Set txid
+    unrequestable = Map.keysSet (Map.filter unrequestableFilter inflightTxs)
+                 <> Map.keysSet bufferedTxs
+
+    inSubmissionSet :: Set txid
+    inSubmissionSet = Map.keysSet inSubmissionToMempoolTxs
+
+
+canRequestTxIds
+  :: Ord txid
+  => TxDecisionPolicy
+  -> SharedTxState peeraddr txid tx
+  -> NumTxIdsToReq
+  -> PeerTxState txid tx
+  -> Bool
+canRequestTxIds
+    policy
+    sharedTxState
+    maxUnacknowledgedTxIds
+    peerTxState@PeerTxState { requestedTxIdsInflight } =
+       requestedTxIdsInflight == 0
+    && requestedTxIdsInflight + numOfUnacked <= maxUnacknowledgedTxIds
+    && txIdsToRequest > 0
+  where
+    -- Split `unacknowledgedTxIds'` into the longest prefix of `txid`s which
+    -- can be acknowledged and the unacknowledged `txid`s.
+    (txIdsToRequest, _, unackedTxIds) =
+      splitAcknowledgedTxIds policy sharedTxState peerTxState
+    numOfUnacked = fromIntegral (StrictSeq.length unackedTxIds)
+
+
+canDownloadTxs
+  :: Ord txid
+  => TxDecisionPolicy
+  -> SizeInBytes
+  -> Set txid
+  -> Set txid
+  -> Set txid
+  -> Set txid
+  -> PeerTxState txid tx
+  -> Bool
+canDownloadTxs
+    _policy
+    txsSizeInflightPerPeer
+    unrequestable
+    inSubmissionSet
+    requestedTxsInflight
+    unknownTxs
+    PeerTxState { requestedTxsInflightSize, availableTxIds } =
+       requestedTxsInflightSize <= txsSizeInflightPerPeer
+    && downloadableExists requestedTxsInflight unknownTxs unrequestable
+                          inSubmissionSet availableTxIds
+
+
+downloadableExists
+  :: Ord txid
+  => Set txid
+  -> Set txid
+  -> Set txid
+  -> Set txid
+  -> Map txid SizeInBytes
+  -> Bool
+downloadableExists
+    requestedTxsInflight
+    unknownTxs
+    unrequestable
+    inSubmissionSet
+    availableTxIds =
+    Map.foldrWithKey
+      (\txid _ acc ->
+          acc
+          || (   txid `Set.notMember` requestedTxsInflight
+              && txid `Set.notMember` unknownTxs
+              && txid `Set.notMember` unrequestable
+              && txid `Set.notMember` inSubmissionSet
+             )
+      )
+      False
+      availableTxIds
 
 --
 -- Auxiliary functions
