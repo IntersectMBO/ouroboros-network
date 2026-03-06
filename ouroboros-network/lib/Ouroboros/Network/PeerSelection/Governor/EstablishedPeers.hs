@@ -714,13 +714,17 @@ aboveTargetOther actions@PeerSelectionActions {
     -- Or more precisely, how many established peers could we demote?
     -- We only want to pick established peers that are not active, since for
     -- active one we need to demote them first.
-  | let PeerSelectionView {
+  | let peerSelectionView@PeerSelectionView {
             viewKnownBigLedgerPeers = (bigLedgerPeersSet, _),
-            viewEstablishedLocalRootPeers = (_, numLocalWarmPeers),
             viewEstablishedPeers    = (establishedPeersSet, numEstablishedPeers),
             viewActivePeers         = (_, numActivePeers)
           }
           = peerSelectionStateToView st
+        PeerSelectionCountersHWC {
+            numberOfWarmLocalRootPeers = numLocalWarmPeers
+          }
+          =
+          snd <$> peerSelectionView
         warmPeers =
                  establishedPeersSet
           Set.\\ activePeers
