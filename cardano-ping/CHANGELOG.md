@@ -2,6 +2,14 @@
 
 <!-- scriv-insert-here -->
 
+<a id='changelog-0.10.2.0'></a>
+## 0.10.2.0 -- 2026-03-06
+
+### Patch
+
+- Output valid JSON when no pongs are received instead of the malformed
+  fragment `] }`.
+
 <a id='changelog-0.10.1.0'></a>
 ## 0.10.1.0 -- 2026-03-06
 
