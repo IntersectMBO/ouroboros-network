@@ -662,7 +662,7 @@ muxChannel tracer egressQueue want@(Wanton w) mc md q =
   where
     -- Limit for the message buffer between send and mux thread.
     perMiniProtocolBufferSize :: Int64
-    perMiniProtocolBufferSize = 0x3ffff
+    perMiniProtocolBufferSize = 0x7fffe
 
     send :: BL.ByteString -> m ()
     send encoding = do
