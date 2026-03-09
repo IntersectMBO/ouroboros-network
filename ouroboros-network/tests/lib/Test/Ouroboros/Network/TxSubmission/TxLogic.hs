@@ -556,7 +556,8 @@ genSharedTxStateWithPeerGen genPeerState maxTxIdsInflight = do
                                  = Map.empty,
                  pendingDecisions
                                  = Set.empty,
-                 peerRng         = mkStdGen seed
+                 peerRng         = mkStdGen seed,
+                 generation      = 0
                }
 
     return ( mempoolHasTxFun

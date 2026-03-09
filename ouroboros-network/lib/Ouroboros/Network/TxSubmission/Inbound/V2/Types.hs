@@ -48,6 +48,7 @@ import Data.Sequence.Strict (StrictSeq)
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Typeable (Typeable, eqT, (:~:) (Refl))
+import Data.Word (Word64)
 import GHC.Generics (Generic)
 import System.Random (StdGen)
 
@@ -260,6 +261,9 @@ data SharedTxState peeraddr txid tx = SharedTxState {
       -- consumed their previous decision (e.g. blocked on mempool submission).
       pendingDecisions         :: !(Set peeraddr),
 
+      -- | Monotonic generation bumped on external state changes.
+      -- Used by decision logic to sleep until work is available.
+      generation            :: !Word64,
 
       -- | Rng used to randomly order peers
       peerRng                  :: !StdGen

@@ -513,6 +513,9 @@ collectTxsImpl txSize peeraddr requestedTxIdsMap receivedTxs
 
 type SharedTxStateVar m peeraddr txid tx = StrictTVar m (SharedTxState peeraddr txid tx)
 
+bumpGeneration :: SharedTxState peeraddr txid tx -> SharedTxState peeraddr txid tx
+bumpGeneration st@SharedTxState { generation } = st { generation = generation + 1 }
+
 newSharedTxStateVar :: MonadSTM m
                     => StdGen
                     -> m (SharedTxStateVar m peeraddr txid tx)
@@ -524,7 +527,8 @@ newSharedTxStateVar rng = newTVarIO SharedTxState {
     timedTxs                 = Map.empty,
     inSubmissionToMempoolTxs = Map.empty,
     pendingDecisions         = Set.empty,
-    peerRng                  = rng
+    peerRng                  = rng,
+    generation               = 0
   }
 
 
@@ -549,7 +553,10 @@ receivedTxIds
 receivedTxIds tracer sharedVar getMempoolSnapshot peeraddr reqNo txidsSeq txidsMap = do
   st <- atomically $ do
     MempoolSnapshot{mempoolHasTx} <- getMempoolSnapshot
-    stateTVar sharedVar ((\a -> (a,a)) . receivedTxIdsImpl mempoolHasTx peeraddr reqNo txidsSeq txidsMap)
+    stateTVar sharedVar (\st ->
+      let st' = receivedTxIdsImpl mempoolHasTx peeraddr reqNo txidsSeq txidsMap st
+          st'' = bumpGeneration st'
+      in (st'', st''))
   traceWith tracer (TraceSharedTxState "receivedTxIds" st)
 
 
@@ -573,7 +580,7 @@ collectTxs tracer txSize sharedVar peeraddr txidsRequested txsMap = do
   r <- atomically $ do
     st <- readTVar sharedVar
     case collectTxsImpl txSize peeraddr txidsRequested txsMap st of
-      r@(Right st') -> writeTVar sharedVar st'
+      r@(Right st') -> writeTVar sharedVar (bumpGeneration st')
                     $> r
       r@Left {}     -> pure r
   case r of
