@@ -210,7 +210,8 @@ nodeToClientProtocols protocols _version _versionData =
 maximumMiniProtocolLimits :: MiniProtocolLimits
 maximumMiniProtocolLimits =
     MiniProtocolLimits {
-      maximumIngressQueue = 0xffffffff
+      maximumIngressQueue = 0xffffffff,
+      burst = Nothing
     }
 
 

@@ -154,6 +154,7 @@ import Ouroboros.Network.Tracers
 import Ouroboros.Network.TxSubmission.Inbound qualified as TxInbound
 import Ouroboros.Network.TxSubmission.Outbound qualified as TxOutbound
 import Ouroboros.Network.Util.ShowProxy (ShowProxy, showProxy)
+import Network.Mux.Types hiding (MiniProtocolInfo (..))
 
 
 -- The Handshake tracer types are simply terrible.
@@ -322,7 +323,8 @@ chainSyncProtocolLimits MiniProtocolParameters { chainSyncPipeliningHighMark } =
       -- TODO: 1400 comes from maxBlockHeaderSize in genesis, but should come
       -- from consensus rather than being hard coded.
       maximumIngressQueue = addSafetyMargin $
-        fromIntegral chainSyncPipeliningHighMark * 1400
+        fromIntegral chainSyncPipeliningHighMark * 1400,
+      burst = Nothing
     }
 
 blockFetchProtocolLimits MiniProtocolParameters { blockFetchPipeliningMax } = MiniProtocolLimits {
@@ -344,7 +346,8 @@ blockFetchProtocolLimits MiniProtocolParameters { blockFetchPipeliningMax } = Mi
     -- relaxed limit here.
     --
     maximumIngressQueue = addSafetyMargin $
-      max (10 * 2_097_154 :: Int) (fromIntegral blockFetchPipeliningMax * 90_112)
+      max (10 * 2_097_154 :: Int) (fromIntegral blockFetchPipeliningMax * 90_112),
+    burst = Just $ ProtocolBurstLimits 100000 100000
   }
 
 txSubmissionProtocolLimits MiniProtocolParameters { txSubmissionMaxUnacked } = MiniProtocolLimits {
@@ -410,13 +413,15 @@ txSubmissionProtocolLimits MiniProtocolParameters { txSubmissionMaxUnacked } = M
       -- 10% as a safety margin.
       --
       maximumIngressQueue = addSafetyMargin $
-          fromIntegral txSubmissionMaxUnacked * (44 + 65_540)
+          fromIntegral txSubmissionMaxUnacked * (44 + 65_540),
+      burst = Nothing
     }
 
 keepAliveProtocolLimits _ =
   MiniProtocolLimits {
       -- One small outstanding message.
-      maximumIngressQueue = addSafetyMargin 1280
+      maximumIngressQueue = addSafetyMargin 1280,
+      burst = Nothing
     }
 
 peerSharingProtocolLimits _ =
@@ -427,7 +432,8 @@ peerSharingProtocolLimits _ =
   -- window size of 4 and a TCP segment is 1440, which gives us 4 * 1440 =
   -- 5760 bytes to fit into a single RTT. So setting the maximum ingress
   -- queue to be a single RTT should be enough to cover for CBOR overhead.
-  maximumIngressQueue = 4 * 1440
+  maximumIngressQueue = 4 * 1440,
+  burst = Nothing
   }
 
 chainSyncMiniProtocolNum :: MiniProtocolNum

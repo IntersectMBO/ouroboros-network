@@ -10,6 +10,8 @@
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE TypeFamilies              #-}
 
+-- TODO: GHC-8.10 on Windows
+{-# OPTIONS_GHC -Wno-name-shadowing #-}
 -- | Network multiplexer API.
 --
 -- The module should be imported qualified.
@@ -55,7 +57,7 @@ import Data.Int (Int64)
 import Data.IntMap.Strict qualified as IntMap
 import Data.Map (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (isNothing)
+import Data.Maybe (fromMaybe, isNothing)
 import Data.Monoid.Synchronisation (FirstToFinish (..))
 
 import Control.Applicative
@@ -66,6 +68,7 @@ import Control.Monad
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI (Time (..))
 import Control.Monad.Class.MonadTimer.SI hiding (timeout)
 import Control.Tracer
 
@@ -284,7 +287,8 @@ miniProtocolJob tracer egressQueue
                   miniProtocolInfo =
                     MiniProtocolInfo {
                       miniProtocolNum,
-                      miniProtocolDir
+                      miniProtocolDir,
+                      miniProtocolLimits
                     },
                   miniProtocolIngressQueue,
                   miniProtocolStatusVar
@@ -302,9 +306,11 @@ miniProtocolJob tracer egressQueue
       labelThisThread (case miniProtocolNum of
                         MiniProtocolNum a -> "prtcl-" ++ show a)
       w <- newTVarIO BL.empty
-      let chan = muxChannel tracer egressQueue (Wanton w)
+      lastSent <- newTVarIO (Time 0)
+      bucket   <- newTVarIO 0
+      let chan = muxChannel tracer egressQueue (Wanton w lastSent bucket)
                             miniProtocolNum miniProtocolDirEnum
-                            miniProtocolIngressQueue
+                            miniProtocolIngressQueue (burst miniProtocolLimits)
       (result, remainder) <- miniProtocolAction chan
       traceWith tracer (TraceTerminating miniProtocolNum miniProtocolDirEnum)
       atomically $ do
@@ -656,13 +662,16 @@ muxChannel
     -> MiniProtocolNum
     -> MiniProtocolDir
     -> IngressQueue m
+    -> Maybe ProtocolBurstLimits
     -> ByteChannel m
-muxChannel tracer egressQueue want@(Wanton w) mc md q =
-    Channel { send, recv}
+muxChannel tracer egressQueue want@(Wanton bufVar _ _) mc md q burstLimits =
+    Channel { send, recv }
   where
     -- Limit for the message buffer between send and mux thread.
     perMiniProtocolBufferSize :: Int64
     perMiniProtocolBufferSize = 0x3ffff
+
+    burstLimits' = fromMaybe (ProtocolBurstLimits 0 0) burstLimits
 
     send :: BL.ByteString -> m ()
     send encoding = do
@@ -672,13 +681,13 @@ muxChannel tracer egressQueue want@(Wanton w) mc md q =
         traceWith tracer $ TraceChannelSendStart mc (fromIntegral $ BL.length encoding)
 
         atomically $ do
-            buf <- readTVar w
+            buf <- readTVar bufVar
             if BL.length buf < perMiniProtocolBufferSize
                then do
                    let wasEmpty = BL.null buf
-                   writeTVar w (BL.append buf encoding)
+                   writeTVar bufVar (BL.append buf encoding)
                    when wasEmpty $
-                     writeTBQueue egressQueue (TLSRDemand mc md want)
+                     writeTBQueue egressQueue (TLSRDemand mc md want burstLimits')
                else retry
 
         traceWith tracer $ TraceChannelSendEnd mc
