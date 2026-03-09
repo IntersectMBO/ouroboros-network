@@ -42,6 +42,7 @@ module Network.Mux.Types
   , remoteClockPrecision
   , RuntimeError (..)
   , ReadBuffer (..)
+  , ProtocolBurstLimits (..)
   ) where
 
 import Prelude hiding (read)
@@ -89,13 +90,20 @@ newtype MiniProtocolNum = MiniProtocolNum Word16
   deriving (Eq, Ord, Enum, Ix, Show)
 
 -- | Per Miniprotocol limits
-newtype MiniProtocolLimits =
+data MiniProtocolLimits =
      MiniProtocolLimits {
        -- | Limit on the maximum number of bytes that can be queued in the
        -- miniprotocol's ingress queue.
        --
-       maximumIngressQueue :: Int
+       maximumIngressQueue :: !Int,
+       burst               :: !(Maybe ProtocolBurstLimits)
      }
+
+data ProtocolBurstLimits = ProtocolBurstLimits {
+  pbMaxBytes   :: !Word32,
+  pbRefillRate :: !Word32
+  }
+  deriving (Eq, Show)
 
 -- $interface
 --
@@ -273,7 +281,7 @@ newtype SDUSize = SDUSize { getSDUSize :: Word16 }
   deriving Generic
   deriving Show via Quiet SDUSize
   deriving (Eq, Ord, Enum)
-  deriving (Num, Real, Integral)
+  deriving (Num, Real, Integral, Bounded)
 
 -- | A channel which wraps each message as an 'SDU' using giving
 -- 'MiniProtocolNum' and 'MiniProtocolDir'.
