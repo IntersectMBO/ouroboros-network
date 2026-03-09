@@ -191,7 +191,7 @@ nodeToNodeCodecCBORTerm version = CodecCBORTerm { encodeTerm = encodeTerm, decod
           where
             decodeNetworkMagic x
               | x >= 0 , x <= 0xffffffff = pure $ NetworkMagic (fromIntegral x)
-              | otherwise                = die $ "networkMagic out of bound: " <> show x
+              | otherwise                = err $ "networkMagic out of bound: " <> show x
 
             decodeDiffusionMode dm = pure $
               if dm
@@ -201,20 +201,20 @@ nodeToNodeCodecCBORTerm version = CodecCBORTerm { encodeTerm = encodeTerm, decod
             decodePeerSharing ps
               | ps == 0   = pure PeerSharingDisabled
               | ps == 1   = pure PeerSharingEnabled
-              | otherwise = die $ "peerSharing is out of bound: " <> show ps
+              | otherwise = err $ "peerSharing is out of bound: " <> show ps
 
             decodeQuery = pure
 
             decodePerasSupportOptional = \case
-              []                   | version <  NodeToNodeV_16 -> pure PerasUnsupported
+              []                        | version <  NodeToNodeV_16 -> pure PerasUnsupported
               [CBOR.TBool perasSupport] | version >= NodeToNodeV_16 -> pure $
                 if perasSupport
                   then PerasSupported
                   else PerasUnsupported
-              l -> die $ "invalid encoding for perasSupport given the version " <> show version <> ": " <> show l
+              l -> err $ "invalid encoding for perasSupport given the version " <> show version <> ": " <> show l
 
-      other -> die $ "unexpected encoding when decoding NodeToNodeVersionData: " <> show other
+      other -> err $ "unexpected encoding when decoding NodeToNodeVersionData: " <> show other
 
-    die = Left . T.pack
+    err = Left . T.pack
 
 data ConnectionMode = UnidirectionalMode | DuplexMode
