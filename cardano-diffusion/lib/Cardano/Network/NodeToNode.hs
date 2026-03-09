@@ -240,7 +240,7 @@ nodeToNodeProtocols
   -- ^ negotiated version data
   -> OuroborosBundle muxMode initiatorCtx responderCtx bytes m a b
 nodeToNodeProtocols _featureFlags miniProtocolParameters protocols
-                    _version NodeToNodeVersionData { peerSharing, perasSupportStatus }
+                    _version NodeToNodeVersionData { peerSharing, perasSupport }
                     =
     TemperatureBundle
       -- Hot protocols: 'chain-sync', 'block-fetch' and 'tx-submission'.
@@ -271,7 +271,7 @@ nodeToNodeProtocols _featureFlags miniProtocolParameters protocols
                 miniProtocolRun    = txSubmissionProtocol
               }
             ]
-              <> concat [perasMiniProtocols | perasSupportStatus == PerasSupported]
+              <> concat [perasMiniProtocols | perasSupport == PerasSupported]
            where
              perasMiniProtocols =
                [ MiniProtocol {

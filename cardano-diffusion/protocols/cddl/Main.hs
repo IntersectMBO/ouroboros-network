@@ -65,7 +65,7 @@ import Cardano.Network.NodeToClient.Version (NodeToClientVersion,
 import Cardano.Network.NodeToClient.Version qualified as NtCVersion
 import Cardano.Network.NodeToNode.Version (DiffusionMode (..),
            NodeToNodeVersion (..), NodeToNodeVersionData (..),
-           PerasSupportStatus (..), isValidNtnVersionDataForVersion,
+           PerasSupport (..), isValidNtnVersionDataForVersion,
            nodeToNodeCodecCBORTerm)
 import Cardano.Network.NodeToNode.Version qualified as NtNVersion
 

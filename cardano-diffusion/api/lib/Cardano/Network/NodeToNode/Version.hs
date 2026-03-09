@@ -8,13 +8,13 @@ module Cardano.Network.NodeToNode.Version
   , NodeToNodeVersionData (..)
   , DiffusionMode (..)
   , ConnectionMode (..)
-  , PerasSupportStatus (..)
+  , PerasSupport (..)
     -- * Codecs
   , nodeToNodeVersionCodec
   , nodeToNodeCodecCBORTerm
     -- * Feature predicates
   , isValidNtnVersionDataForVersion
-  , getLocalPerasSupportStatus
+  , getLocalPerasSupport
   ) where
 
 import Data.Set (Set)
@@ -34,7 +34,7 @@ import Ouroboros.Network.Handshake.Acceptable (Accept (..), Acceptable (..))
 import Ouroboros.Network.Handshake.Queryable (Queryable (..))
 import Ouroboros.Network.Magic
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
-import Ouroboros.Network.PerasSupportStatus
+import Ouroboros.Network.PerasSupport
 
 -- | Enumeration of node to node protocol versions.
 --
@@ -112,7 +112,7 @@ data NodeToNodeVersionData = NodeToNodeVersionData
   , diffusionMode      :: !DiffusionMode
   , peerSharing        :: !PeerSharing
   , query              :: !Bool
-  , perasSupportStatus :: !PerasSupportStatus
+  , perasSupport :: !PerasSupport
   }
   deriving (Show, Eq)
 
@@ -124,13 +124,13 @@ instance Acceptable NodeToNodeVersionData where
     acceptableVersion local remote
       | networkMagic local == networkMagic remote
       = let acceptedDiffusionMode = diffusionMode local `min` diffusionMode remote
-            acceptedPerasSupportStatus = perasSupportStatus local `min` perasSupportStatus remote
+            acceptedPerasSupport = perasSupport local `min` perasSupport remote
          in Accept NodeToNodeVersionData
               { networkMagic       = networkMagic local
               , diffusionMode      = acceptedDiffusionMode
               , peerSharing        = peerSharing local <> peerSharing remote
               , query              = query local || query remote
-              , perasSupportStatus = acceptedPerasSupportStatus
+              , perasSupport = acceptedPerasSupport
               }
       | otherwise
       = Refuse $ T.pack $ "version data mismatch: "
@@ -140,15 +140,15 @@ instance Acceptable NodeToNodeVersionData where
 instance Queryable NodeToNodeVersionData where
     queryVersion = query
 
--- | `perasSupportStatus` field is introduced with `NodeToNodeV_16`, and thus should be
+-- | `perasSupport` field is introduced with `NodeToNodeV_16`, and thus should be
 -- set to `PerasUnsupported` (and not be serialized) for versions before that.
 isValidNtnVersionDataForVersion :: NodeToNodeVersion -> NodeToNodeVersionData -> Bool
 isValidNtnVersionDataForVersion version ntnData =
-  version >= NodeToNodeV_16 || perasSupportStatus ntnData == PerasUnsupported
+  version >= NodeToNodeV_16 || perasSupport ntnData == PerasUnsupported
 
 -- | Determine the local node's Peras support status based on feature flags and version.
-getLocalPerasSupportStatus :: Set CardanoFeatureFlag -> NodeToNodeVersion -> PerasSupportStatus
-getLocalPerasSupportStatus featureFlags v =
+getLocalPerasSupport :: Set CardanoFeatureFlag -> NodeToNodeVersion -> PerasSupport
+getLocalPerasSupport featureFlags v =
   if Set.member PerasFlag featureFlags && v >= NodeToNodeV_16
     then PerasSupported
     else PerasUnsupported
@@ -160,8 +160,8 @@ nodeToNodeCodecCBORTerm :: NodeToNodeVersion -> CodecCBORTerm Text NodeToNodeVer
 nodeToNodeCodecCBORTerm version = CodecCBORTerm { encodeTerm = encodeTerm, decodeTerm = decodeTerm }
   where
     encodeTerm :: NodeToNodeVersionData -> CBOR.Term
-    encodeTerm ntnData@NodeToNodeVersionData{ networkMagic, diffusionMode, peerSharing, query, perasSupportStatus }
-      | not (isValidNtnVersionDataForVersion version ntnData) = error "perasSupportStatus should be PerasUnsupported for versions strictly before NodeToNodeV_16"
+    encodeTerm ntnData@NodeToNodeVersionData{ networkMagic, diffusionMode, peerSharing, query, perasSupport }
+      | not (isValidNtnVersionDataForVersion version ntnData) = error "perasSupport should be PerasUnsupported for versions strictly before NodeToNodeV_16"
       | otherwise =
         CBOR.TList $
              [ CBOR.TInt (fromIntegral $ unNetworkMagic networkMagic)
@@ -173,7 +173,7 @@ nodeToNodeCodecCBORTerm version = CodecCBORTerm { encodeTerm = encodeTerm, decod
                            PeerSharingEnabled  -> 1)
              , CBOR.TBool query
              ]
-          ++ [CBOR.TBool (case perasSupportStatus of
+          ++ [CBOR.TBool (case perasSupport of
                   PerasUnsupported -> False
                   PerasSupported   -> True)
              | version >= NodeToNodeV_16
@@ -181,13 +181,13 @@ nodeToNodeCodecCBORTerm version = CodecCBORTerm { encodeTerm = encodeTerm, decod
 
     decodeTerm :: CBOR.Term -> Either Text NodeToNodeVersionData
     decodeTerm = \case
-      (CBOR.TList (CBOR.TInt networkMagic : CBOR.TBool diffusionMode : CBOR.TInt peerSharing : CBOR.TBool query : perasSupportStatusOptional)) ->
+      (CBOR.TList (CBOR.TInt networkMagic : CBOR.TBool diffusionMode : CBOR.TInt peerSharing : CBOR.TBool query : perasSupportOptional)) ->
             NodeToNodeVersionData
         <$> decodeNetworkMagic networkMagic
         <*> decodeDiffusionMode diffusionMode
         <*> decodePeerSharing peerSharing
         <*> decodeQuery query
-        <*> decodePerasSupportStatusOptional perasSupportStatusOptional
+        <*> decodePerasSupportOptional perasSupportOptional
           where
             decodeNetworkMagic x
               | x >= 0 , x <= 0xffffffff = pure $ NetworkMagic (fromIntegral x)
@@ -205,13 +205,13 @@ nodeToNodeCodecCBORTerm version = CodecCBORTerm { encodeTerm = encodeTerm, decod
 
             decodeQuery = pure
 
-            decodePerasSupportStatusOptional = \case
+            decodePerasSupportOptional = \case
               []                   | version <  NodeToNodeV_16 -> pure PerasUnsupported
-              [CBOR.TBool perasSupportStatus] | version >= NodeToNodeV_16 -> pure $
-                if perasSupportStatus
+              [CBOR.TBool perasSupport] | version >= NodeToNodeV_16 -> pure $
+                if perasSupport
                   then PerasSupported
                   else PerasUnsupported
-              l -> die $ "invalid encoding for perasSupportStatus given the version " <> show version <> ": " <> show l
+              l -> die $ "invalid encoding for perasSupport given the version " <> show version <> ": " <> show l
 
       other -> die $ "unexpected encoding when decoding NodeToNodeVersionData: " <> show other
 

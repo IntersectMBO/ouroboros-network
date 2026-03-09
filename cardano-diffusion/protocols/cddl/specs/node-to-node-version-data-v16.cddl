@@ -2,7 +2,7 @@
 ; NodeToNodeVersionData, v16
 ;
 
-nodeToNodeVersionData = [ networkMagic, initiatorOnlyDiffusionMode, peerSharing, query, perasSupportStatus ]
+nodeToNodeVersionData = [ networkMagic, initiatorOnlyDiffusionMode, peerSharing, query, perasSupport ]
 
 ; range between 0 and 0xffffffff
 networkMagic = base.word32
@@ -10,6 +10,6 @@ initiatorOnlyDiffusionMode = bool
 ; range between 0 and 1
 peerSharing = 0..1
 query = bool
-perasSupportStatus = bool
+perasSupport = bool
 
 ;# import network.base as base

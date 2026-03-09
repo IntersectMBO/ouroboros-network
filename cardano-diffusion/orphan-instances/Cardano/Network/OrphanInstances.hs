@@ -101,12 +101,12 @@ instance ToJSON NodeToClientVersion where
     NodeToClientV_23 -> Number 23
 
 instance ToJSON NodeToNodeVersionData where
-  toJSON (NodeToNodeVersionData (NetworkMagic m) dm ps q pss) = object
+  toJSON (NodeToNodeVersionData (NetworkMagic m) dm ps q ps') = object
     [ "networkMagic"  .= toJSON m
     , "diffusionMode" .= show dm
     , "peerSharing"   .= show ps
     , "query"         .= toJSON q
-    , "perasSupportStatus" .= show pss
+    , "perasSupport" .= show ps'
     ]
 
 instance ToJSON NodeToClientVersionData where

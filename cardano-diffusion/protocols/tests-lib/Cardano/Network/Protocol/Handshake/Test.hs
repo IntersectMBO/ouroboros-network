@@ -131,23 +131,23 @@ instance Arbitrary ArbitraryNodeToNodeVersionData where
                           , PerasSupported
                           ]
     shrink (ArbitraryNodeToNodeVersionData
-             (NodeToNodeVersionData magic mode peerSharing query perasSupportStatus)) =
-        [ ArbitraryNodeToNodeVersionData (NodeToNodeVersionData magic' mode peerSharing' query perasSupportStatus')
+             (NodeToNodeVersionData magic mode peerSharing query perasSupport)) =
+        [ ArbitraryNodeToNodeVersionData (NodeToNodeVersionData magic' mode peerSharing' query perasSupport')
         | magic' <- NetworkMagic <$> shrink (unNetworkMagic magic)
         , peerSharing' <- shrinkPeerSharing peerSharing
-        , perasSupportStatus' <- shrinkPerasSupportStatus perasSupportStatus
+        , perasSupport' <- shrinkPerasSupport perasSupport
         ]
         ++
-        [ ArbitraryNodeToNodeVersionData (NodeToNodeVersionData magic mode' peerSharing' query perasSupportStatus')
+        [ ArbitraryNodeToNodeVersionData (NodeToNodeVersionData magic mode' peerSharing' query perasSupport')
         | mode' <- shrinkMode mode
         , peerSharing' <- shrinkPeerSharing peerSharing
-        , perasSupportStatus' <- shrinkPerasSupportStatus perasSupportStatus
+        , perasSupport' <- shrinkPerasSupport perasSupport
         ]
         ++
-        [ ArbitraryNodeToNodeVersionData (NodeToNodeVersionData magic mode peerSharing' query' perasSupportStatus')
+        [ ArbitraryNodeToNodeVersionData (NodeToNodeVersionData magic mode peerSharing' query' perasSupport')
         | query' <- shrink query
         , peerSharing' <- shrinkPeerSharing peerSharing
-        , perasSupportStatus' <- shrinkPerasSupportStatus perasSupportStatus
+        , perasSupport' <- shrinkPerasSupport perasSupport
         ]
       where
         shrinkMode :: DiffusionMode -> [DiffusionMode]
@@ -157,8 +157,8 @@ instance Arbitrary ArbitraryNodeToNodeVersionData where
         shrinkPeerSharing PeerSharingDisabled = []
         shrinkPeerSharing PeerSharingEnabled  = [PeerSharingDisabled]
 
-        shrinkPerasSupportStatus PerasUnsupported = []
-        shrinkPerasSupportStatus PerasSupported   = [PerasUnsupported]
+        shrinkPerasSupport PerasUnsupported = []
+        shrinkPerasSupport PerasSupported   = [PerasUnsupported]
 
 newtype ArbitraryNodeToNodeVersions =
         ArbitraryNodeToNodeVersions

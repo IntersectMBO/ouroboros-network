@@ -1,4 +1,4 @@
-module Ouroboros.Network.PerasSupportStatus (PerasSupportStatus (..)) where
+module Ouroboros.Network.PerasSupport (PerasSupport (..)) where
 
 -- | The flag which indicates whether the node can support Peras protocol.
 --
@@ -6,10 +6,10 @@ module Ouroboros.Network.PerasSupportStatus (PerasSupportStatus (..)) where
 -- negotiation. If both the local and remote nodes support Peras protocol,
 -- then Peras protocol can be used.
 
-data PerasSupportStatus = PerasUnsupported | PerasSupported
+data PerasSupport = PerasUnsupported | PerasSupported
   deriving (Eq, Show)
 
-instance Ord PerasSupportStatus where
+instance Ord PerasSupport where
   PerasUnsupported <= PerasUnsupported = True
   PerasSupported <= PerasUnsupported   = False
   PerasUnsupported <= PerasSupported   = True
