@@ -1105,7 +1105,7 @@ diffusionSimulation
           acceptVersion = acceptableVersion
           defaultMiniProtocolsLimit :: MiniProtocolLimits
           defaultMiniProtocolsLimit =
-            MiniProtocolLimits { maximumIngressQueue = 64000 }
+            MiniProtocolLimits { maximumIngressQueue = 64000, burst = Nothing }
 
           blockGeneratorArgs :: Node.BlockGeneratorArgs Block StdGen
           blockGeneratorArgs =

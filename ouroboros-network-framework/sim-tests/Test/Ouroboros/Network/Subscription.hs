@@ -86,7 +86,8 @@ testProtocols1 chainSync =
         miniProtocolNum    = MiniProtocolNum 2,
         miniProtocolStart  = StartOnDemand,
         miniProtocolLimits = MiniProtocolLimits {
-                               maximumIngressQueue = defaultMiniProtocolLimit
+                               maximumIngressQueue = defaultMiniProtocolLimit,
+                               burst = Nothing
                              },
         miniProtocolRun    = chainSync
       }
@@ -103,7 +104,8 @@ testProtocols2 reqResp =
         miniProtocolNum    = MiniProtocolNum 4,
         miniProtocolStart  = StartOnDemand,
         miniProtocolLimits = MiniProtocolLimits {
-                               maximumIngressQueue = defaultMiniProtocolLimit
+                               maximumIngressQueue = defaultMiniProtocolLimit,
+                               burst = Nothing
                              },
         miniProtocolRun    = reqResp
       }

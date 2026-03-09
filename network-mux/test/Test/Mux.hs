@@ -103,7 +103,8 @@ tests =
 defaultMiniProtocolLimits :: MiniProtocolLimits
 defaultMiniProtocolLimits =
     MiniProtocolLimits {
-      maximumIngressQueue = defaultMiniProtocolLimit
+      maximumIngressQueue = defaultMiniProtocolLimit,
+      burst = Nothing
     }
 
 defaultMiniProtocolLimit :: Int
@@ -112,7 +113,8 @@ defaultMiniProtocolLimit = 3000000
 smallMiniProtocolLimits :: MiniProtocolLimits
 smallMiniProtocolLimits =
     MiniProtocolLimits {
-      maximumIngressQueue = smallMiniProtocolLimit
+      maximumIngressQueue = smallMiniProtocolLimit,
+      burst = Nothing
     }
 
 smallMiniProtocolLimit :: Int
@@ -1925,7 +1927,7 @@ close_experiment
       (bracket (Mx.new [ MiniProtocolInfo {
                            miniProtocolNum,
                            miniProtocolDir = Mx.InitiatorDirectionOnly,
-                           miniProtocolLimits = Mx.MiniProtocolLimits maxBound,
+                           miniProtocolLimits = Mx.MiniProtocolLimits maxBound Nothing,
                            miniProtocolCapability = Nothing
                          }
                        ])
@@ -1944,7 +1946,7 @@ close_experiment
           (bracket ( Mx.new [ MiniProtocolInfo {
                                 miniProtocolNum,
                                 miniProtocolDir = Mx.ResponderDirectionOnly,
-                                miniProtocolLimits = Mx.MiniProtocolLimits maxBound,
+                                miniProtocolLimits = Mx.MiniProtocolLimits maxBound Nothing,
                                 miniProtocolCapability = Nothing
                               }
                             ])
