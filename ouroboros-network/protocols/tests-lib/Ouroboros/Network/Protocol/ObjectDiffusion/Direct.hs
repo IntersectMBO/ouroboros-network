@@ -28,7 +28,7 @@ directPipelined (ObjectDiffusionOutbound mOutbound)
     directSender EmptyQ inbound outbound
   where
     directSender :: forall (n :: N).
-                    Queue          n (Collect objectId object)
+                    Queue         n (Collect objectId object)
                  -> InboundStIdle n objectId object m a
                  -> OutboundStIdle    objectId object m a
                  -> m a

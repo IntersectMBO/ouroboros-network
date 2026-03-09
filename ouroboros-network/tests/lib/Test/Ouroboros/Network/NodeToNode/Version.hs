@@ -1,7 +1,8 @@
 {-# LANGUAGE NamedFieldPuns      #-}
-{-# OPTIONS_GHC -Wno-orphans #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
+
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 module Test.Ouroboros.Network.NodeToNode.Version (tests) where
 

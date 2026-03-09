@@ -271,7 +271,9 @@ nodeToNodeProtocols _featureFlags miniProtocolParameters protocols
                 miniProtocolRun    = txSubmissionProtocol
               }
             ]
-              <> concat [perasMiniProtocols | perasSupport == PerasSupported]
+              <> case perasSupport of
+                   PerasSupported   -> perasMiniProtocols
+                   PerasUnsupported -> mempty
            where
              perasMiniProtocols =
                [ MiniProtocol {
