@@ -619,7 +619,7 @@ test-suite framework-io-tests
     monoidal-synchronisation,
     network,
     network-mux,
-    ouroboros-network:{api, api-tests-lib, framework, framework-tests-lib},
+    ouroboros-network:{api, api-tests-lib, framework, framework-tests-lib, tests-lib},
     random,
     tasty,
     tasty-quickcheck,

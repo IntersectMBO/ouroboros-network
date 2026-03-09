@@ -41,7 +41,7 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.IOSim hiding (SimResult)
-import Control.Tracer (Tracer (..), showTracing, traceWith)
+import Control.Tracer (Tracer (..), traceWith)
 
 import Codec.CBOR.Decoding qualified as CBOR
 import Codec.CBOR.Encoding qualified as CBOR
@@ -61,6 +61,7 @@ import Ouroboros.Network.TxSubmission.Mempool.Simple (Mempool)
 import Ouroboros.Network.TxSubmission.Mempool.Simple qualified as Mempool
 import Ouroboros.Network.Util.ShowProxy
 
+import Test.Ouroboros.Network.Utils (sayTracer)
 import Test.QuickCheck
 import Text.Printf
 
@@ -224,7 +225,7 @@ verboseTracer :: forall a m.
                        , Show a
                        )
                => Tracer m a
-verboseTracer = threadAndTimeTracer $ showTracing $ Tracer say
+verboseTracer = threadAndTimeTracer sayTracer
 
 threadAndTimeTracer :: forall a m.
                        ( MonadAsync m

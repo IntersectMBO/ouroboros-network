@@ -28,6 +28,7 @@ import Data.Binary.Put qualified as Bin
 import Data.Bits
 import Data.ByteString.Lazy qualified as BL
 import Data.ByteString.Lazy.Char8 qualified as BL8 (pack)
+import Data.Functor.Contravariant ((>$<))
 import Data.List (dropWhileEnd, nub)
 import Data.List qualified as List
 import Data.Map qualified as M
@@ -132,10 +133,7 @@ smallMiniProtocolLimit = 16*1024
 
 activeTracer :: forall m a. MonadSay m => Tracer m a
 activeTracer = nullTracer
---activeTracer = showTracing _sayTracer
-
-_sayTracer :: MonadSay m => Tracer m String
-_sayTracer = Tracer say
+-- activeTracer = sayTracer
 
 --
 -- Generators
@@ -1916,7 +1914,7 @@ verboseTracer :: forall a m.
                        , Show a
                        )
                => Tracer m a
-verboseTracer = threadAndTimeTracer $ showTracing $ Tracer say
+verboseTracer = threadAndTimeTracer $ show >$< Tracer say
 
 muxVerboseTracer :: forall m.
                        ( MonadAsync m

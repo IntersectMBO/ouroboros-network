@@ -13,12 +13,13 @@ module Main (main) where
 
 import Data.ByteString (ByteString)
 import Data.ByteString.Char8 qualified as BSC
+import Data.Functor.Contravariant ((>$<))
 
 import Control.Concurrent (forkIO)
 import Control.Concurrent.STM (atomically)
 import Control.Exception (finally)
 import Control.Monad
-import Control.Tracer (Tracer (..), showTracing)
+import Control.Tracer (Tracer (..))
 
 import System.Environment qualified as SysEnv
 import System.Exit
@@ -71,7 +72,7 @@ putStrLn_ :: String -> IO ()
 putStrLn_ = BSC.putStrLn . BSC.pack
 
 debugTracer :: Show a => Tracer IO a
-debugTracer = showTracing (Tracer putStrLn_)
+debugTracer = show >$< Tracer putStrLn_
 
 --
 -- Protocols
