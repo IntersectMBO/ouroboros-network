@@ -87,7 +87,8 @@ rmIfExists path = do
 maximumMiniProtocolLimits :: MiniProtocolLimits
 maximumMiniProtocolLimits =
     MiniProtocolLimits {
-      maximumIngressQueue = maxBound
+      maximumIngressQueue = maxBound,
+      burst = Nothing
     }
 
 tracer :: Show a => Tracer IO a
@@ -292,5 +293,3 @@ serverPingPong2 =
         , codecPingPong
         , pingPongServerPeer pingPongServerStandard
         )
-
-

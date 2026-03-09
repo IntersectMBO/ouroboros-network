@@ -90,7 +90,8 @@ demoProtocols chainSync =
         miniProtocolNum    = MiniProtocolNum 2,
         miniProtocolStart  = StartOnDemand,
         miniProtocolLimits = MiniProtocolLimits {
-                               maximumIngressQueue = defaultMiniProtocolLimit
+                               maximumIngressQueue = defaultMiniProtocolLimit,
+                               burst = Nothing
                              },
         miniProtocolRun    = chainSync
       }

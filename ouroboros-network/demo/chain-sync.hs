@@ -206,7 +206,8 @@ rmIfExists path = do
 maximumMiniProtocolLimits :: MiniProtocolLimits
 maximumMiniProtocolLimits =
     MiniProtocolLimits {
-      maximumIngressQueue = maxBound
+      maximumIngressQueue = maxBound,
+      burst = Nothing
     }
 
 

@@ -75,7 +75,8 @@ debugTracer = showTracing (Tracer putStrLn_)
 defaultProtocolLimits :: MiniProtocolLimits
 defaultProtocolLimits =
     MiniProtocolLimits {
-      maximumIngressQueue = 64_000
+      maximumIngressQueue = 64_000,
+      burst = Nothing
     }
 
 --
@@ -208,4 +209,3 @@ echoClient :: Int -> Int -> ByteString
            -> ReqRespClient ByteString ByteString IO Int
 echoClient !n 0 _      = SendMsgDone (pure n)
 echoClient !n m rawmsg = SendMsgReq rawmsg (pure . echoClient (n+1) (m-1))
-
