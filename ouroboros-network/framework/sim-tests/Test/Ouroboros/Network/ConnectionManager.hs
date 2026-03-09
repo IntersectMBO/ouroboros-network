@@ -28,7 +28,6 @@ import Control.Exception (assert)
 import Control.Monad (forever, unless, when, (>=>))
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
-import Control.Monad.Class.MonadSay
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
@@ -74,6 +73,7 @@ import Ouroboros.Network.Snocket (Accept (..), Accepted (..),
 import Ouroboros.Network.Util (PrettyShow (..))
 
 import Test.Ouroboros.Network.ConnectionManager.Utils (verifyAbstractTransition)
+import Test.Ouroboros.Network.Utils (dynamicTracer, sayTracer)
 
 
 
@@ -744,7 +744,7 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
         snocket <- mkSnocket scheduleMap
         connStateIdSupply <- atomically $ CM.newConnStateIdSupply Proxy
         let tracer :: Tracer (IOSim s) TestConnectionManagerTrace
-            tracer = Tracer (say . show)
+            tracer = sayTracer
                     {--
                       - <> Tracer (\msg -> do
                       -             t <- getMonotonicTime
@@ -756,8 +756,8 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
             trTracer :: Tracer (IOSim s) (TestTransitionTrace (IOSim s))
             trTracer =
               fmap CM.abstractState `contramap`
-                   Tracer traceM
-                <> Tracer (say . show)
+                   dynamicTracer
+                <> sayTracer
                 {--
                   - <> Tracer (\msg -> do
                   -             t <- getMonotonicTime

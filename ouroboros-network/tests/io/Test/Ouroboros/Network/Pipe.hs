@@ -63,7 +63,7 @@ import Ouroboros.Network.Util.ShowProxy
 
 activeTracer :: Show a => Tracer IO a
 activeTracer = nullTracer
---activeTracer = showTracing stdoutTracer
+--activeTracer = show >$< stdoutTracer
 
 --
 -- The list of all tests

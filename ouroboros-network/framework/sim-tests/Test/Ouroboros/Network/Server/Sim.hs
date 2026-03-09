@@ -1441,12 +1441,12 @@ prop_connection_manager_counters (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
                                   noAttenuation
                                   Map.empty
               $ \snocket getState ->
-                multinodeExperiment (sayTracer <> Tracer traceM)
-                                    (sayTracer <> Tracer traceM)
-                                    (sayTracer <> Tracer traceM)
+                multinodeExperiment (dynamicTracer <> sayTracer)
+                                    (dynamicTracer <> sayTracer)
+                                    (dynamicTracer <> sayTracer)
                                     nullTracer
-                                    (   sayTracer
-                                     <> Tracer traceM
+                                    (   dynamicTracer
+                                     <> sayTracer
                                      <> networkStateTracer getState)
                                     (Mux.Tracers (dynamicTracer <> sayTracer)
                                                  (dynamicTracer <> sayTracer)
@@ -2341,7 +2341,7 @@ multiNodeSimTracer stdGen serverAcc dataFlow defaultBearerInfo
                           $ attenuationMap
 
       mb <- timeout 7200
-                    ( withSnocket (Tracer (say . show))
+                    ( withSnocket sayTracer
                                   (toBearerInfo defaultBearerInfo)
                                   attenuationMap'
               $ \snocket _ ->

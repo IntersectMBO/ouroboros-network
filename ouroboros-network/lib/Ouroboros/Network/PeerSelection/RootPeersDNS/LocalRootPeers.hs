@@ -343,7 +343,7 @@ exampleLocal domains = do
   where
     provider rootPeersVar =
       localRootPeersProvider
-        (showTracing stdoutTracer)
+        (show >$< stdoutTracer)
         DNS.defaultResolvConf
         rootPeersVar
         (map (\d -> (d, DoAdvertisePeer)) domains)
@@ -354,17 +354,17 @@ exampleLocal domains = do
         x <- readTVar var
         check (x /= fingerprint)
         return x
-      traceWith (showTracing stdoutTracer) x
+      traceWith (show >$< stdoutTracer) x
       observer var x
 
 examplePublic :: [DomainAccessPoint] -> IO ()
 examplePublic domains = do
     publicRootPeersProvider
-      (showTracing stdoutTracer)
+      (show >$< stdoutTracer)
       DNS.defaultResolvConf
       domains $ \requestPublicRootPeers ->
         forever $ do
           (ips, ttl) <- requestPublicRootPeers 42
-          traceWith (showTracing stdoutTracer) (ips, ttl)
+          traceWith (show >$< stdoutTracer) (ips, ttl)
           threadDelay ttl
 -}

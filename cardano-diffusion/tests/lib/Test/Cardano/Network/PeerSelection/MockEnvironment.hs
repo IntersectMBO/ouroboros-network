@@ -54,7 +54,6 @@ import Control.Exception (throw)
 import Control.Monad (forM, when)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
-import Control.Monad.Class.MonadSay
 import Control.Monad.Class.MonadTest
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
@@ -95,7 +94,8 @@ import Test.Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers hid
            (tests)
 import Test.Ouroboros.Network.PeerSelection.PeerGraph
 import Test.Ouroboros.Network.Utils (ShrinkCarefully, arbitrarySubset,
-           nightlyTest, prop_shrink_nonequal, prop_shrink_valid)
+           dynamicTracer, nightlyTest, prop_shrink_nonequal, prop_shrink_valid,
+           sayTracer)
 
 import Test.Cardano.Network.PeerSelection.Instances
 import Test.Cardano.Network.PeerSelection.PublicRootPeers ()
@@ -854,10 +854,7 @@ tracerMockEnv = contramap MockEnvEvent tracerTestTraceEvent
 tracerTestTraceEvent :: Tracer (IOSim s) (TestTraceEvent Cardano.ExtraState
                                                          PeerTrustable
                                                          (Cardano.ExtraPeers PeerAddr))
-tracerTestTraceEvent = dynamicTracer <> Tracer (say . show)
-
-dynamicTracer :: Typeable a => Tracer (IOSim s) a
-dynamicTracer = Tracer traceM
+tracerTestTraceEvent = dynamicTracer <> sayTracer
 
 selectPeerSelectionTraceEvents
   :: ( Typeable extraState
