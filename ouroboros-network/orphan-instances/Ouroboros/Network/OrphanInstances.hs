@@ -88,6 +88,8 @@ import Ouroboros.Network.Server.RateLimiting (AcceptConnectionsPolicyTrace (..),
 import Ouroboros.Network.Snocket (LocalAddress (..), RemoteAddress)
 import Ouroboros.Network.TxSubmission.Inbound.V2 (ProcessedTxCount (..),
            TraceTxLogic (..), TraceTxSubmissionInbound (..))
+import Ouroboros.Network.TxSubmission.Inbound.V2.Types
+           (TxSubmissionLogicVersion (..))
 import Ouroboros.Network.TxSubmission.Outbound (TraceTxSubmissionOutbound (..))
 
 -- Helper function for ToJSON instances with a "kind" field
@@ -95,6 +97,16 @@ kindObject :: Text -> [Pair] -> Value
 kindObject k fields = object $ ("kind" .= String k) : fields
 
 -- FromJSON Instances
+
+instance FromJSON TxSubmissionLogicVersion where
+  parseJSON = withText "TxSubmissionLogicVersion" $ \case
+    "TxSubmissionLogicV1" -> pure TxSubmissionLogicV1
+    "TxSubmissionLogicV2" -> pure TxSubmissionLogicV2
+    _                     -> fail "Invalid JSON for TxSubmissionLogicVersion"
+
+instance ToJSON TxSubmissionLogicVersion where
+  toJSON TxSubmissionLogicV1 = String "TxSubmissionLogicV1"
+  toJSON TxSubmissionLogicV2 = String "TxSubmissionLogicV2"
 
 instance FromJSON RootConfig where
   parseJSON = withObject "RootConfig" $ \o ->
