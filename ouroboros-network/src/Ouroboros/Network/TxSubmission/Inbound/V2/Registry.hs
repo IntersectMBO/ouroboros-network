@@ -36,6 +36,7 @@ import Data.Sequence.Strict (StrictSeq)
 import Data.Sequence.Strict qualified as StrictSeq
 import Data.Set qualified as Set
 import Data.Typeable (Typeable)
+import Data.Word (Word64)
 import Data.Void (Void)
 
 import Control.Tracer (Tracer, traceWith)
@@ -62,6 +63,9 @@ newtype TxMempoolSem m = TxMempoolSem (TSem m)
 
 newTxMempoolSem :: MonadSTM m => m (TxMempoolSem m)
 newTxMempoolSem = TxMempoolSem <$> atomically (newTSem 1)
+
+bumpGeneration :: SharedTxState peeraddr txid tx -> SharedTxState peeraddr txid tx
+bumpGeneration st@SharedTxState { generation } = st { generation = generation + 1 }
 
 -- | API to access `PeerTxState` inside `PeerTxStateVar`.
 --
@@ -150,13 +154,13 @@ withPeer tracer
                                 submitTxToMempool }
                   )
 
-          atomically $ modifyTVar sharedStateVar registerPeer
+          atomically $ modifyTVar sharedStateVar (bumpGeneration . registerPeer)
           return peerTxAPI
       )
       -- the handler is a short blocking operation, thus we need to use
       -- `uninterruptibleMask_`
       (\_ -> uninterruptibleMask_ do
-        atomically $ modifyTVar sharedStateVar unregisterPeer
+        atomically $ modifyTVar sharedStateVar (bumpGeneration . unregisterPeer)
         modifyMVar_ channelsVar
           \ TxChannels { txChannelMap } ->
             return TxChannels { txChannelMap = Map.delete peeraddr txChannelMap }
@@ -260,7 +264,7 @@ withPeer tracer
             start <- getMonotonicTime
             res <- addTx
             end <- getMonotonicTime
-            atomically $ modifyTVar sharedStateVar (updateBufferedTx end res)
+            atomically $ modifyTVar sharedStateVar (bumpGeneration . updateBufferedTx end res)
             let duration = end `diffTime` start
             case res of
               TxAccepted -> traceWith txTracer (TraceTxInboundAddedToMempool [txid] duration)
@@ -391,7 +395,7 @@ withPeer tracer
       error ("TxSubmission.countRejectedTxs: invariant violation for peer " ++ show peeraddr)
     countRejectedTxs now n = atomically $ stateTVar sharedStateVar $ \st ->
         let (result, peerTxStates') = Map.alterF fn peeraddr (peerTxStates st)
-        in (result, st { peerTxStates = peerTxStates' })
+        in (result, bumpGeneration st { peerTxStates = peerTxStates' })
       where
         fn :: Maybe (PeerTxState txid tx) -> (Double, Maybe (PeerTxState txid tx))
         fn Nothing   = error ("TxSubmission.withPeer: invariant violation for peer " ++ show peeraddr)
@@ -447,7 +451,7 @@ drainRejectionThread tracer policy sharedStateVar = do
             st' = tickTimedTxs now st
                     { peerTxStates = ptss }
             st'' = st' { inflightTxs = Map.filter (filterStaleReq now) (inflightTxs st')}
-        writeTVar sharedStateVar st''
+        writeTVar sharedStateVar (bumpGeneration st'')
         return st''
       traceWith tracer (TraceSharedTxState "drainRejectionThread" st''')
 
@@ -477,10 +481,11 @@ decisionLogicThread
     -> m Void
 decisionLogicThread tracer counterTracer policy txChannelsVar sharedStateVar = do
     labelThisThread "tx-decision"
-    go
+    initialGeneration <- atomically $ generation <$> readTVar sharedStateVar
+    go initialGeneration
   where
-    go :: m Void
-    go = do
+    go :: Word64 -> m Void
+    go lastSeen = do
       -- We rate limit the decision making process, it could overwhelm the CPU
       -- if there are too many inbound connections.
       threadDelay _DECISION_LOOP_DELAY
@@ -493,11 +498,11 @@ decisionLogicThread tracer counterTracer policy txChannelsVar sharedStateVar = d
       -- Wait until there is potentially some work to do or the timer expires.
       atomically do
         sharedTxState <- readTVar sharedStateVar
-        let activePeers = filterActivePeers now policy sharedTxState
+        let newGeneration = generation sharedTxState > lastSeen
         timerExpired <- Lazy.readTVar delayVar
 
-        -- block until at least one peer is active or the timer expires
-        if not (Map.null activePeers)
+        -- block until state changes or the timer expires
+        if newGeneration
            then return ()
         else if timerExpired
            then return ()
@@ -510,15 +515,15 @@ decisionLogicThread tracer counterTracer policy txChannelsVar sharedStateVar = d
         let activePeers = filterActivePeers now' policy sharedTxState
 
         if Map.null activePeers
-           then return Nothing
+           then return (Left (generation sharedTxState))
            else do
              let (sharedState, decisions) = makeDecisions now' policy sharedTxState activePeers
              writeTVar sharedStateVar sharedState
-             return $ Just (decisions, sharedState)
+             return $ Right (decisions, sharedState)
 
       case res_m of
-           Nothing              -> go
-           Just (decisions, st) -> do
+           Left lastSeen' -> go lastSeen'
+           Right (decisions, st) -> do
              traceWith tracer (TraceSharedTxState "decisionLogicThread" st)
              traceWith tracer (TraceTxDecisions decisions)
              TxChannels { txChannelMap } <- readMVar txChannelsVar
@@ -528,7 +533,7 @@ decisionLogicThread tracer counterTracer policy txChannelsVar sharedStateVar = d
                txChannelMap
                decisions)
              traceWith counterTracer (mkTxSubmissionCounters st)
-             go
+             go (generation st)
 
     nextDecisionDelay
       :: Time

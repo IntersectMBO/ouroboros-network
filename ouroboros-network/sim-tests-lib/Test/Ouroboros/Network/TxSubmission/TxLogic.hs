@@ -462,7 +462,8 @@ genSharedTxState maxTxIdsInflight = do
                  timedTxs        = Map.empty,
                  inSubmissionToMempoolTxs
                                  = Map.empty,
-                 peerRng         = mkStdGen seed
+                 peerRng         = mkStdGen seed,
+                 generation      = 0
                }
 
     return ( mempoolHasTxFun
