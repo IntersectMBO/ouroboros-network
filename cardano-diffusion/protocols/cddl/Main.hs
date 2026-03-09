@@ -65,7 +65,7 @@ import Cardano.Network.NodeToClient.Version (NodeToClientVersion,
 import Cardano.Network.NodeToClient.Version qualified as NtCVersion
 import Cardano.Network.NodeToNode.Version (DiffusionMode (..),
            NodeToNodeVersion (..), NodeToNodeVersionData (..),
-           PerasSupport (..), isValidNtnVersionDataForVersion,
+           PerasSupport (..), fixNtnVersionDataForVersion,
            nodeToNodeCodecCBORTerm)
 import Cardano.Network.NodeToNode.Version qualified as NtNVersion
 
@@ -436,7 +436,7 @@ genValidNtnVersionDataForVersion
     :: NodeToNodeVersion
     -> Gen NodeToNodeVersionData
 genValidNtnVersionDataForVersion version =
-       arbitrary `suchThat` (isValidNtnVersionDataForVersion version)
+  fixNtnVersionDataForVersion version <$> arbitrary
 
 newtype NtNHandshakeV14ToLast =
   NtNHandshakeV14ToLast

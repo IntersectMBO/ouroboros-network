@@ -47,24 +47,26 @@ instance Arbitrary NodeToNodeVersionData where
                    ]
 
 prop_nodeToNodeCodec :: NodeToNodeVersion -> NodeToNodeVersionData -> Property
-prop_nodeToNodeCodec ntnVersion ntnData =
-    isValidNtnVersionDataForVersion ntnVersion ntnData ==>
-        case decodeTerm (encodeTerm ntnData) of
-            Right ntnData' -> ntnData' === ntnData
-            Left err       -> counterexample (show err) False
-    where
-      CodecCBORTerm { encodeTerm, decodeTerm } = nodeToNodeCodecCBORTerm ntnVersion
-
-prop_nodeToNodeCodecHandleInvalidData :: NodeToNodeVersion -> NodeToNodeVersionData -> Property
-prop_nodeToNodeCodecHandleInvalidData ntnVersion ntnData =
-    not (isValidNtnVersionDataForVersion ntnVersion ntnData) ==> ioProperty $ do
-      r <- try @SomeException (evaluate (encodeTerm ntnData))
-      case r of
-        Left _  -> pure $ property True
-        Right _ -> pure $ counterexample explanation False
+prop_nodeToNodeCodec ntnVersion rawNtnData =
+    case decodeTerm (encodeTerm ntnData) of
+      Right ntnData' -> ntnData' === ntnData
+      Left err       -> counterexample (show err) False
   where
-    explanation =
-         show ntnData
-      ++ " was encoded successfully, but should have failed for version "
-      ++ show ntnVersion
-    CodecCBORTerm { encodeTerm } = nodeToNodeCodecCBORTerm ntnVersion
+    ntnData = fixNtnVersionDataForVersion ntnVersion rawNtnData
+    CodecCBORTerm { encodeTerm, decodeTerm } = nodeToNodeCodecCBORTerm ntnVersion
+
+prop_nodeToNodeCodecHandleInvalidData :: NodeToNodeVersionData -> Property
+prop_nodeToNodeCodecHandleInvalidData rawNtnData =
+    forAll (elements (invalidateNtnVersionData rawNtnData)) checkEncodeFails
+  where
+    checkEncodeFails (ntnVersion, ntnData) = ioProperty $ do
+        r <- try @SomeException (evaluate (encodeTerm ntnData))
+        case r of
+          Left _  -> pure $ property True
+          Right _ -> pure $ counterexample explanation False
+      where
+        explanation =
+             show ntnData
+          ++ " was encoded successfully, but should have failed for version "
+          ++ show ntnVersion
+        CodecCBORTerm { encodeTerm } = nodeToNodeCodecCBORTerm ntnVersion

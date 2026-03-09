@@ -14,6 +14,8 @@ module Cardano.Network.NodeToNode.Version
   , nodeToNodeCodecCBORTerm
     -- * Feature predicates
   , isValidNtnVersionDataForVersion
+  , fixNtnVersionDataForVersion
+  , invalidateNtnVersionData
   , getLocalPerasSupport
   ) where
 
@@ -145,6 +147,18 @@ instance Queryable NodeToNodeVersionData where
 isValidNtnVersionDataForVersion :: NodeToNodeVersion -> NodeToNodeVersionData -> Bool
 isValidNtnVersionDataForVersion version ntnData =
   version >= NodeToNodeV_16 || perasSupport ntnData == PerasUnsupported
+
+
+-- | For versions before 'NodeToNodeV_16', set 'perasSupport' to 'PerasUnsupported' to ensure the data is valid for the version.
+fixNtnVersionDataForVersion :: NodeToNodeVersion -> NodeToNodeVersionData -> NodeToNodeVersionData
+fixNtnVersionDataForVersion version ntnData =
+  if version < NodeToNodeV_16
+    then ntnData { perasSupport = PerasUnsupported }
+    else ntnData
+
+invalidateNtnVersionData :: NodeToNodeVersionData -> [(NodeToNodeVersion, NodeToNodeVersionData)]
+invalidateNtnVersionData rawNtnData =
+  (\v -> (v, rawNtnData { perasSupport = PerasSupported })) <$> [minBound .. pred NodeToNodeV_16]
 
 -- | Determine the local node's Peras support status based on feature flags and version.
 getLocalPerasSupport :: Set CardanoFeatureFlag -> NodeToNodeVersion -> PerasSupport

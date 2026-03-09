@@ -171,9 +171,11 @@ instance Show ArbitraryNodeToNodeVersions where
 
 instance Arbitrary ArbitraryNodeToNodeVersions where
     arbitrary = do
-      let compatibleWith v = isValidNtnVersionDataForVersion v . getNodeToNodeVersionData
+      let genValidNtnVersionDataForVersion version = do
+            ArbitraryNodeToNodeVersionData rawNtnData <- arbitrary
+            pure $ ArbitraryNodeToNodeVersionData (fixNtnVersionDataForVersion version rawNtnData)
       vs <- listOf (getNodeToNodeVersion <$> arbitrary)
-      ds <- traverse (\v -> arbitrary `suchThat` compatibleWith v) vs
+      ds <- traverse (\v -> genValidNtnVersionDataForVersion v) vs
       r  <- arbitrary
       return $ ArbitraryNodeToNodeVersions
              $ Versions
