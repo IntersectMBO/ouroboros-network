@@ -77,5 +77,5 @@ defaultTxDecisionPolicy =
     bufferedTxsMinLifetime = 2,
     scoreRate              = 0.1,
     scoreMax               = 15 * 60,
-    interTxSpace           = 0.5
+    interTxSpace           = 0.2
   }
