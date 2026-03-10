@@ -69,7 +69,7 @@ txSubmissionInboundV2
       readTxDecision,
       handleReceivedTxIds,
       handleReceivedTxs,
-      submitTxToMempool
+      submitTxsToMempool
     }
     =
     TxSubmissionServerPipelined $ do
@@ -91,12 +91,12 @@ txSubmissionInboundV2
 
         -- Only attempt to add TXs if we have some work to do
         when (collected > 0) $ do
-          -- submitTxToMempool traces:
+          -- submitTxsToMempool traces:
           -- * `TraceTxSubmissionProcessed`,
           -- * `TraceTxInboundAddedToMempool`, and
           -- * `TraceTxInboundRejectedFromMempool`
           -- events.
-          mapM_ (uncurry $ submitTxToMempool tracer) listOfTxsToMempool
+          submitTxsToMempool tracer listOfTxsToMempool
 
         -- TODO:
         -- We can update the state so that other `tx-submission` servers will
