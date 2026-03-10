@@ -502,8 +502,37 @@ decisionLogicThread tracer counterTracer policy txChannelsVar sharedStateVar = d
     initialGeneration <- atomically $ generation <$> readTVar sharedStateVar
     go initialGeneration
   where
+    maxCoalesce :: DiffTime
+    maxCoalesce = 0.025
+
+    debounceTime :: DiffTime
+    debounceTime = _DECISION_LOOP_DELAY
+
+    debounce :: Lazy.TVar m Bool -> Time -> Word64 -> m ()
+    debounce txTimer deadline lastGen = do
+      now <- getMonotonicTime
+      let remaining = diffTime deadline now
+      if remaining <= 0
+         then return ()
+         else do
+           let waitFor = min debounceTime remaining
+           debounceTimer <- registerDelay waitFor
+           res <- atomically $ do
+             st <- readTVar sharedStateVar
+             expiredTx <- Lazy.readTVar txTimer
+             expiredDebounce <- Lazy.readTVar debounceTimer
+             let gen = generation st
+             case (expiredTx, gen > lastGen, expiredDebounce) of
+                  (True , _, _)         -> return $ Right gen -- txTimer wins, stop coalescing
+                  (False, True, _)      -> return $ Left gen  -- new change, restart debounce
+                  (False, False, True)  -> return $ Right gen -- queit period elapsed
+                  (False, False, False) -> retry
+           case res of
+                Left newGen -> debounce txTimer deadline newGen
+                Right _     -> return ()
+
     go :: Word64 -> m Void
-    go lastSeen = do
+    go lastGen = do
       -- We rate limit the decision making process, it could overwhelm the CPU
       -- if there are too many inbound connections.
       threadDelay _DECISION_LOOP_DELAY
@@ -514,17 +543,26 @@ decisionLogicThread tracer counterTracer policy txChannelsVar sharedStateVar = d
         return $ nextDecisionDelay now sharedTxState
       delayVar <- registerDelay nextDelay
       -- Wait until there is potentially some work to do or the timer expires.
-      atomically do
+      wake_res <- atomically do
         sharedTxState <- readTVar sharedStateVar
-        let newGeneration = generation sharedTxState > lastSeen
+        let gen = generation sharedTxState
         timerExpired <- Lazy.readTVar delayVar
 
         -- block until state changes or the timer expires
-        if newGeneration
-           then return ()
-        else if timerExpired
-           then return ()
-           else retry
+        if timerExpired
+           then return Nothing
+           else if gen > lastGen
+                then return $ Just gen
+                else retry
+
+      -- Unless a tx timer expired run debouncer
+      -- in order to coalesce events together.
+      case wake_res of
+          Nothing -> return ()
+          Just gen -> do
+            now' <- getMonotonicTime
+            let deadline = addTime maxCoalesce now'
+            debounce delayVar deadline gen
 
       -- Use a fresh timestamp for decisions
       now' <- getMonotonicTime
@@ -540,7 +578,7 @@ decisionLogicThread tracer counterTracer policy txChannelsVar sharedStateVar = d
              return $ Right (decisions, sharedState)
 
       case res_m of
-           Left lastSeen' -> go lastSeen'
+           Left gen              -> go gen
            Right (decisions, st) -> do
              traceWith tracer (TraceSharedTxState "decisionLogicThread" st)
              traceWith tracer (TraceTxDecisions decisions)
