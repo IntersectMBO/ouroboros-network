@@ -21,6 +21,7 @@ import Control.Concurrent.Class.MonadMVar.Strict
 import Control.Concurrent.Class.MonadSTM qualified as Lazy
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Concurrent.Class.MonadSTM.TSem
+import Control.Monad (when)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
@@ -29,11 +30,13 @@ import Control.Monad.Class.MonadTimer.SI
 
 import Data.Foldable as Foldable (foldl', traverse_)
 import Data.Hashable
+import Data.List qualified as List
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Sequence.Strict (StrictSeq)
 import Data.Sequence.Strict qualified as StrictSeq
+import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Typeable (Typeable)
 import Data.Word (Word64)
@@ -88,9 +91,10 @@ data PeerTxAPI m txid tx = PeerTxAPI {
                         -> m (Maybe TxSubmissionProtocolError),
     -- ^ handle received txs
 
-    submitTxToMempool     :: Tracer m (TraceTxSubmissionInbound txid tx)
-                          -> txid -> tx -> m ()
-    -- ^ submit the given (txid, tx) to the mempool.
+    submitTxsToMempool     :: Tracer m (TraceTxSubmissionInbound txid tx)
+                          -> [(txid, tx)]
+                          -> m ()
+    -- ^ submit the given txs to the mempool.
   }
 
 
@@ -151,7 +155,7 @@ withPeer tracer
                   , PeerTxAPI { readTxDecision = takeMVar chann',
                                 handleReceivedTxIds,
                                 handleReceivedTxs,
-                                submitTxToMempool }
+                                submitTxsToMempool }
                   )
 
           atomically $ modifyTVar sharedStateVar (bumpGeneration . registerPeer)
@@ -256,65 +260,75 @@ withPeer tracer
     -- PeerTxAPI
     --
 
-    submitTxToMempool :: Tracer m (TraceTxSubmissionInbound txid tx) -> txid -> tx -> m ()
-    submitTxToMempool txTracer txid tx =
+    submitTxsToMempool :: Tracer m (TraceTxSubmissionInbound txid tx)
+                       -> [(txid, tx)]
+                       -> m ()
+    submitTxsToMempool _ [] = return ()
+    submitTxsToMempool txTracer txs =
         bracket_ (atomically $ waitTSem mempoolSem)
                  (atomically $ signalTSem mempoolSem)
           $ do
             start <- getMonotonicTime
-            res <- addTx
+            mpSnapshot <- atomically mempoolGetSnapshot
+
+            -- Note that checking if the mempool contains a TX before
+            -- spending several ms attempting to add it to the pool has
+            -- been judged immoral.
+            let toSubmit =
+                  [ (txid, tx)
+                  | (txid, tx) <- txs
+                  , not (mempoolHasTx mpSnapshot txid)
+                  ]
+                toSubmitTxs = map snd toSubmit
+
+            acceptedTxIds <-
+              if null toSubmitTxs
+                 then return []
+                 else mempoolAddTxs toSubmitTxs
+
             end <- getMonotonicTime
-            atomically $ modifyTVar sharedStateVar (bumpGeneration . updateBufferedTx end res)
             let duration = end `diffTime` start
-            case res of
-              TxAccepted -> traceWith txTracer (TraceTxInboundAddedToMempool [txid] duration)
-              TxRejected -> traceWith txTracer (TraceTxInboundRejectedFromMempool [txid] duration)
+                acceptedSet = Set.fromList acceptedTxIds
+                isAccepted txid = txid `Set.member` acceptedSet
+                rejectedTxIds = [ txid | (txid, _) <- txs, not (isAccepted txid) ]
+                acceptedCount = length acceptedTxIds
+                rejectedCount = length rejectedTxIds
+
+            !s <- countRejectedTxs end (fromIntegral rejectedCount)
+            traceWith txTracer $ TraceTxSubmissionProcessed ProcessedTxCount {
+                ptxcAccepted = acceptedCount
+              , ptxcRejected = rejectedCount
+              , ptxcScore    = s
+              }
+
+            atomically $ modifyTVar sharedStateVar $ \st ->
+              bumpGeneration $ Foldable.foldl' (updateBufferedTx end acceptedSet) st txs
+
+            when (not $ List.null acceptedTxIds) $
+              traceWith txTracer (TraceTxInboundAddedToMempool acceptedTxIds duration)
+
+            when (not $ List.null rejectedTxIds) $
+              traceWith txTracer (TraceTxInboundRejectedFromMempool rejectedTxIds duration)
 
       where
-        -- add the tx to the mempool
-        addTx :: m TxMempoolResult
-        addTx = do
-          mpSnapshot <- atomically mempoolGetSnapshot
-
-          -- Note that checking if the mempool contains a TX before
-          -- spending several ms attempting to add it to the pool has
-          -- been judged immoral.
-          if mempoolHasTx mpSnapshot txid
-             then do
-               !now <- getMonotonicTime
-               !s <- countRejectedTxs now 1
-               traceWith txTracer $ TraceTxSubmissionProcessed ProcessedTxCount {
-                    ptxcAccepted = 0
-                  , ptxcRejected = 1
-                  , ptxcScore    = s
-                  }
-               return TxRejected
-             else do
-               acceptedTxs <- mempoolAddTxs [tx]
-               end <- getMonotonicTime
-               if null acceptedTxs
-                  then do
-                      !s <- countRejectedTxs end 1
-                      traceWith txTracer $ TraceTxSubmissionProcessed ProcessedTxCount {
-                          ptxcAccepted = 0
-                        , ptxcRejected = 1
-                        , ptxcScore    = s
-                        }
-                      return TxRejected
-                  else do
-                      !s <- countRejectedTxs end 0
-                      traceWith txTracer $ TraceTxSubmissionProcessed ProcessedTxCount {
-                          ptxcAccepted = 1
-                        , ptxcRejected = 0
-                        , ptxcScore    = s
-                        }
-                      return TxAccepted
-
         updateBufferedTx :: Time
-                         -> TxMempoolResult
+                         -> Set txid
                          -> SharedTxState peeraddr txid tx
+                         -> (txid, tx)
                          -> SharedTxState peeraddr txid tx
-        updateBufferedTx _ TxRejected st@SharedTxState { peerTxStates
+        updateBufferedTx now acceptedSet st (txid, tx) =
+            let res = if txid `Set.member` acceptedSet
+                         then TxAccepted
+                         else TxRejected
+            in updateBufferedTxResult now res txid tx st
+
+        updateBufferedTxResult :: Time
+                               -> TxMempoolResult
+                               -> txid
+                               -> tx
+                               -> SharedTxState peeraddr txid tx
+                               -> SharedTxState peeraddr txid tx
+        updateBufferedTxResult _ TxRejected txid _ st@SharedTxState { peerTxStates
                                                        , inSubmissionToMempoolTxs } =
             st { peerTxStates = peerTxStates'
                , inSubmissionToMempoolTxs = inSubmissionToMempoolTxs' }
@@ -327,7 +341,7 @@ withPeer tracer
               where
                 fn ps = Just $! ps { toMempoolTxs = Map.delete txid (toMempoolTxs ps)}
 
-        updateBufferedTx now TxAccepted
+        updateBufferedTxResult now TxAccepted txid tx
                          st@SharedTxState { peerTxStates
                                           , bufferedTxs
                                           , referenceCounts
