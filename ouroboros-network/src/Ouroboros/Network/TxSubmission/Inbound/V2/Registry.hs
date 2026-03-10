@@ -442,10 +442,11 @@ drainRejectionThread
        , Ord txid
        )
     => Tracer m (TraceTxLogic peeraddr txid tx)
+    -> Tracer m TxSubmissionCounters
     -> TxDecisionPolicy
     -> SharedTxStateVar m peeraddr txid tx
     -> m Void
-drainRejectionThread tracer policy sharedStateVar = do
+drainRejectionThread tracer counterTracer policy sharedStateVar = do
     labelThisThread "tx-rejection-drain"
     now <- getMonotonicTime
     go $ addTime drainInterval now
@@ -468,6 +469,7 @@ drainRejectionThread tracer policy sharedStateVar = do
         writeTVar sharedStateVar (bumpGeneration st'')
         return st''
       traceWith tracer (TraceSharedTxState "drainRejectionThread" st''')
+      traceWith counterTracer (mkTxSubmissionCounters st''')
 
       if now > nextDrain
          then go $ addTime drainInterval now
@@ -488,12 +490,11 @@ decisionLogicThread
        , Hashable peeraddr
        )
     => Tracer m (TraceTxLogic peeraddr txid tx)
-    -> Tracer m TxSubmissionCounters
     -> TxDecisionPolicy
     -> TxChannelsVar m peeraddr txid tx
     -> SharedTxStateVar m peeraddr txid tx
     -> m Void
-decisionLogicThread tracer counterTracer policy txChannelsVar sharedStateVar = do
+decisionLogicThread tracer policy txChannelsVar sharedStateVar = do
     labelThisThread "tx-decision"
     initialGeneration <- atomically $ generation <$> readTVar sharedStateVar
     go initialGeneration
@@ -584,7 +585,6 @@ decisionLogicThread tracer counterTracer policy txChannelsVar sharedStateVar = d
                (Map.intersectionWith (,)
                txChannelMap
                decisions)
-             traceWith counterTracer (mkTxSubmissionCounters st)
              go (generation st)
 
     nextDecisionDelay
@@ -646,9 +646,9 @@ decisionLogicThreads
     -> m Void
 decisionLogicThreads tracer counterTracer policy txChannelsVar sharedStateVar =
   uncurry (<>) <$>
-    drainRejectionThread tracer policy sharedStateVar
+    drainRejectionThread tracer counterTracer policy sharedStateVar
     `concurrently`
-    decisionLogicThread tracer counterTracer policy txChannelsVar sharedStateVar
+    decisionLogicThread tracer policy txChannelsVar sharedStateVar
 
 
 -- `5ms` delay
