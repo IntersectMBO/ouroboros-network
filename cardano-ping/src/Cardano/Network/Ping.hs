@@ -136,7 +136,9 @@ supportedNodeToNodeVersions magic =
   , NodeToNodeVersionV13 magic InitiatorOnly PeerSharingDisabled
   , NodeToNodeVersionV14 magic InitiatorOnly PeerSharingDisabled
   , NodeToNodeVersionV15 magic InitiatorOnly PeerSharingDisabled
-  , NodeToNodeVersionV16 magic InitiatorOnly PeerSharingDisabled
+  -- TODO: at the moment we set `PerasUnsupported` for all versions, but in
+  -- the future we should probably read the PerasEnabled flag from the environment
+  , NodeToNodeVersionV16 magic InitiatorOnly PeerSharingDisabled PerasUnsupported
   ]
 
 supportedNodeToClientVersions :: Word32 -> [NodeVersion]
@@ -179,6 +181,19 @@ peerSharingFromWord32 :: Word32 -> PeerSharing
 peerSharingFromWord32 1 = PeerSharingEnabled
 peerSharingFromWord32 _ = PeerSharingDisabled
 
+data PerasSupport = PerasUnsupported | PerasSupported
+  deriving (Eq, Ord, Show, Bounded, Generic)
+
+instance ToJSON PerasSupport
+
+perasSupportToBool :: PerasSupport -> Bool
+perasSupportToBool PerasUnsupported = False
+perasSupportToBool PerasSupported   = True
+
+perasSupportFromBool :: Bool -> PerasSupport
+perasSupportFromBool False = PerasUnsupported
+perasSupportFromBool True  = PerasSupported
+
 data NodeVersion
   = NodeToClientVersionV9  Word32
   | NodeToClientVersionV10 Word32
@@ -209,7 +224,7 @@ data NodeVersion
   | NodeToNodeVersionV13   Word32 InitiatorOnly PeerSharing
   | NodeToNodeVersionV14   Word32 InitiatorOnly PeerSharing
   | NodeToNodeVersionV15   Word32 InitiatorOnly PeerSharing
-  | NodeToNodeVersionV16   Word32 InitiatorOnly PeerSharing
+  | NodeToNodeVersionV16   Word32 InitiatorOnly PeerSharing PerasSupport
   deriving (Eq, Ord, Show)
 
 instance ToJSON NodeVersion where
@@ -244,12 +259,14 @@ instance ToJSON NodeVersion where
       NodeToNodeVersionV13   m i ps -> go4 "NodeToNodeVersionV13" m i ps
       NodeToNodeVersionV14   m i ps -> go4 "NodeToNodeVersionV14" m i ps
       NodeToNodeVersionV15   m i ps -> go4 "NodeToNodeVersionV15" m i ps
-      NodeToNodeVersionV16   m i ps -> go4 "NodeToNodeVersionV16" m i ps
+      NodeToNodeVersionV16   m i ps pss -> go5 "NodeToNodeVersionV16" m i ps pss
       where
         go2 (version :: String) magic = ["version" .= version, "magic" .= magic]
         go3 version magic initiator = go2 version magic <> ["initiator" .= toJSON initiator]
         go4 version magic initiator peersharing = go3 version magic initiator <>
                                                     ["peersharing" .= toJSON peersharing]
+        go5 version magic initiator peersharing perassupport = go4 version magic initiator peersharing <>
+                                                               ["perassupport" .= toJSON perassupport]
 
 data PingTip = PingTip {
     ptHost    :: !(IP, Socket.PortNumber)
@@ -393,19 +410,20 @@ handshakeReqEnc versions query =
     encodeVersion (NodeToNodeVersionV3 magic) =
           CBOR.encodeWord 3
       <>  CBOR.encodeInt (fromIntegral magic)
-    encodeVersion (NodeToNodeVersionV4  magic mode) = encodeWithMode 4  magic mode
-    encodeVersion (NodeToNodeVersionV5  magic mode) = encodeWithMode 5  magic mode
-    encodeVersion (NodeToNodeVersionV6  magic mode) = encodeWithMode 6  magic mode
-    encodeVersion (NodeToNodeVersionV7  magic mode) = encodeWithMode 7  magic mode
-    encodeVersion (NodeToNodeVersionV8  magic mode) = encodeWithMode 8  magic mode
-    encodeVersion (NodeToNodeVersionV9  magic mode) = encodeWithMode 9  magic mode
-    encodeVersion (NodeToNodeVersionV10 magic mode) = encodeWithMode 10 magic mode
-    encodeVersion (NodeToNodeVersionV11 magic mode) = encodeWithMode 11 magic mode
-    encodeVersion (NodeToNodeVersionV12 magic mode) = encodeWithMode 12 magic mode
+    encodeVersion (NodeToNodeVersionV4  magic mode)   = encodeWithMode 4  magic mode
+    encodeVersion (NodeToNodeVersionV5  magic mode)   = encodeWithMode 5  magic mode
+    encodeVersion (NodeToNodeVersionV6  magic mode)   = encodeWithMode 6  magic mode
+    encodeVersion (NodeToNodeVersionV7  magic mode)   = encodeWithMode 7  magic mode
+    encodeVersion (NodeToNodeVersionV8  magic mode)   = encodeWithMode 8  magic mode
+    encodeVersion (NodeToNodeVersionV9  magic mode)   = encodeWithMode 9  magic mode
+    encodeVersion (NodeToNodeVersionV10 magic mode)   = encodeWithMode 10 magic mode
+    encodeVersion (NodeToNodeVersionV11 magic mode)   = encodeWithMode 11 magic mode
+    encodeVersion (NodeToNodeVersionV12 magic mode)   = encodeWithMode 12 magic mode
     encodeVersion (NodeToNodeVersionV13 magic mode _) = encodeWithMode 13 magic mode
     encodeVersion (NodeToNodeVersionV14 magic mode _) = encodeWithMode 14 magic mode
     encodeVersion (NodeToNodeVersionV15 magic mode _) = encodeWithMode 15 magic mode
-    encodeVersion (NodeToNodeVersionV16 magic mode _) = encodeWithMode 16 magic mode
+    encodeVersion (NodeToNodeVersionV16 magic mode _ perasSupport) =
+      encodeWithModeAndPerasSupport 16 magic mode perasSupport
 
     nodeToClientDataWithQuery :: Word32 -> CBOR.Encoding
     nodeToClientDataWithQuery magic
@@ -414,7 +432,23 @@ handshakeReqEnc versions query =
       <> CBOR.encodeBool query
 
     encodeWithMode :: Word -> Word32 -> InitiatorOnly -> CBOR.Encoding
-    encodeWithMode vn magic mode
+    encodeWithMode vn magic mode =
+      encodeWithModeAndPerasSupport vn magic mode PerasUnsupported
+
+    encodeWithModeAndPerasSupport :: Word
+                                  -> Word32
+                                  -> InitiatorOnly
+                                  -> PerasSupport
+                                  -> CBOR.Encoding
+    encodeWithModeAndPerasSupport vn magic mode perasSupport
+      | vn >= 16 =
+          CBOR.encodeWord vn
+       <> CBOR.encodeListLen 5
+       <> CBOR.encodeInt (fromIntegral magic)
+       <> CBOR.encodeBool (modeToBool mode)
+       <> CBOR.encodeInt 0 -- NoPeerSharing
+       <> CBOR.encodeBool query
+       <> CBOR.encodeBool (perasSupportToBool perasSupport)
       | vn >= 12 =
           CBOR.encodeWord vn
        <> CBOR.encodeListLen 4
@@ -521,7 +555,7 @@ handshakeDec = do
         (13, False) -> decodeWithModeQueryAndPeerSharing NodeToNodeVersionV13
         (14, False) -> decodeWithModeQueryAndPeerSharing NodeToNodeVersionV14
         (15, False) -> decodeWithModeQueryAndPeerSharing NodeToNodeVersionV15
-        (16, False) -> decodeWithModeQueryAndPeerSharing NodeToNodeVersionV16
+        (16, False) -> decodeWithModeQueryAndPeerSharingAndPerasSupport NodeToNodeVersionV16
 
         (9,  True)  -> Right . NodeToClientVersionV9 <$> CBOR.decodeWord32
         (10, True)  -> Right . NodeToClientVersionV10 <$> CBOR.decodeWord32
@@ -564,6 +598,17 @@ handshakeDec = do
         peerSharing <- peerSharingFromWord32 <$> CBOR.decodeWord32
         _query <- CBOR.decodeBool
         return $ Right $ vnFun magic mode peerSharing
+
+    decodeWithModeQueryAndPeerSharingAndPerasSupport :: (Word32 -> InitiatorOnly -> PeerSharing -> PerasSupport -> NodeVersion)
+                                                     -> CBOR.Decoder s (Either HandshakeFailure NodeVersion)
+    decodeWithModeQueryAndPeerSharingAndPerasSupport vnFun = do
+        _len <- CBOR.decodeListLen
+        magic <- CBOR.decodeWord32
+        mode <- modeFromBool <$> CBOR.decodeBool
+        peerSharing <- peerSharingFromWord32 <$> CBOR.decodeWord32
+        _query <- CBOR.decodeBool
+        perasSupport <- perasSupportFromBool <$> CBOR.decodeBool
+        return $ Right $ vnFun magic mode peerSharing perasSupport
 
 chainSyncIntersectNotFoundDec :: CBOR.Decoder s (Word64, Word64, ByteString)
 chainSyncIntersectNotFoundDec = do
@@ -877,4 +922,4 @@ isSameVersionAndMagic v1 v2 = extract v1 == extract v2
         extract (NodeToNodeVersionV13 m _ _) = (13, m)
         extract (NodeToNodeVersionV14 m _ _) = (14, m)
         extract (NodeToNodeVersionV15 m _ _) = (15, m)
-        extract (NodeToNodeVersionV16 m _ _) = (16, m)
+        extract (NodeToNodeVersionV16 m _ _ _) = (16, m)
