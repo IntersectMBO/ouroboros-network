@@ -500,10 +500,10 @@ decisionLogicThread tracer policy txChannelsVar sharedStateVar = do
     go initialGeneration
   where
     maxCoalesce :: DiffTime
-    maxCoalesce = 0.025
+    maxCoalesce = 0.050
 
     debounceTime :: DiffTime
-    debounceTime = _DECISION_LOOP_DELAY
+    debounceTime = 2 * _DECISION_LOOP_DELAY
 
     debounce :: Lazy.TVar m Bool -> Time -> Word64 -> m ()
     debounce txTimer deadline lastGen = do
