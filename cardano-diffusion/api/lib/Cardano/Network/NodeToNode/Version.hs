@@ -187,9 +187,7 @@ nodeToNodeCodecCBORTerm version = CodecCBORTerm { encodeTerm = encodeTerm, decod
                            PeerSharingEnabled  -> 1)
              , CBOR.TBool query
              ]
-          ++ [CBOR.TBool (case perasSupport of
-                  PerasUnsupported -> False
-                  PerasSupported   -> True)
+          ++ [CBOR.TBool (perasSupportToBool perasSupport)
              | version >= NodeToNodeV_16
              ]
 

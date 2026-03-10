@@ -1,4 +1,12 @@
-module Ouroboros.Network.PerasSupport (PerasSupport (..)) where
+{-# LANGUAGE DeriveGeneric #-}
+
+module Ouroboros.Network.PerasSupport
+  ( PerasSupport (..)
+  , perasSupportToBool
+  , perasSupportFromBool
+  ) where
+
+import GHC.Generics (Generic)
 
 -- | The flag which indicates whether the node can support Peras protocol.
 --
@@ -7,10 +15,13 @@ module Ouroboros.Network.PerasSupport (PerasSupport (..)) where
 -- then Peras protocol can be used.
 
 data PerasSupport = PerasUnsupported | PerasSupported
-  deriving (Eq, Show)
+  deriving (Eq, Ord, Show, Bounded, Generic)
 
-instance Ord PerasSupport where
-  PerasUnsupported <= PerasUnsupported = True
-  PerasSupported <= PerasUnsupported   = False
-  PerasUnsupported <= PerasSupported   = True
-  PerasSupported <= PerasSupported     = True
+
+perasSupportToBool :: PerasSupport -> Bool
+perasSupportToBool PerasUnsupported = False
+perasSupportToBool PerasSupported   = True
+
+perasSupportFromBool :: Bool -> PerasSupport
+perasSupportFromBool False = PerasUnsupported
+perasSupportFromBool True  = PerasSupported
