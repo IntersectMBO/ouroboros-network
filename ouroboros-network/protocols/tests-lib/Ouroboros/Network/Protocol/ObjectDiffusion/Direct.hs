@@ -179,7 +179,7 @@ objectDiffusionOutbound tracer objectId maxUnacked =
 
             let unackedSeq' = Seq.drop (fromIntegral ackNo) unackedSeq
                 unackedMap' = Foldable.foldl' (flip Map.delete) unackedMap
-                                     (Seq.take (fromIntegral ackNo) unackedSeq)
+                                (Seq.take (fromIntegral ackNo) unackedSeq)
 
             case blocking of
               SingBlocking | not (Seq.null unackedSeq')
@@ -210,7 +210,7 @@ objectDiffusionOutbound tracer objectId maxUnacked =
                   (BlockingReply (throw CaughtUpNoObjectsAvailable :| []))
                   (outboundIdle unackedSeq'' unackedMap'' remainingObjects')
 
-              (SingBlocking, obj:objs) ->
+              (SingBlocking, obj : objs) ->
                 SendMsgReplyObjectIds
                   (BlockingReply (fmap objectId (obj :| objs)))
                   (outboundIdle unackedSeq'' unackedMap'' remainingObjects')
@@ -230,7 +230,7 @@ objectDiffusionOutbound tracer objectId maxUnacked =
               [] -> pure (SendMsgReplyObjects objects outbound')
                 where
                   objects     = fmap (unackedMap Map.!) objectIds
-                  outbound'     = outboundIdle unackedSeq unackedMap' remainingObjects
+                  outbound'   = outboundIdle unackedSeq unackedMap' remainingObjects
                   unackedMap' = foldr Map.delete unackedMap objectIds
                   -- Here we remove from the map, while the seq stays unchanged.
                   -- This enforces that each object can be requested at most once.
@@ -398,7 +398,7 @@ objectDiffusionInbound
         objectIdsRequestedWithObjectsReceived =
           [ (objId, mbObj)
           | let objsMap :: Map objectId object
-                objsMap = Map.fromList [ (objectId obj, obj) | obj <- objects ]
+                objsMap  = Map.fromList [ (objectId obj, obj) | obj <- objects ]
           , objId <- objectIds
           , let !mbObj = Map.lookup objId objsMap
           ]
@@ -423,10 +423,10 @@ objectDiffusionInbound
           Foldable.foldl' (flip Map.delete) bufferedObjects' acknowledgedObjectIds
 
     inboundReqObjects :: forall (n :: N).
-                        [object]
-                     -> Nat n
-                     -> InboundState objectId object
-                     -> InboundStIdle n objectId object m [object]
+                         [object]
+                      -> Nat n
+                      -> InboundState objectId object
+                      -> InboundStIdle n objectId object m [object]
     inboundReqObjects accum n st =
         SendMsgRequestObjectsPipelined
           (Set.toList objectsToRequest)
@@ -438,10 +438,10 @@ objectDiffusionInbound
           Set.splitAt (fromIntegral maxObjectsToRequest) (availableObjectIds st)
 
     inboundReqObjectIds :: forall (n :: N).
-                          [object]
-                       -> Nat n
-                       -> InboundState objectId object
-                       -> InboundStIdle n objectId object m [object]
+                           [object]
+                        -> Nat n
+                        -> InboundState objectId object
+                        -> InboundStIdle n objectId object m [object]
     inboundReqObjectIds accum n st
       | numObjectIdsToRequest > 0
       = SendMsgRequestObjectIdsPipelined
