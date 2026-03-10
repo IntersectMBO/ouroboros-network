@@ -58,6 +58,7 @@ import Ouroboros.Network.Protocol.ObjectDiffusion.Direct (
   )
 import Control.Tracer (Tracer, nullTracer)
 import Control.Monad.IOSim (runSimOrThrow)
+import Control.Monad.Class.MonadThrow (MonadCatch, MonadEvaluate)
 
 
 --
@@ -271,7 +272,8 @@ instance Arbitrary ObjectDiffusionTestParams where
     | (a', b', c', d') <- shrink (a, b, c, d) ]
 
 
-testInbound :: Tracer m (TraceObjectDiffusionDirect ObjectId Object)
+testInbound :: (MonadCatch m, MonadEvaluate m)
+            => Tracer m (TraceObjectDiffusionDirect ObjectId Object)
             -> ObjectDiffusionTestParams
             -> ObjectDiffusionInboundPipelined ObjectId Object m [Object]
 testInbound

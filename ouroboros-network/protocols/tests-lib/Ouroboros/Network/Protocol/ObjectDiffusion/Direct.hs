@@ -4,6 +4,7 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Ouroboros.Network.Protocol.ObjectDiffusion.Direct
   ( directPipelined,
@@ -11,7 +12,9 @@ module Ouroboros.Network.Protocol.ObjectDiffusion.Direct
     TraceObjectDiffusionDirect (..),
     objectDiffusionInbound,
     InboundState (..),
-    initialInboundState
+    initialInboundState,
+    CaughtUpNoObjectsAvailable (..),
+    ifCaughtUp
   ) where
 
 
@@ -27,7 +30,7 @@ import Ouroboros.Network.Protocol.ObjectDiffusion.Type (
     NumObjectIdsAck (..),
   )
 
-import Control.Exception (assert)
+import Control.Exception (assert, Exception, throw)
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Sequence.Strict (StrictSeq)
 import Data.Map.Strict (Map)
@@ -40,6 +43,8 @@ import Control.Monad (when)
 import Data.Set (Set)
 import qualified Data.Set as Set
 import qualified Data.List.NonEmpty as NonEmpty
+import Data.Data (Typeable)
+import Control.Monad.Class.MonadThrow (MonadCatch, MonadEvaluate, try, evaluate)
 
 
 directPipelined
@@ -91,6 +96,18 @@ directPipelined (ObjectDiffusionOutbound mOutbound)
 
     directSender EmptyQ (SendMsgDone v) _outbound = pure v
 
+-- | Exception used in the outbound implementation to signal that all objects
+-- have been sent.
+--
+-- This is specifically used in tests where we want to terminate the protocol
+-- gracefully after a certain number of objects have been sent.
+-- See 'ifCaughtUp' for how this exception is used in the inbound implementation
+-- to detect when the outbound has no more objects to send.
+data CaughtUpNoObjectsAvailable = CaughtUpNoObjectsAvailable
+  deriving (Show, Typeable)
+
+instance Exception CaughtUpNoObjectsAvailable
+
 --
 -- Outbound implementation
 --
@@ -119,13 +136,13 @@ objectDiffusionOutbound
   -> [object]
   -> ObjectDiffusionOutbound objectId object m ()
 objectDiffusionOutbound tracer objectId maxUnacked =
-  ObjectDiffusionOutbound . pure . client Seq.empty Map.empty
+  ObjectDiffusionOutbound . pure . outboundIdle Seq.empty Map.empty
   where
-    client :: StrictSeq objectId
+    outboundIdle :: StrictSeq objectId
            -> Map objectId object
            -> [object]
            -> OutboundStIdle objectId object m ()
-    client !unackedSeq !unackedMap remainingObjects =
+    outboundIdle !unackedSeq !unackedMap remainingObjects =
         assert invariant
         OutboundStIdle {
           recvMsgRequestObjectIds,
@@ -183,23 +200,25 @@ objectDiffusionOutbound tracer objectId maxUnacked =
 
             return $! case (blocking, unackedExtra) of
               (SingBlocking, []) ->
-                -- NOTE: the current version of this protocol doesn't have a
-                -- way to inform the inbound side that it's caught up. This
-                -- means that there's no propert inhabitant for this type.
-                --
-                -- This will be solved by:
-                -- https://github.com/tweag/cardano-peras/issues/144
-                error "We can't return anything meaningful here, so let's crash"
+                SendMsgReplyObjectIds
+                  -- We use the specific CaughtUpNoObjectsAvailable exception
+                  -- here to signal to the inbound that we have no more objects
+                  -- to send, so it can terminate gracefully.
+                  --
+                  -- There is no inhabitant of 'NonEmpty objectId' that we can
+                  -- return otherwise to signal this.
+                  (BlockingReply (throw CaughtUpNoObjectsAvailable :| []))
+                  (outboundIdle unackedSeq'' unackedMap'' remainingObjects')
 
               (SingBlocking, obj:objs) ->
                 SendMsgReplyObjectIds
                   (BlockingReply (fmap objectId (obj :| objs)))
-                  (client unackedSeq'' unackedMap'' remainingObjects')
+                  (outboundIdle unackedSeq'' unackedMap'' remainingObjects')
 
               (SingNonBlocking, objs) ->
                 SendMsgReplyObjectIds
                   (NonBlockingReply (fmap objectId objs))
-                  (client unackedSeq'' unackedMap'' remainingObjects')
+                  (outboundIdle unackedSeq'' unackedMap'' remainingObjects')
 
           recvMsgRequestObjects :: [objectId]
                                 -> m (OutboundStObjects objectId object m ())
@@ -208,10 +227,10 @@ objectDiffusionOutbound tracer objectId maxUnacked =
               EventRecvMsgRequestObjects
                 unackedSeq unackedMap remainingObjects objectIds
             case [ objId | objId <- objectIds, objId `Map.notMember` unackedMap ] of
-              [] -> pure (SendMsgReplyObjects objects client')
+              [] -> pure (SendMsgReplyObjects objects outbound')
                 where
                   objects     = fmap (unackedMap Map.!) objectIds
-                  client'     = client unackedSeq unackedMap' remainingObjects
+                  outbound'     = outboundIdle unackedSeq unackedMap' remainingObjects
                   unackedMap' = foldr Map.delete unackedMap objectIds
                   -- Here we remove from the map, while the seq stays unchanged.
                   -- This enforces that each object can be requested at most once.
@@ -240,10 +259,25 @@ data InboundState objectId object = InboundState {
 initialInboundState :: InboundState objectId object
 initialInboundState = InboundState 0 Seq.empty Set.empty Map.empty 0
 
+-- | This is a helper function used in the inbound implementation to terminate
+-- the protocol gracefully when all objects that the outbound peer wanted to
+-- send have actually been sent.
+ifCaughtUp
+  :: (MonadCatch m, MonadEvaluate m)
+  => InboundStIdle 'Z objectId object m a
+  -> (NonEmpty objectId -> InboundStIdle 'Z objectId object m a)
+  -> NonEmpty objectId
+  -> InboundStIdle 'Z objectId object m a
+ifCaughtUp fCaughtUp fElse objectIds = WithEffect $ do
+    result <- try @_ @CaughtUpNoObjectsAvailable
+                  (evaluate (NonEmpty.head objectIds))
+    case result of
+      Left CaughtUpNoObjectsAvailable -> pure fCaughtUp
+      Right _                         -> pure $ fElse objectIds
 
 objectDiffusionInbound
   :: forall objectId object m.
-     (Ord objectId)
+     (Ord objectId, MonadCatch m, MonadEvaluate m)
   => Tracer m (TraceObjectDiffusionDirect objectId object)
   -> (object -> objectId)
   -> Word16  -- ^ Maximum number of unacknowledged object IDs allowed
@@ -256,18 +290,18 @@ objectDiffusionInbound
   maxUnacked
   maxObjectIdsToRequest
   maxObjectsToRequest =
-    ObjectDiffusionInboundPipelined (serverIdle [] Zero initialInboundState)
+    ObjectDiffusionInboundPipelined (inboundIdle [] Zero initialInboundState)
   where
-    serverIdle :: forall (n :: N).
+    inboundIdle :: forall (n :: N).
                   [object]
                -> Nat n
                -> InboundState objectId object
                -> InboundStIdle n objectId object m [object]
-    serverIdle accum Zero st
+    inboundIdle accum Zero st
         -- There are no replies in flight, but we do know some more objects we
         -- can ask for, so lets ask for them and more object IDs.
       | canRequestMoreObjects st
-      = serverReqObjects accum Zero st
+      = inboundReqObjects accum Zero st
 
         -- There's no replies in flight, and we have no more objects we can ask
         -- for so the only remaining thing to do is to ask for more object IDs.
@@ -282,16 +316,21 @@ objectDiffusionInbound
         SendMsgRequestObjectIdsBlocking
           (numObjectsToAcknowledge st)
           numObjectIdsToRequest
-          (\objectIds -> do
-              handleReply accum Zero st {
-                 numObjectsToAcknowledge    = 0,
-                 requestedObjectIdsInFlight = numObjectIdsToRequest
-               }
-               . CollectObjectIds numObjectIdsToRequest
-               . NonEmpty.toList $ objectIds
+          -- Unlike the actual implementation in `ouroboros-consensus`, here
+          -- the outbound peer can respond with an exception to signal that
+          -- there are no more objects to send, in which case we terminate
+          -- gracefully.
+          (ifCaughtUp
+            (SendMsgDone accum)
+            (handleReply accum Zero st {
+                    numObjectsToAcknowledge    = 0,
+                    requestedObjectIdsInFlight = numObjectIdsToRequest
+                  }
+                  . CollectObjectIds numObjectIdsToRequest
+                  . NonEmpty.toList)
           )
 
-    serverIdle accum (Succ n) st
+    inboundIdle accum (Succ n) st
         -- We have replies in flight and we should eagerly collect them if
         -- available, but there are objects to request too so we should not
         -- block waiting for replies.
@@ -306,7 +345,7 @@ objectDiffusionInbound
         --
       | canRequestMoreObjects st
       = CollectPipelined
-          (Just (serverReqObjects accum (Succ n) st))
+          (Just (inboundReqObjects accum (Succ n) st))
           (handleReply accum n st)
 
         -- In this case there is nothing else to do so we block until we
@@ -329,7 +368,7 @@ objectDiffusionInbound
     handleReply accum n st (CollectObjectIds reqNo objectIds) =
       -- Upon receiving a batch of new object IDs we extend our available set,
       -- and extended the unacknowledged sequence.
-      serverIdle accum n st {
+      inboundIdle accum n st {
         requestedObjectIdsInFlight = requestedObjectIdsInFlight st - reqNo,
         unacknowledgedObjectIds    = unacknowledgedObjectIds st
                                   <> Seq.fromList objectIds,
@@ -346,9 +385,9 @@ objectDiffusionInbound
       -- though not all have replies.
       --
       -- We have to update the unacknowledgedObjectIds here eagerly and not
-      -- delay it to serverReqObjects, otherwise we could end up blocking in
-      -- serverIdle on more pipelined results rather than being able to move on.
-      serverIdle accum' n st {
+      -- delay it to inboundReqObjects, otherwise we could end up blocking in
+      -- inboundIdle on more pipelined results rather than being able to move on.
+      inboundIdle accum' n st {
         bufferedObjects         = bufferedObjects'',
         unacknowledgedObjectIds = unacknowledgedObjectIds',
         numObjectsToAcknowledge = numObjectsToAcknowledge st
@@ -383,39 +422,39 @@ objectDiffusionInbound
         bufferedObjects'' =
           Foldable.foldl' (flip Map.delete) bufferedObjects' acknowledgedObjectIds
 
-    serverReqObjects :: forall (n :: N).
+    inboundReqObjects :: forall (n :: N).
                         [object]
                      -> Nat n
                      -> InboundState objectId object
                      -> InboundStIdle n objectId object m [object]
-    serverReqObjects accum n st =
+    inboundReqObjects accum n st =
         SendMsgRequestObjectsPipelined
           (Set.toList objectsToRequest)
-          (serverReqObjectIds accum (Succ n) st {
+          (inboundReqObjectIds accum (Succ n) st {
              availableObjectIds = availableObjectIds'
           })
       where
         (objectsToRequest, availableObjectIds') =
           Set.splitAt (fromIntegral maxObjectsToRequest) (availableObjectIds st)
 
-    serverReqObjectIds :: forall (n :: N).
+    inboundReqObjectIds :: forall (n :: N).
                           [object]
                        -> Nat n
                        -> InboundState objectId object
                        -> InboundStIdle n objectId object m [object]
-    serverReqObjectIds accum n st
+    inboundReqObjectIds accum n st
       | numObjectIdsToRequest > 0
       = SendMsgRequestObjectIdsPipelined
           (numObjectsToAcknowledge st)
           numObjectIdsToRequest
-          (serverIdle accum (Succ n) st {
+          (inboundIdle accum (Succ n) st {
              requestedObjectIdsInFlight = requestedObjectIdsInFlight st
                                         + numObjectIdsToRequest,
              numObjectsToAcknowledge    = 0
           })
 
       | otherwise
-      = serverIdle accum n st
+      = inboundIdle accum n st
       where
         -- This definition is justified by the fact that the
         -- 'numObjectsToAcknowledge' are not included in the
