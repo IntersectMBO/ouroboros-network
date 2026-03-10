@@ -13,8 +13,6 @@ module Test.Ouroboros.Network.Diffusion.Node.Kernel
   , encodeNtNAddr
   , decodeNtNAddr
   , ntnAddrToRelayAccessPoint
-  , ppNtNAddr
-  , ppNtNConnId
   , NtNVersion
   , NtNVersionData (..)
   , NtCAddr
@@ -65,7 +63,6 @@ import Ouroboros.Network.AnchoredFragment (Anchor (..))
 import Ouroboros.Network.Block (HasFullHeader, SlotNo)
 import Ouroboros.Network.Block qualified as Block
 import Ouroboros.Network.BlockFetch
-import Ouroboros.Network.ConnectionId (ConnectionId (..))
 import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.Handshake.Acceptable (Accept (..), Acceptable (..))
 import Ouroboros.Network.Mock.Chain (Chain (..))
@@ -87,6 +84,7 @@ import Ouroboros.Network.Snocket (TestAddress (..))
 import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (SharedTxStateVar,
            TxChannels (..), TxChannelsVar, TxMempoolSem, newSharedTxStateVar,
            newTxMempoolSem)
+import Ouroboros.Network.Util (PrettyShow (..))
 
 import Test.Ouroboros.Network.Diffusion.Node.ChainDB (ChainDB (..))
 import Test.Ouroboros.Network.Diffusion.Node.ChainDB qualified as ChainDB
@@ -130,11 +128,11 @@ instance Show NtNAddr_ where
     show (IPAddr ip port)      = "IPAddr (read \"" ++ show ip ++ "\") " ++ show port
     show UnusedAddr            = "UnusedAddr"
 
-ppNtNAddr_ :: NtNAddr_ -> String
-ppNtNAddr_ (EphemeralIPv4Addr n) = "eph.v4." ++ show n
-ppNtNAddr_ (EphemeralIPv6Addr n) = "eph.v6." ++ show n
-ppNtNAddr_ (IPAddr ip port)      = show ip ++ ":" ++ show port
-ppNtNAddr_ UnusedAddr            = "UnusedAddr"
+instance PrettyShow NtNAddr_ where
+    prettyShow (EphemeralIPv4Addr n) = "eph.v4." ++ show n
+    prettyShow (EphemeralIPv6Addr n) = "eph.v6" ++ show n
+    prettyShow (IPAddr ip port)      = show ip ++ ":" ++ show port
+    prettyShow UnusedAddr            = "UnusedAddr"
 
 instance GlobalAddressScheme NtNAddr_ where
     getAddressType (TestAddress addr) =
@@ -156,13 +154,6 @@ data NtNVersionData = NtNVersionData
   , ntnPeerSharing   :: PeerSharing
   }
   deriving (Show, Generic, NFData)
-
-ppNtNAddr :: NtNAddr -> String
-ppNtNAddr (TestAddress addr) = ppNtNAddr_ addr
-
-ppNtNConnId :: ConnectionId NtNAddr -> String
-ppNtNConnId ConnectionId { localAddress, remoteAddress } =
-  ppNtNAddr localAddress ++ "→" ++ ppNtNAddr remoteAddress
 
 instance Acceptable NtNVersionData where
   acceptableVersion
@@ -464,7 +455,7 @@ withNodeKernelThread addr BlockGeneratorArgs { bgaSlotDuration, bgaBlockGenerato
                         -> m Void
     blockProducerThread NodeKernel { nkChainProducerState, nkChainDB }
                         waitForSlot
-                      =  labelThisThread ("krnl-" ++ ppNtNAddr addr)
+                      =  labelThisThread ("krnl-" ++ prettyShow addr)
                       >> loop (Block.SlotNo 1) bpSeed
       where
         loop :: SlotNo -> seed -> m Void

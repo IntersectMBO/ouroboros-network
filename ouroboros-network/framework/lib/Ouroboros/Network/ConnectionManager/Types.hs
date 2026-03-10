@@ -186,6 +186,7 @@ import Ouroboros.Network.ConnectionId (ConnectionId (..))
 import Ouroboros.Network.ConnectionManager.ConnMap (ConnMap)
 import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.MuxMode
+import Ouroboros.Network.Util (PrettyShow (..))
 
 
 -- | Connection manager supports `IPv4` and `IPv6` addresses.
@@ -393,14 +394,14 @@ newtype ConnectionHandler muxMode handlerTrace socket peerAddr handle handleErro
 --
 data ExceptionInHandler where
     ExceptionInHandler :: forall peerAddr.
-                          (Typeable peerAddr, Show peerAddr)
+                          (Typeable peerAddr, PrettyShow peerAddr)
                        => !peerAddr
                        -> !SomeException
                        -> ExceptionInHandler
 
 instance Show ExceptionInHandler where
     show (ExceptionInHandler peerAddr e) = "ExceptionInHandler "
-                                        ++ show peerAddr
+                                        ++ prettyShow peerAddr
                                         ++ " "
                                         ++ show e
 instance Exception ExceptionInHandler
@@ -752,8 +753,10 @@ data ConnectionManagerError peerAddr
     deriving Show
 
 
-instance ( Show peerAddr
-         , Typeable peerAddr ) => Exception (ConnectionManagerError peerAddr) where
+instance ( PrettyShow peerAddr
+         , Show peerAddr
+         , Typeable peerAddr
+         ) => Exception (ConnectionManagerError peerAddr) where
 
     toException   = connectionManagerErrorToException
     fromException = connectionManagerErrorFromException
@@ -762,49 +765,49 @@ instance ( Show peerAddr
       concat [ "Connection already exists with peer "
              , show provenance
              , " "
-             , show peerAddr
+             , prettyShow peerAddr
              , "\n"
              , prettyCallStack cs
              ]
     displayException (ForbiddenConnection connId cs) =
       concat [ "Forbidden to reuse a connection (UnidirectionalDataFlow) with peer "
-             , show connId
+             , prettyShow connId
              , "\n"
              , prettyCallStack cs
              ]
     displayException (ImpossibleConnection connId cs) =
       concat [ "Impossible connection with peer "
-             , show connId
+             , prettyShow connId
              , "\n"
              , prettyCallStack cs
              ]
     displayException (InboundConnectionNotFound peerAddr cs) =
       concat [ "No matching inbound connection found and creating new connection is not allowed with peer "
-             , show peerAddr
+             , prettyShow peerAddr
              , "\n"
              , prettyCallStack cs
              ]
     displayException (ConnectionTerminating connId cs) =
       concat [ "Connection terminating "
-             , show connId
+             , prettyShow connId
              , "\n"
              , prettyCallStack cs
              ]
     displayException (ConnectionTerminated peerAddr cs) =
       concat [ "Connection terminated "
-             , show peerAddr
+             , prettyShow peerAddr
              , "\n"
              , prettyCallStack cs
              ]
     displayException (ImpossibleState peerAddr cs) =
       concat [ "Imposible connection state for peer "
-             , show peerAddr
+             , prettyShow peerAddr
              , "\n"
              , prettyCallStack cs
              ]
     displayException (ForbiddenOperation peerAddr reason cs) =
       concat [ "Forbidden operation "
-             , show peerAddr
+             , prettyShow peerAddr
              , " "
              , show reason
              , "\n"
@@ -812,7 +815,7 @@ instance ( Show peerAddr
              ]
     displayException (UnknownPeer peerAddr cs) =
       concat [ "UnknownPeer "
-             , show peerAddr
+             , prettyShow peerAddr
              , "\n"
              , prettyCallStack cs
              ]
@@ -823,6 +826,7 @@ instance ( Show peerAddr
 --
 data SomeConnectionManagerError =
     forall addr. ( Typeable addr
+                 , PrettyShow addr
                  , Show addr
                  )
     => SomeConnectionManagerError !(ConnectionManagerError addr)
@@ -833,12 +837,12 @@ instance Show SomeConnectionManagerError where
 instance Exception SomeConnectionManagerError where
     displayException (SomeConnectionManagerError e) = displayException e
 
-connectionManagerErrorToException :: (Typeable addr, Show addr)
+connectionManagerErrorToException :: (Typeable addr, Show addr, PrettyShow addr)
                                   => ConnectionManagerError addr
                                   -> SomeException
 connectionManagerErrorToException = toException . SomeConnectionManagerError
 
-connectionManagerErrorFromException :: (Typeable addr, Show addr)
+connectionManagerErrorFromException :: (Typeable addr, PrettyShow addr)
                                     => SomeException
                                     -> Maybe (ConnectionManagerError addr)
 connectionManagerErrorFromException x = do
@@ -951,14 +955,13 @@ data TransitionTrace' id state = TransitionTrace
     }
   deriving Functor
 
-instance (Show peerAddr, Show state)
+instance (PrettyShow peerAddr, Show state)
       =>  Show (TransitionTrace' peerAddr state) where
     show (TransitionTrace addr tr) =
-      concat [ "TransitionTrace @("
-             , show addr
-             , ") ("
+      concat [ "TransitionTrace @"
+             , prettyShow addr
+             , " "
              , show tr
-             , ")"
              ]
 
 type TransitionTrace peerAddr state = TransitionTrace' peerAddr (MaybeUnknown state)

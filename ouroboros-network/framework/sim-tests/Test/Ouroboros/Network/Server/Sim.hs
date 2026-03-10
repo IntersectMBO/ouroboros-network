@@ -97,6 +97,7 @@ import Ouroboros.Network.Server qualified as Server
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket (Snocket, TestAddress (..))
 import Ouroboros.Network.Snocket qualified as Snocket
+import Ouroboros.Network.Util (PrettyShow (..))
 
 import Simulation.Network.Snocket
 
@@ -600,12 +601,12 @@ data ConnectionHandlerMessage peerAddr req
 data Name addr = Client addr
                | Node addr
                | MainServer
-  deriving Eq
+  deriving (Eq, Show)
 
-instance Show addr => Show (Name addr) where
-    show (Client addr) = "client-" ++ show addr
-    show (Node   addr) = "node-"   ++ show addr
-    show  MainServer   = "main-server"
+instance PrettyShow addr => PrettyShow (Name addr) where
+  prettyShow (Client addr) = "client-" ++ prettyShow addr
+  prettyShow (Node   addr) = "node-"   ++ prettyShow addr
+  prettyShow  MainServer   = "main-server"
 
 
 data ExperimentError =
@@ -627,8 +628,13 @@ multinodeExperiment
        , MonadTraceSTM m
        , MonadSay m
        , acc ~ [req], resp ~ [req]
-       , Ord peerAddr, Show peerAddr, Typeable peerAddr, Eq peerAddr
-       , Serialise req, Show req, NFData req
+       , Ord peerAddr
+       , PrettyShow peerAddr
+       , Typeable peerAddr
+       , Eq peerAddr
+       , Serialise req
+       , Show req
+       , NFData req
        , Serialise resp, Show resp, Eq resp
        , Typeable req, Typeable resp
        )
