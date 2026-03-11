@@ -69,7 +69,7 @@ data TxDecisionPolicy = TxDecisionPolicy {
 defaultTxDecisionPolicy :: TxDecisionPolicy
 defaultTxDecisionPolicy =
   TxDecisionPolicy {
-    maxNumTxIdsToRequest   = 3,
+    maxNumTxIdsToRequest   = 10,
     maxUnacknowledgedTxIds = 10, -- must be the same as txSubmissionMaxUnacked
     txsSizeInflightPerPeer = max_TX_SIZE * 6,
     maxTxsSizeInflight     = max_TX_SIZE * 20,
