@@ -507,7 +507,7 @@ decisionLogicThread tracer policy txChannelsVar sharedStateVar = do
     maxCoalesce = 0.050
 
     debounceTime :: DiffTime
-    debounceTime = 2 * _DECISION_LOOP_DELAY
+    debounceTime = 0.01
 
     debounce :: Lazy.TVar m Bool -> Time -> Word64 -> m ()
     debounce txTimer deadline lastGen = do
@@ -534,10 +534,6 @@ decisionLogicThread tracer policy txChannelsVar sharedStateVar = do
 
     go :: Word64 -> m Void
     go lastGen = do
-      -- We rate limit the decision making process, it could overwhelm the CPU
-      -- if there are too many inbound connections.
-      threadDelay _DECISION_LOOP_DELAY
-
       now <- getMonotonicTime
       nextDelay <- atomically $ do
         sharedTxState <- readTVar sharedStateVar
@@ -658,6 +654,4 @@ decisionLogicThreads tracer counterTracer policy txChannelsVar sharedStateVar =
     decisionLogicThread tracer policy txChannelsVar sharedStateVar
 
 
--- `5ms` delay
-_DECISION_LOOP_DELAY :: DiffTime
-_DECISION_LOOP_DELAY = 0.005
+-- No fixed delay: decision loop blocks on STM/timers and uses debounce.
