@@ -567,7 +567,6 @@ instance MetaTrace (ToExtraTrace extraPeers)
     severityFor (Namespace [] ["ChurnAction"]) _ = Just Info
     severityFor (Namespace [] ["ChurnTimeout"]) _ = Just Notice
     severityFor (Namespace [] ["DebugState"]) _ = Just Info
-    severityFor (Namespace [] ["ExtraTrace"]) _ = Just Info
     severityFor _ _ = Nothing
 
     documentFor (Namespace [] ["LocalRootPeersChanged"]) = Just  ""
@@ -700,10 +699,8 @@ instance MetaTrace (ToExtraTrace extraPeers)
       , Namespace [] ["ChurnWait"]
       , Namespace [] ["ChurnAction"]
       , Namespace [] ["ChurnTimeout"]
-      , Namespace [] ["LedgerStateJudgementChanged"]
       , Namespace [] ["OnlyBootstrapPeers"]
       , Namespace [] ["BootstrapPeersFlagChangedWhilstInSensitiveState"]
-      , Namespace [] ["UseBootstrapPeersChanged"]
       , Namespace [] ["VerifyPeerSnapshot"]
       , Namespace [] ["OutboundGovernorCriticalFailure"]
       , Namespace [] ["DebugState"]
