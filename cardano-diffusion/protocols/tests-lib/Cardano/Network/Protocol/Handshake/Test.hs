@@ -29,6 +29,8 @@ import Network.TypedProtocol.Codec
 
 import Cardano.Network.NodeToClient.Version as NTC
 import Cardano.Network.NodeToNode.Version as NTN
+import Cardano.Network.NodeToNode.Version.TestUtils (genNodeToNodeVersionData,
+           genValidNtnVersionDataForVersion, shrinkNodeToNodeVersionData)
 
 import Ouroboros.Network.Channel
 import Ouroboros.Network.CodecCBORTerm
@@ -117,48 +119,9 @@ instance Queryable ArbitraryNodeToNodeVersionData where
     queryVersion = queryVersion . getNodeToNodeVersionData
 
 instance Arbitrary ArbitraryNodeToNodeVersionData where
-    arbitrary = fmap (fmap (fmap (fmap ArbitraryNodeToNodeVersionData)))
-              . NodeToNodeVersionData
-             <$> (NetworkMagic <$> arbitrary)
-             <*> elements [ InitiatorOnlyDiffusionMode
-                          , InitiatorAndResponderDiffusionMode
-                          ]
-             <*> elements [ PeerSharingDisabled
-                          , PeerSharingEnabled
-                          ]
-             <*> arbitrary
-             <*> elements [ PerasUnsupported
-                          , PerasSupported
-                          ]
-    shrink (ArbitraryNodeToNodeVersionData
-             (NodeToNodeVersionData magic mode peerSharing query perasSupport)) =
-        [ ArbitraryNodeToNodeVersionData (NodeToNodeVersionData magic' mode peerSharing' query perasSupport')
-        | magic' <- NetworkMagic <$> shrink (unNetworkMagic magic)
-        , peerSharing' <- shrinkPeerSharing peerSharing
-        , perasSupport' <- shrinkPerasSupport perasSupport
-        ]
-        ++
-        [ ArbitraryNodeToNodeVersionData (NodeToNodeVersionData magic mode' peerSharing' query perasSupport')
-        | mode' <- shrinkMode mode
-        , peerSharing' <- shrinkPeerSharing peerSharing
-        , perasSupport' <- shrinkPerasSupport perasSupport
-        ]
-        ++
-        [ ArbitraryNodeToNodeVersionData (NodeToNodeVersionData magic mode peerSharing' query' perasSupport')
-        | query' <- shrink query
-        , peerSharing' <- shrinkPeerSharing peerSharing
-        , perasSupport' <- shrinkPerasSupport perasSupport
-        ]
-      where
-        shrinkMode :: DiffusionMode -> [DiffusionMode]
-        shrinkMode InitiatorOnlyDiffusionMode = []
-        shrinkMode InitiatorAndResponderDiffusionMode = [InitiatorOnlyDiffusionMode]
-
-        shrinkPeerSharing PeerSharingDisabled = []
-        shrinkPeerSharing PeerSharingEnabled  = [PeerSharingDisabled]
-
-        shrinkPerasSupport PerasUnsupported = []
-        shrinkPerasSupport PerasSupported   = [PerasUnsupported]
+    arbitrary = ArbitraryNodeToNodeVersionData <$> genNodeToNodeVersionData
+    shrink (ArbitraryNodeToNodeVersionData ntnData) =
+        ArbitraryNodeToNodeVersionData <$> shrinkNodeToNodeVersionData ntnData
 
 newtype ArbitraryNodeToNodeVersions =
         ArbitraryNodeToNodeVersions
@@ -171,11 +134,8 @@ instance Show ArbitraryNodeToNodeVersions where
 
 instance Arbitrary ArbitraryNodeToNodeVersions where
     arbitrary = do
-      let genValidNtnVersionDataForVersion version = do
-            ArbitraryNodeToNodeVersionData rawNtnData <- arbitrary
-            pure $ ArbitraryNodeToNodeVersionData (fixNtnVersionDataForVersion version rawNtnData)
       vs <- listOf (getNodeToNodeVersion <$> arbitrary)
-      ds <- traverse (\v -> genValidNtnVersionDataForVersion v) vs
+      ds <- traverse (\v -> ArbitraryNodeToNodeVersionData <$> genValidNtnVersionDataForVersion v) vs
       r  <- arbitrary
       return $ ArbitraryNodeToNodeVersions
              $ Versions

@@ -63,10 +63,10 @@ import Ouroboros.Network.Magic
 import Cardano.Network.NodeToClient.Version (NodeToClientVersion,
            NodeToClientVersionData (..), nodeToClientCodecCBORTerm)
 import Cardano.Network.NodeToClient.Version qualified as NtCVersion
-import Cardano.Network.NodeToNode.Version (DiffusionMode (..),
-           NodeToNodeVersion (..), NodeToNodeVersionData (..),
-           PerasSupport (..), fixNtnVersionDataForVersion,
+import Cardano.Network.NodeToNode.Version (NodeToNodeVersion (..), NodeToNodeVersionData (..),
            nodeToNodeCodecCBORTerm)
+import Cardano.Network.NodeToNode.Version.TestUtils (genNodeToNodeVersionData, shrinkNodeToNodeVersionData,
+           genValidNtnVersionDataForVersion)
 import Cardano.Network.NodeToNode.Version qualified as NtNVersion
 
 import Ouroboros.Network.PeerSelection.RelayAccessPoint (PortNumber)
@@ -418,25 +418,8 @@ validateCBOR (CDDLSpec spec) blob =
         Right _  -> Right ()
 
 instance Arbitrary NodeToNodeVersionData where
-    arbitrary =
-          NodeToNodeVersionData
-      <$> (NetworkMagic <$> arbitrary)
-      <*> oneof [ pure InitiatorOnlyDiffusionMode
-                , pure InitiatorAndResponderDiffusionMode
-                ]
-      <*> elements [ PeerSharingDisabled
-                   , PeerSharingEnabled
-                   ]
-      <*> arbitrary
-      <*> elements [ PerasUnsupported
-                   , PerasSupported
-                   ]
-
-genValidNtnVersionDataForVersion
-    :: NodeToNodeVersion
-    -> Gen NodeToNodeVersionData
-genValidNtnVersionDataForVersion version =
-  fixNtnVersionDataForVersion version <$> arbitrary
+    arbitrary = genNodeToNodeVersionData
+    shrink = shrinkNodeToNodeVersionData
 
 newtype NtNHandshakeV14ToLast =
   NtNHandshakeV14ToLast

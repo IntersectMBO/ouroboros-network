@@ -7,12 +7,11 @@
 module Test.Ouroboros.Network.NodeToNode.Version (tests) where
 
 import Ouroboros.Network.CodecCBORTerm
-import Ouroboros.Network.Magic
 
 import Cardano.Network.NodeToNode.Version
+import Cardano.Network.NodeToNode.Version.TestUtils
 
 import Control.Exception (SomeException, evaluate, try)
-import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
@@ -25,26 +24,12 @@ tests = testGroup "Ouroboros.Network.NodeToNode.Version"
     ]
 
 instance Arbitrary NodeToNodeVersion where
-    arbitrary = arbitraryBoundedEnum
-
-    shrink v
-      | v == minBound = []
-      | otherwise     = [pred v]
+    arbitrary = genNodeToNodeVersion
+    shrink = shrinkNodeToNodeVersion
 
 instance Arbitrary NodeToNodeVersionData where
-    arbitrary =
-          NodeToNodeVersionData
-      <$> (NetworkMagic <$> arbitrary)
-      <*> oneof [ pure InitiatorOnlyDiffusionMode
-                , pure InitiatorAndResponderDiffusionMode
-                ]
-      <*> elements [ PeerSharingDisabled
-                   , PeerSharingEnabled
-                   ]
-      <*> arbitrary
-      <*> elements [ PerasUnsupported
-                   , PerasSupported
-                   ]
+    arbitrary = genNodeToNodeVersionData
+    shrink = shrinkNodeToNodeVersionData
 
 prop_nodeToNodeCodec :: NodeToNodeVersion -> NodeToNodeVersionData -> Property
 prop_nodeToNodeCodec ntnVersion rawNtnData =
@@ -55,9 +40,9 @@ prop_nodeToNodeCodec ntnVersion rawNtnData =
     ntnData = fixNtnVersionDataForVersion ntnVersion rawNtnData
     CodecCBORTerm { encodeTerm, decodeTerm } = nodeToNodeCodecCBORTerm ntnVersion
 
-prop_nodeToNodeCodecHandleInvalidData :: NodeToNodeVersionData -> Property
-prop_nodeToNodeCodecHandleInvalidData rawNtnData =
-    forAll (elements (invalidateNtnVersionData rawNtnData)) checkEncodeFails
+prop_nodeToNodeCodecHandleInvalidData :: Property
+prop_nodeToNodeCodecHandleInvalidData =
+    forAll genInvalidNtnVersionAndDataPair checkEncodeFails
   where
     checkEncodeFails (ntnVersion, ntnData) = ioProperty $ do
         r <- try @SomeException (evaluate (encodeTerm ntnData))
