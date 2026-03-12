@@ -294,15 +294,16 @@ withPeer tracer
                 acceptedCount = length acceptedTxIds
                 rejectedCount = length rejectedTxIds
 
-            !s <- countRejectedTxs end (fromIntegral rejectedCount)
+            !s <- atomically $ do
+              modifyTVar sharedStateVar $ \st ->
+                bumpGeneration $ Foldable.foldl' (updateBufferedTx end acceptedSet) st txs
+              countRejectedTxs end (fromIntegral rejectedCount)
+
             traceWith txTracer $ TraceTxSubmissionProcessed ProcessedTxCount {
                 ptxcAccepted = acceptedCount
               , ptxcRejected = rejectedCount
               , ptxcScore    = s
               }
-
-            atomically $ modifyTVar sharedStateVar $ \st ->
-              bumpGeneration $ Foldable.foldl' (updateBufferedTx end acceptedSet) st txs
 
             when (not $ List.null acceptedTxIds) $
               traceWith txTracer (TraceTxInboundAddedToMempool acceptedTxIds duration)
@@ -404,12 +405,12 @@ withPeer tracer
     -- PRECONDITION: the `Double` argument is non-negative.
     countRejectedTxs :: Time
                      -> Double
-                     -> m Double
+                     -> STM m Double
     countRejectedTxs _ n | n < 0 =
       error ("TxSubmission.countRejectedTxs: invariant violation for peer " ++ show peeraddr)
-    countRejectedTxs now n = atomically $ stateTVar sharedStateVar $ \st ->
-        let (result, peerTxStates') = Map.alterF fn peeraddr (peerTxStates st)
-        in (result, bumpGeneration st { peerTxStates = peerTxStates' })
+    countRejectedTxs now n = stateTVar sharedStateVar $ \st ->
+        let (result, peerTxStates') = Map.alterF fn peeraddr (peerTxStates st) in
+        (result, st { peerTxStates = peerTxStates' })
       where
         fn :: Maybe (PeerTxState txid tx) -> (Double, Maybe (PeerTxState txid tx))
         fn Nothing   = error ("TxSubmission.withPeer: invariant violation for peer " ++ show peeraddr)
