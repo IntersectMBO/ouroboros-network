@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE BlockArguments      #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
@@ -74,7 +75,7 @@ acknowledgeTxIds
 
 acknowledgeTxIds
     policy
-    sharedTxState
+    sharedTxState@SharedTxState { bufferedTxs }
     ps@PeerTxState { availableTxIds,
                      unknownTxs,
                      requestedTxIdsInflight,
@@ -113,37 +114,24 @@ acknowledgeTxIds
     (txIdsToRequest, acknowledgedTxIds, unacknowledgedTxIds')
       = splitAcknowledgedTxIds policy sharedTxState ps
 
-    txsToMempool = [ (txid, downloadedTxs Map.! txid)
-                   | txid <- toList toMempoolTxIds
-                   , txid `Map.notMember` bufferedTxs sharedTxState
-                   -- without the guard below we could potentially enqueue
-                   -- the same tx into the mempool multiple times over
-                   -- several decision loop iterations before the tx
-                   -- is finally in the mempool, or rejected.
-                   , txid `Map.notMember` toMempoolTxs
-                   ]
-    -- Select downloaded txs from the prefix of `acknowledgedTxIds`, ignoring
-    -- unknown and buffered txs.
-    toMempoolTxIds =
-      StrictSeq.filter (`Map.member` downloadedTxs) acknowledgedTxIds
-
-    txsToMempoolMap = Map.fromList txsToMempool
+    -- foldl' reverses the order, so we need to undo it here
+    txsToMempool = reverse txsToMempoolRev
 
     toMempoolTxs' = toMempoolTxs <> txsToMempoolMap
 
-    (downloadedTxs', ackedDownloadedTxs) =
-      Map.partitionWithKey (\txid _ -> txid `Set.member` liveSet) downloadedTxs
-
-    -- latexTxs: transactions which were downloaded by another peer before we
-    -- downloaded them; it relies on that `txToMempool` filters out
-    -- `bufferedTxs`.
-    lateTxs =
-      Map.filterWithKey (\txid _ -> txid `Map.member` bufferedTxs sharedTxState) ackedDownloadedTxs
-
-    score' = score + fromIntegral (Map.size lateTxs)
+    (txsToMempoolRev, txsToMempoolMap, refCountDiffMap) =
+      Foldable.foldl' accAcknowledgedTxId ([], Map.empty, Map.empty) acknowledgedTxIds
 
     -- the set of live `txids`
     liveSet  = Set.fromList (toList unacknowledgedTxIds')
+
+    (downloadedTxs', lateTxCount) =
+      Map.foldlWithKey' keepLiveDownloadedTx (Map.empty, 0) downloadedTxs
+
+    -- lateTxCount: transactions which were downloaded by another peer before we
+    -- downloaded them; it relies on that `txToMempool` filters out
+    -- `bufferedTxs`.
+    score' = score + fromIntegral lateTxCount
 
     availableTxIds' = availableTxIds
                       `Map.restrictKeys`
@@ -155,13 +143,44 @@ acknowledgeTxIds
     -- above).
     unknownTxs' = unknownTxs `Set.intersection` liveSet
 
-    refCountDiff = RefCountDiff
-                 $ foldr (Map.alter fn)
-                         Map.empty acknowledgedTxIds
-      where
-        fn :: Maybe Int -> Maybe Int
-        fn Nothing  = Just 1
-        fn (Just n) = Just $! n + 1
+    refCountDiff = RefCountDiff refCountDiffMap
+
+    bumpRefCount :: Maybe Int -> Maybe Int
+    bumpRefCount Nothing  = Just 1
+    bumpRefCount (Just n) = Just $! n + 1
+
+    -- Fold one acknowledged txid into the mempool queue and refcount diff.
+    accAcknowledgedTxId
+      :: ([(txid, tx)], Map txid tx, Map txid Int)
+      -> txid
+      -> ([(txid, tx)], Map txid tx, Map txid Int)
+    accAcknowledgedTxId (!txsRev, !txsMap, !refDiffMap) txid =
+      let !refDiffMap' = Map.alter bumpRefCount txid refDiffMap
+      in case Map.lookup txid downloadedTxs of
+           Just tx
+             | txid `Map.notMember` bufferedTxs
+             -- without the guard below we could potentially enqueue
+             -- the same tx into the mempool multiple times over
+             -- several decision loop iterations before the tx
+             -- is finally in the mempool, or rejected.
+             , txid `Map.notMember` toMempoolTxs
+             -> ( (txid, tx) : txsRev
+                , Map.insert txid tx txsMap
+                , refDiffMap'
+                )
+           _ -> (txsRev, txsMap, refDiffMap')
+
+    -- Rebuild the live downloaded set and count as late only non-live txs that
+    -- are already buffered globally.
+    keepLiveDownloadedTx
+      :: (Map txid tx, Int)
+      -> txid
+      -> tx
+      -> (Map txid tx, Int)
+    keepLiveDownloadedTx (!downloadedTxsAcc, !lateTxCountAcc) txid tx
+      | txid `Set.member` liveSet           = (Map.insert txid tx downloadedTxsAcc, lateTxCountAcc)
+      | txid `Map.member` bufferedTxs = (downloadedTxsAcc, lateTxCountAcc + 1)
+      | otherwise                           = (downloadedTxsAcc, lateTxCountAcc)
 
     txIdsToAcknowledge :: NumTxIdsToAck
     txIdsToAcknowledge = fromIntegral $ StrictSeq.length acknowledgedTxIds
