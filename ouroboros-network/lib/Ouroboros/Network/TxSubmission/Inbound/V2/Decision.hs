@@ -103,9 +103,8 @@ data St peeraddr txid tx =
         -- ^ acknowledged `txid` with multiplicities.  It is used to update
         -- `referenceCounts`.
 
-        stInSubmissionToMempoolTxs :: !(Set txid)
-        -- ^ TXs on their way to the mempool. Used to prevent issueing new
-        -- fetch requests for them.
+        stNewInSubmissionToMempoolTxs :: !(Set txid)
+        -- ^ TXs newly selected for mempool submission in this decision round.
       }
 
 
@@ -152,7 +151,7 @@ pickTxsToDownload now policy@TxDecisionPolicy { txsSizeInflightPerPeer,
       -- initial state
       St { stInflight                 = inflightTxs,
            stAcknowledged             = Map.empty,
-           stInSubmissionToMempoolTxs = Map.keysSet inSubmissionToMempoolTxs }
+           stNewInSubmissionToMempoolTxs = Set.empty }
 
     >>>
       gn
@@ -167,7 +166,7 @@ pickTxsToDownload now policy@TxDecisionPolicy { txsSizeInflightPerPeer,
     accumFn
       st@St { stInflight,
               stAcknowledged,
-              stInSubmissionToMempoolTxs }
+              stNewInSubmissionToMempoolTxs }
       ( peeraddr
       , peerTxState@PeerTxState { availableTxIds,
                                   unknownTxs,
@@ -179,7 +178,25 @@ pickTxsToDownload now policy@TxDecisionPolicy { txsSizeInflightPerPeer,
       let requestedTxsInflightSize' :: SizeInBytes
           txsToRequestMap :: Map txid SizeInBytes
 
+          blockedTxid :: txid -> Bool
+          blockedTxid txid =
+               Set.member txid requestedTxsInflight
+            || Set.member txid unknownTxs
+            || Map.member txid bufferedTxs
+            || Map.member txid inSubmissionToMempoolTxs
+            || Set.member txid stNewInSubmissionToMempoolTxs
+
           (requestedTxsInflightSize', txsToRequestMap) =
+            let candidates :: [(txid, (SizeInBytes, InFlightState))]
+                candidates =
+                  Map.foldrWithKey
+                    (\txid txSize acc ->
+                      if blockedTxid txid
+                        then acc
+                        else (txid, (txSize, Map.findWithDefault mempty txid stInflight)) : acc)
+                    []
+                    availableTxIds
+            in
             -- inner fold: fold available `txid`s
             --
             -- Note: although `Map.foldrWithKey` could be used here, it
@@ -187,37 +204,24 @@ pickTxsToDownload now policy@TxDecisionPolicy { txsSizeInflightPerPeer,
             -- `foldWithState`.
             foldWithState
               (\(txid, (txSize, inflightSt)) sizeInflight ->
-                let inflightMultiplicity = inFlightCount inflightSt in
+                let inflightMultiplicity = inFlightCount inflightSt
+                    inflightSpace        = inFlightNextReq inflightSt
+                in
                 if -- note that we pick `txid`'s as long the `s` is
                    -- smaller or equal to `txsSizeInflightPerPeer`.
                    sizeInflight <= txsSizeInflightPerPeer
                    -- the transaction must not be downloaded from more
                    -- than `txInflightMultiplicity` peers simultaneously
                 && inflightMultiplicity < txInflightMultiplicity
+                   -- we issue new requests for the same TX with
+                   -- a minimum time between them
+                && inflightSpace <= now
                 -- TODO: we must validate that `txSize` is smaller than
                 -- maximum txs size
                 then Just (sizeInflight + txSize, (txid, txSize))
                 else Nothing
               )
-              (Map.assocs $
-                -- merge `availableTxIds` with `stInflight`, so we don't
-                -- need to lookup into `stInflight` on every `txid` which
-                -- is in `availableTxIds`.
-                Map.merge (Map.mapMaybeMissing \_txid -> Just . (, mempty))
-                           Map.dropMissing
-                          (Map.zipWithMatched \_txid -> (,))
-
-                          availableTxIds
-                          stInflight
-                -- remove `tx`s which were already downloaded by some
-                -- other peer or are in-flight or unknown by this peer.
-                `Map.withoutKeys` (
-                     Map.keysSet bufferedTxs
-                  <> requestedTxsInflight
-                  <> unknownTxs
-                  <> stInSubmissionToMempoolTxs
-                )
-              )
+              candidates
               requestedTxsInflightSize
               -- pick from `txid`'s which are available from that given
               -- peer.  Since we are folding a dictionary each `txid`
@@ -241,23 +245,25 @@ pickTxsToDownload now policy@TxDecisionPolicy { txsSizeInflightPerPeer,
           stAcknowledged' = Map.unionWith (+) stAcknowledged txIdsToAck
 
           stInflightDelta :: Map txid InFlightState
-          stInflightDelta = Map.fromSet (\_ -> InFlightState 1 $ addTime interTxSpace now)
-                                        txsToRequest
+          stInflightDelta =
+            Map.map (const $ InFlightState 1 $ addTime interTxSpace now) txsToRequestMap
                             -- note: this is right since every `txid`
                             -- could be picked at most once
 
           stInflight' :: Map txid InFlightState
           stInflight' = Map.unionWith (<>) stInflightDelta stInflight
 
-          stInSubmissionToMempoolTxs' = stInSubmissionToMempoolTxs
-                                     <> Set.fromList (map fst listOfTxsToMempool)
+          stNewInSubmissionToMempoolTxs' =
+            List.foldl' (\acc (txid, _) -> Set.insert txid acc)
+                        stNewInSubmissionToMempoolTxs
+                        listOfTxsToMempool
       in
         if requestedTxIdsInflight peerTxState'' > 0
           then
             -- we can request `txid`s & `tx`s
             ( St { stInflight                 = stInflight',
                    stAcknowledged             = stAcknowledged',
-                   stInSubmissionToMempoolTxs = stInSubmissionToMempoolTxs' }
+                   stNewInSubmissionToMempoolTxs = stNewInSubmissionToMempoolTxs' }
             , ( (peeraddr, peerTxState'')
               , TxDecision { txdTxIdsToAcknowledge = numTxIdsToAck,
                              txdPipelineTxIds      = not
@@ -273,7 +279,7 @@ pickTxsToDownload now policy@TxDecisionPolicy { txsSizeInflightPerPeer,
           else
             -- there are no `txid`s to request, only `tx`s.
             ( st { stInflight                 = stInflight',
-                   stInSubmissionToMempoolTxs = stInSubmissionToMempoolTxs'
+                   stNewInSubmissionToMempoolTxs = stNewInSubmissionToMempoolTxs'
                  }
             , ( (peeraddr, peerTxState'')
               , emptyTxDecision { txdTxsToRequest = txsToRequestMap }
@@ -373,17 +379,20 @@ filterActivePeers
       inflightTxs,
       inSubmissionToMempoolTxs,
       pendingDecisions
-    } = Map.filterWithKey (\peer ps -> peer `Set.notMember` pendingDecisions && gn ps)
-                          peerTxStates
+    }
+    = Map.filterWithKey (\peer ps -> peer `Set.notMember` pendingDecisions && gn ps)
+                        peerTxStates
   where
-
     unrequestableFilter :: InFlightState -> Bool
     unrequestableFilter InFlightState{inFlightCount, inFlightNextReq} =
       inFlightCount >= txInflightMultiplicity || inFlightNextReq > now
 
-    unrequestable :: Set txid
-    unrequestable = Map.keysSet (Map.filter unrequestableFilter inflightTxs)
-                 <> Map.keysSet bufferedTxs
+    isUnrequestable :: txid -> Bool
+    isUnrequestable txid =
+      Map.member txid bufferedTxs
+      || case Map.lookup txid inflightTxs of
+           Just inflightSt -> unrequestableFilter inflightSt
+           Nothing         -> False
 
     gn :: PeerTxState txid tx -> Bool
     gn peerTxState@PeerTxState { unacknowledgedTxIds,
@@ -397,15 +406,21 @@ filterActivePeers
             && requestedTxIdsInflight + numOfUnacked <= maxUnacknowledgedTxIds
             && txIdsToRequest > 0
           )
-        || (underSizeLimit && not (Map.null downloadable))
+        || (underSizeLimit && downloadable)
       where
         numOfUnacked   = fromIntegral (StrictSeq.length unacknowledgedTxIds)
         underSizeLimit = requestedTxsInflightSize <= txsSizeInflightPerPeer
-        downloadable   = availableTxIds
-            `Map.withoutKeys` requestedTxsInflight
-            `Map.withoutKeys` unknownTxs
-            `Map.withoutKeys` unrequestable
-            `Map.withoutKeys` Map.keysSet inSubmissionToMempoolTxs
+        downloadable =
+          Map.foldrWithKey
+            (\txid _ acc ->
+              acc
+              || (    Set.notMember txid requestedTxsInflight
+                  &&  Set.notMember txid unknownTxs
+                  &&  not (isUnrequestable txid)
+                  &&  Map.notMember txid inSubmissionToMempoolTxs
+                 ))
+            False
+            availableTxIds
 
         -- Split `unacknowledgedTxIds'` into the longest prefix of `txid`s which
         -- can be acknowledged and the unacknowledged `txid`s.
