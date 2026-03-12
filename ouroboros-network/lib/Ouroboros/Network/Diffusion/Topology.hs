@@ -1,6 +1,18 @@
 {-# LANGUAGE NamedFieldPuns #-}
 
-module Ouroboros.Network.Diffusion.Topology where
+module Ouroboros.Network.Diffusion.Topology
+  ( NetworkTopology (..)
+    -- * Common root configuration
+  , RootConfig (..)
+    -- * Local root peers
+  , LocalRootPeersGroups (..)
+  , LocalRootPeersGroup (..)
+  , LocalRoots (..)
+    -- * Public root peers
+  , PublicRootPeers (..)
+    -- * Public API
+  , producerAddresses
+  ) where
 
 import Data.Map qualified as Map
 import Data.Map.Strict (Map)
