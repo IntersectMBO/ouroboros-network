@@ -345,36 +345,17 @@ receivedTxIdsImpl
                         unacknowledgedTxIds } =
         (st', ps')
       where
+        (availableTxIds', bufferedTxs') =
+          Map.foldlWithKey' accumulateReceivedTxId
+                            (availableTxIds, bufferedTxs)
+                            txidsMap
+
         --
         -- Handle new `txid`s
         --
 
-        -- Divide the new txids in two: those that are already in the mempool
-        -- and those that are not. We'll request some txs from the latter.
-        (ignoredTxIds, availableTxIdsMap) =
-          Map.partitionWithKey
-            (\txid _ -> mempoolHasTx txid)
-            txidsMap
-
-        -- Add all `txids` from `availableTxIdsMap` which are not
-        -- unacknowledged or already buffered. Unacknowledged txids must have
-        -- already been added to `availableTxIds` map before.
-        availableTxIds' =
-          Map.foldlWithKey
-            (\m txid sizeInBytes -> Map.insert txid sizeInBytes m)
-            availableTxIds
-            (Map.filterWithKey
-                (\txid _ -> txid `notElem` unacknowledgedTxIds
-                         && txid `Map.notMember` bufferedTxs)
-                availableTxIdsMap)
-
         -- Add received txids to `unacknowledgedTxIds`.
         unacknowledgedTxIds' = unacknowledgedTxIds <> txidsSeq
-
-        -- Add ignored `txs` to buffered ones.
-        -- Note: we prefer to keep the `tx` if it's already in `bufferedTxs`.
-        bufferedTxs' = bufferedTxs
-                    <> Map.map (const Nothing) ignoredTxIds
 
         referenceCounts' =
           Foldable.foldl'
@@ -390,6 +371,26 @@ receivedTxIdsImpl
               ps { availableTxIds         = availableTxIds',
                    unacknowledgedTxIds    = unacknowledgedTxIds',
                    requestedTxIdsInflight = requestedTxIdsInflight - reqNo }
+
+        -- Fold one received txid into the available and buffered tx maps.
+        accumulateReceivedTxId
+          :: (Map txid SizeInBytes, Map txid (Maybe tx))
+          -> txid
+          -> SizeInBytes
+          -> (Map txid SizeInBytes, Map txid (Maybe tx))
+        accumulateReceivedTxId (!availableTxIdsAcc, !bufferedTxsAcc) txid sizeInBytes
+          | mempoolHasTx txid
+            = (availableTxIdsAcc, Map.alter keepBufferedTx txid bufferedTxsAcc)
+          | txid `elem` unacknowledgedTxIds || txid `Map.member` bufferedTxs
+            = (availableTxIdsAcc, bufferedTxsAcc)
+          | otherwise
+            = (Map.insert txid sizeInBytes availableTxIdsAcc, bufferedTxsAcc)
+
+        -- Insert a placeholder only if absent; never overwrite a buffered tx body.
+        keepBufferedTx :: Maybe (Maybe tx)
+                       -> Maybe (Maybe tx)
+        keepBufferedTx Nothing   = Just Nothing
+        keepBufferedTx existing  = existing
 
 -- | We check advertised sizes up in a fuzzy way.  The advertised and received
 -- sizes need to agree up to `config_MAX_TX_SIZE_DISCREPANCY`.
