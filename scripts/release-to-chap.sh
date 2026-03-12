@@ -81,7 +81,7 @@ else
     git switch main
     git pull
   fi
-  BRANCH="network/release-$(date +%Y-%m-%d-%H-%m-%S)"
+  BRANCH="network/release-$(date +%Y%m%d-%H%M%S)"
   if [[ $TEST == 1 ]];then
     BRANCH="${BRANCH}-DO_NOT_MERGE"
   fi
