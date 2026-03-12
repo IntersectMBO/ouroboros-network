@@ -740,6 +740,25 @@ executable demo-connection-manager
     random,
     typed-protocols:{typed-protocols, examples},
 
+executable demo-tx-submission
+  import: ghc-options
+  hs-source-dirs: demo
+  main-is: tx-submission.hs
+  build-depends:
+    async,
+    base,
+    bytestring,
+    contra-tracer,
+    hashable,
+    io-classes:{io-classes, strict-stm},
+    iproute,
+    network,
+    network-mux,
+    optparse-applicative,
+    ouroboros-network:{ouroboros-network, api, framework, protocols},
+    stm,
+    random
+
 library protocols
   import: ghc-options
   visibility: public
