@@ -1,37 +1,75 @@
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE DeriveAnyClass             #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE GeneralisedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE TypeApplications           #-}
 
 {-# OPTIONS_GHC -Wno-partial-fields #-}
 
 module Main where
 
-import Control.Concurrent.STM
+import Codec.CBOR.Decoding qualified as CBOR
+import Codec.CBOR.Encoding qualified as CBOR
+import Codec.CBOR.Read qualified as CBOR
+import Codec.Serialise (Serialise (..))
+import Codec.Serialise qualified as CBOR
+import Control.Concurrent (forkIO)
 import Control.Concurrent.Async
+import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception
 import Control.Monad
+import Control.Monad.Class.MonadTimer.SI
+import Control.Tracer qualified as Tracer
+import Data.ByteString (ByteString)
+import Data.ByteString.Lazy qualified as LBS
+import Data.Hashable qualified as Hashable
 import Data.IP (IP)
+import GHC.Generics (Generic)
+import NoThunks.Class (NoThunks (..))
+import Options.Applicative
+import System.Random qualified as Random
 
 import Network.Mux qualified as Mx
 import Network.Mux.Bearer qualified as Mx
 import Network.Socket (PortNumber)
 import Network.Socket qualified as Socket
+import Network.TypedProtocol.Codec (Codec)
 
-import Options.Applicative
-import Ouroboros.Network.TxSubmission.Inbound.V2.Types
+import Ouroboros.Network.Protocol.TxSubmission2.Codec qualified as Tx
+import Ouroboros.Network.Protocol.TxSubmission2.Type qualified as Tx
+-- import Ouroboros.Network.Protocol.TxSubmission2.Client qualified as Tx.Outbound
+import Ouroboros.Network.Protocol.TxSubmission2.Server qualified as Tx.Inbound
+
+import Ouroboros.Network.Driver.Limits qualified as Driver
+import Ouroboros.Network.SizeInBytes
+import Ouroboros.Network.Socket ()
+import Ouroboros.Network.TxSubmission.Inbound.V1 qualified as V1
+import Ouroboros.Network.TxSubmission.Inbound.V2 (TxSubmissionLogicVersion (..))
+import Ouroboros.Network.TxSubmission.Inbound.V2 qualified as V2
+import Ouroboros.Network.TxSubmission.Mempool.Simple qualified as Mempool
+import Ouroboros.Network.Util.ShowProxy
 
 main :: IO ()
 main =
   execParser (info (optionParser <**> helper) fullDesc)
     >>= \case
-      InboundOptions addr version ->
-        runTxInbound addr version
+      InboundOptions addr version txDelay ->
+        runTxInbound addr version (microsecondsAsIntToDiffTime txDelay)
       OutboundOptions addr version filePath ->
         runTxOutbound addr version filePath
 
 data Options =
-    InboundOptions Addr TxSubmissionLogicVersion
-                   
-  | OutboundOptions Addr TxSubmissionLogicVersion FilePath
+    InboundOptions
+      Addr
+      TxSubmissionLogicVersion
+      Int -- ^ tx validation time in microseconds
+
+  | OutboundOptions
+      Addr
+      TxSubmissionLogicVersion
+      FilePath -- ^ file path of tx cache
   deriving Show
 
 data Addr = Addr { addr :: IP, port :: PortNumber }
@@ -60,8 +98,8 @@ optionParser =
 
     inboundParser, outboundParser :: Parser Options
     inboundParser =
-      (\addr port version ->
-        InboundOptions Addr { addr, port } version
+      (\addr port version txDelay ->
+        InboundOptions Addr { addr, port } version txDelay
       ) <$> option auto
               (  long "addr"
               <> metavar "ADDR"
@@ -80,6 +118,12 @@ optionParser =
                  TxSubmissionLogicV1
             (    long "v1"
               <> help "use tx-submission-v1 (default is v2)"
+            )
+        <*> option auto
+            (    long "tx-delay"
+              <> help "tx validation delay in microseconds"
+              <> value 10
+              <> showDefault
             )
     outboundParser =
       (\addr port version filePath ->
@@ -109,10 +153,59 @@ optionParser =
              )
 
 
+newtype TxId = TxId Int
+  deriving stock    (Eq, Ord, Show)
+  deriving anyclass ShowProxy
+  deriving newtype  (Serialise, NoThunks)
+
+data Tx = Tx { txid      :: TxId,
+               txPayload :: ByteString
+             }
+  deriving stock    (Eq, Show, Generic)
+  deriving anyclass ShowProxy
+  deriving anyclass NoThunks
+
+instance CBOR.Serialise Tx where
+  encode Tx { txid, txPayload } =
+       CBOR.encodeListLen 2
+    <> CBOR.encode txid
+    <> CBOR.encode txPayload
+  decode = do
+    _ <- CBOR.decodeListLen
+    txid <- CBOR.decode
+    txPayload <- CBOR.decode
+    pure Tx { txid, txPayload }
+
+
+-- | A `Tx`'s smart constructor which computes `txid` from the payload.
+--
+mkTx :: ByteString -> Tx
+mkTx txPayload = Tx { txid = TxId (Hashable.hash txPayload),
+                      txPayload }
+
+-- TODO: avoid re-serialisation
+getTxSize :: Tx -> SizeInBytes
+getTxSize = fromIntegral . LBS.length . CBOR.serialise
+
+
+data DuplicateTxError = DuplicateTxError
+  deriving stock    Show
+  deriving anyclass Exception
+
+
+codec :: Codec (Tx.TxSubmission2 TxId Tx)
+               CBOR.DeserialiseFailure
+               IO
+               LBS.ByteString
+codec = Tx.codecTxSubmission2 CBOR.encode CBOR.decode
+                              CBOR.encode CBOR.decode
+
+
 runTxInbound :: Addr
              -> TxSubmissionLogicVersion
+             -> DiffTime
              -> IO ()
-runTxInbound Addr { addr, port } _version = do
+runTxInbound Addr { addr, port } version txDelay = do
     let hints = Socket.defaultHints
                   { Socket.addrFlags = [Socket.AI_ADDRCONFIG]
                   , Socket.addrFamily = Socket.AF_INET
@@ -126,26 +219,118 @@ runTxInbound Addr { addr, port } _version = do
         Socket.setSocketOption sock Socket.ReuseAddr 1
         Socket.bind sock (Socket.addrAddress sockAddr)
         Socket.listen sock 10
-        forever $
-          bracket
-            (Socket.accept sock)
-            (Socket.close . fst)
-            $ \(sock', _) -> Mx.withReadBufferIO $ \buffer -> do
-              bearer <- Mx.getBearer Mx.makeSocketBearer 1.0 sock' buffer
-              let dir = Mx.ResponderDirectionOnly
-              mux <- Mx.new Mx.nullTracers
-                     (protocols dir)
-              withAsync (Mx.run mux bearer) $ \_ -> do
-                stm <- Mx.runMiniProtocol
-                  mux
-                  (Mx.MiniProtocolNum 1)
-                  dir
-                  Mx.StartOnDemand
-                  $ \chann -> undefined -- TODO
-                atomically stm >>= \case
-                  Left e  -> throwIO e
-                  Right _ -> return ()
 
+        -- V2 only
+        txChann <- V2.newTxChannelsVar
+        txMempoolSem <- V2.newTxMempoolSem
+        txSharedState <- Random.newStdGen >>= V2.newSharedTxStateVar
+        case version of
+          TxSubmissionLogicV1 -> return ()
+          TxSubmissionLogicV2 -> do
+            thrd <- async $ V2.decisionLogicThreads
+                       Tracer.nullTracer
+                       Tracer.nullTracer
+                       txDecisionPolicy
+                       txChann
+                       txSharedState
+            link thrd
+
+
+        mempool <- Mempool.new txid []
+
+        forever $ do
+          (sock', addr') <- Socket.accept sock
+          forkIO $ flip finally (Socket.close sock')
+                 $ handleJust (\e -> case fromException e of
+                                    Just SomeAsyncException {} -> Nothing
+                                    Nothing                    -> Just e
+                              )
+                              (\e -> throwIO e
+                              )
+                 $ Mx.withReadBufferIO $ \buffer -> do
+            bearer <- Mx.getBearer Mx.makeSocketBearer 1.0 sock' buffer
+            let dir = Mx.ResponderDirectionOnly
+            mux <- Mx.new Mx.nullTracers
+                   (protocols dir)
+            withAsync (Mx.run mux bearer) $ \_ ->
+                  either throwIO return
+              =<< atomically
+              =<< Mx.runMiniProtocol
+                    mux
+                    txMiniProtocolNum
+                    dir
+                    Mx.StartOnDemand
+                    (\chann -> do
+                      let reader =
+                            Mempool.getReader
+                              txid
+                              getTxSize
+                              mempool
+                          writer =
+                            Mempool.getWriterWithCtx
+                              (\txs -> fromLazyTVar
+                                   <$> registerDelay
+                                         (fromIntegral (length txs) * txDelay)
+                              )
+                              DuplicateTxError
+                              txid
+                              (\v txs -> do
+                                -- NOTE: we are blocking access to the
+                                -- mempool for all other threads that want
+                                -- to add txs to it while we validate txs.
+                                readTVar v >>= check
+                                pure (Right <$> txs)
+                              )
+                              mempty
+                              mempool
+                      case version of
+                        TxSubmissionLogicV1 -> do
+                          Driver.runPipelinedPeerWithLimits
+                            Tracer.nullTracer
+                            codec
+                            (Tx.byteLimitsTxSubmission2 (fromIntegral . LBS.length))
+                            Tx.timeLimitsTxSubmission2
+                            chann
+                            ( Tx.Inbound.txSubmissionServerPeerPipelined
+                            $ V1.txSubmissionInbound
+                                Tracer.nullTracer
+                                V1.NoTxSubmissionInitDelay
+                                (fromIntegral $ V2.maxUnacknowledgedTxIds txDecisionPolicy)
+                                reader
+                                writer
+                                ()
+                            )
+
+                        TxSubmissionLogicV2 ->
+                          V2.withPeer
+                            Tracer.nullTracer
+                            txChann
+                            txMempoolSem
+                            txDecisionPolicy
+                            txSharedState
+                            reader
+                            writer
+                            getTxSize
+                            addr'
+                            $ \peerTxApi ->
+                              Driver.runPipelinedPeerWithLimits
+                                Tracer.nullTracer
+                                codec
+                                (Tx.byteLimitsTxSubmission2 (fromIntegral . LBS.length))
+                                Tx.timeLimitsTxSubmission2
+                                chann
+                                ( Tx.Inbound.txSubmissionServerPeerPipelined
+                                $ V2.txSubmissionInboundV2
+                                  Tracer.nullTracer
+                                  V2.NoTxSubmissionInitDelay
+                                  writer
+                                  peerTxApi
+                                )
+                    )
+
+-- TODO: make it configurable
+txDecisionPolicy  :: V2.TxDecisionPolicy
+txDecisionPolicy = V2.defaultTxDecisionPolicy
 
 
 runTxOutbound :: Addr
@@ -169,22 +354,24 @@ runTxOutbound Addr { addr, port } _version _file = do
           let dir = Mx.InitiatorDirectionOnly
           mux <- Mx.new Mx.nullTracers
                  (protocols dir)
-          withAsync (Mx.run mux bearer) $ \_ -> do
-            stm <- Mx.runMiniProtocol
+          withAsync (Mx.run mux bearer) $ \_ ->
+            either throwIO return =<< atomically =<< Mx.runMiniProtocol
               mux
-              (Mx.MiniProtocolNum 1)
+              txMiniProtocolNum
               dir
               Mx.StartEagerly
-              $ \chann -> undefined -- TODO
-            atomically stm >>= \case
-              Left e  -> throwIO e
-              Right _ -> return ()
+              (\_chann -> undefined) -- TODO
+
+
+-- | Tx-Submission mini-protocol number
+txMiniProtocolNum :: Mx.MiniProtocolNum
+txMiniProtocolNum = Mx.MiniProtocolNum 4
 
 
 protocols :: Mx.MiniProtocolDirection mode -> [Mx.MiniProtocolInfo mode]
 protocols miniProtocolDir =
   [ Mx.MiniProtocolInfo {
-      Mx.miniProtocolNum        = Mx.MiniProtocolNum 1,
+      Mx.miniProtocolNum        = txMiniProtocolNum,
       Mx.miniProtocolDir,
       Mx.miniProtocolLimits     = Mx.MiniProtocolLimits maxBound,
       Mx.miniProtocolCapability = Nothing
