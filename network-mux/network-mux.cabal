@@ -58,7 +58,7 @@ library
     binary >=0.8 && <0.11,
     bytestring >=0.10 && <0.13,
     containers >=0.5 && <0.9,
-    contra-tracer >=0.1 && <0.3,
+    contra-tracer >=0.1 && <0.2,
     io-classes:{io-classes, si-timers, strict-stm} ^>=1.8,
     monoidal-synchronisation >=0.1 && <0.2,
     network ^>=3.2.7,

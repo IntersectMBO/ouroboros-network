@@ -2,6 +2,19 @@
 
 <!-- scriv-insert-here -->
 
+<a id='changelog-1.1.0.0'></a>
+## 1.1.0.0 -- 2026-03-12
+
+### Breaking
+
+- Add missing orphan instance for 'TxSubmissionLogicVersion'
+
+### Non-Breaking
+
+- Fix to peer selection's above target other: failed to demote an established peer
+
+- Cleaned up tracing namespaces
+
 <a id='changelog-1.0.0.0'></a>
 ## 1.0.0.0 -- 2026-03-06
 
