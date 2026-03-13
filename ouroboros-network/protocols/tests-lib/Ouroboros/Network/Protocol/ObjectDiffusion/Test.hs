@@ -10,27 +10,38 @@
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE ConstrainedClassMethods #-}
 module Ouroboros.Network.Protocol.ObjectDiffusion.Test
   ( tests
   , ObjectId (..)
   , Object (..)
   ) where
 
+import Control.Monad (void)
 import Data.ByteString.Lazy (ByteString)
 import Data.List.NonEmpty qualified as NonEmpty
 
-import Control.Monad.Class.MonadST (MonadST)
+import Control.Monad.Class.MonadAsync (MonadAsync)
 import Control.Monad.ST (runST)
+import Control.Monad.Class.MonadST
+import Control.Monad.Class.MonadFork
 
 import Codec.Serialise (DeserialiseFailure, Serialise)
 import Codec.Serialise qualified as Serialise (decode, encode)
 
 import Network.TypedProtocol.Codec
 import Network.TypedProtocol.Codec.Properties (prop_codecM, prop_codec_splitsM)
+import Network.TypedProtocol.Core (IsPipelined (..))
+import Network.TypedProtocol.Peer (Peer, PeerPipelined)
+import Network.TypedProtocol.Proofs (connectPipelined)
 
+import Ouroboros.Network.Channel (Channel, createConnectedBufferedChannels,
+           createPipelineTestChannels)
+import Ouroboros.Network.Driver (runPeer, runPipelinedPeer)
 import Ouroboros.Network.Util.ShowProxy
 
 import Ouroboros.Network.Protocol.ObjectDiffusion.Codec
@@ -47,8 +58,10 @@ import Test.QuickCheck as QC
 import Test.QuickCheck.Instances.ByteString ()
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
-import Ouroboros.Network.Protocol.ObjectDiffusion.Inbound (ObjectDiffusionInboundPipelined)
-import Ouroboros.Network.Protocol.ObjectDiffusion.Outbound (ObjectDiffusionOutbound)
+import Ouroboros.Network.Protocol.ObjectDiffusion.Inbound (ObjectDiffusionInboundPipelined,
+           objectDiffusionInboundPeerPipelined)
+import Ouroboros.Network.Protocol.ObjectDiffusion.Outbound (ObjectDiffusionOutbound,
+           objectDiffusionOutboundPeer)
 import Data.Word (Word16)
 import Ouroboros.Network.Protocol.ObjectDiffusion.Direct (
   objectDiffusionInbound,
@@ -59,6 +72,7 @@ import Ouroboros.Network.Protocol.ObjectDiffusion.Direct (
 import Control.Tracer (Tracer, nullTracer)
 import Control.Monad.IOSim (runSimOrThrow)
 import Control.Monad.Class.MonadThrow (MonadCatch, MonadEvaluate)
+import GHC.Natural (Natural)
 
 
 --
@@ -70,15 +84,22 @@ tests :: TestTree
 tests =
   testGroup "Ouroboros.Network.Protocol"
     [ testGroup "ObjectDiffusion"
-        [ testProperty "codec"               prop_codec
-        , testProperty "codec id"            prop_codec_id
-        , testProperty "codec 2-splits"    $ withMaxSize 50
-                                             prop_codec_splits2
-        , testProperty "codec 3-splits"    $ withMaxSize 10
-                                             prop_codec_splits3
-        , testProperty "codec cbor"          prop_codec_cbor
-        , testProperty "codec valid cbor"    prop_codec_valid_cbor
-        , testProperty "direct"              prop_direct
+        [ testProperty "codec"                      prop_codec
+        , testProperty "codec id"                   prop_codec_id
+        , testProperty "codec 2-splits"           $ withMaxSize 50
+                                                    prop_codec_splits2
+        , testProperty "codec 3-splits"           $ withMaxSize 10
+                                                    prop_codec_splits3
+        , testProperty "codec cbor"                 prop_codec_cbor
+        , testProperty "codec valid cbor"           prop_codec_valid_cbor
+        , testProperty "direct ST"                  propDirectST
+        , testProperty "direct IO"                  propDirectIO
+        , testProperty "connect ST"                 propConnectST
+        , testProperty "connect IO"                 propConnectIO
+        , testProperty "demo channel ST"            propDemoChannelST
+        , testProperty "demo channel IO"            propDemoChannelIO
+        , testProperty "demo channel (buffered) ST" propDemoChannelBufferedST
+        , testProperty "demo channel (buffered) IO" propDemoChannelBufferedIO
         ]
     ]
 
@@ -243,7 +264,7 @@ labelMsg (AnyMessage msg) =
            MsgRequestObjectIds {} -> "MsgRequestObjectIds"
            MsgReplyObjectIds as   -> "MsgReplyObjectIds " ++ renderRanges 3 (length as)
            MsgRequestObjects as   -> "MsgRequestObjects " ++ renderRanges 3 (length as)
-           MsgReplyObjects as     -> "MsgReplyObjects " ++ renderRanges 3 (length as)
+           MsgReplyObjects as     -> "MsgReplyObjects "   ++ renderRanges 3 (length as)
            MsgDone                -> "MsgDone"
         )
 
@@ -271,12 +292,17 @@ instance Arbitrary ObjectDiffusionTestParams where
     [ ObjectDiffusionTestParams a' b' c' d'
     | (a', b', c', d') <- shrink (a, b, c, d) ]
 
+type ChannelSize = Positive (Small Word16)
 
-testInbound :: (MonadCatch m, MonadEvaluate m)
-            => Tracer m (TraceObjectDiffusionDirect ObjectId Object)
-            -> ObjectDiffusionTestParams
-            -> ObjectDiffusionInboundPipelined ObjectId Object m [Object]
-testInbound
+channelSizeAsNat :: ChannelSize -> Natural
+channelSizeAsNat (Positive (Small n)) = fromIntegral n
+
+testInboundPipelined
+  :: (MonadCatch m, MonadEvaluate m)
+  => Tracer m (TraceObjectDiffusionDirect ObjectId Object)
+  -> ObjectDiffusionTestParams
+  -> ObjectDiffusionInboundPipelined ObjectId Object m [Object]
+testInboundPipelined
   tracer
   ObjectDiffusionTestParams {
     testMaxUnacked            = Positive (Small maxUnacked),
@@ -290,10 +316,11 @@ testInbound
       maxObjectIdsToRequest
       maxObjectsToRequest
 
-testOutbound :: Monad m
-             => Tracer m (TraceObjectDiffusionDirect ObjectId Object)
-             -> ObjectDiffusionTestParams
-             -> ObjectDiffusionOutbound ObjectId Object m ()
+testOutbound
+  :: Monad m
+  => Tracer m (TraceObjectDiffusionDirect ObjectId Object)
+  -> ObjectDiffusionTestParams
+  -> ObjectDiffusionOutbound ObjectId Object m ()
 testOutbound
   tracer
   ObjectDiffusionTestParams {
@@ -308,15 +335,125 @@ testOutbound
 
 -- | Run a simple object diffusion client and server, directly on the wrappers,
 -- without going via the 'Peer'.
-prop_direct :: ObjectDiffusionTestParams  -> Bool
-prop_direct params@ObjectDiffusionTestParams{testObjects} =
-    objects == fromDistinctList testObjects
-  where
-    objects =
-      runSimOrThrow
-        (directPipelined
-          (testOutbound nullTracer params)
-          (testInbound nullTracer params))
+propDirectST :: ObjectDiffusionTestParams
+             -> Property
+propDirectST params@ObjectDiffusionTestParams{testObjects} = runSimOrThrow $ do
+  objects <- directPipelined
+               (testOutbound         nullTracer params)
+               (testInboundPipelined nullTracer params)
+  pure $ objects === fromDistinctList testObjects
+
+propDirectIO :: ObjectDiffusionTestParams
+             -> Property
+propDirectIO params@ObjectDiffusionTestParams{testObjects} = ioProperty $ do
+  objects <- directPipelined
+               (testOutbound         nullTracer params)
+               (testInboundPipelined nullTracer params)
+  pure $ objects === fromDistinctList testObjects
 
 
+-- | Wrap the inbound (client) test implem as a pipelined typed-protocol 'PeerPipelined'.
+testInboundPeerPipelined
+  :: (MonadCatch m, MonadEvaluate m)
+  => Tracer m (TraceObjectDiffusionDirect ObjectId Object)
+  -> ObjectDiffusionTestParams
+  -> PeerPipelined (ObjectDiffusion ObjectId Object) AsClient StInit m [Object]
+testInboundPeerPipelined tracer params =
+    objectDiffusionInboundPeerPipelined (testInboundPipelined tracer params)
 
+-- | Wrap the outbound (server) implem as a non-pipelined typed-protocol 'Peer'.
+testOutboundPeer
+  :: Monad m
+  => Tracer m (TraceObjectDiffusionDirect ObjectId Object)
+  -> ObjectDiffusionTestParams
+  -> Peer (ObjectDiffusion ObjectId Object) AsServer NonPipelined StInit m ()
+testOutboundPeer tracer params =
+    objectDiffusionOutboundPeer (testOutbound tracer params)
+
+-- | Run a simple object diffusion client and server, using 'connectPipelined'
+-- via the typed-protocol 'Peer' and 'PeerPipelined'.
+propConnectST
+  :: ObjectDiffusionTestParams
+  -> [Bool]
+  -> Property
+propConnectST params@ObjectDiffusionTestParams{testObjects} choices = runSimOrThrow $ do
+    (objects, _, _) <- connectPipelined
+                         choices
+                         (testInboundPeerPipelined nullTracer params)
+                         (testOutboundPeer         nullTracer params)
+    pure $ objects === fromDistinctList testObjects
+
+propConnectIO
+  :: ObjectDiffusionTestParams
+  -> [Bool]
+  -> Property
+propConnectIO params@ObjectDiffusionTestParams{testObjects} choices = ioProperty $ do
+    (objects, _, _) <- connectPipelined
+                         choices
+                         (testInboundPeerPipelined nullTracer params)
+                         (testOutboundPeer         nullTracer params)
+    pure $ objects === fromDistinctList testObjects
+
+
+-- | Run the object diffusion protocol over a pair of connected channels,
+-- using the codec, 'runPeer' for the server and 'runPipelinedPeer' for the
+-- pipelined client.
+objectDiffusionDemoPipelined
+  :: forall m.
+     ( MonadST    m
+     , MonadFork  m
+     , MonadCatch m
+     , MonadEvaluate m
+     , MonadAsync m
+     )
+  => Channel m ByteString
+  -> Channel m ByteString
+  -> ObjectDiffusionTestParams
+  -> m [Object]
+objectDiffusionDemoPipelined clientChan serverChan params = do
+  let server = testOutboundPeer         nullTracer params
+      client = testInboundPeerPipelined nullTracer params
+
+  -- We only fork the server, and we run the client to completion to extract the
+  -- list of objects received as the result.
+  _      <- forkIO (void $ runPeer          nullTracer codec serverChan server)
+  (r, _) <-                runPipelinedPeer nullTracer codec clientChan client
+  pure r
+
+-- | Run the object diffusion demo over pipeline test channels.
+propDemoChannelST
+  :: ObjectDiffusionTestParams
+  -> ChannelSize
+  -> Property
+propDemoChannelST params@ObjectDiffusionTestParams{testObjects} chanSize = runSimOrThrow $ do
+    (clientChan, serverChan) <- createPipelineTestChannels (channelSizeAsNat chanSize)
+    objects <- objectDiffusionDemoPipelined clientChan serverChan params
+    pure $ objects === fromDistinctList testObjects
+
+propDemoChannelIO
+  :: ObjectDiffusionTestParams
+  -> ChannelSize
+  -> Property
+propDemoChannelIO params@ObjectDiffusionTestParams{testObjects} chanSize = ioProperty $ do
+    (clientChan, serverChan) <- createPipelineTestChannels (channelSizeAsNat chanSize)
+    objects <- objectDiffusionDemoPipelined clientChan serverChan params
+    pure $ objects === fromDistinctList testObjects
+
+-- | Run the object diffusion demo over buffered channels.
+propDemoChannelBufferedST
+  :: ObjectDiffusionTestParams
+  -> ChannelSize
+  -> Property
+propDemoChannelBufferedST params@ObjectDiffusionTestParams{testObjects} chanSize = runSimOrThrow $ do
+    (clientChan, serverChan) <- createConnectedBufferedChannels (channelSizeAsNat chanSize)
+    objects <- objectDiffusionDemoPipelined clientChan serverChan params
+    pure $ objects === fromDistinctList testObjects
+
+propDemoChannelBufferedIO
+  :: ObjectDiffusionTestParams
+  -> ChannelSize
+  -> Property
+propDemoChannelBufferedIO params@ObjectDiffusionTestParams{testObjects} chanSize = ioProperty $ do
+    (clientChan, serverChan) <- createConnectedBufferedChannels (channelSizeAsNat chanSize)
+    objects <- objectDiffusionDemoPipelined clientChan serverChan params
+    pure $ objects === fromDistinctList testObjects
