@@ -748,16 +748,23 @@ executable demo-tx-submission
     async,
     base,
     bytestring,
+    cborg,
     contra-tracer,
     hashable,
-    io-classes:{io-classes, strict-stm},
+    io-classes:{si-timers, strict-stm},
     iproute,
     network,
     network-mux,
+    nothunks,
     optparse-applicative,
     ouroboros-network:{ouroboros-network, api, framework, protocols},
-    stm,
-    random
+    random,
+    serialise,
+    typed-protocols,
+
+  ghc-options:
+    -threaded
+    -rtsopts
 
 library protocols
   import: ghc-options
