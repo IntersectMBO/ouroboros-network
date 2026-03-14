@@ -334,7 +334,16 @@ type RunMiniProtocolWithMinimalCtx mode peerAddr bytes m a b =
 -- MiniProtocol callback
 --
 
--- | A callback executed by each muxed mini-protocol.
+-- | A callback executed by one of mini-protocols in a multiplexed channel.
+--
+-- We also expose smart constructors:
+--
+-- * `mkMiniProtocolCbFromPeer`
+-- * `mkMiniProtocolCbFromPeerSt`
+-- * `mkMiniProtocolCbFromPeerPipelined`
+--
+-- The smart constructors don't exhaust all the possibilities, e.g. using driver
+-- with size/time limits (with or without access to randomness).
 --
 newtype MiniProtocolCb ctx bytes m a =
     MiniProtocolCb {

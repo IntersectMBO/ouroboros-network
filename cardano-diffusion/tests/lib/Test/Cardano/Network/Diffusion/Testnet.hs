@@ -1,6 +1,7 @@
 {-# LANGUAGE BlockArguments      #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE MultiWayIf          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE NumericUnderscores  #-}
 {-# LANGUAGE OverloadedStrings   #-}
@@ -49,7 +50,6 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Time (secondsToDiffTime)
 import Data.Typeable (Typeable)
-import Data.Void (Void)
 import Data.Word (Word32)
 import GHC.IO.Exception (IOErrorType (..), IOException (..))
 import System.Random (mkStdGen)
@@ -330,7 +330,7 @@ traceFromList :: [a] -> Trace (SimResult ()) a
 traceFromList = Trace.fromList (MainReturn  (Time 0) (Labelled (ThreadId []) (Just "main")) () [])
 
 
-testWithIOSim :: (SimTrace Void -> Int -> Property)
+testWithIOSim :: (SimTrace DiffSimResult -> Int -> Property)
               -- ^ property to verify
               -> Int
               -- ^ number of trace events to analyse
@@ -341,9 +341,10 @@ testWithIOSim :: (SimTrace Void -> Int -> Property)
               -> Property
 testWithIOSim = testWithIOSim' diffusionSimulation
 
-testWithIOSim' :: (forall s. BearerInfo -> DiffusionScript -> IOSim s Void)
+testWithIOSim' :: forall a.
+                  (forall s. BearerInfo -> DiffusionScript -> IOSim s a)
                -- ^ diffusion simulation
-               -> (SimTrace Void -> Int -> Property)
+               -> (SimTrace a -> Int -> Property)
                -- ^ property to verify
                -> Int
                -- ^ number of trace events to analyse
@@ -353,7 +354,7 @@ testWithIOSim' :: (forall s. BearerInfo -> DiffusionScript -> IOSim s Void)
                -- ^ sim-net configuration
                -> Property
 testWithIOSim' simulation prop traceNumber bi ds =
-  let sim :: forall s . IOSim s Void
+  let sim :: forall s . IOSim s a
       sim = simulation (toBearerInfo bi)
                                 ds
       trace = runSimTrace sim
@@ -365,7 +366,7 @@ testWithIOSim' simulation prop traceNumber bi ds =
       prop trace traceNumber
 
 
-testWithIOSimPOR :: (SimTrace Void -> Int -> Property)
+testWithIOSimPOR :: (forall r. Show r => SimTrace r -> Int -> Property)
                  -- ^ property to verify
                  -> Int
                  -- ^ number of trace events to analyse
@@ -375,7 +376,7 @@ testWithIOSimPOR :: (SimTrace Void -> Int -> Property)
                  -- ^ sim-net configuration
                  -> Property
 testWithIOSimPOR prop traceNumber bi ds =
-  let sim :: forall s . IOSim s Void
+  let sim :: forall s. IOSim s DiffSimResult
       sim = do
         exploreRaces
         diffusionSimulation (toBearerInfo bi)
@@ -534,7 +535,7 @@ unit_cm_valid_transitions =
                 , (RacyThreadId [3,1,3,1,2,3,2], 34)
                 ]
             ]
-      sim :: forall s. IOSim s Void
+      sim :: forall s. IOSim s DiffSimResult
       sim = diffusionSimulation (toBearerInfo bi) ds
 
   in exploreSimTrace (\a -> a { explorationReplay = Just s }) sim $ \_ ioSimTrace ->
@@ -548,7 +549,8 @@ unit_cm_valid_transitions =
 -- governor for a maximum number of trace events rather than for a fixed
 -- simulated time.
 --
-prop_diffusion_nofail :: SimTrace Void
+prop_diffusion_nofail :: forall r.
+                         SimTrace r
                       -> Int
                       -> Property
 prop_diffusion_nofail ioSimTrace traceNumber =
@@ -593,7 +595,7 @@ prop_diffusion_nofail_iosim
 unit_connection_manager_trace_coverage :: Property
 unit_connection_manager_trace_coverage =
   withMaxSuccess 1 $
-  let sim :: forall s . IOSim s Void
+  let sim :: forall s. IOSim s DiffSimResult
       sim = diffusionSimulation (toBearerInfo absNoAttenuation)
                                 script
 
@@ -702,7 +704,7 @@ unit_connection_manager_trace_coverage =
 unit_connection_manager_transitions_coverage :: Property
 unit_connection_manager_transitions_coverage =
   withMaxSuccess 1 $
-  let sim :: forall s . IOSim s Void
+  let sim :: forall s. IOSim s DiffSimResult
       sim = diffusionSimulation (toBearerInfo absNoAttenuation)
                                 script
       trace = runSimTrace sim
@@ -825,7 +827,7 @@ prop_inbound_governor_trace_coverage :: AbsBearerInfo
                                      -> Property
 prop_inbound_governor_trace_coverage defaultBearerInfo diffScript =
 
-  let sim :: forall s . IOSim s Void
+  let sim :: forall s. IOSim s DiffSimResult
       sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                 diffScript
 
@@ -849,7 +851,8 @@ prop_inbound_governor_trace_coverage defaultBearerInfo diffScript =
 
 -- | This test check that we don't have any tx submission protocol error
 --
-prop_no_txSubmission_error :: SimTrace Void
+prop_no_txSubmission_error :: forall r.
+                              SimTrace r
                            -> Int
                            -> Property
 prop_no_txSubmission_error ioSimTrace traceNumber =
@@ -1005,7 +1008,8 @@ prop_txSubmission_allTransactions (ArbTxDecisionPolicy decisionPolicy)
     -- This checks the property that after running the simulation for a while
     -- both nodes manage to get all valid transactions.
     --
-    checkAllTransactions :: SimTrace Void
+    checkAllTransactions :: forall r.
+                            SimTrace r
                          -> Int
                          -> Property
     checkAllTransactions ioSimTrace traceNumber =
@@ -1083,7 +1087,7 @@ prop_check_inflight_ratio :: AbsBearerInfo
                           -> DiffusionScript
                           -> Property
 prop_check_inflight_ratio bi ds@(DiffusionScript simArgs _ _) =
-  let sim :: forall s . IOSim s Void
+  let sim :: forall s . IOSim s DiffSimResult
       sim = diffusionSimulation (toBearerInfo bi)
                                 ds
 
@@ -1126,7 +1130,7 @@ prop_inbound_governor_transitions_coverage :: AbsBearerInfo
                                            -> DiffusionScript
                                            -> Property
 prop_inbound_governor_transitions_coverage defaultBearerInfo diffScript =
-  let sim :: forall s . IOSim s Void
+  let sim :: forall s . IOSim s DiffSimResult
       sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                 diffScript
 
@@ -1157,7 +1161,7 @@ prop_fetch_client_state_trace_coverage :: AbsBearerInfo
                                        -> DiffusionScript
                                        -> Property
 prop_fetch_client_state_trace_coverage defaultBearerInfo diffScript =
-  let sim :: forall s . IOSim s Void
+  let sim :: forall s. IOSim s DiffSimResult
       sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                 diffScript
 
@@ -1195,7 +1199,8 @@ prop_fetch_client_state_trace_coverage defaultBearerInfo diffScript =
 
 -- | Same as PeerSelection test 'prop_governor_only_bootstrap_peers_in_fallback_state'
 --
-prop_only_bootstrap_peers_in_fallback_state :: SimTrace Void
+prop_only_bootstrap_peers_in_fallback_state :: forall r.
+                                               SimTrace r
                                             -> Int
                                             -> Property
 prop_only_bootstrap_peers_in_fallback_state ioSimTrace traceNumber =
@@ -1521,7 +1526,8 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
 -- Then just restart relay B.
 -- The connection will never be re-established again.
 --
-prop_track_coolingToCold_demotions :: SimTrace Void
+prop_track_coolingToCold_demotions :: forall r.
+                                      SimTrace r
                                    -> Int
                                    -> Property
 prop_track_coolingToCold_demotions ioSimTracer traceNumber =
@@ -1646,7 +1652,7 @@ prop_server_trace_coverage :: AbsBearerInfo
                            -> Property
 prop_server_trace_coverage defaultBearerInfo diffScript =
 
-  let sim :: forall s . IOSim s Void
+  let sim :: forall s. IOSim s DiffSimResult
       sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                 diffScript
 
@@ -1674,7 +1680,7 @@ prop_peer_selection_action_trace_coverage :: AbsBearerInfo
                                           -> DiffusionScript
                                           -> Property
 prop_peer_selection_action_trace_coverage defaultBearerInfo diffScript =
-  let sim :: forall s . IOSim s Void
+  let sim :: forall s. IOSim s DiffSimResult
       sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                 diffScript
 
@@ -1732,7 +1738,7 @@ prop_peer_selection_trace_coverage :: AbsBearerInfo
                                    -> DiffusionScript
                                    -> Property
 prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
-  let sim :: forall s . IOSim s Void
+  let sim :: forall s. IOSim s DiffSimResult
       sim = diffusionSimulation (toBearerInfo defaultBearerInfo)
                                 diffScript
 
@@ -1886,7 +1892,8 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
 -- might progress but very slowly almost like a livelock. We want to safeguard from such
 -- cases.
 --
-prop_diffusion_nolivelock :: SimTrace Void
+prop_diffusion_nolivelock :: forall r.
+                             SimTrace r
                           -> Int
                           -> Property
 prop_diffusion_nolivelock ioSimTrace traceNumber =
@@ -1961,7 +1968,8 @@ prop_diffusion_nolivelock_iosim
 -- and then the peer gets disconnected, the DNS lookup fails (so you can’t
 -- reconnect). After a bit DNS lookup succeeds and you manage to connect again.
 --
-prop_diffusion_dns_can_recover :: SimTrace Void
+prop_diffusion_dns_can_recover :: forall r.
+                                  SimTrace r
                                -> Int
                                -> Property
 prop_diffusion_dns_can_recover ioSimTrace traceNumber =
@@ -2430,7 +2438,8 @@ prop_accept_failure (AbsIOError ioerr) =
 -- We do not need separate above and below variants of this property since it
 -- is not possible to exceed the target.
 --
-prop_diffusion_target_established_public :: SimTrace Void
+prop_diffusion_target_established_public :: forall r.
+                                            SimTrace r
                                          -> Int
                                          -> Property
 prop_diffusion_target_established_public ioSimTrace traceNumber =
@@ -2523,7 +2532,8 @@ prop_diffusion_target_established_public_iosim
 -- the logs for all nodes running will all appear in the trace and the test
 -- property should only be valid while a given node is up and running.
 --
-prop_diffusion_target_active_public :: SimTrace Void
+prop_diffusion_target_active_public :: forall r.
+                                       SimTrace r
                                     -> Int
                                     -> Property
 prop_diffusion_target_active_public ioSimTrace traceNumber =
@@ -2605,7 +2615,8 @@ prop_diffusion_target_active_public_iosim
 -- | This test checks the percentage of local root peers that, at some point,
 -- become active.
 --
-prop_diffusion_target_active_local :: SimTrace Void
+prop_diffusion_target_active_local :: forall r.
+                                      SimTrace r
                                    -> Int
                                    -> Property
 prop_diffusion_target_active_local ioSimTrace traceNumber =
@@ -2690,7 +2701,8 @@ prop_diffusion_target_active_local_iosim
 -- This test is somewhat similar to `prop_governor_target_active_public`,
 -- however that test enforces network level timeouts.
 --
-prop_diffusion_target_active_root :: SimTrace Void
+prop_diffusion_target_active_root :: forall r.
+                                     SimTrace r
                                   -> Int
                                   -> Property
 prop_diffusion_target_active_root ioSimTrace traceNumber =
@@ -2812,7 +2824,8 @@ prop_hot_diffusion_target_active_root defaultBearerInfo (HotDiffusionScript sa d
 -- We do not need separate above and below variants of this property since it
 -- is not possible to exceed the target.
 --
-prop_diffusion_target_established_local :: SimTrace Void
+prop_diffusion_target_established_local :: forall r.
+                                           SimTrace r
                                         -> Int
                                         -> Property
 prop_diffusion_target_established_local ioSimTrace traceNumber =
@@ -2982,7 +2995,8 @@ prop_diffusion_target_established_local_iosim
 -- connection.
 --
 prop_diffusion_never_connect_peer_behind_firewall
-  :: SimTrace Void
+  :: forall r.
+     SimTrace r
   -> Int
   -> Property
 prop_diffusion_never_connect_peer_behind_firewall ioSimTrace traceNumber =
@@ -3078,7 +3092,8 @@ prop_diffusion_never_connect_peer_behind_firewall_iosim
 -- the logs for all nodes running will all appear in the trace and the test
 -- property should only be valid while a given node is up and running.
 --
-prop_diffusion_target_active_below :: SimTrace Void
+prop_diffusion_target_active_below :: forall r.
+                                      SimTrace r
                                    -> Int
                                    -> Property
 prop_diffusion_target_active_below ioSimTrace traceNumber =
@@ -3255,7 +3270,8 @@ prop_diffusion_target_active_below_iosim
   = testWithIOSim prop_diffusion_target_active_below long_trace
 
 
-prop_diffusion_target_active_local_below :: SimTrace Void
+prop_diffusion_target_active_local_below :: forall r.
+                                            SimTrace r
                                          -> Int
                                          -> Property
 prop_diffusion_target_active_local_below ioSimTrace traceNumber =
@@ -3517,7 +3533,8 @@ data StartStop a =
 
 -- | Show that outbound governor reacts to asynchronous demotions
 --
-prop_diffusion_async_demotions :: SimTrace Void
+prop_diffusion_async_demotions :: forall r.
+                                  SimTrace r
                                -> Int
                                -> Property
 prop_diffusion_async_demotions ioSimTrace traceNumber =
@@ -3694,7 +3711,8 @@ unit_diffusion_async_demotions =
 -- the logs for all nodes running will all appear in the trace and the test
 -- property should only be valid while a given node is up and running.
 --
-prop_diffusion_target_active_local_above :: SimTrace Void
+prop_diffusion_target_active_local_above :: forall r.
+                                            SimTrace r
                                          -> Int
                                          -> Property
 prop_diffusion_target_active_local_above ioSimTrace traceNumber =
@@ -3798,7 +3816,8 @@ prop_diffusion_target_active_local_above_iosim
 -- that the logs for all nodes running will all appear in the trace and the test
 -- property should only be valid while a given node is up and running.
 --
-prop_diffusion_cm_valid_transitions :: SimTrace Void
+prop_diffusion_cm_valid_transitions :: forall r.
+                                       SimTrace r
                                     -> Int
                                     -> Property
 prop_diffusion_cm_valid_transitions ioSimTrace traceNumber =
@@ -3907,7 +3926,8 @@ prop_diffusion_cm_valid_transitions_iosim
 -- 'UnknownConnectionSt', since we can't do that here we limit ourselves
 -- to 'TerminatedSt'.
 --
-prop_diffusion_cm_valid_transition_order' :: SimTrace Void
+prop_diffusion_cm_valid_transition_order' :: forall r.
+                                             SimTrace r
                                           -> Int
                                           -> Property
 prop_diffusion_cm_valid_transition_order' ioSimTrace traceNumber =
@@ -3963,7 +3983,8 @@ prop_diffusion_cm_valid_transition_order_iosimpor
 -- the logs for all nodes running will all appear in the trace and the test
 -- property should only be valid while a given node is up and running.
 --
-prop_diffusion_cm_valid_transition_order'' :: SimTrace Void
+prop_diffusion_cm_valid_transition_order'' :: forall r.
+                                              SimTrace r
                                            -> Int
                                            -> Property
 prop_diffusion_cm_valid_transition_order'' ioSimTrace traceNumber =
@@ -4206,7 +4227,7 @@ prop_unit_reconnect =
            ])
          ]
 
-      sim :: forall s . IOSim s Void
+      sim :: forall s. IOSim s DiffSimResult
       sim = diffusionSimulation (toBearerInfo (absNoAttenuation { abiInboundAttenuation  = SpeedAttenuation SlowSpeed (Time 20) 1000
                                                                 } ))
                                 diffScript
@@ -4257,7 +4278,8 @@ prop_unit_reconnect =
 
 -- | Verify that certain traces are never emitted by the simulation.
 --
-prop_diffusion_cm_no_dodgy_traces :: SimTrace Void
+prop_diffusion_cm_no_dodgy_traces :: forall r.
+                                     SimTrace r
                                   -> Int
                                   -> Property
 prop_diffusion_cm_no_dodgy_traces ioSimTrace traceNumber =
@@ -4318,7 +4340,8 @@ prop_diffusion_cm_no_dodgy_traces_iosim
   = testWithIOSim prop_diffusion_cm_no_dodgy_traces long_trace
 
 
-prop_diffusion_peer_selection_actions_no_dodgy_traces :: SimTrace Void
+prop_diffusion_peer_selection_actions_no_dodgy_traces :: forall r.
+                                                         SimTrace r
                                                       -> Int
                                                       -> Property
 prop_diffusion_peer_selection_actions_no_dodgy_traces ioSimTrace traceNumber =
@@ -4503,7 +4526,7 @@ prop_diffusion_peer_selection_actions_no_dodgy_traces_iosim
 
 unit_peer_sharing :: Property
 unit_peer_sharing =
-    let sim :: forall s. IOSim s Void
+    let sim :: forall s. IOSim s DiffSimResult
         sim = diffusionSimulation (toBearerInfo absNoAttenuation)
                                   script
 
@@ -4675,7 +4698,8 @@ unit_peer_sharing =
 -- a workaround, it ensures the test remains meaningful without being
 -- invalidated by an artificial limitation of the test environment.
 --
-prop_churn_notimeouts :: SimTrace Void
+prop_churn_notimeouts :: forall r.
+                         SimTrace r
                       -> Int
                       -> Property
 prop_churn_notimeouts ioSimTrace traceNumber =
@@ -4759,7 +4783,7 @@ prop_churn_notimeouts_iosim
 -- 3. Checks that targets change when in 'GenesisMode' and 'LedgerStateJudgement' changes.
 --
 prop_churn_targets_bounds :: [(NtNAddr, (PeerSelectionTargets, PeerSelectionTargets))]
-                          -> SimTrace Void
+                          -> SimTrace DiffSimResult
                           -> Int
                           -> Property
 prop_churn_targets_bounds baseTargetsMap ioSimTrace traceNumber =
@@ -4950,7 +4974,8 @@ prop_churn_targets_bounds_ouroboros_iosim bi ds@(DiffusionScript _ _ nodes) =
 -- * `IncreasedEstablishedPeers`
 -- * `IncreasedEstablishedBigLedgerPeers`
 --
-prop_churn_steps :: SimTrace Void
+prop_churn_steps :: forall r.
+                    SimTrace r
                  -> Int
                  -> Property
 prop_churn_steps ioSimTrace traceNumber =
@@ -5081,7 +5106,8 @@ prop_splitWith f as = foldr (++) [] (splitWith f as) === as
 -- the logs for all nodes running will all appear in the trace and the test
 -- property should only be valid while a given node is up and running.
 --
-prop_diffusion_ig_valid_transitions :: SimTrace Void
+prop_diffusion_ig_valid_transitions :: forall r.
+                                       SimTrace r
                                     -> Int
                                     -> Property
 prop_diffusion_ig_valid_transitions ioSimTrace traceNumber =
@@ -5150,7 +5176,8 @@ prop_diffusion_ig_valid_transitions_iosim
 -- the logs for all nodes running will all appear in the trace and the test
 -- property should only be valid while a given node is up and running.
 --
-prop_diffusion_ig_valid_transition_order :: SimTrace Void
+prop_diffusion_ig_valid_transition_order :: forall r.
+                                            SimTrace r
                                          -> Int
                                          -> Property
 prop_diffusion_ig_valid_transition_order ioSimTrace traceNumber =
@@ -5217,11 +5244,15 @@ prop_diffusion_ig_valid_transition_order_iosim
 -- This test tests simultaneously the ConnectionManager and InboundGovernor's
 -- timeouts.
 --
-prop_diffusion_timeouts_enforced :: SimTrace Void
+-- NOTE: we will get multiple groups of labels `simulated time` and `Nº Events`,
+-- one per node in the simulation.
+prop_diffusion_timeouts_enforced :: forall r.
+                                    SimTrace r
                                  -> Int
                                  -> Property
 prop_diffusion_timeouts_enforced ioSimTrace traceNumber =
-    let events :: [Trace () (Time, DiffusionTestTrace)]
+    let -- list of traces grouped by node
+        events :: [Trace () (Time, DiffusionTestTrace)]
         events = Trace.toList
                . fmap ( Trace.fromList ()
                       . fmap (\(WithName _ (WithTime t b)) -> (t, b)))
@@ -5240,7 +5271,8 @@ prop_diffusion_timeouts_enforced ioSimTrace traceNumber =
             lastTime = fst
                      . last
                      $ evsList
-         in classifySimulatedTime lastTime
+         in
+            classifySimulatedTime lastTime
           $ classifyNumberOfEvents (length evsList)
           $ verify_timeouts
             ev
@@ -5256,9 +5288,12 @@ prop_diffusion_timeouts_enforced ioSimTrace traceNumber =
                            . groupConns snd abstractStateIsFinalTransition
                            . selectDiffusionConnectionManagerTransitionEventsTime
                            $ events
+          numTransitions = getSum $ bifoldMap (const mempty) (Sum . length) transitionSignal
 
-       in property
-        $ verifyAllTimeouts True transitionSignal
+      in label ("num-transitions: " ++ renderRanges 50 numTransitions)
+        $ if numTransitions < 1
+            then discard
+            else verifyAllTimeouts True transitionSignal
 
 prop_diffusion_timeouts_enforced_iosimpor
   :: AbsBearerInfo -> DiffusionScript -> Property
@@ -5377,7 +5412,8 @@ unit_local_root_diffusion_mode diffusionMode =
           )
         ]
 
-prop_no_peershare_unwilling:: SimTrace Void
+prop_no_peershare_unwilling:: forall r.
+                              SimTrace r
                            -> Int
                            -> Property
 prop_no_peershare_unwilling ioSimTrace traceNumber =
@@ -5445,21 +5481,23 @@ getTime (t, _, _, _) = t
 
 classifySimulatedTime :: Time -> Property -> Property
 classifySimulatedTime lastTime =
-        classify (lastTime <= Time (10 * 60)) "simulation time <= 10min"
-      . classify (lastTime >  Time (10 * 60)      && lastTime <= Time (20 * 60)) "10min < simulation time <= 20min"
-      . classify (lastTime >  Time (20 * 60)      && lastTime <= Time (40 * 60)) "20min < simulation time <= 40min"
-      . classify (lastTime >  Time (40 * 60)      && lastTime <= Time (60 * 60)) "40min < simulation time <= 1H"
-      . classify (lastTime >  Time (60 * 60)      && lastTime <= Time (5 * 60 * 60)) "1H < simulation time <= 5H"
-      . classify (lastTime >  Time (5 * 60 * 60)  && lastTime <= Time (10 * 60 * 60)) "5H < simulation time <= 10H"
-      . classify (lastTime >  Time (10 * 60 * 60) && lastTime <= Time (24 * 60 * 60)) "10H < simulation time <= 1 Day"
-      . classify (lastTime >= Time (24 * 60 * 60)) "simulation time >= 1 Day"
+  label
+    if | lastTime <= Time (10 * 60)                                         -> "simulation time [0, 10min)"
+       | lastTime >  Time (10 * 60) && lastTime <= Time (20 * 60)           -> "simulation time (10min, 20min]"
+       | lastTime >  Time (20 * 60) && lastTime <= Time (40 * 60)           -> "simulation time (20min, 40min]"
+       | lastTime >  Time (40 * 60) && lastTime <= Time (60 * 60)           -> "simulation time (40min, 1H)"
+       | lastTime >  Time (60 * 60)      && lastTime <= Time (5 * 60 * 60)  -> "simulation time (1H, 5H]"
+       | lastTime >  Time (5 * 60 * 60)  && lastTime <= Time (10 * 60 * 60) -> "simulation time (5H, 10H]"
+       | lastTime >  Time (10 * 60 * 60) && lastTime <= Time (24 * 60 * 60) -> "simulation time (10H, 1 Day]"
+       | otherwise                                                          -> "simulation time >= 1 Day"
 
 classifyNumberOfEvents :: Int -> Property -> Property
 classifyNumberOfEvents nEvents =
-        classify (nEvents <=    100) "Nº Events <=    100"
-      . classify (nEvents >=  1_000) "Nº Events >=  1_000"
-      . classify (nEvents >= 10_000) "Nº Events >= 10_000"
-      . classify (nEvents >= 50_000) "Nº Events >= 50_000"
+  label
+    if | nEvents < 1_000                       -> "Nº Events [0, 1k]"
+       | nEvents >=  1_000 && nEvents < 10_000 -> "Nº Events [1k, 10k)"
+       | nEvents >= 10_000 && nEvents < 50_000 -> "Nº Events [10k, 50k)"
+       | otherwise                             -> "Nº Events [50k, +∞)"
 
 withTimeNameTraceEvents :: forall b name r. (Typeable b, Typeable name)
                         => Trace r SimEvent

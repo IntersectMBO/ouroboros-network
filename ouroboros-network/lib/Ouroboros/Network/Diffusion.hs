@@ -81,6 +81,7 @@ import Ouroboros.Network.Snocket (LocalAddress, LocalSocket (..), RemoteAddress,
            localSocketFileDescriptor, makeLocalBearer, makeSocketBearer')
 import Ouroboros.Network.Snocket qualified as Snocket
 import Ouroboros.Network.Socket (configureSocket, configureSystemdSocket)
+import Ouroboros.Network.Util (PrettyShow (..))
 
 
 socketAddressType :: Socket.SockAddr -> Maybe AddressType
@@ -109,20 +110,21 @@ runM
        , MonadTime        m
        , MonadTimer       m
        , MonadMVar        m
-       , Typeable  ntnAddr
-       , Hashable  ntnAddr
-       , NFData    ntnVersion
-       , Typeable  ntnVersion
-       , Ord       ntnVersion
-       , Show      ntnVersion
-       , NFData    ntnVersionData
-       , Show      ntnVersionData
-       , Typeable  ntcAddr
-       , Ord       ntcAddr
-       , Show      ntcAddr
-       , NFData    ntcVersion
-       , Ord       ntcVersion
-       , NFData    ntcVersionData
+       , Typeable   ntnAddr
+       , Hashable   ntnAddr
+       , PrettyShow ntnAddr
+       , NFData     ntnVersion
+       , Typeable   ntnVersion
+       , Ord        ntnVersion
+       , Show       ntnVersion
+       , NFData     ntnVersionData
+       , Show       ntnVersionData
+       , Typeable   ntcAddr
+       , Ord        ntcAddr
+       , PrettyShow ntcAddr
+       , NFData     ntcVersion
+       , Ord        ntcVersion
+       , NFData     ntcVersionData
        , Monoid extraPeers
        , Eq extraFlags
        , Exception exception
@@ -315,7 +317,7 @@ runM Interfaces
     --
     mkLocalThread :: ThreadId m -> Either ntcFd ntcAddr -> m Void
     mkLocalThread mainThreadId localAddr = do
-     labelThisThread "local connection manager"
+     labelThisThread "diffusion-local"
      withLocalSocket tracer diNtcGetFileDescriptor diNtcSnocket localAddr
       $ \localSocket -> do
         localInbInfoChannel <- newInformationChannel
@@ -403,7 +405,7 @@ runM Interfaces
     --
     mkRemoteThread :: ThreadId m -> m Void
     mkRemoteThread mainThreadId = do
-      labelThisThread "remote connection manager"
+      labelThisThread "diffusion-remote"
       let
         exitPolicy :: ExitPolicy a
         exitPolicy = ExitPolicy {
@@ -824,15 +826,15 @@ runM Interfaces
 run :: ( Monoid extraPeers
        , Eq     extraFlags
        , Exception exception
-       , NFData   ntnVersion
-       , Typeable ntnVersion
-       , Ord      ntnVersion
-       , Show     ntnVersion
-       , NFData   ntnVersionData
-       , Show     ntnVersionData
-       , NFData   ntcVersion
-       , Ord      ntcVersion
-       , NFData   ntcVersionData
+       , NFData     ntnVersion
+       , Typeable   ntnVersion
+       , Ord        ntnVersion
+       , PrettyShow ntnVersion
+       , NFData     ntnVersionData
+       , PrettyShow ntnVersionData
+       , NFData     ntcVersion
+       , Ord        ntcVersion
+       , NFData     ntcVersionData
        , NFData   a
        , SupportsPeerSelectionState extraPeers RemoteAddress
        )

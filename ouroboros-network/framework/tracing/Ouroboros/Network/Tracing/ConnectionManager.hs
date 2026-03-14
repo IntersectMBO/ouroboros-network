@@ -28,6 +28,7 @@ import Ouroboros.Network.ConnectionManager.Types qualified as ConnectionManager
 import Ouroboros.Network.RethrowPolicy (ErrorCommand (..))
 -- Needed for `instance ToJSON ConnectionManager.AbstractState where`.
 import Ouroboros.Network.OrphanInstances qualified ()
+import Ouroboros.Network.Util (PrettyShow)
 
 --------------------------------------------------------------------------------
 -- Connection Manager Tracer.
@@ -372,7 +373,7 @@ instance MetaTrace (ConnectionHandlerTrace versionNumber agreedOptions) where
 -- Connection Manager Transition Tracer.
 --------------------------------------------------------------------------------
 
-instance (Show peerAddr, ToJSON peerAddr)
+instance (PrettyShow peerAddr, ToJSON peerAddr)
       => LogFormatting (ConnectionManager.AbstractTransitionTrace peerAddr) where
     forMachine _dtal (ConnectionManager.TransitionTrace peerAddr tr) =
       mconcat $ reverse

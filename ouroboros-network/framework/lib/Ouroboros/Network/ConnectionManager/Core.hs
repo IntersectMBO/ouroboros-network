@@ -71,6 +71,7 @@ import Ouroboros.Network.InboundGovernor.InformationChannel qualified as InfoCha
 import Ouroboros.Network.MuxMode
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket
+import Ouroboros.Network.Util (PrettyShow (..))
 
 -- | Arguments for a 'ConnectionManager' which are independent of 'MuxMode'.
 --
@@ -372,9 +373,9 @@ with
        , MonadThrow    (STM m)
        , MonadTimer         m
 
-       , Ord      peerAddr
-       , Show     peerAddr
-       , Typeable peerAddr
+       , Ord        peerAddr
+       , PrettyShow peerAddr
+       , Typeable   peerAddr
        )
     => Arguments handlerTrace socket peerAddr handle handleError version versionData m a b
     -> InResponderMode muxMode (InformationChannel (Event muxMode handle initiatorCtx peerAddr versionData m a b) m)
@@ -1462,7 +1463,7 @@ with args@Arguments {
                   <- State.newMutableConnState peerAddr connStateIdSupply connState'
 
                 -- TODO: label `connVar` using 'ConnectionId'
-                labelTVar connVar ("conn-state-" ++ show peerAddr)
+                labelTVar connVar ("conn-state-" ++ prettyShow peerAddr)
 
                 writeTMVar stateVar
                           (State.insertUnknownLocalAddr peerAddr mutableConnState state)

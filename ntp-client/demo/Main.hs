@@ -1,23 +1,21 @@
-{-# LANGUAGE NumericUnderscores  #-}
-module Main
-where
+{-# LANGUAGE NumericUnderscores #-}
+module Main where
 
-import           Control.Concurrent (threadDelay)
-import           Control.Concurrent.Async
-import           Control.Monad (forever)
-import           Control.Tracer
+import Control.Concurrent (threadDelay)
+import Control.Concurrent.Async
+import Control.Monad (forever)
+import Control.Tracer
+import Data.Functor.Contravariant ((>$<))
 
-import           Network.NTP.Client (withNtpClient
-                                    , NtpSettings(..)
-                                    , NtpClient(..))
+import Network.NTP.Client (NtpClient (..), NtpSettings (..), withNtpClient)
 
-import           System.IOManager
+import System.IOManager
 
 
 main :: IO ()
 main =
     withIOManager $ \ioManager ->
-      withNtpClient ioManager (showTracing stdoutTracer) testSettings runApplication
+      withNtpClient ioManager (show >$< stdoutTracer) testSettings runApplication
   where
     runApplication ntpClient = do
         link $ ntpThread ntpClient  -- propergate any errors in the NTP thread.

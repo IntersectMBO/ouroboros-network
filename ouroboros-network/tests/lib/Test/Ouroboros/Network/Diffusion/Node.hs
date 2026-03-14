@@ -108,6 +108,7 @@ import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersAPI (..))
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket (MakeBearer, Snocket, TestAddress (..),
            invalidFileDescriptor)
+import Ouroboros.Network.Util (PrettyShow (..))
 
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy (TxDecisionPolicy)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (decisionLogicThreads)
@@ -256,7 +257,7 @@ run blockGeneratorArgs ni na
     toExtraPeers requestPublicRootPeers peerChurnGovernor
     tracers tracerBlockFetch
     tracerTxLogic mkApps = do
-    labelThisThread ("node-" ++ Node.ppNtNAddr (aIPAddress na))
+    labelThisThread ("node-" ++ prettyShow (aIPAddress na))
     Node.withNodeKernelThread (aIPAddress na) blockGeneratorArgs (aTxs na)
       $ \ nodeKernel nodeKernelThread -> do
         dnsTimeoutScriptVar <- newTVarIO (aDNSTimeoutScript na)
@@ -449,8 +450,8 @@ run blockGeneratorArgs ni na
         toPeerSharing 1 = Right PeerSharingEnabled
         toPeerSharing _ = Left "toPeerSharing: out of bounds"
 
-        decodeData _ (CBOR.TList [CBOR.TBool False, CBOR.TInt a]) = NtNVersionData InitiatorOnlyDiffusionMode <$> (toPeerSharing a)
-        decodeData _ (CBOR.TList [CBOR.TBool True, CBOR.TInt a])  = NtNVersionData InitiatorAndResponderDiffusionMode <$> (toPeerSharing a)
+        decodeData _ (CBOR.TList [CBOR.TBool False, CBOR.TInt a]) = NtNVersionData InitiatorOnlyDiffusionMode <$> toPeerSharing a
+        decodeData _ (CBOR.TList [CBOR.TBool True, CBOR.TInt a])  = NtNVersionData InitiatorAndResponderDiffusionMode <$> toPeerSharing a
         decodeData _ _                                            = Left (Text.pack "unversionedDataCodec: unexpected term")
 
     mkArgs :: StrictTVar m (PublicPeerSelectionState NtNAddr)

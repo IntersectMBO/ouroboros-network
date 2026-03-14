@@ -103,6 +103,8 @@ library api
     Ouroboros.Network.Point
     Ouroboros.Network.Protocol.Limits
     Ouroboros.Network.SizeInBytes
+    Ouroboros.Network.Util
+    Ouroboros.Network.Util.PrettyShow
     Ouroboros.Network.Util.ShowProxy
 
   build-depends:
@@ -422,7 +424,7 @@ library framework-tracing
     iproute,
     network,
     network-mux,
-    ouroboros-network:{framework, orphan-instances},
+    ouroboros-network:{api, framework, orphan-instances},
     text,
     trace-dispatcher ^>=2.11.0,
     typed-protocols:{typed-protocols, stateful} ^>=1.2,
@@ -476,6 +478,7 @@ library tests-lib
     io-classes:{io-classes, si-timers, strict-stm} ^>=1.8,
     io-sim,
     network-mux,
+    ouroboros-network:api,
     pretty-simple,
     psqueues >=0.2.3 && <0.3,
     serialise >=0.2 && <0.3,
@@ -616,7 +619,7 @@ test-suite framework-io-tests
     monoidal-synchronisation,
     network,
     network-mux,
-    ouroboros-network:{api, api-tests-lib, framework, framework-tests-lib},
+    ouroboros-network:{api, api-tests-lib, framework, framework-tests-lib, tests-lib},
     random,
     tasty,
     tasty-quickcheck,
