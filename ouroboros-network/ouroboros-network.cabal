@@ -735,6 +735,7 @@ executable demo-tx-submission
   hs-source-dirs: demo
   main-is: tx-submission.hs
   build-depends:
+    QuickCheck,
     async,
     base,
     bytestring,
@@ -748,6 +749,7 @@ executable demo-tx-submission
     nothunks,
     optparse-applicative,
     ouroboros-network:{ouroboros-network, api, framework, protocols},
+    quickcheck-instances,
     random,
     serialise,
     typed-protocols,

@@ -4,7 +4,7 @@
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE NamedFieldPuns             #-}
-{-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE OverloadedStrings          #-}
 
 {-# OPTIONS_GHC -Wno-partial-fields #-}
 
@@ -13,6 +13,7 @@ module Main where
 import Codec.CBOR.Decoding qualified as CBOR
 import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
+import Codec.CBOR.Write qualified as CBOR
 import Codec.Serialise (Serialise (..))
 import Codec.Serialise qualified as CBOR
 import Control.Concurrent (forkIO)
@@ -23,6 +24,7 @@ import Control.Monad
 import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer qualified as Tracer
 import Data.ByteString (ByteString)
+import Data.ByteString.Builder qualified as BS.Builder
 import Data.ByteString.Lazy qualified as LBS
 import Data.Hashable qualified as Hashable
 import Data.IP (IP)
@@ -51,6 +53,12 @@ import Ouroboros.Network.TxSubmission.Inbound.V2 qualified as V2
 import Ouroboros.Network.TxSubmission.Mempool.Simple qualified as Mempool
 import Ouroboros.Network.Util.ShowProxy
 
+import Test.QuickCheck (arbitrary)
+import Test.QuickCheck.Gen (Gen (..))
+import Test.QuickCheck.Gen qualified as QC
+import Test.QuickCheck.Instances.ByteString ()
+import Test.QuickCheck.Random (newQCGen)
+
 main :: IO ()
 main =
   execParser (info (optionParser <**> helper) fullDesc)
@@ -59,6 +67,10 @@ main =
         runTxInbound addr version (microsecondsAsIntToDiffTime txDelay)
       OutboundOptions addr version filePath ->
         runTxOutbound addr version filePath
+      GenerateTxs num filePath ->
+        runTxsGenerator num filePath
+      AnalyseTxs filePath ->
+        runTxsAnalyser filePath
 
 data Options =
     InboundOptions
@@ -70,6 +82,13 @@ data Options =
       Addr
       TxSubmissionLogicVersion
       FilePath -- ^ file path of tx cache
+
+  | GenerateTxs
+      Int -- ^ number of txs
+      FilePath -- ^ file path
+
+  | AnalyseTxs
+      FilePath
   deriving Show
 
 data Addr = Addr { addr :: IP, port :: PortNumber }
@@ -89,6 +108,16 @@ optionParser =
           $ info outboundParser
           $    fullDesc
             <> progDesc "run tx-submission outbound client")
+    <|> hsubparser
+         (command "generate"
+         $ info generateParser
+         $    fullDesc
+           <> progDesc "generate tx")
+    <|> hsubparser
+         (command "analyse-txs"
+         $ info analyseParser
+         $    fullDesc
+           <> progDesc "analyze tx file")
   where
     defaultPort :: PortNumber
     defaultPort = 4000
@@ -96,7 +125,11 @@ optionParser =
     defaultAddr :: IP
     defaultAddr = read "127.0.0.1"
 
-    inboundParser, outboundParser :: Parser Options
+    inboundParser,
+      outboundParser,
+      generateParser,
+      analyseParser :: Parser Options
+
     inboundParser =
       (\addr port version txDelay ->
         InboundOptions Addr { addr, port } version txDelay
@@ -125,6 +158,7 @@ optionParser =
               <> value 10
               <> showDefault
             )
+
     outboundParser =
       (\addr port version filePath ->
         OutboundOptions Addr { addr, port } version filePath
@@ -148,9 +182,31 @@ optionParser =
               <> help "use tx-submission-v1 (default is v2)"
             )
         <*> strOption
-             (    long "txs"
+             (    long "input"
                <> help "file with txs"
              )
+
+    generateParser =
+      GenerateTxs
+      <$> option auto
+            (  long "number"
+            <> help "number of txs to generate"
+            <> value defaultNumTxs
+            <> showDefault
+            )
+      <*> strOption
+           (  long "output"
+           <> help "output file in cbor format"
+           )
+      where
+        defaultNumTxs = 500
+
+    analyseParser =
+      AnalyseTxs
+      <$> strOption
+           (  long "input"
+           <> help "input file in cbor format"
+           )
 
 
 newtype TxId = TxId Int
@@ -175,7 +231,6 @@ instance CBOR.Serialise Tx where
     txid <- CBOR.decode
     txPayload <- CBOR.decode
     pure Tx { txid, txPayload }
-
 
 -- | A `Tx`'s smart constructor which computes `txid` from the payload.
 --
@@ -337,7 +392,8 @@ runTxOutbound :: Addr
               -> TxSubmissionLogicVersion
               -> FilePath
               -> IO ()
-runTxOutbound Addr { addr, port } _version _file = do
+runTxOutbound Addr { addr, port } _version filePath = do
+    _txs <- readTxs filePath
     let hints = Socket.defaultHints
                   { Socket.addrFlags = [Socket.AI_ADDRCONFIG]
                   , Socket.addrFamily = Socket.AF_INET
@@ -377,3 +433,37 @@ protocols miniProtocolDir =
       Mx.miniProtocolCapability = Nothing
     }
   ]
+
+
+-- | Generate [Tx] and write them to a file.
+--
+runTxsGenerator :: Int -> FilePath -> IO ()
+runTxsGenerator num filePath = do
+    gen <- newQCGen
+    let txs :: [Tx]
+        txs = unGen genTxs gen num
+    BS.Builder.writeFile filePath (CBOR.toBuilder (encode txs))
+  where
+    genTxs :: Gen [Tx]
+    genTxs = QC.vectorOf num $ mkTx <$> arbitrary
+
+
+readTxs :: FilePath -> IO [Tx]
+readTxs filePath = do
+  bs <- LBS.readFile filePath
+  case CBOR.deserialiseFromBytes decode bs of
+    Left e         -> throwIO e
+    Right (_, txs) -> return txs
+
+
+runTxsAnalyser :: FilePath -> IO ()
+runTxsAnalyser filePath = do
+  txs <- readTxs filePath
+  let sizes = getSizeInBytes . getTxSize <$> txs
+      minsize = minimum sizes
+      maxsize = maximum sizes
+      avg :: Float
+      avg = fromIntegral (sum sizes) / fromIntegral (length sizes)
+  putStrLn ("minimum: " ++ show minsize ++ "B")
+  putStrLn ("maximum: " ++ show maxsize ++ "B")
+  putStrLn ("average: " ++ show avg ++ "B")
