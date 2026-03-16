@@ -1,10 +1,13 @@
+{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
+{-# LANGUAGE KindSignatures             #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE NamedFieldPuns             #-}
-{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE RankNTypes                 #-}
 
 {-# OPTIONS_GHC -Wno-partial-fields #-}
 
@@ -19,14 +22,17 @@ import Codec.Serialise qualified as CBOR
 import Control.Concurrent (forkIO)
 import Control.Concurrent.Async
 import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Concurrent.MVar (MVar, newMVar, withMVar)
 import Control.Exception
 import Control.Monad
 import Control.Monad.Class.MonadTimer.SI
+import Control.Tracer (Tracer (..))
 import Control.Tracer qualified as Tracer
 import Data.ByteString (ByteString)
 import Data.ByteString.Builder qualified as BS.Builder
 import Data.ByteString.Lazy qualified as LBS
 import Data.Hashable qualified as Hashable
+import Data.List.NonEmpty qualified as NonEmpty
 import Data.IP (IP)
 import GHC.Generics (Generic)
 import NoThunks.Class (NoThunks (..))
@@ -37,7 +43,7 @@ import Network.Mux qualified as Mx
 import Network.Mux.Bearer qualified as Mx
 import Network.Socket (PortNumber)
 import Network.Socket qualified as Socket
-import Network.TypedProtocol.Codec (Codec)
+import Network.TypedProtocol.Codec (AnyMessage (..), Codec)
 
 import Ouroboros.Network.Protocol.TxSubmission2.Codec qualified as Tx
 import Ouroboros.Network.Protocol.TxSubmission2.Type qualified as Tx
@@ -247,13 +253,61 @@ data DuplicateTxError = DuplicateTxError
   deriving stock    Show
   deriving anyclass Exception
 
+type TxSubmission = Tx.TxSubmission2 TxId Tx
 
-codec :: Codec (Tx.TxSubmission2 TxId Tx)
+codec :: Codec TxSubmission
                CBOR.DeserialiseFailure
                IO
                LBS.ByteString
 codec = Tx.codecTxSubmission2 CBOR.encode CBOR.decode
                               CBOR.encode CBOR.decode
+
+byteLimits
+  :: Driver.ProtocolSizeLimits TxSubmission LBS.ByteString
+byteLimits =
+  Tx.byteLimitsTxSubmission2 (fromIntegral . LBS.length)
+
+
+txSubmissionTracer :: MVar () -> Tracer IO (Driver.TraceSendRecv TxSubmission)
+txSubmissionTracer lock =
+    Tracer $ \msg ->
+      withMVar lock $ \_ -> putStrLn (prettyMsg msg)
+  where
+    prettyMsg :: Driver.TraceSendRecv TxSubmission -> String
+    prettyMsg (Driver.TraceSendMsg (AnyMessage msg)) =
+      "send " ++ pretty msg
+    prettyMsg (Driver.TraceRecvMsg (AnyMessage msg)) =
+      "recv " ++ pretty msg
+
+    -- Show `txid`s, conceal the `txPayload`.
+    pretty :: forall (from :: TxSubmission)
+                     (to :: TxSubmission).
+              Tx.Message TxSubmission from to
+           -> String
+    pretty Tx.MsgInit = "MsgInit"
+    pretty (Tx.MsgRequestTxIds _ ack req) =
+      unwords
+      [ "MsgRequestTxIds"
+      , show ack
+      , show req
+      ]
+    pretty (Tx.MsgReplyTxIds (Tx.BlockingReply txids)) =
+      unwords
+      $ "MsgReplyTxIds.bl"
+      : (show <$> NonEmpty.toList txids)
+    pretty (Tx.MsgReplyTxIds (Tx.NonBlockingReply txids)) =
+      unwords
+      $ "MsgReplyTxIds.nb"
+      : (show <$> txids)
+    pretty (Tx.MsgRequestTxs txids) =
+      unwords
+      $ "MsgRequestTxs"
+      : (show <$> txids)
+    pretty (Tx.MsgReplyTxs txs) =
+      unwords
+      $ "MsgReplyTxs"
+      : (show . txid <$> txs)
+    pretty Tx.MsgDone = "MsgDone"
 
 
 runTxInbound :: Addr
@@ -261,6 +315,7 @@ runTxInbound :: Addr
              -> DiffTime
              -> IO ()
 runTxInbound Addr { addr, port } version txDelay = do
+    traceLock <- newMVar ()
     let hints = Socket.defaultHints
                   { Socket.addrFlags = [Socket.AI_ADDRCONFIG]
                   , Socket.addrFamily = Socket.AF_INET
@@ -341,9 +396,9 @@ runTxInbound Addr { addr, port } version txDelay = do
                       case version of
                         TxSubmissionLogicV1 -> do
                           Driver.runPipelinedPeerWithLimits
-                            Tracer.nullTracer
+                            (txSubmissionTracer traceLock)
                             codec
-                            (Tx.byteLimitsTxSubmission2 (fromIntegral . LBS.length))
+                            byteLimits
                             Tx.timeLimitsTxSubmission2
                             chann
                             ( Tx.Inbound.txSubmissionServerPeerPipelined
@@ -369,9 +424,9 @@ runTxInbound Addr { addr, port } version txDelay = do
                             addr'
                             $ \peerTxApi ->
                               Driver.runPipelinedPeerWithLimits
-                                Tracer.nullTracer
+                                (txSubmissionTracer traceLock)
                                 codec
-                                (Tx.byteLimitsTxSubmission2 (fromIntegral . LBS.length))
+                                byteLimits
                                 Tx.timeLimitsTxSubmission2
                                 chann
                                 ( Tx.Inbound.txSubmissionServerPeerPipelined
