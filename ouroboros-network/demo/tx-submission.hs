@@ -45,10 +45,11 @@ import Network.Socket (PortNumber)
 import Network.Socket qualified as Socket
 import Network.TypedProtocol.Codec (AnyMessage (..), Codec)
 
+import Ouroboros.Network.ControlMessage qualified as ControlMessage
+import Ouroboros.Network.Protocol.TxSubmission2.Client qualified as Tx.Outbound
 import Ouroboros.Network.Protocol.TxSubmission2.Codec qualified as Tx
-import Ouroboros.Network.Protocol.TxSubmission2.Type qualified as Tx
--- import Ouroboros.Network.Protocol.TxSubmission2.Client qualified as Tx.Outbound
 import Ouroboros.Network.Protocol.TxSubmission2.Server qualified as Tx.Inbound
+import Ouroboros.Network.Protocol.TxSubmission2.Type qualified as Tx
 
 import Ouroboros.Network.Driver.Limits qualified as Driver
 import Ouroboros.Network.SizeInBytes
@@ -57,6 +58,7 @@ import Ouroboros.Network.TxSubmission.Inbound.V1 qualified as V1
 import Ouroboros.Network.TxSubmission.Inbound.V2 (TxSubmissionLogicVersion (..))
 import Ouroboros.Network.TxSubmission.Inbound.V2 qualified as V2
 import Ouroboros.Network.TxSubmission.Mempool.Simple qualified as Mempool
+import Ouroboros.Network.TxSubmission.Outbound
 import Ouroboros.Network.Util.ShowProxy
 
 import Test.QuickCheck (arbitrary)
@@ -448,7 +450,9 @@ runTxOutbound :: Addr
               -> FilePath
               -> IO ()
 runTxOutbound Addr { addr, port } _version filePath = do
-    _txs <- readTxs filePath
+    traceLock <- newMVar ()
+    mempool <- readTxs filePath
+           >>= Mempool.new txid
     let hints = Socket.defaultHints
                   { Socket.addrFlags = [Socket.AI_ADDRCONFIG]
                   , Socket.addrFamily = Socket.AF_INET
@@ -465,13 +469,33 @@ runTxOutbound Addr { addr, port } _version filePath = do
           let dir = Mx.InitiatorDirectionOnly
           mux <- Mx.new Mx.nullTracers
                  (protocols dir)
-          withAsync (Mx.run mux bearer) $ \_ ->
+          withAsync (Mx.run mux bearer) $ \_ -> do
+            let reader =
+                  Mempool.getReader
+                    txid
+                    getTxSize
+                    mempool
             either throwIO return =<< atomically =<< Mx.runMiniProtocol
               mux
               txMiniProtocolNum
               dir
               Mx.StartEagerly
-              (\_chann -> undefined) -- TODO
+              (\chann ->
+                Driver.runPeerWithLimits
+                  (txSubmissionTracer traceLock)
+                  codec
+                  byteLimits
+                  Tx.timeLimitsTxSubmission2
+                  chann
+                  ( Tx.Outbound.txSubmissionClientPeer
+                  $ txSubmissionOutbound
+                      Tracer.nullTracer
+                      (Tx.NumTxIdsToAck . Tx.getNumTxIdsToReq $ V2.maxUnacknowledgedTxIds txDecisionPolicy)
+                      reader
+                      ()
+                      (ControlMessage.continueForever Proxy)
+                  )
+              )
 
 
 -- | Tx-Submission mini-protocol number
