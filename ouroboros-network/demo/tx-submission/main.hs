@@ -76,10 +76,17 @@ main :: IO ()
 main =
   execParser (info (optionParser <**> helper) fullDesc)
     >>= \case
-      InboundOptions addr version txDelay ->
-        runTxInbound addr version (microsecondsAsIntToDiffTime txDelay)
-      OutboundOptions addr version filePath num ->
-        replicateConcurrently_ num (runTxOutbound addr version filePath)
+      InboundOptions addr maxNumTxIdsToRequest maxUnacknowledgedTxIds version txDelay -> do
+        let txDecisionPolicy = V2.defaultTxDecisionPolicy
+              { V2.maxNumTxIdsToRequest,
+                V2.maxUnacknowledgedTxIds
+              }
+        runTxInbound addr txDecisionPolicy version (microsecondsAsIntToDiffTime txDelay)
+      OutboundOptions addr maxUnacknowledgedTxIds version filePath num -> do
+        let txDecisionPolicy = V2.defaultTxDecisionPolicy
+              { V2.maxUnacknowledgedTxIds
+              }
+        replicateConcurrently_ num (runTxOutbound addr txDecisionPolicy version filePath)
       GenerateTxs num filePath ->
         runTxsGenerator num filePath
       AnalyseTxs filePath ->
@@ -88,11 +95,14 @@ main =
 data Options =
     InboundOptions
       Addr
+      Tx.NumTxIdsToReq -- ^ maximum number txids to request
+      Tx.NumTxIdsToReq -- ^ unacked txids
       TxSubmissionLogicVersion
       Int -- ^ tx validation time in microseconds
 
   | OutboundOptions
       Addr
+      Tx.NumTxIdsToReq -- ^ unacked txids
       TxSubmissionLogicVersion
       FilePath -- ^ file path of tx cache
       Int -- ^ number of outbound clients to fork
@@ -145,8 +155,8 @@ optionParser =
       analyseParser :: Parser Options
 
     inboundParser =
-      (\addr port version txDelay ->
-        InboundOptions Addr { addr, port } version txDelay
+      (\addr port maxTxIdsToReq maxUnacked version txDelay ->
+        InboundOptions Addr { addr, port } maxTxIdsToReq maxUnacked version txDelay
       ) <$> option auto
               (  long "addr"
               <> metavar "ADDR"
@@ -161,6 +171,18 @@ optionParser =
               <> value defaultPort
               <> showDefault
               )
+        <*> option (Tx.NumTxIdsToReq <$> auto)
+            (    long "txids-to-request"
+              <> help "maximum number of txids to request"
+              <> value (V2.maxNumTxIdsToRequest V2.defaultTxDecisionPolicy)
+              <> showDefaultWith (show . Tx.getNumTxIdsToReq)
+            )
+        <*> option (Tx.NumTxIdsToReq <$> auto)
+            (    long "unacked-txids"
+              <> help "size of unacknowledged txid buffer"
+              <> value (V2.maxUnacknowledgedTxIds V2.defaultTxDecisionPolicy)
+              <> showDefaultWith (show . Tx.getNumTxIdsToReq)
+            )
         <*> flag TxSubmissionLogicV2
                  TxSubmissionLogicV1
             (    long "v1"
@@ -174,8 +196,8 @@ optionParser =
             )
 
     outboundParser =
-      (\addr port version filePath num ->
-        OutboundOptions Addr { addr, port } version filePath num
+      (\addr port maxUnacked version filePath num ->
+        OutboundOptions Addr { addr, port } maxUnacked version filePath num
       ) <$> option auto
               (  long "addr"
               <> metavar "ADDR"
@@ -190,6 +212,12 @@ optionParser =
               <> value defaultPort
               <> showDefault
               )
+        <*> option (Tx.NumTxIdsToReq <$> auto)
+            (    long "unacked-txids"
+              <> help "size of unacknowledged txid buffer"
+              <> value (V2.maxUnacknowledgedTxIds V2.defaultTxDecisionPolicy)
+              <> showDefaultWith (show . Tx.getNumTxIdsToReq)
+            )
         <*> flag TxSubmissionLogicV2
                  TxSubmissionLogicV1
             (    long "v1"
@@ -211,6 +239,7 @@ optionParser =
       GenerateTxs
       <$> option auto
             (  long "number"
+            <> short 'n'
             <> help "number of txs to generate"
             <> value defaultNumTxs
             <> showDefault
@@ -363,10 +392,11 @@ printTracer lock = Tracer $ \(Mx.WithBearer addr a) ->
 
 
 runTxInbound :: Addr
+             -> V2.TxDecisionPolicy
              -> TxSubmissionLogicVersion
              -> DiffTime
              -> IO ()
-runTxInbound Addr { addr, port } version txDelay = do
+runTxInbound Addr { addr, port } txDecisionPolicy version txDelay = do
     traceLock <- newMVar ()
     let hints = Socket.defaultHints
                   { Socket.addrFlags = [Socket.AI_ADDRCONFIG]
@@ -493,16 +523,13 @@ runTxInbound Addr { addr, port } version txDelay = do
                                 )
                     )
 
--- TODO: make it configurable
-txDecisionPolicy  :: V2.TxDecisionPolicy
-txDecisionPolicy = V2.defaultTxDecisionPolicy
-
 
 runTxOutbound :: Addr
+              -> V2.TxDecisionPolicy
               -> TxSubmissionLogicVersion
               -> FilePath
               -> IO ()
-runTxOutbound Addr { addr, port } _version filePath = do
+runTxOutbound Addr { addr, port } txDecisionPolicy _version filePath = do
     traceLock <- newMVar ()
     mempool <- readTxs filePath
            >>= Mempool.new txid
