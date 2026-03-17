@@ -772,6 +772,7 @@ executable demo-tx-submission
   ghc-options:
     -threaded
     -rtsopts
+    "-with-rtsopts=-N2 --disable-delayed-os-memory-return"
 
 library protocols
   import: ghc-options
