@@ -11,8 +11,7 @@ haddocks/
 dist-newstyle/
 dist/
 
-*.swp
-*.swo
+*.sw?
 *~
 \#*
 **/tags
