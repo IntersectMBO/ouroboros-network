@@ -313,6 +313,33 @@ txSubmissionTracer lock =
       : (show . txid <$> txs)
     pretty Tx.MsgDone = "MsgDone"
 
+
+inboundTracer :: MVar () -> Tracer IO (V2.TraceTxSubmissionInbound TxId Tx)
+inboundTracer lock =
+    Tracer $ \msg ->
+      withMVar lock $ \_ -> putStrLn (prettyMsg msg)
+  where
+    prettyMsg :: V2.TraceTxSubmissionInbound TxId Tx -> String
+    prettyMsg (V2.TraceTxSubmissionCollected txids) =
+      unwords ["TraceTxSubmissionCollected ", show txids]
+    prettyMsg (V2.TraceTxSubmissionProcessed cnt) =
+      unwords ["TraceTxSubmissionProcessed ", show cnt]
+    prettyMsg (V2.TraceTxInboundCanRequestMoreTxs a) =
+      unwords ["TraceTxInboundCanRequestMoreTxs ", show a]
+    prettyMsg (V2.TraceTxInboundCannotRequestMoreTxs a) =
+      unwords ["TraceTxInboundCannotRequestMoreTxs ", show a]
+    prettyMsg (V2.TraceTxInboundAddedToMempool txids time) =
+      unwords ["TraceTxInboundAddedToMempool", show txids, show time]
+    prettyMsg (V2.TraceTxInboundRejectedFromMempool txids time) =
+      unwords ["TraceTxInboundRejectedFromMempool", show txids, show time]
+    prettyMsg (V2.TraceTxInboundError err) =
+      unwords ["TraceTxInboundError", show err]
+    prettyMsg  V2.TraceTxInboundTerminated =
+      "TraceTxInboundTerminated"
+    prettyMsg (V2.TraceTxInboundDecision decision) =
+      unwords ["TraceTxInboundDecision", prettyShow decision]
+
+
 printTracer :: Show a => MVar () -> Tracer IO a
 printTracer lock = Tracer $ \a -> withMVar lock $ \_ -> print a
 
@@ -441,7 +468,7 @@ runTxInbound Addr { addr, port } version txDelay = do
                                 chann
                                 ( Tx.Inbound.txSubmissionServerPeerPipelined
                                 $ V2.txSubmissionInboundV2
-                                  Tracer.nullTracer
+                                  (inboundTracer traceLock)
                                   V2.NoTxSubmissionInitDelay
                                   writer
                                   peerTxApi
