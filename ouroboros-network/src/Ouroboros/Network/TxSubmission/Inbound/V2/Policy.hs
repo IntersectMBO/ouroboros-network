@@ -61,8 +61,11 @@ data TxDecisionPolicy = TxDecisionPolicy {
       scoreMax               :: !Double,
       -- ^ Maximum number of "rejections". Unit: seconds
 
-      interTxSpace           :: !DiffTime
-      -- ^ space between requests for the same TX.
+      interTxSpace           :: !DiffTime,
+      -- ^ space between actual requests for the same TX.
+
+      interTxDecisionSpace   :: !DiffTime
+      -- ^ space between scheduling requests for the same TX.
     }
   deriving Show
 
@@ -77,5 +80,6 @@ defaultTxDecisionPolicy =
     bufferedTxsMinLifetime = 2,
     scoreRate              = 0.1,
     scoreMax               = 15 * 60,
-    interTxSpace           = 0.2
+    interTxSpace           = 0.333,
+    interTxDecisionSpace   = 600
   }

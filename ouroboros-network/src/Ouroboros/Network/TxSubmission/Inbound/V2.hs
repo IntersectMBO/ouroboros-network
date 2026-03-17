@@ -67,6 +67,7 @@ txSubmissionInboundV2
     TxSubmissionMempoolWriter { txId }
     PeerTxAPI {
       readTxDecision,
+      setTxRequestSendTime,
       handleReceivedTxIds,
       handleReceivedTxs,
       submitTxsToMempool
@@ -108,7 +109,9 @@ txSubmissionInboundV2
     -- Pipelined request of txs
     serverReqTxs :: TxDecision txid tx
                  -> m (ServerStIdle Z txid tx m ())
-    serverReqTxs txd@TxDecision { txdTxsToRequest = txdTxsToRequest } =
+    serverReqTxs txd@TxDecision { txdTxsToRequest = txdTxsToRequest } = do
+      setTxRequestSendTime (Map.keysSet txdTxsToRequest)
+      traceWith tracer (TraceTxInboundRequestTxs (Map.keys txdTxsToRequest))
       pure $ SendMsgRequestTxsPipelined txdTxsToRequest
                                         (serverReqTxIds (Succ Zero) txd)
 

@@ -76,6 +76,10 @@ data PeerTxAPI m txid tx = PeerTxAPI {
     readTxDecision      :: m (TxDecision txid tx),
     -- ^ a blocking action which reads `TxDecision`
 
+    setTxRequestSendTime :: Set txid
+                         -> m (),
+    -- ^ refresh cooldown for tx body requests when they are actually sent.
+
     handleReceivedTxIds :: NumTxIdsToReq
                         -> StrictSeq txid
                         -- ^ received txids
@@ -132,7 +136,8 @@ withPeer
 withPeer tracer
          channelsVar
          (TxMempoolSem mempoolSem)
-         policy@TxDecisionPolicy { bufferedTxsMinLifetime }
+         policy@TxDecisionPolicy { bufferedTxsMinLifetime,
+                                   interTxSpace }
          sharedStateVar
          TxSubmissionMempoolReader { mempoolGetSnapshot }
          TxSubmissionMempoolWriter { mempoolAddTxs }
@@ -153,6 +158,7 @@ withPeer tracer
                 return
                   ( TxChannels { txChannelMap = txChannelMap' }
                   , PeerTxAPI { readTxDecision = takeMVar chann',
+                                setTxRequestSendTime,
                                 handleReceivedTxIds,
                                 handleReceivedTxs,
                                 submitTxsToMempool }
@@ -259,6 +265,37 @@ withPeer tracer
     --
     -- PeerTxAPI
     --
+
+    setTxRequestSendTime :: Set txid
+                         -> m ()
+    setTxRequestSendTime txids
+      | Set.null txids = return ()
+      | otherwise = do
+          now <- getMonotonicTime
+          atomically $ do
+            st@SharedTxState { inflightTxs } <- readTVar sharedStateVar
+            let !oldMin = nextInflightWakeAt now inflightTxs
+                inflightTxs' = refreshInflightTxs now inflightTxs txids
+                st' = st { inflightTxs = inflightTxs' }
+                newMin = nextInflightWakeAt now inflightTxs'
+            writeTVar sharedStateVar $
+              if oldMin /= newMin
+                 then bumpGeneration st'
+                 else st'
+
+    refreshInflightTxs :: Time
+                       -> Map txid InFlightState
+                       -> Set txid
+                       -> Map txid InFlightState
+    refreshInflightTxs now inflight txids =
+      Foldable.foldl'
+        (\m txid ->
+          Map.adjust
+            (\st -> st { inFlightNextReq = addTime interTxSpace now })
+            txid
+            m)
+        inflight
+        txids
 
     submitTxsToMempool :: Tracer m (TraceTxSubmissionInbound txid tx)
                        -> [(txid, tx)]
@@ -589,22 +626,12 @@ decisionLogicThread tracer policy txChannelsVar sharedStateVar = do
       -> SharedTxState peeraddr txid tx
       -> DiffTime
     nextDecisionDelay now SharedTxState { inflightTxs } =
-      fromMaybe maxDelay (diffTimeNow <$> nextWake)
+      fromMaybe maxDelay (diffTimeNow <$> nextInflightWakeAt now inflightTxs)
       where
         -- If there are no outstanding TXs we wait for a long time
         -- or until an STM value changes.
         maxDelay :: DiffTime
         maxDelay = 120
-
-        nextWake :: Maybe Time
-        nextWake =
-          Foldable.foldl' step Nothing inflightTxs
-
-        step :: Maybe Time -> InFlightState -> Maybe Time
-        step acc InFlightState { inFlightNextReq } =
-          if inFlightNextReq <= now
-             then acc
-             else Just $ maybe inFlightNextReq (min inFlightNextReq) acc
 
         diffTimeNow :: Time -> DiffTime
         diffTimeNow t = t `diffTime` now
@@ -619,6 +646,18 @@ decisionLogicThread tracer policy txChannelsVar sharedStateVar = do
             a' <- restore (io a) `onException` putMVar m a
             putMVar m a'
           Nothing -> putMVar m d
+
+nextInflightWakeAt :: Foldable f
+                   => Time
+                   -> f InFlightState
+                   -> Maybe Time
+nextInflightWakeAt now =
+  Foldable.foldl' step Nothing
+  where
+    step acc InFlightState { inFlightNextReq } =
+      if inFlightNextReq <= now
+         then acc
+         else Just $ maybe inFlightNextReq (min inFlightNextReq) acc
 
 
 -- | Run `decisionLogicThread` and `drainRejectionThread`.

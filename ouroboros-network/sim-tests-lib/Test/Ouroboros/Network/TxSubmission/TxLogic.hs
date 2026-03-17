@@ -1010,7 +1010,8 @@ instance Arbitrary ArbTxDecisionPolicy where
             <*> (realToFrac <$> choose (0 :: Double, 2))
             <*> (choose (0, 1))
             <*> (choose (0, 1800))
-            <*> (realToFrac <$> choose (0 :: Double, 1)))
+            <*> (realToFrac <$> choose (0 :: Double, 1))
+            <*> (realToFrac <$> choose (0 :: Double, 1800)))
 
     shrink (ArbTxDecisionPolicy a@TxDecisionPolicy {
               maxNumTxIdsToRequest,
@@ -1039,12 +1040,16 @@ instance Arbitrary ArbTxDecisionPolicy where
 
 fixupTxDecisionPolicy :: TxDecisionPolicy -> TxDecisionPolicy
 fixupTxDecisionPolicy a@TxDecisionPolicy { txsSizeInflightPerPeer,
-                                           maxTxsSizeInflight }
+                                           maxTxsSizeInflight,
+                                           interTxSpace,
+                                           interTxDecisionSpace }
  = a { txsSizeInflightPerPeer = txsSizeInflightPerPeer',
-       maxTxsSizeInflight     = maxTxsSizeInflight' }
+       maxTxsSizeInflight     = maxTxsSizeInflight',
+       interTxDecisionSpace   = interTxDecisionSpace' }
  where
    txsSizeInflightPerPeer' = min txsSizeInflightPerPeer maxTxsSizeInflight
    maxTxsSizeInflight'     = max txsSizeInflightPerPeer maxTxsSizeInflight
+   interTxDecisionSpace'   = max interTxSpace interTxDecisionSpace
 
 
 prop_splitAcknowledgedTxIds

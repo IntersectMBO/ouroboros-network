@@ -143,7 +143,7 @@ pickTxsToDownload
 pickTxsToDownload now policy@TxDecisionPolicy { txsSizeInflightPerPeer,
                                                 maxTxsSizeInflight,
                                                 txInflightMultiplicity,
-                                                interTxSpace }
+                                                interTxDecisionSpace }
                   sharedState@SharedTxState { peerTxStates,
                                               inflightTxs,
                                               inflightTxsSize,
@@ -301,7 +301,7 @@ pickTxsToDownload now policy@TxDecisionPolicy { txsSizeInflightPerPeer,
 
               stInflightDelta :: Map txid InFlightState
               stInflightDelta =
-                Map.map (const $ InFlightState 1 $ addTime interTxSpace now) txsToRequestMap
+                Map.map (const $ InFlightState 1 $ addTime interTxDecisionSpace now) txsToRequestMap
                 -- note: this is right since every `txid`
                 -- could be picked at most once
 

@@ -414,6 +414,7 @@ data TraceTxSubmissionInbound txid tx =
   -- | Server received 'MsgDone'
   | TraceTxInboundTerminated
   | TraceTxInboundDecision (TxDecision txid tx)
+  | TraceTxInboundRequestTxs [txid]
   deriving (Eq, Show)
 
 
