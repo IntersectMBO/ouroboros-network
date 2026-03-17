@@ -74,8 +74,8 @@ main =
     >>= \case
       InboundOptions addr version txDelay ->
         runTxInbound addr version (microsecondsAsIntToDiffTime txDelay)
-      OutboundOptions addr version filePath ->
-        runTxOutbound addr version filePath
+      OutboundOptions addr version filePath num ->
+        replicateConcurrently_ num (runTxOutbound addr version filePath)
       GenerateTxs num filePath ->
         runTxsGenerator num filePath
       AnalyseTxs filePath ->
@@ -91,6 +91,7 @@ data Options =
       Addr
       TxSubmissionLogicVersion
       FilePath -- ^ file path of tx cache
+      Int -- ^ number of outbound clients to fork
 
   | GenerateTxs
       Int -- ^ number of txs
@@ -169,8 +170,8 @@ optionParser =
             )
 
     outboundParser =
-      (\addr port version filePath ->
-        OutboundOptions Addr { addr, port } version filePath
+      (\addr port version filePath num ->
+        OutboundOptions Addr { addr, port } version filePath num
       ) <$> option auto
               (  long "addr"
               <> metavar "ADDR"
@@ -193,6 +194,13 @@ optionParser =
         <*> strOption
              (    long "input"
                <> help "file with txs"
+             )
+        <*> option auto
+             (   long "num"
+              <> short 'n'
+              <> help "Number of outbound clients to fork"
+              <> value 1
+              <> showDefault
              )
 
     generateParser =
