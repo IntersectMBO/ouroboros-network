@@ -204,7 +204,7 @@ connectTo
   :: NFData a
   => LocalSnocket
   -- ^ callback constructed by 'Ouroboros.Network.IOManager.withIOManager'
-  -> NetworkConnectTracers LocalAddress NodeToClientVersion
+  -> NetworkConnectTracers IO LocalAddress NodeToClientVersion
   -> Versions NodeToClientVersion
               NodeToClientVersionData
               (OuroborosApplicationWithMinimalCtx
@@ -242,7 +242,7 @@ connectTo snocket tracers versions path =
 connectToWithMux
   :: LocalSnocket
   -- ^ callback constructed by 'Ouroboros.Network.IOManager.withIOManager'
-  -> NetworkConnectTracers LocalAddress NodeToClientVersion
+  -> NetworkConnectTracers IO LocalAddress NodeToClientVersion
   -> Versions NodeToClientVersion
               NodeToClientVersionData
               (OuroborosApplicationWithMinimalCtx
