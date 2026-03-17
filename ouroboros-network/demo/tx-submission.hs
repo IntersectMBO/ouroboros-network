@@ -30,6 +30,8 @@ import Control.Tracer qualified as Tracer
 import Data.ByteString (ByteString)
 import Data.ByteString.Builder qualified as BS.Builder
 import Data.ByteString.Lazy qualified as LBS
+import Data.Functor.Contravariant ((>$<))
+import Data.Functor.Identity (Identity (..))
 import Data.Hashable qualified as Hashable
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.IP (IP)
@@ -311,6 +313,10 @@ txSubmissionTracer lock =
     pretty Tx.MsgDone = "MsgDone"
 
 
+printTracer :: Show a => MVar () -> Tracer IO a
+printTracer lock = Tracer $ \a -> withMVar lock $ \_ -> print a
+
+
 runTxInbound :: Addr
              -> TxSubmissionLogicVersion
              -> DiffTime
@@ -362,6 +368,9 @@ runTxInbound Addr { addr, port } version txDelay = do
             bearer <- Mx.getBearer Mx.makeSocketBearer 1.0 sock' buffer
             let dir = Mx.ResponderDirectionOnly
             mux <- Mx.new Mx.nullTracers
+                          { Mx.tracer = runIdentity >$< printTracer traceLock
+                          -- , Mx.bearerTracer = runIdentity >$< printTracer traceLock
+                          }
                    (protocols dir)
             withAsync (Mx.run mux bearer) $ \_ ->
                   either throwIO return
@@ -414,7 +423,7 @@ runTxInbound Addr { addr, port } version txDelay = do
 
                         TxSubmissionLogicV2 ->
                           V2.withPeer
-                            Tracer.nullTracer
+                            (printTracer traceLock)
                             txChann
                             txMempoolSem
                             txDecisionPolicy
@@ -432,7 +441,7 @@ runTxInbound Addr { addr, port } version txDelay = do
                                 chann
                                 ( Tx.Inbound.txSubmissionServerPeerPipelined
                                 $ V2.txSubmissionInboundV2
-                                  Tracer.nullTracer
+                                  (printTracer traceLock)
                                   V2.NoTxSubmissionInitDelay
                                   writer
                                   peerTxApi
@@ -467,6 +476,9 @@ runTxOutbound Addr { addr, port } _version filePath = do
           bearer <- Mx.getBearer Mx.makeSocketBearer 1.0 sock buffer
           let dir = Mx.InitiatorDirectionOnly
           mux <- Mx.new Mx.nullTracers
+                        { Mx.tracer = runIdentity >$< printTracer traceLock
+                        -- , Mx.bearerTracer = runIdentity >$< printTracer traceLock
+                        }
                  (protocols dir)
           withAsync (Mx.run mux bearer) $ \_ -> do
             let reader =
