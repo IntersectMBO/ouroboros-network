@@ -34,8 +34,8 @@ import Data.ByteString.Lazy qualified as LBS
 import Data.Functor.Contravariant ((>$<))
 import Data.Functor.Identity (Identity (..))
 import Data.Hashable qualified as Hashable
-import Data.List.NonEmpty qualified as NonEmpty
 import Data.IP (IP)
+import Data.List.NonEmpty qualified as NonEmpty
 import GHC.Generics (Generic)
 import NoThunks.Class (NoThunks (..))
 import Options.Applicative
@@ -47,7 +47,6 @@ import Network.Socket (PortNumber)
 import Network.Socket qualified as Socket
 import Network.TypedProtocol.Codec (AnyMessage (..), Codec)
 
-import Ouroboros.Network.ControlMessage qualified as ControlMessage
 import Ouroboros.Network.Protocol.TxSubmission2.Client qualified as Tx.Outbound
 import Ouroboros.Network.Protocol.TxSubmission2.Codec qualified as Tx
 import Ouroboros.Network.Protocol.TxSubmission2.Server qualified as Tx.Inbound
@@ -60,8 +59,9 @@ import Ouroboros.Network.TxSubmission.Inbound.V1 qualified as V1
 import Ouroboros.Network.TxSubmission.Inbound.V2 (TxSubmissionLogicVersion (..))
 import Ouroboros.Network.TxSubmission.Inbound.V2 qualified as V2
 import Ouroboros.Network.TxSubmission.Mempool.Simple qualified as Mempool
-import Ouroboros.Network.TxSubmission.Outbound
-import Ouroboros.Network.Util.ShowProxy
+import Ouroboros.Network.Util
+
+import Demo.TxSubmission.Outbound
 
 import Test.QuickCheck (arbitrary)
 import Test.QuickCheck.Gen (Gen (..))
@@ -313,7 +313,6 @@ txSubmissionTracer lock =
       : (show . txid <$> txs)
     pretty Tx.MsgDone = "MsgDone"
 
-
 printTracer :: Show a => MVar () -> Tracer IO a
 printTracer lock = Tracer $ \a -> withMVar lock $ \_ -> print a
 
@@ -424,7 +423,7 @@ runTxInbound Addr { addr, port } version txDelay = do
 
                         TxSubmissionLogicV2 ->
                           V2.withPeer
-                            (printTracer traceLock)
+                            Tracer.nullTracer -- (printTracer traceLock)
                             txChann
                             txMempoolSem
                             txDecisionPolicy
@@ -442,7 +441,7 @@ runTxInbound Addr { addr, port } version txDelay = do
                                 chann
                                 ( Tx.Inbound.txSubmissionServerPeerPipelined
                                 $ V2.txSubmissionInboundV2
-                                  (printTracer traceLock)
+                                  Tracer.nullTracer
                                   V2.NoTxSubmissionInitDelay
                                   writer
                                   peerTxApi
@@ -504,8 +503,6 @@ runTxOutbound Addr { addr, port } _version filePath = do
                       Tracer.nullTracer
                       (Tx.NumTxIdsToAck . Tx.getNumTxIdsToReq $ V2.maxUnacknowledgedTxIds txDecisionPolicy)
                       reader
-                      ()
-                      (ControlMessage.continueForever Proxy)
                   )
               )
 
@@ -558,3 +555,4 @@ runTxsAnalyser filePath = do
   putStrLn ("minimum: " ++ show minsize ++ "B")
   putStrLn ("maximum: " ++ show maxsize ++ "B")
   putStrLn ("average: " ++ show avg ++ "B")
+
