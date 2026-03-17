@@ -270,11 +270,17 @@ byteLimits
 byteLimits =
   Tx.byteLimitsTxSubmission2 (fromIntegral . LBS.length)
 
+prettyWithBearer :: (a -> String) -> Mx.WithBearer Socket.SockAddr a -> String
+prettyWithBearer pretty (Mx.WithBearer addr a) =
+  unwords
+    [ show addr
+    , pretty a
+    ]
 
-txSubmissionTracer :: MVar () -> Tracer IO (Driver.TraceSendRecv TxSubmission)
+txSubmissionTracer :: MVar () -> Tracer IO (Mx.WithBearer Socket.SockAddr (Driver.TraceSendRecv TxSubmission))
 txSubmissionTracer lock =
     Tracer $ \msg ->
-      withMVar lock $ \_ -> putStrLn (prettyMsg msg)
+      withMVar lock $ \_ -> putStrLn (prettyWithBearer prettyMsg msg)
   where
     prettyMsg :: Driver.TraceSendRecv TxSubmission -> String
     prettyMsg (Driver.TraceSendMsg (AnyMessage msg)) =
@@ -313,10 +319,10 @@ txSubmissionTracer lock =
     pretty Tx.MsgDone = "MsgDone"
 
 
-inboundTracer :: MVar () -> Tracer IO (V2.TraceTxSubmissionInbound TxId Tx)
+inboundTracer :: MVar () -> Tracer IO (Mx.WithBearer Socket.SockAddr (V2.TraceTxSubmissionInbound TxId Tx))
 inboundTracer lock =
     Tracer $ \msg ->
-      withMVar lock $ \_ -> putStrLn (prettyMsg msg)
+      withMVar lock $ \_ -> putStrLn (prettyWithBearer prettyMsg msg)
   where
     prettyMsg :: V2.TraceTxSubmissionInbound TxId Tx -> String
     prettyMsg (V2.TraceTxSubmissionCollected txids) =
@@ -339,8 +345,9 @@ inboundTracer lock =
       unwords ["TraceTxInboundDecision", prettyShow decision]
 
 
-printTracer :: Show a => MVar () -> Tracer IO a
-printTracer lock = Tracer $ \a -> withMVar lock $ \_ -> print a
+printTracer :: Show a => MVar () -> Tracer IO (Mx.WithBearer Socket.SockAddr a)
+printTracer lock = Tracer $ \(Mx.WithBearer addr a) ->
+  withMVar lock $ \_ -> putStrLn (show addr ++ " " ++ show a)
 
 
 runTxInbound :: Addr
@@ -394,8 +401,8 @@ runTxInbound Addr { addr, port } version txDelay = do
             bearer <- Mx.getBearer Mx.makeSocketBearer 1.0 sock' buffer
             let dir = Mx.ResponderDirectionOnly
             mux <- Mx.new Mx.nullTracers
-                          { Mx.tracer = runIdentity >$< printTracer traceLock
-                          -- , Mx.bearerTracer = runIdentity >$< printTracer traceLock
+                          { Mx.tracer = Mx.WithBearer addr' . runIdentity >$< printTracer traceLock
+                          -- , Mx.bearerTracer = Mx.WithBearer addr' . runIdentity >$< printTracer traceLock
                           }
                    (protocols dir)
             withAsync (Mx.run mux bearer) $ \_ ->
@@ -432,7 +439,7 @@ runTxInbound Addr { addr, port } version txDelay = do
                       case version of
                         TxSubmissionLogicV1 -> do
                           Driver.runPipelinedPeerWithLimits
-                            (txSubmissionTracer traceLock)
+                            (Mx.WithBearer addr' >$< txSubmissionTracer traceLock)
                             codec
                             byteLimits
                             Tx.timeLimitsTxSubmission2
@@ -449,7 +456,7 @@ runTxInbound Addr { addr, port } version txDelay = do
 
                         TxSubmissionLogicV2 ->
                           V2.withPeer
-                            Tracer.nullTracer -- (printTracer traceLock)
+                            Tracer.nullTracer -- (Mx.WithBearer addr' >$< printTracer traceLock)
                             txChann
                             txMempoolSem
                             txDecisionPolicy
@@ -460,14 +467,14 @@ runTxInbound Addr { addr, port } version txDelay = do
                             addr'
                             $ \peerTxApi ->
                               Driver.runPipelinedPeerWithLimits
-                                (txSubmissionTracer traceLock)
+                                (Mx.WithBearer addr' >$< txSubmissionTracer traceLock)
                                 codec
                                 byteLimits
                                 Tx.timeLimitsTxSubmission2
                                 chann
                                 ( Tx.Inbound.txSubmissionServerPeerPipelined
                                 $ V2.txSubmissionInboundV2
-                                  (inboundTracer traceLock)
+                                  (Mx.WithBearer addr' >$< inboundTracer traceLock)
                                   V2.NoTxSubmissionInitDelay
                                   writer
                                   peerTxApi
@@ -498,12 +505,13 @@ runTxOutbound Addr { addr, port } _version filePath = do
       Socket.close
       $ \sock -> do
         Socket.connect sock (Socket.addrAddress sockAddr)
+        addr' <- Socket.getSocketName sock
         Mx.withReadBufferIO $ \buffer -> do
           bearer <- Mx.getBearer Mx.makeSocketBearer 1.0 sock buffer
           let dir = Mx.InitiatorDirectionOnly
           mux <- Mx.new Mx.nullTracers
-                        { Mx.tracer = runIdentity >$< printTracer traceLock
-                        -- , Mx.bearerTracer = runIdentity >$< printTracer traceLock
+                        { Mx.tracer = Mx.WithBearer addr' . runIdentity >$< printTracer traceLock
+                        -- , Mx.bearerTracer = Mx.WithBearer addr' . runIdentity >$< printTracer traceLock
                         }
                  (protocols dir)
           withAsync (Mx.run mux bearer) $ \_ -> do
@@ -519,7 +527,7 @@ runTxOutbound Addr { addr, port } _version filePath = do
               Mx.StartEagerly
               (\chann ->
                 Driver.runPeerWithLimits
-                  (txSubmissionTracer traceLock)
+                  (Mx.WithBearer addr' >$< txSubmissionTracer traceLock)
                   codec
                   byteLimits
                   Tx.timeLimitsTxSubmission2
