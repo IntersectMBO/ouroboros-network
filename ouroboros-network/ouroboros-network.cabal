@@ -742,17 +742,20 @@ executable demo-connection-manager
 
 executable demo-tx-submission
   import: ghc-options
-  hs-source-dirs: demo
-  main-is: tx-submission.hs
+  hs-source-dirs: demo/tx-submission
+  main-is: main.hs
+  other-modules:
+    Demo.TxSubmission.Outbound
   build-depends:
     QuickCheck,
     async,
     base,
     bytestring,
+    cardano-strict-containers,
     cborg,
     contra-tracer,
     hashable,
-    io-classes:{si-timers, strict-stm},
+    io-classes:{io-classes, si-timers, strict-stm},
     iproute,
     network,
     network-mux,
