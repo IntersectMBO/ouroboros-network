@@ -36,9 +36,12 @@ import Data.Functor.Identity (Identity (..))
 import Data.Hashable qualified as Hashable
 import Data.IP (IP)
 import Data.List.NonEmpty qualified as NonEmpty
+import Data.Word (Word32)
+import Data.Vector qualified as Vec
 import GHC.Generics (Generic)
 import NoThunks.Class (NoThunks (..))
 import Options.Applicative
+import Statistics.Quantile qualified as Stat
 import System.Random qualified as Random
 
 import Network.Mux qualified as Mx
@@ -591,11 +594,20 @@ runTxsAnalyser :: FilePath -> IO ()
 runTxsAnalyser filePath = do
   txs <- readTxs filePath
   let sizes = getSizeInBytes . getTxSize <$> txs
+
+      minsize, maxsize :: Word32
       minsize = minimum sizes
       maxsize = maximum sizes
+
       avg :: Float
       avg = fromIntegral (sum sizes) / fromIntegral (length sizes)
+
+      med :: Double
+      med = Stat.median Stat.medianUnbiased (Vec.fromList $ fromIntegral <$> sizes)
+
+  putStrLn ("length:  " ++ show (length sizes))
   putStrLn ("minimum: " ++ show minsize ++ "B")
   putStrLn ("maximum: " ++ show maxsize ++ "B")
   putStrLn ("average: " ++ show avg ++ "B")
+  putStrLn ("median:  " ++ show med ++ "B")
 

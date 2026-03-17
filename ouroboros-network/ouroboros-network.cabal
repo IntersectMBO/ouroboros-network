@@ -755,7 +755,9 @@ executable demo-tx-submission
     quickcheck-instances,
     random,
     serialise,
+    statistics,
     typed-protocols,
+    vector,
 
   ghc-options:
     -threaded
