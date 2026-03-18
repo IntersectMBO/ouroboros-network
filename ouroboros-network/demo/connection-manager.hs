@@ -81,7 +81,7 @@ import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket (Snocket, socketSnocket)
 import Ouroboros.Network.Snocket qualified as Snocket
 import Ouroboros.Network.Socket ()
-import Ouroboros.Network.Util.ShowProxy
+import Ouroboros.Network.Util
 
 
 instance ShowProxy (ReqResp req resp) where
@@ -180,7 +180,7 @@ withBidirectionalConnectionManager
 
        , Hashable peerAddr
        , Ord peerAddr
-       , Show peerAddr
+       , PrettyShow peerAddr
        , Typeable peerAddr
 
        -- debugging
@@ -464,7 +464,7 @@ bidirectionalExperiment
     :: forall peerAddr socket.
        ( Hashable peerAddr
        , Ord peerAddr
-       , Show peerAddr
+       , PrettyShow peerAddr
        , Typeable peerAddr
        , Eq peerAddr
        )

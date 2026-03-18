@@ -66,6 +66,7 @@ import Ouroboros.Network.Mux
 import Ouroboros.Network.PeerSelection.Governor.Types (PeerStateActions (..))
 import Ouroboros.Network.Protocol.Handshake (HandshakeException)
 import Ouroboros.Network.RethrowPolicy
+import Ouroboros.Network.Util (PrettyShow (..))
 
 import Ouroboros.Network.ConnectionHandler (Handle (..), HandlerError (..),
            MuxConnectionManager)
@@ -592,11 +593,11 @@ withPeerStateActions
        , MonadTimer         m
        , MonadThrow         (STM m)
        , HasInitiator muxMode ~ True
-       , Typeable versionNumber
-       , Show     versionNumber
-       , Ord      peerAddr
-       , Typeable peerAddr
-       , Show     peerAddr
+       , Typeable   versionNumber
+       , Show       versionNumber
+       , Ord        peerAddr
+       , Typeable   peerAddr
+       , PrettyShow peerAddr
        , NFData a
        , NFData b
        )
@@ -842,7 +843,7 @@ withPeerStateActions PeerStateActionsArguments {
                                      (peerMonitoringLoop connHandle $> Nothing))
                                    (return . Just)
                                    ()  -- unit group, not using JobPool to group jobs.
-                                   ("peerMonitoringLoop " ++ show remoteAddress))
+                                   ("peer-monitoring-loop-" ++ prettyShow remoteAddress))
               pure connHandle
 
             Right (Disconnected _ disconnectionError) ->

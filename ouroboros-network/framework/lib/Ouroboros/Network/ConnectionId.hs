@@ -1,11 +1,9 @@
 {-# LANGUAGE DeriveFunctor       #-}
 {-# LANGUAGE DeriveGeneric       #-}
-{-# LANGUAGE DerivingStrategies  #-}
 {-# LANGUAGE DerivingVia         #-}
+{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving  #-}
-{-# LANGUAGE StaticPointers      #-}
 
 module Ouroboros.Network.ConnectionId where
 
@@ -13,7 +11,7 @@ import NoThunks.Class (InspectHeap (..), NoThunks)
 
 import Data.Hashable
 import GHC.Generics (Generic)
-import Ouroboros.Network.Util.ShowProxy (Proxy (..), ShowProxy (..))
+import Ouroboros.Network.Util (PrettyShow (..), Proxy (..), ShowProxy (..))
 
 
 -- | Connection is identified by local and remote address.
@@ -28,6 +26,10 @@ data ConnectionId addr = ConnectionId {
   deriving (Eq, Show, Generic)
   deriving NoThunks via InspectHeap (ConnectionId addr)
   deriving Functor
+
+instance PrettyShow addr => PrettyShow (ConnectionId addr) where
+  prettyShow ConnectionId {localAddress, remoteAddress} =
+    prettyShow localAddress ++ "-" ++ prettyShow remoteAddress
 
 -- | Order first by `remoteAddress` then by `localAddress`.
 --

@@ -40,6 +40,7 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.Fix
 import Control.Tracer (Tracer, contramap, traceWith)
 import Data.Foldable (foldMap', traverse_)
+import Data.Function (on)
 import Data.Functor (void, ($>))
 import Data.Proxy (Proxy (..))
 import Data.Typeable (Typeable)
@@ -71,6 +72,7 @@ import Ouroboros.Network.InboundGovernor.InformationChannel qualified as InfoCha
 import Ouroboros.Network.MuxMode
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket
+import Ouroboros.Network.Util (PrettyShow (..))
 
 -- | Arguments for a 'ConnectionManager' which are independent of 'MuxMode'.
 --
@@ -372,9 +374,9 @@ with
        , MonadThrow    (STM m)
        , MonadTimer         m
 
-       , Ord      peerAddr
-       , Show     peerAddr
-       , Typeable peerAddr
+       , Ord        peerAddr
+       , PrettyShow peerAddr
+       , Typeable   peerAddr
        )
     => Arguments handlerTrace socket peerAddr handle handleError version versionData m a b
     -> InResponderMode muxMode (InformationChannel (Event muxMode handle initiatorCtx peerAddr versionData m a b) m)
@@ -529,48 +531,11 @@ with args@Arguments {
         -- waiting for locks and cleanup logic that could delay closing the
         -- connections and making us not respecting certain timeouts.
         asyncs <- State.traverseMaybe
-          (\MutableConnState { connStateId, connVar } -> do
-            -- cleanup handler for that thread will close socket associated
-            -- with the thread.  We put each connection in 'TerminatedState' to
-            -- try that none of the connection threads will enter
-            -- 'TerminatingState' (and thus delay shutdown for 'tcp_WAIT_TIME'
-            -- seconds) when receiving the 'AsyncCancelled' exception. However,
-            -- we can have a race between the finally handler and the `cleanup`
-            -- callback. If the finally block loses the race, the received
-            -- 'AsyncCancelled' should interrupt the 'threadDelay'.
-            --
-            (connState, trT, trU , shouldTraceTerminated, shouldTraceUnknown)
-              <- atomically $ do
-                  connState <- readTVar connVar
-                  let connState'            = TerminatedState Nothing
-                      trT                   =
-                        TransitionTrace connStateId (mkTransition connState connState')
-                      absConnState          = State.abstractState (Known connState)
-                      shouldTraceTerminated = absConnState /= TerminatedSt
-                      shouldTraceUnknown    = absConnState == ReservedOutboundSt
-                      trU = TransitionTrace
-                              connStateId
-                              (Transition { fromState = Known connState'
-                                          , toState   = Unknown
-                                          })
-
-                  writeTVar connVar connState'
-                  return (connState, trT, trU
-                         , shouldTraceTerminated, shouldTraceUnknown)
-
-            when shouldTraceTerminated $ do
-              traceWith trTracer trT
-
-              -- If an Async exception is received after a connection gets set
-              -- to ReservedOutboundSt, BUT after a connect call is made and,
-              -- therefore still does not have a connection handler thread, we
-              -- should trace the unknown transition as well.
-              when shouldTraceUnknown $
-                traceWith trTracer trU
-
-            -- using 'throwTo' here, since we want to block only until connection
-            -- handler thread receives an exception so as to not take up extra
-            -- time and making us go above timeout schedules.
+          (\MutableConnState { connVar } -> do
+            connState <- readTVarIO connVar
+            -- using 'throwTo' rather than `cancel`, since we want to block only
+            -- until connection handler thread receives an exception so as to
+            -- not take up extra time and making us go above timeout schedules.
             traverse
               (\thread -> do
                 throwTo (asyncThreadId thread) AsyncCancelled
@@ -669,7 +634,7 @@ with args@Arguments {
                     writeTVar connVar connState'
                     return $ Left (Just transitionTrace)
                   TerminatingState {} -> do
-                    return $ Right transition
+                    return $ Right connState
                   TerminatedState {} ->
                     return $ Left Nothing
 
@@ -680,10 +645,10 @@ with args@Arguments {
                   return ( state
                          , Nothing
                          )
-                Right transition -> do
+                Right connState -> do
                   close snocket socket
                   return ( state
-                         , Just transition
+                         , Just connState
                          )
 
             case mbTransition of
@@ -706,72 +671,50 @@ with args@Arguments {
                 traverse_ (traceWith trTracer) mbTransition'
                 traceCounters stateVar
 
-              Just transition ->
+              Just connState ->
                 do traceWith tracer (TrConnectionTimeWait connId)
-                   when (timeWaitTimeout > 0) $
-                     let -- make sure we wait at least 'timeWaitTimeout', we
-                         -- ignore all 'AsyncCancelled' exceptions.
-                         forceThreadDelay delay | delay <= 0 = pure ()
-                         forceThreadDelay delay = do
-                           t <- getMonotonicTime
-                           unmask (threadDelay delay)
-                             `catch` \e ->
-                                case fromException e
-                                of Just AsyncCancelled -> do
-                                     t' <- getMonotonicTime
-                                     forceThreadDelay (delay - t' `diffTime` t)
-                                   _ -> throwIO e
-                     in forceThreadDelay timeWaitTimeout
+                   unmask (threadDelay timeWaitTimeout)
                 `finally` do
                   -- We must ensure that we update 'connVar',
-                  -- `acquireOutboundConnection` might be blocked on it awaiting for:
+                  -- `acquireOutboundConnection` might be blocked on it awaiting
+                  -- for:
                   -- - handshake negotiation; or
                   -- - `Terminate: TerminatingState → TerminatedState` transition.
                   traceWith tracer (TrConnectionTimeWaitDone connId)
 
                   trs <- atomically $ do
-                    connState <- readTVar connVar
-                    let transition' = transition { fromState = Known connState }
-                        shouldTrace = State.abstractState (Known connState)
-                                   /= TerminatedSt
-                    writeTVar connVar (TerminatedState Nothing)
-                    --  We have to be careful when deleting it from
+                    let connState' = TerminatedState Nothing
+                        transition = mkTransition connState connState'
+                        -- Avoid `TerminatedState → TerminatedState` transition.
+                        shouldTransition = on (/=) (State.abstractState . Known)
+                                           connState
+                                           connState'
+                    when shouldTransition $
+                      writeTVar connVar connState'
+                    --  We have to be careful when deleting connVar from
                     --  'ConnectionManagerState'.
-                    updated <-
-                      modifyTMVarPure
-                        stateVar
-                        ( \state ->
-                          case State.lookup connId state of
-                            Nothing -> (state, False)
-                            Just v  ->
-                              if mutableConnState == v
-                                then (State.delete connId state, True)
-                                else (state                    , False)
-                        )
+                    _ <- modifyTMVarPure
+                      stateVar
+                      ( \state ->
+                        case State.lookup connId state of
+                          Nothing -> (state, False)
+                          Just v  ->
+                            if mutableConnState == v
+                              then (State.delete connId state, True)
+                              else (state                    , False)
+                      )
 
-                    if updated
-                       then do
-                      -- Key was present in the dictionary (stateVar) and
-                      -- removed so we trace the removal.
-                        let trs = [ Transition
-                                     { fromState = Known (TerminatedState Nothing)
-                                     , toState   = Unknown
-                                     }
-                                  ]
-                        return $
-                          if shouldTrace
-                             then transition' : trs
-                             else trs
-                      -- Key was not present in the dictionary (stateVar),
-                      -- so we do not trace anything as it was already traced upon
-                      -- deletion.
-                      --
-                      -- OR
-                      --
-                      -- Key was overwritten in the dictionary (stateVar),
-                      -- so we do not trace anything as it was already traced upon
-                      -- overwriting.
-                       else return [ ]
+                    let trs =
+                          [ transition
+                          | shouldTransition
+                          ]
+                          ++
+                          [ Transition
+                              { fromState = Known (TerminatedState Nothing)
+                              , toState   = Unknown
+                              }
+                          ]
+                    return trs
 
                   traverse_ (traceWith trTracer . TransitionTrace connStateId) trs
                   when (not $ List.null trs) $
@@ -1446,34 +1389,34 @@ with args@Arguments {
                   -- connection from the state.
                   retry
 
-            Nothing -> do
+            Nothing ->
               -- Only proceed if creating a new connection is allowed
-              if connProv == Inbound
-              then do
-                return ( Just (Right (TrInboundConnectionNotFound peerAddr))
-                       , Left (withCallStack
-                                (InboundConnectionNotFound peerAddr))
-                       )
-              else do
-                let connState' = ReservedOutboundState
-                (mutableConnState@MutableConnState { connVar, connStateId }
-                  :: MutableConnState peerAddr handle handleError
-                                      version m)
-                  <- State.newMutableConnState peerAddr connStateIdSupply connState'
+              case connProv of
+                Inbound ->
+                  return ( Just (Right (TrInboundConnectionNotFound peerAddr))
+                         , Left (withCallStack
+                                  (InboundConnectionNotFound peerAddr))
+                         )
+                Outbound -> do
+                  let connState' = ReservedOutboundState
+                  (mutableConnState@MutableConnState { connVar, connStateId }
+                    :: MutableConnState peerAddr handle handleError
+                                        version m)
+                    <- State.newMutableConnState peerAddr connStateIdSupply connState'
 
-                -- TODO: label `connVar` using 'ConnectionId'
-                labelTVar connVar ("conn-state-" ++ show peerAddr)
+                  -- TODO: label `connVar` using 'ConnectionId'
+                  labelTVar connVar ("conn-state-" ++ prettyShow peerAddr)
 
-                writeTMVar stateVar
-                          (State.insertUnknownLocalAddr peerAddr mutableConnState state)
-                return ( Just (Left (TransitionTrace
-                                      connStateId
-                                      Transition {
-                                          fromState = Unknown,
-                                          toState   = Known connState'
-                                        }))
-                       , Right (mutableConnState, Nowhere)
-                       )
+                  writeTMVar stateVar
+                            (State.insertUnknownLocalAddr peerAddr mutableConnState state)
+                  return ( Just (Left (TransitionTrace
+                                        connStateId
+                                        Transition {
+                                            fromState = Unknown,
+                                            toState   = Known connState'
+                                          }))
+                         , Right (mutableConnState, Nowhere)
+                         )
 
         traverse_ (either (traceWith trTracer) (traceWith tracer)) trace
         traceCounters stateVar

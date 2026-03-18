@@ -61,6 +61,7 @@ import Control.Monad.IOSim
 import Control.Tracer
 
 import Test.Ouroboros.Network.Orphans ()
+import Test.Ouroboros.Network.Utils (sayTracer)
 
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
@@ -197,7 +198,7 @@ prop_channel_simple_reqresp_ST
   :: ReqRespPayloadWithLimit
   -> Property
 prop_channel_simple_reqresp_ST (ReqRespPayloadWithLimit _limit payload) =
-  let trace = runSimTrace (prop_channel_simple_reqresp (Tracer (say . show)) [payload])
+  let trace = runSimTrace (prop_channel_simple_reqresp sayTracer [payload])
   in counterexample (intercalate "\n" $ map show $ traceEvents trace)
    $ case traceResult True trace of
        Left e  -> throw e
@@ -446,7 +447,7 @@ prop_channel_reqresp_ST
   -> Property
 prop_channel_reqresp_ST (ReqRespPayloadWithLimit limit payload) =
       tabulate "Limit Boundaries" (labelExamples limit payload) $
-        let trace = runSimTrace (prop_channel_reqresp (Tracer (say . show)) limit [payload])
+        let trace = runSimTrace (prop_channel_reqresp sayTracer limit [payload])
         in counterexample (intercalate "\n" $ map show $ traceEvents trace)
            $ case traceResult True trace of
                Left e  -> throw e
@@ -529,7 +530,7 @@ prop_channel_ping_pong_with_limits_ST a@(ArbDelaysAndTimeouts delay delay' timel
   where
     sim :: IOSim s Bool
     sim = prop_channel_ping_pong_with_limits delay delay'
-                                             n (Tracer $ say . show)
+                                             n sayTracer
                                              slimits tlimits
 
     slimits :: ProtocolSizeLimits PingPong String
@@ -654,7 +655,7 @@ prop_channel_stateful_reqresp_ST
   :: ReqRespPayloadWithLimit
   -> Property
 prop_channel_stateful_reqresp_ST (ReqRespPayloadWithLimit _limit payload) =
-  let trace = runSimTrace (prop_channel_stateful_reqresp True (Tracer (say . show)) [payload])
+  let trace = runSimTrace (prop_channel_stateful_reqresp True sayTracer [payload])
   in counterexample (intercalate "\n" $ map show $ traceEvents trace)
    $ case traceResult True trace of
        Left e  -> throw e

@@ -1,12 +1,12 @@
 # Ouroboros Network
 
-[![x86\_64-linux](https://img.shields.io/endpoint?url=https://ci.iog.io/job/IntersectMBO-ouroboros-network/master/x86_64-linux.required/shield&style=for-the-badge&label=x86_64-linux)](https://ci.iog.io/job/IntersectMBO-ouroboros-network/main/x86_64-linux.required)
-[![x86\_64-darwin](https://img.shields.io/endpoint?url=https://ci.iog.io/job/IntersectMBO-ouroboros-network/master/x86_64-darwin.required/shield&style=for-the-badge&label=x86_64-darwin)](https://ci.iog.io/job/IntersectMBO-ouroboros-network/main/x86_64-darwin.required)
-[![aarch64-darwin](https://img.shields.io/endpoint?url=https://ci.iog.io/job/IntersectMBO-ouroboros-network/master/aarch64-darwin.required/shield&style=for-the-badge&label=aarch64-linux)](https://ci.iog.io/job/IntersectMBO-ouroboros-network/main/aarch64-darwin.required)
+[![x86\_64-linux](https://img.shields.io/endpoint?url=https://ci.iog.io/job/IntersectMBO-ouroboros-network/main/x86_64-linux.required/shield&style=for-the-badge&label=x86_64-linux)](https://ci.iog.io/job/IntersectMBO-ouroboros-network/main/x86_64-linux.required)
+[![x86\_64-darwin](https://img.shields.io/endpoint?url=https://ci.iog.io/job/IntersectMBO-ouroboros-network/main/x86_64-darwin.required/shield&style=for-the-badge&label=x86_64-darwin)](https://ci.iog.io/job/IntersectMBO-ouroboros-network/main/x86_64-darwin.required)
+[![aarch64-darwin](https://img.shields.io/endpoint?url=https://ci.iog.io/job/IntersectMBO-ouroboros-network/main/aarch64-darwin.required/shield&style=for-the-badge&label=aarch64-linux)](https://ci.iog.io/job/IntersectMBO-ouroboros-network/main/aarch64-darwin.required)
 [![mingw64](https://img.shields.io/github/actions/workflow/status/intersectmbo/ouroboros-network/build.yml?branch=main&label=mingw64&style=for-the-badge)](https://github.com/intersectmbo/ouroboros-network/actions/workflows/build.yml)
 [![Nightly CI](https://img.shields.io/github/actions/workflow/status/intersectmbo/ouroboros-network/nightly.yml?branch=main&label=Nightly&style=for-the-badge)](https://github.com/intersectmbo/ouroboros-network/actions/workflows/nightly.yml)
 [![Haddocks](https://img.shields.io/github/actions/workflow/status/intersectmbo/ouroboros-network/github-page.yml?branch=main&label=Haddocks&style=for-the-badge)](https://ouroboros-network.cardano.intersectmbo.org/)
-[![Discord](https://img.shields.io/discord/1136727663583698984?style=for-the-badge&color=blue)](https://discord.gg/8ncb7fgG)
+[![Discord](https://img.shields.io/discord/1136727663583698984?style=for-the-badge&color=blue)](https://discord.com/channels/1136727663583698984/1239889324745429122)
 
 This repository contains specification and implementation of the network
 protocols and applications for Ouroboros family of protocols, primarily used by
@@ -143,9 +143,9 @@ The API consists of three layers:
 
 * [demo-chain-sync](https://github.com/intersectmbo/ouroboros-network/wiki/Ouroboros-Network-Demo)
 * [cardano-ping](https://github.com/intersectmbo/ouroboros-network/wiki/cardano-ping)
-* [mux-demo](https://github.com/intersectmbo/ouroboros-network/blob/master/network-mux/demo/mux-demo.hs)
-* [demo-ping-pong](https://github.com/intersectmbo/ouroboros-network/blob/master/ouroboros-network-framework/demo/ping-pong.hs)
-* [demo-ntp-client](https://github.com/intersectmbo/ouroboros-network/blob/master/ntp-client/demo/Main.hs)
+* [mux-demo](https://github.com/intersectmbo/ouroboros-network/blob/main/network-mux/demo/mux-demo.hs)
+* [demo-ping-pong](https://github.com/intersectmbo/ouroboros-network/blob/main/ouroboros-network-framework/demo/ping-pong.hs)
+* [demo-ntp-client](https://github.com/intersectmbo/ouroboros-network/blob/main/ntp-client/demo/Main.hs)
 
 <details>
 <summary>Instructions</summary>

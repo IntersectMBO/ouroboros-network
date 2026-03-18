@@ -73,6 +73,7 @@ import Control.Monad.Class.MonadTimer.SI
 import Data.Bifunctor (first)
 import Data.ByteString.Lazy qualified as BL
 import Data.Foldable (traverse_)
+import Data.Functor.Contravariant ((>$<))
 import Data.Hashable
 import Data.Monoid.Synchronisation (FirstToFinish (..))
 import Data.Typeable (Typeable)
@@ -128,10 +129,10 @@ nullNetworkConnectTracers = NetworkConnectTracers {
 debuggingNetworkConnectTracers :: (Show addr, Show vNumber)
                                => NetworkConnectTracers IO addr vNumber
 debuggingNetworkConnectTracers = NetworkConnectTracers {
-      nctMuxTracers      = Mx.Tracers (showTracing stdoutTracer)
-                                      (showTracing stdoutTracer)
-                                      (showTracing stdoutTracer),
-      nctHandshakeTracer = showTracing stdoutTracer
+      nctMuxTracers      = Mx.Tracers (show >$< stdoutTracer)
+                                      (show >$< stdoutTracer)
+                                      (show >$< stdoutTracer),
+      nctHandshakeTracer = show >$< stdoutTracer
     }
 
 sockAddrFamily

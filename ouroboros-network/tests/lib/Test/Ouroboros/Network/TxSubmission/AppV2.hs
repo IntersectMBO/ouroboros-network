@@ -196,7 +196,7 @@ runTxSubmission tracer tracerTxLogic st0 txDecisionPolicy = do
           -- Construct txSubmission outbound client
       let clients = (\(addr, (mempool {- txs -}, ctrlMsgSTM, outDelay, _, outChannel, _)) -> do
                       let client = txSubmissionOutbound
-                                     (Tracer $ say . show)
+                                     sayTracer
                                      (NumTxIdsToAck $ getNumTxIdsToReq
                                        $ maxUnacknowledgedTxIds txDecisionPolicy)
                                      (getMempoolReader mempool)
