@@ -1506,7 +1506,10 @@ prop_timeouts_enforced (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
 
   in counterexample (ppTrace trace)
    $ label ("number-of-transitions: " ++ renderRanges 10 numTransitions)
-   $ counterexample ("transitionSignal: " ++ Trace.ppTrace (const "") show transitionSignal)
+   $ counterexample
+       (unlines ["AbstractTransitionTrace ConnStateId:"
+                , Trace.ppTrace (const "") (unlines . map (uncurry ppTransitionTrace)) transitionSignal
+                ])
    $ if numTransitions < 1
      then discard
      else verifyAllTimeouts False transitionSignal

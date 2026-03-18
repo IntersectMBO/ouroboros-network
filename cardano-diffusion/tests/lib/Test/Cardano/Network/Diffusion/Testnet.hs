@@ -5291,6 +5291,11 @@ prop_diffusion_timeouts_enforced ioSimTrace traceNumber =
           numTransitions = getSum $ bifoldMap (const mempty) (Sum . length) transitionSignal
 
       in label ("num-transitions: " ++ renderRanges 50 numTransitions)
+        $ counterexample
+            (unlines
+              ["transitions:\n"
+              , Trace.ppTrace (const "") (unlines . map (uncurry ppTransitionTrace)) transitionSignal
+              ])
         $ if numTransitions < 1
             then discard
             else verifyAllTimeouts True transitionSignal
