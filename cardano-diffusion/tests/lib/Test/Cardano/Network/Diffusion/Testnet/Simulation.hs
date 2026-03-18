@@ -1353,7 +1353,7 @@ diffusionSimulationM
             . tracerWithTime
             $ nodeTracer
             )
-            <> sayTracer
+            -- <> sayTracer
 
           -- TODO: can we remove all `NodeArguments` fields that appear in
           -- this function
@@ -1377,7 +1377,7 @@ diffusionSimulationM
                 . tracerWithName addr
                 . tracerWithTime
                 $ nodeTracer )
-                <> sayTracer
+                -- <> sayTracer
 
               appArgs :: Node.AppArgs BlockHeader Block m
               appArgs = Node.AppArgs
@@ -1405,7 +1405,7 @@ diffusionSimulationM
               (snd peerTargets)
               readUseBootstrapPeers)
           )
-          (flip Cardano.ExtraPeers Set.empty)
+          (`Cardano.ExtraPeers` Set.empty)
           requestPublicRootPeers'
           peerChurnGovernor'
           tracers
@@ -1414,7 +1414,8 @@ diffusionSimulationM
              . tracerWithTime
              $ nodeTracer
              )
-          <> sayTracer)
+          -- <> sayTracer
+          )
           tracerTxLogic
           mkApps
         `catch` \e -> traceWith (diffSimTracer addr) (TrErrored e)
@@ -1466,7 +1467,7 @@ diffusionSimulationM
       . tracerWithTime
       $ nodeTracer
       )
-      <> sayTracer
+      -- <> sayTracer
 
     mkTracers
       :: NtNAddr

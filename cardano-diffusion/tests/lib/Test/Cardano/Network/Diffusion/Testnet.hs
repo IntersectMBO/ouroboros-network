@@ -362,7 +362,7 @@ testWithIOSim' simulation prop traceNumber bi ds =
       -- we don't capture the time in the say trace, we add it here
       counterexample (intercalate "\n" $ map (\(Time t, ev) -> show t <> " " <> ev) $
         selectTraceEventsSayWithTime' $ Trace.take traceNumber trace) $
-      -- counterexample (Trace.ppTrace show (ppSimEvent 0 0 0) $ Trace.take traceNumber trace) $
+      -- counterexample (Trace.ppTrace (const "") (ppSimEvent 0 0 0) $ Trace.take traceNumber trace) $
       prop trace traceNumber
 
 
@@ -5309,6 +5309,7 @@ prop_diffusion_timeouts_enforced_iosim
   :: AbsBearerInfo -> DiffusionScript -> Property
 prop_diffusion_timeouts_enforced_iosim
   = testWithIOSim prop_diffusion_timeouts_enforced long_trace
+
 
 
 newtype ArbDiffusionMode = ArbDiffusionMode { getDiffusionMode :: DiffusionMode }
