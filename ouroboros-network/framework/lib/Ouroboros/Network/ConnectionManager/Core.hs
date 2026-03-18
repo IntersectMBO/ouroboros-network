@@ -709,20 +709,7 @@ with args@Arguments {
 
               Just transition ->
                 do traceWith tracer (TrConnectionTimeWait connId)
-                   when (timeWaitTimeout > 0) $
-                     let -- make sure we wait at least 'timeWaitTimeout', we
-                         -- ignore all 'AsyncCancelled' exceptions.
-                         forceThreadDelay delay | delay <= 0 = pure ()
-                         forceThreadDelay delay = do
-                           t <- getMonotonicTime
-                           unmask (threadDelay delay)
-                             `catch` \e ->
-                                case fromException e
-                                of Just AsyncCancelled -> do
-                                     t' <- getMonotonicTime
-                                     forceThreadDelay (delay - t' `diffTime` t)
-                                   _ -> throwIO e
-                     in forceThreadDelay timeWaitTimeout
+                   unmask (threadDelay timeWaitTimeout)
                 `finally` do
                   -- We must ensure that we update 'connVar',
                   -- `acquireOutboundConnection` might be blocked on it awaiting for:
