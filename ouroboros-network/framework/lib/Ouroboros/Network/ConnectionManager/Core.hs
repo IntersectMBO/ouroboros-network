@@ -1447,34 +1447,34 @@ with args@Arguments {
                   -- connection from the state.
                   retry
 
-            Nothing -> do
+            Nothing ->
               -- Only proceed if creating a new connection is allowed
-              if connProv == Inbound
-              then do
-                return ( Just (Right (TrInboundConnectionNotFound peerAddr))
-                       , Left (withCallStack
-                                (InboundConnectionNotFound peerAddr))
-                       )
-              else do
-                let connState' = ReservedOutboundState
-                (mutableConnState@MutableConnState { connVar, connStateId }
-                  :: MutableConnState peerAddr handle handleError
-                                      version m)
-                  <- State.newMutableConnState peerAddr connStateIdSupply connState'
+              case connProv of
+                Inbound ->
+                  return ( Just (Right (TrInboundConnectionNotFound peerAddr))
+                         , Left (withCallStack
+                                  (InboundConnectionNotFound peerAddr))
+                         )
+                Outbound -> do
+                  let connState' = ReservedOutboundState
+                  (mutableConnState@MutableConnState { connVar, connStateId }
+                    :: MutableConnState peerAddr handle handleError
+                                        version m)
+                    <- State.newMutableConnState peerAddr connStateIdSupply connState'
 
-                -- TODO: label `connVar` using 'ConnectionId'
-                labelTVar connVar ("conn-state-" ++ prettyShow peerAddr)
+                  -- TODO: label `connVar` using 'ConnectionId'
+                  labelTVar connVar ("conn-state-" ++ prettyShow peerAddr)
 
-                writeTMVar stateVar
-                          (State.insertUnknownLocalAddr peerAddr mutableConnState state)
-                return ( Just (Left (TransitionTrace
-                                      connStateId
-                                      Transition {
-                                          fromState = Unknown,
-                                          toState   = Known connState'
-                                        }))
-                       , Right (mutableConnState, Nowhere)
-                       )
+                  writeTMVar stateVar
+                            (State.insertUnknownLocalAddr peerAddr mutableConnState state)
+                  return ( Just (Left (TransitionTrace
+                                        connStateId
+                                        Transition {
+                                            fromState = Unknown,
+                                            toState   = Known connState'
+                                          }))
+                         , Right (mutableConnState, Nowhere)
+                         )
 
         traverse_ (either (traceWith trTracer) (traceWith tracer)) trace
         traceCounters stateVar
