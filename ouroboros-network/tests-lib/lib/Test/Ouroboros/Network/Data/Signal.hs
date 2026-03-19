@@ -573,18 +573,24 @@ signalProperty' atMost showSignalValue p =
     go !_ !_ []                  = pure $ property True
     go !n !recent ((t, x) : txs) = (.&&.) . counterexample details <$> p x <*> next
       where
+        recent'
+          | n < atMost =              Deque.snoc (t,x) recent
+          | otherwise  = Deque.tail $ Deque.snoc (t,x) recent
         next
-          | n < atMost = go (n+1) (              Deque.snoc (t,x)  recent) txs
-          | otherwise  = go n     ((Deque.tail . Deque.snoc (t,x)) recent) txs
+          | n < atMost = go (n+1) recent' txs
+          | otherwise  = go n     recent' txs
 
         details =
-          unlines [ "Last " ++ show atMost ++ " signal values:"
-                  , unlines [ show t' ++ "\t@ " ++ showSignalValue x'
-                            | (Time t',x') <- Deque.toList recent ]
-                  , "Property violated at: " ++ show t
-                  , "Invalid signal value:"
-                  , showSignalValue x
-                  ]
+          unlines $
+            [ "Last " ++ show atMost ++ " signal values:"
+            ]
+            ++
+            [ printf "%-18s %s" (show t') (showSignalValue x')
+            | (Time t',x') <- Deque.toList recent'
+            ]
+            ++
+            [ "Property violated at: " ++ case t of Time a -> show a
+            ]
 
 --
 -- Utils
