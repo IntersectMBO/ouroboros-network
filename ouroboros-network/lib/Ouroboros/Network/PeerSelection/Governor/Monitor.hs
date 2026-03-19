@@ -219,7 +219,10 @@ connections PeerSelectionActions{
                               | not $ null publicRootDemotions ]
                            <> [ TraceDemoteBigLedgerPeersAsynchronous
                                   bigLedgerPeersDemotions
-                              | not $ null bigLedgerPeersDemotions ],
+                              | not $ null bigLedgerPeersDemotions ]
+                           <> [ TraceForgottenPeers forgottenPeers
+                              | not $ null forgottenPeers
+                              ],
               decisionJobs  = [],
               decisionState = st {
                                 activePeers       = activePeers',

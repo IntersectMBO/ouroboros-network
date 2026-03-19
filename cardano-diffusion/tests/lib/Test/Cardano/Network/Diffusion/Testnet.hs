@@ -1814,6 +1814,8 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
         "TraceDemoteAsynchronous"
       peerSelectionTraceMap TraceDemoteLocalAsynchronous {}          =
         "TraceDemoteLocalAsynchronous"
+      peerSelectionTraceMap TraceForgottenPeers {}                   =
+        "TraceForgottenPeers"
       peerSelectionTraceMap TraceGovernorWakeup                      =
         "TraceGovernorWakeup"
       peerSelectionTraceMap TraceChurnWait {}                        =
