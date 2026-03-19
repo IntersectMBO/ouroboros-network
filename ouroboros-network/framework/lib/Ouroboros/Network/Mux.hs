@@ -67,6 +67,7 @@ import Data.Foldable (fold)
 import Data.Hashable
 import Data.Kind (Type)
 import Data.Void (Void)
+import Data.Word (Word8)
 
 import Network.TypedProtocol.Codec
 import Network.TypedProtocol.Core
@@ -247,8 +248,9 @@ data MiniProtocol (mode :: Mux.Mode) initiatorCtx responderCtx bytes m a b =
        -- started using `StartEagerly`.
        miniProtocolLimits :: !MiniProtocolLimits,
        -- ^ mini-protocol limits
-       miniProtocolRun    :: !(RunMiniProtocol mode initiatorCtx responderCtx bytes m a b)
+       miniProtocolRun    :: !(RunMiniProtocol mode initiatorCtx responderCtx bytes m a b),
        -- ^ mini-protocol callback(s)
+       miniProtocolWeight :: !Word8
      }
 
 mkMiniProtocolInfo :: ForkPolicyCb
@@ -257,13 +259,15 @@ mkMiniProtocolInfo :: ForkPolicyCb
 mkMiniProtocolInfo forkPolicy MiniProtocol {
      miniProtocolNum,
      miniProtocolLimits,
-     miniProtocolRun
+     miniProtocolRun,
+     miniProtocolWeight
    }
   =
   [ Mux.MiniProtocolInfo {
       Mux.miniProtocolNum,
       Mux.miniProtocolDir = dir,
       Mux.miniProtocolLimits,
+      Mux.miniProtocolWeight,
       Mux.miniProtocolCapability =
         forkPolicy miniProtocolNum
                   (Mux.protocolDirEnum dir)
@@ -528,4 +532,3 @@ mkMiniProtocolInfos :: ForkPolicyCb
                     -> OuroborosBundle mode initiatorCtx responderCtx bytes m a b
                     -> [MiniProtocolInfo mode]
 mkMiniProtocolInfos forkPolicy = foldMap (foldMap (mkMiniProtocolInfo forkPolicy))
-
