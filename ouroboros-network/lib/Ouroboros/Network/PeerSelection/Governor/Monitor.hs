@@ -185,8 +185,8 @@ connections PeerSelectionActions{
                               now
                               policyMaxConnectionRetries
                               (Map.keysSet demotedToCold)
-                              ( \p -> LocalRootPeers.member p localRootPeers ||
-                                (memberExtraPeers p (PublicRootPeers.getExtraPeers publicRootPeers))
+                              ( \p -> LocalRootPeers.member p localRootPeers
+                                   || memberExtraPeers p (PublicRootPeers.getExtraPeers publicRootPeers)
                               )
                               (\p _ ->
                                   case Map.lookup p demotedToCold of
