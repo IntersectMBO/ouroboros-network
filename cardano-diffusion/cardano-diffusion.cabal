@@ -80,11 +80,26 @@ library api
   build-depends:
     aeson,
     base >=4.14 && <4.23,
+    cardano-base ^>=0.1,
     cborg >=0.2.1 && <0.3,
+    containers,
     deepseq,
     nothunks,
     ouroboros-network:api >=1.0.0.0 && <1.2.0.0,
     text >=1.2 && <2.2,
+
+library api-tests-lib
+  import: ghc-options
+  visibility: public
+  hs-source-dirs: api/tests-lib
+  exposed-modules:
+    Cardano.Network.NodeToNode.Version.TestUtils
+
+  build-depends:
+    QuickCheck,
+    base >=4.14 && <4.23,
+    cardano-diffusion:api,
+    ouroboros-network:api,
 
 test-suite api-tests
   import: ghc-options
@@ -99,7 +114,7 @@ test-suite api-tests
   build-depends:
     QuickCheck,
     base >=4.14 && <4.23,
-    cardano-diffusion:api,
+    cardano-diffusion:{api, api-tests-lib},
     ouroboros-network:api,
     tasty,
     tasty-hunit,
@@ -163,6 +178,7 @@ library
     aeson,
     base >=4.14 && <4.23,
     bytestring,
+    cardano-base ^>=0.1,
     cardano-diffusion:{api, protocols},
     containers,
     contra-tracer,
@@ -349,7 +365,7 @@ library protocols-tests-lib
     QuickCheck,
     base >=4.14 && <4.23,
     bytestring,
-    cardano-diffusion:{api, protocols},
+    cardano-diffusion:{api, api-tests-lib, protocols},
     cborg,
     containers,
     contra-tracer,
@@ -394,7 +410,7 @@ test-suite protocols-cddl
     QuickCheck,
     base >=4.14 && <4.23,
     bytestring,
-    cardano-diffusion:{api, protocols, protocols-tests-lib},
+    cardano-diffusion:{api, api-tests-lib, protocols, protocols-tests-lib},
     cborg,
     containers,
     directory,
