@@ -12,6 +12,7 @@ module Test.Ouroboros.Network.Data.Signal
   , eventsFromListUpToTime
   , eventsToList
   , eventsToListWithId
+  , ppEvents
   , selectEvents
     -- * Low level access
   , primitiveTransformEvents
@@ -66,6 +67,7 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 import Deque.Lazy (Deque)
 import Deque.Lazy qualified as Deque
+import Text.Printf (printf)
 
 import Control.Monad.Class.MonadTime.SI (DiffTime, Time (..), addTime)
 
@@ -110,6 +112,12 @@ data E a = E {-# UNPACK #-} !TS a
 newtype Events a = Events [E a]
   deriving (Show, Functor, Foldable)
   deriving newtype (Semigroup, Monoid)
+
+ppEvents :: Show a => Events a -> String
+ppEvents (Events es) =
+  unlines [ printf "%-20s %s" (show t) (show a)
+          | E (TS (Time t) _) a <- es
+          ]
 
 -- | Construct 'Events' from a time series.
 --
