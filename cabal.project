@@ -18,7 +18,7 @@ index-state:
   , hackage.haskell.org 2026-03-04T10:56:45Z
 
   -- Bump this if you need newer packages from CHaP
-  , cardano-haskell-packages 2026-02-17T21:19:19Z
+  , cardano-haskell-packages 2026-03-20T11:04:00Z
 
 packages: ./cardano-ping
           ./monoidal-synchronisation
