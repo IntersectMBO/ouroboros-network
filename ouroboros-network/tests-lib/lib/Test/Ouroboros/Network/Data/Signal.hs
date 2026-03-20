@@ -12,6 +12,7 @@ module Test.Ouroboros.Network.Data.Signal
   , eventsFromListUpToTime
   , eventsToList
   , eventsToListWithId
+  , ppEvents
   , selectEvents
     -- * Low level access
   , primitiveTransformEvents
@@ -66,6 +67,7 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 import Deque.Lazy (Deque)
 import Deque.Lazy qualified as Deque
+import Text.Printf (printf)
 
 import Control.Monad.Class.MonadTime.SI (DiffTime, Time (..), addTime)
 
@@ -110,6 +112,12 @@ data E a = E {-# UNPACK #-} !TS a
 newtype Events a = Events [E a]
   deriving (Show, Functor, Foldable)
   deriving newtype (Semigroup, Monoid)
+
+ppEvents :: Show a => Events a -> String
+ppEvents (Events es) =
+  unlines [ printf "%-20s %s" (show t) (show a)
+          | E (TS (Time t) _) a <- es
+          ]
 
 -- | Construct 'Events' from a time series.
 --
@@ -565,18 +573,24 @@ signalProperty' atMost showSignalValue p =
     go !_ !_ []                  = pure $ property True
     go !n !recent ((t, x) : txs) = (.&&.) . counterexample details <$> p x <*> next
       where
+        recent'
+          | n < atMost =              Deque.snoc (t,x) recent
+          | otherwise  = Deque.tail $ Deque.snoc (t,x) recent
         next
-          | n < atMost = go (n+1) (              Deque.snoc (t,x)  recent) txs
-          | otherwise  = go n     ((Deque.tail . Deque.snoc (t,x)) recent) txs
+          | n < atMost = go (n+1) recent' txs
+          | otherwise  = go n     recent' txs
 
         details =
-          unlines [ "Last " ++ show atMost ++ " signal values:"
-                  , unlines [ show t' ++ "\t@ " ++ showSignalValue x'
-                            | (Time t',x') <- Deque.toList recent ]
-                  , "Property violated at: " ++ show t
-                  , "Invalid signal value:"
-                  , showSignalValue x
-                  ]
+          unlines $
+            [ "Last " ++ show atMost ++ " signal values:"
+            ]
+            ++
+            [ printf "%-18s %s" (show t') (showSignalValue x')
+            | (Time t',x') <- Deque.toList recent'
+            ]
+            ++
+            [ "Property violated at: " ++ case t of Time a -> show a
+            ]
 
 --
 -- Utils

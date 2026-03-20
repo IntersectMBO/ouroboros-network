@@ -449,6 +449,7 @@ reportFailures :: Ord peeraddr
                -- ^ calculate delay from failure count
                -> KnownPeers peeraddr
                -> (KnownPeers peeraddr, Set peeraddr)
+               -- ^ new known set, set of forgotten peers
 reportFailures now
                maxFail
                peers
@@ -466,7 +467,7 @@ reportFailures now
     -- filter out peers with too high fail count
         (peers'', forgets) = Map.partitionWithKey partFn peers'
     -- calculate reconnect times
-        times = Map.mapWithKey (\p fc -> (calcDelay p fc) `addTime` now) peers''
+        times = Map.mapWithKey (\p fc -> calcDelay p fc `addTime` now) peers''
     -- set next connect times.
         knownPeers'' = delete (Map.keysSet forgets) knownPeers' {
           availableToConnect =

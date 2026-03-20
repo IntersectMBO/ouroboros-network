@@ -185,8 +185,8 @@ connections PeerSelectionActions{
                               now
                               policyMaxConnectionRetries
                               (Map.keysSet demotedToCold)
-                              ( \p -> LocalRootPeers.member p localRootPeers ||
-                                (memberExtraPeers p (PublicRootPeers.getExtraPeers publicRootPeers))
+                              ( \p -> LocalRootPeers.member p localRootPeers
+                                   || memberExtraPeers p (PublicRootPeers.getExtraPeers publicRootPeers)
                               )
                               (\p _ ->
                                   case Map.lookup p demotedToCold of
@@ -219,7 +219,10 @@ connections PeerSelectionActions{
                               | not $ null publicRootDemotions ]
                            <> [ TraceDemoteBigLedgerPeersAsynchronous
                                   bigLedgerPeersDemotions
-                              | not $ null bigLedgerPeersDemotions ],
+                              | not $ null bigLedgerPeersDemotions ]
+                           <> [ TraceForgottenPeers forgottenPeers
+                              | not $ null forgottenPeers
+                              ],
               decisionJobs  = [],
               decisionState = st {
                                 activePeers       = activePeers',

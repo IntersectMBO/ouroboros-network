@@ -309,6 +309,10 @@ instance ( Show extraDebugState
     mconcat [ "kind" .= String "DemoteBigLedgerPeerAsynchronous"
              , "state" .= toJSON msp
              ]
+  forMachine _dtal (TraceForgottenPeers peers) =
+    mconcat [ "kind" .= String "ForgottenPeers"
+            , "peers" .= peers
+            ]
   forMachine _dtal TraceGovernorWakeup =
     mconcat [ "kind" .= String "GovernorWakeup"
              ]
@@ -485,6 +489,8 @@ instance MetaTrace (ToExtraTrace extraPeers)
       Namespace [] ["DemoteLocalAsynchronous"]
     namespaceFor TraceDemoteBigLedgerPeersAsynchronous {} =
       Namespace [] ["DemoteBigLedgerPeersAsynchronous"]
+    namespaceFor TraceForgottenPeers {} =
+      Namespace [] ["TraceForgottenPeers"]
     namespaceFor TraceGovernorWakeup {}        =
       Namespace [] ["GovernorWakeup"]
     namespaceFor TraceChurnWait {}             =
