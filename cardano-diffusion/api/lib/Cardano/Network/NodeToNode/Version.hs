@@ -8,15 +8,23 @@ module Cardano.Network.NodeToNode.Version
   , NodeToNodeVersionData (..)
   , DiffusionMode (..)
   , ConnectionMode (..)
+  , PerasSupport (..)
+    -- * Codecs
   , nodeToNodeVersionCodec
   , nodeToNodeCodecCBORTerm
+    -- * Feature predicates
+  , isValidNtnVersionDataForVersion
+  , getLocalPerasSupport
   ) where
 
+import Data.Set (Set)
+import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
 
 import Codec.CBOR.Term qualified as CBOR
 
+import Cardano.Base.FeatureFlags
 import Control.DeepSeq
 import GHC.Generics
 import NoThunks.Class (NoThunks)
@@ -26,6 +34,7 @@ import Ouroboros.Network.Handshake.Acceptable (Accept (..), Acceptable (..))
 import Ouroboros.Network.Handshake.Queryable (Queryable (..))
 import Ouroboros.Network.Magic
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
+import Ouroboros.Network.PerasSupport
 
 -- | Enumeration of node to node protocol versions.
 --
@@ -72,6 +81,10 @@ data NodeToNodeVersion =
     -- ^ Plomin HF, mandatory on mainnet as of 2025.01.29
   | NodeToNodeV_15
     -- ^ SRV support
+  | NodeToNodeV_16
+    -- ^ Experimental.
+    --
+    -- Adds support for Peras mini-protocols (if 'PerasFlag' is set).
   deriving (Eq, Ord, Enum, Bounded, Show, Generic, NFData, NoThunks)
 
 nodeToNodeVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToNodeVersion
@@ -79,9 +92,11 @@ nodeToNodeVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
   where
     encodeTerm NodeToNodeV_14 = CBOR.TInt 14
     encodeTerm NodeToNodeV_15 = CBOR.TInt 15
+    encodeTerm NodeToNodeV_16 = CBOR.TInt 16
 
     decodeTerm (CBOR.TInt 14) = Right NodeToNodeV_14
     decodeTerm (CBOR.TInt 15) = Right NodeToNodeV_15
+    decodeTerm (CBOR.TInt 16) = Right NodeToNodeV_16
     decodeTerm (CBOR.TInt n) = Left ( T.pack "decode NodeToNodeVersion: unknown tag: "
                                         <> T.pack (show n)
                                     , Just n
@@ -97,6 +112,7 @@ data NodeToNodeVersionData = NodeToNodeVersionData
   , diffusionMode :: !DiffusionMode
   , peerSharing   :: !PeerSharing
   , query         :: !Bool
+  , perasSupport  :: !PerasSupport
   }
   deriving (Show, Eq, Generic, NFData)
   -- 'Eq' instance is not provided, it is not what we need in version
@@ -106,14 +122,17 @@ instance Acceptable NodeToNodeVersionData where
     -- | Check that both side use the same 'networkMagic'.  Choose smaller one
     -- from both 'diffusionMode's, e.g. if one is running in 'InitiatorOnlyMode'
     -- agree on it. Agree on the same 'PeerSharing' value.
+    -- Also agree on whether or not Peras should be used.
     acceptableVersion local remote
       | networkMagic local == networkMagic remote
       = let acceptedDiffusionMode = diffusionMode local `min` diffusionMode remote
+            acceptedPerasSupport = perasSupport local `min` perasSupport remote
          in Accept NodeToNodeVersionData
-              { networkMagic  = networkMagic local
-              , diffusionMode = acceptedDiffusionMode
-              , peerSharing   = peerSharing local <> peerSharing remote
-              , query         = query local || query remote
+              { networkMagic       = networkMagic local
+              , diffusionMode      = acceptedDiffusionMode
+              , peerSharing        = peerSharing local <> peerSharing remote
+              , query              = query local || query remote
+              , perasSupport       = acceptedPerasSupport
               }
       | otherwise
       = Refuse $ T.pack $ "version data mismatch: "
@@ -123,50 +142,80 @@ instance Acceptable NodeToNodeVersionData where
 instance Queryable NodeToNodeVersionData where
     queryVersion = query
 
-nodeToNodeCodecCBORTerm :: NodeToNodeVersion -> CodecCBORTerm Text NodeToNodeVersionData
-nodeToNodeCodecCBORTerm =
-    \case
-      NodeToNodeV_14 -> codec
-      NodeToNodeV_15 -> codec
-  where
-    codec = CodecCBORTerm { encodeTerm = encodeTerm, decodeTerm = decodeTerm }
+-- | `perasSupport` field is introduced with `NodeToNodeV_16`, and thus should be
+-- set to `PerasUnsupported` (and not be serialized) for versions before that.
+isValidNtnVersionDataForVersion :: NodeToNodeVersion -> NodeToNodeVersionData -> Bool
+isValidNtnVersionDataForVersion version ntnData =
+  version >= NodeToNodeV_16 || perasSupport ntnData == PerasUnsupported
 
+
+-- | Determine the local node's Peras support status based on feature flags and version.
+getLocalPerasSupport :: Set CardanoFeatureFlag -> NodeToNodeVersion -> PerasSupport
+getLocalPerasSupport featureFlags v =
+  if Set.member PerasFlag featureFlags && v >= NodeToNodeV_16
+    then PerasSupported
+    else PerasUnsupported
+
+-- | Beware, encoding an invalid NodeToNodeVersionData (see `isValidNtnVersionDataForVersion`) for
+-- a given version will fail if a future field is set to a value other than its default forwards
+-- compatibility one. This way `encodeTerm` and `decodeTerm` are only inverses for valid data.
+nodeToNodeCodecCBORTerm :: NodeToNodeVersion -> CodecCBORTerm Text NodeToNodeVersionData
+nodeToNodeCodecCBORTerm version = CodecCBORTerm { encodeTerm = encodeTerm, decodeTerm = decodeTerm }
+  where
     encodeTerm :: NodeToNodeVersionData -> CBOR.Term
-    encodeTerm NodeToNodeVersionData { networkMagic, diffusionMode, peerSharing, query }
-      = CBOR.TList
-          [ CBOR.TInt (fromIntegral $ unNetworkMagic networkMagic)
-          , CBOR.TBool (case diffusionMode of
-                         InitiatorOnlyDiffusionMode         -> True
-                         InitiatorAndResponderDiffusionMode -> False)
-          , CBOR.TInt (case peerSharing of
-                         PeerSharingDisabled -> 0
-                         PeerSharingEnabled  -> 1)
-          , CBOR.TBool query
-          ]
+    encodeTerm ntnData@NodeToNodeVersionData{ networkMagic, diffusionMode, peerSharing, query, perasSupport }
+      | not (isValidNtnVersionDataForVersion version ntnData) = error "perasSupport should be PerasUnsupported for versions strictly before NodeToNodeV_16"
+      | otherwise =
+        CBOR.TList $
+             [ CBOR.TInt (fromIntegral $ unNetworkMagic networkMagic)
+             , CBOR.TBool (case diffusionMode of
+                           InitiatorOnlyDiffusionMode         -> True
+                           InitiatorAndResponderDiffusionMode -> False)
+             , CBOR.TInt (case peerSharing of
+                           PeerSharingDisabled -> 0
+                           PeerSharingEnabled  -> 1)
+             , CBOR.TBool query
+             ]
+          ++ [CBOR.TBool (perasSupportToBool perasSupport)
+             | version >= NodeToNodeV_16
+             ]
 
     decodeTerm :: CBOR.Term -> Either Text NodeToNodeVersionData
-    decodeTerm (CBOR.TList [CBOR.TInt x, CBOR.TBool diffusionMode, CBOR.TInt peerSharing, CBOR.TBool query])
-      | x >= 0
-      , x <= 0xffffffff
-      , Just ps <- case peerSharing of
-                    0 -> Just PeerSharingDisabled
-                    1 -> Just PeerSharingEnabled
-                    _ -> Nothing
-      = Right
-          NodeToNodeVersionData {
-              networkMagic = NetworkMagic (fromIntegral x),
-              diffusionMode = if diffusionMode
-                              then InitiatorOnlyDiffusionMode
-                              else InitiatorAndResponderDiffusionMode,
-              peerSharing = ps,
-              query = query
-            }
-      | x < 0 || x > 0xffffffff
-      = Left $ T.pack $ "networkMagic out of bound: " <> show x
-      | otherwise -- peerSharing < 0 || peerSharing > 1
-      = Left $ T.pack $ "peerSharing is out of bound: " <> show peerSharing
-    decodeTerm t
-      = Left $ T.pack $ "unknown encoding: " ++ show t
+    decodeTerm = \case
+      (CBOR.TList (CBOR.TInt networkMagic : CBOR.TBool diffusionMode : CBOR.TInt peerSharing : CBOR.TBool query : perasSupportOptional)) ->
+            NodeToNodeVersionData
+        <$> decodeNetworkMagic networkMagic
+        <*> decodeDiffusionMode diffusionMode
+        <*> decodePeerSharing peerSharing
+        <*> decodeQuery query
+        <*> decodePerasSupportOptional perasSupportOptional
+          where
+            decodeNetworkMagic x
+              | x >= 0 , x <= 0xffffffff = pure $ NetworkMagic (fromIntegral x)
+              | otherwise                = err $ "networkMagic out of bound: " <> show x
 
+            decodeDiffusionMode dm = pure $
+              if dm
+                then InitiatorOnlyDiffusionMode
+                else InitiatorAndResponderDiffusionMode
+
+            decodePeerSharing ps
+              | ps == 0   = pure PeerSharingDisabled
+              | ps == 1   = pure PeerSharingEnabled
+              | otherwise = err $ "peerSharing is out of bound: " <> show ps
+
+            decodeQuery = pure
+
+            decodePerasSupportOptional = \case
+              []                        | version <  NodeToNodeV_16 -> pure PerasUnsupported
+              [CBOR.TBool perasSupport] | version >= NodeToNodeV_16 -> pure $
+                if perasSupport
+                  then PerasSupported
+                  else PerasUnsupported
+              l -> err $ "invalid encoding for perasSupport given the version " <> show version <> ": " <> show l
+
+      other -> err $ "unexpected encoding when decoding NodeToNodeVersionData: " <> show other
+
+    err = Left . T.pack
 
 data ConnectionMode = UnidirectionalMode | DuplexMode

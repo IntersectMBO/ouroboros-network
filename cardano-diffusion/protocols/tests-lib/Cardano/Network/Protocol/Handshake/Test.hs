@@ -31,6 +31,8 @@ import Network.TypedProtocol.Codec
 
 import Cardano.Network.NodeToClient.Version as NTC
 import Cardano.Network.NodeToNode.Version as NTN
+import Cardano.Network.NodeToNode.Version.TestUtils (genNodeToNodeVersionData,
+           genValidNtnVersionDataForVersion, shrinkNodeToNodeVersionData)
 
 import Ouroboros.Network.Channel
 import Ouroboros.Network.CodecCBORTerm
@@ -104,7 +106,7 @@ tests =
 
 newtype ArbitraryNodeToNodeVersion =
         ArbitraryNodeToNodeVersion { getNodeToNodeVersion :: NodeToNodeVersion }
-  deriving stock   Show
+  deriving stock   (Show, Eq)
   deriving newtype NFData
 
 instance Arbitrary ArbitraryNodeToNodeVersion where
@@ -113,59 +115,17 @@ instance Arbitrary ArbitraryNodeToNodeVersion where
 newtype ArbitraryNodeToNodeVersionData =
         ArbitraryNodeToNodeVersionData
           { getNodeToNodeVersionData :: NodeToNodeVersionData }
-    deriving stock   Show
+    deriving stock   (Show, Eq)
     deriving         Acceptable via NodeToNodeVersionData
     deriving newtype NFData
-
--- | With the introduction of PeerSharing to 'NodeToNodeVersionData' this type's
--- 'Acceptable' instance is no longer symmetric. Because when handshake is
--- performed we keep only the remote's side PeerSharing information. Due to this,
--- the 'ArbitraryNodeToNodeVersionData' needs to have a custom 'Eq' type that
--- ignores this parameter. We also ignore the query field which may differ
--- between parties.
---
-instance Eq ArbitraryNodeToNodeVersionData where
-  (==) (ArbitraryNodeToNodeVersionData (NodeToNodeVersionData nm dm ps _))
-       (ArbitraryNodeToNodeVersionData (NodeToNodeVersionData nm' dm' ps' _))
-    = nm == nm' && dm == dm' && ps == ps'
 
 instance Queryable ArbitraryNodeToNodeVersionData where
     queryVersion = queryVersion . getNodeToNodeVersionData
 
 instance Arbitrary ArbitraryNodeToNodeVersionData where
-    arbitrary = fmap (fmap (fmap ArbitraryNodeToNodeVersionData))
-              . NodeToNodeVersionData
-             <$> (NetworkMagic <$> arbitrary)
-             <*> elements [ InitiatorOnlyDiffusionMode
-                          , InitiatorAndResponderDiffusionMode
-                          ]
-             <*> elements [ PeerSharingDisabled
-                          , PeerSharingEnabled
-                          ]
-             <*> arbitrary
-    shrink (ArbitraryNodeToNodeVersionData
-             (NodeToNodeVersionData magic mode peerSharing query)) =
-        [ ArbitraryNodeToNodeVersionData (NodeToNodeVersionData magic' mode peerSharing' query)
-        | magic' <- NetworkMagic <$> shrink (unNetworkMagic magic)
-        , peerSharing' <- shrinkPeerSharing peerSharing
-        ]
-        ++
-        [ ArbitraryNodeToNodeVersionData (NodeToNodeVersionData magic mode' peerSharing' query)
-        | mode' <- shrinkMode mode
-        , peerSharing' <- shrinkPeerSharing peerSharing
-        ]
-        ++
-        [ ArbitraryNodeToNodeVersionData (NodeToNodeVersionData magic mode peerSharing' query')
-        | query' <- shrink query
-        , peerSharing' <- shrinkPeerSharing peerSharing
-        ]
-      where
-        shrinkMode :: DiffusionMode -> [DiffusionMode]
-        shrinkMode InitiatorOnlyDiffusionMode = []
-        shrinkMode InitiatorAndResponderDiffusionMode = [InitiatorOnlyDiffusionMode]
-
-        shrinkPeerSharing PeerSharingDisabled = []
-        shrinkPeerSharing PeerSharingEnabled  = [PeerSharingDisabled]
+    arbitrary = ArbitraryNodeToNodeVersionData <$> genNodeToNodeVersionData
+    shrink (ArbitraryNodeToNodeVersionData ntnData) =
+        ArbitraryNodeToNodeVersionData <$> shrinkNodeToNodeVersionData ntnData
 
 newtype ArbitraryNodeToNodeVersions =
         ArbitraryNodeToNodeVersions
@@ -179,7 +139,7 @@ instance Show ArbitraryNodeToNodeVersions where
 instance Arbitrary ArbitraryNodeToNodeVersions where
     arbitrary = do
       vs <- listOf (getNodeToNodeVersion <$> arbitrary)
-      ds <- vectorOf (length vs) arbitrary
+      ds <- traverse (\v -> ArbitraryNodeToNodeVersionData <$> genValidNtnVersionDataForVersion v) vs
       r  <- arbitrary
       return $ ArbitraryNodeToNodeVersions
              $ Versions

@@ -63,10 +63,11 @@ import Ouroboros.Network.Magic
 import Cardano.Network.NodeToClient.Version (NodeToClientVersion,
            NodeToClientVersionData (..), nodeToClientCodecCBORTerm)
 import Cardano.Network.NodeToClient.Version qualified as NtCVersion
-import Cardano.Network.NodeToNode.Version (DiffusionMode (..),
-           NodeToNodeVersion (..), NodeToNodeVersionData (..),
-           nodeToNodeCodecCBORTerm)
+import Cardano.Network.NodeToNode.Version (NodeToNodeVersion (..),
+           NodeToNodeVersionData (..), nodeToNodeCodecCBORTerm)
 import Cardano.Network.NodeToNode.Version qualified as NtNVersion
+import Cardano.Network.NodeToNode.Version.TestUtils (genNodeToNodeVersionData,
+           genValidNtnVersionDataForVersion, shrinkNodeToNodeVersionData)
 
 import Ouroboros.Network.PeerSelection.RelayAccessPoint (PortNumber)
 
@@ -105,6 +106,10 @@ import Cardano.Network.Protocol.LocalTxSubmission.Codec.CDDL
 import Cardano.Network.Protocol.LocalTxSubmission.Test qualified as LocalTxSubmission
 import Cardano.Network.Protocol.LocalTxSubmission.Type (LocalTxSubmission)
 import Cardano.Network.Protocol.LocalTxSubmission.Type qualified as LocalTxSubmission
+import Cardano.Network.Protocol.ObjectDiffusion.Codec.CDDL
+import Cardano.Network.Protocol.ObjectDiffusion.Test ()
+import Cardano.Network.Protocol.ObjectDiffusion.Type (ObjectDiffusion)
+import Cardano.Network.Protocol.ObjectDiffusion.Type qualified as ObjectDiffusion
 import Cardano.Network.Protocol.PeerSharing.Codec (codecPeerSharing)
 import Cardano.Network.Protocol.PeerSharing.Test ()
 import Cardano.Network.Protocol.PeerSharing.Type qualified as PeerSharing
@@ -146,12 +151,14 @@ tests CDDLSpecs { cddlChainSync
                 , cddlLocalTxSubmission
                 , cddlLocalTxMonitor
                 , cddlTxSubmission2
+                , cddlObjectDiffusion
                 , cddlKeepAlive
                 , cddlLocalStateQuery
                 , cddlHandshakeNodeToNodeV14ToLast
                 , cddlHandshakeNodeToClient
                 , cddlPeerSharingNodeToNodeV14ToLast
-                , cddlNodeToNodeVersionDataV14ToLast
+                , cddlNodeToNodeVersionDataV14ToV15
+                , cddlNodeToNodeVersionDataV16ToLast
                 } =
   adjustOption (const $ QuickCheckMaxSize 10) $
   testGroup "cddl"
@@ -175,6 +182,8 @@ tests CDDLSpecs { cddlChainSync
                                                cddlBlockFetch)
       , testProperty "TxSubmission2"     (prop_encodeTxSubmission2
                                                cddlTxSubmission2)
+      , testProperty "ObjectDiffusion"   (prop_encodeObjectDiffusion
+                                               cddlObjectDiffusion)
       , testProperty "KeepAlive"         (prop_encodeKeepAlive
                                                cddlKeepAlive)
       , testProperty "LocalTxSubmission" (prop_encodeLocalTxSubmission
@@ -187,8 +196,10 @@ tests CDDLSpecs { cddlChainSync
       , testProperty "PeerSharing V14 to Last" (prop_encodePeerSharingV14ToLast
                                                   cddlPeerSharingNodeToNodeV14ToLast)
 
-      , testProperty "NodeToNodeVersionData V14 to Last" (prop_encodeNodeToNodeVersionDataV14ToLast
-                                                            cddlNodeToNodeVersionDataV14ToLast)
+      , testProperty "NodeToNodeVersionData V14 to V15"  (prop_encodeNodeToNodeVersionDataV14ToV15
+                                                            cddlNodeToNodeVersionDataV14ToV15)
+      , testProperty "NodeToNodeVersionData V16 to Last" (prop_encodeNodeToNodeVersionDataV16ToLast
+                                                            cddlNodeToNodeVersionDataV16ToLast)
       ]
     , testGroup "decoding"
       -- validate decoder by generating messages from the specification
@@ -204,6 +215,8 @@ tests CDDLSpecs { cddlChainSync
                                            cddlBlockFetch)
       , testCase "TxSubmission2"     (unit_decodeTxSubmission2
                                            cddlTxSubmission2)
+      , testCase "ObjectDiffusion"   (unit_decodeObjectDiffusion
+                                           cddlObjectDiffusion)
       , testCase "KeepAlive"         (unit_decodeKeepAlive
                                            cddlKeepAlive)
       , testCase "LocalTxSubmission" (unit_decodeLocalTxSubmission
@@ -216,8 +229,10 @@ tests CDDLSpecs { cddlChainSync
       , testCase "PeerSharing V14 to Last" (unit_decodePeerSharingV14ToLast
                                                 cddlPeerSharingNodeToNodeV14ToLast)
 
-      , testCase "NodeToNodeVersionData V14 to Last" (unit_decodeNodeToNodeVersionDataV14ToLast
-                                                        cddlNodeToNodeVersionDataV14ToLast)
+      , testCase "NodeToNodeVersionData V14 to V15"  (unit_decodeNodeToNodeVersionDataV14ToV15
+                                                        cddlNodeToNodeVersionDataV14ToV15)
+      , testCase "NodeToNodeVersionData V16 to Last" (unit_decodeNodeToNodeVersionDataV16ToLast
+                                                        cddlNodeToNodeVersionDataV16ToLast)
       ]
     ]
 
@@ -226,21 +241,23 @@ tests CDDLSpecs { cddlChainSync
 newtype CDDLSpec ps = CDDLSpec BL.ByteString
 
 data CDDLSpecs = CDDLSpecs {
-    cddlHandshakeNodeToClient        :: CDDLSpec (Handshake NodeToClientVersion CBOR.Term),
-    cddlHandshakeNodeToNodeV14ToLast :: CDDLSpec (Handshake NodeToNodeVersion   CBOR.Term),
-    cddlChainSync                    :: CDDLSpec (ChainSync BlockHeader HeaderPoint HeaderTip),
-    cddlBlockFetch                   :: CDDLSpec (BlockFetch Block BlockPoint),
-    cddlTxSubmission2                :: CDDLSpec (TxSubmission2 TxId Tx),
-    cddlKeepAlive                    :: CDDLSpec KeepAlive,
-    cddlLocalTxSubmission            :: CDDLSpec (LocalTxSubmission
+    cddlHandshakeNodeToClient          :: CDDLSpec (Handshake NodeToClientVersion CBOR.Term),
+    cddlHandshakeNodeToNodeV14ToLast   :: CDDLSpec (Handshake NodeToNodeVersion   CBOR.Term),
+    cddlChainSync                      :: CDDLSpec (ChainSync BlockHeader HeaderPoint HeaderTip),
+    cddlBlockFetch                     :: CDDLSpec (BlockFetch Block BlockPoint),
+    cddlTxSubmission2                  :: CDDLSpec (TxSubmission2 TxId Tx),
+    cddlObjectDiffusion                :: CDDLSpec (ObjectDiffusion ObjectId Object),
+    cddlKeepAlive                      :: CDDLSpec KeepAlive,
+    cddlLocalTxSubmission              :: CDDLSpec (LocalTxSubmission
                                                     LocalTxSubmission.Tx
                                                     LocalTxSubmission.Reject),
-    cddlLocalTxMonitor               :: CDDLSpec (LocalTxMonitor TxId Tx SlotNo),
-    cddlLocalStateQuery              :: CDDLSpec (LocalStateQuery Block BlockPoint Query),
+    cddlLocalTxMonitor                 :: CDDLSpec (LocalTxMonitor TxId Tx SlotNo),
+    cddlLocalStateQuery                :: CDDLSpec (LocalStateQuery Block BlockPoint Query),
 
     cddlPeerSharingNodeToNodeV14ToLast :: CDDLSpec (PeerSharing.PeerSharing SockAddr),
 
-    cddlNodeToNodeVersionDataV14ToLast :: CDDLSpec NodeToNodeVersionData
+    cddlNodeToNodeVersionDataV14ToV15  :: CDDLSpec NodeToNodeVersionData,
+    cddlNodeToNodeVersionDataV16ToLast :: CDDLSpec NodeToNodeVersionData
   }
 
 
@@ -265,27 +282,31 @@ readCDDLSpecs = do
     chainSync             <- cddlc (dir </> "chain-sync.cddl")
     blockFetch            <- cddlc (dir </> "block-fetch.cddl")
     txSubmission2         <- cddlc (dir </> "tx-submission2.cddl")
+    objectDiffusion       <- cddlc (dir </> "object-diffusion.cddl")
     keepAlive             <- cddlc (dir </> "keep-alive.cddl")
     localTxSubmission     <- cddlc (dir </> "local-tx-submission.cddl")
     localTxMonitor        <- cddlc (dir </> "local-tx-monitor.cddl")
     localStateQuery       <- cddlc (dir </> "local-state-query.cddl")
 
     peerSharingNodeToNodeV14ToLast <- cddlc (dir </> "peer-sharing-v14.cddl")
-    nodeToNodeVersionDataV14ToLast <- cddlc (dir </> "node-to-node-version-data-v14.cddl")
+    nodeToNodeVersionDataV14ToV15  <- cddlc (dir </> "node-to-node-version-data-v14.cddl")
+    nodeToNodeVersionDataV16ToLast <- cddlc (dir </> "node-to-node-version-data-v16.cddl")
 
     return CDDLSpecs {
-        cddlHandshakeNodeToClient        = CDDLSpec handshakeNodeToClient,
-        cddlHandshakeNodeToNodeV14ToLast = CDDLSpec handshakeNodeToNodeV14ToLast,
-        cddlChainSync                    = CDDLSpec chainSync,
-        cddlBlockFetch                   = CDDLSpec blockFetch,
-        cddlTxSubmission2                = CDDLSpec txSubmission2,
-        cddlKeepAlive                    = CDDLSpec keepAlive,
-        cddlLocalTxSubmission            = CDDLSpec localTxSubmission,
-        cddlLocalTxMonitor               = CDDLSpec localTxMonitor,
-        cddlLocalStateQuery              = CDDLSpec localStateQuery,
+        cddlHandshakeNodeToClient          = CDDLSpec handshakeNodeToClient,
+        cddlHandshakeNodeToNodeV14ToLast   = CDDLSpec handshakeNodeToNodeV14ToLast,
+        cddlChainSync                      = CDDLSpec chainSync,
+        cddlBlockFetch                     = CDDLSpec blockFetch,
+        cddlTxSubmission2                  = CDDLSpec txSubmission2,
+        cddlObjectDiffusion                = CDDLSpec objectDiffusion,
+        cddlKeepAlive                      = CDDLSpec keepAlive,
+        cddlLocalTxSubmission              = CDDLSpec localTxSubmission,
+        cddlLocalTxMonitor                 = CDDLSpec localTxMonitor,
+        cddlLocalStateQuery                = CDDLSpec localStateQuery,
 
         cddlPeerSharingNodeToNodeV14ToLast = CDDLSpec peerSharingNodeToNodeV14ToLast,
-        cddlNodeToNodeVersionDataV14ToLast = CDDLSpec nodeToNodeVersionDataV14ToLast
+        cddlNodeToNodeVersionDataV14ToV15  = CDDLSpec nodeToNodeVersionDataV14ToV15,
+        cddlNodeToNodeVersionDataV16ToLast = CDDLSpec nodeToNodeVersionDataV16ToLast
       }
 
 --
@@ -395,14 +416,10 @@ validateCBOR (CDDLSpec spec) blob =
         Left err -> Left err
         Right _  -> Right ()
 
+instance Arbitrary NodeToNodeVersionData where
+    arbitrary = genNodeToNodeVersionData
+    shrink    = shrinkNodeToNodeVersionData
 
--- | Newtype for testing Handshake CDDL Specification from version 7 to
--- version 10. After version 10 (i.e. version 11) a new extra parameter is
--- added and we need a new CDDL specification (see
--- specs/handshake-node-to-node-v11-12.cddl). After version 12 a fix for a bug
--- with Peer Sharing required yet another parameter ((see
--- specs/handshake-node-to-node-v13.cddl)
---
 newtype NtNHandshakeV14ToLast =
   NtNHandshakeV14ToLast
     (AnyMessage (Handshake NodeToNodeVersion CBOR.Term))
@@ -415,29 +432,21 @@ genNtNHandshake genVersion = oneof
         . Handshake.MsgProposeVersions
         . Map.fromList
         . map (\(v, d) -> (v, encodeTerm (nodeToNodeCodecCBORTerm v) d))
-      <$> listOf ((,) <$> genVersion <*> genData)
+      <$> listOf genVersionAndVersionData
 
     ,     AnyMessage
         . uncurry Handshake.MsgAcceptVersion
         . (\(v, d) -> (v, encodeTerm (nodeToNodeCodecCBORTerm v) d))
-      <$> ((,) <$> genVersion <*> genData)
+      <$> genVersionAndVersionData
 
     ,     AnyMessage
         . Handshake.MsgRefuse
       <$> genRefuseReason
     ]
   where
-    genData :: Gen NodeToNodeVersionData
-    genData = NodeToNodeVersionData
-          <$> (NetworkMagic <$> arbitrary)
-          <*> oneof
-                [ pure InitiatorOnlyDiffusionMode
-                , pure InitiatorAndResponderDiffusionMode
-                ]
-          <*> elements [ PeerSharingDisabled
-                       , PeerSharingEnabled
-                      ]
-          <*> arbitrary
+    genVersionAndVersionData :: Gen (NodeToNodeVersion, NodeToNodeVersionData)
+    genVersionAndVersionData =
+      genVersion >>= \v -> (v, ) <$> genValidNtnVersionDataForVersion v
 
     genRefuseReason :: Gen (Handshake.RefuseReason NodeToNodeVersion)
     genRefuseReason = oneof
@@ -539,6 +548,13 @@ prop_encodeTxSubmission2
 prop_encodeTxSubmission2 spec = validateEncoder spec txSubmissionCodec2
 
 
+prop_encodeObjectDiffusion
+    :: CDDLSpec   (ObjectDiffusion ObjectId Object)
+    -> AnyMessage (ObjectDiffusion ObjectId Object)
+    -> Property
+prop_encodeObjectDiffusion spec = validateEncoder spec objectDiffusionCodec
+
+
 prop_encodeKeepAlive
     :: CDDLSpec   KeepAlive
     -> AnyMessage KeepAlive
@@ -594,32 +610,36 @@ newtype NtNVersionV14ToLast = NtNVersionV14ToLast NodeToNodeVersion
 instance Arbitrary NtNVersionV14ToLast where
   arbitrary = NtNVersionV14ToLast <$> elements [NodeToNodeV_14 ..]
 
-instance Arbitrary NodeToNodeVersionData where
-    arbitrary =
-      NodeToNodeVersionData
-        <$> (NetworkMagic <$> arbitrary)
-        <*> oneof [ pure InitiatorOnlyDiffusionMode
-                  , pure InitiatorAndResponderDiffusionMode
-                  ]
-        <*> elements [ PeerSharingDisabled
-                     , PeerSharingEnabled
-                     ]
-        <*> arbitrary
-
-newtype NtNVersionDataV14ToLast = NtNVersionDataV14ToLast (NodeToNodeVersion, NodeToNodeVersionData)
+newtype NtNVersionDataV14ToV15 = NtNVersionDataV14ToV15 (NodeToNodeVersion, NodeToNodeVersionData)
   deriving Show
 
-instance Arbitrary NtNVersionDataV14ToLast where
+instance Arbitrary NtNVersionDataV14ToV15 where
   arbitrary = do
-    NtNVersionV14ToLast ntnVersion <- arbitrary
-    ntnVersionData <- arbitrary
-    return (NtNVersionDataV14ToLast (ntnVersion, ntnVersionData))
+    ntnVersion <- elements [NodeToNodeV_14 .. NodeToNodeV_15]
+    ntnVersionData <- genValidNtnVersionDataForVersion ntnVersion
+    return (NtNVersionDataV14ToV15 (ntnVersion, ntnVersionData))
 
-prop_encodeNodeToNodeVersionDataV14ToLast
+prop_encodeNodeToNodeVersionDataV14ToV15
     :: CDDLSpec NodeToNodeVersionData
-    -> NtNVersionDataV14ToLast
+    -> NtNVersionDataV14ToV15
     -> Property
-prop_encodeNodeToNodeVersionDataV14ToLast spec (NtNVersionDataV14ToLast (v, a)) =
+prop_encodeNodeToNodeVersionDataV14ToV15 spec (NtNVersionDataV14ToV15 (v, a)) =
+  validateCBORTermEncoder spec (nodeToNodeCodecCBORTerm v) a
+
+newtype NtNVersionDataV16ToLast = NtNVersionDataV16ToLast (NodeToNodeVersion, NodeToNodeVersionData)
+  deriving Show
+
+instance Arbitrary NtNVersionDataV16ToLast where
+  arbitrary = do
+    ntnVersion <- elements [NodeToNodeV_16 ..]
+    ntnVersionData <- genValidNtnVersionDataForVersion ntnVersion
+    return (NtNVersionDataV16ToLast (ntnVersion, ntnVersionData))
+
+prop_encodeNodeToNodeVersionDataV16ToLast
+    :: CDDLSpec NodeToNodeVersionData
+    -> NtNVersionDataV16ToLast
+    -> Property
+prop_encodeNodeToNodeVersionDataV16ToLast spec (NtNVersionDataV16ToLast (v, a)) =
   validateCBORTermEncoder spec (nodeToNodeCodecCBORTerm v) a
 
 --
@@ -864,13 +884,28 @@ unit_decodeTxSubmission2
     :: CDDLSpec (TxSubmission2 TxId Tx)
     -> Assertion
 unit_decodeTxSubmission2 spec =
-    validateDecoder (Just txSubmissionFix)
+    validateDecoder (Just indefiniteListFix)
       spec txSubmissionCodec2
       [ SomeAgency TxSubmission2.SingInit
       , SomeAgency $ TxSubmission2.SingTxIds TxSubmission2.SingBlocking
       , SomeAgency $ TxSubmission2.SingTxIds TxSubmission2.SingNonBlocking
       , SomeAgency   TxSubmission2.SingTxs
       , SomeAgency   TxSubmission2.SingIdle
+      ]
+      100
+
+
+unit_decodeObjectDiffusion
+    :: CDDLSpec (ObjectDiffusion ObjectId Object)
+    -> Assertion
+unit_decodeObjectDiffusion spec =
+    validateDecoder (Just indefiniteListFix)
+      spec objectDiffusionCodec
+      [ SomeAgency   ObjectDiffusion.SingInit
+      , SomeAgency $ ObjectDiffusion.SingObjectIds ObjectDiffusion.SingBlocking
+      , SomeAgency $ ObjectDiffusion.SingObjectIds ObjectDiffusion.SingNonBlocking
+      , SomeAgency   ObjectDiffusion.SingObjects
+      , SomeAgency   ObjectDiffusion.SingIdle
       ]
       100
 
@@ -947,11 +982,18 @@ unit_decodePeerSharingV14ToLast spec =
       ]
       100
 
-unit_decodeNodeToNodeVersionDataV14ToLast
+unit_decodeNodeToNodeVersionDataV14ToV15
     :: CDDLSpec NodeToNodeVersionData
     -> Assertion
-unit_decodeNodeToNodeVersionDataV14ToLast spec =
-    forM_ [NodeToNodeV_14 ..] $ \v ->
+unit_decodeNodeToNodeVersionDataV14ToV15 spec =
+    forM_ [NodeToNodeV_14 .. NodeToNodeV_15] $ \v ->
+    validateCBORTermDecoder Nothing spec (nodeToNodeCodecCBORTerm v) 100
+
+unit_decodeNodeToNodeVersionDataV16ToLast
+    :: CDDLSpec NodeToNodeVersionData
+    -> Assertion
+unit_decodeNodeToNodeVersionDataV16ToLast spec =
+    forM_ [NodeToNodeV_16 ..] $ \v ->
     validateCBORTermDecoder Nothing spec (nodeToNodeCodecCBORTerm v) 100
 
 --
@@ -975,12 +1017,12 @@ withTemporaryFile bs k =
 
 
 -- | The cddl spec cannot differentiate between fix-length list encoding and
--- infinite-length encoding.  The cddl tool always generates fix-length
--- encoding but tx-submission codec is accepting only infinite-length
--- encoding.
+-- infinite-length encoding. The cddl tool always generates fix-length
+-- encoding but tx-submission and object-diffusion codecs are accepting only
+-- indefinite-length encoding.
 --
-txSubmissionFix :: CBOR.Term -> CBOR.Term
-txSubmissionFix term =
+indefiniteListFix :: CBOR.Term -> CBOR.Term
+indefiniteListFix term =
     case term of
       TList [TInt tag, TList l] -> TList [TInt tag, TListI l]
       _                         -> term
