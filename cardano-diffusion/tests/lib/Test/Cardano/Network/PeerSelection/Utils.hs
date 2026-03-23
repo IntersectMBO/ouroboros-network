@@ -82,6 +82,15 @@ selectEnvTargets f =
   . selectEnvEvents
 
 
+selectForgottenPeers :: Events (TestTraceEvent extraState extraFlags extraPeers)
+                     -> Signal (Set PeerAddr)
+selectForgottenPeers =
+    Signal.fromChangeEvents Set.empty
+  . Signal.selectEvents
+      (\case GovernorEvent (TraceForgottenPeers peers) -> Just $! peers
+             _                                         -> Nothing
+      )
+
 -- | filter big ledger peers
 --
 takeBigLedgerPeers

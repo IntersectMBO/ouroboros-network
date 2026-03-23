@@ -801,6 +801,7 @@ tracerTracePeerSelection = contramap f tracerTestTraceEvent
     f a@(TraceDemoteAsynchronous !_)                               = GovernorEvent a
     f a@(TraceDemoteLocalAsynchronous !_)                          = GovernorEvent a
     f a@(TraceDemoteBigLedgerPeersAsynchronous !_)                 = GovernorEvent a
+    f a@(TraceForgottenPeers !_)                                   = GovernorEvent a
     f a@TraceGovernorWakeup                                        = GovernorEvent a
     f a@(TraceChurnWait !_)                                        = GovernorEvent a
     f a@(ExtraTrace

@@ -1133,6 +1133,10 @@ instance ( ToJSON extraDebugState
     object [ "kind" .= String "DemoteBigLedgerPeersAsynchronous"
            , "state" .= msp
            ]
+  toJSON (TraceForgottenPeers peers) =
+    object [ "kind" .= String "ForgottenPeers"
+           , "peers" .= peers
+           ]
   toJSON TraceGovernorWakeup =
     object [ "kind" .= String "GovernorWakeup"
            ]

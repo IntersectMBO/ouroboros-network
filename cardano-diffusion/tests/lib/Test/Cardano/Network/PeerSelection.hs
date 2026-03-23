@@ -4,6 +4,8 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+-- OverloadedStrings is useful when copy pasting counterexamples
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -970,6 +972,7 @@ traceNum TraceDebugState {}                                   = 53
 traceNum TraceChurnAction {}                                  = 54
 traceNum TraceChurnTimeout {}                                 = 55
 traceNum TraceVerifyPeerSnapshot {}                           = 56
+traceNum TraceForgottenPeers {}                               = 57
 
 allTraceNames :: Map Int String
 allTraceNames =
@@ -1031,6 +1034,7 @@ allTraceNames =
    , (54, "TraceChurnAction")
    , (55, "TraceChurnTimeout")
    , (56, "TraceVerifyPeerSnapshot")
+   , (57, "TraceForgottenPeers")
    ]
 
 
@@ -2129,7 +2133,7 @@ prop_governor_target_known_4_results_used (MaxTime maxTime) env =
 
 
 -- | The governor should not shrink its known peer set except when it is above
--- the target size.
+-- the target size or the peer failed too many times.
 --
 -- We derive a number of signals:
 --
@@ -2149,13 +2153,19 @@ prop_governor_target_known_4_results_used (MaxTime maxTime) env =
 --
 prop_governor_target_known_5_no_shrink_below :: MaxTime -> GovernorMockEnvironment -> Property
 prop_governor_target_known_5_no_shrink_below (MaxTime maxTime) env =
-    let events = Signal.eventsFromListUpToTime maxTime
+    let events :: Events (TestTraceEvent ExtraState PeerTrustable (Cardano.ExtraPeers PeerAddr))
+        events = Signal.eventsFromListUpToTime maxTime
                . selectPeerSelectionTraceEvents
                    @Cardano.ExtraState
                    @PeerTrustable
                    @(Cardano.ExtraPeers PeerAddr)
                . runGovernorInMockEnvironment
                $ env
+
+        -- | Forgotten peers due to too many failures.
+        --
+        forgottenPeers :: Signal (Set PeerAddr)
+        forgottenPeers = selectForgottenPeers events
 
         govTargetsSig :: Signal Int
         govTargetsSig =
@@ -2196,16 +2206,20 @@ prop_governor_target_known_5_no_shrink_below (MaxTime maxTime) env =
           . Signal.difference
               -- We subtract all big ledger peers.  This is because we might
               -- first satisfy the target of known peers, and then learn that
-              -- one of them was a big ledger peers. We also subtract
-              -- bootstrap peers. This would be a fake shrink of known non
-              -- big ledger peers.
+              -- one of them was a big ledger peer. We also subtract
+              -- bootstrap peers. This would be a fake shrink of known non big
+              -- ledger peers.
               --
               -- By subtracting a sum of `y` and `y'` we also do not account
               -- forgetting big ledger peers.
-              (\(x,y,z) (x',y',z') -> x Set.\\ x' Set.\\ y Set.\\ y' Set.\\ z Set.\\ z')
-          $ (,,) <$> govKnownPeersSig
-                 <*> bigLedgerPeersSig
-                 <*> bootstrapPeersSig
+              --
+              -- Subtract `forgottenPeers`: peer selection can go below the
+              -- target, but only if a peer fails too many times.
+              (\(x,y,z,f) (x',y',z',f') -> x Set.\\ x' Set.\\ y Set.\\ y' Set.\\ z Set.\\ z' Set.\\ f Set.\\ f')
+          $ (,,,) <$> govKnownPeersSig
+                  <*> bigLedgerPeersSig
+                  <*> bootstrapPeersSig
+                  <*> forgottenPeers
 
         unexpectedShrink :: Signal Bool
         unexpectedShrink =
@@ -2223,15 +2237,16 @@ prop_governor_target_known_5_no_shrink_below (MaxTime maxTime) env =
             <*> govKnownPeersSig
             <*> knownPeersShrinksSig
 
-     in counterexample
-          "\nSignal key: (target, known peers, shrinks, unexpected)" $
-
+     in counterexample (Signal.ppEvents events) $
+        counterexample
+          "Signal key: (target, known peers, shrinks, unexpected)" $
         signalProperty 20 show
-          (\(_,_,_,unexpected) -> not unexpected)
-          ((,,,) <$> govTargetsSig
-                 <*> govKnownPeersSig
-                 <*> knownPeersShrinksSig
-                 <*> unexpectedShrink)
+          (\(_,_,_,_,unexpected) -> not unexpected)
+          ((,,,,) <$> govTargetsSig
+                  <*> govKnownPeersSig
+                  <*> knownPeersShrinksSig
+                  <*> forgottenPeers
+                  <*> unexpectedShrink)
 
 -- | Like 'prop_governor_target_known_5_no_shrink_below' but for big ledger
 -- peers.
