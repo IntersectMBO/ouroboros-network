@@ -24,6 +24,7 @@ module Main (main) where
 import Control.Concurrent.Class.MonadSTM qualified as LazySTM
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (IOException)
+import Control.Monad
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadSay
@@ -188,6 +189,7 @@ withBidirectionalConnectionManager
        , MonadLabelledSTM m
        , MonadTraceSTM m
        , MonadSay m
+       , MonadPlus (STM m)
        )
     => Snocket m socket peerAddr
     -> Mux.MakeBearer m socket
@@ -314,7 +316,8 @@ withBidirectionalConnectionManager snocket makeBearer socket
                 miniProtocolRun =
                   reqRespInitiatorAndResponder
                     miniProtocolNum
-                    hotRequestsVar
+                    hotRequestsVar,
+                miniProtocolWeight = 1
                }
           ],
         withWarm = WithWarm
@@ -326,7 +329,8 @@ withBidirectionalConnectionManager snocket makeBearer socket
                 miniProtocolRun =
                   reqRespInitiatorAndResponder
                     miniProtocolNum
-                    warmRequestsVar
+                    warmRequestsVar,
+                miniProtocolWeight = 1
               }
           ],
         withEstablished = WithEstablished
@@ -338,7 +342,8 @@ withBidirectionalConnectionManager snocket makeBearer socket
                 miniProtocolRun =
                   reqRespInitiatorAndResponder
                     (Mux.MiniProtocolNum 3)
-                    establishedRequestsVar
+                    establishedRequestsVar,
+                miniProtocolWeight = 1
               }
           ]
       }

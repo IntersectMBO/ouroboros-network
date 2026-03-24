@@ -86,7 +86,8 @@ testProtocols1 chainSync =
                                maximumIngressQueue = defaultMiniProtocolLimit,
                                burst = Nothing
                              },
-        miniProtocolRun    = chainSync
+        miniProtocolRun    = chainSync,
+        miniProtocolWeight = 1
       }
     ]
 

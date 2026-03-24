@@ -36,10 +36,10 @@ module Ouroboros.Network.Diffusion.P2P
   ) where
 
 
-import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadMVar (MonadMVar)
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (IOException)
+import Control.Monad (MonadPlus)
 import Control.Monad.Class.MonadAsync (Async, MonadAsync)
 import Control.Monad.Class.MonadAsync qualified as Async
 import Control.Monad.Class.MonadFork
@@ -620,8 +620,7 @@ runM
                 extraState extraDebugState extraPeers
                 extraAPI extraFlags extraChurnArgs extraCounters .
 
-       ( Alternative (STM m)
-       , MonadAsync       m
+       ( MonadAsync       m
        , MonadDelay       m
        , MonadEvaluate    m
        , MonadFix         m
@@ -633,6 +632,7 @@ runM
        , MonadTime        m
        , MonadTimer       m
        , MonadMVar        m
+       , MonadPlus (STM m)
        , Typeable  ntnAddr
        , Ord       ntnAddr
        , Show      ntnAddr
@@ -822,7 +822,7 @@ runM Interfaces
       --
       -- The `ouroboros-network` guarantees running on a fixed number of file
       -- descriptors given a topology file, see
-      -- https://github.com/IntersectMBO/ouroboros-network/issues/4585#issuecomment-1591777447 
+      -- https://github.com/IntersectMBO/ouroboros-network/issues/4585#issuecomment-1591777447
       -- There's also a calculation for `ouroboros-consensus`, see
       -- https://github.com/IntersectMBO/ouroboros-consensus/issues/20#issuecomment-1514554680
       -- File descriptors could be drained by the tracing system in

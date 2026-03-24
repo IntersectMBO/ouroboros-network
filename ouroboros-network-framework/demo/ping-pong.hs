@@ -110,7 +110,8 @@ demoProtocol0 pingPong =
         miniProtocolNum    = MiniProtocolNum 2,
         miniProtocolStart  = StartOnDemand,
         miniProtocolLimits = maximumMiniProtocolLimits,
-        miniProtocolRun    = pingPong
+        miniProtocolRun    = pingPong,
+        miniProtocolWeight = 1
       }
     ]
 
@@ -202,13 +203,15 @@ demoProtocol1 pingPong pingPong' =
         miniProtocolNum    = MiniProtocolNum 2,
         miniProtocolStart  = StartOnDemand,
         miniProtocolLimits = maximumMiniProtocolLimits,
-        miniProtocolRun    = pingPong
+        miniProtocolRun    = pingPong,
+        miniProtocolWeight = 1
       }
     , MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 3,
         miniProtocolStart  = StartOnDemandAny,
         miniProtocolLimits = maximumMiniProtocolLimits,
-        miniProtocolRun    = pingPong'
+        miniProtocolRun    = pingPong',
+        miniProtocolWeight = 1
       }
     ]
 

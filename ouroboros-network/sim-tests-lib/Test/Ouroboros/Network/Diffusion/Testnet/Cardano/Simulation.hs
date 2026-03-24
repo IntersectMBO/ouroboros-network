@@ -32,10 +32,9 @@ module Test.Ouroboros.Network.Diffusion.Testnet.Cardano.Simulation
   , module PeerSelection
   ) where
 
-import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadMVar (MonadMVar)
 import Control.Concurrent.Class.MonadSTM.Strict
-import Control.Monad (forM, when)
+import Control.Monad (MonadPlus, forM, when)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadSay
@@ -950,8 +949,7 @@ iosimTracer = Tracer traceM <> sayTracer
 
 -- | Run an arbitrary topology
 diffusionSimulation
-  :: forall m. ( Alternative (STM m)
-               , MonadAsync       m
+  :: forall m. ( MonadAsync       m
                , MonadDelay       m
                , MonadFix         m
                , MonadFork        m
@@ -965,6 +963,7 @@ diffusionSimulation
                , MonadTimer       m
                , MonadThrow  (STM m)
                , MonadMVar        m
+               , MonadPlus   (STM m)
                , forall a. Semigroup a => Semigroup (m a)
                )
   => BearerInfo

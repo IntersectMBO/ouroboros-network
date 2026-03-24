@@ -280,14 +280,16 @@ applications debugTracer nodeKernel
           -> MiniProtocolWithExpandedCtx Mx.InitiatorMode          NtNAddr ByteString m () Void
         f MiniProtocol { miniProtocolNum
                        , miniProtocolLimits
-                       , miniProtocolRun } =
+                       , miniProtocolRun
+                       , miniProtocolWeight } =
           MiniProtocol { miniProtocolNum
                        , miniProtocolStart = StartEagerly
                        , miniProtocolLimits
                        , miniProtocolRun =
                           case miniProtocolRun of
                             InitiatorAndResponderProtocol initiator _respnder ->
-                              InitiatorProtocolOnly initiator
+                              InitiatorProtocolOnly initiator,
+                         miniProtocolWeight
                        }
 
     initiatorAndResponderApp
@@ -302,7 +304,8 @@ applications debugTracer nodeKernel
               , miniProtocolRun    =
                   InitiatorAndResponderProtocol
                     chainSyncInitiator
-                    chainSyncResponder
+                    chainSyncResponder,
+                miniProtocolWeight = 1
               }
           , MiniProtocol
               { miniProtocolNum    = blockFetchMiniProtocolNum
@@ -311,7 +314,8 @@ applications debugTracer nodeKernel
               , miniProtocolRun    =
                   InitiatorAndResponderProtocol
                     blockFetchInitiator
-                    blockFetchResponder
+                    blockFetchResponder,
+                miniProtocolWeight = 1
               }
           ]
       , withWarm = WithWarm
@@ -322,7 +326,8 @@ applications debugTracer nodeKernel
               , miniProtocolRun    =
                   InitiatorAndResponderProtocol
                     pingPongInitiator
-                    pingPongResponder
+                    pingPongResponder,
+                miniProtocolWeight = 1
               }
           ]
       , withEstablished = WithEstablished $
@@ -333,7 +338,8 @@ applications debugTracer nodeKernel
               , miniProtocolRun    =
                   InitiatorAndResponderProtocol
                     keepAliveInitiator
-                    keepAliveResponder
+                    keepAliveResponder,
+                miniProtocolWeight = 1
               }
           : case peerSharing of
               PSTypes.PeerSharingEnabled ->
@@ -344,7 +350,8 @@ applications debugTracer nodeKernel
                     , miniProtocolRun    =
                         InitiatorAndResponderProtocol
                           peerSharingInitiator
-                          (peerSharingResponder (nkPeerSharingAPI nodeKernel))
+                          (peerSharingResponder (nkPeerSharingAPI nodeKernel)),
+                      miniProtocolWeight = 1
                     }
                 ]
               PSTypes.PeerSharingDisabled ->

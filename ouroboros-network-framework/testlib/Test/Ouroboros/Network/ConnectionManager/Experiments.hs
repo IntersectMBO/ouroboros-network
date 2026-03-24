@@ -35,7 +35,7 @@ module Test.Ouroboros.Network.ConnectionManager.Experiments
 import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (AssertionFailed)
-import Control.Monad (replicateM, (>=>))
+import Control.Monad (MonadPlus, replicateM, (>=>))
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadSay
@@ -246,6 +246,7 @@ withInitiatorOnlyConnectionManager
        , MonadLabelledSTM m
        , MonadTraceSTM m
        , MonadSay m, Show req
+       , MonadPlus (STM m)
        , Show name
        )
     => name
@@ -340,7 +341,8 @@ withInitiatorOnlyConnectionManager name timeouts trTracer tracer stdGen snocket 
                   miniProtocolStart  = StartOnDemand,
                   miniProtocolLimits = Mx.MiniProtocolLimits maxBound Nothing,
                   miniProtocolRun = reqRespInitiator miniProtocolNum
-                                                     nextRequest
+                                                     nextRequest,
+                  miniProtocolWeight = 1
                 }]
 
     reqRespInitiator :: Mx.MiniProtocolNum
@@ -419,6 +421,7 @@ withBidirectionalConnectionManager
        , MonadLabelledSTM m
        , MonadTraceSTM m
        , MonadSay m, Show req
+       , MonadPlus (STM m)
        , Show name
        )
     => name
@@ -560,7 +563,8 @@ withBidirectionalConnectionManager name timeouts
                   miniProtocolRun = reqRespInitiatorAndResponder
                                         miniProtocolNum
                                         accumulatorInit
-                                        nextRequest
+                                        nextRequest,
+                  miniProtocolWeight = 1
               }]
 
     reqRespInitiatorAndResponder
@@ -715,7 +719,7 @@ unidirectionalExperiment
        , MonadLabelledSTM m
        , MonadTraceSTM m
        , MonadSay m
-
+       , MonadPlus (STM m)
        , acc ~ [req], resp ~ [req]
        , Ord peerAddr, Show peerAddr, Typeable peerAddr, Eq peerAddr
        , Hashable peerAddr
@@ -793,7 +797,7 @@ bidirectionalExperiment
        , MonadLabelledSTM m
        , MonadTraceSTM m
        , MonadSay m
-
+       , MonadPlus (STM m)
        , acc ~ [req], resp ~ [req]
        , Ord peerAddr, Show peerAddr, Typeable peerAddr, Eq peerAddr
        , Hashable peerAddr
