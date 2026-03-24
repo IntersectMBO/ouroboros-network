@@ -149,8 +149,12 @@ data MiniProtocolInfo (mode :: Mode) =
        -- ^ Mini-protocol direction.
        miniProtocolLimits     :: !MiniProtocolLimits,
        -- ^ ingress queue limits for the protocol
-       miniProtocolCapability :: !(Maybe Int)
+       miniProtocolCapability :: !(Maybe Int),
        -- ^ capability on which the mini-protocol should run
+       miniProtocolWeight     :: !Word8
+       -- ^ Protocols with the same weight will share
+       -- an egress queue of that value which biases
+       -- the muxer relative to other protocols
      }
 
 data MiniProtocolDirection (mode :: Mode) where
