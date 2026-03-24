@@ -57,8 +57,9 @@ import Data.Int (Int64)
 import Data.IntMap.Strict qualified as IntMap
 import Data.Map (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromMaybe, isNothing)
-import Data.Monoid.Synchronisation (FirstToFinish (..))
+import Data.Maybe (fromMaybe)
+import Data.Monoid.Synchronisation (FirstToFinish (..), LastToFinish (..))
+import Data.Word (Word8)
 
 import Control.Applicative
 import Control.Concurrent.Class.MonadSTM.Strict
@@ -212,10 +213,10 @@ run :: forall m (mode :: Mode).
        , MonadDelay m
        , MonadFork m
        , MonadLabelledSTM m
-       , Alternative (STM m)
        , MonadThrow (STM m)
        , MonadTimer m
        , MonadMask m
+       , MonadPlus (STM m)
        )
     => Tracer m Trace
     -> Mux mode m
@@ -227,16 +228,25 @@ run tracer
           muxStatus
         }
     bearer@Bearer{name} = do
-    egressQueue <- atomically $ newTBQueue 100
+    let step mMap MiniProtocolState { miniProtocolInfo } = do
+          let weight = miniProtocolWeight miniProtocolInfo
+          Map.alterF (\case
+                        Nothing -> do
+                          q <- newTBQueue 100
+                          labelTBQueue q (name ++ "-mux-egress-" ++ show weight)
+                          pure $ Just q
+                        pass    -> pure pass)
+                     weight
+                     =<< mMap
+    egressQueues <- atomically $ Map.foldl step (pure Map.empty) muxMiniProtocols
 
     -- label shared variables
-    labelTBQueueIO egressQueue (name ++ "-mux-egress")
     labelTVarIO muxStatus (name ++ "-mux-status")
     labelTQueueIO muxControlCmdQueue (name ++ "-mux-ctrl")
 
     JobPool.withJobPool
       (\jobpool -> do
-        JobPool.forkJob jobpool (muxerJob egressQueue)
+        JobPool.forkJob jobpool (muxerJob (Map.assocs egressQueues))
         JobPool.forkJob jobpool demuxerJob
         traceWith tracer (TraceState Mature)
 
@@ -246,7 +256,7 @@ run tracer
           monitor tracer
                   timeout
                   jobpool
-                  egressQueue
+                  egressQueues
                   muxControlCmdQueue
                   muxStatus
       )
@@ -257,8 +267,8 @@ run tracer
       atomically $ writeTVar muxStatus (Failed $ toException e)
       throwIO e
   where
-    muxerJob egressQueue =
-      JobPool.Job (muxer egressQueue bearer)
+    muxerJob egressQueues =
+      JobPool.Job (muxer egressQueues bearer)
                   (return . MuxerException)
                   MuxJob
                   (name ++ "-muxer")
@@ -397,17 +407,17 @@ data MonitorCtx m mode = MonitorCtx {
 monitor :: forall mode m.
            ( MonadAsync m
            , MonadMask m
-           , Alternative (STM m)
            , MonadThrow (STM m)
+           , MonadPlus (STM m)
            )
         => Tracer m Trace
         -> TimeoutFn m
         -> JobPool.JobPool Group m JobResult
-        -> EgressQueue m
+        -> Map Word8 (EgressQueue m)
         -> StrictTQueue m (ControlCmd mode m)
         -> StrictTVar m Status
         -> m ()
-monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
+monitor tracer timeout jobpool egressQueues cmdQueue muxStatus =
     go (MonitorCtx Map.empty Map.empty)
   where
     go :: MonitorCtx m mode -> m ()
@@ -478,7 +488,8 @@ monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
                              miniProtocolInfo = MiniProtocolInfo {
                                miniProtocolNum,
                                miniProtocolDir,
-                               miniProtocolCapability
+                               miniProtocolCapability,
+                               miniProtocolWeight
                              }
                            }
                            ptclAction) -> do
@@ -489,14 +500,14 @@ monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
               JobPool.forkJob jobpool $
                 miniProtocolJob
                   tracer
-                  egressQueue
+                  (egressQueues Map.! miniProtocolWeight)
                   ptclState
                   ptclAction
             Just cap ->
               JobPool.forkJobOn cap jobpool $
                 miniProtocolJob
                   tracer
-                  egressQueue
+                  (egressQueues Map.! miniProtocolWeight)
                   ptclState
                   ptclAction
           go monitorCtx
@@ -542,10 +553,9 @@ monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
           atomically $ writeTVar muxStatus Stopping
           JobPool.cancelGroup jobpool MiniProtocolJob
           -- wait for 2 seconds before the egress queue is drained
-          _ <- timeout 2 $
-            atomically $
-                  tryPeekTBQueue egressQueue
-              >>= check . isNothing
+          _ <- timeout 2 . atomically $
+            let qs = map isEmptyTBQueue (Map.elems egressQueues)
+             in runLastToFinish $ foldl1 (<>) (LastToFinish <$> qs)
           atomically $ writeTVar muxStatus Stopped
           traceWith tracer TraceStopped
           -- by exiting the 'monitor' loop we let the job pool kill demuxer and
@@ -583,7 +593,8 @@ monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
                       miniProtocolInfo = MiniProtocolInfo {
                            miniProtocolNum,
                            miniProtocolDir,
-                           miniProtocolCapability
+                           miniProtocolCapability,
+                           miniProtocolWeight
                       },
                       miniProtocolStatusVar
                     }
@@ -596,14 +607,14 @@ monitor tracer timeout jobpool egressQueue cmdQueue muxStatus =
           JobPool.forkJob jobpool $
             miniProtocolJob
               tracer
-              egressQueue
+              (egressQueues Map.! miniProtocolWeight)
               ptclState
               ptclAction
         Just cap ->
           JobPool.forkJobOn cap jobpool $
             miniProtocolJob
               tracer
-              egressQueue
+              (egressQueues Map.! miniProtocolWeight)
               ptclState
               ptclAction
 
