@@ -73,7 +73,7 @@ makeSocketBearer' pt = MakeBearer $ (\sduTimeout tr fd rb -> do
   where
     opt = Socket.SockOpt 6 25   -- IPPROTO_TCP and TCP_NOTSENT_LOWAT from my system's linux .h files
     size = SDUSize 12_288
-    batch = 131_072
+    batch = 20_000
 
 withReadBufferIO :: (Maybe (ReadBuffer IO) -> IO b)
                  -> IO b
