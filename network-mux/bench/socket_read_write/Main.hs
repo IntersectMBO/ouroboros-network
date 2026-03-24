@@ -144,7 +144,7 @@ mkMiniProtocolState num = do
   mpv    <- newTVarIO StatusRunning
 
   let mpi = MiniProtocolInfo (MiniProtocolNum num) InitiatorDirectionOnly
-                             (MiniProtocolLimits maxBound Nothing) Nothing
+                             (MiniProtocolLimits maxBound Nothing) Nothing 1
   return $ MiniProtocolState mpi mpq mpv
 
 -- | Run a server that accept connections on `ad`.
@@ -208,7 +208,8 @@ startServerEgresss pollInterval sndSizeV ad = forever $ do
     withReadBufferIO (\buffer -> do
       bearer <- getBearer (makeSocketBearer' pollInterval) sduTimeout sd buffer
       sndSize <- atomically $ takeTMVar sndSizeV
-      eq <- atomically $ newTBQueue 100
+      eq' <- atomically $ newTBQueue 100
+      let eq = [(1, eq')]
       w42 <- newTVarIO BL.empty
       w41 <- newTVarIO BL.empty
 
@@ -222,13 +223,13 @@ startServerEgresss pollInterval sndSizeV ad = forever $ do
         replicateM_ numberOfCalls $ do
           let payload42s = replicate 10 $ BL.replicate sndSize 42
           let payload41s = replicate 10 $ BL.replicate 10 41
-          mapM_ (sendToMux w42 eq (MiniProtocolNum 42) ResponderDir) payload42s
-          mapM_ (sendToMux w41 eq (MiniProtocolNum 41) ResponderDir) payload41s
+          mapM_ (sendToMux w42 eq' (MiniProtocolNum 42) ResponderDir) payload42s
+          mapM_ (sendToMux w41 eq' (MiniProtocolNum 41) ResponderDir) payload41s
         when (runtSdus > 0) $ do
           let payload42s = replicate runtSdus $ BL.replicate sndSize 42
           let payload41s = replicate runtSdus $ BL.replicate 10 41
-          mapM_ (sendToMux w42 eq (MiniProtocolNum 42) ResponderDir) payload42s
-          mapM_ (sendToMux w41 eq (MiniProtocolNum 41) ResponderDir) payload41s
+          mapM_ (sendToMux w42 eq' (MiniProtocolNum 42) ResponderDir) payload42s
+          mapM_ (sendToMux w41 eq' (MiniProtocolNum 41) ResponderDir) payload41s
 
         -- Wait for the egress queue to empty
         atomically $ do

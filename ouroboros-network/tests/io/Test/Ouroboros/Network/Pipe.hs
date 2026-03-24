@@ -98,7 +98,8 @@ demoProtocols chainSync =
                                maximumIngressQueue = defaultMiniProtocolLimit,
                                burst = Nothing
                              },
-        miniProtocolRun    = chainSync
+        miniProtocolRun    = chainSync,
+        miniProtocolWeight = 1
       }
     ]
 

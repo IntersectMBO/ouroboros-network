@@ -29,7 +29,7 @@ import Control.Concurrent.Class.MonadSTM qualified as LazySTM
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.DeepSeq (NFData)
 import Control.Exception (SomeAsyncException (..), SomeException (..))
-import Control.Monad (replicateM)
+import Control.Monad (MonadPlus, replicateM)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadSay
@@ -628,6 +628,7 @@ multinodeExperiment
        , MonadLabelledSTM m
        , MonadTraceSTM m
        , MonadSay m
+       , MonadPlus (STM m)
        , acc ~ [req], resp ~ [req]
        , Ord peerAddr
        , PrettyShow peerAddr
@@ -2300,7 +2301,7 @@ prop_server_accept_error (Fixed rnd) (AbsIOError ioerr) =
 
 
 
-multiNodeSimTracer :: ( Alternative (STM m), Monad m, MonadFix m
+multiNodeSimTracer :: ( Monad m, MonadFix m, MonadPlus (STM m)
                       , MonadDelay m, MonadTimer m, MonadLabelledSTM m
                       , MonadTraceSTM m, MonadMask m, MonadTime m
                       , MonadThrow (STM m), MonadSay m, MonadAsync m

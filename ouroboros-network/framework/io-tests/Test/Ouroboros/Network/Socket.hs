@@ -121,7 +121,8 @@ testProtocols2 reqResp =
                                maximumIngressQueue = defaultMiniProtocolLimit,
                                burst = Nothing
                              },
-        miniProtocolRun    = reqResp
+        miniProtocolRun    = reqResp,
+        miniProtocolWeight = 1
       }
     ]
 
