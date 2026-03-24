@@ -10,11 +10,10 @@
 module Test.Ouroboros.Network.Mux (tests) where
 
 import Codec.Serialise (Serialise (..))
-import Data.Functor (void)
 import Data.Monoid.Synchronisation (FirstToFinish (..))
 
-import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadSay
@@ -78,14 +77,14 @@ testProtocols chainSync =
                                maximumIngressQueue = 0xffff,
                                burst = Nothing
                              },
-        miniProtocolRun    = chainSync
+        miniProtocolRun    = chainSync,
+        miniProtocolWeight = 1
       }
     ]
 
 
 demo :: forall m block.
-        ( Alternative (STM m)
-        , MonadAsync m
+        ( MonadAsync m
         , MonadDelay m
         , MonadCatch m
         , MonadEvaluate m
@@ -98,6 +97,7 @@ demo :: forall m block.
         , MonadThrow (STM m)
         , MonadTime m
         , MonadTimer m
+        , MonadPlus (STM m)
         , Chain.HasHeader block
         , Serialise (Chain.HeaderHash block)
         , Serialise block

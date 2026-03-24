@@ -52,8 +52,8 @@ module Cardano.Network.NodeToClient
   , Handshake
   ) where
 
-import Control.Exception (SomeException)
 import Control.DeepSeq (NFData)
+import Control.Exception (SomeException)
 import Control.Monad (forever)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadTimer.SI
@@ -149,25 +149,29 @@ nodeToClientProtocols protocols _version _versionData =
         miniProtocolNum    = MiniProtocolNum 5,
         miniProtocolStart  = StartOnDemand,
         miniProtocolLimits = maximumMiniProtocolLimits,
-        miniProtocolRun    = localChainSyncProtocol
+        miniProtocolRun    = localChainSyncProtocol,
+        miniProtocolWeight = 1
       }
     localTxSubmissionMiniProtocol localTxSubmissionProtocol = MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 6,
         miniProtocolStart  = StartOnDemand,
         miniProtocolLimits = maximumMiniProtocolLimits,
-        miniProtocolRun    = localTxSubmissionProtocol
+        miniProtocolRun    = localTxSubmissionProtocol,
+        miniProtocolWeight = 1
       }
     localStateQueryMiniProtocol localStateQueryProtocol = MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 7,
         miniProtocolStart  = StartOnDemand,
         miniProtocolLimits = maximumMiniProtocolLimits,
-        miniProtocolRun    = localStateQueryProtocol
+        miniProtocolRun    = localStateQueryProtocol,
+        miniProtocolWeight = 1
       }
     localTxMonitorMiniProtocol localTxMonitorProtocol = MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 9,
         miniProtocolStart  = StartOnDemand,
         miniProtocolLimits = maximumMiniProtocolLimits,
-        miniProtocolRun    = localTxMonitorProtocol
+        miniProtocolRun    = localTxMonitorProtocol,
+        miniProtocolWeight = 1
     }
 
 maximumMiniProtocolLimits :: MiniProtocolLimits

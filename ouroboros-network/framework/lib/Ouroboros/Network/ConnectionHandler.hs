@@ -42,10 +42,10 @@ module Ouroboros.Network.ConnectionHandler
   , ConnectionHandlerTrace (..)
   ) where
 
-import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.DeepSeq (NFData)
 import Control.Exception (SomeAsyncException)
+import Control.Monad (MonadPlus)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow hiding (handle)
@@ -242,8 +242,7 @@ type ConnectionManagerWithExpandedCtx muxMode socket peerAddr extraFlags version
 --
 makeConnectionHandler
     :: forall initiatorCtx responderCtx peerAddr muxMode socket versionNumber versionData m a b.
-       ( Alternative (STM m)
-       , MonadAsync    m
+       ( MonadAsync    m
        , MonadDelay    m
        , MonadEvaluate m
        , MonadFork     m
@@ -251,6 +250,7 @@ makeConnectionHandler
        , MonadThrow (STM m)
        , MonadTimer    m
        , MonadMask     m
+       , MonadPlus (STM m)
        , NFData   versionData
        , NFData   versionNumber
        , Ord      versionNumber
