@@ -264,19 +264,22 @@ nodeToNodeProtocols miniProtocolParameters protocols
                 miniProtocolNum    = chainSyncMiniProtocolNum,
                 miniProtocolStart  = StartOnDemand,
                 miniProtocolLimits = chainSyncProtocolLimits miniProtocolParameters,
-                miniProtocolRun    = chainSyncProtocol
+                miniProtocolRun    = chainSyncProtocol,
+                miniProtocolWeight = 1
               }
             , MiniProtocol {
                 miniProtocolNum    = blockFetchMiniProtocolNum,
                 miniProtocolStart  = StartOnDemand,
                 miniProtocolLimits = blockFetchProtocolLimits miniProtocolParameters,
-                miniProtocolRun    = blockFetchProtocol
+                miniProtocolRun    = blockFetchProtocol,
+                miniProtocolWeight = 1
               }
             , MiniProtocol {
                 miniProtocolNum    = txSubmissionMiniProtocolNum,
                 miniProtocolStart  = StartOnDemand,
                 miniProtocolLimits = txSubmissionProtocolLimits miniProtocolParameters,
-                miniProtocolRun    = txSubmissionProtocol
+                miniProtocolRun    = txSubmissionProtocol,
+                miniProtocolWeight = 1
               }
             ])
 
@@ -292,7 +295,8 @@ nodeToNodeProtocols miniProtocolParameters protocols
                 miniProtocolNum    = keepAliveMiniProtocolNum,
                 miniProtocolStart  = StartOnDemandAny,
                 miniProtocolLimits = keepAliveProtocolLimits miniProtocolParameters,
-                miniProtocolRun    = keepAliveProtocol
+                miniProtocolRun    = keepAliveProtocol,
+                miniProtocolWeight = 1
               }
             : case peerSharing of
                 PeerSharingEnabled ->
@@ -300,7 +304,8 @@ nodeToNodeProtocols miniProtocolParameters protocols
                       miniProtocolNum    = peerSharingMiniProtocolNum,
                       miniProtocolStart  = StartOnDemand,
                       miniProtocolLimits = peerSharingProtocolLimits miniProtocolParameters,
-                      miniProtocolRun    = peerSharingProtocol
+                      miniProtocolRun    = peerSharingProtocol,
+                      miniProtocolWeight = 1
                     }
                   ]
                 PeerSharingDisabled ->
