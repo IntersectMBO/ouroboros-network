@@ -29,6 +29,7 @@ import Control.Monad.Trans.Except
 import Control.Monad.Trans.State
 import Data.Bool
 import Data.ByteString.Lazy qualified as BL
+import Data.Either (fromRight)
 import Data.List (tails)
 import Data.Monoid.Synchronisation
 import Data.Word (Word8, Word32)
@@ -214,7 +215,7 @@ muxer egressQueues0 Bearer { writeMany, sduSize, batchSize, egressInterval } = d
       (egressQueues'', batch'') <-
         lift $ buildBatch (mkSingletonBatch sdu) numQueues egressQueues' burst start
       put egressQueues''
-      void . lift $ writeMany timeout (reverse (getSdus batch''))
+      void . lift $ writeMany timeout (getSdus batch'')
       delta <- (`diffTime` start) <$> lift getMonotonicTime
       lift . threadDelay $ egressInterval - delta
 
@@ -224,6 +225,8 @@ muxer egressQueues0 Bearer { writeMany, sduSize, batchSize, egressInterval } = d
 
     toDouble :: Real a => a -> Double
     toDouble = realToFrac
+
+    burstMinSdu = truncate @Double @SDUSize $ fromIntegral msHeaderLength / 0.02
 
     buildBatch batch0 numQueues egressQueues1 mBurst0 start = do
         (qs, b) <- go batch0 egressQueues1 mBurst0
@@ -282,26 +285,21 @@ muxer egressQueues0 Bearer { writeMany, sduSize, batchSize, egressInterval } = d
                                            in assert (tokens >= consumedTokens (fromIntegral $ msLength sdu))
                                               (boundedTokens tokens', tokens')
                             let batch'' = mkSingletonBatch sdu <> batch'
-                            if | nextSdu <= 400 -> do -- 8 bytes header / 2% burst efficiency
+                            if nextSdu <= burstMinSdu -- 8 bytes header / 2% burst efficiency
+                              then do
                                    -- there is more payload, but burst allowance has been exhausted
                                    lift $ writeTBQueue queue demand
-                                   throwE (batch'', not thisEmpty)
-                               | getSdusLength batch'' >= batchSize || getCount batch'' >= maxSDUsPerBatch -> do
-                                   lift $ unGetTBQueue queue demand
-                                   -- return True to decrease the queue weight
-                                   -- and restart with this configuration the next
-                                   -- top loop iteration
                                    throwE (batch'', True)
-                               | otherwise -> pure (batch'', Right nextSdu)
+                              else pure (batch'', Right nextSdu)
                   -- False to stay consistent with Left branch
-                  either pure ((<$ writeTBQueue queue demand) . second (const False))
+                  either pure ((<$ writeTBQueue queue demand) . second (const True))
                     =<< runExceptT do
-                          when (either id id sduSize0 <= 400) do
+                          when (fromRight maxBound sduSize0 <= burstMinSdu) do
                             -- edge case where the protocol is bursty, but there aren't enough tokens
                             -- available. The muxer forever loop does not check this
                             -- when it calls to build a batch, so we handle it here.
                             lift $ writeTBQueue queue demand
-                            throwE (batch, not thisEmpty)
+                            throwE (batch, True)
                           foldM step (batch, sduSize0)
                                      (if allEmpty
                                         then [const $ processSingleWanton sduSize mpc md d]
