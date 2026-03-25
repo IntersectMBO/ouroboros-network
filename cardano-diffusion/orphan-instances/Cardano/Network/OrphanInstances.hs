@@ -22,8 +22,9 @@ import Cardano.Network.PeerSelection.PublicRootPeers (getBootstrapPeers,
 
 import Ouroboros.Network.Diffusion.Topology
 import Ouroboros.Network.Magic (NetworkMagic (..))
-import Ouroboros.Network.OrphanInstances (localRootPeersGroupsFromJSON,
-           networkTopologyFromJSON, networkTopologyToJSON)
+import Ouroboros.Network.OrphanInstances (JSONField (..),
+           localRootPeersGroupsFromJSON, networkTopologyFromJSON,
+           networkTopologyToJSON)
 
 instance ToJSON LedgerStateJudgement where
   toJSON YoungEnough = String "YoungEnough"
@@ -55,6 +56,9 @@ instance FromJSON PeerTrustable where
 instance ToJSON PeerTrustable where
   toJSON IsTrustable    = Bool True
   toJSON IsNotTrustable = Bool False
+
+instance JSONField PeerTrustable where
+  fieldName _ = Just "peerTrustable"
 
 instance ToJSONKey PeerTrustable where
 
