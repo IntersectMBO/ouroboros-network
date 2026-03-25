@@ -2,7 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
-module Ouroboros.Network.Tracing.PeerSelection.RootPeersDNS.LocalRootPeers () where
+module Ouroboros.Network.Tracing.PeerSelection.RootPeersDNS.LocalRootPeers (JSONField (..)) where
 
 import Control.Exception (displayException)
 
@@ -11,13 +11,14 @@ import Data.Text (pack)
 
 -- Needed for `ToJSON PeerSelection.State.LocalRootPeers.LocalRootConfig`
 import Cardano.Logging
-import Ouroboros.Network.OrphanInstances qualified ()
+import Ouroboros.Network.OrphanInstances (JSONField (..))
 import Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
            (TraceLocalRootPeers (..))
 
 instance
   ( ToJSONKey ntnAddr
   , ToJSON ntnAddr
+  , JSONField extraFlags
   , ToJSON extraFlags
   , Show ntnAddr
   , Show extraFlags

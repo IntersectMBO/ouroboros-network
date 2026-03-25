@@ -6,7 +6,7 @@
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Ouroboros.Network.Tracing.PeerSelection.Governor.TracePeerSelection () where
+module Ouroboros.Network.Tracing.PeerSelection.Governor.TracePeerSelection (JSONField (..)) where
 
 --------------------------------------------------------------------------------
 
@@ -19,6 +19,7 @@ import Data.Text (pack)
 
 import Cardano.Logging
 import Ouroboros.Network.Diffusion.Types
+import Ouroboros.Network.OrphanInstances (JSONField (..))
 import Ouroboros.Network.PeerSelection.Governor.Types
            (DebugPeerSelectionState (..), DemotionTimeoutException,
            SupportsPeerSelectionState (..), TracePeerSelection (..))
@@ -36,6 +37,7 @@ import Ouroboros.Network.Tracing.PeerSelection.Governor.Utils
 instance ( Show extraDebugState
          , Show extraFlags
          , ToJSON extraFlags
+         , JSONField extraFlags
          , ToJSON ntnAddr
          , ToJSON (PublicRootPeers extraPeers ntnAddr)
          , ToJSONKey ntnAddr

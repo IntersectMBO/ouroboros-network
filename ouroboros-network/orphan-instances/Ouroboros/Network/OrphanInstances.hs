@@ -4,6 +4,7 @@
 {-# LANGUAGE LambdaCase           #-}
 {-# LANGUAGE NamedFieldPuns       #-}
 {-# LANGUAGE OverloadedStrings    #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE TypeApplications     #-}
 {-# LANGUAGE UndecidableInstances #-}
 
@@ -17,6 +18,7 @@ module Ouroboros.Network.OrphanInstances
   , networkTopologyToJSON
   , localRootPeersGroupsToJSON
   , peerSelectionTargetsToObject
+  , JSONField (..)
   ) where
 
 import Control.Applicative (Alternative ((<|>)))
@@ -30,6 +32,7 @@ import Data.Bool (bool)
 import Data.Foldable (toList)
 import Data.IP (fromHostAddress, fromHostAddress6)
 import Data.Map.Strict qualified as Map
+import Data.Proxy
 import Data.Set qualified as Set
 import Data.Text (Text, pack)
 import Data.Text.Encoding qualified as Text
@@ -406,7 +409,7 @@ instance ToJSON KnownPeerInfo where
 instance ToJSON PeerStatus where
   toJSON = String . pack . show
 
-instance (ToJSON extraFlags, ToJSONKey peerAddr, ToJSON peerAddr, Ord peerAddr)
+instance (JSONField extraFlags, ToJSON extraFlags, ToJSONKey peerAddr, ToJSON peerAddr, Ord peerAddr)
   => ToJSON (LocalRootPeers extraFlags peerAddr) where
   toJSON lrp = kindObject "LocalRootPeers"
     [ "groups" .= toJSONList (LocalRootPeers.toGroups lrp) ]
@@ -445,13 +448,28 @@ instance ToJSON addr => ToJSON (PeerSharingResult addr) where
     PeerSharingResult addrs     -> toJSONList addrs
     PeerSharingNotRegisteredYet -> String "PeerSharingNotRegisteredYet"
 
-instance ToJSON extraFlags => ToJSON (LocalRootConfig extraFlags) where
-  toJSON LocalRootConfig { peerAdvertise, extraLocalRootFlags, LocalRootPeers.diffusionMode } =
-    object
-      [ "peerAdvertise" .= peerAdvertise
-      , "diffusionMode" .= show diffusionMode
-      , "extraFlags"    .= extraLocalRootFlags
+-- | Compute field name for `a` when it's embeded as record in
+-- `LocalRootConfig`.
+class JSONField extraFlags where
+  fieldName :: Proxy extraFlags -> Maybe Key
+
+instance (JSONField extraFlags, ToJSON extraFlags) => ToJSON (LocalRootConfig extraFlags) where
+  toJSON LocalRootConfig { peerAdvertise,
+                           extraLocalRootFlags,
+                           LocalRootPeers.diffusionMode,
+                           localProvenance
+                         } =
+    object $
+      [ "peerAdvertise"  .= peerAdvertise
+      , "diffusionMode"  .= show diffusionMode
+      , "behindFirewall" .= case localProvenance of
+                              Outbound -> False
+                              Inbound  -> True
       ]
+      ++
+      case fieldName (Proxy :: Proxy extraFlags) of
+        Nothing  -> []
+        Just key -> [ key .= extraLocalRootFlags ]
 
 instance ToJSON RemoteAddress where
   toJSON = \case
@@ -729,7 +747,7 @@ instance (ToJSON localAddress, ToJSON remoteAddress) => ToJSON (DiffusionTracer 
     ]
 
 
-instance (ToJSON extraFlags, ToJSON peerAddr, ToJSONKey peerAddr) => ToJSON (TraceLocalRootPeers extraFlags peerAddr) where
+instance (JSONField extraFlags, ToJSON extraFlags, ToJSON peerAddr, ToJSONKey peerAddr) => ToJSON (TraceLocalRootPeers extraFlags peerAddr) where
   toJSON (TraceLocalRootDomains groups) =
     object [ "kind" .= String "LocalRootDomains"
            , "localRootDomains" .= groups
@@ -859,6 +877,7 @@ instance ToJSON Time where
   toJSON = String . pack . show
 
 instance ( ToJSON extraDebugState
+         , JSONField extraFlags
          , ToJSON extraFlags
          , ToJSON extraPeers
          , ToJSON (ToExtraTrace extraPeers)

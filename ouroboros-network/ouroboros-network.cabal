@@ -427,7 +427,7 @@ library framework-tracing
     network-mux,
     ouroboros-network:{api, framework, orphan-instances},
     text,
-    trace-dispatcher ^>=2.11.0,
+    trace-dispatcher ^>=2.12.0,
     typed-protocols:{typed-protocols, stateful} ^>=1.2,
 
 library tests-lib
@@ -666,7 +666,7 @@ library tracing
     iproute,
     ouroboros-network:{ouroboros-network, orphan-instances, protocols},
     text,
-    trace-dispatcher ^>=2.11.0,
+    trace-dispatcher ^>=2.12.0,
 
   if flag(asserts)
     ghc-options: -fno-ignore-asserts
