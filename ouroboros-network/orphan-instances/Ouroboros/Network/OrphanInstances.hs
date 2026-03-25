@@ -446,11 +446,18 @@ instance ToJSON addr => ToJSON (PeerSharingResult addr) where
     PeerSharingNotRegisteredYet -> String "PeerSharingNotRegisteredYet"
 
 instance ToJSON extraFlags => ToJSON (LocalRootConfig extraFlags) where
-  toJSON LocalRootConfig { peerAdvertise, extraLocalRootFlags, LocalRootPeers.diffusionMode } =
+  toJSON LocalRootConfig { peerAdvertise,
+                           extraLocalRootFlags,
+                           LocalRootPeers.diffusionMode,
+                           localProvenance
+                         } =
     object
-      [ "peerAdvertise" .= peerAdvertise
-      , "diffusionMode" .= show diffusionMode
-      , "extraFlags"    .= extraLocalRootFlags
+      [ "peerAdvertise"  .= peerAdvertise
+      , "diffusionMode"  .= show diffusionMode
+      , "behindFirewall" .= case localProvenance of
+                              Outbound -> False
+                              Inbound  -> True
+      , "extraFlags"     .= extraLocalRootFlags
       ]
 
 instance ToJSON RemoteAddress where
