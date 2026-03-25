@@ -272,7 +272,7 @@ nodeToNodeProtocols miniProtocolParameters protocols
                 miniProtocolStart  = StartOnDemand,
                 miniProtocolLimits = blockFetchProtocolLimits miniProtocolParameters,
                 miniProtocolRun    = blockFetchProtocol,
-                miniProtocolWeight = 1
+                miniProtocolWeight = 2
               }
             , MiniProtocol {
                 miniProtocolNum    = txSubmissionMiniProtocolNum,
@@ -352,7 +352,7 @@ blockFetchProtocolLimits MiniProtocolParameters { blockFetchPipeliningMax } = Mi
     --
     maximumIngressQueue = addSafetyMargin $
       max (10 * 2_097_154 :: Int) (fromIntegral blockFetchPipeliningMax * 90_112),
-    burst = Just $ ProtocolBurstLimits 100000 100000
+    burst = Just $ ProtocolBurstLimits 25000 10000
   }
 
 txSubmissionProtocolLimits MiniProtocolParameters { txSubmissionMaxUnacked } = MiniProtocolLimits {
