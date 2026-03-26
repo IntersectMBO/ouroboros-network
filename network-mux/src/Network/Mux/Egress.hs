@@ -222,7 +222,7 @@ muxer egressQueues0 Bearer { writeMany, sduSize, batchSize, egressInterval } =
     toDouble :: Real a => a -> Double
     toDouble = realToFrac
 
-    burstMinSdu = truncate @Double @SDUSize $ fromIntegral msHeaderLength / 0.02
+    burstMinSdu = 0 --truncate @Double @SDUSize $ fromIntegral msHeaderLength / 0.02
 
     buildBatch
       :: SDUBatch -> [(Word8, EgressQueue m)] -> Bool -> Time -> m ([(Word8, EgressQueue m)], SDUBatch)
