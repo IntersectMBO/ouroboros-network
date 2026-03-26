@@ -27,7 +27,6 @@ import Control.Monad
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.Except
 import Control.Monad.Trans.State
-import Data.Bool
 import Data.ByteString.Lazy qualified as BL
 import Data.Either (fromRight)
 import Data.List (tails)
@@ -181,45 +180,42 @@ muxer
     => [(Word8, EgressQueue m)]
     -> Bearer m
     -> m void
-muxer egressQueues0 Bearer { writeMany, sduSize, batchSize, egressInterval } = do
-    let numQueues = length egressQueues0
+muxer egressQueues0 Bearer { writeMany, sduSize, batchSize, egressInterval } =
     withTimeoutSerial $ \timeout -> (`evalStateT` cycle egressQueues0) $ forever do
       egressQueues <- get
-      let job = foldMap (FirstToFinish . traverse readTBQueue)
-                        (zip (tails egressQueues) (take numQueues (snd <$> egressQueues)))
+      let jobs = foldMap (FirstToFinish . traverse readTBQueue)
+                         (zip (tails egressQueues) (take numQueues (snd <$> egressQueues)))
 
       start <- lift getMonotonicTime
       (sdu, egressQueues', burst) <- lift $ atomically do
-        result <- runFirstToFinish job
-        case result of
+        job <- runFirstToFinish jobs
+        case job of
           (egressQueues', demand@(TLSRDemand mpc md d (ProtocolBurstLimits pbMaxBytes _pbRefillRate))) -> do
               let ((weight, queue), rest) = assert (weight > 0) case egressQueues' of
                     [] -> error "impossible"
                     x:xs -> (x, xs)
-                  egressQueues'' = (pred weight, queue) : rest
+                  egressQueues'' | weight > 1 = (pred weight, queue) : rest
+                                 | otherwise  = rest
               eSdu <- processSingleWanton sduSize mpc md d
               case eSdu of
                 Right sdu | pbMaxBytes > 0 ->
                               -- we do not check if the protocol has any tokens to burst,
                               -- that is deferred to buildBatch below.
                               (sdu, egressQueues', True) <$ unGetTBQueue queue demand
-                          | weight > 1 ->
-                              (sdu, egressQueues'', False) <$ writeTBQueue queue demand
-                          | otherwise ->
-                              (sdu, rest, False) <$ writeTBQueue queue demand
-                Left sdu | weight > 1 ->
-                            pure (sdu, egressQueues'', False)
-                         | otherwise ->
-                            pure (sdu, rest, False)
+                          | otherwise -> (sdu, egressQueues'', False) <$ writeTBQueue queue demand
+                Left sdu -> pure (sdu, egressQueues'', False)
 
       (egressQueues'', batch'') <-
-        lift $ buildBatch (mkSingletonBatch sdu) numQueues egressQueues' burst start
+        lift $ buildBatch (mkSingletonBatch sdu) egressQueues' burst start
       put egressQueues''
       void . lift $ writeMany timeout (getSdus batch'')
       delta <- (`diffTime` start) <$> lift getMonotonicTime
       lift . threadDelay $ egressInterval - delta
 
   where
+    numQueues :: Int
+    numQueues = length egressQueues0
+
     maxSDUsPerBatch :: Int
     maxSDUsPerBatch = 100
 
@@ -228,9 +224,11 @@ muxer egressQueues0 Bearer { writeMany, sduSize, batchSize, egressInterval } = d
 
     burstMinSdu = truncate @Double @SDUSize $ fromIntegral msHeaderLength / 0.02
 
-    buildBatch batch0 numQueues egressQueues1 mBurst0 start = do
-        (qs, b) <- go batch0 egressQueues1 mBurst0
-        pure (qs, b { getSdus = reverse (getSdus b) })
+    buildBatch
+      :: SDUBatch -> [(Word8, EgressQueue m)] -> Bool -> Time -> m ([(Word8, EgressQueue m)], SDUBatch)
+    buildBatch batch0 egressQueues1 mBurst0 start = do
+        (qs, batch) <- go batch0 egressQueues1 mBurst0
+        pure (qs, batch { getSdus = reverse (getSdus batch) })
      where
       allM f = \case
         [] -> pure True
@@ -239,11 +237,13 @@ muxer egressQueues0 Bearer { writeMany, sduSize, batchSize, egressInterval } = d
           if res then allM f xs else pure False
 
       go :: SDUBatch -> [(Word8, EgressQueue m)] -> Bool -> m ([(Word8, EgressQueue m)], SDUBatch)
-      go _batch [] _burst = error "impossible"
-      go !batch egressQueues _burst
+      go !_batch [] !_burst = error "impossible"
+      go batch egressQueues _burst
         | getCount batch >= maxSDUsPerBatch || getSdusLength batch >= batchSize
           = return (egressQueues, batch)
       go batch egressQueues@((weight, queue):rest) mBurst = do
+        -- since the list of queues cycles, we only need to check the prefix
+        -- to see if there is any more work to do.
         allEmpty0 <- atomically $ allM isEmptyTBQueue (snd <$> take numQueues egressQueues)
         if allEmpty0
           then return (egressQueues, batch)
@@ -258,15 +258,8 @@ muxer egressQueues0 Bearer { writeMany, sduSize, batchSize, egressInterval } = d
                   restEmpty <- allM isEmptyTBQueue (snd <$> take (pred numQueues) rest)
                   let allEmpty = thisEmpty && restEmpty
                       boundedTokens = min sduSize . fromIntegral . min (fromIntegral $ maxBound @SDUSize)
-                  sduSize0 <- stateTVar wBucket \tokens ->
-                    let tokens' = truncate $
-                                    min (fromIntegral pbMaxBytes)
-                                        (fromIntegral tokens + fromIntegral pbRefillRate * toDouble delta)
-                        -- we leverage burst and deduct credits only where there is contention
-                        -- between protocols
-                        sduSize0 = bool (Left sduSize) (Right $ boundedTokens tokens') (mBurst && not allEmpty)
-                    in (sduSize0, tokens')
-                  let step (!batch', !eSize) mx = do
+
+                      step (!batch', !eSize) mx = do
                         -- the first one is always free
                         -- For Left's, we don't count the wanton bytes against the burst allowance
                         -- to permit a full sdu in the first iteration
@@ -294,6 +287,15 @@ muxer egressQueues0 Bearer { writeMany, sduSize, batchSize, egressInterval } = d
                   -- False to stay consistent with Left branch
                   either pure ((<$ writeTBQueue queue demand) . second (const True))
                     =<< runExceptT do
+                          sduSize0 <- lift $ stateTVar wBucket \tokens ->
+                            let tokens' = truncate $
+                                            min (fromIntegral pbMaxBytes)
+                                                (fromIntegral tokens + fromIntegral pbRefillRate * toDouble delta)
+                                -- we leverage burst and deduct credits only where there is contention
+                                -- between protocols
+                                sduSize0 | mBurst && not allEmpty = Right $ boundedTokens tokens'
+                                         | otherwise = Left sduSize
+                            in (sduSize0, tokens')
                           when (fromRight maxBound sduSize0 <= burstMinSdu) do
                             -- edge case where the protocol is bursty, but there aren't enough tokens
                             -- available. The muxer forever loop does not check this
