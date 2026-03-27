@@ -26,6 +26,7 @@ module Network.Mux
   , MiniProtocolNum (..)
   , MiniProtocolDirection (..)
   , MiniProtocolLimits (..)
+  , ProtocolBurst (..)
     -- * Running the Mux
   , run
   , stop

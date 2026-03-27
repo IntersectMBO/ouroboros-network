@@ -277,7 +277,7 @@ clientServerSimulation payloads =
                     [ MiniProtocolInfo {
                         miniProtocolNum        = reqRespProtocolNum,
                         miniProtocolDir        = Mx.ResponderDirectionOnly,
-                        miniProtocolLimits     = Mx.MiniProtocolLimits maxBound,
+                        miniProtocolLimits     = Mx.MiniProtocolLimits maxBound Nothing,
                         miniProtocolCapability = Nothing
                       }
                     ])
@@ -331,7 +331,7 @@ clientServerSimulation payloads =
                                 [ MiniProtocolInfo {
                                     miniProtocolNum        = reqRespProtocolNum,
                                     miniProtocolDir        = Mx.InitiatorDirectionOnly,
-                                    miniProtocolLimits     = Mx.MiniProtocolLimits maxBound,
+                                    miniProtocolLimits     = Mx.MiniProtocolLimits maxBound Nothing,
                                     miniProtocolCapability = Nothing
                                   }
                                 ]

@@ -342,7 +342,8 @@ chainSyncProtocolLimits MiniProtocolParameters { chainSyncPipeliningHighMark } =
       -- TODO: 1400 comes from maxBlockHeaderSize in genesis, but should come
       -- from consensus rather than being hard coded.
       maximumIngressQueue = addSafetyMargin $
-        fromIntegral chainSyncPipeliningHighMark * 1400
+        fromIntegral chainSyncPipeliningHighMark * 1400,
+      burst = Nothing
     }
 
 blockFetchProtocolLimits MiniProtocolParameters { blockFetchPipeliningMax } = MiniProtocolLimits {
@@ -364,7 +365,8 @@ blockFetchProtocolLimits MiniProtocolParameters { blockFetchPipeliningMax } = Mi
     -- relaxed limit here.
     --
     maximumIngressQueue = addSafetyMargin $
-      max (10 * 2_097_154 :: Int) (fromIntegral blockFetchPipeliningMax * 90_112)
+      max (10 * 2_097_154 :: Int) (fromIntegral blockFetchPipeliningMax * 90_112),
+    burst = Just $ Mx.ProtocolBurst 90_112 10_000
   }
 
 txSubmissionProtocolLimits MiniProtocolParameters
@@ -432,13 +434,15 @@ txSubmissionProtocolLimits MiniProtocolParameters
       -- 10% as a safety margin.
       --
       maximumIngressQueue = addSafetyMargin $
-          fromIntegral maxUnacknowledgedTxIds * (44 + fromIntegral @SizeInBytes @Int max_TX_SIZE)
+          fromIntegral maxUnacknowledgedTxIds * (44 + fromIntegral @SizeInBytes @Int max_TX_SIZE),
+      burst = Nothing
     }
 
 keepAliveProtocolLimits _ =
   MiniProtocolLimits {
       -- One small outstanding message.
-      maximumIngressQueue = addSafetyMargin 1280
+      maximumIngressQueue = addSafetyMargin 1280,
+      burst = Nothing
     }
 
 peerSharingProtocolLimits _ =
@@ -449,7 +453,8 @@ peerSharingProtocolLimits _ =
   -- window size of 4 and a TCP segment is 1440, which gives us 4 * 1440 =
   -- 5760 bytes to fit into a single RTT. So setting the maximum ingress
   -- queue to be a single RTT should be enough to cover for CBOR overhead.
-  maximumIngressQueue = 4 * 1440
+  maximumIngressQueue = 4 * 1440,
+  burst = Nothing
   }
 
 perasCertDiffusionProtocolLimits MiniProtocolParameters { perasCertDiffusionMaxObjectsUnacknowledged } =
@@ -460,7 +465,8 @@ perasCertDiffusionProtocolLimits MiniProtocolParameters { perasCertDiffusionMaxO
       -- even much smaller.
       -- See https://github.com/tweag/cardano-peras/issues/97
       maximumIngressQueue = addSafetyMargin $
-        fromIntegral perasCertDiffusionMaxObjectsUnacknowledged * 20_000
+        fromIntegral perasCertDiffusionMaxObjectsUnacknowledged * 20_000,
+      burst = Nothing
     }
 
 perasVoteDiffusionProtocolLimits MiniProtocolParameters { perasVoteDiffusionMaxObjectsUnacknowledged } =
@@ -469,7 +475,8 @@ perasVoteDiffusionProtocolLimits MiniProtocolParameters { perasVoteDiffusionMaxO
       -- We assume an upper bound of 1 kB per vote.
       -- See https://github.com/tweag/cardano-peras/issues/97
       maximumIngressQueue = addSafetyMargin $
-        fromIntegral perasVoteDiffusionMaxObjectsUnacknowledged * 1_000
+        fromIntegral perasVoteDiffusionMaxObjectsUnacknowledged * 1_000,
+      burst = Nothing
     }
 
 chainSyncMiniProtocolNum :: MiniProtocolNum

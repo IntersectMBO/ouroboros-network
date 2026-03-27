@@ -253,7 +253,7 @@ startServerEgresss pollInterval sndSizeV ad = forever $ do
            let wasEmpty = BL.null buf
            writeTVar w (BL.append buf msg)
            when wasEmpty $
-             writeTBQueue eq (TLSRDemand mc md (Wanton w) $ ProtocolBurst 1)
+             writeTBQueue eq (TLSRDemand mc md (Wanton w undefined undefined) undefined)
          else retry
 
 setupServer :: Socket -> IO Socket.SockAddr

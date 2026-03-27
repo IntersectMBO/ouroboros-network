@@ -352,7 +352,7 @@ withInitiatorOnlyConnectionManager name timeouts trTracer tracer stdGen snocket 
               [MiniProtocol {
                   miniProtocolNum,
                   miniProtocolStart  = StartOnDemand,
-                  miniProtocolLimits = Mx.MiniProtocolLimits maxBound,
+                  miniProtocolLimits = Mx.MiniProtocolLimits maxBound Nothing,
                   miniProtocolRun = reqRespInitiator miniProtocolNum
                                                      nextRequest
                 }]
@@ -580,7 +580,7 @@ withBidirectionalConnectionManager name timeouts
               [MiniProtocol {
                   miniProtocolNum,
                   miniProtocolStart  = Mx.StartOnDemand,
-                  miniProtocolLimits = Mx.MiniProtocolLimits maxBound,
+                  miniProtocolLimits = Mx.MiniProtocolLimits maxBound Nothing,
                   miniProtocolRun = reqRespInitiatorAndResponder
                                         miniProtocolNum
                                         accumulatorInit

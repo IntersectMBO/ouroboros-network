@@ -174,10 +174,11 @@ maximumMiniProtocolLimits :: MiniProtocolLimits
 maximumMiniProtocolLimits =
     MiniProtocolLimits {
 #if !defined(wasm32_HOST_ARCH)
-      maximumIngressQueue = 0xffffffff
+      maximumIngressQueue = 0xffffffff,
 #else
-      maximumIngressQueue = 0x7fffffff
+      maximumIngressQueue = 0x7fffffff,
 #endif
+      burst = Nothing
     }
 
 
