@@ -25,6 +25,7 @@ module Network.Mux.Types
   , IngressQueue
   , MiniProtocolIx
   , MiniProtocolDir (..)
+  , ProtocolBurst (..)
   , protocolDirEnum
   , MiniProtocolState (..)
   , MiniProtocolStatus (..)
@@ -93,14 +94,22 @@ newtype MiniProtocolNum = MiniProtocolNum Word16
   deriving (Eq, Ord, Enum, Ix, Show)
 
 -- | Per Miniprotocol limits
-newtype MiniProtocolLimits =
+data MiniProtocolLimits =
      MiniProtocolLimits {
        -- | Limit on the maximum number of bytes that can be queued in the
        -- miniprotocol's ingress queue.
        --
-       maximumIngressQueue :: Int
+       maximumIngressQueue :: !Int,
+       burst               :: !(Maybe ProtocolBurst)
      }
   deriving Show
+
+
+data ProtocolBurst = ProtocolBurst {
+  pbMaxBytes   :: !Word32,
+  pbRefillRate :: !Word32
+  }
+  deriving (Eq, Show)
 
 -- $interface
 --
@@ -146,8 +155,12 @@ data MiniProtocolInfo (mode :: Mode) =
        -- ^ Mini-protocol direction.
        miniProtocolLimits     :: !MiniProtocolLimits,
        -- ^ ingress queue limits for the protocol
-       miniProtocolCapability :: !(Maybe Int)
+       miniProtocolCapability :: !(Maybe Int),
        -- ^ capability on which the mini-protocol should run
+       miniProtocolWeight     :: !Word8
+       -- ^ Protocols with the same weight will share
+       -- an egress queue of that value which biases
+       -- the muxer relative to other protocols
      }
   deriving Show
 
@@ -287,7 +300,7 @@ newtype SDUSize = SDUSize { getSDUSize :: Word16 }
   deriving Generic
   deriving Show via Quiet SDUSize
   deriving (Eq, Ord, Enum)
-  deriving (Num, Real, Integral)
+  deriving (Bounded, Num, Real, Integral)
 
 -- | A channel which wraps each message as an 'SDU' using giving
 -- 'MiniProtocolNum' and 'MiniProtocolDir'.

@@ -90,7 +90,8 @@ rmIfExists path = do
 maximumMiniProtocolLimits :: MiniProtocolLimits
 maximumMiniProtocolLimits =
     MiniProtocolLimits {
-      maximumIngressQueue = maxBound
+      maximumIngressQueue = maxBound,
+      burst = Nothing
     }
 
 tracer :: Show a => Tracer IO a
@@ -112,7 +113,8 @@ demoProtocol0 pingPong =
         miniProtocolNum    = MiniProtocolNum 2,
         miniProtocolStart  = StartOnDemand,
         miniProtocolLimits = maximumMiniProtocolLimits,
-        miniProtocolRun    = pingPong
+        miniProtocolRun    = pingPong,
+        miniProtocolWeight = 1
       }
     ]
 
@@ -204,13 +206,15 @@ demoProtocol1 pingPong pingPong' =
         miniProtocolNum    = MiniProtocolNum 2,
         miniProtocolStart  = StartOnDemand,
         miniProtocolLimits = maximumMiniProtocolLimits,
-        miniProtocolRun    = pingPong
+        miniProtocolRun    = pingPong,
+        miniProtocolWeight = 1
       }
     , MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 3,
         miniProtocolStart  = StartOnDemandAny,
         miniProtocolLimits = maximumMiniProtocolLimits,
-        miniProtocolRun    = pingPong'
+        miniProtocolRun    = pingPong',
+        miniProtocolWeight = 1
       }
     ]
 
@@ -300,5 +304,3 @@ serverPingPong2 =
         , codecPingPong
         , pingPongServerPeer pingPongServerStandard
         )
-
-

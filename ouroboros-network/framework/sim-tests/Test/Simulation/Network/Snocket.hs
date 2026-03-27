@@ -18,8 +18,8 @@ module Test.Simulation.Network.Snocket
   , toBearerInfo
   ) where
 
-import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadSay
@@ -39,7 +39,6 @@ import Codec.Serialise qualified as Serialise
 import Data.ByteString.Lazy (ByteString)
 import Data.ByteString.Lazy qualified as BL
 import Data.Foldable (traverse_)
-import Data.Functor (void)
 import Data.Map qualified as Map
 import Data.Maybe (isNothing)
 import Data.Set (Set)
@@ -186,8 +185,7 @@ untilSuccess go =
 
 clientServerSimulation
     :: forall m addr payload.
-       ( Alternative (STM m)
-       , MonadAsync       m
+       ( MonadAsync       m
        , MonadDelay       m
        , MonadEvaluate    m
        , MonadFork        m
@@ -197,7 +195,7 @@ clientServerSimulation
        , MonadST          m
        , MonadThrow  (STM m)
        , MonadTimer       m
-
+       , MonadPlus (STM m)
        , Serialise payload
        , Eq payload
        , Show payload
@@ -277,8 +275,9 @@ clientServerSimulation payloads =
                     [ MiniProtocolInfo {
                         miniProtocolNum        = reqRespProtocolNum,
                         miniProtocolDir        = Mx.ResponderDirectionOnly,
-                        miniProtocolLimits     = Mx.MiniProtocolLimits maxBound,
-                        miniProtocolCapability = Nothing
+                        miniProtocolLimits     = Mx.MiniProtocolLimits maxBound Nothing,
+                        miniProtocolCapability = Nothing,
+                        miniProtocolWeight = 1
                       }
                     ])
             Mx.stop
@@ -331,8 +330,9 @@ clientServerSimulation payloads =
                                 [ MiniProtocolInfo {
                                     miniProtocolNum        = reqRespProtocolNum,
                                     miniProtocolDir        = Mx.InitiatorDirectionOnly,
-                                    miniProtocolLimits     = Mx.MiniProtocolLimits maxBound,
-                                    miniProtocolCapability = Nothing
+                                    miniProtocolLimits     = Mx.MiniProtocolLimits maxBound Nothing,
+                                    miniProtocolCapability = Nothing,
+                                    miniProtocolWeight = 1
                                   }
                                 ]
 

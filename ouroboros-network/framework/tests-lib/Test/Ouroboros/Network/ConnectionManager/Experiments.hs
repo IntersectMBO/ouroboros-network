@@ -39,7 +39,7 @@ import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.DeepSeq (NFData)
 import Control.Exception (AssertionFailed)
-import Control.Monad (replicateM, (>=>))
+import Control.Monad (MonadPlus, replicateM, (>=>))
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadSay
@@ -252,6 +252,7 @@ withInitiatorOnlyConnectionManager
        , MonadLabelledSTM m
        , MonadTraceSTM m
        , MonadSay m
+       , MonadPlus (STM m)
        , Show name
        )
     => name
@@ -352,9 +353,10 @@ withInitiatorOnlyConnectionManager name timeouts trTracer tracer stdGen snocket 
               [MiniProtocol {
                   miniProtocolNum,
                   miniProtocolStart  = StartOnDemand,
-                  miniProtocolLimits = Mx.MiniProtocolLimits maxBound,
+                  miniProtocolLimits = Mx.MiniProtocolLimits maxBound Nothing,
                   miniProtocolRun = reqRespInitiator miniProtocolNum
-                                                     nextRequest
+                                                     nextRequest,
+                  miniProtocolWeight = 1
                 }]
 
     reqRespInitiator :: Mx.MiniProtocolNum
@@ -437,6 +439,7 @@ withBidirectionalConnectionManager
        , MonadLabelledSTM m
        , MonadTraceSTM m
        , MonadSay m, Show req
+       , MonadPlus (STM m)
        , NFData req
        , Show name
        )
@@ -580,11 +583,12 @@ withBidirectionalConnectionManager name timeouts
               [MiniProtocol {
                   miniProtocolNum,
                   miniProtocolStart  = Mx.StartOnDemand,
-                  miniProtocolLimits = Mx.MiniProtocolLimits maxBound,
+                  miniProtocolLimits = Mx.MiniProtocolLimits maxBound Nothing,
                   miniProtocolRun = reqRespInitiatorAndResponder
                                         miniProtocolNum
                                         accumulatorInit
-                                        nextRequest
+                                        nextRequest,
+                  miniProtocolWeight = 1
               }]
 
     reqRespInitiatorAndResponder
@@ -741,7 +745,7 @@ unidirectionalExperiment
        , MonadLabelledSTM m
        , MonadTraceSTM m
        , MonadSay m
-
+       , MonadPlus (STM m)
        , acc ~ [req], resp ~ [req]
        , Ord peerAddr
        , PrettyShow peerAddr
@@ -822,7 +826,7 @@ bidirectionalExperiment
        , MonadLabelledSTM m
        , MonadTraceSTM m
        , MonadSay m
-
+       , MonadPlus (STM m)
        , acc ~ [req], resp ~ [req]
        , Ord peerAddr
        , PrettyShow peerAddr

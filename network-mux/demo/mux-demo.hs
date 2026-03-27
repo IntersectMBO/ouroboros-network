@@ -81,7 +81,8 @@ debugTracer = show >$< Tracer putStrLn_
 defaultProtocolLimits :: MiniProtocolLimits
 defaultProtocolLimits =
     MiniProtocolLimits {
-      maximumIngressQueue = 64_000
+      maximumIngressQueue = 64_000,
+      burst = Nothing
     }
 
 --
@@ -146,7 +147,8 @@ serverWorker bearer = do
                 miniProtocolNum        = MiniProtocolNum 2,
                 miniProtocolDir        = ResponderDirectionOnly,
                 miniProtocolLimits     = defaultProtocolLimits,
-                miniProtocolCapability = Nothing
+                miniProtocolCapability = Nothing,
+                miniProtocolWeight     = 1
               }
             ]
 
@@ -206,7 +208,8 @@ clientWorker bearer n msg = do
                 miniProtocolNum        = MiniProtocolNum 2,
                 miniProtocolDir        = InitiatorDirectionOnly,
                 miniProtocolLimits     = defaultProtocolLimits,
-                miniProtocolCapability = Nothing
+                miniProtocolCapability = Nothing,
+                miniProtocolWeight     = 1
               }
             ]
 

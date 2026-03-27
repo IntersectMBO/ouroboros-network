@@ -38,11 +38,10 @@ module Test.Cardano.Network.Diffusion.Testnet.Simulation
   , module PeerSelection
   ) where
 
-import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadMVar (MonadMVar)
 import Control.Concurrent.Class.MonadSTM qualified as LazySTM
 import Control.Concurrent.Class.MonadSTM.Strict
-import Control.Monad (forM, when)
+import Control.Monad (MonadPlus, forM, when)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadSay
@@ -1033,8 +1032,7 @@ data Churn = CardanoChurn | OuroborosChurn
 -- | Run an arbitrary topology in a generic monad `m`.
 --
 diffusionSimulationM
-  :: forall m. ( Alternative (STM m)
-               , MonadAsync       m
+  :: forall m. ( MonadAsync       m
                , MonadDelay       m
                , MonadFix         m
                , MonadEvaluate    m
@@ -1045,6 +1043,7 @@ diffusionSimulationM
                , MonadLabelledSTM m
                , MonadTraceSTM    m
                , MonadMask        m
+               , MonadPlus   (STM m)
                , MonadTime        m
                , MonadTimer       m
                , MonadThrow  (STM m)
@@ -1210,7 +1209,7 @@ diffusionSimulationM
           acceptVersion = acceptableVersion
           defaultMiniProtocolsLimit :: MiniProtocolLimits
           defaultMiniProtocolsLimit =
-            MiniProtocolLimits { maximumIngressQueue = 64000 }
+            MiniProtocolLimits { maximumIngressQueue = 64000, burst = Nothing }
 
           blockGeneratorArgs :: Node.BlockGeneratorArgs Block StdGen
           blockGeneratorArgs =

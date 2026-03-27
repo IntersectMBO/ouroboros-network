@@ -26,6 +26,7 @@ module Network.Mux
   , MiniProtocolNum (..)
   , MiniProtocolDirection (..)
   , MiniProtocolLimits (..)
+  , ProtocolBurst (..)
     -- * Running the Mux
   , run
   , stop
@@ -66,9 +67,10 @@ import Data.ByteString.Lazy qualified as BL
 import Data.Int (Int64)
 import Data.Map (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (isNothing)
-import Data.Monoid.Synchronisation (FirstToFinish (..))
+import Data.Maybe (fromMaybe)
+import Data.Monoid.Synchronisation (FirstToFinish (..), LastToFinish (..))
 import Data.Strict.Tuple (pattern (:!:))
+import Data.Word (Word8)
 
 import Control.Applicative
 import Control.Concurrent.Class.MonadSTM.Strict
@@ -78,6 +80,7 @@ import Control.Monad
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI (Time (..))
 import Control.Monad.Class.MonadTimer.SI hiding (timeout)
 import Control.Tracer
 
@@ -226,10 +229,10 @@ run :: forall m (mode :: Mode).
        , MonadEvaluate m
        , MonadFork m
        , MonadLabelledSTM m
-       , Alternative (STM m)
        , MonadThrow (STM m)
        , MonadTimer m
        , MonadMask m
+       , MonadPlus (STM m)
        )
     => Mux mode m
     -> Bearer m
@@ -245,16 +248,27 @@ run Mux { muxMiniProtocols,
     bearer@Bearer{name} = do
 
     traceWith tracer_ TraceStarting
-    egressQueue <- atomically $ newTBQueue 100
+
+    let step mMap MiniProtocolState { miniProtocolInfo } = do
+          let weight = miniProtocolWeight miniProtocolInfo
+          Map.alterF (\case
+                        Nothing -> do
+                          q <- newTBQueue 100
+                          labelTBQueue q (name ++ "-mux-egress-" ++ show weight)
+                          pure $ Just q
+                        pass    -> pure pass)
+                     weight
+                     =<< mMap
+    egressQueues <- atomically $ Map.foldl step (pure Map.empty) muxMiniProtocols
 
     -- label shared variables
-    labelTBQueueIO egressQueue (name ++ "-mux-egress")
+
     labelTVarIO muxStatus (name ++ "-mux-status")
     labelTQueueIO muxControlCmdQueue (name ++ "-mux-ctrl")
 
     JobPool.withJobPool
       (\jobpool -> do
-        JobPool.forkJob jobpool (muxerJob egressQueue)
+        JobPool.forkJob jobpool (muxerJob (Map.assocs egressQueues))
         JobPool.forkJob jobpool demuxerJob
         traceWith tracer_ (TraceState Mature)
 
@@ -264,7 +278,7 @@ run Mux { muxMiniProtocols,
           monitor tracers
                   timeout
                   jobpool
-                  egressQueue
+                  egressQueues
                   muxControlCmdQueue
                   muxStatus
       )
@@ -277,8 +291,8 @@ run Mux { muxMiniProtocols,
       throwIO e
   where
 
-    muxerJob egressQueue =
-      JobPool.Job (muxer egressQueue bearerTracer_ bearer)
+    muxerJob egressQueues =
+      JobPool.Job (muxer egressQueues bearerTracer_ bearer)
                   (return . MuxerException)
                   MuxJob
                   (name ++ "-muxer")
@@ -312,7 +326,8 @@ miniProtocolJob TracersI {
                   miniProtocolInfo =
                     MiniProtocolInfo {
                       miniProtocolNum,
-                      miniProtocolDir
+                      miniProtocolDir,
+                      miniProtocolLimits
                     },
                   miniProtocolIngressQueue,
                   miniProtocolStatusVar
@@ -328,9 +343,11 @@ miniProtocolJob TracersI {
   where
     jobAction = do
       w <- newTVarIO BL.empty
-      let chan = muxChannel channelTracer_ egressQueue (Wanton w)
+      lastSent <- newTVarIO (Time 0)
+      bucket   <- newTVarIO 0
+      let chan = muxChannel channelTracer_ egressQueue (Wanton w lastSent bucket)
                             miniProtocolNum miniProtocolDirEnum
-                            miniProtocolIngressQueue
+                            miniProtocolIngressQueue (burst miniProtocolLimits)
       (result, remainder) <- miniProtocolAction chan
       traceWith tracer_ (TraceTerminating miniProtocolNum miniProtocolDirEnum)
       atomically $ do
@@ -405,13 +422,13 @@ monitor :: forall mode m.
            ( MonadAsync m
            , MonadEvaluate m
            , MonadMask m
-           , Alternative (STM m)
            , MonadThrow (STM m)
+           , MonadPlus (STM m)
            )
         => Tracers m
         -> TimeoutFn m
         -> JobPool.JobPool Group m JobResult
-        -> EgressQueue m
+        -> Map Word8 (EgressQueue m)
         -> StrictTQueue m (ControlCmd mode m)
         -> StrictTVar m Status
         -> m ()
@@ -419,7 +436,7 @@ monitor tracers@TracersI {
           tracer_       = tracer,
           bearerTracer_ = bearerTracer
         }
-        timeout jobpool egressQueue cmdQueue muxStatus =
+        timeout jobpool egressQueues cmdQueue muxStatus =
     go (MonitorCtx Map.empty Map.empty)
   where
     go :: MonitorCtx m mode -> m ()
@@ -492,7 +509,8 @@ monitor tracers@TracersI {
                              miniProtocolInfo = MiniProtocolInfo {
                                miniProtocolNum,
                                miniProtocolDir,
-                               miniProtocolCapability
+                               miniProtocolCapability,
+                               miniProtocolWeight
                              }
                            }
                            ptclAction) -> do
@@ -503,14 +521,14 @@ monitor tracers@TracersI {
               JobPool.forkJob jobpool $
                 miniProtocolJob
                   tracers
-                  egressQueue
+                  (egressQueues Map.! miniProtocolWeight)
                   ptclState
                   ptclAction
             Just cap ->
               JobPool.forkJobOn cap jobpool $
                 miniProtocolJob
                   tracers
-                  egressQueue
+                  (egressQueues Map.! miniProtocolWeight)
                   ptclState
                   ptclAction
           go monitorCtx
@@ -556,10 +574,9 @@ monitor tracers@TracersI {
           atomically $ writeTVar muxStatus Stopping
           JobPool.cancelGroup jobpool MiniProtocolJob
           -- wait for 2 seconds before the egress queue is drained
-          _ <- timeout 2 $
-            atomically $
-                  tryPeekTBQueue egressQueue
-              >>= check . isNothing
+          _ <- timeout 2 . atomically $
+            let qs = map isEmptyTBQueue (Map.elems egressQueues)
+             in runLastToFinish $ foldl1 (<>) (LastToFinish <$> qs)
           atomically $ writeTVar muxStatus Stopped
           traceWith tracer TraceStopped
           -- by exiting the 'monitor' loop we let the job pool kill demuxer and
@@ -597,7 +614,8 @@ monitor tracers@TracersI {
                       miniProtocolInfo = MiniProtocolInfo {
                            miniProtocolNum,
                            miniProtocolDir,
-                           miniProtocolCapability
+                           miniProtocolCapability,
+                           miniProtocolWeight
                       },
                       miniProtocolStatusVar
                     }
@@ -610,14 +628,14 @@ monitor tracers@TracersI {
           JobPool.forkJob jobpool $
             miniProtocolJob
               tracers
-              egressQueue
+              (egressQueues Map.! miniProtocolWeight)
               ptclState
               ptclAction
         Just cap ->
           JobPool.forkJobOn cap jobpool $
             miniProtocolJob
               tracers
-              egressQueue
+              (egressQueues Map.! miniProtocolWeight)
               ptclState
               ptclAction
 
@@ -676,8 +694,9 @@ muxChannel
     -> MiniProtocolNum
     -> MiniProtocolDir
     -> IngressQueue m
+    -> Maybe ProtocolBurst
     -> ByteChannel m
-muxChannel tracer egressQueue want@(Wanton w) mc md q =
+muxChannel tracer egressQueue want@(Wanton w _ _) mc md q mBurst =
     Channel { send, recv }
   where
     -- A soft limit on the egress buffer (Wanton) size.
@@ -689,6 +708,8 @@ muxChannel tracer egressQueue want@(Wanton w) mc md q =
     --
     egressSoftBufferLimit :: Int64
     egressSoftBufferLimit = 0x3ffff
+
+    burst = fromMaybe (ProtocolBurst 0 0) mBurst
 
     send :: BL.ByteString -> m ()
     send encoding = do
@@ -704,7 +725,7 @@ muxChannel tracer egressQueue want@(Wanton w) mc md q =
                    let wasEmpty = BL.null buf
                    writeTVar w (BL.append buf encoding)
                    when wasEmpty $
-                     writeTBQueue egressQueue (TLSRDemand mc md want)
+                     writeTBQueue egressQueue (TLSRDemand mc md want burst)
                else retry
 
         traceWith tracer $ TraceChannelSendEnd mc

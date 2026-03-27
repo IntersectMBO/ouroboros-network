@@ -340,14 +340,16 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
           -> MiniProtocolWithExpandedCtx Mx.InitiatorMode          NtNAddr PeerTrustable ByteString m () Void
         f MiniProtocol { miniProtocolNum
                        , miniProtocolLimits
-                       , miniProtocolRun } =
+                       , miniProtocolRun
+                       , miniProtocolWeight } =
           MiniProtocol { miniProtocolNum
                        , miniProtocolStart = StartEagerly
                        , miniProtocolLimits
                        , miniProtocolRun =
                           case miniProtocolRun of
                             InitiatorAndResponderProtocol initiator _respnder ->
-                              InitiatorProtocolOnly initiator
+                              InitiatorProtocolOnly initiator,
+                         miniProtocolWeight
                        }
 
     initiatorAndResponderApp
@@ -362,7 +364,8 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
               , miniProtocolRun    =
                   InitiatorAndResponderProtocol
                     chainSyncInitiator
-                    chainSyncResponder
+                    chainSyncResponder,
+                miniProtocolWeight = 1
               }
           , MiniProtocol
               { miniProtocolNum    = blockFetchMiniProtocolNum
@@ -371,7 +374,8 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
               , miniProtocolRun    =
                   InitiatorAndResponderProtocol
                     blockFetchInitiator
-                    blockFetchResponder
+                    blockFetchResponder,
+                miniProtocolWeight = 1
               }
 
           , MiniProtocol {
@@ -384,7 +388,8 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
                     (txSubmissionResponder (nkMempool nodeKernel)
                                            (nkTxChannelsVar nodeKernel)
                                            (nkTxMempoolSem nodeKernel)
-                                           (nkSharedTxStateVar nodeKernel))
+                                           (nkSharedTxStateVar nodeKernel)),
+              miniProtocolWeight = 1
             }
           ]
       , withWarm = WithWarm
@@ -395,7 +400,8 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
               , miniProtocolRun    =
                   InitiatorAndResponderProtocol
                     pingPongInitiator
-                    pingPongResponder
+                    pingPongResponder,
+                miniProtocolWeight = 1
               }
           ]
       , withEstablished = WithEstablished $
@@ -406,7 +412,8 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
               , miniProtocolRun    =
                   InitiatorAndResponderProtocol
                     keepAliveInitiator
-                    keepAliveResponder
+                    keepAliveResponder,
+                miniProtocolWeight = 1
               }
           : case peerSharing of
               PSTypes.PeerSharingEnabled ->
@@ -417,7 +424,8 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
                     , miniProtocolRun    =
                         InitiatorAndResponderProtocol
                           peerSharingInitiator
-                          (peerSharingResponder (nkPeerSharingAPI nodeKernel))
+                          (peerSharingResponder (nkPeerSharingAPI nodeKernel)),
+                      miniProtocolWeight = 1
                     }
                 ]
               PSTypes.PeerSharingDisabled ->

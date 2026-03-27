@@ -115,7 +115,8 @@ reqrespTracer tag = Tracer $ \case
 defaultProtocolLimits :: MiniProtocolLimits
 defaultProtocolLimits =
     MiniProtocolLimits {
-      maximumIngressQueue = 10_000_000
+      maximumIngressQueue = 10_000_000,
+      burst = Nothing
     }
 
 
@@ -125,13 +126,15 @@ protocols miniProtocolDir =
       miniProtocolNum        = MiniProtocolNum 2,
       miniProtocolDir,
       miniProtocolLimits     = defaultProtocolLimits,
-      miniProtocolCapability = Nothing
+      miniProtocolCapability = Nothing,
+      miniProtocolWeight = 1
     }
   , MiniProtocolInfo {
       miniProtocolNum        = MiniProtocolNum 3,
       miniProtocolDir,
       miniProtocolLimits     = defaultProtocolLimits,
-      miniProtocolCapability = Nothing
+      miniProtocolCapability = Nothing,
+      miniProtocolWeight = 1
     }
   ]
 

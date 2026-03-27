@@ -63,7 +63,7 @@ import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.DeepSeq (NFData)
 #if !defined(wasm32_HOST_ARCH)
-import Control.Monad (unless, when)
+import Control.Monad (unless, when, MonadPlus)
 #endif
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
@@ -264,13 +264,13 @@ data ConnectToArgs m fd addr vNumber vData = ConnectToArgs {
 -- Exceptions thrown by 'MuxApplication' are rethrown by 'connectToNode'.
 connectToNode
   :: forall muxMode vNumber vData fd addr m a b.
-     ( Alternative   (STM m)
-     , MonadAsync         m
+     ( MonadAsync         m
      , MonadDelay         m
      , MonadEvaluate      m
      , MonadFork          m
      , MonadLabelledSTM   m
      , MonadMask          m
+     , MonadPlus     (STM m)
      , Mx.MonadReadBuffer m
      , MonadSTM           m
      , MonadTimer         m
@@ -303,13 +303,13 @@ connectToNode sn mkBearer args configureSock versions localAddr remoteAddr =
 -- to execute on a given connection.
 connectToNodeWithMux
   :: forall muxMode vNumber vData fd addr m a b x.
-     ( Alternative   (STM m)
-     , MonadAsync         m
+     ( MonadAsync         m
      , MonadDelay         m
      , MonadEvaluate      m
      , MonadFork          m
      , MonadLabelledSTM   m
      , MonadMask          m
+     , MonadPlus     (STM m)
      , Mx.MonadReadBuffer m
      , MonadSTM           m
      , MonadTimer         m
@@ -366,13 +366,13 @@ connectToNodeWithMux sn mkBearer args configureSock versions localAddr remoteAdd
 -- Exceptions thrown by @'MuxApplication'@ are rethrown by @'connectTo'@.
 connectToNode'
   :: forall muxMode vNumber vData fd addr m a b.
-     ( Alternative   (STM m)
-     , MonadAsync         m
+     ( MonadAsync         m
      , MonadDelay         m
      , MonadFork          m
      , MonadEvaluate      m
      , MonadLabelledSTM   m
      , MonadMask          m
+     , MonadPlus    (STM m)
      , Mx.MonadReadBuffer m
      , MonadSTM           m
      , MonadTimer         m
@@ -401,13 +401,13 @@ connectToNode' sn mkBearer args versions as =
 
 connectToNodeWithMux'
   :: forall muxMode vNumber vData fd addr m a b x.
-     ( Alternative   (STM m)
-     , MonadAsync         m
+     ( MonadAsync         m
      , MonadDelay         m
      , MonadFork          m
      , MonadEvaluate      m
      , MonadLabelledSTM   m
      , MonadMask          m
+     , MonadPlus     (STM m)
      , Mx.MonadReadBuffer m
      , MonadSTM           m
      , MonadTimer         m
