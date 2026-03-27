@@ -402,34 +402,6 @@ library framework
     build-depends: Win32 >=2.5.4.1 && <3.0
   hs-source-dirs: framework
 
-library framework-tracing
-  import: ghc-options
-  visibility: public
-  hs-source-dirs: framework/tracing
-  exposed-modules:
-    Network.Mux.Tracing
-    Ouroboros.Network.Tracing
-
-  other-modules:
-    Ouroboros.Network.Tracing.ConnectionId
-    Ouroboros.Network.Tracing.ConnectionManager
-    Ouroboros.Network.Tracing.Driver
-    Ouroboros.Network.Tracing.InboundGovernor
-    Ouroboros.Network.Tracing.Server
-
-  build-depends:
-    aeson,
-    base >=4.14 && <4.23,
-    containers,
-    formatting,
-    iproute,
-    network,
-    network-mux,
-    ouroboros-network:{api, framework, orphan-instances},
-    text,
-    trace-dispatcher ^>=2.12.0,
-    typed-protocols:{typed-protocols, stateful} ^>=1.2,
-
 library tests-lib
   import: ghc-options
   visibility: public
@@ -639,12 +611,15 @@ library tracing
   visibility: public
   hs-source-dirs: tracing
   exposed-modules:
-    Ouroboros.Network.Tracing.PeerSelection
-    Ouroboros.Network.Tracing.TxSubmission
-    Ouroboros.Network.Tracing.TxSubmission.Inbound
-    Ouroboros.Network.Tracing.TxSubmission.Outbound
+    Network.Mux.Tracing
+    Ouroboros.Network.Tracing
 
   other-modules:
+    Ouroboros.Network.Tracing.ConnectionId
+    Ouroboros.Network.Tracing.ConnectionManager
+    Ouroboros.Network.Tracing.Driver
+    Ouroboros.Network.Tracing.InboundGovernor
+    Ouroboros.Network.Tracing.PeerSelection
     Ouroboros.Network.Tracing.PeerSelection.Governor
     Ouroboros.Network.Tracing.PeerSelection.Governor.DebugPeerSelection
     Ouroboros.Network.Tracing.PeerSelection.Governor.PeerSelectionCounters
@@ -654,6 +629,10 @@ library tracing
     Ouroboros.Network.Tracing.PeerSelection.RootPeersDNS.DNSActions
     Ouroboros.Network.Tracing.PeerSelection.RootPeersDNS.LocalRootPeers
     Ouroboros.Network.Tracing.PeerSelection.RootPeersDNS.PublicRootPeers
+    Ouroboros.Network.Tracing.Server
+    Ouroboros.Network.Tracing.TxSubmission
+    Ouroboros.Network.Tracing.TxSubmission.Inbound
+    Ouroboros.Network.Tracing.TxSubmission.Outbound
 
   reexported-modules:
   default-language: Haskell2010
@@ -662,11 +641,15 @@ library tracing
     aeson,
     base >=4.14 && <4.23,
     containers,
+    formatting,
     io-classes:si-timers,
     iproute,
-    ouroboros-network:{ouroboros-network, orphan-instances, protocols},
+    network,
+    network-mux,
+    ouroboros-network:{ouroboros-network, api, framework, orphan-instances, protocols},
     text,
     trace-dispatcher ^>=2.12.0,
+    typed-protocols:{typed-protocols, stateful},
 
   if flag(asserts)
     ghc-options: -fno-ignore-asserts
