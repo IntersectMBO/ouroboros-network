@@ -2398,7 +2398,8 @@ prop_mux_trailing_bytes reminder (NonEmptyByteString received) = do
                       miniProtocolNum,
                       miniProtocolDir = Mx.ResponderDirectionOnly,
                       miniProtocolLimits = Mx.MiniProtocolLimits maxBound Nothing,
-                      miniProtocolCapability = Nothing
+                      miniProtocolCapability = Nothing,
+                      miniProtocolWeight = 1
                     }
                   ]
     withAsync (Mx.run mux bearer) $ \_ -> do
@@ -2495,8 +2496,9 @@ prop_mux_pure_exception = do
                   [ MiniProtocolInfo {
                       miniProtocolNum,
                       miniProtocolDir = Mx.ResponderDirectionOnly,
-                      miniProtocolLimits = Mx.MiniProtocolLimits maxBound,
-                      miniProtocolCapability = Nothing
+                      miniProtocolLimits = Mx.MiniProtocolLimits maxBound Nothing,
+                      miniProtocolCapability = Nothing,
+                      miniProtocolWeight = 1
                     }
                   ]
     withAsync (Mx.run mux bearer) $ \_ -> do

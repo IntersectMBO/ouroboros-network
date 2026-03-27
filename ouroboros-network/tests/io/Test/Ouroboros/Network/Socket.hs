@@ -175,7 +175,8 @@ testProtocols1 chainSync =
         miniProtocolNum    = MiniProtocolNum 2,
         miniProtocolStart  = StartOnDemandAny,
         miniProtocolLimits = MiniProtocolLimits {
-                               maximumIngressQueue = defaultMiniProtocolLimit
+                               maximumIngressQueue = defaultMiniProtocolLimit,
+                               burst = Nothing
                              },
         miniProtocolRun    = chainSync
       }
