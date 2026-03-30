@@ -3,6 +3,7 @@
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE PackageImports             #-}
 {-# LANGUAGE RankNTypes                 #-}
@@ -29,7 +30,7 @@ import Data.Bits
 import Data.ByteString.Lazy qualified as BL
 import Data.ByteString.Lazy.Char8 qualified as BL8 (pack)
 import Data.Functor.Contravariant ((>$<))
-import Data.List (dropWhileEnd, nub)
+import Data.List (dropWhileEnd, group, nub)
 import Data.List qualified as List
 import Data.Map qualified as M
 import Data.Maybe (isNothing)
@@ -312,6 +313,35 @@ instance Arbitrary DummyCapability where
                 , (8, (DummyCapability . Just) <$> choose (0, 7))
                 , (1, (DummyCapability . Just) <$> arbitrary)
                 ]
+
+
+newtype MiniProtocolWeights = MiniProtocolWeights (MiniProtocolWeight, MiniProtocolWeight)
+  deriving (Eq, Show)
+
+instance Arbitrary MiniProtocolWeights where
+  arbitrary = do
+    wt1 <- arbitrary
+    wt2 <- arbitrary
+    let mkWt = MiniProtocolWeight
+    if wt1 == wt2
+      then pure $ MiniProtocolWeights (mkWt 1, mkWt 1)
+      else pure $ MiniProtocolWeights (wt1, wt2)
+
+  shrink (MiniProtocolWeights (wt1, wt2)) =
+    let mkWt = MiniProtocolWeight
+     in    MiniProtocolWeights (mkWt 1, mkWt 1)
+        : [ MiniProtocolWeights (wt1', wt2')
+          | wt1' <- shrink wt1
+          , wt2' <- shrink wt2
+          ]
+
+
+newtype MiniProtocolWeight = MiniProtocolWeight Word8
+  deriving (Eq, Show)
+
+instance Arbitrary MiniProtocolWeight where
+  arbitrary = MiniProtocolWeight <$> choose (1, 4)
+  shrink (MiniProtocolWeight wt) = MiniProtocolWeight <$> filter (> 0) (shrink wt)
 
 
 -- | A pair of two bytestrings which lengths are unevenly distributed
@@ -1008,8 +1038,10 @@ prop_mux_2_minis_Socket_buf cap a b = ioProperty $
 -- The Mux bearer should alternate between sending data for the two responders.
 --
 prop_mux_starvation :: Uneven
+                    -> MiniProtocolWeights
                     -> Property
-prop_mux_starvation (Uneven response0 response1) =
+prop_mux_starvation (Uneven response0 response1)
+                    (MiniProtocolWeights (MiniProtocolWeight wt1, MiniProtocolWeight wt2)) =
     let sduLen = Mx.SDUSize 1280 in
     (BL.length (unDummyPayload response0) > 2 * fromIntegral (Mx.getSDUSize sduLen)) &&
     (BL.length (unDummyPayload response1) > 2 * fromIntegral (Mx.getSDUSize sduLen)) ==>
@@ -1072,14 +1104,14 @@ prop_mux_starvation (Uneven response0 response1) =
                          miniProtocolDir = Mx.ResponderDirectionOnly,
                          miniProtocolLimits = defaultMiniProtocolLimits,
                          miniProtocolCapability = Nothing,
-                         miniProtocolWeight = 1
+                         miniProtocolWeight = wt1
                        }
         serverApp3 = MiniProtocolInfo {
                          miniProtocolNum = Mx.MiniProtocolNum 3,
                          miniProtocolDir = Mx.ResponderDirectionOnly,
                          miniProtocolLimits = defaultMiniProtocolLimits,
                          miniProtocolCapability = Nothing,
-                         miniProtocolWeight = 1
+                         miniProtocolWeight = wt2
                        }
 
     serverMux <- Mx.new serverTracer [serverApp2, serverApp3]
@@ -1119,28 +1151,30 @@ prop_mux_starvation (Uneven response0 response1) =
 
     -- Then look at the message trace to check for starvation.
     trace <- atomically $ readTVar traceHeaderVar
-    let es = map Mx.mhNum (take 100 (reverse trace))
-        ls = dropWhile (\e -> e == head es) es
-        fair = verifyStarvation ls
+    let es  = map Mx.mhNum (take 100 (reverse trace))
+              -- We can't make 100% sure that both servers start responding at the same
+              -- time but once they are both up and running messages should alternate
+              -- between ReqResp2 and ReqResp3, so we drop the prefix of the protocol
+              -- which goes first, and trim the suffix when the first protocol finishes
+        ls  = dropWhile (\e -> e == head es) es
+        ls' = dropWhileEnd (\e -> e == last ls) ls
+        fair =    counterexample "muxer didn't interleave" (not . null $ ls')
+             .&&. label ("shrinkage " ++ labelPr_ ((length ls' * 100) `div` length es) ++ "%")
+                    (verifyStarvation ls' (\case (Mx.MiniProtocolNum 2) -> wt1; _otherwise -> wt2))
     return $ res_short .&&. res_long .&&. fair
   where
-   -- We can't make 100% sure that both servers start responding at the same
-   -- time but once they are both up and running messages should alternate
-   -- between ReqResp2 and ReqResp3
-    verifyStarvation :: Eq a => [a] -> Property
-    verifyStarvation [] = property True
-    verifyStarvation ms =
-      let ms' = dropWhileEnd (\e -> e == last ms)
-                  (head ms : dropWhile (\e -> e == head ms) ms)
-                ++ [last ms]
-      in
-        label ("length " ++ labelPr_ ((length ms' * 100) `div` length ms) ++ "%")
-        $ label ("length " ++ label_ (length ms')) $ alternates ms'
+    verifyStarvation :: Eq a => [a] -> (a -> Word8) -> Property
+    verifyStarvation [] _atowt = property True
+    verifyStarvation ms atowt = label ("length " ++ label_ (length ms)) .
+                                label ("groups " ++ label_ (length (group ms))) .
+                                alternates $ group ms
 
       where
         alternates []           = True
         alternates (_:[])       = True
-        alternates (a : b : as) = a /= b && alternates (b : as)
+        alternates (a : b : []) =    length a <= fromIntegral (atowt (head a))
+                                  && length b <= fromIntegral (atowt (head b))
+        alternates (a : b : as) = (length a == fromIntegral (atowt (head a))) && alternates (b : as)
 
     label_ :: Int -> String
     label_ n = mconcat
