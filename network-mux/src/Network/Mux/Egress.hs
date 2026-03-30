@@ -276,7 +276,6 @@ muxer egressQueues0 tracer Bearer { writeMany, sduSize, batchSize, egressInterva
                 (batch', goAgain) <- atomically do
                   delta <- (start `diffTime`) <$> stateTVar wLastSent (, start)
                   thisEmpty <- isEmptyTBQueue queue
-                  allEmpty <- (thisEmpty &&) <$> allM isEmptyTBQueue (snd <$> take (pred numQueues) rest)
                   let boundedTokens = min sduSize . fromIntegral . min (fromIntegral $ maxBound @SDUSize)
 
                       step (!batch', !eSize) mx = do
@@ -304,7 +303,7 @@ muxer egressQueues0 tracer Bearer { writeMany, sduSize, batchSize, egressInterva
                                    lift $ writeTBQueue queue demand
                                    throwE (batch'', True)
                               else pure (batch'', Right nextSdu)
-                  either pure ((<$ writeTBQueue queue demand) . second (const True))
+                  either pure (error "impossible")
                     =<< runExceptT do
                           sduSize0 <- lift $ stateTVar wBucket \tokens ->
                             let tokens' = truncate $
@@ -312,7 +311,7 @@ muxer egressQueues0 tracer Bearer { writeMany, sduSize, batchSize, egressInterva
                                                 (fromIntegral tokens + fromIntegral pbRefillRate * toDouble delta)
                                 -- we leverage burst and deduct credits only where there is contention
                                 -- between protocols
-                                sduSize0 | mBurst && not allEmpty = Right $ boundedTokens tokens'
+                                sduSize0 | mBurst    = Right $ boundedTokens tokens'
                                          | otherwise = Left sduSize
                             in (sduSize0, tokens')
                           when (fromRight maxBound sduSize0 <= burstMinSdu) do
@@ -322,10 +321,7 @@ muxer egressQueues0 tracer Bearer { writeMany, sduSize, batchSize, egressInterva
                             lift $ writeTBQueue queue demand
                             throwE (batch, True)
                           foldM step (batch, sduSize0)
-                                     (if allEmpty
-                                        then [const $ processSingleWanton sduSize mpc md d]
-                                             -- ^ grab full sdu, save the tokens for cases with contention
-                                        else repeat (\sduSize' -> processSingleWanton sduSize' mpc md d))
+                                     (repeat (\sduSize' -> processSingleWanton sduSize' mpc md d))
 
                 if weight > 1 && goAgain
                   then let egressQueues' = (pred weight, queue) : rest
