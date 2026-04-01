@@ -30,6 +30,7 @@ import Data.Aeson.Types (Pair, Parser, listValue)
 import Data.Bifunctor (first)
 import Data.Bool (bool)
 import Data.Foldable (toList)
+import Data.IntMap.Strict qualified as IntMap
 import Data.IP (fromHostAddress, fromHostAddress6)
 import Data.Map.Strict qualified as Map
 import Data.Proxy
@@ -38,6 +39,7 @@ import Data.Text (Text, pack)
 import Data.Text.Encoding qualified as Text
 import Data.Text.Encoding.Error qualified as Text
 import Numeric (showOct)
+import Ouroboros.Network.Tx
 
 import Network.Mux.Trace qualified as Mux
 import Network.Mux.Types qualified as Mux
@@ -89,10 +91,10 @@ import Ouroboros.Network.Server qualified as Server
 import Ouroboros.Network.Server.RateLimiting (AcceptConnectionsPolicyTrace (..),
            AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket (LocalAddress (..), RemoteAddress)
-import Ouroboros.Network.TxSubmission.Inbound.V2 (ProcessedTxCount (..),
-           TraceTxLogic (..), TraceTxSubmissionInbound (..))
-import Ouroboros.Network.TxSubmission.Inbound.V2.Types
-           (TxSubmissionLogicVersion (..))
+import Ouroboros.Network.TxSubmission.Inbound.V2.Types (ProcessedTxCount (..),
+           SharedTxState (..), TraceTxLogic (..), TraceTxSubmissionInbound (..),
+           TxEntry (..), TxLease (..), TxSubmissionLogicVersion (..),
+           retainedSize, retainedToList)
 import Ouroboros.Network.TxSubmission.Outbound (TraceTxSubmissionOutbound (..))
 
 -- Helper function for ToJSON instances with a "kind" field
@@ -1814,6 +1816,11 @@ instance ( ToJSON txid
       , "txids" .= toJSON txids
       , "time" .= diffTime
       ]
+  toJSON (TraceTxInboundRequestTxs txids) =
+    object
+      [ "kind" .= String "TxInboundRequestTxs"
+      , "txids" .= toJSON txids
+      ]
   toJSON (TraceTxInboundError err) =
     object
       [ "kind" .= String "TxInboundError"
@@ -1823,28 +1830,64 @@ instance ( ToJSON txid
     object
       [ "kind" .= String "TxInboundTerminated"
       ]
-  toJSON (TraceTxInboundDecision decision) =
+
+traceSharedTxStateToJSON
+  :: (Show addr, Show txid, HasRawTxId txid)
+  => SharedTxState addr txid
+  -> Value
+traceSharedTxStateToJSON SharedTxState {
+                           sharedTxTable,
+                           sharedRetainedTxs,
+                           sharedTxIdToKey,
+                           sharedKeyToTxId,
+                           sharedGeneration
+                         } =
     object
-      [ "kind" .= String "TxInboundDecision"
-      -- TODO: this is too verbose, it will show full tx's
-      , "decision" .= String (pack $ show decision)
+      [ "sharedGeneration" .= sharedGeneration
+      , "activeTxCount" .= IntMap.size sharedTxTable
+      , "retainedTxCount" .= retainedSize sharedRetainedTxs
+      , "internedTxCount" .= Map.size sharedTxIdToKey
+      , "leasedTxCount" .= leasedTxCount
+      , "claimableTxCount" .= claimableTxCount
+      , "totalAttemptCount" .= totalAttemptCount
+      , "submittingTxCount" .= submittingTxCount
+      , "sharedTxTable" .= [ (renderTxId txKey, show txEntry)
+                           | (txKey, txEntry) <- IntMap.toList sharedTxTable
+                           ]
+      , "sharedRetainedTxs" .= [ (renderTxId txKey, show retainUntil)
+                               | (txKey, retainUntil) <- retainedToList sharedRetainedTxs
+                               ]
+      , "internedTxIds" .= fmap show (Map.keys sharedTxIdToKey)
       ]
+  where
+    activeEntries = IntMap.elems sharedTxTable
+
+    leasedTxCount =
+      length [ () | TxEntry { txLease = TxLeased _ _ } <- activeEntries ]
+
+    claimableTxCount =
+      length [ () | TxEntry { txLease = TxClaimable _ } <- activeEntries ]
+
+    totalAttemptCount =
+      sum [ txAttempt | TxEntry { txAttempt } <- activeEntries ]
+
+    submittingTxCount =
+      length [ () | TxEntry { txInSubmission = True } <- activeEntries ]
+
+    renderTxId txKey =
+      maybe "<missing-txid>" show (IntMap.lookup txKey sharedKeyToTxId)
 
 -- TODO: in cardano-node in the `coot/tx-submission-10.5` branch there's
 -- a better instance.
 instance ( Show addr
          , Show txid
          , Show tx
+         , HasRawTxId txid
          )
        => ToJSON (TraceTxLogic addr txid tx) where
-  toJSON (TraceSharedTxState tag st) =
+  toJSON (TraceSharedTxState st) =
     object [ "kind" .= String "SharedTxState"
-           , "tag"  .= String (pack tag)
-           , "sharedTxState" .= String (pack . show $ st)
-           ]
-  toJSON (TraceTxDecisions decisions) =
-    object [ "kind"      .= String "TxDecisions"
-           , "decisions" .= String (pack . show $ decisions)
+           , "sharedTxState" .= traceSharedTxStateToJSON st
            ]
 
 

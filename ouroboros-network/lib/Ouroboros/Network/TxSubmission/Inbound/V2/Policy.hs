@@ -3,6 +3,7 @@
 module Ouroboros.Network.TxSubmission.Inbound.V2.Policy
   ( TxDecisionPolicy (..)
   , defaultTxDecisionPolicy
+  , saneTxDecisionPolicy
   , max_TX_SIZE
     -- * Re-exports
   , NumTxIdsToReq (..)
@@ -29,10 +30,10 @@ max_TX_SIZE = 65_540
 -- | Policy for making decisions
 --
 data TxDecisionPolicy = TxDecisionPolicy {
-      maxNumTxIdsToRequest   :: !NumTxIdsToReq,
+      maxNumTxIdsToRequest           :: !NumTxIdsToReq,
       -- ^ a maximal number of txids requested at once.
 
-      maxUnacknowledgedTxIds :: !NumTxIdsToReq,
+      maxUnacknowledgedTxIds         :: !NumTxIdsToReq,
       -- ^ maximal number of unacknowledgedTxIds.  Measured in `NumTxIdsToReq`
       -- since we enforce this policy by requesting not more txids than what
       -- this limit allows.
@@ -41,25 +42,47 @@ data TxDecisionPolicy = TxDecisionPolicy {
       -- Configuration of tx decision logic.
       --
 
-      txsSizeInflightPerPeer :: !SizeInBytes,
+      txsSizeInflightPerPeer         :: !SizeInBytes,
       -- ^ a limit of tx size in-flight from a single peer.
       -- It can be exceed by max tx size.
 
-      txInflightMultiplicity :: !Int,
+      maxOutstandingTxBatchesPerPeer :: !Int,
+      -- ^ a limit of outstanding tx-body request batches from a single peer.
+
+      txInflightMultiplicity         :: !Int,
       -- ^ from how many peers download the `txid` simultaneously
 
-      bufferedTxsMinLifetime :: !DiffTime,
+      bufferedTxsMinLifetime         :: !DiffTime,
       -- ^ how long TXs that have been added to the mempool will be
       -- kept in the `bufferedTxs` cache.
 
-      scoreRate              :: !Double,
+      scoreRate                      :: !Double,
       -- ^ rate at which "rejected" TXs drain. Unit: TX/seconds.
 
-      scoreMax               :: !Double
+      scoreMax                       :: !Double,
       -- ^ Maximum number of "rejections". Unit: seconds
 
+      scoreAcceptDecrement           :: !Double,
+      -- ^ amount subtracted from the peer's score for each tx body the peer delivered that the mempool accepted.
+
+      interTxSpace                   :: !DiffTime,
+      -- ^ space between actual requests for the same TX. This the time a peer has soul ownership
+      -- of their TX lease. When it expires other peers may issue additional requests.
+
+      inflightTimeout                :: !DiffTime,
+      -- ^ Maximum time a peer's attempt may sit between claim and
+      -- entering submission before the per-entry inflight-multiplicity
+      -- cap is bumped, allowing another peer to attempt in parallel.
+      maxPeerClaimDelay              :: !DiffTime,
+      -- ^ Maximum delay penalty for poor performing peers.
+
+      disablePipelinedTxIdRequests   :: !Bool
+      -- ^ When 'True', the txid picker never issues pipelined
+      -- @MsgRequestTxIds@ messages; only blocking requests fire (and
+      -- only when the unack window has been fully drained). Used
+      -- by some benchmarks.
     }
-  deriving Show
+  deriving (Eq, Show)
 
 instance NFData TxDecisionPolicy where
   rnf TxDecisionPolicy{} = ()
@@ -67,11 +90,41 @@ instance NFData TxDecisionPolicy where
 defaultTxDecisionPolicy :: TxDecisionPolicy
 defaultTxDecisionPolicy =
   TxDecisionPolicy {
-    maxNumTxIdsToRequest   = 3,
+    maxNumTxIdsToRequest   = 6,
     maxUnacknowledgedTxIds = 10, -- must be the same as txSubmissionMaxUnacked
     txsSizeInflightPerPeer = max_TX_SIZE * 6,
+    maxOutstandingTxBatchesPerPeer = 4,
     txInflightMultiplicity = 2,
     bufferedTxsMinLifetime = 2,
-    scoreRate              = 0.1,
-    scoreMax               = 15 * 60
+    scoreRate              = 0.001,
+    scoreMax               = 15 * 60,
+    scoreAcceptDecrement   = 3,
+    interTxSpace           = 0.250,
+    inflightTimeout        = 0.600,
+    maxPeerClaimDelay      = 0.250,
+    disablePipelinedTxIdRequests = False
   }
+
+-- | Sanity check for a 'TxDecisionPolicy': 'True' when every field lies
+-- in the range the decision logic assumes.
+--
+-- The window and per-peer limit fields must be positive (otherwise the
+-- peer can make no progress), the rate, score and delay parameters must
+-- be non-negative, and 'inflightTimeout' must be at least 'interTxSpace'
+-- (their difference is used as a non-negative delay when bumping a stuck
+-- entry's inflight-multiplicity cap).  'defaultTxDecisionPolicy' satisfies
+-- it.
+saneTxDecisionPolicy :: TxDecisionPolicy -> Bool
+saneTxDecisionPolicy p =
+       maxNumTxIdsToRequest           p >= 1
+    && maxUnacknowledgedTxIds         p >= 1
+    && txsSizeInflightPerPeer         p >  0
+    && maxOutstandingTxBatchesPerPeer p >= 1
+    && txInflightMultiplicity         p >= 1
+    && bufferedTxsMinLifetime         p >= 0
+    && scoreRate                      p >= 0
+    && scoreMax                       p >= 0
+    && scoreAcceptDecrement           p >= 0
+    && interTxSpace                   p >= 0
+    && inflightTimeout                p >= interTxSpace p
+    && maxPeerClaimDelay              p >= 0

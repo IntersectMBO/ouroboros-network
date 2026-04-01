@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -Wno-orphans     #-}
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE BlockArguments      #-}
 {-# LANGUAGE DeriveAnyClass      #-}
@@ -7,6 +8,7 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 module Test.Ouroboros.Network.TxSubmission.Types
   ( Tx (..)
@@ -61,6 +63,7 @@ import Network.TypedProtocol.Codec
 
 import Ouroboros.Network.Protocol.TxSubmission2.Codec
 import Ouroboros.Network.Protocol.TxSubmission2.Type
+import Ouroboros.Network.Tx (HasRawTxId (..))
 import Ouroboros.Network.TxSubmission.Inbound.V1
 import Ouroboros.Network.TxSubmission.Mempool.Reader
 import Ouroboros.Network.TxSubmission.Mempool.Simple (Mempool)
@@ -98,8 +101,8 @@ instance Arbitrary txid => Arbitrary (Tx txid) where
       -- generating small tx sizes avoids overflow error when semigroup
       -- instance of `SizeInBytes` is used (summing up all inflight tx
       -- sizes).
-      (size, advSize) <- frequency [ (99, (\a -> (a,a)) <$> chooseEnum (0, maxTxSize))
-                                   , (1, (,) <$> chooseEnum (0, maxTxSize) <*> chooseEnum (0, maxTxSize))
+      (size, advSize) <- frequency [ (90, (\a -> (a,a)) <$> chooseEnum (0, maxTxSize))
+                                   , (10, (,) <$> chooseEnum (0, maxTxSize) <*> chooseEnum (0, maxTxSize))
                                    ]
       Tx <$> arbitrary
          <*> pure size
@@ -116,6 +119,10 @@ maxTxSize :: SizeInBytes
 maxTxSize = 65536
 
 type TxId = Int
+
+instance HasRawTxId Int where
+  type RawTxId Int = Int
+  getRawTxId = id
 
 emptyMempool :: MonadSTM m => m (Mempool m txid (Tx txid))
 emptyMempool = Mempool.empty
@@ -234,7 +241,10 @@ getMempoolWriter duplicateVar (Mempool.Mempool mempoolVar) =
             )
 
         atomically $ modifyTVar' duplicateVar (duplicateValidTxIds <>)
-        pure (acceptedTxs, rejectedTxs)
+        -- 'acceptedTxs' is accumulated by the fold above in reverse;
+        -- restore submission order to match the documented contract and
+        -- the real mempool ('NodeKernel.getMempoolWriter').
+        pure (reverse acceptedTxs, rejectedTxs)
     }
 
 

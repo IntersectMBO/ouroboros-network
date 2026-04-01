@@ -241,5 +241,8 @@ getWriterWithCtx getCtx duplicateTxError getTxId validateTx handleInvalidTxs (Me
                    , acceptedTxs
                    )
           handleInvalidTxs rejectedTxIds
-          return (acceptedTxs, rejectedTxIds)
+          -- 'acceptedTxs' is accumulated by the fold above in reverse;
+          -- restore submission order to match the documented contract and
+          -- the real mempool ('NodeKernel.getMempoolWriter').
+          return (reverse acceptedTxs, rejectedTxIds)
       }

@@ -1,27 +1,25 @@
 {-# LANGUAGE NumericUnderscores #-}
 
--- pPrint
-{-# OPTIONS_GHC -Wno-unused-imports #-}
-
 module Main (main) where
 
-import Control.DeepSeq
-import Control.Exception (evaluate)
-import Data.Map (Map)
-import Debug.Trace (traceMarkerIO)
-import System.Mem (performMajorGC)
-import System.Random.SplitMix qualified as SM
-import Test.Tasty.Bench
-import Text.Pretty.Simple (pPrint)
+import Bench.TxSubmissionV2Server qualified as DirectV2
 
-import Ouroboros.Network.TxSubmission.Inbound.V2.Decision qualified as Tx
-import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
-import Ouroboros.Network.TxSubmission.Inbound.V2.State (SharedTxState (..))
+import Control.DeepSeq (NFData, rnf)
+import Control.Exception (evaluate)
+import System.Mem (performMajorGC)
+import Test.Tasty.Bench
 
 import Test.Ouroboros.Network.PeerSelection.PeerMetric
            (microbenchmark1GenerateInput, microbenchmark1ProcessInput)
-import Test.Ouroboros.Network.TxSubmission.TxLogic as TX
-import Test.Ouroboros.Network.TxSubmission.Types
+import Test.Ouroboros.Network.TxSubmission.TxLogic qualified as TX
+
+benchLoops :: Int
+benchLoops = 1_000
+
+-- | Label suffix derived from 'benchLoops' so the bench names can't drift
+-- from the actual iteration count.
+benchLoopsLabel :: String
+benchLoopsLabel = "x" ++ show benchLoops
 
 main :: IO ()
 main =
@@ -35,73 +33,42 @@ main =
           , env (microbenchmark1GenerateInput False 100_000) $ \i ->
                 bench "100k" $ nfAppIO microbenchmark1ProcessInput i
           ]
-        , bgroup "TxLogic"
-          [ env (do let a = TX.mkDecisionContext (SM.mkSMGen 131) 10
-                    evaluate (rnf a)
-                    -- pPrint a
-                    performMajorGC
-                    traceMarkerIO "evaluated decision context"
-                    return a
-                )
-                (\(~a@(_policy, state)) ->
-                     bench "makeDecisions: 10"
-                   $ let f :: (TxDecisionPolicy, SharedTxState PeerAddr TxId (Tx TxId))
-                            -> ( SharedTxState PeerAddr TxId (Tx TxId)
-                               , Map PeerAddr (Tx.TxDecision TxId (Tx TxId))
-                               )
-                         f = flip (uncurry Tx.makeDecisions) (peerTxStates state)
-                     in nf f a
-                )
-          , env (do let a = TX.mkDecisionContext (SM.mkSMGen 131) 100
-                    evaluate (rnf a)
-                    -- pPrint a
-                    performMajorGC
-                    traceMarkerIO "evaluated decision context"
-                    return a
-                )
-                (\(~a@(_policy, state)) ->
-                     bench "makeDecisions: 100"
-                   $ let f :: ( TxDecisionPolicy
-                              , SharedTxState PeerAddr TxId (Tx TxId)
-                              )
-                           ->  ( SharedTxState PeerAddr TxId (Tx TxId)
-                               , Map PeerAddr (Tx.TxDecision TxId (Tx TxId))
-                               )
-                         f = flip (uncurry Tx.makeDecisions) (peerTxStates state)
-                     in nf f a
-                )
-          , env (do let a = TX.mkDecisionContext (SM.mkSMGen 361) 1_000
-                    evaluate (rnf a)
-                    -- pPrint a
-                    performMajorGC
-                    traceMarkerIO "evaluated decision context"
-                    return a
-                )
-                (\(~a@(_policy, state)) ->
-                     bench "makeDecisions: 1000"
-                   $ let f :: ( TxDecisionPolicy
-                              , SharedTxState PeerAddr TxId (Tx TxId)
-                              )
-                           ->  ( SharedTxState PeerAddr TxId (Tx TxId)
-                               , Map PeerAddr (Tx.TxDecision TxId (Tx TxId))
-                               )
-                         f = flip (uncurry Tx.makeDecisions) (peerTxStates state)
-                     in nf f a
-                )
-{-
-          , env (do
-                    smGen <- SM.initSMGen
-                    print smGen
-                    let a = TX.mkDecisionContext smGen 1000
-                    evaluate (rnf a)
-                    traceMarkerIO "evaluated decision context"
-                    return a
-                )
-                (\a ->
-                     bench "makeDecisions: random"
-                   $ nf (uncurry Tx.makeDecisions) a
-                )
--}
+        , bgroup "TxSubmissionV2"
+          [ env (prepareEnv (TX.mkReceiveDuplicateFixture 100 3)) $ \fixture ->
+                bench ("handleReceivedTxIds/duplicate-active/100existing/3txids/" ++ benchLoopsLabel) $
+                  nfAppIO (TX.runReceiveDuplicateLoop benchLoops) fixture
+          , env (prepareEnv (TX.mkResolvedAckFixture 100 10)) $ \fixture ->
+                bench ("nextPeerAction/ack-resolved-retained/100advertisers/10txids/" ++ benchLoopsLabel) $
+                  nfAppIO (TX.runPeerActionLoop benchLoops) fixture
+          , env (prepareEnv (TX.mkFanoutFixture 100 3)) $ \fixture ->
+                bench ("scenario/fanout-retained/100peers/3txids/" ++ benchLoopsLabel) $
+                  nfAppIO (TX.runFanoutLoop benchLoops) fixture
+          , env
+              (prepareEnv (DirectV2.mkDirectServerFixture 1_000))
+              $ \fixture ->
+                bench "server/direct-interpreter/single-peer/1000batches" $
+                  nfAppIO DirectV2.runDirectServerBenchmark fixture
+          , env
+              (prepareEnv (DirectV2.mkMultiPeerFixture 10 1_000))
+              $ \fixture ->
+                bench "server/direct-interpreter/multi-peer/10peers/1000batches" $
+                  nfAppIO DirectV2.runDirectServerBenchmark fixture
+          , env
+              (prepareEnv (DirectV2.mkMultiPeerFixture 100 100))
+              $ \fixture ->
+                bench "server/direct-interpreter/multi-peer/100peers/100batches" $
+                  nfAppIO DirectV2.runDirectServerBenchmark fixture
+          , env
+              (prepareEnv (DirectV2.mkMultiPeerFixture 100 1_000))
+              $ \fixture ->
+                bench "server/direct-interpreter/multi-peer/100peers/1000batches" $
+                  nfAppIO DirectV2.runDirectServerBenchmark fixture
           ]
         ]
       ]
+
+prepareEnv :: NFData a => a -> IO a
+prepareEnv a = do
+  _ <- evaluate (rnf a)
+  performMajorGC
+  pure a

@@ -111,7 +111,7 @@ import Ouroboros.Network.Snocket (MakeBearer, Snocket, TestAddress (..),
 import Ouroboros.Network.Util (PrettyShow (..))
 
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy (TxDecisionPolicy)
-import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (decisionLogicThreads)
+import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (txCountersThreadV2)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types (TraceTxLogic)
 
 import Simulation.Network.Snocket (AddressType (..), FD)
@@ -127,7 +127,6 @@ import Test.Ouroboros.Network.PeerSelection.RootPeersDNS (DNSLookupDelay,
            DNSTimeout, DomainAccessPoint (..), MockDNSLookupResult,
            mockDNSActions)
 import Test.Ouroboros.Network.TxSubmission.Types (Tx)
-import Test.Ouroboros.Network.Utils
 
 
 
@@ -342,17 +341,18 @@ run blockGeneratorArgs ni na
                            (mkApps nodeKernel keepAliveStdGen))
            $ \ diffusionThread ->
                withAsync (blockFetch nodeKernel) $ \blockFetchLogicThread ->
-
-                 withAsync (decisionLogicThreads
-                              tracerTxLogic
-                              sayTracer
+                 withAsync (txCountersThreadV2
                               (aTxDecisionPolicy na)
-                              (nkTxChannelsVar nodeKernel)
-                              (nkSharedTxStateVar nodeKernel)) $ \decLogicThread ->
-                      wait diffusionThread
-                   <> wait blockFetchLogicThread
-                   <> wait nodeKernelThread
-                   <> wait decLogicThread
+                              nullTracer
+                              tracerTxLogic
+                              (nkTxCountersVar nodeKernel)
+                              (nkSharedTxStateVar nodeKernel)
+                              (nkPeerTxRegistry nodeKernel))
+                   $ \txCountersAid ->
+                          wait diffusionThread
+                       <> wait blockFetchLogicThread
+                       <> wait nodeKernelThread
+                       <> wait txCountersAid
   where
     blockFetch :: NodeKernel BlockHeader Block s txid m
                -> m Void
