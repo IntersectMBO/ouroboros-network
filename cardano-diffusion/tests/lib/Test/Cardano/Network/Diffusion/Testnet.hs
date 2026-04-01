@@ -37,6 +37,7 @@ import Data.Dynamic (fromDynamic)
 import Data.Foldable (fold, foldr')
 import Data.Functor (void)
 import Data.IP qualified as IP
+import Data.IntMap.Strict qualified as IntMap
 import Data.List (intercalate, sort)
 import Data.List qualified as List
 import Data.List.Trace qualified as Trace
@@ -1106,12 +1107,28 @@ prop_check_inflight_ratio bi ds@(DiffusionScript simArgs _ _) =
         $ Signal.eventsToList
         $ Signal.selectEvents
            (\case
-               DiffusionTxLogic (TraceSharedTxState _ d) -> Just (inflightTxs d)
+               DiffusionTxLogic (TraceSharedTxState _ d) -> Just (inflightAttemptCounts d)
                _                                         -> Nothing
            )
           events
 
       txDecisionPolicy = saTxDecisionPolicy simArgs
+
+      inflightAttemptCounts :: SharedTxState NtNAddr Int -> Map Int Int
+      inflightAttemptCounts SharedTxState { sharedTxTable, sharedKeyToTxId } =
+        Map.fromList
+          [ (txid, activeAttemptCount txEntry)
+          | (txKey, txEntry) <- IntMap.toList sharedTxTable
+          , Just txid <- [IntMap.lookup txKey sharedKeyToTxId]
+          ]
+
+      activeAttemptCount :: TxEntry peeraddr -> Int
+      activeAttemptCount TxEntry { txAttempts } =
+        length
+          [ ()
+          | attempt <- Map.elems txAttempts
+          , attempt == TxDownloading || attempt == TxBuffered
+          ]
 
    in tabulate "Max observeed ratio of inflight multiplicity by the max stipulated by the policy"
                (map (\m -> "has " ++ show m ++ " in flight - ratio: "

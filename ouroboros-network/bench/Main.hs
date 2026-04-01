@@ -14,9 +14,11 @@ import System.Random.SplitMix qualified as SM
 import Test.Tasty.Bench
 import Text.Pretty.Simple (pPrint)
 
-import Ouroboros.Network.TxSubmission.Inbound.V2.Decision qualified as Tx
-import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
-import Ouroboros.Network.TxSubmission.Inbound.V2.State (SharedTxState (..))
+-- Disabled pending a replacement benchmark suite for the peer-driven V2
+-- tx-submission scheduler.
+-- import Ouroboros.Network.TxSubmission.Inbound.V2.Decision qualified as Tx
+-- import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
+-- import Ouroboros.Network.TxSubmission.Inbound.V2.State (SharedTxState (..))
 
 import Test.Ouroboros.Network.PeerSelection.PeerMetric
            (microbenchmark1GenerateInput, microbenchmark1ProcessInput)
@@ -35,6 +37,7 @@ main =
           , env (microbenchmark1GenerateInput False 100_000) $ \i ->
                 bench "100k" $ nfAppIO microbenchmark1ProcessInput i
           ]
+        {- Disabled until TxLogic has replacement peer-driven V2 benchmarks.
         , bgroup "TxLogic"
           [ env (do let a = TX.mkDecisionContext (SM.mkSMGen 131) 10
                     evaluate (rnf a)
@@ -88,7 +91,6 @@ main =
                          f = flip (uncurry Tx.makeDecisions) (peerTxStates state)
                      in nf f a
                 )
-{-
           , env (do
                     smGen <- SM.initSMGen
                     print smGen
@@ -101,7 +103,7 @@ main =
                      bench "makeDecisions: random"
                    $ nf (uncurry Tx.makeDecisions) a
                 )
--}
           ]
+        -}
         ]
       ]

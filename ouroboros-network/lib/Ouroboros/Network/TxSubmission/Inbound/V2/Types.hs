@@ -1,4 +1,3 @@
-{-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE ExistentialQuantification  #-}
@@ -11,17 +10,28 @@
 {-# LANGUAGE TypeApplications           #-}
 
 module Ouroboros.Network.TxSubmission.Inbound.V2.Types
-  ( -- * PeerTxState
-    PeerTxState (..)
-    -- * SharedTxState
-  , SharedTxState (..)
-    -- * Decisions
-  , TxsToMempool (..)
-  , TxDecision (..)
-  , emptyTxDecision
+  ( -- * Shared state
+    SharedTxState (..)
+    -- * RetainedTxs with helper functions
+  , RetainedTxs
+  , retainedEmpty
+  , retainedSingleton
+  , retainedFromList
+  , retainedToList
+  , retainedSize
+  , retainedLookup
+  , retainedMember
+  , retainedInsertMax
+  , retainedDeleteKeys
+  , retainedKeysSet
+  , retainedRestrictKeys
+  , retainedNextWake
+  , retainedExpiredKeys
+    -- * Traces
   , TraceTxLogic (..)
   , TxSubmissionInitDelay (..)
   , defaultTxSubmissionInitDelay
+  , const_MAX_TX_SIZE_DISCREPANCY
     -- * Types shared with V1
     -- ** Various
   , ProcessedTxCount (..)
@@ -31,27 +41,475 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Types
     -- ** Traces
   , TraceTxSubmissionInbound (..)
   , TxSubmissionCounters (..)
-  , mkTxSubmissionCounters
     -- ** Protocol Error
   , TxSubmissionProtocolError (..)
+  , TxOwnerAckState (..)
+  , TxAdvertiser (..)
+  , RequestedTxBatch (..)
+  , TxAttemptState (..)
+  , TxLease (..)
+  , TxEntry (..)
+  , PeerAction (..)
+  , PeerPhase (..)
+  , PeerScore (..)
+  , PeerTxLocalState (..)
+  , SharedPeerState (..)
+  , peerGenerationOf
+  , bumpIdlePeerGenerations
+    -- TxKey with helper functions
+  , TxKey (..)
+  , lookupTxKey
+  , resolveTxKey
+  , internTxId
+  , internTxIds
+  , emptyPeerScore
+  , emptyPeerTxLocalState
+  , emptySharedTxState
   ) where
 
-import Control.DeepSeq
 import Control.Exception (Exception (..))
 import Control.Monad.Class.MonadTime.SI
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Monoid (Sum (..))
 import Data.Sequence.Strict (StrictSeq)
-import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Typeable (Typeable, eqT, (:~:) (Refl))
 import GHC.Generics (Generic)
-import System.Random (StdGen)
-
-import NoThunks.Class (NoThunks (..))
 
 import Ouroboros.Network.Protocol.TxSubmission2.Type
+
+import Data.Foldable (foldl')
+import Data.IntMap.Strict (IntMap)
+import Data.IntMap.Strict qualified as IntMap
+import Data.IntPSQ (IntPSQ)
+import Data.IntPSQ qualified as IntPSQ
+import Data.IntSet (IntSet)
+import Data.IntSet qualified as IntSet
+import Data.List (sortOn)
+import Data.Sequence.Strict qualified as StrictSeq
+import Data.Word (Word64)
+
+
+-- | We check advertised sizes in a fuzzy way. The advertised and received
+-- sizes need to agree up to this discrepancy.
+const_MAX_TX_SIZE_DISCREPANCY :: SizeInBytes
+const_MAX_TX_SIZE_DISCREPANCY = 32
+
+-- | Compact internal transaction key used by V2 state.
+newtype TxKey = TxKey { unTxKey :: Int }
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving newtype (Enum)
+
+-- | State which determines when a peer that advertised a txid may
+-- acknowledge it.
+--
+-- The owner peer may acknowledge once the body is buffered locally,
+-- while other peers must wait until the tx is either accepted by the
+-- mempool or fully exhausted.
+data TxOwnerAckState
+  = AckWhenBuffered
+  | AckWhenResolved
+  deriving stock (Eq, Ord, Show, Generic)
+
+-- | Per-peer advertisement state for a tx.
+--
+-- The advertised size must be tracked per peer.
+data TxAdvertiser = TxAdvertiser {
+    txAckState       :: !TxOwnerAckState,
+    txAdvertisedSize :: !SizeInBytes
+  }
+  deriving stock (Eq, Show, Generic)
+
+
+-- | Per-peer attempt state for one tx body.
+--
+-- V2 keeps the actual tx body in peer-local state, but shared state still
+-- needs to know whether each advertiser is currently downloading, has a
+-- buffered body ready, or is submitting it to the mempool.
+data TxAttemptState
+  = -- | The peer has advertised this transaction but has not yet started
+    -- downloading the tx body. This is the initial state when a peer first
+    -- advertises a txid.
+    TxNoAttempt
+
+  | -- | The peer is currently downloading the tx body from another peer.
+    -- The tx body is being fetched and has not yet been received.
+    TxDownloading
+
+  | -- | The peer has finished downloading the tx body and it is buffered
+    -- locally, waiting to be submitted to the mempool.
+    TxBuffered
+
+  | -- | The peer is submitting the tx body to the mempool. This
+    -- is the final state before the transaction leaves the tracking
+    -- system (either accepted into the mempool or rejected).
+    TxSubmitting
+  deriving stock (Eq, Ord, Show, Generic)
+
+-- | The current download lease for a tx body.
+--
+-- A tx is either currently leased to a peer until a deadline or it is
+-- unowned and can be claimed by an eligible advertiser.
+data TxLease peeraddr = TxLeased !peeraddr !Time
+                      | TxClaimable
+  deriving stock (Eq, Show, Generic)
+
+-- | Shared per-tx state.
+--
+-- V2 keeps all cross-peer coordination at tx granularity. The first
+-- peer that advertises a new txid becomes its initial owner. If the
+-- lease expires without a successful outcome, the tx becomes claimable
+-- and another eligible advertiser may atomically claim it.
+data TxEntry peeraddr = TxEntry {
+    -- | Current owner lease for downloading the tx body.
+    txLease        :: !(TxLease peeraddr),
+
+    -- | Peers that have advertised this tx.
+    txAdvertisers  :: !(Map peeraddr TxAdvertiser),
+
+    -- | Stable salt used to break ties between equally scored advertisers.
+    txTieBreakSalt :: !Int,
+
+    -- | Current per-peer attempt state for this tx body.
+    txAttempts     :: !(Map peeraddr TxAttemptState)
+  }
+  deriving stock (Eq, Show, Generic)
+
+-- | The next peer-local action chosen by the V2 worker thread.
+--
+-- V2 drives progress from the peer thread itself. Shared state only decides
+-- whether a peer is allowed to perform an action; the peer thread then carries
+-- it out directly.
+data PeerAction
+  = -- | No immediate work is available.  The peer should wait for either a
+    -- shared-state generation change or the optional timeout.
+    PeerDoNothing !Word64 !(Maybe DiffTime)
+  | -- | Send a txid protocol message acknowledging the first argument and
+    -- requesting the second argument.
+    PeerRequestTxIds !NumTxIdsToAck !NumTxIdsToReq
+  | -- | Request tx bodies for the given internally keyed txs from this peer.
+    PeerRequestTxs ![TxKey]
+  | -- | Submit the buffered txs identified by the given keys to the local
+    -- mempool.
+    PeerSubmitTxs ![TxKey]
+  deriving stock (Eq, Show, Generic)
+
+
+-- | A batch of transaction body requests sent to a peer.
+--
+-- Tracks the set of requested txids and the total expected
+-- size in bytes for the batch. Used to manage inflight requests and match
+-- responses to the original request.
+data RequestedTxBatch = RequestedTxBatch {
+    -- | The set of transaction keys requested in this batch.
+    requestedTxBatchSet  :: !IntSet
+
+    -- | Total expected size in bytes for all tx bodies in this batch.
+  , requestedTxBatchSize :: !SizeInBytes
+  }
+  deriving stock (Eq, Show, Generic)
+
+-- | Coarse phase of a peer worker thread.
+--
+-- The phase is used when deciding whether a peer is currently eligible
+-- to claim an expired tx lease.
+data PeerPhase
+  = -- | The peer worker is idle and may claim work for advertised txs.
+    PeerIdle
+  | -- | The peer worker is waiting for a txid reply from the remote peer.
+    PeerWaitingTxIds
+  | -- | The peer worker is waiting for a tx-body reply from the remote peer.
+    PeerWaitingTxs
+  | -- | The peer worker is submitting buffered txs to the local mempool.
+    PeerSubmittingToMempool
+  deriving stock (Eq, Ord, Show, Generic)
+
+-- | Peer usefulness score.
+--
+-- Lower is better.
+data PeerScore = PeerScore {
+    peerScoreValue :: !Double,
+    peerScoreTs    :: !Time
+  }
+  deriving stock (Eq, Show, Generic)
+
+-- | Low-cost monotonic counters for the V2 peer protocol and coordination path.
+--
+-- These counters are updated incrementally at the points where V2 performs
+-- protocol sends, receives replies, or cheaply classifies received bodies.
+-- They are kept separate from 'SharedTxState' so that emission can read a
+-- small dedicated counter cell without scanning protocol state.
+data TxSubmissionCounters = TxSubmissionCounters {
+    txIdMessagesSent    :: !Word64,
+    txIdsRequested      :: !Word64,
+    txIdRepliesReceived :: !Word64,
+    txIdsReceived       :: !Word64,
+    txMessagesSent      :: !Word64,
+    txsRequested        :: !Word64,
+    txRepliesReceived   :: !Word64,
+    txsReceived         :: !Word64,
+    txsOmitted          :: !Word64,
+    lateBodies          :: !Word64
+  }
+  deriving stock (Eq, Show, Generic)
+
+instance Semigroup TxSubmissionCounters where
+  a <> b = TxSubmissionCounters {
+    txIdMessagesSent    = txIdMessagesSent a + txIdMessagesSent b,
+    txIdsRequested      = txIdsRequested a + txIdsRequested b,
+    txIdRepliesReceived = txIdRepliesReceived a + txIdRepliesReceived b,
+    txIdsReceived      = txIdsReceived a + txIdsReceived b,
+    txMessagesSent = txMessagesSent a + txMessagesSent b,
+    txsRequested = txsRequested a + txsRequested b,
+    txRepliesReceived = txRepliesReceived a + txRepliesReceived b,
+    txsReceived = txsReceived a + txsReceived b,
+    txsOmitted = txsOmitted a + txsOmitted b,
+    lateBodies = lateBodies a + lateBodies b
+    }
+
+instance Monoid TxSubmissionCounters where
+  mempty = TxSubmissionCounters {
+    txIdMessagesSent = 0,
+    txIdsRequested = 0,
+    txIdRepliesReceived = 0,
+    txIdsReceived = 0,
+    txMessagesSent = 0,
+    txsRequested = 0,
+    txRepliesReceived = 0,
+    txsReceived = 0,
+    txsOmitted = 0,
+    lateBodies = 0
+  }
+
+emptyPeerScore :: Time -> PeerScore
+emptyPeerScore scoreTs = PeerScore {
+    peerScoreValue = 0,
+    peerScoreTs    = scoreTs
+  }
+
+-- | Per-peer protocol state.
+--
+-- These are the pieces of state that naturally belong to the worker
+-- thread handling one peer. Shared arbitration state such as peer
+-- phase and peer score is kept separately in 'SharedPeerState'.
+data PeerTxLocalState tx = PeerTxLocalState {
+    -- | Unacknowledged txids in the order advertised by the peer.
+    peerUnacknowledgedTxIds :: !(StrictSeq TxKey),
+
+    -- | Txids this peer currently advertises and that may be requested from
+    -- it if the peer becomes the owner.
+    peerAvailableTxIds      :: !(IntMap SizeInBytes),
+
+    -- | Requested txids that have not yet been replied to.
+    peerRequestedTxs        :: !IntSet,
+    peerRequestedTxBatches  :: !(StrictSeq RequestedTxBatch),
+    peerRequestedTxsSize    :: !SizeInBytes,
+    peerRequestedTxIds      :: !NumTxIdsToReq,
+
+    -- | Tx bodies downloaded from this peer and buffered locally until they
+    -- are either submitted to the mempool or superseded by shared-state
+    -- resolution.
+    peerDownloadedTxs       :: !(IntMap tx)
+  }
+  deriving stock (Eq, Show, Generic)
+
+emptyPeerTxLocalState :: PeerTxLocalState tx
+emptyPeerTxLocalState = PeerTxLocalState {
+    peerUnacknowledgedTxIds = StrictSeq.empty,
+    peerAvailableTxIds      = IntMap.empty,
+    peerRequestedTxs        = IntSet.empty,
+    peerRequestedTxBatches  = StrictSeq.empty,
+    peerRequestedTxsSize    = 0,
+    peerRequestedTxIds      = 0,
+    peerDownloadedTxs       = IntMap.empty
+  }
+
+-- | Small shared view of peer state used for lease claiming and peer
+-- selection.
+data SharedPeerState = SharedPeerState {
+    sharedPeerPhase              :: !PeerPhase,
+    sharedPeerScore              :: !PeerScore,
+    sharedPeerGeneration         :: !Word64,
+    sharedPeerRequestedTxBatches :: !Int,
+    sharedPeerRequestedTxsSize   :: !SizeInBytes
+  }
+  deriving stock (Eq, Show, Generic)
+
+-- | Shared V2 state.
+--
+-- There is no global decision thread. Peer worker threads coordinate by
+-- atomically reading and updating this shared state.
+data SharedTxState peeraddr txid = SharedTxState {
+    sharedPeers       :: !(Map peeraddr SharedPeerState),
+    -- | Active unresolved txs that still participate in leasing, buffering,
+    -- submission and advertiser tracking.
+    sharedTxTable     :: !(IntMap (TxEntry peeraddr)),
+    -- | Accepted txs retained locally for a bounded time so later txid
+    -- advertisements can be acked without re-requesting the body.
+    sharedRetainedTxs :: !RetainedTxs,
+    sharedTxIdToKey   :: !(Map txid TxKey),
+    sharedKeyToTxId   :: !(IntMap txid),
+    sharedNextTxKey   :: !Int,
+    sharedGeneration  :: !Word64
+  }
+  deriving stock (Eq, Show, Generic)
+
+type RetainedTxs = IntPSQ Time ()
+
+emptySharedTxState :: SharedTxState peeraddr txid
+emptySharedTxState = SharedTxState {
+    sharedPeers            = Map.empty,
+    sharedTxTable          = IntMap.empty,
+    sharedRetainedTxs      = retainedEmpty,
+    sharedTxIdToKey        = Map.empty,
+    sharedKeyToTxId        = IntMap.empty,
+    sharedNextTxKey        = 0,
+    sharedGeneration       = 0
+  }
+
+retainedEmpty :: RetainedTxs
+retainedEmpty = IntPSQ.empty
+
+retainedSingleton :: Int -> Time -> RetainedTxs
+retainedSingleton k retainUntil =
+    IntPSQ.insert k retainUntil () retainedEmpty
+
+retainedFromList :: [(Int, Time)] -> RetainedTxs
+retainedFromList =
+    foldl' (\retained (k, retainUntil) -> retainedInsertMax k retainUntil retained) retainedEmpty
+
+retainedToList :: RetainedTxs -> [(Int, Time)]
+retainedToList =
+    sortOn fst
+  . fmap (\(k, retainUntil, ()) -> (k, retainUntil))
+  . IntPSQ.toList
+
+retainedSize :: RetainedTxs -> Int
+retainedSize = IntPSQ.size
+
+retainedLookup :: Int -> RetainedTxs -> Maybe Time
+retainedLookup k retained =
+    fmap fst (IntPSQ.lookup k retained)
+
+retainedMember :: Int -> RetainedTxs -> Bool
+retainedMember k retained =
+    case IntPSQ.lookup k retained of
+      Just _  -> True
+      Nothing -> False
+
+retainedInsertMax :: Int -> Time -> RetainedTxs -> RetainedTxs
+retainedInsertMax k retainUntil retained =
+    IntPSQ.insert k retainUntil' () retained
+  where
+    retainUntil' =
+      case retainedLookup k retained of
+        Just existing -> max existing retainUntil
+        Nothing       -> retainUntil
+
+retainedDeleteKeys :: IntSet -> RetainedTxs -> RetainedTxs
+retainedDeleteKeys keys retained =
+    IntSet.foldl' (flip IntPSQ.delete) retained keys
+
+retainedKeysSet :: RetainedTxs -> IntSet
+retainedKeysSet =
+    IntPSQ.fold' (\k _ _ acc -> IntSet.insert k acc) IntSet.empty
+
+retainedRestrictKeys :: RetainedTxs -> IntSet -> RetainedTxs
+retainedRestrictKeys retained keys =
+    IntPSQ.fold' keep retainedEmpty retained
+  where
+    keep k retainUntil _
+      | IntSet.member k keys = IntPSQ.insert k retainUntil ()
+      | otherwise            = id
+
+retainedNextWake :: Time -> RetainedTxs -> Maybe Time
+retainedNextWake currentTime =
+    go
+  where
+    go retained =
+      case IntPSQ.minView retained of
+        Just (_, retainUntil, (), retained')
+          | retainUntil > currentTime -> Just retainUntil
+          | otherwise                 -> go retained'
+        Nothing ->
+          Nothing
+
+retainedExpiredKeys :: Time -> RetainedTxs -> IntSet
+retainedExpiredKeys currentTime =
+    go IntSet.empty
+  where
+    go expired retained =
+      case IntPSQ.minView retained of
+        Just (k, retainUntil, (), retained')
+          | retainUntil <= currentTime ->
+              go (IntSet.insert k expired) retained'
+          | otherwise ->
+              expired
+        Nothing ->
+          expired
+
+peerGenerationOf :: Ord peeraddr
+                 => peeraddr
+                 -> SharedTxState peeraddr txid
+                 -> Word64
+peerGenerationOf peeraddr SharedTxState { sharedPeers } =
+    case Map.lookup peeraddr sharedPeers of
+         Just SharedPeerState { sharedPeerGeneration } -> sharedPeerGeneration
+         Nothing -> error "TxSubmission.V2.peerGenerationOf: missing peer"
+
+bumpIdlePeerGenerations :: Ord peeraddr
+                        => Set.Set peeraddr
+                        -> SharedTxState peeraddr txid
+                        -> SharedTxState peeraddr txid
+bumpIdlePeerGenerations peersToWake st@SharedTxState { sharedPeers } =
+    st {
+      sharedPeers = Map.mapWithKey bumpPeer sharedPeers
+    }
+  where
+    bumpPeer peeraddr sharedPeerState@SharedPeerState { sharedPeerPhase, sharedPeerGeneration }
+      | Set.member peeraddr peersToWake
+      , sharedPeerPhase == PeerIdle =
+          sharedPeerState { sharedPeerGeneration = sharedPeerGeneration + 1 }
+      | otherwise = sharedPeerState
+
+lookupTxKey :: Ord txid
+            => txid
+            -> SharedTxState peeraddr txid
+            -> Maybe TxKey
+lookupTxKey txid SharedTxState { sharedTxIdToKey } = Map.lookup txid sharedTxIdToKey
+
+resolveTxKey :: SharedTxState peeraddr txid
+             -> TxKey
+             -> txid
+resolveTxKey SharedTxState { sharedKeyToTxId } (TxKey k) =
+    case IntMap.lookup k sharedKeyToTxId of
+         Just txid -> txid
+         Nothing   -> error "TxSubmission.V2.resolveTxKey: missing tx key"
+
+internTxId :: Ord txid
+           => txid
+           -> SharedTxState peeraddr txid
+           -> (TxKey, SharedTxState peeraddr txid)
+internTxId txid st@SharedTxState { sharedTxIdToKey, sharedKeyToTxId, sharedNextTxKey }
+  | Just key <- Map.lookup txid sharedTxIdToKey = (key, st)
+  | otherwise =
+      let key = TxKey sharedNextTxKey
+      in ( key
+         , st { sharedTxIdToKey = Map.insert txid key sharedTxIdToKey
+              , sharedKeyToTxId = IntMap.insert sharedNextTxKey txid sharedKeyToTxId
+              , sharedNextTxKey = sharedNextTxKey + 1
+              }
+         )
+
+internTxIds :: (Foldable f, Ord txid)
+            => f txid
+            -> SharedTxState peeraddr txid
+            -> (Map txid TxKey, SharedTxState peeraddr txid)
+internTxIds txids st0 = foldl' step (Map.empty, st0) txids
+  where
+    step (acc, st) txid =
+      let (key, st') = internTxId txid st
+      in (Map.insert txid key acc, st')
 
 -- | Flag to enable/disable the usage of the new tx-submission logic.
 --
@@ -62,276 +520,10 @@ data TxSubmissionLogicVersion =
     | TxSubmissionLogicV2
     deriving (Eq, Show, Enum, Bounded)
 
---
--- PeerTxState, SharedTxState
---
-
-data PeerTxState txid tx = PeerTxState {
-       -- | Those transactions (by their identifier) that the client has told
-       -- us about, and which we have not yet acknowledged. This is kept in
-       -- the order in which the client gave them to us. This is the same order
-       -- in which we submit them to the mempool (or for this example, the final
-       -- result order). It is also the order we acknowledge in.
-       --
-       unacknowledgedTxIds      :: !(StrictSeq txid),
-
-       -- | Set of known transaction ids which can be requested from this peer.
-       --
-       availableTxIds           :: !(Map txid SizeInBytes),
-
-       -- | The number of transaction identifiers that we have requested but
-       -- which have not yet been replied to. We need to track this it keep
-       -- our requests within the limit on the number of unacknowledged txids.
-       --
-       requestedTxIdsInflight   :: !NumTxIdsToReq,
-
-       -- | The size in bytes of transactions that we have requested but which
-       -- have not yet been replied to.
-       --
-       requestedTxsInflightSize :: !SizeInBytes,
-
-       -- | The set of requested `txid`s.
-       --
-       requestedTxsInflight     :: !(Set txid),
-
-       -- | A subset of `unacknowledgedTxIds` which were unknown to the peer
-       -- (i.e. requested but not received). We need to track these `txid`s
-       -- since they need to be acknowledged.
-       --
-       -- We track these `txid` per peer, rather than in `bufferedTxs` map,
-       -- since that could potentially lead to corrupting the node, not being
-       -- able to download a `tx` which is needed & available from other nodes.
-       --
-       unknownTxs               :: !(Set txid),
-
-       -- | Score is a metric that tracks how usefull a peer has been.
-       -- The larger the value the less usefull peer. It slowly decays towards
-       -- zero.
-       score                    :: !Double,
-
-       -- | Timestamp for the last time `score` was drained.
-       scoreTs                  :: !Time,
-
-       -- | A set of TXs downloaded from the peer. They are not yet
-       -- acknowledged and haven't been sent to the mempool yet.
-       --
-       -- Life cycle of entries:
-       -- * added when a tx is downloaded (see `collectTxsImpl`)
-       -- * follows `unacknowledgedTxIds` (see `acknowledgeTxIds`)
-       --
-       downloadedTxs            :: !(Map txid tx),
-
-       -- | A set of TXs on their way to the mempool.
-       -- Tracked here so that we can cleanup `inSubmissionToMempoolTxs` if the
-       -- peer dies.
-       --
-       -- Life cycle of entries:
-       -- * added by `acknowledgeTxIds` (where decide which txs can be
-       --   submitted to the mempool)
-       -- * removed by `withMempoolSem`
-       --
-       toMempoolTxs             :: !(Map txid tx)
-
-    }
-    deriving (Eq, Show, Generic, NFData)
-
-instance ( NoThunks txid
-         , NoThunks tx
-         ) => NoThunks (PeerTxState txid tx)
-
-
--- | Shared state of all `TxSubmission` clients.
---
--- New `txid` enters `unacknowledgedTxIds` it is also added to `availableTxIds`
--- and `referenceCounts` (see `acknowledgeTxIdsImpl`).
---
--- When a `txid` id is selected to be downloaded, it's added to
--- `requestedTxsInflightSize` (see
--- `Ouroboros.Network.TxSubmission.Inbound.Decision.pickTxsToDownload`).
---
--- When the request arrives, the `txid` is removed from `inflightTxs`.  It
--- might be added to `unknownTxs` if the server didn't have that `txid`, or
--- it's added to `bufferedTxs` (see `collectTxsImpl`).
---
--- Whenever we choose `txid` to acknowledge (either in `acknowledtxsIdsImpl`,
--- `collectTxsImpl` or
--- `Ouroboros.Network.TxSubmission.Inbound.Decision.pickTxsToDownload`, we also
--- recalculate `referenceCounts` and only keep live `txid`s in other maps (e.g.
--- `availableTxIds`, `bufferedTxs`, `unknownTxs`).
---
-data SharedTxState peeraddr txid tx = SharedTxState {
-
-      -- | Map of peer states.
-      --
-      -- /Invariant:/ for peeraddr's which are registered using `withPeer`,
-      -- there's always an entry in this map even if the set of `txid`s is
-      -- empty.
-      --
-      peerTxStates             :: !(Map peeraddr (PeerTxState txid tx)),
-
-      -- | Set of transactions which are in-flight (have already been
-      -- requested) together with multiplicities (from how many peers it is
-      -- currently in-flight)
-      --
-      -- This set can intersect with `availableTxIds`.
-      --
-      inflightTxs              :: !(Map txid Int),
-
-      -- | Map of `tx` which:
-      --
-      --    * were downloaded and added to the mempool,
-      --    * are already in the mempool (`Nothing` is inserted in that case),
-      --
-      -- We only keep live `txid`, e.g. ones which `txid` is unacknowledged by
-      -- at least one peer or has a `timedTxs` entry.
-      --
-      -- /Note:/ `txid`s which `tx` were unknown by a peer are tracked
-      -- separately in `unknownTxs`.
-      --
-      -- /Note:/ previous implementation also needed to explicitly track
-      -- `txid`s which were already acknowledged, but are still unacknowledged.
-      -- In this implementation, this is done using reference counting.
-      --
-      -- This map is useful to acknowledge `txid`s, it's basically taking the
-      -- longest prefix which contains entries in `bufferedTxs` or `unknownTxs`.
-      --
-      bufferedTxs              :: !(Map txid (Maybe tx)),
-
-      -- | We track reference counts of all unacknowledged and timedTxs txids.
-      -- Once the count reaches 0, a tx is removed from `bufferedTxs`.
-      --
-      -- The `bufferedTx` map contains a subset of `txid` which
-      -- `referenceCounts` contains.
-      --
-      -- /Invariants:/
-      --
-      --    * the txid count is equal to multiplicity of txid in all
-      --      `unacknowledgedTxIds` sequences;
-      --    * @Map.keysSet bufferedTxs `Set.isSubsetOf` Map.keysSet referenceCounts@;
-      --    * all counts are positive integers.
-      --
-      referenceCounts          :: !(Map txid Int),
-
-      -- | A set of timeouts for txids that have been added to bufferedTxs after being
-      -- inserted into the mempool.
-      --
-      -- We need these short timeouts to avoid re-downloading a `tx`.  We could
-      -- acknowledge this `txid` to all peers, when a peer from another
-      -- continent presents us it again.
-      --
-      -- Every txid entry has a reference count in `referenceCounts`.
-      --
-      timedTxs                 :: !(Map Time [txid]),
-
-      -- | A set of txids that have been downloaded by a peer and are on their
-      -- way to the mempool. We won't issue further fetch-requests for TXs in
-      -- this state.  We track these txs to not re-download them from another
-      -- peer.
-      --
-      -- * We subtract from the counter when a given tx is added or rejected by
-      --   the mempool or do that for all txs in `toMempoolTxs` when a peer is
-      --   unregistered.
-      -- * We add to the counter when a given tx is selected to be added to the
-      --   mempool in `pickTxsToDownload`.
-      --
-      inSubmissionToMempoolTxs :: !(Map txid Int),
-
-      -- | Rng used to randomly order peers
-      peerRng                  :: !StdGen
-    }
-    deriving (Eq, Show, Generic, NFData)
-
-instance ( NoThunks peeraddr
-         , NoThunks tx
-         , NoThunks txid
-         , NoThunks StdGen
-         ) => NoThunks (SharedTxState peeraddr txid tx)
-
-
---
--- Decisions
---
-
-newtype TxsToMempool txid tx = TxsToMempool { listOfTxsToMempool :: [(txid, tx)] }
-  deriving newtype (Eq, Show, Semigroup, Monoid, NFData)
-
-
--- | Decision made by the decision logic.  Each peer will receive a 'Decision'.
---
--- /note:/ it is rather non-standard to represent a choice between requesting
--- `txid`s and `tx`'s as a product rather than a sum type.  The client will
--- need to download `tx`s first and then send a request for more txids (and
--- acknowledge some `txid`s).   Due to pipelining each client will request
--- decision from the decision logic quite often (every two pipelined requests),
--- but with this design a decision once taken will make the peer non-active
--- (e.g. it won't be returned by `filterActivePeers`) for longer, and thus the
--- expensive `makeDecision` computation will not need to take that peer into
--- account.
---
-data TxDecision txid tx = TxDecision {
-    txdTxIdsToAcknowledge :: !NumTxIdsToAck,
-    -- ^ txid's to acknowledge
-
-    txdTxIdsToRequest     :: !NumTxIdsToReq,
-    -- ^ number of txid's to request
-
-    txdPipelineTxIds      :: !Bool,
-    -- ^ the tx-submission protocol only allows to pipeline `txid`'s requests
-    -- if we have non-acknowledged `txid`s.
-
-    txdTxsToRequest       :: !(Map txid SizeInBytes),
-    -- ^ txid's to download.
-
-    txdTxsToMempool       :: !(TxsToMempool txid tx)
-    -- ^ list of `tx`s to submit to the mempool.
-  }
-  deriving (Show, Eq)
-
-instance (NFData txid, NFData tx) => NFData (TxDecision txid tx) where
-  -- all fields except `txdTxsToMempool` when evaluated to WHNF evaluate to NF.
-  rnf TxDecision {txdTxsToMempool} = rnf txdTxsToMempool
-
--- | A non-commutative semigroup instance.
---
--- /note:/ this instance must be consistent with `pickTxsToDownload` and how
--- `PeerTxState` is updated.  It is designed to work with `TMergeVar`s.
---
-instance Ord txid => Semigroup (TxDecision txid tx) where
-    TxDecision { txdTxIdsToAcknowledge,
-                 txdTxIdsToRequest,
-                 txdPipelineTxIds = _ignored,
-                 txdTxsToRequest,
-                 txdTxsToMempool }
-      <>
-      TxDecision { txdTxIdsToAcknowledge = txdTxIdsToAcknowledge',
-                   txdTxIdsToRequest     = txdTxIdsToRequest',
-                   txdPipelineTxIds      = txdPipelineTxIds',
-                   txdTxsToRequest       = txdTxsToRequest',
-                   txdTxsToMempool       = txdTxsToMempool' }
-      =
-      TxDecision { txdTxIdsToAcknowledge = txdTxIdsToAcknowledge + txdTxIdsToAcknowledge',
-                   txdTxIdsToRequest     = txdTxIdsToRequest + txdTxIdsToRequest',
-                   txdPipelineTxIds      = txdPipelineTxIds',
-                   txdTxsToRequest       = txdTxsToRequest <> txdTxsToRequest',
-                   txdTxsToMempool       = txdTxsToMempool <> txdTxsToMempool'
-                 }
-
--- | A no-op decision.
-emptyTxDecision :: TxDecision txid tx
-emptyTxDecision = TxDecision {
-    txdTxIdsToAcknowledge = 0,
-    txdTxIdsToRequest     = 0,
-    txdPipelineTxIds      = False,
-    txdTxsToRequest       = Map.empty,
-    txdTxsToMempool       = mempty
-  }
-
-
 -- | TxLogic tracer.
 --
 data TraceTxLogic peeraddr txid tx =
-    TraceSharedTxState String (SharedTxState peeraddr txid tx)
-  | TraceTxDecisions (Map peeraddr (TxDecision txid tx))
+    TraceSharedTxState String (SharedTxState peeraddr txid)
   deriving Show
 
 
@@ -380,6 +572,7 @@ data TraceTxSubmissionInbound txid tx =
   | TraceTxInboundAddedToMempool [txid] DiffTime
   | TraceTxInboundRejectedFromMempool [txid] DiffTime
   | TraceTxInboundError TxSubmissionProtocolError
+  | TraceTxInboundRequestTxs [txid]
 
   --
   -- messages emitted by the new implementation of the server in
@@ -389,45 +582,7 @@ data TraceTxSubmissionInbound txid tx =
 
   -- | Server received 'MsgDone'
   | TraceTxInboundTerminated
-  | TraceTxInboundDecision (TxDecision txid tx)
   deriving (Eq, Show)
-
-
-data TxSubmissionCounters =
-    TxSubmissionCounters {
-      numOfOutstandingTxIds         :: Int,
-      -- ^ txids which are not yet downloaded.  This is a diff of keys sets of
-      -- `referenceCounts` and a sum of `bufferedTxs` and
-      -- `insubmissionToMempoolTxs` maps.
-      numOfBufferedTxs              :: Int,
-      -- ^ number of all buffered txs (downloaded or not available)
-      numOfInSubmissionToMempoolTxs :: Int,
-      -- ^ number of all tx's which were submitted to the mempool
-      numOfTxIdsInflight            :: Int
-      -- ^ number of all in-flight txid's.
-    }
-    deriving (Eq, Show)
-
-mkTxSubmissionCounters
-  :: Ord txid
-  => SharedTxState peeraddr txid tx
-  -> TxSubmissionCounters
-mkTxSubmissionCounters
-  SharedTxState {
-    inflightTxs,
-    bufferedTxs,
-    referenceCounts,
-    inSubmissionToMempoolTxs
-  }
-  =
-  TxSubmissionCounters {
-    numOfOutstandingTxIds         = Set.size $ Map.keysSet referenceCounts
-                                        Set.\\ Map.keysSet bufferedTxs
-                                        Set.\\ Map.keysSet inSubmissionToMempoolTxs,
-    numOfBufferedTxs              = Map.size bufferedTxs,
-    numOfInSubmissionToMempoolTxs = Map.size inSubmissionToMempoolTxs,
-    numOfTxIdsInflight            = getSum $ foldMap Sum inflightTxs
-  }
 
 
 data TxSubmissionProtocolError =

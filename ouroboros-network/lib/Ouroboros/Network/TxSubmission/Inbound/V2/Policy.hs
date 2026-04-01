@@ -45,6 +45,9 @@ data TxDecisionPolicy = TxDecisionPolicy {
       -- ^ a limit of tx size in-flight from a single peer.
       -- It can be exceed by max tx size.
 
+      maxOutstandingTxBatchesPerPeer :: !Int,
+      -- ^ a limit of outstanding tx-body request batches from a single peer.
+
       txInflightMultiplicity :: !Int,
       -- ^ from how many peers download the `txid` simultaneously
 
@@ -55,9 +58,11 @@ data TxDecisionPolicy = TxDecisionPolicy {
       scoreRate              :: !Double,
       -- ^ rate at which "rejected" TXs drain. Unit: TX/seconds.
 
-      scoreMax               :: !Double
+      scoreMax               :: !Double,
       -- ^ Maximum number of "rejections". Unit: seconds
 
+      interTxSpace           :: !DiffTime
+      -- ^ space between actual requests for the same TX.
     }
   deriving Show
 
@@ -70,8 +75,10 @@ defaultTxDecisionPolicy =
     maxNumTxIdsToRequest   = 3,
     maxUnacknowledgedTxIds = 10, -- must be the same as txSubmissionMaxUnacked
     txsSizeInflightPerPeer = max_TX_SIZE * 6,
+    maxOutstandingTxBatchesPerPeer = 2,
     txInflightMultiplicity = 2,
     bufferedTxsMinLifetime = 2,
     scoreRate              = 0.1,
-    scoreMax               = 15 * 60
+    scoreMax               = 15 * 60,
+    interTxSpace           = 0.250
   }

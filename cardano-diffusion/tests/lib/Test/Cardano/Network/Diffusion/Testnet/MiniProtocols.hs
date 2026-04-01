@@ -109,7 +109,7 @@ import Ouroboros.Network.TxSubmission.Inbound.V2 (TxSubmissionInitDelay (..),
            txSubmissionInboundV2)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy (TxDecisionPolicy (..))
 import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (SharedTxStateVar,
-           TxChannelsVar, TxMempoolSem, withPeer)
+           TxSubmissionCountersVar, withPeer)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types (TraceTxLogic,
            TraceTxSubmissionInbound)
 import Ouroboros.Network.TxSubmission.Outbound (txSubmissionOutbound)
@@ -280,7 +280,7 @@ applications :: forall block header s m.
              -> Diffusion.Applications NtNAddr NtNVersion NtNVersionData
                                        NtCAddr NtCVersion NtCVersionData
                                        PeerTrustable m ()
-applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug nodeKernel
+applications debugTracer txSubmissionInboundTracer _txSubmissionInboundDebug nodeKernel
              Codecs { chainSyncCodec, blockFetchCodec
                     , keepAliveCodec, pingPongCodec
                     , peerSharingCodec
@@ -382,8 +382,7 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
                   InitiatorAndResponderProtocol
                     (txSubmissionInitiator aaTxDecisionPolicy (nkMempool nodeKernel))
                     (txSubmissionResponder (nkMempool nodeKernel)
-                                           (nkTxChannelsVar nodeKernel)
-                                           (nkTxMempoolSem nodeKernel)
+                                           (nkTxCountersVar nodeKernel)
                                            (nkSharedTxStateVar nodeKernel))
             }
           ]
@@ -715,27 +714,24 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
 
     txSubmissionResponder
       :: Mempool m TxId (Tx TxId)
-      -> TxChannelsVar m NtNAddr Int (Tx Int)
-      -> TxMempoolSem m
-      -> SharedTxStateVar m NtNAddr Int (Tx Int)
+      -> TxSubmissionCountersVar m
+      -> SharedTxStateVar m NtNAddr Int
       -> MiniProtocolCb (ResponderContext NtNAddr) ByteString m ()
-    txSubmissionResponder mempool txChannelsVar txMempoolSem sharedTxStateVar =
+    txSubmissionResponder mempool txCountersVar sharedTxStateVar =
       MiniProtocolCb $
         \ ResponderContext { rcConnectionId = connId@ConnectionId { remoteAddress = them }} channel
         -> do
-          withPeer txSubmissionInboundDebug
-                   txChannelsVar
-                   txMempoolSem
-                   aaTxDecisionPolicy
-                   sharedTxStateVar
+          withPeer aaTxDecisionPolicy
                    (getMempoolReader mempool)
-                   (getMempoolWriter duplicateTxVar mempool)
-                   getTxSize
+                   sharedTxStateVar
+                   txCountersVar
                    them $ \api -> do
             let server = txSubmissionInboundV2
                            txSubmissionInboundTracer
                            NoTxSubmissionInitDelay
+                           (getMempoolReader mempool)
                            (getMempoolWriter duplicateTxVar mempool)
+                           getTxSize
                            api
             labelThisThread "TxSubmissionServer"
             runPipelinedPeerWithLimits
