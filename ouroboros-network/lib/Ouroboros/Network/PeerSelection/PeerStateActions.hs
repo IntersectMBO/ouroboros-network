@@ -53,7 +53,6 @@ import Data.ByteString.Lazy (ByteString)
 import Data.Functor (void, ($>))
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (isNothing)
 import Data.Typeable (Typeable, cast)
 
 import Network.Mux qualified as Mux
@@ -788,8 +787,6 @@ withPeerStateActions PeerStateActionsArguments {
                          provenance
           case res of
             Left e -> do
-              when (isNothing $ fromException @SomeAsyncException e) $
-                traceWith spsTracer (AcquireConnectionError e)
               case runRethrowPolicy spsRethrowPolicy OutboundError e of
                 ShutdownNode -> throwTo spsMainThreadId e
                              >> throwIO e
@@ -1233,6 +1230,5 @@ data PeerSelectionActionsTrace peerAddr vNumber =
     | PeerStatusChangeFailure (PeerStatusChangeType peerAddr) (FailureType vNumber)
     | PeerMonitoringError     (ConnectionId peerAddr) SomeException
     | PeerMonitoringResult    (ConnectionId peerAddr) (Maybe (WithSomeProtocolTemperature FirstToFinishResult))
-    | AcquireConnectionError  SomeException
     | PeerHotDuration         (ConnectionId peerAddr) DiffTime
   deriving Show
