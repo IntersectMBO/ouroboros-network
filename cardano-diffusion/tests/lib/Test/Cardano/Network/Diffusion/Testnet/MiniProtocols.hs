@@ -108,14 +108,17 @@ import Ouroboros.Network.RethrowPolicy
 import Ouroboros.Network.TxSubmission.Inbound.V2 (TxSubmissionInitDelay (..),
            txSubmissionInboundV2)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy (TxDecisionPolicy (..))
-import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (SharedTxStateVar,
-           TxChannelsVar, TxMempoolSem, withPeer)
+import Ouroboros.Network.TxSubmission.Inbound.V2.Registry
+           (PeerTxInFlightRegistry, SharedTxStateVar,
+           TxSubmissionCountersVar, withPeer)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types (TraceTxLogic,
            TraceTxSubmissionInbound)
 import Ouroboros.Network.TxSubmission.Outbound (txSubmissionOutbound)
 import Ouroboros.Network.Util
 
 import Test.Ouroboros.Network.Diffusion.Node.Kernel
+import Test.Ouroboros.Network.TxSubmission.Impaired (Impairment,
+           applyImpairment)
 import Test.Ouroboros.Network.TxSubmission.Types (Mempool, Tx (..), TxId,
            getMempoolReader, getMempoolWriter, txSubmissionCodec2)
 
@@ -241,6 +244,9 @@ data AppArgs header block m = AppArgs
   , aaPeerMetrics
      :: PeerMetrics m NtNAddr
   , aaTxDecisionPolicy :: TxDecisionPolicy
+  , aaTxImpairment     :: Impairment
+    -- ^ behavioural fault injection on this node's outbound
+    -- 'TxSubmissionClient' (default: 'noImpairment')
   }
 
 
@@ -269,7 +275,9 @@ applications :: forall block header s m.
                 , RandomGen s
                 )
              => Tracer m String
-             -> Tracer m (TraceTxSubmissionInbound Int (Tx Int))
+             -> Tracer m (NtNAddr, TraceTxSubmissionInbound Int (Tx Int))
+             -- ^ tagged with the remote peer address so per-peer scoring
+             --   events can be folded out of the trace
              -> Tracer m (TraceTxLogic NtNAddr Int (Tx Int))
              -> NodeKernel header block s Int m
              -> Codecs NtNAddr header block m
@@ -280,7 +288,7 @@ applications :: forall block header s m.
              -> Diffusion.Applications NtNAddr NtNVersion NtNVersionData
                                        NtCAddr NtCVersion NtCVersionData
                                        PeerTrustable m ()
-applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug nodeKernel
+applications debugTracer txSubmissionInboundTracer _txSubmissionInboundDebug nodeKernel
              Codecs { chainSyncCodec, blockFetchCodec
                     , keepAliveCodec, pingPongCodec
                     , peerSharingCodec
@@ -298,6 +306,7 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
                , aaPeerSharing
                , aaPeerMetrics
                , aaTxDecisionPolicy
+               , aaTxImpairment
                }
              toHeader
              duplicateTxVar =
@@ -382,9 +391,9 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
                   InitiatorAndResponderProtocol
                     (txSubmissionInitiator aaTxDecisionPolicy (nkMempool nodeKernel))
                     (txSubmissionResponder (nkMempool nodeKernel)
-                                           (nkTxChannelsVar nodeKernel)
-                                           (nkTxMempoolSem nodeKernel)
-                                           (nkSharedTxStateVar nodeKernel))
+                                           (nkTxCountersVar nodeKernel)
+                                           (nkSharedTxStateVar nodeKernel)
+                                           (nkPeerTxInFlightRegistry nodeKernel))
             }
           ]
       , withWarm = WithWarm
@@ -698,13 +707,14 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
           }
           channel
         -> do
-          let client = txSubmissionOutbound
-                         (((prettyShow connId ++) . (" " ++) . show) `contramap` debugTracer)
-                         (NumTxIdsToAck $ getNumTxIdsToReq
-                                        $ maxUnacknowledgedTxIds txDecisionPolicy)
-                         (getMempoolReader mempool)
-                         (maxBound :: UnversionedProtocol)
-                         controlMessageSTM
+          let baseClient = txSubmissionOutbound
+                             (((prettyShow connId ++) . (" " ++) . show) `contramap` debugTracer)
+                             (NumTxIdsToAck $ getNumTxIdsToReq
+                                            $ maxUnacknowledgedTxIds txDecisionPolicy)
+                             (getMempoolReader mempool)
+                             (maxBound :: UnversionedProtocol)
+                             controlMessageSTM
+          client <- applyImpairment aaTxImpairment mkUnrequested baseClient
           labelThisThread "TxSubmissionClient"
           runPeerWithLimits
             (((prettyShow connId ++) . (" " ++) . show) `contramap` debugTracer)
@@ -713,30 +723,36 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
             (txSubmissionTimeLimits limits)
             channel
             (txSubmissionClientPeer client)
+      where
+        -- Used only when 'impairUnrequestedTx' is set on the impairment;
+        -- the diffusion generator does not currently produce that variant,
+        -- so this mutator is unreachable. 'maxBound' is well outside the
+        -- @Arbitrary Int@ range used by the generators.
+        mkUnrequested :: [TxId] -> Tx TxId -> Tx TxId
+        mkUnrequested _reqs tx = tx { getTxId = maxBound }
 
     txSubmissionResponder
       :: Mempool m TxId (Tx TxId)
-      -> TxChannelsVar m NtNAddr Int (Tx Int)
-      -> TxMempoolSem m
-      -> SharedTxStateVar m NtNAddr Int (Tx Int)
+      -> TxSubmissionCountersVar m
+      -> SharedTxStateVar m NtNAddr Int
+      -> PeerTxInFlightRegistry m NtNAddr
       -> MiniProtocolCb (ResponderContext NtNAddr) ByteString m ()
-    txSubmissionResponder mempool txChannelsVar txMempoolSem sharedTxStateVar =
+    txSubmissionResponder mempool txCountersVar sharedTxStateVar inFlightRegistry =
       MiniProtocolCb $
         \ ResponderContext { rcConnectionId = connId@ConnectionId { remoteAddress = them }} channel
         -> do
-          withPeer txSubmissionInboundDebug
-                   txChannelsVar
-                   txMempoolSem
-                   aaTxDecisionPolicy
-                   sharedTxStateVar
+          withPeer aaTxDecisionPolicy
                    (getMempoolReader mempool)
-                   (getMempoolWriter duplicateTxVar mempool)
-                   getTxSize
+                   sharedTxStateVar
+                   inFlightRegistry
+                   txCountersVar
                    them $ \api -> do
             let server = txSubmissionInboundV2
-                           txSubmissionInboundTracer
+                           ((them,) `contramap` txSubmissionInboundTracer)
                            NoTxSubmissionInitDelay
+                           aaTxDecisionPolicy
                            (getMempoolWriter duplicateTxVar mempool)
+                           getTxSize
                            api
             labelThisThread "TxSubmissionServer"
             runPipelinedPeerWithLimits

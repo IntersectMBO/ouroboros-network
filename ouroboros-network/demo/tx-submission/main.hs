@@ -8,6 +8,7 @@
 {-# LANGUAGE KindSignatures             #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeApplications           #-}
@@ -35,6 +36,7 @@ import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import Data.ByteString.Builder qualified as BS.Builder
 import Data.ByteString.Lazy qualified as LBS
+import Data.ByteString.Short qualified as SBS
 import Data.Functor.Contravariant ((>$<))
 import Data.Functor.Identity (Identity (..))
 import Data.Hashable qualified as Hashable
@@ -48,7 +50,6 @@ import NoThunks.Class (NoThunks (..))
 import Options.Applicative
 import Statistics.Quantile qualified as Stat
 import System.IO (hPutStrLn, stderr)
-import System.Random qualified as Random
 import System.Random.SplitMix qualified as SM
 
 import Network.Mux qualified as Mx
@@ -66,6 +67,7 @@ import Ouroboros.Network.Protocol.TxSubmission2.Type qualified as Tx
 import Ouroboros.Network.Driver.Limits qualified as Driver
 import Ouroboros.Network.SizeInBytes
 import Ouroboros.Network.Socket ()
+import Ouroboros.Network.Tx (HasRawTxId (..))
 import Ouroboros.Network.TxSubmission.Inbound.V1 qualified as V1
 import Ouroboros.Network.TxSubmission.Inbound.V2 (TxSubmissionLogicVersion (..))
 import Ouroboros.Network.TxSubmission.Inbound.V2 qualified as V2
@@ -295,6 +297,10 @@ newtype TxId = TxId Int
   deriving anyclass ShowProxy
   deriving newtype  (Serialise, NoThunks)
 
+instance HasRawTxId TxId where
+  type RawTxId TxId = SBS.ShortByteString
+  getRawTxId = SBS.toShort . LBS.toStrict . CBOR.serialise
+
 data Tx = Tx { txid      :: TxId,
                txPayload :: ByteString,
                txSize    :: SizeInBytes
@@ -428,10 +434,10 @@ inboundTracer lock =
       unwords ["TraceTxInboundRejectedFromMempool", show txids, show time]
     prettyMsg (V2.TraceTxInboundError err) =
       unwords ["TraceTxInboundError", show err]
+    prettyMsg (V2.TraceTxInboundRequestTxs txids) =
+      unwords ["TraceTxInboundRequestTxs", show txids]
     prettyMsg  V2.TraceTxInboundTerminated =
       "TraceTxInboundTerminated"
-    prettyMsg (V2.TraceTxInboundDecision decision) =
-      unwords ["TraceTxInboundDecision", prettyShow decision]
 
 
 printTracer :: Show a => MVar () -> Tracer IO (Mx.WithBearer Socket.SockAddr a)
@@ -461,18 +467,19 @@ runTxInbound Addr { addr, port } txDecisionPolicy version txDelay = do
         Socket.listen sock 10
 
         -- V2 only
-        txChann <- V2.newTxChannelsVar
-        txMempoolSem <- V2.newTxMempoolSem
-        txSharedState <- Random.newStdGen >>= V2.newSharedTxStateVar
+        txSharedState <- V2.newSharedTxStateVar V2.emptySharedTxState
+        txCountersVar <- V2.newTxSubmissionCountersVar mempty
+        txRegistry <- V2.newPeerTxInFlightRegistry
         case version of
           TxSubmissionLogicV1 -> return ()
           TxSubmissionLogicV2 -> do
-            thrd <- async $ V2.decisionLogicThreads
-                       Tracer.nullTracer
-                       Tracer.nullTracer
+            thrd <- async $ V2.txCountersThreadV2
                        txDecisionPolicy
-                       txChann
+                       Tracer.nullTracer
+                       Tracer.nullTracer
+                       txCountersVar
                        txSharedState
+                       txRegistry
             link thrd
 
 
@@ -546,14 +553,11 @@ runTxInbound Addr { addr, port } txDecisionPolicy version txDelay = do
 
                         TxSubmissionLogicV2 ->
                           V2.withPeer
-                            Tracer.nullTracer -- (Mx.WithBearer addr' >$< printTracer traceLock)
-                            txChann
-                            txMempoolSem
                             txDecisionPolicy
-                            txSharedState
                             reader
-                            writer
-                            getTxSize
+                            txSharedState
+                            txRegistry
+                            txCountersVar
                             addr'
                             $ \peerTxApi ->
                               Driver.runPipelinedAnnotatedPeerWithLimits
@@ -566,7 +570,9 @@ runTxInbound Addr { addr, port } txDecisionPolicy version txDelay = do
                                 $ V2.txSubmissionInboundV2
                                   (Mx.WithBearer addr' >$< inboundTracer traceLock)
                                   V2.NoTxSubmissionInitDelay
+                                  txDecisionPolicy
                                   writer
+                                  getTxSize
                                   peerTxApi
                                 )
                     )

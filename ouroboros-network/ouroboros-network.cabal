@@ -104,6 +104,7 @@ library api
     Ouroboros.Network.Point
     Ouroboros.Network.Protocol.Limits
     Ouroboros.Network.SizeInBytes
+    Ouroboros.Network.Tx
     Ouroboros.Network.Util
     Ouroboros.Network.Util.PrettyShow
     Ouroboros.Network.Util.ShowProxy
@@ -256,7 +257,6 @@ library
     Ouroboros.Network.PeerSharing
     Ouroboros.Network.TxSubmission.Inbound.V1
     Ouroboros.Network.TxSubmission.Inbound.V2
-    Ouroboros.Network.TxSubmission.Inbound.V2.Decision
     Ouroboros.Network.TxSubmission.Inbound.V2.Policy
     Ouroboros.Network.TxSubmission.Inbound.V2.Registry
     Ouroboros.Network.TxSubmission.Inbound.V2.State
@@ -314,7 +314,7 @@ library
     dlist,
     dns,
     hashable,
-    io-classes:{io-classes, mtl, si-timers, strict-mvar, strict-stm} ^>=1.8,
+    io-classes:{io-classes, mtl, si-timers, strict-stm} ^>=1.8 || ^>= 1.9,
     iproute,
     monoidal-synchronisation,
     mtl,
@@ -325,6 +325,7 @@ library
     psqueues >=0.2.3 && <0.3,
     random,
     strict-checked-vars ^>=0.2,
+    time,
     transformers,
     typed-protocols ^>=1.2,
 
@@ -644,7 +645,6 @@ library tracing
     base >=4.14 && <4.23,
     containers,
     formatting,
-    io-classes:si-timers,
     iproute,
     network,
     network-mux,
@@ -755,7 +755,6 @@ executable demo-tx-submission
     optparse-applicative,
     ouroboros-network:{ouroboros-network, api, framework, protocols},
     quickcheck-instances,
-    random,
     serialise,
     splitmix,
     statistics,
@@ -961,7 +960,7 @@ library ouroboros-network-tests-lib
     deepseq,
     dns,
     hashable,
-    io-classes:{io-classes, si-timers, strict-mvar, strict-stm},
+    io-classes:{io-classes, si-timers, strict-stm},
     io-sim,
     iproute,
     monoidal-synchronisation,
@@ -1004,6 +1003,7 @@ library ouroboros-network-tests-lib
     Test.Ouroboros.Network.TxSubmission
     Test.Ouroboros.Network.TxSubmission.AppV1
     Test.Ouroboros.Network.TxSubmission.AppV2
+    Test.Ouroboros.Network.TxSubmission.Impaired
     Test.Ouroboros.Network.TxSubmission.Mempool.Simple
     Test.Ouroboros.Network.TxSubmission.MempoolWriter
     Test.Ouroboros.Network.TxSubmission.TxLogic
@@ -1085,11 +1085,17 @@ benchmark sim-benchmarks
   type: exitcode-stdio-1.0
   hs-source-dirs: bench
   main-is: Main.hs
+  other-modules:
+    Bench.TxSubmissionV2Server
   build-depends:
     base,
     containers,
+    contra-tracer,
     deepseq,
-    ouroboros-network:{ouroboros-network, ouroboros-network-tests-lib},
+    io-classes:{io-classes, strict-stm},
+    ouroboros-network:ouroboros-network,
+    ouroboros-network:ouroboros-network-tests-lib,
+    ouroboros-network:protocols,
     pretty-simple,
     splitmix,
     tasty-bench >=0.3.5,

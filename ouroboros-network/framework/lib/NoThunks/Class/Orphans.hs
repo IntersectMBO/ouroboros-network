@@ -7,6 +7,7 @@ module NoThunks.Class.Orphans where
 
 import Data.IntPSQ (IntPSQ)
 import Data.IntPSQ qualified as IntPSQ
+import Data.IntSet (IntSet)
 import Data.OrdPSQ (OrdPSQ)
 import Data.OrdPSQ qualified as OrdPSQ
 
@@ -33,3 +34,5 @@ instance (NoThunks k, NoThunks v) => NoThunks (IntPSQ k v) where
     showTypeOf _ = "IntPSQ"
 
 deriving via InspectHeap SockAddr instance NoThunks SockAddr
+
+deriving via InspectHeap IntSet instance NoThunks IntSet
