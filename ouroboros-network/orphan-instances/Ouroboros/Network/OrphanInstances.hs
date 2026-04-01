@@ -29,6 +29,7 @@ import Data.Bifunctor (first)
 import Data.Bool (bool)
 import Data.Foldable (toList)
 import Data.IP (fromHostAddress, fromHostAddress6)
+import Data.IntMap.Strict qualified as IntMap
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text (Text, pack)
@@ -86,10 +87,12 @@ import Ouroboros.Network.Server qualified as Server
 import Ouroboros.Network.Server.RateLimiting (AcceptConnectionsPolicyTrace (..),
            AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket (LocalAddress (..), RemoteAddress)
-import Ouroboros.Network.TxSubmission.Inbound.V2 (ProcessedTxCount (..),
-           TraceTxLogic (..), TraceTxSubmissionInbound (..))
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
-           (TxSubmissionLogicVersion (..))
+           (ProcessedTxCount (..), SharedPeerState (..),
+           SharedTxState (..), TraceTxLogic (..),
+           TraceTxSubmissionInbound (..), TxAttemptState (..), TxEntry (..),
+           TxLease (..), TxSubmissionLogicVersion (..), retainedSize,
+           retainedToList)
 import Ouroboros.Network.TxSubmission.Outbound (TraceTxSubmissionOutbound (..))
 
 -- Helper function for ToJSON instances with a "kind" field
@@ -1769,6 +1772,11 @@ instance ( ToJSON txid
       , "txids" .= toJSON txids
       , "time" .= diffTime
       ]
+  toJSON (TraceTxInboundRequestTxs txids) =
+    object
+      [ "kind" .= String "TxInboundRequestTxs"
+      , "txids" .= toJSON txids
+      ]
   toJSON (TraceTxInboundError err) =
     object
       [ "kind" .= String "TxInboundError"
@@ -1778,12 +1786,78 @@ instance ( ToJSON txid
     object
       [ "kind" .= String "TxInboundTerminated"
       ]
-  toJSON (TraceTxInboundDecision decision) =
+
+traceSharedTxStateToJSON
+  :: (Show addr, Show txid)
+  => SharedTxState addr txid
+  -> Value
+traceSharedTxStateToJSON SharedTxState {
+                           sharedPeers,
+                           sharedTxTable,
+                           sharedRetainedTxs,
+                           sharedTxIdToKey,
+                           sharedKeyToTxId,
+                           sharedGeneration
+                         } =
     object
-      [ "kind" .= String "TxInboundDecision"
-      -- TODO: this is too verbose, it will show full tx's
-      , "decision" .= String (pack $ show decision)
+      [ "sharedGeneration" .= sharedGeneration
+      , "peerCount" .= Map.size sharedPeers
+      , "activeTxCount" .= IntMap.size sharedTxTable
+      , "retainedTxCount" .= retainedSize sharedRetainedTxs
+      , "internedTxCount" .= Map.size sharedTxIdToKey
+      , "leasedTxCount" .= leasedTxCount
+      , "claimableTxCount" .= claimableTxCount
+      , "resolvedTxCount" .= resolvedTxCount
+      , "downloadingAttemptCount" .= downloadingAttemptCount
+      , "bufferedAttemptCount" .= bufferedAttemptCount
+      , "submittingAttemptCount" .= submittingAttemptCount
+      , "peerPhases" .= peerPhases
+      , "sharedPeers" .= [ (show peeraddr, show peerState)
+                         | (peeraddr, peerState) <- Map.toList sharedPeers
+                         ]
+      , "sharedTxTable" .= [ (renderTxId txKey, show txEntry)
+                           | (txKey, txEntry) <- IntMap.toList sharedTxTable
+                           ]
+      , "sharedRetainedTxs" .= [ (renderTxId txKey, show retainUntil)
+                               | (txKey, retainUntil) <- retainedToList sharedRetainedTxs
+                               ]
+      , "internedTxIds" .= fmap show (Map.keys sharedTxIdToKey)
       ]
+  where
+    activeEntries = IntMap.elems sharedTxTable
+
+    leasedTxCount =
+      length [ () | TxEntry { txLease = TxLeased _ _ } <- activeEntries ]
+
+    claimableTxCount =
+      length [ () | TxEntry { txLease = TxClaimable } <- activeEntries ]
+
+    resolvedTxCount = 0 :: Int
+
+    downloadingAttemptCount =
+      sum [ length [ () | TxDownloading <- Map.elems txAttempts ]
+          | TxEntry { txAttempts } <- activeEntries
+          ]
+
+    bufferedAttemptCount =
+      sum [ length [ () | TxBuffered <- Map.elems txAttempts ]
+          | TxEntry { txAttempts } <- activeEntries
+          ]
+
+    submittingAttemptCount =
+      sum [ length [ () | TxSubmitting <- Map.elems txAttempts ]
+          | TxEntry { txAttempts } <- activeEntries
+          ]
+
+    peerPhases =
+      Map.toList $
+        Map.fromListWith (+)
+          [ (show sharedPeerPhase, 1 :: Int)
+          | SharedPeerState { sharedPeerPhase } <- Map.elems sharedPeers
+          ]
+
+    renderTxId txKey =
+      maybe "<missing-txid>" show (IntMap.lookup txKey sharedKeyToTxId)
 
 -- TODO: in cardano-node in the `coot/tx-submission-10.5` branch there's
 -- a better instance.
@@ -1795,11 +1869,7 @@ instance ( Show addr
   toJSON (TraceSharedTxState tag st) =
     object [ "kind" .= String "SharedTxState"
            , "tag"  .= String (pack tag)
-           , "sharedTxState" .= String (pack . show $ st)
-           ]
-  toJSON (TraceTxDecisions decisions) =
-    object [ "kind"      .= String "TxDecisions"
-           , "decisions" .= String (pack . show $ decisions)
+           , "sharedTxState" .= traceSharedTxStateToJSON st
            ]
 
 

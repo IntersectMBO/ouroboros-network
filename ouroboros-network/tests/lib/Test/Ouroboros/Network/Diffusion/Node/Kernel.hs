@@ -33,7 +33,6 @@ module Test.Ouroboros.Network.Diffusion.Node.Kernel
   ) where
 
 import Control.Applicative (Alternative)
-import Control.Concurrent.Class.MonadMVar.Strict qualified as Strict
 import Control.Concurrent.Class.MonadSTM qualified as LazySTM
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.DeepSeq (NFData (..))
@@ -85,8 +84,9 @@ import Ouroboros.Network.PeerSharing (PeerSharingAPI, PeerSharingRegistry (..),
 import Ouroboros.Network.Protocol.Handshake.Unversioned
 import Ouroboros.Network.Snocket (TestAddress (..))
 import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (SharedTxStateVar,
-           TxChannels (..), TxChannelsVar, TxMempoolSem, newSharedTxStateVar,
-           newTxMempoolSem)
+           TxSubmissionCountersVar, newSharedTxStateVar,
+           newTxSubmissionCountersVar)
+import Ouroboros.Network.TxSubmission.Inbound.V2.Types (emptySharedTxState)
 
 import Test.Ouroboros.Network.Diffusion.Node.ChainDB (ChainDB (..))
 import Test.Ouroboros.Network.Diffusion.Node.ChainDB qualified as ChainDB
@@ -318,19 +318,15 @@ data NodeKernel header block s txid m = NodeKernel {
       nkMempool
         :: Mempool m txid (Tx txid),
 
-      nkTxChannelsVar
-        :: TxChannelsVar m NtNAddr txid (Tx txid),
-
-      nkTxMempoolSem
-        :: TxMempoolSem m,
+      nkTxCountersVar
+        :: TxSubmissionCountersVar m,
 
       nkSharedTxStateVar
-        :: SharedTxStateVar m NtNAddr txid (Tx txid)
+        :: SharedTxStateVar m NtNAddr txid
     }
 
 newNodeKernel :: ( MonadTraceSTM m
                  , MonadLabelledSTM m
-                 , Strict.MonadMVar m
                  , RandomGen rng
                  , Ord txid
                  , Eq txid
@@ -339,7 +335,7 @@ newNodeKernel :: ( MonadTraceSTM m
               -> Int
               -> [Tx txid]
               -> m (NodeKernel header block rng txid m)
-newNodeKernel psRng txSeed txs = do
+newNodeKernel psRng _txSeed txs = do
     publicStateVar <- makePublicPeerSelectionStateVar
     labelTVarIO publicStateVar "public-peer-selection-state-var"
     traceTVarIO publicStateVar (\_ a -> return $ TraceString (show a))
@@ -354,9 +350,8 @@ newNodeKernel psRng txSeed txs = do
                             ps_POLICY_PEER_SHARE_MAX_PEERS
       <*> pure publicStateVar
       <*> newMempool txs
-      <*> Strict.newMVar (TxChannels Map.empty)
-      <*> newTxMempoolSem
-      <*> newSharedTxStateVar (Random.mkStdGen txSeed)
+      <*> newTxSubmissionCountersVar mempty
+      <*> newSharedTxStateVar emptySharedTxState
 
 -- | Register a new upstream chain-sync client.
 --
@@ -434,7 +429,6 @@ withNodeKernelThread
      , MonadThrow    (STM m)
      , MonadTraceSTM      m
      , MonadLabelledSTM   m
-     , Strict.MonadMVar   m
      , HasFullHeader block
      , RandomGen seed
      , SplitGen seed

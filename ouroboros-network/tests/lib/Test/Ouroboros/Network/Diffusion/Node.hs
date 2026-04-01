@@ -110,7 +110,6 @@ import Ouroboros.Network.Snocket (MakeBearer, Snocket, TestAddress (..),
            invalidFileDescriptor)
 
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy (TxDecisionPolicy)
-import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (decisionLogicThreads)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types (TraceTxLogic)
 
 import Simulation.Network.Snocket (AddressType (..), FD)
@@ -126,7 +125,6 @@ import Test.Ouroboros.Network.PeerSelection.RootPeersDNS (DNSLookupDelay,
            DNSTimeout, DomainAccessPoint (..), MockDNSLookupResult,
            mockDNSActions)
 import Test.Ouroboros.Network.TxSubmission.Types (Tx)
-import Test.Ouroboros.Network.Utils
 
 
 
@@ -255,7 +253,7 @@ run blockGeneratorArgs ni na
     extraPeersAPI psArgs
     toExtraPeers requestPublicRootPeers peerChurnGovernor
     tracers tracerBlockFetch
-    tracerTxLogic mkApps = do
+    _tracerTxLogic mkApps = do
     labelThisThread ("node-" ++ Node.ppNtNAddr (aIPAddress na))
     Node.withNodeKernelThread (aIPAddress na) blockGeneratorArgs (aTxs na)
       $ \ nodeKernel nodeKernelThread -> do
@@ -340,17 +338,9 @@ run blockGeneratorArgs ni na
                            (mkApps nodeKernel keepAliveStdGen))
            $ \ diffusionThread ->
                withAsync (blockFetch nodeKernel) $ \blockFetchLogicThread ->
-
-                 withAsync (decisionLogicThreads
-                              tracerTxLogic
-                              sayTracer
-                              (aTxDecisionPolicy na)
-                              (nkTxChannelsVar nodeKernel)
-                              (nkSharedTxStateVar nodeKernel)) $ \decLogicThread ->
-                      wait diffusionThread
-                   <> wait blockFetchLogicThread
-                   <> wait nodeKernelThread
-                   <> wait decLogicThread
+                    wait diffusionThread
+                 <> wait blockFetchLogicThread
+                 <> wait nodeKernelThread
   where
     blockFetch :: NodeKernel BlockHeader Block s txid m
                -> m Void

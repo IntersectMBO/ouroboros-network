@@ -4,11 +4,9 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Network.Tracing.TxSubmission () where
 
-import Control.Arrow
-import Control.Monad.Class.MonadTime.SI
 import Data.Aeson
+import Data.IntMap.Strict qualified as IntMap
 import Data.Map.Strict qualified as Map
-import Data.Set qualified as Set
 
 import Cardano.Logging
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
@@ -17,65 +15,111 @@ instance (Show txid, Show peeraddr) => LogFormatting (TraceTxLogic peeraddr txid
   forMachine dtal (TraceSharedTxState label SharedTxState {..}) =
       mconcat $ [ "kind" .= String "TraceSharedTxState"
                 , "label" .= label
-                , "inflightTxs" .= (fmap (first show) . Map.toList $ inflightTxs)
-                , "bufferedTxs" .= (fmap show . Set.toList . Map.keysSet $ bufferedTxs)
-                , "timedTxs"    .= (fmap (\(Time t, txids) -> (t, fmap show txids)) . Map.toList $ timedTxs)
-                , "inSubmissionToMempoolTxs" .= (fmap (first show) . Map.toList $ inSubmissionToMempoolTxs)
+                , "sharedGeneration" .= sharedGeneration
+                , "peerCount" .= Map.size sharedPeers
+                , "activeTxCount" .= IntMap.size sharedTxTable
+                , "retainedTxCount" .= retainedSize sharedRetainedTxs
+                , "internedTxCount" .= Map.size sharedTxIdToKey
+                , "leasedTxCount" .= leasedTxCount
+                , "claimableTxCount" .= claimableTxCount
+                , "resolvedTxCount" .= resolvedTxCount
+                , "downloadingAttemptCount" .= downloadingAttemptCount
+                , "bufferedAttemptCount" .= bufferedAttemptCount
+                , "submittingAttemptCount" .= submittingAttemptCount
+                , "peerPhases" .= peerPhases
                 ] ++ more
     where
+      activeEntries = IntMap.elems sharedTxTable
+
+      leasedTxCount =
+        length [ () | TxEntry { txLease = TxLeased _ _ } <- activeEntries ]
+
+      claimableTxCount =
+        length [ () | TxEntry { txLease = TxClaimable } <- activeEntries ]
+
+      resolvedTxCount = 0 :: Int
+
+      downloadingAttemptCount =
+        sum [ length [ () | TxDownloading <- Map.elems txAttempts' ]
+            | TxEntry { txAttempts = txAttempts' } <- activeEntries
+            ]
+
+      bufferedAttemptCount =
+        sum [ length [ () | TxBuffered <- Map.elems txAttempts' ]
+            | TxEntry { txAttempts = txAttempts' } <- activeEntries
+            ]
+
+      submittingAttemptCount =
+        sum [ length [ () | TxSubmitting <- Map.elems txAttempts' ]
+            | TxEntry { txAttempts = txAttempts' } <- activeEntries
+            ]
+
+      peerPhases =
+        Map.toList $
+          Map.fromListWith (+)
+            [ (show sharedPeerPhase', 1 :: Int)
+            | SharedPeerState { sharedPeerPhase = sharedPeerPhase' } <- Map.elems sharedPeers
+            ]
+
+      renderTxId txKey =
+        maybe "<missing-txid>" show (IntMap.lookup txKey sharedKeyToTxId)
+
       more = case dtal of
         DMaximum ->
-                  [ "peerTxStates" .= (fmap (first show) . Map.toList $ inflightTxs)
-                  , "referenceCounts" .= (fmap (first show) . Map.toList $ referenceCounts)
+                  [ "sharedPeers" .= [ (show peeraddr, show peerState)
+                                     | (peeraddr, peerState) <- Map.toList sharedPeers
+                                     ]
+                  , "sharedTxTable" .= [ (renderTxId txKey, show txEntry)
+                                       | (txKey, txEntry) <- IntMap.toList sharedTxTable
+                                       ]
+                  , "sharedRetainedTxs" .= [ (renderTxId txKey, show retainUntil)
+                                           | (txKey, retainUntil) <- retainedToList sharedRetainedTxs
+                                           ]
+                  , "internedTxIds" .= fmap show (Map.keys sharedTxIdToKey)
                   ]
         _otherwise -> []
-
-  forMachine dtal (TraceTxDecisions decisionMap) =
-       ("kind" .= String "TraceTxDecisions")
-    <> case dtal of
-         DMaximum -> "decisions" .=
-           let g (TxsToMempool txs) = map (show . fst) txs
-               f TxDecision {..} =
-                 [( fromIntegral txdTxIdsToAcknowledge :: Int, fromIntegral txdTxIdsToRequest :: Int
-                  , map (first show) . Map.toList $ txdTxsToRequest, g txdTxsToMempool)]
-            in map (\(peer, decision) -> (show peer, f decision)) . Map.toList $ decisionMap
-         _otherwise ->
-           let f TxDecision {..} = txdTxIdsToAcknowledge == 0 && txdTxIdsToRequest == 0 &&
-                                   Map.null txdTxsToRequest
-            in "decision-count" .= Map.size (Map.filter (not . f) decisionMap)
 
 
 instance MetaTrace (TraceTxLogic peeraddr txid tx) where
   namespaceFor TraceSharedTxState {} =
     Namespace [] ["TraceSharedTxState"]
-  namespaceFor TraceTxDecisions {} =
-    Namespace [] ["TraceTxDecisions"]
 
   severityFor _ _ = Just Debug
 
   documentFor (Namespace [] ["TraceSharedTxState"]) =
-    Just "Internal bookkeeping of tx-submission shared state for determining fetch decisions"
+    Just "Internal bookkeeping of tx-submission shared state for peer coordination"
   documentFor _ = Nothing
 
   allNamespaces = [
-    Namespace [] ["TraceSharedTxState"],
-    Namespace [] ["TraceTxDecisions"]
+    Namespace [] ["TraceSharedTxState"]
     ]
 
 instance LogFormatting TxSubmissionCounters where
   forMachine _dtal TxSubmissionCounters {..} =
     mconcat [ "kind" .= String "TxSubmissionCounters"
-            , "numOfOutstandingTxIds" .= numOfOutstandingTxIds
-            , "numOfBufferedTxs" .= numOfBufferedTxs
-            , "numOfInSubmissionToMempoolTxs" .= numOfInSubmissionToMempoolTxs
-            , "numOfTxIdsInflight" .= numOfTxIdsInflight
+            , "txIdMessagesSent" .= txIdMessagesSent
+            , "txIdsRequested" .= txIdsRequested
+            , "txIdRepliesReceived" .= txIdRepliesReceived
+            , "txIdsReceived" .= txIdsReceived
+            , "txMessagesSent" .= txMessagesSent
+            , "txsRequested" .= txsRequested
+            , "txRepliesReceived" .= txRepliesReceived
+            , "txsReceived" .= txsReceived
+            , "txsOmitted" .= txsOmitted
+            , "lateBodies" .= lateBodies
             ]
 
   asMetrics TxSubmissionCounters {..} =
-    [ IntM "txSubmission.numOfOutstandingTxIds" (fromIntegral numOfOutstandingTxIds)
-    , IntM "txSubmission.numOfBufferedTxs" (fromIntegral numOfBufferedTxs)
-    , IntM "txSubmission.numOfInSubmissionToMempoolTxs" (fromIntegral numOfInSubmissionToMempoolTxs)
-    , IntM "txSubmission.numOfTxIdsInflight" (fromIntegral numOfTxIdsInflight)
+    [ IntM "txSubmission.txIdMessagesSent" (fromIntegral txIdMessagesSent)
+    , IntM "txSubmission.txIdsRequested" (fromIntegral txIdsRequested)
+    , IntM "txSubmission.txIdRepliesReceived" (fromIntegral txIdRepliesReceived)
+    , IntM "txSubmission.txIdsReceived" (fromIntegral txIdsReceived)
+    , IntM "txSubmission.txMessagesSent" (fromIntegral txMessagesSent)
+    , IntM "txSubmission.txsRequested" (fromIntegral txsRequested)
+    , IntM "txSubmission.txRepliesReceived" (fromIntegral txRepliesReceived)
+    , IntM "txSubmission.txsReceived" (fromIntegral txsReceived)
+    , IntM "txSubmission.txsOmitted" (fromIntegral txsOmitted)
+    , IntM "txSubmission.lateBodies" (fromIntegral lateBodies)
     ]
 
 instance MetaTrace TxSubmissionCounters where
@@ -86,10 +130,16 @@ instance MetaTrace TxSubmissionCounters where
   documentFor _                           = Nothing
 
   metricsDocFor (Namespace [] ["Counters"]) =
-    [ ("txSubmission.numOfOutstandingTxIds", "txid's which are not yet downloaded")
-    , ("txSubmission.numOfBufferedTxs", "tx's which have been recently successfully applied to the mempool")
-    , ("txSubmission.numOfInSubmissionToMempoolTxs", "number of all tx's which are enqueued to the mempool")
-    , ("txSubmission.numOfTxIdsInflight", "number of all in-flight txid's")
+    [ ("txSubmission.txIdMessagesSent", "number of txid request messages sent")
+    , ("txSubmission.txIdsRequested", "number of txids requested from remote peers")
+    , ("txSubmission.txIdRepliesReceived", "number of txid reply messages received")
+    , ("txSubmission.txIdsReceived", "number of txids received in reply batches")
+    , ("txSubmission.txMessagesSent", "number of tx body request messages sent")
+    , ("txSubmission.txsRequested", "number of tx bodies requested from remote peers")
+    , ("txSubmission.txRepliesReceived", "number of tx body reply messages received")
+    , ("txSubmission.txsReceived", "number of tx bodies received")
+    , ("txSubmission.txsOmitted", "number of requested tx bodies omitted from replies")
+    , ("txSubmission.lateBodies", "number of tx bodies received after local resolution")
     ]
   metricsDocFor _ = []
 

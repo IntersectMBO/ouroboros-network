@@ -19,7 +19,6 @@ import Prelude hiding (seq)
 
 import NoThunks.Class
 
-import Control.Concurrent.Class.MonadMVar.Strict
 import Control.Concurrent.Class.MonadSTM qualified as Lazy
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadAsync
@@ -35,7 +34,6 @@ import Control.Tracer (Tracer (..), contramap)
 import Data.ByteString.Lazy qualified as BSL
 import Data.Foldable (traverse_)
 import Data.Function (on)
-import Data.Hashable
 import Data.List (nubBy)
 import Data.List qualified as List
 import Data.List.Trace qualified as Trace
@@ -46,7 +44,6 @@ import Data.Maybe (fromMaybe, isJust)
 import Data.Monoid (Sum (..))
 import Data.Set qualified as Set
 import Data.Typeable (Typeable)
-import System.Random (mkStdGen)
 
 import Ouroboros.Network.Channel
 import Ouroboros.Network.ControlMessage (ControlMessage (..), ControlMessageSTM)
@@ -128,7 +125,7 @@ instance Arbitrary TxSubmissionState where
 
 
 newtype TxStateTrace peeraddr txid =
-    TxStateTrace (SharedTxState peeraddr txid (Tx txid))
+    TxStateTrace (SharedTxState peeraddr txid)
 type TxStateTraceType = TxStateTrace PeerAddr TxId
 
 
@@ -139,7 +136,6 @@ runTxSubmission
      , MonadEvaluate m
      , MonadFork  m
      , MonadMask  m
-     , MonadMVar  m
      , MonadSay   m
      , MonadST    m
      , MonadLabelledSTM m
@@ -156,7 +152,6 @@ runTxSubmission
      , Typeable txid
      , Show peeraddr
      , Ord peeraddr
-     , Hashable peeraddr
      , Typeable peeraddr
 
      , txid ~ Int
@@ -171,86 +166,72 @@ runTxSubmission
   -> TxDecisionPolicy
   -> m ([Tx txid], [[Tx txid]])
   -- ^ inbound and outbound mempools
-runTxSubmission tracer tracerTxLogic st0 txDecisionPolicy = do
+runTxSubmission tracer _tracerTxLogic st0 txDecisionPolicy = do
     st <- traverse (\(b, c, d, e) -> do
         mempool <- newMempool b
         (outChannel, inChannel) <- createConnectedChannels
         return (mempool, c, d, e, outChannel, inChannel)
         ) st0
     inboundMempool <- emptyMempool
-    let txRng = mkStdGen 42 -- TODO
-        txMap = Map.fromList [ (getTxId tx, tx)
+    let txMap = Map.fromList [ (getTxId tx, tx)
                              | (txs, _, _, _) <- Map.elems st0
                              , tx <- txs]
 
-
-    txChannelsVar <- newMVar (TxChannels Map.empty)
-    txMempoolSem <- newTxMempoolSem
     duplicateTxIdsVar <- Lazy.newTVarIO []
-    sharedTxStateVar <- newSharedTxStateVar txRng
+    sharedTxStateVar <- newSharedTxStateVar emptySharedTxState
+    txCountersVar <- newTxSubmissionCountersVar mempty
     traceTVarIO sharedTxStateVar \_ -> return . TraceDynamic . TxStateTrace
     labelTVarIO sharedTxStateVar "shared-tx-state"
 
-    withAsync (decisionLogicThreads tracerTxLogic sayTracer
-                                    txDecisionPolicy txChannelsVar sharedTxStateVar) $ \a -> do
-          -- Construct txSubmission outbound client
-      let clients = (\(addr, (mempool {- txs -}, ctrlMsgSTM, outDelay, _, outChannel, _)) -> do
-                      let client = txSubmissionOutbound
-                                     (Tracer $ say . show)
-                                     (NumTxIdsToAck $ getNumTxIdsToReq
-                                       $ maxUnacknowledgedTxIds txDecisionPolicy)
-                                     (getMempoolReader mempool)
-                                     (maxBound :: TestVersion)
-                                     ctrlMsgSTM
-                      runPeerWithLimits (("OUTBOUND " ++ show addr,) `contramap` tracer)
-                                        txSubmissionCodec2
-                                        (byteLimitsTxSubmission2 (fromIntegral . BSL.length))
-                                        timeLimitsTxSubmission2
-                                        (maybe id delayChannel outDelay outChannel)
-                                        (txSubmissionClientPeer client)
-                    )
-                   <$> Map.assocs st
+    let clients = (\(addr, (mempool {- txs -}, ctrlMsgSTM, outDelay, _, outChannel, _)) -> do
+                    let client = txSubmissionOutbound
+                                   (Tracer $ say . show)
+                                   (NumTxIdsToAck $ getNumTxIdsToReq
+                                     $ maxUnacknowledgedTxIds txDecisionPolicy)
+                                   (getMempoolReader mempool)
+                                   (maxBound :: TestVersion)
+                                   ctrlMsgSTM
+                    runPeerWithLimits (("OUTBOUND " ++ show addr,) `contramap` tracer)
+                                      txSubmissionCodec2
+                                      (byteLimitsTxSubmission2 (fromIntegral . BSL.length))
+                                      timeLimitsTxSubmission2
+                                      (maybe id delayChannel outDelay outChannel)
+                                      (txSubmissionClientPeer client)
+                  )
+                 <$> Map.assocs st
 
-          -- Construct txSubmission inbound server
-          servers = (\(addr, (_, _, _, inDelay, _, inChannel)) ->
-                       withPeer tracerTxLogic
-                                txChannelsVar
-                                txMempoolSem
-                                txDecisionPolicy
-                                sharedTxStateVar
-                                (getMempoolReader inboundMempool)
-                                (getMempoolWriter duplicateTxIdsVar inboundMempool)
-                                getTxSize
-                                addr $ \api -> do
-                                  let server =
-                                        txSubmissionInboundV2 sayTracer --verboseTracer
-                                                              NoTxSubmissionInitDelay
-                                                              (getMempoolWriter duplicateTxIdsVar
-                                                                                inboundMempool)
-                                                              api
-                                  runPipelinedPeerWithLimits
+        servers = (\(addr, (_, _, _, inDelay, _, inChannel)) ->
+                     withPeer txDecisionPolicy
+                              (getMempoolReader inboundMempool)
+                              sharedTxStateVar
+                              txCountersVar
+                              addr $ \api -> do
+                                let server =
+                                      txSubmissionInboundV2 sayTracer
+                                                            NoTxSubmissionInitDelay
+                                                            (getMempoolReader inboundMempool)
+                                                            (getMempoolWriter duplicateTxIdsVar inboundMempool)
+                                                            getTxSize
+                                                            api
+                                runPipelinedPeerWithLimits
+                                  (("INBOUND " ++ show addr,) `contramap` sayTracer)
+                                  txSubmissionCodec2
+                                  (byteLimitsTxSubmission2 (fromIntegral . BSL.length))
+                                  timeLimitsTxSubmission2
+                                  (maybe id delayChannel inDelay inChannel)
+                                  (txSubmissionServerPeerPipelined server)
+                  ) <$> Map.assocs st
 
-                                    (("INBOUND " ++ show addr,) `contramap` sayTracer)
-                                    txSubmissionCodec2
-                                    (byteLimitsTxSubmission2 (fromIntegral . BSL.length))
-                                    timeLimitsTxSubmission2
-                                    (maybe id delayChannel inDelay inChannel)
-                                    (txSubmissionServerPeerPipelined server)
-                    ) <$> Map.assocs st
+    withAsyncAll (zip clients servers) $ \as -> do
+      _ <- waitAllServers as
 
-      -- Run clients and servers
-      withAsyncAll (zip clients servers) $ \as -> do
-        _ <- waitAllServers as
-        -- cancel decision logic thread
-        cancel a
+      inmp <- readMempool inboundMempool
+      dupTxIds <- Lazy.readTVarIO duplicateTxIdsVar
+      let outmp = map (\(txs, _, _, _) -> txs)
+                $ Map.elems st0
+          dupTxs = [ txMap Map.! txid | txid <- dupTxIds]
 
-        inmp <- readMempool inboundMempool
-        dupTxIds <- Lazy.readTVarIO duplicateTxIdsVar
-        let outmp = map (\(txs, _, _, _) -> txs)
-                  $ Map.elems st0
-            dupTxs = [ txMap Map.! txid | txid <- dupTxIds]
-
-        return (inmp <> dupTxs, outmp)
+      return (inmp <> dupTxs, outmp)
   where
     waitAllServers :: [(Async m x, Async m x)] -> m [Either SomeException x]
     waitAllServers [] = return []
@@ -479,28 +460,17 @@ prop_sharedTxStateInvariant initialState@(TxSubmissionState st0 _) =
               . counterexample (show err)
               $ False
     Right _ ->
-      let lookBack, tr' :: [TxStateTraceType]
-          lookBack = Trace.toList $ traceSelectTraceEventsDynamic tr
-          tr' = drop 1 lookBack
+      let tracedStates :: [TxStateTraceType]
+          tracedStates = Trace.toList $ traceSelectTraceEventsDynamic tr
       in counterexample pTrace case
            foldMap (\case
-                        (TxStateTrace stBack, TxStateTrace st)->
-                          (Every . counterexample (show st) $
-                                  sharedTxStateInvariant WeakInvariant st
-                             .&&. let inflight = Map.keysSet $ inflightTxs st
-                                      buffered = Map.keysSet $ bufferedTxs st
-                                      inflightBack = Map.keysSet $ inflightTxs stBack
-                                  in
-                                    -- here we account for a very slow peer from whom we requested
-                                    -- a transaction, but it didn't arrive until we have also requested
-                                    -- it from another peer, received it, and placed it into the mempool,
-                                    -- and so it ended up in bufferedTxs when the first one is still
-                                    -- in flight. It is an error when the opposite happens.
-                                    null $ (inflight Set.\\ inflightBack) `Set.intersection` buffered
-                          , Sum 1
-                          )
+                      TxStateTrace st ->
+                        ( Every . counterexample (show st) $
+                            sharedTxStateInvariant WeakInvariant st
+                        , Sum 1
+                        )
                    )
-                   (zip lookBack tr')
+                   tracedStates
            of (p, Sum c) ->
                  label ("number of txs: "
                          ++
@@ -512,7 +482,6 @@ prop_sharedTxStateInvariant initialState@(TxSubmissionState st0 _) =
                . label ("number of evaluated states: "
                          ++ renderRanges 100 c)
                $ p
-
 
 --
 -- Utils

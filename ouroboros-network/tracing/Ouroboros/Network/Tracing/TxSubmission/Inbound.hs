@@ -73,11 +73,14 @@ instance (Show txid, Show tx)
       , "error" .= Text.pack (show e)
       ]
 
-  forMachine _dtal (TraceTxInboundDecision decision) =
-    mconcat [
-        "kind" .= String "TraceTxInboundDecision"
-      , "decision" .= Text.pack (show decision)
+  forMachine dtal (TraceTxInboundRequestTxs txids) =
+    mconcat
+      [ "kind" .= String "TraceTxInboundRequestTxs"
+      , "count" .= toJSON (length txids)
       ]
+    <> case dtal of
+         DDetailed  -> "txIds" .= Text.pack (show txids)
+         _otherwise -> mempty
 
   asMetrics (TraceTxSubmissionCollected txids) =
     [CounterM "submissions.submitted" (Just (length txids))]
@@ -106,8 +109,8 @@ instance MetaTrace (TraceTxSubmissionInbound txid tx) where
       Namespace [] ["RejectedFromMempool"]
     namespaceFor TraceTxInboundError {} =
       Namespace [] ["Error"]
-    namespaceFor TraceTxInboundDecision {} =
-      Namespace [] ["Decision"]
+    namespaceFor TraceTxInboundRequestTxs {} =
+      Namespace [] ["RequestTxs"]
 
     severityFor (Namespace _ ["Collected"]) _            = Just Debug
     severityFor (Namespace _ ["Processed"]) _            = Just Debug
@@ -117,7 +120,7 @@ instance MetaTrace (TraceTxSubmissionInbound txid tx) where
     severityFor (Namespace _ ["AddedToMempool"]) _       = Just Debug
     severityFor (Namespace _ ["RejectedFromMempool"]) _  = Just Debug
     severityFor (Namespace _ ["Error"]) _                = Just Debug
-    severityFor (Namespace _ ["Decision"]) _             = Just Debug
+    severityFor (Namespace _ ["RequestTxs"]) _           = Just Debug
 
     severityFor _ _                                      = Nothing
 
@@ -151,8 +154,8 @@ instance MetaTrace (TraceTxSubmissionInbound txid tx) where
       "Transactions rejected from mempool and processing time"
     documentFor (Namespace _ ["Error"]) = Just
       "Protocol violation causing connection reset"
-    documentFor (Namespace _ ["Decision"]) = Just
-      "Decision to advance the protocol"
+    documentFor (Namespace _ ["RequestTxs"]) = Just
+      "Transactions requested from the remote peer"
     documentFor _ = Nothing
 
     allNamespaces = [
@@ -164,5 +167,5 @@ instance MetaTrace (TraceTxSubmissionInbound txid tx) where
         , Namespace [] ["AddedToMempool"]
         , Namespace [] ["RejectedFromMempool"]
         , Namespace [] ["Error"]
-        , Namespace [] ["Decision"]
+        , Namespace [] ["RequestTxs"]
         ]
