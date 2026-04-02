@@ -25,21 +25,26 @@ import Ouroboros.Network.Magic
 
 -- | Enumeration of node to client protocol versions.
 --
+-- Historical versions:
+--
+-- @
+-- NodeToClientV_9
+-- -- ^ enabled @CardanoNodeToClientVersion7@, i.e., Alonzo
+-- | NodeToClientV_10
+-- -- ^ added 'GetChainBlockNo' and 'GetChainPoint' queries
+-- | NodeToClientV_11
+-- -- ^ added 'GetRewardInfoPools` Block query
+-- | NodeToClientV_12
+-- -- ^ added 'LocalTxMonitor' mini-protocol
+-- | NodeToClientV_13
+-- -- ^ enabled @CardanoNodeToClientVersion9@, i.e., Babbage
+-- | NodeToClientV_14
+-- -- ^ added @GetPoolDistr@, @GetPoolState@, @GetSnapshots@
+-- | NodeToClientV_15
+-- -- ^ added `query` to NodeToClientVersionData
+-- @
+--
 data NodeToClientVersion
-    -- = NodeToClientV_9
-    -- -- ^ enabled @CardanoNodeToClientVersion7@, i.e., Alonzo
-    -- | NodeToClientV_10
-    -- -- ^ added 'GetChainBlockNo' and 'GetChainPoint' queries
-    -- | NodeToClientV_11
-    -- -- ^ added 'GetRewardInfoPools` Block query
-    -- | NodeToClientV_12
-    -- -- ^ added 'LocalTxMonitor' mini-protocol
-    -- | NodeToClientV_13
-    -- -- ^ enabled @CardanoNodeToClientVersion9@, i.e., Babbage
-    -- | NodeToClientV_14
-    -- -- ^ added @GetPoolDistr@, @GetPoolState@, @GetSnapshots@
-    -- | NodeToClientV_15
-    -- -- ^ added `query` to NodeToClientVersionData
     = NodeToClientV_16
     -- ^  Conway era (enabled @CardanoNodeToClientVersion11@);
     -- added @ImmutableTip@ and @GetStakeDelegDeposits@ queries to @LocalStateQuery@

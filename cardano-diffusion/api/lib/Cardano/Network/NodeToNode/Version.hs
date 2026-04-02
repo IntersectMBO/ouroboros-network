@@ -38,45 +38,48 @@ import Ouroboros.Network.PerasSupport
 
 -- | Enumeration of node to node protocol versions.
 --
+-- Historical versions:
+--
+-- @
+-- NodeToNodeV_7
+-- -- ^ Changes:
+-- --
+-- -- * new 'KeepAlive' codec
+-- -- * Enable @CardanoNodeToNodeVersion5@, i.e., Alonzo
+-- | NodeToNodeV_8
+-- -- ^ Changes:
+-- --
+-- -- * Enable block diffusion pipelining in ChainSync and BlockFetch logic.
+-- | NodeToNodeV_9
+-- -- ^ Changes:
+-- --
+-- -- * Enable @CardanoNodeToNodeVersion6@, i.e., Babbage
+-- | NodeToNodeV_10
+-- -- ^ Changes:
+-- --
+-- -- * Enable full duplex connections.
+-- | NodeToNodeV_11
+-- -- ^ Changes:
+-- --
+-- -- * Adds a new extra parameter to handshake: PeerSharing
+-- --   This version is needed to support the new  Peer Sharing miniprotocol
+-- --   older versions that are negotiated will appear as not participating
+-- --   in Peer Sharing to newer versions.
+-- -- * Adds `query` to NodeToClientVersionData.
+-- | NodeToNodeV_12
+-- -- ^ No changes.
+-- --
+-- -- (In the past, this enabled Conway, but the negotiated 'NodeToNodeVersion'
+-- -- no longer en-/disables eras.)
+-- | NodeToNodeV_13
+-- -- ^ Changes:
+-- -- * Removed PeerSharingPrivate constructor
+-- -- * Fixed Codec to disable PeerSharing with buggy versions 11 and 12.
+-- -- * Disable PeerSharing with InitiatorOnly nodes, since they do not run
+-- --   peer sharing server side and can not reply to requests.
+-- @
+--
 data NodeToNodeVersion =
-    -- commented out versions that can't cross into the current HF era
-    -- NodeToNodeV_7
-    -- -- ^ Changes:
-    -- --
-    -- -- * new 'KeepAlive' codec
-    -- -- * Enable @CardanoNodeToNodeVersion5@, i.e., Alonzo
-    -- | NodeToNodeV_8
-    -- -- ^ Changes:
-    -- --
-    -- -- * Enable block diffusion pipelining in ChainSync and BlockFetch logic.
-    -- | NodeToNodeV_9
-    -- -- ^ Changes:
-    -- --
-    -- -- * Enable @CardanoNodeToNodeVersion6@, i.e., Babbage
-    -- | NodeToNodeV_10
-    -- -- ^ Changes:
-    -- --
-    -- -- * Enable full duplex connections.
-    -- | NodeToNodeV_11
-    -- -- ^ Changes:
-    -- --
-    -- -- * Adds a new extra parameter to handshake: PeerSharing
-    -- --   This version is needed to support the new  Peer Sharing miniprotocol
-    -- --   older versions that are negotiated will appear as not participating
-    -- --   in Peer Sharing to newer versions.
-    -- -- * Adds `query` to NodeToClientVersionData.
-    -- | NodeToNodeV_12
-    -- -- ^ No changes.
-    -- --
-    -- -- (In the past, this enabled Conway, but the negotiated 'NodeToNodeVersion'
-    -- -- no longer en-/disables eras.)
-    -- | NodeToNodeV_13
-    -- ^ Changes:
-    --
-    -- * Removed PeerSharingPrivate constructor
-    -- * Fixed Codec to disable PeerSharing with buggy versions 11 and 12.
-    -- * Disable PeerSharing with InitiatorOnly nodes, since they do not run
-    --   peer sharing server side and can not reply to requests.
     NodeToNodeV_14
     -- ^ Plomin HF, mandatory on mainnet as of 2025.01.29
   | NodeToNodeV_15
