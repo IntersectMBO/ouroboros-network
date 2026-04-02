@@ -52,6 +52,7 @@ import Network.Socket (PortNumber)
 import Network.Socket qualified as Socket
 import Network.TypedProtocol.Codec (AnnotatedCodec, AnyMessage (..))
 
+import Ouroboros.Network.Protocol.Codec.Utils
 import Ouroboros.Network.Protocol.TxSubmission2.Client qualified as Tx.Outbound
 import Ouroboros.Network.Protocol.TxSubmission2.Codec qualified as Tx
 import Ouroboros.Network.Protocol.TxSubmission2.Server qualified as Tx.Inbound
@@ -303,26 +304,27 @@ mkTx txPayload =
            }
   in tx
 
-getTxSize :: Tx.WithBytes Tx -> SizeInBytes
-getTxSize = txSize . Tx.cborPayload
+getTxSize :: Tx -> SizeInBytes
+getTxSize = txSize
 
-getTxId :: Tx.WithBytes Tx -> TxId
-getTxId = txid . Tx.cborPayload
+getTxId :: Tx -> TxId
+getTxId = txid
 
 
 data DuplicateTxError = DuplicateTxError
   deriving stock    Show
   deriving anyclass Exception
 
-type TxSubmission = Tx.TxSubmission2 TxId (Tx.WithBytes Tx)
+type TxSubmission = Tx.TxSubmission2 TxId Tx
 
 codec :: AnnotatedCodec
           TxSubmission
           CBOR.DeserialiseFailure
           IO
           LBS.ByteString
-codec = Tx.anncodecTxSubmission2 CBOR.encode CBOR.decode
-                                             decodeTx
+codec = Tx.anncodecTxSubmission2' (\bs tx -> tx { txSize = fromIntegral (LBS.length bs) })
+                                  CBOR.encode CBOR.decode
+                                  encodeTx    decodeTx
 
 byteLimits
   :: Driver.ProtocolSizeLimits TxSubmission LBS.ByteString
@@ -378,12 +380,12 @@ txSubmissionTracer lock =
     pretty Tx.MsgDone = "MsgDone"
 
 
-inboundTracer :: MVar () -> Tracer IO (Mx.WithBearer Socket.SockAddr (V2.TraceTxSubmissionInbound TxId (Tx.WithBytes Tx)))
+inboundTracer :: MVar () -> Tracer IO (Mx.WithBearer Socket.SockAddr (V2.TraceTxSubmissionInbound TxId Tx))
 inboundTracer lock =
     Tracer $ \msg ->
       withMVar lock $ \_ -> putStrLn (prettyWithBearer prettyMsg msg)
   where
-    prettyMsg :: V2.TraceTxSubmissionInbound TxId (Tx.WithBytes Tx) -> String
+    prettyMsg :: V2.TraceTxSubmissionInbound TxId Tx -> String
     prettyMsg (V2.TraceTxSubmissionCollected txids) =
       unwords ["TraceTxSubmissionCollected ", show txids]
     prettyMsg (V2.TraceTxSubmissionProcessed cnt) =
@@ -446,7 +448,6 @@ runTxInbound Addr { addr, port } txDecisionPolicy version txDelay = do
             link thrd
 
 
-        mempool :: Mempool.Mempool IO TxId (Tx.WithBytes Tx) 
         mempool <- Mempool.new getTxId []
 
         forever $ do
@@ -634,20 +635,26 @@ runTxsGenerator num filePath = do
 
 
 
-readTxs :: FilePath -> IO [Tx.WithBytes Tx]
+readTxs :: FilePath -> IO [Tx]
 readTxs filePath = do
     bs <- LBS.readFile filePath
     case CBOR.deserialiseFromBytes decodeTxs' bs of
       Left e         -> throwIO e
-      Right (_, txs) -> return txs
+      Right (_, txs) -> return $ runByteSpan bs <$> txs
   where
-    decodeTxs' :: CBOR.Decoder s [Tx.WithBytes Tx]
+    runByteSpan :: LBS.ByteString
+                -> WithByteSpan (LBS.ByteString -> Tx)
+                -> Tx
+    runByteSpan bs (WithByteSpan (f, start, end)) =
+      f (bytesBetweenOffsets start end bs)
+
+    decodeTxs' :: CBOR.Decoder s [WithByteSpan (LBS.ByteString -> Tx)]
     decodeTxs' = do
       l <- CBOR.decodeListLen
       replicateM l decodeTx'
 
-    decodeTx' :: CBOR.Decoder s (Tx.WithBytes Tx)
-    decodeTx' = undefined
+    decodeTx' :: CBOR.Decoder s (WithByteSpan (LBS.ByteString -> Tx))
+    decodeTx' = decodeWithByteSpan decodeTx
 
 
 runTxsAnalyser :: FilePath -> IO ()
