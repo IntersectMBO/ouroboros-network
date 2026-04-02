@@ -8,6 +8,7 @@
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 
 {-# OPTIONS_GHC -Wno-partial-fields #-}
 
@@ -29,6 +30,7 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer (..))
 import Control.Tracer qualified as Tracer
 import Data.ByteString (ByteString)
+import Data.ByteString qualified as BS
 import Data.ByteString.Builder qualified as BS.Builder
 import Data.ByteString.Lazy qualified as LBS
 import Data.Functor.Contravariant ((>$<))
@@ -48,7 +50,7 @@ import Network.Mux qualified as Mx
 import Network.Mux.Bearer qualified as Mx
 import Network.Socket (PortNumber)
 import Network.Socket qualified as Socket
-import Network.TypedProtocol.Codec (AnyMessage (..), Codec)
+import Network.TypedProtocol.Codec (AnnotatedCodec, AnyMessage (..))
 
 import Ouroboros.Network.Protocol.TxSubmission2.Client qualified as Tx.Outbound
 import Ouroboros.Network.Protocol.TxSubmission2.Codec qualified as Tx
@@ -265,46 +267,62 @@ newtype TxId = TxId Int
   deriving newtype  (Serialise, NoThunks)
 
 data Tx = Tx { txid      :: TxId,
-               txPayload :: ByteString
+               txPayload :: ByteString,
+               txSize    :: SizeInBytes
              }
   deriving stock    (Eq, Show, Generic)
   deriving anyclass ShowProxy
   deriving anyclass NoThunks
 
-instance CBOR.Serialise Tx where
-  encode Tx { txid, txPayload } =
-       CBOR.encodeListLen 2
-    <> CBOR.encode txid
-    <> CBOR.encode txPayload
-  decode = do
-    _ <- CBOR.decodeListLen
-    txid <- CBOR.decode
-    txPayload <- CBOR.decode
-    pure Tx { txid, txPayload }
+encodeTx :: Tx -> CBOR.Encoding
+encodeTx Tx { txid, txPayload } =
+     CBOR.encodeListLen 2
+  <> CBOR.encode txid
+  <> CBOR.encode txPayload
 
--- | A `Tx`'s smart constructor which computes `txid` from the payload.
+decodeTx :: CBOR.Decoder s (LBS.ByteString -> Tx)
+decodeTx = do
+  _ <- CBOR.decodeListLen
+  txid <- CBOR.decode
+  txPayload <- CBOR.decode
+  pure $ \bs ->
+    Tx { txid,
+         txPayload,
+         txSize = fromIntegral (LBS.length bs)
+       }
+
+-- | A `Tx`'s smart constructor which computes `txid` from the payload and
+-- `txSize` by encoding the `Tx`.
 --
 mkTx :: ByteString -> Tx
-mkTx txPayload = Tx { txid = TxId (Hashable.hash txPayload),
-                      txPayload }
+mkTx txPayload =
+  let tx =
+        Tx { txid = TxId (Hashable.hash txPayload),
+             txPayload,
+             txSize = fromIntegral . BS.length . CBOR.toStrictByteString . encodeTx $ tx
+           }
+  in tx
 
--- TODO: avoid re-serialisation
-getTxSize :: Tx -> SizeInBytes
-getTxSize = fromIntegral . LBS.length . CBOR.serialise
+getTxSize :: Tx.WithBytes Tx -> SizeInBytes
+getTxSize = txSize . Tx.cborPayload
+
+getTxId :: Tx.WithBytes Tx -> TxId
+getTxId = txid . Tx.cborPayload
 
 
 data DuplicateTxError = DuplicateTxError
   deriving stock    Show
   deriving anyclass Exception
 
-type TxSubmission = Tx.TxSubmission2 TxId Tx
+type TxSubmission = Tx.TxSubmission2 TxId (Tx.WithBytes Tx)
 
-codec :: Codec TxSubmission
-               CBOR.DeserialiseFailure
-               IO
-               LBS.ByteString
-codec = Tx.codecTxSubmission2 CBOR.encode CBOR.decode
-                              CBOR.encode CBOR.decode
+codec :: AnnotatedCodec
+          TxSubmission
+          CBOR.DeserialiseFailure
+          IO
+          LBS.ByteString
+codec = Tx.anncodecTxSubmission2 CBOR.encode CBOR.decode
+                                             decodeTx
 
 byteLimits
   :: Driver.ProtocolSizeLimits TxSubmission LBS.ByteString
@@ -356,16 +374,16 @@ txSubmissionTracer lock =
     pretty (Tx.MsgReplyTxs txs) =
       unwords
       $ "MsgReplyTxs"
-      : (show . txid <$> txs)
+      : (show . getTxId <$> txs)
     pretty Tx.MsgDone = "MsgDone"
 
 
-inboundTracer :: MVar () -> Tracer IO (Mx.WithBearer Socket.SockAddr (V2.TraceTxSubmissionInbound TxId Tx))
+inboundTracer :: MVar () -> Tracer IO (Mx.WithBearer Socket.SockAddr (V2.TraceTxSubmissionInbound TxId (Tx.WithBytes Tx)))
 inboundTracer lock =
     Tracer $ \msg ->
       withMVar lock $ \_ -> putStrLn (prettyWithBearer prettyMsg msg)
   where
-    prettyMsg :: V2.TraceTxSubmissionInbound TxId Tx -> String
+    prettyMsg :: V2.TraceTxSubmissionInbound TxId (Tx.WithBytes Tx) -> String
     prettyMsg (V2.TraceTxSubmissionCollected txids) =
       unwords ["TraceTxSubmissionCollected ", show txids]
     prettyMsg (V2.TraceTxSubmissionProcessed cnt) =
@@ -428,7 +446,8 @@ runTxInbound Addr { addr, port } txDecisionPolicy version txDelay = do
             link thrd
 
 
-        mempool <- Mempool.new txid []
+        mempool :: Mempool.Mempool IO TxId (Tx.WithBytes Tx) 
+        mempool <- Mempool.new getTxId []
 
         forever $ do
           (sock', addr') <- Socket.accept sock
@@ -458,7 +477,7 @@ runTxInbound Addr { addr, port } txDecisionPolicy version txDelay = do
                     (\chann -> do
                       let reader =
                             Mempool.getReader
-                              txid
+                              getTxId
                               getTxSize
                               mempool
                           writer =
@@ -468,7 +487,7 @@ runTxInbound Addr { addr, port } txDecisionPolicy version txDelay = do
                                          (fromIntegral (length txs) * txDelay)
                               )
                               DuplicateTxError
-                              txid
+                              getTxId
                               (\v txs -> do
                                 -- NOTE: we are blocking access to the
                                 -- mempool for all other threads that want
@@ -480,7 +499,7 @@ runTxInbound Addr { addr, port } txDecisionPolicy version txDelay = do
                               mempool
                       case version of
                         TxSubmissionLogicV1 -> do
-                          Driver.runPipelinedPeerWithLimits
+                          Driver.runPipelinedAnnotatedPeerWithLimits
                             (Mx.WithBearer addr' >$< txSubmissionTracer traceLock)
                             codec
                             byteLimits
@@ -508,7 +527,7 @@ runTxInbound Addr { addr, port } txDecisionPolicy version txDelay = do
                             getTxSize
                             addr'
                             $ \peerTxApi ->
-                              Driver.runPipelinedPeerWithLimits
+                              Driver.runPipelinedAnnotatedPeerWithLimits
                                 (Mx.WithBearer addr' >$< txSubmissionTracer traceLock)
                                 codec
                                 byteLimits
@@ -532,7 +551,7 @@ runTxOutbound :: Addr
 runTxOutbound Addr { addr, port } txDecisionPolicy _version filePath = do
     traceLock <- newMVar ()
     mempool <- readTxs filePath
-           >>= Mempool.new txid
+           >>= Mempool.new getTxId
     let hints = Socket.defaultHints
                   { Socket.addrFlags = [Socket.AI_ADDRCONFIG]
                   , Socket.addrFamily = Socket.AF_INET
@@ -556,7 +575,7 @@ runTxOutbound Addr { addr, port } txDecisionPolicy _version filePath = do
           withAsync (Mx.run mux bearer) $ \_ -> do
             let reader =
                   Mempool.getReader
-                    txid
+                    getTxId
                     getTxSize
                     mempool
             either throwIO return =<< atomically =<< Mx.runMiniProtocol
@@ -565,7 +584,7 @@ runTxOutbound Addr { addr, port } txDecisionPolicy _version filePath = do
               dir
               Mx.StartEagerly
               (\chann ->
-                Driver.runPeerWithLimits
+                Driver.runAnnotatedPeerWithLimits
                   (Mx.WithBearer addr' >$< txSubmissionTracer traceLock)
                   codec
                   byteLimits
@@ -603,18 +622,32 @@ runTxsGenerator num filePath = do
     gen <- newQCGen
     let txs :: [Tx]
         txs = unGen genTxs gen num
-    BS.Builder.writeFile filePath (CBOR.toBuilder (encode txs))
+    BS.Builder.writeFile filePath (CBOR.toBuilder (encodeTxs txs))
   where
     genTxs :: Gen [Tx]
     genTxs = QC.vectorOf num $ mkTx <$> arbitrary
 
+    encodeTxs :: [Tx] -> CBOR.Encoding
+    encodeTxs txs =
+         CBOR.encodeListLen (fromIntegral $ length txs)
+      <> foldMap encodeTx txs
 
-readTxs :: FilePath -> IO [Tx]
+
+
+readTxs :: FilePath -> IO [Tx.WithBytes Tx]
 readTxs filePath = do
-  bs <- LBS.readFile filePath
-  case CBOR.deserialiseFromBytes decode bs of
-    Left e         -> throwIO e
-    Right (_, txs) -> return txs
+    bs <- LBS.readFile filePath
+    case CBOR.deserialiseFromBytes decodeTxs' bs of
+      Left e         -> throwIO e
+      Right (_, txs) -> return txs
+  where
+    decodeTxs' :: CBOR.Decoder s [Tx.WithBytes Tx]
+    decodeTxs' = do
+      l <- CBOR.decodeListLen
+      replicateM l decodeTx'
+
+    decodeTx' :: CBOR.Decoder s (Tx.WithBytes Tx)
+    decodeTx' = undefined
 
 
 runTxsAnalyser :: FilePath -> IO ()
