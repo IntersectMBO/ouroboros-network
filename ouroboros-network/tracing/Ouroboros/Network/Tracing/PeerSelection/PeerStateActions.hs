@@ -4,7 +4,6 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Ouroboros.Network.Tracing.PeerSelection.PeerStateActions () where
 
-import Control.Exception (displayException)
 import Data.Aeson (ToJSON (..), Value (String), (.=))
 import Data.Text (pack)
 
@@ -41,10 +40,6 @@ instance (Show lAddr, Show peeraddr, ToJSON peeraddr)
              , "connectionId" .= toJSON connId
              , "withProtocolTemp" .= show wf
              ]
-  forMachine _dtal (AcquireConnectionError exception) =
-    mconcat [ "kind" .= String "AcquireConnectionError"
-            , "error" .= displayException exception
-            ]
   forMachine _dtal (PeerHotDuration connId dt) =
     mconcat [ "kind" .= String "PeerHotDuration"
             , "connectionId" .= toJSON connId
@@ -56,7 +51,6 @@ instance MetaTrace (PeerSelectionActionsTrace peeraddr lAddr) where
     namespaceFor PeerStatusChangeFailure {} = Namespace [] ["StatusChangeFailure"]
     namespaceFor PeerMonitoringError {} = Namespace [] ["MonitoringError"]
     namespaceFor PeerMonitoringResult {} = Namespace [] ["MonitoringResult"]
-    namespaceFor AcquireConnectionError {} = Namespace [] ["ConnectionError"]
     namespaceFor PeerHotDuration {} = Namespace [] ["PeerHotDuration"]
 
     severityFor (Namespace _ ["StatusChanged"]) _       = Just Info

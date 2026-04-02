@@ -1263,10 +1263,6 @@ instance (ToJSON peerAddr, Show peerAddr, Show versionNumber)
             , "connectionId" .= toJSON connId
             , "withProtocolTemp" .= show wf
             ]
-  toJSON (AcquireConnectionError exception) =
-    object [ "kind" .= String "AcquireConnectionError"
-           , "error" .= displayException exception
-           ]
   toJSON (PeerHotDuration connId duration) =
     object [ "kind" .= String "PeerHotDuration"
            , "connId" .= connId

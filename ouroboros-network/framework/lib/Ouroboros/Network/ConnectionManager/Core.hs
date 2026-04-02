@@ -1421,7 +1421,8 @@ with args@Arguments {
         traverse_ (either (traceWith trTracer) (traceWith tracer)) trace
         traceCounters stateVar
         case eHandleWedge of
-          Left e ->
+          Left e -> do
+            traceWith tracer (TrConnectError Nothing peerAddr (toException e))
             throwIO e
 
           -- connection manager does not have a connection with @peerAddr@.
@@ -1506,7 +1507,7 @@ with args@Arguments {
                                             , remoteAddress = peerAddr
                                             }
                   updated <- atomically $ modifyTMVarPure stateVar (swap . State.updateLocalAddr connId)
-                  unless updated $
+                  unless updated $ do
                     -- there exists a connection with exact same
                     -- `ConnectionId`
                     --
@@ -1518,7 +1519,9 @@ with args@Arguments {
                     -- open?).  Since the `accept` call never returns, the
                     -- `connId` slot must have been available, and thus
                     -- `State.updateLocalAddr` must have returned `True`.
-                    throwIO (withCallStack $ ConnectionExists provenance peerAddr)
+                    let e = withCallStack $ ConnectionExists provenance peerAddr
+                    traceWith tracer (TrConnectError addr peerAddr (toException e))
+                    throwIO e
 
                   --
                   -- fork connection handler; it will unmask exceptions
@@ -2416,6 +2419,8 @@ data Trace peerAddr handlerTrace
   | TrConnectError                 (Maybe peerAddr) -- ^ local address
                                    peerAddr         -- ^ remote address
                                    SomeException
+    -- ^ Traces error thrown by `acquireConnection`, including, but not limited
+    -- to the `connect` call.
   | TrTerminatingConnection        Provenance (ConnectionId peerAddr)
   | TrTerminatedConnection         Provenance peerAddr
   | TrConnectionHandler            (ConnectionId peerAddr) handlerTrace
