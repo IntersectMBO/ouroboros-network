@@ -1,3 +1,7 @@
+{-# LANGUAGE DeriveAnyClass     #-}
+{-# LANGUAGE DeriveGeneric      #-}
+{-# LANGUAGE DerivingStrategies #-}
+
 module Ouroboros.Network.Protocol.Codec.Utils
   ( WithBytes (..)
   , encodeBytes
@@ -12,6 +16,9 @@ import Codec.CBOR.Decoding qualified as CBOR
 import Codec.CBOR.Encoding qualified as CBOR
 import Data.ByteString.Lazy (ByteString)
 import Data.ByteString.Lazy qualified as BSL
+import GHC.Generics (Generic)
+import NoThunks.Class
+import Ouroboros.Network.Util.ShowProxy
 
 
 data WithBytes a = WithBytes {
@@ -20,7 +27,8 @@ data WithBytes a = WithBytes {
       cborPayload :: a
       -- ^ decoded structure
     }
-  deriving (Show, Eq)
+  deriving stock    (Show, Eq, Generic)
+  deriving anyclass (ShowProxy, NoThunks)
 
 encodeBytes :: ByteString -> CBOR.Encoding
 encodeBytes =
