@@ -23,10 +23,10 @@ import Control.Applicative
 import Control.Exception
 import Control.Monad
 import Control.Monad.Trans.Class
-import Control.Monad.Trans.Except
 import Control.Monad.Trans.State
 import Data.ByteString.Lazy qualified as BL
 import Data.List (tails)
+import Data.Monoid (All (..), Ap (..))
 import Data.Monoid.Synchronisation
 import Data.Word (Word32, Word8)
 
@@ -298,12 +298,6 @@ muxer egressQueues0 tracer Bearer { writeMany, sduSize, batchSize, egressInterva
         (qs, batch) <- go batch0 egressQueues1 canBurst0
         pure (qs, batch { getSdus = reverse (getSdus batch) })
      where
-      allM f = \case
-        [] -> pure True
-        (x:xs) -> do
-          res <- f x
-          if res then allM f xs else pure False
-
       go :: SDUBatch
          -> [(Word8, EgressQueue m)]
          -> Bool
@@ -315,7 +309,12 @@ muxer egressQueues0 tracer Bearer { writeMany, sduSize, batchSize, egressInterva
       go !batch egressQueues@((weight, queue):rest) !canBurst = do
         -- since the list of queues cycles, we only need to check the prefix
         -- to see if there is any more work to do.
-        allEmpty0 <- atomically $ allM isEmptyTBQueue (snd <$> take numQueues egressQueues)
+        --
+        -- TODO: we could use `atomically $ foldMap (fmap All . isEmptyTBQueue
+        -- . snd)` if `transformers` had `Monoid a => Monoid (m a)` instance.
+        All allEmpty0 <-
+          atomically $ getAp $ foldMap (Ap . fmap All . isEmptyTBQueue . snd)
+                                       (take numQueues egressQueues)
         if allEmpty0
           then return (egressQueues, batch)
           else do
