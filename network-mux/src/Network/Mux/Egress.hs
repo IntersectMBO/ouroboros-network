@@ -26,7 +26,6 @@ import Control.Monad.Trans.Class
 import Control.Monad.Trans.Except
 import Control.Monad.Trans.State
 import Data.ByteString.Lazy qualified as BL
-import Data.Either (fromRight)
 import Data.List (tails)
 import Data.Monoid.Synchronisation
 import Data.Word (Word32, Word8)
@@ -144,7 +143,7 @@ data Wanton m = Wanton {
   want      :: !(StrictTVar m BL.ByteString),
   wLastSent :: !(StrictTVar m Time),
   -- ^ the last time the protocol has sent a message
-  wBucket   :: !(StrictTVar m Word32)
+  wBucket   :: !(StrictTVar m TokenSize)
   -- ^ the number of tokens available to burst
   }
 
@@ -176,6 +175,38 @@ sduLength sdu = fromIntegral msHeaderLength + fromIntegral (msLength sdu)
 --
 data SDUWithWantonState = EmptyWanton SDU | NonEmptyWanton SDU
 
+-- | Next `SDUSize` when building a batch of `SDU`s
+--
+data NextSDUSize
+  = BurstSize SDUSize
+  -- ^ Use ` `computeSDUSize` to compute the allowed `SDUSize`
+  | BearerSize
+  -- ^ Use `Bearer`'s `sduSize`
+
+computeSDUSize
+  :: SDUSize   -- ^ Bearer SDUSize
+  -> TokenSize -- ^ token utilised when building a batch of `SDU`s.
+  -> SDUSize   -- ^ the effective `SDUSize`
+computeSDUSize sduSize =
+    min sduSize
+  . fromIntegral @TokenSize @SDUSize                -- Word32 -> Word16
+  . min (fromIntegral @SDUSize @TokenSize maxBound) -- Word16 -> Word32 (but at most Word16)
+
+nextSDUSizeToSDUSize :: SDUSize -> NextSDUSize -> SDUSize
+nextSDUSizeToSDUSize _sduSize (BurstSize sduSize) = sduSize
+nextSDUSizeToSDUSize sduSize BearerSize           = sduSize
+{-# INLINE nextSDUSizeToSDUSize #-}
+
+type TokenSize = Word32
+
+-- | Tokens consumed by an SDU.
+--
+consumedTokens :: NextSDUSize -> SDU -> TokenSize
+-- in burst mode, we charge tokens based on the SDU payload length
+consumedTokens BurstSize{} sdu = fromIntegral (msLength sdu)
+-- in non-burst mode, SDU token size is 0
+consumedTokens BearerSize _sdu = 0
+{-# INLINE consumedTokens #-}
 
 -- | Process the messages from the mini protocols - there is a single
 -- shared FIFO that contains the items of work. This is processed so
@@ -295,61 +326,70 @@ muxer egressQueues0 tracer Bearer { writeMany, sduSize, batchSize, egressInterva
                 (batch', goAgain) <- atomically do
                   delta <- (start `diffTime`) <$> stateTVar wLastSent (, start)
                   thisEmpty <- isEmptyTBQueue queue
-                  let boundedTokens = min sduSize . fromIntegral . min (fromIntegral $ maxBound @SDUSize)
 
-                      step :: (SDUBatch, Either SDUSize SDUSize)
+                  let -- take current `SDUBatch` and `NextSDUSize`, and compute
+                      -- the new `SDUBatch` and `NextSDUSize` or return the
+                      -- `SDUBatch` and a boolean value which indicates if any
+                      -- step was taken.
+                      step :: (SDUBatch, NextSDUSize)
                            -> (SDUSize -> STM m SDUWithWantonState)
                            -- ^ process one Wanton, `SDUSize` instruments how
                            -- many bytes take from a `Wanton`.
                            -> ExceptT (SDUBatch, Bool)
                                       (STM m)
-                                      (SDUBatch, Either SDUSize SDUSize)
-                      step (!batch', !eSize) processWanton = do
+                                      (SDUBatch, NextSDUSize)
+                      step (!batch', !nextSDUSize) processWanton = do
                         -- the first one is always free
                         -- For Left's, we don't count the wanton bytes against the burst allowance
                         -- to permit a full sdu in the first iteration
-                        let (size, consumedTokens) = either (, const 0) (, id) eSize
-                        x <- lift $ processWanton size
+                        x <- lift $ processWanton (nextSDUSizeToSDUSize sduSize nextSDUSize)
                         case x of
                           EmptyWanton sdu -> do
                             -- the `Wanton` is empty
                             lift $ modifyTVar wBucket \tokens ->
-                                     let tokens' = tokens - consumedTokens (fromIntegral (msLength sdu))
-                                     in assert (tokens >= consumedTokens (fromIntegral $ msLength sdu))
+                                     let consumed, tokens' :: TokenSize
+                                         consumed = consumedTokens nextSDUSize sdu
+                                         tokens'  = tokens - consumed
+                                     in assert (tokens >= consumed)
                                         tokens'
                             throwE (mkSingletonBatch sdu <> batch', not thisEmpty)
                           NonEmptyWanton sdu -> do
                             -- the `Wanton` is non-empty
                             nextSdu <- lift $ stateTVar wBucket \tokens ->
-                                           let tokens' = tokens - consumedTokens (fromIntegral (msLength sdu))
-                                           in assert (tokens >= consumedTokens (fromIntegral $ msLength sdu))
-                                              (boundedTokens tokens', tokens')
+                                           let consumed, tokens' :: TokenSize
+                                               consumed = consumedTokens nextSDUSize sdu
+                                               tokens'  = tokens - consumed
+                                           in assert (tokens >= consumed)
+                                              (computeSDUSize sduSize tokens', tokens')
                             let batch'' = mkSingletonBatch sdu <> batch'
                             if nextSdu <= burstMinSdu -- 8 bytes header / 2% burst efficiency
                               then do
-                                   -- there is more payload, but burst allowance has been exhausted
+                                   -- burst allowance has been exhausted, next
+                                   -- SDU would be too small
                                    lift $ writeTBQueue queue demand
                                    throwE (batch'', True)
-                              else pure (batch'', Right nextSdu)
+                              else pure (batch'', BurstSize nextSdu)
 
                   either pure (error "impossible")
                     =<< runExceptT do
-                          sduSize0 <- lift $ stateTVar wBucket \tokens ->
-                            let tokens' = truncate $
+                          nextSduSize <- lift $ stateTVar wBucket \tokens ->
+                            let tokens' :: TokenSize
+                                tokens' = truncate $
                                             min (fromIntegral pbMaxBytes)
                                                 (fromIntegral tokens + fromIntegral pbRefillRate * toDouble delta)
                                 -- we leverage burst and deduct credits only where there is contention
                                 -- between protocols
-                                sduSize0 | mBurst    = Right $ boundedTokens tokens'
-                                         | otherwise = Left sduSize
-                            in (sduSize0, tokens')
-                          when (fromRight maxBound sduSize0 <= burstMinSdu) do
+                                nextSduSize :: NextSDUSize
+                                nextSduSize | mBurst    = BurstSize $ computeSDUSize sduSize tokens'
+                                            | otherwise = BearerSize
+                            in (nextSduSize, tokens')
+                          when (nextSDUSizeToSDUSize maxBound nextSduSize <= burstMinSdu) do
                             -- edge case where the protocol is bursty, but there aren't enough tokens
                             -- available. The muxer forever loop does not check this
                             -- when it calls to build a batch, so we handle it here.
                             lift $ writeTBQueue queue demand
                             throwE (batch, True)
-                          foldM step (batch, sduSize0)
+                          foldM step (batch, nextSduSize)
                                      (repeat (processSingleWanton mpc md d))
 
                 if weight > 1 && goAgain
