@@ -208,6 +208,18 @@ consumedTokens BurstSize{} sdu = fromIntegral (msLength sdu)
 consumedTokens BearerSize _sdu = 0
 {-# INLINE consumedTokens #-}
 
+
+-- | Maximal number of `SDU`s in a `SDUBatch`.
+--
+maxSDUsPerBatch :: Int
+maxSDUsPerBatch = 100
+
+-- | Minimal SDUSize for an SDU to be burst.
+--
+burstMinSdu :: SDUSize
+burstMinSdu = truncate @Double $ fromIntegral msHeaderLength / 0.02
+
+
 -- | Process the messages from the mini protocols - there is a single
 -- shared FIFO that contains the items of work. This is processed so
 -- that each active demand gets a `maxSDU`s work of data processed
@@ -269,13 +281,8 @@ muxer egressQueues0 tracer Bearer { writeMany, sduSize, batchSize, egressInterva
     numQueues :: Int
     numQueues = length egressQueues0
 
-    maxSDUsPerBatch :: Int
-    maxSDUsPerBatch = 100
-
     toDouble :: DiffTime -> Double
     toDouble = realToFrac
-
-    burstMinSdu = truncate @Double @SDUSize $ fromIntegral msHeaderLength / 0.02
 
     -- Build a batch of SDUs to submit in one go to the bearer.
     -- Streams which are permitted to burst will have that many
