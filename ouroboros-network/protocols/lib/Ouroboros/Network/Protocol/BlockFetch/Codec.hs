@@ -13,19 +13,21 @@ module Ouroboros.Network.Protocol.BlockFetch.Codec
   , timeLimitsBlockFetch
   ) where
 
+import Control.Monad (when)
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadTime.SI
 
 import Data.ByteString.Lazy qualified as LBS
+import Data.Functor
 import Data.Kind (Type)
 
 import Codec.CBOR.Decoding qualified as CBOR
 import Codec.CBOR.Encoding qualified as CBOR
-import Codec.CBOR.Read qualified as CBOR
 import Text.Printf
 
 import Network.TypedProtocol.Codec.CBOR hiding (decode, encode)
 
+import Ouroboros.Network.Block
 import Ouroboros.Network.Protocol.BlockFetch.Type
 import Ouroboros.Network.Protocol.Limits
 
@@ -74,13 +76,13 @@ codecBlockFetch
      MonadST m
   => (block            -> CBOR.Encoding)
   -- ^ encode block
-  -> (forall s. CBOR.Decoder s block)
+  -> (forall s. CBOR.Decoder s (Maybe LBS.ByteString -> Either DecoderError block))
   -- ^ decode block
   -> (point -> CBOR.Encoding)
   -- ^ encode point
   -> (forall s. CBOR.Decoder s point)
   -- ^ decode point
-  -> Codec (BlockFetch block point) CBOR.DeserialiseFailure m LBS.ByteString
+  -> CodecF (BlockFetch block point) DeserialiseFailure m (LedgerCompat m DeserialiseFailure LBS.ByteString) LBS.ByteString
 codecBlockFetch encodeBlock decodeBlock
                 encodePoint decodePoint =
     mkCodecCborLazyBS encode decode
@@ -105,7 +107,7 @@ codecBlockFetch encodeBlock decodeBlock
   decode :: forall s (st :: BlockFetch block point).
             ActiveState st
          => StateToken st
-         -> CBOR.Decoder s (SomeMessage st)
+         -> CBOR.Decoder s (LedgerCompat m DeserialiseFailure LBS.ByteString st)
   decode stok = do
     len <- CBOR.decodeListLen
     key <- CBOR.decodeWord
@@ -113,13 +115,17 @@ codecBlockFetch encodeBlock decodeBlock
       (SingBFIdle, 0, 3) -> do
         from <- decodePoint
         to   <- decodePoint
-        return $ SomeMessage $ MsgRequestRange (ChainRange from to)
-      (SingBFIdle, 1, 1) -> return $ SomeMessage MsgClientDone
-      (SingBFBusy, 2, 1) -> return $ SomeMessage MsgStartBatch
-      (SingBFBusy, 3, 1) -> return $ SomeMessage MsgNoBlocks
-      (SingBFStreaming, 4, 2) -> SomeMessage . MsgBlock
-                                                 <$> decodeBlock
-      (SingBFStreaming, 5, 1) -> return $ SomeMessage MsgBatchDone
+        return . YieldAnnotator . Annotator $ \_ -> SomeMessage $ MsgRequestRange (ChainRange from to)
+      (SingBFIdle, 1, 1) -> return . YieldAnnotator . Annotator $ \_ -> SomeMessage MsgClientDone
+      (SingBFBusy, 2, 1) -> return . YieldAnnotator . Annotator $ \_ -> SomeMessage MsgStartBatch
+      (SingBFBusy, 3, 1) -> return . YieldAnnotator . Annotator $ \_ -> SomeMessage MsgNoBlocks
+      (SingBFStreaming, 4, 2) -> do
+        tag <- CBOR.decodeTag
+        when (tag /= 24) $ fail "expected tag 24 (CBOR-in-CBOR)"
+        let dec :: forall s'. CBOR.Decoder s' (Maybe LBS.ByteString -> Either DecoderError (SomeMessage st))
+            dec = decodeBlock <&> fmap (fmap (SomeMessage . MsgBlock))
+        return . YieldBlockDecoder $ convertCborDecoderLBS dec stToIO
+      (SingBFStreaming, 5, 1) -> return . YieldAnnotator . Annotator $ \_ -> SomeMessage MsgBatchDone
 
       --
       -- failures per protocol state

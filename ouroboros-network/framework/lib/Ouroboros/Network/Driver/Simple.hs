@@ -2,11 +2,13 @@
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE MultiWayIf            #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE PolyKinds             #-}
 {-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TupleSections         #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE TypeOperators         #-}
 -- @UndecidableInstances@ extensions is required for defining @Show@ instance
@@ -35,13 +37,23 @@ module Ouroboros.Network.Driver.Simple
   , runAnnotatedConnectedPeers
   , runConnectedPeersAsymmetric
   , runConnectedPeersPipelined
+    -- * experimental
+  , compatDriver
   ) where
+
+import Control.Monad.Trans.Except
+import Control.Monad.Trans.Class
+import Data.ByteString (ByteString)
+import Data.ByteString qualified as LBS
+import Data.ByteString.Unsafe qualified as BS
+import Data.Maybe (maybeToList)
 
 import Network.TypedProtocol.Codec
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Driver
 import Network.TypedProtocol.Peer
 
+import Ouroboros.Network.Block
 import Ouroboros.Network.Channel
 import Ouroboros.Network.Util.ShowProxy
 
@@ -88,6 +100,17 @@ instance Show (AnyMessage ps) => Show (TraceSendRecv ps) where
   show (TraceSendMsg msg) = "Send " ++ show msg
   show (TraceRecvMsg msg) = "Recv " ++ show msg
 
+-- help GHC type checker
+mkCompatDecoderFailure :: forall ps (st :: ps) failure.
+                          ( Show failure
+                          , Show (StateToken st)
+                          , ShowProxy ps
+                          , ActiveState st
+                          )
+                       => StateToken st
+                       -> CompatDecoderFailure failure
+                       -> DecoderFailure
+mkCompatDecoderFailure tok failure = DecoderFailure tok failure
 
 data DecoderFailure where
     DecoderFailure :: forall ps (st :: ps) failure.
@@ -202,6 +225,92 @@ annotatedSimpleDriver
              -> Driver ps pr (Maybe bytes) m
 annotatedSimpleDriver = mkSimpleDriver runAnnotatedDecoderWithChannel runAnnotator
 
+
+compatDriver
+  :: forall ps (pr :: PeerRole) failure m.
+     ( MonadThrow m
+     , MonadEvaluate m
+     , ShowProxy ps
+     , forall (st :: ps) stok. stok ~ StateToken st => Show stok
+     , NFData failure
+     , Show failure
+     )
+  => Tracer m (TraceSendRecv ps)
+  -> CodecF ps failure m (LedgerCompat m failure ByteString) ByteString
+  -> Channel m ByteString
+  -> Driver ps pr (Maybe ByteString) m
+
+compatDriver tracer Codec{encode, decode} Channel{send, recv} =
+      Driver { sendMessage, recvMessage, initialDState = Nothing }
+  where
+    sendMessage :: forall (st :: ps) (st' :: ps).
+                   StateTokenI st
+                => ActiveState st
+                => WeHaveAgencyProof pr st
+                -> Message ps st st'
+                -> m ()
+    sendMessage !_ msg = do
+      send (encode msg)
+      traceWith tracer (TraceSendMsg (AnyMessage msg))
+
+    recvMessage :: forall (st :: ps).
+                   StateTokenI st
+                => ActiveState st
+                => TheyHaveAgencyProof pr st
+                -> Maybe ByteString
+                -> m (SomeMessage st, Maybe ByteString)
+    recvMessage !_ trailing = do
+        let tok = stateToken
+        decoder <- decode tok
+        result <- runDecodeSteps decoder trailing
+        case result of
+          Right x@(SomeMessage !msg, _trailing') -> do
+            traceWith tracer (TraceRecvMsg (AnyMessage msg))
+            return x
+          Left failure -> throwIO (mkCompatDecoderFailure tok failure)
+
+      where
+        runDecodeSteps
+         :: DecodeStep ByteString failure m (LedgerCompat m failure ByteString st)
+         -> Maybe ByteString
+         -> m (Either (CompatDecoderFailure failure) (SomeMessage st, Maybe ByteString))
+        runDecodeSteps decoder trailing1 = runExceptT $ do
+            stage1 <- withExceptT DecodingFailure . ExceptT $ go [] trailing1 decoder
+            case stage1 of
+              (YieldAnnotator f, bytes, trailing1') -> pure (runAnnotator f bytes, trailing1')
+              (YieldBlockDecoder steps1, _bytes, trailing2) -> do
+                let loop sz trailing' =
+                      if sz <= 10 then do
+                        mBs <- recv
+                        let (sz', trailing'') = maybe (sz, trailing') (\bs -> (sz + LBS.length bs, bs:trailing')) mBs
+                        loop sz' trailing''
+                      else pure $ mconcat (reverse trailing')
+                -- pre-load the buffer slightly
+                trailing3 <- lift $ loop (maybe 0 LBS.length trailing2) (maybeToList trailing2)
+                let hdr = BS.unsafeHead trailing3
+                trailing4 <-
+                  if | hdr >= 0x40 && hdr <= 0x57 -> pure $ BS.unsafeDrop 1 trailing3
+                     | hdr == 0x58 -> pure $ BS.unsafeDrop 2 trailing3
+                     | hdr == 0x59 -> pure $ BS.unsafeDrop 3 trailing3
+                     | hdr == 0x5a -> pure $ BS.unsafeDrop 5 trailing3
+                     | hdr == 0x5b -> pure $ BS.unsafeDrop 9 trailing3
+                     | otherwise -> throwE $ CBORinCBORWrapper (CompatDecoderMessage hdr)
+
+                (f, bytes, trailing5) <- withExceptT DecodingFailure . ExceptT $ go [] (Just trailing4) =<< steps1
+                (, trailing5) <$> (withExceptT SemanticFailure . except $ f (Just bytes))
+          where
+            go :: [ByteString]
+               -> Maybe ByteString
+               -> DecodeStep ByteString failure m fa
+               -> m (Either failure (fa, ByteString, Maybe ByteString))
+            go !bytes (Just trailing') (DecodePartial k)  =
+              k (Just trailing') >>= go (trailing' : bytes) Nothing
+            go !bytes  Nothing         (DecodePartial k) =
+              recv >>= \bs -> k bs >>= go (maybe bytes (: bytes) bs) Nothing
+            go !bytes _ (DecodeDone fa trailing')         =
+              return $ Right (fa, (mconcat . reverse $ bytes), trailing')
+            go _bytes _ (DecodeFail failure)             =
+              Left <$> evaluate (force failure)
 
 -- | Run a peer with the given channel via the given codec.
 --

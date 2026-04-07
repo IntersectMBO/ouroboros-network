@@ -3,7 +3,9 @@
 {-# LANGUAGE DeriveTraversable          #-}
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE PatternSynonyms            #-}
@@ -65,8 +67,15 @@ module Ouroboros.Network.Block
   , Serialised (..)
   , wrapCBORinCBOR
   , unwrapCBORinCBOR
+  , unwrapCBORinCBORincremental
   , mkSerialised
   , fromSerialised
+    -- ** Utilities used by custom incremental decoder
+  , LedgerCompat (..)
+  , CompatDecoderFailure (..)
+  , CompatDecoderMessage (..)
+    -- * Re-exports
+  , DecoderError (..)
   ) where
 
 import Codec.CBOR.Decoding (Decoder)
@@ -85,14 +94,18 @@ import Data.ByteString.Lazy.Char8 qualified as BSC
 import Data.Coerce (Coercible, coerce)
 import Data.Kind (Type)
 import Data.Typeable (Typeable)
+import Data.Word (Word8)
 import GHC.Generics (Generic)
 import NoThunks.Class (NoThunks)
+import Numeric (showHex)
 import Quiet
 
-import Cardano.Binary (DecoderError)
+import Cardano.Binary (DecoderError (..))
 import Cardano.Slotting.Block
 import Cardano.Slotting.Slot (SlotNo (..))
 
+import Network.TypedProtocol.Codec qualified as TP
+import Network.TypedProtocol.Driver (SomeMessage)
 import Ouroboros.Network.Point (WithOrigin (..), block, fromWithOrigin, origin,
            withOriginToMaybe)
 import Ouroboros.Network.Point qualified as Point (Block (..))
@@ -448,11 +461,56 @@ instance ShowProxy a => ShowProxy (Serialised a) where
 type instance HeaderHash (Serialised block) = HeaderHash block
 instance StandardHash block => StandardHash (Serialised block)
 
+
+-- | Wraps incremental blockfetch decoder errors
+--
+data CompatDecoderFailure failure =
+  DecodingFailure failure | CBORinCBORWrapper CompatDecoderMessage | SemanticFailure DecoderError
+  deriving Show
+
+newtype CompatDecoderMessage = CompatDecoderMessage Word8
+
+instance Show CompatDecoderMessage where
+  show (CompatDecoderMessage tag) =
+    "To decode block CBOR-in-CBOR, expected tag for payload length in range [0x40, 0x5b]" <>
+    "but instead got 0x" <> showHex tag ""
+
+-- | Used to break block decoding into two phases to achieve
+-- incremental decoding w/o invasive changes in other libraries
+--
+data LedgerCompat m failure bytes st where
+  YieldBlockDecoder
+    :: m (TP.DecodeStep bytes failure m (Maybe bytes -> Either DecoderError (SomeMessage st)))
+    -> LedgerCompat m failure bytes st
+  YieldAnnotator :: TP.Annotator bytes st -> LedgerCompat m failure bytes st
+
+
 -- | Wrap CBOR-in-CBOR
 --
 -- This is primarily useful for the /decoder/; see 'unwrapCBORinCBOR'
 wrapCBORinCBOR :: (a -> Encoding) -> a -> Encoding
 wrapCBORinCBOR enc = encode . mkSerialised enc
+
+
+-- | Experimental CBOR-in-CBOR unwrapper
+-- This version is used by a custom driver to incrementally
+-- decode the embedded bytestring. Tag decoders have been
+-- moved to the blockfetch codec to support this.
+--
+unwrapCBORinCBORincremental
+  :: (forall s. Decoder s (Lazy.ByteString -> Either DecoderError a))
+  -> (forall s. Decoder s (Maybe Lazy.ByteString -> Either DecoderError a))
+unwrapCBORinCBORincremental dec = do
+  -- this might still succeed if there are trailing bytes left, which should be
+  -- a failure otherwise. On the other hand, the decoding will likely fail
+  -- at some later time. Some cooperation from the codec's incremental decoder
+  -- would have to be introduced to handle this properly such that the failure
+  -- is raised here.
+  (fn, start, end) <- Dec.decodeWithByteSpan dec
+  return $ \case
+    Just bytes -> fn (Lazy.take (end - start) (Lazy.drop start bytes))
+    Nothing    -> error "impossible"
+
 
 -- | Unwrap CBOR-in-CBOR
 --

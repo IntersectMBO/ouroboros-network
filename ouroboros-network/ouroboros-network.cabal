@@ -396,6 +396,7 @@ library framework
     quiet,
     random ^>=1.3,
     text,
+    transformers,
     typed-protocols:{typed-protocols, cborg, stateful} ^>=1.2,
 
   if os(windows)
