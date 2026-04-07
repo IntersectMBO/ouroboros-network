@@ -21,9 +21,6 @@ module Network.Mux.Egress
 
 import Control.Applicative
 import Control.Exception
-import Control.Monad
-import Control.Monad.Trans.Class
-import Control.Monad.Trans.State
 import Data.ByteString.Lazy qualified as BL
 import Data.List (tails)
 import Data.Monoid (All (..), Ap (..))
@@ -251,13 +248,25 @@ muxer
     -> Bearer m
     -> m void
 muxer egressQueues0 tracer Bearer { writeMany, sduSize, batchSize, egressInterval } =
-    withTimeoutSerial $ \timeout -> (`evalStateT` cycle egressQueues0) $ forever do
-      egressQueues <- get
-      let jobs = foldMap (FirstToFinish . traverse readTBQueue)
-                         (zip (tails egressQueues) (take numQueues (snd <$> egressQueues)))
+    withTimeoutSerial $ \timeout -> muxerLoop timeout (cycle egressQueues0)
+  where
+    numQueues :: Int
+    numQueues = length egressQueues0
+    toDouble :: DiffTime -> Double
+    toDouble = realToFrac
 
-      start <- lift getMonotonicTime
-      (sdu, egressQueues', canBatch) <- lift $ atomically do
+    -- main muxer loop
+    muxerLoop :: (forall a. DiffTime -> m a -> m (Maybe a))
+              -> [(Word8, EgressQueue m)]
+              -- ^ a cycle of egress queues
+              -> m void
+    muxerLoop timeout egressQueues = do
+      start <- getMonotonicTime
+      (sdu, egressQueues', canBatch) <- atomically do
+        let jobs :: FirstToFinish (STM m)
+                                  ([(Word8, EgressQueue m)], TranslocationServiceRequest m)
+            jobs = foldMap (FirstToFinish . traverse readTBQueue)
+                           (zip (tails egressQueues) (take numQueues (snd <$> egressQueues)))
         job <- runFirstToFinish jobs
         case job of
           (egressQueues', demand@(TLSRDemand mpc md d (ProtocolBurst pbMaxBytes _pbRefillRate))) -> do
@@ -282,19 +291,12 @@ muxer egressQueues0 tracer Bearer { writeMany, sduSize, batchSize, egressInterva
                 EmptyWanton sdu ->
                   pure (sdu, egressQueues'', BatchNotAllowed)
 
-      (egressQueues'', batch'') <-
-        lift $ buildBatch (mkSingletonBatch sdu) egressQueues' canBatch start
-      put egressQueues''
-      void . lift $ writeMany tracer timeout (getSdus batch'')
-      delta <- (`diffTime` start) <$> lift getMonotonicTime
-      lift . threadDelay $ egressInterval - delta
-
-  where
-    numQueues :: Int
-    numQueues = length egressQueues0
-
-    toDouble :: DiffTime -> Double
-    toDouble = realToFrac
+      (egressQueues'', SDUBatch { getSdus = sdus }) <-
+        buildBatch (mkSingletonBatch sdu) egressQueues' canBatch start
+      _ <- writeMany tracer timeout sdus
+      end <- getMonotonicTime
+      threadDelay $ egressInterval - end `diffTime` start
+      muxerLoop timeout egressQueues''
 
     -- Build a batch of SDUs to submit in one go to the bearer.
     -- Streams which are permitted to burst will have that many
