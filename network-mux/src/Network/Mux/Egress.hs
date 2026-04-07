@@ -263,17 +263,31 @@ muxer egressQueues0 tracer Bearer { writeMany, sduSize, batchSize, egressInterva
     muxerLoop timeout egressQueues = do
       start <- getMonotonicTime
       (sdu, egressQueues', canBatch) <- atomically do
-        let jobs :: FirstToFinish (STM m)
-                                  ([(Word8, EgressQueue m)], TranslocationServiceRequest m)
-            jobs = foldMap (FirstToFinish . traverse readTBQueue)
-                           (zip (tails egressQueues) (take numQueues (snd <$> egressQueues)))
-        job <- runFirstToFinish jobs
+        let -- All distinct `EgressQueue`s and their tail (so we keep reading
+            -- them in a round robin way).
+            available :: [(EgressQueue m, [(Word8, EgressQueue m)])]
+            available = take numQueues (snd <$> egressQueues)
+                        `zip`
+                        tails egressQueues
+
+        -- read first available `EgressQueue` and return its tail
+        job <- runFirstToFinish
+             . foldMap
+                 ( FirstToFinish
+                 . \(egressQueue, egressQueues') ->
+                                (,egressQueues') <$> readTBQueue egressQueue
+                 )
+             $ available
         case job of
-          (egressQueues', demand@(TLSRDemand mpc md d (ProtocolBurst pbMaxBytes _pbRefillRate))) -> do
-              let ((weight, queue), rest) = assert (weight > 0) case egressQueues' of
-                    []   -> error "impossible"
-                    x:xs -> (x, xs)
-                  egressQueues'' | weight > 1 = (pred weight, queue) : rest
+          (demand@(TLSRDemand mpc md d (ProtocolBurst pbMaxBytes _pbRefillRate))
+            , egressQueues'
+            ) -> do
+              let ((weight, egressQueue), rest) = assert (weight > 0)
+                    case egressQueues' of
+                      []   -> error "impossible"
+                      x:xs -> (x, xs)
+                  egressQueues'' | weight > 1 = (pred weight, egressQueue)
+                                              : rest
                                  | otherwise  = rest
               eSdu <- processSingleWanton mpc md d sduSize
               case eSdu of
@@ -282,11 +296,11 @@ muxer egressQueues0 tracer Bearer { writeMany, sduSize, batchSize, egressInterva
                   -> -- we do not check if the protocol has any tokens to
                      -- burst, that is deferred to buildBatch below.
                      (sdu, egressQueues', BatchAllowed)
-                  <$ unGetTBQueue queue demand
+                  <$ unGetTBQueue egressQueue demand
 
                   | otherwise
                   -> (sdu, egressQueues'', BatchNotAllowed)
-                  <$ writeTBQueue queue demand
+                  <$ writeTBQueue egressQueue demand
 
                 EmptyWanton sdu ->
                   pure (sdu, egressQueues'', BatchNotAllowed)
