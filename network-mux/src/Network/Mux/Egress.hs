@@ -1,5 +1,6 @@
 {-# LANGUAGE BangPatterns          #-}
 {-# LANGUAGE BlockArguments        #-}
+{-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -130,18 +131,23 @@ type EgressQueue m = StrictTBQueue m (TranslocationServiceRequest m)
 --  arbitrary (yet bounded) size. This multiplexing layer is
 --  responsible for the segmentation of concrete representation into
 --  appropriate SDU's for onward transmission.
-data TranslocationServiceRequest m =
-     TLSRDemand !MiniProtocolNum !MiniProtocolDir !(Wanton m) !ProtocolBurst
+data TranslocationServiceRequest m = TLSRDemand {
+    miniProtocolNum :: !MiniProtocolNum,
+    miniProtocolDir :: !MiniProtocolDir,
+    wanton          :: !(Wanton m),
+    protocolBurst   :: !ProtocolBurst
+  }
 
 -- | A Wanton represent the concrete data to be translocated, note that the
 --  TVar becoming empty indicates -- that the last fragment of the data has
 --  been enqueued on the -- underlying bearer.
 data Wanton m = Wanton {
-  want      :: !(StrictTVar m BL.ByteString),
-  wLastSent :: !(StrictTVar m Time),
-  -- ^ the last time the protocol has sent a message
-  wBucket   :: !(StrictTVar m TokenSize)
-  -- ^ the number of tokens available to burst
+    wanton      :: !(StrictTVar m BL.ByteString),
+    -- ^ data buffer
+    lastSent    :: !(StrictTVar m Time),
+    -- ^ the last time the protocol has sent a message
+    burstBucket :: !(StrictTVar m TokenSize)
+    -- ^ the number of tokens available to burst
   }
 
 
@@ -279,7 +285,7 @@ muxer egressQueues0 tracer Bearer { writeMany, sduSize, batchSize, egressInterva
                  )
              $ available
         case job of
-          (demand@(TLSRDemand mpc md d (ProtocolBurst pbMaxBytes _pbRefillRate))
+          (demand@(TLSRDemand mpc md d ProtocolBurst{maxBytes})
             , egressQueues'
             ) -> do
               let ((weight, egressQueue), rest) = assert (weight > 0)
@@ -292,7 +298,7 @@ muxer egressQueues0 tracer Bearer { writeMany, sduSize, batchSize, egressInterva
               eSdu <- processSingleWanton mpc md d sduSize
               case eSdu of
                 NonEmptyWanton sdu
-                  | pbMaxBytes > 0
+                  | maxBytes > 0
                   -> -- we do not check if the protocol has any tokens to
                      -- burst, that is deferred to buildBatch below.
                      (sdu, egressQueues', BatchAllowed)
@@ -349,21 +355,21 @@ muxer egressQueues0 tracer Bearer { writeMany, sduSize, batchSize, egressInterva
                                        (take numQueues egressQueues)
         if allEmpty0
           then return (egressQueues, batch)
-          else do
-            mResult <- atomically $ tryReadTBQueue queue
-            case mResult of
+          else
+            atomically (tryReadTBQueue queue) >>= \case
               Nothing -> go batch rest BatchNotAllowed
-              Just demand@(TLSRDemand _ _
-                                      Wanton { wLastSent, wBucket }
-                                      ProtocolBurst { pbMaxBytes, pbRefillRate }) -> do
+              Just demand@TLSRDemand {
+                    wanton        = Wanton { lastSent, burstBucket },
+                    protocolBurst = ProtocolBurst { maxBytes, refillRate }
+                  } -> do
                 (batch', canBurst) <- atomically do
-                  delta <- (start `diffTime`) <$> stateTVar wLastSent (, start)
+                  delta <- (start `diffTime`) <$> stateTVar lastSent (, start)
 
-                  nextSduSize <- stateTVar wBucket \tokens ->
+                  nextSduSize <- stateTVar burstBucket \tokens ->
                     let tokens' :: TokenSize
                         tokens' = truncate $
-                                    min (fromIntegral pbMaxBytes)
-                                        (fromIntegral tokens + fromIntegral pbRefillRate * toDouble delta)
+                                    min (fromIntegral maxBytes)
+                                        (fromIntegral tokens + fromIntegral refillRate * toDouble delta)
                         -- we leverage burst and deduct credits only where there is contention
                         -- between protocols
                         nextSduSize :: NextSDUSize
@@ -398,7 +404,11 @@ muxer egressQueues0 tracer Bearer { writeMany, sduSize, batchSize, egressInterva
                     -> SDUBatch
                     -> NextSDUSize
                     -> STM m (SDUBatch, CanBurst)
-          burstLoop demand@(TLSRDemand miniProtocolNum miniProtocolDir want@Wanton {wBucket} _) !batch' !nextSDUSize = do
+          burstLoop demand@TLSRDemand { miniProtocolNum,
+                                        miniProtocolDir,
+                                        wanton = want@Wanton {burstBucket}
+                                      }
+                    !batch' !nextSDUSize = do
             -- The first SDU is always free. For `BearerSize` (no bursting),
             -- we don't count the wanton bytes against the burst allowance
             -- to permit a full sdu in the first iteration
@@ -408,7 +418,7 @@ muxer egressQueues0 tracer Bearer { writeMany, sduSize, batchSize, egressInterva
             case x of
               EmptyWanton sdu -> do
                 -- the `Wanton` is empty
-                modifyTVar wBucket \tokens ->
+                modifyTVar burstBucket \tokens ->
                   let consumed, tokens' :: TokenSize
                       consumed = consumedTokens nextSDUSize sdu
                       tokens'  = tokens - consumed
@@ -422,7 +432,7 @@ muxer egressQueues0 tracer Bearer { writeMany, sduSize, batchSize, egressInterva
 
               NonEmptyWanton sdu -> do
                 -- the `Wanton` is non-empty
-                nextSdu <- stateTVar wBucket \tokens ->
+                nextSdu <- stateTVar burstBucket \tokens ->
                   let consumed, tokens' :: TokenSize
                       consumed = consumedTokens nextSDUSize sdu
                       tokens'  = tokens - consumed
@@ -448,19 +458,19 @@ processSingleWanton :: MonadSTM m
                     -> Wanton m
                     -> SDUSize
                     -> STM m SDUWithWantonState
-processSingleWanton mpc md wanton sduSize = do
+processSingleWanton mpc md Wanton{wanton} sduSize = do
     (blob, wrap) <- do
       -- extract next SDU
-      d <- readTVar (want wanton)
+      d <- readTVar wanton
       let (frag, rest) = BL.splitAt (fromIntegral sduSize) d
       -- if more to process then enqueue remaining work
       if BL.null rest
-        then (frag, EmptyWanton) <$ writeTVar (want wanton) BL.empty
+        then (frag, EmptyWanton) <$ writeTVar wanton BL.empty
         else do
           -- Note that to preserve bytestream ordering within a given
           -- miniprotocol the readTVar and writeTVar operations
           -- must be inside the same STM transaction.
-          (frag, NonEmptyWanton) <$ writeTVar (want wanton) rest
+          (frag, NonEmptyWanton) <$ writeTVar wanton rest
     let sdu = SDU {
                 msHeader = SDUHeader {
                     mhTimestamp = RemoteClockModel 0,
