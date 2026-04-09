@@ -12,7 +12,6 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Registry
   , withPeer
     -- Exported for testing
   , updatePeerPhase
-  , updatePeerRequestedTxs
   ) where
 
 import Control.Concurrent.Class.MonadSTM qualified as Lazy
@@ -25,7 +24,6 @@ import Data.IntMap.Strict qualified as IntMap
 import Data.IntSet qualified as IntSet
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Sequence.Strict qualified as StrictSeq
 import Data.Set qualified as Set
 import Data.Void (Void)
 import Data.Word (Word64)
@@ -190,9 +188,7 @@ withPeer policy TxSubmissionMempoolReader { mempoolGetSnapshot } sharedStateVar 
         sharedPeerState = SharedPeerState {
             sharedPeerPhase = PeerIdle,
             sharedPeerScore = emptyPeerScore now,
-            sharedPeerGeneration = 0,
-            sharedPeerRequestedTxBatches = 0,
-            sharedPeerRequestedTxsSize = 0
+            sharedPeerGeneration = 0
           }
 
     unregisterPeer :: SharedTxState peeraddr txid -> SharedTxState peeraddr txid
@@ -309,8 +305,7 @@ runNextPeerActionImp policy sharedStateVar peeraddr now peerState = atomically $
       (peerAction, peerState', sharedState') = State.nextPeerAction now policy peeraddr
                                                  peerState sharedState
       sharedState''  = updatePeerPhase peeraddr (peerPhaseForActionIdle peerAction) sharedState'
-      sharedState''' = updatePeerRequestedTxs policy peeraddr peerState' sharedState''
-  writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedState'''
+  writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedState''
   return (peerAction, peerState')
 
 -- | Compute the next action for this peer in pipelined mode.
@@ -335,8 +330,7 @@ runNextPeerActionPipelinedImp policy sharedStateVar peeraddr now peerState = ato
       sharedState'' = updatePeerPhase peeraddr
                         (peerPhaseForActionPipelined peeraddr peerAction sharedState')
                         sharedState'
-      sharedState''' = updatePeerRequestedTxs policy peeraddr peerState' sharedState''
-  writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedState'''
+  writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedState''
   return (peerAction, peerState')
 
 -- | Process a batch of txids received from this peer.
@@ -363,8 +357,7 @@ applyReceivedTxIdsImp policy mempoolGetSnapshot sharedStateVar peeraddr now txId
   let sharedGeneration0 = sharedGeneration sharedState
       (peerState', sharedState') = State.handleReceivedTxIds mempoolHasTx now policy peeraddr
                                      txIdsToReq txidsAndSizes peerState sharedState
-      sharedState'' = updatePeerRequestedTxs policy peeraddr peerState' sharedState'
-  writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedState''
+  writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedState'
   return peerState'
 
 -- | Process a batch of tx bodies received from this peer.
@@ -389,11 +382,10 @@ applyReceivedTxsImp policy mempoolGetSnapshot sharedStateVar countersVar peeradd
                     peerState = atomically $ do
   MempoolSnapshot { mempoolHasTx } <- mempoolGetSnapshot
   sharedState <- readTVar sharedStateVar
+  let sharedGeneration0 = sharedGeneration sharedState
   let (omittedCount, lateCount, peerState', sharedState') =
           State.handleReceivedTxs mempoolHasTx now policy peeraddr txs peerState sharedState
-      sharedState'' =
-                        updatePeerRequestedTxs policy peeraddr peerState' sharedState'
-  writeTVar sharedStateVar sharedState''
+  writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedState'
   modifyTVar countersVar (<> mempty {
                       txRepliesReceived = 1,
                       txsReceived       = fromIntegral (length txs),
@@ -422,10 +414,10 @@ applySubmittedTxsImp :: ( MonadSTM m
 applySubmittedTxsImp policy sharedStateVar peeraddr now acceptedTxs rejectedTxs peerState =
   atomically $ do
     sharedState <- readTVar sharedStateVar
+    let sharedGeneration0 = sharedGeneration sharedState
     let (peerState', sharedState') = State.handleSubmittedTxs now policy peeraddr acceptedTxs
                                        rejectedTxs peerState sharedState
-        sharedState'' = updatePeerRequestedTxs policy peeraddr peerState' sharedState'
-    writeTVar sharedStateVar sharedState''
+    writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedState'
     return peerState'
 
 -- | Update the peer's rejection score based on the number of txs rejected
@@ -547,33 +539,6 @@ updatePeerPhase peeraddr peerPhaseNew st@SharedTxState { sharedPeers, sharedGene
       , peerPhaseNew /= PeerIdle = advertisersForPeerTxsExcept peeraddr st
       | otherwise = Set.empty
 
-
--- | Update the peer's shared TX state so that it is in sync with its local state.
-updatePeerRequestedTxs
-  :: Ord peeraddr
-  => TxDecisionPolicy
-  -> peeraddr
-  -> PeerTxLocalState tx
-  -> SharedTxState peeraddr txid
-  -> SharedTxState peeraddr txid
-updatePeerRequestedTxs _policy peeraddr peerState
-                       st@SharedTxState { sharedPeers, sharedGeneration } =
-  case Map.lookup peeraddr sharedPeers of
-       Just sharedPeerState ->
-         if sharedPeerRequestedTxBatches sharedPeerState /= requestedTxBatches
-              || sharedPeerRequestedTxsSize sharedPeerState /= requestedTxsSize
-            then
-              let sharedPeerState' = sharedPeerState {
-                                       sharedPeerRequestedTxBatches = requestedTxBatches
-                                     , sharedPeerRequestedTxsSize = requestedTxsSize }
-                  sharedPeers' = Map.insert peeraddr sharedPeerState' sharedPeers in
-              st { sharedPeers = sharedPeers'
-                 , sharedGeneration = sharedGeneration + 1 }
-            else st
-       _ -> st -- TODO: error?
-  where
-    requestedTxBatches = StrictSeq.length (peerRequestedTxBatches peerState)
-    requestedTxsSize = peerRequestedTxsSize peerState
 
 advertisersForPeerTxsExcept
   :: Ord peeraddr

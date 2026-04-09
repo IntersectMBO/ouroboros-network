@@ -113,10 +113,8 @@ data TxOwnerAckState
 
 -- | Per-peer advertisement state for a tx.
 --
--- The advertised size must be tracked per peer.
 data TxAdvertiser = TxAdvertiser {
-    txAckState       :: !TxOwnerAckState,
-    txAdvertisedSize :: !SizeInBytes
+    txAckState       :: !TxOwnerAckState
   }
   deriving stock (Eq, Show, Generic)
 
@@ -329,9 +327,7 @@ emptyPeerTxLocalState = PeerTxLocalState {
 data SharedPeerState = SharedPeerState {
     sharedPeerPhase              :: !PeerPhase,
     sharedPeerScore              :: !PeerScore,
-    sharedPeerGeneration         :: !Word64,
-    sharedPeerRequestedTxBatches :: !Int,
-    sharedPeerRequestedTxsSize   :: !SizeInBytes
+    sharedPeerGeneration         :: !Word64
   }
   deriving stock (Eq, Show, Generic)
 
