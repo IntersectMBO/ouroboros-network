@@ -87,13 +87,19 @@ main =
                 V2.maxUnacknowledgedTxIds
               }
         runTxInbound addr txDecisionPolicy version (microsecondsAsIntToDiffTime txDelay)
-      OutboundOptions addr maxUnacknowledgedTxIds version filePath num -> do
+      OutboundOptions addr bindAddr maxUnacknowledgedTxIds version filePath num -> do
         let txDecisionPolicy = V2.defaultTxDecisionPolicy
               { V2.maxUnacknowledgedTxIds
               }
         lock <- newMVar ()
         let stderrTracer = Tracer $ \msg -> withMVar lock $ \_ -> hPutStrLn stderr msg
-        replicateConcurrently_ num (runTxOutbound stderrTracer addr txDecisionPolicy version filePath)
+            addrs :: [Addr]
+            addrs = fmap (\a -> bindAddr { port = port bindAddr + fromIntegral a })
+                         [0..(num - 1)]
+        runConcurrently
+          $ foldMap
+            (\bindAddr' -> Concurrently $ runTxOutbound stderrTracer addr bindAddr' txDecisionPolicy version filePath)
+            addrs
       GenerateTxs num filePath ->
         runTxsGenerator num filePath
       AnalyseTxs filePath ->
@@ -101,14 +107,15 @@ main =
 
 data Options =
     InboundOptions
-      Addr
+      Addr -- ^ address of the inbound side
       Tx.NumTxIdsToReq -- ^ maximum number txids to request
       Tx.NumTxIdsToReq -- ^ unacked txids
       TxSubmissionLogicVersion
       Int -- ^ tx validation time in microseconds
 
   | OutboundOptions
-      Addr
+      Addr -- ^ address of the inbound side
+      Addr -- ^ ip address of the outbound side, for `n > 0` port number will be incremented
       Tx.NumTxIdsToReq -- ^ unacked txids
       TxSubmissionLogicVersion
       FilePath -- ^ file path of tx cache
@@ -203,8 +210,8 @@ optionParser =
             )
 
     outboundParser =
-      (\addr port maxUnacked version filePath num ->
-        OutboundOptions Addr { addr, port } maxUnacked version filePath num
+      (\addr port addr' port' maxUnacked version filePath num ->
+        OutboundOptions Addr { addr, port } Addr { addr = addr', port = port' } maxUnacked version filePath num
       ) <$> option auto
               (  long "addr"
               <> metavar "ADDR"
@@ -216,6 +223,20 @@ optionParser =
               (  long "port"
               <> metavar "PORT"
               <> help "inbound port number to connect to"
+              <> value defaultPort
+              <> showDefault
+              )
+        <*> option auto
+            (  long "bind-addr"
+            <> metavar "ADDR"
+            <> help "outbound address to bind to"
+            <> value defaultAddr
+            <> showDefault
+            )
+        <*> option auto
+              (  long "bind-port"
+              <> metavar "PORT"
+              <> help "outbound port number to bind to"
               <> value defaultPort
               <> showDefault
               )
@@ -549,12 +570,14 @@ runTxInbound Addr { addr, port } txDecisionPolicy version txDelay = do
 
 
 runTxOutbound :: Tracer IO String
-              -> Addr
+              -> Addr -- ^ address to connect to
+              -> Addr -- ^ address to bind to
               -> V2.TxDecisionPolicy
               -> TxSubmissionLogicVersion
               -> FilePath
               -> IO ()
-runTxOutbound stderrTracer Addr { addr, port } txDecisionPolicy _version filePath = do
+runTxOutbound stderrTracer inboundAddr outboundAddr
+                           txDecisionPolicy _version filePath = do
     traceLock <- newMVar ()
     mempool <- readTxs filePath
            >>= Mempool.new getTxId
@@ -563,11 +586,17 @@ runTxOutbound stderrTracer Addr { addr, port } txDecisionPolicy _version filePat
                   , Socket.addrFamily = Socket.AF_INET
                   , Socket.addrSocketType = Socket.Stream
                   }
-    sockAddr:_ <- Socket.getAddrInfo (Just hints) (Just $ show addr) (Just $ show port)
+    sockAddr:_ <- Socket.getAddrInfo (Just hints)
+                                     (Just . show . addr $ inboundAddr)
+                                     (Just . show . port $ inboundAddr)
+    bindAddr:_ <- Socket.getAddrInfo (Just hints)
+                                     (Just . show . addr $ outboundAddr)
+                                     (Just . show . port $ outboundAddr)
     bracket
       (Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol)
       Socket.close
       $ \sock -> do
+        Socket.bind sock (Socket.addrAddress bindAddr)
         Socket.connect sock (Socket.addrAddress sockAddr)
           `catch` \case
             e | case ioe_type e of
@@ -577,7 +606,11 @@ runTxOutbound stderrTracer Addr { addr, port } txDecisionPolicy _version filePat
                 Tracer.traceWith stderrTracer $
                   unwords
                   [ "start the inbound side first:"
-                  , "`cabal run exe:demo-tx-inbound -- inbound --addr "++ show addr ++ " --port "++ show port ++"`"
+                  , "`cabal run exe:demo-tx-inbound -- inbound"
+                  , "--addr"
+                  , show (addr inboundAddr)
+                  ,"--port"
+                  , show (port inboundAddr) ++ "`"
                   ]
                 throwIO e
               | otherwise -> do
