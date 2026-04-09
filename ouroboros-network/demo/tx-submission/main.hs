@@ -44,6 +44,7 @@ import GHC.Generics (Generic)
 import NoThunks.Class (NoThunks (..))
 import Options.Applicative
 import Statistics.Quantile qualified as Stat
+import System.IO (hPutStrLn, stderr)
 import System.Random qualified as Random
 
 import Network.Mux qualified as Mx
@@ -74,6 +75,7 @@ import Test.QuickCheck.Gen (Gen (..))
 import Test.QuickCheck.Gen qualified as QC
 import Test.QuickCheck.Instances.ByteString ()
 import Test.QuickCheck.Random (newQCGen)
+import GHC.IO.Exception (IOException(..), IOErrorType (..))
 
 main :: IO ()
 main =
@@ -89,7 +91,9 @@ main =
         let txDecisionPolicy = V2.defaultTxDecisionPolicy
               { V2.maxUnacknowledgedTxIds
               }
-        replicateConcurrently_ num (runTxOutbound addr txDecisionPolicy version filePath)
+        lock <- newMVar ()
+        let stderrTracer = Tracer $ \msg -> withMVar lock $ \_ -> hPutStrLn stderr msg
+        replicateConcurrently_ num (runTxOutbound stderrTracer addr txDecisionPolicy version filePath)
       GenerateTxs num filePath ->
         runTxsGenerator num filePath
       AnalyseTxs filePath ->
@@ -544,12 +548,13 @@ runTxInbound Addr { addr, port } txDecisionPolicy version txDelay = do
                     )
 
 
-runTxOutbound :: Addr
+runTxOutbound :: Tracer IO String
+              -> Addr
               -> V2.TxDecisionPolicy
               -> TxSubmissionLogicVersion
               -> FilePath
               -> IO ()
-runTxOutbound Addr { addr, port } txDecisionPolicy _version filePath = do
+runTxOutbound stderrTracer Addr { addr, port } txDecisionPolicy _version filePath = do
     traceLock <- newMVar ()
     mempool <- readTxs filePath
            >>= Mempool.new getTxId
@@ -564,6 +569,20 @@ runTxOutbound Addr { addr, port } txDecisionPolicy _version filePath = do
       Socket.close
       $ \sock -> do
         Socket.connect sock (Socket.addrAddress sockAddr)
+          `catch` \case
+            e | case ioe_type e of
+                  NoSuchThing -> True
+                  _           -> False
+              -> do
+                Tracer.traceWith stderrTracer $
+                  unwords
+                  [ "start the inbound side first:"
+                  , "`cabal run exe:demo-tx-inbound -- inbound --addr "++ show addr ++ " --port "++ show port ++"`"
+                  ]
+                throwIO e
+              | otherwise -> do
+                Tracer.traceWith stderrTracer (show e)
+                throwIO e
         addr' <- Socket.getSocketName sock
         Mx.withReadBufferIO $ \buffer -> do
           bearer <- Mx.getBearer Mx.makeSocketBearer 1.0 sock buffer
