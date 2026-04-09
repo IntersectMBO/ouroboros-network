@@ -43,6 +43,7 @@ tests =
   testGroup "TxLogic"
     [ testProperty "handleReceivedTxIds inserts new tx entries" prop_handleReceivedTxIds_newEntries
     , testProperty "handleReceivedTxIds resolves txids already in mempool" prop_handleReceivedTxIds_knownToMempool
+    , testProperty "handleReceivedTxIds keeps retained txids local-only" prop_handleReceivedTxIds_retainedIsLocalOnly
     , testProperty "handleReceivedTxs buffers received and drops omitted txs" prop_handleReceivedTxs_buffersAndDropsOmitted
     , testProperty "handleReceivedTxs drops late bodies already retained or in mempool" prop_handleReceivedTxs_dropsLateBodies
     , testProperty "handleReceivedTxs penalizes omitted txs after full prune" prop_handleReceivedTxs_penalizesOmittedAfterPrune
@@ -308,6 +309,37 @@ prop_handleReceivedTxIds_knownToMempool (Positive peeraddr) txid0 txSize0 =
       handleReceivedTxIds (== txid) now defaultTxDecisionPolicy peeraddr requestedToReply [(txid, txSize)] peerState0 emptySharedTxState
     key = lookupKeyOrFail txid sharedState'
     expectedRetainUntil = addTime (bufferedTxsMinLifetime defaultTxDecisionPolicy) now
+
+-- Verifies that txids already retained in shared state only update the peer's
+-- local queue and do not dirty the shared state again.
+prop_handleReceivedTxIds_retainedIsLocalOnly
+  :: Positive Int
+  -> TxId
+  -> Positive Int
+  -> Property
+prop_handleReceivedTxIds_retainedIsLocalOnly (Positive peeraddr) txid0 txSize0 =
+  conjoin
+    [ peerRequestedTxIds peerState' === 0
+    , peerAvailableTxIds peerState' === IntMap.empty
+    , toList (peerUnacknowledgedTxIds peerState') === [key]
+    , sharedState' === sharedState0
+    ]
+  where
+    txid = abs txid0 + 1
+    txSize = mkSize txSize0
+    key = TxKey 0
+    k = unTxKey key
+    retainUntil = addTime 17 now
+    peerState0 = emptyPeerTxLocalState { peerRequestedTxIds = 1 }
+    sharedState0 = emptySharedTxState
+      { sharedRetainedTxs = retainedSingleton k retainUntil
+      , sharedTxIdToKey = Map.singleton txid key
+      , sharedKeyToTxId = IntMap.singleton k txid
+      , sharedNextTxKey = 1
+      , sharedGeneration = 7
+      }
+    (peerState', sharedState') =
+      handleReceivedTxIds (const False) now defaultTxDecisionPolicy peeraddr 1 [(txid, txSize)] peerState0 sharedState0
 
 -- Verifies that handleReceivedTxs buffers received bodies and removes omitted
 -- requested txs from peer and shared state.
@@ -1049,7 +1081,7 @@ prop_nextPeerActionPipelined_requestsTxIds (Positive peeraddr) txid0 _txSize0 =
            , sharedTxTable sharedState' === sharedTxTable sharedState0
            , sharedTxIdToKey sharedState' === sharedTxIdToKey sharedState0
            , sharedKeyToTxId sharedState' === sharedKeyToTxId sharedState0
-           , sharedGeneration sharedState' === sharedGeneration sharedState0 + 1
+           , sharedGeneration sharedState' === sharedGeneration sharedState0
            ]
        _ -> counterexample ("unexpected pipelined action: " ++ show peerAction) False
   where
@@ -1205,6 +1237,7 @@ prop_nextPeerAction_prunesExpiredRetained (Positive peeraddr) txid0 _txSize0 =
            , retainedLookup k (sharedRetainedTxs sharedState') === Nothing
            , Map.lookup txid (sharedTxIdToKey sharedState') === Nothing
            , IntMap.lookup k (sharedKeyToTxId sharedState') === Nothing
+           , sharedGeneration sharedState' === sharedGeneration sharedState0 + 1
            ]
        _ -> counterexample ("unexpected peer action: " ++ show peerAction) False
   where
@@ -1239,6 +1272,7 @@ prop_nextPeerAction_keepsRetained (Positive peeraddr) txid0 _txSize0 =
            , Map.lookup txid (sharedTxIdToKey sharedState') === Just key
            , IntMap.lookup k (sharedKeyToTxId sharedState') === Just txid
            , wakeDelay === diffTime retainUntil now
+           , sharedGeneration sharedState' === sharedGeneration sharedState0
            ]
        _ -> counterexample ("unexpected peer action: " ++ show peerAction) False
   where

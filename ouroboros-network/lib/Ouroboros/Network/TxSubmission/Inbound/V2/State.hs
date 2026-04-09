@@ -74,8 +74,13 @@ mkPeerActionContext now policy peeraddr peerState sharedState =
   where
     -- Remove expireds TX keys from the shared state
     sharedState' =
-      let expiredRetainedKeys = retainedExpiredKeys now (sharedRetainedTxs sharedState) in
-      dropTxKeys expiredRetainedKeys sharedState
+      let expiredRetainedKeys = retainedExpiredKeys now (sharedRetainedTxs sharedState)
+          prunedSharedState = dropTxKeys expiredRetainedKeys sharedState in
+      if IntSet.null expiredRetainedKeys
+         then sharedState
+         else prunedSharedState {
+                sharedGeneration = sharedGeneration sharedState + 1
+              }
 
     -- Remove downloaded tx bodies that are no longer in the shared state.
     peerState' =
@@ -542,21 +547,25 @@ acknowledgeTxIds :: (Ord peeraddr, Ord txid)
                  -> SharedTxState peeraddr txid
 acknowledgeTxIds _ [] st = st
 acknowledgeTxIds peeraddr acknowledgedTxIds st =
-  foldl' acknowledgeOne st' acknowledgedTxIds
+  case foldl' acknowledgeOne (False, st) acknowledgedTxIds of
+    (False, _) -> st
+    (True, st') -> st' { sharedGeneration = sharedGeneration st + 1 }
   where
-    st' = st { sharedGeneration = sharedGeneration st + 1 }
-
-    removeAdvertiser txEntry@TxEntry { txAdvertisers } =
-      txEntry { txAdvertisers = Map.delete peeraddr txAdvertisers }
-
-    acknowledgeOne acc (TxKey k) =
+    acknowledgeOne (sharedChanged, acc) (TxKey k) =
       case IntMap.lookup k (sharedTxTable acc) of
-           Just txEntry ->
-             let txEntry' = removeAdvertiser txEntry in
-             if activeTxLive txEntry'
-                then acc { sharedTxTable = IntMap.insert k txEntry' (sharedTxTable acc) }
-                else dropTxKey k acc
-           Nothing -> acc
+           Just txEntry@TxEntry { txAdvertisers } ->
+             case Map.updateLookupWithKey (\_ _ -> Nothing) peeraddr txAdvertisers of
+               (Just _, txAdvertisers') ->
+                 let txEntry' = txEntry { txAdvertisers = txAdvertisers' }
+                     acc' =
+                       if activeTxLive txEntry'
+                          then acc { sharedTxTable = IntMap.insert k txEntry' (sharedTxTable acc) }
+                          else dropTxKey k acc
+                 in (True, acc')
+               (Nothing, _) ->
+                 (sharedChanged, acc)
+           Nothing ->
+             (sharedChanged, acc)
 
 -- | Determine if an unacknowledged txid is ready to be acknowledged.
 --
@@ -990,6 +999,7 @@ handleReceivedTxIds mempoolHasTx now policy peeraddr requestedTxIds txidsAndSize
       , sharedTxTable'
       , sharedRetainedTxs'
       , peersToWake
+      , sharedChanged
       ) =
       foldl'
         step
@@ -1001,6 +1011,7 @@ handleReceivedTxIds mempoolHasTx now policy peeraddr requestedTxIds txidsAndSize
         , sharedTxTable sharedState
         , sharedRetainedTxs sharedState
         , Set.empty
+        , False
         )
         txidsAndSizes
 
@@ -1012,20 +1023,19 @@ handleReceivedTxIds mempoolHasTx now policy peeraddr requestedTxIds txidsAndSize
         peerAvailableTxIds = peerAvailableTxIds'
       }
 
-    sharedState' = sharedState {
-        sharedTxIdToKey = sharedTxIdToKey',
-        sharedKeyToTxId = sharedKeyToTxId',
-        sharedNextTxKey = sharedNextTxKey',
-        sharedTxTable = sharedTxTable',
-        sharedRetainedTxs = sharedRetainedTxs'
-      }
-
-    sharedState'' =
-      bumpIdlePeerGenerations peersToWake sharedState' {
-        sharedTxTable = sharedTxTable',
-        sharedRetainedTxs = sharedRetainedTxs',
-        sharedGeneration = sharedGeneration sharedState' + 1
-      }
+    sharedState''
+      | sharedChanged =
+          bumpIdlePeerGenerations peersToWake $
+            sharedState {
+              sharedTxIdToKey = sharedTxIdToKey',
+              sharedKeyToTxId = sharedKeyToTxId',
+              sharedNextTxKey = sharedNextTxKey',
+              sharedTxTable = sharedTxTable',
+              sharedRetainedTxs = sharedRetainedTxs',
+              sharedGeneration = sharedGeneration sharedState + 1
+            }
+      | otherwise =
+          sharedState
 
     retainUntil = addTime (bufferedTxsMinLifetime policy) now
 
@@ -1039,6 +1049,7 @@ handleReceivedTxIds mempoolHasTx now policy peeraddr requestedTxIds txidsAndSize
          , IntMap.IntMap (TxEntry peeraddr)
          , RetainedTxs
          , Set.Set peeraddr
+         , Bool
          )
       -> (txid, SizeInBytes)
       -> ( StrictSeq.StrictSeq TxKey
@@ -1049,6 +1060,7 @@ handleReceivedTxIds mempoolHasTx now policy peeraddr requestedTxIds txidsAndSize
          , IntMap.IntMap (TxEntry peeraddr)
          , RetainedTxs
          , Set.Set peeraddr
+         , Bool
          )
     step
       ( unacknowledgedAcc
@@ -1059,6 +1071,7 @@ handleReceivedTxIds mempoolHasTx now policy peeraddr requestedTxIds txidsAndSize
       , txTableAcc
       , retainedAcc
       , peersAcc
+      , sharedChangedAcc
       )
       (txid, txSize)
       | retainedMember k retainedAcc =
@@ -1070,6 +1083,7 @@ handleReceivedTxIds mempoolHasTx now policy peeraddr requestedTxIds txidsAndSize
           , txTableAcc
           , retainedAcc
           , peersAcc
+          , sharedChangedAcc
           )
       | mempoolHasTx txid =
           let wakePeers = case IntMap.lookup k txTableAcc of
@@ -1083,6 +1097,7 @@ handleReceivedTxIds mempoolHasTx now policy peeraddr requestedTxIds txidsAndSize
              , IntMap.delete k txTableAcc
              , retainedInsertMax k retainUntil retainedAcc
              , wakePeers
+             , True
              )
       | otherwise =
           case IntMap.lookup k txTableAcc of
@@ -1101,9 +1116,10 @@ handleReceivedTxIds mempoolHasTx now policy peeraddr requestedTxIds txidsAndSize
                  , IntMap.insert k txEntry txTableAcc
                  , retainedAcc
                  , peersAcc
+                 , True
                  )
             Just txEntry ->
-              let txEntry' = addAdvertiser txSize txEntry
+              let (entryChanged, txEntry') = addAdvertiser txSize txEntry
               in ( unacknowledgedAcc StrictSeq.|> txKey
                  , IntMap.insert k txSize availableAcc
                  , txIdToKeyAcc'
@@ -1112,6 +1128,7 @@ handleReceivedTxIds mempoolHasTx now policy peeraddr requestedTxIds txidsAndSize
                  , IntMap.insert k txEntry' txTableAcc
                  , retainedAcc
                  , peersAcc
+                 , sharedChangedAcc || entryChanged
                  )
       where
         (txKey@(TxKey k), txIdToKeyAcc', keyToTxIdAcc', nextTxKeyAcc') =
@@ -1126,10 +1143,14 @@ handleReceivedTxIds mempoolHasTx now policy peeraddr requestedTxIds txidsAndSize
                  , nextTxKeyAcc + 1
                  )
 
-    addAdvertiser txSize' txEntry@TxEntry { txAdvertisers }
-      | Map.member peeraddr txAdvertisers =
-          txEntry
-      | otherwise =
-          txEntry {
-            txAdvertisers = Map.insert peeraddr (TxAdvertiser AckWhenResolved txSize') txAdvertisers
-          }
+    addAdvertiser txSize' txEntry@TxEntry { txAdvertisers } =
+      case Map.insertLookupWithKey (\_ _ old -> old)
+                                   peeraddr
+                                   (TxAdvertiser AckWhenResolved txSize')
+                                   txAdvertisers of
+        (Nothing, txAdvertisers') ->
+          ( True
+          , txEntry { txAdvertisers = txAdvertisers' }
+          )
+        (Just _, _) ->
+          (False, txEntry)

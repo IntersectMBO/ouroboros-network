@@ -278,6 +278,17 @@ awaitSharedChangeImp sharedStateVar peeraddr generation mDelay =
            expired <- Lazy.readTVar delayVar
            check (generation' /= generation || expired)
 
+-- | Avoid rewriting the shared TVar when the pure state step made no shared
+-- change. Callers use 'sharedGeneration' as the dirty bit for shared state.
+writeSharedStateIfChanged :: MonadSTM m
+                          => SharedTxStateVar m peeraddr txid
+                          -> Word64
+                          -> SharedTxState peeraddr txid
+                          -> STM m ()
+writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedState'
+  | sharedGeneration sharedState' == sharedGeneration0 = pure ()
+  | otherwise = writeTVar sharedStateVar sharedState'
+
 -- | Compute the next action for this peer in non-pipelined mode.
 --
 -- Returns the selected 'PeerAction', an updated peer-local state, and applies
@@ -294,11 +305,12 @@ runNextPeerActionImp :: ( MonadSTM m
                      -> m (PeerAction, PeerTxLocalState tx)
 runNextPeerActionImp policy sharedStateVar peeraddr now peerState = atomically $ do
   sharedState <- readTVar sharedStateVar
-  let (peerAction, peerState', sharedState') = State.nextPeerAction now policy peeraddr
+  let sharedGeneration0 = sharedGeneration sharedState
+      (peerAction, peerState', sharedState') = State.nextPeerAction now policy peeraddr
                                                  peerState sharedState
       sharedState''  = updatePeerPhase peeraddr (peerPhaseForActionIdle peerAction) sharedState'
       sharedState''' = updatePeerRequestedTxs policy peeraddr peerState' sharedState''
-  writeTVar sharedStateVar sharedState'''
+  writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedState'''
   return (peerAction, peerState')
 
 -- | Compute the next action for this peer in pipelined mode.
@@ -317,13 +329,14 @@ runNextPeerActionPipelinedImp :: ( MonadSTM m
                               -> m (PeerAction, PeerTxLocalState tx)
 runNextPeerActionPipelinedImp policy sharedStateVar peeraddr now peerState = atomically $ do
   sharedState <- readTVar sharedStateVar
-  let (peerAction, peerState', sharedState') = State.nextPeerActionPipelined now policy
+  let sharedGeneration0 = sharedGeneration sharedState
+      (peerAction, peerState', sharedState') = State.nextPeerActionPipelined now policy
                                                  peeraddr peerState sharedState
       sharedState'' = updatePeerPhase peeraddr
                         (peerPhaseForActionPipelined peeraddr peerAction sharedState')
                         sharedState'
       sharedState''' = updatePeerRequestedTxs policy peeraddr peerState' sharedState''
-  writeTVar sharedStateVar sharedState'''
+  writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedState'''
   return (peerAction, peerState')
 
 -- | Process a batch of txids received from this peer.
@@ -347,10 +360,11 @@ applyReceivedTxIdsImp policy mempoolGetSnapshot sharedStateVar peeraddr now txId
                       txidsAndSizes peerState = atomically $ do
   MempoolSnapshot { mempoolHasTx } <- mempoolGetSnapshot
   sharedState <- readTVar sharedStateVar
-  let (peerState', sharedState') = State.handleReceivedTxIds mempoolHasTx now policy peeraddr
+  let sharedGeneration0 = sharedGeneration sharedState
+      (peerState', sharedState') = State.handleReceivedTxIds mempoolHasTx now policy peeraddr
                                      txIdsToReq txidsAndSizes peerState sharedState
       sharedState'' = updatePeerRequestedTxs policy peeraddr peerState' sharedState'
-  writeTVar sharedStateVar sharedState''
+  writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedState''
   return peerState'
 
 -- | Process a batch of tx bodies received from this peer.
