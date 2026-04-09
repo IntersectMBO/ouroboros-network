@@ -1104,7 +1104,7 @@ handleReceivedTxIds mempoolHasTx now policy peeraddr requestedTxIds txidsAndSize
             Nothing ->
               let txEntry = TxEntry {
                               txLease = TxLeased peeraddr (addTime (interTxSpace policy) now),
-                              txAdvertisers = Map.singleton peeraddr (TxAdvertiser AckWhenBuffered txSize),
+                              txAdvertisers = Map.singleton peeraddr (TxAdvertiser AckWhenBuffered),
                               txTieBreakSalt = k,
                               txAttempts = Map.empty
                             }
@@ -1119,7 +1119,7 @@ handleReceivedTxIds mempoolHasTx now policy peeraddr requestedTxIds txidsAndSize
                  , True
                  )
             Just txEntry ->
-              let (entryChanged, txEntry') = addAdvertiser txSize txEntry
+              let (entryChanged, txEntry') = addAdvertiser txEntry
               in ( unacknowledgedAcc StrictSeq.|> txKey
                  , IntMap.insert k txSize availableAcc
                  , txIdToKeyAcc'
@@ -1143,10 +1143,10 @@ handleReceivedTxIds mempoolHasTx now policy peeraddr requestedTxIds txidsAndSize
                  , nextTxKeyAcc + 1
                  )
 
-    addAdvertiser txSize' txEntry@TxEntry { txAdvertisers } =
+    addAdvertiser txEntry@TxEntry { txAdvertisers } =
       case Map.insertLookupWithKey (\_ _ old -> old)
                                    peeraddr
-                                   (TxAdvertiser AckWhenResolved txSize')
+                                   (TxAdvertiser AckWhenResolved)
                                    txAdvertisers of
         (Nothing, txAdvertisers') ->
           ( True
