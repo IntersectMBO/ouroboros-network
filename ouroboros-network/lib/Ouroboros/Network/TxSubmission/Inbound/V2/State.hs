@@ -235,7 +235,7 @@ applyRequestTxIdsChoice ctx acknowledgedTxIds txIdsToAcknowledge txIdsToRequest 
     peerState'' =
       (pacPeerState ctx) {
         peerAvailableTxIds =
-          foldl' (flip IntMap.delete) (peerAvailableTxIds (pacPeerState ctx)) (unTxKey <$> acknowledgedTxIds),
+          IntMap.withoutKeys (peerAvailableTxIds (pacPeerState ctx)) (IntSet.fromList $ unTxKey <$> acknowledgedTxIds),
         peerUnacknowledgedTxIds = unacknowledgedTxIds',
         peerRequestedTxIds = peerRequestedTxIds (pacPeerState ctx) + txIdsToRequest
       }
@@ -557,15 +557,19 @@ acknowledgeTxIds peeraddr acknowledgedTxIds st =
     acknowledgeOne acc0@(_, acc) (TxKey k) =
       case IntMap.lookup k (sharedTxTable acc) of
            Just txEntry@TxEntry { txAdvertisers } ->
-             case Map.updateLookupWithKey (\_ _ -> Nothing) peeraddr txAdvertisers of
-               (Just _, txAdvertisers') ->
-                 let txEntry' = txEntry { txAdvertisers = txAdvertisers' }
+             -- Check if peer exists before copying the map
+             case Map.lookup peeraddr txAdvertisers of
+               Just _ ->
+                 -- Peer exists, remove it and copy
+                 let txAdvertisers' = Map.delete peeraddr txAdvertisers
+                     txEntry' = txEntry { txAdvertisers = txAdvertisers' }
                      !acc' =
                        if activeTxLive txEntry'
                           then acc { sharedTxTable = IntMap.insert k txEntry' (sharedTxTable acc) }
                           else dropTxKey k acc
                  in (True, acc')
-               (Nothing, _) ->
+               Nothing ->
+                 -- Peer not an advertiser, no work needed
                  acc0
            Nothing ->
              acc0
