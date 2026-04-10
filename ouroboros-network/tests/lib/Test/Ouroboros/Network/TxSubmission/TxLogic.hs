@@ -13,6 +13,7 @@ module Test.Ouroboros.Network.TxSubmission.TxLogic
   , PeerActionFixture
   , FanoutFixture
   , mkReceiveDuplicateFixture
+  , mkResolvedAckFixture
   , mkForeignRejectedFixture
   , mkFanoutFixture
   , runReceiveDuplicateLoop
@@ -2075,7 +2076,7 @@ mkReceiveDuplicateFixture existingAdvertisers txidCount =
           peerRequestedTxIds = fromIntegral txidCount
         }
     , rdfSharedState =
-        mkActiveSharedState allPeers ownerPeer existingPeers False txidsAndSizes
+        mkActiveSharedState allPeers ownerPeer existingPeers txidsAndSizes
     }
   where
     ownerPeer = 0
@@ -2084,8 +2085,10 @@ mkReceiveDuplicateFixture existingAdvertisers txidCount =
     allPeers = ownerPeer : targetPeer : existingPeers
     txidsAndSizes = mkTxidsAndSizes txidCount
 
-mkForeignRejectedFixture :: Int -> Int -> PeerActionFixture
-mkForeignRejectedFixture advertiserCount txidCount =
+-- Prebuild an ack-only workload after all advertised txs have resolved into
+-- retained entries.
+mkResolvedAckFixture :: Int -> Int -> PeerActionFixture
+mkResolvedAckFixture advertiserCount txidCount =
   PeerActionFixture
     { pafPeerAddr = targetPeer
     , pafPeerState =
@@ -2100,9 +2103,14 @@ mkForeignRejectedFixture advertiserCount txidCount =
     otherPeers = [2 .. advertiserCount - 1]
     allPeers = [0 .. advertiserCount - 1]
     txidsAndSizes = mkTxidsAndSizes txidCount
-    sharedState =
-      mkActiveSharedState allPeers ownerPeer (targetPeer : otherPeers) True txidsAndSizes
-    txKeys = fmap (`lookupKeyOrFail` sharedState) (fmap fst txidsAndSizes)
+    sharedState0 =
+      mkActiveSharedState allPeers ownerPeer (targetPeer : otherPeers) txidsAndSizes
+    sharedState = retainAllActiveTxs sharedState0
+    txKeys = fmap (`lookupKeyOrFail` sharedState0) (fmap fst txidsAndSizes)
+
+-- | Compatibility alias for the previous benchmark helper name.
+mkForeignRejectedFixture :: Int -> Int -> PeerActionFixture
+mkForeignRejectedFixture = mkResolvedAckFixture
 
 mkFanoutFixture :: Int -> Int -> FanoutFixture
 mkFanoutFixture peerCount txidCount =
@@ -2111,7 +2119,7 @@ mkFanoutFixture peerCount txidCount =
     , ffRequestedTxIds = fromIntegral txidCount
     , ffTxidsAndSizes = txidsAndSizes
     , ffInitialSharedState =
-        mkActiveSharedState allPeers ownerPeer [] False txidsAndSizes
+        mkActiveSharedState allPeers ownerPeer [] txidsAndSizes
     }
   where
     ownerPeer = 0
@@ -2176,9 +2184,9 @@ runFanoutLoop iterations FanoutFixture
     roundResult =
       let (!peerStatesRev, !sharedStateAfterReceive) =
             foldl' receiveOne ([], ffInitialSharedState) ffPeers
-          !sharedStateRejected = markAllRejected sharedStateAfterReceive
+          !sharedStateResolved = retainAllActiveTxs sharedStateAfterReceive
           (!ackResultsRev, !sharedStateAfterAck) =
-            foldl' acknowledgeOne ([], sharedStateRejected) (reverse peerStatesRev)
+            foldl' acknowledgeOne ([], sharedStateResolved) (reverse peerStatesRev)
       in (reverse peerStatesRev, reverse ackResultsRev, sharedStateAfterAck)
 
     receiveOne
@@ -2223,10 +2231,9 @@ mkActiveSharedState
   :: [PeerAddr]
   -> PeerAddr
   -> [PeerAddr]
-  -> Bool
   -> [(TxId, SizeInBytes)]
   -> SharedTxState PeerAddr TxId
-mkActiveSharedState allPeers ownerPeer resolvedAdvertisers rejected txidsAndSizes =
+mkActiveSharedState allPeers ownerPeer resolvedAdvertisers txidsAndSizes =
   sharedState1 {
       sharedTxTable =
         IntMap.fromList
@@ -2258,14 +2265,19 @@ mkActiveSharedState allPeers ownerPeer resolvedAdvertisers rejected txidsAndSize
       , txAdvertisers = advertisers
       , txTieBreakSalt = unTxKey txKey
       , txAttempts = Map.empty
-      , txMempoolRejected = rejected
       }
 
-markAllRejected :: SharedTxState PeerAddr TxId -> SharedTxState PeerAddr TxId
-markAllRejected st@SharedTxState { sharedTxTable, sharedGeneration } =
+-- Resolve all active txs into retained entries so non-owner peers may safely
+-- acknowledge their txids.
+retainAllActiveTxs :: SharedTxState PeerAddr TxId -> SharedTxState PeerAddr TxId
+retainAllActiveTxs st@SharedTxState { sharedTxTable, sharedRetainedTxs, sharedGeneration } =
   st {
-      sharedTxTable = IntMap.map markRejected sharedTxTable,
+      sharedTxTable = IntMap.empty,
+      sharedRetainedTxs = IntMap.foldlWithKey' retainOne sharedRetainedTxs sharedTxTable,
       sharedGeneration = sharedGeneration + 1
     }
   where
-    markRejected txEntry = txEntry { txMempoolRejected = True }
+    retainUntil = addTime (bufferedTxsMinLifetime defaultTxDecisionPolicy) now
+
+    retainOne retainedAcc k _ =
+      retainedInsertMax k retainUntil retainedAcc

@@ -30,11 +30,11 @@ main =
           [ env (prepareEnv (TX.mkReceiveDuplicateFixture 100 3)) $ \fixture ->
                 bench "handleReceivedTxIds/duplicate-active/100existing/3txids/x1000" $
                   nfAppIO (TX.runReceiveDuplicateLoop benchLoops) fixture
-          , env (prepareEnv (TX.mkForeignRejectedFixture 100 10)) $ \fixture ->
-                bench "nextPeerAction/ack-foreign-rejected/100advertisers/10txids/x1000" $
+          , env (prepareEnv (TX.mkResolvedAckFixture 100 10)) $ \fixture ->
+                bench "nextPeerAction/ack-resolved-retained/100advertisers/10txids/x1000" $
                   nfAppIO (TX.runPeerActionLoop benchLoops) fixture
           , env (prepareEnv (TX.mkFanoutFixture 100 3)) $ \fixture ->
-                bench "scenario/fanout/100peers/3txids/x1000" $
+                bench "scenario/fanout-retained/100peers/3txids/x1000" $
                   nfAppIO (TX.runFanoutLoop benchLoops) fixture
           ]
         ]
