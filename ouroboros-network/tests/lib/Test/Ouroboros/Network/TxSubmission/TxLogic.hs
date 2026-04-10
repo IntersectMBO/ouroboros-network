@@ -191,7 +191,7 @@ sharedTxStateInvariant strength SharedTxState {
 
     activeEntryLive TxEntry { txLease, txAdvertisers, txAttempts } =
          leaseLive txLease
-      || not (Map.null txAdvertisers)
+      || not (Set.null txAdvertisers)
       || not (Map.null txAttempts)
 
     leaseLive TxClaimable = False
@@ -200,13 +200,13 @@ sharedTxStateInvariant strength SharedTxState {
     checkTxEntry (k, txEntry@TxEntry { txLease, txAdvertisers, txAttempts }) =
       counterexample ("bad active tx entry " ++ show k ++ ": " ++ show txEntry) $
         conjoin
-          [ property (Map.keysSet txAdvertisers `Set.isSubsetOf` knownPeers)
-          , property (Map.keysSet txAttempts `Set.isSubsetOf` Map.keysSet txAdvertisers)
+          [ property (txAdvertisers `Set.isSubsetOf` knownPeers)
+          , property (Map.keysSet txAttempts `Set.isSubsetOf` txAdvertisers)
           , case txLease of
                  TxClaimable ->
                    property True
                  TxLeased owner _ ->
-                   property (Map.member owner sharedPeers && Map.member owner txAdvertisers)
+                   property (Map.member owner sharedPeers && Set.member owner txAdvertisers)
           ]
 
 newtype ArbTxDecisionPolicy = ArbTxDecisionPolicy TxDecisionPolicy
@@ -330,7 +330,7 @@ prop_handleReceivedTxIds_newEntries (Positive peeraddr) (ArbSharedTxState shared
            Just TxEntry { txLease, txAdvertisers, txAttempts } ->
              conjoin
                [ txLease === TxLeased peeraddr expectedLeaseUntil
-               , txAdvertisers === Map.singleton peeraddr (mkAdvertiser AckWhenBuffered)
+               , txAdvertisers === Set.singleton peeraddr
                , txAttempts === Map.empty
                ]
 
@@ -627,7 +627,7 @@ prop_nextPeerAction_prioritisesSubmit (Positive peeraddr) txid0 txSize0 =
       { sharedPeers = Map.singleton peeraddr (mkSharedPeerState PeerIdle (emptyPeerScore now))
       , sharedTxTable = IntMap.singleton k TxEntry
           { txLease = TxLeased peeraddr (addTime 10 now)
-          , txAdvertisers = Map.singleton peeraddr (mkAdvertiser AckWhenBuffered)
+          , txAdvertisers = Set.singleton peeraddr
           , txTieBreakSalt = txid
           , txAttempts = Map.singleton peeraddr TxBuffered
           }
@@ -825,7 +825,7 @@ unit_nextPeerAction_skipsBlockedAvailableTxs step = do
               })
           , (kClaimable, TxEntry
               { txLease = TxClaimable
-              , txAdvertisers = Map.singleton peeraddr (mkAdvertiser AckWhenResolved)
+              , txAdvertisers = Set.singleton peeraddr
               , txTieBreakSalt = 0
               , txAttempts = Map.empty
               })
@@ -860,7 +860,7 @@ prop_nextPeerAction_ownerSubmitsBuffered (Positive peeraddr) txid0 txSize0 =
       { sharedPeers = Map.singleton peeraddr (mkSharedPeerState PeerIdle (emptyPeerScore now))
       , sharedTxTable = IntMap.singleton k TxEntry
           { txLease = TxClaimable
-          , txAdvertisers = Map.singleton peeraddr (mkAdvertiser AckWhenBuffered)
+          , txAdvertisers = Set.singleton peeraddr
           , txTieBreakSalt = txid
           , txAttempts = Map.singleton peeraddr TxBuffered
           }
@@ -925,7 +925,7 @@ unit_nextPeerAction_requestsOtherWorkDespiteBlockedBufferedTx step = do
           [ (kBlocked, blockedEntry)
           , (kClaimable, TxEntry
               { txLease = TxClaimable
-              , txAdvertisers = Map.singleton peeraddr (mkAdvertiser AckWhenResolved)
+              , txAdvertisers = Set.singleton peeraddr
               , txTieBreakSalt = claimableTxid
               , txAttempts = Map.empty
               })
@@ -1196,7 +1196,7 @@ prop_nextPeerActionPipelined_secondBodyBatch (Positive peeraddr) txidA0 txidB0 t
           [ (kA, mkTxEntry peeraddr txSizeA (Just TxDownloading))
           , (kB, TxEntry
               { txLease = TxClaimable
-              , txAdvertisers = Map.singleton peeraddr (mkAdvertiser AckWhenResolved)
+              , txAdvertisers = Set.singleton peeraddr
               , txTieBreakSalt = txidB
               , txAttempts = Map.empty
               })
@@ -1259,7 +1259,7 @@ prop_nextPeerActionPipelined_noThirdBodyBatch (Positive peeraddr) txidA0 txidB0 
           , (kB, mkTxEntry peeraddr txSizeB (Just TxDownloading))
           , (kC, TxEntry
               { txLease = TxClaimable
-              , txAdvertisers = Map.singleton peeraddr (mkAdvertiser AckWhenResolved)
+              , txAdvertisers = Set.singleton peeraddr
               , txTieBreakSalt = txidC
               , txAttempts = Map.empty
               })
@@ -1698,27 +1698,18 @@ genClaimableTxEntry peeraddrs txid = do
       txAttempts = Map.empty
     }
 
--- Generate advertisers where only the chosen owner uses AckWhenBuffered.
+-- Generate the advertiser set for an entry owned by the chosen peer.
 genOwnedAdvertisers
   :: [PeerAddr]
   -> PeerAddr
-  -> Gen (Map.Map PeerAddr TxAdvertiser)
+  -> Gen (Set.Set PeerAddr)
 genOwnedAdvertisers advertiserPeers owner =
-  Map.fromList <$> mapM genAdvertiser advertiserPeers
-  where
-    genAdvertiser peeraddr =
-      let txAckState
-            | peeraddr == owner = AckWhenBuffered
-            | otherwise = AckWhenResolved
-      in pure (peeraddr, TxAdvertiser { txAckState })
+  pure (Set.fromList (owner : advertiserPeers))
 
--- Generate advertisers that all acknowledge on resolution.
-genResolvedAdvertisers :: [PeerAddr] -> Gen (Map.Map PeerAddr TxAdvertiser)
+-- Generate the advertiser set for a claimable entry.
+genResolvedAdvertisers :: [PeerAddr] -> Gen (Set.Set PeerAddr)
 genResolvedAdvertisers advertiserPeers =
-  Map.fromList <$> mapM genAdvertiser advertiserPeers
-  where
-    genAdvertiser peeraddr =
-      pure (peeraddr, TxAdvertiser { txAckState = AckWhenResolved })
+  pure (Set.fromList advertiserPeers)
 
 -- Rebuild a shared state from tx-centric fixtures while preserving interned keys.
 buildSharedTxState
@@ -1831,7 +1822,7 @@ updatePeerUsage peeraddr submitting hasRequestedTxs acc =
 -- Collect every peer mentioned by a tx entry.
 entryPeers :: TxEntry PeerAddr -> [PeerAddr]
 entryPeers TxEntry { txLease, txAdvertisers, txAttempts } =
-  leaseOwner <> Map.keys txAdvertisers <> Map.keys txAttempts
+  leaseOwner <> Set.toList txAdvertisers <> Map.keys txAttempts
   where
     leaseOwner =
       case txLease of
@@ -1999,13 +1990,9 @@ mkSharedPeerState sharedPeerPhase sharedPeerScore =
 mkSharedState :: [TxId] -> SharedTxState PeerAddr TxId
 mkSharedState txids = snd (internTxIds txids emptySharedTxState)
 
--- Construct a single advertiser entry.
-mkAdvertiser :: TxOwnerAckState -> TxAdvertiser
-mkAdvertiser txAckState = TxAdvertiser { txAckState }
-
--- Construct an advertiser map for a set of peers.
-mkAdvertisers :: [(PeerAddr, TxOwnerAckState)] -> Map.Map PeerAddr TxAdvertiser
-mkAdvertisers = Map.fromList . fmap (\(peeraddr, txAckState) -> (peeraddr, mkAdvertiser txAckState))
+-- Construct an advertiser set for a group of peers.
+mkAdvertisers :: [(PeerAddr, TxOwnerAckState)] -> Set.Set PeerAddr
+mkAdvertisers = Set.fromList . fmap fst
 
 -- Construct a requested batch together with its cached key set.
 mkRequestedTxBatch :: [TxKey] -> SizeInBytes -> RequestedTxBatch
@@ -2018,7 +2005,7 @@ mkRequestedTxBatch keys requestedTxBatchSize = RequestedTxBatch
 mkTxEntry :: PeerAddr -> SizeInBytes -> Maybe TxAttemptState -> TxEntry PeerAddr
 mkTxEntry peeraddr _txSize mAttempt = TxEntry
   { txLease = TxLeased peeraddr (addTime 10 now)
-  , txAdvertisers = Map.singleton peeraddr (mkAdvertiser AckWhenBuffered)
+  , txAdvertisers = Set.singleton peeraddr
   , txTieBreakSalt = 0
   , txAttempts = maybe Map.empty (Map.singleton peeraddr) mAttempt
   }
@@ -2254,12 +2241,7 @@ mkActiveSharedState allPeers ownerPeer resolvedAdvertisers txidsAndSizes =
       }
     sharedState1 = snd (internTxIds (fmap fst txidsAndSizes) sharedState0)
 
-    advertisers =
-      Map.fromList $
-        (ownerPeer, TxAdvertiser AckWhenBuffered)
-          : [ (peeraddr, TxAdvertiser AckWhenResolved)
-            | peeraddr <- resolvedAdvertisers
-            ]
+    advertisers = Set.fromList (ownerPeer : resolvedAdvertisers)
 
     mkEntry txKey = TxEntry
       { txLease = TxLeased ownerPeer (addTime 10 now)

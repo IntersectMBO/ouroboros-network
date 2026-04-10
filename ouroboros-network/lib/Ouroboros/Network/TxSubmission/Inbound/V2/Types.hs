@@ -169,7 +169,7 @@ data TxEntry peeraddr = TxEntry {
     txLease           :: !(TxLease peeraddr),
 
     -- | Peers that have advertised this tx.
-    txAdvertisers     :: !(Map peeraddr TxAdvertiser),
+    txAdvertisers     :: !(Set.Set peeraddr),
 
     -- | Stable salt used to break ties between equally scored advertisers.
     txTieBreakSalt    :: !Int,

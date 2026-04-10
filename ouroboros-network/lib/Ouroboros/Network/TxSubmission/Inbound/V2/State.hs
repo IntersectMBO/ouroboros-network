@@ -406,7 +406,7 @@ nextWakeDelay PeerActionContext { pacNow, pacPeerAddr, pacSharedState } =
       IntMap.foldl' stepLease Nothing (sharedTxTable pacSharedState)
 
     stepLease acc txEntry@TxEntry { txLease } =
-      if Map.member pacPeerAddr (txAdvertisers txEntry)
+      if Set.member pacPeerAddr (txAdvertisers txEntry)
          then minMaybe acc (futureLeaseWake txLease)
          else acc
 
@@ -428,14 +428,11 @@ claimTx :: Ord peeraddr
         -> Time
         -> TxEntry peeraddr
         -> TxEntry peeraddr
-claimTx peeraddr leaseUntil txEntry@TxEntry { txAdvertisers, txAttempts } =
+claimTx peeraddr leaseUntil txEntry@TxEntry { txAttempts } =
   txEntry {
     txLease = TxLeased peeraddr leaseUntil,
-    txAdvertisers = Map.adjust setAckWhenBuffered peeraddr txAdvertisers,
     txAttempts = Map.insert peeraddr TxDownloading txAttempts
   }
-  where
-    setAckWhenBuffered advertiser = advertiser { txAckState = AckWhenBuffered }
 
 -- | Determine if a tx is eligible for this peer to request.
 --
@@ -450,9 +447,9 @@ txSelectable PeerActionContext { pacNow, pacPeerAddr, pacPolicy, pacIdlePeerScor
   | txSubmittingAnywhere txEntry = False
   | txPeerHasAttempt = False
   | txActiveAttemptCount txEntry >= txInflightMultiplicity pacPolicy = False
-  | txOwnedByPeer txEntry && Map.member pacPeerAddr txAdvertisers = True
+  | txOwnedByPeer txEntry && Set.member pacPeerAddr txAdvertisers = True
   | otherwise =
-      let peerMayClaim = Map.member pacPeerAddr txAdvertisers &&
+      let peerMayClaim = Set.member pacPeerAddr txAdvertisers &&
                            (case pickClaimOwner of
                                    Just owner -> owner == pacPeerAddr
                                    Nothing    -> False) in
@@ -470,7 +467,7 @@ txSelectable PeerActionContext { pacNow, pacPeerAddr, pacPolicy, pacIdlePeerScor
       where
         eligiblePeers =
           [ (candidate, score)
-          | candidate <- Map.keys txAdvertisers
+          | candidate <- Set.toList txAdvertisers
           , Just score <- [Map.lookup candidate pacIdlePeerScores]
           ]
 
@@ -557,20 +554,17 @@ acknowledgeTxIds peeraddr acknowledgedTxIds st =
     acknowledgeOne acc0@(_, acc) (TxKey k) =
       case IntMap.lookup k (sharedTxTable acc) of
            Just txEntry@TxEntry { txAdvertisers } ->
-             -- Check if peer exists before copying the map
-             case Map.lookup peeraddr txAdvertisers of
-               Just _ ->
-                 -- Peer exists, remove it and copy
-                 let txAdvertisers' = Map.delete peeraddr txAdvertisers
-                     txEntry' = txEntry { txAdvertisers = txAdvertisers' }
-                     !acc' =
-                       if activeTxLive txEntry'
-                          then acc { sharedTxTable = IntMap.insert k txEntry' (sharedTxTable acc) }
-                          else dropTxKey k acc
-                 in (True, acc')
-               Nothing ->
-                 -- Peer not an advertiser, no work needed
-                 acc0
+             if Set.member peeraddr txAdvertisers
+                then
+                  let txAdvertisers' = Set.delete peeraddr txAdvertisers
+                      txEntry' = txEntry { txAdvertisers = txAdvertisers' }
+                      !acc' =
+                        if activeTxLive txEntry'
+                           then acc { sharedTxTable = IntMap.insert k txEntry' (sharedTxTable acc) }
+                           else dropTxKey k acc
+                  in (True, acc')
+                else
+                  acc0
            Nothing ->
              acc0
 
@@ -588,18 +582,26 @@ txIdAckable PeerActionContext { pacPeerAddr, pacPeerState, pacSharedState } (TxK
   | retainedMember k (sharedRetainedTxs pacSharedState) = True
   | otherwise =
       case IntMap.lookup k (sharedTxTable pacSharedState) of
-           Just txEntry ->
-             case Map.lookup pacPeerAddr (txAdvertisers txEntry) of
-                  Just TxAdvertiser { txAckState = AckWhenBuffered } ->
-                    -- Ack the txid if we downloaded it and no other
-                    -- peer is in the process of submitting it to the
-                    -- mempool.
-                    IntMap.member k (peerDownloadedTxs pacPeerState)
-                      && not (txBufferedByPeer pacPeerAddr txEntry
-                               && txSubmittingByOther pacPeerAddr txEntry)
-                  Just TxAdvertiser { txAckState = AckWhenResolved } ->
-                    False -- This becomes ackable once the tx is retained or later pruned.
-                  Nothing -> True -- Safe late ack after this peer was pruned from the shared entry.
+           Just txEntry@TxEntry { txLease, txAdvertisers, txAttempts } ->
+             if Set.member pacPeerAddr txAdvertisers
+                then
+                  let ackWhenBuffered =
+                        case txLease of
+                          TxLeased owner _ -> owner == pacPeerAddr || Map.member pacPeerAddr txAttempts
+                          TxClaimable      -> Map.member pacPeerAddr txAttempts
+                  in
+                  if ackWhenBuffered
+                     then
+                       -- Ack the txid if we downloaded it and no other
+                       -- peer is in the process of submitting it to the
+                       -- mempool.
+                       IntMap.member k (peerDownloadedTxs pacPeerState)
+                         && not (txBufferedByPeer pacPeerAddr txEntry
+                                  && txSubmittingByOther pacPeerAddr txEntry)
+                     else
+                       False -- This becomes ackable once the tx is retained or later pruned.
+                else
+                  True -- Safe late ack after this peer was pruned from the shared entry.
            Nothing -> True -- Safe late ack after the resolved tx was pruned from shared state.
 
 -- | Remove one transaction entry from all shared state maps by key.
@@ -663,7 +665,7 @@ dropDeadActiveKeys keys st@SharedTxState { sharedTxTable } =
 activeTxLive :: TxEntry peeraddr -> Bool
 activeTxLive TxEntry { txLease, txAdvertisers, txAttempts } =
      leaseLive txLease
-  || not (Map.null txAdvertisers)
+  || not (Set.null txAdvertisers)
   || not (Map.null txAttempts)
   where
     leaseLive TxClaimable = False
@@ -693,7 +695,7 @@ advertisersForEntryExcept :: Ord peeraddr
                           -> TxEntry peeraddr
                           -> Set.Set peeraddr
 advertisersForEntryExcept currentPeer TxEntry { txAdvertisers } =
-    Set.delete currentPeer (Map.keysSet txAdvertisers)
+    Set.delete currentPeer txAdvertisers
 
 
 -- | Handle a batch of tx bodies received from one peer.
@@ -876,7 +878,7 @@ handleReceivedTxs mempoolHasTx now policy peeraddr txs peerState sharedState =
         txLease = case txLease of
                        TxLeased owner _ | owner == peeraddr -> TxClaimable
                        _                                    -> txLease,
-        txAdvertisers = Map.delete peeraddr txAdvertisers,
+        txAdvertisers = Set.delete peeraddr txAdvertisers,
         txAttempts = Map.delete peeraddr txAttempts
       }
 
@@ -945,7 +947,7 @@ handleSubmittedTxs now policy peeraddr acceptedTxs rejectedTxs peerState sharedS
         txLease = case txLease of
           TxLeased owner _ | owner == peeraddr -> TxClaimable
           _                                    -> txLease,
-        txAdvertisers = Map.delete peeraddr txAdvertisers,
+        txAdvertisers = Set.delete peeraddr txAdvertisers,
         txAttempts = Map.delete peeraddr txAttempts
       }
 
@@ -1111,7 +1113,7 @@ handleReceivedTxIds mempoolHasTx now policy peeraddr requestedTxIds txidsAndSize
             Nothing ->
               let txEntry = TxEntry {
                               txLease = TxLeased peeraddr (addTime (interTxSpace policy) now),
-                              txAdvertisers = Map.singleton peeraddr (TxAdvertiser AckWhenBuffered),
+                              txAdvertisers = Set.singleton peeraddr,
                               txTieBreakSalt = k,
                               txAttempts = Map.empty
                             }
@@ -1151,11 +1153,11 @@ handleReceivedTxIds mempoolHasTx now policy peeraddr requestedTxIds txidsAndSize
                  )
 
     addAdvertiser txEntry@TxEntry { txAdvertisers } =
-      case Map.lookup peeraddr txAdvertisers of
-        Just _ ->
+      if Set.member peeraddr txAdvertisers
+        then
           -- Peer already an advertiser, avoid copying the map
           (False, txEntry)
-        Nothing ->
+        else
           -- New advertiser, insert and copy
-          let txAdvertisers' = Map.insert peeraddr (TxAdvertiser AckWhenResolved) txAdvertisers
+          let txAdvertisers' = Set.insert peeraddr txAdvertisers
           in (True, txEntry { txAdvertisers = txAdvertisers' })
