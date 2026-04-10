@@ -1147,13 +1147,11 @@ handleReceivedTxIds mempoolHasTx now policy peeraddr requestedTxIds txidsAndSize
                  )
 
     addAdvertiser txEntry@TxEntry { txAdvertisers } =
-      case Map.insertLookupWithKey (\_ _ old -> old)
-                                   peeraddr
-                                   (TxAdvertiser AckWhenResolved)
-                                   txAdvertisers of
-        (Nothing, txAdvertisers') ->
-          ( True
-          , txEntry { txAdvertisers = txAdvertisers' }
-          )
-        (Just _, _) ->
+      case Map.lookup peeraddr txAdvertisers of
+        Just _ ->
+          -- Peer already an advertiser, avoid copying the map
           (False, txEntry)
+        Nothing ->
+          -- New advertiser, insert and copy
+          let txAdvertisers' = Map.insert peeraddr (TxAdvertiser AckWhenResolved) txAdvertisers
+          in (True, txEntry { txAdvertisers = txAdvertisers' })
