@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE ExistentialQuantification  #-}
@@ -67,6 +68,7 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Types
   , emptySharedTxState
   ) where
 
+import Control.DeepSeq (NFData)
 import Control.Exception (Exception (..))
 import Control.Monad.Class.MonadTime.SI
 import Data.Map.Strict (Map)
@@ -98,7 +100,7 @@ const_MAX_TX_SIZE_DISCREPANCY = 32
 -- | Compact internal transaction key used by V2 state.
 newtype TxKey = TxKey { unTxKey :: Int }
   deriving stock (Eq, Ord, Show, Generic)
-  deriving newtype (Enum)
+  deriving newtype (Enum, NFData)
 
 -- | State which determines when a peer that advertised a txid may
 -- acknowledge it.
@@ -110,13 +112,15 @@ data TxOwnerAckState
   = AckWhenBuffered
   | AckWhenResolved
   deriving stock (Eq, Ord, Show, Generic)
+  deriving anyclass NFData
 
 -- | Per-peer advertisement state for a tx.
 --
-data TxAdvertiser = TxAdvertiser {
-    txAckState       :: !TxOwnerAckState
+newtype TxAdvertiser = TxAdvertiser {
+    txAckState :: TxOwnerAckState
   }
   deriving stock (Eq, Show, Generic)
+  deriving newtype NFData
 
 
 -- | Per-peer attempt state for one tx body.
@@ -143,6 +147,7 @@ data TxAttemptState
     -- system (either accepted into the mempool or rejected).
     TxSubmitting
   deriving stock (Eq, Ord, Show, Generic)
+  deriving anyclass NFData
 
 -- | The current download lease for a tx body.
 --
@@ -151,6 +156,7 @@ data TxAttemptState
 data TxLease peeraddr = TxLeased !peeraddr !Time
                       | TxClaimable
   deriving stock (Eq, Show, Generic)
+  deriving anyclass NFData
 
 -- | Shared per-tx state.
 --
@@ -160,18 +166,19 @@ data TxLease peeraddr = TxLeased !peeraddr !Time
 -- and another eligible advertiser may atomically claim it.
 data TxEntry peeraddr = TxEntry {
     -- | Current owner lease for downloading the tx body.
-    txLease        :: !(TxLease peeraddr),
+    txLease           :: !(TxLease peeraddr),
 
     -- | Peers that have advertised this tx.
-    txAdvertisers  :: !(Map peeraddr TxAdvertiser),
+    txAdvertisers     :: !(Map peeraddr TxAdvertiser),
 
     -- | Stable salt used to break ties between equally scored advertisers.
-    txTieBreakSalt :: !Int,
+    txTieBreakSalt    :: !Int,
 
     -- | Current per-peer attempt state for this tx body.
-    txAttempts     :: !(Map peeraddr TxAttemptState)
+    txAttempts        :: !(Map peeraddr TxAttemptState)
   }
   deriving stock (Eq, Show, Generic)
+  deriving anyclass NFData
 
 -- | The next peer-local action chosen by the V2 worker thread.
 --
@@ -191,6 +198,7 @@ data PeerAction
     -- mempool.
     PeerSubmitTxs ![TxKey]
   deriving stock (Eq, Show, Generic)
+  deriving anyclass NFData
 
 
 -- | A batch of transaction body requests sent to a peer.
@@ -206,6 +214,7 @@ data RequestedTxBatch = RequestedTxBatch {
   , requestedTxBatchSize :: !SizeInBytes
   }
   deriving stock (Eq, Show, Generic)
+  deriving anyclass NFData
 
 -- | Coarse phase of a peer worker thread.
 --
@@ -221,6 +230,7 @@ data PeerPhase
   | -- | The peer worker is submitting buffered txs to the local mempool.
     PeerSubmittingToMempool
   deriving stock (Eq, Ord, Show, Generic)
+  deriving anyclass NFData
 
 -- | Peer usefulness score.
 --
@@ -230,6 +240,7 @@ data PeerScore = PeerScore {
     peerScoreTs    :: !Time
   }
   deriving stock (Eq, Show, Generic)
+  deriving anyclass NFData
 
 -- | Low-cost monotonic counters for the V2 peer protocol and coordination path.
 --
@@ -250,6 +261,7 @@ data TxSubmissionCounters = TxSubmissionCounters {
     lateBodies          :: !Word64
   }
   deriving stock (Eq, Show, Generic)
+  deriving anyclass NFData
 
 instance Semigroup TxSubmissionCounters where
   a <> b = TxSubmissionCounters {
@@ -310,6 +322,7 @@ data PeerTxLocalState tx = PeerTxLocalState {
     peerDownloadedTxs       :: !(IntMap tx)
   }
   deriving stock (Eq, Show, Generic)
+  deriving anyclass NFData
 
 emptyPeerTxLocalState :: PeerTxLocalState tx
 emptyPeerTxLocalState = PeerTxLocalState {
@@ -325,11 +338,12 @@ emptyPeerTxLocalState = PeerTxLocalState {
 -- | Small shared view of peer state used for lease claiming and peer
 -- selection.
 data SharedPeerState = SharedPeerState {
-    sharedPeerPhase              :: !PeerPhase,
-    sharedPeerScore              :: !PeerScore,
-    sharedPeerGeneration         :: !Word64
+    sharedPeerPhase      :: !PeerPhase,
+    sharedPeerScore      :: !PeerScore,
+    sharedPeerGeneration :: !Word64
   }
   deriving stock (Eq, Show, Generic)
+  deriving anyclass NFData
 
 -- | Shared V2 state.
 --
@@ -349,6 +363,7 @@ data SharedTxState peeraddr txid = SharedTxState {
     sharedGeneration  :: !Word64
   }
   deriving stock (Eq, Show, Generic)
+  deriving anyclass NFData
 
 type RetainedTxs = IntPSQ Time ()
 
