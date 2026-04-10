@@ -304,7 +304,8 @@ runNextPeerActionImp policy sharedStateVar peeraddr now peerState = atomically $
   let sharedGeneration0 = sharedGeneration sharedState
       (peerAction, peerState', sharedState') = State.nextPeerAction now policy peeraddr
                                                  peerState sharedState
-      sharedState''  = updatePeerPhase peeraddr (peerPhaseForActionIdle peerAction) sharedState'
+      sharedState''  = updatePeerPhase now policy peeraddr
+                         (peerPhaseForActionIdle peerAction) sharedState'
   writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedState''
   return (peerAction, peerState')
 
@@ -327,7 +328,7 @@ runNextPeerActionPipelinedImp policy sharedStateVar peeraddr now peerState = ato
   let sharedGeneration0 = sharedGeneration sharedState
       (peerAction, peerState', sharedState') = State.nextPeerActionPipelined now policy
                                                  peeraddr peerState sharedState
-      sharedState'' = updatePeerPhase peeraddr
+      sharedState'' = updatePeerPhase now policy peeraddr
                         (peerPhaseForActionPipelined peeraddr peerAction sharedState')
                         sharedState'
   writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedState''
@@ -502,7 +503,8 @@ resolveBufferedTxsImp sharedStateVar peerState txKeys = atomically $ do
 
 -- | Update a peer's phase.
 --
--- A phase change always bumps the shared generation. In addition:
+-- A phase change always bumps the shared generation and normalizes the moving
+-- peer's score by draining it to @now@. In addition:
 --
 -- * When a peer becomes 'PeerIdle', bump that peer's own generation so a
 --   'PeerDoNothing' action computed before the phase change does not put that
@@ -515,23 +517,39 @@ resolveBufferedTxsImp sharedStateVar peerState txKeys = atomically $ do
 --   peer should wake and claim a tx.
 updatePeerPhase
   :: Ord peeraddr
-  => peeraddr
+  => Time
+  -> TxDecisionPolicy
+  -> peeraddr
   -> PeerPhase
   -> SharedTxState peeraddr txid
   -> SharedTxState peeraddr txid
-updatePeerPhase peeraddr peerPhaseNew st@SharedTxState { sharedPeers, sharedGeneration } =
+updatePeerPhase now policy peeraddr peerPhaseNew
+                st@SharedTxState { sharedPeers, sharedGeneration } =
   case Map.lookup peeraddr sharedPeers of
        Just sharedPeerState ->
          let peerPhaseOld = sharedPeerPhase sharedPeerState in
          if peerPhaseOld /= peerPhaseNew
             then
+              let sharedPeerScore' =
+                    normalizePeerScore (sharedPeerScore sharedPeerState)
+                  sharedPeerState' =
+                    sharedPeerState {
+                      sharedPeerPhase = peerPhaseNew,
+                      sharedPeerScore = sharedPeerScore'
+                    }
+              in
               let st' = st { sharedPeers = Map.insert peeraddr
-                               (sharedPeerState { sharedPeerPhase = peerPhaseNew }) sharedPeers
+                               sharedPeerState' sharedPeers
                            , sharedGeneration = sharedGeneration + 1 } in
               bumpIdlePeerGenerations (phaseWakePeers peerPhaseOld) st'
             else st
        _ -> st -- TODO error?
   where
+    normalizePeerScore ps@PeerScore { peerScoreValue, peerScoreTs } =
+      let !drain = realToFrac (diffTime now peerScoreTs) * scoreRate policy
+          !drained = max 0 (peerScoreValue - drain)
+      in ps { peerScoreValue = drained, peerScoreTs = now }
+
     phaseWakePeers peerPhaseOld
       | peerPhaseOld /= PeerIdle
       , peerPhaseNew == PeerIdle = Set.singleton peeraddr

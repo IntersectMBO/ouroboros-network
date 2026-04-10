@@ -44,7 +44,9 @@ data PeerActionContext peeraddr txid tx = PeerActionContext {
     -- | Shared tx-submission state after shared pruning has been applied.
     pacSharedState    :: !(SharedTxState peeraddr txid),
     -- | Decayed scores for peers that are currently idle and eligible to claim work.
-    pacIdlePeerScores :: !(Map.Map peeraddr Double)
+    -- Note that this field is lazy to avoid calculating the idle scores when it
+    -- isn't needed.
+    pacIdlePeerScores :: (Map.Map peeraddr Double)
   }
 
 data PeerActionChoice peeraddr =
