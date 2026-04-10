@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns   #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RankNTypes     #-}
 
@@ -8,10 +9,21 @@ module Test.Ouroboros.Network.TxSubmission.TxLogic
   , ArbSharedTxState (..)
   , ArbSharedPeerState (..)
   , ArbPeerTxLocalState (..)
+  , ReceiveDuplicateFixture
+  , PeerActionFixture
+  , FanoutFixture
+  , mkReceiveDuplicateFixture
+  , mkForeignRejectedFixture
+  , mkFanoutFixture
+  , runReceiveDuplicateLoop
+  , runPeerActionLoop
+  , runFanoutLoop
   , sharedTxStateInvariant
   , InvariantStrength (..)
   ) where
 
+import Control.DeepSeq (NFData (rnf))
+import Control.Exception (evaluate)
 import Control.Monad.Class.MonadTime.SI (Time (..), addTime, diffTime)
 import Data.Foldable (foldl', toList)
 import Data.Function (on)
@@ -75,6 +87,49 @@ tests =
 --
 
 type PeerAddr = Int
+
+data ReceiveDuplicateFixture = ReceiveDuplicateFixture
+  { rdfPeerAddr       :: !PeerAddr
+  , rdfRequestedTxIds :: !NumTxIdsToReq
+  , rdfTxidsAndSizes  :: ![(TxId, SizeInBytes)]
+  , rdfPeerState      :: !(PeerTxLocalState (Tx TxId))
+  , rdfSharedState    :: !(SharedTxState PeerAddr TxId)
+  }
+
+data PeerActionFixture = PeerActionFixture
+  { pafPeerAddr    :: !PeerAddr
+  , pafPeerState   :: !(PeerTxLocalState (Tx TxId))
+  , pafSharedState :: !(SharedTxState PeerAddr TxId)
+  }
+
+data FanoutFixture = FanoutFixture
+  { ffPeers              :: ![PeerAddr]
+  , ffRequestedTxIds     :: !NumTxIdsToReq
+  , ffTxidsAndSizes      :: ![(TxId, SizeInBytes)]
+  , ffInitialSharedState :: !(SharedTxState PeerAddr TxId)
+  }
+
+instance NFData ReceiveDuplicateFixture where
+  rnf ReceiveDuplicateFixture { rdfPeerAddr, rdfRequestedTxIds, rdfTxidsAndSizes
+                              , rdfPeerState, rdfSharedState } =
+       rnf rdfPeerAddr
+    `seq` rnf rdfRequestedTxIds
+    `seq` rnf rdfTxidsAndSizes
+    `seq` rnf rdfPeerState
+    `seq` rnf rdfSharedState
+
+instance NFData PeerActionFixture where
+  rnf PeerActionFixture { pafPeerAddr, pafPeerState, pafSharedState } =
+       rnf pafPeerAddr
+    `seq` rnf pafPeerState
+    `seq` rnf pafSharedState
+
+instance NFData FanoutFixture where
+  rnf FanoutFixture { ffPeers, ffRequestedTxIds, ffTxidsAndSizes, ffInitialSharedState } =
+       rnf ffPeers
+    `seq` rnf ffRequestedTxIds
+    `seq` rnf ffTxidsAndSizes
+    `seq` rnf ffInitialSharedState
 
 data InvariantStrength = WeakInvariant
                        | StrongInvariant
@@ -1441,7 +1496,7 @@ unit_updatePeerPhase_wakesOnlyBecomingIdlePeer step = do
           , (other, (mkSharedPeerState PeerIdle (emptyPeerScore now)) { sharedPeerGeneration = 11 })
           ]
       }
-    sharedState' = updatePeerPhase peer PeerIdle sharedState0
+    sharedState' = updatePeerPhase now defaultTxDecisionPolicy peer PeerIdle sharedState0
 
 unit_updatePeerPhase_wakesCompetingAdvertisers :: (String -> IO ()) -> Assertion
 unit_updatePeerPhase_wakesCompetingAdvertisers step = do
@@ -1475,7 +1530,7 @@ unit_updatePeerPhase_wakesCompetingAdvertisers step = do
           , txAttempts = Map.empty
           }
       }
-    sharedState' = updatePeerPhase leavingPeer PeerWaitingTxs sharedState0
+    sharedState' = updatePeerPhase now defaultTxDecisionPolicy leavingPeer PeerWaitingTxs sharedState0
 
 -- Generate a shared peer state.
 genSharedPeerState :: Gen SharedPeerState
@@ -2008,3 +2063,209 @@ firstFreshTxId used = go
     go txid
       | IntSet.member txid used = go (txid + 1)
       | otherwise = txid
+
+mkReceiveDuplicateFixture :: Int -> Int -> ReceiveDuplicateFixture
+mkReceiveDuplicateFixture existingAdvertisers txidCount =
+  ReceiveDuplicateFixture
+    { rdfPeerAddr = targetPeer
+    , rdfRequestedTxIds = fromIntegral txidCount
+    , rdfTxidsAndSizes = txidsAndSizes
+    , rdfPeerState =
+        emptyPeerTxLocalState {
+          peerRequestedTxIds = fromIntegral txidCount
+        }
+    , rdfSharedState =
+        mkActiveSharedState allPeers ownerPeer existingPeers False txidsAndSizes
+    }
+  where
+    ownerPeer = 0
+    targetPeer = existingAdvertisers
+    existingPeers = [1 .. existingAdvertisers - 1]
+    allPeers = ownerPeer : targetPeer : existingPeers
+    txidsAndSizes = mkTxidsAndSizes txidCount
+
+mkForeignRejectedFixture :: Int -> Int -> PeerActionFixture
+mkForeignRejectedFixture advertiserCount txidCount =
+  PeerActionFixture
+    { pafPeerAddr = targetPeer
+    , pafPeerState =
+        emptyPeerTxLocalState {
+          peerUnacknowledgedTxIds = StrictSeq.fromList txKeys
+        }
+    , pafSharedState = sharedState
+    }
+  where
+    ownerPeer = 0
+    targetPeer = 1
+    otherPeers = [2 .. advertiserCount - 1]
+    allPeers = [0 .. advertiserCount - 1]
+    txidsAndSizes = mkTxidsAndSizes txidCount
+    sharedState =
+      mkActiveSharedState allPeers ownerPeer (targetPeer : otherPeers) True txidsAndSizes
+    txKeys = fmap (`lookupKeyOrFail` sharedState) (fmap fst txidsAndSizes)
+
+mkFanoutFixture :: Int -> Int -> FanoutFixture
+mkFanoutFixture peerCount txidCount =
+  FanoutFixture
+    { ffPeers = peers
+    , ffRequestedTxIds = fromIntegral txidCount
+    , ffTxidsAndSizes = txidsAndSizes
+    , ffInitialSharedState =
+        mkActiveSharedState allPeers ownerPeer [] False txidsAndSizes
+    }
+  where
+    ownerPeer = 0
+    peers = [1 .. peerCount]
+    allPeers = ownerPeer : peers
+    txidsAndSizes = mkTxidsAndSizes txidCount
+
+runReceiveDuplicateLoop :: Int -> ReceiveDuplicateFixture -> IO ()
+runReceiveDuplicateLoop iterations ReceiveDuplicateFixture
+  { rdfPeerAddr
+  , rdfRequestedTxIds
+  , rdfTxidsAndSizes
+  , rdfPeerState
+  , rdfSharedState
+  } =
+    go iterations
+  where
+    go 0 = pure ()
+    go n = do
+      let result =
+            handleReceivedTxIds
+              (const False)
+              now
+              defaultTxDecisionPolicy
+              rdfPeerAddr
+              rdfRequestedTxIds
+              rdfTxidsAndSizes
+              rdfPeerState
+              rdfSharedState
+      _ <- evaluate (rnf result)
+      go (n - 1)
+
+runPeerActionLoop :: Int -> PeerActionFixture -> IO ()
+runPeerActionLoop iterations PeerActionFixture
+  { pafPeerAddr
+  , pafPeerState
+  , pafSharedState
+  } =
+    go iterations
+  where
+    go 0 = pure ()
+    go n = do
+      let result =
+            nextPeerAction now defaultTxDecisionPolicy pafPeerAddr pafPeerState pafSharedState
+      _ <- evaluate (rnf result)
+      go (n - 1)
+
+runFanoutLoop :: Int -> FanoutFixture -> IO ()
+runFanoutLoop iterations FanoutFixture
+  { ffPeers
+  , ffRequestedTxIds
+  , ffTxidsAndSizes
+  , ffInitialSharedState
+  } =
+    go iterations
+  where
+    go 0 = pure ()
+    go n = do
+      _ <- evaluate (rnf roundResult)
+      go (n - 1)
+
+    roundResult =
+      let (!peerStatesRev, !sharedStateAfterReceive) =
+            foldl' receiveOne ([], ffInitialSharedState) ffPeers
+          !sharedStateRejected = markAllRejected sharedStateAfterReceive
+          (!ackResultsRev, !sharedStateAfterAck) =
+            foldl' acknowledgeOne ([], sharedStateRejected) (reverse peerStatesRev)
+      in (reverse peerStatesRev, reverse ackResultsRev, sharedStateAfterAck)
+
+    receiveOne
+      :: ([(PeerAddr, PeerTxLocalState (Tx TxId))], SharedTxState PeerAddr TxId)
+      -> PeerAddr
+      -> ([(PeerAddr, PeerTxLocalState (Tx TxId))], SharedTxState PeerAddr TxId)
+    receiveOne (!peerStatesAcc, !sharedStateAcc) peeraddr =
+      let peerState0 =
+            emptyPeerTxLocalState {
+              peerRequestedTxIds = ffRequestedTxIds
+            }
+          !(peerState', sharedStateAcc') =
+            handleReceivedTxIds
+              (const False)
+              now
+              defaultTxDecisionPolicy
+              peeraddr
+              ffRequestedTxIds
+              ffTxidsAndSizes
+              peerState0
+              sharedStateAcc
+      in ((peeraddr, peerState') : peerStatesAcc, sharedStateAcc')
+
+    acknowledgeOne
+      :: ([(PeerAddr, PeerAction, PeerTxLocalState (Tx TxId))], SharedTxState PeerAddr TxId)
+      -> (PeerAddr, PeerTxLocalState (Tx TxId))
+      -> ([(PeerAddr, PeerAction, PeerTxLocalState (Tx TxId))], SharedTxState PeerAddr TxId)
+    acknowledgeOne (!ackResultsAcc, !sharedStateAcc) (peeraddr, peerState0) =
+      let !(peerAction, peerState', sharedStateAcc') =
+            nextPeerAction now defaultTxDecisionPolicy peeraddr peerState0 sharedStateAcc
+      in ( (peeraddr, peerAction, peerState') : ackResultsAcc
+         , sharedStateAcc'
+         )
+
+mkTxidsAndSizes :: Int -> [(TxId, SizeInBytes)]
+mkTxidsAndSizes count =
+  [ (txid, fromIntegral (128 + txid))
+  | txid <- [1 .. count]
+  ]
+
+mkActiveSharedState
+  :: [PeerAddr]
+  -> PeerAddr
+  -> [PeerAddr]
+  -> Bool
+  -> [(TxId, SizeInBytes)]
+  -> SharedTxState PeerAddr TxId
+mkActiveSharedState allPeers ownerPeer resolvedAdvertisers rejected txidsAndSizes =
+  sharedState1 {
+      sharedTxTable =
+        IntMap.fromList
+          [ (unTxKey txKey, mkEntry txKey)
+          | (txid, _txSize) <- txidsAndSizes
+          , let txKey = lookupKeyOrFail txid sharedState1
+          ]
+    }
+  where
+    sharedState0 =
+      emptySharedTxState {
+        sharedPeers =
+          Map.fromList
+            [ (peeraddr, mkSharedPeerState PeerIdle (emptyPeerScore now))
+            | peeraddr <- allPeers
+            ]
+      }
+    sharedState1 = snd (internTxIds (fmap fst txidsAndSizes) sharedState0)
+
+    advertisers =
+      Map.fromList $
+        (ownerPeer, TxAdvertiser AckWhenBuffered)
+          : [ (peeraddr, TxAdvertiser AckWhenResolved)
+            | peeraddr <- resolvedAdvertisers
+            ]
+
+    mkEntry txKey = TxEntry
+      { txLease = TxLeased ownerPeer (addTime 10 now)
+      , txAdvertisers = advertisers
+      , txTieBreakSalt = unTxKey txKey
+      , txAttempts = Map.empty
+      , txMempoolRejected = rejected
+      }
+
+markAllRejected :: SharedTxState PeerAddr TxId -> SharedTxState PeerAddr TxId
+markAllRejected st@SharedTxState { sharedTxTable, sharedGeneration } =
+  st {
+      sharedTxTable = IntMap.map markRejected sharedTxTable,
+      sharedGeneration = sharedGeneration + 1
+    }
+  where
+    markRejected txEntry = txEntry { txMempoolRejected = True }
