@@ -214,7 +214,7 @@ withPeer policy TxSubmissionMempoolReader { mempoolGetSnapshot } sharedStateVar 
           in if txLive txEntry'
                 then ( IntMap.insert k txEntry' txTableAcc
                      , if touched
-                          then Set.union wakeAcc (Set.delete peeraddr (Map.keysSet (txAdvertisers txEntry')))
+                          then Set.union wakeAcc (Set.delete peeraddr (txAdvertisers txEntry'))
                           else wakeAcc
                      )
                 else (txTableAcc, wakeAcc)
@@ -222,7 +222,7 @@ withPeer policy TxSubmissionMempoolReader { mempoolGetSnapshot } sharedStateVar 
         scrubTxEntry txEntry@TxEntry { txLease, txAdvertisers, txAttempts } =
           txEntry {
             txLease = scrubLease txLease,
-            txAdvertisers = Map.delete peeraddr txAdvertisers,
+            txAdvertisers = Set.delete peeraddr txAdvertisers,
             txAttempts = Map.delete peeraddr txAttempts
           }
 
@@ -233,12 +233,12 @@ withPeer policy TxSubmissionMempoolReader { mempoolGetSnapshot } sharedStateVar 
 
         txTouchesPeer TxEntry { txLease, txAdvertisers, txAttempts } =
              leaseOwnedByPeer txLease
-          || Map.member peeraddr txAdvertisers
+          || Set.member peeraddr txAdvertisers
           || Map.member peeraddr txAttempts
 
         txLive TxEntry { txLease, txAdvertisers, txAttempts } =
              leaseLive txLease
-          || not (Map.null txAdvertisers)
+          || not (Set.null txAdvertisers)
           || not (Map.null txAttempts)
 
         leaseOwnedByPeer (TxLeased owner _) = owner == peeraddr
@@ -567,8 +567,8 @@ advertisersForPeerTxsExcept peeraddr SharedTxState { sharedTxTable } =
     IntMap.foldl' collect Set.empty sharedTxTable
   where
     collect peers TxEntry { txAdvertisers }
-      | Map.member peeraddr txAdvertisers =
-          Set.union peers (Set.delete peeraddr (Map.keysSet txAdvertisers))
+      | Set.member peeraddr txAdvertisers =
+          Set.union peers (Set.delete peeraddr txAdvertisers)
       | otherwise =
           peers
 
