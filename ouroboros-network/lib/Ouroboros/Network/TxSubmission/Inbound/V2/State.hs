@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -548,24 +549,24 @@ acknowledgeTxIds :: (Ord peeraddr, Ord txid)
 acknowledgeTxIds _ [] st = st
 acknowledgeTxIds peeraddr acknowledgedTxIds st =
   case foldl' acknowledgeOne (False, st) acknowledgedTxIds of
-    (False, _) -> st
+    (False, _)  -> st
     (True, st') -> st' { sharedGeneration = sharedGeneration st + 1 }
   where
-    acknowledgeOne (sharedChanged, acc) (TxKey k) =
+    acknowledgeOne acc0@(_, acc) (TxKey k) =
       case IntMap.lookup k (sharedTxTable acc) of
            Just txEntry@TxEntry { txAdvertisers } ->
              case Map.updateLookupWithKey (\_ _ -> Nothing) peeraddr txAdvertisers of
                (Just _, txAdvertisers') ->
                  let txEntry' = txEntry { txAdvertisers = txAdvertisers' }
-                     acc' =
+                     !acc' =
                        if activeTxLive txEntry'
                           then acc { sharedTxTable = IntMap.insert k txEntry' (sharedTxTable acc) }
                           else dropTxKey k acc
                  in (True, acc')
                (Nothing, _) ->
-                 (sharedChanged, acc)
+                 acc0
            Nothing ->
-             (sharedChanged, acc)
+             acc0
 
 -- | Determine if an unacknowledged txid is ready to be acknowledged.
 --
@@ -1063,15 +1064,15 @@ handleReceivedTxIds mempoolHasTx now policy peeraddr requestedTxIds txidsAndSize
          , Bool
          )
     step
-      ( unacknowledgedAcc
-      , availableAcc
-      , txIdToKeyAcc
-      , keyToTxIdAcc
-      , nextTxKeyAcc
-      , txTableAcc
-      , retainedAcc
-      , peersAcc
-      , sharedChangedAcc
+      ( !unacknowledgedAcc
+      , !availableAcc
+      , !txIdToKeyAcc
+      , !keyToTxIdAcc
+      , !nextTxKeyAcc
+      , !txTableAcc
+      , !retainedAcc
+      , !peersAcc
+      , !sharedChangedAcc
       )
       (txid, txSize)
       | retainedMember k retainedAcc =
