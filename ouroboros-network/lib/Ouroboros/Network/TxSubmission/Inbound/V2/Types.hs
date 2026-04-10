@@ -474,14 +474,16 @@ bumpIdlePeerGenerations :: Ord peeraddr
                         -> SharedTxState peeraddr txid
 bumpIdlePeerGenerations peersToWake st@SharedTxState { sharedPeers } =
     st {
-      sharedPeers = Map.mapWithKey bumpPeer sharedPeers
+      sharedPeers = foldl' bumpOne sharedPeers (Set.toList peersToWake)
     }
   where
-    bumpPeer peeraddr sharedPeerState@SharedPeerState { sharedPeerPhase, sharedPeerGeneration }
-      | Set.member peeraddr peersToWake
-      , sharedPeerPhase == PeerIdle =
-          sharedPeerState { sharedPeerGeneration = sharedPeerGeneration + 1 }
-      | otherwise = sharedPeerState
+    bumpOne peersMap peeraddr =
+        Map.adjust bumpIdlePeer peeraddr peersMap
+      where
+        bumpIdlePeer sharedPeerState@SharedPeerState { sharedPeerPhase, sharedPeerGeneration }
+          | sharedPeerPhase == PeerIdle =
+              sharedPeerState { sharedPeerGeneration = sharedPeerGeneration + 1 }
+          | otherwise = sharedPeerState
 
 lookupTxKey :: Ord txid
             => txid
