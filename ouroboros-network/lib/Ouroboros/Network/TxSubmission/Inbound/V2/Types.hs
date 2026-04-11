@@ -152,9 +152,11 @@ data TxAttemptState
 -- | The current download lease for a tx body.
 --
 -- A tx is either currently leased to a peer until a deadline or it is
--- unowned and can be claimed by an eligible advertiser.
+-- unowned and became claimable at a specific time. Peers use their decayed
+-- score as an additional per-peer delay after that claimable time before
+-- attempting to steal the lease.
 data TxLease peeraddr = TxLeased !peeraddr !Time
-                      | TxClaimable
+                      | TxClaimable !Time
   deriving stock (Eq, Show, Generic)
   deriving anyclass NFData
 
@@ -168,11 +170,12 @@ data TxEntry peeraddr = TxEntry {
     -- | Current owner lease for downloading the tx body.
     txLease           :: !(TxLease peeraddr),
 
-    -- | Peers that have advertised this tx.
-    txAdvertisers     :: !(Set.Set peeraddr),
-
-    -- | Stable salt used to break ties between equally scored advertisers.
-    txTieBreakSalt    :: !Int,
+    -- | Number of peers that still advertise this tx.
+    --
+    -- The actual advertiser membership is tracked per peer in
+    -- 'SharedPeerState'. The count is retained here so that hot-path scans can
+    -- stop once all advertisers have been found.
+    txAdvertiserCount :: !Int,
 
     -- | Current per-peer attempt state for this tx body.
     txAttempts        :: !(Map peeraddr TxAttemptState)
@@ -234,7 +237,8 @@ data PeerPhase
 
 -- | Peer usefulness score.
 --
--- Lower is better.
+-- Lower is better. The current score is also interpreted as milliseconds of
+-- extra delay before an idle peer may steal a claimable or expired tx lease.
 data PeerScore = PeerScore {
     peerScoreValue :: !Double,
     peerScoreTs    :: !Time
@@ -338,9 +342,10 @@ emptyPeerTxLocalState = PeerTxLocalState {
 -- | Small shared view of peer state used for lease claiming and peer
 -- selection.
 data SharedPeerState = SharedPeerState {
-    sharedPeerPhase      :: !PeerPhase,
-    sharedPeerScore      :: !PeerScore,
-    sharedPeerGeneration :: !Word64
+    sharedPeerPhase            :: !PeerPhase,
+    sharedPeerScore            :: !PeerScore,
+    sharedPeerAdvertisedTxKeys :: !IntSet,
+    sharedPeerGeneration       :: !Word64
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass NFData
