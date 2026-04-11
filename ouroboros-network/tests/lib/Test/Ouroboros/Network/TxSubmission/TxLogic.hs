@@ -58,6 +58,7 @@ tests =
     , testProperty "handleReceivedTxIds resolves txids already in mempool" prop_handleReceivedTxIds_knownToMempool
     , testProperty "handleReceivedTxIds keeps retained txids local-only" prop_handleReceivedTxIds_retainedIsLocalOnly
     , testCaseSteps "handleReceivedTxIds adds the current peer as an advertiser for active txs" unit_handleReceivedTxIds_addsAdvertiserForActiveTxs
+    , testCaseSteps "nextPeerAction lets another peer claim a fresh tx when the first advertiser is full" unit_nextPeerAction_claimsFreshTxWhenFirstAdvertiserIsFull
     , testProperty "handleReceivedTxs buffers received and drops omitted txs" prop_handleReceivedTxs_buffersAndDropsOmitted
     , testProperty "handleReceivedTxs drops late bodies already retained or in mempool" prop_handleReceivedTxs_dropsLateBodies
     , testProperty "handleReceivedTxs penalizes omitted txs after full prune" prop_handleReceivedTxs_penalizesOmittedAfterPrune
@@ -300,7 +301,7 @@ instance Arbitrary ArbSharedTxState where
     | sharedState == emptySharedTxState = []
     | otherwise = ArbSharedTxState <$> shrinkSharedTxState sharedState
 
--- Verifies that handleReceivedTxIds interns new txids, adds leased entries
+-- Verifies that handleReceivedTxIds interns new txids, adds claimable entries
 -- for them, and preserves unrelated shared-state entries.
 prop_handleReceivedTxIds_newEntries
   :: Positive Int
@@ -334,7 +335,6 @@ prop_handleReceivedTxIds_newEntries (Positive peeraddr) (ArbSharedTxState shared
     peerState0 = emptyPeerTxLocalState { peerRequestedTxIds = requestedToReply + fromIntegral extraRequested }
     (peerState', sharedState') =
       handleReceivedTxIds (const False) now defaultTxDecisionPolicy peeraddr requestedToReply txidsAndSizes peerState0 sharedStateBase
-    expectedLeaseUntil = addTime (interTxSpace defaultTxDecisionPolicy) now
     expectedAdvertisedKeys =
       sharedPeerAdvertisedTxKeys (lookupPeerOrFail peeraddr sharedStateBase)
         `IntSet.union`
@@ -348,7 +348,7 @@ prop_handleReceivedTxIds_newEntries (Positive peeraddr) (ArbSharedTxState shared
            Nothing -> counterexample ("missing tx entry for " ++ show txid) False
            Just TxEntry { txLease, txAdvertiserCount, txAttempts } ->
              conjoin
-               [ txLease === TxLeased peeraddr expectedLeaseUntil
+               [ txLease === TxClaimable now
                , txAdvertiserCount === 1
                , txAttempts === Map.empty
                ]
@@ -455,6 +455,69 @@ unit_handleReceivedTxIds_addsAdvertiserForActiveTxs step = do
         , let txKey = lookupKeyOrFail txid sharedState0
         ]
     expectedAdvertisedKeys = IntSet.fromList (map unTxKey txKeys)
+
+unit_nextPeerAction_claimsFreshTxWhenFirstAdvertiserIsFull :: (String -> IO ()) -> Assertion
+unit_nextPeerAction_claimsFreshTxWhenFirstAdvertiserIsFull step = do
+  step "Receive a fresh txid from peer A while A is already at its inflight size limit"
+  let (peerAState1, sharedState1) =
+        handleReceivedTxIds
+          (const False)
+          now
+          defaultTxDecisionPolicy
+          peerA
+          requestedToReply
+          [(txid, txSize)]
+          peerAState0
+          sharedState0
+  txLease (lookupEntryOrFail key sharedState1) @?= TxClaimable now
+  let (peerAAction, _, _) =
+        nextPeerAction now defaultTxDecisionPolicy peerA peerAState1 sharedState1
+  step "Run nextPeerAction for peer A and confirm the fresh tx remains unclaimed because A is full"
+  case peerAAction of
+       PeerDoNothing _ _ -> pure ()
+       other ->
+         assertFailure ("unexpected peer A action: " ++ show other)
+  step "Receive the same txid from peer B and run nextPeerAction for B"
+  let (peerBState1, sharedState2) =
+        handleReceivedTxIds
+          (const False)
+          now
+          defaultTxDecisionPolicy
+          peerB
+          requestedToReply
+          [(txid, txSize)]
+          peerBState0
+          sharedState1
+      (peerBAction, peerBState2, sharedState3) =
+        nextPeerAction now defaultTxDecisionPolicy peerB peerBState1 sharedState2
+  case peerBAction of
+       PeerRequestTxs txKeys -> do
+         step "Assert peer B can claim and request the fresh tx immediately"
+         txKeys @?= [key]
+         peerRequestedTxs peerBState2 @?= IntSet.singleton k
+         txLease (lookupEntryOrFail key sharedState3) @?=
+           TxLeased peerB (addTime (interTxSpace defaultTxDecisionPolicy) now)
+       other ->
+         assertFailure ("unexpected peer B action: " ++ show other)
+  where
+    peerA = 7 :: PeerAddr
+    peerB = 8 :: PeerAddr
+    txid = 1
+    txSize = mkSize (Positive 10)
+    requestedToReply = 1
+    key = TxKey 0
+    k = unTxKey key
+    sharedState0 = emptySharedTxState
+      { sharedPeers = Map.fromList
+          [ (peerA, mkSharedPeerState PeerIdle (emptyPeerScore now))
+          , (peerB, mkSharedPeerState PeerIdle (emptyPeerScore now))
+          ]
+      }
+    peerAState0 = emptyPeerTxLocalState
+      { peerRequestedTxIds = requestedToReply
+      , peerRequestedTxsSize = txsSizeInflightPerPeer defaultTxDecisionPolicy
+      }
+    peerBState0 = emptyPeerTxLocalState { peerRequestedTxIds = requestedToReply }
 
 -- Verifies that handleReceivedTxs buffers received bodies and removes omitted
 -- requested txs from peer and shared state.

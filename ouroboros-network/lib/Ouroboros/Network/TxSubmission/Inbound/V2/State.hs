@@ -1143,10 +1143,10 @@ markSubmittingTxs peeraddr txKeys st =
 -- | Handle a batch of txids received from one peer.
 --
 -- Newly seen txids are interned, appended to the peer's unacknowledged queue,
--- and entered into the shared tx table. The first advertiser gets the initial
--- lease and may acknowledge once the body is buffered locally. Later
--- advertisers are tracked as backups and may only acknowledge once the tx is
--- resolved.
+-- and entered into the shared tx table as claimable work. Any peer that later
+-- advertises the txid may claim it once its score-derived delay has elapsed,
+-- which avoids pinning fresh work to the first peer that happened to announce
+-- it.
 handleReceivedTxIds :: forall peeraddr txid tx. (Ord peeraddr, Ord txid)
                     => (txid -> Bool)
                     -> Time
@@ -1277,7 +1277,7 @@ handleReceivedTxIds mempoolHasTx now policy peeraddr requestedTxIds txidsAndSize
           case IntMap.lookup k (sharedTxTable sharedAcc') of
             Nothing ->
               let txEntry = TxEntry {
-                              txLease = TxLeased peeraddr (addTime (interTxSpace policy) now),
+                              txLease = TxClaimable now,
                               txAdvertiserCount = 1,
                               txAttempts = Map.empty
                             }
