@@ -175,7 +175,9 @@ withPeer policy TxSubmissionMempoolReader { mempoolGetSnapshot } sharedStateVar 
             , addCounters = \delta -> atomically $ modifyTVar countersVar (<> delta)
             }
       )
-      (\_ -> atomically $ modifyTVar sharedStateVar unregisterPeer)
+      (\_ -> do
+          now <- getMonotonicTime
+          atomically $ modifyTVar sharedStateVar (unregisterPeer now))
       io
   where
     registerPeer :: Time -> SharedTxState peeraddr txid -> SharedTxState peeraddr txid
@@ -188,11 +190,12 @@ withPeer policy TxSubmissionMempoolReader { mempoolGetSnapshot } sharedStateVar 
         sharedPeerState = SharedPeerState {
             sharedPeerPhase = PeerIdle,
             sharedPeerScore = emptyPeerScore now,
+            sharedPeerAdvertisedTxKeys = IntSet.empty,
             sharedPeerGeneration = 0
           }
 
-    unregisterPeer :: SharedTxState peeraddr txid -> SharedTxState peeraddr txid
-    unregisterPeer st@SharedTxState { sharedPeers, sharedTxTable, sharedRetainedTxs, sharedTxIdToKey, sharedKeyToTxId, sharedGeneration } =
+    unregisterPeer :: Time -> SharedTxState peeraddr txid -> SharedTxState peeraddr txid
+    unregisterPeer now st@SharedTxState { sharedPeers, sharedTxTable, sharedRetainedTxs, sharedTxIdToKey, sharedKeyToTxId, sharedGeneration } =
       bumpIdlePeerGenerations peersToWake $ st {
         sharedPeers = sharedPeers',
         sharedTxTable = sharedTxTable',
@@ -202,49 +205,53 @@ withPeer policy TxSubmissionMempoolReader { mempoolGetSnapshot } sharedStateVar 
         sharedGeneration = sharedGeneration + 1
       }
       where
+        leavingAdvertisedKeys =
+          maybe IntSet.empty sharedPeerAdvertisedTxKeys (Map.lookup peeraddr sharedPeers)
         sharedPeers' = Map.delete peeraddr sharedPeers
 
-        (sharedTxTable', peersToWake) =
-          IntMap.foldlWithKey' scrubOne (IntMap.empty, Set.empty) sharedTxTable
+        scanState =
+          st { sharedPeers = sharedPeers' }
+
+        (sharedTxTable', wakeKeys) =
+          IntSet.foldl' scrubOne (sharedTxTable, IntSet.empty) leavingAdvertisedKeys
+        peersToWake =
+          State.advertisingPeersForTxKeysExcept peeraddr wakeKeys scanState
         liveKeys = IntMap.keysSet sharedTxTable' `IntSet.union` retainedKeysSet sharedRetainedTxs
 
-        scrubOne (txTableAcc, wakeAcc) k txEntry =
-          let touched = txTouchesPeer txEntry
-              txEntry' = scrubTxEntry txEntry
-          in if txLive txEntry'
-                then ( IntMap.insert k txEntry' txTableAcc
-                     , if touched
-                          then Set.union wakeAcc (Set.delete peeraddr (txAdvertisers txEntry'))
-                          else wakeAcc
-                     )
-                else (txTableAcc, wakeAcc)
+        scrubOne (txTableAcc, wakeKeysAcc) k =
+          case IntMap.lookup k txTableAcc of
+            Just txEntry ->
+              let txEntry' = scrubTxEntry txEntry
+                  txTableAcc' =
+                    if txLive txEntry'
+                       then IntMap.insert k txEntry' txTableAcc
+                       else IntMap.delete k txTableAcc
+                  wakeKeysAcc' =
+                    if txLive txEntry'
+                       then IntSet.insert k wakeKeysAcc
+                       else wakeKeysAcc
+              in (txTableAcc', wakeKeysAcc')
+            Nothing ->
+              (txTableAcc, wakeKeysAcc)
 
-        scrubTxEntry txEntry@TxEntry { txLease, txAdvertisers, txAttempts } =
+        scrubTxEntry txEntry@TxEntry { txLease, txAdvertiserCount, txAttempts } =
           txEntry {
             txLease = scrubLease txLease,
-            txAdvertisers = Set.delete peeraddr txAdvertisers,
+            txAdvertiserCount = txAdvertiserCount - 1,
             txAttempts = Map.delete peeraddr txAttempts
           }
 
         scrubLease (TxLeased owner leaseUntil)
-          | owner == peeraddr = TxClaimable
+          | owner == peeraddr = TxClaimable now
           | otherwise         = TxLeased owner leaseUntil
-        scrubLease TxClaimable = TxClaimable
+        scrubLease claimable@TxClaimable {} = claimable
 
-        txTouchesPeer TxEntry { txLease, txAdvertisers, txAttempts } =
-             leaseOwnedByPeer txLease
-          || Set.member peeraddr txAdvertisers
-          || Map.member peeraddr txAttempts
-
-        txLive TxEntry { txLease, txAdvertisers, txAttempts } =
+        txLive TxEntry { txLease, txAdvertiserCount, txAttempts } =
              leaseLive txLease
-          || not (Set.null txAdvertisers)
+          || txAdvertiserCount > 0
           || not (Map.null txAttempts)
 
-        leaseOwnedByPeer (TxLeased owner _) = owner == peeraddr
-        leaseOwnedByPeer TxClaimable        = False
-
-        leaseLive TxClaimable    = False
+        leaseLive TxClaimable {} = False
         leaseLive (TxLeased _ _) = True
 
 -- | Wait until either the peer's generation changes from the given
@@ -511,10 +518,9 @@ resolveBufferedTxsImp sharedStateVar peerState txKeys = atomically $ do
 --   same peer thread to sleep on a stale generation. This makes its next
 --   'awaitSharedChange' return immediately and re-run scheduling as an idle
 --   claimant.
--- * When a peer leaves 'PeerIdle', bump the generations of other advertisers
---   for txs advertised by that peer. Claim-owner selection only considers idle
---   peers, so removing one idle advertiser can change which remaining idle
---   peer should wake and claim a tx.
+-- * When a peer becomes 'PeerIdle', bump that peer's own generation so it
+--   immediately re-runs scheduling against any txs whose score-derived claim
+--   delay may already have elapsed.
 updatePeerPhase
   :: Ord peeraddr
   => Time
@@ -553,24 +559,7 @@ updatePeerPhase now policy peeraddr peerPhaseNew
     phaseWakePeers peerPhaseOld
       | peerPhaseOld /= PeerIdle
       , peerPhaseNew == PeerIdle = Set.singleton peeraddr
-      | peerPhaseOld == PeerIdle
-      , peerPhaseNew /= PeerIdle = advertisersForPeerTxsExcept peeraddr st
       | otherwise = Set.empty
-
-
-advertisersForPeerTxsExcept
-  :: Ord peeraddr
-  => peeraddr
-  -> SharedTxState peeraddr txid
-  -> Set.Set peeraddr
-advertisersForPeerTxsExcept peeraddr SharedTxState { sharedTxTable } =
-    IntMap.foldl' collect Set.empty sharedTxTable
-  where
-    collect peers TxEntry { txAdvertisers }
-      | Set.member peeraddr txAdvertisers =
-          Set.union peers (Set.delete peeraddr txAdvertisers)
-      | otherwise =
-          peers
 
 peerPhaseForActionIdle :: PeerAction -> PeerPhase
 peerPhaseForActionIdle peerAction =

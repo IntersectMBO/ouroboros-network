@@ -35,7 +35,7 @@ instance (Show txid, Show peeraddr) => LogFormatting (TraceTxLogic peeraddr txid
         length [ () | TxEntry { txLease = TxLeased _ _ } <- activeEntries ]
 
       claimableTxCount =
-        length [ () | TxEntry { txLease = TxClaimable } <- activeEntries ]
+        length [ () | TxEntry { txLease = TxClaimable _ } <- activeEntries ]
 
       resolvedTxCount = 0 :: Int
 
