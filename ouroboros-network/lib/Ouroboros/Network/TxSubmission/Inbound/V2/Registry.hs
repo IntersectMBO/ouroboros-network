@@ -344,8 +344,9 @@ runNextPeerActionPipelinedImp policy sharedStateVar peeraddr now peerState = ato
 -- | Process a batch of txids received from this peer.
 --
 -- Interns new txids into the shared state, updates the peer's unacknowledged queue,
--- handles mempool fast-path for already-known txids, and sets up initial lease
--- ownership for first advertisers. Returns updated peer-local state.
+-- handles mempool fast-path for already-known txids, and leaves fresh txids
+-- claimable so any advertising peer can later claim them. Returns updated
+-- peer-local state.
 applyReceivedTxIdsImp :: ( MonadSTM m
                          , Ord peeraddr
                          , Ord txid )
