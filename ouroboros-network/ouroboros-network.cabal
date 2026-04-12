@@ -1050,11 +1050,17 @@ benchmark sim-benchmarks
   type: exitcode-stdio-1.0
   hs-source-dirs: bench
   main-is: Main.hs
+  other-modules:
+    Bench.TxSubmissionV2Server
   build-depends:
     base,
     containers,
+    contra-tracer,
     deepseq,
-    ouroboros-network:{ouroboros-network, ouroboros-network-tests-lib},
+    io-classes:{io-classes, strict-stm},
+    ouroboros-network:ouroboros-network,
+    ouroboros-network:ouroboros-network-tests-lib,
+    ouroboros-network:protocols,
     pretty-simple,
     splitmix,
     tasty-bench >=0.3.5,
