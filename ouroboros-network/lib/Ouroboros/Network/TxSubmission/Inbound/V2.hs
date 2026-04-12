@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
@@ -39,6 +40,35 @@ import Ouroboros.Network.TxSubmission.Inbound.V2.Registry as V2
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types as V2
 import Ouroboros.Network.TxSubmission.Mempool.Reader
 
+-- The same Stateful types as V1 uses.
+newtype Stateful s n txid tx m = Stateful (s -> ServerStIdle n txid tx m ())
+
+newtype StatefulM s n txid tx m
+  = StatefulM (s -> m (ServerStIdle n txid tx m ()))
+
+newtype StatefulCollect s n txid tx m
+  = StatefulCollect (s -> Collect txid tx -> m (ServerStIdle n txid tx m ()))
+
+continueWithState :: Stateful s n txid tx m
+                  -> s
+                  -> ServerStIdle n txid tx m ()
+continueWithState (Stateful f) !st =
+    f st
+
+continueWithStateM :: StatefulM s n txid tx m
+                   -> s
+                   -> m (ServerStIdle n txid tx m ())
+continueWithStateM (StatefulM f) !st =
+    f st
+{-# NOINLINE continueWithStateM #-}
+
+collectAndContinueWithState :: StatefulCollect s n txid tx m
+                            -> s
+                            -> Collect txid tx
+                            -> m (ServerStIdle n txid tx m ())
+collectAndContinueWithState (StatefulCollect f) !st c =
+    f st c
+{-# NOINLINE collectAndContinueWithState #-}
 
 -- | A tx-submission inbound side (server, sic!).
 --
@@ -83,17 +113,10 @@ txSubmissionInboundV2
       addCounters
     } =
     TxSubmissionServerPipelined $ do
-      -- The pipelined server API does not thread a user state parameter through
-      -- `ServerStIdle`. Multiple continuations here resume after network IO and
-      -- must all access and update the latest peer-local state, so a plain
-      -- `PeerTxLocalState` captured in closures would go stale.
-      --
-      -- No other threads access the peer's peerStateVar.
-      peerStateVar <- newTVarIO emptyPeerTxLocalState
       case initDelay of
         TxSubmissionInitDelay delay -> threadDelay delay
         NoTxSubmissionInitDelay     -> return ()
-      serverIdle peerStateVar
+      continueWithStateM serverIdle emptyPeerTxLocalState
   where
 
     -- Entry point and reset state for the non-pipelined server loop.
@@ -102,34 +125,27 @@ txSubmissionInboundV2
     --   1. The server first starts
     --   2. All pipelined requests have completed and the counter returns to zero
     --   3. An idle peer wakes up after a @PeerDoNothing@ wait
-    serverIdle :: StrictTVar m (PeerTxLocalState tx)
-               -> m (ServerStIdle Z txid tx m ())
-    serverIdle peerStateVar = do
-      peerState <- readTVarIO peerStateVar
-
+    serverIdle :: StatefulM (PeerTxLocalState tx) Z txid tx m
+    serverIdle = StatefulM $ \peerState -> do
       now <- getMonotonicTime
       (peerAction, peerState') <- runNextPeerAction now peerState
-      atomically $ writeTVar peerStateVar peerState'
       case peerAction of
            PeerDoNothing generation mDelay -> do
              awaitSharedChange generation mDelay
-             serverIdle peerStateVar
+             continueWithStateM serverIdle peerState'
            PeerSubmitTxs txKeys ->
-             submitBufferedTxs peerStateVar txKeys (serverIdle peerStateVar)
+             continueWithStateM (submitBufferedTxs txKeys serverIdle) peerState'
            PeerRequestTxs txKeys ->
-             requestTxBodies peerStateVar Zero txKeys
-           PeerRequestTxIds txIdsToAck txIdsToReq -> do
-                serverReqTxIds peerStateVar Zero txIdsToAck txIdsToReq
+             continueWithStateM (requestTxBodies Zero txKeys) peerState'
+           PeerRequestTxIds txIdsToAck txIdsToReq ->
+             continueWithStateM (serverReqTxIds Zero txIdsToAck txIdsToReq) peerState'
 
     -- | Submit buffered transaction bodies to the mempool.
     submitBufferedTxs :: forall (n :: N).
-                         StrictTVar m (PeerTxLocalState tx)
-                      -> [TxKey]
-                      -> m (ServerStIdle n txid tx m ())
-                      -> m (ServerStIdle n txid tx m ())
-    submitBufferedTxs peerStateVar txKeys k = do
-
-      peerState <- readTVarIO peerStateVar
+                         [TxKey]
+                      -> StatefulM (PeerTxLocalState tx) n txid tx m
+                      -> StatefulM (PeerTxLocalState tx) n txid tx m
+    submitBufferedTxs txKeys k = StatefulM $ \peerState -> do
       bufferedTxs <- resolveBufferedTxs peerState txKeys
 
       -- Flags the txs as on the way to the mempool, which temporarily blocks further
@@ -171,82 +187,72 @@ txSubmissionInboundV2
         traceWith tracer (TraceTxInboundRejectedFromMempool rejectedForTrace delta)
 
       peerState' <- applySubmittedTxs end resolvedTxKeys (fmap fst rejectedTxs) peerState
-      atomically $ writeTVar peerStateVar peerState'
-      k
+      continueWithStateM k peerState'
 
     -- Request transaction bodies from the peer.
     requestTxBodies :: forall (n :: N).
-                       StrictTVar m (PeerTxLocalState tx)
-                    -> Nat n
+                       Nat n
                     -> [TxKey]
-                    -> m (ServerStIdle n txid tx m ())
-    requestTxBodies peerStateVar n txKeys = do
-      peerState <- readTVarIO peerStateVar
+                    -> StatefulM (PeerTxLocalState tx) n txid tx m
+    requestTxBodies n txKeys = StatefulM $ \peerState -> do
       txsToRequest <- resolveTxRequest peerState txKeys
       traceWith tracer (TraceTxInboundRequestTxs (Map.keys txsToRequest))
       addCounters mempty { txMessagesSent = 1
                          , txsRequested = fromIntegral (Map.size txsToRequest) }
       pure $ SendMsgRequestTxsPipelined txsToRequest
-               (continueAfterBodyRequests peerStateVar (Succ n))
+               (continueWithStateM (continueAfterBodyRequests (Succ n)) peerState)
 
     -- Continue processing after receiving replies from the peer in pipelined mode.
     continueAfterReplies :: forall (n :: N).
-                            StrictTVar m (PeerTxLocalState tx)
-                         -> Nat n
-                         -> m (ServerStIdle n txid tx m ())
-    continueAfterReplies peerStateVar Zero = serverIdle peerStateVar
-    continueAfterReplies peerStateVar n@Succ{} = do
-      peerState <- readTVarIO peerStateVar
+                            Nat n
+                         -> StatefulM (PeerTxLocalState tx) n txid tx m
+    continueAfterReplies Zero = serverIdle
+    continueAfterReplies n@Succ{} = StatefulM $ \peerState -> do
       now <- getMonotonicTime
       (peerAction, peerState') <- runNextPeerActionPipelined now peerState
-      atomically $ writeTVar peerStateVar peerState'
       case peerAction of
         PeerSubmitTxs txKeys ->
-          submitBufferedTxs peerStateVar txKeys (continueAfterReplies peerStateVar n)
+          continueWithStateM (submitBufferedTxs txKeys (continueAfterReplies n)) peerState'
         PeerRequestTxs txKeys ->
-          requestTxBodies peerStateVar n txKeys
+          continueWithStateM (requestTxBodies n txKeys) peerState'
         PeerRequestTxIds txIdsToAck txIdsToReq ->
-          serverReqTxIds peerStateVar n txIdsToAck txIdsToReq
+          continueWithStateM (serverReqTxIds n txIdsToAck txIdsToReq) peerState'
         PeerDoNothing {} ->
-          handleReplies peerStateVar n
+          pure $ continueWithState (handleReplies n) peerState'
 
     -- Continue processing after receiving transaction body replies in pipelined mode.
     continueAfterBodyRequests :: forall (n :: N).
-                                 StrictTVar m (PeerTxLocalState tx)
-                              -> Nat (S n)
-                              -> m (ServerStIdle (S n) txid tx m ())
-    continueAfterBodyRequests peerStateVar n = do
-      peerState <- readTVarIO peerStateVar
+                                 Nat (S n)
+                              -> StatefulM (PeerTxLocalState tx) (S n) txid tx m
+    continueAfterBodyRequests n = StatefulM $ \peerState -> do
       now <- getMonotonicTime
       (peerAction, peerState') <- runNextPeerActionPipelined now peerState
-      atomically $ writeTVar peerStateVar peerState'
       case peerAction of
         PeerSubmitTxs txKeys ->
-          submitBufferedTxs peerStateVar txKeys (continueAfterReplies peerStateVar n)
+          continueWithStateM (submitBufferedTxs txKeys (continueAfterReplies n)) peerState'
         PeerRequestTxs txKeys ->
-          requestTxBodies peerStateVar n txKeys
-        PeerRequestTxIds txIdsToAck txIdsToReq -> do
-          serverReqTxIds peerStateVar n txIdsToAck txIdsToReq
+          continueWithStateM (requestTxBodies n txKeys) peerState'
+        PeerRequestTxIds txIdsToAck txIdsToReq ->
+          continueWithStateM (serverReqTxIds n txIdsToAck txIdsToReq) peerState'
         PeerDoNothing {} ->
-          handleReplies peerStateVar n
+          pure $ continueWithState (handleReplies n) peerState'
 
     -- Construct and send a txid request message to the peer.
     serverReqTxIds :: forall (n :: N).
-                      StrictTVar m (PeerTxLocalState tx)
-                   -> Nat n
+                      Nat n
                    -> NumTxIdsToAck
                    -> NumTxIdsToReq
-                   -> m (ServerStIdle n txid tx m ())
+                   -> StatefulM (PeerTxLocalState tx) n txid tx m
     -- No requests pending; transitions back to @serverIdle@
-    serverReqTxIds peerStateVar Zero 0 0 = serverIdle peerStateVar
+    serverReqTxIds Zero 0 0 = serverIdle
 
     -- Requests complete but pipeline not empty, continues to
     -- @handleReplies@ to process remaining in-flight replies
-    serverReqTxIds peerStateVar n@Succ{} 0 0 = handleReplies peerStateVar n
+    serverReqTxIds n@Succ{} 0 0 = StatefulM $ \peerState ->
+      pure $ continueWithState (handleReplies n) peerState
 
     -- Non-pipelined request, may send a blocking request
-    serverReqTxIds peerStateVar Zero txIdsToAck txIdsToReq = do
-      peerState <- readTVarIO peerStateVar
+    serverReqTxIds Zero txIdsToAck txIdsToReq = StatefulM $ \peerState -> do
       addCounters mempty { txIdMessagesSent = 1
                          , txIdsRequested = fromIntegral txIdsToReq }
       if StrictSeq.null (peerUnacknowledgedTxIds peerState)
@@ -262,54 +268,47 @@ txSubmissionInboundV2
                           throwIO ProtocolErrorTxIdsNotRequested
                         addCounters mempty { txIdRepliesReceived = 1
                                            , txIdsReceived = fromIntegral (length txids') }
-                        peerStateCurrent <- readTVarIO peerStateVar
-                        peerState' <- applyReceivedTxIds now txIdsToReq txids' peerStateCurrent
-                        atomically $ writeTVar peerStateVar peerState'
-                        serverIdle peerStateVar)
+                        peerState' <- applyReceivedTxIds now txIdsToReq txids' peerState
+                        continueWithStateM serverIdle peerState')
          else
            pure $ SendMsgRequestTxIdsPipelined
                     txIdsToAck
                     txIdsToReq
-                    (handleReplies peerStateVar (Succ Zero))
+                    (pure $ continueWithState (handleReplies (Succ Zero)) peerState)
 
     -- Pipelined request at depth > 0. Sends a pipelined message and continues
     -- to @handleReplies@.
-    serverReqTxIds peerStateVar n@Succ{} txIdsToAck txIdsToReq = do
+    serverReqTxIds n@Succ{} txIdsToAck txIdsToReq = StatefulM $ \peerState -> do
       addCounters mempty { txIdMessagesSent = 1
                          , txIdsRequested = fromIntegral txIdsToReq }
       pure $ SendMsgRequestTxIdsPipelined
                txIdsToAck
                txIdsToReq
-               (handleReplies peerStateVar (Succ n))
+               (pure $ continueWithState (handleReplies (Succ n)) peerState)
 
     -- Prepare to collect pipelined replies from the peer.
     handleReplies :: forall (n :: N).
-                     StrictTVar m (PeerTxLocalState tx)
-                  -> Nat (S n)
-                  -> m (ServerStIdle (S n) txid tx m ())
-    handleReplies peerStateVar (Succ Zero) =
-      pure $ CollectPipelined Nothing (handleReply peerStateVar Zero)
+                     Nat (S n)
+                  -> Stateful (PeerTxLocalState tx) (S n) txid tx m
+    handleReplies (Succ Zero) = Stateful $ \peerState ->
+      CollectPipelined Nothing (collectAndContinueWithState (handleReply Zero) peerState)
 
-    handleReplies peerStateVar (Succ n'@Succ{}) =
-      pure $ CollectPipelined Nothing (handleReply peerStateVar n')
+    handleReplies (Succ n'@Succ{}) = Stateful $ \peerState ->
+      CollectPipelined Nothing (collectAndContinueWithState (handleReply n') peerState)
 
     -- Process a single pipelined reply from the peer.
     handleReply :: forall (n :: N).
-                   StrictTVar m (PeerTxLocalState tx)
-                -> Nat n
-                -> Collect txid tx
-                -> m (ServerStIdle n txid tx m ())
-    handleReply peerStateVar n = \case
+                   Nat n
+                -> StatefulCollect (PeerTxLocalState tx) n txid tx m
+    handleReply n = StatefulCollect $ \peerState -> \case
       CollectTxIds txIdsToReq txids -> do
         unless (length txids <= fromIntegral txIdsToReq) $
           throwIO ProtocolErrorTxIdsNotRequested
         addCounters mempty { txIdRepliesReceived = 1
                            , txIdsReceived = fromIntegral (length txids) }
-        peerState <- readTVarIO peerStateVar
         now <- getMonotonicTime
         peerState' <- applyReceivedTxIds now txIdsToReq txids peerState
-        atomically $ writeTVar peerStateVar peerState'
-        continueAfterReplies peerStateVar n
+        continueWithStateM (continueAfterReplies n) peerState'
 
       CollectTxs requested txs -> do
         let received = Map.fromList [ (txId tx, tx) | tx <- txs ]
@@ -321,13 +320,11 @@ txSubmissionInboundV2
           let protocolError = ProtocolErrorTxSizeError wrongSizedTxs
           traceWith tracer (TraceTxInboundError protocolError)
           throwIO protocolError
-        peerState <- readTVarIO peerStateVar
         now <- getMonotonicTime
         (penaltyCount, peerState') <- applyReceivedTxs now [ (txId tx, tx) | tx <- txs ] peerState
-        atomically $ writeTVar peerStateVar peerState'
         unless (penaltyCount == 0) $
           void $ countRejectedTxs now penaltyCount
-        continueAfterReplies peerStateVar n
+        continueWithStateM (continueAfterReplies n) peerState'
 
     -- Partition submitted transactions into accepted and rejected groups
     classifySubmittedTxs :: [(TxKey, txid)]
@@ -372,3 +369,5 @@ txSubmissionInboundV2
           received - advertised <= const_MAX_TX_SIZE_DISCREPANCY
       | otherwise =
           advertised - received <= const_MAX_TX_SIZE_DISCREPANCY
+
+
