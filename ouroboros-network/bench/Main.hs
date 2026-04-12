@@ -2,6 +2,8 @@
 
 module Main (main) where
 
+import Bench.TxSubmissionV2Server qualified as DirectV2
+
 import Control.DeepSeq (NFData, rnf)
 import Control.Exception (evaluate)
 import System.Mem (performMajorGC)
@@ -36,6 +38,11 @@ main =
           , env (prepareEnv (TX.mkFanoutFixture 100 3)) $ \fixture ->
                 bench "scenario/fanout-retained/100peers/3txids/x1000" $
                   nfAppIO (TX.runFanoutLoop benchLoops) fixture
+          , env
+              (prepareEnv (DirectV2.mkDirectServerFixture 1_000))
+              $ \fixture ->
+                bench "server/direct-interpreter/single-peer/1000batches" $
+                  nfAppIO DirectV2.runDirectServerBenchmark fixture
           ]
         ]
       ]
