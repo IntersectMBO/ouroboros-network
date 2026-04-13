@@ -402,16 +402,19 @@ retainedToList =
 
 retainedSize :: RetainedTxs -> Int
 retainedSize = IntPSQ.size
+{-# INLINE retainedSize #-}
 
 retainedLookup :: Int -> RetainedTxs -> Maybe Time
 retainedLookup k retained =
     fmap fst (IntPSQ.lookup k retained)
+{-# INLINE retainedLookup #-}
 
 retainedMember :: Int -> RetainedTxs -> Bool
 retainedMember k retained =
     case IntPSQ.lookup k retained of
       Just _  -> True
       Nothing -> False
+{-# INLINE retainedMember #-}
 
 retainedInsertMax :: Int -> Time -> RetainedTxs -> RetainedTxs
 retainedInsertMax k retainUntil retained =
@@ -421,14 +424,17 @@ retainedInsertMax k retainUntil retained =
       case retainedLookup k retained of
         Just existing -> max existing retainUntil
         Nothing       -> retainUntil
+{-# INLINE retainedInsertMax #-}
 
 retainedDeleteKeys :: IntSet -> RetainedTxs -> RetainedTxs
 retainedDeleteKeys keys retained =
     IntSet.foldl' (flip IntPSQ.delete) retained keys
+{-# INLINE retainedDeleteKeys #-}
 
 retainedKeysSet :: RetainedTxs -> IntSet
 retainedKeysSet =
     IntPSQ.fold' (\k _ _ acc -> IntSet.insert k acc) IntSet.empty
+{-# INLINE retainedKeysSet #-}
 
 retainedRestrictKeys :: RetainedTxs -> IntSet -> RetainedTxs
 retainedRestrictKeys retained keys =
@@ -437,6 +443,7 @@ retainedRestrictKeys retained keys =
     keep k retainUntil _
       | IntSet.member k keys = IntPSQ.insert k retainUntil ()
       | otherwise            = id
+{-# INLINE retainedRestrictKeys #-}
 
 retainedNextWake :: Time -> RetainedTxs -> Maybe Time
 retainedNextWake currentTime =
@@ -448,7 +455,8 @@ retainedNextWake currentTime =
           | retainUntil > currentTime -> Just retainUntil
           | otherwise                 -> go retained'
         Nothing ->
-          Nothing
+            Nothing
+{-# INLINE retainedNextWake #-}
 
 retainedExpiredKeys :: Time -> RetainedTxs -> IntSet
 retainedExpiredKeys currentTime =
@@ -463,6 +471,7 @@ retainedExpiredKeys currentTime =
               expired
         Nothing ->
           expired
+{-# INLINE retainedExpiredKeys #-}
 
 peerGenerationOf :: Ord peeraddr
                  => peeraddr
