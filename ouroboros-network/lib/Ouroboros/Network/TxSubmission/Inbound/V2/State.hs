@@ -77,7 +77,10 @@ mkPeerActionContext now policy peeraddr peerState sharedState =
     pacClaimDelay = peerClaimDelay policy now (sharedPeerScore sharedPeerState')
     }
   where
-    -- Remove expireds TX keys from the shared state
+    -- Remove expired retained TX keys from all shared state tables.
+    -- When the retain timer expires, the peer gives up waiting for this txid
+    -- and will acknowledge it. We remove from all tables so the tx can be
+    -- re-advertised if needed.
     sharedState' =
       let expiredRetainedKeys = retainedExpiredKeys now (sharedRetainedTxs sharedState)
           prunedSharedState = dropTxKeys expiredRetainedKeys sharedState in
