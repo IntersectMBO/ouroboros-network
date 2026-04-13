@@ -766,6 +766,7 @@ executable demo-tx-submission
     random,
     serialise,
     statistics,
+    splitmix,
     typed-protocols,
     vector,
 

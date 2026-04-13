@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns               #-}
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
@@ -8,6 +9,7 @@
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TypeApplications           #-}
 
 {-# OPTIONS_GHC -Wno-partial-fields #-}
 
@@ -37,7 +39,7 @@ import Data.Functor.Identity (Identity (..))
 import Data.Hashable qualified as Hashable
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.IP (IP)
-import Data.Word (Word32)
+import Data.Word (Word8, Word32)
 import Data.Vector qualified as Vec
 import GHC.Generics (Generic)
 import NoThunks.Class (NoThunks (..))
@@ -45,6 +47,7 @@ import Options.Applicative
 import Statistics.Quantile qualified as Stat
 import System.IO (stderr, hPutStrLn)
 import System.Random qualified as Random
+import System.Random.SplitMix qualified as SM
 
 import Network.Mux qualified as Mx
 import Network.Mux.Bearer qualified as Mx
@@ -69,11 +72,10 @@ import Ouroboros.Network.Util
 
 import Demo.TxSubmission.Outbound
 
-import Test.QuickCheck (arbitrary)
 import Test.QuickCheck.Gen (Gen (..))
 import Test.QuickCheck.Gen qualified as QC
 import Test.QuickCheck.Instances.ByteString ()
-import Test.QuickCheck.Random (newQCGen)
+import Test.QuickCheck.Random (newQCGen, QCGen (..))
 import GHC.IO.Exception (IOException(..), IOErrorType (..))
 
 main :: IO ()
@@ -667,6 +669,53 @@ protocols miniProtocolDir =
   ]
 
 
+genTxSizeRealistic :: Gen SizeInBytes
+genTxSizeRealistic =
+    -- Distribution targets (approx):
+    -- min 55, p10 268, p25 402, median 879, p75 1400, p90 4500, p95 9600, max 16384, mean ~1600.
+    -- Distribution taken from all TXs on mainnet during 2024 - 2025.
+    QC.frequency
+      [ (10, biasedRange 55   268)
+      , (15, biasedRange 269  402)
+      , (25, biasedRange 403  879)
+      , (25, biasedRange 880  1400)
+      , (15, biasedRange 1401 4500)
+      , (5,  biasedRange 4501 9600)
+      , (5,  biasedRange 9601 16384)
+      ]
+  where
+    -- NOTE: This is intentionally not `choose lo hi` (uniform). Squaring `u`
+    -- biases toward smaller values to match the target quantiles above.
+    biasedRange :: SizeInBytes
+                -> SizeInBytes
+                -> Gen SizeInBytes
+    biasedRange (SizeInBytes lo) (SizeInBytes hi) = do
+      u <- QC.choose @Double (0.0, 1.0)
+      let range :: Double
+          range = fromIntegral (hi - lo)
+          offset :: Word32
+          offset = floor (u * u * range)
+      pure (SizeInBytes (lo + offset))
+
+
+-- | Generate a tx with payload of a given size.
+-- 
+-- NOTE: this slightly skews the realistic size distribution, since the
+-- generated `txSize` will be larger than the payload size by CBOR overhead.
+--
+genTx :: SizeInBytes
+      -- ^ payload size
+      -> Gen Tx
+genTx size = MkGen $ \(QCGen g0) _size ->
+    if size <= 0
+      then mkTx BS.empty
+      else mkTx $ fst (BS.unfoldrN (fromIntegral size) gen g0)
+  where
+    gen :: SM.SMGen -> Maybe (Word8, SM.SMGen)
+    gen !g = case SM.nextWord64 g of
+      ~(w64, g') -> Just (fromIntegral w64, g')
+
+
 -- | Generate [Tx] and write them to a file.
 --
 runTxsGenerator :: Int -> FilePath -> IO ()
@@ -677,7 +726,7 @@ runTxsGenerator num filePath = do
     BS.Builder.writeFile filePath (CBOR.toBuilder (encodeTxs txs))
   where
     genTxs :: Gen [Tx]
-    genTxs = QC.vectorOf num $ mkTx <$> arbitrary
+    genTxs = QC.vectorOf num (genTxSizeRealistic >>= genTx)
 
     encodeTxs :: [Tx] -> CBOR.Encoding
     encodeTxs txs =
