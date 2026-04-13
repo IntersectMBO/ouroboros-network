@@ -736,6 +736,7 @@ executable demo-tx-submission
   main-is: main.hs
   other-modules:
     Demo.TxSubmission.Outbound
+
   build-depends:
     QuickCheck,
     async,
@@ -755,6 +756,7 @@ executable demo-tx-submission
     quickcheck-instances,
     random,
     serialise,
+    splitmix,
     statistics,
     typed-protocols,
     vector,
