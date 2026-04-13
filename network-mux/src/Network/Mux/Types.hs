@@ -106,10 +106,10 @@ data MiniProtocolLimits =
 
 
 data ProtocolBurst = ProtocolBurst {
-  pbMaxBytes   :: !Word32,
-  -- ^ token bucket max size
-  pbRefillRate :: !Word32
-  -- ^ token bucket refill rate, [1/s]
+    maxBytes   :: !Word32,
+    -- ^ token bucket max size
+    refillRate :: !Word32
+    -- ^ token bucket refill rate, [1/s]
   }
   deriving (Eq, Show)
 
