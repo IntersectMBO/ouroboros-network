@@ -17,6 +17,7 @@ module Test.Ouroboros.Network.TxSubmission.Types
   , readMempool
   , getMempoolReader
   , getMempoolWriter
+  , InvalidTx (..)
   , maxTxSize
   , LargeNonEmptyList (..)
   , SimResults (..)
@@ -31,6 +32,7 @@ import Prelude hiding (seq)
 import NoThunks.Class
 
 import Control.Concurrent.Class.MonadSTM
+import Control.Concurrent.Class.MonadSTM.Strict qualified as StrictSTM
 import Control.DeepSeq
 import Control.Exception (SomeException (..))
 import Control.Monad.Class.MonadAsync
@@ -48,6 +50,10 @@ import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
 
 import Data.ByteString.Lazy (ByteString)
+import Data.Either (partitionEithers)
+import Data.List qualified as List
+import Data.Sequence qualified as Seq
+import Data.Set qualified as Set
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
 
@@ -138,18 +144,73 @@ getMempoolWriter :: forall txid m.
                  => TVar m [txid]
                  -> Mempool m txid (Tx txid)
                  -> TxSubmissionMempoolWriter txid (Tx txid) Integer m InvalidTx
-getMempoolWriter duplicateVar =
-  Mempool.getWriter DuplicateTx
-                    getTxId
-                    (\_ txs -> return
-                                [ if getTxValid tx
-                                  then Right tx
-                                  else Left (getTxId tx, InvalidTx)
-                                | tx <- txs
-                                ]
-                    )
-                    (\t -> atomically $ modifyTVar' duplicateVar
-                      (map fst (filter ((== DuplicateTx) . snd) t) <>))
+getMempoolWriter duplicateVar (Mempool.Mempool mempoolVar) =
+  TxSubmissionMempoolWriter {
+      txId = getTxId,
+      mempoolAddTxs = \txs -> do
+        (acceptedTxs, rejectedTxs, duplicateValidTxIds) <- atomically $ do
+          Mempool.MempoolSeq { Mempool.mempoolSet, Mempool.mempoolSeq, Mempool.nextIdx } <-
+            StrictSTM.readTVar mempoolVar
+
+          let (duplicateTxs, txsToValidate) =
+                List.partition (\tx -> getTxId tx `Set.member` mempoolSet) txs
+              duplicateRejectedTxs =
+                [ (getTxId tx, DuplicateTx)
+                | tx <- duplicateTxs
+                ]
+              duplicateValidTxIds =
+                [ getTxId tx
+                | tx <- duplicateTxs
+                , getTxValid tx
+                ]
+              (invalidRejectedTxs, validTxs) =
+                partitionEithers
+                  [ if getTxValid tx
+                      then Right tx
+                      else Left (getTxId tx, InvalidTx)
+                  | tx <- txsToValidate
+                  ]
+
+              (delta, mempoolSeq', nextIdx', acceptedTxs, duplicateValidTxIds') =
+                List.foldl'
+                  (\(set, seq, idx, accepted, duplicates) tx ->
+                    let txid = getTxId tx in
+                    if txid `Set.member` set
+                      then ( set
+                           , seq
+                           , idx
+                           , accepted
+                           , txid : duplicates
+                           )
+                      else ( Set.insert txid set
+                           , seq Seq.|> Mempool.WithIndex idx tx
+                           , succ idx
+                           , txid : accepted
+                           , duplicates
+                           )
+                  )
+                  (Set.empty, mempoolSeq, nextIdx, [], [])
+                  validTxs
+
+          StrictSTM.writeTVar
+            mempoolVar
+            Mempool.MempoolSeq {
+              Mempool.mempoolSet = mempoolSet `Set.union` delta,
+              Mempool.mempoolSeq = mempoolSeq',
+              Mempool.nextIdx = nextIdx'
+            }
+
+          pure
+            ( acceptedTxs
+            , invalidRejectedTxs
+                ++ duplicateRejectedTxs
+                ++ [ (txid, DuplicateTx) | txid <- duplicateValidTxIds' ]
+            , duplicateValidTxIds ++ duplicateValidTxIds'
+            )
+
+        atomically $ modifyTVar' duplicateVar (duplicateValidTxIds <>)
+        pure (acceptedTxs, rejectedTxs)
+    }
 
 
 txSubmissionCodec2 :: MonadST m
