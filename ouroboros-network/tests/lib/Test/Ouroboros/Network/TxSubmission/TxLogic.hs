@@ -2131,8 +2131,6 @@ accumulatePeerUsage acc (_, _, TxEntry { txAttempts }) =
           updatePeerUsage peeraddr True False acc'
         TxBuffered ->
           updatePeerUsage peeraddr False False acc'
-        TxNoAttempt ->
-          acc'
 
 -- Merge one peer's submitting and inflight usage into the accumulator.
 updatePeerUsage

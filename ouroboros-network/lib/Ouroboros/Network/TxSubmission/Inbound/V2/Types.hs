@@ -136,12 +136,7 @@ newtype TxAdvertiser = TxAdvertiser {
 -- needs to know whether each advertiser is currently downloading, has a
 -- buffered body ready, or is submitting it to the mempool.
 data TxAttemptState
-  = -- | The peer has advertised this transaction but has not yet started
-    -- downloading the tx body. This is the initial state when a peer first
-    -- advertises a txid.
-    TxNoAttempt
-
-  | -- | The peer is currently downloading the tx body from another peer.
+  = -- | The peer is currently downloading the tx body from another peer.
     -- The tx body is being fetched and has not yet been received.
     TxDownloading
 
