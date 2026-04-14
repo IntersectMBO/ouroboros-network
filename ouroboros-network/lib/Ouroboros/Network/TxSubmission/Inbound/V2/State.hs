@@ -385,9 +385,18 @@ pickRequestTxIdsAction txIdRequestMode ctx@PeerActionContext { pacPolicy, pacPee
 
         numOfUnacked = StrictSeq.length (peerUnacknowledgedTxIds pacPeerState)
         numOfRequested = fromIntegral (peerRequestedTxIds pacPeerState) :: Int
+        hasOutstandingBodyReplies =
+          not (StrictSeq.null (peerRequestedTxBatches pacPeerState))
+        keepOneUnackedForPipelinedRequest =
+          txIdRequestMode == AllowPipelinedTxIdRequests
+            && (numOfRequested > 0 || hasOutstandingBodyReplies)
         numOfAcked0 = StrictSeq.length ackablePrefix
         numOfAcked
-          | numOfRequested > 0 = min numOfAcked0 (max 0 (numOfUnacked - 1))
+          -- A pipelined txid request becomes a non-blocking protocol message
+          -- while any txid or body reply is still in flight. The outbound side
+          -- requires at least one txid to remain unacknowledged in that case.
+          | keepOneUnackedForPipelinedRequest =
+              min numOfAcked0 (max 0 (numOfUnacked - 1))
           | otherwise = numOfAcked0
 
         acknowledgedTxIdsSeq = StrictSeq.take numOfAcked ackablePrefix

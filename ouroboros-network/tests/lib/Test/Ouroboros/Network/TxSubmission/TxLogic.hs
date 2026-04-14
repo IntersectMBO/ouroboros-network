@@ -78,6 +78,7 @@ tests =
     , testProperty "nextPeerAction keeps non-owner txids unacked until resolved" prop_nextPeerAction_nonOwnerWaitsUntilResolved
     , testProperty "nextPeerActionPipelined suppresses ack-only txid requests" prop_nextPeerActionPipelined_requiresAckAndReq
     , testProperty "nextPeerActionPipelined requests txids when it can ack and request" prop_nextPeerActionPipelined_requestsTxIds
+    , testCaseSteps "nextPeerActionPipelined keeps one txid unacked while body replies are in flight" unit_nextPeerActionPipelined_keepsOneUnackedWithOutstandingBodyReply
     , testProperty "nextPeerActionPipelined opens a second outstanding body batch" prop_nextPeerActionPipelined_secondBodyBatch
     , testProperty "nextPeerActionPipelined does not open a third outstanding body batch" prop_nextPeerActionPipelined_noThirdBodyBatch
     , testProperty "nextPeerAction prunes expired retained txs" prop_nextPeerAction_prunesExpiredRetained
@@ -1350,6 +1351,59 @@ prop_nextPeerActionPipelined_requestsTxIds (Positive peeraddr) txid0 _txSize0 =
       , sharedNextTxKey = 1
       }
     (peerAction, peerState', sharedState') = nextPeerActionPipelined now defaultTxDecisionPolicy peeraddr peerState0 sharedState0
+
+unit_nextPeerActionPipelined_keepsOneUnackedWithOutstandingBodyReply
+  :: (String -> IO ())
+  -> Assertion
+unit_nextPeerActionPipelined_keepsOneUnackedWithOutstandingBodyReply step = do
+  step "Run nextPeerActionPipelined with three ackable txids and one outstanding body batch"
+  case peerAction of
+    PeerRequestTxIds txIdsToAcknowledge txIdsToReq -> do
+      step "Assert pipelined txid requests keep one txid unacked while a body reply is still in flight"
+      txIdsToAcknowledge @?= 2
+      assertBool ("expected positive txIdsToReq, got " ++ show txIdsToReq) (txIdsToReq > 0)
+      peerUnacknowledgedTxIds peerState' @?= StrictSeq.singleton keyC
+      peerRequestedTxIds peerState' @?= txIdsToReq
+      peerRequestedTxBatches peerState' @?= peerRequestedTxBatches peerState0
+      sharedState' @?= sharedState0
+    _ ->
+      assertFailure ("unexpected pipelined action: " ++ show peerAction)
+  where
+    peeraddr :: PeerAddr
+    peeraddr = 7
+    txidA, txidB, txidC :: TxId
+    txidA = 1
+    txidB = 2
+    txidC = 3
+    keyA = TxKey 0
+    keyB = TxKey 1
+    keyC = TxKey 2
+    requestedBatch = mkRequestedTxBatch [keyA] 11
+    peerState0 = emptyPeerTxLocalState
+      { peerUnacknowledgedTxIds = StrictSeq.fromList [keyA, keyB, keyC]
+      , peerRequestedTxs = IntSet.singleton (unTxKey keyA)
+      , peerRequestedTxBatches = StrictSeq.singleton requestedBatch
+      , peerRequestedTxsSize = requestedTxBatchSize requestedBatch
+      }
+    sharedState0 = emptySharedTxState
+      { sharedPeers = Map.singleton peeraddr (mkSharedPeerState PeerIdle (emptyPeerScore now))
+      , sharedRetainedTxs =
+          retainedFromList
+            [ (unTxKey keyA, addTime 17 now)
+            , (unTxKey keyB, addTime 17 now)
+            , (unTxKey keyC, addTime 17 now)
+            ]
+      , sharedTxIdToKey = Map.fromList [(txidA, keyA), (txidB, keyB), (txidC, keyC)]
+      , sharedKeyToTxId =
+          IntMap.fromList
+            [ (unTxKey keyA, txidA)
+            , (unTxKey keyB, txidB)
+            , (unTxKey keyC, txidC)
+            ]
+      , sharedNextTxKey = 3
+      }
+    (peerAction, peerState', sharedState') =
+      nextPeerActionPipelined now defaultTxDecisionPolicy peeraddr peerState0 sharedState0
 
 -- Verifies that nextPeerActionPipelined opens a second outstanding body
 -- batch when another downloadable tx is available.
