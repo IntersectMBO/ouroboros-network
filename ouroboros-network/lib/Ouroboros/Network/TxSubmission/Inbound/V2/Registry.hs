@@ -552,10 +552,13 @@ updatePeerPhase now policy peeraddr peerPhaseNew
             else st
        _ -> st -- TODO error?
   where
-    normalizePeerScore ps@PeerScore { peerScoreValue, peerScoreTs } =
-      let !drain = realToFrac (diffTime now peerScoreTs) * scoreRate policy
-          !drained = max 0 (peerScoreValue - drain)
-      in ps { peerScoreValue = drained, peerScoreTs = now }
+    normalizePeerScore ps@PeerScore { peerScoreValue }
+      | peerScoreValue == 0 = ps
+      | otherwise =
+          let PeerScore { peerScoreTs } = ps
+              !drain   = realToFrac (diffTime now peerScoreTs) * scoreRate policy
+              !drained = max 0 (peerScoreValue - drain)
+          in ps { peerScoreValue = drained, peerScoreTs = now }
 
     phaseWakePeers peerPhaseOld
       | peerPhaseOld /= PeerIdle
