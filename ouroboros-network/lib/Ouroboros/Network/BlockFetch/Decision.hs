@@ -939,6 +939,7 @@ fetchRequestDecisions fetchDecisionPolicy fetchMode chains =
     go nConcurrentFetchPeers0 Set.empty NoMaxSlotNo chains
   where
     go :: Word
+       -- ^ number of peers from whom we concurrently fetch blocks
        -> Set (Point header)
        -> MaxSlotNo
        -> [(Either FetchDecline [AnchoredFragment header],
@@ -1045,6 +1046,7 @@ fetchRequestDecision
   => FetchDecisionPolicy header
   -> PraosFetchMode
   -> Word
+  -- ^ number of concurrent requests
   -> PeerFetchInFlightLimits
   -> PeerFetchInFlight header
   -> PeerFetchStatus header
