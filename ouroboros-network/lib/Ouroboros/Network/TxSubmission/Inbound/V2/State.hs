@@ -523,7 +523,7 @@ currentPeerScore :: TxDecisionPolicy
 currentPeerScore TxDecisionPolicy { scoreRate } currentTime
                  PeerScore { peerScoreValue, peerScoreTs }
     | peerScoreValue == 0 = 0
-    | currentTime == peerScoreTs = peerScoreValue
+    | currentTime <= peerScoreTs = peerScoreValue
     | otherwise = max 0 $ peerScoreValue - realToFrac (diffTime currentTime peerScoreTs) * scoreRate
 
 peerClaimDelay :: TxDecisionPolicy
