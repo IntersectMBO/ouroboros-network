@@ -36,10 +36,13 @@ import Data.Sequence.Strict qualified as StrictSeq
 import Data.Set qualified as Set
 import Data.Word (Word64)
 
+import NoThunks.Class (NoThunks, unsafeNoThunks)
+
+
+
 import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
-import Ouroboros.Network.TxSubmission.Inbound.V2.Registry
-           (updatePeerPhase)
+import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (updatePeerPhase)
 import Ouroboros.Network.TxSubmission.Inbound.V2.State
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
 
@@ -87,6 +90,16 @@ tests =
     , testCaseSteps "updatePeerPhase only wakes the peer becoming idle" unit_updatePeerPhase_wakesOnlyBecomingIdlePeer
     , testCaseSteps "updatePeerPhase wakes competing idle advertisers when a peer leaves idle" unit_updatePeerPhase_wakesCompetingAdvertisers
     ]
+
+--
+-- NoThunks invariant checks
+--
+
+-- | Check that a value has no thunks in its fields.
+checkNoThunks :: NoThunks a => String -> a -> Property
+checkNoThunks name val =
+    let result = unsafeNoThunks val
+    in counterexample (name ++ ": " ++ show result) $ property True
 
 --
 -- InboundState properties
@@ -207,7 +220,7 @@ sharedTxStateInvariant strength SharedTxState {
       || not (Map.null txAttempts)
 
     leaseLive TxClaimable {} = False
-    leaseLive TxLeased {} = True
+    leaseLive TxLeased {}    = True
 
     checkTxEntry (k, txEntry@TxEntry { txLease, txAdvertiserCount, txAttempts }) =
       counterexample ("bad active tx entry " ++ show k ++ ": " ++ show txEntry) $
@@ -301,6 +314,7 @@ instance Arbitrary ArbSharedTxState where
     | sharedState == emptySharedTxState = []
     | otherwise = ArbSharedTxState <$> shrinkSharedTxState sharedState
 
+
 -- Verifies that handleReceivedTxIds interns new txids, adds claimable entries
 -- for them, and preserves unrelated shared-state entries.
 prop_handleReceivedTxIds_newEntries
@@ -324,6 +338,8 @@ prop_handleReceivedTxIds_newEntries (Positive peeraddr) (ArbSharedTxState shared
     , sharedNextTxKey sharedState' === sharedNextTxKey sharedStateBase + length txidsAndSizes
     , conjoin (fmap checkExistingTxId (Map.toList (sharedTxIdToKey sharedStateBase)))
     , conjoin (fmap checkEntry txidsAndSizes)
+    , checkNoThunks "peerState'" (peerState' :: PeerTxLocalState (Tx TxId))
+    , checkNoThunks "sharedState'" sharedState'
     ]
   where
     sharedStateBase = ensurePeerAdvertisesTxKeys peeraddr [] sharedState0
@@ -369,6 +385,8 @@ prop_handleReceivedTxIds_knownToMempool (Positive peeraddr) txid0 txSize0 =
     , Map.lookup txid (sharedTxIdToKey sharedState') === Just key
     , IntMap.lookup (unTxKey key) (sharedKeyToTxId sharedState') === Just txid
     , sharedGeneration sharedState' === 1
+    , checkNoThunks "peerState'" (peerState' :: PeerTxLocalState (Tx TxId))
+    , checkNoThunks "sharedState'" sharedState'
     ]
   where
     txid = abs txid0 + 1
@@ -394,6 +412,8 @@ prop_handleReceivedTxIds_retainedIsLocalOnly (Positive peeraddr) txid0 txSize0 =
     , peerAvailableTxIds peerState' === IntMap.empty
     , toList (peerUnacknowledgedTxIds peerState') === [key]
     , sharedState' === sharedState0
+    , checkNoThunks "peerState'" (peerState' :: PeerTxLocalState (Tx TxId))
+    , checkNoThunks "sharedState'" sharedState'
     ]
   where
     txid = abs txid0 + 1
@@ -543,6 +563,8 @@ prop_handleReceivedTxs_buffersAndDropsOmitted (Positive peeraddr) txidA0 txidB0 
       , Map.lookup txidB (sharedTxIdToKey sharedState') === Nothing
       , IntMap.lookup kB (sharedKeyToTxId sharedState') === Nothing
       , sharedGeneration sharedState' === 1
+      , checkNoThunks "peerState'" (peerState' :: PeerTxLocalState (Tx TxId))
+      , checkNoThunks "sharedState'" sharedState'
       ]
   where
     txidA = abs txidA0 + 1
@@ -602,6 +624,10 @@ prop_handleReceivedTxs_dropsLateBodies (Positive peeraddr) txid0 txSize0 =
         }
     , sharedTxTable sharedStateMempool' === IntMap.empty
     , retainedLookup k (sharedRetainedTxs sharedStateMempool') === Just retainedUntil
+    , checkNoThunks "peerStateRetained" (peerStateRetained' :: PeerTxLocalState (Tx TxId))
+    , checkNoThunks "peerStateMempool" (peerStateMempool' :: PeerTxLocalState (Tx TxId))
+    , checkNoThunks "sharedStateRetained" sharedStateRetained'
+    , checkNoThunks "sharedStateMempool" sharedStateMempool'
     ]
   where
     txid = abs txid0 + 1
@@ -655,6 +681,8 @@ prop_handleReceivedTxs_penalizesOmittedAfterPrune (Positive peeraddr) txid0 txSi
     , Map.lookup txid (sharedTxIdToKey sharedState') === Nothing
     , IntMap.lookup k (sharedKeyToTxId sharedState') === Nothing
     , sharedGeneration sharedState' === 1
+    , checkNoThunks "peerState'" (peerState' :: PeerTxLocalState (Tx TxId))
+    , checkNoThunks "sharedState'" sharedState'
     ]
   where
     txid = abs txid0 + 1
@@ -705,6 +733,8 @@ prop_handleSubmittedTxs_retainsAcceptedAndDropsRejected (Positive peeraddr) txid
       , Map.lookup txidB (sharedTxIdToKey sharedState') === Nothing
       , IntMap.lookup kB (sharedKeyToTxId sharedState') === Nothing
       , sharedGeneration sharedState' === 1
+      , checkNoThunks "peerState'" (peerState' :: PeerTxLocalState (Tx TxId))
+      , checkNoThunks "sharedState'" sharedState'
       ]
   where
     txidA = abs txidA0 + 1
@@ -746,6 +776,8 @@ prop_nextPeerAction_prioritisesSubmit (Positive peeraddr) txid0 txSize0 =
            [ txKey === key
            , peerState' === peerState0
            , sharedState' === sharedState0
+           , checkNoThunks "peerState'" (peerState' :: PeerTxLocalState (Tx TxId))
+           , checkNoThunks "sharedState'" sharedState'
            ]
        _ -> counterexample ("unexpected peer action: " ++ show peerAction) False
   where
@@ -792,6 +824,8 @@ prop_nextPeerAction_claimsClaimableTx (Positive peerA0) (Positive peerB0) (Posit
              , peerRequestedTxs peerState' === IntSet.singleton k
              , txLease (lookupEntryOrFail key sharedState') ===
                  TxLeased peerA (addTime (interTxSpace defaultTxDecisionPolicy) now)
+             , checkNoThunks "peerState'" (peerState' :: PeerTxLocalState (Tx TxId))
+             , checkNoThunks "sharedState'" sharedState'
              ]
          _ -> counterexample ("unexpected peer action: " ++ show peerAction) False
   where
@@ -875,6 +909,8 @@ prop_nextPeerAction_claimsExpiredLease (Positive oldOwner0) (Positive peerA0) (P
              , peerRequestedTxs peerState' === IntSet.singleton k
              , txLease (lookupEntryOrFail key sharedState') ===
                  TxLeased peerA (addTime (interTxSpace defaultTxDecisionPolicy) now)
+             , checkNoThunks "peerState'" (peerState' :: PeerTxLocalState (Tx TxId))
+             , checkNoThunks "sharedState'" sharedState'
              ]
          _ -> counterexample ("unexpected peer action: " ++ show peerAction) False
   where
@@ -920,6 +956,8 @@ prop_nextPeerAction_requestsOversizedFirstTx (Positive peeraddr) txid0 (Positive
            , peerRequestedTxsSize peerState' === txSize
            , txLease (lookupEntryOrFail key sharedState') ===
                TxLeased peeraddr (addTime (interTxSpace policy) now)
+           , checkNoThunks "peerState'" (peerState' :: PeerTxLocalState (Tx TxId))
+           , checkNoThunks "sharedState'" sharedState'
            ]
        _ -> counterexample ("unexpected peer action: " ++ show peerAction) False
   where
@@ -1195,6 +1233,8 @@ prop_nextPeerAction_nonOwnerWaitsUntilResolved (Positive owner0) (Positive peera
                conjoin
                  [ txIdsToAcknowledge === 1
                  , peerUnacknowledgedTxIds resolvedPeerState' === StrictSeq.empty
+                 , checkNoThunks "resolvedPeerState'" (resolvedPeerState' :: PeerTxLocalState (Tx TxId))
+                 , checkNoThunks "resolvedSharedState'" resolvedSharedState'
                  ]
              _ -> counterexample ("unexpected resolved action: " ++ show resolvedAction) False
       ]
@@ -1233,8 +1273,10 @@ prop_nextPeerAction_nonOwnerWaitsUntilResolved (Positive owner0) (Positive peera
         [ peerUnacknowledgedTxIds unresolvedPeerState' === peerUnacknowledgedTxIds peerState0
         , txAdvertiserCount (lookupEntryOrFail key unresolvedSharedState') ===
             txAdvertiserCount (lookupEntryOrFail key unresolvedSharedState)
+        , checkNoThunks "unresolvedPeerState'" (unresolvedPeerState' :: PeerTxLocalState (Tx TxId))
+        , checkNoThunks "unresolvedSharedState'" unresolvedSharedState'
         ]
-    (resolvedAction, resolvedPeerState', _) = nextPeerAction now defaultTxDecisionPolicy peeraddr peerState0 resolvedSharedState
+    (resolvedAction, resolvedPeerState', resolvedSharedState') = nextPeerAction now defaultTxDecisionPolicy peeraddr peerState0 resolvedSharedState
 
 -- Verifies that nextPeerActionPipelined does nothing when it can only
 -- acknowledge txids and cannot request new ones in the same step.
@@ -1249,6 +1291,8 @@ prop_nextPeerActionPipelined_requiresAckAndReq (Positive peeraddr) txid0 _txSize
          conjoin
            [ peerUnacknowledgedTxIds peerState' === peerUnacknowledgedTxIds peerState0
            , sharedState' === sharedState0
+           , checkNoThunks "peerState'" (peerState' :: PeerTxLocalState (Tx TxId))
+           , checkNoThunks "sharedState'" sharedState'
            ]
        _ -> counterexample ("unexpected pipelined action: " ++ show peerAction) False
   where
@@ -1832,8 +1876,8 @@ data PeerSeed = PeerSeed {
   }
 
 data PeerDerivedUsage = PeerDerivedUsage {
-    peerHasSubmitting    :: !Bool
-  , peerHasRequestedTxs  :: !Bool
+    peerHasSubmitting   :: !Bool
+  , peerHasRequestedTxs :: !Bool
   }
 
 -- Generate a shared tx state with distinct active and retained entries.
@@ -2062,7 +2106,7 @@ entryPeers (_, txAdvertisers, TxEntry { txLease, txAttempts }) =
     leaseOwner =
       case txLease of
         TxLeased owner _ -> [owner]
-        TxClaimable _ -> []
+        TxClaimable _    -> []
 
 -- Shrink shared state by dropping active txs, retained txs, or unused peers.
 shrinkSharedTxState
@@ -2171,7 +2215,7 @@ genNonEmptySublist xs = do
   ys <- sublistOf xs
   case ys of
     [] -> (: []) <$> elements xs
-    _ -> pure ys
+    _  -> pure ys
 
 -- Generate distinct positive ints from a bounded shuffled range.
 genDistinctPositiveInts :: Int -> Gen [Int]
@@ -2283,21 +2327,21 @@ lookupKeyOrFail :: TxId -> SharedTxState PeerAddr TxId -> TxKey
 lookupKeyOrFail txid st =
   case lookupTxKey txid st of
     Just txKey -> txKey
-    Nothing -> error "TxLogic.lookupKeyOrFail: missing tx key"
+    Nothing    -> error "TxLogic.lookupKeyOrFail: missing tx key"
 
 -- Look up an active tx entry and fail fast in test setup code.
 lookupEntryOrFail :: TxKey -> SharedTxState PeerAddr TxId -> TxEntry PeerAddr
 lookupEntryOrFail (TxKey k) st =
   case IntMap.lookup k (sharedTxTable st) of
     Just txEntry -> txEntry
-    Nothing -> error "TxLogic.lookupEntryOrFail: missing tx entry"
+    Nothing      -> error "TxLogic.lookupEntryOrFail: missing tx entry"
 
 -- Look up a shared peer and fail fast in test setup code.
 lookupPeerOrFail :: PeerAddr -> SharedTxState PeerAddr TxId -> SharedPeerState
 lookupPeerOrFail peeraddr st =
   case Map.lookup peeraddr (sharedPeers st) of
     Just sharedPeerState -> sharedPeerState
-    Nothing -> error "TxLogic.lookupPeerOrFail: missing peer"
+    Nothing              -> error "TxLogic.lookupPeerOrFail: missing peer"
 
 -- Drop duplicate txids while keeping the first proposed size.
 dedupeBatch :: [(TxId, SizeInBytes)] -> [(TxId, SizeInBytes)]
