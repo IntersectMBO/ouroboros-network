@@ -714,8 +714,8 @@ peerAdvertisesAnyTxKey
   :: IntSet.IntSet
   -> SharedPeerState
   -> Bool
-peerAdvertisesAnyTxKey targetKeys sharedPeerState =
-    IntSet.foldr (\k acc -> peerAdvertisesTxKey k sharedPeerState || acc) False targetKeys
+peerAdvertisesAnyTxKey targetKeys SharedPeerState { sharedPeerAdvertisedTxKeys } =
+    not (IntSet.disjoint targetKeys sharedPeerAdvertisedTxKeys)
 
 advertisingPeersForTxKeysExcept
   :: Ord peeraddr
