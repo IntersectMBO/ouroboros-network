@@ -475,19 +475,13 @@ txSelectable PeerActionContext { pacNow, pacPeerAddr, pacPolicy, pacSharedPeerSt
     txOwnedByPeer TxEntry { txLease = TxLeased owner _ } = owner == pacPeerAddr
     txOwnedByPeer TxEntry { txLease = TxClaimable _ }    = False
 
-    txPeerHasAttempt =
-      case txAttemptOfPeer pacPeerAddr txEntry of
-        Just TxNoAttempt -> False
-        Just _           -> True
-        Nothing          -> False
+    txPeerHasAttempt = Map.member pacPeerAddr (txAttempts txEntry)
 
+    -- Safe to use Map.size here: by the time this guard is reached,
+    -- txSubmittingAnywhere has already returned False, so the map contains
+    -- only TxDownloading and TxBuffered entries.
     txActiveAttemptCount :: TxEntry peeraddr -> Int
-    txActiveAttemptCount TxEntry { txAttempts } =
-      length
-        [ ()
-        | attempt <- Map.elems txAttempts
-        , attempt == TxDownloading || attempt == TxBuffered
-        ]
+    txActiveAttemptCount TxEntry { txAttempts } = Map.size txAttempts
 
 
 -- | Extract the peer's TxAttemptState for the TX entry, if it exists.
