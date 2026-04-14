@@ -1,8 +1,10 @@
+{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
-{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE ExistentialQuantification  #-}
 {-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns             #-}
@@ -71,6 +73,9 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Types
 import Control.DeepSeq (NFData)
 import Control.Exception (Exception (..))
 import Control.Monad.Class.MonadTime.SI
+import NoThunks.Class (NoThunks)
+import NoThunks.Class.Orphans ()
+
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Sequence.Strict (StrictSeq)
@@ -100,7 +105,7 @@ const_MAX_TX_SIZE_DISCREPANCY = 32
 -- | Compact internal transaction key used by V2 state.
 newtype TxKey = TxKey { unTxKey :: Int }
   deriving stock (Eq, Ord, Show, Generic)
-  deriving newtype (Enum, NFData)
+  deriving newtype (Enum, NFData, NoThunks)
 
 -- | State which determines when a peer that advertised a txid may
 -- acknowledge it.
@@ -113,6 +118,8 @@ data TxOwnerAckState
   | AckWhenResolved
   deriving stock (Eq, Ord, Show, Generic)
   deriving anyclass NFData
+
+instance NoThunks TxOwnerAckState
 
 -- | Per-peer advertisement state for a tx.
 --
@@ -149,6 +156,8 @@ data TxAttemptState
   deriving stock (Eq, Ord, Show, Generic)
   deriving anyclass NFData
 
+instance NoThunks TxAttemptState
+
 -- | The current download lease for a tx body.
 --
 -- A tx is either currently leased to a peer until a deadline or it is
@@ -158,7 +167,7 @@ data TxAttemptState
 data TxLease peeraddr = TxLeased !peeraddr !Time
                       | TxClaimable !Time
   deriving stock (Eq, Show, Generic)
-  deriving anyclass NFData
+  deriving anyclass (NFData, NoThunks)
 
 -- | Shared per-tx state.
 --
@@ -181,7 +190,7 @@ data TxEntry peeraddr = TxEntry {
     txAttempts        :: !(Map peeraddr TxAttemptState)
   }
   deriving stock (Eq, Show, Generic)
-  deriving anyclass NFData
+  deriving anyclass (NFData, NoThunks)
 
 -- | The next peer-local action chosen by the V2 worker thread.
 --
@@ -211,13 +220,13 @@ data PeerAction
 -- responses to the original request.
 data RequestedTxBatch = RequestedTxBatch {
     -- | The set of transaction keys requested in this batch.
-    requestedTxBatchSet  :: !IntSet
+    requestedTxBatchSet      :: !IntSet
 
     -- | Total expected size in bytes for all tx bodies in this batch.
-  , requestedTxBatchSize :: !SizeInBytes
+  ,     requestedTxBatchSize :: !SizeInBytes
   }
   deriving stock (Eq, Show, Generic)
-  deriving anyclass NFData
+  deriving anyclass (NFData, NoThunks)
 
 -- | Coarse phase of a peer worker thread.
 --
@@ -235,6 +244,8 @@ data PeerPhase
   deriving stock (Eq, Ord, Show, Generic)
   deriving anyclass NFData
 
+instance NoThunks PeerPhase
+
 -- | Peer usefulness score.
 --
 -- Lower is better. The current score is also interpreted as milliseconds of
@@ -244,7 +255,7 @@ data PeerScore = PeerScore {
     peerScoreTs    :: !Time
   }
   deriving stock (Eq, Show, Generic)
-  deriving anyclass NFData
+  deriving anyclass (NFData, NoThunks)
 
 -- | Low-cost monotonic counters for the V2 peer protocol and coordination path.
 --
@@ -326,7 +337,7 @@ data PeerTxLocalState tx = PeerTxLocalState {
     peerDownloadedTxs       :: !(IntMap tx)
   }
   deriving stock (Eq, Show, Generic)
-  deriving anyclass NFData
+  deriving anyclass (NFData, NoThunks)
 
 emptyPeerTxLocalState :: PeerTxLocalState tx
 emptyPeerTxLocalState = PeerTxLocalState {
@@ -348,7 +359,7 @@ data SharedPeerState = SharedPeerState {
     sharedPeerGeneration       :: !Word64
   }
   deriving stock (Eq, Show, Generic)
-  deriving anyclass NFData
+  deriving anyclass (NFData, NoThunks)
 
 -- | Shared V2 state.
 --
@@ -368,7 +379,7 @@ data SharedTxState peeraddr txid = SharedTxState {
     sharedGeneration  :: !Word64
   }
   deriving stock (Eq, Show, Generic)
-  deriving anyclass NFData
+  deriving anyclass (NFData, NoThunks)
 
 type RetainedTxs = IntPSQ Time ()
 
