@@ -530,9 +530,11 @@ peerClaimDelay :: TxDecisionPolicy
                -> Time
                -> PeerScore
                -> DiffTime
-peerClaimDelay policy currentTime =
-    -- Delay contribution in milliseconds is peerScore / 20, then converted to seconds.
-    realToFrac . (/ 20000) . currentPeerScore policy currentTime
+peerClaimDelay policy currentTime peerScore
+    | peerScoreValue peerScore == 0 = 0
+    | otherwise =
+        -- Delay contribution in milliseconds is peerScore / 20, then converted to seconds.
+        realToFrac . (/ 20000) $ currentPeerScore policy currentTime peerScore
 
 txClaimReadyAt :: DiffTime -> TxEntry peeraddr -> Time
 txClaimReadyAt claimDelay TxEntry { txLease } =
