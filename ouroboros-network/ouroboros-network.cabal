@@ -763,7 +763,6 @@ executable demo-tx-submission
     optparse-applicative,
     ouroboros-network:{ouroboros-network, api, framework, protocols},
     quickcheck-instances,
-    random,
     serialise,
     statistics,
     splitmix,

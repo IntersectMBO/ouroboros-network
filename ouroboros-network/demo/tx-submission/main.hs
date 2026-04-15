@@ -46,7 +46,6 @@ import NoThunks.Class (NoThunks (..))
 import Options.Applicative
 import Statistics.Quantile qualified as Stat
 import System.IO (stderr, hPutStrLn)
-import System.Random qualified as Random
 import System.Random.SplitMix qualified as SM
 
 import Network.Mux qualified as Mx
@@ -68,7 +67,8 @@ import Ouroboros.Network.TxSubmission.Inbound.V1 qualified as V1
 import Ouroboros.Network.TxSubmission.Inbound.V2 (TxSubmissionLogicVersion (..))
 import Ouroboros.Network.TxSubmission.Inbound.V2 qualified as V2
 import Ouroboros.Network.TxSubmission.Mempool.Simple qualified as Mempool
-import Ouroboros.Network.Util
+import Ouroboros.Network.Util.ShowProxy
+-- import Ouroboros.Network.Util
 
 import Demo.TxSubmission.Outbound
 
@@ -428,8 +428,8 @@ inboundTracer lock =
       unwords ["TraceTxInboundError", show err]
     prettyMsg  V2.TraceTxInboundTerminated =
       "TraceTxInboundTerminated"
-    prettyMsg (V2.TraceTxInboundDecision decision) =
-      unwords ["TraceTxInboundDecision", prettyShow decision]
+    prettyMsg (V2.TraceTxInboundRequestTxs txids) =
+      unwords ["TraceTxInboundDecision", show txids]
 
 
 printTracer :: Show a => MVar () -> Tracer IO (Mx.WithBearer Socket.SockAddr a)
@@ -459,20 +459,15 @@ runTxInbound Addr { addr, port } txDecisionPolicy version txDelay = do
         Socket.listen sock 10
 
         -- V2 only
-        txChann <- V2.newTxChannelsVar
-        txMempoolSem <- V2.newTxMempoolSem
-        txSharedState <- Random.newStdGen >>= V2.newSharedTxStateVar
+        txSharedStateVar <- V2.newSharedTxStateVar V2.emptySharedTxState
+        txCountersVar <- V2.newTxSubmissionCountersVar mempty
         case version of
           TxSubmissionLogicV1 -> return ()
           TxSubmissionLogicV2 -> do
-            thrd <- async $ V2.decisionLogicThreads
-                       Tracer.nullTracer
-                       Tracer.nullTracer
-                       txDecisionPolicy
-                       txChann
-                       txSharedState
+            thrd <- async $ V2.txCountersThreadV2
+                            Tracer.nullTracer
+                            txCountersVar
             link thrd
-
 
         mempool <- Mempool.new getTxId []
 
@@ -544,14 +539,10 @@ runTxInbound Addr { addr, port } txDecisionPolicy version txDelay = do
 
                         TxSubmissionLogicV2 ->
                           V2.withPeer
-                            Tracer.nullTracer -- (Mx.WithBearer addr' >$< printTracer traceLock)
-                            txChann
-                            txMempoolSem
                             txDecisionPolicy
-                            txSharedState
                             reader
-                            writer
-                            getTxSize
+                            txSharedStateVar
+                            txCountersVar
                             addr'
                             $ \peerTxApi ->
                               Driver.runPipelinedAnnotatedPeerWithLimits
@@ -564,7 +555,9 @@ runTxInbound Addr { addr, port } txDecisionPolicy version txDelay = do
                                 $ V2.txSubmissionInboundV2
                                   (Mx.WithBearer addr' >$< inboundTracer traceLock)
                                   V2.NoTxSubmissionInitDelay
+                                  reader
                                   writer
+                                  getTxSize
                                   peerTxApi
                                 )
                     )
