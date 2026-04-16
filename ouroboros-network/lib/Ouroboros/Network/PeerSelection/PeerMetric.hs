@@ -69,8 +69,8 @@ newtype PeerMetricsConfiguration = PeerMetricsConfiguration {
 
 -- | Integer based metric ordered by 'SlotNo' which holds the peer and time.
 --
--- The `p` parameter is truly polymorphic.  For `upstreamyness` and we use peer
--- address, and for `fetchyness` it is a pair of peer id and bytes downloaded.
+-- The `p` parameter is truly polymorphic.  For `upstreamyness` we use peer
+-- address, for `fetchyness` it is a pair of peer id and bytes downloaded.
 --
 type SlotMetric p = IntPSQ SlotNo (p, Time)
 
@@ -390,6 +390,9 @@ metricsTracer getMetrics writeMetrics PeerMetricsConfiguration { maxEntriesToTra
              else writeMetrics metrics'
            Just (_, (_, oldTime)) ->
                when (oldTime > time) $
+                    -- Update the entry only if the new slot was received
+                    -- earlier than the existing one, since we want to track
+                    -- the earliest appearances.
                     writeMetrics (IntPSQ.insert k slot v metrics)
 
 
