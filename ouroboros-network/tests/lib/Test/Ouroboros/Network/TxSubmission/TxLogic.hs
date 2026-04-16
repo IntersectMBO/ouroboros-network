@@ -1155,7 +1155,7 @@ unit_nextPeerAction_acksSafePrefixBeforeBlockedBufferedTx :: (String -> IO ()) -
 unit_nextPeerAction_acksSafePrefixBeforeBlockedBufferedTx step = do
   step "Run nextPeerAction with an ackable retained tx followed by a blocked buffered tx"
   case peerAction of
-       PeerRequestTxIds txIdsToAcknowledge txIdsToReq -> do
+       PeerRequestTxIds _ txIdsToAcknowledge txIdsToReq -> do
          step "Assert only the safe prefix is acknowledged"
          txIdsToAcknowledge @?= 1
          assertBool ("expected positive txIdsToReq, got " ++ show txIdsToReq) (txIdsToReq > 0)
@@ -1223,14 +1223,14 @@ prop_nextPeerAction_nonOwnerWaitsUntilResolved (Positive owner0) (Positive peera
       [ case unresolvedAction of
              PeerDoNothing _ _ ->
                unresolvedExpectations
-             PeerRequestTxIds txIdsToAcknowledge _ ->
+             PeerRequestTxIds _ txIdsToAcknowledge _ ->
                conjoin
                  [ txIdsToAcknowledge === 0
                  , unresolvedExpectations
                  ]
              _ -> counterexample ("unexpected unresolved action: " ++ show unresolvedAction) False
       , case resolvedAction of
-             PeerRequestTxIds txIdsToAcknowledge _ ->
+             PeerRequestTxIds _ txIdsToAcknowledge _ ->
                conjoin
                  [ txIdsToAcknowledge === 1
                  , peerUnacknowledgedTxIds resolvedPeerState' === StrictSeq.empty
@@ -1322,7 +1322,7 @@ prop_nextPeerActionPipelined_requestsTxIds
   -> Property
 prop_nextPeerActionPipelined_requestsTxIds (Positive peeraddr) txid0 _txSize0 =
   case peerAction of
-       PeerRequestTxIds txIdsToAcknowledge txIdsToReq ->
+       PeerRequestTxIds _ txIdsToAcknowledge txIdsToReq ->
          conjoin
            [ txIdsToAcknowledge === 1
            , counterexample ("expected positive txIdsToReq, got " ++ show txIdsToReq) (txIdsToReq > 0)
@@ -1358,7 +1358,7 @@ unit_nextPeerActionPipelined_keepsOneUnackedWithOutstandingBodyReply
 unit_nextPeerActionPipelined_keepsOneUnackedWithOutstandingBodyReply step = do
   step "Run nextPeerActionPipelined with three ackable txids and one outstanding body batch"
   case peerAction of
-    PeerRequestTxIds txIdsToAcknowledge txIdsToReq -> do
+    PeerRequestTxIds _ txIdsToAcknowledge txIdsToReq -> do
       step "Assert pipelined txid requests keep one txid unacked while a body reply is still in flight"
       txIdsToAcknowledge @?= 2
       assertBool ("expected positive txIdsToReq, got " ++ show txIdsToReq) (txIdsToReq > 0)
@@ -1913,7 +1913,8 @@ genPeerTxLocalState = sized $ \n -> do
       peerRequestedTxBatches,
       peerRequestedTxsSize,
       peerRequestedTxIds,
-      peerDownloadedTxs
+      peerDownloadedTxs,
+      peerDownloadStartTime = Nothing
     }
   where
     genAvailableTx key = do

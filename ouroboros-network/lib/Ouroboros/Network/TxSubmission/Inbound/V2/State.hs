@@ -35,25 +35,25 @@ data TxIdRequestMode = AllowAnyTxIdRequests | AllowPipelinedTxIdRequests
 --
 data PeerActionContext peeraddr txid tx = PeerActionContext {
     -- | Current time used for lease expiry and score decay decisions.
-    pacNow            :: !Time,
+    pacNow             :: !Time,
     -- | Decision policy that governs request, retry, and scoring limits.
-    pacPolicy         :: !TxDecisionPolicy,
+    pacPolicy          :: !TxDecisionPolicy,
     -- | Address of the peer whose next action is being chosen.
-    pacPeerAddr       :: !peeraddr,
+    pacPeerAddr        :: !peeraddr,
     -- | Current peer-local state after local pruning has been applied.
-    pacPeerState      :: !(PeerTxLocalState tx),
+    pacPeerState       :: !(PeerTxLocalState tx),
     -- | Shared tx-submission state after shared pruning has been applied.
-    pacSharedState    :: !(SharedTxState peeraddr txid),
+    pacSharedState     :: !(SharedTxState peeraddr txid),
     -- | This peer's shared state after pruning.
     pacSharedPeerState :: !SharedPeerState,
     -- | Score-derived delay this peer must wait after a tx becomes claimable.
-    pacClaimDelay     :: !DiffTime
+    pacClaimDelay      :: !DiffTime
   }
 
 data PeerActionChoice peeraddr =
     ChooseSubmit ![TxKey]
   | ChooseRequestTxs ![TxKey] !SizeInBytes !(IntMap.IntMap (TxEntry peeraddr))
-  | ChooseRequestTxIds ![TxKey] !NumTxIdsToAck !NumTxIdsToReq !(StrictSeq.StrictSeq TxKey)
+  | ChooseRequestTxIds !TxIdsReqFlavour ![TxKey] !NumTxIdsToAck !NumTxIdsToReq !(StrictSeq.StrictSeq TxKey)
   | ChooseDoNothing !Word64 !(Maybe DiffTime)
 
 -- | Build a precomputed context for selecting the next action for a peer.
@@ -156,7 +156,11 @@ pickPeerActionChoice txIdRequestMode ctx
   -- Pick TXids to ack and/or request more TXids.
   | Just (acknowledgedTxIds, txIdsToAcknowledge, txIdsToRequest, unacknowledgedTxIds') <-
       pickRequestTxIdsAction txIdRequestMode ctx =
-      ChooseRequestTxIds acknowledgedTxIds txIdsToAcknowledge txIdsToRequest unacknowledgedTxIds'
+      let flavour
+            | txIdRequestMode == AllowAnyTxIdRequests
+            , StrictSeq.null unacknowledgedTxIds' = TxIdsBlockingReq
+            | otherwise                            = TxIdsPipelinedReq
+      in ChooseRequestTxIds flavour acknowledgedTxIds txIdsToAcknowledge txIdsToRequest unacknowledgedTxIds'
   -- Do nothing
   | otherwise =
       ChooseDoNothing (peerGenerationOf (pacPeerAddr ctx) (pacSharedState ctx)) (nextWakeDelay ctx)
@@ -172,9 +176,9 @@ applyPeerActionChoice ctx choice =
          applySubmitChoice ctx txsToSubmit
        ChooseRequestTxs txsToRequest txsToRequestSize txTable' ->
          applyRequestTxsChoice ctx txsToRequest txsToRequestSize txTable'
-       ChooseRequestTxIds acknowledgedTxIds txIdsToAcknowledge txIdsToRequest
+       ChooseRequestTxIds flavour acknowledgedTxIds txIdsToAcknowledge txIdsToRequest
                           unacknowledgedTxIds' ->
-         applyRequestTxIdsChoice ctx acknowledgedTxIds txIdsToAcknowledge txIdsToRequest
+         applyRequestTxIdsChoice ctx flavour acknowledgedTxIds txIdsToAcknowledge txIdsToRequest
                                  unacknowledgedTxIds'
        ChooseDoNothing generation wakeDelay ->
          applyDoNothingChoice ctx generation wakeDelay
@@ -227,13 +231,14 @@ applyRequestTxsChoice ctx txsToRequest txsToRequestSize txTable =
 applyRequestTxIdsChoice
   :: (Ord peeraddr, Ord txid)
   => PeerActionContext peeraddr txid tx
+  -> TxIdsReqFlavour
   -> [TxKey]
   -> NumTxIdsToAck
   -> NumTxIdsToReq
   -> StrictSeq.StrictSeq TxKey
   -> (PeerAction, PeerTxLocalState tx, SharedTxState peeraddr txid)
-applyRequestTxIdsChoice ctx acknowledgedTxIds txIdsToAcknowledge txIdsToRequest unacknowledgedTxIds' =
-  ( PeerRequestTxIds txIdsToAcknowledge txIdsToRequest
+applyRequestTxIdsChoice ctx flavour acknowledgedTxIds txIdsToAcknowledge txIdsToRequest unacknowledgedTxIds' =
+  ( PeerRequestTxIds flavour txIdsToAcknowledge txIdsToRequest
   , peerState''
   , sharedState''
   )
@@ -579,9 +584,9 @@ acknowledgeTxIds :: (Ord peeraddr, Ord txid)
                  -> SharedTxState peeraddr txid
 acknowledgeTxIds _ [] st = st
 acknowledgeTxIds peeraddr acknowledgedTxIds st =
-  case IntSet.null removedKeys of
-    True -> st
-    False ->
+  if IntSet.null removedKeys
+    then st
+    else
       let st'' = IntSet.foldl' acknowledgeOne st' removedKeys
       in st'' { sharedGeneration = sharedGeneration st + 1 }
   where
@@ -619,25 +624,20 @@ txIdAckable PeerActionContext { pacPeerAddr, pacPeerState, pacSharedPeerState, p
   | otherwise =
       case IntMap.lookup k (sharedTxTable pacSharedState) of
            Just txEntry@TxEntry { txLease, txAttempts } ->
-             if IntSet.member k (sharedPeerAdvertisedTxKeys pacSharedPeerState)
-                then
-                  let ackWhenBuffered =
-                        case txLease of
-                          TxLeased owner _ -> owner == pacPeerAddr || Map.member pacPeerAddr txAttempts
-                          TxClaimable _    -> Map.member pacPeerAddr txAttempts
-                  in
-                  if ackWhenBuffered
-                     then
-                       -- Ack the txid if we downloaded it and no other
-                       -- peer is in the process of submitting it to the
-                       -- mempool.
-                       IntMap.member k (peerDownloadedTxs pacPeerState)
-                         && not (txBufferedByPeer pacPeerAddr txEntry
-                                  && txSubmittingByOther pacPeerAddr txEntry)
-                     else
-                       False -- This becomes ackable once the tx is retained or later pruned.
-                else
-                  True -- Safe late ack after this peer was pruned from the shared entry.
+             not (IntSet.member k (sharedPeerAdvertisedTxKeys pacSharedPeerState))
+             ||
+               let ackWhenBuffered =
+                     case txLease of
+                       TxLeased owner _ -> owner == pacPeerAddr || Map.member pacPeerAddr txAttempts
+                       TxClaimable _    -> Map.member pacPeerAddr txAttempts
+               in
+               -- Ack the txid if we downloaded it and no other
+               -- peer is in the process of submitting it to the
+               -- mempool.
+               ackWhenBuffered
+                 && IntMap.member k (peerDownloadedTxs pacPeerState)
+                 && not (txBufferedByPeer pacPeerAddr txEntry
+                          && txSubmittingByOther pacPeerAddr txEntry)
            Nothing -> True -- Safe late ack after the resolved tx was pruned from shared state.
 
 -- | Remove one transaction entry from all shared state maps by key.
@@ -705,7 +705,7 @@ activeTxLive TxEntry { txLease, txAdvertiserCount, txAttempts } =
   || not (Map.null txAttempts)
   where
     leaseLive TxClaimable {} = False
-    leaseLive TxLeased {} = True
+    leaseLive TxLeased {}    = True
 
 
 peerAdvertisesTxKey :: Int -> SharedPeerState -> Bool

@@ -52,6 +52,7 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Types
   , TxAttemptState (..)
   , TxLease (..)
   , TxEntry (..)
+  , TxIdsReqFlavour (..)
   , PeerAction (..)
   , PeerPhase (..)
   , PeerScore (..)
@@ -68,6 +69,7 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Types
   , emptyPeerScore
   , emptyPeerTxLocalState
   , emptySharedTxState
+  , diffTimeToMillis
   ) where
 
 import Control.DeepSeq (NFData)
@@ -187,6 +189,14 @@ data TxEntry peeraddr = TxEntry {
   deriving stock (Eq, Show, Generic)
   deriving anyclass (NFData, NoThunks)
 
+-- | Whether a txid request will be sent as a blocking or pipelined wire
+-- message.
+data TxIdsReqFlavour
+  = TxIdsBlockingReq
+  | TxIdsPipelinedReq
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (NFData, NoThunks)
+
 -- | The next peer-local action chosen by the V2 worker thread.
 --
 -- V2 drives progress from the peer thread itself. Shared state only decides
@@ -196,9 +206,9 @@ data PeerAction
   = -- | No immediate work is available.  The peer should wait for either a
     -- shared-state generation change or the optional timeout.
     PeerDoNothing !Word64 !(Maybe DiffTime)
-  | -- | Send a txid protocol message acknowledging the first argument and
-    -- requesting the second argument.
-    PeerRequestTxIds !NumTxIdsToAck !NumTxIdsToReq
+  | -- | Send a txid protocol message acknowledging the second argument and
+    -- requesting the third argument.
+    PeerRequestTxIds !TxIdsReqFlavour !NumTxIdsToAck !NumTxIdsToReq
   | -- | Request tx bodies for the given internally keyed txs from this peer.
     PeerRequestTxs ![TxKey]
   | -- | Submit the buffered txs identified by the given keys to the local
@@ -259,16 +269,52 @@ data PeerScore = PeerScore {
 -- They are kept separate from 'SharedTxState' so that emission can read a
 -- small dedicated counter cell without scanning protocol state.
 data TxSubmissionCounters = TxSubmissionCounters {
-    txIdMessagesSent    :: !Word64,
-    txIdsRequested      :: !Word64,
-    txIdRepliesReceived :: !Word64,
-    txIdsReceived       :: !Word64,
-    txMessagesSent      :: !Word64,
-    txsRequested        :: !Word64,
-    txRepliesReceived   :: !Word64,
-    txsReceived         :: !Word64,
-    txsOmitted          :: !Word64,
-    lateBodies          :: !Word64
+    txIdMessagesSent      :: !Word64,
+    -- ^ Number of txid request messages sent (@MsgRequestTxIds@, blocking or
+    -- pipelined).
+    txIdsRequested        :: !Word64,
+    -- ^ Total number of txids requested across all txid request messages (sum
+    -- of @NumTxIdsToReq@ values).
+    txIdRepliesReceived   :: !Word64,
+    -- ^ Number of txid reply messages received (@MsgReplyTxIds@).
+    txIdsReceived         :: !Word64,
+    -- ^ Total number of txid-size pairs received across all txid replies.
+    txMessagesSent        :: !Word64,
+    -- ^ Number of tx body request messages sent (@MsgRequestTxs@).
+    txsRequested          :: !Word64,
+    -- ^ Total number of tx bodies requested across all body request messages.
+    txRepliesReceived     :: !Word64,
+    -- ^ Number of tx body reply messages received (@MsgReplyTxs@).
+    txsReceived           :: !Word64,
+    -- ^ Total number of tx bodies received across all body replies.
+    txsOmitted            :: !Word64,
+    -- ^ Number of requested tx bodies the peer omitted from its reply.
+    lateBodies            :: !Word64,
+    -- ^ Number of tx bodies received after the local state had already
+    -- resolved them (txid was found in the mempool before the body arrived).
+    txsAccepted           :: !Word64,
+    -- ^ Tx bodies resolved into the mempool (includes txs found already present
+    -- before attempting submission).
+    txsRejected           :: !Word64,
+    -- ^ Tx bodies rejected by the mempool.
+    txIdBlockingReqsSent  :: !Word64,
+    -- ^ Txid request messages sent as blocking requests.
+    txIdPipelinedReqsSent :: !Word64,
+    -- ^ Txid request messages sent as pipelined (non-blocking) requests.
+    txIdBlockingWaitMs    :: !Word64,
+    -- ^ Cumulative milliseconds spent waiting for replies to blocking txid
+    -- requests.  High values indicate the system is mostly idle (no new
+    -- transactions available from peers).
+    txPipelineWaitMs      :: !Word64,
+    -- ^ Cumulative milliseconds the pipeline was active, measured from the
+    -- first 'MsgRequestTxs' send until all pipelined requests (both body and
+    -- txid) have been replied to and the pipeline fully drains.  Proxy for
+    -- the "loading" state where the peer is actively downloading transactions.
+    txSubmissionWaitMs    :: !Word64
+    -- ^ Cumulative milliseconds spent inside 'mempoolAddTxs'.  Covers both
+    -- normal submission latency and time blocked due to a full mempool.
+    -- High values relative to the other duration fields indicate mempool
+    -- backpressure.
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass NFData
@@ -284,7 +330,14 @@ instance Semigroup TxSubmissionCounters where
     txRepliesReceived = txRepliesReceived a + txRepliesReceived b,
     txsReceived = txsReceived a + txsReceived b,
     txsOmitted = txsOmitted a + txsOmitted b,
-    lateBodies = lateBodies a + lateBodies b
+    lateBodies = lateBodies a + lateBodies b,
+    txsAccepted = txsAccepted a + txsAccepted b,
+    txsRejected = txsRejected a + txsRejected b,
+    txIdBlockingReqsSent  = txIdBlockingReqsSent  a + txIdBlockingReqsSent  b,
+    txIdPipelinedReqsSent = txIdPipelinedReqsSent a + txIdPipelinedReqsSent b,
+    txIdBlockingWaitMs    = txIdBlockingWaitMs    a + txIdBlockingWaitMs    b,
+    txPipelineWaitMs      = txPipelineWaitMs      a + txPipelineWaitMs      b,
+    txSubmissionWaitMs    = txSubmissionWaitMs    a + txSubmissionWaitMs    b
     }
 
 instance Monoid TxSubmissionCounters where
@@ -298,8 +351,19 @@ instance Monoid TxSubmissionCounters where
     txRepliesReceived = 0,
     txsReceived = 0,
     txsOmitted = 0,
-    lateBodies = 0
+    lateBodies = 0,
+    txsAccepted = 0,
+    txsRejected = 0,
+    txIdBlockingReqsSent  = 0,
+    txIdPipelinedReqsSent = 0,
+    txIdBlockingWaitMs    = 0,
+    txPipelineWaitMs      = 0,
+    txSubmissionWaitMs    = 0
   }
+
+-- | Convert a 'DiffTime' to whole milliseconds, rounding to nearest.
+diffTimeToMillis :: DiffTime -> Word64
+diffTimeToMillis dt = round (realToFrac dt * 1000 :: Double)
 
 emptyPeerScore :: Time -> PeerScore
 emptyPeerScore scoreTs = PeerScore {
@@ -329,7 +393,11 @@ data PeerTxLocalState tx = PeerTxLocalState {
     -- | Tx bodies downloaded from this peer and buffered locally until they
     -- are either submitted to the mempool or superseded by shared-state
     -- resolution.
-    peerDownloadedTxs       :: !(IntMap tx)
+    peerDownloadedTxs       :: !(IntMap tx),
+
+    -- | Time at which the first outstanding body-request batch was
+    -- sent in the current download episode.
+    peerDownloadStartTime   :: !(Maybe Time)
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (NFData, NoThunks)
@@ -342,7 +410,8 @@ emptyPeerTxLocalState = PeerTxLocalState {
     peerRequestedTxBatches  = StrictSeq.empty,
     peerRequestedTxsSize    = 0,
     peerRequestedTxIds      = 0,
-    peerDownloadedTxs       = IntMap.empty
+    peerDownloadedTxs       = IntMap.empty,
+    peerDownloadStartTime   = Nothing
   }
 
 -- | Small shared view of peer state used for lease claiming and peer

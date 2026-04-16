@@ -159,14 +159,14 @@ withPeer policy TxSubmissionMempoolReader { mempoolGetSnapshot } sharedStateVar 
           atomically $ modifyTVar sharedStateVar (registerPeer now)
           pure PeerTxAPI {
               awaitSharedChange = awaitSharedChangeImp sharedStateVar peeraddr
-            , runNextPeerAction = runNextPeerActionImp policy sharedStateVar peeraddr
+            , runNextPeerAction = runNextPeerActionImp policy sharedStateVar countersVar peeraddr
             , runNextPeerActionPipelined = runNextPeerActionPipelinedImp policy sharedStateVar
-                                             peeraddr
+                                             countersVar peeraddr
             , applyReceivedTxIds = applyReceivedTxIdsImp policy mempoolGetSnapshot sharedStateVar
-                                     peeraddr
+                                     countersVar peeraddr
             , applyReceivedTxs = applyReceivedTxsImp policy mempoolGetSnapshot sharedStateVar
                                    countersVar peeraddr
-            , applySubmittedTxs = applySubmittedTxsImp policy sharedStateVar peeraddr
+            , applySubmittedTxs = applySubmittedTxsImp policy sharedStateVar countersVar peeraddr
             , countRejectedTxs = countRejectedTxsImp policy sharedStateVar peeraddr
             , resolveTxRequest = resolveTxRequestImp sharedStateVar
             , resolveBufferedTxs = resolveBufferedTxsImp sharedStateVar
@@ -292,6 +292,31 @@ writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedState'
   | sharedGeneration sharedState' == sharedGeneration0 = pure ()
   | otherwise = writeTVar sharedStateVar sharedState'
 
+-- | Update the counters for the action chosen by the peer scheduler.
+--
+updateCountersForAction :: MonadSTM m
+                        => TxSubmissionCountersVar m
+                        -> PeerAction
+                        -> STM m ()
+updateCountersForAction countersVar peerAction =
+  case peerAction of
+    PeerRequestTxIds flavour txIdsToAck txIdsToReq
+      | txIdsToAck /= 0 || txIdsToReq /= 0 ->
+          modifyTVar countersVar (<> mempty
+            { txIdMessagesSent        = 1
+            , txIdsRequested          = fromIntegral txIdsToReq
+            , txIdBlockingReqsSent  = case flavour of
+                                           TxIdsBlockingReq  -> 1
+                                           TxIdsPipelinedReq -> 0
+            , txIdPipelinedReqsSent = case flavour of
+                                           TxIdsBlockingReq  -> 0
+                                           TxIdsPipelinedReq -> 1
+            })
+    PeerRequestTxs txKeys ->
+      modifyTVar countersVar (<> mempty { txMessagesSent = 1
+                                        , txsRequested   = fromIntegral (length txKeys) })
+    _ -> pure ()
+
 -- | Compute the next action for this peer in non-pipelined mode.
 --
 -- Returns the selected 'PeerAction', an updated peer-local state, and applies
@@ -302,11 +327,12 @@ runNextPeerActionImp :: ( MonadSTM m
                         , Ord txid )
                      => TxDecisionPolicy
                      -> SharedTxStateVar m peeraddr txid
+                     -> TxSubmissionCountersVar m
                      -> peeraddr
                      -> Time
                      -> PeerTxLocalState tx
                      -> m (PeerAction, PeerTxLocalState tx)
-runNextPeerActionImp policy sharedStateVar peeraddr now peerState = atomically $ do
+runNextPeerActionImp policy sharedStateVar countersVar peeraddr now peerState = atomically $ do
   sharedState <- readTVar sharedStateVar
   let sharedGeneration0 = sharedGeneration sharedState
       (peerAction, peerState', sharedState') = State.nextPeerAction now policy peeraddr
@@ -314,6 +340,7 @@ runNextPeerActionImp policy sharedStateVar peeraddr now peerState = atomically $
       sharedState''  = updatePeerPhase now policy peeraddr
                          (peerPhaseForActionIdle peerAction) sharedState'
   writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedState''
+  updateCountersForAction countersVar peerAction
   return (peerAction, peerState')
 
 -- | Compute the next action for this peer in pipelined mode.
@@ -326,20 +353,23 @@ runNextPeerActionPipelinedImp :: ( MonadSTM m
                                   , Ord txid )
                               => TxDecisionPolicy
                               -> SharedTxStateVar m peeraddr txid
+                              -> TxSubmissionCountersVar m
                               -> peeraddr
                               -> Time
                               -> PeerTxLocalState tx
                               -> m (PeerAction, PeerTxLocalState tx)
-runNextPeerActionPipelinedImp policy sharedStateVar peeraddr now peerState = atomically $ do
-  sharedState <- readTVar sharedStateVar
-  let sharedGeneration0 = sharedGeneration sharedState
-      (peerAction, peerState', sharedState') = State.nextPeerActionPipelined now policy
-                                                 peeraddr peerState sharedState
-      sharedState'' = updatePeerPhase now policy peeraddr
-                        (peerPhaseForActionPipelined peeraddr peerAction sharedState')
-                        sharedState'
-  writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedState''
-  return (peerAction, peerState')
+runNextPeerActionPipelinedImp policy sharedStateVar countersVar peeraddr now peerState =
+    atomically $ do
+      sharedState <- readTVar sharedStateVar
+      let sharedGeneration0 = sharedGeneration sharedState
+          (peerAction, peerState', sharedState') = State.nextPeerActionPipelined now policy
+                                                     peeraddr peerState sharedState
+          sharedState'' = updatePeerPhase now policy peeraddr
+                            (peerPhaseForActionPipelined peeraddr peerAction sharedState')
+                            sharedState'
+      writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedState''
+      updateCountersForAction countersVar peerAction
+      return (peerAction, peerState')
 
 -- | Process a batch of txids received from this peer.
 --
@@ -353,20 +383,23 @@ applyReceivedTxIdsImp :: ( MonadSTM m
                       => TxDecisionPolicy
                       -> STM m (MempoolSnapshot txid tx idx)
                       -> SharedTxStateVar m peeraddr txid
+                      -> TxSubmissionCountersVar m
                       -> peeraddr
                       -> Time
                       -> NumTxIdsToReq
                       -> [(txid, SizeInBytes)]
                       -> PeerTxLocalState tx
                       -> m (PeerTxLocalState tx)
-applyReceivedTxIdsImp policy mempoolGetSnapshot sharedStateVar peeraddr now txIdsToReq
-                      txidsAndSizes peerState = atomically $ do
+applyReceivedTxIdsImp policy mempoolGetSnapshot sharedStateVar countersVar peeraddr now
+                      txIdsToReq txidsAndSizes peerState = atomically $ do
   MempoolSnapshot { mempoolHasTx } <- mempoolGetSnapshot
   sharedState <- readTVar sharedStateVar
   let sharedGeneration0 = sharedGeneration sharedState
       (peerState', sharedState') = State.handleReceivedTxIds mempoolHasTx now policy peeraddr
                                      txIdsToReq txidsAndSizes peerState sharedState
   writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedState'
+  modifyTVar countersVar (<> mempty { txIdRepliesReceived = 1
+                                    , txIdsReceived       = fromIntegral (length txidsAndSizes) })
   return peerState'
 
 -- | Process a batch of tx bodies received from this peer.
@@ -414,19 +447,23 @@ applySubmittedTxsImp :: ( MonadSTM m
                        , Ord txid )
                      => TxDecisionPolicy
                      -> SharedTxStateVar m peeraddr txid
+                     -> TxSubmissionCountersVar m
                      -> peeraddr
                      -> Time
                      -> [TxKey]
                      -> [TxKey]
                      -> PeerTxLocalState tx
                      -> m (PeerTxLocalState tx)
-applySubmittedTxsImp policy sharedStateVar peeraddr now acceptedTxs rejectedTxs peerState =
+applySubmittedTxsImp policy sharedStateVar countersVar peeraddr now acceptedTxs rejectedTxs
+                     peerState =
   atomically $ do
     sharedState <- readTVar sharedStateVar
     let sharedGeneration0 = sharedGeneration sharedState
     let (peerState', sharedState') = State.handleSubmittedTxs now policy peeraddr acceptedTxs
                                        rejectedTxs peerState sharedState
     writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedState'
+    modifyTVar countersVar (<> mempty { txsAccepted = fromIntegral (length acceptedTxs)
+                                      , txsRejected = fromIntegral (length rejectedTxs) })
     return peerState'
 
 -- | Update the peer's rejection score based on the number of txs rejected

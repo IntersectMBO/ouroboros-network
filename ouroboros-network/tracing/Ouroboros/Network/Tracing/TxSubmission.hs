@@ -107,6 +107,13 @@ instance LogFormatting TxSubmissionCounters where
             , "txsReceived" .= txsReceived
             , "txsOmitted" .= txsOmitted
             , "lateBodies" .= lateBodies
+            , "txsAccepted" .= txsAccepted
+            , "txsRejected" .= txsRejected
+            , "txIdBlockingReqsSent" .= txIdBlockingReqsSent
+            , "txIdPipelinedReqsSent" .= txIdPipelinedReqsSent
+            , "txIdBlockingWaitMs" .= txIdBlockingWaitMs
+            , "txPipelineWaitMs" .= txPipelineWaitMs
+            , "txSubmissionWaitMs" .= txSubmissionWaitMs
             ]
 
   asMetrics TxSubmissionCounters {..} =
@@ -120,6 +127,13 @@ instance LogFormatting TxSubmissionCounters where
     , IntM "txSubmission.txsReceived" (fromIntegral txsReceived)
     , IntM "txSubmission.txsOmitted" (fromIntegral txsOmitted)
     , IntM "txSubmission.lateBodies" (fromIntegral lateBodies)
+    , IntM "txSubmission.txsAccepted" (fromIntegral txsAccepted)
+    , IntM "txSubmission.txsRejected" (fromIntegral txsRejected)
+    , IntM "txSubmission.txIdBlockingReqsSent"  (fromIntegral txIdBlockingReqsSent)
+    , IntM "txSubmission.txIdPipelinedReqsSent" (fromIntegral txIdPipelinedReqsSent)
+    , IntM "txSubmission.txIdBlockingWaitMs" (fromIntegral txIdBlockingWaitMs)
+    , IntM "txSubmission.txPipelineWaitMs"   (fromIntegral txPipelineWaitMs)
+    , IntM "txSubmission.txSubmissionWaitMs" (fromIntegral txSubmissionWaitMs)
     ]
 
 instance MetaTrace TxSubmissionCounters where
@@ -140,6 +154,13 @@ instance MetaTrace TxSubmissionCounters where
     , ("txSubmission.txsReceived", "number of tx bodies received")
     , ("txSubmission.txsOmitted", "number of requested tx bodies omitted from replies")
     , ("txSubmission.lateBodies", "number of tx bodies received after local resolution")
+    , ("txSubmission.txsAccepted", "number of tx bodies resolved into the mempool")
+    , ("txSubmission.txsRejected", "number of tx bodies rejected by the mempool")
+    , ("txSubmission.txIdBlockingReqsSent",  "number of blocking txid request messages sent")
+    , ("txSubmission.txIdPipelinedReqsSent", "number of pipelined txid request messages sent")
+    , ("txSubmission.txIdBlockingWaitMs", "cumulative milliseconds spent waiting for blocking txid replies (idle state proxy)")
+    , ("txSubmission.txPipelineWaitMs",   "cumulative milliseconds the pipeline was active from first body request until full drain (loading state proxy)")
+    , ("txSubmission.txSubmissionWaitMs", "cumulative milliseconds spent in mempoolAddTxs; high values indicate mempool backpressure")
     ]
   metricsDocFor _ = []
 
