@@ -83,38 +83,43 @@ test components are disabled in `./scripts/ci/cabal.project.local.Windows.CrossC
 ### Running tests with cabal
 
 To run all tests from a particular component use the following command, in this
-example `ouroboros-network`:
+example `ouroboros-network-sim-tests` from the `ouroboros-network` package:
 
 ```sh
-cabal run ouroboros-network:test
+cabal run ouroboros-network:ouroboros-network-sim-tests
 ```
+
+The `ouroboros-network` package has several test suites: `ouroboros-network-sim-tests`,
+`ouroboros-network-io-tests`, `framework-sim-tests`, `framework-io-tests`,
+`protocols-tests`, `api-tests`.
 
 We use [`tasty`] library which exposes an interface to list & isolate
 a test or group of tests to run.   The following command will list all the
-tests of the `ouroboros-network:test` component:
+tests of the `ouroboros-network-sim-tests` component:
 
 ```
-$ cabal run ouroboros-network:test -- -l
-ouroboros-network.ChainProducerState.Test Arbitrary instances.ChainProducerStateForkTest's generator
-ouroboros-network.ChainProducerState.Test Arbitrary instances.ChainProducerStateForkTest's shrinker
-ouroboros-network.ChainProducerState.check initial follower state
+$ cabal run ouroboros-network:ouroboros-network-sim-tests -- -l
+ouroboros-network-sim-tests.ChainProducerState.Test Arbitrary instances.ChainProducerStateForkTest's generator
+ouroboros-network-sim-tests.ChainProducerState.Test Arbitrary instances.ChainProducerStateForkTest's shrinker
+ouroboros-network-sim-tests.ChainProducerState.check initial follower state
 ...
 ```
 
 To match only tests which contain particular string:
 ```
-$ cabal run ouroboros-network:test -- -p '/governor no livelock/' -l
-ouroboros-network.Ouroboros.Network.PeerSelection.governor no livelock
-ouroboros-network.Ouroboros.Network.PeerSelection.races.governor no livelock
+$ cabal run ouroboros-network:ouroboros-network-sim-tests -- -p '/PeerSelection/' -l
+ouroboros-network-sim-tests.Ouroboros.Network.PeerSelection.KnownPeers.insert is idempotent
+ouroboros-network-sim-tests.Ouroboros.Network.PeerSelection.LocalRootPeers.arbitrary
+...
 
-$ cabal run ouroboros-network:test -- -p '/PeerSelection.governor no livelock/' -l
-ouroboros-network.Ouroboros.Network.PeerSelection.governor no livelock
+$ cabal run ouroboros-network:ouroboros-network-sim-tests -- -p '/PeerSelection.KnownPeers/' -l
+ouroboros-network-sim-tests.Ouroboros.Network.PeerSelection.KnownPeers.insert is idempotent
 ```
 
 You can also use the test hierarchy, e.g. the last test can also be selected with:
 ```
-$ cabal run ouroboros-network:test -- -p '$2 == "Ouroboros.Network.PeerSelection" && $3 == "governor no livelock"' -l
-ouroboros-network.Ouroboros.Network.PeerSelection.governor no livelock
+$ cabal run ouroboros-network:ouroboros-network-sim-tests -- -p '$2 == "Ouroboros.Network.PeerSelection" && $3 == "KnownPeers"' -l
+ouroboros-network-sim-tests.Ouroboros.Network.PeerSelection.KnownPeers.insert is idempotent
 ```
 
 If you want to run selected tests just avoid the `-l` (`--list-tests`) switch.
