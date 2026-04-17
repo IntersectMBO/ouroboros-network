@@ -92,9 +92,12 @@ mkPeerActionContext now policy peeraddr peerState sharedState =
 
     -- Remove downloaded tx bodies that are no longer in the shared state.
     peerState' =
-      peerState {
-        peerDownloadedTxs = IntMap.restrictKeys (peerDownloadedTxs peerState) (IntMap.keysSet (sharedTxTable sharedState'))
-      }
+      let downloaded = peerDownloadedTxs peerState
+      in if IntMap.null downloaded
+            then peerState
+            else peerState {
+                   peerDownloadedTxs = IntMap.intersection downloaded (sharedTxTable sharedState')
+                 }
 
     sharedPeerState' =
       case Map.lookup peeraddr (sharedPeers sharedState') of
