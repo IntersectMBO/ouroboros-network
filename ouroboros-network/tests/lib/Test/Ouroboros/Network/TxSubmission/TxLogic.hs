@@ -290,7 +290,7 @@ instance Arbitrary ArbSharedPeerState where
             { sharedPeerGeneration = 0 }
         ]
     where
-      defaultPeerState = mkSharedPeerState PeerIdle (emptyPeerScore now)
+      defaultPeerState = mkSharedPeerState PeerIdle
 
 instance Arbitrary ArbPeerTxLocalState where
   arbitrary = ArbPeerTxLocalState <$> genPeerTxLocalState
@@ -530,8 +530,8 @@ unit_nextPeerAction_claimsFreshTxWhenFirstAdvertiserIsFull step = do
     k = unTxKey key
     sharedState0 = emptySharedTxState
       { sharedPeers = Map.fromList
-          [ (peerA, mkSharedPeerState PeerIdle (emptyPeerScore now))
-          , (peerB, mkSharedPeerState PeerIdle (emptyPeerScore now))
+          [ (peerA, mkSharedPeerState PeerIdle)
+          , (peerB, mkSharedPeerState PeerIdle)
           ]
       }
     peerAState0 = emptyPeerTxLocalState
@@ -790,7 +790,7 @@ prop_nextPeerAction_prioritisesSubmit (Positive peeraddr) txid0 txSize0 =
     sharedState0 = emptySharedTxState
       { sharedPeers =
           Map.singleton peeraddr
-            (withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle (emptyPeerScore now)))
+            (withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle))
       , sharedTxTable = IntMap.singleton k TxEntry
           { txLease = TxLeased peeraddr (addTime 10 now)
           , txAdvertiserCount = 1
@@ -831,6 +831,7 @@ prop_nextPeerAction_claimsClaimableTx (Positive peerA0) (Positive peerB0) (Posit
          _ -> counterexample ("unexpected peer action: " ++ show peerAction) False
   where
     peerA = peerA0
+    peerAScore = PeerScore 1 now
     peerB = peerB0 + 1000
     peerC = peerC0 + 2000
     distinctPeers = peerA /= peerB && peerA /= peerC && peerB /= peerC
@@ -840,9 +841,9 @@ prop_nextPeerAction_claimsClaimableTx (Positive peerA0) (Positive peerB0) (Posit
     k = unTxKey key
     sharedState0 = emptySharedTxState
       { sharedPeers = Map.fromList
-          [ (peerA, withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle (PeerScore 1 now)))
-          , (peerB, withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle (PeerScore 10 now)))
-          , (peerC, withAdvertisedTxKeys [key] (mkSharedPeerState PeerWaitingTxs (PeerScore 0 now)))
+          [ (peerA, withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle))
+          , (peerB, withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle))
+          , (peerC, withAdvertisedTxKeys [key] (mkSharedPeerState PeerWaitingTxs))
           ]
       , sharedTxIdToKey = Map.singleton txid key
       , sharedKeyToTxId = IntMap.singleton k txid
@@ -853,7 +854,8 @@ prop_nextPeerAction_claimsClaimableTx (Positive peerA0) (Positive peerB0) (Posit
           , txAttempts = Map.empty
           }
       }
-    peerState0 = emptyPeerTxLocalState { peerAvailableTxIds = IntMap.singleton k txSize }
+    peerState0 = emptyPeerTxLocalState { peerAvailableTxIds = IntMap.singleton k txSize
+                                       , peerScore = peerAScore }
     (peerAction, peerState', sharedState') = nextPeerAction now defaultTxDecisionPolicy peerA peerState0 sharedState0
 
 unit_nextPeerAction_claimsAtScoreDelayThreshold :: (String -> IO ()) -> Assertion
@@ -878,7 +880,7 @@ unit_nextPeerAction_claimsAtScoreDelayThreshold step = do
     sharedState0 = emptySharedTxState
       { sharedPeers =
           Map.singleton peeraddr
-            (withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle (PeerScore 20 now)))
+            (withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle))
       , sharedTxIdToKey = Map.singleton txid key
       , sharedKeyToTxId = IntMap.singleton k txid
       , sharedNextTxKey = 1
@@ -888,7 +890,8 @@ unit_nextPeerAction_claimsAtScoreDelayThreshold step = do
           , txAttempts = Map.empty
           }
       }
-    peerState0 = emptyPeerTxLocalState { peerAvailableTxIds = IntMap.singleton k txSize }
+    peerState0 = emptyPeerTxLocalState { peerAvailableTxIds = IntMap.singleton k txSize
+                                        , peerScore = PeerScore 20 now }
     (peerAction, peerState', sharedState') =
       nextPeerAction now defaultTxDecisionPolicy peeraddr peerState0 sharedState0
 
@@ -917,6 +920,7 @@ prop_nextPeerAction_claimsExpiredLease (Positive oldOwner0) (Positive peerA0) (P
   where
     oldOwner = oldOwner0
     peerA = peerA0 + 1000
+    peerAScore = PeerScore 1 now
     peerB = peerB0 + 2000
     distinctPeers = oldOwner /= peerA && oldOwner /= peerB && peerA /= peerB
     txid = abs txid0 + 1
@@ -925,9 +929,9 @@ prop_nextPeerAction_claimsExpiredLease (Positive oldOwner0) (Positive peerA0) (P
     k = unTxKey key
     sharedState0 = emptySharedTxState
       { sharedPeers = Map.fromList
-          [ (oldOwner, withAdvertisedTxKeys [key] (mkSharedPeerState PeerWaitingTxs (PeerScore 0 now)))
-          , (peerA, withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle (PeerScore 1 now)))
-          , (peerB, withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle (PeerScore 10 now)))
+          [ (oldOwner, withAdvertisedTxKeys [key] (mkSharedPeerState PeerWaitingTxs))
+          , (peerA, withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle))
+          , (peerB, withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle))
           ]
       , sharedTxIdToKey = Map.singleton txid key
       , sharedKeyToTxId = IntMap.singleton k txid
@@ -938,7 +942,8 @@ prop_nextPeerAction_claimsExpiredLease (Positive oldOwner0) (Positive peerA0) (P
           , txAttempts = Map.empty
           }
       }
-    peerState0 = emptyPeerTxLocalState { peerAvailableTxIds = IntMap.singleton k txSize }
+    peerState0 = emptyPeerTxLocalState { peerAvailableTxIds = IntMap.singleton k txSize
+                                       , peerScore = peerAScore }
     (peerAction, peerState', sharedState') = nextPeerAction now defaultTxDecisionPolicy peerA peerState0 sharedState0
 
 -- Verifies that nextPeerAction still requests an oversized first tx when it
@@ -972,7 +977,7 @@ prop_nextPeerAction_requestsOversizedFirstTx (Positive peeraddr) txid0 (Positive
       }
     sharedState0 = emptySharedTxState
       { sharedPeers = Map.singleton peeraddr
-          (withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle (emptyPeerScore now)))
+          (withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle))
       , sharedTxIdToKey = Map.singleton txid key
       , sharedKeyToTxId = IntMap.singleton k txid
       , sharedNextTxKey = 1
@@ -1014,9 +1019,9 @@ unit_nextPeerAction_skipsBlockedAvailableTxs step = do
     sharedState = emptySharedTxState
       { sharedPeers = Map.fromList
           [ (peeraddr, withAdvertisedTxKeys [blockedKey, claimableKey]
-                         (mkSharedPeerState PeerIdle (emptyPeerScore testNow)))
+                         (mkSharedPeerState PeerIdle))
           , (otherPeer, withAdvertisedTxKeys [blockedKey]
-                          (mkSharedPeerState PeerIdle (emptyPeerScore testNow)))
+                          (mkSharedPeerState PeerIdle))
           ]
       , sharedTxTable = IntMap.fromList
           [ (kBlocked, TxEntry
@@ -1059,7 +1064,7 @@ prop_nextPeerAction_ownerSubmitsBuffered (Positive peeraddr) txid0 txSize0 =
     sharedState0 = emptySharedTxState
       { sharedPeers =
           Map.singleton peeraddr
-            (withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle (emptyPeerScore now)))
+            (withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle))
       , sharedTxTable = IntMap.singleton k TxEntry
           { txLease = TxClaimable (Time 0)
           , txAdvertiserCount = 1
@@ -1116,9 +1121,9 @@ unit_nextPeerAction_requestsOtherWorkDespiteBlockedBufferedTx step = do
     sharedState0 = emptySharedTxState
       { sharedPeers = Map.fromList
           [ (peeraddr, withAdvertisedTxKeys [blockedKey, claimableKey]
-                         (mkSharedPeerState PeerIdle (emptyPeerScore now)))
+                         (mkSharedPeerState PeerIdle))
           , (submittingPeer, withAdvertisedTxKeys [blockedKey]
-                              (mkSharedPeerState PeerSubmittingToMempool (emptyPeerScore now)))
+                              (mkSharedPeerState PeerSubmittingToMempool))
           ]
       , sharedTxTable = IntMap.fromList
           [ (kBlocked, blockedEntry)
@@ -1187,9 +1192,9 @@ unit_nextPeerAction_acksSafePrefixBeforeBlockedBufferedTx step = do
     sharedState0 = emptySharedTxState
       { sharedPeers = Map.fromList
           [ (peeraddr, withAdvertisedTxKeys [blockedKey]
-                         (mkSharedPeerState PeerIdle (emptyPeerScore now)))
+                         (mkSharedPeerState PeerIdle))
           , (submittingPeer, withAdvertisedTxKeys [blockedKey]
-                              (mkSharedPeerState PeerSubmittingToMempool (emptyPeerScore now)))
+                              (mkSharedPeerState PeerSubmittingToMempool))
           ]
       , sharedTxTable = IntMap.singleton kBlocked blockedEntry
       , sharedRetainedTxs = retainedSingleton kResolved (addTime 17 now)
@@ -1246,8 +1251,8 @@ prop_nextPeerAction_nonOwnerWaitsUntilResolved (Positive owner0) (Positive peera
     key = TxKey 0
     k = unTxKey key
     sharedPeers0 = Map.fromList
-      [ (owner, withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle (emptyPeerScore now)))
-      , (peeraddr, withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle (emptyPeerScore now)))
+      [ (owner, withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle))
+      , (peeraddr, withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle))
       ]
     unresolvedSharedState = emptySharedTxState
       { sharedPeers = sharedPeers0
@@ -1305,7 +1310,7 @@ prop_nextPeerActionPipelined_requiresAckAndReq (Positive peeraddr) txid0 _txSize
       , peerRequestedTxIds = maxNumTxIdsToRequest defaultTxDecisionPolicy
       }
     sharedState0 = emptySharedTxState
-      { sharedPeers = Map.singleton peeraddr (mkSharedPeerState PeerIdle (emptyPeerScore now))
+      { sharedPeers = Map.singleton peeraddr (mkSharedPeerState PeerIdle)
       , sharedRetainedTxs = retainedSingleton k (addTime 17 now)
       , sharedTxIdToKey = Map.singleton txid key
       , sharedKeyToTxId = IntMap.singleton k txid
@@ -1344,7 +1349,7 @@ prop_nextPeerActionPipelined_requestsTxIds (Positive peeraddr) txid0 _txSize0 =
       , peerRequestedTxIds = 0
       }
     sharedState0 = emptySharedTxState
-      { sharedPeers = Map.singleton peeraddr (mkSharedPeerState PeerIdle (emptyPeerScore now))
+      { sharedPeers = Map.singleton peeraddr (mkSharedPeerState PeerIdle)
       , sharedRetainedTxs = retainedSingleton k (addTime 17 now)
       , sharedTxIdToKey = Map.singleton txid key
       , sharedKeyToTxId = IntMap.singleton k txid
@@ -1386,7 +1391,7 @@ unit_nextPeerActionPipelined_keepsOneUnackedWithOutstandingBodyReply step = do
       , peerRequestedTxsSize = requestedTxBatchSize requestedBatch
       }
     sharedState0 = emptySharedTxState
-      { sharedPeers = Map.singleton peeraddr (mkSharedPeerState PeerIdle (emptyPeerScore now))
+      { sharedPeers = Map.singleton peeraddr (mkSharedPeerState PeerIdle)
       , sharedRetainedTxs =
           retainedFromList
             [ (unTxKey keyA, addTime 17 now)
@@ -1448,7 +1453,7 @@ prop_nextPeerActionPipelined_secondBodyBatch (Positive peeraddr) txidA0 txidB0 t
     sharedState0 = emptySharedTxState
       { sharedPeers =
           Map.singleton peeraddr
-            (withAdvertisedTxKeys [keyA, keyB] (mkSharedPeerState PeerIdle (emptyPeerScore now)))
+            (withAdvertisedTxKeys [keyA, keyB] (mkSharedPeerState PeerIdle))
       , sharedTxTable = IntMap.fromList
           [ (kA, mkTxEntry peeraddr txSizeA (Just TxDownloading))
           , (kB, TxEntry
@@ -1511,7 +1516,7 @@ prop_nextPeerActionPipelined_noThirdBodyBatch (Positive peeraddr) txidA0 txidB0 
     sharedState0 = emptySharedTxState
       { sharedPeers =
           Map.singleton peeraddr
-            (withAdvertisedTxKeys [keyA, keyB, keyC] (mkSharedPeerState PeerIdle (emptyPeerScore now)))
+            (withAdvertisedTxKeys [keyA, keyB, keyC] (mkSharedPeerState PeerIdle))
       , sharedTxTable = IntMap.fromList
           [ (kA, mkTxEntry peeraddr txSizeA (Just TxDownloading))
           , (kB, mkTxEntry peeraddr txSizeB (Just TxDownloading))
@@ -1553,7 +1558,7 @@ prop_nextPeerAction_prunesExpiredRetained (Positive peeraddr) txid0 _txSize0 =
     idlePeerState :: PeerTxLocalState (Tx TxId)
     idlePeerState = emptyPeerTxLocalState { peerRequestedTxIds = maxNumTxIdsToRequest defaultTxDecisionPolicy }
     sharedState0 = emptySharedTxState
-      { sharedPeers = Map.singleton peeraddr (mkSharedPeerState PeerIdle (emptyPeerScore now))
+      { sharedPeers = Map.singleton peeraddr (mkSharedPeerState PeerIdle)
       , sharedRetainedTxs = retainedSingleton k now
       , sharedTxIdToKey = Map.singleton txid key
       , sharedKeyToTxId = IntMap.singleton k txid
@@ -1589,7 +1594,7 @@ prop_nextPeerAction_keepsRetained (Positive peeraddr) txid0 _txSize0 =
     idlePeerState :: PeerTxLocalState (Tx TxId)
     idlePeerState = emptyPeerTxLocalState { peerRequestedTxIds = maxNumTxIdsToRequest defaultTxDecisionPolicy }
     sharedState0 = emptySharedTxState
-      { sharedPeers = Map.singleton peeraddr (mkSharedPeerState PeerIdle (emptyPeerScore now))
+      { sharedPeers = Map.singleton peeraddr (mkSharedPeerState PeerIdle)
       , sharedRetainedTxs = retainedSingleton k retainUntil
       , sharedTxIdToKey = Map.singleton txid key
       , sharedKeyToTxId = IntMap.singleton k txid
@@ -1629,8 +1634,8 @@ prop_nextPeerAction_earliestWakeDelay (Positive peeraddr) (Positive owner0) txid
     keyB = TxKey 1
     idlePeerState = emptyPeerTxLocalState { peerRequestedTxIds = maxNumTxIdsToRequest defaultTxDecisionPolicy }
     sharedPeers0 = Map.fromList
-      [ (peeraddr, withAdvertisedTxKeys [keyA] (mkSharedPeerState PeerIdle (emptyPeerScore now)))
-      , (owner, withAdvertisedTxKeys [keyA] (mkSharedPeerState PeerWaitingTxs (emptyPeerScore now)))
+      [ (peeraddr, withAdvertisedTxKeys [keyA] (mkSharedPeerState PeerIdle))
+      , (owner, withAdvertisedTxKeys [keyA] (mkSharedPeerState PeerWaitingTxs))
       ]
     leaseFirstState = emptySharedTxState
       { sharedPeers = sharedPeers0
@@ -1674,12 +1679,12 @@ prop_nextPeerAction_returnsPeerGeneration (Positive peeraddr) =
     sharedState0 = emptySharedTxState
       { sharedPeers = Map.fromList
           [ ( peeraddr
-            , (mkSharedPeerState PeerIdle (emptyPeerScore now))
+            , (mkSharedPeerState PeerIdle)
                 { sharedPeerGeneration = expectedGeneration
                 }
             )
           , ( peeraddr + 1000
-            , (mkSharedPeerState PeerIdle (emptyPeerScore now))
+            , (mkSharedPeerState PeerIdle)
                 { sharedPeerGeneration = 11
                 }
             )
@@ -1715,9 +1720,9 @@ prop_handleSubmittedTxs_bumpsIdleAdvertisers (Positive owner0) (Positive peerA0)
     k = unTxKey key
     sharedState0 = emptySharedTxState
       { sharedPeers = Map.fromList
-          [ (owner, withAdvertisedTxKeys [key] (mkSharedPeerState PeerSubmittingToMempool (emptyPeerScore now)))
-          , (peerA, withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle (emptyPeerScore now)))
-          , (peerB, withAdvertisedTxKeys [key] (mkSharedPeerState PeerWaitingTxs (emptyPeerScore now)))
+          [ (owner, withAdvertisedTxKeys [key] (mkSharedPeerState PeerSubmittingToMempool))
+          , (peerA, withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle))
+          , (peerB, withAdvertisedTxKeys [key] (mkSharedPeerState PeerWaitingTxs))
           ]
       , sharedTxTable = IntMap.singleton k TxEntry
           { txLease = TxLeased owner (addTime 10 now)
@@ -1751,10 +1756,10 @@ unit_advertisingPeersForTxExcept_scansAuthoritativePeerSets step = do
     k = unTxKey key
     sharedState0 = baseState
       { sharedPeers = Map.fromList
-          [ (owner, withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle (emptyPeerScore now)))
-          , (peerA, withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle (emptyPeerScore now)))
-          , (peerB, withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle (emptyPeerScore now)))
-          , (unrelatedPeer, mkSharedPeerState PeerIdle (emptyPeerScore now))
+          [ (owner, withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle))
+          , (peerA, withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle))
+          , (peerB, withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle))
+          , (unrelatedPeer, mkSharedPeerState PeerIdle)
           ]
       , sharedTxTable = IntMap.singleton k TxEntry
           { txLease = TxLeased owner (addTime 10 now)
@@ -1789,10 +1794,10 @@ unit_removeAdvertisingPeersForResolvedTx_clearsAllAdvertisingPeers step = do
     k = unTxKey key
     sharedState0 = baseState
       { sharedPeers = Map.fromList
-          [ (owner, withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle (emptyPeerScore now)))
-          , (peerA, withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle (emptyPeerScore now)))
-          , (peerB, withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle (emptyPeerScore now)))
-          , (unrelatedPeer, mkSharedPeerState PeerIdle (emptyPeerScore now))
+          [ (owner, withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle))
+          , (peerA, withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle))
+          , (peerB, withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle))
+          , (unrelatedPeer, mkSharedPeerState PeerIdle)
           ]
       , sharedTxTable = IntMap.singleton k TxEntry
           { txLease = TxLeased owner (addTime 10 now)
@@ -1813,11 +1818,11 @@ unit_updatePeerPhase_wakesOnlyBecomingIdlePeer step = do
     other = 2
     sharedState0 = emptySharedTxState
       { sharedPeers = Map.fromList
-          [ (peer, (mkSharedPeerState PeerWaitingTxs (emptyPeerScore now)) { sharedPeerGeneration = 5 })
-          , (other, (mkSharedPeerState PeerIdle (emptyPeerScore now)) { sharedPeerGeneration = 11 })
+          [ (peer, (mkSharedPeerState PeerWaitingTxs) { sharedPeerGeneration = 5 })
+          , (other, (mkSharedPeerState PeerIdle) { sharedPeerGeneration = 11 })
           ]
       }
-    sharedState' = updatePeerPhase now defaultTxDecisionPolicy peer PeerIdle sharedState0
+    sharedState' = updatePeerPhase peer PeerIdle sharedState0
 
 unit_updatePeerPhase_wakesCompetingAdvertisers :: (String -> IO ()) -> Assertion
 unit_updatePeerPhase_wakesCompetingAdvertisers step = do
@@ -1837,9 +1842,9 @@ unit_updatePeerPhase_wakesCompetingAdvertisers step = do
     k = unTxKey key
     sharedState0 = baseState
       { sharedPeers = Map.fromList
-          [ (leavingPeer, (withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle (emptyPeerScore now))) { sharedPeerGeneration = 5 })
-          , (competingPeer, (withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle (emptyPeerScore now))) { sharedPeerGeneration = 11 })
-          , (unrelatedPeer, (mkSharedPeerState PeerIdle (emptyPeerScore now)) { sharedPeerGeneration = 17 })
+          [ (leavingPeer, (withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle)) { sharedPeerGeneration = 5 })
+          , (competingPeer, (withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle)) { sharedPeerGeneration = 11 })
+          , (unrelatedPeer, (mkSharedPeerState PeerIdle) { sharedPeerGeneration = 17 })
           ]
       , sharedTxTable = IntMap.singleton k TxEntry
           { txLease = TxClaimable (Time 0)
@@ -1847,18 +1852,15 @@ unit_updatePeerPhase_wakesCompetingAdvertisers step = do
           , txAttempts = Map.empty
           }
       }
-    sharedState' = updatePeerPhase now defaultTxDecisionPolicy leavingPeer PeerWaitingTxs sharedState0
+    sharedState' = updatePeerPhase leavingPeer PeerWaitingTxs sharedState0
 
 -- Generate a shared peer state.
 genSharedPeerState :: Gen SharedPeerState
 genSharedPeerState = do
   sharedPeerPhase <- elements [PeerIdle, PeerWaitingTxIds, PeerWaitingTxs, PeerSubmittingToMempool]
-  peerScoreValue <- choose (0 :: Double, 100)
-  peerScoreTs <- genSmallTime
   sharedPeerGeneration <- genSmallWord64
   pure SharedPeerState {
       sharedPeerPhase,
-      sharedPeerScore = PeerScore peerScoreValue peerScoreTs,
       sharedPeerAdvertisedTxKeys = IntSet.empty,
       sharedPeerGeneration
     }
@@ -1906,6 +1908,8 @@ genPeerTxLocalState = sized $ \n -> do
   peerDownloadedTxs <-
     IntMap.fromList <$> mapM genDownloadedTx downloadedKeys
 
+  peerScoreValue <- choose (0 :: Double, 100)
+  peerScoreTs <- genSmallTime
   pure PeerTxLocalState {
       peerUnacknowledgedTxIds,
       peerAvailableTxIds,
@@ -1914,7 +1918,8 @@ genPeerTxLocalState = sized $ \n -> do
       peerRequestedTxsSize,
       peerRequestedTxIds,
       peerDownloadedTxs,
-      peerDownloadStartTime = Nothing
+      peerDownloadStartTime = Nothing,
+      peerScore = PeerScore peerScoreValue peerScoreTs
     }
   where
     genAvailableTx key = do
@@ -1926,8 +1931,7 @@ genPeerTxLocalState = sized $ \n -> do
       pure (unTxKey key, mkTx (txIdForKey key) txSize)
 
 data PeerSeed = PeerSeed {
-    peerSeedScore      :: !PeerScore
-  , peerSeedGeneration :: !Word64
+    peerSeedGeneration :: !Word64
   }
 
 data PeerDerivedUsage = PeerDerivedUsage {
@@ -1962,15 +1966,8 @@ genSharedTxState = sized $ \n -> do
   pure $ buildSharedTxState peerSeeds activeEntries retainedEntries sharedGeneration
   where
     genPeerSeedEntry peeraddr = do
-      peerScoreValue <- choose (0 :: Double, 100)
-      peerScoreTs <- genSmallTime
       peerSeedGeneration <- genSmallWord64
-      pure ( peeraddr
-           , PeerSeed {
-               peerSeedScore = PeerScore peerScoreValue peerScoreTs,
-               peerSeedGeneration
-             }
-           )
+      pure (peeraddr, PeerSeed { peerSeedGeneration })
 
     genRetainedEntry txid = do
       retainUntil <- genSharedExpiryTime
@@ -2085,7 +2082,7 @@ deriveSharedPeers baseState peerSeeds activeEntries =
     addMissingPeerSeed acc peeraddr =
       Map.insertWith (\_ old -> old) peeraddr defaultPeerSeed acc
 
-    buildPeerState peeraddr PeerSeed { peerSeedScore, peerSeedGeneration } =
+    buildPeerState peeraddr PeerSeed { peerSeedGeneration } =
       let PeerDerivedUsage {
             peerHasSubmitting,
             peerHasRequestedTxs
@@ -2096,17 +2093,13 @@ deriveSharedPeers baseState peerSeeds activeEntries =
             | otherwise = PeerIdle in
       SharedPeerState {
           sharedPeerPhase,
-          sharedPeerScore = peerSeedScore,
           sharedPeerAdvertisedTxKeys =
             Map.findWithDefault IntSet.empty peeraddr peerAdvertisedKeys,
           sharedPeerGeneration = peerSeedGeneration
         }
 
     defaultPeerSeed =
-      PeerSeed {
-        peerSeedScore = emptyPeerScore now,
-        peerSeedGeneration = 0
-      }
+      PeerSeed { peerSeedGeneration = 0 }
 
 -- Default derived usage for a peer with no active work.
 emptyPeerDerivedUsage :: PeerDerivedUsage
@@ -2192,11 +2185,8 @@ shrinkSharedTxState sharedState =
       ]
     peerSeeds =
       Map.map
-        (\SharedPeerState { sharedPeerScore, sharedPeerGeneration } ->
-          PeerSeed {
-            peerSeedScore = sharedPeerScore,
-            peerSeedGeneration = sharedPeerGeneration
-          })
+        (\SharedPeerState { sharedPeerGeneration } ->
+          PeerSeed { peerSeedGeneration = sharedPeerGeneration })
         (sharedPeers sharedState)
     usedPeers =
       foldl' (\peers activeEntry -> peers <> entryPeers activeEntry) [] activeEntries
@@ -2319,11 +2309,10 @@ mkTx txid txSize = Tx
   }
 
 -- Construct a peer fixture with zeroed generation.
-mkSharedPeerState :: PeerPhase -> PeerScore -> SharedPeerState
-mkSharedPeerState sharedPeerPhase sharedPeerScore =
+mkSharedPeerState :: PeerPhase -> SharedPeerState
+mkSharedPeerState sharedPeerPhase =
   SharedPeerState {
     sharedPeerPhase,
-    sharedPeerScore,
     sharedPeerAdvertisedTxKeys = IntSet.empty,
     sharedPeerGeneration = 0
   }
@@ -2348,7 +2337,7 @@ ensurePeerAdvertisesTxKeys peeraddr txKeys st@SharedTxState { sharedPeers } =
     advertisedKeys = IntSet.fromList (map unTxKey txKeys)
 
     updatePeer Nothing =
-      Just (withAdvertisedTxKeys txKeys (mkSharedPeerState PeerIdle (emptyPeerScore now)))
+      Just (withAdvertisedTxKeys txKeys (mkSharedPeerState PeerIdle))
     updatePeer (Just sharedPeerState) =
       Just
         (sharedPeerState {
@@ -2596,7 +2585,7 @@ mkActiveSharedState allPeers ownerPeer resolvedAdvertisers txidsAndSizes =
           ]
     , sharedPeers =
         Map.fromList
-          [ (peeraddr, (mkSharedPeerState PeerIdle (emptyPeerScore now)) {
+          [ (peeraddr, (mkSharedPeerState PeerIdle) {
                          sharedPeerAdvertisedTxKeys =
                            Map.findWithDefault IntSet.empty peeraddr peerAdvertisedKeys
                        })

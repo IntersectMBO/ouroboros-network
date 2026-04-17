@@ -729,6 +729,7 @@ applications debugTracer txSubmissionInboundTracer _txSubmissionInboundDebug nod
             let server = txSubmissionInboundV2
                            txSubmissionInboundTracer
                            NoTxSubmissionInitDelay
+                           aaTxDecisionPolicy
                            (getMempoolReader mempool)
                            (getMempoolWriter duplicateTxVar mempool)
                            getTxSize

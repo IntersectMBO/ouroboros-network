@@ -111,12 +111,6 @@ data PeerTxAPI m txid tx = PeerTxAPI {
                          -> PeerTxLocalState tx
                          -> m (PeerTxLocalState tx),
 
-    -- | Update the peer's rejection score based on the number of txs rejected
-    -- by the mempool, or late/missing delivieries.
-    countRejectedTxs     :: Time
-                         -> Int
-                         -> m Double,
-
     -- | Resolve txids and advertised sizes for a batch of tx keys to request.
     resolveTxRequest     :: PeerTxLocalState tx
                          -> [TxKey]
@@ -155,8 +149,7 @@ withPeer
 withPeer policy TxSubmissionMempoolReader { mempoolGetSnapshot } sharedStateVar countersVar peeraddr io =
     bracket
       (do
-          now <- getMonotonicTime
-          atomically $ modifyTVar sharedStateVar (registerPeer now)
+          atomically $ modifyTVar sharedStateVar registerPeer
           pure PeerTxAPI {
               awaitSharedChange = awaitSharedChangeImp sharedStateVar peeraddr
             , runNextPeerAction = runNextPeerActionImp policy sharedStateVar countersVar peeraddr
@@ -167,7 +160,6 @@ withPeer policy TxSubmissionMempoolReader { mempoolGetSnapshot } sharedStateVar 
             , applyReceivedTxs = applyReceivedTxsImp policy mempoolGetSnapshot sharedStateVar
                                    countersVar peeraddr
             , applySubmittedTxs = applySubmittedTxsImp policy sharedStateVar countersVar peeraddr
-            , countRejectedTxs = countRejectedTxsImp policy sharedStateVar peeraddr
             , resolveTxRequest = resolveTxRequestImp sharedStateVar
             , resolveBufferedTxs = resolveBufferedTxsImp sharedStateVar
             , startSubmittingTxs = atomically . modifyTVar sharedStateVar .
@@ -180,8 +172,8 @@ withPeer policy TxSubmissionMempoolReader { mempoolGetSnapshot } sharedStateVar 
           atomically $ modifyTVar sharedStateVar (unregisterPeer now))
       io
   where
-    registerPeer :: Time -> SharedTxState peeraddr txid -> SharedTxState peeraddr txid
-    registerPeer now st@SharedTxState { sharedPeers, sharedGeneration } =
+    registerPeer :: SharedTxState peeraddr txid -> SharedTxState peeraddr txid
+    registerPeer st@SharedTxState { sharedPeers, sharedGeneration } =
       st {
         sharedPeers = Map.insert peeraddr sharedPeerState sharedPeers,
         sharedGeneration = sharedGeneration + 1
@@ -189,7 +181,6 @@ withPeer policy TxSubmissionMempoolReader { mempoolGetSnapshot } sharedStateVar 
       where
         sharedPeerState = SharedPeerState {
             sharedPeerPhase = PeerIdle,
-            sharedPeerScore = emptyPeerScore now,
             sharedPeerAdvertisedTxKeys = IntSet.empty,
             sharedPeerGeneration = 0
           }
@@ -337,7 +328,7 @@ runNextPeerActionImp policy sharedStateVar countersVar peeraddr now peerState = 
   let sharedGeneration0 = sharedGeneration sharedState
       (peerAction, peerState', sharedState') = State.nextPeerAction now policy peeraddr
                                                  peerState sharedState
-      sharedState''  = updatePeerPhase now policy peeraddr
+      sharedState''  = updatePeerPhase peeraddr
                          (peerPhaseForActionIdle peerAction) sharedState'
   writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedState''
   updateCountersForAction countersVar peerAction
@@ -364,7 +355,7 @@ runNextPeerActionPipelinedImp policy sharedStateVar countersVar peeraddr now pee
       let sharedGeneration0 = sharedGeneration sharedState
           (peerAction, peerState', sharedState') = State.nextPeerActionPipelined now policy
                                                      peeraddr peerState sharedState
-          sharedState'' = updatePeerPhase now policy peeraddr
+          sharedState'' = updatePeerPhase peeraddr
                             (peerPhaseForActionPipelined peeraddr peerAction sharedState')
                             sharedState'
       writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedState''
@@ -466,42 +457,6 @@ applySubmittedTxsImp policy sharedStateVar countersVar peeraddr now acceptedTxs 
                                       , txsRejected = fromIntegral (length rejectedTxs) })
     return peerState'
 
--- | Update the peer's rejection score based on the number of txs rejected
--- by the mempool.
--- Returns the new score value for tracing. The score
--- decays over time and affects fallback peer selection when leases expire.
-countRejectedTxsImp :: ( MonadSTM m
-                       , Ord peeraddr)
-                    => TxDecisionPolicy
-                    -> SharedTxStateVar m peeraddr txid
-                    -> peeraddr
-                    -> Time
-                    -> Int
-                    -> m Double
-countRejectedTxsImp TxDecisionPolicy { scoreRate, scoreMax } sharedStateVar peeraddr now
-                    rejectedCount = atomically $ stateTVar sharedStateVar $
-  updatePeerRejects (fromIntegral rejectedCount)
-  where
-    updatePeerRejects n sharedState =
-      case Map.lookup peeraddr (sharedPeers sharedState) of
-           Nothing -> (0, sharedState) -- TODO this is an invariant violation
-           Just sharedPeerState@SharedPeerState { sharedPeerScore } ->
-             let sharedPeerScore' = updateRejects n sharedPeerScore
-                 sharedPeerState' = sharedPeerState { sharedPeerScore = sharedPeerScore' }
-                 sharedState' = sharedState {
-                     sharedPeers = Map.insert peeraddr sharedPeerState' (sharedPeers sharedState),
-                     sharedGeneration = sharedGeneration sharedState + 1
-                   } in
-             (peerScoreValue sharedPeerScore', sharedState')
-
-    updateRejects 0 ps@PeerScore { peerScoreValue = 0 } = ps { peerScoreTs = now }
-    updateRejects n ps@PeerScore { peerScoreValue, peerScoreTs } =
-        let duration = diffTime now peerScoreTs
-            !drain = realToFrac duration * scoreRate
-            !drained = max 0 (peerScoreValue - drain) in
-        ps { peerScoreValue = min scoreMax (drained + n)
-           , peerScoreTs = now }
-
 -- | Resolve txids and advertised sizes for a batch of tx keys to request.
 --
 -- Looks up the real txid and size from peer-local state for building the
@@ -548,55 +503,35 @@ resolveBufferedTxsImp sharedStateVar peerState txKeys = atomically $ do
 
 -- | Update a peer's phase.
 --
--- A phase change always bumps the shared generation and normalizes the moving
--- peer's score by draining it to @now@. In addition:
+-- A phase change always bumps the shared generation. In addition:
 --
 -- * When a peer becomes 'PeerIdle', bump that peer's own generation so a
 --   'PeerDoNothing' action computed before the phase change does not put that
 --   same peer thread to sleep on a stale generation. This makes its next
 --   'awaitSharedChange' return immediately and re-run scheduling as an idle
 --   claimant.
--- * When a peer becomes 'PeerIdle', bump that peer's own generation so it
---   immediately re-runs scheduling against any txs whose score-derived claim
---   delay may already have elapsed.
+-- * When a peer leaves idle, bump idle advertisers so they can immediately
+--   compete for any leases the departing peer held.
 updatePeerPhase
   :: Ord peeraddr
-  => Time
-  -> TxDecisionPolicy
-  -> peeraddr
+  => peeraddr
   -> PeerPhase
   -> SharedTxState peeraddr txid
   -> SharedTxState peeraddr txid
-updatePeerPhase now policy peeraddr peerPhaseNew
+updatePeerPhase peeraddr peerPhaseNew
                 st@SharedTxState { sharedPeers, sharedGeneration } =
   case Map.lookup peeraddr sharedPeers of
        Just sharedPeerState ->
          let peerPhaseOld = sharedPeerPhase sharedPeerState in
          if peerPhaseOld /= peerPhaseNew
             then
-              let sharedPeerScore' =
-                    normalizePeerScore (sharedPeerScore sharedPeerState)
-                  sharedPeerState' =
-                    sharedPeerState {
-                      sharedPeerPhase = peerPhaseNew,
-                      sharedPeerScore = sharedPeerScore'
-                    }
-              in
-              let st' = st { sharedPeers = Map.insert peeraddr
-                               sharedPeerState' sharedPeers
-                           , sharedGeneration = sharedGeneration + 1 } in
-              bumpIdlePeerGenerations (phaseWakePeers peerPhaseOld) st'
+              let sharedPeerState' = sharedPeerState { sharedPeerPhase = peerPhaseNew }
+                  st' = st { sharedPeers = Map.insert peeraddr sharedPeerState' sharedPeers
+                           , sharedGeneration = sharedGeneration + 1 }
+              in bumpIdlePeerGenerations (phaseWakePeers peerPhaseOld) st'
             else st
        _ -> st -- TODO error?
   where
-    normalizePeerScore ps@PeerScore { peerScoreValue }
-      | peerScoreValue == 0 = ps
-      | otherwise =
-          let PeerScore { peerScoreTs } = ps
-              !drain   = realToFrac (diffTime now peerScoreTs) * scoreRate policy
-              !drained = max 0 (peerScoreValue - drain)
-          in ps { peerScoreValue = drained, peerScoreTs = now }
-
     phaseWakePeers peerPhaseOld
       | peerPhaseOld /= PeerIdle
       , peerPhaseNew == PeerIdle = Set.singleton peeraddr

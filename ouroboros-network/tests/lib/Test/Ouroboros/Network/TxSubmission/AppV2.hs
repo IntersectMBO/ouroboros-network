@@ -209,6 +209,7 @@ runTxSubmission tracer _tracerTxLogic st0 txDecisionPolicy = do
                                 let server =
                                       txSubmissionInboundV2 sayTracer
                                                             NoTxSubmissionInitDelay
+                                                            txDecisionPolicy
                                                             (getMempoolReader inboundMempool)
                                                             (getMempoolWriter duplicateTxIdsVar inboundMempool)
                                                             getTxSize

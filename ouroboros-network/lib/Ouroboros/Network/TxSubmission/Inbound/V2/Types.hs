@@ -375,7 +375,7 @@ emptyPeerScore scoreTs = PeerScore {
 --
 -- These are the pieces of state that naturally belong to the worker
 -- thread handling one peer. Shared arbitration state such as peer
--- phase and peer score is kept separately in 'SharedPeerState'.
+-- phase is kept separately in 'SharedPeerState'.
 data PeerTxLocalState tx = PeerTxLocalState {
     -- | Unacknowledged txids in the order advertised by the peer.
     peerUnacknowledgedTxIds :: !(StrictSeq TxKey),
@@ -397,7 +397,11 @@ data PeerTxLocalState tx = PeerTxLocalState {
 
     -- | Time at which the first outstanding body-request batch was
     -- sent in the current download episode.
-    peerDownloadStartTime   :: !(Maybe Time)
+    peerDownloadStartTime   :: !(Maybe Time),
+
+    -- | Usefulness score for this peer, tracking rejection penalties and
+    -- time-based decay.
+    peerScore               :: !PeerScore
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (NFData, NoThunks)
@@ -411,14 +415,14 @@ emptyPeerTxLocalState = PeerTxLocalState {
     peerRequestedTxsSize    = 0,
     peerRequestedTxIds      = 0,
     peerDownloadedTxs       = IntMap.empty,
-    peerDownloadStartTime   = Nothing
+    peerDownloadStartTime   = Nothing,
+    peerScore               = emptyPeerScore (Time 0)
   }
 
 -- | Small shared view of peer state used for lease claiming and peer
 -- selection.
 data SharedPeerState = SharedPeerState {
     sharedPeerPhase            :: !PeerPhase,
-    sharedPeerScore            :: !PeerScore,
     sharedPeerAdvertisedTxKeys :: !IntSet,
     sharedPeerGeneration       :: !Word64
   }

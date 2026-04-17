@@ -16,7 +16,6 @@ module Ouroboros.Network.TxSubmission.Inbound.V2
   , TxSubmissionInitDelay (..)
   ) where
 
-import Data.Functor (void)
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Strict qualified as Map
 import Data.Sequence.Strict qualified as StrictSeq
@@ -37,6 +36,7 @@ import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToAck,
            SizeInBytes)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
 import Ouroboros.Network.TxSubmission.Inbound.V2.Registry as V2
+import Ouroboros.Network.TxSubmission.Inbound.V2.State qualified as State
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types as V2
 import Ouroboros.Network.TxSubmission.Mempool.Reader
 
@@ -88,6 +88,7 @@ txSubmissionInboundV2
      )
   => Tracer m (TraceTxSubmissionInbound txid tx)
   -> TxSubmissionInitDelay
+  -> TxDecisionPolicy
   -> TxSubmissionMempoolReader txid tx idx m
   -> TxSubmissionMempoolWriter txid tx idx m err
   -> (tx -> SizeInBytes)
@@ -96,6 +97,7 @@ txSubmissionInboundV2
 txSubmissionInboundV2
     tracer
     initDelay
+    policy
     TxSubmissionMempoolReader { mempoolGetSnapshot }
     TxSubmissionMempoolWriter { txId, mempoolAddTxs }
     txSize
@@ -106,7 +108,6 @@ txSubmissionInboundV2
       applyReceivedTxIds,
       applyReceivedTxs,
       applySubmittedTxs,
-      countRejectedTxs,
       resolveTxRequest,
       resolveBufferedTxs,
       startSubmittingTxs,
@@ -136,7 +137,7 @@ txSubmissionInboundV2
                            addCounters mempty { txPipelineWaitMs =
                                                   diffTimeToMillis (now `diffTime` startTime) }
                            pure $ peerState { peerDownloadStartTime = Nothing }
-      (peerAction, peerState'') <- runNextPeerAction now peerState'
+      (peerAction, peerState'') <- runNextPeerAction now (State.drainPeerScore policy now peerState')
       case peerAction of
            PeerDoNothing generation mDelay -> do
              awaitSharedChange generation mDelay
@@ -183,7 +184,8 @@ txSubmissionInboundV2
           delta = end `diffTime` start
 
       addCounters mempty { txSubmissionWaitMs = diffTimeToMillis delta }
-      score <- countRejectedTxs end rejectedCount
+      peerState' <- applySubmittedTxs end resolvedTxKeys (fmap fst rejectedTxs) peerState
+      let (score, peerState'') = State.applyPeerRejections policy end rejectedCount peerState'
       traceWith tracer $
         TraceTxSubmissionProcessed ProcessedTxCount {
             ptxcAccepted = length acceptedTxs,
@@ -194,9 +196,7 @@ txSubmissionInboundV2
         traceWith tracer (TraceTxInboundAddedToMempool (snd <$> acceptedTxs) delta)
       unless (null rejectedForTrace) $
         traceWith tracer (TraceTxInboundRejectedFromMempool rejectedForTrace delta)
-
-      peerState' <- applySubmittedTxs end resolvedTxKeys (fmap fst rejectedTxs) peerState
-      continueWithStateM k peerState'
+      continueWithStateM k peerState''
 
     -- Request transaction bodies from the peer.
     requestTxBodies :: forall (n :: N).
@@ -224,7 +224,7 @@ txSubmissionInboundV2
     continueAfterReplies Zero = serverIdle
     continueAfterReplies n@Succ{} = StatefulM $ \peerState -> do
       now <- getMonotonicTime
-      (peerAction, peerState') <- runNextPeerActionPipelined now peerState
+      (peerAction, peerState') <- runNextPeerActionPipelined now (State.drainPeerScore policy now peerState)
       case peerAction of
         PeerSubmitTxs txKeys ->
           continueWithStateM (submitBufferedTxs txKeys (continueAfterReplies n)) peerState'
@@ -241,7 +241,7 @@ txSubmissionInboundV2
                               -> StatefulM (PeerTxLocalState tx) (S n) txid tx m
     continueAfterBodyRequests n = StatefulM $ \peerState -> do
       now <- getMonotonicTime
-      (peerAction, peerState') <- runNextPeerActionPipelined now peerState
+      (peerAction, peerState') <- runNextPeerActionPipelined now (State.drainPeerScore policy now peerState)
       case peerAction of
         PeerSubmitTxs txKeys ->
           continueWithStateM (submitBufferedTxs txKeys (continueAfterReplies n)) peerState'
@@ -331,9 +331,9 @@ txSubmissionInboundV2
           throwIO protocolError
         now <- getMonotonicTime
         (penaltyCount, peerState') <- applyReceivedTxs now [ (txId tx, tx) | tx <- txs ] peerState
-        unless (penaltyCount == 0) $
-          void $ countRejectedTxs now penaltyCount
-        continueWithStateM (continueAfterReplies n) peerState'
+        let peerState'' | penaltyCount == 0 = peerState'
+                        | otherwise         = snd (State.applyPeerRejections policy now penaltyCount peerState')
+        continueWithStateM (continueAfterReplies n) peerState''
 
     -- Partition submitted transactions into accepted and rejected groups
     classifySubmittedTxs :: [(TxKey, txid)]
