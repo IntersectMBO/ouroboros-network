@@ -534,14 +534,17 @@ retainedNextWake currentTime =
 {-# INLINE retainedNextWake #-}
 
 retainedExpiredKeys :: Time -> RetainedTxs -> IntSet
-retainedExpiredKeys currentTime =
-    go IntSet.empty
+retainedExpiredKeys currentTime retained =
+    -- Quick exit if no TX has expired.
+    case IntPSQ.findMin retained of
+      Just (_, earliest, _) | earliest <= currentTime -> go IntSet.empty retained
+      _                                               -> IntSet.empty
   where
-    go expired retained =
-      case IntPSQ.minView retained of
-        Just (k, retainUntil, (), retained')
+    go expired r =
+      case IntPSQ.minView r of
+        Just (k, retainUntil, (), r')
           | retainUntil <= currentTime ->
-              go (IntSet.insert k expired) retained'
+              go (IntSet.insert k expired) r'
           | otherwise ->
               expired
         Nothing ->
