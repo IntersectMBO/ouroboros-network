@@ -28,13 +28,12 @@ flag tracetcpinfo
   manual: True
   default: False
 
-common demo-deps
+common ghc-options
   default-language: Haskell2010
   default-extensions: ImportQualifiedPost
   ghc-options:
-    -threaded
     -Wall
-    -fno-ignore-asserts
+    -Wno-unticked-promoted-constructors
     -Wcompat
     -Wincomplete-uni-patterns
     -Wincomplete-record-updates
@@ -48,7 +47,14 @@ common demo-deps
     ghc-options:
       -Wno-pattern-namespace-specifier
 
+common demo-deps
+  import: ghc-options
+  ghc-options:
+    -threaded
+    -fno-ignore-asserts
+
 library
+  import: ghc-options
   build-depends:
     -- The Windows version of network-3.1.2 is missing
     -- functions, see
@@ -105,23 +111,24 @@ library
   if os(windows)
     exposed-modules:
       Network.Mux.Bearer.NamedPipe
-  default-language: Haskell2010
-  default-extensions: ImportQualifiedPost
-  ghc-options:
-    -Wall
-    -Wcompat
-    -Widentities
-    -Wincomplete-record-updates
-    -Wincomplete-uni-patterns
-    -Wno-unticked-promoted-constructors
-    -Wpartial-fields
-    -Wredundant-constraints
-    -Wunused-packages
 
-  -- In ghc-9.14 the `pattern` namespace specifier is deprecated.
-  if impl(ghc >=9.14)
-    ghc-options:
-      -Wno-pattern-namespace-specifier
+library tests-lib
+  import: ghc-options
+  visibility: public
+  hs-source-dirs: test
+  exposed-modules:
+    Test.Mux.ReqResp
+
+  build-depends:
+    base >=4.14 && <4.23,
+    binary,
+    bytestring >=0.10 && <0.13,
+    cborg >=0.2.8 && <0.3,
+    contra-tracer >=0.1 && <0.3,
+    io-classes:{io-classes} ^>=1.8,
+    network-mux,
+    primitive,
+    serialise
 
 test-suite test
   type: exitcode-stdio-1.0
@@ -129,7 +136,6 @@ test-suite test
   main-is: Main.hs
   other-modules:
     Test.Mux
-    Test.Mux.ReqResp
     Test.Mux.Timeout
 
   default-language: Haskell2010
@@ -146,7 +152,7 @@ test-suite test
     io-classes:{io-classes, si-timers, strict-stm},
     io-sim,
     network,
-    network-mux,
+    network-mux:{network-mux, tests-lib},
     primitive,
     quickcheck-instances,
     serialise,
