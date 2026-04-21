@@ -15,6 +15,8 @@ function usage {
 
 export LC_ALL=C.UTF-8
 
+FD="$(which fdfind 2>/dev/null || which fd 2>/dev/null)"
+
 STYLISH_HASKELL_ARGS="-c .stylish-haskell-network.yaml -i"
 USE_GIT=1
 
@@ -32,7 +34,7 @@ while getopts ${optstring} arg; do
       PATHS=$(git show --pretty='' --name-only HEAD)
       for path in $PATHS; do
         echo $path
-        fd -e hs --ignore-file ./scripts/ci/check-stylish-ignore --full-path $path -X stylish-haskell $STYLISH_HASKELL_ARGS
+        $FD -e hs --ignore-file ./scripts/ci/check-stylish-ignore --full-path $path -X stylish-haskell $STYLISH_HASKELL_ARGS
       done
       if [ $USE_GIT == 1 ]; then
         git --no-pager diff --exit-code
@@ -44,7 +46,7 @@ while getopts ${optstring} arg; do
       for path in $PATHS; do
         if [ "${path##*.}" == "hs" ]; then
           echo $path
-          fd -e hs --ignore-file ./scripts/ci/check-stylish-ignore --full-path $path -X stylish-haskell $STYLISH_HASKELL_ARGS
+          $FD -e hs --ignore-file ./scripts/ci/check-stylish-ignore --full-path $path -X stylish-haskell $STYLISH_HASKELL_ARGS
         fi
       done
       if [ $USE_GIT == 1 ]; then
@@ -62,9 +64,9 @@ done
 # TODO CPP pragmas in export lists are not supported by stylish-haskell
 FD_OPTS="-e hs --ignore-file ./scripts/ci/check-stylish-ignore -X stylish-haskell $STYLISH_HASKELL_ARGS"
 
-fd . './network-mux'                 $FD_OPTS
-fd . './ouroboros-network'           $FD_OPTS
-fd . './cardano-diffusion'           $FD_OPTS
+$FD . './network-mux'                 $FD_OPTS
+$FD . './ouroboros-network'           $FD_OPTS
+$FD . './cardano-diffusion'           $FD_OPTS
 
 if [ $USE_GIT == 1 ]; then
 git --no-pager diff --exit-code
