@@ -779,7 +779,9 @@ prop_nextPeerAction_prioritisesSubmit (Positive peeraddr) txid0 txSize0 =
          conjoin
            [ txKey === key
            , peerState' === peerState0
-           , sharedState' === sharedState0
+             -- Submit selection atomically marks the chosen tx as TxSubmitting
+             -- so concurrent peer decisions exclude it.
+           , sharedState' === markSubmittingTxs peeraddr [key] sharedState0
            , checkNoThunks "peerState'" (peerState' :: PeerTxLocalState (Tx TxId))
            , checkNoThunks "sharedState'" sharedState'
            ]
@@ -1055,7 +1057,9 @@ prop_nextPeerAction_ownerSubmitsBuffered (Positive peeraddr) txid0 txSize0 =
          conjoin
            [ txKey === key
            , peerState' === peerState0
-           , sharedState' === sharedState0
+             -- Submit selection atomically marks the chosen tx as TxSubmitting
+             -- so concurrent peer decisions exclude it.
+           , sharedState' === markSubmittingTxs peeraddr [key] sharedState0
            ]
        _ -> counterexample ("unexpected peer action: " ++ show peerAction) False
   where

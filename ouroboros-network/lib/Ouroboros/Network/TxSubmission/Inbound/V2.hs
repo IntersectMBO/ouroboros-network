@@ -98,7 +98,7 @@ txSubmissionInboundV2
     tracer
     initDelay
     policy
-    TxSubmissionMempoolReader { mempoolGetSnapshot }
+    TxSubmissionMempoolReader {}
     TxSubmissionMempoolWriter { txId, mempoolAddTxs }
     txSize
     PeerTxAPI {
@@ -110,7 +110,6 @@ txSubmissionInboundV2
       applySubmittedTxs,
       resolveTxRequest,
       resolveBufferedTxs,
-      startSubmittingTxs,
       addCounters
     } =
     TxSubmissionServerPipelined $ do
@@ -157,19 +156,9 @@ txSubmissionInboundV2
     submitBufferedTxs txKeys k = StatefulM $ \peerState -> do
       bufferedTxs <- resolveBufferedTxs peerState txKeys
 
-      -- Flags the txs as on the way to the mempool, which temporarily blocks further
-      -- download attempts.
-      startSubmittingTxs txKeys
-
       start <- getMonotonicTime
-      MempoolSnapshot { mempoolHasTx } <- atomically mempoolGetSnapshot
-
-      -- Note that checking if the mempool contains a TX before
-      -- spending several ms attempting to add it to the pool has
-      -- been judged immoral.
-      let (alreadyInMempool, pendingSubmit) = partitionBufferedTxs mempoolHasTx bufferedTxs
-          submitted = [ (txKey, txid') | (txKey, txid', _) <- pendingSubmit ]
-          toSubmit  = [ tx | (_, _, tx) <- pendingSubmit ]
+      let submitted = [ (txKey, txid') | (txKey, txid', _) <- bufferedTxs ]
+          toSubmit  = [ tx | (_, _, tx) <- bufferedTxs ]
 
       (acceptedTxIds, _) <- if null toSubmit
                                then pure ([], [])
@@ -178,8 +167,8 @@ txSubmissionInboundV2
 
       let (acceptedTxs, rejectedTxs) =
             classifySubmittedTxs submitted (Set.fromList acceptedTxIds)
-          resolvedTxKeys   = [ txKey | (txKey, _, _) <- alreadyInMempool ] <> fmap fst acceptedTxs
-          rejectedForTrace = [ txid' | (_, txid', _) <- alreadyInMempool ] <> fmap snd rejectedTxs
+          resolvedTxKeys   = fmap fst acceptedTxs
+          rejectedForTrace = fmap snd rejectedTxs
           rejectedCount    = length rejectedForTrace
           delta = end `diffTime` start
 
@@ -345,17 +334,6 @@ txSubmissionInboundV2
         classify entry@(_, txid') (acceptedTxs, rejectedTxs)
           | Set.member txid' accepted = (entry : acceptedTxs, rejectedTxs)
           | otherwise                 = (acceptedTxs, entry : rejectedTxs)
-
-    -- Partition buffered transactions by mempool presence.
-    partitionBufferedTxs :: (txid -> Bool)
-                         -> [(TxKey, txid, tx)]
-                         -> ([(TxKey, txid, tx)], [(TxKey, txid, tx)])
-    partitionBufferedTxs mempoolHasTx =
-      foldr step ([], [])
-      where
-        step entry@(_, txid', _) (alreadyInMempool, pendingSubmit)
-          | mempoolHasTx txid' = (entry : alreadyInMempool, pendingSubmit)
-          | otherwise          = (alreadyInMempool, entry : pendingSubmit)
 
     -- Collect transactions with size mismatches between advertised and actual.
     collectWrongSizedTxs :: Map.Map txid SizeInBytes

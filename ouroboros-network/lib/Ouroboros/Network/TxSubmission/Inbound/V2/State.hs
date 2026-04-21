@@ -190,13 +190,17 @@ applyPeerActionChoice ctx choice =
          applyDoNothingChoice ctx generation wakeDelay
 
 -- | Construct a 'PeerSubmitTxs' action for buffered transactions.
-applySubmitChoice :: PeerActionContext peeraddr txid tx
+--
+-- Marks the selected txs as 'TxSubmitting' on this peer in the shared state so
+-- other peers' skip them via 'txSubmittingByOther'.
+applySubmitChoice :: Ord peeraddr
+                  => PeerActionContext peeraddr txid tx
                   -> [TxKey]
                   -> (PeerAction, PeerTxLocalState tx, SharedTxState peeraddr txid)
 applySubmitChoice ctx txsToSubmit =
   ( PeerSubmitTxs txsToSubmit
   , pacPeerState ctx
-  , pacSharedState ctx
+  , markSubmittingTxs (pacPeerAddr ctx) txsToSubmit (pacSharedState ctx)
   )
 
 -- | Construct a 'PeerRequestTxs' action and update local and shared tx state.

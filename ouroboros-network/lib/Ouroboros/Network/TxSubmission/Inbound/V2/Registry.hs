@@ -120,9 +120,6 @@ data PeerTxAPI m txid tx = PeerTxAPI {
     resolveBufferedTxs   :: PeerTxLocalState tx
                          -> [TxKey]
                          -> m [(TxKey, txid, tx)],
-    -- | Mark the given tx keys as entering mempool submission phase in shared
-    -- state.
-    startSubmittingTxs   :: [TxKey] -> m (),
 
     -- | Add a delta to the V2 monotonic counters.
     addCounters          :: TxSubmissionCounters -> m ()
@@ -164,8 +161,6 @@ withPeer policy TxSubmissionMempoolReader { mempoolGetSnapshot } sharedStateVar 
             , applySubmittedTxs = applySubmittedTxsImp policy sharedStateVar countersVar peeraddr
             , resolveTxRequest = resolveTxRequestImp sharedStateVar
             , resolveBufferedTxs = resolveBufferedTxsImp sharedStateVar
-            , startSubmittingTxs = atomically . modifyTVar sharedStateVar .
-                                     State.markSubmittingTxs peeraddr
             , addCounters = \delta -> atomically $ modifyTVar countersVar (<> delta)
             }
       )
