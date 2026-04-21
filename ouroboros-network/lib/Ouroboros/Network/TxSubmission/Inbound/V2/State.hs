@@ -14,6 +14,7 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.State
   , removeAdvertisingPeersForResolvedTx
   , drainPeerScore
   , applyPeerRejections
+  , sweepSharedState
   ) where
 
 import Control.Monad.Class.MonadTime.SI (DiffTime, Time, addTime, diffTime)
@@ -62,7 +63,7 @@ data PeerActionChoice peeraddr =
 -- | Build a precomputed context for selecting the next action for a peer.
 --
 --
-mkPeerActionContext :: (Ord peeraddr, HasRawTxId txid)
+mkPeerActionContext :: Ord peeraddr
                     => Time
                     -> TxDecisionPolicy
                     -> peeraddr
@@ -75,35 +76,22 @@ mkPeerActionContext now policy peeraddr peerState sharedState =
     pacPolicy = policy,
     pacPeerAddr = peeraddr,
     pacPeerState = peerState',
-    pacSharedState = sharedState',
+    pacSharedState = sharedState,
     pacSharedPeerState = sharedPeerState',
     pacClaimDelay = peerClaimDelay policy now (peerScore peerState')
     }
   where
-    -- Remove expired retained TX keys from all shared state tables.
-    -- When the retain timer expires, the peer gives up waiting for this txid
-    -- and will acknowledge it. We remove from all tables so the tx can be
-    -- re-advertised if needed.
-    sharedState' =
-      let expiredRetainedKeys = retainedExpiredKeys now (sharedRetainedTxs sharedState)
-          prunedSharedState = dropTxKeys expiredRetainedKeys sharedState in
-      if IntSet.null expiredRetainedKeys
-         then sharedState
-         else prunedSharedState {
-                sharedGeneration = sharedGeneration sharedState + 1
-              }
-
     -- Remove downloaded tx bodies that are no longer in the shared state.
     peerState' =
       let downloaded = peerDownloadedTxs peerState
       in if IntMap.null downloaded
             then peerState
             else peerState {
-                   peerDownloadedTxs = IntMap.intersection downloaded (sharedTxTable sharedState')
+                   peerDownloadedTxs = IntMap.intersection downloaded (sharedTxTable sharedState)
                  }
 
     sharedPeerState' =
-      case Map.lookup peeraddr (sharedPeers sharedState') of
+      case Map.lookup peeraddr (sharedPeers sharedState) of
         Just sharedPeerState -> sharedPeerState
         Nothing ->
           error "TxSubmission.V2.mkPeerActionContext: missing peer"
@@ -737,6 +725,33 @@ dropDeadActiveKeys keys st@SharedTxState { sharedTxTable } =
       case IntMap.lookup k sharedTxTable of
            Just txEntry -> not (activeTxLive txEntry)
            Nothing      -> False
+
+-- | Shared-state cleanup
+--
+-- Drops two kinds of dead entries in one pass:
+--
+-- * Retained entries whose retention deadline has passed.
+-- * Orphaned 'sharedTxTable' entries.
+--
+-- Bumps 'sharedGeneration' if anything changed so sleeping peer workers wake
+-- and re-evaluate.
+sweepSharedState :: HasRawTxId txid
+                 => Time
+                 -> SharedTxState peeraddr txid
+                 -> SharedTxState peeraddr txid
+sweepSharedState now st
+    | IntSet.null toDrop = st
+    | otherwise          = (dropTxKeys toDrop st) {
+                             sharedGeneration = sharedGeneration st + 1
+                           }
+  where
+    expiredRetained = retainedExpiredKeys now (sharedRetainedTxs st)
+    orphans = IntMap.keysSet (IntMap.filter isOrphan (sharedTxTable st))
+    toDrop  = expiredRetained `IntSet.union` orphans
+
+    isOrphan TxEntry { txLease = TxLeased {} } = False
+    isOrphan TxEntry { txAdvertiserCount, txAttempts } =
+      txAdvertiserCount == 0 && Map.null txAttempts
 
 -- | Is the TX entry alive?
 --

@@ -1571,7 +1571,10 @@ prop_nextPeerAction_prunesExpiredRetained (Positive peeraddr) txid0 _txSize0 =
       , sharedKeyToTxId = IntMap.singleton k txid
       , sharedNextTxKey = max 1 (k + 1)
       }
-    (peerAction, peerState', sharedState') = nextPeerAction now defaultTxDecisionPolicy peeraddr idlePeerState sharedState0
+    -- The central counters thread sweeps expired retained entries; emulate
+    -- that by calling the same helper before evaluating the peer decision.
+    sweptState = sweepSharedState now sharedState0
+    (peerAction, peerState', sharedState') = nextPeerAction now defaultTxDecisionPolicy peeraddr idlePeerState sweptState
 
 -- Verifies that nextPeerAction keeps unexpired retained txs and returns the
 -- wake delay until their expiry.

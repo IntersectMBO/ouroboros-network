@@ -16,6 +16,7 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Registry
 
 import Control.Concurrent.Class.MonadSTM qualified as Lazy
 import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad (when)
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
@@ -53,22 +54,40 @@ newTxSubmissionCountersVar
   -> m (TxSubmissionCountersVar m)
 newTxSubmissionCountersVar = newTVarIO
 
--- | Periodically emit the current V2 counters when they change.
+-- | Central bookkeeping thread for V2.
+--
+-- Wakes every @'bufferedTxsMinLifetime' policy \/ 4@ seconds to run
+-- 'State.sweepSharedState' on the shared tx state (retention expiry + orphan
+-- GC). On a slower cadence (every 'countersInterval' seconds of elapsed time)
+-- it also emits the current counters when they differ from the last emission.
 txCountersThreadV2
-  :: (MonadDelay m, MonadSTM m)
-  => Tracer m TxSubmissionCounters
+  :: forall m peeraddr txid.
+     (MonadDelay m, MonadSTM m, HasRawTxId txid)
+  => TxDecisionPolicy
+  -> Tracer m TxSubmissionCounters
   -> TxSubmissionCountersVar m
+  -> SharedTxStateVar m peeraddr txid
   -> m Void
-txCountersThreadV2 tracer countersVar = go mempty
+txCountersThreadV2 policy tracer countersVar sharedStateVar = do
+    now <- getMonotonicTime
+    go mempty (addTime countersInterval now)
   where
+    sweepInterval :: DiffTime
+    sweepInterval = min 1 (bufferedTxsMinLifetime policy / 4)
+
+    countersInterval :: DiffTime
     countersInterval = 7
 
-    go !previous = do
-      threadDelay countersInterval
-      current <- readTVarIO countersVar
-      if current /= previous
-         then traceWith tracer current >> go current
-         else go previous
+    go !previous !nextEmitAt = do
+      threadDelay sweepInterval
+      now <- getMonotonicTime
+      atomically $ modifyTVar sharedStateVar (State.sweepSharedState now)
+      if now >= nextEmitAt
+         then do
+           current <- readTVarIO countersVar
+           when (current /= previous) $ traceWith tracer current
+           go current (addTime countersInterval now)
+         else go previous nextEmitAt
 
 -- | Peer-facing coordination API.
 --
