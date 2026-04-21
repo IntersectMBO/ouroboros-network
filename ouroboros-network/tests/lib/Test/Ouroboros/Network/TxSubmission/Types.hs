@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -Wno-orphans #-}
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE BlockArguments      #-}
 {-# LANGUAGE DeriveAnyClass      #-}
@@ -49,7 +50,9 @@ import Codec.CBOR.Decoding qualified as CBOR
 import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
 
+import Data.Bits (shiftR)
 import Data.ByteString.Lazy (ByteString)
+import Data.ByteString.Short qualified as SBS
 import Data.Either (partitionEithers)
 import Data.List qualified as List
 import Data.Sequence qualified as Seq
@@ -61,6 +64,7 @@ import Network.TypedProtocol.Codec
 
 import Ouroboros.Network.Protocol.TxSubmission2.Codec
 import Ouroboros.Network.Protocol.TxSubmission2.Type
+import Ouroboros.Network.Tx (HasRawTxId (..), RawTxId (..))
 import Ouroboros.Network.TxSubmission.Inbound.V1
 import Ouroboros.Network.TxSubmission.Mempool.Reader
 import Ouroboros.Network.TxSubmission.Mempool.Simple (Mempool)
@@ -115,6 +119,9 @@ maxTxSize :: SizeInBytes
 maxTxSize = 65536
 
 type TxId = Int
+
+instance HasRawTxId Int where
+  getRawTxId n = RawTxId (SBS.pack [ fromIntegral (n `shiftR` (i * 8)) | i <- [7, 6 .. 0] ])
 
 emptyMempool :: MonadSTM m => m (Mempool m txid (Tx txid))
 emptyMempool = Mempool.empty

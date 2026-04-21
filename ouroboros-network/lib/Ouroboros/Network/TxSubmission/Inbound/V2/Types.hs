@@ -86,6 +86,7 @@ import Data.Typeable (Typeable, eqT, (:~:) (Refl))
 import GHC.Generics (Generic)
 
 import Ouroboros.Network.Protocol.TxSubmission2.Type
+import Ouroboros.Network.Tx (HasRawTxId (..), RawTxId)
 
 import Data.Foldable (foldl')
 import Data.IntMap.Strict (IntMap)
@@ -441,7 +442,7 @@ data SharedTxState peeraddr txid = SharedTxState {
     -- | Accepted txs retained locally for a bounded time so later txid
     -- advertisements can be acked without re-requesting the body.
     sharedRetainedTxs :: !RetainedTxs,
-    sharedTxIdToKey   :: !(Map txid TxKey),
+    sharedTxIdToKey   :: !(Map RawTxId TxKey),
     sharedKeyToTxId   :: !(IntMap txid),
     sharedNextTxKey   :: !Int,
     sharedGeneration  :: !Word64
@@ -581,11 +582,12 @@ bumpIdlePeerGenerations peersToWake st@SharedTxState { sharedPeers } =
               sharedPeerState { sharedPeerGeneration = sharedPeerGeneration + 1 }
           | otherwise = sharedPeerState
 
-lookupTxKey :: Ord txid
+lookupTxKey :: HasRawTxId txid
             => txid
             -> SharedTxState peeraddr txid
             -> Maybe TxKey
-lookupTxKey txid SharedTxState { sharedTxIdToKey } = Map.lookup txid sharedTxIdToKey
+lookupTxKey txid SharedTxState { sharedTxIdToKey } =
+    Map.lookup (getRawTxId txid) sharedTxIdToKey
 
 resolveTxKey :: SharedTxState peeraddr txid
              -> TxKey
@@ -595,30 +597,33 @@ resolveTxKey SharedTxState { sharedKeyToTxId } (TxKey k) =
          Just txid -> txid
          Nothing   -> error "TxSubmission.V2.resolveTxKey: missing tx key"
 
-internTxId :: Ord txid
+internTxId :: HasRawTxId txid
            => txid
            -> SharedTxState peeraddr txid
-           -> (TxKey, SharedTxState peeraddr txid)
+           -> (RawTxId, TxKey, SharedTxState peeraddr txid)
 internTxId txid st@SharedTxState { sharedTxIdToKey, sharedKeyToTxId, sharedNextTxKey }
-  | Just key <- Map.lookup txid sharedTxIdToKey = (key, st)
+  | Just key <- Map.lookup rawId sharedTxIdToKey = (rawId, key, st)
   | otherwise =
-      let key = TxKey sharedNextTxKey
-      in ( key
-         , st { sharedTxIdToKey = Map.insert txid key sharedTxIdToKey
+      let key = TxKey sharedNextTxKey in
+      ( rawId
+         , key
+         , st { sharedTxIdToKey = Map.insert rawId key sharedTxIdToKey
               , sharedKeyToTxId = IntMap.insert sharedNextTxKey txid sharedKeyToTxId
               , sharedNextTxKey = sharedNextTxKey + 1
               }
          )
+  where
+    rawId = getRawTxId txid
 
-internTxIds :: (Foldable f, Ord txid)
+internTxIds :: (Foldable f, HasRawTxId txid)
             => f txid
             -> SharedTxState peeraddr txid
-            -> (Map txid TxKey, SharedTxState peeraddr txid)
+            -> (Map RawTxId TxKey, SharedTxState peeraddr txid)
 internTxIds txids st0 = foldl' step (Map.empty, st0) txids
   where
     step (acc, st) txid =
-      let (key, st') = internTxId txid st
-      in (Map.insert txid key acc, st')
+      let (rawId, key, st') = internTxId txid st in
+      (Map.insert rawId key acc, st')
 
 -- | Flag to enable/disable the usage of the new tx-submission logic.
 --

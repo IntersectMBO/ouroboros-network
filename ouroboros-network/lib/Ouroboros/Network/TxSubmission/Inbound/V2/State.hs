@@ -27,6 +27,7 @@ import Data.Word (Word64)
 
 import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToAck,
            SizeInBytes)
+import Ouroboros.Network.Tx (HasRawTxId (..))
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
 
@@ -61,7 +62,7 @@ data PeerActionChoice peeraddr =
 -- | Build a precomputed context for selecting the next action for a peer.
 --
 --
-mkPeerActionContext :: (Ord peeraddr, Ord txid)
+mkPeerActionContext :: (Ord peeraddr, HasRawTxId txid)
                     => Time
                     -> TxDecisionPolicy
                     -> peeraddr
@@ -108,7 +109,7 @@ mkPeerActionContext now policy peeraddr peerState sharedState =
           error "TxSubmission.V2.mkPeerActionContext: missing peer"
 
 -- | Compute the next peer-local action.
-nextPeerAction :: (Ord peeraddr, Ord txid)
+nextPeerAction :: (Ord peeraddr, HasRawTxId txid)
                => Time
                -> TxDecisionPolicy
                -> peeraddr
@@ -118,7 +119,7 @@ nextPeerAction :: (Ord peeraddr, Ord txid)
 nextPeerAction = nextPeerActionWithMode AllowAnyTxIdRequests
 
 -- | Pipelined version of nextPeerAction
-nextPeerActionPipelined :: (Ord peeraddr, Ord txid)
+nextPeerActionPipelined :: (Ord peeraddr, HasRawTxId txid)
                         => Time
                         -> TxDecisionPolicy
                         -> peeraddr
@@ -132,7 +133,7 @@ nextPeerActionPipelined = nextPeerActionWithMode AllowPipelinedTxIdRequests
 -- nextPeerActionWithMode handles body requests for txs this peer may currently
 -- fetch, tx submission for bodies buffered locally by this peer, and txid ack/request
 -- messages.
-nextPeerActionWithMode :: (Ord peeraddr, Ord txid)
+nextPeerActionWithMode :: (Ord peeraddr, HasRawTxId txid)
                        => TxIdRequestMode
                        -> Time
                        -> TxDecisionPolicy
@@ -171,7 +172,7 @@ pickPeerActionChoice txIdRequestMode ctx
       ChooseDoNothing (peerGenerationOf (pacPeerAddr ctx) (pacSharedState ctx)) (nextWakeDelay ctx)
 
 -- | Execute a chosen peer action and compute resulting state updates
-applyPeerActionChoice :: (Ord peeraddr, Ord txid)
+applyPeerActionChoice :: (Ord peeraddr, HasRawTxId txid)
                       => PeerActionContext peeraddr txid tx
                       -> PeerActionChoice peeraddr
                       -> (PeerAction, PeerTxLocalState tx, SharedTxState peeraddr txid)
@@ -234,7 +235,7 @@ applyRequestTxsChoice ctx txsToRequest txsToRequestSize txTable =
 
 -- | Construct a 'PeerRequestTxIds' action and update local and shared txid state.
 applyRequestTxIdsChoice
-  :: (Ord peeraddr, Ord txid)
+  :: (Ord peeraddr, HasRawTxId txid)
   => PeerActionContext peeraddr txid tx
   -> TxIdsReqFlavour
   -> [TxKey]
@@ -616,7 +617,7 @@ updatePeerAdvertisedTxKeys peeraddr updateKeys st@SharedTxState { sharedPeers } 
         error "TxSubmission.V2.updatePeerAdvertisedTxKeys: missing peer"
 
 -- | Acknowledge txids from a peer and update shared state.
-acknowledgeTxIds :: (Ord peeraddr, Ord txid)
+acknowledgeTxIds :: (Ord peeraddr, HasRawTxId txid)
                  => peeraddr
                  -> [TxKey]
                  -> SharedTxState peeraddr txid
@@ -680,7 +681,7 @@ txIdAckable PeerActionContext { pacPeerAddr, pacPeerState, pacSharedPeerState, p
            Nothing -> True -- Safe late ack after the resolved tx was pruned from shared state.
 
 -- | Remove one transaction entry from all shared state maps by key.
-dropTxKey :: Ord txid
+dropTxKey :: HasRawTxId txid
           => Int
           -> SharedTxState peeraddr txid
           -> SharedTxState peeraddr txid
@@ -695,11 +696,11 @@ dropTxKey k st@SharedTxState { sharedTxTable, sharedRetainedTxs, sharedTxIdToKey
   where
     deleteTxId txIdToKey =
       case IntMap.lookup k sharedKeyToTxId of
-           Just txid -> Map.delete txid txIdToKey
+           Just txid -> Map.delete (getRawTxId txid) txIdToKey
            Nothing   -> txIdToKey
 
 -- | Remove transaction entries from all shared state maps by key.
-dropTxKeys :: Ord txid
+dropTxKeys :: HasRawTxId txid
            => IntSet.IntSet
            -> SharedTxState peeraddr txid
            -> SharedTxState peeraddr txid
@@ -716,11 +717,11 @@ dropTxKeys keys st@SharedTxState { sharedTxTable, sharedRetainedTxs, sharedTxIdT
   where
     deleteTxId txIdToKey k =
       case IntMap.lookup k sharedKeyToTxId of
-           Just txid -> Map.delete txid txIdToKey
+           Just txid -> Map.delete (getRawTxId txid) txIdToKey
            Nothing   -> txIdToKey
 
 -- | Remove transaction keys that are no longer active from the shared state.
-dropDeadActiveKeys :: Ord txid
+dropDeadActiveKeys :: HasRawTxId txid
                    => IntSet.IntSet
                    -> SharedTxState peeraddr txid
                    -> SharedTxState peeraddr txid
@@ -857,7 +858,7 @@ removeAdvertisingPeersForResolvedTxExcept currentPeer txKey@(TxKey k) st@SharedT
 -- already retained or already in the mempool are counted as late and dropped.
 -- Any requested tx omitted from the reply releases this peer's ownership.
 -- Late TXs contributes to the returned penalty count.
-handleReceivedTxs :: (Ord peeraddr, Ord txid)
+handleReceivedTxs :: (Ord peeraddr, HasRawTxId txid)
                   => (txid -> Bool)
                   -> Time
                   -> TxDecisionPolicy
@@ -951,7 +952,7 @@ handleReceivedTxs mempoolHasTx now policy peeraddr txs peerState sharedState =
       , downloadedAcc
       )
       (txid, tx) =
-        case Map.lookup txid txidToKey of
+        case Map.lookup (getRawTxId txid) txidToKey of
              Nothing ->
                ( lateCountAcc + 1
                , pendingKeysAcc
@@ -1065,7 +1066,7 @@ handleReceivedTxs mempoolHasTx now policy peeraddr txs peerState sharedState =
 -- txid advertisements can be acknowledged without re-requesting the body.
 -- Txs rejected by the mempool release this peer's attempt state and advertiser
 -- slot so another advertiser may try later.
-handleSubmittedTxs :: (Ord peeraddr, Ord txid)
+handleSubmittedTxs :: (Ord peeraddr, HasRawTxId txid)
                    => Time
                    -> TxDecisionPolicy
                    -> peeraddr
@@ -1194,7 +1195,7 @@ markSubmittingTxs peeraddr txKeys st =
 -- advertises the txid may claim it once its score-derived delay has elapsed,
 -- which avoids pinning fresh work to the first peer that happened to announce
 -- it.
-handleReceivedTxIds :: forall peeraddr txid tx. (Ord peeraddr, Ord txid)
+handleReceivedTxIds :: forall peeraddr txid tx. (Ord peeraddr, HasRawTxId txid)
                     => (txid -> Bool)
                     -> Time
                     -> TxDecisionPolicy
@@ -1372,14 +1373,15 @@ handleReceivedTxIds mempoolHasTx now policy peeraddr requestedTxIds txidsAndSize
           )
 
     lookupOrInternTxId txid st@SharedTxState { sharedTxIdToKey, sharedKeyToTxId, sharedNextTxKey }
-      | Just key <- Map.lookup txid sharedTxIdToKey = (key, False, st)
+      | Just key <- Map.lookup rawId sharedTxIdToKey = (key, False, st)
       | otherwise =
           let key = TxKey sharedNextTxKey
           in ( key
              , True
              , st {
-                 sharedTxIdToKey = Map.insert txid key sharedTxIdToKey,
+                 sharedTxIdToKey = Map.insert rawId key sharedTxIdToKey,
                  sharedKeyToTxId = IntMap.insert sharedNextTxKey txid sharedKeyToTxId,
                  sharedNextTxKey = sharedNextTxKey + 1
                }
              )
+      where rawId = getRawTxId txid

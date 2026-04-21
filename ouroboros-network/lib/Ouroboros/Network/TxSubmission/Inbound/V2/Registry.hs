@@ -29,6 +29,7 @@ import Data.Void (Void)
 import Data.Word (Word64)
 
 import Ouroboros.Network.Protocol.TxSubmission2.Type
+import Ouroboros.Network.Tx (HasRawTxId)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy (TxDecisionPolicy (..))
 import Ouroboros.Network.TxSubmission.Inbound.V2.State qualified as State
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
@@ -138,6 +139,7 @@ withPeer
      , MonadTimer m
      , Ord peeraddr
      , Ord txid
+     , HasRawTxId txid
      )
   => TxDecisionPolicy
   -> TxSubmissionMempoolReader txid tx idx m
@@ -315,7 +317,7 @@ updateCountersForAction countersVar peerAction =
 -- Called from the main peer loop when not handling pipelined replies.
 runNextPeerActionImp :: ( MonadSTM m
                         , Ord peeraddr
-                        , Ord txid )
+                        , HasRawTxId txid )
                      => TxDecisionPolicy
                      -> SharedTxStateVar m peeraddr txid
                      -> TxSubmissionCountersVar m
@@ -341,7 +343,7 @@ runNextPeerActionImp policy sharedStateVar countersVar peeraddr now peerState = 
 -- pipelined protocol replies.
 runNextPeerActionPipelinedImp :: ( MonadSTM m
                                   , Ord peeraddr
-                                  , Ord txid )
+                                  , HasRawTxId txid )
                               => TxDecisionPolicy
                               -> SharedTxStateVar m peeraddr txid
                               -> TxSubmissionCountersVar m
@@ -370,7 +372,7 @@ runNextPeerActionPipelinedImp policy sharedStateVar countersVar peeraddr now pee
 -- peer-local state.
 applyReceivedTxIdsImp :: ( MonadSTM m
                          , Ord peeraddr
-                         , Ord txid )
+                         , HasRawTxId txid )
                       => TxDecisionPolicy
                       -> STM m (MempoolSnapshot txid tx idx)
                       -> SharedTxStateVar m peeraddr txid
@@ -401,7 +403,7 @@ applyReceivedTxIdsImp policy mempoolGetSnapshot sharedStateVar countersVar peera
 -- missing from the reply, together with the updated peer-local state.
 applyReceivedTxsImp :: ( MonadSTM m
                        , Ord peeraddr
-                       , Ord txid )
+                       , HasRawTxId txid )
                     => TxDecisionPolicy
                     -> STM m (MempoolSnapshot txid tx idx)
                     -> SharedTxStateVar m peeraddr txid
@@ -435,7 +437,7 @@ applyReceivedTxsImp policy mempoolGetSnapshot sharedStateVar countersVar peeradd
 -- Returns updated peer-local state.
 applySubmittedTxsImp :: ( MonadSTM m
                        , Ord peeraddr
-                       , Ord txid )
+                       , HasRawTxId txid )
                      => TxDecisionPolicy
                      -> SharedTxStateVar m peeraddr txid
                      -> TxSubmissionCountersVar m

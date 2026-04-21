@@ -103,6 +103,7 @@ library api
     Ouroboros.Network.Point
     Ouroboros.Network.Protocol.Limits
     Ouroboros.Network.SizeInBytes
+    Ouroboros.Network.Tx
     Ouroboros.Network.Util.ShowProxy
 
   build-depends:

@@ -41,6 +41,7 @@ import NoThunks.Class (NoThunks, unsafeNoThunks)
 
 
 import Ouroboros.Network.Protocol.TxSubmission2.Type
+import Ouroboros.Network.Tx (HasRawTxId (..), RawTxId, getRawTxId)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
 import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (updatePeerPhase)
 import Ouroboros.Network.TxSubmission.Inbound.V2.State
@@ -161,6 +162,7 @@ sharedTxStateInvariant
   :: forall peeraddr txid.
      ( Ord peeraddr
      , Ord txid
+     , HasRawTxId txid
      , Show peeraddr
      , Show txid
      )
@@ -201,11 +203,11 @@ sharedTxStateInvariant strength SharedTxState {
     knownPeers = Map.keysSet sharedPeers
 
     keysRoundTripForward =
-      all (\(txid, txKey) -> IntMap.lookup (unTxKey txKey) sharedKeyToTxId == Just txid)
+      all (\(rawId, txKey) -> fmap getRawTxId (IntMap.lookup (unTxKey txKey) sharedKeyToTxId) == Just rawId)
           (Map.toList sharedTxIdToKey)
 
     keysRoundTripBackward =
-      all (\(k, txid) -> Map.lookup txid sharedTxIdToKey == Just (TxKey k))
+      all (\(k, txid) -> Map.lookup (getRawTxId txid) sharedTxIdToKey == Just (TxKey k))
           (IntMap.toList sharedKeyToTxId)
 
     advertisersForKey k =
@@ -357,8 +359,8 @@ prop_handleReceivedTxIds_newEntries (Positive peeraddr) (ArbSharedTxState shared
         `IntSet.union`
       IntSet.fromList [ unTxKey (lookupKeyOrFail txid sharedState') | (txid, _) <- txidsAndSizes ]
 
-    checkExistingTxId (txid, txKey) =
-      Map.lookup txid (sharedTxIdToKey sharedState') === Just txKey
+    checkExistingTxId (rawId, txKey) =
+      Map.lookup rawId (sharedTxIdToKey sharedState') === Just txKey
 
     checkEntry (txid, _) =
       case IntMap.lookup (unTxKey (lookupKeyOrFail txid sharedState')) (sharedTxTable sharedState') of
@@ -383,7 +385,7 @@ prop_handleReceivedTxIds_knownToMempool (Positive peeraddr) txid0 txSize0 =
     , toList (peerUnacknowledgedTxIds peerState') === [key]
     , IntMap.lookup (unTxKey key) (sharedTxTable sharedState') === (Nothing :: Maybe (TxEntry PeerAddr))
     , retainedLookup (unTxKey key) (sharedRetainedTxs sharedState') === Just expectedRetainUntil
-    , Map.lookup txid (sharedTxIdToKey sharedState') === Just key
+    , Map.lookup (getRawTxId txid) (sharedTxIdToKey sharedState') === Just key
     , IntMap.lookup (unTxKey key) (sharedKeyToTxId sharedState') === Just txid
     , sharedGeneration sharedState' === 1
     , checkNoThunks "peerState'" (peerState' :: PeerTxLocalState (Tx TxId))
@@ -426,7 +428,7 @@ prop_handleReceivedTxIds_retainedIsLocalOnly (Positive peeraddr) txid0 txSize0 =
     sharedState0 = ensurePeerAdvertisesTxKeys peeraddr [] $
       emptySharedTxState
       { sharedRetainedTxs = retainedSingleton k retainUntil
-      , sharedTxIdToKey = Map.singleton txid key
+      , sharedTxIdToKey = Map.singleton (getRawTxId txid) key
       , sharedKeyToTxId = IntMap.singleton k txid
       , sharedNextTxKey = 1
       , sharedGeneration = 7
@@ -561,7 +563,7 @@ prop_handleReceivedTxs_buffersAndDropsOmitted (Positive peeraddr) txidA0 txidB0 
       , fmap (Map.lookup peeraddr . txAttempts) (IntMap.lookup kA (sharedTxTable sharedState')) === Just (Just TxBuffered)
       , IntMap.lookup kB (sharedTxTable sharedState') === (Nothing :: Maybe (TxEntry PeerAddr))
       , retainedLookup kB (sharedRetainedTxs sharedState') === Nothing
-      , Map.lookup txidB (sharedTxIdToKey sharedState') === Nothing
+      , Map.lookup (getRawTxId txidB) (sharedTxIdToKey sharedState') === Nothing
       , IntMap.lookup kB (sharedKeyToTxId sharedState') === Nothing
       , sharedGeneration sharedState' === 1
       , checkNoThunks "peerState'" (peerState' :: PeerTxLocalState (Tx TxId))
@@ -679,7 +681,7 @@ prop_handleReceivedTxs_penalizesOmittedAfterPrune (Positive peeraddr) txid0 txSi
     , peerDownloadedTxs peerState' === (IntMap.empty :: IntMap.IntMap (Tx TxId))
     , sharedTxTable sharedState' === IntMap.empty
     , retainedLookup k (sharedRetainedTxs sharedState') === Nothing
-    , Map.lookup txid (sharedTxIdToKey sharedState') === Nothing
+    , Map.lookup (getRawTxId txid) (sharedTxIdToKey sharedState') === Nothing
     , IntMap.lookup k (sharedKeyToTxId sharedState') === Nothing
     , sharedGeneration sharedState' === 1
     , checkNoThunks "peerState'" (peerState' :: PeerTxLocalState (Tx TxId))
@@ -703,6 +705,7 @@ prop_handleReceivedTxs_penalizesOmittedAfterPrune (Positive peeraddr) txid0 txSi
       , peerRequestedTxBatches = StrictSeq.singleton (mkRequestedTxBatch [key] txSize)
       , peerRequestedTxsSize = txSize
       }
+    sharedStatePruned :: SharedTxState PeerAddr TxId
     sharedStatePruned = sharedStateBase
       { sharedTxTable = IntMap.empty
       , sharedRetainedTxs = retainedEmpty
@@ -727,11 +730,11 @@ prop_handleSubmittedTxs_retainsAcceptedAndDropsRejected (Positive peeraddr) txid
       [ peerDownloadedTxs peerState' === IntMap.empty
       , IntMap.lookup kA (sharedTxTable sharedState') === (Nothing :: Maybe (TxEntry PeerAddr))
       , retainedLookup kA (sharedRetainedTxs sharedState') === Just expectedRetainUntil
-      , Map.lookup txidA (sharedTxIdToKey sharedState') === Just keyA
+      , Map.lookup (getRawTxId txidA) (sharedTxIdToKey sharedState') === Just keyA
       , IntMap.lookup kA (sharedKeyToTxId sharedState') === Just txidA
       , IntMap.lookup kB (sharedTxTable sharedState') === (Nothing :: Maybe (TxEntry PeerAddr))
       , retainedLookup kB (sharedRetainedTxs sharedState') === Nothing
-      , Map.lookup txidB (sharedTxIdToKey sharedState') === Nothing
+      , Map.lookup (getRawTxId txidB) (sharedTxIdToKey sharedState') === Nothing
       , IntMap.lookup kB (sharedKeyToTxId sharedState') === Nothing
       , sharedGeneration sharedState' === 1
       , checkNoThunks "peerState'" (peerState' :: PeerTxLocalState (Tx TxId))
@@ -796,7 +799,7 @@ prop_nextPeerAction_prioritisesSubmit (Positive peeraddr) txid0 txSize0 =
           , txAdvertiserCount = 1
           , txAttempts = Map.singleton peeraddr TxBuffered
           }
-      , sharedTxIdToKey = Map.singleton txid key
+      , sharedTxIdToKey = Map.singleton (getRawTxId txid) key
       , sharedKeyToTxId = IntMap.singleton k txid
       , sharedNextTxKey = 1
       }
@@ -845,7 +848,7 @@ prop_nextPeerAction_claimsClaimableTx (Positive peerA0) (Positive peerB0) (Posit
           , (peerB, withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle))
           , (peerC, withAdvertisedTxKeys [key] (mkSharedPeerState PeerWaitingTxs))
           ]
-      , sharedTxIdToKey = Map.singleton txid key
+      , sharedTxIdToKey = Map.singleton (getRawTxId txid) key
       , sharedKeyToTxId = IntMap.singleton k txid
       , sharedNextTxKey = 1
       , sharedTxTable = IntMap.singleton k TxEntry
@@ -881,7 +884,7 @@ unit_nextPeerAction_claimsAtScoreDelayThreshold step = do
       { sharedPeers =
           Map.singleton peeraddr
             (withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle))
-      , sharedTxIdToKey = Map.singleton txid key
+      , sharedTxIdToKey = Map.singleton (getRawTxId txid) key
       , sharedKeyToTxId = IntMap.singleton k txid
       , sharedNextTxKey = 1
       , sharedTxTable = IntMap.singleton k TxEntry
@@ -933,7 +936,7 @@ prop_nextPeerAction_claimsExpiredLease (Positive oldOwner0) (Positive peerA0) (P
           , (peerA, withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle))
           , (peerB, withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle))
           ]
-      , sharedTxIdToKey = Map.singleton txid key
+      , sharedTxIdToKey = Map.singleton (getRawTxId txid) key
       , sharedKeyToTxId = IntMap.singleton k txid
       , sharedNextTxKey = 1
       , sharedTxTable = IntMap.singleton k TxEntry
@@ -978,7 +981,7 @@ prop_nextPeerAction_requestsOversizedFirstTx (Positive peeraddr) txid0 (Positive
     sharedState0 = emptySharedTxState
       { sharedPeers = Map.singleton peeraddr
           (withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle))
-      , sharedTxIdToKey = Map.singleton txid key
+      , sharedTxIdToKey = Map.singleton (getRawTxId txid) key
       , sharedKeyToTxId = IntMap.singleton k txid
       , sharedNextTxKey = 1
       , sharedTxTable = IntMap.singleton k (mkTxEntry peeraddr txSize Nothing)
@@ -1070,7 +1073,7 @@ prop_nextPeerAction_ownerSubmitsBuffered (Positive peeraddr) txid0 txSize0 =
           , txAdvertiserCount = 1
           , txAttempts = Map.singleton peeraddr TxBuffered
           }
-      , sharedTxIdToKey = Map.singleton txid key
+      , sharedTxIdToKey = Map.singleton (getRawTxId txid) key
       , sharedKeyToTxId = IntMap.singleton k txid
       , sharedNextTxKey = 1
       }
@@ -1134,8 +1137,8 @@ unit_nextPeerAction_requestsOtherWorkDespiteBlockedBufferedTx step = do
               })
           ]
       , sharedTxIdToKey = Map.fromList
-          [ (blockedTxid, blockedKey)
-          , (claimableTxid, claimableKey)
+          [ (getRawTxId blockedTxid, blockedKey)
+          , (getRawTxId claimableTxid, claimableKey)
           ]
       , sharedKeyToTxId = IntMap.fromList
           [ (kBlocked, blockedTxid)
@@ -1199,8 +1202,8 @@ unit_nextPeerAction_acksSafePrefixBeforeBlockedBufferedTx step = do
       , sharedTxTable = IntMap.singleton kBlocked blockedEntry
       , sharedRetainedTxs = retainedSingleton kResolved (addTime 17 now)
       , sharedTxIdToKey = Map.fromList
-          [ (resolvedTxid, resolvedKey)
-          , (blockedTxid, blockedKey)
+          [ (getRawTxId resolvedTxid, resolvedKey)
+          , (getRawTxId blockedTxid, blockedKey)
           ]
       , sharedKeyToTxId = IntMap.fromList
           [ (kResolved, resolvedTxid)
@@ -1261,7 +1264,7 @@ prop_nextPeerAction_nonOwnerWaitsUntilResolved (Positive owner0) (Positive peera
           , txAdvertiserCount = 2
           , txAttempts = Map.singleton owner TxBuffered
           }
-      , sharedTxIdToKey = Map.singleton txid key
+      , sharedTxIdToKey = Map.singleton (getRawTxId txid) key
       , sharedKeyToTxId = IntMap.singleton k txid
       , sharedNextTxKey = 1
       }
@@ -1312,7 +1315,7 @@ prop_nextPeerActionPipelined_requiresAckAndReq (Positive peeraddr) txid0 _txSize
     sharedState0 = emptySharedTxState
       { sharedPeers = Map.singleton peeraddr (mkSharedPeerState PeerIdle)
       , sharedRetainedTxs = retainedSingleton k (addTime 17 now)
-      , sharedTxIdToKey = Map.singleton txid key
+      , sharedTxIdToKey = Map.singleton (getRawTxId txid) key
       , sharedKeyToTxId = IntMap.singleton k txid
       , sharedNextTxKey = 1
       }
@@ -1351,7 +1354,7 @@ prop_nextPeerActionPipelined_requestsTxIds (Positive peeraddr) txid0 _txSize0 =
     sharedState0 = emptySharedTxState
       { sharedPeers = Map.singleton peeraddr (mkSharedPeerState PeerIdle)
       , sharedRetainedTxs = retainedSingleton k (addTime 17 now)
-      , sharedTxIdToKey = Map.singleton txid key
+      , sharedTxIdToKey = Map.singleton (getRawTxId txid) key
       , sharedKeyToTxId = IntMap.singleton k txid
       , sharedNextTxKey = 1
       }
@@ -1398,7 +1401,7 @@ unit_nextPeerActionPipelined_keepsOneUnackedWithOutstandingBodyReply step = do
             , (unTxKey keyB, addTime 17 now)
             , (unTxKey keyC, addTime 17 now)
             ]
-      , sharedTxIdToKey = Map.fromList [(txidA, keyA), (txidB, keyB), (txidC, keyC)]
+      , sharedTxIdToKey = Map.fromList [(getRawTxId txidA, keyA), (getRawTxId txidB, keyB), (getRawTxId txidC, keyC)]
       , sharedKeyToTxId =
           IntMap.fromList
             [ (unTxKey keyA, txidA)
@@ -1462,7 +1465,7 @@ prop_nextPeerActionPipelined_secondBodyBatch (Positive peeraddr) txidA0 txidB0 t
               , txAttempts = Map.empty
               })
           ]
-      , sharedTxIdToKey = Map.fromList [(txidA, keyA), (txidB, keyB)]
+      , sharedTxIdToKey = Map.fromList [(getRawTxId txidA, keyA), (getRawTxId txidB, keyB)]
       , sharedKeyToTxId = IntMap.fromList [(kA, txidA), (kB, txidB)]
       , sharedNextTxKey = 2
       }
@@ -1526,7 +1529,7 @@ prop_nextPeerActionPipelined_noThirdBodyBatch (Positive peeraddr) txidA0 txidB0 
               , txAttempts = Map.empty
               })
           ]
-      , sharedTxIdToKey = Map.fromList [(txidA, keyA), (txidB, keyB), (txidC, keyC)]
+      , sharedTxIdToKey = Map.fromList [(getRawTxId txidA, keyA), (getRawTxId txidB, keyB), (getRawTxId txidC, keyC)]
       , sharedKeyToTxId = IntMap.fromList [(kA, txidA), (kB, txidB), (kC, txidC)]
       , sharedNextTxKey = 3
       }
@@ -1546,7 +1549,7 @@ prop_nextPeerAction_prunesExpiredRetained (Positive peeraddr) txid0 _txSize0 =
            [ peerState' === idlePeerState
            , IntMap.lookup k (sharedTxTable sharedState') === (Nothing :: Maybe (TxEntry PeerAddr))
            , retainedLookup k (sharedRetainedTxs sharedState') === Nothing
-           , Map.lookup txid (sharedTxIdToKey sharedState') === Nothing
+           , Map.lookup (getRawTxId txid) (sharedTxIdToKey sharedState') === Nothing
            , IntMap.lookup k (sharedKeyToTxId sharedState') === Nothing
            , sharedGeneration sharedState' === sharedGeneration sharedState0 + 1
            ]
@@ -1560,7 +1563,7 @@ prop_nextPeerAction_prunesExpiredRetained (Positive peeraddr) txid0 _txSize0 =
     sharedState0 = emptySharedTxState
       { sharedPeers = Map.singleton peeraddr (mkSharedPeerState PeerIdle)
       , sharedRetainedTxs = retainedSingleton k now
-      , sharedTxIdToKey = Map.singleton txid key
+      , sharedTxIdToKey = Map.singleton (getRawTxId txid) key
       , sharedKeyToTxId = IntMap.singleton k txid
       , sharedNextTxKey = max 1 (k + 1)
       }
@@ -1580,7 +1583,7 @@ prop_nextPeerAction_keepsRetained (Positive peeraddr) txid0 _txSize0 =
            [ peerState' === idlePeerState
            , IntMap.lookup k (sharedTxTable sharedState') === (Nothing :: Maybe (TxEntry PeerAddr))
            , retainedLookup k (sharedRetainedTxs sharedState') === Just retainUntil
-           , Map.lookup txid (sharedTxIdToKey sharedState') === Just key
+           , Map.lookup (getRawTxId txid) (sharedTxIdToKey sharedState') === Just key
            , IntMap.lookup k (sharedKeyToTxId sharedState') === Just txid
            , wakeDelay === diffTime retainUntil now
            , sharedGeneration sharedState' === sharedGeneration sharedState0
@@ -1596,7 +1599,7 @@ prop_nextPeerAction_keepsRetained (Positive peeraddr) txid0 _txSize0 =
     sharedState0 = emptySharedTxState
       { sharedPeers = Map.singleton peeraddr (mkSharedPeerState PeerIdle)
       , sharedRetainedTxs = retainedSingleton k retainUntil
-      , sharedTxIdToKey = Map.singleton txid key
+      , sharedTxIdToKey = Map.singleton (getRawTxId txid) key
       , sharedKeyToTxId = IntMap.singleton k txid
       , sharedNextTxKey = 1
       }
@@ -1645,7 +1648,7 @@ prop_nextPeerAction_earliestWakeDelay (Positive peeraddr) (Positive owner0) txid
           , txAttempts = Map.empty
           }
       , sharedRetainedTxs = retainedSingleton (unTxKey keyB) retainUntilLater
-      , sharedTxIdToKey = Map.fromList [(txidA, keyA), (txidB, keyB)]
+      , sharedTxIdToKey = Map.fromList [(getRawTxId txidA, keyA), (getRawTxId txidB, keyB)]
       , sharedKeyToTxId = IntMap.fromList [(unTxKey keyA, txidA), (unTxKey keyB, txidB)]
       , sharedNextTxKey = 2
       }
@@ -1657,7 +1660,7 @@ prop_nextPeerAction_earliestWakeDelay (Positive peeraddr) (Positive owner0) txid
           , txAttempts = Map.empty
           }
       , sharedRetainedTxs = retainedSingleton (unTxKey keyB) retainUntilSoon
-      , sharedTxIdToKey = Map.fromList [(txidA, keyA), (txidB, keyB)]
+      , sharedTxIdToKey = Map.fromList [(getRawTxId txidA, keyA), (getRawTxId txidB, keyB)]
       , sharedKeyToTxId = IntMap.fromList [(unTxKey keyA, txidA), (unTxKey keyB, txidB)]
       , sharedNextTxKey = 2
       }
@@ -1729,7 +1732,7 @@ prop_handleSubmittedTxs_bumpsIdleAdvertisers (Positive owner0) (Positive peerA0)
           , txAdvertiserCount = 3
           , txAttempts = Map.singleton owner TxBuffered
           }
-      , sharedTxIdToKey = Map.singleton txid key
+      , sharedTxIdToKey = Map.singleton (getRawTxId txid) key
       , sharedKeyToTxId = IntMap.singleton k txid
       , sharedNextTxKey = 1
       }
@@ -2393,18 +2396,18 @@ dedupeBatch = nubBy ((==) `on` fst)
 freshBatchAgainstSharedState :: SharedTxState PeerAddr TxId -> [(TxId, SizeInBytes)] -> [(TxId, SizeInBytes)]
 freshBatchAgainstSharedState sharedState = reverse . snd . foldl' step (reserved, [])
   where
-    reserved = IntSet.fromList (Map.keys (sharedTxIdToKey sharedState))
+    reserved = Set.fromList (Map.keys (sharedTxIdToKey sharedState))
 
     step (used, acc) (txid, txSize) =
       let freshTxId = firstFreshTxId used txid in
-      (IntSet.insert freshTxId used, (freshTxId, txSize) : acc)
+      (Set.insert (getRawTxId freshTxId) used, (freshTxId, txSize) : acc)
 
 -- Find the first txid not present in the reserved set.
-firstFreshTxId :: IntSet.IntSet -> TxId -> TxId
+firstFreshTxId :: Set.Set RawTxId -> TxId -> TxId
 firstFreshTxId used = go
   where
     go txid
-      | IntSet.member txid used = go (txid + 1)
+      | Set.member (getRawTxId txid) used = go (txid + 1)
       | otherwise = txid
 
 mkReceiveDuplicateFixture :: Int -> Int -> ReceiveDuplicateFixture
