@@ -210,7 +210,6 @@ runTxSubmission tracer _tracerTxLogic st0 txDecisionPolicy = do
                                       txSubmissionInboundV2 sayTracer
                                                             NoTxSubmissionInitDelay
                                                             txDecisionPolicy
-                                                            (getMempoolReader inboundMempool)
                                                             (getMempoolWriter duplicateTxIdsVar inboundMempool)
                                                             getTxSize
                                                             api

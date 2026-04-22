@@ -96,7 +96,6 @@ runDirectServerBenchmark
             nullTracer
             NoTxSubmissionInitDelay
             defaultTxDecisionPolicy
-            (getMempoolReader inboundMempool)
             (getMempoolWriter duplicateTxIdsVar inboundMempool)
             getTxSize
             api

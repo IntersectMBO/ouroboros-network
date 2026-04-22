@@ -730,7 +730,6 @@ applications debugTracer txSubmissionInboundTracer _txSubmissionInboundDebug nod
                            txSubmissionInboundTracer
                            NoTxSubmissionInitDelay
                            aaTxDecisionPolicy
-                           (getMempoolReader mempool)
                            (getMempoolWriter duplicateTxVar mempool)
                            getTxSize
                            api

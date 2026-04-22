@@ -38,7 +38,6 @@ import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
 import Ouroboros.Network.TxSubmission.Inbound.V2.Registry as V2
 import Ouroboros.Network.TxSubmission.Inbound.V2.State qualified as State
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types as V2
-import Ouroboros.Network.TxSubmission.Mempool.Reader
 
 -- The same Stateful types as V1 uses.
 newtype Stateful s n txid tx m = Stateful (s -> ServerStIdle n txid tx m ())
@@ -89,7 +88,6 @@ txSubmissionInboundV2
   => Tracer m (TraceTxSubmissionInbound txid tx)
   -> TxSubmissionInitDelay
   -> TxDecisionPolicy
-  -> TxSubmissionMempoolReader txid tx idx m
   -> TxSubmissionMempoolWriter txid tx idx m err
   -> (tx -> SizeInBytes)
   -> PeerTxAPI m txid tx
@@ -98,7 +96,6 @@ txSubmissionInboundV2
     tracer
     initDelay
     policy
-    TxSubmissionMempoolReader {}
     TxSubmissionMempoolWriter { txId, mempoolAddTxs }
     txSize
     PeerTxAPI {
