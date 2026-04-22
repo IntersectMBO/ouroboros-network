@@ -108,7 +108,7 @@ getPeerSelectionTargets consensus lsj deadlineTargets syncTargets =
 pickChurnRegime :: ChurnMode -> UseBootstrapPeers -> ChurnRegime
 pickChurnRegime churn bootstrap =
   case (churn, bootstrap) of
-    (ChurnMode FetchModeGenesis,                   _)                     -> ChurnDefault
+    (ChurnMode GenesisFetchMode,                   _)                     -> ChurnDefault
     (ChurnMode (PraosFetchMode FetchModeDeadline), _)                     -> ChurnDefault
     (ChurnMode (PraosFetchMode FetchModeBulkSync), DontUseBootstrapPeers) -> ChurnPraosSync
     (ChurnMode (PraosFetchMode FetchModeBulkSync), UseBootstrapPeers{})   -> ChurnBootstrapPraosSync

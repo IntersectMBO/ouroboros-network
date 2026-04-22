@@ -89,9 +89,9 @@ instance Arbitrary ArbitraryChurnMode where
     arbitrary = ArbitraryChurnMode . ChurnMode <$>
       elements [ PraosFetchMode FetchModeDeadline
                , PraosFetchMode FetchModeBulkSync
-               , FetchModeGenesis
+               , GenesisFetchMode
                ]
-    shrink (ArbitraryChurnMode (ChurnMode FetchModeGenesis)) =
+    shrink (ArbitraryChurnMode (ChurnMode GenesisFetchMode)) =
       [ ArbitraryChurnMode (ChurnMode (PraosFetchMode FetchModeDeadline))
       , ArbitraryChurnMode (ChurnMode (PraosFetchMode FetchModeBulkSync))
       ]
@@ -198,7 +198,7 @@ prop_hotToWarmM ArbitraryPolicyArguments{..} seed = do
                           return $ Map.unionWith (+) hup bup
                       ChurnMode (PraosFetchMode FetchModeBulkSync) ->
                           fetchynessBytes metrics
-                      ChurnMode FetchModeGenesis ->
+                      ChurnMode GenesisFetchMode ->
                           fetchynessBytes metrics
         let (picked, notPicked) = Map.partitionWithKey fn scores
             maxPicked = maximum $ Map.elems picked

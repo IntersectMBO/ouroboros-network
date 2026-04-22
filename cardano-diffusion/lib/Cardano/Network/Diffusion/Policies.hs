@@ -45,7 +45,7 @@ simpleChurnModePeerSelectionPolicy rngVar getChurnMode metrics =
                            bup <- fetchynessBytes metrics
                            return $ bup `optionalMerge` jpm
 
-                       ChurnMode FetchModeGenesis -> do
+                       ChurnMode GenesisFetchMode -> do
                            jpm <- joinedPeerMetricAt metrics
                            bup <- fetchynessBytes metrics
                            return $ bup `optionalMerge` jpm
