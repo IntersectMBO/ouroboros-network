@@ -1537,7 +1537,8 @@ prop_nextPeerActionPipelined_noThirdBodyBatch (Positive peeraddr) txidA0 txidB0 
       , sharedKeyToTxId = IntMap.fromList [(kA, txidA), (kB, txidB), (kC, txidC)]
       , sharedNextTxKey = 3
       }
-    (peerAction, peerState', sharedState') = nextPeerActionPipelined now defaultTxDecisionPolicy peeraddr peerState0 sharedState0
+    (peerAction, peerState', sharedState') = nextPeerActionPipelined now policy peeraddr peerState0 sharedState0
+    policy = defaultTxDecisionPolicy { maxOutstandingTxBatchesPerPeer = 2 }
 
 -- Verifies that nextPeerAction prunes expired retained txs and removes their
 -- tx-key mappings while the peer is idle.
