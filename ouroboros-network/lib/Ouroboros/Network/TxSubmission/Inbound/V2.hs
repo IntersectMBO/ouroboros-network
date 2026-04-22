@@ -53,13 +53,14 @@ continueWithState :: Stateful s n txid tx m
                   -> ServerStIdle n txid tx m ()
 continueWithState (Stateful f) !st =
     f st
+{-# INLINE continueWithState #-}
 
 continueWithStateM :: StatefulM s n txid tx m
                    -> s
                    -> m (ServerStIdle n txid tx m ())
 continueWithStateM (StatefulM f) !st =
     f st
-{-# NOINLINE continueWithStateM #-}
+{-# INLINE continueWithStateM #-}
 
 collectAndContinueWithState :: StatefulCollect s n txid tx m
                             -> s
@@ -67,7 +68,7 @@ collectAndContinueWithState :: StatefulCollect s n txid tx m
                             -> m (ServerStIdle n txid tx m ())
 collectAndContinueWithState (StatefulCollect f) !st c =
     f st c
-{-# NOINLINE collectAndContinueWithState #-}
+{-# INLINE collectAndContinueWithState #-}
 
 -- | A tx-submission inbound side (server, sic!).
 --

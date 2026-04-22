@@ -105,6 +105,7 @@ nextPeerAction :: (Ord peeraddr, HasRawTxId txid)
                -> SharedTxState peeraddr txid
                -> (PeerAction, PeerTxLocalState tx, SharedTxState peeraddr txid)
 nextPeerAction = nextPeerActionWithMode AllowAnyTxIdRequests
+{-# INLINABLE nextPeerAction #-}
 
 -- | Pipelined version of nextPeerAction
 nextPeerActionPipelined :: (Ord peeraddr, HasRawTxId txid)
@@ -115,6 +116,7 @@ nextPeerActionPipelined :: (Ord peeraddr, HasRawTxId txid)
                         -> SharedTxState peeraddr txid
                         -> (PeerAction, PeerTxLocalState tx, SharedTxState peeraddr txid)
 nextPeerActionPipelined = nextPeerActionWithMode AllowPipelinedTxIdRequests
+{-# INLINABLE nextPeerActionPipelined #-}
 
 -- | V2 peer-thread scheduler
 --
@@ -752,6 +754,7 @@ sweepSharedState now st
     isOrphan TxEntry { txLease = TxLeased {} } = False
     isOrphan TxEntry { txAdvertiserCount, txAttempts } =
       txAdvertiserCount == 0 && Map.null txAttempts
+{-# INLINABLE sweepSharedState #-}
 
 -- | Is the TX entry alive?
 --
@@ -1077,6 +1080,7 @@ handleReceivedTxs mempoolHasTx now policy peeraddr txs peerState sharedState =
              else txAdvertiserCount,
         txAttempts = Map.delete peeraddr txAttempts
       }
+{-# INLINABLE handleReceivedTxs #-}
 
 
 -- | Handle the result of submitting buffered txs to the mempool.
@@ -1181,6 +1185,7 @@ handleSubmittedTxs now policy peeraddr acceptedTxs rejectedTxs peerState sharedS
              else txAdvertiserCount,
         txAttempts = Map.delete peeraddr txAttempts
       }
+{-# INLINABLE handleSubmittedTxs #-}
 
 
 -- | Mark buffered txs as entering mempool submission.
@@ -1404,3 +1409,4 @@ handleReceivedTxIds mempoolHasTx now policy peeraddr requestedTxIds txidsAndSize
                }
              )
       where rawId = getRawTxId txid
+{-# INLINABLE handleReceivedTxIds #-}
