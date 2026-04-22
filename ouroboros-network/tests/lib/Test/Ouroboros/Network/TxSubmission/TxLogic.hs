@@ -34,6 +34,7 @@ import Data.IntMap.Strict qualified as IntMap
 import Data.IntSet qualified as IntSet
 import Data.List (nub, nubBy)
 import Data.Map.Strict qualified as Map
+import Data.Maybe (isJust)
 import Data.Sequence.Strict qualified as StrictSeq
 import Data.Set qualified as Set
 import Data.Word (Word64)
@@ -63,9 +64,7 @@ tests =
     [ testProperty "handleReceivedTxIds handles mixed new / retained / mempool txids" prop_handleReceivedTxIds
     , testCaseSteps "handleReceivedTxIds adds the current peer as an advertiser for active txs" unit_handleReceivedTxIds_addsAdvertiserForActiveTxs
     , testCaseSteps "nextPeerAction lets another peer claim a fresh tx when the first advertiser is full" unit_nextPeerAction_claimsFreshTxWhenFirstAdvertiserIsFull
-    , testProperty "handleReceivedTxs buffers received and drops omitted txs" prop_handleReceivedTxs_buffersAndDropsOmitted
-    , testProperty "handleReceivedTxs drops late bodies already retained or in mempool" prop_handleReceivedTxs_dropsLateBodies
-    , testProperty "handleReceivedTxs penalizes omitted txs after full prune" prop_handleReceivedTxs_penalizesOmittedAfterPrune
+    , testProperty "handleReceivedTxs handles mixed buffered / omitted / late-retained / late-mempool / pruned txids" prop_handleReceivedTxs
     , testProperty "handleSubmittedTxs retains accepted and drops rejected" prop_handleSubmittedTxs_retainsAcceptedAndDropsRejected
     , testProperty "nextPeerAction prioritises submitting buffered owned txs" prop_nextPeerAction_prioritisesSubmit
     , testProperty "nextPeerAction claims claimable tx for best idle advertiser" prop_nextPeerAction_claimsClaimableTx
@@ -372,6 +371,70 @@ instance Arbitrary TxIdGroupTag where
     , (4,  pure TxIdMempool)
     , (1,  pure TxIdMempoolResolvesActive)
     ]
+
+-- | Per-requested-txid fate, driving the coherent pre-state for
+-- 'handleReceivedTxs' properties:
+--
+-- * 'RfBuffered': body is in the reply, entry is active with peeraddr's
+--   TxDownloading attempt. Expected: attempt flipped to TxBuffered, body
+--   added to peerDownloadedTxs. @Bool@ = co-advertised by another peer.
+-- * 'RfOmitted': body is not in the reply, entry is active with peeraddr's
+--   TxDownloading attempt. Expected: lease released; entry survives if
+--   co-advertised, otherwise reaped by dropDeadActiveKeys. @Bool@ =
+--   co-advertised.
+-- * 'RfLateRetained': body is in the reply, but the key is already in
+--   sharedRetainedTxs (no sharedTxTable entry). Expected: body dropped,
+--   lateCount incremented, no state change beyond the usual peer bookkeeping.
+-- * 'RfLateMempool': body is in the reply, entry is active with peeraddr's
+--   TxDownloading attempt, and the callback reports the tx as already in
+--   the mempool. Expected: body dropped, entry moved from sharedTxTable
+--   to sharedRetainedTxs, advertising stripped, any other advertiser woken.
+-- * 'RfOmittedPruned': body is not in the reply, and the key is not in
+--   sharedState at all (fully pruned by some concurrent cleanup before
+--   the reply arrives). Expected: omittedCount incremented, no shared-state
+--   change (@keyWasLive@ is False so 'handleOmitted' takes the count-only
+--   branch).
+data RequestedFate
+  = RfBuffered     !Bool
+  | RfOmitted      !Bool
+  | RfLateRetained
+  | RfLateMempool
+  | RfOmittedPruned
+  deriving (Eq, Show)
+
+instance Arbitrary RequestedFate where
+  arbitrary = frequency
+    [ (4, pure (RfBuffered False))
+    , (2, pure (RfBuffered True))
+    , (3, pure (RfOmitted  False))
+    , (2, pure (RfOmitted  True))
+    , (1, pure RfLateRetained)
+    , (1, pure RfLateMempool)
+    , (1, pure RfOmittedPruned)
+    ]
+
+rfInReply :: RequestedFate -> Bool
+rfInReply RfBuffered{}     = True
+rfInReply RfOmitted{}      = False
+rfInReply RfLateRetained   = True
+rfInReply RfLateMempool    = True
+rfInReply RfOmittedPruned  = False
+
+rfCoAdvertised :: RequestedFate -> Bool
+rfCoAdvertised (RfBuffered c) = c
+rfCoAdvertised (RfOmitted  c) = c
+rfCoAdvertised _              = False
+
+rfGoesToActive :: RequestedFate -> Bool
+rfGoesToActive RfBuffered{}    = True
+rfGoesToActive RfOmitted{}     = True
+rfGoesToActive RfLateMempool   = True
+rfGoesToActive RfLateRetained  = False
+rfGoesToActive RfOmittedPruned = False
+
+rfIsPruned :: RequestedFate -> Bool
+rfIsPruned RfOmittedPruned = True
+rfIsPruned _               = False
 
 instance Arbitrary ArbTxDecisionPolicy where
     arbitrary =
@@ -870,178 +933,407 @@ unit_nextPeerAction_claimsFreshTxWhenFirstAdvertiserIsFull step = do
       }
     peerBState0 = emptyPeerTxLocalState { peerRequestedTxIds = requestedToReply }
 
--- Verifies that handleReceivedTxs buffers received bodies and removes omitted
--- requested txs from peer and shared state.
-prop_handleReceivedTxs_buffersAndDropsOmitted
-  :: Positive Int
-  -> TxId
-  -> TxId
-  -> Positive Int
-  -> Positive Int
+-- Verifies that handleReceivedTxs resolves each requested txid according to
+-- its 'RequestedFate': 'RfBuffered' flips the attempt to 'TxBuffered' and
+-- inserts the body; 'RfOmitted' releases peeraddr's lease with the entry
+-- surviving iff co-advertised; 'RfLateRetained' drops the body and counts
+-- a late reply with no further state change; 'RfLateMempool' drops the
+-- body, moves the active entry to sharedRetainedTxs, and strips advertising;
+-- 'RfOmittedPruned' counts a penalty even though the key has already been
+-- fully pruned from shared state. Aggregate 'omittedCount' and 'lateCount'
+-- match the group sizes, peer-local fields handleReceivedTxs does not touch
+-- are preserved, and the combined invariant holds before and after.
+prop_handleReceivedTxs
+  :: ArbSharedTxState
+  -> ArbPeerTxLocalState
+  -> NonEmptyList (TxId, Positive Int, RequestedFate)
   -> Property
-prop_handleReceivedTxs_buffersAndDropsOmitted (Positive peeraddr) txidA0 txidB0 txSizeA0 txSizeB0 =
-  txidA /= txidB ==>
+prop_handleReceivedTxs
+    (ArbSharedTxState sharedState0)
+    (ArbPeerTxLocalState peerStateGenerated)
+    (NonEmpty requestedInput) =
+  forAll (genPeerAddrBiased sharedState0) $ \peeraddr ->
+  let sharedStateWithPeer = ensurePeerAdvertisesTxKeys peeraddr [] sharedState0
+
+      dedupedTagged :: [((TxId, SizeInBytes), RequestedFate)]
+      dedupedTagged =
+        nubBy ((==) `on` (fst . fst))
+          [ ((abs txid + 1, mkSize txSize), fate)
+          | (txid, txSize, fate) <- requestedInput
+          ]
+
+      freshenedTxids :: [(TxId, SizeInBytes)]
+      freshenedTxids =
+        freshBatchAgainstSharedState sharedStateWithPeer (fmap fst dedupedTagged)
+
+      taggedFreshened :: [((TxId, SizeInBytes), RequestedFate)]
+      taggedFreshened = zip freshenedTxids (fmap snd dedupedTagged)
+
+      otherPeerOpt :: Maybe PeerAddr
+      otherPeerOpt =
+        case filter (/= peeraddr) (Map.keys (sharedPeers sharedStateWithPeer)) of
+          []    -> Nothing
+          (p:_) -> Just p
+
+      -- Partition by fate.
+      bufferedGroup, omittedGroup, lateRetainedGroup, lateMempoolGroup, prunedGroup
+        :: [((TxId, SizeInBytes), RequestedFate)]
+      bufferedGroup     = [ e | e@(_, RfBuffered{})    <- taggedFreshened ]
+      omittedGroup      = [ e | e@(_, RfOmitted{})     <- taggedFreshened ]
+      lateRetainedGroup = [ e | e@(_, RfLateRetained)  <- taggedFreshened ]
+      lateMempoolGroup  = [ e | e@(_, RfLateMempool)   <- taggedFreshened ]
+      prunedGroup       = [ e | e@(_, RfOmittedPruned) <- taggedFreshened ]
+
+      -- Entries that need an active sharedTxTable seed, tagged with whether
+      -- the entry is co-advertised by otherPeer. LateMempool keys seed an
+      -- active entry (single advertiser) so the mempool branch of handleOne
+      -- hits the Just lookup and fires removeAdvertisingPeersForResolvedTx.
+      activeSeedTagged :: [((TxId, SizeInBytes), Bool)]
+      activeSeedTagged =
+        [ (fst e, rfCoAdvertised (snd e))
+        | e <- taggedFreshened
+        , rfGoesToActive (snd e)
+        ]
+
+      -- Seed retained first (no sharedTxTable entry, no advertising), then
+      -- active on top (leased to peeraddr with a TxDownloading attempt, plus
+      -- otherPeer advertising for co-advertised ones). Pruned entries are
+      -- deliberately not seeded: their keys live only in the peer's local
+      -- bookkeeping.
+      sharedStateWithLateRetained =
+        seedRetainedTxids (fmap fst lateRetainedGroup) sharedStateWithPeer
+      sharedStateBase =
+        seedRequestedActiveTxids peeraddr otherPeerOpt activeSeedTagged
+                                 sharedStateWithLateRetained
+
+      -- Synthetic keys for pruned entries, chosen to land above every key
+      -- that 'sharedStateBase' already uses so they don't collide with
+      -- anything interned. These keys never appear in any shared-state map.
+      prunedAllocations :: [(((TxId, SizeInBytes), RequestedFate), Int)]
+      prunedAllocations =
+        zip prunedGroup [ sharedNextTxKey sharedStateBase + i
+                        | i <- [0 .. length prunedGroup - 1] ]
+
+      -- Resolve each tagged entry to an Int key: interned entries look their
+      -- key up in sharedStateBase; pruned entries use their synthetic key.
+      prunedKeyByTxId :: Map.Map TxId Int
+      prunedKeyByTxId =
+        Map.fromList [ (txid, k) | (((txid, _), _), k) <- prunedAllocations ]
+
+      keyIntOf :: ((TxId, SizeInBytes), RequestedFate) -> Int
+      keyIntOf ((txid, _), fate)
+        | rfIsPruned fate = prunedKeyByTxId Map.! txid
+        | otherwise       = unTxKey (lookupKeyOrFail txid sharedStateBase)
+
+      -- All requested keys, in input order.
+      requestedKeyInts :: [Int]
+      requestedKeyInts = [ keyIntOf e | e <- taggedFreshened ]
+      requestedKeys :: [TxKey]
+      requestedKeys = fmap TxKey requestedKeyInts
+      requestedKeysSet :: IntSet.IntSet
+      requestedKeysSet = IntSet.fromList requestedKeyInts
+      requestedAvailableMap :: IntMap.IntMap SizeInBytes
+      requestedAvailableMap =
+        IntMap.fromList (zip requestedKeyInts (fmap (snd . fst) taggedFreshened))
+      requestedTotalSize :: SizeInBytes
+      requestedTotalSize = sum (fmap (snd . fst) taggedFreshened)
+      requestedBatch = mkRequestedTxBatch requestedKeys requestedTotalSize
+
+      -- Keys genuinely co-advertised by otherPeer (only Buffered/Omitted tags
+      -- can be co-advertised and only if otherPeerOpt is Just).
+      coAdvertisedKeys :: IntSet.IntSet
+      coAdvertisedKeys =
+        IntSet.fromList
+          [ keyIntOf e
+          | e@(_, fate) <- taggedFreshened
+          , rfCoAdvertised fate
+          , isJust otherPeerOpt
+          ]
+
+      -- Omitted entries that survive (co-advertised) vs get reaped (solo).
+      omittedSurvivingKeys, omittedReapedKeys, lateMempoolKeys :: IntSet.IntSet
+      omittedSurvivingKeys =
+        IntSet.fromList [ keyIntOf e | e <- omittedGroup, keyIntOf e `IntSet.member` coAdvertisedKeys ]
+      omittedReapedKeys =
+        IntSet.fromList [ keyIntOf e | e <- omittedGroup, not (keyIntOf e `IntSet.member` coAdvertisedKeys) ]
+      lateMempoolKeys =
+        IntSet.fromList [ keyIntOf e | e <- lateMempoolGroup ]
+
+      -- mempoolHasTx returns True exactly for the LateMempool group's txids.
+      mempoolTxidSet :: Set.Set TxId
+      mempoolTxidSet = Set.fromList (fmap (fst . fst) lateMempoolGroup)
+      mempoolHasTxFn :: TxId -> Bool
+      mempoolHasTxFn = (`Set.member` mempoolTxidSet)
+
+      -- Body list submitted to handleReceivedTxs: every in-reply entry.
+      receivedBodies :: [(TxId, Tx TxId)]
+      receivedBodies =
+        [ (txid, mkTx txid size)
+        | ((txid, size), fate) <- taggedFreshened
+        , rfInReply fate
+        ]
+
+      -- Peer-local state. Shift the generator's keys out of range, then
+      -- prepend advertised-from-sharedState0 keys plus our requested keys to
+      -- the unack queue, and overwrite the request bookkeeping with a single
+      -- batch of our requested keys (handleReceivedTxs only processes the
+      -- head batch). The shift must also land above the pruned keys, which
+      -- were allocated starting at 'sharedNextTxKey sharedStateBase'.
+      peerKeyShift =
+        sharedNextTxKey sharedStateBase + length prunedGroup + 1
+      preExistingAdvertised =
+        sharedPeerAdvertisedTxKeys
+          (lookupPeerOrFail peeraddr sharedStateWithPeer)
+      unackPrefix :: [TxKey]
+      unackPrefix =
+        [ TxKey k | k <- IntSet.toList preExistingAdvertised ]
+        ++ requestedKeys
+      peerStateShifted = shiftPeerTxLocalStateKeys peerKeyShift peerStateGenerated
+      peerState0 = peerStateShifted {
+          peerUnacknowledgedTxIds =
+            StrictSeq.fromList unackPrefix
+              <> peerUnacknowledgedTxIds peerStateShifted,
+          peerAvailableTxIds     = requestedAvailableMap,
+          peerRequestedTxs       = requestedKeysSet,
+          peerRequestedTxBatches = StrictSeq.singleton requestedBatch,
+          peerRequestedTxsSize   = requestedTotalSize
+        }
+
+      (omittedCount, lateCount, peerState', sharedState') =
+        handleReceivedTxs mempoolHasTxFn now defaultTxDecisionPolicy peeraddr
+                          receivedBodies peerState0 sharedStateBase
+
+      expectedRetainUntil =
+        addTime (bufferedTxsMinLifetime defaultTxDecisionPolicy) now
+
+      -- Per-fate assertions.
+      checkBufferedEntry ((txid, size), _) =
+        let k = unTxKey (lookupKeyOrFail txid sharedState') in
+        conjoin
+          [ counterexample "buffered: peeraddr attempt not TxBuffered"
+              (fmap (\TxEntry { txAttempts } -> Map.lookup peeraddr txAttempts)
+                    (IntMap.lookup k (sharedTxTable sharedState'))
+                 === Just (Just TxBuffered))
+          , counterexample "buffered: body missing from peerDownloadedTxs"
+              (fmap getTxId (IntMap.lookup k (peerDownloadedTxs peerState'))
+                 === Just txid)
+          , counterexample "buffered: body has wrong size"
+              (fmap getTxSize (IntMap.lookup k (peerDownloadedTxs peerState'))
+                 === Just size)
+          ]
+
+      checkOmittedSurvivingEntry ((txid, _), _) =
+        let k = unTxKey (lookupKeyOrFail txid sharedState') in
+        case IntMap.lookup k (sharedTxTable sharedState') of
+          Nothing ->
+            counterexample ("co-adv omitted entry was reaped for " ++ show txid)
+                           (property False)
+          Just TxEntry { txLease, txAdvertiserCount, txAttempts } ->
+            conjoin
+              [ counterexample "co-adv omitted: lease not demoted"
+                  (txLease === TxClaimable now)
+              , counterexample "co-adv omitted: advertiser count not decremented"
+                  (txAdvertiserCount === 1)
+              , counterexample "co-adv omitted: peeraddr attempt not cleared"
+                  (property (Map.notMember peeraddr txAttempts))
+              ]
+
+      checkOmittedReapedEntry ((txid, _), _) =
+        let k = unTxKey (lookupKeyOrFail txid sharedStateBase)
+            rawId = getRawTxId txid
+        in conjoin
+             [ counterexample "reaped omitted: still in sharedTxTable"
+                 (property (IntMap.notMember k (sharedTxTable sharedState')))
+             , counterexample "reaped omitted: leaked into sharedRetainedTxs"
+                 (property (not (retainedMember k (sharedRetainedTxs sharedState'))))
+             , counterexample "reaped omitted: still in sharedKeyToTxId"
+                 (property (IntMap.notMember k (sharedKeyToTxId sharedState')))
+             , counterexample "reaped omitted: still in sharedTxIdToKey"
+                 (property (Map.notMember rawId (sharedTxIdToKey sharedState')))
+             ]
+
+      -- LateRetained: sharedRetainedTxs entry untouched; no sharedTxTable
+      -- entry exists or is created; body was dropped.
+      checkLateRetainedEntry ((txid, _), _) =
+        let k = unTxKey (lookupKeyOrFail txid sharedStateBase) in
+        conjoin
+          [ counterexample "late-retained: leaked into sharedTxTable"
+              (property (IntMap.notMember k (sharedTxTable sharedState')))
+          , counterexample "late-retained: retain-until mismatch"
+              (retainedLookup k (sharedRetainedTxs sharedState')
+                 === Just expectedRetainUntil)
+          , counterexample "late-retained: leaked into peerDownloadedTxs"
+              (property (IntMap.notMember k (peerDownloadedTxs peerState')))
+          ]
+
+      -- LateMempool: active entry moved from sharedTxTable to
+      -- sharedRetainedTxs; peeraddr's advertising stripped.
+      checkLateMempoolEntry ((txid, _), _) =
+        let k = unTxKey (lookupKeyOrFail txid sharedStateBase) in
+        conjoin
+          [ counterexample "late-mempool: still in sharedTxTable"
+              (property (IntMap.notMember k (sharedTxTable sharedState')))
+          , counterexample "late-mempool: retain-until mismatch"
+              (retainedLookup k (sharedRetainedTxs sharedState')
+                 === Just expectedRetainUntil)
+          , counterexample "late-mempool: leaked into peerDownloadedTxs"
+              (property (IntMap.notMember k (peerDownloadedTxs peerState')))
+          , counterexample "late-mempool: still in peer advertised keys"
+              (property (IntSet.notMember k
+                          (sharedPeerAdvertisedTxKeys
+                            (lookupPeerOrFail peeraddr sharedState'))))
+          ]
+
+      -- Pruned: synthetic key was never interned; handleOmitted takes the
+      -- count-only branch and leaves shared state untouched.
+      checkPrunedEntry (((txid, _), _), k) =
+        let rawId = getRawTxId txid in
+        conjoin
+          [ counterexample "pruned: leaked into sharedTxTable"
+              (property (IntMap.notMember k (sharedTxTable sharedState')))
+          , counterexample "pruned: leaked into sharedRetainedTxs"
+              (property (not (retainedMember k (sharedRetainedTxs sharedState'))))
+          , counterexample "pruned: leaked into sharedKeyToTxId"
+              (property (IntMap.notMember k (sharedKeyToTxId sharedState')))
+          , counterexample "pruned: leaked into sharedTxIdToKey"
+              (property (Map.notMember rawId (sharedTxIdToKey sharedState')))
+          , counterexample "pruned: leaked into peerDownloadedTxs"
+              (property (IntMap.notMember k (peerDownloadedTxs peerState')))
+          ]
+
+      -- Expected peeraddr advertised keys post-call: pre-existing plus only
+      -- the buffered group's keys. Omitted-group advertising is stripped by
+      -- removeOmittedAdvertisedKeys; LateMempool advertising is stripped by
+      -- removeAdvertisingPeersForResolvedTx; LateRetained never advertised.
+      expectedPeerAdvertisedPost =
+        preExistingAdvertised
+          `IntSet.union`
+        IntSet.fromList
+          [ unTxKey (lookupKeyOrFail txid sharedState')
+          | ((txid, _), _) <- bufferedGroup
+          ]
+
+      -- otherPeer is added to wakePeers when any surviving omitted entry
+      -- exists; its generation is bumped iff it was PeerIdle. LateMempool
+      -- is set up single-advertiser so it does not wake otherPeer here.
+      checkOtherPeerState =
+        case otherPeerOpt of
+          Just op | not (IntSet.null omittedSurvivingKeys) ->
+            let original = lookupPeerOrFail op sharedStateBase
+                post     = lookupPeerOrFail op sharedState'
+                bumpIfIdle g
+                  | sharedPeerPhase original == PeerIdle = g + 1
+                  | otherwise                            = g
+            in conjoin
+                 [ counterexample "other peer's advertised keys changed"
+                     (sharedPeerAdvertisedTxKeys post
+                        === sharedPeerAdvertisedTxKeys original)
+                 , counterexample "other peer's phase changed"
+                     (sharedPeerPhase post === sharedPeerPhase original)
+                 , counterexample "other peer's generation bump mismatch"
+                     (sharedPeerGeneration post
+                        === bumpIfIdle (sharedPeerGeneration original))
+                 ]
+          _ -> property True
+
+      affectedPeers :: Set.Set PeerAddr
+      affectedPeers =
+        Set.insert peeraddr $
+          case otherPeerOpt of
+            Just op | not (IntSet.null omittedSurvivingKeys) -> Set.singleton op
+            _                                                -> Set.empty
+
+      -- Key sets used for the "unchanged on stable old keys" assertions.
+      -- Every requested key has its sharedTxTable slot touched (added,
+      -- removed, or modified), so they are all excluded from stableForTxTable.
+      -- sharedKeyToTxId only loses reaped keys; sharedRetainedTxs only gains
+      -- LateMempool keys (and keeps the LateRetained pre-seed entries
+      -- unchanged).
+      oldKeys = IntMap.keysSet (sharedKeyToTxId sharedStateBase)
+      stableForKeyMaps  = oldKeys `IntSet.difference` omittedReapedKeys
+      stableForTxTable  = oldKeys `IntSet.difference` requestedKeysSet
+      stableForRetained = oldKeys `IntSet.difference` lateMempoolKeys
+
+      -- Generated peerDownloadedTxs keys (shifted) should survive untouched.
+      genDownloadedKeys =
+        IntMap.keysSet (peerDownloadedTxs peerStateShifted) in
+    classify (StrictSeq.null (peerUnacknowledgedTxIds peerStateGenerated))
+             "generated peer-local state: empty unacknowledged queue" $
+    classify (not (Map.member peeraddr (sharedPeers sharedState0)))
+             "peeraddr: fresh (not in generated sharedState)" $
+    classify (not (IntSet.null coAdvertisedKeys))
+             "requested txs include co-advertised" $
+    classify (not (null bufferedGroup))     "requested txs include buffered"      $
+    classify (not (null omittedGroup))      "requested txs include omitted"       $
+    classify (not (IntSet.null omittedSurvivingKeys))
+             "requested txs include omitted + surviving" $
+    classify (not (IntSet.null omittedReapedKeys))
+             "requested txs include omitted + reaped" $
+    classify (not (null lateRetainedGroup)) "requested txs include late-retained" $
+    classify (not (null lateMempoolGroup))  "requested txs include late-mempool"  $
+    classify (not (null prunedGroup))       "requested txs include pruned"        $
+    tabulate "requested"         [bucket (length freshenedTxids)]                         $
+    tabulate "buffered"          [bucket (length bufferedGroup)]                          $
+    tabulate "omitted"           [bucket (length omittedGroup)]                           $
+    tabulate "late-retained"     [bucket (length lateRetainedGroup)]                      $
+    tabulate "late-mempool"      [bucket (length lateMempoolGroup)]                       $
+    tabulate "pruned"            [bucket (length prunedGroup)]                            $
+    tabulate "sharedState peers" [bucket (Map.size (sharedPeers sharedStateBase))]        $
     conjoin
-      [ omittedCount === 1
-      , lateCount === 0
+      [ omittedCount === length omittedGroup + length prunedGroup
+      , lateCount    === length lateRetainedGroup + length lateMempoolGroup
       , peerRequestedTxs peerState' === IntSet.empty
+      , peerRequestedTxBatches peerState' === StrictSeq.empty
       , peerRequestedTxsSize peerState' === 0
-      , peerDownloadedTxs peerState' === IntMap.singleton kA txA
       , peerAvailableTxIds peerState' === IntMap.empty
-      , fmap (Map.lookup peeraddr . txAttempts) (IntMap.lookup kA (sharedTxTable sharedState')) === Just (Just TxBuffered)
-      , IntMap.lookup kB (sharedTxTable sharedState') === (Nothing :: Maybe (TxEntry PeerAddr))
-      , retainedLookup kB (sharedRetainedTxs sharedState') === Nothing
-      , Map.lookup (getRawTxId txidB) (sharedTxIdToKey sharedState') === Nothing
-      , IntMap.lookup kB (sharedKeyToTxId sharedState') === Nothing
-      , sharedGeneration sharedState' === 1
+      , peerUnacknowledgedTxIds peerState' === peerUnacknowledgedTxIds peerState0
+      , peerRequestedTxIds peerState' === peerRequestedTxIds peerState0
+      , peerDownloadStartTime peerState' === peerDownloadStartTime peerState0
+      , peerScore peerState' === peerScore peerState0
+      , counterexample "generated peerDownloadedTxs entries not preserved"
+          (IntMap.restrictKeys (peerDownloadedTxs peerState') genDownloadedKeys
+             === peerDownloadedTxs peerStateShifted)
+      , counterexample "buffered bodies not all inserted into peerDownloadedTxs"
+          (IntMap.restrictKeys (peerDownloadedTxs peerState')
+             (IntSet.fromList
+                [ unTxKey (lookupKeyOrFail txid sharedState')
+                | ((txid, _), _) <- bufferedGroup
+                ])
+             === IntMap.fromList
+                   [ (unTxKey (lookupKeyOrFail txid sharedState'), mkTx txid size)
+                   | ((txid, size), _) <- bufferedGroup
+                   ])
+      , Map.withoutKeys (sharedPeers sharedState') affectedPeers
+          === Map.withoutKeys (sharedPeers sharedStateBase) affectedPeers
+      , sharedPeerAdvertisedTxKeys (lookupPeerOrFail peeraddr sharedState')
+          === expectedPeerAdvertisedPost
+      , IntMap.restrictKeys (sharedTxTable sharedState') stableForTxTable
+          === IntMap.restrictKeys (sharedTxTable sharedStateBase) stableForTxTable
+      , IntMap.restrictKeys (sharedKeyToTxId sharedState') stableForKeyMaps
+          === IntMap.restrictKeys (sharedKeyToTxId sharedStateBase) stableForKeyMaps
+      , retainedRestrictKeys (sharedRetainedTxs sharedState') stableForRetained
+          === retainedRestrictKeys (sharedRetainedTxs sharedStateBase) stableForRetained
+      , sharedGeneration sharedState' === sharedGeneration sharedStateBase + 1
+      , conjoin (fmap checkBufferedEntry      bufferedGroup)
+      , conjoin [ checkOmittedSurvivingEntry e
+                | e <- omittedGroup
+                , keyIntOf e `IntSet.member` coAdvertisedKeys
+                ]
+      , conjoin [ checkOmittedReapedEntry e
+                | e <- omittedGroup
+                , not (keyIntOf e `IntSet.member` coAdvertisedKeys)
+                ]
+      , conjoin (fmap checkLateRetainedEntry lateRetainedGroup)
+      , conjoin (fmap checkLateMempoolEntry  lateMempoolGroup)
+      , conjoin (fmap checkPrunedEntry       prunedAllocations)
+      , checkOtherPeerState
+      , counterexample "combined invariant violated before the call"
+          (combinedStateInvariant StrongInvariant peeraddr peerState0 sharedStateBase)
+      , counterexample "combined invariant violated after the call"
+          (combinedStateInvariant StrongInvariant peeraddr peerState' sharedState')
       , checkNoThunks "peerState'" (peerState' :: PeerTxLocalState (Tx TxId))
       , checkNoThunks "sharedState'" sharedState'
       ]
-  where
-    txidA = abs txidA0 + 1
-    txidB = abs txidB0 + 2
-    txSizeA = mkSize txSizeA0
-    txSizeB = mkSize txSizeB0
-    txA = mkTx txidA txSizeA
-    sharedState0 =
-      let st = mkSharedState [txidA, txidB]
-          keyA' = lookupKeyOrFail txidA st
-          keyB' = lookupKeyOrFail txidB st in
-      ensurePeerAdvertisesTxKeys peeraddr [keyA', keyB'] $
-        st {
-             sharedTxTable = IntMap.fromList
-               [ (unTxKey keyA', mkTxEntry peeraddr txSizeA (Just TxDownloading))
-               , (unTxKey keyB', mkTxEntry peeraddr txSizeB (Just TxDownloading))
-               ]
-           }
-    keyA = lookupKeyOrFail txidA sharedState0
-    keyB = lookupKeyOrFail txidB sharedState0
-    kA = unTxKey keyA
-    kB = unTxKey keyB
-    peerState0 = emptyPeerTxLocalState
-      { peerAvailableTxIds = IntMap.fromList [(kA, txSizeA), (kB, txSizeB)]
-      , peerRequestedTxs = IntSet.fromList [kA, kB]
-      , peerRequestedTxBatches = StrictSeq.singleton (mkRequestedTxBatch [keyA, keyB] (txSizeA + txSizeB))
-      , peerRequestedTxsSize = txSizeA + txSizeB
-      }
-    (omittedCount, lateCount, peerState', sharedState') = handleReceivedTxs (const False) now defaultTxDecisionPolicy peeraddr [(txidA, txA)] peerState0 sharedState0
-
--- Verifies that handleReceivedTxs drops late bodies when the tx is already
--- retained or already present in the mempool.
-prop_handleReceivedTxs_dropsLateBodies
-  :: Positive Int
-  -> TxId
-  -> Positive Int
-  -> Property
-prop_handleReceivedTxs_dropsLateBodies (Positive peeraddr) txid0 txSize0 =
-  conjoin
-    [ omittedRetained === 0
-    , lateRetained === 1
-    , peerStateRetained' === peerState0
-        { peerAvailableTxIds = IntMap.empty
-        , peerRequestedTxs = IntSet.empty
-        , peerRequestedTxBatches = StrictSeq.empty
-        , peerRequestedTxsSize = 0
-        }
-    , sharedTxTable sharedStateRetained' === IntMap.empty
-    , retainedLookup k (sharedRetainedTxs sharedStateRetained') === Just retainedUntil
-    , omittedMempool === 0
-    , lateMempool === 1
-    , peerStateMempool' === peerState0
-        { peerAvailableTxIds = IntMap.empty
-        , peerRequestedTxs = IntSet.empty
-        , peerRequestedTxBatches = StrictSeq.empty
-        , peerRequestedTxsSize = 0
-        }
-    , sharedTxTable sharedStateMempool' === IntMap.empty
-    , retainedLookup k (sharedRetainedTxs sharedStateMempool') === Just retainedUntil
-    , checkNoThunks "peerStateRetained" (peerStateRetained' :: PeerTxLocalState (Tx TxId))
-    , checkNoThunks "peerStateMempool" (peerStateMempool' :: PeerTxLocalState (Tx TxId))
-    , checkNoThunks "sharedStateRetained" sharedStateRetained'
-    , checkNoThunks "sharedStateMempool" sharedStateMempool'
-    ]
-  where
-    txid = abs txid0 + 1
-    txSize = mkSize txSize0
-    tx = mkTx txid txSize
-    sharedStateBase =
-      let st = mkSharedState [txid]
-          key' = lookupKeyOrFail txid st in
-      ensurePeerAdvertisesTxKeys peeraddr [key'] $
-        st {
-             sharedTxTable = IntMap.singleton (unTxKey key') (mkTxEntry peeraddr txSize Nothing)
-           }
-    key = lookupKeyOrFail txid sharedStateBase
-    k = unTxKey key
-    retainedUntil = addTime (bufferedTxsMinLifetime defaultTxDecisionPolicy) now
-    peerState0 :: PeerTxLocalState (Tx TxId)
-    peerState0 = emptyPeerTxLocalState
-      { peerAvailableTxIds = IntMap.singleton k txSize
-      , peerRequestedTxs = IntSet.singleton k
-      , peerRequestedTxBatches = StrictSeq.singleton (mkRequestedTxBatch [key] txSize)
-      , peerRequestedTxsSize = txSize
-      }
-    sharedStateRetained0 = sharedStateBase {
-        sharedTxTable = IntMap.empty,
-        sharedRetainedTxs = retainedSingleton k retainedUntil
-      }
-    (omittedRetained, lateRetained, peerStateRetained', sharedStateRetained') =
-      handleReceivedTxs (const False) now defaultTxDecisionPolicy peeraddr [(txid, tx)] peerState0 sharedStateRetained0
-    (omittedMempool, lateMempool, peerStateMempool', sharedStateMempool') =
-      handleReceivedTxs (== txid) now defaultTxDecisionPolicy peeraddr [(txid, tx)] peerState0 sharedStateBase
-
--- Verifies that omitting a requested body still counts as a penalty even if
--- the tx has already been fully pruned from shared state by the time the
--- reply is processed.
-prop_handleReceivedTxs_penalizesOmittedAfterPrune
-  :: Positive Int
-  -> TxId
-  -> Positive Int
-  -> Property
-prop_handleReceivedTxs_penalizesOmittedAfterPrune (Positive peeraddr) txid0 txSize0 =
-  conjoin
-    [ omittedCount === 1
-    , lateCount === 0
-    , peerAvailableTxIds peerState' === IntMap.empty
-    , peerRequestedTxs peerState' === IntSet.empty
-    , peerRequestedTxBatches peerState' === StrictSeq.empty
-    , peerRequestedTxsSize peerState' === 0
-    , peerDownloadedTxs peerState' === (IntMap.empty :: IntMap.IntMap (Tx TxId))
-    , sharedTxTable sharedState' === IntMap.empty
-    , retainedLookup k (sharedRetainedTxs sharedState') === Nothing
-    , Map.lookup (getRawTxId txid) (sharedTxIdToKey sharedState') === Nothing
-    , IntMap.lookup k (sharedKeyToTxId sharedState') === Nothing
-    , sharedGeneration sharedState' === 1
-    , checkNoThunks "peerState'" (peerState' :: PeerTxLocalState (Tx TxId))
-    , checkNoThunks "sharedState'" sharedState'
-    ]
-  where
-    txid = abs txid0 + 1
-    txSize = mkSize txSize0
-    sharedStateBase =
-      let st = mkSharedState [txid]
-          key' = lookupKeyOrFail txid st in
-      ensurePeerAdvertisesTxKeys peeraddr [key'] $
-        st {
-             sharedTxTable = IntMap.singleton (unTxKey key') (mkTxEntry peeraddr txSize (Just TxDownloading))
-           }
-    key = lookupKeyOrFail txid sharedStateBase
-    k = unTxKey key
-    peerState0 = emptyPeerTxLocalState
-      { peerAvailableTxIds = IntMap.singleton k txSize
-      , peerRequestedTxs = IntSet.singleton k
-      , peerRequestedTxBatches = StrictSeq.singleton (mkRequestedTxBatch [key] txSize)
-      , peerRequestedTxsSize = txSize
-      }
-    sharedStatePruned :: SharedTxState PeerAddr TxId
-    sharedStatePruned = sharedStateBase
-      { sharedTxTable = IntMap.empty
-      , sharedRetainedTxs = retainedEmpty
-      , sharedTxIdToKey = Map.empty
-      , sharedKeyToTxId = IntMap.empty
-      }
-    (omittedCount, lateCount, peerState', sharedState') =
-      handleReceivedTxs (const False) now defaultTxDecisionPolicy peeraddr [] peerState0 sharedStatePruned
 
 -- Verifies that handleSubmittedTxs retains accepted txs and removes rejected
 -- txs from the active table and tx-key maps.
@@ -2269,9 +2561,7 @@ genPeerTxLocalState = sized $ \n -> do
       txSize <- genPositiveSize
       pure (unTxKey key, mkTx (txIdForKey key) txSize)
 
-data PeerSeed = PeerSeed {
-    peerSeedGeneration :: !Word64
-  }
+newtype PeerSeed = PeerSeed { peerSeedGeneration :: Word64 }
 
 data PeerDerivedUsage = PeerDerivedUsage {
     peerHasSubmitting   :: !Bool
@@ -2832,6 +3122,66 @@ seedActiveTxidsForOtherPeer otherPeer entries st0 =
         sharedPeerAdvertisedTxKeys =
           IntSet.union (sharedPeerAdvertisedTxKeys sps)
                        (IntSet.fromList activeKeys)
+      }
+
+-- Intern each requested txid and add an active sharedTxTable entry leased to
+-- @peeraddr@ with a TxDownloading attempt. Entries whose Bool tag is True
+-- (co-advertised) are also advertised by @otherPeer@, giving them
+-- @txAdvertiserCount = 2@ so the omitted-and-released path leaves them
+-- alive (instead of being reaped by dropDeadActiveKeys). Used by the
+-- handleReceivedTxs property to build a coherent pre-state for one
+-- outstanding request batch.
+seedRequestedActiveTxids
+  :: PeerAddr
+  -> Maybe PeerAddr
+  -> [((TxId, SizeInBytes), Bool)]
+  -> SharedTxState PeerAddr TxId
+  -> SharedTxState PeerAddr TxId
+seedRequestedActiveTxids peeraddr otherPeerOpt tagged st0 =
+  stFinal
+  where
+    entries         = fmap fst tagged
+    (_, stInterned) = internTxIds (fmap fst entries) st0
+    leaseUntil      = addTime (bufferedTxsMinLifetime defaultTxDecisionPolicy) now
+
+    perKey :: [(Int, Bool)]
+    perKey =
+      [ ( unTxKey (lookupKeyOrFail txid stInterned)
+        , coAdv && isJust otherPeerOpt
+        )
+      | ((txid, _), coAdv) <- tagged
+      ]
+
+    mkEntry coAdv = TxEntry {
+        txLease = TxLeased peeraddr leaseUntil,
+        txAdvertiserCount = if coAdv then 2 else 1,
+        txAttempts = Map.singleton peeraddr TxDownloading
+      }
+
+    stWithTable = stInterned {
+        sharedTxTable =
+          foldl' (\tbl (k, coAdv) -> IntMap.insert k (mkEntry coAdv) tbl)
+                 (sharedTxTable stInterned)
+                 perKey
+      }
+
+    peerAdvertisedAll  = IntSet.fromList (map fst perKey)
+    otherAdvertisedAll = IntSet.fromList [ k | (k, True) <- perKey ]
+
+    augmentWith addKeys sps = sps {
+        sharedPeerAdvertisedTxKeys =
+          IntSet.union (sharedPeerAdvertisedTxKeys sps) addKeys
+      }
+
+    stFinal = stWithTable {
+        sharedPeers =
+          let withPeer =
+                Map.adjust (augmentWith peerAdvertisedAll) peeraddr
+                           (sharedPeers stWithTable)
+          in case otherPeerOpt of
+               Just op | not (IntSet.null otherAdvertisedAll) ->
+                 Map.adjust (augmentWith otherAdvertisedAll) op withPeer
+               _ -> withPeer
       }
 
 -- Find the first txid not present in the reserved set.
