@@ -5,6 +5,7 @@ module Cardano.Network.Diffusion.Policies where
 
 import Control.Concurrent.Class.MonadSTM.Strict
 
+import Cardano.Network.FetchMode (FetchMode (..), PraosFetchMode (..))
 import Cardano.Network.PeerSelection.Churn (ChurnMode (..))
 import Data.List (sortOn)
 import Data.Map.Strict qualified as Map
@@ -33,13 +34,18 @@ simpleChurnModePeerSelectionPolicy rngVar getChurnMode metrics =
     hotDemotionPolicy _ _ _ available pickNum = do
         mode <- getChurnMode
         scores <- case mode of
-                       ChurnModeNormal -> do
+                       ChurnMode (PraosFetchMode FetchModeDeadline) -> do
                            jpm <- joinedPeerMetricAt metrics
                            hup <- upstreamyness metrics
                            bup <- fetchynessBlocks metrics
                            return $ Map.unionWith (+) hup bup `optionalMerge` jpm
 
-                       ChurnModeBulkSync -> do
+                       ChurnMode (PraosFetchMode FetchModeBulkSync) -> do
+                           jpm <- joinedPeerMetricAt metrics
+                           bup <- fetchynessBytes metrics
+                           return $ bup `optionalMerge` jpm
+
+                       ChurnMode GenesisFetchMode -> do
                            jpm <- joinedPeerMetricAt metrics
                            bup <- fetchynessBytes metrics
                            return $ bup `optionalMerge` jpm

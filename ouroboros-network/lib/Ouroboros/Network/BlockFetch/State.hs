@@ -99,7 +99,7 @@ fetchLogicIterations decisionTracer clientStateTracer
       end <- getMonotonicTime
       let delta = diffTime end start
           loopInterval = case fetchMode of
-            FetchModeGenesis -> decisionLoopIntervalGenesis fetchDecisionPolicy
+            GenesisFetchMode -> decisionLoopIntervalGenesis fetchDecisionPolicy
             PraosFetchMode{} -> decisionLoopIntervalPraos fetchDecisionPolicy
       -- Limit decision is made once every decisionLoopInterval.
       threadDelay (loopInterval - delta)
@@ -248,7 +248,7 @@ fetchDecisionsForStateSnapshot
           fetchStateFetchedBlocks
           fetchStateFetchedMaxSlotNo
           peerChainsAndPeerInfo
-      FetchModeGenesis ->
+      GenesisFetchMode ->
         fetchDecisionsGenesisM
           tracer
           fetchDecisionPolicy

@@ -521,7 +521,7 @@ selectThePeer
     go grossRequest (c@(candidate, peerInfo) : xs) = do
       if grossRequest `requestHeadInCandidate` candidate then do
         tell $ DList.fromList
-          [(FetchDeclineConcurrencyLimit FetchModeGenesis 1, pInfo)
+          [(FetchDeclineConcurrencyLimit GenesisFetchMode 1, pInfo)
           | (_, pInfo) <- xs
           ]
         pure (Just c)
