@@ -220,7 +220,7 @@ applyRequestTxsChoice ctx txsToRequest txsToRequestSize txTable =
         peerRequestedTxsSize = peerRequestedTxsSize (pacPeerState ctx) + txsToRequestSize
       }
     sharedState'' =
-      bumpIdlePeerGenerations
+      bumpPeerGenerations
         (advertisingPeersForTxKeysExcept (pacPeerAddr ctx) requestedKeys (pacSharedState ctx))
         ((pacSharedState ctx) {
           sharedTxTable = txTable,
@@ -952,7 +952,7 @@ handleReceivedTxs mempoolHasTx now policy peeraddr txs peerState sharedState =
 
     -- Flag peers that may now have work available after processing txs.
     sharedState' =
-      bumpIdlePeerGenerations
+      bumpPeerGenerations
         (Set.union receivedWakePeers omittedWakePeers)
         sharedState''
 
@@ -1120,7 +1120,7 @@ handleSubmittedTxs now policy peeraddr acceptedTxs rejectedTxs peerState sharedS
       IntSet.foldl' updateRejected (sharedStateAfterRejectedPeer, Set.empty) rejectedKeys
 
     sharedState' =
-      bumpIdlePeerGenerations
+      bumpPeerGenerations
         (Set.union acceptedAdvertisers rejectedWakePeers)
         sharedState''
 
@@ -1274,7 +1274,7 @@ handleReceivedTxIds mempoolHasTx now policy peeraddr requestedTxIds txidsAndSize
 
     sharedState''
       | sharedChanged || peerAdvertisedKeys' /= peerAdvertisedKeys0 =
-          bumpIdlePeerGenerations peersToWake $
+          bumpPeerGenerations peersToWake $
             sharedStateHandled {
               sharedPeers =
                 if peerAdvertisedKeys' == peerAdvertisedKeys0

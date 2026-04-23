@@ -203,7 +203,7 @@ withPeer policy TxSubmissionMempoolReader { mempoolGetSnapshot } sharedStateVar 
 
     unregisterPeer :: Time -> SharedTxState peeraddr txid -> SharedTxState peeraddr txid
     unregisterPeer now st@SharedTxState { sharedPeers, sharedTxTable, sharedRetainedTxs, sharedTxIdToKey, sharedKeyToTxId, sharedGeneration } =
-      bumpIdlePeerGenerations peersToWake $ st {
+      bumpPeerGenerations peersToWake $ st {
         sharedPeers = sharedPeers',
         sharedTxTable = sharedTxTable',
         sharedRetainedTxs = sharedRetainedTxs,
@@ -544,7 +544,7 @@ updatePeerPhase peeraddr peerPhaseNew
               let sharedPeerState' = sharedPeerState { sharedPeerPhase = peerPhaseNew }
                   st' = st { sharedPeers = Map.insert peeraddr sharedPeerState' sharedPeers
                            , sharedGeneration = sharedGeneration + 1 }
-              in bumpIdlePeerGenerations (phaseWakePeers peerPhaseOld) st'
+              in bumpPeerGenerations (phaseWakePeers peerPhaseOld) st'
             else st
        _ -> st -- TODO error?
   where

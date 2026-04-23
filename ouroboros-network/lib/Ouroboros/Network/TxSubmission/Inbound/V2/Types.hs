@@ -59,7 +59,7 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Types
   , PeerTxLocalState (..)
   , SharedPeerState (..)
   , peerGenerationOf
-  , bumpIdlePeerGenerations
+  , bumpPeerGenerations
     -- TxKey with helper functions
   , TxKey (..)
   , lookupTxKey
@@ -565,22 +565,22 @@ peerGenerationOf peeraddr SharedTxState { sharedPeers } =
          Just SharedPeerState { sharedPeerGeneration } -> sharedPeerGeneration
          Nothing -> error "TxSubmission.V2.peerGenerationOf: missing peer"
 
-bumpIdlePeerGenerations :: Ord peeraddr
-                        => Set.Set peeraddr
-                        -> SharedTxState peeraddr txid
-                        -> SharedTxState peeraddr txid
-bumpIdlePeerGenerations peersToWake st@SharedTxState { sharedPeers } =
+bumpPeerGenerations :: Ord peeraddr
+                    => Set.Set peeraddr
+                    -> SharedTxState peeraddr txid
+                    -> SharedTxState peeraddr txid
+bumpPeerGenerations peersToWake st@SharedTxState { sharedPeers } =
     st {
       sharedPeers = foldl' bumpOne sharedPeers (Set.toList peersToWake)
     }
   where
     bumpOne peersMap peeraddr =
-        Map.adjust bumpIdlePeer peeraddr peersMap
-      where
-        bumpIdlePeer sharedPeerState@SharedPeerState { sharedPeerPhase, sharedPeerGeneration }
-          | sharedPeerPhase == PeerIdle =
-              sharedPeerState { sharedPeerGeneration = sharedPeerGeneration + 1 }
-          | otherwise = sharedPeerState
+      Map.adjust
+        (\sharedPeerState ->
+           sharedPeerState
+             { sharedPeerGeneration = sharedPeerGeneration sharedPeerState + 1 })
+        peeraddr
+        peersMap
 
 lookupTxKey :: HasRawTxId txid
             => txid

@@ -68,6 +68,7 @@ tests =
     , testProperty "handleSubmittedTxs retains accepted and drops rejected" prop_handleSubmittedTxs_retainsAcceptedAndDropsRejected
     , testProperty "nextPeerAction prioritises submitting buffered owned txs" prop_nextPeerAction_prioritisesSubmit
     , testProperty "nextPeerAction claims claimable tx for best idle advertiser" prop_nextPeerAction_claimsClaimableTx
+    , testProperty "nextPeerAction claims a released tx from another advertiser" prop_nextPeerAction_claimsRejectedTxFromOtherAdvertiser
     , testCaseSteps "nextPeerAction claims a tx once the score delay threshold has elapsed" unit_nextPeerAction_claimsAtScoreDelayThreshold
     , testProperty "nextPeerAction steals expired lease for best idle advertiser" prop_nextPeerAction_claimsExpiredLease
     , testProperty "nextPeerAction requests an oversized first tx within the soft budget" prop_nextPeerAction_requestsOversizedFirstTx
@@ -85,7 +86,7 @@ tests =
     , testProperty "nextPeerAction keeps retained txs before expiry" prop_nextPeerAction_keepsRetained
     , testProperty "PeerDoNothing waits for the earliest shared expiry" prop_nextPeerAction_earliestWakeDelay
     , testProperty "PeerDoNothing uses the current peer generation" prop_nextPeerAction_returnsPeerGeneration
-    , testProperty "handleSubmittedTxs bumps idle advertiser generations" prop_handleSubmittedTxs_bumpsIdleAdvertisers
+    , testProperty "handleSubmittedTxs bumps advertiser generations" prop_handleSubmittedTxs_bumpsAdvertisers
     , testCaseSteps "advertisingPeersForTxExcept scans the authoritative peer key sets" unit_advertisingPeersForTxExcept_scansAuthoritativePeerSets
     , testCaseSteps "removeAdvertisingPeersForResolvedTx clears all advertising peers for a resolved key" unit_removeAdvertisingPeersForResolvedTx_clearsAllAdvertisingPeers
     , testCaseSteps "updatePeerPhase only wakes the peer becoming idle" unit_updatePeerPhase_wakesOnlyBecomingIdlePeer
@@ -746,11 +747,8 @@ prop_handleReceivedTxIds
         case otherPeerOpt of
           Just op | not (null mempoolResolveActiveGroup) ->
             let original = lookupPeerOrFail op sharedStateWithRetained
-                post     = lookupPeerOrFail op sharedState'
-                bumpIfIdle g
-                  | sharedPeerPhase original == PeerIdle = g + 1
-                  | otherwise                            = g
-            in conjoin
+                post     = lookupPeerOrFail op sharedState' in
+            conjoin
                  [ counterexample "other peer's advertised keys not restored"
                      (sharedPeerAdvertisedTxKeys post
                         === sharedPeerAdvertisedTxKeys original)
@@ -758,7 +756,7 @@ prop_handleReceivedTxIds
                      (sharedPeerPhase post === sharedPeerPhase original)
                  , counterexample "other peer's generation bump mismatch"
                      (sharedPeerGeneration post
-                        === bumpIfIdle (sharedPeerGeneration original))
+                        === sharedPeerGeneration original + 1)
                  ]
           _ -> property True
 
@@ -1214,17 +1212,14 @@ prop_handleReceivedTxs
           ]
 
       -- otherPeer is added to wakePeers when any surviving omitted entry
-      -- exists; its generation is bumped iff it was PeerIdle. LateMempool
-      -- is set up single-advertiser so it does not wake otherPeer here.
+      -- exists; its generation is bumped unconditionally. LateMempool is
+      -- set up single-advertiser so it does not wake otherPeer here.
       checkOtherPeerState =
         case otherPeerOpt of
           Just op | not (IntSet.null omittedSurvivingKeys) ->
             let original = lookupPeerOrFail op sharedStateBase
-                post     = lookupPeerOrFail op sharedState'
-                bumpIfIdle g
-                  | sharedPeerPhase original == PeerIdle = g + 1
-                  | otherwise                            = g
-            in conjoin
+                post     = lookupPeerOrFail op sharedState' in
+            conjoin
                  [ counterexample "other peer's advertised keys changed"
                      (sharedPeerAdvertisedTxKeys post
                         === sharedPeerAdvertisedTxKeys original)
@@ -1232,7 +1227,7 @@ prop_handleReceivedTxs
                      (sharedPeerPhase post === sharedPeerPhase original)
                  , counterexample "other peer's generation bump mismatch"
                      (sharedPeerGeneration post
-                        === bumpIfIdle (sharedPeerGeneration original))
+                        === sharedPeerGeneration original + 1)
                  ]
           _ -> property True
 
@@ -1519,6 +1514,80 @@ unit_nextPeerAction_claimsAtScoreDelayThreshold step = do
                                         , peerScore = PeerScore 20 now }
     (peerAction, peerState', sharedState') =
       nextPeerAction now defaultTxDecisionPolicy peeraddr peerState0 sharedState0
+
+-- | A peer whose submission attempt has been cleared (e.g. after a
+-- mempool rejection) must not prevent another advertiser from claiming
+-- the same tx. After one peer's attempt is cleared and its lease
+-- released back to 'TxClaimable', any other peer that still advertises
+-- the tx should be able to claim it on its next 'nextPeerAction' pass.
+--
+-- Exercises the cross-peer retry invariant in the 'txSelectable' /
+-- 'nextPeerAction' path: once no peer has an outstanding attempt on a
+-- tx and its lease is claimable, a still-advertising peer is eligible
+-- to re-claim.
+prop_nextPeerAction_claimsRejectedTxFromOtherAdvertiser :: Property
+prop_nextPeerAction_claimsRejectedTxFromOtherAdvertiser =
+    counterexample "peerB should be able to claim the released tx"
+  $ case action of
+      PeerRequestTxs keys ->
+        counterexample ("keys requested: " ++ show keys)
+          $ TxKey txKeyInt `elem` keys
+      _ ->
+        counterexample ("peerB action: " ++ show action) False
+  where
+    peerA, peerB :: PeerAddr
+    peerA = 1
+    peerB = 2
+
+    txid :: TxId
+    txid = 4
+
+    txKeyInt :: Int
+    txKeyInt = 0
+
+    txSize :: SizeInBytes
+    txSize = 100
+
+    txBody :: Tx TxId
+    txBody = mkTx txid txSize
+
+    sharedState0 :: SharedTxState PeerAddr TxId
+    sharedState0 =
+        ensurePeerAdvertisesTxKeys peerA [TxKey txKeyInt]
+      $ ensurePeerAdvertisesTxKeys peerB [TxKey txKeyInt]
+      $ emptySharedTxState
+          { sharedTxIdToKey = Map.singleton (getRawTxId txid) (TxKey txKeyInt)
+          , sharedKeyToTxId = IntMap.singleton txKeyInt txid
+          , sharedNextTxKey = txKeyInt + 1
+          , sharedTxTable   = IntMap.singleton txKeyInt TxEntry
+              { txLease           = TxLeased peerA (addTime 1 now)
+              , txAdvertiserCount = 2
+              , txAttempts        = Map.singleton peerA TxBuffered
+              }
+          }
+
+    peerAState :: PeerTxLocalState (Tx TxId)
+    peerAState = emptyPeerTxLocalState
+      { peerUnacknowledgedTxIds = StrictSeq.singleton (TxKey txKeyInt)
+      , peerDownloadedTxs       = IntMap.singleton txKeyInt txBody
+      }
+
+    peerBState :: PeerTxLocalState (Tx TxId)
+    peerBState = emptyPeerTxLocalState
+      { peerUnacknowledgedTxIds = StrictSeq.singleton (TxKey txKeyInt)
+      , peerAvailableTxIds      = IntMap.singleton txKeyInt txSize
+      }
+
+    (_peerAStateAfter, sharedStateAfterRejection) =
+      handleSubmittedTxs now defaultTxDecisionPolicy peerA
+        []
+        [TxKey txKeyInt]
+        peerAState
+        sharedState0
+
+    (action, _peerBStateAfter, _sharedStateFinal) =
+      nextPeerAction now defaultTxDecisionPolicy peerB peerBState
+        sharedStateAfterRejection
 
 -- Verifies that nextPeerAction can steal an expired lease for the best idle
 -- advertiser and request that tx.
@@ -2324,20 +2393,21 @@ prop_nextPeerAction_returnsPeerGeneration (Positive peeraddr) =
     peerState0 = emptyPeerTxLocalState { peerRequestedTxIds = maxNumTxIdsToRequest defaultTxDecisionPolicy }
     (peerAction, _, _) = nextPeerAction now defaultTxDecisionPolicy peeraddr peerState0 sharedState0
 
--- Verifies that handleSubmittedTxs bumps idle advertisers while leaving
--- submitting and waiting advertisers unchanged.
-prop_handleSubmittedTxs_bumpsIdleAdvertisers
+-- Verifies that handleSubmittedTxs bumps the generation of every other
+-- advertiser of the resolved tx, regardless of phase, while leaving the
+-- submitting peer's own generation unchanged.
+prop_handleSubmittedTxs_bumpsAdvertisers
   :: Positive Int
   -> Positive Int
   -> Positive Int
   -> TxId
   -> Positive Int
   -> Property
-prop_handleSubmittedTxs_bumpsIdleAdvertisers (Positive owner0) (Positive peerA0) (Positive peerB0) txid0 txSize0 =
+prop_handleSubmittedTxs_bumpsAdvertisers (Positive owner0) (Positive peerA0) (Positive peerB0) txid0 txSize0 =
   owner /= peerA && owner /= peerB && peerA /= peerB ==>
     conjoin
       [ sharedPeerGeneration (lookupPeerOrFail peerA sharedState') === 1
-      , sharedPeerGeneration (lookupPeerOrFail peerB sharedState') === 0
+      , sharedPeerGeneration (lookupPeerOrFail peerB sharedState') === 1
       , sharedPeerGeneration (lookupPeerOrFail owner sharedState') === 0
       ]
   where
