@@ -42,5 +42,6 @@ unit_getMempoolWriter_recordsOnlyValidDuplicates step = do
           getTxId = txid,
           getTxSize = SizeInBytes 1,
           getTxAdvSize = SizeInBytes 1,
-          getTxValid = isValid
+          getTxValid = isValid,
+          getTxParent = Nothing
         }
