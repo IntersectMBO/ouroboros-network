@@ -72,7 +72,12 @@ data Tx txid = Tx {
     -- | If false this means that when this tx will be submitted to a remote
     -- mempool it will not be valid.  The outbound mempool might contain
     -- invalid tx's in this sense.
-    getTxValid   :: !Bool
+    getTxValid   :: !Bool,
+    -- | Optional parent dependency: this tx may only be accepted into a
+    -- mempool once its parent is already present (either from an earlier
+    -- batch or earlier in the same batch).  'Nothing' means no dependency.
+    -- Used by chain-aware tests to model transaction chains.
+    getTxParent  :: !(Maybe txid)
   }
   deriving (Eq, Ord, Show, Generic, NFData)
 
@@ -95,6 +100,9 @@ instance Arbitrary txid => Arbitrary (Tx txid) where
          <*> frequency [ (3, pure True)
                        , (1, pure False)
                        ]
+         <*> pure Nothing
+           -- ^ Generic Arbitrary produces standalone txs with no parent.
+           -- Chain-aware generators construct parents explicitly.
 
 -- maximal tx size
 maxTxSize :: SizeInBytes
@@ -122,7 +130,7 @@ getMempoolReader :: forall txid m.
 getMempoolReader = Mempool.getReader getTxId getTxAdvSize
 
 
-data InvalidTx = InvalidTx | DuplicateTx
+data InvalidTx = InvalidTx | DuplicateTx | MissingParent
   deriving (Eq, Show)
 
 getMempoolWriter :: forall txid m.
@@ -158,12 +166,13 @@ txSubmissionCodec2 =
     codecTxSubmission2 CBOR.encodeInt CBOR.decodeInt
                        encodeTx decodeTx
   where
-    encodeTx Tx {getTxId, getTxSize, getTxAdvSize, getTxValid} =
-         CBOR.encodeListLen 4
+    encodeTx Tx {getTxId, getTxSize, getTxAdvSize, getTxValid, getTxParent} =
+         CBOR.encodeListLen 5
       <> CBOR.encodeInt getTxId
       <> CBOR.encodeWord32 (getSizeInBytes getTxSize)
       <> CBOR.encodeWord32 (getSizeInBytes getTxAdvSize)
       <> CBOR.encodeBool getTxValid
+      <> encodeMaybeInt getTxParent
 
     decodeTx = do
       _ <- CBOR.decodeListLen
@@ -171,6 +180,17 @@ txSubmissionCodec2 =
          <*> (SizeInBytes <$> CBOR.decodeWord32)
          <*> (SizeInBytes <$> CBOR.decodeWord32)
          <*> CBOR.decodeBool
+         <*> decodeMaybeInt
+
+    encodeMaybeInt Nothing  = CBOR.encodeListLen 0
+    encodeMaybeInt (Just i) = CBOR.encodeListLen 1 <> CBOR.encodeInt i
+
+    decodeMaybeInt = do
+      n <- CBOR.decodeListLen
+      case n of
+        0 -> pure Nothing
+        1 -> Just <$> CBOR.decodeInt
+        _ -> fail "decodeMaybeInt: unexpected list length"
 
 
 newtype LargeNonEmptyList a = LargeNonEmpty { getLargeNonEmpty :: [a] }

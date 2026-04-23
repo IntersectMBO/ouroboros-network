@@ -97,6 +97,8 @@ import Ouroboros.Network.TxSubmission.Outbound (TxSubmissionProtocolError (..))
 
 import Simulation.Network.Snocket (BearerInfo (..), noAttenuation)
 
+import Test.Cardano.Network.Diffusion.Testnet.ChainedTxs (ChainedPeerTxs (..))
+import Test.Cardano.Network.Diffusion.Testnet.ChainedTxs qualified as ChainedTxs
 import Test.Cardano.Network.Diffusion.Testnet.Simulation
 
 import Test.Ouroboros.Network.ConnectionManager.Timeouts
@@ -179,6 +181,8 @@ tests =
     , testGroup "Tx Submission"
       [ nightlyTest $ testProperty "no protocol errors"
                                    prop_no_txSubmission_error_iosimpor
+      , nightlyTest $ testProperty "tx chain integrity"
+                                   prop_txSubmission_chainIntegrity_iosimpor
       ]
     , testGroup "Churn"
       [ nightlyTest $ testProperty "no timeouts"
@@ -265,12 +269,15 @@ tests =
                       prop_no_peershare_unwilling_iosim
       ]
     , testGroup "Tx Submission"
-      [ testProperty "no protocol errors"
+      [ ChainedTxs.tests
+      , testProperty "no protocol errors"
                      prop_no_txSubmission_error_iosim
       , testProperty "all transactions"
                      prop_txSubmission_allTransactions
       , testProperty "inflight coverage"
                      prop_check_inflight_ratio
+      , testProperty "tx chain integrity"
+                     prop_txSubmission_chainIntegrity_iosim
       ]
     , testGroup "Churn"
       [ testProperty "no timeouts" prop_churn_notimeouts_iosim
@@ -1074,6 +1081,215 @@ prop_txSubmission_allTransactions (ArbTxDecisionPolicy decisionPolicy)
                   acceptedTxidsB === validSortedTxidsA
            Nothing | [] <- validSortedTxidsA -> property True
                    | otherwise -> counterexample "Didn't found any entry in the map!" False
+
+
+-- | Three-node diffusion topology used by the Tx Chain Integrity
+-- property: one node (0.0.0.0) downloading txs from two downstream
+-- peers (0.0.0.1 and 0.0.0.2). The node has no outbound txs of its own;
+-- each downstream peer advertises the tx list it was assigned by
+-- 'ChainedPeerTxs'.
+txChainIntegrityDiffScript :: ArbTxDecisionPolicy
+                           -> ChainedPeerTxs
+                           -> DiffusionScript
+txChainIntegrityDiffScript (ArbTxDecisionPolicy decisionPolicy)
+                           (ChainedPeerTxs chainedTxsB chainedTxsC) =
+  let localRootConfig = LocalRootConfig
+                          DoNotAdvertisePeer
+                          InitiatorAndResponderDiffusionMode
+                          Outbound
+                          IsNotTrustable
+
+      noPeerTargets = PeerSelectionTargets {
+          targetNumberOfRootPeers                 = 0,
+          targetNumberOfKnownPeers                = 0,
+          targetNumberOfEstablishedPeers          = 0,
+          targetNumberOfActivePeers               = 0,
+          targetNumberOfKnownBigLedgerPeers       = 0,
+          targetNumberOfEstablishedBigLedgerPeers = 0,
+          targetNumberOfActiveBigLedgerPeers      = 0
+        }
+
+      upstreamTargets = PeerSelectionTargets {
+          targetNumberOfRootPeers                 = 1,
+          targetNumberOfKnownPeers                = 1,
+          targetNumberOfEstablishedPeers          = 1,
+          targetNumberOfActivePeers               = 1,
+          targetNumberOfKnownBigLedgerPeers       = 0,
+          targetNumberOfEstablishedBigLedgerPeers = 0,
+          targetNumberOfActiveBigLedgerPeers      = 0
+        }
+
+  in DiffusionScript
+       (SimArgs 1 10 decisionPolicy)
+       (singletonTimedScript Map.empty)
+       [ ( NodeArgs
+             (-1)
+             InitiatorAndResponderDiffusionMode
+             Map.empty
+             PraosMode
+             (Script (DontUseBootstrapPeers :| []))
+             (TestAddress (IPAddr (read "0.0.0.0") 0))
+             PeerSharingDisabled
+             []
+             (Script (LedgerPools [] :| []))
+             (noPeerTargets, noPeerTargets)
+             (Script (DNSTimeout {getDNSTimeout = 10} :| []))
+             (Script (DNSLookupDelay {getDNSLookupDelay = 0} :| []))
+             Nothing
+             False
+             (Script (PraosFetchMode FetchModeDeadline :| []))
+             []
+         , [JoinNetwork 0] )
+       , ( NodeArgs
+             (-2)
+             InitiatorAndResponderDiffusionMode
+             Map.empty
+             PraosMode
+             (Script (DontUseBootstrapPeers :| []))
+             (TestAddress (IPAddr (read "0.0.0.1") 0))
+             PeerSharingDisabled
+             [(1, 1, Map.fromList
+                 [(RelayAccessAddress "0.0.0.0" 0, localRootConfig)])]
+             (Script (LedgerPools [] :| []))
+             (upstreamTargets, upstreamTargets)
+             (Script (DNSTimeout {getDNSTimeout = 10} :| []))
+             (Script (DNSLookupDelay {getDNSLookupDelay = 0} :| []))
+             Nothing
+             False
+             (Script (PraosFetchMode FetchModeDeadline :| []))
+             chainedTxsB
+         , [JoinNetwork 0] )
+       , ( NodeArgs
+             (-3)
+             InitiatorAndResponderDiffusionMode
+             Map.empty
+             PraosMode
+             (Script (DontUseBootstrapPeers :| []))
+             (TestAddress (IPAddr (read "0.0.0.2") 0))
+             PeerSharingDisabled
+             [(1, 1, Map.fromList
+                 [(RelayAccessAddress "0.0.0.0" 0, localRootConfig)])]
+             (Script (LedgerPools [] :| []))
+             (upstreamTargets, upstreamTargets)
+             (Script (DNSTimeout {getDNSTimeout = 10} :| []))
+             (Script (DNSLookupDelay {getDNSLookupDelay = 0} :| []))
+             Nothing
+             False
+             (Script (PraosFetchMode FetchModeDeadline :| []))
+             chainedTxsC
+         , [JoinNetwork 0] )
+       ]
+
+-- | Txs guaranteed to reach the node's mempool: at least one downstream
+-- peer carries the tx together with all of its ancestors, and every
+-- member of that chain is valid. Txs whose chain isn't fully represented
+-- on either downstream peer are legitimately unreachable and correctly
+-- excluded from this lower bound. V2 may deliver additional txs when a
+-- split chain is assembled across downstream peers via favourable
+-- ordering, but those are not guaranteed.
+txChainIntegrityExpected :: ChainedPeerTxs -> Set TxId
+txChainIntegrityExpected (ChainedPeerTxs chainedTxsB chainedTxsC) =
+  Set.union
+    (perPeerDeliverable chainedTxsB)
+    (perPeerDeliverable chainedTxsC)
+  where
+    perPeerDeliverable :: [Tx TxId] -> Set TxId
+    perPeerDeliverable peerTxs =
+      let txMap = Map.fromList [(getTxId t, t) | t <- peerTxs]
+          complete tid = case Map.lookup tid txMap of
+            Nothing -> False
+            Just t  -> getTxValid t
+                    && maybe True complete (getTxParent t) in
+      Set.fromList [ getTxId t | t <- peerTxs, complete (getTxId t) ]
+
+checkTxChainIntegrity :: forall r.
+                         ChainedPeerTxs
+                      -> Set TxId
+                      -> SimTrace r
+                      -> Int
+                      -> Property
+checkTxChainIntegrity (ChainedPeerTxs chainedTxsB chainedTxsC)
+                      expectedAtReceiver
+                      ioSimTrace
+                      traceNumber =
+  let trace = Trace.take traceNumber ioSimTrace
+
+      events = fmap (\(WithTime t (WithName name b)) ->
+                      WithName name (WithTime t b))
+             . withTimeNameTraceEvents
+                @DiffusionTestTrace
+                @NtNAddr
+             $ trace
+
+      sortedAcceptedTxidsMap :: Map NtNAddr [TxId]
+      sortedAcceptedTxidsMap =
+          foldr (\l r ->
+            List.foldl' (\rr (WithName n (WithTime _ x)) ->
+              case x of
+                DiffusionTxSubmissionInbound (TraceTxInboundAddedToMempool txids _) ->
+                  Map.alter (maybe (Just txids) (Just . sort . (txids ++))) n rr
+                _ -> rr) r l
+          ) Map.empty
+        . Trace.toList
+        . splitWithNameTrace
+        $ events
+
+      receiverAddr = TestAddress (IPAddr (read "0.0.0.0") 0)
+      accepted     = Map.lookup receiverAddr sortedAcceptedTxidsMap
+      actualSet    = maybe Set.empty Set.fromList accepted
+      missing      = expectedAtReceiver `Set.difference` actualSet in
+
+  counterexample ("accepted txids map: " ++ show sortedAcceptedTxidsMap)
+   $ counterexample ("downstream peer B outbound: " ++ show chainedTxsB)
+   $ counterexample ("downstream peer C outbound: " ++ show chainedTxsC)
+   $ counterexample ("expected (reliably deliverable): "
+                     ++ show (Set.toList expectedAtReceiver))
+   $ counterexample ("missing from node: " ++ show (Set.toList missing))
+   $ label ("expected count: "
+           ++ renderRanges 5 (Set.size expectedAtReceiver))
+   $ label ("accepted count: "
+           ++ renderRanges 5 (Set.size actualSet))
+   $ counterexample "node (0.0.0.0)"
+   $ property (Set.null missing)
+
+-- | Tx Chain Integrity property: the node's mempool accumulates every
+-- transaction reachable via a complete, valid ancestor chain on at least
+-- one of its downstream peers.
+--
+-- This exercises V2's cross-peer retry path: if an adversarial downstream
+-- peer delivers a child out-of-order and the mempool rejects with
+-- 'MissingParent', the tx must still reach the node via the well-behaved
+-- downstream peer's re-advertisement.
+prop_txSubmission_chainIntegrity :: ArbTxDecisionPolicy
+                                 -> ChainedPeerTxs
+                                 -> Property
+prop_txSubmission_chainIntegrity argPolicy chainedTxs =
+  let diffScript = txChainIntegrityDiffScript argPolicy chainedTxs
+      expected   = txChainIntegrityExpected chainedTxs in
+  checkTxChainIntegrity
+    chainedTxs
+    expected
+    (runSimTrace (diffusionSimulation noAttenuation diffScript))
+    long_trace
+
+prop_txSubmission_chainIntegrity_iosimpor :: ArbTxDecisionPolicy
+                                          -> ChainedPeerTxs
+                                          -> Property
+prop_txSubmission_chainIntegrity_iosimpor argPolicy chainedTxs =
+  let diffScript = txChainIntegrityDiffScript argPolicy chainedTxs
+      expected   = txChainIntegrityExpected chainedTxs
+      sim :: forall s. IOSim s DiffSimResult
+      sim = do
+        exploreRaces
+        diffusionSimulation noAttenuation diffScript
+   in labelDiffusionScript diffScript
+    $ exploreSimTrace (\a -> a { explorationScheduleBound = 10 }) sim $ \_ trace ->
+        checkTxChainIntegrity chainedTxs expected trace long_trace
+
+prop_txSubmission_chainIntegrity_iosim :: ArbTxDecisionPolicy
+                                       -> ChainedPeerTxs
+                                       -> Property
+prop_txSubmission_chainIntegrity_iosim = prop_txSubmission_chainIntegrity
 
 
 -- | This test checks the ratio of the inflight txs against the allowed by the
