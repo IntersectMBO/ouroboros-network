@@ -512,6 +512,7 @@ library cardano-diffusion-tests-lib
   exposed-modules:
     Test.Cardano.Network.Diffusion.Policies
     Test.Cardano.Network.Diffusion.Testnet
+    Test.Cardano.Network.Diffusion.Testnet.ChainedTxs
     Test.Cardano.Network.Diffusion.Testnet.MiniProtocols
     Test.Cardano.Network.Diffusion.Testnet.Simulation
     Test.Cardano.Network.OrphanInstances.Tests
