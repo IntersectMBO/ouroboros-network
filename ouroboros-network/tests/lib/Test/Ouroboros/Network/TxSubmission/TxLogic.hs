@@ -1438,6 +1438,7 @@ prop_nextPeerAction_claimsClaimableTx
   -> Property
 prop_nextPeerAction_claimsClaimableTx (Positive peerA0) (Positive peerB0) (Positive peerC0) txid0 txSize0 =
   distinctPeers ==>
+    peerTxLocalStateInvariant peerState0 .&&.
     case peerAction of
          PeerRequestTxs txKeys ->
            conjoin
@@ -1474,8 +1475,11 @@ prop_nextPeerAction_claimsClaimableTx (Positive peerA0) (Positive peerB0) (Posit
           , txAttempts = Map.empty
           }
       }
-    peerState0 = emptyPeerTxLocalState { peerAvailableTxIds = IntMap.singleton k txSize
-                                       , peerScore = peerAScore }
+    peerState0 = emptyPeerTxLocalState
+      { peerUnacknowledgedTxIds = StrictSeq.singleton key
+      , peerAvailableTxIds = IntMap.singleton k txSize
+      , peerScore = peerAScore
+      }
     (peerAction, peerState', sharedState') = nextPeerAction now defaultTxDecisionPolicy peerA peerState0 sharedState0
 
 unit_nextPeerAction_claimsAtScoreDelayThreshold :: (String -> IO ()) -> Assertion
@@ -1510,8 +1514,11 @@ unit_nextPeerAction_claimsAtScoreDelayThreshold step = do
           , txAttempts = Map.empty
           }
       }
-    peerState0 = emptyPeerTxLocalState { peerAvailableTxIds = IntMap.singleton k txSize
-                                        , peerScore = PeerScore 20 now }
+    peerState0 = emptyPeerTxLocalState
+      { peerUnacknowledgedTxIds = StrictSeq.singleton key
+      , peerAvailableTxIds = IntMap.singleton k txSize
+      , peerScore = PeerScore 20 now
+      }
     (peerAction, peerState', sharedState') =
       nextPeerAction now defaultTxDecisionPolicy peeraddr peerState0 sharedState0
 
@@ -1600,6 +1607,7 @@ prop_nextPeerAction_claimsExpiredLease
   -> Property
 prop_nextPeerAction_claimsExpiredLease (Positive oldOwner0) (Positive peerA0) (Positive peerB0) txid0 txSize0 =
   distinctPeers ==>
+    peerTxLocalStateInvariant peerState0 .&&.
     case peerAction of
          PeerRequestTxs txKeys ->
            conjoin
@@ -1636,8 +1644,11 @@ prop_nextPeerAction_claimsExpiredLease (Positive oldOwner0) (Positive peerA0) (P
           , txAttempts = Map.empty
           }
       }
-    peerState0 = emptyPeerTxLocalState { peerAvailableTxIds = IntMap.singleton k txSize
-                                       , peerScore = peerAScore }
+    peerState0 = emptyPeerTxLocalState
+      { peerUnacknowledgedTxIds = StrictSeq.singleton key
+      , peerAvailableTxIds = IntMap.singleton k txSize
+      , peerScore = peerAScore
+      }
     (peerAction, peerState', sharedState') = nextPeerAction now defaultTxDecisionPolicy peerA peerState0 sharedState0
 
 -- Verifies that nextPeerAction still requests an oversized first tx when it
@@ -1648,6 +1659,7 @@ prop_nextPeerAction_requestsOversizedFirstTx
   -> Positive Int
   -> Property
 prop_nextPeerAction_requestsOversizedFirstTx (Positive peeraddr) txid0 (Positive txSize0) =
+  peerTxLocalStateInvariant peerState0 .&&.
   case peerAction of
        PeerRequestTxs [txKey] ->
          conjoin
@@ -1678,7 +1690,8 @@ prop_nextPeerAction_requestsOversizedFirstTx (Positive peeraddr) txid0 (Positive
       , sharedTxTable = IntMap.singleton k (mkTxEntry peeraddr txSize Nothing)
       }
     peerState0 = emptyPeerTxLocalState
-      { peerAvailableTxIds = IntMap.singleton k txSize
+      { peerUnacknowledgedTxIds = StrictSeq.singleton key
+      , peerAvailableTxIds = IntMap.singleton k txSize
       , peerRequestedTxIds = maxNumTxIdsToRequest policy
       }
     (peerAction, peerState', sharedState') = nextPeerAction now policy peeraddr peerState0 sharedState0
@@ -1707,7 +1720,8 @@ unit_nextPeerAction_skipsBlockedAvailableTxs step = do
     kBlocked = 1
     kClaimable = 2
     peerState = emptyPeerTxLocalState
-      { peerAvailableTxIds = IntMap.fromList [(kBlocked, 10), (kClaimable, 11)]
+      { peerUnacknowledgedTxIds = StrictSeq.fromList [blockedKey, claimableKey]
+      , peerAvailableTxIds = IntMap.fromList [(kBlocked, 10), (kClaimable, 11)]
       }
     sharedState :: SharedTxState PeerAddr TxId
     sharedState = emptySharedTxState
@@ -2117,6 +2131,7 @@ prop_nextPeerActionPipelined_secondBodyBatch
   -> Property
 prop_nextPeerActionPipelined_secondBodyBatch (Positive peeraddr) txidA0 txidB0 txSizeA0 txSizeB0 =
   txidA /= txidB ==>
+    peerTxLocalStateInvariant peerState0 .&&.
     case peerAction of
          PeerRequestTxs [txKey] ->
            conjoin
@@ -2141,7 +2156,8 @@ prop_nextPeerActionPipelined_secondBodyBatch (Positive peeraddr) txidA0 txidB0 t
     kA = unTxKey keyA
     kB = unTxKey keyB
     peerState0 = emptyPeerTxLocalState
-      { peerAvailableTxIds = IntMap.singleton kB txSizeB
+      { peerUnacknowledgedTxIds = StrictSeq.fromList [keyA, keyB]
+      , peerAvailableTxIds = IntMap.fromList [(kA, txSizeA), (kB, txSizeB)]
       , peerRequestedTxs = IntSet.singleton kA
       , peerRequestedTxBatches = StrictSeq.singleton (mkRequestedTxBatch [keyA] txSizeA)
       , peerRequestedTxsSize = txSizeA
@@ -2177,6 +2193,7 @@ prop_nextPeerActionPipelined_noThirdBodyBatch
   -> Property
 prop_nextPeerActionPipelined_noThirdBodyBatch (Positive peeraddr) txidA0 txidB0 txidC0 txSizeA0 txSizeB0 txSizeC0 =
   distinctTxIds ==>
+    peerTxLocalStateInvariant peerState0 .&&.
     case peerAction of
          PeerDoNothing _ _ ->
            conjoin
@@ -2201,7 +2218,8 @@ prop_nextPeerActionPipelined_noThirdBodyBatch (Positive peeraddr) txidA0 txidB0 
     kB = unTxKey keyB
     kC = unTxKey keyC
     peerState0 = emptyPeerTxLocalState
-      { peerAvailableTxIds = IntMap.singleton kC txSizeC
+      { peerUnacknowledgedTxIds = StrictSeq.fromList [keyA, keyB, keyC]
+      , peerAvailableTxIds = IntMap.fromList [(kA, txSizeA), (kB, txSizeB), (kC, txSizeC)]
       , peerRequestedTxs = IntSet.fromList [kA, kB]
       , peerRequestedTxBatches = StrictSeq.fromList
           [ mkRequestedTxBatch [keyA] txSizeA

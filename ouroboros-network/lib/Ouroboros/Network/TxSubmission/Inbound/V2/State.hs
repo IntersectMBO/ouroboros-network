@@ -277,18 +277,33 @@ pickSubmitAction PeerActionContext { pacPeerAddr, pacPeerState, pacSharedState }
      else Just txsToSubmit
   where
 
-    -- Filters the unacknowledged txid queue for bodies buffered by this peer
-    -- that are not currently being submitted by another advertiser.
-    -- Returns the list of tx keys ready for immediate submission in the order they
-    -- were originally advertised by the peer.
-    pickBufferedTxsToSubmit =
-      [ txKey
-      | txKey@(TxKey k) <- toList (peerUnacknowledgedTxIds pacPeerState)
-      , IntMap.member k (peerDownloadedTxs pacPeerState)
-      , Just txEntry <- [IntMap.lookup k (sharedTxTable pacSharedState)]
-      , txBufferedByPeer pacPeerAddr txEntry
-      , not (txSubmittingByOther pacPeerAddr txEntry)
-      ]
+    -- Walk the unacknowledged txid queue in peer advertisement order, picking
+    -- bodies buffered by this peer for immediate submission. Stop at the
+    -- first tx that is unresolved and not available from this peer: later
+    -- txs in the peer's stream must not run ahead of earlier ones, otherwise
+    -- a tx may be offered to the mempool before a transaction it depends on
+    -- is confirmed. Txs already resolved elsewhere (present in
+    -- 'sharedRetainedTxs') are skipped over since no further action is
+    -- needed for them.
+    pickBufferedTxsToSubmit = go [] (toList (peerUnacknowledgedTxIds pacPeerState))
+      where
+        go acc [] = reverse acc
+        go acc (txKey@(TxKey k) : rest) =
+          case IntMap.lookup k (sharedTxTable pacSharedState) of
+            Just txEntry
+              | IntMap.member k (peerDownloadedTxs pacPeerState)
+              , txBufferedByPeer pacPeerAddr txEntry
+              , not (txSubmittingByOther pacPeerAddr txEntry) ->
+                  go (txKey : acc) rest
+            _ | retainedMember k (sharedRetainedTxs pacSharedState) ->
+                  -- already resolved via another peer
+                  go acc rest
+            _ | not (IntMap.member k (peerAvailableTxIds pacPeerState))
+              , not (IntMap.member k (peerDownloadedTxs pacPeerState)) ->
+                  -- we have already finished with this tx (previously
+                  -- submitted, or never had a body to submit)
+                  go acc rest
+            _ -> reverse acc
 
 -- | Select transactions to request from the peer, if within policy limits.
 --
@@ -325,18 +340,22 @@ pickRequestTxsAction ctx@PeerActionContext { pacNow, pacPolicy, pacPeerState, pa
 
         leaseUntil = addTime (interTxSpace pacPolicy) pacNow
 
-        -- We pick which TXs to download based on TxKey in ascending order.
-        -- This makes it likely (but not guaranteed) that we end up downloading
-        -- TXs in the order the peer presented them to us.
+        -- Iterate the peer's unacknowledged queue, which preserves the peer's
+        -- advertisement order. Peers are expected to advertise in chain-
+        -- topological order (parents before children), so walking in that
+        -- order aligns fetch order with submission-validity order and a
+        -- child is never requested ahead of its parent when the same peer
+        -- carries both.
         candidates =
           [ (k, txSize)
-          | (k, txSize) <- IntMap.toAscList (peerAvailableTxIds pacPeerState)
+          | TxKey k <- toList (peerUnacknowledgedTxIds pacPeerState)
           , IntSet.notMember k (peerRequestedTxs pacPeerState)
           , IntMap.notMember k (peerDownloadedTxs pacPeerState)
+          , Just txSize <- [IntMap.lookup k (peerAvailableTxIds pacPeerState)]
           ]
 
-        -- Select transactions to request by iterating through candidates in ascending
-        -- key order until the size budget is consumed.
+        -- Select transactions to request by iterating through candidates in
+        -- peer advertisement order until the size budget is consumed.
         go selectedRev selectedSize txTable [] = (reverse selectedRev, selectedSize, txTable)
         go selectedRev selectedSize txTable ((k, txSize) : rest) =
           if exceedsBudget selectedSize txSize
