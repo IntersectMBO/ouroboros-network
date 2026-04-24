@@ -8,6 +8,7 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Registry
   ( TxChannels (..)
   , TxChannelsVar
   , TxMempoolSem
+  , TxMempoolResult (..)
   , SharedTxStateVar
   , newSharedTxStateVar
   , newTxChannelsVar
@@ -85,7 +86,7 @@ data PeerTxAPI m txid tx = PeerTxAPI {
     -- ^ handle received txs
 
     submitTxToMempool     :: Tracer m (TraceTxSubmissionInbound txid tx)
-                          -> txid -> tx -> m ()
+                          -> txid -> tx -> m TxMempoolResult
     -- ^ submit the given (txid, tx) to the mempool.
   }
 
@@ -248,7 +249,7 @@ withPeer tracer
     -- PeerTxAPI
     --
 
-    submitTxToMempool :: Tracer m (TraceTxSubmissionInbound txid tx) -> txid -> tx -> m ()
+    submitTxToMempool :: Tracer m (TraceTxSubmissionInbound txid tx) -> txid -> tx -> m TxMempoolResult
     submitTxToMempool txTracer txid tx =
         bracket_ (atomically $ waitTSem mempoolSem)
                  (atomically $ signalTSem mempoolSem)
@@ -261,6 +262,7 @@ withPeer tracer
             case res of
               TxAccepted -> traceWith txTracer (TraceTxInboundAddedToMempool [txid] duration)
               TxRejected -> traceWith txTracer (TraceTxInboundRejectedFromMempool [txid] duration)
+            return res
 
       where
         -- add the tx to the mempool
