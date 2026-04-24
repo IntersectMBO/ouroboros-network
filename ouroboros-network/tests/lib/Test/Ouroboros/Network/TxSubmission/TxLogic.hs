@@ -835,7 +835,8 @@ instance Arbitrary ArbCollectTxs where
                                               getTxSize    = size,
                                               -- `availableTxIds` contains advertised sizes
                                               getTxAdvSize = availableTxIds Map.! txid,
-                                              getTxValid   = valid })
+                                              getTxValid   = valid,
+                                              getTxParent  = Nothing })
 
         pure $ assert (foldMap getTxAdvSize receivedTx <= requestedTxsInflightSize)
              $ ArbCollectTxs mempoolHasTxFun
