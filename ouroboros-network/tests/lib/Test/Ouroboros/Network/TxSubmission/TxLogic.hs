@@ -171,15 +171,18 @@ data InvariantStrength = WeakInvariant
 --     and @peerRequestedTxsSize@ equals the sum of all batch sizes.
 peerTxLocalStateInvariant
   :: forall tx.
-     PeerTxLocalState tx
+     TxDecisionPolicy
+  -> PeerTxLocalState tx
   -> Property
-peerTxLocalStateInvariant PeerTxLocalState {
+peerTxLocalStateInvariant TxDecisionPolicy { scoreMax }
+                          PeerTxLocalState {
                             peerUnacknowledgedTxIds,
                             peerAvailableTxIds,
                             peerRequestedTxs,
                             peerRequestedTxBatches,
                             peerRequestedTxsSize,
-                            peerDownloadedTxs
+                            peerDownloadedTxs,
+                            peerScore
                           } =
   conjoin
     [ counterexample "requested keys are not all available"
@@ -196,8 +199,14 @@ peerTxLocalStateInvariant PeerTxLocalState {
         (peerRequestedTxs === batchKeyUnion)
     , counterexample "peerRequestedTxsSize does not match the sum of batch sizes"
         (peerRequestedTxsSize === batchSizeSum)
+    , counterexample ("peerScoreValue is negative: " ++ show scoreVal)
+        (property (scoreVal >= 0))
+    , counterexample ("peerScoreValue exceeds scoreMax: "
+                      ++ show scoreVal ++ " > " ++ show scoreMax)
+        (property (scoreVal <= scoreMax))
     ]
   where
+    scoreVal       = peerScoreValue peerScore
     unackKeys      = IntSet.fromList [ k | TxKey k <- toList peerUnacknowledgedTxIds ]
     availableKeys  = IntMap.keysSet peerAvailableTxIds
     downloadedKeys = IntMap.keysSet peerDownloadedTxs
@@ -225,14 +234,15 @@ combinedStateInvariant
      , Show peeraddr
      , Show txid
      )
-  => InvariantStrength
+  => TxDecisionPolicy
+  -> InvariantStrength
   -> peeraddr
   -> PeerTxLocalState tx
   -> SharedTxState peeraddr txid
   -> Property
-combinedStateInvariant strength peeraddr peerState sharedState =
+combinedStateInvariant policy strength peeraddr peerState sharedState =
   conjoin
-    [ peerTxLocalStateInvariant peerState
+    [ peerTxLocalStateInvariant policy peerState
     , sharedTxStateInvariant strength sharedState
     , counterexample "advertised keys escape the peer's unacknowledged queue"
         (property (advertisedKeys `IntSet.isSubsetOf` unackKeys))
@@ -439,33 +449,52 @@ rfIsPruned _               = False
 
 instance Arbitrary ArbTxDecisionPolicy where
     arbitrary =
-      ArbTxDecisionPolicy <$> (
-       TxDecisionPolicy . getSmall . getPositive
-         <$> arbitrary
-         <*> (getSmall . getPositive <$> arbitrary)
-         <*> (SizeInBytes . getPositive <$> arbitrary)
-         <*> choose (1, 10)
-         <*> (getSmall . getPositive <$> arbitrary)
-         <*> (realToFrac <$> choose (0 :: Double, 2))
-         <*> choose (0, 1)
-         <*> choose (0, 1800)
-         <*> (realToFrac <$> choose (0 :: Double, 1)))
+      frequency
+        [ (1, pure (ArbTxDecisionPolicy defaultTxDecisionPolicy))
+        , (9, ArbTxDecisionPolicy <$> (
+                TxDecisionPolicy . getSmall . getPositive
+                  <$> arbitrary
+                  <*> (getSmall . getPositive <$> arbitrary)
+                  <*> (SizeInBytes . getPositive <$> arbitrary)
+                  <*> choose (1, 10)
+                  <*> (getSmall . getPositive <$> arbitrary)
+                  <*> (realToFrac <$> choose (0 :: Double, 2))
+                  <*> choose (0, 1)
+                  <*> choose (0, 1800)
+                  <*> (realToFrac <$> choose (0 :: Double, 1))))
+        ]
 
-    shrink (ArbTxDecisionPolicy a@TxDecisionPolicy {
-              maxNumTxIdsToRequest,
-              txsSizeInflightPerPeer,
-              txInflightMultiplicity }) =
-      [ ArbTxDecisionPolicy a { maxNumTxIdsToRequest = NumTxIdsToReq x }
-      | (Positive (Small x)) <- shrink (Positive (Small (getNumTxIdsToReq maxNumTxIdsToRequest)))
-      ]
-      ++
-      [ ArbTxDecisionPolicy a { txsSizeInflightPerPeer = SizeInBytes s }
-      | Positive s <- shrink (Positive (getSizeInBytes txsSizeInflightPerPeer))
-      ]
-      ++
-      [ ArbTxDecisionPolicy a { txInflightMultiplicity = x }
-      | Positive (Small x) <- shrink (Positive (Small txInflightMultiplicity))
-      ]
+    shrink (ArbTxDecisionPolicy a)
+      | a == defaultTxDecisionPolicy = []
+      | otherwise =
+          ArbTxDecisionPolicy defaultTxDecisionPolicy
+        : [ ArbTxDecisionPolicy a { maxNumTxIdsToRequest = NumTxIdsToReq x }
+          | (Positive (Small x)) <- shrink (Positive (Small (getNumTxIdsToReq (maxNumTxIdsToRequest a))))
+          ]
+        ++ [ ArbTxDecisionPolicy a { maxUnacknowledgedTxIds = x }
+           | (Positive (Small x)) <- shrink (Positive (Small (maxUnacknowledgedTxIds a)))
+           ]
+        ++ [ ArbTxDecisionPolicy a { txsSizeInflightPerPeer = SizeInBytes s }
+           | Positive s <- shrink (Positive (getSizeInBytes (txsSizeInflightPerPeer a)))
+           ]
+        ++ [ ArbTxDecisionPolicy a { maxOutstandingTxBatchesPerPeer = x }
+           | x <- shrink (maxOutstandingTxBatchesPerPeer a), x >= 1
+           ]
+        ++ [ ArbTxDecisionPolicy a { txInflightMultiplicity = x }
+           | Positive (Small x) <- shrink (Positive (Small (txInflightMultiplicity a)))
+           ]
+        ++ [ ArbTxDecisionPolicy a { bufferedTxsMinLifetime = realToFrac x }
+           | NonNegative x <- shrink (NonNegative (realToFrac (bufferedTxsMinLifetime a) :: Double))
+           ]
+        ++ [ ArbTxDecisionPolicy a { scoreRate = x }
+           | NonNegative x <- shrink (NonNegative (scoreRate a))
+           ]
+        ++ [ ArbTxDecisionPolicy a { scoreMax = x }
+           | NonNegative x <- shrink (NonNegative (scoreMax a))
+           ]
+        ++ [ ArbTxDecisionPolicy a { interTxSpace = realToFrac x }
+           | NonNegative x <- shrink (NonNegative (realToFrac (interTxSpace a) :: Double))
+           ]
 
 instance Arbitrary ArbSharedPeerState where
   arbitrary = ArbSharedPeerState <$> genSharedPeerState
@@ -518,12 +547,14 @@ instance Arbitrary ArbSharedTxState where
 -- Also asserts the peer's pre-existing state and unrelated shared state are
 -- preserved, and that the combined invariant holds before and after.
 prop_handleReceivedTxIds
-  :: ArbSharedTxState
+  :: ArbTxDecisionPolicy
+  -> ArbSharedTxState
   -> ArbPeerTxLocalState
   -> NonEmptyList (TxId, Positive Int, TxIdGroupTag)
   -> Positive Int
   -> Property
 prop_handleReceivedTxIds
+    (ArbTxDecisionPolicy policy)
     (ArbSharedTxState sharedState0)
     (ArbPeerTxLocalState peerStateGenerated)
     (NonEmpty taggedInput)
@@ -559,7 +590,7 @@ prop_handleReceivedTxIds
 
       -- Seed the retained group into the shared state first: intern the txids
       -- and add them to sharedRetainedTxs.
-      sharedStateWithRetained = seedRetainedTxids retainedGroup sharedStateWithPeer
+      sharedStateWithRetained = seedRetainedTxids policy retainedGroup sharedStateWithPeer
 
       -- Pick an advertiser peer for the resolve-active sub-group, if any peer
       -- other than @peeraddr@ exists. If none is available, demote the
@@ -627,10 +658,10 @@ prop_handleReceivedTxIds
         }
       oldPeerAvailableKeys = IntMap.keysSet (peerAvailableTxIds peerState0)
       (peerState', sharedState') =
-        handleReceivedTxIds mempoolHasTx now defaultTxDecisionPolicy peeraddr requestedToReply txidsAndSizes peerState0 sharedStateBase
+        handleReceivedTxIds mempoolHasTx now policy peeraddr requestedToReply txidsAndSizes peerState0 sharedStateBase
 
       expectedRetainUntil =
-        addTime (bufferedTxsMinLifetime defaultTxDecisionPolicy) now
+        addTime (bufferedTxsMinLifetime policy) now
 
       -- Only the new group extends the peer's advertised-key set.
       expectedAdvertisedKeys =
@@ -818,9 +849,9 @@ prop_handleReceivedTxIds
       , conjoin (fmap checkMempoolResolveActiveEntry mempoolResolveActiveGroup)
       , checkOtherPeerState
       , counterexample "combined invariant violated before the call"
-          (combinedStateInvariant StrongInvariant peeraddr peerState0 sharedStateBase)
+          (combinedStateInvariant policy StrongInvariant peeraddr peerState0 sharedStateBase)
       , counterexample "combined invariant violated after the call"
-          (combinedStateInvariant StrongInvariant peeraddr peerState' sharedState')
+          (combinedStateInvariant policy StrongInvariant peeraddr peerState' sharedState')
       , checkNoThunks "peerState'" (peerState' :: PeerTxLocalState (Tx TxId))
       , checkNoThunks "sharedState'" sharedState'
       ]
@@ -942,14 +973,18 @@ unit_nextPeerAction_claimsFreshTxWhenFirstAdvertiserIsFull step = do
 -- match the group sizes, peer-local fields handleReceivedTxs does not touch
 -- are preserved, and the combined invariant holds before and after.
 prop_handleReceivedTxs
-  :: ArbSharedTxState
+  :: ArbTxDecisionPolicy
+  -> ArbSharedTxState
   -> ArbPeerTxLocalState
   -> NonEmptyList (TxId, Positive Int, RequestedFate)
+  -> NonNegative Double
   -> Property
 prop_handleReceivedTxs
+    (ArbTxDecisionPolicy policy)
     (ArbSharedTxState sharedState0)
     (ArbPeerTxLocalState peerStateGenerated)
-    (NonEmpty requestedInput) =
+    (NonEmpty requestedInput)
+    (NonNegative initialScore) =
   forAll (genPeerAddrBiased sharedState0) $ \peeraddr ->
   let sharedStateWithPeer = ensurePeerAdvertisesTxKeys peeraddr [] sharedState0
 
@@ -999,7 +1034,7 @@ prop_handleReceivedTxs
       -- deliberately not seeded: their keys live only in the peer's local
       -- bookkeeping.
       sharedStateWithLateRetained =
-        seedRetainedTxids (fmap fst lateRetainedGroup) sharedStateWithPeer
+        seedRetainedTxids policy (fmap fst lateRetainedGroup) sharedStateWithPeer
       sharedStateBase =
         seedRequestedActiveTxids peeraddr otherPeerOpt activeSeedTagged
                                  sharedStateWithLateRetained
@@ -1094,15 +1129,22 @@ prop_handleReceivedTxs
           peerAvailableTxIds     = requestedAvailableMap,
           peerRequestedTxs       = requestedKeysSet,
           peerRequestedTxBatches = StrictSeq.singleton requestedBatch,
-          peerRequestedTxsSize   = requestedTotalSize
+          peerRequestedTxsSize   = requestedTotalSize,
+          peerScore              = PeerScore (min initialScore (scoreMax policy))
+                                             (Time 0)
         }
 
       (omittedCount, lateCount, peerState', sharedState') =
-        handleReceivedTxs mempoolHasTxFn now defaultTxDecisionPolicy peeraddr
+        handleReceivedTxs mempoolHasTxFn now policy peeraddr
                           receivedBodies peerState0 sharedStateBase
 
+      penaltyCount = omittedCount + lateCount
+      peerState''  | penaltyCount == 0 = peerState'
+                   | otherwise         =
+                       snd (applyPeerRejections policy now penaltyCount peerState')
+
       expectedRetainUntil =
-        addTime (bufferedTxsMinLifetime defaultTxDecisionPolicy) now
+        addTime (bufferedTxsMinLifetime policy) now
 
       -- Per-fate assertions.
       checkBufferedEntry ((txid, size), _) =
@@ -1323,9 +1365,24 @@ prop_handleReceivedTxs
       , conjoin (fmap checkPrunedEntry       prunedAllocations)
       , checkOtherPeerState
       , counterexample "combined invariant violated before the call"
-          (combinedStateInvariant StrongInvariant peeraddr peerState0 sharedStateBase)
+          (combinedStateInvariant policy StrongInvariant peeraddr peerState0 sharedStateBase)
       , counterexample "combined invariant violated after the call"
-          (combinedStateInvariant StrongInvariant peeraddr peerState' sharedState')
+          (combinedStateInvariant policy StrongInvariant peeraddr peerState' sharedState')
+      , counterexample "score path: peerScoreValue not as expected"
+          (if penaltyCount == 0
+              then peerScoreValue (peerScore peerState'')
+                     === peerScoreValue (peerScore peerState0)
+              else peerScoreValue (peerScore peerState'')
+                     === min (scoreMax policy)
+                             (currentPeerScore policy now (peerScore peerState0)
+                                + fromIntegral penaltyCount))
+      , counterexample "score path: peerScoreTs not advanced"
+          (if penaltyCount == 0
+              then peerScoreTs (peerScore peerState'')
+                     === peerScoreTs (peerScore peerState0)
+              else peerScoreTs (peerScore peerState'') === now)
+      , counterexample "combined invariant violated after score update"
+          (combinedStateInvariant policy StrongInvariant peeraddr peerState'' sharedState')
       , checkNoThunks "peerState'" (peerState' :: PeerTxLocalState (Tx TxId))
       , checkNoThunks "sharedState'" sharedState'
       ]
@@ -1333,13 +1390,14 @@ prop_handleReceivedTxs
 -- Verifies that handleSubmittedTxs retains accepted txs and removes rejected
 -- txs from the active table and tx-key maps.
 prop_handleSubmittedTxs_retainsAcceptedAndDropsRejected
-  :: Positive Int
+  :: ArbTxDecisionPolicy
+  -> Positive Int
   -> TxId
   -> TxId
   -> Positive Int
   -> Positive Int
   -> Property
-prop_handleSubmittedTxs_retainsAcceptedAndDropsRejected (Positive peeraddr) txidA0 txidB0 txSizeA0 txSizeB0 =
+prop_handleSubmittedTxs_retainsAcceptedAndDropsRejected (ArbTxDecisionPolicy policy) (Positive peeraddr) txidA0 txidB0 txSizeA0 txSizeB0 =
   txidA /= txidB ==>
     conjoin
       [ peerDownloadedTxs peerState' === IntMap.empty
@@ -1378,17 +1436,18 @@ prop_handleSubmittedTxs_retainsAcceptedAndDropsRejected (Positive peeraddr) txid
     kA = unTxKey keyA
     kB = unTxKey keyB
     peerState0 = emptyPeerTxLocalState { peerDownloadedTxs = IntMap.fromList [(kA, txA), (kB, txB)] }
-    expectedRetainUntil = addTime (bufferedTxsMinLifetime defaultTxDecisionPolicy) now
-    (peerState', sharedState') = handleSubmittedTxs now defaultTxDecisionPolicy peeraddr [keyA] [keyB] peerState0 sharedState0
+    expectedRetainUntil = addTime (bufferedTxsMinLifetime policy) now
+    (peerState', sharedState') = handleSubmittedTxs now policy peeraddr [keyA] [keyB] peerState0 sharedState0
 
 -- Verifies that nextPeerAction submits buffered txs owned by the peer before
 -- taking any other action.
 prop_nextPeerAction_prioritisesSubmit
-  :: Positive Int
+  :: ArbTxDecisionPolicy
+  -> Positive Int
   -> TxId
   -> Positive Int
   -> Property
-prop_nextPeerAction_prioritisesSubmit (Positive peeraddr) txid0 txSize0 =
+prop_nextPeerAction_prioritisesSubmit (ArbTxDecisionPolicy policy) (Positive peeraddr) txid0 txSize0 =
   case peerAction of
        PeerSubmitTxs [txKey] ->
          conjoin
@@ -1422,37 +1481,38 @@ prop_nextPeerAction_prioritisesSubmit (Positive peeraddr) txid0 txSize0 =
       }
     peerState0 = emptyPeerTxLocalState
       { peerUnacknowledgedTxIds = StrictSeq.singleton key
-      , peerRequestedTxIds = maxNumTxIdsToRequest defaultTxDecisionPolicy
+      , peerRequestedTxIds = maxNumTxIdsToRequest policy
       , peerDownloadedTxs = IntMap.singleton k tx
       }
-    (peerAction, peerState', sharedState') = nextPeerAction now defaultTxDecisionPolicy peeraddr peerState0 sharedState0
+    (peerAction, peerState', sharedState') = nextPeerAction now policy peeraddr peerState0 sharedState0
 
 -- Verifies that nextPeerAction leases a claimable tx to the best idle
 -- advertiser and requests its body.
 prop_nextPeerAction_claimsClaimableTx
-  :: Positive Int
+  :: ArbTxDecisionPolicy
+  -> Positive Int
   -> Positive Int
   -> Positive Int
   -> TxId
   -> Positive Int
   -> Property
-prop_nextPeerAction_claimsClaimableTx (Positive peerA0) (Positive peerB0) (Positive peerC0) txid0 txSize0 =
+prop_nextPeerAction_claimsClaimableTx (ArbTxDecisionPolicy policy) (Positive peerA0) (Positive peerB0) (Positive peerC0) txid0 txSize0 =
   distinctPeers ==>
-    peerTxLocalStateInvariant peerState0 .&&.
+    peerTxLocalStateInvariant policy peerState0 .&&.
     case peerAction of
          PeerRequestTxs txKeys ->
            conjoin
              [ txKeys === [key]
              , peerRequestedTxs peerState' === IntSet.singleton k
              , txLease (lookupEntryOrFail key sharedState') ===
-                 TxLeased peerA (addTime (interTxSpace defaultTxDecisionPolicy) now)
+                 TxLeased peerA (addTime (interTxSpace policy) now)
              , checkNoThunks "peerState'" (peerState' :: PeerTxLocalState (Tx TxId))
              , checkNoThunks "sharedState'" sharedState'
              ]
          _ -> counterexample ("unexpected peer action: " ++ show peerAction) False
   where
     peerA = peerA0
-    peerAScore = PeerScore 1 now
+    peerAScore = PeerScore (min 1 (scoreMax policy)) now
     peerB = peerB0 + 1000
     peerC = peerC0 + 2000
     distinctPeers = peerA /= peerB && peerA /= peerC && peerB /= peerC
@@ -1480,7 +1540,7 @@ prop_nextPeerAction_claimsClaimableTx (Positive peerA0) (Positive peerB0) (Posit
       , peerAvailableTxIds = IntMap.singleton k txSize
       , peerScore = peerAScore
       }
-    (peerAction, peerState', sharedState') = nextPeerAction now defaultTxDecisionPolicy peerA peerState0 sharedState0
+    (peerAction, peerState', sharedState') = nextPeerAction now policy peerA peerState0 sharedState0
 
 unit_nextPeerAction_claimsAtScoreDelayThreshold :: (String -> IO ()) -> Assertion
 unit_nextPeerAction_claimsAtScoreDelayThreshold step = do
@@ -1599,22 +1659,23 @@ prop_nextPeerAction_claimsRejectedTxFromOtherAdvertiser =
 -- Verifies that nextPeerAction can steal an expired lease for the best idle
 -- advertiser and request that tx.
 prop_nextPeerAction_claimsExpiredLease
-  :: Positive Int
+  :: ArbTxDecisionPolicy
+  -> Positive Int
   -> Positive Int
   -> Positive Int
   -> TxId
   -> Positive Int
   -> Property
-prop_nextPeerAction_claimsExpiredLease (Positive oldOwner0) (Positive peerA0) (Positive peerB0) txid0 txSize0 =
+prop_nextPeerAction_claimsExpiredLease (ArbTxDecisionPolicy policy) (Positive oldOwner0) (Positive peerA0) (Positive peerB0) txid0 txSize0 =
   distinctPeers ==>
-    peerTxLocalStateInvariant peerState0 .&&.
+    peerTxLocalStateInvariant policy peerState0 .&&.
     case peerAction of
          PeerRequestTxs txKeys ->
            conjoin
              [ txKeys === [key]
              , peerRequestedTxs peerState' === IntSet.singleton k
              , txLease (lookupEntryOrFail key sharedState') ===
-                 TxLeased peerA (addTime (interTxSpace defaultTxDecisionPolicy) now)
+                 TxLeased peerA (addTime (interTxSpace policy) now)
              , checkNoThunks "peerState'" (peerState' :: PeerTxLocalState (Tx TxId))
              , checkNoThunks "sharedState'" sharedState'
              ]
@@ -1622,7 +1683,7 @@ prop_nextPeerAction_claimsExpiredLease (Positive oldOwner0) (Positive peerA0) (P
   where
     oldOwner = oldOwner0
     peerA = peerA0 + 1000
-    peerAScore = PeerScore 1 now
+    peerAScore = PeerScore (min 1 (scoreMax policy)) now
     peerB = peerB0 + 2000
     distinctPeers = oldOwner /= peerA && oldOwner /= peerB && peerA /= peerB
     txid = abs txid0 + 1
@@ -1649,17 +1710,18 @@ prop_nextPeerAction_claimsExpiredLease (Positive oldOwner0) (Positive peerA0) (P
       , peerAvailableTxIds = IntMap.singleton k txSize
       , peerScore = peerAScore
       }
-    (peerAction, peerState', sharedState') = nextPeerAction now defaultTxDecisionPolicy peerA peerState0 sharedState0
+    (peerAction, peerState', sharedState') = nextPeerAction now policy peerA peerState0 sharedState0
 
 -- Verifies that nextPeerAction still requests an oversized first tx when it
 -- is the only available choice within the soft-budget policy.
 prop_nextPeerAction_requestsOversizedFirstTx
-  :: Positive Int
+  :: ArbTxDecisionPolicy
+  -> Positive Int
   -> TxId
   -> Positive Int
   -> Property
-prop_nextPeerAction_requestsOversizedFirstTx (Positive peeraddr) txid0 (Positive txSize0) =
-  peerTxLocalStateInvariant peerState0 .&&.
+prop_nextPeerAction_requestsOversizedFirstTx (ArbTxDecisionPolicy basePolicy) (Positive peeraddr) txid0 (Positive txSize0) =
+  peerTxLocalStateInvariant policy peerState0 .&&.
   case peerAction of
        PeerRequestTxs [txKey] ->
          conjoin
@@ -1677,7 +1739,7 @@ prop_nextPeerAction_requestsOversizedFirstTx (Positive peeraddr) txid0 (Positive
     txSize = mkSize (Positive (txSize0 + 1))
     key = TxKey 0
     k = unTxKey key
-    policy = defaultTxDecisionPolicy
+    policy = basePolicy
       { txsSizeInflightPerPeer = txSize - 1
       , maxOutstandingTxBatchesPerPeer = 1
       }
@@ -1750,11 +1812,12 @@ unit_nextPeerAction_skipsBlockedAvailableTxs step = do
 -- Verifies that nextPeerAction submits buffered owned txs before
 -- acknowledging their txids.
 prop_nextPeerAction_ownerSubmitsBuffered
-  :: Positive Int
+  :: ArbTxDecisionPolicy
+  -> Positive Int
   -> TxId
   -> Positive Int
   -> Property
-prop_nextPeerAction_ownerSubmitsBuffered (Positive peeraddr) txid0 txSize0 =
+prop_nextPeerAction_ownerSubmitsBuffered (ArbTxDecisionPolicy policy) (Positive peeraddr) txid0 txSize0 =
   case peerAction of
        PeerSubmitTxs [txKey] ->
          conjoin
@@ -1786,10 +1849,10 @@ prop_nextPeerAction_ownerSubmitsBuffered (Positive peeraddr) txid0 txSize0 =
       }
     peerState0 = emptyPeerTxLocalState
       { peerUnacknowledgedTxIds = StrictSeq.singleton key
-      , peerRequestedTxIds = maxNumTxIdsToRequest defaultTxDecisionPolicy
+      , peerRequestedTxIds = maxNumTxIdsToRequest policy
       , peerDownloadedTxs = IntMap.singleton k tx
       }
-    (peerAction, peerState', sharedState') = nextPeerAction now defaultTxDecisionPolicy peeraddr peerState0 sharedState0
+    (peerAction, peerState', sharedState') = nextPeerAction now policy peeraddr peerState0 sharedState0
 
 -- Verifies that a blocked buffered tx does not prevent the peer from
 -- requesting a different claimable tx body.
@@ -1928,11 +1991,12 @@ unit_nextPeerAction_acksSafePrefixBeforeBlockedBufferedTx step = do
 -- Verifies that nextPeerAction keeps non-owner txids unacknowledged until
 -- the tx has resolved out of the active table.
 prop_nextPeerAction_nonOwnerWaitsUntilResolved
-  :: Positive Int
+  :: ArbTxDecisionPolicy
+  -> Positive Int
   -> Positive Int
   -> TxId
   -> Property
-prop_nextPeerAction_nonOwnerWaitsUntilResolved (Positive owner0) (Positive peeraddr0) txid0 =
+prop_nextPeerAction_nonOwnerWaitsUntilResolved (ArbTxDecisionPolicy policy) (Positive owner0) (Positive peeraddr0) txid0 =
   owner /= peeraddr ==>
     conjoin
       [ case unresolvedAction of
@@ -1983,7 +2047,7 @@ prop_nextPeerAction_nonOwnerWaitsUntilResolved (Positive owner0) (Positive peera
       { peerUnacknowledgedTxIds = StrictSeq.singleton key
       , peerRequestedTxIds = 0
       }
-    (unresolvedAction, unresolvedPeerState', unresolvedSharedState') = nextPeerAction now defaultTxDecisionPolicy peeraddr peerState0 unresolvedSharedState
+    (unresolvedAction, unresolvedPeerState', unresolvedSharedState') = nextPeerAction now policy peeraddr peerState0 unresolvedSharedState
     unresolvedExpectations =
       conjoin
         [ peerUnacknowledgedTxIds unresolvedPeerState' === peerUnacknowledgedTxIds peerState0
@@ -1992,16 +2056,17 @@ prop_nextPeerAction_nonOwnerWaitsUntilResolved (Positive owner0) (Positive peera
         , checkNoThunks "unresolvedPeerState'" (unresolvedPeerState' :: PeerTxLocalState (Tx TxId))
         , checkNoThunks "unresolvedSharedState'" unresolvedSharedState'
         ]
-    (resolvedAction, resolvedPeerState', resolvedSharedState') = nextPeerAction now defaultTxDecisionPolicy peeraddr peerState0 resolvedSharedState
+    (resolvedAction, resolvedPeerState', resolvedSharedState') = nextPeerAction now policy peeraddr peerState0 resolvedSharedState
 
 -- Verifies that nextPeerActionPipelined does nothing when it can only
 -- acknowledge txids and cannot request new ones in the same step.
 prop_nextPeerActionPipelined_requiresAckAndReq
-  :: Positive Int
+  :: ArbTxDecisionPolicy
+  -> Positive Int
   -> TxId
   -> Positive Int
   -> Property
-prop_nextPeerActionPipelined_requiresAckAndReq (Positive peeraddr) txid0 _txSize0 =
+prop_nextPeerActionPipelined_requiresAckAndReq (ArbTxDecisionPolicy policy) (Positive peeraddr) txid0 _txSize0 =
   case peerAction of
        PeerDoNothing _ _ ->
          conjoin
@@ -2017,7 +2082,7 @@ prop_nextPeerActionPipelined_requiresAckAndReq (Positive peeraddr) txid0 _txSize
     k = unTxKey key
     peerState0 = emptyPeerTxLocalState
       { peerUnacknowledgedTxIds = StrictSeq.singleton key
-      , peerRequestedTxIds = maxNumTxIdsToRequest defaultTxDecisionPolicy
+      , peerRequestedTxIds = maxNumTxIdsToRequest policy
       }
     sharedState0 = emptySharedTxState
       { sharedPeers = Map.singleton peeraddr (mkSharedPeerState PeerIdle)
@@ -2026,16 +2091,17 @@ prop_nextPeerActionPipelined_requiresAckAndReq (Positive peeraddr) txid0 _txSize
       , sharedKeyToTxId = IntMap.singleton k txid
       , sharedNextTxKey = 1
       }
-    (peerAction, peerState', sharedState') = nextPeerActionPipelined now defaultTxDecisionPolicy peeraddr peerState0 sharedState0
+    (peerAction, peerState', sharedState') = nextPeerActionPipelined now policy peeraddr peerState0 sharedState0
 
 -- Verifies that nextPeerActionPipelined requests txids once it can both
 -- acknowledge old txids and ask for more.
 prop_nextPeerActionPipelined_requestsTxIds
-  :: Positive Int
+  :: ArbTxDecisionPolicy
+  -> Positive Int
   -> TxId
   -> Positive Int
   -> Property
-prop_nextPeerActionPipelined_requestsTxIds (Positive peeraddr) txid0 _txSize0 =
+prop_nextPeerActionPipelined_requestsTxIds (ArbTxDecisionPolicy policy) (Positive peeraddr) txid0 _txSize0 =
   case peerAction of
        PeerRequestTxIds _ txIdsToAcknowledge txIdsToReq ->
          conjoin
@@ -2065,7 +2131,7 @@ prop_nextPeerActionPipelined_requestsTxIds (Positive peeraddr) txid0 _txSize0 =
       , sharedKeyToTxId = IntMap.singleton k txid
       , sharedNextTxKey = 1
       }
-    (peerAction, peerState', sharedState') = nextPeerActionPipelined now defaultTxDecisionPolicy peeraddr peerState0 sharedState0
+    (peerAction, peerState', sharedState') = nextPeerActionPipelined now policy peeraddr peerState0 sharedState0
 
 unit_nextPeerActionPipelined_keepsOneUnackedWithOutstandingBodyReply
   :: (String -> IO ())
@@ -2123,15 +2189,16 @@ unit_nextPeerActionPipelined_keepsOneUnackedWithOutstandingBodyReply step = do
 -- Verifies that nextPeerActionPipelined opens a second outstanding body
 -- batch when another downloadable tx is available.
 prop_nextPeerActionPipelined_secondBodyBatch
-  :: Positive Int
+  :: ArbTxDecisionPolicy
+  -> Positive Int
   -> TxId
   -> TxId
   -> Positive Int
   -> Positive Int
   -> Property
-prop_nextPeerActionPipelined_secondBodyBatch (Positive peeraddr) txidA0 txidB0 txSizeA0 txSizeB0 =
+prop_nextPeerActionPipelined_secondBodyBatch (ArbTxDecisionPolicy basePolicy) (Positive peeraddr) txidA0 txidB0 txSizeA0 txSizeB0 =
   txidA /= txidB ==>
-    peerTxLocalStateInvariant peerState0 .&&.
+    peerTxLocalStateInvariant policy peerState0 .&&.
     case peerAction of
          PeerRequestTxs [txKey] ->
            conjoin
@@ -2140,7 +2207,7 @@ prop_nextPeerActionPipelined_secondBodyBatch (Positive peeraddr) txidA0 txidB0 t
              , StrictSeq.length (peerRequestedTxBatches peerState') === 2
              , peerRequestedTxsSize peerState' === txSizeA + txSizeB
              , fmap txLease (IntMap.lookup kB (sharedTxTable sharedState')) ===
-                 Just (TxLeased peeraddr (addTime (interTxSpace defaultTxDecisionPolicy) now))
+                 Just (TxLeased peeraddr (addTime (interTxSpace policy) now))
              , fmap (Map.lookup peeraddr . txAttempts)
                  (IntMap.lookup kB (sharedTxTable sharedState')) ===
                  Just (Just TxDownloading)
@@ -2178,12 +2245,18 @@ prop_nextPeerActionPipelined_secondBodyBatch (Positive peeraddr) txidA0 txidB0 t
       , sharedKeyToTxId = IntMap.fromList [(kA, txidA), (kB, txidB)]
       , sharedNextTxKey = 2
       }
-    (peerAction, peerState', sharedState') = nextPeerActionPipelined now defaultTxDecisionPolicy peeraddr peerState0 sharedState0
+    policy = basePolicy
+      { maxOutstandingTxBatchesPerPeer = max 2 (maxOutstandingTxBatchesPerPeer basePolicy)
+      , txsSizeInflightPerPeer         = max (txSizeA + txSizeB)
+                                             (txsSizeInflightPerPeer basePolicy)
+      }
+    (peerAction, peerState', sharedState') = nextPeerActionPipelined now policy peeraddr peerState0 sharedState0
 
 -- Verifies that nextPeerActionPipelined does not open a third outstanding
 -- body batch once the per-peer batch limit is reached.
 prop_nextPeerActionPipelined_noThirdBodyBatch
-  :: Positive Int
+  :: ArbTxDecisionPolicy
+  -> Positive Int
   -> TxId
   -> TxId
   -> TxId
@@ -2191,9 +2264,9 @@ prop_nextPeerActionPipelined_noThirdBodyBatch
   -> Positive Int
   -> Positive Int
   -> Property
-prop_nextPeerActionPipelined_noThirdBodyBatch (Positive peeraddr) txidA0 txidB0 txidC0 txSizeA0 txSizeB0 txSizeC0 =
+prop_nextPeerActionPipelined_noThirdBodyBatch (ArbTxDecisionPolicy basePolicy) (Positive peeraddr) txidA0 txidB0 txidC0 txSizeA0 txSizeB0 txSizeC0 =
   distinctTxIds ==>
-    peerTxLocalStateInvariant peerState0 .&&.
+    peerTxLocalStateInvariant policy peerState0 .&&.
     case peerAction of
          PeerDoNothing _ _ ->
            conjoin
@@ -2245,16 +2318,17 @@ prop_nextPeerActionPipelined_noThirdBodyBatch (Positive peeraddr) txidA0 txidB0 
       , sharedNextTxKey = 3
       }
     (peerAction, peerState', sharedState') = nextPeerActionPipelined now policy peeraddr peerState0 sharedState0
-    policy = defaultTxDecisionPolicy { maxOutstandingTxBatchesPerPeer = 2 }
+    policy = basePolicy { maxOutstandingTxBatchesPerPeer = 2 }
 
 -- Verifies that nextPeerAction prunes expired retained txs and removes their
 -- tx-key mappings while the peer is idle.
 prop_nextPeerAction_prunesExpiredRetained
-  :: Positive Int
+  :: ArbTxDecisionPolicy
+  -> Positive Int
   -> TxId
   -> Positive Int
   -> Property
-prop_nextPeerAction_prunesExpiredRetained (Positive peeraddr) txid0 _txSize0 =
+prop_nextPeerAction_prunesExpiredRetained (ArbTxDecisionPolicy policy) (Positive peeraddr) txid0 _txSize0 =
   case peerAction of
        PeerDoNothing _ Nothing ->
          conjoin
@@ -2271,7 +2345,7 @@ prop_nextPeerAction_prunesExpiredRetained (Positive peeraddr) txid0 _txSize0 =
     key = TxKey 0
     k = unTxKey key
     idlePeerState :: PeerTxLocalState (Tx TxId)
-    idlePeerState = emptyPeerTxLocalState { peerRequestedTxIds = maxNumTxIdsToRequest defaultTxDecisionPolicy }
+    idlePeerState = emptyPeerTxLocalState { peerRequestedTxIds = maxNumTxIdsToRequest policy }
     sharedState0 = emptySharedTxState
       { sharedPeers = Map.singleton peeraddr (mkSharedPeerState PeerIdle)
       , sharedRetainedTxs = retainedSingleton k now
@@ -2282,16 +2356,17 @@ prop_nextPeerAction_prunesExpiredRetained (Positive peeraddr) txid0 _txSize0 =
     -- The central counters thread sweeps expired retained entries; emulate
     -- that by calling the same helper before evaluating the peer decision.
     sweptState = sweepSharedState now sharedState0
-    (peerAction, peerState', sharedState') = nextPeerAction now defaultTxDecisionPolicy peeraddr idlePeerState sweptState
+    (peerAction, peerState', sharedState') = nextPeerAction now policy peeraddr idlePeerState sweptState
 
 -- Verifies that nextPeerAction keeps unexpired retained txs and returns the
 -- wake delay until their expiry.
 prop_nextPeerAction_keepsRetained
-  :: Positive Int
+  :: ArbTxDecisionPolicy
+  -> Positive Int
   -> TxId
   -> Positive Int
   -> Property
-prop_nextPeerAction_keepsRetained (Positive peeraddr) txid0 _txSize0 =
+prop_nextPeerAction_keepsRetained (ArbTxDecisionPolicy policy) (Positive peeraddr) txid0 _txSize0 =
   case peerAction of
        PeerDoNothing _ (Just wakeDelay) ->
          conjoin
@@ -2310,7 +2385,7 @@ prop_nextPeerAction_keepsRetained (Positive peeraddr) txid0 _txSize0 =
     key = TxKey 0
     k = unTxKey key
     idlePeerState :: PeerTxLocalState (Tx TxId)
-    idlePeerState = emptyPeerTxLocalState { peerRequestedTxIds = maxNumTxIdsToRequest defaultTxDecisionPolicy }
+    idlePeerState = emptyPeerTxLocalState { peerRequestedTxIds = maxNumTxIdsToRequest policy }
     sharedState0 = emptySharedTxState
       { sharedPeers = Map.singleton peeraddr (mkSharedPeerState PeerIdle)
       , sharedRetainedTxs = retainedSingleton k retainUntil
@@ -2318,19 +2393,20 @@ prop_nextPeerAction_keepsRetained (Positive peeraddr) txid0 _txSize0 =
       , sharedKeyToTxId = IntMap.singleton k txid
       , sharedNextTxKey = 1
       }
-    (peerAction, peerState', sharedState') = nextPeerAction now defaultTxDecisionPolicy peeraddr idlePeerState sharedState0
+    (peerAction, peerState', sharedState') = nextPeerAction now policy peeraddr idlePeerState sharedState0
 
 -- Verifies that PeerDoNothing waits until the earliest shared expiry, whether
 -- it comes from a lease or a retained tx.
 prop_nextPeerAction_earliestWakeDelay
-  :: Positive Int
+  :: ArbTxDecisionPolicy
+  -> Positive Int
   -> Positive Int
   -> TxId
   -> TxId
   -> Positive Int
   -> Positive Int
   -> Property
-prop_nextPeerAction_earliestWakeDelay (Positive peeraddr) (Positive owner0) txidA0 txidB0 _txSizeA0 _txSizeB0 =
+prop_nextPeerAction_earliestWakeDelay (ArbTxDecisionPolicy policy) (Positive peeraddr) (Positive owner0) txidA0 txidB0 _txSizeA0 _txSizeB0 =
   peeraddr /= owner ==>
     conjoin
       [ case leaseFirstAction of
@@ -2350,7 +2426,7 @@ prop_nextPeerAction_earliestWakeDelay (Positive peeraddr) (Positive owner0) txid
     retainUntilSoon = addTime 13 now
     keyA = TxKey 0
     keyB = TxKey 1
-    idlePeerState = emptyPeerTxLocalState { peerRequestedTxIds = maxNumTxIdsToRequest defaultTxDecisionPolicy }
+    idlePeerState = emptyPeerTxLocalState { peerRequestedTxIds = maxNumTxIdsToRequest policy }
     sharedPeers0 = Map.fromList
       [ (peeraddr, withAdvertisedTxKeys [keyA] (mkSharedPeerState PeerIdle))
       , (owner, withAdvertisedTxKeys [keyA] (mkSharedPeerState PeerWaitingTxs))
@@ -2379,15 +2455,16 @@ prop_nextPeerAction_earliestWakeDelay (Positive peeraddr) (Positive owner0) txid
       , sharedKeyToTxId = IntMap.fromList [(unTxKey keyA, txidA), (unTxKey keyB, txidB)]
       , sharedNextTxKey = 2
       }
-    (leaseFirstAction, _, _) = nextPeerAction now defaultTxDecisionPolicy peeraddr idlePeerState leaseFirstState
-    (retainFirstAction, _, _) = nextPeerAction now defaultTxDecisionPolicy peeraddr idlePeerState retainFirstState
+    (leaseFirstAction, _, _) = nextPeerAction now policy peeraddr idlePeerState leaseFirstState
+    (retainFirstAction, _, _) = nextPeerAction now policy peeraddr idlePeerState retainFirstState
 
 -- Verifies that PeerDoNothing reports the current generation of the acting
 -- peer.
 prop_nextPeerAction_returnsPeerGeneration
-  :: Positive Int
+  :: ArbTxDecisionPolicy
+  -> Positive Int
   -> Property
-prop_nextPeerAction_returnsPeerGeneration (Positive peeraddr) =
+prop_nextPeerAction_returnsPeerGeneration (ArbTxDecisionPolicy policy) (Positive peeraddr) =
   case peerAction of
        PeerDoNothing generation Nothing -> generation === expectedGeneration
        _ -> counterexample ("unexpected peer action: " ++ show peerAction) False
@@ -2408,20 +2485,21 @@ prop_nextPeerAction_returnsPeerGeneration (Positive peeraddr) =
             )
           ]
       }
-    peerState0 = emptyPeerTxLocalState { peerRequestedTxIds = maxNumTxIdsToRequest defaultTxDecisionPolicy }
-    (peerAction, _, _) = nextPeerAction now defaultTxDecisionPolicy peeraddr peerState0 sharedState0
+    peerState0 = emptyPeerTxLocalState { peerRequestedTxIds = maxNumTxIdsToRequest policy }
+    (peerAction, _, _) = nextPeerAction now policy peeraddr peerState0 sharedState0
 
 -- Verifies that handleSubmittedTxs bumps the generation of every other
 -- advertiser of the resolved tx, regardless of phase, while leaving the
 -- submitting peer's own generation unchanged.
 prop_handleSubmittedTxs_bumpsAdvertisers
-  :: Positive Int
+  :: ArbTxDecisionPolicy
+  -> Positive Int
   -> Positive Int
   -> Positive Int
   -> TxId
   -> Positive Int
   -> Property
-prop_handleSubmittedTxs_bumpsAdvertisers (Positive owner0) (Positive peerA0) (Positive peerB0) txid0 txSize0 =
+prop_handleSubmittedTxs_bumpsAdvertisers (ArbTxDecisionPolicy policy) (Positive owner0) (Positive peerA0) (Positive peerB0) txid0 txSize0 =
   owner /= peerA && owner /= peerB && peerA /= peerB ==>
     conjoin
       [ sharedPeerGeneration (lookupPeerOrFail peerA sharedState') === 1
@@ -2453,7 +2531,7 @@ prop_handleSubmittedTxs_bumpsAdvertisers (Positive owner0) (Positive peerA0) (Po
       , sharedNextTxKey = 1
       }
     peerState0 = emptyPeerTxLocalState { peerDownloadedTxs = IntMap.singleton k tx }
-    (_, sharedState') = handleSubmittedTxs now defaultTxDecisionPolicy owner [key] [] peerState0 sharedState0
+    (_, sharedState') = handleSubmittedTxs now policy owner [key] [] peerState0 sharedState0
 
 unit_advertisingPeersForTxExcept_scansAuthoritativePeerSets :: (String -> IO ()) -> Assertion
 unit_advertisingPeersForTxExcept_scansAuthoritativePeerSets step = do
@@ -2627,8 +2705,9 @@ genPeerTxLocalState = sized $ \n -> do
   peerDownloadedTxs <-
     IntMap.fromList <$> mapM genDownloadedTx downloadedKeys
 
-  peerScoreValue <- choose (0 :: Double, 100)
   peerScoreTs <- genSmallTime
+  -- Generated peer states default to a zero score.
+  let peerScoreValue = 0
   pure PeerTxLocalState {
       peerUnacknowledgedTxIds,
       peerAvailableTxIds,
@@ -3163,10 +3242,11 @@ freshBatchAgainstSharedState sharedState = reverse . snd . foldl' step (reserved
 -- Intern the given txids into the shared state and seed each into
 -- sharedRetainedTxs.
 seedRetainedTxids
-  :: [(TxId, SizeInBytes)]
+  :: TxDecisionPolicy
+  -> [(TxId, SizeInBytes)]
   -> SharedTxState PeerAddr TxId
   -> SharedTxState PeerAddr TxId
-seedRetainedTxids entries st0 =
+seedRetainedTxids policy entries st0 =
   stInterned {
     sharedRetainedTxs =
       foldl' (\r k -> retainedInsertMax k retainUntil r)
@@ -3174,7 +3254,7 @@ seedRetainedTxids entries st0 =
              retainedKeys
   }
   where
-    retainUntil         = addTime (bufferedTxsMinLifetime defaultTxDecisionPolicy) now
+    retainUntil         = addTime (bufferedTxsMinLifetime policy) now
     (_, stInterned)     = internTxIds (fmap fst entries) st0
     retainedKeys        = [ unTxKey (lookupKeyOrFail txid stInterned)
                           | (txid, _) <- entries

@@ -12,6 +12,7 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.State
   , advertisingPeersForTxKeysExcept
   , advertisingPeersForTxExcept
   , removeAdvertisingPeersForResolvedTx
+  , currentPeerScore
   , drainPeerScore
   , applyPeerRejections
   , sweepSharedState

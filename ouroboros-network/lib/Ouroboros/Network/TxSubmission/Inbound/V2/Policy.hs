@@ -64,7 +64,7 @@ data TxDecisionPolicy = TxDecisionPolicy {
       interTxSpace           :: !DiffTime
       -- ^ space between actual requests for the same TX.
     }
-  deriving Show
+  deriving (Eq, Show)
 
 instance NFData TxDecisionPolicy where
   rnf TxDecisionPolicy{} = ()
