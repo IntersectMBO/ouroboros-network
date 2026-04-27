@@ -28,7 +28,7 @@ module Test.Ouroboros.Network.TxSubmission.TxLogic
 import Control.DeepSeq (NFData (rnf))
 import Control.Exception (evaluate)
 import Control.Monad.Class.MonadTime.SI (Time (..), addTime, diffTime)
-import Data.Foldable (toList)
+import Data.Foldable (foldl', toList)
 import Data.Function (on)
 import Data.IntMap.Strict qualified as IntMap
 import Data.IntSet qualified as IntSet

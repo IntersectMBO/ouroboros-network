@@ -78,6 +78,7 @@ import Control.Monad.Class.MonadTime.SI
 import NoThunks.Class (NoThunks)
 import NoThunks.Class.Orphans ()
 
+import Data.Foldable (foldl')
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Sequence.Strict (StrictSeq)

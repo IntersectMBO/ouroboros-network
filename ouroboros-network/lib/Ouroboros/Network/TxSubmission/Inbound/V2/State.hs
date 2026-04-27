@@ -19,7 +19,7 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.State
   ) where
 
 import Control.Monad.Class.MonadTime.SI (DiffTime, Time, addTime, diffTime)
-import Data.Foldable (toList)
+import Data.Foldable (foldl', toList)
 import Data.IntMap.Strict qualified as IntMap
 import Data.IntSet qualified as IntSet
 import Data.Map.Strict qualified as Map
