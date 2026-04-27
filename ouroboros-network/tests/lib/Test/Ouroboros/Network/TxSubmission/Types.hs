@@ -1,3 +1,4 @@
+{-# LANGUAGE TypeFamilies #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE BlockArguments      #-}
@@ -64,7 +65,7 @@ import Network.TypedProtocol.Codec
 
 import Ouroboros.Network.Protocol.TxSubmission2.Codec
 import Ouroboros.Network.Protocol.TxSubmission2.Type
-import Ouroboros.Network.Tx (HasRawTxId (..), RawTxId (..))
+import Ouroboros.Network.Tx (HasRawTxId (..))
 import Ouroboros.Network.TxSubmission.Inbound.V1
 import Ouroboros.Network.TxSubmission.Mempool.Reader
 import Ouroboros.Network.TxSubmission.Mempool.Simple (Mempool)
@@ -121,7 +122,8 @@ maxTxSize = 65536
 type TxId = Int
 
 instance HasRawTxId Int where
-  getRawTxId n = RawTxId (SBS.pack [ fromIntegral (n `shiftR` (i * 8)) | i <- [7, 6 .. 0] ])
+  type RawTxId Int = SBS.ShortByteString
+  getRawTxId n = SBS.pack [ fromIntegral (n `shiftR` (i * 8)) | i <- [7, 6 .. 0] ]
 
 emptyMempool :: MonadSTM m => m (Mempool m txid (Tx txid))
 emptyMempool = Mempool.empty

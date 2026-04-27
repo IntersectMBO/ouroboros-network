@@ -55,6 +55,7 @@ import Ouroboros.Network.Protocol.TxSubmission2.Client
 import Ouroboros.Network.Protocol.TxSubmission2.Codec
 import Ouroboros.Network.Protocol.TxSubmission2.Server
 import Ouroboros.Network.Protocol.TxSubmission2.Type
+import Ouroboros.Network.Tx (HasRawTxId)
 import Ouroboros.Network.TxSubmission.Inbound.V2 (txSubmissionInboundV2)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
 import Ouroboros.Network.TxSubmission.Inbound.V2.Registry
@@ -470,7 +471,7 @@ prop_TxSubmissionState_shrinkNoDups st =
 -- all peers have exited and retained entries have been allowed to
 -- expire.  Catches leaks in scrub-on-disconnect, sweep orphan
 -- detection, retained-set expiry, and lookup-table cleanup.
-prop_sharedStateClean :: (Show peeraddr, Show txid)
+prop_sharedStateClean :: (Show peeraddr, Show txid, HasRawTxId txid)
                       => SharedTxState peeraddr txid -> Property
 prop_sharedStateClean st =
     counterexample ("final shared state: " ++ show st)

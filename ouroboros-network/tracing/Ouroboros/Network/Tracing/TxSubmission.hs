@@ -10,8 +10,9 @@ import Data.Map.Strict qualified as Map
 
 import Cardano.Logging
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
+import Ouroboros.Network.Tx
 
-instance (Show txid, Show peeraddr) => LogFormatting (TraceTxLogic peeraddr txid tx) where
+instance (Show txid, HasRawTxId txid, Show peeraddr) => LogFormatting (TraceTxLogic peeraddr txid tx) where
   forMachine dtal (TraceSharedTxState label SharedTxState {..}) =
       mconcat $ [ "kind" .= String "TraceSharedTxState"
                 , "label" .= label
