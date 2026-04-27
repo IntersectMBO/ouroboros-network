@@ -88,7 +88,6 @@ import GHC.Generics (Generic)
 import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Ouroboros.Network.Tx (HasRawTxId (..), RawTxId)
 
-import Data.Foldable (foldl')
 import Data.IntMap.Strict (IntMap)
 import Data.IntMap.Strict qualified as IntMap
 import Data.IntPSQ (IntPSQ)
@@ -442,13 +441,17 @@ data SharedTxState peeraddr txid = SharedTxState {
     -- | Accepted txs retained locally for a bounded time so later txid
     -- advertisements can be acked without re-requesting the body.
     sharedRetainedTxs :: !RetainedTxs,
-    sharedTxIdToKey   :: !(Map RawTxId TxKey),
+    sharedTxIdToKey   :: !(Map (RawTxId txid) TxKey),
     sharedKeyToTxId   :: !(IntMap txid),
     sharedNextTxKey   :: !Int,
     sharedGeneration  :: !Word64
   }
-  deriving stock (Eq, Show, Generic)
-  deriving anyclass (NFData, NoThunks)
+  deriving stock Generic
+
+deriving stock instance (Eq peeraddr, Eq txid, HasRawTxId txid) => Eq (SharedTxState peeraddr txid)
+deriving stock instance (Show peeraddr, Show txid, HasRawTxId txid) => Show (SharedTxState peeraddr txid)
+deriving anyclass instance (NFData peeraddr, NFData txid, HasRawTxId txid) => NFData (SharedTxState peeraddr txid)
+deriving anyclass instance (NoThunks peeraddr, NoThunks txid, HasRawTxId txid) => NoThunks (SharedTxState peeraddr txid)
 
 type RetainedTxs = IntPSQ Time ()
 
@@ -600,7 +603,7 @@ resolveTxKey SharedTxState { sharedKeyToTxId } (TxKey k) =
 internTxId :: HasRawTxId txid
            => txid
            -> SharedTxState peeraddr txid
-           -> (RawTxId, TxKey, SharedTxState peeraddr txid)
+           -> (RawTxId txid, TxKey, SharedTxState peeraddr txid)
 internTxId txid st@SharedTxState { sharedTxIdToKey, sharedKeyToTxId, sharedNextTxKey }
   | Just key <- Map.lookup rawId sharedTxIdToKey = (rawId, key, st)
   | otherwise =
@@ -618,7 +621,7 @@ internTxId txid st@SharedTxState { sharedTxIdToKey, sharedKeyToTxId, sharedNextT
 internTxIds :: (Foldable f, HasRawTxId txid)
             => f txid
             -> SharedTxState peeraddr txid
-            -> (Map RawTxId TxKey, SharedTxState peeraddr txid)
+            -> (Map (RawTxId txid) TxKey, SharedTxState peeraddr txid)
 internTxIds txids st0 = foldl' step (Map.empty, st0) txids
   where
     step (acc, st) txid =

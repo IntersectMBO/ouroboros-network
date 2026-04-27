@@ -19,6 +19,7 @@ module Ouroboros.Network.OrphanInstances
   , peerSelectionTargetsToObject
   ) where
 
+import Ouroboros.Network.Tx
 import Control.Applicative (Alternative ((<|>)))
 import Control.Exception (Exception (..))
 import Control.Monad (zipWithM)
@@ -1788,7 +1789,7 @@ instance ( ToJSON txid
       ]
 
 traceSharedTxStateToJSON
-  :: (Show addr, Show txid)
+  :: (Show addr, Show txid, Show (RawTxId txid))
   => SharedTxState addr txid
   -> Value
 traceSharedTxStateToJSON SharedTxState {
@@ -1864,6 +1865,7 @@ traceSharedTxStateToJSON SharedTxState {
 instance ( Show addr
          , Show txid
          , Show tx
+         , Show (RawTxId txid)
          )
        => ToJSON (TraceTxLogic addr txid tx) where
   toJSON (TraceSharedTxState tag st) =

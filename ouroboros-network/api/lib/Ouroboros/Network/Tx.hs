@@ -1,5 +1,5 @@
-{-# LANGUAGE DerivingStrategies         #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE TypeFamilies     #-}
 
 -- | Abstract view over transactions
 --
@@ -7,16 +7,10 @@
 -- transactions or transaction identifiers look like.
 module Ouroboros.Network.Tx
   ( HasRawTxId (..)
-  , RawTxId (..)
   ) where
 
 import Control.DeepSeq (NFData)
-import Data.ByteString.Short (ShortByteString)
 import NoThunks.Class (NoThunks)
-
--- | Raw byte representation of a transaction identifier.
-newtype RawTxId = RawTxId ShortByteString
-  deriving newtype (Eq, Ord, Show, NFData, NoThunks)
 
 -- | Abstract over transaction identifiers, providing access to their raw byte
 -- representation for efficient comparison.
@@ -25,5 +19,12 @@ newtype RawTxId = RawTxId ShortByteString
 --
 -- * If @getRawTxId x == getRawTxId y@ then @x == y@
 --   (the raw bytes must uniquely identify the transaction)
-class HasRawTxId txid where
-  getRawTxId :: txid -> RawTxId
+class ( Eq (RawTxId txid)
+      , Ord (RawTxId txid)
+      , Show (RawTxId txid)
+      , NFData (RawTxId txid)
+      , NoThunks (RawTxId txid)
+      )
+  => HasRawTxId txid where
+  type RawTxId txid
+  getRawTxId :: txid -> RawTxId txid

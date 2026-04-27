@@ -28,7 +28,7 @@ module Test.Ouroboros.Network.TxSubmission.TxLogic
 import Control.DeepSeq (NFData (rnf))
 import Control.Exception (evaluate)
 import Control.Monad.Class.MonadTime.SI (Time (..), addTime, diffTime)
-import Data.Foldable (foldl', toList)
+import Data.Foldable (toList)
 import Data.Function (on)
 import Data.IntMap.Strict qualified as IntMap
 import Data.IntSet qualified as IntSet
@@ -3353,7 +3353,7 @@ seedRequestedActiveTxids peeraddr otherPeerOpt tagged st0 =
       }
 
 -- Find the first txid not present in the reserved set.
-firstFreshTxId :: Set.Set RawTxId -> TxId -> TxId
+firstFreshTxId :: Set.Set (RawTxId TxId) -> TxId -> TxId
 firstFreshTxId used = go
   where
     go txid
