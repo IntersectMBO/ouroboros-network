@@ -72,6 +72,7 @@ data NodeToNodeVersion =
     -- ^ Plomin HF, mandatory on mainnet as of 2025.01.29
   | NodeToNodeV_15
     -- ^ SRV support
+  | NodeToNodeV_16
   deriving (Eq, Ord, Enum, Bounded, Show, Generic, NFData, NoThunks)
 
 nodeToNodeVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToNodeVersion
@@ -79,9 +80,11 @@ nodeToNodeVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
   where
     encodeTerm NodeToNodeV_14 = CBOR.TInt 14
     encodeTerm NodeToNodeV_15 = CBOR.TInt 15
+    encodeTerm NodeToNodeV_16 = CBOR.TInt 16
 
     decodeTerm (CBOR.TInt 14) = Right NodeToNodeV_14
     decodeTerm (CBOR.TInt 15) = Right NodeToNodeV_15
+    decodeTerm (CBOR.TInt 16) = Right NodeToNodeV_16
     decodeTerm (CBOR.TInt n) = Left ( T.pack "decode NodeToNodeVersion: unknown tag: "
                                         <> T.pack (show n)
                                     , Just n
@@ -128,6 +131,7 @@ nodeToNodeCodecCBORTerm =
     \case
       NodeToNodeV_14 -> codec
       NodeToNodeV_15 -> codec
+      NodeToNodeV_16 -> codec
   where
     codec = CodecCBORTerm { encodeTerm = encodeTerm, decodeTerm = decodeTerm }
 
