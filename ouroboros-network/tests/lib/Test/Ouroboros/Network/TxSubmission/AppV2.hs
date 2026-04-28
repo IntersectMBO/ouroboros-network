@@ -59,6 +59,9 @@ import Ouroboros.Network.TxSubmission.Inbound.V2.Types
 import Ouroboros.Network.TxSubmission.Outbound
 import Ouroboros.Network.Util.ShowProxy
 
+import System.Random (mkStdGen)
+
+import Test.Ouroboros.Network.TxSubmission.Impaired (delayBodies, omitBodies)
 import Test.Ouroboros.Network.TxSubmission.TxLogic hiding (tests)
 import Test.Ouroboros.Network.TxSubmission.Types
 import Test.Ouroboros.Network.Utils hiding (debugTracer)
@@ -73,8 +76,9 @@ import Test.Tasty.QuickCheck (testProperty)
 
 tests :: TestTree
 tests = testGroup "AppV2"
-  [ testProperty "txSubmission"  prop_txSubmission
-  , testProperty "inflight"      prop_txSubmission_inflight
+  [ testProperty "txSubmission"          prop_txSubmission
+  , testProperty "inflight"              prop_txSubmission_inflight
+  , testProperty "resilientToImpairment" prop_txSubmission_resilientToImpairment
   , testProperty "SharedTxState" $ withMaxSize 25
                                  $ withMaxSuccess 25
                                  prop_sharedTxStateInvariant
@@ -92,8 +96,42 @@ data TxSubmissionState =
                          -- delay is less than 10s, otherwise 'smallDelay' in
                          -- 'timeLimitsTxSubmission2' will kick in.
                          )
+    , peerImpairment :: Map Int Impairment
     , decisionPolicy :: TxDecisionPolicy
   } deriving (Show)
+
+-- | Behavioural fault injection on a peer's outbound 'TxSubmissionClient'.
+-- Peers absent from 'peerImpairment' run with no impairment.
+data Impairment = Impairment
+  { impairBodyDelay :: Maybe DiffTime
+    -- ^ added before each MsgReplyTxs; txid replies are unaffected
+  , impairOmitProb  :: Double
+    -- ^ per-body Bernoulli drop probability, in [0, 1]
+  , impairSeed      :: Int
+    -- ^ seed for the per-peer StdGen used by 'omitBodies'
+  } deriving Show
+
+noImpairment :: Impairment
+noImpairment = Impairment { impairBodyDelay = Nothing
+                          , impairOmitProb  = 0
+                          , impairSeed      = 0
+                          }
+
+-- | Wrap a 'TxSubmissionClient' with the given 'Impairment'. Allocates a
+-- per-peer 'StdGen' TVar only when the omission rate is non-zero.
+applyImpairment :: (MonadDelay m, MonadSTM m)
+                => Impairment
+                -> TxSubmissionClient txid tx m a
+                -> m (TxSubmissionClient txid tx m a)
+applyImpairment Impairment { impairBodyDelay, impairOmitProb, impairSeed } c0 = do
+    c1 <- if impairOmitProb > 0
+            then do
+              genVar <- newTVarIO (mkStdGen impairSeed)
+              pure (omitBodies genVar impairOmitProb c0)
+            else pure c0
+    pure $ case impairBodyDelay of
+      Just d  -> delayBodies d c1
+      Nothing -> c1
 
 instance Arbitrary TxSubmissionState where
   arbitrary = do
@@ -108,13 +146,14 @@ instance Arbitrary TxSubmissionState where
     peersState <- zipWith (curry (\(a, (b, c)) -> (a, b, c))) txs
               <$> vectorOf peersN arbitrary
     return TxSubmissionState  { peerMap = Map.fromList (zip peers peersState),
+                                peerImpairment = Map.empty,
                                 decisionPolicy
                               }
-  shrink TxSubmissionState { peerMap, decisionPolicy } =
-    TxSubmissionState <$> shrinkMap1 peerMap
-                      <*> [ policy
-                          | ArbTxDecisionPolicy policy <- shrink (ArbTxDecisionPolicy decisionPolicy)
-                          ]
+  shrink TxSubmissionState { peerMap, peerImpairment, decisionPolicy } =
+    [ TxSubmissionState peerMap' peerImpairment policy
+    | peerMap' <- shrinkMap1 peerMap
+    , ArbTxDecisionPolicy policy <- shrink (ArbTxDecisionPolicy decisionPolicy)
+    ]
     where
       shrinkMap1 :: (Ord k, Arbitrary k, Arbitrary v) => Map k v -> [Map k v]
       shrinkMap1 m
@@ -163,10 +202,11 @@ runTxSubmission
                   , Maybe DiffTime
                   , Maybe DiffTime
                   )
+  -> Map peeraddr Impairment
   -> TxDecisionPolicy
   -> m ([Tx txid], [[Tx txid]])
   -- ^ inbound and outbound mempools
-runTxSubmission tracer _tracerTxLogic st0 txDecisionPolicy = do
+runTxSubmission tracer _tracerTxLogic st0 peerImpairmentMap txDecisionPolicy = do
     st <- traverse (\(b, c, d, e) -> do
         mempool <- newMempool b
         (outChannel, inChannel) <- createConnectedChannels
@@ -184,13 +224,15 @@ runTxSubmission tracer _tracerTxLogic st0 txDecisionPolicy = do
     labelTVarIO sharedTxStateVar "shared-tx-state"
 
     let clients = (\(addr, (mempool {- txs -}, ctrlMsgSTM, outDelay, _, outChannel, _)) -> do
-                    let client = txSubmissionOutbound
-                                   (Tracer $ say . show)
-                                   (NumTxIdsToAck $ getNumTxIdsToReq
-                                     $ maxUnacknowledgedTxIds txDecisionPolicy)
-                                   (getMempoolReader mempool)
-                                   (maxBound :: TestVersion)
-                                   ctrlMsgSTM
+                    let baseClient = txSubmissionOutbound
+                                       (Tracer $ say . show)
+                                       (NumTxIdsToAck $ getNumTxIdsToReq
+                                         $ maxUnacknowledgedTxIds txDecisionPolicy)
+                                       (getMempoolReader mempool)
+                                       (maxBound :: TestVersion)
+                                       ctrlMsgSTM
+                        imp        = Map.findWithDefault noImpairment addr peerImpairmentMap
+                    client <- applyImpairment imp baseClient
                     runPeerWithLimits (("OUTBOUND " ++ show addr,) `contramap` tracer)
                                       txSubmissionCodec2
                                       (byteLimitsTxSubmission2 (fromIntegral . BSL.length))
@@ -255,7 +297,7 @@ runTxSubmission tracer _tracerTxLogic st0 txDecisionPolicy = do
 txSubmissionSimulation :: forall s . TxSubmissionState
                        -> IOSim s ([Tx Int], [[Tx Int]])
                        -- ^ inbound & outbound mempools
-txSubmissionSimulation (TxSubmissionState state txDecisionPolicy) = do
+txSubmissionSimulation (TxSubmissionState state peerImpairment txDecisionPolicy) = do
   state' <- traverse (\(txs, mbOutDelay, mbInDelay) -> do
                       let mbOutDelayTime = getSmallDelay . getPositive <$> mbOutDelay
                           mbInDelayTime  = getSmallDelay . getPositive <$> mbInDelay
@@ -293,7 +335,7 @@ txSubmissionSimulation (TxSubmissionState state txDecisionPolicy) = do
     ) \_ -> do
       let tracer :: forall a. (Show a, Typeable a) => Tracer (IOSim s) a
           tracer = dynamicTracer <> sayTracer -- <> verboseTracer <> debugTracer
-      runTxSubmission tracer tracer state'' txDecisionPolicy
+      runTxSubmission tracer tracer state'' peerImpairment txDecisionPolicy
 
 filterValidTxs :: [Tx txid] -> [Tx txid]
 filterValidTxs
@@ -305,7 +347,7 @@ filterValidTxs
 -- didn't regress.
 --
 prop_txSubmission :: TxSubmissionState -> Property
-prop_txSubmission st@(TxSubmissionState peers _) =
+prop_txSubmission st@(TxSubmissionState peers _ _) =
     let tr = runSimTrace (txSubmissionSimulation st)
         numPeersWithWronglySizedTx :: Int
         numPeersWithWronglySizedTx =
@@ -398,7 +440,7 @@ prop_txSubmission st@(TxSubmissionState peers _) =
 -- TODO: have we generated enough outbound mempools which interact in interesting
 -- ways?
 prop_txSubmission_inflight :: TxSubmissionState -> Property
-prop_txSubmission_inflight st@(TxSubmissionState state policy) =
+prop_txSubmission_inflight st@(TxSubmissionState state _ policy) =
   let maxRepeatedValidTxs = Map.foldr (\(txs, _, _) r -> foldr fn r txs)
                                       Map.empty
                                       state
@@ -456,8 +498,102 @@ prop_txSubmission_inflight st@(TxSubmissionState state policy) =
              = r'
 
 
+-- | Resilience to per-peer impairment. With a non-empty subset of peers
+-- wrapped in any combination of 'omitBodies' and 'delayBodies', every tx
+-- contributed by a well-behaved peer must still reach the inbound mempool.
+-- Exercises V2's cross-peer retry path (omission) and stuck-leaseholder
+-- bump path (delay).
+--
+-- Contributions from an impaired peer are not asserted: omitted bodies
+-- may never reach the mempool, and severely delayed bodies may not arrive
+-- before the simulation terminates.
+prop_txSubmission_resilientToImpairment :: TxSubmissionState -> Property
+prop_txSubmission_resilientToImpairment baseSt =
+    forAll (genImpairment (Map.keys (peerMap baseSt))) $ \imp ->
+      not (Map.null imp) ==>
+      let st         = baseSt { peerImpairment = imp }
+          allAddrs   = Map.keysSet (peerMap st)
+          wbAddrs    = allAddrs `Set.difference` Map.keysSet imp
+          wbPeerTxs  = [ txs
+                       | addr <- Set.toList wbAddrs
+                       , let (txs, _, _) = peerMap st Map.! addr ]
+          tr         = runSimTrace (txSubmissionSimulation st)
+      in not (Set.null wbAddrs) ==>
+         label ("impaired peers: "     ++ show (Map.size imp)) $
+         label ("well-behaved peers: " ++ show (Set.size wbAddrs)) $
+         tabulate "impairment kind" (kindOf <$> Map.elems imp) $
+         case traceResult True tr of
+           Left e ->
+               counterexample (show e)
+             . counterexample (ppTrace tr)
+             $ False
+           Right (inmp, _) ->
+               counterexample (ppTrace tr)
+             $ conjoin (validateWellBehaved inmp `map` wbPeerTxs)
+  where
+    -- Pick a non-empty proper subset of peers to impair. Each impaired
+    -- peer gets some mix of body delay and per-body omission (at least
+    -- one of the two).
+    genImpairment :: [Int] -> Gen (Map Int Impairment)
+    genImpairment addrs
+      | length addrs < 2 = pure Map.empty
+      | otherwise = do
+          n        <- choose (1, length addrs - 1)
+          shuffled <- shuffle addrs
+          let impaired = take n shuffled
+          imps <- traverse (const genOneImpairment) impaired
+          pure (Map.fromList (zip impaired imps))
+
+    genOneImpairment :: Gen Impairment
+    genOneImpairment = oneof [genOmit, genDelay, genBoth]
+
+    genOmit = do
+      p    <- choose (0.1 :: Double, 0.9)
+      seed <- arbitrary
+      pure Impairment { impairBodyDelay = Nothing
+                      , impairOmitProb  = p
+                      , impairSeed      = seed
+                      }
+    genDelay = do
+      d <- choose (0.1 :: Double, 2.0)
+      pure Impairment { impairBodyDelay = Just (realToFrac d)
+                      , impairOmitProb  = 0
+                      , impairSeed      = 0
+                      }
+    genBoth = do
+      p    <- choose (0.1 :: Double, 0.9)
+      seed <- arbitrary
+      d    <- choose (0.1 :: Double, 2.0)
+      pure Impairment { impairBodyDelay = Just (realToFrac d)
+                      , impairOmitProb  = p
+                      , impairSeed      = seed
+                      }
+
+    kindOf Impairment { impairBodyDelay = Nothing, impairOmitProb = _ } = "omit-only"
+    kindOf Impairment { impairBodyDelay = Just _,  impairOmitProb = 0 } = "delay-only"
+    kindOf Impairment { impairBodyDelay = Just _,  impairOmitProb = _ } = "delay+omit"
+
+    -- Same shape as 'validate' inside 'prop_txSubmission'. Only assert
+    -- coverage when the peer's stream is all-unique-and-all-valid; the
+    -- duplicate / invalid-prefix cases are out of scope here and covered
+    -- by the existing 'prop_txSubmission'.
+    validateWellBehaved :: [Tx Int] -> [Tx Int] -> Property
+    validateWellBehaved inmp outmp =
+      let outUnique = nubBy ((==) `on` getTxId) outmp
+          outValid  = filterValidTxs outmp in
+      if length outUnique == length outmp && length outValid == length outmp
+        then
+          let outIds  = Set.fromList (getTxId <$> outValid)
+              inIds   = Set.fromList (getTxId <$> inmp)
+              missing = outIds `Set.difference` inIds in
+            counterexample ("missing: " ++ show (Set.toList missing))
+          $ property (Set.null missing)
+        else
+          property True
+
+
 prop_sharedTxStateInvariant :: TxSubmissionState -> Property
-prop_sharedTxStateInvariant initialState@(TxSubmissionState st0 _) =
+prop_sharedTxStateInvariant initialState@(TxSubmissionState st0 _ _) =
   let tr = runSimTrace (() <$ txSubmissionSimulation initialState)
       pTrace = List.intercalate "\n" $ map (\(Time t, ev) -> show t <> " " <> ev) $
         selectTraceEventsSayWithTime' tr
