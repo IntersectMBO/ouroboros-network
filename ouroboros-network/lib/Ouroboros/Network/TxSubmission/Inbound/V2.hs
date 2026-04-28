@@ -318,8 +318,18 @@ txSubmissionInboundV2
           throwIO protocolError
         now <- getMonotonicTime
         (penaltyCount, peerState') <- applyReceivedTxs now [ (txId tx, tx) | tx <- txs ] peerState
-        let peerState'' | penaltyCount == 0 = peerState'
-                        | otherwise         = snd (State.applyPeerRejections policy now penaltyCount peerState')
+        peerState'' <-
+          if penaltyCount == 0
+             then pure peerState'
+             else do
+               let (score, ps) = State.applyPeerRejections policy now penaltyCount peerState'
+               traceWith tracer $
+                 TraceTxSubmissionProcessed ProcessedTxCount {
+                     ptxcAccepted = 0,
+                     ptxcRejected = penaltyCount,
+                     ptxcScore    = score
+                   }
+               pure ps
         continueWithStateM (continueAfterReplies n) peerState''
 
     -- Partition submitted transactions into accepted and rejected groups
