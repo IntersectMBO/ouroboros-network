@@ -13,14 +13,17 @@
 module Test.Ouroboros.Network.TxSubmission.Impaired
   ( delayBodies
   , omitBodies
+  , Impairment (..)
+  , noImpairment
+  , applyImpairment
   ) where
 
 import Control.Concurrent.Class.MonadSTM.Strict (MonadSTM, StrictTVar,
-           atomically, stateTVar)
+           atomically, newTVarIO, stateTVar)
 import Control.Monad (filterM)
 import Control.Monad.Class.MonadTime.SI (DiffTime)
 import Control.Monad.Class.MonadTimer.SI (MonadDelay, threadDelay)
-import System.Random (StdGen, uniformR)
+import System.Random (StdGen, mkStdGen, uniformR)
 
 import Ouroboros.Network.Protocol.TxSubmission2.Client
 
@@ -101,3 +104,39 @@ omitBodies genVar p (TxSubmissionClient mIdle) =
     rollKeep = stateTVar genVar $ \g ->
       case uniformR (0 :: Double, 1) g of
         (x, g') -> (x >= p, g')
+
+
+-- | Behavioural fault injection on a peer's outbound 'TxSubmissionClient'.
+-- Peers configured with 'noImpairment' run unwrapped.
+data Impairment = Impairment
+  { impairBodyDelay :: Maybe DiffTime
+    -- ^ added before each MsgReplyTxs; txid replies are unaffected
+  , impairOmitProb  :: Double
+    -- ^ per-body Bernoulli drop probability, in [0, 1]
+  , impairSeed      :: Int
+    -- ^ seed for the per-peer StdGen used by 'omitBodies'
+  } deriving Show
+
+-- | The neutral impairment: no delay, no omission. Equivalent to running the
+-- client unwrapped.
+noImpairment :: Impairment
+noImpairment = Impairment { impairBodyDelay = Nothing
+                          , impairOmitProb  = 0
+                          , impairSeed      = 0
+                          }
+
+-- | Wrap a 'TxSubmissionClient' with the given 'Impairment'. Allocates a
+-- per-peer 'StdGen' TVar only when the omission rate is non-zero.
+applyImpairment :: (MonadDelay m, MonadSTM m)
+                => Impairment
+                -> TxSubmissionClient txid tx m a
+                -> m (TxSubmissionClient txid tx m a)
+applyImpairment Impairment { impairBodyDelay, impairOmitProb, impairSeed } c0 = do
+    c1 <- if impairOmitProb > 0
+            then do
+              genVar <- newTVarIO (mkStdGen impairSeed)
+              pure (omitBodies genVar impairOmitProb c0)
+            else pure c0
+    pure $ case impairBodyDelay of
+      Just d  -> delayBodies d c1
+      Nothing -> c1

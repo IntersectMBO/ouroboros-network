@@ -59,9 +59,8 @@ import Ouroboros.Network.TxSubmission.Inbound.V2.Types
 import Ouroboros.Network.TxSubmission.Outbound
 import Ouroboros.Network.Util.ShowProxy
 
-import System.Random (mkStdGen)
-
-import Test.Ouroboros.Network.TxSubmission.Impaired (delayBodies, omitBodies)
+import Test.Ouroboros.Network.TxSubmission.Impaired (Impairment (..),
+           applyImpairment, noImpairment)
 import Test.Ouroboros.Network.TxSubmission.TxLogic hiding (tests)
 import Test.Ouroboros.Network.TxSubmission.Types
 import Test.Ouroboros.Network.Utils hiding (debugTracer)
@@ -99,39 +98,6 @@ data TxSubmissionState =
     , peerImpairment :: Map Int Impairment
     , decisionPolicy :: TxDecisionPolicy
   } deriving (Show)
-
--- | Behavioural fault injection on a peer's outbound 'TxSubmissionClient'.
--- Peers absent from 'peerImpairment' run with no impairment.
-data Impairment = Impairment
-  { impairBodyDelay :: Maybe DiffTime
-    -- ^ added before each MsgReplyTxs; txid replies are unaffected
-  , impairOmitProb  :: Double
-    -- ^ per-body Bernoulli drop probability, in [0, 1]
-  , impairSeed      :: Int
-    -- ^ seed for the per-peer StdGen used by 'omitBodies'
-  } deriving Show
-
-noImpairment :: Impairment
-noImpairment = Impairment { impairBodyDelay = Nothing
-                          , impairOmitProb  = 0
-                          , impairSeed      = 0
-                          }
-
--- | Wrap a 'TxSubmissionClient' with the given 'Impairment'. Allocates a
--- per-peer 'StdGen' TVar only when the omission rate is non-zero.
-applyImpairment :: (MonadDelay m, MonadSTM m)
-                => Impairment
-                -> TxSubmissionClient txid tx m a
-                -> m (TxSubmissionClient txid tx m a)
-applyImpairment Impairment { impairBodyDelay, impairOmitProb, impairSeed } c0 = do
-    c1 <- if impairOmitProb > 0
-            then do
-              genVar <- newTVarIO (mkStdGen impairSeed)
-              pure (omitBodies genVar impairOmitProb c0)
-            else pure c0
-    pure $ case impairBodyDelay of
-      Just d  -> delayBodies d c1
-      Nothing -> c1
 
 instance Arbitrary TxSubmissionState where
   arbitrary = do
