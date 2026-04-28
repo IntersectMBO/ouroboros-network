@@ -61,8 +61,13 @@ data TxDecisionPolicy = TxDecisionPolicy {
       scoreMax               :: !Double,
       -- ^ Maximum number of "rejections". Unit: seconds
 
-      interTxSpace           :: !DiffTime
+      interTxSpace           :: !DiffTime,
       -- ^ space between actual requests for the same TX.
+
+      inflightTimeout        :: !DiffTime
+      -- ^ Maximum time a peer's attempt may sit between claim and the
+      -- TxSubmitting state before the per-entry inflight-multiplicity
+      -- cap is bumped, allowing another peer to attempt in parallel.
     }
   deriving (Eq, Show)
 
@@ -80,5 +85,6 @@ defaultTxDecisionPolicy =
     bufferedTxsMinLifetime = 2,
     scoreRate              = 0.1,
     scoreMax               = 15 * 60,
-    interTxSpace           = 0.250
+    interTxSpace           = 0.250,
+    inflightTimeout        = 1.0  -- = 4 * interTxSpace
   }

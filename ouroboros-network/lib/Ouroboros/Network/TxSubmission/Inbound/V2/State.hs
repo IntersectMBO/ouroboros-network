@@ -135,7 +135,8 @@ nextPeerActionWithMode :: (Ord peeraddr, HasRawTxId txid)
 nextPeerActionWithMode txIdRequestMode now policy peeraddr peerState sharedState =
   applyPeerActionChoice ctx (pickPeerActionChoice txIdRequestMode ctx)
   where
-    ctx = mkPeerActionContext now policy peeraddr peerState sharedState
+    sharedState' = bumpStuckEntries now policy peeraddr peerState sharedState
+    ctx = mkPeerActionContext now policy peeraddr peerState sharedState'
 
 -- | Pick which action to perform next.
 --
@@ -437,18 +438,30 @@ pickRequestTxIdsAction txIdRequestMode ctx@PeerActionContext { pacPolicy, pacPee
 
 -- | Compute the time delay until the peer should next wake to check for work.
 nextWakeDelay :: PeerActionContext peeraddr txid tx -> Maybe DiffTime
-nextWakeDelay PeerActionContext { pacNow, pacClaimDelay, pacSharedPeerState, pacSharedState } =
-    (`diffTime` pacNow) <$> minMaybe nextLeaseWake nextRetainWake
+nextWakeDelay PeerActionContext { pacNow, pacPolicy, pacClaimDelay
+                                , pacSharedPeerState, pacPeerState, pacSharedState } =
+    (`diffTime` pacNow) <$> minMaybe (minMaybe nextClaimWake nextBumpWake) nextRetainWake
   where
-    nextLeaseWake =
-      IntSet.foldl' stepLease Nothing (sharedPeerAdvertisedTxKeys pacSharedPeerState)
+    -- Wake at the earliest claim-ready time among txs this peer advertises.
+    nextClaimWake =
+      IntSet.foldl' stepClaim Nothing (sharedPeerAdvertisedTxKeys pacSharedPeerState)
 
-    stepLease acc k =
+    -- Wake at the earliest bump-ready time among txs this peer holds buffered.
+    -- Scoped to 'peerDownloadedTxs' to match 'bumpStuckEntries': only the
+    -- leaseholder schedules a bump-wake, so non-leaseholders don't busy-loop
+    -- at exact bumpAt with no entry to bump.
+    nextBumpWake =
+      IntMap.foldlWithKey' stepBump Nothing (peerDownloadedTxs pacPeerState)
+
+    stepClaim acc k =
       case IntMap.lookup k (sharedTxTable pacSharedState) of
-        Just txEntry ->
-          minMaybe acc (futureClaimWake txEntry)
-        Nothing ->
-          acc
+        Just txEntry -> minMaybe acc (futureClaimWake txEntry)
+        Nothing      -> acc
+
+    stepBump acc k _tx =
+      case IntMap.lookup k (sharedTxTable pacSharedState) of
+        Just txEntry -> minMaybe acc (nextStuckBumpWake pacNow pacPolicy txEntry)
+        Nothing      -> acc
 
     nextRetainWake = retainedNextWake pacNow (sharedRetainedTxs pacSharedState)
 
@@ -473,6 +486,92 @@ claimTx peeraddr leaseUntil txEntry@TxEntry { txAttempts } =
     txAttempts = Map.insert peeraddr TxDownloading txAttempts
   }
 
+-- | Time at which a leased entry becomes eligible for an inflight cap bump.
+--
+-- The leaseholder's claim time is recovered from the lease deadline. If the
+-- entry has been re-claimed since the original peer's attempt, this reflects
+-- the latest claim instead. That is intentional: each successful claim earns
+-- its own 'inflightTimeout' grace period before the next bump, so cap growth
+-- is rate-limited at one bump per 'inflightTimeout' per claim.
+stuckBumpReadyAt :: TxDecisionPolicy -> Time -> Time
+stuckBumpReadyAt policy leaseUntil =
+    addTime (inflightTimeout policy - interTxSpace policy) leaseUntil
+
+-- | Bump 'currentMaxInflightMultiplicity' by one when the leaseholder has
+-- held the lease past 'inflightTimeout' without anyone reaching 'TxSubmitting',
+-- and the cap is the bottleneck preventing another peer from joining.
+bumpCurrentMaxIfStuck :: Time -> TxDecisionPolicy -> TxEntry peeraddr -> TxEntry peeraddr
+bumpCurrentMaxIfStuck now policy
+                      entry@TxEntry { txLease = TxLeased _ leaseUntil
+                                    , currentMaxInflightMultiplicity = cap }
+  | txActiveAttemptCount entry >= cap
+  , now >= stuckBumpReadyAt policy leaseUntil
+  , not (txSubmittingAnywhere entry)
+  = entry { currentMaxInflightMultiplicity = cap + 1 }
+bumpCurrentMaxIfStuck _ _ entry = entry
+
+-- | Future wake time at which an entry would become eligible for a cap bump.
+--
+-- Returns 'Just' for any bump-eligible entry whose 'bumpAt' is at or after
+-- 'now'. Using '>=' (rather than '>') means a peer that runs 'nextWakeDelay'
+-- without 'bumpStuckEntries' having already fired still schedules a wake.
+nextStuckBumpWake :: Time -> TxDecisionPolicy -> TxEntry peeraddr -> Maybe Time
+nextStuckBumpWake now policy
+                  entry@TxEntry { txLease = TxLeased _ leaseUntil
+                                , currentMaxInflightMultiplicity = cap }
+  | txActiveAttemptCount entry >= cap
+  , not (txSubmittingAnywhere entry)
+  , let bumpAt = stuckBumpReadyAt policy leaseUntil
+  , bumpAt >= now
+  = Just bumpAt
+nextStuckBumpWake _ _ _ = Nothing
+
+-- | Sweep the txs this peer has buffered locally and bump any whose lease
+-- has been held past 'inflightTimeout'. The leaseholder is in the best
+-- position to detect that it is holding others up: its 'peerDownloadedTxs'
+-- is small (usually empty) so the sweep is cheap, and any tx it has buffered
+-- is one it has at some point claimed itself.
+--
+-- When an entry is bumped, this also bumps the per-peer generation of every
+-- other peer that advertises it so they wake out of 'awaitSharedChange' and
+-- re-evaluate eligibility under the new cap. 'sharedGeneration' is bumped
+-- so 'writeSharedStateIfChanged' commits the update.
+bumpStuckEntries :: Ord peeraddr
+                 => Time
+                 -> TxDecisionPolicy
+                 -> peeraddr
+                 -> PeerTxLocalState tx
+                 -> SharedTxState peeraddr txid
+                 -> SharedTxState peeraddr txid
+bumpStuckEntries now policy peeraddr peerState st =
+    if IntSet.null bumpedKeys
+       then st
+       else bumpPeerGenerations
+              (advertisingPeersForTxKeysExcept peeraddr bumpedKeys st)
+              st { sharedTxTable    = txTable',
+                   sharedGeneration = sharedGeneration st + 1 }
+  where
+    (bumpedKeys, txTable') =
+      IntMap.foldlWithKey' bumpOne (IntSet.empty, sharedTxTable st)
+                                   (peerDownloadedTxs peerState)
+    bumpOne (bumpedAcc, tbl) k _tx =
+      case IntMap.lookup k tbl of
+        Nothing -> (bumpedAcc, tbl)
+        Just entry ->
+          let entry' = bumpCurrentMaxIfStuck now policy entry in
+          if currentMaxInflightMultiplicity entry'
+               /= currentMaxInflightMultiplicity entry
+             then (IntSet.insert k bumpedAcc, IntMap.insert k entry' tbl)
+             else (bumpedAcc, tbl)
+
+-- | Number of peers currently attempting this tx body.
+--
+-- Counts every peer in 'txAttempts' regardless of attempt state. Callers
+-- that have already excluded 'TxSubmitting' via 'txSubmittingAnywhere'
+-- effectively count only 'TxDownloading' and 'TxBuffered'.
+txActiveAttemptCount :: TxEntry peeraddr -> Int
+txActiveAttemptCount TxEntry { txAttempts } = Map.size txAttempts
+
 -- | Determine if a tx is eligible for this peer to request.
 --
 -- A tx is selectable if it can be claimed or is already owned by this peer
@@ -482,13 +581,13 @@ txSelectable :: Ord peeraddr
              -> TxKey
              -> TxEntry peeraddr
              -> Bool
-txSelectable PeerActionContext { pacNow, pacPeerAddr, pacPolicy, pacSharedPeerState
+txSelectable PeerActionContext { pacNow, pacPeerAddr, pacSharedPeerState
                                , pacClaimDelay }
              txKey
              txEntry
   | txSubmittingAnywhere txEntry = False
   | txPeerHasAttempt = False
-  | txActiveAttemptCount txEntry >= txInflightMultiplicity pacPolicy = False
+  | txActiveAttemptCount txEntry >= currentMaxInflightMultiplicity txEntry = False
   | not peerAdvertisesTx = False
   | txOwnedByPeer txEntry = True
   | otherwise = txClaimReadyAt pacClaimDelay txEntry <= pacNow
@@ -501,12 +600,6 @@ txSelectable PeerActionContext { pacNow, pacPeerAddr, pacPolicy, pacSharedPeerSt
     txOwnedByPeer TxEntry { txLease = TxClaimable _ }    = False
 
     txPeerHasAttempt = Map.member pacPeerAddr (txAttempts txEntry)
-
-    -- Safe to use Map.size here: by the time this guard is reached,
-    -- txSubmittingAnywhere has already returned False, so the map contains
-    -- only TxDownloading and TxBuffered entries.
-    txActiveAttemptCount :: TxEntry peeraddr -> Int
-    txActiveAttemptCount TxEntry { txAttempts } = Map.size txAttempts
 
 
 -- | Extract the peer's TxAttemptState for the TX entry, if it exists.
@@ -1371,7 +1464,9 @@ handleReceivedTxIds mempoolHasTx now policy peeraddr requestedTxIds txidsAndSize
               let txEntry = TxEntry {
                               txLease = TxClaimable now,
                               txAdvertiserCount = 1,
-                              txAttempts = Map.empty
+                              txAttempts = Map.empty,
+                              currentMaxInflightMultiplicity =
+                                txInflightMultiplicity policy
                             }
               in ( txKey : unacknowledgedAcc
                  , IntMap.insert k txSize availableAcc

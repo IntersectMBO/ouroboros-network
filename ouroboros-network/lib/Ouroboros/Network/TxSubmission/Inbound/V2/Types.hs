@@ -185,7 +185,15 @@ data TxEntry peeraddr = TxEntry {
     txAdvertiserCount :: !Int,
 
     -- | Current per-peer attempt state for this tx body.
-    txAttempts        :: !(Map peeraddr TxAttemptState)
+    txAttempts        :: !(Map peeraddr TxAttemptState),
+
+    -- | Effective per-tx inflight multiplicity cap.
+    --
+    -- Initialised from 'txInflightMultiplicity' of the policy when the
+    -- entry is created, and bumped by one when a peer's attempt sits past
+    -- 'inflightTimeout' without reaching 'TxSubmitting', allowing another
+    -- peer to attempt in parallel.
+    currentMaxInflightMultiplicity :: !Int
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (NFData, NoThunks)
