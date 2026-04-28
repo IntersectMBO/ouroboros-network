@@ -72,10 +72,10 @@ instance NFData TxDecisionPolicy where
 defaultTxDecisionPolicy :: TxDecisionPolicy
 defaultTxDecisionPolicy =
   TxDecisionPolicy {
-    maxNumTxIdsToRequest   = 6,
-    maxUnacknowledgedTxIds = 10, -- must be the same as txSubmissionMaxUnacked
+    maxNumTxIdsToRequest   = 12,
+    maxUnacknowledgedTxIds = 20, -- must be the same as txSubmissionMaxUnacked
     txsSizeInflightPerPeer = max_TX_SIZE * 6,
-    maxOutstandingTxBatchesPerPeer = 4,
+    maxOutstandingTxBatchesPerPeer = 2,
     txInflightMultiplicity = 2,
     bufferedTxsMinLifetime = 2,
     scoreRate              = 0.1,
