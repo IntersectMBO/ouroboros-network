@@ -427,16 +427,22 @@ prop_txSubmission_inflight st@(TxSubmissionState state policy) =
               then merge (mapMissing \_txid _left  -> error "impossible")
                          (mapMissing \_txid _right -> True)
                          (zipWithMatched \_txid left right ->
-                             left <= right `min` txInflightMultiplicity policy)
+                             left <= right `min` inflightLimit)
                          resultRepeatedValidTxs
                          maxRepeatedValidTxs
               else merge (mapMissing \_txid _left  -> error "impossible")
                          (mapMissing \_txid _right -> False)
                          (zipWithMatched \_txid left right ->
-                             left <= right `min` txInflightMultiplicity policy)
+                             left <= right `min` inflightLimit)
                          resultRepeatedValidTxs
                          maxRepeatedValidTxs
   where
+    -- Loosened from txInflightMultiplicity to account for the per-tx
+    -- 'currentMaxInflightMultiplicity' bumps that fire when a peer holds
+    -- a lease past 'inflightTimeout'. Each peer can contribute at most one
+    -- bump per stuck claim, so 'cap + peers' is a safe static upper bound.
+    inflightLimit = txInflightMultiplicity policy + Map.size state
+
     -- we work with txid's because a repeated tx may have different advertised/actual
     -- byte size by different peers in this test, but otherwise multiplicity
     -- should be determined by txid.

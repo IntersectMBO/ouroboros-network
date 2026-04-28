@@ -451,17 +451,22 @@ instance Arbitrary ArbTxDecisionPolicy where
     arbitrary =
       frequency
         [ (1, pure (ArbTxDecisionPolicy defaultTxDecisionPolicy))
-        , (9, ArbTxDecisionPolicy <$> (
-                TxDecisionPolicy . getSmall . getPositive
-                  <$> arbitrary
-                  <*> (getSmall . getPositive <$> arbitrary)
-                  <*> (SizeInBytes . getPositive <$> arbitrary)
-                  <*> choose (1, 10)
-                  <*> (getSmall . getPositive <$> arbitrary)
-                  <*> (realToFrac <$> choose (0 :: Double, 2))
-                  <*> choose (0, 1)
-                  <*> choose (0, 1800)
-                  <*> (realToFrac <$> choose (0 :: Double, 1))))
+        , (9, do
+            interTxSpaceVal <- realToFrac <$> choose (0 :: Double, 1)
+            offset          <- choose (0.01 :: Double, 10)
+            let inflightTimeoutVal = interTxSpaceVal + realToFrac offset
+            ArbTxDecisionPolicy <$> (
+              TxDecisionPolicy . getSmall . getPositive
+                <$> arbitrary
+                <*> (getSmall . getPositive <$> arbitrary)
+                <*> (SizeInBytes . getPositive <$> arbitrary)
+                <*> choose (1, 10)
+                <*> (getSmall . getPositive <$> arbitrary)
+                <*> (realToFrac <$> choose (0 :: Double, 2))
+                <*> choose (0, 1)
+                <*> choose (0, 1800)
+                <*> pure interTxSpaceVal
+                <*> pure inflightTimeoutVal))
         ]
 
     shrink (ArbTxDecisionPolicy a)
@@ -494,6 +499,10 @@ instance Arbitrary ArbTxDecisionPolicy where
            ]
         ++ [ ArbTxDecisionPolicy a { interTxSpace = realToFrac x }
            | NonNegative x <- shrink (NonNegative (realToFrac (interTxSpace a) :: Double))
+           ]
+        ++ [ ArbTxDecisionPolicy a { inflightTimeout = realToFrac x }
+           | NonNegative x <- shrink (NonNegative (realToFrac (inflightTimeout a) :: Double))
+           , realToFrac x > interTxSpace a
            ]
 
 instance Arbitrary ArbSharedPeerState where
@@ -1427,8 +1436,8 @@ prop_handleSubmittedTxs_retainsAcceptedAndDropsRejected (ArbTxDecisionPolicy pol
       ensurePeerAdvertisesTxKeys peeraddr [keyA', keyB'] $
         st {
              sharedTxTable = IntMap.fromList
-               [ (unTxKey keyA', mkTxEntry peeraddr txSizeA (Just TxBuffered))
-               , (unTxKey keyB', mkTxEntry peeraddr txSizeB (Just TxBuffered))
+               [ (unTxKey keyA', mkTxEntry peeraddr txSizeA (Just TxBuffered) policy)
+               , (unTxKey keyB', mkTxEntry peeraddr txSizeB (Just TxBuffered) policy)
                ]
            }
     keyA = lookupKeyOrFail txidA sharedState0
@@ -1474,6 +1483,7 @@ prop_nextPeerAction_prioritisesSubmit (ArbTxDecisionPolicy policy) (Positive pee
           { txLease = TxLeased peeraddr (addTime 10 now)
           , txAdvertiserCount = 1
           , txAttempts = Map.singleton peeraddr TxBuffered
+          , currentMaxInflightMultiplicity = txInflightMultiplicity policy
           }
       , sharedTxIdToKey = Map.singleton (getRawTxId txid) key
       , sharedKeyToTxId = IntMap.singleton k txid
@@ -1533,6 +1543,7 @@ prop_nextPeerAction_claimsClaimableTx (ArbTxDecisionPolicy policy) (Positive pee
           { txLease = TxClaimable (Time 0)
           , txAdvertiserCount = 3
           , txAttempts = Map.empty
+          , currentMaxInflightMultiplicity = txInflightMultiplicity policy
           }
       }
     peerState0 = emptyPeerTxLocalState
@@ -1572,6 +1583,8 @@ unit_nextPeerAction_claimsAtScoreDelayThreshold step = do
           { txLease = TxClaimable claimableAt
           , txAdvertiserCount = 1
           , txAttempts = Map.empty
+          , currentMaxInflightMultiplicity =
+              txInflightMultiplicity defaultTxDecisionPolicy
           }
       }
     peerState0 = emptyPeerTxLocalState
@@ -1630,6 +1643,8 @@ prop_nextPeerAction_claimsRejectedTxFromOtherAdvertiser =
               { txLease           = TxLeased peerA (addTime 1 now)
               , txAdvertiserCount = 2
               , txAttempts        = Map.singleton peerA TxBuffered
+              , currentMaxInflightMultiplicity =
+                  txInflightMultiplicity defaultTxDecisionPolicy
               }
           }
 
@@ -1703,6 +1718,7 @@ prop_nextPeerAction_claimsExpiredLease (ArbTxDecisionPolicy policy) (Positive ol
           { txLease = TxLeased oldOwner (Time 0)
           , txAdvertiserCount = 3
           , txAttempts = Map.empty
+          , currentMaxInflightMultiplicity = txInflightMultiplicity policy
           }
       }
     peerState0 = emptyPeerTxLocalState
@@ -1749,7 +1765,7 @@ prop_nextPeerAction_requestsOversizedFirstTx (ArbTxDecisionPolicy basePolicy) (P
       , sharedTxIdToKey = Map.singleton (getRawTxId txid) key
       , sharedKeyToTxId = IntMap.singleton k txid
       , sharedNextTxKey = 1
-      , sharedTxTable = IntMap.singleton k (mkTxEntry peeraddr txSize Nothing)
+      , sharedTxTable = IntMap.singleton k (mkTxEntry peeraddr txSize Nothing policy)
       }
     peerState0 = emptyPeerTxLocalState
       { peerUnacknowledgedTxIds = StrictSeq.singleton key
@@ -1798,11 +1814,13 @@ unit_nextPeerAction_skipsBlockedAvailableTxs step = do
               { txLease = TxLeased otherPeer (addTime 10 testNow)
               , txAdvertiserCount = 2
               , txAttempts = Map.empty
+              , currentMaxInflightMultiplicity = txInflightMultiplicity policy
               })
           , (kClaimable, TxEntry
               { txLease = TxClaimable (Time 0)
               , txAdvertiserCount = 1
               , txAttempts = Map.empty
+              , currentMaxInflightMultiplicity = txInflightMultiplicity policy
               })
           ]
       }
@@ -1842,6 +1860,7 @@ prop_nextPeerAction_ownerSubmitsBuffered (ArbTxDecisionPolicy policy) (Positive 
           { txLease = TxClaimable (Time 0)
           , txAdvertiserCount = 1
           , txAttempts = Map.singleton peeraddr TxBuffered
+          , currentMaxInflightMultiplicity = txInflightMultiplicity policy
           }
       , sharedTxIdToKey = Map.singleton (getRawTxId txid) key
       , sharedKeyToTxId = IntMap.singleton k txid
@@ -1890,6 +1909,8 @@ unit_nextPeerAction_requestsOtherWorkDespiteBlockedBufferedTx step = do
           [ (peeraddr, TxBuffered)
           , (submittingPeer, TxSubmitting)
           ]
+      , currentMaxInflightMultiplicity =
+          txInflightMultiplicity defaultTxDecisionPolicy
       }
     sharedState0 = emptySharedTxState
       { sharedPeers = Map.fromList
@@ -1904,6 +1925,8 @@ unit_nextPeerAction_requestsOtherWorkDespiteBlockedBufferedTx step = do
               { txLease = TxClaimable (Time 0)
               , txAdvertiserCount = 1
               , txAttempts = Map.empty
+              , currentMaxInflightMultiplicity =
+                  txInflightMultiplicity defaultTxDecisionPolicy
               })
           ]
       , sharedTxIdToKey = Map.fromList
@@ -1961,6 +1984,8 @@ unit_nextPeerAction_acksSafePrefixBeforeBlockedBufferedTx step = do
           [ (peeraddr, TxBuffered)
           , (submittingPeer, TxSubmitting)
           ]
+      , currentMaxInflightMultiplicity =
+          txInflightMultiplicity defaultTxDecisionPolicy
       }
     sharedState0 = emptySharedTxState
       { sharedPeers = Map.fromList
@@ -2034,6 +2059,7 @@ prop_nextPeerAction_nonOwnerWaitsUntilResolved (ArbTxDecisionPolicy policy) (Pos
           { txLease = TxClaimable (Time 0)
           , txAdvertiserCount = 2
           , txAttempts = Map.singleton owner TxBuffered
+          , currentMaxInflightMultiplicity = txInflightMultiplicity policy
           }
       , sharedTxIdToKey = Map.singleton (getRawTxId txid) key
       , sharedKeyToTxId = IntMap.singleton k txid
@@ -2234,11 +2260,12 @@ prop_nextPeerActionPipelined_secondBodyBatch (ArbTxDecisionPolicy basePolicy) (P
           Map.singleton peeraddr
             (withAdvertisedTxKeys [keyA, keyB] (mkSharedPeerState PeerIdle))
       , sharedTxTable = IntMap.fromList
-          [ (kA, mkTxEntry peeraddr txSizeA (Just TxDownloading))
+          [ (kA, mkTxEntry peeraddr txSizeA (Just TxDownloading) policy)
           , (kB, TxEntry
               { txLease = TxClaimable (Time 0)
               , txAdvertiserCount = 1
               , txAttempts = Map.empty
+              , currentMaxInflightMultiplicity = txInflightMultiplicity policy
               })
           ]
       , sharedTxIdToKey = Map.fromList [(getRawTxId txidA, keyA), (getRawTxId txidB, keyB)]
@@ -2305,12 +2332,13 @@ prop_nextPeerActionPipelined_noThirdBodyBatch (ArbTxDecisionPolicy basePolicy) (
           Map.singleton peeraddr
             (withAdvertisedTxKeys [keyA, keyB, keyC] (mkSharedPeerState PeerIdle))
       , sharedTxTable = IntMap.fromList
-          [ (kA, mkTxEntry peeraddr txSizeA (Just TxDownloading))
-          , (kB, mkTxEntry peeraddr txSizeB (Just TxDownloading))
+          [ (kA, mkTxEntry peeraddr txSizeA (Just TxDownloading) policy)
+          , (kB, mkTxEntry peeraddr txSizeB (Just TxDownloading) policy)
           , (kC, TxEntry
               { txLease = TxClaimable (Time 0)
               , txAdvertiserCount = 1
               , txAttempts = Map.empty
+              , currentMaxInflightMultiplicity = txInflightMultiplicity policy
               })
           ]
       , sharedTxIdToKey = Map.fromList [(getRawTxId txidA, keyA), (getRawTxId txidB, keyB), (getRawTxId txidC, keyC)]
@@ -2437,6 +2465,7 @@ prop_nextPeerAction_earliestWakeDelay (ArbTxDecisionPolicy policy) (Positive pee
           { txLease = TxLeased owner leaseUntil
           , txAdvertiserCount = 2
           , txAttempts = Map.empty
+          , currentMaxInflightMultiplicity = txInflightMultiplicity policy
           }
       , sharedRetainedTxs = retainedSingleton (unTxKey keyB) retainUntilLater
       , sharedTxIdToKey = Map.fromList [(getRawTxId txidA, keyA), (getRawTxId txidB, keyB)]
@@ -2449,6 +2478,7 @@ prop_nextPeerAction_earliestWakeDelay (ArbTxDecisionPolicy policy) (Positive pee
           { txLease = TxLeased owner leaseUntilLater
           , txAdvertiserCount = 2
           , txAttempts = Map.empty
+          , currentMaxInflightMultiplicity = txInflightMultiplicity policy
           }
       , sharedRetainedTxs = retainedSingleton (unTxKey keyB) retainUntilSoon
       , sharedTxIdToKey = Map.fromList [(getRawTxId txidA, keyA), (getRawTxId txidB, keyB)]
@@ -2525,6 +2555,7 @@ prop_handleSubmittedTxs_bumpsAdvertisers (ArbTxDecisionPolicy policy) (Positive 
           { txLease = TxLeased owner (addTime 10 now)
           , txAdvertiserCount = 3
           , txAttempts = Map.singleton owner TxBuffered
+          , currentMaxInflightMultiplicity = txInflightMultiplicity policy
           }
       , sharedTxIdToKey = Map.singleton (getRawTxId txid) key
       , sharedKeyToTxId = IntMap.singleton k txid
@@ -2562,6 +2593,8 @@ unit_advertisingPeersForTxExcept_scansAuthoritativePeerSets step = do
           { txLease = TxLeased owner (addTime 10 now)
           , txAdvertiserCount = 1
           , txAttempts = Map.empty
+          , currentMaxInflightMultiplicity =
+              txInflightMultiplicity defaultTxDecisionPolicy
           }
       }
 
@@ -2600,6 +2633,8 @@ unit_removeAdvertisingPeersForResolvedTx_clearsAllAdvertisingPeers step = do
           { txLease = TxLeased owner (addTime 10 now)
           , txAdvertiserCount = 1
           , txAttempts = Map.empty
+          , currentMaxInflightMultiplicity =
+              txInflightMultiplicity defaultTxDecisionPolicy
           }
       }
 
@@ -2647,6 +2682,8 @@ unit_updatePeerPhase_wakesCompetingAdvertisers step = do
           { txLease = TxClaimable (Time 0)
           , txAdvertiserCount = 2
           , txAttempts = Map.empty
+          , currentMaxInflightMultiplicity =
+              txInflightMultiplicity defaultTxDecisionPolicy
           }
       }
     sharedState' = updatePeerPhase leavingPeer PeerWaitingTxs sharedState0
@@ -2795,7 +2832,9 @@ genLeasedTxEntry peeraddrs _txid = do
     , TxEntry {
         txLease,
         txAdvertiserCount = Set.size txAdvertisers,
-        txAttempts = maybe Map.empty (Map.singleton owner) ownerAttempt
+        txAttempts = maybe Map.empty (Map.singleton owner) ownerAttempt,
+        currentMaxInflightMultiplicity =
+          txInflightMultiplicity defaultTxDecisionPolicy
       }
     )
 
@@ -2810,7 +2849,9 @@ genClaimableTxEntry peeraddrs _txid = do
     , TxEntry {
         txLease = TxClaimable claimableAt,
         txAdvertiserCount = Set.size txAdvertisers,
-        txAttempts = Map.empty
+        txAttempts = Map.empty,
+        currentMaxInflightMultiplicity =
+          txInflightMultiplicity defaultTxDecisionPolicy
       }
     )
 
@@ -3201,11 +3242,12 @@ mkRequestedTxBatch keys requestedTxBatchSize = RequestedTxBatch
   }
 
 -- Construct a leased tx entry owned by one peer.
-mkTxEntry :: PeerAddr -> SizeInBytes -> Maybe TxAttemptState -> TxEntry PeerAddr
-mkTxEntry peeraddr _txSize mAttempt = TxEntry
+mkTxEntry :: PeerAddr -> SizeInBytes -> Maybe TxAttemptState -> TxDecisionPolicy -> TxEntry PeerAddr
+mkTxEntry peeraddr _txSize mAttempt policy = TxEntry
   { txLease = TxLeased peeraddr (addTime 10 now)
   , txAdvertiserCount = 1
   , txAttempts = maybe Map.empty (Map.singleton peeraddr) mAttempt
+  , currentMaxInflightMultiplicity = txInflightMultiplicity policy
   }
 
 -- Look up an interned key and fail fast in test setup code.
@@ -3280,7 +3322,9 @@ seedActiveTxidsForOtherPeer otherPeer entries st0 =
     activeEntry = TxEntry {
         txLease = TxClaimable now,
         txAdvertiserCount = 1,
-        txAttempts = Map.empty
+        txAttempts = Map.empty,
+        currentMaxInflightMultiplicity =
+          txInflightMultiplicity defaultTxDecisionPolicy
       }
     (_, stInterned) = internTxIds (fmap fst entries) st0
     activeKeys      = [ unTxKey (lookupKeyOrFail txid stInterned)
@@ -3323,7 +3367,9 @@ seedRequestedActiveTxids peeraddr otherPeerOpt tagged st0 =
     mkEntry coAdv = TxEntry {
         txLease = TxLeased peeraddr leaseUntil,
         txAdvertiserCount = if coAdv then 2 else 1,
-        txAttempts = Map.singleton peeraddr TxDownloading
+        txAttempts = Map.singleton peeraddr TxDownloading,
+        currentMaxInflightMultiplicity =
+          txInflightMultiplicity defaultTxDecisionPolicy
       }
 
     stWithTable = stInterned {
@@ -3562,6 +3608,8 @@ mkActiveSharedState allPeers ownerPeer resolvedAdvertisers txidsAndSizes =
       { txLease = TxLeased ownerPeer (addTime 10 now)
       , txAdvertiserCount = Set.size advertisers
       , txAttempts = Map.empty
+      , currentMaxInflightMultiplicity =
+          txInflightMultiplicity defaultTxDecisionPolicy
       }
 
 -- Resolve all active txs into retained entries so non-owner peers may safely
