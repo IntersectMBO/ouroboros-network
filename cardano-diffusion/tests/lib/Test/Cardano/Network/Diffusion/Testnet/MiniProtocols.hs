@@ -116,6 +116,8 @@ import Ouroboros.Network.TxSubmission.Outbound (txSubmissionOutbound)
 import Ouroboros.Network.Util.ShowProxy
 
 import Test.Ouroboros.Network.Diffusion.Node.Kernel
+import Test.Ouroboros.Network.TxSubmission.Impaired (Impairment,
+           applyImpairment)
 import Test.Ouroboros.Network.TxSubmission.Types (Mempool, Tx (..), TxId,
            getMempoolReader, getMempoolWriter, txSubmissionCodec2)
 
@@ -241,6 +243,9 @@ data AppArgs header block m = AppArgs
   , aaPeerMetrics
      :: PeerMetrics m NtNAddr
   , aaTxDecisionPolicy :: TxDecisionPolicy
+  , aaTxImpairment     :: Impairment
+    -- ^ behavioural fault injection on this node's outbound
+    -- 'TxSubmissionClient' (default: 'noImpairment')
   }
 
 
@@ -269,7 +274,9 @@ applications :: forall block header s m.
                 , RandomGen s
                 )
              => Tracer m String
-             -> Tracer m (TraceTxSubmissionInbound Int (Tx Int))
+             -> Tracer m (NtNAddr, TraceTxSubmissionInbound Int (Tx Int))
+             -- ^ tagged with the remote peer address so per-peer scoring
+             --   events can be folded out of the trace
              -> Tracer m (TraceTxLogic NtNAddr Int (Tx Int))
              -> NodeKernel header block s Int m
              -> Codecs NtNAddr header block m
@@ -298,6 +305,7 @@ applications debugTracer txSubmissionInboundTracer _txSubmissionInboundDebug nod
                , aaPeerSharing
                , aaPeerMetrics
                , aaTxDecisionPolicy
+               , aaTxImpairment
                }
              toHeader
              duplicateTxVar =
@@ -696,13 +704,14 @@ applications debugTracer txSubmissionInboundTracer _txSubmissionInboundDebug nod
           }
           channel
         -> do
-          let client = txSubmissionOutbound
-                         (((ppNtNConnId connId ++) . (" " ++) . show) `contramap` debugTracer)
-                         (NumTxIdsToAck $ getNumTxIdsToReq
-                                        $ maxUnacknowledgedTxIds txDecisionPolicy)
-                         (getMempoolReader mempool)
-                         (maxBound :: UnversionedProtocol)
-                         controlMessageSTM
+          let baseClient = txSubmissionOutbound
+                             (((ppNtNConnId connId ++) . (" " ++) . show) `contramap` debugTracer)
+                             (NumTxIdsToAck $ getNumTxIdsToReq
+                                            $ maxUnacknowledgedTxIds txDecisionPolicy)
+                             (getMempoolReader mempool)
+                             (maxBound :: UnversionedProtocol)
+                             controlMessageSTM
+          client <- applyImpairment aaTxImpairment baseClient
           labelThisThread "TxSubmissionClient"
           runPeerWithLimits
             (((ppNtNConnId connId ++) . (" " ++) . show) `contramap` debugTracer)
@@ -727,7 +736,7 @@ applications debugTracer txSubmissionInboundTracer _txSubmissionInboundDebug nod
                    txCountersVar
                    them $ \api -> do
             let server = txSubmissionInboundV2
-                           txSubmissionInboundTracer
+                           ((them,) `contramap` txSubmissionInboundTracer)
                            NoTxSubmissionInitDelay
                            aaTxDecisionPolicy
                            (getMempoolWriter duplicateTxVar mempool)

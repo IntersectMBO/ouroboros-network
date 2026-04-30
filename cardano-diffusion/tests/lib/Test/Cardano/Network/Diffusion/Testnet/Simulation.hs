@@ -146,6 +146,7 @@ import Test.Ouroboros.Network.PeerSelection.RootPeersDNS (DNSLookupDelay (..),
            DNSTimeout (..), DomainAccessPoint (..), MockDNSMap, genDomainName)
 import Test.Ouroboros.Network.PeerSelection.RootPeersDNS qualified as PeerSelection hiding
            (tests)
+import Test.Ouroboros.Network.TxSubmission.Impaired (Impairment, noImpairment)
 import Test.Ouroboros.Network.TxSubmission.TxLogic (ArbTxDecisionPolicy (..))
 import Test.Ouroboros.Network.TxSubmission.Types (Tx (..))
 import Test.Ouroboros.Network.Utils
@@ -238,6 +239,9 @@ data NodeArgs =
     , naChainSyncEarlyExit     :: Bool
     , naFetchModeScript        :: Script FetchMode
     , naTxs                    :: [Tx Int]
+    , naTxImpairment           :: Impairment
+      -- ^ behavioural fault injection on this node's outbound
+      -- 'TxSubmissionClient' (default: 'noImpairment')
     }
 
 instance Show NodeArgs where
@@ -246,7 +250,7 @@ instance Show NodeArgs where
                     naLocalRootPeers, naPeerTargets, naDNSTimeoutScript,
                     naDNSLookupDelayScript, naChainSyncExitOnBlockNo,
                     naChainSyncEarlyExit, naFetchModeScript, naConsensusMode,
-                    naTxs } =
+                    naTxs, naTxImpairment } =
       unwords [ "NodeArgs"
               , "(" ++ show naSeed ++ ")"
               , show naDiffusionMode
@@ -264,6 +268,7 @@ instance Show NodeArgs where
               , show naChainSyncEarlyExit
               , "(" ++ show naFetchModeScript ++ ")"
               , show naTxs
+              , "(" ++ show naTxImpairment ++ ")"
               ]
 
 data Command = JoinNetwork DiffTime
@@ -478,6 +483,7 @@ genNodeArgs relays minConnected localRootPeers self txs = flip suchThat hasUpstr
       , naPeerSharing            = peerSharing
       , naFetchModeScript        = fetchModeScript
       , naTxs                    = txs
+      , naTxImpairment           = noImpairment
       }
   where
     makeRelayAccessPoint (relay, _, _, _) = relay
@@ -970,7 +976,7 @@ data DiffusionTestTrace =
     | DiffusionServerTrace (Server.Trace NtNAddr)
     | DiffusionFetchTrace (TraceFetchClientState BlockHeader)
     | DiffusionChurnModeTrace TraceChurnMode
-    | DiffusionTxSubmissionInbound (TraceTxSubmissionInbound Int (Tx Int))
+    | DiffusionTxSubmissionInbound NtNAddr (TraceTxSubmissionInbound Int (Tx Int))
     | DiffusionTxLogic (TraceTxLogic NtNAddr Int (Tx Int))
     | DiffusionDebugTrace String
     | DiffusionDNSTrace DNSTrace
@@ -993,7 +999,7 @@ ppDiffusionTestTrace (DiffusionInboundGovernorTransitionTrace tr)   = show tr
 ppDiffusionTestTrace (DiffusionServerTrace tr)                      = show tr
 ppDiffusionTestTrace (DiffusionFetchTrace tr)                       = show tr
 ppDiffusionTestTrace (DiffusionChurnModeTrace tr)                   = show tr
-ppDiffusionTestTrace (DiffusionTxSubmissionInbound tr)              = show tr
+ppDiffusionTestTrace (DiffusionTxSubmissionInbound peer tr)         = ppNtNAddr peer ++ " " ++ show tr
 ppDiffusionTestTrace (DiffusionTxLogic tr)                          = show tr
 ppDiffusionTestTrace (DiffusionDebugTrace tr)                       =      tr
 ppDiffusionTestTrace (DiffusionDNSTrace tr)                         = show tr
@@ -1178,6 +1184,7 @@ diffusionSimulationM
             , naPeerSharing            = peerSharing
             , naDiffusionMode          = diffusionMode
             , naTxs                    = txs
+            , naTxImpairment           = txImpairment
             }
             ntnSnocket
             ntcSnocket
@@ -1365,7 +1372,7 @@ diffusionSimulationM
                    duplicateTxVar
             where
               tracerTxSubmissionInbound =
-                  contramap DiffusionTxSubmissionInbound
+                  contramap (uncurry DiffusionTxSubmissionInbound)
                 . tracerWithName addr
                 . tracerWithTime
                 $ nodeTracer
@@ -1382,6 +1389,7 @@ diffusionSimulationM
                 , Node.aaPeerSharing         = Node.aPeerSharing arguments
                 , Node.aaPeerMetrics         = peerMetrics
                 , Node.aaTxDecisionPolicy    = Node.aTxDecisionPolicy arguments
+                , Node.aaTxImpairment        = txImpairment
                 }
 
       Node.run
