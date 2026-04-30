@@ -427,11 +427,11 @@ instance Arbitrary RequestedFate where
     ]
 
 rfInReply :: RequestedFate -> Bool
-rfInReply RfBuffered{}     = True
-rfInReply RfOmitted{}      = False
-rfInReply RfLateRetained   = True
-rfInReply RfLateMempool    = True
-rfInReply RfOmittedPruned  = False
+rfInReply RfBuffered{}    = True
+rfInReply RfOmitted{}     = False
+rfInReply RfLateRetained  = True
+rfInReply RfLateMempool   = True
+rfInReply RfOmittedPruned = False
 
 rfCoAdvertised :: RequestedFate -> Bool
 rfCoAdvertised (RfBuffered c) = c
@@ -1399,56 +1399,123 @@ prop_handleReceivedTxs
       ]
 
 -- Verifies that handleSubmittedTxs retains accepted txs and removes rejected
--- txs from the active table and tx-key maps.
+-- txs from the active table and tx-key maps. Generated over a non-empty
+-- list of (txid, size, accepted-flag, co-advertised-flag): the
+-- accepted-flag controls accept vs reject; the co-advertised-flag adds a
+-- second peer as advertiser, so rejected co-advertised txs stay in
+-- 'sharedTxTable' (only the calling peer's advertisement is removed)
+-- while rejected solo txs are dropped from all maps.
 prop_handleSubmittedTxs_retainsAcceptedAndDropsRejected
   :: ArbTxDecisionPolicy
   -> Positive Int
-  -> TxId
-  -> TxId
-  -> Positive Int
-  -> Positive Int
+  -> NonEmptyList (TxId, Positive Int, Bool, Bool)
   -> Property
-prop_handleSubmittedTxs_retainsAcceptedAndDropsRejected (ArbTxDecisionPolicy policy) (Positive peeraddr) txidA0 txidB0 txSizeA0 txSizeB0 =
-  txidA /= txidB ==>
-    conjoin
+prop_handleSubmittedTxs_retainsAcceptedAndDropsRejected
+    (ArbTxDecisionPolicy policy)
+    (Positive peeraddr)
+    (NonEmpty rawEntries) =
+      tabulate "accepted count"      [bucket (length acceptedKeys)]
+    . tabulate "rejected count"      [bucket (length rejectedKeys)]
+    . tabulate "co-advertised count" [bucket (length [() | (_, _, _, True) <- entries])]
+    $ conjoin $
       [ peerDownloadedTxs peerState' === IntMap.empty
-      , IntMap.lookup kA (sharedTxTable sharedState') === (Nothing :: Maybe (TxEntry PeerAddr))
-      , retainedLookup kA (sharedRetainedTxs sharedState') === Just expectedRetainUntil
-      , Map.lookup (getRawTxId txidA) (sharedTxIdToKey sharedState') === Just keyA
-      , IntMap.lookup kA (sharedKeyToTxId sharedState') === Just txidA
-      , IntMap.lookup kB (sharedTxTable sharedState') === (Nothing :: Maybe (TxEntry PeerAddr))
-      , retainedLookup kB (sharedRetainedTxs sharedState') === Nothing
-      , Map.lookup (getRawTxId txidB) (sharedTxIdToKey sharedState') === Nothing
-      , IntMap.lookup kB (sharedKeyToTxId sharedState') === Nothing
-      , sharedGeneration sharedState' === 1
+      , sharedGeneration sharedState' === sharedGeneration sharedState0 + 1
       , checkNoThunks "peerState'" (peerState' :: PeerTxLocalState (Tx TxId))
       , checkNoThunks "sharedState'" sharedState'
       ]
+      ++
+      [ counterexample ("accepted txid=" ++ show txid) (acceptedAssertions txid)
+      | (txid, _, True, _) <- entries
+      ]
+      ++
+      [ counterexample ("rejected solo txid=" ++ show txid) (rejectedSoloAssertions txid)
+      | (txid, _, False, False) <- entries
+      ]
+      ++
+      [ counterexample ("rejected co-advertised txid=" ++ show txid) (rejectedCoAdvAssertions txid)
+      | (txid, _, False, True) <- entries
+      ]
   where
-    txidA = abs txidA0 + 1
-    txidB = abs txidB0 + 2
-    txSizeA = mkSize txSizeA0
-    txSizeB = mkSize txSizeB0
-    txA = mkTx txidA txSizeA
-    txB = mkTx txidB txSizeB
+    -- Use a distinct address as the second advertiser. Adding @peeraddr + 1@
+    -- guarantees they don't clash even if QC produces consecutive ids.
+    otherPeer = peeraddr + 1
+
+    -- Normalise: shift txids to >= 1, convert sizes, dedupe by shifted txid
+    -- (first occurrence wins). NonEmpty input ensures at least one entry
+    -- survives.
+    entries :: [(TxId, SizeInBytes, Bool, Bool)]
+    entries = nubBy ((==) `on` (\(t, _, _, _) -> t))
+            $ map (\(t, sz, acc, co) -> (abs t + 1, mkSize sz, acc, co)) rawEntries
+
     sharedState0 =
-      let st = mkSharedState [txidA, txidB]
-          keyA' = lookupKeyOrFail txidA st
-          keyB' = lookupKeyOrFail txidB st in
-      ensurePeerAdvertisesTxKeys peeraddr [keyA', keyB'] $
-        st {
-             sharedTxTable = IntMap.fromList
-               [ (unTxKey keyA', mkTxEntry peeraddr txSizeA (Just TxBuffered) policy)
-               , (unTxKey keyB', mkTxEntry peeraddr txSizeB (Just TxBuffered) policy)
-               ]
+      let st            = mkSharedState [ txid | (txid, _, _, _) <- entries ]
+          peeraddrKeys  = [ lookupKeyOrFail txid st | (txid, _, _, _)    <- entries ]
+          otherPeerKeys = [ lookupKeyOrFail txid st | (txid, _, _, True) <- entries ] in
+      ensurePeerAdvertisesTxKeys otherPeer otherPeerKeys
+      $ ensurePeerAdvertisesTxKeys peeraddr peeraddrKeys
+      $ st { sharedTxTable = IntMap.fromList
+              [ (unTxKey (lookupKeyOrFail txid st),
+                 (mkTxEntry peeraddr sz (Just TxBuffered) policy)
+                   { txAdvertiserCount = if co then 2 else 1 })
+              | (txid, sz, _, co) <- entries
+              ]
            }
-    keyA = lookupKeyOrFail txidA sharedState0
-    keyB = lookupKeyOrFail txidB sharedState0
-    kA = unTxKey keyA
-    kB = unTxKey keyB
-    peerState0 = emptyPeerTxLocalState { peerDownloadedTxs = IntMap.fromList [(kA, txA), (kB, txB)] }
+
+    keyOf txid = lookupKeyOrFail txid sharedState0
+    kOf        = unTxKey . keyOf
+
+    acceptedKeys = [ keyOf txid | (txid, _, True,  _) <- entries ]
+    rejectedKeys = [ keyOf txid | (txid, _, False, _) <- entries ]
+
+    peerState0 = emptyPeerTxLocalState
+                   { peerDownloadedTxs = IntMap.fromList
+                       [ (kOf txid, mkTx txid sz)
+                       | (txid, sz, _, _) <- entries
+                       ]
+                   }
+
     expectedRetainUntil = addTime (bufferedTxsMinLifetime policy) now
-    (peerState', sharedState') = handleSubmittedTxs now policy peeraddr [keyA] [keyB] peerState0 sharedState0
+
+    (peerState', sharedState') =
+      handleSubmittedTxs now policy peeraddr acceptedKeys rejectedKeys
+                         peerState0 sharedState0
+
+    advertisedKeysOf peer st =
+      sharedPeerAdvertisedTxKeys (lookupPeerOrFail peer st)
+
+    acceptedAssertions txid =
+      let k   = kOf txid
+          key = keyOf txid in
+      conjoin
+        [ IntMap.lookup k (sharedTxTable sharedState') === (Nothing :: Maybe (TxEntry PeerAddr))
+        , retainedLookup k (sharedRetainedTxs sharedState') === Just expectedRetainUntil
+        , Map.lookup (getRawTxId txid) (sharedTxIdToKey sharedState') === Just key
+        , IntMap.lookup k (sharedKeyToTxId sharedState') === Just txid
+        ]
+
+    rejectedSoloAssertions txid =
+      let k = kOf txid in
+      conjoin
+        [ IntMap.lookup k (sharedTxTable sharedState') === (Nothing :: Maybe (TxEntry PeerAddr))
+        , retainedLookup k (sharedRetainedTxs sharedState') === Nothing
+        , Map.lookup (getRawTxId txid) (sharedTxIdToKey sharedState') === Nothing
+        , IntMap.lookup k (sharedKeyToTxId sharedState') === Nothing
+        ]
+
+    rejectedCoAdvAssertions txid =
+      let k   = kOf txid
+          key = keyOf txid in
+      conjoin
+        [ counterexample "entry should remain in sharedTxTable"
+            $ isJust (IntMap.lookup k (sharedTxTable sharedState'))
+        , counterexample "this peer's advertisement should be removed"
+            $ not (IntSet.member k (advertisedKeysOf peeraddr  sharedState'))
+        , counterexample "co-advertiser's advertisement should remain"
+            $ IntSet.member k (advertisedKeysOf otherPeer sharedState')
+        , Map.lookup (getRawTxId txid) (sharedTxIdToKey sharedState') === Just key
+        , IntMap.lookup k (sharedKeyToTxId sharedState') === Just txid
+        , retainedLookup k (sharedRetainedTxs sharedState') === Nothing
+        ]
 
 -- Verifies that nextPeerAction submits buffered txs owned by the peer before
 -- taking any other action.
