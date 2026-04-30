@@ -70,6 +70,8 @@ tests =
     , testProperty "nextPeerAction claims claimable tx for best idle advertiser" prop_nextPeerAction_claimsClaimableTx
     , testProperty "nextPeerAction claims a released tx from another advertiser" prop_nextPeerAction_claimsRejectedTxFromOtherAdvertiser
     , testCaseSteps "nextPeerAction claims a tx once the score delay threshold has elapsed" unit_nextPeerAction_claimsAtScoreDelayThreshold
+    , testCaseSteps "peerScore decays linearly over time at scoreRate" unit_peerScore_decaysOverTime
+    , testCaseSteps "applyPeerRejections drains the existing score before adding the new rejection count" unit_applyPeerRejections_drainsThenAdds
     , testProperty "nextPeerAction steals expired lease for best idle advertiser" prop_nextPeerAction_claimsExpiredLease
     , testProperty "nextPeerAction requests an oversized first tx within the soft budget" prop_nextPeerAction_requestsOversizedFirstTx
     , testCaseSteps "nextPeerAction skips blocked available txs and requests later claimable ones" unit_nextPeerAction_skipsBlockedAvailableTxs
@@ -1552,6 +1554,32 @@ prop_nextPeerAction_claimsClaimableTx (ArbTxDecisionPolicy policy) (Positive pee
       , peerScore = peerAScore
       }
     (peerAction, peerState', sharedState') = nextPeerAction now policy peerA peerState0 sharedState0
+
+-- | A peer's score decays linearly at 'scoreRate' from its last
+-- timestamped value, clamped to zero.
+unit_peerScore_decaysOverTime :: (String -> IO ()) -> Assertion
+unit_peerScore_decaysOverTime step = do
+    step "After 50 seconds at scoreRate 0.1 a score of 10 should drain to 5"
+    currentPeerScore policy (Time 50) score0 @?= 5
+    step "After 200 seconds the score should be fully decayed (clamped to 0)"
+    currentPeerScore policy (Time 200) score0 @?= 0
+    step "Reading at the same instant as the last update returns the unchanged value"
+    currentPeerScore policy (Time 0) score0 @?= peerScoreValue score0
+  where
+    policy = defaultTxDecisionPolicy
+    score0 = PeerScore { peerScoreValue = 10, peerScoreTs = Time 0 }
+
+-- | A new rejection drains the existing score at 'scoreRate' per second
+-- since its last update before adding the rejection count.
+unit_applyPeerRejections_drainsThenAdds :: (String -> IO ()) -> Assertion
+unit_applyPeerRejections_drainsThenAdds step = do
+    step "Starting score 10 at Time 0; one rejection 50s later: 10 - (50 * 0.1) + 1 = 6"
+    fst (applyPeerRejections policy (Time 50) 1 peerState0) @?= 6
+  where
+    policy     = defaultTxDecisionPolicy
+    peerState0 = emptyPeerTxLocalState
+                   { peerScore = PeerScore { peerScoreValue = 10
+                                           , peerScoreTs    = Time 0 } }
 
 unit_nextPeerAction_claimsAtScoreDelayThreshold :: (String -> IO ()) -> Assertion
 unit_nextPeerAction_claimsAtScoreDelayThreshold step = do
