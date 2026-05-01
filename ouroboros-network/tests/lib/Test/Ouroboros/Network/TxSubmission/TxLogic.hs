@@ -32,9 +32,9 @@ import Data.Foldable (foldl', toList)
 import Data.Function (on)
 import Data.IntMap.Strict qualified as IntMap
 import Data.IntSet qualified as IntSet
-import Data.List (nub, nubBy)
+import Data.List (mapAccumL, nub, nubBy, sortBy)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (isJust)
+import Data.Maybe (isJust, listToMaybe)
 import Data.Sequence.Strict qualified as StrictSeq
 import Data.Set qualified as Set
 import Data.Word (Word64)
@@ -53,20 +53,32 @@ import Ouroboros.Network.TxSubmission.Inbound.V2.Types
 import Test.Ouroboros.Network.TxSubmission.Types
 
 import Test.QuickCheck
-import Test.Tasty (TestTree, testGroup)
+import Test.Tasty (TestTree, localOption, testGroup)
 import Test.Tasty.HUnit (Assertion, assertBool, assertFailure, testCaseSteps,
            (@?=))
-import Test.Tasty.QuickCheck (testProperty)
+import Test.Tasty.QuickCheck (QuickCheckTests (..), testProperty)
 
 tests :: TestTree
 tests =
   testGroup "TxLogic"
-    [ testProperty "handleReceivedTxIds handles mixed new / retained / mempool txids" prop_handleReceivedTxIds
+    [ localOption (QuickCheckTests 50) $
+        testGroup "TriggerScenario meta-tests"
+          [ testProperty "generated scenario produces a valid initial state"
+                         prop_TriggerScenario_validInitialState
+          , testProperty "shrink preserves validity"
+                         prop_TriggerScenario_shrinkPreservesValidity
+          , testProperty "shrink does not grow the trigger list"
+                         prop_TriggerScenario_shrinkSmaller
+          , testProperty "shrink does not contain the original value"
+                         prop_TriggerScenario_shrinkExcludesOriginal
+          ]
+    , testProperty "handleReceivedTxIds handles mixed new / retained / mempool txids" prop_handleReceivedTxIds
     , testCaseSteps "handleReceivedTxIds adds the current peer as an advertiser for active txs" unit_handleReceivedTxIds_addsAdvertiserForActiveTxs
     , testCaseSteps "nextPeerAction lets another peer claim a fresh tx when the first advertiser is full" unit_nextPeerAction_claimsFreshTxWhenFirstAdvertiserIsFull
     , testProperty "handleReceivedTxs handles mixed buffered / omitted / late-retained / late-mempool / pruned txids" prop_handleReceivedTxs
     , testProperty "handleSubmittedTxs retains accepted and drops rejected" prop_handleSubmittedTxs_retainsAcceptedAndDropsRejected
     , testProperty "nextPeerAction prioritises submitting buffered owned txs" prop_nextPeerAction_prioritisesSubmit
+    , testProperty "nextPeerAction processes all multi-peer triggers" prop_nextPeerAction_processesAllTriggers
     , testProperty "nextPeerAction claims claimable tx for best idle advertiser" prop_nextPeerAction_claimsClaimableTx
     , testProperty "nextPeerAction claims a released tx from another advertiser" prop_nextPeerAction_claimsRejectedTxFromOtherAdvertiser
     , testCaseSteps "nextPeerAction claims a tx once the score delay threshold has elapsed" unit_nextPeerAction_claimsAtScoreDelayThreshold
@@ -1564,6 +1576,667 @@ prop_nextPeerAction_prioritisesSubmit (ArbTxDecisionPolicy policy) (Positive pee
       , peerDownloadedTxs = IntMap.singleton k tx
       }
     (peerAction, peerState', sharedState') = nextPeerAction now policy peeraddr peerState0 sharedState0
+
+-- | Trigger kinds for the model-based 'nextPeerAction' property. Each
+-- describes one action that should be choosable at the moment the test
+-- calls 'nextPeerAction'. The state-builder turns the list into a
+-- consistent ('PeerTxLocalState', 'SharedTxState') pair.
+data ActionTrigger
+  = TSubmittable    TxId (Positive Int)             -- buffered + owned + body-downloaded
+  | TFetchable      TxId (Positive Int)             -- claimable + advertised + in available
+  | TAckable        TxId                             -- in 'sharedRetainedTxs' + unacked queue
+  | TFetchableLater (Positive Int) TxId (Positive Int)
+    -- ^ delay-in-seconds + txid + size: claimable only after the loop has
+    --   advanced 'time' by at least the delay; otherwise just like
+    --   'TFetchable'.
+  deriving (Eq, Show)
+
+instance Arbitrary ActionTrigger where
+  arbitrary = oneof
+    [ TSubmittable    <$> arbitrary <*> arbitrary
+    , TFetchable      <$> arbitrary <*> arbitrary
+    , TAckable        <$> arbitrary
+    , TFetchableLater <$> arbitrary <*> arbitrary <*> arbitrary
+    ]
+  -- Shrink only by demoting to a simpler trigger constructor and at most
+  -- one numeric-field alternative. Avoids the combinatorial blow-up that
+  -- recursive 'shrink' on every numeric field produces, which made QC's
+  -- shrinker hundreds of steps slow on rich trigger lists.
+  shrink (TSubmittable t s) =
+       [ TFetchable t s, TAckable t ]
+    ++ [ TSubmittable t' s | t' <- take 1 (shrink t) ]
+  shrink (TFetchable t s) =
+       TAckable t :
+       [ TFetchable t' s | t' <- take 1 (shrink t) ]
+  shrink (TAckable t) =
+       [ TAckable t' | t' <- take 1 (shrink t) ]
+  shrink (TFetchableLater d t s) =
+       [ TFetchable t s, TAckable t ]            -- demote: collapse delay
+    ++ [ TFetchableLater d' t s | d' <- take 1 (shrink d) ]
+
+triggerTxid :: ActionTrigger -> TxId
+triggerTxid (TSubmittable    t _)   = t
+triggerTxid (TFetchable      t _)   = t
+triggerTxid (TAckable        t)     = t
+triggerTxid (TFetchableLater _ t _) = t
+
+isTSubmittable :: ActionTrigger -> Bool
+isTSubmittable TSubmittable{} = True
+isTSubmittable _              = False
+
+isTAckable :: ActionTrigger -> Bool
+isTAckable TAckable{} = True
+isTAckable _          = False
+
+isTFetchableNow :: ActionTrigger -> Bool
+isTFetchableNow TFetchable{}      = True
+isTFetchableNow _                 = False
+
+isTFetchableLater :: ActionTrigger -> Bool
+isTFetchableLater TFetchableLater{} = True
+isTFetchableLater _                 = False
+
+-- | Generator-time bias selector: 'ModeDisjoint' renumbers all triggers
+-- so each peer's txid range is unique (no cross-peer overlap),
+-- 'ModeShared' collapses txids into a small shared pool so cross-peer
+-- overlap arises with high probability. Both modes are sampled so
+-- single-peer-shape regressions and cross-peer-guard regressions are
+-- both reachable from the corpus.
+data OverlapMode = ModeDisjoint | ModeShared
+  deriving (Eq, Show)
+
+-- | A scenario is an overlap mode plus a per-peer trigger map. With 1-3
+-- peers, scenarios cover both single-peer behaviour and the cross-peer
+-- code paths in 'nextPeerAction' (lease contention,
+-- 'txSubmittingAnywhere', advertiser bookkeeping) that the single-peer
+-- model could not reach.
+data TriggerScenario =
+       TriggerScenario OverlapMode (Map.Map PeerAddr [ActionTrigger])
+  deriving (Eq, Show)
+
+-- | Per-peer trigger-list generator. Singleton is common; empty and
+-- large lists are explicitly represented; the per-element generator
+-- biases toward uniform-of-one-class so all-fetchable / all-ackable
+-- scenarios arise often enough to exercise their code paths.
+genPerPeerTriggers :: Gen [ActionTrigger]
+genPerPeerTriggers = do
+  size <- frequency
+    [ (2, pure 1)           -- singleton
+    , (1, pure 0)           -- empty
+    , (3, choose (2, 10))   -- small
+    , (1, choose (11, 100)) -- larger
+    ]
+  genElem <- oneof
+    [ pure arbitrary
+    , pure (TFetchable      <$> arbitrary <*> arbitrary)
+    , pure (TSubmittable    <$> arbitrary <*> arbitrary)
+    , pure (TAckable        <$> arbitrary)
+    , pure (TFetchableLater <$> arbitrary <*> arbitrary <*> arbitrary)
+    ]
+  vectorOf size genElem
+
+-- | Size-first shrink for a per-peer trigger list: halve, drop one,
+-- element-shrink. Same behaviour as the original 'shrink' for
+-- 'TriggerScenario' before the multi-peer refactor.
+shrinkTriggerList :: [ActionTrigger] -> [[ActionTrigger]]
+shrinkTriggerList ts =
+  let n = length ts in
+     [ take (n `div` 2) ts | n >= 2 ]
+  ++ [ drop (n `div` 2) ts | n >= 2 ]
+  ++ [ take i ts ++ drop (i + 1) ts | i <- [0 .. n - 1] ]
+  ++ [ take i ts ++ t' : drop (i + 1) ts
+     | i <- [0 .. n - 1]
+     , t' <- shrink (ts !! i)
+     ]
+
+-- | Replace every 'ActionTrigger's txid so each peer's range is unique
+-- across peers. Guarantees zero cross-peer overlap regardless of the raw
+-- arbitrary txids.
+renumberDisjoint :: [[ActionTrigger]] -> [[ActionTrigger]]
+renumberDisjoint = snd . mapAccumL renumberOne 1
+  where
+    renumberOne nextId triggers =
+      let n = length triggers in
+      (nextId + n, zipWith setTxid triggers [nextId .. nextId + n - 1])
+
+-- | Replace every 'ActionTrigger's txid with a draw from a shared pool
+-- of size 'poolSize'. Within-peer collisions get deduped by the
+-- subsequent 'normaliseTriggers'; cross-peer collisions become the
+-- overlap that the multi-peer test is designed to exercise.
+collapseToPool :: Int -> [[ActionTrigger]] -> Gen [[ActionTrigger]]
+collapseToPool poolSize = traverse (traverse remap)
+  where
+    remap trig = do
+      newId <- chooseInt (1, poolSize)
+      pure (setTxid trig newId)
+
+setTxid :: ActionTrigger -> TxId -> ActionTrigger
+setTxid (TSubmittable    _ s)   t = TSubmittable    t s
+setTxid (TFetchable      _ s)   t = TFetchable      t s
+setTxid (TAckable        _)     t = TAckable        t
+setTxid (TFetchableLater d _ s) t = TFetchableLater d t s
+
+instance Arbitrary TriggerScenario where
+  arbitrary = do
+    -- Peer-count distribution: weighted toward 1-2 peers so the simpler
+    -- single-peer cases remain well-represented while 3-peer scenarios
+    -- still arise often enough to surface multi-claim contention.
+    nPeers <- frequency
+      [ (2, pure 1)
+      , (2, pure 2)
+      , (1, pure 3)
+      ]
+    perPeer <- vectorOf nPeers genPerPeerTriggers
+    -- Mode-frequency 2:3 ensures both modes are well-represented;
+    -- 'ModeShared' is weighted slightly higher because cross-peer
+    -- overlap is the harder-to-reach coverage class.
+    mode <- frequency
+      [ (2, pure ModeDisjoint)
+      , (3, pure ModeShared)
+      ]
+    remapped <- case mode of
+      ModeDisjoint -> pure (renumberDisjoint perPeer)
+      ModeShared   ->
+        let totalT  = sum (map length perPeer)
+            poolSz  = max 1 (totalT `div` 2) in
+        collapseToPool poolSz perPeer
+    pure (TriggerScenario mode
+            (Map.fromList (zip [1 .. nPeers] remapped)))
+  -- Shrink keeps the mode and shrinks structure: drop a peer first,
+  -- then shrink one peer's list. Keeping at least one peer preserves
+  -- well-formedness; mode is locked at generation so shrinks never
+  -- migrate between disjoint and shared.
+  shrink (TriggerScenario mode m) =
+       [ TriggerScenario mode (Map.delete p m)
+       | Map.size m > 1
+       , p <- Map.keys m
+       ]
+    ++ [ TriggerScenario mode (Map.insert p ts' m)
+       | (p, ts) <- Map.toList m
+       , ts' <- shrinkTriggerList ts
+       ]
+
+-- | Strongest trigger category seen across all peers for a given txid.
+-- Drives both the merged 'TxEntry' shape and the global expected-action
+-- assertion in 'prop_nextPeerAction_processesAllTriggers'.
+data TxCategory = CatSubmit | CatFetch | CatAck
+  deriving (Eq, Show)
+
+categoryOf :: [ActionTrigger] -> TxCategory
+categoryOf trigs
+  | any isTSubmittable trigs                                  = CatSubmit
+  | any isTFetchableNow trigs || any isTFetchableLater trigs  = CatFetch
+  | otherwise                                                 = CatAck
+
+hasActiveEntry :: ActionTrigger -> Bool
+hasActiveEntry TAckable{} = False
+hasActiveEntry _          = True
+
+-- | Build a consistent multi-peer state from a per-peer trigger map.
+-- Each peer's list must be normalised; triggers are globally re-keyed so
+-- a txid mentioned by multiple peers gets a single shared 'TxKey' and
+-- their 'TxEntry' merges advertiser count, attempts, and lease.
+--
+-- For a txid:
+--  * if any peer has 'TSubmittable', the lowest-numbered such peer holds
+--    the lease ('TxLeased') and every TSubmittable peer's attempt is
+--    'TxBuffered';
+--  * else if any peer has 'TFetchableLater', the lease is 'TxClaimable'
+--    delayed by the first such trigger's delay;
+--  * else if any peer has 'TFetchable', the lease is 'TxClaimable' now;
+--  * else (only 'TAckable' across all peers) the txid lives in
+--    'sharedRetainedTxs' and has no active-table entry.
+buildTriggerState :: TxDecisionPolicy
+                  -> Map.Map PeerAddr [ActionTrigger]
+                  -> ( Map.Map PeerAddr (PeerTxLocalState (Tx TxId))
+                     , SharedTxState PeerAddr TxId
+                     )
+buildTriggerState policy perPeer =
+    (peerStates, sharedState0)
+  where
+    -- Global txid order: peer-ascending, then per-peer trigger order;
+    -- first appearance wins. Stable so the same scenario always builds
+    -- the same state.
+    allTxids :: [TxId]
+    allTxids = nub
+      [ triggerTxid t
+      | (_, ts) <- Map.toAscList perPeer
+      , t <- ts
+      ]
+
+    txidToKey :: Map.Map TxId Int
+    txidToKey = Map.fromList (zip allTxids [0..])
+
+    txidKey :: TxId -> Int
+    txidKey t = txidToKey Map.! t
+
+    triggersFor :: TxId -> [(PeerAddr, ActionTrigger)]
+    triggersFor txid =
+      [ (p, t)
+      | (p, ts) <- Map.toAscList perPeer
+      , t <- ts
+      , triggerTxid t == txid
+      ]
+
+    submittingPeer :: TxId -> Maybe PeerAddr
+    submittingPeer txid = listToMaybe
+      [ p | (p, t) <- triggersFor txid, isTSubmittable t ]
+
+    laterDelay :: TxId -> Maybe Int
+    laterDelay txid = listToMaybe
+      [ d | (_, TFetchableLater (Positive d) _ _) <- triggersFor txid ]
+
+    mkEntry :: TxId -> TxEntry PeerAddr
+    mkEntry txid =
+      let trigs = triggersFor txid
+          activeCount = length (filter (hasActiveEntry . snd) trigs)
+          attempts = Map.fromList
+            [ (p, TxBuffered) | (p, t) <- trigs, isTSubmittable t ]
+          lease = case submittingPeer txid of
+            Just p  -> TxLeased p (addTime 10 now)
+            Nothing -> case laterDelay txid of
+              Just d  -> TxClaimable (addTime (fromIntegral d) now)
+              Nothing -> TxClaimable now in
+      TxEntry
+        { txLease           = lease
+        , txAdvertiserCount = activeCount
+        , txAttempts        = attempts
+        , currentMaxInflightMultiplicity = txInflightMultiplicity policy
+        }
+
+    activeTxids = [ txid | txid <- allTxids
+                  , categoryOf (map snd (triggersFor txid)) /= CatAck ]
+    retainedTxids = [ txid | txid <- allTxids
+                    , categoryOf (map snd (triggersFor txid)) == CatAck ]
+
+    retainedUntil   = addTime 600 now
+    retainedEntries = [ (txidKey txid, retainedUntil) | txid <- retainedTxids ]
+
+    mkPeerLocal :: PeerAddr -> [ActionTrigger] -> PeerTxLocalState (Tx TxId)
+    mkPeerLocal _ ts = emptyPeerTxLocalState
+      { peerUnacknowledgedTxIds = StrictSeq.fromList
+          [ TxKey (txidKey (triggerTxid t)) | t <- ts ]
+      , peerDownloadedTxs = IntMap.fromList
+          [ (txidKey t', mkTx t' (mkSize s))
+          | TSubmittable t' s <- ts
+          ]
+      , peerAvailableTxIds = IntMap.fromList $
+             [ (txidKey t', mkSize s) | TFetchable t' s <- ts ]
+          ++ [ (txidKey t', mkSize s) | TFetchableLater _ t' s <- ts ]
+      }
+
+    peerStates = Map.mapWithKey mkPeerLocal perPeer
+
+    mkSharedPeer :: PeerAddr -> [ActionTrigger] -> SharedPeerState
+    mkSharedPeer _ ts =
+      let advKeys = [ TxKey (txidKey (triggerTxid t))
+                    | t <- ts, hasActiveEntry t ] in
+      withAdvertisedTxKeys advKeys (mkSharedPeerState PeerIdle)
+
+    sharedPeers' = Map.mapWithKey mkSharedPeer perPeer
+
+    sharedState0 = emptySharedTxState
+      { sharedPeers       = sharedPeers'
+      , sharedTxTable     = IntMap.fromList
+          [ (txidKey txid, mkEntry txid) | txid <- activeTxids ]
+      , sharedTxIdToKey   = Map.fromList
+          [ (getRawTxId txid, TxKey (txidKey txid)) | txid <- allTxids ]
+      , sharedKeyToTxId   = IntMap.fromList
+          [ (txidKey txid, txid) | txid <- allTxids ]
+      , sharedNextTxKey   = length allTxids
+      , sharedRetainedTxs = retainedFromList retainedEntries
+      }
+
+-- | Normalise a per-peer trigger list: shift txids to >= 1, dedupe by
+-- the post-shift txid, and reorder so ackables come first, then
+-- submittables, then fetchables. The order matters because
+-- 'pickSubmitAction' walks 'peerUnacknowledgedTxIds' in order and stops
+-- at the first non-submittable-but-known tx, and 'pickRequestTxIdsAction'
+-- takes the longest ackable prefix; with ackables first every ackable is
+-- reached, and the submit walk skips ackables (no shared-table entry) to
+-- pick up submittables before stopping at the first fetchable.
+normaliseTriggers :: [ActionTrigger] -> [ActionTrigger]
+normaliseTriggers =
+    orderTriggers
+  . nubBy ((==) `on` triggerTxid)
+  . map shiftTrigger
+  where
+    shiftTrigger (TSubmittable    t s)   = TSubmittable    (abs t + 1) s
+    shiftTrigger (TFetchable      t s)   = TFetchable      (abs t + 1) s
+    shiftTrigger (TAckable        t)     = TAckable        (abs t + 1)
+    shiftTrigger (TFetchableLater d t s) = TFetchableLater d (abs t + 1) s
+    orderTriggers ts =
+         filter isTAckable        ts
+      ++ filter isTSubmittable    ts
+      ++ filter isTFetchableNow   ts
+      ++ filter isTFetchableLater ts
+
+-- | Across peers, ensure each txid has 'TSubmittable' from at most one
+-- peer. The lowest-numbered peer keeps the 'TSubmittable'; others get
+-- demoted to 'TFetchable' with the same size. This avoids invariant-
+-- violating initial states where two peers both hold the body for the
+-- same tx with one as the lease-holder.
+dedupeAcrossPeers :: Map.Map PeerAddr [ActionTrigger]
+                  -> Map.Map PeerAddr [ActionTrigger]
+dedupeAcrossPeers m = Map.mapWithKey (map . demote) m
+  where
+    primarySubmitter :: Map.Map TxId PeerAddr
+    primarySubmitter = Map.fromListWith min
+      [ (t, p) | (p, ts) <- Map.toList m, TSubmittable t _ <- ts ]
+    demote p (TSubmittable t s)
+      | Map.lookup t primarySubmitter /= Just p = TFetchable t s
+    demote _ trig = trig
+
+-- | Per-peer normalise plus cross-peer dedupe, in that order.
+normaliseScenario :: Map.Map PeerAddr [ActionTrigger]
+                  -> Map.Map PeerAddr [ActionTrigger]
+normaliseScenario = dedupeAcrossPeers . Map.map normaliseTriggers
+
+-- | Drives 'nextPeerAction' for every peer in the scenario, advancing
+-- the earliest-wake peer at each step. After any action that mutates
+-- shared state (Submit / RequestTxs / RequestTxIds), other peers are
+-- reactivated so they can re-evaluate against the new shared state.
+-- Asserts:
+--
+--   1. The loop terminates within the iteration budget.
+--   2. Every txid whose strongest cross-peer trigger category is
+--      'CatSubmit' appears in the union of submitted keys.
+--   3. Every txid whose category is 'CatFetch' appears in the union of
+--      requested keys.
+--   4. Every txid whose category is 'CatAck' appears in the union of
+--      acked keys.
+--   5. 'combinedStateInvariant' holds on the initial state for every
+--      peer and after the acting peer's update at every step.
+prop_nextPeerAction_processesAllTriggers
+  :: ArbTxDecisionPolicy
+  -> TriggerScenario
+  -> Property
+prop_nextPeerAction_processesAllTriggers
+    (ArbTxDecisionPolicy arbPolicy) (TriggerScenario mode rawPerPeer) =
+      tabulate "trigger count" [bucket totalTriggers]
+    . tabulate "peer count"    [show nPeers]
+    . tabulate "iterations"    [bucket iterations]
+    . tabulate "shared txids"  [bucket sharedTxidCount]
+    . tabulate "overlap mode"  [show mode]
+    $ conjoin
+        [ counterexample "loop must terminate within step budget"
+            $ property terminated
+        , counterexample "submitted set must equal CatSubmit txids"
+            $ allSubmitted === expectedSubmitted
+        , counterexample "requested set must equal CatFetch txids"
+            $ allRequested === expectedFetched
+        , counterexample
+            ("expected acks missing: " ++ show (IntSet.toList missingAcks))
+            $ property (IntSet.null missingAcks)
+        , conjoin
+            [ counterexample ("initial invariant for peer " ++ show p)
+                $ combinedStateInvariant policy StrongInvariant p ps0 sharedState0
+            | (p, ps0) <- Map.toList peerStates0
+            ]
+        , conjoin
+            [ counterexample
+                ("invariant after step " ++ show n
+                  ++ " (peer " ++ show p ++ ")") inv
+            | (n, p, inv) <- stateInvariants
+            ]
+        , conjoin
+            [ checkQuiescence p ps
+            | (p, (Nothing, ps)) <- Map.toList finalSchedule
+            ]
+        ]
+  where
+    perPeer       = normaliseScenario rawPerPeer
+    totalTriggers = sum (map length (Map.elems perPeer))
+    nPeers        = Map.size perPeer
+
+    -- Number of txids that appear in two or more peers' trigger lists.
+    -- A non-zero value confirms the multi-peer apparatus is actually
+    -- exercising cross-peer overlap rather than running independent
+    -- single-peer scenarios in parallel.
+    txidPeerCounts :: Map.Map TxId Int
+    txidPeerCounts = Map.fromListWith (+)
+      [ (triggerTxid t, 1 :: Int)
+      | (_, ts) <- Map.toList perPeer
+      , t       <- ts
+      ]
+    sharedTxidCount = length
+      [ () | (_, n) <- Map.toList txidPeerCounts, n >= 2 ]
+
+    policy = arbPolicy
+      { txInflightMultiplicity         = 2
+      , txsSizeInflightPerPeer         =
+          max_TX_SIZE * fromIntegral (max 1 totalTriggers)
+      , maxOutstandingTxBatchesPerPeer = max 1 totalTriggers
+      }
+
+    -- Per-peer interleaving plus lease-expiry cycles inflate iteration
+    -- counts versus the single-peer case; the budget grows linearly with
+    -- the product so each peer can claim every advertised tx without
+    -- exhausting the budget.
+    maxIters = 100 + 6 * totalTriggers * max 1 nPeers
+
+    -- Global per-txid expected categories.
+    allTxids = nub
+      [ triggerTxid t | (_, ts) <- Map.toAscList perPeer, t <- ts ]
+    txidToKey = Map.fromList (zip allTxids [0..])
+    txidKey t = txidToKey Map.! t
+
+    triggersFor txid =
+      [ trig | (_, ts) <- Map.toAscList perPeer
+             , trig    <- ts
+             , triggerTxid trig == txid ]
+    catFor txid = categoryOf (triggersFor txid)
+
+    -- With deferred body delivery, fetched txids run the full
+    -- Fetch -> Buffer -> Submit cycle, so 'CatFetch' txids contribute
+    -- to both expectedSubmitted and expectedFetched.
+    expectedSubmitted = IntSet.fromList
+      [ txidKey t | t <- allTxids
+                  , let c = catFor t, c == CatSubmit || c == CatFetch ]
+    expectedFetched   = IntSet.fromList
+      [ txidKey t | t <- allTxids, catFor t == CatFetch  ]
+    expectedAcked     = IntSet.fromList
+      [ txidKey t | t <- allTxids, catFor t == CatAck    ]
+
+    (peerStates0, sharedState0) = buildTriggerState policy perPeer
+
+    initialSchedule :: Map.Map PeerAddr (Maybe Time, PeerTxLocalState (Tx TxId))
+    initialSchedule = Map.map (\ps -> (Just now, ps)) peerStates0
+
+    (allSubmitted, allRequested, allAcked,
+     stateInvariants, terminated, iterations,
+     finalSchedule, finalSS, finalTime) =
+        runLoop sharedState0 initialSchedule Map.empty
+                IntSet.empty IntSet.empty IntSet.empty
+                [] 0 now
+
+    missingAcks = expectedAcked `IntSet.difference` allAcked
+
+    -- Pick the active peer (status 'Just t') with the smallest 't'.
+    -- Returns 'Nothing' if every peer is parked at 'Nothing' (terminated).
+    pickEarliest schedule =
+      case sortBy (compare `on` snd)
+             [ (p, t) | (p, (Just t, _)) <- Map.toList schedule ] of
+        []         -> Nothing
+        (p, t) : _ ->
+          let (_, ps) = schedule Map.! p in
+          Just (p, t, ps)
+
+    -- After a state-mutating action, drag every other peer's wake to
+    -- 'time' (or earlier) so they re-evaluate the new shared state. A
+    -- peer parked at 'Nothing' (previously terminated) is reactivated.
+    reactivateOthers acting time =
+      Map.mapWithKey $ \p (status, ps) ->
+        if p == acting
+          then (status, ps)
+          else case status of
+            Just t' | t' <= time -> (Just t', ps)
+            _                    -> (Just time, ps)
+
+    -- Build the (txid, body) pair for a requested key by looking up the
+    -- txid in shared state and the size in the requesting peer's
+    -- pre-action 'peerAvailableTxIds'. Deferring delivery means we have
+    -- to capture sizes before 'applyRequestTxsChoice' moves the keys
+    -- out of 'peerAvailableTxIds'.
+    mkBody :: SharedTxState PeerAddr TxId
+           -> PeerTxLocalState (Tx TxId)
+           -> TxKey
+           -> (TxId, Tx TxId)
+    mkBody ss ps (TxKey k) =
+      let txid = sharedKeyToTxId ss IntMap.! k
+          size = peerAvailableTxIds ps IntMap.! k in
+      (txid, mkTx txid size)
+
+    -- Quiescence: re-poll a peer parked at terminal status against the
+    -- final shared state. A truly terminated peer should produce
+    -- 'PeerDoNothing _ Nothing' with no state mutation. Catches
+    -- non-determinism in 'nextPeerAction', accidental input mutation
+    -- on the no-op path, and "fake termination" regressions.
+    checkQuiescence :: PeerAddr -> PeerTxLocalState (Tx TxId) -> Property
+    checkQuiescence p ps =
+      let (action, ps', ss') = nextPeerAction finalTime policy p ps finalSS in
+      case action of
+        PeerDoNothing _ Nothing ->
+          conjoin
+            [ counterexample ("quiescence: peer " ++ show p ++ " local state changed")
+                $ ps' === ps
+            , counterexample ("quiescence: peer " ++ show p ++ " mutated shared state")
+                $ ss' === finalSS
+            ]
+        other ->
+          counterexample
+            ("quiescence: peer " ++ show p ++ " produced " ++ show other)
+            (property False)
+
+    -- runLoop's 'pending' field maps each peer to the bodies queued for
+    -- its next-iteration delivery. Drain happens just before the peer
+    -- acts; the request-to-delivery gap gives other peers exactly one
+    -- scheduling step to observe the in-flight state.
+    runLoop ss schedule pending subs reqs acks invs i lastTime
+      | i >= maxIters =
+          (subs, reqs, acks, reverse invs, False, i, schedule, ss, lastTime)
+      | otherwise =
+          case pickEarliest schedule of
+            Nothing ->
+              (subs, reqs, acks, reverse invs, True, i, schedule, ss, lastTime)
+            Just (p, time, ps) ->
+              let lastTime' = max lastTime time
+
+                  -- Drain p's pending body deliveries before its action.
+                  (psPre, ssPre, pendingPre, drainInvs, stepDrain) =
+                    case Map.lookup p pending of
+                      Nothing -> (ps, ss, pending, [], i)
+                      Just deliveries ->
+                        let (_, _, ps2, ss2) =
+                              handleReceivedTxs (const False) time policy p
+                                deliveries ps ss
+                            drainInv = combinedStateInvariant policy
+                                         StrongInvariant p ps2 ss2
+                            stepD = i + 1 in
+                        ( ps2, ss2, Map.delete p pending
+                           , [(stepD, p, drainInv)], stepD )
+
+                  (action, ps', ss') =
+                    nextPeerAction time policy p psPre ssPre
+                  oldUnacked = peerUnacknowledgedTxIds psPre
+                  newUnacked = peerUnacknowledgedTxIds ps'
+                  numAcked   = StrictSeq.length oldUnacked
+                             - StrictSeq.length newUnacked
+                  ackedNow   = IntSet.fromList $ map unTxKey
+                             $ toList (StrictSeq.take numAcked oldUnacked)
+                  inv        = combinedStateInvariant policy
+                                 StrongInvariant p ps' ss'
+                  step       = stepDrain + 1 in
+              case action of
+                PeerDoNothing _ Nothing ->
+                  let schedule' = Map.insert p (Nothing, ps') schedule in
+                  runLoop ss' schedule' pendingPre subs reqs acks
+                       ((step, p, inv) : drainInvs ++ invs) step lastTime'
+                PeerDoNothing _ (Just delay) ->
+                  let nextWake = addTime (max delay 0.001) time
+                      schedule' = Map.insert p (Just nextWake, ps') schedule in
+                  runLoop ss' schedule' pendingPre subs reqs acks
+                       ((step, p, inv) : drainInvs ++ invs) step lastTime'
+                PeerSubmitTxs ks ->
+                  let (ps'', ss'') = handleSubmittedTxs time policy p ks [] ps' ss'
+                      postInv = combinedStateInvariant policy
+                                  StrongInvariant p ps'' ss''
+                      others' = reactivateOthers p time schedule
+                      schedule' = Map.insert p (Just time, ps'') others'
+                      subs' = IntSet.union subs
+                                (IntSet.fromList (unTxKey <$> ks)) in
+                  runLoop ss'' schedule' pendingPre subs' reqs acks
+                       ( (step, p, postInv) : (step, p, inv)
+                       : drainInvs ++ invs ) step lastTime'
+                PeerRequestTxs ks ->
+                  -- Queue the bodies for delivery on p's next iteration.
+                  -- Bodies are built from the pre-action peer state so
+                  -- the size lookup hits 'peerAvailableTxIds' before
+                  -- 'applyRequestTxsChoice' moved the keys out.
+                  let bodies   = [ mkBody ssPre psPre k | k <- ks ]
+                      pending' = Map.insert p bodies pendingPre
+                      others'  = reactivateOthers p time schedule
+                      schedule' = Map.insert p (Just time, ps') others'
+                      reqs'     = IntSet.union reqs
+                                    (IntSet.fromList (unTxKey <$> ks)) in
+                  runLoop ss' schedule' pending' subs reqs' acks
+                       ((step, p, inv) : drainInvs ++ invs) step lastTime'
+                PeerRequestTxIds{} ->
+                  let others'   = reactivateOthers p time schedule
+                      schedule' = Map.insert p (Just time, ps') others'
+                      acks'     = IntSet.union acks ackedNow in
+                  runLoop ss' schedule' pendingPre subs reqs acks'
+                       ((step, p, inv) : drainInvs ++ invs) step lastTime'
+
+-- | Policy used by the 'TriggerScenario' meta-tests below. Mirrors the
+-- pin in 'prop_nextPeerAction_processesAllTriggers'.
+metaPolicy :: TxDecisionPolicy
+metaPolicy = defaultTxDecisionPolicy { txInflightMultiplicity = 2 }
+
+-- | Every generated 'TriggerScenario' produces an initial state that
+-- satisfies 'combinedStateInvariant' for every peer. Catches state-
+-- builder bugs (wrong txids in maps, missing entries, etc.) before they
+-- show up as confusing failures of
+-- 'prop_nextPeerAction_processesAllTriggers'.
+prop_TriggerScenario_validInitialState :: TriggerScenario -> Property
+prop_TriggerScenario_validInitialState (TriggerScenario _ rawPerPeer) =
+    let perPeer       = normaliseScenario rawPerPeer
+        (states, ss0) = buildTriggerState metaPolicy perPeer in
+    conjoin
+         [ counterexample ("invalid initial state for peer " ++ show p)
+             $ combinedStateInvariant metaPolicy StrongInvariant p ps ss0
+         | (p, ps) <- Map.toList states
+         ]
+
+-- | Every shrink of a generated scenario is itself valid. Without this,
+-- 'prop_nextPeerAction_processesAllTriggers' could shrink into invalid
+-- territory and report a bogus counterexample.
+prop_TriggerScenario_shrinkPreservesValidity :: TriggerScenario -> Property
+prop_TriggerScenario_shrinkPreservesValidity ts =
+    conjoin
+      [ prop_TriggerScenario_validInitialState ts'
+      | ts' <- shrink ts
+      ]
+
+-- | Shrinks never grow the total trigger count. Catches shrinker
+-- regressions that would slow down or invalidate the main property's
+-- shrinking.
+prop_TriggerScenario_shrinkSmaller :: TriggerScenario -> Property
+prop_TriggerScenario_shrinkSmaller ts@(TriggerScenario _ rawM) =
+    let n = sum (map length (Map.elems rawM)) in
+    conjoin
+      [ counterexample ("shrink grew the trigger count: " ++ show ts')
+          $ sum (map length (Map.elems rawM')) <= n
+      | ts'@(TriggerScenario _ rawM') <- shrink ts
+      ]
+
+-- | A scenario is not in its own shrink list. Catches shrink-into-self
+-- regressions that would loop QuickCheck.
+prop_TriggerScenario_shrinkExcludesOriginal :: TriggerScenario -> Property
+prop_TriggerScenario_shrinkExcludesOriginal ts =
+    counterexample "shrink contains the original value"
+      $ property (ts `notElem` shrink ts)
+
 
 -- Verifies that nextPeerAction leases a claimable tx to the best idle
 -- advertiser and requests its body.
