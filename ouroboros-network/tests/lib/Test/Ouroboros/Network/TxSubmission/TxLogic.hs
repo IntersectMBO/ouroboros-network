@@ -79,7 +79,7 @@ tests =
     , testProperty "handleSubmittedTxs retains accepted and drops rejected" prop_handleSubmittedTxs_retainsAcceptedAndDropsRejected
     , testProperty "nextPeerAction processes all multi-peer triggers" prop_nextPeerAction_processesAllTriggers
     , testProperty "nextPeerAction claims claimable tx for best idle advertiser" prop_nextPeerAction_claimsClaimableTx
-    , testProperty "nextPeerAction claims a released tx from another advertiser" prop_nextPeerAction_claimsRejectedTxFromOtherAdvertiser
+    , testCaseSteps "nextPeerAction claims a released tx from another advertiser" unit_nextPeerAction_claimsRejectedTxFromOtherAdvertiser
     , testCaseSteps "nextPeerAction claims a tx once the score delay threshold has elapsed" unit_nextPeerAction_claimsAtScoreDelayThreshold
     , testCaseSteps "peerScore decays linearly over time at scoreRate" unit_peerScore_decaysOverTime
     , testCaseSteps "applyPeerRejections drains the existing score before adding the new rejection count" unit_applyPeerRejections_drainsThenAdds
@@ -118,6 +118,26 @@ checkNoThunks name val =
       Just info -> counterexample
                      (name ++ " contains thunks: " ++ show info)
                      (property False)
+
+-- | HUnit equivalent of 'checkNoThunks'.
+assertNoThunks :: NoThunks a => String -> a -> Assertion
+assertNoThunks name val =
+    val `seq` case unsafeNoThunks val of
+      Nothing   -> pure ()
+      Just info -> assertFailure (name ++ " contains thunks: " ++ show info)
+
+-- | Evaluate a 'Property' once (no QuickCheck shrinking) and convert
+-- the verdict into an 'Assertion'. Useful for invariant helpers like
+-- 'combinedStateInvariant' that return 'Property' so they're directly
+-- usable from 'testProperty', but need bridging to 'testCaseSteps'.
+assertProperty :: Testable prop => String -> prop -> Assertion
+assertProperty name prop = do
+    result <- quickCheckWithResult
+                stdArgs { chatty = False, maxSuccess = 1 }
+                prop
+    case result of
+      Success {} -> pure ()
+      _          -> assertFailure (name ++ ": " ++ output result)
 
 --
 -- InboundState properties
@@ -2513,15 +2533,57 @@ unit_nextPeerAction_claimsAtScoreDelayThreshold step = do
 -- 'nextPeerAction' path: once no peer has an outstanding attempt on a
 -- tx and its lease is claimable, a still-advertising peer is eligible
 -- to re-claim.
-prop_nextPeerAction_claimsRejectedTxFromOtherAdvertiser :: Property
-prop_nextPeerAction_claimsRejectedTxFromOtherAdvertiser =
-    counterexample "peerB should be able to claim the released tx"
-  $ case action of
-      PeerRequestTxs keys ->
-        counterexample ("keys requested: " ++ show keys)
-          $ TxKey txKeyInt `elem` keys
-      _ ->
-        counterexample ("peerB action: " ++ show action) False
+unit_nextPeerAction_claimsRejectedTxFromOtherAdvertiser
+  :: (String -> IO ()) -> Assertion
+unit_nextPeerAction_claimsRejectedTxFromOtherAdvertiser step = do
+  step "Run handleSubmittedTxs with peerA rejecting the tx"
+  let (peerAStateAfter, sharedStateAfterRejection) =
+        handleSubmittedTxs now defaultTxDecisionPolicy peerA
+          []
+          [TxKey txKeyInt]
+          peerAState
+          sharedState0
+      entryAfterRejection =
+        lookupEntryOrFail (TxKey txKeyInt) sharedStateAfterRejection
+
+  step "Assert peerA's downloadedTxs is cleared"
+  peerDownloadedTxs peerAStateAfter @?= IntMap.empty
+
+  step "Assert the lease is released and peerA leaves the advertiser set"
+  txLease entryAfterRejection           @?= TxClaimable now
+  txAttempts entryAfterRejection        @?= Map.empty
+  txAdvertiserCount entryAfterRejection @?= 1
+
+  step "Assert combinedStateInvariant for peerA after rejection"
+  assertProperty "combinedStateInvariant peerA after rejection" $
+    combinedStateInvariant defaultTxDecisionPolicy StrongInvariant
+      peerA peerAStateAfter sharedStateAfterRejection
+
+  step "Assert NoThunks on post-rejection states"
+  assertNoThunks "peerAStateAfter"           peerAStateAfter
+  assertNoThunks "sharedStateAfterRejection" sharedStateAfterRejection
+
+  step "Run nextPeerAction for peerB"
+  let (action, peerBStateAfter, sharedStateFinal) =
+        nextPeerAction now defaultTxDecisionPolicy peerB peerBState
+          sharedStateAfterRejection
+
+  step "Assert peerB claims the released tx exclusively"
+  action @?= PeerRequestTxs [TxKey txKeyInt]
+  peerRequestedTxs peerBStateAfter @?= IntSet.singleton txKeyInt
+
+  step "Assert peerB now holds the lease"
+  txLease (lookupEntryOrFail (TxKey txKeyInt) sharedStateFinal) @?=
+    TxLeased peerB (addTime (interTxSpace defaultTxDecisionPolicy) now)
+
+  step "Assert combinedStateInvariant for peerB after claim"
+  assertProperty "combinedStateInvariant peerB after claim" $
+    combinedStateInvariant defaultTxDecisionPolicy StrongInvariant
+      peerB peerBStateAfter sharedStateFinal
+
+  step "Assert NoThunks on post-claim states"
+  assertNoThunks "peerBStateAfter"  peerBStateAfter
+  assertNoThunks "sharedStateFinal" sharedStateFinal
   where
     peerA, peerB :: PeerAddr
     peerA = 1
@@ -2567,17 +2629,6 @@ prop_nextPeerAction_claimsRejectedTxFromOtherAdvertiser =
       { peerUnacknowledgedTxIds = StrictSeq.singleton (TxKey txKeyInt)
       , peerAvailableTxIds      = IntMap.singleton txKeyInt txSize
       }
-
-    (_peerAStateAfter, sharedStateAfterRejection) =
-      handleSubmittedTxs now defaultTxDecisionPolicy peerA
-        []
-        [TxKey txKeyInt]
-        peerAState
-        sharedState0
-
-    (action, _peerBStateAfter, _sharedStateFinal) =
-      nextPeerAction now defaultTxDecisionPolicy peerB peerBState
-        sharedStateAfterRejection
 
 -- Verifies that nextPeerAction can steal an expired lease for the best idle
 -- advertiser and request that tx.
