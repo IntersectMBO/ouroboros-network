@@ -8,6 +8,7 @@
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE NumericUnderscores         #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
@@ -69,7 +70,7 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Types
   , emptyPeerScore
   , emptyPeerTxLocalState
   , emptySharedTxState
-  , diffTimeToMillis
+  , diffTimeToMilliseconds
   ) where
 
 import Control.DeepSeq (NFData)
@@ -82,6 +83,7 @@ import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Sequence.Strict (StrictSeq)
 import Data.Set qualified as Set
+import Data.Time.Clock (diffTimeToPicoseconds)
 import Data.Typeable (Typeable, eqT, (:~:) (Refl))
 import GHC.Generics (Generic)
 
@@ -370,9 +372,12 @@ instance Monoid TxSubmissionCounters where
     txSubmissionWaitMs    = 0
   }
 
--- | Convert a 'DiffTime' to whole milliseconds, rounding to nearest.
-diffTimeToMillis :: DiffTime -> Word64
-diffTimeToMillis dt = round (realToFrac dt * 1000 :: Double)
+-- | Convert a non-negative 'DiffTime' to whole milliseconds (truncated).
+--
+-- Works directly on the underlying picosecond 'Integer' to avoid the
+-- 'realToFrac' detour through 'Rational' and 'Double'.
+diffTimeToMilliseconds :: DiffTime -> Word64
+diffTimeToMilliseconds = fromInteger . (`div` 1_000_000_000) . diffTimeToPicoseconds
 
 emptyPeerScore :: Time -> PeerScore
 emptyPeerScore scoreTs = PeerScore {

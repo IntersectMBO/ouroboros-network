@@ -132,7 +132,7 @@ txSubmissionInboundV2
                          Nothing        -> pure peerState
                          Just startTime -> do
                            addCounters mempty { txPipelineWaitMs =
-                                                  diffTimeToMillis (now `diffTime` startTime) }
+                                                  diffTimeToMilliseconds (now `diffTime` startTime) }
                            pure $ peerState { peerDownloadStartTime = Nothing }
       (peerAction, peerState'') <- runNextPeerAction now (State.drainPeerScore policy now peerState')
       case peerAction of
@@ -170,7 +170,7 @@ txSubmissionInboundV2
           rejectedCount    = length rejectedForTrace
           delta = end `diffTime` start
 
-      addCounters mempty { txSubmissionWaitMs = diffTimeToMillis delta }
+      addCounters mempty { txSubmissionWaitMs = diffTimeToMilliseconds delta }
       peerState' <- applySubmittedTxs end resolvedTxKeys (fmap fst rejectedTxs) peerState
       let (score, peerState'') = State.applyPeerRejections policy end rejectedCount peerState'
       traceWith tracer $
@@ -264,7 +264,7 @@ txSubmissionInboundV2
                     (traceWith tracer TraceTxInboundTerminated)
                     (\txids -> do
                         now <- getMonotonicTime
-                        addCounters mempty { txIdBlockingWaitMs = diffTimeToMillis (now `diffTime` sendTime) }
+                        addCounters mempty { txIdBlockingWaitMs = diffTimeToMilliseconds (now `diffTime` sendTime) }
                         let txids' = NonEmpty.toList txids
                         unless (length txids' <= fromIntegral txIdsToReq) $
                           throwIO ProtocolErrorTxIdsNotRequested
