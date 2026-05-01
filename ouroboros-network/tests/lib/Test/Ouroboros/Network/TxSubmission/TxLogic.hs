@@ -83,7 +83,6 @@ tests =
     , testCaseSteps "nextPeerAction claims a tx once the score delay threshold has elapsed" unit_nextPeerAction_claimsAtScoreDelayThreshold
     , testCaseSteps "peerScore decays linearly over time at scoreRate" unit_peerScore_decaysOverTime
     , testCaseSteps "applyPeerRejections drains the existing score before adding the new rejection count" unit_applyPeerRejections_drainsThenAdds
-    , testProperty "nextPeerAction steals expired lease for best idle advertiser" prop_nextPeerAction_claimsExpiredLease
     , testProperty "nextPeerAction requests an oversized first tx within the soft budget" prop_nextPeerAction_requestsOversizedFirstTx
     , testCaseSteps "nextPeerAction skips blocked available txs and requests later claimable ones" unit_nextPeerAction_skipsBlockedAvailableTxs
     , testProperty "nextPeerAction submits buffered owned txs before acking" prop_nextPeerAction_ownerSubmitsBuffered
@@ -2249,6 +2248,19 @@ prop_TriggerScenario_shrinkExcludesOriginal ts =
 data PeerRole = Good | Bad | Confounder
   deriving (Eq, Show)
 
+-- | Initial-lease form for 'prop_nextPeerAction_claimsClaimableTx':
+-- 'ClaimableLease' starts with 'TxClaimable claimableAt' (no current
+-- holder); 'ExpiredLease' starts with 'TxLeased oldOwner claimableAt'
+-- (held by a 'PeerWaitingTxs'-phase peer whose 'leaseUntil' is in the
+-- past). Production routes both through 'txClaimReadyAt', so the same
+-- claim arithmetic applies in either form -- this axis subsumes the
+-- expired-lease scenario into the same property.
+data LeaseStart = ClaimableLease | ExpiredLease
+  deriving (Eq, Show)
+
+instance Arbitrary LeaseStart where
+  arbitrary = elements [ClaimableLease, ExpiredLease]
+
 -- | A scheduling order over the three roles. The 'Arbitrary' instance
 -- shuffles the three roles uniformly so each of the six permutations
 -- is reached.
@@ -2273,15 +2285,18 @@ prop_nextPeerAction_claimsClaimableTx
   -> Positive Int
   -> Positive Int
   -> PeerOrder
+  -> LeaseStart
   -> Property
 prop_nextPeerAction_claimsClaimableTx
     (ArbTxDecisionPolicy arbPolicy)
     (Positive good0) (Positive bad0) (Positive conf0)
-    txid0 txSize0 (Positive badScore0) (Positive tDecay0) (PeerOrder order) =
+    txid0 txSize0 (Positive badScore0) (Positive tDecay0) (PeerOrder order)
+    leaseStart =
     tabulate "order"     [show order]
     . tabulate "bad score (decayed)"
         [bucket (round decayedBadScore :: Int)]
     . tabulate "tDecay (s)" [bucket (round tDecaySec :: Int)]
+    . tabulate "lease start" [show leaseStart]
     $ conjoin
       [ peerTxLocalStateInvariant policy goodPeerState0
       , peerTxLocalStateInvariant policy badPeerState0
@@ -2395,18 +2410,38 @@ prop_nextPeerAction_claimsClaimableTx
       | badRunsBeforeGood = badClaimDelay - diffTime now claimableAt
       | otherwise         = badClaimDelay + interTxSpace policy
 
+    -- 'oldOwner' is only present in shared state when 'leaseStart =
+    -- ExpiredLease'. It holds a stale 'TxLeased oldOwner claimableAt'
+    -- with 'leaseUntil = claimableAt < now', so the lease is expired
+    -- and any other advertiser whose 'peerClaimDelay' permits can
+    -- claim. 'nextPeerAction' is never called for 'oldOwner' -- it
+    -- exists only to bump 'txAdvertiserCount' and supply the
+    -- expired-lease holder.
+    oldOwner = good0 + bad0 + conf0 + 3000
+    oldOwnerEntries = case leaseStart of
+      ClaimableLease -> []
+      ExpiredLease   ->
+        [ ( oldOwner
+          , withAdvertisedTxKeys [key] (mkSharedPeerState PeerWaitingTxs)
+          )
+        ]
     sharedState0 = emptySharedTxState
       { sharedPeers = Map.fromList
-          [ (goodPeer, withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle))
-          , (badPeer,  withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle))
-          , (confPeer, mkSharedPeerState PeerIdle)
-          ]
+          $ [ (goodPeer, withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle))
+            , (badPeer,  withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle))
+            , (confPeer, mkSharedPeerState PeerIdle)
+            ]
+         ++ oldOwnerEntries
       , sharedTxIdToKey = Map.singleton (getRawTxId txid) key
       , sharedKeyToTxId = IntMap.singleton k txid
       , sharedNextTxKey = 1
       , sharedTxTable = IntMap.singleton k TxEntry
-          { txLease = TxClaimable claimableAt
-          , txAdvertiserCount = 2
+          { txLease = case leaseStart of
+              ClaimableLease -> TxClaimable claimableAt
+              ExpiredLease   -> TxLeased oldOwner claimableAt
+          , txAdvertiserCount = case leaseStart of
+              ClaimableLease -> 2
+              ExpiredLease   -> 3
           , txAttempts = Map.empty
           , currentMaxInflightMultiplicity = txInflightMultiplicity policy
           }
@@ -2629,63 +2664,6 @@ unit_nextPeerAction_claimsRejectedTxFromOtherAdvertiser step = do
       { peerUnacknowledgedTxIds = StrictSeq.singleton (TxKey txKeyInt)
       , peerAvailableTxIds      = IntMap.singleton txKeyInt txSize
       }
-
--- Verifies that nextPeerAction can steal an expired lease for the best idle
--- advertiser and request that tx.
-prop_nextPeerAction_claimsExpiredLease
-  :: ArbTxDecisionPolicy
-  -> Positive Int
-  -> Positive Int
-  -> Positive Int
-  -> TxId
-  -> Positive Int
-  -> Property
-prop_nextPeerAction_claimsExpiredLease (ArbTxDecisionPolicy policy) (Positive oldOwner0) (Positive peerA0) (Positive peerB0) txid0 txSize0 =
-  distinctPeers ==>
-    peerTxLocalStateInvariant policy peerState0 .&&.
-    case peerAction of
-         PeerRequestTxs txKeys ->
-           conjoin
-             [ txKeys === [key]
-             , peerRequestedTxs peerState' === IntSet.singleton k
-             , txLease (lookupEntryOrFail key sharedState') ===
-                 TxLeased peerA (addTime (interTxSpace policy) now)
-             , checkNoThunks "peerState'" (peerState' :: PeerTxLocalState (Tx TxId))
-             , checkNoThunks "sharedState'" sharedState'
-             ]
-         _ -> counterexample ("unexpected peer action: " ++ show peerAction) False
-  where
-    oldOwner = oldOwner0
-    peerA = peerA0 + 1000
-    peerAScore = PeerScore (min 1 (scoreMax policy)) now
-    peerB = peerB0 + 2000
-    distinctPeers = oldOwner /= peerA && oldOwner /= peerB && peerA /= peerB
-    txid = abs txid0 + 1
-    txSize = mkSize txSize0
-    key = TxKey 0
-    k = unTxKey key
-    sharedState0 = emptySharedTxState
-      { sharedPeers = Map.fromList
-          [ (oldOwner, withAdvertisedTxKeys [key] (mkSharedPeerState PeerWaitingTxs))
-          , (peerA, withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle))
-          , (peerB, withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle))
-          ]
-      , sharedTxIdToKey = Map.singleton (getRawTxId txid) key
-      , sharedKeyToTxId = IntMap.singleton k txid
-      , sharedNextTxKey = 1
-      , sharedTxTable = IntMap.singleton k TxEntry
-          { txLease = TxLeased oldOwner (Time 0)
-          , txAdvertiserCount = 3
-          , txAttempts = Map.empty
-          , currentMaxInflightMultiplicity = txInflightMultiplicity policy
-          }
-      }
-    peerState0 = emptyPeerTxLocalState
-      { peerUnacknowledgedTxIds = StrictSeq.singleton key
-      , peerAvailableTxIds = IntMap.singleton k txSize
-      , peerScore = peerAScore
-      }
-    (peerAction, peerState', sharedState') = nextPeerAction now policy peerA peerState0 sharedState0
 
 -- Verifies that nextPeerAction still requests an oversized first tx when it
 -- is the only available choice within the soft-budget policy.
