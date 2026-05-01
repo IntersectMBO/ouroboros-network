@@ -208,8 +208,6 @@ applyRequestTxsChoice ctx txsToRequest txsToRequestSize txTable =
   , sharedState''
   )
   where
-    requestedKeys = IntSet.fromList (unTxKey <$> txsToRequest)
-
     peerState'' =
       (pacPeerState ctx) {
         peerRequestedTxs =
@@ -221,13 +219,14 @@ applyRequestTxsChoice ctx txsToRequest txsToRequestSize txTable =
           },
         peerRequestedTxsSize = peerRequestedTxsSize (pacPeerState ctx) + txsToRequestSize
       }
+    -- Take the lease without waking other advertisers: claiming doesn't
+    -- give them a new option (they couldn't claim before this commit, and
+    -- they still can't), and they'll be bumped on submit / lease release.
     sharedState'' =
-      bumpPeerGenerations
-        (advertisingPeersForTxKeysExcept (pacPeerAddr ctx) requestedKeys (pacSharedState ctx))
-        ((pacSharedState ctx) {
-          sharedTxTable = txTable,
-          sharedGeneration = sharedGeneration (pacSharedState ctx) + 1
-        })
+      (pacSharedState ctx) {
+        sharedTxTable = txTable,
+        sharedGeneration = sharedGeneration (pacSharedState ctx) + 1
+      }
 
 -- | Construct a 'PeerRequestTxIds' action and update local and shared txid state.
 applyRequestTxIdsChoice
