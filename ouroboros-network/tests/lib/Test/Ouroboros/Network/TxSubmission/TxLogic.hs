@@ -83,7 +83,7 @@ tests =
     , testCaseSteps "nextPeerAction claims a tx once the score delay threshold has elapsed" unit_nextPeerAction_claimsAtScoreDelayThreshold
     , testCaseSteps "peerScore decays linearly over time at scoreRate" unit_peerScore_decaysOverTime
     , testCaseSteps "applyPeerRejections drains the existing score before adding the new rejection count" unit_applyPeerRejections_drainsThenAdds
-    , testProperty "nextPeerAction requests an oversized first tx within the soft budget" prop_nextPeerAction_requestsOversizedFirstTx
+    , testProperty "nextPeerAction picks txs respecting the inflight size budget" prop_nextPeerAction_picksTxsRespectingBudget
     , testCaseSteps "nextPeerAction skips blocked available txs and requests later claimable ones" unit_nextPeerAction_skipsBlockedAvailableTxs
     , testProperty "nextPeerAction submits buffered owned txs before acking" prop_nextPeerAction_ownerSubmitsBuffered
     , testCaseSteps "nextPeerAction requests other txs despite a blocked buffered tx" unit_nextPeerAction_requestsOtherWorkDespiteBlockedBufferedTx
@@ -2665,51 +2665,247 @@ unit_nextPeerAction_claimsRejectedTxFromOtherAdvertiser step = do
       , peerAvailableTxIds      = IntMap.singleton txKeyInt txSize
       }
 
--- Verifies that nextPeerAction still requests an oversized first tx when it
--- is the only available choice within the soft-budget policy.
-prop_nextPeerAction_requestsOversizedFirstTx
+-- | Verifies that 'pickRequestTxsAction' obeys the soft-budget batch
+-- semantics across a list of available txs:
+--
+--   * The first tx in advertisement order is requested even if its
+--     size exceeds the per-peer inflight budget (provided the peer
+--     hasn't already filled the inflight cap, which it hasn't here).
+--   * Each subsequent tx is included while
+--     'selectedSize + txSize <= sizeBudget'.
+--   * The walk stops at the first tx that does not fit; later (smaller)
+--     txs are not tried.
+--
+-- Subsumes the single-tx soft-budget claim (one element in the list)
+-- and pins the multi-tx '<= sizeBudget' boundary that catches the
+-- 'exceedsBudget' branch logic.
+prop_nextPeerAction_picksTxsRespectingBudget
   :: ArbTxDecisionPolicy
   -> Positive Int
-  -> TxId
+  -> NonEmptyList (Positive Int)
+  -> Positive Int
   -> Positive Int
   -> Property
-prop_nextPeerAction_requestsOversizedFirstTx (ArbTxDecisionPolicy basePolicy) (Positive peeraddr) txid0 (Positive txSize0) =
-  peerTxLocalStateInvariant policy peerState0 .&&.
-  case peerAction of
-       PeerRequestTxs [txKey] ->
-         conjoin
-           [ txKey === key
-           , peerRequestedTxs peerState' === IntSet.singleton k
-           , peerRequestedTxsSize peerState' === txSize
-           , txLease (lookupEntryOrFail key sharedState') ===
-               TxLeased peeraddr (addTime (interTxSpace policy) now)
-           , checkNoThunks "peerState'" (peerState' :: PeerTxLocalState (Tx TxId))
-           , checkNoThunks "sharedState'" sharedState'
-           ]
-       _ -> counterexample ("unexpected peer action: " ++ show peerAction) False
+prop_nextPeerAction_picksTxsRespectingBudget
+    (ArbTxDecisionPolicy basePolicy) (Positive peeraddr)
+    (NonEmpty rawSizes) (Positive budget0) (Positive prefilledCount0) =
+    tabulate "tx count"        [bucket n]
+    . tabulate "budget mode"   [budgetMode]
+    . tabulate "prefilled count" [bucket prefilledCount]
+    . tabulate "selected count" [bucket (length expectedSelection)]
+    $ conjoin
+      [ peerTxLocalStateInvariant policy peerState0
+      , -- 'expectedSelection' empty implies the budget is exhausted
+        -- (cap consumed or no candidates), so the action must be
+        -- 'PeerDoNothing'; otherwise it must match exactly.
+        case (expectedSelection, action) of
+          ([], PeerDoNothing _ _) -> property True
+          ([], other) ->
+            counterexample ("expected PeerDoNothing, got: " ++ show other)
+              (property False)
+          (_, PeerRequestTxs txKeys) -> txKeys === expectedKeys
+          (_, other) ->
+            counterexample
+              ("expected PeerRequestTxs " ++ show expectedKeys
+                ++ ", got: " ++ show other)
+              (property False)
+      , counterexample "peerRequestedTxsSize tracks total in-flight" $
+          peerRequestedTxsSize peerState' === prefilledSize + sumExpected
+      , conjoin
+          [ counterexample ("lease for selected key " ++ show k) $
+              txLease (lookupEntryOrFail (TxKey k) sharedState') ===
+                TxLeased peeraddr (addTime (interTxSpace policy) now)
+          | (k, _) <- expectedSelection
+          ]
+      , conjoin
+          [ counterexample ("prefilled lease unchanged for key " ++ show k) $
+              txLease (lookupEntryOrFail (TxKey k) sharedState') ===
+                TxLeased peeraddr (addTime 10 now)
+          | (k, _) <- prefilledTxs
+          ]
+      , conjoin
+          [ counterexample
+              ("unselected candidate lease unchanged for key " ++ show k) $
+                txLease (lookupEntryOrFail (TxKey k) sharedState') ===
+                  TxClaimable now
+          | (k, _) <- candidateTxs
+          , TxKey k `notElem` expectedKeys
+          ]
+      , conjoin
+          [ counterexample ("txAttempts for selected key " ++ show k) $
+              txAttempts (lookupEntryOrFail (TxKey k) sharedState') ===
+                Map.singleton peeraddr TxDownloading
+          | (k, _) <- expectedSelection
+          ]
+      , conjoin
+          [ counterexample ("txAttempts unchanged for prefilled key " ++ show k) $
+              txAttempts (lookupEntryOrFail (TxKey k) sharedState') ===
+                Map.singleton peeraddr TxDownloading
+          | (k, _) <- prefilledTxs
+          ]
+      , conjoin
+          [ counterexample ("txAttempts unchanged for unselected key " ++ show k) $
+              txAttempts (lookupEntryOrFail (TxKey k) sharedState') ===
+                Map.empty
+          | (k, _) <- candidateTxs
+          , TxKey k `notElem` expectedKeys
+          ]
+      , combinedStateInvariant policy StrongInvariant peeraddr
+          peerState' sharedState'
+      , checkNoThunks "peerState'" (peerState' :: PeerTxLocalState (Tx TxId))
+      , checkNoThunks "sharedState'" sharedState'
+      ]
   where
-    txid = abs txid0 + 1
-    txSize = mkSize (Positive (txSize0 + 1))
-    key = TxKey 0
-    k = unTxKey key
+    txSizes :: [SizeInBytes]
+    txSizes = map mkSize rawSizes
+    n       = length txSizes
+
+    -- All txs in advertisement order, indexed by 'TxKey'.
+    indexed :: [(Int, SizeInBytes)]
+    indexed = zip [0..] txSizes
+
+    keys :: [TxKey]
+    keys = [TxKey k | (k, _) <- indexed]
+
+    txidFor :: Int -> TxId
+    txidFor i = i + 1
+
+    -- Number of pre-existing in-flight txs taken from the start of
+    -- 'indexed'. Range '[0..n]' covers fully-fresh, partial-prefill,
+    -- and fully-prefilled (no candidates) configurations.
+    prefilledCount :: Int
+    prefilledCount = (prefilledCount0 - 1) `mod` (n + 1)
+
+    (prefilledTxs, candidateTxs) = splitAt prefilledCount indexed
+
+    prefilledSize :: SizeInBytes
+    prefilledSize = sum (map snd prefilledTxs)
+
+    candidateTotal :: Int
+    candidateTotal = sum (map (fromIntegral . getSizeInBytes . snd) candidateTxs)
+
+    -- Budget split into three regions to keep the multi-tx fitting
+    -- cases well-represented in the corpus rather than getting drowned
+    -- by cap-consumed runs:
+    --
+    --   * 25% "low" ('[0..prefilledSize-1]' or just 0 when
+    --     prefilledSize is 0) -- exercises 'cap consumed'.
+    --   * 50% "mid" ('[prefilledSize..prefilledSize+candidateTotal]')
+    --     -- the partial-fitting boundary where S4-shape budget
+    --     mutations live.
+    --   * 25% "high" ('[prefilledSize+candidateTotal+1..]') -- "all
+    --     fits" with budget to spare.
+    --
+    -- 'budget0' is split: bottom two bits select the region, upper
+    -- bits position within it.
+    budgetVal :: Int
+    budgetVal =
+        let region = (budget0 - 1) `mod` 4
+            offset = (budget0 - 1) `div` 4
+            pSize  = fromIntegral prefilledSize
+        in case region of
+          0 -> offset `mod` max 1 pSize
+          3 -> pSize + candidateTotal + 1
+                 + offset `mod` max 1 candidateTotal
+          _ -> pSize + offset `mod` (candidateTotal + 1)
+    budget :: SizeInBytes
+    budget = fromIntegral budgetVal
+
+    -- Remaining budget after accounting for in-flight prefilled bytes.
+    sizeBudget :: Int
+    sizeBudget = max 0 (budgetVal - fromIntegral prefilledSize)
+
+    -- Independent expected selection mirroring production's
+    -- 'exceedsBudget' with non-zero starting 'peerRequestedTxsSize'.
+    -- Soft-budget allowance for the first candidate fires only when
+    -- 'prefilledSize < budget' (the cap isn't already consumed).
+    -- Accumulators carried as 'Int' to avoid 'SizeInBytes' overflow in
+    -- the wider arithmetic.
+    expectedSelection :: [(Int, SizeInBytes)]
+    expectedSelection = go [] (0 :: Int) candidateTxs
+      where
+        go acc _ [] = reverse acc
+        go acc tot ((k, s) : rest)
+          | exceedsBudget tot (fromIntegral s) = reverse acc
+          | otherwise = go ((k, s) : acc) (tot + fromIntegral s) rest
+
+        exceedsBudget :: Int -> Int -> Bool
+        exceedsBudget selectedSize txSize
+          | selectedSize + txSize <= sizeBudget = False
+          | selectedSize > 0 = True
+          | otherwise = fromIntegral prefilledSize >= budgetVal
+
+    expectedKeys :: [TxKey]
+    expectedKeys = [TxKey k | (k, _) <- expectedSelection]
+
+    sumExpected :: SizeInBytes
+    sumExpected = sum (map snd expectedSelection)
+
+    budgetMode
+      | null candidateTxs                                       = "no candidates"
+      | budgetVal >= fromIntegral prefilledSize + candidateTotal = "all fits"
+      | fromIntegral prefilledSize >= budgetVal                  = "cap consumed"
+      | maybe False (\(_, s) -> sizeBudget < fromIntegral s)
+              (listToMaybeFst candidateTxs)                      = "only first (soft)"
+      | otherwise                                                = "partial"
+      where
+        listToMaybeFst :: [a] -> Maybe a
+        listToMaybeFst []      = Nothing
+        listToMaybeFst (x : _) = Just x
+
+    -- 'maxOutstandingTxBatchesPerPeer' pinned to at least 2 so the
+    -- prefilled batch (when present) plus a fresh request batch fit.
     policy = basePolicy
-      { txsSizeInflightPerPeer = txSize - 1
-      , maxOutstandingTxBatchesPerPeer = 1
+      { txsSizeInflightPerPeer         = budget
+      , maxOutstandingTxBatchesPerPeer =
+          max 2 (maxOutstandingTxBatchesPerPeer basePolicy)
       }
+
     sharedState0 = emptySharedTxState
       { sharedPeers = Map.singleton peeraddr
-          (withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle))
-      , sharedTxIdToKey = Map.singleton (getRawTxId txid) key
-      , sharedKeyToTxId = IntMap.singleton k txid
-      , sharedNextTxKey = 1
-      , sharedTxTable = IntMap.singleton k (mkTxEntry peeraddr txSize Nothing policy)
+          (withAdvertisedTxKeys keys (mkSharedPeerState PeerIdle))
+      , sharedTxIdToKey = Map.fromList
+          [ (getRawTxId (txidFor i), TxKey i) | (i, _) <- indexed ]
+      , sharedKeyToTxId = IntMap.fromList
+          [ (i, txidFor i) | (i, _) <- indexed ]
+      , sharedNextTxKey = n
+      , sharedTxTable   = IntMap.fromList
+          [ (i, mkEntry i) | (i, _) <- indexed ]
       }
+      where
+        mkEntry i
+          | i < prefilledCount = TxEntry
+              { txLease = TxLeased peeraddr (addTime 10 now)
+              , txAdvertiserCount = 1
+              , txAttempts = Map.singleton peeraddr TxDownloading
+              , currentMaxInflightMultiplicity = txInflightMultiplicity policy
+              }
+          | otherwise = TxEntry
+              { txLease = TxClaimable now
+              , txAdvertiserCount = 1
+              , txAttempts = Map.empty
+              , currentMaxInflightMultiplicity = txInflightMultiplicity policy
+              }
+
     peerState0 = emptyPeerTxLocalState
-      { peerUnacknowledgedTxIds = StrictSeq.singleton key
-      , peerAvailableTxIds = IntMap.singleton k txSize
-      , peerRequestedTxIds = maxNumTxIdsToRequest policy
+      { peerUnacknowledgedTxIds = StrictSeq.fromList keys
+      , peerAvailableTxIds      = IntMap.fromList indexed
+      , peerRequestedTxs        = IntSet.fromList
+          [ k | (k, _) <- prefilledTxs ]
+      , peerRequestedTxBatches  = case prefilledTxs of
+          [] -> StrictSeq.empty
+          xs -> StrictSeq.singleton
+                  (mkRequestedTxBatch
+                     [TxKey k | (k, _) <- xs]
+                     prefilledSize)
+      , peerRequestedTxsSize    = prefilledSize
+      -- 'peerRequestedTxIds' pinned at the cap so the action under test
+      -- is 'PeerRequestTxs' (or 'PeerDoNothing'), not 'PeerRequestTxIds'.
+      , peerRequestedTxIds      = maxNumTxIdsToRequest policy
       }
-    (peerAction, peerState', sharedState') = nextPeerAction now policy peeraddr peerState0 sharedState0
+
+    (action, peerState', sharedState') =
+      nextPeerAction now policy peeraddr peerState0 sharedState0
 
 -- Verifies that nextPeerAction skips available txs blocked by another
 -- peer's lease and requests a later claimable tx instead.
