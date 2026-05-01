@@ -114,8 +114,11 @@ tests =
 -- | Check that a value has no thunks in its fields.
 checkNoThunks :: NoThunks a => String -> a -> Property
 checkNoThunks name val =
-    let result = unsafeNoThunks val
-    in counterexample (name ++ ": " ++ show result) $ property True
+    val `seq` case unsafeNoThunks val of
+      Nothing   -> property True
+      Just info -> counterexample
+                     (name ++ " contains thunks: " ++ show info)
+                     (property False)
 
 --
 -- InboundState properties
