@@ -27,12 +27,12 @@ module Test.Ouroboros.Network.TxSubmission.TxLogic
 
 import Control.DeepSeq (NFData (rnf))
 import Control.Exception (evaluate)
-import Control.Monad.Class.MonadTime.SI (Time (..), addTime, diffTime)
+import Control.Monad.Class.MonadTime.SI (DiffTime, Time (..), addTime, diffTime)
 import Data.Foldable (foldl', toList)
 import Data.Function (on)
 import Data.IntMap.Strict qualified as IntMap
 import Data.IntSet qualified as IntSet
-import Data.List (mapAccumL, nub, nubBy, sortBy)
+import Data.List (elemIndex, mapAccumL, nub, nubBy, sortBy)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (isJust, listToMaybe)
 import Data.Sequence.Strict qualified as StrictSeq
@@ -2222,8 +2222,27 @@ prop_TriggerScenario_shrinkExcludesOriginal ts =
       $ property (ts `notElem` shrink ts)
 
 
--- Verifies that nextPeerAction leases a claimable tx to the best idle
--- advertiser and requests its body.
+-- | Roles for 'prop_nextPeerAction_claimsClaimableTx': 'Good' has no
+-- score and can claim; 'Bad' has a 'peerClaimDelay' that pushes its
+-- claim past 'now'; 'Confounder' has no relevant local state and is
+-- expected to do nothing on any 'nextPeerAction' call.
+data PeerRole = Good | Bad | Confounder
+  deriving (Eq, Show)
+
+-- | A scheduling order over the three roles. The 'Arbitrary' instance
+-- shuffles the three roles uniformly so each of the six permutations
+-- is reached.
+newtype PeerOrder = PeerOrder [PeerRole]
+  deriving (Eq, Show)
+
+instance Arbitrary PeerOrder where
+  arbitrary = PeerOrder <$> shuffle [Good, Bad, Confounder]
+
+-- | Verifies that 'Good' (no score) wins the lease regardless of which
+-- order the three peers are scheduled. 'Bad' is score-delayed past
+-- 'now' so its 'nextPeerAction' yields without claiming; 'Confounder'
+-- has no advertised tx and yields trivially. The lease must end up at
+-- 'Good' across all six role orderings.
 prop_nextPeerAction_claimsClaimableTx
   :: ArbTxDecisionPolicy
   -> Positive Int
@@ -2231,53 +2250,190 @@ prop_nextPeerAction_claimsClaimableTx
   -> Positive Int
   -> TxId
   -> Positive Int
+  -> Positive Int
+  -> Positive Int
+  -> PeerOrder
   -> Property
-prop_nextPeerAction_claimsClaimableTx (ArbTxDecisionPolicy policy) (Positive peerA0) (Positive peerB0) (Positive peerC0) txid0 txSize0 =
-  distinctPeers ==>
-    peerTxLocalStateInvariant policy peerState0 .&&.
-    case peerAction of
-         PeerRequestTxs txKeys ->
-           conjoin
-             [ txKeys === [key]
-             , peerRequestedTxs peerState' === IntSet.singleton k
-             , txLease (lookupEntryOrFail key sharedState') ===
-                 TxLeased peerA (addTime (interTxSpace policy) now)
-             , checkNoThunks "peerState'" (peerState' :: PeerTxLocalState (Tx TxId))
-             , checkNoThunks "sharedState'" sharedState'
-             ]
-         _ -> counterexample ("unexpected peer action: " ++ show peerAction) False
+prop_nextPeerAction_claimsClaimableTx
+    (ArbTxDecisionPolicy arbPolicy)
+    (Positive good0) (Positive bad0) (Positive conf0)
+    txid0 txSize0 (Positive badScore0) (Positive tDecay0) (PeerOrder order) =
+    tabulate "order"     [show order]
+    . tabulate "bad score (decayed)"
+        [bucket (round decayedBadScore :: Int)]
+    . tabulate "tDecay (s)" [bucket (round tDecaySec :: Int)]
+    $ conjoin
+      [ peerTxLocalStateInvariant policy goodPeerState0
+      , peerTxLocalStateInvariant policy badPeerState0
+      , peerTxLocalStateInvariant policy confPeerState0
+      , counterexample
+          ("Good must claim: " ++ show (lookupResult Good)) $
+            case lookupResult Good of
+              Just (PeerRequestTxs txKeys, _) -> txKeys === [key]
+              _                                -> property False
+      , counterexample "Good must record the requested tx" $
+          case lookupResult Good of
+            Just (_, ps') -> peerRequestedTxs ps' === IntSet.singleton k
+            Nothing       -> property False
+      , counterexample
+          ("Bad must yield with the score-delay derived wake: "
+            ++ show (lookupResult Bad)) $
+            case lookupResult Bad of
+              Just (PeerDoNothing _ (Just delay), _) ->
+                -- Tolerance absorbs sub-picosecond FP drift from
+                -- production's 'Double' score arithmetic. 1ns is well
+                -- below any production-relevant timing distinction.
+                let diff = abs (delay - expectedBadDelay) in
+                counterexample
+                  ("delay = " ++ show delay
+                    ++ ", expected = " ++ show expectedBadDelay
+                    ++ ", diff = " ++ show diff)
+                  (property (diff < 1e-9))
+              other ->
+                counterexample ("got: " ++ show other) (property False)
+      , counterexample
+          ("Confounder must do nothing with no scheduled wake: "
+            ++ show (lookupResult Confounder)) $
+            case lookupResult Confounder of
+              Just (PeerDoNothing _ Nothing, _) -> property True
+              _                                 -> property False
+      , counterexample "Lease must end up at Good" $
+          txLease (lookupEntryOrFail key sharedStateFinal) ===
+            TxLeased goodPeer (addTime (interTxSpace policy) now)
+      , checkNoThunks "sharedStateFinal" sharedStateFinal
+      , conjoin
+          [ checkNoThunks
+              ("peerState' for " ++ show role)
+              (ps' :: PeerTxLocalState (Tx TxId))
+          | (role, _, ps', _) <- results
+          ]
+      , conjoin
+          [ counterexample
+              ("combined invariant for " ++ show role)
+              (combinedStateInvariant policy StrongInvariant
+                 (fst (roleSetup role)) ps' ss')
+          | (role, _, ps', ss') <- results
+          ]
+      ]
   where
-    peerA = peerA0
-    peerAScore = PeerScore (min 1 (scoreMax policy)) now
-    peerB = peerB0 + 1000
-    peerC = peerC0 + 2000
-    distinctPeers = peerA /= peerB && peerA /= peerC && peerB /= peerC
-    txid = abs txid0 + 1
+    -- Pin 'scoreMax' high enough to fit a pre-decay score of
+    -- (decayed-target + decayAmount) without clamping; bound
+    -- 'scoreRate' to a non-zero range so the decay arithmetic in
+    -- 'currentPeerScore' produces an observable change.
+    policy = arbPolicy
+      { scoreMax  = max 200 (scoreMax arbPolicy)
+      , scoreRate = max 0.01 (min 1.0 (scoreRate arbPolicy))
+      }
+
+    goodPeer = good0
+    badPeer  = bad0 + 1000
+    confPeer = conf0 + 2000
+    txid   = abs txid0 + 1
     txSize = mkSize txSize0
-    key = TxKey 0
-    k = unTxKey key
+    key    = TxKey 0
+    k      = unTxKey key
+
+    -- Score decay parameters: 'peerScoreTs' is 'tDecaySec' seconds
+    -- before 'now', so 'currentPeerScore' takes its decay arm. The
+    -- pre-decay 'peerScoreValue' is chosen so the decayed value lands
+    -- in [21..100] -- below the pinned 'scoreMax = 200' and above the
+    -- 1ms-delay threshold of 'now - claimableAt = 0.001s'.
+    claimableAt = Time 99.999
+    tDecaySec :: Double
+    tDecaySec = fromIntegral (1 + (tDecay0 - 1) `mod` 10 :: Int)
+    decayAmount :: Double
+    decayAmount = tDecaySec * scoreRate policy
+    -- Decayed score in [21..100] regardless of 'tDecaySec'/'scoreRate'.
+    decayedBadScore :: Double
+    decayedBadScore = fromIntegral (21 + (badScore0 - 1) `mod` 80 :: Int)
+    badInitialScore :: Double
+    badInitialScore = decayedBadScore + decayAmount
+    badPeerScore  = PeerScore
+      { peerScoreValue = badInitialScore
+      , peerScoreTs    = addTime (negate (realToFrac tDecaySec)) now
+      }
+    -- Bad's wake delay depends on whether Good claimed before Bad ran:
+    --  * Bad runs while the lease is 'TxClaimable claimableAt': wake at
+    --    'claimableAt + peerClaimDelay', delay relative to 'now'.
+    --  * Bad runs after Good claimed (lease is 'TxLeased Good
+    --    (now + interTxSpace)'): wake at 'leaseUntil + peerClaimDelay',
+    --    delay = 'interTxSpace + peerClaimDelay'.
+    -- The score-delay formula '/ 20000' is replicated independently
+    -- here (rather than imported) so divergence in the production
+    -- 'peerClaimDelay' surfaces as a delay mismatch.
+    badRunsBeforeGood = case (elemIndex Bad order, elemIndex Good order) of
+                         (Just bi, Just gi) -> bi < gi
+                         _                  -> False
+    -- Independent score-delay formula using the *decayed* score: this
+    -- replicates production's 'peerClaimDelay (currentPeerScore _ _)'
+    -- in two steps so divergences in either decay direction (S11) or
+    -- the '/ 20000' divisor (S14) surface as a delay mismatch.
+    badClaimDelay :: DiffTime
+    badClaimDelay = realToFrac (decayedBadScore / 20000)
+    expectedBadDelay :: DiffTime
+    expectedBadDelay
+      | badRunsBeforeGood = badClaimDelay - diffTime now claimableAt
+      | otherwise         = badClaimDelay + interTxSpace policy
+
     sharedState0 = emptySharedTxState
       { sharedPeers = Map.fromList
-          [ (peerA, withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle))
-          , (peerB, withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle))
-          , (peerC, withAdvertisedTxKeys [key] (mkSharedPeerState PeerWaitingTxs))
+          [ (goodPeer, withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle))
+          , (badPeer,  withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle))
+          , (confPeer, mkSharedPeerState PeerIdle)
           ]
       , sharedTxIdToKey = Map.singleton (getRawTxId txid) key
       , sharedKeyToTxId = IntMap.singleton k txid
       , sharedNextTxKey = 1
       , sharedTxTable = IntMap.singleton k TxEntry
-          { txLease = TxClaimable (Time 0)
-          , txAdvertiserCount = 3
+          { txLease = TxClaimable claimableAt
+          , txAdvertiserCount = 2
           , txAttempts = Map.empty
           , currentMaxInflightMultiplicity = txInflightMultiplicity policy
           }
       }
-    peerState0 = emptyPeerTxLocalState
+
+    goodPeerState0 = emptyPeerTxLocalState
       { peerUnacknowledgedTxIds = StrictSeq.singleton key
-      , peerAvailableTxIds = IntMap.singleton k txSize
-      , peerScore = peerAScore
+      , peerAvailableTxIds      = IntMap.singleton k txSize
       }
-    (peerAction, peerState', sharedState') = nextPeerAction now policy peerA peerState0 sharedState0
+    badPeerState0 = emptyPeerTxLocalState
+      { peerUnacknowledgedTxIds = StrictSeq.singleton key
+      , peerAvailableTxIds      = IntMap.singleton k txSize
+      , peerScore               = badPeerScore
+      }
+    -- 'peerRequestedTxIds' pinned at the per-peer cap so Confounder has
+    -- no headroom for a 'PeerRequestTxIds' action; combined with empty
+    -- 'peerAvailableTxIds'/'peerUnacknowledgedTxIds'/'peerDownloadedTxs'
+    -- and no advertised keys, Confounder has genuinely nothing to do
+    -- and must yield 'PeerDoNothing _ Nothing'.
+    confPeerState0 = emptyPeerTxLocalState
+      { peerRequestedTxIds = maxNumTxIdsToRequest policy
+      }
+
+    roleSetup Good       = (goodPeer, goodPeerState0)
+    roleSetup Bad        = (badPeer,  badPeerState0)
+    roleSetup Confounder = (confPeer, confPeerState0)
+
+    -- Run nextPeerAction for each peer in the generated order,
+    -- threading shared state. Records the post-action peer state and
+    -- shared state per role so each peer's joint
+    -- '(ps', ss')' can be checked by 'combinedStateInvariant'.
+    runOne (ss, acc) role =
+      let (peer, ps0)        = roleSetup role
+          (action, ps', ss') = nextPeerAction now policy peer ps0 ss
+      in (ss', (role, action, ps', ss') : acc)
+
+    (sharedStateFinal, resultsRev) = foldl' runOne (sharedState0, []) order
+    results :: [( PeerRole
+                , PeerAction
+                , PeerTxLocalState (Tx TxId)
+                , SharedTxState PeerAddr TxId )]
+    results = reverse resultsRev
+
+    lookupResult :: PeerRole
+                 -> Maybe (PeerAction, PeerTxLocalState (Tx TxId))
+    lookupResult role = listToMaybe
+      [ (action, ps') | (r, action, ps', _) <- results, r == role ]
 
 -- | A peer's score decays linearly at 'scoreRate' from its last
 -- timestamped value, clamped to zero.
