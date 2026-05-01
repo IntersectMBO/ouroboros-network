@@ -10,12 +10,14 @@ module Bench.TxSubmissionV2Server
   ( DirectServerFixture
   , DirectServerResult
   , mkDirectServerFixture
+  , mkMultiPeerFixture
   , runDirectServerBenchmark
   ) where
 
 import Control.Concurrent.Class.MonadSTM qualified as Lazy
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.DeepSeq (NFData)
+import Control.Monad.Class.MonadAsync (mapConcurrently_)
 import Control.Tracer (nullTracer)
 
 import Data.List.NonEmpty qualified as NonEmpty
@@ -40,7 +42,7 @@ import Test.Ouroboros.Network.TxSubmission.Types
 
 
 data DirectServerFixture = DirectServerFixture
-  { dsPeerAddr         :: !Int
+  { dsPeerCount        :: !Int
   , dsTxIdReplyBatches :: !Int
   , dsTxSize           :: !SizeInBytes
   }
@@ -65,9 +67,28 @@ mkDirectServerFixture
   :: Int -> DirectServerFixture
 mkDirectServerFixture batches =
   DirectServerFixture
-    { dsPeerAddr = 1
+    { dsPeerCount        = 1
     , dsTxIdReplyBatches = batches
-    , dsTxSize = SizeInBytes 1024
+    , dsTxSize           = SizeInBytes 1024
+    }
+
+
+-- | Multi-peer fixture: @peers@ peers each playing back the same txid stream.
+--
+-- Models the mainnet steady state where many upstream peers advertise the
+-- same fresh txids. The first peer downloads each tx body and submits it to
+-- the mempool, which puts the key into 'sharedRetainedTxs'. Subsequent
+-- peers find the txid in the retained set and ack-skip without ever
+-- requesting the body.
+mkMultiPeerFixture
+  :: Int -- ^ peer count
+  -> Int -- ^ batches per peer
+  -> DirectServerFixture
+mkMultiPeerFixture peers batches =
+  DirectServerFixture
+    { dsPeerCount        = peers
+    , dsTxIdReplyBatches = batches
+    , dsTxSize           = SizeInBytes 1024
     }
 
 
@@ -75,7 +96,7 @@ runDirectServerBenchmark
   :: DirectServerFixture -> IO DirectServerResult
 runDirectServerBenchmark
   DirectServerFixture {
-      dsPeerAddr,
+      dsPeerCount,
       dsTxIdReplyBatches,
       dsTxSize
     } = do
@@ -84,35 +105,35 @@ runDirectServerBenchmark
   sharedStateVar <- newSharedTxStateVar emptySharedTxState
   countersVar <- newTxSubmissionCountersVar mempty
 
-  withPeer
-    defaultTxDecisionPolicy
-    (getMempoolReader inboundMempool)
-    sharedStateVar
-    countersVar
-    dsPeerAddr
-    $ \api -> do
-    let server =
-          txSubmissionInboundV2
-            nullTracer
-            NoTxSubmissionInitDelay
-            defaultTxDecisionPolicy
-            (getMempoolWriter duplicateTxIdsVar inboundMempool)
-            getTxSize
-            api
+  let runPeer addr =
+        withPeer
+          defaultTxDecisionPolicy
+          (getMempoolReader inboundMempool)
+          sharedStateVar
+          countersVar
+          addr
+          $ \api -> do
+            let server =
+                  txSubmissionInboundV2
+                    nullTracer
+                    NoTxSubmissionInitDelay
+                    defaultTxDecisionPolicy
+                    (getMempoolWriter duplicateTxIdsVar inboundMempool)
+                    getTxSize
+                    api
+            case server of
+              TxSubmissionServerPipelined initServer -> do
+                st0 <- initServer
+                driveServer dsTxSize dsTxIdReplyBatches 1 [] st0
 
-    case server of
-      TxSubmissionServerPipelined initServer -> do
-        st0 <- initServer
-        driveServer
-          dsTxSize
-          dsTxIdReplyBatches
-          1
-          []
-          st0
+  -- Spawn one async per peer. Peers race for tx leases, contend on
+  -- the shared STM state, and exercise the scheduler the same way
+  -- they do on mainnet.
+  mapConcurrently_ runPeer [1 .. dsPeerCount]
 
-    (DirectServerResult
-      . length <$> readMempool inboundMempool)
-      <*> readTVarIO countersVar
+  (DirectServerResult
+    . length <$> readMempool inboundMempool)
+    <*> readTVarIO countersVar
 
 
 driveServer

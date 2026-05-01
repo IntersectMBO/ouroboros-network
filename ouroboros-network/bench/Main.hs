@@ -43,6 +43,21 @@ main =
               $ \fixture ->
                 bench "server/direct-interpreter/single-peer/1000batches" $
                   nfAppIO DirectV2.runDirectServerBenchmark fixture
+          , env
+              (prepareEnv (DirectV2.mkMultiPeerFixture 10 1_000))
+              $ \fixture ->
+                bench "server/direct-interpreter/multi-peer/10peers/1000batches" $
+                  nfAppIO DirectV2.runDirectServerBenchmark fixture
+          , env
+              (prepareEnv (DirectV2.mkMultiPeerFixture 100 100))
+              $ \fixture ->
+                bench "server/direct-interpreter/multi-peer/100peers/100batches" $
+                  nfAppIO DirectV2.runDirectServerBenchmark fixture
+          , env
+              (prepareEnv (DirectV2.mkMultiPeerFixture 100 1_000))
+              $ \fixture ->
+                bench "server/direct-interpreter/multi-peer/100peers/1000batches" $
+                  nfAppIO DirectV2.runDirectServerBenchmark fixture
           ]
         ]
       ]

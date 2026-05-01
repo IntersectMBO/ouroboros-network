@@ -321,6 +321,7 @@ library
     psqueues >=0.2.3 && <0.3,
     random,
     strict-checked-vars ^>=0.2,
+    time,
     transformers,
     typed-protocols ^>=1.2,
 
