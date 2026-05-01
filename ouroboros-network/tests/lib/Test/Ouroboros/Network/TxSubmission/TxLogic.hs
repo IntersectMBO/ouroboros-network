@@ -77,7 +77,6 @@ tests =
     , testCaseSteps "nextPeerAction lets another peer claim a fresh tx when the first advertiser is full" unit_nextPeerAction_claimsFreshTxWhenFirstAdvertiserIsFull
     , testProperty "handleReceivedTxs handles mixed buffered / omitted / late-retained / late-mempool / pruned txids" prop_handleReceivedTxs
     , testProperty "handleSubmittedTxs retains accepted and drops rejected" prop_handleSubmittedTxs_retainsAcceptedAndDropsRejected
-    , testProperty "nextPeerAction prioritises submitting buffered owned txs" prop_nextPeerAction_prioritisesSubmit
     , testProperty "nextPeerAction processes all multi-peer triggers" prop_nextPeerAction_processesAllTriggers
     , testProperty "nextPeerAction claims claimable tx for best idle advertiser" prop_nextPeerAction_claimsClaimableTx
     , testProperty "nextPeerAction claims a released tx from another advertiser" prop_nextPeerAction_claimsRejectedTxFromOtherAdvertiser
@@ -1532,54 +1531,6 @@ prop_handleSubmittedTxs_retainsAcceptedAndDropsRejected
         , retainedLookup k (sharedRetainedTxs sharedState') === Nothing
         ]
 
--- Verifies that nextPeerAction submits buffered txs owned by the peer before
--- taking any other action.
-prop_nextPeerAction_prioritisesSubmit
-  :: ArbTxDecisionPolicy
-  -> Positive Int
-  -> TxId
-  -> Positive Int
-  -> Property
-prop_nextPeerAction_prioritisesSubmit (ArbTxDecisionPolicy policy) (Positive peeraddr) txid0 txSize0 =
-  case peerAction of
-       PeerSubmitTxs [txKey] ->
-         conjoin
-           [ txKey === key
-           , peerState' === peerState0
-             -- Submit selection atomically marks the chosen tx as TxSubmitting
-             -- so concurrent peer decisions exclude it.
-           , sharedState' === markSubmittingTxs peeraddr [key] sharedState0
-           , checkNoThunks "peerState'" (peerState' :: PeerTxLocalState (Tx TxId))
-           , checkNoThunks "sharedState'" sharedState'
-           ]
-       _ -> counterexample ("unexpected peer action: " ++ show peerAction) False
-  where
-    txid = abs txid0 + 1
-    txSize = mkSize txSize0
-    tx = mkTx txid txSize
-    key = TxKey 0
-    k = unTxKey key
-    sharedState0 = emptySharedTxState
-      { sharedPeers =
-          Map.singleton peeraddr
-            (withAdvertisedTxKeys [key] (mkSharedPeerState PeerIdle))
-      , sharedTxTable = IntMap.singleton k TxEntry
-          { txLease = TxLeased peeraddr (addTime 10 now)
-          , txAdvertiserCount = 1
-          , txAttempts = Map.singleton peeraddr TxBuffered
-          , currentMaxInflightMultiplicity = txInflightMultiplicity policy
-          }
-      , sharedTxIdToKey = Map.singleton (getRawTxId txid) key
-      , sharedKeyToTxId = IntMap.singleton k txid
-      , sharedNextTxKey = 1
-      }
-    peerState0 = emptyPeerTxLocalState
-      { peerUnacknowledgedTxIds = StrictSeq.singleton key
-      , peerRequestedTxIds = maxNumTxIdsToRequest policy
-      , peerDownloadedTxs = IntMap.singleton k tx
-      }
-    (peerAction, peerState', sharedState') = nextPeerAction now policy peeraddr peerState0 sharedState0
-
 -- | Trigger kinds for the model-based 'nextPeerAction' property. Each
 -- describes one action that should be choosable at the moment the test
 -- calls 'nextPeerAction'. The state-builder turns the list into a
@@ -2133,9 +2084,19 @@ prop_nextPeerAction_processesAllTriggers
                         let (_, _, ps2, ss2) =
                               handleReceivedTxs (const False) time policy p
                                 deliveries ps ss
-                            drainInv = combinedStateInvariant policy
-                                         StrongInvariant p ps2 ss2
-                            stepD = i + 1 in
+                            stepD = i + 1
+                            drainInv = conjoin
+                              [ combinedStateInvariant policy
+                                  StrongInvariant p ps2 ss2
+                              , checkNoThunks
+                                  ("peerState after drain (peer "
+                                    ++ show p ++ ", step " ++ show stepD ++ ")")
+                                  ps2
+                              , checkNoThunks
+                                  ("sharedState after drain (peer "
+                                    ++ show p ++ ", step " ++ show stepD ++ ")")
+                                  ss2
+                              ] in
                         ( ps2, ss2, Map.delete p pending
                            , [(stepD, p, drainInv)], stepD )
 
@@ -2147,9 +2108,19 @@ prop_nextPeerAction_processesAllTriggers
                              - StrictSeq.length newUnacked
                   ackedNow   = IntSet.fromList $ map unTxKey
                              $ toList (StrictSeq.take numAcked oldUnacked)
-                  inv        = combinedStateInvariant policy
-                                 StrongInvariant p ps' ss'
-                  step       = stepDrain + 1 in
+                  step       = stepDrain + 1
+                  inv        = conjoin
+                    [ combinedStateInvariant policy
+                        StrongInvariant p ps' ss'
+                    , checkNoThunks
+                        ("peerState' (peer " ++ show p
+                          ++ ", step " ++ show step ++ ")")
+                        ps'
+                    , checkNoThunks
+                        ("sharedState' (peer " ++ show p
+                          ++ ", step " ++ show step ++ ")")
+                        ss'
+                    ] in
               case action of
                 PeerDoNothing _ Nothing ->
                   let schedule' = Map.insert p (Nothing, ps') schedule in
@@ -2162,8 +2133,18 @@ prop_nextPeerAction_processesAllTriggers
                        ((step, p, inv) : drainInvs ++ invs) step lastTime'
                 PeerSubmitTxs ks ->
                   let (ps'', ss'') = handleSubmittedTxs time policy p ks [] ps' ss'
-                      postInv = combinedStateInvariant policy
-                                  StrongInvariant p ps'' ss''
+                      postInv = conjoin
+                        [ combinedStateInvariant policy
+                            StrongInvariant p ps'' ss''
+                        , checkNoThunks
+                            ("peerState'' (peer " ++ show p
+                              ++ ", step " ++ show step ++ ")")
+                            ps''
+                        , checkNoThunks
+                            ("sharedState'' (peer " ++ show p
+                              ++ ", step " ++ show step ++ ")")
+                            ss''
+                        ]
                       others' = reactivateOthers p time schedule
                       schedule' = Map.insert p (Just time, ps'') others'
                       subs' = IntSet.union subs
