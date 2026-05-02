@@ -54,12 +54,8 @@ instance (Show txid, Show peeraddr) => LogFormatting (TraceTxLogic peeraddr txid
             | TxEntry { txAttempts = txAttempts' } <- activeEntries
             ]
 
-      peerPhases =
-        Map.toList $
-          Map.fromListWith (+)
-            [ (show sharedPeerPhase', 1 :: Int)
-            | SharedPeerState { sharedPeerPhase = sharedPeerPhase' } <- Map.elems sharedPeers
-            ]
+      peerPhases :: [(String, Int)]
+      peerPhases = []
 
       renderTxId txKey =
         maybe "<missing-txid>" show (IntMap.lookup txKey sharedKeyToTxId)

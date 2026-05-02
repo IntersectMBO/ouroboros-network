@@ -10,8 +10,6 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Registry
   , newTxSubmissionCountersVar
   , txCountersThreadV2
   , withPeer
-    -- Exported for testing
-  , updatePeerPhase
   ) where
 
 import Control.Concurrent.Class.MonadSTM qualified as Lazy
@@ -25,7 +23,6 @@ import Data.IntMap.Strict qualified as IntMap
 import Data.IntSet qualified as IntSet
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Set qualified as Set
 import Data.Void (Void)
 import Data.Word (Word64)
 
@@ -196,7 +193,6 @@ withPeer policy TxSubmissionMempoolReader { mempoolGetSnapshot } sharedStateVar 
       }
       where
         sharedPeerState = SharedPeerState {
-            sharedPeerPhase = PeerIdle,
             sharedPeerAdvertisedTxKeys = IntSet.empty,
             sharedPeerGeneration = 0
           }
@@ -344,9 +340,7 @@ runNextPeerActionImp policy sharedStateVar countersVar peeraddr now peerState = 
   let sharedGeneration0 = sharedGeneration sharedState
       (peerAction, peerState', sharedState') = State.nextPeerAction now policy peeraddr
                                                  peerState sharedState
-      sharedState''  = updatePeerPhase peeraddr
-                         (peerPhaseForActionIdle peerAction) sharedState'
-  writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedState''
+  writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedState'
   updateCountersForAction countersVar peerAction
   return (peerAction, peerState')
 
@@ -371,10 +365,7 @@ runNextPeerActionPipelinedImp policy sharedStateVar countersVar peeraddr now pee
       let sharedGeneration0 = sharedGeneration sharedState
           (peerAction, peerState', sharedState') = State.nextPeerActionPipelined now policy
                                                      peeraddr peerState sharedState
-          sharedState'' = updatePeerPhase peeraddr
-                            (peerPhaseForActionPipelined peeraddr peerAction sharedState')
-                            sharedState'
-      writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedState''
+      writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedState'
       updateCountersForAction countersVar peerAction
       return (peerAction, peerState')
 
@@ -517,62 +508,3 @@ resolveBufferedTxsImp sharedStateVar peerState txKeys = atomically $ do
              Nothing -> error "TxSubmission.V2.resolveBufferedTxsImp: missing buffered tx"
       )
 
--- | Update a peer's phase.
---
--- A phase change always bumps the shared generation. In addition:
---
--- * When a peer becomes 'PeerIdle', bump that peer's own generation so a
---   'PeerDoNothing' action computed before the phase change does not put that
---   same peer thread to sleep on a stale generation. This makes its next
---   'awaitSharedChange' return immediately and re-run scheduling as an idle
---   claimant.
--- * When a peer leaves idle, bump idle advertisers so they can immediately
---   compete for any leases the departing peer held.
-updatePeerPhase
-  :: Ord peeraddr
-  => peeraddr
-  -> PeerPhase
-  -> SharedTxState peeraddr txid
-  -> SharedTxState peeraddr txid
-updatePeerPhase peeraddr peerPhaseNew
-                st@SharedTxState { sharedPeers, sharedGeneration } =
-  case Map.lookup peeraddr sharedPeers of
-       Just sharedPeerState ->
-         let peerPhaseOld = sharedPeerPhase sharedPeerState in
-         if peerPhaseOld /= peerPhaseNew
-            then
-              let sharedPeerState' = sharedPeerState { sharedPeerPhase = peerPhaseNew }
-                  st' = st { sharedPeers = Map.insert peeraddr sharedPeerState' sharedPeers
-                           , sharedGeneration = sharedGeneration + 1 }
-              in bumpPeerGenerations (phaseWakePeers peerPhaseOld) st'
-            else st
-       _ -> st -- TODO error?
-  where
-    phaseWakePeers peerPhaseOld
-      | peerPhaseOld /= PeerIdle
-      , peerPhaseNew == PeerIdle = Set.singleton peeraddr
-      | otherwise = Set.empty
-
-peerPhaseForActionIdle :: PeerAction -> PeerPhase
-peerPhaseForActionIdle peerAction =
-    case peerAction of
-         PeerDoNothing {}    -> PeerIdle
-         PeerSubmitTxs {}    -> PeerSubmittingToMempool
-         PeerRequestTxs {}   -> PeerWaitingTxs
-         PeerRequestTxIds {} -> PeerWaitingTxIds
-
-peerPhaseForActionPipelined
-  :: Ord peeraddr
-  => peeraddr
-  -> PeerAction
-  -> SharedTxState peeraddr txid
-  -> PeerPhase
-peerPhaseForActionPipelined peeraddr peerAction sharedState =
-    case peerAction of
-         PeerDoNothing {}    -> peerPhaseOf peeraddr sharedState
-         PeerSubmitTxs {}    -> PeerSubmittingToMempool
-         PeerRequestTxs {}   -> PeerWaitingTxs
-         PeerRequestTxIds {} -> PeerWaitingTxIds
-  where
-    peerPhaseOf peer st =
-      maybe PeerIdle sharedPeerPhase (Map.lookup peer (sharedPeers st))

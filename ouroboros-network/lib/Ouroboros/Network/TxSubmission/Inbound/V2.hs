@@ -137,8 +137,18 @@ txSubmissionInboundV2
       (peerAction, peerState'') <- runNextPeerAction now (State.drainPeerScore policy now peerState')
       case peerAction of
            PeerDoNothing generation mDelay -> do
-             awaitSharedChange generation mDelay
-             continueWithStateM serverIdle peerState''
+             -- An Active->Idle transition means this peer has just become
+             -- eligible for actions it could not take before (e.g. claiming
+             -- expired leases as an idle claimant). Re-run the scheduler
+             -- immediately rather than parking on a wake condition that may
+             -- not fire.
+             let cameToIdle = peerPhase peerState' /= PeerIdle
+                           && peerPhase peerState'' == PeerIdle
+             if cameToIdle
+                then continueWithStateM serverIdle peerState''
+                else do
+                  awaitSharedChange generation mDelay
+                  continueWithStateM serverIdle peerState''
            PeerSubmitTxs txKeys ->
              continueWithStateM (submitBufferedTxs txKeys serverIdle) peerState''
            PeerRequestTxs txKeys ->

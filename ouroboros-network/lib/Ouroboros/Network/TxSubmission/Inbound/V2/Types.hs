@@ -387,10 +387,17 @@ emptyPeerScore scoreTs = PeerScore {
 
 -- | Per-peer protocol state.
 --
--- These are the pieces of state that naturally belong to the worker
--- thread handling one peer. Shared arbitration state such as peer
--- phase is kept separately in 'SharedPeerState'.
+-- Owned by the worker thread for one peer. Includes the peer's coarse
+-- protocol phase ('peerPhase'), which is purely peer-local: only this
+-- peer's own scheduler reads and updates it, so it doesn't belong in
+-- shared state.
 data PeerTxLocalState tx = PeerTxLocalState {
+    -- | Coarse phase of this peer's worker thread. Updated by
+    -- 'nextPeerAction' / 'nextPeerActionPipelined' when an action is
+    -- chosen and inspected in 'serverIdle' to decide whether to skip
+    -- 'awaitSharedChange' on an Active->Idle transition.
+    peerPhase               :: !PeerPhase,
+
     -- | Unacknowledged txids in the order advertised by the peer.
     peerUnacknowledgedTxIds :: !(StrictSeq TxKey),
 
@@ -422,6 +429,7 @@ data PeerTxLocalState tx = PeerTxLocalState {
 
 emptyPeerTxLocalState :: PeerTxLocalState tx
 emptyPeerTxLocalState = PeerTxLocalState {
+    peerPhase               = PeerIdle,
     peerUnacknowledgedTxIds = StrictSeq.empty,
     peerAvailableTxIds      = IntMap.empty,
     peerRequestedTxs        = IntSet.empty,
@@ -436,7 +444,6 @@ emptyPeerTxLocalState = PeerTxLocalState {
 -- | Small shared view of peer state used for lease claiming and peer
 -- selection.
 data SharedPeerState = SharedPeerState {
-    sharedPeerPhase            :: !PeerPhase,
     sharedPeerAdvertisedTxKeys :: !IntSet,
     sharedPeerGeneration       :: !Word64
   }

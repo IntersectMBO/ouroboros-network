@@ -123,7 +123,8 @@ nextPeerActionPipelined = nextPeerActionWithMode AllowPipelinedTxIdRequests
 --
 -- nextPeerActionWithMode handles body requests for txs this peer may currently
 -- fetch, tx submission for bodies buffered locally by this peer, and txid ack/request
--- messages.
+-- messages.  Updates 'peerPhase' on the returned 'PeerTxLocalState' to
+-- reflect the chosen action.
 nextPeerActionWithMode :: (Ord peeraddr, HasRawTxId txid)
                        => TxIdRequestMode
                        -> Time
@@ -133,10 +134,29 @@ nextPeerActionWithMode :: (Ord peeraddr, HasRawTxId txid)
                        -> SharedTxState peeraddr txid
                        -> (PeerAction, PeerTxLocalState tx, SharedTxState peeraddr txid)
 nextPeerActionWithMode txIdRequestMode now policy peeraddr peerState sharedState =
-  applyPeerActionChoice ctx (pickPeerActionChoice txIdRequestMode ctx)
+    let (action, peerState', sharedState'') =
+          applyPeerActionChoice ctx (pickPeerActionChoice txIdRequestMode ctx)
+        peerState'' = peerState' {
+            peerPhase = phaseForAction txIdRequestMode (peerPhase peerState) action
+          }
+    in (action, peerState'', sharedState'')
   where
     sharedState' = bumpStuckEntries now policy peeraddr peerState sharedState
     ctx = mkPeerActionContext now policy peeraddr peerState sharedState'
+
+-- | Compute the new 'PeerPhase' for the chosen 'PeerAction'.
+--
+-- In pipelined mode a 'PeerDoNothing' keeps the current phase (the peer
+-- is still mid-pipeline, just waiting for replies). In non-pipelined mode
+-- a 'PeerDoNothing' transitions to 'PeerIdle'.
+phaseForAction :: TxIdRequestMode -> PeerPhase -> PeerAction -> PeerPhase
+phaseForAction txIdRequestMode currentPhase action = case action of
+    PeerDoNothing {}    -> case txIdRequestMode of
+                             AllowPipelinedTxIdRequests -> currentPhase
+                             AllowAnyTxIdRequests       -> PeerIdle
+    PeerSubmitTxs {}    -> PeerSubmittingToMempool
+    PeerRequestTxs {}   -> PeerWaitingTxs
+    PeerRequestTxIds {} -> PeerWaitingTxIds
 
 -- | Pick which action to perform next.
 --
@@ -196,8 +216,7 @@ applySubmitChoice ctx txsToSubmit =
   )
 
 -- | Construct a 'PeerRequestTxs' action and update local and shared tx state.
-applyRequestTxsChoice :: Ord peeraddr
-                      => PeerActionContext peeraddr txid tx
+applyRequestTxsChoice :: PeerActionContext peeraddr txid tx
                       -> [TxKey]
                       -> SizeInBytes
                       -> IntMap.IntMap (TxEntry peeraddr)

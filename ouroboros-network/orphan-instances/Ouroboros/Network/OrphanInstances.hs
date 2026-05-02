@@ -88,7 +88,7 @@ import Ouroboros.Network.Server.RateLimiting (AcceptConnectionsPolicyTrace (..),
            AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket (LocalAddress (..), RemoteAddress)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
-           (ProcessedTxCount (..), SharedPeerState (..),
+           (ProcessedTxCount (..),
            SharedTxState (..), TraceTxLogic (..),
            TraceTxSubmissionInbound (..), TxAttemptState (..), TxEntry (..),
            TxLease (..), TxSubmissionLogicVersion (..), retainedSize,
@@ -1849,12 +1849,8 @@ traceSharedTxStateToJSON SharedTxState {
           | TxEntry { txAttempts } <- activeEntries
           ]
 
-    peerPhases =
-      Map.toList $
-        Map.fromListWith (+)
-          [ (show sharedPeerPhase, 1 :: Int)
-          | SharedPeerState { sharedPeerPhase } <- Map.elems sharedPeers
-          ]
+    peerPhases :: [(String, Int)]
+    peerPhases = []
 
     renderTxId txKey =
       maybe "<missing-txid>" show (IntMap.lookup txKey sharedKeyToTxId)
