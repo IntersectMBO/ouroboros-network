@@ -470,7 +470,19 @@ data SharedTxState peeraddr txid = SharedTxState {
   deriving stock (Eq, Show, Generic)
   deriving anyclass (NFData, NoThunks)
 
-type RetainedTxs = IntPSQ Time ()
+-- | Retained tx-key set with two indexes:
+--
+-- * 'retainedQueue' is keyed on 'Time' for cheap earliest-expiry queries.
+-- * 'retainedSet'   shadows the keys for O(min(n, W)) 'retainedMember'
+--   queries (the hot path: every received txid is checked here).
+--
+-- Both are kept in lockstep by the 'retained*' helpers below.
+data RetainedTxs = RetainedTxs {
+    retainedQueue :: !(IntPSQ Time ()),
+    retainedSet   :: !IntSet
+  }
+  deriving stock    (Eq, Show, Generic)
+  deriving anyclass (NFData, NoThunks)
 
 emptySharedTxState :: SharedTxState peeraddr txid
 emptySharedTxState = SharedTxState {
@@ -484,11 +496,12 @@ emptySharedTxState = SharedTxState {
   }
 
 retainedEmpty :: RetainedTxs
-retainedEmpty = IntPSQ.empty
+retainedEmpty = RetainedTxs IntPSQ.empty IntSet.empty
 
 retainedSingleton :: Int -> Time -> RetainedTxs
 retainedSingleton k retainUntil =
-    IntPSQ.insert k retainUntil () retainedEmpty
+    RetainedTxs (IntPSQ.insert k retainUntil () IntPSQ.empty)
+                (IntSet.singleton k)
 
 retainedFromList :: [(Int, Time)] -> RetainedTxs
 retainedFromList =
@@ -499,55 +512,55 @@ retainedToList =
     sortOn fst
   . fmap (\(k, retainUntil, ()) -> (k, retainUntil))
   . IntPSQ.toList
+  . retainedQueue
 
 retainedSize :: RetainedTxs -> Int
-retainedSize = IntPSQ.size
+retainedSize = IntSet.size . retainedSet
 {-# INLINE retainedSize #-}
 
 retainedLookup :: Int -> RetainedTxs -> Maybe Time
 retainedLookup k retained =
-    fmap fst (IntPSQ.lookup k retained)
+    fmap fst (IntPSQ.lookup k (retainedQueue retained))
 {-# INLINE retainedLookup #-}
 
 retainedMember :: Int -> RetainedTxs -> Bool
-retainedMember k retained =
-    case IntPSQ.lookup k retained of
-      Just _  -> True
-      Nothing -> False
+retainedMember k = IntSet.member k . retainedSet
 {-# INLINE retainedMember #-}
 
 retainedInsertMax :: Int -> Time -> RetainedTxs -> RetainedTxs
-retainedInsertMax k retainUntil retained =
-    IntPSQ.insert k retainUntil' () retained
+retainedInsertMax k retainUntil (RetainedTxs queue keys) =
+    RetainedTxs (IntPSQ.insert k retainUntil' () queue)
+                (IntSet.insert k keys)
   where
     retainUntil' =
-      case retainedLookup k retained of
-        Just existing -> max existing retainUntil
-        Nothing       -> retainUntil
+      case IntPSQ.lookup k queue of
+        Just (existing, ()) -> max existing retainUntil
+        Nothing             -> retainUntil
 {-# INLINE retainedInsertMax #-}
 
 retainedDeleteKeys :: IntSet -> RetainedTxs -> RetainedTxs
-retainedDeleteKeys keys retained =
-    IntSet.foldl' (flip IntPSQ.delete) retained keys
+retainedDeleteKeys ks (RetainedTxs queue keys) =
+    RetainedTxs (IntSet.foldl' (flip IntPSQ.delete) queue ks)
+                (keys `IntSet.difference` ks)
 {-# INLINE retainedDeleteKeys #-}
 
 retainedKeysSet :: RetainedTxs -> IntSet
-retainedKeysSet =
-    IntPSQ.fold' (\k _ _ acc -> IntSet.insert k acc) IntSet.empty
+retainedKeysSet = retainedSet
 {-# INLINE retainedKeysSet #-}
 
 retainedRestrictKeys :: RetainedTxs -> IntSet -> RetainedTxs
-retainedRestrictKeys retained keys =
-    IntPSQ.fold' keep retainedEmpty retained
+retainedRestrictKeys (RetainedTxs queue keys) ks =
+    RetainedTxs (IntPSQ.fold' keep IntPSQ.empty queue)
+                (IntSet.intersection keys ks)
   where
     keep k retainUntil _
-      | IntSet.member k keys = IntPSQ.insert k retainUntil ()
-      | otherwise            = id
+      | IntSet.member k ks = IntPSQ.insert k retainUntil ()
+      | otherwise          = id
 {-# INLINE retainedRestrictKeys #-}
 
 retainedNextWake :: Time -> RetainedTxs -> Maybe Time
 retainedNextWake currentTime =
-    go
+    go . retainedQueue
   where
     go retained =
       case IntPSQ.minView retained of
@@ -561,10 +574,11 @@ retainedNextWake currentTime =
 retainedExpiredKeys :: Time -> RetainedTxs -> IntSet
 retainedExpiredKeys currentTime retained =
     -- Quick exit if no TX has expired.
-    case IntPSQ.findMin retained of
-      Just (_, earliest, _) | earliest <= currentTime -> go IntSet.empty retained
+    case IntPSQ.findMin queue of
+      Just (_, earliest, _) | earliest <= currentTime -> go IntSet.empty queue
       _                                               -> IntSet.empty
   where
+    queue = retainedQueue retained
     go expired r =
       case IntPSQ.minView r of
         Just (k, retainUntil, (), r')
