@@ -65,8 +65,8 @@ data TxDecisionPolicy = TxDecisionPolicy {
       -- ^ space between actual requests for the same TX.
 
       inflightTimeout        :: !DiffTime
-      -- ^ Maximum time a peer's attempt may sit between claim and the
-      -- TxSubmitting state before the per-entry inflight-multiplicity
+      -- ^ Maximum time a peer's attempt may sit between claim and
+      -- entering submission before the per-entry inflight-multiplicity
       -- cap is bumped, allowing another peer to attempt in parallel.
     }
   deriving (Eq, Show)

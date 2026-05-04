@@ -108,7 +108,8 @@ import Ouroboros.Network.RethrowPolicy
 import Ouroboros.Network.TxSubmission.Inbound.V2 (TxSubmissionInitDelay (..),
            txSubmissionInboundV2)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy (TxDecisionPolicy (..))
-import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (SharedTxStateVar,
+import Ouroboros.Network.TxSubmission.Inbound.V2.Registry
+           (PeerTxInFlightRegistry, SharedTxStateVar,
            TxSubmissionCountersVar, withPeer)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types (TraceTxLogic,
            TraceTxSubmissionInbound)
@@ -391,7 +392,8 @@ applications debugTracer txSubmissionInboundTracer _txSubmissionInboundDebug nod
                     (txSubmissionInitiator aaTxDecisionPolicy (nkMempool nodeKernel))
                     (txSubmissionResponder (nkMempool nodeKernel)
                                            (nkTxCountersVar nodeKernel)
-                                           (nkSharedTxStateVar nodeKernel))
+                                           (nkSharedTxStateVar nodeKernel)
+                                           (nkPeerTxInFlightRegistry nodeKernel))
             }
           ]
       , withWarm = WithWarm
@@ -725,14 +727,16 @@ applications debugTracer txSubmissionInboundTracer _txSubmissionInboundDebug nod
       :: Mempool m TxId (Tx TxId)
       -> TxSubmissionCountersVar m
       -> SharedTxStateVar m NtNAddr Int
+      -> PeerTxInFlightRegistry m NtNAddr
       -> MiniProtocolCb (ResponderContext NtNAddr) ByteString m ()
-    txSubmissionResponder mempool txCountersVar sharedTxStateVar =
+    txSubmissionResponder mempool txCountersVar sharedTxStateVar inFlightRegistry =
       MiniProtocolCb $
         \ ResponderContext { rcConnectionId = connId@ConnectionId { remoteAddress = them }} channel
         -> do
           withPeer aaTxDecisionPolicy
                    (getMempoolReader mempool)
                    sharedTxStateVar
+                   inFlightRegistry
                    txCountersVar
                    them $ \api -> do
             let server = txSubmissionInboundV2

@@ -9,9 +9,6 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.State
   , markSubmittingTxs
   , nextPeerAction
   , nextPeerActionPipelined
-  , advertisingPeersForTxKeysExcept
-  , advertisingPeersForTxExcept
-  , removeAdvertisingPeersForResolvedTx
   , currentPeerScore
   , drainPeerScore
   , applyPeerRejections
@@ -21,10 +18,10 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.State
 import Control.Monad.Class.MonadTime.SI (DiffTime, Time, addTime, diffTime)
 import Data.Foldable (foldl', toList)
 import Data.IntMap.Strict qualified as IntMap
+import Data.IntSet (IntSet)
 import Data.IntSet qualified as IntSet
 import Data.Map.Strict qualified as Map
 import Data.Sequence.Strict qualified as StrictSeq
-import Data.Set qualified as Set
 import Data.Word (Word64)
 
 import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToAck,
@@ -40,19 +37,19 @@ data TxIdRequestMode = AllowAnyTxIdRequests | AllowPipelinedTxIdRequests
 --
 data PeerActionContext peeraddr txid tx = PeerActionContext {
     -- | Current time used for lease expiry and score decay decisions.
-    pacNow             :: !Time,
+    pacNow          :: !Time,
     -- | Decision policy that governs request, retry, and scoring limits.
-    pacPolicy          :: !TxDecisionPolicy,
+    pacPolicy       :: !TxDecisionPolicy,
     -- | Address of the peer whose next action is being chosen.
-    pacPeerAddr        :: !peeraddr,
+    pacPeerAddr     :: !peeraddr,
     -- | Current peer-local state after local pruning has been applied.
-    pacPeerState       :: !(PeerTxLocalState tx),
+    pacPeerState    :: !(PeerTxLocalState tx),
+    -- | This peer's contribution counters mirroring shared-state writes.
+    pacPeerInFlight :: !PeerTxInFlight,
     -- | Shared tx-submission state after shared pruning has been applied.
-    pacSharedState     :: !(SharedTxState peeraddr txid),
-    -- | This peer's shared state after pruning.
-    pacSharedPeerState :: !SharedPeerState,
+    pacSharedState  :: !(SharedTxState peeraddr txid),
     -- | Score-derived delay this peer must wait after a tx becomes claimable.
-    pacClaimDelay      :: !DiffTime
+    pacClaimDelay   :: !DiffTime
   }
 
 data PeerActionChoice peeraddr =
@@ -64,21 +61,21 @@ data PeerActionChoice peeraddr =
 -- | Build a precomputed context for selecting the next action for a peer.
 --
 --
-mkPeerActionContext :: Ord peeraddr
-                    => Time
+mkPeerActionContext :: Time
                     -> TxDecisionPolicy
                     -> peeraddr
                     -> PeerTxLocalState tx
+                    -> PeerTxInFlight
                     -> SharedTxState peeraddr txid
                     -> PeerActionContext peeraddr txid tx
-mkPeerActionContext now policy peeraddr peerState sharedState =
+mkPeerActionContext now policy peeraddr peerState peerInFlight sharedState =
   PeerActionContext {
     pacNow = now,
     pacPolicy = policy,
     pacPeerAddr = peeraddr,
     pacPeerState = peerState',
+    pacPeerInFlight = peerInFlight,
     pacSharedState = sharedState,
-    pacSharedPeerState = sharedPeerState',
     pacClaimDelay = peerClaimDelay policy now (peerScore peerState')
     }
   where
@@ -91,31 +88,27 @@ mkPeerActionContext now policy peeraddr peerState sharedState =
                    peerDownloadedTxs = IntMap.intersection downloaded (sharedTxTable sharedState)
                  }
 
-    sharedPeerState' =
-      case Map.lookup peeraddr (sharedPeers sharedState) of
-        Just sharedPeerState -> sharedPeerState
-        Nothing ->
-          error "TxSubmission.V2.mkPeerActionContext: missing peer"
-
 -- | Compute the next peer-local action.
-nextPeerAction :: (Ord peeraddr, HasRawTxId txid)
+nextPeerAction :: Ord peeraddr
                => Time
                -> TxDecisionPolicy
                -> peeraddr
                -> PeerTxLocalState tx
+               -> PeerTxInFlight
                -> SharedTxState peeraddr txid
-               -> (PeerAction, PeerTxLocalState tx, SharedTxState peeraddr txid)
+               -> (PeerAction, PeerTxLocalState tx, PeerTxInFlight, SharedTxState peeraddr txid)
 nextPeerAction = nextPeerActionWithMode AllowAnyTxIdRequests
 {-# INLINABLE nextPeerAction #-}
 
 -- | Pipelined version of nextPeerAction
-nextPeerActionPipelined :: (Ord peeraddr, HasRawTxId txid)
+nextPeerActionPipelined :: Ord peeraddr
                         => Time
                         -> TxDecisionPolicy
                         -> peeraddr
                         -> PeerTxLocalState tx
+                        -> PeerTxInFlight
                         -> SharedTxState peeraddr txid
-                        -> (PeerAction, PeerTxLocalState tx, SharedTxState peeraddr txid)
+                        -> (PeerAction, PeerTxLocalState tx, PeerTxInFlight, SharedTxState peeraddr txid)
 nextPeerActionPipelined = nextPeerActionWithMode AllowPipelinedTxIdRequests
 {-# INLINABLE nextPeerActionPipelined #-}
 
@@ -124,25 +117,27 @@ nextPeerActionPipelined = nextPeerActionWithMode AllowPipelinedTxIdRequests
 -- nextPeerActionWithMode handles body requests for txs this peer may currently
 -- fetch, tx submission for bodies buffered locally by this peer, and txid ack/request
 -- messages.  Updates 'peerPhase' on the returned 'PeerTxLocalState' to
--- reflect the chosen action.
-nextPeerActionWithMode :: (Ord peeraddr, HasRawTxId txid)
+-- reflect the chosen action and threads the per-peer 'PeerTxInFlight'
+-- counters.
+nextPeerActionWithMode :: Ord peeraddr
                        => TxIdRequestMode
                        -> Time
                        -> TxDecisionPolicy
                        -> peeraddr
                        -> PeerTxLocalState tx
+                       -> PeerTxInFlight
                        -> SharedTxState peeraddr txid
-                       -> (PeerAction, PeerTxLocalState tx, SharedTxState peeraddr txid)
-nextPeerActionWithMode txIdRequestMode now policy peeraddr peerState sharedState =
-    let (action, peerState', sharedState'') =
+                       -> (PeerAction, PeerTxLocalState tx, PeerTxInFlight, SharedTxState peeraddr txid)
+nextPeerActionWithMode txIdRequestMode now policy peeraddr peerState peerInFlight sharedState =
+    let (action, peerState', peerInFlight', sharedState'') =
           applyPeerActionChoice ctx (pickPeerActionChoice txIdRequestMode ctx)
         peerState'' = peerState' {
             peerPhase = phaseForAction txIdRequestMode (peerPhase peerState) action
           }
-    in (action, peerState'', sharedState'')
+    in (action, peerState'', peerInFlight', sharedState'')
   where
-    sharedState' = bumpStuckEntries now policy peeraddr peerState sharedState
-    ctx = mkPeerActionContext now policy peeraddr peerState sharedState'
+    sharedState' = bumpStuckEntries now policy peerState sharedState
+    ctx = mkPeerActionContext now policy peeraddr peerState peerInFlight sharedState'
 
 -- | Compute the new 'PeerPhase' for the chosen 'PeerAction'.
 --
@@ -181,13 +176,12 @@ pickPeerActionChoice txIdRequestMode ctx
       in ChooseRequestTxIds flavour acknowledgedTxIds txIdsToAcknowledge txIdsToRequest unacknowledgedTxIds'
   -- Do nothing
   | otherwise =
-      ChooseDoNothing (peerGenerationOf (pacPeerAddr ctx) (pacSharedState ctx)) (nextWakeDelay ctx)
+      ChooseDoNothing (sharedGeneration (pacSharedState ctx)) (nextWakeDelay ctx)
 
 -- | Execute a chosen peer action and compute resulting state updates
-applyPeerActionChoice :: (Ord peeraddr, HasRawTxId txid)
-                      => PeerActionContext peeraddr txid tx
+applyPeerActionChoice :: PeerActionContext peeraddr txid tx
                       -> PeerActionChoice peeraddr
-                      -> (PeerAction, PeerTxLocalState tx, SharedTxState peeraddr txid)
+                      -> (PeerAction, PeerTxLocalState tx, PeerTxInFlight, SharedTxState peeraddr txid)
 applyPeerActionChoice ctx choice =
   case choice of
        ChooseSubmit txsToSubmit ->
@@ -203,40 +197,54 @@ applyPeerActionChoice ctx choice =
 
 -- | Construct a 'PeerSubmitTxs' action for buffered transactions.
 --
--- Marks the selected txs as 'TxSubmitting' on this peer in the shared state so
--- other peers' skip them via 'txSubmittingByOther'.
-applySubmitChoice :: Ord peeraddr
-                  => PeerActionContext peeraddr txid tx
+-- Marks the selected txs as in-submission on this peer.  Other peers
+-- skip them via 'txSubmittingByOther'.  STM serialisation guarantees
+-- only one peer can win the @ChooseSubmit@ race for a given key.
+applySubmitChoice :: PeerActionContext peeraddr txid tx
                   -> [TxKey]
-                  -> (PeerAction, PeerTxLocalState tx, SharedTxState peeraddr txid)
+                  -> (PeerAction, PeerTxLocalState tx, PeerTxInFlight, SharedTxState peeraddr txid)
 applySubmitChoice ctx txsToSubmit =
-  ( PeerSubmitTxs txsToSubmit
-  , pacPeerState ctx
-  , markSubmittingTxs (pacPeerAddr ctx) txsToSubmit (pacSharedState ctx)
-  )
+  let keys = IntSet.fromList (unTxKey <$> txsToSubmit)
+      pif  = pacPeerInFlight ctx
+      pif' = pif {
+          pifAttempting = pifAttempting pif `IntSet.difference` keys,
+          pifSubmitting = pifSubmitting pif `IntSet.union`      keys
+        }
+  in ( PeerSubmitTxs txsToSubmit
+     , pacPeerState ctx
+     , pif'
+     , markSubmittingTxs txsToSubmit (pacSharedState ctx)
+     )
 
 -- | Construct a 'PeerRequestTxs' action and update local and shared tx state.
 applyRequestTxsChoice :: PeerActionContext peeraddr txid tx
                       -> [TxKey]
                       -> SizeInBytes
                       -> IntMap.IntMap (TxEntry peeraddr)
-                      -> (PeerAction, PeerTxLocalState tx, SharedTxState peeraddr txid)
+                      -> (PeerAction, PeerTxLocalState tx, PeerTxInFlight, SharedTxState peeraddr txid)
 applyRequestTxsChoice ctx txsToRequest txsToRequestSize txTable =
   ( PeerRequestTxs txsToRequest
   , peerState''
+  , peerInFlight''
   , sharedState''
   )
   where
+    requestedKeys = IntSet.fromList (unTxKey <$> txsToRequest)
     peerState'' =
       (pacPeerState ctx) {
         peerRequestedTxs =
-          foldl' (flip IntSet.insert) (peerRequestedTxs (pacPeerState ctx)) (unTxKey <$> txsToRequest),
+          peerRequestedTxs (pacPeerState ctx) `IntSet.union` requestedKeys,
         peerRequestedTxBatches =
           peerRequestedTxBatches (pacPeerState ctx) StrictSeq.|> RequestedTxBatch {
-            requestedTxBatchSet = IntSet.fromList (unTxKey <$> txsToRequest),
+            requestedTxBatchSet = requestedKeys,
             requestedTxBatchSize = txsToRequestSize
           },
         peerRequestedTxsSize = peerRequestedTxsSize (pacPeerState ctx) + txsToRequestSize
+      }
+    pif = pacPeerInFlight ctx
+    peerInFlight'' = pif {
+        pifLeased     = pifLeased     pif `IntSet.union` requestedKeys,
+        pifAttempting = pifAttempting pif `IntSet.union` requestedKeys
       }
     -- Take the lease without waking other advertisers: claiming doesn't
     -- give them a new option (they couldn't claim before this commit, and
@@ -249,48 +257,52 @@ applyRequestTxsChoice ctx txsToRequest txsToRequestSize txTable =
 
 -- | Construct a 'PeerRequestTxIds' action and update local and shared txid state.
 applyRequestTxIdsChoice
-  :: (Ord peeraddr, HasRawTxId txid)
-  => PeerActionContext peeraddr txid tx
+  :: PeerActionContext peeraddr txid tx
   -> TxIdsReqFlavour
   -> [TxKey]
   -> NumTxIdsToAck
   -> NumTxIdsToReq
   -> StrictSeq.StrictSeq TxKey
-  -> (PeerAction, PeerTxLocalState tx, SharedTxState peeraddr txid)
+  -> (PeerAction, PeerTxLocalState tx, PeerTxInFlight, SharedTxState peeraddr txid)
 applyRequestTxIdsChoice ctx flavour acknowledgedTxIds txIdsToAcknowledge txIdsToRequest unacknowledgedTxIds' =
   ( PeerRequestTxIds flavour txIdsToAcknowledge txIdsToRequest
   , peerState''
-  , sharedState''
+  , peerInFlight''
+  , pacSharedState ctx
   )
   where
+    peerState0 = pacPeerState ctx
+    acknowledgedKeys = IntSet.fromList (unTxKey <$> acknowledgedTxIds)
     peerState'' =
-      (pacPeerState ctx) {
+      peerState0 {
         peerAvailableTxIds =
-          IntMap.withoutKeys (peerAvailableTxIds (pacPeerState ctx)) (IntSet.fromList $ unTxKey <$> acknowledgedTxIds),
+          IntMap.withoutKeys (peerAvailableTxIds peerState0) acknowledgedKeys,
         peerUnacknowledgedTxIds = unacknowledgedTxIds',
-        peerRequestedTxIds = peerRequestedTxIds (pacPeerState ctx) + txIdsToRequest
+        peerRequestedTxIds = peerRequestedTxIds peerState0 + txIdsToRequest
       }
-    sharedState'' =
-      acknowledgeTxIds (pacPeerAddr ctx) acknowledgedTxIds (pacSharedState ctx)
+    pif = pacPeerInFlight ctx
+    peerInFlight'' = pif {
+        pifAdvertised = pifAdvertised pif `IntSet.difference` acknowledgedKeys
+      }
 
 -- | Construct a 'PeerDoNothing' action.
 applyDoNothingChoice
   :: PeerActionContext peeraddr txid tx
   -> Word64
   -> Maybe DiffTime
-  -> (PeerAction, PeerTxLocalState tx, SharedTxState peeraddr txid)
+  -> (PeerAction, PeerTxLocalState tx, PeerTxInFlight, SharedTxState peeraddr txid)
 applyDoNothingChoice ctx generation wakeDelay =
   ( PeerDoNothing generation wakeDelay
   , pacPeerState ctx
+  , pacPeerInFlight ctx
   , pacSharedState ctx
   )
 
 -- | Select downloaded transactions that this peer may submit to the mempool.
 pickSubmitAction
-  :: Ord peeraddr
-  => PeerActionContext peeraddr txid tx
+  :: PeerActionContext peeraddr txid tx
   -> Maybe [TxKey]
-pickSubmitAction PeerActionContext { pacPeerAddr, pacPeerState, pacSharedState } =
+pickSubmitAction PeerActionContext { pacPeerState, pacPeerInFlight, pacSharedState } =
   let txsToSubmit = pickBufferedTxsToSubmit in
   if null txsToSubmit
      then Nothing
@@ -311,9 +323,8 @@ pickSubmitAction PeerActionContext { pacPeerAddr, pacPeerState, pacSharedState }
         go acc (txKey@(TxKey k) : rest) =
           case IntMap.lookup k (sharedTxTable pacSharedState) of
             Just txEntry
-              | IntMap.member k (peerDownloadedTxs pacPeerState)
-              , txBufferedByPeer pacPeerAddr txEntry
-              , not (txSubmittingByOther pacPeerAddr txEntry) ->
+              | txBufferedByPeer pacPeerState k
+              , not (txSubmittingByOther pacPeerInFlight k txEntry) ->
                   go (txKey : acc) rest
             _ | retainedMember k (sharedRetainedTxs pacSharedState) ->
                   -- already resolved via another peer
@@ -457,12 +468,12 @@ pickRequestTxIdsAction txIdRequestMode ctx@PeerActionContext { pacPolicy, pacPee
 -- | Compute the time delay until the peer should next wake to check for work.
 nextWakeDelay :: PeerActionContext peeraddr txid tx -> Maybe DiffTime
 nextWakeDelay PeerActionContext { pacNow, pacPolicy, pacClaimDelay
-                                , pacSharedPeerState, pacPeerState, pacSharedState } =
+                                , pacPeerState, pacPeerInFlight, pacSharedState } =
     (`diffTime` pacNow) <$> minMaybe (minMaybe nextClaimWake nextBumpWake) nextRetainWake
   where
     -- Wake at the earliest claim-ready time among txs this peer advertises.
     nextClaimWake =
-      IntSet.foldl' stepClaim Nothing (sharedPeerAdvertisedTxKeys pacSharedPeerState)
+      IntSet.foldl' stepClaim Nothing (pifAdvertised pacPeerInFlight)
 
     -- Wake at the earliest bump-ready time among txs this peer holds buffered.
     -- Scoped to 'peerDownloadedTxs' to match 'bumpStuckEntries': only the
@@ -492,16 +503,15 @@ nextWakeDelay PeerActionContext { pacNow, pacPolicy, pacClaimDelay
     minMaybe x Nothing         = x
     minMaybe (Just x) (Just y) = Just (min x y)
 
--- | Assign a tx lease to a peer and mark it as downloading.
-claimTx :: Ord peeraddr
-        => peeraddr
+-- | Assign a tx lease to a peer and increment the attempt count.
+claimTx :: peeraddr
         -> Time
         -> TxEntry peeraddr
         -> TxEntry peeraddr
-claimTx peeraddr leaseUntil txEntry@TxEntry { txAttempts } =
+claimTx peeraddr leaseUntil txEntry@TxEntry { txAttempt } =
   txEntry {
-    txLease = TxLeased peeraddr leaseUntil,
-    txAttempts = Map.insert peeraddr TxDownloading txAttempts
+    txLease   = TxLeased peeraddr leaseUntil,
+    txAttempt = txAttempt + 1
   }
 
 -- | Time at which a leased entry becomes eligible for an inflight cap bump.
@@ -512,19 +522,19 @@ claimTx peeraddr leaseUntil txEntry@TxEntry { txAttempts } =
 -- its own 'inflightTimeout' grace period before the next bump, so cap growth
 -- is rate-limited at one bump per 'inflightTimeout' per claim.
 stuckBumpReadyAt :: TxDecisionPolicy -> Time -> Time
-stuckBumpReadyAt policy leaseUntil =
-    addTime (inflightTimeout policy - interTxSpace policy) leaseUntil
+stuckBumpReadyAt policy =
+    addTime (inflightTimeout policy - interTxSpace policy)
 
 -- | Bump 'currentMaxInflightMultiplicity' by one when the leaseholder has
--- held the lease past 'inflightTimeout' without anyone reaching 'TxSubmitting',
+-- held the lease past 'inflightTimeout' without anyone reaching submission,
 -- and the cap is the bottleneck preventing another peer from joining.
 bumpCurrentMaxIfStuck :: Time -> TxDecisionPolicy -> TxEntry peeraddr -> TxEntry peeraddr
 bumpCurrentMaxIfStuck now policy
                       entry@TxEntry { txLease = TxLeased _ leaseUntil
                                     , currentMaxInflightMultiplicity = cap }
-  | txActiveAttemptCount entry >= cap
+  | txAttempt entry >= cap
   , now >= stuckBumpReadyAt policy leaseUntil
-  , not (txSubmittingAnywhere entry)
+  , not (txInSubmission entry)
   = entry { currentMaxInflightMultiplicity = cap + 1 }
 bumpCurrentMaxIfStuck _ _ entry = entry
 
@@ -537,8 +547,8 @@ nextStuckBumpWake :: Time -> TxDecisionPolicy -> TxEntry peeraddr -> Maybe Time
 nextStuckBumpWake now policy
                   entry@TxEntry { txLease = TxLeased _ leaseUntil
                                 , currentMaxInflightMultiplicity = cap }
-  | txActiveAttemptCount entry >= cap
-  , not (txSubmittingAnywhere entry)
+  | txAttempt entry >= cap
+  , not (txInSubmission entry)
   , let bumpAt = stuckBumpReadyAt policy leaseUntil
   , bumpAt >= now
   = Just bumpAt
@@ -550,24 +560,18 @@ nextStuckBumpWake _ _ _ = Nothing
 -- is small (usually empty) so the sweep is cheap, and any tx it has buffered
 -- is one it has at some point claimed itself.
 --
--- When an entry is bumped, this also bumps the per-peer generation of every
--- other peer that advertises it so they wake out of 'awaitSharedChange' and
--- re-evaluate eligibility under the new cap. 'sharedGeneration' is bumped
--- so 'writeSharedStateIfChanged' commits the update.
-bumpStuckEntries :: Ord peeraddr
-                 => Time
+-- 'sharedGeneration' is bumped when entries change so other peers wake out
+-- of 'awaitSharedChange' and re-evaluate eligibility under the new cap.
+bumpStuckEntries :: Time
                  -> TxDecisionPolicy
-                 -> peeraddr
                  -> PeerTxLocalState tx
                  -> SharedTxState peeraddr txid
                  -> SharedTxState peeraddr txid
-bumpStuckEntries now policy peeraddr peerState st =
+bumpStuckEntries now policy peerState st =
     if IntSet.null bumpedKeys
        then st
-       else bumpPeerGenerations
-              (advertisingPeersForTxKeysExcept peeraddr bumpedKeys st)
-              st { sharedTxTable    = txTable',
-                   sharedGeneration = sharedGeneration st + 1 }
+       else st { sharedTxTable    = txTable',
+                 sharedGeneration = sharedGeneration st + 1 }
   where
     (bumpedKeys, txTable') =
       IntMap.foldlWithKey' bumpOne (IntSet.empty, sharedTxTable st)
@@ -582,71 +586,52 @@ bumpStuckEntries now policy peeraddr peerState st =
              then (IntSet.insert k bumpedAcc, IntMap.insert k entry' tbl)
              else (bumpedAcc, tbl)
 
--- | Number of peers currently attempting this tx body.
---
--- Counts every peer in 'txAttempts' regardless of attempt state. Callers
--- that have already excluded 'TxSubmitting' via 'txSubmittingAnywhere'
--- effectively count only 'TxDownloading' and 'TxBuffered'.
-txActiveAttemptCount :: TxEntry peeraddr -> Int
-txActiveAttemptCount TxEntry { txAttempts } = Map.size txAttempts
-
 -- | Determine if a tx is eligible for this peer to request.
 --
 -- A tx is selectable if it can be claimed or is already owned by this peer
 -- and this peer's score-derived claim delay has elapsed.
-txSelectable :: Ord peeraddr
+--
+-- Callers iterate candidates from the peer's own 'peerAvailableTxIds', so
+-- the "this peer advertises @txKey@" precondition is established by the
+-- caller.
+txSelectable :: Eq peeraddr
              => PeerActionContext peeraddr txid tx
              -> TxKey
              -> TxEntry peeraddr
              -> Bool
-txSelectable PeerActionContext { pacNow, pacPeerAddr, pacSharedPeerState
-                               , pacClaimDelay }
-             txKey
+txSelectable PeerActionContext { pacNow, pacPeerAddr, pacClaimDelay
+                               , pacPeerInFlight }
+             (TxKey k)
              txEntry
-  | txSubmittingAnywhere txEntry = False
+  | txInSubmission txEntry = False
   | txPeerHasAttempt = False
-  | txActiveAttemptCount txEntry >= currentMaxInflightMultiplicity txEntry = False
-  | not peerAdvertisesTx = False
+  | txAttempt txEntry >= currentMaxInflightMultiplicity txEntry = False
   | txOwnedByPeer txEntry = True
   | otherwise = txClaimReadyAt pacClaimDelay txEntry <= pacNow
   where
-    peerAdvertisesTx =
-      IntSet.member (unTxKey txKey) (sharedPeerAdvertisedTxKeys pacSharedPeerState)
-
     -- txOwnedByPeer :: TxEntry peeraddr -> Bool
     txOwnedByPeer TxEntry { txLease = TxLeased owner _ } = owner == pacPeerAddr
     txOwnedByPeer TxEntry { txLease = TxClaimable _ }    = False
 
-    txPeerHasAttempt = Map.member pacPeerAddr (txAttempts txEntry)
+    txPeerHasAttempt =
+         IntSet.member k (pifAttempting pacPeerInFlight)
+      || IntSet.member k (pifSubmitting pacPeerInFlight)
 
-
--- | Extract the peer's TxAttemptState for the TX entry, if it exists.
-txAttemptOfPeer :: Ord peeraddr => peeraddr -> TxEntry peeraddr -> Maybe TxAttemptState
-txAttemptOfPeer peeraddr TxEntry { txAttempts } = Map.lookup peeraddr txAttempts
-
--- | Does the peer have the TX entry buffered?
-txBufferedByPeer :: Ord peeraddr => peeraddr -> TxEntry peeraddr -> Bool
-txBufferedByPeer peeraddr txEntry =
-  txAttemptOfPeer peeraddr txEntry == Just TxBuffered
+-- | Does the peer have the TX entry buffered locally?
+--
+-- The peer's own 'peerDownloadedTxs' is the source of truth for "buffered
+-- body present", so this is a peer-local lookup.
+txBufferedByPeer :: PeerTxLocalState tx -> Int -> Bool
+txBufferedByPeer peerState k = IntMap.member k (peerDownloadedTxs peerState)
 
 -- | Check whether some other peer is already submitting this tx.
 --
--- Uses a single fold over 'txAttempts' and short-circuits at the first
--- matching 'TxSubmitting'.
-txSubmittingByOther :: Eq peeraddr => peeraddr -> TxEntry peeraddr -> Bool
-txSubmittingByOther peeraddr TxEntry { txAttempts } =
-  Map.foldrWithKey
-    (\owner attempt acc -> (owner /= peeraddr && attempt == TxSubmitting) || acc)
-    False
-    txAttempts
-
--- | Check whether any peer is currently submitting this tx.
---
--- Like 'txSubmittingByOther', this short-circuits at the first 'TxSubmitting'.
-txSubmittingAnywhere :: TxEntry peeraddr -> Bool
-txSubmittingAnywhere TxEntry { txAttempts } =
-  Map.foldr (\attempt acc -> attempt == TxSubmitting || acc) False txAttempts
-
+-- True iff the entry's @txInSubmission@ flag is set and this peer is not
+-- the submitter.
+txSubmittingByOther :: PeerTxInFlight -> Int -> TxEntry peeraddr -> Bool
+txSubmittingByOther pif k txEntry =
+     txInSubmission txEntry
+  && IntSet.notMember k (pifSubmitting pif)
 
 -- | Compute the current usefulness score for a peer after time-based decay.
 --
@@ -715,114 +700,43 @@ txClaimReadyAt claimDelay TxEntry { txLease } =
         TxLeased _ leaseUntil -> leaseUntil
         TxClaimable readyAt   -> readyAt
 
-updatePeerAdvertisedTxKeys
-  :: Ord peeraddr
-  => peeraddr
-  -> (IntSet.IntSet -> (a, IntSet.IntSet))
-  -> SharedTxState peeraddr txid
-  -> (a, SharedTxState peeraddr txid)
-updatePeerAdvertisedTxKeys peeraddr updateKeys st@SharedTxState { sharedPeers } =
-    case Map.lookup peeraddr sharedPeers of
-      Just sharedPeerState ->
-        let oldKeys = sharedPeerAdvertisedTxKeys sharedPeerState
-            (result, newKeys) = updateKeys oldKeys
-        in if newKeys == oldKeys
-              then (result, st)
-              else
-                ( result
-                , st {
-                    sharedPeers =
-                      Map.insert
-                        peeraddr
-                        (sharedPeerState { sharedPeerAdvertisedTxKeys = newKeys })
-                        sharedPeers
-                  }
-                )
-      Nothing ->
-        error "TxSubmission.V2.updatePeerAdvertisedTxKeys: missing peer"
-
--- | Acknowledge txids from a peer and update shared state.
-acknowledgeTxIds :: (Ord peeraddr, HasRawTxId txid)
-                 => peeraddr
-                 -> [TxKey]
-                 -> SharedTxState peeraddr txid
-                 -> SharedTxState peeraddr txid
-acknowledgeTxIds _ [] st = st
-acknowledgeTxIds peeraddr acknowledgedTxIds st =
-  if IntSet.null removedKeys
-    then st
-    else
-      let st'' = IntSet.foldl' acknowledgeOne st' removedKeys
-      in st'' { sharedGeneration = sharedGeneration st + 1 }
-  where
-    acknowledgedKeys = IntSet.fromList (unTxKey <$> acknowledgedTxIds)
-    (removedKeys, st') =
-      updatePeerAdvertisedTxKeys peeraddr removeAdvertisedKeys st
-
-    removeAdvertisedKeys advertisedKeys =
-      let removed = IntSet.intersection acknowledgedKeys advertisedKeys
-      in (removed, advertisedKeys `IntSet.difference` removed)
-
-    acknowledgeOne acc k =
-      case IntMap.lookup k (sharedTxTable acc) of
-        Just txEntry ->
-          let txEntry' = txEntry { txAdvertiserCount = txAdvertiserCount txEntry - 1 }
-          in if activeTxLive txEntry'
-                then acc { sharedTxTable = IntMap.insert k txEntry' (sharedTxTable acc) }
-                else dropTxKey k acc
-        Nothing ->
-          acc
-
 -- | Determine if an unacknowledged txid is ready to be acknowledged.
 --
 -- A txid remains ackable after it has been resolved and removed from shared
 -- state. The wire protocol only needs an ack count for the peer-local
 -- unacknowledged prefix, so a late ack is still safe even after the active
 -- entry and retained marker have been pruned.
-txIdAckable :: Ord peeraddr
+txIdAckable :: Eq peeraddr
             => PeerActionContext peeraddr txid tx
             -> TxKey
             -> Bool
-txIdAckable PeerActionContext { pacPeerAddr, pacPeerState, pacSharedPeerState, pacSharedState }
+txIdAckable PeerActionContext { pacPeerAddr, pacPeerState, pacPeerInFlight, pacSharedState }
             (TxKey k)
   | retainedMember k (sharedRetainedTxs pacSharedState) = True
+    -- The peer no longer tracks the txid as advertised. This covers
+    -- mempool/retained txids that 'handleReceivedTxIds' kept out of the
+    -- advertised set, as well as txids the peer has already attempted
+    -- and submitted (or that another peer resolved).
+  | not (IntSet.member k (pifAdvertised pacPeerInFlight)) = True
   | otherwise =
       case IntMap.lookup k (sharedTxTable pacSharedState) of
-           Just txEntry@TxEntry { txLease, txAttempts } ->
-             not (IntSet.member k (sharedPeerAdvertisedTxKeys pacSharedPeerState))
-             ||
-               let ackWhenBuffered =
-                     case txLease of
-                       TxLeased owner _ -> owner == pacPeerAddr || Map.member pacPeerAddr txAttempts
-                       TxClaimable _    -> Map.member pacPeerAddr txAttempts
-               in
-               -- Ack the txid if we downloaded it and no other
-               -- peer is in the process of submitting it to the
-               -- mempool.
-               ackWhenBuffered
-                 && IntMap.member k (peerDownloadedTxs pacPeerState)
-                 && not (txBufferedByPeer pacPeerAddr txEntry
-                          && txSubmittingByOther pacPeerAddr txEntry)
+           Just txEntry ->
+             let peerHasStake =
+                      IntSet.member k (pifAttempting pacPeerInFlight)
+                   || IntSet.member k (pifSubmitting pacPeerInFlight)
+                 ackWhenBuffered =
+                   case txLease txEntry of
+                     TxLeased owner _ -> owner == pacPeerAddr || peerHasStake
+                     TxClaimable _    -> peerHasStake
+             in
+             -- Ack the txid if we downloaded it and no other
+             -- peer is in the process of submitting it to the
+             -- mempool.
+             ackWhenBuffered
+               && IntMap.member k (peerDownloadedTxs pacPeerState)
+               && not (txBufferedByPeer pacPeerState k
+                        && txSubmittingByOther pacPeerInFlight k txEntry)
            Nothing -> True -- Safe late ack after the resolved tx was pruned from shared state.
-
--- | Remove one transaction entry from all shared state maps by key.
-dropTxKey :: HasRawTxId txid
-          => Int
-          -> SharedTxState peeraddr txid
-          -> SharedTxState peeraddr txid
-dropTxKey k st@SharedTxState { sharedTxTable, sharedRetainedTxs, sharedTxIdToKey
-                             , sharedKeyToTxId } =
-    st {
-      sharedTxTable = IntMap.delete k sharedTxTable,
-      sharedRetainedTxs = retainedDeleteKeys (IntSet.singleton k) sharedRetainedTxs,
-      sharedTxIdToKey = deleteTxId sharedTxIdToKey,
-      sharedKeyToTxId = IntMap.delete k sharedKeyToTxId
-    }
-  where
-    deleteTxId txIdToKey =
-      case IntMap.lookup k sharedKeyToTxId of
-           Just txid -> Map.delete (getRawTxId txid) txIdToKey
-           Nothing   -> txIdToKey
 
 -- | Remove transaction entries from all shared state maps by key.
 dropTxKeys :: HasRawTxId txid
@@ -845,165 +759,46 @@ dropTxKeys keys st@SharedTxState { sharedTxTable, sharedRetainedTxs, sharedTxIdT
            Just txid -> Map.delete (getRawTxId txid) txIdToKey
            Nothing   -> txIdToKey
 
--- | Remove transaction keys that are no longer active from the shared state.
-dropDeadActiveKeys :: HasRawTxId txid
-                   => IntSet.IntSet
-                   -> SharedTxState peeraddr txid
-                   -> SharedTxState peeraddr txid
-dropDeadActiveKeys keys st@SharedTxState { sharedTxTable } =
-  let deadKeys = IntSet.filter isDead keys in
-  dropTxKeys deadKeys st
-  where
-    isDead k =
-      case IntMap.lookup k sharedTxTable of
-           Just txEntry -> not (activeTxLive txEntry)
-           Nothing      -> False
-
 -- | Shared-state cleanup
 --
 -- Drops two kinds of dead entries in one pass:
 --
 -- * Retained entries whose retention deadline has passed.
--- * Orphaned 'sharedTxTable' entries.
+-- * Orphaned 'sharedTxTable' entries: entries with a released lease,
+--   no in-flight attempt, and no live peer still tracking the key in
+--   its 'pifAdvertised' set.
+--
+-- The @liveAdvertised@ set is the union of every active peer's
+-- 'pifAdvertised'.  Caller (the sweep thread) snapshots all per-peer
+-- TVars in the same STM transaction that runs this function so the
+-- snapshot is coherent with the sharedTxTable read.
 --
 -- Bumps 'sharedGeneration' if anything changed so sleeping peer workers wake
 -- and re-evaluate.
 sweepSharedState :: HasRawTxId txid
                  => Time
+                 -> IntSet
                  -> SharedTxState peeraddr txid
                  -> SharedTxState peeraddr txid
-sweepSharedState now st
+sweepSharedState now liveAdvertised st
     | IntSet.null toDrop = st
     | otherwise          = (dropTxKeys toDrop st) {
                              sharedGeneration = sharedGeneration st + 1
                            }
   where
     expiredRetained = retainedExpiredKeys now (sharedRetainedTxs st)
-    orphans = IntMap.keysSet (IntMap.filter isOrphan (sharedTxTable st))
+    orphans =
+      IntMap.keysSet
+        (IntMap.filterWithKey isOrphan (sharedTxTable st))
     toDrop  = expiredRetained `IntSet.union` orphans
 
-    isOrphan TxEntry { txLease = TxLeased {} } = False
-    isOrphan TxEntry { txAdvertiserCount, txAttempts } =
-      txAdvertiserCount == 0 && Map.null txAttempts
+    isOrphan _ TxEntry { txLease = TxLeased {} } = False
+    isOrphan k TxEntry { txAttempt, txInSubmission }
+      | txAttempt > 0                     = False
+      | txInSubmission                    = False
+      | IntSet.member k liveAdvertised    = False
+      | otherwise                         = True
 {-# INLINABLE sweepSharedState #-}
-
--- | Is the TX entry alive?
---
--- A TX entry is alive if there is a lease, there are advertisers for it or there are
--- download attempts for it.
-activeTxLive :: TxEntry peeraddr -> Bool
-activeTxLive TxEntry { txLease, txAdvertiserCount, txAttempts } =
-     leaseLive txLease
-  || txAdvertiserCount > 0
-  || not (Map.null txAttempts)
-  where
-    leaseLive TxClaimable {} = False
-    leaseLive TxLeased {}    = True
-
-
-peerAdvertisesTxKey :: Int -> SharedPeerState -> Bool
-peerAdvertisesTxKey k SharedPeerState { sharedPeerAdvertisedTxKeys } =
-    IntSet.member k sharedPeerAdvertisedTxKeys
-
-peerAdvertisesAnyTxKey
-  :: IntSet.IntSet
-  -> SharedPeerState
-  -> Bool
-peerAdvertisesAnyTxKey targetKeys SharedPeerState { sharedPeerAdvertisedTxKeys } =
-    not (IntSet.disjoint targetKeys sharedPeerAdvertisedTxKeys)
-
-advertisingPeersForTxKeysExcept
-  :: Ord peeraddr
-  => peeraddr
-  -> IntSet.IntSet
-  -> SharedTxState peeraddr txid
-  -> Set.Set peeraddr
-advertisingPeersForTxKeysExcept _ targetKeys _
-  | IntSet.null targetKeys = Set.empty
-advertisingPeersForTxKeysExcept currentPeer targetKeys SharedTxState { sharedPeers } =
-    Map.foldlWithKey' collect Set.empty sharedPeers
-  where
-    collect acc peeraddr sharedPeerState
-      | peeraddr == currentPeer = acc
-      | peerAdvertisesAnyTxKey targetKeys sharedPeerState = Set.insert peeraddr acc
-      | otherwise = acc
-
-advertisingPeersForTx
-  :: Ord peeraddr
-  => TxKey
-  -> Map.Map peeraddr SharedPeerState
-  -> Set.Set peeraddr
-advertisingPeersForTx (TxKey k) =
-    Map.foldlWithKey' collect Set.empty
-  where
-    collect acc peeraddr sharedPeerState
-      | peerAdvertisesTxKey k sharedPeerState = Set.insert peeraddr acc
-      | otherwise = acc
-
-advertisingPeersForTxExcept
-  :: Ord peeraddr
-  => peeraddr
-  -> TxKey
-  -> SharedTxState peeraddr txid
-  -> Set.Set peeraddr
-advertisingPeersForTxExcept currentPeer txKey =
-    advertisingPeersForTxKeysExcept currentPeer (IntSet.singleton (unTxKey txKey))
-
-removeAdvertisingPeersForResolvedTx
-  :: Ord peeraddr
-  => TxKey
-  -> SharedTxState peeraddr txid
-  -> (SharedTxState peeraddr txid, Set.Set peeraddr)
-removeAdvertisingPeersForResolvedTx txKey@(TxKey k) st@SharedTxState { sharedPeers }
-  | Set.null advertisers = (st, advertisers)
-  | otherwise =
-      ( st {
-          sharedPeers =
-            Set.foldl' clearAdvertisedKey sharedPeers advertisers
-        }
-      , advertisers
-      )
-  where
-    advertisers = advertisingPeersForTx txKey sharedPeers
-
-    clearAdvertisedKey peers peeraddr =
-      Map.adjust
-        (\sharedPeerState ->
-           sharedPeerState {
-             sharedPeerAdvertisedTxKeys =
-               IntSet.delete k (sharedPeerAdvertisedTxKeys sharedPeerState)
-           })
-        peeraddr
-        peers
-
-removeAdvertisingPeersForResolvedTxExcept
-  :: Ord peeraddr
-  => peeraddr
-  -> TxKey
-  -> SharedTxState peeraddr txid
-  -> (SharedTxState peeraddr txid, Set.Set peeraddr)
-removeAdvertisingPeersForResolvedTxExcept currentPeer txKey@(TxKey k) st@SharedTxState { sharedPeers }
-  | Set.null advertisers = (st, advertisers)
-  | otherwise =
-      ( st {
-          sharedPeers =
-            Set.foldl' clearAdvertisedKey sharedPeers advertisers
-        }
-      , advertisers
-      )
-  where
-    advertisers = advertisingPeersForTxExcept currentPeer txKey st
-
-    clearAdvertisedKey peers peeraddr =
-      Map.adjust
-        (\sharedPeerState ->
-           sharedPeerState {
-             sharedPeerAdvertisedTxKeys =
-               IntSet.delete k (sharedPeerAdvertisedTxKeys sharedPeerState)
-           })
-        peeraddr
-        peers
-
 
 -- | Handle a batch of tx bodies received from one peer.
 --
@@ -1011,22 +806,23 @@ removeAdvertisingPeersForResolvedTxExcept currentPeer txKey@(TxKey k) st@SharedT
 -- already retained or already in the mempool are counted as late and dropped.
 -- Any requested tx omitted from the reply releases this peer's ownership.
 -- Late TXs contributes to the returned penalty count.
-handleReceivedTxs :: (Ord peeraddr, HasRawTxId txid)
+handleReceivedTxs :: (Eq peeraddr, HasRawTxId txid)
                   => (txid -> Bool)
                   -> Time
                   -> TxDecisionPolicy
                   -> peeraddr
                   -> [(txid, tx)]
                   -> PeerTxLocalState tx
+                  -> PeerTxInFlight
                   -> SharedTxState peeraddr txid
-                  -> (Int, Int, PeerTxLocalState tx, SharedTxState peeraddr txid)
-handleReceivedTxs mempoolHasTx now policy peeraddr txs peerState sharedState =
-    (omittedCount, lateCount, peerState', sharedState')
+                  -> (Int, Int, PeerTxLocalState tx, PeerTxInFlight, SharedTxState peeraddr txid)
+handleReceivedTxs mempoolHasTx now policy peeraddr txs peerState peerInFlight sharedState =
+    (omittedCount, lateCount, peerState', peerInFlight', sharedState')
   where
     txidToKey = sharedTxIdToKey sharedState
 
     requestedKeys = requestedTxBatchSet requestedBatch
-    retainUntil = addTime (bufferedTxsMinLifetime policy) now
+    retainUntil   = addTime (bufferedTxsMinLifetime policy) now
 
     -- Dequeue the next requested tx batch to process.
     (requestedBatch, remainingRequestedBatches) =
@@ -1036,72 +832,69 @@ handleReceivedTxs mempoolHasTx now policy peeraddr txs peerState sharedState =
            batch StrictSeq.:<| batches ->
              (batch, batches)
 
-    -- Process each received tx, collecting late counts, pending requests,
-    -- updated shared state, and peers to wake up.
+    -- Process each received tx, collecting late counts, pending
+    -- requests, the keys still buffered by this peer, and updated
+    -- shared state.  @bufferedKeys@ is the subset of @requestedKeys@
+    -- that ended up buffered locally; the rest are released below.
     ( lateCount
       , pendingRequestedKeys
+      , bufferedKeys
       , sharedStateHandled
-      , receivedWakePeers
       , peerDownloadedTxs'
       ) =
       foldl'
         handleOne
         ( 0
         , requestedKeys
+        , IntSet.empty
         , sharedState
-        , Set.empty
         , peerDownloadedTxs peerState
         )
         txs
 
-    (omittedAdvertisedKeys, sharedStateReleased0) =
-      updatePeerAdvertisedTxKeys peeraddr removeOmittedAdvertisedKeys sharedStateHandled
-
     -- Process omitted (not received) txs: count a penalty for every omitted
-    -- request, release ownership for keys that are still live, and collect
-    -- peers to wake up.
-    (omittedCount, sharedStateReleased, omittedWakePeers) =
-      IntSet.foldl' handleOmitted (0, sharedStateReleased0, Set.empty) pendingRequestedKeys
+    -- request and release this peer's lease where it still held one.
+    (omittedCount, sharedStateReleased) =
+      IntSet.foldl' handleOmitted (0, sharedStateHandled) pendingRequestedKeys
 
-    -- Build the final shared state with updated tables and cleaned-up dead entries.
-    sharedState'' =
-      dropDeadActiveKeys pendingRequestedKeys $
-        sharedStateReleased {
-          sharedGeneration = sharedGeneration sharedState + 1
-        }
+    -- Keys this peer is no longer attempting (everything in the batch
+    -- except still-buffered keys).  Used to update both the per-peer
+    -- in-flight set and the shared 'txAttempt' counters via 'releaseLease'.
+    releasedKeys = requestedKeys `IntSet.difference` bufferedKeys
 
-    -- Update peer state: remove processed keys, update batch tracking, and record
-    -- downloaded txs.
+    sharedState' =
+      sharedStateReleased {
+        sharedGeneration = sharedGeneration sharedState + 1
+      }
+
+    -- Update peer state: remove processed keys, update batch tracking,
+    -- and record downloaded txs.
     peerState' = peerState {
         peerAvailableTxIds =
-          IntSet.foldl' (flip IntMap.delete) (peerAvailableTxIds peerState) requestedKeys
+          IntMap.withoutKeys (peerAvailableTxIds peerState) requestedKeys
       , peerRequestedTxs = peerRequestedTxs peerState `IntSet.difference` requestedKeys
       , peerRequestedTxBatches = remainingRequestedBatches
       , peerRequestedTxsSize = peerRequestedTxsSize peerState - requestedTxBatchSize requestedBatch
       , peerDownloadedTxs = peerDownloadedTxs'
       }
 
-    -- Flag peers that may now have work available after processing txs.
-    sharedState' =
-      bumpPeerGenerations
-        (Set.union receivedWakePeers omittedWakePeers)
-        sharedState''
+    peerInFlight' = peerInFlight {
+        pifLeased     = pifLeased     peerInFlight `IntSet.difference` releasedKeys,
+        pifAttempting = pifAttempting peerInFlight `IntSet.difference` releasedKeys,
+        pifAdvertised = pifAdvertised peerInFlight `IntSet.difference` releasedKeys
+      }
 
     keyWasLive k =
          IntMap.member k (sharedTxTable sharedState)
       || retainedMember k (sharedRetainedTxs sharedState)
-
-    removeOmittedAdvertisedKeys advertisedKeys =
-      let removed = IntSet.intersection pendingRequestedKeys advertisedKeys
-      in (removed, advertisedKeys `IntSet.difference` removed)
 
     -- Fold function over received txs: classify as late, already in mempool, or buffer for
     -- download.
     handleOne
       ( lateCountAcc
       , pendingKeysAcc
+      , bufferedAcc
       , sharedAcc
-      , wakePeersAcc
       , downloadedAcc
       )
       (txid, tx) =
@@ -1109,107 +902,86 @@ handleReceivedTxs mempoolHasTx now policy peeraddr txs peerState sharedState =
              Nothing ->
                ( lateCountAcc + 1
                , pendingKeysAcc
+               , bufferedAcc
                , sharedAcc
-               , wakePeersAcc
                , downloadedAcc
                )
-             Just txKey@(TxKey k)
+             Just (TxKey k)
                | retainedMember k (sharedRetainedTxs sharedAcc) ->
                    let sharedAcc' =
                          sharedAcc {
-                           sharedTxTable = IntMap.delete k (sharedTxTable sharedAcc)
+                           sharedTxTable =
+                             IntMap.adjust decAttempt k (sharedTxTable sharedAcc)
                          }
                    in ( lateCountAcc + 1
                       , IntSet.delete k pendingKeysAcc
+                      , bufferedAcc
                       , sharedAcc'
-                      , wakePeersAcc
                       , downloadedAcc
                       )
                | mempoolHasTx txid ->
-                   let (sharedAcc', advertisers) =
-                         case IntMap.lookup k (sharedTxTable sharedAcc) of
-                           Just _ ->
-                             removeAdvertisingPeersForResolvedTx txKey sharedAcc
-                           Nothing ->
-                             (sharedAcc, Set.empty)
-                       wakePeers =
-                         Set.union wakePeersAcc (Set.delete peeraddr advertisers)
-                       sharedAcc'' =
-                         sharedAcc' {
-                           sharedTxTable = IntMap.delete k (sharedTxTable sharedAcc'),
+                   let sharedAcc' =
+                         sharedAcc {
+                           sharedTxTable = IntMap.delete k (sharedTxTable sharedAcc),
                            sharedRetainedTxs =
-                             retainedInsertMax k retainUntil (sharedRetainedTxs sharedAcc')
+                             retainedInsertMax k retainUntil (sharedRetainedTxs sharedAcc)
                          }
                    in ( lateCountAcc + 1
                       , IntSet.delete k pendingKeysAcc
-                      , sharedAcc''
-                      , wakePeers
+                      , bufferedAcc
+                      , sharedAcc'
                       , downloadedAcc
                       )
                | otherwise ->
                    case IntMap.lookup k (sharedTxTable sharedAcc) of
-                        Just txEntry
-                          | peerHasAttempt txEntry ->
+                        Just _txEntry
+                          | IntSet.member k (pifAttempting peerInFlight) ->
                               ( lateCountAcc
                               , IntSet.delete k pendingKeysAcc
-                              , sharedAcc {
-                                  sharedTxTable =
-                                    IntMap.insert k (markBuffered txEntry)
-                                      (sharedTxTable sharedAcc)
-                                }
-                              , wakePeersAcc
+                              , IntSet.insert k bufferedAcc
+                              , sharedAcc
                               , IntMap.insert k tx downloadedAcc
                               )
                         _ ->
                               ( lateCountAcc + 1
                               , IntSet.delete k pendingKeysAcc
+                              , bufferedAcc
                               , sharedAcc
-                              , wakePeersAcc
                               , downloadedAcc
                               )
 
-    -- Handle omitted (not received) txs: release ownership, count penalties,
-    -- and wake up other advertisers if the tx is still active.
-    handleOmitted (omittedCountAcc, sharedAcc, wakePeersAcc) k
+    -- Handle omitted (not received) txs: release this peer's lease so
+    -- another advertiser can claim the tx, decrement 'txAttempt'.
+    handleOmitted (omittedCountAcc, sharedAcc) k
       | keyWasLive k =
           let sharedAcc' =
                 case IntMap.lookup k (sharedTxTable sharedAcc) of
                   Just txEntry ->
                     sharedAcc {
                       sharedTxTable =
-                        IntMap.insert k (releaseLease (IntSet.member k omittedAdvertisedKeys) txEntry)
+                        IntMap.insert k (releaseLease txEntry)
                           (sharedTxTable sharedAcc)
                     }
                   Nothing ->
                     sharedAcc
-              wakePeersAcc' =
-                case IntMap.lookup k (sharedTxTable sharedAcc') of
-                     Just txEntry
-                       | activeTxLive txEntry ->
-                           Set.union
-                             (advertisingPeersForTxExcept peeraddr (TxKey k) sharedAcc')
-                             wakePeersAcc
-                     _ -> wakePeersAcc in
-          (omittedCountAcc + 1, sharedAcc', wakePeersAcc')
+          in (omittedCountAcc + 1, sharedAcc')
       | otherwise =
-          (omittedCountAcc + 1, sharedAcc, wakePeersAcc)
+          (omittedCountAcc + 1, sharedAcc)
 
-    peerHasAttempt TxEntry { txAttempts } =
-      Map.member peeraddr txAttempts
+    -- Decrement the entry's attempt counter (e.g. when its body arrived
+    -- but the tx had been retained meanwhile, so the peer's attempt is
+    -- effectively over).  Lease unaffected: if this peer didn't hold it,
+    -- nothing to do; if it did, the decrement still leaves @txAttempt@
+    -- non-negative because every increment had a paired peer.
+    decAttempt entry@TxEntry { txAttempt } =
+      entry { txAttempt = max 0 (txAttempt - 1) }
 
-    markBuffered txEntry@TxEntry { txAttempts } =
-      txEntry { txAttempts = Map.insert peeraddr TxBuffered txAttempts }
-
-    releaseLease wasAdvertised txEntry@TxEntry { txLease, txAdvertiserCount, txAttempts } =
+    releaseLease txEntry@TxEntry { txLease, txAttempt } =
       txEntry {
         txLease = case txLease of
                        TxLeased owner _ | owner == peeraddr -> TxClaimable now
                        _                                    -> txLease,
-        txAdvertiserCount =
-          if wasAdvertised
-             then txAdvertiserCount - 1
-             else txAdvertiserCount,
-        txAttempts = Map.delete peeraddr txAttempts
+        txAttempt = max 0 (txAttempt - 1)
       }
 {-# INLINABLE handleReceivedTxs #-}
 
@@ -1218,19 +990,20 @@ handleReceivedTxs mempoolHasTx now policy peeraddr txs peerState sharedState =
 --
 -- Accepted txs leave the active table and move into the retained set so later
 -- txid advertisements can be acknowledged without re-requesting the body.
--- Txs rejected by the mempool release this peer's attempt state and advertiser
--- slot so another advertiser may try later.
-handleSubmittedTxs :: (Ord peeraddr, HasRawTxId txid)
+-- Txs rejected by the mempool release this peer's lease and clear
+-- 'txInSubmission' so another advertiser may try later.
+handleSubmittedTxs :: Eq peeraddr
                    => Time
                    -> TxDecisionPolicy
                    -> peeraddr
                    -> [TxKey]
                    -> [TxKey]
                    -> PeerTxLocalState tx
+                   -> PeerTxInFlight
                    -> SharedTxState peeraddr txid
-                   -> (PeerTxLocalState tx, SharedTxState peeraddr txid)
-handleSubmittedTxs now policy peeraddr acceptedTxs rejectedTxs peerState sharedState =
-  (peerState', sharedState')
+                   -> (PeerTxLocalState tx, PeerTxInFlight, SharedTxState peeraddr txid)
+handleSubmittedTxs now policy peeraddr acceptedTxs rejectedTxs peerState peerInFlight sharedState =
+  (peerState', peerInFlight', sharedState')
   where
     acceptedKeys = IntSet.fromList (unTxKey <$> acceptedTxs)
     rejectedKeys = IntSet.fromList (unTxKey <$> rejectedTxs)
@@ -1238,109 +1011,84 @@ handleSubmittedTxs now policy peeraddr acceptedTxs rejectedTxs peerState sharedS
 
     peerState' = peerState {
         peerDownloadedTxs =
-          IntSet.foldl' (flip IntMap.delete) (peerDownloadedTxs peerState) submittedKeys
+          IntMap.withoutKeys (peerDownloadedTxs peerState) submittedKeys,
+        peerAvailableTxIds =
+          IntMap.withoutKeys (peerAvailableTxIds peerState) submittedKeys
       }
 
-    (sharedStateAfterAccepted, acceptedAdvertisers) =
-      foldl' acceptSubmittedTx (sharedState, Set.empty) acceptedTxs
+    -- Submission outcomes clear the peer's submission and advertised
+    -- contributions for these keys; the peer is done with them.  The
+    -- attempt was already taken off 'pifAttempting' (and 'txAttempt')
+    -- when 'markSubmittingTxs' fired.
+    peerInFlight' = peerInFlight {
+        pifLeased     = pifLeased     peerInFlight `IntSet.difference` submittedKeys,
+        pifSubmitting = pifSubmitting peerInFlight `IntSet.difference` submittedKeys,
+        pifAdvertised = pifAdvertised peerInFlight `IntSet.difference` submittedKeys
+      }
 
-    (rejectedAdvertisedKeys, sharedStateAfterRejectedPeer) =
-      updatePeerAdvertisedTxKeys peeraddr removeRejectedAdvertisedKeys sharedStateAfterAccepted
+    sharedStateAfterAccepted =
+      foldl' acceptSubmittedTx sharedState acceptedTxs
 
-    (sharedStateAfterRejected, rejectedWakePeers) =
-      IntSet.foldl' updateRejected (sharedStateAfterRejectedPeer, Set.empty) rejectedKeys
+    sharedStateAfterRejected =
+      IntSet.foldl' updateRejected sharedStateAfterAccepted rejectedKeys
 
     sharedState' =
-      bumpPeerGenerations
-        (Set.union acceptedAdvertisers rejectedWakePeers)
-        sharedState''
-
-    sharedState'' =
-      dropDeadActiveKeys rejectedKeys $
-        sharedStateAfterRejected {
-          sharedGeneration = sharedGeneration sharedState + 1
-        }
+      sharedStateAfterRejected {
+        sharedGeneration = sharedGeneration sharedState + 1
+      }
 
     retainedUntil = addTime (bufferedTxsMinLifetime policy) now
 
-    removeRejectedAdvertisedKeys advertisedKeys =
-      let removed = IntSet.intersection rejectedKeys advertisedKeys
-      in (removed, advertisedKeys `IntSet.difference` removed)
+    acceptSubmittedTx sharedAcc (TxKey k) =
+      sharedAcc {
+        sharedTxTable = IntMap.delete k (sharedTxTable sharedAcc),
+        sharedRetainedTxs =
+          retainedInsertMax k retainedUntil (sharedRetainedTxs sharedAcc)
+      }
 
-    acceptSubmittedTx (sharedAcc, wakePeersAcc) txKey@(TxKey k) =
-      let (sharedAcc', advertisers) =
-            case IntMap.lookup k (sharedTxTable sharedAcc) of
-              Just _ ->
-                removeAdvertisingPeersForResolvedTx txKey sharedAcc
-              Nothing ->
-                (sharedAcc, Set.empty)
-          sharedAcc'' =
-            sharedAcc' {
-              sharedTxTable = IntMap.delete k (sharedTxTable sharedAcc'),
-              sharedRetainedTxs =
-                retainedInsertMax k retainedUntil (sharedRetainedTxs sharedAcc')
-            }
-      in (sharedAcc'', Set.union wakePeersAcc (Set.delete peeraddr advertisers))
+    updateRejected sharedAcc k =
+      case IntMap.lookup k (sharedTxTable sharedAcc) of
+        Just txEntry ->
+          sharedAcc {
+            sharedTxTable =
+              IntMap.insert k (markRejected txEntry) (sharedTxTable sharedAcc)
+          }
+        Nothing ->
+          sharedAcc
 
-    updateRejected (sharedAcc, wakePeersAcc) k =
-      let sharedAcc' =
-            case IntMap.lookup k (sharedTxTable sharedAcc) of
-              Just txEntry ->
-                sharedAcc {
-                  sharedTxTable =
-                    IntMap.insert k
-                      (markRejected (IntSet.member k rejectedAdvertisedKeys) txEntry)
-                      (sharedTxTable sharedAcc)
-                }
-              Nothing ->
-                sharedAcc
-          wakePeersAcc' =
-            case IntMap.lookup k (sharedTxTable sharedAcc') of
-              Just txEntry
-                | activeTxLive txEntry ->
-                    Set.union
-                      (advertisingPeersForTxExcept peeraddr (TxKey k) sharedAcc')
-                      wakePeersAcc
-              _ ->
-                wakePeersAcc
-      in (sharedAcc', wakePeersAcc')
-
-    markRejected wasAdvertised txEntry@TxEntry { txLease, txAdvertiserCount, txAttempts } =
+    markRejected txEntry@TxEntry { txLease } =
       txEntry {
         txLease = case txLease of
           TxLeased owner _ | owner == peeraddr -> TxClaimable now
           _                                    -> txLease,
-        txAdvertiserCount =
-          if wasAdvertised
-             then txAdvertiserCount - 1
-             else txAdvertiserCount,
-        txAttempts = Map.delete peeraddr txAttempts
+        txInSubmission = False
       }
 {-# INLINABLE handleSubmittedTxs #-}
 
 
 -- | Mark buffered txs as entering mempool submission.
-markSubmittingTxs :: Ord peeraddr
-                  => peeraddr
-                  -> [TxKey]
+--
+-- Decrements 'txAttempt' (the peer is leaving the @attempting@ state)
+-- and sets 'txInSubmission'.  STM serialisation around the
+-- @ChooseSubmit@ choice guarantees only one peer ever flips
+-- 'txInSubmission' from @False@ to @True@ for a given key.
+markSubmittingTxs :: [TxKey]
                   -> SharedTxState peeraddr txid
                   -> SharedTxState peeraddr txid
-markSubmittingTxs _ [] st = st
-markSubmittingTxs peeraddr txKeys st =
+markSubmittingTxs [] st = st
+markSubmittingTxs txKeys st =
   st {
-    sharedTxTable = foldl' markOne (sharedTxTable st) txKeys,
+    sharedTxTable    = foldl' markOne (sharedTxTable st) txKeys,
     sharedGeneration = sharedGeneration st + 1
   }
   where
     markOne txTable (TxKey k) = IntMap.adjust markSubmitting k txTable
 
-    markSubmitting txEntry@TxEntry { txAttempts } =
+    markSubmitting txEntry@TxEntry { txAttempt } =
       txEntry {
-        txAttempts = Map.adjust toSubmitting peeraddr txAttempts
+        txAttempt      = max 0 (txAttempt - 1),
+        txInSubmission = True
       }
-
-    toSubmitting TxBuffered = TxSubmitting
-    toSubmitting attempt    = attempt
 
 
 -- | Handle a batch of txids received from one peer.
@@ -1350,35 +1098,27 @@ markSubmittingTxs peeraddr txKeys st =
 -- advertises the txid may claim it once its score-derived delay has elapsed,
 -- which avoids pinning fresh work to the first peer that happened to announce
 -- it.
-handleReceivedTxIds :: forall peeraddr txid tx. (Ord peeraddr, HasRawTxId txid)
+handleReceivedTxIds :: forall peeraddr txid tx. HasRawTxId txid
                     => (txid -> Bool)
                     -> Time
                     -> TxDecisionPolicy
-                    -> peeraddr
                     -> NumTxIdsToReq
                     -> [(txid, SizeInBytes)]
                     -> PeerTxLocalState tx
+                    -> PeerTxInFlight
                     -> SharedTxState peeraddr txid
-                    -> (PeerTxLocalState tx, SharedTxState peeraddr txid)
-handleReceivedTxIds mempoolHasTx now policy peeraddr requestedTxIds txidsAndSizes
-                    peerState sharedState =
-    (peerState'', sharedState'')
+                    -> (PeerTxLocalState tx, PeerTxInFlight, SharedTxState peeraddr txid)
+handleReceivedTxIds mempoolHasTx now policy requestedTxIds txidsAndSizes
+                    peerState peerInFlight sharedState =
+    (peerState'', peerInFlight'', sharedState'')
   where
-    sharedPeerState0 =
-      case Map.lookup peeraddr (sharedPeers sharedState) of
-        Just sharedPeerState -> sharedPeerState
-        Nothing ->
-          error "TxSubmission.V2.handleReceivedTxIds: missing peer"
+    peerAdvertisedKeys0 = pifAdvertised peerInFlight
 
-    peerAdvertisedKeys0 = sharedPeerAdvertisedTxKeys sharedPeerState0
-
-    -- Fold over received txids: build unacknowledged list, update tables,
-    -- and track peers to wake based on tx state (retained/mempool/new).
+    -- Fold over received txids: build unacknowledged list, update tables.
     ( receivedTxKeysRev
       , peerAvailableTxIds'
       , sharedStateHandled
       , peerAdvertisedKeys'
-      , peersToWake
       , sharedChanged
       ) =
       foldl'
@@ -1387,7 +1127,6 @@ handleReceivedTxIds mempoolHasTx now policy peeraddr requestedTxIds txidsAndSize
         , peerAvailableTxIds peerState
         , sharedState
         , peerAdvertisedKeys0
-        , Set.empty
         , False
         )
         txidsAndSizes
@@ -1403,20 +1142,15 @@ handleReceivedTxIds mempoolHasTx now policy peeraddr requestedTxIds txidsAndSize
         peerAvailableTxIds = peerAvailableTxIds'
       }
 
+    peerInFlight'' = peerInFlight {
+        pifAdvertised = peerAdvertisedKeys'
+      }
+
     sharedState''
-      | sharedChanged || peerAdvertisedKeys' /= peerAdvertisedKeys0 =
-          bumpPeerGenerations peersToWake $
-            sharedStateHandled {
-              sharedPeers =
-                if peerAdvertisedKeys' == peerAdvertisedKeys0
-                  then sharedPeers sharedStateHandled
-                  else
-                    Map.insert
-                      peeraddr
-                      (sharedPeerState0 { sharedPeerAdvertisedTxKeys = peerAdvertisedKeys' })
-                      (sharedPeers sharedStateHandled),
-              sharedGeneration = sharedGeneration sharedState + 1
-            }
+      | sharedChanged =
+          sharedStateHandled {
+            sharedGeneration = sharedGeneration sharedState + 1
+          }
       | otherwise =
           sharedState
 
@@ -1428,7 +1162,6 @@ handleReceivedTxIds mempoolHasTx now policy peeraddr requestedTxIds txidsAndSize
          , IntMap.IntMap SizeInBytes
          , SharedTxState peeraddr txid
          , IntSet.IntSet
-         , Set.Set peeraddr
          , Bool
          )
       -> (txid, SizeInBytes)
@@ -1436,7 +1169,6 @@ handleReceivedTxIds mempoolHasTx now policy peeraddr requestedTxIds txidsAndSize
          , IntMap.IntMap SizeInBytes
          , SharedTxState peeraddr txid
          , IntSet.IntSet
-         , Set.Set peeraddr
          , Bool
          )
     step
@@ -1444,7 +1176,6 @@ handleReceivedTxIds mempoolHasTx now policy peeraddr requestedTxIds txidsAndSize
       , !availableAcc
       , !sharedAcc
       , !peerAdvertisedKeysAcc
-      , !peersAcc
       , !sharedChangedAcc
       )
       (txid, txSize)
@@ -1453,36 +1184,26 @@ handleReceivedTxIds mempoolHasTx now policy peeraddr requestedTxIds txidsAndSize
           , IntMap.delete k availableAcc
           , sharedAcc'
           , IntSet.delete k peerAdvertisedKeysAcc
-          , peersAcc
           , sharedChangedAcc'
           )
       | mempoolHasTx txid =
-          let (sharedAcc'', advertisers) =
-                case IntMap.lookup k (sharedTxTable sharedAcc') of
-                  Just _ ->
-                    removeAdvertisingPeersForResolvedTxExcept peeraddr txKey sharedAcc'
-                  Nothing ->
-                    (sharedAcc', Set.empty)
-              wakePeers =
-                Set.union peersAcc (Set.delete peeraddr advertisers)
-          in ( txKey : unacknowledgedAcc
-             , IntMap.delete k availableAcc
-             , sharedAcc'' {
-                 sharedTxTable = IntMap.delete k (sharedTxTable sharedAcc''),
-                 sharedRetainedTxs =
-                   retainedInsertMax k retainUntil (sharedRetainedTxs sharedAcc'')
-               }
-             , IntSet.delete k peerAdvertisedKeysAcc
-             , wakePeers
-             , True
-             )
+          ( txKey : unacknowledgedAcc
+          , IntMap.delete k availableAcc
+          , sharedAcc' {
+              sharedTxTable = IntMap.delete k (sharedTxTable sharedAcc'),
+              sharedRetainedTxs =
+                retainedInsertMax k retainUntil (sharedRetainedTxs sharedAcc')
+            }
+          , IntSet.delete k peerAdvertisedKeysAcc
+          , True
+          )
       | otherwise =
           case IntMap.lookup k (sharedTxTable sharedAcc') of
             Nothing ->
               let txEntry = TxEntry {
                               txLease = TxClaimable now,
-                              txAdvertiserCount = 1,
-                              txAttempts = Map.empty,
+                              txAttempt = 0,
+                              txInSubmission = False,
                               currentMaxInflightMultiplicity =
                                 txInflightMultiplicity policy
                             }
@@ -1492,42 +1213,19 @@ handleReceivedTxIds mempoolHasTx now policy peeraddr requestedTxIds txidsAndSize
                      sharedTxTable = IntMap.insert k txEntry (sharedTxTable sharedAcc')
                    }
                  , IntSet.insert k peerAdvertisedKeysAcc
-                 , peersAcc
                  , True
                  )
-            Just txEntry ->
-              let (entryChanged, txEntry', peerAdvertisedKeysAcc') =
-                    addAdvertiser k peerAdvertisedKeysAcc txEntry
-                  availableAcc' = IntMap.insert k txSize availableAcc
-                  sharedAcc'' =
-                    if entryChanged
-                      then
-                        sharedAcc' {
-                          sharedTxTable = IntMap.insert k txEntry' (sharedTxTable sharedAcc')
-                        }
-                      else
-                        sharedAcc'
-              in ( txKey : unacknowledgedAcc
-                 , availableAcc'
-                 , sharedAcc''
-                 , peerAdvertisedKeysAcc'
-                 , peersAcc
-                 , sharedChangedAcc' || entryChanged
-                 )
+            Just _ ->
+              ( txKey : unacknowledgedAcc
+              , IntMap.insert k txSize availableAcc
+              , sharedAcc'
+              , IntSet.insert k peerAdvertisedKeysAcc
+              , sharedChangedAcc'
+              )
       where
         retainedAcc = sharedRetainedTxs sharedAcc'
         sharedChangedAcc' = sharedChangedAcc || txKeyWasNew
         (txKey@(TxKey k), txKeyWasNew, sharedAcc') = lookupOrInternTxId txid sharedAcc
-
-    addAdvertiser k peerAdvertisedKeysAcc txEntry@TxEntry { txAdvertiserCount } =
-      if IntSet.member k peerAdvertisedKeysAcc
-        then
-          (False, txEntry, peerAdvertisedKeysAcc)
-        else
-          ( True
-          , txEntry { txAdvertiserCount = txAdvertiserCount + 1 }
-          , IntSet.insert k peerAdvertisedKeysAcc
-          )
 
     lookupOrInternTxId txid st@SharedTxState { sharedTxIdToKey, sharedKeyToTxId, sharedNextTxKey }
       | Just key <- Map.lookup rawId sharedTxIdToKey = (key, False, st)

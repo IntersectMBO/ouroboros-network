@@ -90,7 +90,7 @@ import Ouroboros.Network.Snocket (LocalAddress (..), RemoteAddress)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
            (ProcessedTxCount (..),
            SharedTxState (..), TraceTxLogic (..),
-           TraceTxSubmissionInbound (..), TxAttemptState (..), TxEntry (..),
+           TraceTxSubmissionInbound (..), TxEntry (..),
            TxLease (..), TxSubmissionLogicVersion (..), retainedSize,
            retainedToList)
 import Ouroboros.Network.TxSubmission.Outbound (TraceTxSubmissionOutbound (..))
@@ -1792,7 +1792,6 @@ traceSharedTxStateToJSON
   => SharedTxState addr txid
   -> Value
 traceSharedTxStateToJSON SharedTxState {
-                           sharedPeers,
                            sharedTxTable,
                            sharedRetainedTxs,
                            sharedTxIdToKey,
@@ -1801,20 +1800,13 @@ traceSharedTxStateToJSON SharedTxState {
                          } =
     object
       [ "sharedGeneration" .= sharedGeneration
-      , "peerCount" .= Map.size sharedPeers
       , "activeTxCount" .= IntMap.size sharedTxTable
       , "retainedTxCount" .= retainedSize sharedRetainedTxs
       , "internedTxCount" .= Map.size sharedTxIdToKey
       , "leasedTxCount" .= leasedTxCount
       , "claimableTxCount" .= claimableTxCount
-      , "resolvedTxCount" .= resolvedTxCount
-      , "downloadingAttemptCount" .= downloadingAttemptCount
-      , "bufferedAttemptCount" .= bufferedAttemptCount
-      , "submittingAttemptCount" .= submittingAttemptCount
-      , "peerPhases" .= peerPhases
-      , "sharedPeers" .= [ (show peeraddr, show peerState)
-                         | (peeraddr, peerState) <- Map.toList sharedPeers
-                         ]
+      , "totalAttemptCount" .= totalAttemptCount
+      , "submittingTxCount" .= submittingTxCount
       , "sharedTxTable" .= [ (renderTxId txKey, show txEntry)
                            | (txKey, txEntry) <- IntMap.toList sharedTxTable
                            ]
@@ -1832,25 +1824,11 @@ traceSharedTxStateToJSON SharedTxState {
     claimableTxCount =
       length [ () | TxEntry { txLease = TxClaimable _ } <- activeEntries ]
 
-    resolvedTxCount = 0 :: Int
+    totalAttemptCount =
+      sum [ txAttempt | TxEntry { txAttempt } <- activeEntries ]
 
-    downloadingAttemptCount =
-      sum [ length [ () | TxDownloading <- Map.elems txAttempts ]
-          | TxEntry { txAttempts } <- activeEntries
-          ]
-
-    bufferedAttemptCount =
-      sum [ length [ () | TxBuffered <- Map.elems txAttempts ]
-          | TxEntry { txAttempts } <- activeEntries
-          ]
-
-    submittingAttemptCount =
-      sum [ length [ () | TxSubmitting <- Map.elems txAttempts ]
-          | TxEntry { txAttempts } <- activeEntries
-          ]
-
-    peerPhases :: [(String, Int)]
-    peerPhases = []
+    submittingTxCount =
+      length [ () | TxEntry { txInSubmission = True } <- activeEntries ]
 
     renderTxId txKey =
       maybe "<missing-txid>" show (IntMap.lookup txKey sharedKeyToTxId)

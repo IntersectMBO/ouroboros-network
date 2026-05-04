@@ -31,7 +31,8 @@ import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Ouroboros.Network.TxSubmission.Inbound.V2
            (TxSubmissionInitDelay (NoTxSubmissionInitDelay),
            defaultTxDecisionPolicy, txSubmissionInboundV2)
-import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (newSharedTxStateVar,
+import Ouroboros.Network.TxSubmission.Inbound.V2.Registry
+           (newPeerTxInFlightRegistry, newSharedTxStateVar,
            newTxSubmissionCountersVar, withPeer)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types (TxSubmissionCounters,
            emptySharedTxState)
@@ -94,8 +95,7 @@ mkMultiPeerFixture peers batches =
 
 runDirectServerBenchmark
   :: DirectServerFixture -> IO DirectServerResult
-runDirectServerBenchmark
-  DirectServerFixture {
+runDirectServerBenchmark DirectServerFixture {
       dsPeerCount,
       dsTxIdReplyBatches,
       dsTxSize
@@ -103,13 +103,17 @@ runDirectServerBenchmark
   inboundMempool <- emptyMempool
   duplicateTxIdsVar <- Lazy.newTVarIO []
   sharedStateVar <- newSharedTxStateVar emptySharedTxState
+  inFlightRegistry <- newPeerTxInFlightRegistry
   countersVar <- newTxSubmissionCountersVar mempty
 
-  let runPeer addr =
+  let writer = getMempoolWriter duplicateTxIdsVar inboundMempool
+
+      runPeer addr =
         withPeer
           defaultTxDecisionPolicy
           (getMempoolReader inboundMempool)
           sharedStateVar
+          inFlightRegistry
           countersVar
           addr
           $ \api -> do
@@ -118,17 +122,15 @@ runDirectServerBenchmark
                     nullTracer
                     NoTxSubmissionInitDelay
                     defaultTxDecisionPolicy
-                    (getMempoolWriter duplicateTxIdsVar inboundMempool)
+                    writer
                     getTxSize
                     api
+                stream = [1 .. dsTxIdReplyBatches * 6]
             case server of
               TxSubmissionServerPipelined initServer -> do
                 st0 <- initServer
-                driveServer dsTxSize dsTxIdReplyBatches 1 [] st0
+                driveServer dsTxSize stream [] st0
 
-  -- Spawn one async per peer. Peers race for tx leases, contend on
-  -- the shared STM state, and exercise the scheduler the same way
-  -- they do on mainnet.
   mapConcurrently_ runPeer [1 .. dsPeerCount]
 
   (DirectServerResult
@@ -138,36 +140,30 @@ runDirectServerBenchmark
 
 driveServer
   :: SizeInBytes
-  -> Int
-  -> TxId
+  -> [TxId]
   -> [PendingReply]
   -> ServerStIdle n TxId (Tx TxId) IO ()
   -> IO ()
-driveServer !txSize !remainingBatches !nextTxId !pending =
+driveServer !txSize !stream !pending =
     \case
       SendMsgRequestTxIdsBlocking _ req kDone k
-        | remainingBatches <= 0 -> kDone
+        | null stream -> kDone
         | otherwise -> do
-            let (txids, nextTxId') = mkTxIdReply txSize nextTxId req
+            let (txids, stream') = takeReply txSize req stream
             st' <- k (NonEmpty.fromList txids)
-            driveServer txSize (remainingBatches - 1) nextTxId' pending st'
+            driveServer txSize stream' pending st'
 
       SendMsgRequestTxIdsPipelined _ req k -> do
-        let (txids, nextTxId', remainingBatches') =
-              if remainingBatches <= 0
-                 then ([], nextTxId, remainingBatches)
-                 else let (txids', nextTxId'') = mkTxIdReply txSize nextTxId req
-                      in (txids', nextTxId'', remainingBatches - 1)
+        let (txids, stream') = takeReply txSize req stream
             pending' = pending ++ [PendingTxIds req txids]
         st' <- k
-        driveServer txSize remainingBatches' nextTxId' pending' st'
+        driveServer txSize stream' pending' st'
 
       SendMsgRequestTxsPipelined requested k -> do
         st' <- k
         driveServer
           txSize
-          remainingBatches
-          nextTxId
+          stream
           (pending ++ [PendingTxs requested])
           st'
 
@@ -175,27 +171,26 @@ driveServer !txSize !remainingBatches !nextTxId !pending =
         case pending of
           reply : pending' -> do
             st' <- collect (renderPendingReply reply)
-            driveServer txSize remainingBatches nextTxId pending' st'
+            driveServer txSize stream pending' st'
           [] ->
             case mNone of
-              Just k -> k >>= driveServer txSize remainingBatches nextTxId []
+              Just k -> k >>= driveServer txSize stream []
               Nothing ->
                 error $
                   "TxSubmissionV2 direct benchmark: unexpected "
                     ++ "CollectPipelined with no pending replies"
 
 
-mkTxIdReply
+-- | Take the next @req@-sized chunk from the precomputed txid stream. If
+-- the stream is exhausted, return an empty reply and the empty stream.
+takeReply
   :: SizeInBytes
-  -> TxId
   -> NumTxIdsToReq
-  -> ([(TxId, SizeInBytes)], TxId)
-mkTxIdReply txSize nextTxId req =
-    ( [ (txid, txSize)
-      | txid <- [nextTxId .. nextTxId + replyCount - 1]
-      ]
-    , nextTxId + replyCount
-    )
+  -> [TxId]
+  -> ([(TxId, SizeInBytes)], [TxId])
+takeReply txSize req stream =
+    let (taken, rest) = splitAt replyCount stream
+    in ([ (t, txSize) | t <- taken ], rest)
   where
     replyCount = fromIntegral (getNumTxIdsToReq req)
 

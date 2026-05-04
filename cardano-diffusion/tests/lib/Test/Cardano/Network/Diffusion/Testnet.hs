@@ -1580,12 +1580,7 @@ prop_check_inflight_ratio bi ds@(DiffusionScript simArgs _ _) =
           ]
 
       activeAttemptCount :: TxEntry peeraddr -> Int
-      activeAttemptCount TxEntry { txAttempts } =
-        length
-          [ ()
-          | attempt <- Map.elems txAttempts
-          , attempt == TxDownloading || attempt == TxBuffered
-          ]
+      activeAttemptCount TxEntry { txAttempt } = txAttempt
 
    in tabulate "Max observeed ratio of inflight multiplicity by the max stipulated by the policy"
                (map (\m -> "has " ++ show m ++ " in flight - ratio: "

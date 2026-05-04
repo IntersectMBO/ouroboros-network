@@ -16,17 +16,13 @@ instance (Show txid, Show peeraddr) => LogFormatting (TraceTxLogic peeraddr txid
       mconcat $ [ "kind" .= String "TraceSharedTxState"
                 , "label" .= label
                 , "sharedGeneration" .= sharedGeneration
-                , "peerCount" .= Map.size sharedPeers
                 , "activeTxCount" .= IntMap.size sharedTxTable
                 , "retainedTxCount" .= retainedSize sharedRetainedTxs
                 , "internedTxCount" .= Map.size sharedTxIdToKey
                 , "leasedTxCount" .= leasedTxCount
                 , "claimableTxCount" .= claimableTxCount
-                , "resolvedTxCount" .= resolvedTxCount
-                , "downloadingAttemptCount" .= downloadingAttemptCount
-                , "bufferedAttemptCount" .= bufferedAttemptCount
-                , "submittingAttemptCount" .= submittingAttemptCount
-                , "peerPhases" .= peerPhases
+                , "totalAttemptCount" .= totalAttemptCount
+                , "submittingTxCount" .= submittingTxCount
                 ] ++ more
     where
       activeEntries = IntMap.elems sharedTxTable
@@ -37,35 +33,18 @@ instance (Show txid, Show peeraddr) => LogFormatting (TraceTxLogic peeraddr txid
       claimableTxCount =
         length [ () | TxEntry { txLease = TxClaimable _ } <- activeEntries ]
 
-      resolvedTxCount = 0 :: Int
+      totalAttemptCount =
+        sum [ txAttempt entry | entry <- activeEntries ]
 
-      downloadingAttemptCount =
-        sum [ length [ () | TxDownloading <- Map.elems txAttempts' ]
-            | TxEntry { txAttempts = txAttempts' } <- activeEntries
-            ]
-
-      bufferedAttemptCount =
-        sum [ length [ () | TxBuffered <- Map.elems txAttempts' ]
-            | TxEntry { txAttempts = txAttempts' } <- activeEntries
-            ]
-
-      submittingAttemptCount =
-        sum [ length [ () | TxSubmitting <- Map.elems txAttempts' ]
-            | TxEntry { txAttempts = txAttempts' } <- activeEntries
-            ]
-
-      peerPhases :: [(String, Int)]
-      peerPhases = []
+      submittingTxCount =
+        length [ () | TxEntry { txInSubmission = True } <- activeEntries ]
 
       renderTxId txKey =
         maybe "<missing-txid>" show (IntMap.lookup txKey sharedKeyToTxId)
 
       more = case dtal of
         DMaximum ->
-                  [ "sharedPeers" .= [ (show peeraddr, show peerState)
-                                     | (peeraddr, peerState) <- Map.toList sharedPeers
-                                     ]
-                  , "sharedTxTable" .= [ (renderTxId txKey, show txEntry)
+                  [ "sharedTxTable" .= [ (renderTxId txKey, show txEntry)
                                        | (txKey, txEntry) <- IntMap.toList sharedTxTable
                                        ]
                   , "sharedRetainedTxs" .= [ (renderTxId txKey, show retainUntil)

@@ -185,6 +185,7 @@ runTxSubmission tracer _tracerTxLogic st0 peerImpairmentMap txDecisionPolicy = d
 
     duplicateTxIdsVar <- Lazy.newTVarIO []
     sharedTxStateVar <- newSharedTxStateVar emptySharedTxState
+    inFlightRegistry <- newPeerTxInFlightRegistry
     txCountersVar <- newTxSubmissionCountersVar mempty
     traceTVarIO sharedTxStateVar \_ -> return . TraceDynamic . TxStateTrace
     labelTVarIO sharedTxStateVar "shared-tx-state"
@@ -212,6 +213,7 @@ runTxSubmission tracer _tracerTxLogic st0 peerImpairmentMap txDecisionPolicy = d
                      withPeer txDecisionPolicy
                               (getMempoolReader inboundMempool)
                               sharedTxStateVar
+                              inFlightRegistry
                               txCountersVar
                               addr $ \api -> do
                                 let server =

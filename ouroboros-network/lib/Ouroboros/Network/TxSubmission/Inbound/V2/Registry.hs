@@ -4,9 +4,11 @@
 
 module Ouroboros.Network.TxSubmission.Inbound.V2.Registry
   ( SharedTxStateVar
+  , PeerTxInFlightRegistry
   , PeerTxAPI (..)
   , TxSubmissionCountersVar
   , newSharedTxStateVar
+  , newPeerTxInFlightRegistry
   , newTxSubmissionCountersVar
   , txCountersThreadV2
   , withPeer
@@ -20,6 +22,7 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer, traceWith)
 import Data.IntMap.Strict qualified as IntMap
+import Data.IntSet (IntSet)
 import Data.IntSet qualified as IntSet
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -39,6 +42,18 @@ type SharedTxStateVar m peeraddr txid = StrictTVar m (SharedTxState peeraddr txi
 -- | STM handle for V2 monotonic counters.
 type TxSubmissionCountersVar m = StrictTVar m TxSubmissionCounters
 
+-- | Per-peer in-flight TVar.
+type PeerTxInFlightVar m = StrictTVar m PeerTxInFlight
+
+-- | Registry of every live peer's 'PeerTxInFlightVar'.
+--
+-- 'withPeer' adds the peer's TVar on bracket-enter and removes it on
+-- bracket-exit (after scrubbing any contributions the peer still has
+-- to shared state).  The sweep snapshots this map to compute the
+-- @liveAdvertised@ union without touching peer-local protocol state.
+type PeerTxInFlightRegistry m peeraddr =
+       StrictTVar m (Map peeraddr (PeerTxInFlightVar m))
+
 newSharedTxStateVar
   :: MonadSTM m
   => SharedTxState peeraddr txid
@@ -51,12 +66,21 @@ newTxSubmissionCountersVar
   -> m (TxSubmissionCountersVar m)
 newTxSubmissionCountersVar = newTVarIO
 
+newPeerTxInFlightRegistry
+  :: MonadSTM m
+  => m (PeerTxInFlightRegistry m peeraddr)
+newPeerTxInFlightRegistry = newTVarIO Map.empty
+
 -- | Central bookkeeping thread for V2.
 --
--- Wakes every @'bufferedTxsMinLifetime' policy \/ 4@ seconds to run
--- 'State.sweepSharedState' on the shared tx state (retention expiry + orphan
--- GC). On a slower cadence (every 'countersInterval' seconds of elapsed time)
--- it also emits the current counters when they differ from the last emission.
+-- Wakes every @'bufferedTxsMinLifetime' policy \/ 4@ seconds (capped
+-- between 100 ms and 1 s) to run 'State.sweepSharedState' on the
+-- shared tx state.  The sweep needs the union of every live peer's
+-- 'pifAdvertised' to decide which entries are still wanted; the
+-- registry is read inside the same STM transaction as the sweep so
+-- the snapshot is coherent.  On a slower cadence (every
+-- 'countersInterval' seconds of elapsed time) it also emits the
+-- current counters when they differ from the last emission.
 txCountersThreadV2
   :: forall m peeraddr txid.
      (MonadDelay m, MonadSTM m, HasRawTxId txid)
@@ -64,13 +88,14 @@ txCountersThreadV2
   -> Tracer m TxSubmissionCounters
   -> TxSubmissionCountersVar m
   -> SharedTxStateVar m peeraddr txid
+  -> PeerTxInFlightRegistry m peeraddr
   -> m Void
-txCountersThreadV2 policy tracer countersVar sharedStateVar = do
+txCountersThreadV2 policy tracer countersVar sharedStateVar registry = do
     now <- getMonotonicTime
     go mempty (addTime countersInterval now)
   where
     sweepInterval :: DiffTime
-    sweepInterval = min 1 (bufferedTxsMinLifetime policy / 4)
+    sweepInterval = max 0.1 (min 1 (bufferedTxsMinLifetime policy / 4))
 
     countersInterval :: DiffTime
     countersInterval = 7
@@ -78,7 +103,9 @@ txCountersThreadV2 policy tracer countersVar sharedStateVar = do
     go !previous !nextEmitAt = do
       threadDelay sweepInterval
       now <- getMonotonicTime
-      atomically $ modifyTVar sharedStateVar (State.sweepSharedState now)
+      atomically $ do
+        liveAdvertised <- snapshotLiveAdvertised registry
+        modifyTVar sharedStateVar (State.sweepSharedState now liveAdvertised)
       if now >= nextEmitAt
          then do
            current <- readTVarIO countersVar
@@ -86,13 +113,29 @@ txCountersThreadV2 policy tracer countersVar sharedStateVar = do
            go current (addTime countersInterval now)
          else go previous nextEmitAt
 
+-- | Read every live peer's 'pifAdvertised' and union them.
+snapshotLiveAdvertised
+  :: MonadSTM m
+  => PeerTxInFlightRegistry m peeraddr
+  -> STM m IntSet
+snapshotLiveAdvertised registry = do
+    peers <- readTVar registry
+    foldr step (pure IntSet.empty) (Map.elems peers)
+  where
+    step var k = do
+      pif <- readTVar var
+      acc <- k
+      pure $! IntSet.union (pifAdvertised pif) acc
+
 -- | Peer-facing coordination API.
 --
--- The peer thread keeps its local protocol state in an local
--- variable. Registry helpers operate only on the shared STM state; any helper
--- that needs peer-local state should take it explicitly as an argument.
+-- The peer thread keeps its local protocol state in a local
+-- variable. Registry helpers operate only on the shared STM state
+-- and the per-peer 'PeerTxInFlight' TVar (closure-captured); any
+-- helper that needs peer-local state should take it explicitly as an
+-- argument.
 data PeerTxAPI m txid tx = PeerTxAPI {
-    -- | Wait until either the peer's generation changes from the given
+    -- | Wait until either 'sharedGeneration' moves past the given
     -- value or the optional timeout expires.
     awaitSharedChange    :: Word64
                          -> Maybe DiffTime
@@ -157,132 +200,123 @@ withPeer
   => TxDecisionPolicy
   -> TxSubmissionMempoolReader txid tx idx m
   -> SharedTxStateVar m peeraddr txid
+  -> PeerTxInFlightRegistry m peeraddr
   -> TxSubmissionCountersVar m
   -> peeraddr
   -> (PeerTxAPI m txid tx -> m a)
   -> m a
-withPeer policy TxSubmissionMempoolReader { mempoolGetSnapshot } sharedStateVar countersVar peeraddr io =
-    bracket
-      (do
-          atomically $ modifyTVar sharedStateVar registerPeer
-          pure PeerTxAPI {
-              awaitSharedChange = awaitSharedChangeImp sharedStateVar peeraddr
-            , runNextPeerAction = runNextPeerActionImp policy sharedStateVar countersVar peeraddr
-            , runNextPeerActionPipelined = runNextPeerActionPipelinedImp policy sharedStateVar
-                                             countersVar peeraddr
-            , applyReceivedTxIds = applyReceivedTxIdsImp policy mempoolGetSnapshot sharedStateVar
-                                     countersVar peeraddr
-            , applyReceivedTxs = applyReceivedTxsImp policy mempoolGetSnapshot sharedStateVar
-                                   countersVar peeraddr
-            , applySubmittedTxs = applySubmittedTxsImp policy sharedStateVar countersVar peeraddr
-            , resolveTxRequest = resolveTxRequestImp sharedStateVar
-            , resolveBufferedTxs = resolveBufferedTxsImp sharedStateVar
-            , addCounters = \delta -> atomically $ modifyTVar countersVar (<> delta)
-            }
-      )
-      (\_ -> do
-          now <- getMonotonicTime
-          atomically $ modifyTVar sharedStateVar (unregisterPeer now))
-      io
+withPeer policy TxSubmissionMempoolReader { mempoolGetSnapshot }
+         sharedStateVar registry countersVar peeraddr io =
+    bracket acquire release run
   where
-    registerPeer :: SharedTxState peeraddr txid -> SharedTxState peeraddr txid
-    registerPeer st@SharedTxState { sharedPeers, sharedGeneration } =
-      st {
-        sharedPeers = Map.insert peeraddr sharedPeerState sharedPeers,
-        sharedGeneration = sharedGeneration + 1
-      }
-      where
-        sharedPeerState = SharedPeerState {
-            sharedPeerAdvertisedTxKeys = IntSet.empty,
-            sharedPeerGeneration = 0
-          }
+    acquire = do
+      peerInFlightVar <- newTVarIO emptyPeerTxInFlight
+      atomically $ modifyTVar registry (Map.insert peeraddr peerInFlightVar)
+      pure peerInFlightVar
 
-    unregisterPeer :: Time -> SharedTxState peeraddr txid -> SharedTxState peeraddr txid
-    unregisterPeer now st@SharedTxState { sharedPeers, sharedTxTable, sharedRetainedTxs, sharedTxIdToKey, sharedKeyToTxId, sharedGeneration } =
-      bumpPeerGenerations peersToWake $ st {
-        sharedPeers = sharedPeers',
-        sharedTxTable = sharedTxTable',
-        sharedRetainedTxs = sharedRetainedTxs,
-        sharedTxIdToKey = Map.filter (\txKey -> IntSet.member (unTxKey txKey) liveKeys) sharedTxIdToKey,
-        sharedKeyToTxId = IntMap.restrictKeys sharedKeyToTxId liveKeys,
-        sharedGeneration = sharedGeneration + 1
-      }
-      where
-        leavingAdvertisedKeys =
-          maybe IntSet.empty sharedPeerAdvertisedTxKeys (Map.lookup peeraddr sharedPeers)
-        sharedPeers' = Map.delete peeraddr sharedPeers
+    release peerInFlightVar = do
+      now <- getMonotonicTime
+      atomically $ do
+        pif <- readTVar peerInFlightVar
+        modifyTVar sharedStateVar (scrubFromPeerInFlight peeraddr now pif)
+        modifyTVar registry (Map.delete peeraddr)
 
-        scanState =
-          st { sharedPeers = sharedPeers' }
+    run peerInFlightVar = io PeerTxAPI {
+          awaitSharedChange = awaitSharedChangeImp sharedStateVar
+        , runNextPeerAction = runNextPeerActionImp policy sharedStateVar
+                                peerInFlightVar countersVar peeraddr
+        , runNextPeerActionPipelined = runNextPeerActionPipelinedImp policy
+                                         sharedStateVar peerInFlightVar
+                                         countersVar peeraddr
+        , applyReceivedTxIds = applyReceivedTxIdsImp policy mempoolGetSnapshot
+                                 sharedStateVar peerInFlightVar countersVar
+        , applyReceivedTxs = applyReceivedTxsImp policy mempoolGetSnapshot
+                               sharedStateVar peerInFlightVar countersVar peeraddr
+        , applySubmittedTxs = applySubmittedTxsImp policy sharedStateVar
+                                peerInFlightVar countersVar peeraddr
+        , resolveTxRequest = resolveTxRequestImp sharedStateVar
+        , resolveBufferedTxs = resolveBufferedTxsImp sharedStateVar
+        , addCounters = \delta -> atomically $ modifyTVar countersVar (<> delta)
+        }
 
-        (sharedTxTable', wakeKeys) =
-          IntSet.foldl' scrubOne (sharedTxTable, IntSet.empty) leavingAdvertisedKeys
-        peersToWake =
-          State.advertisingPeersForTxKeysExcept peeraddr wakeKeys scanState
-        liveKeys = IntMap.keysSet sharedTxTable' `IntSet.union` retainedKeysSet sharedRetainedTxs
-
-        scrubOne (txTableAcc, wakeKeysAcc) k =
-          case IntMap.lookup k txTableAcc of
-            Just txEntry ->
-              let txEntry' = scrubTxEntry txEntry
-                  txTableAcc' =
-                    if txLive txEntry'
-                       then IntMap.insert k txEntry' txTableAcc
-                       else IntMap.delete k txTableAcc
-                  wakeKeysAcc' =
-                    if txLive txEntry'
-                       then IntSet.insert k wakeKeysAcc
-                       else wakeKeysAcc
-              in (txTableAcc', wakeKeysAcc')
-            Nothing ->
-              (txTableAcc, wakeKeysAcc)
-
-        scrubTxEntry txEntry@TxEntry { txLease, txAdvertiserCount, txAttempts } =
-          txEntry {
-            txLease = scrubLease txLease,
-            txAdvertiserCount = txAdvertiserCount - 1,
-            txAttempts = Map.delete peeraddr txAttempts
-          }
-
-        scrubLease (TxLeased owner leaseUntil)
-          | owner == peeraddr = TxClaimable now
-          | otherwise         = TxLeased owner leaseUntil
-        scrubLease claimable@TxClaimable {} = claimable
-
-        txLive TxEntry { txLease, txAdvertiserCount, txAttempts } =
-             leaseLive txLease
-          || txAdvertiserCount > 0
-          || not (Map.null txAttempts)
-
-        leaseLive TxClaimable {} = False
-        leaseLive (TxLeased _ _) = True
-
--- | Wait until either the peer's generation changes from the given
--- value or the optional timeout expires.
+-- | Reverse this peer's still-outstanding contributions to the shared
+-- 'TxEntry' counters.  Run by the bracket finalizer; uses the per-peer
+-- TVar snapshot taken at exit time.
 --
---  Used by idle peers to avoid busy-waiting while still being woken when relevant cross-peer
---  state (such as lease expiries or new tx advertisements) changes.
-awaitSharedChangeImp :: ( MonadTimer m
-                        , Ord peeraddr )
+-- 'pifLeased' is best-effort (another peer can steal the lease in the
+-- meantime), so the lease release verifies the entry still names this
+-- peer as owner before claiming.
+scrubFromPeerInFlight
+  :: Eq peeraddr
+  => peeraddr
+  -> Time
+  -> PeerTxInFlight
+  -> SharedTxState peeraddr txid
+  -> SharedTxState peeraddr txid
+scrubFromPeerInFlight peeraddr now pif st
+  | nothingToDo = st
+  | otherwise   = st {
+        sharedTxTable    = sharedTxTable',
+        sharedGeneration = sharedGeneration st + 1
+      }
+  where
+    nothingToDo =
+         IntSet.null (pifLeased pif)
+      && IntSet.null (pifAttempting pif)
+      && IntSet.null (pifSubmitting pif)
+
+    sharedTxTable' =
+        IntSet.foldl' clearSubmission
+          (IntSet.foldl' decAttempt
+             (IntSet.foldl' releaseLease (sharedTxTable st)
+                (pifLeased pif))
+             (pifAttempting pif))
+          (pifSubmitting pif)
+
+    releaseLease tbl k =
+      IntMap.adjust
+        (\entry -> case txLease entry of
+            TxLeased owner _ | owner == peeraddr ->
+              entry { txLease = TxClaimable now }
+            _ -> entry)
+        k tbl
+
+    decAttempt tbl k =
+      IntMap.adjust
+        (\entry -> entry { txAttempt = max 0 (txAttempt entry - 1) })
+        k tbl
+
+    clearSubmission tbl k =
+      IntMap.adjust
+        (\entry -> entry { txInSubmission = False })
+        k tbl
+
+-- | Wait until either 'sharedGeneration' moves past the given value or the
+-- optional timeout expires.
+--
+-- Used by idle peers to avoid busy-waiting while still being woken when
+-- shared state changes (lease expiries, new tx advertisements, mempool
+-- resolutions).  A spurious wake on a change that doesn't grant this peer
+-- new work is harmless: the peer immediately re-runs 'nextPeerAction',
+-- selects 'PeerDoNothing' again, and goes back to sleep on the new
+-- generation value.
+awaitSharedChangeImp :: MonadTimer m
                      => SharedTxStateVar m peeraddr txid
-                     -> peeraddr
                      -> Word64
                      -> Maybe DiffTime
                      -> m ()
-awaitSharedChangeImp sharedStateVar peeraddr generation mDelay =
+awaitSharedChangeImp sharedStateVar generation mDelay =
   case mDelay of
        Nothing ->
          atomically $ do
            sharedState <- readTVar sharedStateVar
-           let generation' = peerGenerationOf peeraddr sharedState
-           check (generation' /= generation)
+           check (sharedGeneration sharedState /= generation)
        Just delay -> do
          delayVar <- registerDelay delay
          atomically $ do
            sharedState <- readTVar sharedStateVar
-           let generation' = peerGenerationOf peeraddr sharedState
            expired <- Lazy.readTVar delayVar
-           check (generation' /= generation || expired)
+           check (sharedGeneration sharedState /= generation || expired)
 
 -- | Avoid rewriting the shared TVar when the pure state step made no shared
 -- change. Callers use 'sharedGeneration' as the dirty bit for shared state.
@@ -294,6 +328,16 @@ writeSharedStateIfChanged :: MonadSTM m
 writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedState'
   | sharedGeneration sharedState' == sharedGeneration0 = pure ()
   | otherwise = writeTVar sharedStateVar sharedState'
+
+-- | Avoid rewriting the per-peer TVar when nothing changed.
+writePeerInFlightIfChanged :: MonadSTM m
+                           => PeerTxInFlightVar m
+                           -> PeerTxInFlight
+                           -> PeerTxInFlight
+                           -> STM m ()
+writePeerInFlightIfChanged var before after
+  | before == after = pure ()
+  | otherwise       = writeTVar var after
 
 -- | Update the counters for the action chosen by the peer scheduler.
 --
@@ -321,111 +365,107 @@ updateCountersForAction countersVar peerAction =
     _ -> pure ()
 
 -- | Compute the next action for this peer in non-pipelined mode.
---
--- Returns the selected 'PeerAction', an updated peer-local state, and applies
--- changes to shared state (such as lease/advertiser coordination).
--- Called from the main peer loop when not handling pipelined replies.
 runNextPeerActionImp :: ( MonadSTM m
-                        , Ord peeraddr
-                        , HasRawTxId txid )
+                        , Ord peeraddr )
                      => TxDecisionPolicy
                      -> SharedTxStateVar m peeraddr txid
+                     -> PeerTxInFlightVar m
                      -> TxSubmissionCountersVar m
                      -> peeraddr
                      -> Time
                      -> PeerTxLocalState tx
                      -> m (PeerAction, PeerTxLocalState tx)
-runNextPeerActionImp policy sharedStateVar countersVar peeraddr now peerState = atomically $ do
+runNextPeerActionImp policy sharedStateVar peerInFlightVar countersVar peeraddr
+                     now peerState = atomically $ do
   sharedState <- readTVar sharedStateVar
+  peerInFlight <- readTVar peerInFlightVar
   let sharedGeneration0 = sharedGeneration sharedState
-      (peerAction, peerState', sharedState') = State.nextPeerAction now policy peeraddr
-                                                 peerState sharedState
+      (peerAction, peerState', peerInFlight', sharedState') =
+        State.nextPeerAction now policy peeraddr peerState peerInFlight sharedState
   writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedState'
+  writePeerInFlightIfChanged peerInFlightVar peerInFlight peerInFlight'
   updateCountersForAction countersVar peerAction
   return (peerAction, peerState')
 
 -- | Compute the next action for this peer in pipelined mode.
---
--- Similar to 'runNextPeerAction' but allows pipelined txid request messages where
--- both acknowledgments and requests can be sent together. Used when waiting for
--- pipelined protocol replies.
 runNextPeerActionPipelinedImp :: ( MonadSTM m
-                                  , Ord peeraddr
-                                  , HasRawTxId txid )
+                                  , Ord peeraddr )
                               => TxDecisionPolicy
                               -> SharedTxStateVar m peeraddr txid
+                              -> PeerTxInFlightVar m
                               -> TxSubmissionCountersVar m
                               -> peeraddr
                               -> Time
                               -> PeerTxLocalState tx
                               -> m (PeerAction, PeerTxLocalState tx)
-runNextPeerActionPipelinedImp policy sharedStateVar countersVar peeraddr now peerState =
+runNextPeerActionPipelinedImp policy sharedStateVar peerInFlightVar countersVar
+                              peeraddr now peerState =
     atomically $ do
       sharedState <- readTVar sharedStateVar
+      peerInFlight <- readTVar peerInFlightVar
       let sharedGeneration0 = sharedGeneration sharedState
-          (peerAction, peerState', sharedState') = State.nextPeerActionPipelined now policy
-                                                     peeraddr peerState sharedState
+          (peerAction, peerState', peerInFlight', sharedState') =
+            State.nextPeerActionPipelined now policy peeraddr peerState
+                                          peerInFlight sharedState
       writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedState'
+      writePeerInFlightIfChanged peerInFlightVar peerInFlight peerInFlight'
       updateCountersForAction countersVar peerAction
       return (peerAction, peerState')
 
 -- | Process a batch of txids received from this peer.
---
--- Interns new txids into the shared state, updates the peer's unacknowledged queue,
--- handles mempool fast-path for already-known txids, and leaves fresh txids
--- claimable so any advertising peer can later claim them. Returns updated
--- peer-local state.
 applyReceivedTxIdsImp :: ( MonadSTM m
-                         , Ord peeraddr
                          , HasRawTxId txid )
                       => TxDecisionPolicy
                       -> STM m (MempoolSnapshot txid tx idx)
                       -> SharedTxStateVar m peeraddr txid
+                      -> PeerTxInFlightVar m
                       -> TxSubmissionCountersVar m
-                      -> peeraddr
                       -> Time
                       -> NumTxIdsToReq
                       -> [(txid, SizeInBytes)]
                       -> PeerTxLocalState tx
                       -> m (PeerTxLocalState tx)
-applyReceivedTxIdsImp policy mempoolGetSnapshot sharedStateVar countersVar peeraddr now
-                      txIdsToReq txidsAndSizes peerState = atomically $ do
-  MempoolSnapshot { mempoolHasTx } <- mempoolGetSnapshot
-  sharedState <- readTVar sharedStateVar
-  let sharedGeneration0 = sharedGeneration sharedState
-      (peerState', sharedState') = State.handleReceivedTxIds mempoolHasTx now policy peeraddr
-                                     txIdsToReq txidsAndSizes peerState sharedState
-  writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedState'
-  modifyTVar countersVar (<> mempty { txIdRepliesReceived = 1
-                                    , txIdsReceived       = fromIntegral (length txidsAndSizes) })
-  return peerState'
+applyReceivedTxIdsImp policy mempoolGetSnapshot sharedStateVar peerInFlightVar
+                      countersVar now txIdsToReq txidsAndSizes peerState =
+  atomically $ do
+    MempoolSnapshot { mempoolHasTx } <- mempoolGetSnapshot
+    sharedState <- readTVar sharedStateVar
+    peerInFlight <- readTVar peerInFlightVar
+    let sharedGeneration0 = sharedGeneration sharedState
+        (peerState', peerInFlight', sharedState') =
+          State.handleReceivedTxIds mempoolHasTx now policy txIdsToReq txidsAndSizes
+                                    peerState peerInFlight sharedState
+    writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedState'
+    writePeerInFlightIfChanged peerInFlightVar peerInFlight peerInFlight'
+    modifyTVar countersVar (<> mempty { txIdRepliesReceived = 1
+                                      , txIdsReceived       = fromIntegral (length txidsAndSizes) })
+    return peerState'
 
 -- | Process a batch of tx bodies received from this peer.
---
--- Buffers the received bodies in peer-local state, updates shared advertiser tracking,
--- and handles omitted bodies by releasing ownership so other advertisers may claim them.
--- Returns the combined penalty count for bodies that were already resolved locally or
--- missing from the reply, together with the updated peer-local state.
 applyReceivedTxsImp :: ( MonadSTM m
-                       , Ord peeraddr
+                       , Eq peeraddr
                        , HasRawTxId txid )
                     => TxDecisionPolicy
                     -> STM m (MempoolSnapshot txid tx idx)
                     -> SharedTxStateVar m peeraddr txid
+                    -> PeerTxInFlightVar m
                     -> TxSubmissionCountersVar m
                     -> peeraddr
                     -> Time
                     -> [(txid, tx)]
                     -> PeerTxLocalState tx
                     -> m (Int, PeerTxLocalState tx)
-applyReceivedTxsImp policy mempoolGetSnapshot sharedStateVar countersVar peeraddr now txs
-                    peerState = atomically $ do
+applyReceivedTxsImp policy mempoolGetSnapshot sharedStateVar peerInFlightVar
+                    countersVar peeraddr now txs peerState = atomically $ do
   MempoolSnapshot { mempoolHasTx } <- mempoolGetSnapshot
   sharedState <- readTVar sharedStateVar
+  peerInFlight <- readTVar peerInFlightVar
   let sharedGeneration0 = sharedGeneration sharedState
-  let (omittedCount, lateCount, peerState', sharedState') =
-          State.handleReceivedTxs mempoolHasTx now policy peeraddr txs peerState sharedState
+      (omittedCount, lateCount, peerState', peerInFlight', sharedState') =
+        State.handleReceivedTxs mempoolHasTx now policy peeraddr txs
+                                peerState peerInFlight sharedState
   writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedState'
+  writePeerInFlightIfChanged peerInFlightVar peerInFlight peerInFlight'
   modifyTVar countersVar (<> mempty {
                       txRepliesReceived = 1,
                       txsReceived       = fromIntegral (length txs),
@@ -435,16 +475,11 @@ applyReceivedTxsImp policy mempoolGetSnapshot sharedStateVar countersVar peeradd
   return (omittedCount + lateCount, peerState')
 
 -- | Mark txs as submitted to the mempool and update shared state.
---
--- Takes the keys that were resolved (either already-in-mempool or successfully
--- submitted) and the keys that were rejected, updating lease ownership, advertiser
--- ack states, and peer rejection scores.
--- Returns updated peer-local state.
 applySubmittedTxsImp :: ( MonadSTM m
-                       , Ord peeraddr
-                       , HasRawTxId txid )
+                       , Eq peeraddr )
                      => TxDecisionPolicy
                      -> SharedTxStateVar m peeraddr txid
+                     -> PeerTxInFlightVar m
                      -> TxSubmissionCountersVar m
                      -> peeraddr
                      -> Time
@@ -452,22 +487,22 @@ applySubmittedTxsImp :: ( MonadSTM m
                      -> [TxKey]
                      -> PeerTxLocalState tx
                      -> m (PeerTxLocalState tx)
-applySubmittedTxsImp policy sharedStateVar countersVar peeraddr now acceptedTxs rejectedTxs
-                     peerState =
+applySubmittedTxsImp policy sharedStateVar peerInFlightVar countersVar peeraddr
+                     now acceptedTxs rejectedTxs peerState =
   atomically $ do
     sharedState <- readTVar sharedStateVar
+    peerInFlight <- readTVar peerInFlightVar
     let sharedGeneration0 = sharedGeneration sharedState
-    let (peerState', sharedState') = State.handleSubmittedTxs now policy peeraddr acceptedTxs
-                                       rejectedTxs peerState sharedState
+        (peerState', peerInFlight', sharedState') =
+          State.handleSubmittedTxs now policy peeraddr acceptedTxs
+                                   rejectedTxs peerState peerInFlight sharedState
     writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedState'
+    writePeerInFlightIfChanged peerInFlightVar peerInFlight peerInFlight'
     modifyTVar countersVar (<> mempty { txsAccepted = fromIntegral (length acceptedTxs)
                                       , txsRejected = fromIntegral (length rejectedTxs) })
     return peerState'
 
 -- | Resolve txids and advertised sizes for a batch of tx keys to request.
---
--- Looks up the real txid and size from peer-local state for building the
--- protocol message. Used before sending 'MsgRequestTxs'.
 resolveTxRequestImp :: ( MonadSTM m
                        , Ord txid )
                     => SharedTxStateVar m peeraddr txid
@@ -486,10 +521,6 @@ resolveTxRequestImp sharedStateVar peerState txKeys = atomically $ do
       )
 
 -- | Resolve buffered tx bodies into full submission records.
---
--- Takes tx keys that have been downloaded and buffered locally, looks up their txids and
--- body values from peer-local state, and returns triples ready for mempool submission.
--- Used when submitting txs after body collection.
 resolveBufferedTxsImp :: ( MonadSTM m
                          )
                        => SharedTxStateVar m peeraddr txid
@@ -507,4 +538,3 @@ resolveBufferedTxsImp sharedStateVar peerState txKeys = atomically $ do
              Just tx -> tx
              Nothing -> error "TxSubmission.V2.resolveBufferedTxsImp: missing buffered tx"
       )
-

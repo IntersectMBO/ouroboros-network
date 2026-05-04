@@ -50,7 +50,6 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Types
   , TxOwnerAckState (..)
   , TxAdvertiser (..)
   , RequestedTxBatch (..)
-  , TxAttemptState (..)
   , TxLease (..)
   , TxEntry (..)
   , TxIdsReqFlavour (..)
@@ -58,9 +57,8 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Types
   , PeerPhase (..)
   , PeerScore (..)
   , PeerTxLocalState (..)
-  , SharedPeerState (..)
-  , peerGenerationOf
-  , bumpPeerGenerations
+  , PeerTxInFlight (..)
+  , emptyPeerTxInFlight
     -- TxKey with helper functions
   , TxKey (..)
   , lookupTxKey
@@ -82,7 +80,6 @@ import NoThunks.Class.Orphans ()
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Sequence.Strict (StrictSeq)
-import Data.Set qualified as Set
 import Data.Time.Clock (diffTimeToPicoseconds)
 import Data.Typeable (Typeable, eqT, (:~:) (Refl))
 import GHC.Generics (Generic)
@@ -135,29 +132,6 @@ newtype TxAdvertiser = TxAdvertiser {
   deriving newtype NFData
 
 
--- | Per-peer attempt state for one tx body.
---
--- V2 keeps the actual tx body in peer-local state, but shared state still
--- needs to know whether each advertiser is currently downloading, has a
--- buffered body ready, or is submitting it to the mempool.
-data TxAttemptState
-  = -- | The peer is currently downloading the tx body from another peer.
-    -- The tx body is being fetched and has not yet been received.
-    TxDownloading
-
-  | -- | The peer has finished downloading the tx body and it is buffered
-    -- locally, waiting to be submitted to the mempool.
-    TxBuffered
-
-  | -- | The peer is submitting the tx body to the mempool. This
-    -- is the final state before the transaction leaves the tracking
-    -- system (either accepted into the mempool or rejected).
-    TxSubmitting
-  deriving stock (Eq, Ord, Show, Generic)
-  deriving anyclass NFData
-
-instance NoThunks TxAttemptState
-
 -- | The current download lease for a tx body.
 --
 -- A tx is either currently leased to a peer until a deadline or it is
@@ -175,30 +149,85 @@ data TxLease peeraddr = TxLeased !peeraddr !Time
 -- peer that advertises a new txid becomes its initial owner. If the
 -- lease expires without a successful outcome, the tx becomes claimable
 -- and another eligible advertiser may atomically claim it.
+--
+-- Per-peer attempt detail is tracked in each peer's 'PeerTxInFlight'
+-- TVar (owned by 'withPeer').  The shared entry only carries
+-- aggregate counts: how many peers are currently attempting this body
+-- and whether any peer is mid mempool submission.
 data TxEntry peeraddr = TxEntry {
-    -- | Current owner lease for downloading the tx body.
+    -- | Current owner lease for downloading the tx body.  When
+    -- 'TxClaimable', the embedded 'Time' also doubles as the
+    -- last-activity stamp used by the orphan sweep.
     txLease           :: !(TxLease peeraddr),
 
-    -- | Number of peers that still advertise this tx.
-    --
-    -- The actual advertiser membership is tracked per peer in
-    -- 'SharedPeerState'. The count is retained here so that hot-path scans can
-    -- stop once all advertisers have been found.
-    txAdvertiserCount :: !Int,
+    -- | Number of peers currently attempting the body (claimed lease
+    -- and/or buffered locally).  Incremented on claim, decremented on
+    -- omit / lease release / 'PeerSubmitTxs' transition (the
+    -- submitting peer no longer counts as an attempter).
+    txAttempt         :: !Int,
 
-    -- | Current per-peer attempt state for this tx body.
-    txAttempts        :: !(Map peeraddr TxAttemptState),
+    -- | At least one peer is currently inside @mempoolAddTxs@ for this
+    -- body.  Other peers use this flag, combined with their own
+    -- 'pifSubmitting' set, to skip 'PeerSubmitTxs' for the same key.
+    -- STM serialisation guarantees at most one peer is the submitter
+    -- at any moment.
+    txInSubmission    :: !Bool,
 
     -- | Effective per-tx inflight multiplicity cap.
     --
     -- Initialised from 'txInflightMultiplicity' of the policy when the
     -- entry is created, and bumped by one when a peer's attempt sits past
-    -- 'inflightTimeout' without reaching 'TxSubmitting', allowing another
+    -- 'inflightTimeout' without reaching submission, allowing another
     -- peer to attempt in parallel.
     currentMaxInflightMultiplicity :: !Int
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (NFData, NoThunks)
+
+-- | Per-peer in-flight tracking, owned by 'withPeer'.
+--
+-- The peer thread updates this TVar in the same STM transaction as
+-- the shared 'TxEntry' so the two stay coherent.  Two readers:
+--
+-- * On exception, 'withPeer's bracket finalizer reads it and reverses
+--   each per-peer contribution: releases any held lease, decrements
+--   'txAttempt' for each attempted key, clears 'txInSubmission' for
+--   any in-flight submission.
+--
+-- * The sweep walks every live peer's TVar to compute the union of
+--   advertised keys and skips those entries when looking for orphans
+--   to retire (the entry is still wanted by an active peer that
+--   may simply be slow to claim).
+data PeerTxInFlight = PeerTxInFlight {
+    -- | Keys this peer currently has in its advertised window.  Used
+    -- by the orphan sweep to know the entry is still wanted, and by
+    -- 'nextWakeDelay' to scan for the earliest claim wake.
+    pifAdvertised :: !IntSet,
+
+    -- | Keys this peer currently holds 'TxLeased' on.  Cleared on
+    -- omit, accept, reject, lease-loss and bracket exit.
+    pifLeased     :: !IntSet,
+
+    -- | Keys this peer currently counts toward 'txAttempt'.  Spans
+    -- the @claim -> download -> buffer@ phases; the key moves to
+    -- 'pifSubmitting' on the @submit@ transition.
+    pifAttempting :: !IntSet,
+
+    -- | Keys this peer currently counts toward 'txInSubmission'.
+    -- Set on 'PeerSubmitTxs' / 'markSubmittingTxs', cleared on accept
+    -- or reject.
+    pifSubmitting :: !IntSet
+  }
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (NFData, NoThunks)
+
+emptyPeerTxInFlight :: PeerTxInFlight
+emptyPeerTxInFlight = PeerTxInFlight {
+    pifAdvertised = IntSet.empty,
+    pifLeased     = IntSet.empty,
+    pifAttempting = IntSet.empty,
+    pifSubmitting = IntSet.empty
+  }
 
 -- | Whether a txid request will be sent as a blocking or pipelined wire
 -- message.
@@ -441,21 +470,11 @@ emptyPeerTxLocalState = PeerTxLocalState {
     peerScore               = emptyPeerScore (Time 0)
   }
 
--- | Small shared view of peer state used for lease claiming and peer
--- selection.
-data SharedPeerState = SharedPeerState {
-    sharedPeerAdvertisedTxKeys :: !IntSet,
-    sharedPeerGeneration       :: !Word64
-  }
-  deriving stock (Eq, Show, Generic)
-  deriving anyclass (NFData, NoThunks)
-
 -- | Shared V2 state.
 --
 -- There is no global decision thread. Peer worker threads coordinate by
 -- atomically reading and updating this shared state.
 data SharedTxState peeraddr txid = SharedTxState {
-    sharedPeers       :: !(Map peeraddr SharedPeerState),
     -- | Active unresolved txs that still participate in leasing, buffering,
     -- submission and advertiser tracking.
     sharedTxTable     :: !(IntMap (TxEntry peeraddr)),
@@ -486,7 +505,6 @@ data RetainedTxs = RetainedTxs {
 
 emptySharedTxState :: SharedTxState peeraddr txid
 emptySharedTxState = SharedTxState {
-    sharedPeers            = Map.empty,
     sharedTxTable          = IntMap.empty,
     sharedRetainedTxs      = retainedEmpty,
     sharedTxIdToKey        = Map.empty,
@@ -589,32 +607,6 @@ retainedExpiredKeys currentTime retained =
         Nothing ->
           expired
 {-# INLINE retainedExpiredKeys #-}
-
-peerGenerationOf :: Ord peeraddr
-                 => peeraddr
-                 -> SharedTxState peeraddr txid
-                 -> Word64
-peerGenerationOf peeraddr SharedTxState { sharedPeers } =
-    case Map.lookup peeraddr sharedPeers of
-         Just SharedPeerState { sharedPeerGeneration } -> sharedPeerGeneration
-         Nothing -> error "TxSubmission.V2.peerGenerationOf: missing peer"
-
-bumpPeerGenerations :: Ord peeraddr
-                    => Set.Set peeraddr
-                    -> SharedTxState peeraddr txid
-                    -> SharedTxState peeraddr txid
-bumpPeerGenerations peersToWake st@SharedTxState { sharedPeers } =
-    st {
-      sharedPeers = foldl' bumpOne sharedPeers (Set.toList peersToWake)
-    }
-  where
-    bumpOne peersMap peeraddr =
-      Map.adjust
-        (\sharedPeerState ->
-           sharedPeerState
-             { sharedPeerGeneration = sharedPeerGeneration sharedPeerState + 1 })
-        peeraddr
-        peersMap
 
 lookupTxKey :: HasRawTxId txid
             => txid
