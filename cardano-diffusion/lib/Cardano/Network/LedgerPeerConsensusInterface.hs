@@ -2,6 +2,7 @@
 
 module Cardano.Network.LedgerPeerConsensusInterface
   ( LedgerPeersConsensusInterface (..)
+  , GetImmutableBlockPointError (..)
     -- * Re-exports
   , FetchMode (..)
   , LedgerStateJudgement (..)
@@ -16,6 +17,20 @@ import Cardano.Network.PeerSelection.LocalRootPeers
 import Ouroboros.Network.Block (Point)
 import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type (RawBlockHash)
+
+
+-- | Error returned by 'getImmutableBlockPoint'.
+--
+data GetImmutableBlockPointError
+  = -- | Genesis point was provided as the target, which has no slot or hash
+    -- to look up.
+    ImmutableBlockPointGenesisPoint
+  | -- | The block was not found in ImmutableDB because the target slot
+    -- is not yet immutable.
+    ImmutableBlockPointNotYetImmutable
+  | -- | ImmutableDB is empty (tip is at origin).
+    ImmutableBlockPointTipIsOrigin
+  deriving (Show, Eq)
 
 
 -- | Cardano Node specific consensus interface actions.
@@ -39,6 +54,8 @@ data LedgerPeersConsensusInterface m =
   -- | Ask the Consensus layer's immutable DB for a point. The callback will yield either:
   --   - the block at the target slot if there is a block in the immutable DB at that slot;
   --   - or the block from the next occupied slot.
-  , getBlockHash
-      :: forall r. Point RawBlockHash -> (m (Maybe (Point RawBlockHash)) -> m r) -> m r
+  , getImmutableBlockPoint
+      :: forall r. Point RawBlockHash
+      -> (m (Either GetImmutableBlockPointError (Point RawBlockHash)) -> m r)
+      -> m r
   }
