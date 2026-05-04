@@ -861,6 +861,23 @@ with args@Arguments {
                            UnnegotiatedState     {} -> writeTVar (connVar v) connState'
                                                     $> v
 
+                           -- The following cases are either impossible (would
+                           -- violate TCP semantics, e.g. only one connection
+                           -- with a given four-tuple may exist in the system),
+                           -- or somehow our state got outdated (a rare race
+                           -- condition).  We keep the inbound connection, as
+                           -- it's the only possible active connection.  If
+                           -- assertions are on we also throw an exception.  By
+                           -- default assertions are off in production node, but
+                           -- there are nodes on the network that run with
+                           -- assertions enabled to notice any rare invariant
+                           -- violation.
+                           --
+                           -- Please note that these cases are not possible to
+                           -- trigger with a TCP simultaneous open.  Such
+                           -- connections are outbound on both sides, and
+                           -- neither side is accepted, thus
+                           -- `includeInboundConnection` is not executed.
                            OutboundUniState      {} -> writeTVar (connVar v) connState'
                                                     $> assert False v
                            OutboundDupState      {} -> writeTVar (connVar v) connState'
