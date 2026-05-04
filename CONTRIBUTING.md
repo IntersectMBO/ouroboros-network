@@ -270,7 +270,7 @@ For a general architectural overview of the network code contact either:
 We officially support:
 
 * `Linux` (`x86_64-linux`)
-* `MacOS` (`x86_64-darwin` and `aarch64-darwin`)
+* `MacOS` (`aarch64-darwin`)
 * `Windows` (using [`msys2`] software distribution, and cross-compiled on linux with `nix`)
 
 On 32-bit platforms, you might expect some issues (currently memory requirement
