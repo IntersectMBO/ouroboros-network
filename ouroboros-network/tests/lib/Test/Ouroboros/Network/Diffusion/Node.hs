@@ -36,10 +36,9 @@ module Test.Ouroboros.Network.Diffusion.Node
   , Node.ntnAddrToRelayAccessPoint
   ) where
 
-import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadMVar (MonadMVar)
 import Control.Concurrent.Class.MonadSTM.Strict
-import Control.Monad ((>=>))
+import Control.Monad (MonadPlus, (>=>))
 import Control.Monad.Class.MonadAsync (MonadAsync (wait, withAsync))
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadSay
@@ -178,8 +177,7 @@ data Arguments extraChurnArgs extraFlags m = Arguments
 run :: forall extraState extraDebugState extraAPI
               extraPeers extraFlags extraChurnArgs
               exception resolver m.
-       ( Alternative (STM m)
-       , MonadAsync       m
+       ( MonadAsync       m
        , MonadDelay       m
        , MonadEvaluate    m
        , MonadFix         m
@@ -193,7 +191,7 @@ run :: forall extraState extraDebugState extraAPI
        , MonadTimer       m
        , MonadThrow       (STM m)
        , MonadMVar        m
-
+       , MonadPlus        (STM m)
        , Eq extraFlags
        , Monoid extraPeers
        , SupportsPeerSelectionState extraPeers NtNAddr

@@ -209,7 +209,8 @@ rmIfExists path = do
 maximumMiniProtocolLimits :: MiniProtocolLimits
 maximumMiniProtocolLimits =
     MiniProtocolLimits {
-      maximumIngressQueue = maxBound
+      maximumIngressQueue = maxBound,
+      burst = Nothing
     }
 
 
@@ -226,7 +227,8 @@ demoProtocol2 chainSync =
         miniProtocolNum    = MiniProtocolNum 2,
         miniProtocolStart  = StartOnDemand,
         miniProtocolLimits = maximumMiniProtocolLimits,
-        miniProtocolRun    = chainSync
+        miniProtocolRun    = chainSync,
+        miniProtocolWeight = 1
       }
     ]
 
@@ -336,13 +338,15 @@ demoProtocol3 chainSync blockFetch =
         miniProtocolNum    = MiniProtocolNum 2,
         miniProtocolStart  = StartOnDemand,
         miniProtocolLimits = maximumMiniProtocolLimits,
-        miniProtocolRun    = chainSync
+        miniProtocolRun    = chainSync,
+        miniProtocolWeight = 1
       }
     , MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 3,
         miniProtocolStart  = StartOnDemand,
         miniProtocolLimits = maximumMiniProtocolLimits,
-        miniProtocolRun    = blockFetch
+        miniProtocolRun    = blockFetch,
+        miniProtocolWeight = 1
       }
     ]
 

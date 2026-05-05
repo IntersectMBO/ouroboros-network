@@ -3,6 +3,7 @@
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE PackageImports             #-}
 {-# LANGUAGE RankNTypes                 #-}
@@ -29,7 +30,7 @@ import Data.Bits
 import Data.ByteString.Lazy qualified as BL
 import Data.ByteString.Lazy.Char8 qualified as BL8 (pack)
 import Data.Functor.Contravariant ((>$<))
-import Data.List (dropWhileEnd, nub)
+import Data.List (dropWhileEnd, group, nub)
 import Data.List qualified as List
 import Data.Map qualified as M
 import Data.Maybe (isNothing)
@@ -116,7 +117,8 @@ tests =
 defaultMiniProtocolLimits :: MiniProtocolLimits
 defaultMiniProtocolLimits =
     MiniProtocolLimits {
-      maximumIngressQueue = defaultMiniProtocolLimit
+      maximumIngressQueue = defaultMiniProtocolLimit,
+      burst = Nothing
     }
 
 defaultMiniProtocolLimit :: Int
@@ -125,7 +127,8 @@ defaultMiniProtocolLimit = 3000000
 smallMiniProtocolLimits :: MiniProtocolLimits
 smallMiniProtocolLimits =
     MiniProtocolLimits {
-      maximumIngressQueue = smallMiniProtocolLimit
+      maximumIngressQueue = smallMiniProtocolLimit,
+      burst = Nothing
     }
 
 smallMiniProtocolLimit :: Int
@@ -312,6 +315,35 @@ instance Arbitrary DummyCapability where
                 ]
 
 
+newtype MiniProtocolWeights = MiniProtocolWeights (MiniProtocolWeight, MiniProtocolWeight)
+  deriving (Eq, Show)
+
+instance Arbitrary MiniProtocolWeights where
+  arbitrary = do
+    wt1 <- arbitrary
+    wt2 <- arbitrary
+    let mkWt = MiniProtocolWeight
+    if wt1 == wt2
+      then pure $ MiniProtocolWeights (mkWt 1, mkWt 1)
+      else pure $ MiniProtocolWeights (wt1, wt2)
+
+  shrink (MiniProtocolWeights (wt1, wt2)) =
+    let mkWt = MiniProtocolWeight
+     in    MiniProtocolWeights (mkWt 1, mkWt 1)
+        : [ MiniProtocolWeights (wt1', wt2')
+          | wt1' <- shrink wt1
+          , wt2' <- shrink wt2
+          ]
+
+
+newtype MiniProtocolWeight = MiniProtocolWeight Word8
+  deriving (Eq, Show)
+
+instance Arbitrary MiniProtocolWeight where
+  arbitrary = MiniProtocolWeight <$> choose (1, 4)
+  shrink (MiniProtocolWeight wt) = MiniProtocolWeight <$> filter (> 0) (shrink wt)
+
+
 -- | A pair of two bytestrings which lengths are unevenly distributed
 --
 data Uneven = Uneven DummyPayload DummyPayload
@@ -372,14 +404,16 @@ prop_mux_snd_recv (DummyRun messages) = ioProperty $ do
                        miniProtocolNum = Mx.MiniProtocolNum 2,
                        miniProtocolDir = Mx.InitiatorDirectionOnly,
                        miniProtocolLimits = defaultMiniProtocolLimits,
-                       miniProtocolCapability = Nothing
+                       miniProtocolCapability = Nothing,
+                       miniProtocolWeight = 1
                      }
 
         serverApp = MiniProtocolInfo {
                        miniProtocolNum = Mx.MiniProtocolNum 2,
                        miniProtocolDir = Mx.ResponderDirectionOnly,
                        miniProtocolLimits = defaultMiniProtocolLimits,
-                       miniProtocolCapability = Nothing
+                       miniProtocolCapability = Nothing,
+                       miniProtocolWeight = 1
                      }
 
     clientMux <- Mx.new clientTracer [clientApp]
@@ -445,13 +479,15 @@ prop_mux_snd_recv_bi (DummyRun messages) (DummyCapability clientCap) (DummyCapab
                         miniProtocolNum = Mx.MiniProtocolNum 2,
                         miniProtocolDir = Mx.InitiatorDirection,
                         miniProtocolLimits = defaultMiniProtocolLimits,
-                        miniProtocolCapability = Nothing
+                        miniProtocolCapability = Nothing,
+                        miniProtocolWeight = 1
                        }
                      , MiniProtocolInfo {
                         miniProtocolNum = Mx.MiniProtocolNum 2,
                         miniProtocolDir = Mx.ResponderDirection,
                         miniProtocolLimits = defaultMiniProtocolLimits,
-                        miniProtocolCapability = clientCap
+                        miniProtocolCapability = clientCap,
+                        miniProtocolWeight = 1
                       }
                      ]
 
@@ -460,13 +496,15 @@ prop_mux_snd_recv_bi (DummyRun messages) (DummyCapability clientCap) (DummyCapab
                         miniProtocolNum = Mx.MiniProtocolNum 2,
                         miniProtocolDir = Mx.ResponderDirection,
                         miniProtocolLimits = defaultMiniProtocolLimits,
-                        miniProtocolCapability = serverCap
+                        miniProtocolCapability = serverCap,
+                        miniProtocolWeight = 1
                        }
                      , MiniProtocolInfo {
                         miniProtocolNum = Mx.MiniProtocolNum 2,
                         miniProtocolDir = Mx.InitiatorDirection,
                         miniProtocolLimits = defaultMiniProtocolLimits,
-                        miniProtocolCapability = Nothing
+                        miniProtocolCapability = Nothing,
+                        miniProtocolWeight = 1
                        }
                      ]
 
@@ -560,14 +598,16 @@ prop_mux_snd_recv_compat messages = ioProperty $ do
                            miniProtocolNum        = Mx.MiniProtocolNum 2,
                            miniProtocolLimits     = defaultMiniProtocolLimits,
                            miniProtocolDir        = Mx.InitiatorDirectionOnly,
-                           miniProtocolCapability = Nothing }
+                           miniProtocolCapability = Nothing,
+                           miniProtocolWeight = 1 }
                        ]
 
         serverBundle = [ MiniProtocolInfo {
                            miniProtocolNum        = Mx.MiniProtocolNum 2,
                            miniProtocolLimits     = defaultMiniProtocolLimits,
                            miniProtocolDir        = Mx.ResponderDirectionOnly,
-                           miniProtocolCapability = Nothing }
+                           miniProtocolCapability = Nothing,
+                           miniProtocolWeight = 1 }
                        ]
 
     clientAsync <- async $ do
@@ -766,7 +806,8 @@ runMuxApplication (DummyCapability rspCap) initApps initBearer respApps respBear
             miniProtocolNum        = Mx.MiniProtocolNum pn,
             miniProtocolDir        = Mx.ResponderDirectionOnly,
             miniProtocolLimits     = defaultMiniProtocolLimits,
-            miniProtocolCapability = rspCap
+            miniProtocolCapability = rspCap,
+            miniProtocolWeight     = 1
           }
         )
         respApps'
@@ -785,7 +826,8 @@ runMuxApplication (DummyCapability rspCap) initApps initBearer respApps respBear
             miniProtocolNum        = Mx.MiniProtocolNum pn,
             miniProtocolDir        = Mx.InitiatorDirectionOnly,
             miniProtocolLimits     = defaultMiniProtocolLimits,
-            miniProtocolCapability = Nothing
+            miniProtocolCapability = Nothing,
+            miniProtocolWeight = 1
           }
         )
         initApps'
@@ -996,8 +1038,10 @@ prop_mux_2_minis_Socket_buf cap a b = ioProperty $
 -- The Mux bearer should alternate between sending data for the two responders.
 --
 prop_mux_starvation :: Uneven
+                    -> MiniProtocolWeights
                     -> Property
-prop_mux_starvation (Uneven response0 response1) =
+prop_mux_starvation (Uneven response0 response1)
+                    (MiniProtocolWeights (MiniProtocolWeight wt1, MiniProtocolWeight wt2)) =
     let sduLen = Mx.SDUSize 1280 in
     (BL.length (unDummyPayload response0) > 2 * fromIntegral (Mx.getSDUSize sduLen)) &&
     (BL.length (unDummyPayload response1) > 2 * fromIntegral (Mx.getSDUSize sduLen)) ==>
@@ -1043,13 +1087,15 @@ prop_mux_starvation (Uneven response0 response1) =
                          miniProtocolNum = Mx.MiniProtocolNum 2,
                          miniProtocolDir = Mx.InitiatorDirectionOnly,
                          miniProtocolLimits = defaultMiniProtocolLimits,
-                         miniProtocolCapability = Nothing
+                         miniProtocolCapability = Nothing,
+                         miniProtocolWeight = 1
                        }
         clientApp3 = MiniProtocolInfo {
                          miniProtocolNum = Mx.MiniProtocolNum 3,
                          miniProtocolDir = Mx.InitiatorDirectionOnly,
                          miniProtocolLimits = defaultMiniProtocolLimits,
-                         miniProtocolCapability = Nothing
+                         miniProtocolCapability = Nothing,
+                         miniProtocolWeight = 1
                        }
 
         serverApp2, serverApp3 :: MiniProtocolInfo Mx.ResponderMode
@@ -1057,13 +1103,15 @@ prop_mux_starvation (Uneven response0 response1) =
                          miniProtocolNum = Mx.MiniProtocolNum 2,
                          miniProtocolDir = Mx.ResponderDirectionOnly,
                          miniProtocolLimits = defaultMiniProtocolLimits,
-                         miniProtocolCapability = Nothing
+                         miniProtocolCapability = Nothing,
+                         miniProtocolWeight = wt1
                        }
         serverApp3 = MiniProtocolInfo {
                          miniProtocolNum = Mx.MiniProtocolNum 3,
                          miniProtocolDir = Mx.ResponderDirectionOnly,
                          miniProtocolLimits = defaultMiniProtocolLimits,
-                         miniProtocolCapability = Nothing
+                         miniProtocolCapability = Nothing,
+                         miniProtocolWeight = wt2
                        }
 
     serverMux <- Mx.new serverTracer [serverApp2, serverApp3]
@@ -1103,28 +1151,30 @@ prop_mux_starvation (Uneven response0 response1) =
 
     -- Then look at the message trace to check for starvation.
     trace <- atomically $ readTVar traceHeaderVar
-    let es = map Mx.mhNum (take 100 (reverse trace))
-        ls = dropWhile (\e -> e == head es) es
-        fair = verifyStarvation ls
+    let es  = map Mx.mhNum (take 100 (reverse trace))
+              -- We can't make 100% sure that both servers start responding at the same
+              -- time but once they are both up and running messages should alternate
+              -- between ReqResp2 and ReqResp3, so we drop the prefix of the protocol
+              -- which goes first, and trim the suffix when the first protocol finishes
+        ls  = dropWhile (\e -> e == head es) es
+        ls' = dropWhileEnd (\e -> e == last ls) ls
+        fair =    counterexample "muxer didn't interleave" (not . null $ ls')
+             .&&. label ("shrinkage " ++ labelPr_ ((length ls' * 100) `div` length es) ++ "%")
+                    (verifyStarvation ls' (\case (Mx.MiniProtocolNum 2) -> wt1; _otherwise -> wt2))
     return $ res_short .&&. res_long .&&. fair
   where
-   -- We can't make 100% sure that both servers start responding at the same
-   -- time but once they are both up and running messages should alternate
-   -- between ReqResp2 and ReqResp3
-    verifyStarvation :: Eq a => [a] -> Property
-    verifyStarvation [] = property True
-    verifyStarvation ms =
-      let ms' = dropWhileEnd (\e -> e == last ms)
-                  (head ms : dropWhile (\e -> e == head ms) ms)
-                ++ [last ms]
-      in
-        label ("length " ++ labelPr_ ((length ms' * 100) `div` length ms) ++ "%")
-        $ label ("length " ++ label_ (length ms')) $ alternates ms'
+    verifyStarvation :: Eq a => [a] -> (a -> Word8) -> Property
+    verifyStarvation [] _atowt = property True
+    verifyStarvation ms atowt = label ("length " ++ label_ (length ms)) .
+                                label ("groups " ++ label_ (length (group ms))) .
+                                alternates $ group ms
 
       where
         alternates []           = True
         alternates (_:[])       = True
-        alternates (a : b : as) = a /= b && alternates (b : as)
+        alternates (a : b : []) =    length a <= fromIntegral (atowt (head a))
+                                  && length b <= fromIntegral (atowt (head b))
+        alternates (a : b : as) = (length a == fromIntegral (atowt (head a))) && alternates (b : as)
 
     label_ :: Int -> String
     label_ n = mconcat
@@ -1151,8 +1201,7 @@ encodeInvalidMuxSDU sdu =
 -- | Verify ingress processing of valid and invalid SDUs.
 --
 prop_demux_sdu :: forall m.
-                    ( Alternative (STM m)
-                    , MonadAsync m
+                    ( MonadAsync m
                     , MonadDelay m
                     , MonadEvaluate m
                     , MonadFork m
@@ -1161,6 +1210,7 @@ prop_demux_sdu :: forall m.
                     , MonadSay m
                     , MonadThrow (STM m)
                     , MonadTimer m
+                    , MonadPlus (STM m)
                     )
                  => ArbitrarySDU
                  -> m Property
@@ -1179,7 +1229,8 @@ prop_demux_sdu a = do
                            miniProtocolNum = Mx.MiniProtocolNum 2,
                            miniProtocolDir = Mx.ResponderDirectionOnly,
                            miniProtocolLimits = smallMiniProtocolLimits,
-                           miniProtocolCapability = Nothing
+                           miniProtocolCapability = Nothing,
+                           miniProtocolWeight = 1
                          }
 
         (client_w, said, waitServerRes, mux) <- plainServer server_mps (serverRsp stopVar)
@@ -1208,7 +1259,8 @@ prop_demux_sdu a = do
                             miniProtocolNum = Mx.MiniProtocolNum 2,
                             miniProtocolDir = Mx.ResponderDirectionOnly,
                             miniProtocolLimits = defaultMiniProtocolLimits,
-                            miniProtocolCapability = Nothing
+                            miniProtocolCapability = Nothing,
+                            miniProtocolWeight = 1
                           }
 
         (client_w, said, waitServerRes, mux) <- plainServer server_mps (serverRsp stopVar)
@@ -1236,7 +1288,8 @@ prop_demux_sdu a = do
                             miniProtocolNum = Mx.MiniProtocolNum 2,
                             miniProtocolDir = Mx.ResponderDirectionOnly,
                             miniProtocolLimits = defaultMiniProtocolLimits,
-                            miniProtocolCapability = Nothing
+                            miniProtocolCapability = Nothing,
+                            miniProtocolWeight = 1
                           }
 
         (client_w, said, waitServerRes, mux) <- plainServer server_mps (serverRsp stopVar)
@@ -1472,7 +1525,7 @@ dummyRestartingAppToChannel (app, r) = \_ -> do
 
 
 appToInfo :: Mx.MiniProtocolDirection mode -> DummyApp -> MiniProtocolInfo mode
-appToInfo d da = MiniProtocolInfo (daNum da) d defaultMiniProtocolLimits Nothing
+appToInfo d da = MiniProtocolInfo (daNum da) d defaultMiniProtocolLimits Nothing 1
 
 triggerApp :: forall m.
               ( MonadAsync m
@@ -1491,8 +1544,7 @@ triggerApp bearer app = do
     return ()
 
 prop_mux_start_mX :: forall m.
-                       ( Alternative (STM m)
-                       , MonadAsync m
+                       ( MonadAsync m
                        , MonadDelay m
                        , MonadEvaluate m
                        , MonadFork m
@@ -1501,6 +1553,7 @@ prop_mux_start_mX :: forall m.
                        , MonadSay m
                        , MonadThrow (STM m)
                        , MonadTimer m
+                       , MonadPlus (STM m)
                        )
                     => DummyApps
                     -> DiffTime
@@ -1555,8 +1608,7 @@ prop_mux_start_mX apps runTime = do
                       Right _ -> return (counterexample "not-failed" False, r)
 
 prop_mux_restart_m :: forall m.
-                       ( Alternative (STM m)
-                       , MonadAsync m
+                       ( MonadAsync m
                        , MonadDelay m
                        , MonadEvaluate m
                        , MonadFork m
@@ -1565,6 +1617,7 @@ prop_mux_restart_m :: forall m.
                        , MonadSay m
                        , MonadThrow (STM m)
                        , MonadTimer m
+                       , MonadPlus (STM m)
                        )
                     => DummyRestartingApps
                     -> m Property
@@ -1726,8 +1779,7 @@ prop_mux_restart_m (DummyRestartingInitiatorResponderApps rapps) = do
 
 -- | Verifying starting and stopping of miniprotocols. Both normal exits and by exception.
 prop_mux_start_m :: forall m.
-                       ( Alternative (STM m)
-                       , MonadAsync m
+                       ( MonadAsync m
                        , MonadDelay m
                        , MonadEvaluate m
                        , MonadFork  m
@@ -1736,6 +1788,7 @@ prop_mux_start_m :: forall m.
                        , MonadSay m
                        , MonadThrow (STM m)
                        , MonadTimer m
+                       , MonadPlus (STM m)
                        )
                     => Mx.Bearer m
                     -- ^ Mux bearer
@@ -1973,8 +2026,7 @@ withNetworkCtx NetworkCtx { ncSocket, ncClose, ncMuxBearer } k =
 
 close_experiment
     :: forall sock acc req resp m.
-       ( Alternative (STM m)
-       , MonadAsync       m
+       ( MonadAsync       m
        , MonadDelay       m
        , MonadEvaluate    m
        , MonadFork        m
@@ -1983,6 +2035,7 @@ close_experiment
        , MonadTimer       m
        , MonadThrow  (STM m)
        , MonadST          m
+       , MonadPlus (STM m)
        , Serialise req
        , Serialise resp
        , Eq resp
@@ -2016,8 +2069,9 @@ close_experiment
                        [ MiniProtocolInfo {
                            miniProtocolNum,
                            miniProtocolDir = Mx.InitiatorDirectionOnly,
-                           miniProtocolLimits = Mx.MiniProtocolLimits maxBound,
-                           miniProtocolCapability = Nothing
+                           miniProtocolLimits = Mx.MiniProtocolLimits maxBound Nothing,
+                           miniProtocolCapability = Nothing,
+                           miniProtocolWeight = 1
                          }
                        ])
                 Mx.stop $ \mux ->
@@ -2036,8 +2090,9 @@ close_experiment
                             [ MiniProtocolInfo {
                                 miniProtocolNum,
                                 miniProtocolDir = Mx.ResponderDirectionOnly,
-                                miniProtocolLimits = Mx.MiniProtocolLimits maxBound,
-                                miniProtocolCapability = Nothing
+                                miniProtocolLimits = Mx.MiniProtocolLimits maxBound Nothing,
+                                miniProtocolCapability = Nothing,
+                                miniProtocolWeight = 1
                               }
                             ])
                     Mx.stop $ \mux ->
@@ -2371,13 +2426,13 @@ instance Arbitrary NonEmptyByteString where
       ]
 
 prop_mux_trailing_bytes
-  :: ( Alternative   (STM m)
-     , MonadAsync         m
+  :: ( MonadAsync         m
      , MonadDelay         m
      , MonadEvaluate      m
      , MonadFork          m
      , MonadLabelledSTM   m
      , MonadMask          m
+     , MonadPlus     (STM m)
      , MonadTimer         m
      , MonadThrow    (STM m)
      )
@@ -2395,8 +2450,9 @@ prop_mux_trailing_bytes reminder (NonEmptyByteString received) = do
                   [ MiniProtocolInfo {
                       miniProtocolNum,
                       miniProtocolDir = Mx.ResponderDirectionOnly,
-                      miniProtocolLimits = Mx.MiniProtocolLimits maxBound,
-                      miniProtocolCapability = Nothing
+                      miniProtocolLimits = Mx.MiniProtocolLimits maxBound Nothing,
+                      miniProtocolCapability = Nothing,
+                      miniProtocolWeight = 1
                     }
                   ]
     withAsync (Mx.run mux bearer) $ \_ -> do
@@ -2471,13 +2527,13 @@ prop_mux_trailing_bytes_io reminder received =
 
 
 prop_mux_pure_exception
-  :: ( Alternative   (STM m)
-     , MonadAsync         m
+  :: ( MonadAsync         m
      , MonadDelay         m
      , MonadEvaluate      m
      , MonadFork          m
      , MonadLabelledSTM   m
      , MonadMask          m
+     , MonadPlus     (STM m)
      , MonadTimer         m
      , MonadThrow    (STM m)
      )
@@ -2493,8 +2549,9 @@ prop_mux_pure_exception = do
                   [ MiniProtocolInfo {
                       miniProtocolNum,
                       miniProtocolDir = Mx.ResponderDirectionOnly,
-                      miniProtocolLimits = Mx.MiniProtocolLimits maxBound,
-                      miniProtocolCapability = Nothing
+                      miniProtocolLimits = Mx.MiniProtocolLimits maxBound Nothing,
+                      miniProtocolCapability = Nothing,
+                      miniProtocolWeight = 1
                     }
                   ]
     withAsync (Mx.run mux bearer) $ \_ -> do

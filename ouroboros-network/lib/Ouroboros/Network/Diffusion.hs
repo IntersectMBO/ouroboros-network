@@ -20,11 +20,11 @@ module Ouroboros.Network.Diffusion
   ) where
 
 
-import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadMVar (MonadMVar)
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.DeepSeq (NFData)
 import Control.Exception (IOException)
+import Control.Monad (MonadPlus)
 import Control.Monad.Class.MonadAsync (Async, MonadAsync)
 import Control.Monad.Class.MonadAsync qualified as Async
 import Control.Monad.Class.MonadFork
@@ -97,8 +97,7 @@ runM
                 extraState extraDebugState extraPeers
                 extraAPI extraFlags extraChurnArgs.
 
-       ( Alternative (STM m)
-       , MonadAsync       m
+       ( MonadAsync       m
        , MonadDelay       m
        , MonadEvaluate    m
        , MonadFix         m
@@ -106,6 +105,7 @@ runM
        , MonadLabelledSTM m
        , MonadTraceSTM    m
        , MonadMask        m
+       , MonadPlus   (STM m)
        , MonadThrow  (STM m)
        , MonadTime        m
        , MonadTimer       m

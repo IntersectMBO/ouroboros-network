@@ -14,9 +14,9 @@ module Ouroboros.Network.Server.Simple
   , ServerTracer (..)
   ) where
 
-import Control.Applicative (Alternative)
 import Control.Concurrent.JobPool qualified as JobPool
 import Control.DeepSeq (NFData)
+import Control.Monad (MonadPlus)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
@@ -43,13 +43,13 @@ data ServerTracer addr
   deriving Show
 
 with :: forall fd addr vNumber vData m a b.
-        ( Alternative (STM m),
-          MonadAsync m,
+        ( MonadAsync m,
           MonadDelay m,
           MonadEvaluate m,
           MonadFork  m,
           MonadLabelledSTM m,
           MonadMask  m,
+          MonadPlus (STM m),
           MonadTimer m,
           MonadThrow (STM m),
           NFData vData,
