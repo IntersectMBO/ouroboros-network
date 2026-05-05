@@ -10,6 +10,7 @@
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeSynonymInstances       #-}
 
 #if !defined(mingw32_HOST_OS)
@@ -631,6 +632,7 @@ localSocketFileDescriptor =
 #else
 localSocketFileDescriptor = socketFileDescriptor . getLocalHandle
 #endif
+
 
 -- | invalidFileDescriptor - when we need something for testing/simulation
 invalidFileDescriptor :: FileDescriptor

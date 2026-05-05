@@ -329,7 +329,8 @@ library
 
   if !os(windows)
     build-depends:
-      directory
+      directory,
+      unix,
 
 library framework
   import: ghc-options

@@ -25,6 +25,9 @@ import Control.Concurrent.Class.MonadMVar (MonadMVar)
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.DeepSeq (NFData)
 import Control.Exception (IOException)
+#if !defined(mingw32_HOST_OS) && !defined(wasm32_HOST_ARCH)
+import Control.Monad (when)
+#endif
 import Control.Monad.Class.MonadAsync (Async, MonadAsync)
 import Control.Monad.Class.MonadAsync qualified as Async
 import Control.Monad.Class.MonadFork
@@ -33,6 +36,10 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.Fix (MonadFix)
 import Control.Tracer (Tracer, contramap, nullTracer, traceWith)
+#if !defined(mingw32_HOST_OS) && !defined(wasm32_HOST_ARCH)
+import Data.Bits ((.|.))
+import System.Posix.Files qualified as Unix
+#endif
 import Data.ByteString.Lazy (ByteString)
 import Data.Hashable (Hashable)
 import Data.IP qualified as IP
@@ -77,8 +84,9 @@ import Ouroboros.Network.PeerSharing (PeerSharingRegistry (..))
 import Ouroboros.Network.Protocol.Handshake
 import Ouroboros.Network.RethrowPolicy
 import Ouroboros.Network.Server qualified as Server
-import Ouroboros.Network.Snocket (LocalAddress, LocalSocket (..), RemoteAddress,
-           localSocketFileDescriptor, makeLocalBearer, makeSocketBearer')
+import Ouroboros.Network.Snocket (LocalAddress (..), LocalSocket (..),
+           RemoteAddress, localSocketFileDescriptor, makeLocalBearer,
+           makeSocketBearer')
 import Ouroboros.Network.Snocket qualified as Snocket
 import Ouroboros.Network.Socket (configureSocket, configureSystemdSocket)
 import Ouroboros.Network.Util (PrettyShow (..))
@@ -164,6 +172,7 @@ runM Interfaces
        , diNtcSnocket
        , diNtcBearer
        , diNtcGetFileDescriptor
+       , diNtcConfigureSocketFile
        , diRng
        , diDnsActions
        , diConnStateIdSupply
@@ -318,7 +327,9 @@ runM Interfaces
     mkLocalThread :: ThreadId m -> Either ntcFd ntcAddr -> m Void
     mkLocalThread mainThreadId localAddr = do
      labelThisThread "diffusion-local"
-     withLocalSocket tracer diNtcGetFileDescriptor diNtcSnocket localAddr
+     withLocalSocket tracer diNtcGetFileDescriptor
+                     diNtcConfigureSocketFile
+                     diNtcSnocket localAddr
       $ \localSocket -> do
         localInbInfoChannel <- newInformationChannel
 
@@ -912,7 +923,7 @@ run extraParams tracers args apps = do
 --
 
 mkInterfaces :: IOManager
-             -> Tracer IO (DiffusionTracer ntnAddr ntcAddr)
+             -> Tracer IO (DiffusionTracer ntnAddr LocalAddress)
              -> DiffTime
              -> IO (Interfaces Socket
                                RemoteAddress
@@ -921,7 +932,6 @@ mkInterfaces :: IOManager
                                Resolver
                                IO)
 mkInterfaces iocp tracer egressPollInterval = do
-
   diRng <- newStdGen
   diConnStateIdSupply <- atomically $ CM.newConnStateIdSupply Proxy
 
@@ -936,15 +946,47 @@ mkInterfaces iocp tracer egressPollInterval = do
     diNtnConfigureSystemdSocket =
       configureSystemdSocket
         (SystemdSocketConfiguration `contramap` tracer),
-    diNtnAddressType       = socketAddressType,
-    diNtnToPeerAddr        = curry IP.toSockAddr,
-    diNtcSnocket           = Snocket.localSnocket iocp,
-    diNtcBearer            = makeLocalBearer,
-    diNtcGetFileDescriptor = localSocketFileDescriptor,
-    diDnsActions           = RootPeersDNS.ioDNSActions,
+    diNtnAddressType            = socketAddressType,
+    diNtnToPeerAddr             = curry IP.toSockAddr,
+    diNtcSnocket                = Snocket.localSnocket iocp,
+    diNtcBearer                 = makeLocalBearer,
+    diNtcGetFileDescriptor      = localSocketFileDescriptor,
+    diNtcConfigureSocketFile    = checkLocalSocket tracer,
+    diDnsActions                = RootPeersDNS.ioDNSActions,
     diRng,
     diConnStateIdSupply
   }
+
+-- | Trace a warning if the socket file or its parent directory have to broad
+-- permissions.
+--
+-- No-op on Windows (named pipes do not live in a POSIX-permissioned
+-- directory) and on WASM (WASI does not implement the POSIX permission
+-- model in any meaningful way).
+checkLocalSocket
+  :: Tracer IO (DiffusionTracer ntnAddr LocalAddress)
+  -> LocalAddress
+  -> IO ()
+#if defined(mingw32_HOST_OS) || defined(wasm32_HOST_ARCH)
+checkLocalSocket _ _ = return ()
+#else
+checkLocalSocket tracer addr@(LocalAddress path) = do
+  sockMode <- Unix.fileMode <$> Unix.getFileStatus path
+  let otherMask = Unix.otherReadMode .|. Unix.otherWriteMode
+  when (Unix.intersectFileModes sockMode otherMask /= Unix.nullFileMode) $
+    traceWith tracer (InsecureLocalSocketPermissions addr (fromIntegral sockMode))
+
+  dirMode <- Unix.fileMode <$> Unix.getFileStatus (parentDirectory path)
+  let writeMask = Unix.groupWriteMode .|. Unix.otherWriteMode
+  when (Unix.intersectFileModes dirMode writeMask /= Unix.nullFileMode) $
+    traceWith tracer (InsecureLocalSocketDirectory addr (fromIntegral dirMode))
+  where
+    parentDirectory :: FilePath -> FilePath
+    parentDirectory p = case break (== '/') (reverse p) of
+      (_, '/' : revParent) | not (null revParent) -> reverse revParent
+      (_, '/' : _)                                -> "/"
+      _                                           -> "."
+#endif
 
 --
 -- Data flow

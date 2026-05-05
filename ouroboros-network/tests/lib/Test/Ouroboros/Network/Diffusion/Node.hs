@@ -267,19 +267,20 @@ run blockGeneratorArgs ni na
                                                (NtCFD m) NtCAddr
                                                resolver m
             interfaces = Diffusion.Interfaces
-              { Diffusion.diNtnSnocket            = iNtnSnocket ni
-              , Diffusion.diNtnBearer             = iNtnBearer ni
-              , Diffusion.diWithBuffer            = \f -> f Nothing
-              , Diffusion.diNtnConfigureSocket    = \_ _ -> return ()
+              { Diffusion.diNtnSnocket             = iNtnSnocket ni
+              , Diffusion.diNtnBearer              = iNtnBearer ni
+              , Diffusion.diWithBuffer             = \f -> f Nothing
+              , Diffusion.diNtnConfigureSocket     = \_ _ -> return ()
               , Diffusion.diNtnConfigureSystemdSocket
-                                               = \_ _ -> return ()
-              , Diffusion.diNtnAddressType = ntnAddressType
-              , Diffusion.diNtnToPeerAddr         = \a b -> TestAddress (Node.IPAddr a b)
-              , Diffusion.diNtcSnocket            = iNtcSnocket ni
-              , Diffusion.diNtcBearer             = iNtcBearer ni
-              , Diffusion.diNtcGetFileDescriptor  = \_ -> pure invalidFileDescriptor
-              , Diffusion.diRng                   = diffStgGen
-              , Diffusion.diDnsActions            = \tracer lookupType toPeerAddr ->
+                                                   = \_ _ -> return ()
+              , Diffusion.diNtnAddressType         = ntnAddressType
+              , Diffusion.diNtnToPeerAddr          = \a b -> TestAddress (Node.IPAddr a b)
+              , Diffusion.diNtcSnocket             = iNtcSnocket ni
+              , Diffusion.diNtcBearer              = iNtcBearer ni
+              , Diffusion.diNtcGetFileDescriptor   = \_ -> pure invalidFileDescriptor
+              , Diffusion.diNtcConfigureSocketFile = \_ -> pure ()
+              , Diffusion.diRng                    = diffStgGen
+              , Diffusion.diDnsActions             = \tracer lookupType toPeerAddr ->
                   mockDNSActions
                     tracer
                     lookupType

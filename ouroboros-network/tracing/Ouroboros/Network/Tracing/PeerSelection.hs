@@ -7,6 +7,7 @@ module Ouroboros.Network.Tracing.PeerSelection () where
 import Data.Aeson (Value (String), (.=))
 import Data.List qualified as List
 import Data.Text (pack)
+import Numeric (showOct)
 
 import Cardano.Logging
 import Ouroboros.Network.Diffusion.Types qualified as Diff
@@ -54,6 +55,11 @@ instance (Show ntnAddr, Show ntcAddr) =>
     , "path" .= String (pack . show $ localAddress)
     , "socket" .= String (pack (show socket))
     ]
+  forMachine _dtal (Diff.ConfiguredLocalSocket localAddress socket) = mconcat
+    [ "kind" .= String "ConfiguredLocalSocket"
+    , "path" .= String (pack . show $ localAddress)
+    , "socket" .= String (pack (show socket))
+    ]
   forMachine _dtal (Diff.ListeningLocalSocket localAddress socket) = mconcat
     [ "kind" .= String "ListeningLocalSocket"
     , "path" .=  String (pack . show $ localAddress)
@@ -63,6 +69,16 @@ instance (Show ntnAddr, Show ntcAddr) =>
     [ "kind" .= String "LocalSocketUp"
     , "path" .= String (pack . show $ localAddress)
     , "socket" .= String (pack (show fd))
+    ]
+  forMachine _dtal (Diff.InsecureLocalSocketDirectory localAddress mode) = mconcat
+    [ "kind" .= String "InsecureLocalSocketDirectory"
+    , "path" .= String (pack . show $ localAddress)
+    , "mode" .= String (pack (showString "0o" . showOct mode $ ""))
+    ]
+  forMachine _dtal (Diff.InsecureLocalSocketPermissions localAddress mode) = mconcat
+    [ "kind" .= String "InsecureLocalSocketDirectory"
+    , "path" .= String (pack . show $ localAddress)
+    , "mode" .= String (pack (showString "0o" . showOct mode $ ""))
     ]
   forMachine _dtal (Diff.CreatingServerSocket socket) = mconcat
     [ "kind" .= String "CreatingServerSocket"
@@ -109,10 +125,16 @@ instance MetaTrace (Diff.DiffusionTracer ntnAddr ntcAddr) where
       Namespace [] ["CreatedLocalSocket"]
     namespaceFor Diff.ConfiguringLocalSocket {} =
       Namespace [] ["ConfiguringLocalSocket"]
+    namespaceFor Diff.ConfiguredLocalSocket {} =
+      Namespace [] ["ConfiguredLocalSocket"]
     namespaceFor Diff.ListeningLocalSocket {} =
       Namespace [] ["ListeningLocalSocket"]
     namespaceFor Diff.LocalSocketUp {} =
       Namespace [] ["LocalSocketUp"]
+    namespaceFor Diff.InsecureLocalSocketDirectory {} =
+      Namespace [] ["InsecureLocalSocketDirectory"]
+    namespaceFor Diff.InsecureLocalSocketPermissions {} =
+      Namespace [] ["InsecureLocalSocketDirectory"]
     namespaceFor Diff.CreatingServerSocket {} =
       Namespace [] ["CreatingServerSocket"]
     namespaceFor Diff.ListeningServerSocket {} =
@@ -130,23 +152,26 @@ instance MetaTrace (Diff.DiffusionTracer ntnAddr ntcAddr) where
     namespaceFor Diff.SystemdSocketConfiguration {} =
       Namespace [] ["SystemdSocketConfiguration"]
 
-    severityFor (Namespace _ ["RunServer"]) _ = Just Info
-    severityFor (Namespace _ ["RunLocalServer"]) _ = Just Info
-    severityFor (Namespace _ ["UsingSystemdSocket"]) _ = Just Info
-    severityFor (Namespace _ ["CreateSystemdSocketForSnocketPath"]) _ = Just Info
-    severityFor (Namespace _ ["CreatedLocalSocket"]) _ = Just Info
-    severityFor (Namespace _ ["ConfiguringLocalSocket"]) _ = Just Info
-    severityFor (Namespace _ ["ListeningLocalSocket"]) _ = Just Info
-    severityFor (Namespace _ ["LocalSocketUp"]) _ = Just Info
-    severityFor (Namespace _ ["CreatingServerSocket"]) _ = Just Info
-    severityFor (Namespace _ ["ListeningServerSocket"]) _ = Just Info
-    severityFor (Namespace _ ["ServerSocketUp"]) _ = Just Info
-    severityFor (Namespace _ ["ConfiguringServerSocket"]) _ = Just Info
-    severityFor (Namespace _ ["UnsupportedLocalSystemdSocket"]) _ = Just Warning
-    severityFor (Namespace _ ["UnsupportedReadySocketCase"]) _ = Just Info
-    severityFor (Namespace _ ["DiffusionErrored"]) _ = Just Critical
-    severityFor (Namespace _ ["SystemdSocketConfiguration"]) _ = Just Warning
-    severityFor _ _ = Nothing
+    severityFor _ (Just Diff.RunServer{}) = Just Info
+    severityFor _ (Just Diff.RunLocalServer{}) = Just Info
+    severityFor _ (Just Diff.UsingSystemdSocket{}) = Just Info
+    severityFor _ (Just Diff.CreateSystemdSocketForSnocketPath{}) = Just Info
+    severityFor _ (Just Diff.CreatedLocalSocket{}) = Just Info
+    severityFor _ (Just Diff.ConfiguringLocalSocket{}) = Just Info
+    severityFor _ (Just Diff.ConfiguredLocalSocket{}) = Just Info
+    severityFor _ (Just Diff.ListeningLocalSocket{}) = Just Info
+    severityFor _ (Just Diff.LocalSocketUp{}) = Just Info
+    severityFor _ (Just Diff.InsecureLocalSocketDirectory{}) = Just Warning
+    severityFor _ (Just Diff.InsecureLocalSocketPermissions{}) = Just Warning
+    severityFor _ (Just Diff.CreatingServerSocket{}) = Just Info
+    severityFor _ (Just Diff.ListeningServerSocket{}) = Just Info
+    severityFor _ (Just Diff.ServerSocketUp{}) = Just Info
+    severityFor _ (Just Diff.ConfiguringServerSocket{}) = Just Info
+    severityFor _ (Just Diff.UnsupportedLocalSystemdSocket{}) = Just Warning
+    severityFor _ (Just Diff.UnsupportedReadySocketCase{}) = Just Info
+    severityFor _ (Just Diff.DiffusionErrored{}) = Just Critical
+    severityFor _ (Just Diff.SystemdSocketConfiguration{}) = Just Warning
+    severityFor _ Nothing = Nothing
 
     documentFor (Namespace _ ["RunServer"]) = Just
       "RunServer"
@@ -160,10 +185,24 @@ instance MetaTrace (Diff.DiffusionTracer ntnAddr ntcAddr) where
       "CreatedLocalSocket"
     documentFor (Namespace _ ["ConfiguringLocalSocket"]) = Just
       "ConfiguringLocalSocket"
+    documentFor (Namespace _ ["ConfiguredLocalSocket"]) = Just $ mconcat
+      [ "ConfiguredLocalSocket: the local socket's permissions have been "
+      , "restricted (POSIX: mode 0600)."
+      ]
     documentFor (Namespace _ ["ListeningLocalSocket"]) = Just
       "ListeningLocalSocket"
     documentFor (Namespace _ ["LocalSocketUp"]) = Just
       "LocalSocketUp"
+    documentFor (Namespace _ ["InsecureLocalSocketDirectory"]) = Just $ mconcat
+      [ "InsecureLocalSocketDirectory: the parent directory of the local "
+      , "socket has group or other write permission, leaving the socket "
+      , "vulnerable to manipulation by another local user with write access "
+      , "to that directory."
+      ]
+    documentFor (Namespace _ ["InsecureLocalSocketPermissions"]) = Just $ mconcat
+      [ "InsecureLocalSocketPermissions: the local socket has other-read or "
+      , "other-write permissions."
+      ]
     documentFor (Namespace _ ["CreatingServerSocket"]) = Just
       "CreatingServerSocket"
     documentFor (Namespace _ ["ListeningServerSocket"]) = Just
@@ -189,8 +228,10 @@ instance MetaTrace (Diff.DiffusionTracer ntnAddr ntcAddr) where
       , Namespace [] ["CreateSystemdSocketForSnocketPath"]
       , Namespace [] ["CreatedLocalSocket"]
       , Namespace [] ["ConfiguringLocalSocket"]
+      , Namespace [] ["ConfiguredLocalSocket"]
       , Namespace [] ["ListeningLocalSocket"]
       , Namespace [] ["LocalSocketUp"]
+      , Namespace [] ["InsecureLocalSocketDirectory"]
       , Namespace [] ["CreatingServerSocket"]
       , Namespace [] ["ListeningServerSocket"]
       , Namespace [] ["ServerSocketUp"]
