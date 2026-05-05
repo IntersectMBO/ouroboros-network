@@ -426,9 +426,14 @@ applyReceivedTxIdsImp :: ( MonadSTM m
                       -> PeerTxLocalState tx
                       -> m (PeerTxLocalState tx)
 applyReceivedTxIdsImp policy mempoolGetSnapshot sharedStateVar peerInFlightVar
-                      countersVar now txIdsToReq txidsAndSizes peerState =
+                      countersVar now txIdsToReq txidsAndSizes peerState = do
+  -- Snapshot the mempool outside the per-peer STM transaction so mempool
+  -- writers don't kick the hot path into retries.  Stale answers are
+  -- benign: a false positive delays re-fetch by 'bufferedTxsMinLifetime'
+  -- via the retained set; a false negative wastes one body fetch that
+  -- 'handleReceivedTxs' will reclassify as late.
+  MempoolSnapshot { mempoolHasTx } <- atomically mempoolGetSnapshot
   atomically $ do
-    MempoolSnapshot { mempoolHasTx } <- mempoolGetSnapshot
     sharedState <- readTVar sharedStateVar
     peerInFlight <- readTVar peerInFlightVar
     let sharedGeneration0 = sharedGeneration sharedState
@@ -456,23 +461,25 @@ applyReceivedTxsImp :: ( MonadSTM m
                     -> PeerTxLocalState tx
                     -> m (Int, PeerTxLocalState tx)
 applyReceivedTxsImp policy mempoolGetSnapshot sharedStateVar peerInFlightVar
-                    countersVar peeraddr now txs peerState = atomically $ do
-  MempoolSnapshot { mempoolHasTx } <- mempoolGetSnapshot
-  sharedState <- readTVar sharedStateVar
-  peerInFlight <- readTVar peerInFlightVar
-  let sharedGeneration0 = sharedGeneration sharedState
-      (omittedCount, lateCount, peerState', peerInFlight', sharedState') =
-        State.handleReceivedTxs mempoolHasTx now policy peeraddr txs
-                                peerState peerInFlight sharedState
-  writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedState'
-  writePeerInFlightIfChanged peerInFlightVar peerInFlight peerInFlight'
-  modifyTVar countersVar (<> mempty {
-                      txRepliesReceived = 1,
-                      txsReceived       = fromIntegral (length txs),
-                      txsOmitted        = fromIntegral omittedCount,
-                      lateBodies        = fromIntegral lateCount
-                    })
-  return (omittedCount + lateCount, peerState')
+                    countersVar peeraddr now txs peerState = do
+  -- Mempool snapshot taken in its own STM tx; see 'applyReceivedTxIdsImp'.
+  MempoolSnapshot { mempoolHasTx } <- atomically mempoolGetSnapshot
+  atomically $ do
+    sharedState <- readTVar sharedStateVar
+    peerInFlight <- readTVar peerInFlightVar
+    let sharedGeneration0 = sharedGeneration sharedState
+        (omittedCount, lateCount, peerState', peerInFlight', sharedState') =
+          State.handleReceivedTxs mempoolHasTx now policy peeraddr txs
+                                  peerState peerInFlight sharedState
+    writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedState'
+    writePeerInFlightIfChanged peerInFlightVar peerInFlight peerInFlight'
+    modifyTVar countersVar (<> mempty {
+                        txRepliesReceived = 1,
+                        txsReceived       = fromIntegral (length txs),
+                        txsOmitted        = fromIntegral omittedCount,
+                        lateBodies        = fromIntegral lateCount
+                      })
+    return (omittedCount + lateCount, peerState')
 
 -- | Mark txs as submitted to the mempool and update shared state.
 applySubmittedTxsImp :: ( MonadSTM m
