@@ -13,7 +13,7 @@ LEIOS_BLOCK_SIZE=$((($MUX_SDU - 5) * 1000))
 PRAOS_BLOCK_SIZE=$((($MUX_SDU - 5) * 10))
 
 # client's configuration
-NUM_LEIOS_REQUESTS=20
+NUM_LEIOS_REQUESTS=10
 NUM_PRAOS_REQUESTS=1000 # $(($NUM_LEIOS_REQUESTS * $LEIOS_BLOCK_SIZE / $PRAOS_BLOCK_SIZE))
 
 # network shaping parameters
@@ -41,6 +41,7 @@ cleanup_netns() {
       # kill server and tcpdump
       sudo kill -9 $pid
     done
+    sudo ip netns delete ns$i
   done
   # for i in 1 2 3; do sudo ip netns del ns$i; done
 
@@ -163,7 +164,10 @@ setup_bridge() {
 
 setup_bridge
 
-cabal build exe:mux-leios-demo
+if ! cabal build exe:mux-leios-demo; then
+  echo "cabal build failed; exiting." >&2
+  exit 1
+fi
 CMD=$(cabal list-bin exe:mux-leios-demo)
 
 # For debuging throuput shaping
