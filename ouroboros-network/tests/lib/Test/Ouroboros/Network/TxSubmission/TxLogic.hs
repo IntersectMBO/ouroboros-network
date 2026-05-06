@@ -389,7 +389,7 @@ sharedTxStateInvariant strength SharedTxState {
           ]
 
 newtype ArbTxDecisionPolicy = ArbTxDecisionPolicy TxDecisionPolicy
-  deriving Show
+  deriving (Eq, Show)
 
 newtype ArbSharedTxState = ArbSharedTxState (SharedTxState PeerAddr TxId)
   deriving Show
@@ -449,7 +449,7 @@ instance Arbitrary ArbTxDecisionPolicy where
 
     shrink (ArbTxDecisionPolicy a)
       | a == defaultTxDecisionPolicy = []
-      | otherwise =
+      | otherwise = nub $
           ArbTxDecisionPolicy defaultTxDecisionPolicy
         : [ ArbTxDecisionPolicy a { maxNumTxIdsToRequest = NumTxIdsToReq x }
           | (Positive (Small x)) <- shrink (Positive (Small (getNumTxIdsToReq (maxNumTxIdsToRequest a))))

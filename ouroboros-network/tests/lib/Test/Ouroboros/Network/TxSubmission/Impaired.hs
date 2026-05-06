@@ -115,7 +115,7 @@ data Impairment = Impairment
     -- ^ per-body Bernoulli drop probability, in [0, 1]
   , impairSeed      :: Int
     -- ^ seed for the per-peer StdGen used by 'omitBodies'
-  } deriving Show
+  } deriving (Eq, Show)
 
 -- | The neutral impairment: no delay, no omission. Equivalent to running the
 -- client unwrapped.
