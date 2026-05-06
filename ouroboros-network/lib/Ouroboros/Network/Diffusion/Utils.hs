@@ -114,14 +114,12 @@ withLocalSocket tracer getFileDescriptor sn localAddress k =
     $ \case
       -- unconfigured socket
       Right (sd, addr) -> do
-        traceWith tracer . ConfiguringLocalSocket addr
-           =<< getFileDescriptor sd
+        fd <- getFileDescriptor sd
+        traceWith tracer (ConfiguringLocalSocket addr fd)
         Snocket.bind sn sd addr
-        traceWith tracer . ListeningLocalSocket addr
-           =<< getFileDescriptor sd
+        traceWith tracer (ListeningLocalSocket addr fd)
         Snocket.listen sn sd
-        traceWith tracer . LocalSocketUp addr
-           =<< getFileDescriptor sd
+        traceWith tracer (LocalSocketUp addr fd)
         k sd
 
       -- pre-configured systemd socket
