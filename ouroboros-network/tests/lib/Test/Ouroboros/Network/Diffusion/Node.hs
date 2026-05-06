@@ -39,7 +39,6 @@ module Test.Ouroboros.Network.Diffusion.Node
 import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadMVar (MonadMVar)
 import Control.Concurrent.Class.MonadSTM.Strict
-import Control.Monad ((>=>))
 import Control.Monad.Class.MonadAsync (MonadAsync (wait, withAsync))
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadSay
@@ -377,17 +376,16 @@ run blockGeneratorArgs ni na
     blockFetchPolicy nodeKernel =
         BlockFetchConsensusInterface {
           readCandidateChains    = readTVar (nkClientChains nodeKernel)
-                                   >>= traverse (readTVar
-                                       >=> (return . toAnchoredFragment)),
-          readCurrentChain       = readTVar (nkChainProducerState nodeKernel)
-                                   >>= (return . toAnchoredFragmentHeader . chainState),
+                               >>= fmap (fmap toAnchoredFragment) . traverse readTVar,
+          readCurrentChain       = toAnchoredFragmentHeader . chainState
+                               <$> readTVar (nkChainProducerState nodeKernel),
           readFetchMode          = return $ PraosFetchMode FetchModeBulkSync,
           readFetchedBlocks      = flip Set.member <$> getBlockPointSet (nkChainDB nodeKernel),
-          readFetchedMaxSlotNo   = Foldable.foldl' max NoMaxSlotNo .
-                                   map (maxSlotNoFromWithOrigin . pointSlot) .
-                                   Set.elems <$>
-                                   getBlockPointSet (nkChainDB nodeKernel),
-          mkAddFetchedBlock        =
+          readFetchedMaxSlotNo   = Foldable.foldl' max NoMaxSlotNo
+                                 . map (maxSlotNoFromWithOrigin . pointSlot)
+                                 . Set.elems
+                               <$> getBlockPointSet (nkChainDB nodeKernel),
+          mkAddFetchedBlock      =
               pure $ \_p b ->
                 atomically (addBlock b (nkChainDB nodeKernel)),
 
