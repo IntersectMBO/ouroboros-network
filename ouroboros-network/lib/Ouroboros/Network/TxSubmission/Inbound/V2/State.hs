@@ -310,14 +310,21 @@ pickSubmitAction PeerActionContext { pacPeerState, pacPeerInFlight, pacSharedSta
      else Just txsToSubmit
   where
 
-    -- Walk the unacknowledged txid queue in peer advertisement order, picking
-    -- bodies buffered by this peer for immediate submission. Stop at the
-    -- first tx that is unresolved and not available from this peer: later
-    -- txs in the peer's stream must not run ahead of earlier ones, otherwise
-    -- a tx may be offered to the mempool before a transaction it depends on
-    -- is confirmed. Txs already resolved elsewhere (present in
-    -- 'sharedRetainedTxs') are skipped over since no further action is
-    -- needed for them.
+    -- Walk the unacknowledged txid queue in peer advertisement order,
+    -- picking bodies buffered by this peer for immediate submission.
+    -- Classification of each entry:
+    --
+    -- * 'sharedTxTable' has 'Nothing' for the key: the tx was resolved at
+    --   some point (a peer submitted it to the mempool) and the entry was
+    --   deleted.  Orphan sweep cannot drop an entry while any peer still
+    --   tracks the key, so 'Nothing' here implies resolution; safe to skip
+    --   and continue past, regardless of whether the retained marker has
+    --   since expired or the mempool has since evicted.
+    -- * 'sharedTxTable' has 'Just' but we don't have the body buffered, or
+    --   another peer is already submitting: the tx is in flight elsewhere.
+    --   Stop, otherwise later txs in our stream might run ahead of an
+    --   unresolved earlier tx they depend on.
+    -- * 'sharedTxTable' has 'Just' and we have the body buffered: submit.
     pickBufferedTxsToSubmit = go [] (toList (peerUnacknowledgedTxIds pacPeerState))
       where
         go acc [] = reverse acc
@@ -327,15 +334,8 @@ pickSubmitAction PeerActionContext { pacPeerState, pacPeerInFlight, pacSharedSta
               | txBufferedByPeer pacPeerState k
               , not (txSubmittingByOther pacPeerInFlight k txEntry) ->
                   go (txKey : acc) rest
-            _ | retainedMember k (sharedRetainedTxs pacSharedState) ->
-                  -- already resolved via another peer
-                  go acc rest
-            _ | not (IntMap.member k (peerAvailableTxIds pacPeerState))
-              , not (IntMap.member k (peerDownloadedTxs pacPeerState)) ->
-                  -- we have already finished with this tx (previously
-                  -- submitted, or never had a body to submit)
-                  go acc rest
-            _ -> reverse acc
+            Just _  -> reverse acc
+            Nothing -> go acc rest
 
 -- | Select transactions to request from the peer, if within policy limits.
 --
