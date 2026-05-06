@@ -714,11 +714,16 @@ txIdAckable :: Eq peeraddr
 txIdAckable PeerActionContext { pacPeerAddr, pacPeerState, pacPeerInFlight, pacSharedState }
             (TxKey k)
   | retainedMember k (sharedRetainedTxs pacSharedState) = True
+  | IntMap.member k (peerDownloadedTxs pacPeerState) = False
+    -- We hold the body in our local buffer; we must submit it before
+    -- acking the txid, otherwise the body would orphan in
+    -- 'peerDownloadedTxs' if 'pickSubmitAction' is blocked from
+    -- reaching this entry by an earlier in-flight tx.
+  | not (IntSet.member k (pifAdvertised pacPeerInFlight)) = True
     -- The peer no longer tracks the txid as advertised. This covers
     -- mempool/retained txids that 'handleReceivedTxIds' kept out of the
     -- advertised set, as well as txids the peer has already attempted
     -- and submitted (or that another peer resolved).
-  | not (IntSet.member k (pifAdvertised pacPeerInFlight)) = True
   | otherwise =
       case IntMap.lookup k (sharedTxTable pacSharedState) of
            Just txEntry ->
