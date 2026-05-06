@@ -282,7 +282,8 @@ applyRequestTxIdsChoice ctx flavour acknowledgedTxIds txIdsToAcknowledge txIdsTo
       }
     pif = pacPeerInFlight ctx
     peerInFlight'' = pif {
-        pifAdvertised = pifAdvertised pif `IntSet.difference` acknowledgedKeys
+        pifAdvertised  = pifAdvertised  pif `IntSet.difference` acknowledgedKeys,
+        pifAcksPending = pifAcksPending pif `IntSet.difference` acknowledgedKeys
       }
 
 -- | Construct a 'PeerDoNothing' action.
@@ -759,19 +760,49 @@ dropTxKeys keys st@SharedTxState { sharedTxTable, sharedRetainedTxs, sharedTxIdT
            Just txid -> Map.delete (getRawTxId txid) txIdToKey
            Nothing   -> txIdToKey
 
+-- | Remove only the txid <-> key lookup entries for the given keys.
+-- Used by the sweep for keys that have outlived their 'sharedTxTable'
+-- and retained residence but had their lookup entries kept while peers
+-- still carried the txid in 'peerUnacknowledgedTxIds'.
+dropLookupOnly :: HasRawTxId txid
+               => IntSet.IntSet
+               -> SharedTxState peeraddr txid
+               -> SharedTxState peeraddr txid
+dropLookupOnly keys st@SharedTxState { sharedTxIdToKey, sharedKeyToTxId }
+  | IntSet.null keys = st
+  | otherwise =
+      st {
+        sharedTxIdToKey = IntSet.foldl' deleteTxId sharedTxIdToKey keys,
+        sharedKeyToTxId = IntMap.withoutKeys sharedKeyToTxId keys
+      }
+  where
+    deleteTxId txIdToKey k =
+      case IntMap.lookup k sharedKeyToTxId of
+           Just txid -> Map.delete (getRawTxId txid) txIdToKey
+           Nothing   -> txIdToKey
+
 -- | Shared-state cleanup
 --
--- Drops two kinds of dead entries in one pass:
+-- Drops three kinds of dead entries in one pass:
 --
--- * Retained entries whose retention deadline has passed.
+-- * Retained entries whose retention deadline has passed.  Only the
+--   'sharedRetainedTxs' membership is removed; the txid lookup tables
+--   ('sharedTxIdToKey', 'sharedKeyToTxId') are preserved here because
+--   peers may still hold the key in 'peerUnacknowledgedTxIds' until
+--   they ack it.
 -- * Orphaned 'sharedTxTable' entries: entries with a released lease,
---   no in-flight attempt, and no live peer still tracking the key in
---   its 'pifAdvertised' set.
+--   no in-flight attempt, and no live peer still tracking the key.
+--   These are safe to fully tear down (lookup tables included): by
+--   definition no peer references them.
+-- * Stale lookup-table entries: keys present only in 'sharedTxIdToKey'
+--   / 'sharedKeyToTxId' with no peer still referencing them.  Bounds
+--   the lookup tables so they don't grow unboundedly.
 --
--- The @liveAdvertised@ set is the union of every active peer's
--- 'pifAdvertised'.  Caller (the sweep thread) snapshots all per-peer
--- TVars in the same STM transaction that runs this function so the
--- snapshot is coherent with the sharedTxTable read.
+-- The @liveReferences@ set is the union of every active peer's
+-- 'pifAdvertised' and 'pifAcksPending'.  Caller (the sweep thread)
+-- snapshots all per-peer TVars in the same STM transaction that runs
+-- this function so the snapshot is coherent with the sharedTxTable
+-- read.
 --
 -- Bumps 'sharedGeneration' if anything changed so sleeping peer workers wake
 -- and re-evaluate.
@@ -780,23 +811,36 @@ sweepSharedState :: HasRawTxId txid
                  -> IntSet
                  -> SharedTxState peeraddr txid
                  -> SharedTxState peeraddr txid
-sweepSharedState now liveAdvertised st
-    | IntSet.null toDrop = st
-    | otherwise          = (dropTxKeys toDrop st) {
-                             sharedGeneration = sharedGeneration st + 1
-                           }
+sweepSharedState now liveReferences st
+    | IntSet.null orphans
+   && IntSet.null expiredRetained
+   && IntSet.null staleLookups = st
+    | otherwise =
+        ( dropLookupOnly staleLookups
+        . dropTxKeys orphans
+        $ st { sharedRetainedTxs =
+                 retainedDeleteKeys expiredRetained (sharedRetainedTxs st) }
+        ) { sharedGeneration = sharedGeneration st + 1 }
   where
     expiredRetained = retainedExpiredKeys now (sharedRetainedTxs st)
     orphans =
       IntMap.keysSet
         (IntMap.filterWithKey isOrphan (sharedTxTable st))
-    toDrop  = expiredRetained `IntSet.union` orphans
+
+    retainedAfter  = retainedKeysSet (sharedRetainedTxs st)
+                      `IntSet.difference` expiredRetained
+    referencedKeys = IntMap.keysSet (sharedTxTable st)
+                      `IntSet.union` retainedAfter
+                      `IntSet.union` liveReferences
+    staleLookups   = IntMap.keysSet (sharedKeyToTxId st)
+                      `IntSet.difference` referencedKeys
+                      `IntSet.difference` orphans
 
     isOrphan _ TxEntry { txLease = TxLeased {} } = False
     isOrphan k TxEntry { txAttempt, txInSubmission }
       | txAttempt > 0                     = False
       | txInSubmission                    = False
-      | IntSet.member k liveAdvertised    = False
+      | IntSet.member k liveReferences    = False
       | otherwise                         = True
 {-# INLINABLE sweepSharedState #-}
 
@@ -1113,12 +1157,14 @@ handleReceivedTxIds mempoolHasTx now policy requestedTxIds txidsAndSizes
     (peerState'', peerInFlight'', sharedState'')
   where
     peerAdvertisedKeys0 = pifAdvertised peerInFlight
+    peerAcksPending0    = pifAcksPending peerInFlight
 
     -- Fold over received txids: build unacknowledged list, update tables.
     ( receivedTxKeysRev
       , peerAvailableTxIds'
       , sharedStateHandled
       , peerAdvertisedKeys'
+      , peerAcksPending'
       , sharedChanged
       ) =
       foldl'
@@ -1127,6 +1173,7 @@ handleReceivedTxIds mempoolHasTx now policy requestedTxIds txidsAndSizes
         , peerAvailableTxIds peerState
         , sharedState
         , peerAdvertisedKeys0
+        , peerAcksPending0
         , False
         )
         txidsAndSizes
@@ -1143,7 +1190,8 @@ handleReceivedTxIds mempoolHasTx now policy requestedTxIds txidsAndSizes
       }
 
     peerInFlight'' = peerInFlight {
-        pifAdvertised = peerAdvertisedKeys'
+        pifAdvertised  = peerAdvertisedKeys',
+        pifAcksPending = peerAcksPending'
       }
 
     sharedState''
@@ -1162,12 +1210,14 @@ handleReceivedTxIds mempoolHasTx now policy requestedTxIds txidsAndSizes
          , IntMap.IntMap SizeInBytes
          , SharedTxState peeraddr txid
          , IntSet.IntSet
+         , IntSet.IntSet
          , Bool
          )
       -> (txid, SizeInBytes)
       -> ( [TxKey]
          , IntMap.IntMap SizeInBytes
          , SharedTxState peeraddr txid
+         , IntSet.IntSet
          , IntSet.IntSet
          , Bool
          )
@@ -1176,6 +1226,7 @@ handleReceivedTxIds mempoolHasTx now policy requestedTxIds txidsAndSizes
       , !availableAcc
       , !sharedAcc
       , !peerAdvertisedKeysAcc
+      , !peerAcksPendingAcc
       , !sharedChangedAcc
       )
       (txid, txSize)
@@ -1184,6 +1235,7 @@ handleReceivedTxIds mempoolHasTx now policy requestedTxIds txidsAndSizes
           , IntMap.delete k availableAcc
           , sharedAcc'
           , IntSet.delete k peerAdvertisedKeysAcc
+          , IntSet.insert k peerAcksPendingAcc
           , sharedChangedAcc'
           )
       | mempoolHasTx txid =
@@ -1195,6 +1247,7 @@ handleReceivedTxIds mempoolHasTx now policy requestedTxIds txidsAndSizes
                 retainedInsertMax k retainUntil (sharedRetainedTxs sharedAcc')
             }
           , IntSet.delete k peerAdvertisedKeysAcc
+          , IntSet.insert k peerAcksPendingAcc
           , True
           )
       | otherwise =
@@ -1213,6 +1266,7 @@ handleReceivedTxIds mempoolHasTx now policy requestedTxIds txidsAndSizes
                      sharedTxTable = IntMap.insert k txEntry (sharedTxTable sharedAcc')
                    }
                  , IntSet.insert k peerAdvertisedKeysAcc
+                 , IntSet.insert k peerAcksPendingAcc
                  , True
                  )
             Just _ ->
@@ -1220,6 +1274,7 @@ handleReceivedTxIds mempoolHasTx now policy requestedTxIds txidsAndSizes
               , IntMap.insert k txSize availableAcc
               , sharedAcc'
               , IntSet.insert k peerAdvertisedKeysAcc
+              , IntSet.insert k peerAcksPendingAcc
               , sharedChangedAcc'
               )
       where

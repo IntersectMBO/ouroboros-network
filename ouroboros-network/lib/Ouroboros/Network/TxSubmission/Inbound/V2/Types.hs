@@ -216,7 +216,14 @@ data PeerTxInFlight = PeerTxInFlight {
     -- | Keys this peer currently counts toward 'txInSubmission'.
     -- Set on 'PeerSubmitTxs' / 'markSubmittingTxs', cleared on accept
     -- or reject.
-    pifSubmitting :: !IntSet
+    pifSubmitting :: !IntSet,
+
+    -- | Keys this peer holds in 'peerUnacknowledgedTxIds'.  A superset
+    -- of 'pifAdvertised': also tracks keys the peer learned about via
+    -- the retained-or-mempool path of 'handleReceivedTxIds' that are
+    -- not advertised for fetch but still pending an ack.  Used by the
+    -- sweep to know whether the txid lookup tables can be reclaimed.
+    pifAcksPending :: !IntSet
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (NFData, NoThunks)
@@ -226,7 +233,8 @@ emptyPeerTxInFlight = PeerTxInFlight {
     pifAdvertised = IntSet.empty,
     pifLeased     = IntSet.empty,
     pifAttempting = IntSet.empty,
-    pifSubmitting = IntSet.empty
+    pifSubmitting = IntSet.empty,
+    pifAcksPending = IntSet.empty
   }
 
 -- | Whether a txid request will be sent as a blocking or pipelined wire

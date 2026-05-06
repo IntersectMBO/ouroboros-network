@@ -104,8 +104,8 @@ txCountersThreadV2 policy tracer countersVar sharedStateVar registry = do
       threadDelay sweepInterval
       now <- getMonotonicTime
       atomically $ do
-        liveAdvertised <- snapshotLiveAdvertised registry
-        modifyTVar sharedStateVar (State.sweepSharedState now liveAdvertised)
+        liveReferences <- snapshotLiveReferences registry
+        modifyTVar sharedStateVar (State.sweepSharedState now liveReferences)
       if now >= nextEmitAt
          then do
            current <- readTVarIO countersVar
@@ -113,19 +113,24 @@ txCountersThreadV2 policy tracer countersVar sharedStateVar registry = do
            go current (addTime countersInterval now)
          else go previous nextEmitAt
 
--- | Read every live peer's 'pifAdvertised' and union them.
-snapshotLiveAdvertised
+-- | Read every live peer's 'pifAdvertised' and 'pifAcksPending' and
+-- union them.  This is the set of keys still referenced by some peer
+-- (advertised for fetch, or held in @peerUnacknowledgedTxIds@ awaiting
+-- ack) and is used by the sweep to know which lookup table entries
+-- can be safely reclaimed.
+snapshotLiveReferences
   :: MonadSTM m
   => PeerTxInFlightRegistry m peeraddr
   -> STM m IntSet
-snapshotLiveAdvertised registry = do
+snapshotLiveReferences registry = do
     peers <- readTVar registry
     foldr step (pure IntSet.empty) (Map.elems peers)
   where
     step var k = do
       pif <- readTVar var
       acc <- k
-      pure $! IntSet.union (pifAdvertised pif) acc
+      pure $!  IntSet.union (pifAdvertised pif)
+             $ IntSet.union (pifAcksPending pif) acc
 
 -- | Peer-facing coordination API.
 --

@@ -353,8 +353,8 @@ sharedTxStateInvariant strength SharedTxState {
         (IntSet.null (IntMap.keysSet sharedTxTable `IntSet.intersection` retainedKeysSet sharedRetainedTxs))
     , counterexample "tx-key maps disagree"
         (property (keysRoundTripForward && keysRoundTripBackward))
-    , counterexample "tx-key maps do not track exactly the live tx keys"
-        (IntMap.keysSet sharedKeyToTxId === liveKeys)
+    , counterexample "live tx keys missing from tx-key maps"
+        (liveKeys `IntSet.isSubsetOf` IntMap.keysSet sharedKeyToTxId)
     , counterexample "sharedNextTxKey does not stay ahead of all live tx keys"
         (property (all (< sharedNextTxKey) (IntSet.toList liveKeys)))
     ]
