@@ -34,6 +34,8 @@ import Control.Tracer (Tracer (..), contramap)
 import Data.ByteString.Lazy qualified as BSL
 import Data.Foldable (traverse_)
 import Data.Function (on)
+import Data.IntMap.Strict qualified as IntMap
+import Data.IntSet qualified as IntSet
 import Data.List (nubBy)
 import Data.List qualified as List
 import Data.List.Trace qualified as Trace
@@ -71,6 +73,7 @@ import Test.QuickCheck
 import "quickcheck-monoids" Test.QuickCheck.Monoids
 #endif
 import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.HUnit (Assertion, assertEqual, testCase)
 import Test.Tasty.QuickCheck (testProperty)
 
 
@@ -91,6 +94,7 @@ tests = testGroup "AppV2"
   , testProperty "SharedTxState" $ withMaxSize 25
                                  $ withMaxSuccess 25
                                  prop_sharedTxStateInvariant
+  , testCase     "counterEmission/cadence"   unit_counterEmission_cadence
   ]
 
 data TestVersion = TestVersion
@@ -184,8 +188,8 @@ runTxSubmission
                   )
   -> Map peeraddr Impairment
   -> TxDecisionPolicy
-  -> m ([Tx txid], [[Tx txid]])
-  -- ^ inbound and outbound mempools
+  -> m ([Tx txid], [[Tx txid]], SharedTxState peeraddr txid)
+  -- ^ inbound mempool, outbound mempools, final shared state
 runTxSubmission tracer _tracerTxLogic countersTracer st0 peerImpairmentMap txDecisionPolicy = do
     st <- traverse (\(b, c, d, e) -> do
         mempool <- newMempool b
@@ -251,15 +255,24 @@ runTxSubmission tracer _tracerTxLogic countersTracer st0 peerImpairmentMap txDec
               \countersAid ->
       withAsyncAll (zip clients servers) $ \as -> do
         _ <- waitAllServers as
+
+        -- All peers have scrubbed their per-peer state via the
+        -- 'withPeer' bracket finalizer.  Wait long enough for retained
+        -- entries to expire so a sweep tick (still firing inside the
+        -- running counters thread) can clear them along with any
+        -- orphans and stale lookups.
+        threadDelay (bufferedTxsMinLifetime txDecisionPolicy + 1)
+
         cancel countersAid
 
-        inmp <- readMempool inboundMempool
+        finalSharedState <- readTVarIO sharedTxStateVar
+        inmp     <- readMempool inboundMempool
         dupTxIds <- Lazy.readTVarIO duplicateTxIdsVar
-        let outmp = map (\(txs, _, _, _) -> txs)
-                  $ Map.elems st0
+        let outmp  = map (\(txs, _, _, _) -> txs)
+                   $ Map.elems st0
             dupTxs = [ txMap Map.! txid | txid <- dupTxIds]
 
-        return (inmp <> dupTxs, outmp)
+        return (inmp <> dupTxs, outmp, finalSharedState)
   where
     waitAllServers :: [(Async m x, Async m x)] -> m [Either SomeException x]
     waitAllServers [] = return []
@@ -281,8 +294,8 @@ runTxSubmission tracer _tracerTxLogic countersTracer st0 peerImpairmentMap txDec
 
 
 txSubmissionSimulation :: forall s . TxSubmissionState
-                       -> IOSim s ([Tx Int], [[Tx Int]])
-                       -- ^ inbound & outbound mempools
+                       -> IOSim s ([Tx Int], [[Tx Int]], SharedTxState PeerAddr TxId)
+                       -- ^ inbound mempool, outbound mempools, final shared state
 txSubmissionSimulation (TxSubmissionState state peerImpairment txDecisionPolicy) = do
   state' <- traverse (\(txs, mbOutDelay, mbInDelay) -> do
                       let mbOutDelayTime = getSmallDelay . getPositive <$> mbOutDelay
@@ -401,6 +414,73 @@ prop_TxSubmissionState_shrinkNoDups st =
     $ length (List.nub shrunk) === length shrunk
 
 
+-- | Asserts that the 'SharedTxState' has been fully reclaimed after
+-- all peers have exited and retained entries have been allowed to
+-- expire.  Catches leaks in scrub-on-disconnect, sweep orphan
+-- detection, retained-set expiry, and lookup-table cleanup.
+prop_sharedStateClean :: (Show peeraddr, Show txid)
+                      => SharedTxState peeraddr txid -> Property
+prop_sharedStateClean st =
+    counterexample ("final shared state: " ++ show st)
+  $ conjoin
+      [ counterexample "sharedTxTable not empty" $
+          IntMap.null (sharedTxTable st)
+      , counterexample "sharedRetainedTxs not empty" $
+          IntSet.null (retainedKeysSet (sharedRetainedTxs st))
+      , counterexample "sharedTxIdToKey not empty" $
+          Map.null (sharedTxIdToKey st)
+      , counterexample "sharedKeyToTxId not empty" $
+          IntMap.null (sharedKeyToTxId st)
+      ]
+
+
+-- | Pin the cadence of 'txCountersThreadV2'.  After a single counter
+-- bump at thread start, exactly one emission must fire at exactly the
+-- first 'countersInterval' deadline.  Beyond that, with no further
+-- counter activity, the 'current /= previous' guard must suppress
+-- subsequent emissions.  Targets:
+--
+-- * the 'now >= nextEmitAt' boundary,
+-- * the 'when (current /= previous)' guard,
+-- * the 'previous' update.
+unit_counterEmission_cadence :: Assertion
+unit_counterEmission_cadence =
+    let (threadStart, timeline) = runSimOrThrow simulation
+        timestamps              = map fst timeline in
+    assertEqual ("timeline: " ++ show timeline)
+                [addTime 7 threadStart]
+                timestamps
+  where
+    simulation :: forall s. IOSim s (Time, [(Time, TxSubmissionCounters)])
+    simulation = do
+      sharedTxStateVar <- newSharedTxStateVar
+                            (emptySharedTxState :: SharedTxState Int Int)
+      inFlightRegistry <- newPeerTxInFlightRegistry
+                            :: IOSim s (PeerTxInFlightRegistry (IOSim s) Int)
+      txCountersVar    <- newTxSubmissionCountersVar mempty
+      recorder         <- newTVarIO []
+
+      let policy = defaultTxDecisionPolicy
+          tracer = Tracer $ \counters -> do
+                     now <- getMonotonicTime
+                     atomically (modifyTVar recorder ((now, counters):))
+
+      threadStart <- getMonotonicTime
+      atomically (modifyTVar txCountersVar
+                    (<> mempty { txIdMessagesSent = 1 }))
+
+      withAsync (txCountersThreadV2 policy tracer txCountersVar
+                                    sharedTxStateVar inFlightRegistry)
+                \countersAid -> do
+        -- Run past the second emission boundary (threadStart + 14s) so
+        -- any spurious second emission shows up in the recorder.
+        threadDelay 14.5
+        cancel countersAid
+
+      timeline <- atomically (readTVar recorder)
+      pure (threadStart, reverse timeline)
+
+
 -- | Invariants over the counter snapshots emitted by 'txCountersThreadV2'.
 -- Asserts monotonicity of every field, protocol-level causality bounds,
 -- decomposition of total txid sends into blocking and pipelined, and body
@@ -500,9 +580,11 @@ prop_txSubmission st@(TxSubmissionState peers _ _) =
              counterexample (show e)
            . counterexample (ppSayTrace tr)
            $ False
-         Right (inmp, outmps) ->
+         Right (inmp, outmps, finalState) ->
              counterexample (ppSayTrace tr)
-           $ conjoin (validate inmp `map` outmps) .&&. prop_counterInvariants tr
+           $ conjoin (validate inmp `map` outmps)
+             .&&. prop_counterInvariants tr
+             .&&. prop_sharedStateClean finalState
   where
     -- | Asserts that every txid produced is present in the consumer set.
     -- On failure the counterexample names the missing txids so the
@@ -577,7 +659,7 @@ prop_txSubmission_inflight st@(TxSubmissionState state _ policy) =
        Left err -> counterexample pTrace
                  $ counterexample (show err)
                  $ property False
-       Right (inmp, _) ->
+       Right (inmp, _, finalState) ->
          let resultRepeatedValidTxs =
                foldr fn Map.empty inmp
          in label (if hasInvalidSize then "has wrongly sized tx" else "has no wrongly sized tx")
@@ -585,7 +667,8 @@ prop_txSubmission_inflight st@(TxSubmissionState state _ policy) =
           . counterexample ("hasInvalidSize: " <> show hasInvalidSize)
           . counterexample ("Result valid [(txid, repeated)]:\n" <> show resultRepeatedValidTxs)
           . counterexample ("Testcase max valid [(txid, repeated)]:\n" <> show maxRepeatedValidTxs)
-          . (\p -> p .&&. prop_counterInvariants trace)
+          . (\p -> p .&&. prop_counterInvariants trace
+                     .&&. prop_sharedStateClean finalState)
           . conjoin . Map.elems $ if hasInvalidSize
               then merge (mapMissing \_txid _left  -> error "impossible")
                          (mapMissing \_txid _right -> True)
@@ -648,10 +731,11 @@ prop_txSubmission_resilientToImpairment baseSt =
                counterexample (show e)
              . counterexample (ppSayTrace tr)
              $ False
-           Right (inmp, _) ->
+           Right (inmp, _, finalState) ->
                counterexample (ppSayTrace tr)
              $ conjoin (validateWellBehaved inmp `map` wbPeerTxs)
                .&&. prop_counterInvariants tr
+               .&&. prop_sharedStateClean finalState
   where
     -- Pick a non-empty proper subset of peers to impair. Each impaired
     -- peer gets some mix of body delay and per-body omission (at least
