@@ -37,6 +37,7 @@ import Data.Set qualified as Set
 import Data.Text (Text, pack)
 import Data.Text.Encoding qualified as Text
 import Data.Text.Encoding.Error qualified as Text
+import Numeric (showOct)
 
 import Network.Mux.Trace qualified as Mux
 import Network.Mux.Types qualified as Mux
@@ -704,6 +705,11 @@ instance (ToJSON localAddress, ToJSON remoteAddress) => ToJSON (DiffusionTracer 
     , "address" .= localAddress
     , "socket" .= String (pack (show socket))
     ]
+  toJSON (ConfiguredLocalSocket localAddress socket) = object
+    [ "kind" .= String "ConfiguredLocalSocket"
+    , "address" .= localAddress
+    , "socket" .= String (pack (show socket))
+    ]
   toJSON (ListeningLocalSocket localAddress socket) = object
     [ "kind" .= String "ListeningLocalSocket"
     , "address" .= localAddress
@@ -713,6 +719,16 @@ instance (ToJSON localAddress, ToJSON remoteAddress) => ToJSON (DiffusionTracer 
     [ "kind" .= String "LocalSocketUp"
     , "address" .= localAddress
     , "socket" .= String (pack (show fd))
+    ]
+  toJSON (InsecureLocalSocketDirectory localAddress mode) = object
+    [ "kind" .= String "InsecureLocalSocketDirectory"
+    , "address" .= localAddress
+    , "mode" .= String (pack (showString "0o" . showOct mode $ ""))
+    ]
+  toJSON (InsecureLocalSocketPermissions localAddress mode) = object
+    [ "kind" .= String "InsecureLocalSocketPermissions"
+    , "address" .= localAddress
+    , "mode" .= String (pack (showString "0o" . showOct mode $ ""))
     ]
   toJSON (CreatingServerSocket sockAddr) = object
     [ "kind" .= String "CreatingServerSocket"
