@@ -73,7 +73,7 @@ import Test.QuickCheck
 import "quickcheck-monoids" Test.QuickCheck.Monoids
 #endif
 import Test.Tasty (TestTree, testGroup)
-import Test.Tasty.HUnit (Assertion, assertEqual, testCase)
+import Test.Tasty.HUnit (Assertion, assertBool, assertEqual, testCase)
 import Test.Tasty.QuickCheck (testProperty)
 
 
@@ -95,6 +95,11 @@ tests = testGroup "AppV2"
                                  $ withMaxSuccess 25
                                  prop_sharedTxStateInvariant
   , testCase     "counterEmission/cadence"   unit_counterEmission_cadence
+  , testCase     "score/wellBehavedStaysAtZero"
+                                              unit_score_wellBehavedStaysAtZero
+  , testCase     "score/persistentBadStaysHigh"
+                                              unit_score_persistentBadStaysHigh
+  , testCase     "score/recoversAfterBurst"   unit_score_recoversAfterBurst
   ]
 
 data TestVersion = TestVersion
@@ -150,6 +155,17 @@ newtype TxStateTrace peeraddr txid =
     TxStateTrace (SharedTxState peeraddr txid)
 type TxStateTraceType = TxStateTrace PeerAddr TxId
 
+-- | Per-peer inbound trace event, tagging each 'TraceTxSubmissionInbound'
+-- value with the peer it was emitted for.  Tests extract these from the
+-- simulation trace via 'traceSelectTraceEventsDynamic' to observe per-peer
+-- score evolution (carried in 'TraceTxSubmissionProcessed') and other
+-- inbound protocol events.
+data PeerInboundTrace peeraddr txid tx =
+    PeerInboundTrace peeraddr (TraceTxSubmissionInbound txid tx)
+  deriving Show
+
+type PeerInboundTraceType = PeerInboundTrace PeerAddr TxId (Tx TxId)
+
 
 runTxSubmission
   :: forall m peeraddr txid.
@@ -181,6 +197,7 @@ runTxSubmission
   => Tracer m (String, TraceSendRecv (TxSubmission2 txid (Tx txid)))
   -> Tracer m (TraceTxLogic peeraddr txid (Tx txid))
   -> Tracer m TxSubmissionCounters
+  -> Tracer m (PeerInboundTrace peeraddr txid (Tx txid))
   -> Map peeraddr ( [Tx txid]
                   , ControlMessageSTM m
                   , Maybe DiffTime
@@ -190,7 +207,7 @@ runTxSubmission
   -> TxDecisionPolicy
   -> m ([Tx txid], [[Tx txid]], SharedTxState peeraddr txid)
   -- ^ inbound mempool, outbound mempools, final shared state
-runTxSubmission tracer _tracerTxLogic countersTracer st0 peerImpairmentMap txDecisionPolicy = do
+runTxSubmission tracer _tracerTxLogic countersTracer inboundTracer st0 peerImpairmentMap txDecisionPolicy = do
     st <- traverse (\(b, c, d, e) -> do
         mempool <- newMempool b
         (outChannel, inChannel) <- createConnectedChannels
@@ -235,12 +252,13 @@ runTxSubmission tracer _tracerTxLogic countersTracer st0 peerImpairmentMap txDec
                               txCountersVar
                               addr $ \api -> do
                                 let server =
-                                      txSubmissionInboundV2 sayTracer
-                                                            NoTxSubmissionInitDelay
-                                                            txDecisionPolicy
-                                                            (getMempoolWriter duplicateTxIdsVar inboundMempool)
-                                                            getTxSize
-                                                            api
+                                      txSubmissionInboundV2
+                                        (PeerInboundTrace addr `contramap` inboundTracer)
+                                        NoTxSubmissionInitDelay
+                                        txDecisionPolicy
+                                        (getMempoolWriter duplicateTxIdsVar inboundMempool)
+                                        getTxSize
+                                        api
                                 runPipelinedPeerWithLimits
                                   (("INBOUND " ++ show addr,) `contramap` sayTracer)
                                   txSubmissionCodec2
@@ -334,7 +352,7 @@ txSubmissionSimulation (TxSubmissionState state peerImpairment txDecisionPolicy)
     ) \_ -> do
       let tracer :: forall a. (Show a, Typeable a) => Tracer (IOSim s) a
           tracer = dynamicTracer <> sayTracer -- <> verboseTracer <> debugTracer
-      runTxSubmission tracer tracer tracer state'' peerImpairment txDecisionPolicy
+      runTxSubmission tracer tracer tracer tracer state'' peerImpairment txDecisionPolicy
 
 filterValidTxs :: [Tx txid] -> [Tx txid]
 filterValidTxs
@@ -796,6 +814,124 @@ prop_txSubmission_resilientToImpairment baseSt =
           $ property (Set.null missing)
         else
           property True
+
+
+--
+-- Score-related unit tests (decrement-on-accept tuning of peerScore).
+--
+
+-- | Build a 'Tx' with the given id, size, and validity.  Used by the
+-- score tests to construct deterministic per-peer tx lists that
+-- include known-valid and known-invalid bodies (the test mempool
+-- rejects @getTxValid = False@ via 'getMempoolWriter').
+mkTx :: TxId -> Bool -> Tx TxId
+mkTx i valid = Tx { getTxId      = i
+                  , getTxSize    = 100
+                  , getTxAdvSize = 100
+                  , getTxValid   = valid
+                  , getTxParent  = Nothing
+                  }
+
+-- | Pick out the per-peer @ptxcScore@ values from the simulation
+-- trace, keyed by the peer the inbound side attributed the event to.
+-- The aggregator @combine@ is invoked as @combine new old@ (matching
+-- 'Map.insertWith' semantics) and controls reduction across multiple
+-- events for the same peer.
+peerScoresBy :: (Double -> Double -> Double)
+             -> SimTrace a
+             -> Map PeerAddr Double
+peerScoresBy combine tr =
+    Map.fromListWith combine
+      [ (peer, ptxcScore ptxc)
+      | PeerInboundTrace peer (TraceTxSubmissionProcessed ptxc) <- events
+      ]
+  where
+    events :: [PeerInboundTraceType]
+    events = Trace.toList $ traceSelectTraceEventsDynamic tr
+
+peerPeakScore, peerFinalScore :: SimTrace a -> Map PeerAddr Double
+peerPeakScore  = peerScoresBy max
+peerFinalScore = peerScoresBy const
+
+
+-- | A peer that delivers only invalid bodies accumulates a non-zero
+-- score from the mempool-reject penalty path. Sole advertiser, so no
+-- multiplicity races: the score gain comes purely from the rejection
+-- count attributed to this peer. With no accepts to offset, the score
+-- cannot drain back to zero before the run ends.
+unit_score_persistentBadStaysHigh :: Assertion
+unit_score_persistentBadStaysHigh = do
+    let st = TxSubmissionState
+              { peerMap        = Map.singleton 1
+                                   ([ mkTx i False | i <- [0..9] ], Nothing, Nothing)
+              , peerImpairment = Map.empty
+              , decisionPolicy = defaultTxDecisionPolicy
+              }
+        tr          = runSimTrace (() <$ txSubmissionSimulation st)
+        peakScores  = peerPeakScore tr
+        finalScores = peerFinalScore tr
+        peakPeer1   = Map.findWithDefault 0 1 peakScores
+        finalPeer1  = Map.findWithDefault 0 1 finalScores
+        ctx :: String
+        ctx = "peak score:  " ++ show peakScores
+           ++ "\nfinal score: " ++ show finalScores
+    assertBool (ctx ++ "\npeer1 must accumulate score from mempool rejects")
+               (peakPeer1 > 0)
+    assertBool (ctx ++ "\npeer1 score must stay within scoreMax")
+               (peakPeer1 <= scoreMax defaultTxDecisionPolicy)
+    assertBool (ctx ++ "\npeer1 has no accepts to offset the rejections, score must stay above zero")
+               (finalPeer1 > 0)
+
+-- | A peer that delivers a burst of invalid bodies and then valid
+-- bodies recovers via decrement-on-accept: the score climbs during
+-- the invalid phase, then drops back to zero as the accepts cancel
+-- the rejection accumulation (with default 'scoreAcceptDecrement' of
+-- 1 and equal-or-greater valid count).
+unit_score_recoversAfterBurst :: Assertion
+unit_score_recoversAfterBurst = do
+    let invalids = 5
+        valids   = 10
+        st = TxSubmissionState
+              { peerMap        = Map.singleton 1
+                                   ( [ mkTx i False | i <- [0..invalids - 1] ]
+                                  ++ [ mkTx i True  | i <- [invalids .. invalids + valids - 1] ]
+                                   , Nothing, Nothing)
+              , peerImpairment = Map.empty
+              , decisionPolicy = defaultTxDecisionPolicy
+              }
+        tr          = runSimTrace (() <$ txSubmissionSimulation st)
+        peakScores  = peerPeakScore tr
+        finalScores = peerFinalScore tr
+        peakPeer1   = Map.findWithDefault 0 1 peakScores
+        finalPeer1  = Map.findWithDefault 0 1 finalScores
+        ctx :: String
+        ctx = "peak score:  " ++ show peakScores
+           ++ "\nfinal score: " ++ show finalScores
+    assertBool (ctx ++ "\npeer1 must briefly accumulate score during the invalid burst")
+               (peakPeer1 > 0)
+    assertEqual (ctx ++ "\npeer1 must end at zero once valid accepts have drained the rejections")
+                0
+                finalPeer1
+
+-- | A well-behaved peer that is the sole advertiser of every tx it
+-- carries never sees a late or rejected event, so its score stays at
+-- zero throughout the run.  Documents that decrement-on-accept does
+-- not push the score below the floor when there is nothing to drain.
+unit_score_wellBehavedStaysAtZero :: Assertion
+unit_score_wellBehavedStaysAtZero = do
+    let st = TxSubmissionState
+              { peerMap        = Map.singleton 1
+                                   ([ mkTx i True | i <- [0..9] ], Nothing, Nothing)
+              , peerImpairment = Map.empty
+              , decisionPolicy = defaultTxDecisionPolicy
+              }
+        tr         = runSimTrace (() <$ txSubmissionSimulation st)
+        peakScores = peerPeakScore tr
+        peakPeer1  = Map.findWithDefault 0 1 peakScores
+    assertEqual ("peak score: " ++ show peakScores
+                  ++ "\npeer1 must never accumulate any score")
+                0
+                peakPeer1
 
 
 prop_sharedTxStateInvariant :: TxSubmissionState -> Property

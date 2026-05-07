@@ -11,7 +11,8 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.State
   , nextPeerActionPipelined
   , currentPeerScore
   , drainPeerScore
-  , applyPeerRejections
+  , peerClaimDelay
+  , applyPeerEvents
   , sweepSharedState
   ) where
 
@@ -648,15 +649,22 @@ currentPeerScore TxDecisionPolicy { scoreRate } currentTime
     | currentTime <= peerScoreTs = peerScoreValue
     | otherwise = max 0 $ peerScoreValue - realToFrac (diffTime currentTime peerScoreTs) * scoreRate
 
+-- | Compute the peer's score-derived claim delay.
+--
+-- A peer with a fully drained score has no delay.  Any non-zero score
+-- maps to a delay in @[10 ms, interTxSpace policy]@: the cap is
+-- 'scoreMax', the floor is 10 ms so even a small accumulated score
+-- meaningfully nudges race outcomes against the peer rather than being
+-- swallowed by jitter.
 peerClaimDelay :: TxDecisionPolicy
                -> Time
                -> PeerScore
                -> DiffTime
-peerClaimDelay policy currentTime peerScore
-    | peerScoreValue peerScore == 0 = 0
-    | otherwise =
-        -- Delay contribution in milliseconds is peerScore / 20, then converted to seconds.
-        realToFrac . (/ 20000) $ currentPeerScore policy currentTime peerScore
+peerClaimDelay policy@TxDecisionPolicy { interTxSpace, scoreMax } currentTime peerScore
+    | s == 0   = 0
+    | otherwise = max 0.010 . realToFrac $ s / scoreMax * realToFrac interTxSpace
+  where
+    s = currentPeerScore policy currentTime peerScore
 
 -- | Decay the peer's score to @now@, updating the timestamp.
 drainPeerScore :: TxDecisionPolicy
@@ -671,26 +679,39 @@ drainPeerScore policy now peerState@PeerTxLocalState { peerScore }
       peerState { peerScore = PeerScore { peerScoreValue = drained, peerScoreTs = now } }
 {-# INLINE drainPeerScore #-}
 
--- | Apply a rejection penalty to the peer's local score.
--- Returns the new score value (for tracing) and the updated local state.
-applyPeerRejections :: TxDecisionPolicy
-                    -> Time
-                    -> Int
-                    -> PeerTxLocalState tx
-                    -> (Double, PeerTxLocalState tx)
-applyPeerRejections TxDecisionPolicy { scoreRate, scoreMax } now rejectedCount
-                    peerState@PeerTxLocalState { peerScore } =
-  (peerScoreValue peerScore', peerState { peerScore = peerScore' })
+-- | Apply a batch of accept/reject events to the peer's local score.
+-- Drains the score by elapsed time at 'scoreRate', then adds the
+-- rejection count and subtracts 'scoreAcceptDecrement' per accept;
+-- clamps to @[0, scoreMax]@. Returns the new score value (for
+-- tracing) and the updated local state.
+applyPeerEvents :: TxDecisionPolicy
+                -> Time
+                -> Int  -- ^ accepted count (decrements score)
+                -> Int  -- ^ rejected/penalty count (increments score)
+                -> PeerTxLocalState tx
+                -> (Double, PeerTxLocalState tx)
+applyPeerEvents TxDecisionPolicy { scoreRate, scoreMax, scoreAcceptDecrement }
+                now acceptedCount rejectedCount
+                peerState@PeerTxLocalState { peerScore }
+  -- Fast path: score is already 0 and there's no penalty to add.
+  -- Accepts can only decrement (clamped at 0), so they can't move
+  -- the score. Just refresh the timestamp; no arithmetic.
+  | rejectedCount == 0
+  , peerScoreValue peerScore == 0
+  = (0, peerState { peerScore = peerScore { peerScoreTs = now } })
+
+  | otherwise
+  = (peerScoreValue peerScore', peerState { peerScore = peerScore' })
   where
-    n = fromIntegral rejectedCount :: Double
-    peerScore' = applyRejects n peerScore
-    applyRejects 0 ps@PeerScore { peerScoreValue = 0 } = ps { peerScoreTs = now }
-    applyRejects n' ps@PeerScore { peerScoreValue, peerScoreTs } =
-        let duration = diffTime now peerScoreTs
-            !drain   = realToFrac duration * scoreRate
-            !drained = max 0 (peerScoreValue - drain) in
-        ps { peerScoreValue = min scoreMax (drained + n'), peerScoreTs = now }
-{-# INLINE applyPeerRejections #-}
+    rejGain = fromIntegral rejectedCount :: Double
+    accDec  = fromIntegral acceptedCount * scoreAcceptDecrement
+    peerScore' =
+      let duration  = diffTime now (peerScoreTs peerScore)
+          !drainAmt = realToFrac duration * scoreRate
+          !drained  = max 0 (peerScoreValue peerScore - drainAmt)
+          !final    = min scoreMax (max 0 (drained + rejGain - accDec)) in
+      peerScore { peerScoreValue = final, peerScoreTs = now }
+{-# INLINE applyPeerEvents #-}
 
 txClaimReadyAt :: DiffTime -> TxEntry peeraddr -> Time
 txClaimReadyAt claimDelay TxEntry { txLease } =

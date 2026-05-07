@@ -182,7 +182,9 @@ txSubmissionInboundV2
 
       addCounters mempty { txSubmissionWaitMs = diffTimeToMilliseconds delta }
       peerState' <- applySubmittedTxs end resolvedTxKeys (fmap fst rejectedTxs) peerState
-      let (score, peerState'') = State.applyPeerRejections policy end rejectedCount peerState'
+      let acceptedCount = length acceptedTxs
+          (score, peerState'') =
+            State.applyPeerEvents policy end acceptedCount rejectedCount peerState'
       traceWith tracer $
         TraceTxSubmissionProcessed ProcessedTxCount {
             ptxcAccepted = length acceptedTxs,
@@ -332,7 +334,7 @@ txSubmissionInboundV2
           if penaltyCount == 0
              then pure peerState'
              else do
-               let (score, ps) = State.applyPeerRejections policy now penaltyCount peerState'
+               let (score, ps) = State.applyPeerEvents policy now 0 penaltyCount peerState'
                traceWith tracer $
                  TraceTxSubmissionProcessed ProcessedTxCount {
                      ptxcAccepted = 0,

@@ -73,7 +73,7 @@ tests =
           ]
     , testProperty "nextPeerAction processes all multi-peer triggers" prop_nextPeerAction_processesAllTriggers
     , testCaseSteps "peerScore decays linearly over time at scoreRate" unit_peerScore_decaysOverTime
-    , testCaseSteps "applyPeerRejections drains the existing score before adding the new rejection count" unit_applyPeerRejections_drainsThenAdds
+    , testCaseSteps "applyPeerEvents drains the existing score before adding the new rejection count" unit_applyPeerEvents_drainsThenAdds
     , testProperty "handleReceivedTxIds classifies incoming txids" prop_handleReceivedTxIds
     , testCaseSteps "handleReceivedTxIds tracks the advertise without mutating an existing entry" unit_handleReceivedTxIds_advertisesExistingEntry
     , testProperty "handleReceivedTxs buffers requested bodies and releases omitted ones" prop_handleReceivedTxs
@@ -443,6 +443,7 @@ instance Arbitrary ArbTxDecisionPolicy where
                 <*> (realToFrac <$> choose (0 :: Double, 2))
                 <*> choose (0, 1)
                 <*> choose (0, 1800)
+                <*> choose (0, 5)
                 <*> pure interTxSpaceVal
                 <*> pure inflightTimeoutVal))
         ]
@@ -474,6 +475,9 @@ instance Arbitrary ArbTxDecisionPolicy where
            ]
         ++ [ ArbTxDecisionPolicy a { scoreMax = x }
            | NonNegative x <- shrink (NonNegative (scoreMax a))
+           ]
+        ++ [ ArbTxDecisionPolicy a { scoreAcceptDecrement = x }
+           | NonNegative x <- shrink (NonNegative (scoreAcceptDecrement a))
            ]
         ++ [ ArbTxDecisionPolicy a { interTxSpace = realToFrac x }
            | NonNegative x <- shrink (NonNegative (realToFrac (interTxSpace a) :: Double))
@@ -520,17 +524,22 @@ unit_peerScore_decaysOverTime step = do
     step "Reading at the same instant as the last update returns the unchanged value"
     currentPeerScore policy (Time 0) score0 @?= peerScoreValue score0
   where
-    policy = defaultTxDecisionPolicy
+    -- Pin scoreRate to a value that makes the test arithmetic obvious;
+    -- the production default may be tuned without affecting this
+    -- formula-level invariant.
+    policy = defaultTxDecisionPolicy { scoreRate = 0.1 }
     score0 = PeerScore { peerScoreValue = 10, peerScoreTs = Time 0 }
 
 -- | A new rejection drains the existing score at 'scoreRate' per second
 -- since its last update before adding the rejection count.
-unit_applyPeerRejections_drainsThenAdds :: (String -> IO ()) -> Assertion
-unit_applyPeerRejections_drainsThenAdds step = do
+unit_applyPeerEvents_drainsThenAdds :: (String -> IO ()) -> Assertion
+unit_applyPeerEvents_drainsThenAdds step = do
     step "Starting score 10 at Time 0; one rejection 50s later: 10 - (50 * 0.1) + 1 = 6"
-    fst (applyPeerRejections policy (Time 50) 1 peerState0) @?= 6
+    fst (applyPeerEvents policy (Time 50) 0 1 peerState0) @?= 6
   where
-    policy     = defaultTxDecisionPolicy
+    -- See 'unit_peerScore_decaysOverTime' for why the test pins
+    -- scoreRate explicitly.
+    policy     = defaultTxDecisionPolicy { scoreRate = 0.1 }
     peerState0 = emptyPeerTxLocalState
                    { peerScore = PeerScore { peerScoreValue = 10
                                            , peerScoreTs    = Time 0 } }
@@ -1689,20 +1698,20 @@ unit_nextPeerAction_claimsRejectedTxFromOtherAdvertiser step = do
       Nothing -> assertFailure "entry vanished after B's claim"
 
 -- | A peer with a non-zero score waits its score-derived delay before
--- claiming a TxClaimable entry.  Set up the entry to become claimable
--- exactly @peerScore / 20000@ seconds before @now@; the peer should
--- be allowed to claim at @now@.
+-- claiming a TxClaimable entry.  With any non-zero score the floor is
+-- 10 ms (see 'peerClaimDelay'); set up the entry to become claimable
+-- exactly 10 ms before @now@ so the claim is just allowed.
 unit_nextPeerAction_claimsAtScoreDelayThreshold
   :: (String -> IO ()) -> Assertion
 unit_nextPeerAction_claimsAtScoreDelayThreshold step = do
-    step "Set up: claimableAt = now - 1ms, peer score = 20 (1ms claim delay), so claim at now is just allowed"
+    step "Set up: claimableAt = now - 10ms, peer score = 20 (10ms floor claim delay), so claim at now is just allowed"
     let peerAddr = 7 :: PeerAddr
         txid :: TxId
         txid = 1
         txSize = mkSize (Positive 10)
         key = TxKey 0
         k   = unTxKey key
-        claimableAt = Time 99.999  -- now is Time 100
+        claimableAt = Time 99.990  -- now is Time 100; 10 ms in the past
         sharedState = emptySharedTxState
           { sharedTxIdToKey = Map.singleton (getRawTxId txid) key
           , sharedKeyToTxId = IntMap.singleton k txid
@@ -1729,7 +1738,7 @@ unit_nextPeerAction_claimsAtScoreDelayThreshold step = do
           nextPeerAction now defaultTxDecisionPolicy peerAddr
             peerState peerInFlight sharedState
 
-    step "Tx becomes claimable once the peerScore / 20000 ms threshold has elapsed"
+    step "Tx becomes claimable once the score-derived 10ms floor has elapsed"
     case action of
       PeerRequestTxs txKeys -> do
         txKeys @?= [key]
@@ -2016,7 +2025,7 @@ prop_nextPeerAction_claimsClaimableTx
                          (Just bi, Just gi) -> bi < gi
                          _                  -> False
     badClaimDelay :: DiffTime
-    badClaimDelay = realToFrac (decayedBadScore / 20000)
+    badClaimDelay = peerClaimDelay policy now badPeerScore
     expectedBadDelay :: DiffTime
     expectedBadDelay
       | badRunsBeforeGood = badClaimDelay - diffTime now claimableAt

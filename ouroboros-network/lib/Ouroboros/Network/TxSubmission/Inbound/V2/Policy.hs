@@ -61,6 +61,9 @@ data TxDecisionPolicy = TxDecisionPolicy {
       scoreMax               :: !Double,
       -- ^ Maximum number of "rejections". Unit: seconds
 
+      scoreAcceptDecrement   :: !Double,
+      -- ^ amount subtracted from the peer's score for each tx body the peer delivered that the mempool accepted.
+
       interTxSpace           :: !DiffTime,
       -- ^ space between actual requests for the same TX.
 
@@ -83,8 +86,9 @@ defaultTxDecisionPolicy =
     maxOutstandingTxBatchesPerPeer = 4,
     txInflightMultiplicity = 2,
     bufferedTxsMinLifetime = 2,
-    scoreRate              = 0.1,
+    scoreRate              = 0.001,
     scoreMax               = 15 * 60,
+    scoreAcceptDecrement   = 3,
     interTxSpace           = 0.250,
     inflightTimeout        = 1.0  -- = 4 * interTxSpace
   }
