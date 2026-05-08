@@ -117,9 +117,9 @@ instance Arbitrary NtNAddr_ where
                , IPv4 . toIPv4 <$> replicateM 4 (choose (0,255))
                ]
     frequency
-      [ (1 , EphemeralIPv4Addr <$> (fromInteger <$> arbitrary))
-      , (1 , EphemeralIPv6Addr <$> (fromInteger <$> arbitrary))
-      , (3 , IPAddr a          <$> (read . show <$> chooseInt (0, 9999)))
+      [ (1 , EphemeralIPv4Addr . fromInteger <$> arbitrary)
+      , (1 , EphemeralIPv6Addr . fromInteger <$> arbitrary)
+      , (3 , IPAddr a . read . show <$> chooseInt (0, 9999))
       ]
 
 instance Show NtNAddr_ where
@@ -198,8 +198,8 @@ decodeNtNAddr = do
   _ <- CBOR.decodeListLen
   tok <- CBOR.decodeWord
   case tok of
-    0 -> (TestAddress . EphemeralIPv4Addr . fromIntegral) <$> CBOR.decodeWord
-    1 -> (TestAddress . EphemeralIPv6Addr . fromIntegral) <$> CBOR.decodeWord
+    0 -> TestAddress . EphemeralIPv4Addr . fromIntegral <$> CBOR.decodeWord
+    1 -> TestAddress . EphemeralIPv6Addr . fromIntegral <$> CBOR.decodeWord
     2 -> TestAddress <$> (IPAddr <$> decodeIP <*> decodePortNumber)
     _ -> fail ("decodeNtNAddr: unknown tok:" ++ show tok)
 
@@ -220,7 +220,7 @@ decodeIP = do
   _ <- CBOR.decodeListLen
   tok <- CBOR.decodeWord
   case tok of
-    0 -> (IPv4 . toIPv4w) <$> CBOR.decodeWord32
+    0 -> IPv4 . toIPv4w <$> CBOR.decodeWord32
     1 -> do
       w1 <- CBOR.decodeWord32
       w2 <- CBOR.decodeWord32
