@@ -713,7 +713,7 @@ applications debugTracer txSubmissionInboundTracer _txSubmissionInboundDebug nod
                              (getMempoolReader mempool)
                              (maxBound :: UnversionedProtocol)
                              controlMessageSTM
-          client <- applyImpairment aaTxImpairment baseClient
+          client <- applyImpairment aaTxImpairment mkUnrequested baseClient
           labelThisThread "TxSubmissionClient"
           runPeerWithLimits
             (((ppNtNConnId connId ++) . (" " ++) . show) `contramap` debugTracer)
@@ -722,6 +722,13 @@ applications debugTracer txSubmissionInboundTracer _txSubmissionInboundDebug nod
             (txSubmissionTimeLimits limits)
             channel
             (txSubmissionClientPeer client)
+      where
+        -- Used only when 'impairUnrequestedTx' is set on the impairment;
+        -- the diffusion generator does not currently produce that variant,
+        -- so this mutator is unreachable. 'maxBound' is well outside the
+        -- @Arbitrary Int@ range used by the generators.
+        mkUnrequested :: [TxId] -> Tx TxId -> Tx TxId
+        mkUnrequested _reqs tx = tx { getTxId = maxBound }
 
     txSubmissionResponder
       :: Mempool m TxId (Tx TxId)

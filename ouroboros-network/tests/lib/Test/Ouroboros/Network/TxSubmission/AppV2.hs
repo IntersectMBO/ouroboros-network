@@ -8,7 +8,6 @@
 {-# LANGUAGE PackageImports      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
-{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeOperators       #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -21,6 +20,7 @@ import NoThunks.Class
 
 import Control.Concurrent.Class.MonadSTM qualified as Lazy
 import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad (void)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadSay
@@ -80,13 +80,22 @@ import Test.Tasty.QuickCheck (testProperty)
 tests :: TestTree
 tests = testGroup "AppV2"
   [ testGroup "Generators"
-      [ testProperty "TxSubmissionState/validGen"      prop_TxSubmissionState_validGen
+      [ testProperty "TxSubmissionState/validGen"
+          prop_TxSubmissionState_validGen
       , testProperty "TxSubmissionState/shrinkValid"
-          $  prop_TxSubmissionState_shrinkValid
+          prop_TxSubmissionState_shrinkValid
       , testProperty "TxSubmissionState/shrinkSmaller"
-          $  prop_TxSubmissionState_shrinkSmaller
+          prop_TxSubmissionState_shrinkSmaller
       , testProperty "TxSubmissionState/shrinkNoDups"
-          $  prop_TxSubmissionState_shrinkNoDups
+          prop_TxSubmissionState_shrinkNoDups
+      , testProperty "TxSubmissionImpairmentState/validGen"
+          prop_TxSubmissionImpairmentState_validGen
+      , testProperty "TxSubmissionImpairmentState/shrinkValid"
+          prop_TxSubmissionImpairmentState_shrinkValid
+      , testProperty "TxSubmissionImpairmentState/shrinkSmaller"
+          prop_TxSubmissionImpairmentState_shrinkSmaller
+      , testProperty "TxSubmissionImpairmentState/shrinkNoDups"
+          prop_TxSubmissionImpairmentState_shrinkNoDups
       ]
   , testProperty "txSubmission"          prop_txSubmission
   , testProperty "inflight"              prop_txSubmission_inflight
@@ -234,7 +243,7 @@ runTxSubmission tracer _tracerTxLogic countersTracer inboundTracer st0 peerImpai
                                        (maxBound :: TestVersion)
                                        ctrlMsgSTM
                         imp        = Map.findWithDefault noImpairment addr peerImpairmentMap
-                    client <- applyImpairment imp baseClient
+                    client <- applyImpairment imp mkUnrequested baseClient
                     runPeerWithLimits (("OUTBOUND " ++ show addr,) `contramap` tracer)
                                       txSubmissionCodec2
                                       (byteLimitsTxSubmission2 (fromIntegral . BSL.length))
@@ -358,6 +367,13 @@ filterValidTxs :: [Tx txid] -> [Tx txid]
 filterValidTxs
   = filter getTxValid
   . takeWhile (\Tx{getTxSize, getTxAdvSize} -> getTxSize == getTxAdvSize)
+
+-- | Mutator passed to 'applyImpairment' for the @unrequestedTx@ wrapper.
+-- Returns a clone of the given body with its txid replaced by 'maxBound',
+-- which is well outside the @Arbitrary Int@ range used by the generators
+-- and so is guaranteed not to collide with any requested txid.
+mkUnrequested :: [Int] -> Tx Int -> Tx Int
+mkUnrequested _reqs tx = tx { getTxId = maxBound }
 
 -- | Pretty-print only the say-tracer events of an IOSim trace, prefixed
 -- with their simulation time.  The full 'ppTrace' includes scheduling
@@ -495,7 +511,7 @@ unit_counterEmission_cadence =
         threadDelay 14.5
         cancel countersAid
 
-      timeline <- atomically (readTVar recorder)
+      timeline <- readTVarIO recorder
       pure (threadStart, reverse timeline)
 
 
@@ -729,74 +745,141 @@ prop_txSubmission_inflight st@(TxSubmissionState state _ policy) =
 -- Contributions from an impaired peer are not asserted: omitted bodies
 -- may never reach the mempool, and severely delayed bodies may not arrive
 -- before the simulation terminates.
-prop_txSubmission_resilientToImpairment :: TxSubmissionState -> Property
-prop_txSubmission_resilientToImpairment baseSt =
-    forAll (genImpairment (Map.keys (peerMap baseSt))) $ \imp ->
-      not (Map.null imp) ==>
-      let st         = baseSt { peerImpairment = imp }
-          allAddrs   = Map.keysSet (peerMap st)
-          wbAddrs    = allAddrs `Set.difference` Map.keysSet imp
-          wbPeerTxs  = [ txs
-                       | addr <- Set.toList wbAddrs
-                       , let (txs, _, _) = peerMap st Map.! addr ]
-          tr         = runSimTrace (txSubmissionSimulation st)
-      in not (Set.null wbAddrs) ==>
-         label ("impaired peers: "     ++ show (Map.size imp)) $
-         label ("well-behaved peers: " ++ show (Set.size wbAddrs)) $
-         tabulate "impairment kind" (kindOf <$> Map.elems imp) $
-         case traceResult True tr of
-           Left e ->
-               counterexample (show e)
-             . counterexample (ppSayTrace tr)
-             $ False
-           Right (inmp, _, finalState) ->
-               counterexample (ppSayTrace tr)
-             $ conjoin (validateWellBehaved inmp `map` wbPeerTxs)
-               .&&. prop_counterInvariants tr
-               .&&. prop_sharedStateClean finalState
+-- | A 'TxSubmissionState' carrying the additional invariants required by
+-- 'prop_txSubmission_resilientToImpairment': at least two peers, with a
+-- non-empty proper subset of them assigned an 'Impairment'.
+newtype TxSubmissionImpairmentState =
+    TxSubmissionImpairmentState
+      { unTxSubmissionImpairmentState :: TxSubmissionState }
+  deriving (Eq, Show)
+
+instance Arbitrary TxSubmissionImpairmentState where
+  arbitrary = do
+    base <- arbitrary `suchThat` ((>= 2) . Map.size . peerMap)
+    imp  <- genImpairment (Map.keys (peerMap base))
+    pure $ TxSubmissionImpairmentState base { peerImpairment = imp }
+
+  shrink (TxSubmissionImpairmentState st) =
+       [ TxSubmissionImpairmentState st' { peerImpairment = imp' }
+       | st' <- shrink st
+       , Map.size (peerMap st') >= 2
+       , let imp' = Map.restrictKeys (peerImpairment st)
+                                     (Map.keysSet (peerMap st'))
+       , not (Map.null imp')
+       , Map.size imp' < Map.size (peerMap st')
+       ]
+    ++ [ TxSubmissionImpairmentState st { peerImpairment = imp' }
+       | imp' <- shrinkImpairmentMap (peerImpairment st)
+       , not (Map.null imp')
+       ]
+
+validTxSubmissionImpairmentState :: TxSubmissionImpairmentState -> Bool
+validTxSubmissionImpairmentState (TxSubmissionImpairmentState st) =
+     validTxSubmissionState st
+  && Map.size (peerMap st) >= 2
+  && not (Map.null (peerImpairment st))
+  && Map.size (peerImpairment st) < Map.size (peerMap st)
+
+-- Pick a non-empty proper subset of peers to impair, each given some
+-- mix of body delay, per-body omission, txid-overflow, or unrequested
+-- body injection.
+genImpairment :: [Int] -> Gen (Map Int Impairment)
+genImpairment addrs
+  | length addrs < 2 = pure Map.empty
+  | otherwise = do
+      n        <- choose (1, length addrs - 1)
+      shuffled <- shuffle addrs
+      let impaired = take n shuffled
+      imps <- traverse (const genOneImpairment) impaired
+      pure (Map.fromList (zip impaired imps))
+
+genOneImpairment :: Gen Impairment
+genOneImpairment = oneof [genOmit, genDelay, genBoth, genExtraTxIds, genUnrequestedTx]
   where
-    -- Pick a non-empty proper subset of peers to impair. Each impaired
-    -- peer gets some mix of body delay and per-body omission (at least
-    -- one of the two).
-    genImpairment :: [Int] -> Gen (Map Int Impairment)
-    genImpairment addrs
-      | length addrs < 2 = pure Map.empty
-      | otherwise = do
-          n        <- choose (1, length addrs - 1)
-          shuffled <- shuffle addrs
-          let impaired = take n shuffled
-          imps <- traverse (const genOneImpairment) impaired
-          pure (Map.fromList (zip impaired imps))
-
-    genOneImpairment :: Gen Impairment
-    genOneImpairment = oneof [genOmit, genDelay, genBoth]
-
     genOmit = do
       p    <- choose (0.1 :: Double, 0.9)
       seed <- arbitrary
-      pure Impairment { impairBodyDelay = Nothing
-                      , impairOmitProb  = p
-                      , impairSeed      = seed
-                      }
+      pure noImpairment { impairOmitProb = p, impairSeed = seed }
     genDelay = do
       d <- choose (0.1 :: Double, 2.0)
-      pure Impairment { impairBodyDelay = Just (realToFrac d)
-                      , impairOmitProb  = 0
-                      , impairSeed      = 0
-                      }
+      pure noImpairment { impairBodyDelay = Just (realToFrac d) }
     genBoth = do
       p    <- choose (0.1 :: Double, 0.9)
       seed <- arbitrary
       d    <- choose (0.1 :: Double, 2.0)
-      pure Impairment { impairBodyDelay = Just (realToFrac d)
-                      , impairOmitProb  = p
-                      , impairSeed      = seed
-                      }
+      pure noImpairment { impairBodyDelay = Just (realToFrac d)
+                        , impairOmitProb  = p
+                        , impairSeed      = seed
+                        }
+    genExtraTxIds = do
+      n <- choose (1, 5 :: Int)
+      pure noImpairment { impairExtraTxIds = fromIntegral n }
+    genUnrequestedTx = pure noImpairment { impairUnrequestedTx = True }
 
-    kindOf Impairment { impairBodyDelay = Nothing, impairOmitProb = _ } = "omit-only"
-    kindOf Impairment { impairBodyDelay = Just _,  impairOmitProb = 0 } = "delay-only"
-    kindOf Impairment { impairBodyDelay = Just _,  impairOmitProb = _ } = "delay+omit"
+shrinkImpairmentMap :: Map Int Impairment -> [Map Int Impairment]
+shrinkImpairmentMap m =
+     [ Map.delete k m | Map.size m > 1, k <- Map.keys m ]
+  ++ [ Map.insert k imp' m
+     | (k, imp) <- Map.toList m
+     , imp' <- shrinkImpairment imp
+     ]
 
+shrinkImpairment :: Impairment -> [Impairment]
+shrinkImpairment imp = List.nub $
+     [ imp { impairUnrequestedTx = False } | impairUnrequestedTx imp ]
+  ++ [ imp { impairExtraTxIds = 0 }        | impairExtraTxIds imp > 0 ]
+  ++ [ imp { impairBodyDelay = Nothing }   | isJust (impairBodyDelay imp) ]
+  ++ [ imp { impairOmitProb = 0 }          | impairOmitProb imp > 0 ]
+  ++ [ imp { impairExtraTxIds = n }
+     | n <- shrink (impairExtraTxIds imp)
+     , n > 0
+     , n /= impairExtraTxIds imp
+     ]
+  ++ [ imp { impairBodyDelay = Just (realToFrac d') }
+     | Just d <- [impairBodyDelay imp]
+     , d' <- shrink (realToFrac d :: Double)
+     , d' > 0
+     , realToFrac d' /= d
+     ]
+  ++ [ imp { impairOmitProb = p' }
+     | impairOmitProb imp > 0
+     , p' <- shrink (impairOmitProb imp)
+     , p' > 0
+     , p' /= impairOmitProb imp
+     ]
+
+kindOf :: Impairment -> String
+kindOf Impairment { impairUnrequestedTx = True }                    = "unrequested-tx"
+kindOf Impairment { impairExtraTxIds = n }                | n > 0   = "extra-txids"
+kindOf Impairment { impairBodyDelay = Just _,  impairOmitProb = 0 } = "delay-only"
+kindOf Impairment { impairBodyDelay = Just _,  impairOmitProb = _ } = "delay+omit"
+kindOf Impairment { impairBodyDelay = Nothing, impairOmitProb = _ } = "omit-only"
+
+prop_txSubmission_resilientToImpairment :: TxSubmissionImpairmentState -> Property
+prop_txSubmission_resilientToImpairment (TxSubmissionImpairmentState st) =
+    let imp       = peerImpairment st
+        allAddrs  = Map.keysSet (peerMap st)
+        wbAddrs   = allAddrs `Set.difference` Map.keysSet imp
+        wbPeerTxs = [ txs | addr <- Set.toList wbAddrs
+                          , let (txs, _, _) = peerMap st Map.! addr ]
+        allOutIds = Set.fromList
+                  $ concatMap (\(txs, _, _) -> getTxId <$> txs)
+                  $ Map.elems (peerMap st)
+        tr        = runSimTrace (txSubmissionSimulation st)
+    in label ("impaired peers: "     ++ show (Map.size imp))
+     $ label ("well-behaved peers: " ++ show (Set.size wbAddrs))
+     $ tabulate "impairment kind" (kindOf <$> Map.elems imp)
+     $ case traceResult True tr of
+         Left e -> counterexample (show e)
+                 . counterexample (ppSayTrace tr)
+                 $ False
+         Right (inmp, _, finalState) ->
+             counterexample (ppSayTrace tr)
+           $ conjoin (validateWellBehaved inmp `map` wbPeerTxs)
+             .&&. noContamination allOutIds inmp
+             .&&. prop_counterInvariants tr
+             .&&. prop_sharedStateClean finalState
+  where
     -- Same shape as 'validate' inside 'prop_txSubmission'. Only assert
     -- coverage when the peer's stream is all-unique-and-all-valid; the
     -- duplicate / invalid-prefix cases are out of scope here and covered
@@ -814,6 +897,39 @@ prop_txSubmission_resilientToImpairment baseSt =
           $ property (Set.null missing)
         else
           property True
+
+    -- Inbound mempool must not contain any txid no peer ever advertised.
+    -- Catches adversarial bodies (e.g. injected by 'unrequestedTx') that
+    -- would slip past the inbound's protocol checks.
+    noContamination :: Set.Set Int -> [Tx Int] -> Property
+    noContamination allOutIds inmp =
+      let inIds  = Set.fromList (getTxId <$> inmp)
+          extras = inIds `Set.difference` allOutIds in
+        counterexample ("contaminating txids: " ++ show (Set.toList extras))
+      $ property (Set.null extras)
+
+prop_TxSubmissionImpairmentState_validGen :: TxSubmissionImpairmentState -> Property
+prop_TxSubmissionImpairmentState_validGen st =
+    counterexample (show st)
+  $ validTxSubmissionImpairmentState st
+
+prop_TxSubmissionImpairmentState_shrinkValid :: TxSubmissionImpairmentState -> Property
+prop_TxSubmissionImpairmentState_shrinkValid st = conjoin
+  [ counterexample (show s) (validTxSubmissionImpairmentState s)
+  | s <- shrink st
+  ]
+
+prop_TxSubmissionImpairmentState_shrinkSmaller :: TxSubmissionImpairmentState -> Property
+prop_TxSubmissionImpairmentState_shrinkSmaller st = conjoin
+  [ counterexample ("shrink emitted self: " ++ show s) (s /= st)
+  | s <- shrink st
+  ]
+
+prop_TxSubmissionImpairmentState_shrinkNoDups :: TxSubmissionImpairmentState -> Property
+prop_TxSubmissionImpairmentState_shrinkNoDups st =
+  let shrunk = shrink st in
+      counterexample ("duplicates: " ++ show (shrunk List.\\ List.nub shrunk))
+    $ length (List.nub shrunk) === length shrunk
 
 
 --
@@ -867,7 +983,7 @@ unit_score_persistentBadStaysHigh = do
               , peerImpairment = Map.empty
               , decisionPolicy = defaultTxDecisionPolicy
               }
-        tr          = runSimTrace (() <$ txSubmissionSimulation st)
+        tr          = runSimTrace (void $ txSubmissionSimulation st)
         peakScores  = peerPeakScore tr
         finalScores = peerFinalScore tr
         peakPeer1   = Map.findWithDefault 0 1 peakScores
@@ -899,7 +1015,7 @@ unit_score_recoversAfterBurst = do
               , peerImpairment = Map.empty
               , decisionPolicy = defaultTxDecisionPolicy
               }
-        tr          = runSimTrace (() <$ txSubmissionSimulation st)
+        tr          = runSimTrace (void $ txSubmissionSimulation st)
         peakScores  = peerPeakScore tr
         finalScores = peerFinalScore tr
         peakPeer1   = Map.findWithDefault 0 1 peakScores
@@ -925,7 +1041,7 @@ unit_score_wellBehavedStaysAtZero = do
               , peerImpairment = Map.empty
               , decisionPolicy = defaultTxDecisionPolicy
               }
-        tr         = runSimTrace (() <$ txSubmissionSimulation st)
+        tr         = runSimTrace (void $ txSubmissionSimulation st)
         peakScores = peerPeakScore tr
         peakPeer1  = Map.findWithDefault 0 1 peakScores
     assertEqual ("peak score: " ++ show peakScores
@@ -936,7 +1052,7 @@ unit_score_wellBehavedStaysAtZero = do
 
 prop_sharedTxStateInvariant :: TxSubmissionState -> Property
 prop_sharedTxStateInvariant initialState@(TxSubmissionState st0 _ _) =
-  let tr = runSimTrace (() <$ txSubmissionSimulation initialState)
+  let tr = runSimTrace (void $ txSubmissionSimulation initialState)
       pTrace = ppSayTrace tr
   in case traceResult True tr of
     Left err -> counterexample pTrace

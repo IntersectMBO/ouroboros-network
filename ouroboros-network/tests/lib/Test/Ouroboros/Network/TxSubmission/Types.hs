@@ -101,8 +101,8 @@ instance Arbitrary txid => Arbitrary (Tx txid) where
       -- generating small tx sizes avoids overflow error when semigroup
       -- instance of `SizeInBytes` is used (summing up all inflight tx
       -- sizes).
-      (size, advSize) <- frequency [ (99, (\a -> (a,a)) <$> chooseEnum (0, maxTxSize))
-                                   , (1, (,) <$> chooseEnum (0, maxTxSize) <*> chooseEnum (0, maxTxSize))
+      (size, advSize) <- frequency [ (90, (\a -> (a,a)) <$> chooseEnum (0, maxTxSize))
+                                   , (10, (,) <$> chooseEnum (0, maxTxSize) <*> chooseEnum (0, maxTxSize))
                                    ]
       Tx <$> arbitrary
          <*> pure size
