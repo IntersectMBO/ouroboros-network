@@ -4324,7 +4324,7 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
                     lpExtraAPI = Cardano.LedgerPeersConsensusInterface {
                       readFetchMode = pure (PraosFetchMode FetchModeDeadline),
                       getLedgerStateJudgement = readLedgerStateJudgement,
-                      getBlockHash = error "getBlockHash not implemented",
+                      getImmutableBlockPoint = error "getImmutableBlockPoint not implemented",
                       updateOutboundConnectionsState = \a -> do
                         a' <- readTVar olocVar
                         when (a /= a') $

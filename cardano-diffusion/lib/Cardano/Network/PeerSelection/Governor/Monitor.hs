@@ -691,7 +691,7 @@ jobVerifyPeerSnapshot :: MonadSTM m
                       -> Cardano.LedgerPeersConsensusInterface m
                       -> Job () m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
 jobVerifyPeerSnapshot (slotNo, fileHash)
-                      Cardano.LedgerPeersConsensusInterface { getBlockHash }
+                      Cardano.LedgerPeersConsensusInterface { getImmutableBlockPoint }
   = Job job (const (completion False)) () "jobVerifyPeerSnapshot"
   where
     completion result = return . Completion $ \st _now ->
@@ -700,9 +700,9 @@ jobVerifyPeerSnapshot (slotNo, fileHash)
         decisionState = st,
         decisionJobs  = [] }
 
-    job = getBlockHash (BlockPoint slotNo fileHash) $ \promise -> do
+    job = getImmutableBlockPoint (BlockPoint slotNo fileHash) $ \promise -> do
       waited <- promise
       case waited of
-        Just (BlockPoint { withHash }) -> do
+        Right (BlockPoint { withHash }) -> do
           completion $ fileHash == withHash
         _otherwise -> completion False
