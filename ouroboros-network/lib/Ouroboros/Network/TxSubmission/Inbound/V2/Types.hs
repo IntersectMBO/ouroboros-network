@@ -390,6 +390,9 @@ data TraceTxSubmissionInbound txid tx =
   -- | Server received 'MsgDone'
   | TraceTxInboundTerminated
   | TraceTxInboundDecision (TxDecision txid tx)
+  -- | Received txids announced by the peer, with the time at which they were
+  -- received.  This event is emitted once per 'MsgReplyTxIds' message.
+  | TraceTxInboundReceivedTxIds [txid] Time
   deriving (Eq, Show)
 
 

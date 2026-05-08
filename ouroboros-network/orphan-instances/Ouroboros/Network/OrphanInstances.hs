@@ -1784,6 +1784,12 @@ instance ( ToJSON txid
       -- TODO: this is too verbose, it will show full tx's
       , "decision" .= String (pack $ show decision)
       ]
+  toJSON (TraceTxInboundReceivedTxIds txids time) =
+    object
+      [ "kind"  .= String "TxInboundReceivedTxIds"
+      , "txids" .= toJSON txids
+      , "time"  .= String (pack $ show time)
+      ]
 
 -- TODO: in cardano-node in the `coot/tx-submission-10.5` branch there's
 -- a better instance.

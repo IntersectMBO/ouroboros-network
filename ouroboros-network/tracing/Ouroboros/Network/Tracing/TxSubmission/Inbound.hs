@@ -79,6 +79,16 @@ instance (Show txid, Show tx)
       , "decision" .= Text.pack (show decision)
       ]
 
+  forMachine dtal (TraceTxInboundReceivedTxIds txids time) =
+    mconcat
+      [ "kind"  .= String "TraceTxInboundReceivedTxIds"
+      , "count" .= toJSON (length txids)
+      , "time"  .= Text.pack (show time)
+      ]
+    <> case dtal of
+         DDetailed  -> "txIds" .= Text.pack (show txids)
+         _otherwise -> mempty
+
   asMetrics (TraceTxSubmissionCollected txids) =
     [CounterM "submissions.submitted" (Just (length txids))]
   asMetrics (TraceTxSubmissionProcessed processed) =
@@ -108,6 +118,8 @@ instance MetaTrace (TraceTxSubmissionInbound txid tx) where
       Namespace [] ["Error"]
     namespaceFor TraceTxInboundDecision {} =
       Namespace [] ["Decision"]
+    namespaceFor TraceTxInboundReceivedTxIds {} =
+      Namespace [] ["ReceivedTxIds"]
 
     severityFor (Namespace _ ["Collected"]) _            = Just Debug
     severityFor (Namespace _ ["Processed"]) _            = Just Debug
@@ -118,6 +130,7 @@ instance MetaTrace (TraceTxSubmissionInbound txid tx) where
     severityFor (Namespace _ ["RejectedFromMempool"]) _  = Just Debug
     severityFor (Namespace _ ["Error"]) _                = Just Debug
     severityFor (Namespace _ ["Decision"]) _             = Just Debug
+    severityFor (Namespace _ ["ReceivedTxIds"]) _        = Just Debug
 
     severityFor _ _                                      = Nothing
 
@@ -153,6 +166,8 @@ instance MetaTrace (TraceTxSubmissionInbound txid tx) where
       "Protocol violation causing connection reset"
     documentFor (Namespace _ ["Decision"]) = Just
       "Decision to advance the protocol"
+    documentFor (Namespace _ ["ReceivedTxIds"]) = Just
+      "Txids announced by the peer and the time at which they were received."
     documentFor _ = Nothing
 
     allNamespaces = [
@@ -165,4 +180,5 @@ instance MetaTrace (TraceTxSubmissionInbound txid tx) where
         , Namespace [] ["RejectedFromMempool"]
         , Namespace [] ["Error"]
         , Namespace [] ["Decision"]
+        , Namespace [] ["ReceivedTxIds"]
         ]
