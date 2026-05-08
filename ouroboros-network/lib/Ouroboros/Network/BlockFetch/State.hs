@@ -1,9 +1,10 @@
-{-# LANGUAGE BangPatterns     #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE NamedFieldPuns   #-}
-{-# LANGUAGE RecordWildCards  #-}
-{-# LANGUAGE TypeFamilies     #-}
-{-# LANGUAGE TypeOperators    #-}
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE TypeOperators       #-}
 
 module Ouroboros.Network.BlockFetch.State
   ( fetchLogicIterations
@@ -201,7 +202,8 @@ fetchLogicIteration decisionTracer clientStateTracer
 -- real work.
 --
 fetchDecisionsForStateSnapshot
-  :: (HasHeader header,
+  :: forall header block peer m.
+     (HasHeader header,
       HeaderHash header ~ HeaderHash block,
       Ord peer,
       Hashable peer,
@@ -260,6 +262,15 @@ fetchDecisionsForStateSnapshot
           peersOrderHandlers
           peerChainsAndPeerInfo
   where
+    peerChainsAndPeerInfo
+      :: [(AnchoredFragment header
+          , ( PeerFetchStatus header
+            , PeerFetchInFlight header
+            , PeerGSV
+            , peer
+            , (FetchClientStateVars m header, peer)
+            )
+          )]
     peerChainsAndPeerInfo =
       map swizzle . Map.toList $
       Map.intersectionWith (,)
