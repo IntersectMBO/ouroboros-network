@@ -53,15 +53,23 @@ bootstrapping the project); the official
 To build all the required jobs (which are necessary to pass through CI), you can run:
 
 ```sh
-nix build -j auto .\#hydraJobs.required
+nix build -j auto .\#hydraJobs.x86_64-linux.required
 ```
 
-To inspect what can be built use `nix repl` , for example:
-```
-nix-repl> :lf .
-nix-repl> hydraJobs.<TAB>
-nix-repl> hydraJobs.
-hydraJobs.aarch64-darwin  hydraJobs.x86_64-darwin   hydraJobs.x86_64-linux
+Each system exposes `all` aggregates at multiple levels. The top-level all
+covers native jobs only, while cross-compilation targets and compiler variants
+each have their own `all`: 
+
+```sh
+# all jobs on the native system
+nix build -j auto .\#hydraJobs.x86_64-linux.all
+nix build -j auto .\#hydraJobs.aarch64-darwin.all
+
+# all Windows cross-compiled jobs (only available on x86_64-linux)
+nix build -j auto .\#hydraJobs.x86_64-linux.x86_64-w64-mingw32.all
+
+# all jobs built with an alternative compiler
+nix build -j auto .\#hydraJobs.x86_64-linux.ghc982.all
 ```
 
 In various packages, we use `CPP` pragmas to compile different code depending
@@ -70,15 +78,21 @@ is very helpful to diagnose build time compiler errors.
 
 #### Cross Compilation
 
-Nix allows to build Windows native executables on Linux, e.g. to build
-`network-mux:lib:network-mux` component one can run this command:
+Nix allows to build Windows native executables on Linux.  To build all
+cross-compiled components at once:
 
-```bash
-nix build .\#hydraJobs.x86_64-linux.ghc810-x86_64-w64-mingw32.packages.network-mux:lib:network-mux
+```sh
+nix build -j auto .\#hydraJobs.x86_64-linux.x86_64-w64-mingw32.all
+```
+
+To build a specific component, e.g. `network-mux:lib:network-mux`:
+
+```sh
+nix build .\#hydraJobs.x86_64-linux.x86_64-w64-mingw32.packages."network-mux:lib:network-mux"
 ```
 
 Not all components are available in cross-compilation right now.  All the
-test components are disabled in `./scripts/ci/cabal.project.local.Windows.CrossCompile`.
+test components are disabled in `./scripts/ci/cabal.project.local.Windows`.
 
 ### Running tests with cabal
 
@@ -128,12 +142,12 @@ If in doubt you can use `-h` or visit [tasty documentation][tasty-options].
 
 ### Building & running tests with nix
 
-`nix build -j auto .\#hydraJobs.required` will build and run all required
-checks.  If you want to build only tests for a particular package, e.g.
+`nix build -j auto .\#hydraJobs.x86_64-linux.required` will build and run all
+required checks.  If you want to build only tests for a particular package, e.g.
 `network-mux` package (on `linux`) use:
 
 ```sh
-nix build -j auto .\#hydraJobs.x86_64-linux.packages.network-mux:test:test
+nix build -j auto .\#hydraJobs.x86_64-linux.checks."network-mux:test:test"
 ```
 
 The executable will be available at `./results/bin/` directory.  You can pass
