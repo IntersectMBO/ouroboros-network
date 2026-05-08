@@ -27,6 +27,7 @@ import Data.Void (Void)
 
 import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad (when)
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
@@ -173,23 +174,41 @@ peerChurnGovernor PeerChurnArgs {
   -- TVar must not be `nullPeerselectionTargets` otherwise targetPeers in
   -- Monitor will not work due to a check!
   atomically $ do
+    churnMode <- updateChurnMode
     ledgerStateJudgement0 <- getLedgerStateJudgement
+    HotValency ltt <- getLocalRootHotTarget
+    regime <- pickChurnRegime churnMode <$> getUseBootstrapPeers
     let targets0 = getPeerSelectionTargets consensusMode ledgerStateJudgement0 peerSelectionTargets genesisPeerSelectionTargets
         targets0' = case consensusMode of
           -- In the `PraosMode` give a head start to big ledger & local root
           -- peers by disabling root peers.
-          PraosMode  -> targets0 { targetNumberOfRootPeers = 0 }
+          PraosMode -> case regime of
+            ChurnDefault   -> targets0 { targetNumberOfRootPeers = 0 }
+            ChurnPraosSync -> targets0 { targetNumberOfRootPeers = 0 }
+            ChurnBootstrapPraosSync ->
+              targets0 {
+                targetNumberOfActivePeers =
+                  min ((max 1 ltt) + 1) (targetNumberOfActivePeers targets0),
+                targetNumberOfActiveBigLedgerPeers =
+                  min 1 (targetNumberOfActiveBigLedgerPeers targets0)
+                }
           _otherwise -> targets0
     writeTVar peerSelectionVar targets0'
 
   threadDelay 3
 
   atomically $ do
+    churnMode <- updateChurnMode
     ledgerStateJudgement <- getLedgerStateJudgement
-    let targets = getPeerSelectionTargets consensusMode ledgerStateJudgement
-                                          peerSelectionTargets
-                                          genesisPeerSelectionTargets
-    writeTVar peerSelectionVar targets
+    regime <- pickChurnRegime churnMode <$> getUseBootstrapPeers
+    targets <- readTVar peerSelectionVar
+    let targets'
+          | ChurnBootstrapPraosSync <- regime = targets
+          | otherwise = getPeerSelectionTargets consensusMode
+                                                ledgerStateJudgement
+                                                peerSelectionTargets
+                                                genesisPeerSelectionTargets
+    when (targets' /= targets) $ writeTVar peerSelectionVar targets'
 
   endTs0 <- getMonotonicTime
   fuzzyDelay inRng (endTs0 `diffTime` startTs0) >>= churnLoop

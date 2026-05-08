@@ -379,7 +379,8 @@ instance ( Show extraDebugState
 
   forMachine dtal (ExtraTrace tr) = forMachine dtal tr
 
-  forHuman = pack . show
+  forHuman (ExtraTrace tr) = pack . show $ tr
+  forHuman tr              = pack . show $ tr
 
   asMetrics (TraceChurnAction duration action _) =
     [ DoubleM ("peerSelection.churn" <> pack (show action) <> ".duration")
@@ -511,8 +512,8 @@ instance MetaTrace (ToExtraTrace extraPeers)
       Namespace [] ["ChurnTimeout"]
     namespaceFor TraceDebugState {} =
       Namespace [] ["DebugState"]
-    namespaceFor (ExtraTrace _) =
-      Namespace [] []
+    namespaceFor (ExtraTrace et) =
+      nsCast $ namespaceFor et
 
     severityFor (Namespace [] ["LocalRootPeersChanged"]) _ = Just Notice
     severityFor (Namespace [] ["TargetsChanged"]) _ = Just Notice
@@ -575,7 +576,10 @@ instance MetaTrace (ToExtraTrace extraPeers)
     severityFor (Namespace [] ["ChurnAction"]) _ = Just Info
     severityFor (Namespace [] ["ChurnTimeout"]) _ = Just Notice
     severityFor (Namespace [] ["DebugState"]) _ = Just Info
-    severityFor _ _ = Nothing
+    severityFor ns tr = case tr of
+      Just (ExtraTrace et) -> severityFor (nsCast ns :: Namespace (ToExtraTrace extraPeers)) (Just et)
+      Just _ -> Nothing
+      Nothing -> severityFor (nsCast ns :: Namespace (ToExtraTrace extraPeers)) Nothing
 
     documentFor (Namespace [] ["LocalRootPeersChanged"]) = Just  ""
     documentFor (Namespace [] ["TargetsChanged"]) = Just  ""
@@ -640,7 +644,7 @@ instance MetaTrace (ToExtraTrace extraPeers)
       "Outbound Governor was killed unexpectedly"
     documentFor (Namespace [] ["DebugState"]) = Just
       "peer selection internal state"
-    documentFor _ = Nothing
+    documentFor ns = documentFor (nsCast ns :: Namespace (ToExtraTrace extraPeers))
 
     metricsDocFor (Namespace [] ["ChurnAction"]) =
      [ ("peerSelection.churn.DecreasedActivePeers.duration", "")
@@ -650,7 +654,7 @@ instance MetaTrace (ToExtraTrace extraPeers)
      , ("peerSelection.churn.DecreasedKnownPeers.duration", "")
      , ("peerSelection.churn.DecreasedKnownBigLedgerPeers.duration", "")
      ]
-    metricsDocFor _ = []
+    metricsDocFor ns = metricsDocFor (nsCast ns :: Namespace (ToExtraTrace extraPeers))
 
     allNamespaces = [
         Namespace [] ["LocalRootPeersChanged"]
