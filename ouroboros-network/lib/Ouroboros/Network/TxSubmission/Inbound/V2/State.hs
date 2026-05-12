@@ -660,9 +660,9 @@ peerClaimDelay :: TxDecisionPolicy
                -> Time
                -> PeerScore
                -> DiffTime
-peerClaimDelay policy@TxDecisionPolicy { interTxSpace, scoreMax } currentTime peerScore
+peerClaimDelay policy@TxDecisionPolicy { maxPeerClaimDelay, scoreMax } currentTime peerScore
     | s == 0   = 0
-    | otherwise = max 0.010 . realToFrac $ s / scoreMax * realToFrac interTxSpace
+    | otherwise = max 0.010 . realToFrac $ s / scoreMax * realToFrac maxPeerClaimDelay
   where
     s = currentPeerScore policy currentTime peerScore
 

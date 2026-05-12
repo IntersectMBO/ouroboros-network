@@ -445,7 +445,8 @@ instance Arbitrary ArbTxDecisionPolicy where
                 <*> choose (0, 1800)
                 <*> choose (0, 5)
                 <*> pure interTxSpaceVal
-                <*> pure inflightTimeoutVal))
+                <*> pure inflightTimeoutVal
+                <*> (realToFrac <$> choose (0.1, 1 :: Double))))
         ]
 
     shrink (ArbTxDecisionPolicy a)

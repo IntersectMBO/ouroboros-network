@@ -67,10 +67,12 @@ data TxDecisionPolicy = TxDecisionPolicy {
       interTxSpace           :: !DiffTime,
       -- ^ space between actual requests for the same TX.
 
-      inflightTimeout        :: !DiffTime
+      inflightTimeout        :: !DiffTime,
       -- ^ Maximum time a peer's attempt may sit between claim and
       -- entering submission before the per-entry inflight-multiplicity
       -- cap is bumped, allowing another peer to attempt in parallel.
+      maxPeerClaimDelay      :: !DiffTime
+      -- ^ Maximum delay penalty for poor performing peers.
     }
   deriving (Eq, Show)
 
@@ -89,6 +91,7 @@ defaultTxDecisionPolicy =
     scoreRate              = 0.001,
     scoreMax               = 15 * 60,
     scoreAcceptDecrement   = 3,
-    interTxSpace           = 0.250,
-    inflightTimeout        = 1.0  -- = 4 * interTxSpace
+    interTxSpace           = 0.050,
+    inflightTimeout        = 0.5,
+    maxPeerClaimDelay      = 0.250
   }
