@@ -11,12 +11,12 @@
 
 local default_settings = {
   -- the port used by `./network-mux/demo/mux-leios-demo.sh`
-  port = 9001,
+  port = 4000,
   -- a range of mini-protocol numbers is used to check if we parsed a valid
   -- MuxSDU header.  This is important when TCP segments are lost, and we need
   -- to skip bytes until we find a begining of a new MuxSDU.
-  min_mini_protocol_num = 2,
-  max_mini_protocol_num = 3,
+  min_mini_protocol_num = 1,
+  max_mini_protocol_num = 15,
 }
 
 local MUX_HDR_LEN = 8

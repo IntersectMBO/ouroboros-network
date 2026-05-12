@@ -11,8 +11,7 @@ haddocks/
 dist-newstyle/
 dist/
 
-*.swp
-*.swo
+*.sw?
 *~
 \#*
 **/tags
@@ -82,3 +81,4 @@ cabal.project.consensus
 *.vim
 
 /mux-leios-tmp-dir
+/tx-submission-tmp-dir

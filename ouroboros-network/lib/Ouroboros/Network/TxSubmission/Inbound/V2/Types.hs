@@ -47,11 +47,13 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Typeable (Typeable, eqT, (:~:) (Refl))
 import GHC.Generics (Generic)
+import GHC.Show (showSpace)
 import System.Random (StdGen)
 
 import NoThunks.Class (NoThunks (..))
 
 import Ouroboros.Network.Protocol.TxSubmission2.Type
+import Ouroboros.Network.Util (PrettyShow (..))
 
 -- | Flag to enable/disable the usage of the new tx-submission logic.
 --
@@ -286,6 +288,21 @@ data TxDecision txid tx = TxDecision {
     -- ^ list of `tx`s to submit to the mempool.
   }
   deriving (Show, Eq)
+
+instance (Show txid, Show tx) => PrettyShow (TxDecision txid tx) where
+  prettyShow (TxDecision ack req pipelined txids txs) =
+      showString "TxDecision"
+    . showSpace
+    . showParen True (shows ack)
+    . showSpace
+    . showParen True (shows req)
+    . showSpace
+    . shows pipelined
+    . showSpace
+    . shows (Map.toList txids)
+    . showSpace
+    . shows (fst `map` listOfTxsToMempool txs)
+    $ ""
 
 instance (NFData txid, NFData tx) => NFData (TxDecision txid tx) where
   -- all fields except `txdTxsToMempool` when evaluated to WHNF evaluate to NF.

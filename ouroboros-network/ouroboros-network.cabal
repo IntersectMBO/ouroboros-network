@@ -730,6 +730,42 @@ executable demo-connection-manager
     random,
     typed-protocols:{typed-protocols, examples},
 
+executable demo-tx-submission
+  import: ghc-options
+  hs-source-dirs: demo/tx-submission
+  main-is: main.hs
+  other-modules:
+    Demo.TxSubmission.Outbound
+
+  build-depends:
+    QuickCheck,
+    async,
+    base,
+    bytestring,
+    cardano-strict-containers,
+    cborg,
+    contra-tracer,
+    hashable,
+    io-classes:{io-classes, si-timers, strict-stm},
+    iproute,
+    network,
+    network-mux,
+    nothunks,
+    optparse-applicative,
+    ouroboros-network:{ouroboros-network, api, framework, protocols},
+    quickcheck-instances,
+    random,
+    serialise,
+    splitmix,
+    statistics,
+    typed-protocols,
+    vector,
+
+  ghc-options:
+    -threaded
+    -rtsopts
+    "-with-rtsopts=-N2 --disable-delayed-os-memory-return"
+
 library protocols
   import: ghc-options
   visibility: public
