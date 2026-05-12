@@ -137,27 +137,28 @@ data Addr = Addr { addr :: IP, port :: PortNumber }
 
 optionParser :: Parser Options
 optionParser =
-        hsubparser
-          ( command "inbound"
-          $ info inboundParser
-          $    fullDesc
-            <> progDesc "run tx-submission inbound server"
-          )
-    <|> hsubparser
-          (command "outbound"
-          $ info outboundParser
-          $    fullDesc
-            <> progDesc "run tx-submission outbound client")
-    <|> hsubparser
-         (command "generate"
-         $ info generateParser
-         $    fullDesc
-           <> progDesc "generate tx")
-    <|> hsubparser
-         (command "analyse-txs"
-         $ info analyseParser
-         $    fullDesc
-           <> progDesc "analyze tx file")
+    hsubparser
+      (  command "inbound"
+           ( info inboundParser
+           $    fullDesc
+             <> progDesc "run tx-submission inbound server"
+           )
+      <> command "outbound"
+           ( info outboundParser
+           $    fullDesc
+             <> progDesc "run tx-submission outbound client"
+           )
+      <> command "generate"
+           ( info generateParser
+           $    fullDesc
+             <> progDesc "generate tx"
+           )
+      <> command "analyse-txs"
+           ( info analyseParser
+           $    fullDesc
+             <> progDesc "analyze tx file"
+           )
+      )
   where
     defaultPort :: PortNumber
     defaultPort = 4000
