@@ -35,7 +35,7 @@ import Control.DeepSeq (NFData (..))
 import Control.Monad (when)
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadTime.SI
-import Control.Tracer (Tracer (..), contramap, nullTracer)
+import Control.Tracer (Tracer, contramap, mkTracer, nullTracer)
 import Data.Bifunctor (Bifunctor (..))
 import Data.IntPSQ (IntPSQ)
 import Data.IntPSQ qualified as IntPSQ
@@ -320,7 +320,7 @@ peerRegistryTracer :: forall p m.
                    => PeerMetrics m p
                    -> Tracer (STM m) (TraceLabelPeer p SlotNo)
 peerRegistryTracer PeerMetrics { peerMetricsVar } =
-    Tracer $ \(TraceLabelPeer peer slotNo) -> do
+    mkTracer $ \(TraceLabelPeer peer slotNo) -> do
       -- order matters: 'insertPeer' must access the previous value of
       -- lastSeenRegistry
       modifyTVar peerMetricsVar $ updateLastSlot slotNo
@@ -372,7 +372,7 @@ metricsTracer
     -> PeerMetricsConfiguration
     -> Tracer (STM m) (TraceLabelPeer p (SlotNo, Time))
 metricsTracer getMetrics writeMetrics PeerMetricsConfiguration { maxEntriesToTrack } =
-    Tracer $ \(TraceLabelPeer !peer (!slot, !time)) -> do
+    mkTracer $ \(TraceLabelPeer !peer (!slot, !time)) -> do
       metrics <- getMetrics
       let !k = slotToInt slot
           !v = (peer, time)

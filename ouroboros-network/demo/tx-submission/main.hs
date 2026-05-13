@@ -29,7 +29,7 @@ import Control.Concurrent.MVar (MVar, newMVar, withMVar)
 import Control.Exception
 import Control.Monad
 import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer (Tracer (..))
+import Control.Tracer (Tracer, mkTracer)
 import Control.Tracer qualified as Tracer
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
@@ -94,7 +94,7 @@ main =
               { V2.maxUnacknowledgedTxIds
               }
         lock <- newMVar ()
-        let stderrTracer = Tracer $ \msg -> withMVar lock $ \_ -> hPutStrLn stderr msg
+        let stderrTracer = mkTracer $ \msg -> withMVar lock $ \_ -> hPutStrLn stderr msg
             addrs :: [Addr]
             addrs = fmap (\a -> bindAddr { port = port bindAddr + fromIntegral a })
                          [0..(num - 1)]
@@ -368,7 +368,7 @@ prettyWithBearer pretty (Mx.WithBearer addr a) =
 
 txSubmissionTracer :: MVar () -> Tracer IO (Mx.WithBearer Socket.SockAddr (Driver.TraceSendRecv TxSubmission))
 txSubmissionTracer lock =
-    Tracer $ \msg ->
+    mkTracer $ \msg ->
       withMVar lock $ \_ -> putStrLn (prettyWithBearer prettyMsg msg)
   where
     prettyMsg :: Driver.TraceSendRecv TxSubmission -> String
@@ -410,7 +410,7 @@ txSubmissionTracer lock =
 
 inboundTracer :: MVar () -> Tracer IO (Mx.WithBearer Socket.SockAddr (V2.TraceTxSubmissionInbound TxId Tx))
 inboundTracer lock =
-    Tracer $ \msg ->
+    mkTracer $ \msg ->
       withMVar lock $ \_ -> putStrLn (prettyWithBearer prettyMsg msg)
   where
     prettyMsg :: V2.TraceTxSubmissionInbound TxId Tx -> String
@@ -435,7 +435,7 @@ inboundTracer lock =
 
 
 printTracer :: Show a => MVar () -> Tracer IO (Mx.WithBearer Socket.SockAddr a)
-printTracer lock = Tracer $ \(Mx.WithBearer addr a) ->
+printTracer lock = mkTracer $ \(Mx.WithBearer addr a) ->
   withMVar lock $ \_ -> putStrLn (show addr ++ " " ++ show a)
 
 

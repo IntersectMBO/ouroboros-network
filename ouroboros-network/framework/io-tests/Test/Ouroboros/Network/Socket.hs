@@ -546,10 +546,10 @@ instance (Show a) => Show (WithThreadAndTime a) where
         printf "%s: %s: %s" (show wtatOccuredAt) (show wtatWithinThread) (show wtatEvent)
 
 _verboseTracer :: Show a => Tracer IO a
-_verboseTracer = threadAndTimeTracer $ showTracing stdoutTracer
+_verboseTracer = threadAndTimeTracer $ show >$< stdoutTracer
 
 threadAndTimeTracer :: Tracer IO (WithThreadAndTime a) -> Tracer IO a
-threadAndTimeTracer tr = Tracer $ \s -> do
+threadAndTimeTracer tr = mkTracer $ \s -> do
     !now <- getCurrentTime
     !tid <- myThreadId
     traceWith tr $ WithThreadAndTime now tid s

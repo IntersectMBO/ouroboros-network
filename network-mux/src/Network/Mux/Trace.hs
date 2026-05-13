@@ -209,7 +209,7 @@ tracersWith tr = Tracers {
   }
 
 
-nullTracers :: Applicative m => Tracers' m f
+nullTracers :: Monad m => Tracers' m f
 nullTracers = tracersWith nullTracer
 
 
@@ -217,6 +217,7 @@ nullTracers = tracersWith nullTracer
 -- functor in the `Tracer` type.
 --
 pattern TracersI :: forall m.
+                    Monad m =>
                     Tracer m Trace
                  -> Tracer m ChannelTrace
                  -> Tracer m BearerTrace
@@ -238,7 +239,8 @@ pattern TracersI { tracer_, channelTracer_, bearerTracer_ } <-
 
 -- | Contravariant natural transformation of `Tracers' m`.
 --
-contramapTracers' :: (forall x. f' x -> f x)
+contramapTracers' :: Monad m
+                  => (forall x. f' x -> f x)
                   -> Tracers' m f -> Tracers' m f'
 contramapTracers'
   f
@@ -255,5 +257,5 @@ contramapTracers'
 
 type TracersWithBearer connId m = Tracers' m (WithBearer connId)
 
-tracersWithBearer :: peerId -> TracersWithBearer peerId m -> Tracers m
+tracersWithBearer :: Monad m => peerId -> TracersWithBearer peerId m -> Tracers m
 tracersWithBearer peerId = contramapTracers' (WithBearer peerId . runIdentity)

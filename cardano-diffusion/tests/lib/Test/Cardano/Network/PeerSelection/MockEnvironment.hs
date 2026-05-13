@@ -60,7 +60,7 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI hiding (timeout)
 import Control.Monad.Fail qualified as Fail
 import Control.Monad.IOSim
-import Control.Tracer (Tracer (..), contramap, traceWith)
+import Control.Tracer (Tracer, contramap, mkTracer, traceWith)
 
 import Ouroboros.Network.BlockFetch (FetchMode (..), PraosFetchMode (..))
 import Ouroboros.Network.ConnectionManager.Types (Provenance)
@@ -838,7 +838,7 @@ traceAssociationMode
 
   -> Tracer (IOSim s)
            (DebugPeerSelection Cardano.ExtraState extraFlags extraPeers PeerAddr)
-traceAssociationMode interfaces actions = Tracer $ \(TraceGovernorState _ _ st) -> do
+traceAssociationMode interfaces actions = mkTracer $ \(TraceGovernorState _ _ st) -> do
     associationMode <- atomically $ readAssociationMode
                                            (readUseLedgerPeers interfaces)
                                            (Governor.peerSharing actions)

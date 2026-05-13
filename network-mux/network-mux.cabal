@@ -58,7 +58,7 @@ library
     binary >=0.8 && <0.11,
     bytestring >=0.10 && <0.13,
     containers >=0.5 && <0.9,
-    contra-tracer >=0.1 && <0.2,
+    contra-tracer ^>=0.2.1,
     io-classes:{io-classes, si-timers, strict-stm} ^>=1.8,
     monoidal-synchronisation >=0.1 && <0.2,
     network ^>=3.2.7,
@@ -135,7 +135,7 @@ test-suite test
   default-language: Haskell2010
   default-extensions: ImportQualifiedPost
   build-depends:
-    QuickCheck,
+    QuickCheck <2.18,
     Win32-network,
     base >=4.14 && <4.23,
     binary,

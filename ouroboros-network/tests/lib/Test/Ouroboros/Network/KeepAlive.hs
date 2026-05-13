@@ -192,4 +192,4 @@ prop_keepAlive_convergence nd seed =
         g >= low && g <= high
 
 dynamicTracer :: Typeable a => Tracer (IOSim s) a
-dynamicTracer = Tracer traceM
+dynamicTracer = mkTracer traceM

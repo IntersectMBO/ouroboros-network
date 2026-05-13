@@ -110,9 +110,6 @@ let
         packages.ouroboros-network.components.tests.framework-sim-tests.doCheck = onLinux;
         packages.ouroboros-network.components.tests.ouroboros-network-sim-tests.doCheck = onLinux;
       })
-      ({ pkgs, ... }: lib.mkIf pkgs.stdenv.hostPlatform.isWindows {
-        packages.basement.configureFlags = [ "--hsc2hs-options=--cflag=-Wno-int-conversion" ];
-      })
     ];
   });
 in

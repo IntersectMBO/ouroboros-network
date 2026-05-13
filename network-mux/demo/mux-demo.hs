@@ -19,7 +19,7 @@ import Control.Concurrent (forkIO)
 import Control.Concurrent.STM (atomically)
 import Control.Exception (finally)
 import Control.Monad
-import Control.Tracer (Tracer (..))
+import Control.Tracer (Tracer, mkTracer)
 
 import System.Environment qualified as SysEnv
 import System.Exit
@@ -72,7 +72,7 @@ putStrLn_ :: String -> IO ()
 putStrLn_ = BSC.putStrLn . BSC.pack
 
 debugTracer :: Show a => Tracer IO a
-debugTracer = show >$< Tracer putStrLn_
+debugTracer = show >$< mkTracer putStrLn_
 
 --
 -- Protocols

@@ -48,7 +48,7 @@ import GHC.Real
 import Control.Monad.Class.MonadSay
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.IOSim (IOSim, traceM)
-import Control.Tracer (Contravariant (contramap), Tracer (..), contramapM)
+import Control.Tracer (Contravariant (contramap), Tracer, contramapM, mkTracer)
 
 import Data.Bitraversable (bimapAccumR)
 import Data.List (delete, nub)
@@ -198,7 +198,7 @@ data WithTime event = WithTime {
 instance Show event => Show (WithTime event) where
   show (WithTime (Time t) ev) = show t <> "@ " <> show ev
 
-tracerWithName :: name -> Tracer m (WithName name a) -> Tracer m a
+tracerWithName :: Monad m => name -> Tracer m (WithName name a) -> Tracer m a
 tracerWithName name = contramap (WithName name)
 
 tracerWithTime :: MonadMonotonicTime m => Tracer m (WithTime a) -> Tracer m a
@@ -266,17 +266,17 @@ instance (Eq a, Arbitrary a) => Arbitrary (DistinctNEList a) where
 -- | Trace to `stderr` via `Debug.Tracer` API.
 --
 debugTracer :: ( Show a, Applicative m) => Tracer m a
-debugTracer = Tracer Debug.traceShowM
+debugTracer = mkTracer Debug.traceShowM
 
 -- | Trace using `MonadSay` instance.
 --
 sayTracer :: ( Show a, MonadSay m) => Tracer m a
-sayTracer = Tracer (say . show)
+sayTracer = mkTracer (say . show)
 
 -- | Dynamic tracer for `IOSim` using `traceM`.
 --
 dynamicTracer :: Typeable a => Tracer (IOSim s) a
-dynamicTracer = Tracer traceM
+dynamicTracer = mkTracer traceM
 
 --
 -- Nightly tests

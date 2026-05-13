@@ -723,7 +723,7 @@ muxChannel tracer egressQueue want@(Wanton w) mc md q =
         traceWith tracer $ TraceChannelRecvEnd mc (fromIntegral $ BL.length blob)
         return $ Just blob
 
-traceBearerState :: Tracer m Trace -> State -> m ()
+traceBearerState :: Monad m => Tracer m Trace -> State -> m ()
 traceBearerState tracer state =
     traceWith tracer (TraceState state)
 

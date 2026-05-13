@@ -28,7 +28,6 @@ import Data.Binary.Put qualified as Bin
 import Data.Bits
 import Data.ByteString.Lazy qualified as BL
 import Data.ByteString.Lazy.Char8 qualified as BL8 (pack)
-import Data.Functor.Contravariant ((>$<))
 import Data.List (dropWhileEnd, nub)
 import Data.List qualified as List
 import Data.Map qualified as M
@@ -1009,7 +1008,7 @@ prop_mux_starvation (Uneven response0 response1) =
     activeMpsVar <- newTVarIO 0
     traceHeaderVar <- newTVarIO []
     let headerTracer =
-          Tracer $ \e -> case e of
+          mkTracer $ \e -> case e of
             Mx.TraceRecvHeaderEnd header
               -> atomically (modifyTVar traceHeaderVar (header:))
             _ -> return ()
@@ -1914,7 +1913,7 @@ verboseTracer :: forall a m.
                        , Show a
                        )
                => Tracer m a
-verboseTracer = threadAndTimeTracer $ show >$< Tracer say
+verboseTracer = threadAndTimeTracer $ show >$< mkTracer say
 
 muxVerboseTracer :: forall m.
                        ( MonadAsync m
@@ -1929,7 +1928,7 @@ threadAndTimeTracer :: forall a m.
                        , MonadMonotonicTime m
                        )
                     => Tracer m (WithThreadAndTime a) -> Tracer m a
-threadAndTimeTracer tr = Tracer $ \s -> do
+threadAndTimeTracer tr = mkTracer $ \s -> do
     !now <- getMonotonicTime
     !tid <- myThreadId
     traceWith tr $ WithThreadAndTime now (show tid) s
