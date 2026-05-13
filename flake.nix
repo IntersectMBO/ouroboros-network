@@ -73,20 +73,62 @@
 
         # jobs executed on hydra
         hydraJobs =
-          pkgs.callPackages inputs.iohkNix.utils.ciJobsAggregates
-            {
-              ciJobs =
-                flake.hydraJobs
-                // {
-                  # This ensure hydra send a status for the required job (even
-                  # if no change other than commit hash)
-                  revision = pkgs.writeText "revision" (inputs.self.rev or "dirty");
-                }
-                // lib.optionalAttrs (system == "x86_64-linux") {
-                  devShell = devShells.default;
-                  inherit format network-docs;
+          let
+            ciJobs =
+              flake.hydraJobs
+              // {
+                # This ensure hydra send a status for the required job (even
+                # if no change other than commit hash)
+                revision = pkgs.writeText "revision" (inputs.self.rev or "dirty");
+              }
+              // lib.optionalAttrs (system == "x86_64-linux") {
+                devShell = devShells.default;
+                inherit format network-docs;
+              };
+
+            # Sub-groups in flake.hydraJobs are cross-compilation targets
+            # (e.g. x86_64-w64-mingw32) and compiler variants (e.g. ghc982).
+            # They are distinguished from native job categories (packages,
+            # checks, …) by having nested attrsets as values rather than
+            # derivations.
+            subGroups = lib.filterAttrs
+              (_: v: lib.isAttrs v
+                && !lib.isDerivation v
+                && lib.any (x: lib.isAttrs x && !lib.isDerivation x)
+                (lib.attrValues v))
+              flake.hydraJobs;
+
+            # For each sub-group expose an 'all' aggregate so that all jobs
+            # in that group can be built with a single command, e.g.:
+            #   nix build .\#hydraJobs.x86_64-linux.x86_64-w64-mingw32.all
+            #   nix build .\#hydraJobs.x86_64-linux.ghc982.all
+            subGroupAlls = lib.mapAttrs
+              (name: jobs: {
+                all = pkgs.releaseTools.aggregate {
+                  name = "${name}-all";
+                  meta.description = "All jobs for ${name}";
+                  constituents = lib.collect lib.isDerivation jobs;
                 };
+              })
+              subGroups;
+
+            # Native-only jobs: ciJobs without the sub-groups, so that the
+            # top-level 'all' is symmetric across systems (no cross-compiled
+            # or variant jobs mixed in).
+            nativeJobs = builtins.removeAttrs ciJobs (builtins.attrNames subGroups);
+          in
+          pkgs.callPackages inputs.iohkNix.utils.ciJobsAggregates { inherit ciJobs; }
+          // subGroupAlls
+          // {
+            # An 'all' aggregate covering every native job on this system, e.g.:
+            #   nix build .\#hydraJobs.x86_64-linux.all
+            #   nix build .\#hydraJobs.aarch64-darwin.all
+            all = pkgs.releaseTools.aggregate {
+              name = "all";
+              meta.description = "All native jobs for ${system}";
+              constituents = lib.collect lib.isDerivation nativeJobs;
             };
+          };
 
         # Provide hydraJobs through legacyPackages to allow building without system prefix, e.g.
         # `nix build .\#network-mux:lib:network-mux`
