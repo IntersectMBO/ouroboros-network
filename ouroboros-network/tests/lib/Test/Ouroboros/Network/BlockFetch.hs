@@ -829,20 +829,26 @@ unit_bracketSyncWithFetchClient step = do
                  -> ((forall c. m c -> m c) -> m d)
                  -> m (Either SomeException a, Either SomeException b)
     testSkeleton withFetchTestAction withSyncTestAction withKeepAliveTestAction = do
-      registry <- newFetchClientRegistry
-      setFetchClientContext registry nullTracer dummyPolicy
+      blockFetchRegistry <- newFetchClientRegistry
+      keepAliveRegistry <- newKeepAliveRegistry
+      setFetchClientContext blockFetchRegistry nullTracer dummyPolicy
 
       fetchStatePeerChainsVar <- newTVarIO Map.empty
 
       let peer  = "thepeer"
           fetch :: m a
-          fetch = withFetchTestAction $ \body ->
-                    bracketFetchClient registry (maxBound @NodeToNodeVersion) peer $ \_ ->
-                      body
+          fetch = withFetchTestAction
+                  $ \body ->
+                    bracketFetchClient
+                      blockFetchRegistry
+                      keepAliveRegistry
+                      (maxBound @NodeToNodeVersion)
+                      peer
+                      $ \_ -> body
 
           sync :: m b
           sync  = withSyncTestAction $ \body ->
-                    bracketSyncWithFetchClient registry peer $
+                    bracketSyncWithFetchClient blockFetchRegistry peer $
                       bracket_
                         (atomically (modifyTVar fetchStatePeerChainsVar
                                                 (Map.insert peer ())))
@@ -852,13 +858,13 @@ unit_bracketSyncWithFetchClient step = do
 
           keep :: m d
           keep  = withKeepAliveTestAction $ \body ->
-                    bracketKeepAliveClient registry peer $ const body
+                    bracketKeepAliveClient keepAliveRegistry peer $ const body
 
           logic :: (Map String (PeerFetchStatus BlockHeader), Map String ())
                 -> m ()
           logic fingerprint = do
             fingerprint' <- atomically $ do
-              fetchStatePeerStates <- readFetchClientsStatus registry
+              fetchStatePeerStates <- readFetchClientsStatus blockFetchRegistry
               fetchStatePeerChains <- readTVar fetchStatePeerChainsVar
               let fingerprint' = (fetchStatePeerStates, fetchStatePeerChains)
               check (fingerprint' /= fingerprint)
@@ -894,11 +900,11 @@ unit_bracketSyncWithFetchClient step = do
               syncRes  <- waitCatch syncAsync
               void $ waitCatch keepAsync
               atomically $ do
-                fr <- readTVar $ fcrFetchRegistry registry
-                sr <- readTVar $ fcrSyncRegistry  registry
-                dr <- readTVar $ fcrDqRegistry    registry
-                kr <- readTVar $ fcrKeepRegistry  registry
-                yr <- readTVar $ fcrDying         registry
+                fr <- readTVar $ fetchRegistry blockFetchRegistry
+                sr <- readTVar $ syncRegistry  blockFetchRegistry
+                dr <- readTVar $ dqRegistry    keepAliveRegistry
+                kr <- readTVar $ keepRegistry  keepAliveRegistry
+                yr <- readTVar $ dyingRegistry keepAliveRegistry
                 if and [Map.null fr, Map.null sr, Map.null dr, Map.null kr, Set.null yr]
                    then return ()
                    else error "state leak"

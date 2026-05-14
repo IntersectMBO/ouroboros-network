@@ -43,7 +43,7 @@ tests = testGroup "KeepAlive"
     [ testProperty "KeepAlive Convergence" prop_keepAlive_convergence]
 
 runKeepAliveClient
-    :: forall m peer header block.
+    :: forall m peer.
         ( MonadAsync m
         , MonadEvaluate m
         , MonadFork m
@@ -55,7 +55,7 @@ runKeepAliveClient
     => Tracer m (TraceKeepAliveClient peer)
     -> StdGen
     -> ControlMessageSTM m
-    -> FetchClientRegistry peer header block m
+    -> KeepAliveRegistry peer m
     -> peer
     -> Channel m BL.ByteString
     -> KeepAliveInterval
@@ -94,7 +94,7 @@ runKeepAliveServer channel =
         $ keepAliveServer
 
 runKeepAliveClientAndServer
-    :: forall m peer header block.
+    :: forall m peer.
         ( MonadAsync m
         , MonadDelay m
         , MonadEvaluate m
@@ -110,7 +110,7 @@ runKeepAliveClientAndServer
     -> Int
     -> Tracer m (TraceKeepAliveClient peer)
     -> ControlMessageSTM m
-    -> FetchClientRegistry peer header block m
+    -> KeepAliveRegistry peer m
     -> peer
     -> KeepAliveInterval
     -> m (Async m ((), Maybe BL.ByteString), Async m ((), Maybe BL.ByteString))
@@ -149,7 +149,7 @@ prop_keepAlive_convergenceM
     -> Int
     -> m ()
 prop_keepAlive_convergenceM tracer (NetworkDelay nd) seed = do
-    registry <- newFetchClientRegistry
+    registry <- newKeepAliveRegistry
     controlMessageV <- newTVarIO Continue
     let controlMessageSTM = readTVar controlMessageV
         clientId = "client"

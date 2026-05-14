@@ -511,6 +511,7 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
          channel
       -> do labelThisThread "BlockFetchClient"
             bracketFetchClient (nkFetchClientRegistry nodeKernel)
+                               (nkKeepAliveRegistry nodeKernel)
                                UnversionedProtocol
                                remoteAddress
                                $ \clientCtx ->
@@ -574,7 +575,7 @@ applications debugTracer txSubmissionInboundTracer txSubmissionInboundDebug node
                                     remoteAddress
                                     ctxVar
                                     (KeepAliveInterval aaKeepAliveInterval))
-            bracketKeepAliveClient (nkFetchClientRegistry nodeKernel)
+            bracketKeepAliveClient (nkKeepAliveRegistry nodeKernel)
                                    remoteAddress
                                    kacApp
 

@@ -84,7 +84,8 @@ blockFetchExample0 fetchMode decisionTracer clientStateTracer clientMsgTracer
                    controlMessageSTM
                    currentChain candidateChain = do
 
-    registry    <- newFetchClientRegistry :: m (FetchClientRegistry Int BlockHeader Block m)
+    blockFetchRegistry <- newFetchClientRegistry :: m (FetchClientRegistry Int BlockHeader Block m)
+    keepAliveRegistry  <- newKeepAliveRegistry   :: m (KeepAliveRegistry Int m)
     blockHeap   <- mkTestFetchedBlockHeap (anchoredChainPoints currentChain)
 
     (clientAsync, serverAsync, syncClientAsync, keepAliveAsync)
@@ -93,14 +94,16 @@ blockFetchExample0 fetchMode decisionTracer clientStateTracer clientMsgTracer
                     (contramap (TraceLabelPeer peerno) serverMsgTracer)
                     (maxBound :: NodeToNodeVersion)
                     clientDelay serverDelay
-                    registry peerno
+                    blockFetchRegistry
+                    keepAliveRegistry
+                    peerno
                     (blockFetchClient (maxBound :: NodeToNodeVersion) controlMessageSTM nullTracer)
                     (mockBlockFetchServer1 candidateChain)
 
     fetchAsync  <- async $ do
       threadId <- myThreadId
       labelThread threadId "block-fetch-logic"
-      blockFetch registry blockHeap
+      blockFetch blockFetchRegistry keepAliveRegistry blockHeap
     driverAsync <- async $ do
       threadId <- myThreadId
       labelThread threadId "driver"
@@ -132,13 +135,15 @@ blockFetchExample0 fetchMode decisionTracer clientStateTracer clientMsgTracer
                           : map blockPoint (AnchoredFragment.toOldestFirst c)
 
     blockFetch :: FetchClientRegistry Int BlockHeader Block m
+               -> KeepAliveRegistry Int m
                -> TestFetchedBlockHeap m Block
                -> m ()
-    blockFetch registry blockHeap =
+    blockFetch blockFetchRegistry keepAliveRegistry blockHeap =
         blockFetchLogic
           decisionTracer clientStateTracer
           (sampleBlockFetchPolicy1 fetchMode headerForgeUTCTime blockHeap currentChainHeaders candidateChainHeaders)
-          registry
+          blockFetchRegistry
+          keepAliveRegistry
           (BlockFetchConfiguration {
             bfcMaxConcurrencyBulkSync = 1,
             bfcMaxConcurrencyDeadline = 2,
@@ -198,7 +203,8 @@ blockFetchExample1 fetchMode decisionTracer clientStateTracer clientMsgTracer
     controlMessageVar <- newTVarIO Continue
     let controlMessageSTM = readTVar controlMessageVar
 
-    registry    <- newFetchClientRegistry
+    blockFetchRegistry <- newFetchClientRegistry
+    keepAliveRegistry  <- newKeepAliveRegistry
     blockHeap   <- mkTestFetchedBlockHeap (anchoredChainPoints currentChain)
 
     peerAsyncs  <- sequence
@@ -207,7 +213,9 @@ blockFetchExample1 fetchMode decisionTracer clientStateTracer clientMsgTracer
                         (contramap (TraceLabelPeer peerno) serverMsgTracer)
                         (maxBound :: NodeToNodeVersion)
                         clientDelay serverDelay
-                        registry peerno
+                        blockFetchRegistry
+                        keepAliveRegistry
+                        peerno
                         (blockFetchClient (maxBound :: NodeToNodeVersion) controlMessageSTM nullTracer)
                         (mockBlockFetchServer1 candidateChain)
                     | (peerno, candidateChain) <- zip [1..] candidateChains
@@ -215,7 +223,7 @@ blockFetchExample1 fetchMode decisionTracer clientStateTracer clientMsgTracer
     fetchAsync  <- async $ do
       threadId <- myThreadId
       labelThread threadId "block-fetch-logic"
-      blockFetch registry blockHeap
+      blockFetch blockFetchRegistry keepAliveRegistry blockHeap
     driverAsync <- async $ do
       threadId <- myThreadId
       labelThread threadId "block-fetch-driver"
@@ -246,13 +254,15 @@ blockFetchExample1 fetchMode decisionTracer clientStateTracer clientMsgTracer
                           : map blockPoint (AnchoredFragment.toOldestFirst c)
 
     blockFetch :: FetchClientRegistry Int BlockHeader Block m
+               -> KeepAliveRegistry Int m
                -> TestFetchedBlockHeap m Block
                -> m ()
-    blockFetch registry blockHeap =
+    blockFetch blockFetchRegistry keepAliveRegistry blockHeap =
         blockFetchLogic
           decisionTracer clientStateTracer
           (sampleBlockFetchPolicy1 fetchMode headerForgeUTCTime blockHeap currentChainHeaders candidateChainHeaders)
-          registry
+          blockFetchRegistry
+          keepAliveRegistry
           (BlockFetchConfiguration {
             bfcMaxConcurrencyBulkSync = 1,
             bfcMaxConcurrencyDeadline = 2,
@@ -355,13 +365,14 @@ runFetchClient :: ( MonadAsync m
                 => Tracer m (TraceSendRecv (BlockFetch block point))
                 -> version
                 -> FetchClientRegistry peerid header block m
+                -> KeepAliveRegistry peerid m
                 -> peerid
                 -> Channel m LBS.ByteString
                 -> (  FetchClientContext header block m
                    -> ClientPipelined (BlockFetch block point) BFIdle m a)
                 -> m a
-runFetchClient tracer version registry peerid channel client =
-    bracketFetchClient registry version peerid $ \clientCtx ->
+runFetchClient tracer version blockFetchRegistry keepAliveRegistry peerid channel client =
+    bracketFetchClient blockFetchRegistry keepAliveRegistry version peerid $ \clientCtx ->
       fst <$>
         runPipelinedPeerWithLimits tracer codec (byteLimitsBlockFetch (fromIntegral . LBS.length))
           timeLimitsBlockFetch channel (client clientCtx)
@@ -418,6 +429,7 @@ runFetchClientAndServerAsync
                 -> Maybe DiffTime -- ^ client's channel delay
                 -> Maybe DiffTime -- ^ server's channel delay
                 -> FetchClientRegistry peerid header block m
+                -> KeepAliveRegistry peerid m
                 -> peerid
                 -> (  FetchClientContext header block m
                    -> ClientPipelined (BlockFetch block (Point block)) BFIdle m a)
@@ -426,7 +438,9 @@ runFetchClientAndServerAsync
 runFetchClientAndServerAsync clientTracer serverTracer
                              version
                              clientDelay  serverDelay
-                             registry peerid client server = do
+                             blockFetchRegistry
+                             keepAliveRegistry
+                             peerid client server = do
     (clientChannel, serverChannel) <- createConnectedChannels
 
     clientAsync <- async $ do
@@ -435,7 +449,9 @@ runFetchClientAndServerAsync clientTracer serverTracer
       runFetchClient
         clientTracer
         version
-        registry peerid
+        blockFetchRegistry
+        keepAliveRegistry
+        peerid
         (fromMaybe id (delayChannel <$> clientDelay) clientChannel)
         client
 
@@ -454,13 +470,14 @@ runFetchClientAndServerAsync clientTracer serverTracer
       threadId <- myThreadId
       labelThread threadId ("registry-" ++ show peerid)
       bracketSyncWithFetchClient
-        registry peerid
+        blockFetchRegistry
+        peerid
         (forever (threadDelay 1000) >> return ())
     keepAliveAsync <- async $ do
       threadId <- myThreadId
       labelThread threadId ("keep-alive-" ++ show peerid)
       bracketKeepAliveClient
-        registry peerid
+        keepAliveRegistry peerid
         (\_ -> forever (threadDelay 1000) >> return ())
 
     return (clientAsync, serverAsync, syncClientAsync, keepAliveAsync)

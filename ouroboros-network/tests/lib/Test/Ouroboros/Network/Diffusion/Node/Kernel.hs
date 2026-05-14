@@ -294,6 +294,9 @@ data NodeKernel header block s txid m = NodeKernel {
       nkFetchClientRegistry
         :: FetchClientRegistry NtNAddr header block m,
 
+      nkKeepAliveRegistry
+        :: KeepAliveRegistry NtNAddr m,
+
       nkPeerSharingRegistry
         :: PeerSharingRegistry NtNAddr m,
 
@@ -338,6 +341,7 @@ newNodeKernel psRng txSeed txs = do
       <$> newTVarIO Map.empty
       <*> newTVarIO (ChainProducerState Chain.Genesis Map.empty 0)
       <*> newFetchClientRegistry
+      <*> newKeepAliveRegistry
       <*> newPeerSharingRegistry
       <*> ChainDB.newChainDB
       <*> newPeerSharingAPI publicStateVar psRng
