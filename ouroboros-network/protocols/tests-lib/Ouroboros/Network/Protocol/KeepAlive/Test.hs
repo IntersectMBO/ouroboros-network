@@ -11,6 +11,7 @@ module Ouroboros.Network.Protocol.KeepAlive.Test where
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
 import Control.Monad.IOSim (runSimOrThrow)
 import Control.Monad.ST (runST)
 import Control.Tracer (nullTracer)
@@ -95,10 +96,11 @@ prop_connect f (NonNegative n) =
 -- Properties using channels, codecs and drivers.
 --
 
-prop_channel :: ( MonadST       m
-                , MonadAsync    m
-                , MonadCatch    m
-                , MonadEvaluate m
+prop_channel :: ( MonadST           m
+                , MonadAsync        m
+                , MonadCatch        m
+                , MonadEvaluate     m
+                , MonadMonotonicTime m
                 )
              => (Int -> Int)
              -> Int

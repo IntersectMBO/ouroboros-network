@@ -27,6 +27,7 @@ import Data.Binary.Put qualified as Bin
 import Data.Bits
 import Data.ByteString.Lazy qualified as BL
 import Data.ByteString.Lazy.Char8 qualified as BL8 (pack)
+import Data.IntMap qualified as IntMap
 import Data.List (dropWhileEnd, nub)
 import Data.List qualified as List
 import Data.Map qualified as M
@@ -126,6 +127,12 @@ smallMiniProtocolLimits =
 
 smallMiniProtocolLimit :: Int
 smallMiniProtocolLimit = 16*1024
+
+-- | Wrap a `Maybe LBS.ByteString` trailing in a `Reception` with empty arrival
+-- times.  Used at the boundary where codec runners hand trailing back to
+-- `runMiniProtocol`.
+wrapReception :: Functor f => f (a, Maybe BL.ByteString) -> f (a, Maybe (Mx.Reception BL.ByteString))
+wrapReception = fmap (\(a, t) -> (a, Mx.MkReception IntMap.empty <$> t))
 
 activeTracer :: forall m a. MonadSay m => Tracer m a
 activeTracer = nullTracer
@@ -619,8 +626,8 @@ setupMiniReqRspCompat :: IO ()
                       -> DummyTrace
                       -- ^ Trace of messages
                       -> IO ( IO Bool
-                            , Mx.ByteChannel IO -> IO ((), Maybe BL.ByteString)
-                            , Mx.ByteChannel IO -> IO ((), Maybe BL.ByteString)
+                            , Mx.ByteChannel IO -> IO ((), Maybe (Mx.Reception BL.ByteString))
+                            , Mx.ByteChannel IO -> IO ((), Maybe (Mx.Reception BL.ByteString))
                             )
 setupMiniReqRspCompat serverAction mpsEndVar (DummyTrace msgs) = do
     serverResultVar <- newEmptyTMVarIO
@@ -660,19 +667,19 @@ setupMiniReqRspCompat serverAction mpsEndVar (DummyTrace msgs) = do
 
     clientApp :: StrictTMVar IO Bool
               -> Mx.ByteChannel IO
-              -> IO ((), Maybe BL.ByteString)
+              -> IO ((), Maybe (Mx.Reception BL.ByteString))
     clientApp clientResultVar clientChan = do
         (result, trailing) <- runClientCBOR nullTracer clientChan (reqRespClient requests)
         atomically (putTMVar clientResultVar result)
-        (,trailing) <$> end
+        (,Mx.MkReception IntMap.empty <$> trailing) <$> end
 
     serverApp :: StrictTMVar IO Bool
               -> Mx.ByteChannel IO
-              -> IO ((), Maybe BL.ByteString)
+              -> IO ((), Maybe (Mx.Reception BL.ByteString))
     serverApp serverResultVar serverChan = do
         (result, trailing) <- runServerCBOR nullTracer serverChan (reqRespServer responses)
         atomically (putTMVar serverResultVar result)
-        (,trailing) <$> end
+        (,Mx.MkReception IntMap.empty <$> trailing) <$> end
 
     -- Wait on all miniprotocol jobs before letting a miniprotocol thread exit.
     end = do
@@ -694,8 +701,8 @@ setupMiniReqRsp :: IO ()
                 -- ^ Action performed by responder before processing the response
                 -> DummyTrace
                 -- ^ Trace of messages
-                -> IO ( Mx.ByteChannel IO -> IO (Bool, Maybe BL.ByteString)
-                      , Mx.ByteChannel IO -> IO (Bool, Maybe BL.ByteString)
+                -> IO ( Mx.ByteChannel IO -> IO (Bool, Maybe (Mx.Reception BL.ByteString))
+                      , Mx.ByteChannel IO -> IO (Bool, Maybe (Mx.Reception BL.ByteString))
                       )
 setupMiniReqRsp serverAction (DummyTrace msgs) = do
 
@@ -727,12 +734,12 @@ setupMiniReqRsp serverAction (DummyTrace msgs) = do
         go resps (req:reqs) = SendMsgReq req $ \resp -> return (go (resp:resps) reqs)
 
     clientApp :: Mx.ByteChannel IO
-              -> IO (Bool, Maybe BL.ByteString)
-    clientApp clientChan = runClientCBOR nullTracer clientChan (reqRespClient requests)
+              -> IO (Bool, Maybe (Mx.Reception BL.ByteString))
+    clientApp clientChan = wrapReception (runClientCBOR nullTracer clientChan (reqRespClient requests))
 
     serverApp :: Mx.ByteChannel IO
-              -> IO (Bool, Maybe BL.ByteString)
-    serverApp serverChan = runServerCBOR nullTracer serverChan (reqRespServer responses)
+              -> IO (Bool, Maybe (Mx.Reception BL.ByteString))
+    serverApp serverChan = wrapReception (runServerCBOR nullTracer serverChan (reqRespServer responses))
 
 --
 -- Running with queues and pipes
@@ -740,15 +747,15 @@ setupMiniReqRsp serverAction (DummyTrace msgs) = do
 
 -- Run applications continuation
 type RunMuxApplications
-    =  [Mx.ByteChannel IO -> IO (Bool, Maybe BL.ByteString)]
-    -> [Mx.ByteChannel IO -> IO (Bool, Maybe BL.ByteString)]
+    =  [Mx.ByteChannel IO -> IO (Bool, Maybe (Mx.Reception BL.ByteString))]
+    -> [Mx.ByteChannel IO -> IO (Bool, Maybe (Mx.Reception BL.ByteString))]
     -> IO Bool
 
 
 runMuxApplication :: DummyCapability
-                  -> [Mx.ByteChannel IO -> IO (Bool, Maybe BL.ByteString)]
+                  -> [Mx.ByteChannel IO -> IO (Bool, Maybe (Mx.Reception BL.ByteString))]
                   -> Mx.Bearer IO
-                  -> [Mx.ByteChannel IO -> IO (Bool, Maybe BL.ByteString)]
+                  -> [Mx.ByteChannel IO -> IO (Bool, Maybe (Mx.Reception BL.ByteString))]
                   -> Mx.Bearer IO
                   -> IO Bool
 runMuxApplication (DummyCapability rspCap) initApps initBearer respApps respBearer = do
@@ -1288,7 +1295,7 @@ prop_demux_sdu a = do
         loop e = do
             msg_m <- Mx.recv chan
             case msg_m of
-                 Just msg ->
+                 Just (Mx.MkReception _ msg) ->
                      case BL.stripPrefix msg e of
                           Just e' -> loop e'
                           Nothing -> error "recv corruption"
@@ -1426,7 +1433,7 @@ dummyAppToChannel :: forall m.
                      , MonadCatch m
                      )
                   => DummyApp
-                  -> (Mx.ByteChannel m -> m ((), Maybe BL.ByteString))
+                  -> (Mx.ByteChannel m -> m ((), Maybe (Mx.Reception BL.ByteString)))
 dummyAppToChannel DummyApp {daAction, daRunTime} = \_ -> do
     threadDelay daRunTime
     case daAction of
@@ -1461,7 +1468,7 @@ dummyRestartingAppToChannel :: forall a m.
                      , MonadDelay m
                      )
                   => (DummyApp, a)
-                  -> (Mx.ByteChannel m -> m ((DummyApp, a), Maybe BL.ByteString))
+                  -> (Mx.ByteChannel m -> m ((DummyApp, a), Maybe (Mx.Reception BL.ByteString)))
 dummyRestartingAppToChannel (app, r) = \_ -> do
     threadDelay $ daRunTime app
     case daAction app of
@@ -2020,7 +2027,7 @@ close_experiment
                 Mx.runMiniProtocol
                   mux miniProtocolNum
                   Mx.InitiatorDirectionOnly Mx.StartEagerly
-                  (\chan -> mkClient >>= runClientCBOR clientTracer chan)
+                  (\chan -> wrapReception (mkClient >>= runClientCBOR clientTracer chan))
             >>= atomically
       )
       $ \clientAsync ->
@@ -2040,7 +2047,7 @@ close_experiment
                   Mx.runMiniProtocol
                     mux miniProtocolNum
                     Mx.ResponderDirectionOnly Mx.StartOnDemand
-                    (\chan -> runServerCBOR serverTracer chan (server acc0))
+                    (\chan -> wrapReception (runServerCBOR serverTracer chan (server acc0)))
               >>= atomically
           )
           $ \serverAsync -> do
@@ -2423,7 +2430,7 @@ prop_mux_trailing_bytes reminder (NonEmptyByteString received) = do
               Mx.StartEagerly
               (\_ -> do
                 labelThisThread "resp:1"
-                return ((), Just reminder))
+                return ((), Just (Mx.MkReception IntMap.empty reminder)))
 
       -- 3. Read all bytes from the channel
       r <- atomically =<< Mx.runMiniProtocol
@@ -2441,7 +2448,7 @@ prop_mux_trailing_bytes reminder (NonEmptyByteString received) = do
       -- additional data (`received` bytes).
       case r of
         Left e    -> throwIO e
-        Right bts -> return $ bts === Just (reminder <> received)
+        Right bts -> return $ ((\(Mx.MkReception _ b) -> b) <$> bts) === Just (reminder <> received)
   where
     miniProtocolNum :: Mx.MiniProtocolNum
     miniProtocolNum = Mx.MiniProtocolNum 1

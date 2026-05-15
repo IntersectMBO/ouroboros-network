@@ -20,6 +20,7 @@ import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
 import Control.Monad.IOSim (runSimOrThrow)
 import Control.Tracer (nullTracer)
 
@@ -286,6 +287,7 @@ prop_connect_pipelined5 (TestChainAndPoints chain points)
 prop_channel :: ( MonadAsync m
                 , MonadCatch m
                 , MonadEvaluate m
+                , MonadMonotonicTime m
                 , MonadST m
                 )
              => m (Channel m ByteString, Channel m ByteString)

@@ -24,6 +24,7 @@ import Codec.CBOR.Term qualified as CBOR
 import Control.DeepSeq (NFData)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
 import Control.Monad.IOSim (runSimOrThrow)
 import Control.Tracer (nullTracer)
 
@@ -374,9 +375,10 @@ prop_query_version_NodeToClient_SimNet
 -- | Run a query for the server's supported version.
 --
 prop_peerSharing_symmetric ::
-                           ( MonadAsync    m
-                           , MonadCatch    m
-                           , MonadEvaluate m
+                           ( MonadAsync         m
+                           , MonadCatch         m
+                           , MonadEvaluate      m
+                           , MonadMonotonicTime m
                            )
                            => m (Channel m ByteString, Channel m ByteString)
                            -> Codec (Handshake NodeToNodeVersion CBOR.Term)

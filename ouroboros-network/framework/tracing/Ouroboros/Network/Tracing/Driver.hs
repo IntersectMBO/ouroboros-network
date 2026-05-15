@@ -7,7 +7,8 @@
 
 module Ouroboros.Network.Tracing.Driver () where
 
-import Data.Aeson (Value (String), (.=))
+import Control.Monad.Class.MonadTime.SI (Time (..))
+import Data.Aeson (Value (String), (.=), (.?=))
 
 import Cardano.Logging
 import Ouroboros.Network.Driver.Simple qualified as Simple
@@ -16,68 +17,75 @@ import Ouroboros.Network.Driver.Stateful qualified as Stateful
 import Network.TypedProtocol.Codec qualified as Simple
 import Network.TypedProtocol.Stateful.Codec qualified as Stateful
 
+-- | Render the mux bearer time as seconds since process start. This is the
+-- same shape the immdb-server's hand-rolled SendRecv tracer uses (before the
+-- 'tmf' conversion to UTCTime); downstream analysis joins by sequence number,
+-- so an unconverted Double is sufficient.
+jsonMuxAt :: Time -> Double
+jsonMuxAt (Time t) = realToFrac t
+
 -------------------------------------------------------------------------------
 -- Driver Simple.
 -------------------------------------------------------------------------------
 
 instance LogFormatting (Simple.AnyMessage ps)
       => LogFormatting (Simple.TraceSendRecv ps) where
-  forMachine dtal (Simple.TraceSendMsg m) = mconcat
-    [ "kind" .= String "Send" , "msg" .= forMachine dtal m ]
-  forMachine dtal (Simple.TraceRecvMsg m) = mconcat
-    [ "kind" .= String "Recv" , "msg" .= forMachine dtal m ]
+  forMachine dtal (Simple.TraceSendMsg tm m) = mconcat
+    [ "kind" .= String "Send" , "msg" .= forMachine dtal m, "mux_at" .= jsonMuxAt tm ]
+  forMachine dtal (Simple.TraceRecvMsg mbTm m) = mconcat
+    [ "kind" .= String "Recv" , "msg" .= forMachine dtal m, "mux_at" .?= fmap jsonMuxAt mbTm ]
 
-  forHuman (Simple.TraceSendMsg m) = "Send: " <> forHuman m
-  forHuman (Simple.TraceRecvMsg m) = "Receive: " <> forHuman m
+  forHuman (Simple.TraceSendMsg _ m) = "Send: " <> forHuman m
+  forHuman (Simple.TraceRecvMsg _ m) = "Receive: " <> forHuman m
 
-  asMetrics (Simple.TraceSendMsg m) = asMetrics m
-  asMetrics (Simple.TraceRecvMsg m) = asMetrics m
+  asMetrics (Simple.TraceSendMsg _ m) = asMetrics m
+  asMetrics (Simple.TraceRecvMsg _ m) = asMetrics m
 
 instance LogFormatting (Stateful.AnyMessage ps f)
       => LogFormatting (Stateful.TraceSendRecv ps f) where
-  forMachine dtal (Stateful.TraceSendMsg m) = mconcat
-    [ "kind" .= String "Send" , "msg" .= forMachine dtal m ]
-  forMachine dtal (Stateful.TraceRecvMsg m) = mconcat
-    [ "kind" .= String "Recv" , "msg" .= forMachine dtal m ]
+  forMachine dtal (Stateful.TraceSendMsg tm m) = mconcat
+    [ "kind" .= String "Send" , "msg" .= forMachine dtal m, "mux_at" .= jsonMuxAt tm ]
+  forMachine dtal (Stateful.TraceRecvMsg mbTm m) = mconcat
+    [ "kind" .= String "Recv" , "msg" .= forMachine dtal m, "mux_at" .?= fmap jsonMuxAt mbTm ]
 
-  forHuman (Stateful.TraceSendMsg m) = "Send: " <> forHuman m
-  forHuman (Stateful.TraceRecvMsg m) = "Receive: " <> forHuman m
+  forHuman (Stateful.TraceSendMsg _ m) = "Send: " <> forHuman m
+  forHuman (Stateful.TraceRecvMsg _ m) = "Receive: " <> forHuman m
 
-  asMetrics (Stateful.TraceSendMsg m) = asMetrics m
-  asMetrics (Stateful.TraceRecvMsg m) = asMetrics m
+  asMetrics (Stateful.TraceSendMsg _ m) = asMetrics m
+  asMetrics (Stateful.TraceRecvMsg _ m) = asMetrics m
 
 instance MetaTrace (Simple.AnyMessage ps) =>
             MetaTrace (Simple.TraceSendRecv ps) where
-  namespaceFor (Simple.TraceSendMsg msg) =
+  namespaceFor (Simple.TraceSendMsg _ msg) =
     nsPrependInner "Send" (namespaceFor msg)
-  namespaceFor (Simple.TraceRecvMsg msg) =
+  namespaceFor (Simple.TraceRecvMsg _ msg) =
     nsPrependInner "Receive" (namespaceFor msg)
 
-  severityFor (Namespace out ("Send" : tl)) (Just (Simple.TraceSendMsg msg)) =
+  severityFor (Namespace out ("Send" : tl)) (Just (Simple.TraceSendMsg _ msg)) =
     severityFor (Namespace out tl) (Just msg)
   severityFor (Namespace out ("Send" : tl)) Nothing =
     severityFor (Namespace out tl :: Namespace (Simple.AnyMessage ps)) Nothing
-  severityFor (Namespace out ("Receive" : tl)) (Just (Simple.TraceSendMsg msg)) =
+  severityFor (Namespace out ("Receive" : tl)) (Just (Simple.TraceSendMsg _ msg)) =
     severityFor (Namespace out tl) (Just msg)
   severityFor (Namespace out ("Receive" : tl)) Nothing =
     severityFor (Namespace out tl :: Namespace (Simple.AnyMessage ps)) Nothing
   severityFor _ _ = Nothing
 
-  privacyFor (Namespace out ("Send" : tl)) (Just (Simple.TraceSendMsg msg)) =
+  privacyFor (Namespace out ("Send" : tl)) (Just (Simple.TraceSendMsg _ msg)) =
     privacyFor (Namespace out tl) (Just msg)
   privacyFor (Namespace out ("Send" : tl)) Nothing =
     privacyFor (Namespace out tl :: Namespace (Simple.AnyMessage ps)) Nothing
-  privacyFor (Namespace out ("Receive" : tl)) (Just (Simple.TraceSendMsg msg)) =
+  privacyFor (Namespace out ("Receive" : tl)) (Just (Simple.TraceSendMsg _ msg)) =
     privacyFor (Namespace out tl) (Just msg)
   privacyFor (Namespace out ("Receive" : tl)) Nothing =
     privacyFor (Namespace out tl :: Namespace (Simple.AnyMessage ps)) Nothing
   privacyFor _ _ = Nothing
 
-  detailsFor (Namespace out ("Send" : tl)) (Just (Simple.TraceSendMsg msg)) =
+  detailsFor (Namespace out ("Send" : tl)) (Just (Simple.TraceSendMsg _ msg)) =
     detailsFor (Namespace out tl) (Just msg)
   detailsFor (Namespace out ("Send" : tl)) Nothing =
     detailsFor (Namespace out tl :: Namespace (Simple.AnyMessage ps)) Nothing
-  detailsFor (Namespace out ("Receive" : tl)) (Just (Simple.TraceSendMsg msg)) =
+  detailsFor (Namespace out ("Receive" : tl)) (Just (Simple.TraceSendMsg _ msg)) =
     detailsFor (Namespace out tl) (Just msg)
   detailsFor (Namespace out ("Receive" : tl)) Nothing =
     detailsFor (Namespace out tl :: Namespace (Simple.AnyMessage ps)) Nothing
@@ -101,37 +109,37 @@ instance MetaTrace (Simple.AnyMessage ps) =>
 
 instance MetaTrace (Stateful.AnyMessage ps f) =>
             MetaTrace (Stateful.TraceSendRecv ps f) where
-  namespaceFor (Stateful.TraceSendMsg msg) =
+  namespaceFor (Stateful.TraceSendMsg _ msg) =
     nsPrependInner "Send" (namespaceFor msg)
-  namespaceFor (Stateful.TraceRecvMsg msg) =
+  namespaceFor (Stateful.TraceRecvMsg _ msg) =
     nsPrependInner "Receive" (namespaceFor msg)
 
-  severityFor (Namespace out ("Send" : tl)) (Just (Stateful.TraceSendMsg msg)) =
+  severityFor (Namespace out ("Send" : tl)) (Just (Stateful.TraceSendMsg _ msg)) =
     severityFor (Namespace out tl) (Just msg)
   severityFor (Namespace out ("Send" : tl)) Nothing =
     severityFor (Namespace out tl :: Namespace (Stateful.AnyMessage ps f)) Nothing
 
-  severityFor (Namespace out ("Receive" : tl)) (Just (Stateful.TraceSendMsg msg)) =
+  severityFor (Namespace out ("Receive" : tl)) (Just (Stateful.TraceSendMsg _ msg)) =
     severityFor (Namespace out tl) (Just msg)
   severityFor (Namespace out ("Receive" : tl)) Nothing =
     severityFor (Namespace out tl :: Namespace (Stateful.AnyMessage ps f)) Nothing
   severityFor _ _ = Nothing
 
-  privacyFor (Namespace out ("Send" : tl)) (Just (Stateful.TraceSendMsg msg)) =
+  privacyFor (Namespace out ("Send" : tl)) (Just (Stateful.TraceSendMsg _ msg)) =
     privacyFor (Namespace out tl) (Just msg)
   privacyFor (Namespace out ("Send" : tl)) Nothing =
     privacyFor (Namespace out tl :: Namespace (Stateful.AnyMessage ps f)) Nothing
-  privacyFor (Namespace out ("Receive" : tl)) (Just (Stateful.TraceSendMsg msg)) =
+  privacyFor (Namespace out ("Receive" : tl)) (Just (Stateful.TraceSendMsg _ msg)) =
     privacyFor (Namespace out tl) (Just msg)
   privacyFor (Namespace out ("Receive" : tl)) Nothing =
     privacyFor (Namespace out tl :: Namespace (Stateful.AnyMessage ps f)) Nothing
   privacyFor _ _ = Nothing
 
-  detailsFor (Namespace out ("Send" : tl)) (Just (Stateful.TraceSendMsg msg)) =
+  detailsFor (Namespace out ("Send" : tl)) (Just (Stateful.TraceSendMsg _ msg)) =
     detailsFor (Namespace out tl) (Just msg)
   detailsFor (Namespace out ("Send" : tl)) Nothing =
     detailsFor (Namespace out tl :: Namespace (Stateful.AnyMessage ps f)) Nothing
-  detailsFor (Namespace out ("Receive" : tl)) (Just (Stateful.TraceSendMsg msg)) =
+  detailsFor (Namespace out ("Receive" : tl)) (Just (Stateful.TraceSendMsg _ msg)) =
     detailsFor (Namespace out tl) (Just msg)
   detailsFor (Namespace out ("Receive" : tl)) Nothing =
     detailsFor (Namespace out tl :: Namespace (Stateful.AnyMessage ps f)) Nothing

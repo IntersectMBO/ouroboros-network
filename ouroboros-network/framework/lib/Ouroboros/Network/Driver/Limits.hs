@@ -45,6 +45,8 @@ module Ouroboros.Network.Driver.Limits
 
 import Data.Bifunctor (first)
 import Data.Functor.Identity
+import Data.IntMap (IntMap)
+import Data.IntMap qualified as IntMap
 import Data.Maybe (fromMaybe)
 import GHC.Stack
 import System.Random
@@ -54,6 +56,7 @@ import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer (..), contramap, traceWith)
 
@@ -71,7 +74,8 @@ import Ouroboros.Network.Util.ShowProxy
 
 mkDriverWithLimits
   :: forall ps (pr :: PeerRole) failure bytes m f annotator.
-     ( MonadThrow m
+     ( MonadMonotonicTime m
+     , MonadThrow m
      , ShowProxy ps
      , forall (st' :: ps) tok. tok ~ StateToken st' => Show tok
      , Show failure
@@ -79,12 +83,13 @@ mkDriverWithLimits
   => (forall a.
            Word
         -> Channel m bytes
-        -> Maybe bytes
+        -> Maybe (Reception bytes)
         -> DecodeStep bytes failure m (f a)
-        -> m (Either (Maybe failure) (a, Maybe bytes))
+        -> m (Either (Maybe failure) (a, Maybe Time, Maybe (Reception bytes)))
      )
-  -- ^ run incremental decoder against a channel
-  --
+  -- ^ run incremental decoder against a channel; produces the arrival time of
+  -- the last byte of the decoded message (when available) alongside the
+  -- (possibly partial) next-message bytes with per-byte arrival times.
 
   -> (forall (st :: ps). annotator st -> f (SomeMessage st))
   -- ^ transform annotator to a container holding the decoded
@@ -96,7 +101,7 @@ mkDriverWithLimits
   -> ProtocolSizeLimits ps bytes
   -> ProtocolTimeLimits ps
   -> Channel m bytes
-  -> Driver ps pr (Maybe bytes) m
+  -> Driver ps pr (Maybe (Reception bytes)) m
 mkDriverWithLimits runDecodeStep nat tracer
                    timeoutFn
                    Codec{encode, decode}
@@ -112,16 +117,17 @@ mkDriverWithLimits runDecodeStep nat tracer
                 -> Message ps st st'
                 -> m ()
     sendMessage !_ msg = do
+      tm <- getMonotonicTime
       send (encode msg)
-      traceWith tracer (TraceSendMsg (AnyMessage msg))
+      traceWith tracer (TraceSendMsg tm (AnyMessage msg))
 
 
     recvMessage :: forall (st :: ps).
                    StateTokenI st
                 => ActiveState st
                 => TheyHaveAgencyProof pr st
-                -> Maybe bytes
-                -> m (SomeMessage st, Maybe bytes)
+                -> Maybe (Reception bytes)
+                -> m (SomeMessage st, Maybe (Reception bytes))
     recvMessage !_ trailing = do
       let tok = stateToken
       decoder <- decode tok
@@ -132,9 +138,9 @@ mkDriverWithLimits runDecodeStep nat tracer
                                  channel trailing (nat <$> decoder)
 
       case result of
-        Just (Right x@(SomeMessage msg, _trailing')) -> do
-          traceWith tracer (TraceRecvMsg (AnyMessage msg))
-          return x
+        Just (Right (SomeMessage msg, mbTm, trailing')) -> do
+          traceWith tracer (TraceRecvMsg mbTm (AnyMessage msg))
+          return (SomeMessage msg, trailing')
         Just (Left (Just failure)) -> throwIO (DecoderFailure tok failure)
         Just (Left Nothing)        -> throwIO (ExceededSizeLimit tok)
         Nothing                    -> throwIO (ExceededTimeLimit tok)
@@ -143,6 +149,7 @@ mkDriverWithLimits runDecodeStep nat tracer
 driverWithLimits
   :: forall ps (pr :: PeerRole) failure bytes m.
      ( MonadEvaluate m
+     , MonadMonotonicTime m
      , MonadThrow m
      , ShowProxy ps
      , forall (st' :: ps) tok. tok ~ StateToken st' => Show tok
@@ -156,13 +163,14 @@ driverWithLimits
   -> ProtocolSizeLimits ps bytes
   -> ProtocolTimeLimits ps
   -> Channel m bytes
-  -> Driver ps pr (Maybe bytes) m
+  -> Driver ps pr (Maybe (Reception bytes)) m
 driverWithLimits = mkDriverWithLimits runDecoderWithLimit Identity
 
 
 annotatedDriverWithLimits
   :: forall ps (pr :: PeerRole) failure bytes m.
      ( MonadEvaluate m
+     , MonadMonotonicTime m
      , MonadThrow m
      , Monoid bytes
      , ShowProxy ps
@@ -177,13 +185,14 @@ annotatedDriverWithLimits
   -> ProtocolSizeLimits ps bytes
   -> ProtocolTimeLimits ps
   -> Channel m bytes
-  -> Driver ps pr (Maybe bytes) m
+  -> Driver ps pr (Maybe (Reception bytes)) m
 annotatedDriverWithLimits = mkDriverWithLimits runAnnotatedDecoderWithLimit runAnnotator
 
 
 mkDriverWithLimitsRnd
   :: forall ps (pr :: PeerRole) failure bytes m f annotator.
-     ( MonadThrow m
+     ( MonadMonotonicTime m
+     , MonadThrow m
      , ShowProxy ps
      , forall (st' :: ps) tok. tok ~ StateToken st' => Show tok
      , Show failure
@@ -193,9 +202,9 @@ mkDriverWithLimitsRnd
            HasCallStack
         => Word
         -> Channel m bytes
-        -> Maybe bytes
+        -> Maybe (Reception bytes)
         -> DecodeStep bytes failure m (f a)
-        -> m (Either (Maybe failure) (a, Maybe bytes))
+        -> m (Either (Maybe failure) (a, Maybe Time, Maybe (Reception bytes)))
      )
   -- ^ run incremental decoder against a channel
   --
@@ -211,7 +220,7 @@ mkDriverWithLimitsRnd
   -> ProtocolSizeLimits ps bytes
   -> ProtocolTimeLimitsWithRnd ps
   -> Channel m bytes
-  -> Driver ps pr (Maybe bytes, StdGen) m
+  -> Driver ps pr (Maybe (Reception bytes), StdGen) m
 mkDriverWithLimitsRnd runDecodeStep nat tracer timeoutFn rnd0
                       Codec{encode, decode}
                       ProtocolSizeLimits{sizeLimitForState}
@@ -226,16 +235,17 @@ mkDriverWithLimitsRnd runDecodeStep nat tracer timeoutFn rnd0
                 -> Message ps st st'
                 -> m ()
     sendMessage !_ msg = do
+      tm <- getMonotonicTime
       send (encode msg)
-      traceWith tracer (TraceSendMsg (AnyMessage msg))
+      traceWith tracer (TraceSendMsg tm (AnyMessage msg))
 
 
     recvMessage :: forall (st :: ps).
                    StateTokenI st
                 => ActiveState st
                 => TheyHaveAgencyProof pr st
-                -> (Maybe bytes, StdGen)
-                -> m (SomeMessage st, (Maybe bytes, StdGen))
+                -> (Maybe (Reception bytes), StdGen)
+                -> m (SomeMessage st, (Maybe (Reception bytes), StdGen))
     recvMessage !_ (trailing, !rnd) = do
       let tok = stateToken
       decoder <- decode tok
@@ -247,9 +257,9 @@ mkDriverWithLimitsRnd runDecodeStep nat tracer timeoutFn rnd0
                                  channel trailing (nat <$> decoder)
 
       case result of
-        Just (Right (x@(SomeMessage msg), trailing')) -> do
-          traceWith tracer (TraceRecvMsg (AnyMessage msg))
-          return (x, (trailing', rnd'))
+        Just (Right (SomeMessage msg, mbTm, trailing')) -> do
+          traceWith tracer (TraceRecvMsg mbTm (AnyMessage msg))
+          return (SomeMessage msg, (trailing', rnd'))
         Just (Left (Just failure)) -> throwIO (DecoderFailure tok failure)
         Just (Left Nothing)        -> throwIO (ExceededSizeLimit tok)
         Nothing                    -> throwIO (ExceededTimeLimit tok)
@@ -260,6 +270,7 @@ mkDriverWithLimitsRnd runDecodeStep nat tracer timeoutFn rnd0
 --
 driverWithLimitsRnd :: forall ps (pr :: PeerRole) failure bytes m.
                        ( MonadEvaluate m
+                       , MonadMonotonicTime m
                        , MonadThrow m
                        , ShowProxy ps
                        , forall (st' :: ps) tok. tok ~ StateToken st' => Show tok
@@ -275,7 +286,7 @@ driverWithLimitsRnd :: forall ps (pr :: PeerRole) failure bytes m.
                     -> ProtocolSizeLimits ps bytes
                     -> ProtocolTimeLimitsWithRnd ps
                     -> Channel m bytes
-                    -> Driver ps pr (Maybe bytes, StdGen) m
+                    -> Driver ps pr (Maybe (Reception bytes), StdGen) m
 driverWithLimitsRnd = mkDriverWithLimitsRnd runDecoderWithLimit Identity
 
 
@@ -289,11 +300,11 @@ runDecoderWithLimit
     => Word
     -- ^ message size limit
     -> Channel m bytes
-    -> Maybe bytes
+    -> Maybe (Reception bytes)
     -> DecodeStep bytes failure m (Identity a)
-    -> m (Either (Maybe failure) (a, Maybe bytes))
-runDecoderWithLimit limit Channel{recv} trailing0 step =
-    go 0 trailing0 step
+    -> m (Either (Maybe failure) (a, Maybe Time, Maybe (Reception bytes)))
+runDecoderWithLimit limit Channel{recv} =
+    \trailing step -> go IntMap.empty 0 0 trailing step
   where
     size :: bytes -> Word
     size = bearerBytesSize
@@ -311,27 +322,42 @@ runDecoderWithLimit limit Channel{recv} trailing0 step =
     -- This leaves just one special case: if the decoder finishes with that
     -- final chunk, we must check if it consumed too much of the final chunk.
     --
-    go :: Word        -- ^ size of consumed input so far
-       -> Maybe bytes -- ^ any trailing data
+    go :: IntMap Time
+       -> Word        -- ^ size of the latest 'Reception'
+       -> Word        -- ^ size of consumed input so far
+       -> Maybe (Reception bytes)
        -> DecodeStep bytes failure m (Identity a)
-       -> m (Either (Maybe failure) (a, Maybe bytes))
+       -> m (Either (Maybe failure) (a, Maybe Time, Maybe (Reception bytes)))
 
-    go !sz trailing (DecodePartial k)
-      | sz > limit = return (Left Nothing)
-      | otherwise  = case trailing of
-                       Nothing -> do mbs <- recv
-                                     let !sz' = sz + maybe 0 size mbs
-                                     go sz' Nothing =<< k mbs
-                       Just bs -> do let sz' = sz + size bs
-                                     go sz' Nothing =<< k (Just bs)
-
-    go !sz !_ (DecodeDone (Identity x) trailing)
+    go !tms !rsz !sz !_ (DecodeDone (Identity x) trailing)
       | let sz' = sz - maybe 0 size trailing
       , sz' > limit = return (Left Nothing)
-      | otherwise   = return (Right (x, trailing))
+      | otherwise   =
+        let (mbTm, tms') = runDecoderWithChannel_DecodeDone
+                              tms
+                              (fromIntegral rsz)
+                              (fromIntegral $ maybe 0 size trailing)
+        in
+        return (Right (x, mbTm, MkReception tms' <$> trailing))
 
-    go !_ !_ (DecodeFail failure) =
+    go !_ !_ !_ !_ (DecodeFail failure) =
       Left . Just <$> evaluate (force failure)
+
+    go !_ !_ !sz !trailing (DecodePartial k)
+      | sz > limit = return (Left Nothing)
+      | otherwise  = case trailing of
+                       Nothing -> do mr <- recv
+                                     let (!tms', !rsz', mbs) = case mr of
+                                           Nothing                   -> (IntMap.empty, 0, Nothing)
+                                           Just (MkReception tms bs) -> (tms, size bs, Just bs)
+                                         !sz' = sz + rsz'
+                                     go tms' rsz' sz' Nothing =<< k mbs
+                       Just (MkReception tms' bs) -> do
+                           -- INVARIANT This is only reachable on the first
+                           -- invocation of @go@, so the incoming @tms@, @rsz@
+                           -- and @sz@ are empty.
+                           let !sz' = size bs
+                           go tms' sz' sz' Nothing =<< k (Just bs)
 
 
 runAnnotatedDecoderWithLimit
@@ -345,11 +371,11 @@ runAnnotatedDecoderWithLimit
     => Word
     -- ^ message size limit
     -> Channel m bytes
-    -> Maybe bytes
+    -> Maybe (Reception bytes)
     -> DecodeStep bytes failure m (bytes -> a)
-    -> m (Either (Maybe failure) (a, Maybe bytes))
+    -> m (Either (Maybe failure) (a, Maybe Time, Maybe (Reception bytes)))
 runAnnotatedDecoderWithLimit limit Channel{recv} =
-    go mempty 0
+    \trailing step -> go mempty IntMap.empty 0 0 trailing step
   where
     size :: bytes -> Word
     size = bearerBytesSize
@@ -367,36 +393,49 @@ runAnnotatedDecoderWithLimit limit Channel{recv} =
     -- This leaves just one special case: if the decoder finishes with that
     -- final chunk, we must check if it consumed too much of the final chunk.
     --
-    go :: [bytes]     -- ^ accumulation of chunks received from the network
-       -> Word        -- ^ size of consumed input so far
-       -> Maybe bytes -- ^ any trailing data
+    go :: [bytes]                  -- ^ accumulation of chunks received from the network
+       -> IntMap Time              -- ^ per-byte arrival times for the latest 'Reception'
+       -> Word                     -- ^ size of the latest 'Reception'
+       -> Word                     -- ^ size of consumed input so far
+       -> Maybe (Reception bytes)  -- ^ any trailing data
        -> DecodeStep bytes failure m (bytes -> a)
-       -> m (Either (Maybe failure) (a, Maybe bytes))
+       -> m (Either (Maybe failure) (a, Maybe Time, Maybe (Reception bytes)))
 
 
-    go !_ !sz !_ DecodePartial {} | sz > limit =
+    go !_ !_ !_ !sz !_ DecodePartial {} | sz > limit =
       return (Left Nothing)
 
-    go !bytes !sz (Just trailing) (DecodePartial k) = do
+    go !bytes !_ !_ !sz (Just (MkReception tms' trailing)) (DecodePartial k) = do
+      -- INVARIANT only reachable on the first invocation; previous @tms@, @rsz@
+      -- carry no information yet.
       let sz' = sz + size trailing
       step <- k (Just trailing)
-      go (trailing : bytes) sz' Nothing step
+      go (trailing : bytes) tms' (size trailing) sz' Nothing step
 
-    go !bytes !sz Nothing (DecodePartial k) = do
-      mbs <- recv
-      let !sz' = sz + maybe 0 size mbs
+    go !bytes _ _ !sz Nothing (DecodePartial k) = do
+      mr <- recv
+      let (!tms', !rsz', mbs) = case mr of
+            Nothing                   -> (IntMap.empty, 0, Nothing)
+            Just (MkReception tms bs) -> (tms, size bs, Just bs)
+          !sz' = sz + rsz'
       step <- k mbs
       go (case mbs of
             Nothing -> bytes
             Just bs -> bs : bytes)
-         sz' Nothing step
+         tms' rsz' sz' Nothing step
 
-    go !bytes !sz !_ (DecodeDone f trailing)
+    go !bytes tms rsz !sz !_ (DecodeDone f trailing)
       | let sz' = sz - maybe 0 size trailing
       , sz' > limit = return (Left Nothing)
-      | otherwise   = return (Right (f (mconcat $ reverse bytes), trailing))
+      | otherwise   =
+        let (mbTm, tms') = runDecoderWithChannel_DecodeDone
+                              tms
+                              (fromIntegral rsz)
+                              (fromIntegral $ maybe 0 size trailing)
+        in
+        return (Right (f (mconcat $ reverse bytes), mbTm, MkReception tms' <$> trailing))
 
-    go !_ !_ !_ (DecodeFail failure) =
+    go !_ !_ !_ !_ !_ (DecodeFail failure) =
       Left . Just <$> evaluate (force failure)
 
 
@@ -423,7 +462,7 @@ runPeerWithLimits
   -> ProtocolTimeLimits ps
   -> Channel m bytes
   -> Peer ps pr NonPipelined st m a
-  -> m (a, Maybe bytes)
+  -> m (a, Maybe (Reception bytes))
 runPeerWithLimits tracer codec slimits tlimits channel peer =
     withTimeoutSerial $ \timeoutFn ->
       let driver = driverWithLimits tracer timeoutFn codec slimits tlimits channel
@@ -454,7 +493,7 @@ runAnnotatedPeerWithLimits
   -> ProtocolTimeLimits ps
   -> Channel m bytes
   -> Peer ps pr NonPipelined st m a
-  -> m (a, Maybe bytes)
+  -> m (a, Maybe (Reception bytes))
 runAnnotatedPeerWithLimits tracer codec slimits tlimits channel peer =
     withTimeoutSerial $ \timeoutFn ->
       let driver = annotatedDriverWithLimits tracer timeoutFn codec slimits tlimits channel
@@ -487,7 +526,7 @@ runPeerWithLimitsRnd
   -> ProtocolTimeLimitsWithRnd ps
   -> Channel m bytes
   -> Peer ps pr NonPipelined st m a
-  -> m (a, Maybe bytes)
+  -> m (a, Maybe (Reception bytes))
 runPeerWithLimitsRnd tracer rnd codec slimits tlimits channel peer =
     withTimeoutSerial $ \timeoutFn ->
       let driver = driverWithLimitsRnd tracer timeoutFn rnd codec slimits tlimits channel
@@ -523,7 +562,7 @@ runPipelinedPeerWithLimits
   -> ProtocolTimeLimits ps
   -> Channel m bytes
   -> PeerPipelined ps pr st m a
-  -> m (a, Maybe bytes)
+  -> m (a, Maybe (Reception bytes))
 runPipelinedPeerWithLimits tracer codec slimits tlimits channel peer =
     withTimeoutSerial $ \timeoutFn ->
       let driver = driverWithLimits tracer timeoutFn codec slimits tlimits channel
@@ -552,7 +591,7 @@ runPipelinedAnnotatedPeerWithLimits
   -> ProtocolTimeLimits ps
   -> Channel m bytes
   -> PeerPipelined ps pr st m a
-  -> m (a, Maybe bytes)
+  -> m (a, Maybe (Reception bytes))
 runPipelinedAnnotatedPeerWithLimits tracer codec slimits tlimits channel peer =
     withTimeoutSerial $ \timeoutFn ->
       let driver = annotatedDriverWithLimits tracer timeoutFn codec slimits tlimits channel
@@ -584,7 +623,7 @@ runPipelinedPeerWithLimitsRnd
   -> ProtocolTimeLimitsWithRnd ps
   -> Channel m bytes
   -> PeerPipelined ps pr st m a
-  -> m (a, Maybe bytes)
+  -> m (a, Maybe (Reception bytes))
 runPipelinedPeerWithLimitsRnd tracer rnd codec slimits tlimits channel peer =
     withTimeoutSerial $ \timeoutFn ->
       let driver = driverWithLimitsRnd tracer timeoutFn rnd codec slimits tlimits channel

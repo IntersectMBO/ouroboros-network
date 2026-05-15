@@ -59,6 +59,7 @@ import Network.TypedProtocol.Peer
 import Network.TypedProtocol.ReqResp.Client
 import Network.TypedProtocol.ReqResp.Server
 import Network.TypedProtocol.ReqResp.Type
+import Ouroboros.Network.Mux (wrapMiniProtocolTrailing)
 
 import Test.Ouroboros.Network.Data.AbsBearerInfo
 import Test.Ouroboros.Network.Orphans ()
@@ -292,7 +293,8 @@ clientServerSimulation payloads =
                           mux reqRespProtocolNum
                           Mx.ResponderDirectionOnly
                           Mx.StartOnDemand
-                          (\channel -> runPeer prtclTracer
+                          (\channel -> wrapMiniProtocolTrailing $
+                                       runPeer prtclTracer
                                                codecReqResp
                                                channel
                                                serverPeer)
@@ -343,7 +345,8 @@ clientServerSimulation payloads =
                               mux reqRespProtocolNum
                               InitiatorDirectionOnly
                               StartEagerly
-                              (\channel -> runPeer prtclTracer
+                              (\channel -> wrapMiniProtocolTrailing $
+                                           runPeer prtclTracer
                                                    codecReqResp
                                                    channel
                                                    clientPeer)
@@ -621,7 +624,8 @@ prop_self_connect (Payload payload) =
                                     (Just <$> waitSTM serverThread)
                                    `orElse`
                                    pure Nothing
-                    return $ Just payload === payload'
+                    let payloadBytes = (\(MkReception _ b) -> b) <$> payload'
+                    return $ Just payload === payloadBytes
                         .&&. isNothing serverResult
 
 

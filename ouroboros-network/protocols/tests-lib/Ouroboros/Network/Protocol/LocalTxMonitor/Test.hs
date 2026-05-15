@@ -22,6 +22,7 @@ import Control.DeepSeq (NFData)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
 import Control.Monad.IOSim
 import Control.Monad.ST qualified as ST
 import Control.Tracer (nullTracer)
@@ -169,7 +170,12 @@ prop_connect (slot, txs) =
 
 -- | Run a local tx-monitor client and server using connected channels.
 --
-prop_channel :: (MonadAsync m, MonadCatch m, MonadEvaluate m, MonadST m)
+prop_channel :: ( MonadAsync m
+                , MonadCatch m
+                , MonadEvaluate m
+                , MonadMonotonicTime m
+                , MonadST m
+                )
              => m (Channel m ByteString, Channel m ByteString)
              -> (SlotNo, [Tx])
              -> m Bool

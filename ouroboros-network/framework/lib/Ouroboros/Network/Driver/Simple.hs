@@ -28,6 +28,9 @@ module Ouroboros.Network.Driver.Simple
     -- * Pipelined peers
   , runPipelinedPeer
   , runPipelinedAnnotatedPeer
+    -- * Util
+  , runDecoderWithChannel
+  , runDecoderWithChannel_DecodeDone
     -- * Connected peers
     -- TODO: move these to a test lib
   , Role (..)
@@ -37,18 +40,24 @@ module Ouroboros.Network.Driver.Simple
   , runConnectedPeersPipelined
   ) where
 
+import Control.Applicative ((<|>))
+import Data.IntMap (IntMap)
+import Data.IntMap qualified as IntMap
+
 import Network.TypedProtocol.Codec
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Driver
 import Network.TypedProtocol.Peer
 
 import Ouroboros.Network.Channel
+import Ouroboros.Network.Protocol.Limits (BearerBytes (bearerBytesSize))
 import Ouroboros.Network.Util.ShowProxy
 
 import Control.DeepSeq (NFData, force)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
 import Control.Tracer (Tracer (..), contramap, traceWith)
 import Data.Functor.Identity (Identity (..))
 
@@ -80,13 +89,22 @@ import Data.Functor.Identity (Identity (..))
 
 -- | Structured 'Tracer' output for 'runPeer' and derivitives.
 --
+-- 'TraceSendMsg' carries the time the @send@ happened.
+-- 'TraceRecvMsg' carries the arrival time of the last byte of the message that
+-- the decoder consumed; this may be 'Nothing' for 'Channel' implementations
+-- that cannot provide arrival times.
+--
 data TraceSendRecv ps where
-     TraceSendMsg :: AnyMessage ps -> TraceSendRecv ps
-     TraceRecvMsg :: AnyMessage ps -> TraceSendRecv ps
+     TraceSendMsg :: Time -> AnyMessage ps -> TraceSendRecv ps
+     TraceRecvMsg :: Maybe Time -> AnyMessage ps -> TraceSendRecv ps
 
 instance Show (AnyMessage ps) => Show (TraceSendRecv ps) where
-  show (TraceSendMsg msg) = "Send " ++ show msg
-  show (TraceRecvMsg msg) = "Recv " ++ show msg
+  show (TraceSendMsg tm msg) = "Send " ++ show tm ++ " " ++ show msg
+  show (TraceRecvMsg mbTm msg) =
+    let s = case mbTm of
+          Nothing -> "Nothing"
+          Just x  -> "(Just " ++ show x ++ ")"
+    in "Recv " ++ s ++ " " ++ show msg
 
 
 data DecoderFailure where
@@ -118,18 +136,22 @@ instance Exception DecoderFailure where
 
 
 mkSimpleDriver :: forall ps (pr :: PeerRole) failure bytes m f annotator.
-                 ( MonadThrow m
+                 ( MonadMonotonicTime m
+                 , MonadThrow m
                  , ShowProxy ps
                  , forall (st :: ps) stok. stok ~ StateToken st => Show stok
                  , Show failure
                  )
               => (forall a.
                       Channel m bytes
-                   -> Maybe bytes
+                   -> Maybe (Reception bytes)
                    -> DecodeStep bytes failure m (f a)
-                   -> m (Either failure (a, Maybe bytes))
+                   -> m (Either failure (a, Maybe Time, Maybe (Reception bytes)))
                  )
-              -- ^ run incremental decoder against a channel
+              -- ^ run incremental decoder against a channel; returns the
+              -- arrival time of the last byte of the decoded message (when
+              -- available) and the (possibly partial) next-message bytes
+              -- with their per-byte arrival times.
 
               -> (forall (st :: ps). annotator st -> f (SomeMessage st))
               -- ^ transform annotator to a container holding the decoded
@@ -138,7 +160,7 @@ mkSimpleDriver :: forall ps (pr :: PeerRole) failure bytes m f annotator.
               -> Tracer m (TraceSendRecv ps)
               -> CodecF ps failure m annotator bytes
               -> Channel m bytes
-              -> Driver ps pr (Maybe bytes) m
+              -> Driver ps pr (Maybe (Reception bytes)) m
 
 mkSimpleDriver runDecodeSteps nat tracer Codec{encode, decode} channel@Channel{send} =
     Driver { sendMessage, recvMessage, initialDState = Nothing }
@@ -150,56 +172,61 @@ mkSimpleDriver runDecodeSteps nat tracer Codec{encode, decode} channel@Channel{s
                 -> Message ps st st'
                 -> m ()
     sendMessage !_ msg = do
+      tm <- getMonotonicTime
       send (encode msg)
-      traceWith tracer (TraceSendMsg (AnyMessage msg))
+      traceWith tracer (TraceSendMsg tm (AnyMessage msg))
 
     recvMessage :: forall (st :: ps).
                    StateTokenI st
                 => ActiveState st
                 => TheyHaveAgencyProof pr st
-                -> Maybe bytes
-                -> m (SomeMessage st, Maybe bytes)
+                -> Maybe (Reception bytes)
+                -> m (SomeMessage st, Maybe (Reception bytes))
     recvMessage !_ trailing = do
       let tok = stateToken
       decoder <- decode tok
       result  <- runDecodeSteps channel trailing (nat <$> decoder)
       case result of
-        Right x@(SomeMessage !msg, _trailing') -> do
-          traceWith tracer (TraceRecvMsg (AnyMessage msg))
-          return x
+        Right (SomeMessage !msg, mbTm, trailing') -> do
+          traceWith tracer (TraceRecvMsg mbTm (AnyMessage msg))
+          return (SomeMessage msg, trailing')
         Left failure ->
           throwIO (DecoderFailure tok failure)
 
 
 simpleDriver :: forall ps (pr :: PeerRole) failure bytes m.
                 ( MonadEvaluate m
+                , MonadMonotonicTime m
                 , MonadThrow m
                 , ShowProxy ps
                 , forall (st :: ps) stok. stok ~ StateToken st => Show stok
                 , NFData failure
                 , Show failure
+                , BearerBytes bytes
                 )
              => Tracer m (TraceSendRecv ps)
              -> Codec ps failure m bytes
              -> Channel m bytes
-             -> Driver ps pr (Maybe bytes) m
+             -> Driver ps pr (Maybe (Reception bytes)) m
 simpleDriver = mkSimpleDriver runDecoderWithChannel Identity
 
 
 annotatedSimpleDriver
              :: forall ps (pr :: PeerRole) failure bytes m.
-                ( MonadThrow m
-                , MonadEvaluate m
+                ( MonadEvaluate m
+                , MonadMonotonicTime m
+                , MonadThrow m
                 , Monoid bytes
                 , ShowProxy ps
                 , forall (st :: ps) stok. stok ~ StateToken st => Show stok
                 , NFData failure
                 , Show failure
+                , BearerBytes bytes
                 )
              => Tracer m (TraceSendRecv ps)
              -> AnnotatedCodec ps failure m bytes
              -> Channel m bytes
-             -> Driver ps pr (Maybe bytes) m
+             -> Driver ps pr (Maybe (Reception bytes)) m
 annotatedSimpleDriver = mkSimpleDriver runAnnotatedDecoderWithChannel runAnnotator
 
 
@@ -210,18 +237,20 @@ annotatedSimpleDriver = mkSimpleDriver runAnnotatedDecoderWithChannel runAnnotat
 runPeer
   :: forall ps (st :: ps) pr failure bytes m a .
      ( MonadEvaluate m
+     , MonadMonotonicTime m
      , MonadThrow m
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
      , NFData a
      , NFData failure
      , Show failure
+     , BearerBytes bytes
      )
   => Tracer m (TraceSendRecv ps)
   -> Codec ps failure m bytes
   -> Channel m bytes
   -> Peer ps pr NonPipelined st m a
-  -> m (a, Maybe bytes)
+  -> m (a, Maybe (Reception bytes))
 runPeer tracer codec channel peer =
     runPeerWithDriver driver peer
   where
@@ -235,6 +264,7 @@ runPeer tracer codec channel peer =
 runAnnotatedPeer
   :: forall ps (st :: ps) pr failure bytes m a .
      ( MonadEvaluate m
+     , MonadMonotonicTime m
      , MonadThrow m
      , Monoid bytes
      , ShowProxy ps
@@ -242,12 +272,13 @@ runAnnotatedPeer
      , NFData a
      , NFData failure
      , Show failure
+     , BearerBytes bytes
      )
   => Tracer m (TraceSendRecv ps)
   -> AnnotatedCodec ps failure m bytes
   -> Channel m bytes
   -> Peer ps pr NonPipelined st m a
-  -> m (a, Maybe bytes)
+  -> m (a, Maybe (Reception bytes))
 runAnnotatedPeer tracer codec channel peer =
     runPeerWithDriver driver peer
   where
@@ -265,18 +296,20 @@ runPipelinedPeer
   :: forall ps (st :: ps) pr failure bytes m a.
      ( MonadAsync m
      , MonadEvaluate m
+     , MonadMonotonicTime m
      , MonadThrow m
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
      , NFData a
      , NFData failure
      , Show failure
+     , BearerBytes bytes
      )
   => Tracer m (TraceSendRecv ps)
   -> Codec ps failure m bytes
   -> Channel m bytes
   -> PeerPipelined ps pr st m a
-  -> m (a, Maybe bytes)
+  -> m (a, Maybe (Reception bytes))
 runPipelinedPeer tracer codec channel peer =
     runPipelinedPeerWithDriver driver peer
   where
@@ -294,6 +327,7 @@ runPipelinedAnnotatedPeer
   :: forall ps (st :: ps) pr failure bytes m a.
      ( MonadAsync m
      , MonadEvaluate m
+     , MonadMonotonicTime m
      , MonadThrow m
      , Monoid bytes
      , ShowProxy ps
@@ -301,12 +335,13 @@ runPipelinedAnnotatedPeer
      , NFData a
      , NFData failure
      , Show failure
+     , BearerBytes bytes
      )
   => Tracer m (TraceSendRecv ps)
   -> AnnotatedCodec ps failure m bytes
   -> Channel m bytes
   -> PeerPipelined ps pr st m a
-  -> m (a, Maybe bytes)
+  -> m (a, Maybe (Reception bytes))
 runPipelinedAnnotatedPeer tracer codec channel peer =
     runPipelinedPeerWithDriver driver peer
   where
@@ -316,24 +351,75 @@ runPipelinedAnnotatedPeer tracer codec channel peer =
 -- Utils
 --
 
--- | Run a codec incremental decoder 'DecodeStep' against a channel. It also
--- takes any extra input data and returns any unused trailing data.
+-- | Given the per-byte arrival-time map of a single 'Reception', the total
+-- 'Reception' byte size and how many of its trailing bytes were left unconsumed
+-- by the decoder, compute:
 --
-runDecoderWithChannel :: ( Monad m
+-- * 'Just' the arrival time of the last byte the decoder consumed (or
+--   'Nothing' if no arrival time was provided for any consumed byte), and
+-- * the rekeyed arrival-time map for the unconsumed trailing bytes, with the
+--   message-completion time inserted at offset 0 (so the next decode's
+--   first-byte time isn't lost if the message boundary fell strictly inside a
+--   chunk).
+--
+runDecoderWithChannel_DecodeDone :: IntMap Time -> Int -> Int -> (Maybe Time, IntMap Time)
+runDecoderWithChannel_DecodeDone tms rsz nTrailing =
+    let nConsumed = rsz - nTrailing
+        (lt, mbEq, gt) = IntMap.splitLookup nConsumed tms
+        mbTm :: Maybe Time
+        mbTm = case IntMap.lookupMax lt of
+            Nothing      -> Nothing  -- this 'Channel' did not provide a 'Time' for this byte
+            Just (_, tm) -> Just tm
+
+        gt' = IntMap.mapKeysMonotonic (\key -> key - nConsumed) gt
+        tms' :: IntMap Time
+        tms' = case mbEq <|> mbTm of
+            Nothing -> gt'
+            Just tm -> IntMap.insert 0 tm gt'
+    in
+    (mbTm, tms')
+
+-- | Run a codec incremental decoder 'DecodeStep' against a channel. It also
+-- takes any extra input data and returns any unused trailing data, alongside
+-- the arrival time of the last byte the decoder consumed.
+--
+runDecoderWithChannel :: forall m bytes failure a.
+                         ( Monad m
                          , MonadEvaluate m
                          , NFData failure
+                         , BearerBytes bytes
                          )
                       => Channel m bytes
-                      -> Maybe bytes
+                      -> Maybe (Reception bytes)
                       -> DecodeStep bytes failure m (Identity a)
-                      -> m (Either failure (a, Maybe bytes))
+                      -> m (Either failure (a, Maybe Time, Maybe (Reception bytes)))
 
-runDecoderWithChannel Channel{recv} = go
+runDecoderWithChannel Channel{recv} =
+    \trailing step -> go IntMap.empty 0 trailing step
   where
-    go _ (DecodeDone (Identity x) trailing) = return (Right (x, trailing))
-    go _ (DecodeFail failure)               = Left <$> evaluate (force failure)
-    go Nothing         (DecodePartial k)    = recv >>= k        >>= go Nothing
-    go (Just trailing) (DecodePartial k)    = k (Just trailing) >>= go Nothing
+    size = bearerBytesSize
+
+    go :: IntMap Time
+       -> Word
+       -> Maybe (Reception bytes)
+       -> DecodeStep bytes failure m (Identity a)
+       -> m (Either failure (a, Maybe Time, Maybe (Reception bytes)))
+    go tms rsz _ (DecodeDone (Identity x) trailing) =
+      let (mbTm, tms') = runDecoderWithChannel_DecodeDone
+                            tms
+                            (fromIntegral rsz)
+                            (fromIntegral $ maybe 0 size trailing)
+      in
+      return (Right (x, mbTm, MkReception tms' <$> trailing))
+    go _ _ _ (DecodeFail failure) = Left <$> evaluate (force failure)
+    go _ _ Nothing (DecodePartial k) = do
+      mRcptn <- recv
+      let (!tms', !rsz', mbs) = case mRcptn of
+            Nothing                   -> (IntMap.empty, 0, Nothing)
+            Just (MkReception tms bs) -> (tms, size bs, Just bs)
+      k mbs >>= go tms' rsz' Nothing
+    go _ _ (Just (MkReception tms trailing)) (DecodePartial k) =
+      k (Just trailing) >>= go tms (size trailing) Nothing
 
 
 runAnnotatedDecoderWithChannel
@@ -342,22 +428,42 @@ runAnnotatedDecoderWithChannel
      , MonadEvaluate m
      , Monoid bytes
      , NFData failure
+     , BearerBytes bytes
      )
   => Channel m bytes
-  -> Maybe bytes
+  -> Maybe (Reception bytes)
   -> DecodeStep bytes failure m (bytes -> a)
-  -> m (Either failure (a, Maybe bytes))
+  -> m (Either failure (a, Maybe Time, Maybe (Reception bytes)))
 
-runAnnotatedDecoderWithChannel Channel{recv} = go []
+runAnnotatedDecoderWithChannel Channel{recv} =
+    \trailing step -> go [] IntMap.empty 0 trailing step
   where
+    size = bearerBytesSize
+
     go :: [bytes]
-       -> Maybe bytes
+       -> IntMap Time
+       -> Int            -- ^ size of the latest 'Reception'
+       -> Maybe (Reception bytes)
        -> DecodeStep bytes failure m (bytes -> a)
-       -> m (Either failure (a, Maybe bytes))
-    go !bytes (Just trailing) (DecodePartial k) = k (Just trailing) >>= go (trailing : bytes) Nothing
-    go !bytes Nothing         (DecodePartial k) = recv >>= \bs -> k bs >>= go (maybe bytes (: bytes) bs) Nothing
-    go !bytes _ (DecodeDone f trailing)         = return $ Right (f $ mconcat (reverse bytes), trailing)
-    go _bytes _ (DecodeFail failure)            = Left <$> evaluate (force failure)
+       -> m (Either failure (a, Maybe Time, Maybe (Reception bytes)))
+    go !bytes _ _ (Just (MkReception tms' trailing)) (DecodePartial k) =
+      -- INVARIANT only reachable on the first invocation; @tms@ and @rsz@ are
+      -- empty.
+      k (Just trailing) >>= go (trailing : bytes) tms' (fromIntegral $ size trailing) Nothing
+    go !bytes _ _ Nothing (DecodePartial k) = do
+      mRcptn <- recv
+      let (!tms', !rsz', mbs) = case mRcptn of
+            Nothing                   -> (IntMap.empty, 0, Nothing)
+            Just (MkReception tms bs) -> (tms, size bs, Just bs)
+      k mbs >>= go (maybe bytes (: bytes) mbs) tms' (fromIntegral rsz') Nothing
+    go !bytes tms rsz _ (DecodeDone f trailing) =
+      let (mbTm, tms') = runDecoderWithChannel_DecodeDone
+                            tms
+                            rsz
+                            (fromIntegral $ maybe 0 size trailing)
+      in
+      return $ Right (f $ mconcat (reverse bytes), mbTm, MkReception tms' <$> trailing)
+    go _bytes _ _ _ (DecodeFail failure) = Left <$> evaluate (force failure)
 
 
 data Role = Client | Server
@@ -373,6 +479,7 @@ data Role = Client | Server
 runConnectedPeers :: forall ps pr st failure bytes m a b.
                      ( MonadAsync m
                      , MonadEvaluate m
+                     , MonadMonotonicTime m
                      , MonadThrow m
                      , ShowProxy ps
                      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
@@ -380,6 +487,7 @@ runConnectedPeers :: forall ps pr st failure bytes m a b.
                      , NFData b
                      , NFData failure
                      , Show failure
+                     , BearerBytes bytes
                      )
                   => m (Channel m bytes, Channel m bytes)
                   -> Tracer m (Role, TraceSendRecv ps)
@@ -406,6 +514,7 @@ runAnnotatedConnectedPeers
   :: forall ps pr st failure bytes m a b.
      ( MonadAsync m
      , MonadEvaluate m
+     , MonadMonotonicTime m
      , MonadThrow m
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
@@ -414,6 +523,7 @@ runAnnotatedConnectedPeers
      , NFData failure
      , Show failure
      , Monoid bytes
+     , BearerBytes bytes
      )
   => m (Channel m bytes, Channel m bytes)
   -> Tracer m (Role, TraceSendRecv ps)
@@ -439,12 +549,14 @@ runAnnotatedConnectedPeers createChannels tracer codec client server =
 runConnectedPeersPipelined :: ( MonadAsync m
                               , MonadCatch m
                               , MonadEvaluate m
+                              , MonadMonotonicTime m
                               , ShowProxy ps
                               , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
                               , NFData a
                               , NFData b
                               , NFData failure
                               , Show failure
+                              , BearerBytes bytes
                               )
                            => m (Channel m bytes, Channel m bytes)
                            -> Tracer m (Role, TraceSendRecv ps)
@@ -470,12 +582,14 @@ runConnectedPeersAsymmetric
     :: ( MonadAsync m
        , MonadEvaluate m
        , MonadMask  m
+       , MonadMonotonicTime m
        , ShowProxy ps
        , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
        , NFData a
        , NFData b
        , NFData failure
        , Show failure
+       , BearerBytes bytes
        )
     => m (Channel m bytes, Channel m bytes)
     -> Tracer m (Role, TraceSendRecv ps)

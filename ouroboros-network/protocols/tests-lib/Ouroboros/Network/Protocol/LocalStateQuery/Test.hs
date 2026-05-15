@@ -30,6 +30,7 @@ import Control.DeepSeq (NFData)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
 import Control.Monad.IOSim
 import Control.Monad.ST (runST)
 import Control.Tracer (nullTracer)
@@ -211,10 +212,11 @@ prop_connect input =
 
 -- | Run a local state query client and server using connected channels.
 --
-prop_channel :: ( MonadAsync    m
-                , MonadEvaluate m
-                , MonadMask     m
-                , MonadST       m
+prop_channel :: ( MonadAsync         m
+                , MonadEvaluate      m
+                , MonadMask          m
+                , MonadMonotonicTime m
+                , MonadST            m
                 )
              => m (Channel m ByteString, Channel m ByteString)
              -> SetupData

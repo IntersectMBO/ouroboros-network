@@ -23,6 +23,7 @@ module Ouroboros.Network.Mux
   , projectBundle
     -- * Mux mini-protocol callback
   , MiniProtocolCb (..)
+  , wrapMiniProtocolTrailing
   , mkMiniProtocolCbFromPeer
   , mkMiniProtocolCbFromPeerPipelined
   , mkMiniProtocolCbFromPeerSt
@@ -55,11 +56,14 @@ module Ouroboros.Network.Mux
   , Mux.HasInitiator
   , Mux.HasResponder
   , Mux.StartOnDemandOrEagerly (..)
+    -- | from "Network.Mux.Channel"
+  , Reception (..)
   ) where
 
 import Control.DeepSeq (NFData)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
 import Control.Tracer (Tracer)
 
 import Data.Foldable (fold)
@@ -83,6 +87,7 @@ import Ouroboros.Network.Context (ExpandedInitiatorContext,
            MinimalInitiatorContext, ResponderContext)
 import Ouroboros.Network.Driver
 import Ouroboros.Network.Driver.Stateful qualified as Stateful
+import Ouroboros.Network.Protocol.Limits (BearerBytes)
 import Ouroboros.Network.Util.ShowProxy (ShowProxy)
 
 
@@ -339,21 +344,34 @@ type RunMiniProtocolWithMinimalCtx mode peerAddr bytes m a b =
 newtype MiniProtocolCb ctx bytes m a =
     MiniProtocolCb {
       runMiniProtocolCb ::
-        ctx -> Channel m bytes -> m (a, Maybe bytes)
+        ctx -> Channel m bytes -> m (a, Maybe (Reception bytes))
     }
+
+-- | Identity adapter for codec-runner results being handed back as a
+-- 'MiniProtocolCb' trailing.
+--
+-- Historically the codec drivers returned a bare @Maybe bytes@ trailing
+-- while 'MiniProtocolCb' carries 'Maybe (Reception bytes)' — the helper
+-- wrapped the former in @MkReception IntMap.empty@.  Now that codec drivers
+-- thread per-byte arrival times themselves, the two trailings agree and the
+-- helper is just 'id'.  Kept around so we don't churn every call site.
+wrapMiniProtocolTrailing :: m a -> m a
+wrapMiniProtocolTrailing = id
 
 
 -- | Create a 'MuxPeer' from a tracer, codec and 'Peer'.
 --
 mkMiniProtocolCbFromPeer
   :: forall (pr :: PeerRole) ps (st :: ps) failure bytes ctx m a.
-     ( MonadThrow m
+     ( MonadMonotonicTime m
+     , MonadThrow m
      , MonadEvaluate m
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
      , NFData a
      , NFData failure
      , Show failure
+     , BearerBytes bytes
      )
   => (ctx -> ( Tracer m (TraceSendRecv ps)
              , Codec ps failure m bytes
@@ -365,20 +383,22 @@ mkMiniProtocolCbFromPeer fn =
     MiniProtocolCb $ \ctx channel ->
       case fn ctx of
         (tracer, codec, peer) ->
-          runPeer tracer codec channel peer
+          wrapMiniProtocolTrailing (runPeer tracer codec channel peer)
 
 -- | Create a 'MuxPeer' from a tracer, codec and 'Stateful.Peer'.
 --
 mkMiniProtocolCbFromPeerSt
   :: forall (pr :: PeerRole) ps (f :: ps -> Type) (st :: ps) failure bytes ctx m a.
-     ( MonadAsync    m
-     , MonadEvaluate m
-     , MonadMask     m
+     ( MonadAsync         m
+     , MonadEvaluate      m
+     , MonadMask          m
+     , MonadMonotonicTime m
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
      , NFData a
      , NFData failure
      , Show failure
+     , BearerBytes bytes
      )
   => (ctx -> ( Tracer m (Stateful.TraceSendRecv ps f)
              , Stateful.Codec ps failure f m bytes
@@ -391,21 +411,23 @@ mkMiniProtocolCbFromPeerSt fn =
     MiniProtocolCb $ \ctx channel ->
       case fn ctx of
         (tracer, codec, f, peer) ->
-          Stateful.runPeer tracer codec channel f peer
+          wrapMiniProtocolTrailing (Stateful.runPeer tracer codec channel f peer)
 
 
 -- | Create a 'MuxPeer' from a tracer, codec and 'PeerPipelined'.
 --
 mkMiniProtocolCbFromPeerPipelined
   :: forall (pr :: PeerRole) ps (st :: ps) failure ctx bytes m a.
-     ( MonadAsync    m
-     , MonadEvaluate m
-     , MonadThrow    m
+     ( MonadAsync         m
+     , MonadEvaluate      m
+     , MonadMonotonicTime m
+     , MonadThrow         m
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
      , NFData a
      , NFData failure
      , Show failure
+     , BearerBytes bytes
      )
   => (ctx -> ( Tracer m (TraceSendRecv ps)
              , Codec ps failure m bytes
@@ -417,7 +439,7 @@ mkMiniProtocolCbFromPeerPipelined fn =
     MiniProtocolCb $ \ctx channel ->
       case fn ctx of
         (tracer, codec, peer) ->
-          runPipelinedPeer tracer codec channel peer
+          wrapMiniProtocolTrailing (runPipelinedPeer tracer codec channel peer)
 
 
 contramapMiniProtocolCbCtx :: (ctx -> ctx')

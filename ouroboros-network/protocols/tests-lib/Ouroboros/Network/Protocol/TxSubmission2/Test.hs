@@ -29,6 +29,7 @@ import Data.Word (Word16)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
 import Control.Monad.IOSim
 import Control.Monad.ST (runST)
 import Control.Tracer (Tracer (..), contramap, nullTracer)
@@ -215,6 +216,7 @@ prop_connect2 params@TxSubmissionTestParams{testTransactions}
 prop_channel :: ( MonadAsync m
                 , MonadCatch m
                 , MonadEvaluate m
+                , MonadMonotonicTime m
                 , MonadST m
                 )
              => m (Channel m ByteString, Channel m ByteString)

@@ -624,11 +624,11 @@ instance ToJSON Mux.BearerTrace where
 
 instance ToJSON (AnyMessage ps) => ToJSON (TraceSendRecv ps) where
   toJSON = \case
-    TraceSendMsg msg ->
+    TraceSendMsg _ msg ->
       object [ "type"    .= String "SendMsg"
              , "message" .= msg
              ]
-    TraceRecvMsg msg ->
+    TraceRecvMsg _ msg ->
       object [ "type"    .= String "RecvMsg"
              , "message" .= msg
              ]

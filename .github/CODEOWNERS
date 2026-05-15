@@ -1,7 +1,8 @@
 # Note: later rules override earlier rules.
 
 # Default
-*                  @intersectmbo/ouroboros-network-maintainers
+# FIXME: disabled codeowners for leios-prototype
+# *                  @intersectmbo/ouroboros-network-maintainers
 
 # CICD
 nix/               @intersectmbo/core-tech-release-1 @intersectmbo/ouroboros-network-maintainers

@@ -13,6 +13,8 @@ module Main (main) where
 
 import Data.ByteString (ByteString)
 import Data.ByteString.Char8 qualified as BSC
+import Data.ByteString.Lazy qualified as BSL
+import Data.IntMap qualified as IntMap
 
 import Control.Concurrent (forkIO)
 import Control.Concurrent.STM (atomically)
@@ -44,6 +46,10 @@ import Network.Mux as Mx
 import Network.Mux.Bearer qualified as Mx
 
 import Test.Mux.ReqResp
+
+
+wrapReception :: Functor f => f (a, Maybe BSL.ByteString) -> f (a, Maybe (Mx.Reception BSL.ByteString))
+wrapReception = fmap (\(a, t) -> (a, Mx.MkReception IntMap.empty <$> t))
 
 
 main :: IO ()
@@ -133,7 +139,7 @@ serverWorker bearer = do
         runMiniProtocol mux (MiniProtocolNum 2)
                              ResponderDirectionOnly
                              StartOnDemand $ \channel ->
-          runServerCBOR debugTracer channel (echoServer 0)
+          wrapReception $ runServerCBOR debugTracer channel (echoServer 0)
       result <- atomically awaitResult
       putStrLn $ "Result: " ++ show result
       Mx.stop mux
@@ -193,7 +199,7 @@ clientWorker bearer n msg = do
         runMiniProtocol mux (MiniProtocolNum 2)
                              InitiatorDirectionOnly
                              StartEagerly $ \channel ->
-          runClientCBOR debugTracer channel (echoClient 0 n (BSC.pack msg))
+          wrapReception $ runClientCBOR debugTracer channel (echoClient 0 n (BSC.pack msg))
       result <- atomically awaitResult
       putStrLn $ "Result: " ++ show result
       Mx.stop mux
