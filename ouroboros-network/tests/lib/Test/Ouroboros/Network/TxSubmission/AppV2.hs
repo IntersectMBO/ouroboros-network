@@ -204,7 +204,7 @@ runTxSubmission tracer tracerTxLogic st0 txDecisionPolicy = do
                                      ctrlMsgSTM
                       runPeerWithLimits (("OUTBOUND " ++ show addr,) `contramap` tracer)
                                         txSubmissionCodec2
-                                        (byteLimitsTxSubmission2 (fromIntegral . BSL.length))
+                                        (byteLimitsTxSubmission2)
                                         timeLimitsTxSubmission2
                                         (maybe id delayChannel outDelay outChannel)
                                         (txSubmissionClientPeer client)
@@ -232,7 +232,7 @@ runTxSubmission tracer tracerTxLogic st0 txDecisionPolicy = do
 
                                     (("INBOUND " ++ show addr,) `contramap` sayTracer)
                                     txSubmissionCodec2
-                                    (byteLimitsTxSubmission2 (fromIntegral . BSL.length))
+                                    (byteLimitsTxSubmission2)
                                     timeLimitsTxSubmission2
                                     (maybe id delayChannel inDelay inChannel)
                                     (txSubmissionServerPeerPipelined server)

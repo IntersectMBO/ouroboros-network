@@ -78,7 +78,6 @@ mkDriverWithLimits
      )
   => (forall a.
            Word
-        -> (bytes -> Word)
         -> Channel m bytes
         -> Maybe bytes
         -> DecodeStep bytes failure m (f a)
@@ -101,7 +100,7 @@ mkDriverWithLimits
 mkDriverWithLimits runDecodeStep nat tracer
                    timeoutFn
                    Codec{encode, decode}
-                   ProtocolSizeLimits{sizeLimitForState, dataSize}
+                   ProtocolSizeLimits{sizeLimitForState}
                    ProtocolTimeLimits{timeLimitForState}
                    channel@Channel{send} =
     Driver { sendMessage, recvMessage, initialDState = Nothing }
@@ -129,7 +128,7 @@ mkDriverWithLimits runDecodeStep nat tracer
       let sizeLimit = sizeLimitForState @st stateToken
           timeLimit = fromMaybe (-1) (timeLimitForState @st stateToken)
       result  <- timeoutFn timeLimit $
-                   runDecodeStep sizeLimit dataSize
+                   runDecodeStep sizeLimit
                                  channel trailing (nat <$> decoder)
 
       case result of
@@ -149,6 +148,7 @@ driverWithLimits
      , forall (st' :: ps) tok. tok ~ StateToken st' => Show tok
      , NFData failure
      , Show failure
+     , BearerBytes bytes
      )
   => Tracer m (TraceSendRecv ps)
   -> TimeoutFn m
@@ -169,6 +169,7 @@ annotatedDriverWithLimits
      , forall (st' :: ps) tok. tok ~ StateToken st' => Show tok
      , NFData failure
      , Show failure
+     , BearerBytes bytes
      )
   => Tracer m (TraceSendRecv ps)
   -> TimeoutFn m
@@ -191,7 +192,6 @@ mkDriverWithLimitsRnd
   => (forall a.
            HasCallStack
         => Word
-        -> (bytes -> Word)
         -> Channel m bytes
         -> Maybe bytes
         -> DecodeStep bytes failure m (f a)
@@ -214,7 +214,7 @@ mkDriverWithLimitsRnd
   -> Driver ps pr (Maybe bytes, StdGen) m
 mkDriverWithLimitsRnd runDecodeStep nat tracer timeoutFn rnd0
                       Codec{encode, decode}
-                      ProtocolSizeLimits{sizeLimitForState, dataSize}
+                      ProtocolSizeLimits{sizeLimitForState}
                       ProtocolTimeLimitsWithRnd{timeLimitForStateWithRnd}
                       channel@Channel{send} =
     Driver { sendMessage, recvMessage, initialDState = (Nothing, rnd0) }
@@ -243,7 +243,7 @@ mkDriverWithLimitsRnd runDecodeStep nat tracer timeoutFn rnd0
           (timeLimit, rnd') = first (fromMaybe (-1))
                             $ timeLimitForStateWithRnd @st stateToken rnd
       result  <- timeoutFn timeLimit $
-                   runDecodeStep sizeLimit dataSize
+                   runDecodeStep sizeLimit
                                  channel trailing (nat <$> decoder)
 
       case result of
@@ -266,6 +266,7 @@ driverWithLimitsRnd :: forall ps (pr :: PeerRole) failure bytes m.
                        , Show failure
                        , NFData failure
                        , HasCallStack
+                       , BearerBytes bytes
                        )
                     => Tracer m (TraceSendRecv ps)
                     -> TimeoutFn m
@@ -283,18 +284,20 @@ runDecoderWithLimit
        ( Monad m
        , MonadEvaluate m
        , NFData failure
+       , BearerBytes bytes
        )
     => Word
     -- ^ message size limit
-    -> (bytes -> Word)
-    -- ^ byte size
     -> Channel m bytes
     -> Maybe bytes
     -> DecodeStep bytes failure m (Identity a)
     -> m (Either (Maybe failure) (a, Maybe bytes))
-runDecoderWithLimit limit size Channel{recv} trailing0 step =
+runDecoderWithLimit limit Channel{recv} trailing0 step =
     go 0 trailing0 step
   where
+    size :: bytes -> Word
+    size = bearerBytesSize
+
     -- Our strategy here is as follows...
     --
     -- We of course want to enforce the maximum data limit, but we also want to
@@ -337,18 +340,20 @@ runAnnotatedDecoderWithLimit
        , MonadEvaluate m
        , Monoid bytes
        , NFData failure
+       , BearerBytes bytes
        )
     => Word
     -- ^ message size limit
-    -> (bytes -> Word)
-    -- ^ byte size
     -> Channel m bytes
     -> Maybe bytes
     -> DecodeStep bytes failure m (bytes -> a)
     -> m (Either (Maybe failure) (a, Maybe bytes))
-runAnnotatedDecoderWithLimit limit size Channel{recv} =
+runAnnotatedDecoderWithLimit limit Channel{recv} =
     go mempty 0
   where
+    size :: bytes -> Word
+    size = bearerBytesSize
+
     -- Our strategy here is as follows...
     --
     -- We of course want to enforce the maximum data limit, but we also want to
@@ -410,6 +415,7 @@ runPeerWithLimits
      , NFData a
      , NFData failure
      , Show failure
+     , BearerBytes bytes
      )
   => Tracer m (TraceSendRecv ps)
   -> Codec ps failure m bytes
@@ -440,6 +446,7 @@ runAnnotatedPeerWithLimits
      , NFData a
      , NFData failure
      , Show failure
+     , BearerBytes bytes
      )
   => Tracer m (TraceSendRecv ps)
   -> AnnotatedCodec ps failure m bytes
@@ -471,6 +478,7 @@ runPeerWithLimitsRnd
      , NFData failure
      , Show failure
      , HasCallStack
+     , BearerBytes bytes
      )
   => Tracer m (TraceSendRecv ps)
   -> StdGen
@@ -507,6 +515,7 @@ runPipelinedPeerWithLimits
      , NFData a
      , NFData failure
      , Show failure
+     , BearerBytes bytes
      )
   => Tracer m (TraceSendRecv ps)
   -> Codec ps failure m bytes
@@ -535,6 +544,7 @@ runPipelinedAnnotatedPeerWithLimits
      , NFData a
      , NFData failure
      , Show failure
+     , BearerBytes bytes
      )
   => Tracer m (TraceSendRecv ps)
   -> AnnotatedCodec ps failure m bytes
@@ -565,6 +575,7 @@ runPipelinedPeerWithLimitsRnd
      , NFData a
      , NFData failure
      , Show failure
+     , BearerBytes bytes
      )
   => Tracer m (TraceSendRecv ps)
   -> StdGen
@@ -603,6 +614,7 @@ runConnectedPeersWithLimits
      , NFData failure
      , ShowProxy ps
      , forall (st' :: ps) sing. sing ~ StateToken st' => Show sing
+     , BearerBytes bytes
      )
   => m (Channel m bytes, Channel m bytes)
   -> Tracer m (Role, TraceSendRecv ps)
@@ -642,6 +654,7 @@ runConnectedPeersWithLimitsRnd
      , ShowProxy ps
      , forall (st' :: ps) sing. sing ~ StateToken st' => Show sing
      , HasCallStack
+     , BearerBytes bytes
      )
   => m (Channel m bytes, Channel m bytes)
   -> Tracer m (Role, TraceSendRecv ps)
@@ -689,6 +702,7 @@ runConnectedPipelinedPeersWithLimits
      , NFData failure
      , ShowProxy ps
      , forall (st' :: ps) sing. sing ~ StateToken st' => Show sing
+     , BearerBytes bytes
      )
   => m (Channel m bytes, Channel m bytes)
   -> Tracer m (Role, TraceSendRecv ps)
@@ -725,6 +739,7 @@ runConnectedPipelinedPeersWithLimitsRnd
      , NFData failure
      , ShowProxy ps
      , forall (st' :: ps) sing. sing ~ StateToken st' => Show sing
+     , BearerBytes bytes
      )
   => m (Channel m bytes, Channel m bytes)
   -> Tracer m (Role, TraceSendRecv ps)

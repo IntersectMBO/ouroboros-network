@@ -1216,13 +1216,13 @@ diffusionSimulationM
           limitsAndTimeouts
             = Node.LimitsAndTimeouts
                 { Node.chainSyncLimits      = defaultMiniProtocolsLimit
-                , Node.chainSyncSizeLimits  = byteLimitsChainSync (fromIntegral . BL.length)
+                , Node.chainSyncSizeLimits  = byteLimitsChainSync
                 , Node.chainSyncTimeLimits  = timeLimitsChainSync Cardano.defaultChainSyncIdleTimeout
                 , Node.blockFetchLimits     = defaultMiniProtocolsLimit
-                , Node.blockFetchSizeLimits = byteLimitsBlockFetch (fromIntegral . BL.length)
+                , Node.blockFetchSizeLimits = byteLimitsBlockFetch
                 , Node.blockFetchTimeLimits = timeLimitsBlockFetch
                 , Node.keepAliveLimits      = defaultMiniProtocolsLimit
-                , Node.keepAliveSizeLimits  = byteLimitsKeepAlive (fromIntegral . BL.length)
+                , Node.keepAliveSizeLimits  = byteLimitsKeepAlive
                 , Node.keepAliveTimeLimits  = timeLimitsKeepAlive
                 , Node.pingPongLimits       = defaultMiniProtocolsLimit
                 , Node.pingPongSizeLimits   = byteLimitsPingPong
@@ -1232,15 +1232,14 @@ diffusionSimulationM
                     ProtocolTimeLimits (const shortWait)
                 , Node.handhsakeSizeLimits  =
                     ProtocolSizeLimits (const (4 * 1440))
-                                       (fromIntegral . BL.length)
                 , Node.peerSharingLimits     = defaultMiniProtocolsLimit
                 , Node.peerSharingTimeLimits =
                     timeLimitsPeerSharing
                 , Node.peerSharingSizeLimits =
-                    byteLimitsPeerSharing (fromIntegral . BL.length)
+                    byteLimitsPeerSharing
                 , Node.txSubmissionLimits = defaultMiniProtocolsLimit
                 , Node.txSubmissionTimeLimits = timeLimitsTxSubmission2
-                , Node.txSubmissionSizeLimits = byteLimitsTxSubmission2 (fromIntegral . BL.length)
+                , Node.txSubmissionSizeLimits = byteLimitsTxSubmission2
                 }
 
           interfaces :: Node.Interfaces (Cardano.LedgerPeersConsensusInterface m) m
@@ -1557,7 +1556,7 @@ diffusionSimulationM
 --
 
 byteLimitsPingPong :: ProtocolSizeLimits PingPong.PingPong BL.ByteString
-byteLimitsPingPong = ProtocolSizeLimits (const smallByteLimit) (fromIntegral . BL.length)
+byteLimitsPingPong = ProtocolSizeLimits (const smallByteLimit)
 
 timeLimitsPingPong :: ProtocolTimeLimits PingPong.PingPong
 timeLimitsPingPong = ProtocolTimeLimits $ \case

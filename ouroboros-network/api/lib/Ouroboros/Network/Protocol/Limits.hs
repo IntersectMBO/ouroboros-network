@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE DeriveAnyClass        #-}
 {-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE PolyKinds             #-}
@@ -15,8 +16,11 @@ module Ouroboros.Network.Protocol.Limits where
 import Control.DeepSeq (NFData (..))
 import Control.Exception
 import Control.Monad.Class.MonadTime.SI
+import Data.ByteString qualified as BS
+import Data.ByteString.Lazy qualified as BL
 import System.Random (StdGen)
 
+import Network.TypedProtocol.Codec (AnyMessage)
 import Network.TypedProtocol.Core
 
 import Ouroboros.Network.Util.ShowProxy
@@ -24,10 +28,29 @@ import Ouroboros.Network.Util.ShowProxy
 
 data ProtocolSizeLimits ps bytes = ProtocolSizeLimits {
        sizeLimitForState :: forall (st :: ps). ActiveState st
-                         => StateToken st -> Word,
-
-       dataSize          :: bytes -> Word
+                         => StateToken st -> Word
      }
+
+-- | Compute the on-the-wire size of a chunk of bytes from a 'Bearer'.
+--
+-- Used by the driver-layer size-limit machinery in place of the prior
+-- @dataSize :: bytes -> Word@ field of 'ProtocolSizeLimits' — making it a
+-- class lets every 'Codec' producer skip wiring the size function through.
+class BearerBytes bytes where
+    bearerBytesSize :: bytes -> Word
+
+instance BearerBytes BS.ByteString where
+    bearerBytesSize = fromIntegral . BS.length
+
+instance BearerBytes BL.ByteString where
+    bearerBytesSize = fromIntegral . BL.length
+
+instance BearerBytes [Char] where
+    bearerBytesSize = fromIntegral . length
+
+instance BearerBytes (AnyMessage msg) where
+    -- AnyMessage is used in tests where messages are not actually serialised.
+    bearerBytesSize = const 1
 
 newtype ProtocolTimeLimits ps = ProtocolTimeLimits {
        timeLimitForState :: forall  (st :: ps). ActiveState st

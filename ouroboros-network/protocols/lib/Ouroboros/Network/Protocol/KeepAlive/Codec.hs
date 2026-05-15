@@ -75,7 +75,7 @@ codecKeepAlive_v2 = mkCodecCborLazyBS encodeMsg decodeMsg
            fail (printf "codecKeepAlive (%s, %s) unexpected key (%d, %d)" (show (activeAgency :: ActiveAgency st)) (show stok) key len)
 
 
-byteLimitsKeepAlive :: (bytes -> Word) -> ProtocolSizeLimits KeepAlive bytes
+byteLimitsKeepAlive :: ProtocolSizeLimits KeepAlive bytes
 byteLimitsKeepAlive = ProtocolSizeLimits sizeLimitForState
   where
     sizeLimitForState :: ActiveState st

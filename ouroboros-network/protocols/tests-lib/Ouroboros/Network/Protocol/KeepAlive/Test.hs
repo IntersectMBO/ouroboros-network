@@ -26,6 +26,7 @@ import Network.TypedProtocol.Proofs
 import Ouroboros.Network.Channel
 import Ouroboros.Network.Driver.Limits
 import Ouroboros.Network.Driver.Simple (runConnectedPeers)
+import Ouroboros.Network.Protocol.Limits (BearerBytes (bearerBytesSize))
 
 import Ouroboros.Network.Protocol.KeepAlive.Client
 import Ouroboros.Network.Protocol.KeepAlive.Codec
@@ -163,8 +164,8 @@ prop_codec_v2_valid_cbor msg =
 prop_byteLimits :: AnyMessage KeepAlive
                 -> Bool
 prop_byteLimits (AnyMessage (msg :: Message KeepAlive st st')) =
-        dataSize (encode msg)
+        bearerBytesSize (encode msg)
      <= sizeLimitForState (stateToken :: StateToken st)
   where
     Codec { encode } = codecKeepAlive_v2 :: Codec KeepAlive CBOR.DeserialiseFailure IO ByteString
-    ProtocolSizeLimits { sizeLimitForState, dataSize } = byteLimitsKeepAlive (fromIntegral . BL.length)
+    ProtocolSizeLimits { sizeLimitForState } = byteLimitsKeepAlive

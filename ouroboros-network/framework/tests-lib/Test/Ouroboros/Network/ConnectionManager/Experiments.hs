@@ -630,7 +630,6 @@ reqRespSizeLimits :: forall req resp. ProtocolSizeLimits (ReqResp req resp)
                                                          ByteString
 reqRespSizeLimits = ProtocolSizeLimits
     { sizeLimitForState
-    , dataSize = fromIntegral . LBS.length
     }
   where
     sizeLimitForState :: forall (st :: ReqResp req resp).

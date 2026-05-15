@@ -36,8 +36,7 @@ import Text.Printf
 
 -- | Byte Limits
 byteLimitsChainSync :: forall bytes (header :: Type) (point :: Type) (tip :: Type) .
-                       (bytes -> Word) -- ^ compute size of `bytes`
-                    -> ProtocolSizeLimits (ChainSync header point tip) bytes
+                       ProtocolSizeLimits (ChainSync header point tip) bytes
 byteLimitsChainSync = ProtocolSizeLimits stateToLimit
   where
     stateToLimit :: forall (st :: ChainSync header point tip).

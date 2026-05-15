@@ -101,7 +101,7 @@ txSubmissionSimulation tracer maxUnacked outboundTxs
       async $ runPeerWithLimits
                 (("OUTBOUND",) `contramap` tracer)
                 txSubmissionCodec2
-                (byteLimitsTxSubmission2 (fromIntegral . BSL.length))
+                (byteLimitsTxSubmission2)
                 timeLimitsTxSubmission2
                 (maybe id delayChannel outboundDelay outboundChannel)
                 (txSubmissionClientPeer (outboundPeer outboundMempool))
@@ -110,7 +110,7 @@ txSubmissionSimulation tracer maxUnacked outboundTxs
       async $ runPipelinedPeerWithLimits
                 (("INBOUND",) `contramap` verboseTracer)
                 txSubmissionCodec2
-                (byteLimitsTxSubmission2 (fromIntegral . BSL.length))
+                (byteLimitsTxSubmission2)
                 timeLimitsTxSubmission2
                 (maybe id delayChannel inboundDelay inboundChannel)
                 (txSubmissionServerPeerPipelined (inboundPeer duplicateTxIdsVar inboundMempool))

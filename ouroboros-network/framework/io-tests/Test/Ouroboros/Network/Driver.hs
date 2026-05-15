@@ -98,7 +98,7 @@ byteLimitsReqResp
   :: forall req resp.
      Word
   -> ProtocolSizeLimits (ReqResp req resp) String
-byteLimitsReqResp limit = ProtocolSizeLimits stateToLimit (fromIntegral . length)
+byteLimitsReqResp limit = ProtocolSizeLimits stateToLimit
   where
     stateToLimit :: forall (st  :: ReqResp req resp).  ActiveState st
                  => StateToken st -> Word
@@ -534,8 +534,7 @@ prop_channel_ping_pong_with_limits_ST a@(ArbDelaysAndTimeouts delay delay' timel
 
     slimits :: ProtocolSizeLimits PingPong String
     slimits = ProtocolSizeLimits {
-        sizeLimitForState = \_ -> toSize sizelimit,
-        dataSize = fromIntegral . List.length
+        sizeLimitForState = \_ -> toSize sizelimit
       }
 
     tlimits :: ProtocolTimeLimits PingPong

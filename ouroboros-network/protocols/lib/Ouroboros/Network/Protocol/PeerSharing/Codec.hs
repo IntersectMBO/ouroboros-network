@@ -128,8 +128,7 @@ maxTransmissionUnit :: Word
 maxTransmissionUnit = 4 * 1440
 
 byteLimitsPeerSharing :: forall (peerAddress :: Type) bytes.
-                         (bytes -> Word) -- ^ compute size of bytes
-                      -> ProtocolSizeLimits (PeerSharing peerAddress) bytes
+                         ProtocolSizeLimits (PeerSharing peerAddress) bytes
 byteLimitsPeerSharing = ProtocolSizeLimits sizeLimitForState
   where
     sizeLimitForState :: forall (st :: PeerSharing peerAddress).

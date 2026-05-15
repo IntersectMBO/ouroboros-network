@@ -26,6 +26,8 @@ import Network.TypedProtocol.Codec
 import Network.TypedProtocol.Codec.Properties
 import Network.TypedProtocol.Proofs
 
+import Ouroboros.Network.Protocol.Limits (BearerBytes (bearerBytesSize))
+
 import Ouroboros.Network.Channel (createConnectedChannels)
 import Ouroboros.Network.Driver.Limits (ProtocolSizeLimits (..))
 import Ouroboros.Network.Driver.Simple (runConnectedPeers)
@@ -186,9 +188,8 @@ prop_codec_splits3 msg =
 prop_byteLimits :: AnyMessage (PeerSharing Int)
                 -> Bool
 prop_byteLimits (AnyMessage (msg :: Message (PeerSharing Int) st st')) =
-        dataSize (encode msg)
+        bearerBytesSize (encode msg)
      <= sizeLimitForState (stateToken :: StateToken st)
   where
     Codec { encode } = codecPeerSharing @IO CBOR.encodeInt CBOR.decodeInt
-    ProtocolSizeLimits { sizeLimitForState, dataSize } =
-      byteLimitsPeerSharing (fromIntegral . BL.length)
+    ProtocolSizeLimits { sizeLimitForState } = byteLimitsPeerSharing
