@@ -233,6 +233,7 @@ library
     Ouroboros.Network.Diffusion.Utils
     Ouroboros.Network.ExitPolicy
     Ouroboros.Network.KeepAlive
+    Ouroboros.Network.KeepAlive.Registry
     Ouroboros.Network.PeerSelection
     Ouroboros.Network.PeerSelection.Churn
     Ouroboros.Network.PeerSelection.Governor

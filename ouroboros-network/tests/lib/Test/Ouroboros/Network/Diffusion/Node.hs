@@ -361,6 +361,7 @@ run blockGeneratorArgs ni na
         tracerBlockFetch
         (blockFetchPolicy nodeKernel)
         (nkFetchClientRegistry nodeKernel)
+        (nkKeepAliveRegistry nodeKernel)
         (BlockFetchConfiguration {
           bfcMaxConcurrencyBulkSync = 1,
           bfcMaxConcurrencyDeadline = 2,
