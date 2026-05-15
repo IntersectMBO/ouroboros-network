@@ -30,8 +30,7 @@ import Data.Word (Word16)
 import System.Random (StdGen, mkStdGen, uniformR)
 
 import Ouroboros.Network.Protocol.TxSubmission2.Client
-import Ouroboros.Network.Protocol.TxSubmission2.Type (BlockingReplyList (..),
-           NumTxIdsToReq (..))
+import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToReq (..))
 import Ouroboros.Network.SizeInBytes (SizeInBytes)
 
 
