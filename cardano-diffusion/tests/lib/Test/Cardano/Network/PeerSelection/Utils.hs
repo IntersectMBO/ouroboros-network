@@ -15,7 +15,8 @@ import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPe
 
 import Test.Ouroboros.Network.Data.Signal (Events, Signal)
 import Test.Ouroboros.Network.Data.Signal qualified as Signal
-import Test.Ouroboros.Network.PeerSelection.Instances (PeerAddr (..))
+import Test.Ouroboros.Network.PeerSelection.Instances (PeerAddr (..),
+           TestSeed (..))
 
 import Test.Cardano.Network.PeerSelection.MockEnvironment hiding (targets,
            tests)
@@ -50,7 +51,8 @@ selectGovAssociationMode = Signal.selectEvents
                                     _                         -> Nothing)
 
 selectGovState :: Eq a
-               => (forall peerconn.
+               => TestSeed
+               -> (forall peerconn.
                        Governor.PeerSelectionState extraState extraFlags extraPeers
                                                    PeerAddr peerconn
                     -> a
@@ -59,11 +61,9 @@ selectGovState :: Eq a
                -> extraPeers
                -> Events (TestTraceEvent extraState extraFlags extraPeers)
                -> Signal a
-selectGovState f es ep =
+selectGovState (TestSeed seed') f es ep =
     Signal.nub
-  -- TODO: #3182 Rng seed should come from quickcheck.
-  --       and `NumberOfBigLedgerPeers`
-  . Signal.fromChangeEvents (f $! Governor.emptyPeerSelectionState (mkStdGen 42) es ep)
+  . Signal.fromChangeEvents (f $! Governor.emptyPeerSelectionState (mkStdGen seed') es ep)
   . Signal.selectEvents
       (\case GovernorDebug (Governor.TraceGovernorState _ _ st) -> Just $! f st
              _                                                  -> Nothing)
