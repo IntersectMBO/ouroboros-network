@@ -68,19 +68,13 @@ selectGovState f es ep =
       (\case GovernorDebug (Governor.TraceGovernorState _ _ st) -> Just $! f st
              _                                                  -> Nothing)
 
-selectEnvTargets :: Eq a
+selectGovTargets :: Eq a
                  => (PeerSelectionTargets -> a)
+                 -> extraState
+                 -> extraPeers
                  -> Events (TestTraceEvent extraState extraFlags extraPeers)
                  -> Signal a
-selectEnvTargets f =
-    Signal.nub
-  . fmap f
-  . Signal.fromChangeEvents Governor.nullPeerSelectionTargets
-  . Signal.selectEvents
-      (\case TraceEnvSetTargets targets -> Just $! targets
-             _                          -> Nothing)
-  . selectEnvEvents
-
+selectGovTargets f = selectGovState (f . Governor.targets)
 
 selectForgottenPeers :: Events (TestTraceEvent extraState extraFlags extraPeers)
                      -> Signal (Set PeerAddr)

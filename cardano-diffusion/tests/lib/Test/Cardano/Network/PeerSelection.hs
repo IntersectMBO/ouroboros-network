@@ -1188,11 +1188,11 @@ prop_governor_target_root_below env =
 
         govTargetsSig :: Signal Int
         govTargetsSig =
-          selectGovState (targetNumberOfRootPeers . Governor.targets)
-                         (Cardano.ExtraState.empty (consensusMode env)
-                                                   (NumberOfBigLedgerPeers 0))
-                         Cardano.ExtraPeers.empty
-                         events
+          selectGovTargets targetNumberOfRootPeers
+                           (Cardano.ExtraState.empty (consensusMode env)
+                                                     (NumberOfBigLedgerPeers 0))
+                           Cardano.ExtraPeers.empty
+                           events
 
         govLocalRootPeersSig :: Signal (Set PeerAddr)
         govLocalRootPeersSig =
@@ -1700,11 +1700,11 @@ prop_governor_target_known_2_opportunity_taken (MaxTime maxTime) env =
 
         govTargetsSig :: Signal Int
         govTargetsSig =
-          selectGovState (targetNumberOfKnownPeers . Governor.targets)
-                         (Cardano.ExtraState.empty (consensusMode env)
-                                                   (NumberOfBigLedgerPeers 0))
-                         Cardano.ExtraPeers.empty
-                         events
+          selectGovTargets targetNumberOfKnownPeers
+                           (Cardano.ExtraState.empty (consensusMode env)
+                                                     (NumberOfBigLedgerPeers 0))
+                           Cardano.ExtraPeers.empty
+                           events
 
         govKnownPeersSig :: Signal (Set PeerAddr)
         govKnownPeersSig =
@@ -2078,11 +2078,11 @@ prop_governor_target_known_4_results_used (MaxTime maxTime) env =
 
         govTargetsSig :: Signal Int
         govTargetsSig =
-          selectGovState (targetNumberOfKnownPeers . Governor.targets)
-                         (Cardano.ExtraState.empty (consensusMode env)
-                                                   (NumberOfBigLedgerPeers 0))
-                         Cardano.ExtraPeers.empty
-                         events
+          selectGovTargets targetNumberOfKnownPeers
+                           (Cardano.ExtraState.empty (consensusMode env)
+                                                     (NumberOfBigLedgerPeers 0))
+                           Cardano.ExtraPeers.empty
+                           events
 
         govKnownPeersSig :: Signal (Set PeerAddr)
         govKnownPeersSig =
@@ -2169,11 +2169,11 @@ prop_governor_target_known_5_no_shrink_below (MaxTime maxTime) env =
 
         govTargetsSig :: Signal Int
         govTargetsSig =
-          selectGovState (targetNumberOfKnownPeers . Governor.targets)
-                         (Cardano.ExtraState.empty (consensusMode env)
-                                                   (NumberOfBigLedgerPeers 0))
-                         Cardano.ExtraPeers.empty
-                         events
+          selectGovTargets targetNumberOfKnownPeers
+                           (Cardano.ExtraState.empty (consensusMode env)
+                                                     (NumberOfBigLedgerPeers 0))
+                           Cardano.ExtraPeers.empty
+                           events
 
         govKnownPeersSig :: Signal (Set PeerAddr)
         govKnownPeersSig =
@@ -2263,11 +2263,11 @@ prop_governor_target_known_5_no_shrink_big_ledger_peers_below (MaxTime maxTime) 
 
         govTargetsSig :: Signal Int
         govTargetsSig =
-          selectGovState (targetNumberOfKnownBigLedgerPeers . Governor.targets)
-                         (Cardano.ExtraState.empty (consensusMode env)
-                                                   (NumberOfBigLedgerPeers 0))
-                         Cardano.ExtraPeers.empty
-                         events
+          selectGovTargets targetNumberOfKnownBigLedgerPeers
+                           (Cardano.ExtraState.empty (consensusMode env)
+                                                     (NumberOfBigLedgerPeers 0))
+                           Cardano.ExtraPeers.empty
+                           events
 
         govKnownPeersSig :: Signal (Set PeerAddr)
         govKnownPeersSig =
@@ -2349,11 +2349,11 @@ prop_governor_target_known_above (MaxTime maxTime) env =
 
         govTargetsSig :: Signal PeerSelectionTargets
         govTargetsSig =
-          selectGovState Governor.targets
-                         (Cardano.ExtraState.empty (consensusMode env)
-                                                   (NumberOfBigLedgerPeers 0))
-                         Cardano.ExtraPeers.empty
-                         events
+          selectGovTargets id
+                           (Cardano.ExtraState.empty (consensusMode env)
+                                                     (NumberOfBigLedgerPeers 0))
+                           Cardano.ExtraPeers.empty
+                           events
 
         govLocalRootPeersSig :: Signal (Set PeerAddr)
         govLocalRootPeersSig =
@@ -2469,11 +2469,11 @@ prop_governor_target_known_big_ledger_peers_above (MaxTime maxTime) env =
 
         govTargetsSig :: Signal PeerSelectionTargets
         govTargetsSig =
-          selectGovState Governor.targets
-                         (Cardano.ExtraState.empty (consensusMode env)
-                                                   (NumberOfBigLedgerPeers 0))
-                         Cardano.ExtraPeers.empty
-                         events
+          selectGovTargets id
+                           (Cardano.ExtraState.empty (consensusMode env)
+                                                     (NumberOfBigLedgerPeers 0))
+                           Cardano.ExtraPeers.empty
+                           events
 
         govKnownPeersSig :: Signal (Set PeerAddr)
         govKnownPeersSig =
@@ -2582,11 +2582,11 @@ prop_governor_target_established_below (MaxTime maxTime) env =
 
         govTargetsSig :: Signal Int
         govTargetsSig =
-          selectGovState (targetNumberOfEstablishedPeers . Governor.targets)
-                         (Cardano.ExtraState.empty (consensusMode env)
-                                                   (NumberOfBigLedgerPeers 0))
-                         Cardano.ExtraPeers.empty
-                         events
+          selectGovTargets targetNumberOfEstablishedPeers
+                           (Cardano.ExtraState.empty (consensusMode env)
+                                                     (NumberOfBigLedgerPeers 0))
+                           Cardano.ExtraPeers.empty
+                           events
 
         govLocalRootPeersSig :: Signal (LocalRootPeers.LocalRootPeers PeerTrustable PeerAddr)
         govLocalRootPeersSig =
@@ -2706,11 +2706,11 @@ prop_governor_target_established_big_ledger_peers_below (MaxTime maxTime) env =
 
         govTargetsSig :: Signal Int
         govTargetsSig =
-          selectGovState (targetNumberOfEstablishedBigLedgerPeers . Governor.targets)
-                         (Cardano.ExtraState.empty (consensusMode env)
-                                                   (NumberOfBigLedgerPeers 0))
-                         Cardano.ExtraPeers.empty
-                         events
+          selectGovTargets targetNumberOfEstablishedBigLedgerPeers
+                           (Cardano.ExtraState.empty (consensusMode env)
+                                                     (NumberOfBigLedgerPeers 0))
+                           Cardano.ExtraPeers.empty
+                           events
 
         govKnownPeersSig :: Signal (Set PeerAddr)
         govKnownPeersSig =
@@ -2820,11 +2820,11 @@ prop_governor_target_active_below (MaxTime maxTime) env =
 
         govTargetsSig :: Signal Int
         govTargetsSig =
-          selectGovState (targetNumberOfActivePeers . Governor.targets)
-                         (Cardano.ExtraState.empty (consensusMode env)
-                                                   (NumberOfBigLedgerPeers 0))
-                         Cardano.ExtraPeers.empty
-                         events
+          selectGovTargets targetNumberOfActivePeers
+                           (Cardano.ExtraState.empty (consensusMode env)
+                                                     (NumberOfBigLedgerPeers 0))
+                           Cardano.ExtraPeers.empty
+                           events
 
         govLocalRootPeersSig :: Signal (LocalRootPeers.LocalRootPeers PeerTrustable PeerAddr)
         govLocalRootPeersSig =
@@ -2959,11 +2959,11 @@ prop_governor_target_active_big_ledger_peers_below (MaxTime maxTime) env =
 
         govTargetsSig :: Signal Int
         govTargetsSig =
-          selectGovState (targetNumberOfActiveBigLedgerPeers . Governor.targets)
-                         (Cardano.ExtraState.empty (consensusMode env)
-                                                   (NumberOfBigLedgerPeers 0))
-                         Cardano.ExtraPeers.empty
-                         events
+          selectGovTargets targetNumberOfActiveBigLedgerPeers
+                           (Cardano.ExtraState.empty (consensusMode env)
+                                                     (NumberOfBigLedgerPeers 0))
+                           Cardano.ExtraPeers.empty
+                           events
 
         govEstablishedPeersSig :: Signal (Set PeerAddr)
         govEstablishedPeersSig =
@@ -3073,11 +3073,11 @@ prop_governor_target_established_above (MaxTime maxTime) env =
 
         govTargetsSig :: Signal Int
         govTargetsSig =
-          selectGovState (targetNumberOfEstablishedPeers . Governor.targets)
-                         (Cardano.ExtraState.empty (consensusMode env)
-                                                   (NumberOfBigLedgerPeers 0))
-                         Cardano.ExtraPeers.empty
-                         events
+          selectGovTargets targetNumberOfEstablishedPeers
+                           (Cardano.ExtraState.empty (consensusMode env)
+                                                     (NumberOfBigLedgerPeers 0))
+                           Cardano.ExtraPeers.empty
+                           events
 
         govDemotionsInProgressSig :: Signal (Set PeerAddr)
         govDemotionsInProgressSig =
@@ -3188,11 +3188,11 @@ prop_governor_target_established_big_ledger_peers_above (MaxTime maxTime) env =
 
         govTargetsSig :: Signal Int
         govTargetsSig =
-          selectGovState (targetNumberOfEstablishedBigLedgerPeers . Governor.targets)
-                         (Cardano.ExtraState.empty (consensusMode env)
-                                                   (NumberOfBigLedgerPeers 0))
-                         Cardano.ExtraPeers.empty
-                         events
+          selectGovTargets targetNumberOfEstablishedBigLedgerPeers
+                           (Cardano.ExtraState.empty (consensusMode env)
+                                                     (NumberOfBigLedgerPeers 0))
+                           Cardano.ExtraPeers.empty
+                           events
 
         govEstablishedPeersSig :: Signal (Set PeerAddr)
         govEstablishedPeersSig =
@@ -3275,11 +3275,11 @@ prop_governor_target_active_above (MaxTime maxTime) env =
 
         govTargetsSig :: Signal Int
         govTargetsSig =
-          selectGovState (targetNumberOfActivePeers . Governor.targets)
-                         (Cardano.ExtraState.empty (consensusMode env)
-                                                   (NumberOfBigLedgerPeers 0))
-                         Cardano.ExtraPeers.empty
-                         events
+          selectGovTargets targetNumberOfActivePeers
+                           (Cardano.ExtraState.empty (consensusMode env)
+                                                     (NumberOfBigLedgerPeers 0))
+                           Cardano.ExtraPeers.empty
+                           events
 
         govLocalRootPeersSig :: Signal (LocalRootPeers.LocalRootPeers PeerTrustable PeerAddr)
         govLocalRootPeersSig =
@@ -3357,11 +3357,11 @@ prop_governor_target_active_big_ledger_peers_above (MaxTime maxTime) env =
 
         govTargetsSig :: Signal Int
         govTargetsSig =
-          selectGovState (targetNumberOfActiveBigLedgerPeers . Governor.targets)
-                         (Cardano.ExtraState.empty (consensusMode env)
-                                                   (NumberOfBigLedgerPeers 0))
-                         Cardano.ExtraPeers.empty
-                         events
+          selectGovTargets targetNumberOfActiveBigLedgerPeers
+                           (Cardano.ExtraState.empty (consensusMode env)
+                                                     (NumberOfBigLedgerPeers 0))
+                           Cardano.ExtraPeers.empty
+                           events
 
         govActivePeersSig :: Signal (Set PeerAddr)
         govActivePeersSig =
