@@ -13,7 +13,6 @@ module Test.Ouroboros.Network.Socket (tests) where
 import Data.Bifoldable (bitraverse_)
 import Data.ByteString.Lazy qualified as BL
 import Data.Either (fromRight)
-import Data.IntMap qualified as IntMap
 import Data.List (mapAccumL)
 import Data.Monoid.Synchronisation (FirstToFinish (..))
 import Data.Time.Clock (UTCTime, getCurrentTime)

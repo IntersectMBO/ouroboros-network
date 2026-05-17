@@ -18,7 +18,6 @@ import Control.Tracer (nullTracer)
 
 import Codec.CBOR.Read qualified as CBOR
 import Data.ByteString.Lazy (ByteString)
-import Data.ByteString.Lazy qualified as BL
 
 import Network.TypedProtocol.Codec
 import Network.TypedProtocol.Codec.Properties

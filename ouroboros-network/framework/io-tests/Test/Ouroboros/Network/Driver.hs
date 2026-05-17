@@ -14,7 +14,6 @@ module Test.Ouroboros.Network.Driver (tests) where
 import Data.Bifunctor (bimap)
 import Data.Kind (Type)
 import Data.List (intercalate)
-import Data.List qualified as List
 import Text.Read (readMaybe)
 
 import Network.TypedProtocol.Codec

@@ -26,7 +26,6 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.IOSim hiding (SimResult)
 import Control.Tracer (Tracer (..), contramap, nullTracer)
 
-import Data.ByteString.Lazy qualified as BSL
 import Data.Function (on)
 import Data.List (intercalate, nubBy)
 import Data.Maybe (fromMaybe)

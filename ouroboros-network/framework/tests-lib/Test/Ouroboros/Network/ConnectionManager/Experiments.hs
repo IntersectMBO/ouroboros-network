@@ -52,7 +52,6 @@ import Control.Tracer (Tracer (..), contramap, nullTracer)
 
 import Codec.Serialise.Class (Serialise)
 import Data.ByteString.Lazy (ByteString)
-import Data.ByteString.Lazy qualified as LBS
 import Data.Functor (($>), (<&>))
 import Data.Functor.Compose
 import Data.Hashable

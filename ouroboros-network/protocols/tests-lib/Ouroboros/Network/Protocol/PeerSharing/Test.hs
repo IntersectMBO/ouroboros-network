@@ -19,7 +19,6 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.IOSim (runSimOrThrow)
 import Control.Monad.ST (runST)
 import Control.Tracer (nullTracer)
-import Data.ByteString.Lazy qualified as BL
 import Data.Foldable as Foldable (foldl')
 import Data.Word (Word8)
 

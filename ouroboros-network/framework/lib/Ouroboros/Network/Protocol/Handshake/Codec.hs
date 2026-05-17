@@ -22,7 +22,6 @@ import Control.Monad (replicateM, unless)
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadTime.SI
 import Data.ByteString.Lazy (ByteString)
-import Data.ByteString.Lazy qualified as BL
 import Data.Either (partitionEithers)
 import Data.Map (Map)
 import Data.Map qualified as Map
