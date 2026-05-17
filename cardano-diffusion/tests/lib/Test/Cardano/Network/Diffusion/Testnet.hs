@@ -111,6 +111,7 @@ import Test.Ouroboros.Network.Diffusion.Node (config_REPROMOTE_DELAY)
 import Test.Ouroboros.Network.Diffusion.Node.Kernel
 import Test.Ouroboros.Network.InboundGovernor.Utils
 import Test.Ouroboros.Network.LedgerPeers (LedgerPools (..))
+import Test.Ouroboros.Network.PeerSelection.Instances (TestSeed (..))
 import Test.Ouroboros.Network.TxSubmission.TxLogic (ArbTxDecisionPolicy (..))
 import Test.Ouroboros.Network.TxSubmission.Types (Tx (..), TxId)
 import Test.Ouroboros.Network.Utils hiding (SmallDelay, debugTracer)
@@ -1415,11 +1416,12 @@ prop_fetch_client_state_trace_coverage defaultBearerInfo diffScript =
 
 -- | Same as PeerSelection test 'prop_governor_only_bootstrap_peers_in_fallback_state'
 --
-prop_only_bootstrap_peers_in_fallback_state :: forall r.
+prop_only_bootstrap_peers_in_fallback_state :: TestSeed
+                                            -> forall r.
                                                SimTrace r
                                             -> Int
                                             -> Property
-prop_only_bootstrap_peers_in_fallback_state ioSimTrace traceNumber =
+prop_only_bootstrap_peers_in_fallback_state testSeed ioSimTrace traceNumber =
   let events :: [Events DiffusionTestTrace]
       events = Trace.toList
              . fmap ( Signal.eventsFromList
@@ -1450,6 +1452,7 @@ prop_only_bootstrap_peers_in_fallback_state ioSimTrace traceNumber =
       let govUseBootstrapPeers :: Signal UseBootstrapPeers
           govUseBootstrapPeers =
             selectDiffusionPeerSelectionState
+              testSeed
               (Cardano.ExtraState.bootstrapPeersFlag . Governor.extraState)
               events
 
@@ -1473,6 +1476,7 @@ prop_only_bootstrap_peers_in_fallback_state ioSimTrace traceNumber =
           govLedgerStateJudgement :: Signal LedgerStateJudgement
           govLedgerStateJudgement =
             selectDiffusionPeerSelectionState
+              testSeed
               (Cardano.ExtraState.ledgerStateJudgement . Governor.extraState)
               events
 
@@ -1489,11 +1493,12 @@ prop_only_bootstrap_peers_in_fallback_state ioSimTrace traceNumber =
 
           govKnownPeers :: Signal (Set NtNAddr)
           govKnownPeers =
-            selectDiffusionPeerSelectionState (KnownPeers.toSet . Governor.knownPeers) events
+            selectDiffusionPeerSelectionState testSeed (KnownPeers.toSet . Governor.knownPeers) events
 
           govTrustedPeers :: Signal (Set NtNAddr)
           govTrustedPeers =
             selectDiffusionPeerSelectionState
+              testSeed
               (\st -> LocalRootPeers.keysSet (LocalRootPeers.clampToTrustable (Governor.localRootPeers st))
                    <> PublicRootPeers.getBootstrapPeers (Governor.publicRootPeers st)
               ) events
@@ -1549,18 +1554,18 @@ prop_only_bootstrap_peers_in_fallback_state ioSimTrace traceNumber =
             keepNonTrustablePeersTooLong
 
 prop_only_bootstrap_peers_in_fallback_state_iosimpor
-  :: AbsBearerInfo -> DiffusionScript -> Property
-prop_only_bootstrap_peers_in_fallback_state_iosimpor
-  = testWithIOSimPOR prop_only_bootstrap_peers_in_fallback_state short_trace
+  :: TestSeed -> AbsBearerInfo -> DiffusionScript -> Property
+prop_only_bootstrap_peers_in_fallback_state_iosimpor testSeed
+  = testWithIOSimPOR (prop_only_bootstrap_peers_in_fallback_state testSeed) short_trace
 
 prop_only_bootstrap_peers_in_fallback_state_iosim
-  :: AbsBearerInfo -> DiffusionScript -> Property
-prop_only_bootstrap_peers_in_fallback_state_iosim
-  = testWithIOSim prop_only_bootstrap_peers_in_fallback_state long_trace
+  :: TestSeed -> AbsBearerInfo -> DiffusionScript -> Property
+prop_only_bootstrap_peers_in_fallback_state_iosim testSeed
+  = testWithIOSim (prop_only_bootstrap_peers_in_fallback_state testSeed) long_trace
 
 prop_bootstrap_timeout_iosim
-  :: AbsBearerInfo -> DiffusionScript -> Property
-prop_bootstrap_timeout_iosim = testWithIOSim prop long_trace
+  :: TestSeed -> AbsBearerInfo -> DiffusionScript -> Property
+prop_bootstrap_timeout_iosim testSeed = testWithIOSim prop long_trace
   where
     prop ioSimTrace traceNumber =
       let events :: [Events DiffusionTestTrace]
@@ -1592,12 +1597,14 @@ prop_bootstrap_timeout_iosim = testWithIOSim prop long_trace
       let govUseBootstrapPeers :: Signal UseBootstrapPeers
           govUseBootstrapPeers =
             selectDiffusionPeerSelectionState
+              testSeed
               (Cardano.ExtraState.bootstrapPeersFlag . Governor.extraState)
               evs
 
           govLedgerStateJudgement :: Signal LedgerStateJudgement
           govLedgerStateJudgement =
             selectDiffusionPeerSelectionState
+              testSeed
               (Cardano.ExtraState.ledgerStateJudgement . Governor.extraState)
               evs
 
@@ -1613,6 +1620,7 @@ prop_bootstrap_timeout_iosim = testWithIOSim prop long_trace
           govBootstrapTimeout :: Signal (Maybe Time)
           govBootstrapTimeout =
             selectDiffusionPeerSelectionState
+              testSeed
               (Cardano.ExtraState.bootstrapPeersTimeout . Governor.extraState)
               evs
 
@@ -1742,11 +1750,12 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
 -- Then just restart relay B.
 -- The connection will never be re-established again.
 --
-prop_track_coolingToCold_demotions :: forall r.
+prop_track_coolingToCold_demotions :: TestSeed
+                                   -> forall r.
                                       SimTrace r
                                    -> Int
                                    -> Property
-prop_track_coolingToCold_demotions ioSimTracer traceNumber =
+prop_track_coolingToCold_demotions testSeed ioSimTracer traceNumber =
   let events :: [Events DiffusionTestTrace]
       events = Trace.toList
              . fmap ( Signal.eventsFromList
@@ -1779,6 +1788,7 @@ prop_track_coolingToCold_demotions ioSimTracer traceNumber =
       let govInProgressDemoteToCold :: Signal (Set NtNAddr)
           govInProgressDemoteToCold =
             selectDiffusionPeerSelectionState
+              testSeed
               Governor.inProgressDemoteToCold
               events
 
@@ -1851,14 +1861,14 @@ prop_track_coolingToCold_demotions ioSimTracer traceNumber =
         $ map (signalProperty 20 show Set.null) notInProgressDemoteToColdForTooLong
 
 prop_track_coolingToCold_demotions_iosimpor
-  :: AbsBearerInfo -> DiffusionScript -> Property
-prop_track_coolingToCold_demotions_iosimpor
-  = testWithIOSimPOR prop_track_coolingToCold_demotions short_trace
+  :: TestSeed -> AbsBearerInfo -> DiffusionScript -> Property
+prop_track_coolingToCold_demotions_iosimpor testSeed
+  = testWithIOSimPOR (prop_track_coolingToCold_demotions testSeed) short_trace
 
 prop_track_coolingToCold_demotions_iosim
-  :: AbsBearerInfo -> DiffusionScript -> Property
-prop_track_coolingToCold_demotions_iosim
-  = testWithIOSim prop_track_coolingToCold_demotions long_trace
+  :: TestSeed -> AbsBearerInfo -> DiffusionScript -> Property
+prop_track_coolingToCold_demotions_iosim testSeed
+  = testWithIOSim (prop_track_coolingToCold_demotions testSeed) long_trace
 
 
 -- | This test coverage of ServerTrace constructors, namely accept errors.
@@ -2651,11 +2661,12 @@ prop_accept_failure (AbsIOError ioerr) =
 -- We do not need separate above and below variants of this property since it
 -- is not possible to exceed the target.
 --
-prop_diffusion_target_established_public :: forall r.
+prop_diffusion_target_established_public :: TestSeed
+                                         -> forall r.
                                             SimTrace r
                                          -> Int
                                          -> Property
-prop_diffusion_target_established_public ioSimTrace traceNumber =
+prop_diffusion_target_established_public testSeed ioSimTrace traceNumber =
     let events :: [Events DiffusionTestTrace]
         events = Trace.toList
                . fmap ( Signal.eventsFromList
@@ -2687,18 +2698,21 @@ prop_diffusion_target_established_public ioSimTrace traceNumber =
       let govPublicRootPeersSig :: Signal (Set NtNAddr)
           govPublicRootPeersSig =
             selectDiffusionPeerSelectionState
+              testSeed
               (PublicRootPeers.toSet Cardano.ExtraPeers.toSet . Governor.publicRootPeers)
               events
 
           govEstablishedPeersSig :: Signal (Set NtNAddr)
           govEstablishedPeersSig =
             selectDiffusionPeerSelectionState
+              testSeed
               (EstablishedPeers.toSet . Governor.establishedPeers)
               events
 
           govInProgressPromoteColdSig :: Signal (Set NtNAddr)
           govInProgressPromoteColdSig =
             selectDiffusionPeerSelectionState
+              testSeed
               Governor.inProgressPromoteCold
               events
 
@@ -2730,14 +2744,14 @@ prop_diffusion_target_established_public ioSimTrace traceNumber =
           True
 
 prop_diffusion_target_established_public_iosimpor
-  :: AbsBearerInfo -> DiffusionScript -> Property
-prop_diffusion_target_established_public_iosimpor
-  = testWithIOSimPOR prop_diffusion_target_established_public short_trace
+  :: TestSeed -> AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_target_established_public_iosimpor testSeed
+  = testWithIOSimPOR (prop_diffusion_target_established_public testSeed) short_trace
 
 prop_diffusion_target_established_public_iosim
-  :: AbsBearerInfo -> DiffusionScript -> Property
-prop_diffusion_target_established_public_iosim
-  = testWithIOSim prop_diffusion_target_established_public long_trace
+  :: TestSeed -> AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_target_established_public_iosim testSeed
+  = testWithIOSim (prop_diffusion_target_established_public testSeed) long_trace
 
 -- | A variant of
 -- 'Test.Ouroboros.Network.PeerSelection.prop_governor_target_active_public'
@@ -2745,11 +2759,12 @@ prop_diffusion_target_established_public_iosim
 -- the logs for all nodes running will all appear in the trace and the test
 -- property should only be valid while a given node is up and running.
 --
-prop_diffusion_target_active_public :: forall r.
+prop_diffusion_target_active_public :: TestSeed
+                                    -> forall r.
                                        SimTrace r
                                     -> Int
                                     -> Property
-prop_diffusion_target_active_public ioSimTrace traceNumber =
+prop_diffusion_target_active_public testSeed ioSimTrace traceNumber =
     let events :: [Events DiffusionTestTrace]
         events = Trace.toList
                . fmap ( Signal.eventsFromList
@@ -2781,12 +2796,14 @@ prop_diffusion_target_active_public ioSimTrace traceNumber =
         let govPublicRootPeersSig :: Signal (Set NtNAddr)
             govPublicRootPeersSig =
               selectDiffusionPeerSelectionState
+                testSeed
                 (PublicRootPeers.toSet Cardano.ExtraPeers.toSet . Governor.publicRootPeers)
                 events
 
             govActivePeersSig :: Signal (Set NtNAddr)
             govActivePeersSig =
-              selectDiffusionPeerSelectionState Governor.activePeers
+              selectDiffusionPeerSelectionState testSeed
+                                                Governor.activePeers
                                                 events
 
             publicInActive :: Signal Bool
@@ -2815,24 +2832,25 @@ prop_diffusion_target_active_public ioSimTrace traceNumber =
             True
 
 prop_diffusion_target_active_public_iosimpor
-  :: AbsBearerInfo -> DiffusionScript -> Property
-prop_diffusion_target_active_public_iosimpor
-  = testWithIOSimPOR prop_diffusion_target_active_public short_trace
+  :: TestSeed -> AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_target_active_public_iosimpor testSeed
+  = testWithIOSimPOR (prop_diffusion_target_active_public testSeed) short_trace
 
 prop_diffusion_target_active_public_iosim
-  :: AbsBearerInfo -> DiffusionScript -> Property
-prop_diffusion_target_active_public_iosim
-  = testWithIOSim prop_diffusion_target_active_public long_trace
+  :: TestSeed -> AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_target_active_public_iosim testSeed
+  = testWithIOSim (prop_diffusion_target_active_public testSeed) long_trace
 
 
 -- | This test checks the percentage of local root peers that, at some point,
 -- become active.
 --
-prop_diffusion_target_active_local :: forall r.
+prop_diffusion_target_active_local :: TestSeed
+                                   -> forall r.
                                       SimTrace r
                                    -> Int
                                    -> Property
-prop_diffusion_target_active_local ioSimTrace traceNumber =
+prop_diffusion_target_active_local testSeed ioSimTrace traceNumber =
     let events :: [Events DiffusionTestTrace]
         events = Trace.toList
                . fmap ( Signal.eventsFromList
@@ -2864,12 +2882,13 @@ prop_diffusion_target_active_local ioSimTrace traceNumber =
         let govLocalRootPeersSig :: Signal (Set NtNAddr)
             govLocalRootPeersSig =
               selectDiffusionPeerSelectionState
+                testSeed
                 (LocalRootPeers.keysSet . Governor.localRootPeers)
                 events
 
             govActivePeersSig :: Signal (Set NtNAddr)
             govActivePeersSig =
-              selectDiffusionPeerSelectionState Governor.activePeers
+              selectDiffusionPeerSelectionState testSeed Governor.activePeers
               events
 
             localInActive :: Signal Bool
@@ -2898,14 +2917,14 @@ prop_diffusion_target_active_local ioSimTrace traceNumber =
             True
 
 prop_diffusion_target_active_local_iosimpor
-  :: AbsBearerInfo -> DiffusionScript -> Property
-prop_diffusion_target_active_local_iosimpor
-  = testWithIOSimPOR prop_diffusion_target_active_local short_trace
+  :: TestSeed -> AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_target_active_local_iosimpor testSeed
+  = testWithIOSimPOR (prop_diffusion_target_active_local testSeed) short_trace
 
 prop_diffusion_target_active_local_iosim
-  :: AbsBearerInfo -> DiffusionScript -> Property
-prop_diffusion_target_active_local_iosim
-  = testWithIOSim prop_diffusion_target_active_local long_trace
+  :: TestSeed -> AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_target_active_local_iosim testSeed
+  = testWithIOSim (prop_diffusion_target_active_local testSeed) long_trace
 
 
 -- | This test checks that there's at least one root or local root peers in the
@@ -2914,11 +2933,12 @@ prop_diffusion_target_active_local_iosim
 -- This test is somewhat similar to `prop_governor_target_active_public`,
 -- however that test enforces network level timeouts.
 --
-prop_diffusion_target_active_root :: forall r.
+prop_diffusion_target_active_root :: TestSeed
+                                  -> forall r.
                                      SimTrace r
                                   -> Int
                                   -> Property
-prop_diffusion_target_active_root ioSimTrace traceNumber =
+prop_diffusion_target_active_root testSeed ioSimTrace traceNumber =
     let events :: [Events DiffusionTestTrace]
         events = Trace.toList
                . fmap ( Signal.eventsFromList
@@ -2950,12 +2970,12 @@ prop_diffusion_target_active_root ioSimTrace traceNumber =
         let govLocalRootPeersSig :: Signal (Set NtNAddr)
             govLocalRootPeersSig =
               selectDiffusionPeerSelectionState
-                (LocalRootPeers.keysSet . Governor.localRootPeers) events
+                testSeed (LocalRootPeers.keysSet . Governor.localRootPeers) events
 
             govPublicRootPeersSig :: Signal (Set NtNAddr)
             govPublicRootPeersSig =
               selectDiffusionPeerSelectionState
-                (PublicRootPeers.toSet Cardano.ExtraPeers.toSet . Governor.publicRootPeers) events
+                testSeed (PublicRootPeers.toSet Cardano.ExtraPeers.toSet . Governor.publicRootPeers) events
 
             govRootPeersSig :: Signal (Set NtNAddr)
             govRootPeersSig = Set.union <$> govLocalRootPeersSig
@@ -2963,7 +2983,7 @@ prop_diffusion_target_active_root ioSimTrace traceNumber =
 
             govActivePeersSig :: Signal (Set NtNAddr)
             govActivePeersSig =
-              selectDiffusionPeerSelectionState Governor.activePeers events
+              selectDiffusionPeerSelectionState testSeed Governor.activePeers events
 
             rootInActive :: Signal Bool
             rootInActive =
@@ -2991,42 +3011,45 @@ prop_diffusion_target_active_root ioSimTrace traceNumber =
             True
 
 prop_diffusion_target_active_root_iosimpor
-  :: AbsBearerInfo -> DiffusionScript -> Property
-prop_diffusion_target_active_root_iosimpor
-  = testWithIOSimPOR prop_diffusion_target_active_root short_trace
+  :: TestSeed -> AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_target_active_root_iosimpor testSeed
+  = testWithIOSimPOR (prop_diffusion_target_active_root testSeed) short_trace
 
 prop_diffusion_target_active_root_iosim
-  :: AbsBearerInfo -> DiffusionScript -> Property
-prop_diffusion_target_active_root_iosim
-  = testWithIOSim prop_diffusion_target_active_root long_trace
+  :: TestSeed -> AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_target_active_root_iosim testSeed
+  = testWithIOSim (prop_diffusion_target_active_root testSeed) long_trace
 
 
 -- | This test checks the percentage of public root peers that, at some point,
 -- become active, when using the 'HotDiffusionScript' generator.
 --
-prop_hot_diffusion_target_active_public :: NonFailingAbsBearerInfo
+prop_hot_diffusion_target_active_public :: TestSeed
+                                        -> NonFailingAbsBearerInfo
                                         -> HotDiffusionScript
                                         -> Property
-prop_hot_diffusion_target_active_public defaultBearerInfo (HotDiffusionScript sa dns hds) =
-  testWithIOSim prop_diffusion_target_active_public long_trace (unNFBI defaultBearerInfo) (DiffusionScript sa dns hds)
+prop_hot_diffusion_target_active_public testSeed defaultBearerInfo (HotDiffusionScript sa dns hds) =
+  testWithIOSim (prop_diffusion_target_active_public testSeed) long_trace (unNFBI defaultBearerInfo) (DiffusionScript sa dns hds)
 
 -- | This test checks the percentage of local root peers that, at some point,
 -- become active, when using the 'HotDiffusionScript' generator.
 --
-prop_hot_diffusion_target_active_local :: NonFailingAbsBearerInfo
+prop_hot_diffusion_target_active_local :: TestSeed
+                                       -> NonFailingAbsBearerInfo
                                        -> HotDiffusionScript
                                        -> Property
-prop_hot_diffusion_target_active_local defaultBearerInfo (HotDiffusionScript sa dns hds) =
-  testWithIOSim prop_diffusion_target_active_local long_trace (unNFBI defaultBearerInfo) (DiffusionScript sa dns hds)
+prop_hot_diffusion_target_active_local testSeed defaultBearerInfo (HotDiffusionScript sa dns hds) =
+  testWithIOSim (prop_diffusion_target_active_local testSeed) long_trace (unNFBI defaultBearerInfo) (DiffusionScript sa dns hds)
 
 -- | This test checks the percentage of root peers that, at some point,
 -- become active, when using the 'HotDiffusionScript' generator.
 --
-prop_hot_diffusion_target_active_root :: NonFailingAbsBearerInfo
+prop_hot_diffusion_target_active_root :: TestSeed
+                                      -> NonFailingAbsBearerInfo
                                       -> HotDiffusionScript
                                       -> Property
-prop_hot_diffusion_target_active_root defaultBearerInfo (HotDiffusionScript sa dns hds) =
-  testWithIOSim prop_diffusion_target_active_root long_trace (unNFBI defaultBearerInfo) (DiffusionScript sa dns hds)
+prop_hot_diffusion_target_active_root testSeed defaultBearerInfo (HotDiffusionScript sa dns hds) =
+  testWithIOSim (prop_diffusion_target_active_root testSeed) long_trace (unNFBI defaultBearerInfo) (DiffusionScript sa dns hds)
 
 -- | A variant of
 -- 'Test.Ouroboros.Network.PeerSelection.prop_governor_target_established_local'
@@ -3037,11 +3060,12 @@ prop_hot_diffusion_target_active_root defaultBearerInfo (HotDiffusionScript sa d
 -- We do not need separate above and below variants of this property since it
 -- is not possible to exceed the target.
 --
-prop_diffusion_target_established_local :: forall r.
+prop_diffusion_target_established_local :: TestSeed
+                                        -> forall r.
                                            SimTrace r
                                         -> Int
                                         -> Property
-prop_diffusion_target_established_local ioSimTrace traceNumber =
+prop_diffusion_target_established_local testSeed ioSimTrace traceNumber =
     let events :: [Events DiffusionTestTrace]
         events = Trace.toList
                . fmap ( Signal.eventsFromList
@@ -3073,17 +3097,19 @@ prop_diffusion_target_established_local ioSimTrace traceNumber =
     verify_target_established_local events  =
       let govLocalRootPeersSig :: Signal (LocalRootPeers.LocalRootPeers PeerTrustable NtNAddr)
           govLocalRootPeersSig =
-            selectDiffusionPeerSelectionState Governor.localRootPeers events
+            selectDiffusionPeerSelectionState testSeed Governor.localRootPeers events
 
           govInProgressPromoteColdSig :: Signal (Set NtNAddr)
           govInProgressPromoteColdSig =
             selectDiffusionPeerSelectionState
+              testSeed
               Governor.inProgressPromoteCold
               events
 
           govEstablishedPeersSig :: Signal (Set NtNAddr)
           govEstablishedPeersSig =
             selectDiffusionPeerSelectionState
+              testSeed
               (EstablishedPeers.toSet . Governor.establishedPeers)
               events
 
@@ -3133,6 +3159,7 @@ prop_diffusion_target_established_local ioSimTrace traceNumber =
           govUseBootstrapPeersSig :: Signal Bool
           govUseBootstrapPeersSig =
             selectDiffusionPeerSelectionState
+              testSeed
               (\psState ->
                  let bpf = Cardano.ExtraState.bootstrapPeersFlag $ Governor.extraState psState
                      lsj = Cardano.ExtraState.ledgerStateJudgement $ Governor.extraState psState
@@ -3195,24 +3222,25 @@ prop_diffusion_target_established_local ioSimTrace traceNumber =
 
 
 prop_diffusion_target_established_local_iosimpor
-  :: AbsBearerInfo -> DiffusionScript -> Property
-prop_diffusion_target_established_local_iosimpor
-  = testWithIOSimPOR prop_diffusion_target_established_local short_trace
+  :: TestSeed -> AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_target_established_local_iosimpor testSeed
+  = testWithIOSimPOR (prop_diffusion_target_established_local testSeed) short_trace
 
 prop_diffusion_target_established_local_iosim
-  :: AbsBearerInfo -> DiffusionScript -> Property
-prop_diffusion_target_established_local_iosim
-  = testWithIOSim prop_diffusion_target_established_local long_trace
+  :: TestSeed -> AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_target_established_local_iosim testSeed
+  = testWithIOSim (prop_diffusion_target_established_local testSeed) long_trace
 
 -- | Avoid connecting to root peers with inbound provenance and without inbound
 -- connection.
 --
 prop_diffusion_never_connect_peer_behind_firewall
-  :: forall r.
+  :: TestSeed
+  -> forall r.
      SimTrace r
   -> Int
   -> Property
-prop_diffusion_never_connect_peer_behind_firewall ioSimTrace traceNumber =
+prop_diffusion_never_connect_peer_behind_firewall testSeed ioSimTrace traceNumber =
     let events :: [Events DiffusionTestTrace]
         events = Trace.toList
                . fmap ( Signal.eventsFromList
@@ -3246,7 +3274,7 @@ prop_diffusion_never_connect_peer_behind_firewall ioSimTrace traceNumber =
       let govLocalRootPeersSig
             :: Signal (LocalRootPeers.LocalRootPeers PeerTrustable NtNAddr)
           govLocalRootPeersSig =
-            selectDiffusionPeerSelectionState Governor.localRootPeers events
+            selectDiffusionPeerSelectionState testSeed Governor.localRootPeers events
 
           govUnreachablePeersSig :: Signal (Set NtNAddr)
           govUnreachablePeersSig =
@@ -3290,14 +3318,14 @@ prop_diffusion_never_connect_peer_behind_firewall ioSimTrace traceNumber =
                 <*> govNotFoundInboundConnSig)
 
 prop_diffusion_never_connect_peer_behind_firewall_iosimpor
-  :: AbsBearerInfo -> DiffusionScript -> Property
-prop_diffusion_never_connect_peer_behind_firewall_iosimpor
-  = testWithIOSimPOR prop_diffusion_never_connect_peer_behind_firewall short_trace
+  :: TestSeed -> AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_never_connect_peer_behind_firewall_iosimpor testSeed
+  = testWithIOSimPOR (prop_diffusion_never_connect_peer_behind_firewall testSeed) short_trace
 
 prop_diffusion_never_connect_peer_behind_firewall_iosim
-  :: AbsBearerInfo -> DiffusionScript -> Property
-prop_diffusion_never_connect_peer_behind_firewall_iosim
-  = testWithIOSim prop_diffusion_never_connect_peer_behind_firewall long_trace
+  :: TestSeed -> AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_never_connect_peer_behind_firewall_iosim testSeed
+  = testWithIOSim (prop_diffusion_never_connect_peer_behind_firewall testSeed) long_trace
 
 -- | A variant of
 -- 'Test.Ouroboros.Network.PeerSelection.prop_governor_target_active_below'
@@ -3305,11 +3333,12 @@ prop_diffusion_never_connect_peer_behind_firewall_iosim
 -- the logs for all nodes running will all appear in the trace and the test
 -- property should only be valid while a given node is up and running.
 --
-prop_diffusion_target_active_below :: forall r.
+prop_diffusion_target_active_below :: TestSeed
+                                   -> forall r.
                                       SimTrace r
                                    -> Int
                                    -> Property
-prop_diffusion_target_active_below ioSimTrace traceNumber =
+prop_diffusion_target_active_below testSeed ioSimTrace traceNumber =
     let events :: [Events DiffusionTestTrace]
         events = Trace.toList
                . fmap ( Signal.eventsFromList
@@ -3341,23 +3370,26 @@ prop_diffusion_target_active_below ioSimTrace traceNumber =
     verify_target_active_below events =
       let govLocalRootPeersSig :: Signal (LocalRootPeers.LocalRootPeers PeerTrustable NtNAddr)
           govLocalRootPeersSig =
-            selectDiffusionPeerSelectionState Governor.localRootPeers events
+            selectDiffusionPeerSelectionState testSeed Governor.localRootPeers events
 
           govActiveTargetsSig :: Signal Int
           govActiveTargetsSig =
             selectDiffusionPeerSelectionState
+              testSeed
               (targetNumberOfActivePeers . Governor.targets)
               events
 
           govInProgressDemoteToColdSig :: Signal (Set NtNAddr)
           govInProgressDemoteToColdSig =
             selectDiffusionPeerSelectionState
+              testSeed
               Governor.inProgressDemoteToCold
               events
 
           govEstablishedPeersSig :: Signal (Set NtNAddr)
           govEstablishedPeersSig =
             selectDiffusionPeerSelectionState
+              testSeed
               (dropBigLedgerPeers $
                  EstablishedPeers.toSet . Governor.establishedPeers)
               events
@@ -3365,6 +3397,7 @@ prop_diffusion_target_active_below ioSimTrace traceNumber =
           govActivePeersSig :: Signal (Set NtNAddr)
           govActivePeersSig =
             selectDiffusionPeerSelectionState
+              testSeed
               (dropBigLedgerPeers Governor.activePeers)
               events
 
@@ -3404,6 +3437,7 @@ prop_diffusion_target_active_below ioSimTrace traceNumber =
           govInProgressIneligibleSig :: Signal (Set NtNAddr)
           govInProgressIneligibleSig =
             selectDiffusionPeerSelectionState
+            testSeed
             (uncurry Set.union . (    Governor.inProgressPromoteWarm
                                   &&& Governor.inProgressDemoteWarm))
             events
@@ -3473,21 +3507,22 @@ prop_diffusion_target_active_below ioSimTrace traceNumber =
             )
 
 prop_diffusion_target_active_below_iosimpor
-  :: AbsBearerInfo -> DiffusionScript -> Property
-prop_diffusion_target_active_below_iosimpor
-  = testWithIOSimPOR prop_diffusion_target_active_below short_trace
+  :: TestSeed -> AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_target_active_below_iosimpor testSeed
+  = testWithIOSimPOR (prop_diffusion_target_active_below testSeed) short_trace
 
 prop_diffusion_target_active_below_iosim
-  :: AbsBearerInfo -> DiffusionScript -> Property
-prop_diffusion_target_active_below_iosim
-  = testWithIOSim prop_diffusion_target_active_below long_trace
+  :: TestSeed -> AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_target_active_below_iosim testSeed
+  = testWithIOSim (prop_diffusion_target_active_below testSeed) long_trace
 
 
-prop_diffusion_target_active_local_below :: forall r.
+prop_diffusion_target_active_local_below :: TestSeed
+                                         -> forall r.
                                             SimTrace r
                                          -> Int
                                          -> Property
-prop_diffusion_target_active_local_below ioSimTrace traceNumber =
+prop_diffusion_target_active_local_below testSeed ioSimTrace traceNumber =
     let events :: [Events DiffusionTestTrace]
         events = Trace.toList
                . fmap ( Signal.eventsFromList
@@ -3519,21 +3554,23 @@ prop_diffusion_target_active_local_below ioSimTrace traceNumber =
     verify_target_active_below events =
       let govLocalRootPeersSig :: Signal (LocalRootPeers.LocalRootPeers PeerTrustable NtNAddr)
           govLocalRootPeersSig =
-            selectDiffusionPeerSelectionState Governor.localRootPeers events
+            selectDiffusionPeerSelectionState testSeed Governor.localRootPeers events
 
           govEstablishedPeersSig :: Signal (Set NtNAddr)
           govEstablishedPeersSig =
             selectDiffusionPeerSelectionState
+              testSeed
               (EstablishedPeers.toSet . Governor.establishedPeers)
               events
 
           govActivePeersSig :: Signal (Set NtNAddr)
           govActivePeersSig =
-            selectDiffusionPeerSelectionState Governor.activePeers events
+            selectDiffusionPeerSelectionState testSeed Governor.activePeers events
 
           govInProgressIneligibleSig :: Signal (Set NtNAddr)
           govInProgressIneligibleSig =
             selectDiffusionPeerSelectionState
+              testSeed
               (\psState -> Set.unions [ Governor.inProgressPromoteWarm psState
                                       , Governor.inProgressDemoteWarm psState
                                       , Governor.inProgressDemoteToCold psState
@@ -3588,6 +3625,7 @@ prop_diffusion_target_active_local_below ioSimTrace traceNumber =
           govUseBootstrapPeersSig :: Signal Bool
           govUseBootstrapPeersSig =
             selectDiffusionPeerSelectionState
+              testSeed
               (\psState ->
                  let bpf = Cardano.ExtraState.bootstrapPeersFlag $ Governor.extraState psState
                      lsj = Cardano.ExtraState.ledgerStateJudgement $ Governor.extraState psState
@@ -3646,14 +3684,14 @@ prop_diffusion_target_active_local_below ioSimTrace traceNumber =
                       <*> promotionOpportunitiesIgnoredTooLong)
 
 prop_diffusion_target_active_local_below_iosimpor
-  :: AbsBearerInfo -> DiffusionScript -> Property
-prop_diffusion_target_active_local_below_iosimpor
-  = testWithIOSimPOR prop_diffusion_target_active_local_below short_trace
+  :: TestSeed -> AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_target_active_local_below_iosimpor testSeed
+  = testWithIOSimPOR (prop_diffusion_target_active_local_below testSeed) short_trace
 
 prop_diffusion_target_active_local_below_iosim
-  :: AbsBearerInfo -> DiffusionScript -> Property
-prop_diffusion_target_active_local_below_iosim
-  = testWithIOSim prop_diffusion_target_active_local_below very_long_trace
+  :: TestSeed -> AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_target_active_local_below_iosim testSeed
+  = testWithIOSim (prop_diffusion_target_active_local_below testSeed) very_long_trace
 
 
 --_iosim
@@ -3924,11 +3962,12 @@ unit_diffusion_async_demotions =
 -- the logs for all nodes running will all appear in the trace and the test
 -- property should only be valid while a given node is up and running.
 --
-prop_diffusion_target_active_local_above :: forall r.
+prop_diffusion_target_active_local_above :: TestSeed
+                                         -> forall r.
                                             SimTrace r
                                          -> Int
                                          -> Property
-prop_diffusion_target_active_local_above ioSimTrace traceNumber =
+prop_diffusion_target_active_local_above testSeed ioSimTrace traceNumber =
     let events :: [Events DiffusionTestTrace]
         events = Trace.toList
                .fmap ( Signal.eventsFromList
@@ -3960,19 +3999,20 @@ prop_diffusion_target_active_local_above ioSimTrace traceNumber =
     verify_target_active_above events =
       let govLocalRootPeersSig :: Signal (LocalRootPeers.LocalRootPeers PeerTrustable NtNAddr)
           govLocalRootPeersSig =
-            selectDiffusionPeerSelectionState Governor.localRootPeers events
+            selectDiffusionPeerSelectionState testSeed Governor.localRootPeers events
 
           govActivePeersSig :: Signal (Set NtNAddr)
           govActivePeersSig =
-            selectDiffusionPeerSelectionState Governor.activePeers events
+            selectDiffusionPeerSelectionState testSeed Governor.activePeers events
 
           govActiveBigPeersSig :: Signal (Set NtNAddr)
           govActiveBigPeersSig =
-            selectDiffusionPeerSelectionState (dropBigLedgerPeers Governor.activePeers) events
+            selectDiffusionPeerSelectionState testSeed (dropBigLedgerPeers Governor.activePeers) events
 
           govInProgressIneligibleSig :: Signal (Set NtNAddr)
           govInProgressIneligibleSig =
             selectDiffusionPeerSelectionState
+            testSeed
             (uncurry Set.union . (    Governor.inProgressDemoteToCold
                                   &&& Governor.inProgressDemoteHot))
             events
@@ -4013,14 +4053,14 @@ prop_diffusion_target_active_local_above ioSimTrace traceNumber =
                     <*> demotionOpportunitiesIgnoredTooLong)
 
 prop_diffusion_target_active_local_above_iosimpor
-  :: AbsBearerInfo -> DiffusionScript -> Property
-prop_diffusion_target_active_local_above_iosimpor
-  = testWithIOSimPOR prop_diffusion_target_active_local_above short_trace
+  :: TestSeed -> AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_target_active_local_above_iosimpor testSeed
+  = testWithIOSimPOR (prop_diffusion_target_active_local_above testSeed) short_trace
 
 prop_diffusion_target_active_local_above_iosim
-  :: AbsBearerInfo -> DiffusionScript -> Property
-prop_diffusion_target_active_local_above_iosim
-  = testWithIOSim prop_diffusion_target_active_local_above long_trace
+  :: TestSeed -> AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_target_active_local_above_iosim testSeed
+  = testWithIOSim (prop_diffusion_target_active_local_above testSeed) long_trace
 
 
 -- | A variant of ouroboros-network-framework
@@ -4373,8 +4413,8 @@ prop_unit_4258 =
 -- 'threadDelay' to 'evalGuardedDecisions' in the outbound governor code to
 -- force it to go to the back of the queue everytime.
 --
-prop_unit_reconnect :: Property
-prop_unit_reconnect =
+prop_unit_reconnect :: TestSeed -> Property
+prop_unit_reconnect testSeed =
   let diffScript =
         DiffusionScript
           (SimArgs 1 10 defaultTxDecisionPolicy)
@@ -4468,6 +4508,7 @@ prop_unit_reconnect =
       let govEstablishedPeersSig :: Signal (Set NtNAddr)
           govEstablishedPeersSig =
             selectDiffusionPeerSelectionState
+              testSeed
               (EstablishedPeers.toSet . Governor.establishedPeers)
               (wnEvent <$> events)
 
@@ -4994,11 +5035,12 @@ prop_churn_notimeouts_iosim
 --       excess (established - active) or (known - established), whichever is applicable.
 -- 3. Checks that targets change when in 'GenesisMode' and 'LedgerStateJudgement' changes.
 --
-prop_churn_targets_bounds :: [(NtNAddr, (PeerSelectionTargets, PeerSelectionTargets))]
+prop_churn_targets_bounds :: TestSeed
+                          -> [(NtNAddr, (PeerSelectionTargets, PeerSelectionTargets))]
                           -> SimTrace DiffSimResult
                           -> Int
                           -> Property
-prop_churn_targets_bounds baseTargetsMap ioSimTrace traceNumber =
+prop_churn_targets_bounds testSeed baseTargetsMap ioSimTrace traceNumber =
    let events :: [Events (NtNAddr, DiffusionTestTrace)]
        events = Trace.toList
               . fmap ( Signal.eventsFromList
@@ -5086,18 +5128,20 @@ prop_churn_targets_bounds baseTargetsMap ioSimTrace traceNumber =
            let targetsChangeSig :: Signal (NtNAddr, PeerSelectionTargets)
                targetsChangeSig =
                  selectDiffusionPeerSelectionStateWithName
-                   targets evs
+                   testSeed targets evs
 
                -- The last known consensus mode
                consensusModeSig :: Signal ConsensusMode
                consensusModeSig =
                  selectDiffusionPeerSelectionState
+                   testSeed
                    (Cardano.ExtraState.consensusMode . Governor.extraState)
                    (snd <$> evs)
 
                govUseBootstrapPeersSig :: Signal (LedgerStateJudgement, Bool, Bool)
                govUseBootstrapPeersSig =
                  selectDiffusionPeerSelectionState
+                   testSeed
                    (\psState ->
                       let bpf = Cardano.ExtraState.bootstrapPeersFlag $ Governor.extraState psState
                           lsj = Cardano.ExtraState.ledgerStateJudgement $ Governor.extraState psState
@@ -5158,20 +5202,20 @@ prop_churn_targets_bounds baseTargetsMap ioSimTrace traceNumber =
 
 
 prop_churn_targets_bounds_cardano_iosim
-  :: AbsBearerInfo -> DiffusionScript -> Property
-prop_churn_targets_bounds_cardano_iosim bi ds@(DiffusionScript _ _ nodes) =
+  :: TestSeed -> AbsBearerInfo -> DiffusionScript -> Property
+prop_churn_targets_bounds_cardano_iosim testSeed bi ds@(DiffusionScript _ _ nodes) =
   let baseTargets = [ (naAddr nodeArgs, naPeerTargets nodeArgs)
                     | (nodeArgs, _) <- nodes
                     ]
-  in testWithIOSim (prop_churn_targets_bounds baseTargets) long_trace bi ds
+  in testWithIOSim (prop_churn_targets_bounds testSeed baseTargets) long_trace bi ds
 
 prop_churn_targets_bounds_ouroboros_iosim
-  :: AbsBearerInfo -> DiffusionScript -> Property
-prop_churn_targets_bounds_ouroboros_iosim bi ds@(DiffusionScript _ _ nodes) =
+  :: TestSeed -> AbsBearerInfo -> DiffusionScript -> Property
+prop_churn_targets_bounds_ouroboros_iosim testSeed bi ds@(DiffusionScript _ _ nodes) =
   let baseTargets = [ (naAddr nodeArgs, naPeerTargets nodeArgs)
                     | (nodeArgs, _) <- nodes
                     ]
-  in testWithIOSim' diffusionSimulation' (prop_churn_targets_bounds baseTargets) long_trace bi ds
+  in testWithIOSim' diffusionSimulation' (prop_churn_targets_bounds testSeed baseTargets) long_trace bi ds
 
 -- | Verify that churn trace consists of repeated list of actions:
 --
@@ -5742,15 +5786,15 @@ selectDiffusionSimulationTrace = Signal.selectEvents
 
 selectDiffusionPeerSelectionStateWithName
   :: Eq a
-  => (forall peerconn.
+  => TestSeed
+     -> (forall peerconn.
          Governor.PeerSelectionState Cardano.ExtraState PeerTrustable
                                      (Cardano.ExtraPeers NtNAddr) NtNAddr peerconn
       -> a)
   -> Events (NtNAddr, DiffusionTestTrace)
   -> Signal (NtNAddr, a)
-selectDiffusionPeerSelectionStateWithName f =
+selectDiffusionPeerSelectionStateWithName (TestSeed seed) f =
     Signal.nub
-  -- TODO: #3182 Rng seed should come from quickcheck.
   . Signal.scanl (\z ->
                     maybe z \(addr, trace) -> either (TestAddress UnusedAddr,) (addr,) trace)
                  offState
@@ -5768,22 +5812,22 @@ selectDiffusionPeerSelectionStateWithName f =
     offState = (TestAddress UnusedAddr, initial PraosMode)
     initial consensusMode =
       f $! Governor.emptyPeerSelectionState
-                      (mkStdGen 42)
+                      (mkStdGen seed)
                       (Cardano.ExtraState.empty consensusMode (NumberOfBigLedgerPeers 0))
                       Cardano.ExtraPeers.empty
 
 
 selectDiffusionPeerSelectionState
   :: Eq a
-  => (forall peerconn.
+  => TestSeed
+     -> (forall peerconn.
          Governor.PeerSelectionState Cardano.ExtraState PeerTrustable
                                      (ExtraPeers NtNAddr) NtNAddr peerconn
       -> a)
   -> Events DiffusionTestTrace
   -> Signal a
-selectDiffusionPeerSelectionState f =
+selectDiffusionPeerSelectionState (TestSeed seed) f =
     Signal.nub
-  -- TODO: #3182 Rng seed should come from quickcheck.
   . Signal.scanl fromMaybe offState
   . Signal.fromEvents
   . Signal.selectEvents (\case
@@ -5796,7 +5840,7 @@ selectDiffusionPeerSelectionState f =
     offState = initial PraosMode
     initial consensusMode =
       f $! Governor.emptyPeerSelectionState
-                      (mkStdGen 42)
+                      (mkStdGen seed)
                       (Cardano.ExtraState.empty consensusMode (NumberOfBigLedgerPeers 0))
                       Cardano.ExtraPeers.empty
 
