@@ -95,6 +95,7 @@ tests =
     , testCaseSteps "nextPeerAction claims a released tx from another advertiser" unit_nextPeerAction_claimsRejectedTxFromOtherAdvertiser
     , testCaseSteps "nextPeerAction claims a tx once the score delay threshold has elapsed" unit_nextPeerAction_claimsAtScoreDelayThreshold
     , testCaseSteps "nextPeerAction requests other work despite a blocked buffered tx" unit_nextPeerAction_requestsOtherWorkDespiteBlockedBufferedTx
+    , testCaseSteps "nextPeerAction submits buffered bodies across a resolved-elsewhere gap" unit_nextPeerAction_submitsBufferedAcrossResolvedGap
     , testProperty "nextPeerAction keeps non-owner txids unacked until resolved" prop_nextPeerAction_nonOwnerWaitsUntilResolved
     , testProperty "nextPeerAction claims a claimable tx for the best idle advertiser" prop_nextPeerAction_claimsClaimableTx
     ]
@@ -1557,6 +1558,64 @@ unit_nextPeerAction_acksSafePrefixBeforeBlockedBufferedTx step = do
     -- otherPeer is referenced only to express the multi-peer setup.
     _ <- pure (otherPeer :: PeerAddr)
     pure ()
+
+-- | When a peer's unack queue has a buffered body, then a
+-- resolved-elsewhere gap (the txid has no entry in 'sharedTxTable'),
+-- then another buffered body, 'pickBufferedTxsToSubmit' must skip the
+-- gap and emit both buffered bodies in one 'PeerSubmitTxs' batch.
+--
+-- Regression guard for the Nothing-vs-Just distinction in
+-- 'pickBufferedTxsToSubmit': collapsing the 'Nothing' branch into
+-- "stop" leaves the second buffered body unsubmitted, breaking
+-- progress when an intermediate txid was resolved by another peer.
+unit_nextPeerAction_submitsBufferedAcrossResolvedGap
+  :: (String -> IO ()) -> Assertion
+unit_nextPeerAction_submitsBufferedAcrossResolvedGap step = do
+    step "Set up: 3 unack txids, bodies buffered for 1st and 3rd; 2nd resolved elsewhere"
+    let peerAddr  = 7 :: PeerAddr
+        key1      = TxKey 1
+        key2      = TxKey 2
+        key3      = TxKey 3
+        k1        = unTxKey key1
+        k3        = unTxKey key3
+        body1     = mkTx 1 (mkSize (Positive 10))
+        body3     = mkTx 3 (mkSize (Positive 10))
+        policy    = defaultTxDecisionPolicy
+        leaseTime = addTime 10 now
+        entry     = TxEntry
+          { txLease                        = TxLeased peerAddr leaseTime
+          , txAttempt                      = 1
+          , txInSubmission                 = False
+          , currentMaxInflightMultiplicity = txInflightMultiplicity policy
+          }
+        sharedState = emptySharedTxState
+          { sharedTxTable   = IntMap.fromList [(k1, entry), (k3, entry)]
+          , sharedTxIdToKey = Map.fromList
+              [ (getRawTxId (1 :: TxId), key1)
+              , (getRawTxId (2 :: TxId), key2)
+              , (getRawTxId (3 :: TxId), key3)
+              ]
+          , sharedKeyToTxId = IntMap.fromList
+              [(k1, 1 :: TxId), (unTxKey key2, 2), (k3, 3)]
+          , sharedNextTxKey = 4
+          }
+        peerState = emptyPeerTxLocalState
+          { peerUnacknowledgedTxIds = StrictSeq.fromList [key1, key2, key3]
+          , peerDownloadedTxs       = IntMap.fromList [(k1, body1), (k3, body3)]
+          }
+        peerInFlight = emptyPeerTxInFlight
+          { pifLeased     = IntSet.fromList [k1, k3]
+          , pifAttempting = IntSet.fromList [k1, k3]
+          }
+
+    step "Run nextPeerAction"
+    let (action, _, _, _) =
+          nextPeerAction now policy peerAddr peerState peerInFlight sharedState
+
+    step "Both buffered bodies submitted in one batch"
+    case action of
+      PeerSubmitTxs ks -> ks @?= [key1, key3]
+      other            -> assertFailure ("unexpected action: " ++ show other)
 
 -- | When peer A is at its inflight-size cap and a fresh txid arrives,
 -- peer A cannot claim; once peer B advertises the same key, peer B can
