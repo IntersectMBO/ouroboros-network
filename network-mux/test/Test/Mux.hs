@@ -31,7 +31,7 @@ import Data.ByteString.Lazy.Char8 qualified as BL8 (pack)
 import Data.List (dropWhileEnd, nub)
 import Data.List qualified as List
 import Data.Map qualified as M
-import Data.Maybe (isNothing)
+import Data.Maybe (fromMaybe, isNothing)
 import Data.Tuple (swap)
 import Data.Word
 import System.Random.SplitMix qualified as SM
@@ -2379,6 +2379,7 @@ prop_mux_trailing_bytes
      , MonadMask          m
      , MonadTimer         m
      , MonadThrow    (STM m)
+     , MonadSay           m
      )
   => BL.ByteString
   -> NonEmptyByteString
@@ -2408,7 +2409,8 @@ prop_mux_trailing_bytes reminder (NonEmptyByteString received) = do
       -- remote side sending additional data after restarting the mini-protocol.
       -- The initial data for this conversation is in the trailing bytes, which
       -- are assumed to be already received. We inject them in the next step.
-      atomically $ writeTBQueue mux_r
+      atomically
+        $ writeTBQueue mux_r
         $ Mx.encodeSDU
         $ Mx.SDU { Mx.msHeader = Mx.SDUHeader {
                      Mx.mhTimestamp = Mx.RemoteClockModel 0,
@@ -2419,9 +2421,8 @@ prop_mux_trailing_bytes reminder (NonEmptyByteString received) = do
                    Mx.msBlob = received
                 }
 
-      -- 2. Run a mini-protocol which returns `reminder` as trailing bytes.
-      -- This represents the responder side stopping the mini-protocol with
-      -- trailing bytes.
+      -- 2. Run a mini-protocol which returns `trailing` bytes. This represents
+      -- the responder side stopping the mini-protocol with trailing bytes.
       _ <- atomically =<< Mx.runMiniProtocol
               mux
               miniProtocolNum
@@ -2439,11 +2440,22 @@ prop_mux_trailing_bytes reminder (NonEmptyByteString received) = do
               Mx.StartEagerly
               (\chan -> do
                 labelThisThread "resp:2"
-                a <- Mx.recv chan
-                return (a, Nothing)
+                let expectedLen = BL.length reminder + BL.length received
+                    -- `recv` returns whatever is currently available in the
+                    -- ingress queue without waiting for more.  If the trailing
+                    -- bytes arrive before the demuxer has processed the SDU,
+                    -- a single `recv` would return only the trailing bytes and
+                    -- miss the SDU payload, making the test non-deterministic.
+                    go acc
+                      | BL.length acc >= expectedLen = return acc
+                      | otherwise = do
+                          mbs <- Mx.recv chan
+                          go (acc <> fromMaybe BL.empty mbs)
+                a <- go BL.empty
+                return (Just a, Nothing)
               )
 
-      -- 4. Verify that we received trailing bytes were injected before the
+      -- 4. Verify that the trailing bytes were injected before the
       -- additional data (`received` bytes).
       case r of
         Left e    -> throwIO e
@@ -2460,7 +2472,7 @@ prop_mux_trailing_bytes_iosim reminder received =
   let trace = runSimTrace $ prop_mux_trailing_bytes reminder received
   in counterexample (ppTrace_ trace) (case traceResult True trace of
                                        Left e  -> counterexample (show e) False
-                                       Right r -> r)
+                                       Right r -> property r)
 
 prop_mux_trailing_bytes_io :: BL.ByteString
                            -> NonEmptyByteString
