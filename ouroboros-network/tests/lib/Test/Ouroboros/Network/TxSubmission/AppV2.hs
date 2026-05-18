@@ -295,10 +295,11 @@ runTxSubmission tracer _tracerTxLogic countersTracer inboundTracer st0
       withAsyncAll (zip clients servers) $ \as -> do
         let serverAsyncs = Map.fromList
                          $ zip (Map.keys st0) (snd <$> as)
-        traverse_ (\(addr, t) -> void $ async $ do
-                    threadDelay t
-                    mapM_ cancel (Map.lookup addr serverAsyncs))
-                  (Map.toList cancelSchedule)
+        cancelAids <- traverse
+                        (\(addr, t) -> async $ do
+                           threadDelay t
+                           mapM_ cancel (Map.lookup addr serverAsyncs))
+                        (Map.toList cancelSchedule)
         _ <- waitAllServers as
 
         -- All peers have scrubbed their per-peer state via the
@@ -309,6 +310,7 @@ runTxSubmission tracer _tracerTxLogic countersTracer inboundTracer st0
         threadDelay (bufferedTxsMinLifetime txDecisionPolicy + 1)
 
         cancel countersAid
+        traverse_ cancel cancelAids
 
         finalSharedState <- readTVarIO sharedTxStateVar
         inmp     <- readMempool inboundMempool
@@ -1098,18 +1100,20 @@ txSubmissionSimulationDisconnect
     (do threadDelay (simDelayTime + 1000)
         atomically (traverse_ (`writeTVar` Terminate) controlMessageVars)
     ) \_ -> do
-      -- Fire-and-forget clean exits.
-      traverse_ (\(addr, (t, _)) ->
-                  case Map.lookup addr disconnectVars of
-                    Just v -> void $ async $ do
-                                threadDelay t
-                                atomically (writeTVar v Terminate)
-                    Nothing -> pure ())
-                [ x | x@(_, (_, ExitClean)) <- Map.toList schedule ]
+      disconnectAids <-
+        traverse (\(addr, (t, _)) ->
+                    case Map.lookup addr disconnectVars of
+                      Just v -> async $ do
+                                  threadDelay t
+                                  atomically (writeTVar v Terminate)
+                      Nothing -> async (pure ()))
+                 [ x | x@(_, (_, ExitClean)) <- Map.toList schedule ]
       let tracer :: forall a. (Show a, Typeable a) => Tracer (IOSim s) a
           tracer = dynamicTracer <> sayTracer
-      runTxSubmission tracer tracer tracer tracer combinedState peerImpairment
-                      cancelSchedule txDecisionPolicy
+      result <- runTxSubmission tracer tracer tracer tracer combinedState peerImpairment
+                                cancelSchedule txDecisionPolicy
+      traverse_ cancel disconnectAids
+      pure result
 
 
 -- | Resilience to peer disconnects: with a non-empty proper subset of peers
