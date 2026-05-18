@@ -96,19 +96,26 @@ tests = testGroup "AppV2"
           prop_TxSubmissionImpairmentState_shrinkSmaller
       , testProperty "TxSubmissionImpairmentState/shrinkNoDups"
           prop_TxSubmissionImpairmentState_shrinkNoDups
+      , testProperty "TxSubmissionDisconnectState/validGen"
+          prop_TxSubmissionDisconnectState_validGen
+      , testProperty "TxSubmissionDisconnectState/shrinkValid"
+          prop_TxSubmissionDisconnectState_shrinkValid
+      , testProperty "TxSubmissionDisconnectState/shrinkSmaller"
+          prop_TxSubmissionDisconnectState_shrinkSmaller
+      , testProperty "TxSubmissionDisconnectState/shrinkNoDups"
+          prop_TxSubmissionDisconnectState_shrinkNoDups
       ]
   , testProperty "txSubmission"          prop_txSubmission
   , testProperty "inflight"              prop_txSubmission_inflight
   , testProperty "resilientToImpairment" prop_txSubmission_resilientToImpairment
+  , testProperty "peerDisconnect"        prop_txSubmission_peerDisconnect
   , testProperty "SharedTxState" $ withMaxSize 25
                                  $ withMaxSuccess 25
                                  prop_sharedTxStateInvariant
-  , testCase     "counterEmission/cadence"   unit_counterEmission_cadence
-  , testCase     "score/wellBehavedStaysAtZero"
-                                              unit_score_wellBehavedStaysAtZero
-  , testCase     "score/persistentBadStaysHigh"
-                                              unit_score_persistentBadStaysHigh
-  , testCase     "score/recoversAfterBurst"   unit_score_recoversAfterBurst
+  , testCase     "counterEmission/cadence"      unit_counterEmission_cadence
+  , testCase     "score/wellBehavedStaysAtZero" unit_score_wellBehavedStaysAtZero
+  , testCase     "score/persistentBadStaysHigh" unit_score_persistentBadStaysHigh
+  , testCase     "score/recoversAfterBurst"     unit_score_recoversAfterBurst
   ]
 
 data TestVersion = TestVersion
@@ -213,10 +220,14 @@ runTxSubmission
                   , Maybe DiffTime
                   )
   -> Map peeraddr Impairment
+  -> Map peeraddr DiffTime
+     -- ^ cancel the server async for each listed peer at the given
+     --   time, simulating an abrupt disconnect mid-protocol
   -> TxDecisionPolicy
   -> m ([Tx txid], [[Tx txid]], SharedTxState peeraddr txid)
   -- ^ inbound mempool, outbound mempools, final shared state
-runTxSubmission tracer _tracerTxLogic countersTracer inboundTracer st0 peerImpairmentMap txDecisionPolicy = do
+runTxSubmission tracer _tracerTxLogic countersTracer inboundTracer st0
+                peerImpairmentMap cancelSchedule txDecisionPolicy = do
     st <- traverse (\(b, c, d, e) -> do
         mempool <- newMempool b
         (outChannel, inChannel) <- createConnectedChannels
@@ -281,6 +292,12 @@ runTxSubmission tracer _tracerTxLogic countersTracer inboundTracer st0 peerImpai
                                   txCountersVar sharedTxStateVar inFlightRegistry)
               \countersAid ->
       withAsyncAll (zip clients servers) $ \as -> do
+        let serverAsyncs = Map.fromList
+                         $ zip (Map.keys st0) (snd <$> as)
+        traverse_ (\(addr, t) -> void $ async $ do
+                    threadDelay t
+                    mapM_ cancel (Map.lookup addr serverAsyncs))
+                  (Map.toList cancelSchedule)
         _ <- waitAllServers as
 
         -- All peers have scrubbed their per-peer state via the
@@ -361,7 +378,8 @@ txSubmissionSimulation (TxSubmissionState state peerImpairment txDecisionPolicy)
     ) \_ -> do
       let tracer :: forall a. (Show a, Typeable a) => Tracer (IOSim s) a
           tracer = dynamicTracer <> sayTracer -- <> verboseTracer <> debugTracer
-      runTxSubmission tracer tracer tracer tracer state'' peerImpairment txDecisionPolicy
+      runTxSubmission tracer tracer tracer tracer state'' peerImpairment
+                      Map.empty txDecisionPolicy
 
 filterValidTxs :: [Tx txid] -> [Tx txid]
 filterValidTxs
@@ -927,6 +945,264 @@ prop_TxSubmissionImpairmentState_shrinkSmaller st = conjoin
 
 prop_TxSubmissionImpairmentState_shrinkNoDups :: TxSubmissionImpairmentState -> Property
 prop_TxSubmissionImpairmentState_shrinkNoDups st =
+  let shrunk = shrink st in
+      counterexample ("duplicates: " ++ show (shrunk List.\\ List.nub shrunk))
+    $ length (List.nub shrunk) === length shrunk
+
+
+-- | How a disconnected peer leaves the simulation.
+data ExitMethod = ExitClean | ExitCancel
+  deriving (Eq, Show, Bounded, Enum)
+
+-- | A 'TxSubmissionState' plus a per-peer early-exit schedule.
+-- Invariants (encoded in the 'Arbitrary' instance):
+--
+-- * @peerMap@ has at least two peers.
+-- * The schedule covers a non-empty proper subset of @peerMap@'s keys
+--   (at least one peer runs to the end).
+-- * Each scheduled time is in @[0.5, 5.0]@ seconds.
+data TxSubmissionDisconnectState =
+    TxSubmissionDisconnectState
+      { tdsBase     :: TxSubmissionState
+      , tdsSchedule :: Map Int (DiffTime, ExitMethod)
+      }
+  deriving (Eq, Show)
+
+instance Arbitrary TxSubmissionDisconnectState where
+  arbitrary = do
+    base <- arbitrary `suchThat` ((>= 2) . Map.size . peerMap)
+    sch  <- genDisconnectSchedule (Map.keys (peerMap base))
+    pure (TxSubmissionDisconnectState base sch)
+
+  shrink (TxSubmissionDisconnectState st sch) =
+       [ TxSubmissionDisconnectState st' sch'
+       | st' <- shrink st
+       , Map.size (peerMap st') >= 2
+       , let sch' = Map.restrictKeys sch (Map.keysSet (peerMap st'))
+       , not (Map.null sch')
+       , Map.size sch' < Map.size (peerMap st')
+       ]
+    ++ [ TxSubmissionDisconnectState st sch'
+       | sch' <- shrinkDisconnectSchedule sch
+       , not (Map.null sch')
+       ]
+
+validTxSubmissionDisconnectState :: TxSubmissionDisconnectState -> Bool
+validTxSubmissionDisconnectState (TxSubmissionDisconnectState st sch) =
+     validTxSubmissionState st
+  && Map.size (peerMap st) >= 2
+  && not (Map.null sch)
+  && Map.keysSet sch `Set.isSubsetOf` Map.keysSet (peerMap st)
+  && Map.size sch < Map.size (peerMap st)
+  && all (\(t, _) -> t >= 0.5) (Map.elems sch)
+
+genDisconnectSchedule :: [Int] -> Gen (Map Int (DiffTime, ExitMethod))
+genDisconnectSchedule addrs
+  | length addrs < 2 = pure Map.empty
+  | otherwise = do
+      n        <- choose (1, length addrs - 1)
+      shuffled <- shuffle addrs
+      let chosen = take n shuffled
+      entries <- traverse (const genEntry) chosen
+      pure (Map.fromList (zip chosen entries))
+  where
+    genEntry = do
+      t <- frequency
+             [ (1, choose (0.5 :: Double,  3.0))
+             , (1, choose (3.0 :: Double,  5.0))
+             , (3, choose (5.0 :: Double, 10.0))
+             ]
+      m <- elements [ExitClean, ExitCancel]
+      pure (realToFrac t, m)
+
+-- Drop a scheduled peer, simplify 'ExitCancel' to 'ExitClean', or
+-- shrink the scheduled time toward 0.5 (the generator floor).
+shrinkDisconnectSchedule :: Map Int (DiffTime, ExitMethod)
+                    -> [Map Int (DiffTime, ExitMethod)]
+shrinkDisconnectSchedule m = List.nub $
+     [ Map.delete k m | k <- Map.keys m, Map.size m > 1 ]
+  ++ [ Map.insert k (t, ExitClean) m
+     | (k, (t, ExitCancel)) <- Map.toList m
+     ]
+  ++ [ Map.insert k (realToFrac t', method) m
+     | (k, (t, method)) <- Map.toList m
+     , t' <- shrink (realToFrac t :: Double)
+     , t' >= 0.5
+     , realToFrac t' /= t
+     ]
+
+-- | Variant of 'txSubmissionSimulation' that lets each peer exit early
+-- via the supplied schedule.
+--
+-- * 'ExitClean' peers get a second per-peer control TVar; their control
+--   STM combines it with the global one so a 'Terminate' from either
+--   source makes the outbound send 'MsgDone'.
+-- * 'ExitCancel' peers are passed through to 'runTxSubmission' which
+--   cancels the server async at the scheduled time, simulating an
+--   abrupt disconnect.
+txSubmissionSimulationDisconnect
+  :: forall s. TxSubmissionDisconnectState
+  -> IOSim s ( [Tx Int], [[Tx Int]], SharedTxState PeerAddr TxId )
+txSubmissionSimulationDisconnect
+    (TxSubmissionDisconnectState
+       (TxSubmissionState state peerImpairment txDecisionPolicy) schedule) = do
+  state' <- traverse (\(txs, mbOutDelay, mbInDelay) -> do
+                      let mbOutDelayTime = getSmallDelay . getPositive <$> mbOutDelay
+                          mbInDelayTime  = getSmallDelay . getPositive <$> mbInDelay
+                      controlMessageVar <- newTVarIO Continue
+                      return ( txs
+                             , controlMessageVar
+                             , mbOutDelayTime
+                             , mbInDelayTime
+                             )
+                    )
+                    state
+
+  -- Per-peer disconnect TVar for the clean-exit subset.
+  disconnectVars <- Map.fromList <$> sequence
+                  [ (addr,) <$> newTVarIO Continue
+                  | (addr, (_, ExitClean)) <- Map.toList schedule
+                  ]
+
+  let cancelSchedule = Map.fromList
+                         [ (addr, t)
+                         | (addr, (t, ExitCancel)) <- Map.toList schedule
+                         ]
+
+      -- Build a per-peer combined control STM that yields 'Terminate'
+      -- when either the global or the per-peer disconnect TVar says so.
+      combinedState :: Map PeerAddr ([Tx TxId], ControlMessageSTM (IOSim s), Maybe DiffTime, Maybe DiffTime)
+      combinedState = Map.mapWithKey
+        (\addr (txs, var, mbOutDelay, mbInDelay) ->
+           let stm = case Map.lookup addr disconnectVars of
+                       Nothing       -> readTVar var
+                       Just disconnectVar -> do
+                         g <- readTVar var
+                         c <- readTVar disconnectVar
+                         pure (if g == Terminate || c == Terminate
+                                  then Terminate else g)
+           in (txs, stm, mbOutDelay, mbInDelay))
+        state'
+
+      simDelayTime = Map.foldl' (\m (txs, _, mbInDelay, mbOutDelay) ->
+                                  max m ( fromMaybe 1 (max <$> mbInDelay <*> mbOutDelay)
+                                        * realToFrac (length txs `div` 4)
+                                        )
+                                )
+                                0
+                                state'
+      controlMessageVars = (\(_, x, _, _) -> x) <$> Map.elems state'
+
+  withAsync
+    (do threadDelay (simDelayTime + 1000)
+        atomically (traverse_ (`writeTVar` Terminate) controlMessageVars)
+    ) \_ -> do
+      -- Fire-and-forget clean exits.
+      traverse_ (\(addr, (t, _)) ->
+                  case Map.lookup addr disconnectVars of
+                    Just v -> void $ async $ do
+                                threadDelay t
+                                atomically (writeTVar v Terminate)
+                    Nothing -> pure ())
+                [ x | x@(_, (_, ExitClean)) <- Map.toList schedule ]
+      let tracer :: forall a. (Show a, Typeable a) => Tracer (IOSim s) a
+          tracer = dynamicTracer <> sayTracer
+      runTxSubmission tracer tracer tracer tracer combinedState peerImpairment
+                      cancelSchedule txDecisionPolicy
+
+
+-- | Resilience to peer disconnects: with a non-empty proper subset of peers
+-- exiting early (cleanly via 'MsgDone' or abruptly via cancellation),
+-- the surviving peers' valid txs still reach the inbound mempool, no
+-- adversarial txid leaks in, counters stay consistent, and the
+-- 'SharedTxState' is fully reclaimed at end of simulation.
+--
+-- Exercises the 'withPeer' bracket finalizer scrub on mid-protocol
+-- exit, including 'pifSubmitting'-non-empty paths reached when a peer
+-- is cancelled while bodies are in submission.
+prop_txSubmission_peerDisconnect :: TxSubmissionDisconnectState -> Property
+prop_txSubmission_peerDisconnect cs@(TxSubmissionDisconnectState st schedule) =
+    let allAddrs    = Map.keysSet (peerMap st)
+        disconnected = Map.keysSet schedule
+        survivors    = allAddrs `Set.difference` disconnected
+        survivorTxs = [ txs | addr <- Set.toList survivors
+                            , let (txs, _, _) = peerMap st Map.! addr ]
+        allOutIds   = Set.fromList
+                    $ concatMap (\(txs, _, _) -> getTxId <$> txs)
+                    $ Map.elems (peerMap st)
+        tr          = runSimTrace (txSubmissionSimulationDisconnect cs)
+        -- Earliest inbound trace time per peer. A 'cancel-active'
+        -- classification means the inbound emitted at least one event
+        -- before the scheduled cancel, so the bracket finalizer
+        -- exercised the scrub-with-non-empty-state path; 'cancel-idle'
+        -- means the cancel hit a server that had not progressed past
+        -- 'serverIdle'.
+        inboundFirstActivity :: Map Int Time
+        inboundFirstActivity =
+          Map.fromListWith min
+            [ (addr, t)
+            | (t, PeerInboundTrace addr _)
+                <- selectTraceEventsDynamicWithTime tr
+                    :: [(Time, PeerInboundTraceType)]
+            ]
+        cancelClassifications :: [String]
+        cancelClassifications =
+          [ case Map.lookup addr inboundFirstActivity of
+              Just firstActivity
+                | firstActivity < Time t -> "cancel-active"
+              _                          -> "cancel-idle"
+          | (addr, (t, ExitCancel)) <- Map.toList schedule
+          ]
+    in label ("disconnected peers: " ++ show (Map.size schedule))
+     $ label ("surviving peers: " ++ show (Set.size survivors))
+     $ tabulate "exit method" (show . snd <$> Map.elems schedule)
+     $ tabulate "cancel timing" cancelClassifications
+     $ case traceResult True tr of
+         Left e -> counterexample (show e)
+                 . counterexample (ppSayTrace tr)
+                 $ False
+         Right (inmp, _, finalState) ->
+             counterexample (ppSayTrace tr)
+           $ conjoin (validateSurvivor inmp `map` survivorTxs)
+             .&&. noContamination allOutIds inmp
+             .&&. prop_counterInvariants tr
+             .&&. prop_sharedStateClean finalState
+  where
+    validateSurvivor :: [Tx Int] -> [Tx Int] -> Property
+    validateSurvivor inmp outmp =
+      let outUnique = nubBy ((==) `on` getTxId) outmp
+          outValid  = filterValidTxs outmp in
+      if length outUnique == length outmp && length outValid == length outmp
+        then
+          let outIds  = Set.fromList (getTxId <$> outValid)
+              inIds   = Set.fromList (getTxId <$> inmp)
+              missing = outIds `Set.difference` inIds in
+            counterexample ("missing: " ++ show (Set.toList missing))
+          $ property (Set.null missing)
+        else
+          property True
+
+    noContamination :: Set.Set Int -> [Tx Int] -> Property
+    noContamination allOutIds inmp =
+      let inIds  = Set.fromList (getTxId <$> inmp)
+          extras = inIds `Set.difference` allOutIds in
+        counterexample ("contaminating txids: " ++ show (Set.toList extras))
+      $ property (Set.null extras)
+
+prop_TxSubmissionDisconnectState_validGen :: TxSubmissionDisconnectState -> Property
+prop_TxSubmissionDisconnectState_validGen st =
+    counterexample (show st) $ validTxSubmissionDisconnectState st
+
+prop_TxSubmissionDisconnectState_shrinkValid :: TxSubmissionDisconnectState -> Property
+prop_TxSubmissionDisconnectState_shrinkValid st = conjoin
+  [ counterexample (show s) (validTxSubmissionDisconnectState s) | s <- shrink st ]
+
+prop_TxSubmissionDisconnectState_shrinkSmaller :: TxSubmissionDisconnectState -> Property
+prop_TxSubmissionDisconnectState_shrinkSmaller st = conjoin
+  [ counterexample ("shrink emitted self: " ++ show s) (s /= st) | s <- shrink st ]
+
+prop_TxSubmissionDisconnectState_shrinkNoDups :: TxSubmissionDisconnectState -> Property
+prop_TxSubmissionDisconnectState_shrinkNoDups st =
   let shrunk = shrink st in
       counterexample ("duplicates: " ++ show (shrunk List.\\ List.nub shrunk))
     $ length (List.nub shrunk) === length shrunk
