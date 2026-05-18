@@ -106,8 +106,8 @@
               (name: jobs: {
                 all = pkgs.releaseTools.aggregate {
                   name = "${name}-all";
-                  meta.description = "All jobs for ${name}";
-                  constituents = lib.collect lib.isDerivation jobs;
+                  meta.description = "All jobs for ${name} (no tests)";
+                  constituents = lib.collect lib.isDerivation (builtins.removeAttrs jobs [ "checks" ]);
                 };
               })
               subGroups;
@@ -120,13 +120,14 @@
           pkgs.callPackages inputs.iohkNix.utils.ciJobsAggregates { inherit ciJobs; }
           // subGroupAlls
           // {
-            # An 'all' aggregate covering every native job on this system, e.g.:
+            # An 'all' aggregate covering every native job on this system,
+            # excluding tests, e.g.:
             #   nix build .\#hydraJobs.x86_64-linux.all
             #   nix build .\#hydraJobs.aarch64-darwin.all
             all = pkgs.releaseTools.aggregate {
               name = "all";
-              meta.description = "All native jobs for ${system}";
-              constituents = lib.collect lib.isDerivation nativeJobs;
+              meta.description = "All native jobs for ${system} (no tests)";
+              constituents = lib.collect lib.isDerivation (builtins.removeAttrs nativeJobs [ "checks" ]);
             };
           };
 
