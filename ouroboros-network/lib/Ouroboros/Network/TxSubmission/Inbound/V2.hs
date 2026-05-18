@@ -117,6 +117,16 @@ txSubmissionInboundV2
       continueWithStateM serverIdle emptyPeerTxLocalState
   where
 
+    -- Mirror V1's TraceTxInboundCan/CannotRequestMoreTxs: emit once per
+    -- scheduler iteration based on whether the peer currently advertises any
+    -- txids whose bodies we could request.
+    traceCanRequest :: forall (n :: N). Nat n -> PeerTxLocalState tx -> m ()
+    traceCanRequest n st
+      | null (peerAvailableTxIds st) =
+          traceWith tracer (TraceTxInboundCannotRequestMoreTxs (natToInt n))
+      | otherwise =
+          traceWith tracer (TraceTxInboundCanRequestMoreTxs (natToInt n))
+
     -- Entry point and reset state for the non-pipelined server loop.
     --
     -- This function is called when:
@@ -134,6 +144,7 @@ txSubmissionInboundV2
                            addCounters mempty { txPipelineWaitMs =
                                                   diffTimeToMilliseconds (now `diffTime` startTime) }
                            pure $ peerState { peerDownloadStartTime = Nothing }
+      traceCanRequest Zero peerState'
       (peerAction, peerState'') <- runNextPeerAction now (State.drainPeerScore policy now peerState')
       case peerAction of
            PeerDoNothing generation mDelay -> do
@@ -223,6 +234,7 @@ txSubmissionInboundV2
     continueAfterReplies Zero = serverIdle
     continueAfterReplies n@Succ{} = StatefulM $ \peerState -> do
       now <- getMonotonicTime
+      traceCanRequest n peerState
       (peerAction, peerState') <- runNextPeerActionPipelined now (State.drainPeerScore policy now peerState)
       case peerAction of
         PeerSubmitTxs txKeys ->
@@ -240,6 +252,7 @@ txSubmissionInboundV2
                               -> StatefulM (PeerTxLocalState tx) (S n) txid tx m
     continueAfterBodyRequests n = StatefulM $ \peerState -> do
       now <- getMonotonicTime
+      traceCanRequest n peerState
       (peerAction, peerState') <- runNextPeerActionPipelined now (State.drainPeerScore policy now peerState)
       case peerAction of
         PeerSubmitTxs txKeys ->
