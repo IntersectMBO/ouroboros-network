@@ -2059,7 +2059,8 @@ close_experiment
               (CleanShutdown, Right (Right resps), Right _)
                  | expected <- expectedResps (List.length resps)
                  , resps == expected
-                -> return $ property True
+                -> return $ label "CleanShutdown"
+                          $ property True
 
                  | otherwise
                 -> return $ counterexample
@@ -2074,7 +2075,8 @@ close_experiment
               (CloseOnRead, Right (Right resps@[]), Right _)
                  | expected <- expectedResps 0
                  , List.null expected
-                -> return $ property True
+                -> return $ label ("CloseOnRead: " ++ if null reqs0 then "reqs == 0" else "reqs0 > 0")
+                          $ property True
 
                  | otherwise
                 -> return $ counterexample
@@ -2082,6 +2084,24 @@ close_experiment
                                       , " ≠ "
                                       , show (expectedResps (List.length resps))
                                       ])
+                              False
+
+              -- With empty reqs, CloseOnRead sends MsgDone immediately (same
+              -- as CleanShutdown). The server is StartOnDemand and may never
+              -- be scheduled before the mux shuts down, so it receives
+              -- Shutdown Nothing Stopped instead of a normal termination.
+              (CloseOnRead, Right (Right []), Left serverError)
+                 | Just e <- fromException (collapsE serverError)
+                 , case e of
+                     Mx.Shutdown Nothing _ -> True
+                     Mx.BearerClosed {}    -> True
+                     _                     -> False
+                -> return $ label ("CloseOnRead: " ++ if null reqs0 then "reqs == 0" else "reqs0 > 0")
+                          $ property True
+
+                 | otherwise
+                -> return $ counterexample
+                              (show serverError)
                               False
 
               (CloseOnWrite, Right (Left resps), Left serverError)
@@ -2092,7 +2112,8 @@ close_experiment
                      Mx.Shutdown {}     -> True
                      Mx.BearerClosed {} -> True
                      _                  -> False
-                -> return $ property True
+                -> return $ label ("CloseOnWrite: " ++ if null reqs0 then "reqs == 0" else "reqs0 > 0")
+                          $ property True
 
                  | expected <- expectedResps (List.length resps)
                  , resps /= expected
