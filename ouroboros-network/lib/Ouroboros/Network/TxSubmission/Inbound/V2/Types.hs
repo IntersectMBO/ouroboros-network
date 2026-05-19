@@ -459,7 +459,7 @@ instance Eq   TxSubmissionProtocolError where
     ProtocolErrorTxNotRequested    == ProtocolErrorTxNotRequested      = True
     ProtocolErrorTxNotRequested    == _                                = False
     ProtocolErrorTxIdsNotRequested == ProtocolErrorTxIdsNotRequested   = True
-    ProtocolErrorTxIdsNotRequested == _                                = True
+    ProtocolErrorTxIdsNotRequested == _                                = False
     ProtocolErrorTxSizeError (as :: [(a, SizeInBytes, SizeInBytes)])
       == ProtocolErrorTxSizeError (as' :: [(a', SizeInBytes, SizeInBytes)]) =
         case eqT @a @a' of
