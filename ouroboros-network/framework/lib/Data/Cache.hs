@@ -27,7 +27,7 @@ withCacheA (Cache a) a' action =
 -- | Trace with cache only performs the tracing when the cached value is
 -- different than the most recent one.
 --
-traceWithCache :: (Applicative m, Eq a) => Tracer m a -> Cache a -> a -> m ()
+traceWithCache :: (Monad m, Eq a) => Tracer m a -> Cache a -> a -> m ()
 traceWithCache tracer cache a =
     withCacheA cache a (traceWith tracer)
 
@@ -35,7 +35,7 @@ traceWithCache tracer cache a =
 -- different than the most recent one. And applies a function to the cache
 -- value before tracing.
 --
-mapTraceWithCache :: (Applicative m, Eq a)
+mapTraceWithCache :: (Monad m, Eq a)
                   => (a -> b) -> Tracer m b -> Cache a -> a -> m ()
 mapTraceWithCache f tracer cache a =
     withCacheA cache a (traceWith tracer . f)

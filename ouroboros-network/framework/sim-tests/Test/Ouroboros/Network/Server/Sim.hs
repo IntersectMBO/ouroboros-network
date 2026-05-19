@@ -40,7 +40,7 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.Fix (MonadFix)
 import Control.Monad.IOSim
-import Control.Tracer (Tracer (..), nullTracer)
+import Control.Tracer (Tracer, mkTracer, nullTracer)
 
 import Codec.Serialise.Class (Serialise)
 import Data.Bifoldable
@@ -1432,7 +1432,7 @@ prop_connection_manager_counters (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
          else (duplexConns, unidirectionalConns, inboundConns + outboundConns - duplexConns)
 
     networkStateTracer getState =
-      Tracer $ \_ -> getState >>= traceM
+      mkTracer $ \_ -> getState >>= traceM
 
     sim :: IOSim s ()
     sim = do

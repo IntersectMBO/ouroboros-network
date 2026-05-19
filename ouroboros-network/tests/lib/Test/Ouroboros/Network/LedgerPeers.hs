@@ -25,7 +25,7 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.IOSim hiding (SimResult)
-import Control.Tracer (Tracer (..), nullTracer, traceWith)
+import Control.Tracer (Tracer, mkTracer, nullTracer, traceWith)
 import Data.Aeson
 import Data.Aeson.Types as Aeson
 import Data.ByteString.Builder (toLazyByteString, word64BE)
@@ -295,7 +295,7 @@ prop_pick100 seed (NonNegative n) ledgerPeersKind (MockRoots _ dnsMapScript _ _)
           withLedgerPeers
                 PeerActionsDNS { paToPeerAddr = curry IP.toSockAddr,
                                  paDnsActions = mockDNSActions
-                                                   (Tracer traceM)
+                                                   (mkTracer traceM)
                                                    LookupReqAOnly
                                                    (curry IP.toSockAddr)
                                                    dnsMapVar
@@ -363,7 +363,7 @@ prop_pick (LedgerPools lps) ledgerPeersKind count seed (MockRoots _ dnsMapScript
           withLedgerPeers
                 PeerActionsDNS { paToPeerAddr = curry IP.toSockAddr,
                                  paDnsActions = mockDNSActions
-                                                  (Tracer traceM)
+                                                  (mkTracer traceM)
                                                   LookupReqAOnly
                                                   (curry IP.toSockAddr)
                                                   dnsMapVar
@@ -781,7 +781,7 @@ threadAndTimeTracer :: forall a m.
                        , MonadMonotonicTime m
                        )
                     => Tracer m (WithThreadAndTime a) -> Tracer m a
-threadAndTimeTracer tr = Tracer $ \s -> do
+threadAndTimeTracer tr = mkTracer $ \s -> do
     !now <- getMonotonicTime
     !tid <- show <$> myThreadId
     traceWith tr $! WithThreadAndTime now tid s

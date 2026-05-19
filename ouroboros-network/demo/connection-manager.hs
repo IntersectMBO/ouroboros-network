@@ -33,7 +33,7 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI (MonadTime (..))
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.Fix (MonadFix)
-import Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)
+import Control.Tracer (Tracer, contramap, mkTracer, nullTracer, traceWith)
 
 import Data.ByteString.Lazy (ByteString)
 import Data.Either (partitionEithers)
@@ -727,6 +727,6 @@ forever' io = do
 
 
 debugTracer :: (MonadSay m, MonadTime m, Show a) => Tracer m a
-debugTracer = Tracer $ \msg -> do
+debugTracer = mkTracer $ \msg -> do
     t <- getCurrentTime
     say (show t ++ " " ++ show msg)

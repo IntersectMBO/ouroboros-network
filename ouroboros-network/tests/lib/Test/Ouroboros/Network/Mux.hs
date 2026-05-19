@@ -64,7 +64,7 @@ activeTracer = nullTracer
 --activeTracer = show >$< sayTracer
 
 _sayTracer :: MonadSay m => Tracer m String
-_sayTracer = Tracer say
+_sayTracer = mkTracer say
 
 
 testProtocols :: RunMiniProtocolWithMinimalCtx appType addr bytes m a b

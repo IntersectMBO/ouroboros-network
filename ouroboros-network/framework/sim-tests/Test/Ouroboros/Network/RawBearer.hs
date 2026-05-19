@@ -8,7 +8,7 @@ module Test.Ouroboros.Network.RawBearer where
 
 import Control.Monad.Class.MonadSay
 import Control.Monad.IOSim hiding (liftST)
-import Control.Tracer (Tracer (..), nullTracer)
+import Control.Tracer (Tracer, mkTracer, nullTracer)
 
 import Ouroboros.Network.Snocket
 import Simulation.Network.Snocket as SimSnocket
@@ -25,7 +25,7 @@ tests = testGroup "Ouroboros.Network.RawBearer"
   ]
 
 iosimTracer :: forall s. Tracer (IOSim s) String
-iosimTracer = Tracer say
+iosimTracer = mkTracer say
 
 ioTracer :: Tracer IO String
 ioTracer = nullTracer

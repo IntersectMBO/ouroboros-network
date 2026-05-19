@@ -73,7 +73,6 @@ import Control.Monad.Class.MonadTimer.SI
 import Data.Bifunctor (first)
 import Data.ByteString.Lazy qualified as BL
 import Data.Foldable (traverse_)
-import Data.Functor.Contravariant ((>$<))
 import Data.Hashable
 import Data.Monoid.Synchronisation (FirstToFinish (..))
 import Data.Typeable (Typeable)
@@ -118,7 +117,7 @@ data NetworkConnectTracers m addr vNumber = NetworkConnectTracers {
       -- negotiation mismatches.
     }
 
-nullNetworkConnectTracers :: Applicative m
+nullNetworkConnectTracers :: Monad m
                           => NetworkConnectTracers m addr vNumber
 nullNetworkConnectTracers = NetworkConnectTracers {
       nctMuxTracers      = Mx.nullTracers,

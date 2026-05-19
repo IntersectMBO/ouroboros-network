@@ -21,7 +21,7 @@ import Control.DeepSeq (NFData (..))
 import Control.Monad (when)
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer (Tracer (..), traceWith)
+import Control.Tracer (Tracer, mkTracer, traceWith)
 
 import Data.Foldable as Foldable (foldl', foldr')
 import Data.List (sortOn)
@@ -254,7 +254,7 @@ prop_insert_peer script =
     config = PeerMetricsConfiguration { maxEntriesToTrack = 180 }
 
     sim :: IOSim s ()
-    sim = simulatePeerMetricScript (Tracer traceM) config script
+    sim = simulatePeerMetricScript (mkTracer traceM) config script
 
     -- drop first 90 slots
     trace :: [PeerMetricsTrace]
@@ -319,7 +319,7 @@ prop_metrics_are_bounded script =
     config = PeerMetricsConfiguration { maxEntriesToTrack = 180 }
 
     sim :: IOSim s ()
-    sim = simulatePeerMetricScript (Tracer traceM) config script
+    sim = simulatePeerMetricScript (mkTracer traceM) config script
 
     trace :: [PeerMetricsTrace]
     trace = selectTraceEventsDynamic (runSimTrace sim)
@@ -393,7 +393,7 @@ prop_bounded_size (Positive maxEntriesToTrack) script =
     config = PeerMetricsConfiguration { maxEntriesToTrack }
 
     sim :: IOSim s ()
-    sim = simulatePeerMetricScript (Tracer traceM) config script
+    sim = simulatePeerMetricScript (mkTracer traceM) config script
 
     trace :: [PeerMetricsTrace]
     trace = selectTraceEventsDynamic (runSimTrace sim)
@@ -475,7 +475,7 @@ prop_simScript script =
     config = PeerMetricsConfiguration { maxEntriesToTrack = 500 }
 
     sim :: IOSim s ()
-    sim = simulatePeerMetricScriptWithoutDelays (Tracer traceM) config script
+    sim = simulatePeerMetricScriptWithoutDelays (mkTracer traceM) config script
 
     trace :: [PeerMetricsTrace]
     trace = selectTraceEventsDynamic (runSimTrace sim)

@@ -52,7 +52,7 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.Fix
 import Control.Monad.IOSim (IOSim)
-import Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)
+import Control.Tracer (Tracer, contramap, mkTracer, nullTracer, traceWith)
 
 import Data.Bifunctor (first)
 import Data.Bool (bool)
@@ -1330,7 +1330,7 @@ diffusionSimulationM
               , Node.aTimeWaitTimeout      = 30
               , Node.aDNSTimeoutScript     = dnsTimeout
               , Node.aDNSLookupDelayScript = dnsLookupDelay
-              , Node.aDebugTracer          = Tracer (\s -> do
+              , Node.aDebugTracer          = mkTracer (\s -> do
                                               t <- getMonotonicTime
                                               traceWith nodeTracer $ WithTime t (WithName addr (DiffusionDebugTrace s)))
               , Node.aExtraChurnArgs       = cardanoChurnArgs
@@ -1480,7 +1480,7 @@ diffusionSimulationM
                            m
     mkTracers ntnAddr nodeId =
       let sayTracer' :: Show event => Tracer m event
-          sayTracer' = Tracer $ \event ->
+          sayTracer' = mkTracer $ \event ->
                        -- time of events is added in `testWithIOSim` and
                        -- `testWithIOSimPOR`
                        say $ show nodeId ++ " @ " ++ show event

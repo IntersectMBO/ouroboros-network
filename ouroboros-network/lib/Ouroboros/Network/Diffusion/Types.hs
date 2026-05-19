@@ -305,7 +305,7 @@ data Tracers ntnAddr ntnVersion ntnVersionData
     }
 
 
-nullTracers :: Applicative m
+nullTracers :: Monad m
             => Tracers ntnAddr ntnVersion ntnVersionData
                        ntcAddr ntcVersion ntcVersionData
                        extraState extraDebugState

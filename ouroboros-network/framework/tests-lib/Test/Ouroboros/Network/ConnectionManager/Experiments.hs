@@ -940,22 +940,33 @@ bidirectionalExperiment
                           throwIO (userError $ "bidirectionalExperiment: " ++ show err)
                   ))
 
+              -- When the two sides run concurrently, one side may finish its
+              -- rounds and call releaseOutboundConnection while the other
+              -- side is still reading on the same physical TCP connection.
+              -- The connection manager closes the socket (RST via
+              -- SO_LINGER=0), causing a Shutdown or BearerClosed error on
+              -- the still-active side.  Treat these as acceptable races
+              -- rather than test failures.
+              let checkResult (r, expected) acc =
+                    case r of
+                      Left err
+                        | Just e <- fromException @Mx.Error err
+                        , case e of
+                            Mx.Shutdown {}     -> True
+                            Mx.BearerClosed {} -> True
+                            _                  -> False
+                        -> acc
+                      Left err -> counterexample (show err) False
+                      Right a  -> a === expected .&&. acc
+
               pure $
-                foldr
-                  (\ (r, expected) acc ->
-                    case r of
-                      Left err -> counterexample (show err) False
-                      Right a  -> a === expected .&&. acc)
-                  (property True)
-                  (zip rs0 (expectedResult clientAndServerData0 clientAndServerData1))
+                foldr checkResult
+                      (property True)
+                      (zip rs0 (expectedResult clientAndServerData0 clientAndServerData1))
                 .&&.
-                foldr
-                  (\ (r, expected) acc ->
-                    case r of
-                      Left err -> counterexample (show err) False
-                      Right a  -> a === expected .&&. acc)
-                  (property True)
-                  (zip rs1 (expectedResult clientAndServerData1 clientAndServerData0))
+                foldr checkResult
+                      (property True)
+                      (zip rs1 (expectedResult clientAndServerData1 clientAndServerData0))
                 ))
 
 

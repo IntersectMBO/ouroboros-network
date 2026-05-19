@@ -15,7 +15,6 @@
 module Test.Ouroboros.Network.Socket (tests) where
 
 import Data.ByteString.Lazy qualified as BL
-import Data.Functor.Contravariant ((>$<))
 import Data.Void (Void)
 import GHC.Generics (Generic)
 import Network.Socket qualified as Socket
@@ -344,7 +343,7 @@ _verboseTracer :: Show a => Tracer IO a
 _verboseTracer = threadAndTimeTracer $ show >$< stdoutTracer
 
 threadAndTimeTracer :: Tracer IO (WithThreadAndTime a) -> Tracer IO a
-threadAndTimeTracer tr = Tracer $ \s -> do
+threadAndTimeTracer tr = mkTracer $ \s -> do
     !now <- getCurrentTime
     !tid <- myThreadId
     traceWith tr $ WithThreadAndTime now tid s

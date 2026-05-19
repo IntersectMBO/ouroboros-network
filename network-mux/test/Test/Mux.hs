@@ -28,11 +28,10 @@ import Data.Binary.Put qualified as Bin
 import Data.Bits
 import Data.ByteString.Lazy qualified as BL
 import Data.ByteString.Lazy.Char8 qualified as BL8 (pack)
-import Data.Functor.Contravariant ((>$<))
 import Data.List (dropWhileEnd, nub)
 import Data.List qualified as List
 import Data.Map qualified as M
-import Data.Maybe (isNothing)
+import Data.Maybe (fromMaybe, isNothing)
 import Data.Tuple (swap)
 import Data.Word
 import System.Random.SplitMix qualified as SM
@@ -1009,7 +1008,7 @@ prop_mux_starvation (Uneven response0 response1) =
     activeMpsVar <- newTVarIO 0
     traceHeaderVar <- newTVarIO []
     let headerTracer =
-          Tracer $ \e -> case e of
+          mkTracer $ \e -> case e of
             Mx.TraceRecvHeaderEnd header
               -> atomically (modifyTVar traceHeaderVar (header:))
             _ -> return ()
@@ -1914,7 +1913,7 @@ verboseTracer :: forall a m.
                        , Show a
                        )
                => Tracer m a
-verboseTracer = threadAndTimeTracer $ show >$< Tracer say
+verboseTracer = threadAndTimeTracer $ show >$< mkTracer say
 
 muxVerboseTracer :: forall m.
                        ( MonadAsync m
@@ -1929,7 +1928,7 @@ threadAndTimeTracer :: forall a m.
                        , MonadMonotonicTime m
                        )
                     => Tracer m (WithThreadAndTime a) -> Tracer m a
-threadAndTimeTracer tr = Tracer $ \s -> do
+threadAndTimeTracer tr = mkTracer $ \s -> do
     !now <- getMonotonicTime
     !tid <- myThreadId
     traceWith tr $ WithThreadAndTime now (show tid) s
@@ -2060,7 +2059,8 @@ close_experiment
               (CleanShutdown, Right (Right resps), Right _)
                  | expected <- expectedResps (List.length resps)
                  , resps == expected
-                -> return $ property True
+                -> return $ label "CleanShutdown"
+                          $ property True
 
                  | otherwise
                 -> return $ counterexample
@@ -2075,7 +2075,8 @@ close_experiment
               (CloseOnRead, Right (Right resps@[]), Right _)
                  | expected <- expectedResps 0
                  , List.null expected
-                -> return $ property True
+                -> return $ label ("CloseOnRead: " ++ if null reqs0 then "reqs == 0" else "reqs0 > 0")
+                          $ property True
 
                  | otherwise
                 -> return $ counterexample
@@ -2083,6 +2084,24 @@ close_experiment
                                       , " ≠ "
                                       , show (expectedResps (List.length resps))
                                       ])
+                              False
+
+              -- With empty reqs, CloseOnRead sends MsgDone immediately (same
+              -- as CleanShutdown). The server is StartOnDemand and may never
+              -- be scheduled before the mux shuts down, so it receives
+              -- Shutdown Nothing Stopped instead of a normal termination.
+              (CloseOnRead, Right (Right []), Left serverError)
+                 | Just e <- fromException (collapsE serverError)
+                 , case e of
+                     Mx.Shutdown Nothing _ -> True
+                     Mx.BearerClosed {}    -> True
+                     _                     -> False
+                -> return $ label ("CloseOnRead: " ++ if null reqs0 then "reqs == 0" else "reqs0 > 0")
+                          $ property True
+
+                 | otherwise
+                -> return $ counterexample
+                              (show serverError)
                               False
 
               (CloseOnWrite, Right (Left resps), Left serverError)
@@ -2093,7 +2112,8 @@ close_experiment
                      Mx.Shutdown {}     -> True
                      Mx.BearerClosed {} -> True
                      _                  -> False
-                -> return $ property True
+                -> return $ label ("CloseOnWrite: " ++ if null reqs0 then "reqs == 0" else "reqs0 > 0")
+                          $ property True
 
                  | expected <- expectedResps (List.length resps)
                  , resps /= expected
@@ -2380,6 +2400,7 @@ prop_mux_trailing_bytes
      , MonadMask          m
      , MonadTimer         m
      , MonadThrow    (STM m)
+     , MonadSay           m
      )
   => BL.ByteString
   -> NonEmptyByteString
@@ -2409,7 +2430,8 @@ prop_mux_trailing_bytes reminder (NonEmptyByteString received) = do
       -- remote side sending additional data after restarting the mini-protocol.
       -- The initial data for this conversation is in the trailing bytes, which
       -- are assumed to be already received. We inject them in the next step.
-      atomically $ writeTBQueue mux_r
+      atomically
+        $ writeTBQueue mux_r
         $ Mx.encodeSDU
         $ Mx.SDU { Mx.msHeader = Mx.SDUHeader {
                      Mx.mhTimestamp = Mx.RemoteClockModel 0,
@@ -2420,9 +2442,8 @@ prop_mux_trailing_bytes reminder (NonEmptyByteString received) = do
                    Mx.msBlob = received
                 }
 
-      -- 2. Run a mini-protocol which returns `reminder` as trailing bytes.
-      -- This represents the responder side stopping the mini-protocol with
-      -- trailing bytes.
+      -- 2. Run a mini-protocol which returns `trailing` bytes. This represents
+      -- the responder side stopping the mini-protocol with trailing bytes.
       _ <- atomically =<< Mx.runMiniProtocol
               mux
               miniProtocolNum
@@ -2440,11 +2461,22 @@ prop_mux_trailing_bytes reminder (NonEmptyByteString received) = do
               Mx.StartEagerly
               (\chan -> do
                 labelThisThread "resp:2"
-                a <- Mx.recv chan
-                return (a, Nothing)
+                let expectedLen = BL.length reminder + BL.length received
+                    -- `recv` returns whatever is currently available in the
+                    -- ingress queue without waiting for more.  If the trailing
+                    -- bytes arrive before the demuxer has processed the SDU,
+                    -- a single `recv` would return only the trailing bytes and
+                    -- miss the SDU payload, making the test non-deterministic.
+                    go acc
+                      | BL.length acc >= expectedLen = return acc
+                      | otherwise = do
+                          mbs <- Mx.recv chan
+                          go (acc <> fromMaybe BL.empty mbs)
+                a <- go BL.empty
+                return (Just a, Nothing)
               )
 
-      -- 4. Verify that we received trailing bytes were injected before the
+      -- 4. Verify that the trailing bytes were injected before the
       -- additional data (`received` bytes).
       case r of
         Left e    -> throwIO e
@@ -2461,7 +2493,7 @@ prop_mux_trailing_bytes_iosim reminder received =
   let trace = runSimTrace $ prop_mux_trailing_bytes reminder received
   in counterexample (ppTrace_ trace) (case traceResult True trace of
                                        Left e  -> counterexample (show e) False
-                                       Right r -> r)
+                                       Right r -> property r)
 
 prop_mux_trailing_bytes_io :: BL.ByteString
                            -> NonEmptyByteString

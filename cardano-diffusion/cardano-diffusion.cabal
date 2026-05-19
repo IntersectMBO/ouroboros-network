@@ -96,7 +96,7 @@ library api-tests-lib
     Cardano.Network.NodeToNode.Version.TestUtils
 
   build-depends:
-    QuickCheck,
+    QuickCheck <2.18,
     base >=4.14 && <4.23,
     cardano-diffusion:api,
     ouroboros-network:api,
@@ -112,7 +112,7 @@ test-suite api-tests
     Test.Cardano.Network.Version
 
   build-depends:
-    QuickCheck,
+    QuickCheck <2.18,
     base >=4.14 && <4.23,
     cardano-diffusion:{api, api-tests-lib},
     ouroboros-network:api,
@@ -371,7 +371,7 @@ library protocols-tests-lib
     Ouroboros.Network.Protocol.TxSubmission2.Test as Cardano.Network.Protocol.TxSubmission2.Test,
 
   build-depends:
-    QuickCheck,
+    QuickCheck <2.18,
     base >=4.14 && <4.23,
     bytestring,
     cardano-diffusion:{api, api-tests-lib, protocols},
@@ -416,7 +416,7 @@ test-suite protocols-cddl
     buildable: False
 
   build-depends:
-    QuickCheck,
+    QuickCheck <2.18,
     base >=4.14 && <4.23,
     bytestring,
     cardano-diffusion:{api, api-tests-lib, protocols, protocols-tests-lib},
@@ -479,7 +479,7 @@ library cardano-diffusion-tests-lib
   visibility: public
   hs-source-dirs: tests/lib
   build-depends:
-    QuickCheck,
+    QuickCheck <2.18,
     aeson,
     base >=4.14 && <4.23,
     bytestring,
@@ -559,7 +559,7 @@ library subscription
     cardano-diffusion ^>=1.0.0.0,
     cborg >=0.2.8 && <0.3,
     containers >=0.5 && <0.9,
-    contra-tracer >=0.1 && <0.3,
+    contra-tracer ^>=0.2.1,
     deepseq,
     io-classes:si-timers ^>=1.8.0.1,
     network-mux ^>=0.10.1.0,

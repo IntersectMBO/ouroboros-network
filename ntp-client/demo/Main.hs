@@ -5,7 +5,6 @@ import Control.Concurrent (threadDelay)
 import Control.Concurrent.Async
 import Control.Monad (forever)
 import Control.Tracer
-import Data.Functor.Contravariant ((>$<))
 
 import Network.NTP.Client (NtpClient (..), NtpSettings (..), withNtpClient)
 
