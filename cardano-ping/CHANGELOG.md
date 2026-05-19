@@ -1,10 +1,47 @@
-# Revision history for cardano-ping
+# cardano-ping changelog
 
-## next version
+<!-- scriv-insert-here -->
+
+<a id='changelog-0.10.2.0'></a>
+## 0.10.2.0 -- 2026-03-06
+
+### Patch
+
+- Output valid JSON when no pongs are received instead of the malformed
+  fragment `] }`.
+
+<a id='changelog-0.10.1.0'></a>
+## 0.10.1.0 -- 2026-03-06
+
+### Non-Breaking
+
+- Update dependencies.
+
+- Add support for ghc-9.14.
+
+<a id='changelog-0.10.0.0'></a>
+## 0.10.0.0 -- 2026-01-20
+
+### Breaking
+
+- Added `NodeToClientVersionV23`
+
+- Support `NodeToNodeV_15`
+
+### Non-Breaking
+
+- Update dependencies.
+<!-- scriv-end-here -->
+
+## 0.9.0.0 -- 2026-06-28
 
 ### Breaking changes
 
+* Added support of `NodeToClientV_21`.
+
 ### Non-breaking changes
+
+* Updated to `network-mux-0.9`
 
 ## 0.8.0.1 -- 2025-05-13
 
@@ -78,7 +115,7 @@
 
 ### Breaking changes
 
-* Addapted to `network-mux` changes in https://github.com/IntersectMBO/ouroboros-network/pull/4997
+* Adapted to `network-mux` changes in https://github.com/IntersectMBO/ouroboros-network/pull/4997
 
 ### Non-breaking changes
 
@@ -149,14 +186,14 @@
 ## 0.2.0.3 -- 2023-06-09
 
 * For versions strictly lower than `NodeToNodeV_11`, send
-  `InitiatorAndResponder` flag when quering.  For these versions querying is
+  `InitiatorAndResponder` flag when querying.  For these versions querying is
   not recognised by the remote side, and thus it will do handshake negotiation.
 * Only print the query result if querying is supported by the remote side.
 
 ## 0.2.0.2 -- 2023-06-08
 
 * Support `NodeToNodeV_11`, `NodeToNodeV_12` and `NodeToClientV_16`.
-* Fix delay/timeout bugs (miliseconds were used instead of seconds).
+* Fix delay/timeout bugs (milliseconds were used instead of seconds).
 * Print query even if --quiet flag is given.
 * Instead of a boolean flag print `InitiatorOnly` or `InitiatorAndResponder`.
 * Fixed encoding of `NodeToNodeV_11`.

@@ -1,10 +1,72 @@
-# Revision history for mux
+# network-mux changelog
 
-## next release
+<!-- scriv-insert-here -->
+
+<a id='changelog-0.10.1.0'></a>
+## 0.10.1.0 -- 2026-03-06
+
+### Non-Breaking
+
+- Added `network-mux:mux-leios-demo`
+- Added binary encoding to `Test.Mux.ReqResp`:
+  * `runClient` renamed as `runClientCBOR`
+  * `runServer` renamed as `runServerCBOR`
+  added API:
+  * `runClientBin`
+  * `runServerBin`
+  * `runClientBurstBin`
+  * `runServerBurstBin`
+  * `runClientBurstCBOR`
+  * `runServerBurstCBOR`
+
+- Added `network-mux/wireshark-plugin/` - a WireShark dissector plugin for mux SDUs.
+
+- Update dependencies.
+
+- Support `Win32-network ^>=0.1`.
+
+- Add support for ghc-9.14.
+
+<a id='changelog-0.10.0.0'></a>
+## 0.10.0.0 -- 2026-01-20
+
+### Breaking
+
+- Tracers are now passed to `Network.Mux.new` rather than `Network.Mux.run`.
+- Added new trace points to `Network.Mux.Trace.Trace`:
+  - `NewMux` which logs all `MiniProtocolInfo`s used to create the new `Mux` interface.
+  - `MuxStarting` which logs that `Mux` is starting.
+
+### Non-Breaking
+
+- Patched so that it compiles to wasm
+
+- Update dependencies.
+
+- Fixed handling of trailing bytes in presence of received data.
+<!-- scriv-end-here -->
+
+## 0.9.1.0 -- 2025-09-10
+
+### Non-breaking changes
+
+* Exposed `MakeBearerCb` to expose its haddocks.
+
+## 0.9.0.0 -- 2025-06-28
 
 ### Breaking changes
 
-* `IngressQueue` is parameterized by a strict `Pair` type
+* run, miniProtocolJob, monitor now accept Tracers record
+  instead of `Tracer m Trace` type.
+* Removed handshake trace events from mux trace.
+* `Trace` was split into three traces: `Trace` of mux events, `ChannelTrace`
+   & `BearerTrace`.  As a result `run` & `Bearer` API were modified.
+
+## 0.8.0.2 -- 2025-07-17
+
+### Breaking changes
+
+* `IngressQueue` is using strict `Pair` type
 
 ### Non-breaking changes
 
@@ -22,6 +84,8 @@
 
 * `MakeBearer` accepts optional `ReadBuffer`
 * added fields `egressInterval`, `writeMany`, `batchSize` to `Bearer`
+  * writeMany provides vector IO, egressInterval supports polling of egress queue
+    for tuning latency vs. network efficiency
 * `socketAsBearer` additionally takes `ReadBuffer`, egress
   interval `DiffTime` for egress polling, and batchSize
 * changed `IngressQueue` type synonym
@@ -30,6 +94,10 @@
 ### Non-breaking changes
 
 * added `makeSocketBearer'`, `ReadBuffer`, `withReadBufferIO`
+* Define msHeaderLength instead of using '8'
+* Benchmark for Socket Bearer
+* Use ByteString.Builder for the ingress queues
+* Signal the kernel that we require at least the full SDU's worth of data
 
 ## 0.7.0.0 -- 2025-02-25
 

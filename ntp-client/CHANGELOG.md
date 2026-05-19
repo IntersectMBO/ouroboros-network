@@ -1,6 +1,14 @@
-# Revision history for ntp-client
+# ntp-client changelog
 
-## next release
+<!-- scriv-insert-here -->
+
+<a id='changelog-0.0.1.7'></a>
+## 0.0.1.7 -- 2026-01-15
+
+### Non-Breaking
+
+- Update dependencies.
+<!-- scriv-end-here -->
 
 ## 0.0.1.6 -- 2024-08-07
 
@@ -40,7 +48,7 @@
 
 ### Non-breaking changes
 
-* `ghc-9.4` and `ghc-9.6` compatiblity.
+* `ghc-9.4` and `ghc-9.6` compatibility.
 
 ## 0.0.1.0 -- 2022-12-13
 

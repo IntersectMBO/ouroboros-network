@@ -385,7 +385,7 @@ the rules below, it is good practice to update the code's style to match them.
             } = args
       ```
 
-   d. Using `RecordWildCards` for unpacking large records is discuraged.
+   d. Using `RecordWildCards` for unpacking large records is discouraged.
 
    e. Class or instance contexts: when a class or instance declaration doesn't
       fit onto a single line because of the super-class context, wrap the line
@@ -404,7 +404,7 @@ the rules below, it is good practice to update the code's style to match them.
             => C a where
       ```
 
-   e. Tuples in type signatures:
+   f. Tuples in type signatures:
 
       ```haskell
       foo ::
@@ -417,7 +417,7 @@ the rules below, it is good practice to update the code's style to match them.
            )
       ```
 
-   f. Datatypes:
+   g. Datatypes:
 
       ```haskell
       data Foo =
@@ -436,7 +436,7 @@ the rules below, it is good practice to update the code's style to match them.
           }
       ```
 
-   g. Type synonyms:
+   h. Type synonyms:
 
       ```haskell
       type Foo a b =
@@ -452,7 +452,7 @@ the rules below, it is good practice to update the code's style to match them.
         )
       ```
 
-   h. Function composition:
+   i. Function composition:
 
       ```haskell
       foo = h
@@ -1037,7 +1037,7 @@ the rules below, it is good practice to update the code's style to match them.
     `-fno-warn-x`.
 
     Most often (whenever we can), we use `-Wno-unticked-promoted-constructors`.
-    This allows to use unticked promoted data contructors as types.
+    This allows to use unticked promoted data constructors as types.
 
 21. __HasCallStack__: when using `error` in code paths should be impossible and
     are indicative of bugs, make sure enough `HasCallStack` constraints are in

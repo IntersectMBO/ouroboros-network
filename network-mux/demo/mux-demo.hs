@@ -3,6 +3,7 @@
 {-# LANGUAGE DataKinds          #-}
 {-# LANGUAGE NamedFieldPuns     #-}
 {-# LANGUAGE NumericUnderscores #-}
+{-# LANGUAGE PackageImports     #-}
 
 {-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
 
@@ -17,7 +18,7 @@ import Control.Concurrent (forkIO)
 import Control.Concurrent.STM (atomically)
 import Control.Exception (finally)
 import Control.Monad
-import Control.Tracer (Tracer (..), nullTracer, showTracing)
+import Control.Tracer (Tracer (..), showTracing)
 
 import System.Environment qualified as SysEnv
 import System.Exit
@@ -28,7 +29,11 @@ import Data.Bits
 import System.IOManager
 import System.Win32
 import System.Win32.Async qualified as Win32.Async
-import System.Win32.NamedPipes
+#if MIN_VERSION_Win32_network(0,2,0)
+import "Win32" System.Win32.NamedPipes
+#else
+import "Win32-network" System.Win32.NamedPipes
+#endif
 #else
 import Network.Socket (Family (AF_UNIX), SockAddr (..))
 import Network.Socket qualified as Socket
@@ -101,7 +106,7 @@ server =
     associateWithIOManager ioManager (Left hpipe)
     Win32.Async.connectNamedPipe hpipe
     void $ forkIO $ do
-      bearer <- getBearer Mx.makeNamedPipeBearer (-1) nullTracer hpipe Nothing
+      bearer <- getBearer Mx.makeNamedPipeBearer (-1) hpipe Nothing
       serverWorker bearer
         `finally` closeHandle hpipe
 #else
@@ -113,7 +118,7 @@ server = do
     forever $ do
       (sock', _addr) <- Socket.accept sock
       void $ forkIO $ do
-        bearer <- getBearer Mx.makeSocketBearer 1.0 nullTracer sock' Nothing
+        bearer <- getBearer Mx.makeSocketBearer 1.0 sock' Nothing
         serverWorker bearer
           `finally` Socket.close sock'
 #endif
@@ -121,19 +126,19 @@ server = do
 
 serverWorker :: Bearer IO -> IO ()
 serverWorker bearer = do
-    mux <- Mx.new ptcls
+    mux <- Mx.new Mx.nullTracers ptcls
 
     void $ forkIO $ do
       awaitResult <-
         runMiniProtocol mux (MiniProtocolNum 2)
                              ResponderDirectionOnly
                              StartOnDemand $ \channel ->
-          runServer debugTracer channel (echoServer 0)
+          runServerCBOR debugTracer channel (echoServer 0)
       result <- atomically awaitResult
       putStrLn $ "Result: " ++ show result
       Mx.stop mux
 
-    Mx.run nullTracer mux bearer
+    Mx.run mux bearer
   where
     ptcls :: [MiniProtocolInfo ResponderMode]
     ptcls = [ MiniProtocolInfo {
@@ -168,32 +173,32 @@ client n msg =
                         fILE_FLAG_OVERLAPPED
                         Nothing
     associateWithIOManager ioManager (Left hpipe)
-    bearer <- getBearer Mx.makeNamedPipeBearer (-1) nullTracer hpipe Nothing
+    bearer <- getBearer Mx.makeNamedPipeBearer (-1) hpipe Nothing
     clientWorker bearer n msg
 #else
 client n msg = do
     sock <- Socket.socket AF_UNIX Socket.Stream Socket.defaultProtocol
     Socket.connect sock (SockAddrUnix pipeName)
-    bearer <- getBearer Mx.makeSocketBearer 1.0 nullTracer sock Nothing
+    bearer <- getBearer Mx.makeSocketBearer 1.0 sock Nothing
     clientWorker bearer n msg
 #endif
 
 
 clientWorker :: Mx.Bearer IO -> Int -> String -> IO ()
 clientWorker bearer n msg = do
-    mux <- Mx.new ptcls
+    mux <- Mx.new Mx.nullTracers ptcls
 
     void $ forkIO $ do
       awaitResult <-
         runMiniProtocol mux (MiniProtocolNum 2)
                              InitiatorDirectionOnly
                              StartEagerly $ \channel ->
-          runClient debugTracer channel (echoClient 0 n (BSC.pack msg))
+          runClientCBOR debugTracer channel (echoClient 0 n (BSC.pack msg))
       result <- atomically awaitResult
       putStrLn $ "Result: " ++ show result
       Mx.stop mux
 
-    Mx.run nullTracer mux bearer
+    Mx.run mux bearer
   where
     ptcls :: [MiniProtocolInfo Mx.InitiatorMode]
     ptcls = [ MiniProtocolInfo {
@@ -208,4 +213,3 @@ echoClient :: Int -> Int -> ByteString
            -> ReqRespClient ByteString ByteString IO Int
 echoClient !n 0 _      = SendMsgDone (pure n)
 echoClient !n m rawmsg = SendMsgReq rawmsg (pure . echoClient (n+1) (m-1))
-

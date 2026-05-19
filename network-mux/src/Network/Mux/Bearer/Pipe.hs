@@ -70,10 +70,9 @@ pipeChannelFromNamedPipe h = PipeChannel {
 
 pipeAsBearer
   :: Mx.SDUSize
-  -> Tracer IO Mx.Trace
   -> PipeChannel
   -> Bearer IO
-pipeAsBearer sduSize tracer channel =
+pipeAsBearer sduSize channel =
       Mx.Bearer {
           Mx.read           = readPipe,
           Mx.write          = writePipe,
@@ -84,8 +83,8 @@ pipeAsBearer sduSize tracer channel =
           Mx.egressInterval = 0
         }
     where
-      readPipe :: Mx.TimeoutFn IO -> IO (Mx.SDU, Time)
-      readPipe _ = do
+      readPipe :: Tracer IO Mx.BearerTrace -> Mx.TimeoutFn IO -> IO (Mx.SDU, Time)
+      readPipe tracer _ = do
           traceWith tracer Mx.TraceRecvHeaderStart
           hbuf <- recvLen' (fromIntegral Mx.msHeaderLength) []
           case Mx.decodeSDU hbuf of
@@ -96,21 +95,21 @@ pipeAsBearer sduSize tracer channel =
                   ts <- getMonotonicTime
                   traceWith tracer (Mx.TraceRecvDeltaQObservation msHeader ts)
                   return (header {Mx.msBlob = blob}, ts)
+        where
+          recvLen' :: Int -> [BL.ByteString] -> IO BL.ByteString
+          recvLen' 0 bufs = return $ BL.concat $ reverse bufs
+          recvLen' l bufs = do
+              traceWith tracer $ Mx.TraceRecvStart l
+              buf <- readHandle channel l
+                        `catch` Mx.handleIOException "readHandle errored"
+              if BL.null buf
+                  then throwIO $ Mx.BearerClosed "Pipe closed when reading data"
+                  else do
+                      traceWith tracer $ Mx.TraceRecvEnd (fromIntegral $ BL.length buf)
+                      recvLen' (l - fromIntegral (BL.length buf)) (buf : bufs)
 
-      recvLen' :: Int -> [BL.ByteString] -> IO BL.ByteString
-      recvLen' 0 bufs = return $ BL.concat $ reverse bufs
-      recvLen' l bufs = do
-          traceWith tracer $ Mx.TraceRecvStart l
-          buf <- readHandle channel l
-                    `catch` Mx.handleIOException "readHandle errored"
-          if BL.null buf
-              then throwIO $ Mx.BearerClosed "Pipe closed when reading data"
-              else do
-                  traceWith tracer $ Mx.TraceRecvEnd (fromIntegral $ BL.length buf)
-                  recvLen' (l - fromIntegral (BL.length buf)) (buf : bufs)
-
-      writePipe :: Mx.TimeoutFn IO -> Mx.SDU -> IO Time
-      writePipe _ sdu = do
+      writePipe :: Tracer IO Mx.BearerTrace -> Mx.TimeoutFn IO -> Mx.SDU -> IO Time
+      writePipe tracer _ sdu = do
           ts <- getMonotonicTime
           let ts32 = Mx.timestampMicrosecondsLow32Bits ts
               sdu' = Mx.setTimestamp sdu (Mx.RemoteClockModel ts32)
@@ -121,9 +120,9 @@ pipeAsBearer sduSize tracer channel =
           traceWith tracer Mx.TraceSendEnd
           return ts
 
-      writePipeMany :: Mx.TimeoutFn IO -> [Mx.SDU] -> IO Time
-      writePipeMany timeoutFn sdus = do
+      writePipeMany :: Tracer IO Mx.BearerTrace -> Mx.TimeoutFn IO -> [Mx.SDU] -> IO Time
+      writePipeMany tracer timeoutFn sdus = do
         ts <- getMonotonicTime
-        mapM_ (writePipe timeoutFn) sdus
+        mapM_ (writePipe tracer timeoutFn) sdus
         return ts
 

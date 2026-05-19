@@ -1,0 +1,30 @@
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric  #-}
+
+module Ouroboros.Network.Point
+  ( WithOrigin (..)
+  , Block (..)
+  , origin
+  , at
+  , block
+  , fromWithOrigin
+  , withOrigin
+  , withOriginToMaybe
+  , withOriginFromMaybe
+  ) where
+
+import Control.DeepSeq (NFData)
+import Data.Aeson
+import GHC.Generics (Generic)
+import NoThunks.Class (NoThunks)
+
+import Cardano.Slotting.Slot
+
+data Block slot hash = Block
+  { blockPointSlot :: !slot
+  , blockPointHash :: !hash
+  }
+  deriving (Eq, Ord, Show, ToJSON, FromJSON, Generic, NoThunks, NFData)
+
+block :: slot -> hash -> WithOrigin (Block slot hash)
+block slot hash = at (Block slot hash)

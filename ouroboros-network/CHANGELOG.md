@@ -1,12 +1,412 @@
-# Revision history for ouroboros-network
+# ouroboros-network changelog
 
-## next release
+<!-- scriv-insert-here -->
+
+<a id='changelog-1.1.0.0'></a>
+## 1.1.0.0 -- 2026-03-12
+
+### Breaking
+
+- Add missing orphan instance for 'TxSubmissionLogicVersion'
+
+### Non-Breaking
+
+- Fix to peer selection's above target other: failed to demote an established peer
+
+- Cleaned up tracing namespaces
+
+<a id='changelog-1.0.0.0'></a>
+## 1.0.0.0 -- 2026-03-06
+
+### Breaking
+
+- Removed `dtTraceChurnCounters` from `Ouroboros.Network.Diffusion.Tracers`, it
+  duplicated information already available in `dtTracePeerSelectionTracer`.  As
+  a consequence, `ChurnCounters` is removed as well as `pcaChurnTracer` record
+ field from `PeerChurnArgs`.
+
+- Unified two traces into one.  The following two records fields of
+  `Ouroboros.Network.Diffusion.Tracers` were removed:
+  - `dtDebugPeerSelectionInitiatorTracer`
+  - `dtDebugPeerSelectionInitiatorResponderTracer`
+  The were replaced with a single field `dtDebugPeerSelectionTracer` which
+  combines both traces.
+
+- Removed previous targets from `TraceTargetsChanged`.
+
+- Trace only current peer selection targets, the previous targets are easily
+  available in the log. The `ToJSON` instance for `PeerSelectionTargets` has
+  been changed, it now inlines the current targets in the event object, and
+  thus there's no `"kind":"PeerSelectionTargets"` any more, only
+  `"kind":"TargetsChanged"`.
+
+- Integration with `typed-protocols-1.2.0.0`, `NFData` constraints are required in public API (e.g. `connectToNode`, `connectToNodeWithMux`, `Server.with`, `Server.Simple.with`, etc.).
+
+- Added NFData constraint to `StandardHash`.
+
+- Remove `Arbitrary` instance for `BlockNo` from the `Ouroboros.Network.Mock.ChainGenerators` module. The instance is now provided by the `Test.Cardano.Slotting.Arbitrary` module of the `cardano-slotting` library.
+
+- Replace the existential type `SomeHashableBlock`, which hides the `blk` type varialbe, with `RawBlockHash`, which is simply a wrapper of a raw block hash, represented as `ShortByteString`.
+- Remove the `blk` type variable from the `LedgerPeerSnapshotWithBlock` type.
+- Remove the `Proxy blk` argument from the `decodeLedgerPeerSnapshot` function. The hash in the snapshot is now a concrete type.
+
+- Added trace-dispatcher LogFormatting and MetaTrace instances
+  for tx-submission decision logic and counters:
+  - TraceTxLogic
+  - TxSubmissionCounters
+
+- Added trace-dispatcher LogFormatting and MetaTrace instances
+  for tx-submission inbound and outbound tracers:
+  - TraceTxSubmissionInbound
+  - TraceTxSubmissionOutbound
+
+- Removed extraCounters type variable from various places in the library,
+  replacing its uses with 'ViewExtraPeers extraPeers'
+- Removed daPeerSelectionStateToExtraCounters field from Diffusion
+  Arguments record. This functionality was subsumed by the new
+  SupportsPeerSelectionState class.
+- Added SupportsPeerSelectionState constraint to required places.
+
+- Fix spelling of LedgerRelayAccessPointV1's getter
+
+- `LedgerPeersKind` is a type data, `SingLedgerPeersKind` it's singleton,
+  `SomeLedgerPeersKind` universally quantified wrapper. Low level api is using
+  `SingLedgerPeersKind`, higher level API (including diffusion) is using
+  `SomeLedgerPeersKind`.
+
+### Non-Breaking
+
+- Update dependencies.
+
+- Fixed some issues in the implementation of the simple mempool.
+
+- Fixed a bug in ouroboros churn (used by `dmq-node`), IntersectMBO/ouroboros-network#5290.
+
+- Add `Eq` instance for `SomeLedgerPeerSnapshot`
+
+- Support `Win32-network ^>=0.1`.
+
+- Moved `LogFormatting` and `MetaTrace` instances from `cardano-node` to `ouroboros-network`.
+- Added `framework-tracing` and `tracing` sub-libraries to `ouroboros-network.cabal` to support these instances with correct dependencies.
+- `framework-tracing` contains instances for lower-level components (e.g. `network-mux`) and depends only on `framework`.
+- `tracing` contains instances for higher-level components (e.g. PeerSelection) and depends on `ouroboros-network`.
+- Generalized `DebugPeerSelection` and `PeerSelectionCounters` tracing instances to use generic types, removing dependencies on `cardano-diffusion` and `ouroboros-consensus`.
+
+- Add support for ghc-9.14.
+- Fix an incomplete case match warning.
+
+- tx-submission: Ensure all eligible downloaded tx's will be submitted to the mempool
+- tx-submission: Enforce that no transaction is enqueued to the mempool more than once by the same peer
+- tx-submission: Improve testcase generation and inflight test
+- tx-submission: Remove global size limit for inflight tx's
+
+- Added a variant of `signalProperty` that takes a property-producing function
+  instead of a boolean predicate.
+
+- Introduced SupportsPeerSelectionState class which enhances
+  ouroboros-network as a reusable diffusion library.
+- The class collects the types of the extra peers and extra tracing.
+  It also provides a method to retrieve a view with counters of those
+  extra peers as well as exposes the PublicExtraPeersAPI type. The latter
+  motivates the removal of extraPeersAPI from PeerSelectionActions record.
+
+- Added types for running ouroboros-network without any extra peer types:
+  - NoExtraPeers, NoExtraDebugState, NoExtraState, NoExtraFlags
+- Added SupportsPeerSelectionState instance for NoExtraPeers.
+- Added some convenience type aliases for running diffusion using NoExtraPeers:
+  - OuroborosTracePeerSelection, OuroborosDebugPeerSelection,
+    OuroborosPeerSelectionCounters
+
+- Added ToJSON instance for SizeInBytes
+
+<a id='changelog-0.24.0.0'></a>
+## 0.24.0.0 -- 2026-01-20
+
+### Breaking
+
+- All `ouroboros-*` were incorporated into `ouroboros-network`, at the same
+  time all **Cardano** specific components were pulled into `cardano-diffusion`:
+
+  * `ouroboros-network-protocols`                         -> `ouroboros-network:protocols`
+  * `ouroboros-network-protocols:testlib`                 -> `ouroboros-network:protocols-tests-lib`
+  * `ouroboros-network-protocols:test`                    -> `ouroboros-network:protocols-tests`
+  * `ouroboros-network-protocols:bench`                   -> `ouroboros-network:protocols-bench`
+  * `ouroboros-network-framework`                         -> `ouroboros-network:framework`
+  * `ouroboros-network-framework:testlib`                 -> `ouroboros-network:framework-tests-lib`
+  * `ouroboros-network-framework:sim-tests`               -> `ouroboros-network:framework-sim-tests`
+  * `ouroboros-network-framework:io-tests`                -> `ouroboros-network:framework-io-tests`
+  * `ouroboros-network-framework:demo-connection-manager` -> `ouroboros-network:demo-connection-manager`
+  * `ouroboros-network-framework:demo-ping-pong`          -> `ouroboros-network:demo-ping-pong`
+  * `ouroboros-network-mock`                              -> `ouroboros-network:mock`
+  * `ouroboros-network:testlib`                           -> `ouroboros-network:ouroboros-network-tests-lib`
+  * `ouroboros-network:sim-tests`                         -> `ouroboros-network:ouroboros-network-sim-tests`
+  * `ouroboros-network:io-tests`                          -> `ouroboros-network:ouroboros-network-io-tests`
+  * `ouroboros-network-testing`                           -> `ouroboros-network:tests-lib`
+  * `ouroboros-network-testing:test`                      -> `ouroboros-network:tests-lib`
+  * `ouroboros-network-api`                               -> `ouroboros-network:api`
+  * `ouroboros-network-api:test`                          -> `ouroboros-network:api-tests`
+  * `ouroboros-network-api:bench-anchored-fragment`       -> `ouroboros-network:api-bench`
+
+- The following modules were moved to a different namespace:
+  * `ouroboros-network:api` - moved `NodeTo{Node,Client}` modules under `Cardano` namespace
+  * `ouroboros-network:api-tests` - moved `NodeTo{Client,Node}.Version` tests
+  * `ouroboros-network:api-tests` - moved Test.Cardano.Network.Version
+  * `ouroboros-network:mock` - moved its last module to protocols-tests-lib
+
+- Introduced `cardano-diffusion` package.  It contains all `Cardano.Network`
+  namespace.
+
+- Added exports to `Ouroboros.Network.PeerSelection`, quite likely you can
+  simplify your imports.  If you need Cardano-specific peer selection, try
+  importing from `Cardano.Network.PeerSelection` from `cardano-diffusion`
+  package.  It re-exports almost all of `Ouroboros.Network.PeerSelection`.
+
+- `PeerChurnArgs{getLedgerStateCtx}` was renamed to
+  `PeerChurnArgs{getLedgerPeersAPI}`, to avoid a name clash with
+  `PeerSelectionActions{getLedgerStateCtx}`.
+
+- `LocalRootConfig{extraFlags}` was renamed to
+  `LocalRootConfig{extraLocalRootFlags}` to avoid a name clash with
+  `LocalRootPeersGroup{extraFlags}` field in the `Ouroboros.Network.Topology`
+  module.
+
+- `Ouroboros.Network.PeerSelection.PeerSelectionActions.requestPublicRootPeers`
+   was renamed as `requestPublicRootPeersImpl` to avoid a name clash with
+   `PeerSelectionActions{requestPublicRootPeers}`.
+
+- `linger` function's arm callback now returns a `Maybe Bool`
+- `keyedLinger'`s arm callback now returns a `Maybe (Set b)`
+- `keyedLinger'`'s arm callback now returns a `Maybe (Set b, DiffTime))`
+- The above changes allow those functions to reset signal state on `Nothing`
+
+- `Ouroboros.Network.Server.Simple.with` now requires tracers as argument,
+  these should not be nullTracers in production code, although
+  `Network.Mux.Trace.ChannelTrace` and `Network.Mux.Trace.BearerTrace` should
+  be off by default as they can be extensive, the `Network.Mux.Trace.Trace` can
+  be on by default, while `Ouroboros.Network.Server.Simple.ServerTrace` must be
+  on as it traces important exception.
+
+- Ouroboros.Network.TxSubmission.Mempool.Simple API changes:
+  - `Mempool` is parametrised over `txid` and `tx` types
+  - `new` takes `tx -> txid` getter function
+
+ouroboros-network:api:
+- Added `LedgerBigPeerSnapshotV23` and `LedgerAllPeerSnapshotV23` constructors to `LedgerPeerSnapshot` type
+  to identify network magic and tip block hash when snapshot was recorded
+- removed compareLedgerPeerSnapshotApproximate
+
+- Changed the type of `localRoots` to `LocalRoots`.
+- Modified `AcquireOutboundConnection` to include an additional parameter: `Provenance`.
+- `acquireOutboundConnectionImpl` only creates a new connection if `Provenance` permits it.
+- `jobPromoteColdPeer` only creates a new connection if no inbound connection is found and provenance is set to `Outbound`.
+
+- Changed ToJSON for DiffusionMode to agree with the topology file syntax. ReadJSON was already correct.
+
+- Moved `timeLimitsChainSync` from `Ouroboros.Network.Protocol.ChainSync.Codec` to `Cardano.Network.Protocol.ChainSync.Codec.TimeLimits`.
+- Added type variable `extraFlag` to `HandleWithExpandedCtx`.
+- Added type variable `extraFlag` to `ConnectionManagerWithExpandedCtx`.
+- Added type variable `extraFlag` to `ExpandedInitiatorContext`.
+- Added type variable `extraFlag` to `OuroborosBundleWithExpandedCtx`.
+- Added type variable `extraFlag` to `MiniProtocolWithExpandedCtx`.
+- Added type variable `extraFlag` to `RunMiniProtocolWithExpandedCtx`.
+- Added type variable `extraFlag` to `Applications`.
+- Added type variable `extraFlag` to `NodeToNodeHandle`.
+- Added type variable `extraFlag` to `NodeToNodeConnectionManager`.
+- Added type variable `extraFlag` to `NodeToNodePeerConnectionHandle`.
+- Added type variable `extraFlag` to `PeerStateActions`.
+- Added type variable `extraFlag` to `ApplicationHandle`.
+- Added type variable `extraFlag` to `PeerConnectionHandle`.
+- Added type variable `extraFlag` to `PeerStateActionsArguments`.
+- Added parameter `extraFlags` to `PeerSelection.Governor.ActivePeers.belowTarget`.
+- Added parameter `extraFlags` to `PeerSelection.Governor.ActivePeers.jobPromoteWarmPeer`.
+- Added parameter `extraFlags` to `PeerSelection.Governor.EstablishedPeers.belowTarget`.
+- Added parameter `extraFlags` to `PeerSelection.Governor.EstablishedPeers.jobPromoteColdPeer`.
+- Added parameter `extraFlags` to `PeerStateActions.establishPeerConnection`.
+- Added parameter `extraFlags` to `PeerStateActions.activatePeerConnection`.
+
+- `TxSubmissionMempoolWriter` added tx validation error type parameter,
+  `mempoolAddTxs` returns a list of accepted `txids` and a list of rejected
+  `txids` with errors.
+- `Ouroboros.Network.TxSubmission.Mempool.Simple.getMempoolWriter` changes:
+  - supplies the current time to the validation function,
+  - removed `ctx` parameter,
+  - validation happens in an `STM` transaction, which allows acquiring and
+    updating validation `ctx`.
+
+- Change the type of `unwrapCBORinCBOR` and `fromSerialised` to allow inner decoders that may fail.
+
+### Non-Breaking
+
+- Added latch function to `Signal`
+- bugfix missed promotion/demotion opportunities in:
+  - `ActivePeers.aboveTargetBigLedgerPeers`
+  - `ActivePeers.aboveTargetOther`
+  - `EstablishedPeers.aboveTargetOther`
+  - `EstablishedPeers.aboveTargetBigLedgerPeers`
+  - `EstablishedPeers.belowTargetLocal`
+  - `EstablishedPeers.belowTargetOther`
+  - `ActivePeers.belowTargetLocal`
+
+- `PublicPeerSelectionState`: added `Show` instance.
+- `showSignalValue`: cleaner counterexample output.
+- `Test.Ouroboros.Network.Utils.dynamicTracer`: added, using  `IOSim`'s `traceM` API.
+
+- The `FromJSON RelayAccessPoints` instance has changed: `0.0.0.0` and `::`
+  addresses are forbidden in topology file, they are not valid destination
+  addresses and can lead to confusing situations.
+
+- Added `NoThunks` instance for `NodeToNodeVersion`.
+
+- Patched so that it compiles to wasm
+
+- framework: improved handling of `ECONNABORTED` in the simple server.
+
+ouroboros-network:api:
+- Added {To,From}JSON instances to `Point` and `Block`
+- added {encode,decode}LedgerPeerSnapshotPoint
+- added {encode,decode}StakePools
+
+ouroboros-network:
+- Removed cardano-slotting dependency
+- moved `jobVerifyPeerSnapshot` to cardano-diffusion
+
+- Enforce a minimum churn of established peers based on churned active peers.
+- Enforce a minimum churn of known peers based on churned established peers.
+
+- Added `LocalRoots` type in `Ouroboros.Network.PeerSelection.State.LocalRootPeers` with the following fields:
+  - `rootConfig` of type `RootConfig`
+  - `provenance` of type `Provenance`
+- Added `localProvenance` field to `LocalRootConfig`.
+- Added a new constructor `InboundConnectionNotFound` for `ConnectionManagerError`.
+- Renamed `Test.Ouroboros.Network.Orphans` to `Test.Ouroboros.Network.OrphanInstances`.
+- Moved the following instances from `Test.Ouroboros.Network.PeerSelection.LocalRootPeers` to `Test.Ouroboros.Network.OrphanInstances`:
+  - `Arbitrary WarmValency`
+  - `Arbitrary HotValency`
+- Removed duplicated code from `Test.Ouroboros.Network.PeerSelection.Instances` and `Test.Ouroboros.Network.PeerSelection.RelayAccessPoint`, and moved it to `Test.Ouroboros.Network.OrphanInstances`:
+  - `genIPv4`
+  - `genIPv6`
+  - `Arbitrary SlotNo`
+  - `Arbitrary PeerAdvertise`
+  - `Arbitrary PeerSharing`
+  - `Arbitrary AfterSlot`
+  - `Arbitrary UseLedgerPeers`
+  - `Arbitrary PortNumber`
+  - `Arbitrary RelayAccessPoint`
+  - `Arbitrary LedgerRelayAccessPoint`
+  - `Arbitrary (LocalRootConfig extraFlags)`
+
+- Add support for nothunks == 0.3.*.
+
+- Update dependencies.
+
+- Make dissecting of mux segments in wireshark more robust
+
+- Added keyedTimeout', which allows to reset the timeouts
+  when an arbitrary condition is met
+
+- Added field `eicExtraFlags` to `ExpandedInitiatorContext`.
+- Added field `defaultExtraFlags` to `PeerSelectionGovernorArgs`.
+
+* Limit the number of failures to 5 before a peer that isn't a localroot, bootstrap peer or public root peer is forgotten.
+* Decrease the time blockfetch waits for chainsync to exit in case of an error
+* Increase the timeout for chainsync in state StMustReply to between 601 and 911 seconds.
+
+- Compatibility with both `QuickCheck` < 2.15 and >= 2.16
+
+- Improved `Message TxSubmission` ToJSON instance
+- Improved `Message KeepAlived` ToJSON instance
+- `Ouroboros.Network.TxSubmission.Mempool.Simple` re-export `TxSubmissionMempool{Reader,Writer}` data types.
+- `Ouroboros.Network.TxSubmission.Mempool.Simple` is assigning stable `idx`s to `tx`s.
+<!-- scriv-end-here -->
+
+## 0.23.0.0 -- 2025-09-10
 
 ### Breaking changes
 
+* `Ouroboros.Network.NodeTo{Client,Node}` modules moved to
+  `ouroboros-network:cardano-diffusion` (as `Cardano.Network.NodeTo{Node,Client}`)
+* Adapt to simplified type of `headerForgeUTCTime` in `BlockFetchConsensusInterface`.
+* Type of `defaultSyncTargets` changed.
+* Type of `defaultPeerSharing` changed.
+* Adapted to changes of `BlockFetchConsensusInterface`.
+* `Ouroboros.Network.TxSubmission.Inbound` moved to `Ouroboros.Network.TxSubmission.Inbound.V1`
+* `Ouroboros.Network.TxSubmission.Inbound.V1.txSubmissionInbound` takes extra argument: `TxSubmissionInitDelay` (previously configurable through `cabal` flags).
+* Removed the `txsubmission-delay` cabal flag.
+* `ProtocolErrorRequestedTooManyTxids` includes number of unacked txids.
+* Renamed `PeerChurnArgs` field: `getOriginalPeerSelectionTargets` -> `pcaPeerSelectionTargets`
+* Renamed `genesisPeerTargets` -> `genesisPeerSelectionTargets` in the following types:
+  * `Cardano.Network.Diffusion.Types.CardanoNodeArguments`
+  * `Cardano.Network.Diffusion.Types.ExtraPeerSelectionActions`
+  * `Cardano.Network.PeerSelection.Churn.ExtraArguments`
+  * `Cardano.Network.PeerSelection.Governor.PeerSelectionActions.ExtraPeerSelectionActions`
+* Added `localRootPeersGroupToJSON`, `localRootPeersGroupsToJSON`,
+`networkToplogogyToJSON` to `Ouroboros.Network.OrphanInstances`
+* Removed `ToJSON` and `FromJSON` instances for `NetworkTopology extraConfig
+  extraFlags` from `Ouroboros.Network.OrphanInstances`.
+* Added `ToJSON` and `FromJSON` instances for `NetworkTopology
+  UseBootstrapPeers PeerTrustable` to `Cardano.Network.OrphanInstances`
+* Added `localRootPeersGroupFromJSON`, `localRootPeersGroupsFromJSON`,
+  `networkTopologyFromJSON` to `Ouroboros.Network.OrphanInstances`
+
 ### Non-breaking changes
 
-## 0.21.3.0 -- 2025-07-15
+* Added `IsBlockProducer` type in `Ouroboros.Network.Diffusion.Configuration`.
+* Added `Ouroboros.Network.TxSubmission.Inbound.V2`.
+
+## 0.22.1.0 -- 28.07.2025
+
+### Non-breaking changes
+
+- Added `pchPromotedHotVar` to `PeerConnectionHandle` to track when a peer has been promoted to hot
+- Added tag `PeerHotDuration` to `PeerSelectionActionsTrace` to indicate how long a remote
+  peer has been in hot mode until it was either demoted or closed.
+
+## 0.22.0.0 -- 28.06.2025
+
+### Breaking changes
+
+- Removed `TraceLedgerPeersResult` and `TraceLedgerPeersFailure`
+- Changed `TraceLedgerPeersDomains` to accept `[RelayAccessPoint]`
+- Removed `TraceLocalRootResult` and changed some other constructors to
+  accept `RelayAccessPoint` in lieu of `DomainAccessPoint`, which was removed
+- Removed `TracePublicRootResult` and `TracePublicRootFailure`
+- Changed signature of `resolveLedgerPeers`, `localRootPeersProvider`, `publicRootPeersProvider`,
+  `withPeerSelectionActions` to accept random seed for DNS SRV lookup.
+- `TraceChurnMode` removed from `TracePeerSelection`
+- `ChurnMode` moved to new `cardano-diffusion` sublibrary
+- Created `cardano-diffusion` sublibrary with all cardano specific
+  implementation details.
+- Removed `Cardano.Network.ExtraArguments` module as it is no longer needed
+- Created `Cardano.Network.Diffusion` with its own run function. This function
+  initializes the cardano diffusion with all its specific parameters and
+  provides a cleaner API that makes explicit what locally configured values it
+  depends on.
+- Created Cardano `LocalConfiguration` data type
+- Simplified `Arguments` / `Applications` / `Interfaces data` type. No longer
+  receives a lot of type parameters as some of their fields were moved to
+  `DiffusionArguments`
+- Removed `readFetchMode` from `Churn.ExtraArguments` and moved it to `LedgerPeersConsensusInterface`.
+- Renamed `Arguments` to `DiffusionConfiguration`
+- Renamed `Applications` to `DiffusionApplications`
+- `runM` function now receives `ExtraParameters` as an argument
+- Configurable Mux Egress Poll Interval
+- New data type `LedgerRelayAccessPoint`, similar to `RelayAccessPoint` but using unqualified srv domain names (according to CIP#155).
+- CBOR encoding of `LedgerRelayAccessPoint` changed (compared to `RelayAccessPoint`).
+- JSON encoding of `LedgerRelayAccessPoint` changed (compared to `RelayAccessPoint`), `LedgerRelayAccessPointV1` newtype wrapper is provided.
+- CBOR encoding of `RelayAccessPont` changed.
+- JSON encoding of `RelayAccessPont` changed.
+
+### Non-breaking changes
+
+* Tracing of DNS results is now directly performed by `dnsLookupWithTTL`,
+  which is captured by the new `DNSTrace` type. Results are tagged with
+  the new `DNSLookupResult` type. The type of peer that traces are tagged with
+  are captured by the `DNSPeersKind` type, which also distinguishes the type
+  of ledger peer.
+* Added `dispatchLookupWithTTL`
+* Fixed CBOR encoding of the `LedgerPeerSnapshot`.
+
+## 0.21.3.0 -- 2025-07-17
 
 ### Breaking changes
 
@@ -35,7 +435,7 @@
 
 * Lowered default established targets:
   - ledger peers:     30 (deadline mode)
-  - big ledgerp pers: 40 (syncing mode)
+  - big ledger peers: 40 (syncing mode)
 
 ## 0.21.0.0 -- 2025-05-13
 
@@ -45,7 +445,7 @@
   support for mux buffered socket bearers
 * added `daEgressPollInterval` to diffusion `Arguments` record
   which specifies the cork duration of mux egress queue at the
-  application layer. This provides a configurable latency/efficieny
+  application layer. This provides a configurable latency/efficiency
   tradeoff.
 
 ### Non-breaking changes
@@ -251,14 +651,29 @@
 
 ### Breaking changes
 
+* APIs removed from `Ouroboros.Network.{NodeToClient,NodeToNode}` modules:
+  * NetworkServerTracers
+  * NetworkMutableState APIs
+  * withServer
+  * ErrorPolicies
+  * WithAddr
+  * SuspendDecision
+* APIs removed from `Ouroboros.Network.NodeToNode` module:
+  * IPSubscriptionTarget
+  * NetworkIPSubscription
+  * NetworkSubscriptionTracers
+  * SubscriptionParams
+  * DnsSubscriptionTarget
+  * DnsSubscriptioinParams
+  * NetworkDNSSubscriptionTracers
+  * dnsSubscriptionWorker
 * Added `AcquireConnectionError` to `PeerSelectionActionsTrace`
 * Removed deprecated `ReconnectDelay` type alias.
-* Addapted to `network-mux` changes in https://github.com/IntersectMBO/ouroboros-network/pull/4999
-* Addapted to `network-mux` changes in https://github.com/IntersectMBO/ouroboros-network/pull/4997
+* Adapted to `network-mux` changes in https://github.com/IntersectMBO/ouroboros-network/pull/4999
+* Adapted to `network-mux` changes in https://github.com/IntersectMBO/ouroboros-network/pull/4997
 * Use `LocalRootConfig` instead of a tuple.
 * Extended `LocalRootConfig` with `diffusionMode :: DiffusionMode` field.
 * Added `diConnStateSupply` record field to `Ouroboros.Network.Diffusion.P2P.Interfaces`.
-* UnknownMiniProtocol error should not crash the node
 
 ### Non-breaking changes
 
@@ -274,7 +689,7 @@
   bootstrapping a node in Genesis consensus mode, or in general when
   LedgerStateJudgement = TooOld, subject to conditions in
   `LedgerPeers.ledgerPeersThread`.
-* Diffusion run function in P2P mode has new paramaters:
+* Diffusion run function in P2P mode has new parameters:
     * `daPeerTargets` - replaces daPeerSelectionTargets. `Configuration`
         module provides an API. Used by peer selection & churn governors. Given
         required arguments, it returns the correct target basis to use for churn
@@ -291,7 +706,7 @@
 * `Ouroboros.Network.NodeToClient.connectTo` takes
   `OuroborosApplicationWithMinimalCtx` which is using `Void` type for responder
   protocols.  It anyway only accepts `InitiatorMode`, and thus no responder
-  protocols can be specified, nontheless this might require changing type
+  protocols can be specified, nonetheless this might require changing type
   signature of the applications passed to it.  `connectTo` returns now either
   an error or the result of the first terminated mini-protocol.
 * `Ouroboros.Network.NodeToNode.connectTo` returns either an error or the
@@ -414,7 +829,7 @@
 * Update the bigledger retry state in case of an exception
 * Reset public root retry state when transition between `LedgerStateJudgements`.
 * Reduce public root retry timer.
-* Don't classify a config file with publicRoot/bootstrapPeers IP addresss only
+* Don't classify a config file with publicRoot/bootstrapPeers IP addresses only
   as a DNS error.
 * Renamed `fuzzRnd` to `stdGen` in `PeerSelectionState`
 * split `stdGen` in `PeerSelection.Governor.wakeupAction`
@@ -501,7 +916,7 @@
   involves the bootstrap peers flag and the ledger state judgement value.
 
 * Improved tracing when peersharing
-* set knownSuccessfulConnection for incomming peers
+* set knownSuccessfulConnection for incoming peers
 * Don't use minPeerShareTime with GuardedSkip
 
 * `PeerSharingController` is now private and `requestPeers` is exported
@@ -525,7 +940,7 @@
 
 ### Breaking changes
 
-* Renamed `ReconnectDelay` to `RepromoteDelay` - the dalay is used after
+* Renamed `ReconnectDelay` to `RepromoteDelay` - the delay is used after
   demotion to `cold` as well as `warm` state.  A `ReconnectDelay` type alias is
   still provided but deprecated.
 
@@ -623,7 +1038,7 @@ Deprecated release.
 ### Non-breaking changes
 
 * Updated KeepAlive client to collect a rtt sample for the first packet.
-* Less aggresive churning of established and known peers.
+* Less aggressive churning of established and known peers.
 * Added peer sharing to wireshark dissector.
 * Added ledger peers to diffusion simulation
 * Fixed diffusion tests.
@@ -811,7 +1226,7 @@ Deprecated release.
 
 ### Non-breaking changes
 
-* `ghc-9.4` and `ghc-9.6` compatiblity.
+* `ghc-9.4` and `ghc-9.6` compatibility.
 
 ## 0.5.0.0 -- 2023-04-19
 

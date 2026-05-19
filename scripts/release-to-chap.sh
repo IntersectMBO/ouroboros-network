@@ -53,10 +53,10 @@ if [[ $REPORT == 1 ]] then
   for cbl in $(fd -e cabal); do
     v=$(grep '^version:' $cbl | awk '{print $2}')
     n=$(dirname $cbl)
-    x=$(git --no-pager log --oneline $n-$v.. -- $(dirname $cbl) | wc -l)
+    x=$(git --no-pager log --oneline $n-$v.. -- $(dirname $cbl) || true | wc -l)
     if [[ !($x == "0") ]]; then
       trace "$n changes since $v"
-      git --no-pager log --oneline --graph $n-$v.. -- $(dirname $cbl)
+      git --no-pager log --oneline --graph $n-$v.. -- $(dirname $cbl) || true
     fi
   done
 else
@@ -81,24 +81,27 @@ else
     git switch main
     git pull
   fi
-  BRANCH="network/release-$(date -I)"
+  BRANCH="network/release-$(date +%Y%m%d-%H%M%S)"
   if [[ $TEST == 1 ]];then
     BRANCH="${BRANCH}-DO_NOT_MERGE"
   fi
   git switch -c $BRANCH
 
+  # Gather packages to publish on CHaP
+  publish=""
   for cf in $cabal_files; do
     name=$(cat $cf | grep '^name:' | awk '{ print $2 }')
     version=$(cat $cf | grep '^version:' | awk '{ print $2 }')
     dir="$CHAP_DIR/_sources/$name/$version"
     if [[ !(-d $dir) ]];then
-      trace "publishing $name-$version"
-      ./scripts/add-from-github.sh $REPO_URL $gitsha $name
+      publish="$publish $name"
       if [[ $TEST == 0 ]];then
         git --git-dir "$gitdir/.git" tag "$name-$version" $gitsha
       fi
     fi
   done
+  trace "Publishing:$publish"
+  ./scripts/add-from-github.sh $REPO_URL $gitsha $publish
 
   git --no-pager log --oneline origin/main..HEAD
 

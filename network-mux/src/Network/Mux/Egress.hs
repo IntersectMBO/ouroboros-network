@@ -22,6 +22,7 @@ import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI hiding (timeout)
+import Control.Tracer (Tracer)
 
 import Network.Mux.Timeout
 import Network.Mux.Types
@@ -142,19 +143,20 @@ muxer
        , MonadTimer m
        )
     => EgressQueue m
+    -> Tracer m BearerTrace
     -> Bearer m
     -> m void
-muxer egressQueue Bearer { writeMany, sduSize, batchSize, egressInterval } =
+muxer egressQueue tracer Bearer { writeMany, sduSize, batchSize, egressInterval } =
     withTimeoutSerial $ \timeout ->
     forever $ do
       start <- getMonotonicTime
       TLSRDemand mpc md d <- atomically $ readTBQueue egressQueue
       sdu <- processSingleWanton egressQueue sduSize mpc md d
       sdus <- buildBatch [sdu] (sduLength sdu)
-      void $ writeMany timeout (reverse sdus)
+      void $ writeMany tracer timeout sdus
       end <- getMonotonicTime
       empty <- atomically $ isEmptyTBQueue egressQueue
-      when (empty) $ do
+      when empty $ do
         let delta = diffTime end start
         threadDelay (egressInterval - delta)
 
@@ -171,15 +173,17 @@ muxer egressQueue Bearer { writeMany, sduSize, batchSize, egressInterval } =
     -- The batch size is either limited by the bearer
     -- (e.g the SO_SNDBUF for Socket) or number of SDUs.
     --
-    buildBatch sdus _ | length sdus >= maxSDUsPerBatch   = return sdus
-    buildBatch sdus sdusLength | sdusLength >= batchSize = return sdus
-    buildBatch sdus !sdusLength = do
-      demand_m <- atomically $ tryReadTBQueue egressQueue
-      case demand_m of
-           Just (TLSRDemand mpc md d) -> do
-             sdu <- processSingleWanton egressQueue sduSize mpc md d
-             buildBatch (sdu:sdus) (sdusLength + sduLength sdu)
-           Nothing -> return sdus
+    buildBatch s sl = reverse <$> go s sl
+     where
+      go sdus _ | length sdus >= maxSDUsPerBatch   = return sdus
+      go sdus sdusLength | sdusLength >= batchSize = return sdus
+      go sdus !sdusLength = do
+        demand_m <- atomically $ tryReadTBQueue egressQueue
+        case demand_m of
+             Just (TLSRDemand mpc md d) -> do
+               sdu <- processSingleWanton egressQueue sduSize mpc md d
+               go (sdu:sdus) (sdusLength + sduLength sdu)
+             Nothing -> return sdus
 
 -- | Pull a `maxSDU`s worth of data out out the `Wanton` - if there is
 -- data remaining requeue the `TranslocationServiceRequest` (this
@@ -211,7 +215,7 @@ processSingleWanton egressQueue (SDUSize sduSize)
       pure frag
     let sdu = SDU {
                 msHeader = SDUHeader {
-                    mhTimestamp = (RemoteClockModel 0),
+                    mhTimestamp = RemoteClockModel 0,
                     mhNum       = mpc,
                     mhDir       = md,
                     mhLength    = fromIntegral $ BL.length blob

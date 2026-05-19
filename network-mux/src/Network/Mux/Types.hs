@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                        #-}
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingVia                #-}
@@ -15,13 +16,13 @@ module Network.Mux.Types
   ( MiniProtocolInfo (..)
   , MiniProtocolNum (..)
   , MiniProtocolDirection (..)
+  , StartOnDemandOrEagerly (..)
   , MiniProtocolLimits (..)
   , Mode (..)
   , HasInitiator
   , HasResponder
   , Status (..)
   , IngressQueue
-  , IngressQueueVal (..)
   , MiniProtocolIx
   , MiniProtocolDir (..)
   , protocolDirEnum
@@ -42,28 +43,31 @@ module Network.Mux.Types
   , remoteClockPrecision
   , RuntimeError (..)
   , ReadBuffer (..)
+  , BearerTrace (..)
   ) where
 
 import Prelude hiding (read)
 
-import Control.Exception (Exception, SomeException)
+import Control.Exception
+import Control.Tracer (Tracer)
 import Data.ByteString.Builder (Builder)
 import Data.ByteString.Lazy qualified as BL
 import Data.Functor (void)
 import Data.Int
-import Data.IntMap (IntMap)
-import Data.IntMap qualified as IntMap
 import Data.Ix (Ix (..))
+import Data.Strict.Tuple as Strict (Pair)
 import Data.Word
 import Foreign.Ptr (Ptr)
 import Quiet
+import Text.Printf
 
 import GHC.Generics (Generic)
 
 import Control.Concurrent.Class.MonadSTM.Strict (StrictTVar)
 import Control.Monad.Class.MonadTime.SI
 
-import Network.Mux.Channel (ByteChannel, Channel (..), Reception (..))
+import Network.Mux.Channel (ByteChannel, Channel (..))
+import Network.Mux.TCPInfo
 import Network.Mux.Timeout (TimeoutFn)
 
 
@@ -96,6 +100,7 @@ newtype MiniProtocolLimits =
        --
        maximumIngressQueue :: Int
      }
+  deriving Show
 
 -- $interface
 --
@@ -144,6 +149,7 @@ data MiniProtocolInfo (mode :: Mode) =
        miniProtocolCapability :: !(Maybe Int)
        -- ^ capability on which the mini-protocol should run
      }
+  deriving Show
 
 data MiniProtocolDirection (mode :: Mode) where
     InitiatorDirectionOnly :: MiniProtocolDirection InitiatorMode
@@ -153,6 +159,21 @@ data MiniProtocolDirection (mode :: Mode) where
 
 deriving instance Eq (MiniProtocolDirection (mode :: Mode))
 deriving instance Ord (MiniProtocolDirection (mode :: Mode))
+deriving instance Show (MiniProtocolDirection (mode :: Mode))
+
+-- | Strategy how to start a mini-protocol.
+--
+data StartOnDemandOrEagerly =
+    -- | Start a mini-protocol promptly.
+    StartEagerly
+    -- | Start a mini-protocol when data is received for the given
+    -- mini-protocol.  Must be used only when initial message is sent by the
+    -- remote side.
+  | StartOnDemand
+    -- | Like `StartOnDemand`, but start a mini-protocol if data is received for
+    -- any mini-protocol set to `StartOnDemand`.
+  | StartOnDemandAny
+  deriving (Eq, Show)
 
 --
 -- Mux status
@@ -178,14 +199,7 @@ data Status
 -- Mux internal types
 --
 
-type IngressQueue m = StrictTVar m IngressQueueVal
-
-data IngressQueueVal = MkIngressQueueVal
-  -- | number of bytes in the 'Builder'
-  !Int64
-  -- | when each chunk of those bytes arose
-  !(IntMap Time)
-  !Builder
+type IngressQueue m = StrictTVar m (Strict.Pair Int64 Builder)
 
 -- | The index of a protocol in a MuxApplication, used for array indices
 newtype MiniProtocolIx = MiniProtocolIx Int
@@ -254,11 +268,11 @@ msHeaderLength = 8
 --
 data Bearer m = Bearer {
     -- | Timestamp and send SDU.
-      write          :: TimeoutFn m -> SDU -> m Time
+      write          :: Tracer m BearerTrace -> TimeoutFn m -> SDU -> m Time
     -- | Timestamp and send many SDUs.
-    , writeMany      :: TimeoutFn m -> [SDU] -> m Time
+    , writeMany      :: Tracer m BearerTrace -> TimeoutFn m -> [SDU] -> m Time
     -- | Read a SDU
-    , read           :: TimeoutFn m -> m (SDU, Time)
+    , read           :: Tracer m BearerTrace -> TimeoutFn m -> m (SDU, Time)
     -- | Return a suitable SDU payload size.
     , sduSize        :: SDUSize
     -- | Return a suitable batch size
@@ -280,14 +294,15 @@ newtype SDUSize = SDUSize { getSDUSize :: Word16 }
 --
 bearerAsChannel
   :: forall m. Functor m
-  => Bearer m
+  => Tracer m BearerTrace
+  -> Bearer m
   -> MiniProtocolNum
   -> MiniProtocolDir
   -> ByteChannel m
-bearerAsChannel bearer ptclNum ptclDir =
+bearerAsChannel tracer bearer ptclNum ptclDir =
       Channel {
-        send = \blob -> void $ write bearer noTimeout (wrap blob),
-        recv = Just . cnv <$> read bearer noTimeout
+        send = \blob -> void $ write bearer tracer noTimeout (wrap blob),
+        recv = Just . msBlob . fst <$> read bearer tracer noTimeout
       }
     where
       -- wrap a 'ByteString' as 'SDU'
@@ -302,9 +317,6 @@ bearerAsChannel bearer ptclNum ptclDir =
               },
             msBlob = blob
           }
-
-      cnv :: (SDU, Time) -> Reception BL.ByteString
-      cnv (sdu, tm) = MkReception (IntMap.singleton 0 tm) (msBlob sdu)
 
       noTimeout :: TimeoutFn m
       noTimeout _ r = Just <$> r
@@ -323,7 +335,7 @@ instance Exception RuntimeError
 
 -- | ReadBuffer for Mux Bearers
 --
--- This is used to read more data than what currently need in one syscall.
+-- This is used to read more data than whats currently needed in one syscall.
 -- Any extra data read is cached in rbVar until the next read request.
 data ReadBuffer m = ReadBuffer {
   -- | Read cache
@@ -333,3 +345,55 @@ data ReadBuffer m = ReadBuffer {
   -- | Size of `rbBuf`.
   , rbSize :: Int
   }
+
+
+-- | Low-level bearer trace tags (these are not traced by the tracer which is
+-- passed to Mux).
+--
+data BearerTrace =
+      TraceRecvHeaderStart
+    | TraceRecvHeaderEnd SDUHeader
+    | TraceRecvDeltaQObservation SDUHeader Time
+    | TraceRecvDeltaQSample Double Int Int Double Double Double Double String
+    | TraceEmitDeltaQ
+    | TraceRecvRaw Int
+    | TraceRecvStart Int
+    | TraceRecvEnd Int
+    | TraceSendStart SDUHeader
+    | TraceSendEnd
+    | TraceSDUReadTimeoutException
+    | TraceSDUWriteTimeoutException
+    | TraceTCPInfo StructTCPInfo Word16
+
+instance Show BearerTrace where
+    show TraceRecvHeaderStart = printf "Bearer Receive Header Start"
+    show (TraceRecvHeaderEnd SDUHeader { mhTimestamp, mhNum, mhDir, mhLength }) = printf "Bearer Receive Header End: ts: 0x%08x (%s) %s len %d"
+        (unRemoteClockModel mhTimestamp) (show mhNum) (show mhDir) mhLength
+    show (TraceRecvDeltaQObservation SDUHeader { mhTimestamp, mhLength } ts) = printf "Bearer DeltaQ observation: remote ts %d local ts %s length %d"
+        (unRemoteClockModel mhTimestamp) (show ts) mhLength
+    show (TraceRecvDeltaQSample d sp so dqs dqvm dqvs estR sdud) = printf "Bearer DeltaQ Sample: duration %.3e packets %d sumBytes %d DeltaQ_S %.3e DeltaQ_VMean %.3e DeltaQ_VVar %.3e DeltaQ_estR %.3e sizeDist %s"
+         d sp so dqs dqvm dqvs estR sdud
+    show TraceEmitDeltaQ = "emit DeltaQ"
+    show (TraceRecvRaw len) = printf "Bearer Receive Raw: length %d" len
+    show (TraceRecvStart len) = printf "Bearer Receive Start: length %d" len
+    show (TraceRecvEnd len) = printf "Bearer Receive End: length %d" len
+    show (TraceSendStart SDUHeader { mhTimestamp, mhNum, mhDir, mhLength }) = printf "Bearer Send Start: ts: 0x%08x (%s) %s length %d"
+        (unRemoteClockModel mhTimestamp) (show mhNum) (show mhDir) mhLength
+    show TraceSendEnd = printf "Bearer Send End"
+    show TraceSDUReadTimeoutException = "Timed out reading SDU"
+    show TraceSDUWriteTimeoutException = "Timed out writing SDU"
+#ifdef linux_HOST_OS
+    show (TraceTCPInfo StructTCPInfo
+            { tcpi_snd_mss, tcpi_rcv_mss, tcpi_lost, tcpi_retrans
+            , tcpi_rtt, tcpi_rttvar, tcpi_snd_cwnd }
+            len)
+                                     =
+      printf "TCPInfo rtt %d rttvar %d cwnd %d smss %d rmss %d lost %d retrans %d len %d"
+        (fromIntegral tcpi_rtt :: Word) (fromIntegral tcpi_rttvar :: Word)
+        (fromIntegral tcpi_snd_cwnd :: Word) (fromIntegral tcpi_snd_mss :: Word)
+        (fromIntegral tcpi_rcv_mss :: Word) (fromIntegral tcpi_lost :: Word)
+        (fromIntegral tcpi_retrans :: Word)
+        len
+#else
+    show (TraceTCPInfo _ len) = printf "TCPInfo len %d" len
+#endif

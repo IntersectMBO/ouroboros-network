@@ -62,14 +62,9 @@ done
 # TODO CPP pragmas in export lists are not supported by stylish-haskell
 FD_OPTS="-e hs --ignore-file ./scripts/ci/check-stylish-ignore -X stylish-haskell $STYLISH_HASKELL_ARGS"
 
-fd . './quickcheck-monoids'          $FD_OPTS
 fd . './network-mux'                 $FD_OPTS
-fd . './ouroboros-network-api'       $FD_OPTS
-fd . './ouroboros-network-framework' $FD_OPTS
-fd . './ouroboros-network-mock'      $FD_OPTS
-fd . './ouroboros-network-protocols' $FD_OPTS
 fd . './ouroboros-network'           $FD_OPTS
-fd . './cardano-client'              $FD_OPTS
+fd . './cardano-diffusion'           $FD_OPTS
 
 if [ $USE_GIT == 1 ]; then
 git --no-pager diff --exit-code

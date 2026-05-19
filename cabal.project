@@ -15,23 +15,18 @@ repository cardano-haskell-packages
 -- repeat the index-state for hackage to work around haskell.nix parsing limitation
 index-state:
   -- Bump this if you need newer packages from Hackage
-  , hackage.haskell.org 2024-12-10T16:20:07Z
+  , hackage.haskell.org 2026-03-04T10:56:45Z
 
   -- Bump this if you need newer packages from CHaP
-  , cardano-haskell-packages 2024-11-26T16:00:26Z
+  , cardano-haskell-packages 2026-02-17T21:19:19Z
 
 packages: ./cardano-ping
           ./monoidal-synchronisation
-          ./quickcheck-monoids
           ./network-mux
           ./ouroboros-network
-          ./ouroboros-network-api
-          ./ouroboros-network-framework
-          ./ouroboros-network-mock
-          ./ouroboros-network-protocols
-          ./ouroboros-network-testing
+          ./cardano-diffusion
           ./ntp-client
-          ./cardano-client
+          ./acts-generic
 
 tests: True
 benchmarks: True
@@ -54,6 +49,71 @@ package network-mux
 package ouroboros-network
   flags: +asserts +cddl
 
--- For 0.21.3 release only for CI tests
-constraints:
-    QuickCheck ^>=2.14
+package acts
+  flags: -finitary
+
+allow-newer:
+  , quickcheck-instances:QuickCheck
+
+if impl (ghc >= 9.14)
+  constraints:
+    , containers > 0.7
+    , foldl >= 1.4.18
+    , nothunks >= 0.3
+
+  allow-newer:
+    -- https://github.com/haskell/aeson/issues/1155
+    , aeson:QuickCheck
+    , aeson:base
+    , aeson:bytestring
+    , aeson:containers
+    , aeson:ghc-prim
+    , aeson:template-haskell
+    , aeson:text-iso8601
+    , aeson:time
+    , aeson:time-compat
+
+    -- https://github.com/phadej/boring/issues/48
+    , boring:base
+
+    -- https://github.com/well-typed/canonical-json/issues/12
+    , canonical-json:containers
+
+    -- https://github.com/well-typed/cborg/issues/373
+    , cborg:base
+    , cborg:containers
+    , cborg-json:base
+
+    -- https://github.com/haskellari/indexed-traversable/issues/50
+    , indexed-traversable:base
+    , indexed-traversable:containers
+    , indexed-traversable-instances:base
+
+    -- https://github.com/haskellari/qc-instances/issues/110
+    , quickcheck-instances:base
+    , quickcheck-instances:bytestring
+
+    -- https://github.com/haskellari/these/issues/211
+    , semialign:base
+    , semialign:containers
+
+    -- https://github.com/well-typed/cborg/issues/373
+    , serialise:base
+    , serialise:containers
+
+    -- https://github.com/phadej/tdigest/issues/50
+    , tdigest:base
+
+    -- https://github.com/haskellari/these/issues/211
+    , these:base
+
+    -- https://github.com/haskellari/tree-diff/issues/102
+    , tree-diff:QuickCheck
+    , tree-diff:base
+    , tree-diff:containers
+
+    -- https://github.com/haskell-hvr/uuid/issues/95
+    , uuid-types:template-haskell
+
+    -- https://github.com/serokell/haskell-with-utf8/issues/41
+    , with-utf8:base

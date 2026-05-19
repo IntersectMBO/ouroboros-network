@@ -129,7 +129,7 @@ should be discontinued.
 
 Instead of integrating version negotiation in the protocol, we may want to
 establish it via the peer discovery system. Part of a `FIND_NODE` response
-could be a list of supported protcol versions and the relevant IP/PORT of the
+could be a list of supported protocol versions and the relevant IP/PORT of the
 server which implements it.
 
 ## Repurposing of the OutboundQueue

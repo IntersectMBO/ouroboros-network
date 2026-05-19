@@ -1,0 +1,20 @@
+chainSyncMessage
+    = msgRequestNext
+    / msgAwaitReply
+    / msgRollForward
+    / msgRollBackward
+    / msgFindIntersect
+    / msgIntersectFound
+    / msgIntersectNotFound
+    / chainSyncMsgDone
+
+msgRequestNext         = [0]
+msgAwaitReply          = [1]
+msgRollForward         = [2, base.header, base.tip]
+msgRollBackward        = [3, base.point, base.tip]
+msgFindIntersect       = [4, base.points]
+msgIntersectFound      = [5, base.point, base.tip]
+msgIntersectNotFound   = [6, base.tip]
+chainSyncMsgDone       = [7]
+
+;# import network.base as base

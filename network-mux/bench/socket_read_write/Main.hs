@@ -10,11 +10,11 @@ import Control.Monad (forever, replicateM_, unless, when)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer
-import Data.ByteString.Builder (toLazyByteString)
+import Data.ByteString.Builder (Builder, toLazyByteString)
 import Data.ByteString.Lazy qualified as BL
 import Data.Functor (void)
 import Data.Int
-import Data.IntMap qualified as IntMap
+import Data.Strict.Tuple as Strict (Pair ((:!:)))
 import Data.Word
 import Network.Socket (Socket)
 import Network.Socket qualified as Socket
@@ -23,7 +23,6 @@ import Test.Tasty.Bench
 
 import Network.Mux
 import Network.Mux.Bearer
-import Network.Mux.Channel (Reception (..))
 import Network.Mux.Egress
 import Network.Mux.Ingress
 import Network.Mux.Timeout (withTimeoutSerial)
@@ -54,9 +53,9 @@ readBenchmark sndSizeV sndSize addr = do
       atomically $ putTMVar sndSizeV sndSize
       Socket.connect sd addr
       withReadBufferIO (\buffer -> do
-        bearer <- getBearer makeSocketBearer sduTimeout activeTracer sd buffer
+        bearer <- getBearer makeSocketBearer sduTimeout sd buffer
 
-        let chan = bearerAsChannel bearer (MiniProtocolNum 42) InitiatorDir
+        let chan = bearerAsChannel activeTracer bearer (MiniProtocolNum 42) InitiatorDir
         doRead chan 0
        )
     )
@@ -66,7 +65,7 @@ readBenchmark sndSizeV sndSize addr = do
    doRead  chan !cnt = do
      msg_m <- recv chan
      case msg_m of
-          Just (MkReception _tms msg) -> doRead chan (cnt + BL.length msg)
+          Just msg -> doRead chan (cnt + BL.length msg)
           Nothing  -> error "doRead: nullread"
 
 -- | Like readDemuxerBenchmark but it doesn't empty the ingress queue until
@@ -81,18 +80,18 @@ readDemuxerQueueBenchmark sndSizeV sndSize addr = do
 
       Socket.connect sd addr
       withReadBufferIO (\buffer -> do
-        bearer <- getBearer makeSocketBearer sduTimeout activeTracer sd buffer
+        bearer <- getBearer makeSocketBearer sduTimeout sd buffer
         ms42 <- mkMiniProtocolState 42
-        withAsync (demuxer [ms42] bearer) $ \aid -> do
+        withAsync (demuxer [ms42] activeTracer bearer) $ \aid -> do
           doRead 0xa5 (totalPayloadLen sndSize) (miniProtocolIngressQueue ms42)
           cancel aid
        )
     )
  where
-   doRead :: Word8 -> Int64 -> StrictTVar IO IngressQueueVal -> IO ()
+   doRead :: Word8 -> Int64 -> StrictTVar IO (Strict.Pair Int64 Builder) -> IO ()
    doRead tag maxData queue = do
      msg <- atomically $ do
-       MkIngressQueueVal l _tm b <- readTVar queue
+       l :!: b <- readTVar queue
        if l == maxData
           then
             return (toLazyByteString b)
@@ -113,10 +112,10 @@ readDemuxerBenchmark sndSizeV sndSize addr = do
 
       Socket.connect sd addr
       withReadBufferIO (\buffer -> do
-        bearer <- getBearer makeSocketBearer sduTimeout activeTracer sd buffer
+        bearer <- getBearer makeSocketBearer sduTimeout sd buffer
         ms42 <- mkMiniProtocolState 42
         ms41 <- mkMiniProtocolState 41
-        withAsync (demuxer [ms41, ms42] bearer) $ \aid -> do
+        withAsync (demuxer [ms41, ms42] activeTracer bearer) $ \aid -> do
           withAsync (doRead 42 (totalPayloadLen sndSize) (miniProtocolIngressQueue ms42) 0) $ \aid42 -> do
             withAsync (doRead 41 (totalPayloadLen 10) (miniProtocolIngressQueue ms41) 0) $ \aid41 -> do
               _ <- waitBoth aid42 aid41
@@ -125,15 +124,15 @@ readDemuxerBenchmark sndSizeV sndSize addr = do
        )
     )
  where
-   doRead :: Word8 -> Int64 -> StrictTVar IO IngressQueueVal -> Int64 -> IO ()
+   doRead :: Word8 -> Int64 -> StrictTVar IO (Strict.Pair Int64 Builder) -> Int64 -> IO ()
    doRead _ maxData _ cnt | cnt >= maxData = return ()
    doRead tag maxData queue !cnt = do
      msg <- atomically $ do
-       MkIngressQueueVal l _tms b <- readTVar queue
+       l :!: b <- readTVar queue
        if l == 0
           then retry
           else do
-            writeTVar queue $ MkIngressQueueVal 0 IntMap.empty mempty
+            writeTVar queue $ 0 :!: mempty
             return (toLazyByteString b)
      if BL.all ( == tag) msg
         then doRead tag maxData queue (cnt + BL.length msg)
@@ -141,7 +140,7 @@ readDemuxerBenchmark sndSizeV sndSize addr = do
 
 mkMiniProtocolState :: MonadSTM m => Word16 -> m (MiniProtocolState 'InitiatorMode m)
 mkMiniProtocolState num = do
-  mpq <- newTVarIO $ MkIngressQueueVal 0 IntMap.empty mempty
+  mpq <- newTVarIO $ 0 :!: mempty
   mpv    <- newTVarIO StatusRunning
 
   let mpi = MiniProtocolInfo (MiniProtocolNum num) InitiatorDirectionOnly
@@ -153,10 +152,10 @@ startServer :: StrictTMVar IO Int64 -> Socket -> IO ()
 startServer sndSizeV ad = forever $ do
     (sd, _) <- Socket.accept ad
     withReadBufferIO (\buffer -> do
-      bearer <- getBearer makeSocketBearer sduTimeout activeTracer sd buffer
+      bearer <- getBearer makeSocketBearer sduTimeout sd buffer
       sndSize <- atomically $ takeTMVar sndSizeV
 
-      let chan = bearerAsChannel bearer (MiniProtocolNum 42) ResponderDir
+      let chan = bearerAsChannel activeTracer bearer (MiniProtocolNum 42) ResponderDir
           payload = BL.replicate sndSize 0xa5
           maxData = totalPayloadLen sndSize
           numberOfSdus = fromIntegral $ maxData `div` sndSize
@@ -169,7 +168,7 @@ startServerMany :: StrictTMVar IO Int64 -> Socket -> IO ()
 startServerMany sndSizeV ad = forever $ do
     (sd, _) <- Socket.accept ad
     withReadBufferIO (\buffer -> do
-      bearer <- getBearer makeSocketBearer sduTimeout activeTracer sd buffer
+      bearer <- getBearer makeSocketBearer sduTimeout sd buffer
       sndSize <- atomically $ takeTMVar sndSizeV
 
       let maxData = totalPayloadLen sndSize
@@ -180,10 +179,10 @@ startServerMany sndSizeV ad = forever $ do
       withTimeoutSerial $ \timeoutFn -> do
         replicateM_ numberOfCalls $ do
           let sdus = replicate 10 $ wrap $ BL.replicate sndSize 0xa5
-          void $ writeMany bearer timeoutFn sdus
+          void $ writeMany bearer activeTracer timeoutFn sdus
         when (runtSdus > 0) $ do
           let sdus = replicate runtSdus $ wrap $ BL.replicate sndSize 0xa5
-          void $ writeMany bearer timeoutFn sdus
+          void $ writeMany bearer activeTracer timeoutFn sdus
      )
  where
   -- wrap a 'ByteString' as 'SDU'
@@ -207,7 +206,7 @@ startServerEgresss :: DiffTime -> StrictTMVar IO Int64 -> Socket -> IO ()
 startServerEgresss pollInterval sndSizeV ad = forever $ do
     (sd, _) <- Socket.accept ad
     withReadBufferIO (\buffer -> do
-      bearer <- getBearer (makeSocketBearer' pollInterval) sduTimeout activeTracer sd buffer
+      bearer <- getBearer (makeSocketBearer' pollInterval) sduTimeout sd buffer
       sndSize <- atomically $ takeTMVar sndSizeV
       eq <- atomically $ newTBQueue 100
       w42 <- newTVarIO BL.empty
@@ -218,7 +217,7 @@ startServerEgresss pollInterval sndSizeV ad = forever $ do
           numberOfCalls = numberOfSdus `div` 10 :: Int
           runtSdus = numberOfSdus `mod` 10 :: Int
 
-      withAsync (muxer eq bearer) $ \aid -> do
+      withAsync (muxer eq activeTracer bearer) $ \aid -> do
 
         replicateM_ numberOfCalls $ do
           let payload42s = replicate 10 $ BL.replicate sndSize 42
