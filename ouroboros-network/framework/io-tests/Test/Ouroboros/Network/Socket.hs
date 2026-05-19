@@ -93,9 +93,9 @@ tests =
 #endif
   , after AllFinish LAST_IP_TEST $
     testProperty "socket error during receive"           (withMaxSuccess 10 prop_socket_recv_error)
-  , after AllFinish LAST_IP_TEST $
+  , after AllFinish "socket error during receive" $
     testProperty "socket error during send"              (withMaxSuccess 10 prop_socket_send_error)
-  , after AllFinish "socket close during receive" $
+  , after AllFinish "socket error during send" $
     testProperty "socket client connection failure"      prop_socket_client_connect_error
   ]
 #undef LAST_IP_TEST
