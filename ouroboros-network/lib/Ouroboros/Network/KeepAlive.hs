@@ -9,6 +9,7 @@ module Ouroboros.Network.KeepAlive
   , keepAliveClient
   , keepAliveServer
   , TraceKeepAliveClient (..)
+  , module Registry
   ) where
 
 import Control.Concurrent.Class.MonadSTM qualified as Lazy
@@ -21,6 +22,7 @@ import Data.Map.Strict qualified as M
 import Data.Maybe (fromJust)
 import System.Random (StdGen, random)
 
+import Ouroboros.Network.KeepAlive.Registry as Registry
 import Ouroboros.Network.ControlMessage (ControlMessage (..), ControlMessageSTM)
 import Ouroboros.Network.DeltaQ
 import Ouroboros.Network.Protocol.KeepAlive.Client
