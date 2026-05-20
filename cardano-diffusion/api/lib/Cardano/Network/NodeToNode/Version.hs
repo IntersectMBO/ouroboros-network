@@ -1,7 +1,8 @@
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DeriveGeneric  #-}
-{-# LANGUAGE LambdaCase     #-}
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE DeriveAnyClass     #-}
+{-# LANGUAGE DeriveGeneric      #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE LambdaCase         #-}
+{-# LANGUAGE NamedFieldPuns     #-}
 
 module Cardano.Network.NodeToNode.Version
   ( NodeToNodeVersion (..)
@@ -35,6 +36,7 @@ import Ouroboros.Network.Handshake.Queryable (Queryable (..))
 import Ouroboros.Network.Magic
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PerasSupport
+import Ouroboros.Network.Util (PrettyShow (..))
 
 -- | Enumeration of node to node protocol versions.
 --
@@ -88,7 +90,8 @@ data NodeToNodeVersion =
     -- ^ Experimental.
     --
     -- Adds support for Peras mini-protocols (if 'PerasFlag' is set).
-  deriving (Eq, Ord, Enum, Bounded, Show, Generic, NFData, NoThunks)
+  deriving stock (Eq, Ord, Enum, Bounded, Show, Generic)
+  deriving anyclass (NFData, NoThunks, PrettyShow)
 
 nodeToNodeVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToNodeVersion
 nodeToNodeVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
@@ -117,9 +120,10 @@ data NodeToNodeVersionData = NodeToNodeVersionData
   , query         :: !Bool
   , perasSupport  :: !PerasSupport
   }
-  deriving (Show, Eq, Generic, NFData)
+  deriving stock (Show, Eq, Generic)
   -- 'Eq' instance is not provided, it is not what we need in version
   -- negotiation (see 'Acceptable' instance below).
+  deriving anyclass (NFData, PrettyShow)
 
 instance Acceptable NodeToNodeVersionData where
     -- | Check that both side use the same 'networkMagic'.  Choose smaller one
