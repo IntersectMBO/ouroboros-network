@@ -1,7 +1,8 @@
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DeriveGeneric  #-}
-{-# LANGUAGE LambdaCase     #-}
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE DeriveAnyClass     #-}
+{-# LANGUAGE DeriveGeneric      #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE LambdaCase         #-}
+{-# LANGUAGE NamedFieldPuns     #-}
 
 module Cardano.Network.NodeToClient.Version
   ( NodeToClientVersion (..)
@@ -21,6 +22,7 @@ import Ouroboros.Network.CodecCBORTerm
 import Ouroboros.Network.Handshake.Acceptable (Accept (..), Acceptable (..))
 import Ouroboros.Network.Handshake.Queryable (Queryable (..))
 import Ouroboros.Network.Magic
+import Ouroboros.Network.Util (PrettyShow (..))
 
 
 -- | Enumeration of node to client protocol versions.
@@ -68,7 +70,8 @@ data NodeToClientVersion
     | NodeToClientV_23
     -- ^ added @QueryDRepsDelegations@,
     -- LedgerPeerSnapshot CBOR encoding contains block hash and NetworkMagic
-  deriving (Eq, Ord, Enum, Bounded, Show, Generic, NFData)
+  deriving stock (Eq, Ord, Enum, Bounded, Show, Generic)
+  deriving anyclass (NFData, PrettyShow)
 
 -- | We set 16ths bit to distinguish `NodeToNodeVersion` and
 -- `NodeToClientVersion`.  This way connecting wrong protocol suite will fail
@@ -127,7 +130,8 @@ data NodeToClientVersionData = NodeToClientVersionData
   { networkMagic :: !NetworkMagic
   , query        :: !Bool
   }
-  deriving (Eq, Show, Generic, NFData)
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (NFData, PrettyShow)
 
 instance Acceptable NodeToClientVersionData where
     acceptableVersion local remote
