@@ -74,7 +74,7 @@ import Ouroboros.Network.DeltaQ (GSV (GSV),
 import Ouroboros.Network.Diffusion.Topology (LocalRootPeersGroup (..),
            LocalRootPeersGroups (..), LocalRoots (..), NetworkTopology (..),
            PublicRootPeers (..), RootConfig (..))
-import Ouroboros.Network.Diffusion.Types (DiffusionTracer (..))
+import Ouroboros.Network.Diffusion.Types (DiffusionTracer (..), NoExtraFlags)
 import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.Driver.Simple
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (repromoteDelay))
@@ -453,6 +453,9 @@ instance ToJSON addr => ToJSON (PeerSharingResult addr) where
 -- `LocalRootConfig`.
 class JSONField extraFlags where
   fieldName :: Proxy extraFlags -> Maybe Key
+
+instance JSONField NoExtraFlags where
+  fieldName _ = Nothing
 
 instance (JSONField extraFlags, ToJSON extraFlags) => ToJSON (LocalRootConfig extraFlags) where
   toJSON LocalRootConfig { peerAdvertise,
