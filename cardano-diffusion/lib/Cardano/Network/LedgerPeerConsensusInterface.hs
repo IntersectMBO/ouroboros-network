@@ -5,6 +5,7 @@ module Cardano.Network.LedgerPeerConsensusInterface
   , GetImmutableBlockPointError (..)
     -- * Re-exports
   , FetchMode (..)
+  , PraosFetchMode (..)
   , LedgerStateJudgement (..)
   , OutboundConnectionsState (..)
   ) where
@@ -15,7 +16,7 @@ import Cardano.Network.LedgerStateJudgement
 import Cardano.Network.PeerSelection.LocalRootPeers
            (OutboundConnectionsState (..))
 import Ouroboros.Network.Block (Point)
-import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode (..))
+import Ouroboros.Network.BlockFetch.ConsensusInterface (FetchMode (..), PraosFetchMode (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type (RawBlockHash)
 
 
