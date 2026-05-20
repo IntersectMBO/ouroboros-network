@@ -233,7 +233,6 @@ library
     Ouroboros.Network.Diffusion.Utils
     Ouroboros.Network.ExitPolicy
     Ouroboros.Network.KeepAlive
-    Ouroboros.Network.KeepAlive.Registry
     Ouroboros.Network.PeerSelection
     Ouroboros.Network.PeerSelection.Churn
     Ouroboros.Network.PeerSelection.Governor
@@ -267,6 +266,7 @@ library
     Ouroboros.Network.TxSubmission.Outbound
 
   other-modules:
+    Ouroboros.Network.KeepAlive.Registry
     Ouroboros.Network.PeerSelection.Governor.BigLedgerPeers
     Ouroboros.Network.PeerSelection.Governor.EstablishedPeers
     Ouroboros.Network.PeerSelection.Governor.KnownPeers
