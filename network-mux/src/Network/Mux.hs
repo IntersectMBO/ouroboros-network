@@ -788,7 +788,8 @@ runMiniProtocol Mux { muxMiniProtocols,
       case st of
         Stopping -> throwSTM (Shutdown Nothing st)
         Stopped  -> throwSTM (Shutdown Nothing st)
-        _        -> return ()
+        Failed e -> throwSTM (Shutdown (Just e) st)
+        Ready {} -> return ()
 
       -- Make sure no thread is currently running, and update the status to
       -- indicate a thread is running (or ready to start on demand)
