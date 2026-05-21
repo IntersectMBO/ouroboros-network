@@ -22,6 +22,9 @@ module Ouroboros.Network.Diffusion.Types
   , NoExtraState (..)
   , NoExtraDebugState (..)
   , NoExtraPeers (..)
+  , NoExtraConfig (..)
+  , NoExtraAPI (..)
+  , NoExtraChurnArgs (..)
   , ViewExtraPeers (..)
   , OuroborosPeerSelectionCounters
   , OuroborosDebugPeerSelection
@@ -158,6 +161,12 @@ data NoExtraState = NoExtraState
 data NoExtraDebugState = NoExtraDebugState
   deriving (Eq, Show)
 data NoExtraPeers peeraddr = NoExtraPeers
+  deriving (Eq, Show)
+data NoExtraConfig = NoExtraConfig
+  deriving (Eq, Show)
+data NoExtraAPI = NoExtraAPI
+  deriving (Eq, Show)
+data NoExtraChurnArgs = NoExtraChurnArgs
   deriving (Eq, Show)
 
 instance Monoid (NoExtraPeers peeraddr) where
