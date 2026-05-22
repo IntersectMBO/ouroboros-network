@@ -21,7 +21,7 @@ import Network.Mux.Types
 --   seconds (when in use).
 initDeltaQTracer :: MonadSTM m
                  => m (Tracer m BearerTrace -> Tracer m BearerTrace)
-initDeltaQTracer = newTVarIO initialStatsA >>= pure . dqTracer
+initDeltaQTracer = dqTracer <$> newTVarIO initialStatsA
 
 initDeltaQTracer' :: MonadSTM m
                   => Tracer m BearerTrace

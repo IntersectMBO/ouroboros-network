@@ -2070,6 +2070,61 @@ close_experiment
                                       ])
                               False
 
+              -- With empty reqs, CleanShutdown also sends MsgDone immediately.
+              -- The server is StartOnDemand and may not be scheduled before the
+              -- client socket closes (EOF → BearerClosed → mux Stopped), so it
+              -- receives Shutdown Nothing Stopped instead of a normal termination.
+              -- On Windows the bearer raises IOException rather than BearerClosed,
+              -- so the mux enters Failed state and completionAction returns
+              -- Shutdown (Just e) (Failed e) instead of Shutdown Nothing Stopped.
+              (CleanShutdown, Right (Right []), Left serverError)
+                 | Just e <- fromException (collapsE serverError)
+                 , case e of
+                     Mx.Shutdown {}     -> True
+                     Mx.BearerClosed {} -> True
+                     _                  -> False
+                -> return $ label "CleanShutdown"
+                          $ property True
+
+                 | otherwise
+                -> return $ counterexample
+                              (show serverError)
+                              False
+
+              -- The egress thread clears the Wanton TVar before writeMany sends
+              -- the bytes to the bearer.  If the mux run thread (Mx.run) is
+              -- cancelled in that window the MsgDone SDU is never transmitted.
+              -- The server is blocking on recv waiting for MsgDone; when the
+              -- client socket closes it gets BearerClosed → mux Failed.  The
+              -- client responses are still correct, so accept the
+              -- connection-level server error.
+              (CleanShutdown, Right (Right resps), Left serverError)
+                 | expected <- expectedResps (List.length resps)
+                 , resps == expected
+                 , Just e <- fromException (collapsE serverError)
+                 , case e of
+                     Mx.Shutdown {}     -> True
+                     Mx.BearerClosed {} -> True
+                     _                  -> False
+                -> return $ label "CleanShutdown"
+                          $ property True
+
+                 | expected <- expectedResps (List.length resps)
+                 , resps /= expected
+                -> return $ counterexample
+                              (concat [ show resps
+                                      , " ≠ "
+                                      , show expected
+                                      ])
+                          $ counterexample
+                              (show serverError)
+                              False
+
+                 | otherwise
+                -> return $ counterexample
+                              (show serverError)
+                              False
+
               -- close on read with empty responses is the same as clean
               -- shutdown
               (CloseOnRead, Right (Right resps@[]), Right _)

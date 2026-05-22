@@ -9,6 +9,7 @@ module Ouroboros.Network.KeepAlive
   , keepAliveClient
   , keepAliveServer
   , TraceKeepAliveClient (..)
+  , module Registry
   ) where
 
 import Control.Concurrent.Class.MonadSTM qualified as Lazy
@@ -23,6 +24,7 @@ import System.Random (StdGen, random)
 
 import Ouroboros.Network.ControlMessage (ControlMessage (..), ControlMessageSTM)
 import Ouroboros.Network.DeltaQ
+import Ouroboros.Network.KeepAlive.Registry as Registry
 import Ouroboros.Network.Protocol.KeepAlive.Client
 import Ouroboros.Network.Protocol.KeepAlive.Server
 import Ouroboros.Network.Protocol.KeepAlive.Type
@@ -47,6 +49,7 @@ keepAliveClient
     -> ControlMessageSTM m
     -> peer
     -> StrictTVar m (M.Map peer PeerGSV)
+    -- ^ available from `KeepAliveRegistry`
     -> KeepAliveInterval
     -> KeepAliveClient m ()
 keepAliveClient tracer inRng controlMessageSTM peer dqCtx KeepAliveInterval { keepAliveInterval } =

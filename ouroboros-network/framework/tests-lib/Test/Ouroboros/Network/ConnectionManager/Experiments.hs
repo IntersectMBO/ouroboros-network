@@ -788,8 +788,7 @@ unidirectionalExperiment stdGen timeouts snocket makeBearer confSock socket clie
                      (\case
                         Connected connId _ _ -> releaseOutboundConnection connectionManager connId
                         Disconnected {} -> error "unidirectionalExperiment: impossible happened")
-                     (\connHandle -> do
-                      case connHandle of
+                     (\case
                         Connected connId _ (Handle mux muxBundle controlBundle _
                                         :: HandleWithExpandedCtx Mx.InitiatorMode peerAddr ()
                                               DataFlowProtocolData ByteString m [resp] Void) ->
@@ -902,15 +901,14 @@ bidirectionalExperiment
                           connId
                       Disconnected {} ->
                         error "bidirectionalExperiment: impossible happened")
-                    (\connHandle ->
-                      case connHandle of
-                        Connected connId _ (Handle mux muxBundle controlBundle _) -> do
-                          try @_ @SomeException $
-                            runInitiatorProtocols
-                              SingInitiatorResponderMode
-                              mux muxBundle controlBundle connId
-                        Disconnected _ err ->
-                          throwIO (userError $ "bidirectionalExperiment: " ++ show err)
+                    (\case
+                      Connected connId _ (Handle mux muxBundle controlBundle _) -> do
+                        try @_ @SomeException $
+                          runInitiatorProtocols
+                            SingInitiatorResponderMode
+                            mux muxBundle controlBundle connId
+                      Disconnected _ err ->
+                        throwIO (userError $ "bidirectionalExperiment: " ++ show err)
                   ))
                 `concurrently`
                 replicateM
@@ -928,16 +926,15 @@ bidirectionalExperiment
                           connectionManager1
                           connId
                       Disconnected {} ->
-                        error "ibidirectionalExperiment: impossible happened")
-                    (\connHandle ->
-                      case connHandle of
-                        Connected connId _ (Handle mux muxBundle controlBundle _) -> do
-                          try @_ @SomeException $
-                            runInitiatorProtocols
-                              SingInitiatorResponderMode
-                              mux muxBundle controlBundle connId
-                        Disconnected _ err ->
-                          throwIO (userError $ "bidirectionalExperiment: " ++ show err)
+                        error "bidirectionalExperiment: impossible happened")
+                    (\case
+                      Connected connId _ (Handle mux muxBundle controlBundle _) -> do
+                        try @_ @SomeException $
+                          runInitiatorProtocols
+                            SingInitiatorResponderMode
+                            mux muxBundle controlBundle connId
+                      Disconnected _ err ->
+                        throwIO (userError $ "bidirectionalExperiment: " ++ show err)
                   ))
 
               -- When the two sides run concurrently, one side may finish its
@@ -955,7 +952,7 @@ bidirectionalExperiment
                             Mx.Shutdown {}     -> True
                             Mx.BearerClosed {} -> True
                             _                  -> False
-                        -> acc
+                        -> labelMuxError e acc
                       Left err -> counterexample (show err) False
                       Right a  -> a === expected .&&. acc
 
@@ -986,3 +983,19 @@ withLock True   v m =
     bracket (atomically $ takeTMVar v)
             (atomically . putTMVar v)
             (const m)
+
+labelMuxError :: forall p. Testable p
+              => Mx.Error
+              -> p
+              -> Property
+labelMuxError e =
+  label $ case e of
+    Mx.UnknownMiniProtocol {} -> "unknown mini-protocol"
+    Mx.BearerClosed {}        -> "bearer closed"
+    Mx.IngressQueueOverRun {} -> "ingress queue over run"
+    Mx.InitiatorOnly {}       -> "initiator only"
+    Mx.IOException {}         -> "io exception"
+    Mx.SDUDecodeError {}      -> "sdu decode error"
+    Mx.SDUReadTimeout {}      -> "sdu read timeout"
+    Mx.SDUWriteTimeout {}     -> "sdu write timeout"
+    Mx.Shutdown {}            -> "shutdown"
