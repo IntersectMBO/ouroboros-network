@@ -27,11 +27,14 @@ module Test.Mux.ReqResp
   , ReqRespClientLoop (..)
   , runClientBurstCBOR
   , runClientBurstBin
+  , runClientBurst
     -- ** Active Server
   , ReqRespServerBurst (..)
   , ReqRespServerLoop (..)
   , runServerBurstCBOR
   , runServerBurstBin
+  , runServerBurst
+  , runCBORDecoderWithChannel
   ) where
 
 import Codec.CBOR.Decoding qualified as CBOR hiding (Done, Fail)
