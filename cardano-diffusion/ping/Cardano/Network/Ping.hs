@@ -202,15 +202,25 @@ instance ToJSON PingTip where
 
 data StatPoint = StatPoint
   { spTimestamp :: UTCTime
+    -- ^ time-stamp of the sample value
   , spHost      :: TL.Text
+    -- ^ host
   , spCookie    :: Word16
+    -- ^ sample number
   , spSample    :: Double
+    -- ^ current sample value
   , spMedian    :: Double
+    -- ^ median value
   , spP90       :: Double
+    -- ^ 90 percentile
   , spMean      :: Double
+    -- ^ mean value
   , spMin       :: Double
+    -- ^ minimal value
   , spMax       :: Double
+    -- ^ maximal value
   , spStd       :: Double
+    -- ^ standard deviation
   }
 
 instance Show StatPoint where
@@ -232,6 +242,7 @@ instance ToJSON StatPoint where
       , "mean"      .= spMean
       , "min"       .= spMin
       , "max"       .= spMax
+      , "std"       .= spStd
       ]
 
 toStatPoint :: UTCTime -> TL.Text -> Word16 -> Double -> TDigest 5 -> StatPoint
