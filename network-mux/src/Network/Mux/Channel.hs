@@ -33,7 +33,9 @@ module Network.Mux.Channel
     -- ** connected `ByteChannel`s
   , createBufferConnectedChannels
   , createPipeConnectedChannels
+#if !defined(mingw32_HOST_OS)
   , createSocketConnectedChannels
+#endif
   ) where
 
 import Data.ByteString qualified as BS
