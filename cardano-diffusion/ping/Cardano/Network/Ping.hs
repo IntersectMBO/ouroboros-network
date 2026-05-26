@@ -487,7 +487,9 @@ pingClient protocol stdout opts@PingOpts{..} peer =
                      diffusionMode = InitiatorOnlyDiffusionMode,
                      peerSharing   = PeerSharingDisabled,
                      query         = pingOptsQuery,
-                     perasSupport  = PerasUnsupported
+                     perasSupport  = if versionNumber >= NodeToNodeV_16
+                                     then PerasSupported
+                                     else PerasUnsupported
                    }
                    (const ())
                )
