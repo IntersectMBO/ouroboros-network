@@ -2092,10 +2092,25 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
       peerSelectionTraceMap (TraceVerifyPeerSnapshot result)         =
         "TraceVerifyPeerSnapshot " <> show result
       eventsSeenNames = map peerSelectionTraceMap events
+      ledgerPeerUsageLabels =
+        mapMaybe ledgerPeerUsageLabel events
+
+      ledgerPeerUsageLabel
+        :: TracePeerSelection extraState extraFlags extraPeers peeraddr
+        -> Maybe String
+      ledgerPeerUsageLabel = \case
+        TraceBigLedgerPeersResults peers _ _ -> Just $ "TraceBigLedgerPeersResults " ++ show (Set.size peers)
+        TraceForgetBigLedgerPeers _ _ peers -> Just $ "TraceForgetBigLedgerPeers " ++ show (Set.size peers)
+        TracePromoteColdBigLedgerPeers _ _ peers -> Just $ "TracePromoteColdBigLedgerPeers " ++ show (Set.size peers)
+        TracePromoteWarmBigLedgerPeers _ _ peers -> Just $ "TracePromoteWarmBigLedgerPeers " ++ show (Set.size peers)
+        TraceDemoteWarmBigLedgerPeers _ _ peers -> Just $ "TraceDemoteWarmBigLedgerPeers " ++ show (Set.size peers)
+        TraceDemoteHotBigLedgerPeers _ _ peers -> Just $ "TraceDemoteHotBigLedgerPeers " ++ show (Set.size peers)
+        _ -> Nothing
 
    -- TODO: Add checkCoverage here
    in tabulate "peer selection trace" eventsSeenNames
-      True
+       $ tabulate "distribution of used ledger peers" ledgerPeerUsageLabels
+         True
 
 -- | A variant of
 -- 'Test.Ouroboros.Network.ConnectionHandler.Network.PeerSelection.prop_governor_nolivelock'
