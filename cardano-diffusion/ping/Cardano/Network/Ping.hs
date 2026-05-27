@@ -287,7 +287,7 @@ keepAliveDelay :: DiffTime
 keepAliveDelay = 1
 
 idleTimeout :: DiffTime
-idleTimeout = 5
+idleTimeout = 1
 
 
 data PingClientError
@@ -435,6 +435,9 @@ pingClients protocol opts peers = do
       loggerThread opts msgQueue
       `catch`
       \(e :: SomeException) -> IO.hPutStrLn IO.stderr (displayException e)
+                            >> throwIO e
+    threadDelay idleTimeout
+
 
 pingClient
   :: forall versionNumber versionData.
@@ -644,8 +647,6 @@ pingClient protocol stdout opts@PingOpts{..} peer =
                   --
                   -- ping mode over node-to-client protocol is not supported
                   --
-
-              threadDelay idleTimeout
 
     getPeerName :: IO TL.Text
     getPeerName =
