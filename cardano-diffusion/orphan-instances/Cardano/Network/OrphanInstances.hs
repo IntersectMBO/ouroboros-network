@@ -79,6 +79,7 @@ instance FromJSON NodeToClientVersion where
     Number 21 -> pure NodeToClientV_21
     Number 22 -> pure NodeToClientV_22
     Number 23 -> pure NodeToClientV_23
+    Number 24 -> pure NodeToClientV_24
     Number x  -> fail $ "FromJSON.NodeToClientVersion: unsupported node-to-client protocol version " ++ show x
     x         -> fail $ "FromJSON.NodeToClientVersion: error parsing NodeToClientVersion: " ++ show x
 
@@ -92,6 +93,7 @@ instance ToJSON NodeToClientVersion where
     NodeToClientV_21 -> Number 21
     NodeToClientV_22 -> Number 22
     NodeToClientV_23 -> Number 23
+    NodeToClientV_24 -> Number 24
 
 instance ToJSON NodeToNodeVersionData where
   toJSON (NodeToNodeVersionData (NetworkMagic m) dm ps q) = object

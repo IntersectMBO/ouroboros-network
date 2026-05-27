@@ -63,6 +63,8 @@ data NodeToClientVersion
     | NodeToClientV_23
     -- ^ added @QueryDRepsDelegations@,
     -- LedgerPeerSnapshot CBOR encoding contains block hash and NetworkMagic
+    | NodeToClientV_24
+    -- ^ added @ValidateTx@ query
   deriving (Eq, Ord, Enum, Bounded, Show, Generic, NFData)
 
 -- | We set 16ths bit to distinguish `NodeToNodeVersion` and
@@ -84,6 +86,7 @@ nodeToClientVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
           NodeToClientV_21 -> enc 21
           NodeToClientV_22 -> enc 22
           NodeToClientV_23 -> enc 23
+          NodeToClientV_24 -> enc 24
         where
           enc :: Int -> CBOR.Term
           enc = CBOR.TInt . (`setBit` nodeToClientVersionBit)
@@ -98,6 +101,7 @@ nodeToClientVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
             21 -> Right NodeToClientV_21
             22 -> Right NodeToClientV_22
             23 -> Right NodeToClientV_23
+            24 -> Right NodeToClientV_24
             n  -> Left (unknownTag n)
         where
           dec :: CBOR.Term -> Either (Text, Maybe Int) Int
