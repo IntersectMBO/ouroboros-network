@@ -16,12 +16,14 @@
 
 module Cardano.Network.Ping
   ( PingOpts (..)
+  , PingMode (..)
   , LogFormat (..)
   , LogMsg (..)
   , StatPoint (..)
   , ProtocolFlavour (..)
   , pingClients
   , mainnetMagic
+  , NetworkMagic (..)
   ) where
 
 import Control.Concurrent.Class.MonadSTM.Strict
@@ -85,21 +87,26 @@ import Ouroboros.Network.Util.ShowProxy
 data LogFormat = AsJSON | AsText
   deriving (Eq, Show)
 
+
+data PingMode =
+    TipMode
+    -- puery tip
+  | PingMode
+    -- ping
+  | QueryMode
+    -- query handshake parameters
+  deriving (Eq, Show)
+
 data PingOpts = PingOpts
-  { pingOptsCount          :: Word32
+  { pingOptsCount :: Word32
     -- ^ Number of messages to send to the server
-  , pingOptsHandshakeQuery :: Bool
-    -- ^ Whether to send a query during the handshake to request the available protocol versions
-  , pingOptsMagic          :: NetworkMagic
+  , pingOptsMagic :: NetworkMagic
     -- ^ The network magic to use for all connections
-  , pingOptsJson           :: LogFormat
+  , pingOptsJson  :: LogFormat
     -- ^ Print output in JSON
-  , pingOptsQuiet          :: Bool
+  , pingOptsQuiet :: Bool
     -- ^ Less verbose output
-  , pingOptsGetTip         :: Bool
-    -- ^ Get Tip after handshake
-  , pingOptsQuery          :: Bool
-    -- ^ Query handshake parameters
+  , pingOptsMode  :: PingMode
   } deriving (Eq, Show)
 
 mainnetMagic :: NetworkMagic
@@ -115,8 +122,7 @@ data LogMsg = LogMsg BL.ByteString
 loggerThread :: PingOpts -> StrictTMVar IO LogMsg -> IO ()
 loggerThread
     PingOpts { pingOptsJson,
-               pingOptsGetTip,
-               pingOptsHandshakeQuery
+               pingOptsMode
              }
     msgQueue
     =
@@ -126,24 +132,31 @@ loggerThread
       msg <- atomically $ takeTMVar msgQueue
       case msg of
         LogMsg bs -> do
-          let bs' = case (pingOptsJson, first, pingOptsGetTip) of
-                (AsJSON, False, _)    ->
+          let bs' = case (pingOptsJson, first, pingOptsMode) of
+                (AsJSON, False, PingMode) ->
                   LBS.Char.pack ",\n" <> bs
-                (AsJSON, True, False) ->
+                (AsJSON, False, TipMode) ->
+                  LBS.Char.pack ",\n" <> bs
+                (AsJSON, True, PingMode) ->
                   LBS.Char.pack "{ \"pongs\": [ " <> bs
-                (AsJSON, True, True)  ->
+                (AsJSON, True, TipMode)  ->
                   LBS.Char.pack "{ \"tip\": [ " <> bs
-                (AsText, True, False) ->
+                (AsText, True, PingMode) ->
                   LBS.Char.pack "timestamp,                      host,                         cookie,  sample,  median,     p90,    mean,     min,     max,     std\n" <> bs
-                (AsText, True, True)  -> bs
-                (AsText, False, _)    -> bs
+                (AsText, True, TipMode)   -> bs
+                (AsText, False, _)        -> bs
+
+                (_     , _, QueryMode) -> bs
 
           LBS.Char.putStr bs'
           go False
         -- Output valid JSON even when no pongs were received
-        LogEnd -> when (pingOptsJson == AsJSON && not pingOptsHandshakeQuery) $
+        LogEnd -> when (pingOptsJson == AsJSON && pingOptsMode /= QueryMode) $
           if first
-            then IO.putStrLn $ if pingOptsGetTip then "{ \"tip\": [] }" else "{ \"pongs\": [] }"
+            then IO.putStrLn $ case pingOptsMode of
+              TipMode   -> "{ \"tip\": [] }"
+              PingMode  -> "{ \"pongs\": [] }"
+              QueryMode -> ""
             else IO.putStrLn "] }"
 
 sduTimeout :: DiffTime
@@ -497,7 +510,9 @@ pingClient protocol stdout opts@PingOpts{..} peer =
                      networkMagic  = pingOptsMagic,
                      diffusionMode = InitiatorOnlyDiffusionMode,
                      peerSharing   = PeerSharingDisabled,
-                     query         = pingOptsQuery,
+                     query         = case pingOptsMode of
+                                        QueryMode -> True
+                                        _         -> False,
                      perasSupport  = if versionNumber >= NodeToNodeV_16
                                      then PerasSupported
                                      else PerasUnsupported
@@ -513,7 +528,9 @@ pingClient protocol stdout opts@PingOpts{..} peer =
                    versionNumber
                    NodeToClientVersionData {
                      networkMagic = pingOptsMagic,
-                     query        = pingOptsQuery
+                     query        = case pingOptsMode of
+                                      QueryMode -> True
+                                      _         -> False
                    }
                    (const ())
                )
@@ -529,15 +546,20 @@ pingClient protocol stdout opts@PingOpts{..} peer =
           case r' of
             HandshakeQueryResult versions -> do
               -- print query results if it was supported by the remote side
-              when pingOptsHandshakeQuery $
+              when (pingOptsMode == QueryMode) $
                 -- override the pingOptsQuiet flag
                 logMsgWithPeer opts { pingOptsQuiet = False } peerName $
                   QueriedVersions (Map.keys versions)
             HandshakeNegotiationResult _ version _versionData -> do
               -- show negotiated version
               logMsg $ NegotiatedVersion version
-              case protocol of
-                _ | pingOptsGetTip -> do
+              case (protocol, pingOptsMode) of
+                (_, QueryMode) ->
+                  -- in `QueryMode` we didn't negotiated the connection, so we
+                  -- cannot run any mini-protocol.
+                  pure ()
+
+                (_, TipMode) -> do
                   --
                   -- run chain sync to get the tip
                   --
@@ -582,7 +604,8 @@ pingClient protocol stdout opts@PingOpts{..} peer =
                         >>= void . atomically
                     )
                     `finally` Mx.stop mx
-                NodeToNode -> do
+
+                (NodeToNode, PingMode) -> do
                   --
                   -- run keepalive client to get RTT samples
                   --
@@ -616,7 +639,12 @@ pingClient protocol stdout opts@PingOpts{..} peer =
                         >>= void . atomically
                     )
                     `finally` Mx.stop mx
-                NodeToClient -> pure ()
+
+                (NodeToClient, PingMode) -> pure ()
+                  --
+                  -- ping mode over node-to-client protocol is not supported
+                  --
+
               threadDelay idleTimeout
 
     getPeerName :: IO TL.Text
