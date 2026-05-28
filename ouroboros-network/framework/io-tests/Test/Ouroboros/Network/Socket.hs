@@ -67,6 +67,7 @@ import Ouroboros.Network.Protocol.Handshake.Unversioned
 
 import Test.Ouroboros.Network.Orphans ()
 
+import Test.Cardano.Base.QuickCheck qualified as BaseQC
 import Test.QuickCheck
 import Test.Tasty (DependencyType (..), TestTree, after, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
@@ -92,9 +93,9 @@ tests =
   , testProperty "socket send receive Unix"              prop_socket_send_recv_unix
 #endif
   , after AllFinish LAST_IP_TEST $
-    testProperty "socket error during receive"           (withMaxSuccess 10 prop_socket_recv_error)
+    testProperty "socket error during receive"           (BaseQC.withNumTests 10 prop_socket_recv_error)
   , after AllFinish "socket error during receive" $
-    testProperty "socket error during send"              (withMaxSuccess 10 prop_socket_send_error)
+    testProperty "socket error during send"              (BaseQC.withNumTests 10 prop_socket_send_error)
   , after AllFinish "socket error during send" $
     testProperty "socket client connection failure"      prop_socket_client_connect_error
   ]

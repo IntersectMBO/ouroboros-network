@@ -62,7 +62,7 @@ test-suite test
   other-modules: Network.NTP.Client.Packet
   type: exitcode-stdio-1.0
   build-depends:
-    QuickCheck <2.18,
+    QuickCheck,
     base >=4.14 && <4.23,
     binary >=0.8 && <0.11,
     tasty,

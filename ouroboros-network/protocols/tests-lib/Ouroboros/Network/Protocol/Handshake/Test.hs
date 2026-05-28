@@ -66,6 +66,7 @@ import Ouroboros.Network.Protocol.Handshake.Version
 
 import Codec.CBOR.Write qualified as CBOR
 
+import Test.Cardano.Base.QuickCheck qualified as BaseQC
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
@@ -98,7 +99,7 @@ tests =
         , testProperty "codec RefuseReason"    prop_codec_RefuseReason
         , testProperty "codec"                 prop_codec_Handshake
         , testProperty "codec 2-splits"        prop_codec_splits2_Handshake
-        , testProperty "codec 3-splits"      $ withMaxSuccess 30
+        , testProperty "codec 3-splits"      $ BaseQC.withNumTests 30
                                                prop_codec_splits3_Handshake
         , testProperty "codec cbor"            prop_codec_cbor
         , testProperty "codec valid cbor"      prop_codec_valid_cbor

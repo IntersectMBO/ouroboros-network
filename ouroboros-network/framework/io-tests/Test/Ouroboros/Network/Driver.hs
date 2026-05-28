@@ -63,6 +63,7 @@ import Control.Tracer
 import Test.Ouroboros.Network.Orphans ()
 import Test.Ouroboros.Network.Utils (sayTracer)
 
+import Test.Cardano.Base.QuickCheck qualified as BaseQC
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
@@ -77,7 +78,7 @@ tests =
   testGroup "Ouroboros.Network.Driver"
   [ testGroup "Simple"
     [ testProperty "channel ReqResp ST"              prop_channel_simple_reqresp_ST
-    , testProperty "channel ReqResp IO"              (withMaxSuccess 33 prop_channel_simple_reqresp_IO)
+    , testProperty "channel ReqResp IO"              (BaseQC.withNumTests 33 prop_channel_simple_reqresp_IO)
     , testProperty "channel PingPong ST"             prop_channel_ping_pong_ST
     , testProperty "channel PingPong IO"             prop_channel_ping_pong_IO
     ]
@@ -88,7 +89,7 @@ tests =
     ]
   , testGroup "Stateful"
     [ testProperty "channel Stateful ReqResp ST"     prop_channel_stateful_reqresp_ST
-    , testProperty "channel Stateful ReqResp IO"     (withMaxSuccess 33 prop_channel_stateful_reqresp_IO)
+    , testProperty "channel Stateful ReqResp IO"     (BaseQC.withNumTests 33 prop_channel_stateful_reqresp_IO)
     ]
   ]
 

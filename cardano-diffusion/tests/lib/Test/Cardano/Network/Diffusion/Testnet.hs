@@ -115,6 +115,7 @@ import Test.Ouroboros.Network.TxSubmission.TxLogic (ArbTxDecisionPolicy (..))
 import Test.Ouroboros.Network.TxSubmission.Types (Tx (..), TxId)
 import Test.Ouroboros.Network.Utils hiding (SmallDelay, debugTracer)
 
+import Test.Cardano.Base.QuickCheck qualified as BaseQC
 import Test.QuickCheck
 import Test.QuickCheck.Monadic as QC
 #if !MIN_VERSION_QuickCheck(2,16,0)
@@ -601,7 +602,7 @@ prop_diffusion_nofail_iosim
 --
 unit_connection_manager_trace_coverage :: Property
 unit_connection_manager_trace_coverage =
-  withMaxSuccess 1 $
+  BaseQC.withNumTests 1 $
   let sim :: forall s. IOSim s DiffSimResult
       sim = diffusionSimulation (toBearerInfo absNoAttenuation)
                                 script
@@ -710,7 +711,7 @@ unit_connection_manager_trace_coverage =
 --
 unit_connection_manager_transitions_coverage :: Property
 unit_connection_manager_transitions_coverage =
-  withMaxSuccess 1 $
+  BaseQC.withNumTests 1 $
   let sim :: forall s. IOSim s DiffSimResult
       sim = diffusionSimulation (toBearerInfo absNoAttenuation)
                                 script
@@ -5533,7 +5534,7 @@ unit_local_root_diffusion_mode :: DiffusionMode
                                -> Property
 unit_local_root_diffusion_mode diffusionMode =
     -- this is a unit test
-    withMaxSuccess 1 $
+    BaseQC.withNumTests 1 $
     let sim = diffusionSimulation (toBearerInfo absNoAttenuation) script
 
         -- list of negotiated version data

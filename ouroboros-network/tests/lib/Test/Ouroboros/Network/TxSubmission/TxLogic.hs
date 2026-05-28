@@ -59,6 +59,7 @@ import Ouroboros.Network.TxSubmission.Inbound.V2.Types qualified as TXS
 
 import Test.Ouroboros.Network.TxSubmission.Types
 
+import Test.Cardano.Base.QuickCheck qualified as BaseQC
 import Test.QuickCheck
 import Test.QuickCheck.Function (apply)
 import Test.QuickCheck.Gen (Gen (..))
@@ -78,7 +79,7 @@ tests = testGroup "AppV2"
       [ testGroup "Arbitrary"
         [ testGroup "ArbSharedTxState"
           [ testProperty "generator"              prop_SharedTxState_generator
-          , testProperty "shrinker"             $ withMaxSuccess 10
+          , testProperty "shrinker"             $ BaseQC.withNumTests 10
                                                   prop_SharedTxState_shrinker
           , testProperty "nothunks"               prop_SharedTxState_nothunks
           ]
@@ -87,7 +88,7 @@ tests = testGroup "AppV2"
           ]
         , testGroup "ArbCollectTxs"
           [ testProperty "generator"              prop_collectTxs_generator
-          , testProperty "shrinker"             $ withMaxSuccess 10
+          , testProperty "shrinker"             $ BaseQC.withNumTests 10
                                                   prop_collectTxs_shrinker
           ]
         ]
@@ -103,7 +104,7 @@ tests = testGroup "AppV2"
     , testGroup "Decisions"
       [ testGroup "ArbDecisionContexts"
         [ testProperty "generator"               prop_ArbDecisionContexts_generator
-        , testProperty "shrinker"              $ withMaxSuccess 33
+        , testProperty "shrinker"              $ BaseQC.withNumTests 33
                                                  prop_ArbDecisionContexts_shrinker
         ]
       , testProperty "shared state invariant"    prop_makeDecisions_sharedstate
