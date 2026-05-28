@@ -398,6 +398,9 @@ toStatPoint ts host cookie sample td =
 keepAliveDelay :: DiffTime
 keepAliveDelay = 1
 
+
+-- | An idle timeout applied before closing the connection, to let the other
+-- side exit cleanly.
 idleTimeout :: DiffTime
 idleTimeout = 1
 
@@ -575,8 +578,6 @@ pingClients opts@PingOpts { pingOptsAddresses = addresses } = do
       \(e :: SomeException) -> IO.hPutStrLn IO.stderr (displayException e)
                             >> throwIO e
 
-    threadDelay idleTimeout
-
 pingClient
   :: forall versionNumber versionData.
      ( Acceptable versionData
@@ -745,6 +746,7 @@ pingClient protocol stdout opts@PingOpts{..} peer =
                         >>= void . atomically
                     )
                     `finally` Mx.stop mx
+                  threadDelay idleTimeout
 
                 (NodeToNode, PingMode) -> do
                   --
@@ -780,6 +782,7 @@ pingClient protocol stdout opts@PingOpts{..} peer =
                         >>= void . atomically
                     )
                     `finally` Mx.stop mx
+                  threadDelay idleTimeout
 
                 (NodeToClient, PingMode) -> pure ()
                   --
