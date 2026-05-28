@@ -602,13 +602,24 @@ library ping
     containers,
     contra-tracer >=0.1 && <0.3,
     deepseq,
+    directory,
     io-classes:{io-classes, si-timers, strict-stm} ^>=1.8.0.1,
     iproute ^>=1.7.15,
     network ^>=3.2.7,
     network-mux,
+    optparse-applicative,
     ouroboros-network:{api, framework} >=1.0.0.0 && <1.2.0.0,
     random,
     serialise,
     tdigest ^>=0.3,
     text >=1.2.4 && <2.2,
     time >=1.9.1 && <1.16,
+
+executable cardano-ping
+  import: ghc-options
+  hs-source-dirs: demo
+  main-is: ping.hs
+  build-depends:
+    base >=4.14 && <4.23,
+    cardano-diffusion:ping,
+    optparse-applicative,

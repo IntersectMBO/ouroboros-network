@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE InstanceSigs        #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RankNTypes          #-}
@@ -16,6 +17,7 @@
 
 module Cardano.Network.Ping
   ( PingOpts (..)
+  , pingOptsParser
   , PingMode (..)
   , LogFormat (..)
   , LogMsg (..)
@@ -45,7 +47,7 @@ import Data.ByteString.Lazy qualified as BL
 import Data.ByteString.Lazy.Char8 qualified as LBS.Char
 import Data.IP
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, mapMaybe)
 import Data.TDigest (TDigest)
 import Data.TDigest qualified as TDigest
 import Data.Text.Lazy qualified as TL
@@ -57,9 +59,13 @@ import Network.Mux qualified as Mx
 import Network.Mux.Bearer (MakeBearer (..), makeSocketBearer)
 import Network.Socket (AddrInfo, StructLinger (..))
 import Network.Socket qualified as Socket
+import Options.Applicative
+import Options.Applicative.Help.Pretty qualified as Pretty
+import System.Directory (doesFileExist)
 import System.IO qualified as IO
 import System.Random (initStdGen)
 import Text.Printf (printf)
+import Text.Read (readMaybe)
 
 import Cardano.Network.Diffusion.Configuration (defaultChainSyncIdleTimeout)
 import Cardano.Network.NodeToClient qualified as NodeToClient
@@ -97,20 +103,126 @@ data PingMode =
     -- query handshake parameters
   deriving (Eq, Show)
 
+type Port = Word
+
 data PingOpts = PingOpts
-  { pingOptsCount :: Word32
+  { pingOptsCount     :: Word32
     -- ^ Number of messages to send to the server
-  , pingOptsMagic :: NetworkMagic
+  , pingOptsMagic     :: NetworkMagic
     -- ^ The network magic to use for all connections
-  , pingOptsJson  :: LogFormat
+  , pingOptsJson      :: LogFormat
     -- ^ Print output in JSON
-  , pingOptsQuiet :: Bool
+  , pingOptsQuiet     :: Bool
     -- ^ Less verbose output
-  , pingOptsMode  :: PingMode
+  , pingOptsMode      :: PingMode
+    -- ^ Ping mode
+  , pingOptsAddresses :: [Either FilePath (IP, Port)]
+    -- ^ list of addresses
   } deriving (Eq, Show)
 
 mainnetMagic :: NetworkMagic
 mainnetMagic = NetworkMagic 764824073
+
+pingOptsParser :: Parser PingOpts
+pingOptsParser =
+  PingOpts
+    <$> option auto
+        (  long "count"
+        <> short 'c'
+        <> help (mconcat
+                [ "Stop after sending count requests and receiving count responses.  "
+                , "If this option is not specified, ping will operate until interrupted.  "
+                ])
+        <> metavar "COUNT"
+        <> value maxBound
+        <> showDefault
+        )
+    <*> option (NetworkMagic <$> auto)
+        (  long "network-magic"
+        <> short 'm'
+        <> help "Network magic."
+        <> value mainnetMagic
+        <> metavar "MAGIC"
+        <> showDefaultWith (show . unNetworkMagic)
+        )
+    <*> flag  AsText AsJSON
+        (  long "json"
+        <> short 'j'
+        <> help "JSON output flag."
+        )
+    <*> flag False True
+        (  long "quiet"
+        <> short 'q'
+        <> help "Quiet flag, CSV/JSON only output."
+        )
+    <*> option pingMode
+        (  long "mode"
+        <> helpDoc (Just $ Pretty.hang 2 $
+                 "Mode, either ping, tip or query:"
+              <> Pretty.softline
+              <> "ping  - send pings via keep-alive protocol (node-to-node only),"
+              <> Pretty.softline
+              <> "tip   - query tip via chain-sync protocol (node-to-node / node-to-client),"
+              <> Pretty.softline
+              <> "query - query handshake parameters (node-to-node / node-to-client)."
+           )
+        <> value PingMode
+        <> metavar "MODE"
+        )
+    <*> argParser
+  where
+    pingMode :: ReadM PingMode
+    pingMode =
+      eitherReader $ \case
+        "tip" -> Right TipMode
+        "ping" -> Right PingMode
+        "query" -> Right QueryMode
+        _ -> Left "unexpected string"
+
+
+    argParser :: Parser [Either FilePath (IP, Port)]
+    argParser =
+        some addrParser
+      where
+        addrParser :: Parser (Either FilePath (IP, Port))
+        addrParser =
+            argument (Right <$> readIPv4AndPort <|> Right <$> readIPv6AndPort <|> Left <$> readFilePath)
+                     (  help "List of IP address and ports or UNIX socket paths, e.g. 127.0.0.1:3001 [::1]:3001."
+                     <> metavar "ADDRS"
+                     )
+          where
+            -- note: `Read` instances for `IP`, `IPv4`, `IPv6` expect no trailing
+            -- characters after the address, thus we need to find the split position
+            -- first.
+
+            -- parse IPv4 address and port in a form `127.0.0.1:3001`
+            readIPv4AndPort :: ReadM (IP, Port)
+            readIPv4AndPort =
+              eitherReader $ \s -> do
+                case splitWith ':' s of
+                  Nothing -> Left s
+                  Just (addrStr, portStr) ->
+                    maybe (Left s) Right $
+                    (,) <$> readMaybe addrStr
+                        <*> readMaybe portStr
+
+            -- parse IPv6 address and port in a form `[::1]:3001` or a UNIX file path
+            readIPv6AndPort :: ReadM (IP, Port)
+            readIPv6AndPort =
+              eitherReader $ \s ->
+                case s of
+                  ('[':s') ->
+                     case splitWith ']' s' of
+                       Just (addrStr, ':' : portStr) ->
+                         maybe (Left s) Right $
+                         (,) <$> readMaybe addrStr
+                             <*> readMaybe portStr
+                       _ -> Left s
+                  _ -> Left s
+
+            readFilePath :: ReadM FilePath
+            readFilePath = eitherReader Right
+
 
 data LogMsg = LogMsg BL.ByteString
             | LogEnd
@@ -410,25 +522,51 @@ keepAliveClient stdout peerName logFormat count td0 =
 --
 
 pingClients
-  :: forall versionNumber versionData.
-     ( Acceptable versionData
-     , Queryable versionData
-     , NFData versionData
-     , Ord versionNumber
-     , Show versionNumber
-     , NFData versionNumber
-     , ToJSON versionNumber
-     )
-  => ProtocolFlavour versionNumber versionData
-  -> PingOpts
-  -> [AddrInfo]
+  :: PingOpts
   -> IO ()
-pingClients protocol opts peers = do
+pingClients opts@PingOpts { pingOptsAddresses = addresses } = do
     msgQueue <- newEmptyTMVarIO
     let tracer :: Tracer IO LogMsg
         tracer = mkTracer $ \msg -> atomically $ putTMVar msgQueue msg
 
-    mapConcurrently_ (pingClient protocol tracer opts) peers
+    sockAddrs
+      <- mapMaybe (either (fmap Left)
+                          (fmap Right . maybeHead))
+         <$> traverse
+               (\case
+                  Right (ip@IPv4{}, port) ->
+                    Right <$> Socket.getAddrInfo
+                      (Just Socket.defaultHints { Socket.addrFamily = Socket.AF_INET })
+                      (Just (show ip))
+                      (Just (show port))
+                  Right (ip@IPv6{}, port) ->
+                    Right <$> Socket.getAddrInfo
+                      (Just Socket.defaultHints { Socket.addrFamily = Socket.AF_INET6 })
+                      (Just (show ip))
+                      (Just (show port))
+                  Left path -> do
+                    a <- doesFileExist path
+                    if a
+                      then return $ Left $ Just
+                           $ Socket.AddrInfo
+                              []
+                              Socket.AF_UNIX
+                              Socket.Stream
+                              Socket.defaultProtocol
+                              (Socket.SockAddrUnix path)
+                              Nothing
+                      else do
+                        case readMaybe path :: Maybe IP of
+                          Nothing -> IO.hPutStrLn IO.stderr ("WARNING: file does not exist: " ++ show path)
+                          Just ip -> IO.hPutStrLn IO.stderr ("WARNING: please add a port number for " ++ show ip)
+                        return (Left Nothing)
+               )
+               addresses
+
+    mapConcurrently_ (\case
+                        Right addr -> pingClient NodeToNode tracer opts addr
+                        Left  addr -> pingClient NodeToClient tracer opts addr
+                     ) sockAddrs
       `finally`
       atomically (putTMVar msgQueue LogEnd)
       `race_`
@@ -436,8 +574,8 @@ pingClients protocol opts peers = do
       `catch`
       \(e :: SomeException) -> IO.hPutStrLn IO.stderr (displayException e)
                             >> throwIO e
-    threadDelay idleTimeout
 
+    threadDelay idleTimeout
 
 pingClient
   :: forall versionNumber versionData.
@@ -706,3 +844,22 @@ logMsgWithPeer PingOpts { pingOptsQuiet, pingOptsJson } peerStr msg =
 
 instance ShowProxy CBOR.Term where
   showProxy _ = "CBOR.Term"
+
+--
+-- Utils
+--
+
+maybeHead :: [a] -> Maybe a
+maybeHead []    = Nothing
+maybeHead (a:_) = Just a
+
+splitWith :: Char -> String -> Maybe (String, String)
+splitWith c = go ""
+    where
+      go _ []
+        = Nothing
+      go !acc (a:as)
+        | a == c
+        = Just (reverse acc, as)
+      go !acc (a:as)
+        = go (a:acc) as
