@@ -92,6 +92,6 @@ defaultTxDecisionPolicy =
     scoreMax               = 15 * 60,
     scoreAcceptDecrement   = 3,
     interTxSpace           = 0.250,
-    inflightTimeout        = 0.500,
+    inflightTimeout        = 0.600,
     maxPeerClaimDelay      = 0.250
   }
