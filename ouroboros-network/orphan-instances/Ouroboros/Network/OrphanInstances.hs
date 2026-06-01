@@ -21,7 +21,6 @@ module Ouroboros.Network.OrphanInstances
   , JSONField (..)
   ) where
 
-import Ouroboros.Network.Tx
 import Control.Applicative (Alternative ((<|>)))
 import Control.Exception (Exception (..))
 import Control.Monad (zipWithM)
@@ -31,8 +30,8 @@ import Data.Aeson.Types (Pair, Parser, listValue)
 import Data.Bifunctor (first)
 import Data.Bool (bool)
 import Data.Foldable (toList)
-import Data.IP (fromHostAddress, fromHostAddress6)
 import Data.IntMap.Strict qualified as IntMap
+import Data.IP (fromHostAddress, fromHostAddress6)
 import Data.Map.Strict qualified as Map
 import Data.Proxy
 import Data.Set qualified as Set
@@ -40,6 +39,7 @@ import Data.Text (Text, pack)
 import Data.Text.Encoding qualified as Text
 import Data.Text.Encoding.Error qualified as Text
 import Numeric (showOct)
+import Ouroboros.Network.Tx
 
 import Network.Mux.Trace qualified as Mux
 import Network.Mux.Types qualified as Mux
@@ -91,12 +91,10 @@ import Ouroboros.Network.Server qualified as Server
 import Ouroboros.Network.Server.RateLimiting (AcceptConnectionsPolicyTrace (..),
            AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket (LocalAddress (..), RemoteAddress)
-import Ouroboros.Network.TxSubmission.Inbound.V2.Types
-           (ProcessedTxCount (..),
-           SharedTxState (..), TraceTxLogic (..),
-           TraceTxSubmissionInbound (..), TxEntry (..),
-           TxLease (..), TxSubmissionLogicVersion (..), retainedSize,
-           retainedToList)
+import Ouroboros.Network.TxSubmission.Inbound.V2.Types (ProcessedTxCount (..),
+           SharedTxState (..), TraceTxLogic (..), TraceTxSubmissionInbound (..),
+           TxEntry (..), TxLease (..), TxSubmissionLogicVersion (..),
+           retainedSize, retainedToList)
 import Ouroboros.Network.TxSubmission.Outbound (TraceTxSubmissionOutbound (..))
 
 -- Helper function for ToJSON instances with a "kind" field

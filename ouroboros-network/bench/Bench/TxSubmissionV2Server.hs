@@ -28,8 +28,8 @@ import GHC.Generics (Generic)
 import Ouroboros.Network.Protocol.TxSubmission2.Server
 import Ouroboros.Network.Protocol.TxSubmission2.Type
            (NumTxIdsToReq (getNumTxIdsToReq), SizeInBytes (..))
-import Ouroboros.Network.TxSubmission.Inbound.V2
-           (TxDecisionPolicy (..), TxSubmissionInitDelay (NoTxSubmissionInitDelay),
+import Ouroboros.Network.TxSubmission.Inbound.V2 (TxDecisionPolicy (..),
+           TxSubmissionInitDelay (NoTxSubmissionInitDelay),
            defaultTxDecisionPolicy, txSubmissionInboundV2)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Registry
            (newPeerTxInFlightRegistry, newSharedTxStateVar,
@@ -37,9 +37,8 @@ import Ouroboros.Network.TxSubmission.Inbound.V2.Registry
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types (TxSubmissionCounters,
            emptySharedTxState)
 
-import Test.Ouroboros.Network.TxSubmission.Types
-           (Tx (..), TxId,
-           emptyMempool, getMempoolReader, getMempoolWriter, readMempool)
+import Test.Ouroboros.Network.TxSubmission.Types (Tx (..), TxId, emptyMempool,
+           getMempoolReader, getMempoolWriter, readMempool)
 
 
 data DirectServerFixture = DirectServerFixture
