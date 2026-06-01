@@ -798,10 +798,10 @@ applyPeerEvents policy@TxDecisionPolicy { scoreMax, scoreAcceptDecrement }
                 peerState@PeerTxLocalState { peerScore }
   -- Fast path: score is already 0 and there's no penalty to add.
   -- Accepts can only decrement (clamped at 0), so they can't move
-  -- the score. Just refresh the timestamp; no arithmetic.
+  -- the score. Return the state unchanged.
   | rejectedCount == 0
   , peerScoreValue peerScore == 0
-  = (0, peerState { peerScore = peerScore { peerScoreTs = now } })
+  = (0, peerState)
 
   | otherwise
   = (peerScoreValue peerScore', peerState { peerScore = peerScore' })
