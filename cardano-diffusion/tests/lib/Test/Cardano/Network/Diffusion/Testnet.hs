@@ -36,8 +36,8 @@ import Data.Char (ord)
 import Data.Dynamic (fromDynamic)
 import Data.Foldable (fold, foldr')
 import Data.Functor (void)
-import Data.IP qualified as IP
 import Data.IntMap.Strict qualified as IntMap
+import Data.IP qualified as IP
 import Data.List (intercalate, sort)
 import Data.List qualified as List
 import Data.List.Trace qualified as Trace

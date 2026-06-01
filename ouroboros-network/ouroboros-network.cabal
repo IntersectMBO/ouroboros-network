@@ -310,7 +310,7 @@ library
     dlist,
     dns,
     hashable,
-    io-classes:{io-classes, mtl, si-timers, strict-stm} ^>=1.8 || ^>= 1.9,
+    io-classes:{io-classes, mtl, si-timers, strict-stm} ^>=1.8 || ^>=1.9,
     iproute,
     monoidal-synchronisation,
     mtl,
@@ -1054,13 +1054,14 @@ benchmark sim-benchmarks
   main-is: Main.hs
   other-modules:
     Bench.TxSubmissionV2Server
+
   build-depends:
     base,
     containers,
     contra-tracer,
     deepseq,
     io-classes:{io-classes, strict-stm},
-    ouroboros-network:ouroboros-network,
+    ouroboros-network,
     ouroboros-network:ouroboros-network-tests-lib,
     ouroboros-network:protocols,
     pretty-simple,
