@@ -185,11 +185,12 @@ instance NFData FanoutFixture where
 --     acked).
 peerTxLocalStateInvariant
   :: forall tx.
-     TxDecisionPolicy
+     NoThunks tx
+  => TxDecisionPolicy
   -> PeerTxLocalState tx
   -> Property
 peerTxLocalStateInvariant TxDecisionPolicy { scoreMax }
-                          PeerTxLocalState {
+                          ps@PeerTxLocalState {
                             peerUnacknowledgedTxIds,
                             peerAvailableTxIds,
                             peerRequestedTxs,
@@ -218,6 +219,7 @@ peerTxLocalStateInvariant TxDecisionPolicy { scoreMax }
     , counterexample ("peerScoreValue exceeds scoreMax: "
                       ++ show scoreVal ++ " > " ++ show scoreMax)
         (property (scoreVal <= scoreMax))
+    , checkNoThunks "PeerTxLocalState" ps
     ]
   where
     scoreVal       = peerScoreValue peerScore
@@ -275,6 +277,7 @@ combinedStateInvariant
      , HasRawTxId txid
      , Show peeraddr
      , Show txid
+     , NoThunks tx
      )
   => TxDecisionPolicy
   -> Map.Map peeraddr (PeerTxLocalState tx, PeerTxInFlight)
@@ -381,6 +384,7 @@ combinedStateInvariantStep
      , HasRawTxId txid
      , Show peeraddr
      , Show txid
+     , NoThunks tx
      )
   => TxDecisionPolicy
   -> Map.Map peeraddr (PeerTxLocalState tx, PeerTxInFlight)
@@ -648,6 +652,7 @@ prop_handleReceivedTxIds (ArbTxDecisionPolicy policy) (NonEmpty taggedInput) =
     sharedState0 = seedRetainedTxids policy retainedGroup emptySharedTxState
 
     requestedToReply = fromIntegral (length txidsAndSizes)
+    peerState0 :: PeerTxLocalState (Tx TxId)
     peerState0   = emptyPeerTxLocalState { peerRequestedTxIds = requestedToReply }
     peerInFlight0 = emptyPeerTxInFlight
 
@@ -944,6 +949,16 @@ prop_handleSubmittedTxs_retainsAcceptedAndDropsRejected
       handleSubmittedTxs now policy peerAddr accepted rejected
                          peerState0 peerInFlight0 sharedState1
 
+    -- Mirror the production pipeline in 'submitBufferedTxs': after
+    -- 'handleSubmittedTxs', the V2 harness runs 'applyPeerEvents' on
+    -- the resulting peer state.  Running 'peerTxLocalStateInvariant'
+    -- on the output guards both its fast path
+    -- (rejectedCount == 0 && score == 0) and its slow path against
+    -- future strictness regressions via the invariant's embedded
+    -- 'checkNoThunks'.
+    (_, peerStateAfterEvents) =
+      applyPeerEvents policy now (length accepted) (length rejected) peerState'
+
     retainUntil = addTime (bufferedTxsMinLifetime policy) now
 
     checkAccepted k =
@@ -981,6 +996,7 @@ prop_handleSubmittedTxs_retainsAcceptedAndDropsRejected
       , combinedStateInvariantStep policy
           (Map.singleton peerAddr (peerState', peerInFlight'))
           sharedState1 sharedState'
+      , peerTxLocalStateInvariant policy peerStateAfterEvents
       ]
   where
     peerAddr = 1 :: PeerAddr
