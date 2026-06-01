@@ -770,13 +770,18 @@ peerClaimDelay policy@TxDecisionPolicy { maxPeerClaimDelay, scoreMax } currentTi
     s = currentPeerScore policy currentTime peerScore
 
 -- | Decay the peer's score to @now@, updating the timestamp.
+--
+-- Fast path: a score that is already 0 stays 0, and the stale
+-- 'peerScoreTs' is harmless because 'currentPeerScore' short-circuits
+-- on @peerScoreValue == 0@ without reading the timestamp, while any
+-- later 'applyPeerEvents' transition to a positive score overwrites
+-- 'peerScoreTs' with the current 'now'.  Return the state unchanged.
 drainPeerScore :: TxDecisionPolicy
                -> Time
                -> PeerTxLocalState tx
                -> PeerTxLocalState tx
 drainPeerScore policy now peerState@PeerTxLocalState { peerScore }
-  | peerScoreValue peerScore == 0 =
-      peerState { peerScore = peerScore { peerScoreTs = now } }
+  | peerScoreValue peerScore == 0 = peerState
   | otherwise =
       let drained = currentPeerScore policy now peerScore in
       peerState { peerScore = PeerScore { peerScoreValue = drained, peerScoreTs = now } }
