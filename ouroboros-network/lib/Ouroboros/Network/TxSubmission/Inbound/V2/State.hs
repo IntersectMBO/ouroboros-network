@@ -173,9 +173,10 @@ nextPeerActionWithMode :: Ord peeraddr
 nextPeerActionWithMode txIdRequestMode now policy peeraddr peerState peerInFlight sharedState =
     let (action, peerState', peerInFlight', sharedState'') =
           applyPeerActionChoice ctx (pickPeerActionChoice txIdRequestMode ctx)
-        peerState'' = peerState' {
-            peerPhase = phaseForAction txIdRequestMode (peerPhase peerState) action
-          }
+        newPhase = phaseForAction txIdRequestMode (peerPhase peerState) action
+        peerState'' = if newPhase == peerPhase peerState'
+                         then peerState'
+                         else peerState' { peerPhase = newPhase }
     in (action, peerState'', peerInFlight', sharedState'')
   where
     sharedState' = bumpStuckEntries now policy (peerDownloadedTxs peerState) sharedState
