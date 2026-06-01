@@ -1088,18 +1088,20 @@ handleReceivedTxs mempoolHasTx now policy peeraddr txs peerState peerInFlight sh
                )
              Just (TxKey k)
                | retainedMember k (sharedRetainedTxs sharedAcc) ->
-                   let sharedAcc' =
-                         sharedAcc {
-                           sharedTxTable =
-                             IntMap.adjust decAttempt k (sharedTxTable sharedAcc)
-                         }
-                   in ( lateCountAcc + 1
-                      , IntSet.delete k pendingKeysAcc
-                      , bufferedAcc
-                      , sharedAcc'
-                      , downloadedAcc
-                      , wakeAcc
-                      )
+                   -- Active and retained are disjoint by construction:
+                   -- 'acceptSubmittedTx' deletes from 'sharedTxTable' and
+                   -- inserts into 'sharedRetainedTxs' in one step, and
+                   -- 'handleReceivedTxIds' leaves the active table alone
+                   -- when classifying a txid as retained.  So the key is
+                   -- not in 'sharedTxTable' here and there is nothing to
+                   -- decrement; skip the record update.
+                   ( lateCountAcc + 1
+                   , IntSet.delete k pendingKeysAcc
+                   , bufferedAcc
+                   , sharedAcc
+                   , downloadedAcc
+                   , wakeAcc
+                   )
                | mempoolHasTx txid ->
                    let sharedAcc' =
                          sharedAcc {
@@ -1152,14 +1154,6 @@ handleReceivedTxs mempoolHasTx now policy peeraddr txs peerState peerInFlight sh
               (omittedCountAcc + 1, sharedAcc, wakeAcc)
       | otherwise =
           (omittedCountAcc + 1, sharedAcc, wakeAcc)
-
-    -- Decrement the entry's attempt counter (e.g. when its body arrived
-    -- but the tx had been retained meanwhile, so the peer's attempt is
-    -- effectively over).  Lease unaffected: if this peer didn't hold it,
-    -- nothing to do; if it did, the decrement still leaves @txAttempt@
-    -- non-negative because every increment had a paired peer.
-    decAttempt entry@TxEntry { txAttempt } =
-      entry { txAttempt = max 0 (txAttempt - 1) }
 
     releaseLease txEntry@TxEntry { txLease, txAttempt } =
       txEntry {
@@ -1362,10 +1356,15 @@ handleReceivedTxIds mempoolHasTx now policy requestedTxIds txidsAndSizes
         peerLastTxIdReplyWasEmpty = null txidsAndSizes
       }
 
-    peerInFlight'' = peerInFlight {
-        pifAdvertised  = peerAdvertisedKeys',
-        pifAcksPending = peerAcksPending'
-      }
+    -- An empty reply leaves both sets unchanged (the fold doesn't fire),
+    -- so skip the record rebuild.
+    peerInFlight'' =
+        if null txidsAndSizes
+           then peerInFlight
+           else peerInFlight {
+               pifAdvertised  = peerAdvertisedKeys',
+               pifAcksPending = peerAcksPending'
+             }
 
     sharedState''
       | wakeChange =
