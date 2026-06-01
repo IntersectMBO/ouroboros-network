@@ -10,7 +10,9 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
+{-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE TypeData            #-}
 {-# LANGUAGE TypeFamilies        #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -43,6 +45,7 @@ import Data.Aeson (KeyValue ((.=)), ToJSON (toJSON), Value, encode, object)
 import Data.Aeson.Text (encodeToLazyText)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
+import Data.ByteString.Char8 qualified as BS.Char
 import Data.ByteString.Lazy qualified as BL
 import Data.ByteString.Lazy.Char8 qualified as LBS.Char
 import Data.IP
@@ -54,6 +57,7 @@ import Data.Text.Lazy qualified as TL
 import Data.Text.Lazy.IO qualified as TL
 import Data.Time.Format.ISO8601 (iso8601Show)
 import Data.Word (Word16, Word32)
+import Network.DNS qualified as DNS
 import Network.Mux (MiniProtocolInfo (..))
 import Network.Mux qualified as Mx
 import Network.Mux.Bearer (MakeBearer (..), makeSocketBearer)
@@ -105,7 +109,30 @@ data PingMode =
 
 type Port = Word
 
-data PingOpts = PingOpts
+-- | There are three stages for resolving addresses.
+--
+-- 1. FilePath might be a file path or a DNS name
+-- 2. FilePath was resolved as a DNS name (or not, if a dns lookup failed)
+-- 3. Resolved DNS names into IPs and ports.
+--
+-- See `resolveAddress`
+--
+type data Stage = Unresolved ResolvedFilePath | ResolvedDNS
+type data ResolvedFilePath = FilePathUnresolved | FilePathResolved
+
+
+data Address (stage :: Stage) where
+    FilePath :: FilePath -> Address resolved
+
+    Domain   :: String
+             -> Port
+             -> Address (Unresolved FilePathResolved)
+
+    IP       :: IP
+             -> Port
+             -> Address resolved
+
+data PingOpts stage = PingOpts
   { pingOptsCount     :: Word32
     -- ^ Number of messages to send to the server
   , pingOptsMagic     :: NetworkMagic
@@ -116,14 +143,14 @@ data PingOpts = PingOpts
     -- ^ Less verbose output
   , pingOptsMode      :: PingMode
     -- ^ Ping mode
-  , pingOptsAddresses :: [Either FilePath (IP, Port)]
+  , pingOptsAddresses :: [Address stage]
     -- ^ list of addresses
-  } deriving (Eq, Show)
+  } -- deriving (Eq, Show)
 
 mainnetMagic :: NetworkMagic
 mainnetMagic = NetworkMagic 764824073
 
-pingOptsParser :: Parser PingOpts
+pingOptsParser :: Parser (PingOpts (Unresolved FilePathUnresolved))
 pingOptsParser =
   PingOpts
     <$> option auto
@@ -180,16 +207,20 @@ pingOptsParser =
         _ -> Left "unexpected string"
 
 
-    argParser :: Parser [Either FilePath (IP, Port)]
+    argParser :: Parser [Address (Unresolved FilePathUnresolved)]
     argParser =
         some addrParser
       where
-        addrParser :: Parser (Either FilePath (IP, Port))
+        addrParser :: Parser (Address (Unresolved FilePathUnresolved))
         addrParser =
-            argument (Right <$> readIPv4AndPort <|> Right <$> readIPv6AndPort <|> Left <$> readFilePath)
-                     (  help "List of IP address and ports or UNIX socket paths, e.g. 127.0.0.1:3001 [::1]:3001."
-                     <> metavar "ADDRS"
-                     )
+            argument
+              (     uncurry IP <$> readIPv4AndPort
+                <|> uncurry IP <$> readIPv6AndPort
+                <|> FilePath   <$> readDomainNameOrFilePath
+              )
+              (  help "List of IP/DNS address and ports or UNIX socket paths, e.g. 127.0.0.1:3001 [::1]:3001 example.org:3001."
+              <> metavar "ADDRS"
+              )
           where
             -- note: `Read` instances for `IP`, `IPv4`, `IPv6` expect no trailing
             -- characters after the address, thus we need to find the split position
@@ -220,8 +251,8 @@ pingOptsParser =
                        _ -> Left s
                   _ -> Left s
 
-            readFilePath :: ReadM FilePath
-            readFilePath = eitherReader Right
+            readDomainNameOrFilePath :: ReadM String
+            readDomainNameOrFilePath = eitherReader Right
 
 
 data LogMsg = LogMsg BL.ByteString
@@ -231,7 +262,7 @@ data LogMsg = LogMsg BL.ByteString
 
 -- | Logging is done concurrently from multiple ping clients.
 --
-loggerThread :: PingOpts -> StrictTMVar IO LogMsg -> IO ()
+loggerThread :: PingOpts stage -> StrictTMVar IO LogMsg -> IO ()
 loggerThread
     PingOpts { pingOptsJson,
                pingOptsMode
@@ -524,30 +555,69 @@ keepAliveClient stdout peerName logFormat count td0 =
 -- Ping Client
 --
 
+resolveAddress :: Address (Unresolved fpResolved)
+               -> IO [Address ResolvedDNS]
+resolveAddress (IP addr port) = pure [IP addr port]
+resolveAddress (FilePath path) =
+   case splitWith ':' path
+           >>= \(dnsStr, portStr) -> (dnsStr,) <$> readMaybe portStr
+     of
+     Just (dnsname, port) ->
+       -- try resolve as a domain name
+       resolveAddress (Domain dnsname port)
+        >>= \case
+          [] ->
+            -- dns query failed, let's try if it is a file path
+            doesFileExist path >>= \case
+              True -> pure [FilePath path]
+              False -> do
+                IO.hPutStrLn IO.stderr ("WARNING: file path " ++ show path ++ " does not exist")
+                pure []
+          addrs -> pure addrs
+     Nothing -> do
+       pure [FilePath path]
+resolveAddress (Domain dns port) = do
+  let hostname = BS.Char.pack dns
+  rs <- DNS.makeResolvSeed DNS.defaultResolvConf
+  DNS.withResolver rs $ \resolver -> do
+    a <- fmap (map IPv4) <$> DNS.lookupA resolver hostname
+    aaaa <- fmap (map IPv6) <$> DNS.lookupAAAA resolver hostname
+    case a <> aaaa of
+      Left err -> do
+        IO.hPutStrLn IO.stderr ("WARNING: dns error: " ++ show err)
+        return []
+      Right ips -> do
+        IO.hPutStrLn IO.stderr ("INFO: " ++ dns ++ ":" ++ show port ++ " " ++ show ips)
+        return [ IP ip port | ip <- ips ]
+
+
 pingClients
-  :: PingOpts
+  :: PingOpts (Unresolved FilePathUnresolved)
   -> IO ()
 pingClients opts@PingOpts { pingOptsAddresses = addresses } = do
     msgQueue <- newEmptyTMVarIO
     let tracer :: Tracer IO LogMsg
         tracer = mkTracer $ \msg -> atomically $ putTMVar msgQueue msg
 
+    -- resolved addresses
+    resolvedAddresses <-
+      concat <$> traverse resolveAddress addresses
     sockAddrs
       <- mapMaybe (either (fmap Left)
                           (fmap Right . maybeHead))
          <$> traverse
                (\case
-                  Right (ip@IPv4{}, port) ->
+                  IP ip@IPv4{} port ->
                     Right <$> Socket.getAddrInfo
                       (Just Socket.defaultHints { Socket.addrFamily = Socket.AF_INET })
                       (Just (show ip))
                       (Just (show port))
-                  Right (ip@IPv6{}, port) ->
+                  IP ip@IPv6{} port ->
                     Right <$> Socket.getAddrInfo
                       (Just Socket.defaultHints { Socket.addrFamily = Socket.AF_INET6 })
                       (Just (show ip))
                       (Just (show port))
-                  Left path -> do
+                  FilePath path -> do
                     a <- doesFileExist path
                     if a
                       then return $ Left $ Just
@@ -564,11 +634,13 @@ pingClients opts@PingOpts { pingOptsAddresses = addresses } = do
                           Just ip -> IO.hPutStrLn IO.stderr ("WARNING: please add a port number for " ++ show ip)
                         return (Left Nothing)
                )
-               addresses
+               resolvedAddresses
 
+    let opts' :: PingOpts ResolvedDNS
+        opts' = opts { pingOptsAddresses = resolvedAddresses }
     mapConcurrently_ (\case
-                        Right addr -> pingClient NodeToNode tracer opts addr
-                        Left  addr -> pingClient NodeToClient tracer opts addr
+                        Right addr -> pingClient NodeToNode tracer opts' addr
+                        Left  addr -> pingClient NodeToClient tracer opts' addr
                      ) sockAddrs
       `finally`
       atomically (putTMVar msgQueue LogEnd)
@@ -590,7 +662,7 @@ pingClient
      )
   => ProtocolFlavour versionNumber versionData
   -> Tracer IO LogMsg
-  -> PingOpts
+  -> PingOpts ResolvedDNS
   -> AddrInfo
   -> IO ()
 pingClient protocol stdout opts@PingOpts{..} peer =
@@ -837,7 +909,7 @@ instance Format HandshakeRTT where
 
 -- note: use `logMsg` defined above in terms of `logMsgWithPeer`
 logMsgWithPeer :: Format msg
-               => PingOpts
+               => PingOpts ResolvedDNS
                -> TL.Text -- ^ peer identifier
                -> msg
                -> IO ()
