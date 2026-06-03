@@ -1,19 +1,20 @@
-{-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE InstanceSigs        #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE RecordWildCards     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving  #-}
-{-# LANGUAGE TupleSections       #-}
-{-# LANGUAGE TypeApplications    #-}
-{-# LANGUAGE TypeData            #-}
-{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE BangPatterns         #-}
+{-# LANGUAGE DataKinds            #-}
+{-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE GADTs                #-}
+{-# LANGUAGE InstanceSigs         #-}
+{-# LANGUAGE LambdaCase           #-}
+{-# LANGUAGE NamedFieldPuns       #-}
+{-# LANGUAGE OverloadedStrings    #-}
+{-# LANGUAGE RankNTypes           #-}
+{-# LANGUAGE RecordWildCards      #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE StandaloneDeriving   #-}
+{-# LANGUAGE TupleSections        #-}
+{-# LANGUAGE TypeApplications     #-}
+{-# LANGUAGE TypeData             #-}
+{-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -30,6 +31,7 @@ module Cardano.Network.Ping
   , NetworkMagic (..)
   ) where
 
+import Control.Concurrent.Class.MonadMVar
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.DeepSeq (NFData)
 import Control.Monad (unless, void, when)
@@ -37,17 +39,18 @@ import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer (Tracer, mkTracer, nullTracer, traceWith)
+import Control.Tracer (Tracer, mkTracer, nullTracer, traceWith, (>$<))
 
 import Codec.CBOR.Term qualified as CBOR
 import Codec.Serialise qualified as Serialise
-import Data.Aeson (KeyValue ((.=)), ToJSON (toJSON), Value, encode, object)
+import Data.Aeson (KeyValue ((.=)), ToJSON (toJSON), Value, object)
+import Data.Aeson qualified as Aeson
+import Data.Aeson.KeyMap qualified as KeyMap
 import Data.Aeson.Text (encodeToLazyText)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import Data.ByteString.Char8 qualified as BS.Char
 import Data.ByteString.Lazy qualified as BL
-import Data.ByteString.Lazy.Char8 qualified as LBS.Char
 import Data.IP
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, mapMaybe)
@@ -61,7 +64,7 @@ import Network.DNS qualified as DNS
 import Network.Mux (MiniProtocolInfo (..))
 import Network.Mux qualified as Mx
 import Network.Mux.Bearer (MakeBearer (..), makeSocketBearer)
-import Network.Socket (AddrInfo, StructLinger (..))
+import Network.Socket (AddrInfo, HostName, ServiceName, StructLinger (..))
 import Network.Socket qualified as Socket
 import Options.Applicative
 import Options.Applicative.Help.Pretty qualified as Pretty
@@ -255,59 +258,24 @@ pingOptsParser =
             readDomainNameOrFilePath = eitherReader Right
 
 
-data LogMsg = LogMsg BL.ByteString
-            | LogEnd
-            deriving Show
+data LogMsg = LogChainSyncTip PingTip
+            | LogStatPoint StatPoint
+  deriving Show
 
+instance ToText LogMsg where
+  toText (LogChainSyncTip tip) = TL.pack (show tip)
+  toText (LogStatPoint point)  = TL.pack (show point)
 
--- | Logging is done concurrently from multiple ping clients.
---
-loggerThread :: PingOpts stage -> StrictTMVar IO LogMsg -> IO ()
-loggerThread
-    PingOpts { pingOptsJson,
-               pingOptsMode
-             }
-    msgQueue
-    =
-    go True
-  where
-    go first = do
-      msg <- atomically $ takeTMVar msgQueue
-      case msg of
-        LogMsg bs -> do
-          let bs' = case (pingOptsJson, first, pingOptsMode) of
-                (AsJSON, False, PingMode) ->
-                  LBS.Char.pack ",\n" <> bs
-                (AsJSON, False, TipMode) ->
-                  LBS.Char.pack ",\n" <> bs
-                (AsJSON, True, PingMode) ->
-                  LBS.Char.pack "{ \"pongs\": [ " <> bs
-                (AsJSON, True, TipMode)  ->
-                  LBS.Char.pack "{ \"tip\": [ " <> bs
-                (AsText, True, PingMode) ->
-                  LBS.Char.pack "timestamp,                      host,                         cookie,  sample,  median,     p90,    mean,     min,     max,     std\n" <> bs
-                (AsText, True, TipMode)   -> bs
-                (AsText, False, _)        -> bs
+instance ToJSON LogMsg where
+  toJSON (LogChainSyncTip tip) = toJSON tip
+  toJSON (LogStatPoint point)  = toJSON point
 
-                (_     , _, QueryMode) -> bs
-
-          LBS.Char.putStr bs'
-          go False
-        -- Output valid JSON even when no pongs were received
-        LogEnd -> when (pingOptsJson == AsJSON && pingOptsMode /= QueryMode) $
-          if first
-            then IO.putStrLn $ case pingOptsMode of
-              TipMode   -> "{ \"tip\": [] }"
-              PingMode  -> "{ \"pongs\": [] }"
-              QueryMode -> ""
-            else IO.putStrLn "] }"
 
 sduTimeout :: DiffTime
 sduTimeout = 30
 
 data PingTip = PingTip {
-    ptHost    :: !(Either FilePath (IP, Socket.PortNumber))
-  , ptRtt     :: !Double
+    ptRtt     :: !Double
   , ptHash    :: !ByteString
   , ptBlockNo :: !BlockNo
   , ptSlotNo  :: !SlotNo
@@ -318,49 +286,24 @@ hexStr = BS.foldr (\b -> (<>) (printf "%02x" b)) ""
 
 instance Show PingTip where
   show PingTip{..} =
-    case ptHost of
-      Right (ip, port) ->
-        printf "host: %s:%d, rtt: %f, hash %s, blockNo: %d slotNo: %d"
-               (show ip)
-               (fromIntegral port :: Word16)
-               ptRtt
-               (hexStr ptHash)
-               (unBlockNo ptBlockNo)
-               (unSlotNo ptSlotNo)
-      Left path ->
-        printf "host: %s, rtt: %f, hash %s, blockNo: %d slotNo: %d"
-               path
-               ptRtt
-               (hexStr ptHash)
-               (unBlockNo ptBlockNo)
-               (unSlotNo ptSlotNo)
+    printf "rtt: %f, hash %s, blockNo: %d, slotNo: %d"
+           ptRtt
+           (hexStr ptHash)
+           (unBlockNo ptBlockNo)
+           (unSlotNo ptSlotNo)
 
 instance ToJSON PingTip where
   toJSON PingTip{..} =
-    case ptHost of
-      Right (ip, port) ->
-        object [
-            "rtt"     .= ptRtt
-          , "hash"    .= hexStr ptHash
-          , "blockNo" .= ptBlockNo
-          , "slotNo"  .= ptSlotNo
-          , "addr"    .= show ip
-          , "port"    .= (fromIntegral port :: Word16)
-          ]
-      Left path ->
-        object [
-            "rtt"     .= ptRtt
-          , "hash"    .= hexStr ptHash
-          , "blockNo" .= ptBlockNo
-          , "slotNo"  .= ptSlotNo
-          , "path"    .= path
-          ]
+    object [
+        "rtt"     .= ptRtt
+      , "hash"    .= hexStr ptHash
+      , "blockNo" .= ptBlockNo
+      , "slotNo"  .= ptSlotNo
+      ]
 
 data StatPoint = StatPoint
   { spTimestamp :: UTCTime
     -- ^ time-stamp of the sample value
-  , spHost      :: TL.Text
-    -- ^ host
   , spCookie    :: Word16
     -- ^ sample number
   , spSample    :: Double
@@ -382,15 +325,15 @@ data StatPoint = StatPoint
 instance Show StatPoint where
   show :: StatPoint -> String
   show StatPoint {..} =
-    printf "%-31s %-28s %7d, %7.3f, %7.3f, %7.3f, %7.3f, %7.3f, %7.3f, %7.3f"
-      (iso8601Show spTimestamp ++ ",") (show spHost ++ ",") spCookie spSample spMedian spP90 spMean spMin spMax spStd
+    printf "%-31s %7d, %7.3f, %7.3f, %7.3f, %7.3f, %7.3f, %7.3f, %7.3f"
+      (iso8601Show spTimestamp ++ ",")
+      spCookie spSample spMedian spP90 spMean spMin spMax spStd
 
 instance ToJSON StatPoint where
   toJSON :: StatPoint -> Value
   toJSON StatPoint {..} =
     object
       [ "timestamp" .= spTimestamp
-      , "host"      .= spHost
       , "cookie"    .= spCookie
       , "sample"    .= spSample
       , "median"    .= spMedian
@@ -401,19 +344,18 @@ instance ToJSON StatPoint where
       , "std"       .= spStd
       ]
 
-toStatPoint :: UTCTime -> TL.Text -> Word16 -> Double -> TDigest 5 -> StatPoint
-toStatPoint ts host cookie sample td =
+toStatPoint :: UTCTime -> Word16 -> Double -> TDigest 5 -> StatPoint
+toStatPoint ts cookie sample td =
   StatPoint
-    { spTimestamp = ts
-    , spHost      = host
-    , spCookie    = cookie
-    , spSample    = sample
-    , spMedian    = quantile' 0.5
-    , spP90       = quantile' 0.9
-    , spMean      = mean'
-    , spMin       = TDigest.minimumValue td
-    , spMax       = TDigest.maximumValue td
-    , spStd       = stddev'
+    { spTimestamp   = ts
+    , spCookie      = cookie
+    , spSample      = sample
+    , spMedian      = quantile' 0.5
+    , spP90         = quantile' 0.9
+    , spMean        = mean'
+    , spMin         = TDigest.minimumValue td
+    , spMax         = TDigest.maximumValue td
+    , spStd         = stddev'
     }
   where
     quantile' :: Double -> Double
@@ -442,7 +384,7 @@ data PingClientError
 
   | forall versionNumber.
     Show versionNumber
-  => PingClientHandshakeProtocolError (HandshakeProtocolError versionNumber) TL.Text
+  => PingClientHandshakeProtocolError (HandshakeProtocolError versionNumber) String
   -- ^ handshake protocol error
 
 deriving instance Show PingClientError
@@ -478,10 +420,8 @@ instance StandardHash ChainSyncBlock
 -- or `node-to-client` protocol.
 chainSyncClient
   :: Tracer IO LogMsg
-  -> Either FilePath (IP, Socket.PortNumber)
-  -> LogFormat
   -> ChainSyncClient ChainSyncHeader ChainSyncPoint ChainSyncTip IO ()
-chainSyncClient stdout host logFormat =
+chainSyncClient stdout =
     ChainSync.ChainSyncClient $ do
       start <- getMonotonicTime
       return (go start)
@@ -501,15 +441,12 @@ chainSyncClient stdout host logFormat =
                    TipGenesis              -> (0, mempty, 0)
                    Tip slotNo hash blockNo -> (slotNo, hash, blockNo)
                  pingTip = PingTip {
-                   ptHost = host,
                    ptRtt  = toSample end start,
                    ptHash,
                    ptBlockNo,
                    ptSlotNo
                  }
-             case logFormat of
-               AsJSON -> traceWith stdout $ LogMsg (encode pingTip)
-               AsText -> traceWith stdout $ LogMsg $ LBS.Char.pack $ show pingTip <> "\n"
+             traceWith stdout (LogChainSyncTip pingTip)
              return $ ChainSync.SendMsgDone ()
        }
 
@@ -520,12 +457,10 @@ chainSyncClient stdout host logFormat =
 
 keepAliveClient
   :: Tracer IO LogMsg
-  -> TL.Text   -- ^ peer
-  -> LogFormat -- ^ use JSON formatting
   -> Word32    -- ^ ping count
   -> TDigest 5
   -> KeepAliveClient IO ()
-keepAliveClient stdout peerName logFormat count td0 =
+keepAliveClient stdout count td0 =
     KeepAliveClient $ loop td0 0
   where
     loop :: TDigest 5
@@ -543,10 +478,8 @@ keepAliveClient stdout peerName logFormat count td0 =
         now <- getCurrentTime
         let rtt = toSample end start
             td' = TDigest.insert rtt td
-            point = toStatPoint now peerName cookie16 rtt td'
-        case logFormat of
-          AsJSON -> traceWith stdout $ LogMsg (encode point)
-          AsText -> traceWith stdout $ LogMsg $ LBS.Char.pack $ show point <> "\n"
+            point = toStatPoint now cookie16 rtt td'
+        traceWith stdout $ LogStatPoint point
         threadDelay keepAliveDelay
         loop td' (cookie + 1)
 
@@ -555,16 +488,17 @@ keepAliveClient stdout peerName logFormat count td0 =
 -- Ping Client
 --
 
-resolveAddress :: Address (Unresolved fpResolved)
+resolveAddress :: PingOpts (Unresolved FilePathUnresolved)
+               -> Address (Unresolved fpResolved)
                -> IO [Address ResolvedDNS]
-resolveAddress (IP addr port) = pure [IP addr port]
-resolveAddress (FilePath path) =
+resolveAddress _ (IP addr port) = pure [IP addr port]
+resolveAddress opts (FilePath path) =
    case splitWith ':' path
            >>= \(dnsStr, portStr) -> (dnsStr,) <$> readMaybe portStr
      of
      Just (dnsname, port) ->
        -- try resolve as a domain name
-       resolveAddress (Domain dnsname port)
+       resolveAddress opts (Domain dnsname port)
         >>= \case
           [] ->
             -- dns query failed, let's try if it is a file path
@@ -576,7 +510,7 @@ resolveAddress (FilePath path) =
           addrs -> pure addrs
      Nothing -> do
        pure [FilePath path]
-resolveAddress (Domain dns port) = do
+resolveAddress PingOpts { pingOptsQuiet } (Domain dns port) = do
   let hostname = BS.Char.pack dns
   rs <- DNS.makeResolvSeed DNS.defaultResolvConf
   DNS.withResolver rs $ \resolver -> do
@@ -587,21 +521,22 @@ resolveAddress (Domain dns port) = do
         IO.hPutStrLn IO.stderr ("WARNING: dns error: " ++ show err)
         return []
       Right ips -> do
-        IO.hPutStrLn IO.stderr ("INFO: " ++ dns ++ ":" ++ show port ++ " " ++ show ips)
+        unless pingOptsQuiet $
+          IO.hPutStrLn IO.stderr ("INFO: " ++ dns ++ ":" ++ show port ++ " " ++ show ips)
         return [ IP ip port | ip <- ips ]
 
 
 pingClients
   :: PingOpts (Unresolved FilePathUnresolved)
   -> IO ()
-pingClients opts@PingOpts { pingOptsAddresses = addresses } = do
-    msgQueue <- newEmptyTMVarIO
-    let tracer :: Tracer IO LogMsg
-        tracer = mkTracer $ \msg -> atomically $ putTMVar msgQueue msg
+pingClients opts@PingOpts { pingOptsJson, pingOptsAddresses = addresses } = do
+    logLock <- newMVar ()
+    let tracer :: Tracer IO (WithHost LogMsg)
+        tracer = mkTracer $ \msg -> withMVar logLock $ \_ -> TL.putStrLn (format pingOptsJson msg)
 
     -- resolved addresses
     resolvedAddresses <-
-      concat <$> traverse resolveAddress addresses
+      concat <$> traverse (resolveAddress opts) addresses
     sockAddrs
       <- mapMaybe (either (fmap Left)
                           (fmap Right . maybeHead))
@@ -642,10 +577,6 @@ pingClients opts@PingOpts { pingOptsAddresses = addresses } = do
                         Right addr -> pingClient NodeToNode tracer opts' addr
                         Left  addr -> pingClient NodeToClient tracer opts' addr
                      ) sockAddrs
-      `finally`
-      atomically (putTMVar msgQueue LogEnd)
-      `race_`
-      loggerThread opts msgQueue
       `catch`
       \(e :: SomeException) -> IO.hPutStrLn IO.stderr (displayException e)
                             >> throwIO e
@@ -661,7 +592,7 @@ pingClient
      , ToJSON versionNumber
      )
   => ProtocolFlavour versionNumber versionData
-  -> Tracer IO LogMsg
+  -> Tracer IO (WithHost LogMsg)
   -> PingOpts ResolvedDNS
   -> AddrInfo
   -> IO ()
@@ -682,9 +613,10 @@ pingClient protocol stdout opts@PingOpts{..} peer =
   where
     runPingClient :: Socket.Socket -> IO ()
     runPingClient sd = do
-      peerName <- getPeerName
-      let logMsg :: Format msg => msg -> IO ()
-          logMsg = logMsgWithPeer opts peerName
+      (hostName, serviceName) <- getPeerName
+      let logMsg :: (ToText msg, ToJSON msg) => msg -> IO ()
+          logMsg = logMsgWithPeer opts hostName (Just serviceName)
+          stdout' = WithHost hostName (Just serviceName) >$< stdout
 
       !t0_s <- getMonotonicTime
       Socket.connect sd (Socket.addrAddress peer)
@@ -754,7 +686,7 @@ pingClient protocol stdout opts@PingOpts{..} peer =
         Left err -> throwIO (PingClientProtocolLimitFailure err)
         Right (Left err', rtt) -> do
           logMsg (HandshakeRTT rtt)
-          throwIO (PingClientHandshakeProtocolError err' peerName)
+          throwIO (PingClientHandshakeProtocolError err' (hostName ++ ":" ++ serviceName))
         Right (Right r', rtt) -> do
           logMsg (HandshakeRTT rtt)
           case r' of
@@ -762,8 +694,8 @@ pingClient protocol stdout opts@PingOpts{..} peer =
               -- print query results if it was supported by the remote side
               when (pingOptsMode == QueryMode) $
                 -- override the pingOptsQuiet flag
-                logMsgWithPeer opts { pingOptsQuiet = False } peerName $
-                  QueriedVersions (Map.keys versions)
+                logMsgWithPeer opts { pingOptsQuiet = False } hostName (Just serviceName)
+                  $ QueriedVersions (Map.keys versions)
             HandshakeNegotiationResult _ version _versionData -> do
               -- show negotiated version
               logMsg $ NegotiatedVersion version
@@ -777,11 +709,6 @@ pingClient protocol stdout opts@PingOpts{..} peer =
                   --
                   -- run chain sync to get the tip
                   --
-                  let host =
-                        case Socket.addrAddress peer of
-                           Socket.SockAddrUnix path       -> Left path
-                           Socket.SockAddrInet pn ha      -> Right (IPv4 (fromHostAddress ha), pn)
-                           Socket.SockAddrInet6 pn _ ha _ -> Right (IPv6 (fromHostAddress6 ha), pn)
                   stdGen <- initStdGen
                   mx <- Mx.new
                           Mx.nullTracers
@@ -814,7 +741,7 @@ pingClient protocol stdout opts@PingOpts{..} peer =
                           (ChainSync.byteLimitsChainSync (fromIntegral . BL.length))
                           (ChainSync.timeLimitsChainSync defaultChainSyncIdleTimeout IsNotTrustable)
                           channel
-                          (ChainSync.chainSyncClientPeer $ chainSyncClient stdout host pingOptsJson))
+                          (ChainSync.chainSyncClientPeer $ chainSyncClient stdout'))
                         >>= void . atomically
                     )
                     `finally` Mx.stop mx
@@ -837,7 +764,7 @@ pingClient protocol stdout opts@PingOpts{..} peer =
                       NodeToNode.keepAliveMiniProtocolNum
                       Mx.InitiatorDirectionOnly
                       Mx.StartEagerly
-                      (\channel -> do
+                      (\channel ->
                         runPeerWithLimits
                           nullTracer
                           KeepAlive.codecKeepAlive_v2
@@ -846,9 +773,7 @@ pingClient protocol stdout opts@PingOpts{..} peer =
                           channel
                           (KeepAlive.keepAliveClientPeer
                             $ keepAliveClient
-                                stdout
-                                peerName
-                                pingOptsJson
+                                stdout'
                                 pingOptsCount
                                 (TDigest.tdigest [])))
                         >>= void . atomically
@@ -861,60 +786,103 @@ pingClient protocol stdout opts@PingOpts{..} peer =
                   -- ping mode over node-to-client protocol is not supported
                   --
 
-    getPeerName :: IO TL.Text
-    getPeerName =
-      case Socket.addrFamily peer of
-        Socket.AF_UNIX -> return $ TL.pack . show $ Socket.addrAddress peer
-        _ -> do
-          (Just host, Just port) <-
-            Socket.getNameInfo
-              [Socket.NI_NUMERICHOST, Socket.NI_NUMERICSERV]
-              True True (Socket.addrAddress peer)
-          return $ TL.pack $ host <> ":" <> port
+    getPeerName :: IO (HostName, ServiceName)
+    getPeerName = do
+      (Just host, Just port) <-
+        Socket.getNameInfo
+          [Socket.NI_NUMERICHOST, Socket.NI_NUMERICSERV]
+          True True (Socket.addrAddress peer)
+      return (host, port)
 
 
 toSample :: Time -> Time -> Double
 toSample end start = realToFrac $ end `diffTime` start
 
-class Format a where
-  format :: LogFormat -> a -> TL.Text
+format :: (ToText a, ToJSON a) => LogFormat -> a -> TL.Text
+format AsJSON = encodeToLazyText . toJSON
+format AsText = toText
+
+class ToText a where
+  toText :: a -> TL.Text
+
+data WithHost a = WithHost HostName (Maybe ServiceName) a
+
+instance ToText a => ToText (WithHost a) where
+  toText (WithHost host Nothing a) =
+    "host: " <> TL.pack (printf "%-28s" (host ++ ", ")) <> toText a
+  toText (WithHost host (Just port) a) =
+    "host: " <> TL.pack (printf "%-28s" (host <> ":" <> port <> ", ")) <> toText a
+
+instance ToJSON a => ToJSON (WithHost a) where
+  toJSON (WithHost host port a) =
+    case toJSON a of
+      Aeson.Object o ->
+        Aeson.Object ( KeyMap.insert "host" (toJSON host)
+                     $ case port of
+                         Nothing  -> o
+                         Just prt -> KeyMap.insert "port" (toJSON prt) o
+                     )
+
+      x -> object $ [ "host" .= host, "data" .= x ]
+                 ++ case port of
+                      Nothing  -> []
+                      Just prt -> [ "port" .= prt ]
 
 newtype NegotiatedVersion versionNumber = NegotiatedVersion versionNumber
 
-instance (ToJSON versionNumber, Show versionNumber)
-      => Format (NegotiatedVersion versionNumber) where
-  format AsJSON (NegotiatedVersion v) = encodeToLazyText $ object ["negotiated_version" .= toJSON v]
-  format AsText (NegotiatedVersion v) = TL.pack $ printf "Negotiated version %s" (show v)
+instance Show versionNumber
+      => ToText (NegotiatedVersion versionNumber) where
+  toText (NegotiatedVersion v) = TL.pack $ printf "negotiated versions: %s" (show v)
+
+instance ToJSON versionNumber
+      => ToJSON (NegotiatedVersion versionNumber) where
+  toJSON (NegotiatedVersion v) = object ["negotiated_versions" .= toJSON v]
+
 
 newtype QueriedVersions versionNumber = QueriedVersions [versionNumber]
 
-instance (ToJSON versionNumber, Show versionNumber)
-      => Format (QueriedVersions versionNumber) where
-  format AsJSON (QueriedVersions vs) = encodeToLazyText $ object ["queried_versions" .= toJSON vs]
-  format AsText (QueriedVersions vs) = TL.pack $ printf "Queried versions %s" (show vs)
+instance Show versionNumber
+      => ToText (QueriedVersions versionNumber) where
+  toText (QueriedVersions vs) =
+    TL.pack $ printf "Queried versions: %s" (unwords $ show <$> vs)
+
+instance ToJSON versionNumber
+      => ToJSON (QueriedVersions versionNumber) where
+  toJSON (QueriedVersions vs) =
+    object ["queried_versions" .= toJSON vs]
 
 
 newtype NetworkRTT = NetworkRTT Double
 
-instance Format NetworkRTT where
-  format AsJSON (NetworkRTT rtt) = encodeToLazyText $ object ["network_rtt" .= toJSON rtt]
-  format AsText (NetworkRTT rtt) = TL.pack $ printf "network rtt: %.3f" rtt
+instance ToText NetworkRTT where
+  toText (NetworkRTT rtt) =
+    TL.pack $ printf "network rtt: %.3f" rtt
+
+instance ToJSON NetworkRTT where
+  toJSON (NetworkRTT rtt) =
+    object ["network_rtt" .= toJSON rtt]
+
 
 newtype HandshakeRTT = HandshakeRTT DiffTime
 
-instance Format HandshakeRTT where
-  format AsJSON (HandshakeRTT diff) = encodeToLazyText $ object ["handshake_rtt" .= toJSON ((fromRational $ toRational diff) :: Double)]
-  format AsText (HandshakeRTT diff) = TL.pack $ printf "handshake rtt: %s" $ show diff
+instance ToText HandshakeRTT where
+  toText (HandshakeRTT diff) =
+    TL.pack $ printf "handshake rtt: %s" $ show diff
+
+instance ToJSON HandshakeRTT where
+  toJSON (HandshakeRTT diff) =
+    object ["handshake rtt" .= toJSON ((fromRational $ toRational diff) :: Double)]
 
 
 -- note: use `logMsg` defined above in terms of `logMsgWithPeer`
-logMsgWithPeer :: Format msg
+logMsgWithPeer :: (ToText msg, ToJSON msg)
                => PingOpts ResolvedDNS
-               -> TL.Text -- ^ peer identifier
+               -> HostName
+               -> Maybe ServiceName
                -> msg
                -> IO ()
-logMsgWithPeer PingOpts { pingOptsQuiet, pingOptsJson } peerStr msg =
-  unless pingOptsQuiet $ TL.hPutStrLn IO.stdout (peerStr <> " " <> format pingOptsJson msg)
+logMsgWithPeer PingOpts { pingOptsQuiet, pingOptsJson } host service msg =
+  unless pingOptsQuiet $ TL.hPutStrLn IO.stdout (format pingOptsJson (WithHost host service msg))
 
 
 instance ShowProxy CBOR.Term where
