@@ -286,7 +286,7 @@ hexStr = BS.foldr (\b -> (<>) (printf "%02x" b)) ""
 
 instance Show PingTip where
   show PingTip{..} =
-    printf "rtt: %f, hash %s, blockNo: %d, slotNo: %d"
+    printf "rtt: %.3f, hash: %s, blockNo: %d, slotNo: %d"
            ptRtt
            (hexStr ptHash)
            (unBlockNo ptBlockNo)
@@ -867,7 +867,7 @@ newtype HandshakeRTT = HandshakeRTT DiffTime
 
 instance ToText HandshakeRTT where
   toText (HandshakeRTT diff) =
-    TL.pack $ printf "handshake rtt: %s" $ show diff
+    TL.pack $ printf "handshake rtt: %.3f" (realToFrac diff :: Double)
 
 instance ToJSON HandshakeRTT where
   toJSON (HandshakeRTT diff) =
