@@ -32,7 +32,7 @@ import Ouroboros.Network.TxSubmission.Inbound.V2 (TxDecisionPolicy (..),
            TxSubmissionInitDelay (NoTxSubmissionInitDelay),
            defaultTxDecisionPolicy, txSubmissionInboundV2)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Registry
-           (newPeerTxInFlightRegistry, newSharedTxStateVar,
+           (newPeerTxRegistry, newSharedTxStateVar,
            newTxSubmissionCountersVar, withPeer)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types (TxSubmissionCounters,
            emptySharedTxState)
@@ -113,7 +113,7 @@ runDirectServerBenchmark DirectServerFixture {
   inboundMempool <- emptyMempool
   duplicateTxIdsVar <- Lazy.newTVarIO []
   sharedStateVar <- newSharedTxStateVar emptySharedTxState
-  inFlightRegistry <- newPeerTxInFlightRegistry
+  inFlightRegistry <- newPeerTxRegistry
   countersVar <- newTxSubmissionCountersVar mempty
 
   let writer = getMempoolWriter duplicateTxIdsVar inboundMempool

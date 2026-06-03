@@ -109,7 +109,7 @@ import Ouroboros.Network.TxSubmission.Inbound.V2 (TxSubmissionInitDelay (..),
            txSubmissionInboundV2)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy (TxDecisionPolicy (..))
 import Ouroboros.Network.TxSubmission.Inbound.V2.Registry
-           (PeerTxInFlightRegistry, SharedTxStateVar, TxSubmissionCountersVar,
+           (PeerTxRegistry, SharedTxStateVar, TxSubmissionCountersVar,
            withPeer)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types (TraceTxLogic,
            TraceTxSubmissionInbound)
@@ -393,7 +393,7 @@ applications debugTracer txSubmissionInboundTracer _txSubmissionInboundDebug nod
                     (txSubmissionResponder (nkMempool nodeKernel)
                                            (nkTxCountersVar nodeKernel)
                                            (nkSharedTxStateVar nodeKernel)
-                                           (nkPeerTxInFlightRegistry nodeKernel))
+                                           (nkPeerTxRegistry nodeKernel))
             }
           ]
       , withWarm = WithWarm
@@ -735,7 +735,7 @@ applications debugTracer txSubmissionInboundTracer _txSubmissionInboundDebug nod
       :: Mempool m TxId (Tx TxId)
       -> TxSubmissionCountersVar m
       -> SharedTxStateVar m NtNAddr Int
-      -> PeerTxInFlightRegistry m NtNAddr
+      -> PeerTxRegistry m NtNAddr
       -> MiniProtocolCb (ResponderContext NtNAddr) ByteString m ()
     txSubmissionResponder mempool txCountersVar sharedTxStateVar inFlightRegistry =
       MiniProtocolCb $

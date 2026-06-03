@@ -81,8 +81,8 @@ import Ouroboros.Network.PeerSharing (PeerSharingAPI, PeerSharingRegistry (..),
 import Ouroboros.Network.Protocol.Handshake.Unversioned
 import Ouroboros.Network.Snocket (TestAddress (..))
 import Ouroboros.Network.TxSubmission.Inbound.V2.Registry
-           (PeerTxInFlightRegistry, SharedTxStateVar, TxSubmissionCountersVar,
-           newPeerTxInFlightRegistry, newSharedTxStateVar,
+           (PeerTxRegistry, SharedTxStateVar, TxSubmissionCountersVar,
+           newPeerTxRegistry, newSharedTxStateVar,
            newTxSubmissionCountersVar)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types (emptySharedTxState)
 import Ouroboros.Network.Util (PrettyShow (..))
@@ -319,8 +319,8 @@ data NodeKernel header block s txid m = NodeKernel {
       nkSharedTxStateVar
         :: SharedTxStateVar m NtNAddr txid,
 
-      nkPeerTxInFlightRegistry
-        :: PeerTxInFlightRegistry m NtNAddr
+      nkPeerTxRegistry
+        :: PeerTxRegistry m NtNAddr
     }
 
 newNodeKernel :: ( MonadTraceSTM m
@@ -351,7 +351,7 @@ newNodeKernel psRng _txSeed txs = do
       <*> newMempool txs
       <*> newTxSubmissionCountersVar mempty
       <*> newSharedTxStateVar emptySharedTxState
-      <*> newPeerTxInFlightRegistry
+      <*> newPeerTxRegistry
 
 -- | Register a new upstream chain-sync client.
 --

@@ -469,7 +469,7 @@ runTxInbound Addr { addr, port } txDecisionPolicy version txDelay = do
         -- V2 only
         txSharedState <- V2.newSharedTxStateVar V2.emptySharedTxState
         txCountersVar <- V2.newTxSubmissionCountersVar mempty
-        txRegistry <- V2.newPeerTxInFlightRegistry
+        txRegistry <- V2.newPeerTxRegistry
         case version of
           TxSubmissionLogicV1 -> return ()
           TxSubmissionLogicV2 -> do
