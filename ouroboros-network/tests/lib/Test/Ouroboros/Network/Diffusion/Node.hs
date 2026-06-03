@@ -345,7 +345,7 @@ run blockGeneratorArgs ni na
                               tracerTxLogic
                               (nkTxCountersVar nodeKernel)
                               (nkSharedTxStateVar nodeKernel)
-                              (nkPeerTxInFlightRegistry nodeKernel))
+                              (nkPeerTxRegistry nodeKernel))
                    $ \txCountersAid ->
                           wait diffusionThread
                        <> wait blockFetchLogicThread

@@ -4,11 +4,11 @@
 
 module Ouroboros.Network.TxSubmission.Inbound.V2.Registry
   ( SharedTxStateVar
-  , PeerTxInFlightRegistry
+  , PeerTxRegistry
   , PeerTxAPI (..)
   , TxSubmissionCountersVar
   , newSharedTxStateVar
-  , newPeerTxInFlightRegistry
+  , newPeerTxRegistry
   , newTxSubmissionCountersVar
   , txCountersThreadV2
   , withPeer
@@ -40,20 +40,25 @@ import Ouroboros.Network.TxSubmission.Mempool.Reader
 -- | Shared STM handle for V2 coordination state.
 type SharedTxStateVar m peeraddr txid = StrictTVar m (SharedTxState peeraddr txid)
 
--- | STM handle for V2 monotonic counters.
+-- | STM handle for V2 monotonic counters.  Used both for each peer's
+-- private counters cell and for the shared retired-peers accumulator
+-- (see 'withPeer' and 'txCountersThreadV2').
 type TxSubmissionCountersVar m = StrictTVar m TxSubmissionCounters
 
 -- | Per-peer in-flight TVar.
 type PeerTxInFlightVar m = StrictTVar m PeerTxInFlight
 
--- | Registry of every live peer's 'PeerTxInFlightVar'.
+-- | Registry of every live peer's coordination TVars: its in-flight
+-- contributions and its private counters cell.
 --
--- 'withPeer' adds the peer's TVar on bracket-enter and removes it on
+-- 'withPeer' adds the pair on bracket-enter and removes it on
 -- bracket-exit (after scrubbing any contributions the peer still has
--- to shared state).  The sweep snapshots this map to compute the
--- @liveAdvertised@ union without touching peer-local protocol state.
-type PeerTxInFlightRegistry m peeraddr =
-       StrictTVar m (Map peeraddr (PeerTxInFlightVar m))
+-- to shared state and flushing its counters into the retired
+-- accumulator).  'snapshotLiveReferences' reads the in-flight vars to
+-- compute the @liveAdvertised@ union; 'snapshotCounters' reads the
+-- counter cells to aggregate for emission.
+type PeerTxRegistry m peeraddr =
+       StrictTVar m (Map peeraddr (PeerTxInFlightVar m, TxSubmissionCountersVar m))
 
 newSharedTxStateVar
   :: MonadSTM m
@@ -67,10 +72,10 @@ newTxSubmissionCountersVar
   -> m (TxSubmissionCountersVar m)
 newTxSubmissionCountersVar = newTVarIO
 
-newPeerTxInFlightRegistry
+newPeerTxRegistry
   :: MonadSTM m
-  => m (PeerTxInFlightRegistry m peeraddr)
-newPeerTxInFlightRegistry = newTVarIO Map.empty
+  => m (PeerTxRegistry m peeraddr)
+newPeerTxRegistry = newTVarIO Map.empty
 
 -- | Central bookkeeping thread for V2.
 --
@@ -81,7 +86,8 @@ newPeerTxInFlightRegistry = newTVarIO Map.empty
 -- registry is read inside the same STM transaction as the sweep so
 -- the snapshot is coherent.  On a slower cadence (every
 -- 'countersInterval' seconds of elapsed time) it also emits the
--- current counters when they differ from the last emission, and a
+-- aggregated counters -- the retired-peers accumulator plus every
+-- live peer's cell -- when they differ from the last emission, and a
 -- 'TraceSharedTxState' snapshot when @sharedRevision@ or
 -- @sharedGeneration@ has moved since the last emission.
 txCountersThreadV2
@@ -92,9 +98,9 @@ txCountersThreadV2
   -> Tracer m (TraceTxLogic peeraddr txid tx)
   -> TxSubmissionCountersVar m
   -> SharedTxStateVar m peeraddr txid
-  -> PeerTxInFlightRegistry m peeraddr
+  -> PeerTxRegistry m peeraddr
   -> m Void
-txCountersThreadV2 policy countersTracer sharedStateTracer countersVar
+txCountersThreadV2 policy countersTracer sharedStateTracer retiredCountersVar
                    sharedStateVar registry = do
     now <- getMonotonicTime
     initialSt <- readTVarIO sharedStateVar
@@ -120,7 +126,7 @@ txCountersThreadV2 policy countersTracer sharedStateTracer countersVar
           writeTVar sharedStateVar st'
       if now >= nextEmitAt
          then do
-           current <- readTVarIO countersVar
+           current <- atomically (snapshotCounters retiredCountersVar registry)
            when (current /= previous) $ traceWith countersTracer current
            st <- readTVarIO sharedStateVar
            let curRev = sharedRevision   st
@@ -141,16 +147,36 @@ txCountersThreadV2 policy countersTracer sharedStateTracer countersVar
 -- can be safely reclaimed.
 snapshotLiveReferences
   :: MonadSTM m
-  => PeerTxInFlightRegistry m peeraddr
+  => PeerTxRegistry m peeraddr
   -> STM m IntSet
 snapshotLiveReferences registry = do
     peers <- readTVar registry
-    pifs  <- traverse readTVar (Map.elems peers)
+    pifs  <- traverse (readTVar . fst) (Map.elems peers)
     pure $! IntSet.unions
               [ s
               | pif <- pifs
               , s   <- [pifAdvertised pif, pifAcksPending pif]
               ]
+
+-- | Aggregate the V2 counters for emission: the retired-peers
+-- accumulator plus every live peer's private counters cell.
+--
+-- Read in a single STM transaction so the snapshot is coherent with
+-- 'withPeer' disconnect flushes (which move a peer's counters into the
+-- retired accumulator and drop it from the registry atomically),
+-- keeping the emitted aggregate monotonic.  The transaction is
+-- read-only, so the hot-path per-peer writers never block on it; only
+-- this reader (at the 'countersInterval' cadence) retries on conflict.
+snapshotCounters
+  :: MonadSTM m
+  => TxSubmissionCountersVar m
+  -> PeerTxRegistry m peeraddr
+  -> STM m TxSubmissionCounters
+snapshotCounters retiredCountersVar registry = do
+    retired <- readTVar retiredCountersVar
+    peers   <- readTVar registry
+    live    <- traverse (readTVar . snd) (Map.elems peers)
+    pure $! mconcat (retired : live)
 
 -- | Peer-facing coordination API.
 --
@@ -226,43 +252,54 @@ withPeer
   => TxDecisionPolicy
   -> TxSubmissionMempoolReader txid tx idx m
   -> SharedTxStateVar m peeraddr txid
-  -> PeerTxInFlightRegistry m peeraddr
+  -> PeerTxRegistry m peeraddr
   -> TxSubmissionCountersVar m
   -> peeraddr
   -> (PeerTxAPI m txid tx -> m a)
   -> m a
 withPeer policy TxSubmissionMempoolReader { mempoolGetSnapshot }
-         sharedStateVar registry countersVar peeraddr io =
+         sharedStateVar registry retiredCountersVar peeraddr io =
     bracket acquire release run
   where
     acquire = do
       peerInFlightVar <- newTVarIO emptyPeerTxInFlight
-      atomically $ modifyTVar registry (Map.insert peeraddr peerInFlightVar)
-      pure peerInFlightVar
+      peerCountersVar <- newTVarIO mempty
+      atomically $ modifyTVar registry
+                     (Map.insert peeraddr (peerInFlightVar, peerCountersVar))
+      pure (peerInFlightVar, peerCountersVar)
 
-    release peerInFlightVar = do
+    -- On exit: reverse this peer's in-flight contributions to shared
+    -- state, flush its accumulated counters into the retired
+    -- accumulator (so the emitted aggregate stays monotonic across
+    -- disconnects), then drop it from the registry.  Flush and removal
+    -- commit in one transaction so 'snapshotCounters' counts this peer
+    -- exactly once: via its live cell before exit, via the retired
+    -- accumulator after.
+    release (peerInFlightVar, peerCountersVar) = do
       now <- getMonotonicTime
       atomically $ do
         pif <- readTVar peerInFlightVar
         modifyTVar sharedStateVar (scrubFromPeerInFlight peeraddr now pif)
+        peerCounters <- readTVar peerCountersVar
+        modifyTVar retiredCountersVar (<> peerCounters)
         modifyTVar registry (Map.delete peeraddr)
 
-    run peerInFlightVar = io PeerTxAPI {
+    run (peerInFlightVar, peerCountersVar) = io PeerTxAPI {
           awaitSharedChange = awaitSharedChangeImp sharedStateVar
         , runNextPeerAction = runNextPeerActionImp policy sharedStateVar
-                                peerInFlightVar countersVar peeraddr
+                                peerInFlightVar peerCountersVar peeraddr
         , runNextPeerActionPipelined = runNextPeerActionPipelinedImp policy
                                          sharedStateVar peerInFlightVar
-                                         countersVar peeraddr
+                                         peerCountersVar peeraddr
         , applyReceivedTxIds = applyReceivedTxIdsImp policy mempoolGetSnapshot
-                                 sharedStateVar peerInFlightVar countersVar
+                                 sharedStateVar peerInFlightVar peerCountersVar
         , applyReceivedTxs = applyReceivedTxsImp policy mempoolGetSnapshot
-                               sharedStateVar peerInFlightVar countersVar peeraddr
+                               sharedStateVar peerInFlightVar peerCountersVar peeraddr
         , applySubmittedTxs = applySubmittedTxsImp policy sharedStateVar
-                                peerInFlightVar countersVar peeraddr
+                                peerInFlightVar peerCountersVar peeraddr
         , resolveTxRequest = resolveTxRequestImp sharedStateVar
         , resolveBufferedTxs = resolveBufferedTxsImp sharedStateVar
-        , addCounters = \delta -> atomically $ modifyTVar countersVar (<> delta)
+        , addCounters = \delta -> atomically $ modifyTVar peerCountersVar (<> delta)
         }
 
 -- | Reverse this peer's still-outstanding contributions to the shared

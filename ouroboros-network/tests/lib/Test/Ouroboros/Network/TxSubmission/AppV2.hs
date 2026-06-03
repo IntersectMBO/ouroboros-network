@@ -241,7 +241,7 @@ runTxSubmission tracer tracerTxLogic countersTracer inboundTracer st0
 
     duplicateTxIdsVar <- Lazy.newTVarIO []
     sharedTxStateVar <- newSharedTxStateVar emptySharedTxState
-    inFlightRegistry <- newPeerTxInFlightRegistry
+    inFlightRegistry <- newPeerTxRegistry
     txCountersVar <- newTxSubmissionCountersVar mempty
     traceTVarIO sharedTxStateVar \_ -> return . TraceDynamic . TxStateTrace
     labelTVarIO sharedTxStateVar "shared-tx-state"
@@ -510,8 +510,8 @@ unit_counterEmission_cadence =
     simulation = do
       sharedTxStateVar <- newSharedTxStateVar
                             (emptySharedTxState :: SharedTxState Int Int)
-      inFlightRegistry <- newPeerTxInFlightRegistry
-                            :: IOSim s (PeerTxInFlightRegistry (IOSim s) Int)
+      inFlightRegistry <- newPeerTxRegistry
+                            :: IOSim s (PeerTxRegistry (IOSim s) Int)
       txCountersVar    <- newTxSubmissionCountersVar mempty
       recorder         <- newTVarIO []
 
