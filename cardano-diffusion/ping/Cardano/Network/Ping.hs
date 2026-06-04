@@ -52,10 +52,13 @@ import Data.ByteString qualified as BS
 import Data.ByteString.Char8 qualified as BS.Char
 import Data.ByteString.Lazy qualified as BL
 import Data.IP
+import Data.List qualified as List
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, mapMaybe)
+import Data.String (fromString)
 import Data.TDigest (TDigest)
 import Data.TDigest qualified as TDigest
+import Data.Text (Text)
 import Data.Text.Lazy qualified as TL
 import Data.Text.Lazy.IO qualified as TL
 import Data.Time.Format.ISO8601 (iso8601Show)
@@ -260,15 +263,57 @@ pingOptsParser =
 
 data LogMsg = LogChainSyncTip PingTip
             | LogStatPoint StatPoint
+            | LogNodeToClientVersionData NodeToClientVersion (Either Text NodeToClientVersionData)
+            | LogNodeToNodeVersionData   NodeToNodeVersion   (Either Text NodeToNodeVersionData)
   deriving Show
 
 instance ToText LogMsg where
   toText (LogChainSyncTip tip) = TL.pack (show tip)
-  toText (LogStatPoint point)  = TL.pack (show point)
+  toText (LogStatPoint point) = TL.pack (show point)
+  toText (LogNodeToClientVersionData version versionData)
+    = TL.pack $ unwords
+      [ show version
+      , either (TL.unpack . TL.fromStrict) showNodeToClientVersionData versionData
+      ]
+    where
+      showNodeToClientVersionData :: NodeToClientVersionData -> String
+      showNodeToClientVersionData
+        (NodeToClientVersionData networkMagic query)
+        = unwords
+          [ show networkMagic
+          , show query
+          ]
+  toText (LogNodeToNodeVersionData version versionData)
+    = TL.pack $ unwords
+      [ show version
+      , either (TL.unpack . TL.fromStrict) showNodeToNodeVersionData versionData
+      ]
+    where
+      showNodeToNodeVersionData :: NodeToNodeVersionData -> String
+      showNodeToNodeVersionData
+        (NodeToNodeVersionData
+          networkMagic
+          diffusionMode
+          peerSharing
+          query
+          perasSupport
+        )
+        = unwords
+          [ show networkMagic
+          , show diffusionMode
+          , show peerSharing
+          , show query
+          , show perasSupport
+          ]
+
 
 instance ToJSON LogMsg where
   toJSON (LogChainSyncTip tip) = toJSON tip
-  toJSON (LogStatPoint point)  = toJSON point
+  toJSON (LogStatPoint point) = toJSON point
+  toJSON (LogNodeToClientVersionData version versionData)
+    = object [ fromString (show version) .= either toJSON toJSON versionData ]
+  toJSON (LogNodeToNodeVersionData version versionData)
+    = object [ fromString (show version) .= either toJSON toJSON versionData ]
 
 
 sduTimeout :: DiffTime
@@ -286,7 +331,7 @@ hexStr = BS.foldr (\b -> (<>) (printf "%02x" b)) ""
 
 instance Show PingTip where
   show PingTip{..} =
-    printf "rtt: %.3f, hash: %s, blockNo: %d, slotNo: %d"
+    printf "rtt: %.3fs, hash: %s, blockNo: %d, slotNo: %d"
            ptRtt
            (hexStr ptHash)
            (unBlockNo ptBlockNo)
@@ -692,10 +737,17 @@ pingClient protocol stdout opts@PingOpts{..} peer =
           case r' of
             HandshakeQueryResult versions -> do
               -- print query results if it was supported by the remote side
-              when (pingOptsMode == QueryMode) $
-                -- override the pingOptsQuiet flag
-                logMsgWithPeer opts { pingOptsQuiet = False } hostName (Just serviceName)
-                  $ QueriedVersions (Map.keys versions)
+              when (pingOptsMode == QueryMode) $ void $
+                Map.traverseWithKey
+                  (\version versionData ->
+                    traceWith stdout' $
+                      case protocol of
+                        NodeToClient ->
+                          LogNodeToClientVersionData version versionData
+                        NodeToNode ->
+                          LogNodeToNodeVersionData version versionData
+                  )
+                  versions
             HandshakeNegotiationResult _ version _versionData -> do
               -- show negotiated version
               logMsg $ NegotiatedVersion version
@@ -856,7 +908,7 @@ newtype NetworkRTT = NetworkRTT Double
 
 instance ToText NetworkRTT where
   toText (NetworkRTT rtt) =
-    TL.pack $ printf "network rtt: %.3f" rtt
+    TL.pack $ printf "network rtt: %.3fs" rtt
 
 instance ToJSON NetworkRTT where
   toJSON (NetworkRTT rtt) =
@@ -867,7 +919,7 @@ newtype HandshakeRTT = HandshakeRTT DiffTime
 
 instance ToText HandshakeRTT where
   toText (HandshakeRTT diff) =
-    TL.pack $ printf "handshake rtt: %.3f" (realToFrac diff :: Double)
+    TL.pack $ printf "handshake rtt: %.3fs" (realToFrac diff :: Double)
 
 instance ToJSON HandshakeRTT where
   toJSON (HandshakeRTT diff) =
