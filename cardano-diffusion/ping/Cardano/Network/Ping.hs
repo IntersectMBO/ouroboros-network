@@ -34,6 +34,7 @@ module Cardano.Network.Ping
 import Control.Concurrent.Class.MonadMVar
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.DeepSeq (NFData)
+import Control.Exception (SomeAsyncException (..))
 import Control.Monad (unless, void, when)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
@@ -261,11 +262,62 @@ pingOptsParser =
             readDomainNameOrFilePath = eitherReader Right
 
 
+-- | Log messages to stdout.
+--
 data LogMsg = LogChainSyncTip PingTip
             | LogStatPoint StatPoint
             | LogNodeToClientVersionData NodeToClientVersion (Either Text NodeToClientVersionData)
             | LogNodeToNodeVersionData   NodeToNodeVersion   (Either Text NodeToNodeVersionData)
   deriving Show
+
+-- | Log messages to stderr.
+--
+data PingWarning = FilePathDoesNotExist FilePath
+                 | DNSError DNS.DNSError
+                 | DNSResolution String [IP] Word
+                 | MissingPort IP
+                 | Error SomeException
+                 | ConnectError Socket.SockAddr SomeException
+
+
+
+formatPingWarning :: PingWarning -> String
+formatPingWarning msg = severity msg ++ fn msg
+  where
+    fn (FilePathDoesNotExist path)
+      = "file path " ++ show path ++ " does not exist"
+    fn (DNSError err)
+      = "dns: " ++ show err
+    fn (DNSResolution domain ips port)
+      = concat
+      [ domain
+      , ": "
+      , List.intercalate ", " (ipWithPort <$> ips)
+      ]
+      where
+        ipWithPort ip = show ip ++ ":" ++ show port
+    fn (MissingPort ip)
+      = "missing port for " ++ show ip
+    fn (Error err)
+      = show err
+    fn (ConnectError sockAddr err)
+      = unwords
+      [ "connect error"
+      , show sockAddr
+      , show err
+      ]
+
+    severity :: PingWarning -> String
+    severity = \case
+        FilePathDoesNotExist{} -> warning
+        DNSError{}             -> warning
+        DNSResolution{}        -> mempty
+        MissingPort{}          -> warning
+        Error{}                -> warning
+        ConnectError{}         -> warning
+      where
+        warning = "WARNING: "
+
 
 instance ToText LogMsg where
   toText (LogChainSyncTip tip) = TL.pack (show tip)
@@ -467,9 +519,7 @@ chainSyncClient
   :: Tracer IO LogMsg
   -> ChainSyncClient ChainSyncHeader ChainSyncPoint ChainSyncTip IO ()
 chainSyncClient stdout =
-    ChainSync.ChainSyncClient $ do
-      start <- getMonotonicTime
-      return (go start)
+    ChainSync.ChainSyncClient $ go <$> getMonotonicTime
   where
     go :: Time
        -> ChainSync.ClientStIdle ChainSyncHeader ChainSyncPoint ChainSyncTip IO ()
@@ -533,29 +583,30 @@ keepAliveClient stdout count td0 =
 -- Ping Client
 --
 
-resolveAddress :: PingOpts (Unresolved FilePathUnresolved)
+resolveAddress :: Tracer IO PingWarning
+               -> PingOpts (Unresolved FilePathUnresolved)
                -> Address (Unresolved fpResolved)
                -> IO [Address ResolvedDNS]
-resolveAddress _ (IP addr port) = pure [IP addr port]
-resolveAddress opts (FilePath path) =
+resolveAddress _stderr _ (IP addr port) = pure [IP addr port]
+resolveAddress stderr  opts (FilePath path) =
    case splitWith ':' path
            >>= \(dnsStr, portStr) -> (dnsStr,) <$> readMaybe portStr
      of
      Just (dnsname, port) ->
        -- try resolve as a domain name
-       resolveAddress opts (Domain dnsname port)
+       resolveAddress stderr opts (Domain dnsname port)
         >>= \case
           [] ->
             -- dns query failed, let's try if it is a file path
             doesFileExist path >>= \case
               True -> pure [FilePath path]
               False -> do
-                IO.hPutStrLn IO.stderr ("WARNING: file path " ++ show path ++ " does not exist")
+                traceWith stderr (FilePathDoesNotExist path)
                 pure []
           addrs -> pure addrs
      Nothing -> do
        pure [FilePath path]
-resolveAddress PingOpts { pingOptsQuiet } (Domain dns port) = do
+resolveAddress stderr PingOpts { pingOptsQuiet } (Domain dns port) = do
   let hostname = BS.Char.pack dns
   rs <- DNS.makeResolvSeed DNS.defaultResolvConf
   DNS.withResolver rs $ \resolver -> do
@@ -563,11 +614,11 @@ resolveAddress PingOpts { pingOptsQuiet } (Domain dns port) = do
     aaaa <- fmap (map IPv6) <$> DNS.lookupAAAA resolver hostname
     case a <> aaaa of
       Left err -> do
-        IO.hPutStrLn IO.stderr ("WARNING: dns error: " ++ show err)
+        traceWith stderr $ DNSError err
         return []
       Right ips -> do
         unless pingOptsQuiet $
-          IO.hPutStrLn IO.stderr ("INFO: " ++ dns ++ ":" ++ show port ++ " " ++ show ips)
+          traceWith stderr $ DNSResolution dns ips port
         return [ IP ip port | ip <- ips ]
 
 
@@ -576,12 +627,17 @@ pingClients
   -> IO ()
 pingClients opts@PingOpts { pingOptsJson, pingOptsAddresses = addresses } = do
     logLock <- newMVar ()
-    let tracer :: Tracer IO (WithHost LogMsg)
-        tracer = mkTracer $ \msg -> withMVar logLock $ \_ -> TL.putStrLn (format pingOptsJson msg)
+    let stdout :: Tracer IO (WithHost LogMsg)
+        stdout = mkTracer $ \msg -> withMVar logLock $ \_ -> TL.putStrLn (format pingOptsJson msg)
+
+    stderrLock <- newMVar ()
+    IO.hSetBuffering IO.stderr IO.LineBuffering
+    let stderr :: Tracer IO PingWarning
+        stderr = mkTracer $ \msg -> withMVar stderrLock $ \_ -> IO.hPutStrLn IO.stderr (formatPingWarning msg)
 
     -- resolved addresses
     resolvedAddresses <-
-      concat <$> traverse (resolveAddress opts) addresses
+      concat <$> traverse (resolveAddress stderr opts) addresses
     sockAddrs
       <- mapMaybe (either (fmap Left)
                           (fmap Right . maybeHead))
@@ -610,8 +666,10 @@ pingClients opts@PingOpts { pingOptsJson, pingOptsAddresses = addresses } = do
                               Nothing
                       else do
                         case readMaybe path :: Maybe IP of
-                          Nothing -> IO.hPutStrLn IO.stderr ("WARNING: file does not exist: " ++ show path)
-                          Just ip -> IO.hPutStrLn IO.stderr ("WARNING: please add a port number for " ++ show ip)
+                          Nothing ->
+                            traceWith stderr $ FilePathDoesNotExist path
+                          Just ip ->
+                            traceWith stderr $ MissingPort ip
                         return (Left Nothing)
                )
                resolvedAddresses
@@ -619,8 +677,8 @@ pingClients opts@PingOpts { pingOptsJson, pingOptsAddresses = addresses } = do
     let opts' :: PingOpts ResolvedDNS
         opts' = opts { pingOptsAddresses = resolvedAddresses }
     mapConcurrently_ (\case
-                        Right addr -> pingClient NodeToNode tracer opts' addr
-                        Left  addr -> pingClient NodeToClient tracer opts' addr
+                        Right addr -> pingClient NodeToNode stdout stderr opts' addr
+                        Left  addr -> pingClient NodeToClient stdout stderr opts' addr
                      ) sockAddrs
       `catch`
       \(e :: SomeException) -> IO.hPutStrLn IO.stderr (displayException e)
@@ -638,10 +696,11 @@ pingClient
      )
   => ProtocolFlavour versionNumber versionData
   -> Tracer IO (WithHost LogMsg)
+  -> Tracer IO PingWarning
   -> PingOpts ResolvedDNS
   -> AddrInfo
   -> IO ()
-pingClient protocol stdout opts@PingOpts{..} peer =
+pingClient protocol stdout stderr opts@PingOpts{..} peer =
     bracket
       (Socket.socket (Socket.addrFamily peer) Socket.Stream Socket.defaultProtocol)
       Socket.close
@@ -664,7 +723,12 @@ pingClient protocol stdout opts@PingOpts{..} peer =
           stdout' = WithHost hostName (Just serviceName) >$< stdout
 
       !t0_s <- getMonotonicTime
-      Socket.connect sd (Socket.addrAddress peer)
+
+      handleJust (\e -> case fromException e of { Just SomeAsyncException {} -> Nothing; _ -> Just e })
+                 (\e  -> traceWith stderr (ConnectError (Socket.addrAddress peer) e)
+                      >> throwIO e
+                 ) $
+        Socket.connect sd (Socket.addrAddress peer)
       !t0_e <- getMonotonicTime
 
       logMsg $ NetworkRTT (toSample t0_e t0_s)
