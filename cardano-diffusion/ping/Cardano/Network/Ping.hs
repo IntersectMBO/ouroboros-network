@@ -20,7 +20,8 @@
 
 module Cardano.Network.Ping
   ( PingOpts (..)
-  , pingOptsParser
+  , Address
+  , cmdlineParser
   , PingMode (..)
   , LogFormat (..)
   , LogMsg (..)
@@ -118,28 +119,36 @@ type Port = Word
 
 -- | There are three stages for resolving addresses.
 --
--- 1. FilePath might be a file path or a DNS name
--- 2. FilePath was resolved as a DNS name (or not, if a dns lookup failed)
--- 3. Resolved DNS names into IPs and ports.
+-- 1. SRV might be a file path or a DNS name or an SRV record
+-- 2. SRV was resolved as an SRV record, if not
+-- 3. try to resolve it as a DNS name
+-- 4. if failed, try to use it as a file path
 --
 -- See `resolveAddress`
 --
-type data Stage = Unresolved ResolvedFilePath | ResolvedDNS
-type data ResolvedFilePath = FilePathUnresolved | FilePathResolved
+type data Stage = Unresolved ResolvedSRVOrFilePath | Resolved
+type data ResolvedSRVOrFilePath = SRVOrFilePathUnresolved | SRVOrFilePathResolved
 
 
 data Address (stage :: Stage) where
-    FilePath :: FilePath -> Address resolved
+    FilePath :: FilePath -> Address Resolved
 
-    Domain   :: String
+    FilePathOrDomain
+             :: String
+             -> Address (Unresolved SRVOrFilePathUnresolved)
+
+    Domain   :: DNS.Domain
              -> Port
-             -> Address (Unresolved FilePathResolved)
+             -> Address (Unresolved SRVOrFilePathResolved)
+
+    SRV      :: String
+             -> Address (Unresolved SRVOrFilePathUnresolved)
 
     IP       :: IP
              -> Port
              -> Address resolved
 
-data PingOpts stage = PingOpts
+data PingOpts = PingOpts
   { pingOptsCount     :: Word32
     -- ^ Number of messages to send to the server
   , pingOptsMagic     :: NetworkMagic
@@ -150,14 +159,14 @@ data PingOpts stage = PingOpts
     -- ^ Less verbose output
   , pingOptsMode      :: PingMode
     -- ^ Ping mode
-  , pingOptsAddresses :: [Address stage]
-    -- ^ list of addresses
+  , pingOptsSRVPrefix :: String
+    -- ^ SRV prefix
   } -- deriving (Eq, Show)
 
 mainnetMagic :: NetworkMagic
 mainnetMagic = NetworkMagic 764824073
 
-pingOptsParser :: Parser (PingOpts (Unresolved FilePathUnresolved))
+pingOptsParser :: Parser PingOpts
 pingOptsParser =
   PingOpts
     <$> option auto
@@ -203,7 +212,13 @@ pingOptsParser =
         <> value PingMode
         <> metavar "MODE"
         )
-    <*> argParser
+    <*> option str
+        (   long "srv-prefix"
+         <> help "Prefix that will be added to an SRV service name"
+         <> value "_cardano._tcp"
+         <> metavar "SRV_PREFIX"
+         <> showDefault
+        )
   where
     pingMode :: ReadM PingMode
     pingMode =
@@ -214,52 +229,59 @@ pingOptsParser =
         _ -> Left "unexpected string"
 
 
-    argParser :: Parser [Address (Unresolved FilePathUnresolved)]
-    argParser =
-        some addrParser
+argParser :: Parser [Address (Unresolved SRVOrFilePathUnresolved)]
+argParser =
+    some addrParser
+  where
+    addrParser :: Parser (Address (Unresolved SRVOrFilePathUnresolved))
+    addrParser =
+        argument
+          (     uncurry IP <$> readIPv4AndPort
+            <|> uncurry IP <$> readIPv6AndPort
+            <|>                readDomainNameOrFilePath
+          )
+          (  help "List of IP/DNS/SRV address and ports or UNIX socket paths, e.g. 127.0.0.1:3001 [::1]:3001 example.org:3001."
+          <> metavar "ADDRS"
+          )
       where
-        addrParser :: Parser (Address (Unresolved FilePathUnresolved))
-        addrParser =
-            argument
-              (     uncurry IP <$> readIPv4AndPort
-                <|> uncurry IP <$> readIPv6AndPort
-                <|> FilePath   <$> readDomainNameOrFilePath
-              )
-              (  help "List of IP/DNS address and ports or UNIX socket paths, e.g. 127.0.0.1:3001 [::1]:3001 example.org:3001."
-              <> metavar "ADDRS"
-              )
-          where
-            -- note: `Read` instances for `IP`, `IPv4`, `IPv6` expect no trailing
-            -- characters after the address, thus we need to find the split position
-            -- first.
+        -- note: `Read` instances for `IP`, `IPv4`, `IPv6` expect no trailing
+        -- characters after the address, thus we need to find the split position
+        -- first.
 
-            -- parse IPv4 address and port in a form `127.0.0.1:3001`
-            readIPv4AndPort :: ReadM (IP, Port)
-            readIPv4AndPort =
-              eitherReader $ \s -> do
-                case splitWith ':' s of
-                  Nothing -> Left s
-                  Just (addrStr, portStr) ->
-                    maybe (Left s) Right $
-                    (,) <$> readMaybe addrStr
-                        <*> readMaybe portStr
+        -- parse IPv4 address and port in a form `127.0.0.1:3001`
+        readIPv4AndPort :: ReadM (IP, Port)
+        readIPv4AndPort =
+          eitherReader $ \s -> do
+            case splitWith ':' s of
+              Nothing -> Left s
+              Just (addrStr, portStr) ->
+                maybe (Left s) Right $
+                (,) <$> readMaybe addrStr
+                    <*> readMaybe portStr
 
-            -- parse IPv6 address and port in a form `[::1]:3001` or a UNIX file path
-            readIPv6AndPort :: ReadM (IP, Port)
-            readIPv6AndPort =
-              eitherReader $ \s ->
-                case s of
-                  ('[':s') ->
-                     case splitWith ']' s' of
-                       Just (addrStr, ':' : portStr) ->
-                         maybe (Left s) Right $
-                         (,) <$> readMaybe addrStr
-                             <*> readMaybe portStr
-                       _ -> Left s
-                  _ -> Left s
+        -- parse IPv6 address and port in a form `[::1]:3001` or a UNIX file path
+        readIPv6AndPort :: ReadM (IP, Port)
+        readIPv6AndPort =
+          eitherReader $ \s ->
+            case s of
+              ('[':s') ->
+                 case splitWith ']' s' of
+                   Just (addrStr, ':' : portStr) ->
+                     maybe (Left s) Right $
+                     (,) <$> readMaybe addrStr
+                         <*> readMaybe portStr
+                   _ -> Left s
+              _ -> Left s
 
-            readDomainNameOrFilePath :: ReadM String
-            readDomainNameOrFilePath = eitherReader Right
+        readDomainNameOrFilePath :: ReadM (Address (Unresolved SRVOrFilePathUnresolved))
+        readDomainNameOrFilePath = eitherReader $ \s ->
+          case List.find (== ':') s of
+            -- not an `SRV` record
+            Just _  -> Right (FilePathOrDomain s)
+            Nothing -> Right (SRV s)
+
+cmdlineParser :: Parser (PingOpts, [Address (Unresolved SRVOrFilePathUnresolved)])
+cmdlineParser = (,) <$> pingOptsParser <*> argParser
 
 
 -- | Log messages to stdout.
@@ -273,12 +295,11 @@ data LogMsg = LogChainSyncTip PingTip
 -- | Log messages to stderr.
 --
 data PingWarning = FilePathDoesNotExist FilePath
-                 | DNSError DNS.DNSError
-                 | DNSResolution String [IP] Word
+                 | DNSError DNS.Domain DNS.DNSError
+                 | DNSResolution DNS.Domain [IP] Word
                  | MissingPort IP
                  | Error SomeException
                  | ConnectError Socket.SockAddr SomeException
-
 
 
 formatPingWarning :: PingWarning -> String
@@ -286,11 +307,15 @@ formatPingWarning msg = severity msg ++ fn msg
   where
     fn (FilePathDoesNotExist path)
       = "file path " ++ show path ++ " does not exist"
-    fn (DNSError err)
-      = "dns: " ++ show err
+    fn (DNSError domain err)
+      = unwords
+      [ "dns:"
+      , BS.Char.unpack domain
+      , show err
+      ]
     fn (DNSResolution domain ips port)
       = concat
-      [ domain
+      [ BS.Char.unpack domain
       , ": "
       , List.intercalate ", " (ipWithPort <$> ips)
       ]
@@ -584,17 +609,44 @@ keepAliveClient stdout count td0 =
 --
 
 resolveAddress :: Tracer IO PingWarning
-               -> PingOpts (Unresolved FilePathUnresolved)
+               -> DNS.Resolver
+               -> PingOpts
                -> Address (Unresolved fpResolved)
-               -> IO [Address ResolvedDNS]
-resolveAddress _stderr _ (IP addr port) = pure [IP addr port]
-resolveAddress stderr  opts (FilePath path) =
+               -> IO [Address Resolved]
+
+-- 1. Resolve an SRV records
+resolveAddress stderr resolver opts@PingOpts { pingOptsSRVPrefix = srvPrefix } (SRV dns) = do
+  let hostname = BS.Char.pack $ case srvPrefix of
+                                  [] -> dns
+                                  _  -> srvPrefix ++ "." ++ dns
+  r <- DNS.lookupRaw resolver hostname DNS.SRV
+  case r >>= flip DNS.fromDNSMessage selectSRV of
+    Left err -> do
+      traceWith stderr $ DNSError hostname err
+      -- try resolve the SRV as a domain:port or a filepath
+      resolveAddress stderr resolver opts (FilePathOrDomain dns)
+    Right services ->
+      concat <$> traverse (resolveAddress stderr resolver opts)
+        [ Domain domain (fromIntegral port)
+        | (domain, _, _, port, _ttl)  <- services
+        ]
+  where
+    selectSRV DNS.DNSMessage { DNS.answer } =
+      [ (domain', priority', weight', port, ttl)
+      | DNS.ResourceRecord {
+          DNS.rdata = DNS.RD_SRV priority' weight' port domain',
+          DNS.rrttl = ttl
+        } <- answer
+      ]
+
+-- 2. Resolved domain name or file path
+resolveAddress stderr resolver opts (FilePathOrDomain path) =
    case splitWith ':' path
            >>= \(dnsStr, portStr) -> (dnsStr,) <$> readMaybe portStr
      of
      Just (dnsname, port) ->
        -- try resolve as a domain name
-       resolveAddress stderr opts (Domain dnsname port)
+       resolveAddress stderr resolver opts (Domain (BS.Char.pack dnsname) port)
         >>= \case
           [] ->
             -- dns query failed, let's try if it is a file path
@@ -604,40 +656,61 @@ resolveAddress stderr  opts (FilePath path) =
                 traceWith stderr (FilePathDoesNotExist path)
                 pure []
           addrs -> pure addrs
-     Nothing -> do
-       pure [FilePath path]
-resolveAddress stderr PingOpts { pingOptsQuiet } (Domain dns port) = do
-  let hostname = BS.Char.pack dns
-  rs <- DNS.makeResolvSeed DNS.defaultResolvConf
-  DNS.withResolver rs $ \resolver -> do
-    a <- fmap (map IPv4) <$> DNS.lookupA resolver hostname
-    aaaa <- fmap (map IPv6) <$> DNS.lookupAAAA resolver hostname
-    case a <> aaaa of
-      Left err -> do
-        traceWith stderr $ DNSError err
-        return []
-      Right ips -> do
-        unless pingOptsQuiet $
-          traceWith stderr $ DNSResolution dns ips port
-        return [ IP ip port | ip <- ips ]
+     Nothing ->
+       doesFileExist path >>= \case
+         True -> pure [FilePath path]
+         False -> do
+           traceWith stderr (FilePathDoesNotExist path)
+           pure []
+
+-- 3. Resolve domain names
+resolveAddress stderr resolver PingOpts { pingOptsQuiet } (Domain hostname port) = do
+  a <- fmap (map IPv4) <$> DNS.lookupA resolver hostname
+  aaaa <- fmap (map IPv6) <$> DNS.lookupAAAA resolver hostname
+  case a <>: aaaa of
+    Left err -> do
+      traceWith stderr $ DNSError hostname err
+      return []
+    Right ips -> do
+      unless pingOptsQuiet $
+        traceWith stderr $ DNSResolution hostname ips port
+      return [ IP ip port | ip <- ips ]
+  where
+    (<>:) :: Either e [a] -> Either e [a] -> Either e [a]
+    (Left e) <>: Left{}    = Left e
+    Right as <>: Left{}    = Right as
+    Left{}   <>: Right as  = Right as
+    Right as <>: Right as' = Right (as ++ as')
+
+-- 4. Return ip address
+resolveAddress _stderr _ _ (IP addr port) = pure [IP addr port]
 
 
 pingClients
-  :: PingOpts (Unresolved FilePathUnresolved)
+  :: PingOpts
+  -> [Address (Unresolved SRVOrFilePathUnresolved)]
   -> IO ()
-pingClients opts@PingOpts { pingOptsJson, pingOptsAddresses = addresses } = do
-    logLock <- newMVar ()
+pingClients opts@PingOpts { pingOptsJson } addresses = do
+    stdoutLock <- newMVar ()
+    IO.hSetBuffering IO.stdout IO.LineBuffering
     let stdout :: Tracer IO (WithHost LogMsg)
-        stdout = mkTracer $ \msg -> withMVar logLock $ \_ -> TL.putStrLn (format pingOptsJson msg)
+        stdout = mkTracer $ \msg -> withMVar stdoutLock $ \_ -> TL.putStrLn (format pingOptsJson msg)
 
     stderrLock <- newMVar ()
     IO.hSetBuffering IO.stderr IO.LineBuffering
     let stderr :: Tracer IO PingWarning
-        stderr = mkTracer $ \msg -> withMVar stderrLock $ \_ -> IO.hPutStrLn IO.stderr (formatPingWarning msg)
+        stderr = mkTracer $ \msg -> withMVar stderrLock $ \_ ->
+          case msg of
+            -- Don't print IllegalDomain errors, which are common when we try
+            -- to resolve a file path as a DNS name.
+            DNSError _ DNS.IllegalDomain -> pure ()
+            _ -> IO.hPutStrLn IO.stderr (formatPingWarning msg)
 
     -- resolved addresses
+    rs <- DNS.makeResolvSeed DNS.defaultResolvConf
     resolvedAddresses <-
-      concat <$> traverse (resolveAddress stderr opts) addresses
+      DNS.withResolver rs $ \resolver ->
+        concat <$> traverse (resolveAddress stderr resolver opts) addresses
     sockAddrs
       <- mapMaybe (either (fmap Left)
                           (fmap Right . maybeHead))
@@ -674,17 +747,15 @@ pingClients opts@PingOpts { pingOptsJson, pingOptsAddresses = addresses } = do
                )
                resolvedAddresses
 
-    let opts' :: PingOpts ResolvedDNS
-        opts' = opts { pingOptsAddresses = resolvedAddresses }
     mapConcurrently_ (\case
                       Right addr ->
                         -- ignore exceptions so other ping clients can
                         -- continue
                         void $ try @_ @SomeException $
-                        pingClient NodeToNode stdout stderr opts' addr
+                        pingClient NodeToNode stdout stderr opts addr
                       Left  addr ->
                         void $ try @_ @SomeException $
-                        pingClient NodeToClient stdout stderr opts' addr
+                        pingClient NodeToClient stdout stderr opts addr
                    ) sockAddrs
 
 pingClient
@@ -700,7 +771,7 @@ pingClient
   => ProtocolFlavour versionNumber versionData
   -> Tracer IO (WithHost LogMsg)
   -> Tracer IO PingWarning
-  -> PingOpts ResolvedDNS
+  -> PingOpts
   -> AddrInfo
   -> IO ()
 pingClient protocol stdout stderr opts@PingOpts{..} peer =
@@ -995,7 +1066,7 @@ instance ToJSON HandshakeRTT where
 
 -- note: use `logMsg` defined above in terms of `logMsgWithPeer`
 logMsgWithPeer :: (ToText msg, ToJSON msg)
-               => PingOpts ResolvedDNS
+               => PingOpts
                -> HostName
                -> Maybe ServiceName
                -> msg
