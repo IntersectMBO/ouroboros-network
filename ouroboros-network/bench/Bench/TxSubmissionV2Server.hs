@@ -31,9 +31,8 @@ import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Ouroboros.Network.TxSubmission.Inbound.V2 (TxDecisionPolicy (..),
            TxSubmissionInitDelay (NoTxSubmissionInitDelay),
            defaultTxDecisionPolicy, txSubmissionInboundV2)
-import Ouroboros.Network.TxSubmission.Inbound.V2.Registry
-           (newPeerTxRegistry, newSharedTxStateVar,
-           newTxSubmissionCountersVar, withPeer)
+import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (newPeerTxRegistry,
+           newSharedTxStateVar, newTxSubmissionCountersVar, withPeer)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types (TxSubmissionCounters,
            emptySharedTxState)
 

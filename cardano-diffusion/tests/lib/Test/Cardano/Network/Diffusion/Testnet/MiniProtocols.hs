@@ -108,9 +108,8 @@ import Ouroboros.Network.RethrowPolicy
 import Ouroboros.Network.TxSubmission.Inbound.V2 (TxSubmissionInitDelay (..),
            txSubmissionInboundV2)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy (TxDecisionPolicy (..))
-import Ouroboros.Network.TxSubmission.Inbound.V2.Registry
-           (PeerTxRegistry, SharedTxStateVar, TxSubmissionCountersVar,
-           withPeer)
+import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (PeerTxRegistry,
+           SharedTxStateVar, TxSubmissionCountersVar, withPeer)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types (TraceTxLogic,
            TraceTxSubmissionInbound)
 import Ouroboros.Network.TxSubmission.Outbound (txSubmissionOutbound)
