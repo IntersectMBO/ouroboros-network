@@ -677,12 +677,15 @@ pingClients opts@PingOpts { pingOptsJson, pingOptsAddresses = addresses } = do
     let opts' :: PingOpts ResolvedDNS
         opts' = opts { pingOptsAddresses = resolvedAddresses }
     mapConcurrently_ (\case
-                        Right addr -> pingClient NodeToNode stdout stderr opts' addr
-                        Left  addr -> pingClient NodeToClient stdout stderr opts' addr
-                     ) sockAddrs
-      `catch`
-      \(e :: SomeException) -> IO.hPutStrLn IO.stderr (displayException e)
-                            >> throwIO e
+                      Right addr ->
+                        -- ignore exceptions so other ping clients can
+                        -- continue
+                        void $ try @_ @SomeException $
+                        pingClient NodeToNode stdout stderr opts' addr
+                      Left  addr ->
+                        void $ try @_ @SomeException $
+                        pingClient NodeToClient stdout stderr opts' addr
+                   ) sockAddrs
 
 pingClient
   :: forall versionNumber versionData.
