@@ -516,7 +516,7 @@ domainLookupWithTTL :: (MonadAsync m)
                     -> DNSPeersKind
                     -> (   DNS.Domain
                         -> DNS.TYPE
-                    -> m (Maybe (Either DNSError DNSMessage)))
+                        -> m (Maybe (Either DNSError DNSMessage)))
                     -> m (Either [DNSError] [(IP, DNS.TTL)])
 domainLookupWithTTL tracer look@LookupReqAOnly d peerType resolveDNS = do
     res <- domainALookupWithTTL (resolveDNS d DNS.A)
