@@ -13,6 +13,7 @@ module Cardano.Network.NodeToNode.Version
     -- * Codecs
   , nodeToNodeVersionCodec
   , nodeToNodeCodecCBORTerm
+  , NetworkMagic (..)
     -- * Feature predicates
   , isValidNtnVersionDataForVersion
   , getLocalPerasSupport
