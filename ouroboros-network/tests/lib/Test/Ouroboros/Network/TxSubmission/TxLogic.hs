@@ -3423,6 +3423,17 @@ mkFanoutFixture peerCount txidCount =
     allPeers = ownerPeer : peers
     txidsAndSizes = mkTxidsAndSizes txidCount
 
+-- | Per-iteration timestamp for the benchmark loops below.
+--
+-- The offset (one picosecond per loop index) is far below any policy
+-- timescale, so every iteration exercises the same code path, but it makes
+-- each iteration's workload a distinct expression.  Without it GHC shares a
+-- single result across all iterations (directly via a where-binding, or via
+-- let-floating of a loop-invariant body), and the loop degenerates into
+-- compute-once-then-'rnf'.
+iterationTime :: Int -> Time
+iterationTime n = addTime (fromIntegral n * 1e-12) now
+
 runReceiveDuplicateLoop :: Int -> ReceiveDuplicateFixture -> IO ()
 runReceiveDuplicateLoop iterations ReceiveDuplicateFixture
   { rdfRequestedTxIds
@@ -3437,7 +3448,7 @@ runReceiveDuplicateLoop iterations ReceiveDuplicateFixture
       let result =
             handleReceivedTxIds
               (const False)
-              now
+              (iterationTime n)
               defaultTxDecisionPolicy
               rdfRequestedTxIds
               rdfTxidsAndSizes
@@ -3458,7 +3469,7 @@ runPeerActionLoop iterations PeerActionFixture
     go 0 = pure ()
     go n = do
       let result =
-            nextPeerAction now defaultTxDecisionPolicy pafPeerAddr
+            nextPeerAction (iterationTime n) defaultTxDecisionPolicy pafPeerAddr
               pafPeerState emptyPeerTxInFlight pafSharedState
       _ <- evaluate (rnf result)
       go (n - 1)
@@ -3474,22 +3485,23 @@ runFanoutLoop iterations FanoutFixture
   where
     go 0 = pure ()
     go n = do
-      _ <- evaluate (rnf roundResult)
+      _ <- evaluate (rnf (roundResult (iterationTime n)))
       go (n - 1)
 
-    roundResult =
+    roundResult iterNow =
       let (!peerStatesRev, !sharedStateAfterReceive) =
-            List.foldl' receiveOne ([], ffInitialSharedState) ffPeers
+            List.foldl' (receiveOne iterNow) ([], ffInitialSharedState) ffPeers
           !sharedStateResolved = retainAllActiveTxs sharedStateAfterReceive
           (!ackResultsRev, !sharedStateAfterAck) =
-            List.foldl' acknowledgeOne ([], sharedStateResolved) (reverse peerStatesRev)
+            List.foldl' (acknowledgeOne iterNow) ([], sharedStateResolved) (reverse peerStatesRev)
       in (reverse peerStatesRev, reverse ackResultsRev, sharedStateAfterAck)
 
     receiveOne
-      :: ([(PeerAddr, PeerTxLocalState (Tx TxId), PeerTxInFlight)], SharedTxState PeerAddr TxId)
+      :: Time
+      -> ([(PeerAddr, PeerTxLocalState (Tx TxId), PeerTxInFlight)], SharedTxState PeerAddr TxId)
       -> PeerAddr
       -> ([(PeerAddr, PeerTxLocalState (Tx TxId), PeerTxInFlight)], SharedTxState PeerAddr TxId)
-    receiveOne (!peerStatesAcc, !sharedStateAcc) peeraddr =
+    receiveOne iterNow (!peerStatesAcc, !sharedStateAcc) peeraddr =
       let peerState0 =
             emptyPeerTxLocalState {
               peerRequestedTxIds = ffRequestedTxIds
@@ -3497,7 +3509,7 @@ runFanoutLoop iterations FanoutFixture
           !(peerState', peerInFlight', sharedStateAcc') =
             handleReceivedTxIds
               (const False)
-              now
+              iterNow
               defaultTxDecisionPolicy
               ffRequestedTxIds
               ffTxidsAndSizes
@@ -3507,12 +3519,13 @@ runFanoutLoop iterations FanoutFixture
       in ((peeraddr, peerState', peerInFlight') : peerStatesAcc, sharedStateAcc')
 
     acknowledgeOne
-      :: ([(PeerAddr, PeerAction, PeerTxLocalState (Tx TxId))], SharedTxState PeerAddr TxId)
+      :: Time
+      -> ([(PeerAddr, PeerAction, PeerTxLocalState (Tx TxId))], SharedTxState PeerAddr TxId)
       -> (PeerAddr, PeerTxLocalState (Tx TxId), PeerTxInFlight)
       -> ([(PeerAddr, PeerAction, PeerTxLocalState (Tx TxId))], SharedTxState PeerAddr TxId)
-    acknowledgeOne (!ackResultsAcc, !sharedStateAcc) (peeraddr, peerState0, peerInFlight0) =
+    acknowledgeOne iterNow (!ackResultsAcc, !sharedStateAcc) (peeraddr, peerState0, peerInFlight0) =
       let !(peerAction, peerState', _peerInFlight', sharedStateAcc') =
-            nextPeerAction now defaultTxDecisionPolicy peeraddr
+            nextPeerAction iterNow defaultTxDecisionPolicy peeraddr
               peerState0 peerInFlight0 sharedStateAcc
       in ( (peeraddr, peerAction, peerState') : ackResultsAcc
          , sharedStateAcc'
