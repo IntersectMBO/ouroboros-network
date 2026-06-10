@@ -55,8 +55,10 @@ import Data.ByteString.Char8 qualified as BS.Char
 import Data.ByteString.Lazy qualified as BL
 import Data.IP
 import Data.List qualified as List
+import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromMaybe, mapMaybe)
+import Data.Maybe (catMaybes, fromMaybe)
+import Data.Monoid (All (..))
 import Data.String (fromString)
 import Data.TDigest (TDigest)
 import Data.TDigest qualified as TDigest
@@ -69,7 +71,7 @@ import Network.DNS qualified as DNS
 import Network.Mux (MiniProtocolInfo (..))
 import Network.Mux qualified as Mx
 import Network.Mux.Bearer (MakeBearer (..), makeSocketBearer)
-import Network.Socket (AddrInfo, HostName, ServiceName, StructLinger (..))
+import Network.Socket (AddrInfo, StructLinger (..))
 import Network.Socket qualified as Socket
 import Options.Applicative
 import Options.Applicative.Help.Pretty qualified as Pretty
@@ -147,6 +149,20 @@ data Address (stage :: Stage) where
     IP       :: IP
              -> Port
              -> Address resolved
+
+
+showIPWithPort :: IP -> Port -> String
+showIPWithPort ip@IPv4{} port = show ip ++ ":" ++ show port
+showIPWithPort ip@IPv6{} port = "[" ++ show ip ++ "]:" ++ show port
+
+instance Show (Address Resolved) where
+  show :: Address Resolved -> String
+  show (IP ip port)    = showIPWithPort ip port
+  show (FilePath path) = path
+
+deriving instance Eq (Address Resolved)
+deriving instance Ord (Address Resolved)
+
 
 data PingOpts = PingOpts
   { pingOptsCount     :: Word32
@@ -317,20 +333,14 @@ formatPingWarning msg = severity msg ++ fn msg
       = concat
       [ BS.Char.unpack domain
       , ": "
-      , List.intercalate ", " (ipWithPort <$> ips)
+      , List.intercalate ", " (flip showIPWithPort port <$> ips)
       ]
-      where
-        ipWithPort ip = show ip ++ ":" ++ show port
     fn (MissingPort ip)
       = "missing port for " ++ show ip
     fn (Error err)
       = show err
     fn (ConnectError sockAddr err)
-      = unwords
-      [ "connect error"
-      , show sockAddr
-      , show err
-      ]
+      = printf "%-47s %s" (show sockAddr) (show err)
 
     severity :: PingWarning -> String
     severity = \case
@@ -408,7 +418,7 @@ hexStr = BS.foldr (\b -> (<>) (printf "%02x" b)) ""
 
 instance Show PingTip where
   show PingTip{..} =
-    printf "rtt: %.3fs, hash: %s, blockNo: %d, slotNo: %d"
+    printf "%6.3fs, %-64s, %9d, %10d"
            ptRtt
            (hexStr ptHash)
            (unBlockNo ptBlockNo)
@@ -447,9 +457,30 @@ data StatPoint = StatPoint
 instance Show StatPoint where
   show :: StatPoint -> String
   show StatPoint {..} =
-    printf "%-31s %7d, %7.3f, %7.3f, %7.3f, %7.3f, %7.3f, %7.3f, %7.3f"
+    printf "%-31s %6d, %6.3f, %6.3f, %6.3f, %6.3f, %6.3f, %6.3f, %6.3f"
       (iso8601Show spTimestamp ++ ",")
       spCookie spSample spMedian spP90 spMean spMin spMax spStd
+
+statPointHeader :: String
+statPointHeader = printf "%-46s %30s, %6s, %6s, %6s, %6s, %6s, %6s, %6s, %6s"
+                         ("host," :: String)
+                         ("timestamp" :: String)
+                         ("cookie" :: String)
+                         ("sample" :: String)
+                         ("median" :: String)
+                         ("p90"    :: String)
+                         ("mean"   :: String)
+                         ("min"   :: String)
+                         ("max"   :: String)
+                         ("std"   :: String)
+
+tipHeader :: String
+tipHeader = printf "%-47s %6s, %64s, %9s, %10s"
+                   ("host,"   :: String)
+                   ("rtt"     :: String)
+                   ("hash"    :: String)
+                   ("blockNo" :: String)
+                   ("slotNo"  :: String)
 
 instance ToJSON StatPoint where
   toJSON :: StatPoint -> Value
@@ -506,7 +537,7 @@ data PingClientError
 
   | forall versionNumber.
     Show versionNumber
-  => PingClientHandshakeProtocolError (HandshakeProtocolError versionNumber) String
+  => PingClientHandshakeProtocolError (HandshakeProtocolError versionNumber) (Address Resolved)
   -- ^ handshake protocol error
 
 deriving instance Show PingClientError
@@ -514,8 +545,8 @@ deriving instance Show PingClientError
 instance Exception PingClientError where
   displayException (PingClientProtocolLimitFailure err) =
     displayException err
-  displayException (PingClientHandshakeProtocolError err peerStr) =
-    printf "%s handshake error: %s" peerStr (show err)
+  displayException (PingClientHandshakeProtocolError err addr) =
+    printf "%s handshake error: %s" (show addr) (show err)
 
 data ProtocolFlavour version versionData where
     NodeToNode   :: ProtocolFlavour NodeToNodeVersion   NodeToNodeVersionData
@@ -541,10 +572,15 @@ instance StandardHash ChainSyncBlock
 -- A `ChainSyncClient` that finds the current `Tip` over `node-to-node`
 -- or `node-to-client` protocol.
 chainSyncClient
-  :: Tracer IO LogMsg
+  :: PingOpts
+  -> Signal
+  -> HeaderVar
+  -> Tracer IO LogMsg
   -> ChainSyncClient ChainSyncHeader ChainSyncPoint ChainSyncTip IO ()
-chainSyncClient stdout =
-    ChainSync.ChainSyncClient $ go <$> getMonotonicTime
+chainSyncClient opts sig@Signal { signalReadiness } headerVar stdout =
+    ChainSync.ChainSyncClient $ do
+      signalReadiness
+      go <$> getMonotonicTime
   where
     go :: Time
        -> ChainSync.ClientStIdle ChainSyncHeader ChainSyncPoint ChainSyncTip IO ()
@@ -566,6 +602,8 @@ chainSyncClient stdout =
                    ptBlockNo,
                    ptSlotNo
                  }
+             awaitReadiness sig
+             printHeader opts headerVar tipHeader
              traceWith stdout (LogChainSyncTip pingTip)
              return $ ChainSync.SendMsgDone ()
        }
@@ -576,18 +614,25 @@ chainSyncClient stdout =
 --
 
 keepAliveClient
-  :: Tracer IO LogMsg
-  -> Word32    -- ^ ping count
+  :: PingOpts
+  -> Signal
+  -> HeaderVar
+  -- ^ stat header MVar
+  -> Tracer IO LogMsg
   -> TDigest 5
   -> KeepAliveClient IO ()
-keepAliveClient stdout count td0 =
+keepAliveClient opts@PingOpts { pingOptsCount } sig headerVar stdout td0 =
     KeepAliveClient $ loop td0 0
   where
+    -- we keep sending  keep alive message from the start, but we output
+    -- measurements only when all clients are ready.  This is to make the output
+    -- clean.  We cannot await for all clients to be ready, since some
+    -- connections might be shutdown
     loop :: TDigest 5
          -> Word32
          -> IO (KeepAlive.KeepAliveClientSt IO ())
     loop _td cookie
-      | cookie == count
+      | cookie == pingOptsCount
       = return $ KeepAlive.SendMsgDone (pure ())
     loop td cookie = do
       start <- getMonotonicTime
@@ -596,12 +641,23 @@ keepAliveClient stdout count td0 =
       return $ KeepAlive.SendMsgKeepAlive (KeepAlive.Cookie cookie16) $ do
         end <- getMonotonicTime
         now <- getCurrentTime
-        let rtt = toSample end start
-            td' = TDigest.insert rtt td
-            point = toStatPoint now cookie16 rtt td'
-        traceWith stdout $ LogStatPoint point
-        threadDelay keepAliveDelay
-        loop td' (cookie + 1)
+        ready <- signalAndGetReadiness sig
+        if ready
+          then do
+            printHeader opts headerVar statPointHeader
+            let rtt = toSample end start
+                td' = TDigest.insert rtt td
+                point = toStatPoint now cookie16 rtt td'
+            traceWith stdout $ LogStatPoint point
+            threadDelay keepAliveDelay
+            loop td' (cookie + 1)
+          else do
+            -- we keep updating the measurements but we don't show them, other
+            -- clients are still connecting or negotiating their connection.
+            let rtt = toSample end start
+                td' = TDigest.insert rtt td
+            threadDelay keepAliveDelay
+            loop td' cookie
 
 
 --
@@ -658,7 +714,8 @@ resolveAddress stderr resolver opts (FilePathOrDomain path) =
           addrs -> pure addrs
      Nothing ->
        doesFileExist path >>= \case
-         True -> pure [FilePath path]
+         True ->
+           pure [FilePath path]
          False -> do
            traceWith stderr (FilePathDoesNotExist path)
            pure []
@@ -712,50 +769,44 @@ pingClients opts@PingOpts { pingOptsJson } addresses = do
       DNS.withResolver rs $ \resolver ->
         concat <$> traverse (resolveAddress stderr resolver opts) addresses
     sockAddrs
-      <- mapMaybe (either (fmap Left)
-                          (fmap Right . maybeHead))
+      <- catMaybes
          <$> traverse
                (\case
-                  IP ip@IPv4{} port ->
-                    Right <$> Socket.getAddrInfo
+                  addr@(IP ip@IPv4{} port) ->
+                    fmap (addr,) . maybeHead <$> Socket.getAddrInfo
                       (Just Socket.defaultHints { Socket.addrFamily = Socket.AF_INET })
                       (Just (show ip))
                       (Just (show port))
-                  IP ip@IPv6{} port ->
-                    Right <$> Socket.getAddrInfo
+                  addr@(IP ip@IPv6{} port) ->
+                    fmap (addr,) . maybeHead <$> Socket.getAddrInfo
                       (Just Socket.defaultHints { Socket.addrFamily = Socket.AF_INET6 })
                       (Just (show ip))
                       (Just (show port))
-                  FilePath path -> do
-                    a <- doesFileExist path
-                    if a
-                      then return $ Left $ Just
-                           $ Socket.AddrInfo
-                              []
-                              Socket.AF_UNIX
-                              Socket.Stream
-                              Socket.defaultProtocol
-                              (Socket.SockAddrUnix path)
-                              Nothing
-                      else do
-                        case readMaybe path :: Maybe IP of
-                          Nothing ->
-                            traceWith stderr $ FilePathDoesNotExist path
-                          Just ip ->
-                            traceWith stderr $ MissingPort ip
-                        return (Left Nothing)
+                  addr@(FilePath path) -> do
+                    return $ Just
+                      ( addr
+                      , Socket.AddrInfo
+                         []
+                         Socket.AF_UNIX
+                         Socket.Stream
+                         Socket.defaultProtocol
+                         (Socket.SockAddrUnix path)
+                         Nothing
+                      )
                )
                resolvedAddresses
 
+    headerVar <- newHeaderVar
+    signalVar <- newSignalVar (fst <$> sockAddrs)
     mapConcurrently_ (\case
-                      Right addr ->
-                        -- ignore exceptions so other ping clients can
-                        -- continue
+                      -- ignore exceptions so other ping clients can
+                      -- continue
+                      addr@(IP {}, _) ->
                         void $ try @_ @SomeException $
-                        pingClient NodeToNode stdout stderr opts addr
-                      Left  addr ->
+                        pingClient NodeToNode stdout stderr opts signalVar headerVar addr
+                      addr@(FilePath {}, _) ->
                         void $ try @_ @SomeException $
-                        pingClient NodeToClient stdout stderr opts addr
+                        pingClient NodeToClient stdout stderr opts signalVar headerVar addr
                    ) sockAddrs
 
 pingClient
@@ -772,9 +823,12 @@ pingClient
   -> Tracer IO (WithHost LogMsg)
   -> Tracer IO PingWarning
   -> PingOpts
-  -> AddrInfo
+  -> SignalVar (Address Resolved)
+  -> HeaderVar
+  -> (Address Resolved, AddrInfo)
   -> IO ()
-pingClient protocol stdout stderr opts@PingOpts{..} peer =
+pingClient protocol stdout stderr opts@PingOpts{..} signalVar headerVar (addr, peer) =
+  withSignal signalVar addr $ \sig ->
     bracket
       (Socket.socket (Socket.addrFamily peer) Socket.Stream Socket.defaultProtocol)
       Socket.close
@@ -786,15 +840,14 @@ pingClient protocol stdout stderr opts@PingOpts{..} peer =
               { sl_onoff  = 1
               , sl_linger = 0
               }
-        runPingClient sd
+        runPingClient sig sd
       )
   where
-    runPingClient :: Socket.Socket -> IO ()
-    runPingClient sd = do
-      (hostName, serviceName) <- getPeerName
+    runPingClient :: Signal -> Socket.Socket -> IO ()
+    runPingClient sig sd = do
       let logMsg :: (ToText msg, ToJSON msg) => msg -> IO ()
-          logMsg = logMsgWithPeer opts hostName (Just serviceName)
-          stdout' = WithHost hostName (Just serviceName) >$< stdout
+          logMsg = logMsgWithPeer opts addr
+          stdout' = WithHost addr >$< stdout
 
       !t0_s <- getMonotonicTime
 
@@ -866,14 +919,17 @@ pingClient protocol stdout stderr opts@PingOpts{..} peer =
                [minBound..maxBound]
         )
       case r of
-        Left err -> throwIO (PingClientProtocolLimitFailure err)
+        Left err -> do
+          throwIO (PingClientProtocolLimitFailure err)
         Right (Left err', rtt) -> do
           logMsg (HandshakeRTT rtt)
-          throwIO (PingClientHandshakeProtocolError err' (hostName ++ ":" ++ serviceName))
+          throwIO (PingClientHandshakeProtocolError err' addr)
         Right (Right r', rtt) -> do
           logMsg (HandshakeRTT rtt)
           case r' of
             HandshakeQueryResult versions -> do
+              signalReadiness sig
+              awaitReadiness sig
               -- print query results if it was supported by the remote side
               when (pingOptsMode == QueryMode) $ void $
                 Map.traverseWithKey
@@ -931,7 +987,7 @@ pingClient protocol stdout stderr opts@PingOpts{..} peer =
                           (ChainSync.byteLimitsChainSync (fromIntegral . BL.length))
                           (ChainSync.timeLimitsChainSync defaultChainSyncIdleTimeout IsNotTrustable)
                           channel
-                          (ChainSync.chainSyncClientPeer $ chainSyncClient stdout'))
+                          (ChainSync.chainSyncClientPeer $ chainSyncClient opts sig headerVar stdout'))
                         >>= void . atomically
                     )
                     `finally` Mx.stop mx
@@ -963,8 +1019,10 @@ pingClient protocol stdout stderr opts@PingOpts{..} peer =
                           channel
                           (KeepAlive.keepAliveClientPeer
                             $ keepAliveClient
+                                opts
+                                sig
+                                headerVar
                                 stdout'
-                                pingOptsCount
                                 (TDigest.tdigest [])))
                         >>= void . atomically
                     )
@@ -975,14 +1033,6 @@ pingClient protocol stdout stderr opts@PingOpts{..} peer =
                   --
                   -- ping mode over node-to-client protocol is not supported
                   --
-
-    getPeerName :: IO (HostName, ServiceName)
-    getPeerName = do
-      (Just host, Just port) <-
-        Socket.getNameInfo
-          [Socket.NI_NUMERICHOST, Socket.NI_NUMERICSERV]
-          True True (Socket.addrAddress peer)
-      return (host, port)
 
 
 toSample :: Time -> Time -> Double
@@ -995,28 +1045,19 @@ format AsText = toText
 class ToText a where
   toText :: a -> TL.Text
 
-data WithHost a = WithHost HostName (Maybe ServiceName) a
+data WithHost a = WithHost (Address Resolved) a
 
 instance ToText a => ToText (WithHost a) where
-  toText (WithHost host Nothing a) =
-    "host: " <> TL.pack (printf "%-28s" (host ++ ", ")) <> toText a
-  toText (WithHost host (Just port) a) =
-    "host: " <> TL.pack (printf "%-28s" (host <> ":" <> port <> ", ")) <> toText a
+  toText (WithHost host a) =
+    TL.pack (printf "%-47s" (show host ++ ", ")) <> toText a
 
 instance ToJSON a => ToJSON (WithHost a) where
-  toJSON (WithHost host port a) =
+  toJSON (WithHost host a) =
     case toJSON a of
       Aeson.Object o ->
-        Aeson.Object ( KeyMap.insert "host" (toJSON host)
-                     $ case port of
-                         Nothing  -> o
-                         Just prt -> KeyMap.insert "port" (toJSON prt) o
-                     )
+        Aeson.Object (KeyMap.insert "host" (toJSON $ show host) o)
 
-      x -> object $ [ "host" .= host, "data" .= x ]
-                 ++ case port of
-                      Nothing  -> []
-                      Just prt -> [ "port" .= prt ]
+      x -> object [ "host" .= show host, "data" .= x ]
 
 newtype NegotiatedVersion versionNumber = NegotiatedVersion versionNumber
 
@@ -1067,12 +1108,11 @@ instance ToJSON HandshakeRTT where
 -- note: use `logMsg` defined above in terms of `logMsgWithPeer`
 logMsgWithPeer :: (ToText msg, ToJSON msg)
                => PingOpts
-               -> HostName
-               -> Maybe ServiceName
+               -> Address Resolved
                -> msg
                -> IO ()
-logMsgWithPeer PingOpts { pingOptsQuiet, pingOptsJson } host service msg =
-  unless pingOptsQuiet $ TL.hPutStrLn IO.stdout (format pingOptsJson (WithHost host service msg))
+logMsgWithPeer PingOpts { pingOptsQuiet, pingOptsJson } addr msg =
+  unless pingOptsQuiet $ TL.hPutStrLn IO.stdout (format pingOptsJson (WithHost addr msg))
 
 
 instance ShowProxy CBOR.Term where
@@ -1096,3 +1136,67 @@ splitWith c = go ""
         = Just (reverse acc, as)
       go !acc (a:as)
         = go (a:acc) as
+
+
+type SignalVar addr = StrictTVar IO (Map addr Bool)
+
+data Signal = Signal {
+    signalReadiness :: IO (),
+    getReadiness    :: STM IO Bool
+  }
+
+awaitReadiness :: Signal -> IO ()
+awaitReadiness Signal { getReadiness } =
+  atomically (getReadiness >>= check)
+
+signalAndGetReadiness :: Signal -> IO Bool
+signalAndGetReadiness Signal { signalReadiness, getReadiness } = do
+  signalReadiness
+  atomically getReadiness
+
+newSignalVar :: Ord addr
+             => [addr]
+             -> IO (SignalVar addr)
+newSignalVar addrs = newTVarIO (Map.fromList [(addr, False) | addr <- addrs])
+
+withSignal :: Ord addr
+           => SignalVar addr
+           -> addr
+           -> (Signal -> IO a)
+           -> IO a
+withSignal var addr k =
+  let signalReadiness :: IO ()
+      signalReadiness = atomically $ modifyTVar var (Map.insert addr True)
+
+      getReadiness :: STM IO Bool
+      getReadiness = getAll . foldMap All <$> readTVar var
+  in k Signal { signalReadiness, getReadiness }
+     `onException`
+     atomically (modifyTVar var (Map.insert addr True))
+
+
+data HeaderState = NotPrinted | Printing | Printed
+type HeaderVar = StrictTVar IO HeaderState
+
+newHeaderVar :: IO HeaderVar
+newHeaderVar = newTVarIO NotPrinted
+
+printHeader :: PingOpts
+            -> HeaderVar
+            -> String
+            -> IO ()
+printHeader PingOpts { pingOptsJson } headerVar hdr = do
+  when (pingOptsJson == AsText) $ do
+    st <- atomically $ do
+      st <- readTVar headerVar
+      case st of
+        NotPrinted -> writeTVar headerVar Printing
+                   >> pure st
+        Printing   -> retry
+        Printed    -> return st
+    case st of
+      NotPrinted -> do
+        IO.putStrLn hdr
+        atomically (writeTVar headerVar Printed)
+      Printing   -> error "impossible"
+      Printed    -> pure ()
