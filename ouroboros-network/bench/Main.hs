@@ -14,7 +14,12 @@ import Test.Ouroboros.Network.PeerSelection.PeerMetric
 import Test.Ouroboros.Network.TxSubmission.TxLogic qualified as TX
 
 benchLoops :: Int
-benchLoops = 1_0000
+benchLoops = 1_000
+
+-- | Label suffix derived from 'benchLoops' so the bench names can't drift
+-- from the actual iteration count.
+benchLoopsLabel :: String
+benchLoopsLabel = "x" ++ show benchLoops
 
 main :: IO ()
 main =
@@ -30,13 +35,13 @@ main =
           ]
         , bgroup "TxSubmissionV2"
           [ env (prepareEnv (TX.mkReceiveDuplicateFixture 100 3)) $ \fixture ->
-                bench "handleReceivedTxIds/duplicate-active/100existing/3txids/x1000" $
+                bench ("handleReceivedTxIds/duplicate-active/100existing/3txids/" ++ benchLoopsLabel) $
                   nfAppIO (TX.runReceiveDuplicateLoop benchLoops) fixture
           , env (prepareEnv (TX.mkResolvedAckFixture 100 10)) $ \fixture ->
-                bench "nextPeerAction/ack-resolved-retained/100advertisers/10txids/x1000" $
+                bench ("nextPeerAction/ack-resolved-retained/100advertisers/10txids/" ++ benchLoopsLabel) $
                   nfAppIO (TX.runPeerActionLoop benchLoops) fixture
           , env (prepareEnv (TX.mkFanoutFixture 100 3)) $ \fixture ->
-                bench "scenario/fanout-retained/100peers/3txids/x1000" $
+                bench ("scenario/fanout-retained/100peers/3txids/" ++ benchLoopsLabel) $
                   nfAppIO (TX.runFanoutLoop benchLoops) fixture
           , env
               (prepareEnv (DirectV2.mkDirectServerFixture 1_000))
