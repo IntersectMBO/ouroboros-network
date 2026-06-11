@@ -24,6 +24,7 @@ module Cardano.Network.Ping
   , cmdlineParser
   , PingMode (..)
   , LogFormat (..)
+  , ColorMode (..)
   , LogMsg (..)
   , StatPoint (..)
   , ProtocolFlavour (..)
@@ -107,6 +108,9 @@ import Ouroboros.Network.Util.ShowProxy
 data LogFormat = AsJSON | AsText
   deriving (Eq, Show)
 
+data ColorMode = ColorAuto | ColorNever | ColorAlways
+  deriving (Eq, Show)
+
 
 data PingMode =
     TipMode
@@ -177,6 +181,8 @@ data PingOpts = PingOpts
     -- ^ Ping mode
   , pingOptsSRVPrefix :: String
     -- ^ SRV prefix
+  , pingOptsColor     :: ColorMode
+    -- ^ Colorised output
   } -- deriving (Eq, Show)
 
 mainnetMagic :: NetworkMagic
@@ -235,6 +241,13 @@ pingOptsParser =
          <> metavar "SRV_PREFIX"
          <> showDefault
         )
+    <*> option colorMode
+        (   long "color"
+         <> help "Colorized output: auto, never or always."
+         <> value ColorAuto
+         <> metavar "COLOR"
+         <> showDefaultWith (\case { ColorAuto -> "auto"; ColorNever -> "never"; ColorAlways -> "always" })
+        )
   where
     pingMode :: ReadM PingMode
     pingMode =
@@ -243,6 +256,14 @@ pingOptsParser =
         "ping" -> Right PingMode
         "query" -> Right QueryMode
         _ -> Left "unexpected string"
+
+    colorMode :: ReadM ColorMode
+    colorMode =
+      eitherReader $ \case
+        "auto"   -> Right ColorAuto
+        "never"  -> Right ColorNever
+        "always" -> Right ColorAlways
+        _        -> Left "expected auto, never or always"
 
 
 argParser :: Parser [Address (Unresolved SRVOrFilePathUnresolved)]
@@ -1185,7 +1206,7 @@ printHeader :: PingOpts
             -> HeaderVar
             -> String
             -> IO ()
-printHeader PingOpts { pingOptsJson } headerVar hdr = do
+printHeader PingOpts { pingOptsJson, pingOptsColor } headerVar hdr = do
   when (pingOptsJson == AsText) $ do
     st <- atomically $ do
       st <- readTVar headerVar
@@ -1196,7 +1217,11 @@ printHeader PingOpts { pingOptsJson } headerVar hdr = do
         Printed    -> return st
     case st of
       NotPrinted -> do
-        IO.putStrLn hdr
+        useColor <- case pingOptsColor of
+          ColorAlways -> pure True
+          ColorNever  -> pure False
+          ColorAuto   -> IO.hIsTerminalDevice IO.stdout
+        IO.putStrLn (if useColor then "\ESC[1m" ++ hdr ++ "\ESC[0m" else hdr)
         atomically (writeTVar headerVar Printed)
       Printing   -> error "impossible"
       Printed    -> pure ()
