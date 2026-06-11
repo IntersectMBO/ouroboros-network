@@ -61,10 +61,11 @@ import Data.Void (Void)
 import Network.DNS (Domain, TYPE)
 import System.Random (StdGen, splitGen)
 
+import Ouroboros.Network.CodecCBORTerm
 import Ouroboros.Network.Mux (noBindForkPolicy)
 import Ouroboros.Network.Protocol.Handshake (HandshakeArguments (..))
-import Ouroboros.Network.Protocol.Handshake.Codec (VersionDataCodec (..),
-           noTimeLimitsHandshake, timeLimitsHandshake)
+import Ouroboros.Network.Protocol.Handshake.Codec (noTimeLimitsHandshake,
+           timeLimitsHandshake)
 import Ouroboros.Network.Protocol.Handshake.Unversioned
            (unversionedHandshakeCodec, unversionedProtocolDataCodec)
 import Ouroboros.Network.Protocol.Handshake.Version (Accept (Accept))
@@ -432,7 +433,7 @@ run blockGeneratorArgs ni na
     -- various pseudo random generators
     (diffStgGen, keepAliveStdGen) = splitGen (iRng ni)
 
-    ntnUnversionedDataCodec :: VersionDataCodec CBOR.Term NtNVersion NtNVersionData
+    ntnUnversionedDataCodec :: VersionDataCodec NtNVersion NtNVersionData
     ntnUnversionedDataCodec = VersionDataCodec { encodeData, decodeData }
       where
         encodeData _ NtNVersionData { ntnDiffusionMode, ntnPeerSharing } =

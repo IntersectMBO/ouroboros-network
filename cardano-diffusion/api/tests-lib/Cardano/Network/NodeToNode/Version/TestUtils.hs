@@ -12,7 +12,6 @@ module Cardano.Network.NodeToNode.Version.TestUtils
   ) where
 
 import Cardano.Network.NodeToNode.Version
-import Ouroboros.Network.Magic (NetworkMagic (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Test.QuickCheck (Gen, arbitrary, arbitraryBoundedEnum, elements, oneof,
            shrink)

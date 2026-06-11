@@ -71,6 +71,10 @@
           };
         };
 
+        # NOTE: we don't cross-compile `ouroboros-network` to `musl64` on
+        # `hydra`, and `cardano-ping-static` is not build on `hydra`.
+        cardano-ping-static = pkgs.ouroboros-network.projectCross.musl64.hsPkgs.cardano-diffusion.components.exes.cardano-ping;
+
         # jobs executed on hydra
         hydraJobs =
           let
@@ -92,10 +96,11 @@
             # checks, …) by having nested attrsets as values rather than
             # derivations.
             subGroups = lib.filterAttrs
-              (_: v: lib.isAttrs v
+              (_: v:
+                lib.isAttrs v
                 && !lib.isDerivation v
                 && lib.any (x: lib.isAttrs x && !lib.isDerivation x)
-                (lib.attrValues v))
+                  (lib.attrValues v))
               flake.hydraJobs;
 
             # For each sub-group expose an 'all' aggregate so that all jobs
@@ -145,9 +150,14 @@
           };
         };
       in
-      lib.recursiveUpdate flake rec {
-        project = pkgs.ouroboros-network;
-        inherit hydraJobs legacyPackages devShells;
+      lib.recursiveUpdate flake
+        rec {
+          project = pkgs.ouroboros-network;
+          inherit hydraJobs legacyPackages devShells;
+        }
+      // {
+        # `nix build .\#cardano-ping-static.x86_64-linux`
+        inherit cardano-ping-static;
       }
     );
 }

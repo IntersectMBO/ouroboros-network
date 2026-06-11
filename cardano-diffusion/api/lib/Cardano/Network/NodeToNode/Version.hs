@@ -12,7 +12,8 @@ module Cardano.Network.NodeToNode.Version
   , PerasSupport (..)
     -- * Codecs
   , nodeToNodeVersionCodec
-  , nodeToNodeCodecCBORTerm
+  , nodeToNodeVersionDataCodec
+  , NetworkMagic (..)
     -- * Feature predicates
   , isValidNtnVersionDataForVersion
   , getLocalPerasSupport
@@ -224,5 +225,8 @@ nodeToNodeCodecCBORTerm version = CodecCBORTerm { encodeTerm = encodeTerm, decod
       other -> err $ "unexpected encoding when decoding NodeToNodeVersionData: " <> show other
 
     err = Left . T.pack
+
+nodeToNodeVersionDataCodec :: VersionDataCodec NodeToNodeVersion NodeToNodeVersionData
+nodeToNodeVersionDataCodec = mkVersionedCodecCBORTerm nodeToNodeCodecCBORTerm
 
 data ConnectionMode = UnidirectionalMode | DuplexMode

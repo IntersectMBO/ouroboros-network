@@ -19,6 +19,11 @@ module Cardano.Network.NodeToClient
   , nullNetworkConnectTracers
   , connectTo
   , connectToWithMux
+    -- * Mini-Protocol numbers
+  , localChainSyncMiniProtocolNum
+  , localTxSubmissionMiniProtocolNum
+  , localStateQueryMiniProtocolNum
+  , localTxMonitorMiniProtocolNum
     -- * Null Protocol Peers
   , chainSyncPeerNull
   , localStateQueryPeerNull
@@ -42,7 +47,9 @@ module Cardano.Network.NodeToClient
     -- ** Codecs
   , nodeToClientHandshakeCodec
   , nodeToClientVersionCodec
-  , nodeToClientCodecCBORTerm
+  , nodeToClientVersionDataCodec
+    -- * Limits
+  , maximumMiniProtocolLimits
     -- * Re-exports
   , ConnectionId (..)
   , MinimalInitiatorContext (..)
@@ -112,6 +119,18 @@ data NodeToClientProtocols appType ntcAddr bytes m a b = NodeToClientProtocols {
                                    appType ntcAddr bytes m a b
   }
 
+localChainSyncMiniProtocolNum :: MiniProtocolNum
+localChainSyncMiniProtocolNum = MiniProtocolNum 5
+
+localTxSubmissionMiniProtocolNum :: MiniProtocolNum
+localTxSubmissionMiniProtocolNum = MiniProtocolNum 6
+
+localStateQueryMiniProtocolNum :: MiniProtocolNum
+localStateQueryMiniProtocolNum = MiniProtocolNum 7
+
+localTxMonitorMiniProtocolNum :: MiniProtocolNum
+localTxMonitorMiniProtocolNum = MiniProtocolNum 9
+
 
 -- | Make an 'OuroborosApplication' for the bundle of mini-protocols that
 -- make up the overall node-to-client protocol.
@@ -146,25 +165,25 @@ nodeToClientProtocols protocols _version _versionData =
 
   where
     localChainSyncMiniProtocol localChainSyncProtocol = MiniProtocol {
-        miniProtocolNum    = MiniProtocolNum 5,
+        miniProtocolNum    = localChainSyncMiniProtocolNum,
         miniProtocolStart  = StartOnDemand,
         miniProtocolLimits = maximumMiniProtocolLimits,
         miniProtocolRun    = localChainSyncProtocol
       }
     localTxSubmissionMiniProtocol localTxSubmissionProtocol = MiniProtocol {
-        miniProtocolNum    = MiniProtocolNum 6,
+        miniProtocolNum    = localTxSubmissionMiniProtocolNum,
         miniProtocolStart  = StartOnDemand,
         miniProtocolLimits = maximumMiniProtocolLimits,
         miniProtocolRun    = localTxSubmissionProtocol
       }
     localStateQueryMiniProtocol localStateQueryProtocol = MiniProtocol {
-        miniProtocolNum    = MiniProtocolNum 7,
+        miniProtocolNum    = localStateQueryMiniProtocolNum,
         miniProtocolStart  = StartOnDemand,
         miniProtocolLimits = maximumMiniProtocolLimits,
         miniProtocolRun    = localStateQueryProtocol
       }
     localTxMonitorMiniProtocol localTxMonitorProtocol = MiniProtocol {
-        miniProtocolNum    = MiniProtocolNum 9,
+        miniProtocolNum    = localTxMonitorMiniProtocolNum,
         miniProtocolStart  = StartOnDemand,
         miniProtocolLimits = maximumMiniProtocolLimits,
         miniProtocolRun    = localTxMonitorProtocol
@@ -223,7 +242,7 @@ connectTo snocket tracers versions path =
       ConnectToArgs {
         ctaHandshakeCodec      = nodeToClientHandshakeCodec,
         ctaHandshakeTimeLimits = noTimeLimitsHandshake,
-        ctaVersionDataCodec    = cborTermVersionDataCodec nodeToClientCodecCBORTerm,
+        ctaVersionDataCodec    = nodeToClientVersionDataCodec,
         ctaConnectTracers      = tracers,
         ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
       }
@@ -272,7 +291,7 @@ connectToWithMux snocket tracers versions path k =
     ConnectToArgs {
       ctaHandshakeCodec      = nodeToClientHandshakeCodec,
       ctaHandshakeTimeLimits = noTimeLimitsHandshake,
-      ctaVersionDataCodec    = cborTermVersionDataCodec nodeToClientCodecCBORTerm,
+      ctaVersionDataCodec    = nodeToClientVersionDataCodec,
       ctaConnectTracers      = tracers,
       ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
     }

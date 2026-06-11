@@ -2148,9 +2148,9 @@ close_experiment
               (CloseOnRead, Right (Right []), Left serverError)
                  | Just e <- fromException (collapsE serverError)
                  , case e of
-                     Mx.Shutdown Nothing _ -> True
-                     Mx.BearerClosed {}    -> True
-                     _                     -> False
+                     Mx.Shutdown {}     -> True
+                     Mx.BearerClosed {} -> True
+                     _                  -> False
                 -> return $ label ("CloseOnRead: " ++ if null reqs0 then "reqs == 0" else "reqs0 > 0")
                           $ property True
 
@@ -2332,8 +2332,6 @@ prop_mux_close_io fault reqs fn acc = ioProperty $ withIOManager $ \iocp -> do
                 associateWithIOManager iocp (Right sock)
                 (Socket.getSocketName serverSocket
                   >>= Socket.connect sock)
-                  `onException`
-                    Socket.close sock
                 return sock,
               ncClose  = Socket.close,
               ncMuxBearer = \sd k -> withReadBufferIO (\buffer -> do

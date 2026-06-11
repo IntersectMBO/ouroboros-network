@@ -321,8 +321,8 @@ prop_shrink_ArbitraryValidVersions a = and
   | ArbitraryValidVersions vs' <- shrink a
   ]
 
--- |
--- Generators for pairs of arbitrary list of versions.
+
+-- | Generators for pairs of arbitrary list of versions.
 --
 data ArbitraryVersions =
   ArbitraryVersions
@@ -346,9 +346,7 @@ instance Arbitrary ArbitraryVersions where
       | vs'' <- shrinkList (const []) (Map.toList vs')
       ]
 
-
--- |
--- Check if a @'ProtocolVersion' 'VersionNumber' r@ is valid.
+-- | Check if a @'ProtocolVersion' 'VersionNumber' r@ is valid.
 --
 validVersion :: VersionNumber -> Version VersionData Bool -> Bool
 validVersion Version_0 ((Version _ d)) = dataVersion1 d == False
@@ -400,11 +398,11 @@ prop_connect (ArbitraryVersions clientVersions serverVersions) =
   in case runSimOrThrow
            (connect
               (handshakeClientPeer
-                (cborTermVersionDataCodec dataCodecCBORTerm)
+                (mkVersionedCodecCBORTerm dataCodecCBORTerm)
                 acceptableVersion
                 clientVersions)
               (handshakeServerPeer
-                (cborTermVersionDataCodec dataCodecCBORTerm)
+                (mkVersionedCodecCBORTerm dataCodecCBORTerm)
                 acceptableVersion
                 queryVersion
                 serverVersions)) of
@@ -442,11 +440,11 @@ prop_channel createChannels clientVersions serverVersions =
       runConnectedPeers
         createChannels nullTracer versionNumberHandshakeCodec
         (handshakeClientPeer
-          (cborTermVersionDataCodec dataCodecCBORTerm)
+          (mkVersionedCodecCBORTerm dataCodecCBORTerm)
           acceptableVersion
           clientVersions)
         (handshakeServerPeer
-          (cborTermVersionDataCodec dataCodecCBORTerm)
+          (mkVersionedCodecCBORTerm dataCodecCBORTerm)
           acceptableVersion
           queryVersion
           serverVersions)
@@ -518,11 +516,11 @@ prop_channel_asymmetric createChannels clientVersions = do
         versionNumberHandshakeCodec
         (codecHandshake versionNumberCodec')
         (handshakeClientPeer
-          (cborTermVersionDataCodec dataCodecCBORTerm)
+          (mkVersionedCodecCBORTerm dataCodecCBORTerm)
           acceptableVersion
           clientVersions)
         (handshakeServerPeer
-          (cborTermVersionDataCodec dataCodecCBORTerm)
+          (mkVersionedCodecCBORTerm dataCodecCBORTerm)
           acceptableVersion
           queryVersion
           serverVersions)
@@ -627,7 +625,7 @@ prop_query_version :: ( MonadAsync m
                    => m (Channel m ByteString, Channel m ByteString)
                    -> Codec (Handshake vNumber CBOR.Term)
                              CBOR.DeserialiseFailure m ByteString
-                   -> VersionDataCodec CBOR.Term vNumber vData
+                   -> VersionDataCodec vNumber vData
                    -> Versions vNumber vData Bool
                    -> Versions vNumber vData Bool
                    -> (vData -> vData)
@@ -673,6 +671,11 @@ prop_query_version createChannels codec versionDataCodec clientVersions serverVe
 -- The refuse reason might differ, although if one side refuses it with
 -- `Refused` the other side must refuse the same version.
 --
+-- NOTE: this test should be run with only valid versions, otherwise it might
+-- fail, e.g. if `Version_0` with `VersionData 0 True True` is passed, then
+-- `clientVersions` will be `VersionData 0 False False`, which inevitably leads
+-- to a failure.
+--
 prop_acceptOrRefuse_symmetric
   :: forall vNumber vData r.
      ( Acceptable vData
@@ -681,16 +684,19 @@ prop_acceptOrRefuse_symmetric
      , Ord  vNumber
      , Show vNumber
      )
-  => Versions vNumber vData r
+  => VersionDataCodec vNumber vData
+  -> Versions vNumber vData r
   -> Versions vNumber vData r
   -> Property
-prop_acceptOrRefuse_symmetric clientVersions serverVersions =
+prop_acceptOrRefuse_symmetric codec clientVersions serverVersions =
     case ( acceptOrRefuse codec acceptableVersion clientVersions serverMap
          , acceptOrRefuse codec acceptableVersion serverVersions clientMap
          ) of
       (Right (_, vNumber, vData), Right (_, vNumber', vData')) ->
-             vNumber === vNumber'
-        .&&. vData   === vData'
+             (counterexample "negotiated version numbers mismatch:" $
+               vNumber === vNumber')
+        .&&. (counterexample "negotiated version data mismatch:" $
+               vData === vData')
       (Left (VersionMismatch vNumbers _), Left (VersionMismatch vNumbers' _)) ->
              vNumbers  === Map.keys clientMap
         .&&. vNumbers' === Map.keys serverMap
@@ -704,25 +710,18 @@ prop_acceptOrRefuse_symmetric clientVersions serverVersions =
         property False
 
   where
-    codec :: VersionDataCodec vData vNumber vData
-    codec = VersionDataCodec {
-        encodeData = \_ vData -> vData,
-        decodeData = \_ vData -> Right vData
-      }
-
-    toMap :: Versions vNumber vData r
-          -> Map vNumber vData
-    toMap (Versions m) = versionData `Map.map` m
-
-    clientMap = toMap clientVersions
-    serverMap = toMap serverVersions
+    clientMap, serverMap :: Map vNumber CBOR.Term
+    clientMap = Map.mapWithKey (\v -> encodeData codec v . versionData) $ getVersions clientVersions
+    serverMap = Map.mapWithKey (\v -> encodeData codec v . versionData) $ getVersions serverVersions
 
 
 prop_acceptOrRefuse_symmetric_VersionData
-  :: ArbitraryVersions
+  :: ArbitraryValidVersions
+  -> ArbitraryValidVersions
   -> Property
-prop_acceptOrRefuse_symmetric_VersionData (ArbitraryVersions a b) =
-    prop_acceptOrRefuse_symmetric a b
+prop_acceptOrRefuse_symmetric_VersionData (ArbitraryValidVersions a) (ArbitraryValidVersions b) =
+    prop_acceptOrRefuse_symmetric (mkVersionedCodecCBORTerm dataCodecCBORTerm)
+                                  a b
 
 
 -- | Run two handshake clients against each other, which simulates a TCP
@@ -740,7 +739,7 @@ prop_channel_simultaneous_open
     => m (Channel m ByteString, Channel m ByteString)
     -> Codec (Handshake vNumber CBOR.Term)
               CBOR.DeserialiseFailure m ByteString
-    -> VersionDataCodec CBOR.Term vNumber vData
+    -> VersionDataCodec vNumber vData
     -> Versions vNumber vData Bool
     -> Versions vNumber vData Bool
     -> m Property
@@ -795,7 +794,7 @@ prop_channel_simultaneous_open_ST (ArbitraryVersions clientVersions serverVersio
   runSimOrThrow $ prop_channel_simultaneous_open
                     createConnectedChannels
                     versionNumberHandshakeCodec
-                    (cborTermVersionDataCodec dataCodecCBORTerm)
+                    (mkVersionedCodecCBORTerm dataCodecCBORTerm)
                     clientVersions
                     serverVersions
 
@@ -806,7 +805,7 @@ prop_channel_simultaneous_open_IO (ArbitraryVersions clientVersions serverVersio
   ioProperty $ prop_channel_simultaneous_open
                  createConnectedChannels
                  versionNumberHandshakeCodec
-                 (cborTermVersionDataCodec dataCodecCBORTerm)
+                 (mkVersionedCodecCBORTerm dataCodecCBORTerm)
                  clientVersions
                  serverVersions
 
@@ -829,7 +828,7 @@ prop_channel_simultaneous_open_sim
        )
     => Codec (Handshake vNumber CBOR.Term)
               CBOR.DeserialiseFailure m ByteString
-    -> VersionDataCodec CBOR.Term vNumber vData
+    -> VersionDataCodec vNumber vData
     -> Versions vNumber vData Bool
     -> Versions vNumber vData Bool
     -> m Property
@@ -892,7 +891,7 @@ prop_channel_simultaneous_open_SimNet
   (ArbitraryVersions clientVersions serverVersions) =
     runSimOrThrow $ prop_channel_simultaneous_open_sim
       versionNumberHandshakeCodec
-      (cborTermVersionDataCodec dataCodecCBORTerm)
+      (mkVersionedCodecCBORTerm dataCodecCBORTerm)
       clientVersions
       serverVersions
 
