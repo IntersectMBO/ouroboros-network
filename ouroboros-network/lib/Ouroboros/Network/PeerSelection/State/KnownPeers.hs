@@ -309,6 +309,19 @@ setCurrentTime :: Ord peeraddr
                -> KnownPeers peeraddr
                -> KnownPeers peeraddr
 setCurrentTime now knownPeers@KnownPeers {
+                     nextConnectTimes,
+                     clearFailCountTimes
+                   }
+    -- Efficient check for the common case of there being nothing to do: either
+    -- nothing is scheduled, or the earliest scheduled time is still in the
+    -- future.
+    | noneDue nextConnectTimes
+    , noneDue clearFailCountTimes
+    = knownPeers
+  where
+    noneDue q = maybe True (\(_,t,_) -> t > now) (PSQ.findMin q)
+
+setCurrentTime now knownPeers@KnownPeers {
                      availableToConnect,
                      nextConnectTimes,
                      clearFailCountTimes

@@ -38,7 +38,6 @@ import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.OrdPSQ (OrdPSQ)
 import Data.OrdPSQ qualified as PSQ
-import Data.Semigroup (Min (..))
 import Data.Set (Set)
 import Data.Set qualified as Set
 
@@ -220,13 +219,14 @@ setCurrentTime :: Ord peeraddr
 setCurrentTime now ep@EstablishedPeers { nextPeerShareTimes
                                        , nextActivateTimes
                                        }
- -- Efficient check for the common case of there being nothing to do:
-    | Just (Min t) <- (f <$> PSQ.minView nextPeerShareTimes)
-                   <> (f <$> PSQ.minView nextActivateTimes)
-    , t > now
+    -- Efficient check for the common case of there being nothing to do: either
+    -- nothing is scheduled, or the earliest scheduled time is still in the
+    -- future.
+    | noneDue nextPeerShareTimes
+    , noneDue nextActivateTimes
     = ep
   where
-    f (_,t,_,_) = Min t
+    noneDue q = maybe True (\(_,t,_) -> t > now) (PSQ.findMin q)
 
 setCurrentTime now ep@EstablishedPeers { nextPeerShareTimes
                                        , availableForPeerShare
