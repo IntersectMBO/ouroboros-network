@@ -1,3 +1,4 @@
+-- experiment branch: contra-tracer 0.2 without May-18 test fixes, 900M limit
 -- Custom repository for cardano haskell packages, see CONTRIBUTING for more
 repository cardano-haskell-packages
   url: https://chap.intersectmbo.org/
