@@ -660,7 +660,7 @@ library tracing
     base >=4.14 && <4.23,
     containers,
     iproute,
-    ouroboros-network:{ouroboros-network, orphan-instances, protocols},
+    ouroboros-network:{ouroboros-network, api, orphan-instances, protocols},
     text,
     trace-dispatcher ^>=2.11.0 || ^>=2.12.0,
 
