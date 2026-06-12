@@ -14,17 +14,18 @@ import NoThunks.Class (NoThunks)
 -- representation for efficient comparison.
 --
 -- 'getRawTxId' is used both as a faster equality proxy and as the key type
--- for shared lookup tables, so it must agree with the @txid@ instances on
--- both equality and ordering.
+-- for shared lookup tables.
 --
--- Laws:
+-- Law:
 --
 -- * @getRawTxId x == getRawTxId y@ iff @x == y@
 --   (raw equality is equivalent to txid equality; in particular, the raw
 --   bytes must uniquely identify the transaction so Map keys do not collide)
--- * @compare (getRawTxId x) (getRawTxId y) == compare x y@
---   (ordering is preserved; ordered containers keyed by 'RawTxId' agree with
---   ordering on the underlying @txid@)
+--
+-- The 'Ord' instance is only used to key ordered containers, so it does
+-- /not/ need to agree with the ordering of the underlying @txid@ (e.g.
+-- a serialised-bytes ordering is fine even when it sorts differently from
+-- the @txid@'s own 'Ord').
 class ( Eq (RawTxId txid)
       , Ord (RawTxId txid)
       , Show (RawTxId txid)
