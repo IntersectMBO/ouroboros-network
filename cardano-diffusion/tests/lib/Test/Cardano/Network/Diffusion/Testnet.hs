@@ -1294,7 +1294,7 @@ prop_txSubmission_chainIntegrity_iosimpor :: ArbTxDecisionPolicy
 prop_txSubmission_chainIntegrity_iosimpor argPolicy chainedTxs =
   let diffScript = txChainIntegrityDiffScript argPolicy chainedTxs
       expected   = txChainIntegrityExpected chainedTxs
-      sim :: forall s. IOSim s DiffSimResult
+      sim :: forall s. IOSim s Void
       sim = do
         exploreRaces
         diffusionSimulation noAttenuation diffScript
