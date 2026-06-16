@@ -20,7 +20,9 @@
 
 module Cardano.Network.Ping
   ( PingOpts (..)
-  , Address
+  , Stage (..)
+  , ResolvedSRVOrFilePath (..)
+  , Address (..)
   , cmdlineParser
   , PingMode (..)
   , LogFormat (..)
