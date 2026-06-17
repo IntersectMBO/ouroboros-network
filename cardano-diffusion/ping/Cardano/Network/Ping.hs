@@ -19,7 +19,11 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Cardano.Network.Ping
-  ( PingOpts (..)
+  ( -- * API
+    pingClients
+  , pingClient
+    -- * Options and arguments
+  , PingOpts (..)
   , Stage (..)
   , ResolvedSRVOrFilePath (..)
   , Address
@@ -27,13 +31,16 @@ module Cardano.Network.Ping
   , PingMode (..)
   , LogFormat (..)
   , ColorMode (..)
+    -- * Log messages
+  , PingWarning (..)
   , WithHost (..)
   , LogMsg (..)
   , StatPoint (..)
+    -- * Exceptions
   , PingClientException (..)
-  , pingClients
-  , pingClient
+    -- * Cardano main-net configuration
   , mainnetMagic
+    -- * Re-exports
   , NetworkMagic (..)
   ) where
 
