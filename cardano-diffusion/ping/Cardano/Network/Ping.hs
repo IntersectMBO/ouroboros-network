@@ -28,7 +28,7 @@ module Cardano.Network.Ping
   , WithHost (..)
   , LogMsg (..)
   , StatPoint (..)
-  , PingClientError (..)
+  , PingClientException (..)
   , pingClients
   , pingClient
   , mainnetMagic
@@ -46,6 +46,7 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer, mkTracer, nullTracer, traceWith, (>$<))
 
+import Codec.CBOR.Read qualified as CBOR
 import Codec.CBOR.Term qualified as CBOR
 import Codec.Serialise qualified as Serialise
 import Data.Aeson (KeyValue ((.=)), ToJSON (toJSON), Value, object)
@@ -554,22 +555,37 @@ idleTimeout :: DiffTime
 idleTimeout = 1
 
 
-data PingClientError
-  = PingClientProtocolLimitFailure ProtocolLimitFailure
+data PingClientException
+  = ProtocolLimitException ProtocolLimitFailure
   -- ^ protocol limit error
 
   | forall versionNumber.
     Show versionNumber
-  => PingClientHandshakeProtocolError (HandshakeProtocolError versionNumber) SockAddr
+  => HandshakeException (HandshakeProtocolError versionNumber) SockAddr
   -- ^ handshake protocol error
 
-deriving instance Show PingClientError
+  | IOException IOError
+  -- ^ IO errors
 
-instance Exception PingClientError where
-  displayException (PingClientProtocolLimitFailure err) =
+  | DecodingException CBOR.DeserialiseFailure
+  -- ^ cbor exceptions
+
+  | MuxException Mx.Error
+  -- ^ mux exceptions
+
+deriving instance Show PingClientException
+
+instance Exception PingClientException where
+  displayException (ProtocolLimitException err) =
     displayException err
-  displayException (PingClientHandshakeProtocolError err addr) =
+  displayException (HandshakeException err addr) =
     printf "%s handshake error: %s" (show addr) (show err)
+  displayException (IOException err) =
+    displayException err
+  displayException (DecodingException err) =
+    displayException err
+  displayException (MuxException err) =
+    displayException err
 
 data ProtocolFlavour version versionData where
     NodeToNode   :: ProtocolFlavour NodeToNodeVersion   NodeToNodeVersionData
@@ -847,11 +863,19 @@ pingClient
   -> Tracer IO PingWarning
   -> PingOpts
   -> AddrInfo
-  -> IO ()
-pingClient stdout stderr opts addrInfo = do
-  signalVar <- newSignalVar [Socket.addrAddress addrInfo]
-  headerVar <- newHeaderVar
-  pingClient' stdout stderr opts signalVar headerVar addrInfo
+  -> IO (Either PingClientException ())
+pingClient stdout stderr opts addrInfo =
+  do
+    signalVar <- newSignalVar [Socket.addrAddress addrInfo]
+    headerVar <- newHeaderVar
+    Right <$> pingClient' stdout stderr opts signalVar headerVar addrInfo
+  `catch` \case
+    err | Just e <- fromException err -> return (Left (IOException e))
+        | Just e <- fromException err -> return (Left (DecodingException e))
+        | Just e <- fromException err -> return (Left (MuxException e))
+        | Just e <- fromException err -> return (Left e)
+        | otherwise
+        -> throwIO err
 
 
 -- | Low level API to run a single ping client.
@@ -977,10 +1001,10 @@ pingClient' stdout stderr opts@PingOpts{..} signalVar headerVar addrInfo =
         )
       case r of
         Left err -> do
-          throwIO (PingClientProtocolLimitFailure err)
+          throwIO (ProtocolLimitException err)
         Right (Left err', rtt) -> do
           logMsg (HandshakeRTT rtt)
-          throwIO (PingClientHandshakeProtocolError err' addr)
+          throwIO (HandshakeException err' addr)
         Right (Right r', rtt) -> do
           logMsg (HandshakeRTT rtt)
           case r' of
