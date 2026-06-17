@@ -1,0 +1,102 @@
+cabal-version:   3.4
+name:            window-stats
+version:         0.1.0.0
+synopsis:        Efficient sliding window statistics with finger trees and t-digest
+license:         Apache-2.0
+license-files:
+    LICENSE
+    NOTICE
+copyright:       Intersect
+author:          Marcin Wójtowicz
+maintainer:      marcin.wojtowicz@iohk.io
+category:        Data
+build-type:      Simple
+extra-doc-files: CHANGELOG.md
+
+common ghc-options
+    default-language: Haskell2010
+    default-extensions: ImportQualifiedPost
+    ghc-options:
+        -Wall
+        -Wno-unticked-promoted-constructors
+        -Wcompat
+        -Wincomplete-uni-patterns
+        -Wincomplete-record-updates
+        -Wpartial-fields
+        -Widentities
+        -Wredundant-constraints
+        -Wunused-packages
+
+    -- In ghc-9.14 the `pattern` namespace specifier is deprecated.
+    if impl(ghc >=9.14)
+      ghc-options:
+        -Wno-pattern-namespace-specifier
+
+    -- GHC-9.14 warns on constraints that it considers redundant
+    -- but are necessary for earlier compilers.
+    if impl(ghc >=9.14)
+      ghc-options:
+        -Wno-redundant-constraints
+
+library with-tdigest
+    import: ghc-options
+    visibility: public
+    exposed-modules:
+        Data.Window.DigestCount,
+        Data.Window.DigestTimed
+    build-depends:
+        base,
+        fingertree,
+        tdigest,
+        window-stats
+    hs-source-dirs:
+        tdigest
+    default-extensions:
+        ImportQualifiedPost
+    default-language: Haskell2010
+
+library
+    import: ghc-options
+    exposed-modules:
+        Data.Window.Count,
+        Data.Window.Internal.Count,
+        Data.Window.Internal.Measures,
+        Data.Window.Internal.Timed,
+        Data.Window.Timed,
+        Data.Window.TimeLike
+    build-depends:
+        base >=4.14 && <4.23,
+        deepseq,
+        fingertree,
+        io-classes:si-timers ^>=1.8,
+        time,
+    hs-source-dirs:
+        lib
+
+library with-foldl
+    import: ghc-options
+    visibility: public
+    exposed-modules:
+        Data.Window.Fold.Count
+        Data.Window.Fold.Timed
+    build-depends:
+        base,
+        containers,
+        fingertree,
+        foldl,
+        window-stats
+    hs-source-dirs:
+        fold/lib
+
+test-suite ws-test
+    import:           ghc-options
+    type:             exitcode-stdio-1.0
+    hs-source-dirs:   test
+    main-is:          Main.hs
+    build-depends:
+        base,
+        QuickCheck,
+        tasty,
+        tasty-quickcheck,
+        time,
+        window-stats

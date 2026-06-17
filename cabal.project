@@ -27,6 +27,7 @@ packages: ./cardano-ping
           ./cardano-diffusion
           ./ntp-client
           ./acts-generic
+          ./window-stats
 
 tests: True
 benchmarks: True
