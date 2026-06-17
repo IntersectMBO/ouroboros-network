@@ -28,7 +28,9 @@ module Cardano.Network.Ping
   , WithHost (..)
   , LogMsg (..)
   , StatPoint (..)
+  , PingClientError (..)
   , pingClients
+  , pingClient
   , mainnetMagic
   , NetworkMagic (..)
   ) where
@@ -830,27 +832,39 @@ pingClients opts@PingOpts { pingOptsJson } addresses = do
 
     headerVar <- newHeaderVar
     signalVar <- newSignalVar (Socket.addrAddress <$> sockAddrs)
-    mapConcurrently_ (\case
+    mapConcurrently_ (
                       -- ignore exceptions so other ping clients can
                       -- continue
-                      addr | Socket.AF_UNIX <- Socket.addrFamily addr ->
-                        void $ try @_ @SomeException $
-                        pingClient stdout stderr opts signalVar headerVar addr
-                      addr ->
-                        void $ try @_ @SomeException $
-                        pingClient stdout stderr opts signalVar headerVar addr
-                   ) sockAddrs
+                        void . try @_ @SomeException .
+                        pingClient' stdout stderr opts signalVar headerVar
+                     ) sockAddrs
 
 
+-- | Run a single ping client.
+--
 pingClient
-  -> Tracer IO (WithHost LogMsg)
+  :: Tracer IO (WithHost LogMsg)
+  -> Tracer IO PingWarning
+  -> PingOpts
+  -> AddrInfo
+  -> IO ()
+pingClient stdout stderr opts addrInfo = do
+  signalVar <- newSignalVar [Socket.addrAddress addrInfo]
+  headerVar <- newHeaderVar
+  pingClient' stdout stderr opts signalVar headerVar addrInfo
+
+
+-- | Low level API to run a single ping client.
+--
+pingClient'
+  :: Tracer IO (WithHost LogMsg)
   -> Tracer IO PingWarning
   -> PingOpts
   -> SignalVar SockAddr
   -> HeaderVar
   -> AddrInfo
   -> IO ()
-pingClient stdout stderr opts@PingOpts{..} signalVar headerVar addrInfo =
+pingClient' stdout stderr opts@PingOpts{..} signalVar headerVar addrInfo =
   withSignal signalVar addr $ \sig ->
     bracket
       (Socket.socket (Socket.addrFamily addrInfo) Socket.Stream Socket.defaultProtocol)
