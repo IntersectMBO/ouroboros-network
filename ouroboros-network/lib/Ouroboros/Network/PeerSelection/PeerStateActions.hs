@@ -555,6 +555,8 @@ instance ( Show peerAddr
 
 -- | Record of arguments of 'peerSelectionActions'.
 --
+-- It is instantiated for production in `Ouroboros.Network.Diffusion`.
+--
 data PeerStateActionsArguments muxMode socket responderCtx peerAddr extraFlags versionData versionNumber m a b =
     PeerStateActionsArguments {
 
@@ -562,10 +564,16 @@ data PeerStateActionsArguments muxMode socket responderCtx peerAddr extraFlags v
 
       -- | Peer deactivation timeout: timeouts stopping hot protocols.
       --
+      -- We use `Ouroboros.Network.Diffusion.Policies.deactivateTimeout` in
+      -- `Ouroboros.Network.Diffusion`.
+      --
       spsDeactivateTimeout      :: DiffTime,
 
       -- | Timeout on closing connection: timeouts stopping established and warm
       -- peer protocols.
+      --
+      -- We use `Ouroboros.Network.Diffusion.Policies.closeConnectionTimeout` in
+      -- `Ouroboros.Network.Diffusion`.
       --
       spsCloseConnectionTimeout :: DiffTime,
 

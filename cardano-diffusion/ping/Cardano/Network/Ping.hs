@@ -19,17 +19,28 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Cardano.Network.Ping
-  ( PingOpts (..)
+  ( -- * API
+    pingClients
+  , pingClient
+    -- * Options and arguments
+  , PingOpts (..)
+  , Stage (..)
+  , ResolvedSRVOrFilePath (..)
   , Address
   , cmdlineParser
   , PingMode (..)
   , LogFormat (..)
   , ColorMode (..)
+    -- * Log messages
+  , PingWarning (..)
+  , WithHost (..)
   , LogMsg (..)
   , StatPoint (..)
-  , ProtocolFlavour (..)
-  , pingClients
+    -- * Exceptions
+  , PingClientException (..)
+    -- * Cardano main-net configuration
   , mainnetMagic
+    -- * Re-exports
   , NetworkMagic (..)
   ) where
 
@@ -44,6 +55,7 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer, mkTracer, nullTracer, traceWith, (>$<))
 
+import Codec.CBOR.Read qualified as CBOR
 import Codec.CBOR.Term qualified as CBOR
 import Codec.Serialise qualified as Serialise
 import Data.Aeson (KeyValue ((.=)), ToJSON (toJSON), Value, object)
@@ -72,7 +84,7 @@ import Network.DNS qualified as DNS
 import Network.Mux (MiniProtocolInfo (..))
 import Network.Mux qualified as Mx
 import Network.Mux.Bearer (MakeBearer (..), makeSocketBearer)
-import Network.Socket (AddrInfo, StructLinger (..))
+import Network.Socket (AddrInfo, SockAddr, StructLinger (..))
 import Network.Socket qualified as Socket
 import Options.Applicative
 import Options.Applicative.Help.Pretty qualified as Pretty
@@ -336,7 +348,7 @@ data PingWarning = FilePathDoesNotExist FilePath
                  | DNSResolution DNS.Domain [IP] Word
                  | MissingPort IP
                  | Error SomeException
-                 | ConnectError Socket.SockAddr SomeException
+                 | ConnectError SockAddr SomeException
 
 
 formatPingWarning :: PingWarning -> String
@@ -552,26 +564,54 @@ idleTimeout :: DiffTime
 idleTimeout = 1
 
 
-data PingClientError
-  = PingClientProtocolLimitFailure ProtocolLimitFailure
+data PingClientException
+  = ProtocolLimitException ProtocolLimitFailure
   -- ^ protocol limit error
 
   | forall versionNumber.
     Show versionNumber
-  => PingClientHandshakeProtocolError (HandshakeProtocolError versionNumber) (Address Resolved)
+  => HandshakeException (HandshakeProtocolError versionNumber) SockAddr
   -- ^ handshake protocol error
 
-deriving instance Show PingClientError
+  | IOException IOError
+  -- ^ IO errors
 
-instance Exception PingClientError where
-  displayException (PingClientProtocolLimitFailure err) =
+  | DecodingException CBOR.DeserialiseFailure
+  -- ^ cbor exceptions
+
+  | MuxException Mx.Error
+  -- ^ mux exceptions
+
+deriving instance Show PingClientException
+
+instance Exception PingClientException where
+  displayException (ProtocolLimitException err) =
     displayException err
-  displayException (PingClientHandshakeProtocolError err addr) =
+  displayException (HandshakeException err addr) =
     printf "%s handshake error: %s" (show addr) (show err)
+  displayException (IOException err) =
+    displayException err
+  displayException (DecodingException err) =
+    displayException err
+  displayException (MuxException err) =
+    displayException err
 
 data ProtocolFlavour version versionData where
     NodeToNode   :: ProtocolFlavour NodeToNodeVersion   NodeToNodeVersionData
     NodeToClient :: ProtocolFlavour NodeToClientVersion NodeToClientVersionData
+
+data SomeProtocolFlavour where
+    SomeProtocolFlavour :: forall versionNumber versionData.
+                           ( Acceptable versionData
+                           , Queryable versionData
+                           , NFData versionData
+                           , Ord versionNumber
+                           , Show versionNumber
+                           , NFData versionNumber
+                           , ToJSON versionNumber
+                           )
+                        => ProtocolFlavour versionNumber versionData
+                        -> SomeProtocolFlavour
 
 --
 -- ChainSync Tip Sampling
@@ -793,79 +833,108 @@ pingClients opts@PingOpts { pingOptsJson } addresses = do
       <- catMaybes
          <$> traverse
                (\case
-                  addr@(IP ip@IPv4{} port) ->
-                    fmap (addr,) . maybeHead <$> Socket.getAddrInfo
+                  (IP ip@IPv4{} port) ->
+                    maybeHead <$> Socket.getAddrInfo
                       (Just Socket.defaultHints { Socket.addrFamily = Socket.AF_INET })
                       (Just (show ip))
                       (Just (show port))
-                  addr@(IP ip@IPv6{} port) ->
-                    fmap (addr,) . maybeHead <$> Socket.getAddrInfo
+                  (IP ip@IPv6{} port) ->
+                    maybeHead <$> Socket.getAddrInfo
                       (Just Socket.defaultHints { Socket.addrFamily = Socket.AF_INET6 })
                       (Just (show ip))
                       (Just (show port))
-                  addr@(FilePath path) -> do
-                    return $ Just
-                      ( addr
-                      , Socket.AddrInfo
-                         []
-                         Socket.AF_UNIX
-                         Socket.Stream
-                         Socket.defaultProtocol
-                         (Socket.SockAddrUnix path)
-                         Nothing
-                      )
+                  (FilePath path) -> do
+                    return $ Just $
+                      Socket.AddrInfo
+                       []
+                       Socket.AF_UNIX
+                       Socket.Stream
+                       Socket.defaultProtocol
+                       (Socket.SockAddrUnix path)
+                       Nothing
                )
                resolvedAddresses
 
     headerVar <- newHeaderVar
-    signalVar <- newSignalVar (fst <$> sockAddrs)
-    mapConcurrently_ (\case
+    signalVar <- newSignalVar (Socket.addrAddress <$> sockAddrs)
+    mapConcurrently_ (
                       -- ignore exceptions so other ping clients can
                       -- continue
-                      addr@(IP {}, _) ->
-                        void $ try @_ @SomeException $
-                        pingClient NodeToNode stdout stderr opts signalVar headerVar addr
-                      addr@(FilePath {}, _) ->
-                        void $ try @_ @SomeException $
-                        pingClient NodeToClient stdout stderr opts signalVar headerVar addr
-                   ) sockAddrs
+                        void . try @_ @SomeException .
+                        pingClient' stdout stderr opts signalVar headerVar
+                     ) sockAddrs
 
+
+-- | Run a single ping client.
+--
 pingClient
-  :: forall versionNumber versionData.
-     ( Acceptable versionData
-     , Queryable versionData
-     , NFData versionData
-     , Ord versionNumber
-     , Show versionNumber
-     , NFData versionNumber
-     , ToJSON versionNumber
-     )
-  => ProtocolFlavour versionNumber versionData
-  -> Tracer IO (WithHost LogMsg)
+  :: Tracer IO (WithHost LogMsg)
   -> Tracer IO PingWarning
   -> PingOpts
-  -> SignalVar (Address Resolved)
+  -> AddrInfo
+  -> IO (Either PingClientException ())
+pingClient stdout stderr opts addrInfo =
+  do
+    signalVar <- newSignalVar [Socket.addrAddress addrInfo]
+    headerVar <- newHeaderVar
+    Right <$> pingClient' stdout stderr opts signalVar headerVar addrInfo
+  `catch` \case
+    err | Just e <- fromException err -> return (Left (IOException e))
+        | Just e <- fromException err -> return (Left (DecodingException e))
+        | Just e <- fromException err -> return (Left (MuxException e))
+        | Just e <- fromException err -> return (Left e)
+        | otherwise
+        -> throwIO err
+
+
+-- | Low level API to run a single ping client.
+--
+pingClient'
+  :: Tracer IO (WithHost LogMsg)
+  -> Tracer IO PingWarning
+  -> PingOpts
+  -> SignalVar SockAddr
   -> HeaderVar
-  -> (Address Resolved, AddrInfo)
+  -> AddrInfo
   -> IO ()
-pingClient protocol stdout stderr opts@PingOpts{..} signalVar headerVar (addr, peer) =
+pingClient' stdout stderr opts@PingOpts{..} signalVar headerVar addrInfo =
   withSignal signalVar addr $ \sig ->
     bracket
-      (Socket.socket (Socket.addrFamily peer) Socket.Stream Socket.defaultProtocol)
+      (Socket.socket (Socket.addrFamily addrInfo) Socket.Stream Socket.defaultProtocol)
       Socket.close
       (\sd -> do
-        when (Socket.addrFamily peer /= Socket.AF_UNIX) $ do
+        when (Socket.addrFamily addrInfo /= Socket.AF_UNIX) $ do
           Socket.setSocketOption sd Socket.NoDelay 1
           Socket.setSockOpt sd Socket.Linger
             StructLinger
               { sl_onoff  = 1
               , sl_linger = 0
               }
-        runPingClient sig sd
+        let someProtocol :: SomeProtocolFlavour
+            someProtocol = case Socket.addrFamily addrInfo of
+              Socket.AF_UNIX -> SomeProtocolFlavour NodeToClient
+              _              -> SomeProtocolFlavour NodeToNode
+        case someProtocol of
+          SomeProtocolFlavour protocol -> runPingClient protocol sig sd
       )
   where
-    runPingClient :: Signal -> Socket.Socket -> IO ()
-    runPingClient sig sd = do
+    addr :: SockAddr
+    addr = Socket.addrAddress addrInfo
+
+    runPingClient :: forall versionNumber versionData.
+                     ( Acceptable versionData
+                     , Queryable versionData
+                     , NFData versionData
+                     , Ord versionNumber
+                     , Show versionNumber
+                     , NFData versionNumber
+                     , ToJSON versionNumber
+                     )
+                  => ProtocolFlavour versionNumber versionData
+                  -> Signal
+                  -> Socket.Socket
+                  -> IO ()
+    runPingClient protocol sig sd = do
       let logMsg :: (ToText msg, ToJSON msg) => msg -> IO ()
           logMsg = logMsgWithPeer opts addr
           stdout' = WithHost addr >$< stdout
@@ -873,10 +942,10 @@ pingClient protocol stdout stderr opts@PingOpts{..} signalVar headerVar (addr, p
       !t0_s <- getMonotonicTime
 
       handleJust (\e -> case fromException e of { Just SomeAsyncException {} -> Nothing; _ -> Just e })
-                 (\e  -> traceWith stderr (ConnectError (Socket.addrAddress peer) e)
+                 (\e  -> traceWith stderr (ConnectError addr e)
                       >> throwIO e
                  ) $
-        Socket.connect sd (Socket.addrAddress peer)
+        Socket.connect sd addr
       !t0_e <- getMonotonicTime
 
       logMsg $ NetworkRTT (toSample t0_e t0_s)
@@ -941,10 +1010,10 @@ pingClient protocol stdout stderr opts@PingOpts{..} signalVar headerVar (addr, p
         )
       case r of
         Left err -> do
-          throwIO (PingClientProtocolLimitFailure err)
+          throwIO (ProtocolLimitException err)
         Right (Left err', rtt) -> do
           logMsg (HandshakeRTT rtt)
-          throwIO (PingClientHandshakeProtocolError err' addr)
+          throwIO (HandshakeException err' addr)
         Right (Right r', rtt) -> do
           logMsg (HandshakeRTT rtt)
           case r' of
@@ -1066,7 +1135,7 @@ format AsText = toText
 class ToText a where
   toText :: a -> TL.Text
 
-data WithHost a = WithHost (Address Resolved) a
+data WithHost a = WithHost SockAddr a
 
 instance ToText a => ToText (WithHost a) where
   toText (WithHost host a) =
@@ -1129,7 +1198,7 @@ instance ToJSON HandshakeRTT where
 -- note: use `logMsg` defined above in terms of `logMsgWithPeer`
 logMsgWithPeer :: (ToText msg, ToJSON msg)
                => PingOpts
-               -> Address Resolved
+               -> SockAddr
                -> msg
                -> IO ()
 logMsgWithPeer PingOpts { pingOptsQuiet, pingOptsJson } addr msg =
