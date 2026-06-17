@@ -28,7 +28,6 @@ module Cardano.Network.Ping
   , WithHost (..)
   , LogMsg (..)
   , StatPoint (..)
-  , ProtocolFlavour (..)
   , pingClients
   , mainnetMagic
   , NetworkMagic (..)
@@ -574,6 +573,19 @@ data ProtocolFlavour version versionData where
     NodeToNode   :: ProtocolFlavour NodeToNodeVersion   NodeToNodeVersionData
     NodeToClient :: ProtocolFlavour NodeToClientVersion NodeToClientVersionData
 
+data SomeProtocolFlavour where
+    SomeProtocolFlavour :: forall versionNumber versionData.
+                           ( Acceptable versionData
+                           , Queryable versionData
+                           , NFData versionData
+                           , Ord versionNumber
+                           , Show versionNumber
+                           , NFData versionNumber
+                           , ToJSON versionNumber
+                           )
+                        => ProtocolFlavour versionNumber versionData
+                        -> SomeProtocolFlavour
+
 --
 -- ChainSync Tip Sampling
 --
@@ -823,24 +835,14 @@ pingClients opts@PingOpts { pingOptsJson } addresses = do
                       -- continue
                       addr | Socket.AF_UNIX <- Socket.addrFamily addr ->
                         void $ try @_ @SomeException $
-                        pingClient NodeToClient stdout stderr opts signalVar headerVar addr
+                        pingClient stdout stderr opts signalVar headerVar addr
                       addr ->
                         void $ try @_ @SomeException $
-                        pingClient NodeToNode stdout stderr opts signalVar headerVar addr
+                        pingClient stdout stderr opts signalVar headerVar addr
                    ) sockAddrs
 
 
 pingClient
-  :: forall versionNumber versionData.
-     ( Acceptable versionData
-     , Queryable versionData
-     , NFData versionData
-     , Ord versionNumber
-     , Show versionNumber
-     , NFData versionNumber
-     , ToJSON versionNumber
-     )
-  => ProtocolFlavour versionNumber versionData
   -> Tracer IO (WithHost LogMsg)
   -> Tracer IO PingWarning
   -> PingOpts
@@ -848,7 +850,7 @@ pingClient
   -> HeaderVar
   -> AddrInfo
   -> IO ()
-pingClient protocol stdout stderr opts@PingOpts{..} signalVar headerVar addrInfo =
+pingClient stdout stderr opts@PingOpts{..} signalVar headerVar addrInfo =
   withSignal signalVar addr $ \sig ->
     bracket
       (Socket.socket (Socket.addrFamily addrInfo) Socket.Stream Socket.defaultProtocol)
@@ -861,14 +863,31 @@ pingClient protocol stdout stderr opts@PingOpts{..} signalVar headerVar addrInfo
               { sl_onoff  = 1
               , sl_linger = 0
               }
-        runPingClient sig sd
+        let someProtocol :: SomeProtocolFlavour
+            someProtocol = case Socket.addrFamily addrInfo of
+              Socket.AF_UNIX -> SomeProtocolFlavour NodeToClient
+              _              -> SomeProtocolFlavour NodeToNode
+        case someProtocol of
+          SomeProtocolFlavour protocol -> runPingClient protocol sig sd
       )
   where
     addr :: SockAddr
     addr = Socket.addrAddress addrInfo
 
-    runPingClient :: Signal -> Socket.Socket -> IO ()
-    runPingClient sig sd = do
+    runPingClient :: forall versionNumber versionData.
+                     ( Acceptable versionData
+                     , Queryable versionData
+                     , NFData versionData
+                     , Ord versionNumber
+                     , Show versionNumber
+                     , NFData versionNumber
+                     , ToJSON versionNumber
+                     )
+                  => ProtocolFlavour versionNumber versionData
+                  -> Signal
+                  -> Socket.Socket
+                  -> IO ()
+    runPingClient protocol sig sd = do
       let logMsg :: (ToText msg, ToJSON msg) => msg -> IO ()
           logMsg = logMsgWithPeer opts addr
           stdout' = WithHost addr >$< stdout
