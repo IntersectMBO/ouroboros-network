@@ -30,6 +30,7 @@ module Cardano.Network.Ping
   , mkAddress
   , cmdlineParser
   , PingMode (..)
+  , AcceptFilePath (..)
   , LogFormat (..)
   , ColorMode (..)
     -- * Log messages
@@ -67,6 +68,7 @@ import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import Data.ByteString.Char8 qualified as BS.Char
 import Data.ByteString.Lazy qualified as BL
+import Data.Foldable (traverse_)
 import Data.IP
 import Data.List qualified as List
 import Data.Map.Strict (Map)
@@ -200,6 +202,13 @@ instance Show (Address stage) where
 deriving instance Eq (Address Resolved)
 deriving instance Ord (Address Resolved)
 
+data SomeAddress where
+    SomeAddress :: forall (stage :: Stage).
+                   Address stage
+                -> SomeAddress
+
+instance Show SomeAddress where
+  show (SomeAddress address) = show address
 
 data PingOpts = PingOpts
   { pingOptsCount     :: Word32
@@ -358,35 +367,38 @@ data LogMsg = LogChainSyncTip PingTip
             | LogNodeToNodeVersionData   NodeToNodeVersion   (Either Text NodeToNodeVersionData)
   deriving Show
 
+data AddressResolutionError =
+     FilePathDoesNotExistError FilePath
+   | NoPortNumberError SomeAddress
+   | DNSError SomeAddress DNS.DNSError
+  deriving Show
+
+instance Exception AddressResolutionError where
+  displayException (FilePathDoesNotExistError path)
+    = "file path " ++ show path ++ " does not exist"
+  displayException (NoPortNumberError addr)
+    = "missing port number for " ++ show addr
+  displayException (DNSError addr err)
+    = show addr ++ ": " ++ displayException err
+
 -- | Log messages to stderr.
 --
-data PingWarning = FilePathDoesNotExist FilePath
-                 | DNSError DNS.Domain DNS.DNSError
+data PingWarning = AddressResolutionError AddressResolutionError
                  | DNSResolution DNS.Domain [IP] Word
-                 | MissingPort IP
                  | Error SomeException
                  | ConnectError SockAddr SomeException
-
 
 formatPingWarning :: PingWarning -> String
 formatPingWarning msg = severity msg ++ fn msg
   where
-    fn (FilePathDoesNotExist path)
-      = "file path " ++ show path ++ " does not exist"
-    fn (DNSError domain err)
-      = unwords
-      [ "dns:"
-      , BS.Char.unpack domain
-      , show err
-      ]
+    fn (AddressResolutionError err)
+      = displayException err
     fn (DNSResolution domain ips port)
       = concat
       [ BS.Char.unpack domain
       , ": "
       , List.intercalate ", " (flip showIPWithPort port <$> ips)
       ]
-    fn (MissingPort ip)
-      = "missing port for " ++ show ip
     fn (Error err)
       = show err
     fn (ConnectError sockAddr err)
@@ -394,12 +406,10 @@ formatPingWarning msg = severity msg ++ fn msg
 
     severity :: PingWarning -> String
     severity = \case
-        FilePathDoesNotExist{} -> warning
-        DNSError{}             -> warning
-        DNSResolution{}        -> mempty
-        MissingPort{}          -> warning
-        Error{}                -> warning
-        ConnectError{}         -> warning
+        AddressResolutionError{} -> warning
+        DNSResolution{}          -> mempty
+        Error{}                  -> warning
+        ConnectError{}           -> warning
       where
         warning = "WARNING: "
 
@@ -742,83 +752,120 @@ keepAliveClient opts@PingOpts { pingOptsCount } sig headerVar stdout td0 =
 -- Ping Client
 --
 
-resolveAddress :: Tracer IO PingWarning
-               -> DNS.Resolver
-               -> PingOpts
-               -> Address (Unresolved fpResolved)
-               -> IO [Address Resolved]
 
--- 1. Resolve an SRV records
-resolveAddress stderr resolver opts@PingOpts { pingOptsSRVPrefix = srvPrefix } (SRV dns) = do
-  let hostname = BS.Char.pack $ case srvPrefix of
-                                  [] -> dns
-                                  _  -> srvPrefix ++ "." ++ dns
-  r <- DNS.lookupRaw resolver hostname DNS.SRV
-  case r >>= flip DNS.fromDNSMessage selectSRV of
-    Left err -> do
-      traceWith stderr $ DNSError hostname err
-      -- try resolve the SRV as a domain:port or a filepath
-      resolveAddress stderr resolver opts (FilePathOrDomain dns)
-    Right services ->
-      concat <$> traverse (resolveAddress stderr resolver opts)
-        [ Domain domain (fromIntegral port)
-        | (domain, _, _, port, _ttl)  <- services
-        ]
+-- | `resolveAddress` has two modes of operations.  It can try to resolve an
+-- `Address` to a `FilePath`, or not.  In the latter case the errors will be
+-- more precise.  It is useful when validating an srv record / domain names / ip
+-- addresses.
+--
+data AcceptFilePath = AddressMightBeAFilePath | AddressIsNotAFilePath
+
+
+resolveAddress
+  :: Tracer IO PingWarning
+  -> DNS.Resolver
+  -> PingOpts
+  -> AcceptFilePath
+  -- ^ if `True` then `Address` could be a file path, if `False`
+  -- then we won't try to resolve an address as a `FilePath`.
+  -> Address (Unresolved SRVOrFilePathUnresolved)
+  -- ^ Either `FilePathOrDomain` or `SRV`, use `mkAddress` to
+  -- construct the right one.
+  -> IO ([Address Resolved], [AddressResolutionError])
+resolveAddress
+    stderr resolver
+    PingOpts { pingOptsQuiet, pingOptsSRVPrefix = srvPrefix }
+    acceptFilePath
+    = \addr -> go addr
   where
-    selectSRV DNS.DNSMessage { DNS.answer } =
-      [ (domain', priority', weight', port, ttl)
-      | DNS.ResourceRecord {
-          DNS.rdata = DNS.RD_SRV priority' weight' port domain',
-          DNS.rrttl = ttl
-        } <- answer
-      ]
+    -- resolution loop
+    go :: Address (Unresolved fpResolved)
+       -> IO ([Address Resolved], [AddressResolutionError])
 
--- 2. Resolved domain name or file path
-resolveAddress stderr resolver opts (FilePathOrDomain path) =
-   case splitWith ':' path
-           >>= \(dnsStr, portStr) -> (dnsStr,) <$> readMaybe portStr
-     of
-     Just (dnsname, port) ->
-       -- try resolve as a domain name
-       resolveAddress stderr resolver opts (Domain (BS.Char.pack dnsname) port)
-        >>= \case
-          [] ->
-            -- dns query failed, let's try if it is a file path
-            doesFileExist path >>= \case
-              True -> pure [FilePath path]
-              False -> do
-                traceWith stderr (FilePathDoesNotExist path)
-                pure []
-          addrs -> pure addrs
-     Nothing ->
-       doesFileExist path >>= \case
-         True ->
-           pure [FilePath path]
-         False -> do
-           traceWith stderr (FilePathDoesNotExist path)
-           pure []
+    -- 1. Resolve an SRV record
+    go addr@(SRV dns) = do
+      let hostname = BS.Char.pack $ case srvPrefix of
+                                      [] -> dns
+                                      _  -> srvPrefix ++ "." ++ dns
+      r <- DNS.lookupRaw resolver hostname DNS.SRV
+      case r >>= flip DNS.fromDNSMessage selectSRV of
+        Left err -> do
+          let err' = DNSError (SomeAddress addr) err
+          traceWith stderr (AddressResolutionError err')
+          case acceptFilePath of
+            AddressMightBeAFilePath ->
+              -- try resolve the SRV as a file path
+              go (FilePathOrDomain dns)
+            AddressIsNotAFilePath ->
+              pure ([], [err'])
+        Right services ->
+          concatBoth <$> traverse go
+            [ Domain domain (fromIntegral port)
+            | (domain, _, _, port, _ttl)  <- services
+            ]
+      where
+        selectSRV DNS.DNSMessage { DNS.answer } =
+          [ (domain', priority', weight', port, ttl)
+          | DNS.ResourceRecord {
+              DNS.rdata = DNS.RD_SRV priority' weight' port domain',
+              DNS.rrttl = ttl
+            } <- answer
+          ]
 
--- 3. Resolve domain names
-resolveAddress stderr resolver PingOpts { pingOptsQuiet } (Domain hostname port) = do
-  a <- fmap (map IPv4) <$> DNS.lookupA resolver hostname
-  aaaa <- fmap (map IPv6) <$> DNS.lookupAAAA resolver hostname
-  case a <>: aaaa of
-    Left err -> do
-      traceWith stderr $ DNSError hostname err
-      return []
-    Right ips -> do
-      unless pingOptsQuiet $
-        traceWith stderr $ DNSResolution hostname ips port
-      return [ IP ip port | ip <- ips ]
-  where
-    (<>:) :: Either e [a] -> Either e [a] -> Either e [a]
-    (Left e) <>: Left{}    = Left e
-    Right as <>: Left{}    = Right as
-    Left{}   <>: Right as  = Right as
-    Right as <>: Right as' = Right (as ++ as')
+    -- 2. Resolved domain name or file path
+    go addr@(FilePathOrDomain path) =
+       case splitWith ':' path
+               >>= \(dnsStr, portStr) -> (dnsStr,) <$> readMaybe portStr
+         of
+         Just (dnsname, port) ->
+           -- try resolve as a domain name
+           go (Domain (BS.Char.pack dnsname) port)
+             >>= \case
+               ([], errs) | AddressMightBeAFilePath <- acceptFilePath ->
+                 -- dns query failed, let's try if it is a file path
+                 doesFileExist path >>= \case
+                   True -> pure ([FilePath path], errs)
+                   False -> do
+                     let err = FilePathDoesNotExistError path
+                     traceWith stderr (AddressResolutionError err)
+                     pure ([], err : errs)
+               (addrs, errs) -> pure (addrs, errs)
+         Nothing | AddressMightBeAFilePath <- acceptFilePath -> do
+           doesFileExist path >>= \case
+             True ->
+               pure ([FilePath path], [])
+             False -> do
+               let err = FilePathDoesNotExistError path
+               traceWith stderr (AddressResolutionError err)
+               pure ([], [err])
+         Nothing -> do
+           pure ([], [NoPortNumberError (SomeAddress addr)])
 
--- 4. Return ip address
-resolveAddress _stderr _ _ (IP addr port) = pure [IP addr port]
+    -- 3. Resolve domain names
+    go addr@(Domain hostname port) = do
+      a <- fmap (map IPv4) <$> DNS.lookupA resolver hostname
+      aaaa <- fmap (map IPv6) <$> DNS.lookupAAAA resolver hostname
+      case a <>: aaaa of
+        (ips, errs) -> do
+          let errs' = [ DNSError (SomeAddress addr) err | err <- errs ]
+          traverse_ (traceWith stderr . AddressResolutionError) errs'
+          unless pingOptsQuiet $
+            traceWith stderr $ DNSResolution hostname ips port
+          return ( [ IP ip port | ip <- ips ]
+                 , errs'
+                 )
+      where
+        (<>:) :: Eq e => Either e [a] -> Either e [a] -> ([a], [e])
+        (Left e) <>: Left e'   | e /= e'
+                               = ([], [e, e'])
+                               | otherwise
+                               = ([], [e])
+        Right as <>: Left e'   = (as, [e'])
+        Left e   <>: Right as  = (as, [e])
+        Right as <>: Right as' = (as ++ as', [])
+
+    -- 4. Return ip address
+    go (IP addr port) = pure ([IP addr port], [])
 
 
 pingClients
@@ -829,23 +876,20 @@ pingClients opts@PingOpts { pingOptsJson } addresses = do
     stdoutLock <- newMVar ()
     IO.hSetBuffering IO.stdout IO.LineBuffering
     let stdout :: Tracer IO (WithHost LogMsg)
-        stdout = mkTracer $ \msg -> withMVar stdoutLock $ \_ -> TL.putStrLn (format pingOptsJson msg)
+        stdout = mkTracer $ \msg -> withMVar stdoutLock $ \_ ->
+          TL.putStrLn (format pingOptsJson msg)
 
     stderrLock <- newMVar ()
     IO.hSetBuffering IO.stderr IO.LineBuffering
     let stderr :: Tracer IO PingWarning
         stderr = mkTracer $ \msg -> withMVar stderrLock $ \_ ->
-          case msg of
-            -- Don't print IllegalDomain errors, which are common when we try
-            -- to resolve a file path as a DNS name.
-            DNSError _ DNS.IllegalDomain -> pure ()
-            _ -> IO.hPutStrLn IO.stderr (formatPingWarning msg)
+          IO.hPutStrLn IO.stderr (formatPingWarning msg)
 
     -- resolved addresses
     rs <- DNS.makeResolvSeed DNS.defaultResolvConf
-    resolvedAddresses <-
+    (resolvedAddresses, _) <-
       DNS.withResolver rs $ \resolver ->
-        concat <$> traverse (resolveAddress stderr resolver opts) addresses
+        concatBoth <$> traverse (resolveAddress stderr resolver opts AddressMightBeAFilePath) addresses
     sockAddrs
       <- catMaybes
          <$> traverse
@@ -1232,6 +1276,9 @@ instance ShowProxy CBOR.Term where
 maybeHead :: [a] -> Maybe a
 maybeHead []    = Nothing
 maybeHead (a:_) = Just a
+
+concatBoth :: [([a], [b])] -> ([a], [b])
+concatBoth a = (concatMap fst a, concatMap snd a)
 
 splitWith :: Char -> String -> Maybe (String, String)
 splitWith c = go ""
