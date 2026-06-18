@@ -21,6 +21,7 @@
 module Cardano.Network.Ping
   ( -- * API
     pingClients
+  , pingClients'
   , pingClient
     -- * Options and arguments
   , PingOpts (..)
@@ -35,6 +36,7 @@ module Cardano.Network.Ping
   , ColorMode (..)
     -- * Log messages
   , PingWarning (..)
+  , PingException (..)
   , WithHost (..)
   , LogMsg (..)
   , StatPoint (..)
@@ -68,6 +70,7 @@ import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import Data.ByteString.Char8 qualified as BS.Char
 import Data.ByteString.Lazy qualified as BL
+import Data.Either (lefts)
 import Data.Foldable (traverse_)
 import Data.IP
 import Data.List qualified as List
@@ -92,6 +95,7 @@ import Network.Socket qualified as Socket
 import Options.Applicative
 import Options.Applicative.Help.Pretty qualified as Pretty
 import System.Directory (doesFileExist)
+import System.Exit qualified as IO
 import System.IO qualified as IO
 import System.Random (initStdGen)
 import Text.Printf (printf)
@@ -225,7 +229,7 @@ data PingOpts = PingOpts
     -- ^ SRV prefix
   , pingOptsColor     :: ColorMode
     -- ^ Colorised output
-  } -- deriving (Eq, Show)
+  }
 
 mainnetMagic :: NetworkMagic
 mainnetMagic = NetworkMagic 764824073
@@ -592,7 +596,7 @@ idleTimeout = 1
 
 
 data PingClientException
-  = ProtocolLimitException ProtocolLimitFailure
+  = ProtocolLimitException ProtocolLimitFailure SockAddr
   -- ^ protocol limit error
 
   | forall versionNumber.
@@ -600,28 +604,28 @@ data PingClientException
   => HandshakeException (HandshakeProtocolError versionNumber) SockAddr
   -- ^ handshake protocol error
 
-  | IOException IOError
+  | IOException IOError SockAddr
   -- ^ IO errors
 
-  | DecodingException CBOR.DeserialiseFailure
+  | DecodingException CBOR.DeserialiseFailure SockAddr
   -- ^ cbor exceptions
 
-  | MuxException Mx.Error
+  | MuxException Mx.Error SockAddr
   -- ^ mux exceptions
 
 deriving instance Show PingClientException
 
 instance Exception PingClientException where
-  displayException (ProtocolLimitException err) =
-    displayException err
+  displayException (ProtocolLimitException err addr) =
+    printf "%s protocol limits error: %s" (show addr) (displayException err)
   displayException (HandshakeException err addr) =
     printf "%s handshake error: %s" (show addr) (show err)
-  displayException (IOException err) =
-    displayException err
-  displayException (DecodingException err) =
-    displayException err
-  displayException (MuxException err) =
-    displayException err
+  displayException (IOException err addr) =
+    printf "%s io error: %s" (show addr) (displayException err)
+  displayException (DecodingException err addr) =
+    printf "%s decoding error: %s" (show addr) (displayException err)
+  displayException (MuxException err addr) =
+    printf "%s mux error: %s" (show addr) (displayException err)
 
 data ProtocolFlavour version versionData where
     NodeToNode   :: ProtocolFlavour NodeToNodeVersion   NodeToNodeVersionData
@@ -766,7 +770,7 @@ resolveAddress
   -> DNS.Resolver
   -> PingOpts
   -> AcceptFilePath
-  -- ^ if `True` then `Address` could be a file path, if `False`
+  -- ^ if ``
   -- then we won't try to resolve an address as a `FilePath`.
   -> Address (Unresolved SRVOrFilePathUnresolved)
   -- ^ Either `FilePathOrDomain` or `SRV`, use `mkAddress` to
@@ -872,24 +876,55 @@ pingClients
   :: PingOpts
   -> [Address (Unresolved SRVOrFilePathUnresolved)]
   -> IO ()
-pingClients opts@PingOpts { pingOptsJson } addresses = do
-    stdoutLock <- newMVar ()
-    IO.hSetBuffering IO.stdout IO.LineBuffering
-    let stdout :: Tracer IO (WithHost LogMsg)
-        stdout = mkTracer $ \msg -> withMVar stdoutLock $ \_ ->
-          TL.putStrLn (format pingOptsJson msg)
+pingClients
+  opts@PingOpts { pingOptsJson }
+  addresses = do
+  stdoutLock <- newMVar ()
+  IO.hSetBuffering IO.stdout IO.LineBuffering
+  let stdout :: Tracer IO (WithHost LogMsg)
+      stdout = mkTracer $ \msg -> withMVar stdoutLock $ \_ ->
+        TL.putStrLn (format pingOptsJson msg)
 
-    stderrLock <- newMVar ()
-    IO.hSetBuffering IO.stderr IO.LineBuffering
-    let stderr :: Tracer IO PingWarning
-        stderr = mkTracer $ \msg -> withMVar stderrLock $ \_ ->
-          IO.hPutStrLn IO.stderr (formatPingWarning msg)
+  stderrLock <- newMVar ()
+  IO.hSetBuffering IO.stderr IO.LineBuffering
+  let stderr :: Tracer IO PingWarning
+      stderr = mkTracer $ \msg -> withMVar stderrLock $ \_ ->
+        IO.hPutStrLn IO.stderr (formatPingWarning msg)
 
+  errors <- pingClients' stdout stderr opts AddressMightBeAFilePath addresses
+  unless (null errors)
+    IO.exitFailure
+
+
+data PingException
+  = AddressResolutionException AddressResolutionError
+  | PingClientException PingClientException
+  deriving Show
+
+instance Exception PingException where
+  displayException (AddressResolutionException e) = displayException e
+  displayException (PingClientException e) = displayException e
+
+-- | A low level API which returns all address resolution & clients errors.
+--
+pingClients'
+  :: Tracer IO (WithHost LogMsg)
+  -> Tracer IO PingWarning
+  -> PingOpts
+  -> AcceptFilePath
+  -- ^ accept file paths as addresses; if set to `AddressIsNotAFilePath` we'll
+  -- never return file path related errors in `AddressResolutionError`.
+  -> [Address (Unresolved SRVOrFilePathUnresolved)]
+  -> IO [PingException]
+  -- ^ returns two list:
+  -- * list of resolve errors (printed with `PingWarning` tracer)
+  -- * list of `pingClient` errors
+pingClients' stdout stderr opts acceptFilePath addresses = do
     -- resolved addresses
     rs <- DNS.makeResolvSeed DNS.defaultResolvConf
-    (resolvedAddresses, _) <-
+    (resolvedAddresses, resolveErrors) <-
       DNS.withResolver rs $ \resolver ->
-        concatBoth <$> traverse (resolveAddress stderr resolver opts AddressMightBeAFilePath) addresses
+        concatBoth <$> traverse (resolveAddress stderr resolver opts acceptFilePath) addresses
     sockAddrs
       <- catMaybes
          <$> traverse
@@ -918,12 +953,12 @@ pingClients opts@PingOpts { pingOptsJson } addresses = do
 
     headerVar <- newHeaderVar
     signalVar <- newSignalVar (Socket.addrAddress <$> sockAddrs)
-    mapConcurrently_ (
-                      -- ignore exceptions so other ping clients can
-                      -- continue
-                        void . try @_ @SomeException .
-                        pingClient' stdout stderr opts signalVar headerVar
-                     ) sockAddrs
+    results <-
+      mapConcurrently
+        (pingClient' stdout stderr opts signalVar headerVar)
+        sockAddrs
+    return $ (AddressResolutionException <$> resolveErrors)
+          ++ (PingClientException <$> lefts results)
 
 
 -- | Run a single ping client.
@@ -934,18 +969,10 @@ pingClient
   -> PingOpts
   -> AddrInfo
   -> IO (Either PingClientException ())
-pingClient stdout stderr opts addrInfo =
-  do
-    signalVar <- newSignalVar [Socket.addrAddress addrInfo]
-    headerVar <- newHeaderVar
-    Right <$> pingClient' stdout stderr opts signalVar headerVar addrInfo
-  `catch` \case
-    err | Just e <- fromException err -> return (Left (IOException e))
-        | Just e <- fromException err -> return (Left (DecodingException e))
-        | Just e <- fromException err -> return (Left (MuxException e))
-        | Just e <- fromException err -> return (Left e)
-        | otherwise
-        -> throwIO err
+pingClient stdout stderr opts addrInfo = do
+  signalVar <- newSignalVar [Socket.addrAddress addrInfo]
+  headerVar <- newHeaderVar
+  pingClient' stdout stderr opts signalVar headerVar addrInfo
 
 
 -- | Low level API to run a single ping client.
@@ -957,8 +984,9 @@ pingClient'
   -> SignalVar SockAddr
   -> HeaderVar
   -> AddrInfo
-  -> IO ()
+  -> IO (Either PingClientException ())
 pingClient' stdout stderr opts@PingOpts{..} signalVar headerVar addrInfo =
+  handlePingClientExceptions $
   withSignal signalVar addr $ \sig ->
     bracket
       (Socket.socket (Socket.addrFamily addrInfo) Socket.Stream Socket.defaultProtocol)
@@ -981,6 +1009,19 @@ pingClient' stdout stderr opts@PingOpts{..} signalVar headerVar addrInfo =
   where
     addr :: SockAddr
     addr = Socket.addrAddress addrInfo
+
+    handlePingClientExceptions
+      :: IO ()
+      -> IO (Either PingClientException ())
+    handlePingClientExceptions io =
+      (Right <$> io)
+      `catch` \case
+        err | Just e <- fromException err -> pure (Left (IOException e addr))
+            | Just e <- fromException err -> pure (Left (DecodingException e addr))
+            | Just e <- fromException err -> pure (Left (MuxException e addr))
+            | Just e <- fromException err -> pure (Left e)
+            | otherwise
+            -> throwIO err
 
     runPingClient :: forall versionNumber versionData.
                      ( Acceptable versionData
@@ -1071,7 +1112,7 @@ pingClient' stdout stderr opts@PingOpts{..} signalVar headerVar addrInfo =
         )
       case r of
         Left err -> do
-          throwIO (ProtocolLimitException err)
+          throwIO (ProtocolLimitException err addr)
         Right (Left err', rtt) -> do
           logMsg (HandshakeRTT rtt)
           throwIO (HandshakeException err' addr)
@@ -1197,6 +1238,7 @@ class ToText a where
   toText :: a -> TL.Text
 
 data WithHost a = WithHost SockAddr a
+  deriving Show
 
 instance ToText a => ToText (WithHost a) where
   toText (WithHost host a) =
