@@ -2092,24 +2092,100 @@ prop_peer_selection_trace_coverage defaultBearerInfo diffScript =
       peerSelectionTraceMap (TraceVerifyPeerSnapshot result)         =
         "TraceVerifyPeerSnapshot " <> show result
       eventsSeenNames = map peerSelectionTraceMap events
-      ledgerPeerUsageLabels =
-        mapMaybe ledgerPeerUsageLabel events
 
-      ledgerPeerUsageLabel
-        :: TracePeerSelection extraState extraFlags extraPeers peeraddr
+      (ledgerPeerResultLabels, ledgerPeerActionLabels) = ledgerPeerLabelsFromTrace events
+
+      -- Generic peer-selection actions, such as 'TracePromoteWarmPeers',
+      -- only carry the selected peers.  They do not say whether those peers
+      -- are ledger peers.
+      --
+      -- This is a trace-derived classification: generic peer-action events are
+      -- classified using the ledger-peer set from the most recent debug-state
+      -- snapshot in the same ordered trace stream.
+      --
+      -- The first result - ledger-peer result sizes.
+      -- The second result - how many ledger peers were selected by actions.
+      ledgerPeerLabelsFromTrace
+        :: [TracePeerSelection Cardano.ExtraState
+                               PeerTrustable
+                               (ExtraPeers NtNAddr)
+                               NtNAddr]
+        -> ([String], [String])
+      ledgerPeerLabelsFromTrace =
+        go Set.empty
+        where
+          go
+            :: Set NtNAddr
+            -- ^ Ledger peers from the most recent 'TraceDebugState'.
+            -> [TracePeerSelection Cardano.ExtraState
+                                   PeerTrustable
+                                   (ExtraPeers NtNAddr)
+                                   NtNAddr]
+            -> ([String], [String])
+          go _ [] = ([], [])
+          go _ (TraceDebugState _ st : evs) =
+            let currentLedgerPeers = PublicRootPeers.getLedgerPeers (dpssPublicRootPeers st)
+             in go currentLedgerPeers evs
+          go ledgerPeers (event : evs) =
+            let (resultLabels, actionLabels) = go ledgerPeers evs
+                resultLabels' =
+                  case ledgerPeerResultLabel event of
+                    Nothing -> resultLabels
+                    Just rl -> rl : resultLabels
+                actionLabels' =
+                  case ledgerPeerActionLabel ledgerPeers event of
+                    Nothing -> actionLabels
+                    Just al -> al : actionLabels
+             in (resultLabels', actionLabels')
+
+      ledgerPeerResultLabel
+        :: TracePeerSelection extraDebugState extraFlags extraPeers peeraddr
         -> Maybe String
-      ledgerPeerUsageLabel = \case
-        TraceBigLedgerPeersResults peers _ _ -> Just $ "TraceBigLedgerPeersResults " ++ show (Set.size peers)
+      ledgerPeerResultLabel = \case
+        TraceBigLedgerPeersResults peers _ _ ->
+          Just $ "TraceBigLedgerPeersResults " ++ show (Set.size peers)
+        TracePublicRootsResults publicRootPeers _ _ ->
+          let ledgerPeers = PublicRootPeers.getLedgerPeers publicRootPeers
+          in Just $ "TracePublicRootsResults ledger peers " ++ show (Set.size ledgerPeers)
+        _ -> Nothing
+
+      ledgerPeerActionLabel
+        :: Ord peeraddr
+        => Set peeraddr
+        -> TracePeerSelection extraDebugState extraFlags extraPeers peeraddr
+        -> Maybe String
+      ledgerPeerActionLabel ledgerPeers = \case
         TraceForgetBigLedgerPeers _ _ peers -> Just $ "TraceForgetBigLedgerPeers " ++ show (Set.size peers)
         TracePromoteColdBigLedgerPeers _ _ peers -> Just $ "TracePromoteColdBigLedgerPeers " ++ show (Set.size peers)
         TracePromoteWarmBigLedgerPeers _ _ peers -> Just $ "TracePromoteWarmBigLedgerPeers " ++ show (Set.size peers)
         TraceDemoteWarmBigLedgerPeers _ _ peers -> Just $ "TraceDemoteWarmBigLedgerPeers " ++ show (Set.size peers)
         TraceDemoteHotBigLedgerPeers _ _ peers -> Just $ "TraceDemoteHotBigLedgerPeers " ++ show (Set.size peers)
+        TracePromoteColdPeers _ _ peers ->
+          labelLedgerPeerIntersection "TracePromoteColdPeers ledger peers" ledgerPeers peers
+        TracePromoteWarmPeers _ _ peers ->
+          labelLedgerPeerIntersection "TracePromoteWarmPeers ledger peers" ledgerPeers peers
+        TraceDemoteWarmPeers _ _ peers ->
+          labelLedgerPeerIntersection "TraceDemoteWarmPeers ledger peers" ledgerPeers peers
+        TraceDemoteHotPeers _ _ peers ->
+          labelLedgerPeerIntersection "TraceDemoteHotPeers ledger peers" ledgerPeers peers
+        TraceForgetColdPeers _ _ peers ->
+          labelLedgerPeerIntersection "TraceForgetColdPeers ledger peers" ledgerPeers peers
         _ -> Nothing
+
+      labelLedgerPeerIntersection
+        :: Ord peeraddr
+        => String
+        -> Set peeraddr
+        -> Set peeraddr
+        -> Maybe String
+      labelLedgerPeerIntersection name ledgerPeers peers =
+        let usedLedgerPeers = Set.intersection ledgerPeers peers
+         in Just $ name ++ " " ++ show (Set.size usedLedgerPeers)
 
    -- TODO: Add checkCoverage here
    in tabulate "peer selection trace" eventsSeenNames
-       $ tabulate "distribution of used ledger peers" ledgerPeerUsageLabels
+       $ tabulate "ledger peer result sizes" ledgerPeerResultLabels
+       $ tabulate "ledger peers selected by actions" ledgerPeerActionLabels
          True
 
 -- | A variant of
