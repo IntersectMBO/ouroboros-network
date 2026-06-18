@@ -26,7 +26,8 @@ module Cardano.Network.Ping
   , PingOpts (..)
   , Stage (..)
   , ResolvedSRVOrFilePath (..)
-  , Address
+  , Address (IP)
+  , mkAddress
   , cmdlineParser
   , PingMode (..)
   , LogFormat (..)
@@ -167,14 +168,34 @@ data Address (stage :: Stage) where
              -> Address resolved
 
 
+-- | A smart constructor for `Address` type.
+--
+mkAddress :: String -> Address (Unresolved SRVOrFilePathUnresolved)
+mkAddress s | illegalDomain = FilePathOrDomain s
+            | otherwise     = SRV s
+  where
+    -- A basic test to decide between `FilePathOrDomain` or `SRV`.  The `dns`
+    -- library has a slightly more advanced version and returns `IllegalDomain`
+    -- error.
+    illegalDomain :: Bool
+    illegalDomain
+      | ':' `List.elem` s    = True
+      | '/' `List.elem` s    = True
+      | '.' `List.notElem` s = True
+      | otherwise            = False
+
+
 showIPWithPort :: IP -> Port -> String
 showIPWithPort ip@IPv4{} port = show ip ++ ":" ++ show port
 showIPWithPort ip@IPv6{} port = "[" ++ show ip ++ "]:" ++ show port
 
-instance Show (Address Resolved) where
-  show :: Address Resolved -> String
-  show (IP ip port)    = showIPWithPort ip port
-  show (FilePath path) = path
+instance Show (Address stage) where
+  show :: Address stage -> String
+  show (IP ip port)            = showIPWithPort ip port
+  show (FilePath path)         = path
+  show (FilePathOrDomain path) = path
+  show (Domain domain port)    = BS.Char.unpack domain ++ ":" ++ show port
+  show (SRV domain)            = domain
 
 deriving instance Eq (Address Resolved)
 deriving instance Ord (Address Resolved)
@@ -323,11 +344,7 @@ argParser =
               _ -> Left s
 
         readDomainNameOrFilePath :: ReadM (Address (Unresolved SRVOrFilePathUnresolved))
-        readDomainNameOrFilePath = eitherReader $ \s ->
-          case List.find (== ':') s of
-            -- not an `SRV` record
-            Just _  -> Right (FilePathOrDomain s)
-            Nothing -> Right (SRV s)
+        readDomainNameOrFilePath = eitherReader $ Right . mkAddress
 
 cmdlineParser :: Parser (PingOpts, [Address (Unresolved SRVOrFilePathUnresolved)])
 cmdlineParser = (,) <$> pingOptsParser <*> argParser
