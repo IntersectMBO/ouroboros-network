@@ -97,7 +97,7 @@ let
         preCheck =
           lib.mkForce
             (if buildSystem == "x86_64-linux"
-            then "export GHCRTS=-M1500M"
+            then "export GHCRTS=-M900M"
             else "");
         doCheck = !pkgs.stdenv.hostPlatform.isWindows;
 
