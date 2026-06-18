@@ -34,6 +34,8 @@ packages: ./monoidal-synchronisation
 tests: True
 benchmarks: True
 
+constraints: tasty == 1.5.3
+
 package bitvec
   flags: -simd
 
