@@ -4,7 +4,9 @@
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns             #-}
+#if defined(mingw32_HOST_OS)
 {-# LANGUAGE PackageImports             #-}
+#endif
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TupleSections              #-}
@@ -145,8 +147,7 @@ newtype DummyPayload = DummyPayload {
 instance Show DummyPayload where
     show d = printf "DummyPayload %d\n" (BL.length $ unDummyPayload d)
 
--- |
--- Generate a byte string of a given size.
+-- | Generate a byte string of a given size.
 --
 genByteString :: Int -> Gen BL.ByteString
 genByteString size = do
@@ -166,7 +167,7 @@ prop_arbitrary_genByteString (NonNegative (Small size)) = ioProperty $ do
   return $ fromIntegral size == BL.length bs
 
 genLargeByteString :: Int -> Int -> Gen BL.ByteString
-genLargeByteString chunkSize  size | chunkSize < size = do
+genLargeByteString chunkSize size | chunkSize < size = do
   chunk <- genByteString chunkSize
   return $ BL.concat $
         replicate (size `div` chunkSize) chunk
@@ -174,8 +175,7 @@ genLargeByteString chunkSize  size | chunkSize < size = do
         [BL.take (fromIntegral $ size `mod` chunkSize) chunk]
 genLargeByteString _chunkSize size = genByteString size
 
--- |
--- Large Int values, but not too large, up to @1024*1024@.
+-- | Large Int values, but not too large, up to @1024*1024@.
 --
 newtype LargeInt = LargeInt Int
   deriving (Eq, Ord, Num, Show)
@@ -306,8 +306,8 @@ newtype DummyCapability = DummyCapability {
 instance Arbitrary DummyCapability where
     arbitrary =
       frequency [ (1, return $ DummyCapability Nothing)
-                , (8, (DummyCapability . Just) <$> choose (0, 7))
-                , (1, (DummyCapability . Just) <$> arbitrary)
+                , (8, DummyCapability . Just <$> choose (0, 7))
+                , (1, DummyCapability . Just <$> arbitrary)
                 ]
 
 
@@ -393,7 +393,7 @@ prop_mux_snd_recv (DummyRun messages) = ioProperty $ do
         Mx.stop clientMux
         wait serverAsync
         wait clientAsync
-        return $ r
+        return r
 
   where
     step _ _ _ _ [] = return $ property True
@@ -1259,6 +1259,12 @@ prop_demux_sdu a = do
                     Nothing -> return $ counterexample (show e) False
             Right _ -> return $ counterexample "expected an exception" False
 
+    plainServer :: MiniProtocolInfo  mode
+                -> (Mx.ByteChannel m -> m (a, Maybe BL.ByteString))
+                -> m ( StrictTBQueue m BL.ByteString
+                     , Async m ()
+                     , STM m (Either SomeException a), Mx.Mux mode m
+                     )
     plainServer serverApp server_mp = do
         server_w <- atomically $ newTBQueue 10
         server_r <- atomically $ newTBQueue 10
@@ -1274,18 +1280,24 @@ prop_demux_sdu a = do
                           Nothing
 
         serverMux <- Mx.new serverTracer [serverApp]
-        serverRes <- Mx.runMiniProtocol serverMux (Mx.miniProtocolNum serverApp) (Mx.miniProtocolDir serverApp)
-                 Mx.StartEagerly server_mp
+        serverRes <- Mx.runMiniProtocol serverMux
+                                        (Mx.miniProtocolNum serverApp)
+                                        (Mx.miniProtocolDir serverApp)
+                                        Mx.StartEagerly
+                                        server_mp
 
         said <- async $ Mx.run serverMux serverBearer
         return (server_r, said, serverRes, serverMux)
 
     -- Server that expects to receive a specific ByteString.
     -- Doesn't send a reply.
+    serverRsp :: StrictTMVar m BL.ByteString
+              -> Mx.Channel m BL.ByteString
+              -> m ((), Maybe a)
     serverRsp stopVar chan =
         atomically (takeTMVar stopVar) >>= loop
       where
-        loop e | e == BL.empty = return ((), Nothing)
+        loop e | BL.null e = return ((), Nothing)
         loop e = do
             msg_m <- Mx.recv chan
             case msg_m of
@@ -1295,7 +1307,11 @@ prop_demux_sdu a = do
                           Nothing -> error "recv corruption"
                  Nothing -> error "eof corruption"
 
-    writeSdu _ payload | payload == BL.empty = return ()
+
+    writeSdu :: StrictTBQueue m BL.ByteString
+             -> BL.ByteString
+             -> m ()
+    writeSdu _ payload | BL.null payload = return ()
     writeSdu queue payload = do
         let (!frag, !rest) = BL.splitAt 0xffff payload
             sdu' = Mx.SDU
@@ -1393,7 +1409,7 @@ data DummyApps =
 
 instance Arbitrary DummyApps where
     arbitrary = do
-        nums <- listOf1 $ arbitrary
+        nums <- listOf1 arbitrary
         apps <- mapM genApp $ nub nums
         mode <- arbitrary
         case mode of
@@ -1442,7 +1458,7 @@ data DummyRestartingApps =
 
 instance Arbitrary DummyRestartingApps where
     arbitrary = do
-        nums <- listOf1 $ arbitrary
+        nums <- listOf1 arbitrary
         apps <- mapM genApp $ nub nums
         mode <- arbitrary
         case mode of
