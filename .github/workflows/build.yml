@@ -45,7 +45,7 @@ jobs:
         ghc-version: ${{ matrix.ghc }}
         cabal-version: "3.12.1.0"
 
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
 
     - name: "Configure cabal.project.local"
       run: |
