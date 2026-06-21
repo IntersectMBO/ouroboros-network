@@ -444,6 +444,8 @@ runM Interfaces
                   -> throwIO (UnexpectedIPv6Address addr)
         Nothing   -> pure ()
 
+      traceWith tracer (Addresses $ catMaybes [ipv4Address, ipv6Address])
+
       lookupReqs <- case (ipv4Address, ipv6Address) of
                            (Just _ , Nothing) -> return RootPeersDNS.LookupReqAOnly
                            (Nothing, Just _ ) -> return RootPeersDNS.LookupReqAAAAOnly
