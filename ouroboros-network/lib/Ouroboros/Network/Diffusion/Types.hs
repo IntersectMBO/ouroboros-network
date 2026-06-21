@@ -102,7 +102,9 @@ import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit)
 --
 -- TODO: rename as `DiffusionTrace`
 data DiffusionTracer ntnAddr ntcAddr
-  = RunServer (NonEmpty ntnAddr)
+  =
+    Addresses [ntnAddr]
+  | RunServer (NonEmpty ntnAddr)
   | RunLocalServer ntcAddr
   | UsingSystemdSocket ntcAddr
   -- Rename as 'CreateLocalSocket'
