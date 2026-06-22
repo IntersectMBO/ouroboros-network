@@ -489,7 +489,9 @@ applyReceivedTxIdsImp :: ( MonadSTM m
                       -> TxSubmissionCountersVar m
                       -> Time
                       -> NumTxIdsToReq
+                      -- ^ number of requested txid's
                       -> [(txid, SizeInBytes)]
+                      -- ^ actually received txid's with sizes
                       -> PeerTxLocalState tx
                       -> m (PeerTxLocalState tx)
 applyReceivedTxIdsImp policy mempoolGetSnapshot sharedStateVar peerInFlightVar
