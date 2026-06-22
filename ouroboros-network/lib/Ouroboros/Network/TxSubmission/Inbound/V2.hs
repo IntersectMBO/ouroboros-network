@@ -215,6 +215,7 @@ txSubmissionInboundV2
     submitBufferedTxs :: forall (n :: N).
                          [TxKey]
                       -> StatefulM (PeerTxLocalState tx) n txid tx m
+                      -- ^ a continuation
                       -> StatefulM (PeerTxLocalState tx) n txid tx m
     submitBufferedTxs txKeys k = StatefulM $ \peerState -> do
       bufferedTxs <- resolveBufferedTxs peerState txKeys
