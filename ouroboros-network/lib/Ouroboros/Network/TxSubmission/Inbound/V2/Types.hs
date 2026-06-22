@@ -132,19 +132,28 @@ data TxEntry peeraddr = TxEntry {
     -- | Current owner lease for downloading the tx body.  When
     -- 'TxClaimable', the embedded 'Time' also doubles as the
     -- last-activity stamp used by the orphan sweep.
+    --
+    -- Invariant: while 'TxLeased' to a registered peer, that peer's
+    -- 'pifLeased' contains this key (stale leases left behind by
+    -- inflight-cap theft are tolerated).
     txLease                        :: !(TxLease peeraddr),
 
     -- | Number of peers currently attempting the body (claimed lease
     -- and/or buffered locally).  Incremented on claim, decremented on
     -- omit / lease release / 'PeerSubmitTxs' transition (the
     -- submitting peer no longer counts as an attempter).
+    --
+    -- Invariant: equals the number of registered peers whose
+    -- 'pifAttempting' contains this key.
     txAttempt                      :: !Int,
 
     -- | At least one peer is currently inside @mempoolAddTxs@ for this
-    -- body.  Other peers use this flag, combined with their own
-    -- 'pifSubmitting' set, to skip 'PeerSubmitTxs' for the same key.
-    -- STM serialisation guarantees at most one peer is the submitter
-    -- at any moment.
+    -- body.  Other peers skip 'PeerSubmitTxs' for the key while it is
+    -- set.  STM serialisation guarantees at most one peer is the
+    -- submitter at any moment.
+    --
+    -- Invariant: true iff some registered peer's 'pifSubmitting'
+    -- contains this key.
     txInSubmission                 :: !Bool,
 
     -- | Effective per-tx inflight multiplicity cap.
@@ -172,10 +181,17 @@ data TxEntry peeraddr = TxEntry {
 --   advertised keys and skips those entries when looking for orphans
 --   to retire (the entry is still wanted by an active peer that
 --   may simply be slow to claim).
+--
+-- Invariant: 'pifAttempting' and 'pifSubmitting' are disjoint; a key
+-- moves from the former to the latter atomically on the submit
+-- transition.  'pifLeased' is a subset of their union.
 data PeerTxInFlight = PeerTxInFlight {
     -- | Keys this peer currently has in its advertised window.  Used
     -- by the orphan sweep to know the entry is still wanted, and by
     -- 'nextWakeDelay' to scan for the earliest claim wake.
+    --
+    -- Invariant: a subset of the live keys (active 'sharedTxTable'
+    -- union retained 'sharedRetainedTxs').
     pifAdvertised  :: !IntSet,
 
     -- | Keys this peer currently holds 'TxLeased' on.  Cleared on
@@ -394,6 +410,19 @@ emptyPeerScore scoreTs = PeerScore {
 -- protocol phase ('peerPhase'), which is purely peer-local: only this
 -- peer's own scheduler reads and updates it, so it doesn't belong in
 -- shared state.
+--
+-- Invariants (see @peerTxLocalStateInvariant@):
+--
+-- * 'peerRequestedTxs' is a subset of the 'peerAvailableTxIds' keys,
+--   which are a subset of the 'peerUnacknowledgedTxIds' keys.
+-- * 'peerDownloadedTxs' keys are a subset of the unacknowledged queue
+--   and disjoint from both 'peerAvailableTxIds' and 'peerRequestedTxs':
+--   a key leaves available/requested exactly when its body lands in
+--   downloaded.
+-- * 'peerRequestedTxs' equals the union of every batch's
+--   'requestedTxBatchSet', and 'peerRequestedTxsSize' the sum of their
+--   'requestedTxBatchSize'.
+-- * the 'peerScore' value stays in @[0, scoreMax]@.
 data PeerTxLocalState tx = PeerTxLocalState {
     -- | Coarse phase of this peer's worker thread. Updated by
     -- 'nextPeerAction' / 'nextPeerActionPipelined' when an action is
@@ -410,8 +439,17 @@ data PeerTxLocalState tx = PeerTxLocalState {
 
     -- | Requested txids that have not yet been replied to.
     peerRequestedTxs          :: !IntSet,
+
+    -- | Outstanding tx-body request batches, in request order.  Their
+    -- 'requestedTxBatchSet's union to 'peerRequestedTxs' and their
+    -- 'requestedTxBatchSize's sum to 'peerRequestedTxsSize'.
     peerRequestedTxBatches    :: !(StrictSeq RequestedTxBatch),
+
+    -- | Total serialized size of all outstanding requested tx bodies.
     peerRequestedTxsSize      :: !SizeInBytes,
+
+    -- | Number of txids requested from this peer but not yet replied to
+    -- (the in-flight txid-request window).
     peerRequestedTxIds        :: !NumTxIdsToReq,
 
     -- | Tx bodies downloaded from this peer and buffered locally until they
@@ -454,6 +492,21 @@ emptyPeerTxLocalState = PeerTxLocalState {
 --
 -- There is no global decision thread. Peer worker threads coordinate by
 -- atomically reading and updating this shared state.
+--
+-- Invariants (see @sharedTxStateInvariant@):
+--
+-- * the active ('sharedTxTable') and retained ('sharedRetainedTxs') key
+--   sets are disjoint.
+-- * 'sharedTxIdToKey' and 'sharedKeyToTxId' are mutual inverses (equal
+--   size, round-tripping in both directions).
+-- * every live key (active union retained) is present in those two maps.
+-- * 'sharedNextTxKey' is strictly greater than every live key, so a
+--   freshly interned key never collides with a live one.
+--
+-- Cross-step (see @sharedGenerationBumpInvariant@): both counters are
+-- monotone non-decreasing, and any transition that changes some other
+-- field must advance 'sharedGeneration' or 'sharedRevision';
+-- @writeSharedStateIfChanged@ silently drops a commit that bumps neither.
 data SharedTxState peeraddr txid = SharedTxState {
     -- | Active unresolved txs that still participate in leasing, buffering,
     -- submission and advertiser tracking.
@@ -461,8 +514,14 @@ data SharedTxState peeraddr txid = SharedTxState {
     -- | Accepted txs retained locally for a bounded time so later txid
     -- advertisements can be acked without re-requesting the body.
     sharedRetainedTxs :: !RetainedTxs,
+    -- | Forward txid interning table: maps a raw txid to its compact
+    -- 'TxKey'.  Inverse of 'sharedKeyToTxId'.
     sharedTxIdToKey   :: !(Map (RawTxId txid) TxKey),
+    -- | Reverse interning table: maps a 'TxKey' back to its txid.
+    -- Inverse of 'sharedTxIdToKey'.
     sharedKeyToTxId   :: !(IntMap txid),
+    -- | Next fresh 'TxKey' to allocate; stays strictly greater than every
+    -- live key.
     sharedNextTxKey   :: !Int,
     -- | Wake counter.  Bumped on transitions that may grant other peers a
     -- new option (lease release, new entry accepted into the mempool, cap
@@ -480,7 +539,28 @@ deriving stock instance (Show peeraddr, Show txid, HasRawTxId txid) => Show (Sha
 deriving anyclass instance (NFData peeraddr, NFData txid, HasRawTxId txid) => NFData (SharedTxState peeraddr txid)
 deriving anyclass instance (NoThunks peeraddr, NoThunks txid, HasRawTxId txid) => NoThunks (SharedTxState peeraddr txid)
 
--- | Retained tx-key set with two indexes:
+-- | Keys of transactions tx-submission knows are in the mempool, kept for a
+-- a limited time.
+--
+-- A key enters whenever we learns that the tx is in the mempool:
+--
+-- * a body we submitted is accepted, or
+-- * a peer announces a txid, or delivers a body, that the mempool
+--   already holds. Could be due to earlier fetches, or the TX may have
+--   arrived through the LocalTxSubmission protocol.
+--
+-- In each case the key is dropped from the active 'sharedTxTable' and
+-- inserted here with deadline @now + bufferedTxsMinLifetime@ (re-insert
+-- keeps the later deadline).  A key leaves only when that deadline passes
+-- and the shared-state sweep removes it, independent of whether peers
+-- have acked it yet.
+--
+-- While retained a key counts as resolved: its txid may be acked to the
+-- announcing peers, and a re-announced txid or late-arriving body is
+-- treated as already handled rather than re-fetched.  A rejected tx is
+-- not retained, it stays claimable in 'sharedTxTable' so peers retry it.
+--
+-- Backed by two indexes:
 --
 -- * 'retainedQueue' is keyed on 'Time' for cheap earliest-expiry queries.
 -- * 'retainedSet'   shadows the keys for O(min(n, W)) 'retainedMember'

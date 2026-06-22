@@ -227,6 +227,9 @@ data PeerTxAPI m txid tx = PeerTxAPI {
                          -> [TxKey]
                          -> m (Map txid SizeInBytes),
     -- | Resolve buffered tx bodies into full submission records.
+    --
+    -- pre-condition: the list of keys is in `peerDownloadedTxs` field of
+    -- `PeerTxLocalState`.  It is ensured by `pickSubmitAction`.
     resolveBufferedTxs   :: PeerTxLocalState tx
                          -> [TxKey]
                          -> m [(TxKey, txid, tx)],

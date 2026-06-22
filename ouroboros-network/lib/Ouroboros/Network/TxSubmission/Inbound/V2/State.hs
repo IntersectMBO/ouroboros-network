@@ -16,6 +16,7 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.State
   , sweepSharedState
   ) where
 
+import Control.Exception (assert)
 import Control.Monad.Class.MonadTime.SI (DiffTime, Time, addTime, diffTime)
 import Data.Foldable (toList)
 import Data.IntMap.Strict qualified as IntMap
@@ -237,8 +238,8 @@ applyPeerActionChoice ctx choice =
 -- | Construct a 'PeerSubmitTxs' action for buffered transactions.
 --
 -- Marks the selected txs as in-submission on this peer.  Other peers
--- skip them via 'txSubmittingByOther'.  STM serialisation guarantees
--- only one peer can win the @ChooseSubmit@ race for a given key.
+-- skip them while the 'txInSubmission' flag is set.  STM serialisation
+-- guarantees only one peer can win the @ChooseSubmit@ race for a given key.
 applySubmitChoice :: PeerActionContext peeraddr txid tx
                   -> [TxKey]
                   -> (PeerAction, PeerTxLocalState tx, PeerTxInFlight, SharedTxState peeraddr txid)
@@ -344,11 +345,10 @@ applyDoNothingChoice ctx generation wakeDelay =
 pickSubmitAction
   :: PeerActionContext peeraddr txid tx
   -> Maybe [TxKey]
-pickSubmitAction PeerActionContext { pacPeerState, pacPeerInFlight, pacSharedState } =
-  let txsToSubmit = pickBufferedTxsToSubmit in
-  if null txsToSubmit
+pickSubmitAction PeerActionContext { pacPeerState, pacSharedState } =
+  if null pickBufferedTxsToSubmit
      then Nothing
-     else Just txsToSubmit
+     else Just pickBufferedTxsToSubmit
   where
 
     -- Walk the unacknowledged txid queue in peer advertisement order,
@@ -383,7 +383,7 @@ pickSubmitAction PeerActionContext { pacPeerState, pacPeerInFlight, pacSharedSta
               case IntMap.lookup k (sharedTxTable pacSharedState) of
                 Just txEntry
                   | txBufferedByPeer pacPeerState k
-                  , not (txSubmittingByOther pacPeerInFlight k txEntry) ->
+                  , not (txInSubmission txEntry) ->
                       go (IntSet.insert k seen) (txKey : acc) rest
                 Just _  -> reverse acc
                 Nothing -> go seen acc rest
@@ -466,12 +466,14 @@ pickRequestTxsAction ctx@PeerActionContext { pacNow, pacPolicy, pacPeerState, pa
                   -- Entry resolved or swept since this peer's local state last synced; skip.
                   Nothing -> go seen selectedRev selectedSize txTable rest
 
+        -- Check if the size is within the budget.
+        --
+        -- The inflight size limit is soft by up to one tx size, so a peer with
+        -- spare capacity may still request its first tx in a batch even when
+        -- that single tx exceeds the remaining byte budget.
         exceedsBudget selectedSize txSize
           | selectedSize + txSize <= sizeBudget = False
           | selectedSize /= 0 = True
-          -- The inflight size limit is soft by up to one tx size, so a peer with
-          -- spare capacity may still request its first tx in a batch even when
-          -- that single tx exceeds the remaining byte budget.
           | otherwise = peerRequestedTxsSize pacPeerState >= txsSizeInflightPerPeer pacPolicy
 
 -- | Determine txid acknowledgment and request counts, if any work is available.
@@ -489,7 +491,7 @@ pickRequestTxIdsAction txIdRequestMode ctx@PeerActionContext { pacPolicy, pacPee
   -- request behaviour at the wire.
   | disablePipelinedTxIdRequests pacPolicy
   , txIdRequestMode == AllowPipelinedTxIdRequests
-    || not (StrictSeq.null unacknowledgedTxIds') = Nothing
+    || not (StrictSeq.null unacknowledgedTxIds) = Nothing
 
   -- A pure-ack pipelined message would burn a pipeline slot for an
   -- empty reply ('req=0' forces the response empty by construction) and
@@ -510,56 +512,53 @@ pickRequestTxIdsAction txIdRequestMode ctx@PeerActionContext { pacPolicy, pacPee
   -- next 'ack=0, req=N' pipelined wire message (V2.hs sends pipelined
   -- whenever the unacked queue is non-empty).  The flag is cleared by
   -- a non-empty txid reply or by the mempool accepting one of this
-  -- peer's txs - both signs the peer may have new work for us.
+  -- peer's txs - both signs that the peer may have new work for us.
   | peerLastTxIdReplyWasEmpty pacPeerState
   , txIdsToAcknowledge <= 0
   , not (StrictSeq.null (peerUnacknowledgedTxIds pacPeerState)) = Nothing
 
-  | otherwise = Just (acknowledgedTxIds, txIdsToAcknowledge, txIdsToRequest, unacknowledgedTxIds')
+  | otherwise = Just (acknowledgedTxIds, txIdsToAcknowledge, txIdsToRequest, unacknowledgedTxIds)
   where
 
     -- Split the unacknowledged txid queue into acknowledged and remaining portions.
     --
     -- acknowledgedTxIds is the longest prefix of "ackable" txids.
     -- unacknowledgedTxIds is the remaining txids
-    (acknowledgedTxIds, txIdsToAcknowledge, txIdsToRequest, unacknowledgedTxIds') =
-      ( toList acknowledgedTxIdsSeq
-      , fromIntegral numOfAcked
-      , txIdsToRequest'
-      , unacknowledgedTxIds
-      )
-      where
-        ackablePrefix = StrictSeq.takeWhileL (txIdAckable ctx) (peerUnacknowledgedTxIds
-                                             pacPeerState)
+    acknowledgedTxIds = toList acknowledgedTxIdsSeq
+    txIdsToAcknowledge = fromIntegral numOfAcked
 
-        numOfUnacked = StrictSeq.length (peerUnacknowledgedTxIds pacPeerState)
-        numOfRequested = fromIntegral (peerRequestedTxIds pacPeerState) :: Int
-        hasOutstandingBodyReplies =
-          not (StrictSeq.null (peerRequestedTxBatches pacPeerState))
-        keepOneUnackedForPipelinedRequest =
-          txIdRequestMode == AllowPipelinedTxIdRequests
-            && (numOfRequested > 0 || hasOutstandingBodyReplies)
-        numOfAcked0 = StrictSeq.length ackablePrefix
-        numOfAcked
-          -- A pipelined txid request becomes a non-blocking protocol message
-          -- while any txid or body reply is still in flight. The outbound side
-          -- requires at least one txid to remain unacknowledged in that case.
-          | keepOneUnackedForPipelinedRequest =
-              min numOfAcked0 (max 0 (numOfUnacked - 1))
-          | otherwise = numOfAcked0
+    ackablePrefix =
+      StrictSeq.takeWhileL (txIdAckable ctx)
+                           (peerUnacknowledgedTxIds pacPeerState)
 
-        acknowledgedTxIdsSeq = StrictSeq.take numOfAcked ackablePrefix
-        unacknowledgedTxIds = StrictSeq.drop numOfAcked (peerUnacknowledgedTxIds pacPeerState)
-        unackedAndRequested = numOfUnacked + numOfRequested
+    numOfUnacked = StrictSeq.length (peerUnacknowledgedTxIds pacPeerState)
+    numOfRequested = fromIntegral (peerRequestedTxIds pacPeerState) :: Int
+    hasOutstandingBodyReplies =
+      not (StrictSeq.null (peerRequestedTxBatches pacPeerState))
+    keepOneUnackedForPipelinedRequest =
+      txIdRequestMode == AllowPipelinedTxIdRequests
+        && (numOfRequested > 0 || hasOutstandingBodyReplies)
+    numOfAcked0 = StrictSeq.length ackablePrefix
+    numOfAcked
+      -- A pipelined txid request becomes a non-blocking protocol message
+      -- while any txid or body reply is still in flight. The outbound side
+      -- requires at least one txid to remain unacknowledged in that case.
+      | keepOneUnackedForPipelinedRequest =
+          min numOfAcked0 (max 0 (numOfUnacked - 1))
+      | otherwise = numOfAcked0
 
-        -- How many new txids we can request: capped by the unack-window
-        -- room left after this round's ack ('maxUnacknowledgedTxIds -
-        -- unackedAndRequested + numOfAcked') and by the per-message
-        -- request limit ('maxNumTxIdsToRequest - numOfRequested').
-        txIdsToRequest' =
-          fromIntegral $ max 0 $ min
-            (fromIntegral (maxUnacknowledgedTxIds pacPolicy) - unackedAndRequested + numOfAcked)
-            (fromIntegral (maxNumTxIdsToRequest pacPolicy) - numOfRequested)
+    (acknowledgedTxIdsSeq, unacknowledgedTxIds) = StrictSeq.splitAt numOfAcked
+      (peerUnacknowledgedTxIds pacPeerState)
+    unackedAndRequested = numOfUnacked + numOfRequested
+
+    -- How many new txids we can request: capped by the unack-window
+    -- room left after this round's ack ('maxUnacknowledgedTxIds -
+    -- unackedAndRequested + numOfAcked') and by the per-message
+    -- request limit ('maxNumTxIdsToRequest - numOfRequested').
+    txIdsToRequest =
+      fromIntegral $ max 0 $ min
+        (fromIntegral (maxUnacknowledgedTxIds pacPolicy) - unackedAndRequested + numOfAcked)
+        (fromIntegral (maxNumTxIdsToRequest pacPolicy) - numOfRequested)
 
 -- | Compute the time delay until the peer should next wake to check for work.
 nextWakeDelay :: PeerActionContext peeraddr txid tx
@@ -728,15 +727,6 @@ txSelectable PeerActionContext { pacNow, pacPeerAddr, pacClaimDelay
 -- body present", so this is a peer-local lookup.
 txBufferedByPeer :: PeerTxLocalState tx -> Int -> Bool
 txBufferedByPeer peerState k = IntMap.member k (peerDownloadedTxs peerState)
-
--- | Check whether some other peer is already submitting this tx.
---
--- True iff the entry's @txInSubmission@ flag is set and this peer is not
--- the submitter.
-txSubmittingByOther :: PeerTxInFlight -> Int -> TxEntry peeraddr -> Bool
-txSubmittingByOther pif k txEntry =
-     txInSubmission txEntry
-  && IntSet.notMember k (pifSubmitting pif)
 
 -- | Compute the current usefulness score for a peer after time-based decay.
 --
@@ -1346,9 +1336,9 @@ handleReceivedTxIds mempoolHasTx now policy requestedTxIds txidsAndSizes
 
     peerState'' = peerState {
         peerUnacknowledgedTxIds = peerUnacknowledgedTxIds',
-        peerRequestedTxIds = fromIntegral $
-            max 0 ( fromIntegral (peerRequestedTxIds peerState) -
-                    fromIntegral requestedTxIds :: Int ),
+        peerRequestedTxIds =
+          assert (requestedTxIds <= peerRequestedTxIds peerState)
+                 (peerRequestedTxIds peerState - requestedTxIds),
         peerAvailableTxIds = peerAvailableTxIds',
         -- Track empty-reply state so the txid picker can back off
         -- 'ack=0, req=N' pipelined requests until the peer makes

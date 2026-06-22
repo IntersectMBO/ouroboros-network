@@ -1796,7 +1796,6 @@ unit_nextPeerAction_acksSafePrefixBeforeBlockedBufferedTx
 unit_nextPeerAction_acksSafePrefixBeforeBlockedBufferedTx step = do
     step "Set up: tx 1 retained (ackable), tx 2 leased + buffered + already submitting via another peer"
     let peerAddr  = 7 :: PeerAddr
-        otherPeer = 8 :: PeerAddr
         resolvedKey = TxKey 1
         blockedKey  = TxKey 2
         kResolved   = unTxKey resolvedKey
@@ -1821,36 +1820,30 @@ unit_nextPeerAction_acksSafePrefixBeforeBlockedBufferedTx step = do
           { peerUnacknowledgedTxIds = StrictSeq.fromList [resolvedKey, blockedKey]
           , peerDownloadedTxs = IntMap.singleton kBlocked blockedTx
           }
-        -- This peer holds the lease and is inside mempoolAddTxs;
-        -- another peer (otherPeer) is also "submitting" so submitting-
-        -- by-other is True from peerAddr's viewpoint. We model that by
-        -- otherPeer's pifSubmitting having the key.
+        -- Another peer (not in this single-peer snapshot) is mid-submission,
+        -- so the entry's 'txInSubmission' flag is set.  peerAddr holds the
+        -- lease and has the body buffered, but must skip submitting while
+        -- the flag is set; it can still ack the safe retained prefix.
         peerInFlight = emptyPeerTxInFlight
           { pifLeased     = IntSet.singleton kBlocked
-          , pifSubmitting = IntSet.singleton kBlocked
+          , pifAttempting = IntSet.singleton kBlocked
           }
 
-    step "Run nextPeerAction (with the blocked tx already submitted by 'me')"
+    step "Run nextPeerAction (with the blocked tx in submission by another peer)"
     let (action, peerState', _, _) =
           nextPeerAction now policy peerAddr peerState peerInFlight sharedState
 
-    -- The pickSubmit walk finds the blocked tx still buffered + this
-    -- peer is the submitter (so 'txSubmittingByOther' is False), so
-    -- the test should fall through to a txid request that acks the
-    -- retained prefix only.
+    -- 'pickBufferedTxsToSubmit' finds the blocked tx buffered but in
+    -- submission ('txInSubmission' set), so it skips it; the walk falls
+    -- through to a txid request that acks the retained prefix only.
     step "Only the retained prefix is acked; blocked tx remains unacked"
     case action of
       PeerRequestTxIds ack req -> do
         ack @?= 1
         assertBool ("expected positive txIdsToReq, got " ++ show req) (req > 0)
         toList (peerUnacknowledgedTxIds peerState') @?= [blockedKey]
-      PeerSubmitTxs ks ->
-        ks @?= [blockedKey]
       other ->
         assertFailure ("unexpected action: " ++ show other)
-    -- otherPeer is referenced only to express the multi-peer setup.
-    _ <- pure (otherPeer :: PeerAddr)
-    pure ()
 
 -- | When a peer's unack queue has a buffered body, then a
 -- resolved-elsewhere gap (the txid has no entry in 'sharedTxTable'),

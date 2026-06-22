@@ -18,6 +18,7 @@ module Ouroboros.Network.TxSubmission.Inbound.V2
 
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Strict qualified as Map
+import Data.Maybe (mapMaybe)
 import Data.Sequence.Strict qualified as StrictSeq
 import Data.Set qualified as Set
 import Data.Typeable (Typeable)
@@ -224,31 +225,34 @@ txSubmissionInboundV2
       let submitted = [ (txKey, txid') | (txKey, txid', _) <- bufferedTxs ]
           toSubmit  = [ tx | (_, _, tx) <- bufferedTxs ]
 
-      (acceptedTxIds, _) <- if null toSubmit
-                               then pure ([], [])
-                               else mempoolAddTxs toSubmit
+      (acceptedTxIds, rejectedTxs) <- if null toSubmit
+                                         then pure ([], [])
+                                         else mempoolAddTxs toSubmit
       end <- getMonotonicTime
 
-      let (acceptedTxs, rejectedTxs) =
-            classifySubmittedTxs submitted (Set.fromList acceptedTxIds)
-          resolvedTxKeys   = fmap fst acceptedTxs
-          rejectedForTrace = fmap snd rejectedTxs
-          rejectedCount    = length rejectedForTrace
-          delta = end `diffTime` start
+      -- 'mempoolAddTxs' partitions the batch into accepted and
+      -- rejected (see 'TxSubmissionMempoolWriter'); map each verdict's
+      -- txids back to our 'TxKey's via the submitted batch.
+      let submittedKeyOf   = Map.fromList [ (txid', txKey) | (txKey, txid') <- submitted ]
+          resolvedTxKeys   = mapMaybe (`Map.lookup` submittedKeyOf) acceptedTxIds
+          rejectedKeys     = mapMaybe ((`Map.lookup` submittedKeyOf) . fst) rejectedTxs
+          rejectedForTrace = fmap fst rejectedTxs
+          acceptedCount    = length acceptedTxIds
+          rejectedCount    = length rejectedTxs
+          delta            = end `diffTime` start
 
       addCounters mempty { txSubmissionWaitMs = diffTimeToMilliseconds delta }
-      peerState' <- applySubmittedTxs end resolvedTxKeys (fmap fst rejectedTxs) peerState
-      let acceptedCount = length acceptedTxs
-          (score, peerState'') =
+      peerState' <- applySubmittedTxs end resolvedTxKeys rejectedKeys peerState
+      let (score, peerState'') =
             State.applyPeerEvents policy end acceptedCount rejectedCount peerState'
       traceWith tracer $
         TraceTxSubmissionProcessed ProcessedTxCount {
-            ptxcAccepted = length acceptedTxs,
+            ptxcAccepted = acceptedCount,
             ptxcRejected = rejectedCount,
             ptxcScore    = score
           }
-      unless (null acceptedTxs) $
-        traceWith tracer (TraceTxInboundAddedToMempool (snd <$> acceptedTxs) delta)
+      unless (null acceptedTxIds) $
+        traceWith tracer (TraceTxInboundAddedToMempool acceptedTxIds delta)
       unless (null rejectedForTrace) $
         traceWith tracer (TraceTxInboundRejectedFromMempool rejectedForTrace delta)
       continueWithStateM k peerState''
@@ -404,17 +408,6 @@ txSubmissionInboundV2
                    }
                pure ps
         continueWithStateM (continueAfterReplies n) peerState''
-
-    -- Partition submitted transactions into accepted and rejected groups
-    classifySubmittedTxs :: [(TxKey, txid)]
-                         -> Set.Set txid
-                         -> ([(TxKey, txid)], [(TxKey, txid)])
-    classifySubmittedTxs submitted accepted =
-      foldr classify ([], []) submitted
-      where
-        classify entry@(_, txid') (acceptedTxs, rejectedTxs)
-          | Set.member txid' accepted = (entry : acceptedTxs, rejectedTxs)
-          | otherwise                 = (acceptedTxs, entry : rejectedTxs)
 
     -- Collect transactions with size mismatches between advertised and actual.
     collectWrongSizedTxs :: Map.Map txid SizeInBytes

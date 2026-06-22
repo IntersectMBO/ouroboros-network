@@ -241,7 +241,10 @@ getMempoolWriter duplicateVar (Mempool.Mempool mempoolVar) =
             )
 
         atomically $ modifyTVar' duplicateVar (duplicateValidTxIds <>)
-        pure (acceptedTxs, rejectedTxs)
+        -- 'acceptedTxs' is accumulated by the fold above in reverse;
+        -- restore submission order to match the documented contract and
+        -- the real mempool ('NodeKernel.getMempoolWriter').
+        pure (reverse acceptedTxs, rejectedTxs)
     }
 
 
