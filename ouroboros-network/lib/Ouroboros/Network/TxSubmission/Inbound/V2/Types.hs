@@ -614,12 +614,12 @@ internTxId txid st@SharedTxState { sharedTxIdToKey, sharedKeyToTxId, sharedNextT
   | otherwise =
       let key = TxKey sharedNextTxKey in
       ( rawId
-         , key
-         , st { sharedTxIdToKey = Map.insert rawId key sharedTxIdToKey
-              , sharedKeyToTxId = IntMap.insert sharedNextTxKey txid sharedKeyToTxId
-              , sharedNextTxKey = sharedNextTxKey + 1
-              }
-         )
+      , key
+      , st { sharedTxIdToKey = Map.insert rawId key sharedTxIdToKey
+           , sharedKeyToTxId = IntMap.insert sharedNextTxKey txid sharedKeyToTxId
+           , sharedNextTxKey = sharedNextTxKey + 1
+           }
+      )
   where
     rawId = getRawTxId txid
 
