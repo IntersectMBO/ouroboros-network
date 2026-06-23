@@ -365,11 +365,8 @@ txSubmissionInboundV2
     handleReplies :: forall (n :: N).
                      Nat (S n)
                   -> Stateful (PeerTxLocalState tx) (S n) txid tx m
-    handleReplies (Succ Zero) = Stateful $ \peerState ->
-      CollectPipelined Nothing (collectAndContinueWithState (handleReply Zero) peerState)
-
-    handleReplies (Succ n'@Succ{}) = Stateful $ \peerState ->
-      CollectPipelined Nothing (collectAndContinueWithState (handleReply n') peerState)
+    handleReplies (Succ n) = Stateful $ \peerState ->
+      CollectPipelined Nothing (collectAndContinueWithState (handleReply n) peerState)
 
     -- Process a single pipelined reply from the peer.
     handleReply :: forall (n :: N).
