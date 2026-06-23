@@ -56,19 +56,19 @@ To build all the required jobs (which are necessary to pass through CI), you can
 nix build -j auto .\#hydraJobs.x86_64-linux.required
 ```
 
-Each system exposes `all` aggregates at multiple levels. The top-level all
-covers native jobs only, while cross-compilation targets and compiler variants
-each have their own `all`: 
+Each system also exposes `all` aggregates that build every package without
+running tests.  The top-level `all` covers native jobs only; cross-compilation
+targets and compiler variants each have their own `all`:
 
 ```sh
-# all jobs on the native system
+# all packages on the native system (no tests)
 nix build -j auto .\#hydraJobs.x86_64-linux.all
 nix build -j auto .\#hydraJobs.aarch64-darwin.all
 
-# all Windows cross-compiled jobs (only available on x86_64-linux)
+# all Windows cross-compiled packages (only available on x86_64-linux)
 nix build -j auto .\#hydraJobs.x86_64-linux.x86_64-w64-mingw32.all
 
-# all jobs built with an alternative compiler
+# all packages built with an alternative compiler
 nix build -j auto .\#hydraJobs.x86_64-linux.ghc982.all
 ```
 
