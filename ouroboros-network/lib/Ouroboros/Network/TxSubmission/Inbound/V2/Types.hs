@@ -44,6 +44,7 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Types
     -- ** Traces
   , TraceTxSubmissionInbound (..)
   , TxSubmissionCounters (..)
+  , RttStats (..)
     -- ** Protocol Error
   , TxSubmissionProtocolError (..)
   , RequestedTxBatch (..)
@@ -324,11 +325,17 @@ data TxSubmissionCounters = TxSubmissionCounters {
     -- first 'MsgRequestTxs' send until all pipelined requests (both body and
     -- txid) have been replied to and the pipeline fully drains.  Proxy for
     -- the "loading" state where the peer is actively downloading transactions.
-    txSubmissionWaitMs    :: !Word64
+    txSubmissionWaitMs    :: !Word64,
     -- ^ Cumulative milliseconds spent inside 'mempoolAddTxs'.  Covers both
     -- normal submission latency and time blocked due to a full mempool.
     -- High values relative to the other duration fields indicate mempool
     -- backpressure.
+    reclaims              :: !Word64,
+    -- ^ Tx-body leases stolen from another peer after the lease expired
+    -- (serial retry triggered by lease expiry).
+    capBumps              :: !Word64
+    -- ^ Inflight-multiplicity cap bumps (parallel retry enabled for a stuck
+    -- leaseholder).
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass NFData
@@ -351,7 +358,9 @@ instance Semigroup TxSubmissionCounters where
     txIdPipelinedReqsSent = txIdPipelinedReqsSent a + txIdPipelinedReqsSent b,
     txIdBlockingWaitMs    = txIdBlockingWaitMs    a + txIdBlockingWaitMs    b,
     txPipelineWaitMs      = txPipelineWaitMs      a + txPipelineWaitMs      b,
-    txSubmissionWaitMs    = txSubmissionWaitMs    a + txSubmissionWaitMs    b
+    txSubmissionWaitMs    = txSubmissionWaitMs    a + txSubmissionWaitMs    b,
+    reclaims              = reclaims              a + reclaims              b,
+    capBumps              = capBumps              a + capBumps              b
     }
 
 instance Monoid TxSubmissionCounters where
@@ -372,8 +381,30 @@ instance Monoid TxSubmissionCounters where
     txIdPipelinedReqsSent = 0,
     txIdBlockingWaitMs    = 0,
     txPipelineWaitMs      = 0,
-    txSubmissionWaitMs    = 0
+    txSubmissionWaitMs    = 0,
+    reclaims              = 0,
+    capBumps              = 0
   }
+
+-- | A summary of request-to-reply round-trip times over a sliding window,
+-- in milliseconds.  Quantiles are approximate (t-digest backed).  A
+-- 'rttCount' of zero means the window held no samples and the other fields
+-- are not meaningful.
+data RttStats = RttStats {
+    rttCount  :: !Int,
+    -- ^ Number of samples the window held when the summary was taken.
+    rttP50Ms  :: !Double,
+    -- ^ Median round-trip time (ms).
+    rttP90Ms  :: !Double,
+    -- ^ 90th-percentile round-trip time (ms).
+    rttP95Ms  :: !Double,
+    -- ^ 95th-percentile round-trip time (ms).
+    rttP99Ms  :: !Double,
+    -- ^ 99th-percentile round-trip time (ms).
+    rttMeanMs :: !Double
+    -- ^ Mean round-trip time (ms).
+  }
+  deriving stock (Eq, Show, Generic)
 
 -- | Convert a non-negative 'DiffTime' to whole milliseconds (truncated).
 --
@@ -423,9 +454,28 @@ data PeerTxLocalState tx = PeerTxLocalState {
     -- sent in the current download episode.
     peerDownloadStartTime     :: !(Maybe Time),
 
+    -- | FIFO of send timestamps for in-flight pipelined requests, both
+    -- txid and tx-body.  A timestamp is appended when a pipelined request
+    -- is sent and removed from the front when the matching reply is
+    -- collected; the protocol preserves request/reply order, so the front
+    -- timestamp always pairs with the next collected reply.  The
+    -- difference gives the request-to-reply round-trip time.  Blocking
+    -- txid requests are not tracked here: they are request-and-wait, not a
+    -- round trip.
+    peerPipelinedSendTimes    :: !(StrictSeq Time),
+
     -- | Usefulness score for this peer, tracking rejection penalties and
     -- time-based decay.
     peerScore                 :: !PeerScore,
+
+    -- | Cached base round-trip-time estimate for this peer (txid p95),
+    -- refreshed periodically from its txid round-trip window; 'Nothing'
+    -- until enough samples accrue.  The per-request lease is derived from
+    -- this and the request size (see 'interTxSpaceFor').
+    peerRttEstimate           :: !(Maybe DiffTime),
+    -- | When 'peerRttEstimate' is next due to be recomputed ('Time' 0
+    -- before the first refresh).
+    peerRttUpdateAt           :: !Time,
 
     -- | Set on a txid reply that returned zero new txids; cleared on a
     -- non-empty txid reply or when the mempool accepts at least one tx
@@ -446,7 +496,10 @@ emptyPeerTxLocalState = PeerTxLocalState {
     peerRequestedTxIds        = 0,
     peerDownloadedTxs         = IntMap.empty,
     peerDownloadStartTime     = Nothing,
+    peerPipelinedSendTimes    = StrictSeq.empty,
     peerScore                 = emptyPeerScore (Time 0),
+    peerRttEstimate           = Nothing,
+    peerRttUpdateAt           = Time 0,
     peerLastTxIdReplyWasEmpty = False
   }
 
@@ -471,7 +524,13 @@ data SharedTxState peeraddr txid = SharedTxState {
     -- | Structural dirty bit.  Bumped on most structural changes; used by
     -- 'writeSharedStateIfChanged' (paired with 'sharedGeneration') to skip
     -- redundant TVar writes.  A change to either counter triggers a write.
-    sharedRevision    :: !Word64
+    sharedRevision    :: !Word64,
+    -- | Cumulative count of tx-body leases stolen from another peer after
+    -- the lease expired; surfaced via 'TxSubmissionCounters' reclaims.
+    sharedReclaims    :: !Word64,
+    -- | Cumulative count of inflight-multiplicity cap bumps; surfaced via
+    -- 'TxSubmissionCounters' capBumps.
+    sharedCapBumps    :: !Word64
   }
   deriving stock Generic
 
@@ -502,7 +561,9 @@ emptySharedTxState = SharedTxState {
     sharedKeyToTxId        = IntMap.empty,
     sharedNextTxKey        = 0,
     sharedGeneration       = 0,
-    sharedRevision         = 0
+    sharedRevision         = 0,
+    sharedReclaims         = 0,
+    sharedCapBumps         = 0
   }
 
 retainedEmpty :: RetainedTxs
@@ -646,6 +707,11 @@ data TxSubmissionLogicVersion =
 --
 data TraceTxLogic peeraddr txid tx =
     TraceSharedTxState (SharedTxState peeraddr txid)
+    -- | Global (all-peers) round-trip-time summary over the sliding window:
+    -- the first 'RttStats' covers txid request/reply round trips, the
+    -- second covers tx-body request/reply round trips.  Emitted
+    -- periodically by the central bookkeeping thread.
+  | TraceTxLogicRtt RttStats RttStats
   deriving Show
 
 
@@ -694,7 +760,10 @@ data TraceTxSubmissionInbound txid tx =
   | TraceTxInboundAddedToMempool [txid] DiffTime
   | TraceTxInboundRejectedFromMempool [txid] DiffTime
   | TraceTxInboundError TxSubmissionProtocolError
-  | TraceTxInboundRequestTxs [txid]
+  -- | Tx bodies requested from a peer: the txids, the RTT-derived
+  -- exclusive-fetch lease ('interTxSpace') applied to them, and the peer's
+  -- current txid and tx-body RTT summaries (in that order).
+  | TraceTxInboundRequestTxs [txid] DiffTime RttStats RttStats
 
   --
   -- messages emitted by the new implementation of the server in

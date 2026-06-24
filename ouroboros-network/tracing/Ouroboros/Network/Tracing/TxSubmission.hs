@@ -54,19 +54,39 @@ instance (Show txid, Show peeraddr, HasRawTxId txid) => LogFormatting (TraceTxLo
                   ]
         _otherwise -> []
 
+  forMachine _dtal (TraceTxLogicRtt txIdRtt txBodyRtt) =
+      mconcat [ "kind"      .= String "TraceTxLogicRtt"
+              , "txIdRtt"   .= rttObject txIdRtt
+              , "txBodyRtt" .= rttObject txBodyRtt
+              ]
+    where
+      rttObject RttStats {..} =
+        object [ "count"  .= rttCount
+               , "p50Ms"  .= rttP50Ms
+               , "p90Ms"  .= rttP90Ms
+               , "p95Ms"  .= rttP95Ms
+               , "p99Ms"  .= rttP99Ms
+               , "meanMs" .= rttMeanMs
+               ]
+
 
 instance MetaTrace (TraceTxLogic peeraddr txid tx) where
   namespaceFor TraceSharedTxState {} =
     Namespace [] ["TraceSharedTxState"]
+  namespaceFor TraceTxLogicRtt {} =
+    Namespace [] ["TraceTxLogicRtt"]
 
   severityFor _ _ = Just Debug
 
   documentFor (Namespace [] ["TraceSharedTxState"]) =
     Just "Internal bookkeeping of tx-submission shared state for peer coordination"
+  documentFor (Namespace [] ["TraceTxLogicRtt"]) =
+    Just "Global request-to-reply round-trip-time summary over a sliding window"
   documentFor _ = Nothing
 
   allNamespaces = [
-    Namespace [] ["TraceSharedTxState"]
+      Namespace [] ["TraceSharedTxState"]
+    , Namespace [] ["TraceTxLogicRtt"]
     ]
 
 instance LogFormatting TxSubmissionCounters where
@@ -89,6 +109,8 @@ instance LogFormatting TxSubmissionCounters where
             , "txIdBlockingWaitMs" .= txIdBlockingWaitMs
             , "txPipelineWaitMs" .= txPipelineWaitMs
             , "txSubmissionWaitMs" .= txSubmissionWaitMs
+            , "reclaims" .= reclaims
+            , "capBumps" .= capBumps
             ]
 
   asMetrics TxSubmissionCounters {..} =
@@ -109,6 +131,8 @@ instance LogFormatting TxSubmissionCounters where
     , IntM "txSubmission.txIdBlockingWaitMs" (fromIntegral txIdBlockingWaitMs)
     , IntM "txSubmission.txPipelineWaitMs"   (fromIntegral txPipelineWaitMs)
     , IntM "txSubmission.txSubmissionWaitMs" (fromIntegral txSubmissionWaitMs)
+    , IntM "txSubmission.reclaims" (fromIntegral reclaims)
+    , IntM "txSubmission.capBumps" (fromIntegral capBumps)
     ]
 
 instance MetaTrace TxSubmissionCounters where
@@ -136,6 +160,8 @@ instance MetaTrace TxSubmissionCounters where
     , ("txSubmission.txIdBlockingWaitMs", "cumulative milliseconds spent waiting for blocking txid replies (idle state proxy)")
     , ("txSubmission.txPipelineWaitMs",   "cumulative milliseconds the pipeline was active from first body request until full drain (loading state proxy)")
     , ("txSubmission.txSubmissionWaitMs", "cumulative milliseconds spent in mempoolAddTxs; high values indicate mempool backpressure")
+    , ("txSubmission.reclaims", "tx-body leases stolen from another peer after lease expiry (serial retry)")
+    , ("txSubmission.capBumps", "inflight-multiplicity cap bumps (parallel retry for a stuck leaseholder)")
     ]
   metricsDocFor _ = []
 

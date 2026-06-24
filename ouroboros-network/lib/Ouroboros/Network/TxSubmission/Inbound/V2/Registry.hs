@@ -33,6 +33,9 @@ import GHC.Stack (HasCallStack)
 import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Ouroboros.Network.Tx (HasRawTxId)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy (TxDecisionPolicy (..))
+import Ouroboros.Network.TxSubmission.Inbound.V2.Rtt (PeerRtt, RttKind,
+           emptyPeerRtt, globalRttStats, peerRttStats, recordRttSample,
+           txidRttP95)
 import Ouroboros.Network.TxSubmission.Inbound.V2.State qualified as State
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
 import Ouroboros.Network.TxSubmission.Mempool.Reader
@@ -48,17 +51,23 @@ type TxSubmissionCountersVar m = StrictTVar m TxSubmissionCounters
 -- | Per-peer in-flight TVar.
 type PeerTxInFlightVar m = StrictTVar m PeerTxInFlight
 
+-- | Per-peer RTT-windows TVar.
+type PeerRttVar m = StrictTVar m PeerRtt
+
 -- | Registry of every live peer's coordination TVars: its in-flight
--- contributions and its private counters cell.
+-- contributions, its private counters cell and its RTT windows.
 --
--- 'withPeer' adds the pair on bracket-enter and removes it on
+-- 'withPeer' adds the entry on bracket-enter and removes it on
 -- bracket-exit (after scrubbing any contributions the peer still has
 -- to shared state and flushing its counters into the retired
 -- accumulator).  'snapshotLiveReferences' reads the in-flight vars to
 -- compute the @liveAdvertised@ union; 'snapshotCounters' reads the
--- counter cells to aggregate for emission.
+-- counter cells to aggregate for emission; 'snapshotPeerRtts' reads the
+-- RTT windows for the global RTT aggregate.
 type PeerTxRegistry m peeraddr =
-       StrictTVar m (Map peeraddr (PeerTxInFlightVar m, TxSubmissionCountersVar m))
+       StrictTVar m (Map peeraddr ( PeerTxInFlightVar m
+                                  , TxSubmissionCountersVar m
+                                  , PeerRttVar m ))
 
 newSharedTxStateVar
   :: MonadSTM m
@@ -87,9 +96,10 @@ newPeerTxRegistry = newTVarIO Map.empty
 -- the snapshot is coherent.  On a slower cadence (every
 -- 'countersInterval' seconds of elapsed time) it also emits the
 -- aggregated counters -- the retired-peers accumulator plus every
--- live peer's cell -- when they differ from the last emission, and a
--- 'TraceSharedTxState' snapshot when @sharedRevision@ or
--- @sharedGeneration@ has moved since the last emission.
+-- live peer's cell -- when they differ from the last emission, a global
+-- round-trip-time summary ('TraceTxLogicRtt') merged from every live
+-- peer's RTT windows, and a 'TraceSharedTxState' snapshot when
+-- @sharedRevision@ or @sharedGeneration@ has moved since the last emission.
 txCountersThreadV2
   :: forall m peeraddr txid tx.
      (MonadDelay m, MonadSTM m, HasRawTxId txid)
@@ -126,9 +136,16 @@ txCountersThreadV2 policy countersTracer sharedStateTracer retiredCountersVar
           writeTVar sharedStateVar st'
       if now >= nextEmitAt
          then do
-           current <- atomically (snapshotCounters retiredCountersVar registry)
-           when (current /= previous) $ traceWith countersTracer current
+           current0 <- atomically (snapshotCounters retiredCountersVar registry)
            st <- readTVarIO sharedStateVar
+           -- reclaims/capBumps are node-global, tracked in shared state.
+           let current = current0 { reclaims = sharedReclaims st
+                                  , capBumps = sharedCapBumps st }
+           when (current /= previous) $ traceWith countersTracer current
+           peerRtts <- atomically (snapshotPeerRtts registry)
+           let (txIdRtt, txBodyRtt) = globalRttStats now peerRtts
+           when (rttCount txIdRtt > 0 || rttCount txBodyRtt > 0) $
+             traceWith sharedStateTracer (TraceTxLogicRtt txIdRtt txBodyRtt)
            let curRev = sharedRevision   st
                curGen = sharedGeneration st
            (lastRev', lastGen') <-
@@ -151,7 +168,7 @@ snapshotLiveReferences
   -> STM m IntSet
 snapshotLiveReferences registry = do
     peers <- readTVar registry
-    pifs  <- traverse (readTVar . fst) (Map.elems peers)
+    pifs  <- traverse (\(pifVar, _, _) -> readTVar pifVar) (Map.elems peers)
     pure $! IntSet.unions
               [ s
               | pif <- pifs
@@ -175,8 +192,20 @@ snapshotCounters
 snapshotCounters retiredCountersVar registry = do
     retired <- readTVar retiredCountersVar
     peers   <- readTVar registry
-    live    <- traverse (readTVar . snd) (Map.elems peers)
+    live    <- traverse (\(_, cVar, _) -> readTVar cVar) (Map.elems peers)
     pure $! mconcat (retired : live)
+
+-- | Read every live peer's RTT windows, for the global RTT aggregate.
+--
+-- Like 'snapshotCounters', read in a single read-only STM transaction so
+-- the snapshot is coherent and the per-peer writers never block on it.
+snapshotPeerRtts
+  :: MonadSTM m
+  => PeerTxRegistry m peeraddr
+  -> STM m [PeerRtt]
+snapshotPeerRtts registry = do
+    peers <- readTVar registry
+    traverse (\(_, _, rttVar) -> readTVar rttVar) (Map.elems peers)
 
 -- | Peer-facing coordination API.
 --
@@ -232,7 +261,16 @@ data PeerTxAPI m txid tx = PeerTxAPI {
                          -> m [(TxKey, txid, tx)],
 
     -- | Add a delta to the V2 monotonic counters.
-    addCounters          :: TxSubmissionCounters -> m ()
+    addCounters          :: TxSubmissionCounters -> m (),
+
+    -- | Record a request-to-reply round-trip-time sample for this peer:
+    -- the kind of round trip, the time the reply was collected, and the
+    -- elapsed time since the request was sent.
+    recordRtt            :: RttKind -> Time -> DiffTime -> m (),
+
+    -- | This peer's current txid and tx-body RTT summaries, as of the given
+    -- time.
+    peerRttSummary       :: Time -> m (RttStats, RttStats)
   }
 
 --
@@ -264,9 +302,11 @@ withPeer policy TxSubmissionMempoolReader { mempoolGetSnapshot }
     acquire = do
       peerInFlightVar <- newTVarIO emptyPeerTxInFlight
       peerCountersVar <- newTVarIO mempty
+      peerRttVar      <- newTVarIO emptyPeerRtt
       atomically $ modifyTVar registry
-                     (Map.insert peeraddr (peerInFlightVar, peerCountersVar))
-      pure (peerInFlightVar, peerCountersVar)
+                     (Map.insert peeraddr
+                        (peerInFlightVar, peerCountersVar, peerRttVar))
+      pure (peerInFlightVar, peerCountersVar, peerRttVar)
 
     -- On exit: reverse this peer's in-flight contributions to shared
     -- state, flush its accumulated counters into the retired
@@ -275,7 +315,7 @@ withPeer policy TxSubmissionMempoolReader { mempoolGetSnapshot }
     -- commit in one transaction so 'snapshotCounters' counts this peer
     -- exactly once: via its live cell before exit, via the retired
     -- accumulator after.
-    release (peerInFlightVar, peerCountersVar) = do
+    release (peerInFlightVar, peerCountersVar, _peerRttVar) = do
       now <- getMonotonicTime
       atomically $ do
         pif <- readTVar peerInFlightVar
@@ -284,13 +324,13 @@ withPeer policy TxSubmissionMempoolReader { mempoolGetSnapshot }
         modifyTVar retiredCountersVar (<> peerCounters)
         modifyTVar registry (Map.delete peeraddr)
 
-    run (peerInFlightVar, peerCountersVar) = io PeerTxAPI {
+    run (peerInFlightVar, peerCountersVar, peerRttVar) = io PeerTxAPI {
           awaitSharedChange = awaitSharedChangeImp sharedStateVar
         , runNextPeerAction = runNextPeerActionImp policy sharedStateVar
-                                peerInFlightVar peerCountersVar peeraddr
+                                peerInFlightVar peerCountersVar peerRttVar peeraddr
         , runNextPeerActionPipelined = runNextPeerActionPipelinedImp policy
                                          sharedStateVar peerInFlightVar
-                                         peerCountersVar peeraddr
+                                         peerCountersVar peerRttVar peeraddr
         , applyReceivedTxIds = applyReceivedTxIdsImp policy mempoolGetSnapshot
                                  sharedStateVar peerInFlightVar peerCountersVar
         , applyReceivedTxs = applyReceivedTxsImp policy mempoolGetSnapshot
@@ -300,6 +340,9 @@ withPeer policy TxSubmissionMempoolReader { mempoolGetSnapshot }
         , resolveTxRequest = resolveTxRequestImp sharedStateVar
         , resolveBufferedTxs = resolveBufferedTxsImp sharedStateVar
         , addCounters = \delta -> atomically $ modifyTVar peerCountersVar (<> delta)
+        , recordRtt = \kind collectedAt rtt ->
+            atomically $ modifyTVar peerRttVar (recordRttSample kind collectedAt rtt)
+        , peerRttSummary = \now -> peerRttStats now <$> readTVarIO peerRttVar
         }
 
 -- | Reverse this peer's still-outstanding contributions to the shared
@@ -429,6 +472,28 @@ updateCountersForAction countersVar peerAction =
                                         , txsRequested   = fromIntegral (length txKeys) })
     _ -> pure ()
 
+-- | How often a peer's RTT-derived 'interTxSpace' lease is recomputed.
+rttLeaseRefreshInterval :: DiffTime
+rttLeaseRefreshInterval = 60
+
+-- | Recompute a peer's base RTT estimate from its txid round-trip window when
+-- due, throttled to 'rttLeaseRefreshInterval' so the common path is a single
+-- time comparison.  The per-request lease is derived from this estimate and
+-- the request size at request time (see 'interTxSpaceFor').
+refreshLease :: MonadSTM m
+             => PeerRttVar m
+             -> Time
+             -> PeerTxLocalState tx
+             -> STM m (PeerTxLocalState tx)
+refreshLease peerRttVar now peerState
+  | now < peerRttUpdateAt peerState = pure peerState
+  | otherwise = do
+      prtt <- readTVar peerRttVar
+      pure peerState {
+          peerRttEstimate = txidRttP95 now prtt,
+          peerRttUpdateAt = addTime rttLeaseRefreshInterval now
+        }
+
 -- | Compute the next action for this peer in non-pipelined mode.
 runNextPeerActionImp :: ( MonadSTM m
                         , Ord peeraddr )
@@ -436,22 +501,24 @@ runNextPeerActionImp :: ( MonadSTM m
                      -> SharedTxStateVar m peeraddr txid
                      -> PeerTxInFlightVar m
                      -> TxSubmissionCountersVar m
+                     -> PeerRttVar m
                      -> peeraddr
                      -> Time
                      -> PeerTxLocalState tx
                      -> m (PeerAction, PeerTxLocalState tx)
-runNextPeerActionImp policy sharedStateVar peerInFlightVar countersVar peeraddr
-                     now peerState = atomically $ do
+runNextPeerActionImp policy sharedStateVar peerInFlightVar countersVar peerRttVar
+                     peeraddr now peerState = atomically $ do
   sharedState <- readTVar sharedStateVar
   peerInFlight <- readTVar peerInFlightVar
+  peerState' <- refreshLease peerRttVar now peerState
   let sharedGeneration0 = sharedGeneration sharedState
       sharedRevision0   = sharedRevision   sharedState
-      (peerAction, peerState', peerInFlight', sharedState') =
-        State.nextPeerAction now policy peeraddr peerState peerInFlight sharedState
+      (peerAction, peerState'', peerInFlight', sharedState') =
+        State.nextPeerAction now policy peeraddr peerState' peerInFlight sharedState
   writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedRevision0 sharedState'
   writePeerInFlightIfChanged peerInFlightVar peerInFlight peerInFlight'
   updateCountersForAction countersVar peerAction
-  return (peerAction, peerState')
+  return (peerAction, peerState'')
 
 -- | Compute the next action for this peer in pipelined mode.
 runNextPeerActionPipelinedImp :: ( MonadSTM m
@@ -460,24 +527,26 @@ runNextPeerActionPipelinedImp :: ( MonadSTM m
                               -> SharedTxStateVar m peeraddr txid
                               -> PeerTxInFlightVar m
                               -> TxSubmissionCountersVar m
+                              -> PeerRttVar m
                               -> peeraddr
                               -> Time
                               -> PeerTxLocalState tx
                               -> m (PeerAction, PeerTxLocalState tx)
 runNextPeerActionPipelinedImp policy sharedStateVar peerInFlightVar countersVar
-                              peeraddr now peerState =
+                              peerRttVar peeraddr now peerState =
     atomically $ do
       sharedState <- readTVar sharedStateVar
       peerInFlight <- readTVar peerInFlightVar
+      peerState' <- refreshLease peerRttVar now peerState
       let sharedGeneration0 = sharedGeneration sharedState
           sharedRevision0   = sharedRevision   sharedState
-          (peerAction, peerState', peerInFlight', sharedState') =
-            State.nextPeerActionPipelined now policy peeraddr peerState
+          (peerAction, peerState'', peerInFlight', sharedState') =
+            State.nextPeerActionPipelined now policy peeraddr peerState'
                                           peerInFlight sharedState
       writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedRevision0 sharedState'
       writePeerInFlightIfChanged peerInFlightVar peerInFlight peerInFlight'
       updateCountersForAction countersVar peerAction
-      return (peerAction, peerState')
+      return (peerAction, peerState'')
 
 -- | Process a batch of txids received from this peer.
 applyReceivedTxIdsImp :: ( MonadSTM m

@@ -89,9 +89,9 @@ import Ouroboros.Network.Server.RateLimiting (AcceptConnectionsPolicyTrace (..),
            AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket (LocalAddress (..), RemoteAddress)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types (ProcessedTxCount (..),
-           SharedTxState (..), TraceTxLogic (..), TraceTxSubmissionInbound (..),
-           TxEntry (..), TxLease (..), TxSubmissionLogicVersion (..),
-           retainedSize, retainedToList)
+           RttStats (..), SharedTxState (..), TraceTxLogic (..),
+           TraceTxSubmissionInbound (..), TxEntry (..), TxLease (..),
+           TxSubmissionLogicVersion (..), retainedSize, retainedToList)
 import Ouroboros.Network.TxSubmission.Outbound (TraceTxSubmissionOutbound (..))
 
 -- Helper function for ToJSON instances with a "kind" field
@@ -1771,11 +1771,22 @@ instance ( ToJSON txid
       , "txids" .= toJSON txids
       , "time" .= diffTime
       ]
-  toJSON (TraceTxInboundRequestTxs txids) =
+  toJSON (TraceTxInboundRequestTxs txids lease txIdRtt txBodyRtt) =
     object
-      [ "kind" .= String "TxInboundRequestTxs"
-      , "txids" .= toJSON txids
+      [ "kind"      .= String "TxInboundRequestTxs"
+      , "txids"     .= toJSON txids
+      , "lease"     .= lease
+      , "txIdRtt"   .= rttObj txIdRtt
+      , "txBodyRtt" .= rttObj txBodyRtt
       ]
+    where
+      rttObj r = object [ "count"  .= rttCount  r
+                        , "p50Ms"  .= rttP50Ms  r
+                        , "p90Ms"  .= rttP90Ms  r
+                        , "p95Ms"  .= rttP95Ms  r
+                        , "p99Ms"  .= rttP99Ms  r
+                        , "meanMs" .= rttMeanMs r
+                        ]
   toJSON (TraceTxInboundError err) =
     object
       [ "kind" .= String "TxInboundError"
@@ -1844,6 +1855,19 @@ instance ( Show addr
     object [ "kind" .= String "SharedTxState"
            , "sharedTxState" .= traceSharedTxStateToJSON st
            ]
+  toJSON (TraceTxLogicRtt txIdRtt txBodyRtt) =
+    object [ "kind"      .= String "TraceTxLogicRtt"
+           , "txIdRtt"   .= rttObj txIdRtt
+           , "txBodyRtt" .= rttObj txBodyRtt
+           ]
+    where
+      rttObj r = object [ "count"  .= rttCount  r
+                        , "p50Ms"  .= rttP50Ms  r
+                        , "p90Ms"  .= rttP90Ms  r
+                        , "p95Ms"  .= rttP95Ms  r
+                        , "p99Ms"  .= rttP99Ms  r
+                        , "meanMs" .= rttMeanMs r
+                        ]
 
 
 -- TODO: we need verbosity levels, this instance should be removed once

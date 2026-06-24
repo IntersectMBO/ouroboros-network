@@ -36,6 +36,8 @@ import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToAck,
            SizeInBytes)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
 import Ouroboros.Network.TxSubmission.Inbound.V2.Registry as V2
+import Ouroboros.Network.TxSubmission.Inbound.V2.Rtt (RttKind (..),
+           interTxSpaceFor)
 import Ouroboros.Network.TxSubmission.Inbound.V2.State qualified as State
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types as V2
 
@@ -152,7 +154,9 @@ txSubmissionInboundV2
       applySubmittedTxs,
       resolveTxRequest,
       resolveBufferedTxs,
-      addCounters
+      addCounters,
+      recordRtt,
+      peerRttSummary
     } =
     TxSubmissionServerPipelined $ do
       case initDelay of
@@ -170,6 +174,26 @@ txSubmissionInboundV2
           traceWith tracer (TraceTxInboundCannotRequestMoreTxs (natToInt n))
       | otherwise =
           traceWith tracer (TraceTxInboundCanRequestMoreTxs (natToInt n))
+
+    -- Append a pipelined-request send timestamp to the per-peer FIFO.
+    pushSendTime :: Time -> PeerTxLocalState tx -> PeerTxLocalState tx
+    pushSendTime t st =
+      st { peerPipelinedSendTimes = peerPipelinedSendTimes st StrictSeq.|> t }
+
+    -- Pop the oldest outstanding send timestamp and record the round-trip
+    -- time for the reply just collected.  Replies arrive in request order,
+    -- so the front timestamp pairs with this reply; the reply constructor
+    -- (not the FIFO) determines which window 'kind' the sample feeds.
+    recordCollectRtt :: RttKind
+                     -> Time
+                     -> PeerTxLocalState tx
+                     -> m (PeerTxLocalState tx)
+    recordCollectRtt kind now peerState =
+      case peerPipelinedSendTimes peerState of
+        sendTime StrictSeq.:<| rest -> do
+          recordRtt kind now (now `diffTime` sendTime)
+          pure peerState { peerPipelinedSendTimes = rest }
+        StrictSeq.Empty -> pure peerState
 
     -- Entry point and reset state for the non-pipelined server loop.
     --
@@ -259,15 +283,24 @@ txSubmissionInboundV2
                     -> StatefulM (PeerTxLocalState tx) n txid tx m
     requestTxBodies n txKeys = StatefulM $ \peerState -> do
       txsToRequest <- resolveTxRequest peerState txKeys
-      traceWith tracer (TraceTxInboundRequestTxs (Map.keys txsToRequest))
 
       -- Record the start of the download episode on the first outstanding
       -- body request.  Subsequent pipelined requests leave the start time
       -- unchanged so we measure from first-send to last-receive.
       sendTime <- getMonotonicTime
-      let peerState' = case peerDownloadStartTime peerState of
-                            Nothing -> peerState { peerDownloadStartTime = Just sendTime }
-                            Just _  -> peerState
+      (txIdRtt, txBodyRtt) <- peerRttSummary sendTime
+      traceWith tracer (TraceTxInboundRequestTxs
+                          (Map.keys txsToRequest)
+                          (interTxSpaceFor (interTxSpace policy)
+                                           (inflightTimeout policy)
+                                           (peerRttEstimate peerState)
+                                           (sum (Map.elems txsToRequest)))
+                          txIdRtt
+                          txBodyRtt)
+      let peerState' = pushSendTime sendTime $
+                         case peerDownloadStartTime peerState of
+                           Nothing -> peerState { peerDownloadStartTime = Just sendTime }
+                           Just _  -> peerState
       pure $ SendMsgRequestTxsPipelined txsToRequest
                (continueWithStateM (continueAfterBodyRequests (Succ n)) peerState')
 
@@ -341,20 +374,24 @@ txSubmissionInboundV2
                         peerState' <- applyReceivedTxIds now txIdsToReq txids' peerState
                         continueWithStateM serverIdle peerState')
          else do
+           sendTime <- getMonotonicTime
            addCounters mempty { txIdPipelinedReqsSent = 1 }
+           let peerState' = pushSendTime sendTime peerState
            pure $ SendMsgRequestTxIdsPipelined
                     txIdsToAck
                     txIdsToReq
-                    (pure $ continueWithState (handleReplies (Succ Zero)) peerState)
+                    (pure $ continueWithState (handleReplies (Succ Zero)) peerState')
 
     -- Pipelined request at depth > 0. Sends a pipelined message and continues
     -- to @handleReplies@.
     serverReqTxIds n@Succ{} txIdsToAck txIdsToReq = StatefulM $ \peerState -> do
+      sendTime <- getMonotonicTime
       addCounters mempty { txIdPipelinedReqsSent = 1 }
+      let peerState' = pushSendTime sendTime peerState
       pure $ SendMsgRequestTxIdsPipelined
                txIdsToAck
                txIdsToReq
-               (pure $ continueWithState (handleReplies (Succ n)) peerState)
+               (pure $ continueWithState (handleReplies (Succ n)) peerState')
 
     -- Prepare to collect pipelined replies from the peer.
     handleReplies :: forall (n :: N).
@@ -375,8 +412,9 @@ txSubmissionInboundV2
         unless (length txids <= fromIntegral txIdsToReq) $
           throwIO ProtocolErrorTxIdsNotRequested
         now <- getMonotonicTime
-        peerState' <- applyReceivedTxIds now txIdsToReq txids peerState
-        continueWithStateM (continueAfterReplies n) peerState'
+        peerState'  <- recordCollectRtt RttTxId now peerState
+        peerState'' <- applyReceivedTxIds now txIdsToReq txids peerState'
+        continueWithStateM (continueAfterReplies n) peerState''
 
       CollectTxs requested txs -> do
         let received = Map.fromList [ (txId tx, tx) | tx <- txs ]
@@ -389,12 +427,13 @@ txSubmissionInboundV2
           traceWith tracer (TraceTxInboundError protocolError)
           throwIO protocolError
         now <- getMonotonicTime
-        (penaltyCount, peerState') <- applyReceivedTxs now [ (txId tx, tx) | tx <- txs ] peerState
-        peerState'' <-
+        peerState' <- recordCollectRtt RttTxBody now peerState
+        (penaltyCount, peerState'') <- applyReceivedTxs now [ (txId tx, tx) | tx <- txs ] peerState'
+        peerState''' <-
           if penaltyCount == 0
-             then pure peerState'
+             then pure peerState''
              else do
-               let (score, ps) = State.applyPeerEvents policy now 0 penaltyCount peerState'
+               let (score, ps) = State.applyPeerEvents policy now 0 penaltyCount peerState''
                traceWith tracer $
                  TraceTxSubmissionProcessed ProcessedTxCount {
                      ptxcAccepted = 0,
@@ -402,7 +441,7 @@ txSubmissionInboundV2
                      ptxcScore    = score
                    }
                pure ps
-        continueWithStateM (continueAfterReplies n) peerState''
+        continueWithStateM (continueAfterReplies n) peerState'''
 
     -- Partition submitted transactions into accepted and rejected groups
     classifySubmittedTxs :: [(TxKey, txid)]

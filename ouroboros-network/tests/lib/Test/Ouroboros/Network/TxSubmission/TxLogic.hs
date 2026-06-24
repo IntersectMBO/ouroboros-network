@@ -3079,7 +3079,10 @@ genPeerTxLocalState = sized $ \n -> do
       peerRequestedTxIds,
       peerDownloadedTxs,
       peerDownloadStartTime = Nothing,
+      peerPipelinedSendTimes = StrictSeq.empty,
       peerScore = PeerScore peerScoreValue peerScoreTs,
+      peerRttEstimate = Nothing,
+      peerRttUpdateAt = Time 0,
       peerLastTxIdReplyWasEmpty = False
     }
   where

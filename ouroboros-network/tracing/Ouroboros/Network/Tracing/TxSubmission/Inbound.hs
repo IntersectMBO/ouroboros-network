@@ -73,14 +73,26 @@ instance (Show txid, Show tx)
       , "error" .= Text.pack (show e)
       ]
 
-  forMachine dtal (TraceTxInboundRequestTxs txids) =
+  forMachine dtal (TraceTxInboundRequestTxs txids lease txIdRtt txBodyRtt) =
     mconcat
       [ "kind" .= String "TraceTxInboundRequestTxs"
       , "count" .= toJSON (length txids)
+      , "lease" .= toJSON lease
+      , "txIdRtt" .= rttObject txIdRtt
+      , "txBodyRtt" .= rttObject txBodyRtt
       ]
     <> case dtal of
          DDetailed  -> "txIds" .= Text.pack (show txids)
          _otherwise -> mempty
+    where
+      rttObject r = object
+        [ "count"  .= rttCount  r
+        , "p50Ms"  .= rttP50Ms  r
+        , "p90Ms"  .= rttP90Ms  r
+        , "p95Ms"  .= rttP95Ms  r
+        , "p99Ms"  .= rttP99Ms  r
+        , "meanMs" .= rttMeanMs r
+        ]
 
   asMetrics (TraceTxSubmissionCollected txids) =
     [CounterM "submissions.submitted" (Just (length txids))]

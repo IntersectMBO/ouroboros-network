@@ -256,6 +256,7 @@ library
     Ouroboros.Network.TxSubmission.Inbound.V2
     Ouroboros.Network.TxSubmission.Inbound.V2.Policy
     Ouroboros.Network.TxSubmission.Inbound.V2.Registry
+    Ouroboros.Network.TxSubmission.Inbound.V2.Rtt
     Ouroboros.Network.TxSubmission.Inbound.V2.State
     Ouroboros.Network.TxSubmission.Inbound.V2.Types
     Ouroboros.Network.TxSubmission.Mempool.Reader
@@ -321,9 +322,11 @@ library
     psqueues >=0.2.3 && <0.3,
     random,
     strict-checked-vars ^>=0.2,
+    tdigest,
     time,
     transformers,
     typed-protocols ^>=1.2,
+    window-stats:with-tdigest,
 
   if !os(windows)
     build-depends:

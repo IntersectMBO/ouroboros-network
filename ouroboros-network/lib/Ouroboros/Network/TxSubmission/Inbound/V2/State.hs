@@ -16,7 +16,7 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.State
   , sweepSharedState
   ) where
 
-import Control.Monad.Class.MonadTime.SI (DiffTime, Time, addTime, diffTime)
+import Control.Monad.Class.MonadTime.SI (DiffTime, Time (..), addTime, diffTime)
 import Data.Foldable (toList)
 import Data.IntMap.Strict qualified as IntMap
 import Data.IntSet (IntSet)
@@ -31,6 +31,7 @@ import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToAck,
            SizeInBytes)
 import Ouroboros.Network.Tx (HasRawTxId (..))
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
+import Ouroboros.Network.TxSubmission.Inbound.V2.Rtt (interTxSpaceFor)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
 
 data TxIdRequestMode = AllowAnyTxIdRequests | AllowPipelinedTxIdRequests
@@ -218,7 +219,8 @@ pickPeerActionChoice txIdRequestMode ctx
       ChooseDoNothing (sharedGeneration (pacSharedState ctx)) (nextWakeDelay ctx)
 
 -- | Execute a chosen peer action and compute resulting state updates
-applyPeerActionChoice :: PeerActionContext peeraddr txid tx
+applyPeerActionChoice :: Eq peeraddr
+                      => PeerActionContext peeraddr txid tx
                       -> PeerActionChoice peeraddr
                       -> (PeerAction, PeerTxLocalState tx, PeerTxInFlight, SharedTxState peeraddr txid)
 applyPeerActionChoice ctx choice =
@@ -256,7 +258,8 @@ applySubmitChoice ctx txsToSubmit =
      )
 
 -- | Construct a 'PeerRequestTxs' action and update local and shared tx state.
-applyRequestTxsChoice :: PeerActionContext peeraddr txid tx
+applyRequestTxsChoice :: Eq peeraddr
+                      => PeerActionContext peeraddr txid tx
                       -> [TxKey]
                       -> SizeInBytes
                       -> IntMap.IntMap (TxEntry peeraddr)
@@ -291,10 +294,19 @@ applyRequestTxsChoice ctx txsToRequest txsToRequestSize txTable =
     -- commit, and they still can't.  Waking them here would cost a full
     -- 'nextPeerAction' pass per peer with nothing to show for it; the
     -- wake they actually care about is on submit / lease release.
+    -- A reclaim is a body lease stolen from a different peer after that
+    -- peer's lease expired -- the serial-retry the lease duration governs.
+    reclaimed = length
+      [ () | TxKey k     <- txsToRequest
+           , Just oldEntry <- [IntMap.lookup k (sharedTxTable (pacSharedState ctx))]
+           , TxLeased owner _ <- [txLease oldEntry]
+           , owner /= pacPeerAddr ctx
+           ]
     sharedState' =
       (pacSharedState ctx) {
-        sharedTxTable = txTable,
-        sharedRevision = sharedRevision (pacSharedState ctx) + 1
+        sharedTxTable  = txTable,
+        sharedRevision = sharedRevision (pacSharedState ctx) + 1,
+        sharedReclaims = sharedReclaims (pacSharedState ctx) + fromIntegral reclaimed
       }
 
 -- | Construct a 'PeerRequestTxIds' action and update local and shared txid state.
@@ -412,7 +424,24 @@ pickRequestTxsAction ctx@PeerActionContext { pacNow, pacPolicy, pacPeerState, pa
       if StrictSeq.length (peerRequestedTxBatches pacPeerState) >=
            maxOutstandingTxBatchesPerPeer pacPolicy
          then ([], 0, sharedTxTable pacSharedState)
-         else go IntSet.empty [] 0 (sharedTxTable pacSharedState) candidates
+         else
+           let (selected, selectedSize) = go IntSet.empty [] 0 candidates
+               -- The whole batch is delivered over a single request, so its
+               -- lease is sized from the total selected bytes: the base RTT
+               -- scaled by the TCP round trips the transfer is expected to
+               -- need.
+               leaseUntil = addTime
+                              (interTxSpaceFor (interTxSpace pacPolicy)
+                                               (inflightTimeout pacPolicy)
+                                               (peerRttEstimate pacPeerState)
+                                               selectedSize)
+                              pacNow
+               txTable' =
+                 List.foldl'
+                   (\tbl (TxKey k) ->
+                      IntMap.adjust (claimTx (pacPeerAddr ctx) leaseUntil) k tbl)
+                   (sharedTxTable pacSharedState) selected
+           in (selected, selectedSize, txTable')
       where
         -- Remaining bytes available for requesting new tx, based on the
         -- per-peer inflight size limit.
@@ -420,8 +449,6 @@ pickRequestTxsAction ctx@PeerActionContext { pacNow, pacPolicy, pacPeerState, pa
           if peerRequestedTxsSize pacPeerState >= txsSizeInflightPerPeer pacPolicy
              then 0
              else txsSizeInflightPerPeer pacPolicy - peerRequestedTxsSize pacPeerState
-
-        leaseUntil = addTime (interTxSpace pacPolicy) pacNow
 
         -- Iterate the peer's unacknowledged queue, which preserves the order
         -- in which the peer sent us the txids.  Walking the queue in that
@@ -446,25 +473,22 @@ pickRequestTxsAction ctx@PeerActionContext { pacNow, pacPolicy, pacPeerState, pa
         -- 'Map txid SizeInBytes' already deduplicates, and we must not
         -- inflate 'txAttempt' or 'peerRequestedTxsSize' with phantom
         -- second claims.
-        go _    selectedRev selectedSize txTable [] = (reverse selectedRev, selectedSize, txTable)
-        go seen selectedRev selectedSize txTable ((k, txSize) : rest)
-          | IntSet.member k seen = go seen selectedRev selectedSize txTable rest
+        go _    selectedRev selectedSize [] = (reverse selectedRev, selectedSize)
+        go seen selectedRev selectedSize ((k, txSize) : rest)
+          | IntSet.member k seen = go seen selectedRev selectedSize rest
           | exceedsBudget selectedSize txSize =
-              (reverse selectedRev, selectedSize, txTable)
+              (reverse selectedRev, selectedSize)
           | otherwise =
-              case IntMap.lookup k txTable of
-                  Just txEntry ->
-                    if txSelectable ctx (TxKey k) txEntry
-                       then
-                         go (IntSet.insert k seen)
-                            (TxKey k : selectedRev)
-                            (selectedSize + txSize)
-                            (IntMap.insert k (claimTx (pacPeerAddr ctx) leaseUntil txEntry)
-                                           txTable)
-                            rest
-                       else go seen selectedRev selectedSize txTable rest
-                  -- Entry resolved or swept since this peer's local state last synced; skip.
-                  Nothing -> go seen selectedRev selectedSize txTable rest
+              case IntMap.lookup k (sharedTxTable pacSharedState) of
+                  Just txEntry
+                    | txSelectable ctx (TxKey k) txEntry ->
+                        go (IntSet.insert k seen)
+                           (TxKey k : selectedRev)
+                           (selectedSize + txSize)
+                           rest
+                  -- Not selectable, or resolved/swept since this peer's local
+                  -- state last synced; skip.
+                  _ -> go seen selectedRev selectedSize rest
 
         exceedsBudget selectedSize txSize
           | selectedSize + txSize <= sizeBudget = False
@@ -610,16 +634,12 @@ claimTx peeraddr leaseUntil txEntry@TxEntry { txAttempt } =
     txAttempt = txAttempt + 1
   }
 
--- | Time at which a leased entry becomes eligible for an inflight cap bump.
---
--- The leaseholder's claim time is recovered from the lease deadline. If the
--- entry has been re-claimed since the original peer's attempt, this reflects
--- the latest claim instead. That is intentional: each successful claim earns
--- its own 'inflightTimeout' grace period before the next bump, so cap growth
--- is rate-limited at one bump per 'inflightTimeout' per claim.
---
--- The offset cancels the 'interTxSpace' baked into 'leaseUntil', yielding
--- 'claimTime + inflightTimeout'.
+-- | Time at which a leased entry becomes eligible for an inflight cap bump:
+-- a fixed grace of @inflightTimeout - interTxSpace@ after the lease expires.
+-- For the policy-default lease this is @claimTime + inflightTimeout@; with a
+-- per-peer RTT-derived lease the bump tracks the lease, so stuck-detection
+-- scales with the peer's latency.  A re-claim resets the lease, keeping cap
+-- growth rate-limited to one bump per claim.
 stuckBumpReadyAt :: TxDecisionPolicy -> Time -> Time
 stuckBumpReadyAt policy =
     addTime (inflightTimeout policy - interTxSpace policy)
@@ -665,18 +685,19 @@ bumpStuckEntries :: forall peeraddr txid tx.
                  -> SharedTxState peeraddr txid
                  -> SharedTxState peeraddr txid
 bumpStuckEntries now policy downloadedTxs st =
-    if anyBumped
+    if bumpCount > 0
        then st { sharedTxTable    = txTable',
-                 sharedGeneration = sharedGeneration st + 1 }
+                 sharedGeneration = sharedGeneration st + 1,
+                 sharedCapBumps   = sharedCapBumps st + fromIntegral bumpCount }
        else st
   where
-    (anyBumped, txTable') =
-      IntMap.foldlWithKey' bumpOne (False, sharedTxTable st) downloadedTxs
-    bumpOne (!changed, !tbl) k _tx
+    (bumpCount, txTable') =
+      IntMap.foldlWithKey' bumpOne (0 :: Int, sharedTxTable st) downloadedTxs
+    bumpOne (!n, !tbl) k _tx
       | Just entry  <- IntMap.lookup k tbl
       , Just entry' <- bumpCurrentMaxIfStuck entry
-      = (True, IntMap.insert k entry' tbl)
-      | otherwise = (changed, tbl)
+      = (n + 1, IntMap.insert k entry' tbl)
+      | otherwise = (n, tbl)
 
     -- Bump 'currentMaxInflightMultiplicity' by one when the leaseholder
     -- has held the lease past 'inflightTimeout' without anyone reaching
