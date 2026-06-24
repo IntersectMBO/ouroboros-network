@@ -37,12 +37,13 @@ import Ouroboros.Network.Protocol.PeerSharing.Examples
            (peerSharingClientCollect, peerSharingServerReplicate)
 import Ouroboros.Network.Protocol.PeerSharing.Server (peerSharingServerPeer)
 import Ouroboros.Network.Protocol.PeerSharing.Type
+import Test.Cardano.Base.QuickCheck qualified as BaseQC
 import Test.Ouroboros.Network.Protocol.Utils (prop_codec_cborM,
            prop_codec_valid_cbor_encoding, splits2, splits3)
 import Test.QuickCheck.Function (Fun, applyFun)
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (Arbitrary (..), Property, ioProperty, oneof,
-           testProperty, withMaxSuccess, (===))
+           testProperty, (===))
 
 tests :: TestTree
 tests =
@@ -56,7 +57,7 @@ tests =
         , testProperty "codec cbor"       prop_codec_cbor
         , testProperty "codec valid cbor" prop_codec_valid_cbor
         , testProperty "codec 2-splits"   prop_codec_splits2
-        , testProperty "codec 3-splits"   (withMaxSuccess 33 prop_codec_splits3)
+        , testProperty "codec 3-splits"   (BaseQC.withNumTests 33 prop_codec_splits3)
         , testProperty "byteLimits"       prop_byteLimits
         ]
     ]

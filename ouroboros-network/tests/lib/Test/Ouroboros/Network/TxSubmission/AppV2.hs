@@ -66,6 +66,7 @@ import Test.Ouroboros.Network.TxSubmission.TxLogic hiding (tests)
 import Test.Ouroboros.Network.TxSubmission.Types
 import Test.Ouroboros.Network.Utils hiding (debugTracer)
 
+import Test.Cardano.Base.QuickCheck qualified as BaseQC
 import Test.QuickCheck
 #if !MIN_VERSION_QuickCheck(2,16,0)
 import "quickcheck-monoids" Test.QuickCheck.Monoids
@@ -79,7 +80,7 @@ tests = testGroup "AppV2"
   [ testProperty "txSubmission"  prop_txSubmission
   , testProperty "inflight"      prop_txSubmission_inflight
   , testProperty "SharedTxState" $ withMaxSize 25
-                                 $ withMaxSuccess 25
+                                 $ BaseQC.withNumTests 25
                                  prop_sharedTxStateInvariant
   ]
 

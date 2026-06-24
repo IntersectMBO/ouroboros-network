@@ -143,7 +143,7 @@ library api-tests-lib
     Ouroboros.Network.Mock.ConcreteBlock
 
   build-depends:
-    QuickCheck <2.18,
+    QuickCheck,
     base,
     bytestring,
     cardano-slotting:testlib ^>=0.2.0,
@@ -169,7 +169,7 @@ test-suite api-tests
     Test.Ouroboros.Network.PeerSelection.RelayAccessPoint
 
   build-depends:
-    QuickCheck <2.18,
+    QuickCheck,
     aeson,
     base >=4.14 && <4.23,
     bytestring,
@@ -443,7 +443,7 @@ library tests-lib
     TypeInType
 
   build-depends:
-    QuickCheck <2.18,
+    QuickCheck,
     base >=4.14 && <4.23,
     cborg >=0.2.1 && <0.3,
     containers,
@@ -481,7 +481,7 @@ test-suite tests-lib-tests
   hs-source-dirs: tests-lib/tests
   other-modules: Test.Ouroboros.Network.Data.AbsBearerInfo.Test
   build-depends:
-    QuickCheck <2.18,
+    QuickCheck,
     base >=4.14 && <4.23,
     ouroboros-network:tests-lib,
     tasty,
@@ -507,7 +507,7 @@ library framework-tests-lib
     Test.Ouroboros.Network.RawBearer.Utils
 
   build-depends:
-    QuickCheck <2.18,
+    QuickCheck,
     base >=4.14 && <4.23,
     bytestring,
     cborg,
@@ -540,7 +540,7 @@ test-suite framework-sim-tests
     Test.Simulation.Network.Snocket
 
   build-depends:
-    QuickCheck <2.18,
+    QuickCheck,
     base >=4.14 && <4.23,
     bytestring,
     cborg,
@@ -584,9 +584,10 @@ test-suite framework-io-tests
     Test.Ouroboros.Network.Socket
 
   build-depends:
-    QuickCheck <2.18,
+    QuickCheck,
     base >=4.14 && <4.23,
     bytestring,
+    cardano-base:testlib >=0.1.5.0,
     contra-tracer,
     directory,
     io-classes:{io-classes, si-timers, strict-stm},
@@ -739,7 +740,7 @@ executable demo-tx-submission
     Demo.TxSubmission.Outbound
 
   build-depends:
-    QuickCheck <2.18,
+    QuickCheck,
     async,
     base,
     bytestring,
@@ -904,9 +905,10 @@ library protocols-tests-lib
     Test.Ouroboros.Network.Protocol.Utils
 
   build-depends:
-    QuickCheck <2.18,
+    QuickCheck,
     base >=4.14 && <4.23,
     bytestring,
+    cardano-base:testlib >=0.1.5.0,
     cardano-strict-containers,
     cborg,
     containers,
@@ -949,11 +951,12 @@ library ouroboros-network-tests-lib
   visibility: public
   hs-source-dirs: tests/lib
   build-depends:
-    QuickCheck <2.18,
+    QuickCheck,
     aeson,
     array,
     base >=4.14 && <4.23,
     bytestring,
+    cardano-base:testlib >=0.1.5.0,
     cardano-strict-containers,
     cborg,
     containers,
@@ -1048,9 +1051,10 @@ test-suite ouroboros-network-io-tests
     Test.Ouroboros.Network.Socket
 
   build-depends:
-    QuickCheck <2.18,
+    QuickCheck,
     base >=4.14 && <4.23,
     bytestring,
+    cardano-base:testlib >=0.1.5.0,
     cborg,
     contra-tracer,
     deepseq,

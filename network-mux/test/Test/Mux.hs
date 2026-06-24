@@ -35,6 +35,7 @@ import Data.Maybe (fromMaybe, isNothing)
 import Data.Tuple (swap)
 import Data.Word
 import System.Random.SplitMix qualified as SM
+import Test.Cardano.Base.QuickCheck qualified as BaseQC
 import Test.QuickCheck hiding ((.&.))
 import Test.QuickCheck.Instances.ByteString ()
 import Test.Tasty
@@ -87,21 +88,21 @@ tests =
   [ testProperty "mux send receive"             prop_mux_snd_recv
   , testProperty "mux send receive bidir"       prop_mux_snd_recv_bi
   , testProperty "mux send receive compat"      prop_mux_snd_recv_compat
-  , testProperty "1 miniprot Queue"             (withMaxSuccess 50 prop_mux_1_mini_Queue)
-  , testProperty "2 miniprots Queue"            (withMaxSuccess 50 prop_mux_2_minis_Queue)
-  , testProperty "1 miniprot Pipe"              (withMaxSuccess 50 prop_mux_1_mini_Pipe)
-  , testProperty "2 miniprots Pipe"             (withMaxSuccess 50 prop_mux_2_minis_Pipe)
-  , testProperty "1 miniprot Socket"            (withMaxSuccess 50 prop_mux_1_mini_Socket)
-  , testProperty "1 miniprot Socket, buffered"  (withMaxSuccess 50 prop_mux_1_mini_Socket_buf)
-  , testProperty "2 miniprot Socket"            (withMaxSuccess 50 prop_mux_2_minis_Socket)
-  , testProperty "2 miniprots Socket, buffered" (withMaxSuccess 50 prop_mux_2_minis_Socket_buf)
+  , testProperty "1 miniprot Queue"             (BaseQC.withNumTests 50 prop_mux_1_mini_Queue)
+  , testProperty "2 miniprots Queue"            (BaseQC.withNumTests 50 prop_mux_2_minis_Queue)
+  , testProperty "1 miniprot Pipe"              (BaseQC.withNumTests 50 prop_mux_1_mini_Pipe)
+  , testProperty "2 miniprots Pipe"             (BaseQC.withNumTests 50 prop_mux_2_minis_Pipe)
+  , testProperty "1 miniprot Socket"            (BaseQC.withNumTests 50 prop_mux_1_mini_Socket)
+  , testProperty "1 miniprot Socket, buffered"  (BaseQC.withNumTests 50 prop_mux_1_mini_Socket_buf)
+  , testProperty "2 miniprot Socket"            (BaseQC.withNumTests 50 prop_mux_2_minis_Socket)
+  , testProperty "2 miniprots Socket, buffered" (BaseQC.withNumTests 50 prop_mux_2_minis_Socket_buf)
   , testProperty "starvation"                   prop_mux_starvation
   , testProperty "demuxing (Sim)"               prop_demux_sdu_sim
   , testProperty "demuxing (IO)"                prop_demux_sdu_io
   , testProperty "mux start and stop"           prop_mux_start
   , testProperty "mux restart"                  prop_mux_restart
   , testProperty "mux close (Sim)"              prop_mux_close_sim
-  , testProperty "mux close (IO)"               (withMaxSuccess 50 prop_mux_close_io)
+  , testProperty "mux close (IO)"               (BaseQC.withNumTests 50 prop_mux_close_io)
   , testProperty "trailing bytes (Sim)"         prop_mux_trailing_bytes_iosim
   , testProperty "trailing bytes (IO)"          prop_mux_trailing_bytes_io
   , testProperty "pure exception (Sim)"         prop_mux_pure_exception_iosim
