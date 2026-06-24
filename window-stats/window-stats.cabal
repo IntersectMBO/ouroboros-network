@@ -42,6 +42,7 @@ library with-tdigest
     import: ghc-options
     visibility: public
     exposed-modules:
+        Data.Window.DigestBucketed,
         Data.Window.DigestCount,
         Data.Window.DigestTimed
     build-depends:
@@ -58,7 +59,9 @@ library with-tdigest
 library
     import: ghc-options
     exposed-modules:
+        Data.Window.Bucketed,
         Data.Window.Count,
+        Data.Window.Internal.Bucketed,
         Data.Window.Internal.Count,
         Data.Window.Internal.Measures,
         Data.Window.Internal.Timed,
