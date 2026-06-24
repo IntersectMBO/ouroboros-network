@@ -1292,8 +1292,8 @@ prop_demux_sdu a = do
     -- Server that expects to receive a specific ByteString.
     -- Doesn't send a reply.
     serverRsp :: StrictTMVar m BL.ByteString
-              -> Mx.Channel m BL.ByteString
-              -> m ((), Maybe a)
+              -> Mx.ByteChannel m
+              -> m ((), Maybe BL.ByteString)
     serverRsp stopVar chan =
         atomically (takeTMVar stopVar) >>= loop
       where
@@ -2227,11 +2227,21 @@ close_experiment
                               (show serverError)
                               False
 #ifdef mingw32_HOST_OS
-              -- this fails on Windows for ~1% of cases
+              -- these cases fail on Windows for ~1% of cases: when the bearer
+              -- gets a Windows "network name no longer available" IOException,
+              -- either side can surface it as Shutdown (Just IOException) Failed.
+              (_, Left (Right clientError), _)
+                 | iotest
+                 , Just (Mx.Shutdown (Just e) _) <- fromException clientError
+                 , Just (Mx.IOException _ msg) <- fromException e
+                 , msg == "recv errored"
+                -> return $ label ("client-error: " ++ show fault) True
+
               (_, Right _, Left (Right serverError))
                  | iotest
                  , Just (Mx.Shutdown (Just e) _) <- fromException serverError
-                 , Just Mx.IOException {} <- fromException e
+                 , Just (Mx.IOException _ msg) <- fromException e
+                 , msg == "recv errored"
                 -> return $ label ("server-error: " ++ show fault) True
 #endif
 
