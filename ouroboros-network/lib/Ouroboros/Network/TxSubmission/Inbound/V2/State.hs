@@ -62,9 +62,11 @@ data PeerActionContext peeraddr txid tx = PeerActionContext {
 data PeerActionChoice peeraddr =
     -- | Submit the buffered bodies for the given tx keys to the mempool.
     ChooseSubmit ![TxKey]
-    -- | Request tx bodies: keys to request, total expected size, and the
-    -- tx table updated with the new lease assignments.
-  | ChooseRequestTxs ![TxKey] !SizeInBytes !(IntMap.IntMap (TxEntry peeraddr))
+    -- | Request tx bodies: keys to request, total expected size, the
+    -- tx table updated with the new lease assignments, and a flag
+    -- indicating whether at least one entry's inflight cap was lazily
+    -- bumped during selection.
+  | ChooseRequestTxs ![TxKey] !SizeInBytes !(IntMap.IntMap (TxEntry peeraddr)) !Bool
     -- | Send a txid request: acknowledged keys, ack count, request count,
     -- and the updated unacknowledged queue.  The wire send site decides
     -- whether the message is blocking or pipelined based on the
@@ -208,8 +210,8 @@ pickPeerActionChoice txIdRequestMode ctx
   | Just txsToSubmit <- pickSubmitAction ctx =
       ChooseSubmit txsToSubmit
   -- Pick TXs to fetch
-  | Just (txsToRequest, txsToRequestSize, txTable') <- pickRequestTxsAction ctx =
-      ChooseRequestTxs txsToRequest txsToRequestSize txTable'
+  | Just (txsToRequest, txsToRequestSize, txTable', bumped) <- pickRequestTxsAction ctx =
+      ChooseRequestTxs txsToRequest txsToRequestSize txTable' bumped
   -- Pick TXids to ack and/or request more TXids.
   | Just (acknowledgedTxIds, txIdsToAcknowledge, txIdsToRequest, unacknowledgedTxIds') <-
       pickRequestTxIdsAction txIdRequestMode ctx =
@@ -226,8 +228,8 @@ applyPeerActionChoice ctx choice =
   case choice of
        ChooseSubmit txsToSubmit ->
          applySubmitChoice ctx txsToSubmit
-       ChooseRequestTxs txsToRequest txsToRequestSize txTable' ->
-         applyRequestTxsChoice ctx txsToRequest txsToRequestSize txTable'
+       ChooseRequestTxs txsToRequest txsToRequestSize txTable' bumped ->
+         applyRequestTxsChoice ctx txsToRequest txsToRequestSize txTable' bumped
        ChooseRequestTxIds acknowledgedTxIds txIdsToAcknowledge txIdsToRequest
                           unacknowledgedTxIds' ->
          applyRequestTxIdsChoice ctx acknowledgedTxIds txIdsToAcknowledge txIdsToRequest
@@ -261,8 +263,11 @@ applyRequestTxsChoice :: PeerActionContext peeraddr txid tx
                       -> [TxKey]
                       -> SizeInBytes
                       -> IntMap.IntMap (TxEntry peeraddr)
+                      -> Bool
+                      -- ^ True iff at least one entry's cap was lazily
+                      -- bumped during selection.
                       -> (PeerAction, PeerTxLocalState tx, PeerTxInFlight, SharedTxState peeraddr txid)
-applyRequestTxsChoice ctx txsToRequest txsToRequestSize txTable =
+applyRequestTxsChoice ctx txsToRequest txsToRequestSize txTable bumped =
   ( PeerRequestTxs txsToRequest
   , peerState'
   , peerInFlight'
@@ -286,16 +291,19 @@ applyRequestTxsChoice ctx txsToRequest txsToRequestSize txTable =
         pifLeased     = pifLeased     pif `IntSet.union` requestedKeys,
         pifAttempting = pifAttempting pif `IntSet.union` requestedKeys
       }
-    -- Bump only 'sharedRevision' (the structural dirty bit), not
-    -- 'sharedGeneration' (the wake counter).  Claiming a lease grants no
-    -- new option to other advertisers: they couldn't claim before this
-    -- commit, and they still can't.  Waking them here would cost a full
-    -- 'nextPeerAction' pass per peer with nothing to show for it; the
-    -- wake they actually care about is on submit / lease release.
+    -- Bump 'sharedRevision' (the structural dirty bit) unconditionally;
+    -- bump 'sharedGeneration' (the wake counter) iff a lazy cap-bump
+    -- occurred during selection.  Claiming a lease alone grants no new
+    -- option to other advertisers, so it does not justify waking them.
+    -- A cap-bump does: a previously locked-out peer can now claim, and
+    -- any peer parked on a bumpAt timer should re-evaluate immediately.
+    st = pacSharedState ctx
     sharedState' =
-      (pacSharedState ctx) {
-        sharedTxTable = txTable,
-        sharedRevision = sharedRevision (pacSharedState ctx) + 1
+      st {
+        sharedTxTable    = txTable,
+        sharedRevision   = sharedRevision st + 1,
+        sharedGeneration = if bumped then sharedGeneration st + 1
+                                     else sharedGeneration st
       }
 
 -- | Construct a 'PeerRequestTxIds' action and update local and shared txid state.
@@ -396,12 +404,17 @@ pickSubmitAction PeerActionContext { pacPeerState, pacSharedState } =
 -- Updated shared state with new lease ownership for selected txs
 pickRequestTxsAction :: Eq peeraddr
                      => PeerActionContext peeraddr txid tx
-                     -> Maybe ([TxKey], SizeInBytes, IntMap.IntMap (TxEntry peeraddr))
+                     -> Maybe ([TxKey], SizeInBytes, IntMap.IntMap (TxEntry peeraddr), Bool)
+                     -- ^ The 'Bool' is 'True' iff at least one entry's
+                     -- inflight cap was lazily bumped during selection.
+                     -- The caller uses it to decide whether to advance
+                     -- 'sharedGeneration' (a bump grants new options to
+                     -- locked-out peers).
 pickRequestTxsAction ctx@PeerActionContext { pacNow, pacPolicy, pacPeerState, pacSharedState } =
-  let (txsToRequest, txsToRequestSize, sharedState') = pickTxsToRequest in
+  let (txsToRequest, txsToRequestSize, txTable', bumped) = pickTxsToRequest in
   if null txsToRequest
      then Nothing
-     else Just (txsToRequest, txsToRequestSize, sharedState')
+     else Just (txsToRequest, txsToRequestSize, txTable', bumped)
   where
 
     -- Picks txs from the peer's available set that are not yet requested or
@@ -411,8 +424,8 @@ pickRequestTxsAction ctx@PeerActionContext { pacNow, pacPolicy, pacPeerState, pa
     pickTxsToRequest =
       if StrictSeq.length (peerRequestedTxBatches pacPeerState) >=
            maxOutstandingTxBatchesPerPeer pacPolicy
-         then ([], 0, sharedTxTable pacSharedState)
-         else go IntSet.empty [] 0 (sharedTxTable pacSharedState) candidates
+         then ([], 0, sharedTxTable pacSharedState, False)
+         else go IntSet.empty [] 0 (sharedTxTable pacSharedState) False candidates
       where
         -- Remaining bytes available for requesting new tx, based on the
         -- per-peer inflight size limit.
@@ -446,25 +459,37 @@ pickRequestTxsAction ctx@PeerActionContext { pacNow, pacPolicy, pacPeerState, pa
         -- 'Map txid SizeInBytes' already deduplicates, and we must not
         -- inflate 'txAttempt' or 'peerRequestedTxsSize' with phantom
         -- second claims.
-        go _    selectedRev selectedSize txTable [] = (reverse selectedRev, selectedSize, txTable)
-        go seen selectedRev selectedSize txTable ((k, txSize) : rest)
-          | IntSet.member k seen = go seen selectedRev selectedSize txTable rest
+        go _    selectedRev selectedSize txTable bumped [] =
+            (reverse selectedRev, selectedSize, txTable, bumped)
+        go seen selectedRev selectedSize txTable bumped ((k, txSize) : rest)
+          | IntSet.member k seen = go seen selectedRev selectedSize txTable bumped rest
           | exceedsBudget selectedSize txSize =
-              (reverse selectedRev, selectedSize, txTable)
+              (reverse selectedRev, selectedSize, txTable, bumped)
           | otherwise =
               case IntMap.lookup k txTable of
-                  Just txEntry ->
-                    if txSelectable ctx (TxKey k) txEntry
-                       then
-                         go (IntSet.insert k seen)
-                            (TxKey k : selectedRev)
-                            (selectedSize + txSize)
-                            (IntMap.insert k (claimTx (pacPeerAddr ctx) leaseUntil txEntry)
-                                           txTable)
-                            rest
-                       else go seen selectedRev selectedSize txTable rest
+                  Just txEntry
+                    | txSelectable ctx (TxKey k) txEntry ->
+                        claimAndRecur txEntry bumped
+                      -- A2: lazy cap-bump.  This peer was blocked solely
+                      -- by a saturated cap on a stale lease; raise the
+                      -- cap and claim under the new value.  Sets the
+                      -- 'bumped' flag so 'applyRequestTxsChoice' advances
+                      -- 'sharedGeneration' to wake other locked-out peers.
+                    | Just txEntry' <- bumpCurrentMaxIfStuck pacPolicy pacNow txEntry
+                    , txSelectable ctx (TxKey k) txEntry' ->
+                        claimAndRecur txEntry' True
+                    | otherwise ->
+                        go seen selectedRev selectedSize txTable bumped rest
                   -- Entry resolved or swept since this peer's local state last synced; skip.
-                  Nothing -> go seen selectedRev selectedSize txTable rest
+                  Nothing -> go seen selectedRev selectedSize txTable bumped rest
+          where
+            claimAndRecur entry bumped' =
+              go (IntSet.insert k seen)
+                 (TxKey k : selectedRev)
+                 (selectedSize + txSize)
+                 (IntMap.insert k (claimTx (pacPeerAddr ctx) leaseUntil entry) txTable)
+                 bumped'
+                 rest
 
         -- Check if the size is within the budget.
         --
@@ -673,20 +698,29 @@ bumpStuckEntries now policy downloadedTxs st =
       IntMap.foldlWithKey' bumpOne (False, sharedTxTable st) downloadedTxs
     bumpOne (!changed, !tbl) k _tx
       | Just entry  <- IntMap.lookup k tbl
-      , Just entry' <- bumpCurrentMaxIfStuck entry
+      , Just entry' <- bumpCurrentMaxIfStuck policy now entry
       = (True, IntMap.insert k entry' tbl)
       | otherwise = (changed, tbl)
 
-    -- Bump 'currentMaxInflightMultiplicity' by one when the leaseholder
-    -- has held the lease past 'inflightTimeout' without anyone reaching
-    -- submission, and the cap is the bottleneck preventing another peer
-    -- from joining.  Returns 'Nothing' when no bump was warranted.
-    bumpCurrentMaxIfStuck :: TxEntry peeraddr -> Maybe (TxEntry peeraddr)
-    bumpCurrentMaxIfStuck entry@TxEntry { currentMaxInflightMultiplicity = cap }
-      | Just bumpAt <- stuckBumpEligibleAt policy entry
-      , now >= bumpAt
-      = Just entry { currentMaxInflightMultiplicity = cap + 1 }
-    bumpCurrentMaxIfStuck _ = Nothing
+-- | Bump 'currentMaxInflightMultiplicity' by one when the leaseholder
+-- has held the lease past 'inflightTimeout' without anyone reaching
+-- submission, and the cap is the bottleneck preventing another peer
+-- from joining.  Returns 'Nothing' when no bump is warranted.
+--
+-- Used both by 'bumpStuckEntries' (eager, scoped to a peer's
+-- 'peerDownloadedTxs') and by 'pickRequestTxsAction' (lazy, invoked
+-- on demand for an entry a peer is trying to claim but is blocked
+-- from by a saturated cap).
+bumpCurrentMaxIfStuck
+  :: TxDecisionPolicy
+  -> Time
+  -> TxEntry peeraddr
+  -> Maybe (TxEntry peeraddr)
+bumpCurrentMaxIfStuck policy now entry@TxEntry { currentMaxInflightMultiplicity = cap }
+  | Just bumpAt <- stuckBumpEligibleAt policy entry
+  , now >= bumpAt
+  = Just entry { currentMaxInflightMultiplicity = cap + 1 }
+bumpCurrentMaxIfStuck _ _ _ = Nothing
 
 -- | Determine if a tx is eligible for this peer to request.
 --

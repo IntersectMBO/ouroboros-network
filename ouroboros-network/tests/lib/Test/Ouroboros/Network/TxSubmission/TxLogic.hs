@@ -98,6 +98,7 @@ tests =
     , testCaseSteps "nextPeerAction only acks the safe prefix before a blocked buffered tx" unit_nextPeerAction_acksSafePrefixBeforeBlockedBufferedTx
     , testCaseSteps "nextPeerAction lets another peer claim a fresh tx when the first advertiser is full" unit_nextPeerAction_claimsFreshTxWhenFirstAdvertiserIsFull
     , testCaseSteps "nextPeerAction claims a released tx from another advertiser" unit_nextPeerAction_claimsRejectedTxFromOtherAdvertiser
+    , testCaseSteps "nextPeerAction lazily bumps a cap-saturated entry and claims under the new cap" unit_nextPeerAction_lazyBumpsCapSaturatedEntry
     , testCaseSteps "nextPeerAction claims a tx once the score delay threshold has elapsed" unit_nextPeerAction_claimsAtScoreDelayThreshold
     , testCaseSteps "nextPeerAction requests other work despite a blocked buffered tx" unit_nextPeerAction_requestsOtherWorkDespiteBlockedBufferedTx
     , testCaseSteps "nextPeerAction submits buffered bodies across a resolved-elsewhere gap" unit_nextPeerAction_submitsBufferedAcrossResolvedGap
@@ -2042,6 +2043,113 @@ unit_nextPeerAction_claimsRejectedTxFromOtherAdvertiser step = do
         TxLeased owner _ -> owner @?= peerB
         _                -> assertFailure "B's claim did not produce TxLeased B"
       Nothing -> assertFailure "entry vanished after B's claim"
+
+-- | A2: lazy cap-bump in 'pickRequestTxsAction'.
+--
+-- Scenario:
+--   * Peers A and B both claimed tx X earlier; txAttempt = 2 = cap.
+--   * Both stalled before delivering the body (peerDownloadedTxs is
+--     empty for X on both, no buffered body).
+--   * The lease deadline and the stuckBumpReadyAt threshold have both
+--     passed.
+--   * Peer C also advertised X but is locked out by the cap.
+--
+-- 'bumpStuckEntries' alone does not recover this: nobody has X in
+-- 'peerDownloadedTxs', so no eager bump call visits the entry.  The
+-- recovery path under test is the lazy bump in 'pickRequestTxsAction':
+-- when peer C walks its candidate queue and 'txSelectable' rejects X
+-- because of the saturated cap, the picker invokes
+-- 'bumpCurrentMaxIfStuck' and retries selectability under the new cap.
+--
+-- Asserts that on peer C's next 'nextPeerAction':
+--   1. C issues a 'PeerRequestTxs' containing X (the claim succeeded).
+--   2. The entry's 'currentMaxInflightMultiplicity' grew from cap to
+--      cap + 1.
+--   3. The entry's lease moved to C with a fresh deadline.
+--   4. 'txAttempt' grew to cap + 1 (C joined as a third claimant).
+--   5. 'sharedGeneration' advanced -- locked-out peers parked on
+--      'awaitSharedChange' must wake to re-evaluate.
+unit_nextPeerAction_lazyBumpsCapSaturatedEntry
+  :: (String -> IO ()) -> Assertion
+unit_nextPeerAction_lazyBumpsCapSaturatedEntry step = do
+    step "Pre-state: txAttempt = cap = 2, A and B stalled with empty buffers, C also advertises"
+    let policy = defaultTxDecisionPolicy
+        peerB  = 2 :: PeerAddr
+        peerC  = 3 :: PeerAddr
+        txid :: TxId
+        txid     = 1
+        txKeyInt = 0
+        key      = TxKey txKeyInt
+        txSize   = mkSize (Positive 10)
+
+        cap = txInflightMultiplicity policy  -- default 2
+
+        -- B claimed last (txLease points to B); claim was at Time 99,
+        -- so leaseUntil = 99.25 and stuckBumpReadyAt = leaseUntil +
+        -- (inflightTimeout - interTxSpace) = 99.25 + 0.35 = 99.60.
+        -- 'now' (Time 100) is comfortably past the bump threshold.
+        bClaimTime  = Time 99
+        bLeaseUntil = addTime (interTxSpace policy) bClaimTime
+
+        sharedState0 :: SharedTxState PeerAddr TxId
+        sharedState0 = emptySharedTxState
+          { sharedTxIdToKey = Map.singleton (getRawTxId txid) key
+          , sharedKeyToTxId = IntMap.singleton txKeyInt txid
+          , sharedNextTxKey = txKeyInt + 1
+          , sharedTxTable   = IntMap.singleton txKeyInt TxEntry
+              { txLease = TxLeased peerB bLeaseUntil
+              , txAttempt = cap
+              , txInSubmission = False
+              , currentMaxInflightMultiplicity = cap
+              }
+          }
+
+        -- Peer C: also advertised X, has not claimed; everything else
+        -- is empty (no other work in flight, no buffered bodies).
+        peerCState0 = emptyPeerTxLocalState
+          { peerUnacknowledgedTxIds = StrictSeq.singleton key
+          , peerAvailableTxIds      = IntMap.singleton txKeyInt txSize
+          }
+        peerCInFlight0 = emptyPeerTxInFlight
+          { pifAdvertised  = IntSet.singleton txKeyInt
+          , pifAcksPending = IntSet.singleton txKeyInt
+          }
+
+    step "Sanity: now is past stuckBumpReadyAt"
+    let bumpAt = addTime (inflightTimeout policy - interTxSpace policy)
+                         bLeaseUntil
+    assertBool ("now (" ++ show now ++ ") must be past bumpAt ("
+                ++ show bumpAt ++ ")")
+               (now >= bumpAt)
+
+    step "Run nextPeerAction for peer C: lazy bump fires, C claims X"
+    let (action, peerCState', peerCInFlight', sharedState') =
+          nextPeerAction now policy peerC peerCState0 peerCInFlight0 sharedState0
+
+    step "Action: PeerRequestTxs for X"
+    action @?= PeerRequestTxs [key]
+
+    step "C's local state reflects the claim"
+    peerRequestedTxs peerCState'      @?= IntSet.singleton txKeyInt
+    IntSet.member txKeyInt (pifLeased peerCInFlight')     @?= True
+    IntSet.member txKeyInt (pifAttempting peerCInFlight') @?= True
+
+    step "Shared entry: cap bumped, lease moved to C, txAttempt incremented"
+    case IntMap.lookup txKeyInt (sharedTxTable sharedState') of
+      Just entry -> do
+        currentMaxInflightMultiplicity entry @?= cap + 1
+        txAttempt entry                      @?= cap + 1
+        txInSubmission entry                 @?= False
+        case txLease entry of
+          TxLeased owner deadline -> do
+            owner    @?= peerC
+            deadline @?= addTime (interTxSpace policy) now
+          TxClaimable _ ->
+            assertFailure "lease did not move to peer C"
+      Nothing -> assertFailure "entry vanished after C's claim"
+
+    step "sharedGeneration advanced: parked peers will wake"
+    sharedGeneration sharedState' @?= sharedGeneration sharedState0 + 1
 
 -- | A peer with a non-zero score waits its score-derived delay before
 -- claiming a TxClaimable entry.  With any non-zero score the floor is
