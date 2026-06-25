@@ -34,6 +34,11 @@ flag repl
   manual: True
   default: False
 
+flag optparse-applicative-fork
+  description: Use optparse-applicative-fork
+  manual: True
+  default: False
+
 common ghc-options
   default-language: Haskell2010
   default-extensions: ImportQualifiedPost
@@ -615,7 +620,6 @@ library ping
     iproute ^>=1.7.15,
     network ^>=3.2.7,
     network-mux,
-    optparse-applicative,
     ouroboros-network:{api, framework} >=1.0.0.0 && <1.2.0.0,
     random,
     serialise,
@@ -623,11 +627,14 @@ library ping
     text >=1.2.4 && <2.2,
     time >=1.9.1 && <1.16,
 
-  if flag(repl)
+  -- Until https://github.com/IntersectMBO/cardano-cli/pull/1390 is merged we
+  -- need to allow for `optparse-applicative-fork`
+  if flag(optparse-applicative-fork)
     build-depends:
-      ouroboros-network:protocols
-
-    ghc-options: -Wno-unused-packages
+      optparse-applicative-fork
+  else
+    build-depends:
+      optparse-applicative
 
 executable cardano-ping
   import: ghc-options
@@ -636,4 +643,10 @@ executable cardano-ping
   build-depends:
     base >=4.14 && <4.23,
     cardano-diffusion:ping,
-    optparse-applicative,
+
+  if flag(optparse-applicative-fork)
+    build-depends:
+      optparse-applicative-fork
+  else
+    build-depends:
+      optparse-applicative
