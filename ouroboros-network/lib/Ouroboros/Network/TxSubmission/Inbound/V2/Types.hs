@@ -760,10 +760,11 @@ data TraceTxSubmissionInbound txid tx =
   | TraceTxInboundAddedToMempool [txid] DiffTime
   | TraceTxInboundRejectedFromMempool [txid] DiffTime
   | TraceTxInboundError TxSubmissionProtocolError
-  -- | Tx bodies requested from a peer: the txids, the RTT-derived
-  -- exclusive-fetch lease ('interTxSpace') applied to them, and the peer's
-  -- current txid and tx-body RTT summaries (in that order).
-  | TraceTxInboundRequestTxs [txid] DiffTime RttStats RttStats
+  -- | Tx bodies requested from a peer: the txids, the estimated total reply
+  -- size in bytes (sum of advertised tx sizes; drives the expected-RTT lease
+  -- scaling), the RTT-derived exclusive-fetch lease ('interTxSpace') applied to
+  -- them, and the peer's current txid and tx-body RTT summaries (in that order).
+  | TraceTxInboundRequestTxs [txid] SizeInBytes DiffTime RttStats RttStats
 
   --
   -- messages emitted by the new implementation of the server in

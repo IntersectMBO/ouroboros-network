@@ -1771,10 +1771,11 @@ instance ( ToJSON txid
       , "txids" .= toJSON txids
       , "time" .= diffTime
       ]
-  toJSON (TraceTxInboundRequestTxs txids lease txIdRtt txBodyRtt) =
+  toJSON (TraceTxInboundRequestTxs txids respBytes lease txIdRtt txBodyRtt) =
     object
       [ "kind"      .= String "TxInboundRequestTxs"
       , "txids"     .= toJSON txids
+      , "respBytes" .= toJSON respBytes
       , "lease"     .= lease
       , "txIdRtt"   .= rttObj txIdRtt
       , "txBodyRtt" .= rttObj txBodyRtt

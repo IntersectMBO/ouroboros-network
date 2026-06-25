@@ -289,12 +289,14 @@ txSubmissionInboundV2
       -- unchanged so we measure from first-send to last-receive.
       sendTime <- getMonotonicTime
       (txIdRtt, txBodyRtt) <- peerRttSummary sendTime
+      let reqSize = sum (Map.elems txsToRequest)
       traceWith tracer (TraceTxInboundRequestTxs
                           (Map.keys txsToRequest)
+                          reqSize
                           (interTxSpaceFor (interTxSpace policy)
                                            (inflightTimeout policy)
                                            (peerRttEstimate peerState)
-                                           (sum (Map.elems txsToRequest)))
+                                           reqSize)
                           txIdRtt
                           txBodyRtt)
       let peerState' = pushSendTime sendTime $

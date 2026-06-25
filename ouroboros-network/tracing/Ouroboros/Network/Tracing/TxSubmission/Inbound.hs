@@ -73,10 +73,11 @@ instance (Show txid, Show tx)
       , "error" .= Text.pack (show e)
       ]
 
-  forMachine dtal (TraceTxInboundRequestTxs txids lease txIdRtt txBodyRtt) =
+  forMachine dtal (TraceTxInboundRequestTxs txids respBytes lease txIdRtt txBodyRtt) =
     mconcat
       [ "kind" .= String "TraceTxInboundRequestTxs"
       , "count" .= toJSON (length txids)
+      , "respBytes" .= toJSON respBytes
       , "lease" .= toJSON lease
       , "txIdRtt" .= rttObject txIdRtt
       , "txBodyRtt" .= rttObject txBodyRtt
