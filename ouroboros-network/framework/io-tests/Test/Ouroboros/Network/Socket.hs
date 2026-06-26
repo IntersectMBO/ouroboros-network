@@ -19,9 +19,9 @@ import Data.Time.Clock (UTCTime, getCurrentTime)
 import Data.Void (Void)
 #ifndef mingw32_HOST_OS
 import System.Directory (removeFile)
-import System.IO.Error
 #endif
 import Network.Socket qualified as Socket
+import System.IO.Error
 #if defined(mingw32_HOST_OS)
 import System.Win32.Async.Socket.ByteString.Lazy qualified as Win32.Async
            (sendAll)
@@ -238,7 +238,7 @@ prop_socket_send_recv initiatorAddr responderAddr configureSock f xs =
             pure ((), trailing)
 
     let snocket = socketSnocket iomgr
-    res <-
+    res <- try $
       Server.Simple.with
         snocket
         nullTracer
@@ -274,7 +274,19 @@ prop_socket_send_recv initiatorAddr responderAddr configureSock f xs =
             localAddress
           atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
 
-    return (res == mapAccumL f 0 xs)
+    case res of
+      Right result -> return (result == mapAccumL f 0 xs)
+      Left e       -> do
+        --  The siblingVar barrier guarantees both peers capture their result
+        --  before either returns, so if both results are present the
+        --  exchange succeeded and the reset is a benign teardown artifact.
+        --  A reset before completion leaves a result unset and is
+        --  re-thrown as a genuine failure.
+        captured <- atomically $ (,) <$> tryReadTMVar sv <*> tryReadTMVar cv
+        case captured of
+          (Just sr, Just cr) | isBenignTeardown e ->
+            return ((sr, cr) == mapAccumL f 0 xs)
+          _ -> throwIO e
 
   where
     waitSibling :: StrictTVar IO Int -> IO ()
@@ -283,6 +295,24 @@ prop_socket_send_recv initiatorAddr responderAddr configureSock f xs =
         atomically $ do
             cnt <- readTVar cntVar
             unless (cnt == 0) retry
+
+-- | True for the connection-reset / bearer-closed exceptions that can surface
+-- while the mux bearers are torn down after a completed exchange.  On loopback,
+-- if one side closes its socket while the other is still reading, the reader
+-- observes a reset; this is benign (see 'prop_socket_recv_error', which asserts
+-- the very same close path).
+isBenignTeardown :: SomeException -> Bool
+isBenignTeardown e
+  | Just ioe <- fromException e
+  = isResourceVanishedError ioe
+  | Just muxError <- fromException e
+  = case muxError of
+      Mx.BearerClosed{}       -> True
+      Mx.IOException ioe _    -> isResourceVanishedError ioe
+      Mx.Shutdown (Just e') _ -> isBenignTeardown e'
+      _                       -> False
+  | otherwise
+  = False
 
 data RecvErrorType = RecvSocketClosed | RecvSDUTimeout deriving (Eq, Show)
 
