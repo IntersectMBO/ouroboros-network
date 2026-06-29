@@ -289,7 +289,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
             (\_ -> initiatorApp))
           (Just consumerAddress)
           producerAddress')
-        $ \ _connAsync -> do
+        $ \connAsync -> do
           void $ forkIO $ sequence_
               [ do
                   threadDelay 10e-4 -- just to provide interest
@@ -300,7 +300,11 @@ demo chain0 updates = withIOManager $ \iocp -> do
               | update <- updates
               ]
 
-          atomically $ takeTMVar done
+          result <- atomically $ takeTMVar done
+          -- Let connectToNode return on its own once the chain-sync client
+          -- terminates.
+          void $ wait connAsync
+          return result
 
   where
     checkTip target consumerVar = atomically $ do
