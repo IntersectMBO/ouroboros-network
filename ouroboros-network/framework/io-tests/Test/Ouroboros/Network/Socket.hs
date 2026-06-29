@@ -202,8 +202,16 @@ prop_socket_send_recv initiatorAddr responderAddr configureSock f xs =
     {- The siblingVar is used by the initiator and responder to wait on each other before exiting.
      - Without this wait there is a risk that one side will finish first causing the Muxbearer to
      - be torn down and the other side exiting before it has a chance to write to its result TMVar.
+     - It also guarantees the responder has received the client's final message before either side
+     - returns, so both result TMVars are populated by the time we read them below.
      -}
     siblingVar <- newTVarIO 2
+
+    {- After the siblingVar barrier the initiator returns and connectToNode closes the client
+     - socket; the responder then blocks on clientDone, keeping the server's mux alive until the
+     - client has fully closed.
+     -}
+    clientDone <- newEmptyTMVarIO
 
     let -- Server Node; only req-resp server
         responderApp :: OuroborosApplicationWithMinimalCtx
@@ -219,6 +227,9 @@ prop_socket_send_recv initiatorAddr responderAddr configureSock f xs =
                          (ReqResp.reqRespServerPeer (ReqResp.reqRespServerMapAccumL (\a -> pure . f a) 0))
             atomically $ putTMVar sv r
             waitSibling siblingVar
+            -- keep the responder (and thus the server's mux) alive until the
+            -- client has finished and closed its socket
+            atomically $ takeTMVar clientDone
             pure ((), trailing)
 
         -- Client Node; only req-resp client
@@ -272,6 +283,10 @@ prop_socket_send_recv initiatorAddr responderAddr configureSock f xs =
             (unversionedProtocol initiatorApp)
             (Just initiatorAddr)
             localAddress
+          -- connectToNode has returned, so the client mux is stopped and its
+          -- socket closed; release the responder to shut down against an
+          -- already-closed peer
+          atomically $ putTMVar clientDone ()
           atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
 
     return (res == mapAccumL f 0 xs)
