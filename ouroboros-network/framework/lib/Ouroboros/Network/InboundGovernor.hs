@@ -390,7 +390,19 @@ with
                             Duplex         -> OrdPSQ.insert (remoteAddress connId) time csVersionData
                                                             (freshDuplexPeers state)
                       }
-                return . Just $ StateWithPeerTransition state' connId
+
+                -- If the mux already reached a terminal state before we
+                -- registered the connection, the tracer dropped its stop event
+                -- (lookup miss), so unregister now; checked in the same atomic
+                -- as we make the new connection visible.
+                state'' <- atomically $ do
+                  muxIsStopped <- Mux.hasStopped csMux
+                  let s = if muxIsStopped
+                             then unregisterConnection True connId state'
+                             else state'
+                  writeTVar stateVar s
+                  return s
+                return . Just $ StateWithPeerTransition state'' connId
 
           MuxFinished connId result -> do
 
