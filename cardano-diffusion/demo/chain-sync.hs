@@ -390,7 +390,6 @@ clientBlockFetch sockAddrs maxSlotNo = withIOManager $ \iocp -> do
                                             (Map.delete connId)
               in bracketSyncWithFetchClient blockFetchRegistry connId $
                  bracket register unregister $ \chainVar ->
-                 wrapMiniProtocolTrailing $
                  runPeer
                    nullTracer -- (contramap (show . TraceLabelPeer ("chain-sync", getFilePath $ remoteAddress connId)) stdoutTracer)
                    codecChainSync
@@ -406,14 +405,12 @@ clientBlockFetch sockAddrs maxSlotNo = withIOManager $ \iocp -> do
               bracketDqRegistry keepAliveRegistry connId $
               bracketFetchClient blockFetchRegistry keepAliveRegistry (maxBound :: NodeToNodeVersion) connId $ \clientCtx -> do
                 threadDelay 1000000
-                wrapMiniProtocolTrailing
-                  ( runPipelinedPeer
-                      nullTracer -- (contramap (show . TraceLabelPeer ("block-fetch", getFilePath $ remoteAddress connId)) stdoutTracer)
-                      codecBlockFetch
-                      channel
-                      (blockFetchClient (maxBound :: NodeToNodeVersion) continueUntilMaxSlot
-                                        nullTracer clientCtx)
-                  )
+                runPipelinedPeer
+                  nullTracer -- (contramap (show . TraceLabelPeer ("block-fetch", getFilePath $ remoteAddress connId)) stdoutTracer)
+                  codecBlockFetch
+                  channel
+                  (blockFetchClient (maxBound :: NodeToNodeVersion) continueUntilMaxSlot
+                                    nullTracer clientCtx)
 
         blockFetchPolicy :: BlockFetchConsensusInterface
                              LocalConnectionId BlockHeader Block IO

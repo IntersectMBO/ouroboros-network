@@ -34,7 +34,6 @@ module Network.Mux
   , StartOnDemandOrEagerly (..)
   , ByteChannel
   , Channel (..)
-  , Reception (..)
     -- * Bearer
   , Bearer
   , MakeBearer (..)
@@ -65,11 +64,11 @@ module Network.Mux
 import Data.ByteString.Builder (lazyByteString, toLazyByteString)
 import Data.ByteString.Lazy qualified as BL
 import Data.Int (Int64)
-import Data.IntMap.Strict qualified as IntMap
 import Data.Map (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (isNothing)
 import Data.Monoid.Synchronisation (FirstToFinish (..))
+import Data.Strict.Tuple (pattern (:!:))
 
 import Control.Applicative
 import Control.Concurrent.Class.MonadSTM.Strict
@@ -163,7 +162,7 @@ mkMiniProtocolState :: MonadSTM m
                     => MiniProtocolInfo mode
                     -> m (MiniProtocolState mode m)
 mkMiniProtocolState miniProtocolInfo = do
-    miniProtocolIngressQueue <- newTVarIO $ MkIngressQueueVal 0 IntMap.empty mempty
+    miniProtocolIngressQueue <- newTVarIO $ 0 :!: mempty
     miniProtocolStatusVar    <- newTVarIO StatusIdle
     return MiniProtocolState {
        miniProtocolInfo,
@@ -344,11 +343,10 @@ miniProtocolJob TracersI {
         putTMVar completionVar (Right result)
           `orElse` throwSTM (BlockedOnCompletionVar miniProtocolNum)
         case remainder of
-          Just (MkReception oldTms trailing) ->
-            modifyTVar miniProtocolIngressQueue $ \(MkIngressQueueVal l tms b) ->
-              let tms' = IntMap.union tms (IntMap.mapKeysMonotonic (+ fromIntegral l) oldTms)
-              in
-              MkIngressQueueVal (BL.length trailing + l) tms' (lazyByteString trailing <> b)
+          Just trailing ->
+            modifyTVar miniProtocolIngressQueue $ \(l :!: b) ->
+                  BL.length trailing + l
+              :!: lazyByteString trailing <> b
           Nothing ->
             pure ()
 
@@ -376,7 +374,7 @@ data ControlCmd mode m =
 
 data MiniProtocolAction m where
     MiniProtocolAction :: forall m a.
-      { miniProtocolAction :: ByteChannel m -> m (a, Maybe (Reception BL.ByteString)),
+      { miniProtocolAction :: ByteChannel m -> m (a, Maybe BL.ByteString),
         -- ^ mini-protocol action
         completionVar      :: StrictTMVar m (Either SomeException a)
         -- ^ Completion var
@@ -625,7 +623,7 @@ monitor tracers@TracersI {
 
     checkNonEmptyQueue :: IngressQueue m -> STM m ()
     checkNonEmptyQueue q = do
-      MkIngressQueueVal l _tms _builder <- readTVar q
+      l :!: _ <- readTVar q
       check (l /= 0)
 
     protocolKey :: MiniProtocolState mode m -> MiniProtocolKey
@@ -711,21 +709,19 @@ muxChannel tracer egressQueue want@(Wanton w) mc md q =
 
         traceWith tracer $ TraceChannelSendEnd mc
 
-    recv :: m (Maybe (Reception BL.ByteString))
+    recv :: m (Maybe BL.ByteString)
     recv = do
         -- We receive CBOR encoded messages as ByteStrings (possibly partial) from the
         -- matching ingress queue. This is the same queue the 'demux' thread writes to.
         traceWith tracer $ TraceChannelRecvStart mc
-        (tms, blob) <- atomically $ do
-            MkIngressQueueVal l tms blob <- readTVar q
+        blob <- atomically $ do
+            l :!: blob <- readTVar q
             if l == 0
                 then retry
-                else do
-                  writeTVar q (MkIngressQueueVal 0 IntMap.empty mempty)
-                  return (tms, toLazyByteString blob)
+                else writeTVar q (0 :!: mempty) >> return (toLazyByteString blob)
         -- say $ printf "recv mid %s mode %s blob len %d" (show mid) (show md) (BL.length blob)
         traceWith tracer $ TraceChannelRecvEnd mc (fromIntegral $ BL.length blob)
-        return $ Just (MkReception tms blob)
+        return $ Just blob
 
 traceBearerState :: Monad m => Tracer m Trace -> State -> m ()
 traceBearerState tracer state =
@@ -773,7 +769,7 @@ runMiniProtocol :: forall mode m a.
                 -> MiniProtocolNum
                 -> MiniProtocolDirection mode
                 -> StartOnDemandOrEagerly
-                -> (ByteChannel m -> m (a, Maybe (Reception BL.ByteString)))
+                -> (ByteChannel m -> m (a, Maybe BL.ByteString))
                 -> m (STM m (Either SomeException a))
 runMiniProtocol Mux { muxMiniProtocols,
                       muxControlCmdQueue,

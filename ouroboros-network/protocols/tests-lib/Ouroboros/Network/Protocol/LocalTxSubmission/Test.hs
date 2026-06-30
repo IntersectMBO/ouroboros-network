@@ -22,7 +22,6 @@ import Data.ByteString.Lazy (ByteString)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow
-import Control.Monad.Class.MonadTime.SI
 import Control.Monad.IOSim
 import Control.Monad.ST (runST)
 import Control.Tracer (nullTracer)
@@ -151,11 +150,10 @@ prop_connect p txs =
 
 -- | Run a local tx-submission client and server using connected channels.
 --
-prop_channel :: ( MonadAsync         m
-                , MonadCatch         m
-                , MonadEvaluate      m
-                , MonadMonotonicTime m
-                , MonadST            m
+prop_channel :: ( MonadAsync    m
+                , MonadCatch    m
+                , MonadEvaluate m
+                , MonadST       m
                 )
              => m (Channel m ByteString, Channel m ByteString)
              -> (Tx -> SubmitResult Reject) -> [Tx]

@@ -421,11 +421,10 @@ prop_connect (ArbitraryVersions clientVersions serverVersions) =
 
 -- | Run a simple block-fetch client and server using connected channels.
 --
-prop_channel :: ( MonadAsync         m
-                , MonadCatch         m
-                , MonadEvaluate      m
-                , MonadMonotonicTime m
-                , MonadST            m
+prop_channel :: ( MonadAsync    m
+                , MonadCatch    m
+                , MonadEvaluate m
+                , MonadST m
                 )
              => m (Channel m ByteString, Channel m ByteString)
              -> Versions VersionNumber VersionData Bool
@@ -501,11 +500,10 @@ prop_pipe_IO (ArbitraryVersions clientVersions serverVersions) =
 -- a single version 'Version_1' (it cannot decode any other version).
 --
 prop_channel_asymmetric
-    :: ( MonadAsync         m
-       , MonadEvaluate      m
-       , MonadMask          m
-       , MonadMonotonicTime m
-       , MonadST            m
+    :: ( MonadAsync    m
+       , MonadEvaluate m
+       , MonadMask     m
+       , MonadST       m
        )
     => m (Channel m ByteString, Channel m ByteString)
     -> Versions VersionNumber VersionData Bool
@@ -616,7 +614,6 @@ prop_acceptable_symmetric_VersionData a b =
 prop_query_version :: ( MonadAsync m
                       , MonadCatch m
                       , MonadEvaluate m
-                      , MonadMonotonicTime m
                       , Eq vData
                       , Acceptable vData
                       , NFData vData
@@ -735,7 +732,6 @@ prop_channel_simultaneous_open
     :: ( MonadAsync m
        , MonadCatch m
        , MonadEvaluate m
-       , MonadMonotonicTime m
        , Acceptable vData
        , NFData vData
        , NFData vNumber

@@ -19,7 +19,6 @@ import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow
-import Control.Monad.Class.MonadTime.SI
 import Control.Monad.IOSim (runSimOrThrow)
 import Control.Monad.ST qualified as ST
 import Control.Tracer (nullTracer)
@@ -607,7 +606,6 @@ chainSyncDemo
      , MonadSTM m
      , MonadEvaluate m
      , MonadFork m
-     , MonadMonotonicTime m
      , MonadThrow m
      )
   => Channel m ByteString
@@ -669,12 +667,11 @@ propChainSyncPipe cps =
 
 chainSyncDemoPipelined
   :: forall m.
-     ( MonadST            m
-     , MonadEvaluate      m
-     , MonadFork          m
-     , MonadAsync         m
-     , MonadMonotonicTime m
-     , MonadThrow         m
+     ( MonadST       m
+     , MonadEvaluate m
+     , MonadFork     m
+     , MonadAsync    m
+     , MonadThrow    m
      )
   => Channel m ByteString
   -> Channel m ByteString

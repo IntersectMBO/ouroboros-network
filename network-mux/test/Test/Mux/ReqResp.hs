@@ -119,7 +119,7 @@ runCBORDecoderWithChannel Channel{recv} trailing decoder =
        -> m (Either CBOR.DeserialiseFailure (a, Maybe LBS.ByteString))
 
     go Nothing (CBOR.Partial k) =
-      recv >>= stToIO . k . fmap (\(MkReception _ bs) -> LBS.toStrict bs) >>= go Nothing
+      recv >>= stToIO . k . fmap LBS.toStrict >>= go Nothing
     go (Just bs) (CBOR.Partial k)  =
       stToIO (k (Just bs)) >>= go Nothing
     go _ (CBOR.Done trailing' _ a) | BS.null trailing'
@@ -169,7 +169,7 @@ runBinDecoderWithChannel Channel{recv} trailing decoder =
        -> Bin.Decoder a
        -> m (Either String (a, Maybe LBS.ByteString))
     go Nothing (Bin.Partial k) =
-      k . fmap (\(MkReception _ bs) -> LBS.toStrict bs) <$> recv >>= go Nothing
+      k . fmap LBS.toStrict <$> recv >>= go Nothing
     go (Just bs) (Bin.Partial k) =
       go Nothing (k (Just bs))
     go _ (Bin.Done trailing' _ a) | BS.null trailing'

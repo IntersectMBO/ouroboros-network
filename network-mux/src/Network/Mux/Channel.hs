@@ -1,8 +1,5 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
-{-# LANGUAGE DeriveFoldable      #-}
-{-# LANGUAGE DeriveFunctor       #-}
-{-# LANGUAGE DeriveTraversable   #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -13,7 +10,6 @@
 module Network.Mux.Channel
   ( -- * Channel
     Channel (..)
-  , Reception (..)
     -- ** Channel API
   , isoKleisliChannel
   , hoistChannel
@@ -41,8 +37,6 @@ module Network.Mux.Channel
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
 import Data.ByteString.Lazy.Internal qualified as LBS (smallChunkSize)
-import Data.IntMap (IntMap)
-import Data.IntMap qualified as IntMap
 import Network.Socket qualified as Socket
 import Network.Socket.ByteString qualified as Socket
 import System.IO qualified as IO (Handle, IOMode (..), hFlush, hIsEOF, withFile)
@@ -52,7 +46,6 @@ import Control.Concurrent.Class.MonadSTM
 import Control.Concurrent.Class.MonadSTM.Strict qualified as StrictSTM
 import Control.Monad ((>=>))
 import Control.Monad.Class.MonadSay
-import Control.Monad.Class.MonadTime.SI (Time, getMonotonicTime)
 import Control.Monad.Class.MonadTimer.SI
 
 
@@ -78,21 +71,8 @@ data Channel m a = Channel {
     -- It may raise exceptions (as appropriate for the monad and kind of
     -- channel).
     --
-    -- The map inside 'Reception' records the time at which each chunk of the
-    -- input bytes data was read from the bearer. The key is the index of the
-    -- first byte of the arrival. Thus the first entry always has key @0@.
-    -- Some 'Channel's are more abstract than to have a 'Bearer'; these times
-    -- are a best effort in those cases and so may be very coarse, but they're
-    -- never missing.
-    --
-    recv :: m (Maybe (Reception a))
+    recv :: m (Maybe a)
   }
-
--- | A received value paired with the per-chunk arrival times.
-data Reception a = MkReception { receivalTimes :: !(IntMap Time)
-                               , received      :: !a
-                               }
-  deriving (Foldable, Functor, Traversable)
 
 -- | Given an isomorphism between @a@ and @b@ (in Kleisli category), transform
 -- a @'Channel' m a@ into @'Channel' m b@.
@@ -105,7 +85,7 @@ isoKleisliChannel
   -> Channel m b
 isoKleisliChannel f finv Channel{send, recv} = Channel {
     send = finv >=> send,
-    recv = recv >>= traverse (traverse f)
+    recv = recv >>= traverse f
   }
 
 
@@ -132,7 +112,7 @@ channelEffect beforeSend afterRecv Channel{send, recv} =
 
     , recv = do
         mx <- recv
-        afterRecv $ (\(MkReception _tms x) -> x) <$> mx
+        afterRecv mx
         return mx
     }
 
@@ -166,19 +146,19 @@ loggingChannel ident Channel{send,recv} =
     loggingSend a = do
       say (show ident ++ ":send:" ++ show a)
       send a
-
+  
     loggingRecv = do
       msg <- recv
       case msg of
-        Nothing                   -> return ()
-        Just (MkReception _tms a) -> say (show ident ++ ":recv:" ++ show a)
+        Nothing -> return ()
+        Just a  -> say (show ident ++ ":recv:" ++ show a)
       return msg
 
 
 -- | Make a 'Channel' from a pair of 'TMVar's, one for reading and one for
 -- writing.
 --
-mvarsAsChannel :: (MonadSTM m, MonadMonotonicTime m)
+mvarsAsChannel :: MonadSTM m
                => StrictSTM.StrictTMVar m a
                -> StrictSTM.StrictTMVar m a
                -> Channel m a
@@ -186,16 +166,14 @@ mvarsAsChannel bufferRead bufferWrite =
     Channel{send, recv}
   where
     send x = atomically (StrictSTM.putTMVar bufferWrite x)
-    recv   = do
-      tm <- getMonotonicTime
-      atomically (Just . MkReception (IntMap.singleton 0 tm) <$> StrictSTM.takeTMVar bufferRead)
+    recv   = atomically (Just <$> StrictSTM.takeTMVar bufferRead)
 
 
 -- | Create a pair of channels that are connected via one-place buffers.
 --
 -- This is primarily useful for testing protocols.
 --
-createConnectedChannels :: (MonadSTM m, MonadMonotonicTime m) => m (Channel m a, Channel m a)
+createConnectedChannels :: MonadSTM m => m (Channel m a, Channel m a)
 createConnectedChannels = do
     -- Create two TMVars to act as the channel buffer (one for each direction)
     -- and use them to make both ends of a bidirectional channel
@@ -234,14 +212,12 @@ handlesAsChannel hndRead hndWrite =
       LBS.hPut hndWrite chunk
       IO.hFlush hndWrite
 
-    recv :: IO (Maybe (Reception LBS.ByteString))
+    recv :: IO (Maybe LBS.ByteString)
     recv = do
-      tm <- getMonotonicTime
       eof <- IO.hIsEOF hndRead
       if eof
         then return Nothing
-        else Just . MkReception (IntMap.singleton 0 tm) . LBS.fromStrict
-               <$> BS.hGetSome hndRead LBS.smallChunkSize
+        else Just . LBS.fromStrict <$> BS.hGetSome hndRead LBS.smallChunkSize
 
 -- | Create a pair of 'Channel's that are connected internally.
 --
@@ -252,7 +228,7 @@ handlesAsChannel hndRead hndWrite =
 -- is /fully evaluated/ first. This ensures that any work to serialise the data
 -- takes place on the /writer side and not the reader side/.
 --
-createBufferConnectedChannels :: forall m. (MonadSTM m, MonadMonotonicTime m)
+createBufferConnectedChannels :: forall m. MonadSTM m
                               => m (ByteChannel m,
                                     ByteChannel m)
 createBufferConnectedChannels = do
@@ -271,11 +247,8 @@ createBufferConnectedChannels = do
                            -- Evaluate the chunk c /before/ doing the STM
                            -- transaction to write it to the buffer.
 
-        recv :: m (Maybe (Reception LBS.ByteString))
-        recv   = do
-            tm <- getMonotonicTime
-            Just . MkReception (IntMap.singleton 0 tm) . LBS.fromStrict
-              <$> atomically (takeTMVar bufferRead)
+        recv :: m (Maybe LBS.ByteString)
+        recv   = Just . LBS.fromStrict <$> atomically (takeTMVar bufferRead)
 
 
 -- | Create a local pipe, with both ends in this process, and expose that as
@@ -325,15 +298,14 @@ socketAsChannel socket =
      Socket.sendMany socket (LBS.toChunks chunks)
      -- TODO: limit write sizes, or break them into multiple sends.
 
-    recv :: IO (Maybe (Reception LBS.ByteString))
+    recv :: IO (Maybe LBS.ByteString)
     recv = do
       -- We rely on the behaviour of stream sockets that a zero length chunk
       -- indicates EOF.
       chunk <- Socket.recv socket LBS.smallChunkSize
-      tm <- getMonotonicTime
       if BS.null chunk
         then return Nothing
-        else return $ Just $ MkReception (IntMap.singleton 0 tm) $ LBS.fromStrict chunk
+        else return (Just (LBS.fromStrict chunk))
 
 #if !defined(mingw32_HOST_OS)
 --- | Create a local socket, with both ends in this process, and expose that as

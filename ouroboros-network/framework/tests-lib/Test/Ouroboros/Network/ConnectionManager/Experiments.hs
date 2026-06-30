@@ -365,7 +365,6 @@ withInitiatorOnlyConnectionManager name timeouts trTracer tracer stdGen snocket 
     reqRespInitiator protocolNum nextRequest =
       InitiatorProtocolOnly
         (MiniProtocolCb $ \ExpandedInitiatorContext { eicConnectionId = connId } channel ->
-           wrapMiniProtocolTrailing $
            runPeerWithLimits
              (WithName (name,"Initiator",protocolNum) `contramap` nullTracer)
              -- TraceSendRecv
@@ -598,7 +597,6 @@ withBidirectionalConnectionManager name timeouts
     reqRespInitiatorAndResponder protocolNum accInit nextRequest =
       InitiatorAndResponderProtocol
         (MiniProtocolCb $ \ExpandedInitiatorContext { eicConnectionId = connId } channel ->
-           wrapMiniProtocolTrailing $
            runPeerWithLimits
              (WithName (name,"Initiator",protocolNum) `contramap` nullTracer)
              -- TraceSendRecv
@@ -610,7 +608,6 @@ withBidirectionalConnectionManager name timeouts
                reqs <- atomically (nextRequest connId)
                pure $ reqRespClientPeer (reqRespClientMap reqs)))
         (MiniProtocolCb $ \_ctx channel ->
-           wrapMiniProtocolTrailing $
            runPeerWithLimits
              (WithName (name,"Responder",protocolNum) `contramap` nullTracer)
              -- TraceSendRecv

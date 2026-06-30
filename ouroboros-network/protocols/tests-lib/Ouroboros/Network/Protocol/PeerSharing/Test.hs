@@ -15,7 +15,6 @@ import Codec.CBOR.Encoding qualified as CBOR
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow
-import Control.Monad.Class.MonadTime.SI
 import Control.Monad.IOSim (runSimOrThrow)
 import Control.Monad.ST (runST)
 import Control.Tracer (nullTracer)
@@ -104,11 +103,10 @@ prop_connect f l =
 -- Properties using channels, codecs and drivers.
 --
 
-prop_channel :: ( MonadAsync        m
-                , MonadCatch        m
-                , MonadEvaluate     m
-                , MonadST           m
-                , MonadMonotonicTime m
+prop_channel :: ( MonadAsync    m
+                , MonadCatch    m
+                , MonadEvaluate m
+                , MonadST       m
                 )
              => Fun Word8 Int
              -> [PeerSharingAmount]

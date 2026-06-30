@@ -12,7 +12,6 @@ module Ouroboros.Network.Channel
   , createPipelineTestChannels
   ) where
 
-import Data.IntMap qualified as IntMap
 import Numeric.Natural
 
 import Control.Concurrent.Class.MonadSTM.Strict
@@ -38,7 +37,7 @@ fixedInputChannel xs0 = do
                xs <- readTVar v
                case xs of
                  []      -> return Nothing
-                 (x:xs') -> writeTVar v xs' >> return (Just (MkReception IntMap.empty x))
+                 (x:xs') -> writeTVar v xs' >> return (Just x)
 
     send _ = return ()
 
@@ -63,7 +62,7 @@ createConnectedBufferedChannelsUnbounded = do
         Channel{send, recv}
       where
         send x = atomically (writeTQueue bufferWrite x)
-        recv   = atomically (Just . MkReception IntMap.empty <$> readTQueue bufferRead)
+        recv   = atomically (Just <$> readTQueue bufferRead)
 
 
 -- | Create a pair of channels that are connected via N-place buffers.
@@ -106,7 +105,7 @@ createConnectedBufferedChannelsSTM sz = do
         Channel{send, recv}
       where
         send x  = writeTBQueue bufferWrite x
-        recv    = Just . MkReception IntMap.empty <$> readTBQueue bufferRead
+        recv    = Just <$> readTBQueue bufferRead
 
 
 -- | Create a pair of channels that are connected via N-place buffers.
@@ -136,7 +135,7 @@ createPipelineTestChannels sz = do
                    full <- isFullTBQueue bufferWrite
                    if full then error failureMsg
                            else writeTBQueue bufferWrite x
-        recv   = atomically (Just . MkReception IntMap.empty <$> readTBQueue bufferRead)
+        recv   = atomically (Just <$> readTBQueue bufferRead)
 
     failureMsg = "createPipelineTestChannels: "
               ++ "maximum pipeline depth exceeded: " ++ show sz
