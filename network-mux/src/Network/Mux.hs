@@ -43,6 +43,7 @@ module Network.Mux
     -- * Monitoring
   , miniProtocolStateMap
   , stopped
+  , hasStopped
     -- * Errors
   , Error (..)
   , RuntimeError (..)
@@ -124,6 +125,20 @@ stopped Mux { muxStatus } =
       Failed err -> return (Just err)
       Stopping   -> retry
       Stopped    -> return Nothing
+
+
+-- | Non-blocking check whether the mux has already reached a terminal state
+-- (stopped cleanly or failed).  Unlike 'stopped', this never blocks (retries)
+-- while the mux is still running or stopping; it returns 'False' in those
+-- cases.
+--
+hasStopped :: MonadSTM m => Mux mode m -> STM m Bool
+hasStopped Mux { muxStatus } =
+    readTVar muxStatus >>= \case
+      Ready    -> return False
+      Stopping -> return False
+      Stopped  -> return True
+      Failed _ -> return True
 
 
 -- | Create a mux handle in `Mode` and register mini-protocols.
