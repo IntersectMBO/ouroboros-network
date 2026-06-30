@@ -1083,7 +1083,7 @@ The maximum depth of a fork in Ouroboros is bounded, and the intersection will a
 iterations of this algorithm.
 
 \subparagraph{Additional remarks}
-Note that by sending \MsgFindIntersect{}, the server will not modify its
+Note that by sending \MsgIntersectNotFound{}, the server will not modify its
 \readpointer{}.
 
 \subsection{Implementation of the Chain Consumer}
@@ -2186,6 +2186,7 @@ in table~\ref{table:node-to-node-protocol-versions}.
       \header{version}         & \header{description} \\\hline
       \texttt{NodeToNodeV\_14} & No changes, identifies Plomin HF nodes mandatory on mainnet as of 2025.01.29\\
       \texttt{NodeToNodeV\_15} & No changes, identifies nodes which support SRV records\\
+      \texttt{NodeToNodeV\_16} & Experimental, support Peras mini-protocols\\
     \end{tabular}
     \caption{Node-to-node protocol versions}
     \label{table:node-to-node-protocol-versions}
@@ -2264,6 +2265,9 @@ table~\ref{table:node-to-client-protocol-versions}.
       \texttt{NodeToClientV\_20} & \texttt{QueryStakePoolDefaultVote} query; \\
                                  & added \texttt{MsgGetMeasures} and \texttt{MsgReplyGetMeasures} queries \\
       \texttt{NodeToClientV\_21} & new codecs for \texttt{PParams} and \texttt{CompactGenesis} \\
+      \texttt{NodeToClientV\_22} & support SRV records in \texttt{GetBigLedgerPeerSnapshot} \\
+      \texttt{NodeToClientV\_23} & added \texttt{QueryDRepsDelegations}; \\
+                                 & \texttt{LedgerPeerSnapshot} CBOR encoding contains block hash and network magic \\
     \end{tabular}
     \caption{Node-to-client protocol versions}
     \label{table:node-to-client-protocol-versions}

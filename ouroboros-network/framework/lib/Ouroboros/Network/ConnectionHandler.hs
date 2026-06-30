@@ -74,6 +74,7 @@ import Ouroboros.Network.MuxMode
 import Ouroboros.Network.Protocol.Handshake
 import Ouroboros.Network.Protocol.Handshake.Version qualified as Handshake
 import Ouroboros.Network.RethrowPolicy
+import Ouroboros.Network.Util (PrettyShow (..))
 
 
 -- | We place an upper limit of `30s` on the time we wait on receiving an SDU.
@@ -253,7 +254,7 @@ makeConnectionHandler
        , NFData   versionData
        , NFData   versionNumber
        , Ord      versionNumber
-       , Show     peerAddr
+       , PrettyShow peerAddr
        , Typeable peerAddr
        )
     => Mx.TracersWithBearer (ConnectionId peerAddr) m
@@ -322,8 +323,7 @@ makeConnectionHandler muxTracers forkPolicy
                               socket
                               PromiseWriter { writePromise }
                               tracer
-                              connectionId@ConnectionId { localAddress
-                                                        , remoteAddress }
+                              connectionId@ConnectionId { remoteAddress }
                               mkMuxBearer
                               withBuffer
         = MaskedAction { runWithUnmask }
@@ -331,11 +331,7 @@ makeConnectionHandler muxTracers forkPolicy
         runWithUnmask :: (forall x. m x -> m x) -> m ()
         runWithUnmask unmask =
           classifyExceptions tracer remoteAddress OutboundError $ do
-            labelThisThread (concat ["out-conn-hndlr-"
-                                    , show localAddress
-                                    , "-"
-                                    , show remoteAddress
-                                    ])
+            labelThisThread ("outbd-" ++ prettyShow connectionId)
             handshakeBearer <- mkMuxBearer sduHandshakeTimeout socket Nothing
             hsResult <-
               unmask (runHandshakeClient handshakeBearer
@@ -404,8 +400,7 @@ makeConnectionHandler muxTracers forkPolicy
                              socket
                              PromiseWriter { writePromise }
                              tracer
-                             connectionId@ConnectionId { localAddress
-                                                       , remoteAddress }
+                             connectionId@ConnectionId { remoteAddress }
                              mkMuxBearer
                              withBuffer
         = MaskedAction { runWithUnmask }
@@ -413,11 +408,7 @@ makeConnectionHandler muxTracers forkPolicy
         runWithUnmask :: (forall x. m x -> m x) -> m ()
         runWithUnmask unmask =
           classifyExceptions tracer remoteAddress InboundError $ do
-            labelThisThread (concat ["in-conn-hndlr-"
-                                    , show localAddress
-                                    , "-"
-                                    , show remoteAddress
-                                    ])
+            labelThisThread ("inbd-" ++ prettyShow connectionId)
             handshakeBearer <- mkMuxBearer sduHandshakeTimeout socket Nothing
             hsResult <-
               unmask (runHandshakeServer handshakeBearer

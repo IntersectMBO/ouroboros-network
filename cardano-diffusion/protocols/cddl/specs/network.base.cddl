@@ -7,14 +7,16 @@
 ; if you need further advise how to find concrete encoding of `Cardano` data
 ; types.
 
-block  = any
-header = any
-tip    = any
-point  = any
+block    = any
+header   = any
+tip      = any
+point    = any
 ; The codec only accepts definite-length list.
-points = [ *point ]
-txId   = any
-tx     = any
+points   = [ *point ]
+txId     = any
+tx       = any
+objectId = any
+object   = any
 
 ; although some of our protocols are polymorphic over slots, e.g.
 ; `local-tx-monitor`, slots are always encoded as `word64`.

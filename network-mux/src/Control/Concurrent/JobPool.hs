@@ -106,6 +106,8 @@ forkJob' doFork JobPool{jobsVar, completionQueue} (Job action handler group labe
        -> m ()
     io tid restore = do
       labelThread tid label
+      -- NOTE: `network-mux` relies on not passing asynchronous exceptions to
+      -- the exception handler, see `Network.Mux.miniProtocolJob`.
       !res <- handleJust notAsyncExceptions handler $
               restore action
       atomically $ writeTQueue completionQueue res

@@ -68,7 +68,7 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.Class.MonadTimer.SI qualified as MonadTimer
 import Control.Monad.IOSim
-import Control.Tracer (Tracer (Tracer), contramap, nullTracer, traceWith)
+import Control.Tracer (Tracer, contramap, mkTracer, nullTracer, traceWith)
 
 import Ouroboros.Network.ConnectionManager.Types (Provenance (Outbound))
 import Ouroboros.Network.DiffusionMode
@@ -607,10 +607,10 @@ mockResolveLedgerPeers tracer (MockRoots _ _ publicRootPeers dnsMapScript)
 type TestTraceEvent a = Either a DNSTrace
 
 tracerTraceLocalRoots :: Tracer (IOSim s) (TestTraceEvent (TraceLocalRootPeers () SockAddr))
-tracerTraceLocalRoots = Tracer traceM
+tracerTraceLocalRoots = mkTracer traceM
 
 tracerTracePublicRoots :: Tracer (IOSim s) (TestTraceEvent TracePublicRootPeers)
-tracerTracePublicRoots = Tracer traceM
+tracerTracePublicRoots = mkTracer traceM
 
 selectTestTraceEvents :: (Typeable b) => SimTrace a
                       -> [(Time, TestTraceEvent b)]
@@ -1097,8 +1097,8 @@ prop_retryResource (NonEmpty delays0) as =
     delays = getDNSTimeout <$> NonEmpty.fromList delays0
 
     tracer :: Tracer (IOSim s) Int
-    tracer = Tracer (\a -> getMonotonicTime >>= \t -> traceM (t, a))
-          <> Tracer (\a -> getMonotonicTime >>= \t -> say (show (t, a)))
+    tracer = mkTracer (\a -> getMonotonicTime >>= \t -> traceM (t, a))
+          <> mkTracer (\a -> getMonotonicTime >>= \t -> say (show (t, a)))
 
     resource :: Resource (IOSim s) Int
     resource = retryResource nullTracer delays

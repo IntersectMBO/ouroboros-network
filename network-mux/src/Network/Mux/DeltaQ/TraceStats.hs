@@ -47,14 +47,18 @@ calcTransitTime :: (Word32, Time)
 calcTransitTime (remoteRefTS, localRefTS) remoteTS' localTS
   = let remoteTS
           = unRemoteClockModel remoteTS'
+
+        remoteClockDiffAsTimeDiff :: Word32 -> DiffTime
         remoteClockDiffAsTimeDiff
           = (remoteClockPrecision *) . fromRational . fromIntegral
+
+        correctedEmitTime :: Time
         correctedEmitTime
           | remoteTS >= remoteRefTS
-          = (remoteClockDiffAsTimeDiff $ remoteTS - remoteRefTS)
+          = remoteClockDiffAsTimeDiff (remoteTS - remoteRefTS)
             `addTime` localRefTS
           | otherwise -- wrap has occurred
-          = (remoteClockDiffAsTimeDiff $ maxBound - (remoteRefTS - remoteTS))
+          = remoteClockDiffAsTimeDiff (maxBound - (remoteRefTS - remoteTS))
             `addTime` localRefTS
     in S $! fromRational (toRational (localTS `diffTime` correctedEmitTime))
 
@@ -108,23 +112,41 @@ constructSample sa = OneWaySample
     -- gather the data for the G,S estimations
     (totalSDUOctets, minSRev)
       = IM.foldrWithKey accum (0, []) $ observables sa
+
+    accum :: Int -> PerSizeRecord
+          -> (Int, [(Int, SISec)])
+          -> (Int, [(Int, SISec)])
     accum nOctets psr (sumSize, minS)
-      = ( sumSize + (count psr) * nOctets
+      = ( sumSize + count psr * nOctets
         , (nOctets, minTransitTime psr) : minS)
+
     -- fit a line to get the G,S estimation
     (dQGEst, dQSEst, rEst) = estimateGS minSRev
+
     -- normalise all the observations
+    normalisedObservations :: IntMap PerSizeRecord
     normalisedObservations
       = let norm n = S . fromRational . toRational
-                     $ dQGEst + (fromIntegral n) * dQSEst
+                     $ dQGEst + fromIntegral n * dQSEst
         in IM.mapWithKey (\k -> normalisePSR (norm k)) (observables sa)
+
     -- calculate the total population V stats
+    vSum   :: Double
+    vSum2  :: Double
+    vSum'  :: SISec
+    vSum2' :: SISec2
+
     (vSum, vSum2)
-      = let S  v  = vSum'
+      = let v, v2 :: Float
+            S  v  = vSum'
             S2 v2 = vSum2'
         in (fromRational . toRational $ v, fromRational . toRational $ v2)
     (vSum', vSum2')
       = IM.foldr vCalc (0,0) normalisedObservations
+
+    vCalc :: PerSizeRecord
+          -> (SISec, SISec2)
+          -> (SISec, SISec2)
     vCalc psr (x, x2)
       = (x + sumTransitTime psr, x2 + sumTransitTimeSq psr)
 
@@ -194,7 +216,7 @@ data PerSizeRecord = PSR
   }
 
 instance Semigroup PerSizeRecord where
-  a <> b = PSR { minTransitTime   = (minTransitTime a) `min` (minTransitTime b)
+  a <> b = PSR { minTransitTime   = minTransitTime a `min` minTransitTime b
                , count            = count a + count b
                , sumTransitTime   = sumTransitTime a + sumTransitTime b
                , sumTransitTimeSq = sumTransitTimeSq a + sumTransitTimeSq b
@@ -203,8 +225,8 @@ instance Semigroup PerSizeRecord where
 -- | Normalise given the calculated G,S for the size
 normalisePSR :: SISec -> PerSizeRecord -> PerSizeRecord
 normalisePSR norm psr
-  = let adj  = (fromIntegral (count psr) * norm)
-        stt' = (sumTransitTime psr) - adj
+  = let adj  = fromIntegral (count psr) * norm
+        stt' = sumTransitTime psr - adj
         ttt (S a) (S b)
              = S2 $ a * b
     in psr { minTransitTime   = minTransitTime   psr - norm
@@ -248,7 +270,7 @@ sampleInterval = check 10
      | otherwise
        = error "Infeasible sampleInterval"
     wrapInterval
-      = remoteClockPrecision * (fromIntegral $ unRemoteClockModel maxBound)
+      = remoteClockPrecision * fromIntegral (unRemoteClockModel maxBound)
 
 nan :: Double
 nan = 0/0

@@ -12,7 +12,7 @@ import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.IOSim
-import Control.Tracer (Tracer (..), contramapM)
+import Control.Tracer (Tracer, contramapM, mkTracer)
 import Data.List (scanl')
 
 import Ouroboros.Network.Server.RateLimiting
@@ -202,7 +202,7 @@ runRateLimitExperiment :: AcceptedConnectionsLimit
 runRateLimitExperiment policy events =
     selectTraceEventsDynamic
       $ runSimTrace
-      $ rateLimittingExperiment (Tracer traceM) policy events
+      $ rateLimittingExperiment (mkTracer traceM) policy events
 
 
 --

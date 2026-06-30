@@ -53,7 +53,6 @@ import Data.ByteString.Lazy (ByteString)
 import Data.Functor (void, ($>))
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (isNothing)
 import Data.Typeable (Typeable, cast)
 
 import Network.Mux qualified as Mux
@@ -66,6 +65,7 @@ import Ouroboros.Network.Mux
 import Ouroboros.Network.PeerSelection.Governor.Types (PeerStateActions (..))
 import Ouroboros.Network.Protocol.Handshake (HandshakeException)
 import Ouroboros.Network.RethrowPolicy
+import Ouroboros.Network.Util (PrettyShow (..))
 
 import Ouroboros.Network.ConnectionHandler (Handle (..), HandlerError (..),
            MuxConnectionManager)
@@ -555,6 +555,8 @@ instance ( Show peerAddr
 
 -- | Record of arguments of 'peerSelectionActions'.
 --
+-- It is instantiated for production in `Ouroboros.Network.Diffusion`.
+--
 data PeerStateActionsArguments muxMode socket responderCtx peerAddr extraFlags versionData versionNumber m a b =
     PeerStateActionsArguments {
 
@@ -562,10 +564,16 @@ data PeerStateActionsArguments muxMode socket responderCtx peerAddr extraFlags v
 
       -- | Peer deactivation timeout: timeouts stopping hot protocols.
       --
+      -- We use `Ouroboros.Network.Diffusion.Policies.deactivateTimeout` in
+      -- `Ouroboros.Network.Diffusion`.
+      --
       spsDeactivateTimeout      :: DiffTime,
 
       -- | Timeout on closing connection: timeouts stopping established and warm
       -- peer protocols.
+      --
+      -- We use `Ouroboros.Network.Diffusion.Policies.closeConnectionTimeout` in
+      -- `Ouroboros.Network.Diffusion`.
       --
       spsCloseConnectionTimeout :: DiffTime,
 
@@ -592,11 +600,11 @@ withPeerStateActions
        , MonadTimer         m
        , MonadThrow         (STM m)
        , HasInitiator muxMode ~ True
-       , Typeable versionNumber
-       , Show     versionNumber
-       , Ord      peerAddr
-       , Typeable peerAddr
-       , Show     peerAddr
+       , Typeable   versionNumber
+       , Show       versionNumber
+       , Ord        peerAddr
+       , Typeable   peerAddr
+       , PrettyShow peerAddr
        , NFData a
        , NFData b
        )
@@ -787,8 +795,6 @@ withPeerStateActions PeerStateActionsArguments {
                          provenance
           case res of
             Left e -> do
-              when (isNothing $ fromException @SomeAsyncException e) $
-                traceWith spsTracer (AcquireConnectionError e)
               case runRethrowPolicy spsRethrowPolicy OutboundError e of
                 ShutdownNode -> throwTo spsMainThreadId e
                              >> throwIO e
@@ -842,7 +848,7 @@ withPeerStateActions PeerStateActionsArguments {
                                      (peerMonitoringLoop connHandle $> Nothing))
                                    (return . Just)
                                    ()  -- unit group, not using JobPool to group jobs.
-                                   ("peerMonitoringLoop " ++ show remoteAddress))
+                                   ("peer-monitoring-loop-" ++ prettyShow remoteAddress))
               pure connHandle
 
             Right (Disconnected _ disconnectionError) ->
@@ -1232,6 +1238,5 @@ data PeerSelectionActionsTrace peerAddr vNumber =
     | PeerStatusChangeFailure (PeerStatusChangeType peerAddr) (FailureType vNumber)
     | PeerMonitoringError     (ConnectionId peerAddr) SomeException
     | PeerMonitoringResult    (ConnectionId peerAddr) (Maybe (WithSomeProtocolTemperature FirstToFinishResult))
-    | AcquireConnectionError  SomeException
     | PeerHotDuration         (ConnectionId peerAddr) DiffTime
   deriving Show

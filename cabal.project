@@ -15,13 +15,16 @@ repository cardano-haskell-packages
 -- repeat the index-state for hackage to work around haskell.nix parsing limitation
 index-state:
   -- Bump this if you need newer packages from Hackage
-  , hackage.haskell.org 2026-03-04T10:56:45Z
+  , hackage.haskell.org 2026-05-26T19:31:06Z
 
   -- Bump this if you need newer packages from CHaP
-  , cardano-haskell-packages 2026-04-13T13:33:52Z
+  , cardano-haskell-packages 2026-06-23T21:17:32Z
 
-packages: ./cardano-ping
-          ./monoidal-synchronisation
+active-repositories:
+  , :rest
+  , cardano-haskell-packages:override
+
+packages: ./monoidal-synchronisation
           ./network-mux
           ./ouroboros-network
           ./cardano-diffusion
@@ -52,9 +55,6 @@ package ouroboros-network
 package acts
   flags: -finitary
 
-allow-newer:
-  , quickcheck-instances:QuickCheck
-
 if impl (ghc >= 9.14)
   constraints:
     , containers > 0.7
@@ -63,7 +63,6 @@ if impl (ghc >= 9.14)
 
   allow-newer:
     -- https://github.com/haskell/aeson/issues/1155
-    , aeson:QuickCheck
     , aeson:base
     , aeson:bytestring
     , aeson:containers
@@ -89,10 +88,6 @@ if impl (ghc >= 9.14)
     , indexed-traversable:containers
     , indexed-traversable-instances:base
 
-    -- https://github.com/haskellari/qc-instances/issues/110
-    , quickcheck-instances:base
-    , quickcheck-instances:bytestring
-
     -- https://github.com/haskellari/these/issues/211
     , semialign:base
     , semialign:containers
@@ -108,7 +103,6 @@ if impl (ghc >= 9.14)
     , these:base
 
     -- https://github.com/haskellari/tree-diff/issues/102
-    , tree-diff:QuickCheck
     , tree-diff:base
     , tree-diff:containers
 
@@ -117,3 +111,4 @@ if impl (ghc >= 9.14)
 
     -- https://github.com/serokell/haskell-with-utf8/issues/41
     , with-utf8:base
+

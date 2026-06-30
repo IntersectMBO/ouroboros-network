@@ -4,6 +4,7 @@
 {-# LANGUAGE LambdaCase           #-}
 {-# LANGUAGE NamedFieldPuns       #-}
 {-# LANGUAGE OverloadedStrings    #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE TypeApplications     #-}
 {-# LANGUAGE UndecidableInstances #-}
 
@@ -17,6 +18,7 @@ module Ouroboros.Network.OrphanInstances
   , networkTopologyToJSON
   , localRootPeersGroupsToJSON
   , peerSelectionTargetsToObject
+  , JSONField (..)
   ) where
 
 import Control.Applicative (Alternative ((<|>)))
@@ -28,12 +30,16 @@ import Data.Aeson.Types (Pair, Parser, listValue)
 import Data.Bifunctor (first)
 import Data.Bool (bool)
 import Data.Foldable (toList)
+import Data.IntMap.Strict qualified as IntMap
 import Data.IP (fromHostAddress, fromHostAddress6)
 import Data.Map.Strict qualified as Map
+import Data.Proxy
 import Data.Set qualified as Set
 import Data.Text (Text, pack)
 import Data.Text.Encoding qualified as Text
 import Data.Text.Encoding.Error qualified as Text
+import Numeric (showOct)
+import Ouroboros.Network.Tx
 
 import Network.Mux.Trace qualified as Mux
 import Network.Mux.Types qualified as Mux
@@ -70,8 +76,7 @@ import Ouroboros.Network.DeltaQ (GSV (GSV),
 import Ouroboros.Network.Diffusion.Topology (LocalRootPeersGroup (..),
            LocalRootPeersGroups (..), LocalRoots (..), NetworkTopology (..),
            PublicRootPeers (..), RootConfig (..))
-import Ouroboros.Network.Diffusion.Types (DiffusionTracer (..))
-import Ouroboros.Network.DiffusionMode
+import Ouroboros.Network.Diffusion.Types
 import Ouroboros.Network.Driver.Simple
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (repromoteDelay))
 import Ouroboros.Network.InboundGovernor qualified as InboundGovernor
@@ -86,10 +91,10 @@ import Ouroboros.Network.Server qualified as Server
 import Ouroboros.Network.Server.RateLimiting (AcceptConnectionsPolicyTrace (..),
            AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket (LocalAddress (..), RemoteAddress)
-import Ouroboros.Network.TxSubmission.Inbound.V2 (ProcessedTxCount (..),
-           TraceTxLogic (..), TraceTxSubmissionInbound (..))
-import Ouroboros.Network.TxSubmission.Inbound.V2.Types
-           (TxSubmissionLogicVersion (..))
+import Ouroboros.Network.TxSubmission.Inbound.V2.Types (ProcessedTxCount (..),
+           SharedTxState (..), TraceTxLogic (..), TraceTxSubmissionInbound (..),
+           TxEntry (..), TxLease (..), TxSubmissionLogicVersion (..),
+           retainedSize, retainedToList)
 import Ouroboros.Network.TxSubmission.Outbound (TraceTxSubmissionOutbound (..))
 
 -- Helper function for ToJSON instances with a "kind" field
@@ -406,7 +411,7 @@ instance ToJSON KnownPeerInfo where
 instance ToJSON PeerStatus where
   toJSON = String . pack . show
 
-instance (ToJSON extraFlags, ToJSONKey peerAddr, ToJSON peerAddr, Ord peerAddr)
+instance (JSONField extraFlags, ToJSON extraFlags, ToJSONKey peerAddr, ToJSON peerAddr, Ord peerAddr)
   => ToJSON (LocalRootPeers extraFlags peerAddr) where
   toJSON lrp = kindObject "LocalRootPeers"
     [ "groups" .= toJSONList (LocalRootPeers.toGroups lrp) ]
@@ -445,13 +450,39 @@ instance ToJSON addr => ToJSON (PeerSharingResult addr) where
     PeerSharingResult addrs     -> toJSONList addrs
     PeerSharingNotRegisteredYet -> String "PeerSharingNotRegisteredYet"
 
-instance ToJSON extraFlags => ToJSON (LocalRootConfig extraFlags) where
-  toJSON LocalRootConfig { peerAdvertise, extraLocalRootFlags, LocalRootPeers.diffusionMode } =
-    object
-      [ "peerAdvertise" .= peerAdvertise
-      , "diffusionMode" .= show diffusionMode
-      , "extraFlags"    .= extraLocalRootFlags
+-- | Compute field name for `a` when it's embeded as record in
+-- `LocalRootConfig`.
+class JSONField extraFlags where
+  fieldName :: Proxy extraFlags -> Maybe Key
+
+instance JSONField NoExtraFlags where
+  fieldName _ = Nothing
+
+instance ToJSON NoExtraFlags where
+  toJSON _ = Null
+  omitField _ = True
+
+instance ToJSON NoExtraDebugState where
+  toJSON _ = Null
+  omitField _ = True
+
+instance (JSONField extraFlags, ToJSON extraFlags) => ToJSON (LocalRootConfig extraFlags) where
+  toJSON LocalRootConfig { peerAdvertise,
+                           extraLocalRootFlags,
+                           LocalRootPeers.diffusionMode,
+                           localProvenance
+                         } =
+    object $
+      [ "peerAdvertise"  .= peerAdvertise
+      , "diffusionMode"  .= show diffusionMode
+      , "behindFirewall" .= case localProvenance of
+                              Outbound -> False
+                              Inbound  -> True
       ]
+      ++
+      case fieldName (Proxy :: Proxy extraFlags) of
+        Nothing  -> []
+        Just key -> [ key .= extraLocalRootFlags ]
 
 instance ToJSON RemoteAddress where
   toJSON = \case
@@ -686,6 +717,11 @@ instance (ToJSON localAddress, ToJSON remoteAddress) => ToJSON (DiffusionTracer 
     , "address" .= localAddress
     , "socket" .= String (pack (show socket))
     ]
+  toJSON (ConfiguredLocalSocket localAddress socket) = object
+    [ "kind" .= String "ConfiguredLocalSocket"
+    , "address" .= localAddress
+    , "socket" .= String (pack (show socket))
+    ]
   toJSON (ListeningLocalSocket localAddress socket) = object
     [ "kind" .= String "ListeningLocalSocket"
     , "address" .= localAddress
@@ -695,6 +731,16 @@ instance (ToJSON localAddress, ToJSON remoteAddress) => ToJSON (DiffusionTracer 
     [ "kind" .= String "LocalSocketUp"
     , "address" .= localAddress
     , "socket" .= String (pack (show fd))
+    ]
+  toJSON (InsecureLocalSocketDirectory localAddress mode) = object
+    [ "kind" .= String "InsecureLocalSocketDirectory"
+    , "address" .= localAddress
+    , "mode" .= String (pack (showString "0o" . showOct mode $ ""))
+    ]
+  toJSON (InsecureLocalSocketPermissions localAddress mode) = object
+    [ "kind" .= String "InsecureLocalSocketPermissions"
+    , "address" .= localAddress
+    , "mode" .= String (pack (showString "0o" . showOct mode $ ""))
     ]
   toJSON (CreatingServerSocket sockAddr) = object
     [ "kind" .= String "CreatingServerSocket"
@@ -729,7 +775,7 @@ instance (ToJSON localAddress, ToJSON remoteAddress) => ToJSON (DiffusionTracer 
     ]
 
 
-instance (ToJSON extraFlags, ToJSON peerAddr, ToJSONKey peerAddr) => ToJSON (TraceLocalRootPeers extraFlags peerAddr) where
+instance (JSONField extraFlags, ToJSON extraFlags, ToJSON peerAddr, ToJSONKey peerAddr) => ToJSON (TraceLocalRootPeers extraFlags peerAddr) where
   toJSON (TraceLocalRootDomains groups) =
     object [ "kind" .= String "LocalRootDomains"
            , "localRootDomains" .= groups
@@ -859,6 +905,7 @@ instance ToJSON Time where
   toJSON = String . pack . show
 
 instance ( ToJSON extraDebugState
+         , JSONField extraFlags
          , ToJSON extraFlags
          , ToJSON extraPeers
          , ToJSON (ToExtraTrace extraPeers)
@@ -1133,6 +1180,10 @@ instance ( ToJSON extraDebugState
     object [ "kind" .= String "DemoteBigLedgerPeersAsynchronous"
            , "state" .= msp
            ]
+  toJSON (TraceForgottenPeers peers) =
+    object [ "kind" .= String "ForgottenPeers"
+           , "peers" .= peers
+           ]
   toJSON TraceGovernorWakeup =
     object [ "kind" .= String "GovernorWakeup"
            ]
@@ -1240,10 +1291,6 @@ instance (ToJSON peerAddr, Show peerAddr, Show versionNumber)
             , "connectionId" .= toJSON connId
             , "withProtocolTemp" .= show wf
             ]
-  toJSON (AcquireConnectionError exception) =
-    object [ "kind" .= String "AcquireConnectionError"
-           , "error" .= displayException exception
-           ]
   toJSON (PeerHotDuration connId duration) =
     object [ "kind" .= String "PeerHotDuration"
            , "connId" .= connId
@@ -1769,6 +1816,11 @@ instance ( ToJSON txid
       , "txids" .= toJSON txids
       , "time" .= diffTime
       ]
+  toJSON (TraceTxInboundRequestTxs txids) =
+    object
+      [ "kind" .= String "TxInboundRequestTxs"
+      , "txids" .= toJSON txids
+      ]
   toJSON (TraceTxInboundError err) =
     object
       [ "kind" .= String "TxInboundError"
@@ -1778,28 +1830,64 @@ instance ( ToJSON txid
     object
       [ "kind" .= String "TxInboundTerminated"
       ]
-  toJSON (TraceTxInboundDecision decision) =
+
+traceSharedTxStateToJSON
+  :: (Show addr, Show txid, HasRawTxId txid)
+  => SharedTxState addr txid
+  -> Value
+traceSharedTxStateToJSON SharedTxState {
+                           sharedTxTable,
+                           sharedRetainedTxs,
+                           sharedTxIdToKey,
+                           sharedKeyToTxId,
+                           sharedGeneration
+                         } =
     object
-      [ "kind" .= String "TxInboundDecision"
-      -- TODO: this is too verbose, it will show full tx's
-      , "decision" .= String (pack $ show decision)
+      [ "sharedGeneration" .= sharedGeneration
+      , "activeTxCount" .= IntMap.size sharedTxTable
+      , "retainedTxCount" .= retainedSize sharedRetainedTxs
+      , "internedTxCount" .= Map.size sharedTxIdToKey
+      , "leasedTxCount" .= leasedTxCount
+      , "claimableTxCount" .= claimableTxCount
+      , "totalAttemptCount" .= totalAttemptCount
+      , "submittingTxCount" .= submittingTxCount
+      , "sharedTxTable" .= [ (renderTxId txKey, show txEntry)
+                           | (txKey, txEntry) <- IntMap.toList sharedTxTable
+                           ]
+      , "sharedRetainedTxs" .= [ (renderTxId txKey, show retainUntil)
+                               | (txKey, retainUntil) <- retainedToList sharedRetainedTxs
+                               ]
+      , "internedTxIds" .= fmap show (Map.keys sharedTxIdToKey)
       ]
+  where
+    activeEntries = IntMap.elems sharedTxTable
+
+    leasedTxCount =
+      length [ () | TxEntry { txLease = TxLeased _ _ } <- activeEntries ]
+
+    claimableTxCount =
+      length [ () | TxEntry { txLease = TxClaimable _ } <- activeEntries ]
+
+    totalAttemptCount =
+      sum [ txAttempt | TxEntry { txAttempt } <- activeEntries ]
+
+    submittingTxCount =
+      length [ () | TxEntry { txInSubmission = True } <- activeEntries ]
+
+    renderTxId txKey =
+      maybe "<missing-txid>" show (IntMap.lookup txKey sharedKeyToTxId)
 
 -- TODO: in cardano-node in the `coot/tx-submission-10.5` branch there's
 -- a better instance.
 instance ( Show addr
          , Show txid
          , Show tx
+         , HasRawTxId txid
          )
        => ToJSON (TraceTxLogic addr txid tx) where
-  toJSON (TraceSharedTxState tag st) =
+  toJSON (TraceSharedTxState st) =
     object [ "kind" .= String "SharedTxState"
-           , "tag"  .= String (pack tag)
-           , "sharedTxState" .= String (pack . show $ st)
-           ]
-  toJSON (TraceTxDecisions decisions) =
-    object [ "kind"      .= String "TxDecisions"
-           , "decisions" .= String (pack . show $ decisions)
+           , "sharedTxState" .= traceSharedTxStateToJSON st
            ]
 
 

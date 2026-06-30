@@ -13,14 +13,13 @@ module Main (main) where
 
 import Data.ByteString (ByteString)
 import Data.ByteString.Char8 qualified as BSC
-import Data.ByteString.Lazy qualified as BSL
-import Data.IntMap qualified as IntMap
+import Data.Functor.Contravariant ((>$<))
 
 import Control.Concurrent (forkIO)
 import Control.Concurrent.STM (atomically)
 import Control.Exception (finally)
 import Control.Monad
-import Control.Tracer (Tracer (..), showTracing)
+import Control.Tracer (Tracer, mkTracer)
 
 import System.Environment qualified as SysEnv
 import System.Exit
@@ -48,10 +47,6 @@ import Network.Mux.Bearer qualified as Mx
 import Test.Mux.ReqResp
 
 
-wrapReception :: Functor f => f (a, Maybe BSL.ByteString) -> f (a, Maybe (Mx.Reception BSL.ByteString))
-wrapReception = fmap (\(a, t) -> (a, Mx.MkReception IntMap.empty <$> t))
-
-
 main :: IO ()
 main = do
     args <- SysEnv.getArgs
@@ -77,7 +72,7 @@ putStrLn_ :: String -> IO ()
 putStrLn_ = BSC.putStrLn . BSC.pack
 
 debugTracer :: Show a => Tracer IO a
-debugTracer = showTracing (Tracer putStrLn_)
+debugTracer = show >$< mkTracer putStrLn_
 
 --
 -- Protocols
@@ -139,7 +134,7 @@ serverWorker bearer = do
         runMiniProtocol mux (MiniProtocolNum 2)
                              ResponderDirectionOnly
                              StartOnDemand $ \channel ->
-          wrapReception $ runServerCBOR debugTracer channel (echoServer 0)
+          runServerCBOR debugTracer channel (echoServer 0)
       result <- atomically awaitResult
       putStrLn $ "Result: " ++ show result
       Mx.stop mux
@@ -199,7 +194,7 @@ clientWorker bearer n msg = do
         runMiniProtocol mux (MiniProtocolNum 2)
                              InitiatorDirectionOnly
                              StartEagerly $ \channel ->
-          wrapReception $ runClientCBOR debugTracer channel (echoClient 0 n (BSC.pack msg))
+          runClientCBOR debugTracer channel (echoClient 0 n (BSC.pack msg))
       result <- atomically awaitResult
       putStrLn $ "Result: " ++ show result
       Mx.stop mux

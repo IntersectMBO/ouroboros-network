@@ -63,6 +63,7 @@ import Ouroboros.Network.Mux (wrapMiniProtocolTrailing)
 
 import Test.Ouroboros.Network.Data.AbsBearerInfo
 import Test.Ouroboros.Network.Orphans ()
+import Test.Ouroboros.Network.Utils (sayTracer)
 
 import Test.QuickCheck hiding (Result (..))
 import Test.QuickCheck.Instances.ByteString ()
@@ -271,7 +272,7 @@ clientServerSimulation payloads =
               mxTracer =
                 (("server", connId,)
                    `contramap`
-                   traceTime (Tracer (say . show)))
+                   traceTime sayTracer)
           bracket
             (Mx.new (Mx.Tracers mxTracer mxTracer mxTracer)
                     [ MiniProtocolInfo {
@@ -285,8 +286,8 @@ clientServerSimulation payloads =
             $ \mux -> do
 
               let prtclTracer = (connId,) `contramap`
-                                traceTime (   Tracer (say . show)
-                                           -- <> Tracer Debug.traceShowM
+                                traceTime (   sayTracer
+                                           -- <> debugTracer
                                           )
 
               resSTM <- runMiniProtocol
@@ -326,7 +327,7 @@ clientServerSimulation payloads =
                       mxTracer =
                         (("client", connId,)
                            `contramap`
-                           traceTime (Tracer (say . show)))
+                           traceTime sayTracer)
 
                   mux <- Mx.new (Mx.Tracers mxTracer mxTracer mxTracer)
                                 [ MiniProtocolInfo {
@@ -338,8 +339,8 @@ clientServerSimulation payloads =
                                 ]
 
                   let prtclTracer = (connId,) `contramap`
-                                    traceTime (   Tracer (say . show)
-                                               -- <> Tracer Debug.traceShowM
+                                    traceTime (   sayTracer
+                                               -- <> debugTracer
                                               )
                   resSTM <- runMiniProtocol
                               mux reqRespProtocolNum

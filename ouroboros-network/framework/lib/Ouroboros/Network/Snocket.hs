@@ -10,6 +10,7 @@
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeSynonymInstances       #-}
 
 #if !defined(mingw32_HOST_OS)
@@ -84,7 +85,7 @@ import Network.Mux.Bearer
 import Ouroboros.Network.ConnectionId
 import Ouroboros.Network.IOManager
 import Ouroboros.Network.RawBearer
-import Ouroboros.Network.Util.ShowProxy (ShowProxy, showProxy)
+import Ouroboros.Network.Util (PrettyShow (..), ShowProxy (..))
 
 
 type RemoteAddress      = Socket.SockAddr
@@ -219,6 +220,8 @@ newtype LocalAddress = LocalAddress { getFilePath :: FilePath }
   deriving (Eq, Ord, Generic)
   deriving Show via Quiet LocalAddress
 
+instance PrettyShow LocalAddress where
+  prettyShow LocalAddress { getFilePath = fp } = fp
 
 instance Hashable LocalAddress where
     hashWithSalt s (LocalAddress path) = hashWithSalt s path
@@ -231,6 +234,9 @@ instance Show addr => Show (TestAddress addr) where
    showsPrec d (TestAddress addr) = showParen (d > app_prec) $
         showString "TestAddress " . showsPrec (app_prec+1) addr
      where app_prec = 10
+
+instance PrettyShow addr => PrettyShow (TestAddress addr) where
+    prettyShow (TestAddress addr) = prettyShow addr
 
 instance Hashable addr => Hashable (TestAddress addr)
 
@@ -626,6 +632,7 @@ localSocketFileDescriptor =
 #else
 localSocketFileDescriptor = socketFileDescriptor . getLocalHandle
 #endif
+
 
 -- | invalidFileDescriptor - when we need something for testing/simulation
 invalidFileDescriptor :: FileDescriptor

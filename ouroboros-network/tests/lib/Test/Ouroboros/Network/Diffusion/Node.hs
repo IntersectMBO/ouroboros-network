@@ -39,7 +39,6 @@ module Test.Ouroboros.Network.Diffusion.Node
 import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadMVar (MonadMVar)
 import Control.Concurrent.Class.MonadSTM.Strict
-import Control.Monad ((>=>))
 import Control.Monad.Class.MonadAsync (MonadAsync (wait, withAsync))
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadSay
@@ -62,10 +61,11 @@ import Data.Void (Void)
 import Network.DNS (Domain, TYPE)
 import System.Random (StdGen, splitGen)
 
+import Ouroboros.Network.CodecCBORTerm
 import Ouroboros.Network.Mux (noBindForkPolicy)
 import Ouroboros.Network.Protocol.Handshake (HandshakeArguments (..))
-import Ouroboros.Network.Protocol.Handshake.Codec (VersionDataCodec (..),
-           noTimeLimitsHandshake, timeLimitsHandshake)
+import Ouroboros.Network.Protocol.Handshake.Codec (noTimeLimitsHandshake,
+           timeLimitsHandshake)
 import Ouroboros.Network.Protocol.Handshake.Unversioned
            (unversionedHandshakeCodec, unversionedProtocolDataCodec)
 import Ouroboros.Network.Protocol.Handshake.Version (Accept (Accept))
@@ -108,9 +108,10 @@ import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersAPI (..))
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket (MakeBearer, Snocket, TestAddress (..),
            invalidFileDescriptor)
+import Ouroboros.Network.Util (PrettyShow (..))
 
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy (TxDecisionPolicy)
-import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (decisionLogicThreads)
+import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (txCountersThreadV2)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types (TraceTxLogic)
 
 import Simulation.Network.Snocket (AddressType (..), FD)
@@ -126,7 +127,6 @@ import Test.Ouroboros.Network.PeerSelection.RootPeersDNS (DNSLookupDelay,
            DNSTimeout, DomainAccessPoint (..), MockDNSLookupResult,
            mockDNSActions)
 import Test.Ouroboros.Network.TxSubmission.Types (Tx)
-import Test.Ouroboros.Network.Utils
 
 
 
@@ -256,7 +256,7 @@ run blockGeneratorArgs ni na
     toExtraPeers requestPublicRootPeers peerChurnGovernor
     tracers tracerBlockFetch
     tracerTxLogic mkApps = do
-    labelThisThread ("node-" ++ Node.ppNtNAddr (aIPAddress na))
+    labelThisThread ("node-" ++ prettyShow (aIPAddress na))
     Node.withNodeKernelThread (aIPAddress na) blockGeneratorArgs (aTxs na)
       $ \ nodeKernel nodeKernelThread -> do
         dnsTimeoutScriptVar <- newTVarIO (aDNSTimeoutScript na)
@@ -267,19 +267,20 @@ run blockGeneratorArgs ni na
                                                (NtCFD m) NtCAddr
                                                resolver m
             interfaces = Diffusion.Interfaces
-              { Diffusion.diNtnSnocket            = iNtnSnocket ni
-              , Diffusion.diNtnBearer             = iNtnBearer ni
-              , Diffusion.diWithBuffer            = \f -> f Nothing
-              , Diffusion.diNtnConfigureSocket    = \_ _ -> return ()
+              { Diffusion.diNtnSnocket             = iNtnSnocket ni
+              , Diffusion.diNtnBearer              = iNtnBearer ni
+              , Diffusion.diWithBuffer             = \f -> f Nothing
+              , Diffusion.diNtnConfigureSocket     = \_ _ -> return ()
               , Diffusion.diNtnConfigureSystemdSocket
-                                               = \_ _ -> return ()
-              , Diffusion.diNtnAddressType = ntnAddressType
-              , Diffusion.diNtnToPeerAddr         = \a b -> TestAddress (Node.IPAddr a b)
-              , Diffusion.diNtcSnocket            = iNtcSnocket ni
-              , Diffusion.diNtcBearer             = iNtcBearer ni
-              , Diffusion.diNtcGetFileDescriptor  = \_ -> pure invalidFileDescriptor
-              , Diffusion.diRng                   = diffStgGen
-              , Diffusion.diDnsActions            = \tracer lookupType toPeerAddr ->
+                                                   = \_ _ -> return ()
+              , Diffusion.diNtnAddressType         = ntnAddressType
+              , Diffusion.diNtnToPeerAddr          = \a b -> TestAddress (Node.IPAddr a b)
+              , Diffusion.diNtcSnocket             = iNtcSnocket ni
+              , Diffusion.diNtcBearer              = iNtcBearer ni
+              , Diffusion.diNtcGetFileDescriptor   = \_ -> pure invalidFileDescriptor
+              , Diffusion.diNtcConfigureSocketFile = \_ -> pure ()
+              , Diffusion.diRng                    = diffStgGen
+              , Diffusion.diDnsActions             = \tracer lookupType toPeerAddr ->
                   mockDNSActions
                     tracer
                     lookupType
@@ -340,17 +341,18 @@ run blockGeneratorArgs ni na
                            (mkApps nodeKernel keepAliveStdGen))
            $ \ diffusionThread ->
                withAsync (blockFetch nodeKernel) $ \blockFetchLogicThread ->
-
-                 withAsync (decisionLogicThreads
-                              tracerTxLogic
-                              sayTracer
+                 withAsync (txCountersThreadV2
                               (aTxDecisionPolicy na)
-                              (nkTxChannelsVar nodeKernel)
-                              (nkSharedTxStateVar nodeKernel)) $ \decLogicThread ->
-                      wait diffusionThread
-                   <> wait blockFetchLogicThread
-                   <> wait nodeKernelThread
-                   <> wait decLogicThread
+                              nullTracer
+                              tracerTxLogic
+                              (nkTxCountersVar nodeKernel)
+                              (nkSharedTxStateVar nodeKernel)
+                              (nkPeerTxRegistry nodeKernel))
+                   $ \txCountersAid ->
+                          wait diffusionThread
+                       <> wait blockFetchLogicThread
+                       <> wait nodeKernelThread
+                       <> wait txCountersAid
   where
     blockFetch :: NodeKernel BlockHeader Block s txid m
                -> m Void
@@ -360,6 +362,7 @@ run blockGeneratorArgs ni na
         tracerBlockFetch
         (blockFetchPolicy nodeKernel)
         (nkFetchClientRegistry nodeKernel)
+        (nkKeepAliveRegistry nodeKernel)
         (BlockFetchConfiguration {
           bfcMaxConcurrencyBulkSync = 1,
           bfcMaxConcurrencyDeadline = 2,
@@ -376,17 +379,16 @@ run blockGeneratorArgs ni na
     blockFetchPolicy nodeKernel =
         BlockFetchConsensusInterface {
           readCandidateChains    = readTVar (nkClientChains nodeKernel)
-                                   >>= traverse (readTVar
-                                       >=> (return . toAnchoredFragment)),
-          readCurrentChain       = readTVar (nkChainProducerState nodeKernel)
-                                   >>= (return . toAnchoredFragmentHeader . chainState),
+                               >>= fmap (fmap toAnchoredFragment) . traverse readTVar,
+          readCurrentChain       = toAnchoredFragmentHeader . chainState
+                               <$> readTVar (nkChainProducerState nodeKernel),
           readFetchMode          = return $ PraosFetchMode FetchModeBulkSync,
           readFetchedBlocks      = flip Set.member <$> getBlockPointSet (nkChainDB nodeKernel),
-          readFetchedMaxSlotNo   = Foldable.foldl' max NoMaxSlotNo .
-                                   map (maxSlotNoFromWithOrigin . pointSlot) .
-                                   Set.elems <$>
-                                   getBlockPointSet (nkChainDB nodeKernel),
-          mkAddFetchedBlock        =
+          readFetchedMaxSlotNo   = Foldable.foldl' max NoMaxSlotNo
+                                 . map (maxSlotNoFromWithOrigin . pointSlot)
+                                 . Set.elems
+                               <$> getBlockPointSet (nkChainDB nodeKernel),
+          mkAddFetchedBlock      =
               pure $ \_p b ->
                 atomically (addBlock b (nkChainDB nodeKernel)),
 
@@ -431,7 +433,7 @@ run blockGeneratorArgs ni na
     -- various pseudo random generators
     (diffStgGen, keepAliveStdGen) = splitGen (iRng ni)
 
-    ntnUnversionedDataCodec :: VersionDataCodec CBOR.Term NtNVersion NtNVersionData
+    ntnUnversionedDataCodec :: VersionDataCodec NtNVersion NtNVersionData
     ntnUnversionedDataCodec = VersionDataCodec { encodeData, decodeData }
       where
         encodeData _ NtNVersionData { ntnDiffusionMode, ntnPeerSharing } =
@@ -449,8 +451,8 @@ run blockGeneratorArgs ni na
         toPeerSharing 1 = Right PeerSharingEnabled
         toPeerSharing _ = Left "toPeerSharing: out of bounds"
 
-        decodeData _ (CBOR.TList [CBOR.TBool False, CBOR.TInt a]) = NtNVersionData InitiatorOnlyDiffusionMode <$> (toPeerSharing a)
-        decodeData _ (CBOR.TList [CBOR.TBool True, CBOR.TInt a])  = NtNVersionData InitiatorAndResponderDiffusionMode <$> (toPeerSharing a)
+        decodeData _ (CBOR.TList [CBOR.TBool False, CBOR.TInt a]) = NtNVersionData InitiatorOnlyDiffusionMode <$> toPeerSharing a
+        decodeData _ (CBOR.TList [CBOR.TBool True, CBOR.TInt a])  = NtNVersionData InitiatorAndResponderDiffusionMode <$> toPeerSharing a
         decodeData _ _                                            = Left (Text.pack "unversionedDataCodec: unexpected term")
 
     mkArgs :: StrictTVar m (PublicPeerSelectionState NtNAddr)

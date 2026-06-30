@@ -95,6 +95,9 @@ module Ouroboros.Network.BlockFetch
   , newFetchClientRegistry
   , bracketFetchClient
   , bracketSyncWithFetchClient
+    -- * The 'KeepAliveRegistry'
+  , KeepAliveRegistry
+  , newKeepAliveRegistry
   , bracketKeepAliveClient
     -- * Re-export types used by 'BlockFetchConsensusInterface'
   , PraosFetchMode (..)
@@ -117,8 +120,9 @@ import Ouroboros.Network.Block
 import Ouroboros.Network.SizeInBytes (SizeInBytes)
 
 import Ouroboros.Network.BlockFetch.ClientRegistry (FetchClientPolicy (..),
-           FetchClientRegistry, bracketFetchClient, bracketKeepAliveClient,
-           bracketSyncWithFetchClient, newFetchClientRegistry,
+           FetchClientRegistry, KeepAliveRegistry, bracketFetchClient,
+           bracketKeepAliveClient, bracketSyncWithFetchClient,
+           newFetchClientRegistry, newKeepAliveRegistry,
            readFetchClientsStateVars, readFetchClientsStatus, readPeerGSVs,
            setFetchClientContext)
 import Ouroboros.Network.BlockFetch.ConsensusInterface
@@ -185,14 +189,16 @@ blockFetchLogic :: forall addr header block m.
                 -> Tracer m (TraceLabelPeer addr (TraceFetchClientState header))
                 -> BlockFetchConsensusInterface addr header block m
                 -> FetchClientRegistry addr header block m
+                -> KeepAliveRegistry addr m
                 -> BlockFetchConfiguration
                 -> m Void
 blockFetchLogic decisionTracer clientStateTracer
                 BlockFetchConsensusInterface{..}
-                registry
+                blockFetchRegistry
+                keepAliveRegistry
                 BlockFetchConfiguration{..} = do
 
-    setFetchClientContext registry clientStateTracer mkFetchClientPolicy
+    setFetchClientContext blockFetchRegistry clientStateTracer mkFetchClientPolicy
 
     fetchLogicIterations
       decisionTracer clientStateTracer
@@ -230,7 +236,7 @@ blockFetchLogic decisionTracer clientStateTracer
       FetchTriggerVariables {
         readStateCurrentChain    = readCurrentChain,
         readStateCandidateChains = readCandidateChains,
-        readStatePeerStatus      = readFetchClientsStatus registry,
+        readStatePeerStatus      = readFetchClientsStatus blockFetchRegistry,
         readStateChainComparison = readChainComparison
       }
 
@@ -238,8 +244,8 @@ blockFetchLogic decisionTracer clientStateTracer
     fetchNonTriggerVariables =
       FetchNonTriggerVariables {
         readStateFetchedBlocks      = readFetchedBlocks,
-        readStatePeerStateVars      = readFetchClientsStateVars registry,
-        readStatePeerGSVs           = readPeerGSVs registry,
+        readStatePeerStateVars      = readFetchClientsStateVars blockFetchRegistry,
+        readStatePeerGSVs           = readPeerGSVs keepAliveRegistry,
         readStateFetchMode          = readFetchMode,
         readStateFetchedMaxSlotNo   = readFetchedMaxSlotNo,
         readStateChainSelStarvation = readChainSelStarvation

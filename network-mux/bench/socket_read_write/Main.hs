@@ -30,7 +30,7 @@ import Network.Mux.Types
 
 activeTracer :: Tracer IO a
 activeTracer = nullTracer
---activeTracer = showTracing stdoutTracer
+--activeTracer = show >$< stdoutTracer
 
 sduTimeout :: DiffTime
 sduTimeout = 10

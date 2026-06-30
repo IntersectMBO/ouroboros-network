@@ -35,7 +35,7 @@ import Control.DeepSeq (NFData (..))
 import Control.Monad (when)
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadTime.SI
-import Control.Tracer (Tracer (..), contramap, nullTracer)
+import Control.Tracer (Tracer, contramap, mkTracer, nullTracer)
 import Data.Bifunctor (Bifunctor (..))
 import Data.IntPSQ (IntPSQ)
 import Data.IntPSQ qualified as IntPSQ
@@ -69,8 +69,8 @@ newtype PeerMetricsConfiguration = PeerMetricsConfiguration {
 
 -- | Integer based metric ordered by 'SlotNo' which holds the peer and time.
 --
--- The `p` parameter is truly polymorphic.  For `upstreamyness` and we use peer
--- address, and for `fetchyness` it is a pair of peer id and bytes downloaded.
+-- The `p` parameter is truly polymorphic.  For `upstreamyness` we use peer
+-- address, for `fetchyness` it is a pair of peer id and bytes downloaded.
 --
 type SlotMetric p = IntPSQ SlotNo (p, Time)
 
@@ -320,7 +320,7 @@ peerRegistryTracer :: forall p m.
                    => PeerMetrics m p
                    -> Tracer (STM m) (TraceLabelPeer p SlotNo)
 peerRegistryTracer PeerMetrics { peerMetricsVar } =
-    Tracer $ \(TraceLabelPeer peer slotNo) -> do
+    mkTracer $ \(TraceLabelPeer peer slotNo) -> do
       -- order matters: 'insertPeer' must access the previous value of
       -- lastSeenRegistry
       modifyTVar peerMetricsVar $ updateLastSlot slotNo
@@ -372,7 +372,7 @@ metricsTracer
     -> PeerMetricsConfiguration
     -> Tracer (STM m) (TraceLabelPeer p (SlotNo, Time))
 metricsTracer getMetrics writeMetrics PeerMetricsConfiguration { maxEntriesToTrack } =
-    Tracer $ \(TraceLabelPeer !peer (!slot, !time)) -> do
+    mkTracer $ \(TraceLabelPeer !peer (!slot, !time)) -> do
       metrics <- getMetrics
       let !k = slotToInt slot
           !v = (peer, time)
@@ -390,6 +390,9 @@ metricsTracer getMetrics writeMetrics PeerMetricsConfiguration { maxEntriesToTra
              else writeMetrics metrics'
            Just (_, (_, oldTime)) ->
                when (oldTime > time) $
+                    -- Update the entry only if the new slot was received
+                    -- earlier than the existing one, since we want to track
+                    -- the earliest appearances.
                     writeMetrics (IntPSQ.insert k slot v metrics)
 
 

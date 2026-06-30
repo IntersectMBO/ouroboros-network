@@ -5,7 +5,7 @@ synopsis: A networking layer for the cardano blockchain protocol
 description: A networking layer for the cardano blockchain protocol.
 license: Apache-2.0
 license-file: LICENSE
-author: Alexander Vieth, Marcin Szamotulski, Duncan Coutts
+author: Alexander Vieth, Marcin Szamotulski, Karl Knutsson, Duncan Coutts
 maintainer: marcin.szamotulski@iohk.io
 copyright: 2019-2023 Input Output Global Inc (IOG), 2023-2026 Intersect
 license-files:
@@ -26,6 +26,11 @@ flag cddl
   manual: True
   -- These tests need the cddl and the cbor-diag Ruby-package
   default: True
+
+flag optparse-applicative-fork
+  description: Use optparse-applicative-fork
+  manual: True
+  default: False
 
 common ghc-options
   default-language: Haskell2010
@@ -80,11 +85,26 @@ library api
   build-depends:
     aeson,
     base >=4.14 && <4.23,
+    cardano-base ^>=0.1,
     cborg >=0.2.1 && <0.3,
+    containers,
     deepseq,
     nothunks,
     ouroboros-network:api >=1.0.0.0 && <1.2.0.0,
     text >=1.2 && <2.2,
+
+library api-tests-lib
+  import: ghc-options
+  visibility: public
+  hs-source-dirs: api/tests-lib
+  exposed-modules:
+    Cardano.Network.NodeToNode.Version.TestUtils
+
+  build-depends:
+    QuickCheck,
+    base >=4.14 && <4.23,
+    cardano-diffusion:api,
+    ouroboros-network:api,
 
 test-suite api-tests
   import: ghc-options
@@ -99,7 +119,7 @@ test-suite api-tests
   build-depends:
     QuickCheck,
     base >=4.14 && <4.23,
-    cardano-diffusion:api,
+    cardano-diffusion:{api, api-tests-lib},
     ouroboros-network:api,
     tasty,
     tasty-hunit,
@@ -163,6 +183,7 @@ library
     aeson,
     base >=4.14 && <4.23,
     bytestring,
+    cardano-base ^>=0.1,
     cardano-diffusion:{api, protocols},
     containers,
     contra-tracer,
@@ -173,6 +194,7 @@ library
     network ^>=3.2.7,
     network-mux,
     ouroboros-network:{ouroboros-network, api, framework, protocols} >=1.0.0.0 && <1.2.0.0,
+    quiet,
     random ^>=1.3,
     typed-protocols:{typed-protocols, stateful} ^>=1.2,
 
@@ -284,6 +306,10 @@ library protocols
     Ouroboros.Network.Protocol.LocalTxSubmission.Codec as Cardano.Network.Protocol.LocalTxSubmission.Codec,
     Ouroboros.Network.Protocol.LocalTxSubmission.Server as Cardano.Network.Protocol.LocalTxSubmission.Server,
     Ouroboros.Network.Protocol.LocalTxSubmission.Type as Cardano.Network.Protocol.LocalTxSubmission.Type,
+    Ouroboros.Network.Protocol.ObjectDiffusion.Codec as Cardano.Network.Protocol.ObjectDiffusion.Codec,
+    Ouroboros.Network.Protocol.ObjectDiffusion.Inbound as Cardano.Network.Protocol.ObjectDiffusion.Inbound,
+    Ouroboros.Network.Protocol.ObjectDiffusion.Outbound as Cardano.Network.Protocol.ObjectDiffusion.Outbound,
+    Ouroboros.Network.Protocol.ObjectDiffusion.Type as Cardano.Network.Protocol.ObjectDiffusion.Type,
     Ouroboros.Network.Protocol.PeerSharing.Client as Cardano.Network.Protocol.PeerSharing.Client,
     Ouroboros.Network.Protocol.PeerSharing.Server as Cardano.Network.Protocol.PeerSharing.Server,
     Ouroboros.Network.Protocol.PeerSharing.Type as Cardano.Network.Protocol.PeerSharing.Type,
@@ -337,6 +363,10 @@ library protocols-tests-lib
     Ouroboros.Network.Protocol.LocalTxSubmission.Direct as Cardano.Network.Protocol.LocalTxSubmission.Direct,
     Ouroboros.Network.Protocol.LocalTxSubmission.Examples as Cardano.Network.Protocol.LocalTxSubmission.Examples,
     Ouroboros.Network.Protocol.LocalTxSubmission.Test as Cardano.Network.Protocol.LocalTxSubmission.Test,
+    Ouroboros.Network.Protocol.ObjectDiffusion.Codec.CDDL as Cardano.Network.Protocol.ObjectDiffusion.Codec.CDDL,
+    Ouroboros.Network.Protocol.ObjectDiffusion.Direct as Cardano.Network.Protocol.ObjectDiffusion.Direct,
+    Ouroboros.Network.Protocol.ObjectDiffusion.Examples as Cardano.Network.Protocol.ObjectDiffusion.Examples,
+    Ouroboros.Network.Protocol.ObjectDiffusion.Test as Cardano.Network.Protocol.ObjectDiffusion.Test,
     Ouroboros.Network.Protocol.PeerSharing.Direct as Cardano.Network.Protocol.PeerSharing.Direct,
     Ouroboros.Network.Protocol.PeerSharing.Examples as Cardano.Network.Protocol.PeerSharing.Examples,
     Ouroboros.Network.Protocol.PeerSharing.Test as Cardano.Network.Protocol.PeerSharing.Test,
@@ -349,7 +379,7 @@ library protocols-tests-lib
     QuickCheck,
     base >=4.14 && <4.23,
     bytestring,
-    cardano-diffusion:{api, protocols},
+    cardano-diffusion:{api, api-tests-lib, protocols},
     cborg,
     containers,
     contra-tracer,
@@ -360,7 +390,6 @@ library protocols-tests-lib
     random,
     tasty,
     tasty-quickcheck,
-    text,
     typed-protocols,
 
 test-suite protocols-tests
@@ -394,7 +423,7 @@ test-suite protocols-cddl
     QuickCheck,
     base >=4.14 && <4.23,
     bytestring,
-    cardano-diffusion:{api, protocols, protocols-tests-lib},
+    cardano-diffusion:{api, api-tests-lib, protocols, protocols-tests-lib},
     cborg,
     containers,
     directory,
@@ -458,6 +487,7 @@ library cardano-diffusion-tests-lib
     aeson,
     base >=4.14 && <4.23,
     bytestring,
+    cardano-base:testlib >=0.1.5.0,
     cardano-diffusion:{cardano-diffusion, api, orphan-instances, protocols, protocols-tests-lib},
     cardano-slotting,
     cborg,
@@ -487,6 +517,7 @@ library cardano-diffusion-tests-lib
   exposed-modules:
     Test.Cardano.Network.Diffusion.Policies
     Test.Cardano.Network.Diffusion.Testnet
+    Test.Cardano.Network.Diffusion.Testnet.ChainedTxs
     Test.Cardano.Network.Diffusion.Testnet.MiniProtocols
     Test.Cardano.Network.Diffusion.Testnet.Simulation
     Test.Cardano.Network.OrphanInstances.Tests
@@ -533,7 +564,7 @@ library subscription
     cardano-diffusion ^>=1.0.0.0,
     cborg >=0.2.8 && <0.3,
     containers >=0.5 && <0.9,
-    contra-tracer >=0.1 && <0.3,
+    contra-tracer ^>=0.2.1,
     deepseq,
     io-classes:si-timers ^>=1.8.0.1,
     network-mux ^>=0.10.1.0,
@@ -562,3 +593,54 @@ library tracing
 
   if flag(asserts)
     ghc-options: -fno-ignore-asserts
+
+library ping
+  import: ghc-options
+  visibility: public
+  hs-source-dirs: ping
+  exposed-modules: Cardano.Network.Ping
+  build-depends:
+    aeson >=2.1.1.0 && <3,
+    base >=4.14 && <4.23,
+    bytestring >=0.10 && <0.13,
+    cardano-diffusion:{cardano-diffusion, api, orphan-instances, protocols},
+    cborg >=0.2.8 && <0.3,
+    containers,
+    contra-tracer >=0.1 && <0.3,
+    deepseq,
+    directory,
+    dns,
+    io-classes:{io-classes, si-timers, strict-stm} ^>=1.8.0.1,
+    iproute ^>=1.7.15,
+    network ^>=3.2.7,
+    network-mux,
+    ouroboros-network:{api, framework} >=1.0.0.0 && <1.2.0.0,
+    random,
+    serialise,
+    tdigest ^>=0.3,
+    text >=1.2.4 && <2.2,
+    time >=1.9.1 && <1.16,
+
+  -- Until https://github.com/IntersectMBO/cardano-cli/pull/1390 is merged we
+  -- need to allow for `optparse-applicative-fork`
+  if flag(optparse-applicative-fork)
+    build-depends:
+      optparse-applicative-fork
+  else
+    build-depends:
+      optparse-applicative
+
+executable cardano-ping
+  import: ghc-options
+  hs-source-dirs: demo
+  main-is: ping.hs
+  build-depends:
+    base >=4.14 && <4.23,
+    cardano-diffusion:ping,
+
+  if flag(optparse-applicative-fork)
+    build-depends:
+      optparse-applicative-fork
+  else
+    build-depends:
+      optparse-applicative

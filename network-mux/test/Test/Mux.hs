@@ -22,6 +22,7 @@ import Codec.CBOR.Encoding as CBOR
 import Codec.Serialise (Serialise (..))
 import Control.Applicative
 import Control.Arrow ((&&&))
+import Control.Exception (ErrorCall (..))
 import Control.Monad
 import Data.Binary.Put qualified as Bin
 import Data.Bits
@@ -31,10 +32,11 @@ import Data.IntMap qualified as IntMap
 import Data.List (dropWhileEnd, nub)
 import Data.List qualified as List
 import Data.Map qualified as M
-import Data.Maybe (isNothing)
+import Data.Maybe (fromMaybe, isNothing)
 import Data.Tuple (swap)
 import Data.Word
 import System.Random.SplitMix qualified as SM
+import Test.Cardano.Base.QuickCheck qualified as BaseQC
 import Test.QuickCheck hiding ((.&.))
 import Test.QuickCheck.Instances.ByteString ()
 import Test.Tasty
@@ -87,23 +89,25 @@ tests =
   [ testProperty "mux send receive"             prop_mux_snd_recv
   , testProperty "mux send receive bidir"       prop_mux_snd_recv_bi
   , testProperty "mux send receive compat"      prop_mux_snd_recv_compat
-  , testProperty "1 miniprot Queue"             (withMaxSuccess 50 prop_mux_1_mini_Queue)
-  , testProperty "2 miniprots Queue"            (withMaxSuccess 50 prop_mux_2_minis_Queue)
-  , testProperty "1 miniprot Pipe"              (withMaxSuccess 50 prop_mux_1_mini_Pipe)
-  , testProperty "2 miniprots Pipe"             (withMaxSuccess 50 prop_mux_2_minis_Pipe)
-  , testProperty "1 miniprot Socket"            (withMaxSuccess 50 prop_mux_1_mini_Socket)
-  , testProperty "1 miniprot Socket, buffered"  (withMaxSuccess 50 prop_mux_1_mini_Socket_buf)
-  , testProperty "2 miniprot Socket"            (withMaxSuccess 50 prop_mux_2_minis_Socket)
-  , testProperty "2 miniprots Socket, buffered" (withMaxSuccess 50 prop_mux_2_minis_Socket_buf)
+  , testProperty "1 miniprot Queue"             (BaseQC.withNumTests 50 prop_mux_1_mini_Queue)
+  , testProperty "2 miniprots Queue"            (BaseQC.withNumTests 50 prop_mux_2_minis_Queue)
+  , testProperty "1 miniprot Pipe"              (BaseQC.withNumTests 50 prop_mux_1_mini_Pipe)
+  , testProperty "2 miniprots Pipe"             (BaseQC.withNumTests 50 prop_mux_2_minis_Pipe)
+  , testProperty "1 miniprot Socket"            (BaseQC.withNumTests 50 prop_mux_1_mini_Socket)
+  , testProperty "1 miniprot Socket, buffered"  (BaseQC.withNumTests 50 prop_mux_1_mini_Socket_buf)
+  , testProperty "2 miniprot Socket"            (BaseQC.withNumTests 50 prop_mux_2_minis_Socket)
+  , testProperty "2 miniprots Socket, buffered" (BaseQC.withNumTests 50 prop_mux_2_minis_Socket_buf)
   , testProperty "starvation"                   prop_mux_starvation
   , testProperty "demuxing (Sim)"               prop_demux_sdu_sim
   , testProperty "demuxing (IO)"                prop_demux_sdu_io
   , testProperty "mux start and stop"           prop_mux_start
   , testProperty "mux restart"                  prop_mux_restart
   , testProperty "mux close (Sim)"              prop_mux_close_sim
-  , testProperty "mux close (IO)"               (withMaxSuccess 50 prop_mux_close_io)
+  , testProperty "mux close (IO)"               (BaseQC.withNumTests 50 prop_mux_close_io)
   , testProperty "trailing bytes (Sim)"         prop_mux_trailing_bytes_iosim
   , testProperty "trailing bytes (IO)"          prop_mux_trailing_bytes_io
+  , testProperty "pure exception (Sim)"         prop_mux_pure_exception_iosim
+  , testProperty "pure exception (IO)"          prop_mux_pure_exception_io
   , testGroup "Generators"
     [ testProperty "genByteString"              prop_arbitrary_genByteString
     , testProperty "genLargeByteString"         prop_arbitrary_genLargeByteString
@@ -136,10 +140,7 @@ wrapReception = fmap (\(a, t) -> (a, Mx.MkReception IntMap.empty <$> t))
 
 activeTracer :: forall m a. MonadSay m => Tracer m a
 activeTracer = nullTracer
---activeTracer = showTracing _sayTracer
-
-_sayTracer :: MonadSay m => Tracer m String
-_sayTracer = Tracer say
+-- activeTracer = sayTracer
 
 --
 -- Generators
@@ -1015,7 +1016,7 @@ prop_mux_starvation (Uneven response0 response1) =
     activeMpsVar <- newTVarIO 0
     traceHeaderVar <- newTVarIO []
     let headerTracer =
-          Tracer $ \e -> case e of
+          mkTracer $ \e -> case e of
             Mx.TraceRecvHeaderEnd header
               -> atomically (modifyTVar traceHeaderVar (header:))
             _ -> return ()
@@ -1160,6 +1161,7 @@ prop_demux_sdu :: forall m.
                     ( Alternative (STM m)
                     , MonadAsync m
                     , MonadDelay m
+                    , MonadEvaluate m
                     , MonadFork m
                     , MonadLabelledSTM m
                     , MonadMask m
@@ -1499,6 +1501,7 @@ prop_mux_start_mX :: forall m.
                        ( Alternative (STM m)
                        , MonadAsync m
                        , MonadDelay m
+                       , MonadEvaluate m
                        , MonadFork m
                        , MonadLabelledSTM m
                        , MonadMask m
@@ -1562,6 +1565,7 @@ prop_mux_restart_m :: forall m.
                        ( Alternative (STM m)
                        , MonadAsync m
                        , MonadDelay m
+                       , MonadEvaluate m
                        , MonadFork m
                        , MonadLabelledSTM m
                        , MonadMask m
@@ -1732,6 +1736,7 @@ prop_mux_start_m :: forall m.
                        ( Alternative (STM m)
                        , MonadAsync m
                        , MonadDelay m
+                       , MonadEvaluate m
                        , MonadFork  m
                        , MonadLabelledSTM m
                        , MonadMask m
@@ -1916,7 +1921,7 @@ verboseTracer :: forall a m.
                        , Show a
                        )
                => Tracer m a
-verboseTracer = threadAndTimeTracer $ showTracing $ Tracer say
+verboseTracer = threadAndTimeTracer $ show >$< mkTracer say
 
 muxVerboseTracer :: forall m.
                        ( MonadAsync m
@@ -1931,7 +1936,7 @@ threadAndTimeTracer :: forall a m.
                        , MonadMonotonicTime m
                        )
                     => Tracer m (WithThreadAndTime a) -> Tracer m a
-threadAndTimeTracer tr = Tracer $ \s -> do
+threadAndTimeTracer tr = mkTracer $ \s -> do
     !now <- getMonotonicTime
     !tid <- myThreadId
     traceWith tr $ WithThreadAndTime now (show tid) s
@@ -1978,6 +1983,7 @@ close_experiment
        ( Alternative (STM m)
        , MonadAsync       m
        , MonadDelay       m
+       , MonadEvaluate    m
        , MonadFork        m
        , MonadLabelledSTM m
        , MonadMask        m
@@ -2061,7 +2067,8 @@ close_experiment
               (CleanShutdown, Right (Right resps), Right _)
                  | expected <- expectedResps (List.length resps)
                  , resps == expected
-                -> return $ property True
+                -> return $ label "CleanShutdown"
+                          $ property True
 
                  | otherwise
                 -> return $ counterexample
@@ -2071,12 +2078,68 @@ close_experiment
                                       ])
                               False
 
+              -- With empty reqs, CleanShutdown also sends MsgDone immediately.
+              -- The server is StartOnDemand and may not be scheduled before the
+              -- client socket closes (EOF → BearerClosed → mux Stopped), so it
+              -- receives Shutdown Nothing Stopped instead of a normal termination.
+              -- On Windows the bearer raises IOException rather than BearerClosed,
+              -- so the mux enters Failed state and completionAction returns
+              -- Shutdown (Just e) (Failed e) instead of Shutdown Nothing Stopped.
+              (CleanShutdown, Right (Right []), Left serverError)
+                 | Just e <- fromException (collapsE serverError)
+                 , case e of
+                     Mx.Shutdown {}     -> True
+                     Mx.BearerClosed {} -> True
+                     _                  -> False
+                -> return $ label "CleanShutdown"
+                          $ property True
+
+                 | otherwise
+                -> return $ counterexample
+                              (show serverError)
+                              False
+
+              -- The egress thread clears the Wanton TVar before writeMany sends
+              -- the bytes to the bearer.  If the mux run thread (Mx.run) is
+              -- cancelled in that window the MsgDone SDU is never transmitted.
+              -- The server is blocking on recv waiting for MsgDone; when the
+              -- client socket closes it gets BearerClosed → mux Failed.  The
+              -- client responses are still correct, so accept the
+              -- connection-level server error.
+              (CleanShutdown, Right (Right resps), Left serverError)
+                 | expected <- expectedResps (List.length resps)
+                 , resps == expected
+                 , Just e <- fromException (collapsE serverError)
+                 , case e of
+                     Mx.Shutdown {}     -> True
+                     Mx.BearerClosed {} -> True
+                     _                  -> False
+                -> return $ label "CleanShutdown"
+                          $ property True
+
+                 | expected <- expectedResps (List.length resps)
+                 , resps /= expected
+                -> return $ counterexample
+                              (concat [ show resps
+                                      , " ≠ "
+                                      , show expected
+                                      ])
+                          $ counterexample
+                              (show serverError)
+                              False
+
+                 | otherwise
+                -> return $ counterexample
+                              (show serverError)
+                              False
+
               -- close on read with empty responses is the same as clean
               -- shutdown
               (CloseOnRead, Right (Right resps@[]), Right _)
                  | expected <- expectedResps 0
                  , List.null expected
-                -> return $ property True
+                -> return $ label ("CloseOnRead: " ++ if null reqs0 then "reqs == 0" else "reqs0 > 0")
+                          $ property True
 
                  | otherwise
                 -> return $ counterexample
@@ -2084,6 +2147,24 @@ close_experiment
                                       , " ≠ "
                                       , show (expectedResps (List.length resps))
                                       ])
+                              False
+
+              -- With empty reqs, CloseOnRead sends MsgDone immediately (same
+              -- as CleanShutdown). The server is StartOnDemand and may never
+              -- be scheduled before the mux shuts down, so it receives
+              -- Shutdown Nothing Stopped instead of a normal termination.
+              (CloseOnRead, Right (Right []), Left serverError)
+                 | Just e <- fromException (collapsE serverError)
+                 , case e of
+                     Mx.Shutdown {}     -> True
+                     Mx.BearerClosed {} -> True
+                     _                  -> False
+                -> return $ label ("CloseOnRead: " ++ if null reqs0 then "reqs == 0" else "reqs0 > 0")
+                          $ property True
+
+                 | otherwise
+                -> return $ counterexample
+                              (show serverError)
                               False
 
               (CloseOnWrite, Right (Left resps), Left serverError)
@@ -2094,7 +2175,8 @@ close_experiment
                      Mx.Shutdown {}     -> True
                      Mx.BearerClosed {} -> True
                      _                  -> False
-                -> return $ property True
+                -> return $ label ("CloseOnWrite: " ++ if null reqs0 then "reqs == 0" else "reqs0 > 0")
+                          $ property True
 
                  | expected <- expectedResps (List.length resps)
                  , resps /= expected
@@ -2258,8 +2340,6 @@ prop_mux_close_io fault reqs fn acc = ioProperty $ withIOManager $ \iocp -> do
                 associateWithIOManager iocp (Right sock)
                 (Socket.getSocketName serverSocket
                   >>= Socket.connect sock)
-                  `onException`
-                    Socket.close sock
                 return sock,
               ncClose  = Socket.close,
               ncMuxBearer = \sd k -> withReadBufferIO (\buffer -> do
@@ -2375,11 +2455,13 @@ prop_mux_trailing_bytes
   :: ( Alternative   (STM m)
      , MonadAsync         m
      , MonadDelay         m
+     , MonadEvaluate      m
      , MonadFork          m
      , MonadLabelledSTM   m
      , MonadMask          m
      , MonadTimer         m
      , MonadThrow    (STM m)
+     , MonadSay           m
      )
   => BL.ByteString
   -> NonEmptyByteString
@@ -2409,7 +2491,8 @@ prop_mux_trailing_bytes reminder (NonEmptyByteString received) = do
       -- remote side sending additional data after restarting the mini-protocol.
       -- The initial data for this conversation is in the trailing bytes, which
       -- are assumed to be already received. We inject them in the next step.
-      atomically $ writeTBQueue mux_r
+      atomically
+        $ writeTBQueue mux_r
         $ Mx.encodeSDU
         $ Mx.SDU { Mx.msHeader = Mx.SDUHeader {
                      Mx.mhTimestamp = Mx.RemoteClockModel 0,
@@ -2420,9 +2503,8 @@ prop_mux_trailing_bytes reminder (NonEmptyByteString received) = do
                    Mx.msBlob = received
                 }
 
-      -- 2. Run a mini-protocol which returns `reminder` as trailing bytes.
-      -- This represents the responder side stopping the mini-protocol with
-      -- trailing bytes.
+      -- 2. Run a mini-protocol which returns `trailing` bytes. This represents
+      -- the responder side stopping the mini-protocol with trailing bytes.
       _ <- atomically =<< Mx.runMiniProtocol
               mux
               miniProtocolNum
@@ -2440,11 +2522,22 @@ prop_mux_trailing_bytes reminder (NonEmptyByteString received) = do
               Mx.StartEagerly
               (\chan -> do
                 labelThisThread "resp:2"
-                a <- Mx.recv chan
-                return (a, Nothing)
+                let expectedLen = BL.length reminder + BL.length received
+                    -- `recv` returns whatever is currently available in the
+                    -- ingress queue without waiting for more.  If the trailing
+                    -- bytes arrive before the demuxer has processed the SDU,
+                    -- a single `recv` would return only the trailing bytes and
+                    -- miss the SDU payload, making the test non-deterministic.
+                    go acc
+                      | BL.length acc >= expectedLen = return acc
+                      | otherwise = do
+                          mbs <- Mx.recv chan
+                          go (acc <> fromMaybe BL.empty mbs)
+                a <- go BL.empty
+                return (Just a, Nothing)
               )
 
-      -- 4. Verify that we received trailing bytes were injected before the
+      -- 4. Verify that the trailing bytes were injected before the
       -- additional data (`received` bytes).
       case r of
         Left e    -> throwIO e
@@ -2461,13 +2554,74 @@ prop_mux_trailing_bytes_iosim reminder received =
   let trace = runSimTrace $ prop_mux_trailing_bytes reminder received
   in counterexample (ppTrace_ trace) (case traceResult True trace of
                                        Left e  -> counterexample (show e) False
-                                       Right r -> r)
+                                       Right r -> property r)
 
 prop_mux_trailing_bytes_io :: BL.ByteString
                            -> NonEmptyByteString
                            -> Property
 prop_mux_trailing_bytes_io reminder received =
   ioProperty $ prop_mux_trailing_bytes reminder received
+
+
+prop_mux_pure_exception
+  :: ( Alternative   (STM m)
+     , MonadAsync         m
+     , MonadDelay         m
+     , MonadEvaluate      m
+     , MonadFork          m
+     , MonadLabelledSTM   m
+     , MonadMask          m
+     , MonadTimer         m
+     , MonadThrow    (STM m)
+     )
+  => m Property
+prop_mux_pure_exception = do
+    mux_w <- atomically $ newTBQueue 10
+    mux_r <- atomically $ newTBQueue 10
+    bearer <- getBearer Mx.makeQueueChannelBearer
+                (-1)
+                QueueChannel { writeQueue = mux_w, readQueue = mux_r }
+                Nothing
+    mux <- Mx.new Mx.nullTracers -- { Mx.tracer = Tracer Debug.traceShowM }
+                  [ MiniProtocolInfo {
+                      miniProtocolNum,
+                      miniProtocolDir = Mx.ResponderDirectionOnly,
+                      miniProtocolLimits = Mx.MiniProtocolLimits maxBound,
+                      miniProtocolCapability = Nothing
+                    }
+                  ]
+    withAsync (Mx.run mux bearer) $ \_ -> do
+      r <- atomically =<< Mx.runMiniProtocol
+              mux
+              miniProtocolNum
+              Mx.ResponderDirectionOnly
+              Mx.StartEagerly
+              (\_ -> do
+                labelThisThread "resp:1"
+                throwIO (error "pure exception" :: IOError))
+
+      return $ case r of
+        Left e   | Just (_ :: ErrorCall) <- fromException e
+                 -> property True
+                 | Just (_ :: IOError) <- fromException e
+                 -> counterexample "unexpected IOError" False
+                 | otherwise
+                 -> counterexample "unexpected error" False
+        Right {} -> counterexample "unexpected result" False
+  where
+    miniProtocolNum :: Mx.MiniProtocolNum
+    miniProtocolNum = Mx.MiniProtocolNum 1
+
+
+prop_mux_pure_exception_iosim :: Property
+prop_mux_pure_exception_iosim = once $
+  let trace = runSimTrace $ prop_mux_pure_exception
+  in counterexample (ppTrace_ trace) (case traceResult True trace of
+                                       Left e  -> counterexample (show e) False
+                                       Right r -> r)
+
+prop_mux_pure_exception_io :: Property
+prop_mux_pure_exception_io = once $ ioProperty $ prop_mux_pure_exception
 
 -- compare error types, not the payloads
 compareErrors :: Mx.Error -> Mx.Error -> Bool

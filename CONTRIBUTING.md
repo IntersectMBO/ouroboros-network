@@ -53,15 +53,23 @@ bootstrapping the project); the official
 To build all the required jobs (which are necessary to pass through CI), you can run:
 
 ```sh
-nix build -j auto .\#hydraJobs.required
+nix build -j auto .\#hydraJobs.x86_64-linux.required
 ```
 
-To inspect what can be built use `nix repl` , for example:
-```
-nix-repl> :lf .
-nix-repl> hydraJobs.<TAB>
-nix-repl> hydraJobs.
-hydraJobs.aarch64-darwin  hydraJobs.x86_64-darwin   hydraJobs.x86_64-linux
+Each system also exposes `all` aggregates that build every package without
+running tests.  The top-level `all` covers native jobs only; cross-compilation
+targets and compiler variants each have their own `all`:
+
+```sh
+# all packages on the native system (no tests)
+nix build -j auto .\#hydraJobs.x86_64-linux.all
+nix build -j auto .\#hydraJobs.aarch64-darwin.all
+
+# all Windows cross-compiled packages (only available on x86_64-linux)
+nix build -j auto .\#hydraJobs.x86_64-linux.x86_64-w64-mingw32.all
+
+# all packages built with an alternative compiler
+nix build -j auto .\#hydraJobs.x86_64-linux.ghc982.all
 ```
 
 In various packages, we use `CPP` pragmas to compile different code depending
@@ -70,51 +78,62 @@ is very helpful to diagnose build time compiler errors.
 
 #### Cross Compilation
 
-Nix allows to build Windows native executables on Linux, e.g. to build
-`network-mux:lib:network-mux` component one can run this command:
+Nix allows to build Windows native executables on Linux.  To build all
+cross-compiled components at once:
 
-```bash
-nix build .\#hydraJobs.x86_64-linux.ghc810-x86_64-w64-mingw32.packages.network-mux:lib:network-mux
+```sh
+nix build -j auto .\#hydraJobs.x86_64-linux.x86_64-w64-mingw32.all
+```
+
+To build a specific component, e.g. `network-mux:lib:network-mux`:
+
+```sh
+nix build .\#hydraJobs.x86_64-linux.x86_64-w64-mingw32.packages."network-mux:lib:network-mux"
 ```
 
 Not all components are available in cross-compilation right now.  All the
-test components are disabled in `./scripts/ci/cabal.project.local.Windows.CrossCompile`.
+test components are disabled in `./scripts/ci/cabal.project.local.Windows`.
 
 ### Running tests with cabal
 
 To run all tests from a particular component use the following command, in this
-example `ouroboros-network`:
+example `ouroboros-network-sim-tests` from the `ouroboros-network` package:
 
 ```sh
-cabal run ouroboros-network:test
+cabal run ouroboros-network:ouroboros-network-sim-tests
 ```
+
+The `ouroboros-network` package has several test suites: `ouroboros-network-sim-tests`,
+`ouroboros-network-io-tests`, `framework-sim-tests`, `framework-io-tests`,
+`protocols-tests`, `api-tests`.
 
 We use [`tasty`] library which exposes an interface to list & isolate
 a test or group of tests to run.   The following command will list all the
-tests of the `ouroboros-network:test` component:
+tests of the `ouroboros-network-sim-tests` component:
 
 ```
-$ cabal run ouroboros-network:test -- -l
-ouroboros-network.ChainProducerState.Test Arbitrary instances.ChainProducerStateForkTest's generator
-ouroboros-network.ChainProducerState.Test Arbitrary instances.ChainProducerStateForkTest's shrinker
-ouroboros-network.ChainProducerState.check initial follower state
+$ cabal run ouroboros-network:ouroboros-network-sim-tests -- -l
+ouroboros-network-sim-tests.ChainProducerState.Test Arbitrary instances.ChainProducerStateForkTest's generator
+ouroboros-network-sim-tests.ChainProducerState.Test Arbitrary instances.ChainProducerStateForkTest's shrinker
+ouroboros-network-sim-tests.ChainProducerState.check initial follower state
 ...
 ```
 
 To match only tests which contain particular string:
 ```
-$ cabal run ouroboros-network:test -- -p '/governor no livelock/' -l
-ouroboros-network.Ouroboros.Network.PeerSelection.governor no livelock
-ouroboros-network.Ouroboros.Network.PeerSelection.races.governor no livelock
+$ cabal run ouroboros-network:ouroboros-network-sim-tests -- -p '/PeerSelection/' -l
+ouroboros-network-sim-tests.Ouroboros.Network.PeerSelection.KnownPeers.insert is idempotent
+ouroboros-network-sim-tests.Ouroboros.Network.PeerSelection.LocalRootPeers.arbitrary
+...
 
-$ cabal run ouroboros-network:test -- -p '/PeerSelection.governor no livelock/' -l
-ouroboros-network.Ouroboros.Network.PeerSelection.governor no livelock
+$ cabal run ouroboros-network:ouroboros-network-sim-tests -- -p '/PeerSelection.KnownPeers/' -l
+ouroboros-network-sim-tests.Ouroboros.Network.PeerSelection.KnownPeers.insert is idempotent
 ```
 
 You can also use the test hierarchy, e.g. the last test can also be selected with:
 ```
-$ cabal run ouroboros-network:test -- -p '$2 == "Ouroboros.Network.PeerSelection" && $3 == "governor no livelock"' -l
-ouroboros-network.Ouroboros.Network.PeerSelection.governor no livelock
+$ cabal run ouroboros-network:ouroboros-network-sim-tests -- -p '$2 == "Ouroboros.Network.PeerSelection" && $3 == "KnownPeers"' -l
+ouroboros-network-sim-tests.Ouroboros.Network.PeerSelection.KnownPeers.insert is idempotent
 ```
 
 If you want to run selected tests just avoid the `-l` (`--list-tests`) switch.
@@ -123,12 +142,12 @@ If in doubt you can use `-h` or visit [tasty documentation][tasty-options].
 
 ### Building & running tests with nix
 
-`nix build -j auto .\#hydraJobs.required` will build and run all required
-checks.  If you want to build only tests for a particular package, e.g.
+`nix build -j auto .\#hydraJobs.x86_64-linux.required` will build and run all
+required checks.  If you want to build only tests for a particular package, e.g.
 `network-mux` package (on `linux`) use:
 
 ```sh
-nix build -j auto .\#hydraJobs.x86_64-linux.packages.network-mux:test:test
+nix build -j auto .\#hydraJobs.x86_64-linux.checks."network-mux:test:test"
 ```
 
 The executable will be available at `./results/bin/` directory.  You can pass
@@ -265,7 +284,7 @@ For a general architectural overview of the network code contact either:
 We officially support:
 
 * `Linux` (`x86_64-linux`)
-* `MacOS` (`x86_64-darwin` and `aarch64-darwin`)
+* `MacOS` (`aarch64-darwin`)
 * `Windows` (using [`msys2`] software distribution, and cross-compiled on linux with `nix`)
 
 On 32-bit platforms, you might expect some issues (currently memory requirement

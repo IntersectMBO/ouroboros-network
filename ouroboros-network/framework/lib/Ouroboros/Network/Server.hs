@@ -59,6 +59,7 @@ import Ouroboros.Network.InboundGovernor qualified as InboundGovernor
 import Ouroboros.Network.Mux
 import Ouroboros.Network.Server.RateLimiting
 import Ouroboros.Network.Snocket
+import Ouroboros.Network.Util (PrettyShow (..))
 
 
 --
@@ -109,8 +110,8 @@ with :: forall muxMode socket peerAddr initiatorCtx responderCtx handle handlerT
        , MonadTime     m
        , MonadTimer    m
        , HasResponder muxMode ~ True
-       , Ord      peerAddr
-       , Show     peerAddr
+       , Ord        peerAddr
+       , PrettyShow peerAddr
        , MonadTraceSTM m
        , MonadFork m
        , MonadFix m
@@ -146,7 +147,7 @@ with Arguments {
       InboundGovernor.with inboundGovernorArgs
         \inboundGovernorThread readPublicInboundState connectionManager ->
           withAsync do
-            labelThisThread "Server2 (ouroboros-network-framework)"
+            labelThisThread "server"
             k inboundGovernorThread readPublicInboundState connectionManager
           \actionThread -> do
             traceWith tracer (TrServerStarted localAddresses)
@@ -189,7 +190,7 @@ with Arguments {
                -> Accept m socket peerAddr
                -> m Void
     acceptLoop localAddress connectionManager acceptOne0 = mask $ \unmask -> do
-        labelThisThread ("accept-loop-" ++ show localAddress)
+        labelThisThread ("accept-loop-" ++ prettyShow localAddress)
         go unmask acceptOne0
       where
         -- we must guarantee that 'includeInboundConnection' is called,

@@ -31,7 +31,7 @@ jobs:
 
     steps:
     - name: Checkout ouroboros-network repository
-      uses: actions/checkout@v6
+      uses: actions/checkout@v7
 
       # we need nix to later build the spec documents
     - name: Install Nix
@@ -55,7 +55,7 @@ jobs:
       with:
         use-sodium-vrf: false
 
-    - uses: actions/cache@v5
+    - uses: actions/cache@v6
       name: Cache cabal store
       with:
         path: ${{ steps.setup-haskell.outputs.cabal-store }}
@@ -90,10 +90,10 @@ jobs:
         done
 
     - name: Upload artifacts
-      uses: actions/upload-pages-artifact@v4
+      uses: actions/upload-pages-artifact@v5
       with:
         path: ./haddocks
 
     - name: Deploy 🚀
       id: deployment
-      uses: actions/deploy-pages@v4
+      uses: actions/deploy-pages@v5

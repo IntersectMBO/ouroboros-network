@@ -50,6 +50,7 @@ import Test.Data.PipeliningDepth (PipeliningDepth (..))
 import Test.Ouroboros.Network.Protocol.Utils (prop_codec_cborM,
            prop_codec_valid_cbor_encoding, splits2, splits3)
 
+import Test.Cardano.Base.QuickCheck qualified as BaseQC
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
@@ -73,14 +74,14 @@ tests =
         , testProperty "pipe IO"             prop_pipe_IO
         , testProperty "codec"               prop_codec_BlockFetch
         , testProperty "codec 2-splits"      prop_codec_splits2_BlockFetch
-        , testProperty "codec 3-splits"    $ withMaxSuccess 30
+        , testProperty "codec 3-splits"    $ BaseQC.withNumTests 30
                                              prop_codec_splits3_BlockFetch
         , testProperty "codec cbor"          prop_codec_cbor_BlockFetch
         , testProperty "codec valid cbor"    prop_codec_valid_cbor_BlockFetch
 
         , testProperty "codecSerialised"                   prop_codec_BlockFetchSerialised
         , testProperty "codecSerialised 2-splits"          prop_codec_splits2_BlockFetchSerialised
-        , testProperty "codecSerialised 3-splits"        $ withMaxSuccess 30
+        , testProperty "codecSerialised 3-splits"        $ BaseQC.withNumTests 30
                                                            prop_codec_splits3_BlockFetchSerialised
         , testProperty "codecSerialised cbor"              prop_codec_cbor_BlockFetchSerialised
         , testProperty "codec/codecSerialised bin compat"  prop_codec_binary_compat_BlockFetch_BlockFetchSerialised

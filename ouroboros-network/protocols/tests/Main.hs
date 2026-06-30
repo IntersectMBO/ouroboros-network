@@ -9,6 +9,7 @@ import Ouroboros.Network.Protocol.KeepAlive.Test qualified (tests)
 import Ouroboros.Network.Protocol.LocalStateQuery.Test qualified (tests)
 import Ouroboros.Network.Protocol.LocalTxMonitor.Test qualified (tests)
 import Ouroboros.Network.Protocol.LocalTxSubmission.Test qualified (tests)
+import Ouroboros.Network.Protocol.ObjectDiffusion.Test qualified (tests)
 import Ouroboros.Network.Protocol.PeerSharing.Test qualified (tests)
 import Ouroboros.Network.Protocol.TxSubmission2.Test qualified (tests)
 import Test.Data.CDDL qualified (tests)
@@ -33,4 +34,5 @@ tests =
   , Ouroboros.Network.Protocol.LocalTxSubmission.Test.tests
   , Ouroboros.Network.Protocol.PeerSharing.Test.tests
   , Ouroboros.Network.Protocol.TxSubmission2.Test.tests
+  , Ouroboros.Network.Protocol.ObjectDiffusion.Test.tests
   ]

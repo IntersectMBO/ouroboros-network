@@ -61,10 +61,10 @@ tests =
 
 activeTracer :: forall m a. (MonadSay m, Show a) => Tracer m a
 activeTracer = nullTracer
---activeTracer = showTracing sayTracer
+--activeTracer = show >$< sayTracer
 
 _sayTracer :: MonadSay m => Tracer m String
-_sayTracer = Tracer say
+_sayTracer = mkTracer say
 
 
 testProtocols :: RunMiniProtocolWithMinimalCtx appType addr bytes m a b

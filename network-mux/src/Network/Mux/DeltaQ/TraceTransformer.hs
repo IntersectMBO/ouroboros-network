@@ -9,7 +9,6 @@ module Network.Mux.DeltaQ.TraceTransformer
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Tracer
-import Data.Functor.Contravariant ((>$<))
 import Data.Functor.Identity
 
 import Network.Mux.DeltaQ.TraceStats
@@ -22,7 +21,7 @@ import Network.Mux.Types
 --   seconds (when in use).
 initDeltaQTracer :: MonadSTM m
                  => m (Tracer m BearerTrace -> Tracer m BearerTrace)
-initDeltaQTracer = newTVarIO initialStatsA >>= pure . dqTracer
+initDeltaQTracer = dqTracer <$> newTVarIO initialStatsA
 
 initDeltaQTracer' :: MonadSTM m
                   => Tracer m BearerTrace
@@ -35,7 +34,7 @@ dqTracer :: MonadSTM m
          => StrictTVar m StatsA
          -> Tracer m BearerTrace
          -> Tracer m BearerTrace
-dqTracer sTvar tr = Tracer go
+dqTracer sTvar tr = mkTracer go
   where
     go (TraceRecvDeltaQObservation SDUHeader { mhTimestamp, mhLength } t)
       = update mhTimestamp t (fromIntegral mhLength)

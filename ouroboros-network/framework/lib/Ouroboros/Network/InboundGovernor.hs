@@ -51,7 +51,7 @@ import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer (Tracer (..), traceWith)
+import Control.Tracer (Tracer, mkTracer, traceWith)
 
 import Data.Bifunctor (first)
 import Data.ByteString.Lazy (ByteString)
@@ -191,7 +191,7 @@ with
                                                          active
     withConnectionManager connectionHandler \connectionManager ->
       withAsync
-        (  labelThisThread "inbound-governor-loop" >>
+        (  labelThisThread "inbound-governor" >>
            forever (inboundGovernorStep connectionManager stateVar >> yield)
          `catch` \e -> do
            -- following the next statement, the ig tracer will no longer
@@ -603,7 +603,7 @@ inboundGovernorMuxTracer
   -> StrictTVar m (StrictMaybe ResponderCounters)
   -> Tracer m (Mux.WithBearer (ConnectionId peerAddr) Mux.Trace)
 inboundGovernorMuxTracer infoChannel connectionDataFlow stateVar activeVar countersVar =
-  Tracer \(Mux.WithBearer peer trace) -> do
+  mkTracer \(Mux.WithBearer peer trace) -> do
     -- hello from muxer main thread
     -- code here is running in the context of the connection handler/muxer
     -- so care must be taken not to deadlock ourselves

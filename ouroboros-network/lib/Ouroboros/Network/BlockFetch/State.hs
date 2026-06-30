@@ -1,9 +1,10 @@
-{-# LANGUAGE BangPatterns     #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE NamedFieldPuns   #-}
-{-# LANGUAGE RecordWildCards  #-}
-{-# LANGUAGE TypeFamilies     #-}
-{-# LANGUAGE TypeOperators    #-}
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE TypeOperators       #-}
 
 module Ouroboros.Network.BlockFetch.State
   ( fetchLogicIterations
@@ -99,7 +100,7 @@ fetchLogicIterations decisionTracer clientStateTracer
       end <- getMonotonicTime
       let delta = diffTime end start
           loopInterval = case fetchMode of
-            FetchModeGenesis -> decisionLoopIntervalGenesis fetchDecisionPolicy
+            GenesisFetchMode -> decisionLoopIntervalGenesis fetchDecisionPolicy
             PraosFetchMode{} -> decisionLoopIntervalPraos fetchDecisionPolicy
       -- Limit decision is made once every decisionLoopInterval.
       threadDelay (loopInterval - delta)
@@ -201,7 +202,8 @@ fetchLogicIteration decisionTracer clientStateTracer
 -- real work.
 --
 fetchDecisionsForStateSnapshot
-  :: (HasHeader header,
+  :: forall header block peer m.
+     (HasHeader header,
       HeaderHash header ~ HeaderHash block,
       Ord peer,
       Hashable peer,
@@ -248,7 +250,7 @@ fetchDecisionsForStateSnapshot
           fetchStateFetchedBlocks
           fetchStateFetchedMaxSlotNo
           peerChainsAndPeerInfo
-      FetchModeGenesis ->
+      GenesisFetchMode ->
         fetchDecisionsGenesisM
           tracer
           fetchDecisionPolicy
@@ -260,6 +262,15 @@ fetchDecisionsForStateSnapshot
           peersOrderHandlers
           peerChainsAndPeerInfo
   where
+    peerChainsAndPeerInfo
+      :: [(AnchoredFragment header
+          , ( PeerFetchStatus header
+            , PeerFetchInFlight header
+            , PeerGSV
+            , peer
+            , (FetchClientStateVars m header, peer)
+            )
+          )]
     peerChainsAndPeerInfo =
       map swizzle . Map.toList $
       Map.intersectionWith (,)

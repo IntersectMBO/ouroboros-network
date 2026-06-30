@@ -49,8 +49,7 @@ import Ouroboros.Network.Protocol.ChainSync.Codec qualified as ChainSync
 import Ouroboros.Network.Protocol.ChainSync.Examples qualified as ChainSync
 import Ouroboros.Network.Protocol.ChainSync.Server qualified as ChainSync
 import Ouroboros.Network.Protocol.Handshake (HandshakeArguments (..))
-import Ouroboros.Network.Protocol.Handshake.Codec (cborTermVersionDataCodec,
-           noTimeLimitsHandshake)
+import Ouroboros.Network.Protocol.Handshake.Codec (noTimeLimitsHandshake)
 import Ouroboros.Network.Protocol.Handshake.Version (simpleSingletonVersions)
 import Ouroboros.Network.Server.Simple qualified as Server.Simple
 import Ouroboros.Network.Util.ShowProxy
@@ -149,6 +148,8 @@ testVersionCodecCBORTerm !_ =
     decodeTerm t
       = Left $ T.pack $ "unknown encoding: " ++ show t
 
+testVersionDataCodec :: VersionDataCodec TestVersion TestVersionData
+testVersionDataCodec = mkVersionedCodecCBORTerm testVersionCodecCBORTerm
 
 --
 -- The list of all tests
@@ -259,7 +260,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
         haHandshakeTracer  = nullTracer,
         haBearerTracer     = nullTracer,
         haHandshakeCodec   = handshakeCodec,
-        haVersionDataCodec = cborTermVersionDataCodec testVersionCodecCBORTerm,
+        haVersionDataCodec = testVersionDataCodec,
         haAcceptVersion    = acceptableVersion,
         haQueryVersion     = queryVersion,
         haTimeLimits       = noTimeLimitsHandshake
@@ -277,7 +278,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
           ConnectToArgs {
             ctaHandshakeCodec      = handshakeCodec,
             ctaHandshakeTimeLimits = noTimeLimitsHandshake,
-            ctaVersionDataCodec    = cborTermVersionDataCodec testVersionCodecCBORTerm,
+            ctaVersionDataCodec    = testVersionDataCodec,
             ctaConnectTracers      = nullNetworkConnectTracers,
             ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
           }
@@ -288,7 +289,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
             (\_ -> initiatorApp))
           (Just consumerAddress)
           producerAddress')
-        $ \ _connAsync -> do
+        $ \connAsync -> do
           void $ forkIO $ sequence_
               [ do
                   threadDelay 10e-4 -- just to provide interest
@@ -299,7 +300,11 @@ demo chain0 updates = withIOManager $ \iocp -> do
               | update <- updates
               ]
 
-          atomically $ takeTMVar done
+          result <- atomically $ takeTMVar done
+          -- Let connectToNode return on its own once the chain-sync client
+          -- terminates.
+          void $ wait connAsync
+          return result
 
   where
     checkTip target consumerVar = atomically $ do
@@ -340,10 +345,10 @@ instance (Show a) => Show (WithThreadAndTime a) where
         printf "%s: %s: %s" (show wtatOccuredAt) (show wtatWithinThread) (show wtatEvent)
 
 _verboseTracer :: Show a => Tracer IO a
-_verboseTracer = threadAndTimeTracer $ showTracing stdoutTracer
+_verboseTracer = threadAndTimeTracer $ show >$< stdoutTracer
 
 threadAndTimeTracer :: Tracer IO (WithThreadAndTime a) -> Tracer IO a
-threadAndTimeTracer tr = Tracer $ \s -> do
+threadAndTimeTracer tr = mkTracer $ \s -> do
     !now <- getCurrentTime
     !tid <- myThreadId
     traceWith tr $ WithThreadAndTime now tid s

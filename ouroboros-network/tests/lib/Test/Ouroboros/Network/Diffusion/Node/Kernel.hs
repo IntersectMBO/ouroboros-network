@@ -13,8 +13,6 @@ module Test.Ouroboros.Network.Diffusion.Node.Kernel
   , encodeNtNAddr
   , decodeNtNAddr
   , ntnAddrToRelayAccessPoint
-  , ppNtNAddr
-  , ppNtNConnId
   , NtNVersion
   , NtNVersionData (..)
   , NtCAddr
@@ -33,7 +31,6 @@ module Test.Ouroboros.Network.Diffusion.Node.Kernel
   ) where
 
 import Control.Applicative (Alternative)
-import Control.Concurrent.Class.MonadMVar.Strict qualified as Strict
 import Control.Concurrent.Class.MonadSTM qualified as LazySTM
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.DeepSeq (NFData (..))
@@ -65,7 +62,6 @@ import Ouroboros.Network.AnchoredFragment (Anchor (..))
 import Ouroboros.Network.Block (HasFullHeader, SlotNo)
 import Ouroboros.Network.Block qualified as Block
 import Ouroboros.Network.BlockFetch
-import Ouroboros.Network.ConnectionId (ConnectionId (..))
 import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.Handshake.Acceptable (Accept (..), Acceptable (..))
 import Ouroboros.Network.Mock.Chain (Chain (..))
@@ -84,9 +80,11 @@ import Ouroboros.Network.PeerSharing (PeerSharingAPI, PeerSharingRegistry (..),
            ps_POLICY_PEER_SHARE_MAX_PEERS, ps_POLICY_PEER_SHARE_STICKY_TIME)
 import Ouroboros.Network.Protocol.Handshake.Unversioned
 import Ouroboros.Network.Snocket (TestAddress (..))
-import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (SharedTxStateVar,
-           TxChannels (..), TxChannelsVar, TxMempoolSem, newSharedTxStateVar,
-           newTxMempoolSem)
+import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (PeerTxRegistry,
+           SharedTxStateVar, TxSubmissionCountersVar, newPeerTxRegistry,
+           newSharedTxStateVar, newTxSubmissionCountersVar)
+import Ouroboros.Network.TxSubmission.Inbound.V2.Types (emptySharedTxState)
+import Ouroboros.Network.Util (PrettyShow (..))
 
 import Test.Ouroboros.Network.Diffusion.Node.ChainDB (ChainDB (..))
 import Test.Ouroboros.Network.Diffusion.Node.ChainDB qualified as ChainDB
@@ -119,9 +117,9 @@ instance Arbitrary NtNAddr_ where
                , IPv4 . toIPv4 <$> replicateM 4 (choose (0,255))
                ]
     frequency
-      [ (1 , EphemeralIPv4Addr <$> (fromInteger <$> arbitrary))
-      , (1 , EphemeralIPv6Addr <$> (fromInteger <$> arbitrary))
-      , (3 , IPAddr a          <$> (read . show <$> chooseInt (0, 9999)))
+      [ (1 , EphemeralIPv4Addr . fromInteger <$> arbitrary)
+      , (1 , EphemeralIPv6Addr . fromInteger <$> arbitrary)
+      , (3 , IPAddr a . read . show <$> chooseInt (0, 9999))
       ]
 
 instance Show NtNAddr_ where
@@ -130,11 +128,11 @@ instance Show NtNAddr_ where
     show (IPAddr ip port)      = "IPAddr (read \"" ++ show ip ++ "\") " ++ show port
     show UnusedAddr            = "UnusedAddr"
 
-ppNtNAddr_ :: NtNAddr_ -> String
-ppNtNAddr_ (EphemeralIPv4Addr n) = "eph.v4." ++ show n
-ppNtNAddr_ (EphemeralIPv6Addr n) = "eph.v6." ++ show n
-ppNtNAddr_ (IPAddr ip port)      = show ip ++ ":" ++ show port
-ppNtNAddr_ UnusedAddr            = "UnusedAddr"
+instance PrettyShow NtNAddr_ where
+    prettyShow (EphemeralIPv4Addr n) = "eph.v4." ++ show n
+    prettyShow (EphemeralIPv6Addr n) = "eph.v6" ++ show n
+    prettyShow (IPAddr ip port)      = show ip ++ ":" ++ show port
+    prettyShow UnusedAddr            = "UnusedAddr"
 
 instance GlobalAddressScheme NtNAddr_ where
     getAddressType (TestAddress addr) =
@@ -156,13 +154,6 @@ data NtNVersionData = NtNVersionData
   , ntnPeerSharing   :: PeerSharing
   }
   deriving (Show, Generic, NFData)
-
-ppNtNAddr :: NtNAddr -> String
-ppNtNAddr (TestAddress addr) = ppNtNAddr_ addr
-
-ppNtNConnId :: ConnectionId NtNAddr -> String
-ppNtNConnId ConnectionId { localAddress, remoteAddress } =
-  ppNtNAddr localAddress ++ "→" ++ ppNtNAddr remoteAddress
 
 instance Acceptable NtNVersionData where
   acceptableVersion
@@ -207,8 +198,8 @@ decodeNtNAddr = do
   _ <- CBOR.decodeListLen
   tok <- CBOR.decodeWord
   case tok of
-    0 -> (TestAddress . EphemeralIPv4Addr . fromIntegral) <$> CBOR.decodeWord
-    1 -> (TestAddress . EphemeralIPv6Addr . fromIntegral) <$> CBOR.decodeWord
+    0 -> TestAddress . EphemeralIPv4Addr . fromIntegral <$> CBOR.decodeWord
+    1 -> TestAddress . EphemeralIPv6Addr . fromIntegral <$> CBOR.decodeWord
     2 -> TestAddress <$> (IPAddr <$> decodeIP <*> decodePortNumber)
     _ -> fail ("decodeNtNAddr: unknown tok:" ++ show tok)
 
@@ -229,7 +220,7 @@ decodeIP = do
   _ <- CBOR.decodeListLen
   tok <- CBOR.decodeWord
   case tok of
-    0 -> (IPv4 . toIPv4w) <$> CBOR.decodeWord32
+    0 -> IPv4 . toIPv4w <$> CBOR.decodeWord32
     1 -> do
       w1 <- CBOR.decodeWord32
       w2 <- CBOR.decodeWord32
@@ -303,6 +294,9 @@ data NodeKernel header block s txid m = NodeKernel {
       nkFetchClientRegistry
         :: FetchClientRegistry NtNAddr header block m,
 
+      nkKeepAliveRegistry
+        :: KeepAliveRegistry NtNAddr m,
+
       nkPeerSharingRegistry
         :: PeerSharingRegistry NtNAddr m,
 
@@ -318,19 +312,18 @@ data NodeKernel header block s txid m = NodeKernel {
       nkMempool
         :: Mempool m txid (Tx txid),
 
-      nkTxChannelsVar
-        :: TxChannelsVar m NtNAddr txid (Tx txid),
-
-      nkTxMempoolSem
-        :: TxMempoolSem m,
+      nkTxCountersVar
+        :: TxSubmissionCountersVar m,
 
       nkSharedTxStateVar
-        :: SharedTxStateVar m NtNAddr txid (Tx txid)
+        :: SharedTxStateVar m NtNAddr txid,
+
+      nkPeerTxRegistry
+        :: PeerTxRegistry m NtNAddr
     }
 
 newNodeKernel :: ( MonadTraceSTM m
                  , MonadLabelledSTM m
-                 , Strict.MonadMVar m
                  , RandomGen rng
                  , Ord txid
                  , Eq txid
@@ -339,7 +332,7 @@ newNodeKernel :: ( MonadTraceSTM m
               -> Int
               -> [Tx txid]
               -> m (NodeKernel header block rng txid m)
-newNodeKernel psRng txSeed txs = do
+newNodeKernel psRng _txSeed txs = do
     publicStateVar <- makePublicPeerSelectionStateVar
     labelTVarIO publicStateVar "public-peer-selection-state-var"
     traceTVarIO publicStateVar (\_ a -> return $ TraceString (show a))
@@ -347,6 +340,7 @@ newNodeKernel psRng txSeed txs = do
       <$> newTVarIO Map.empty
       <*> newTVarIO (ChainProducerState Chain.Genesis Map.empty 0)
       <*> newFetchClientRegistry
+      <*> newKeepAliveRegistry
       <*> newPeerSharingRegistry
       <*> ChainDB.newChainDB
       <*> newPeerSharingAPI publicStateVar psRng
@@ -354,9 +348,9 @@ newNodeKernel psRng txSeed txs = do
                             ps_POLICY_PEER_SHARE_MAX_PEERS
       <*> pure publicStateVar
       <*> newMempool txs
-      <*> Strict.newMVar (TxChannels Map.empty)
-      <*> newTxMempoolSem
-      <*> newSharedTxStateVar (Random.mkStdGen txSeed)
+      <*> newTxSubmissionCountersVar mempty
+      <*> newSharedTxStateVar emptySharedTxState
+      <*> newPeerTxRegistry
 
 -- | Register a new upstream chain-sync client.
 --
@@ -434,7 +428,6 @@ withNodeKernelThread
      , MonadThrow    (STM m)
      , MonadTraceSTM      m
      , MonadLabelledSTM   m
-     , Strict.MonadMVar   m
      , HasFullHeader block
      , RandomGen seed
      , SplitGen seed
@@ -464,7 +457,7 @@ withNodeKernelThread addr BlockGeneratorArgs { bgaSlotDuration, bgaBlockGenerato
                         -> m Void
     blockProducerThread NodeKernel { nkChainProducerState, nkChainDB }
                         waitForSlot
-                      =  labelThisThread ("krnl-" ++ ppNtNAddr addr)
+                      =  labelThisThread ("krnl-" ++ prettyShow addr)
                       >> loop (Block.SlotNo 1) bpSeed
       where
         loop :: SlotNo -> seed -> m Void

@@ -1790,6 +1790,9 @@ data TracePeerSelection extraDebugState extraFlags extraPeers peeraddr =
      | TraceDemoteLocalAsynchronous (Map peeraddr (PeerStatus, Maybe RepromoteDelay))
      | TraceDemoteBigLedgerPeersAsynchronous
                                     (Map peeraddr (PeerStatus, Maybe RepromoteDelay))
+       -- | Set of forgotten peers due to too many failures (connection errors,
+       -- asynchronous demotions, etc.)
+     | TraceForgottenPeers (Set peeraddr)
 
      | TraceGovernorWakeup
 

@@ -22,6 +22,7 @@ import Control.Monad.Class.MonadTimer.SI
 import Data.ByteString.Lazy qualified as BL
 import Data.Monoid.Synchronisation
 import Data.Void (Void)
+import Test.Cardano.Base.QuickCheck qualified as BaseQC
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
@@ -63,7 +64,7 @@ import Ouroboros.Network.Util.ShowProxy
 
 activeTracer :: Show a => Tracer IO a
 activeTracer = nullTracer
---activeTracer = showTracing stdoutTracer
+--activeTracer = show >$< stdoutTracer
 
 --
 -- The list of all tests
@@ -71,7 +72,7 @@ activeTracer = nullTracer
 
 tests :: TestTree
 tests = testGroup "Pipe"
-   [ testProperty "pipe sync demo" (withMaxSuccess 32 prop_pipe_demo)
+   [ testProperty "pipe sync demo" (BaseQC.withNumTests 32 prop_pipe_demo)
    ]
 
 --

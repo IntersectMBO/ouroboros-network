@@ -54,14 +54,13 @@ import Control.Exception (throw)
 import Control.Monad (forM, when)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
-import Control.Monad.Class.MonadSay
 import Control.Monad.Class.MonadTest
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI hiding (timeout)
 import Control.Monad.Fail qualified as Fail
 import Control.Monad.IOSim
-import Control.Tracer (Tracer (..), contramap, traceWith)
+import Control.Tracer (Tracer, contramap, mkTracer, traceWith)
 
 import Ouroboros.Network.BlockFetch (FetchMode (..), PraosFetchMode (..))
 import Ouroboros.Network.ConnectionManager.Types (Provenance)
@@ -95,7 +94,8 @@ import Test.Ouroboros.Network.PeerSelection.LocalRootPeers as LocalRootPeers hid
            (tests)
 import Test.Ouroboros.Network.PeerSelection.PeerGraph
 import Test.Ouroboros.Network.Utils (ShrinkCarefully, arbitrarySubset,
-           nightlyTest, prop_shrink_nonequal, prop_shrink_valid)
+           dynamicTracer, nightlyTest, prop_shrink_nonequal, prop_shrink_valid,
+           sayTracer)
 
 import Test.Cardano.Network.PeerSelection.Instances
 import Test.Cardano.Network.PeerSelection.PublicRootPeers ()
@@ -486,7 +486,7 @@ mockPeerSelectionActions' tracer
           lpExtraAPI = Cardano.LedgerPeersConsensusInterface {
             readFetchMode = pure (PraosFetchMode FetchModeDeadline),
             getLedgerStateJudgement = readLedgerStateJudgement,
-            getBlockHash = error "getBlockHash not implemented",
+            getImmutableBlockPoint = error "getImmutableBlockPoint not implemented",
             updateOutboundConnectionsState = \a -> do
               a' <- readTVar outboundConnectionsStateVar
               when (a /= a') $
@@ -801,6 +801,7 @@ tracerTracePeerSelection = contramap f tracerTestTraceEvent
     f a@(TraceDemoteAsynchronous !_)                               = GovernorEvent a
     f a@(TraceDemoteLocalAsynchronous !_)                          = GovernorEvent a
     f a@(TraceDemoteBigLedgerPeersAsynchronous !_)                 = GovernorEvent a
+    f a@(TraceForgottenPeers !_)                                   = GovernorEvent a
     f a@TraceGovernorWakeup                                        = GovernorEvent a
     f a@(TraceChurnWait !_)                                        = GovernorEvent a
     f a@(ExtraTrace
@@ -837,7 +838,7 @@ traceAssociationMode
 
   -> Tracer (IOSim s)
            (DebugPeerSelection Cardano.ExtraState extraFlags extraPeers PeerAddr)
-traceAssociationMode interfaces actions = Tracer $ \(TraceGovernorState _ _ st) -> do
+traceAssociationMode interfaces actions = mkTracer $ \(TraceGovernorState _ _ st) -> do
     associationMode <- atomically $ readAssociationMode
                                            (readUseLedgerPeers interfaces)
                                            (Governor.peerSharing actions)
@@ -854,10 +855,7 @@ tracerMockEnv = contramap MockEnvEvent tracerTestTraceEvent
 tracerTestTraceEvent :: Tracer (IOSim s) (TestTraceEvent Cardano.ExtraState
                                                          PeerTrustable
                                                          (Cardano.ExtraPeers PeerAddr))
-tracerTestTraceEvent = dynamicTracer <> Tracer (say . show)
-
-dynamicTracer :: Typeable a => Tracer (IOSim s) a
-dynamicTracer = Tracer traceM
+tracerTestTraceEvent = dynamicTracer <> sayTracer
 
 selectPeerSelectionTraceEvents
   :: ( Typeable extraState

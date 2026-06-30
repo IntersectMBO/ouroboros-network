@@ -25,6 +25,7 @@ import Data.Map.Strict qualified as Map
 import Data.Maybe (isNothing, listToMaybe)
 import Data.Tuple (swap)
 
+import Test.Cardano.Base.QuickCheck qualified as BaseQC
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
@@ -55,7 +56,7 @@ tests =
     [ testProperty "core -> relay" prop_coreToRelay
     , testProperty "core -> relay -> relay" prop_coreToRelay2
     ]
-  , testProperty "arbtirary node graph" (withMaxSuccess 50 prop_networkGraph)
+  , testProperty "arbtirary node graph" (BaseQC.withNumTests 50 prop_networkGraph)
   , testProperty "blockGenerator invariant IOSim" prop_blockGenerator_ST
   , testProperty "blockGenerator invariant IO" prop_blockGenerator_IO
   ]

@@ -16,6 +16,7 @@ module Ouroboros.Network.TxSubmission.Mempool.Simple
   , getReader
   , TxSubmissionMempoolReader (..)
   , getWriter
+  , getWriterWithCtx
   , TxSubmissionMempoolWriter (..)
   ) where
 
@@ -137,32 +138,54 @@ data InvalidTxsError where
 deriving instance Show InvalidTxsError
 instance Exception InvalidTxsError
 
+getWriter
+  :: forall tx txid failure m.
+     ( MonadSTM m
+     , MonadTime m
+     , Ord txid
+     )
+  => failure
+  -- ^ duplicate tx error
+  -> (tx -> txid)
+  -- ^ get transaction hash
+  -> (UTCTime -> [tx] -> STM m [Either (txid, failure) tx])
+  -- ^ validate a tx in an `STM` transaction, this allows acquiring and
+  -- updating validation context.
+  -> ([(txid, failure)] -> m ())
+  -- ^ handle invalid txs, e.g. logging, throwing exceptions, etc
+  -> Mempool m txid tx
+  -- ^ mempool
+  -> TxSubmissionMempoolWriter txid tx Integer m failure
+getWriter = getWriterWithCtx (\_ -> getCurrentTime)
+
 
 -- | A simple mempool writer.
 --
-getWriter :: forall tx txid failure m.
-             ( MonadSTM m
-             , MonadTime m
-             , Ord txid
-             )
-          => failure
-          -- ^ duplicate tx error
-          -> (tx -> txid)
-          -- ^ get transaction hash
-          -> (UTCTime -> [tx] -> STM m [Either (txid, failure) tx])
-          -- ^ validate a tx in an `STM` transaction, this allows acquiring and
-          -- updating validation context.
-          -> ([(txid, failure)] -> m ())
-          -- ^ handle invalid txs, e.g. logging, throwing exceptions, etc
-          -> Mempool m txid tx
-          -- ^ mempool
-          -> TxSubmissionMempoolWriter txid tx Integer m failure
-getWriter duplicateTxError getTxId validateTx handleInvalidTxs (Mempool mempoolVar) =
+getWriterWithCtx
+  :: forall tx txid ctx failure m.
+     ( MonadSTM m
+     , Ord txid
+     )
+  => ([tx] -> m ctx)
+  -- ^ get validation ctx
+  -> failure
+  -- ^ duplicate tx error
+  -> (tx -> txid)
+  -- ^ get transaction hash
+  -> (ctx -> [tx] -> STM m [Either (txid, failure) tx])
+  -- ^ validate a tx in an `STM` transaction, this allows acquiring and
+  -- updating validation context.
+  -> ([(txid, failure)] -> m ())
+  -- ^ handle invalid txs, e.g. logging, throwing exceptions, etc
+  -> Mempool m txid tx
+  -- ^ mempool
+  -> TxSubmissionMempoolWriter txid tx Integer m failure
+getWriterWithCtx getCtx duplicateTxError getTxId validateTx handleInvalidTxs (Mempool mempoolVar) =
     TxSubmissionMempoolWriter {
         txId = getTxId,
 
         mempoolAddTxs = \txs -> do
-          now <- getCurrentTime
+          ctx <- getCtx txs
           (rejectedTxIds, acceptedTxs) <- atomically $ do
             MempoolSeq { mempoolSet, mempoolSeq, nextIdx } <- readTVar mempoolVar
 
@@ -177,7 +200,7 @@ getWriter duplicateTxError getTxId validateTx handleInvalidTxs (Mempool mempoolV
             -- NOTE: we might have duplicates in the `txs'` list
             (invalidTxIds, validTxs) <-
                 fmap partitionEithers
-              . validateTx now
+              . validateTx ctx
               $ txs'
 
             let acceptedTxs     :: [txid]
@@ -218,5 +241,8 @@ getWriter duplicateTxError getTxId validateTx handleInvalidTxs (Mempool mempoolV
                    , acceptedTxs
                    )
           handleInvalidTxs rejectedTxIds
-          return (acceptedTxs, rejectedTxIds)
+          -- 'acceptedTxs' is accumulated by the fold above in reverse;
+          -- restore submission order to match the documented contract and
+          -- the real mempool ('NodeKernel.getMempoolWriter').
+          return (reverse acceptedTxs, rejectedTxIds)
       }

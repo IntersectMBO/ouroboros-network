@@ -61,6 +61,7 @@ import Ouroboros.Network.Protocol.LocalStateQuery.Type
 
 import Test.Ouroboros.Network.Protocol.Utils
 
+import Test.Cardano.Base.QuickCheck qualified as BaseQC
 import Test.QuickCheck as QC hiding (Result)
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
@@ -79,7 +80,7 @@ tests =
         , testProperty "connect"             prop_connect
         , testProperty "codec"               prop_codec_LocalStateQuery
         , testProperty "codec 2-splits"      prop_codec_splits2
-        , testProperty "codec 3-splits"    $ withMaxSuccess 30
+        , testProperty "codec 3-splits"    $ BaseQC.withNumTests 30
                                              prop_codec_splits3
         , testProperty "codec cbor"          prop_codec_cbor
         , testProperty "codec valid cbor"    prop_codec_valid_cbor

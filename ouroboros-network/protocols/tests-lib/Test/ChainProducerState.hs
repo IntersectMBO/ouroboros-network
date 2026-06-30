@@ -14,6 +14,7 @@ module Test.ChainProducerState
 import Data.List (unfoldr)
 import Data.Map qualified as Map
 
+import Test.Cardano.Base.QuickCheck qualified as BaseQC
 import Test.QuickCheck
 import Test.Tasty
 import Test.Tasty.QuickCheck
@@ -34,7 +35,7 @@ tests =
     [ testProperty "ChainProducerStateForkTest's generator"
                    prop_arbitrary_ChainProducerStateForkTest
     , testProperty "ChainProducerStateForkTest's shrinker"
-                   (withMaxSuccess 25 prop_shrink_ChainProducerStateForkTest)
+                   (BaseQC.withNumTests 25 prop_shrink_ChainProducerStateForkTest)
     ]
   , testProperty "check initial follower state" prop_init_lookup
   , testProperty "check second follower state"  prop_init_next_lookup

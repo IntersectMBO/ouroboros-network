@@ -37,6 +37,7 @@ import Prelude hiding (lookup)
 import Ouroboros.Network.ConnectionId
 import Ouroboros.Network.ConnectionManager.ConnMap as ConnMap
 import Ouroboros.Network.ConnectionManager.Types
+import Ouroboros.Network.Util (PrettyShow (..))
 
 import Test.Ouroboros.Network.Utils (WithName (..))
 
@@ -68,6 +69,9 @@ readAbstractStateMap = traverse (fmap (abstractState . Known) . readTVar . connV
 newtype ConnStateId = ConnStateId Int
   deriving stock (Eq, Ord, Show)
   deriving newtype Enum
+
+instance PrettyShow ConnStateId where
+  prettyShow (ConnStateId connStateId) = show connStateId
 
 -- | 'MutableConnState', which supplies a unique identifier.
 --

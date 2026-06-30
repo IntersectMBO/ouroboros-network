@@ -104,7 +104,7 @@ prop_blockFetchStaticNoOverlapPraos =
 
 prop_blockFetchStaticNoOverlapGenesis :: TestChainFork -> Property
 prop_blockFetchStaticNoOverlapGenesis =
-    prop_blockFetchStaticNoOverlap FetchModeGenesis
+    prop_blockFetchStaticNoOverlap GenesisFetchMode
 
 -- | In this test we have two candidates chains that are static throughout the
 -- run. The two chains share some common prefix (genesis in the degenerate
@@ -139,7 +139,7 @@ prop_blockFetchStaticNoOverlap fetchMode (TestChainFork common fork1 fork2) =
         -- For fetch reqs added and received, we observe exactly the sequence
         -- of blocks we expect, which is the whole fork suffix.
         case fetchMode of
-          FetchModeGenesis ->
+          GenesisFetchMode ->
             tracePropertyBlocksRequestedAndReceivedPerPeerGenesis fork1'' fork2'' trace
           PraosFetchMode{} ->
             tracePropertyBlocksRequestedAndReceivedPerPeerPraos fork1'' fork2'' trace
@@ -175,7 +175,7 @@ prop_blockFetchStaticWithOverlapPraos =
 
 prop_blockFetchStaticWithOverlapGenesis :: TestChainFork -> Property
 prop_blockFetchStaticWithOverlapGenesis =
-    prop_blockFetchStaticWithOverlap FetchModeGenesis
+    prop_blockFetchStaticWithOverlap GenesisFetchMode
 
 -- | In this test we have two candidates chains that are static throughout the
 -- run. The two chains share some common prefix (genesis in the degenerate
@@ -207,7 +207,7 @@ prop_blockFetchStaticWithOverlap fetchMode (TestChainFork _common fork1 fork2) =
         -- For fetch reqs added and received, between the two peers we observe
         -- the set of blocks we expect, which is the union of the two chains.
         case fetchMode of
-          FetchModeGenesis ->
+          GenesisFetchMode ->
             tracePropertyBlocksRequestedAndReceivedAllPeersGenesis fork1' fork2' trace
           PraosFetchMode{} ->
             tracePropertyBlocksRequestedAndReceivedAllPeersPraos fork1' fork2' trace
@@ -829,20 +829,26 @@ unit_bracketSyncWithFetchClient step = do
                  -> ((forall c. m c -> m c) -> m d)
                  -> m (Either SomeException a, Either SomeException b)
     testSkeleton withFetchTestAction withSyncTestAction withKeepAliveTestAction = do
-      registry <- newFetchClientRegistry
-      setFetchClientContext registry nullTracer dummyPolicy
+      blockFetchRegistry <- newFetchClientRegistry
+      keepAliveRegistry <- newKeepAliveRegistry
+      setFetchClientContext blockFetchRegistry nullTracer dummyPolicy
 
       fetchStatePeerChainsVar <- newTVarIO Map.empty
 
       let peer  = "thepeer"
           fetch :: m a
-          fetch = withFetchTestAction $ \body ->
-                    bracketFetchClient registry (maxBound @NodeToNodeVersion) peer $ \_ ->
-                      body
+          fetch = withFetchTestAction
+                  $ \body ->
+                    bracketFetchClient
+                      blockFetchRegistry
+                      keepAliveRegistry
+                      (maxBound @NodeToNodeVersion)
+                      peer
+                      $ \_ -> body
 
           sync :: m b
           sync  = withSyncTestAction $ \body ->
-                    bracketSyncWithFetchClient registry peer $
+                    bracketSyncWithFetchClient blockFetchRegistry peer $
                       bracket_
                         (atomically (modifyTVar fetchStatePeerChainsVar
                                                 (Map.insert peer ())))
@@ -852,13 +858,13 @@ unit_bracketSyncWithFetchClient step = do
 
           keep :: m d
           keep  = withKeepAliveTestAction $ \body ->
-                    bracketKeepAliveClient registry peer $ const body
+                    bracketKeepAliveClient keepAliveRegistry peer $ const body
 
           logic :: (Map String (PeerFetchStatus BlockHeader), Map String ())
                 -> m ()
           logic fingerprint = do
             fingerprint' <- atomically $ do
-              fetchStatePeerStates <- readFetchClientsStatus registry
+              fetchStatePeerStates <- readFetchClientsStatus blockFetchRegistry
               fetchStatePeerChains <- readTVar fetchStatePeerChainsVar
               let fingerprint' = (fetchStatePeerStates, fetchStatePeerChains)
               check (fingerprint' /= fingerprint)
@@ -894,11 +900,11 @@ unit_bracketSyncWithFetchClient step = do
               syncRes  <- waitCatch syncAsync
               void $ waitCatch keepAsync
               atomically $ do
-                fr <- readTVar $ fcrFetchRegistry registry
-                sr <- readTVar $ fcrSyncRegistry  registry
-                dr <- readTVar $ fcrDqRegistry    registry
-                kr <- readTVar $ fcrKeepRegistry  registry
-                yr <- readTVar $ fcrDying         registry
+                fr <- readTVar $ fetchRegistry blockFetchRegistry
+                sr <- readTVar $ syncRegistry  blockFetchRegistry
+                dr <- readTVar $ dqRegistry    keepAliveRegistry
+                kr <- readTVar $ keepRegistry  keepAliveRegistry
+                yr <- readTVar $ dyingRegistry keepAliveRegistry
                 if and [Map.null fr, Map.null sr, Map.null dr, Map.null kr, Set.null yr]
                    then return ()
                    else error "state leak"
@@ -908,7 +914,7 @@ prop_terminatePraos :: TestChainFork -> Positive SmallDelay -> Property
 prop_terminatePraos = prop_terminate (PraosFetchMode FetchModeBulkSync)
 
 prop_terminateGenesis :: TestChainFork -> Positive SmallDelay -> Property
-prop_terminateGenesis = prop_terminate FetchModeGenesis
+prop_terminateGenesis = prop_terminate GenesisFetchMode
 
 -- | Check that the client can terminate using `ControlMessage` mechanism.
 --

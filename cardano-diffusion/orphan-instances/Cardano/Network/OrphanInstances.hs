@@ -22,8 +22,9 @@ import Cardano.Network.PeerSelection.PublicRootPeers (getBootstrapPeers,
 
 import Ouroboros.Network.Diffusion.Topology
 import Ouroboros.Network.Magic (NetworkMagic (..))
-import Ouroboros.Network.OrphanInstances (localRootPeersGroupsFromJSON,
-           networkTopologyFromJSON, networkTopologyToJSON)
+import Ouroboros.Network.OrphanInstances (JSONField (..),
+           localRootPeersGroupsFromJSON, networkTopologyFromJSON,
+           networkTopologyToJSON)
 
 instance ToJSON LedgerStateJudgement where
   toJSON YoungEnough = String "YoungEnough"
@@ -56,18 +57,23 @@ instance ToJSON PeerTrustable where
   toJSON IsTrustable    = Bool True
   toJSON IsNotTrustable = Bool False
 
+instance JSONField PeerTrustable where
+  fieldName _ = Just "peerTrustable"
+
 instance ToJSONKey PeerTrustable where
 
 instance FromJSON NodeToNodeVersion where
   parseJSON = \case
     Number 14 -> pure NodeToNodeV_14
     Number 15 -> pure NodeToNodeV_15
+    Number 16 -> pure NodeToNodeV_16
     Number x  -> fail $ "FromJSON.NodeToNodeVersion: unsupported node-to-node protocol version " ++ show x
     x         -> fail $ "FromJSON.NodeToNodeVersion: error parsing NodeToNodeVersion: " ++ show x
 
 instance ToJSON NodeToNodeVersion where
   toJSON NodeToNodeV_14 = Number 14
   toJSON NodeToNodeV_15 = Number 15
+  toJSON NodeToNodeV_16 = Number 16
 
 instance FromJSON NodeToClientVersion where
   parseJSON = \case
@@ -94,11 +100,12 @@ instance ToJSON NodeToClientVersion where
     NodeToClientV_23 -> Number 23
 
 instance ToJSON NodeToNodeVersionData where
-  toJSON (NodeToNodeVersionData (NetworkMagic m) dm ps q) = object
+  toJSON (NodeToNodeVersionData (NetworkMagic m) dm ps q ps') = object
     [ "networkMagic"  .= toJSON m
     , "diffusionMode" .= show dm
     , "peerSharing"   .= show ps
     , "query"         .= toJSON q
+    , "perasSupport"  .= show ps'
     ]
 
 instance ToJSON NodeToClientVersionData where

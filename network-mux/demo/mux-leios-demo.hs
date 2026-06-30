@@ -104,7 +104,7 @@ reqrespTracer
   :: String
   -- ^ tag
   -> Tracer IO (TraceSendRecv (MsgReqResp ByteString ByteString))
-reqrespTracer tag = Tracer $ \case
+reqrespTracer tag = mkTracer $ \case
   TraceSend (MsgReq a)  -> putStrLn_ $ tag ++ " Send MsgReq " ++ show (BSC.length a)
   TraceSend (MsgResp a) -> putStrLn_ $ tag ++ " Send MsgResp " ++ show (BSC.length a)
   TraceSend MsgDone     -> putStrLn_ $ tag ++ " Send MsgDone"

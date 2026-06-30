@@ -22,6 +22,9 @@ module Ouroboros.Network.Diffusion.Types
   , NoExtraState (..)
   , NoExtraDebugState (..)
   , NoExtraPeers (..)
+  , NoExtraConfig (..)
+  , NoExtraAPI (..)
+  , NoExtraChurnArgs (..)
   , ViewExtraPeers (..)
   , OuroborosPeerSelectionCounters
   , OuroborosDebugPeerSelection
@@ -61,6 +64,7 @@ import Data.Maybe.Strict
 import Data.Set (Set)
 import Data.Typeable (Typeable)
 import Data.Void (Void)
+import Data.Word (Word32)
 import System.Random (StdGen)
 
 import Network.Mux qualified as Mx
@@ -109,8 +113,16 @@ data DiffusionTracer ntnAddr ntcAddr
   | CreateSystemdSocketForSnocketPath ntcAddr
   | CreatedLocalSocket ntcAddr
   | ConfiguringLocalSocket ntcAddr FileDescriptor
+  | ConfiguredLocalSocket ntcAddr FileDescriptor
   | ListeningLocalSocket ntcAddr FileDescriptor
   | LocalSocketUp  ntcAddr FileDescriptor
+  -- | The parent directory of the local socket has @group@ or @other@ write
+  -- bits set.  This is a warning, not a failure: the socket itself is
+  -- mode @0600@, but the parent directory's permissions may still allow
+  -- another local user to rename or unlink the socket file.  The 'Word32'
+  -- is the parent directory's POSIX mode.
+  | InsecureLocalSocketDirectory ntcAddr Word32
+  | InsecureLocalSocketPermissions ntcAddr Word32
   -- Rename as 'CreateServerSocket'
   | CreatingServerSocket ntnAddr
   | ConfiguringServerSocket ntnAddr
@@ -149,6 +161,12 @@ data NoExtraState = NoExtraState
 data NoExtraDebugState = NoExtraDebugState
   deriving (Eq, Show)
 data NoExtraPeers peeraddr = NoExtraPeers
+  deriving (Eq, Show)
+data NoExtraConfig = NoExtraConfig
+  deriving (Eq, Show)
+data NoExtraAPI = NoExtraAPI
+  deriving (Eq, Show)
+data NoExtraChurnArgs = NoExtraChurnArgs
   deriving (Eq, Show)
 
 instance Monoid (NoExtraPeers peeraddr) where
@@ -296,7 +314,7 @@ data Tracers ntnAddr ntnVersion ntnVersionData
     }
 
 
-nullTracers :: Applicative m
+nullTracers :: Monad m
             => Tracers ntnAddr ntnVersion ntnVersionData
                        ntcAddr ntcVersion ntcVersionData
                        extraState extraDebugState
@@ -766,6 +784,11 @@ data Interfaces ntnFd ntnAddr ntcFd ntcAddr
         --
         diNtcGetFileDescriptor
           :: ntcFd -> m FileDescriptor,
+
+        -- | configure node-to-client socket file (called between
+        -- `bind` and `listen`).
+        diNtcConfigureSocketFile
+          :: ntcAddr -> m (),
 
         -- | diffusion pseudo random generator. It is split between various
         -- components that need randomness, e.g. inbound governor, peer

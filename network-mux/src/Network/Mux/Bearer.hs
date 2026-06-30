@@ -18,7 +18,7 @@ module Network.Mux.Bearer
 #if defined(mingw32_HOST_OS)
   , makeNamedPipeBearer
 #endif
-  , withReadBufferIO
+  , MonadReadBuffer (..)
   ) where
 
 import           Control.Monad.Class.MonadSTM
@@ -86,17 +86,19 @@ makeSocketBearer' egressInterval = MakeBearer $ pureBearer $ \sduTimeout fd rb -
     size = SDUSize 12_288
     batch = 131_072
 
-withReadBufferIO :: (Maybe (ReadBuffer IO) -> IO b)
-                 -> IO b
-withReadBufferIO f = allocaBytesAligned size 8 $ \ptr -> do
-    v <- newTVarIO BL.empty
-    f $ Just $ ReadBuffer v ptr size
-  where
-    -- Maximum amount of data read in one call.
-    -- Corresponds to the default readbuffer size on Linux.
-    -- We want it larger than 64Kbyte, but not too large since
-    -- it is a memory overhead per mux bearer in an application.
-    size = 131_072
+class MonadReadBuffer m where
+  withReadBufferIO :: (Maybe (ReadBuffer m) -> m a) -> m a
+
+instance MonadReadBuffer IO where
+  withReadBufferIO f = allocaBytesAligned size 8 $ \ptr -> do
+      v <- newTVarIO BL.empty
+      f $ Just $ ReadBuffer v ptr size
+    where
+      -- Maximum amount of data read in one call.
+      -- Corresponds to the default readbuffer size on Linux.
+      -- We want it larger than 64Kbyte, but not too large since
+      -- it is a memory overhead per mux bearer in an application.
+      size = 131_072
 
 makePipeChannelBearer :: MakeBearer IO PipeChannel
 makePipeChannelBearer = MakeBearer $ pureBearer (\_ fd _ -> pipeAsBearer size fd)

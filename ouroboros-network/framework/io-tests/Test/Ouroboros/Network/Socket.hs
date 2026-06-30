@@ -67,6 +67,7 @@ import Ouroboros.Network.Protocol.Handshake.Unversioned
 
 import Test.Ouroboros.Network.Orphans ()
 
+import Test.Cardano.Base.QuickCheck qualified as BaseQC
 import Test.QuickCheck
 import Test.Tasty (DependencyType (..), TestTree, after, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
@@ -92,10 +93,10 @@ tests =
   , testProperty "socket send receive Unix"              prop_socket_send_recv_unix
 #endif
   , after AllFinish LAST_IP_TEST $
-    testProperty "socket error during receive"           (withMaxSuccess 10 prop_socket_recv_error)
-  , after AllFinish LAST_IP_TEST $
-    testProperty "socket error during send"              (withMaxSuccess 10 prop_socket_send_error)
-  , after AllFinish "socket close during receive" $
+    testProperty "socket error during receive"           (BaseQC.withNumTests 10 prop_socket_recv_error)
+  , after AllFinish "socket error during receive" $
+    testProperty "socket error during send"              (BaseQC.withNumTests 10 prop_socket_send_error)
+  , after AllFinish "socket error during send" $
     testProperty "socket client connection failure"      prop_socket_client_connect_error
   ]
 #undef LAST_IP_TEST
@@ -135,7 +136,7 @@ prop_socket_send_recv_ipv4
   -> [Int]
   -> Property
 prop_socket_send_recv_ipv4 f xs = ioProperty $ do
-    server:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "6061")
+    server:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
     client:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
     prop_socket_send_recv (Socket.addrAddress client)
                           (Socket.addrAddress server)
@@ -149,7 +150,7 @@ prop_socket_send_recv_ipv6 :: (Int ->  Int -> (Int, Int))
                            -> [Int]
                            -> Property
 prop_socket_send_recv_ipv6 request response = ioProperty $ do
-    server:_ <- Socket.getAddrInfo Nothing (Just "::1") (Just "6061")
+    server:_ <- Socket.getAddrInfo Nothing (Just "::1") (Just "0")
     client:_ <- Socket.getAddrInfo Nothing (Just "::1") (Just "0")
     prop_socket_send_recv (Socket.addrAddress client)
                           (Socket.addrAddress server)
@@ -201,8 +202,16 @@ prop_socket_send_recv initiatorAddr responderAddr configureSock f xs =
     {- The siblingVar is used by the initiator and responder to wait on each other before exiting.
      - Without this wait there is a risk that one side will finish first causing the Muxbearer to
      - be torn down and the other side exiting before it has a chance to write to its result TMVar.
+     - It also guarantees the responder has received the client's final message before either side
+     - returns, so both result TMVars are populated by the time we read them below.
      -}
     siblingVar <- newTVarIO 2
+
+    {- After the siblingVar barrier the initiator returns and connectToNode closes the client
+     - socket; the responder then blocks on clientDone, keeping the server's mux alive until the
+     - client has fully closed.
+     -}
+    clientDone <- newEmptyTMVarIO
 
     let -- Server Node; only req-resp server
         responderApp :: OuroborosApplicationWithMinimalCtx
@@ -218,6 +227,9 @@ prop_socket_send_recv initiatorAddr responderAddr configureSock f xs =
                          (ReqResp.reqRespServerPeer (ReqResp.reqRespServerMapAccumL (\a -> pure . f a) 0))
             atomically $ putTMVar sv r
             waitSibling siblingVar
+            -- keep the responder (and thus the server's mux) alive until the
+            -- client has finished and closed its socket
+            atomically $ takeTMVar clientDone
             pure ((), trailing)
 
         -- Client Node; only req-resp client
@@ -256,7 +268,7 @@ prop_socket_send_recv initiatorAddr responderAddr configureSock f xs =
 
         }
         (unversionedProtocol (SomeResponderApplication responderApp))
-        $ \_ _ -> do
+        $ \localAddress _ -> do
           void $ connectToNode
             snocket
             Mx.makeSocketBearer
@@ -270,7 +282,11 @@ prop_socket_send_recv initiatorAddr responderAddr configureSock f xs =
             (`configureSock` Nothing)
             (unversionedProtocol initiatorApp)
             (Just initiatorAddr)
-            responderAddr
+            localAddress
+          -- connectToNode has returned, so the client mux is stopped and its
+          -- socket closed; release the responder to shut down against an
+          -- already-closed peer
+          atomically $ putTMVar clientDone ()
           atomically $ (,) <$> takeTMVar sv <*> takeTMVar cv
 
     return (res == mapAccumL f 0 xs)
@@ -546,10 +562,10 @@ instance (Show a) => Show (WithThreadAndTime a) where
         printf "%s: %s: %s" (show wtatOccuredAt) (show wtatWithinThread) (show wtatEvent)
 
 _verboseTracer :: Show a => Tracer IO a
-_verboseTracer = threadAndTimeTracer $ showTracing stdoutTracer
+_verboseTracer = threadAndTimeTracer $ show >$< stdoutTracer
 
 threadAndTimeTracer :: Tracer IO (WithThreadAndTime a) -> Tracer IO a
-threadAndTimeTracer tr = Tracer $ \s -> do
+threadAndTimeTracer tr = mkTracer $ \s -> do
     !now <- getCurrentTime
     !tid <- myThreadId
     traceWith tr $ WithThreadAndTime now tid s

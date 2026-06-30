@@ -81,11 +81,16 @@ withLocalSocket :: forall ntnAddr ntcFd ntcAddr m a.
                    )
                 => Tracer m (DiffusionTracer ntnAddr ntcAddr)
                 -> (ntcFd -> m FileDescriptor)
+                -> (ntcAddr -> m ())
+                -- ^ configure the local socket file.
                 -> Snocket m ntcFd ntcAddr
                 -> Either ntcFd ntcAddr
                 -> (ntcFd -> m a)
                 -> m a
-withLocalSocket tracer getFileDescriptor sn localAddress k =
+withLocalSocket tracer
+                getFileDescriptor
+                configureSocketFile
+                sn localAddress k =
   bracket
     (
       case localAddress of
@@ -112,18 +117,21 @@ withLocalSocket tracer getFileDescriptor sn localAddress k =
       Left   sd     -> Snocket.close sn sd
     )
     $ \case
-      -- unconfigured socket
+      -- not configured socket
       Right (sd, addr) -> do
-        traceWith tracer . ConfiguringLocalSocket addr
-           =<< getFileDescriptor sd
+        fd <- getFileDescriptor sd
+        traceWith tracer (ConfiguringLocalSocket addr fd)
         Snocket.bind sn sd addr
-        traceWith tracer . ListeningLocalSocket addr
-           =<< getFileDescriptor sd
+        configureSocketFile addr
+        traceWith tracer (ConfiguredLocalSocket addr fd)
+        traceWith tracer (ListeningLocalSocket addr fd)
         Snocket.listen sn sd
-        traceWith tracer . LocalSocketUp addr
-           =<< getFileDescriptor sd
+        traceWith tracer (LocalSocketUp addr fd)
         k sd
 
       -- pre-configured systemd socket
-      Left sd -> k sd
+      Left sd -> do
+        addr <- Snocket.getLocalAddr sn sd
+        configureSocketFile addr
+        k sd
 

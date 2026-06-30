@@ -74,7 +74,7 @@ import Ouroboros.Network.Protocol.BlockFetch.Type qualified as BlockFetch
 
 import Ouroboros.Network.BlockFetch
 import Ouroboros.Network.BlockFetch.Client
-import Ouroboros.Network.BlockFetch.ClientRegistry (FetchClientRegistry (..))
+import Ouroboros.Network.BlockFetch.ClientRegistry (KeepAliveRegistry (..))
 import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainSelStarvation (..),
            initialWithFingerprint)
 import Ouroboros.Network.DeltaQ (defaultGSV)
@@ -203,15 +203,6 @@ rmIfExists :: FilePath -> IO ()
 rmIfExists path = do
   b <- doesFileExist path
   when b (removeFile path)
-
--- TODO: provide sensible limits
--- https://github.com/intersectmbo/ouroboros-network/issues/575
-maximumMiniProtocolLimits :: MiniProtocolLimits
-maximumMiniProtocolLimits =
-    MiniProtocolLimits {
-      maximumIngressQueue = maxBound
-    }
-
 
 --
 -- Chain sync demo
@@ -348,10 +339,10 @@ demoProtocol3 chainSync blockFetch =
 
 -- We run `chain-sync` and `block-fetch`, without `keep-alive`, so we need to
 -- register peers in `dqRegistry`.
-bracketDqRegistry :: FetchClientRegistry (ConnectionId LocalAddress) header block IO
+bracketDqRegistry :: KeepAliveRegistry (ConnectionId LocalAddress) IO
                   -> ConnectionId LocalAddress
                   -> IO a -> IO a
-bracketDqRegistry FetchClientRegistry { fcrDqRegistry = dqRegistry } peer k =
+bracketDqRegistry KeepAliveRegistry { dqRegistry } peer k =
     bracket (atomically (modifyTVar dqRegistry (Map.insert peer defaultGSV)))
             (\_ -> atomically (modifyTVar dqRegistry (Map.delete peer)))
             (\_ -> k)
@@ -360,7 +351,8 @@ clientBlockFetch :: [FilePath]
                  -> Maybe SlotNo
                  -> IO ()
 clientBlockFetch sockAddrs maxSlotNo = withIOManager $ \iocp -> do
-    registry   <- newFetchClientRegistry
+    blockFetchRegistry <- newFetchClientRegistry
+    keepAliveRegistry <- newKeepAliveRegistry
     blockHeap  <- mkTestFetchedBlockHeap []
 
     candidateChainsVar <- newTVarIO Map.empty
@@ -396,7 +388,7 @@ clientBlockFetch sockAddrs maxSlotNo = withIOManager $ \iocp -> do
                   unregister _ = atomically $
                                  modifyTVar candidateChainsVar
                                             (Map.delete connId)
-              in bracketSyncWithFetchClient registry connId $
+              in bracketSyncWithFetchClient blockFetchRegistry connId $
                  bracket register unregister $ \chainVar ->
                  wrapMiniProtocolTrailing $
                  runPeer
@@ -411,8 +403,8 @@ clientBlockFetch sockAddrs maxSlotNo = withIOManager $ \iocp -> do
         blockFetch =
           InitiatorProtocolOnly $
             MiniProtocolCb $ \MinimalInitiatorContext { micConnectionId = connId } channel ->
-              bracketDqRegistry registry connId $
-              bracketFetchClient registry (maxBound :: NodeToNodeVersion) connId $ \clientCtx -> do
+              bracketDqRegistry keepAliveRegistry connId $
+              bracketFetchClient blockFetchRegistry keepAliveRegistry (maxBound :: NodeToNodeVersion) connId $ \clientCtx -> do
                 threadDelay 1000000
                 wrapMiniProtocolTrailing
                   ( runPipelinedPeer
@@ -515,7 +507,8 @@ clientBlockFetch sockAddrs maxSlotNo = withIOManager $ \iocp -> do
                       (contramap show stdoutTracer) -- decisionTracer
                       (contramap show stdoutTracer) -- state tracer
                       blockFetchPolicy
-                      registry
+                      blockFetchRegistry
+                      keepAliveRegistry
                       (BlockFetchConfiguration {
                         bfcMaxConcurrencyBulkSync = 1,
                         bfcMaxConcurrencyDeadline = 2,

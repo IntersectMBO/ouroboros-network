@@ -149,7 +149,7 @@ instance Arbitrary AbsIOError where
       mkIOError ioe_type = IOError
         { ioe_handle      = Nothing
         , ioe_type
-        , ioe_location    = "AttenuationChannel"
+        , ioe_location    = "Test.Ouroboros.Network.Data.AbsBearerInfo"
         , ioe_description = "attenuation"
         , ioe_errno       = Nothing
         , ioe_filename    = Nothing

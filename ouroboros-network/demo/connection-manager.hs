@@ -33,7 +33,7 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI (MonadTime (..))
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.Fix (MonadFix)
-import Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)
+import Control.Tracer (Tracer, contramap, mkTracer, nullTracer, traceWith)
 
 import Data.ByteString.Lazy (ByteString)
 import Data.Either (partitionEithers)
@@ -81,7 +81,7 @@ import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket (Snocket, socketSnocket)
 import Ouroboros.Network.Snocket qualified as Snocket
 import Ouroboros.Network.Socket ()
-import Ouroboros.Network.Util.ShowProxy
+import Ouroboros.Network.Util
 
 
 instance ShowProxy (ReqResp req resp) where
@@ -180,7 +180,7 @@ withBidirectionalConnectionManager
 
        , Hashable peerAddr
        , Ord peerAddr
-       , Show peerAddr
+       , PrettyShow peerAddr
        , Typeable peerAddr
 
        -- debugging
@@ -464,7 +464,7 @@ bidirectionalExperiment
     :: forall peerAddr socket.
        ( Hashable peerAddr
        , Ord peerAddr
-       , Show peerAddr
+       , PrettyShow peerAddr
        , Typeable peerAddr
        , Eq peerAddr
        )
@@ -727,6 +727,6 @@ forever' io = do
 
 
 debugTracer :: (MonadSay m, MonadTime m, Show a) => Tracer m a
-debugTracer = Tracer $ \msg -> do
+debugTracer = mkTracer $ \msg -> do
     t <- getCurrentTime
     say (show t ++ " " ++ show msg)

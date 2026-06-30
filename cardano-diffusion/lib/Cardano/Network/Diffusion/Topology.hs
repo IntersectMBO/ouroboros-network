@@ -1,10 +1,15 @@
 {-# LANGUAGE NamedFieldPuns #-}
 
-module Cardano.Network.Diffusion.Topology where
+module Cardano.Network.Diffusion.Topology
+  ( CardanoNetworkTopology
+  , isValidTrustedPeerConfiguration
+    -- Re-exports
+  , module Topology
+  ) where
 
 import Cardano.Network.PeerSelection.Bootstrap (UseBootstrapPeers (..))
 import Cardano.Network.PeerSelection.PeerTrustable (PeerTrustable (..))
-import Ouroboros.Network.Diffusion.Topology
+import Ouroboros.Network.Diffusion.Topology as Topology
 
 type CardanoNetworkTopology =
   NetworkTopology UseBootstrapPeers PeerTrustable

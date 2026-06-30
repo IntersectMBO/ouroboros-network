@@ -23,14 +23,16 @@ import System.Random
 
 import NoThunks.Class.Orphans ()
 
+import Cardano.Network.Diffusion.Policies (simpleChurnModePeerSelectionPolicy)
+import Cardano.Network.FetchMode
+import Cardano.Network.PeerSelection.Churn (ChurnMode (..))
 import Cardano.Slotting.Slot (SlotNo (..))
+
 import Ouroboros.Network.PeerSelection (PeerSource (..))
 import Ouroboros.Network.PeerSelection.Governor
 import Ouroboros.Network.PeerSelection.PeerMetric
 import Ouroboros.Network.SizeInBytes
 
-import Cardano.Network.Diffusion.Policies (simpleChurnModePeerSelectionPolicy)
-import Cardano.Network.PeerSelection.Churn (ChurnMode (..))
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
@@ -84,8 +86,19 @@ instance Arbitrary ArbitraryDemotion where
 newtype ArbitraryChurnMode = ArbitraryChurnMode ChurnMode deriving Show
 
 instance Arbitrary ArbitraryChurnMode where
-    arbitrary = ArbitraryChurnMode <$>
-        elements [ChurnModeNormal, ChurnModeBulkSync]
+    arbitrary = ArbitraryChurnMode . ChurnMode <$>
+      elements [ PraosFetchMode FetchModeDeadline
+               , PraosFetchMode FetchModeBulkSync
+               , GenesisFetchMode
+               ]
+    shrink (ArbitraryChurnMode (ChurnMode GenesisFetchMode)) =
+      [ ArbitraryChurnMode (ChurnMode (PraosFetchMode FetchModeDeadline))
+      , ArbitraryChurnMode (ChurnMode (PraosFetchMode FetchModeBulkSync))
+      ]
+    shrink (ArbitraryChurnMode (ChurnMode (PraosFetchMode FetchModeDeadline))) =
+      [ArbitraryChurnMode (ChurnMode (PraosFetchMode FetchModeBulkSync))]
+    shrink (ArbitraryChurnMode (ChurnMode (PraosFetchMode FetchModeBulkSync))) =
+      []
 
 instance Arbitrary ArbitraryPolicyArguments where
     arbitrary = do
@@ -179,11 +192,13 @@ prop_hotToWarmM ArbitraryPolicyArguments{..} seed = do
               -> m Property
     noneWorse metrics pickedSet = do
         scores <- atomically $ case apaChurnMode of
-                      ChurnModeNormal -> do
+                      ChurnMode (PraosFetchMode FetchModeDeadline) -> do
                           hup <- upstreamyness metrics
                           bup <- fetchynessBlocks metrics
                           return $ Map.unionWith (+) hup bup
-                      ChurnModeBulkSync ->
+                      ChurnMode (PraosFetchMode FetchModeBulkSync) ->
+                          fetchynessBytes metrics
+                      ChurnMode GenesisFetchMode ->
                           fetchynessBytes metrics
         let (picked, notPicked) = Map.partitionWithKey fn scores
             maxPicked = maximum $ Map.elems picked

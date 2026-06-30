@@ -28,6 +28,6 @@ mkReadFetchMode consensusMode getLedgerStateJudgement getFetchMode =
     case consensusMode of
       GenesisMode -> getLedgerStateJudgement <&> \case
         YoungEnough -> PraosFetchMode FetchModeDeadline
-        TooOld      -> FetchModeGenesis
+        TooOld      -> GenesisFetchMode
       PraosMode   -> PraosFetchMode <$> getFetchMode
 

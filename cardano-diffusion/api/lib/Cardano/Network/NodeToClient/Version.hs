@@ -1,13 +1,15 @@
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DeriveGeneric  #-}
-{-# LANGUAGE LambdaCase     #-}
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE DeriveAnyClass     #-}
+{-# LANGUAGE DeriveGeneric      #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE LambdaCase         #-}
+{-# LANGUAGE NamedFieldPuns     #-}
 
 module Cardano.Network.NodeToClient.Version
   ( NodeToClientVersion (..)
   , NodeToClientVersionData (..)
-  , nodeToClientCodecCBORTerm
   , nodeToClientVersionCodec
+  , nodeToClientVersionDataCodec
+  , NetworkMagic (..)
   ) where
 
 import Codec.CBOR.Term qualified as CBOR
@@ -21,25 +23,31 @@ import Ouroboros.Network.CodecCBORTerm
 import Ouroboros.Network.Handshake.Acceptable (Accept (..), Acceptable (..))
 import Ouroboros.Network.Handshake.Queryable (Queryable (..))
 import Ouroboros.Network.Magic
+import Ouroboros.Network.Util (PrettyShow (..))
 
 
 -- | Enumeration of node to client protocol versions.
 --
+-- Historical versions:
+--
+-- @
+-- NodeToClientV_9
+-- -- ^ enabled @CardanoNodeToClientVersion7@, i.e., Alonzo
+-- | NodeToClientV_10
+-- -- ^ added 'GetChainBlockNo' and 'GetChainPoint' queries
+-- | NodeToClientV_11
+-- -- ^ added 'GetRewardInfoPools` Block query
+-- | NodeToClientV_12
+-- -- ^ added 'LocalTxMonitor' mini-protocol
+-- | NodeToClientV_13
+-- -- ^ enabled @CardanoNodeToClientVersion9@, i.e., Babbage
+-- | NodeToClientV_14
+-- -- ^ added @GetPoolDistr@, @GetPoolState@, @GetSnapshots@
+-- | NodeToClientV_15
+-- -- ^ added `query` to NodeToClientVersionData
+-- @
+--
 data NodeToClientVersion
-    -- = NodeToClientV_9
-    -- -- ^ enabled @CardanoNodeToClientVersion7@, i.e., Alonzo
-    -- | NodeToClientV_10
-    -- -- ^ added 'GetChainBlockNo' and 'GetChainPoint' queries
-    -- | NodeToClientV_11
-    -- -- ^ added 'GetRewardInfoPools` Block query
-    -- | NodeToClientV_12
-    -- -- ^ added 'LocalTxMonitor' mini-protocol
-    -- | NodeToClientV_13
-    -- -- ^ enabled @CardanoNodeToClientVersion9@, i.e., Babbage
-    -- | NodeToClientV_14
-    -- -- ^ added @GetPoolDistr@, @GetPoolState@, @GetSnapshots@
-    -- | NodeToClientV_15
-    -- -- ^ added `query` to NodeToClientVersionData
     = NodeToClientV_16
     -- ^  Conway era (enabled @CardanoNodeToClientVersion11@);
     -- added @ImmutableTip@ and @GetStakeDelegDeposits@ queries to @LocalStateQuery@
@@ -63,7 +71,8 @@ data NodeToClientVersion
     | NodeToClientV_23
     -- ^ added @QueryDRepsDelegations@,
     -- LedgerPeerSnapshot CBOR encoding contains block hash and NetworkMagic
-  deriving (Eq, Ord, Enum, Bounded, Show, Generic, NFData)
+  deriving stock (Eq, Ord, Enum, Bounded, Show, Generic)
+  deriving anyclass (NFData, PrettyShow)
 
 -- | We set 16ths bit to distinguish `NodeToNodeVersion` and
 -- `NodeToClientVersion`.  This way connecting wrong protocol suite will fail
@@ -122,7 +131,8 @@ data NodeToClientVersionData = NodeToClientVersionData
   { networkMagic :: !NetworkMagic
   , query        :: !Bool
   }
-  deriving (Eq, Show, Generic, NFData)
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (NFData, PrettyShow)
 
 instance Acceptable NodeToClientVersionData where
     acceptableVersion local remote
@@ -154,3 +164,7 @@ nodeToClientCodecCBORTerm _v = CodecCBORTerm {encodeTerm, decodeTerm}
       decoder :: Int -> Bool -> Either Text NodeToClientVersionData
       decoder x query | x >= 0 && x <= 0xffffffff = Right (NodeToClientVersionData (NetworkMagic $ fromIntegral x) query)
                       | otherwise                 = Left $ T.pack $ "networkMagic out of bound: " <> show x
+
+
+nodeToClientVersionDataCodec :: VersionDataCodec NodeToClientVersion NodeToClientVersionData
+nodeToClientVersionDataCodec = mkVersionedCodecCBORTerm nodeToClientCodecCBORTerm

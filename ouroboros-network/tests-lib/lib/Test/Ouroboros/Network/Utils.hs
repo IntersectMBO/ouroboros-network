@@ -34,7 +34,6 @@ module Test.Ouroboros.Network.Utils
   , splitWithNameTrace
     -- * Tracers
   , debugTracer
-  , debugTracerG
   , sayTracer
   , dynamicTracer
     -- * Tasty Utils
@@ -49,7 +48,7 @@ import GHC.Real
 import Control.Monad.Class.MonadSay
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.IOSim (IOSim, traceM)
-import Control.Tracer (Contravariant (contramap), Tracer (..), contramapM)
+import Control.Tracer (Contravariant (contramap), Tracer, contramapM, mkTracer)
 
 import Data.Bitraversable (bimapAccumR)
 import Data.List (delete, nub)
@@ -65,7 +64,9 @@ import Data.Typeable (Typeable)
 import Text.Pretty.Simple (pPrint)
 import Text.Printf
 
-import Debug.Trace (traceShowM)
+import Ouroboros.Network.Util (PrettyShow (..))
+
+import Debug.Trace qualified as Debug (traceShowM)
 import Test.QuickCheck
 import Test.Tasty (TestTree)
 import Test.Tasty.ExpectedFailure (ignoreTest)
@@ -183,8 +184,8 @@ data WithName name event = WithName {
   }
   deriving Functor
 
-instance (Show name, Show event) => Show (WithName name event) where
-  show (WithName name ev) = "#" <> show name <> " % " <> show ev
+instance (PrettyShow name, Show event) => Show (WithName name event) where
+  show (WithName name ev) = "#" <> prettyShow name <> " % " <> show ev
 
 -- NOTE: one shouldn't use it in `sayTracer`, use
 -- `selectTraceEventsSayWithTime` instead.
@@ -195,9 +196,9 @@ data WithTime event = WithTime {
   deriving Functor
 
 instance Show event => Show (WithTime event) where
-  show (WithTime (Time t) ev) = show t <> " @ " <> show ev
+  show (WithTime (Time t) ev) = show t <> "@ " <> show ev
 
-tracerWithName :: name -> Tracer m (WithName name a) -> Tracer m a
+tracerWithName :: Monad m => name -> Tracer m (WithName name a) -> Tracer m a
 tracerWithName name = contramap (WithName name)
 
 tracerWithTime :: MonadMonotonicTime m => Tracer m (WithTime a) -> Tracer m a
@@ -259,29 +260,23 @@ instance (Eq a, Arbitrary a) => Arbitrary (DistinctNEList a) where
     [ DistinctNEList (NE.fromList (nub xs')) | xs' <- shrink (NE.toList xs), not (null xs') ]
 
 --
--- Debugging tools
+-- Tracers
 --
 
+-- | Trace to `stderr` via `Debug.Tracer` API.
+--
 debugTracer :: ( Show a, Applicative m) => Tracer m a
-debugTracer = Tracer traceShowM
+debugTracer = mkTracer Debug.traceShowM
 
+-- | Trace using `MonadSay` instance.
+--
 sayTracer :: ( Show a, MonadSay m) => Tracer m a
-sayTracer = Tracer (say . show)
+sayTracer = mkTracer (say . show)
 
--- | Redefine this tracer to get valuable tracing information from various
--- components:
+-- | Dynamic tracer for `IOSim` using `traceM`.
 --
--- * connection-manager
--- * inbound governor
--- * server
---
-debugTracerG :: (Show a, Typeable a) => Tracer (IOSim s) a
-debugTracerG =    Tracer (\msg -> getCurrentTime >>= say . show . (,msg))
-               <> Tracer traceM
-            -- <> Tracer Debug.traceShowM
-
 dynamicTracer :: Typeable a => Tracer (IOSim s) a
-dynamicTracer = Tracer traceM
+dynamicTracer = mkTracer traceM
 
 --
 -- Nightly tests

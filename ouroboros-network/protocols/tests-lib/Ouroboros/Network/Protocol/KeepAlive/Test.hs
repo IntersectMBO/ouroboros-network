@@ -39,6 +39,7 @@ import Test.Ouroboros.Network.Protocol.Utils (prop_codec_valid_cbor_encoding,
            splits2, splits3)
 
 
+import Test.Cardano.Base.QuickCheck qualified as BaseQC
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
@@ -57,7 +58,7 @@ tests = testGroup "Ouroboros.Network.Protocol.KeepAlive"
   , testProperty "channel IO"          prop_channel_IO
   , testProperty "codec v2"            prop_codec_v2
   , testProperty "codec v2 2-splits"   prop_codec_v2_splits2
-  , testProperty "codec v2 3-splits"   (withMaxSuccess 33 prop_codec_v2_splits3)
+  , testProperty "codec v2 3-splits"   (BaseQC.withNumTests 33 prop_codec_v2_splits3)
   , testProperty "codec v2 valid CBOR" prop_codec_v2_valid_cbor
   , testProperty "byteLimits"          prop_byteLimits
   ]

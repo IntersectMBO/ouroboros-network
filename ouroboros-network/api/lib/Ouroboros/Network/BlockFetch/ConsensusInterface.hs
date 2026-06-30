@@ -55,7 +55,7 @@ data PraosFetchMode =
   deriving (Eq, Show)
 
 -- | The fetch mode that the block fetch logic should use.
-data FetchMode = FetchModeGenesis | PraosFetchMode PraosFetchMode
+data FetchMode = GenesisFetchMode | PraosFetchMode PraosFetchMode
   deriving (Eq, Show)
 
 -- | The consensus layer functionality that the block fetch logic requires.

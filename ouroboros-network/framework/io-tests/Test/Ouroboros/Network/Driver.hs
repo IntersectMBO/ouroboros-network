@@ -60,7 +60,9 @@ import Control.Monad.IOSim
 import Control.Tracer
 
 import Test.Ouroboros.Network.Orphans ()
+import Test.Ouroboros.Network.Utils (sayTracer)
 
+import Test.Cardano.Base.QuickCheck qualified as BaseQC
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
@@ -75,7 +77,7 @@ tests =
   testGroup "Ouroboros.Network.Driver"
   [ testGroup "Simple"
     [ testProperty "channel ReqResp ST"              prop_channel_simple_reqresp_ST
-    , testProperty "channel ReqResp IO"              (withMaxSuccess 33 prop_channel_simple_reqresp_IO)
+    , testProperty "channel ReqResp IO"              (BaseQC.withNumTests 33 prop_channel_simple_reqresp_IO)
     , testProperty "channel PingPong ST"             prop_channel_ping_pong_ST
     , testProperty "channel PingPong IO"             prop_channel_ping_pong_IO
     ]
@@ -86,7 +88,7 @@ tests =
     ]
   , testGroup "Stateful"
     [ testProperty "channel Stateful ReqResp ST"     prop_channel_stateful_reqresp_ST
-    , testProperty "channel Stateful ReqResp IO"     (withMaxSuccess 33 prop_channel_stateful_reqresp_IO)
+    , testProperty "channel Stateful ReqResp IO"     (BaseQC.withNumTests 33 prop_channel_stateful_reqresp_IO)
     ]
   ]
 
@@ -196,7 +198,7 @@ prop_channel_simple_reqresp_ST
   :: ReqRespPayloadWithLimit
   -> Property
 prop_channel_simple_reqresp_ST (ReqRespPayloadWithLimit _limit payload) =
-  let trace = runSimTrace (prop_channel_simple_reqresp (Tracer (say . show)) [payload])
+  let trace = runSimTrace (prop_channel_simple_reqresp sayTracer [payload])
   in counterexample (intercalate "\n" $ map show $ traceEvents trace)
    $ case traceResult True trace of
        Left e  -> throw e
@@ -445,7 +447,7 @@ prop_channel_reqresp_ST
   -> Property
 prop_channel_reqresp_ST (ReqRespPayloadWithLimit limit payload) =
       tabulate "Limit Boundaries" (labelExamples limit payload) $
-        let trace = runSimTrace (prop_channel_reqresp (Tracer (say . show)) limit [payload])
+        let trace = runSimTrace (prop_channel_reqresp sayTracer limit [payload])
         in counterexample (intercalate "\n" $ map show $ traceEvents trace)
            $ case traceResult True trace of
                Left e  -> throw e
@@ -528,7 +530,7 @@ prop_channel_ping_pong_with_limits_ST a@(ArbDelaysAndTimeouts delay delay' timel
   where
     sim :: IOSim s Bool
     sim = prop_channel_ping_pong_with_limits delay delay'
-                                             n (Tracer $ say . show)
+                                             n sayTracer
                                              slimits tlimits
 
     slimits :: ProtocolSizeLimits PingPong String
@@ -652,7 +654,7 @@ prop_channel_stateful_reqresp_ST
   :: ReqRespPayloadWithLimit
   -> Property
 prop_channel_stateful_reqresp_ST (ReqRespPayloadWithLimit _limit payload) =
-  let trace = runSimTrace (prop_channel_stateful_reqresp True (Tracer (say . show)) [payload])
+  let trace = runSimTrace (prop_channel_stateful_reqresp True sayTracer [payload])
   in counterexample (intercalate "\n" $ map show $ traceEvents trace)
    $ case traceResult True trace of
        Left e  -> throw e
