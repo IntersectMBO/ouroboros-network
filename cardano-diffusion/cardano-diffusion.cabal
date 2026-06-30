@@ -27,6 +27,13 @@ flag cddl
   -- These tests need the cddl and the cbor-diag Ruby-package
   default: True
 
+-- it might be a `cabal` bug that we need extra dependencies for
+-- `cardano-diffusion:ping` in the repl or hls.
+flag repl
+  description: Enable additional dependencies for cabal repl or hls
+  manual: True
+  default: False
+
 flag optparse-applicative-fork
   description: Use optparse-applicative-fork
   manual: True
@@ -629,6 +636,12 @@ library ping
   else
     build-depends:
       optparse-applicative
+
+  if flag(repl)
+    build-depends:
+      ouroboros-network:protocols
+
+    ghc-options: -Wno-unused-packages
 
 executable cardano-ping
   import: ghc-options

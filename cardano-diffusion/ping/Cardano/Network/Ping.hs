@@ -21,21 +21,31 @@
 module Cardano.Network.Ping
   ( -- * API
     pingClients
+  , pingClients'
   , pingClient
     -- * Options and arguments
   , PingOpts (..)
   , Stage (..)
   , ResolvedSRVOrFilePath (..)
-  , Address
+  , Address (IP)
+  , mkAddress
   , cmdlineParser
   , PingMode (..)
+  , AcceptFilePath (..)
   , LogFormat (..)
   , ColorMode (..)
     -- * Log messages
   , PingWarning (..)
+  , PingException (..)
   , WithHost (..)
   , LogMsg (..)
   , StatPoint (..)
+  , mkStdOutTracer
+  , mkStdErrTracer
+  , mkHeaderTracer
+    -- ** Formatting log messages
+  , format
+  , ToText (..)
     -- * Exceptions
   , PingClientException (..)
     -- * Cardano main-net configuration
@@ -66,6 +76,8 @@ import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import Data.ByteString.Char8 qualified as BS.Char
 import Data.ByteString.Lazy qualified as BL
+import Data.Either (lefts)
+import Data.Foldable (traverse_)
 import Data.IP
 import Data.List qualified as List
 import Data.Map.Strict (Map)
@@ -89,6 +101,7 @@ import Network.Socket qualified as Socket
 import Options.Applicative
 import Options.Applicative.Help.Pretty qualified as Pretty
 import System.Directory (doesFileExist)
+import System.Exit qualified as IO
 import System.IO qualified as IO
 import System.Random (initStdGen)
 import Text.Printf (printf)
@@ -126,11 +139,11 @@ data ColorMode = ColorAuto | ColorNever | ColorAlways
 
 data PingMode =
     TipMode
-    -- puery tip
+    -- ^ query tip
   | PingMode
-    -- ping
+    -- ^ ping
   | QueryMode
-    -- query handshake parameters
+    -- ^ query handshake parameters
   deriving (Eq, Show)
 
 type Port = Word
@@ -166,19 +179,50 @@ data Address (stage :: Stage) where
              -> Port
              -> Address resolved
 
+deriving instance Show (Address resolved)
+
+
+-- | A smart constructor for `Address` type.
+--
+mkAddress :: String -> Address (Unresolved SRVOrFilePathUnresolved)
+mkAddress s | illegalDomain = FilePathOrDomain s
+            | otherwise     = SRV s
+  where
+    -- A basic test to decide between `FilePathOrDomain` or `SRV`.  The `dns`
+    -- library has a slightly more advanced version and returns `IllegalDomain`
+    -- error.
+    illegalDomain :: Bool
+    illegalDomain
+      | ':' `List.elem` s    = True
+      | '/' `List.elem` s    = True
+      | '.' `List.notElem` s = True
+      | otherwise            = False
+
 
 showIPWithPort :: IP -> Port -> String
 showIPWithPort ip@IPv4{} port = show ip ++ ":" ++ show port
 showIPWithPort ip@IPv6{} port = "[" ++ show ip ++ "]:" ++ show port
 
-instance Show (Address Resolved) where
-  show :: Address Resolved -> String
-  show (IP ip port)    = showIPWithPort ip port
-  show (FilePath path) = path
+ppAddress :: Address stage -> String
+ppAddress (IP ip port)            = showIPWithPort ip port
+ppAddress (FilePath path)         = path
+ppAddress (FilePathOrDomain path) = path
+ppAddress (Domain domain port)    = BS.Char.unpack domain ++ ":" ++ show port
+ppAddress (SRV domain)            = domain
 
 deriving instance Eq (Address Resolved)
 deriving instance Ord (Address Resolved)
 
+data SomeAddress where
+    SomeAddress :: forall (stage :: Stage).
+                   Address stage
+                -> SomeAddress
+
+instance Show SomeAddress where
+  show (SomeAddress address) = show address
+
+ppSomeAddress :: SomeAddress -> String
+ppSomeAddress (SomeAddress addr) = ppAddress addr
 
 data PingOpts = PingOpts
   { pingOptsCount     :: Word32
@@ -195,7 +239,7 @@ data PingOpts = PingOpts
     -- ^ SRV prefix
   , pingOptsColor     :: ColorMode
     -- ^ Colorised output
-  } -- deriving (Eq, Show)
+  }
 
 mainnetMagic :: NetworkMagic
 mainnetMagic = NetworkMagic 764824073
@@ -323,11 +367,7 @@ argParser =
               _ -> Left s
 
         readDomainNameOrFilePath :: ReadM (Address (Unresolved SRVOrFilePathUnresolved))
-        readDomainNameOrFilePath = eitherReader $ \s ->
-          case List.find (== ':') s of
-            -- not an `SRV` record
-            Just _  -> Right (FilePathOrDomain s)
-            Nothing -> Right (SRV s)
+        readDomainNameOrFilePath = eitherReader $ Right . mkAddress
 
 cmdlineParser :: Parser (PingOpts, [Address (Unresolved SRVOrFilePathUnresolved)])
 cmdlineParser = (,) <$> pingOptsParser <*> argParser
@@ -341,50 +381,63 @@ data LogMsg = LogChainSyncTip PingTip
             | LogNodeToNodeVersionData   NodeToNodeVersion   (Either Text NodeToNodeVersionData)
   deriving Show
 
+
+
+data LogInfoMsg = LogNetworkRTT NetworkRTT
+                | LogHandshakeRTT HandshakeRTT
+                | forall versionNumber.
+                  (Show versionNumber, ToText versionNumber, ToJSON versionNumber)
+                  => LogNegotiatedVersion (NegotiatedVersion versionNumber)
+
+deriving instance Show LogInfoMsg
+
+
+data AddressResolutionError =
+     FilePathDoesNotExistError FilePath
+   | NoPortNumberError SomeAddress
+   | DNSError SomeAddress DNS.DNSError
+  deriving Show
+
+instance Exception AddressResolutionError where
+  displayException (FilePathDoesNotExistError path)
+    = "file path " ++ show path ++ " does not exist"
+  displayException (NoPortNumberError addr)
+    = "missing port number for " ++ ppSomeAddress addr
+  displayException (DNSError addr err)
+    = ppSomeAddress addr ++ ": " ++ displayException err
+
 -- | Log messages to stderr.
 --
-data PingWarning = FilePathDoesNotExist FilePath
-                 | DNSError DNS.Domain DNS.DNSError
+data PingWarning = AddressResolutionError AddressResolutionError
                  | DNSResolution DNS.Domain [IP] Word
-                 | MissingPort IP
                  | Error SomeException
                  | ConnectError SockAddr SomeException
 
 
-formatPingWarning :: PingWarning -> String
-formatPingWarning msg = severity msg ++ fn msg
-  where
-    fn (FilePathDoesNotExist path)
-      = "file path " ++ show path ++ " does not exist"
-    fn (DNSError domain err)
-      = unwords
-      [ "dns:"
-      , BS.Char.unpack domain
-      , show err
-      ]
-    fn (DNSResolution domain ips port)
-      = concat
-      [ BS.Char.unpack domain
-      , ": "
-      , List.intercalate ", " (flip showIPWithPort port <$> ips)
-      ]
-    fn (MissingPort ip)
-      = "missing port for " ++ show ip
-    fn (Error err)
-      = show err
-    fn (ConnectError sockAddr err)
-      = printf "%-47s %s" (show sockAddr) (show err)
+instance ToText PingWarning where
+  toText msg = severity msg <> fn msg
+    where
+      fn (AddressResolutionError err)
+        = TL.pack $ displayException err
+      fn (DNSResolution domain ips port)
+        = TL.pack $ concat
+        [ BS.Char.unpack domain
+        , ": "
+        , List.intercalate ", " (flip showIPWithPort port <$> ips)
+        ]
+      fn (Error err)
+        = TL.pack $ displayException err
+      fn (ConnectError sockAddr err)
+        = TL.pack $ printf "%-47s %s" (show sockAddr) (displayException err)
 
-    severity :: PingWarning -> String
-    severity = \case
-        FilePathDoesNotExist{} -> warning
-        DNSError{}             -> warning
-        DNSResolution{}        -> mempty
-        MissingPort{}          -> warning
-        Error{}                -> warning
-        ConnectError{}         -> warning
-      where
-        warning = "WARNING: "
+      severity :: PingWarning -> TL.Text
+      severity = \case
+          AddressResolutionError{} -> warning
+          DNSResolution{}          -> mempty
+          Error{}                  -> warning
+          ConnectError{}           -> warning
+        where
+          warning = TL.pack "WARNING: "
 
 
 instance ToText LogMsg where
@@ -426,6 +479,10 @@ instance ToText LogMsg where
           , show perasSupport
           ]
 
+instance ToText LogInfoMsg where
+  toText (LogNetworkRTT rtt)      = toText rtt
+  toText (LogHandshakeRTT rtt)    = toText rtt
+  toText (LogNegotiatedVersion v) = toText v
 
 instance ToJSON LogMsg where
   toJSON (LogChainSyncTip tip) = toJSON tip
@@ -434,6 +491,11 @@ instance ToJSON LogMsg where
     = object [ fromString (show version) .= either toJSON toJSON versionData ]
   toJSON (LogNodeToNodeVersionData version versionData)
     = object [ fromString (show version) .= either toJSON toJSON versionData ]
+
+instance ToJSON LogInfoMsg where
+  toJSON (LogNetworkRTT rtt)      = toJSON rtt
+  toJSON (LogHandshakeRTT rtt)    = toJSON rtt
+  toJSON (LogNegotiatedVersion v) = toJSON v
 
 
 sduTimeout :: DiffTime
@@ -494,26 +556,32 @@ instance Show StatPoint where
       (iso8601Show spTimestamp ++ ",")
       spCookie spSample spMedian spP90 spMean spMin spMax spStd
 
-statPointHeader :: String
-statPointHeader = printf "%-46s %30s, %6s, %6s, %6s, %6s, %6s, %6s, %6s, %6s"
-                         ("host," :: String)
-                         ("timestamp" :: String)
-                         ("cookie" :: String)
-                         ("sample" :: String)
-                         ("median" :: String)
-                         ("p90"    :: String)
-                         ("mean"   :: String)
-                         ("min"   :: String)
-                         ("max"   :: String)
-                         ("std"   :: String)
 
-tipHeader :: String
-tipHeader = printf "%-47s %6s, %64s, %9s, %10s"
-                   ("host,"   :: String)
-                   ("rtt"     :: String)
-                   ("hash"    :: String)
-                   ("blockNo" :: String)
-                   ("slotNo"  :: String)
+data Header = PingHeader | TipHeader
+
+instance ToText Header where
+  toText PingHeader = TL.pack
+                    $ printf "%-46s %30s, %6s, %6s, %6s, %6s, %6s, %6s, %6s, %6s"
+                       ("host," :: String)
+                       ("timestamp" :: String)
+                       ("cookie" :: String)
+                       ("sample" :: String)
+                       ("median" :: String)
+                       ("p90"    :: String)
+                       ("mean"   :: String)
+                       ("min"   :: String)
+                       ("max"   :: String)
+                       ("std"   :: String)
+  toText TipHeader = TL.pack
+                   $ printf "%-47s %6s, %64s, %9s, %10s"
+                       ("host,"   :: String)
+                       ("rtt"     :: String)
+                       ("hash"    :: String)
+                       ("blockNo" :: String)
+                       ("slotNo"  :: String)
+
+instance ToJSON Header where
+  toJSON _ = Aeson.Null
 
 instance ToJSON StatPoint where
   toJSON :: StatPoint -> Value
@@ -565,7 +633,7 @@ idleTimeout = 1
 
 
 data PingClientException
-  = ProtocolLimitException ProtocolLimitFailure
+  = ProtocolLimitException ProtocolLimitFailure SockAddr
   -- ^ protocol limit error
 
   | forall versionNumber.
@@ -573,28 +641,28 @@ data PingClientException
   => HandshakeException (HandshakeProtocolError versionNumber) SockAddr
   -- ^ handshake protocol error
 
-  | IOException IOError
+  | IOException IOError SockAddr
   -- ^ IO errors
 
-  | DecodingException CBOR.DeserialiseFailure
+  | DecodingException CBOR.DeserialiseFailure SockAddr
   -- ^ cbor exceptions
 
-  | MuxException Mx.Error
+  | MuxException Mx.Error SockAddr
   -- ^ mux exceptions
 
 deriving instance Show PingClientException
 
 instance Exception PingClientException where
-  displayException (ProtocolLimitException err) =
-    displayException err
+  displayException (ProtocolLimitException err addr) =
+    printf "%s protocol limits error: %s" (show addr) (displayException err)
   displayException (HandshakeException err addr) =
     printf "%s handshake error: %s" (show addr) (show err)
-  displayException (IOException err) =
-    displayException err
-  displayException (DecodingException err) =
-    displayException err
-  displayException (MuxException err) =
-    displayException err
+  displayException (IOException err addr) =
+    printf "%s io error: %s" (show addr) (displayException err)
+  displayException (DecodingException err addr) =
+    printf "%s decoding error: %s" (show addr) (displayException err)
+  displayException (MuxException err addr) =
+    printf "%s mux error: %s" (show addr) (displayException err)
 
 data ProtocolFlavour version versionData where
     NodeToNode   :: ProtocolFlavour NodeToNodeVersion   NodeToNodeVersionData
@@ -609,6 +677,7 @@ data SomeProtocolFlavour where
                            , Show versionNumber
                            , NFData versionNumber
                            , ToJSON versionNumber
+                           , ToText versionNumber
                            )
                         => ProtocolFlavour versionNumber versionData
                         -> SomeProtocolFlavour
@@ -633,12 +702,11 @@ instance StandardHash ChainSyncBlock
 -- A `ChainSyncClient` that finds the current `Tip` over `node-to-node`
 -- or `node-to-client` protocol.
 chainSyncClient
-  :: PingOpts
-  -> Signal
-  -> HeaderVar
+  :: Signal
   -> Tracer IO LogMsg
+  -> Tracer IO Header
   -> ChainSyncClient ChainSyncHeader ChainSyncPoint ChainSyncTip IO ()
-chainSyncClient opts sig@Signal { signalReadiness } headerVar stdout =
+chainSyncClient sig@Signal { signalReadiness } stdout headerTracer =
     ChainSync.ChainSyncClient $ do
       signalReadiness
       go <$> getMonotonicTime
@@ -664,7 +732,7 @@ chainSyncClient opts sig@Signal { signalReadiness } headerVar stdout =
                    ptSlotNo
                  }
              awaitReadiness sig
-             printHeader opts headerVar tipHeader
+             traceWith headerTracer TipHeader
              traceWith stdout (LogChainSyncTip pingTip)
              return $ ChainSync.SendMsgDone ()
        }
@@ -677,12 +745,11 @@ chainSyncClient opts sig@Signal { signalReadiness } headerVar stdout =
 keepAliveClient
   :: PingOpts
   -> Signal
-  -> HeaderVar
-  -- ^ stat header MVar
   -> Tracer IO LogMsg
+  -> Tracer IO Header
   -> TDigest 5
   -> KeepAliveClient IO ()
-keepAliveClient opts@PingOpts { pingOptsCount } sig headerVar stdout td0 =
+keepAliveClient PingOpts { pingOptsCount } sig stdout headerTracer td0 =
     KeepAliveClient $ loop td0 0
   where
     -- we keep sending  keep alive message from the start, but we output
@@ -705,7 +772,7 @@ keepAliveClient opts@PingOpts { pingOptsCount } sig headerVar stdout td0 =
         ready <- signalAndGetReadiness sig
         if ready
           then do
-            printHeader opts headerVar statPointHeader
+            traceWith headerTracer PingHeader
             let rtt = toSample end start
                 td' = TDigest.insert rtt td
                 point = toStatPoint now cookie16 rtt td'
@@ -725,110 +792,184 @@ keepAliveClient opts@PingOpts { pingOptsCount } sig headerVar stdout td0 =
 -- Ping Client
 --
 
-resolveAddress :: Tracer IO PingWarning
-               -> DNS.Resolver
-               -> PingOpts
-               -> Address (Unresolved fpResolved)
-               -> IO [Address Resolved]
 
--- 1. Resolve an SRV records
-resolveAddress stderr resolver opts@PingOpts { pingOptsSRVPrefix = srvPrefix } (SRV dns) = do
-  let hostname = BS.Char.pack $ case srvPrefix of
-                                  [] -> dns
-                                  _  -> srvPrefix ++ "." ++ dns
-  r <- DNS.lookupRaw resolver hostname DNS.SRV
-  case r >>= flip DNS.fromDNSMessage selectSRV of
-    Left err -> do
-      traceWith stderr $ DNSError hostname err
-      -- try resolve the SRV as a domain:port or a filepath
-      resolveAddress stderr resolver opts (FilePathOrDomain dns)
-    Right services ->
-      concat <$> traverse (resolveAddress stderr resolver opts)
-        [ Domain domain (fromIntegral port)
-        | (domain, _, _, port, _ttl)  <- services
-        ]
+-- | `resolveAddress` has two modes of operations.  It can try to resolve an
+-- `Address` to a `FilePath`, or not.  In the latter case the errors will be
+-- more precise.  It is useful when validating an srv record / domain names / ip
+-- addresses.
+--
+data AcceptFilePath = AddressMightBeAFilePath | AddressIsNotAFilePath
+
+
+resolveAddress
+  :: Tracer IO PingWarning
+  -- ^ stderr
+  -> DNS.Resolver
+  -> PingOpts
+  -> AcceptFilePath
+  -- ^ if ``
+  -- then we won't try to resolve an address as a `FilePath`.
+  -> Address (Unresolved SRVOrFilePathUnresolved)
+  -- ^ Either `FilePathOrDomain` or `SRV`, use `mkAddress` to
+  -- construct the right one.
+  -> IO ([Address Resolved], [AddressResolutionError])
+resolveAddress
+    stderr resolver
+    PingOpts { pingOptsQuiet, pingOptsSRVPrefix = srvPrefix }
+    acceptFilePath
+    =
+    go
   where
-    selectSRV DNS.DNSMessage { DNS.answer } =
-      [ (domain', priority', weight', port, ttl)
-      | DNS.ResourceRecord {
-          DNS.rdata = DNS.RD_SRV priority' weight' port domain',
-          DNS.rrttl = ttl
-        } <- answer
-      ]
+    -- resolution loop
+    go :: Address (Unresolved fpResolved)
+       -> IO ([Address Resolved], [AddressResolutionError])
 
--- 2. Resolved domain name or file path
-resolveAddress stderr resolver opts (FilePathOrDomain path) =
-   case splitWith ':' path
-           >>= \(dnsStr, portStr) -> (dnsStr,) <$> readMaybe portStr
-     of
-     Just (dnsname, port) ->
-       -- try resolve as a domain name
-       resolveAddress stderr resolver opts (Domain (BS.Char.pack dnsname) port)
-        >>= \case
-          [] ->
-            -- dns query failed, let's try if it is a file path
-            doesFileExist path >>= \case
-              True -> pure [FilePath path]
-              False -> do
-                traceWith stderr (FilePathDoesNotExist path)
-                pure []
-          addrs -> pure addrs
-     Nothing ->
-       doesFileExist path >>= \case
-         True ->
-           pure [FilePath path]
-         False -> do
-           traceWith stderr (FilePathDoesNotExist path)
-           pure []
+    -- 1. Resolve an SRV record
+    go addr@(SRV dns) = do
+      let hostname = BS.Char.pack $ case srvPrefix of
+                                      [] -> dns
+                                      _  -> srvPrefix ++ "." ++ dns
+      r <- DNS.lookupRaw resolver hostname DNS.SRV
+      case r >>= flip DNS.fromDNSMessage selectSRV of
+        Left err -> do
+          let err' = DNSError (SomeAddress addr) err
+          traceWith stderr (AddressResolutionError err')
+          case acceptFilePath of
+            AddressMightBeAFilePath ->
+              -- try resolve the SRV as a file path
+              go (FilePathOrDomain dns)
+            AddressIsNotAFilePath ->
+              pure ([], [err'])
+        Right services ->
+          concatBoth <$> traverse go
+            [ Domain domain (fromIntegral port)
+            | (domain, _, _, port, _ttl)  <- services
+            ]
+      where
+        selectSRV DNS.DNSMessage { DNS.answer } =
+          [ (domain', priority', weight', port, ttl)
+          | DNS.ResourceRecord {
+              DNS.rdata = DNS.RD_SRV priority' weight' port domain',
+              DNS.rrttl = ttl
+            } <- answer
+          ]
 
--- 3. Resolve domain names
-resolveAddress stderr resolver PingOpts { pingOptsQuiet } (Domain hostname port) = do
-  a <- fmap (map IPv4) <$> DNS.lookupA resolver hostname
-  aaaa <- fmap (map IPv6) <$> DNS.lookupAAAA resolver hostname
-  case a <>: aaaa of
-    Left err -> do
-      traceWith stderr $ DNSError hostname err
-      return []
-    Right ips -> do
-      unless pingOptsQuiet $
-        traceWith stderr $ DNSResolution hostname ips port
-      return [ IP ip port | ip <- ips ]
-  where
-    (<>:) :: Either e [a] -> Either e [a] -> Either e [a]
-    (Left e) <>: Left{}    = Left e
-    Right as <>: Left{}    = Right as
-    Left{}   <>: Right as  = Right as
-    Right as <>: Right as' = Right (as ++ as')
+    -- 2. Resolved domain name or file path
+    go addr@(FilePathOrDomain path) =
+       case splitWith ':' path
+               >>= \(dnsStr, portStr) -> (dnsStr,) <$> readMaybe portStr
+         of
+         Just (dnsname, port) ->
+           -- try resolve as a domain name
+           go (Domain (BS.Char.pack dnsname) port)
+             >>= \case
+               ([], errs) | AddressMightBeAFilePath <- acceptFilePath ->
+                 -- dns query failed, let's try if it is a file path
+                 doesFileExist path >>= \case
+                   True -> pure ([FilePath path], errs)
+                   False -> do
+                     let err = FilePathDoesNotExistError path
+                     traceWith stderr (AddressResolutionError err)
+                     pure ([], err : errs)
+               (addrs, errs) -> pure (addrs, errs)
+         Nothing | AddressMightBeAFilePath <- acceptFilePath -> do
+           doesFileExist path >>= \case
+             True ->
+               pure ([FilePath path], [])
+             False -> do
+               let err = FilePathDoesNotExistError path
+               traceWith stderr (AddressResolutionError err)
+               pure ([], [err])
+         Nothing -> do
+           pure ([], [NoPortNumberError (SomeAddress addr)])
 
--- 4. Return ip address
-resolveAddress _stderr _ _ (IP addr port) = pure [IP addr port]
+    -- 3. Resolve domain names
+    go addr@(Domain hostname port) = do
+      a <- fmap (map IPv4) <$> DNS.lookupA resolver hostname
+      aaaa <- fmap (map IPv6) <$> DNS.lookupAAAA resolver hostname
+      case a <>: aaaa of
+        (ips, errs) -> do
+          let errs' = [ DNSError (SomeAddress addr) err | err <- errs ]
+          traverse_ (traceWith stderr . AddressResolutionError) errs'
+          unless pingOptsQuiet $
+            traceWith stderr $ DNSResolution hostname ips port
+          return ( [ IP ip port | ip <- ips ]
+                 , errs'
+                 )
+      where
+        (<>:) :: Eq e => Either e [a] -> Either e [a] -> ([a], [e])
+        (Left e) <>: Left e'   | e /= e'
+                               = ([], [e, e'])
+                               | otherwise
+                               = ([], [e])
+        Right as <>: Left e'   = (as, [e'])
+        Left e   <>: Right as  = (as, [e])
+        Right as <>: Right as' = (as ++ as', [])
+
+    -- 4. Return ip address
+    go (IP addr port) = pure ([IP addr port], [])
 
 
 pingClients
   :: PingOpts
   -> [Address (Unresolved SRVOrFilePathUnresolved)]
   -> IO ()
-pingClients opts@PingOpts { pingOptsJson } addresses = do
-    stdoutLock <- newMVar ()
-    IO.hSetBuffering IO.stdout IO.LineBuffering
-    let stdout :: Tracer IO (WithHost LogMsg)
-        stdout = mkTracer $ \msg -> withMVar stdoutLock $ \_ -> TL.putStrLn (format pingOptsJson msg)
+pingClients
+  opts@PingOpts { pingOptsJson }
+  addresses = do
+  stdout <- mkStdOutTracer
+  stderr <- mkStdErrTracer
+  headerTracer <- mkHeaderTracer opts stdout
 
-    stderrLock <- newMVar ()
-    IO.hSetBuffering IO.stderr IO.LineBuffering
-    let stderr :: Tracer IO PingWarning
-        stderr = mkTracer $ \msg -> withMVar stderrLock $ \_ ->
-          case msg of
-            -- Don't print IllegalDomain errors, which are common when we try
-            -- to resolve a file path as a DNS name.
-            DNSError _ DNS.IllegalDomain -> pure ()
-            _ -> IO.hPutStrLn IO.stderr (formatPingWarning msg)
+  errors <-
+    pingClients'
+      (format pingOptsJson >$< stdout)
+      (format pingOptsJson >$< stdout)
+      headerTracer
+      (toText >$< stderr)
+      opts
+      AddressMightBeAFilePath addresses
+  unless (null errors)
+    IO.exitFailure
 
+
+data PingException
+  = AddressResolutionException AddressResolutionError
+  | PingClientException PingClientException
+  deriving Show
+
+instance Exception PingException where
+  displayException (AddressResolutionException e) = displayException e
+  displayException (PingClientException e)        = displayException e
+
+-- | A low level API which returns all address resolution & clients errors.
+--
+pingClients'
+  :: Tracer IO (WithHost LogMsg)
+  -- ^ trace log messages
+  -> Tracer IO (WithHost LogInfoMsg)
+  -- ^ info messages (e.g. RTTs, negotiated version numbers)
+  -> Tracer IO Header
+  -- ^ print header for ping measurements or tip information; it should be
+  -- enabled if the first tracer is enabled.
+  -> Tracer IO PingWarning
+  -- ^ trace warning messages
+  -> PingOpts
+  -- ^ options for the ping command
+  -> AcceptFilePath
+  -- ^ accept file paths as addresses; if set to `AddressIsNotAFilePath` we'll
+  -- never return file path related errors in `AddressResolutionError`.
+  -> [Address (Unresolved SRVOrFilePathUnresolved)]
+  -> IO [PingException]
+  -- ^ returns two list:
+  -- * list of resolve errors (printed with `PingWarning` tracer)
+  -- * list of `pingClient` errors
+pingClients' stdout infoTracer headerTracer stderr opts acceptFilePath addresses = do
     -- resolved addresses
     rs <- DNS.makeResolvSeed DNS.defaultResolvConf
-    resolvedAddresses <-
+    (resolvedAddresses, resolveErrors) <-
       DNS.withResolver rs $ \resolver ->
-        concat <$> traverse (resolveAddress stderr resolver opts) addresses
+        concatBoth <$> traverse (resolveAddress stderr resolver opts acceptFilePath) addresses
     sockAddrs
       <- catMaybes
          <$> traverse
@@ -855,49 +996,46 @@ pingClients opts@PingOpts { pingOptsJson } addresses = do
                )
                resolvedAddresses
 
-    headerVar <- newHeaderVar
     signalVar <- newSignalVar (Socket.addrAddress <$> sockAddrs)
-    mapConcurrently_ (
-                      -- ignore exceptions so other ping clients can
-                      -- continue
-                        void . try @_ @SomeException .
-                        pingClient' stdout stderr opts signalVar headerVar
-                     ) sockAddrs
+    results <-
+      mapConcurrently
+        (pingClient' stdout infoTracer headerTracer stderr opts signalVar)
+        sockAddrs
+    return $ (AddressResolutionException <$> resolveErrors)
+          ++ (PingClientException <$> lefts results)
 
 
 -- | Run a single ping client.
 --
 pingClient
   :: Tracer IO (WithHost LogMsg)
+  -- ^ stdout
+  -> Tracer IO (WithHost LogInfoMsg)
+  -- ^ info tracer
+  -> Tracer IO Header
   -> Tracer IO PingWarning
+  -- ^ stderr
   -> PingOpts
   -> AddrInfo
   -> IO (Either PingClientException ())
-pingClient stdout stderr opts addrInfo =
-  do
-    signalVar <- newSignalVar [Socket.addrAddress addrInfo]
-    headerVar <- newHeaderVar
-    Right <$> pingClient' stdout stderr opts signalVar headerVar addrInfo
-  `catch` \case
-    err | Just e <- fromException err -> return (Left (IOException e))
-        | Just e <- fromException err -> return (Left (DecodingException e))
-        | Just e <- fromException err -> return (Left (MuxException e))
-        | Just e <- fromException err -> return (Left e)
-        | otherwise
-        -> throwIO err
+pingClient stdout infoTracer headerTracer stderr opts addrInfo = do
+  signalVar <- newSignalVar [Socket.addrAddress addrInfo]
+  pingClient' stdout infoTracer headerTracer stderr opts signalVar addrInfo
 
 
 -- | Low level API to run a single ping client.
 --
 pingClient'
   :: Tracer IO (WithHost LogMsg)
+  -> Tracer IO (WithHost LogInfoMsg)
+  -> Tracer IO Header
   -> Tracer IO PingWarning
   -> PingOpts
   -> SignalVar SockAddr
-  -> HeaderVar
   -> AddrInfo
-  -> IO ()
-pingClient' stdout stderr opts@PingOpts{..} signalVar headerVar addrInfo =
+  -> IO (Either PingClientException ())
+pingClient' stdout infoTracer headerTracer stderr opts@PingOpts{..} signalVar addrInfo =
+  handlePingClientExceptions $
   withSignal signalVar addr $ \sig ->
     bracket
       (Socket.socket (Socket.addrFamily addrInfo) Socket.Stream Socket.defaultProtocol)
@@ -921,6 +1059,19 @@ pingClient' stdout stderr opts@PingOpts{..} signalVar headerVar addrInfo =
     addr :: SockAddr
     addr = Socket.addrAddress addrInfo
 
+    handlePingClientExceptions
+      :: IO ()
+      -> IO (Either PingClientException ())
+    handlePingClientExceptions io =
+      (Right <$> io)
+      `catch` \case
+        err | Just e <- fromException err -> pure (Left (IOException e addr))
+            | Just e <- fromException err -> pure (Left (DecodingException e addr))
+            | Just e <- fromException err -> pure (Left (MuxException e addr))
+            | Just e <- fromException err -> pure (Left e)
+            | otherwise
+            -> throwIO err
+
     runPingClient :: forall versionNumber versionData.
                      ( Acceptable versionData
                      , Queryable versionData
@@ -929,15 +1080,18 @@ pingClient' stdout stderr opts@PingOpts{..} signalVar headerVar addrInfo =
                      , Show versionNumber
                      , NFData versionNumber
                      , ToJSON versionNumber
+                     , ToText versionNumber
                      )
                   => ProtocolFlavour versionNumber versionData
                   -> Signal
                   -> Socket.Socket
                   -> IO ()
     runPingClient protocol sig sd = do
-      let logMsg :: (ToText msg, ToJSON msg) => msg -> IO ()
-          logMsg = logMsgWithPeer opts addr
-          stdout' = WithHost addr >$< stdout
+      let stdout' :: Tracer IO LogMsg
+          stdout' =  WithHost addr >$< stdout
+
+          infoTracer' :: Tracer IO LogInfoMsg
+          infoTracer' = WithHost addr >$< infoTracer
 
       !t0_s <- getMonotonicTime
 
@@ -948,7 +1102,7 @@ pingClient' stdout stderr opts@PingOpts{..} signalVar headerVar addrInfo =
         Socket.connect sd addr
       !t0_e <- getMonotonicTime
 
-      logMsg $ NetworkRTT (toSample t0_e t0_s)
+      traceWith infoTracer' (LogNetworkRTT $ NetworkRTT (toSample t0_e t0_s))
 
       connId <- ConnectionId <$> Socket.getSocketName sd
                              <*> Socket.getPeerName sd
@@ -1010,12 +1164,12 @@ pingClient' stdout stderr opts@PingOpts{..} signalVar headerVar addrInfo =
         )
       case r of
         Left err -> do
-          throwIO (ProtocolLimitException err)
+          throwIO (ProtocolLimitException err addr)
         Right (Left err', rtt) -> do
-          logMsg (HandshakeRTT rtt)
+          traceWith infoTracer' (LogHandshakeRTT $ HandshakeRTT rtt)
           throwIO (HandshakeException err' addr)
         Right (Right r', rtt) -> do
-          logMsg (HandshakeRTT rtt)
+          traceWith infoTracer' (LogHandshakeRTT $ HandshakeRTT rtt)
           case r' of
             HandshakeQueryResult versions -> do
               signalReadiness sig
@@ -1034,7 +1188,7 @@ pingClient' stdout stderr opts@PingOpts{..} signalVar headerVar addrInfo =
                   versions
             HandshakeNegotiationResult _ version _versionData -> do
               -- show negotiated version
-              logMsg $ NegotiatedVersion version
+              traceWith infoTracer' (LogNegotiatedVersion $ NegotiatedVersion version)
               case (protocol, pingOptsMode) of
                 (_, QueryMode) ->
                   -- in `QueryMode` we didn't negotiated the connection, so we
@@ -1077,7 +1231,7 @@ pingClient' stdout stderr opts@PingOpts{..} signalVar headerVar addrInfo =
                           (ChainSync.byteLimitsChainSync (fromIntegral . BL.length))
                           (ChainSync.timeLimitsChainSync defaultChainSyncIdleTimeout IsNotTrustable)
                           channel
-                          (ChainSync.chainSyncClientPeer $ chainSyncClient opts sig headerVar stdout'))
+                          (ChainSync.chainSyncClientPeer $ chainSyncClient sig stdout' headerTracer))
                         >>= void . atomically
                     )
                     `finally` Mx.stop mx
@@ -1111,8 +1265,8 @@ pingClient' stdout stderr opts@PingOpts{..} signalVar headerVar addrInfo =
                             $ keepAliveClient
                                 opts
                                 sig
-                                headerVar
                                 stdout'
+                                headerTracer
                                 (TDigest.tdigest [])))
                         >>= void . atomically
                     )
@@ -1135,7 +1289,20 @@ format AsText = toText
 class ToText a where
   toText :: a -> TL.Text
 
+instance ToText String where
+  toText = TL.pack
+
+instance ToText TL.Text where
+  toText = id
+
+instance ToText NodeToClientVersion where
+  toText = TL.pack . show
+
+instance ToText NodeToNodeVersion where
+  toText = TL.pack . show
+
 data WithHost a = WithHost SockAddr a
+  deriving Show
 
 instance ToText a => ToText (WithHost a) where
   toText (WithHost host a) =
@@ -1150,6 +1317,7 @@ instance ToJSON a => ToJSON (WithHost a) where
       x -> object [ "host" .= show host, "data" .= x ]
 
 newtype NegotiatedVersion versionNumber = NegotiatedVersion versionNumber
+  deriving Show
 
 instance Show versionNumber
       => ToText (NegotiatedVersion versionNumber) where
@@ -1160,6 +1328,7 @@ instance ToJSON versionNumber
   toJSON (NegotiatedVersion v) = object ["negotiated_versions" .= toJSON v]
 
 
+{-
 newtype QueriedVersions versionNumber = QueriedVersions [versionNumber]
 
 instance Show versionNumber
@@ -1171,9 +1340,11 @@ instance ToJSON versionNumber
       => ToJSON (QueriedVersions versionNumber) where
   toJSON (QueriedVersions vs) =
     object ["queried_versions" .= toJSON vs]
+-}
 
 
 newtype NetworkRTT = NetworkRTT Double
+  deriving Show
 
 instance ToText NetworkRTT where
   toText (NetworkRTT rtt) =
@@ -1185,6 +1356,7 @@ instance ToJSON NetworkRTT where
 
 
 newtype HandshakeRTT = HandshakeRTT DiffTime
+  deriving Show
 
 instance ToText HandshakeRTT where
   toText (HandshakeRTT diff) =
@@ -1193,17 +1365,6 @@ instance ToText HandshakeRTT where
 instance ToJSON HandshakeRTT where
   toJSON (HandshakeRTT diff) =
     object ["handshake rtt" .= toJSON ((fromRational $ toRational diff) :: Double)]
-
-
--- note: use `logMsg` defined above in terms of `logMsgWithPeer`
-logMsgWithPeer :: (ToText msg, ToJSON msg)
-               => PingOpts
-               -> SockAddr
-               -> msg
-               -> IO ()
-logMsgWithPeer PingOpts { pingOptsQuiet, pingOptsJson } addr msg =
-  unless pingOptsQuiet $ TL.hPutStrLn IO.stdout (format pingOptsJson (WithHost addr msg))
-
 
 instance ShowProxy CBOR.Term where
   showProxy _ = "CBOR.Term"
@@ -1215,6 +1376,9 @@ instance ShowProxy CBOR.Term where
 maybeHead :: [a] -> Maybe a
 maybeHead []    = Nothing
 maybeHead (a:_) = Just a
+
+concatBoth :: [([a], [b])] -> ([a], [b])
+concatBoth a = (concatMap fst a, concatMap snd a)
 
 splitWith :: Char -> String -> Maybe (String, String)
 splitWith c = go ""
@@ -1271,12 +1435,14 @@ type HeaderVar = StrictTVar IO HeaderState
 newHeaderVar :: IO HeaderVar
 newHeaderVar = newTVarIO NotPrinted
 
-printHeader :: PingOpts
-            -> HeaderVar
-            -> String
-            -> IO ()
-printHeader PingOpts { pingOptsJson, pingOptsColor } headerVar hdr = do
-  when (pingOptsJson == AsText) $ do
+mkHeaderTracer
+  :: PingOpts
+  -> Tracer IO TL.Text
+  -> IO (Tracer IO Header)
+mkHeaderTracer PingOpts { pingOptsJson = AsJSON } _ = pure nullTracer
+mkHeaderTracer PingOpts { pingOptsJson = AsText, pingOptsColor } stdout = do
+  headerVar <- newHeaderVar
+  return $ mkTracer $ \hdr -> do
     st <- atomically $ do
       st <- readTVar headerVar
       case st of
@@ -1290,7 +1456,25 @@ printHeader PingOpts { pingOptsJson, pingOptsColor } headerVar hdr = do
           ColorAlways -> pure True
           ColorNever  -> pure False
           ColorAuto   -> IO.hIsTerminalDevice IO.stdout
-        IO.putStrLn (if useColor then "\ESC[1m" ++ hdr ++ "\ESC[0m" else hdr)
+        traceWith stdout (if useColor
+                             then "\ESC[1m" <> toText hdr <> "\ESC[0m"
+                             else toText hdr)
         atomically (writeTVar headerVar Printed)
       Printing   -> error "impossible"
       Printed    -> pure ()
+
+
+mkStdOutTracer :: IO (Tracer IO TL.Text)
+mkStdOutTracer = do
+  lock <- newMVar ()
+  IO.hSetBuffering IO.stdout IO.LineBuffering
+  return $ mkTracer $ \msg -> withMVar lock $ \_ ->
+    TL.putStrLn msg
+
+
+mkStdErrTracer :: IO (Tracer IO TL.Text)
+mkStdErrTracer = do
+  lock <- newMVar ()
+  IO.hSetBuffering IO.stderr IO.LineBuffering
+  return $ mkTracer $ \msg -> withMVar lock $ \_ ->
+    TL.hPutStrLn IO.stderr msg
