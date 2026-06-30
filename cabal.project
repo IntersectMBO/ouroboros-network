@@ -62,53 +62,12 @@ if impl (ghc >= 9.14)
     , nothunks >= 0.3
 
   allow-newer:
-    -- https://github.com/haskell/aeson/issues/1155
-    , aeson:base
-    , aeson:bytestring
-    , aeson:containers
-    , aeson:ghc-prim
-    , aeson:template-haskell
-    , aeson:text-iso8601
-    , aeson:time
-    , aeson:time-compat
-
-    -- https://github.com/phadej/boring/issues/48
-    , boring:base
-
-    -- https://github.com/well-typed/canonical-json/issues/12
     , canonical-json:containers
-
-    -- https://github.com/well-typed/cborg/issues/373
     , cborg:base
     , cborg:containers
     , cborg-json:base
-
-    -- https://github.com/haskellari/indexed-traversable/issues/50
-    , indexed-traversable:base
-    , indexed-traversable:containers
-    , indexed-traversable-instances:base
-
-    -- https://github.com/haskellari/these/issues/211
-    , semialign:base
-    , semialign:containers
-
-    -- https://github.com/well-typed/cborg/issues/373
     , serialise:base
     , serialise:containers
-
-    -- https://github.com/phadej/tdigest/issues/50
+    , serialise:time
     , tdigest:base
-
-    -- https://github.com/haskellari/these/issues/211
-    , these:base
-
-    -- https://github.com/haskellari/tree-diff/issues/102
-    , tree-diff:base
-    , tree-diff:containers
-
-    -- https://github.com/haskell-hvr/uuid/issues/95
-    , uuid-types:template-haskell
-
-    -- https://github.com/serokell/haskell-with-utf8/issues/41
     , with-utf8:base
-
