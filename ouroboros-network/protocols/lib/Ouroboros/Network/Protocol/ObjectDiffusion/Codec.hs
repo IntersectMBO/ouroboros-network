@@ -28,10 +28,9 @@ import Ouroboros.Network.Protocol.ObjectDiffusion.Type
 import Text.Printf
 
 -- | Byte Limits.
-byteLimitsObjectDiffusion
-  :: forall bytes objectId object.
-     (bytes -> Word)
-  -> ProtocolSizeLimits (ObjectDiffusion objectId object) bytes
+byteLimitsObjectDiffusion ::
+  forall bytes objectId object.
+  ProtocolSizeLimits (ObjectDiffusion objectId object) bytes
 byteLimitsObjectDiffusion = ProtocolSizeLimits stateToLimit
   where
     stateToLimit

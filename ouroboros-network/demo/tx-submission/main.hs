@@ -363,7 +363,7 @@ codec = Tx.anncodecTxSubmission2' (\bs tx -> tx { txSize = fromIntegral (LBS.len
 byteLimits
   :: Driver.ProtocolSizeLimits TxSubmission LBS.ByteString
 byteLimits =
-  Tx.byteLimitsTxSubmission2 (fromIntegral . LBS.length)
+  Tx.byteLimitsTxSubmission2
 
 prettyWithBearer :: (a -> String) -> Mx.WithBearer Socket.SockAddr a -> String
 prettyWithBearer pretty (Mx.WithBearer addr a) =

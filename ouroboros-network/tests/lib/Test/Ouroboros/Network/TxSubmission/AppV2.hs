@@ -31,7 +31,6 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.IOSim
 import Control.Tracer (Tracer, contramap, mkTracer, nullTracer)
 
-import Data.ByteString.Lazy qualified as BSL
 import Data.Foldable (traverse_)
 import Data.Function (on)
 import Data.IntMap.Strict qualified as IntMap
@@ -260,7 +259,7 @@ runTxSubmission tracer tracerTxLogic countersTracer inboundTracer st0
                     client <- applyImpairment imp mkUnrequested baseClient
                     runPeerWithLimits (("OUTBOUND " ++ show addr,) `contramap` tracer)
                                       txSubmissionCodec2
-                                      (byteLimitsTxSubmission2 (fromIntegral . BSL.length))
+                                      byteLimitsTxSubmission2
                                       timeLimitsTxSubmission2
                                       (maybe id delayChannel outDelay outChannel)
                                       (txSubmissionClientPeer client)
@@ -285,7 +284,7 @@ runTxSubmission tracer tracerTxLogic countersTracer inboundTracer st0
                                 runPipelinedPeerWithLimits
                                   (("INBOUND " ++ show addr,) `contramap` sayTracer)
                                   txSubmissionCodec2
-                                  (byteLimitsTxSubmission2 (fromIntegral . BSL.length))
+                                  byteLimitsTxSubmission2
                                   timeLimitsTxSubmission2
                                   (maybe id delayChannel inDelay inChannel)
                                   (txSubmissionServerPeerPipelined server)

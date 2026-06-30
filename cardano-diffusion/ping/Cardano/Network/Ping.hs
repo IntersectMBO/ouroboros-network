@@ -65,7 +65,6 @@ import Data.Aeson.Text (encodeToLazyText)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import Data.ByteString.Char8 qualified as BS.Char
-import Data.ByteString.Lazy qualified as BL
 import Data.IP
 import Data.List qualified as List
 import Data.Map.Strict (Map)
@@ -1074,7 +1073,7 @@ pingClient' stdout stderr opts@PingOpts{..} signalVar headerVar addrInfo =
                                                     CBOR.encodeTerm CBOR.decodeTerm
                                                     (encodeTip Serialise.encode)
                                                     (decodeTip Serialise.decode))
-                          (ChainSync.byteLimitsChainSync (fromIntegral . BL.length))
+                          ChainSync.byteLimitsChainSync
                           (ChainSync.timeLimitsChainSync defaultChainSyncIdleTimeout IsNotTrustable)
                           channel
                           (ChainSync.chainSyncClientPeer $ chainSyncClient opts sig headerVar stdout'))
@@ -1104,7 +1103,7 @@ pingClient' stdout stderr opts@PingOpts{..} signalVar headerVar addrInfo =
                         runPeerWithLimits
                           nullTracer
                           KeepAlive.codecKeepAlive_v2
-                          (KeepAlive.byteLimitsKeepAlive (fromIntegral . BL.length))
+                          KeepAlive.byteLimitsKeepAlive
                           KeepAlive.timeLimitsKeepAlive
                           channel
                           (KeepAlive.keepAliveClientPeer
