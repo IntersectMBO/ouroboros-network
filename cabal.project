@@ -15,10 +15,10 @@ repository cardano-haskell-packages
 -- repeat the index-state for hackage to work around haskell.nix parsing limitation
 index-state:
   -- Bump this if you need newer packages from Hackage
-  , hackage.haskell.org 2026-05-26T19:31:06Z
+  , hackage.haskell.org 2026-06-29T22:49:53Z
 
   -- Bump this if you need newer packages from CHaP
-  , cardano-haskell-packages 2026-06-23T21:17:32Z
+  , cardano-haskell-packages 2026-06-29T12:05:19Z
 
 active-repositories:
   , :rest
@@ -55,6 +55,9 @@ package ouroboros-network
 package acts
   flags: -finitary
 
+allow-newer:
+  , cborg-json:aeson
+
 if impl (ghc >= 9.14)
   constraints:
     , containers > 0.7
@@ -62,53 +65,12 @@ if impl (ghc >= 9.14)
     , nothunks >= 0.3
 
   allow-newer:
-    -- https://github.com/haskell/aeson/issues/1155
-    , aeson:base
-    , aeson:bytestring
-    , aeson:containers
-    , aeson:ghc-prim
-    , aeson:template-haskell
-    , aeson:text-iso8601
-    , aeson:time
-    , aeson:time-compat
-
-    -- https://github.com/phadej/boring/issues/48
-    , boring:base
-
-    -- https://github.com/well-typed/canonical-json/issues/12
     , canonical-json:containers
-
-    -- https://github.com/well-typed/cborg/issues/373
     , cborg:base
     , cborg:containers
     , cborg-json:base
-
-    -- https://github.com/haskellari/indexed-traversable/issues/50
-    , indexed-traversable:base
-    , indexed-traversable:containers
-    , indexed-traversable-instances:base
-
-    -- https://github.com/haskellari/these/issues/211
-    , semialign:base
-    , semialign:containers
-
-    -- https://github.com/well-typed/cborg/issues/373
     , serialise:base
     , serialise:containers
-
-    -- https://github.com/phadej/tdigest/issues/50
+    , serialise:time
     , tdigest:base
-
-    -- https://github.com/haskellari/these/issues/211
-    , these:base
-
-    -- https://github.com/haskellari/tree-diff/issues/102
-    , tree-diff:base
-    , tree-diff:containers
-
-    -- https://github.com/haskell-hvr/uuid/issues/95
-    , uuid-types:template-haskell
-
-    -- https://github.com/serokell/haskell-with-utf8/issues/41
     , with-utf8:base
-
