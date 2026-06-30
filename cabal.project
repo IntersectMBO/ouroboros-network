@@ -55,6 +55,9 @@ package ouroboros-network
 package acts
   flags: -finitary
 
+allow-newer:
+  , cborg-json:aeson
+
 if impl (ghc >= 9.14)
   constraints:
     , containers > 0.7
