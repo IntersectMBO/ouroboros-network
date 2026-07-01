@@ -206,13 +206,12 @@ data ResponderCounters = ResponderCounters {
 -- | Remove connection from 'State'.
 --
 unregisterConnection :: Ord peerAddr
-                     => Bool
-                     -> ConnectionId peerAddr
+                     => ConnectionId peerAddr
                      -> State muxMode initiatorCtx peerAddr versionData m a b
                      -> State muxMode initiatorCtx peerAddr versionData m a b
-unregisterConnection bypass connId state =
+unregisterConnection connId state =
     state { connections =
-              assert (connId `Map.member` connections state || bypass) $
+              assert (connId `Map.member` connections state) $
               Map.delete connId (connections state),
 
             matureDuplexPeers =
