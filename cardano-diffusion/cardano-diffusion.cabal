@@ -90,7 +90,7 @@ library api
     Cardano.Network.PeerSelection.PeerTrustable
 
   build-depends:
-    aeson >=2.3 && <3,
+    aeson,
     base >=4.14 && <4.23,
     cardano-base ^>=0.1,
     cborg >=0.2.1 && <0.3,
@@ -607,7 +607,7 @@ library ping
   hs-source-dirs: ping
   exposed-modules: Cardano.Network.Ping
   build-depends:
-    aeson >=2.3 && <3,
+    aeson >=2.1.1.0 && <3,
     base >=4.14 && <4.23,
     bytestring >=0.10 && <0.13,
     cardano-diffusion:{cardano-diffusion, api, orphan-instances, protocols},
