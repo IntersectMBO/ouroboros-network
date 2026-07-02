@@ -5,22 +5,22 @@ let
   inherit (prev) lib;
   inherit (prev) pkgs;
   inherit (final) haskell-nix;
-  buildSystem = pkgs.buildPlatform.system;
+  buildSystem = pkgs.stdenv.buildPlatform.system;
   onLinux = buildSystem == "x86_64-linux";
 
   # default compiler used on all systems, also provided within the shell
-  defaultCompiler = "ghc966";
+  defaultCompiler = "ghc967";
 
   # the compiler used for cross compilation
   # alternative compilers only used on Linux
   #
   # NOTE: cross compilation with `ghc-9.6.2` doesn't currently work
   # https://ci.iog.io/build/623082/nixlog/2
-  crossGHCVersion = "ghc966";
+  crossGHCVersion = "ghc967";
 
   # alternative compilers
   otherCompilers =
-    if onLinux then [ "ghc982" ] else [ ];
+    if onLinux then [ "ghc9122" ] else [ ];
 
   # from https://github.com/input-output-hk/haskell.nix/issues/298#issuecomment-767936405
   forAllProjectPackages = cfg: args@{ config, lib, ... }: {

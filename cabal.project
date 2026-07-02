@@ -55,9 +55,6 @@ package ouroboros-network
 package acts
   flags: -finitary
 
-allow-newer:
-  , cborg-json:aeson
-
 if impl (ghc >= 9.14)
   constraints:
     , containers > 0.7
@@ -65,12 +62,20 @@ if impl (ghc >= 9.14)
     , nothunks >= 0.3
 
   allow-newer:
+    -- https://github.com/well-typed/canonical-json/issues/12
     , canonical-json:containers
+
+    -- https://github.com/well-typed/cborg/issues/373
     , cborg:base
     , cborg:containers
     , cborg-json:base
+
+    -- https://github.com/well-typed/cborg/issues/373
     , serialise:base
     , serialise:containers
-    , serialise:time
+
+    -- https://github.com/phadej/tdigest/issues/50
     , tdigest:base
+
+    -- https://github.com/serokell/haskell-with-utf8/issues/41
     , with-utf8:base

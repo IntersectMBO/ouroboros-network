@@ -2,7 +2,7 @@ inputs: final: prev:
 
 let
   inherit (final) lib;
-  tool-index-state = "2024-07-04T00:00:00Z";
+  tool-index-state = "2026-02-17T10:15:41Z";
   tool = name: version: other:
     final.haskell-nix.tool final.ouroboros-network.args.compiler-nix-name name ({
       version = version;
@@ -18,6 +18,4 @@ in
     inherit (final.ouroboros-network.args) compiler-nix-name;
     index-state = tool-index-state;
   };
-  # remove once our nixpkgs contains https://github.com/NixOS/nixpkgs/pull/394873
-  cddlc = final.callPackage ./cddlc/package.nix { };
 }

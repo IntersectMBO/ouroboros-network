@@ -110,7 +110,7 @@ library api
     Ouroboros.Network.Util.ShowProxy
 
   build-depends:
-    aeson >=2.3 && <3,
+    aeson,
     base >=4.14 && <4.23,
     base16-bytestring,
     bytestring >=0.10 && <0.13,
