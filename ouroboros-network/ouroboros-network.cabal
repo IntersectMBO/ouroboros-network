@@ -651,7 +651,7 @@ library tracing
     network-mux,
     ouroboros-network:{ouroboros-network, api, framework, orphan-instances, protocols},
     text,
-    trace-dispatcher ^>=2.12.0,
+    trace-dispatcher ^>=2.13.0,
     typed-protocols:{typed-protocols, stateful},
 
   if flag(asserts)
