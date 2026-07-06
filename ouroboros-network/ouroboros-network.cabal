@@ -621,6 +621,7 @@ library tracing
     Ouroboros.Network.Tracing.ConnectionManager
     Ouroboros.Network.Tracing.Driver
     Ouroboros.Network.Tracing.InboundGovernor
+    Ouroboros.Network.Tracing.LocalStateQuery
     Ouroboros.Network.Tracing.PeerSelection
     Ouroboros.Network.Tracing.PeerSelection.Governor
     Ouroboros.Network.Tracing.PeerSelection.Governor.DebugPeerSelection
