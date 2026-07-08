@@ -161,6 +161,28 @@ buildDigestW bucketDur retention =
   foldl' (flip DTB.insert) (DTB.empty bucketDur retention)
 
 
+-- | Alternating dense/gap stream. Each cycle emits @nDense@ samples
+-- spaced by @denseStep@ seconds, then a silent @gapDur@ before the
+-- next cycle. Same generator as the benchmark uses; kept in sync by
+-- hand.
+cascadeSamples
+    :: Int              -- ^ number of cycles
+    -> Int              -- ^ samples per dense stretch
+    -> Double           -- ^ time step within a dense stretch (s)
+    -> Double           -- ^ gap between stretches (s)
+    -> [(UTCTime, Double)]
+cascadeSamples cycles nDense denseStep gapDur =
+    [ (mkT (fromIntegral k * cycleDur + fromIntegral i * denseStep)
+      , fromIntegral (k * nDense + i)
+      )
+    | k <- [0 .. cycles - 1]
+    , i <- [0 .. nDense - 1]
+    ]
+  where
+    stretchDur = fromIntegral (nDense - 1) * denseStep
+    cycleDur   = stretchDur + gapDur
+
+
 -- Bug #1 (direct regression): a hand-picked sequence that spans two
 -- bucket periods with multiple samples in the second period. Under
 -- correct behaviour the open bucket accumulates the last three samples;
@@ -299,6 +321,47 @@ prop_dtb_windowDurationApproximate =
                (show d ++ " outside [" ++ show actual ++
                 ", " ++ show (actual + bucketDur) ++ "]")
                (d >= actual .&&. d <= actual + bucketDur)
+
+
+-- The cascade generator produces at least one bucket-sized window with
+-- many samples, i.e. dense stretches actually exist.
+unit_cascadeGeneratorHasDenseStretches :: Property
+unit_cascadeGeneratorHasDenseStretches = once $
+    let bucketDur    = 1.0 :: NominalDiffTime
+        nDense       = 500
+        samples      = cascadeSamples 4 nDense 0.01 10.0
+        times        = map fst samples
+        limit t0     = bucketDur `addUTCTime` t0
+        perBucket    =
+          [ length (takeWhile (< limit t0) suffix)
+          | suffix@(t0:_) <- tails times
+          ]
+        isDense      = not . null $ dropWhile (< 90) perBucket
+    in counterexample ("no dense buckets") $
+         isDense   -- ~100 expected with denseStep = 0.01s
+
+
+-- The cascade generator drives multi-bucket evictions: some insertion
+-- causes 'sampleCount' to drop by more than one bucket's worth of
+-- samples in a single step.
+unit_cascadeGeneratorTriggersMultiBucketEviction :: Property
+unit_cascadeGeneratorTriggersMultiBucketEviction = once $
+    let bucketDur = 1.0 :: NominalDiffTime
+        retention = 10             -- window = 10s, gap = 10s -> cascade
+        nDense    = 500            -- 5s of dense samples, ~100/bucket
+        samples   = cascadeSamples 4 nDense 0.01 10.0
+        w0        = DTB.empty bucketDur retention :: DigestW
+        ws        = scanl (flip DTB.insert) w0 samples
+        counts    = map DTB.sampleCount ws
+        deltas    = zipWith (-) (drop 1 counts) counts
+        minDelta  = minimum deltas
+    in counterexample ("smallest sampleCount delta: " ++ show minDelta) $
+         -- A single insert should evict several full buckets at once.
+         -- With ~100 samples/bucket and window = 10s, a 10s gap after a
+         -- 5s dense stretch drops all ~5 buckets in one dropUntil call.
+         minDelta <= -200
+
+
 main :: IO ()
 main = defaultMain tests
 
@@ -334,5 +397,9 @@ tests =
                        prop_dtb_evictionRetainsOnlyRecent
         , testProperty "windowDuration is bounded [actual, actual + bucketDur]"
                        prop_dtb_windowDurationApproximate
+        , testProperty "cascade generator has dense stretches"
+                       unit_cascadeGeneratorHasDenseStretches
+        , testProperty "cascade generator triggers multi-bucket eviction"
+                       unit_cascadeGeneratorTriggersMultiBucketEviction
         ]
     ]
