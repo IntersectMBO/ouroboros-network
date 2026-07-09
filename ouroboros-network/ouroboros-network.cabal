@@ -368,6 +368,7 @@ library framework
     Ouroboros.Network.Protocol.Handshake.Unversioned
     Ouroboros.Network.Protocol.Handshake.Version
     Ouroboros.Network.RawBearer
+    Ouroboros.Network.RegisteredDelay
     Ouroboros.Network.RethrowPolicy
     Ouroboros.Network.Server
     Ouroboros.Network.Server.ConnectionTable
