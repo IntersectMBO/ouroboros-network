@@ -75,6 +75,12 @@ data TimedDigestWindow t (comp :: Nat) = TimedDigestWindow
   , tdwBucketDuration :: !(Dur t) -- ^ duration of a single bucket
   , tdwBucket         :: !(Maybe (OpenBucket t comp))
   , tdwTree           :: !(FingerTree (BucketMeasure t comp) (SealedBucket t comp))
+  , tdwCacheDigest    :: !(Maybe (TDigest comp))
+    -- ^ Cached (treeDigest <> obDigest); 'Nothing' iff 'tdwBucket' is
+    -- 'Nothing'. The wrapped 'TDigest' is left as a thunk — set on every
+    -- 'insert'/'evictBefore' so the first 'windowDigest' after a batch
+    -- of writes materialises it and subsequent reads project the
+    -- field directly.
   }
 
 deriving instance (Show (Dur t), Show t) => Show (TimedDigestWindow t comp)
@@ -89,12 +95,13 @@ empty tdwBucketDuration r =
     , tdwBucketDuration
     , tdwBucket = Nothing
     , tdwTree = FT.empty
+    , tdwCacheDigest = Nothing
     }
 
 
 -- | Resets the window, keeping only the retention durations
 reset :: KnownNat comp => TimedDigestWindow t comp -> TimedDigestWindow t comp
-reset tdw = tdw { tdwBucket = Nothing, tdwTree = FT.empty }
+reset tdw = tdw { tdwBucket = Nothing, tdwTree = FT.empty, tdwCacheDigest = Nothing }
 
 
 -- | Returns the number of samples which were inserted into the fingertree
@@ -107,14 +114,13 @@ sampleCount TimedDigestWindow { tdwBucket, tdwTree } =
                    in count + obCount bucket
 
 
--- | Returns the digest of the sliding window, or Nothing if there are no samples
+-- | Returns the digest of the sliding window, or 'Nothing' if there
+-- are no samples. Forces the cached 'tdwCacheDigest' on the first
+-- call after a batch of writes.
 windowDigest :: KnownNat comp => TimedDigestWindow t comp -> Maybe (TDigest comp)
-windowDigest TimedDigestWindow { tdwTree, tdwBucket } =
-  case tdwBucket of
-    Nothing -> Nothing
-    Just OpenBucket { obDigest } ->
-      let treeDigest = bmDigest $ FT.measure tdwTree
-       in Just $! treeDigest <> obDigest
+windowDigest tdw = case tdwCacheDigest tdw of
+  Nothing -> Nothing
+  Just !d -> Just d
 
 
 -- | Insert a new timestamped sample, then evict any buckets
@@ -127,12 +133,16 @@ insert :: (TimeLike t, KnownNat comp)
        -> TimedDigestWindow t comp
 insert (t, a) tdw@TimedDigestWindow { tdwBucketDuration, tdwDuration, tdwBucket, tdwTree} =
     case fillBucket of
-      (Nothing, bucket) -> tdw { tdwBucket = Just $! bucket }
+      (Nothing, bucket) ->
+        -- Fits: tree is unchanged, only the open bucket grew. Refresh
+        -- the cache thunk so it closes over the new obDigest.
+        let cache = Just (bmDigest (FT.measure tdwTree) <> obDigest bucket)
+         in tdw { tdwBucket = Just $! bucket, tdwCacheDigest = cache }
       (Just sealed, bucket) ->
         let sample   = SealedBucket (obFinish sealed) (obCount sealed) (obDigest sealed)
             tdwTree' = tdwTree FT.|> sample
             cutoff   = negate tdwDuration `addT` t
-            -- evictBefore will force the measure once after it's done
+            -- evictBefore forces the tree measure and refreshes the cache w/o forcing
          in evictBefore cutoff tdw { tdwBucket = Just $! bucket
                                    , tdwTree = tdwTree' }
   where
@@ -161,7 +171,10 @@ evictBefore :: (KnownNat comp, TimeLike t)
             => t
             -> TimedDigestWindow t comp
             -> TimedDigestWindow t comp
-evictBefore cutoff win = win { tdwTree = tdwTree', tdwBucket = tdwBucket' }
+evictBefore cutoff win = win { tdwTree = tdwTree'
+                             , tdwBucket = tdwBucket'
+                             , tdwCacheDigest = cache
+                             }
   where
     tdwBucket' = case tdwBucket win of
       Nothing -> Nothing
@@ -171,9 +184,16 @@ evictBefore cutoff win = win { tdwTree = tdwTree', tdwBucket = tdwBucket' }
 
     tdwTree' = FT.dropUntil (maybe False (> cutoff) . bmFinish)
                             (tdwTree win)
-    -- we will not have to combine t-digests of the buckets
-    -- which we have dropped from the window
-    !_ = bmDigest $ FT.measure tdwTree'
+    -- Force the post-eviction tree measure. This bounds the tail
+    -- latency of the next 'windowDigest' by one '<>' with 'obDigest',
+    -- and drops thunks for evicted subtrees without ever combining
+    -- them.
+    !treeDigest = bmDigest $ FT.measure tdwTree'
+
+    -- Lazy cache thunk closing over the post-eviction state.
+    cache = case tdwBucket' of
+      Nothing     -> Nothing
+      Just bucket -> Just (treeDigest <> obDigest bucket)
 
 -- | Approximate duration covered by the samples in the window. 'Nothing'
 -- for an empty window. The reported value may exceed the actual duration of
@@ -198,14 +218,10 @@ windowDuration TimedDigestWindow { tdwBucket, tdwBucketDuration, tdwTree } =
 
 -- | Returns the means of the outermost centroids - appoximations, not the actual min/max samples
 windowMinMaxValues :: KnownNat comp => TimedDigestWindow t comp -> Maybe (Mean, Mean)
-windowMinMaxValues TimedDigestWindow { tdwTree, tdwBucket } =
-  case tdwBucket of
-    Nothing     -> Nothing
-    Just bucket ->
-      let !bucketDigest = obDigest bucket
-          !treeDigest  = bmDigest $ FT.measure tdwTree
-          combined     = treeDigest <> bucketDigest
-       in Just (TD.minimumValue combined, TD.maximumValue combined)
+windowMinMaxValues tdw =
+  case windowDigest tdw of
+    Nothing -> Nothing
+    Just d  -> Just (TD.minimumValue d, TD.maximumValue d)
 
 
 windowMedian :: KnownNat comp => TimedDigestWindow t comp -> Maybe Double
