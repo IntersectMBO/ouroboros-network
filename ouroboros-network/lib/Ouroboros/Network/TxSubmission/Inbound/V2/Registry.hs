@@ -12,9 +12,10 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Registry
   , newTxSubmissionCountersVar
   , txCountersThreadV2
   , withPeer
+    -- re-exports
+  , RegisteredDelay
   ) where
 
-import Control.Concurrent.Class.MonadSTM qualified as Lazy
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad (when)
 import Control.Monad.Class.MonadThrow
@@ -31,6 +32,8 @@ import Data.Word (Word64)
 import GHC.Stack (HasCallStack)
 
 import Ouroboros.Network.Protocol.TxSubmission2.Type
+import Ouroboros.Network.RegisteredDelay (RegisteredDelay)
+import Ouroboros.Network.RegisteredDelay qualified as RegisteredDelay
 import Ouroboros.Network.Tx (HasRawTxId)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy (TxDecisionPolicy (..))
 import Ouroboros.Network.TxSubmission.Inbound.V2.State qualified as State
@@ -187,8 +190,8 @@ data PeerTxAPI m txid tx = PeerTxAPI {
     -- | Wait until either 'sharedGeneration' moves past the given
     -- value or the optional timeout expires.
     awaitSharedChange    :: Word64
-                         -> Maybe DiffTime
-                         -> m (),
+                         -> Maybe (RegisteredDelay m)
+                         -> STM m (),
 
     -- | Compute the next action for this peer in non-pipelined mode.
     runNextPeerAction    :: Time
@@ -374,20 +377,17 @@ scrubFromPeerInFlight peeraddr now pif st
 awaitSharedChangeImp :: MonadTimer m
                      => SharedTxStateVar m peeraddr txid
                      -> Word64
-                     -> Maybe DiffTime
-                     -> m ()
-awaitSharedChangeImp sharedStateVar generation mDelay =
-  case mDelay of
-       Nothing ->
-         atomically $ do
-           sharedState <- readTVar sharedStateVar
-           check (sharedGeneration sharedState /= generation)
-       Just delay -> do
-         delayVar <- registerDelay delay
-         atomically $ do
-           sharedState <- readTVar sharedStateVar
-           expired <- Lazy.readTVar delayVar
-           check (sharedGeneration sharedState /= generation || expired)
+                     -> Maybe (RegisteredDelay m)
+                     -> STM m ()
+awaitSharedChangeImp sharedStateVar generation mRegisteredDelay =
+  case mRegisteredDelay of
+       Nothing -> do
+         sharedState <- readTVar sharedStateVar
+         check (sharedGeneration sharedState /= generation)
+       Just registeredDelay -> do
+         sharedState <- readTVar sharedStateVar
+         expired <- RegisteredDelay.read registeredDelay
+         check (sharedGeneration sharedState /= generation || expired)
 
 -- | Avoid rewriting the shared TVar when the pure state step made no shared
 -- change. Callers use 'sharedGeneration' as the dirty bit for shared state.
