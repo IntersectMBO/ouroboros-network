@@ -14,7 +14,6 @@ module Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
 import Data.List (partition)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Word (Word32)
 import System.Random
 
 import Control.Concurrent.Class.MonadSTM.Strict
@@ -24,7 +23,6 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Tracer (Tracer (..), traceWith)
 
-import Network.DNS (DNSError)
 import Network.DNS qualified as DNS
 import Network.Socket qualified as Socket
 
@@ -33,6 +31,8 @@ import Ouroboros.Network.PeerSelection.RelayAccessPoint
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore (DNSSemaphore,
            withDNSSemaphore)
+import Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
+           (ttlForResults)
 
 ---------------------------------------------
 -- Public root peer set provider using DNS
@@ -114,20 +114,14 @@ publicRootPeersProvider tracer
             -- configured via the DNS.ResolvConf resolvTimeout field and defaults
             -- to 3 sec.
             results  <- withAsyncAll lookups (atomically . mapM waitSTM)
-            let successes = [ ( (addr, pa)
-                              , ttl')
-                            | ( Right addrttls
-                              , pa) <- results
+            let successes = [ ((addr, pa) , ttl')
+                            | (Right addrttls, pa) <- results
                             , (addr, ttl') <- addrttls
                             ]
                 !domainsIps = [(toPeerAddr ip port, pa)
                               | (RelayAccessAddress ip port, pa) <- relayAddrs ]
                 !addrs      = Map.fromList (map fst successes) `Map.union` Map.fromList domainsIps
-                !ttl        = if null lookups
-                                then -- Not having any peers with domains configured is not
-                                     -- a DNS error.
-                                     ttlForResults [60]
-                                else ttlForResults (map snd successes)
+                !ttl        = ttlForResults (map snd successes)
             -- If all the lookups failed we'll return an empty set with a minimum
             -- TTL, and the governor will invoke its exponential backoff.
             return (addrs, ttl)
@@ -139,27 +133,3 @@ withAsyncAll xs0 action = go [] xs0
   where
     go as []     = action (reverse as)
     go as (x:xs) = withAsync x (\a -> go (a:as) xs)
-
--- | Policy for TTL for positive results
-ttlForResults :: [DNS.TTL] -> DiffTime
-
--- This case says we have a successful reply but there is no answer.
--- This covers for example non-existent TLDs since there is no authority
--- to say that they should not exist.
-ttlForResults []   = ttlForDnsError DNS.NameError 0
-ttlForResults ttls = clipTTLBelow
-                   . clipTTLAbove
-                   . (fromIntegral :: Word32 -> DiffTime)
-                   $ maximum ttls
-
--- | Limit insane TTL choices.
-clipTTLAbove, clipTTLBelow :: DiffTime -> DiffTime
-clipTTLBelow = max 60     -- between 1min
-clipTTLAbove = min 900    -- and 15min
-
--- | Policy for TTL for negative results
--- Cache negative response for 15 minutes
--- Otherwise, use exponential backoff, up to a limit
-ttlForDnsError :: DNSError -> DiffTime -> DiffTime
-ttlForDnsError DNS.NameError _ = 900
-ttlForDnsError _           ttl = clipTTLAbove (ttl * 2 + 5)

@@ -28,6 +28,7 @@ module Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
     -- * Tracing types
   , DNSTrace (..)
   , DNSPeersKind (..)
+  , maxTTL
   ) where
 
 import Data.ByteString.Char8 qualified as BS

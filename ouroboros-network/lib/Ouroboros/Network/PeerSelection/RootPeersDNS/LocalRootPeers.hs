@@ -10,6 +10,7 @@ module Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
   ( -- * DNS based provider for local root peers
     localRootPeersProvider
   , TraceLocalRootPeers (..)
+  , ttlForResults
   ) where
 
 import Data.Bifunctor (second)
@@ -297,23 +298,17 @@ ttlForResults :: [DNS.TTL] -> DiffTime
 -- This case says we have a successful reply but there is no answer.
 -- This covers for example non-existent TLDs since there is no authority
 -- to say that they should not exist.
-ttlForResults []   = ttlForDnsError 0 DNS.NameError
-ttlForResults ttls = clipTTLBelow
-                   . clipTTLAbove
-                   . (fromIntegral :: Word32 -> DiffTime)
+ttlForResults []   = 60
+ttlForResults ttls = (fromIntegral :: Word32 -> DiffTime)
                    $ maximum ttls
-
--- | Limit insane TTL choices.
-clipTTLAbove, clipTTLBelow :: DiffTime -> DiffTime
-clipTTLBelow = max 60     -- between 1min
-clipTTLAbove = min 900    -- and 15min
 
 -- | Policy for TTL for negative results
 -- Cache negative response for 15min
 -- Otherwise, use exponential backoff, up to a limit
 ttlForDnsError :: DiffTime -> DNS.DNSError -> DiffTime
-ttlForDnsError _   DNS.NameError = 900
-ttlForDnsError ttl _             = clipTTLAbove (ttl * 2 + 5)
+ttlForDnsError _   DNS.NameError = fromIntegral maxTTL
+ttlForDnsError ttl _             = (ttl * 2 + 5) `min` (fromIntegral maxTTL)
+
 
 -- | `withAsyncAll`, but the actions are tagged with a context
 withAsyncAllWithCtx :: MonadAsync m => [(ctx, m a)] -> ([(ctx, Async m a)] -> m b) -> m b
