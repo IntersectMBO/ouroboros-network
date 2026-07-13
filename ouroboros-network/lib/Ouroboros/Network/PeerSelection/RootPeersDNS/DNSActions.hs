@@ -605,7 +605,14 @@ domainAAAALookupWithTTL action = do
 -- Utils
 --
 
-
 fixupTTL :: DNS.TTL -> DNS.TTL
-fixupTTL 0 = maxBound
-fixupTTL a = a `max` 30
+fixupTTL = clipTTLBelow
+         . clipTTLAbove
+
+minTTL, maxTTL :: DNS.TTL
+minTTL = 60
+maxTTL = 900
+
+clipTTLAbove, clipTTLBelow :: DNS.TTL -> DNS.TTL
+clipTTLBelow = max minTTL -- between 1min
+clipTTLAbove = min maxTTL -- and 15min
