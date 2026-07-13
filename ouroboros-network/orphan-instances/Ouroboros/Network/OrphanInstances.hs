@@ -1634,6 +1634,9 @@ instance ToJSON addr
              , "to"      .= ConnMgr.toState tr
              ]
 
+instance ToJSON TTL where
+  toJSON = toJSON . ttlDiffTime
+
 instance ToJSON DNSTrace where
   toJSON (DNSLookupResult peerKind domain Nothing results) =
     object [ "type" .= String "DNSLookupResult"
@@ -1667,7 +1670,7 @@ instance ToJSON DNSTrace where
     object [ "type" .= String "SRVLookupResult"
            , "peer" .= show peerKind
            , "domain" .= String (Text.decodeUtf8With Text.ignore domain)
-           , "results" .= (\(domain', a, b, c, d) -> (show domain', a, b, c, d))
+           , "results" .= (\(domain', a, b, c, ttl) -> (show domain', a, b, c, ttl))
                           `map` results
            ]
   toJSON (SRVLookupError peerKind domain) =

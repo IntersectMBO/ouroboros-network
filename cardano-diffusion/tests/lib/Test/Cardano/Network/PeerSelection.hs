@@ -4306,7 +4306,7 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
                 readPeerSelectionTargets = return targets,
                 requestPeerShare         = \_ _ -> return (PeerSharingResult []),
                 peerConnToPeerSharing    = id,
-                requestPublicRootPeers   = \_ _ _ -> return (PublicRootPeers.empty Cardano.ExtraPeers.empty, 0),
+                requestPublicRootPeers   = \_ _ _ -> return (PublicRootPeers.empty Cardano.ExtraPeers.empty, ttlDiffTime minTTL),
                 peerStateActions         = PeerStateActions {
                   establishPeerConnection  = error "establishPeerConnection",
                   monitorPeerConnection    = error "monitorPeerConnection",
@@ -4363,7 +4363,9 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
     pickTrivially :: Applicative m => Set SockAddr -> Int -> m (Set SockAddr)
     pickTrivially m n = pure . Set.take n $ m
 
-    transformPeerSelectionAction = fmap (fmap (\(a, b) -> (Cardano.PublicRootPeers.fromMapAndSet a Set.empty Set.empty Set.empty, b)))
+    transformPeerSelectionAction :: (Int -> IO (Map SockAddr PeerAdvertise, TTL))
+                                 -> (Int -> IO (CardanoPublicRootPeers SockAddr, DiffTime))
+    transformPeerSelectionAction = fmap (fmap (\(a, ttl) -> (Cardano.PublicRootPeers.fromMapAndSet a Set.empty Set.empty Set.empty, ttlDiffTime ttl)))
 
 prop_issue_3550 :: Property
 prop_issue_3550 = prop_governor_target_established_below defaultMaxTime $

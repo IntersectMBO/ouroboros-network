@@ -507,10 +507,10 @@ mockPeerSelectionActions' tracer
       -> m (CardanoPublicRootPeers PeerAddr, DiffTime)
     requestPublicRootPeers ledgerPeersKind _rng _n = do
       traceWith tracer TraceEnvRequestPublicRootPeers
-      let ttl :: DiffTime
-          ttl = 60
+      let ttl :: TTL
+          ttl = mkClippedTTL (60 :: Int)
       _ <- async $ do
-        threadDelay ttl
+        threadDelay (ttlDiffTime ttl)
         traceWith tracer TraceEnvPublicRootTTL
 
       -- Read the current ledger state judgement
@@ -539,7 +539,7 @@ mockPeerSelectionActions' tracer
                        PublicRootPeers.fromBigLedgerPeers bigLedgerPeers
 
       traceWith tracer (TraceEnvRootsResult (Set.toList (PublicRootPeers.toSet Cardano.ExtraPeers.toSet result)))
-      return (result, ttl)
+      return (result, ttlDiffTime ttl)
 
     requestPeerShare :: PeerSharingAmount -> PeerAddr -> m (PeerSharingResult PeerAddr)
     requestPeerShare _ addr = do

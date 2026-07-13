@@ -20,7 +20,6 @@ import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
-import Control.Monad.Class.MonadTime.SI
 import Control.Tracer (Tracer (..), traceWith)
 
 import Network.DNS qualified as DNS
@@ -56,7 +55,7 @@ publicRootPeersProvider
   -> STM m (Map RelayAccessPoint PeerAdvertise)
   -> DNSActions peerAddr resolver m
   -> StdGen
-  -> ((Int -> m (Map peerAddr PeerAdvertise, DiffTime)) -> m a)
+  -> ((Int -> m (Map peerAddr PeerAdvertise, TTL)) -> m a)
   -> m a
 publicRootPeersProvider tracer
                         toPeerAddr
@@ -78,7 +77,7 @@ publicRootPeersProvider tracer
     requestPublicRootPeers
       :: StrictTVar m (Resource m (Either DNSorIOError resolver))
       -> Int
-      -> m (Map peerAddr PeerAdvertise, DiffTime)
+      -> m (Map peerAddr PeerAdvertise, TTL)
     requestPublicRootPeers resourceVar _numRequested = do
         domains <- atomically readDomains
         traceWith tracer (TracePublicRootRelayAccessPoint domains)
