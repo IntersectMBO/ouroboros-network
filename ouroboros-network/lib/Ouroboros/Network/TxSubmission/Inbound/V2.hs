@@ -35,6 +35,7 @@ import Network.TypedProtocol
 import Ouroboros.Network.Protocol.TxSubmission2.Server
 import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToAck,
            SizeInBytes)
+import Ouroboros.Network.RegisteredDelay qualified as RegisteredDelay
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
 import Ouroboros.Network.TxSubmission.Inbound.V2.Registry as V2
 import Ouroboros.Network.TxSubmission.Inbound.V2.State qualified as State
@@ -125,7 +126,7 @@ collectAndContinueWithState (StatefulCollect f) !st =
 txSubmissionInboundV2
   :: forall txid tx idx m err.
      ( MonadDelay m
-     , MonadSTM m
+     , MonadTimer m
      , MonadThrow m
      , Ord txid
      , Show txid
@@ -203,7 +204,8 @@ txSubmissionInboundV2
              if cameToIdle
                 then continueWithStateM serverIdle peerState''
                 else do
-                  awaitSharedChange generation mDelay
+                  mRegisteredDelay <- traverse RegisteredDelay.new mDelay
+                  atomically $ awaitSharedChange generation mRegisteredDelay
                   continueWithStateM serverIdle peerState''
            PeerSubmitTxs txKeys ->
              continueWithStateM (submitBufferedTxs txKeys serverIdle) peerState''
