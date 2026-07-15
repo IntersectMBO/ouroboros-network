@@ -76,7 +76,7 @@ instance (Show ntnAddr, Show ntcAddr) =>
     , "mode" .= String (pack (showString "0o" . showOct mode $ ""))
     ]
   forMachine _dtal (Diff.InsecureLocalSocketPermissions localAddress mode) = mconcat
-    [ "kind" .= String "InsecureLocalSocketDirectory"
+    [ "kind" .= String "InsecureLocalSocketPermissions"
     , "path" .= String (pack . show $ localAddress)
     , "mode" .= String (pack (showString "0o" . showOct mode $ ""))
     ]
@@ -132,9 +132,9 @@ instance MetaTrace (Diff.DiffusionTracer ntnAddr ntcAddr) where
     namespaceFor Diff.LocalSocketUp {} =
       Namespace [] ["LocalSocketUp"]
     namespaceFor Diff.InsecureLocalSocketDirectory {} =
-      Namespace [] ["InsecureLocalSocketDirectory"]
+      Namespace [] ["InsecureLocalSocket", "Directory"]
     namespaceFor Diff.InsecureLocalSocketPermissions {} =
-      Namespace [] ["InsecureLocalSocketDirectory"]
+      Namespace [] ["InsecureLocalSocket", "Permissions"]
     namespaceFor Diff.CreatingServerSocket {} =
       Namespace [] ["CreatingServerSocket"]
     namespaceFor Diff.ListeningServerSocket {} =
@@ -161,7 +161,7 @@ instance MetaTrace (Diff.DiffusionTracer ntnAddr ntcAddr) where
     severityFor (Namespace _ ["ConfiguredLocalSocket"]) _ = Just Info
     severityFor (Namespace _ ["ListeningLocalSocket"]) _ = Just Info
     severityFor (Namespace _ ["LocalSocketUp"]) _ = Just Info
-    severityFor (Namespace _ ["InsecureLocalSocketDirectory"]) _ = Just Warning
+    severityFor (Namespace _ ["InsecureLocalSocket"]) _ = Just Warning
     severityFor (Namespace _ ["CreatingServerSocket"]) _ = Just Info
     severityFor (Namespace _ ["ListeningServerSocket"]) _ = Just Info
     severityFor (Namespace _ ["ServerSocketUp"]) _ = Just Info
@@ -192,13 +192,13 @@ instance MetaTrace (Diff.DiffusionTracer ntnAddr ntcAddr) where
       "ListeningLocalSocket"
     documentFor (Namespace _ ["LocalSocketUp"]) = Just
       "LocalSocketUp"
-    documentFor (Namespace _ ["InsecureLocalSocketDirectory"]) = Just $ mconcat
+    documentFor (Namespace _ ["InsecureLocalSocket", "Directory"]) = Just $ mconcat
       [ "InsecureLocalSocketDirectory: the parent directory of the local "
       , "socket has group or other write permission, leaving the socket "
       , "vulnerable to manipulation by another local user with write access "
       , "to that directory."
       ]
-    documentFor (Namespace _ ["InsecureLocalSocketPermissions"]) = Just $ mconcat
+    documentFor (Namespace _ ["InsecureLocalSocket", "Permissions"]) = Just $ mconcat
       [ "InsecureLocalSocketPermissions: the local socket has other-read or "
       , "other-write permissions."
       ]
@@ -230,7 +230,8 @@ instance MetaTrace (Diff.DiffusionTracer ntnAddr ntcAddr) where
       , Namespace [] ["ConfiguredLocalSocket"]
       , Namespace [] ["ListeningLocalSocket"]
       , Namespace [] ["LocalSocketUp"]
-      , Namespace [] ["InsecureLocalSocketDirectory"]
+      , Namespace [] ["InsecureLocalSocket", "Directory"]
+      , Namespace [] ["InsecureLocalSocket", "Permissions"]
       , Namespace [] ["CreatingServerSocket"]
       , Namespace [] ["ListeningServerSocket"]
       , Namespace [] ["ServerSocketUp"]
