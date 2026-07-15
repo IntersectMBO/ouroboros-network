@@ -39,6 +39,7 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.Fix
 import Control.Tracer (Tracer, contramap, traceWith)
+import Data.Bifunctor
 import Data.Foldable (foldMap', traverse_)
 import Data.Function (on)
 import Data.Functor (void, ($>))
@@ -603,74 +604,65 @@ with args@Arguments {
           uninterruptibleMask_ do
             traceWith tracer (TrConnectionCleanup connId)
             mbTransition <- modifyTMVar stateVar $ \state -> do
-              eTransition <- atomically $ do
+              (state', trace) <- atomically $ do
                 connState <- readTVar connVar
                 let connState' = TerminatedState Nothing
                     transition = mkTransition connState connState'
                     transitionTrace = TransitionTrace connStateId transition
-                case connState of
+                (purge, trace) <- case connState of
                   ReservedOutboundState -> do
                     writeTVar connVar connState'
-                    return $ Left (Just transitionTrace)
+                    return (True, Left [transitionTrace])
                   UnnegotiatedState {} -> do
                     writeTVar connVar connState'
-                    return $ Left (Just transitionTrace)
+                    return (True, Left [transitionTrace])
                   OutboundUniState {} -> do
                     writeTVar connVar connState'
-                    return $ Left (Just transitionTrace)
+                    return (True, Left [transitionTrace])
                   OutboundDupState {} -> do
                     writeTVar connVar connState'
-                    return $ Left (Just transitionTrace)
+                    return (True, Left [transitionTrace])
                   OutboundIdleState {} -> do
                     writeTVar connVar connState'
-                    return $ Left (Just transitionTrace)
+                    return (True, Left [transitionTrace])
                   InboundIdleState {} -> do
                     writeTVar connVar connState'
-                    return $ Left (Just transitionTrace)
+                    return (True, Left [transitionTrace])
                   InboundState {} -> do
                     writeTVar connVar connState'
-                    return $ Left (Just transitionTrace)
+                    return (True, Left [transitionTrace])
                   DuplexState {} -> do
                     writeTVar connVar connState'
-                    return $ Left (Just transitionTrace)
+                    return (True, Left [transitionTrace])
                   TerminatingState {} -> do
-                    return $ Right connState
-                  TerminatedState {} ->
-                    return $ Left Nothing
+                    return (False, Right connState)
+                  TerminatedState {} -> do
+                    return (True, Left [])
+                case (purge, State.lookup connId state) of
+                  (True, Just v)
+                    | mutableConnState == v ->
+                        let transition' =
+                              TransitionTrace
+                                connStateId
+                                Transition
+                                  { fromState = Known (TerminatedState Nothing)
+                                  , toState   = Unknown
+                                  }
+                            trace' = first (++ [transition']) trace
+                        in pure (State.delete connId state, trace')
+                  _otherwise -> pure (state, trace)
 
-              case eTransition of
-                Left mbTransition -> do
-                  traverse_ (traceWith trTracer) mbTransition
+              case trace of
+                Left transitions -> do
+                  traverse_ (traceWith trTracer) transitions
                   close snocket socket
-                  return ( state
-                         , Nothing
-                         )
+                  return (state', Nothing)
                 Right connState -> do
                   close snocket socket
-                  return ( state
-                         , Just connState
-                         )
+                  return (state', Just connState)
 
             case mbTransition of
-              Nothing -> do
-                let transition =
-                      TransitionTrace
-                        connStateId
-                        Transition
-                           { fromState = Known (TerminatedState Nothing)
-                           , toState   = Unknown
-                           }
-                mbTransition' <- modifyTMVar stateVar $ \state ->
-                  case State.lookup connId state of
-                    Nothing -> pure (state, Nothing)
-                    Just v  ->
-                      if mutableConnState == v
-                         then pure (State.delete connId state , Just transition)
-                         else pure (state                     , Nothing)
-
-                traverse_ (traceWith trTracer) mbTransition'
-                traceCounters stateVar
-
+              Nothing -> traceCounters stateVar
               Just connState ->
                 do traceWith tracer (TrConnectionTimeWait connId)
                    unmask (threadDelay timeWaitTimeout)
@@ -853,6 +845,7 @@ with args@Arguments {
                         -- 'Overwritten', 'SelfConn' or accepting a new
                         -- connection while the old one is terminating.
                         connState0' <- readTVar (connVar v)
+                        let fault = withCallStack . ForbiddenOperation (remoteAddress connId)
                         !v' <- case connState0' of
                            -- Overwritten
                            ReservedOutboundState {} -> writeTVar (connVar v) connState'
@@ -861,35 +854,12 @@ with args@Arguments {
                            UnnegotiatedState     {} -> writeTVar (connVar v) connState'
                                                     $> v
 
-                           -- The following cases are either impossible (would
-                           -- violate TCP semantics, e.g. only one connection
-                           -- with a given four-tuple may exist in the system),
-                           -- or somehow our state got outdated (a rare race
-                           -- condition).  We keep the inbound connection, as
-                           -- it's the only possible active connection.  If
-                           -- assertions are on we also throw an exception.  By
-                           -- default assertions are off in production node, but
-                           -- there are nodes on the network that run with
-                           -- assertions enabled to notice any rare invariant
-                           -- violation.
-                           --
-                           -- Please note that these cases are not possible to
-                           -- trigger with a TCP simultaneous open.  Such
-                           -- connections are outbound on both sides, and
-                           -- neither side is accepted, thus
-                           -- `includeInboundConnection` is not executed.
-                           OutboundUniState      {} -> writeTVar (connVar v) connState'
-                                                    $> assert False v
-                           OutboundDupState      {} -> writeTVar (connVar v) connState'
-                                                    $> assert False v
-                           OutboundIdleState     {} -> writeTVar (connVar v) connState'
-                                                    $> assert False v
-                           DuplexState           {} -> writeTVar (connVar v) connState'
-                                                    $> assert False v
-                           InboundIdleState      {} -> writeTVar (connVar v) connState'
-                                                    $> assert False v
-                           InboundState          {} -> writeTVar (connVar v) connState'
-                                                    $> assert False v
+                           OutboundUniState      {} -> throwSTM . fault $ State.abstractState (Known connState0')
+                           OutboundDupState      {} -> throwSTM . fault $ State.abstractState (Known connState0')
+                           OutboundIdleState     {} -> throwSTM . fault $ State.abstractState (Known connState0')
+                           DuplexState           {} -> throwSTM . fault $ State.abstractState (Known connState0')
+                           InboundIdleState      {} -> throwSTM . fault $ State.abstractState (Known connState0')
+                           InboundState          {} -> throwSTM . fault $ State.abstractState (Known connState0')
 
                            TerminatingState      {} -> State.newMutableConnState (remoteAddress connId) connStateIdSupply connState'
                            TerminatedState       {} -> State.newMutableConnState (remoteAddress connId) connStateIdSupply connState'
