@@ -53,11 +53,12 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} =
           when (getNumTxIdsToAck ackNo > fromIntegral (Seq.length unackedSeq)) $
             throwIO ProtocolErrorAckedTooManyTxids
 
-          let unackedNo = fromIntegral (Seq.length unackedSeq)
+          let unackedNo :: Int
+              unackedNo = Seq.length unackedSeq
           when (  unackedNo
-                - getNumTxIdsToAck ackNo
-                + getNumTxIdsToReq reqNo
-                > getNumTxIdsToAck maxUnacked) $
+                - fromIntegral ackNo
+                + fromIntegral reqNo
+                > fromIntegral maxUnacked) $
             throwIO (ProtocolErrorRequestedTooManyTxids reqNo unackedNo maxUnacked)
 
           -- Update our tracking state to remove the number of txids that the

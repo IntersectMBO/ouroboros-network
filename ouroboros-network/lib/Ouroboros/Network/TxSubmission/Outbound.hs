@@ -15,7 +15,6 @@ import Data.List.NonEmpty qualified as NonEmpty
 import Data.Maybe (catMaybes, isNothing, mapMaybe)
 import Data.Sequence.Strict (StrictSeq)
 import Data.Sequence.Strict qualified as Seq
-import Data.Word (Word16)
 
 import Control.Exception (assert)
 import Control.Monad (unless, when)
@@ -44,7 +43,7 @@ data TraceTxSubmissionOutbound txid tx
 data TxSubmissionProtocolError =
        ProtocolErrorAckedTooManyTxids
      | ProtocolErrorRequestedNothing
-     | ProtocolErrorRequestedTooManyTxids NumTxIdsToReq Word16 NumTxIdsToAck
+     | ProtocolErrorRequestedTooManyTxids NumTxIdsToReq Int NumTxIdsToAck
      | ProtocolErrorRequestBlocking
      | ProtocolErrorRequestNonBlocking
      | ProtocolErrorRequestedUnavailableTx
@@ -100,11 +99,12 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version co
           when (getNumTxIdsToAck ackNo > fromIntegral (Seq.length unackedSeq)) $
             throwIO ProtocolErrorAckedTooManyTxids
 
-          let unackedNo = fromIntegral (Seq.length unackedSeq)
+          let unackedNo :: Int
+              unackedNo = Seq.length unackedSeq
           when (  unackedNo
-                - getNumTxIdsToAck ackNo
-                + getNumTxIdsToReq reqNo
-                > getNumTxIdsToAck maxUnacked) $
+                - fromIntegral ackNo
+                + fromIntegral reqNo
+                > fromIntegral maxUnacked) $
             throwIO (ProtocolErrorRequestedTooManyTxids reqNo unackedNo maxUnacked)
 
           -- Update our tracking state to remove the number of txids that the
