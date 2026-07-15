@@ -153,7 +153,7 @@ data BlockFetchConsensusInterface peer header block m =
 -- represent this piece of information.
 data ChainSelStarvation
   = ChainSelStarvationOngoing
-  | ChainSelStarvationEndedAt Time
+  | ChainSelStarvationEndedAt !Time
   deriving (Eq, Show, NoThunks, Generic)
 
 
