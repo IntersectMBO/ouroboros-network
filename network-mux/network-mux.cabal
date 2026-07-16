@@ -65,9 +65,12 @@ library
     process ^>=1.6,
     quiet,
     statistics-linreg >=0.3 && <0.4,
+    psqueues >=0.2.3 && <0.3,
+    random >=1.2 && <1.4,
     strict,
     time >=1.9.1 && <1.16,
     vector >=0.12 && <0.14,
+    window-stats:with-tdigest,
 
   if os(windows)
     build-depends:
@@ -93,6 +96,7 @@ library
     Network.Mux.DeltaQ.TraceTypes
     Network.Mux.Egress
     Network.Mux.Ingress
+    Network.Mux.RTT
     Network.Mux.TCPInfo
     Network.Mux.Time
     Network.Mux.Timeout
@@ -130,6 +134,7 @@ test-suite test
   other-modules:
     Test.Mux
     Test.Mux.ReqResp
+    Test.Mux.RTT
     Test.Mux.Timeout
 
   default-language: Haskell2010
@@ -150,6 +155,7 @@ test-suite test
     network-mux,
     primitive,
     quickcheck-instances,
+    random,
     serialise,
     splitmix,
     tasty,
@@ -194,6 +200,7 @@ executable mux-demo
     io-classes,
     network-mux,
     primitive,
+    random,
     serialise,
     stm,
 
@@ -226,6 +233,7 @@ executable mux-leios-demo
     network,
     network-mux,
     primitive,
+    random,
     serialise,
     stm,
 
@@ -245,6 +253,7 @@ benchmark socket-read-write-benchmarks
     io-classes:{io-classes, si-timers, strict-stm},
     network,
     network-mux,
+    random,
     strict,
     tasty-bench,
 

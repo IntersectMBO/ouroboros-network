@@ -713,6 +713,7 @@ executable demo-ping-pong
     directory,
     network-mux,
     ouroboros-network:{api, framework},
+    random,
     typed-protocols:examples,
 
 executable demo-connection-manager
@@ -756,6 +757,7 @@ executable demo-tx-submission
     optparse-applicative,
     ouroboros-network:{ouroboros-network, api, framework, protocols},
     quickcheck-instances,
+    random,
     serialise,
     splitmix,
     statistics,
@@ -1063,6 +1065,7 @@ test-suite ouroboros-network-io-tests
     network,
     network-mux,
     ouroboros-network:{api, api-tests-lib, framework, protocols, protocols-tests-lib, tests-lib},
+    random,
     serialise,
     tasty,
     tasty-quickcheck,
