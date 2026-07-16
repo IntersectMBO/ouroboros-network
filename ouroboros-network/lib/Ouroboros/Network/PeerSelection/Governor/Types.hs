@@ -76,6 +76,8 @@ module Ouroboros.Network.PeerSelection.Governor.Types
     -- * Error types
   , BootstrapPeersCriticalTimeoutError (..)
   , DemotionTimeoutException (..)
+    -- * Re-exports
+  , TTL (..)
   ) where
 
 import Control.Applicative (Alternative)
@@ -101,6 +103,7 @@ import Ouroboros.Network.PeerSelection.LedgerPeers.Type
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers)
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
+import Ouroboros.Network.PeerSelection.RootPeersDNS (TTL (..))
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers (EstablishedPeers)
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
 import Ouroboros.Network.PeerSelection.State.KnownPeers (KnownPeers)

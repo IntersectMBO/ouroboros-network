@@ -10,6 +10,8 @@ module Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
   ( -- * DNS based provider for local root peers
     localRootPeersProvider
   , TraceLocalRootPeers (..)
+  , ttlForResults
+  , ttlForDnsError
   ) where
 
 import Data.Bifunctor (second)
@@ -17,7 +19,6 @@ import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Void (Void, absurd)
-import Data.Word (Word32)
 import System.Random
 
 import Control.Applicative (Alternative, (<|>))
@@ -25,7 +26,6 @@ import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad (when)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
-import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer (..), contramap, traceWith)
 
@@ -250,7 +250,7 @@ localRootPeersProvider tracer
               traceWith tracer (TraceLocalRootGroups newRootPeersGroups)
               traceWith tracer (TraceLocalRootDNSMap newDNSDomainMap)
 
-              go (ttlForResults (map snd results)) rr'
+              go (ttlDiffTime $ ttlForResults (map snd results)) rr'
 
     -- | Returns local root peers without any domain names, only 'peerAddr'
     -- (IP + PortNumber).
@@ -292,28 +292,21 @@ localRootPeersProvider tracer
 -- * Aux
 
 -- | Policy for TTL for positive results
-ttlForResults :: [DNS.TTL] -> DiffTime
+ttlForResults :: [TTL] -> TTL
 
 -- This case says we have a successful reply but there is no answer.
 -- This covers for example non-existent TLDs since there is no authority
 -- to say that they should not exist.
-ttlForResults []   = ttlForDnsError 0 DNS.NameError
-ttlForResults ttls = clipTTLBelow
-                   . clipTTLAbove
-                   . (fromIntegral :: Word32 -> DiffTime)
-                   $ maximum ttls
-
--- | Limit insane TTL choices.
-clipTTLAbove, clipTTLBelow :: DiffTime -> DiffTime
-clipTTLBelow = max 60     -- between 1min
-clipTTLAbove = min 900    -- and 15min
+ttlForResults []   = minTTL
+ttlForResults ttls = maximum ttls
 
 -- | Policy for TTL for negative results
 -- Cache negative response for 15min
 -- Otherwise, use exponential backoff, up to a limit
 ttlForDnsError :: DiffTime -> DNS.DNSError -> DiffTime
-ttlForDnsError _   DNS.NameError = 900
-ttlForDnsError ttl _             = clipTTLAbove (ttl * 2 + 5)
+ttlForDnsError _   DNS.NameError = ttlDiffTime   maxTTL
+ttlForDnsError ttl _             = ttlDiffTime . mkClippedTTL $ ttl * 2 + 5
+
 
 -- | `withAsyncAll`, but the actions are tagged with a context
 withAsyncAllWithCtx :: MonadAsync m => [(ctx, m a)] -> ([(ctx, Async m a)] -> m b) -> m b

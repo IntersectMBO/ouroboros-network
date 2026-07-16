@@ -2512,32 +2512,6 @@ prop_diffusion_dns_can_recover ioSimTrace traceNumber =
       <$> events
 
   where
-
-    -- | Policy for TTL for positive results
-    -- | Policy for TTL for negative results
-    -- Cache negative response for 3hrs
-    -- Otherwise, use exponential backoff, up to a limit
-    ttlForDnsError :: DNS.DNSError -> DiffTime -> DiffTime
-    ttlForDnsError DNS.NameError _ = 10_800
-    ttlForDnsError _           ttl = clipTTLAbove (ttl * 2 + 5)
-
-    ttlForResults :: [DNS.TTL] -> DiffTime
-    -- This case says we have a successful reply but there is no answer.
-    -- This covers for example non-existent TLDs since there is no authority
-    -- to say that they should not exist.
-    ttlForResults []   = ttlForDnsError DNS.NameError 0
-    ttlForResults ttls = clipTTLBelow
-                       . clipTTLAbove
-                       . (fromIntegral :: Word32 -> DiffTime)
-                       $ maximum ttls
-
-    -- | Limit insane TTL choices.
-    clipTTLAbove :: DiffTime -> DiffTime
-    clipTTLAbove = min 86_400  -- and 24hrs
-
-    clipTTLBelow :: DiffTime -> DiffTime
-    clipTTLBelow = max 60  -- and 1 min
-
     verify_dns_can_recover :: Events DiffusionTestTrace -> Property
     verify_dns_can_recover events =
         verify Map.empty Map.empty 0 (Time 0) (Signal.eventsToList events)
@@ -2560,7 +2534,7 @@ prop_diffusion_dns_can_recover ioSimTrace traceNumber =
           (TraceLocalRootFailure rap (DNSError err)) ->
             let dns = extractDomainName rap
                 ttl = fromMaybe 0 $ Map.lookup dns ttlMap
-                ttl' = ttlForDnsError err ttl
+                ttl' = ttlForDnsError ttl err
                 ttlMap' = Map.insert dns ttl' ttlMap
              in verify (Map.insert dns (addTime ttl' t) toRecover)
                         ttlMap'
@@ -2571,7 +2545,7 @@ prop_diffusion_dns_can_recover ioSimTrace traceNumber =
         DiffusionDNSTrace (DNSLookupResult DNSLocalPeer domain srvDomain ipsttls) ->
           let primaryDomain = fromMaybe domain srvDomain
               ttls = map getTTLs ipsttls
-              ttlMap' = Map.insert primaryDomain (ttlForResults ttls) ttlMap
+              ttlMap' = Map.insert primaryDomain (ttlDiffTime $ ttlForResults ttls) ttlMap
            in case Map.lookup primaryDomain toRecover of
                 Nothing -> verify toRecover ttlMap' recovered t evs
                 Just _  -> verify (Map.delete primaryDomain toRecover)

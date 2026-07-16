@@ -205,7 +205,7 @@ jobReqPublicRootPeers PeerSelectionActions{ requestPublicRootPeers,
             publicRootRetryDiffTime :: DiffTime
             publicRootRetryDiffTime
               | publicRootBackoffs' == 0
-                          = min 60 ttl -- don't let days long dns timeout kreep in here.
+                          = ttl
               | otherwise = 2^(publicRootBackoffs' `min` 8)
 
             publicRootRetryTime :: Time

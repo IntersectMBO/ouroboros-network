@@ -31,7 +31,8 @@ import Cardano.Network.PeerSelection.PublicRootPeers qualified as Cardano.Public
 import Ouroboros.Network.PeerSelection.LedgerPeers hiding (getLedgerPeers)
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.PeerSelectionActions qualified as Ouroboros
-import Ouroboros.Network.PeerSelection.RootPeersDNS (PeerActionsDNS (..))
+import Ouroboros.Network.PeerSelection.RootPeersDNS (PeerActionsDNS (..),
+           TTL (..))
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSSemaphore (DNSSemaphore)
 import Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
 import System.Random
@@ -75,7 +76,7 @@ requestPublicRootPeersImpl
     then do
       -- If the ledger state is in sensitive state we should get trustable peers.
       (bootstrapPeers, dt) <- requestConfiguredBootstrapPeers n
-      pure (Cardano.PublicRootPeers.fromBootstrapPeers bootstrapPeers, dt)
+      pure (Cardano.PublicRootPeers.fromBootstrapPeers bootstrapPeers, ttlDiffTime dt)
     else do
       Ouroboros.requestPublicRootPeersImpl
         publicTracer
@@ -88,7 +89,7 @@ requestPublicRootPeersImpl
         rng
         n
   where
-    requestConfiguredBootstrapPeers :: Int -> m (Set peeraddr, DiffTime)
+    requestConfiguredBootstrapPeers :: Int -> m (Set peeraddr, TTL)
     requestConfiguredBootstrapPeers x = do
       let readBootstrapPeersMap =
             fmap (\case

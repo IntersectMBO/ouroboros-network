@@ -1,11 +1,13 @@
-{-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE CPP                 #-}
-{-# LANGUAGE DeriveFunctor       #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE BangPatterns               #-}
+{-# LANGUAGE CPP                        #-}
+{-# LANGUAGE DeriveFunctor              #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE GeneralisedNewtypeDeriving #-}
+{-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TupleSections              #-}
 
 module Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
   ( -- * DNS based actions for local and public root providers
@@ -28,6 +30,10 @@ module Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
     -- * Tracing types
   , DNSTrace (..)
   , DNSPeersKind (..)
+  , TTL (ttlDiffTime)
+  , mkClippedTTL
+  , minTTL
+  , maxTTL
   ) where
 
 import Data.ByteString.Char8 qualified as BS
@@ -85,7 +91,7 @@ data DNSTrace =
       -- ^ source of addresses
       (Maybe DNS.Domain)
       -- ^ SRV domain, if relevant
-      [(IP, PortNumber, DNS.TTL)]
+      [(IP, PortNumber, TTL)]
       -- ^ payload
 
     -- | `DNS` lookup error
@@ -98,7 +104,7 @@ data DNSTrace =
   | SRVLookupResult
       DNSPeersKind
       DNS.Domain
-      [(DNS.Domain, Word16, Word16, Word16, DNS.TTL)]
+      [(DNS.Domain, Word16, Word16, Word16, TTL)]
 
     -- | `SRV` resolution errors, all dns errors are traced with
     -- `DNSLookupError`
@@ -121,7 +127,7 @@ data DNSorIOError
 -- | Wraps lookup result for client code
 --
 type DNSLookupResult peerAddr =
-    Either [DNS.DNSError] [(peerAddr, DNS.TTL)]
+    Either [DNS.DNSError] [(peerAddr, TTL)]
 
 instance Exception DNSorIOError where
 
@@ -456,8 +462,8 @@ srvRecordLookupWithTTL ofType tracer toPeerAddr peerType domainSRV resolveDNS rn
       where
         ipsttlsWithPort port ttl = map (\(ip, _ttl) -> (ip, fromIntegral port, ttl))
 
-        runWeightedLookup :: NonEmpty (DNS.Domain, Word16, Word16, Word16, DNS.TTL)
-                          -> m (Either [DNSError] [(IP, PortNumber, DNS.TTL)], DNS.Domain)
+        runWeightedLookup :: NonEmpty (DNS.Domain, Word16, Word16, Word16, TTL)
+                          -> m (Either [DNSError] [(IP, PortNumber, TTL)], DNS.Domain)
         runWeightedLookup services =
            let (upperBound, cdf) = Fold.foldl' aggregate (0, []) services
                mapCdf = Map.fromList cdf
@@ -470,7 +476,7 @@ srvRecordLookupWithTTL ofType tracer toPeerAddr peerType domainSRV resolveDNS rn
            in (upper', (upper', srv):cdf)
 
         selectSRV DNS.DNSMessage { DNS.answer } =
-          [ (domain', priority', weight', port, ttl)
+          [ (domain', priority', weight', port, mkClippedTTL ttl)
           | DNS.ResourceRecord {
               DNS.rdata = DNS.RD_SRV priority' weight' port domain',
               DNS.rrttl = ttl
@@ -506,7 +512,7 @@ dispatchLookupWithTTL lookupType mkResolveDNS tracer toPeerAddr peerType domain 
       Fold.traverse_ (traceWith tracer . DNSLookupResult peerType d Nothing) trace
       return $ map (\(ip, _ttl) -> (toPeerAddr ip p, _ttl)) <$> result
     RelayAccessSRVDomain d -> srvRecordLookupWithTTL lookupType tracer toPeerAddr peerType d resolveDNS rng
-    RelayAccessAddress addr p  -> return . Right $ [(toPeerAddr addr p, maxBound)]
+    RelayAccessAddress addr p  -> return . Right $ [(toPeerAddr addr p, maxTTL)]
 
 
 domainLookupWithTTL :: (MonadAsync m)
@@ -517,7 +523,7 @@ domainLookupWithTTL :: (MonadAsync m)
                     -> (   DNS.Domain
                         -> DNS.TYPE
                         -> m (Maybe (Either DNSError DNSMessage)))
-                    -> m (Either [DNSError] [(IP, DNS.TTL)])
+                    -> m (Either [DNSError] [(IP, TTL)])
 domainLookupWithTTL tracer look@LookupReqAOnly d peerType resolveDNS = do
     res <- domainALookupWithTTL (resolveDNS d DNS.A)
     case res of
@@ -562,7 +568,7 @@ domainLookupWithTTL tracer LookupReqAAndAAAA d peerType resolveDNS = do
 --
 domainALookupWithTTL :: (MonadThread m)
                => m (Maybe (Either DNSError DNSMessage))
-               -> m (Either DNS.DNSError [(IP, DNS.TTL)])
+               -> m (Either DNS.DNSError [(IP, TTL)])
 domainALookupWithTTL action = do
     labelThisThread "domainALookupWithTTL"
     reply <- action
@@ -573,7 +579,7 @@ domainALookupWithTTL action = do
       --TODO: we can get the SOA TTL on NXDOMAIN here if we want to
   where
     selectA DNS.DNSMessage { DNS.answer } =
-      [ (IPv4 addr, fixupTTL ttl)
+      [ (IPv4 addr, mkClippedTTL ttl)
       | DNS.ResourceRecord {
           DNS.rdata = DNS.RD_A addr,
           DNS.rrttl = ttl
@@ -583,7 +589,7 @@ domainALookupWithTTL action = do
 
 domainAAAALookupWithTTL :: (MonadThread m)
                   => m (Maybe (Either DNSError DNSMessage))
-                  -> m (Either DNS.DNSError [(IP, DNS.TTL)])
+                  -> m (Either DNS.DNSError [(IP, TTL)])
 domainAAAALookupWithTTL action = do
     labelThisThread "domainAAAALookupWithTTL"
     reply <- action
@@ -594,7 +600,7 @@ domainAAAALookupWithTTL action = do
       --TODO: we can get the SOA TTL on NXDOMAIN here if we want to
   where
     selectAAAA DNS.DNSMessage { DNS.answer } =
-      [ (IPv6 addr, fixupTTL ttl)
+      [ (IPv6 addr, mkClippedTTL ttl)
       | DNS.ResourceRecord {
           DNS.rdata = DNS.RD_AAAA addr,
           DNS.rrttl = ttl
@@ -605,7 +611,26 @@ domainAAAALookupWithTTL action = do
 -- Utils
 --
 
+-- | All TTL values are coming from DNS.TTL and are clipped via `mkClippedTTL`.
+--
+newtype TTL = TTL { ttlDiffTime :: DiffTime }
+  deriving stock Show
+  deriving newtype (Eq, Ord)
 
-fixupTTL :: DNS.TTL -> DNS.TTL
-fixupTTL 0 = maxBound
-fixupTTL a = a `max` 30
+
+-- | Make a TTL which is clipped between `60s` and `900s`.
+--
+mkClippedTTL :: forall ttl. Real ttl => ttl -> TTL
+mkClippedTTL =
+    clipTTLAbove
+  . clipTTLBelow
+  . TTL
+  . realToFrac
+
+minTTL, maxTTL :: TTL
+minTTL = TTL 60
+maxTTL = TTL 900
+
+clipTTLAbove, clipTTLBelow :: TTL -> TTL
+clipTTLBelow = max minTTL -- between 1min
+clipTTLAbove = min maxTTL -- and 15min
