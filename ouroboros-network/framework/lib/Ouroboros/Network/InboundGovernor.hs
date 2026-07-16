@@ -290,7 +290,10 @@ with
               }) -> do
 
                 traceWith tracer (TrNewConnection provenance connId)
-                let responderContext = ResponderContext { rcConnectionId = connId }
+                let responderContext = ResponderContext {
+                        rcConnectionId = connId,
+                        rcPeerRTT      = Mux.peerRTT csMux
+                      }
 
                 connections <- Map.alterF
                   (\case
@@ -809,7 +812,7 @@ mkRemoteTransitionTrace connId fromState toState =
 -- * /Consumer:/ inbound governor.
 --
 type InboundGovernorInfoChannel (muxMode :: Mux.Mode) initiatorCtx peerAddr versionData bytes m a b =
-    InformationChannel (Event (muxMode :: Mux.Mode) (Handle muxMode initiatorCtx (ResponderContext peerAddr) versionData bytes m a b) initiatorCtx peerAddr versionData m a b) m
+    InformationChannel (Event (muxMode :: Mux.Mode) (Handle muxMode initiatorCtx (ResponderContext peerAddr m) versionData bytes m a b) initiatorCtx peerAddr versionData m a b) m
 
 
 -- | Announcement message for a new connection.

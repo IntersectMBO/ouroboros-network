@@ -33,14 +33,16 @@ module Network.Mux.Types
   , SDU (..)
   , SDUHeader (..)
   , SDUSize (..)
-  , msTimestamp
-  , setTimestamp
+  , msSendCookie
+  , msEchoCookie
+  , setSendCookie
+  , setEchoCookie
   , msNum
   , msDir
   , msLength
   , msHeaderLength
-  , RemoteClockModel (..)
-  , remoteClockPrecision
+  , Cookie (..)
+  , noCookie
   , RuntimeError (..)
   , ReadBuffer (..)
   , BearerTrace (..)
@@ -71,13 +73,30 @@ import Network.Mux.TCPInfo
 import Network.Mux.Timeout (TimeoutFn)
 
 
-newtype RemoteClockModel
-  = RemoteClockModel { unRemoteClockModel :: Word32 }
-  deriving (Eq, Bounded)
+-- | An opaque cookie carried in the SDU header.
+--
+-- The SDU header carries two of these: a fresh cookie
+-- ('mhSendCookie') minted by the local muxer per outgoing SDU, and
+-- an echo ('mhEchoCookie') of the freshest 'mhSendCookie' the local
+-- muxer received from its peer. The receiver, matching an incoming
+-- echo against its own outstanding-cookie map, recovers the local
+-- time at which that cookie was sent — hence a per-SDU RTT sample.
+--
+-- Cookies are drawn from a PRNG so a peer cannot forge low RTTs by
+-- echoing a cookie value we have not actually sent. The 'noCookie'
+-- ('Cookie' 0) value is reserved as the "no echo available" sentinel.
+newtype Cookie
+  = Cookie { unCookie :: Word16 }
+  deriving (Eq, Ord, Bounded)
 
--- | The `DiffTime` represented by a tick in the `RemoteClockModel`
-remoteClockPrecision :: DiffTime
-remoteClockPrecision = 1e-6
+instance Show Cookie where
+  show (Cookie w) = printf "0x%04x" w
+
+-- | Sentinel echo-cookie meaning "the local muxer has not observed a
+-- peer cookie yet". Peers echoing this back must be dropped rather
+-- than matched.
+noCookie :: Cookie
+noCookie = Cookie 0
 
 --
 -- Mini-protocol numbers
@@ -227,10 +246,15 @@ data MiniProtocolStatus = StatusIdle
   deriving (Eq, Show)
 
 data SDUHeader = SDUHeader {
-      mhTimestamp :: !RemoteClockModel
-    , mhNum       :: !MiniProtocolNum
-    , mhDir       :: !MiniProtocolDir
-    , mhLength    :: !Word16
+      mhSendCookie :: !Cookie
+      -- ^ Fresh cookie drawn per outgoing SDU by the local muxer.
+    , mhEchoCookie :: !Cookie
+      -- ^ Echo of the freshest 'mhSendCookie' the local muxer has
+      -- received from its peer. On receipt, this is the identifier
+      -- against which we look up our own send time.
+    , mhNum        :: !MiniProtocolNum
+    , mhDir        :: !MiniProtocolDir
+    , mhLength     :: !Word16
     }
 
 
@@ -239,12 +263,19 @@ data SDU = SDU {
     , msBlob   :: !BL.ByteString
     }
 
-msTimestamp :: SDU -> RemoteClockModel
-msTimestamp = mhTimestamp . msHeader
+msSendCookie :: SDU -> Cookie
+msSendCookie = mhSendCookie . msHeader
 
-setTimestamp :: SDU -> RemoteClockModel -> SDU
-setTimestamp sdu@SDU { msHeader } mhTimestamp =
-    sdu { msHeader = msHeader { mhTimestamp } }
+msEchoCookie :: SDU -> Cookie
+msEchoCookie = mhEchoCookie . msHeader
+
+setSendCookie :: SDU -> Cookie -> SDU
+setSendCookie sdu@SDU { msHeader } mhSendCookie =
+    sdu { msHeader = msHeader { mhSendCookie } }
+
+setEchoCookie :: SDU -> Cookie -> SDU
+setEchoCookie sdu@SDU { msHeader } mhEchoCookie =
+    sdu { msHeader = msHeader { mhEchoCookie } }
 
 msNum :: SDU -> MiniProtocolNum
 msNum = mhNum . msHeader
@@ -308,12 +339,13 @@ bearerAsChannel tracer bearer ptclNum ptclDir =
       -- wrap a 'ByteString' as 'SDU'
       wrap :: BL.ByteString -> SDU
       wrap blob = SDU {
-            -- it will be filled when the 'SDU' is send by the 'bearer'
+            -- Cookies are filled in by the muxer at SDU construction.
             msHeader = SDUHeader {
-                mhTimestamp = RemoteClockModel 0,
-                mhNum       = ptclNum,
-                mhDir       = ptclDir,
-                mhLength    = fromIntegral $ BL.length blob
+                mhSendCookie = noCookie,
+                mhEchoCookie = noCookie,
+                mhNum        = ptclNum,
+                mhDir        = ptclDir,
+                mhLength     = fromIntegral $ BL.length blob
               },
             msBlob = blob
           }

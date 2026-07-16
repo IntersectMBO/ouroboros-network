@@ -459,14 +459,16 @@ mkInitiatorContext :: MonadSTM m
 mkInitiatorContext tok isBigLedgerPeer extraFlags
                    PeerConnectionHandle {
                        pchConnectionId = connectionId,
-                       pchAppHandles   = appHandles
+                       pchAppHandles   = appHandles,
+                       pchMux          = mux
                     }
                    =
                    ExpandedInitiatorContext {
                        eicConnectionId    = connectionId,
                        eicControlMessage  = readTVar (getControlVar tok appHandles),
                        eicIsBigLedgerPeer = isBigLedgerPeer,
-                       eicExtraFlags      = extraFlags
+                       eicExtraFlags      = extraFlags,
+                       eicPeerRTT         = Mux.peerRTT mux
                      }
 
 

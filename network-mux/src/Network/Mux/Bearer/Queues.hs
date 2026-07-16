@@ -64,10 +64,8 @@ queueChannelAsBearer sduSize QueueChannel { writeQueue, readQueue } = do
       writeMux :: Tracer m Mx.BearerTrace -> Mx.TimeoutFn m -> Mx.SDU -> m Time
       writeMux tracer _ sdu = do
           ts <- getMonotonicTime
-          let ts32 = Mx.timestampMicrosecondsLow32Bits ts
-              sdu' = Mx.setTimestamp sdu (Mx.RemoteClockModel ts32)
-              buf  = Mx.encodeSDU sdu'
-          traceWith tracer $ Mx.TraceSendStart (Mx.msHeader sdu')
+          let buf = Mx.encodeSDU sdu
+          traceWith tracer $ Mx.TraceSendStart (Mx.msHeader sdu)
           atomically $ writeTBQueue writeQueue buf
           traceWith tracer Mx.TraceSendEnd
           return ts

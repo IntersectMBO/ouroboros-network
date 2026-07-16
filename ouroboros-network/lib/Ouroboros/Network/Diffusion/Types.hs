@@ -717,7 +717,7 @@ type NodeToNodeConnectionManager
 type NodeToNodePeerConnectionHandle (mode :: Mx.Mode) ntnAddr extraFlags ntnVersionData m a b =
     PeerConnectionHandle
       mode
-      (ResponderContext ntnAddr)
+      (ResponderContext ntnAddr m)
       ntnAddr
       extraFlags
       ntnVersionData

@@ -182,10 +182,8 @@ socketAsBearer sduSize batchSize readBuffer_m sduTimeout egressInterval sd =
       writeSocket :: Tracer IO BearerTrace -> Mx.TimeoutFn IO -> Mx.SDU -> IO Time
       writeSocket tracer timeout sdu = do
           ts <- getMonotonicTime
-          let ts32 = Mx.timestampMicrosecondsLow32Bits ts
-              sdu' = Mx.setTimestamp sdu (Mx.RemoteClockModel ts32)
-              buf  = Mx.encodeSDU sdu'
-          traceWith tracer $ Mx.TraceSendStart (Mx.msHeader sdu')
+          let buf = Mx.encodeSDU sdu
+          traceWith tracer $ Mx.TraceSendStart (Mx.msHeader sdu)
           r <- timeout sduTimeout $
 #if defined(mingw32_HOST_OS)
               Win32.Async.sendAll sd buf
@@ -217,10 +215,8 @@ socketAsBearer sduSize batchSize readBuffer_m sduTimeout egressInterval sd =
         return ts
 #else
       writeSocketMany tracer timeout sdus = do
-          ts <- getMonotonicTime
-          let ts32 = Mx.timestampMicrosecondsLow32Bits ts
-              buf  = map (Mx.encodeSDU .
-                           (\sdu -> Mx.setTimestamp sdu (Mx.RemoteClockModel ts32))) sdus
+          ts  <- getMonotonicTime
+          let buf = map Mx.encodeSDU sdus
           r <- timeout (fromIntegral (length sdus) * sduTimeout) $
               Socket.sendMany sd (concatMap BL.toChunks buf)
               `catch` Mx.handleIOException "sendAll errored"

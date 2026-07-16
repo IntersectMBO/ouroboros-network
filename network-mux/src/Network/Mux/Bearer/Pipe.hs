@@ -111,10 +111,8 @@ pipeAsBearer sduSize channel =
       writePipe :: Tracer IO Mx.BearerTrace -> Mx.TimeoutFn IO -> Mx.SDU -> IO Time
       writePipe tracer _ sdu = do
           ts <- getMonotonicTime
-          let ts32 = Mx.timestampMicrosecondsLow32Bits ts
-              sdu' = Mx.setTimestamp sdu (Mx.RemoteClockModel ts32)
-              buf  = Mx.encodeSDU sdu'
-          traceWith tracer $ Mx.TraceSendStart (Mx.msHeader sdu')
+          let buf = Mx.encodeSDU sdu
+          traceWith tracer $ Mx.TraceSendStart (Mx.msHeader sdu)
           writeHandle channel buf
             `catch` Mx.handleIOException "writeHandle errored"
           traceWith tracer Mx.TraceSendEnd

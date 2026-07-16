@@ -152,9 +152,9 @@ counters State { connections } =
 data MiniProtocolData muxMode initiatorCtx peerAddr m a b = MiniProtocolData {
     -- | Static 'MiniProtocol' description.
     --
-    mpdMiniProtocol     :: !(MiniProtocol muxMode initiatorCtx (ResponderContext peerAddr) ByteString m a b),
+    mpdMiniProtocol     :: !(MiniProtocol muxMode initiatorCtx (ResponderContext peerAddr m) ByteString m a b),
 
-    mpdResponderContext :: !(ResponderContext peerAddr),
+    mpdResponderContext :: !(ResponderContext peerAddr m),
 
     -- | Static mini-protocol temperature.
     --

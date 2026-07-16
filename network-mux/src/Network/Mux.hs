@@ -59,6 +59,10 @@ module Network.Mux
   , WithBearer (..)
   , TracersWithBearer
   , tracersWithBearer
+    -- * Peer RTT
+  , RTT.PeerRTT (..)
+  , RTT.noPeerRTT
+  , peerRTT
   ) where
 
 import Data.ByteString.Builder (lazyByteString, toLazyByteString)
@@ -85,6 +89,8 @@ import Network.Mux.Bearer
 import Network.Mux.Channel
 import Network.Mux.Egress as Egress
 import Network.Mux.Ingress as Ingress
+import Network.Mux.RTT (RTTState)
+import Network.Mux.RTT qualified as RTT
 import Network.Mux.Timeout
 import Network.Mux.Trace
 import Network.Mux.Types
@@ -101,9 +107,15 @@ data Mux (mode :: Mode) m =
        muxMiniProtocols   :: !(Map (MiniProtocolNum, MiniProtocolDir)
                                    (MiniProtocolState mode m)),
        muxControlCmdQueue :: !(StrictTQueue m (ControlCmd mode m)),
-       muxStatus          :: StrictTVar m Status,
-       muxTracers         :: Tracers m
+       muxStatus          :: !(StrictTVar m Status),
+       muxTracers         :: !(Tracers m),
+       muxRTTState        :: !(RTTState m)
      }
+
+
+-- | Reader handle for the per-peer RTT distribution tracked by this mux.
+peerRTT :: MonadSTM m => Mux mode m -> RTT.PeerRTT m
+peerRTT Mux { muxRTTState } = RTT.peerRTT muxRTTState
 
 
 -- | Get information about all statically registered mini-protocols.
@@ -140,6 +152,7 @@ new muxTracers ptcls = do
     muxMiniProtocols   <- mkMiniProtocolStateMap ptcls
     muxControlCmdQueue <- atomically newTQueue
     muxStatus <- newTVarIO Ready
+    muxRTTState <- RTT.newRTTState rttSeed
     return Mux {
       muxMiniProtocols,
       muxControlCmdQueue,
@@ -240,7 +253,8 @@ run Mux { muxMiniProtocols,
           muxTracers = tracers@TracersI {
               tracer_,
               bearerTracer_
-            }
+            },
+          muxRTTState
         }
     bearer@Bearer{name} = do
 

@@ -7,10 +7,14 @@ module Ouroboros.Network.Context
   , MinimalInitiatorContext (..)
   , ResponderContext (..)
     -- * Re-exports
+  , PeerRTT (..)
+  , noPeerRTT
   , ConnectionId (..)
   , ControlMessageSTM
   , IsBigLedgerPeer (..)
   ) where
+
+import Network.Mux (PeerRTT (..), noPeerRTT)
 
 import Ouroboros.Network.ConnectionId
 import Ouroboros.Network.ControlMessage
@@ -23,8 +27,10 @@ data ExpandedInitiatorContext addr extraFlags m = ExpandedInitiatorContext {
     eicConnectionId    :: !(ConnectionId addr),
     eicControlMessage  :: !(ControlMessageSTM m),
     eicIsBigLedgerPeer :: !IsBigLedgerPeer,
-    eicExtraFlags      :: !extraFlags
+    eicExtraFlags      :: !extraFlags,
     -- ^ in `cardano-diffusion` it's instantiated to `PeerTrustable`, in `dmq-node` to `NoExtraFlags`
+    eicPeerRTT         :: !(PeerRTT m)
+    -- ^ read handle for the per-peer RTT distribution
   }
 
 -- | A context passed to initiator mini-protocol execution for non-p2p
@@ -37,7 +43,8 @@ newtype MinimalInitiatorContext addr = MinimalInitiatorContext {
 
 -- | Context passed to each responder mini-protocol execution.
 --
-newtype ResponderContext addr = ResponderContext {
-    rcConnectionId    :: ConnectionId addr
+data ResponderContext addr m = ResponderContext {
+    rcConnectionId :: !(ConnectionId addr),
+    rcPeerRTT      :: !(PeerRTT m)
+    -- ^ read handle for the per-peer RTT distribution
   }
-  deriving Functor

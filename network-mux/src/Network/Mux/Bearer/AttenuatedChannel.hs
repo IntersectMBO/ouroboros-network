@@ -304,10 +304,8 @@ attenuationChannelAsBearer sduSize sduTimeout chan =
     writeMux :: Tracer m BearerTrace -> TimeoutFn m -> SDU -> m Time
     writeMux tracer _ sdu = do
       ts <- getMonotonicTime
-      let ts32 = timestampMicrosecondsLow32Bits ts
-          sdu' = setTimestamp sdu (RemoteClockModel ts32)
-          buf  = encodeSDU sdu'
-      traceWith tracer $ TraceSendStart (msHeader sdu')
+      let buf = encodeSDU sdu
+      traceWith tracer $ TraceSendStart (msHeader sdu)
       acWrite chan buf
 
       traceWith tracer TraceSendEnd

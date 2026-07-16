@@ -152,9 +152,9 @@ data NodeToNodeProtocols appType initiatorCtx responderCtx bytes m a b = NodeToN
 }
 
 type NodeToNodeProtocolsWithExpandedCtx appType ntnAddr bytes m a b =
-    NodeToNodeProtocols appType (ExpandedInitiatorContext ntnAddr PeerTrustable m) (ResponderContext ntnAddr) bytes m a b
+    NodeToNodeProtocols appType (ExpandedInitiatorContext ntnAddr PeerTrustable m) (ResponderContext ntnAddr m) bytes m a b
 type NodeToNodeProtocolsWithMinimalCtx  appType ntnAddr bytes m a b =
-    NodeToNodeProtocols appType (MinimalInitiatorContext ntnAddr)  (ResponderContext ntnAddr) bytes m a b
+    NodeToNodeProtocols appType (MinimalInitiatorContext ntnAddr)  (ResponderContext ntnAddr m) bytes m a b
 
 
 data MiniProtocolParameters = MiniProtocolParameters {

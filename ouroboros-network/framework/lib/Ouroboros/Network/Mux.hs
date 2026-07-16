@@ -222,13 +222,13 @@ type OuroborosBundle   (mode :: Mux.Mode) initiatorCtx responderCtx bytes m a b 
 type OuroborosBundleWithExpandedCtx (mode :: Mux.Mode) peerAddr extraFlags bytes m a b =
      OuroborosBundle mode
                      (ExpandedInitiatorContext peerAddr extraFlags m)
-                     (ResponderContext peerAddr)
+                     (ResponderContext peerAddr m)
                      bytes m a b
 
 type OuroborosBundleWithMinimalCtx (mode :: Mux.Mode) peerAddr bytes m a b =
      OuroborosBundle mode
                      (MinimalInitiatorContext peerAddr)
-                     (ResponderContext peerAddr)
+                     (ResponderContext peerAddr m)
                      bytes m a b
 
 
@@ -280,14 +280,14 @@ mkMiniProtocolInfo forkPolicy MiniProtocol {
 --
 type MiniProtocolWithExpandedCtx mode peerAddr extraFlags bytes m a b =
      MiniProtocol mode (ExpandedInitiatorContext peerAddr extraFlags m)
-                       (ResponderContext peerAddr)
+                       (ResponderContext peerAddr m)
                        bytes m a b
 
 -- | 'MiniProtocol' type used in non-P2P.
 --
 type MiniProtocolWithMinimalCtx mode peerAddr bytes m a b =
      MiniProtocol mode (MinimalInitiatorContext peerAddr)
-                       (ResponderContext peerAddr)
+                       (ResponderContext peerAddr m)
                        bytes m a b
 
 
@@ -316,7 +316,7 @@ data RunMiniProtocol (mode :: Mux.Mode) initiatorCtx responderCtx bytes m a b wh
 type RunMiniProtocolWithExpandedCtx mode peerAddr extraFlags bytes m a b =
      RunMiniProtocol mode
                      (ExpandedInitiatorContext peerAddr extraFlags m)
-                     (ResponderContext peerAddr)
+                     (ResponderContext peerAddr m)
                      bytes m a b
 
 
@@ -327,7 +327,7 @@ type RunMiniProtocolWithExpandedCtx mode peerAddr extraFlags bytes m a b =
 type RunMiniProtocolWithMinimalCtx mode peerAddr bytes m a b =
      RunMiniProtocol mode
                      (MinimalInitiatorContext peerAddr)
-                     (ResponderContext peerAddr)
+                     (ResponderContext peerAddr m)
                      bytes m a b
 
 
@@ -451,7 +451,7 @@ newtype OuroborosApplication  (mode :: Mux.Mode) initiatorCtx responderCtx bytes
 type OuroborosApplicationWithMinimalCtx mode peerAddr bytes m a b =
      OuroborosApplication mode
                           (MinimalInitiatorContext peerAddr)
-                          (ResponderContext peerAddr)
+                          (ResponderContext peerAddr m)
                           bytes m a b
 
 fromOuroborosBundle :: OuroborosBundle      mode initiatorCtx responderCtx bytes m a b

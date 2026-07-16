@@ -144,7 +144,7 @@ data MkMuxConnectionHandler (muxMode :: Mx.Mode) socket initiatorCtx responderCt
 --
 type HandleWithExpandedCtx muxMode peerAddr extraFlags versionData bytes m a b =
      Handle    muxMode (ExpandedInitiatorContext peerAddr extraFlags m)
-                       (ResponderContext peerAddr)
+                       (ResponderContext peerAddr m)
                        versionData bytes m a b
 
 -- | 'Handle' used by:
@@ -154,7 +154,7 @@ type HandleWithExpandedCtx muxMode peerAddr extraFlags versionData bytes m a b =
 --
 type HandleWithMinimalCtx muxMode peerAddr versionData bytes m a b =
      Handle       muxMode (MinimalInitiatorContext peerAddr)
-                          (ResponderContext peerAddr)
+                          (ResponderContext peerAddr m)
                           versionData bytes m a b
 
 -- | A connection handler error.

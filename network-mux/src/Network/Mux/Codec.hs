@@ -18,14 +18,18 @@ import Network.Mux.Types
 -- >  0                   1                   2                   3
 -- >  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 -- > +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
--- > |                        transmission time                      |
+-- > |         send cookie           |         echo cookie           |
 -- > +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 -- > |d|    mini-protocol number     |             length            |
 -- > +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 --
 -- All fields are in big endian byte order.
 --
--- * transmission time: time when the SDU was sent
+-- * send cookie: an opaque per-SDU 16-bit identifier drawn from a
+--   PRNG by the local muxer at SDU construction.
+-- * echo cookie: the freshest 'send cookie' the local muxer observed
+--   from its peer; the peer uses this on receipt to look up the local
+--   send time and compute an RTT sample.
 -- * @d@: mini-protocol direction (`MiniProtocolDir`):
 --
 --     * 1 - initiator direction
@@ -40,7 +44,8 @@ encodeSDU sdu =
   BL.append hdr $ msBlob sdu
   where
     enc = do
-        Bin.putWord32be $ unRemoteClockModel $ msTimestamp sdu
+        Bin.putWord16be $ unCookie $ msSendCookie sdu
+        Bin.putWord16be $ unCookie $ msEchoCookie sdu
         Bin.putWord16be $ putNumAndMode (msNum sdu) (msDir sdu)
         Bin.putWord16be $ fromIntegral $ BL.length $ msBlob sdu
 
@@ -65,13 +70,15 @@ decodeSDU buf =
              else Left $ SDUDecodeError "short SDU"
   where
     dec = do
-        mhTimestamp <- RemoteClockModel <$> Bin.getWord32be
+        mhSendCookie <- Cookie <$> Bin.getWord16be
+        mhEchoCookie <- Cookie <$> Bin.getWord16be
         a <- Bin.getWord16be
         mhLength <- Bin.getWord16be
-        let mhDir  = getDir a
-            mhNum  = MiniProtocolNum (a .&. 0x7fff)
+        let mhDir = getDir a
+            mhNum = MiniProtocolNum (a .&. 0x7fff)
         return $ SDUHeader {
-            mhTimestamp,
+            mhSendCookie,
+            mhEchoCookie,
             mhNum,
             mhDir,
             mhLength
