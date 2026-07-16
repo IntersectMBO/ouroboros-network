@@ -385,8 +385,23 @@ data ReadBuffer m = ReadBuffer {
 data BearerTrace =
       TraceRecvHeaderStart
     | TraceRecvHeaderEnd SDUHeader
-    | TraceRecvDeltaQObservation SDUHeader Time
-    | TraceRecvDeltaQSample Double Int Int Double Double Double Double String
+      -- | Round-trip observation for a received SDU whose echo cookie
+      -- matched an outstanding send: the mini-protocol number of the
+      -- SDU that carried the echo, its length in bytes, and the
+      -- measured round-trip delay.
+    | TraceRecvDeltaQObservation MiniProtocolNum Word16 DiffTime
+      -- | A follow-up SDU in a response burst: the peer echoed a
+      -- cookie whose first echo we already matched. The 'DiffTime'
+      -- is the gap between this SDU and the previous echo of the
+      -- same cookie (peer's inter-SDU serialisation interval), not
+      -- a round-trip. See track.md's DeltaQ-caveat appendix.
+    | TraceRecvBurstSDU MiniProtocolNum Word16 DiffTime
+      -- | Periodic DeltaQ sample. Fields: duration, sumPackets,
+      -- sumTotalSDU, estDeltaQS (RTT-derived seconds/byte),
+      -- estBurstS (burst-derived seconds/byte, NaN if no burst
+      -- observations this period), estDeltaQVMean, estDeltaQVVar,
+      -- estR, sizeDist.
+    | TraceRecvDeltaQSample Double Int Int Double Double Double Double Double String
     | TraceEmitDeltaQ
     | TraceRecvRaw Int
     | TraceRecvStart Int
@@ -399,18 +414,20 @@ data BearerTrace =
 
 instance Show BearerTrace where
     show TraceRecvHeaderStart = printf "Bearer Receive Header Start"
-    show (TraceRecvHeaderEnd SDUHeader { mhTimestamp, mhNum, mhDir, mhLength }) = printf "Bearer Receive Header End: ts: 0x%08x (%s) %s len %d"
-        (unRemoteClockModel mhTimestamp) (show mhNum) (show mhDir) mhLength
-    show (TraceRecvDeltaQObservation SDUHeader { mhTimestamp, mhLength } ts) = printf "Bearer DeltaQ observation: remote ts %d local ts %s length %d"
-        (unRemoteClockModel mhTimestamp) (show ts) mhLength
-    show (TraceRecvDeltaQSample d sp so dqs dqvm dqvs estR sdud) = printf "Bearer DeltaQ Sample: duration %.3e packets %d sumBytes %d DeltaQ_S %.3e DeltaQ_VMean %.3e DeltaQ_VVar %.3e DeltaQ_estR %.3e sizeDist %s"
-         d sp so dqs dqvm dqvs estR sdud
+    show (TraceRecvHeaderEnd SDUHeader { mhSendCookie, mhEchoCookie, mhNum, mhDir, mhLength }) = printf "Bearer Receive Header End: send-cookie: %s echo-cookie: %s (%s) %s len %d"
+        (show mhSendCookie) (show mhEchoCookie) (show mhNum) (show mhDir) mhLength
+    show (TraceRecvDeltaQObservation mpNum len delay) = printf "Bearer DeltaQ observation: %s length %d round-trip %s"
+        (show mpNum) len (show delay)
+    show (TraceRecvBurstSDU mpNum len gap) = printf "Bearer Burst SDU: %s length %d gap %s"
+        (show mpNum) len (show gap)
+    show (TraceRecvDeltaQSample d sp so dqs bs dqvm dqvs estR sdud) = printf "Bearer DeltaQ Sample: duration %.3e packets %d sumBytes %d DeltaQ_S %.3e Burst_S %.3e DeltaQ_VMean %.3e DeltaQ_VVar %.3e DeltaQ_estR %.3e sizeDist %s"
+         d sp so dqs bs dqvm dqvs estR sdud
     show TraceEmitDeltaQ = "emit DeltaQ"
     show (TraceRecvRaw len) = printf "Bearer Receive Raw: length %d" len
     show (TraceRecvStart len) = printf "Bearer Receive Start: length %d" len
     show (TraceRecvEnd len) = printf "Bearer Receive End: length %d" len
-    show (TraceSendStart SDUHeader { mhTimestamp, mhNum, mhDir, mhLength }) = printf "Bearer Send Start: ts: 0x%08x (%s) %s length %d"
-        (unRemoteClockModel mhTimestamp) (show mhNum) (show mhDir) mhLength
+    show (TraceSendStart SDUHeader { mhSendCookie, mhEchoCookie, mhNum, mhDir, mhLength }) = printf "Bearer Send Start: send-cookie: %s echo-cookie: %s (%s) %s length %d"
+        (show mhSendCookie) (show mhEchoCookie) (show mhNum) (show mhDir) mhLength
     show TraceSendEnd = printf "Bearer Send End"
     show TraceSDUReadTimeoutException = "Timed out reading SDU"
     show TraceSDUWriteTimeoutException = "Timed out writing SDU"
