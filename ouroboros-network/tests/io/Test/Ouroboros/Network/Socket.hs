@@ -56,6 +56,7 @@ import Ouroboros.Network.Util.ShowProxy
 
 import Test.Ouroboros.Network.Serialise
 
+import System.Random
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)

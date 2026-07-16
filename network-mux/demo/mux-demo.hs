@@ -24,6 +24,7 @@ import Control.Tracer (Tracer, mkTracer)
 import System.Environment qualified as SysEnv
 import System.Exit
 import System.IO
+import System.Random
 
 #if defined(mingw32_HOST_OS)
 import Data.Bits
@@ -127,7 +128,8 @@ server = do
 
 serverWorker :: Bearer IO -> IO ()
 serverWorker bearer = do
-    mux <- Mx.new Mx.nullTracers ptcls
+    g   <- newStdGen
+    mux <- Mx.new Mx.nullTracers g ptcls
 
     void $ forkIO $ do
       awaitResult <-
@@ -187,7 +189,8 @@ client n msg = do
 
 clientWorker :: Mx.Bearer IO -> Int -> String -> IO ()
 clientWorker bearer n msg = do
-    mux <- Mx.new Mx.nullTracers ptcls
+    g   <- newStdGen
+    mux <- Mx.new Mx.nullTracers g ptcls
 
     void $ forkIO $ do
       awaitResult <-

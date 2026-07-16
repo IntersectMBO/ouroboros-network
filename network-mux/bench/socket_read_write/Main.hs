@@ -25,8 +25,11 @@ import Network.Mux
 import Network.Mux.Bearer
 import Network.Mux.Egress
 import Network.Mux.Ingress
-import Network.Mux.Timeout (withTimeoutSerial)
+import Network.Mux.RTT
+import Network.Mux.Timeout
 import Network.Mux.Types
+
+import System.Random
 
 activeTracer :: Tracer IO a
 activeTracer = nullTracer
@@ -82,7 +85,8 @@ readDemuxerQueueBenchmark sndSizeV sndSize addr = do
       withReadBufferIO (\buffer -> do
         bearer <- getBearer makeSocketBearer sduTimeout sd buffer
         ms42 <- mkMiniProtocolState 42
-        withAsync (demuxer [ms42] activeTracer bearer) $ \aid -> do
+        rtt  <- newRTTState (mkStdGen 0)
+        withAsync (demuxer [ms42] rtt activeTracer bearer) $ \aid -> do
           doRead 0xa5 (totalPayloadLen sndSize) (miniProtocolIngressQueue ms42)
           cancel aid
        )
@@ -115,7 +119,8 @@ readDemuxerBenchmark sndSizeV sndSize addr = do
         bearer <- getBearer makeSocketBearer sduTimeout sd buffer
         ms42 <- mkMiniProtocolState 42
         ms41 <- mkMiniProtocolState 41
-        withAsync (demuxer [ms41, ms42] activeTracer bearer) $ \aid -> do
+        rtt  <- newRTTState (mkStdGen 0)
+        withAsync (demuxer [ms41, ms42] rtt activeTracer bearer) $ \aid -> do
           withAsync (doRead 42 (totalPayloadLen sndSize) (miniProtocolIngressQueue ms42) 0) $ \aid42 -> do
             withAsync (doRead 41 (totalPayloadLen 10) (miniProtocolIngressQueue ms41) 0) $ \aid41 -> do
               _ <- waitBoth aid42 aid41
@@ -190,10 +195,11 @@ startServerMany sndSizeV ad = forever $ do
   wrap blob = SDU {
         -- it will be filled when the 'SDU' is send by the 'bearer'
        msHeader = SDUHeader {
-           mhTimestamp = RemoteClockModel 0,
-           mhNum       = MiniProtocolNum 42,
-           mhDir       = ResponderDir,
-           mhLength    = fromIntegral $ BL.length blob
+           mhSendCookie = noCookie,
+           mhEchoCookie = noCookie,
+           mhNum        = MiniProtocolNum 42,
+           mhDir        = ResponderDir,
+           mhLength     = fromIntegral $ BL.length blob
           },
         msBlob = blob
      }
@@ -217,7 +223,8 @@ startServerEgresss pollInterval sndSizeV ad = forever $ do
           numberOfCalls = numberOfSdus `div` 10 :: Int
           runtSdus = numberOfSdus `mod` 10 :: Int
 
-      withAsync (muxer eq activeTracer bearer) $ \aid -> do
+      rtt <- newRTTState (mkStdGen 0)
+      withAsync (muxer eq rtt activeTracer bearer) $ \aid -> do
 
         replicateM_ numberOfCalls $ do
           let payload42s = replicate 10 $ BL.replicate sndSize 42
