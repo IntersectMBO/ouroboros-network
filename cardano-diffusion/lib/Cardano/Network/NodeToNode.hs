@@ -82,6 +82,7 @@ import Control.Exception (SomeException)
 import Data.ByteString.Lazy qualified as BL
 import Data.Set (Set)
 import Data.Word
+import System.Random
 
 import Network.Mux qualified as Mx
 #if !defined(wasm32_HOST_ARCH)
@@ -509,16 +510,18 @@ connectTo
   -> Socket.SockAddr
   -> IO (Either SomeException (Either a b))
 #if !defined(wasm32_HOST_ARCH)
-connectTo sn tr =
+connectTo sn tr versions localAddr remoteAddr = do
+    rttCookieSeed <- newStdGen
     connectToNode sn makeSocketBearer
                   ConnectToArgs {
                     ctaHandshakeCodec      = nodeToNodeHandshakeCodec,
                     ctaHandshakeTimeLimits = timeLimitsHandshake,
                     ctaVersionDataCodec    = nodeToNodeVersionDataCodec,
                     ctaConnectTracers      = tr,
-                    ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
+                    ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion,
+                    ctaRTTCookieSeed       = rttCookieSeed
                   }
-                  configureOutboundSocket
+                  configureOutboundSocket versions localAddr remoteAddr
   where
     configureOutboundSocket :: Socket -> IO ()
     configureOutboundSocket sock = do

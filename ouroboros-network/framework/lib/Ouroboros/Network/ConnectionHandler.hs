@@ -58,6 +58,7 @@ import Data.Map (Map)
 import Data.Maybe.Strict
 import Data.Text (Text)
 import Data.Typeable (Typeable)
+import System.Random (StdGen, splitGen)
 
 import Network.Mux (Mux)
 import Network.Mux qualified as Mx
@@ -265,13 +266,18 @@ makeConnectionHandler
     -> (ThreadId m, RethrowPolicy)
     -- ^ 'ThreadId' and rethrow policy.  Rethrow policy might throw an async
     -- exception to that thread, when trying to terminate the process.
+    -> StrictTVar m StdGen
+    -- ^ PRNG source for per-mux RTT-cookie seeds. Each invocation of
+    -- the returned handler atomically splits a fresh 'StdGen' out of
+    -- this TVar and passes it to 'Mx.new'.
     -> MkMuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr versionNumber versionData ByteString m a b
     -> MuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr
                             versionNumber versionData ByteString m a b
 makeConnectionHandler muxTracers forkPolicy
                       handshakeArguments
                       versionedApplication
-                      (mainThreadId, rethrowPolicy) =
+                      (mainThreadId, rethrowPolicy)
+                      rttCookieRngVar =
   \case
     MuxInitiatorConnectionHandler ->
       ConnectionHandler . WithInitiatorMode
@@ -367,7 +373,9 @@ makeConnectionHandler muxTracers forkPolicy
                         -- If this is InitiatorOnly, or a server where unidirectional flow was negotiated
                         -- the IG will never be informed of this remote for obvious reasons.
                         pure $ Mx.tracersWithBearer connectionId muxTracers
-                mux <- Mx.new muxTracers' (mkMiniProtocolInfos (runForkPolicy forkPolicy remoteAddress) app)
+                rttSeed <- atomically $ stateTVar rttCookieRngVar splitGen
+                mux     <- Mx.new muxTracers' rttSeed
+                                  (mkMiniProtocolInfos (runForkPolicy forkPolicy remoteAddress) app)
                 let !handle = Handle {
                         hMux            = mux,
                         hMuxBundle      = app,
@@ -435,9 +443,11 @@ makeConnectionHandler muxTracers forkPolicy
                      <*> newTVarIO Continue
 
                countersVar <- newTVarIO . SJust $ ResponderCounters 0 0
+               rttSeed <- atomically $ stateTVar rttCookieRngVar splitGen
                mux <- Mx.new (Mx.tracersWithBearer connectionId muxTracers {
                                Mx.tracer = Mx.tracer muxTracers <> inboundGovernorMuxTracer countersVar
                              })
+                             rttSeed
                              (mkMiniProtocolInfos (runForkPolicy forkPolicy remoteAddress) app)
 
                let !handle = Handle {

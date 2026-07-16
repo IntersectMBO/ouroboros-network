@@ -68,6 +68,7 @@ import Control.Monad.Class.MonadTimer.SI
 import Data.ByteString.Lazy qualified as BL
 import Data.Kind (Type)
 import Data.Void (Void, absurd)
+import System.Random
 
 import Network.Mux qualified as Mx
 import Network.TypedProtocol.Peer.Client
@@ -234,22 +235,24 @@ connectTo
   -> FilePath
   -- ^ path of the unix socket or named pipe
   -> IO (Either SomeException a)
-connectTo snocket tracers versions path =
+connectTo snocket tracers versions path = do
+    rttCookieSeed <- newStdGen
     fmap fn <$>
-    connectToNode
-      snocket
-      makeLocalBearer
-      ConnectToArgs {
-        ctaHandshakeCodec      = nodeToClientHandshakeCodec,
-        ctaHandshakeTimeLimits = noTimeLimitsHandshake,
-        ctaVersionDataCodec    = nodeToClientVersionDataCodec,
-        ctaConnectTracers      = tracers,
-        ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
-      }
-      mempty
-      versions
-      Nothing
-      (localAddressFromPath path)
+      connectToNode
+        snocket
+        makeLocalBearer
+        ConnectToArgs {
+          ctaHandshakeCodec      = nodeToClientHandshakeCodec,
+          ctaHandshakeTimeLimits = noTimeLimitsHandshake,
+          ctaVersionDataCodec    = nodeToClientVersionDataCodec,
+          ctaConnectTracers      = tracers,
+          ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion,
+          ctaRTTCookieSeed       = rttCookieSeed
+        }
+        mempty
+        versions
+        Nothing
+        (localAddressFromPath path)
   where
     fn :: forall x. Either x Void -> x
     fn = either id absurd
@@ -284,7 +287,8 @@ connectToWithMux
   --
   -- NOTE: when the callback returns or errors, the mux thread will be killed.
   -> IO x
-connectToWithMux snocket tracers versions path k =
+connectToWithMux snocket tracers versions path k = do
+  rttCookieSeed <- newStdGen
   connectToNodeWithMux
     snocket
     makeLocalBearer
@@ -293,7 +297,8 @@ connectToWithMux snocket tracers versions path k =
       ctaHandshakeTimeLimits = noTimeLimitsHandshake,
       ctaVersionDataCodec    = nodeToClientVersionDataCodec,
       ctaConnectTracers      = tracers,
-      ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
+      ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion,
+      ctaRTTCookieSeed       = rttCookieSeed
     }
     mempty
     versions

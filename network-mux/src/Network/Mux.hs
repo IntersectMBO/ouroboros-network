@@ -10,8 +10,6 @@
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE TypeFamilies              #-}
 
--- TODO: GHC-8.10 on Windows
-{-# OPTIONS_GHC -Wno-name-shadowing #-}
 -- | Network multiplexer API.
 --
 -- The module should be imported qualified.
@@ -85,6 +83,8 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTimer.SI hiding (timeout)
 import Control.Tracer
 
+import System.Random (StdGen)
+
 import Network.Mux.Bearer
 import Network.Mux.Channel
 import Network.Mux.Egress as Egress
@@ -143,11 +143,13 @@ stopped Mux { muxStatus } =
 new :: forall (mode :: Mode) m.
        MonadLabelledSTM m
     => Tracers m
+    -> StdGen
+    -- ^ seed for RTT-cookie generation
     -> [MiniProtocolInfo mode]
     -- ^ description of protocols run by the mux layer.  Only these protocols
     -- one will be able to execute.
     -> m (Mux mode m)
-new muxTracers ptcls = do
+new muxTracers rttSeed ptcls = do
     traceWith (tracer_ muxTracers) (TraceNewMux ptcls)
     muxMiniProtocols   <- mkMiniProtocolStateMap ptcls
     muxControlCmdQueue <- atomically newTQueue

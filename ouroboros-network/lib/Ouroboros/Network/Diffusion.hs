@@ -272,7 +272,12 @@ runM Interfaces
     (fuzzRng,        rng3) = splitGen rng2
     (cmLocalStdGen,  rng4) = splitGen rng3
     (cmStdGen1,      rng5) = splitGen rng4
-    (cmStdGen2, peerSelectionActionsRng) = splitGen rng5
+    (cmStdGen2,      rng6) = splitGen rng5
+    -- Per-connection RTT-cookie PRNG seeds: one shared TVar per CM.
+    -- Each mux instance atomically splits a fresh 'StdGen' out of the
+    -- appropriate TVar in 'makeConnectionHandler'.
+    (rttNtcSeed,     rng7) = splitGen rng6
+    (rttNtnSeed,     peerSelectionActionsRng) = splitGen rng7
 
     mkInboundPeersMap :: IG.PublicState ntnAddr ntnVersionData
                       -> Map ntnAddr PeerSharing
@@ -327,6 +332,7 @@ runM Interfaces
     mkLocalThread :: ThreadId m -> Either ntcFd ntcAddr -> m Void
     mkLocalThread mainThreadId localAddr = do
      labelThisThread "diffusion-local"
+     rttNtcCookieRngVar <- newTVarIO rttNtcSeed
      withLocalSocket tracer diNtcGetFileDescriptor
                      diNtcConfigureSocketFile
                      diNtcSnocket localAddr
@@ -353,6 +359,7 @@ runM Interfaces
                         (WithEstablished [])
                   ) <$> daLocalResponderApplication )
                 (mainThreadId, rethrowPolicy <> daLocalRethrowPolicy)
+                rttNtcCookieRngVar
                 (MuxResponderConnectionHandler responderMuxChannelTracer)
 
             localWithConnectionManager
@@ -417,6 +424,7 @@ runM Interfaces
     mkRemoteThread :: ThreadId m -> m Void
     mkRemoteThread mainThreadId = do
       labelThisThread "diffusion-remote"
+      rttNtnCookieRngVar <- newTVarIO rttNtnSeed
       let
         exitPolicy :: ExitPolicy a
         exitPolicy = ExitPolicy {
@@ -531,6 +539,7 @@ runM Interfaces
               daNtnHandshakeArguments
               versions
               (mainThreadId, rethrowPolicy <> daRethrowPolicy)
+              rttNtnCookieRngVar
 
           -- | Capture the two variations (InitiatorMode,InitiatorResponderMode) of
           --   withConnectionManager:

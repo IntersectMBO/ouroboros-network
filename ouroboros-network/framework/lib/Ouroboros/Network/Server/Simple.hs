@@ -26,6 +26,7 @@ import Data.ByteString.Lazy qualified as BL
 import Data.Functor (void)
 import Data.Typeable (Typeable)
 import Data.Void (Void)
+import System.Random (mkStdGen)
 
 import Network.Mux qualified as Mx
 
@@ -133,7 +134,9 @@ with sn tracer muxTracers makeBearer configureSock addr handshakeArgs versions k
                     Left (HandshakeProtocolError e) -> throwIO e
                     Right HandshakeQueryResult {}   -> error "handshake query is not supported"
                     Right (HandshakeNegotiationResult (SomeResponderApplication app) vNumber vData) -> do
+                      -- TODO: entropy-seed the RTT PRNG.
                       mux <- Mx.new (connId `Mx.tracersWithBearer` muxTracers)
+                                    (mkStdGen 0)
                                     (toMiniProtocolInfos
                                       (runForkPolicy noBindForkPolicy remoteAddress)
                                       app)

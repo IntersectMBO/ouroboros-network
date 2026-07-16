@@ -77,6 +77,7 @@ import Data.Hashable
 import Data.Monoid.Synchronisation (FirstToFinish (..))
 import Data.Typeable (Typeable)
 import Data.Word (Word16)
+import System.Random (StdGen)
 #if !defined(wasm32_HOST_ARCH)
 import Network.Socket (SockAddr, Socket, StructLinger (..))
 #else
@@ -249,7 +250,11 @@ data ConnectToArgs m fd addr vNumber vData = ConnectToArgs {
     ctaHandshakeTimeLimits :: ProtocolTimeLimits (Handshake vNumber CBOR.Term),
     ctaVersionDataCodec    :: VersionDataCodec vNumber vData,
     ctaConnectTracers      :: NetworkConnectTracers m addr vNumber,
-    ctaHandshakeCallbacks  :: HandshakeCallbacks vData
+    ctaHandshakeCallbacks  :: HandshakeCallbacks vData,
+    ctaRTTCookieSeed       :: StdGen
+    -- ^ PRNG seed for the connection's RTT-cookie generation. Callers
+    -- running in 'IO' can supply 'System.Random.newStdGen'; simulation
+    -- callers can pass a fixed 'mkStdGen'.
   }
 
 
@@ -450,7 +455,8 @@ connectToNodeWithMux'
           nctMuxTracers,
           nctHandshakeTracer
         },
-      ctaHandshakeCallbacks  = handshakeCallbacks
+      ctaHandshakeCallbacks  = handshakeCallbacks,
+      ctaRTTCookieSeed       = rttCookieSeed
   }
   versions sd k = do
     connectionId <- (\localAddress remoteAddress -> ConnectionId { localAddress, remoteAddress })
@@ -483,7 +489,8 @@ connectToNodeWithMux'
        Right (HandshakeNegotiationResult app versionNumber agreedOptions) ->
          Mx.withReadBufferIO $ \buffer -> do
            bearer <- Mx.getBearer makeBearer sduTimeout sd buffer
-           mux <- Mx.new muxTracers (toMiniProtocolInfos (runForkPolicy noBindForkPolicy remoteAddress) app)
+           mux <- Mx.new muxTracers rttCookieSeed
+                         (toMiniProtocolInfos (runForkPolicy noBindForkPolicy remoteAddress) app)
            withAsync (Mx.run mux bearer) $ \aid ->
              k connectionId versionNumber agreedOptions app mux aid
 
@@ -514,7 +521,7 @@ simpleMuxCallback
   -> m (Either SomeException (Either a b))
 simpleMuxCallback connectionId _ _ app mux aid = do
     let initCtx = MinimalInitiatorContext connectionId
-        respCtx = ResponderContext connectionId
+        respCtx = ResponderContext connectionId (Mx.peerRTT mux)
 
     resOps <- sequence
       [ Mx.runMiniProtocol
