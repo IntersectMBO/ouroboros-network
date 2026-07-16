@@ -79,8 +79,18 @@ import Network.Mux.Codec qualified as Mx
 import Network.Mux.Types (MiniProtocolInfo (..), MiniProtocolLimits (..))
 import Network.Mux.Types qualified as Mx
 import Network.Socket qualified as Socket
+import System.Random hiding (genByteString)
 import Text.Show.Functions ()
 -- import qualified Debug.Trace as Debug
+
+
+-- | Deterministic 'Mx.new' for tests — every mux gets the same seed.
+mkMux :: MonadLabelledSTM m
+      => Mx.Tracers m
+      -> [MiniProtocolInfo mode]
+      -> m (Mux mode m)
+mkMux tracers = Mx.new tracers (mkStdGen 0)
+
 
 tests :: TestTree
 tests =
@@ -233,7 +243,8 @@ instance Arbitrary DummyRun where
         map DummyRun $ filter (not . null) a'
 
 data InvalidSDU = InvalidSDU {
-      isTimestamp  :: !Mx.RemoteClockModel
+      isSendCookie :: !Mx.Cookie
+    , isEchoCookie :: !Mx.Cookie
     , isIdAndMode  :: !Word16
     , isLength     :: !Word16
     , isRealLength :: !Int
@@ -241,8 +252,9 @@ data InvalidSDU = InvalidSDU {
     }
 
 instance Show InvalidSDU where
-    show a = printf "InvalidSDU 0x%08x 0x%04x 0x%04x 0x%04x 0x%02x\n"
-                    (Mx.unRemoteClockModel $ isTimestamp a)
+    show a = printf "InvalidSDU 0x%04x 0x%04x 0x%04x 0x%04x 0x%04x 0x%02x\n"
+                    (Mx.unCookie $ isSendCookie a)
+                    (Mx.unCookie $ isEchoCookie a)
                     (isIdAndMode a)
                     (isLength a)
                     (isRealLength a)
@@ -274,17 +286,19 @@ instance Arbitrary ArbitrarySDU where
             return $ ArbitraryValidSDU (DummyPayload pl) (Just (Mx.IngressQueueOverRun (Mx.MiniProtocolNum 0) Mx.InitiatorDir))
 
         unknownMiniProtocol = do
-            ts  <- arbitrary
+            sendTs <- arbitrary
+            echoTs <- arbitrary
             mid <- choose (6, 0x7fff) -- ClientChainSynWithBlocks with 5 is the highest valid mid
             mode <- oneof [return 0x0, return 0x8000]
             len <- choose (1, 0xffff)
             p <- arbitrary
 
-            return $ ArbitraryInvalidSDU (InvalidSDU (Mx.RemoteClockModel ts) (mid .|. mode) len
+            return $ ArbitraryInvalidSDU (InvalidSDU (Mx.Cookie sendTs) (Mx.Cookie echoTs) (mid .|. mode) len
                                           (8 + fromIntegral len) p)
                                          (Mx.UnknownMiniProtocol (Mx.MiniProtocolNum 0))
         invalidLenght = do
-            ts  <- arbitrary
+            sendTs <- arbitrary
+            echoTs <- arbitrary
             mid <- arbitrary
             realLen <- choose (0, Mx.msHeaderLength)
             -- An SDU with a payload length of 0 is also invalid.
@@ -294,7 +308,7 @@ instance Arbitrary ArbitrarySDU where
                                                    else arbitrary
             p <- arbitrary
 
-            return $ ArbitraryInvalidSDU (InvalidSDU (Mx.RemoteClockModel ts) mid len (fromIntegral realLen) p)
+            return $ ArbitraryInvalidSDU (InvalidSDU (Mx.Cookie sendTs) (Mx.Cookie echoTs) mid len (fromIntegral realLen) p)
                                          (Mx.SDUDecodeError "")
 
 instance Arbitrary Mx.State where
@@ -382,9 +396,9 @@ prop_mux_snd_recv (DummyRun messages) = ioProperty $ do
                        miniProtocolCapability = Nothing
                      }
 
-    clientMux <- Mx.new clientTracer [clientApp]
+    clientMux <- mkMux clientTracer [clientApp]
 
-    serverMux <- Mx.new serverTracer [serverApp]
+    serverMux <- mkMux serverTracer [serverApp]
 
     withAsync (Mx.run clientMux clientBearer) $ \clientAsync ->
       withAsync (Mx.run serverMux serverBearer) $ \serverAsync -> do
@@ -471,10 +485,10 @@ prop_mux_snd_recv_bi (DummyRun messages) (DummyCapability clientCap) (DummyCapab
                      ]
 
 
-    clientMux <- Mx.new clientTracer clientApps
+    clientMux <- mkMux clientTracer clientApps
     clientAsync <- async $ Mx.run clientMux clientBearer
 
-    serverMux <- Mx.new serverTracer serverApps
+    serverMux <- mkMux serverTracer serverApps
     serverAsync <- async $ Mx.run serverMux serverBearer
 
     r <- step clientMux clientApps serverMux serverApps messages
@@ -571,7 +585,7 @@ prop_mux_snd_recv_compat messages = ioProperty $ do
                        ]
 
     clientAsync <- async $ do
-      clientMux <- Mx.new clientTracer clientBundle
+      clientMux <- mkMux clientTracer clientBundle
       res <- Mx.runMiniProtocol
         clientMux
         (Mx.MiniProtocolNum 2)
@@ -589,7 +603,7 @@ prop_mux_snd_recv_compat messages = ioProperty $ do
         wait aid
 
     serverAsync <- async $ do
-      serverMux <- Mx.new serverTracer serverBundle
+      serverMux <- mkMux serverTracer serverBundle
       res <- Mx.runMiniProtocol
         serverMux
         (Mx.MiniProtocolNum 2)
@@ -761,7 +775,7 @@ runMuxApplication (DummyCapability rspCap) initApps initBearer respApps respBear
         respApps' = zip protNum respApps
         initApps' = zip protNum initApps
 
-    respMux <- Mx.new serverTracer $ map (\(pn,_) ->
+    respMux <- mkMux serverTracer $ map (\(pn,_) ->
           MiniProtocolInfo {
             miniProtocolNum        = Mx.MiniProtocolNum pn,
             miniProtocolDir        = Mx.ResponderDirectionOnly,
@@ -780,7 +794,7 @@ runMuxApplication (DummyCapability rspCap) initApps initBearer respApps respBear
                            | (pn, app) <- respApps'
                            ]
 
-    initMux <- Mx.new clientTracer $ map (\(pn,_) ->
+    initMux <- mkMux clientTracer $ map (\(pn,_) ->
           MiniProtocolInfo {
             miniProtocolNum        = Mx.MiniProtocolNum pn,
             miniProtocolDir        = Mx.InitiatorDirectionOnly,
@@ -1066,14 +1080,14 @@ prop_mux_starvation (Uneven response0 response1) =
                          miniProtocolCapability = Nothing
                        }
 
-    serverMux <- Mx.new serverTracer [serverApp2, serverApp3]
+    serverMux <- mkMux serverTracer [serverApp2, serverApp3]
     serverMux_aid <- async $ Mx.run serverMux serverBearer
     serverRes2 <- Mx.runMiniProtocol serverMux (miniProtocolNum serverApp2) (miniProtocolDir serverApp2)
                    Mx.StartOnDemand server_short
     serverRes3 <- Mx.runMiniProtocol serverMux (miniProtocolNum serverApp3) (miniProtocolDir serverApp3)
                    Mx.StartOnDemand server_long
 
-    clientMux <- Mx.new clientTracer [clientApp2, clientApp3]
+    clientMux <- mkMux clientTracer [clientApp2, clientApp3]
     clientMux_aid <- async $ Mx.run clientMux clientBearer
     clientRes2 <- Mx.runMiniProtocol clientMux (miniProtocolNum clientApp2) (miniProtocolDir clientApp2)
                    Mx.StartEagerly client_short
@@ -1144,7 +1158,8 @@ encodeInvalidMuxSDU sdu =
     BL.append header $ BL.replicate (fromIntegral $ isLength sdu) (isPattern sdu)
   where
     enc = do
-        Bin.putWord32be $ Mx.unRemoteClockModel $ isTimestamp sdu
+        Bin.putWord16be $ Mx.unCookie $ isSendCookie sdu
+        Bin.putWord16be $ Mx.unCookie $ isEchoCookie sdu
         Bin.putWord16be $ isIdAndMode sdu
         Bin.putWord16be $ isLength sdu
 
@@ -1274,7 +1289,7 @@ prop_demux_sdu a = do
                                        }
                           Nothing
 
-        serverMux <- Mx.new serverTracer [serverApp]
+        serverMux <- mkMux serverTracer [serverApp]
         serverRes <- Mx.runMiniProtocol serverMux (Mx.miniProtocolNum serverApp) (Mx.miniProtocolDir serverApp)
                  Mx.StartEagerly server_mp
 
@@ -1301,7 +1316,8 @@ prop_demux_sdu a = do
         let (!frag, !rest) = BL.splitAt 0xffff payload
             sdu' = Mx.SDU
                     (Mx.SDUHeader
-                      (Mx.RemoteClockModel 0)
+                      Mx.noCookie
+                      Mx.noCookie
                       (Mx.MiniProtocolNum 2)
                       Mx.InitiatorDir
                       (fromIntegral $ BL.length frag))
@@ -1577,7 +1593,7 @@ prop_mux_restart_m (DummyRestartingInitiatorApps apps) = do
                 Nothing
     let minis = map (appToInfo Mx.InitiatorDirectionOnly . fst) apps
 
-    mux <- Mx.new Mx.nullTracers minis
+    mux <- mkMux Mx.nullTracers minis
     mux_aid <- async $ Mx.run mux bearer
     getRes <- sequence [ Mx.runMiniProtocol
                            mux
@@ -1624,7 +1640,7 @@ prop_mux_restart_m (DummyRestartingResponderApps rapps) = do
     let apps = map fst rapps
         minis = map (appToInfo Mx.ResponderDirectionOnly) apps
 
-    mux <- Mx.new Mx.nullTracers minis
+    mux <- mkMux Mx.nullTracers minis
     mux_aid <- async $ Mx.run mux bearer
     getRes <- sequence [ Mx.runMiniProtocol
                            mux
@@ -1674,7 +1690,7 @@ prop_mux_restart_m (DummyRestartingInitiatorResponderApps rapps) = do
         initMinis = map (appToInfo Mx.InitiatorDirection) apps
         respMinis = map (appToInfo Mx.ResponderDirection) apps
 
-    mux <- Mx.new Mx.nullTracers $ initMinis ++ respMinis
+    mux <- mkMux Mx.nullTracers $ initMinis ++ respMinis
     mux_aid <- async $ Mx.run mux bearer
     getInitRes <- sequence [ Mx.runMiniProtocol
                                mux
@@ -1760,7 +1776,7 @@ prop_mux_start_m bearer _ checkRes (DummyInitiatorApps apps) runTime _ = do
     let minis = map (appToInfo Mx.InitiatorDirectionOnly) apps
         minRunTime = minimum $ runTime : (map daRunTime $ filter (\app -> daAction app == DummyAppFail) apps)
 
-    mux <- Mx.new Mx.nullTracers minis
+    mux <- mkMux Mx.nullTracers minis
     mux_aid <- async $ Mx.run mux bearer
     killer <- async $ (threadDelay runTime) >> Mx.stop mux
     getRes <- sequence [ Mx.runMiniProtocol
@@ -1784,7 +1800,7 @@ prop_mux_start_m bearer trigger checkRes (DummyResponderApps apps) runTime anySt
                                                           _                   -> daRunTime a + daStartAfter a
                                               ) $ filter (\app -> daAction app == DummyAppFail) apps)
 
-    mux <- Mx.new muxVerboseTracer minis
+    mux <- mkMux muxVerboseTracer minis
     mux_aid <- async $ Mx.run mux bearer
     getRes <- sequence [ Mx.runMiniProtocol
                            mux
@@ -1814,7 +1830,7 @@ prop_mux_start_m bearer _trigger _checkRes (DummyResponderAppsKillMux apps) runT
     -- not deadlocks.
     let minis = map (appToInfo Mx.ResponderDirectionOnly) apps
 
-    mux <- Mx.new muxVerboseTracer minis
+    mux <- mkMux muxVerboseTracer minis
     mux_aid <- async $ Mx.run mux bearer
     getRes <- sequence [ Mx.runMiniProtocol
                            mux
@@ -1837,7 +1853,7 @@ prop_mux_start_m bearer trigger checkRes (DummyInitiatorResponderApps apps) runT
         respMinis = map (appToInfo Mx.ResponderDirection) apps
         minRunTime = minimum $ runTime : (map (\a -> daRunTime a) $ filter (\app -> daAction app == DummyAppFail) apps)
 
-    mux <- Mx.new muxVerboseTracer $ initMinis ++ respMinis
+    mux <- mkMux muxVerboseTracer $ initMinis ++ respMinis
     mux_aid <- async $ Mx.run mux bearer
     getInitRes <- sequence [ Mx.runMiniProtocol
                                mux
@@ -2012,7 +2028,7 @@ close_experiment
         serverMuxTracer  = Mx.TracersI serverMuxTracer' nullTracer nullTracer
     withAsync
       -- run client thread
-      (bracket (Mx.new clientMuxTracer
+      (bracket (mkMux clientMuxTracer
                        [ MiniProtocolInfo {
                            miniProtocolNum,
                            miniProtocolDir = Mx.InitiatorDirectionOnly,
@@ -2032,7 +2048,7 @@ close_experiment
       $ \clientAsync ->
         withAsync
           -- run server thread
-          (bracket ( Mx.new serverMuxTracer
+          (bracket ( mkMux serverMuxTracer
                             [ MiniProtocolInfo {
                                 miniProtocolNum,
                                 miniProtocolDir = Mx.ResponderDirectionOnly,
@@ -2466,7 +2482,7 @@ prop_mux_trailing_bytes reminder (NonEmptyByteString received) = do
                 (-1)
                 QueueChannel { writeQueue = mux_w, readQueue = mux_r }
                 Nothing
-    mux <- Mx.new Mx.nullTracers
+    mux <- mkMux Mx.nullTracers
                   [ MiniProtocolInfo {
                       miniProtocolNum,
                       miniProtocolDir = Mx.ResponderDirectionOnly,
@@ -2488,10 +2504,11 @@ prop_mux_trailing_bytes reminder (NonEmptyByteString received) = do
         $ writeTBQueue mux_r
         $ Mx.encodeSDU
         $ Mx.SDU { Mx.msHeader = Mx.SDUHeader {
-                     Mx.mhTimestamp = Mx.RemoteClockModel 0,
-                     Mx.mhNum       = miniProtocolNum,
-                     Mx.mhDir       = Mx.InitiatorDir,
-                     Mx.mhLength    = fromIntegral (BL.length received)
+                     Mx.mhSendCookie = Mx.noCookie,
+                     Mx.mhEchoCookie = Mx.noCookie,
+                     Mx.mhNum           = miniProtocolNum,
+                     Mx.mhDir           = Mx.InitiatorDir,
+                     Mx.mhLength        = fromIntegral (BL.length received)
                    },
                    Mx.msBlob = received
                 }
@@ -2575,7 +2592,7 @@ prop_mux_pure_exception = do
                 (-1)
                 QueueChannel { writeQueue = mux_w, readQueue = mux_r }
                 Nothing
-    mux <- Mx.new Mx.nullTracers -- { Mx.tracer = Tracer Debug.traceShowM }
+    mux <- mkMux Mx.nullTracers -- { Mx.tracer = Tracer Debug.traceShowM }
                   [ MiniProtocolInfo {
                       miniProtocolNum,
                       miniProtocolDir = Mx.ResponderDirectionOnly,
