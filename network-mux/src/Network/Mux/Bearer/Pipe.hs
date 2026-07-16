@@ -93,7 +93,6 @@ pipeAsBearer sduSize channel =
                   traceWith tracer $ Mx.TraceRecvHeaderEnd msHeader
                   blob <- recvLen' (fromIntegral $ Mx.mhLength msHeader) []
                   ts <- getMonotonicTime
-                  traceWith tracer (Mx.TraceRecvDeltaQObservation msHeader ts)
                   return (header {Mx.msBlob = blob}, ts)
         where
           recvLen' :: Int -> [BL.ByteString] -> IO BL.ByteString

@@ -24,6 +24,7 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI hiding (timeout)
 import Control.Tracer (Tracer)
 
+import Network.Mux.RTT (RTTState, newSendCookie)
 import Network.Mux.Timeout
 import Network.Mux.Types
 
@@ -143,16 +144,26 @@ muxer
        , MonadTimer m
        )
     => EgressQueue m
+    -> RTTState m
     -> Tracer m BearerTrace
     -> Bearer m
     -> m void
-muxer egressQueue tracer Bearer { writeMany, sduSize, batchSize, egressInterval } =
+muxer egressQueue rttState tracer Bearer { writeMany, sduSize, batchSize, egressInterval } =
     withTimeoutSerial $ \timeout ->
     forever $ do
       start <- getMonotonicTime
       TLSRDemand mpc md d <- atomically $ readTBQueue egressQueue
-      sdu <- processSingleWanton egressQueue sduSize mpc md d
-      sdus <- buildBatch [sdu] (sduLength sdu)
+      -- Capture the send-time *after* the queue read, not before. If
+      -- 'readTBQueue' blocked waiting for a demand, using 'start'
+      -- would attribute the queue-block interval to the cookie's
+      -- send time and inflate the RTT samples this batch produces.
+      -- 'start' stays for the loop-throttle math below.
+      mintTime <- getMonotonicTime
+      -- Mint a fresh (send, echo) cookie pair once per iteration and
+      -- reuse it across every SDU in this batch.
+      cookies <- atomically $ newSendCookie rttState mintTime
+      sdu <- atomically $ processSingleWanton egressQueue cookies sduSize mpc md d
+      sdus <- buildBatch cookies [sdu] (sduLength sdu)
       void $ writeMany tracer timeout sdus
       end <- getMonotonicTime
       empty <- atomically $ isEmptyTBQueue egressQueue
@@ -173,7 +184,7 @@ muxer egressQueue tracer Bearer { writeMany, sduSize, batchSize, egressInterval 
     -- The batch size is either limited by the bearer
     -- (e.g the SO_SNDBUF for Socket) or number of SDUs.
     --
-    buildBatch s sl = reverse <$> go s sl
+    buildBatch cookies s sl = reverse <$> go s sl
      where
       go sdus _ | length sdus >= maxSDUsPerBatch   = return sdus
       go sdus sdusLength | sdusLength >= batchSize = return sdus
@@ -181,7 +192,7 @@ muxer egressQueue tracer Bearer { writeMany, sduSize, batchSize, egressInterval 
         demand_m <- atomically $ tryReadTBQueue egressQueue
         case demand_m of
              Just (TLSRDemand mpc md d) -> do
-               sdu <- processSingleWanton egressQueue sduSize mpc md d
+               sdu <- atomically $ processSingleWanton egressQueue cookies sduSize mpc md d
                go (sdu:sdus) (sdusLength + sduLength sdu)
              Nothing -> return sdus
 
@@ -191,36 +202,36 @@ muxer egressQueue tracer Bearer { writeMany, sduSize, batchSize, egressInterval 
 -- first.
 processSingleWanton :: MonadSTM m
                     => EgressQueue m
+                    -> (Cookie, Cookie)
+                    -- ^ (send, echo) cookie pair, minted once per
+                    -- muxer iteration and reused across the batch.
                     -> SDUSize
                     -> MiniProtocolNum
                     -> MiniProtocolDir
                     -> Wanton m
-                    -> m SDU
-processSingleWanton egressQueue (SDUSize sduSize)
+                    -> STM m SDU
+processSingleWanton egressQueue (sendCookie, echoCookie) (SDUSize sduSize)
                     mpc md wanton = do
-    blob <- atomically $ do
-      -- extract next SDU
-      d <- readTVar (want wanton)
-      let (frag, rest) = BL.splitAt (fromIntegral sduSize) d
-      -- if more to process then enqueue remaining work
-      if BL.null rest
-        then writeTVar (want wanton) BL.empty
-        else do
-          -- Note that to preserve bytestream ordering within a given
-          -- miniprotocol the readTVar and writeTVar operations
-          -- must be inside the same STM transaction.
-          writeTVar (want wanton) rest
-          writeTBQueue egressQueue (TLSRDemand mpc md wanton)
-      -- return data to send
-      pure frag
-    let sdu = SDU {
-                msHeader = SDUHeader {
-                    mhTimestamp = RemoteClockModel 0,
-                    mhNum       = mpc,
-                    mhDir       = md,
-                    mhLength    = fromIntegral $ BL.length blob
-                  },
-                msBlob = blob
-              }
-    return sdu
+    -- extract next SDU
+    d <- readTVar (want wanton)
+    let (frag, rest) = BL.splitAt (fromIntegral sduSize) d
+    -- if more to process then enqueue remaining work
+    if BL.null rest
+      then writeTVar (want wanton) BL.empty
+      else do
+        -- Note that to preserve bytestream ordering within a given
+        -- miniprotocol the readTVar and writeTVar operations
+        -- must be inside the same STM transaction.
+        writeTVar (want wanton) rest
+        writeTBQueue egressQueue (TLSRDemand mpc md wanton)
+    pure SDU {
+             msHeader = SDUHeader {
+                 mhSendCookie = sendCookie,
+                 mhEchoCookie = echoCookie,
+                 mhNum        = mpc,
+                 mhDir        = md,
+                 mhLength     = fromIntegral $ BL.length frag
+               },
+             msBlob = frag
+           }
     --paceTransmission tNow

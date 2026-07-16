@@ -51,7 +51,6 @@ namedPipeAsBearer sduSize h =
           traceWith tracer $ Mx.TraceRecvHeaderEnd msHeader
           blob <- recvLen' tracer False (fromIntegral $ Mx.mhLength msHeader) []
           ts <- getMonotonicTime
-          traceWith tracer (Mx.TraceRecvDeltaQObservation msHeader ts)
           return (header {Mx.msBlob = blob}, ts)
 
     recvLen' :: Tracer IO Mx.BearerTrace -> Bool -> Int64 -> [BL.ByteString] -> IO BL.ByteString

@@ -36,6 +36,8 @@ module Network.Mux.RTT
   , RTTState
   , newRTTState
   , newSendCookie
+  , processIngress
+  , IngressEcho (..)
   , peerRTT
     -- * Configuration
   , defaultBucketDur
@@ -43,6 +45,7 @@ module Network.Mux.RTT
   , defaultHoldDuration
   , defaultMaxOutstanding
   , defaultMintInterval
+  , defaultBurstMaxAge
   , RTTComp
   ) where
 
@@ -105,6 +108,49 @@ defaultMaxOutstanding = 4096
 defaultMintInterval :: DiffTime
 defaultMintInterval = 1e-3
 
+-- | Maximum lifetime of the "burst tracker" cache — once a matched
+-- cookie has been sitting in the cache for longer than this, we
+-- refuse to count further echoes of it as burst continuations. Bounds
+-- the amount of extra observation an adversarial peer can synthesise
+-- by echoing an old cookie in a loop. 1 s is generous for a
+-- legitimate response burst (thousands of back-to-back SDUs at wire
+-- speed) while cutting off replay abuse.
+defaultBurstMaxAge :: DiffTime
+defaultBurstMaxAge = 1
+
+
+-- | Bookkeeping for the last cookie we successfully matched — used
+-- to recognise burst-continuation SDUs (subsequent responses from
+-- the peer that echo the same cookie because they were emitted
+-- before the peer had received a newer one from us).
+data BurstTracker = BurstTracker
+  { btCookie         :: !Cookie
+    -- ^ The most recently matched cookie.
+  , btFirstMatchTime :: !Time
+    -- ^ Local time at which we accepted the first echo of this
+    -- cookie; used against 'rttBurstMaxAge' to bound how long we
+    -- keep counting continuations.
+  , btLastEchoTime   :: !Time
+    -- ^ Local time of the most recent echo (initial or
+    -- continuation); the next burst continuation's inter-SDU gap
+    -- is @now − btLastEchoTime@.
+  }
+
+
+-- | Result of a single ingress-echo evaluation.
+data IngressEcho
+  = -- | First echo of a cookie we sent — a round-trip sample.
+    EchoMatched  !DiffTime
+    -- | A follow-up SDU from the peer echoing the same cookie whose
+    -- initial echo we already matched. The 'DiffTime' is the gap
+    -- between this SDU and the previous echo of the same cookie
+    -- (a peer-side inter-SDU serialisation interval), not a
+    -- round-trip.
+  | EchoBurstSDU !DiffTime
+    -- | Nothing useful: no match, and no active burst tracker.
+  | EchoNoSignal
+  deriving Show
+
 
 -- | Internal per-mux RTT state.
 data RTTState m = RTTState {
@@ -123,6 +169,10 @@ data RTTState m = RTTState {
     -- 'newSendCookie' for SDUs sent within 'rttMintInterval' of the
     -- previous mint. 'Nothing' before the first mint.
   , rttLastMinted     :: !(StrictTVar m (Maybe (Cookie, Time)))
+    -- | Most recently matched cookie + timing (see 'BurstTracker'),
+    -- or 'Nothing' if none is being tracked. Cleared on age-out, on
+    -- a fresh match to a different cookie, and on unrelated misses.
+  , rttLastEcho       :: !(StrictTVar m (Maybe BurstTracker))
     -- | PRNG for cookie generation.
   , rttPRNG           :: !(StrictTVar m StdGen)
     -- | Rolling t-digest window of RTT samples.
@@ -133,6 +183,8 @@ data RTTState m = RTTState {
   , rttMaxOutstanding :: !Int
     -- | Cookie-reuse window; see 'defaultMintInterval'.
   , rttMintInterval   :: !DiffTime
+    -- | Maximum age of the burst tracker; see 'defaultBurstMaxAge'.
+  , rttBurstMaxAge    :: !DiffTime
   }
 
 
@@ -147,6 +199,7 @@ newRTTState g = do
     rttLastPeerCookie <- newTVarIO noCookie
     rttOutstanding    <- newTVarIO PSQ.empty
     rttLastMinted     <- newTVarIO Nothing
+    rttLastEcho       <- newTVarIO Nothing
     rttPRNG           <- newTVarIO g
     rttWindow         <- newTVarIO (DTB.empty defaultBucketDur defaultRetention)
     labelTVarIO rttLastPeerCookie "RTT.lastPeerCookie"
@@ -165,6 +218,7 @@ newRTTState g = do
         rttHoldDuration   = defaultHoldDuration,
         rttMaxOutstanding = defaultMaxOutstanding,
         rttMintInterval   = defaultMintInterval,
+        rttBurstMaxAge    = defaultBurstMaxAge
       }
 
 
@@ -221,6 +275,71 @@ newSendCookie RTTState { rttLastPeerCookie
       | otherwise           = case PSQ.minView psq of
           Just (_k, _p, _v, rest) -> trimToCap cap rest
           Nothing                 -> psq
+
+
+-- | Ingress processing:
+--
+--   * Update 'rttLastPeerCookie' with 'mhSendCookie'.
+--   * If mhEchoCookie appears in the outstanding set, compute RTT
+--     (@now − sendTime@), sample the window, and age out outstanding
+--     entries (delete-on-match + monotone-echo enforcement). Result
+--     is 'EchoMatched'.
+--   * If it doesn't, but the burst tracker still holds the same
+--     cookie and hasn't aged out, emit an 'EchoBurstSDU' with the
+--     inter-SDU gap.
+--   * Otherwise 'EchoNoSignal'; age-out still runs on the
+--     outstanding-store.
+processIngress
+    :: MonadSTM m
+    => RTTState m
+    -> SDUHeader
+    -> Time
+    -> m IngressEcho
+processIngress RTTState { rttLastPeerCookie
+                        , rttOutstanding
+                        , rttLastEcho
+                        , rttWindow
+                        , rttHoldDuration
+                        , rttBurstMaxAge
+                        }
+               SDUHeader { mhSendCookie, mhEchoCookie }
+               now
+  = atomically $ do
+    writeTVar rttLastPeerCookie mhSendCookie
+    outs0  <- readTVar rttOutstanding
+    mBurst <- readTVar rttLastEcho
+    -- TODO: be more clever about ageCutoff in an efficient way,
+    -- perhaps by taking into account rttOutstanding growth
+    let ageCutoff = negate rttHoldDuration `addTime` now
+    case PSQ.lookup mhEchoCookie outs0 of
+      Just (sendTime, ()) -> do
+        -- Fresh match: RTT sample, prune outstanding, reset burst tracker.
+        let cutoff = max sendTime ageCutoff
+            rtt   = now `diffTime` sendTime
+        writeTVar rttOutstanding (snd (PSQ.atMostView cutoff outs0))
+        writeTVar rttLastEcho $ Just BurstTracker
+          { btCookie         = mhEchoCookie
+          , btFirstMatchTime = now
+          , btLastEchoTime   = now
+          }
+        modifyTVar rttWindow (DTB.insert (now, realToFrac rtt))
+        return (EchoMatched rtt)
+      Nothing -> do
+        -- Age-out runs regardless of whether the echo matched.
+        writeTVar rttOutstanding (snd (PSQ.atMostView ageCutoff outs0))
+        case mBurst of
+          Just bt
+            | btCookie bt == mhEchoCookie
+            , now `diffTime` btFirstMatchTime bt <= rttBurstMaxAge -> do
+                let gap = now `diffTime` btLastEchoTime bt
+                writeTVar rttLastEcho $ Just bt { btLastEchoTime = now }
+                return (EchoBurstSDU gap)
+          _otherwise -> do
+            -- No live burst tracker for this cookie: clear the cache
+            -- (whether it held a stale different cookie or an expired
+            -- entry, we don't want it hanging around).
+            writeTVar rttLastEcho Nothing
+            return EchoNoSignal
 
 
 -- | Reader handle for consumers.

@@ -58,7 +58,6 @@ queueChannelAsBearer sduSize QueueChannel { writeQueue, readQueue } = do
               Right header -> do
                   traceWith tracer $ Mx.TraceRecvHeaderEnd (Mx.msHeader header)
                   ts <- getMonotonicTime
-                  traceWith tracer $ Mx.TraceRecvDeltaQObservation (Mx.msHeader header) ts
                   return (header {Mx.msBlob = payload}, ts)
 
       writeMux :: Tracer m Mx.BearerTrace -> Mx.TimeoutFn m -> Mx.SDU -> m Time

@@ -298,7 +298,6 @@ attenuationChannelAsBearer sduSize sduTimeout chan =
               let header = msHeader muxsdu
               traceWith tracer $ TraceRecvHeaderEnd header
               ts <- getMonotonicTime
-              traceWith tracer $ TraceRecvDeltaQObservation header ts
               return (muxsdu {msBlob = payload}, ts)
 
     writeMux :: Tracer m BearerTrace -> TimeoutFn m -> SDU -> m Time

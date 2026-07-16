@@ -92,7 +92,6 @@ socketAsBearer sduSize batchSize readBuffer_m sduTimeout egressInterval sd =
 
                        !ts <- getMonotonicTime
                        let !header' = header {Mx.msBlob = blob}
-                       traceWith tracer (Mx.TraceRecvDeltaQObservation msHeader ts)
                        return (header', ts)
 
           recvLen' ::  Int64 -> [BL.ByteString] -> IO BL.ByteString

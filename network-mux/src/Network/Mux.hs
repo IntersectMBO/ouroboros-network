@@ -157,7 +157,8 @@ new muxTracers ptcls = do
       muxMiniProtocols,
       muxControlCmdQueue,
       muxStatus,
-      muxTracers
+      muxTracers,
+      muxRTTState
     }
 
 mkMiniProtocolStateMap :: MonadSTM m
@@ -292,13 +293,13 @@ run Mux { muxMiniProtocols,
   where
 
     muxerJob egressQueue =
-      JobPool.Job (muxer egressQueue bearerTracer_ bearer)
+      JobPool.Job (muxer egressQueue muxRTTState bearerTracer_ bearer)
                   (return . MuxerException)
                   MuxJob
                   (name ++ "-muxer")
 
     demuxerJob =
-      JobPool.Job (demuxer (Map.elems muxMiniProtocols) bearerTracer_ bearer)
+      JobPool.Job (demuxer (Map.elems muxMiniProtocols) muxRTTState bearerTracer_ bearer)
                   (return . DemuxerException)
                   MuxJob
                   (name ++ "-demuxer")

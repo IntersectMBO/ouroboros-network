@@ -24,8 +24,9 @@ import Control.Monad
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTimer.SI hiding (timeout)
-import Control.Tracer (Tracer)
+import Control.Tracer (Tracer, traceWith)
 
+import Network.Mux.RTT (IngressEcho (..), RTTState, processIngress)
 import Network.Mux.Timeout
 import Network.Mux.Trace
 import Network.Mux.Types as Mx
@@ -102,16 +103,34 @@ data MiniProtocolDispatchInfo m =
 demuxer :: (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
             MonadTimer m)
       => [MiniProtocolState mode m]
+      -> RTTState m
       -> Tracer m BearerTrace
       -> Bearer m
       -> m void
-demuxer ptcls tracer bearer =
+demuxer ptcls rttState tracer bearer =
   let !dispatchTable = setupDispatchTable ptcls in
   withTimeoutSerial $ \timeout ->
   forever $ do
-    (sdu, _) <- Mx.read bearer tracer timeout
-    -- say $ printf "demuxing sdu on mid %s mode %s lenght %d " (show $ msId sdu) (show $ msDir sdu)
-    --             (BL.length $ msBlob sdu)
+    (sdu, recvTime) <- Mx.read bearer tracer timeout
+    -- Update the last-peer-cookie TVar; sample RTT or burst-gap
+    -- when the peer echoed one of our outstanding cookies. Both
+    -- flavours of observation are surfaced as bearer traces; a
+    -- downstream transformer can filter/bucket per protocol and
+    -- decide which measurements to feed to which regression (see
+    -- track.md's DeltaQ appendix for the semantics).
+    echoResult <- processIngress rttState (msHeader sdu) recvTime
+    case echoResult of
+      EchoMatched rtt -> traceWith tracer $
+        TraceRecvDeltaQObservation
+          (Mx.msNum sdu)
+          (Mx.mhLength (msHeader sdu))
+          rtt
+      EchoBurstSDU gap -> traceWith tracer $
+        TraceRecvBurstSDU
+          (Mx.msNum sdu)
+          (Mx.mhLength (msHeader sdu))
+          gap
+      EchoNoSignal -> return ()
     case lookupMiniProtocol dispatchTable (msNum sdu)
                             -- Notice the mode reversal, ResponderDir is
                             -- delivered to InitiatorDir and vice versa:
