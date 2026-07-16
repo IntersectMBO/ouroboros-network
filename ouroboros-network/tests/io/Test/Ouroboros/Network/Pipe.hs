@@ -48,6 +48,7 @@ import "Win32-network" System.Win32.NamedPipes qualified as Win32.NamedPipes
 #else
 import System.IO (hClose)
 import System.Process (createPipe)
+import System.Random
 #endif
 
 import Ouroboros.Network.Block (decodeTip, encodeTip)
@@ -204,7 +205,7 @@ demo chain0 updates = do
         serverBearer <- Mx.getBearer Mx.makePipeChannelBearer (-1) chan2 Nothing
 
         _ <- async $ do
-              clientMux <- Mx.new (Mx.Tracers activeTracer activeTracer activeTracer)
+              clientMux <- Mx.new (Mx.Tracers activeTracer activeTracer activeTracer) (mkStdGen 0)
                                   (toMiniProtocolInfos (\_ _ -> Nothing) consumerApp)
               let initCtx = MinimalInitiatorContext (ConnectionId "consumer" "producer")
               resOps <- sequence
@@ -230,9 +231,9 @@ demo chain0 updates = do
                 wait aid
 
         _ <- async $ do
-              serverMux <- Mx.new (Mx.Tracers activeTracer activeTracer activeTracer)
+              serverMux <- Mx.new (Mx.Tracers activeTracer activeTracer activeTracer) (mkStdGen 0)
                                   (toMiniProtocolInfos (\_ _ -> Nothing) producerApp)
-              let respCtx = ResponderContext (ConnectionId "consumer" "producer")
+              let respCtx = ResponderContext (ConnectionId "consumer" "producer") noPeerRTT
               resOps <- sequence
                 [ Mx.runMiniProtocol
                     serverMux

@@ -62,8 +62,7 @@ import Data.Proxy (Proxy (..))
 import Data.Typeable (Typeable)
 import Data.Void (Void)
 
-import System.Random (StdGen)
-import System.Random qualified as Random
+import System.Random
 
 import Test.QuickCheck
 
@@ -282,6 +281,8 @@ withInitiatorOnlyConnectionManager
 withInitiatorOnlyConnectionManager name timeouts trTracer tracer stdGen snocket makeBearer connStateIdSupply
                                    localAddr nextRequests handshakeTimeLimits acceptedConnLimit k = do
   mainThreadId <- myThreadId
+  let (rttSeed, _) = splitGen stdGen
+  rttCookieRngVar <- newTVarIO rttSeed
   let muxTracers :: Mx.TracersWithBearer (ConnectionId peerAddr) m
       muxTracers = Mx.Tracers {
         Mx.tracer        = WithName name `contramap` nullTracer,
@@ -307,6 +308,7 @@ withInitiatorOnlyConnectionManager name timeouts trTracer tracer stdGen snocket 
                         <> debugMuxRuntimeErrorRethrowPolicy
                         <> debugIOErrorRethrowPolicy
                         <> assertRethrowPolicy)
+          rttCookieRngVar
           MuxInitiatorConnectionHandler
 
 
@@ -342,7 +344,7 @@ withInitiatorOnlyConnectionManager name timeouts trTracer tracer stdGen snocket 
     clientApplication :: TemperatureBundle
                            [MiniProtocol Mx.InitiatorMode
                                          (ExpandedInitiatorContext peerAddr () m)
-                                         (ResponderContext peerAddr)
+                                         (ResponderContext peerAddr m)
                                          ByteString m [resp] Void]
     clientApplication = mkProto <$> (Mx.MiniProtocolNum <$> nums)
                                 <*> nextRequests
@@ -361,7 +363,7 @@ withInitiatorOnlyConnectionManager name timeouts trTracer tracer stdGen snocket 
                      -> (ConnectionId peerAddr -> STM m [req])
                      -> RunMiniProtocol Mx.InitiatorMode
                                         (ExpandedInitiatorContext peerAddr () m)
-                                        (ResponderContext peerAddr)
+                                        (ResponderContext peerAddr m)
                                         ByteString m [resp] Void
     reqRespInitiator protocolNum nextRequest =
       InitiatorProtocolOnly
@@ -488,6 +490,8 @@ withBidirectionalConnectionManager name timeouts
                                    acceptedConnLimit k = do
     mainThreadId <- myThreadId
     inbgovInfoChannel <- newInformationChannel
+    let (rttSeed, _) = splitGen stdGen
+    rttCookieRngVar <- newTVarIO rttSeed
     let mkConnectionHandler =
           makeConnectionHandler
             ((Compose . WithName name) `Mx.contramapTracers'` muxTracer)
@@ -507,6 +511,7 @@ withBidirectionalConnectionManager name timeouts
                           <> debugMuxRuntimeErrorRethrowPolicy
                           <> debugIOErrorRethrowPolicy
                           <> assertRethrowPolicy)
+            rttCookieRngVar
 
         withConnectionManager connectionHandler k' =
           CM.with CM.Arguments {
@@ -572,7 +577,7 @@ withBidirectionalConnectionManager name timeouts
     serverApplication :: TemperatureBundle
                           [MiniProtocol Mx.InitiatorResponderMode
                                         (ExpandedInitiatorContext peerAddr () m)
-                                        (ResponderContext peerAddr)
+                                        (ResponderContext peerAddr m)
                                         ByteString m [resp] acc]
     serverApplication = mkProto <$> (Mx.MiniProtocolNum <$> nums) <*> nextRequests
       where nums = TemperatureBundle (WithHot 1) (WithWarm 2) (WithEstablished 3)
@@ -593,7 +598,7 @@ withBidirectionalConnectionManager name timeouts
       -> (ConnectionId peerAddr -> STM m [req])
       -> RunMiniProtocol Mx.InitiatorResponderMode
                          (ExpandedInitiatorContext peerAddr () m)
-                         (ResponderContext peerAddr)
+                         (ResponderContext peerAddr m)
                          ByteString m [resp] acc
     reqRespInitiatorAndResponder protocolNum accInit nextRequest =
       InitiatorAndResponderProtocol
@@ -678,7 +683,7 @@ runInitiatorProtocols
     => SingMuxMode muxMode
     -> Mx.Mux muxMode m
     -> OuroborosBundle muxMode (ExpandedInitiatorContext addr () m)
-                               (ResponderContext addr)
+                               (ResponderContext addr m)
                                ByteString m a b
     -> TemperatureBundle (StrictTVar m ControlMessage)
     -> ConnectionId addr
@@ -712,7 +717,8 @@ runInitiatorProtocols singMuxMode mux bundle controlBundle connId = do
             eicConnectionId    = connId,
             eicControlMessage  = controlMessage,
             eicIsBigLedgerPeer = IsNotBigLedgerPeer,
-            eicExtraFlags      = ()
+            eicExtraFlags      = (),
+            eicPeerRTT         = noPeerRTT
           }
 
 --
@@ -761,7 +767,7 @@ unidirectionalExperiment
     -> ClientAndServerData req
     -> m Property
 unidirectionalExperiment stdGen timeouts snocket makeBearer confSock socket clientAndServerData = do
-    let (stdGen', stdGen'') = Random.splitGen stdGen
+    let (stdGen', stdGen'') = splitGen stdGen
     nextReqs <- oneshotNextRequests clientAndServerData
     connStateIdSupply <- atomically $ CM.newConnStateIdSupply (Proxy @m)
     withInitiatorOnlyConnectionManager
@@ -850,7 +856,7 @@ bidirectionalExperiment
 bidirectionalExperiment
     useLock stdGen timeouts snocket makeBearer confSock socket0 socket1 localAddr0 localAddr1
     clientAndServerData0 clientAndServerData1 = do
-      let (stdGen', stdGen'') = Random.splitGen stdGen
+      let (stdGen', stdGen'') = splitGen stdGen
       lock <- newTMVarIO ()
       connStateIdSupply <- atomically $ CM.newConnStateIdSupply (Proxy @m)
       nextRequests0 <- oneshotNextRequests clientAndServerData0

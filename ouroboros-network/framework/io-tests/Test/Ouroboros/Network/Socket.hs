@@ -20,6 +20,7 @@ import Data.Void (Void)
 #ifndef mingw32_HOST_OS
 import System.Directory (removeFile)
 import System.IO.Error
+import System.Random
 #endif
 import Network.Socket qualified as Socket
 #if defined(mingw32_HOST_OS)
@@ -269,6 +270,7 @@ prop_socket_send_recv initiatorAddr responderAddr configureSock f xs =
         }
         (unversionedProtocol (SomeResponderApplication responderApp))
         $ \localAddress _ -> do
+          rttCookieSeed <- newStdGen
           void $ connectToNode
             snocket
             Mx.makeSocketBearer
@@ -277,7 +279,8 @@ prop_socket_send_recv initiatorAddr responderAddr configureSock f xs =
               ctaHandshakeTimeLimits = noTimeLimitsHandshake,
               ctaVersionDataCodec    = unversionedProtocolDataCodec,
               ctaConnectTracers      = NetworkConnectTracers (Mx.tracersWith activeMuxTracer) nullTracer,
-              ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
+              ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion,
+              ctaRTTCookieSeed       = rttCookieSeed
             }
             (`configureSock` Nothing)
             (unversionedProtocol initiatorApp)
@@ -365,8 +368,8 @@ prop_socket_recv_error f rerr =
                     _ <- async $ do
                       threadDelay 0.1
                       atomically $ putTMVar lock ()
-                    mux <- Mx.new Mx.nullTracers (toMiniProtocolInfos (\_ _ -> Nothing) app)
-                    let respCtx = ResponderContext connectionId
+                    mux <- Mx.new Mx.nullTracers (mkStdGen 0) (toMiniProtocolInfos (\_ _ -> Nothing) app)
+                    let respCtx = ResponderContext connectionId noPeerRTT
                     resOps <- sequence
                       [ Mx.runMiniProtocol
                           mux
@@ -496,10 +499,11 @@ prop_socket_send_error rerr =
       wrap blob ptclDir ptclNum = Mx.SDU {
             -- it will be filled when the 'SDU' is send by the 'bearer'
             Mx.msHeader = Mx.SDUHeader {
-                Mx.mhTimestamp = Mx.RemoteClockModel 0,
-                Mx.mhNum       = ptclNum,
-                Mx.mhDir       = ptclDir,
-                Mx.mhLength    = fromIntegral $ BL.length blob
+                Mx.mhSendCookie = Mx.noCookie,
+                Mx.mhEchoCookie = Mx.noCookie,
+                Mx.mhNum        = ptclNum,
+                Mx.mhDir        = ptclDir,
+                Mx.mhLength     = fromIntegral $ BL.length blob
               },
             Mx.msBlob = blob
           }
@@ -530,6 +534,7 @@ prop_socket_client_connect_error _ xs =
             ((), trailing)
               <$ atomically (putTMVar cv ())
 
+    rttCookieSeed <- newStdGen
     (res :: Either IOException Bool)
       <- try $ False <$ connectToNode
         (socketSnocket iomgr)
@@ -539,7 +544,8 @@ prop_socket_client_connect_error _ xs =
           ctaHandshakeTimeLimits = noTimeLimitsHandshake,
           ctaVersionDataCodec    = unversionedProtocolDataCodec,
           ctaConnectTracers      = nullNetworkConnectTracers,
-          ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
+          ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion,
+          ctaRTTCookieSeed       = rttCookieSeed
         }
         (`configureSocket` Nothing)
         (unversionedProtocol app)

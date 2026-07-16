@@ -272,6 +272,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
         TestVersionData { networkMagic = NetworkMagic 0 }
         (\_ -> SomeResponderApplication responderApp))
       $ \producerAddress' _ -> do
+      rttCookieSeed <- newStdGen
       withAsync
         (connectToNode
           (socketSnocket iocp)
@@ -281,7 +282,8 @@ demo chain0 updates = withIOManager $ \iocp -> do
             ctaHandshakeTimeLimits = noTimeLimitsHandshake,
             ctaVersionDataCodec    = testVersionDataCodec,
             ctaConnectTracers      = nullNetworkConnectTracers,
-            ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
+            ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion,
+            ctaRTTCookieSeed       = rttCookieSeed
           }
           (`configureSocket` Nothing)
           (simpleSingletonVersions

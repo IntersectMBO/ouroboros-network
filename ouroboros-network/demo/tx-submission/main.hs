@@ -50,6 +50,7 @@ import NoThunks.Class (NoThunks (..))
 import Options.Applicative
 import Statistics.Quantile qualified as Stat
 import System.IO (hPutStrLn, stderr)
+import System.Random qualified as Random
 import System.Random.SplitMix qualified as SM
 
 import Network.Mux qualified as Mx
@@ -497,11 +498,12 @@ runTxInbound Addr { addr, port } txDecisionPolicy version txDelay = do
                  $ Mx.withReadBufferIO $ \buffer -> do
             bearer <- Mx.getBearer Mx.makeSocketBearer 1.0 sock' buffer
             let dir = Mx.ResponderDirectionOnly
+            g   <- Random.newStdGen
             mux <- Mx.new Mx.nullTracers
                           { Mx.tracer = Mx.WithBearer addr' . runIdentity >$< printTracer traceLock
                           -- , Mx.bearerTracer = Mx.WithBearer addr' . runIdentity >$< printTracer traceLock
                           }
-                   (protocols dir)
+                   g (protocols dir)
             withAsync (Mx.run mux bearer) $ \_ ->
                   either throwIO return
               =<< atomically
@@ -629,11 +631,12 @@ runTxOutbound stderrTracer inboundAddr outboundAddr
         Mx.withReadBufferIO $ \buffer -> do
           bearer <- Mx.getBearer Mx.makeSocketBearer 1.0 sock buffer
           let dir = Mx.InitiatorDirectionOnly
+          g   <- Random.newStdGen
           mux <- Mx.new Mx.nullTracers
                         { Mx.tracer = Mx.WithBearer addr' . runIdentity >$< printTracer traceLock
                         -- , Mx.bearerTracer = Mx.WithBearer addr' . runIdentity >$< printTracer traceLock
                         }
-                 (protocols dir)
+                 g (protocols dir)
           withAsync (Mx.run mux bearer) $ \_ -> do
             let reader =
                   Mempool.getReader

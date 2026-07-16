@@ -230,6 +230,9 @@ withBidirectionalConnectionManager snocket makeBearer socket
     hotRequestsVar         <- LazySTM.newTVarIO hotInitiatorRequests
     warmRequestsVar        <- LazySTM.newTVarIO warmInitiatorRequests
     establishedRequestsVar <- LazySTM.newTVarIO establishedInitiatorRequests
+    -- Split off an independent PRNG for RTT cookie generation.
+    let (rttSeed, _)        = Random.splitGen stdGen
+    rttCookieRngVar        <- newTVarIO rttSeed
     let muxTracers = Mx.Tracers {
           Mx.tracer        = ("mux",) `contramap` nullTracer,
           Mx.channelTracer = ("mux",) `contramap` nullTracer,
@@ -254,6 +257,7 @@ withBidirectionalConnectionManager snocket makeBearer socket
                                 establishedRequestsVar))
           (mainThreadId,   debugMuxErrorRethrowPolicy
                         <> debugIOErrorRethrowPolicy)
+          rttCookieRngVar
 
         withConnectionManager connectionHandler k' =
             CM.with
@@ -510,7 +514,8 @@ bidirectionalExperiment
                                                 . projectBundle tok
                                                 $ controlMessageBundle,
                              eicIsBigLedgerPeer = IsNotBigLedgerPeer,
-                             eicExtraFlags      = ()
+                             eicExtraFlags      = (),
+                             eicPeerRTT         = noPeerRTT
                            })
                   muxBundle
               res <-

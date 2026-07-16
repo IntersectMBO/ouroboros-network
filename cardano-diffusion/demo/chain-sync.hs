@@ -35,8 +35,7 @@ import Control.Monad.Class.MonadTime.SI (Time (..))
 import Control.Tracer
 
 import System.Directory
-import System.Random (RandomGen, SplitGen, StdGen)
-import System.Random qualified as Random
+import System.Random
 
 import Options.Applicative qualified as Opts
 
@@ -228,6 +227,7 @@ clientChainSync :: [FilePath]
 clientChainSync sockPaths maxSlotNo = withIOManager $ \iocp ->
     forConcurrently_ (zip [0..] sockPaths) $ \(index, sockPath) -> do
       threadDelay (50000 * index)
+      rttCookieSeed <- newStdGen
       void $ connectToNode
         (localSnocket iocp)
         makeLocalBearer
@@ -236,7 +236,8 @@ clientChainSync sockPaths maxSlotNo = withIOManager $ \iocp ->
           ctaHandshakeTimeLimits = noTimeLimitsHandshake,
           ctaVersionDataCodec    = unversionedProtocolDataCodec,
           ctaConnectTracers      = nullNetworkConnectTracers,
-          ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
+          ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion,
+          ctaRTTCookieSeed       = rttCookieSeed
         }
         mempty
         (simpleSingletonVersions
@@ -263,8 +264,8 @@ serverChainSync :: FilePath
                 -> IO Void
 serverChainSync sockAddr slotLength seed = withIOManager $ \iocp -> do
     prng <- case seed of
-      Nothing -> Random.initStdGen
-      Just a  -> return (Random.mkStdGen a)
+      Nothing -> initStdGen
+      Just a  -> return (mkStdGen a)
     Server.Simple.with
       (localSnocket iocp)
       nullTracer
@@ -479,8 +480,9 @@ clientBlockFetch sockAddrs maxSlotNo = withIOManager $ \iocp -> do
           chainSelection fingerprint'
 
     peerAsyncs <- sequence
-                    [ async . void $
-                        connectToNode
+                    [ async $ do
+                        rttCookieSeed <- newStdGen
+                        void $ connectToNode
                           (localSnocket iocp)
                           makeLocalBearer
                           ConnectToArgs {
@@ -488,7 +490,8 @@ clientBlockFetch sockAddrs maxSlotNo = withIOManager $ \iocp -> do
                             ctaHandshakeTimeLimits = noTimeLimitsHandshake,
                             ctaVersionDataCodec    = unversionedProtocolDataCodec,
                             ctaConnectTracers      = nullNetworkConnectTracers,
-                            ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
+                            ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion,
+                            ctaRTTCookieSeed       = rttCookieSeed
                           }
                           mempty
                           (simpleSingletonVersions
@@ -543,8 +546,8 @@ serverBlockFetch :: FilePath
                  -> IO Void
 serverBlockFetch sockAddr slotLength seed = withIOManager $ \iocp -> do
     prng <- case seed of
-      Nothing -> Random.initStdGen
-      Just a  -> return (Random.mkStdGen a)
+      Nothing -> initStdGen
+      Just a  -> return (mkStdGen a)
     Server.Simple.with
       (localSnocket iocp)
       nullTracer
@@ -792,7 +795,7 @@ genBlockChain !g prevHeader =
     block :< genBlockChain g'' (Just (blockHeader block))
   where
     block     = genBlock g' prevHeader
-    (g', g'') = Random.splitGen g
+    (g', g'') = splitGen g
 
 genBlock :: SplitGen g => g -> Maybe BlockHeader -> Block
 genBlock g prevHeader =
@@ -800,7 +803,7 @@ genBlock g prevHeader =
   where
     blockBody   = genBlockBody g'
     blockHeader = genBlockHeader g'' prevHeader blockBody
-    (g', g'')   = Random.splitGen g
+    (g', g'')   = splitGen g
 
 genBlockHeader :: RandomGen g
                => g -> Maybe BlockHeader -> BlockBody -> BlockHeader
@@ -814,7 +817,7 @@ genBlockHeader g prevHeader body =
       headerBlockNo  = maybe 1 (succ             . headerBlockNo) prevHeader,
       headerBodyHash = hashBody body
     }
-    (slotGap, _) = Random.randomR (1,3) g
+    (slotGap, _) = randomR (1,3) g
 
     addSlotGap :: Int -> SlotNo -> SlotNo
     addSlotGap m (SlotNo n) = SlotNo (n + fromIntegral m)
@@ -823,8 +826,8 @@ genBlockBody :: RandomGen g => g -> BlockBody
 genBlockBody g =
     BlockBody . BSC.take len . BSC.drop offset . BSC.pack $ bodyData
   where
-    (offset, g') = Random.randomR (0, bodyDataCycle-1)    g
-    (len   , _ ) = Random.randomR (1, bodyDataCycle*10-1) g'
+    (offset, g') = randomR (0, bodyDataCycle-1)    g
+    (len   , _ ) = randomR (1, bodyDataCycle*10-1) g'
 
 bodyData :: String
 bodyData = concat

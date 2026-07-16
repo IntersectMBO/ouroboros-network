@@ -64,6 +64,8 @@ import Test.Ouroboros.Network.Data.AbsBearerInfo
 import Test.Ouroboros.Network.Orphans ()
 import Test.Ouroboros.Network.Utils (sayTracer)
 
+import System.Random
+
 import Test.QuickCheck hiding (Result (..))
 import Test.QuickCheck.Instances.ByteString ()
 import Test.Tasty (TestTree, testGroup)
@@ -274,6 +276,7 @@ clientServerSimulation payloads =
                    traceTime sayTracer)
           bracket
             (Mx.new (Mx.Tracers mxTracer mxTracer mxTracer)
+                    (mkStdGen 0)
                     [ MiniProtocolInfo {
                         miniProtocolNum        = reqRespProtocolNum,
                         miniProtocolDir        = Mx.ResponderDirectionOnly,
@@ -328,6 +331,7 @@ clientServerSimulation payloads =
                            traceTime sayTracer)
 
                   mux <- Mx.new (Mx.Tracers mxTracer mxTracer mxTracer)
+                                (mkStdGen 0)
                                 [ MiniProtocolInfo {
                                     miniProtocolNum        = reqRespProtocolNum,
                                     miniProtocolDir        = Mx.InitiatorDirectionOnly,

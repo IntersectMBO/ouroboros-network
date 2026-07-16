@@ -51,6 +51,8 @@ import Network.Mux.Bearer qualified as Mx
 import Network.Mux.Bearer.Queues qualified as Mx
 import Ouroboros.Network.Mux as Mx
 
+import System.Random
+
 
 tests :: TestTree
 tests =
@@ -166,7 +168,7 @@ demo chain0 updates delay = do
                        Nothing
 
     clientAsync <- async $ do
-      clientMux <- Mx.new (Mx.Tracers activeTracer activeTracer activeTracer)
+      clientMux <- Mx.new (Mx.Tracers activeTracer activeTracer activeTracer) (mkStdGen 0)
                           (toMiniProtocolInfos (\_ _ -> Nothing) consumerApp)
       let initCtx = MinimalInitiatorContext (ConnectionId "consumer" "producer")
       resOps <- sequence
@@ -192,9 +194,9 @@ demo chain0 updates delay = do
         wait aid
 
     serverAsync <- async $ do
-      serverMux <- Mx.new (Mx.Tracers activeTracer activeTracer activeTracer)
+      serverMux <- Mx.new (Mx.Tracers activeTracer activeTracer activeTracer) (mkStdGen 0)
                           (toMiniProtocolInfos (\_ _ -> Nothing) producerApp)
-      let respCtx = ResponderContext (ConnectionId "producer" "consumer")
+      let respCtx = ResponderContext (ConnectionId "producer" "consumer") noPeerRTT
       resOps <- sequence
         [ Mx.runMiniProtocol
             serverMux

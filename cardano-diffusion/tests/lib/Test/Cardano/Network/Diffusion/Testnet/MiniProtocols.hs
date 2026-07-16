@@ -491,7 +491,7 @@ applications debugTracer txSubmissionInboundTracer nodeKernel
                           )
 
     chainSyncResponder
-      :: MiniProtocolCb (ResponderContext NtNAddr) ByteString m ()
+      :: MiniProtocolCb (ResponderContext NtNAddr m) ByteString m ()
     chainSyncResponder = MiniProtocolCb $
       \ ResponderContext { rcConnectionId = connId }
         channel -> do
@@ -533,7 +533,7 @@ applications debugTracer txSubmissionInboundTracer nodeKernel
                                      nullTracer clientCtx)
 
     blockFetchResponder
-      :: MiniProtocolCb (ResponderContext NtNAddr) ByteString m ()
+      :: MiniProtocolCb (ResponderContext NtNAddr m) ByteString m ()
     blockFetchResponder =
       MiniProtocolCb $
         \ ResponderContext { rcConnectionId = connId }
@@ -587,7 +587,7 @@ applications debugTracer txSubmissionInboundTracer nodeKernel
                                    kacApp
 
     keepAliveResponder
-      :: MiniProtocolCb (ResponderContext NtNAddr) ByteString m ()
+      :: MiniProtocolCb (ResponderContext NtNAddr m) ByteString m ()
     keepAliveResponder = MiniProtocolCb $
       \ ResponderContext { rcConnectionId = connId }
         channel -> do
@@ -644,7 +644,7 @@ applications debugTracer txSubmissionInboundTracer nodeKernel
                (pingPongClientPeer pingPongClient)
 
     pingPongResponder
-      :: MiniProtocolCb (ResponderContext NtNAddr) ByteString m ()
+      :: MiniProtocolCb (ResponderContext NtNAddr m) ByteString m ()
     pingPongResponder  = MiniProtocolCb $
       \ResponderContext { rcConnectionId = connId } channel ->
       runPeerWithLimits
@@ -679,7 +679,7 @@ applications debugTracer txSubmissionInboundTracer nodeKernel
 
     peerSharingResponder
       :: PeerSharingAPI NtNAddr s m
-      -> MiniProtocolCb (ResponderContext NtNAddr) ByteString m ()
+      -> MiniProtocolCb (ResponderContext NtNAddr m) ByteString m ()
     peerSharingResponder psAPI = MiniProtocolCb $
       \ ResponderContext { rcConnectionId = connId }
         channel -> do
@@ -734,7 +734,7 @@ applications debugTracer txSubmissionInboundTracer nodeKernel
       -> TxSubmissionCountersVar m
       -> SharedTxStateVar m NtNAddr Int
       -> PeerTxRegistry m NtNAddr
-      -> MiniProtocolCb (ResponderContext NtNAddr) ByteString m ()
+      -> MiniProtocolCb (ResponderContext NtNAddr m) ByteString m ()
     txSubmissionResponder mempool txCountersVar sharedTxStateVar inFlightRegistry =
       MiniProtocolCb $
         \ ResponderContext { rcConnectionId = connId@ConnectionId { remoteAddress = them }} channel

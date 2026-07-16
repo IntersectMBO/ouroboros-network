@@ -1202,6 +1202,7 @@ pingClient' stdout infoTracer headerTracer stderr opts@PingOpts{..} signalVar ad
                   stdGen <- initStdGen
                   mx <- Mx.new
                           Mx.nullTracers
+                          stdGen
                           [MiniProtocolInfo {
                             miniProtocolNum        = case protocol of
                                                        NodeToNode -> NodeToNode.chainSyncMiniProtocolNum
@@ -1241,8 +1242,10 @@ pingClient' stdout infoTracer headerTracer stderr opts@PingOpts{..} signalVar ad
                   --
                   -- run keepalive client to get RTT samples
                   --
+                  g  <- initStdGen
                   mx <- Mx.new
                           Mx.nullTracers
+                          g
                           [MiniProtocolInfo {
                             miniProtocolNum        = NodeToNode.keepAliveMiniProtocolNum,
                             miniProtocolDir        = Mx.InitiatorDirectionOnly,

@@ -23,6 +23,7 @@ import System.Directory
 import System.Environment
 import System.Exit
 import System.IO
+import System.Random
 import Text.Printf (printf)
 
 import Network.Mux qualified as Mx
@@ -118,23 +119,24 @@ demoProtocol0 pingPong =
 
 
 clientPingPong :: Bool -> IO ()
-clientPingPong pipelined =
-    withIOManager $ \iomgr ->
+clientPingPong pipelined = withIOManager $ \iomgr -> do
+    rttCookieSeed <- newStdGen
     void $
-    connectToNode
-      (Snocket.localSnocket iomgr)
-      makeLocalBearer
-      ConnectToArgs {
-        ctaHandshakeCodec      = unversionedHandshakeCodec,
-        ctaHandshakeTimeLimits = noTimeLimitsHandshake,
-        ctaVersionDataCodec    = unversionedProtocolDataCodec,
-        ctaConnectTracers      = nullNetworkConnectTracers,
-        ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
-      }
-      mempty
-      (unversionedProtocol app)
-      Nothing
-      defaultLocalSocketAddr
+      connectToNode
+        (Snocket.localSnocket iomgr)
+        makeLocalBearer
+        ConnectToArgs {
+          ctaHandshakeCodec      = unversionedHandshakeCodec,
+          ctaHandshakeTimeLimits = noTimeLimitsHandshake,
+          ctaVersionDataCodec    = unversionedProtocolDataCodec,
+          ctaConnectTracers      = nullNetworkConnectTracers,
+          ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion,
+          ctaRTTCookieSeed       = rttCookieSeed
+        }
+        mempty
+        (unversionedProtocol app)
+        Nothing
+        defaultLocalSocketAddr
   where
     app :: OuroborosApplicationWithMinimalCtx
              Mx.InitiatorMode LocalAddress LBS.ByteString IO () Void
@@ -216,22 +218,24 @@ demoProtocol1 pingPong pingPong' =
 
 
 clientPingPong2 :: Bool -> IO ()
-clientPingPong2 flood =
-    withIOManager $ \iomgr -> void $ do
-    connectToNode
-      (Snocket.localSnocket iomgr)
-      makeLocalBearer
-      ConnectToArgs {
-        ctaHandshakeCodec      = unversionedHandshakeCodec,
-        ctaHandshakeTimeLimits = noTimeLimitsHandshake,
-        ctaVersionDataCodec    = unversionedProtocolDataCodec,
-        ctaConnectTracers      = nullNetworkConnectTracers,
-        ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
-      }
-      mempty
-      (unversionedProtocol app)
-      Nothing
-      defaultLocalSocketAddr
+clientPingPong2 flood = withIOManager $ \iomgr -> do
+    rttCookieSeed <- newStdGen
+    void $
+      connectToNode
+        (Snocket.localSnocket iomgr)
+        makeLocalBearer
+        ConnectToArgs {
+          ctaHandshakeCodec      = unversionedHandshakeCodec,
+          ctaHandshakeTimeLimits = noTimeLimitsHandshake,
+          ctaVersionDataCodec    = unversionedProtocolDataCodec,
+          ctaConnectTracers      = nullNetworkConnectTracers,
+          ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion,
+          ctaRTTCookieSeed       = rttCookieSeed
+        }
+        mempty
+        (unversionedProtocol app)
+        Nothing
+        defaultLocalSocketAddr
   where
     app :: OuroborosApplicationWithMinimalCtx
              Mx.InitiatorMode addr LBS.ByteString IO  () Void
