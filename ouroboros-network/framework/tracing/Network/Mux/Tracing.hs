@@ -19,7 +19,7 @@ import Network.Mux qualified as Mux
 #ifdef linux_HOST_OS
 import Network.Mux.TCPInfo (StructTCPInfo (..))
 #endif
-import Network.Mux.Types (SDUHeader (..), unRemoteClockModel)
+import Network.Mux.Types
 
 --------------------------------------------------------------------------------
 -- Mux Tracer
@@ -54,28 +54,30 @@ instance LogFormatting Mux.BearerTrace where
       [ "kind" .= String "Mux.TraceRecvHeaderStart"
       , "msg"  .= String "Bearer Receive Header Start"
       ]
-    forMachine _dtal (Mux.TraceRecvHeaderEnd SDUHeader { mhTimestamp, mhNum, mhDir, mhLength }) = mconcat
+    forMachine _dtal (Mux.TraceRecvHeaderEnd SDUHeader { mhSendCookie, mhEchoCookie, mhNum, mhDir, mhLength }) = mconcat
       [ "kind" .= String "Mux.TraceRecvHeaderStart"
       , "msg"  .=  String "Bearer Receive Header End"
-      , "timestamp" .= String (showTHex (unRemoteClockModel mhTimestamp))
+      , "sendCookie" .= String (showTHex (unCookie mhSendCookie))
+      , "echoCookie" .= String (showTHex (unCookie mhEchoCookie))
       , "miniProtocolNum" .= String (showT mhNum)
       , "miniProtocolDir" .= String (showT mhDir)
       , "length" .= String (showT mhLength)
       ]
-    forMachine _dtal (Mux.TraceRecvDeltaQObservation SDUHeader { mhTimestamp, mhLength } ts) = mconcat
+    forMachine _dtal (Mux.TraceRecvDeltaQObservation mpNum len delay) = mconcat
       [ "kind" .= String "Mux.TraceRecvDeltaQObservation"
       , "msg"  .=  String "Bearer DeltaQ observation"
-      , "timeRemote" .=  String (showT ts)
-      , "timeLocal" .= String (showTHex (unRemoteClockModel mhTimestamp))
-      , "length" .= String (showT mhLength)
+      , "miniProtocolNum" .= String (showT mpNum)
+      , "length" .= String (showT len)
+      , "roundTrip" .= String (showT delay)
       ]
-    forMachine _dtal (Mux.TraceRecvDeltaQSample d sp so dqs dqvm dqvs estR sdud) = mconcat
+    forMachine _dtal (Mux.TraceRecvDeltaQSample d sp so dqs bs dqvm dqvs estR sdud) = mconcat
       [ "kind" .= String "Mux.TraceRecvDeltaQSample"
       , "msg"  .=  String "Bearer DeltaQ Sample"
       , "duration" .=  String (showT d)
       , "packets" .= String (showT sp)
       , "sumBytes" .= String (showT so)
       , "DeltaQ_S" .= String (showT dqs)
+      , "Burst_S" .= String (showT bs)
       , "DeltaQ_VMean" .= String (showT dqvm)
       , "DeltaQ_VVar" .= String (showT dqvs)
       , "DeltaQ_estR" .= String (showT estR)
@@ -96,10 +98,11 @@ instance LogFormatting Mux.BearerTrace where
       , "msg"  .= String "Bearer Receive End"
       , "length" .= String (showT len)
       ]
-    forMachine _dtal (Mux.TraceSendStart SDUHeader { mhTimestamp, mhNum, mhDir, mhLength }) = mconcat
+    forMachine _dtal (Mux.TraceSendStart SDUHeader { mhSendCookie, mhEchoCookie, mhNum, mhDir, mhLength }) = mconcat
       [ "kind" .= String "Mux.TraceSendStart"
       , "msg"  .= String "Bearer Send Start"
-      , "timestamp" .= String (showTHex (unRemoteClockModel mhTimestamp))
+      , "sendCookie" .= String (showTHex (unCookie mhSendCookie))
+      , "echoCookie" .= String (showTHex (unCookie mhEchoCookie))
       , "miniProtocolNum" .= String (showT mhNum)
       , "miniProtocolDir" .= String (showT mhDir)
       , "length" .= String (showT mhLength)
@@ -143,26 +146,27 @@ instance LogFormatting Mux.BearerTrace where
 
     forHuman Mux.TraceRecvHeaderStart =
       "Bearer Receive Header Start"
-    forHuman (Mux.TraceRecvHeaderEnd SDUHeader { mhTimestamp, mhNum, mhDir, mhLength }) =
-      sformat ("Bearer Receive Header End: ts:" % prefixHex % "(" % shown % ") " % shown % " len " % int)
-        (unRemoteClockModel mhTimestamp) mhNum mhDir mhLength
-    forHuman (Mux.TraceRecvDeltaQObservation SDUHeader { mhTimestamp, mhLength } ts) =
-      sformat ("Bearer DeltaQ observation: remote ts" % int % " local ts " % shown % " length " % int)
-         (unRemoteClockModel mhTimestamp) ts mhLength
-    forHuman (Mux.TraceRecvDeltaQSample d sp so dqs dqvm dqvs estR sdud) =
+    forHuman (Mux.TraceRecvHeaderEnd SDUHeader { mhSendCookie, mhEchoCookie, mhNum, mhDir, mhLength }) =
+      sformat ("Bearer Receive Header End: send-cookie:" % prefixHex % " echo-cookie:" % prefixHex % " (" % shown % ") " % shown % " len " % int)
+        (unCookie mhSendCookie) (unCookie mhEchoCookie) mhNum mhDir mhLength
+    forHuman (Mux.TraceRecvDeltaQObservation mpNum len delay) =
+      sformat ("Bearer DeltaQ observation: " % shown % " length " % int % " round-trip " % shown)
+         mpNum len delay
+    forHuman (Mux.TraceRecvDeltaQSample d sp so dqs bs dqvm dqvs estR sdud) =
       sformat ("Bearer DeltaQ Sample: duration " % fixed 3 % " packets " % int % " sumBytes "
-        % int % " DeltaQ_S " % fixed 3 % " DeltaQ_VMean " % fixed 3 % "DeltaQ_VVar " % fixed 3
+        % int % " DeltaQ_S " % fixed 3 % " Burst_S " % fixed 3
+        % " DeltaQ_VMean " % fixed 3 % "DeltaQ_VVar " % fixed 3
         % " DeltaQ_estR " % fixed 3 % " sizeDist " % string)
-        d sp so dqs dqvm dqvs estR sdud
+        d sp so dqs bs dqvm dqvs estR sdud
     forHuman (Mux.TraceRecvStart len) =
       sformat ("Bearer Receive Start: length " % int) len
     forHuman (Mux.TraceRecvRaw len) =
       sformat ("Bearer Receive Raw: length " % int) len
     forHuman (Mux.TraceRecvEnd len) =
       sformat ("Bearer Receive End: length " % int) len
-    forHuman (Mux.TraceSendStart SDUHeader { mhTimestamp, mhNum, mhDir, mhLength }) =
-      sformat ("Bearer Send Start: ts: " % prefixHex % " (" % shown % ") " % shown % " length " % int)
-        (unRemoteClockModel mhTimestamp) mhNum mhDir mhLength
+    forHuman (Mux.TraceSendStart SDUHeader { mhSendCookie, mhEchoCookie, mhNum, mhDir, mhLength }) =
+      sformat ("Bearer Send Start: send-cookie: " % prefixHex % " echo-cookie: " % prefixHex % " (" % shown % ") " % shown % " length " % int)
+        (unCookie mhSendCookie) (unCookie mhEchoCookie) mhNum mhDir mhLength
     forHuman Mux.TraceSendEnd =
       "Bearer Send End"
     forHuman Mux.TraceSDUReadTimeoutException =
@@ -495,7 +499,7 @@ instance MetaTrace Mux.Trace where
       Namespace [] ["Stopped"]
 
     severityFor (Namespace _ ["State"]) _            = Just Info
-    severityFor (Namespace _ ["CleanExit"]) _        = Just Info
+    severityFor (Namespace _ ["CleanExit"]) _        = Just Notice
     severityFor (Namespace _ ["ExceptionExit"]) _    = Just Notice
     severityFor (Namespace _ ["StartEagerly"]) _     = Just Debug
     severityFor (Namespace _ ["StartOnDemand"]) _    = Just Debug
