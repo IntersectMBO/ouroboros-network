@@ -240,6 +240,7 @@ data PingOpts = PingOpts
     -- ^ SRV prefix
   , pingOptsColor     :: ColorMode
     -- ^ Colorised output
+  , pingOptsHashType  :: HashType
   }
 
 mainnetMagic :: NetworkMagic
@@ -304,6 +305,10 @@ pingOptsParser =
          <> value ColorAuto
          <> metavar "COLOR"
          <> showDefaultWith (\case { ColorAuto -> "auto"; ColorNever -> "never"; ColorAlways -> "always" })
+        )
+    <*> flag FullHash ShortHash
+        (    long "short-hash"
+          <> help "show short tip's hash"
         )
   where
     pingMode :: ReadM PingMode
@@ -507,10 +512,11 @@ sduTimeout :: DiffTime
 sduTimeout = 30
 
 data PingTip = PingTip {
-    ptRtt     :: !Double
-  , ptHash    :: !ByteString
-  , ptBlockNo :: !BlockNo
-  , ptSlotNo  :: !SlotNo
+    ptRtt      :: !Double
+  , ptHash     :: !ByteString
+  , ptBlockNo  :: !BlockNo
+  , ptSlotNo   :: !SlotNo
+  , ptHashType :: !HashType
   }
 
 hexStr :: ByteString -> String
@@ -520,12 +526,17 @@ instance Show PingTip where
   show PingTip{..} =
     formatToString
       (    F.lpadded 6 ' ' (F.fixed 3)
-        %- F.right 64 ' '
+        %- F.left (hashLength ptHashType) ' '
         %- F.lpadded 9 ' ' F.int
         %- F.lpadded 10 ' ' F.int
       )
       ptRtt
-      (hexStr ptHash)
+      (case ptHashType of
+        FullHash  -> hexStr ptHash
+        ShortHash -> let hex = hexStr ptHash
+                     in
+                     take (2 + 16) hex ++ ".." ++ drop (length hex - 16) hex
+      )
       (unBlockNo ptBlockNo)
       (unSlotNo ptSlotNo)
 
@@ -583,8 +594,13 @@ instance Show StatPoint where
       fmtDouble :: forall r. F.Format r (Double -> r)
       fmtDouble = F.lpadded 6 ' ' (F.fixed 3)
 
+data HashType = ShortHash | FullHash
 
-data Header = PingHeader | TipHeader
+hashLength :: HashType -> Int
+hashLength ShortHash = 4 + 32
+hashLength FullHash  = 2 + 64
+
+data Header = PingHeader | TipHeader HashType
 
 instance ToText Header where
   toText PingHeader =
@@ -614,17 +630,21 @@ instance ToText Header where
       fmtString :: forall r. F.Format r (String -> r)
       fmtString = F.left 6 ' '
 
-  toText TipHeader =
+  toText (TipHeader hashType) =
     F.format
       (    F.right 47 ' '
-        %+ F.left 6 ' '
-        %- F.left 64 ' '
+        %  F.left 6 ' '
+        %- F.left (hashLength hashType) ' '
         %- F.left 9 ' '
         %- F.left 10 ' '
       )
       ("host,"   :: String)
       ("rtt"     :: String)
-      ("hash"    :: String)
+      (case hashType of
+        FullHash  -> "hash"
+        ShortHash -> "short-hash"
+                  :: String
+      )
       ("blockNo" :: String)
       ("slotNo"  :: String)
 
@@ -760,11 +780,12 @@ instance StandardHash ChainSyncBlock
 -- A `ChainSyncClient` that finds the current `Tip` over `node-to-node`
 -- or `node-to-client` protocol.
 chainSyncClient
-  :: Signal
+  :: HashType
+  -> Signal
   -> Tracer IO LogMsg
   -> Tracer IO Header
   -> ChainSyncClient ChainSyncHeader ChainSyncPoint ChainSyncTip IO ()
-chainSyncClient sig@Signal { signalReadiness } stdout headerTracer =
+chainSyncClient hashType sig@Signal { signalReadiness } stdout headerTracer =
     ChainSync.ChainSyncClient $ do
       signalReadiness
       go <$> getMonotonicTime
@@ -787,10 +808,11 @@ chainSyncClient sig@Signal { signalReadiness } stdout headerTracer =
                    ptRtt  = toSample end start,
                    ptHash,
                    ptBlockNo,
-                   ptSlotNo
+                   ptSlotNo,
+                   ptHashType = hashType
                  }
              awaitReadiness sig
-             traceWith headerTracer TipHeader
+             traceWith headerTracer (TipHeader hashType)
              traceWith stdout (LogChainSyncTip pingTip)
              return $ ChainSync.SendMsgDone ()
        }
@@ -1289,7 +1311,7 @@ pingClient' stdout infoTracer headerTracer stderr opts@PingOpts{..} signalVar ad
                           (ChainSync.byteLimitsChainSync (fromIntegral . BL.length))
                           (ChainSync.timeLimitsChainSync defaultChainSyncIdleTimeout IsNotTrustable)
                           channel
-                          (ChainSync.chainSyncClientPeer $ chainSyncClient sig stdout' headerTracer))
+                          (ChainSync.chainSyncClientPeer $ chainSyncClient pingOptsHashType sig stdout' headerTracer))
                         >>= void . atomically
                     )
                     `finally` Mx.stop mx
