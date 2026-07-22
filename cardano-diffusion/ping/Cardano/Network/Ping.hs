@@ -514,7 +514,7 @@ data PingTip = PingTip {
   }
 
 hexStr :: ByteString -> String
-hexStr = BS.foldr (\b -> (<>) (formatToString (F.hexPrefix 2) b)) ""
+hexStr bs = "0x" <> BS.foldr (\b cnt -> formatToString F.hex b <> cnt) "" bs
 
 instance Show PingTip where
   show PingTip{..} =
