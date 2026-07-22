@@ -92,6 +92,8 @@ import Data.Text.Lazy qualified as TL
 import Data.Text.Lazy.IO qualified as TL
 import Data.Time.Format.ISO8601 (iso8601Show)
 import Data.Word (Word16, Word32)
+import Formatting (formatToString, (%), (%+))
+import Formatting qualified as F
 import Network.DNS qualified as DNS
 import Network.Mux (MiniProtocolInfo (..))
 import Network.Mux qualified as Mx
@@ -104,7 +106,6 @@ import System.Directory (doesFileExist)
 import System.Exit qualified as IO
 import System.IO qualified as IO
 import System.Random (initStdGen)
-import Text.Printf (printf)
 import Text.Read (readMaybe)
 
 import Cardano.Network.Diffusion.Configuration (defaultChainSyncIdleTimeout)
@@ -428,7 +429,11 @@ instance ToText PingWarning where
       fn (Error err)
         = TL.pack $ displayException err
       fn (ConnectError sockAddr err)
-        = TL.pack $ printf "%-47s %s" (show sockAddr) (displayException err)
+        = TL.pack $
+            formatToString
+              (F.right 47 ' ' %+ F.string)
+              (show sockAddr)
+              (displayException err)
 
       severity :: PingWarning -> TL.Text
       severity = \case
@@ -509,15 +514,24 @@ data PingTip = PingTip {
   }
 
 hexStr :: ByteString -> String
-hexStr = BS.foldr (\b -> (<>) (printf "%02x" b)) ""
+hexStr = BS.foldr (\b -> (<>) (formatToString (F.hexPrefix 2) b)) ""
 
 instance Show PingTip where
   show PingTip{..} =
-    printf "%6.3fs, %-64s, %9d, %10d"
-           ptRtt
-           (hexStr ptHash)
-           (unBlockNo ptBlockNo)
-           (unSlotNo ptSlotNo)
+    formatToString
+      (    F.lpadded 6 ' ' (F.fixed 3)
+        %- F.right 64 ' '
+        %- F.lpadded 9 ' ' F.int
+        %- F.lpadded 10 ' ' F.int
+      )
+      ptRtt
+      (hexStr ptHash)
+      (unBlockNo ptBlockNo)
+      (unSlotNo ptSlotNo)
+
+(%-) :: F.Format r a -> F.Format r' r -> F.Format r' a
+a %- b = a F.% "," %+ b
+infixr 9 %-
 
 instance ToJSON PingTip where
   toJSON PingTip{..} =
@@ -552,33 +566,67 @@ data StatPoint = StatPoint
 instance Show StatPoint where
   show :: StatPoint -> String
   show StatPoint {..} =
-    printf "%-31s %6d, %6.3f, %6.3f, %6.3f, %6.3f, %6.3f, %6.3f, %6.3f"
-      (iso8601Show spTimestamp ++ ",")
-      spCookie spSample spMedian spP90 spMean spMin spMax spStd
+      formatToString
+        (    F.right 31 ' '
+          %  F.left 6 ' '
+          %- fmtDouble
+          %- fmtDouble
+          %- fmtDouble
+          %- fmtDouble
+          %- fmtDouble
+          %- fmtDouble
+          %- fmtDouble
+        )
+        (iso8601Show spTimestamp ++ ",")
+        spCookie spSample spMedian spP90 spMean spMin spMax spStd
+    where
+      fmtDouble :: forall r. F.Format r (Double -> r)
+      fmtDouble = F.lpadded 6 ' ' (F.fixed 3)
 
 
 data Header = PingHeader | TipHeader
 
 instance ToText Header where
-  toText PingHeader = TL.pack
-                    $ printf "%-46s %30s, %6s, %6s, %6s, %6s, %6s, %6s, %6s, %6s"
-                       ("host," :: String)
-                       ("timestamp" :: String)
-                       ("cookie" :: String)
-                       ("sample" :: String)
-                       ("median" :: String)
-                       ("p90"    :: String)
-                       ("mean"   :: String)
-                       ("min"   :: String)
-                       ("max"   :: String)
-                       ("std"   :: String)
-  toText TipHeader = TL.pack
-                   $ printf "%-47s %6s, %64s, %9s, %10s"
-                       ("host,"   :: String)
-                       ("rtt"     :: String)
-                       ("hash"    :: String)
-                       ("blockNo" :: String)
-                       ("slotNo"  :: String)
+  toText PingHeader =
+    F.format
+      (    F.right 46 ' '
+        %+ F.left 30 ' '
+        %- fmtString
+        %- fmtString
+        %- fmtString
+        %- fmtString
+        %- fmtString
+        %- fmtString
+        %- fmtString
+        %- fmtString
+      )
+      ("host," :: String)
+      ("timestamp" :: String)
+      ("cookie" :: String)
+      ("sample" :: String)
+      ("median" :: String)
+      ("p90"    :: String)
+      ("mean"   :: String)
+      ("min"   :: String)
+      ("max"   :: String)
+      ("std"   :: String)
+    where
+      fmtString :: forall r. F.Format r (String -> r)
+      fmtString = F.left 6 ' '
+
+  toText TipHeader =
+    F.format
+      (    F.right 47 ' '
+        %+ F.left 6 ' '
+        %- F.left 64 ' '
+        %- F.left 9 ' '
+        %- F.left 10 ' '
+      )
+      ("host,"   :: String)
+      ("rtt"     :: String)
+      ("hash"    :: String)
+      ("blockNo" :: String)
+      ("slotNo"  :: String)
 
 instance ToJSON Header where
   toJSON _ = Aeson.Null
@@ -654,15 +702,25 @@ deriving instance Show PingClientException
 
 instance Exception PingClientException where
   displayException (ProtocolLimitException err addr) =
-    printf "%s protocol limits error: %s" (show addr) (displayException err)
+    formatToString
+      (F.shown %+ "protocol limits error:" %+ F.string)
+      addr (displayException err)
   displayException (HandshakeException err addr) =
-    printf "%s handshake error: %s" (show addr) (show err)
+    formatToString
+      (F.shown %+ "handshake error:" %+ F.shown)
+      addr err
   displayException (IOException err addr) =
-    printf "%s io error: %s" (show addr) (displayException err)
+    formatToString
+      (F.shown %+ "io error:" %+ F.string)
+      addr (displayException err)
   displayException (DecodingException err addr) =
-    printf "%s decoding error: %s" (show addr) (displayException err)
+    formatToString
+      (F.shown %+ "decoding error:" %+ F.string)
+      addr (displayException err)
   displayException (MuxException err addr) =
-    printf "%s mux error: %s" (show addr) (displayException err)
+    formatToString
+      (F.shown %+ "mux error:" %+ F.string)
+      addr (displayException err)
 
 data ProtocolFlavour version versionData where
     NodeToNode   :: ProtocolFlavour NodeToNodeVersion   NodeToNodeVersionData
@@ -1306,7 +1364,9 @@ data WithHost a = WithHost SockAddr a
 
 instance ToText a => ToText (WithHost a) where
   toText (WithHost host a) =
-    TL.pack (printf "%-47s" (show host ++ ", ")) <> toText a
+    F.format (F.right 47 ' ' F.% F.text)
+             (show host ++ ", ")
+             (toText a)
 
 instance ToJSON a => ToJSON (WithHost a) where
   toJSON (WithHost host a) =
@@ -1321,7 +1381,7 @@ newtype NegotiatedVersion versionNumber = NegotiatedVersion versionNumber
 
 instance Show versionNumber
       => ToText (NegotiatedVersion versionNumber) where
-  toText (NegotiatedVersion v) = TL.pack $ printf "negotiated versions: %s" (show v)
+  toText (NegotiatedVersion v) = F.format ("negotiated versions:" %+ F.shown) v
 
 instance ToJSON versionNumber
       => ToJSON (NegotiatedVersion versionNumber) where
@@ -1348,7 +1408,9 @@ newtype NetworkRTT = NetworkRTT Double
 
 instance ToText NetworkRTT where
   toText (NetworkRTT rtt) =
-    TL.pack $ printf "network rtt: %.3fs" rtt
+    F.format
+      ("network rtt:" %+ F.fixed 3 F.% "s")
+      rtt
 
 instance ToJSON NetworkRTT where
   toJSON (NetworkRTT rtt) =
@@ -1360,7 +1422,9 @@ newtype HandshakeRTT = HandshakeRTT DiffTime
 
 instance ToText HandshakeRTT where
   toText (HandshakeRTT diff) =
-    TL.pack $ printf "handshake rtt: %.3fs" (realToFrac diff :: Double)
+    F.format
+      ("handshake rtt:" %+ F.fixed 3 F.% "s")
+      (realToFrac diff :: Double)
 
 instance ToJSON HandshakeRTT where
   toJSON (HandshakeRTT diff) =

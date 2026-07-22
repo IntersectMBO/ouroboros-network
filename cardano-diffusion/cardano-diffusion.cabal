@@ -617,6 +617,7 @@ library ping
     deepseq,
     directory,
     dns,
+    formatting,
     io-classes:{io-classes, si-timers, strict-stm} ^>=1.8.0.1,
     iproute ^>=1.7.15,
     network ^>=3.2.7,
