@@ -389,6 +389,9 @@ data LogMsg = LogChainSyncTip PingTip
 
 
 
+-- | Log network RTT, handshake RTT, negotiated version (only if
+-- `pingOptsQuiet` is not set)
+--
 data LogInfoMsg = LogNetworkRTT NetworkRTT
                 | LogHandshakeRTT HandshakeRTT
                 | forall versionNumber.
@@ -1171,7 +1174,10 @@ pingClient' stdout infoTracer headerTracer stderr opts@PingOpts{..} signalVar ad
           stdout' =  WithHost addr >$< stdout
 
           infoTracer' :: Tracer IO LogInfoMsg
-          infoTracer' = WithHost addr >$< infoTracer
+          infoTracer' =
+            if pingOptsQuiet
+            then nullTracer
+            else WithHost addr >$< infoTracer
 
       !t0_s <- getMonotonicTime
 
