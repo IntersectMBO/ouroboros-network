@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -27,7 +28,8 @@ import Data.Functor.Identity
 import Data.Kind (Type)
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Type.Equality
-import Text.Printf
+import Formatting (formatToString, (%+))
+import Formatting qualified as F
 
 import Codec.CBOR.Decoding qualified as CBOR
 import Codec.CBOR.Encoding qualified as CBOR
@@ -443,15 +445,22 @@ decodeTxSubmission2 mkWithBytes
     --
 
     (SingInit, _, _) ->
-        fail (printf "codecTxSubmission (%s) unexpected key (%d, %d)" (show stok) key len)
+        fail (formatToString fmterr (activeAgency :: ActiveAgency st) stok key len)
     (SingTxIds SingBlocking, _, _) ->
-        fail (printf "codecTxSubmission (%s) unexpected key (%d, %d)" (show stok) key len)
+        fail (formatToString fmterr (activeAgency :: ActiveAgency st) stok key len)
     (SingTxIds SingNonBlocking, _, _) ->
-        fail (printf "codecTxSubmission (%s) unexpected key (%d, %d)" (show stok) key len)
+        fail (formatToString fmterr (activeAgency :: ActiveAgency st) stok key len)
     (SingTxs, _, _) ->
-        fail (printf "codecTxSubmission (%s) unexpected key (%d, %d)" (show stok) key len)
+        fail (formatToString fmterr (activeAgency :: ActiveAgency st) stok key len)
     (SingIdle, _, _) ->
-        fail (printf "codecTxSubmission (%s) unexpected key (%d, %d)" (show stok) key len)
+        fail (formatToString fmterr (activeAgency :: ActiveAgency st) stok key len)
+
+  where
+    fmterr :: forall r. F.Format r (ActiveAgency st -> StateToken st -> Word -> Int -> r)
+    fmterr = "codecTxSubmission2"
+          %+ F.parenthesised (F.shown F.% "," %+ F.shown)
+          %+ "unexpected key"
+          %+ F.parenthesised (F.int F.% "," %+ F.int)
 
 
 codecTxSubmission2Id

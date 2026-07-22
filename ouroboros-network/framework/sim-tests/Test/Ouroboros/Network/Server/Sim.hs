@@ -8,6 +8,7 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE NumericUnderscores  #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
@@ -65,7 +66,8 @@ import Data.Set qualified as Set
 import Data.Typeable (Typeable)
 import System.Random (StdGen, mkStdGen, splitGen)
 
-import Text.Printf
+import Formatting (formatToString, (%+))
+import Formatting qualified as F
 
 import Test.QuickCheck
 #if !MIN_VERSION_QuickCheck(2,16,0)
@@ -2255,7 +2257,8 @@ prop_server_accept_error (Fixed rnd) (AbsIOError ioerr) =
                Snocket.listen snock socket0
                nextRequests <- oneshotNextRequests pdata
                connStateIdSupply <- atomically $ CM.newConnStateIdSupply Proxy
-               withBidirectionalConnectionManager "node-0" simTimeouts
+               withBidirectionalConnectionManager ("node-0" :: String)
+                                                  simTimeouts
                                                   nullTracer nullTracer
                                                   nullTracer nullTracer
                                                   Mux.nullTracers nullTracer
@@ -2472,7 +2475,11 @@ ppScript (MultiNodeScript script _) = intercalate "\n" $ go 0 script
              , " est:", show (withoutProtocolTemperature est)]
 
     go _ [] = []
-    go t (e : es) = printf "%5s: %s" (show t') (ppEvent e) : go t' es
+    go t (e : es) =
+        formatToString
+          (F.left 5 ' ' F.% ":" %+ F.string)
+          (show t') (ppEvent e)
+      : go t' es
       where t' = t + delay e
 
 --

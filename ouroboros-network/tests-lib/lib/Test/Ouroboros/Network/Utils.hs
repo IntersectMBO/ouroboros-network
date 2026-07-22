@@ -1,10 +1,15 @@
+{-# LANGUAGE BangPatterns               #-}
 {-# LANGUAGE CPP                        #-}
 {-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TupleSections              #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 module Test.Ouroboros.Network.Utils
   ( -- * Arbitrary Delays
@@ -32,6 +37,8 @@ module Test.Ouroboros.Network.Utils
   , swapTimeWithName
   , swapNameWithTime
   , splitWithNameTrace
+  , WithThreadAndTime (..)
+  , tracerWithThreadAndTime
     -- * Tracers
   , debugTracer
   , sayTracer
@@ -45,10 +52,12 @@ module Test.Ouroboros.Network.Utils
 
 import GHC.Real
 
+import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadSay
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.IOSim (IOSim, traceM)
-import Control.Tracer (Contravariant (contramap), Tracer, contramapM, mkTracer)
+import Control.Tracer (Contravariant (contramap), Tracer, contramapM, mkTracer,
+           traceWith)
 
 import Data.Bitraversable (bimapAccumR)
 import Data.List (delete, nub)
@@ -61,8 +70,9 @@ import Data.Maybe (fromJust, isJust)
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Typeable (Typeable)
+import Formatting (formatToString, (%+))
+import Formatting qualified as F
 import Text.Pretty.Simple (pPrint)
-import Text.Printf
 
 import Ouroboros.Network.Util (PrettyShow (..))
 
@@ -151,7 +161,11 @@ prop_shrink_valid valid (ShrinkCarefully x) =
 -- | Use in 'tabulate' to help summarise data into buckets.
 --
 renderRanges :: Int -> Int -> String
-renderRanges r n = "[" ++ printf "% 3d" lower ++ ", " ++ printf "% 3d" upper ++ ")"
+renderRanges r n =
+    formatToString
+      ("[" F.% F.left 3 ' ' F.% "," %+ F.left 3 ' ' F.% ")")
+      lower
+      upper
   where
     lower = n - n `mod` r
     upper = lower + (r-1)
@@ -289,3 +303,31 @@ nightlyTest =
 #else
   id
 #endif
+
+
+data WithThreadAndTime m a = WithThreadAndTime {
+      wtatOccuredAt    :: !Time
+    , wtatWithinThread :: !(ThreadId m)
+    , wtatEvent        :: !a
+    }
+
+instance (Show (ThreadId m), Show a)
+      => Show (WithThreadAndTime m a) where
+    show WithThreadAndTime {wtatOccuredAt, wtatWithinThread, wtatEvent} =
+        formatToString
+          (F.shown F.% ":" %+ F.shown F.% ":" %+ F.shown)
+          wtatOccuredAt
+          wtatWithinThread
+          wtatEvent
+
+tracerWithThreadAndTime
+  :: forall a m.
+     ( MonadFork m
+     , MonadMonotonicTime m
+     )
+  => Tracer m (WithThreadAndTime m a)
+  -> Tracer m a
+tracerWithThreadAndTime tr = mkTracer $ \s -> do
+    !now <- getMonotonicTime
+    !tid <- myThreadId
+    traceWith tr $ WithThreadAndTime now tid s

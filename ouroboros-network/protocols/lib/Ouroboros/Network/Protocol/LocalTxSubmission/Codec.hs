@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -27,7 +28,8 @@ import Data.Constraint
 import Data.Functor.Identity
 import Data.Kind (Type)
 import Data.Type.Equality
-import Text.Printf
+import Formatting (formatToString, (%+))
+import Formatting qualified as F
 
 import Network.TypedProtocol.Codec.CBOR
 
@@ -164,8 +166,13 @@ decodeLocalTxSubmission mkWithBytes decodeWithByteSpan decodeTx decodeReject sto
 
     (SingDone, _, _) -> notActiveState stok
 
-    (_, _, _) -> fail (printf "codecLocalTxSubmission (%s, %s) unexpected key (%d, %d)"
-                              (show (activeAgency :: ActiveAgency st)) (show stok) key len)
+    (_, _, _) -> fail (formatToString fmterr (activeAgency :: ActiveAgency st) stok key len)
+  where
+    fmterr :: forall r. F.Format r (ActiveAgency st -> StateToken st -> Word -> Int -> r)
+    fmterr = "codecLocalTxSubmission"
+          %+ F.parenthesised (F.shown F.% "," %+ F.shown)
+          %+ "unexpected key"
+          %+ F.parenthesised (F.int F.% "," %+ F.int)
 
 --
 -- Map protocol state & messages from `LocalTxSubmission (Identity tx) reject` to

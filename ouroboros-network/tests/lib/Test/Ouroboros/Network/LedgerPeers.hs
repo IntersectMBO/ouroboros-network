@@ -57,10 +57,10 @@ import Ouroboros.Network.Point (WithOrigin (..))
 
 import Test.Ouroboros.Network.Data.Script
 import Test.Ouroboros.Network.PeerSelection.RootPeersDNS
+import Test.Ouroboros.Network.Utils (WithThreadAndTime (..))
 import Test.QuickCheck
 import Test.Tasty
 import Test.Tasty.QuickCheck
-import Text.Printf
 
 tests :: TestTree
 tests = testGroup "Ouroboros.Network.LedgerPeers"
@@ -761,15 +761,6 @@ evaluateTrace = go []
         Right (TraceInternalError e)                 -> error ("IOSim: " ++ e)
         Left  (SomeException e)                      -> pure $ SimException (SomeException e) (reverse as)
 
-data WithThreadAndTime a = WithThreadAndTime {
-      wtatOccuredAt    :: !Time
-    , wtatWithinThread :: !String
-    , wtatEvent        :: !a
-    }
-
-instance (Show a) => Show (WithThreadAndTime a) where
-    show WithThreadAndTime {wtatOccuredAt, wtatWithinThread, wtatEvent} =
-        printf "%s: %s: %s" (show wtatOccuredAt) (show wtatWithinThread) (show wtatEvent)
 
 verboseTracer :: forall a m. (MonadSay m, Show a)
                => Tracer m a
@@ -779,8 +770,8 @@ threadAndTimeTracer :: forall a m.
                        ( MonadAsync m
                        , MonadMonotonicTime m
                        )
-                    => Tracer m (WithThreadAndTime a) -> Tracer m a
+                    => Tracer m (WithThreadAndTime m a) -> Tracer m a
 threadAndTimeTracer tr = mkTracer $ \s -> do
     !now <- getMonotonicTime
-    !tid <- show <$> myThreadId
+    !tid <- myThreadId
     traceWith tr $! WithThreadAndTime now tid s

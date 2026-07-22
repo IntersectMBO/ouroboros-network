@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -25,13 +26,14 @@ import Ouroboros.Network.Protocol.Limits
 import Data.ByteString.Lazy qualified as LBS
 import Data.Kind (Type)
 import Data.Singletons (withSingI)
+import Formatting (formatToString, (%+))
+import Formatting qualified as F
 
 import Codec.CBOR.Decoding (decodeListLen, decodeWord)
 import Codec.CBOR.Decoding qualified as CBOR
 import Codec.CBOR.Encoding (encodeListLen, encodeWord)
 import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
-import Text.Printf
 
 
 -- | Byte Limits
@@ -180,20 +182,24 @@ codecChainSync encodeHeader decodeHeader
         --
 
         (_, _, SingIdle) ->
-          fail (printf "codecChainSync (%s, %s) unexpected key (%d, %d)"
-                       (show (activeAgency :: ActiveAgency st)) (show stok) key len)
+              fail (formatToString fmterr (activeAgency :: ActiveAgency st) stok key len)
         (_, _, SingNext next) ->
           case next of
             SingCanAwait ->
-              fail (printf "codecChainSync (%s) unexpected key (%d, %d)"
-                           (show (activeAgency :: ActiveAgency st)) (show stok) key len)
+              fail (formatToString fmterr (activeAgency :: ActiveAgency st) stok key len)
             SingMustReply ->
-              fail (printf "codecChainSync (%s) unexpected key (%d, %d)"
-                           (show (activeAgency :: ActiveAgency st)) (show stok) key len)
+              fail (formatToString fmterr (activeAgency :: ActiveAgency st) stok key len)
         (_, _, SingIntersect) ->
-          fail (printf "codecChainSync (%s) unexpected key (%d, %d)"
-                       (show (activeAgency :: ActiveAgency st)) (show stok) key len)
+              fail (formatToString fmterr (activeAgency :: ActiveAgency st) stok key len)
         (_, _, SingDone) -> notActiveState stok
+
+    fmterr :: forall (st :: ChainSync header point tip) r.
+              F.Format r (ActiveAgency st -> StateToken st -> Word -> Int -> r)
+    fmterr = "codecChainSync"
+          %+ F.parenthesised (F.shown F.% "," %+ F.shown)
+          %+ "unexpected key"
+          %+ F.parenthesised (F.int F.% "," %+ F.int)
+
 
 encodeList :: (a -> CBOR.Encoding) -> [a] -> CBOR.Encoding
 encodeList _   [] = CBOR.encodeListLen 0

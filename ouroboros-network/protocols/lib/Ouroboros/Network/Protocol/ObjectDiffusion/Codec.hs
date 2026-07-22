@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -22,10 +23,11 @@ import Control.Monad.Class.MonadTime.SI
 import Data.ByteString.Lazy (ByteString)
 import Data.Kind (Type)
 import Data.List.NonEmpty qualified as NonEmpty
+import Formatting (formatToString, (%+))
+import Formatting qualified as F
 import Network.TypedProtocol.Codec.CBOR
 import Ouroboros.Network.Protocol.Limits
 import Ouroboros.Network.Protocol.ObjectDiffusion.Type
-import Text.Printf
 
 -- | Byte Limits.
 byteLimitsObjectDiffusion
@@ -219,15 +221,22 @@ decodeObjectDiffusion decodeObjectId decodeObject = decode
         (SingDone, _, _) -> notActiveState stok
         -- failures per protocol state
         (SingInit, _, _) ->
-          fail $ printf "codecObjectDiffusion (%s) unexpected key (%d, %d)" (show stok) key len
+          fail (formatToString fmterr (activeAgency :: ActiveAgency st') stok key len)
         (SingObjectIds SingBlocking, _, _) ->
-          fail $ printf "codecObjectDiffusion (%s) unexpected key (%d, %d)" (show stok) key len
+          fail (formatToString fmterr (activeAgency :: ActiveAgency st') stok key len)
         (SingObjectIds SingNonBlocking, _, _) ->
-          fail $ printf "codecObjectDiffusion (%s) unexpected key (%d, %d)" (show stok) key len
+          fail (formatToString fmterr (activeAgency :: ActiveAgency st') stok key len)
         (SingObjects, _, _) ->
-          fail $ printf "codecObjectDiffusion (%s) unexpected key (%d, %d)" (show stok) key len
+          fail (formatToString fmterr (activeAgency :: ActiveAgency st') stok key len)
         (SingIdle, _, _) ->
-          fail $ printf "codecObjectDiffusion (%s) unexpected key (%d, %d)" (show stok) key len
+          fail (formatToString fmterr (activeAgency :: ActiveAgency st') stok key len)
+
+    fmterr :: forall (st' :: ObjectDiffusion objectId object) r.
+              F.Format r (ActiveAgency st' -> StateToken st' -> Word -> Int -> r)
+    fmterr = "codecObjectDiffusion"
+          %+ F.parenthesised (F.shown F.% "," %+ F.shown)
+          %+ "unexpected key"
+          %+ F.parenthesised (F.int F.% "," %+ F.int)
 
 codecObjectDiffusionId
   :: forall objectId object m.
