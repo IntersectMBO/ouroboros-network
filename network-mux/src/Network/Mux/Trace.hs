@@ -4,6 +4,7 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE LambdaCase                #-}
 {-# LANGUAGE NamedFieldPuns            #-}
+{-# LANGUAGE OverloadedStrings         #-}
 {-# LANGUAGE PatternSynonyms           #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE ViewPatterns              #-}
@@ -35,7 +36,8 @@ module Network.Mux.Trace
 
 import Prelude hiding (read)
 
-import Text.Printf
+import Formatting (formatToString, (%+))
+import Formatting qualified as F
 
 import Control.Exception hiding (throwIO)
 import Control.Monad.Class.MonadThrow
@@ -83,16 +85,16 @@ data Error = UnknownMiniProtocol MiniProtocolNum
 
 instance Exception Error where
   displayException = \case
-    UnknownMiniProtocol pnum      -> printf "unknown mini-protocol %s" (show pnum)
-    BearerClosed msg              -> printf "bearer closed: %s" (show msg)
-    IngressQueueOverRun pnum pdir -> printf "ingress queue overrun for %s %s " (show pnum) (show pdir)
-    InitiatorOnly pnum            -> printf "received data on initiator only protocol %s" (show pnum)
-    IOException e msg             -> displayException e ++ ": " ++ msg
-    SDUDecodeError msg            -> printf "SDU decode error: %s" msg
+    UnknownMiniProtocol pnum      -> formatToString ("unknown mini-protocol" %+ F.shown) pnum
+    BearerClosed msg              -> formatToString ( "bearer closed:" %+ F.shown) msg
+    IngressQueueOverRun pnum pdir -> formatToString ("ingress queue overrun for" %+ F.shown %+ F.shown) pnum pdir
+    InitiatorOnly pnum            -> formatToString ("received data on initiator only protocol" %+ F.shown) pnum
+    IOException e msg             -> formatToString (F.string F.% ":" %+ F.string) (displayException e) msg
+    SDUDecodeError msg            -> formatToString ("SDU decode error:" %+ F.string) msg
     SDUReadTimeout                -> "SDU read timeout expired"
     SDUWriteTimeout               -> "SDU write timeout expired"
-    Shutdown Nothing st           -> printf "mux shutdown error in state %s" (show st)
-    Shutdown (Just e) st          -> printf "mux shutdown error (%s) in state %s " (displayException e) (show st)
+    Shutdown Nothing st           -> formatToString ("mux shutdown error in state" %+ F.shown) st
+    Shutdown (Just e) st          -> formatToString ("mux shutdown error" %+ F.parenthesised F.string %+ "in state" %+ F.shown) (displayException e) st
 
 -- | Handler for 'IOException's which wraps them in 'Error'.
 --
@@ -138,12 +140,14 @@ data ChannelTrace =
     | TraceChannelSendEnd MiniProtocolNum
 
 instance Show ChannelTrace where
-    show (TraceChannelRecvStart mid) = printf "Channel Receive Start on %s" (show mid)
-    show (TraceChannelRecvEnd mid len) = printf "Channel Receive End on (%s) %d" (show mid)
-        len
-    show (TraceChannelSendStart mid len) = printf "Channel Send Start on (%s) %d" (show mid)
-        len
-    show (TraceChannelSendEnd mid) = printf "Channel Send End on %s" (show mid)
+    show (TraceChannelRecvStart mid) =
+      formatToString ("Channel Receive Start on" %+ F.shown) mid
+    show (TraceChannelRecvEnd mid len)   =
+      formatToString ("Channel Receive End on" %+ F.parenthesised F.shown %+ F.int) mid len
+    show (TraceChannelSendStart mid len) =
+      formatToString ("Channel Send Start on" %+ F.parenthesised F.shown %+ F.int) mid len
+    show (TraceChannelSendEnd mid) =
+      formatToString ("Channel Send End on" %+ F.shown) mid
 
 
 data State = Mature
@@ -169,15 +173,40 @@ data Trace =
     | TraceStopped
 
 instance Show Trace where
-    show (TraceState new) = printf "State: %s" (show new)
-    show (TraceCleanExit mid dir) = printf "Miniprotocol (%s) %s terminated cleanly" (show mid) (show dir)
-    show (TraceExceptionExit mid dir e) = printf "Miniprotocol %s %s terminated with exception %s" (show mid) (show dir) (show e)
-    show (TraceStartEagerly mid dir) = printf "Eagerly started (%s) in %s" (show mid) (show dir)
-    show (TraceStartOnDemand mid dir) = printf "Preparing to start (%s) in %s" (show mid) (show dir)
-    show (TraceStartOnDemandAny mid dir) = printf "Preparing to start on any (%s) in %s" (show mid) (show dir)
-    show (TraceStartedOnDemand mid dir) = printf "Started on demand (%s) in %s" (show mid) (show dir)
-    show (TraceTerminating mid dir) = printf "Terminating (%s) in %s" (show mid) (show dir)
-    show (TraceNewMux infos) = printf "New mux with protocols: %s" (show infos)
+    show (TraceState new) =
+      formatToString ("State:" %+ F.shown) new
+    show (TraceCleanExit mid dir) =
+      formatToString
+        ("Miniprotocol" %+ F.parenthesised F.shown %+ F.shown %+ "terminated cleanly")
+        mid dir
+    show (TraceExceptionExit mid dir e) =
+      formatToString
+        ("Miniprotocol" %+ F.shown %+ F.shown %+ "terminated with exception" %+ F.shown)
+        mid dir e
+    show (TraceStartEagerly mid dir) =
+      formatToString
+        ("Eagerly started" %+ F.parenthesised F.shown %+ "in" %+ F.shown)
+        mid dir
+    show (TraceStartOnDemand mid dir) =
+      formatToString
+        ("Preparing to start" %+ F.parenthesised F.shown %+ "in" %+ F.shown)
+        mid dir
+    show (TraceStartOnDemandAny mid dir) =
+      formatToString
+        ("Preparing to start on any" %+ F.parenthesised F.shown %+ "in" %+ F.shown)
+        mid dir
+    show (TraceStartedOnDemand mid dir) =
+      formatToString
+        ("Started on demand" %+ F.parenthesised F.shown %+ "in" %+ F.shown)
+        mid dir
+    show (TraceTerminating mid dir) =
+      formatToString
+        ("Terminating" %+ F.parenthesised F.shown %+ "in" %+ F.shown)
+        mid dir
+    show (TraceNewMux infos) =
+      formatToString
+        ("New mux with protocols:" %+ F.commaSpaceSep F.shown)
+        infos
     show TraceStarting = "Mux starting"
     show TraceStopping = "Mux stopping"
     show TraceStopped  = "Mux stoppped"

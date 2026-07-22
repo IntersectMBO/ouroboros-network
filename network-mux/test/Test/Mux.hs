@@ -4,6 +4,7 @@
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE OverloadedStrings          #-}
 #if defined(mingw32_HOST_OS)
 {-# LANGUAGE PackageImports             #-}
 #endif
@@ -36,13 +37,14 @@ import Data.Map qualified as M
 import Data.Maybe (fromMaybe, isNothing)
 import Data.Tuple (swap)
 import Data.Word
+import Formatting (formatToString, (%), (%+))
+import Formatting qualified as F
 import System.Random.SplitMix qualified as SM
 import Test.Cardano.Base.QuickCheck qualified as BaseQC
 import Test.QuickCheck hiding ((.&.))
 import Test.QuickCheck.Instances.ByteString ()
 import Test.Tasty
 import Test.Tasty.QuickCheck (testProperty)
-import Text.Printf
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadAsync
@@ -146,7 +148,7 @@ newtype DummyPayload = DummyPayload {
     } deriving Eq
 
 instance Show DummyPayload where
-    show d = printf "DummyPayload %d\n" (BL.length $ unDummyPayload d)
+    show d = formatToString ("DummyPayload" %+ F.int % "\n") (BL.length $ unDummyPayload d)
 
 -- | Generate a byte string of a given size.
 --
@@ -241,12 +243,13 @@ data InvalidSDU = InvalidSDU {
     }
 
 instance Show InvalidSDU where
-    show a = printf "InvalidSDU 0x%08x 0x%04x 0x%04x 0x%04x 0x%02x\n"
-                    (Mx.unRemoteClockModel $ isTimestamp a)
-                    (isIdAndMode a)
-                    (isLength a)
-                    (isRealLength a)
-                    (isPattern a)
+    show a = formatToString
+              ("InvalidSDU" %+ F.hexPrefix 8 %+ F.hexPrefix 4 %+ F.hexPrefix 4 %+ F.hexPrefix 4 %+ F.hexPrefix 2 F.% "\n")
+              (Mx.unRemoteClockModel $ isTimestamp a)
+              (isIdAndMode a)
+              (isLength a)
+              (isRealLength a)
+              (isPattern a)
 
 data ArbitrarySDU = ArbitraryInvalidSDU InvalidSDU Mx.Error
                   | ArbitraryValidSDU DummyPayload (Maybe Mx.Error)
@@ -363,8 +366,8 @@ prop_mux_snd_recv (DummyRun messages) = ioProperty $ do
                          sduLen
                          QueueChannel { writeQueue = server_w, readQueue = server_r }
 
-        clientTracer' = contramap (Mx.WithBearer "client") activeTracer
-        serverTracer' = contramap (Mx.WithBearer "server") activeTracer
+        clientTracer' = contramap (Mx.WithBearer ("client" :: String)) activeTracer
+        serverTracer' = contramap (Mx.WithBearer ("server" :: String)) activeTracer
         clientTracer = Mx.TracersI clientTracer' clientTracer' clientTracer'
         serverTracer = Mx.TracersI serverTracer' serverTracer' serverTracer'
 
@@ -426,8 +429,8 @@ prop_mux_snd_recv_bi (DummyRun messages) (DummyCapability clientCap) (DummyCapab
     let server_w = client_r
         server_r = client_w
 
-        clientTracer' = contramap (Mx.WithBearer "client") activeTracer
-        serverTracer' = contramap (Mx.WithBearer "server") activeTracer
+        clientTracer' = contramap (Mx.WithBearer ("client" :: String)) activeTracer
+        serverTracer' = contramap (Mx.WithBearer ("server" :: String)) activeTracer
         clientTracer  = Mx.TracersI clientTracer' clientTracer' clientTracer'
         serverTracer  = Mx.TracersI serverTracer' serverTracer' serverTracer'
 
@@ -539,8 +542,8 @@ prop_mux_snd_recv_compat messages = ioProperty $ do
     let server_w = client_r
         server_r = client_w
 
-        clientTracer' = contramap (Mx.WithBearer "client") activeTracer
-        serverTracer' = contramap (Mx.WithBearer "server") activeTracer
+        clientTracer' = contramap (Mx.WithBearer ("client" :: String)) activeTracer
+        serverTracer' = contramap (Mx.WithBearer ("server" :: String)) activeTracer
         clientTracer  = Mx.TracersI clientTracer' clientTracer' clientTracer'
         serverTracer  = Mx.TracersI serverTracer' serverTracer' serverTracer'
 
@@ -753,8 +756,8 @@ runMuxApplication :: DummyCapability
                   -> Mx.Bearer IO
                   -> IO Bool
 runMuxApplication (DummyCapability rspCap) initApps initBearer respApps respBearer = do
-    let clientTracer' = contramap (Mx.WithBearer "client") activeTracer
-        serverTracer' = contramap (Mx.WithBearer "server") activeTracer
+    let clientTracer' = contramap (Mx.WithBearer ("client" :: String)) activeTracer
+        serverTracer' = contramap (Mx.WithBearer ("server" :: String)) activeTracer
         clientTracer  = Mx.TracersI clientTracer' clientTracer' clientTracer'
         serverTracer  = Mx.TracersI serverTracer' serverTracer' serverTracer'
         protNum = [1..]
@@ -1017,8 +1020,8 @@ prop_mux_starvation (Uneven response0 response1) =
     let server_w = client_r
         server_r = client_w
 
-        clientTracer' = contramap (Mx.WithBearer "client") activeTracer
-        serverTracer' = contramap (Mx.WithBearer "server") activeTracer
+        clientTracer' = contramap (Mx.WithBearer ("client" :: String)) activeTracer
+        serverTracer' = contramap (Mx.WithBearer ("server" :: String)) activeTracer
         clientTracer  = Mx.TracersI clientTracer' clientTracer' (clientTracer' <> headerTracer)
         serverTracer  = Mx.TracersI serverTracer' serverTracer' serverTracer'
 
@@ -1270,7 +1273,7 @@ prop_demux_sdu a = do
         server_w <- atomically $ newTBQueue 10
         server_r <- atomically $ newTBQueue 10
 
-        let serverTracer' = contramap (Mx.WithBearer "server") activeTracer
+        let serverTracer' = contramap (Mx.WithBearer ("server" :: String)) activeTracer
             serverTracer  = Mx.TracersI serverTracer' serverTracer' serverTracer'
 
         serverBearer <- getBearer makeQueueChannelBearer
@@ -1558,11 +1561,11 @@ prop_mux_start_mX apps runTime = do
              DummyAppSucceed ->
                  case r of
                       Left _  -> return (counterexample
-                                          (printf "%s ≰ %s" (show minRunTime) (show totTime))
+                                          (formatToString (F.shown %+ "≰" %+ F.shown) minRunTime totTime)
                                           (minRunTime <= totTime)
                                         , r)
                       Right _ -> return (counterexample
-                                          (printf "%s ≱ %s" (show minRunTime) (show totTime))
+                                          (formatToString (F.shown %+ "≱" %+ F.shown) minRunTime totTime)
                                           (minRunTime >= totTime)
                                         , r)
              DummyAppFail ->
@@ -1921,7 +1924,11 @@ data WithThreadAndTime a = WithThreadAndTime {
 
 instance (Show a) => Show (WithThreadAndTime a) where
     show WithThreadAndTime {wtatOccuredAt, wtatWithinThread, wtatEvent} =
-        printf "%s: %s: %s" (show wtatOccuredAt) (show wtatWithinThread) (show wtatEvent)
+        formatToString
+          (F.shown F.% ":" %+ F.shown F.% ":" %+ F.shown)
+          wtatOccuredAt
+          wtatWithinThread
+          wtatEvent
 
 verboseTracer :: forall a m.
                        ( MonadAsync m
