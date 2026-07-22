@@ -485,8 +485,10 @@ instance ToText LogMsg where
           perasSupport
         )
         = unwords
-          [ show networkMagic
-          , show diffusionMode
+          [ show (unNetworkMagic networkMagic)
+          , case diffusionMode of
+              InitiatorOnlyDiffusionMode         -> "InitiatorOnly"
+              InitiatorAndResponderDiffusionMode -> "InitiatorAndResponder"
           , show peerSharing
           , show query
           , show perasSupport
