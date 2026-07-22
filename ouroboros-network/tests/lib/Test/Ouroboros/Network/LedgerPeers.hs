@@ -334,7 +334,6 @@ prop_pick100 seed (NonNegative n) ledgerPeersKind (MockRoots _ dnsMapScript _ _)
              SimDeadLock trace -> do
                  return $ counterexample (intercalate "\n" $ "Deadlock" : trace) False
              SimReturn peers _trace -> do
-                 -- printf "Log: %s\n" (intercalate "\n" _trace)
                  return $ peers === [ RelayAccessAddress (read "1.1.1.1") 1 ]
 
 -- | Verify that given at least one peer we manage to pick `count` peers.

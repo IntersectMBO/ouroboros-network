@@ -719,7 +719,6 @@ muxChannel tracer egressQueue want@(Wanton w) mc md q =
             if l == 0
                 then retry
                 else writeTVar q (0 :!: mempty) >> return (toLazyByteString blob)
-        -- say $ printf "recv mid %s mode %s blob len %d" (show mid) (show md) (BL.length blob)
         traceWith tracer $ TraceChannelRecvEnd mc (fromIntegral $ BL.length blob)
         return $ Just blob
 
