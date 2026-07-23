@@ -161,7 +161,8 @@ instance MetaTrace (Diff.DiffusionTracer ntnAddr ntcAddr) where
     severityFor (Namespace _ ["ConfiguredLocalSocket"]) _ = Just Info
     severityFor (Namespace _ ["ListeningLocalSocket"]) _ = Just Info
     severityFor (Namespace _ ["LocalSocketUp"]) _ = Just Info
-    severityFor (Namespace _ ["InsecureLocalSocket"]) _ = Just Warning
+    severityFor (Namespace _ ["InsecureLocalSocket", "Directory"]) _ = Just Warning
+    severityFor (Namespace _ ["InsecureLocalSocket", "Permissions"]) _ = Just Warning
     severityFor (Namespace _ ["CreatingServerSocket"]) _ = Just Info
     severityFor (Namespace _ ["ListeningServerSocket"]) _ = Just Info
     severityFor (Namespace _ ["ServerSocketUp"]) _ = Just Info
