@@ -332,6 +332,8 @@ connectionManagerTraceMap (TrConnectionFailure _)          =
   "TrConnectionFailure"
 connectionManagerTraceMap (TrConnectionNotFound p _)       =
   "TrConnectionNotFound " ++ show p
+connectionManagerTraceMap TrMutableConnStateId {}          =
+  "TrMutableConnStateId"
 connectionManagerTraceMap (TrForbiddenOperation _ as)      =
   "TrForbiddenOperation" ++ show as
 connectionManagerTraceMap (TrPruneConnections _ _ _)       =

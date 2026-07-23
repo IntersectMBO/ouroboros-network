@@ -1273,7 +1273,7 @@ with args@Arguments {
     acquireOutboundConnectionImpl stateVar stdGenVar handler diffusionMode peerAddr connProv = do
         let provenance = Outbound
         traceWith tracer (TrIncludeConnection provenance peerAddr)
-        (trace, eHandleWedge) <- atomically $ do
+        (trace, trTrace, eHandleWedge) <- atomically $ do
           state <- readTMVar stateVar
           stdGen <- stateTVar stdGenVar Random.splitGen
           case State.lookupByRemoteAddr stdGen peerAddr state of
@@ -1282,13 +1282,15 @@ with args@Arguments {
               let st = State.abstractState (Known connState)
               case connState of
                 ReservedOutboundState ->
-                  return ( Just (Right (TrConnectionExists provenance peerAddr st))
+                  return ( Just (TrConnectionExists provenance peerAddr st)
+                         , Nothing
                          , Left (withCallStack
                                   (ConnectionExists provenance peerAddr))
                          )
 
                 UnnegotiatedState Outbound _connId _connThread -> do
-                  return ( Just (Right (TrConnectionExists provenance peerAddr st))
+                  return ( Just $ TrConnectionExists provenance peerAddr st
+                         , Nothing
                          , Left (withCallStack
                                   (ConnectionExists provenance peerAddr))
                          )
@@ -1298,29 +1300,34 @@ with args@Arguments {
                   -- return 'There' to indicate that we need to block on
                   -- the connection state.
                   return ( Nothing
+                         , Nothing
                          , Right (mutableConnState, There connId)
                          )
 
                 OutboundUniState {} -> do
-                  return ( Just (Right (TrConnectionExists provenance peerAddr st))
+                  return ( Just (TrConnectionExists provenance peerAddr st)
+                         , Nothing
                          , Left (withCallStack
                                   (ConnectionExists provenance peerAddr))
                          )
 
                 OutboundDupState {} -> do
-                  return ( Just (Right (TrConnectionExists provenance peerAddr st))
+                  return ( Just (TrConnectionExists provenance peerAddr st)
+                         , Nothing
                          , Left (withCallStack
                                   (ConnectionExists provenance peerAddr))
                          )
 
                 OutboundIdleState _connId _connThread _handle _dataFlow ->
                   let tr = State.abstractState (Known connState) in
-                  return ( Just (Right (TrForbiddenOperation peerAddr tr))
+                  return ( Just (TrForbiddenOperation peerAddr tr)
+                         , Nothing
                          , Left (withCallStack (ForbiddenOperation peerAddr tr))
                          )
 
                 InboundIdleState connId _connThread _handle Unidirectional -> do
-                  return ( Just (Right (TrForbiddenConnection connId))
+                  return ( Just (TrForbiddenConnection connId)
+                         , Nothing
                          , Left (withCallStack
                                   (ForbiddenConnection connId))
                          )
@@ -1332,16 +1339,18 @@ with args@Arguments {
                   -- @
                   let connState' = OutboundDupState connId connThread handle Ticking
                   writeTVar connVar connState'
-                  return ( Just (Left (TransitionTrace
-                                         connStateId
-                                         (mkTransition connState connState')))
+                  return ( Nothing
+                         , Just $ TransitionTrace
+                                   connStateId
+                                   (mkTransition connState connState')
                          , Right (mutableConnState, Here (Connected connId dataFlow handle))
                          )
 
                 InboundState connId _connThread _handle Unidirectional -> do
                   -- the remote side negotiated unidirectional connection, we
                   -- cannot re-use it.
-                  return ( Just (Right (TrForbiddenConnection connId))
+                  return ( Just (TrForbiddenConnection connId)
+                         , Nothing
                          , Left (withCallStack
                                   (ForbiddenConnection connId))
                          )
@@ -1353,14 +1362,16 @@ with args@Arguments {
                   -- @
                   let connState' = DuplexState connId connThread handle
                   writeTVar connVar connState'
-                  return ( Just (Left (TransitionTrace
-                                        connStateId
-                                        (mkTransition connState connState')))
+                  return ( Nothing
+                         , Just (TransitionTrace
+                                   connStateId
+                                   (mkTransition connState connState'))
                          , Right (mutableConnState, Here (Connected connId dataFlow handle))
                          )
 
                 DuplexState _connId _connThread  _handle ->
-                  return ( Just (Right (TrConnectionExists provenance peerAddr st))
+                  return ( Just (TrConnectionExists provenance peerAddr st)
+                         , Nothing
                          , Left (withCallStack
                                   (ConnectionExists provenance peerAddr))
                          )
@@ -1380,7 +1391,8 @@ with args@Arguments {
               -- Only proceed if creating a new connection is allowed
               case connProv of
                 Inbound ->
-                  return ( Just (Right (TrInboundConnectionNotFound peerAddr))
+                  return ( Just (TrInboundConnectionNotFound peerAddr)
+                         , Nothing
                          , Left (withCallStack
                                   (InboundConnectionNotFound peerAddr))
                          )
@@ -1396,16 +1408,18 @@ with args@Arguments {
 
                   writeTMVar stateVar
                             (State.insertUnknownLocalAddr peerAddr mutableConnState state)
-                  return ( Just (Left (TransitionTrace
-                                        connStateId
-                                        Transition {
-                                            fromState = Unknown,
-                                            toState   = Known connState'
-                                          }))
+                  return ( Just (TrMutableConnStateId peerAddr connStateId)
+                         , Just (TransitionTrace
+                                  connStateId
+                                  Transition {
+                                      fromState = Unknown,
+                                      toState   = Known connState'
+                                    })
                          , Right (mutableConnState, Nowhere)
                          )
 
-        traverse_ (either (traceWith trTracer) (traceWith tracer)) trace
+        traverse_ (traceWith tracer) trace
+        traverse_ (traceWith trTracer) trTrace
         traceCounters stateVar
         case eHandleWedge of
           Left e -> do
@@ -2399,6 +2413,7 @@ withCallStack k = k callStack
 data Trace peerAddr handlerTrace
   = TrIncludeConnection            Provenance peerAddr
   | TrInboundConnectionNotFound    peerAddr
+  | TrMutableConnStateId           peerAddr State.ConnStateId
   | TrReleaseConnection            Provenance (ConnectionId peerAddr)
   | TrConnect                      (Maybe peerAddr) -- ^ local address
                                    peerAddr         -- ^ remote address
