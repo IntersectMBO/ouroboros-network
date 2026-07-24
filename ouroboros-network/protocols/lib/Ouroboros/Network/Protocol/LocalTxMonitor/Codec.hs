@@ -3,6 +3,7 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -24,11 +25,12 @@ import Network.TypedProtocol.Core
 import Data.ByteString.Lazy (ByteString)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
+import Formatting (formatToString, (%+))
+import Formatting qualified as F
 
 import Codec.CBOR.Decoding qualified as CBOR
 import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
-import Text.Printf
 
 import Ouroboros.Network.Protocol.LocalTxMonitor.Type
 
@@ -169,8 +171,14 @@ codecLocalTxMonitor version
         (SingDone, _, _) -> notActiveState stok
 
         (_, _, _) ->
-          fail (printf "codecLocalTxMonitor (%s, %s) unexpected key (%d, %d)"
-                       (show (activeAgency :: ActiveAgency st)) (show stok) key len)
+          fail (formatToString fmterr (activeAgency :: ActiveAgency st) stok key len)
+
+    fmterr :: forall (st :: LocalTxMonitor txid tx slot) r.
+              F.Format r (ActiveAgency st -> StateToken st -> Word -> Int -> r)
+    fmterr = "codecLocalTxMonitor"
+          %+ F.parenthesised (F.shown F.% "," %+ F.shown)
+          %+ "unexpected key"
+          %+ F.parenthesised (F.int F.% "," %+ F.int)
 
 encodeMeasureMap :: Map MeasureName (SizeAndCapacity Integer) -> CBOR.Encoding
 encodeMeasureMap m =

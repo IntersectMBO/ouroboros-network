@@ -1,5 +1,4 @@
 {-# OPTIONS_GHC -Wno-orphans     #-}
-{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE BlockArguments      #-}
 {-# LANGUAGE DeriveAnyClass      #-}
 {-# LANGUAGE DeriveGeneric       #-}
@@ -37,7 +36,6 @@ import Control.Concurrent.Class.MonadSTM
 import Control.Concurrent.Class.MonadSTM.Strict qualified as StrictSTM
 import Control.DeepSeq
 import Control.Exception (SomeException (..))
-import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadSay
 import Control.Monad.Class.MonadST
@@ -45,7 +43,7 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.IOSim hiding (SimResult)
-import Control.Tracer (Tracer, mkTracer, traceWith)
+import Control.Tracer (Tracer)
 
 import Codec.CBOR.Decoding qualified as CBOR
 import Codec.CBOR.Encoding qualified as CBOR
@@ -70,9 +68,9 @@ import Ouroboros.Network.TxSubmission.Mempool.Simple (Mempool)
 import Ouroboros.Network.TxSubmission.Mempool.Simple qualified as Mempool
 import Ouroboros.Network.Util.ShowProxy
 
-import Test.Ouroboros.Network.Utils (sayTracer)
+import Test.Ouroboros.Network.Utils (WithThreadAndTime (..), sayTracer,
+           tracerWithThreadAndTime)
 import Test.QuickCheck
-import Text.Printf
 
 
 data Tx txid = Tx {
@@ -315,33 +313,12 @@ evaluateTrace = go []
         Left  (SomeException e)                      -> pure $ SimException (SomeException e) (reverse as)
 
 
-data WithThreadAndTime a = WithThreadAndTime {
-      wtatOccuredAt    :: !Time
-    , wtatWithinThread :: !String
-    , wtatEvent        :: !a
-    }
-
-instance (Show a) => Show (WithThreadAndTime a) where
-    show WithThreadAndTime {wtatOccuredAt, wtatWithinThread, wtatEvent} =
-        printf "%s: %s: %s" (show wtatOccuredAt) (show wtatWithinThread) (show wtatEvent)
-
 verboseTracer :: forall a m.
-                       ( MonadAsync m
+                       ( MonadFork m
                        , MonadDelay m
                        , MonadSay m
                        , MonadMonotonicTime m
                        , Show a
                        )
                => Tracer m a
-verboseTracer = threadAndTimeTracer sayTracer
-
-threadAndTimeTracer :: forall a m.
-                       ( MonadAsync m
-                       , MonadDelay m
-                       , MonadMonotonicTime m
-                       )
-                    => Tracer m (WithThreadAndTime a) -> Tracer m a
-threadAndTimeTracer tr = mkTracer $ \s -> do
-    !now <- getMonotonicTime
-    !tid <- myThreadId
-    traceWith tr $ WithThreadAndTime now (show tid) s
+verboseTracer = tracerWithThreadAndTime sayTracer

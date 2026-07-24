@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -17,7 +18,8 @@ import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadTime.SI (DiffTime)
 
 import Data.ByteString.Lazy (ByteString)
-import Text.Printf
+import Formatting (formatToString, (%+))
+import Formatting qualified as F
 
 import Codec.CBOR.Decoding qualified as CBOR (Decoder, decodeListLen,
            decodeWord, decodeWord16)
@@ -72,7 +74,14 @@ codecKeepAlive_v2 = mkCodecCborLazyBS encodeMsg decodeMsg
          (SingDone, _, _) -> notActiveState stok
 
          (_, _, _) ->
-           fail (printf "codecKeepAlive (%s, %s) unexpected key (%d, %d)" (show (activeAgency :: ActiveAgency st)) (show stok) key len)
+           fail (formatToString fmterr (activeAgency :: ActiveAgency st) stok key len)
+
+     fmterr :: forall (st :: KeepAlive) r.
+               F.Format r (ActiveAgency st -> StateToken st -> Word -> Int -> r)
+     fmterr = "codecKeepAlive"
+           %+ F.parenthesised (F.shown F.% "," %+ F.shown)
+           %+ "unexpected key"
+           %+ F.parenthesised (F.int F.% "," %+ F.int)
 
 
 byteLimitsKeepAlive :: (bytes -> Word) -> ProtocolSizeLimits KeepAlive bytes

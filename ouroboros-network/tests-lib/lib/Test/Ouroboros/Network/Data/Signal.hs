@@ -3,6 +3,7 @@
 {-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 
 module Test.Ouroboros.Network.Data.Signal
@@ -67,7 +68,8 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 import Deque.Lazy (Deque)
 import Deque.Lazy qualified as Deque
-import Text.Printf (printf)
+import Formatting (formatToString, (%+))
+import Formatting qualified as F
 
 import Control.Monad.Class.MonadTime.SI (DiffTime, Time (..), addTime)
 
@@ -115,8 +117,11 @@ newtype Events a = Events [E a]
 
 ppEvents :: Show a => Events a -> String
 ppEvents (Events es) =
-  unlines [ printf "%-20s %s" (show t) (show a)
-          | E (TS (Time t) _) a <- es
+  unlines [ formatToString (    (show `F.mapf` F.right 20 ' ')
+                             %+ F.shown
+                           )
+                           time a
+          | E (TS (Time time) _) a <- es
           ]
 
 -- | Construct 'Events' from a time series.
@@ -585,7 +590,11 @@ signalProperty' atMost showSignalValue p =
             [ "Last " ++ show atMost ++ " signal values:"
             ]
             ++
-            [ printf "%-18s %s" (show t') (showSignalValue x')
+            [ formatToString
+                (    (show `F.mapf` F.right 18 ' ')
+                  %+ F.string
+                )
+                t' (showSignalValue x')
             | (Time t',x') <- Deque.toList recent'
             ]
             ++

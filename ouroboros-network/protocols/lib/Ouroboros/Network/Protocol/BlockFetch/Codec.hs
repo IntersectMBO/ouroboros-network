@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -18,11 +19,12 @@ import Control.Monad.Class.MonadTime.SI
 
 import Data.ByteString.Lazy qualified as LBS
 import Data.Kind (Type)
+import Formatting (formatToString, (%+))
+import Formatting qualified as F
 
 import Codec.CBOR.Decoding qualified as CBOR
 import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
-import Text.Printf
 
 import Network.TypedProtocol.Codec.CBOR hiding (decode, encode)
 
@@ -126,16 +128,20 @@ codecBlockFetch encodeBlock decodeBlock
       --
 
       (SingBFIdle, _, _) ->
-        fail (printf "codecBlockFetch (%s, %s) unexpected key (%d, %d)"
-                     (show (activeAgency :: ActiveAgency st)) (show stok) key len)
+        fail (formatToString fmterr (activeAgency :: ActiveAgency st) stok key len)
       (SingBFStreaming, _ , _) ->
-        fail (printf "codecBlockFetch (%s, %s) unexpected key (%d, %d)"
-                     (show (activeAgency :: ActiveAgency st)) (show stok) key len)
+        fail (formatToString fmterr (activeAgency :: ActiveAgency st) stok key len)
       (SingBFBusy, _, _) ->
-        fail (printf "codecBlockFetch (%s, %s) unexpected key (%d, %d)"
-                     (show (activeAgency :: ActiveAgency st)) (show stok) key len)
+        fail (formatToString fmterr (activeAgency :: ActiveAgency st) stok key len)
 
       (SingBFDone, _, _) -> notActiveState stok
+
+  fmterr :: forall (st :: BlockFetch block point) r.
+            F.Format r (ActiveAgency st -> StateToken st -> Word -> Int -> r)
+  fmterr = "codecBlockFetch"
+        %+ F.parenthesised (F.shown F.% "," %+ F.shown)
+        %+ "unexpected key"
+        %+ F.parenthesised (F.int F.% "," %+ F.int)
 
 
 codecBlockFetchId

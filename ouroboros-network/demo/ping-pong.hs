@@ -18,12 +18,13 @@ import Control.Concurrent.Async
 import Control.Monad (when)
 import Control.Tracer
 
+import Formatting (formatToString, (%+))
+import Formatting qualified as F
 import GHC.Clock (getMonotonicTime)
 import System.Directory
 import System.Environment
 import System.Exit
 import System.IO
-import Text.Printf (printf)
 
 import Network.Mux qualified as Mx
 
@@ -98,7 +99,10 @@ tracer = f `contramapM` stdoutTracer
   where
     f a = do
       t <- getMonotonicTime
-      return (printf "%-20f %s" t (show a))
+      return $
+        formatToString
+          (F.right 20 ' ' %+ F.shown)
+          t a
 
 --
 -- Ping pong demo

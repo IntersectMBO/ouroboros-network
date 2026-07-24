@@ -7,6 +7,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
 
@@ -19,13 +20,11 @@ import Data.Void (Void)
 import GHC.Generics (Generic)
 import Network.Socket qualified as Socket
 
-import Control.Concurrent (ThreadId)
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.DeepSeq (NFData)
 import Control.Monad
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork hiding (ThreadId)
-import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer
 
@@ -59,7 +58,6 @@ import Test.Ouroboros.Network.Serialise
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
-import Text.Printf
 import Text.Show.Functions ()
 
 import Codec.CBOR.Read qualified as CBOR
@@ -73,6 +71,7 @@ import Ouroboros.Network.Handshake.Acceptable
 import Ouroboros.Network.Handshake.Queryable
 import Ouroboros.Network.Protocol.Handshake.Codec qualified as Handshake
 import Ouroboros.Network.Protocol.Handshake.Type (Handshake)
+import Test.Ouroboros.Network.Utils (tracerWithThreadAndTime)
 
 --
 -- Simple testing versioning scheme
@@ -334,21 +333,5 @@ demo chain0 updates = withIOManager $ \iocp -> do
         , ChainSync.points = \_ -> pure $ Right $ consumerClient done target chain
         }
 
-data WithThreadAndTime a = WithThreadAndTime {
-      wtatOccuredAt    :: !UTCTime
-    , wtatWithinThread :: !ThreadId
-    , wtatEvent        :: !a
-    }
-
-instance (Show a) => Show (WithThreadAndTime a) where
-    show WithThreadAndTime {wtatOccuredAt, wtatWithinThread, wtatEvent} =
-        printf "%s: %s: %s" (show wtatOccuredAt) (show wtatWithinThread) (show wtatEvent)
-
 _verboseTracer :: Show a => Tracer IO a
-_verboseTracer = threadAndTimeTracer $ show >$< stdoutTracer
-
-threadAndTimeTracer :: Tracer IO (WithThreadAndTime a) -> Tracer IO a
-threadAndTimeTracer tr = mkTracer $ \s -> do
-    !now <- getCurrentTime
-    !tid <- myThreadId
-    traceWith tr $ WithThreadAndTime now tid s
+_verboseTracer = tracerWithThreadAndTime $ show >$< stdoutTracer
