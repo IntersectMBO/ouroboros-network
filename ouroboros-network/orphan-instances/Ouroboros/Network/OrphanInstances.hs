@@ -1340,6 +1340,12 @@ instance (Show addr, Show versionNumber, Show agreedOptions,
         [ "kind" .= String "InboundConnectionNotFound"
         , "remoteAddress" .= peerAddr
         ]
+    TrMutableConnStateId peerAddr (ConnStateId connStateId) ->
+      object
+        [ "kind" .= String "MutableConnStateId"
+        , "remoteAddress" .= peerAddr
+        , "connStateId" .= connStateId
+        ]
     TrIncludeConnection prov peerAddr ->
       object
         [ "kind" .= String "IncludeConnection"

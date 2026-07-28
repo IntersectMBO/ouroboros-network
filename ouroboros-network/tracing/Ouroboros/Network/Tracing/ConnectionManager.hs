@@ -22,6 +22,7 @@ import Ouroboros.Network.ConnectionId (ConnectionId (..))
 import Ouroboros.Network.ConnectionManager.ConnMap (ConnMap (..))
 import Ouroboros.Network.ConnectionManager.Core as ConnectionManager
            (Trace (..))
+import Ouroboros.Network.ConnectionManager.State (ConnStateId (..))
 import Ouroboros.Network.ConnectionManager.Types
            (ConnectionManagerCounters (..))
 import Ouroboros.Network.ConnectionManager.Types qualified as ConnectionManager
@@ -46,6 +47,12 @@ instance (Show addr, LogFormatting addr, ToJSON addr, LogFormatting handler, Sho
         mconcat $ reverse
           [ "kind" .= String "InboundConnectionNotFound"
           , "remoteAddress" .= forMachine dtal peerAddr
+          ]
+    forMachine dtal (TrMutableConnStateId peerAddr (ConnStateId connStateId)) =
+        mconcat
+          [ "kind" .= String "MutableConnStateId"
+          , "remoteAddress" .= forMachine dtal peerAddr
+          , "connStateId" .= connStateId
           ]
     forMachine _dtal (TrReleaseConnection prov connId) =
         mconcat $ reverse
@@ -235,6 +242,7 @@ instance (Show versionNumber, ToJSON versionNumber, ToJSON agreedOptions)
 instance MetaTrace handler => MetaTrace (ConnectionManager.Trace addr handler) where
     namespaceFor TrIncludeConnection {}  = Namespace [] ["IncludeConnection"]
     namespaceFor TrInboundConnectionNotFound {} = Namespace [] ["InboundConnectionNotFound"]
+    namespaceFor TrMutableConnStateId {} = Namespace [] ["MutableConnStateId"]
     namespaceFor TrReleaseConnection {}  = Namespace [] ["UnregisterConnection"]
     namespaceFor TrConnect {}  = Namespace [] ["Connect"]
     namespaceFor TrConnectError {}  = Namespace [] ["ConnectError"]
@@ -259,6 +267,7 @@ instance MetaTrace handler => MetaTrace (ConnectionManager.Trace addr handler) w
 
     severityFor (Namespace _  ["IncludeConnection"]) _ = Just Debug
     severityFor (Namespace _  ["UnregisterConnection"]) _ = Just Debug
+    severityFor (Namespace _  ["TrMutableConnStateId"]) _ = Just Debug
     severityFor (Namespace _  ["Connect"]) _ = Just Debug
     severityFor (Namespace _  ["ConnectError"]) _ = Just Info
     severityFor (Namespace _  ["TerminatingConnection"]) _ = Just Debug

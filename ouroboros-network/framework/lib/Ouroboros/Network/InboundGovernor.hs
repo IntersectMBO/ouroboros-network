@@ -392,19 +392,20 @@ with
                       }
                 return . Just $ StateWithPeerTransition state' connId
 
-          MuxFinished connId result -> do
+          MuxFinished connId
+            | Just mux <- csMux <$> Map.lookup connId (connections state) -> do
+                merr <- atomically $ Mux.stopped mux
+                case merr of
+                  Nothing  -> traceWith tracer (TrMuxCleanExit connId)
+                  Just err -> traceWith tracer (TrMuxErrored connId err)
 
-            merr <- atomically result
-            case merr of
-              Nothing  -> traceWith tracer (TrMuxCleanExit connId)
-              Just err -> traceWith tracer (TrMuxErrored connId err)
+                -- the connection manager does should realise this on itself.
+                let state' = unregisterConnection connId state
+                return . Just $ StateWithPeerTransition state' connId
+                -- ^ even though it might not be true, but it's benign
 
-            -- the connection manager does should realise this on itself.
-            -- we bypass the assertion check since MuxFinished could have been
-            -- placed on the queue by a racing thread before we managed
-            -- to remove the connection from our state at the end of this loop.
-            let state' = unregisterConnection True connId state
-            return . Just $ StateWithPeerTransition state' connId -- ^ even though it might not be true, but it's benign
+            -- we could legitimately hit here after 'CommitRemote' succeeded
+            | otherwise -> return Nothing
 
           MiniProtocolTerminated
             Terminated {
@@ -517,7 +518,7 @@ with
                     --    Commit^{dataFlow}_{Remote} : InboundIdleState dataFlow
                     --                               → TerminatingState
                     -- @
-                    let state' = unregisterConnection False connId state
+                    let state' = unregisterConnection connId state
                     return . Just $ StateWithPeerTransition state' connId
 
                   -- the connection is still used by p2p-governor, carry on but put
@@ -689,13 +690,9 @@ inboundGovernorMuxTracer infoChannel connectionDataFlow stateVar activeVar count
           _otherwise -> writeTVar countersVar SNothing
 
 
-      (_, True) | True <- muxStopped trace -> atomically do
-        State { connections } <- readTVar stateVar
-        case Map.lookup peer connections of
-          Just ConnectionState {csMux} ->
-            InfoChannel.writeMessage infoChannel $
-              MuxFinished peer (Mux.stopped csMux)
-          _otherwise -> pure ()
+      (_, True) | muxStopped trace -> atomically do
+        InfoChannel.writeMessage infoChannel
+                               $ MuxFinished peer
         writeTVar countersVar SNothing
 
       _otherwise -> return ()
@@ -848,7 +845,7 @@ data Event (muxMode :: Mux.Mode) handle initiatorCtx peerAddr versionData m a b
 
     -- | A multiplexer exited.
     --
-    | MuxFinished            !(ConnectionId peerAddr) (STM m (Maybe SomeException))
+    | MuxFinished            !(ConnectionId peerAddr)
 
     -- | A mini-protocol terminated either cleanly or abruptly.
     --
