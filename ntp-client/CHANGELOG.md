@@ -2,6 +2,20 @@
 
 <!-- scriv-insert-here -->
 
+<a id='changelog-0.1.0.0'></a>
+## 0.1.0.0 -- 2026-07-28
+
+### Breaking
+
+- Upgraded to `contra-tracer ^>=0.2.1`. The `Tracer` data constructor is no
+  longer exported; use `mkTracer` instead.
+
+### Non-Breaking
+
+- Replaced `showTracing` with `show >$<`.
+
+- Removed the `QuickCheck < 2.18` upper bound, allowing QuickCheck 2.18+.
+
 <a id='changelog-0.0.1.7'></a>
 ## 0.0.1.7 -- 2026-01-15
 

@@ -1,6 +1,6 @@
 cabal-version: 3.4
 name: cardano-diffusion
-version: 1.0.0.0
+version: 1.1.0.0
 synopsis: A networking layer for the cardano blockchain protocol
 description: A networking layer for the cardano blockchain protocol.
 license: Apache-2.0
@@ -97,7 +97,7 @@ library api
     containers,
     deepseq,
     nothunks,
-    ouroboros-network:api >=1.0.0.0 && <1.2.0.0,
+    ouroboros-network:api ^>=1.2.0.0,
     text >=1.2 && <2.2,
 
 library api-tests-lib
@@ -200,7 +200,7 @@ library
     monoidal-synchronisation,
     network ^>=3.2.7,
     network-mux,
-    ouroboros-network:{ouroboros-network, api, framework, protocols} >=1.0.0.0 && <1.2.0.0,
+    ouroboros-network:{ouroboros-network, api, framework, protocols} ^>=1.2.0.0,
     quiet,
     random ^>=1.3,
     typed-protocols:{typed-protocols, stateful} ^>=1.2,
@@ -568,13 +568,13 @@ library subscription
   build-depends:
     base >=4.14 && <4.23,
     bytestring >=0.10 && <0.13,
-    cardano-diffusion ^>=1.0.0.0,
+    cardano-diffusion,
     cborg >=0.2.8 && <0.3,
     containers >=0.5 && <0.9,
     contra-tracer ^>=0.2.1,
     deepseq,
     io-classes:si-timers ^>=1.8.0.1,
-    network-mux ^>=0.10.1.0,
+    network-mux ^>=0.11.0.0,
     ouroboros-network:{api, framework},
 
 library tracing
@@ -622,7 +622,7 @@ library ping
     iproute ^>=1.7.15,
     network ^>=3.2.7,
     network-mux,
-    ouroboros-network:{api, framework} >=1.0.0.0 && <1.2.0.0,
+    ouroboros-network:{api, framework} ^>=1.2.0.0,
     random,
     serialise,
     tdigest ^>=0.3,

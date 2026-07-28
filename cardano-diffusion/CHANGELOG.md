@@ -2,6 +2,108 @@
 
 <!-- scriv-insert-here -->
 
+<a id='changelog-1.1.0.0'></a>
+## 1.1.0.0 -- 2026-07-28
+
+### Breaking
+
+- Added `NodeToNodeV_16` and updated `NodeToNodeVersionData` with a new `PerasSupport` field that is used only for `NodeToNodeV_16` version and later. This field indicates whether the node supports Peras protocols, and is negotiated during the version handshake.
+  - CDDL specification for `NodeToNodeVersionData` has been updated in a backward-compatible way.
+
+- `Cardano.Network.NodeToNode`: Added support for certificate and vote diffusion mini-protocols for Ouroboros Peras.
+  - New fields in `NodeToNodeProtocols`.
+  - Protocol limits `perasCertDiffusionProtocolLimits`/`perasCertVoteProtocolLimits`.
+  - Mini-protocol numbers `perasCertDiffusionMiniProtocolNum`/`perasVoteDiffusionMiniProtocolNum`.
+
+- `cardano-ping` has been deprecated and it is recommended to switch to
+  `cardano-diffusion:ping` library.  The API has changed.  The logger is
+  instantiated by the top level `pingClients` function.  It supports
+  connecting to multiple nodes at once and supports SRV records. Note that
+  `pingClient` is now an internal, not-exported function. The new API suports
+  querying tip over node-to-node and node-to-client protocols.  An
+  optparse-applicative parser for `PingOpts` is provided.
+  - minimal node-to-node version support is raised from `NodeToNodeV_7` to `NodeToNodeV_14`.
+  - minimal node-to-client version support is raised from `NodeToClientV_9` to `NodeToClientV_16`.
+  - `pingOptsJson` is now a `LogFormat` rather than a `Bool`.
+  - logger is now an internal funcionality, no need to initialise it on the user side.
+
+- Added `nodeTo{Client,Node}VersionDataCodec` to
+  `Cardano.Network.NodeTo{Client,Node}` modules.
+- Removed `nodeTo{Client,Node}CodecCBORTerm`, use the above binding instead.
+
+- `ChurnMode` is now a newtype wrapper around `FetchMode`.
+
+- Rename `getBlockHash` to `getImmutableBlockPoint` to better reflect that it queries the immutable DB and returns a `Point`.
+- Change the return type of `getBlockHash` (renamed to `getImmutableBlockPoint`) from `Maybe (Point RawBlockHash)` to `Either GetImmutableBlockPointError (Point RawBlockHash)`, replacing an opaque `Nothing` with structured error information.
+
+- Upgraded to `contra-tracer ^>=0.2.1`. The `Tracer` data constructor is no
+  longer exported; use `mkTracer` instead.
+- Capped `QuickCheck < 2.18`.
+
+- Bumped `trace-dispatcher` to `^>=2.13`.
+
+### Non-Breaking
+
+- `Cardano.Network.OrphanInstances`: Added support for `NodeToNodeV_16`.
+
+- Using tracers defined in `Test.Ouroboros.Network.Utils` rather than providing ones own.
+- Added number of transitions in the tx-submission sim-net test.
+- Replaced `classify` with `label` in `sim-net` tests which provides nicer output.
+- Provide `DiffSimResult` type alias for diffusion simulation result type.
+- Using `PrettyShow` in tests.
+
+- Re-exported `Ouroboros.Network.Diffusion.Topology` from `Cardano.Network.Diffusion.Topology`.
+
+- `ToJSON` instance of `CardanoLocalRootConfig` was changed, instead of
+  a generic `extraFlags` field we use `peerTrustable` field name for the
+ `PeerTrustable` flag.
+
+- Improved haddocks of `NodeToNodeVersion` and `NodeToClientVersion`.
+
+- Add test for testing V2 tx-submission when faced with option to download TXs in different
+  orders from different peers.
+
+- When a node is started and syncing begins using bootstrap peers, only two outbound active connections
+  should be established to reduce the load on bootstray relays. Prior to this change, until the first
+  churn cycle 15 minutes into operation, a full set of active peers would be connected to.
+
+- Minor tweaks to tracing irregularities
+
+- Rename the peer-selection target signal helper from `selectEnvTargets` to `selectGovTargets`.
+
+- Update test suite for tx-submission v2 without a central decision thread.
+
+- Exported `PraosFetchMode` from `Cardano.Network.LedgerPeerConsensusInterface`
+- Added `PrettyShow` instances for
+    - `NodeToNodeVersion`
+    - `NodeToNodeVersionData`
+    - `NodeToClientVersion`
+    - `NodeToClientVersionData`
+
+- Added `pingOptsParser` to `cardano-diffusion:ping`.
+- Added `cardano-diffusion:cardano-ping` command.
+
+- Removed the `QuickCheck < 2.18` upper bound, allowing QuickCheck 2.18+.
+- Added `cardano-base:testlib >=0.1.5.0` dependency.
+
+- Added `pingClient` to `cardano-diffusion:ping`
+- `cardano-diffusion:ping` now exports also
+  - `Stage`
+  - `ResolvedSRVOrFilePath`
+  - `PingClientException`
+
+- `cardano-diffusion:ping` changes
+  - added `pingClients'` to `cardano-diffusion:ping`,
+  - exported `IP` and `mkAddress` constructors of the `Address` type.
+
+- Revert aeson lower bound
+
+- Internal adaptations to `ouroboros-network` changes regarding `TTL` newtype wrapper.
+
+- cardano-diffusion:ping - more concise formatting of `NodeToNodeVersionData`
+- cardano-diffusion:ping - quiet mode: don't show rtt information
+- cardano-diffusion:ping - `--short-hash` option added
+
 <a id='changelog-1.0.0.0'></a>
 ## 1.0.0.0 -- 2026-03-06
 

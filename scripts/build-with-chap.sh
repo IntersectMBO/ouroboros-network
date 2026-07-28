@@ -12,6 +12,7 @@ which gh
 which yq # https://github.com/mikefarah/yq#install
 
 CHAP_DIR=${CARDANO_HASKELL_PACKAGES_DIR:-"/tmp/chap"}
+FD="$(which fdfind 2>/dev/null || which fd 2>/dev/null)"
 
 function usage {
   echo "Build against cardano-haskell-packages branch"
@@ -42,7 +43,7 @@ if [[ -n "$(git status --untracked-files=no --porcelain)" ]];then
   exit 1
 fi
 
-cabal_files=$(fd -ae 'cabal')
+cabal_files=$($FD -ae 'cabal')
 for cf in $cabal_files; do
   name=$(cat $cf | grep '^name:' | awk '{ print $2 }')
   version=$(cat $cf | grep '^version:' | awk '{ print $2 }')
