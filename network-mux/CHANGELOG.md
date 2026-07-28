@@ -2,6 +2,36 @@
 
 <!-- scriv-insert-here -->
 
+<a id='changelog-0.11.0.0'></a>
+## 0.11.0.0 -- 2026-07-28
+
+### Breaking
+
+- Evaluate mini-protocol errors to WHNF, before writing them to completion
+  variable.
+
+- Upgraded to `contra-tracer ^>=0.2.1`. The `Tracer` data constructor is no
+  longer exported; use `mkTracer` instead. `nullTracers`, the `TracersI`
+  pattern synonym, `contramapTracers'`, `tracersWithBearer` and
+  `traceBearerState` now require `Monad m` rather than `Applicative m`.
+- Capped `QuickCheck < 2.18`.
+
+### Non-Breaking
+
+- Added `MonadReadBuffer`, `withReadBufferIO` is now exposed as an `IO` instance of `MoandReadBuffer`.
+  This allows us to use `ReadBuffer` in a polymorphic way (parametrised by a monad).
+
+- Removed synchronous exception from mux job handler
+
+- Split `network-mux/demo/mux-leios-demo.sh` into two parts:
+  - `network-mux/demo/ns-setup.sh` - network setup
+  - `network-mux/demo/mux-leios-demo.sh -run the mux leios demo using `ns-setup.sh`
+
+- When mux is in `Failed` state, throw the failure exception when starting `runMiniProtocol`
+
+- Removed the `QuickCheck < 2.18` upper bound, allowing QuickCheck 2.18+.
+- Added `cardano-base:testlib >=0.1.5.0` dependency.
+
 <a id='changelog-0.10.1.0'></a>
 ## 0.10.1.0 -- 2026-03-06
 
