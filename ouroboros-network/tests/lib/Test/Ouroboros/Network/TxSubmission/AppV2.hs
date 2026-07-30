@@ -398,18 +398,6 @@ filterValidTxs
 mkUnrequested :: [Int] -> Tx Int -> Tx Int
 mkUnrequested _reqs tx = tx { getTxId = maxBound }
 
--- | Pretty-print only the say-tracer events of an IOSim trace, prefixed
--- with their simulation time.  The full 'ppTrace' includes scheduling
--- noise (ThreadDelay, Deschedule, TxCommitted, etc.) that obscures the
--- protocol-relevant events; this helper restricts the output to the
--- events that the test infrastructure forwards through 'sayTracer'
--- (protocol messages, counter snapshots, shared-state changes).
-ppSayTrace :: SimTrace a -> String
-ppSayTrace tr =
-    List.intercalate "\n"
-  $ map (\(Time t, ev) -> show t <> " " <> ev)
-  $ selectTraceEventsSayWithTime' tr
-
 -- | Documented invariants of a 'TxSubmissionState' produced by the
 -- 'Arbitrary' instance.  Used by the generator/shrinker meta-tests.
 validTxSubmissionState :: TxSubmissionState -> Bool
