@@ -23,6 +23,7 @@ import Test.Tasty.Bench
 
 import Network.Mux
 import Network.Mux.Bearer
+import Network.Mux.Codec (decodeSDU, encodeSDU)
 import Network.Mux.Egress
 import Network.Mux.Ingress
 import Network.Mux.Timeout (withTimeoutSerial)
@@ -184,19 +185,33 @@ startServerMany sndSizeV ad = forever $ do
           let sdus = replicate runtSdus $ wrap $ BL.replicate sndSize 0xa5
           void $ writeMany bearer activeTracer timeoutFn sdus
      )
- where
-  -- wrap a 'ByteString' as 'SDU'
-  wrap :: BL.ByteString -> SDU
-  wrap blob = SDU {
-        -- it will be filled when the 'SDU' is send by the 'bearer'
-       msHeader = SDUHeader {
-           mhTimestamp = RemoteClockModel 0,
-           mhNum       = MiniProtocolNum 42,
-           mhDir       = ResponderDir,
-           mhLength    = fromIntegral $ BL.length blob
-          },
-        msBlob = blob
-     }
+
+-- | Wrap a 'ByteString' as 'SDU'
+wrap :: BL.ByteString -> SDU
+wrap blob = SDU {
+      -- it will be filled when the 'SDU' is send by the 'bearer'
+     msHeader = SDUHeader {
+         mhTimestamp = RemoteClockModel 0,
+         mhNum       = MiniProtocolNum 42,
+         mhDir       = ResponderDir,
+         mhLength    = fromIntegral $ BL.length blob
+        },
+      msBlob = blob
+   }
+
+-- | An 'SDU' with a payload of the given size.
+mkSDU :: Int64 -> SDU
+mkSDU size = wrap $ BL.replicate size 0xa5
+
+-- | An encoded 'SDU' header, input for the 'decodeSDU' benchmarks.
+hdrBytes :: Int64 -> BL.ByteString
+hdrBytes size = BL.take msHeaderLength $ encodeSDU $ mkSDU size
+
+-- | Decode an 'SDU' header, forcing the result.
+decodeHdr :: BL.ByteString -> Word16
+decodeHdr b = case decodeSDU b of
+                   Right sdu -> msLength sdu
+                   Left  _   -> 0
 
 -- | Run a server that accept connections on `ad`.
 -- It will send streams of data over the 41 and 42 miniprotocol.
@@ -297,29 +312,47 @@ main = do
           withAsync (startServerMany sndSizeMV ad2) $ \saidM -> do
             withAsync (startServerEgresss 0.001 sndSizeEV ad3) $ \saidE -> withAsync (startServerEgresss 0 sndSizeEV ad4) $ \saidF -> do
               defaultMain [
-                  -- Suggested Max SDU size for Socket bearer
-                  bench "Read/Write Benchmark 12288 byte SDUs"  $ nfIO $ readBenchmark sndSizeV 12288 addr
+                  -- Micro-benchmarks for SDU header encoding, isolated
+                  -- from socket IO.
+                  bgroup "Codec" [
+                    bench "encodeSDU 12288 byte SDU" $ nf encodeSDU (mkSDU 12288)
+                  , bench "encodeSDU 10 byte SDU"    $ nf encodeSDU (mkSDU 10)
+                    -- mirrors the batching used by writeMany
+                  , bench "encodeSDU 10x12288 byte SDUs" $
+                      nf (map encodeSDU) (replicate 10 $ mkSDU 12288)
+                  , bench "decodeSDU 12288 byte SDU" $
+                      whnf decodeHdr (hdrBytes 12288)
+                  , bench "decodeSDU 10 byte SDU" $
+                      whnf decodeHdr (hdrBytes 10)
+                  , bench "decodeSDU 10x12288 byte SDUs" $
+                      nf (map decodeHdr) (replicate 10 $ hdrBytes 12288)
+                  ]
+
+                , bgroup "Socket" [
+                    -- Suggested Max SDU size for Socket bearer
+                    bench "Read/Write Benchmark 12288 byte SDUs"  $ nfIO $ readBenchmark sndSizeV 12288 addr
+                    -- Payload size for ChainSync's RequestNext
+                  , bench "Read/Write Benchmark 914 byte SDUs"  $ nfIO $ readBenchmark sndSizeV 914 addr
                   -- Payload size for ChainSync's RequestNext
-                , bench "Read/Write Benchmark 914 byte SDUs"  $ nfIO $ readBenchmark sndSizeV 914 addr
-                -- Payload size for ChainSync's RequestNext
-                , bench "Read/Write Benchmark 10 byte SDUs"  $ nfIO $ readBenchmark sndSizeV 10 addr
+                  , bench "Read/Write Benchmark 10 byte SDUs"  $ nfIO $ readBenchmark sndSizeV 10 addr
 
-                  -- Send batches of SDUs at the same time
-                , bench "Read/Write-Many Benchmark 12288 byte SDUs"  $ nfIO $ readBenchmark sndSizeMV 12288 addrM
-                , bench "Read/Write-Many Benchmark 914 byte SDUs"  $ nfIO $ readBenchmark sndSizeMV 914 addrM
-                , bench "Read/Write-Many Benchmark 10 byte SDUs"  $ nfIO $ readBenchmark sndSizeMV 10 addrM
+                    -- Send batches of SDUs at the same time
+                  , bench "Read/Write-Many Benchmark 12288 byte SDUs"  $ nfIO $ readBenchmark sndSizeMV 12288 addrM
+                  , bench "Read/Write-Many Benchmark 914 byte SDUs"  $ nfIO $ readBenchmark sndSizeMV 914 addrM
+                  , bench "Read/Write-Many Benchmark 10 byte SDUs"  $ nfIO $ readBenchmark sndSizeMV 10 addrM
 
-                  -- Use standard muxer and demuxer, 1ms poll
-                , bench "Read/Write Mux Benchmark 800+10 byte SDUs, 1ms Poll"  $ nfIO $ readDemuxerBenchmark sndSizeEV 800 addrE
-                , bench "Read/Write Mux Benchmark 12288+10 byte SDUs, 1ms Poll"  $ nfIO $ readDemuxerBenchmark sndSizeEV 12288 addrE
+                    -- Use standard muxer and demuxer, 1ms poll
+                  , bench "Read/Write Mux Benchmark 800+10 byte SDUs, 1ms Poll"  $ nfIO $ readDemuxerBenchmark sndSizeEV 800 addrE
+                  , bench "Read/Write Mux Benchmark 12288+10 byte SDUs, 1ms Poll"  $ nfIO $ readDemuxerBenchmark sndSizeEV 12288 addrE
 
-                  -- Use standard muxer and demuxer, 0ms poll
-                , bench "Read/Write Mux Benchmark 800+10 byte SDUs, 0ms Poll"  $ nfIO $ readDemuxerBenchmark sndSizeEV 800 addrF
-                , bench "Read/Write Mux Benchmark 12288+10 byte SDUs, 0ms Poll"  $ nfIO $ readDemuxerBenchmark sndSizeEV 12288 addrF
+                    -- Use standard muxer and demuxer, 0ms poll
+                  , bench "Read/Write Mux Benchmark 800+10 byte SDUs, 0ms Poll"  $ nfIO $ readDemuxerBenchmark sndSizeEV 800 addrF
+                  , bench "Read/Write Mux Benchmark 12288+10 byte SDUs, 0ms Poll"  $ nfIO $ readDemuxerBenchmark sndSizeEV 12288 addrF
 
-                  -- Use standard demuxer
-                , bench "Read/Write Demuxer Queuing Benchmark 10 byte SDUs"  $ nfIO $ readDemuxerQueueBenchmark sndSizeV 10 addr
-                , bench "Read/Write Demuxer Queuing Benchmark 256 byte SDUs"  $ nfIO $ readDemuxerQueueBenchmark sndSizeV 256 addr
+                    -- Use standard demuxer
+                  , bench "Read/Write Demuxer Queuing Benchmark 10 byte SDUs"  $ nfIO $ readDemuxerQueueBenchmark sndSizeV 10 addr
+                  , bench "Read/Write Demuxer Queuing Benchmark 256 byte SDUs"  $ nfIO $ readDemuxerQueueBenchmark sndSizeV 256 addr
+                  ]
                 ]
               cancel said
               cancel saidM

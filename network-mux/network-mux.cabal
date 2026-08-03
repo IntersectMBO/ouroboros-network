@@ -255,6 +255,7 @@ benchmark socket-read-write-benchmarks
   ghc-options:
     -threaded
     -rtsopts
+    "-with-rtsopts=-T"
     -fproc-alignment=64
     -Wall
     -Wcompat
