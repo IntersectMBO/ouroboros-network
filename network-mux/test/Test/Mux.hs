@@ -111,6 +111,7 @@ tests =
   , testProperty "trailing bytes (IO)"          prop_mux_trailing_bytes_io
   , testProperty "pure exception (Sim)"         prop_mux_pure_exception_iosim
   , testProperty "pure exception (IO)"          prop_mux_pure_exception_io
+  , testProperty "sdu codec"                    prop_sdu_codec
   , testGroup "Generators"
     [ testProperty "genByteString"              prop_arbitrary_genByteString
     , testProperty "genLargeByteString"         prop_arbitrary_genLargeByteString
@@ -1150,6 +1151,71 @@ encodeInvalidMuxSDU sdu =
         Bin.putWord32be $ Mx.unRemoteClockModel $ isTimestamp sdu
         Bin.putWord16be $ isIdAndMode sdu
         Bin.putWord16be $ isLength sdu
+
+-- | An 'Mx.SDU' header for the codec round-trip test: covers both
+-- directions as well as boundary timestamps, mini-protocol numbers and
+-- payload lengths.
+--
+data SDUCodecCase = SDUCodecCase Word32 Word16 Mx.MiniProtocolDir Word16
+  deriving Show
+
+instance Arbitrary SDUCodecCase where
+    arbitrary =
+        SDUCodecCase
+          <$> boundary [0, maxBound]                  -- timestamp
+          <*> ((.&. 0x7fff) <$> boundary [0, 0x7fff]) -- mini-protocol number
+          <*> elements [Mx.InitiatorDir, Mx.ResponderDir]
+          <*> boundary [0, 1, maxBound]               -- payload length
+      where
+        boundary :: Arbitrary a => [a] -> Gen a
+        boundary xs = frequency ([(1, pure x) | x <- xs] ++ [(3, arbitrary)])
+
+-- | Wire format and round-trip check of 'Mx.encodeSDU' / 'Mx.decodeSDU'.
+--
+-- The encoding must be byte identical to a reference 'Bin.runPut' based
+-- encoder (the previous implementation of 'Mx.encodeSDU') and
+-- 'Mx.decodeSDU' must recover the header exactly.  Note that
+-- 'Mx.decodeSDU' rejects zero length SDUs and truncated headers.
+--
+prop_sdu_codec :: SDUCodecCase -> Property
+prop_sdu_codec (SDUCodecCase ts num dir len) =
+         counterexample "wire format differs from reference encoder"
+           (encoded === reference)
+    .&&. forAll (choose (0, Mx.msHeaderLength - 1)) (\k ->
+           counterexample ("truncated header of length " ++ show k ++ " not rejected") $
+             case Mx.decodeSDU (BL.take k encoded) of
+               Left (Mx.SDUDecodeError _) -> True
+               _                          -> False)
+    .&&. case Mx.decodeSDU encoded of
+           Left (Mx.SDUDecodeError e) ->
+             counterexample ("unexpected decode error: " ++ e) (len === 0)
+           Left e ->
+             counterexample ("unexpected error: " ++ show e) False
+           Right sdu' ->
+                  len =/= 0
+             .&&. Mx.unRemoteClockModel (Mx.msTimestamp sdu') === ts
+             .&&. Mx.msNum sdu'    === Mx.MiniProtocolNum num
+             .&&. Mx.msDir sdu'    === dir
+             .&&. Mx.msLength sdu' === len
+  where
+    blob = BL.replicate (fromIntegral len) 0xa5
+    sdu  = Mx.SDU {
+        Mx.msHeader = Mx.SDUHeader {
+            Mx.mhTimestamp = Mx.RemoteClockModel ts,
+            Mx.mhNum       = Mx.MiniProtocolNum num,
+            Mx.mhDir       = dir,
+            Mx.mhLength    = len
+          },
+        Mx.msBlob = blob
+      }
+    encoded   = Mx.encodeSDU sdu
+    reference = Bin.runPut refPut `BL.append` blob
+    refPut = do
+        Bin.putWord32be ts
+        Bin.putWord16be $ case dir of
+                            Mx.InitiatorDir -> num
+                            Mx.ResponderDir -> num .|. 0x8000
+        Bin.putWord16be len
 
 -- | Verify ingress processing of valid and invalid SDUs.
 --
