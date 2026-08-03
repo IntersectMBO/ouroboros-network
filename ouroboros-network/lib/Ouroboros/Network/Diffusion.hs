@@ -17,6 +17,8 @@ module Ouroboros.Network.Diffusion
   , mkInterfaces
   , socketAddressType
   , module Ouroboros.Network.Diffusion.Types
+    -- * Utils
+  , readIPAndPort
   ) where
 
 

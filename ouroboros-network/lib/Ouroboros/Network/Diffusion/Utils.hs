@@ -9,19 +9,72 @@
 module Ouroboros.Network.Diffusion.Utils
   ( withSockets
   , withLocalSocket
+  , readIPAndPort
   ) where
 
 
+import Control.Applicative ((<|>))
 import Control.Monad.Class.MonadThrow
 import Control.Tracer (Tracer, traceWith)
+import Data.Bifunctor (first)
+import Data.IP (IP (..), IPv4, IPv6)
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Typeable (Typeable)
+import Network.Socket (PortNumber)
+import Options.Applicative (ReadM, eitherReader)
+import Text.Read (readMaybe)
 
 import Ouroboros.Network.Snocket (FileDescriptor, Snocket)
 import Ouroboros.Network.Snocket qualified as Snocket
 
 import Ouroboros.Network.Diffusion.Types
+
+
+-- | optparse-applictive parser for `IPv4:Port` or `IPv6:Port`.
+--
+-- note: `Read` instances for `IP`, `IPv4`, `IPv6` expect no trailing characters
+-- after the address, thus we need custom parser which finds the split position
+-- first.
+readIPAndPort :: ReadM (IP, PortNumber)
+readIPAndPort = (first IPv4 <$> readIPv4AndPort)
+            <|> (first IPv6 <$> readIPv6AndPort)
+  where
+    readIPv4AndPort :: ReadM (IPv4, PortNumber)
+    readIPv4AndPort =
+      eitherReader $ \s -> do
+        case splitWith ':' s of
+          Nothing -> Left s
+          Just (addrStr, portStr) ->
+            maybe (Left s) Right $
+            (,) <$> readMaybe addrStr
+                <*> readMaybe portStr
+
+
+    -- parse IPv6 address and port in a form `[::1]:3001` or a UNIX file path
+    readIPv6AndPort :: ReadM (IPv6, PortNumber)
+    readIPv6AndPort =
+      eitherReader $ \s ->
+        case s of
+          ('[':s') ->
+             case splitWith ']' s' of
+               Just (addrStr, ':' : portStr) ->
+                 maybe (Left s) Right $
+                 (,) <$> readMaybe addrStr
+                     <*> readMaybe portStr
+               _ -> Left s
+          _ -> Left s
+
+    splitWith :: Char -> String -> Maybe (String, String)
+    splitWith c = go ""
+        where
+          go _ []
+            = Nothing
+          go !acc (a:as)
+            | a == c
+            = Just (reverse acc, as)
+          go !acc (a:as)
+            = go (a:acc) as
 
 --
 -- Socket utility functions

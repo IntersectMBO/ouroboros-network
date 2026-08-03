@@ -110,6 +110,7 @@ import System.IO qualified as IO
 import System.Random (initStdGen)
 import Text.Read (readMaybe)
 
+import Cardano.Network.Diffusion (readIPAndPort)
 import Cardano.Network.Diffusion.Configuration (defaultChainSyncIdleTimeout)
 import Cardano.Network.NodeToClient qualified as NodeToClient
 import Cardano.Network.NodeToClient.Version
@@ -149,7 +150,7 @@ data PingMode =
     -- ^ query handshake parameters
   deriving (Eq, Show)
 
-type Port = Word
+type Port = Socket.PortNumber
 
 -- | There are three stages for resolving addresses.
 --
@@ -337,43 +338,13 @@ argParser =
     addrParser :: Parser (Address (Unresolved SRVOrFilePathUnresolved))
     addrParser =
         argument
-          (     uncurry IP <$> readIPv4AndPort
-            <|> uncurry IP <$> readIPv6AndPort
+          (     uncurry IP <$> readIPAndPort
             <|>                readDomainNameOrFilePath
           )
           (  help "List of IP/DNS/SRV address and ports or UNIX socket paths, e.g. 127.0.0.1:3001 [::1]:3001 example.org:3001."
           <> metavar "ADDRS"
           )
       where
-        -- note: `Read` instances for `IP`, `IPv4`, `IPv6` expect no trailing
-        -- characters after the address, thus we need to find the split position
-        -- first.
-
-        -- parse IPv4 address and port in a form `127.0.0.1:3001`
-        readIPv4AndPort :: ReadM (IP, Port)
-        readIPv4AndPort =
-          eitherReader $ \s -> do
-            case splitWith ':' s of
-              Nothing -> Left s
-              Just (addrStr, portStr) ->
-                maybe (Left s) Right $
-                (,) <$> readMaybe addrStr
-                    <*> readMaybe portStr
-
-        -- parse IPv6 address and port in a form `[::1]:3001` or a UNIX file path
-        readIPv6AndPort :: ReadM (IP, Port)
-        readIPv6AndPort =
-          eitherReader $ \s ->
-            case s of
-              ('[':s') ->
-                 case splitWith ']' s' of
-                   Just (addrStr, ':' : portStr) ->
-                     maybe (Left s) Right $
-                     (,) <$> readMaybe addrStr
-                         <*> readMaybe portStr
-                   _ -> Left s
-              _ -> Left s
-
         readDomainNameOrFilePath :: ReadM (Address (Unresolved SRVOrFilePathUnresolved))
         readDomainNameOrFilePath = eitherReader $ Right . mkAddress
 
@@ -420,7 +391,7 @@ instance Exception AddressResolutionError where
 -- | Log messages to stderr.
 --
 data PingWarning = AddressResolutionError AddressResolutionError
-                 | DNSResolution DNS.Domain [IP] Word
+                 | DNSResolution DNS.Domain [IP] Port
                  | Error SomeException
                  | ConnectError SockAddr SomeException
 
