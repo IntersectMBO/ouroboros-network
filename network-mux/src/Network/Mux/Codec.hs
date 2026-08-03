@@ -2,9 +2,10 @@
 
 module Network.Mux.Codec where
 
-import Data.Binary.Get qualified as Bin
-import Data.Binary.Put qualified as Bin
 import Data.Bits
+import Data.ByteString qualified as BS
+import Data.ByteString.Builder qualified as Bld
+import Data.ByteString.Builder.Extra qualified as Bld
 import Data.ByteString.Lazy qualified as BL
 import Data.Word
 
@@ -36,13 +37,15 @@ import Network.Mux.Types
 --
 encodeSDU :: SDU -> BL.ByteString
 encodeSDU sdu =
-  let hdr = Bin.runPut enc in
-  BL.append hdr $ msBlob sdu
+    Bld.toLazyByteStringWith
+      (Bld.untrimmedStrategy hdrLength hdrLength)
+      (msBlob sdu) hdr
   where
-    enc = do
-        Bin.putWord32be $ unRemoteClockModel $ msTimestamp sdu
-        Bin.putWord16be $ putNumAndMode (msNum sdu) (msDir sdu)
-        Bin.putWord16be $ fromIntegral $ BL.length $ msBlob sdu
+    hdrLength = fromIntegral msHeaderLength
+
+    hdr = Bld.word32BE (unRemoteClockModel (msTimestamp sdu))
+       <> Bld.word16BE (putNumAndMode (msNum sdu) (msDir sdu))
+       <> Bld.word16BE (fromIntegral (BL.length (msBlob sdu)) :: Word16)
 
     putNumAndMode :: MiniProtocolNum -> MiniProtocolDir -> Word16
     putNumAndMode (MiniProtocolNum n) InitiatorDir = n
@@ -52,31 +55,34 @@ encodeSDU sdu =
 -- | Decode a 'MuSDU' header.  A left inverse of 'encodeSDU'.
 --
 decodeSDU :: BL.ByteString -> Either Error SDU
-decodeSDU buf =
-    case Bin.runGetOrFail dec buf of
-         Left  (_, _, e)  -> Left $ SDUDecodeError e
-         Right (_, _, h) ->
-           if mhLength h > 0
-             then
-               Right $ SDU {
-                     msHeader = h
-                   , msBlob   = BL.empty
-                   }
-             else Left $ SDUDecodeError "short SDU"
+decodeSDU buf
+    | BL.length buf < msHeaderLength
+    = Left $ SDUDecodeError "not enough bytes"
+    | mhLength > 0
+    = Right $ SDU {
+          msHeader = SDUHeader {
+              mhTimestamp,
+              mhNum,
+              mhDir,
+              mhLength
+            }
+        , msBlob   = BL.empty
+        }
+    | otherwise
+    = Left $ SDUDecodeError "short SDU"
   where
-    dec = do
-        mhTimestamp <- RemoteClockModel <$> Bin.getWord32be
-        a <- Bin.getWord16be
-        mhLength <- Bin.getWord16be
-        let mhDir  = getDir a
-            mhNum  = MiniProtocolNum (a .&. 0x7fff)
-        return $ SDUHeader {
-            mhTimestamp,
-            mhNum,
-            mhDir,
-            mhLength
-          }
+    hdr = BL.toStrict $ BL.take msHeaderLength buf
 
-    getDir mid =
-        if mid .&. 0x8000 == 0 then InitiatorDir
-                               else ResponderDir
+    byte :: Int -> Word32
+    byte i = fromIntegral $ BS.index hdr i
+
+    mhTimestamp = RemoteClockModel $
+                      byte 0 `shiftL` 24
+                  .|. byte 1 `shiftL` 16
+                  .|. byte 2 `shiftL`  8
+                  .|. byte 3
+    a           = fromIntegral $ byte 4 `shiftL` 8 .|. byte 5 :: Word16
+    mhLength    = fromIntegral $ byte 6 `shiftL` 8 .|. byte 7
+    mhNum       = MiniProtocolNum $ a .&. 0x7fff
+    mhDir       = if a .&. 0x8000 == 0 then InitiatorDir
+                                       else ResponderDir
