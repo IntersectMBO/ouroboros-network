@@ -767,7 +767,7 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer debugTracer cmTracer
               ( withInitiatorOnlyConnectionManager
                     name simTimeouts nullTracer cmTracer stdGen
                     snocket makeBearer connStateIdSupply
-                    (Just localAddr) (mkNextRequests connVar)
+                    [localAddr] (mkNextRequests connVar)
                     timeLimitsHandshake acceptedConnLimit
                   ( \ connectionManager ->
                       connectionLoop SingInitiatorMode localAddr cc connectionManager Map.empty connVar
@@ -805,7 +805,7 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer debugTracer cmTracer
                           inboundTracer muxTracers debugTracer
                           stdGen
                           snocket makeBearer connStateIdSupply
-                          (\_ -> pure ()) fd (Just localAddr) serverAcc
+                          (\_ -> pure ()) fd [localAddr] serverAcc
                           (mkNextRequests connVar)
                           timeLimitsHandshake
                           acceptedConnLimit
@@ -823,7 +823,7 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer debugTracer cmTracer
                 Unidirectional ->
                   Job ( withInitiatorOnlyConnectionManager
                           name simTimeouts trTracer cmTracer stdGen snocket makeBearer
-                          connStateIdSupply (Just localAddr)
+                          connStateIdSupply [localAddr]
                           (mkNextRequests connVar)
                           timeLimitsHandshake
                           acceptedConnLimit
@@ -2267,7 +2267,7 @@ prop_server_accept_error (Fixed rnd) (AbsIOError ioerr) =
                                                   makeFDBearer
                                                   connStateIdSupply
                                                   (\_ -> pure ())
-                                                  socket0 (Just addr)
+                                                  socket0 [addr]
                                                   [accumulatorInit pdata]
                                                   nextRequests
                                                   noTimeLimitsHandshake

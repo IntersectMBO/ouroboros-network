@@ -52,6 +52,7 @@ import Control.Tracer (Tracer (..), nullTracer)
 import Codec.CBOR.Term qualified as CBOR
 import Data.Foldable as Foldable (foldl')
 import Data.IP (IP (..))
+import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map (Map)
 import Data.Set (Set)
 import Data.Set qualified as Set
@@ -458,8 +459,9 @@ run blockGeneratorArgs ni na
     mkArgs :: StrictTVar m (PublicPeerSelectionState NtNAddr)
            -> Diffusion.Configuration extraFlags m (NtNFD m) NtNAddr (NtCFD m) NtCAddr
     mkArgs dcPublicPeerSelectionVar = Diffusion.Configuration
-      { Diffusion.dcIPv4Address   = Right <$> (ntnToIPv4 . aIPAddress) na
-      , Diffusion.dcIPv6Address   = Right <$> (ntnToIPv6 . aIPAddress) na
+      { Diffusion.dcAddresses   = Right $ NonEmpty.fromList $
+                                          (ntnToIPv4 . aIPAddress $ na)
+                                       ++ (ntnToIPv6 . aIPAddress $ na)
       , Diffusion.dcLocalAddress  = Nothing
       , Diffusion.dcAcceptedConnectionsLimit
                                   = aAcceptedLimits na
@@ -482,15 +484,15 @@ run blockGeneratorArgs ni na
 
 --- Utils
 
-ntnToIPv4 :: NtNAddr -> Maybe NtNAddr
-ntnToIPv4 ntnAddr@(TestAddress (Node.EphemeralIPv4Addr _)) = Just ntnAddr
-ntnToIPv4 ntnAddr@(TestAddress (Node.IPAddr (IPv4 _) _))   = Just ntnAddr
-ntnToIPv4 (TestAddress _)                                  = Nothing
+ntnToIPv4 :: NtNAddr -> [NtNAddr]
+ntnToIPv4 ntnAddr@(TestAddress (Node.EphemeralIPv4Addr _)) = [ntnAddr]
+ntnToIPv4 ntnAddr@(TestAddress (Node.IPAddr (IPv4 _) _))   = [ntnAddr]
+ntnToIPv4 (TestAddress _)                                  = []
 
-ntnToIPv6 :: NtNAddr -> Maybe NtNAddr
-ntnToIPv6 ntnAddr@(TestAddress (Node.EphemeralIPv6Addr _)) = Just ntnAddr
-ntnToIPv6 ntnAddr@(TestAddress (Node.IPAddr (IPv6 _) _))   = Just ntnAddr
-ntnToIPv6 (TestAddress _)                                  = Nothing
+ntnToIPv6 :: NtNAddr -> [NtNAddr]
+ntnToIPv6 ntnAddr@(TestAddress (Node.EphemeralIPv6Addr _)) = [ntnAddr]
+ntnToIPv6 ntnAddr@(TestAddress (Node.IPAddr (IPv6 _) _))   = [ntnAddr]
+ntnToIPv6 (TestAddress _)                                  = []
 
 --
 -- Constants

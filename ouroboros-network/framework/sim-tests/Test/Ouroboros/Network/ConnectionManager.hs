@@ -725,10 +725,10 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
           in counterexample ("\nTransition Trace\n" ++ (intercalate "\n" . map show $ cmTrace))
                             (verifyTrace cmTrace)
   where
-    myAddress :: Maybe Addr
+    myAddress :: [Addr]
     myAddress = if bindToLocalAddress
-                  then Just (TestAddress 0)
-                  else Nothing
+                  then [TestAddress 0]
+                  else []
 
     verifyTrace :: [TestAbstractTransitionTrace] -> Property
     verifyTrace = conjoin
@@ -771,7 +771,7 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
             tracer,
             trTracer,
             ipv4Address = myAddress,
-            ipv6Address = Nothing,
+            ipv6Address = [],
             addressType = \_ -> Just IPv4Address,
             snocket = snocket,
             makeBearer = makeFDBearer,

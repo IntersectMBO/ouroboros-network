@@ -844,7 +844,7 @@ prop_channel_simultaneous_open_sim codec versionDataCodec
           addr  = Snocket.TestAddress 1
           addr' = Snocket.TestAddress 2
       -- listening snockets
-      bracket (Snocket.open  sn Snocket.TestFamily)
+      bracket (Snocket.open sn Snocket.TestFamily)
               (Snocket.close sn) $ \fdLst ->
         bracket (Snocket.open  sn Snocket.TestFamily)
                 (Snocket.close sn) $ \fdLst' -> do

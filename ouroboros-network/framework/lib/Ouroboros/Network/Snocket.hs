@@ -251,6 +251,11 @@ type LocalConnectionId = ConnectionId LocalAddress
 -- 'LocalFamily' requires 'LocalAddress', this is needed to provide path of the
 -- opened Win32 'HANDLE'.
 --
+-- TODO: this type is wrong, since we need `diNtnAddressType` in
+-- `Ouroboros.Network.Diffusion`.  Address family should be simplified so we
+-- don't need the other one.  `TestFamily` constructor should be avoided, it
+-- makes us have the `diNtnAddressType` to classify address family.
+--
 data AddressFamily addr where
 
     SocketFamily :: !Socket.Family

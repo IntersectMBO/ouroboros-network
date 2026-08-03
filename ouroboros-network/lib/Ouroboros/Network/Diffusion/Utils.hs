@@ -89,13 +89,18 @@ withSockets :: forall m ntnFd ntnAddr ntcAddr a.
             -> Snocket m ntnFd ntnAddr
             -> (ntnFd -> ntnAddr -> m ()) -- ^ configure a socket
             -> (ntnFd -> ntnAddr -> m ()) -- ^ configure a systemd socket
-            -> [Either ntnFd ntnAddr]
+            -> Either (NonEmpty ntnFd) (NonEmpty ntnAddr)
             -> (NonEmpty ntnFd -> NonEmpty ntnAddr -> m a)
             -> m a
-withSockets tracer sn
+
+-- create a socket for each address
+withSockets tracer
+            sn
             configureSocket
-            configureSystemdSocket
-            addresses k = go [] addresses
+            _configureSystemdSocket
+            (Right addresses) k
+            =
+            go [] (NonEmpty.toList addresses)
   where
     go !acc (a : as) = withSocket a (\sa -> go (sa : acc) as)
     go []   []       = throwIO NoSocket
@@ -103,15 +108,10 @@ withSockets tracer sn
       let acc' = NonEmpty.fromList (reverse acc)
       in (k $! (fst <$> acc')) $! (snd <$> acc')
 
-    withSocket :: Either ntnFd ntnAddr
+    withSocket :: ntnAddr
                -> ((ntnFd, ntnAddr) -> m a)
                -> m a
-    withSocket (Left sock) f =
-      do !addr <- Snocket.getLocalAddr sn sock
-         configureSystemdSocket sock addr
-         f (sock, addr)
-      `onException` Snocket.close sn sock
-    withSocket (Right addr) f =
+    withSocket addr f =
       bracket
         (do traceWith tracer (CreatingServerSocket addr)
             Snocket.open sn (Snocket.addrFamily sn addr))
@@ -124,6 +124,30 @@ withSockets tracer sn
           Snocket.listen sn sock
           traceWith tracer $ ServerSocketUp addr
           f (sock, addr)
+
+-- systemd activated socket
+withSockets _tracer
+            sn
+            _configureSocket
+            configureSystemdSocket
+            (Left addresses) k
+            =
+            go [] (NonEmpty.toList addresses)
+  where
+    go !acc (a : as) = withSocket a (\sa -> go (sa : acc) as)
+    go []   []       = throwIO NoSocket
+    go !acc []       =
+      let acc' = NonEmpty.fromList (reverse acc)
+      in (k $! (fst <$> acc')) $! (snd <$> acc')
+
+    withSocket :: ntnFd
+               -> ((ntnFd, ntnAddr) -> m a)
+               -> m a
+    withSocket sock f =
+      do !addr <- Snocket.getLocalAddr sn sock
+         configureSystemdSocket sock addr
+         f (sock, addr)
+      `onException` Snocket.close sn sock
 
 
 withLocalSocket :: forall ntnAddr ntcFd ntcAddr m a.

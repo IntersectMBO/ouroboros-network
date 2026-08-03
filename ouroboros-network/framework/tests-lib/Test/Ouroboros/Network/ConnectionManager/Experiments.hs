@@ -53,11 +53,13 @@ import Control.Tracer (Tracer (..), contramap, nullTracer)
 import Codec.Serialise.Class (Serialise)
 import Data.ByteString.Lazy (ByteString)
 import Data.ByteString.Lazy qualified as LBS
+import Data.Either (partitionEithers)
 import Data.Functor (($>), (<&>))
 import Data.Functor.Compose
 import Data.Hashable
 import Data.List (mapAccumL)
 import Data.List.NonEmpty (NonEmpty (..))
+import Data.Maybe (mapMaybe)
 import Data.Proxy (Proxy (..))
 import Data.Typeable (Typeable)
 import Data.Void (Void)
@@ -195,6 +197,21 @@ expectedResult client@ClientAndServerData
 noNextRequests :: forall stm req peerAddr. Applicative stm => TemperatureBundle (ConnectionId peerAddr -> stm [req])
 noNextRequests = pure $ \_ -> pure []
 
+-- | Split local addresses by their real 'Snocket.AddressFamily', so that
+-- 'CM.Arguments' only offers an address of the same family as the peer being
+-- dialled (see 'Ouroboros.Network.Diffusion.runM' for the production
+-- counterpart of this split). 'Snocket.AFLocal' addresses are dropped, since
+-- they are never used to bind outbound @ip@ connections.
+partitionAddressesByFamily :: Snocket m socket peerAddr
+                           -> [peerAddr]
+                           -> ([peerAddr], [peerAddr])
+partitionAddressesByFamily snocket =
+    partitionEithers
+  . mapMaybe (\addr -> case Snocket.addrFamily snocket addr of
+                 Snocket.AFInet    -> Just (Left addr)
+                 Snocket.AFInet6   -> Just (Right addr)
+                 Snocket.AFLocal{} -> Nothing)
+
 -- | Next requests bundle for bidirectional and unidirectional experiments.
 oneshotNextRequests
   :: forall req peerAddr m. MonadSTM m
@@ -268,7 +285,7 @@ withInitiatorOnlyConnectionManager
     -- ^ series of request possible to do with the bidirectional connection
     -- manager towards some peer.
     -> CM.ConnStateIdSupply m
-    -> Maybe peerAddr
+    -> [peerAddr]
     -> TemperatureBundle (ConnectionId peerAddr -> STM m [req])
     -- ^ Functions to get the next requests for a given connection
     -> ProtocolTimeLimits (Handshake UnversionedProtocol Term)
@@ -280,9 +297,11 @@ withInitiatorOnlyConnectionManager
        -> m a)
     -> m a
 withInitiatorOnlyConnectionManager name timeouts trTracer tracer stdGen snocket makeBearer connStateIdSupply
-                                   localAddr nextRequests handshakeTimeLimits acceptedConnLimit k = do
+                                   localAddrs nextRequests handshakeTimeLimits acceptedConnLimit k = do
   mainThreadId <- myThreadId
-  let muxTracers :: Mx.TracersWithBearer (ConnectionId peerAddr) m
+  let (ipv4Addrs, ipv6Addrs) = partitionAddressesByFamily snocket localAddrs
+
+      muxTracers :: Mx.TracersWithBearer (ConnectionId peerAddr) m
       muxTracers = Mx.Tracers {
         Mx.tracer        = WithName name `contramap` nullTracer,
         Mx.channelTracer = WithName name `contramap` nullTracer,
@@ -317,8 +336,8 @@ withInitiatorOnlyConnectionManager name timeouts trTracer tracer stdGen snocket 
     trTracer  = (WithName name . fmap CM.abstractState)
                   `contramap` trTracer,
     -- This is actually the low level bearer tracer
-    ipv4Address  = localAddr,
-    ipv6Address  = Nothing,
+    ipv4Address = ipv4Addrs,
+    ipv6Address = ipv6Addrs,
     addressType  = \_ -> Just IPv4Address,
     snocket,
     makeBearer,
@@ -459,7 +478,7 @@ withBidirectionalConnectionManager
     -> (socket -> m ()) -- ^ configure socket
     -> socket
     -- ^ listening socket
-    -> Maybe peerAddr
+    -> [peerAddr]
     -> acc
     -- ^ Initial state for the server
     -> TemperatureBundle (ConnectionId peerAddr -> STM m [req])
@@ -482,13 +501,15 @@ withBidirectionalConnectionManager name timeouts
                                    stdGen
                                    snocket makeBearer connStateIdSupply
                                    confSock socket
-                                   localAddress
+                                   localAddresses
                                    accumulatorInit nextRequests
                                    handshakeTimeLimits
                                    acceptedConnLimit k = do
     mainThreadId <- myThreadId
     inbgovInfoChannel <- newInformationChannel
-    let mkConnectionHandler =
+    let (ipv4Addrs, ipv6Addrs) = partitionAddressesByFamily snocket localAddresses
+
+        mkConnectionHandler =
           makeConnectionHandler
             ((Compose . WithName name) `Mx.contramapTracers'` muxTracer)
             noBindForkPolicy
@@ -516,8 +537,8 @@ withBidirectionalConnectionManager name timeouts
             trTracer  = (WithName name . fmap CM.abstractState)
                           `contramap` trTracer,
             -- low level bearer tracer
-            ipv4Address  = localAddress,
-            ipv6Address  = Nothing,
+            ipv4Address  = ipv4Addrs,
+            ipv6Address  = ipv6Addrs,
             addressType  = \_ -> Just IPv4Address,
             snocket,
             makeBearer,
@@ -765,7 +786,7 @@ unidirectionalExperiment stdGen timeouts snocket makeBearer confSock socket clie
     nextReqs <- oneshotNextRequests clientAndServerData
     connStateIdSupply <- atomically $ CM.newConnStateIdSupply (Proxy @m)
     withInitiatorOnlyConnectionManager
-      "client" timeouts nullTracer nullTracer stdGen' snocket makeBearer connStateIdSupply Nothing nextReqs
+      "client" timeouts nullTracer nullTracer stdGen' snocket makeBearer connStateIdSupply [] nextReqs
       timeLimitsHandshake maxAcceptedConnectionsLimit
       $ \connectionManager ->
         withBidirectionalConnectionManager "server" timeouts
@@ -773,7 +794,7 @@ unidirectionalExperiment stdGen timeouts snocket makeBearer confSock socket clie
                                            nullTracer Mx.nullTracers nullTracer
                                            stdGen''
                                            snocket makeBearer connStateIdSupply
-                                           confSock socket Nothing
+                                           confSock socket []
                                            [accumulatorInit clientAndServerData]
                                            noNextRequests
                                            timeLimitsHandshake
@@ -859,7 +880,7 @@ bidirectionalExperiment
                                          nullTracer nullTracer nullTracer nullTracer Mx.nullTracers
                                          nullTracer stdGen' snocket makeBearer
                                          connStateIdSupply confSock
-                                         socket0 (Just localAddr0)
+                                         socket0 [localAddr0]
                                          [accumulatorInit clientAndServerData0]
                                          nextRequests0
                                          noTimeLimitsHandshake
@@ -869,7 +890,7 @@ bidirectionalExperiment
                                              nullTracer nullTracer nullTracer nullTracer Mx.nullTracers
                                              nullTracer stdGen'' snocket makeBearer
                                              connStateIdSupply confSock
-                                             socket1 (Just localAddr1)
+                                             socket1 [localAddr1]
                                              [accumulatorInit clientAndServerData1]
                                              nextRequests1
                                              noTimeLimitsHandshake
