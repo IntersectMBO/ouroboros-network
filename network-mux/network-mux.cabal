@@ -55,7 +55,6 @@ library
     -- https://github.com/haskell/network/issues/484
     array >=0.5 && <0.6,
     base >=4.14 && <4.23,
-    binary >=0.8 && <0.11,
     bytestring >=0.10 && <0.13,
     containers >=0.5 && <0.9,
     contra-tracer ^>=0.2.1,
@@ -140,7 +139,7 @@ test-suite test
     QuickCheck,
     Win32-network,
     base >=4.14 && <4.23,
-    binary,
+    binary >=0.8 && <0.11,
     bytestring,
     cardano-base:testlib >=0.1.5.0,
     cborg,
@@ -255,7 +254,7 @@ benchmark socket-read-write-benchmarks
   ghc-options:
     -threaded
     -rtsopts
-    "-with-rtsopts=-T"
+    -with-rtsopts=-T
     -fproc-alignment=64
     -Wall
     -Wcompat
