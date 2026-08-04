@@ -2,6 +2,13 @@
 
 <!-- scriv-insert-here -->
 
+<a id='changelog-1.1.1.0'></a>
+## 1.1.1.0 -- 2026-08-05
+
+### Non-Breaking
+
+- `cardano-diffusion:ping` - export `HashType` from `Cardano.Network.Ping`.
+
 <a id='changelog-1.1.0.0'></a>
 ## 1.1.0.0 -- 2026-07-28
 

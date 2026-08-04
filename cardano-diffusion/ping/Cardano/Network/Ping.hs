@@ -34,6 +34,7 @@ module Cardano.Network.Ping
   , AcceptFilePath (..)
   , LogFormat (..)
   , ColorMode (..)
+  , HashType (..)
     -- * Log messages
   , PingWarning (..)
   , PingException (..)
