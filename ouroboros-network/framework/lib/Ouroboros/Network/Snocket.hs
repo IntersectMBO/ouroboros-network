@@ -5,6 +5,7 @@
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE PackageImports             #-}
 {-# LANGUAGE RankNTypes                 #-}
@@ -43,7 +44,6 @@ module Ouroboros.Network.Snocket
   , LocalAddress (..)
   , LocalConnectionId
   , localAddressFromPath
-  , TestAddress (..)
   , FileDescriptor
   , socketFileDescriptor
   , localSocketFileDescriptor
@@ -51,6 +51,7 @@ module Ouroboros.Network.Snocket
   , invalidFileDescriptor
     -- * Re-exports
   , MakeBearer (..)
+  , Socket.Family (Socket.AF_INET, Socket.AF_INET6)
   ) where
 
 import Control.DeepSeq (NFData (..))
@@ -74,8 +75,6 @@ import "Win32" System.Win32.NamedPipes qualified as Win32.NamedPipes
 import "Win32-network" System.Win32.NamedPipes qualified as Win32.NamedPipes
 #endif
 #endif
-
-import NoThunks.Class
 
 import Network.Socket (SockAddr (..), Socket)
 import Network.Socket qualified as Socket
@@ -226,19 +225,8 @@ instance PrettyShow LocalAddress where
 instance Hashable LocalAddress where
     hashWithSalt s (LocalAddress path) = hashWithSalt s path
 
-newtype TestAddress addr = TestAddress { getTestAddress :: addr }
-  deriving (Eq, Ord, Generic, NFData)
-  deriving NoThunks via InspectHeap (TestAddress addr)
-
-instance Show addr => Show (TestAddress addr) where
-   showsPrec d (TestAddress addr) = showParen (d > app_prec) $
-        showString "TestAddress " . showsPrec (app_prec+1) addr
-     where app_prec = 10
-
-instance PrettyShow addr => PrettyShow (TestAddress addr) where
-    prettyShow (TestAddress addr) = prettyShow addr
-
-instance Hashable addr => Hashable (TestAddress addr)
+instance NFData LocalAddress where
+  rnf (LocalAddress path) = rnf path
 
 type LocalConnectionId = ConnectionId LocalAddress
 
@@ -251,26 +239,11 @@ type LocalConnectionId = ConnectionId LocalAddress
 -- 'LocalFamily' requires 'LocalAddress', this is needed to provide path of the
 -- opened Win32 'HANDLE'.
 --
--- TODO: this type is wrong, since we need `diNtnAddressType` in
--- `Ouroboros.Network.Diffusion`.  Address family should be simplified so we
--- don't need the other one.  `TestFamily` constructor should be avoided, it
--- makes us have the `diNtnAddressType` to classify address family.
---
-data AddressFamily addr where
-
-    SocketFamily :: !Socket.Family
-                 -> AddressFamily Socket.SockAddr
-
-    LocalFamily  :: !LocalAddress -> AddressFamily LocalAddress
-
-    -- | Using a newtype wrapper 'TestAddress' makes pattern matches on
-    -- @AddressFamily@ complete, e.g. it makes 'AddressFamily' injective:
-    -- @AddressFamily addr == AddressFamily addr'@ then @addr == addr'@. .
-    --
-    TestFamily   :: AddressFamily (TestAddress addr)
-
-deriving instance Eq   addr => Eq   (AddressFamily addr)
-deriving instance Show addr => Show (AddressFamily addr)
+data AddressFamily
+  = AFInet
+  | AFInet6
+  | AFLocal !LocalAddress
+  deriving (Eq, Show)
 
 
 -- | Abstract communication interface that can be used by more than
@@ -297,7 +270,7 @@ data Snocket m fd addr = Snocket {
 
     -- | Get address family of an address.
     --
-  , addrFamily    :: addr -> AddressFamily addr
+  , addrFamily    :: addr -> AddressFamily
 
     -- | Open a file descriptor  (socket / namedPipe).
     --
@@ -305,7 +278,7 @@ data Snocket m fd addr = Snocket {
     --
     -- /For named pipes:/ 'Win32.createNamedPipe' is used.
     --
-  , open          :: AddressFamily addr -> m fd
+  , open          :: AddressFamily -> m fd
 
     -- | A way to create 'fd' to pass to 'connect'.
     --
@@ -352,10 +325,15 @@ data Snocket m fd addr = Snocket {
 --
 
 
-socketAddrFamily :: Socket.SockAddr -> AddressFamily Socket.SockAddr
-socketAddrFamily Socket.SockAddrInet  {} = SocketFamily Socket.AF_INET
-socketAddrFamily Socket.SockAddrInet6 {} = SocketFamily Socket.AF_INET6
-socketAddrFamily Socket.SockAddrUnix  {} = SocketFamily Socket.AF_UNIX
+socketAddrFamily :: Socket.SockAddr -> AddressFamily
+socketAddrFamily Socket.SockAddrInet  {}    = AFInet
+socketAddrFamily Socket.SockAddrInet6 {}    = AFInet6
+socketAddrFamily (Socket.SockAddrUnix file) = AFLocal (LocalAddress file)
+
+addressFamilyToFamily :: AddressFamily -> Socket.Family
+addressFamilyToFamily AFInet     = Socket.AF_INET
+addressFamilyToFamily AFInet6    = Socket.AF_INET6
+addressFamilyToFamily AFLocal {} = Socket.AF_UNIX
 
 
 type SocketSnocket = Snocket IO Socket SockAddr
@@ -396,9 +374,9 @@ socketSnocket ioManager = Snocket {
     , close    = uninterruptibleMask_ . Socket.close
     }
   where
-    openSocket :: AddressFamily SockAddr -> IO Socket
-    openSocket (SocketFamily family_) = do
-      sd <- Socket.socket family_ Socket.Stream Socket.defaultProtocol
+    openSocket :: AddressFamily -> IO Socket
+    openSocket af = do
+      sd <- Socket.socket (addressFamilyToFamily af) Socket.Stream Socket.defaultProtocol
       associateWithIOManager ioManager (Right sd)
         -- open is designed to be used in `bracket`, and thus it's called with
         -- async exceptions masked.  The 'associateWithIOCP' is a blocking
@@ -479,26 +457,31 @@ localSnocket :: IOManager -> LocalSnocket
 localSnocket ioManager = Snocket {
       getLocalAddr  = return . getLocalPath
     , getRemoteAddr = return . getRemotePath
-    , addrFamily    = LocalFamily
+    , addrFamily    = AFLocal
 
-    , open = \(LocalFamily addr) -> do
-        hpipe <- Win32.NamedPipes.createNamedPipe
-                   (getFilePath addr)
-                   (Win32.NamedPipes.pIPE_ACCESS_DUPLEX .|. Win32.NamedPipes.fILE_FLAG_OVERLAPPED)
-                   (Win32.NamedPipes.pIPE_TYPE_BYTE     .|. Win32.NamedPipes.pIPE_READMODE_BYTE)
-                   Win32.NamedPipes.pIPE_UNLIMITED_INSTANCES
-                   65536   -- outbound pipe size
-                   16384   -- inbound pipe size
-                   0       -- default timeout
-                   Nothing -- default security
-        associateWithIOManager ioManager (Left hpipe)
-          `catch` \(e :: IOException) -> do
-            Win32.closeHandle hpipe
-            throwIO e
-          `catch` \(SomeAsyncException _) -> do
-            Win32.closeHandle hpipe
-            throwIO e
-        pure (LocalSocket hpipe addr (LocalAddress ""))
+    , open = \case
+        af@AFInet ->
+          throwIO (userError $ "unsupported address family: " ++ show af)
+        af@AFInet6 ->
+          throwIO (userError $ "unsupported address family: " ++ show af)
+        AFLocal addr -> do
+          hpipe <- Win32.NamedPipes.createNamedPipe
+                     (getFilePath addr)
+                     (Win32.NamedPipes.pIPE_ACCESS_DUPLEX .|. Win32.NamedPipes.fILE_FLAG_OVERLAPPED)
+                     (Win32.NamedPipes.pIPE_TYPE_BYTE     .|. Win32.NamedPipes.pIPE_READMODE_BYTE)
+                     Win32.NamedPipes.pIPE_UNLIMITED_INSTANCES
+                     65536   -- outbound pipe size
+                     16384   -- inbound pipe size
+                     0       -- default timeout
+                     Nothing -- default security
+          associateWithIOManager ioManager (Left hpipe)
+            `catch` \(e :: IOException) -> do
+              Win32.closeHandle hpipe
+              throwIO e
+            `catch` \(SomeAsyncException _) -> do
+              Win32.closeHandle hpipe
+              throwIO e
+          pure (LocalSocket hpipe addr (LocalAddress ""))
 
     -- To connect, simply create a file whose name is the named pipe name.
     , openToConnect  = \(LocalAddress pipeName) -> do
@@ -576,7 +559,7 @@ localSnocket ioManager =
     Snocket {
         getLocalAddr  = fmap toLocalAddress . Socket.getSocketName . getLocalHandle
       , getRemoteAddr = fmap toLocalAddress . Socket.getPeerName . getLocalHandle
-      , addrFamily    = LocalFamily
+      , addrFamily    = AFLocal
       , connect       = \(LocalSocket s) addr ->
           Socket.connect s (fromLocalAddress addr)
       , bind          = \(LocalSocket fd) addr -> Socket.bind fd (fromLocalAddress addr)
@@ -585,7 +568,7 @@ localSnocket ioManager =
                       . berkeleyAccept ioManager
                       . getLocalHandle
       , open          = openSocket
-      , openToConnect = openSocket . LocalFamily
+      , openToConnect = openSocket . AFLocal
       , close         = uninterruptibleMask_ . Socket.close . getLocalHandle
       }
   where
@@ -597,8 +580,8 @@ localSnocket ioManager =
     fromLocalAddress :: LocalAddress -> SockAddr
     fromLocalAddress = SockAddrUnix . getFilePath
 
-    openSocket :: AddressFamily LocalAddress -> IO LocalSocket
-    openSocket (LocalFamily _addr) = do
+    openSocket :: AddressFamily -> IO LocalSocket
+    openSocket (AFLocal _addr) = do
       sd <- Socket.socket Socket.AF_UNIX Socket.Stream Socket.defaultProtocol
       associateWithIOManager ioManager (Right sd)
         -- open is designed to be used in `bracket`, and thus it's called with
@@ -611,6 +594,8 @@ localSnocket ioManager =
           Socket.close sd
           throwIO e
       return (LocalSocket sd)
+    openSocket af =
+      throwIO (userError $ "unsupported address family: " ++ show af)
 #endif
 
 localAddressFromPath :: FilePath -> LocalAddress

@@ -69,7 +69,7 @@ import Ouroboros.Network.InboundGovernor.InformationChannel qualified as InfoCha
 import Ouroboros.Network.MuxMode
 import Ouroboros.Network.Server.RateLimiting
 import Ouroboros.Network.Snocket (Accept (..), Accepted (..),
-           AddressFamily (TestFamily), Snocket (..), TestAddress (..))
+           AddressFamily (..), Snocket (..))
 import Ouroboros.Network.Util (PrettyShow (..))
 
 import Test.Ouroboros.Network.ConnectionManager.Utils (verifyAbstractTransition)
@@ -91,12 +91,15 @@ tests =
 -- | Address type.  '0' indicates local address, the 'Arbitrary' generator only
 -- returns (strictly) positive addresses.
 --
-type Addr = TestAddress Int
+newtype TestAddress = TestAddress { getTestAddress :: Int }
+  deriving (Eq, Enum, Num, Ord, Show)
+type Addr = TestAddress
 
+instance PrettyShow TestAddress where
+  prettyShow = show . getTestAddress
 
-instance Arbitrary Addr where
+instance Arbitrary TestAddress where
     arbitrary =
-      TestAddress <$>
         -- from one side we want a small address pool (this makes a greater
         -- chance of reusing a connection), but we also want to allow
         -- variability
@@ -416,10 +419,10 @@ mkSnocket :: forall m.
              , MonadSTM   m
              , MonadThrow (STM m)
              )
-          => RefinedScheduleMap Addr
+          => RefinedScheduleMap TestAddress
           -- ^ we need the schedule to know how much time 'connect' will take
           -- and weather it errors or not.
-          -> m (Snocket m (FD m) Addr)
+          -> m (Snocket m (FD m) TestAddress)
 mkSnocket scheduleMap = do
     -- We keep track of outbound connections which will call 'connect' in
     -- a mutable TVar.
@@ -466,7 +469,8 @@ mkSnocket scheduleMap = do
         Nothing   -> throwIO InvalidArgumentError
         Just addr -> pure addr
 
-    addrFamily _ = TestFamily
+    addrFamily (TestAddress a) | odd a     = AFInet
+                               | otherwise = AFInet6
 
     open _ =
       FD <$>
@@ -795,7 +799,7 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
           $ \(connectionManager
                 :: ConnectionManager Mx.InitiatorResponderMode (FD (IOSim s))
                                      Addr (Handle m) Void (IOSim s)) -> do
-            fd <- open snocket TestFamily
+            fd <- open snocket AFInet
             traverse_ (bind snocket fd) myAddress
 
             let go :: HasCallStack

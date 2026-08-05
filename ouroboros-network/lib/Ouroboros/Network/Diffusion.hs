@@ -88,9 +88,9 @@ import Ouroboros.Network.PeerSharing (PeerSharingRegistry (..))
 import Ouroboros.Network.Protocol.Handshake
 import Ouroboros.Network.RethrowPolicy
 import Ouroboros.Network.Server qualified as Server
-import Ouroboros.Network.Snocket (AddressFamily (..), LocalAddress (..),
-           LocalSocket (..), RemoteAddress, localSocketFileDescriptor,
-           makeLocalBearer, makeSocketBearer')
+import Ouroboros.Network.Snocket (LocalAddress (..), LocalSocket (..),
+           RemoteAddress, localSocketFileDescriptor, makeLocalBearer,
+           makeSocketBearer')
 import Ouroboros.Network.Snocket qualified as Snocket
 import Ouroboros.Network.Socket (configureSocket, configureSystemdSocket)
 import Ouroboros.Network.Util (PrettyShow (..))

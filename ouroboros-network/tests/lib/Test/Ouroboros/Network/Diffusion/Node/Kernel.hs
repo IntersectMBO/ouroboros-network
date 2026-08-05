@@ -9,7 +9,7 @@
 module Test.Ouroboros.Network.Diffusion.Node.Kernel
   ( -- * Common types
     NtNAddr
-  , NtNAddr_ (..)
+  , NetworkAddress (..)
   , encodeNtNAddr
   , decodeNtNAddr
   , ntnAddrToRelayAccessPoint
@@ -34,7 +34,7 @@ import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM qualified as LazySTM
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.DeepSeq (NFData (..))
-import Control.Monad (replicateM, when)
+import Control.Monad (when)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
@@ -44,15 +44,13 @@ import Control.Monad.Class.MonadTimer.SI
 import Codec.CBOR.Decoding qualified as CBOR
 import Codec.CBOR.Encoding qualified as CBOR
 import Data.ByteString.Char8 qualified as BSC
-import Data.Hashable (Hashable)
-import Data.IP (IP (..), fromIPv4w, fromIPv6w, toIPv4, toIPv4w, toIPv6, toIPv6w)
+import Data.IP (IP (..))
 import Data.IP qualified as IP
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Monoid.Synchronisation
 import Data.Void (Void)
 import GHC.Generics (Generic)
-import Numeric.Natural (Natural)
 import System.Random (RandomGen, SplitGen, StdGen)
 import System.Random qualified as Random
 
@@ -70,7 +68,7 @@ import Ouroboros.Network.Mock.ConcreteBlock (Block)
 import Ouroboros.Network.Mock.ConcreteBlock qualified as ConcreteBlock
 import Ouroboros.Network.Mock.ProducerState
 
-import Simulation.Network.Snocket (AddressType (..), GlobalAddressScheme (..))
+import Simulation.Network.Snocket (NetworkAddress (..))
 
 import Ouroboros.Network.PeerSelection (PeerSharing, RelayAccessPoint (..))
 import Ouroboros.Network.PeerSelection.Governor (PublicPeerSelectionState,
@@ -79,7 +77,6 @@ import Ouroboros.Network.PeerSharing (PeerSharingAPI, PeerSharingRegistry (..),
            newPeerSharingAPI, newPeerSharingRegistry,
            ps_POLICY_PEER_SHARE_MAX_PEERS, ps_POLICY_PEER_SHARE_STICKY_TIME)
 import Ouroboros.Network.Protocol.Handshake.Unversioned
-import Ouroboros.Network.Snocket (TestAddress (..))
 import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (PeerTxRegistry,
            SharedTxStateVar, TxSubmissionCountersVar, newPeerTxRegistry,
            newSharedTxStateVar, newTxSubmissionCountersVar)
@@ -90,64 +87,9 @@ import Test.Ouroboros.Network.Diffusion.Node.ChainDB (ChainDB (..))
 import Test.Ouroboros.Network.Diffusion.Node.ChainDB qualified as ChainDB
 import Test.Ouroboros.Network.OrphanInstances ()
 import Test.Ouroboros.Network.TxSubmission.Types (Mempool, Tx, newMempool)
-import Test.QuickCheck (Arbitrary (..), choose, chooseInt, frequency, oneof)
 
 
--- | Node-to-node address type.
---
-data NtNAddr_
-  = EphemeralIPv4Addr Natural
-  | EphemeralIPv6Addr Natural
-  | IPAddr IP.IP PortNumber
-  | UnusedAddr
-  deriving (Eq, Ord, Generic)
-
--- we need to work around the lack of the `NFData IP` instance
-instance NFData NtNAddr_ where
-    rnf (EphemeralIPv4Addr p)      = p `seq` ()
-    rnf (EphemeralIPv6Addr p)      = p `seq` ()
-    rnf (IPAddr (IP.IPv4 ip) port) = ip `seq` port `seq` ()
-    rnf (IPAddr (IP.IPv6 ip) port) = rnf (IP.fromIPv6w ip) `seq` port `seq` ()
-    rnf UnusedAddr                 = ()
-
-instance Arbitrary NtNAddr_ where
-  arbitrary = do
-    -- TODO: Move this IP generator to ouroboros-network-testing
-    a <- oneof [ IPv6 . toIPv6 <$> replicateM 8 (choose (0,0xffff))
-               , IPv4 . toIPv4 <$> replicateM 4 (choose (0,255))
-               ]
-    frequency
-      [ (1 , EphemeralIPv4Addr . fromInteger <$> arbitrary)
-      , (1 , EphemeralIPv6Addr . fromInteger <$> arbitrary)
-      , (3 , IPAddr a . read . show <$> chooseInt (0, 9999))
-      ]
-
-instance Show NtNAddr_ where
-    show (EphemeralIPv4Addr n) = "EphemeralIPv4Addr " ++ show n
-    show (EphemeralIPv6Addr n) = "EphemeralIPv6Addr " ++ show n
-    show (IPAddr ip port)      = "IPAddr (read \"" ++ show ip ++ "\") " ++ show port
-    show UnusedAddr            = "UnusedAddr"
-
-instance PrettyShow NtNAddr_ where
-    prettyShow (EphemeralIPv4Addr n) = "eph.v4." ++ show n
-    prettyShow (EphemeralIPv6Addr n) = "eph.v6" ++ show n
-    prettyShow (IPAddr ip port)      = show ip ++ ":" ++ show port
-    prettyShow UnusedAddr            = "UnusedAddr"
-
-instance GlobalAddressScheme NtNAddr_ where
-    getAddressType (TestAddress addr) =
-      case addr of
-        EphemeralIPv4Addr _   -> IPv4Address
-        EphemeralIPv6Addr _   -> IPv6Address
-        IPAddr (IP.IPv4 {}) _ -> IPv4Address
-        IPAddr (IP.IPv6 {}) _ -> IPv6Address
-        UnusedAddr            -> IPv4Address
-    ephemeralAddress IPv4Address = TestAddress . EphemeralIPv4Addr
-    ephemeralAddress IPv6Address = TestAddress . EphemeralIPv6Addr
-
-instance Hashable NtNAddr_
-
-type NtNAddr        = TestAddress NtNAddr_
+type NtNAddr        = NetworkAddress
 type NtNVersion     = UnversionedProtocol
 data NtNVersionData = NtNVersionData
   { ntnDiffusionMode :: DiffusionMode
@@ -171,43 +113,44 @@ instance Acceptable NtNVersionData where
         ntnPeerSharing   = ntnPeerSharing <> ntnPeerSharing'
       }
 
-type NtCAddr        = TestAddress Int
+type NtCAddr        = NetworkAddress
 type NtCVersion     = UnversionedProtocol
 type NtCVersionData = UnversionedProtocolData
 
 ntnAddrToRelayAccessPoint :: NtNAddr -> Maybe RelayAccessPoint
-ntnAddrToRelayAccessPoint (TestAddress (IPAddr ip port)) =
+ntnAddrToRelayAccessPoint (IPAddr ip port) =
     Just (RelayAccessAddress ip port)
 ntnAddrToRelayAccessPoint _ = Nothing
 
-encodeNtNAddr :: NtNAddr -> CBOR.Encoding
-encodeNtNAddr (TestAddress (EphemeralIPv4Addr nat)) = CBOR.encodeListLen 2
-                                                   <> CBOR.encodeWord 0
-                                                   <> CBOR.encodeWord (fromIntegral nat)
-encodeNtNAddr (TestAddress (EphemeralIPv6Addr nat)) = CBOR.encodeListLen 2
-                                                   <> CBOR.encodeWord 1
-                                                   <> CBOR.encodeWord (fromIntegral nat)
-encodeNtNAddr (TestAddress (IPAddr ip pn)) = CBOR.encodeListLen 3
+encodeNtNAddr :: NetworkAddress -> CBOR.Encoding
+encodeNtNAddr (EphIPv4Addr nat) = CBOR.encodeListLen 2
+                               <> CBOR.encodeWord 0
+                               <> CBOR.encodeWord (fromIntegral nat)
+encodeNtNAddr (EphIPv6Addr nat) = CBOR.encodeListLen 2
+                               <> CBOR.encodeWord 1
+                               <> CBOR.encodeWord (fromIntegral nat)
+encodeNtNAddr (IPAddr ip pn) = CBOR.encodeListLen 3
                                           <> CBOR.encodeWord 2
                                           <> encodeIP ip
                                           <> encodePortNumber pn
-encodeNtNAddr (TestAddress UnusedAddr) = error "impossible"
+encodeNtNAddr (UnusedAddr) = error "impossible"
+encodeNtNAddr  LocalAddr{} = error "invariant violation"
 
 decodeNtNAddr :: CBOR.Decoder s NtNAddr
 decodeNtNAddr = do
   _ <- CBOR.decodeListLen
   tok <- CBOR.decodeWord
   case tok of
-    0 -> TestAddress . EphemeralIPv4Addr . fromIntegral <$> CBOR.decodeWord
-    1 -> TestAddress . EphemeralIPv6Addr . fromIntegral <$> CBOR.decodeWord
-    2 -> TestAddress <$> (IPAddr <$> decodeIP <*> decodePortNumber)
+    0 -> EphIPv4Addr . fromIntegral <$> CBOR.decodeWord
+    1 -> EphIPv6Addr . fromIntegral <$> CBOR.decodeWord
+    2 -> IPAddr <$> decodeIP <*> decodePortNumber
     _ -> fail ("decodeNtNAddr: unknown tok:" ++ show tok)
 
 encodeIP :: IP -> CBOR.Encoding
 encodeIP (IPv4 ip) = CBOR.encodeListLen 2
                   <> CBOR.encodeWord 0
-                  <> CBOR.encodeWord32 (fromIPv4w ip)
-encodeIP (IPv6 ip) = case fromIPv6w ip of
+                  <> CBOR.encodeWord32 (IP.fromIPv4w ip)
+encodeIP (IPv6 ip) = case IP.fromIPv6w ip of
   (w1, w2, w3, w4) -> CBOR.encodeListLen 5
                    <> CBOR.encodeWord 1
                    <> CBOR.encodeWord32 w1
@@ -220,13 +163,13 @@ decodeIP = do
   _ <- CBOR.decodeListLen
   tok <- CBOR.decodeWord
   case tok of
-    0 -> IPv4 . toIPv4w <$> CBOR.decodeWord32
+    0 -> IPv4 . IP.toIPv4w <$> CBOR.decodeWord32
     1 -> do
       w1 <- CBOR.decodeWord32
       w2 <- CBOR.decodeWord32
       w3 <- CBOR.decodeWord32
       w4 <- CBOR.decodeWord32
-      return (IPv6 (toIPv6w (w1, w2, w3, w4)))
+      return (IPv6 (IP.toIPv6w (w1, w2, w3, w4)))
 
     _ -> fail ("decodeIP: unknown tok:" ++ show tok)
 

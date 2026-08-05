@@ -10,7 +10,6 @@ import Control.Monad.Class.MonadSay
 import Control.Monad.IOSim hiding (liftST)
 import Control.Tracer (Tracer, mkTracer, nullTracer)
 
-import Ouroboros.Network.Snocket
 import Simulation.Network.Snocket as SimSnocket
 
 import Test.Ouroboros.Network.Data.AbsBearerInfo
@@ -34,7 +33,7 @@ onlyIf :: Bool -> a -> Maybe a
 onlyIf False = const Nothing
 onlyIf True  = Just
 
-prop_raw_bearer_send_and_receive_iosim :: Int -> Int -> Message -> Property
+prop_raw_bearer_send_and_receive_iosim :: Natural -> Natural -> Message -> Property
 prop_raw_bearer_send_and_receive_iosim serverInt clientInt msg =
   iosimProperty $
     SimSnocket.withSnocket
@@ -45,8 +44,8 @@ prop_raw_bearer_send_and_receive_iosim serverInt clientInt msg =
           iosimTracer
           snocket
           (makeFDRawBearer nullTracer)
-          (TestAddress serverInt)
-          (Just $ TestAddress clientInt)
+          (EphIPv4Addr serverInt)
+          (Just $ EphIPv4Addr clientInt)
           msg
 
 

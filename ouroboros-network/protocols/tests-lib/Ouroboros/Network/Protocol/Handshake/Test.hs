@@ -53,7 +53,6 @@ import Ouroboros.Network.Channel
 import Ouroboros.Network.CodecCBORTerm
 import Ouroboros.Network.Driver.Simple (runConnectedPeers,
            runConnectedPeersAsymmetric, runPeer)
-import Ouroboros.Network.Snocket (TestAddress (..))
 import Ouroboros.Network.Snocket qualified as Snocket
 import Simulation.Network.Snocket
 
@@ -840,21 +839,21 @@ prop_channel_simultaneous_open_sim codec versionDataCodec
                 attenuation
                 Map.empty
               $ \sn _ -> do
-      let addr, addr' :: TestAddress Int
-          addr  = Snocket.TestAddress 1
-          addr' = Snocket.TestAddress 2
+      let addr, addr' :: NetworkAddress
+          addr  = EphIPv4Addr 1
+          addr' = EphIPv4Addr 2
       -- listening snockets
-      bracket (Snocket.open sn Snocket.TestFamily)
+      bracket (Snocket.open sn Snocket.AFInet)
               (Snocket.close sn) $ \fdLst ->
-        bracket (Snocket.open  sn Snocket.TestFamily)
+        bracket (Snocket.open  sn Snocket.AFInet)
                 (Snocket.close sn) $ \fdLst' -> do
           Snocket.bind sn fdLst  addr
           Snocket.bind sn fdLst' addr'
           Snocket.listen sn fdLst
           Snocket.listen sn fdLst'
           -- connection snockets
-          bracket ((,) <$> Snocket.open sn Snocket.TestFamily
-                       <*> Snocket.open sn Snocket.TestFamily
+          bracket ((,) <$> Snocket.open sn Snocket.AFInet
+                       <*> Snocket.open sn Snocket.AFInet
                   )
                   (\(fdConn, fdConn') ->
                       -- we need concurrently close both sockets: they need to
@@ -886,8 +885,7 @@ prop_channel_simultaneous_open_sim codec versionDataCodec
               serverVersions
 
 
-prop_channel_simultaneous_open_SimNet :: ArbitraryVersions
-                                                        -> Property
+prop_channel_simultaneous_open_SimNet :: ArbitraryVersions -> Property
 prop_channel_simultaneous_open_SimNet
   (ArbitraryVersions clientVersions serverVersions) =
     runSimOrThrow $ prop_channel_simultaneous_open_sim

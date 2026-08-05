@@ -15,14 +15,12 @@ module Test.Ouroboros.Network.Diffusion.Node
   , run
     -- * node types
   , NtNAddr
-  , NtNFD
   , NtNVersion
   , NtNVersionData
   , NtCAddr
-  , NtCFD
   , NtCVersion
   , NtCVersionData
-  , Node.NtNAddr_ (..)
+  , NetworkAddress (..)
     -- * extra types used by the node
   , AcceptedConnectionsLimit (..)
   , DiffusionMode (..)
@@ -107,15 +105,14 @@ import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency,
            LocalRootConfig, WarmValency)
 import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersAPI (..))
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
-import Ouroboros.Network.Snocket (MakeBearer, Snocket, TestAddress (..),
-           invalidFileDescriptor)
+import Ouroboros.Network.Snocket (MakeBearer, Snocket, invalidFileDescriptor)
 import Ouroboros.Network.Util (PrettyShow (..))
 
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy (TxDecisionPolicy)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (txCountersThreadV2)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types (TraceTxLogic)
 
-import Simulation.Network.Snocket (AddressType (..), FD)
+import Simulation.Network.Snocket (AddressType (..), FD, NetworkAddress (..))
 
 import Test.Ouroboros.Network.Data.Script
 import Test.Ouroboros.Network.Diffusion.Node.ChainDB (addBlock,
@@ -132,12 +129,11 @@ import Test.Ouroboros.Network.TxSubmission.Types (Tx)
 
 
 data Interfaces extraAPI m = Interfaces
-    { iNtnSnocket        :: Snocket m (NtNFD m) NtNAddr
-    , iNtnBearer         :: MakeBearer m (NtNFD m)
+    { iSnocket           :: Snocket m (FD m) NetworkAddress
+    , iNtnBearer         :: MakeBearer m (FD m)
     , iAcceptVersion     :: NtNVersionData -> NtNVersionData -> Accept NtNVersionData
     , iNtnDomainResolver :: DNSLookupType -> [DomainAccessPoint] -> m (Map DomainAccessPoint (Set NtNAddr))
-    , iNtcSnocket        :: Snocket m (NtCFD m) NtCAddr
-    , iNtcBearer         :: MakeBearer m (NtCFD m)
+    , iNtcBearer         :: MakeBearer m (FD m)
     , iRng               :: StdGen
     , iDomainMap         :: StrictTVar m (Map (Domain, TYPE) MockDNSLookupResult)
     , iLedgerPeersConsensusInterface
@@ -145,9 +141,6 @@ data Interfaces extraAPI m = Interfaces
     , iConnStateIdSupply :: ConnStateIdSupply m
     , iSRVPrefix         :: SRVPrefix
     }
-
-type NtNFD m = FD m NtNAddr
-type NtCFD m = FD m NtCAddr
 
 data Arguments extraChurnArgs extraFlags m = Arguments
     { aIPAddress            :: NtNAddr
@@ -264,19 +257,19 @@ run blockGeneratorArgs ni na
         dnsLookupDelayScriptVar <- newTVarIO (aDNSLookupDelayScript na)
 
         let -- diffusion interfaces
-            interfaces :: Diffusion.Interfaces (NtNFD m) NtNAddr
-                                               (NtCFD m) NtCAddr
+            interfaces :: Diffusion.Interfaces (FD m) NtNAddr
+                                               (FD m) NtCAddr
                                                resolver m
             interfaces = Diffusion.Interfaces
-              { Diffusion.diNtnSnocket             = iNtnSnocket ni
+              { Diffusion.diNtnSnocket             = iSnocket ni
               , Diffusion.diNtnBearer              = iNtnBearer ni
               , Diffusion.diWithBuffer             = \f -> f Nothing
               , Diffusion.diNtnConfigureSocket     = \_ _ -> return ()
               , Diffusion.diNtnConfigureSystemdSocket
                                                    = \_ _ -> return ()
               , Diffusion.diNtnAddressType         = ntnAddressType
-              , Diffusion.diNtnToPeerAddr          = \a b -> TestAddress (Node.IPAddr a b)
-              , Diffusion.diNtcSnocket             = iNtcSnocket ni
+              , Diffusion.diNtnToPeerAddr          = \a b -> Node.IPAddr a b
+              , Diffusion.diNtcSnocket             = iSnocket ni
               , Diffusion.diNtcBearer              = iNtcBearer ni
               , Diffusion.diNtcGetFileDescriptor   = \_ -> pure invalidFileDescriptor
               , Diffusion.diNtcConfigureSocketFile = \_ -> pure ()
@@ -425,11 +418,12 @@ run blockGeneratorArgs ni na
                                  . toOldestFirst
 
     ntnAddressType :: NtNAddr -> Maybe AddressType
-    ntnAddressType (TestAddress (Node.EphemeralIPv4Addr _)) = Just IPv4Address
-    ntnAddressType (TestAddress (Node.EphemeralIPv6Addr _)) = Just IPv6Address
-    ntnAddressType (TestAddress (Node.IPAddr (IPv4 _) _))   = Just IPv4Address
-    ntnAddressType (TestAddress (Node.IPAddr (IPv6 _) _))   = Just IPv6Address
-    ntnAddressType (TestAddress  Node.UnusedAddr)           = Just IPv4Address
+    ntnAddressType (Node.EphIPv4Addr _)     = Just IPv4Address
+    ntnAddressType (Node.EphIPv6Addr _)     = Just IPv6Address
+    ntnAddressType (Node.IPAddr (IPv4 _) _) = Just IPv4Address
+    ntnAddressType (Node.IPAddr (IPv6 _) _) = Just IPv6Address
+    ntnAddressType Node.UnusedAddr          = Just IPv4Address
+    ntnAddressType Node.LocalAddr {}        = error "invariant violation"
 
     -- various pseudo random generators
     (diffStgGen, keepAliveStdGen) = splitGen (iRng ni)
@@ -457,7 +451,7 @@ run blockGeneratorArgs ni na
         decodeData _ _                                            = Left (Text.pack "unversionedDataCodec: unexpected term")
 
     mkArgs :: StrictTVar m (PublicPeerSelectionState NtNAddr)
-           -> Diffusion.Configuration extraFlags m (NtNFD m) NtNAddr (NtCFD m) NtCAddr
+           -> Diffusion.Configuration extraFlags m (FD m) NtNAddr (FD m) NtCAddr
     mkArgs dcPublicPeerSelectionVar = Diffusion.Configuration
       { Diffusion.dcAddresses   = Right $ NonEmpty.fromList $
                                           (ntnToIPv4 . aIPAddress $ na)
@@ -485,14 +479,14 @@ run blockGeneratorArgs ni na
 --- Utils
 
 ntnToIPv4 :: NtNAddr -> [NtNAddr]
-ntnToIPv4 ntnAddr@(TestAddress (Node.EphemeralIPv4Addr _)) = [ntnAddr]
-ntnToIPv4 ntnAddr@(TestAddress (Node.IPAddr (IPv4 _) _))   = [ntnAddr]
-ntnToIPv4 (TestAddress _)                                  = []
+ntnToIPv4 ntnAddr@(Node.EphIPv4Addr _)     = [ntnAddr]
+ntnToIPv4 ntnAddr@(Node.IPAddr (IPv4 _) _) = [ntnAddr]
+ntnToIPv4 _                                = []
 
 ntnToIPv6 :: NtNAddr -> [NtNAddr]
-ntnToIPv6 ntnAddr@(TestAddress (Node.EphemeralIPv6Addr _)) = [ntnAddr]
-ntnToIPv6 ntnAddr@(TestAddress (Node.IPAddr (IPv6 _) _))   = [ntnAddr]
-ntnToIPv6 (TestAddress _)                                  = []
+ntnToIPv6 ntnAddr@(Node.EphIPv6Addr _)     = [ntnAddr]
+ntnToIPv6 ntnAddr@(Node.IPAddr (IPv6 _) _) = [ntnAddr]
+ntnToIPv6 _                                = []
 
 --
 -- Constants

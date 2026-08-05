@@ -9,7 +9,6 @@
 module Test.Ouroboros.Network.ConnectionManager.Timeouts
   ( verifyAllTimeouts
   , SimAddr
-  , SimAddr_
   , TestAddr (..)
   , TestProperty (..)
   , ArbDataFlow (..)
@@ -57,7 +56,6 @@ import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.Driver.Limits (ProtocolTimeLimits (..))
 import Ouroboros.Network.Protocol.Handshake.Codec (timeLimitsHandshake)
 import Ouroboros.Network.Protocol.Handshake.Type
-import Ouroboros.Network.Snocket qualified as Snocket
 import Ouroboros.Network.Util (PrettyShow (..))
 
 
@@ -387,8 +385,7 @@ groupConnsEither getTransition isFinalTransition =
 
 -- | The concrete address type used by simulations.
 --
-type SimAddr  = Snocket.TestAddress SimAddr_
-type SimAddr_ = Int
+type SimAddr  = Int
 
 -- | We use a wrapper for test addresses since the Arbitrary instance for Snocket.TestAddress only
 --   generates addresses between 1 and 4.
@@ -396,7 +393,7 @@ newtype TestAddr = TestAddr { unTestAddr :: SimAddr }
   deriving (Show, Eq, Ord)
 
 instance Arbitrary TestAddr where
-  arbitrary = TestAddr . Snocket.TestAddress <$> choose (1, 100)
+  arbitrary = TestAddr <$> choose (1, 100)
 
 
 -- | Test property together with classification.

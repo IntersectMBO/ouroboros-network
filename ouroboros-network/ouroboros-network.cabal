@@ -391,7 +391,6 @@ library framework
     Ouroboros.Network.Server.Simple
     Ouroboros.Network.Snocket
     Ouroboros.Network.Socket
-    Simulation.Network.Snocket
 
   -- other-extensions:
   build-depends:
@@ -518,6 +517,7 @@ library framework-tests-lib
   visibility: public
   hs-source-dirs: framework/tests-lib
   exposed-modules:
+    Simulation.Network.Snocket
     Test.Ouroboros.Network.ConnectionManager.Experiments
     Test.Ouroboros.Network.ConnectionManager.Timeouts
     Test.Ouroboros.Network.ConnectionManager.Utils
@@ -537,7 +537,11 @@ library framework-tests-lib
     hashable,
     io-classes:{io-classes, si-timers, strict-stm},
     io-sim,
+    iproute,
+    monoidal-synchronisation,
+    network,
     network-mux,
+    nothunks,
     ouroboros-network:{api, framework, tests-lib},
     quickcheck-monoids,
     random,
@@ -939,7 +943,7 @@ library protocols-tests-lib
     io-classes:{io-classes, si-timers, strict-stm},
     io-sim,
     network-mux,
-    ouroboros-network:{api, api-tests-lib, framework, protocols, tests-lib},
+    ouroboros-network:{api, api-tests-lib, framework, framework-tests-lib, protocols, tests-lib},
     pipes,
     quickcheck-instances,
     serialise,
@@ -995,7 +999,7 @@ library ouroboros-network-tests-lib
     network,
     network-mux,
     nothunks,
-    ouroboros-network:{ouroboros-network, api, api-tests-lib, framework, protocols, protocols-tests-lib, tests-lib},
+    ouroboros-network:{ouroboros-network, api, api-tests-lib, framework, framework-tests-lib, protocols, protocols-tests-lib, tests-lib},
     pretty-simple,
     quickcheck-monoids,
     random,

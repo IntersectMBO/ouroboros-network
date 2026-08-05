@@ -97,7 +97,7 @@ import Ouroboros.Network.Protocol.Handshake.Unversioned
 import Ouroboros.Network.Server (RemoteTransitionTrace)
 import Ouroboros.Network.Server qualified as Server
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
-import Ouroboros.Network.Snocket (Snocket, TestAddress (..))
+import Ouroboros.Network.Snocket (Snocket)
 import Ouroboros.Network.Snocket qualified as Snocket
 import Ouroboros.Network.Util (PrettyShow (..))
 
@@ -160,7 +160,6 @@ tests =
     ]
   ]
 
-
 --
 -- Server tests
 --
@@ -174,13 +173,14 @@ prop_unidirectional_Sim (Fixed rnd) clientAndServerData =
                 noAttenuation
                 Map.empty
       $ \snock _ ->
-        bracket (Snocket.open snock Snocket.TestFamily)
+        bracket (Snocket.open snock Snocket.AFInet)
                 (Snocket.close snock) $ \fd -> do
           Snocket.bind   snock fd serverAddr
           Snocket.listen snock fd
           unidirectionalExperiment (mkStdGen rnd) simTimeouts snock makeFDBearer mempty fd clientAndServerData
   where
-    serverAddr = Snocket.TestAddress (0 :: Int)
+    serverAddr :: NetworkAddress
+    serverAddr = EphIPv4Addr 0
 
 prop_bidirectional_Sim :: Fixed Int
                        -> ClientAndServerData Int
@@ -192,13 +192,13 @@ prop_bidirectional_Sim (Fixed rnd) data0 data1 =
                 noAttenuation
                 Map.empty
                 $ \snock _ ->
-      bracket ((,) <$> Snocket.open snock Snocket.TestFamily
-                   <*> Snocket.open snock Snocket.TestFamily)
+      bracket ((,) <$> Snocket.open snock Snocket.AFInet
+                   <*> Snocket.open snock Snocket.AFInet)
               (\ (socket0, socket1) -> Snocket.close snock socket0 >>
                                        Snocket.close snock socket1)
         $ \ (socket0, socket1) -> do
-          let addr0 = Snocket.TestAddress (0 :: Int)
-              addr1 = Snocket.TestAddress 1
+          let addr0 = EphIPv4Addr 0
+              addr1 = EphIPv4Addr 1
           Snocket.bind   snock socket0 addr0
           Snocket.bind   snock socket1 addr1
           Snocket.listen snock socket0
@@ -217,31 +217,31 @@ prop_bidirectional_Sim (Fixed rnd) data0 data1 =
 -- | A test case for the multi-node property contains a sequence of connection
 -- events. The `DiffTime` in each constructor is relative to the previous event
 -- in the sequence.
-data ConnectionEvent req peerAddr
-  = StartClient DiffTime peerAddr
+data ConnectionEvent req
+  = StartClient DiffTime NetworkAddress
     -- ^ Start a new client at the given address
-  | StartServer DiffTime peerAddr req
+  | StartServer DiffTime NetworkAddress req
     -- ^ Start a new server at the given address
-  | InboundConnection DiffTime peerAddr
+  | InboundConnection DiffTime NetworkAddress
     -- ^ Create a connection from client or server with the given address to the central server.
-  | OutboundConnection DiffTime peerAddr
+  | OutboundConnection DiffTime NetworkAddress
     -- ^ Create a connection from the central server to another server.
-  | InboundMiniprotocols DiffTime peerAddr (TemperatureBundle [req])
+  | InboundMiniprotocols DiffTime NetworkAddress (TemperatureBundle [req])
     -- ^ Run a bundle of mini protocols on the inbound connection from the given address.
-  | OutboundMiniprotocols DiffTime peerAddr (TemperatureBundle [req])
+  | OutboundMiniprotocols DiffTime NetworkAddress (TemperatureBundle [req])
     -- ^ Run a bundle of mini protocols on the outbound connection to the given address.
-  | CloseInboundConnection DiffTime peerAddr
+  | CloseInboundConnection DiffTime NetworkAddress
     -- ^ Close an inbound connection.
-  | CloseOutboundConnection DiffTime peerAddr
+  | CloseOutboundConnection DiffTime NetworkAddress
     -- ^ Close an outbound connection.
-  | ShutdownClientServer DiffTime peerAddr
+  | ShutdownClientServer DiffTime NetworkAddress
     -- ^ Shuts down a client/server (simulates power loss)
   deriving (Eq, Show, Functor)
 
 -- | A sequence of connection events that make up a test scenario for `prop_multinode_Sim`.
-data MultiNodeScript req peerAddr = MultiNodeScript
-  { mnsEvents         :: [ConnectionEvent req peerAddr]
-  , mnsAttenuationMap :: Map peerAddr
+data MultiNodeScript req = MultiNodeScript
+  { mnsEvents         :: [ConnectionEvent req]
+  , mnsAttenuationMap :: Map NetworkAddress
                              (Script AbsBearerInfo)
   }
   deriving (Show)
@@ -252,8 +252,8 @@ data MultiNodePruningScript req = MultiNodePruningScript
   { mnpsAcceptedConnLimit :: AcceptedConnectionsLimit
     -- ^ Should yield small values to trigger pruning
     -- more often
-  , mnpsEvents            :: [ConnectionEvent req TestAddr]
-  , mnpsAttenuationMap    :: Map TestAddr
+  , mnpsEvents            :: [ConnectionEvent req]
+  , mnpsAttenuationMap    :: Map NetworkAddress
                                  (Script AbsBearerInfo)
   }
   deriving Show
@@ -265,14 +265,14 @@ data MultiNodePruningScript req = MultiNodePruningScript
 -- there's already a `Unidirectional` inbound connection (i.e.
 -- a `ForbiddenOperation`).
 --
-data ScriptState peerAddr = ScriptState { startedClients      :: [peerAddr]
-                                        , startedServers      :: [peerAddr]
-                                        , clientConnections   :: [peerAddr]
-                                        , inboundConnections  :: [peerAddr]
-                                        , outboundConnections :: [peerAddr] }
+data ScriptState = ScriptState { startedClients      :: [NetworkAddress]
+                               , startedServers      :: [NetworkAddress]
+                               , clientConnections   :: [NetworkAddress]
+                               , inboundConnections  :: [NetworkAddress]
+                               , outboundConnections :: [NetworkAddress] }
 
 -- | Update the state after a connection event.
-nextState :: Eq peerAddr => ConnectionEvent req peerAddr -> ScriptState peerAddr -> ScriptState peerAddr
+nextState :: ConnectionEvent req -> ScriptState -> ScriptState
 nextState e s@ScriptState{..} =
   case e of
     StartClient             _ a   -> s{ startedClients      = a : startedClients }
@@ -287,7 +287,7 @@ nextState e s@ScriptState{..} =
                                      , startedServers       = delete a startedServers }
 
 -- | Check if an event makes sense in a given state.
-isValidEvent :: Eq peerAddr => ConnectionEvent req peerAddr -> ScriptState peerAddr -> Bool
+isValidEvent :: ConnectionEvent req -> ScriptState -> Bool
 isValidEvent e ScriptState{..} =
   case e of
     StartClient             _ a   -> notElem a (startedClients ++ startedServers)
@@ -310,9 +310,8 @@ shrinkBundle (TemperatureBundle (WithHot hot) (WithWarm warm) (WithEstablished e
   (shrink warm <&> \ warm' -> TemperatureBundle (WithHot hot)  (WithWarm warm') (WithEstablished est)) ++
   (shrink est  <&> \ est'  -> TemperatureBundle (WithHot hot)  (WithWarm warm)  (WithEstablished est'))
 
-genAttenuationMap :: Ord peerAddr
-                  => [ConnectionEvent req peerAddr]
-                  -> Gen (Map peerAddr (Script AbsBearerInfo))
+genAttenuationMap :: [ConnectionEvent req]
+                  -> Gen (Map NetworkAddress (Script AbsBearerInfo))
 genAttenuationMap events = do
   let nodes = map
                 (\ case
@@ -340,8 +339,8 @@ genAttenuationMap events = do
   return (Map.fromList attenuationMap)
 
 
-instance (Arbitrary peerAddr, Arbitrary req, Ord peerAddr) =>
-         Arbitrary (MultiNodeScript req peerAddr) where
+instance Arbitrary req
+      => Arbitrary (MultiNodeScript req) where
   arbitrary = do
       Positive len <- scale ((* 2) . (`div` 3)) arbitrary
       events <- go (ScriptState [] [] [] [] []) (len :: Integer)
@@ -403,7 +402,7 @@ instance (Arbitrary peerAddr, Arbitrary req, Ord peerAddr) =>
       shrinkEvent (ShutdownClientServer d a) = shrinkDelay d <&> \ d' -> ShutdownClientServer d' a
 
 
-prop_generator_MultiNodeScript :: MultiNodeScript Int TestAddr -> Property
+prop_generator_MultiNodeScript :: MultiNodeScript Int -> Property
 prop_generator_MultiNodeScript (MultiNodeScript script _) =
     label ("Number of events: " ++ within_ 10 (length script))
   $ label ( "Number of servers: "
@@ -589,24 +588,24 @@ instance (Eq req, Arbitrary req) =>
         shrinkDelay d <&> \ d' -> ShutdownClientServer d' a
 
 -- | Each node in the multi-node experiment is controlled by a thread responding to these messages.
-data ConnectionHandlerMessage peerAddr req
-  = NewConnection peerAddr
+data ConnectionHandlerMessage req
+  = NewConnection NetworkAddress
     -- ^ Connect to the server at the given address.
-  | Disconnect peerAddr
+  | Disconnect NetworkAddress
     -- ^ Disconnect from the server at the given address.
-  | RunMiniProtocols peerAddr (TemperatureBundle [req])
+  | RunMiniProtocols NetworkAddress (TemperatureBundle [req])
     -- ^ Run a bundle of mini protocols against the server at the given address (requires an active
     --   connection).
   | Shutdown
     -- ^ Shutdowns a server at the given address
 
 
-data Name addr = Client addr
-               | Node addr
-               | MainServer
+data Name = Client NetworkAddress
+          | Node NetworkAddress
+          | MainServer
   deriving (Eq, Show)
 
-instance PrettyShow addr => PrettyShow (Name addr) where
+instance PrettyShow Name where
   prettyShow (Client addr) = "client-" ++ prettyShow addr
   prettyShow (Node   addr) = "node-"   ++ prettyShow addr
   prettyShow  MainServer   = "main-server"
@@ -622,7 +621,7 @@ instance Exception ExperimentError where
 
 -- | Run a central server that talks to any number of clients and other nodes.
 multinodeExperiment
-    :: forall peerAddr socket acc req resp m.
+    :: forall acc req resp m.
        ( ConnectionManagerMonad m
        , MonadAsync m
        , MonadDelay m
@@ -631,39 +630,35 @@ multinodeExperiment
        , MonadTraceSTM m
        , MonadSay m
        , acc ~ [req], resp ~ [req]
-       , Ord peerAddr
-       , PrettyShow peerAddr
-       , Typeable peerAddr
-       , Eq peerAddr
        , Serialise req
        , Show req
        , NFData req
        , Serialise resp, Show resp, Eq resp
        , Typeable req, Typeable resp
        )
-    => Tracer m (WithName (Name peerAddr)
-                          (RemoteTransitionTrace peerAddr))
-    -> Tracer m (WithName (Name peerAddr)
+    => Tracer m (WithName Name
+                          (RemoteTransitionTrace NetworkAddress))
+    -> Tracer m (WithName Name
                           (AbstractTransitionTrace CM.ConnStateId))
-    -> Tracer m (WithName (Name peerAddr)
-                          (IG.Trace peerAddr))
-    -> Tracer m (WithName (Name peerAddr)
-                          (IG.Debug peerAddr DataFlowProtocolData))
-    -> Tracer m (WithName (Name peerAddr)
+    -> Tracer m (WithName Name
+                          (IG.Trace NetworkAddress))
+    -> Tracer m (WithName Name
+                          (IG.Debug NetworkAddress DataFlowProtocolData))
+    -> Tracer m (WithName Name
                           (CM.Trace
-                            peerAddr
+                            NetworkAddress
                             (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData)))
-    -> Mux.Tracers' m (WithNameAndBearer (Name peerAddr) peerAddr)
+    -> Mux.Tracers' m (WithNameAndBearer Name NetworkAddress)
     -> StdGen
-    -> Snocket m socket peerAddr
-    -> Mux.MakeBearer m socket
-    -> Snocket.AddressFamily peerAddr
+    -> Snocket m (FD m) NetworkAddress
+    -> Mux.MakeBearer m (FD m)
+    -> Snocket.AddressFamily
     -- ^ either run the main node in 'Duplex' or 'Unidirectional' mode.
-    -> peerAddr
+    -> NetworkAddress
     -> req
     -> DataFlow
     -> AcceptedConnectionsLimit
-    -> MultiNodeScript req peerAddr
+    -> MultiNodeScript req
     -> m ()
 multinodeExperiment inboundTrTracer trTracer inboundTracer debugTracer cmTracer
                     muxTracers stdGen0 snocket makeBearer addrFamily serverAddr accInit
@@ -678,9 +673,9 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer debugTracer cmTracer
 
     loop :: StrictTVar m StdGen
          -> CM.ConnStateIdSupply m
-         -> Map.Map peerAddr acc
-         -> Map.Map peerAddr (StrictTQueue m (ConnectionHandlerMessage peerAddr req))
-         -> [ConnectionEvent req peerAddr]
+         -> Map.Map NetworkAddress acc
+         -> Map.Map NetworkAddress (StrictTQueue m (ConnectionHandlerMessage req))
+         -> [ConnectionEvent req]
          -> JobPool WithoutQueue () m ()
          -> m ()
     loop _ _ _ _ [] _ = threadDelay 3600
@@ -732,17 +727,17 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer debugTracer cmTracer
           sendMsg nodeAddr Shutdown
           loop stdGenVar connStateIdSupply nodeAccs servers events jobpool
       where
-        sendMsg :: peerAddr -> ConnectionHandlerMessage peerAddr req -> m ()
+        sendMsg :: NetworkAddress -> ConnectionHandlerMessage req -> m ()
         sendMsg addr msg = atomically $
           case Map.lookup addr servers of
             Nothing -> throwIO (NodeNotRunningException addr)
             Just cc -> writeTQueue cc msg
 
-    mkNextRequests :: StrictTVar m (Map.Map (ConnectionId peerAddr) (TemperatureBundle (StrictTQueue m [req]))) ->
-                      TemperatureBundle (ConnectionId peerAddr -> STM m [req])
+    mkNextRequests :: StrictTVar m (Map.Map (ConnectionId NetworkAddress) (TemperatureBundle (StrictTQueue m [req]))) ->
+                      TemperatureBundle (ConnectionId NetworkAddress -> STM m [req])
     mkNextRequests connVar = makeBundle next
       where
-        next :: forall pt. SingProtocolTemperature pt -> ConnectionId peerAddr -> STM m [req]
+        next :: forall pt. SingProtocolTemperature pt -> ConnectionId NetworkAddress -> STM m [req]
         next tok connId = do
           connMap <- readTVar connVar
           case Map.lookup connId connMap of
@@ -751,10 +746,10 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer debugTracer cmTracer
 
     startClientConnectionHandler :: StrictTVar m StdGen
                                  -> CM.ConnStateIdSupply m
-                                 -> Name peerAddr
-                                 -> peerAddr
+                                 -> Name
+                                 -> NetworkAddress
                                  -> JobPool WithoutQueue () m ()
-                                 -> m (StrictTQueue m (ConnectionHandlerMessage peerAddr req))
+                                 -> m (StrictTQueue m (ConnectionHandlerMessage req))
     startClientConnectionHandler stdGenVar connStateIdSupply name localAddr jobpool  = do
         cc <- atomically newTQueue
         labelTQueueIO cc $ "cc/" ++ show name
@@ -780,12 +775,12 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer debugTracer cmTracer
 
     startServerConnectionHandler :: StrictTVar m StdGen
                                  -> CM.ConnStateIdSupply m
-                                 -> Name peerAddr
+                                 -> Name
                                  -> DataFlow
                                  -> acc
-                                 -> peerAddr
+                                 -> NetworkAddress
                                  -> JobPool WithoutQueue () m ()
-                                 -> m (StrictTQueue m (ConnectionHandlerMessage peerAddr req))
+                                 -> m (StrictTQueue m (ConnectionHandlerMessage req))
     startServerConnectionHandler stdGenVar connStateIdSupply name dataFlow serverAcc localAddr jobpool = do
         fd <- Snocket.open snocket addrFamily
         Snocket.bind   snocket fd localAddr
@@ -867,18 +862,18 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer debugTracer cmTracer
          :: forall muxMode a.
             (HasInitiator muxMode ~ True)
          => SingMuxMode muxMode
-         -> peerAddr
-         -> StrictTQueue m (ConnectionHandlerMessage peerAddr req)
+         -> NetworkAddress
+         -> StrictTQueue m (ConnectionHandlerMessage req)
          -- ^ control channel
-         -> ConnectionManagerWithExpandedCtx muxMode socket peerAddr () DataFlowProtocolData UnversionedProtocol ByteString m [resp] a
-         -> Map.Map peerAddr (HandleWithExpandedCtx muxMode peerAddr () DataFlowProtocolData ByteString m [resp] a)
+         -> ConnectionManagerWithExpandedCtx muxMode (FD m) NetworkAddress () DataFlowProtocolData UnversionedProtocol ByteString m [resp] a
+         -> Map.Map NetworkAddress (HandleWithExpandedCtx muxMode NetworkAddress () DataFlowProtocolData ByteString m [resp] a)
          -- ^ active connections
-         -> StrictTVar m (Map.Map (ConnectionId peerAddr) (TemperatureBundle (StrictTQueue m [req])))
+         -> StrictTVar m (Map.Map (ConnectionId NetworkAddress) (TemperatureBundle (StrictTQueue m [req])))
          -- ^ mini protocol queues
          -> m ()
     connectionLoop muxMode localAddr cc cm connMap0 connVar = go connMap0
       where
-        go :: Map.Map peerAddr (HandleWithExpandedCtx muxMode peerAddr () DataFlowProtocolData ByteString m [resp] a) -- active connections
+        go :: Map.Map NetworkAddress (HandleWithExpandedCtx muxMode NetworkAddress () DataFlowProtocolData ByteString m [resp] a) -- active connections
            -> m ()
         go !connMap = atomically (readTQueue cc) >>= \ case
           NewConnection remoteAddr -> do
@@ -962,7 +957,7 @@ data Three a b c
     | Third  c
   deriving Show
 
-validate_transitions :: MultiNodeScript Int TestAddr
+validate_transitions :: MultiNodeScript Int
                      -> SimTrace ()
                      -> Property
 validate_transitions mns@(MultiNodeScript events _) trace =
@@ -1009,20 +1004,20 @@ validate_transitions mns@(MultiNodeScript events _) trace =
     $ evs
   where
     -- abstractTransitionEvents :: Trace (SimResult ())
-    --                                   (AbstractTransitionTrace SimAddr)
+    --                                   (AbstractTransitionTrace NetworkAddress)
     -- abstractTransitionEvents = traceWithNameTraceEvents trace
 
-    evs :: Trace (SimResult ()) (Either (AbstractTransitionTrace SimAddr)
-                                        (CM.Trace SimAddr (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData)))
+    evs :: Trace (SimResult ()) (Either (AbstractTransitionTrace NetworkAddress)
+                                        (CM.Trace NetworkAddress (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData)))
     evs = fmap (bimap wnEvent wnEvent)
         . Trace.filter ((MainServer ==) . either wnName wnName)
         . traceSelectTraceEvents fn
         $ trace
       where
         fn :: Time -> SimEventType
-           -> Maybe (Either (WithName (Name SimAddr) (AbstractTransitionTrace SimAddr))
-                            (WithName (Name SimAddr) (CM.Trace SimAddr
-                                                        (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData))))
+           -> Maybe (Either (WithName Name (AbstractTransitionTrace NetworkAddress))
+                            (WithName Name (CM.Trace NetworkAddress
+                                                     (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData))))
         fn _ (EventLog dyn) = Left  <$> fromDynamic dyn
                           <|> Right <$> fromDynamic dyn
         fn _ _              = Nothing
@@ -1038,7 +1033,7 @@ prop_connection_manager_valid_transitions
   -> Int
   -> ArbDataFlow
   -> AbsBearerInfo
-  -> MultiNodeScript Int TestAddr
+  -> MultiNodeScript Int
   -> Property
 prop_connection_manager_valid_transitions
   (Fixed rnd) serverAcc (ArbDataFlow dataFlow) defaultBearerInfo
@@ -1059,7 +1054,7 @@ prop_connection_manager_valid_transitions_racy
   -> Int
   -> ArbDataFlow
   -> AbsBearerInfo
-  -> MultiNodeScript Int TestAddr
+  -> MultiNodeScript Int
   -> Property
 prop_connection_manager_valid_transitions_racy
    (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
@@ -1085,7 +1080,7 @@ prop_connection_manager_transitions_coverage :: Fixed Int
                                              -> Int
                                              -> ArbDataFlow
                                              -> AbsBearerInfo
-                                             -> MultiNodeScript Int TestAddr
+                                             -> MultiNodeScript Int
                                              -> Property
 prop_connection_manager_transitions_coverage (Fixed rnd) serverAcc
     (ArbDataFlow dataFlow)
@@ -1093,7 +1088,7 @@ prop_connection_manager_transitions_coverage (Fixed rnd) serverAcc
     (MultiNodeScript events attenuationMap) =
   let trace = runSimTrace sim
 
-      abstractTransitionEvents :: [AbstractTransitionTrace SimAddr]
+      abstractTransitionEvents :: [AbstractTransitionTrace NetworkAddress]
       abstractTransitionEvents = withNameTraceEvents trace
 
       transitionsSeen = nub [ tran | TransitionTrace _ tran <- abstractTransitionEvents]
@@ -1119,7 +1114,7 @@ prop_connection_manager_no_invalid_traces :: Fixed Int
                                           -> Int
                                           -> ArbDataFlow
                                           -> AbsBearerInfo
-                                          -> MultiNodeScript Int TestAddr
+                                          -> MultiNodeScript Int
                                           -> Property
 prop_connection_manager_no_invalid_traces (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
                                           defaultBearerInfo
@@ -1129,7 +1124,7 @@ prop_connection_manager_no_invalid_traces (Fixed rnd) serverAcc (ArbDataFlow dat
 
       connectionManagerEvents :: Trace (SimResult ())
                                        (CM.Trace
-                                         SimAddr
+                                         NetworkAddress
                                          (ConnectionHandlerTrace
                                            UnversionedProtocol
                                            DataFlowProtocolData))
@@ -1172,7 +1167,7 @@ prop_connection_manager_valid_transition_order :: Fixed Int
                                                -> Int
                                                -> ArbDataFlow
                                                -> AbsBearerInfo
-                                               -> MultiNodeScript Int TestAddr
+                                               -> MultiNodeScript Int
                                                -> Property
 prop_connection_manager_valid_transition_order (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
                                                defaultBearerInfo
@@ -1182,7 +1177,7 @@ prop_connection_manager_valid_transition_order (Fixed rnd) serverAcc (ArbDataFlo
   let trace = runSimTrace sim
 
       abstractTransitionEvents :: Trace (SimResult ())
-                                        (AbstractTransitionTrace SimAddr)
+                                        (AbstractTransitionTrace NetworkAddress)
       abstractTransitionEvents = traceWithNameTraceEvents trace
 
   in tabulate "ConnectionEvents" (map showConnectionEvents events)
@@ -1211,7 +1206,7 @@ prop_connection_manager_valid_transition_order_racy :: Fixed Int
                                                     -> Int
                                                     -> ArbDataFlow
                                                     -> AbsBearerInfo
-                                                    -> MultiNodeScript Int TestAddr
+                                                    -> MultiNodeScript Int
                                                     -> Property
 prop_connection_manager_valid_transition_order_racy (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
                                                     defaultBearerInfo
@@ -1222,7 +1217,7 @@ prop_connection_manager_valid_transition_order_racy (Fixed rnd) serverAcc (ArbDa
           (\a -> a { explorationReplay = Just ControlDefault })
           sim $ \_ trace ->
       let abstractTransitionEvents :: Trace (SimResult ())
-                                            (AbstractTransitionTrace SimAddr)
+                                            (AbstractTransitionTrace NetworkAddress)
           abstractTransitionEvents = traceWithNameTraceEvents trace
 
       in  -- ppDebug trace
@@ -1265,7 +1260,7 @@ prop_connection_manager_valid_transition_order_racy (Fixed rnd) serverAcc (ArbDa
 prop_connection_manager_counters :: Fixed Int
                                  -> Int
                                  -> ArbDataFlow
-                                 -> MultiNodeScript Int TestAddr
+                                 -> MultiNodeScript Int
                                  -> Property
 prop_connection_manager_counters (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
                                  (MultiNodeScript events
@@ -1274,14 +1269,14 @@ prop_connection_manager_counters (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
 
       connectionManagerEvents :: Trace (SimResult ())
                                        (CM.Trace
-                                         SimAddr
+                                         NetworkAddress
                                          (ConnectionHandlerTrace
                                            UnversionedProtocol
                                            DataFlowProtocolData))
       connectionManagerEvents = traceWithNameTraceEvents trace
 
       -- Needed for calculating a more accurate upper bound
-      networkEvents :: [ObservableNetworkState SimAddr]
+      networkEvents :: [ObservableNetworkState]
       networkEvents = selectTraceEventsDynamic trace
 
       upperBound =
@@ -1311,8 +1306,8 @@ prop_connection_manager_counters (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
        )
     $ connectionManagerEvents
   where
-    serverAddress :: SimAddr
-    serverAddress = TestAddress 0
+    serverAddress :: NetworkAddress
+    serverAddress = EphIPv4Addr 0
 
     -- We count all connections as prunable because we do not have a better way
     -- to know what transitions will a given connection go through. We also
@@ -1325,8 +1320,8 @@ prop_connection_manager_counters (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
     -- Note that this is only valid in the case of no attenuation.
     --
     multiNodeScriptToCounters :: DataFlow
-                              -> [ConnectionEvent Int TestAddr]
-                              -> [ObservableNetworkState SimAddr]
+                              -> [ConnectionEvent Int]
+                              -> [ObservableNetworkState]
                               -> ConnectionManagerCounters
     multiNodeScriptToCounters df ces uss =
       let ifDuplex = bool 0 1 (df == Duplex)
@@ -1456,14 +1451,14 @@ prop_connection_manager_counters (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
                                     (mkStdGen rnd)
                                     snocket
                                     makeFDBearer
-                                    Snocket.TestFamily
+                                    Snocket.AFInet
                                     serverAddress
                                     serverAcc
                                     dataFlow
                                     maxAcceptedConnectionsLimit
                                     (MultiNodeScript
-                                      (fmap unTestAddr <$> events)
-                                      (Map.mapKeys unTestAddr attenuationMap)
+                                      events
+                                      attenuationMap
                                     )
               )
       case mb of
@@ -1475,7 +1470,7 @@ prop_connection_manager_counters (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
 --
 -- Using type alias enforces an invariant between event tracer & event selector
 -- to trace / select the same type.
-type TimedTransitionEvents = WithTime (WithName (Name SimAddr) (AbstractTransitionTrace CM.ConnStateId))
+type TimedTransitionEvents = WithTime (WithName Name (AbstractTransitionTrace CM.ConnStateId))
 
 -- | Property wrapping `multinodeExperiment`.
 --
@@ -1489,7 +1484,7 @@ type TimedTransitionEvents = WithTime (WithName (Name SimAddr) (AbstractTransiti
 prop_timeouts_enforced :: Fixed Int
                        -> Int
                        -> ArbDataFlow
-                       -> MultiNodeScript Int TestAddr
+                       -> MultiNodeScript Int
                        -> Property
 prop_timeouts_enforced (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
                        (MultiNodeScript events attenuationMap) =
@@ -1551,7 +1546,7 @@ prop_inbound_governor_valid_transitions :: Fixed Int
                                         -> Int
                                         -> ArbDataFlow
                                         -> AbsBearerInfo
-                                        -> MultiNodeScript Int TestAddr
+                                        -> MultiNodeScript Int
                                         -> Property
 prop_inbound_governor_valid_transitions (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
                                         defaultBearerInfo
@@ -1561,7 +1556,7 @@ prop_inbound_governor_valid_transitions (Fixed rnd) serverAcc (ArbDataFlow dataF
   let trace = runSimTrace sim
 
       remoteTransitionTraceEvents :: Trace (SimResult ())
-                                           (RemoteTransitionTrace SimAddr)
+                                           (RemoteTransitionTrace NetworkAddress)
       remoteTransitionTraceEvents = traceWithNameTraceEvents trace
 
   in tabulate "ConnectionEvents" (map showConnectionEvents events)
@@ -1597,7 +1592,7 @@ prop_inbound_governor_no_unsupported_state :: Fixed Int
                                            -> Int
                                            -> ArbDataFlow
                                            -> AbsBearerInfo
-                                           -> MultiNodeScript Int TestAddr
+                                           -> MultiNodeScript Int
                                            -> Property
 prop_inbound_governor_no_unsupported_state (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
                                            defaultBearerInfo
@@ -1607,7 +1602,7 @@ prop_inbound_governor_no_unsupported_state (Fixed rnd) serverAcc (ArbDataFlow da
   let trace = runSimTrace sim
 
       inboundGovernorEvents :: Trace (SimResult ())
-                                     (IG.Trace SimAddr)
+                                     (IG.Trace NetworkAddress)
       inboundGovernorEvents = traceWithNameTraceEvents trace
 
   in tabulate "ConnectionEvents" (map showConnectionEvents events)
@@ -1654,7 +1649,7 @@ prop_inbound_governor_no_invalid_traces :: Fixed Int
                                         -> Int
                                         -> ArbDataFlow
                                         -> AbsBearerInfo
-                                        -> MultiNodeScript Int TestAddr
+                                        -> MultiNodeScript Int
                                         -> Property
 prop_inbound_governor_no_invalid_traces (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
                                         defaultBearerInfo
@@ -1662,7 +1657,7 @@ prop_inbound_governor_no_invalid_traces (Fixed rnd) serverAcc (ArbDataFlow dataF
                                                              attenuationMap) =
   let trace = runSimTrace sim
 
-      inboundGovernorEvents :: Trace (SimResult ()) (IG.Trace SimAddr)
+      inboundGovernorEvents :: Trace (SimResult ()) (IG.Trace NetworkAddress)
       inboundGovernorEvents = traceWithNameTraceEvents trace
 
   in tabulate "ConnectionEvents" (map showConnectionEvents events)
@@ -1702,7 +1697,7 @@ prop_inbound_governor_transitions_coverage :: Fixed Int
                                            -> Int
                                            -> ArbDataFlow
                                            -> AbsBearerInfo
-                                           -> MultiNodeScript Int TestAddr
+                                           -> MultiNodeScript Int
                                            -> Property
 prop_inbound_governor_transitions_coverage (Fixed rnd) serverAcc
   (ArbDataFlow dataFlow)
@@ -1710,7 +1705,7 @@ prop_inbound_governor_transitions_coverage (Fixed rnd) serverAcc
   (MultiNodeScript events attenuationMap) =
   let trace = runSimTrace sim
 
-      remoteTransitionTraceEvents :: [RemoteTransitionTrace SimAddr]
+      remoteTransitionTraceEvents :: [RemoteTransitionTrace NetworkAddress]
       remoteTransitionTraceEvents = withNameTraceEvents trace
 
       transitionsSeen = nub [ tran
@@ -1739,7 +1734,7 @@ prop_inbound_governor_valid_transition_order :: Fixed Int
                                              -> Int
                                              -> ArbDataFlow
                                              -> AbsBearerInfo
-                                             -> MultiNodeScript Int TestAddr
+                                             -> MultiNodeScript Int
                                              -> Property
 prop_inbound_governor_valid_transition_order (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
                                              defaultBearerInfo
@@ -1748,10 +1743,10 @@ prop_inbound_governor_valid_transition_order (Fixed rnd) serverAcc (ArbDataFlow 
                                                       attenuationMap) =
   let trace = runSimTrace sim
 
-      remoteTransitionTraceEvents :: Trace (SimResult ()) (RemoteTransitionTrace SimAddr)
+      remoteTransitionTraceEvents :: Trace (SimResult ()) (RemoteTransitionTrace NetworkAddress)
       remoteTransitionTraceEvents = traceWithNameTraceEvents trace
 
-      -- inboundGovernorEvents :: Trace (SimResult ()) (InboundGovernorTrace SimAddr)
+      -- inboundGovernorEvents :: Trace (SimResult ()) (InboundGovernorTrace NetworkAddress)
       -- inboundGovernorEvents = traceWithNameTraceEvents trace
 
   in tabulate "ConnectionEvents" (map showConnectionEvents events)
@@ -1782,7 +1777,7 @@ prop_inbound_governor_valid_transition_order (Fixed rnd) serverAcc (ArbDataFlow 
 prop_inbound_governor_counters :: Fixed Int
                                -> Int
                                -> ArbDataFlow
-                               -> MultiNodeScript Int TestAddr
+                               -> MultiNodeScript Int
                                -> Property
 prop_inbound_governor_counters (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
                                mns@(MultiNodeScript
@@ -1791,7 +1786,7 @@ prop_inbound_governor_counters (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
   let trace = runSimTrace sim
 
       inboundGovernorEvents :: Trace (SimResult ())
-                                     (IG.Trace SimAddr)
+                                     (IG.Trace NetworkAddress)
       inboundGovernorEvents = traceWithNameTraceEvents trace
 
       upperBound = multiNodeScriptToCounters events
@@ -1829,10 +1824,10 @@ prop_inbound_governor_counters (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
     -- inbound governor states of remote warm or remote hot connections. An
     -- upper bound is established because it is not possible to predict whether
     -- some failure will occur.
-    multiNodeScriptToCounters :: [ConnectionEvent Int TestAddr]
+    multiNodeScriptToCounters :: [ConnectionEvent Int]
                               -> IG.Counters
     multiNodeScriptToCounters =
-      let taServerAcc = TestAddr (TestAddress 0)
+      let taServerAcc = EphIPv4Addr 0
        in
         (\x ->
           let serverAccEntry = x Map.! taServerAcc
@@ -1878,17 +1873,17 @@ prop_inbound_governor_state :: Fixed Int
                             -> Int
                             -> ArbDataFlow
                             -> AbsBearerInfo
-                            -> MultiNodeScript Int TestAddr
+                            -> MultiNodeScript Int
                             -> Property
 prop_inbound_governor_state (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
                             defaultBearerInfo
                             mns@(MultiNodeScript events attenuationMap) =
   let trace = runSimTrace sim
 
-      evs :: Trace (SimResult ()) (IG.Debug SimAddr DataFlowProtocolData)
+      evs :: Trace (SimResult ()) (IG.Debug NetworkAddress DataFlowProtocolData)
       evs = traceWithNameTraceEvents trace
 
-      -- inboundGovernorEvents :: Trace (SimResult ()) (InboundGovernorTrace SimAddr)
+      -- inboundGovernorEvents :: Trace (SimResult ()) (InboundGovernorTrace NetworkAddress)
       -- inboundGovernorEvents = traceWithNameTraceEvents trace
 
   in  counterexample (ppScript mns)
@@ -1907,7 +1902,7 @@ prop_inbound_governor_state (Fixed rnd) serverAcc (ArbDataFlow dataFlow)
                        events
                        attenuationMap
 
-    inboundGovernorStateInvariant :: IG.Debug SimAddr DataFlowProtocolData
+    inboundGovernorStateInvariant :: IG.Debug NetworkAddress DataFlowProtocolData
                                   -> Property
     inboundGovernorStateInvariant
         (IG.Debug IG.State { IG.connections,
@@ -1944,17 +1939,17 @@ prop_connection_manager_pruning (Fixed rnd) serverAcc
                                   attenuationMap) =
   let trace = runSimTrace sim
 
-      evs :: Trace (SimResult ()) (Either (AbstractTransitionTrace SimAddr)
-                                          (CM.Trace SimAddr (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData)))
+      evs :: Trace (SimResult ()) (Either (AbstractTransitionTrace NetworkAddress)
+                                          (CM.Trace NetworkAddress (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData)))
       evs = fmap (bimap wnEvent wnEvent)
           . Trace.filter ((MainServer ==) . either wnName wnName)
           . traceSelectTraceEvents fn
           $ trace
         where
           fn :: Time -> SimEventType
-             -> Maybe (Either (WithName (Name SimAddr) (AbstractTransitionTrace SimAddr))
-                              (WithName (Name SimAddr) (CM.Trace SimAddr
-                                                          (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData))))
+             -> Maybe (Either (WithName Name (AbstractTransitionTrace NetworkAddress))
+                              (WithName Name (CM.Trace NetworkAddress
+                                                       (ConnectionHandlerTrace UnversionedProtocol DataFlowProtocolData))))
           fn _ (EventLog dyn) = fromDynamic dyn
           fn _ _              = Nothing
 
@@ -2033,15 +2028,15 @@ prop_inbound_governor_pruning (Fixed rnd) serverAcc
                                 attenuationMap) =
   let trace = runSimTrace sim
 
-      evs :: Trace (SimResult ()) (Either (IG.Trace SimAddr)
-                                          (RemoteTransitionTrace SimAddr))
+      evs :: Trace (SimResult ()) (Either (IG.Trace NetworkAddress)
+                                          (RemoteTransitionTrace NetworkAddress))
       evs = fmap (bimap wnEvent wnEvent)
           . Trace.filter ((MainServer ==) . either wnName wnName)
           . traceSelectTraceEvents fn
           $ trace
         where
-          fn :: Time -> SimEventType -> Maybe (Either (WithName (Name SimAddr) (IG.Trace SimAddr))
-                                                      (WithName (Name SimAddr) (RemoteTransitionTrace SimAddr)))
+          fn :: Time -> SimEventType -> Maybe (Either (WithName Name (IG.Trace NetworkAddress))
+                                                      (WithName Name (RemoteTransitionTrace NetworkAddress)))
           fn _ (EventLog dyn) = Left  <$> fromDynamic dyn
                             <|> Right <$> fromDynamic dyn
           fn _ _              = Nothing
@@ -2161,16 +2156,16 @@ prop_never_above_hardlimit (Fixed rnd) serverAcc
 
       connectionManagerEvents :: Trace (SimResult ())
                                        (CM.Trace
-                                         SimAddr
+                                         NetworkAddress
                                          (ConnectionHandlerTrace
                                            UnversionedProtocol
                                            DataFlowProtocolData))
       connectionManagerEvents = traceWithNameTraceEvents trace
 
-      -- abstractTransitionEvents :: Trace (SimResult ()) (AbstractTransitionTrace SimAddr)
+      -- abstractTransitionEvents :: Trace (SimResult ()) (AbstractTransitionTrace NetworkAddress)
       -- abstractTransitionEvents = traceWithNameTraceEvents trace
 
-      -- inboundGovernorEvents :: Trace (SimResult ()) (InboundGovernorTrace SimAddr)
+      -- inboundGovernorEvents :: Trace (SimResult ()) (InboundGovernorTrace NetworkAddress)
       -- inboundGovernorEvents = traceWithNameTraceEvents trace
 
   in  tabulate "ConnectionEvents" (map showConnectionEvents events)
@@ -2243,14 +2238,14 @@ prop_server_accept_error (Fixed rnd) (AbsIOError ioerr) =
                       bearerAttenuation
                       Map.empty
         $ \snock _ ->
-           bracket ((,) <$> Snocket.open snock Snocket.TestFamily
-                        <*> Snocket.open snock Snocket.TestFamily)
+           bracket ((,) <$> Snocket.open snock Snocket.AFInet
+                        <*> Snocket.open snock Snocket.AFInet)
                    (\ (socket0, socket1) -> Snocket.close snock socket0 >>
                                             Snocket.close snock socket1)
              $ \ (socket0, socket1) -> do
 
-               let addr :: SimAddr
-                   addr = Snocket.TestAddress (0 :: Int)
+               let addr :: NetworkAddress
+                   addr = EphIPv4Addr 0
                    pdata :: ClientAndServerData Int
                    pdata = ClientAndServerData 0 [] [] []
                Snocket.bind snock socket0 addr
@@ -2316,22 +2311,22 @@ multiNodeSimTracer :: ( Alternative (STM m), Monad m, MonadFix m
                    -> DataFlow
                    -> AbsBearerInfo
                    -> AcceptedConnectionsLimit
-                   -> [ConnectionEvent req TestAddr]
-                   -> Map TestAddr (Script AbsBearerInfo)
+                   -> [ConnectionEvent req]
+                   -> Map NetworkAddress (Script AbsBearerInfo)
                    -> Tracer m
-                      (WithName (Name SimAddr) (RemoteTransitionTrace SimAddr))
+                      (WithName Name (RemoteTransitionTrace NetworkAddress))
                    -> Tracer m
-                      (WithName (Name SimAddr) (AbstractTransitionTrace CM.ConnStateId))
+                      (WithName Name (AbstractTransitionTrace CM.ConnStateId))
                    -> Tracer m
-                      (WithName (Name SimAddr) (IG.Trace SimAddr))
+                      (WithName Name (IG.Trace NetworkAddress))
                    -> Tracer m
-                      (WithName (Name SimAddr) (IG.Debug SimAddr DataFlowProtocolData))
-                   -> Mux.Tracers' m (WithNameAndBearer (Name SimAddr) SimAddr)
+                      (WithName Name (IG.Debug NetworkAddress DataFlowProtocolData))
+                   -> Mux.Tracers' m (WithNameAndBearer Name NetworkAddress)
                    -> Tracer m
                       (WithName
-                       (Name SimAddr)
+                        Name
                         (CM.Trace
-                         SimAddr
+                          NetworkAddress
                           (ConnectionHandlerTrace
                             UnversionedProtocol DataFlowProtocolData)))
                    -> m ()
@@ -2343,7 +2338,7 @@ multiNodeSimTracer stdGen serverAcc dataFlow defaultBearerInfo
       let attenuationMap' = (fmap toBearerInfo <$>)
                           . Map.mapKeys ( normaliseId
                                         . ConnectionId mainServerAddr
-                                        . unTestAddr)
+                                        )
                           $ attenuationMap
 
       mb <- timeout 7200
@@ -2360,22 +2355,22 @@ multiNodeSimTracer stdGen serverAcc dataFlow defaultBearerInfo
                                      stdGen
                                      snocket
                                      makeFDBearer
-                                     Snocket.TestFamily
+                                     Snocket.AFInet
                                      mainServerAddr
                                      serverAcc
                                      dataFlow
                                      acceptedConnLimit
                                      (MultiNodeScript
-                                       ((unTestAddr <$>) <$> events)
-                                       (Map.mapKeys unTestAddr attenuationMap)
+                                       events
+                                       attenuationMap
                                      )
               )
       case mb of
         Nothing -> throwIO SimulationTimeout
         Just a  -> return a
   where
-    mainServerAddr :: SimAddr
-    mainServerAddr = Snocket.TestAddress 0
+    mainServerAddr :: NetworkAddress
+    mainServerAddr = EphIPv4Addr 0
 
 
 multiNodeSim :: ( Serialise req
@@ -2389,8 +2384,8 @@ multiNodeSim :: ( Serialise req
              -> DataFlow
              -> AbsBearerInfo
              -> AcceptedConnectionsLimit
-             -> [ConnectionEvent req TestAddr]
-             -> Map TestAddr (Script AbsBearerInfo)
+             -> [ConnectionEvent req]
+             -> Map NetworkAddress (Script AbsBearerInfo)
              -> IOSim s ()
 multiNodeSim stdGen serverAcc dataFlow defaultBearerInfo
                    acceptedConnLimit events attenuationMap = do
@@ -2421,16 +2416,16 @@ unit_connection_terminated_when_negotiating =
           }
       multiNodeScript =
         MultiNodeScript
-         [ StartServer 0           (TestAddr {unTestAddr = TestAddress 24}) 0
-         , OutboundConnection 0    (TestAddr {unTestAddr = TestAddress 24})
-         , StartServer 0           (TestAddr {unTestAddr = TestAddress 40}) 0
-         , OutboundMiniprotocols 0 (TestAddr {unTestAddr = TestAddress 24})
+         [ StartServer 0           (EphIPv4Addr 24) 0
+         , OutboundConnection 0    (EphIPv4Addr 24)
+         , StartServer 0           (EphIPv4Addr 40) 0
+         , OutboundMiniprotocols 0 (EphIPv4Addr 24)
                                    (TemperatureBundle
                                      { withHot         = WithHot [0]
                                      , withWarm        = WithWarm []
                                      , withEstablished = WithEstablished []
                                      })
-         , OutboundConnection 0    (TestAddr {unTestAddr = TestAddress 40})
+         , OutboundConnection 0    (EphIPv4Addr 40)
          ]
          Map.empty
    in
@@ -2446,7 +2441,7 @@ unit_connection_terminated_when_negotiating =
         (Fixed 0) 0 arbDataFlow absBearerInfo
         multiNodeScript
 
-ppScript :: (Show peerAddr, Show req) => MultiNodeScript peerAddr req -> String
+ppScript :: Show req => MultiNodeScript req -> String
 ppScript (MultiNodeScript script _) = intercalate "\n" $ go 0 script
   where
     delay (StartServer             d _ _) = d
@@ -2497,24 +2492,24 @@ traceWithNameTraceEvents = fmap wnEvent
           . Trace.filter ((MainServer ==) . wnName)
           . traceSelectTraceEventsDynamic
               @(SimResult ())
-              @(WithName (Name SimAddr) b)
+              @(WithName Name b)
 
 withNameTraceEvents :: forall b. Typeable b => SimTrace () -> [b]
 withNameTraceEvents = fmap wnEvent
           . filter ((MainServer ==) . wnName)
           . selectTraceEventsDynamic
               @()
-              @(WithName (Name SimAddr) b)
+              @(WithName Name b)
 
 withTimeNameTraceEvents :: forall b. Typeable b
                         => SimTrace ()
-                        -> Trace (SimResult ()) (WithTime (WithName (Name SimAddr) b))
+                        -> Trace (SimResult ()) (WithTime (WithName Name b))
 withTimeNameTraceEvents =
             traceSelectTraceEventsDynamic
               @(SimResult ())
-              @(WithTime (WithName (Name SimAddr) b))
+              @(WithTime (WithName Name b))
 
-showConnectionEvents :: ConnectionEvent req peerAddr -> String
+showConnectionEvents :: ConnectionEvent req -> String
 showConnectionEvents StartClient{}             = "StartClient"
 showConnectionEvents StartServer{}             = "StartServer"
 showConnectionEvents InboundConnection{}       = "InboundConnection"

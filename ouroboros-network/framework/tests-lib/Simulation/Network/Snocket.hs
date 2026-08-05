@@ -1,9 +1,14 @@
+{-# LANGUAGE BangPatterns          #-}
+{-# LANGUAGE DeriveAnyClass        #-}
+{-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE DerivingStrategies    #-}
+{-# LANGUAGE DerivingVia           #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE InstanceSigs          #-}
 {-# LANGUAGE KindSignatures        #-}
+{-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE MultiWayIf            #-}
 {-# LANGUAGE NamedFieldPuns        #-}
@@ -41,17 +46,18 @@ module Simulation.Network.Snocket
   , FD
   , makeFDRawBearer
   , makeFDBearer
-  , GlobalAddressScheme (..)
+  , NetworkAddress (..)
   , AddressType (..)
   , WithAddr (..)
+    -- * Re-exports
+  , Natural
   ) where
-
-import Prelude hiding (read)
 
 import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM qualified as LazySTM
 import Control.Concurrent.Class.MonadSTM.Strict
-import Control.Monad (when)
+import Control.DeepSeq (NFData (..))
+import Control.Monad (replicateM, when)
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
@@ -59,6 +65,7 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.ST.Unsafe (unsafeIOToST)
 import Control.Tracer (Tracer, contramap, contramapM, traceWith)
 
+import GHC.Generics (Generic)
 import GHC.IO.Exception
 
 import Data.Bifoldable (bitraverse_)
@@ -66,6 +73,8 @@ import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
 import Data.Foldable (traverse_)
 import Data.Functor (($>))
+import Data.Hashable
+import Data.IP qualified as IP
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Typeable (Typeable)
@@ -73,6 +82,7 @@ import Foreign.Marshal (copyBytes)
 import Foreign.Ptr (castPtr)
 import Formatting (formatToString, (%+))
 import Formatting qualified as F
+import NoThunks.Class (InspectHeap (..), NoThunks (..))
 import Numeric.Natural (Natural)
 
 import Data.Monoid.Synchronisation (FirstToFinish (..))
@@ -80,13 +90,16 @@ import Data.Wedge
 
 import Network.Mux (SDUSize (..))
 import Network.Mux.Bearer.AttenuatedChannel
+import Network.Socket (PortNumber)
 
 import Ouroboros.Network.ConnectionId
 import Ouroboros.Network.ConnectionManager.Types (AddressType (..))
 import Ouroboros.Network.RawBearer
 import Ouroboros.Network.Snocket
+import Ouroboros.Network.Util (PrettyShow (..))
 
 import Test.Ouroboros.Network.Data.Script (Script (..), stepScriptSTM)
+import Test.QuickCheck hiding (Result (..))
 
 data Connection m addr = Connection
     { -- | Attenuated channels of a connection.
@@ -141,13 +154,11 @@ mkConnection :: ( MonadDelay         m
                 , MonadTimer         m
                 , MonadThrow         m
                 , MonadThrow    (STM m)
-                , Eq addr
                 )
-             => Tracer m (WithAddr (TestAddress addr)
-                                   (SnocketTrace m (TestAddress addr)))
+             => Tracer m (WithAddr (SnocketTrace m))
              -> BearerInfo
-             -> ConnectionId (TestAddress addr)
-             -> STM m (Connection m (TestAddress addr))
+             -> ConnectionId NetworkAddress
+             -> STM m (Connection m NetworkAddress)
 
 mkConnection tr bearerInfo connId@ConnectionId { localAddress, remoteAddress } | localAddress == remoteAddress = do
   -- we are connecting to onself.  On Linux this returns a connection which
@@ -227,36 +238,36 @@ normaliseId
 
 -- | Simulation network environment consumed by 'simSnocket'.
 --
-data NetworkState m addr = NetworkState {
+data NetworkState m = NetworkState {
       -- | All listening 'FD's.
       --
-      nsListeningFDs      :: StrictTVar m (Map addr (FD m addr)),
+      nsListeningFDs      :: StrictTVar m (Map NetworkAddress (FD m)),
 
       -- | Registry of active connections.
       --
       nsConnections       :: StrictTVar
                               m
-                              (Map (NormalisedId addr) (Connection m addr)),
+                              (Map (NormalisedId NetworkAddress) (Connection m NetworkAddress)),
 
       -- | Get an unused ephemeral address.
       --
-      nsNextEphemeralAddr :: AddressType -> STM m addr,
+      nsNextEphemeralAddr :: AddressFamily -> STM m NetworkAddress,
 
       nsDefaultBearerInfo :: BearerInfo,
 
       -- | Get the BearerInfo Script for a given connection.
       --
-      nsAttenuationMap    :: Map (NormalisedId addr)
+      nsAttenuationMap    :: Map (NormalisedId NetworkAddress)
                                  (LazySTM.TVar m (Script BearerInfo))
 
     }
 
 -- | Simulation accessible network environment consumed by 'simSnocket'.
 --
-newtype ObservableNetworkState addr = ObservableNetworkState {
+newtype ObservableNetworkState = ObservableNetworkState {
       -- | Registry of active connections and respective provider
       --
-      onsConnections :: Map (NormalisedId addr) addr
+      onsConnections :: Map (NormalisedId NetworkAddress) NetworkAddress
     }
     deriving Show
 
@@ -345,23 +356,26 @@ noAttenuation = BearerInfo { biConnectionDelay      = 0
 -- | Create a new network snocket based on a 'BearerInfo' script.
 --
 newNetworkState
-    :: forall m peerAddr.
+    :: forall m.
        ( MonadLabelledSTM m
-       , GlobalAddressScheme peerAddr
        )
     => BearerInfo
-    -> Map (NormalisedId (TestAddress peerAddr))
+    -> Map (NormalisedId NetworkAddress)
            (Script BearerInfo)
     -- ^ the largest ephemeral address
-    -> m (NetworkState m (TestAddress peerAddr))
+    -> m (NetworkState m)
 newNetworkState defaultBearerInfo scriptMap = atomically $ do
   (v :: StrictTVar m Natural) <- newTVar 0
-  let nextEphemeralAddr :: AddressType -> STM m (TestAddress peerAddr)
-      nextEphemeralAddr addrType = do
+
+  let nextEphemeralAddr :: AddressFamily -> STM m NetworkAddress
+      nextEphemeralAddr addrFamily = do
         -- TODO: we should use `(\s -> (succ s, s)` but p2p-master does not
         -- include PR #3172.
          a <- stateTVar v (\s -> let s' = succ s in (s', s'))
-         return (ephemeralAddress addrType a)
+         return $ case addrFamily of
+           AFInet       -> EphIPv4Addr a
+           AFInet6      -> EphIPv6Addr a
+           AFLocal addr -> LocalAddr addr
 
   scriptMapVars <- traverse LazySTM.newTVar scriptMap
   s <- NetworkState
@@ -392,51 +406,90 @@ deriving instance Show ResourceException
 instance Exception ResourceException where
 
 
--- | A type class for global IP address scheme.  Every node in the simulation
--- has an ephemeral address.  Every node in the simulation has an implicit ipv4
--- and ipv6 address (if one is not bound by explicitly).
+data NetworkAddress
+  = EphIPv4Addr Natural
+  -- ^ a globally unique ephemeral IPv4 address
+  | EphIPv6Addr Natural
+  -- ^ a globally unique ephemeral IPv6 address
+  | IPAddr IP.IP PortNumber
+  -- ^ IP address
+  | UnusedAddr
+  | LocalAddr LocalAddress
+  -- ^ Local socket
+  deriving stock (Eq, Ord, Generic)
+  deriving NoThunks via InspectHeap NetworkAddress
+
+instance NFData NetworkAddress where
+  rnf (EphIPv4Addr !_) = ()
+  rnf (EphIPv6Addr !_) = ()
+  rnf (IPAddr !_ !_)   = ()
+  rnf UnusedAddr       = ()
+  rnf (LocalAddr addr) = rnf addr
+
+instance Show NetworkAddress where
+    show (EphIPv4Addr n)  = "EphIPv4Addr " ++ show n
+    show (EphIPv6Addr n)  = "EphIPv6Addr " ++ show n
+    show (IPAddr ip port) = "IPAddr (read \"" ++ show ip ++ "\") " ++ show port
+    show UnusedAddr       = "UnusedAddr"
+    show (LocalAddr addr) = "LocalAddr (" ++ show addr ++ ")"
+
+instance PrettyShow NetworkAddress where
+  prettyShow (EphIPv4Addr n)  = "eph:" ++ show n
+  prettyShow (EphIPv6Addr n)  = "eph6:" ++ show n
+  prettyShow (IPAddr ip port) = show ip ++ ":" ++ show port
+  prettyShow UnusedAddr       = "unused-addr"
+  prettyShow (LocalAddr addr) = prettyShow addr
+
+
+instance Hashable NetworkAddress where
+    hashWithSalt s (EphIPv4Addr n) = hashWithSalt s n
+    hashWithSalt s (EphIPv6Addr n) = hashWithSalt s n
+    hashWithSalt s (IPAddr (IP.IPv4 ip) port) = hashWithSalt s ( IP.toHostAddress ip
+                                                               , fromIntegral port :: Integer)
+    hashWithSalt s (IPAddr (IP.IPv6 ip) port) = hashWithSalt s ( IP.toHostAddress6 ip
+                                                               , fromIntegral port :: Integer)
+    hashWithSalt s UnusedAddr = hashWithSalt s ("unusedaddr" :: String)
+    hashWithSalt s (LocalAddr path) = hashWithSalt s path
+
+-- | This instance only generates `AFInet` or `AFInet6` addresses.
 --
-class GlobalAddressScheme addr where
-    getAddressType   :: TestAddress addr -> AddressType
-    ephemeralAddress :: AddressType -> Natural -> TestAddress addr
-
-
-
--- | All negative addresses are ephemeral.  Even address are IPv4, while odd
--- ones are IPv6.
---
-instance GlobalAddressScheme Int where
-    getAddressType (TestAddress n) = if n `mod` 2 == 0
-                         then IPv4Address
-                         else IPv6Address
-    ephemeralAddress IPv4Address n = TestAddress $ (-2) * fromIntegral n
-    ephemeralAddress IPv6Address n = TestAddress $ (-1) * fromIntegral n + 1
+instance Arbitrary NetworkAddress where
+  arbitrary =
+    frequency
+      [ (1 , EphIPv4Addr <$> arbitrary `suchThat` (> 100)) -- first 100 are reserved
+      , (1 , EphIPv6Addr <$> arbitrary `suchThat` (> 100)) -- first 100 are reserved
+      , (3 , IPAddr <$> genIP <*> (fromIntegral <$> chooseInt (0, 9999)))
+      ]
+      where
+        genIP = oneof [ IP.IPv4 . IP.toIPv4 <$> replicateM 4 (choose (0,255))
+                      , IP.IPv6 . IP.toIPv6 <$> replicateM 8 (choose (0,0xffff))
+                      ]
 
 
 -- | A bracket which runs a network simulation.  When the simulation
 -- terminates it verifies that all listening sockets and all connections are
 -- closed.  It might throw 'ResourceException'.
 --
+-- TODO: this function shouldn't be polymorphic over `peerAddr`, it will be
+-- easier for tests if it came with a concrete type and sensible QuickCheck
+-- instances.  This requires moving it to
+-- `ouroboros-network:framework-tests-lib`
+--
 withSnocket
-    :: forall m peerAddr a.
+    :: forall m a.
        ( Alternative (STM m)
        , MonadDelay       m
        , MonadLabelledSTM m
        , MonadMask        m
        , MonadTimer       m
        , MonadThrow  (STM m)
-       , GlobalAddressScheme peerAddr
-       , Ord      peerAddr
-       , Typeable peerAddr
-       , Show     peerAddr
        )
-    => Tracer m (WithAddr (TestAddress peerAddr)
-                          (SnocketTrace m (TestAddress peerAddr)))
+    => Tracer m (WithAddr (SnocketTrace m))
     -> BearerInfo
-    -> Map (NormalisedId (TestAddress peerAddr))
+    -> Map (NormalisedId NetworkAddress)
            (Script BearerInfo)
-    -> (Snocket m (FD m (TestAddress peerAddr)) (TestAddress peerAddr)
-        -> m (ObservableNetworkState (TestAddress peerAddr))
+    -> (Snocket m (FD m) NetworkAddress
+        -> m ObservableNetworkState
         -> m a)
     -> m a
 withSnocket tr defaultBearerInfo scriptMap k = do
@@ -451,7 +504,7 @@ withSnocket tr defaultBearerInfo scriptMap k = do
     return a
   where
     -- verify that all sockets are closed
-    checkResources :: NetworkState m (TestAddress peerAddr)
+    checkResources :: NetworkState m
                    -> Maybe SomeException
                    -> m (Maybe ResourceException)
     checkResources NetworkState { nsListeningFDs, nsConnections } err = do
@@ -468,8 +521,8 @@ withSnocket tr defaultBearerInfo scriptMap k = do
          |  otherwise
          -> return   Nothing
 
-    toState :: NetworkState m (TestAddress peerAddr)
-               -> m (ObservableNetworkState (TestAddress peerAddr))
+    toState :: NetworkState m
+            -> m ObservableNetworkState
     toState ns = atomically $ do
         onsConnections <- fmap connProvider <$> readTVar (nsConnections ns)
         return (ObservableNetworkState onsConnections)
@@ -479,8 +532,8 @@ withSnocket tr defaultBearerInfo scriptMap k = do
 -- | Channel together with information needed by the other end, e.g. address of
 -- the connecting host, shared 'SDUSize'.
 --
-data ChannelWithInfo m addr = ChannelWithInfo {
-    cwiAddress       :: !addr,
+data ChannelWithInfo m = ChannelWithInfo {
+    cwiAddress       :: !NetworkAddress,
     cwiSDUSize       :: !SDUSize,
     cwiChannelLocal  :: !(AttenuatedChannel m),
     cwiChannelRemote :: !(AttenuatedChannel m)
@@ -494,7 +547,7 @@ data ChannelWithInfo m addr = ChannelWithInfo {
 -- | Internal file descriptor type which tracks the file descriptor state
 -- across 'Snocket' api calls.
 --
-data FD_ m addr
+data FD_ m
     -- | 'FD_' for uninitialised snockets (either not connected or not
     -- listening).
     --
@@ -502,7 +555,7 @@ data FD_ m addr
     -- (which corresponds to 'socket' system call).
     -- 'bind' will update the address.
     = FDUninitialised
-        !(Maybe addr)
+        !(Maybe NetworkAddress)
         -- ^ address (initialised by a 'bind')
 
     -- | 'FD_' for snockets in listening state.
@@ -510,10 +563,10 @@ data FD_ m addr
     -- 'FDListening' is created by 'listen'
     --
     | FDListening
-        !addr
+        !NetworkAddress
         -- ^ listening address
 
-        !(StrictTBQueue m (ChannelWithInfo m addr))
+        !(StrictTBQueue m (ChannelWithInfo m))
         -- ^ listening queue; when 'connect' is called; dual 'AttenuatedChannel'
         -- of 'FDConnected' file descriptor is passed through the listening
         -- queue.
@@ -524,8 +577,8 @@ data FD_ m addr
     -- | 'FD_' was passed to 'connect' call, if needed an ephemeral address was
     -- assigned to it.  This corresponds to 'SYN_SENT' state.
     --
-    | FDConnecting !(ConnectionId addr)
-                   !(Connection m addr)
+    | FDConnecting !(ConnectionId NetworkAddress)
+                   !(Connection m NetworkAddress)
 
     -- | 'FD_' for snockets in connected state.
     --
@@ -533,19 +586,19 @@ data FD_ m addr
     -- corresponds to 'ESTABLISHED' state.
     --
     | FDConnected
-        !(ConnectionId addr)
+        !(ConnectionId NetworkAddress)
         -- ^ local and remote addresses
-        !(Connection m addr)
+        !(Connection m NetworkAddress)
         -- ^ connection
 
     -- | 'FD_' of a closed file descriptor; we keep 'ConnectionId' just for
     -- tracing purposes.
     --
     | FDClosed
-        !(Wedge (ConnectionId addr) addr)
+        !(Wedge (ConnectionId NetworkAddress) NetworkAddress)
 
 
-instance Show addr => Show (FD_ m addr) where
+instance Show (FD_ m) where
     show (FDUninitialised mbAddr)   = "FDUninitialised " ++ show mbAddr
     show (FDListening addr _)       = "FDListening " ++ show addr
     show (FDConnecting connId conn) = concat
@@ -565,7 +618,7 @@ instance Show addr => Show (FD_ m addr) where
 
 -- | File descriptor type.
 --
-newtype FD m peerAddr = FD { fdVar :: StrictTVar m (FD_ m peerAddr) }
+newtype FD m = FD { fdVar :: StrictTVar m (FD_ m) }
 
 data FDRawBearerSendTrace
   = SendingBytes Int
@@ -598,21 +651,20 @@ data FDRawBearerTrace
 -- plain old 'ByteString' under the hood. This allows us to use the
 -- 'AttenuatedChannel' inside the `FD_`, even though its send and receive
 -- methods do not have the right format.
-makeFDRawBearer :: forall m addr.
+makeFDRawBearer :: forall m.
                    ( MonadST m
                    , MonadThrow m
                    , MonadLabelledSTM m
-                   , Show addr
                    )
                 => Tracer m FDRawBearerTrace
-                -> MakeRawBearer m (FD m (TestAddress addr))
+                -> MakeRawBearer m (FD m)
 makeFDRawBearer tracer = MakeRawBearer go
   where
     traceSend = traceWith tracer . TraceSend
 
     traceRecv = traceWith tracer . TraceRecv
 
-    go (FD {fdVar}) = do
+    go FD {fdVar} = do
       (bufVar :: StrictTMVar m LBS.ByteString) <- newTMVarIO LBS.empty
       return RawBearer
                 { send = \src srcSize -> do
@@ -663,7 +715,7 @@ makeFDRawBearer tracer = MakeRawBearer go
                         throwIO (invalidError fd_)
                 }
 
-    invalidError :: FD_ m (TestAddress addr) -> IOError
+    invalidError :: FD_ m -> IOError
     invalidError fd_ = IOError
       { ioe_handle      = Nothing
       , ioe_type        = InvalidArgument
@@ -675,13 +727,12 @@ makeFDRawBearer tracer = MakeRawBearer go
       , ioe_filename    = Nothing
       }
 
-makeFDBearer :: forall addr m.
+makeFDBearer :: forall m.
                 ( MonadMonotonicTime m
                 , MonadSTM   m
                 , MonadThrow m
-                , Show addr
                 )
-             => MakeBearer m (FD m (TestAddress addr))
+             => MakeBearer m (FD m)
 makeFDBearer = MakeBearer $ \sduTimeout FD { fdVar } _ -> do
         fd_ <- readTVarIO fdVar
         case fd_ of
@@ -698,7 +749,7 @@ makeFDBearer = MakeBearer $ \sduTimeout FD { fdVar } _ -> do
           FDClosed {} ->
             throwIO (invalidError fd_)
   where
-    invalidError :: FD_ m (TestAddress addr) -> IOError
+    invalidError :: FD_ m -> IOError
     invalidError fd_ = IOError
       { ioe_handle      = Nothing
       , ioe_type        = InvalidArgument
@@ -715,9 +766,9 @@ makeFDBearer = MakeBearer $ \sduTimeout FD { fdVar } _ -> do
 --
 
 -- TODO: use `Ouroboros.Network.ExitPolicy.WithAddr`
-data WithAddr addr event =
-    WithAddr { waLocalAddr  :: Maybe addr
-             , waRemoteAddr :: Maybe addr
+data WithAddr event =
+    WithAddr { waLocalAddr  :: Maybe NetworkAddress
+             , waRemoteAddr :: Maybe NetworkAddress
              , waEvent      :: event
              }
   deriving Show
@@ -727,7 +778,7 @@ data SockType = ListeningSock
               | UnknownType
   deriving Show
 
-mkSockType :: FD_ m addr -> SockType
+mkSockType :: FD_ m -> SockType
 mkSockType FDUninitialised {} = UnknownType
 mkSockType FDListening {}     = ListeningSock
 mkSockType FDConnecting {}    = ConnectionSock
@@ -739,22 +790,22 @@ data TimeoutDetail
     | WaitingToBeAccepted
   deriving Show
 
-data SnocketTrace m addr
-    = STConnecting   (FD_ m addr) addr
-    | STConnected    (FD_ m addr) OpenType
+data SnocketTrace m
+    = STConnecting   (FD_ m) NetworkAddress
+    | STConnected    (FD_ m) OpenType
     | STBearerInfo   BearerInfo
-    | STConnectError (FD_ m addr) addr IOError
+    | STConnectError (FD_ m) NetworkAddress IOError
     | STConnectTimeout TimeoutDetail
-    | STBindError    (FD_ m addr) addr IOError
-    | STClosing      SockType (Wedge (ConnectionId addr) [addr])
+    | STBindError    (FD_ m) NetworkAddress IOError
+    | STClosing      SockType (Wedge (ConnectionId NetworkAddress) [NetworkAddress])
     | STClosed       SockType (Maybe (Maybe ConnectionState))
     -- ^ TODO: Document meaning of 'Maybe (Maybe OpenState)'
     | STClosingQueue Bool
     | STClosedQueue  Bool
     | STAcceptFailure SockType SomeException
     | STAccepting
-    | STAccepted      addr
-    | STAttenuatedChannelTrace (ConnectionId addr) AttenuatedChannelTrace
+    | STAccepted      NetworkAddress
+    | STAttenuatedChannelTrace (ConnectionId NetworkAddress) AttenuatedChannelTrace
   deriving Show
 
 -- | Either simultaneous open or normal open.  Unlike in TCP, only one side will
@@ -776,36 +827,32 @@ connectTimeout = 120
 -- | Simulated 'Snocket' running in 'NetworkState'.  A single 'NetworkState'
 -- should be shared with all nodes in the same network.
 --
-mkSnocket :: forall m addr.
+mkSnocket :: forall m.
              ( Alternative   (STM m)
              , MonadDelay         m
              , MonadLabelledSTM   m
              , MonadThrow    (STM m)
              , MonadMask          m
              , MonadTimer         m
-             , GlobalAddressScheme addr
-             , Ord  addr
-             , Show addr
              )
-          => NetworkState m (TestAddress addr)
-          -> Tracer m (WithAddr (TestAddress addr)
-                                (SnocketTrace m (TestAddress addr)))
-          -> Snocket m (FD m (TestAddress addr)) (TestAddress addr)
-mkSnocket state tr = Snocket { getLocalAddr
-                             , getRemoteAddr
-                             , addrFamily
-                             , open
-                             , openToConnect
-                             , connect
-                             , bind
-                             , listen
-                             , accept
-                             , close
-                             }
+          => NetworkState m
+          -> Tracer m (WithAddr (SnocketTrace m))
+          -> Snocket m (FD m) NetworkAddress
+mkSnocket state tr =
+    Snocket { getLocalAddr
+            , getRemoteAddr
+            , addrFamily
+            , open
+            , openToConnect
+            , connect
+            , bind
+            , listen
+            , accept
+            , close
+            }
   where
-    getLocalAddrM :: FD m (TestAddress addr)
-                  -> m (Either (FD_ m (TestAddress addr))
-                               (TestAddress addr))
+    getLocalAddrM :: FD m
+                  -> m (Either (FD_ m) NetworkAddress)
     getLocalAddrM FD { fdVar } = do
         fd_ <- readTVarIO fdVar
         return $ case fd_ of
@@ -818,9 +865,8 @@ mkSnocket state tr = Snocket { getLocalAddr
                                           -> Right localAddress
           FDClosed {}                     -> Left fd_
 
-    getRemoteAddrM :: FD m (TestAddress addr)
-                   -> m (Either (FD_ m (TestAddress addr))
-                                (TestAddress addr))
+    getRemoteAddrM :: FD m
+                   -> m (Either (FD_ m) NetworkAddress)
     getRemoteAddrM FD { fdVar } = do
         fd_ <- readTVarIO fdVar
         return $ case fd_ of
@@ -832,11 +878,11 @@ mkSnocket state tr = Snocket { getLocalAddr
                                      -> Right remoteAddress
           FDClosed {}                -> Left fd_
 
-    traceWith' :: FD m (TestAddress addr)
-               -> SnocketTrace m (TestAddress addr)
+    traceWith' :: FD m
+               -> SnocketTrace m
                -> m ()
     traceWith' fd =
-      let tr' :: Tracer m (SnocketTrace m (TestAddress addr))
+      let tr' :: Tracer m (SnocketTrace m)
           tr' = (\ev -> (\a b -> WithAddr (hush a)
                                           (hush b) ev)
                     <$> getLocalAddrM  fd
@@ -848,7 +894,7 @@ mkSnocket state tr = Snocket { getLocalAddr
     -- Snocket api
     --
 
-    getLocalAddr :: FD m (TestAddress addr) -> m (TestAddress addr)
+    getLocalAddr :: FD m -> m NetworkAddress
     getLocalAddr fd = do
         maddr <- getLocalAddrM fd
         case maddr of
@@ -857,7 +903,7 @@ mkSnocket state tr = Snocket { getLocalAddr
           -- return '0.0.0.0:0'.
           Left fd_   -> throwIO (ioe fd_)
       where
-        ioe :: FD_ m (TestAddress addr) -> IOError
+        ioe :: FD_ m -> IOError
         ioe fd_ = IOError
                 { ioe_handle      = Nothing
                 , ioe_type        = InvalidArgument
@@ -869,14 +915,14 @@ mkSnocket state tr = Snocket { getLocalAddr
                 , ioe_filename    = Nothing
                 }
 
-    getRemoteAddr :: FD m (TestAddress addr) -> m (TestAddress addr)
+    getRemoteAddr :: FD m -> m NetworkAddress
     getRemoteAddr fd = do
       maddr <- getRemoteAddrM fd
       case maddr of
         Right addr -> return addr
         Left fd_   -> throwIO (ioe fd_)
       where
-        ioe :: FD_ m (TestAddress addr) -> IOError
+        ioe :: FD_ m -> IOError
         ioe fd_ = IOError
           { ioe_handle      = Nothing
           , ioe_type        = InvalidArgument
@@ -889,22 +935,28 @@ mkSnocket state tr = Snocket { getLocalAddr
           }
 
 
-    addrFamily :: TestAddress addr -> AddressFamily (TestAddress addr)
-    addrFamily _ = TestFamily
+    addrFamily :: NetworkAddress -> AddressFamily
+    addrFamily = \case
+      EphIPv4Addr {}     -> AFInet
+      IPAddr IP.IPv4{} _ -> AFInet
+      UnusedAddr         -> AFInet -- arbitrary choice
+      EphIPv6Addr {}     -> AFInet6
+      IPAddr IP.IPv6{} _ -> AFInet6
+      LocalAddr addr     -> AFLocal addr
 
 
-    open :: AddressFamily (TestAddress addr) -> m (FD m (TestAddress addr))
+    open :: AddressFamily -> m (FD m)
     open _ = atomically $ do
       fdVar <- newTVar (FDUninitialised Nothing)
       labelTVar fdVar "fd"
       return FD { fdVar }
 
 
-    openToConnect :: TestAddress addr  -> m (FD m (TestAddress addr))
-    openToConnect _ = open TestFamily
+    openToConnect :: NetworkAddress  -> m (FD m)
+    openToConnect = open . addrFamily
 
 
-    connect :: FD m (TestAddress addr) -> TestAddress addr -> m ()
+    connect :: FD m -> NetworkAddress -> m ()
     connect fd@FD { fdVar = fdVarLocal } remoteAddress = do
         fd_ <- readTVarIO fdVarLocal
         traceWith' fd (STConnecting fd_ remoteAddress)
@@ -917,7 +969,7 @@ mkSnocket state tr = Snocket { getLocalAddr
               localAddress <-
                 case mbLocalAddr of
                   Just addr -> return addr
-                  Nothing   -> nsNextEphemeralAddr state (getAddressType remoteAddress)
+                  Nothing   -> nsNextEphemeralAddr state (addrFamily remoteAddress)
 
               let connId = ConnectionId { localAddress, remoteAddress }
                   normalisedId = normaliseId connId
@@ -1141,7 +1193,7 @@ mkSnocket state tr = Snocket { getLocalAddr
           , ioe_filename    = Nothing
           }
 
-        connectIOError :: ConnectionId (TestAddress addr) -> String -> IOError
+        connectIOError :: ConnectionId NetworkAddress -> String -> IOError
         connectIOError connId desc = IOError
           { ioe_handle      = Nothing
           , ioe_type        = OtherError
@@ -1154,7 +1206,7 @@ mkSnocket state tr = Snocket { getLocalAddr
           , ioe_filename    = Nothing
           }
 
-        connectedIOError :: FD_ m (TestAddress addr) -> IOError
+        connectedIOError :: FD_ m -> IOError
         connectedIOError fd_ = IOError
           { ioe_handle      = Nothing
           , ioe_type        = AlreadyExists
@@ -1166,7 +1218,7 @@ mkSnocket state tr = Snocket { getLocalAddr
           , ioe_filename    = Nothing
           }
 
-        invalidError :: FD_ m (TestAddress addr) -> IOError
+        invalidError :: FD_ m -> IOError
         invalidError fd_ = IOError
           { ioe_handle      = Nothing
           , ioe_type        = InvalidArgument
@@ -1179,7 +1231,7 @@ mkSnocket state tr = Snocket { getLocalAddr
           }
 
 
-    bind :: FD m (TestAddress addr) -> TestAddress addr -> m ()
+    bind :: FD m -> NetworkAddress -> m ()
     bind fd@FD { fdVar } addr = do
         res <- atomically $ do
           fd_ <- readTVar fdVar
@@ -1207,7 +1259,7 @@ mkSnocket state tr = Snocket { getLocalAddr
           }
 
 
-    listen :: FD m (TestAddress addr) -> m ()
+    listen :: FD m -> m ()
     listen fd@FD { fdVar } = atomically $ do
         fd_ <- readTVar fdVar
         case fd_ of
@@ -1234,7 +1286,7 @@ mkSnocket state tr = Snocket { getLocalAddr
         bound :: Natural
         bound = 10
 
-        invalidError :: FD_ m (TestAddress addr) -> IOError
+        invalidError :: FD_ m -> IOError
         invalidError fd_ = IOError
           { ioe_handle      = Nothing
           , ioe_type        = InvalidArgument
@@ -1247,17 +1299,16 @@ mkSnocket state tr = Snocket { getLocalAddr
           }
 
 
-    accept :: FD m (TestAddress addr)
-           -> m (Accept m (FD m (TestAddress addr))
-                                (TestAddress addr))
+    accept :: FD m
+           -> m (Accept m (FD m) NetworkAddress)
     accept FD { fdVar } = do time <- getMonotonicTime
                              let deltaAndIOErr =
                                    biAcceptFailures (nsDefaultBearerInfo state)
                              return $ accept_ time deltaAndIOErr
       where
         -- non-blocking; return 'True' if a connection is in 'SYN_SENT' state
-        synSent :: TestAddress addr
-                -> ChannelWithInfo m (TestAddress addr)
+        synSent :: NetworkAddress
+                -> ChannelWithInfo m
                 -> STM m Bool
         synSent localAddress cwi = do
           connMap <- readTVar (nsConnections state)
@@ -1275,8 +1326,7 @@ mkSnocket state tr = Snocket { getLocalAddr
 
         accept_ :: Time
                 -> Maybe (DiffTime, IOError)
-                -> Accept m (FD m (TestAddress addr))
-                                  (TestAddress addr)
+                -> Accept m (FD m) NetworkAddress
         accept_ time deltaAndIOErr = Accept $ do
             ctime <- getMonotonicTime
             bracketOnError
@@ -1400,7 +1450,7 @@ mkSnocket state tr = Snocket { getLocalAddr
                     return (Accepted fdRemote remoteAddress, accept_ time deltaAndIOErr)
 
 
-        invalidError :: FD_ m (TestAddress addr) -> IOError
+        invalidError :: FD_ m -> IOError
         invalidError fd = IOError
           { ioe_handle      = Nothing
           , ioe_type        = InvalidArgument
@@ -1413,7 +1463,7 @@ mkSnocket state tr = Snocket { getLocalAddr
           }
 
 
-    close :: FD m (TestAddress addr)
+    close :: FD m
           -> m ()
     close FD { fdVar } =
       uninterruptibleMask_ $ do
