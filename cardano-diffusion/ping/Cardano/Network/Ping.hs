@@ -31,6 +31,7 @@ module Cardano.Network.Ping
   , mkAddress
   , cmdlineParser
   , PingMode (..)
+  , HashType (..)
   , AcceptFilePath (..)
   , LogFormat (..)
   , ColorMode (..)
