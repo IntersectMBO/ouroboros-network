@@ -776,7 +776,6 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
             trTracer,
             ipv4Address = myAddress,
             ipv6Address = [],
-            addressType = \_ -> Just IPv4Address,
             snocket = snocket,
             makeBearer = makeFDBearer,
             withBuffer = \f -> f Nothing,

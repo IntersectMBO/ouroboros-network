@@ -104,8 +104,6 @@ data Arguments handlerTrace socket peerAddr handle handleError versionNumber ver
         --
         ipv6Address         :: [peerAddr],
 
-        addressType         :: peerAddr -> Maybe AddressType,
-
         -- | Snocket for the 'socket' type.
         --
         snocket             :: Snocket m socket peerAddr,
@@ -395,7 +393,6 @@ with args@Arguments {
          trTracer,
          ipv4Address,
          ipv6Address,
-         addressType,
          snocket,
          makeBearer,
          withBuffer,
@@ -1470,24 +1467,24 @@ with args@Arguments {
                 )
                 $ \socket -> do
                   traceWith tracer (TrConnectionNotFound provenance peerAddr)
-                  addr <- case addressType peerAddr of
-                     Nothing          -> pure Nothing
-                     Just IPv4Address -> randomElement stdGenVar ipv4Address
-                     Just IPv6Address -> randomElement stdGenVar ipv6Address
+                  addr <- case addrFamily snocket peerAddr of
+                     AFInet    -> randomElement stdGenVar ipv4Address
+                     AFInet6   -> randomElement stdGenVar ipv6Address
+                     AFLocal{} -> pure Nothing
                   configureSocket socket addr
                   -- only bind to the ip address if:
                   -- the diffusion is given `ipv4/6` addresses;
                   -- `diffusionMode` for this connection is
                   -- `InitiatorAndResponderMode`.
-                  case addressType peerAddr of
-                    Just IPv4Address | InitiatorAndResponderDiffusionMode
-                                       <- diffusionMode ->
-                         traverse_ (bind snocket socket)
-                                   ipv4Address
-                    Just IPv6Address | InitiatorAndResponderDiffusionMode
-                                       <- diffusionMode ->
-                         traverse_ (bind snocket socket)
-                                   ipv6Address
+                  case addrFamily snocket peerAddr of
+                    AFInet | InitiatorAndResponderDiffusionMode
+                             <- diffusionMode ->
+                      traverse_ (bind snocket socket)
+                                ipv4Address
+                    AFInet6 | InitiatorAndResponderDiffusionMode
+                              <- diffusionMode ->
+                      traverse_ (bind snocket socket)
+                                ipv6Address
                     _ -> pure ()
 
                   traceWith tracer (TrConnect addr peerAddr diffusionMode)

@@ -47,7 +47,6 @@ module Simulation.Network.Snocket
   , makeFDRawBearer
   , makeFDBearer
   , NetworkAddress (..)
-  , AddressType (..)
   , WithAddr (..)
     -- * Re-exports
   , Natural
@@ -93,7 +92,6 @@ import Network.Mux.Bearer.AttenuatedChannel
 import Network.Socket (PortNumber)
 
 import Ouroboros.Network.ConnectionId
-import Ouroboros.Network.ConnectionManager.Types (AddressType (..))
 import Ouroboros.Network.RawBearer
 import Ouroboros.Network.Snocket
 import Ouroboros.Network.Util (PrettyShow (..))

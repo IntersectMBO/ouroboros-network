@@ -338,7 +338,6 @@ withInitiatorOnlyConnectionManager name timeouts trTracer tracer stdGen snocket 
     -- This is actually the low level bearer tracer
     ipv4Address = ipv4Addrs,
     ipv6Address = ipv6Addrs,
-    addressType  = \_ -> Just IPv4Address,
     snocket,
     makeBearer,
     withBuffer = \f -> f Nothing,
@@ -539,7 +538,6 @@ withBidirectionalConnectionManager name timeouts
             -- low level bearer tracer
             ipv4Address  = ipv4Addrs,
             ipv6Address  = ipv6Addrs,
-            addressType  = \_ -> Just IPv4Address,
             snocket,
             makeBearer,
             withBuffer = \f -> f Nothing,

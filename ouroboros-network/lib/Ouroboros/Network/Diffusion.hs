@@ -15,7 +15,6 @@ module Ouroboros.Network.Diffusion
   ( run
   , runM
   , mkInterfaces
-  , socketAddressType
   , module Ouroboros.Network.Diffusion.Types
     -- * Utils
   , readIPAndPort
@@ -61,7 +60,6 @@ import Network.Mux qualified as Mx
 import Network.Mux.Bearer (withReadBufferIO)
 import Network.Mux.Types
 import Network.Socket (Socket)
-import Network.Socket qualified as Socket
 
 import Ouroboros.Network.ConnectionHandler
 import Ouroboros.Network.ConnectionManager.Core qualified as CM
@@ -94,12 +92,6 @@ import Ouroboros.Network.Snocket (LocalAddress (..), LocalSocket (..),
 import Ouroboros.Network.Snocket qualified as Snocket
 import Ouroboros.Network.Socket (configureSocket, configureSystemdSocket)
 import Ouroboros.Network.Util (PrettyShow (..))
-
-
-socketAddressType :: Socket.SockAddr -> Maybe AddressType
-socketAddressType Socket.SockAddrInet {}  = Just IPv4Address
-socketAddressType Socket.SockAddrInet6 {} = Just IPv6Address
-socketAddressType Socket.SockAddrUnix {}  = Nothing
 
 
 runM
@@ -171,7 +163,6 @@ runM Interfaces
        , diWithBuffer
        , diNtnConfigureSocket
        , diNtnConfigureSystemdSocket
-       , diNtnAddressType
        , diNtnToPeerAddr
        , diNtcSnocket
        , diNtcBearer
@@ -374,7 +365,6 @@ runM Interfaces
                   CM.trTracer            = nullTracer, -- TODO: issue #3320
                   CM.ipv4Address         = [],
                   CM.ipv6Address         = [],
-                  CM.addressType         = const Nothing,
                   CM.snocket             = diNtcSnocket,
                   CM.makeBearer          = diNtcBearer,
                   CM.withBuffer          = diWithBuffer,
@@ -432,10 +422,10 @@ runM Interfaces
               partitionEithers
             $ catMaybes
             $ map (\addr ->
-                   case diNtnAddressType addr of
-                     Just IPv4Address -> Just $ Left addr
-                     Just IPv6Address -> Just $ Right addr
-                     Nothing          -> Nothing
+                   case Snocket.addrFamily diNtnSnocket addr of
+                     Snocket.AFInet    -> Just $ Left addr
+                     Snocket.AFInet6   -> Just $ Right addr
+                     Snocket.AFLocal{} -> Nothing
                   )
             $ NonEmpty.toList
             $ addrs
@@ -491,7 +481,6 @@ runM Interfaces
                 `contramap` dtConnectionManagerTransitionTracer,
               CM.ipv4Address         = ipv4Addresses,
               CM.ipv6Address         = ipv6Addresses,
-              CM.addressType         = diNtnAddressType,
               CM.snocket             = diNtnSnocket,
               CM.makeBearer          = diNtnBearer,
               CM.withBuffer          = diWithBuffer,
@@ -938,7 +927,6 @@ mkInterfaces iocp tracer egressPollInterval = do
     diNtnConfigureSystemdSocket =
       configureSystemdSocket
         (SystemdSocketConfiguration `contramap` tracer),
-    diNtnAddressType            = socketAddressType,
     diNtnToPeerAddr             = curry IP.toSockAddr,
     diNtcSnocket                = Snocket.localSnocket iocp,
     diNtcBearer                 = makeLocalBearer,

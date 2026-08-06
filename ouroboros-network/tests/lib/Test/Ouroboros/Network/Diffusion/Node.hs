@@ -112,7 +112,7 @@ import Ouroboros.Network.TxSubmission.Inbound.V2.Policy (TxDecisionPolicy)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (txCountersThreadV2)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types (TraceTxLogic)
 
-import Simulation.Network.Snocket (AddressType (..), FD, NetworkAddress (..))
+import Simulation.Network.Snocket (FD, NetworkAddress (..))
 
 import Test.Ouroboros.Network.Data.Script
 import Test.Ouroboros.Network.Diffusion.Node.ChainDB (addBlock,
@@ -267,7 +267,6 @@ run blockGeneratorArgs ni na
               , Diffusion.diNtnConfigureSocket     = \_ _ -> return ()
               , Diffusion.diNtnConfigureSystemdSocket
                                                    = \_ _ -> return ()
-              , Diffusion.diNtnAddressType         = ntnAddressType
               , Diffusion.diNtnToPeerAddr          = \a b -> Node.IPAddr a b
               , Diffusion.diNtcSnocket             = iSnocket ni
               , Diffusion.diNtcBearer              = iNtcBearer ni
@@ -416,14 +415,6 @@ run blockGeneratorArgs ni na
         toAnchoredFragmentHeader = AF.fromOldestFirst AF.AnchorGenesis
                                  . map blockHeader
                                  . toOldestFirst
-
-    ntnAddressType :: NtNAddr -> Maybe AddressType
-    ntnAddressType (Node.EphIPv4Addr _)     = Just IPv4Address
-    ntnAddressType (Node.EphIPv6Addr _)     = Just IPv6Address
-    ntnAddressType (Node.IPAddr (IPv4 _) _) = Just IPv4Address
-    ntnAddressType (Node.IPAddr (IPv6 _) _) = Just IPv6Address
-    ntnAddressType Node.UnusedAddr          = Just IPv4Address
-    ntnAddressType Node.LocalAddr {}        = error "invariant violation"
 
     -- various pseudo random generators
     (diffStgGen, keepAliveStdGen) = splitGen (iRng ni)

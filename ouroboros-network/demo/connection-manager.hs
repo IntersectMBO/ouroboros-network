@@ -263,7 +263,6 @@ withBidirectionalConnectionManager snocket makeBearer socket
                   trTracer     = ("cm-state",) `contramap` debugTracer,
                   ipv4Address  = localAddresses,
                   ipv6Address  = [],
-                  addressType  = \_ -> Just IPv4Address,
                   snocket      = snocket,
                   makeBearer   = makeBearer,
                   CM.withBuffer   = \f -> f Nothing,

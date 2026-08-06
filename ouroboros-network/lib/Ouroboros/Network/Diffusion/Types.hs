@@ -760,11 +760,6 @@ data Interfaces ntnFd ntnAddr ntcFd ntcAddr
         diNtnConfigureSystemdSocket
           :: ntnFd -> ntnAddr -> m (),
 
-        -- | node-to-node address type
-        --
-        diNtnAddressType
-          :: ntnAddr -> Maybe AddressType,
-
         -- | node-to-node peer address
         --
         diNtnToPeerAddr
