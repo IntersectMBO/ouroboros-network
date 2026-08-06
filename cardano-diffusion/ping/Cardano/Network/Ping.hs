@@ -73,6 +73,7 @@ import Data.Aeson (KeyValue ((.=)), ToJSON (toJSON), Value, object)
 import Data.Aeson qualified as Aeson
 import Data.Aeson.KeyMap qualified as KeyMap
 import Data.Aeson.Text (encodeToLazyText)
+import Data.Bifunctor (first, second)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import Data.ByteString.Char8 qualified as BS.Char
@@ -1051,11 +1052,31 @@ pingClients'
   -- * list of resolve errors (printed with `PingWarning` tracer)
   -- * list of `pingClient` errors
 pingClients' stdout infoTracer headerTracer stderr opts acceptFilePath addresses = do
+    -- split addresses into IPs and ones that require DNS resolver, which avoids
+    -- reading `/etc/resolv.conf` is not needed.
+    let (ips, nonips) =
+          foldr
+            (\addr as ->
+               case addr of
+                 IP ip port -> first  (IP ip port :) as
+                 _          -> second (addr :) as
+            )
+            ([], [])
+            addresses
     -- resolved addresses
-    rs <- DNS.makeResolvSeed DNS.defaultResolvConf
     (resolvedAddresses, resolveErrors) <-
-      DNS.withResolver rs $ \resolver ->
-        concatBoth <$> traverse (resolveAddress stderr resolver opts acceptFilePath) addresses
+      if null nonips
+        then return (ips, [])
+        else do
+          rs <- DNS.makeResolvSeed DNS.defaultResolvConf
+          DNS.withResolver rs $ \resolver ->
+                first (ips ++)
+             .  concatBoth
+            <$> traverse
+                  (resolveAddress stderr resolver opts acceptFilePath)
+                  nonips
+
+
     sockAddrs
       <- catMaybes
          <$> traverse
