@@ -63,6 +63,24 @@ main =
               $ \fixture ->
                 bench "server/direct-interpreter/multi-peer/100peers/1000batches" $
                   nfAppIO DirectV2.runDirectServerBenchmark fixture
+            -- Stress / sanity entry: nondeterministic workload (see
+            -- 'mkMultiPeerPipelinedFixture'), so expect a loose stdev;
+            -- meaningful for catching multi-x regressions in the
+            -- pipelined path under contention, not percent-level deltas.
+          , env
+              (prepareEnv (DirectV2.mkMultiPeerPipelinedFixture 100 100))
+              $ \fixture ->
+                bench "server/direct-interpreter/multi-peer-pipelined/100peers/100batches" $
+                  nfAppIO DirectV2.runDirectServerBenchmark fixture
+            -- Mainnet-scale inbound-peer count: a large relay serves
+            -- 100-300 inbound tx-submission clients, all sharing one
+            -- 'SharedTxState' var.  Zero-latency replies make this a
+            -- pessimistic contention bound for that scale.
+          , env
+              (prepareEnv (DirectV2.mkMultiPeerPipelinedFixture 300 100))
+              $ \fixture ->
+                bench "server/direct-interpreter/multi-peer-pipelined/300peers/100batches" $
+                  nfAppIO DirectV2.runDirectServerBenchmark fixture
           ]
         ]
       ]

@@ -1119,9 +1119,13 @@ benchmark sim-benchmarks
   -- alignment. See https://github.com/Bodigrim/tasty-bench#comparison-against-baseline
   -- We use threaded RTS, because of
   -- https://gitlab.haskell.org/ghc/ghc/-/issues/25165
+  -- We default to -N4: four capabilities approximate real stake pool
+  -- hardware and give the multi-peer fixtures genuine parallel STM
+  -- conflicts (on one capability transactions rarely interleave
+  -- mid-flight, understating contention).  Override with +RTS -N<n>.
   ghc-options:
     -fno-ignore-asserts
     -threaded
     -rtsopts
-    "-with-rtsopts=-A32m -T"
+    "-with-rtsopts=-A32m -T -N4"
     -fproc-alignment=64

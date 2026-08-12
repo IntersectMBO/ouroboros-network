@@ -11,6 +11,7 @@ module Bench.TxSubmissionV2Server
   , DirectServerResult
   , mkDirectServerFixture
   , mkMultiPeerFixture
+  , mkMultiPeerPipelinedFixture
   , runDirectServerBenchmark
   ) where
 
@@ -98,6 +99,30 @@ mkMultiPeerFixture peers batches =
     , dsPolicy           = defaultTxDecisionPolicy {
                              disablePipelinedTxIdRequests = True
                            }
+    }
+
+
+-- | Like 'mkMultiPeerFixture' but with pipelined txid requests left
+-- enabled (the default policy), so the pipelined reply loop, the hot
+-- path on a production relay,  runs under shared-state contention.
+--
+-- Unlike the blocking-mode fixture the workload is not deterministic:
+-- cross-peer races change how many messages are exchanged from run to
+-- run (measured spread at 100 peers x 100 batches: ~5% on txid
+-- messages, up to 6x on the pipelined-request count).  Treat it as a
+-- stress \/ sanity benchmark for catastrophic regressions in the
+-- pipelined path (STM retry storms, livelock); percent-level
+-- comparisons belong to the deterministic blocking-mode fixtures.
+mkMultiPeerPipelinedFixture
+  :: Int -- ^ peer count
+  -> Int -- ^ batches per peer
+  -> DirectServerFixture
+mkMultiPeerPipelinedFixture peers batches =
+  DirectServerFixture
+    { dsPeerCount        = peers
+    , dsTxIdReplyBatches = batches
+    , dsTxSize           = SizeInBytes 1024
+    , dsPolicy           = defaultTxDecisionPolicy
     }
 
 

@@ -24,7 +24,7 @@ import Data.Set qualified as Set
 import Data.Typeable (Typeable)
 
 import Control.Concurrent.Class.MonadSTM.Strict
-import Control.Monad (unless)
+import Control.Monad (unless, when)
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
@@ -151,6 +151,8 @@ txSubmissionInboundV2
       runNextPeerActionPipelined,
       applyReceivedTxIds,
       applyReceivedTxs,
+      applyReceivedTxIdsPipelined,
+      applyReceivedTxsPipelined,
       applySubmittedTxs,
       resolveTxRequest,
       resolveBufferedTxs,
@@ -167,11 +169,16 @@ txSubmissionInboundV2
     -- scheduler iteration based on whether the peer currently advertises any
     -- txids whose bodies we could request.
     traceCanRequest :: forall (n :: N). Nat n -> PeerTxLocalState tx -> m ()
-    traceCanRequest n st
-      | null (peerAvailableTxIds st) =
-          traceWith tracer (TraceTxInboundCannotRequestMoreTxs (natToInt n))
-      | otherwise =
+    traceCanRequest n st = traceCanRequest' n (not (null (peerAvailableTxIds st)))
+
+    -- As 'traceCanRequest', for call sites where the availability was
+    -- already computed inside a fused STM transaction ('ReplyApplied').
+    traceCanRequest' :: forall (n :: N). Nat n -> Bool -> m ()
+    traceCanRequest' n canRequest
+      | canRequest =
           traceWith tracer (TraceTxInboundCanRequestMoreTxs (natToInt n))
+      | otherwise =
+          traceWith tracer (TraceTxInboundCannotRequestMoreTxs (natToInt n))
 
     -- Entry point and reset state for the non-pipelined server loop.
     --
@@ -363,6 +370,26 @@ txSubmissionInboundV2
                txIdsToReq
                (pure $ continueWithState (handleReplies (Succ n)) peerState)
 
+    -- Dispatch an action chosen inside a fused apply+schedule
+    -- transaction ('applyReceivedTxIdsPipelined' /
+    -- 'applyReceivedTxsPipelined').  Mirrors 'continueAfterReplies' at
+    -- depth @'Succ' n@, but skips the separate scheduler transaction:
+    -- the action was already chosen against the just-applied state.
+    dispatchFusedAction :: forall (n :: N).
+                           Nat (S n)
+                        -> PeerAction
+                        -> StatefulM (PeerTxLocalState tx) (S n) txid tx m
+    dispatchFusedAction n peerAction = StatefulM $ \peerState ->
+      case peerAction of
+        PeerSubmitTxs txKeys ->
+          continueWithStateM (submitBufferedTxs txKeys (continueAfterReplies n)) peerState
+        PeerRequestTxs txKeys ->
+          continueWithStateM (requestTxBodies n txKeys) peerState
+        PeerRequestTxIds txIdsToAck txIdsToReq ->
+          continueWithStateM (serverReqTxIds n txIdsToAck txIdsToReq) peerState
+        PeerDoNothing {} ->
+          pure $ continueWithState (handleReplies n) peerState
+
     -- Prepare to collect pipelined replies from the peer.
     handleReplies :: forall (n :: N).
                      Nat (S n)
@@ -379,8 +406,19 @@ txSubmissionInboundV2
         unless (length txids <= fromIntegral txIdsToReq) $
           throwIO ProtocolErrorTxIdsNotRequested
         now <- getMonotonicTime
-        peerState' <- applyReceivedTxIds now txIdsToReq txids peerState
-        continueWithStateM (continueAfterReplies n) peerState'
+        case n of
+          -- Pipeline drained after this reply: the next action may be
+          -- a blocking request, which only 'serverIdle''s non-pipelined
+          -- scheduler can choose, so apply and schedule stay separate.
+          Zero -> do
+            peerState' <- applyReceivedTxIds now txIdsToReq txids peerState
+            continueWithStateM (continueAfterReplies n) peerState'
+          -- Replies still in flight: apply the reply and choose the
+          -- next pipelined action in one STM transaction.
+          Succ{} -> do
+            (applied, peerState') <- applyReceivedTxIdsPipelined now txIdsToReq txids peerState
+            traceCanRequest' n (raCanRequestTxs applied)
+            continueWithStateM (dispatchFusedAction n (raPeerAction applied)) peerState'
 
       CollectTxs requested txs -> do
         let received = Map.fromList [ (txId tx, tx) | tx <- txs ]
@@ -393,20 +431,35 @@ txSubmissionInboundV2
           traceWith tracer (TraceTxInboundError protocolError)
           throwIO protocolError
         now <- getMonotonicTime
-        (penaltyCount, peerState') <- applyReceivedTxs now [ (txId tx, tx) | tx <- txs ] peerState
-        peerState'' <-
-          if penaltyCount == 0
-             then pure peerState'
-             else do
-               let (score, ps) = State.applyPeerEvents policy now 0 penaltyCount peerState'
-               traceWith tracer $
-                 TraceTxSubmissionProcessed ProcessedTxCount {
-                     ptxcAccepted = 0,
-                     ptxcRejected = penaltyCount,
-                     ptxcScore    = score
-                   }
-               pure ps
-        continueWithStateM (continueAfterReplies n) peerState''
+        case n of
+          -- See the 'CollectTxIds' case: at depth zero apply and
+          -- schedule stay separate.
+          Zero -> do
+            (penaltyCount, peerState') <- applyReceivedTxs now [ (txId tx, tx) | tx <- txs ] peerState
+            peerState'' <-
+              if penaltyCount == 0
+                 then pure peerState'
+                 else do
+                   let (score, ps) = State.applyPeerEvents policy now 0 penaltyCount peerState'
+                   traceWith tracer $
+                     TraceTxSubmissionProcessed ProcessedTxCount {
+                         ptxcAccepted = 0,
+                         ptxcRejected = penaltyCount,
+                         ptxcScore    = score
+                       }
+                   pure ps
+            continueWithStateM (continueAfterReplies n) peerState''
+          Succ{} -> do
+            (applied, peerState') <- applyReceivedTxsPipelined now [ (txId tx, tx) | tx <- txs ] peerState
+            when (raPenaltyCount applied > 0) $
+              traceWith tracer $
+                TraceTxSubmissionProcessed ProcessedTxCount {
+                    ptxcAccepted = 0,
+                    ptxcRejected = raPenaltyCount applied,
+                    ptxcScore    = raPenaltyScore applied
+                  }
+            traceCanRequest' n (raCanRequestTxs applied)
+            continueWithStateM (dispatchFusedAction n (raPeerAction applied)) peerState'
 
     -- Collect transactions with size mismatches between advertised and actual.
     collectWrongSizedTxs :: Map.Map txid SizeInBytes
