@@ -6,6 +6,7 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Registry
   ( SharedTxStateVar
   , PeerTxRegistry
   , PeerTxAPI (..)
+  , ReplyApplied (..)
   , TxSubmissionCountersVar
   , newSharedTxStateVar
   , newPeerTxRegistry
@@ -179,6 +180,26 @@ snapshotCounters retiredCountersVar registry = do
     live    <- traverse (readTVar . snd) (Map.elems peers)
     pure $! mconcat (retired : live)
 
+-- | Result of a fused reply-apply + scheduler step
+-- ('applyReceivedTxIdsPipelined' \/ 'applyReceivedTxsPipelined').
+--
+data ReplyApplied = ReplyApplied {
+    raPeerAction    :: !PeerAction,
+    -- ^ Next action for this peer, chosen against the just-applied
+    -- state (after 'State.drainPeerScore').
+    raCanRequestTxs :: !Bool,
+    -- ^ Whether the peer advertised any requestable txids right after
+    -- the reply was applied (before the scheduler step could claim
+    -- them); input for the Can\/CannotRequestMoreTxs trace.
+    raPenaltyCount  :: !Int,
+    -- ^ Tx-body replies only: omitted plus late bodies
+    -- ('State.handleReceivedTxs'); always 0 for txid replies.
+    raPenaltyScore  :: !Double
+    -- ^ Peer score after applying the penalty via
+    -- 'State.applyPeerEvents'; meaningful only when 'raPenaltyCount'
+    -- is positive.
+  }
+
 -- | Peer-facing coordination API.
 --
 -- The peer thread keeps its local protocol state in a local
@@ -215,6 +236,27 @@ data PeerTxAPI m txid tx = PeerTxAPI {
                          -> [(txid, tx)]
                          -> PeerTxLocalState tx
                          -> m (Int, PeerTxLocalState tx),
+
+    -- | Process a batch of txids received from this peer and choose
+    -- the next pipelined action in the same STM transaction.  Fusing
+    -- the two steps saves one transaction per reply on the hot
+    -- pipelined path and commits the shared state once instead of
+    -- twice; both steps share the single 'Time' argument.
+    applyReceivedTxIdsPipelined :: Time
+                                -> NumTxIdsToReq
+                                -> [(txid, SizeInBytes)]
+                                -> PeerTxLocalState tx
+                                -> m (ReplyApplied, PeerTxLocalState tx),
+
+    -- | Process a batch of tx bodies received from this peer and
+    -- choose the next pipelined action in the same STM transaction.
+    -- Omitted\/late-body penalties are applied to the peer score
+    -- ('State.applyPeerEvents') before the scheduler step, mirroring
+    -- the unfused sequence in the V2 server loop.
+    applyReceivedTxsPipelined :: Time
+                              -> [(txid, tx)]
+                              -> PeerTxLocalState tx
+                              -> m (ReplyApplied, PeerTxLocalState tx),
 
     -- | Mark txs as submitted to the mempool and update shared state.
     applySubmittedTxs    :: Time
@@ -299,6 +341,12 @@ withPeer policy TxSubmissionMempoolReader { mempoolGetSnapshot }
                                  sharedStateVar peerInFlightVar peerCountersVar
         , applyReceivedTxs = applyReceivedTxsImp policy mempoolGetSnapshot
                                sharedStateVar peerInFlightVar peerCountersVar peeraddr
+        , applyReceivedTxIdsPipelined = applyReceivedTxIdsPipelinedImp policy
+                                          mempoolGetSnapshot sharedStateVar
+                                          peerInFlightVar peerCountersVar peeraddr
+        , applyReceivedTxsPipelined = applyReceivedTxsPipelinedImp policy
+                                        mempoolGetSnapshot sharedStateVar
+                                        peerInFlightVar peerCountersVar peeraddr
         , applySubmittedTxs = applySubmittedTxsImp policy sharedStateVar
                                 peerInFlightVar peerCountersVar peeraddr
         , resolveTxRequest = resolveTxRequestImp sharedStateVar
@@ -555,6 +603,123 @@ applyReceivedTxsImp policy mempoolGetSnapshot sharedStateVar peerInFlightVar
                         lateBodies        = fromIntegral lateCount
                       })
     return (omittedCount + lateCount, peerState')
+
+-- | Fused variant of 'applyReceivedTxIdsImp': apply the txid reply and
+-- run 'State.nextPeerActionPipelined' in one STM transaction.
+--
+-- Compared with running the two steps in separate transactions this
+-- halves the hot-path transaction count and commits the shared state
+-- once instead of twice (one fewer invalidation event for the other
+-- peers' in-flight transactions), at the price of re-executing both
+-- steps when the transaction is invalidated by a concurrent commit.
+-- The read\/write set is unchanged (shared state, this peer's
+-- in-flight var and counters cell), so validation work per
+-- transaction does not grow.
+--
+-- The scheduler step sees the peer state with 'State.drainPeerScore'
+-- applied, matching the unfused sequence in the V2 server loop; both
+-- steps share the single 'Time' argument.
+applyReceivedTxIdsPipelinedImp
+  :: ( MonadSTM m
+     , Ord peeraddr
+     , HasRawTxId txid )
+  => TxDecisionPolicy
+  -> STM m (MempoolSnapshot txid tx idx)
+  -> SharedTxStateVar m peeraddr txid
+  -> PeerTxInFlightVar m
+  -> TxSubmissionCountersVar m
+  -> peeraddr
+  -> Time
+  -> NumTxIdsToReq
+  -- ^ number of requested txid's
+  -> [(txid, SizeInBytes)]
+  -- ^ actually received txid's with sizes
+  -> PeerTxLocalState tx
+  -> m (ReplyApplied, PeerTxLocalState tx)
+applyReceivedTxIdsPipelinedImp policy mempoolGetSnapshot sharedStateVar peerInFlightVar
+                               countersVar peeraddr now txIdsToReq txidsAndSizes peerState = do
+  -- Mempool snapshot taken in its own STM tx; see 'applyReceivedTxIdsImp'.
+  MempoolSnapshot { mempoolHasTx } <- atomically mempoolGetSnapshot
+  atomically $ do
+    sharedState <- readTVar sharedStateVar
+    peerInFlight <- readTVar peerInFlightVar
+    let sharedGeneration0 = sharedGeneration sharedState
+        sharedRevision0   = sharedRevision   sharedState
+        (peerStateApplied, peerInFlightApplied, sharedStateApplied) =
+          State.handleReceivedTxIds mempoolHasTx now policy txIdsToReq txidsAndSizes
+                                    peerState peerInFlight sharedState
+        canRequestTxs = not (IntMap.null (peerAvailableTxIds peerStateApplied))
+        (peerAction, peerState', peerInFlight', sharedState') =
+          State.nextPeerActionPipelined now policy peeraddr
+                                        (State.drainPeerScore policy now peerStateApplied)
+                                        peerInFlightApplied sharedStateApplied
+    writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedRevision0 sharedState'
+    writePeerInFlightIfChanged peerInFlightVar peerInFlight peerInFlight'
+    modifyTVar countersVar (<> mempty { txIdRepliesReceived = 1
+                                      , txIdsReceived       = fromIntegral (length txidsAndSizes) })
+    updateCountersForAction countersVar peerAction
+    return ( ReplyApplied { raPeerAction    = peerAction
+                          , raCanRequestTxs = canRequestTxs
+                          , raPenaltyCount  = 0
+                          , raPenaltyScore  = 0 }
+           , peerState' )
+
+-- | Fused variant of 'applyReceivedTxsImp'; see
+-- 'applyReceivedTxIdsPipelinedImp' for the transaction-fusion
+-- rationale.  Penalties for omitted\/late bodies are folded into the
+-- peer score with 'State.applyPeerEvents' before the scheduler step,
+-- mirroring the unfused sequence in the V2 server loop.
+applyReceivedTxsPipelinedImp
+  :: ( MonadSTM m
+     , Ord peeraddr
+     , Show peeraddr
+     , HasRawTxId txid )
+  => TxDecisionPolicy
+  -> STM m (MempoolSnapshot txid tx idx)
+  -> SharedTxStateVar m peeraddr txid
+  -> PeerTxInFlightVar m
+  -> TxSubmissionCountersVar m
+  -> peeraddr
+  -> Time
+  -> [(txid, tx)]
+  -> PeerTxLocalState tx
+  -> m (ReplyApplied, PeerTxLocalState tx)
+applyReceivedTxsPipelinedImp policy mempoolGetSnapshot sharedStateVar peerInFlightVar
+                             countersVar peeraddr now txs peerState = do
+  -- Mempool snapshot taken in its own STM tx; see 'applyReceivedTxIdsImp'.
+  MempoolSnapshot { mempoolHasTx } <- atomically mempoolGetSnapshot
+  atomically $ do
+    sharedState <- readTVar sharedStateVar
+    peerInFlight <- readTVar peerInFlightVar
+    let sharedGeneration0 = sharedGeneration sharedState
+        sharedRevision0   = sharedRevision   sharedState
+        (omittedCount, lateCount, peerStateApplied, peerInFlightApplied, sharedStateApplied) =
+          State.handleReceivedTxs mempoolHasTx now policy peeraddr txs
+                                  peerState peerInFlight sharedState
+        penaltyCount = omittedCount + lateCount
+        (penaltyScore, peerStatePenalised) =
+          if penaltyCount == 0
+             then (0, peerStateApplied)
+             else State.applyPeerEvents policy now 0 penaltyCount peerStateApplied
+        canRequestTxs = not (IntMap.null (peerAvailableTxIds peerStatePenalised))
+        (peerAction, peerState', peerInFlight', sharedState') =
+          State.nextPeerActionPipelined now policy peeraddr
+                                        (State.drainPeerScore policy now peerStatePenalised)
+                                        peerInFlightApplied sharedStateApplied
+    writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedRevision0 sharedState'
+    writePeerInFlightIfChanged peerInFlightVar peerInFlight peerInFlight'
+    modifyTVar countersVar (<> mempty {
+                        txRepliesReceived = 1,
+                        txsReceived       = fromIntegral (length txs),
+                        txsOmitted        = fromIntegral omittedCount,
+                        lateBodies        = fromIntegral lateCount
+                      })
+    updateCountersForAction countersVar peerAction
+    return ( ReplyApplied { raPeerAction    = peerAction
+                          , raCanRequestTxs = canRequestTxs
+                          , raPenaltyCount  = penaltyCount
+                          , raPenaltyScore  = penaltyScore }
+           , peerState' )
 
 -- | Mark txs as submitted to the mempool and update shared state.
 applySubmittedTxsImp :: ( MonadSTM m
