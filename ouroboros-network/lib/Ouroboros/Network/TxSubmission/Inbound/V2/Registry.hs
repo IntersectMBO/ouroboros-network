@@ -277,8 +277,8 @@ data PeerTxAPI m txid tx = PeerTxAPI {
                          -> [TxKey]
                          -> m [(TxKey, txid, tx)],
 
-    -- | Add a delta to the V2 monotonic counters.
-    addCounters          :: TxSubmissionCounters -> m ()
+    -- | Apply a direct update to the V2 monotonic counters.
+    addCounters          :: (TxSubmissionCounters -> TxSubmissionCounters) -> m ()
   }
 
 --
@@ -351,7 +351,7 @@ withPeer policy TxSubmissionMempoolReader { mempoolGetSnapshot }
                                 peerInFlightVar peerCountersVar peeraddr
         , resolveTxRequest = resolveTxRequestImp sharedStateVar
         , resolveBufferedTxs = resolveBufferedTxsImp sharedStateVar
-        , addCounters = \delta -> atomically $ modifyTVar peerCountersVar (<> delta)
+        , addCounters = \f -> atomically $ modifyTVar peerCountersVar f
         }
 
 -- | Reverse this peer's still-outstanding contributions to the shared
@@ -471,13 +471,15 @@ updateCountersForAction countersVar peerAction =
   case peerAction of
     PeerRequestTxIds txIdsToAck txIdsToReq
       | txIdsToAck /= 0 || txIdsToReq /= 0 ->
-          modifyTVar countersVar (<> mempty
-            { txIdMessagesSent = 1
-            , txIdsRequested   = fromIntegral txIdsToReq
-            })
+          modifyTVar countersVar $ \c -> c
+            { txIdMessagesSent = txIdMessagesSent c + 1
+            , txIdsRequested   = txIdsRequested c + fromIntegral txIdsToReq
+            }
     PeerRequestTxs txKeys ->
-      modifyTVar countersVar (<> mempty { txMessagesSent = 1
-                                        , txsRequested   = fromIntegral (length txKeys) })
+      modifyTVar countersVar $ \c -> c
+        { txMessagesSent = txMessagesSent c + 1
+        , txsRequested   = txsRequested c + fromIntegral (length txKeys)
+        }
     _ -> pure ()
 
 -- | Compute the next action for this peer in non-pipelined mode.
@@ -563,8 +565,10 @@ applyReceivedTxIdsImp policy mempoolGetSnapshot sharedStateVar peerInFlightVar
                                     peerState peerInFlight sharedState
     writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedRevision0 sharedState'
     writePeerInFlightIfChanged peerInFlightVar peerInFlight peerInFlight'
-    modifyTVar countersVar (<> mempty { txIdRepliesReceived = 1
-                                      , txIdsReceived       = fromIntegral (length txidsAndSizes) })
+    modifyTVar countersVar $ \c -> c
+      { txIdRepliesReceived = txIdRepliesReceived c + 1
+      , txIdsReceived       = txIdsReceived c + fromIntegral (length txidsAndSizes)
+      }
     return peerState'
 
 -- | Process a batch of tx bodies received from this peer.
@@ -596,12 +600,12 @@ applyReceivedTxsImp policy mempoolGetSnapshot sharedStateVar peerInFlightVar
                                   peerState peerInFlight sharedState
     writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedRevision0 sharedState'
     writePeerInFlightIfChanged peerInFlightVar peerInFlight peerInFlight'
-    modifyTVar countersVar (<> mempty {
-                        txRepliesReceived = 1,
-                        txsReceived       = fromIntegral (length txs),
-                        txsOmitted        = fromIntegral omittedCount,
-                        lateBodies        = fromIntegral lateCount
-                      })
+    modifyTVar countersVar $ \c -> c
+      { txRepliesReceived = txRepliesReceived c + 1
+      , txsReceived       = txsReceived c + fromIntegral (length txs)
+      , txsOmitted        = txsOmitted c + fromIntegral omittedCount
+      , lateBodies        = lateBodies c + fromIntegral lateCount
+      }
     return (omittedCount + lateCount, peerState')
 
 -- | Fused variant of 'applyReceivedTxIdsImp': apply the txid reply and
@@ -655,8 +659,10 @@ applyReceivedTxIdsPipelinedImp policy mempoolGetSnapshot sharedStateVar peerInFl
                                         peerInFlightApplied sharedStateApplied
     writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedRevision0 sharedState'
     writePeerInFlightIfChanged peerInFlightVar peerInFlight peerInFlight'
-    modifyTVar countersVar (<> mempty { txIdRepliesReceived = 1
-                                      , txIdsReceived       = fromIntegral (length txidsAndSizes) })
+    modifyTVar countersVar $ \c -> c
+      { txIdRepliesReceived = txIdRepliesReceived c + 1
+      , txIdsReceived       = txIdsReceived c + fromIntegral (length txidsAndSizes)
+      }
     updateCountersForAction countersVar peerAction
     return ( ReplyApplied { raPeerAction    = peerAction
                           , raCanRequestTxs = canRequestTxs
@@ -708,12 +714,12 @@ applyReceivedTxsPipelinedImp policy mempoolGetSnapshot sharedStateVar peerInFlig
                                         peerInFlightApplied sharedStateApplied
     writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedRevision0 sharedState'
     writePeerInFlightIfChanged peerInFlightVar peerInFlight peerInFlight'
-    modifyTVar countersVar (<> mempty {
-                        txRepliesReceived = 1,
-                        txsReceived       = fromIntegral (length txs),
-                        txsOmitted        = fromIntegral omittedCount,
-                        lateBodies        = fromIntegral lateCount
-                      })
+    modifyTVar countersVar $ \c -> c
+      { txRepliesReceived = txRepliesReceived c + 1
+      , txsReceived       = txsReceived c + fromIntegral (length txs)
+      , txsOmitted        = txsOmitted c + fromIntegral omittedCount
+      , lateBodies        = lateBodies c + fromIntegral lateCount
+      }
     updateCountersForAction countersVar peerAction
     return ( ReplyApplied { raPeerAction    = peerAction
                           , raCanRequestTxs = canRequestTxs
@@ -746,8 +752,10 @@ applySubmittedTxsImp policy sharedStateVar peerInFlightVar countersVar peeraddr
                                    rejectedTxs peerState peerInFlight sharedState
     writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedRevision0 sharedState'
     writePeerInFlightIfChanged peerInFlightVar peerInFlight peerInFlight'
-    modifyTVar countersVar (<> mempty { txsAccepted = fromIntegral (length acceptedTxs)
-                                      , txsRejected = fromIntegral (length rejectedTxs) })
+    modifyTVar countersVar $ \c -> c
+      { txsAccepted = txsAccepted c + fromIntegral (length acceptedTxs)
+      , txsRejected = txsRejected c + fromIntegral (length rejectedTxs)
+      }
     return peerState'
 
 -- | Resolve txids and advertised sizes for a batch of tx keys to request.
