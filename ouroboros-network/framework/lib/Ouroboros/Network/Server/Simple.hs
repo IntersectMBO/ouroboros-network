@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE LambdaCase          #-}
@@ -79,7 +80,7 @@ with :: forall fd addr vNumber vData m a b.
      -- server accept loop
      -> m a
 with sn tracer muxTracers makeBearer configureSock addr handshakeArgs versions k =
-   JobPool.withJobPool $ \jobPool ->
+   JobPool.withJobPool_ $ \jobPool ->
    bracket
      (do sd <- Snocket.open sn (Snocket.addrFamily sn addr)
          configureSock sd addr
@@ -94,7 +95,7 @@ with sn tracer muxTracers makeBearer configureSock addr handshakeArgs versions k
                  (k localAddress)
      )
   where
-    acceptLoop :: JobPool.JobPool () m ()
+    acceptLoop :: JobPool.JobPool JobPool.WithoutQueue () m ()
                -> addr
                -> Snocket.Accept m fd addr
                -> m Void

@@ -1,5 +1,6 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
@@ -55,7 +56,7 @@ import Data.Void (Void)
 
 import Control.Applicative (Alternative ((<|>)))
 import Control.Concurrent.Class.MonadSTM.Strict
-import Control.Concurrent.JobPool (JobPool)
+import Control.Concurrent.JobPool (HasQueue (..), JobPool)
 import Control.Concurrent.JobPool qualified as JobPool
 import Control.Exception (SomeAsyncException (..))
 import Control.Monad.Class.MonadAsync
@@ -535,7 +536,7 @@ peerSelectionGovernorLoop :: forall m extraState extraDebugState extraFlags extr
                           -> PeerSelectionInterfaces
                               extraState extraFlags extraPeers
                               peeraddr peerconn m
-                          -> JobPool () m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
+                          -> JobPool WithQueue () m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
                           -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
                           -> m Void
 peerSelectionGovernorLoop tracer

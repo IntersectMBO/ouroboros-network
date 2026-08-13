@@ -667,7 +667,7 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer debugTracer cmTracer
                     muxTracers stdGen0 snocket makeBearer addrFamily serverAddr accInit
                     dataFlow0 acceptedConnLimit
                     (MultiNodeScript script _) =
-  withJobPool $ \jobpool -> do
+  withJobPool_ $ \jobpool -> do
   stdGenVar <- newTVarIO stdGen0
   connStateIdSupply <- atomically $ CM.newConnStateIdSupply (Proxy @m)
   cc <- startServerConnectionHandler stdGenVar connStateIdSupply MainServer dataFlow0 [accInit] serverAddr jobpool
@@ -679,7 +679,7 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer debugTracer cmTracer
          -> Map.Map peerAddr acc
          -> Map.Map peerAddr (StrictTQueue m (ConnectionHandlerMessage peerAddr req))
          -> [ConnectionEvent req peerAddr]
-         -> JobPool () m ()
+         -> JobPool WithoutQueue () m ()
          -> m ()
     loop _ _ _ _ [] _ = threadDelay 3600
     loop stdGenVar connStateIdSupply nodeAccs servers (event : events) jobpool =
@@ -751,7 +751,7 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer debugTracer cmTracer
                                  -> CM.ConnStateIdSupply m
                                  -> Name peerAddr
                                  -> peerAddr
-                                 -> JobPool () m ()
+                                 -> JobPool WithoutQueue () m ()
                                  -> m (StrictTQueue m (ConnectionHandlerMessage peerAddr req))
     startClientConnectionHandler stdGenVar connStateIdSupply name localAddr jobpool  = do
         cc <- atomically newTQueue
@@ -782,7 +782,7 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer debugTracer cmTracer
                                  -> DataFlow
                                  -> acc
                                  -> peerAddr
-                                 -> JobPool () m ()
+                                 -> JobPool WithoutQueue () m ()
                                  -> m (StrictTQueue m (ConnectionHandlerMessage peerAddr req))
     startServerConnectionHandler stdGenVar connStateIdSupply name dataFlow serverAcc localAddr jobpool = do
         fd <- Snocket.open snocket addrFamily
