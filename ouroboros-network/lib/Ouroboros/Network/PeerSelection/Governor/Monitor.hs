@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -23,7 +24,7 @@ import Data.Maybe (fromMaybe, isJust)
 import Data.Set (Set)
 import Data.Set qualified as Set
 
-import Control.Concurrent.JobPool (JobPool)
+import Control.Concurrent.JobPool (HasQueue (..), JobPool)
 import Control.Concurrent.JobPool qualified as JobPool
 import Control.Exception (assert)
 import Control.Monad.Class.MonadSTM
@@ -97,7 +98,7 @@ targetPeers PeerSelectionActions{ readPeerSelectionTargets,
 -- | Await for the first result from 'JobPool' and return its 'Decision'.
 --
 jobs :: MonadSTM m
-     => JobPool () m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
+     => JobPool WithQueue () m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
      -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
      -> Guarded (STM m) (TimedDecision m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
 jobs jobPool st =

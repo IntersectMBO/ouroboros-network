@@ -45,7 +45,7 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 
-import Control.Concurrent.JobPool (Job (..), JobPool)
+import Control.Concurrent.JobPool (HasQueue (..), Job (..), JobPool)
 import Control.Concurrent.JobPool qualified as JobPool
 import Control.Tracer (Tracer, traceWith)
 
@@ -627,7 +627,7 @@ withPeerStateActions PeerStateActionsArguments {
                        spsMainThreadId
                      }
                      k =
-    JobPool.withJobPool $ \jobPool ->
+    JobPool.withJobPool_ $ \jobPool ->
       k PeerStateActions {
           establishPeerConnection = establishPeerConnection jobPool,
           monitorPeerConnection,
@@ -774,7 +774,7 @@ withPeerStateActions PeerStateActionsArguments {
             tracePeerHotDuration pch >>
             traceWith spsTracer (PeerStatusChanged (CoolingToCold pchConnectionId))
 
-    establishPeerConnection :: JobPool () m (Maybe SomeException)
+    establishPeerConnection :: JobPool WithoutQueue () m (Maybe SomeException)
                             -> IsBigLedgerPeer
                             -> DiffusionMode
                             -> Provenance

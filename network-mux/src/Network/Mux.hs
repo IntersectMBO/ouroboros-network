@@ -410,7 +410,7 @@ monitor :: forall mode m.
            )
         => Tracers m
         -> TimeoutFn m
-        -> JobPool.JobPool Group m JobResult
+        -> JobPool.JobPool JobPool.WithQueue Group m JobResult
         -> EgressQueue m
         -> StrictTQueue m (ControlCmd mode m)
         -> StrictTVar m Status
