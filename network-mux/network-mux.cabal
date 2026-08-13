@@ -28,6 +28,11 @@ flag tracetcpinfo
   manual: True
   default: False
 
+flag asserts
+  description: Enable assertions
+  manual: True
+  default: False
+
 common demo-deps
   default-language: Haskell2010
   default-extensions: ImportQualifiedPost
@@ -123,6 +128,9 @@ library
   if impl(ghc >=9.14)
     ghc-options:
       -Wno-pattern-namespace-specifier
+
+  if flag(asserts)
+    ghc-options: -fno-ignore-asserts
 
 test-suite test
   type: exitcode-stdio-1.0
