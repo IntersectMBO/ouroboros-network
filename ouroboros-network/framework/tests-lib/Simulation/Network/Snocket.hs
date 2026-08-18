@@ -47,6 +47,7 @@ module Simulation.Network.Snocket
   , makeFDRawBearer
   , makeFDBearer
   , NetworkAddress (..)
+  , networkAddressFamily
   , WithAddr (..)
     -- * Re-exports
   , Natural
@@ -448,6 +449,18 @@ instance Hashable NetworkAddress where
                                                                , fromIntegral port :: Integer)
     hashWithSalt s UnusedAddr = hashWithSalt s ("unusedaddr" :: String)
     hashWithSalt s (LocalAddr path) = hashWithSalt s path
+
+-- | Classify a 'NetworkAddress' by its address family, e.g. to decide
+-- whether it can be used as a local address when connecting to a given peer.
+--
+networkAddressFamily :: NetworkAddress -> AddressFamily
+networkAddressFamily = \case
+  EphIPv4Addr {}     -> AFInet
+  IPAddr IP.IPv4{} _ -> AFInet
+  UnusedAddr         -> AFInet -- arbitrary choice
+  EphIPv6Addr {}     -> AFInet6
+  IPAddr IP.IPv6{} _ -> AFInet6
+  LocalAddr addr     -> AFLocal addr
 
 -- | This instance only generates `AFInet` or `AFInet6` addresses.
 --
@@ -934,13 +947,7 @@ mkSnocket state tr =
 
 
     addrFamily :: NetworkAddress -> AddressFamily
-    addrFamily = \case
-      EphIPv4Addr {}     -> AFInet
-      IPAddr IP.IPv4{} _ -> AFInet
-      UnusedAddr         -> AFInet -- arbitrary choice
-      EphIPv6Addr {}     -> AFInet6
-      IPAddr IP.IPv6{} _ -> AFInet6
-      LocalAddr addr     -> AFLocal addr
+    addrFamily = networkAddressFamily
 
 
     open :: AddressFamily -> m (FD m)
