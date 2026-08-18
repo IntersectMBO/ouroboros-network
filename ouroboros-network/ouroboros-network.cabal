@@ -17,7 +17,7 @@ extra-doc-files: CHANGELOG.md
 
 flag asserts
   description: Enable assertions
-  manual: False
+  manual: True
   default: False
 
 flag ipv6
