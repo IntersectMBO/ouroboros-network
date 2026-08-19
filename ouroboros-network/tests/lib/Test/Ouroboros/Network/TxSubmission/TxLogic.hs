@@ -134,7 +134,7 @@ tests =
     , testProperty "nanosecond deadlines never expire early, and expire within 1 ns" prop_retainDeadline_rounding
     , testProperty "counters snapshot counts every peer exactly once" prop_snapshotCounters_exactlyOnce
     , testProperty "a release removes its own registration, not another under its address" prop_registry_releaseOwn
-    , testProperty "nextPeerActionPipelined allows request-only (ack=0) when the queue is non-empty" prop_nextPeerActionPipelined_allowsRequestOnly
+    , testProperty "nextPeerActionPipelined rejects request-only (ack=0, req=N) messages" prop_nextPeerActionPipelined_rejectsRequestOnly
     , testCaseSteps "nextPeerActionPipelined rejects pure-ack (ack=N, req=0) messages" unit_nextPeerActionPipelined_rejectsPureAck
     , testProperty "nextPeerActionPipelined emits a pipelined txid request when ack and request fire together" prop_nextPeerActionPipelined_requestsTxIds
     , testProperty "nextPeerActionPipelined opens a second outstanding body batch" prop_nextPeerActionPipelined_secondBodyBatch
@@ -584,8 +584,7 @@ instance Arbitrary ArbTxDecisionPolicy where
                 <*> choose (0, 5)
                 <*> pure interTxSpaceVal
                 <*> pure inflightTimeoutVal
-                <*> (realToFrac <$> choose (0.1, 1 :: Double))
-                <*> pure False))
+                <*> (realToFrac <$> choose (0.1, 1 :: Double))))
         ]
 
     shrink (ArbTxDecisionPolicy a)
@@ -2453,10 +2452,6 @@ prop_walkFrom_cyclic ks (Positive limit) (NonNegative from) =
 -- nextPeerActionPipelined
 --
 
--- | In pipelined mode 'pickRequestTxIdsAction' must return @Nothing@
--- when either the ack count or the request count is zero (the wire
--- format would otherwise produce an ack-only or request-only
--- pipelined message, which is not allowed).
 -- | When the peer has at least one ackable txid AND room to request
 -- more, 'nextPeerActionPipelined' emits a 'PeerRequestTxIds' with both
 -- counts non-zero.
@@ -2533,15 +2528,16 @@ unit_nextPeerActionPipelined_keepsOneUnackedWithOutstandingBodyReply step = do
   where
     peerAddr = 1 :: PeerAddr
 
--- | When the peer has an unacked txid that is *not* ackable (so the
--- ack prefix is empty) but the unack window still has room, the
--- pipelined picker emits a request-only message ('ack=0, req=N').
--- Filling the window without acking is spec-compliant and matches V1's
--- behaviour.
-prop_nextPeerActionPipelined_allowsRequestOnly
+-- | Request-only pipelined messages ('ack=0, req=N') poll the peer for
+-- txids without letting its unack window grow, so the pipelined picker
+-- must not emit them: a pipelined txid request has to both ack and
+-- request.  When the peer has an unacked txid that is *not* ackable (so
+-- the ack prefix is empty), the picker parks instead, even though the
+-- unack window still has room.
+prop_nextPeerActionPipelined_rejectsRequestOnly
   :: ArbTxDecisionPolicy
   -> Property
-prop_nextPeerActionPipelined_allowsRequestOnly (ArbTxDecisionPolicy policy0) =
+prop_nextPeerActionPipelined_rejectsRequestOnly (ArbTxDecisionPolicy policy0) =
   let
     -- Cap to small windows so the property is easy to reason about.
     policy = policy0 { maxUnacknowledgedTxIds = 4
@@ -2581,13 +2577,8 @@ prop_nextPeerActionPipelined_allowsRequestOnly (ArbTxDecisionPolicy policy0) =
   in
     counterexample ("got: " ++ show action) $
       case action of
-        PeerRequestTxIds ack req ->
-          conjoin [ counterexample "ack should be zero (nothing ackable)"
-                      (ack == 0)
-                  , counterexample "req should be non-zero (window has room)"
-                      (req /= 0)
-                  ]
-        _ -> property False
+        PeerDoNothing {} -> property True
+        _                -> property False
   where
     peerAddr = 1 :: PeerAddr
 
