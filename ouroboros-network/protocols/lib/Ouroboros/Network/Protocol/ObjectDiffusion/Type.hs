@@ -176,10 +176,11 @@ instance Protocol (ObjectDiffusion objectId object) where
     -- | Request a list of object identifiers from the server, and confirm a
     -- number of outstanding object identifiers.
     --
-    -- With 'TokBlocking' this is a blocking operation: the response will always
-    -- have at least one object identifier, and it does not expect a prompt
-    -- response: there is no timeout. This covers the case when there is nothing
-    -- else to do but wait.
+    -- With 'TokBlocking' this is a blocking operation: the response will either
+    -- have at least one object identifier, or be a 'MsgServerIdle'. This covers
+    -- the case when there is nothing else to do but wait. 'MsgServerIdle'
+    -- periodically returns agency to the client so it can react to control
+    -- messages while remaining caught up.
     --
     -- With 'TokNonBlocking' this is a non-blocking operation: the response may
     -- be an empty list and this does expect a prompt response. This covers high
@@ -233,6 +234,15 @@ instance Protocol (ObjectDiffusion objectId object) where
     MsgReplyObjectIds
       :: BlockingReplyList blocking objectId
       -> Message (ObjectDiffusion objectId object) (StObjectIds blocking) StIdle
+    -- | The server has no object identifiers after its current cursor.
+    --
+    -- This response is only valid for a blocking request. It returns agency to
+    -- the client, which can terminate or immediately issue another blocking
+    -- request. In the latter case the protocol remains a continuous wait for
+    -- new objects, without a client-side polling delay.
+
+    MsgServerIdle
+      :: Message (ObjectDiffusion objectId object) (StObjectIds 'StBlocking) StIdle
     -- | Request one or more objects corresponding to the given object
     -- identifiers.
     --
@@ -283,6 +293,7 @@ instance ( NFData objectId
   rnf MsgInit                          = ()
   rnf (MsgRequestObjectIds tkbs w1 w2) = rnf tkbs `seq` rnf w1 `seq` rnf w2
   rnf (MsgReplyObjectIds brl)          = rnf brl
+  rnf MsgServerIdle                    = ()
   rnf (MsgRequestObjects objIds)       = rnf objIds
   rnf (MsgReplyObjects objects)        = rnf objects
   rnf MsgDone                          = ()

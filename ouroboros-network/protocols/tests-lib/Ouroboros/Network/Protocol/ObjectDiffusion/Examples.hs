@@ -11,7 +11,6 @@ module Ouroboros.Network.Protocol.ObjectDiffusion.Examples
   , testObjectDiffusionInbound
   , InboundState (..)
   , initialInboundState
-  , WithCaughtUpDetection (..)
   ) where
 
 
@@ -26,7 +25,7 @@ import Control.Exception (assert)
 import Control.Monad (when)
 import Control.Tracer (Tracer, traceWith)
 import Data.Foldable qualified as Foldable
-import Data.List.NonEmpty (NonEmpty (..))
+import Data.List.NonEmpty (NonEmpty ((:|)))
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -35,40 +34,6 @@ import Data.Sequence.Strict qualified as Seq
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Word (Word16)
-
--- | This helper typeclass allows the inbound and outbound tests implementation
--- to finish the protocol gracefully when all the desired objects have been sent.
---
--- | Normally, the outbound side should always respond with a non-empty list of
--- object IDs to a blocking request, but instead it can respond with the
--- 'caughtUpSentinel' (still inhabiting 'NonEmpty objectId') to indicate that
--- there are no more objects to send, and the inbound side can use 'ifCaughtUp'
--- to detect this and terminate the protocol gracefully.
---
--- | This suggests that the concrete type used for 'objectId' has some special
--- values that are not actually valid object IDs, but are used to signal this
--- condition. This is a bit hacky, but it allows us to keep the example
--- implementations simple and focused on the pipelining aspect, without having
--- to introduce additional protocol messages or state to handle termination.
-class Eq objectId => WithCaughtUpDetection objectId where
-  -- | This is a special value that the outbound implementation can use to
-  -- signal to the inbound implementation that there are no more objects to send.
-  -- This ought to be a value that uses non-normal object IDs, but still
-  -- inhabits 'NonEmpty objectId'.
-  caughtUpSentinel :: NonEmpty objectId
-
-  -- | This is a helper function used in the inbound implementation to terminate
-  -- the protocol gracefully when all objects that the outbound peer wanted to
-  -- send have actually been sent.
-  ifCaughtUp
-    :: InboundStIdle 'Z objectId object m a
-    -> (NonEmpty objectId -> InboundStIdle 'Z objectId object m a)
-    -> NonEmpty objectId
-    -> InboundStIdle 'Z objectId object m a
-  ifCaughtUp fCaughtUp fElse objectIds =
-    if objectIds == caughtUpSentinel
-       then fCaughtUp
-       else fElse objectIds
 
 --
 -- Outbound implementation
@@ -91,7 +56,7 @@ data TraceObjectDiffusionTestImplem objectId object =
 
 testObjectDiffusionOutbound
   :: forall objectId object m.
-     (Ord objectId, Show objectId, Monad m, WithCaughtUpDetection objectId)
+     (Ord objectId, Show objectId, Monad m)
   => Tracer m (TraceObjectDiffusionTestImplem objectId object)
   -> (object -> objectId)
   -> Word16  -- ^ Maximum number of unacknowledged object IDs allowed
@@ -162,15 +127,7 @@ testObjectDiffusionOutbound tracer objectId maxUnacked =
 
             return $! case (blocking, unackedExtra) of
               (SingBlocking, []) ->
-                -- | In the production-ready implementation that lives in
-                -- `ouroboros-consensus`, we would block on waiting new objects
-                -- from the ObjectPool here.
-                -- But in this test implementation, we use 'caughtUpSentinel'
-                -- to signal that there are no more objects to send, so the
-                -- inbound side knows it is caught-up and can terminate the
-                -- protocol gracefully.
-                SendMsgReplyObjectIds
-                  (BlockingReply caughtUpSentinel)
+                SendMsgServerIdle
                   (outboundIdle unackedSeq'' unackedMap'' remainingObjects')
 
               (SingBlocking, obj : objs) ->
@@ -225,7 +182,7 @@ initialInboundState = InboundState 0 Seq.empty Set.empty Map.empty 0
 
 testObjectDiffusionInbound
   :: forall objectId object m.
-     (Ord objectId, WithCaughtUpDetection objectId)
+     (Ord objectId)
   => Tracer m (TraceObjectDiffusionTestImplem objectId object)
   -> (object -> objectId)
   -> Word16  -- ^ Maximum number of unacknowledged object IDs allowed
@@ -264,18 +221,17 @@ testObjectDiffusionInbound
         SendMsgRequestObjectIdsBlocking
           (numObjectsToAcknowledge st)
           numObjectIdsToRequest
-          -- We use 'ifCaughtUp' here to detect if the outbound side ha
-          -- signaled that there are no more objects to send, in which case we
-          -- terminate the protocol gracefully using 'SendMsgDone'.
-          (ifCaughtUp
-            (SendMsgDone accum)
-            (handleReply accum Zero st {
+          -- If object IDs are available, handle them like any other collected
+          -- batch and continue running the protocol.
+          (handleReply accum Zero st {
                     numObjectsToAcknowledge    = 0,
                     requestedObjectIdsInFlight = numObjectIdsToRequest
                   }
                   . CollectObjectIds numObjectIdsToRequest
                   . NonEmpty.toList)
-          )
+          -- The example server uses 'MsgServerIdle' to signal that the
+          -- test is over, so terminate and return all collected objects.
+          (SendMsgDone accum)
 
     inboundIdle accum (Succ n) st
         -- We have replies in flight and we should eagerly collect them if

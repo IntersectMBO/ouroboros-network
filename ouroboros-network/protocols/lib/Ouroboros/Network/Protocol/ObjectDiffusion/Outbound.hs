@@ -61,6 +61,9 @@ data OutboundStObjectIds blocking objectId object m a where
     :: BlockingReplyList blocking objectId
     -> OutboundStIdle objectId object m a
     -> OutboundStObjectIds blocking objectId object m a
+  SendMsgServerIdle
+    :: OutboundStIdle objectId object m a
+    -> OutboundStObjectIds 'StBlocking objectId object m a
 
 data OutboundStObjects objectId object m a where
   SendMsgReplyObjects
@@ -86,6 +89,11 @@ objectDiffusionOutboundPeer (ObjectDiffusionOutbound outboundSt) =
         MsgRequestObjectIds blocking ackNo reqNo -> Effect $ do
           reply <- recvMsgRequestObjectIds blocking ackNo reqNo
           case reply of
+            SendMsgServerIdle k ->
+              return $
+                Yield
+                  MsgServerIdle
+                  (run k)
             SendMsgReplyObjectIds objectIds k ->
               -- TODO: investigate why GHC cannot infer `SingI`; it used to in
               -- `coot/typed-protocols-rewrite` branch

@@ -23,7 +23,6 @@ module Ouroboros.Network.Protocol.ObjectDiffusion.Test
 
 import Control.Monad (void)
 import Data.ByteString.Lazy (ByteString)
-import Data.List.NonEmpty (NonEmpty ((:|)))
 import Data.List.NonEmpty qualified as NonEmpty
 
 import Control.Monad.Class.MonadAsync (MonadAsync)
@@ -61,8 +60,8 @@ import GHC.Generics
 import GHC.Natural (Natural)
 import Ouroboros.Network.Protocol.ObjectDiffusion.Direct (directPipelined)
 import Ouroboros.Network.Protocol.ObjectDiffusion.Examples
-           (TraceObjectDiffusionTestImplem, WithCaughtUpDetection (..),
-           testObjectDiffusionInbound, testObjectDiffusionOutbound)
+           (TraceObjectDiffusionTestImplem, testObjectDiffusionInbound,
+           testObjectDiffusionOutbound)
 import Ouroboros.Network.Protocol.ObjectDiffusion.Inbound
            (ObjectDiffusionInboundPipelined,
            objectDiffusionInboundPeerPipelined)
@@ -116,11 +115,7 @@ newtype ObjectId = ObjectId (Maybe Word64)
   deriving (Eq, Ord, Show, Serialise, Generic, NFData)
 
 instance Arbitrary ObjectId where
-  -- | We never generate the `Nothing` variant, since it is reserved for the sentinel value used to detect that the peer is caught up.
-  arbitrary = ObjectId . Just <$> arbitrary
-
-instance WithCaughtUpDetection ObjectId where
-  caughtUpSentinel = ObjectId Nothing :| []
+  arbitrary = ObjectId <$> arbitrary
 
 instance ShowProxy ObjectId where
     showProxy _ = "ObjectId"
@@ -157,6 +152,8 @@ instance (Arbitrary objectId, Arbitrary object)
         <$> NonBlockingReply
         <$> arbitrary
 
+    , pure $ AnyMessage MsgServerIdle
+
     , AnyMessage
         <$> MsgRequestObjects
         <$> arbitrary
@@ -190,6 +187,9 @@ instance (Eq objectId, Eq object)
   (==) (AnyMessage (MsgReplyObjectIds (NonBlockingReply objectIds)))
        (AnyMessage (MsgReplyObjectIds (NonBlockingReply objectIds'))) =
     objectIds == objectIds'
+
+  (==) (AnyMessage MsgServerIdle)
+       (AnyMessage MsgServerIdle) = True
 
   (==) (AnyMessage (MsgRequestObjects objectIds))
        (AnyMessage (MsgRequestObjects objectIds')) = objectIds == objectIds'
@@ -266,6 +266,7 @@ labelMsg (AnyMessage msg) =
            MsgInit                -> "MsgInit"
            MsgRequestObjectIds {} -> "MsgRequestObjectIds"
            MsgReplyObjectIds as   -> "MsgReplyObjectIds " ++ renderRanges 3 (length as)
+           MsgServerIdle          -> "MsgServerIdle"
            MsgRequestObjects as   -> "MsgRequestObjects " ++ renderRanges 3 (length as)
            MsgReplyObjects as     -> "MsgReplyObjects "   ++ renderRanges 3 (length as)
            MsgDone                -> "MsgDone"
