@@ -151,6 +151,9 @@ encodeObjectDiffusion encodeObjectId encodeObject = encode
     encode MsgDone =
          CBOR.encodeListLen 1
       <> CBOR.encodeWord 5
+    encode MsgServerIdle =
+         CBOR.encodeListLen 1
+      <> CBOR.encodeWord 6
 
 decodeObjectDiffusion
   :: forall (objectId :: Type) (object :: Type)
@@ -218,6 +221,8 @@ decodeObjectDiffusion decodeObjectId decodeObject = decode
           return $ SomeMessage $ MsgReplyObjects objIds
         (SingIdle, 1, 5) ->
           return $ SomeMessage MsgDone
+        (SingObjectIds SingBlocking, 1, 6) ->
+          return $ SomeMessage MsgServerIdle
         (SingDone, _, _) -> notActiveState stok
         -- failures per protocol state
         (SingInit, _, _) ->
@@ -281,6 +286,8 @@ codecObjectDiffusionId = Codec {encode, decode}
           DecodeDone (SomeMessage msg) Nothing
         (SingObjectIds b, Just (AnyMessage msg)) -> case (b, msg) of
           (SingBlocking, MsgReplyObjectIds (BlockingReply {})) ->
+            DecodeDone (SomeMessage msg) Nothing
+          (SingBlocking, MsgServerIdle) ->
             DecodeDone (SomeMessage msg) Nothing
           (SingNonBlocking, MsgReplyObjectIds (NonBlockingReply {})) ->
             DecodeDone (SomeMessage msg) Nothing
