@@ -50,6 +50,7 @@ data InboundStIdle (n :: N) objectId object m a where
     -> NumObjectIdsReq -- ^ number of objectIds to request
     -> (NonEmpty objectId -> InboundStIdle Z objectId object m a)
     -> InboundStIdle Z objectId object m a
+    -> InboundStIdle Z objectId object m a
   SendMsgRequestObjectIdsPipelined
     :: NumObjectIdsAck
     -> NumObjectIdsReq
@@ -82,12 +83,14 @@ objectDiffusionInboundPeerPipelined (ObjectDiffusionInboundPipelined inboundSt) 
       :: InboundStIdle n objectId object m a
       -> Peer (ObjectDiffusion objectId object) AsClient (Pipelined n (Collect objectId object)) StIdle m a
 
-    run (SendMsgRequestObjectIdsBlocking ackNo reqNo k) =
+    run (SendMsgRequestObjectIdsBlocking ackNo reqNo k onServerIdle) =
           Yield (MsgRequestObjectIds SingBlocking ackNo reqNo)
             $ Await
             $ \case
                 MsgReplyObjectIds (BlockingReply objectIds) ->
                   run (k objectIds)
+                MsgServerIdle ->
+                  run onServerIdle
     run (SendMsgRequestObjectIdsPipelined ackNo reqNo k) =
           YieldPipelined
             (MsgRequestObjectIds SingNonBlocking ackNo reqNo)
