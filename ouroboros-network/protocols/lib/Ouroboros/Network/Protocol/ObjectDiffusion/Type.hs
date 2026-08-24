@@ -17,28 +17,31 @@
 module Ouroboros.Network.Protocol.ObjectDiffusion.Type
   ( ObjectDiffusion (..)
   , Message (..)
+  , ObjectIdsReplyList (..)
+  , ObjectIdsRequestKind (..)
+  , singObjectIdsRequestKind
   , SingObjectDiffusion (..)
+  , SingStObjectIdsKind (..)
+  , SingStObjectIdsPhase (..)
+  , StObjectIdsKind (..)
+  , StObjectIdsPhase (..)
   , NumObjectIdsAck (..)
   , NumObjectIdsReq (..)
   , NumObjectsReq (..)
   , NumObjectsUnacknowledged (..)
     -- re-exports
-  , BlockingReplyList (..)
-  , SingBlockingStyle (..)
   , SizeInBytes (..)
-  , StBlockingStyle (..)
   ) where
 
 import Control.DeepSeq (NFData (..))
 import Data.Kind (Type)
+import Data.List.NonEmpty (NonEmpty)
 import Data.Monoid (Sum (..))
 import Data.Singletons
 import Data.Word (Word16)
 import GHC.Generics (Generic)
 import Network.TypedProtocol.Core
 import NoThunks.Class (NoThunks (..))
-import Ouroboros.Network.Protocol.TxSubmission2.Type (BlockingReplyList (..),
-           SingBlockingStyle (..), StBlockingStyle (..))
 import Ouroboros.Network.SizeInBytes (SizeInBytes (..))
 import Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 import Quiet (Quiet (..))
@@ -61,8 +64,12 @@ data ObjectDiffusion objectId object where
   -- | The outbound node has agency; it must reply with a list of object
   -- identifiers that it wishes to submit.
   --
-  -- There are two sub-states for this, for blocking and non-blocking cases.
-  StObjectIds :: StBlockingStyle -> ObjectDiffusion objectId object
+  -- A non-blocking request has one prompt reply state. A blocking request has
+  -- two phases, distinguishing the prompt reply state from the state entered
+  -- after the server has reported that it must await new objects.
+  StObjectIds
+    :: StObjectIdsKind
+    -> ObjectDiffusion objectId object
   -- | The outbound node has agency; it must reply with the list of
   -- objects.
   StObjects   :: ObjectDiffusion objectId object
@@ -84,14 +91,50 @@ instance ( ShowProxy objectId
 instance ShowProxy (StIdle :: ObjectDiffusion objectId object) where
   showProxy _ = "StIdle"
 
+-- | The two phases of a blocking object-ID reply.
+data StObjectIdsPhase = StCanAwait | StMustReply
+
+data SingStObjectIdsPhase (phase :: StObjectIdsPhase) where
+  SingCanAwait :: SingStObjectIdsPhase 'StCanAwait
+  SingMustReply :: SingStObjectIdsPhase 'StMustReply
+
+deriving instance Show (SingStObjectIdsPhase phase)
+
+type instance Sing = SingStObjectIdsPhase
+
+instance SingI 'StCanAwait where sing = SingCanAwait
+instance SingI 'StMustReply where sing = SingMustReply
+
+-- | The three legal object-ID reply states. Only blocking replies have an
+-- await phase.
+data StObjectIdsKind
+  = StObjectIdsNonBlocking
+  | StObjectIdsBlocking StObjectIdsPhase
+
+data SingStObjectIdsKind (kind :: StObjectIdsKind) where
+  SingObjectIdsNonBlocking
+    :: SingStObjectIdsKind 'StObjectIdsNonBlocking
+  SingObjectIdsBlocking
+    :: SingStObjectIdsPhase phase
+    -> SingStObjectIdsKind ('StObjectIdsBlocking phase)
+
+deriving instance Show (SingStObjectIdsKind kind)
+
+type instance Sing = SingStObjectIdsKind
+
+instance SingI 'StObjectIdsNonBlocking where
+  sing = SingObjectIdsNonBlocking
+instance SingI phase => SingI ('StObjectIdsBlocking phase) where
+  sing = SingObjectIdsBlocking sing
+
 type SingObjectDiffusion
   :: ObjectDiffusion objectId object
   -> Type
 data SingObjectDiffusion k where
   SingInit      :: SingObjectDiffusion StInit
   SingIdle      :: SingObjectDiffusion StIdle
-  SingObjectIds :: SingBlockingStyle stBlocking
-                -> SingObjectDiffusion (StObjectIds stBlocking)
+  SingObjectIds :: SingStObjectIdsKind kind
+                -> SingObjectDiffusion (StObjectIds kind)
   SingObjects   :: SingObjectDiffusion StObjects
   SingDone      :: SingObjectDiffusion StDone
 
@@ -99,8 +142,7 @@ deriving instance Show (SingObjectDiffusion k)
 
 instance StateTokenI StInit where stateToken = SingInit
 instance StateTokenI StIdle where stateToken = SingIdle
-instance (SingI stBlocking)
-      => StateTokenI (StObjectIds stBlocking) where
+instance SingI kind => StateTokenI (StObjectIds kind) where
   stateToken = SingObjectIds sing
 instance StateTokenI StObjects where stateToken = SingObjects
 instance StateTokenI StDone where stateToken = SingDone
@@ -133,6 +175,48 @@ newtype NumObjectsUnacknowledged = NumObjectsUnacknowledged {getNumObjectsUnackn
   deriving (Semigroup) via (Sum Word16)
   deriving (Monoid)    via (Sum Word16)
   deriving (Show)      via (Quiet NumObjectsUnacknowledged)
+
+-- | The two legal object-ID request kinds, indexed by the state in which the
+-- server must reply.
+data ObjectIdsRequestKind (kind :: StObjectIdsKind) where
+  RequestObjectIdsNonBlocking
+    :: ObjectIdsRequestKind 'StObjectIdsNonBlocking
+  RequestObjectIdsBlocking
+    :: ObjectIdsRequestKind ('StObjectIdsBlocking 'StCanAwait)
+
+deriving instance Eq (ObjectIdsRequestKind kind)
+deriving instance Show (ObjectIdsRequestKind kind)
+
+instance NFData (ObjectIdsRequestKind kind) where
+  rnf RequestObjectIdsNonBlocking = ()
+  rnf RequestObjectIdsBlocking    = ()
+
+singObjectIdsRequestKind
+  :: ObjectIdsRequestKind kind
+  -> SingStObjectIdsKind kind
+singObjectIdsRequestKind RequestObjectIdsNonBlocking =
+  SingObjectIdsNonBlocking
+singObjectIdsRequestKind RequestObjectIdsBlocking =
+  SingObjectIdsBlocking SingCanAwait
+
+-- | Object-ID replies indexed by the protocol state in which they can be
+-- sent. Blocking replies are non-empty and valid in either blocking phase;
+-- non-blocking replies may be empty.
+data ObjectIdsReplyList (kind :: StObjectIdsKind) a where
+  BlockingReply
+    :: NonEmpty a
+    -> ObjectIdsReplyList ('StObjectIdsBlocking phase) a
+  NonBlockingReply
+    :: [a]
+    -> ObjectIdsReplyList 'StObjectIdsNonBlocking a
+
+deriving instance Eq a => Eq (ObjectIdsReplyList kind a)
+deriving instance Show a => Show (ObjectIdsReplyList kind a)
+deriving instance Foldable (ObjectIdsReplyList kind)
+
+instance NFData a => NFData (ObjectIdsReplyList kind a) where
+  rnf (BlockingReply values)    = rnf values
+  rnf (NonBlockingReply values) = rnf values
 
 
 -- | There are some constraints of the protocol that are not captured in the
@@ -176,24 +260,24 @@ instance Protocol (ObjectDiffusion objectId object) where
     -- | Request a list of object identifiers from the server, and confirm a
     -- number of outstanding object identifiers.
     --
-    -- With 'TokBlocking' this is a blocking operation: the response will either
-    -- have at least one object identifier, or be a 'MsgServerIdle'. This covers
-    -- the case when there is nothing else to do but wait. 'MsgServerIdle'
-    -- periodically returns agency to the client so it can react to control
-    -- messages while remaining caught up.
+    -- With 'RequestObjectIdsBlocking' this is a blocking operation: the server
+    -- either replies promptly with at least one object identifier or sends
+    -- 'MsgAwaitReply'. After 'MsgAwaitReply', it waits for new objects and
+    -- eventually replies with identifiers or 'MsgServerIdle'.
     --
-    -- With 'TokNonBlocking' this is a non-blocking operation: the response may
-    -- be an empty list and this does expect a prompt response. This covers high
-    -- throughput use cases where we wish to pipeline, by interleaving requests
-    -- for additional object identifiers with requests for objects, which
-    -- requires these requests not block.
+    -- With 'RequestObjectIdsNonBlocking' this is a non-blocking operation: the
+    -- response may be an empty list and this does expect a prompt response.
+    -- This covers high throughput use cases where we wish to pipeline, by
+    -- interleaving requests for additional object identifiers with requests
+    -- for objects, which requires these requests not block.
     --
     -- The request gives the maximum number of object identifiers that can be
     -- accepted in the response. This must be greater than zero in the
-    -- 'TokBlocking' case. In the 'TokNonBlocking' case either the numbers
-    -- acknowledged or the number requested __MUST__ be non-zero. In either
-    -- case, the number requested __MUST__ not put the total outstanding over
-    -- the fixed protocol limit.
+    -- 'RequestObjectIdsBlocking' case. In the
+    -- 'RequestObjectIdsNonBlocking' case either the numbers acknowledged or
+    -- the number requested __MUST__ be non-zero. In either case, the number
+    -- requested __MUST__ not put the total outstanding over the fixed protocol
+    -- limit.
     --
     -- The request also gives the number of outstanding object identifiers that
     -- can now be acknowledged. The actual objects to acknowledge are known to
@@ -211,18 +295,19 @@ instance Protocol (ObjectDiffusion objectId object) where
     --   remaining unacknowledged objects.
 
     MsgRequestObjectIds
-      :: forall (blocking :: StBlockingStyle) objectId object.
-         SingBlockingStyle blocking
+      :: forall (kind :: StObjectIdsKind) objectId object.
+         ObjectIdsRequestKind kind
       -> NumObjectIdsAck -- ^ Acknowledge this number of outstanding objects
       -> NumObjectIdsReq -- ^ Request up to this number of object ids
-      -> Message (ObjectDiffusion objectId object) StIdle (StObjectIds blocking)
+      -> Message (ObjectDiffusion objectId object) StIdle (StObjectIds kind)
     -- | Reply with a list of object identifiers for available objects, along
     -- with the size of each object.
     --
     -- The list must not be longer than the maximum number requested.
     --
-    -- In the 'StObjectIds' 'Blocking' state the list must be non-empty while in
-    -- the 'StObjectIds' 'NonBlocking' state the list may be empty.
+    -- In a @'StObjectIds' ('StObjectIdsBlocking' phase)@ state the list must be
+    -- non-empty, while in @'StObjectIds' 'StObjectIdsNonBlocking'@ it may be
+    -- empty.
     --
     -- These objects are added to the notional FIFO of outstanding object
     -- identifiers for the protocol.
@@ -232,9 +317,21 @@ instance Protocol (ObjectDiffusion objectId object) where
     -- objects.
 
     MsgReplyObjectIds
-      :: BlockingReplyList blocking objectId
-      -> Message (ObjectDiffusion objectId object) (StObjectIds blocking) StIdle
-    -- | The server has no object identifiers after its current cursor.
+      :: ObjectIdsReplyList kind objectId
+      -> Message (ObjectDiffusion objectId object) (StObjectIds kind) StIdle
+    -- | The server has no object identifiers immediately available after its
+    -- current cursor, so it will await new objects.
+    --
+    -- This message is the prompt per-peer caught-up observation. The server
+    -- retains agency and must subsequently reply with non-empty object IDs or
+    -- 'MsgServerIdle'.
+
+    MsgAwaitReply
+      :: Message
+           (ObjectDiffusion objectId object)
+           (StObjectIds ('StObjectIdsBlocking 'StCanAwait))
+           (StObjectIds ('StObjectIdsBlocking 'StMustReply))
+    -- | The server still has no object identifiers after a bounded wait.
     --
     -- This response is only valid for a blocking request. It returns agency to
     -- the client, which can terminate or immediately issue another blocking
@@ -242,7 +339,10 @@ instance Protocol (ObjectDiffusion objectId object) where
     -- new objects, without a client-side polling delay.
 
     MsgServerIdle
-      :: Message (ObjectDiffusion objectId object) (StObjectIds 'StBlocking) StIdle
+      :: Message
+           (ObjectDiffusion objectId object)
+           (StObjectIds ('StObjectIdsBlocking 'StMustReply))
+           StIdle
     -- | Request one or more objects corresponding to the given object
     -- identifiers.
     --
@@ -278,11 +378,11 @@ instance Protocol (ObjectDiffusion objectId object) where
     MsgDone
       :: Message (ObjectDiffusion objectId object) StIdle StDone
 
-  type StateAgency StInit          = ClientAgency
-  type StateAgency StIdle          = ClientAgency
-  type StateAgency (StObjectIds b) = ServerAgency
-  type StateAgency StObjects       = ServerAgency
-  type StateAgency StDone          = NobodyAgency
+  type StateAgency StInit             = ClientAgency
+  type StateAgency StIdle             = ClientAgency
+  type StateAgency (StObjectIds kind) = ServerAgency
+  type StateAgency StObjects          = ServerAgency
+  type StateAgency StDone             = NobodyAgency
 
   type StateToken = SingObjectDiffusion
 
@@ -293,6 +393,7 @@ instance ( NFData objectId
   rnf MsgInit                          = ()
   rnf (MsgRequestObjectIds tkbs w1 w2) = rnf tkbs `seq` rnf w1 `seq` rnf w2
   rnf (MsgReplyObjectIds brl)          = rnf brl
+  rnf MsgAwaitReply                    = ()
   rnf MsgServerIdle                    = ()
   rnf (MsgRequestObjects objIds)       = rnf objIds
   rnf (MsgReplyObjects objects)        = rnf objects

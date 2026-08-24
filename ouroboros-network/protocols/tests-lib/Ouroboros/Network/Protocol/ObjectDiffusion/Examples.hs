@@ -18,8 +18,9 @@ import Network.TypedProtocol.Core
 
 import Ouroboros.Network.Protocol.ObjectDiffusion.Inbound
 import Ouroboros.Network.Protocol.ObjectDiffusion.Outbound
-import Ouroboros.Network.Protocol.ObjectDiffusion.Type (BlockingReplyList (..),
-           NumObjectIdsAck (..), NumObjectIdsReq (..), SingBlockingStyle (..))
+import Ouroboros.Network.Protocol.ObjectDiffusion.Type (NumObjectIdsAck (..),
+           NumObjectIdsReq (..), ObjectIdsReplyList (..),
+           ObjectIdsRequestKind (..))
 
 import Control.Exception (assert)
 import Control.Monad (when)
@@ -83,12 +84,12 @@ testObjectDiffusionOutbound tracer objectId maxUnacked =
               unackedMap
               (Map.fromList [ (x, ()) | x <- Foldable.toList unackedSeq ])
 
-          recvMsgRequestObjectIds :: forall blocking.
-                                     SingBlockingStyle blocking
+          recvMsgRequestObjectIds :: forall kind.
+                                     ObjectIdsRequestKind kind
                                   -> NumObjectIdsAck
                                   -> NumObjectIdsReq
-                                  -> m (OutboundStObjectIds blocking objectId object m ())
-          recvMsgRequestObjectIds blocking ackNo reqNo = do
+                                  -> m (OutboundStObjectIds kind objectId object m ())
+          recvMsgRequestObjectIds requestKind ackNo reqNo = do
             traceWith tracer $
               EventRecvMsgRequestObjectIds
                 unackedSeq unackedMap remainingObjects ackNo reqNo
@@ -108,8 +109,8 @@ testObjectDiffusionOutbound tracer objectId maxUnacked =
                 unackedMap' = Foldable.foldl' (flip Map.delete) unackedMap
                                 (Seq.take (fromIntegral ackNo) unackedSeq)
 
-            case blocking of
-              SingBlocking | not (Seq.null unackedSeq')
+            case requestKind of
+              RequestObjectIdsBlocking | not (Seq.null unackedSeq')
                 -> error $ "testObjectDiffusionOutbound.recvMsgRequestObjectIds: "
                         <> "peer made a blocking request for more object IDs when "
                         <> "there are still unacknowledged object IDs."
@@ -125,17 +126,24 @@ testObjectDiffusionOutbound tracer objectId maxUnacked =
                                                  | obj <- unackedExtra ]
                 remainingObjects' = drop (fromIntegral reqNo) remainingObjects
 
-            return $! case (blocking, unackedExtra) of
-              (SingBlocking, []) ->
-                SendMsgServerIdle
-                  (outboundIdle unackedSeq'' unackedMap'' remainingObjects')
+            return $! case (requestKind, unackedExtra) of
+              (RequestObjectIdsBlocking, []) ->
+                -- The test server is not also a client for the purpose of the
+                -- object diffusion protocol, and does not produce votes or
+                -- certificates. This means there is no source for which new
+                -- objects can be created. Hence, after sending `MsgAwaitReply`,
+                -- the server can immediately send `MsgServerIdle`. The client
+                -- interprets this as the end of the test.
+                SendMsgAwaitReply $ pure $
+                  SendMsgServerIdle
+                    (outboundIdle unackedSeq'' unackedMap'' remainingObjects')
 
-              (SingBlocking, obj : objs) ->
+              (RequestObjectIdsBlocking, obj : objs) ->
                 SendMsgReplyObjectIds
                   (BlockingReply (fmap objectId (obj :| objs)))
                   (outboundIdle unackedSeq'' unackedMap'' remainingObjects')
 
-              (SingNonBlocking, objs) ->
+              (RequestObjectIdsNonBlocking, objs) ->
                 SendMsgReplyObjectIds
                   (NonBlockingReply (fmap objectId objs))
                   (outboundIdle unackedSeq'' unackedMap'' remainingObjects')
@@ -182,7 +190,7 @@ initialInboundState = InboundState 0 Seq.empty Set.empty Map.empty 0
 
 testObjectDiffusionInbound
   :: forall objectId object m.
-     (Ord objectId)
+     (Ord objectId, Applicative m)
   => Tracer m (TraceObjectDiffusionTestImplem objectId object)
   -> (object -> objectId)
   -> Word16  -- ^ Maximum number of unacknowledged object IDs allowed
@@ -221,6 +229,9 @@ testObjectDiffusionInbound
         SendMsgRequestObjectIdsBlocking
           (numObjectsToAcknowledge st)
           numObjectIdsToRequest
+          -- There is nothing for this example client to record when the server
+          -- reports that it must await new object IDs.
+          (pure ())
           -- If object IDs are available, handle them like any other collected
           -- batch and continue running the protocol.
           (handleReply accum Zero st {
