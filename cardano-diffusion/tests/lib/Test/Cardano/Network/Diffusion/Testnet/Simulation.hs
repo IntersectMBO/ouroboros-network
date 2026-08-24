@@ -32,7 +32,7 @@ module Test.Cardano.Network.Diffusion.Testnet.Simulation
   , DiffusionTestTrace (..)
   , ppDiffusionTestTrace
     -- * Re-exports
-  , TestAddress (..)
+  , Node.NetworkAddress (..)
   , RelayAccessPoint (..)
   , Script (..)
   , module PeerSelection
@@ -125,7 +125,7 @@ import Ouroboros.Network.Protocol.PeerSharing.Codec (byteLimitsPeerSharing,
 import Ouroboros.Network.Protocol.TxSubmission2.Codec (byteLimitsTxSubmission2,
            timeLimitsTxSubmission2)
 import Ouroboros.Network.Server qualified as Server
-import Ouroboros.Network.Snocket (Snocket, TestAddress (..))
+import Ouroboros.Network.Snocket (Snocket)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy (TxDecisionPolicy)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types (TraceTxLogic,
            TraceTxSubmissionInbound)
@@ -138,8 +138,7 @@ import Simulation.Network.Snocket (BearerInfo (..), FD, SnocketTrace,
 import Test.Ouroboros.Network.Data.Script
 import Test.Ouroboros.Network.Diffusion.Node qualified as Node
 import Test.Ouroboros.Network.Diffusion.Node.Kernel (NtCAddr, NtCVersion,
-           NtCVersionData, NtNAddr, NtNAddr_ (IPAddr), NtNVersion,
-           NtNVersionData)
+           NtCVersionData, NtNAddr, NtNVersion, NtNVersionData)
 import Test.Ouroboros.Network.LedgerPeers (LedgerPools (..), cardanoSRVPrefix,
            genLedgerPoolsFrom)
 import Test.Ouroboros.Network.OrphanInstances (genIPv4, genIPv6)
@@ -474,7 +473,7 @@ genNodeArgs relays minConnected localRootPeers self txs = flip suchThat hasUpstr
         -- `UseLedgerPeers 0`!
       , naConsensusMode
       , naBootstrapPeers         = bootstrapPeersDomain
-      , naAddr                   = TestAddress ((\(_, ip, port, _) -> IPAddr ip port) self)
+      , naAddr                   = ((\(_, ip, port, _) -> Node.IPAddr ip port) self)
       , naLocalRootPeers         = localRootPeers
       , naLedgerPeers            = ledgerPeersScript
       , naPeerTargets            = peerTargets
@@ -1001,7 +1000,7 @@ ppDiffusionTestTrace (DiffusionInboundGovernorTransitionTrace tr)   = show tr
 ppDiffusionTestTrace (DiffusionServerTrace tr)                      = show tr
 ppDiffusionTestTrace (DiffusionFetchTrace tr)                       = show tr
 ppDiffusionTestTrace (DiffusionChurnModeTrace tr)                   = show tr
-ppDiffusionTestTrace (DiffusionTxSubmissionInbound (TestAddress peer) tr) = prettyShow peer ++ " " ++ show tr
+ppDiffusionTestTrace (DiffusionTxSubmissionInbound peer tr) = prettyShow peer ++ " " ++ show tr
 ppDiffusionTestTrace (DiffusionTxLogic tr)                          = show tr
 ppDiffusionTestTrace (DiffusionDebugTrace tr)                       =      tr
 ppDiffusionTestTrace (DiffusionDNSTrace tr)                         = show tr
@@ -1071,15 +1070,13 @@ diffusionSimulationM
     -- TODO: we should use `snocket` per node, this will allow us to set up
     -- bearer info per node
     withSnocket netSimTracer defaultBearerInfo Map.empty
-      $ \ntnSnocket _ ->
-        withSnocket nullTracer defaultBearerInfo Map.empty
-      $ \ntcSnocket _ -> do
+      $ \snocket _ -> do
         dnsMapVar <- fromLazyTVar <$> playTimedScript nullTracer dnsMapScript
         withAsyncAll
           (zipWith
             (\(args, commands) nodeId -> do
               labelThisThread ("ctrl-" ++ show nodeId)
-              runCommand ntnSnocket ntcSnocket dnsMapVar simArgs args connStateIdSupply nodeId Nothing commands)
+              runCommand snocket dnsMapVar simArgs args connStateIdSupply nodeId Nothing commands)
             nodeArgs
             [NodeId 1..]
           )
@@ -1088,16 +1085,14 @@ diffusionSimulationM
             return x
           )
   where
-    netSimTracer :: Tracer m (WithAddr NtNAddr (SnocketTrace m NtNAddr))
-    netSimTracer = (\(WithAddr l _ a) -> WithName (fromMaybe (TestAddress $ IPAddr (read "0.0.0.0") 0) l) (show a))
+    netSimTracer :: Tracer m (WithAddr (SnocketTrace m))
+    netSimTracer = (\(WithAddr l _ a) -> WithName (fromMaybe (Node.IPAddr (read "0.0.0.0") 0) l) (show a))
        `contramap` tracerWithTime nullTracer
 
     -- | Runs a single node according to a list of commands.
     runCommand
-      :: Snocket m (FD m NtNAddr) NtNAddr
-        -- ^ Node to node Snocket
-      -> Snocket m (FD m NtCAddr) NtCAddr
-        -- ^ Node to client Snocket
+      :: Snocket m (FD m) Node.NetworkAddress
+        -- ^ snocket
       -> StrictTVar m MockDNSMap
         -- ^ Map of domain map TVars to be updated in case a node changes its IP
       -> SimArgs -- ^ Simulation arguments needed in order to run a simulation
@@ -1113,7 +1108,7 @@ diffusionSimulationM
          -- TVar.
       -> [Command] -- ^ List of commands/actions to perform for a single node
       -> m Void
-    runCommand ntnSocket ntcSocket dnsMapVar sArgs nArgs@NodeArgs { naAddr, naConsensusMode }
+    runCommand snocket dnsMapVar sArgs nArgs@NodeArgs { naAddr, naConsensusMode }
                connStateIdSupply nodeId hostAndLRP cmds = do
       traceWith (diffSimTracer naAddr) . TrSay $ show nodeId ++ "@" ++ prettyShow naAddr
       runCommand' hostAndLRP cmds
@@ -1134,7 +1129,7 @@ diffusionSimulationM
           threadDelay delay
           traceWith (diffSimTracer naAddr) (TrJoiningNetwork naConsensusMode)
           lrpVar <- newTVarIO $ naLocalRootPeers nArgs
-          withAsync (runNode sArgs nArgs ntnSocket ntcSocket connStateIdSupply lrpVar dnsMapVar nodeId) $ \nodeAsync ->
+          withAsync (runNode sArgs nArgs snocket connStateIdSupply lrpVar dnsMapVar nodeId) $ \nodeAsync ->
             runCommand' (Just (nodeAsync, lrpVar)) cs
         runCommand' _ (JoinNetwork _:_) =
           error "runCommand: Impossible happened"
@@ -1160,8 +1155,7 @@ diffusionSimulationM
 
     runNode :: SimArgs
             -> NodeArgs
-            -> Snocket m (FD m NtNAddr) NtNAddr
-            -> Snocket m (FD m NtCAddr) NtCAddr
+            -> Snocket m (FD m) Node.NetworkAddress
             -> CM.ConnStateIdSupply m
             -> StrictTVar m [( HotValency
                              , WarmValency
@@ -1192,8 +1186,7 @@ diffusionSimulationM
             , naTxs                    = txs
             , naTxImpairment           = txImpairment
             }
-            ntnSnocket
-            ntcSnocket
+            snocket
             connStateIdSupply
             lrpVar
             dMapVar
@@ -1259,11 +1252,10 @@ diffusionSimulationM
           interfaces :: Node.Interfaces (Cardano.LedgerPeersConsensusInterface m) m
           interfaces =
             Node.Interfaces
-              { Node.iNtnSnocket        = ntnSnocket
+              { Node.iSnocket           = snocket
               , Node.iNtnBearer         = makeFDBearer
               , Node.iAcceptVersion     = acceptVersion
               , Node.iNtnDomainResolver = domainResolver dMapVar
-              , Node.iNtcSnocket        = ntcSnocket
               , Node.iNtcBearer         = makeFDBearer
               , Node.iRng               = rng
               , Node.iDomainMap         = dMapVar
@@ -1445,7 +1437,7 @@ diffusionSimulationM
       let mapDomains :: [(DomainAccessPoint, Set NtNAddr)]
           mapDomains =
             [ ( dap
-              , Set.fromList [ TestAddress (IPAddr a p) | (a, p) <- addrs ]
+              , Set.fromList [ Node.IPAddr a p | (a, p) <- addrs ]
               )
             | dap <- daps
             , let addrs = case dap of

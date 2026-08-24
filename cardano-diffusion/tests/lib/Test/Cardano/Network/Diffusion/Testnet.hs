@@ -436,7 +436,7 @@ unit_cm_valid_transitions =
                                   DoAdvertisePeer)])
                   GenesisMode
                   (Script (DontUseBootstrapPeers :| []))
-                  (TestAddress (IPAddr (read "0:79::1:0:0") 3))
+                  (IPAddr (read "0:79::1:0:0") 3)
                   PeerSharingDisabled
                   [ (HotValency {getHotValency = 1},
                      WarmValency {getWarmValency = 1},
@@ -479,7 +479,7 @@ unit_cm_valid_transitions =
                   Map.empty
                   GenesisMode
                   (Script (DontUseBootstrapPeers :| []))
-                  (TestAddress (IPAddr (read "0:71:0:1:0:1:0:1") 65_534))
+                  (IPAddr (read "0:71:0:1:0:1:0:1") 65_534)
                   PeerSharingEnabled
                   [ (HotValency {getHotValency = 1},
                      WarmValency {getWarmValency = 1},
@@ -641,8 +641,8 @@ unit_connection_manager_trace_coverage =
                         _  -> True)
   where
     addr, addr' :: NtNAddr
-    addr  = TestAddress (IPAddr (read "127.0.0.2") 1_000)
-    addr' = TestAddress (IPAddr (read "127.0.0.1") 1_000)
+    addr  = IPAddr (read "127.0.0.2") 1_000
+    addr' = IPAddr (read "127.0.0.1") 1_000
 
     script@(DiffusionScript _ _ nodes) =
       DiffusionScript
@@ -767,8 +767,8 @@ unit_connection_manager_transitions_coverage =
 
   where
     addr, addr' :: NtNAddr
-    addr  = TestAddress (IPAddr (read "127.0.0.2") 1000)
-    addr' = TestAddress (IPAddr (read "127.0.0.1") 1000)
+    addr  = IPAddr (read "127.0.0.2") 1000
+    addr' = IPAddr (read "127.0.0.1") 1000
 
     script@(DiffusionScript _ _ nodes) =
       DiffusionScript
@@ -956,7 +956,7 @@ prop_txSubmission_allTransactions (ArbTxDecisionPolicy decisionPolicy)
               Map.empty
               PraosMode
               (Script (DontUseBootstrapPeers :| []))
-              (TestAddress (IPAddr (read "0.0.0.0") 0))
+              (IPAddr (read "0.0.0.0") 0)
               PeerSharingDisabled
               [(2,2,Map.fromList [(RelayAccessAddress "0.0.0.1" 0, localRootConfig)])]
               (Script (LedgerPools [] :| []))
@@ -986,7 +986,7 @@ prop_txSubmission_allTransactions (ArbTxDecisionPolicy decisionPolicy)
                Map.empty
                PraosMode
                (Script (DontUseBootstrapPeers :| []))
-               (TestAddress (IPAddr (read "0.0.0.1") 0))
+               (IPAddr (read "0.0.0.1") 0)
                PeerSharingDisabled
                [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.0" 0, localRootConfig)])]
                (Script (LedgerPools [] :| []))
@@ -1088,7 +1088,7 @@ prop_txSubmission_allTransactions (ArbTxDecisionPolicy decisionPolicy)
          -- for the two nodes involved in the simulation and verify that indeed
          -- each peer managed to learn about the other peer' transactions.
          --
-        $ case Map.lookup (TestAddress (IPAddr (read "0.0.0.0") 0)) sortedAcceptedTxidsMap
+        $ case Map.lookup (IPAddr (read "0.0.0.0") 0) sortedAcceptedTxidsMap
                of
            Just acceptedTxidsA ->
              counterexample "0.0.0.0" $
@@ -1096,7 +1096,7 @@ prop_txSubmission_allTransactions (ArbTxDecisionPolicy decisionPolicy)
            Nothing | [] <- validSortedTxidsB -> property True
                    | otherwise -> counterexample "Didn't found any entry in the map!" False
         .&&.
-          case Map.lookup (TestAddress (IPAddr (read "0.0.0.1") 0)) sortedAcceptedTxidsMap
+          case Map.lookup (IPAddr (read "0.0.0.1") 0) sortedAcceptedTxidsMap
                of
            Just acceptedTxidsB ->
              counterexample "0.0.0.1" $
@@ -1150,7 +1150,7 @@ txChainIntegrityDiffScript (ArbTxDecisionPolicy decisionPolicy)
              Map.empty
              PraosMode
              (Script (DontUseBootstrapPeers :| []))
-             (TestAddress (IPAddr (read "0.0.0.0") 0))
+             (IPAddr (read "0.0.0.0") 0)
              PeerSharingDisabled
              []
              (Script (LedgerPools [] :| []))
@@ -1169,7 +1169,7 @@ txChainIntegrityDiffScript (ArbTxDecisionPolicy decisionPolicy)
              Map.empty
              PraosMode
              (Script (DontUseBootstrapPeers :| []))
-             (TestAddress (IPAddr (read "0.0.0.1") 0))
+             (IPAddr (read "0.0.0.1") 0)
              PeerSharingDisabled
              [(1, 1, Map.fromList
                  [(RelayAccessAddress "0.0.0.0" 0, localRootConfig)])]
@@ -1189,7 +1189,7 @@ txChainIntegrityDiffScript (ArbTxDecisionPolicy decisionPolicy)
              Map.empty
              PraosMode
              (Script (DontUseBootstrapPeers :| []))
-             (TestAddress (IPAddr (read "0.0.0.2") 0))
+             (IPAddr (read "0.0.0.2") 0)
              PeerSharingDisabled
              [(1, 1, Map.fromList
                  [(RelayAccessAddress "0.0.0.0" 0, localRootConfig)])]
@@ -1259,7 +1259,7 @@ checkTxChainIntegrity (ChainedPeerTxs chainedTxsB chainedTxsC)
         . splitWithNameTrace
         $ events
 
-      receiverAddr = TestAddress (IPAddr (read "0.0.0.0") 0)
+      receiverAddr = IPAddr (read "0.0.0.0") 0
       accepted     = Map.lookup receiverAddr sortedAcceptedTxidsMap
       actualSet    = maybe Set.empty Set.fromList accepted
       missing      = expectedAtReceiver `Set.difference` actualSet in
@@ -1449,7 +1449,7 @@ txScoreImpairmentDiffScript ScoreImpairmentInput { siiTxCount, siiBDelayMul, sii
                Map.empty
                PraosMode
                (Script (DontUseBootstrapPeers :| []))
-               (TestAddress (IPAddr (read "0.0.0.0") 0))
+               (IPAddr (read "0.0.0.0") 0)
                PeerSharingDisabled
                []
                (Script (LedgerPools [] :| []))
@@ -1468,7 +1468,7 @@ txScoreImpairmentDiffScript ScoreImpairmentInput { siiTxCount, siiBDelayMul, sii
                Map.empty
                PraosMode
                (Script (DontUseBootstrapPeers :| []))
-               (TestAddress (IPAddr (read "0.0.0.1") 0))
+               (IPAddr (read "0.0.0.1") 0)
                PeerSharingDisabled
                [(1, 1, Map.fromList
                    [(RelayAccessAddress "0.0.0.0" 0, localRootConfig)])]
@@ -1488,7 +1488,7 @@ txScoreImpairmentDiffScript ScoreImpairmentInput { siiTxCount, siiBDelayMul, sii
                Map.empty
                PraosMode
                (Script (DontUseBootstrapPeers :| []))
-               (TestAddress (IPAddr (read "0.0.0.2") 0))
+               (IPAddr (read "0.0.0.2") 0)
                PeerSharingDisabled
                [(1, 1, Map.fromList
                    [(RelayAccessAddress "0.0.0.0" 0, localRootConfig)])]
@@ -1515,9 +1515,9 @@ prop_txSubmission_score_impairment input@ScoreImpairmentInput { siiTxCount, siiB
               $ diffusionSimulation noAttenuation
                   (txScoreImpairmentDiffScript input)
 
-        receiverAddr = TestAddress (IPAddr (read "0.0.0.0") 0)
-        peerB        = TestAddress (IPAddr (read "0.0.0.1") 0)
-        peerC        = TestAddress (IPAddr (read "0.0.0.2") 0)
+        receiverAddr = IPAddr (read "0.0.0.0") 0
+        peerB        = IPAddr (read "0.0.0.1") 0
+        peerC        = IPAddr (read "0.0.0.2") 0
 
         scores :: Map NtNAddr Double
         scores =
@@ -1971,7 +1971,7 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
               (Map.fromList [(RelayAccessDomain "test2" 65_535, DoAdvertisePeer)])
               PraosMode
               (Script (UseBootstrapPeers [RelayAccessDomain "bootstrap" 0] :| []))
-              (TestAddress (IPAddr (read "0:7:0:7::") 65_533))
+              (IPAddr (read "0:7:0:7::") 65_533)
               PeerSharingDisabled
               [ (1,1,Map.fromList [(RelayAccessDomain "test2" 65_535,LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode Outbound IsNotTrustable)
               , (RelayAccessAddress "0:6:0:3:0:6:0:5" 65_530,LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode Outbound IsNotTrustable)])
@@ -2004,7 +2004,7 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
              (Map.fromList [(RelayAccessAddress "0:7:0:7::" 65_533, DoAdvertisePeer)])
              PraosMode
               (Script (UseBootstrapPeers [RelayAccessDomain "bootstrap" 0] :| []))
-             (TestAddress (IPAddr (read "0:6:0:3:0:6:0:5") 65_530))
+             (IPAddr (read "0:6:0:3:0:6:0:5") 65_530)
              PeerSharingDisabled
              []
              (Script (LedgerPools [] :| []))
@@ -2617,7 +2617,7 @@ unit_4191 = testWithIOSim prop_diffusion_dns_can_recover long_trace absInfo scri
             Map.empty
             PraosMode
             (Script (UseBootstrapPeers [RelayAccessDomain "bootstrap" 0] :| []))
-            (TestAddress (IPAddr (read "0.0.1.236") 65_527))
+            (IPAddr (read "0.0.1.236") 65_527)
             PeerSharingDisabled
             [ (2,2,Map.fromList [ (RelayAccessDomain "test2" 15,LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode Outbound IsNotTrustable)
                                 , (RelayAccessDomain "test3" 4,LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode Outbound IsNotTrustable)])
@@ -2696,12 +2696,12 @@ prop_connect_failure (AbsIOError ioerr) =
                   . Trace.take noEvents
                   $ trace
            evs = eventsToList (selectDiffusionSimulationTrace events)
-       in  counterexample (Trace.ppTrace show (ppSimEvent 0 0 0) . Trace.take noEvents $ trace)
-         . counterexample (show evs)
+       in  -- counterexample (Trace.ppTrace show (ppSimEvent 0 0 0) . Trace.take noEvents $ trace)
+           counterexample (show evs)
          . -- verify that the node was not killed by the `IOError`
-           all (\case
-                   TrErrored {} -> False
-                   _            -> True)
+           foldMap (\case
+                       TrErrored err -> Every (counterexample ("exception: " ++ show err) False)
+                       _             -> Every (property True))
          . map snd
          $ evs
     ) noEvents absInfo script
@@ -2719,7 +2719,7 @@ prop_connect_failure (AbsIOError ioerr) =
 
     nodeIP   = read "10.0.0.0"
     nodePort = 1
-    nodeAddr = TestAddress (IPAddr nodeIP nodePort)
+    nodeAddr = IPAddr nodeIP nodePort
 
     relayIP   = read "10.0.0.1"
     relayPort = 1
@@ -2734,7 +2734,7 @@ prop_connect_failure (AbsIOError ioerr) =
             naPublicRoots = Map.empty,
             naConsensusMode = PraosMode,
             naBootstrapPeers = Script (DontUseBootstrapPeers :| []),
-            naAddr = TestAddress (IPAddr nodeIP nodePort),
+            naAddr = IPAddr nodeIP nodePort,
             naPeerSharing = PeerSharingDisabled,
             naLocalRootPeers = [(1,1,Map.fromList [(RelayAccessAddress relayIP relayPort,LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode Outbound IsNotTrustable)])],
             naLedgerPeers = Script (LedgerPools [] :| []),
@@ -2764,7 +2764,7 @@ prop_connect_failure (AbsIOError ioerr) =
             naPublicRoots = Map.empty,
             naConsensusMode = PraosMode,
             naBootstrapPeers = Script (DontUseBootstrapPeers :| []),
-            naAddr = TestAddress (IPAddr relayIP relayPort),
+            naAddr = IPAddr relayIP relayPort,
             naPeerSharing = PeerSharingDisabled,
             naLocalRootPeers = [],
             naLedgerPeers = Script (LedgerPools [] :| []),
@@ -2852,7 +2852,7 @@ prop_accept_failure (AbsIOError ioerr) =
 
     relayIP   = read "10.0.0.1"
     relayPort = 1
-    relayAddr = TestAddress (IPAddr relayIP relayPort)
+    relayAddr = IPAddr relayIP relayPort
 
     script =
       DiffusionScript
@@ -2864,7 +2864,7 @@ prop_accept_failure (AbsIOError ioerr) =
             naPublicRoots = Map.empty,
             naConsensusMode = PraosMode,
             naBootstrapPeers = Script (DontUseBootstrapPeers :| []),
-            naAddr = TestAddress (IPAddr nodeIP nodePort),
+            naAddr = IPAddr nodeIP nodePort,
             naPeerSharing = PeerSharingDisabled,
             naLocalRootPeers = [(1,1,Map.fromList [(RelayAccessAddress relayIP relayPort,LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode Outbound IsNotTrustable)])],
             naLedgerPeers = Script (LedgerPools [] :| []),
@@ -2894,7 +2894,7 @@ prop_accept_failure (AbsIOError ioerr) =
             naPublicRoots = Map.empty,
             naConsensusMode = PraosMode,
             naBootstrapPeers = Script (DontUseBootstrapPeers :| []),
-            naAddr = TestAddress (IPAddr relayIP relayPort),
+            naAddr = IPAddr relayIP relayPort,
             naPeerSharing = PeerSharingDisabled,
             naLocalRootPeers = [],
             naLedgerPeers = Script (LedgerPools [] :| []),
@@ -3967,17 +3967,17 @@ async_demotion_network_script =
         )
       ]
   where
-    addr1    = TestAddress (IPAddr (read "10.0.0.1") 3000)
+    addr1    = IPAddr (read "10.0.0.1") 3000
     ra_addr1 = RelayAccessAddress (read "10.0.0.1") 3000
     localRoots1  = [(2,2, Map.fromList [(ra_addr2, LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode Outbound IsNotTrustable)
                                        ,(ra_addr3, LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode Outbound IsNotTrustable)])]
     localRoots1' = [(2,2, Map.fromList [(ra_addr2, LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode Outbound IsNotTrustable)
                                        ,(ra_addr3, LocalRootConfig DoAdvertisePeer InitiatorAndResponderDiffusionMode Outbound IsNotTrustable)])]
 
-    addr2    = TestAddress (IPAddr (read "10.0.0.2") 3000)
+    addr2    = IPAddr (read "10.0.0.2") 3000
     ra_addr2 = RelayAccessAddress (read "10.0.0.2") 3000
 
-    addr3    = TestAddress (IPAddr (read "10.0.0.3") 3000)
+    addr3    = IPAddr (read "10.0.0.3") 3000
     ra_addr3 = RelayAccessAddress (read "10.0.0.3") 3000
 
     simArgs = SimArgs {
@@ -4558,7 +4558,7 @@ prop_unit_4258 =
              Map.empty
              PraosMode
              (Script (UseBootstrapPeers [RelayAccessDomain "bootstrap" 0] :| []))
-             (TestAddress (IPAddr (read "0.0.0.4") 9))
+             (IPAddr (read "0.0.0.4") 9)
              PeerSharingDisabled
              [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.8" 65_531,LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode Outbound IsNotTrustable)])]
              (Script (LedgerPools [] :| []))
@@ -4594,7 +4594,7 @@ prop_unit_4258 =
              (Map.fromList [(RelayAccessAddress "0.0.0.4" 9, DoAdvertisePeer)])
              PraosMode
              (Script (UseBootstrapPeers [RelayAccessDomain "bootstrap" 0] :| []))
-             (TestAddress (IPAddr (read "0.0.0.8") 65_531))
+             (IPAddr (read "0.0.0.8") 65_531)
              PeerSharingDisabled
              [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.4" 9,LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode Outbound IsNotTrustable)])]
              (Script (LedgerPools [] :| []))
@@ -4667,7 +4667,7 @@ prop_unit_reconnect =
               Map.empty
               PraosMode
               (Script (DontUseBootstrapPeers :| []))
-              (TestAddress (IPAddr (read "0.0.0.0") 0))
+              (IPAddr (read "0.0.0.0") 0)
               PeerSharingDisabled
               [ (2,2,Map.fromList [ (RelayAccessAddress "0.0.0.1" 0,LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode Outbound IsNotTrustable)
                                   , (RelayAccessAddress "0.0.0.2" 0,LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode Outbound IsNotTrustable)
@@ -4699,7 +4699,7 @@ prop_unit_reconnect =
                Map.empty
                PraosMode
                (Script (DontUseBootstrapPeers :| []))
-               (TestAddress (IPAddr (read "0.0.0.1") 0))
+               (IPAddr (read "0.0.0.1") 0)
                PeerSharingDisabled
                [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.0" 0,LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode Outbound IsNotTrustable)])]
                (Script (LedgerPools [] :| []))
@@ -5110,13 +5110,13 @@ unit_peer_sharing =
     --   peer sharing), and thus it should be marked as `DoAdvertisePeer`
     -- * ip_2 should learn about ip_0 from ip_1 by peer sharing
 
-    ip_0 = TestAddress $ IPAddr (IP.IPv4 (IP.toIPv4 [0,0,0,0])) 3000
+    ip_0 = IPAddr (IP.IPv4 (IP.toIPv4 [0,0,0,0])) 3000
     -- ra_0 = RelayAccessAddress (IP.IPv4 (IP.toIPv4 [0,0,0,0])) 3000
 
-    ip_1 = TestAddress $ IPAddr (IP.IPv4 (IP.toIPv4 [0,0,0,0])) 3001
+    ip_1 = IPAddr (IP.IPv4 (IP.toIPv4 [0,0,0,0])) 3001
     ra_1 = RelayAccessAddress (IP.IPv4 (IP.toIPv4 [0,0,0,0])) 3001
 
-    ip_2 = TestAddress $ IPAddr (IP.IPv4 (IP.toIPv4 [0,0,0,0])) 3002
+    ip_2 = IPAddr (IP.IPv4 (IP.toIPv4 [0,0,0,0])) 3002
     -- ra_2 = RelayAccessAddress (IP.IPv4 (IP.toIPv4 [0,0,0,0])) 3002
 
     targets x = let t = PeerSelectionTargets {
@@ -5842,8 +5842,8 @@ unit_local_root_diffusion_mode diffusionMode =
     in property $ foldMap (\versionData -> Every $ ntnDiffusionMode versionData === diffusionMode) events
   where
     addr, addr' :: NtNAddr
-    addr  = TestAddress (IPAddr (read "127.0.0.2") 1000)
-    addr' = TestAddress (IPAddr (read "127.0.0.1") 1000)
+    addr  = IPAddr (read "127.0.0.2") 1000
+    addr' = IPAddr (read "127.0.0.1") 1000
 
     script =
       DiffusionScript
@@ -6039,7 +6039,7 @@ selectDiffusionPeerSelectionStateWithName f =
     Signal.nub
   -- TODO: #3182 Rng seed should come from quickcheck.
   . Signal.scanl (\z ->
-                    maybe z \(addr, trace) -> either (TestAddress UnusedAddr,) (addr,) trace)
+                    maybe z \(addr, trace) -> either (UnusedAddr,) (addr,) trace)
                  offState
   . Signal.fromEvents
   . Signal.selectEvents (
@@ -6052,7 +6052,7 @@ selectDiffusionPeerSelectionStateWithName f =
                    _                                                         -> Nothing)
       >>> \(addr, tr) -> (addr,) <$> tr)
   where
-    offState = (TestAddress UnusedAddr, initial PraosMode)
+    offState = (UnusedAddr, initial PraosMode)
     initial consensusMode =
       f $! Governor.emptyPeerSelectionState
                       (mkStdGen 42)

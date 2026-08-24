@@ -198,7 +198,7 @@ withBidirectionalConnectionManager
     -> CM.ConnStateIdSupply m
     -> DiffTime -- protocol idle timeout
     -> DiffTime -- wait time timeout
-    -> Maybe peerAddr
+    -> [peerAddr]
     -> Random.StdGen
     -> ClientAndServerData
     -- ^ series of request possible to do with the bidirectional connection
@@ -214,7 +214,7 @@ withBidirectionalConnectionManager snocket makeBearer socket
                                    connStateIdSupply
                                    protocolIdleTimeout
                                    timeWaitTimeout
-                                   localAddress
+                                   localAddresses
                                    stdGen
                                    ClientAndServerData {
                                        hotInitiatorRequests,
@@ -261,9 +261,8 @@ withBidirectionalConnectionManager snocket makeBearer socket
                   -- ConnectionManagerTrace
                   tracer       = ("cm",) `contramap` debugTracer,
                   trTracer     = ("cm-state",) `contramap` debugTracer,
-                  ipv4Address  = localAddress,
-                  ipv6Address  = Nothing,
-                  addressType  = \_ -> Just IPv4Address,
+                  ipv4Address  = localAddresses,
+                  ipv6Address  = [],
                   snocket      = snocket,
                   makeBearer   = makeBearer,
                   CM.withBuffer   = \f -> f Nothing,
@@ -488,7 +487,7 @@ bidirectionalExperiment
       withBidirectionalConnectionManager
         snocket makeBearer socket0 connStateIdSupply
         protocolIdleTimeout timeWaitTimeout
-        (Just localAddr) stdGen clientAndServerData $
+        [localAddr] stdGen clientAndServerData $
         \connectionManager _serverAddr _inbGovAsync -> forever' $ do
           -- runInitiatorProtocols returns a list of results per each protocol
           -- in each bucket (warm \/ hot \/ established); but we run only one

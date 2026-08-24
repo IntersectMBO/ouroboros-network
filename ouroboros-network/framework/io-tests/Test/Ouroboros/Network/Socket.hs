@@ -331,7 +331,7 @@ prop_socket_recv_error f rerr =
         snocket = socketSnocket iomgr
 
     bracket
-      (open snocket (SocketFamily Socket.AF_INET))
+      (open snocket AFInet)
       (close snocket)
       $ \sd -> do
         -- bind the socket
@@ -436,7 +436,7 @@ prop_socket_send_error rerr =
         snocket = socketSnocket iomgr
 
     bracket
-      (open snocket (SocketFamily Socket.AF_INET))
+      (open snocket AFInet)
       (close snocket)
       $ \sd -> do
         -- bind the socket

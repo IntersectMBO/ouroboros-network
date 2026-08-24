@@ -470,13 +470,13 @@ data Arguments extraState extraDebugState extraFlags extraPeers
 -- | Required Diffusion Arguments to run network layer
 --
 data Configuration extraFlags m ntnFd ntnAddr ntcFd ntcAddr = Configuration {
-      -- | an @IPv4@ socket ready to accept connections or an @IPv4@ addresses
+      -- | A list of IPv4, IPv6 addresses or systemd activated sockets.
       --
-      dcIPv4Address              :: Maybe (Either ntnFd ntnAddr)
-
-      -- | an @IPv6@ socket ready to accept connections or an @IPv6@ addresses
+      -- The diffusion will run an inbound server on each of the
+      -- sockets/addresses.  When creating outbound connections, a random local
+      -- address/interface will be used by the connection manager.
       --
-    , dcIPv6Address              :: Maybe (Either ntnFd ntnAddr)
+      dcAddresses                :: Either (NonEmpty ntnFd) (NonEmpty ntnAddr)
 
       -- | an @AF_UNIX@ socket ready to accept connections or an @AF_UNIX@
       -- socket path or name of `named-pipe` on `Windows`.
@@ -759,11 +759,6 @@ data Interfaces ntnFd ntnAddr ntcFd ntcAddr
         --
         diNtnConfigureSystemdSocket
           :: ntnFd -> ntnAddr -> m (),
-
-        -- | node-to-node address type
-        --
-        diNtnAddressType
-          :: ntnAddr -> Maybe AddressType,
 
         -- | node-to-node peer address
         --
