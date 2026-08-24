@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE EmptyCase           #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE LambdaCase          #-}
@@ -24,6 +25,7 @@ module Ouroboros.Network.Protocol.ObjectDiffusion.Outbound
   , objectDiffusionOutboundPeer
   ) where
 
+import Data.Singletons (withSingI)
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Peer (Peer)
 import Network.TypedProtocol.Peer.Server
@@ -46,24 +48,27 @@ newtype ObjectDiffusionOutbound objectId object m a = ObjectDiffusionOutbound {
 --
 -- It must be prepared to handle any of these.
 data OutboundStIdle objectId object m a = OutboundStIdle {
-      recvMsgRequestObjectIds :: forall blocking.
-                                 SingBlockingStyle blocking
+      recvMsgRequestObjectIds :: forall kind.
+                                 ObjectIdsRequestKind kind
                               -> NumObjectIdsAck
                               -> NumObjectIdsReq
-                              -> m (OutboundStObjectIds blocking objectId object m a),
+                              -> m (OutboundStObjectIds kind objectId object m a),
       recvMsgRequestObjects   :: [objectId]
                               -> m (OutboundStObjects objectId object m a),
       recvMsgDone             :: m a
     }
 
-data OutboundStObjectIds blocking objectId object m a where
+data OutboundStObjectIds kind objectId object m a where
   SendMsgReplyObjectIds
-    :: BlockingReplyList blocking objectId
+    :: ObjectIdsReplyList kind objectId
     -> OutboundStIdle objectId object m a
-    -> OutboundStObjectIds blocking objectId object m a
+    -> OutboundStObjectIds kind objectId object m a
+  SendMsgAwaitReply
+    :: m (OutboundStObjectIds ('StObjectIdsBlocking 'StMustReply) objectId object m a)
+    -> OutboundStObjectIds ('StObjectIdsBlocking 'StCanAwait) objectId object m a
   SendMsgServerIdle
     :: OutboundStIdle objectId object m a
-    -> OutboundStObjectIds 'StBlocking objectId object m a
+    -> OutboundStObjectIds ('StObjectIdsBlocking 'StMustReply) objectId object m a
 
 data OutboundStObjects objectId object m a where
   SendMsgReplyObjects
@@ -86,26 +91,33 @@ objectDiffusionOutboundPeer (ObjectDiffusionOutbound outboundSt) =
       -> Peer (ObjectDiffusion objectId object) AsServer NonPipelined StIdle m a
     run OutboundStIdle {recvMsgRequestObjectIds, recvMsgRequestObjects, recvMsgDone} =
       Await $ \case
-        MsgRequestObjectIds blocking ackNo reqNo -> Effect $ do
-          reply <- recvMsgRequestObjectIds blocking ackNo reqNo
-          case reply of
-            SendMsgServerIdle k ->
-              return $
-                Yield
-                  MsgServerIdle
-                  (run k)
-            SendMsgReplyObjectIds objectIds k ->
-              -- TODO: investigate why GHC cannot infer `SingI`; it used to in
-              -- `coot/typed-protocols-rewrite` branch
-              return $ case blocking of
-                SingBlocking ->
+        MsgRequestObjectIds requestKind ackNo reqNo ->
+          withSingI (singObjectIdsRequestKind requestKind) $ Effect $ do
+            reply <- recvMsgRequestObjectIds requestKind ackNo reqNo
+            case reply of
+              SendMsgAwaitReply waitForReply ->
+                return $
+                  Yield
+                    MsgAwaitReply
+                    (Effect $ do
+                      finalReply <- waitForReply
+                      pure $ case finalReply of
+                        SendMsgServerIdle k ->
+                          Yield MsgServerIdle (run k)
+                        SendMsgReplyObjectIds objectIds k ->
+                          Yield (MsgReplyObjectIds objectIds) (run k))
+              SendMsgReplyObjectIds objectIds k ->
+                return $
                   Yield
                     (MsgReplyObjectIds objectIds)
                     (run k)
-                SingNonBlocking ->
-                  Yield
-                    (MsgReplyObjectIds objectIds)
-                    (run k)
+              -- Matching 'SendMsgServerIdle' refines @kind@ to the blocking
+              -- 'StMustReply' state, but 'ObjectIdsRequestKind' has no
+              -- constructor for that state. A request can only enter the
+              -- non-blocking state or blocking 'StCanAwait'; 'StMustReply' is
+              -- reached later by sending 'MsgAwaitReply'. The empty case
+              -- discharges this statically impossible branch.
+              SendMsgServerIdle _ -> case requestKind of {}
         MsgRequestObjects objectIds -> Effect $ do
           SendMsgReplyObjects objects k <- recvMsgRequestObjects objectIds
           return $

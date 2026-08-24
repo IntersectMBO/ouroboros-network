@@ -22,11 +22,6 @@ import Test.Data.CDDL (Any (..))
 import Test.QuickCheck (Arbitrary)
 
 -- | Simple wrapper around 'Any' matching @objectId = any@ in the CDDL spec.
--- This is intentionally different from the 'ObjectId' in
--- 'ObjectDiffusion.Test', which wraps @Maybe Word64@.
--- TODO: Change that test wrapper to @Word64@ now that @MsgServerIdle@
--- represents the caught-up state explicitly; @Maybe@ was only needed for the
--- sentinel.
 --
 newtype ObjectId = ObjectId Any
   deriving (Eq, Ord, Show, Arbitrary, Serialise, Generic, NFData)
