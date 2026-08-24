@@ -280,8 +280,7 @@ driverWithLimitsRnd = mkDriverWithLimitsRnd runDecoderWithLimit Identity
 
 runDecoderWithLimit
     :: forall m bytes failure a.
-       ( Monad m
-       , MonadEvaluate m
+       ( MonadEvaluate m
        , NFData failure
        )
     => Word
@@ -333,8 +332,7 @@ runDecoderWithLimit limit size Channel{recv} trailing0 step =
 
 runAnnotatedDecoderWithLimit
     :: forall m bytes failure a.
-       ( Monad m
-       , MonadEvaluate m
+       ( MonadEvaluate m
        , Monoid bytes
        , NFData failure
        )
