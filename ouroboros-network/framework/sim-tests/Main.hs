@@ -6,6 +6,7 @@ import Test.Tasty
 import Test.Ouroboros.Network.ConnectionManager qualified as ConnectionManager
 import Test.Ouroboros.Network.RateLimiting qualified as RateLimiting
 import Test.Ouroboros.Network.Server.Sim qualified as Server
+import Test.Simulation.Network.Snocket qualified as Snocket
 
 main :: IO ()
 main = withUtf8 $ defaultMain tests
@@ -16,6 +17,5 @@ tests =
   [ ConnectionManager.tests
   , Server.tests
   , RateLimiting.tests
+  , Snocket.tests
   ]
-
-
