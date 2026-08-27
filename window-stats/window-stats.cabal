@@ -76,7 +76,7 @@ library
   build-depends:
     base >=4.14 && <4.23,
     deepseq,
-    fingertree,
+    fingertree ^>= 0.1.6.1,
     io-classes:si-timers ^>=1.8,
     time,
 
