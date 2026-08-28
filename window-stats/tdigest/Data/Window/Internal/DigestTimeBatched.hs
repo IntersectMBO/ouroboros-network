@@ -13,6 +13,7 @@ module Data.Window.Internal.DigestTimeBatched where
 
 import Control.DeepSeq
 import Control.Exception (assert)
+import Control.Monad ((>=>))
 import Data.FingerTree (FingerTree, ViewL (..))
 import Data.FingerTree qualified as FT
 import Data.TDigest (TDigest)
@@ -225,29 +226,29 @@ windowDuration TimedDigestWindow { tdwBucket, tdwBucketDuration, tdwTree } =
 
 -- Convenience API --
 
--- | Returns the means of the outermost centroids - appoximations, not the actual min/max samples
+-- | Returns the means of the outermost centroids - approximations, not the
+-- actual min/max samples
+--
 windowMinMaxValues :: TimedDigestWindow t comp -> Maybe (Mean, Mean)
-windowMinMaxValues tdw =
-  case windowDigest tdw of
-    Nothing -> Nothing
-    Just d  -> Just (TD.minimumValue d, TD.maximumValue d)
+windowMinMaxValues =
+  windowDigest >=> \d -> Just (TD.minimumValue d, TD.maximumValue d)
 
 
 windowMedian :: TimedDigestWindow t comp -> Maybe Double
-windowMedian = maybe Nothing TD.median . windowDigest
+windowMedian = windowDigest >=> TD.median
 
 
 windowQuantile :: Double -> TimedDigestWindow t comp -> Maybe Double
-windowQuantile q = maybe Nothing (TD.quantile q) . windowDigest
+windowQuantile q = windowDigest >=> TD.quantile q
 
 
 windowMean :: TimedDigestWindow t comp -> Maybe Double
-windowMean = maybe Nothing TD.mean . windowDigest
+windowMean = windowDigest >=> TD.mean
 
 
 windowVariance :: TimedDigestWindow t comp -> Maybe Double
-windowVariance = maybe Nothing TD.variance . windowDigest
+windowVariance = windowDigest >=> TD.variance
 
 
 windowStdDev :: TimedDigestWindow t comp -> Maybe Double
-windowStdDev = maybe Nothing TD.stddev . windowDigest
+windowStdDev = windowDigest >=> TD.stddev
