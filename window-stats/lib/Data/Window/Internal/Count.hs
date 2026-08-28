@@ -58,6 +58,7 @@ data Window v a = Window
 
 instance Foldable (Window v) where
   foldMap f Window { windowTree } = foldMap (f . sampleValue) windowTree
+  null Window { windowTree } = FT.null windowTree
 
 
 -- | The user-supplied measure of the current window contents.

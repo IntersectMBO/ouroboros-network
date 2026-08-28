@@ -13,6 +13,7 @@ module Data.Window.Internal.DigestTimeBatched where
 
 import Control.DeepSeq
 import Control.Exception (assert)
+import Control.Monad ((>=>))
 import Data.FingerTree (FingerTree, ViewL (..))
 import Data.FingerTree qualified as FT
 import Data.TDigest (TDigest)
@@ -99,6 +100,15 @@ empty tdwBucketDuration r =
     }
 
 
+-- | Check if there are no samples registered.
+--
+null :: TimedDigestWindow t comp -> Bool
+null TimedDigestWindow { tdwTree, tdwCacheDigest = Nothing }
+       | FT.null tdwTree
+       = True
+null _ = False
+
+
 -- | Resets the window, keeping only the retention durations
 reset :: KnownNat comp => TimedDigestWindow t comp -> TimedDigestWindow t comp
 reset tdw = tdw { tdwBucket = Nothing, tdwTree = FT.empty, tdwCacheDigest = Nothing }
@@ -117,7 +127,7 @@ sampleCount TimedDigestWindow { tdwBucket, tdwTree } =
 -- | Returns the digest of the sliding window, or 'Nothing' if there
 -- are no samples. Forces the cached 'tdwCacheDigest' on the first
 -- call after a batch of writes.
-windowDigest :: KnownNat comp => TimedDigestWindow t comp -> Maybe (TDigest comp)
+windowDigest :: TimedDigestWindow t comp -> Maybe (TDigest comp)
 windowDigest tdw = case tdwCacheDigest tdw of
   Nothing -> Nothing
   Just !d -> Just d
@@ -216,29 +226,29 @@ windowDuration TimedDigestWindow { tdwBucket, tdwBucketDuration, tdwTree } =
 
 -- Convenience API --
 
--- | Returns the means of the outermost centroids - appoximations, not the actual min/max samples
-windowMinMaxValues :: KnownNat comp => TimedDigestWindow t comp -> Maybe (Mean, Mean)
-windowMinMaxValues tdw =
-  case windowDigest tdw of
-    Nothing -> Nothing
-    Just d  -> Just (TD.minimumValue d, TD.maximumValue d)
+-- | Returns the means of the outermost centroids - approximations, not the
+-- actual min/max samples
+--
+windowMinMaxValues :: TimedDigestWindow t comp -> Maybe (Mean, Mean)
+windowMinMaxValues =
+  windowDigest >=> \d -> Just (TD.minimumValue d, TD.maximumValue d)
 
 
-windowMedian :: KnownNat comp => TimedDigestWindow t comp -> Maybe Double
-windowMedian = maybe Nothing TD.median . windowDigest
+windowMedian :: TimedDigestWindow t comp -> Maybe Double
+windowMedian = windowDigest >=> TD.median
 
 
-windowQuantile :: KnownNat comp => Double -> TimedDigestWindow t comp -> Maybe Double
-windowQuantile q = maybe Nothing (TD.quantile q) . windowDigest
+windowQuantile :: Double -> TimedDigestWindow t comp -> Maybe Double
+windowQuantile q = windowDigest >=> TD.quantile q
 
 
-windowMean :: KnownNat comp => TimedDigestWindow t comp -> Maybe Double
-windowMean = maybe Nothing TD.mean . windowDigest
+windowMean :: TimedDigestWindow t comp -> Maybe Double
+windowMean = windowDigest >=> TD.mean
 
 
-windowVariance :: KnownNat comp => TimedDigestWindow t comp -> Maybe Double
-windowVariance = maybe Nothing TD.variance . windowDigest
+windowVariance :: TimedDigestWindow t comp -> Maybe Double
+windowVariance = windowDigest >=> TD.variance
 
 
-windowStdDev :: KnownNat comp => TimedDigestWindow t comp -> Maybe Double
-windowStdDev = maybe Nothing TD.stddev . windowDigest
+windowStdDev :: TimedDigestWindow t comp -> Maybe Double
+windowStdDev = windowDigest >=> TD.stddev

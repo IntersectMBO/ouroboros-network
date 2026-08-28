@@ -33,6 +33,7 @@ module Data.Window.DigestTimeBatched
     TimedDigestWindow
     -- * Construction
   , empty
+  , null
     -- TODO: From collections
     -- , fromListN
     -- , fromFoldable
@@ -58,6 +59,7 @@ module Data.Window.DigestTimeBatched
   , TDigest
   ) where
 
+import Prelude hiding (null)
 import Data.TDigest (TDigest)
 
 import Data.Window.Internal.DigestTimeBatched
