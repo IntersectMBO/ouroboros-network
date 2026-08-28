@@ -90,6 +90,7 @@ deriving instance (NFData (Dur t), NFData t, NFData v, NFData a)
 instance Foldable (TimedWindow t v) where
   foldMap f TimedWindow { twTree } =
     foldMap (f . tsValue) twTree
+  null TimedWindow { twTree } = FT.null twTree
 
 
 -- | The user-supplied measure of the current window contents.

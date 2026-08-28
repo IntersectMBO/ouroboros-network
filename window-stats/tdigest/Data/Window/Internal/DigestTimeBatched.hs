@@ -99,6 +99,15 @@ empty tdwBucketDuration r =
     }
 
 
+-- | Check if there are no samples registered.
+--
+null :: TimedDigestWindow t comp -> Bool
+null TimedDigestWindow { tdwTree, tdwCacheDigest = Nothing }
+       | FT.null tdwTree
+       = True
+null _ = False
+
+
 -- | Resets the window, keeping only the retention durations
 reset :: KnownNat comp => TimedDigestWindow t comp -> TimedDigestWindow t comp
 reset tdw = tdw { tdwBucket = Nothing, tdwTree = FT.empty, tdwCacheDigest = Nothing }
