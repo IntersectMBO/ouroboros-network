@@ -88,7 +88,18 @@ tierBetween clusterV contV u w
   | otherwise                        = InterContinent
 
 genTopology :: TopoParams -> Topology
-genTopology tp = Topology nodesV outV inDegV
+genTopology tp
+  -- Input guards (TCP-audit Part 4): the group denominators feed `groupOf`'s
+  -- `div`, and a zero there divides by zero; a negative/empty node count yields
+  -- an empty topology whose downstream means are NaN.  Fail fast with a clear
+  -- message rather than crash deep in the graph build.
+  | tpNodes tp      < 1 = errorWithoutStackTrace "--nodes must be >= 1"
+  | tpClusters tp   < 1 = errorWithoutStackTrace "--clusters must be >= 1 (it is a groupOf divisor)"
+  | tpRegions tp    < 1 = errorWithoutStackTrace "--regions must be >= 1 (it is a groupOf divisor)"
+  | tpContinents tp < 1 = errorWithoutStackTrace "--continents must be >= 1"
+  | tpRttFuzz tp < 0 || tpRttFuzz tp > 2 =
+      errorWithoutStackTrace "--rtt-fuzz must be in [0, 2] (beyond 2 the fuzz drives RTTs negative)"
+  | otherwise = Topology nodesV outV inDegV
   where
     n  = tpNodes tp
     g0 = mkStdGen (tpSeed tp)

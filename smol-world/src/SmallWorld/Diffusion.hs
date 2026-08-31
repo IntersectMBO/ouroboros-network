@@ -89,8 +89,8 @@ data DiffParams = DiffParams
   , dpReorderP        :: !Double  -- per-round probability a reordering triggers a spurious
                                   --   fast-retransmit (a cwnd cut without real loss); 0 = off
   , dpJitterSeed      :: !Int     -- seed for the deterministic per-round jitter/reorder draws
-  , dpSack            :: !Bool    -- SACK fast-recovery: a recoverable GE burst recovers in ~1 RTT (else RTO)
-                                  --   unless a retransmit is also lost (then RTO); off = No-SACK
+  , dpSack            :: !Bool    -- SACK fast-recovery: a recoverable GE burst recovers in ~1 RTT (else RTO);
+                                  --   off = No-SACK. (No retransmit-loss RTO path is modelled — D20 simplification.)
   , dpLossIntraCluster   :: !GE   -- baseline Gilbert–Elliott loss per RTT tier (D2): a
   , dpLossIntraContinent :: !GE   --   separate good/bad chain for local / intra-continent /
   , dpLossInterContinent :: !GE   --   inter-continent edges (loss rises with the tier)
@@ -243,7 +243,13 @@ diffuseTimesFrom dp topo sources closureOf =
 -- dpEgressBps@ (cold start, full egress) — so g5/sweep/battle are unchanged.
 diffuseTimesGen :: DiffParams -> Topology -> [NodeId] -> (NodeId -> Int)
                 -> (NodeId -> Bool) -> (NodeId -> Double) -> IM.IntMap Double
-diffuseTimesGen dp topo sources closureOf warm egressOf = loop 0 IM.empty (IM.fromList [ (s, 0) | s <- sources ])
+diffuseTimesGen dp topo sources closureOf warm egressOf
+  -- Input guard (TCP-audit Finding 3): the bin loop steps `t` by `dpBinS`, so a
+  -- non-positive or non-finite step never reaches `dpCapS` and the run hangs.
+  | dpBinS dp <= 0 || isNaN (dpBinS dp) || isInfinite (dpBinS dp) =
+      errorWithoutStackTrace "--bin-ms must be positive and finite (else the bin loop never advances)"
+  | dpCapS dp <= 0 = errorWithoutStackTrace "--cap-s must be positive"
+  | otherwise = loop 0 IM.empty (IM.fromList [ (s, 0) | s <- sources ])
   where
     n        = nNodes topo
     srcsOf   = V.generate n (\u -> [ (eTo e, eRttMs e / 1000, eTier e) | e <- topoOut topo V.! u ]) -- rtt in s
@@ -272,9 +278,10 @@ diffuseTimesGen dp topo sources closureOf warm egressOf = loop 0 IM.empty (IM.fr
           startFlow u =
             let (v, rtt, tier, _) = minimumBy (comparing (\(_, _, _, a) -> a)) (announces u) -- first announcer
                 tpB = mkTcpParams bodyB rtt 0 (egressOf v)
-                fs0 | warm v    = (initFlow tpB) { fsCwnd = tpSsthresh0 tpB, fsPhase = CA }
+                fs0 | warm v    = (initFlow tpB) { fsCwnd = tpSsthresh0 tpB, fsPhase = CA
+                                                 , fsWMax = tpSsthresh0 tpB, fsCubicOrigin = tpSsthresh0 tpB }  -- Finding 5: prime the CUBIC epoch from ssthresh (mirror the SS->CA clamp); else a warm flow regrows from origin 0, slower than cold
                     | otherwise = initFlow tpB
-            in Flow tpB Body v fs0 rtt (t + rtt) False (t + rtt) 0 tier False 0  -- body req: 1 RTT to first byte
+            in Flow tpB Body v fs0 rtt (t + 2 * rtt) False (t + rtt) 0 tier False 0  -- body req: flReady = 1 RTT to first byte; flNext = grow at the NEXT boundary, not this one (Finding 4)
           fetch1 = foldl' (\m u -> IM.insert u (startFlow u) m) fetch startable
           -- only actively-transmitting flows consume egress: a flow waiting on a
           -- request RTT or stalled in an RTO backoff (flReady > t) sends nothing,
@@ -313,9 +320,12 @@ diffuseTimesGen dp topo sources closureOf warm egressOf = loop 0 IM.empty (IM.fr
           -- stalls (matching TCP.hs stepRound's firstLoss-1 credit); the packets past
           -- the first loss are retransmitted after the RTO, not booked now.  `flRoundB0`
           -- marks this round's starting byte count, so the cap holds fsBytesSent at
-          -- ≤ roundStart + prefix.  Clean/cut/oversub rounds credit the full bin.
-          deliverB   | geRTO     = max 0 (min (round bytesRaw) (flRoundB0 f + prefixB - fsBytesSent fs))
-                     | otherwise = round bytesRaw
+          -- ≤ roundStart + prefix.  The same prefix cap applies to a `capFinal` round — a
+          -- recoverable (fast-rtx) loss in the FINAL window, whose fill RTT is exposed (no
+          -- following data to overlap it) — so it completes ~1 RTT on, not this round.
+          -- Mid-transfer fast-rtx and clean/cut/oversub rounds credit the full bin (M0).
+          deliverB   | geRTO || capFinal = max 0 (min (round bytesRaw) (flRoundB0 f + prefixB - fsBytesSent fs))
+                     | otherwise         = round bytesRaw
           fsB        = fs { fsBytesSent = min (tpFileBytes tp) (fsBytesSent fs + deliverB) }
           oversub    = windowRate > share * 1.001    -- ε=0.001: float-equality guard at exactly fair share
           -- Tier-dependent baseline (non-congestion) link loss, Gilbert–Elliott.  The
@@ -366,6 +376,14 @@ diffuseTimesGen dp topo sources closureOf warm egressOf = loop 0 IM.empty (IM.fr
           oversubRTO = windowRate > share * dpRtoThresh dp
           lossNow    = flLoss f || oversub || geLoss
           rtoNow     = oversubRTO || geRTO
+          -- Final-window fast-retransmit: a recoverable (non-RTO) loss in the LAST window
+          -- has no following data to overlap the retransmit, so the in-order prefix closes
+          -- only ~1 RTT on (the fill lands next round).  Mid-transfer that RTT is absorbed
+          -- by continued transmission (M0); at the file tail it is exposed, so `deliverB`
+          -- caps this round to the pre-loss prefix (as GE-RTO does) and it completes next
+          -- round — the DES analogue of TCP.hs's completing-fastRtx +rtt (faithful fast recovery).
+          finalWindow = attempt >= remPkts                   -- the window covers all remaining pkts (attempt == remPkts)
+          capFinal    = lossNow && not rtoNow && finalWindow  -- a fast-rtx loss that would otherwise complete the file
           -- first-loss position (truncated geometric over the window, given ≥1 loss)
           -- for the GE-RTO prefix-credit above; only forced when geRTO (pLoss > 0).
           u4         = hashUnit (mix [dpJitterSeed dp, u, flRound f, 4, phaseSalt])
@@ -404,11 +422,11 @@ diffuseTimesGen dp topo sources closureOf warm egressOf = loop 0 IM.empty (IM.fr
                   -- SAME persistent connection: carry the congestion-control
                   -- state (cwnd, ssthresh, CUBIC epoch) over — reset only the
                   -- byte counter — so the closure does NOT re-slow-start. One RTT
-                  -- gap for the closure request (flNext = t + rtt).
+                  -- gap for the closure request (flReady = t + rtt); grow at the next boundary (flNext = t + 2*rtt, Finding 4).
                   then let tpC = mkTcpParams (closureOf u) rttBase 0 (egressOf v)
                            fC  = f { flTp = tpC, flPhase = Closure
                                    , flFs = fs2 { fsBytesSent = 0 }
-                                   , flNext = t + rtt, flLoss = False
+                                   , flNext = t + 2 * rtt, flLoss = False
                                    , flReady = t + rtt, flRound = 0
                                    , flRoundB0 = 0 }  -- closure req: 1 RTT to first byte; round-start resets
                        in (IM.insert u fC accF, accDone)

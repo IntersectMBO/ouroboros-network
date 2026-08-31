@@ -94,9 +94,10 @@ growOnAck tp fs
   | fsPhase fs == SlowStart =
       let c = fsCwnd fs * 2
       in if c >= fsSsthresh fs
-           then fs { fsCwnd = fsSsthresh fs, fsWMax = fsSsthresh fs
-                   , fsLastWMax = 0, fsK = 0   -- no prior loss yet; RFC 8312 §4.6 W_last_max starts unset
-                   , fsCubicOrigin = fsSsthresh fs, fsCaElapsed = 0, fsPhase = CA }
+           then let w = max (fsSsthresh fs) (fsCwnd fs)  -- Finding 8: never shrink on a clean round (post-idleReset ssthresh<cwnd corner); no-op when cwnd<ssthresh
+                in fs { fsCwnd = w, fsWMax = w
+                      , fsLastWMax = 0, fsK = 0   -- no prior loss yet; RFC 8312 §4.6 W_last_max starts unset
+                      , fsCubicOrigin = w, fsCaElapsed = 0, fsPhase = CA }
            else fs { fsCwnd = c }
   | otherwise =
       fs { fsCwnd = max 1 (tpCubicC tp * (fsCaElapsed fs - fsK fs) ** 3 + fsCubicOrigin fs) }
@@ -114,7 +115,7 @@ cutOnLoss tp effCwnd fs =
   in fs { fsWMax = wMax
         , fsLastWMax = cwndAtLoss   -- RFC 8312 §4.6: W_last_max = the pre-reduction cwnd-at-loss (may descend)
         , fsCwnd = max 1 (cwndAtLoss * (1 - beta))
-        , fsK = (wMax * beta / tpCubicC tp) ** (1/3)
+        , fsK = (max 0 (wMax - max 1 (cwndAtLoss * (1 - beta))) / tpCubicC tp) ** (1/3)  -- regrow CA from the installed cwnd, not a fast-conv-dipped value (Finding 1; no-op outside the fast-conv corner)
         , fsCubicOrigin = wMax
         , fsCaElapsed = 0
         , fsPhase = CA }
@@ -126,7 +127,7 @@ rtoCollapse :: Int -> FlowState -> FlowState
 rtoCollapse effCwnd fs =
   fs { fsSsthresh = max 2 (fromIntegral effCwnd * 0.7)   -- RFC 8312 §4.7: ssthresh = beta_cubic·cwnd (0.7), not Standard-TCP 0.5
      , fsCwnd = 1, fsPhase = SlowStart
-     , fsWMax = 0, fsK = 0, fsCubicOrigin = 0, fsCaElapsed = 0 }
+     , fsWMax = 0, fsLastWMax = 0, fsK = 0, fsCubicOrigin = 0, fsCaElapsed = 0 }  -- Finding 11: clear the high-water mark on RTO (Linux bictcp_reset)
 
 -- | Linux @tcp_slow_start_after_idle@: a connection idle for longer than one RTO
 -- restarts its window at the initial cwnd (back into slow-start), keeping
@@ -142,10 +143,10 @@ rtoCollapse effCwnd fs =
 idleReset :: Bool -> Double -> TcpParams -> FlowState -> FlowState
 idleReset keepsWarm idleGapS tp fs
   | keepsWarm                 = fs
-  | idleGapS <= tpBaseRtoS tp = fs   -- within one RTO: not idle, stays warm
+  | idleGapS <= max (tpRtoMinS tp) (tpBaseRtoS tp) = fs   -- within one (floored) RTO: not idle, stays warm (Finding 7 — the RTO the model charges is floored at tpRtoMinS)
   | otherwise                 = fs { fsCwnd = tpCwnd0 tp, fsPhase = SlowStart
-                                   , fsWMax = 0, fsK = 0, fsCubicOrigin = 0
-                                   , fsCaElapsed = 0, fsConsecTO = 0 }
+                                   , fsWMax = 0, fsLastWMax = 0, fsK = 0, fsCubicOrigin = 0
+                                   , fsCaElapsed = 0, fsConsecTO = 0 }   -- Finding 11: clear the high-water mark on idle-reset too
 
 -- | Sample losses in a window of @n@ packets at per-packet rate @p@: returns
 -- (loss count, 1-based first-loss position or 0, rng').
@@ -179,7 +180,11 @@ stepRound tp rtt lossP fs g =
      else if fastRtx
        then let fs1 = (advance attempt rtt fs) { fsConsecTO = 0 }  -- data delivered ⇒ RTO backoff clears (fresh RTT sample recomputes RTO, RFC 6298 §2.2/2.3 + Karn)
             in if fsBytesSent fs1 >= tpFileBytes tp
-                 then (fs1, 0, g')
+                 -- final-window fast-retransmit: mid-transfer the fill RTT is absorbed by the
+                 -- next round's continued transmission (M0), but at the file tail nothing rides
+                 -- behind the hole, so the in-order prefix closes only when the retransmit lands
+                 -- ~1 RTT on — charge it (faithful Linux fast recovery; mechanics.md §4).
+                 then (fs1 { fsT = fsT fs1 + rtt }, 1, g')
                  else (cutOnLoss tp effCwnd fs1, 1, g')
      else -- RTO
        let delivered = max 0 (firstLoss - 1)
