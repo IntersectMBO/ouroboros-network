@@ -39,7 +39,8 @@ module SmallWorld.Diffusion
   , simulateBattle
   ) where
 
-import           Data.List          (foldl', minimumBy, sortBy)
+import           Data.List          (minimumBy, sortBy)
+import qualified Data.Foldable as Foldable
 import           Data.Ord           (comparing, Down(..))
 import qualified Data.IntMap.Strict as IM
 import qualified Data.IntSet        as IS
@@ -283,14 +284,14 @@ diffuseTimesGen dp topo sources closureOf warm egressOf
                                                  , fsWMax = tpSsthresh0 tpB }  -- Finding 5: prime the CUBIC epoch from ssthresh (mirror the SS->CA clamp); else a warm flow regrows from origin 0, slower than cold
                     | otherwise = initFlow tpB
             in Flow tpB Body v fs0 rtt (t + 2 * rtt) False (t + rtt) 0 tier False 0  -- body req: flReady = 1 RTT to first byte; flNext = grow at the NEXT boundary, not this one (Finding 4)
-          fetch1 = foldl' (\m u -> IM.insert u (startFlow u) m) fetch startable
+          fetch1 = Foldable.foldl' (\m u -> IM.insert u (startFlow u) m) fetch startable
           -- only actively-transmitting flows consume egress: a flow waiting on a
           -- request RTT or stalled in an RTO backoff (flReady > t) sends nothing,
           -- so it must not dilute the hub's egress share
           load  = IM.fromListWith (+) [ (flSrc f, 1 :: Int) | f <- IM.elems fetch1, flReady f <= t ]
           shareOf v = egressOf v / fromIntegral (max 1 (IM.findWithDefault 1 v load))
           (fetch2, done) = IM.foldrWithKey (advance t shareOf) (IM.empty, []) fetch1
-          has1 = foldl' (\m (u, tc) -> IM.insert u tc m) has done
+          has1 = Foldable.foldl' (\m (u, tc) -> IM.insert u tc m) has done
       in (fetch2, has1)
 
     advance t shareOf u f (accF, accDone)
