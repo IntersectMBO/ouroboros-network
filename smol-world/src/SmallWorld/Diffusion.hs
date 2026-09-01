@@ -279,9 +279,7 @@ diffuseTimesGen dp topo sources closureOf warm egressOf
           startFlow u =
             let (v, rtt, tier, _) = minimumBy (comparing (\(_, _, _, a) -> a)) (announces u) -- first announcer
                 tpB = mkTcpParams bodyB rtt 0 (egressOf v)
-                fs0 | warm v    = (initFlow tpB) { fsCwnd = tpSsthresh0 tpB
-                                                 , fsPhase = CA
-                                                 , fsWMax = tpSsthresh0 tpB }  -- Finding 5: prime the CUBIC epoch from ssthresh (mirror the SS->CA clamp); else a warm flow regrows from origin 0, slower than cold
+                fs0 | warm v    = warmFlow tpB   -- already-ramped; epoch built by enterCA
                     | otherwise = initFlow tpB
             in Flow tpB Body v fs0 rtt (t + 2 * rtt) False (t + rtt) 0 tier False 0  -- body req: flReady = 1 RTT to first byte; flNext = grow at the NEXT boundary, not this one (Finding 4)
           fetch1 = Foldable.foldl' (\m u -> IM.insert u (startFlow u) m) fetch startable
@@ -376,8 +374,16 @@ diffuseTimesGen dp topo sources closureOf warm egressOf
           geLoss     = not geClean
           geRTO      = uLoss >= cutThresh                     -- past the recoverable band ⇒ timeout
           oversubRTO = windowRate > share * dpRtoThresh dp
+          -- RFC 5681 §3.2: a fast retransmit needs three dup-ACKs, so a loss in a window of
+          -- fewer than four packets cannot be recovered without a timeout.  The GE channel
+          -- already encodes this analytically (with a3 = 0 both pRecov and pFastRtx vanish,
+          -- so every GE loss becomes a geRTO); the oversub and carried (flLoss) channels did
+          -- not.  Gating all of them keeps onCongestionEvent to windows where a real sender
+          -- could fast-retransmit — the precondition RFC 9438 §4.6 Figure 5 relies on when it
+          -- floors cwnd at 2 SMSS with no guard of its own.
+          dupAckable = a3 > 0                                 -- attempt >= 4
           lossNow    = flLoss f || oversub || geLoss
-          rtoNow     = oversubRTO || geRTO
+          rtoNow     = oversubRTO || geRTO || not dupAckable
           -- Final-window fast-retransmit: a recoverable (non-RTO) loss in the LAST window
           -- has no following data to overlap the retransmit, so the in-order prefix closes
           -- only ~1 RTT on (the fill lands next round).  Mid-transfer that RTT is absorbed
@@ -405,17 +411,17 @@ diffuseTimesGen dp topo sources closureOf warm egressOf
                     rtoBase = rttBase * (1 + 4 * rttVar)
                     rto = min (tpRtoMaxS tp)
                               (max (tpRtoMinS tp) rtoBase * 2 ^ min (fsConsecTO fsB) (30 :: Int))
-                    fs' = (rtoCollapse effCwnd fsB) { fsConsecTO = fsConsecTO fsB + 1 }
+                    fs' = (rtoCollapse tp (fromIntegral effCwnd) fsB) { fsConsecTO = fsConsecTO fsB + 1 }
                 in (fs', False, t + rto, t + rto, r1)           -- HOL: no delivery/egress until stall ends
             | lossNow =                                         -- recoverable loss ⇒ fast-retransmit / SACK fast-recovery: graceful cut
                 -- data delivered ⇒ fresh RTT samples ⇒ RTO backoff clears (fresh RTT sample recomputes RTO, RFC 6298 §2.2/2.3 + Karn)
-                ((cutOnLoss tp effCwnd fsB) { fsConsecTO = 0 }, False, flNext f + rtt, flReady f, r1)
-            | reorder =                                         -- reordering ⇒ spurious fast-retransmit
-                ((cutOnLoss tp effCwnd fsB) { fsConsecTO = 0 }, False, flNext f + rtt, flReady f, r1)
+                ((onCongestionEvent tp Loss (fromIntegral effCwnd) fsB) { fsConsecTO = 0 }, False, flNext f + rtt, flReady f, r1)
+            | reorder && dupAckable =                           -- reordering ⇒ spurious fast-retransmit
+                -- a spurious fast retransmit needs the same three dup-ACKs; below that the
+                -- reordered packet simply arrives late and nothing fires (not a timeout)
+                ((onCongestionEvent tp Loss (fromIntegral effCwnd) fsB) { fsConsecTO = 0 }, False, flNext f + rtt, flReady f, r1)
             | otherwise =                                       -- clean round: grow, reset RTO backoff
-                let grown = growOnAck tp (if fsPhase fsB == CA
-                                            then fsB { fsCaElapsed = fsCaElapsed fsB + rtt }
-                                            else fsB)
+                let grown = growOnAck tp rtt fsB   -- advances t - t_epoch itself (§4.2)
                 in (grown { fsConsecTO = 0 }, False, flNext f + rtt, flReady f, r1)
           rb0'       = if boundary then fsBytesSent fs2 else flRoundB0 f  -- next round starts at this round's delivered total
       in if fsBytesSent fs2 >= tpFileBytes tp

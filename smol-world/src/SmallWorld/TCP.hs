@@ -1,52 +1,87 @@
--- | Per-flow CUBIC + full-RTO transport, a faithful Haskell port of the TCP
--- estimator's @simulate_one_run@ (round-based cwnd dynamics: slow-start / CUBIC
--- congestion avoidance, fast-retransmit vs. RTO, prefix-crediting on timeout).
+{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE MultiWayIf #-}
+
+-- | Per-flow CUBIC congestion control (RFC 9438) plus a full RTO, at one-round
+-- (one-RTT) granularity.
 --
--- This is the single-flow core.  Phase 2 drives it per-round from the diffusion
--- DES with a *per-round loss probability* derived from each serving node's egress
--- contention (rather than a fixed p) and a bandwidth cap from the node's egress
--- fair-share — but the cwnd/RTO arithmetic here is exactly the estimator's.
+-- Each RFC clause is one named function that can be diffed against the text:
+-- 'enterCA' is §4.2 Figure 2, 'nextCwnd' is §4.4/§4.5, 'fastConvergence' is §4.7,
+-- 'multiplicativeDecrease' is §4.6 Figure 5, and 'onCongestionEvent' composes the last
+-- three in the RFC's own order (§4.7 runs "before the window reduction described in
+-- Section 4.6").  Names and units follow §4.1: all windows in segments, all times in
+-- seconds, and beta_cubic is the RFC's 0.7 -- the RETAINED fraction -- so every formula
+-- reads as printed.
+--
+-- This is the single-flow core.  The diffusion DES drives the same primitives per round
+-- with a loss decision derived from egress contention rather than a sampled rate.
 module SmallWorld.TCP
-  ( Phase(..)
+  ( -- * RFC 9438 §4.1.2 state
+    Epoch(..)
+  , Phase(..)
   , FlowState(..)
   , TcpParams(..)
   , mkTcpParams
   , initFlow
-  , growOnAck
-  , cutOnLoss
+  , warmFlow
+    -- * The clauses
+  -- , enterCA
+  -- , nextCwnd
+  -- , fastConvergence
+  -- , multiplicativeDecrease
+  , CongestionEvent(..)
+  , onCongestionEvent
   , rtoCollapse
   , idleReset
+    -- * Round drivers
+  , growOnAck
   , stepRound
   , flowTime
   , flowTimeFrom
-  , warmFlow
   ) where
 
 import System.Random (RandomGen, randomR)
 
-data Phase = SlowStart | CA deriving (Eq, Show)
+-- | RFC 9438 §4.1.2: the congestion-avoidance epoch.  First free are defined "at the
+-- beginning of the current congestion avoidance stage", so they are built together by
+-- 'enterCA' and never assigned piecewise -- a partially-updated epoch (a new W_max with a
+-- stale K, say) has no representation.  The elapsed time is updated on by `growOnAck`.
+data Epoch = Epoch
+  { epWMax      :: !Double   -- ^ W_max
+  , epCwndEpoch :: !Double   -- ^ cwnd_epoch
+  , epK         :: !Double   -- ^ K, seconds
+  , epElapsed   :: !Double   -- ^ t - t_epoch, seconds
+  } deriving (Eq, Show)
+
+-- | Slow start carries no epoch: W_max is undefined until the first congestion event
+-- (§4.10), and an RTO returns here precisely in order to forget it (§4.8).
+data Phase =
+    SlowStart
+   -- ^ slow start phase
+ | CA !Epoch
+   -- ^ congestion avoidance phase with internal state
+ deriving (Eq, Show)
 
 -- | Static per-flow parameters (constant over the transfer).
 data TcpParams = TcpParams
   { tpFileBytes  :: !Int
   , tpRttS       :: !Double
-  , tpLossP      :: !Double   -- per-packet loss this transfer (Phase-2 overrides per round)
+  , tpLossP      :: !Double   -- ^ per-packet loss this transfer (the DES overrides per round)
   , tpMss        :: !Int
-  , tpBdpCapSegs :: !Int      -- window cap = BDP/MSS (bandwidth ceiling)
+  , tpBdpCapSegs :: !Int      -- ^ window cap = BDP/MSS (bandwidth ceiling)
   , tpCwnd0      :: !Double
   , tpSsthresh0  :: !Double
-  , tpCubicC     :: !Double
-  , tpCubicBeta  :: !Double
+  , tpCubicC     :: !Double   -- ^ C, segments/s^3 (§4.1.1)
+  , tpBetaCubic  :: !Double   -- ^ beta_cubic, the RETAINED fraction (§4.6: SHOULD be 0.7)
   , tpRtoMinS    :: !Double
   , tpRtoMaxS    :: !Double
   , tpBaseRtoS   :: !Double
-  , tpFastConv   :: !Bool
+  , tpFastConv   :: !Bool     -- ^ §4.7
   , tpEnableRto  :: !Bool
   } deriving (Show)
 
--- | Smart constructor: derive the BDP window cap and initial ssthresh from a
--- capacity (bits/s) and RTT, matching the estimator's auto-sizing (ssthresh at
--- link saturation; base RTO = RTT + 4·RTTVAR with the no-jitter RTTVAR = RTT/4).
+-- | Smart constructor: derive the BDP window cap and initial ssthresh from a capacity
+-- (bits/s) and RTT (ssthresh at link saturation; base RTO = RTT + 4·RTTVAR with the
+-- no-jitter RTTVAR = RTT/4, floored at Linux's TCP_RTO_MIN rather than RFC 6298 §2.4's 1 s).
 mkTcpParams :: Int -> Double -> Double -> Double -> TcpParams
 mkTcpParams fileBytes rttS lossP capBps = TcpParams
   { tpFileBytes  = fileBytes
@@ -57,7 +92,7 @@ mkTcpParams fileBytes rttS lossP capBps = TcpParams
   , tpCwnd0      = 10
   , tpSsthresh0  = fromIntegral bdpCap
   , tpCubicC     = 0.4
-  , tpCubicBeta  = 0.3
+  , tpBetaCubic  = 0.7
   , tpRtoMinS    = 0.2
   , tpRtoMaxS    = 120
   , tpBaseRtoS   = rttS + 4 * (0.25 * rttS)
@@ -66,101 +101,236 @@ mkTcpParams fileBytes rttS lossP capBps = TcpParams
   }
   where
     mss    = 1460
-    bdpCap = max 1 (floor (capBps * rttS / 8 / fromIntegral mss))  -- floor matches the reference estimator; inert in-regime (BDP ≥ ~850 segs)
+    bdpCap = max 1 (floor (capBps * rttS / 8 / fromIntegral mss))
 
 data FlowState = FlowState
-  { fsCwnd        :: !Double
-  , fsSsthresh    :: !Double
-  , fsPhase       :: !Phase
-  , fsWMax        :: !Double
-  , fsLastWMax    :: !Double
-  , fsK           :: !Double
-  , fsCaElapsed   :: !Double
-  , fsBytesSent   :: !Int
-  , fsT           :: !Double
-  , fsConsecTO    :: !Int
+  { fsCwnd      :: !Double   -- ^ cwnd, segments
+  , fsSsthresh  :: !Double   -- ^ ssthresh, segments
+  , fsCwndPrior :: !Double   -- ^ cwnd_prior (§4.1.2): cwnd when ssthresh was last set
+  , fsPhase     :: !Phase
+  , fsBytesSent :: !Int
+  , fsT         :: !Double
+  , fsConsecTO  :: !Int
   } deriving (Show)
 
 initFlow :: TcpParams -> FlowState
 initFlow tp = FlowState
-  { fsCwnd = tpCwnd0 tp, fsSsthresh = tpSsthresh0 tp, fsPhase = SlowStart
-  , fsWMax = 0, fsLastWMax = 0, fsK = 0, fsCaElapsed = 0
-  , fsBytesSent = 0, fsT = 0, fsConsecTO = 0 }
+  { fsCwnd = tpCwnd0 tp, fsSsthresh = tpSsthresh0 tp, fsCwndPrior = 0
+  , fsPhase = SlowStart, fsBytesSent = 0, fsT = 0, fsConsecTO = 0 }
 
--- Loss-free round: slow-start doubling to ssthresh, then CUBIC convex regrowth.
-growOnAck :: TcpParams -> FlowState -> FlowState
-growOnAck tp fs
-  | fsPhase fs == SlowStart =
-      let c = fsCwnd fs * 2
-      in if c >= fsSsthresh fs
-           then let w = max (fsSsthresh fs) (fsCwnd fs)  -- Finding 8: never shrink on a clean round (post-idleReset ssthresh<cwnd corner); no-op when cwnd<ssthresh
-                in fs { fsCwnd = w, fsWMax = w
-                      , fsLastWMax = 0, fsK = 0   -- no prior loss yet; RFC 8312 §4.6 W_last_max starts unset
-                      , fsCaElapsed = 0, fsPhase = CA }
-           else fs { fsCwnd = c }
-  | otherwise =
-      fs { fsCwnd = max 1 (tpCubicC tp * (fsCaElapsed fs - fsK fs) ** 3 + fsWMax fs) }
+-- | A warm flow at (near-)steady cwnd: already ramped to the BDP cap and in congestion
+-- avoidance, so a WARM transfer skips the cold slow-start ramp.  Its epoch is §4.10's
+-- loss-free-exit shape: W_max = cwnd_epoch = cwnd, K = 0.
+warmFlow :: TcpParams -> FlowState
+warmFlow tp = (initFlow tp) { fsCwnd = cap, fsSsthresh = cap, fsCwndPrior = cap
+                            , fsPhase = enterCA (tpCubicC tp) cap cap }
+  where cap = fromIntegral (tpBdpCapSegs tp)
 
--- Graceful fast recovery: CUBIC multiplicative decrease + fresh concave epoch.
--- fsBytesSent is untouched — a loss costs a cwnd cut + ~1 RTT, not delivered data
--- (no-round-discard; see tcpcheck's self-check and mechanics.md §4/§5).
-cutOnLoss :: TcpParams -> Int -> FlowState -> FlowState
-cutOnLoss tp effCwnd fs =
-  let beta = tpCubicBeta tp
-      cwndAtLoss = fromIntegral effCwnd
-      wMax | tpFastConv tp && fsLastWMax fs > 0 && cwndAtLoss < fsLastWMax fs
-               = cwndAtLoss * (2 - beta) / 2
-           | otherwise = cwndAtLoss
-  in fs { fsWMax = wMax
-        , fsLastWMax = cwndAtLoss   -- RFC 8312 §4.6: W_last_max = the pre-reduction cwnd-at-loss (may descend)
-        , fsCwnd = max 1 (cwndAtLoss * (1 - beta))
-        , fsK = (max 0 (wMax - max 1 (cwndAtLoss * (1 - beta))) / tpCubicC tp) ** (1/3)  -- regrow CA from the installed cwnd, not a fast-conv-dipped value (Finding 1; no-op outside the fast-conv corner)
-        , fsCaElapsed = 0
-        , fsPhase = CA }
+-- | §4.2 Figure 2: @K = cbrt((W_max - cwnd_epoch)/C)@.  The only way to build an 'Epoch',
+-- so @W_cubic(0) == cwnd_epoch@ holds by construction and the curve can never start below
+-- the installed window.  The first branch is §4.8/§4.10's rule for an epoch beginning at
+-- or above W_max -- "K is set to 0, and W_max is set to the congestion window size at the
+-- beginning of the current congestion avoidance stage" (Linux: @last_max_cwnd <= cwnd =>
+-- bic_K = 0, bic_origin_point = cwnd@).
+enterCA :: Double
+        -- ^ @C@
+        -> Double
+        -- ^ @W_max@
+        -> Double
+        -- ^ @cwnd_epoch@
+        -> Phase
+enterCA c wMax cwndEpoch
+  | wMax <= cwndEpoch
+  = CA Epoch { epWMax = cwndEpoch
+             , epCwndEpoch = cwndEpoch
+             , epK = 0
+             , epElapsed = 0
+             }
+  | otherwise
+  = CA Epoch { epWMax = wMax
+             , epCwndEpoch = cwndEpoch
+             , epK = ((wMax - cwndEpoch) / c) ** (1/3) -- Figure 2
+             , epElapsed = 0
+             }
 
--- RTO: collapse to a slow-start restart (cwnd->1, ssthresh = beta_cubic·cwnd).
--- fsBytesSent is untouched — the RTO costs a backoff stall + slow-start re-ramp,
--- not the round; the transfer resumes from where it was.
-rtoCollapse :: Int -> FlowState -> FlowState
-rtoCollapse effCwnd fs =
-  fs { fsSsthresh = max 2 (fromIntegral effCwnd * 0.7)   -- RFC 8312 §4.7: ssthresh = beta_cubic·cwnd (0.7), not Standard-TCP 0.5
-     , fsCwnd = 1, fsPhase = SlowStart
-     , fsWMax = 0, fsLastWMax = 0, fsK = 0, fsCaElapsed = 0 }  -- Finding 11: clear the high-water mark on RTO (Linux bictcp_reset)
-
--- | Linux @tcp_slow_start_after_idle@: a connection idle for longer than one RTO
--- restarts its window at the initial cwnd (back into slow-start), keeping
--- ssthresh — so a *reused* connection does not send from a stale warm window.
--- Stacks that disable it (@tcp_slow_start_after_idle=0@, @keepsWarm=True@) retain
--- the warm cwnd across the idle gap.  @idleGapS@ is the inactivity since the
--- connection last sent.  Gaps within one RTO (e.g. the ~1-RTT body→closure
--- request within a single EB) are not idle and stay warm regardless.
+-- | The per-round rendering of §4.4/§4.5.
 --
--- In single-EB diffusion every connection is used once, so this never fires;
--- it is the seam the Phase-4 multi-round driver uses when a connection is reused
--- for the next EB after seconds of inactivity (see design.md D12).
+-- The RFC's per-ACK rule is @cwnd += (target - cwnd)/cwnd@ with @target = W_cubic(t+RTT)@.
+-- That is a first-order lag of time constant RTT, so the cwnd it *achieves* at time t is
+-- W_cubic(t) to within O(RTT^2·W''), not the target -- a model that assigns once per round
+-- assigns W_cubic(t) and must NOT also apply the lookahead, or it runs a full RTT of curve
+-- fast.  §4.2's two bounds still apply, ensuring "CUBIC's congestion window increase rate
+-- is non-decreasing and is less than the increase rate of slow start": @max cwnd@ (Linux:
+-- @ca->cnt = 100 * cwnd@ when the target is at or below cwnd) and @min (1.5 * cwnd)@
+-- (Linux: @ca->cnt = max(ca->cnt, 2U)@).
+nextCwnd :: Double
+         -- ^ @C@
+         -> Epoch
+         -> Double
+         -- ^ @cwnd@
+         -> Double
+nextCwnd c ep cwnd =
+    -- Section §4.2, `target` formula
+    if | wCubic < cwnd      -> cwnd
+       | wCubic > cwndLimit -> cwndLimit
+       | otherwise          -> wCubic
+  where
+    --  Figure 1
+    wCubic     = c * (epElapsed ep - epK ep) ** 3 + epWMax ep
+    cwndLimit  = 1.5 * cwnd
+
+-- | One loss-free round: RFC 5681 slow-start doubling up to ssthresh, then §4.4/§4.5.
+-- Takes the round's RTT and owns the epoch clock, so @t - t_epoch@ has exactly one writer
+-- per round (§4.2: t must exclude any period in which cwnd was not updated).
+growOnAck :: TcpParams
+          -> Double
+          -- ^ @RTT@
+          -> FlowState
+          -> FlowState
+growOnAck tp rtt fs = case fsPhase fs of
+  SlowStart
+    | doubled < fsSsthresh fs ->
+      fs { fsCwnd = doubled }
+    -- §4.10: cwnd is no longer at or below ssthresh, so leave slow start.  A loss-free
+    -- exit leaves W_max undefined; the RFC's remedy is "CUBIC sets cwnd_prior = cwnd and
+    -- switches to congestion avoidance ... K is set to 0, and W_max is set to the
+    -- congestion window size at the beginning of the current congestion avoidance stage".
+    -- `max` because after an idleReset ssthresh can sit below cwnd, and slow start must
+    -- never reduce the window.
+    | otherwise ->
+      fs { fsCwnd      = w
+         , fsCwndPrior = w
+         , fsPhase     = enterCA (tpCubicC tp) w w
+         }
+
+  -- congestion avoidance
+  CA ep ->
+    let ep' = ep { epElapsed = epElapsed ep + rtt }
+    in fs { fsCwnd  = nextCwnd (tpCubicC tp) ep' (fsCwnd fs)
+          , fsPhase = CA ep'
+          }
+  where
+    doubled = fsCwnd fs * 2
+    w       = fsSsthresh fs `max` fsCwnd fs
+
+-- | W_max as of now: undefined (0) in slow start, so fast convergence cannot fire on a
+-- flow that has not been cut in this stage -- which is also how §4.8's "forget W_max on a
+-- timeout" falls out, since 'rtoCollapse' returns to slow start.
+currentWMax :: FlowState -> Double
+currentWMax fs = case fsPhase fs of
+  CA ep     -> epWMax ep
+  SlowStart -> 0
+
+-- | §4.7 Fast Convergence.  Runs BEFORE the reduction, on the pre-reduction cwnd, and
+-- compares against W_max -- the value a previous firing may already have reduced (§4.1.2:
+-- "if fast convergence is enabled, W_max may be further reduced") -- never against
+-- cwnd_prior.  RFC 8312's separate W_last_max, which compared against the un-reduced
+-- pre-cut cwnd and so fired more often, does not exist in RFC 9438.
+fastConvergence :: Bool -> Double -> Double -> Double -> Double
+fastConvergence enabled betaCubic cwnd wMax
+  | enabled && cwnd < wMax = cwnd * (1 + betaCubic) / 2
+  | otherwise              = cwnd
+
+data CongestionEvent = Loss | ECE
+  deriving Show
+
+-- | §4.6 Figure 5, returning all three outputs at once so none can be dropped.
+--
+-- @flightSize@ is the RFC's flight_size.  §4.6 permits cwnd in its place, but only for
+-- implementations that "use other measures to prevent cwnd from growing when the volume of
+-- bytes in flight is smaller than cwnd" -- a caller substituting cwnd takes on that
+-- obligation.  Figure 5 applies the cwnd floor to the *unfloored* ssthresh and floors
+-- ssthresh on the following line, hence the order here.
+multiplicativeDecrease
+  :: Double
+  -> CongestionEvent
+  -> Double
+  -- ^ @cwnd@
+  -> Double
+  -> (Double, Double, Double)
+  -- ^ @(ssthresh, cwnd_prior, cwnd)@
+multiplicativeDecrease betaCubic ev cwnd flightSize =
+  ( max ssthresh 2                            -- ssthresh = max(ssthresh, 2)
+  , cwnd                                      -- cwnd_prior = cwnd
+  , max ssthresh floorSegs )                  -- cwnd = max(ssthresh, 2) / max(ssthresh, 1)
+  where
+    ssthresh  = flightSize * betaCubic
+    floorSegs = case ev of Loss -> 2; ECE -> 1
+
+-- | A congestion event (§4.6): fast convergence, then the multiplicative decrease, then a
+-- fresh epoch -- in the RFC's order.  fsBytesSent and fsT are untouched: a loss costs a
+-- window reduction (and, at the caller's discretion, a recovery RTT), never delivered data.
+onCongestionEvent :: TcpParams -> CongestionEvent -> Double -> FlowState -> FlowState
+onCongestionEvent tp ev flightSize fs = fs
+  { fsSsthresh  = ssthresh
+  , fsCwndPrior = cwndPrior
+  , fsCwnd      = cwnd
+  , fsPhase     = enterCA (tpCubicC tp) wMax cwnd }
+  where
+    wMax = fastConvergence
+            (tpFastConv tp)
+            (tpBetaCubic tp)
+            (fsCwnd fs)
+            (currentWMax fs)
+
+    (ssthresh, cwndPrior, cwnd) =
+      multiplicativeDecrease
+        (tpBetaCubic tp)
+        ev
+        (fsCwnd fs)
+        flightSize
+
+
+-- | §4.8 Timeout: "CUBIC follows Reno to reduce cwnd but sets ssthresh using beta_cubic
+-- (same as in Section 4.6)".  cwnd goes to 1 and the flow returns to slow start, which
+-- drops the epoch and with it W_max -- §4.8's requirement that the next congestion
+-- avoidance stage begin with K = 0 and W_max = cwnd_epoch (Linux: bictcp_reset on
+-- TCP_CA_Loss).  fsBytesSent/fsT are untouched; the caller charges the backoff stall.
+rtoCollapse :: TcpParams -> Double -> FlowState -> FlowState
+rtoCollapse tp flightSize fs =
+  fs { fsSsthresh  = max 2 (flightSize * tpBetaCubic tp)
+     , fsCwndPrior = fsCwnd fs
+     , fsCwnd      = 1
+     , fsPhase     = SlowStart }
+
+-- | Linux @tcp_slow_start_after_idle@ (RFC 5681 §4.1): a connection idle for longer than
+-- one RTO restarts its window at the initial cwnd, back in slow start, keeping ssthresh --
+-- so a *reused* connection does not send from a stale warm window.  Stacks that disable it
+-- (@tcp_slow_start_after_idle=0@, @keepsWarm=True@) retain the warm cwnd.  @idleGapS@ is
+-- the inactivity since the connection last sent; gaps within one RTO (e.g. the ~1-RTT
+-- body->closure request inside a single EB) are not idle and stay warm regardless.
+--
+-- In single-EB diffusion every connection is used once, so this never fires; it is the
+-- seam a multi-round driver uses when a connection is reused after seconds of inactivity.
 idleReset :: Bool -> Double -> TcpParams -> FlowState -> FlowState
 idleReset keepsWarm idleGapS tp fs
-  | keepsWarm                 = fs
-  | idleGapS <= max (tpRtoMinS tp) (tpBaseRtoS tp) = fs   -- within one (floored) RTO: not idle, stays warm (Finding 7 — the RTO the model charges is floored at tpRtoMinS)
-  | otherwise                 = fs { fsCwnd = tpCwnd0 tp, fsPhase = SlowStart
-                                   , fsWMax = 0, fsLastWMax = 0, fsK = 0
-                                   , fsCaElapsed = 0, fsConsecTO = 0 }   -- Finding 11: clear the high-water mark on idle-reset too
+  | keepsWarm                                      = fs
+  | idleGapS <= max (tpRtoMinS tp) (tpBaseRtoS tp) = fs
+  | otherwise = fs { fsCwnd = tpCwnd0 tp, fsPhase = SlowStart, fsConsecTO = 0 }
 
 -- | Sample losses in a window of @n@ packets at per-packet rate @p@: returns
 -- (loss count, 1-based first-loss position or 0, rng').
-sampleLosses :: RandomGen g => Int -> Double -> g -> (Int, Int, g)
+sampleLosses :: RandomGen g
+             => Int
+             -- ^ window size in packets
+             -> Double
+             -- ^ per packet loss probability
+             -> g
+             -> (Int, Int, g)
 sampleLosses n p = go 1 0 0
   where
-    go i k firstPos g
-      | i > n     = (k, firstPos, g)
-      | otherwise = let (u, g') = randomR (0, 1) g
-                    in if u < p
-                         then go (i+1) (k+1) (if firstPos == 0 then i else firstPos) g'
-                         else go (i+1) k firstPos g'
+    go !i !k !firstPos !g
+      | i > n
+      = (k, firstPos, g)
 
--- | One round (one RTT, or one RTO stall on timeout).  @rtt@ and @lossP@ are
--- passed in so the Phase-2 DES can vary them per round (jitter, egress-derived
--- loss); the isolated single-flow driver just passes the flow's constants.
+      | otherwise
+      = let (u, g') = randomR (0, 1) g in
+        if u < p
+        then go (i+1) (k+1) (if firstPos == 0 then i else firstPos) g'
+        else go (i+1) k firstPos g'
+
+-- | One round (one RTT, or one RTO stall on timeout).  @rtt@ and @lossP@ are passed in so
+-- a driver can vary them per round (jitter, egress-derived loss).
 stepRound :: RandomGen g => TcpParams -> Double -> Double -> FlowState -> g -> (FlowState, Int, g)
 stepRound tp rtt lossP fs g =
   let mss     = tpMss tp
@@ -168,59 +338,58 @@ stepRound tp rtt lossP fs g =
       remB    = tpFileBytes tp - fsBytesSent fs
       remPkts = (remB + mss - 1) `div` mss
       attempt = min effCwnd remPkts
+      flight  = fromIntegral effCwnd          -- see note at the call sites below
       (k, firstLoss, g') = sampleLosses attempt lossP g
       lossRound = k > 0
+      -- RFC 5681 §3.2: a fast retransmit needs three dup-ACKs, so the first loss must
+      -- leave >= 3 packets behind it; anything else (or >= 2 losses, no SACK) times out.
       fastRtx | lossRound && tpEnableRto tp = k == 1 && attempt - firstLoss >= 3
               | otherwise                   = lossRound
   in if not lossRound
-       then let fs1 = (advance attempt rtt fs) { fsConsecTO = 0 }  -- clean round resets RTO backoff
-            in (if fsBytesSent fs1 >= tpFileBytes tp then fs1 else growOnAck tp fs1, 0, g')
+       then let fs1 = (advance attempt rtt fs) { fsConsecTO = 0 }  -- clean round resets the RTO backoff
+            in (if fsBytesSent fs1 >= tpFileBytes tp then fs1 else growOnAck tp rtt fs1, 0, g')
      else if fastRtx
-       then let fs1 = (advance attempt rtt fs) { fsConsecTO = 0 }  -- data delivered ⇒ RTO backoff clears (fresh RTT sample recomputes RTO, RFC 6298 §2.2/2.3 + Karn)
+       then let fs1 = (advance attempt rtt fs) { fsConsecTO = 0 }  -- data delivered => fresh RTT samples clear the backoff (RFC 6298 §2.2/2.3 + Karn)
             in if fsBytesSent fs1 >= tpFileBytes tp
-                 -- final-window fast-retransmit: mid-transfer the fill RTT is absorbed by the
-                 -- next round's continued transmission (M0), but at the file tail nothing rides
-                 -- behind the hole, so the in-order prefix closes only when the retransmit lands
-                 -- ~1 RTT on — charge it (faithful Linux fast recovery; mechanics.md §4).
+                 -- final-window fast retransmit: mid-transfer the fill RTT is absorbed by
+                 -- the next round's continued transmission, but at the file tail nothing
+                 -- rides behind the hole, so the in-order prefix closes only when the
+                 -- retransmit lands ~1 RTT on -- charge it.
                  then (fs1 { fsT = fsT fs1 + rtt }, 1, g')
-                 else (cutOnLoss tp effCwnd fs1, 1, g')
+                 -- flight_size is the BDP-capped window rather than `attempt`: §4.6 warns
+                 -- that cutting from a short flight "would decrease cwnd to a much lower
+                 -- value than necessary", and `attempt` dips below the window only at the
+                 -- file tail.  The BDP cap is the "other measure" §4.6 asks of a
+                 -- cwnd-based implementation.
+                 else (onCongestionEvent tp Loss flight fs1, 1, g')
      else -- RTO
        let delivered = max 0 (firstLoss - 1)
            backoff   = (2 :: Int) ^ min (fsConsecTO fs) (30 :: Int)
            rto       = min (tpRtoMaxS tp) (max (tpRtoMinS tp) (tpBaseRtoS tp) * fromIntegral backoff)
            fs1 = fs { fsBytesSent = min (tpFileBytes tp) (fsBytesSent fs + delivered * mss)
                     , fsT = fsT fs + rto, fsConsecTO = fsConsecTO fs + 1 }
-       in (rtoCollapse effCwnd fs1, 1, g')
+       in (rtoCollapse tp flight fs1, 1, g')
   where
-    -- advance a delivering round; does NOT reset fsConsecTO itself — the caller
-    -- clears it on any data-delivering round (clean or fast-retransmit), since a
-    -- successful delivery draws fresh RTT samples and clears the RTO backoff
-    -- (a fresh RTT sample recomputes RTO, RFC 6298 §2.2/2.3 + Karn); only back-to-back timeouts keep the backoff.
-    advance pkts rtt' f =
-      let f1 = f { fsBytesSent = min (tpFileBytes tp) (fsBytesSent f + pkts * tpMss tp)
-                 , fsT = fsT f + rtt' }
-      in if fsPhase f1 == CA then f1 { fsCaElapsed = fsCaElapsed f1 + rtt' } else f1
+    -- a delivering round: bytes and wall clock only.  The epoch clock belongs to
+    -- growOnAck, and fsConsecTO to the caller (cleared on any delivering round, since a
+    -- successful delivery draws fresh RTT samples; only back-to-back timeouts keep it).
+    advance pkts rtt' f = f { fsBytesSent = min (tpFileBytes tp) (fsBytesSent f + pkts * tpMss tp)
+                            , fsT = fsT f + rtt' }
 
 -- | Isolated single-flow completion: (download time s, effective loss events).
 flowTime :: RandomGen g => TcpParams -> g -> (Double, Int)
 flowTime tp = flowTimeFrom tp (initFlow tp)
 
--- | As 'flowTime' but from an arbitrary initial 'FlowState' — lets a caller start a transfer WARM (cwnd
--- already ramped, e.g. a continuous gossip link or a warm-idle node) instead of cold slow-start.
+-- | As 'flowTime' but from an arbitrary initial 'FlowState' -- lets a caller start a
+-- transfer WARM (cwnd already ramped) instead of cold slow-start.
 flowTimeFrom :: RandomGen g => TcpParams -> FlowState -> g -> (Double, Int)
 flowTimeFrom tp fs0 g0
   | tpFileBytes tp <= 0 = (0, 0)
   | otherwise           = loop fs0 { fsBytesSent = 0, fsT = 0 } 0 g0 (0 :: Int)
   where
-    loop fs nLoss g rounds
+    loop !fs !nLoss !g !rounds
       | fsBytesSent fs >= tpFileBytes tp = (fsT fs, nLoss)
       | rounds > 10000000                = (1/0, nLoss)
       | otherwise =
           let (fs', dl, g') = stepRound tp (tpRttS tp) (tpLossP tp) fs g
           in loop fs' (nLoss + dl) g' (rounds + 1)
-
--- | A warm flow at (near-)steady cwnd: ramped through slow-start to ssthresh and into congestion
--- avoidance, so a WARM transfer skips the cold slow-start penalty.  (Losses still cut it via CUBIC.)
-warmFlow :: TcpParams -> FlowState
-warmFlow tp = (initFlow tp) { fsCwnd = fromIntegral (tpBdpCapSegs tp), fsSsthresh = fromIntegral (tpBdpCapSegs tp)
-                            , fsPhase = CA, fsWMax = fromIntegral (tpBdpCapSegs tp) }
