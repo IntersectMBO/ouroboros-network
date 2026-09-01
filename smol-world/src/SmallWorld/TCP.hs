@@ -75,7 +75,6 @@ data FlowState = FlowState
   , fsWMax        :: !Double
   , fsLastWMax    :: !Double
   , fsK           :: !Double
-  , fsCubicOrigin :: !Double
   , fsCaElapsed   :: !Double
   , fsBytesSent   :: !Int
   , fsT           :: !Double
@@ -85,7 +84,7 @@ data FlowState = FlowState
 initFlow :: TcpParams -> FlowState
 initFlow tp = FlowState
   { fsCwnd = tpCwnd0 tp, fsSsthresh = tpSsthresh0 tp, fsPhase = SlowStart
-  , fsWMax = 0, fsLastWMax = 0, fsK = 0, fsCubicOrigin = 0, fsCaElapsed = 0
+  , fsWMax = 0, fsLastWMax = 0, fsK = 0, fsCaElapsed = 0
   , fsBytesSent = 0, fsT = 0, fsConsecTO = 0 }
 
 -- Loss-free round: slow-start doubling to ssthresh, then CUBIC convex regrowth.
@@ -97,10 +96,10 @@ growOnAck tp fs
            then let w = max (fsSsthresh fs) (fsCwnd fs)  -- Finding 8: never shrink on a clean round (post-idleReset ssthresh<cwnd corner); no-op when cwnd<ssthresh
                 in fs { fsCwnd = w, fsWMax = w
                       , fsLastWMax = 0, fsK = 0   -- no prior loss yet; RFC 8312 §4.6 W_last_max starts unset
-                      , fsCubicOrigin = w, fsCaElapsed = 0, fsPhase = CA }
+                      , fsCaElapsed = 0, fsPhase = CA }
            else fs { fsCwnd = c }
   | otherwise =
-      fs { fsCwnd = max 1 (tpCubicC tp * (fsCaElapsed fs - fsK fs) ** 3 + fsCubicOrigin fs) }
+      fs { fsCwnd = max 1 (tpCubicC tp * (fsCaElapsed fs - fsK fs) ** 3 + fsWMax fs) }
 
 -- Graceful fast recovery: CUBIC multiplicative decrease + fresh concave epoch.
 -- fsBytesSent is untouched — a loss costs a cwnd cut + ~1 RTT, not delivered data
@@ -116,7 +115,6 @@ cutOnLoss tp effCwnd fs =
         , fsLastWMax = cwndAtLoss   -- RFC 8312 §4.6: W_last_max = the pre-reduction cwnd-at-loss (may descend)
         , fsCwnd = max 1 (cwndAtLoss * (1 - beta))
         , fsK = (max 0 (wMax - max 1 (cwndAtLoss * (1 - beta))) / tpCubicC tp) ** (1/3)  -- regrow CA from the installed cwnd, not a fast-conv-dipped value (Finding 1; no-op outside the fast-conv corner)
-        , fsCubicOrigin = wMax
         , fsCaElapsed = 0
         , fsPhase = CA }
 
@@ -127,7 +125,7 @@ rtoCollapse :: Int -> FlowState -> FlowState
 rtoCollapse effCwnd fs =
   fs { fsSsthresh = max 2 (fromIntegral effCwnd * 0.7)   -- RFC 8312 §4.7: ssthresh = beta_cubic·cwnd (0.7), not Standard-TCP 0.5
      , fsCwnd = 1, fsPhase = SlowStart
-     , fsWMax = 0, fsLastWMax = 0, fsK = 0, fsCubicOrigin = 0, fsCaElapsed = 0 }  -- Finding 11: clear the high-water mark on RTO (Linux bictcp_reset)
+     , fsWMax = 0, fsLastWMax = 0, fsK = 0, fsCaElapsed = 0 }  -- Finding 11: clear the high-water mark on RTO (Linux bictcp_reset)
 
 -- | Linux @tcp_slow_start_after_idle@: a connection idle for longer than one RTO
 -- restarts its window at the initial cwnd (back into slow-start), keeping
@@ -145,7 +143,7 @@ idleReset keepsWarm idleGapS tp fs
   | keepsWarm                 = fs
   | idleGapS <= max (tpRtoMinS tp) (tpBaseRtoS tp) = fs   -- within one (floored) RTO: not idle, stays warm (Finding 7 — the RTO the model charges is floored at tpRtoMinS)
   | otherwise                 = fs { fsCwnd = tpCwnd0 tp, fsPhase = SlowStart
-                                   , fsWMax = 0, fsLastWMax = 0, fsK = 0, fsCubicOrigin = 0
+                                   , fsWMax = 0, fsLastWMax = 0, fsK = 0
                                    , fsCaElapsed = 0, fsConsecTO = 0 }   -- Finding 11: clear the high-water mark on idle-reset too
 
 -- | Sample losses in a window of @n@ packets at per-packet rate @p@: returns
@@ -225,4 +223,4 @@ flowTimeFrom tp fs0 g0
 -- avoidance, so a WARM transfer skips the cold slow-start penalty.  (Losses still cut it via CUBIC.)
 warmFlow :: TcpParams -> FlowState
 warmFlow tp = (initFlow tp) { fsCwnd = fromIntegral (tpBdpCapSegs tp), fsSsthresh = fromIntegral (tpBdpCapSegs tp)
-                            , fsPhase = CA, fsWMax = fromIntegral (tpBdpCapSegs tp), fsCubicOrigin = fromIntegral (tpBdpCapSegs tp) }
+                            , fsPhase = CA, fsWMax = fromIntegral (tpBdpCapSegs tp) }

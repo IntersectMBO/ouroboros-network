@@ -278,8 +278,9 @@ diffuseTimesGen dp topo sources closureOf warm egressOf
           startFlow u =
             let (v, rtt, tier, _) = minimumBy (comparing (\(_, _, _, a) -> a)) (announces u) -- first announcer
                 tpB = mkTcpParams bodyB rtt 0 (egressOf v)
-                fs0 | warm v    = (initFlow tpB) { fsCwnd = tpSsthresh0 tpB, fsPhase = CA
-                                                 , fsWMax = tpSsthresh0 tpB, fsCubicOrigin = tpSsthresh0 tpB }  -- Finding 5: prime the CUBIC epoch from ssthresh (mirror the SS->CA clamp); else a warm flow regrows from origin 0, slower than cold
+                fs0 | warm v    = (initFlow tpB) { fsCwnd = tpSsthresh0 tpB
+                                                 , fsPhase = CA
+                                                 , fsWMax = tpSsthresh0 tpB }  -- Finding 5: prime the CUBIC epoch from ssthresh (mirror the SS->CA clamp); else a warm flow regrows from origin 0, slower than cold
                     | otherwise = initFlow tpB
             in Flow tpB Body v fs0 rtt (t + 2 * rtt) False (t + rtt) 0 tier False 0  -- body req: flReady = 1 RTT to first byte; flNext = grow at the NEXT boundary, not this one (Finding 4)
           fetch1 = foldl' (\m u -> IM.insert u (startFlow u) m) fetch startable
