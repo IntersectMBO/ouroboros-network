@@ -188,7 +188,7 @@ stepRound tp rtt lossP fs g =
                  else (cutOnLoss tp effCwnd fs1, 1, g')
      else -- RTO
        let delivered = max 0 (firstLoss - 1)
-           backoff   = 2 ^ min (fsConsecTO fs) (30 :: Int)
+           backoff   = (2 :: Int) ^ min (fsConsecTO fs) (30 :: Int)
            rto       = min (tpRtoMaxS tp) (max (tpRtoMinS tp) (tpBaseRtoS tp) * fromIntegral backoff)
            fs1 = fs { fsBytesSent = min (tpFileBytes tp) (fsBytesSent fs + delivered * mss)
                     , fsT = fsT fs + rto, fsConsecTO = fsConsecTO fs + 1 }
