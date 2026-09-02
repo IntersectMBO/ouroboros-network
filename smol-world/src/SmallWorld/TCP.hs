@@ -5,7 +5,7 @@
 -- (one-RTT) granularity.
 --
 -- Each RFC clause is one named function that can be diffed against the text:
--- 'enterCA' is §4.2 Figure 2, 'nextCwnd' is §4.4/§4.5, 'fastConvergence' is §4.7,
+-- 'enterCA' is §4.2 Figure 2, 'cubicTarget' is §4.4/§4.5, 'fastConvergence' is §4.7,
 -- 'multiplicativeDecrease' is §4.6 Figure 5, and 'onCongestionEvent' composes the last
 -- three in the RFC's own order (§4.7 runs "before the window reduction described in
 -- Section 4.6").  Names and units follow §4.1: all windows in segments, all times in
@@ -25,7 +25,10 @@ module SmallWorld.TCP
   , warmFlow
     -- * The clauses
   -- , enterCA
-  -- , nextCwnd
+  -- , wCubic
+  -- , nextWEst
+  -- , nextCACwnd
+  -- , cubicTarget
   -- , fastConvergence
   -- , multiplicativeDecrease
   , CongestionEvent(..)
@@ -50,6 +53,7 @@ data Epoch = Epoch
   , epCwndEpoch :: !Double   -- ^ cwnd_epoch
   , epK         :: !Double   -- ^ K, seconds
   , epElapsed   :: !Double   -- ^ t - t_epoch, seconds
+  , epWEst      :: !Double   -- ^ W_est (§4.3), the Reno-friendly window estimate
   } deriving (Eq, Show)
 
 -- | Slow start carries no epoch: W_max is undefined until the first congestion event
@@ -145,12 +149,15 @@ enterCA c wMax cwndEpoch
              , epCwndEpoch = cwndEpoch
              , epK = 0
              , epElapsed = 0
+             , epWEst = cwndEpoch   -- §4.3, and §4.8/§4.10 for the post-timeout stage
              }
   | otherwise
   = CA Epoch { epWMax = wMax
              , epCwndEpoch = cwndEpoch
              , epK = ((wMax - cwndEpoch) / c) ** (1/3) -- Figure 2
              , epElapsed = 0
+             , epWEst = cwndEpoch   -- §4.3: "W_est is set equal to cwnd_epoch at the
+                                    -- start of the congestion avoidance stage"
              }
 
 -- | The per-round rendering of §4.4/§4.5.
@@ -163,21 +170,80 @@ enterCA c wMax cwndEpoch
 -- is non-decreasing and is less than the increase rate of slow start": @max cwnd@ (Linux:
 -- @ca->cnt = 100 * cwnd@ when the target is at or below cwnd) and @min (1.5 * cwnd)@
 -- (Linux: @ca->cnt = max(ca->cnt, 2U)@).
-nextCwnd :: Double
-         -- ^ @C@
-         -> Epoch
+cubicTarget :: Double
+            -- ^ @C@
+            -> Epoch
+            -> Double
+            -- ^ @cwnd@
+            -> Double
+cubicTarget c ep cwnd =
+    -- Section §4.2, `target` formula
+    if | w < cwnd      -> cwnd
+       | w > cwndLimit -> cwndLimit
+       | otherwise     -> w
+  where
+    w          = wCubic c ep
+    cwndLimit  = 1.5 * cwnd
+
+-- | §4.2 Figure 1: @W_cubic(t) = C*(t - K)^3 + W_max@.  Kept separate from 'cubicTarget'
+-- because §4.3's region test is on this raw value, not on the clamped target.
+wCubic :: Double
+       -- ^ @C@
+       -> Epoch
+       -> Double
+wCubic c ep = c * (epElapsed ep - epK ep) ** 3 + epWMax ep
+
+-- | §4.3 Figure 4: @W_est = W_est + alpha_cubic * segments_acked / cwnd@, applied once per
+-- round with the round's acknowledged-segment count.
+--
+-- @alpha_cubic = 3*(1 - beta_cubic)/(1 + beta_cubic)@ (= 0.529 at 0.7) is the additive
+-- factor that "achieves approximately the same average window size as Reno".  §4.3 then
+-- escalates it: "Once W_est has grown to reach the cwnd at the time of most recently
+-- setting ssthresh -- that is, W_est >= cwnd_prior -- the sender SHOULD set alpha_cubic
+-- to 1 to ensure that it can achieve the same congestion window increment rate as Reno".
+nextWEst :: Double
+         -- ^ @β_cubic@
+         -> Double
+         -- ^ @cwnd_prior@
          -> Double
          -- ^ @cwnd@
          -> Double
-nextCwnd c ep cwnd =
-    -- Section §4.2, `target` formula
-    if | wCubic < cwnd      -> cwnd
-       | wCubic > cwndLimit -> cwndLimit
-       | otherwise          -> wCubic
+         -- ^ @segments_acked@ this round
+         -> Double
+         -- ^ @W_est@
+         -> Double
+nextWEst betaCubic cwndPrior cwnd segmentsAcked wEst =
+    wEst + alphaCubic * segmentsAcked / cwnd
   where
-    --  Figure 1
-    wCubic     = c * (epElapsed ep - epK ep) ** 3 + epWMax ep
-    cwndLimit  = 1.5 * cwnd
+    -- α_cubic
+    alphaCubic | wEst >= cwndPrior = 1
+               | otherwise         = 3 * (1 - betaCubic) / (1 + betaCubic)
+
+-- | The congestion-avoidance window for the next round: §4.3's region choice.
+--
+-- "CUBIC checks whether W_cubic(t) is less than W_est.  If so, CUBIC is in the
+-- Reno-friendly region and cwnd SHOULD be set to W_est at each reception of a new ACK";
+-- otherwise §4.2's @target@ applies.  Two details of that sentence matter: the test is on
+-- the RAW W_cubic(t), not on the clamped target, and the W_est arm *assigns* rather than
+-- taking a maximum, so §4.2's bounds do not gate it.  (They coincide in practice -- W_est
+-- starts at cwnd_epoch, both only grow, and in this region W_est is the larger -- but the
+-- branch is what the RFC specifies.)  The region is orthogonal to concave/convex: §4.3
+-- applies "where cwnd could be greater than or less than W_max".
+nextCACwnd :: Double
+           -- ^ @C@
+           -> Epoch
+           -> Double
+           -- ^ @cwnd@
+           -> Double
+nextCACwnd c ep cwnd
+  -- Reno-friendly region
+  | wCubic c ep < epWEst ep
+  = epWEst ep
+
+  -- CUBIC region
+  | otherwise
+  = cubicTarget c ep cwnd
+
 
 -- | One loss-free round: RFC 5681 slow-start doubling up to ssthresh, then §4.4/§4.5.
 -- Takes the round's RTT and owns the epoch clock, so @t - t_epoch@ has exactly one writer
@@ -185,9 +251,12 @@ nextCwnd c ep cwnd =
 growOnAck :: TcpParams
           -> Double
           -- ^ @RTT@
+          -> Double
+          -- ^ @segments_acked@ this round: what the round actually put on the wire, which
+          -- is below @cwnd@ for a share-throttled round or the file tail
           -> FlowState
           -> FlowState
-growOnAck tp rtt fs = case fsPhase fs of
+growOnAck tp rtt segmentsAcked fs = case fsPhase fs of
   SlowStart
     | doubled < fsSsthresh fs ->
       fs { fsCwnd = doubled }
@@ -205,8 +274,13 @@ growOnAck tp rtt fs = case fsPhase fs of
 
   -- congestion avoidance
   CA ep ->
-    let ep' = ep { epElapsed = epElapsed ep + rtt }
-    in fs { fsCwnd  = nextCwnd (tpCubicC tp) ep' (fsCwnd fs)
+    -- §4.3 updates W_est on the new ACK and only then compares it with W_cubic(t), so the
+    -- epoch clock and W_est both advance before the region choice.
+    let ep' = ep { epElapsed = epElapsed ep + rtt
+                 , epWEst    = nextWEst (tpBetaCubic tp) (fsCwndPrior fs)
+                                        (fsCwnd fs) segmentsAcked (epWEst ep)
+                 }
+    in fs { fsCwnd  = nextCACwnd (tpCubicC tp) ep' (fsCwnd fs)
           , fsPhase = CA ep'
           }
   where
@@ -347,7 +421,7 @@ stepRound tp rtt lossP fs g =
               | otherwise                   = lossRound
   in if not lossRound
        then let fs1 = (advance attempt rtt fs) { fsConsecTO = 0 }  -- clean round resets the RTO backoff
-            in (if fsBytesSent fs1 >= tpFileBytes tp then fs1 else growOnAck tp rtt fs1, 0, g')
+            in (if fsBytesSent fs1 >= tpFileBytes tp then fs1 else growOnAck tp rtt (fromIntegral attempt) fs1, 0, g')
      else if fastRtx
        then let fs1 = (advance attempt rtt fs) { fsConsecTO = 0 }  -- data delivered => fresh RTT samples clear the backoff (RFC 6298 §2.2/2.3 + Karn)
             in if fsBytesSent fs1 >= tpFileBytes tp

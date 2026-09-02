@@ -421,7 +421,10 @@ diffuseTimesGen dp topo sources closureOf warm egressOf
                 -- reordered packet simply arrives late and nothing fires (not a timeout)
                 ((onCongestionEvent tp Loss (fromIntegral effCwnd) fsB) { fsConsecTO = 0 }, False, flNext f + rtt, flReady f, r1)
             | otherwise =                                       -- clean round: grow, reset RTO backoff
-                let grown = growOnAck tp rtt fsB   -- advances t - t_epoch itself (§4.2)
+                -- `attempt`, not effCwnd: §4.3 Figure 4 credits W_est by
+                -- alpha_cubic * segments_acked / cwnd, and a share-throttled round puts
+                -- fewer than cwnd segments on the wire
+                let grown = growOnAck tp rtt (fromIntegral attempt) fsB  -- advances t - t_epoch itself (§4.2)
                 in (grown { fsConsecTO = 0 }, False, flNext f + rtt, flReady f, r1)
           rb0'       = if boundary then fsBytesSent fs2 else flRoundB0 f  -- next round starts at this round's delivered total
       in if fsBytesSent fs2 >= tpFileBytes tp
