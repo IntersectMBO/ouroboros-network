@@ -18,6 +18,7 @@ module SmallWorld.TCP
   ( -- * RFC 9438 §4.1.2 state
     Epoch(..)
   , Phase(..)
+  , RttEst(..)
   , FlowState(..)
   , TcpParams(..)
   , mkTcpParams
@@ -65,6 +66,15 @@ data Phase =
    -- ^ congestion avoidance phase with internal state
  deriving (Eq, Show)
 
+-- | RFC 6298 §2's retransmission-timer state.  'NoSample' is §2.1 -- before any RTT
+-- measurement has been made -- kept as its own constructor so §2.2's initialisation
+-- cannot be confused with §2.3's update.
+data RttEst = NoSample
+              -- ^ §2.1: no measurement yet
+            | RttEst !Double !Double
+              -- ^ SRTT and RTTVAR, seconds
+  deriving (Eq, Show)
+
 -- | Static per-flow parameters (constant over the transfer).
 data TcpParams = TcpParams
   { tpFileBytes  :: !Int
@@ -78,14 +88,14 @@ data TcpParams = TcpParams
   , tpBetaCubic  :: !Double   -- ^ beta_cubic, the RETAINED fraction (§4.6: SHOULD be 0.7)
   , tpRtoMinS    :: !Double
   , tpRtoMaxS    :: !Double
-  , tpBaseRtoS   :: !Double
+  , tpClockG     :: !Double   -- ^ clock granularity G (§2.2/§2.3's @max(G, K*RTTVAR)@)
+  , tpInitRtoS   :: !Double   -- ^ RTO before any RTT measurement (§2.1: SHOULD be 1 s)
   , tpFastConv   :: !Bool     -- ^ §4.7
   , tpEnableRto  :: !Bool
   } deriving (Show)
 
 -- | Smart constructor: derive the BDP window cap and initial ssthresh from a capacity
--- (bits/s) and RTT (ssthresh at link saturation; base RTO = RTT + 4·RTTVAR with the
--- no-jitter RTTVAR = RTT/4, floored at Linux's TCP_RTO_MIN rather than RFC 6298 §2.4's 1 s).
+-- (bits/s) and RTT (ssthresh at link saturation).
 mkTcpParams :: Int -> Double -> Double -> Double -> TcpParams
 mkTcpParams fileBytes rttS lossP capBps = TcpParams
   { tpFileBytes  = fileBytes
@@ -99,7 +109,8 @@ mkTcpParams fileBytes rttS lossP capBps = TcpParams
   , tpBetaCubic  = 0.7
   , tpRtoMinS    = 0.2
   , tpRtoMaxS    = 120
-  , tpBaseRtoS   = rttS + 4 * (0.25 * rttS)
+  , tpClockG     = 0.001
+  , tpInitRtoS   = 1.0
   , tpFastConv   = True
   , tpEnableRto  = True
   }
@@ -112,6 +123,9 @@ data FlowState = FlowState
   , fsSsthresh  :: !Double   -- ^ ssthresh, segments
   , fsCwndPrior :: !Double   -- ^ cwnd_prior (§4.1.2): cwnd when ssthresh was last set
   , fsPhase     :: !Phase
+  , fsRttEst    :: !RttEst   -- ^ RFC 6298 §2: SRTT/RTTVAR, or NoSample before the first
+                             --   measurement.  Only rounds that deliver non-retransmitted
+                             --   data update it (§3, Karn's algorithm).
   , fsBytesSent :: !Int
   , fsT         :: !Double
   , fsConsecTO  :: !Int
@@ -120,7 +134,8 @@ data FlowState = FlowState
 initFlow :: TcpParams -> FlowState
 initFlow tp = FlowState
   { fsCwnd = tpCwnd0 tp, fsSsthresh = tpSsthresh0 tp, fsCwndPrior = 0
-  , fsPhase = SlowStart, fsBytesSent = 0, fsT = 0, fsConsecTO = 0 }
+  , fsPhase = SlowStart, fsRttEst = NoSample
+  , fsBytesSent = 0, fsT = 0, fsConsecTO = 0 }
 
 -- | A warm flow at (near-)steady cwnd: already ramped to the BDP cap and in congestion
 -- avoidance, so a WARM transfer skips the cold slow-start ramp.  Its epoch is §4.10's
@@ -355,6 +370,37 @@ onCongestionEvent tp ev flightSize fs = fs
         flightSize
 
 
+-- | RFC 6298 §2.2 on the first RTT measurement, §2.3 on every subsequent one.
+--
+-- @
+--   (2.2)  SRTT <- R                 (2.3)  RTTVAR <- (1-beta)*RTTVAR + beta*|SRTT - R'|
+--          RTTVAR <- R/2                    SRTT   <- (1-alpha)*SRTT + alpha*R'
+-- @
+--
+-- with alpha = 1/8 and beta = 1/4.  §2.3 makes the *order* a MUST -- RTTVAR is updated
+-- using the value of SRTT from before SRTT itself is updated -- which holds here because
+-- @rttVar'@ refers to the pattern-bound @srtt@, not to @srtt'@.
+--
+-- Karn's algorithm (§3) forbids sampling a retransmitted segment, so this is called only
+-- from a round that delivered original transmissions: 'stepRound' applies it in 'advance',
+-- which runs on clean and fast-retransmit rounds but not on a timeout.
+sampleRtt :: Double
+          -- ^ the round's measured RTT
+          -> RttEst
+          -> RttEst
+sampleRtt r  NoSample             = RttEst r (r / 2)
+sampleRtt r' (RttEst srtt rttVar) = RttEst srtt' rttVar'
+  where
+    rttVar' = (1 - 0.25)  * rttVar + 0.25  * abs (srtt - r')
+    srtt'   = (1 - 0.125) * srtt   + 0.125 * r'
+
+-- | RFC 6298 @RTO <- SRTT + max(G, K*RTTVAR)@ with K = 4 (§2.2/§2.3), or §2.1's initial
+-- value while no measurement has been taken.  §2.4's floor and §2.5's ceiling are applied
+-- by the caller, around §5.5's backoff, because §5.5 doubles an already-floored RTO.
+baseRto :: TcpParams -> RttEst -> Double
+baseRto tp NoSample              = tpInitRtoS tp
+baseRto tp (RttEst srtt rttVar)  = srtt + max (tpClockG tp) (4 * rttVar)
+
 -- | §4.8 Timeout: "CUBIC follows Reno to reduce cwnd but sets ssthresh using beta_cubic
 -- (same as in Section 4.6)".  cwnd goes to 1 and the flow returns to slow start, which
 -- drops the epoch and with it W_max -- §4.8's requirement that the next congestion
@@ -379,7 +425,7 @@ rtoCollapse tp flightSize fs =
 idleReset :: Bool -> Double -> TcpParams -> FlowState -> FlowState
 idleReset keepsWarm idleGapS tp fs
   | keepsWarm                                      = fs
-  | idleGapS <= max (tpRtoMinS tp) (tpBaseRtoS tp) = fs
+  | idleGapS <= max (tpRtoMinS tp) (baseRto tp (fsRttEst fs)) = fs
   | otherwise = fs { fsCwnd = tpCwnd0 tp, fsPhase = SlowStart, fsConsecTO = 0 }
 
 -- | Sample losses in a window of @n@ packets at per-packet rate @p@: returns
@@ -408,7 +454,9 @@ sampleLosses n p = go 1 0 0
 stepRound :: RandomGen g
           => TcpParams
           -> Double
+          -- ^ RTT of this round
           -> Double
+          -- ^ loss probability, thus from the interval [0, 1]
           -> FlowState
           -> g
           -> (FlowState, Bool, g)
@@ -482,9 +530,23 @@ stepRound tp rtt lossP fs g =
       else -- RTO
         let delivered = max 0 (firstLoss - 1)
             backoff   = (2 :: Int) ^ min (fsConsecTO fs) (30 :: Int)
-            rto       = min (tpRtoMaxS tp) (max (tpRtoMinS tp) (tpBaseRtoS tp) * fromIntegral backoff)
+            rto       = min (tpRtoMaxS tp) (max (tpRtoMinS tp) (baseRto tp (fsRttEst fs)) * fromIntegral backoff)
+            acked     = delivered > 0
             fs1 = fs { fsBytesSent = min (tpFileBytes tp) (fsBytesSent fs + delivered * mss)
-                     , fsT = fsT fs + rto, fsConsecTO = fsConsecTO fs + 1 }
+                     , fsT = fsT fs + rto
+                     , -- RFC 6298 §3: original transmissions ahead of the hole are Karn-legal, and §3 requires
+                       -- at least one measurement per RTT where one is possible; the §5 note then
+                       -- collapses the backed-off RTO.  With nothing acked there is no sample and the
+                       -- backoff compounds (§5.5).
+                       fsRttEst =
+                         if acked
+                           then sampleRtt rtt (fsRttEst fs)
+                           else fsRttEst fs
+                     , fsConsecTO =
+                         if acked
+                           then 0
+                           else fsConsecTO fs + 1
+                     }
         in ( rtoCollapse tp flight fs1
            , True
            , g'
@@ -496,6 +558,9 @@ stepRound tp rtt lossP fs g =
     advance pkts rtt' f =
       f { fsBytesSent = min (tpFileBytes tp) (fsBytesSent f + pkts * tpMss tp)
         , fsT = fsT f + rtt'
+          -- this round delivered original transmissions, so it yields a Karn-legal RTT
+          -- sample (§3); a timeout round does not call `advance` and so does not sample
+        , fsRttEst = sampleRtt rtt' (fsRttEst f)
         }
 
 -- | Isolated single-flow completion: (download time s, effective loss events).
