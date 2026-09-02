@@ -405,50 +405,98 @@ sampleLosses n p = go 1 0 0
 
 -- | One round (one RTT, or one RTO stall on timeout).  @rtt@ and @lossP@ are passed in so
 -- a driver can vary them per round (jitter, egress-derived loss).
-stepRound :: RandomGen g => TcpParams -> Double -> Double -> FlowState -> g -> (FlowState, Int, g)
+stepRound :: RandomGen g
+          => TcpParams
+          -> Double
+          -> Double
+          -> FlowState
+          -> g
+          -> (FlowState, Bool, g)
 stepRound tp rtt lossP fs g =
-  let mss     = tpMss tp
+  let mss, effCwnd, remPkts, attempt, k, firstLoss :: Int
+
+      -- maximum segment size
+      mss = tpMss tp
+
+      -- effective cwnd
       effCwnd = max 1 (min (floor (fsCwnd fs)) (tpBdpCapSegs tp))
-      remB    = tpFileBytes tp - fsBytesSent fs
-      remPkts = (remB + mss - 1) `div` mss
+
+      -- number of packets needed to finish the transmission
+      remPkts = (tpFileBytes tp - fsBytesSent fs + mss - 1) `div` mss
+
+      -- number of packets attempted to handle in this round
       attempt = min effCwnd remPkts
+
+      flight :: Double
       flight  = fromIntegral effCwnd          -- see note at the call sites below
+
+      -- k is the number of lost packets
       (k, firstLoss, g') = sampleLosses attempt lossP g
       lossRound = k > 0
       -- RFC 5681 §3.2: a fast retransmit needs three dup-ACKs, so the first loss must
       -- leave >= 3 packets behind it; anything else (or >= 2 losses, no SACK) times out.
       fastRtx | lossRound && tpEnableRto tp = k == 1 && attempt - firstLoss >= 3
               | otherwise                   = lossRound
-  in if not lossRound
-       then let fs1 = (advance attempt rtt fs) { fsConsecTO = 0 }  -- clean round resets the RTO backoff
-            in (if fsBytesSent fs1 >= tpFileBytes tp then fs1 else growOnAck tp rtt (fromIntegral attempt) fs1, 0, g')
-     else if fastRtx
-       then let fs1 = (advance attempt rtt fs) { fsConsecTO = 0 }  -- data delivered => fresh RTT samples clear the backoff (RFC 6298 §2.2/2.3 + Karn)
-            in if fsBytesSent fs1 >= tpFileBytes tp
-                 -- final-window fast retransmit: mid-transfer the fill RTT is absorbed by
-                 -- the next round's continued transmission, but at the file tail nothing
-                 -- rides behind the hole, so the in-order prefix closes only when the
-                 -- retransmit lands ~1 RTT on -- charge it.
-                 then (fs1 { fsT = fsT fs1 + rtt }, 1, g')
-                 -- flight_size is the BDP-capped window rather than `attempt`: §4.6 warns
-                 -- that cutting from a short flight "would decrease cwnd to a much lower
-                 -- value than necessary", and `attempt` dips below the window only at the
-                 -- file tail.  The BDP cap is the "other measure" §4.6 asks of a
-                 -- cwnd-based implementation.
-                 else (onCongestionEvent tp Loss flight fs1, 1, g')
-     else -- RTO
-       let delivered = max 0 (firstLoss - 1)
-           backoff   = (2 :: Int) ^ min (fsConsecTO fs) (30 :: Int)
-           rto       = min (tpRtoMaxS tp) (max (tpRtoMinS tp) (tpBaseRtoS tp) * fromIntegral backoff)
-           fs1 = fs { fsBytesSent = min (tpFileBytes tp) (fsBytesSent fs + delivered * mss)
-                    , fsT = fsT fs + rto, fsConsecTO = fsConsecTO fs + 1 }
-       in (rtoCollapse tp flight fs1, 1, g')
+  in
+  if not lossRound
+    then
+    -- clean round resets the RTO backoff
+    let fs1 = (advance attempt rtt fs) { fsConsecTO = 0 } in
+    ( if fsBytesSent fs1 >= tpFileBytes tp
+        then
+            -- RFC 9438
+            -- §5.8 "CUBIC does not increase its congestion window if
+            --       a flow is application limited"
+            -- §4.2 "t MUST NOT include periods during which cwnd has not
+            --       been updated due to application-limited behaviour"
+            --
+            -- But above all, `flowTimeFrom` will terminate and will not
+            -- evaluate `cwnd` any more thus no need to recompute it.
+             fs1
+        else growOnAck tp rtt (fromIntegral attempt) fs1
+    , False
+    , g'
+    )
+    else if fastRtx
+      then
+        -- data delivered => fresh RTT samples clear the backoff (RFC 6298 §2.2/2.3 + Karn)
+        let fs1 = (advance attempt rtt fs) { fsConsecTO = 0 }
+        in if fsBytesSent fs1 >= tpFileBytes tp
+             -- final-window fast retransmit: mid-transfer the fill RTT is absorbed by
+             -- the next round's continued transmission, but at the file tail nothing
+             -- rides behind the hole, so the in-order prefix closes only when the
+             -- retransmit lands ~1 RTT on -- charge it.
+             then ( fs1 { fsT = fsT fs1 + rtt }
+                  , True
+                  , g'
+                  )
+             -- flight_size is the BDP-capped window rather than `attempt`: §4.6 warns
+             -- that cutting from a short flight "would decrease cwnd to a much lower
+             -- value than necessary", and `attempt` dips below the window only at the
+             -- file tail.  The BDP cap is the "other measure" §4.6 asks of a
+             -- cwnd-based implementation.
+             else ( onCongestionEvent tp Loss flight fs1
+                  , True
+                  , g'
+                  )
+      else -- RTO
+        let delivered = max 0 (firstLoss - 1)
+            backoff   = (2 :: Int) ^ min (fsConsecTO fs) (30 :: Int)
+            rto       = min (tpRtoMaxS tp) (max (tpRtoMinS tp) (tpBaseRtoS tp) * fromIntegral backoff)
+            fs1 = fs { fsBytesSent = min (tpFileBytes tp) (fsBytesSent fs + delivered * mss)
+                     , fsT = fsT fs + rto, fsConsecTO = fsConsecTO fs + 1 }
+        in ( rtoCollapse tp flight fs1
+           , True
+           , g'
+           )
   where
     -- a delivering round: bytes and wall clock only.  The epoch clock belongs to
     -- growOnAck, and fsConsecTO to the caller (cleared on any delivering round, since a
     -- successful delivery draws fresh RTT samples; only back-to-back timeouts keep it).
-    advance pkts rtt' f = f { fsBytesSent = min (tpFileBytes tp) (fsBytesSent f + pkts * tpMss tp)
-                            , fsT = fsT f + rtt' }
+    advance pkts rtt' f =
+      f { fsBytesSent = min (tpFileBytes tp) (fsBytesSent f + pkts * tpMss tp)
+        , fsT = fsT f + rtt'
+        }
 
 -- | Isolated single-flow completion: (download time s, effective loss events).
 flowTime :: RandomGen g => TcpParams -> g -> (Double, Int)
@@ -465,5 +513,5 @@ flowTimeFrom tp fs0 g0
       | fsBytesSent fs >= tpFileBytes tp = (fsT fs, nLoss)
       | rounds > 10000000                = (1/0, nLoss)
       | otherwise =
-          let (fs', dl, g') = stepRound tp (tpRttS tp) (tpLossP tp) fs g
-          in loop fs' (nLoss + dl) g' (rounds + 1)
+          let (fs', lossRound, g') = stepRound tp (tpRttS tp) (tpLossP tp) fs g
+          in loop fs' (if lossRound then nLoss + 1 else nLoss) g' (rounds + 1)
