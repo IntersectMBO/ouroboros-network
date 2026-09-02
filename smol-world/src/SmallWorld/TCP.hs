@@ -37,6 +37,7 @@ module SmallWorld.TCP
   , rtoCollapse
   , idleReset
   , onDelivery
+  , rtoAfter
     -- * Round drivers
   , growOnAck
   , stepRound
@@ -402,6 +403,25 @@ baseRto :: TcpParams -> RttEst -> Double
 baseRto tp NoSample              = tpInitRtoS tp
 baseRto tp (RttEst srtt rttVar)  = srtt + max (tpClockG tp) (4 * rttVar)
 
+-- | The timeout to charge for the @n@-th consecutive expiry: RFC 6298 §5.5's exponential
+-- backoff applied to §2's RTO, with §2.4's floor and §2.5's ceiling.
+--
+-- @n@ is the count of *prior* consecutive timeouts, so the first expiry charges the
+-- un-doubled RTO -- the timer that just fired was armed (§5.1/§5.2) before §5.5 doubled
+-- anything.  The floor goes on *before* the doubling, because §2.4 rounds up whenever the
+-- RTO is computed and §5.5 then doubles that result.  For the same reason the estimator
+-- passed in must be the one from before this round's sample: that is what armed the timer.
+rtoAfter :: TcpParams
+         -> RttEst
+         -> Int
+         -- ^ prior consecutive timeouts
+         -> Double
+rtoAfter tp est n =
+  min (tpRtoMaxS tp) (flooredRto * backoff)
+    where
+      flooredRto = max (tpRtoMinS tp) (baseRto tp est)
+      backoff = 2 ^ min n (30 :: Int)
+
 -- | Bookkeeping shared by every round that delivered non-retransmitted data.
 --
 -- Such a round yields a Karn-legal RTT sample (RFC 6298 §3), and because a new measurement
@@ -550,8 +570,7 @@ stepRound tp rtt lossP fs g =
                   )
       else -- RTO
         let delivered = max 0 (firstLoss - 1)
-            backoff   = (2 :: Int) ^ min (fsConsecTO fs) (30 :: Int)
-            rto       = min (tpRtoMaxS tp) (max (tpRtoMinS tp) (baseRto tp (fsRttEst fs)) * fromIntegral backoff)
+            rto       = rtoAfter tp (fsRttEst fs) (fsConsecTO fs)
             -- RFC 6298 §3: the packets ahead of the hole are original transmissions, so
             -- they are Karn-legal and §3 requires a measurement where one is possible;
             -- with nothing acked there is no sample and the backoff compounds (§5.5).

@@ -407,10 +407,13 @@ diffuseTimesGen dp topo sources closureOf warm egressOf
           (fs2, loss2, next2, ready2, round2)
             | not boundary = (fsB, lossNow, flNext f, flReady f, flRound f)
             | lossNow && rtoNow =                               -- RTO: oversub OR a ≥2-loss/tail burst; backed-off stall + HOL + restart
-                let rttVar = max 0.25 (dpJitter dp)             -- jitter inflates RTTVAR ⇒ larger RTO
-                    rtoBase = rttBase * (1 + 4 * rttVar)
-                    rto = min (tpRtoMaxS tp)
-                              (max (tpRtoMinS tp) rtoBase * 2 ^ min (fsConsecTO fsB) (30 :: Int))
+                -- RFC 6298 §2/§5.5, shared with stepRound.  `fsRttEst fsB` is the
+                -- estimator from before this round's sample -- that is what armed the
+                -- timer that just expired.  This replaces a nominal RTTVAR derived from
+                -- the `--jitter` knob: the estimator now measures the variance of the
+                -- per-round RTTs the DES actually draws, so the timer responds to real
+                -- jitter rather than to its configured bound.
+                let rto = rtoAfter tp (fsRttEst fsB) (fsConsecTO fsB)
                     -- did this round put anything on the wire?  If so its originals are
                     -- Karn-legal (RFC 6298 §3) and the sample collapses the backoff; if
                     -- not, the backoff compounds (§5.5).  Covers both RTO channels: a
