@@ -36,6 +36,7 @@ module SmallWorld.TCP
   , onCongestionEvent
   , rtoCollapse
   , idleReset
+  , onDelivery
     -- * Round drivers
   , growOnAck
   , stepRound
@@ -401,6 +402,26 @@ baseRto :: TcpParams -> RttEst -> Double
 baseRto tp NoSample              = tpInitRtoS tp
 baseRto tp (RttEst srtt rttVar)  = srtt + max (tpClockG tp) (4 * rttVar)
 
+-- | Bookkeeping shared by every round that delivered non-retransmitted data.
+--
+-- Such a round yields a Karn-legal RTT sample (RFC 6298 §3), and because a new measurement
+-- recomputes the RTO it also collapses any exponential backoff -- the note after §5.7:
+-- "once a new RTT measurement is obtained (which can only happen when new data has been
+-- sent and acknowledged) ... which may result in 'collapsing' RTO back down after it has
+-- been subject to exponential back off".
+--
+-- Both drivers must apply this on exactly the rounds that put original transmissions on
+-- the wire and got them acknowledged: a clean round, a fast-retransmit round, and the
+-- pre-loss prefix of a timeout round.  Keeping it in one function is what stops them
+-- drifting apart on which rounds count.
+onDelivery :: Double
+           -- ^ the round's measured RTT
+           -> FlowState
+           -> FlowState
+onDelivery rtt fs = fs { fsRttEst = sampleRtt rtt (fsRttEst fs)
+                       , fsConsecTO = 0
+                       }
+
 -- | §4.8 Timeout: "CUBIC follows Reno to reduce cwnd but sets ssthresh using beta_cubic
 -- (same as in Section 4.6)".  cwnd goes to 1 and the flow returns to slow start, which
 -- drops the epoch and with it W_max -- §4.8's requirement that the next congestion
@@ -489,7 +510,7 @@ stepRound tp rtt lossP fs g =
   if not lossRound
     then
     -- clean round resets the RTO backoff
-    let fs1 = (advance attempt rtt fs) { fsConsecTO = 0 } in
+    let fs1 = advance attempt rtt fs in
     ( if fsBytesSent fs1 >= tpFileBytes tp
         then
             -- RFC 9438
@@ -508,7 +529,7 @@ stepRound tp rtt lossP fs g =
     else if fastRtx
       then
         -- data delivered => fresh RTT samples clear the backoff (RFC 6298 §2.2/2.3 + Karn)
-        let fs1 = (advance attempt rtt fs) { fsConsecTO = 0 }
+        let fs1 = advance attempt rtt fs
         in if fsBytesSent fs1 >= tpFileBytes tp
              -- final-window fast retransmit: mid-transfer the fill RTT is absorbed by
              -- the next round's continued transmission, but at the file tail nothing
@@ -531,22 +552,14 @@ stepRound tp rtt lossP fs g =
         let delivered = max 0 (firstLoss - 1)
             backoff   = (2 :: Int) ^ min (fsConsecTO fs) (30 :: Int)
             rto       = min (tpRtoMaxS tp) (max (tpRtoMinS tp) (baseRto tp (fsRttEst fs)) * fromIntegral backoff)
-            acked     = delivered > 0
-            fs1 = fs { fsBytesSent = min (tpFileBytes tp) (fsBytesSent fs + delivered * mss)
-                     , fsT = fsT fs + rto
-                     , -- RFC 6298 §3: original transmissions ahead of the hole are Karn-legal, and §3 requires
-                       -- at least one measurement per RTT where one is possible; the §5 note then
-                       -- collapses the backed-off RTO.  With nothing acked there is no sample and the
-                       -- backoff compounds (§5.5).
-                       fsRttEst =
-                         if acked
-                           then sampleRtt rtt (fsRttEst fs)
-                           else fsRttEst fs
-                     , fsConsecTO =
-                         if acked
-                           then 0
-                           else fsConsecTO fs + 1
-                     }
+            -- RFC 6298 §3: the packets ahead of the hole are original transmissions, so
+            -- they are Karn-legal and §3 requires a measurement where one is possible;
+            -- with nothing acked there is no sample and the backoff compounds (§5.5).
+            fs0 | delivered > 0 = onDelivery rtt fs
+                | otherwise     = fs { fsConsecTO = fsConsecTO fs + 1 }
+            fs1 = fs0 { fsBytesSent = min (tpFileBytes tp) (fsBytesSent fs + delivered * mss)
+                      , fsT = fsT fs + rto
+                      }
         in ( rtoCollapse tp flight fs1
            , True
            , g'
@@ -555,12 +568,12 @@ stepRound tp rtt lossP fs g =
     -- a delivering round: bytes and wall clock only.  The epoch clock belongs to
     -- growOnAck, and fsConsecTO to the caller (cleared on any delivering round, since a
     -- successful delivery draws fresh RTT samples; only back-to-back timeouts keep it).
+    -- `onDelivery` takes the round's RTT sample and clears the RTO backoff; a timeout
+    -- round does not call `advance`, and handles its delivered prefix separately.
     advance pkts rtt' f =
-      f { fsBytesSent = min (tpFileBytes tp) (fsBytesSent f + pkts * tpMss tp)
+      (onDelivery rtt' f)
+        { fsBytesSent = min (tpFileBytes tp) (fsBytesSent f + pkts * tpMss tp)
         , fsT = fsT f + rtt'
-          -- this round delivered original transmissions, so it yields a Karn-legal RTT
-          -- sample (§3); a timeout round does not call `advance` and so does not sample
-        , fsRttEst = sampleRtt rtt' (fsRttEst f)
         }
 
 -- | Isolated single-flow completion: (download time s, effective loss events).

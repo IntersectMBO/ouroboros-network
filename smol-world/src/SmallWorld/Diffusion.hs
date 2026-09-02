@@ -411,21 +411,32 @@ diffuseTimesGen dp topo sources closureOf warm egressOf
                     rtoBase = rttBase * (1 + 4 * rttVar)
                     rto = min (tpRtoMaxS tp)
                               (max (tpRtoMinS tp) rtoBase * 2 ^ min (fsConsecTO fsB) (30 :: Int))
-                    fs' = (rtoCollapse tp (fromIntegral effCwnd) fsB) { fsConsecTO = fsConsecTO fsB + 1 }
+                    -- did this round put anything on the wire?  If so its originals are
+                    -- Karn-legal (RFC 6298 §3) and the sample collapses the backoff; if
+                    -- not, the backoff compounds (§5.5).  Covers both RTO channels: a
+                    -- GE-RTO delivers its pre-loss prefix, an oversub RTO the whole bin.
+                    fs' | fsBytesSent fsB > flRoundB0 f
+                        = onDelivery rtt (rtoCollapse tp (fromIntegral effCwnd) fsB)
+                        | otherwise
+                        = (rtoCollapse tp (fromIntegral effCwnd) fsB)
+                            { fsConsecTO = fsConsecTO fsB + 1 }
                 in (fs', False, t + rto, t + rto, r1)           -- HOL: no delivery/egress until stall ends
             | lossNow =                                         -- recoverable loss ⇒ fast-retransmit / SACK fast-recovery: graceful cut
-                -- data delivered ⇒ fresh RTT samples ⇒ RTO backoff clears (fresh RTT sample recomputes RTO, RFC 6298 §2.2/2.3 + Karn)
-                ((onCongestionEvent tp Loss (fromIntegral effCwnd) fsB) { fsConsecTO = 0 }, False, flNext f + rtt, flReady f, r1)
+                -- fast recovery acks at least three originals by construction, so the round
+                -- always yields a Karn-legal sample, which also clears the backoff (§3 and
+                -- the note after §5.7)
+                (onDelivery rtt (onCongestionEvent tp Loss (fromIntegral effCwnd) fsB), False, flNext f + rtt, flReady f, r1)
             | reorder && dupAckable =                           -- reordering ⇒ spurious fast-retransmit
                 -- a spurious fast retransmit needs the same three dup-ACKs; below that the
-                -- reordered packet simply arrives late and nothing fires (not a timeout)
-                ((onCongestionEvent tp Loss (fromIntegral effCwnd) fsB) { fsConsecTO = 0 }, False, flNext f + rtt, flReady f, r1)
+                -- reordered packet simply arrives late and nothing fires (not a timeout).
+                -- The round was in fact clean, so it samples like one.
+                (onDelivery rtt (onCongestionEvent tp Loss (fromIntegral effCwnd) fsB), False, flNext f + rtt, flReady f, r1)
             | otherwise =                                       -- clean round: grow, reset RTO backoff
                 -- `attempt`, not effCwnd: §4.3 Figure 4 credits W_est by
                 -- alpha_cubic * segments_acked / cwnd, and a share-throttled round puts
                 -- fewer than cwnd segments on the wire
                 let grown = growOnAck tp rtt (fromIntegral attempt) fsB  -- advances t - t_epoch itself (§4.2)
-                in (grown { fsConsecTO = 0 }, False, flNext f + rtt, flReady f, r1)
+                in (onDelivery rtt grown, False, flNext f + rtt, flReady f, r1)
           rb0'       = if boundary then fsBytesSent fs2 else flRoundB0 f  -- next round starts at this round's delivered total
       in if fsBytesSent fs2 >= tpFileBytes tp
            then if flPhase f == Body
