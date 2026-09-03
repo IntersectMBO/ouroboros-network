@@ -38,11 +38,5 @@ codecLocalTxMonitor ::
   -> (slot -> CBOR.Encoding)
   -> (forall s. CBOR.Decoder s slot)
   -> Codec (LocalTxMonitor txid tx slot) CBOR.DeserialiseFailure m ByteString
-codecLocalTxMonitor version =
-    Codec.codecLocalTxMonitor localTxMonitorVersion
-  where
-    localTxMonitorVersion
-      | version < NodeToClientV_20
-      = Codec.LocalTxMonitor_V1
-      | otherwise
-      = Codec.LocalTxMonitor_V2
+codecLocalTxMonitor _version =
+    Codec.codecLocalTxMonitor Codec.LocalTxMonitor_V2

@@ -77,26 +77,12 @@ instance ToJSON NodeToNodeVersion where
 
 instance FromJSON NodeToClientVersion where
   parseJSON = \case
-    Number 16 -> pure NodeToClientV_16
-    Number 17 -> pure NodeToClientV_17
-    Number 18 -> pure NodeToClientV_18
-    Number 19 -> pure NodeToClientV_19
-    Number 20 -> pure NodeToClientV_20
-    Number 21 -> pure NodeToClientV_21
-    Number 22 -> pure NodeToClientV_22
     Number 23 -> pure NodeToClientV_23
     Number x  -> fail $ "FromJSON.NodeToClientVersion: unsupported node-to-client protocol version " ++ show x
     x         -> fail $ "FromJSON.NodeToClientVersion: error parsing NodeToClientVersion: " ++ show x
 
 instance ToJSON NodeToClientVersion where
   toJSON = \case
-    NodeToClientV_16 -> Number 16
-    NodeToClientV_17 -> Number 17
-    NodeToClientV_18 -> Number 18
-    NodeToClientV_19 -> Number 19
-    NodeToClientV_20 -> Number 20
-    NodeToClientV_21 -> Number 21
-    NodeToClientV_22 -> Number 22
     NodeToClientV_23 -> Number 23
 
 instance ToJSON NodeToNodeVersionData where

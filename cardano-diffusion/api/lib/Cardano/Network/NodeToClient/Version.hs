@@ -45,30 +45,30 @@ import Ouroboros.Network.Util (PrettyShow (..))
 -- -- ^ added @GetPoolDistr@, @GetPoolState@, @GetSnapshots@
 -- | NodeToClientV_15
 -- -- ^ added `query` to NodeToClientVersionData
+-- | NodeToClientV_16
+-- -- ^  Conway era (enabled @CardanoNodeToClientVersion11@);
+-- -- added @ImmutableTip@ and @GetStakeDelegDeposits@ queries to @LocalStateQuery@
+-- | NodeToClientV_17
+-- -- ^ added @GetProposals@ and @GetRatifyState@ queries
+-- | NodeToClientV_18
+-- -- ^ added @GetFuturePParams@ query
+-- | NodeToClientV_19
+-- -- ^ added @GetBigLedgerPeerSnapshot@ query
+-- | NodeToClientV_20
+-- -- ^ added @QueryStakePoolDefaultVote@ query;
+-- -- added @MsgGetMeasures@ and @MsgReplyGetMeasures@ to @LocalTxMonitor@
+-- | NodeToClientV_21
+-- -- ^ new codecs for @PParams@ and @CompactGenesis@
+-- | NodeToClientV_22
+-- -- ^ support SRV records in @GetBigLedgerPeerSnapshot@ query
+-- -- TODO: remove CBOR instances from LedgerPeers.Type when V22 support
+-- --       is removed, update {To,From}JSON LedgerPeerSnapshot instances
+-- --       and update LedgerPeerSnapshot query encoding in consensus.
+-- --       marked with TODO's.
 -- @
 --
 data NodeToClientVersion
-    = NodeToClientV_16
-    -- ^  Conway era (enabled @CardanoNodeToClientVersion11@);
-    -- added @ImmutableTip@ and @GetStakeDelegDeposits@ queries to @LocalStateQuery@
-    | NodeToClientV_17
-    -- ^ added @GetProposals@ and @GetRatifyState@ queries
-    | NodeToClientV_18
-    -- ^ added @GetFuturePParams@ query
-    | NodeToClientV_19
-    -- ^ added @GetBigLedgerPeerSnapshot@ query
-    | NodeToClientV_20
-    -- ^ added @QueryStakePoolDefaultVote@ query;
-    -- added @MsgGetMeasures@ and @MsgReplyGetMeasures@ to @LocalTxMonitor@
-    | NodeToClientV_21
-    -- ^ new codecs for @PParams@ and @CompactGenesis@
-    | NodeToClientV_22
-    -- ^ support SRV records in @GetBigLedgerPeerSnapshot@ query
-    -- TODO: remove CBOR instances from LedgerPeers.Type when V22 support
-    --       is removed, update {To,From}JSON LedgerPeerSnapshot instances
-    --       and update LedgerPeerSnapshot query encoding in consensus.
-    --       marked with TODO's.
-    | NodeToClientV_23
+    = NodeToClientV_23
     -- ^ added @QueryDRepsDelegations@,
     -- LedgerPeerSnapshot CBOR encoding contains block hash and NetworkMagic
   deriving stock (Eq, Ord, Enum, Bounded, Show, Generic)
@@ -85,13 +85,6 @@ nodeToClientVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToClientVersion
 nodeToClientVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
     where
       encodeTerm = \case
-          NodeToClientV_16 -> enc 16
-          NodeToClientV_17 -> enc 17
-          NodeToClientV_18 -> enc 18
-          NodeToClientV_19 -> enc 19
-          NodeToClientV_20 -> enc 20
-          NodeToClientV_21 -> enc 21
-          NodeToClientV_22 -> enc 22
           NodeToClientV_23 -> enc 23
         where
           enc :: Int -> CBOR.Term
@@ -99,13 +92,6 @@ nodeToClientVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
 
       decodeTerm =
           dec >=> \case
-            16 -> Right NodeToClientV_16
-            17 -> Right NodeToClientV_17
-            18 -> Right NodeToClientV_18
-            19 -> Right NodeToClientV_19
-            20 -> Right NodeToClientV_20
-            21 -> Right NodeToClientV_21
-            22 -> Right NodeToClientV_22
             23 -> Right NodeToClientV_23
             n  -> Left (unknownTag n)
         where
