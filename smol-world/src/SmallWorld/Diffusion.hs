@@ -413,7 +413,7 @@ diffuseTimesGen dp topo sources closureOf warm egressOf
                 -- the `--jitter` knob: the estimator now measures the variance of the
                 -- per-round RTTs the DES actually draws, so the timer responds to real
                 -- jitter rather than to its configured bound.
-                let rto = rtoAfter tp (fsRttEst fsB) (fsConsecTO fsB)
+                let rto = rtoAfter tp fsB
                     -- did this round put anything on the wire?  If so its originals are
                     -- Karn-legal (RFC 6298 §3) and the sample collapses the backoff; if
                     -- not, the backoff compounds (§5.5).  Covers both RTO channels: a

@@ -406,21 +406,14 @@ baseRto tp (RttEst srtt rttVar)  = srtt + max (tpClockG tp) (4 * rttVar)
 -- | The timeout to charge for the @n@-th consecutive expiry: RFC 6298 §5.5's exponential
 -- backoff applied to §2's RTO, with §2.4's floor and §2.5's ceiling.
 --
--- @n@ is the count of *prior* consecutive timeouts, so the first expiry charges the
--- un-doubled RTO -- the timer that just fired was armed (§5.1/§5.2) before §5.5 doubled
--- anything.  The floor goes on *before* the doubling, because §2.4 rounds up whenever the
--- RTO is computed and §5.5 then doubles that result.  For the same reason the estimator
--- passed in must be the one from before this round's sample: that is what armed the timer.
 rtoAfter :: TcpParams
-         -> RttEst
-         -> Int
-         -- ^ prior consecutive timeouts
+         -> FlowState
          -> Double
-rtoAfter tp est n =
+rtoAfter tp FlowState { fsRttEst, fsConsecTO } =
   min (tpRtoMaxS tp) (flooredRto * backoff)
     where
-      flooredRto = max (tpRtoMinS tp) (baseRto tp est)
-      backoff = 2 ^ min n (30 :: Int)
+      flooredRto = max (tpRtoMinS tp) (baseRto tp fsRttEst)
+      backoff = 2 ^ min fsConsecTO (30 :: Int)
 
 -- | Bookkeeping shared by every round that delivered non-retransmitted data.
 --
@@ -570,7 +563,7 @@ stepRound tp rtt lossP fs g =
                   )
       else -- RTO
         let delivered = max 0 (firstLoss - 1)
-            rto       = rtoAfter tp (fsRttEst fs) (fsConsecTO fs)
+            rto       = rtoAfter tp fs
             -- RFC 6298 §3: the packets ahead of the hole are original transmissions, so
             -- they are Karn-legal and §3 requires a measurement where one is possible;
             -- with nothing acked there is no sample and the backoff compounds (§5.5).
@@ -595,20 +588,60 @@ stepRound tp rtt lossP fs g =
         , fsT = fsT f + rtt'
         }
 
+
+-- | RFC 5681 §4.1 "Restarting Idle Connections": a sender that has not *sent* for longer
+-- than the retransmission timeout collapses its window before transmitting again, because
+-- "after an idle period, TCP cannot use the ACK clock to strobe new segments into the
+-- network, as all the ACKs have drained", and "changing network conditions may have
+-- rendered TCP's notion of the available end-to-end network capacity ... inaccurate".
+--
+-- @RW = min(IW, cwnd)@, so this can only ever *reduce* the window: a connection already
+-- below the initial window keeps what it has.
+--
+-- The trigger is "has not *sent*", not "has not received".  §4.1 calls that out
+-- explicitly: a receive-based test "can fail to deflate cwnd in the common case of
+-- persistent HTTP connections", where an inbound request lets the server restart on a
+-- stale window.
+--
+-- ssthresh is deliberately untouched -- §4.1 says nothing about it, and Linux's
+-- 'tcp_cwnd_restart' explicitly preserves it (@snd_ssthresh = tcp_current_ssthresh(sk)@)
+-- -- so the congestion history the last cut recorded survives the idle gap and the
+-- re-ramp stops where it should.  Returning to 'SlowStart' is [Jac88]'s recommendation
+-- quoted by §4.1, and it also drops the CUBIC epoch, which is what RFC 9438 §4.8/§4.10
+-- want: the next slow-start exit re-seeds W_max and K from the window actually reached.
+restartIdle :: TcpParams
+            -> Double
+            -- ^ time since this flow last SENT data
+            -> FlowState
+            -> FlowState
+restartIdle tp idleGapS fs
+  | idleGapS <= rto = fs
+  | otherwise       = fs'
+  where
+    fs' = fs { fsCwnd     = min (tpCwnd0 tp) (fsCwnd fs)   -- RW = min(IW, cwnd)
+             , fsPhase    = SlowStart
+             , fsConsecTO = 0
+             }
+    -- "an interval exceeding the retransmission timeout" -- the current RTO, floored, with
+    -- no backoff applied: an idle connection is not mid-retransmission.
+    rto = rtoAfter tp fs'
+
 -- | Isolated single-flow completion: (download time s, effective loss events).
-flowTime :: RandomGen g => TcpParams -> g -> (Double, Int)
-flowTime tp = flowTimeFrom tp (initFlow tp)
+flowTime :: RandomGen g => TcpParams -> g -> (Int, FlowState)
+flowTime tp = flowTimeFrom tp 0 (initFlow tp)
 
 -- | As 'flowTime' but from an arbitrary initial 'FlowState' -- lets a caller start a
 -- transfer WARM (cwnd already ramped) instead of cold slow-start.
-flowTimeFrom :: RandomGen g => TcpParams -> FlowState -> g -> (Double, Int)
-flowTimeFrom tp fs0 g0
-  | tpFileBytes tp <= 0 = (0, 0)
-  | otherwise           = loop fs0 { fsBytesSent = 0, fsT = 0 } 0 g0 (0 :: Int)
+--
+flowTimeFrom :: RandomGen g => TcpParams -> Double -> FlowState -> g -> (Int, FlowState)
+flowTimeFrom tp idleGapS fs0 g0
+  | tpFileBytes tp <= 0 = (0, fs0)
+  | otherwise           = loop (restartIdle tp idleGapS fs0) { fsBytesSent = 0 }
+                          0 g0 (0 :: Int)
   where
     loop !fs !nLoss !g !rounds
-      | fsBytesSent fs >= tpFileBytes tp = (fsT fs, nLoss)
-      | rounds > 10000000                = (1/0, nLoss)
+      | fsBytesSent fs >= tpFileBytes tp = (nLoss, fs)
+      | rounds > 10000000                = (nLoss, fs { fsT = 1/0 })
       | otherwise =
           let (fs', lossRound, g') = stepRound tp (tpRttS tp) (tpLossP tp) fs g
           in loop fs' (if lossRound then nLoss + 1 else nLoss) g' (rounds + 1)
