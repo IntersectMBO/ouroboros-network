@@ -279,6 +279,5 @@ instance Show (State st) where
     show (StateQuerying _) = "StateQuerying *"
     show StateDone         = "StateDone"
 
-data LocalStateQueryVersion = LocalStateQuery_V1 -- <  NodeToClientV_16
-                            | LocalStateQuery_V2 -- >= NodeToClientV_17
+data LocalStateQueryVersion = LocalStateQuery_V2 -- >= NodeToClientV_17
   deriving (Eq, Ord, Enum, Bounded, Show)
