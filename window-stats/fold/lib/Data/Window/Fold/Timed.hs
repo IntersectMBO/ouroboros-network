@@ -13,11 +13,11 @@
 -- its rolling measure to a downstream fold.
 --
 -- All combinators are polymorphic in the time type @t@ (behind a
--- 'TimeLike' constraint), the measure @v@, and the sample type @a@
+-- 'TimeDuration' constraint), the measure @v@, and the sample type @a@
 -- (behind a 'FT.Measured' constraint), so they work unchanged with
 -- the wall-clock ('UTCTime') and monotonic
 -- ('Control.Monad.Class.MonadTime.SI.Time') stock instances, with any
--- user-defined 'TimeLike' instance, and with any of the built-in
+-- user-defined 'TimeDuration' instance, and with any of the built-in
 -- sample wrappers ('Data.Window.Timed.SumSample',
 -- 'Data.Window.Timed.MomentSample', 'Data.Window.Timed.MinMaxSample').
 --
@@ -38,7 +38,7 @@ import Data.FingerTree qualified as FT
 import Data.Sequence qualified as S
 
 import Data.Window.Internal.Timed qualified as W
-import Data.Window.TimeLike
+import Data.Window.TimeDuration
 
 
 -- | Compute the window measure at each step as the window moves across the
@@ -46,8 +46,8 @@ import Data.Window.TimeLike
 -- The sequence has the same length as the input stream, with the i-th element
 -- being the measure of the window ending at the i-th input element.
 --
-windowScan :: forall t v a. (TimeLike t, FT.Measured v a)
-           => Dur t
+windowScan :: forall t v a. (TimeDuration t, FT.Measured v a)
+           => Duration t
            -> F.Fold (t, a) (S.Seq v)
 windowScan timedWindowDuration = F.Fold step initial extract
   where
@@ -64,8 +64,8 @@ windowScan timedWindowDuration = F.Fold step initial extract
 -- the input stream. A specialisation of 'windowScan' for when you want
 -- to post-process the measure at each step.
 --
-windowFoldWith :: (TimeLike t, FT.Measured v a)
-               => Dur t
+windowFoldWith :: (TimeDuration t, FT.Measured v a)
+               => Duration t
                -> (v -> b)
                -> F.Fold (t, a) (S.Seq b)
 windowFoldWith timedWindowDuration f = fmap f <$> windowScan timedWindowDuration
@@ -82,8 +82,8 @@ windowFoldWith timedWindowDuration f = fmap f <$> windowScan timedWindowDuration
 -- (e.g. average them, take their max, fold them into a histogram)
 -- rather than materialise every intermediate value.
 --
-windowFoldRolling :: forall t v a r. (TimeLike t, FT.Measured v a)
-                  => Dur t
+windowFoldRolling :: forall t v a r. (TimeDuration t, FT.Measured v a)
+                  => Duration t
                   -> F.Fold v r
                   -> F.Fold (t, a) r
 windowFoldRolling timedWindowDuration = F.purely $ \innerStep innerInit innerExtract ->
@@ -103,8 +103,8 @@ windowFoldRolling timedWindowDuration = F.purely $ \innerStep innerInit innerExt
 -- mean, variance, quantiles) where partial-window readings are
 -- misleading.
 --
-windowFoldRollingFull :: forall t v a r. (TimeLike t, FT.Measured v a)
-                      => Dur t
+windowFoldRollingFull :: forall t v a r. (TimeDuration t, FT.Measured v a)
+                      => Duration t
                       -> F.Fold v r
                       -> F.Fold (t, a) r
 windowFoldRollingFull timedWindowDuration = F.purely $ \innerStep innerInit innerExtract ->
@@ -121,8 +121,8 @@ windowFoldRollingFull timedWindowDuration = F.purely $ \innerStep innerInit inne
 -- window with a 'F.FoldM' (e.g. one that emits each measure to an
 -- effectful sink).
 --
-windowFoldRollingM :: forall m t v a r. (Monad m, TimeLike t, FT.Measured v a)
-                   => Dur t
+windowFoldRollingM :: forall m t v a r. (Monad m, TimeDuration t, FT.Measured v a)
+                   => Duration t
                    -> F.FoldM m v r
                    -> F.FoldM m (t, a) r
 windowFoldRollingM timedWindowDuration = F.impurely $ \innerStep innerInit innerExtract ->
@@ -149,9 +149,9 @@ windowFoldRollingM timedWindowDuration = F.impurely $ \innerStep innerInit inner
 -- 'windowFoldRolling2Full', which suppresses emission until both
 -- windows have been spanned by their configured duration.
 --
-windowFoldRolling2 :: forall t v a r. (TimeLike t, FT.Measured v a)
-                   => Dur t -- ^ short window duration
-                   -> Dur t -- ^ long window duration
+windowFoldRolling2 :: forall t v a r. (TimeDuration t, FT.Measured v a)
+                   => Duration t -- ^ short window duration
+                   -> Duration t -- ^ long window duration
                    -> F.Fold (v, v) r
                    -> F.Fold (t, a) r
 windowFoldRolling2 short long = F.purely $ \innerStep innerInit innerExtract ->
@@ -173,9 +173,9 @@ windowFoldRolling2 short long = F.purely $ \innerStep innerInit innerExtract ->
 -- Use this when partial-window readings would distort the comparison
 -- (typically for any statistical measure).
 --
-windowFoldRolling2Full :: forall t v a r. (TimeLike t, FT.Measured v a)
-                       => Dur t -- ^ short window duration
-                       -> Dur t -- ^ long window duration
+windowFoldRolling2Full :: forall t v a r. (TimeDuration t, FT.Measured v a)
+                       => Duration t -- ^ short window duration
+                       -> Duration t -- ^ long window duration
                        -> F.Fold (v, v) r
                        -> F.Fold (t, a) r
 windowFoldRolling2Full short long = F.purely $ \innerStep innerInit innerExtract ->
@@ -198,8 +198,8 @@ windowFoldRolling2Full short long = F.purely $ \innerStep innerInit innerExtract
 -- when you want to query multiple statistics over the trailing window
 -- after consuming a stream.
 --
-windowFinal :: forall t v a. (TimeLike t, FT.Measured v a)
-            => Dur t
+windowFinal :: forall t v a. (TimeDuration t, FT.Measured v a)
+            => Duration t
             -> F.Fold (t, a) (W.TimedWindow t v a)
 windowFinal timedWindowDuration =
   F.Fold (\w ta -> W.insert ta w) (W.empty timedWindowDuration) id
@@ -209,7 +209,7 @@ windowFinal timedWindowDuration =
 -- stream. The most common shorthand when you want a single rolling
 -- statistic over the trailing duration.
 --
-windowMeasureFinal :: forall t v a. (TimeLike t, FT.Measured v a)
-                   => Dur t
+windowMeasureFinal :: forall t v a. (TimeDuration t, FT.Measured v a)
+                   => Duration t
                    -> F.Fold (t, a) v
 windowMeasureFinal d = W.windowMeasure <$> windowFinal d

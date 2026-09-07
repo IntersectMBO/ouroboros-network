@@ -46,7 +46,7 @@ library
     -- Data.Window.Internal.DigestCountBatched,
     Data.Window.DigestTimeBatched
     Data.Window.Internal.DigestTimeBatched
-    Data.Window.TimeLike
+    Data.Window.TimeDuration
 
   build-depends:
     base,
