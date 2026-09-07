@@ -91,9 +91,7 @@ tests =
                    prop_self_connect
     ]
 
-type TestAddr      = TestAddress Int
-type TestFD      m = FD m TestAddr
-type TestSnocket m = Snocket m (TestFD m) TestAddr
+type TestSnocket m = Snocket m (FD m) NetworkAddress
 
 pingServer :: forall payload m. Applicative m
            => ReqRespServer payload payload m ()
@@ -193,7 +191,7 @@ untilSuccess go =
 
 
 clientServerSimulation
-    :: forall m addr payload.
+    :: forall m payload.
        ( Alternative (STM m)
        , MonadAsync       m
        , MonadDelay       m
@@ -212,7 +210,7 @@ clientServerSimulation
        , Ord (Async m ())
        )
     => [payload]
-    -> m (Either (TestError addr) ())
+    -> m (Either TestError ())
 clientServerSimulation payloads =
     withSnocket nullTracer (toBearerInfo absNoAttenuation) Map.empty
     $ \snocket _ ->
@@ -225,8 +223,8 @@ clientServerSimulation payloads =
     reqRespProtocolNum :: MiniProtocolNum
     reqRespProtocolNum = MiniProtocolNum 0
 
-    serverAddr :: TestAddr
-    serverAddr = TestAddress 1
+    serverAddr :: NetworkAddress
+    serverAddr = EphIPv4Addr 1
 
     serverPeer :: Peer (ReqResp payload payload) AsServer NonPipelined StIdle m ()
     serverPeer = reqRespServerPeer pingServer
@@ -239,7 +237,7 @@ clientServerSimulation payloads =
     server snocket = do
         labelThisThread "server"
         threadsVar <- newTVarIO Set.empty
-        bracket (open snocket TestFamily)
+        bracket (open snocket AFInet)
                 (close snocket)
                 (\fd -> do
                   bind snocket fd serverAddr
@@ -250,7 +248,7 @@ clientServerSimulation payloads =
             traverse_ cancel threads
       where
         acceptLoop :: StrictTVar m (Set (Async m ()))
-                   -> Accept m (TestFD m) TestAddr
+                   -> Accept m (FD m) NetworkAddress
                    -> m ()
         acceptLoop threadsVar accept0 = do
           (accepted, accept1) <- runAccept accept0
@@ -266,7 +264,7 @@ clientServerSimulation payloads =
             AcceptFailure _err ->
               acceptLoop threadsVar accept1
 
-        handleConnection :: Mx.Bearer m -> TestAddr -> m ()
+        handleConnection :: Mx.Bearer m -> NetworkAddress -> m ()
         handleConnection bearer remoteAddr = do
           labelThisThread "server-handler"
           let connId = ConnectionId {
@@ -395,17 +393,17 @@ toBearerInfo abi =
 -- Properties
 --
 
-data TestError addr = UnexpectedOutcome
-                    | UnexpectedError SomeException
-                    | UnexpectedlyReleasedListeningSockets
-                    | DidNotTimeout
-                    | DidNotComplainAboutNoSuchListeningSockets
-                    | DoNotExistInNetworkState addr addr
-                    -- ^ LocalAddress, RemoteAddress
+data TestError = UnexpectedOutcome
+               | UnexpectedError SomeException
+               | UnexpectedlyReleasedListeningSockets
+               | DidNotTimeout
+               | DidNotComplainAboutNoSuchListeningSockets
+               | DoNotExistInNetworkState NetworkAddress NetworkAddress
+               -- ^ LocalAddress, RemoteAddress
   deriving Show
 
 verify_no_error
-  :: (forall s . IOSim s (Either (TestError (TestAddress Int)) ()))
+  :: (forall s . IOSim s (Either TestError ()))
   -> Property
 verify_no_error sim =
   let tr = runSimTrace sim
@@ -436,22 +434,24 @@ prop_client_server :: [Payload] -> Property
 prop_client_server payloads =
   verify_no_error sim
   where
-    sim :: forall s addr . IOSim s (Either (TestError addr) ())
+    sim :: forall s. IOSim s (Either TestError ())
     sim = clientServerSimulation (map unPayload payloads)
 
 prop_connect_to_accepting_socket :: AbsBearerInfo -> Property
 prop_connect_to_accepting_socket defaultBearerInfo =
     verify_no_error sim
   where
-    serverAddr :: TestAddress Int
-    serverAddr = TestAddress 0
+    serverAddr :: NetworkAddress
+    serverAddr = EphIPv4Addr 0
 
-    clientAddr :: TestAddress Int
-    clientAddr = TestAddress 1
+    clientAddr :: NetworkAddress
+    clientAddr = EphIPv4Addr 1
 
-    sim :: forall s . IOSim s (Either (TestError (TestAddress Int)) ())
+    sim :: forall s . IOSim s (Either TestError ())
     sim =
-      withSnocket nullTracer (toBearerInfo defaultBearerInfo) Map.empty
+      withSnocket nullTracer
+                  (toBearerInfo defaultBearerInfo)
+                  Map.empty
       $ \snocket getState ->
         withAsync
           (runServer serverAddr snocket (close snocket)
@@ -478,16 +478,17 @@ prop_connect_and_not_close :: AbsBearerInfo -> Property
 prop_connect_and_not_close defaultBearerInfo =
     verify_no_error sim
   where
-    sim :: forall s . IOSim s (Either (TestError (TestAddress Int)) ())
+    sim :: forall s . IOSim s (Either TestError ())
     sim =
-      withSnocket nullTracer (toBearerInfo defaultBearerInfo) Map.empty
+      withSnocket nullTracer
+                  (toBearerInfo defaultBearerInfo)
+                  Map.empty
       (\snocket _ ->
         withAsync
-          (runServer (TestAddress (0 :: Int)) snocket (\_ -> pure ())
+          (runServer (EphIPv4Addr 0) snocket (\_ -> pure ())
                      acceptOne return)
           $ \serverAsync -> do
-            res <- runClient (TestAddress 1) (TestAddress 0)
-                            snocket (\_ -> pure ())
+            res <- runClient (EphIPv4Addr 1) (EphIPv4Addr 0) snocket (\_ -> pure ())
             _ <- wait serverAsync
             return res
       )
@@ -503,14 +504,16 @@ prop_connect_to_not_accepting_socket :: AbsBearerInfo -> Property
 prop_connect_to_not_accepting_socket defaultBearerInfo =
     verify_no_error sim
   where
-    sim :: forall s addr . IOSim s (Either (TestError addr) ())
+    sim :: forall s. IOSim s (Either TestError ())
     sim =
-      withSnocket nullTracer (toBearerInfo defaultBearerInfo) Map.empty
+      withSnocket nullTracer
+                  (toBearerInfo defaultBearerInfo)
+                  Map.empty
       $ \snocket _ ->
-        withAsync (runServer (TestAddress (0 :: Int)) snocket
+        withAsync (runServer (EphIPv4Addr 0) snocket
                              (close snocket) loop return)
           $ \_ -> do
-            res <- runClient (TestAddress 1) (TestAddress 0)
+            res <- runClient (EphIPv4Addr 1) (EphIPv4Addr 0)
                             snocket (close snocket)
             case res of
               -- Should timeout
@@ -526,11 +529,12 @@ prop_connect_to_uninitialised_socket :: AbsBearerInfo -> Property
 prop_connect_to_uninitialised_socket defaultBearerInfo =
     verify_no_error sim
   where
-    sim :: forall s addr . IOSim s (Either (TestError addr) ())
+    sim :: forall s. IOSim s (Either TestError ())
     sim =
-      withSnocket nullTracer (toBearerInfo defaultBearerInfo) Map.empty
+      withSnocket nullTracer
+                  (toBearerInfo defaultBearerInfo) Map.empty
       $ \snocket _ -> do
-        res <- runClient (TestAddress (1 :: Int)) (TestAddress 0)
+        res <- runClient (EphIPv4Addr 1) (EphIPv4Addr 0)
                          snocket (close snocket)
         case res of
           -- Should complain about no such listening socket
@@ -541,14 +545,15 @@ prop_connect_to_not_listening_socket :: AbsBearerInfo -> Property
 prop_connect_to_not_listening_socket defaultBearerInfo =
     verify_no_error sim
   where
-    sim :: forall s addr . IOSim s (Either (TestError addr) ())
+    sim :: forall s. IOSim s (Either TestError ())
     sim =
-      withSnocket nullTracer (toBearerInfo defaultBearerInfo) Map.empty
+      withSnocket nullTracer
+                  (toBearerInfo defaultBearerInfo) Map.empty
       $ \snocket _ ->
-        withAsync (runServerNotListening (TestAddress (0 :: Int)) snocket
+        withAsync (runServerNotListening (EphIPv4Addr 0) snocket
                                          (close snocket) acceptOne)
           $ \_ -> do
-            res <- runClient (TestAddress (1 :: Int)) (TestAddress 0)
+            res <- runClient (EphIPv4Addr 1) (EphIPv4Addr 0)
                              snocket (close snocket)
             case res of
               -- Should complain about no such listening socket
@@ -559,15 +564,15 @@ prop_connect_to_not_listening_socket defaultBearerInfo =
       :: ( MonadThread m
          , MonadThrow m
          )
-      => TestAddress addr -- ^ Local Address
-      -> Snocket m fd (TestAddress addr)
-      -> (fd -> m ()) -- ^ Resource cleanup function (socket close)
-      -> (m (Accept m fd (TestAddress addr)) -> m (Either err fd))
+      => NetworkAddress -- ^ Local Address
+      -> Snocket m (FD m) NetworkAddress
+      -> (FD m -> m ()) -- ^ Resource cleanup function (socket close)
+      -> (m (Accept m (FD m) NetworkAddress) -> m (Either err (FD m)))
       -- ^ Accepting function
       -> m (Either err ())
     runServerNotListening localAddress snocket closeF acceptF = do
       labelThisThread "server"
-      bracket (open snocket TestFamily)
+      bracket (open snocket AFInet)
               closeF
               (\fd -> do
                 bind snocket fd localAddress
@@ -581,16 +586,17 @@ prop_simultaneous_open :: AbsBearerInfo -> Property
 prop_simultaneous_open defaultBearerInfo =
     verify_no_error sim
   where
-    sim :: forall s . IOSim s (Either (TestError (TestAddress Int)) ())
+    sim :: forall s . IOSim s (Either TestError ())
     sim =
-      withSnocket nullTracer (toBearerInfo defaultBearerInfo) Map.empty
+      withSnocket nullTracer
+                  (toBearerInfo defaultBearerInfo) Map.empty
       $ \snocket getState ->
         withAsync
-          (listenAndConnect (TestAddress (0 :: Int)) (TestAddress 1)
+          (listenAndConnect (EphIPv4Addr 0) (EphIPv4Addr 1)
                             snocket getState)
           $ \clientAsync -> do
-            _ <- listenAndConnect (TestAddress 1) (TestAddress 0)
-                                 snocket getState
+            _ <- listenAndConnect (EphIPv4Addr 1) (EphIPv4Addr 0)
+                                  snocket getState
             wait clientAsync
 
 
@@ -606,8 +612,8 @@ prop_self_connect :: Payload -> Property
 prop_self_connect (Payload payload) =
     runSimOrThrow sim
   where
-    addr :: TestAddress Int
-    addr = TestAddress 0
+    addr :: NetworkAddress
+    addr = EphIPv4Addr 0
 
     sim :: forall s. IOSim s Property
     sim =
@@ -642,17 +648,17 @@ runServer
   :: ( MonadThread m
      , MonadThrow m
      )
-  => TestAddress addr -- ^ Local Address
-  -> Snocket m fd (TestAddress addr)
+  => addr -- ^ Local Address
+  -> Snocket m fd addr
   -> (fd -> m ()) -- ^ Resource cleanup function (socket close)
-  -> (m (Accept m fd (TestAddress addr)) -> m (Either err fd))
+  -> (m (Accept m fd addr) -> m (Either err fd))
   -- ^ Accepting function
   -> (Either err fd -> m (Either err fd))
   -- ^ Assert NetworkState
   -> m (Either err ())
 runServer localAddress snocket closeF acceptF assertState = do
     labelThisThread "server"
-    bracket (open snocket TestFamily)
+    bracket (open snocket AFInet)
             closeF
             (\fd -> do
               bind snocket fd localAddress
@@ -665,7 +671,7 @@ runServer localAddress snocket closeF acceptF assertState = do
 
 acceptOne :: MonadMask m
           => m (Accept m fd addr)
-          -> m (Either (TestError addr) fd)
+          -> m (Either TestError fd)
 acceptOne accept = mask_ $ do
   accept0 <- accept
   (accepted, _) <- runAccept accept0
@@ -683,7 +689,7 @@ runClient
   -> addr -- ^ Remote Address
   -> Snocket m fd addr
   -> (fd -> m ()) -- ^ Resource cleanup function (socket close)
-  -> m (Either (TestError addr) ())
+  -> m (Either TestError ())
 runClient localAddress remoteAddress snocket closeF = do
     labelThisThread "client"
     bracket (openToConnect snocket localAddress)
@@ -697,16 +703,15 @@ runClient localAddress remoteAddress snocket closeF = do
 listenAndConnect
   :: ( MonadThread m
      , MonadCatch m
-     , Ord addr
      )
-  => TestAddress addr -- ^ Local Address
-  -> TestAddress addr -- ^ Remote Address
-  -> Snocket m fd (TestAddress addr)
-  -> m (ObservableNetworkState (TestAddress addr))
-  -> m (Either (TestError (TestAddress addr)) ())
+  => NetworkAddress -- ^ Local Address
+  -> NetworkAddress -- ^ Remote Address
+  -> Snocket m (FD m) NetworkAddress
+  -> m ObservableNetworkState
+  -> m (Either TestError ())
 listenAndConnect localAddress remoteAddress snocket getState = do
     labelThisThread "connectingServer"
-    bracket (open snocket TestFamily)
+    bracket (open snocket AFInet)
             (close snocket)
             $ \fd -> do
               bind snocket fd localAddress
@@ -723,12 +728,12 @@ listenAndConnect localAddress remoteAddress snocket getState = do
 
 -- | Asserts that the local address and remote address pair exists in the
 -- NetworkState.
-assertNetworkState :: (Monad m, Ord addr)
-                    => addr -- ^ Local Address
-                    -> addr -- ^ Remote Address
-                    -> m (ObservableNetworkState addr)
-                    -> Either (TestError addr) b
-                    -> m (Either (TestError addr) b)
+assertNetworkState :: Monad m
+                   => NetworkAddress -- ^ Local Address
+                   -> NetworkAddress -- ^ Remote Address
+                   -> m ObservableNetworkState
+                   -> Either TestError b
+                   -> m (Either TestError b)
 assertNetworkState localAddress remoteAddress getState res = do
   us <- onsConnections <$> getState
   -- Important to use serverAddr as first argument

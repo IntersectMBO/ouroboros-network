@@ -90,8 +90,7 @@
 module Ouroboros.Network.ConnectionManager.Types
   ( -- * Connection manager core types
     -- ** Connection Types
-    AddressType (..)
-  , Provenance (..)
+    Provenance (..)
   , DataFlow (..)
   , TimeoutExpired (..)
   , ConnectionType (..)
@@ -187,12 +186,6 @@ import Ouroboros.Network.ConnectionManager.ConnMap (ConnMap)
 import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.MuxMode
 import Ouroboros.Network.Util (PrettyShow (..))
-
-
--- | Connection manager supports `IPv4` and `IPv6` addresses.
---
-data AddressType = IPv4Address | IPv6Address
-    deriving Show
 
 
 -- | Each connection is is either initiated locally (outbound) or by a remote

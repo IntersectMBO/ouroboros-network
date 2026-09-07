@@ -95,16 +95,14 @@ data Arguments handlerTrace socket peerAddr handle handleError versionNumber ver
         -- bidirectional @TCP@ connections, it must be the same as the server
         -- listening @IPv4@ address.
         --
-        ipv4Address         :: Maybe peerAddr,
+        ipv4Address         :: [peerAddr],
 
         -- | @IPv6@ address of the connection manager.  If given, outbound
         -- connections to an @IPv6@ address will bound to it.  To use
         -- bidirectional @TCP@ connections, it must be the same as the server
         -- listening @IPv6@ address.
         --
-        ipv6Address         :: Maybe peerAddr,
-
-        addressType         :: peerAddr -> Maybe AddressType,
+        ipv6Address         :: [peerAddr],
 
         -- | Snocket for the 'socket' type.
         --
@@ -395,7 +393,6 @@ with args@Arguments {
          trTracer,
          ipv4Address,
          ipv6Address,
-         addressType,
          snocket,
          makeBearer,
          withBuffer,
@@ -1470,24 +1467,24 @@ with args@Arguments {
                 )
                 $ \socket -> do
                   traceWith tracer (TrConnectionNotFound provenance peerAddr)
-                  let addr = case addressType peerAddr of
-                               Nothing          -> Nothing
-                               Just IPv4Address -> ipv4Address
-                               Just IPv6Address -> ipv6Address
+                  addr <- case addrFamily snocket peerAddr of
+                     AFInet    -> randomElement stdGenVar ipv4Address
+                     AFInet6   -> randomElement stdGenVar ipv6Address
+                     AFLocal{} -> pure Nothing
                   configureSocket socket addr
                   -- only bind to the ip address if:
                   -- the diffusion is given `ipv4/6` addresses;
                   -- `diffusionMode` for this connection is
                   -- `InitiatorAndResponderMode`.
-                  case addressType peerAddr of
-                    Just IPv4Address | InitiatorAndResponderDiffusionMode
-                                       <- diffusionMode ->
-                         traverse_ (bind snocket socket)
-                                   ipv4Address
-                    Just IPv6Address | InitiatorAndResponderDiffusionMode
-                                       <- diffusionMode ->
-                         traverse_ (bind snocket socket)
-                                   ipv6Address
+                  case addrFamily snocket peerAddr of
+                    AFInet | InitiatorAndResponderDiffusionMode
+                             <- diffusionMode ->
+                      traverse_ (bind snocket socket)
+                                ipv4Address
+                    AFInet6 | InitiatorAndResponderDiffusionMode
+                              <- diffusionMode ->
+                      traverse_ (bind snocket socket)
+                                ipv6Address
                     _ -> pure ()
 
                   traceWith tracer (TrConnect addr peerAddr diffusionMode)
@@ -2444,3 +2441,13 @@ data Trace peerAddr handlerTrace
   | TrUnexpectedlyFalseAssertion   (AssertionLocation peerAddr)
   -- ^ This case is unexpected at call site.
   deriving Show
+
+
+randomElement :: MonadSTM m
+              => StrictTVar m StdGen -> [a] -> m (Maybe a)
+randomElement _ [] = pure Nothing
+randomElement _ [a] = pure $ Just a
+randomElement stdGenVar as = do
+  stdGen <- atomically $ stateTVar stdGenVar Random.splitGen
+  let (indx, _) = Random.uniformR (0, length as - 1) stdGen
+  return $ Just $ as List.!! indx
