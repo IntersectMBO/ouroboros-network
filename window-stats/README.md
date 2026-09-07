@@ -28,7 +28,7 @@ common rolling statistics:
 | `DigestSample`  | `TDigest comp`   | approximate quantiles (with-tdigest)   |
 
 Time-based windows abstract over the timestamp type via the
-`TimeLike` class. Two stock instances are shipped:
+`TimeDuration` class. Two stock instances are shipped:
 
 - `UTCTime` / `NominalDiffTime` (wall-clock, from `time`)
 - `Time` / `DiffTime` (monotonic, from `io-classes:si-timers`)

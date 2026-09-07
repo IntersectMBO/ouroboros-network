@@ -9,7 +9,7 @@
 -- duration are evicted automatically on insertion.
 --
 -- The time representation is abstracted via the 'TimeLike' class. Two
--- stock instances are provided in "Data.Window.TimeLike":
+-- stock instances are provided in "Data.Window.TimeDuration":
 --
 -- * @'TimedWindow' 'Data.Time.UTCTime' v a@ for wall-clock timestamps
 --   from the @time@ package.
@@ -36,7 +36,7 @@ module Data.Window.Timed
   ( -- * Types
     TimedWindow
     -- * Time abstraction
-  , TimeLike (..)
+  , TimeDuration (..)
     -- * Construction
   , empty
   , singleton
@@ -78,4 +78,4 @@ module Data.Window.Timed
 
 import Data.Window.Internal.Measures
 import Data.Window.Internal.Timed
-import Data.Window.TimeLike
+import Data.Window.TimeDuration

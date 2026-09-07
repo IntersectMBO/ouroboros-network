@@ -39,38 +39,37 @@ common ghc-options
     ghc-options:
       -Wno-redundant-constraints
 
-library with-tdigest
+library
   import: ghc-options
-  visibility: public
   exposed-modules:
     -- TODO implement:
     -- Data.Window.Internal.DigestCountBatched,
     Data.Window.DigestTimeBatched
     Data.Window.Internal.DigestTimeBatched
+    Data.Window.TimeDuration
 
   build-depends:
     base,
     deepseq,
     fingertree,
     tdigest,
-    window-stats,
+    io-classes:si-timers ^>= 1.8,
 
   hs-source-dirs:
-    tdigest
+    lib
 
   default-extensions:
     ImportQualifiedPost
 
   default-language: Haskell2010
 
-library
+library extra-measures
   import: ghc-options
   exposed-modules:
     Data.Window.Count
     Data.Window.Internal.Count
     Data.Window.Internal.Measures
     Data.Window.Internal.Timed
-    Data.Window.TimeLike
     Data.Window.Timed
 
   build-depends:
@@ -79,9 +78,10 @@ library
     fingertree ^>= 0.1.6.1,
     io-classes:si-timers ^>=1.8,
     time,
+    window-stats,
 
   hs-source-dirs:
-    lib
+    extra-measures
 
 library with-foldl
   import: ghc-options
@@ -95,7 +95,7 @@ library with-foldl
     containers,
     fingertree,
     foldl,
-    window-stats,
+    window-stats:{window-stats, extra-measures},
 
   hs-source-dirs:
     fold/lib
@@ -116,7 +116,7 @@ test-suite ws-test
     tasty-quickcheck,
     time,
     window-stats,
-    window-stats:with-tdigest,
+    window-stats:extra-measures,
 
 benchmark ws-bench
   import: ghc-options
@@ -131,4 +131,4 @@ benchmark ws-bench
   build-depends:
     base,
     time,
-    window-stats:with-tdigest,
+    window-stats,

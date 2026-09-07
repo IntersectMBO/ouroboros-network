@@ -23,7 +23,7 @@ import Data.Time (UTCTime)
 import GHC.Generics
 
 import Data.Window.Internal.Measures
-import Data.Window.TimeLike
+import Data.Window.TimeDuration
 
 
 -- | A measure that tracks the count of elements, the timestamp
@@ -59,7 +59,7 @@ instance FT.Measured v a => FT.Measured (TimedMeasure t v) (TimedSample t a) whe
 
 
 -- | Configured maximum duration of the window.
-windowMaxDuration :: TimedWindow t v a -> Dur t
+windowMaxDuration :: TimedWindow t v a -> Duration t
 windowMaxDuration = twDuration
 {-# INLINE windowMaxDuration #-}
 
@@ -77,14 +77,14 @@ data TimedSample t a = TimedSample
 -- duration. Values are stored in non-increasing timestamp order, ie.
 -- with freshest samples at the head.
 data TimedWindow t v a = TimedWindow
-  { twDuration :: !(Dur t)
+  { twDuration :: !(Duration t)
   , twTree     :: !(FingerTree (TimedMeasure t v) (TimedSample t a))
   }
   deriving Generic
 
-deriving instance (Show (Dur t), Show t, Show v, Show a)
+deriving instance (Show (Duration t), Show t, Show v, Show a)
   => Show (TimedWindow t v a)
-deriving instance (NFData (Dur t), NFData t, NFData v, NFData a)
+deriving instance (NFData (Duration t), NFData t, NFData v, NFData a)
   => NFData (TimedWindow t v a)
 
 instance Foldable (TimedWindow t v) where
@@ -171,9 +171,9 @@ size = tmCount . FT.measure . twTree
 -- for an empty window.
 -- \(O(1)\)
 --
-windowDuration :: (TimeLike t, FT.Measured v a)
+windowDuration :: (TimeDuration t, FT.Measured v a)
                => TimedWindow t v a
-               -> Maybe (Dur t)
+               -> Maybe (Duration t)
 windowDuration TimedWindow { twTree } =
     do
     start  <- tmStart $ FT.measure twTree
@@ -188,7 +188,7 @@ windowDuration TimedWindow { twTree } =
 -- | Constructs an empty time window of the given @timedWindowDuration@ duration
 --
 empty :: FT.Measured v a
-      => Dur t
+      => Duration t
       -> TimedWindow t v a
 empty twDuration =
   TimedWindow { twDuration, twTree = FT.empty }
@@ -197,7 +197,7 @@ empty twDuration =
 -- | Constructs a window with duration of @timedWindowDuration@ containing a single sample
 --
 singleton :: (FT.Measured v b, Coercible a b)
-          => Dur t
+          => Duration t
           -> (t, a)
           -> TimedWindow t v b
 singleton twDuration (t, a) =
@@ -213,7 +213,7 @@ singleton twDuration (t, a) =
 -- @a@ must be the unwrapped version of b.
 -- \(O(1)\) amortized, \(O(\log w)\) w/c
 --
-insert :: (TimeLike t, FT.Measured v b, Coercible a b)
+insert :: (TimeDuration t, FT.Measured v b, Coercible a b)
        => (t, a)
        -> TimedWindow t v b
        -> TimedWindow t v b
@@ -232,7 +232,7 @@ insert (t, a) win@TimedWindow { twDuration, twTree } =
 -- @a@ must be the unwrapped version of b.
 -- \(O(\n log w)\), use when n >> w
 --
-insertMany :: (TimeLike t, FT.Measured v b, Foldable f, Coercible a b)
+insertMany :: (TimeDuration t, FT.Measured v b, Foldable f, Coercible a b)
            => f (t, a)
            -> TimedWindow t v b
            -> TimedWindow t v b
@@ -254,8 +254,8 @@ insertMany as win@TimedWindow { twDuration, twTree } = maybe win (`evictBefore` 
 -- for correct behaviour (__note__: this is opposite from 'insertMany' and 'fromFoldable')
 -- \(O(\w log w)\)
 --
-fromListN :: (TimeLike t, FT.Measured v b, Coercible a b)
-         => Dur t
+fromListN :: (TimeDuration t, FT.Measured v b, Coercible a b)
+         => Duration t
          -> [(t, a)]
          -> TimedWindow t v b
 fromListN twDuration as = maybe (empty twDuration) (`evictBefore` win) cutoff
@@ -275,8 +275,8 @@ fromListN twDuration as = maybe (empty twDuration) (`evictBefore` win) cutoff
 -- correct eviction behaviour.
 -- \(O(\n log n)\), use when n ~= w
 --
-fromFoldable :: (TimeLike t, FT.Measured v b, Foldable f, Coercible a b)
-             => Dur t
+fromFoldable :: (TimeDuration t, FT.Measured v b, Foldable f, Coercible a b)
+             => Duration t
              -> f (t, a)
              -> TimedWindow t v b
 fromFoldable twDuration as = maybe (empty twDuration) (`evictBefore` win) cutoff
@@ -337,7 +337,7 @@ evictOldestN n win
 -- | Evict all elements whose timestamp is older than the given cutoff time.
 -- \(O(\log w)\)
 --
-evictBefore :: (TimeLike t, FT.Measured v a)
+evictBefore :: (TimeDuration t, FT.Measured v a)
             => t
             -> TimedWindow t v a
             -> TimedWindow t v a
@@ -357,8 +357,8 @@ evictBefore cutoff =
 -- now older than that duration relative to the newest element.
 -- \(O(\log w)\)
 --
-resize :: (TimeLike t, FT.Measured v a)
-       => Dur t
+resize :: (TimeDuration t, FT.Measured v a)
+       => Duration t
        -> TimedWindow t v a
        -> TimedWindow t v a
 resize twDuration win@TimedWindow { twTree } =
