@@ -381,8 +381,7 @@ mkMiniProtocolCbFromPeer fn =
 --
 mkMiniProtocolCbFromPeerSt
   :: forall (pr :: PeerRole) ps (f :: ps -> Type) (st :: ps) failure bytes ctx m a.
-     ( MonadAsync    m
-     , MonadEvaluate m
+     ( MonadEvaluate m
      , MonadMask     m
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
