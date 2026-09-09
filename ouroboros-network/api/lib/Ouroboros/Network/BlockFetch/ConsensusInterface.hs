@@ -62,7 +62,7 @@ data FetchMode = GenesisFetchMode | PraosFetchMode PraosFetchMode
 --
 -- These are provided as input to the block fetch by the consensus layer.
 --
-data BlockFetchConsensusInterface peer header block m =
+data BlockFetchConsensusInterface peer header block matchedBlock m =
      BlockFetchConsensusInterface {
 
        -- | Read the K-suffixes of the candidate chains.
@@ -104,7 +104,7 @@ data BlockFetchConsensusInterface peer header block m =
        -- That function and 'readFetchedBlocks' are required to be linked. Upon
        -- successful completion of @addFetchedBlock@ it must be the case that
        -- 'readFetchedBlocks' reports the block.
-       mkAddFetchedBlock      :: STM m (Point block -> block -> m ()),
+       mkAddFetchedBlock      :: STM m (Point block -> matchedBlock -> m ()),
 
        -- | The highest stored/downloaded slot number.
        --
@@ -129,7 +129,7 @@ data BlockFetchConsensusInterface peer header block m =
        -- | Given a block header, validate the supposed corresponding block
        -- body.
        --
-       blockMatchesHeader      :: header -> block -> Bool,
+       blockMatchesHeader      :: header -> block -> Maybe matchedBlock,
 
        -- | Calculate when a header's block was forged.
        headerForgeUTCTime      :: header -> UTCTime,

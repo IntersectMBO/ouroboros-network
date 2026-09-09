@@ -84,7 +84,7 @@ blockFetchExample0 fetchMode decisionTracer clientStateTracer clientMsgTracer
                    controlMessageSTM
                    currentChain candidateChain = do
 
-    blockFetchRegistry <- newFetchClientRegistry :: m (FetchClientRegistry Int BlockHeader Block m)
+    blockFetchRegistry <- newFetchClientRegistry :: m (FetchClientRegistry Int BlockHeader Block Block m)
     keepAliveRegistry  <- newKeepAliveRegistry   :: m (KeepAliveRegistry Int m)
     blockHeap   <- mkTestFetchedBlockHeap (anchoredChainPoints currentChain)
 
@@ -134,7 +134,7 @@ blockFetchExample0 fetchMode decisionTracer clientStateTracer clientMsgTracer
     anchoredChainPoints c = anchorPoint c
                           : map blockPoint (AnchoredFragment.toOldestFirst c)
 
-    blockFetch :: FetchClientRegistry Int BlockHeader Block m
+    blockFetch :: FetchClientRegistry Int BlockHeader Block Block m
                -> KeepAliveRegistry Int m
                -> TestFetchedBlockHeap m Block
                -> m ()
@@ -253,7 +253,7 @@ blockFetchExample1 fetchMode decisionTracer clientStateTracer clientMsgTracer
     anchoredChainPoints c = anchorPoint c
                           : map blockPoint (AnchoredFragment.toOldestFirst c)
 
-    blockFetch :: FetchClientRegistry Int BlockHeader Block m
+    blockFetch :: FetchClientRegistry Int BlockHeader Block Block m
                -> KeepAliveRegistry Int m
                -> TestFetchedBlockHeap m Block
                -> m ()
@@ -298,7 +298,7 @@ sampleBlockFetchPolicy1 :: ( MonadSTM m
                         -> TestFetchedBlockHeap m block
                         -> AnchoredFragment header
                         -> Map peer (AnchoredFragment header)
-                        -> BlockFetchConsensusInterface peer header block m
+                        -> BlockFetchConsensusInterface peer header block block m
 sampleBlockFetchPolicy1 fetchMode headerFieldsForgeUTCTime blockHeap currentChain candidateChains =
     BlockFetchConsensusInterface {
       readCandidateChains    = return candidateChains,
@@ -318,7 +318,7 @@ sampleBlockFetchPolicy1 fetchMode headerFieldsForgeUTCTime blockHeap currentChai
           },
 
       blockFetchSize         = \_ -> 2000,
-      blockMatchesHeader     = \_ _ -> True,
+      blockMatchesHeader     = \_ blk -> Just blk,
 
       headerForgeUTCTime     = headerFieldsForgeUTCTime,
       readChainSelStarvation = pure (ChainSelStarvationEndedAt (Time 0)),
@@ -364,11 +364,11 @@ runFetchClient :: ( MonadAsync m
                   )
                 => Tracer m (TraceSendRecv (BlockFetch block point))
                 -> version
-                -> FetchClientRegistry peerid header block m
+                -> FetchClientRegistry peerid header block block m
                 -> KeepAliveRegistry peerid m
                 -> peerid
                 -> Channel m LBS.ByteString
-                -> (  FetchClientContext header block m
+                -> (  FetchClientContext header block block m
                    -> ClientPipelined (BlockFetch block point) BFIdle m a)
                 -> m a
 runFetchClient tracer version blockFetchRegistry keepAliveRegistry peerid channel client =
@@ -428,10 +428,10 @@ runFetchClientAndServerAsync
                 -> version
                 -> Maybe DiffTime -- ^ client's channel delay
                 -> Maybe DiffTime -- ^ server's channel delay
-                -> FetchClientRegistry peerid header block m
+                -> FetchClientRegistry peerid header block block m
                 -> KeepAliveRegistry peerid m
                 -> peerid
-                -> (  FetchClientContext header block m
+                -> (  FetchClientContext header block block m
                    -> ClientPipelined (BlockFetch block (Point block)) BFIdle m a)
                 -> BlockFetchServer block (Point block) m b
                 -> m (Async m a, Async m b, Async m (), Async m ())

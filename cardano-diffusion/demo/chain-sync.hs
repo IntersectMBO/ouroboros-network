@@ -413,7 +413,7 @@ clientBlockFetch sockAddrs maxSlotNo = withIOManager $ \iocp -> do
                                     nullTracer clientCtx)
 
         blockFetchPolicy :: BlockFetchConsensusInterface
-                             LocalConnectionId BlockHeader Block IO
+                             LocalConnectionId BlockHeader Block Block IO
         blockFetchPolicy =
             BlockFetchConsensusInterface {
               readCandidateChains    = readTVar candidateChainsVar
@@ -434,7 +434,7 @@ clientBlockFetch sockAddrs maxSlotNo = withIOManager $ \iocp -> do
                   },
 
               blockFetchSize         = \_ -> 1000,
-              blockMatchesHeader     = \_ _ -> True,
+              blockMatchesHeader     = \_ blk -> Just blk,
 
               headerForgeUTCTime,
               readChainSelStarvation = pure (ChainSelStarvationEndedAt (Time 0)),
