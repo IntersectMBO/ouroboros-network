@@ -46,12 +46,12 @@ import Ouroboros.Network.KeepAlive.Registry as KeepAlive
 -- The threads add\/remove themselves to\/from this registry when they start up
 -- and shut down.
 --
-data FetchClientRegistry peer header block m =
+data FetchClientRegistry peer header block matchedBlock m =
      FetchClientRegistry {
        ctxVar
          :: StrictTMVar
               m ( Tracer m (TraceLabelPeer peer (TraceFetchClientState header))
-                , STM m (FetchClientPolicy header block m)
+                , STM m (FetchClientPolicy header block matchedBlock m)
                 ),
        fetchRegistry
          :: StrictTVar  m (Map peer (FetchClientStateVars m header)),
@@ -61,7 +61,7 @@ data FetchClientRegistry peer header block m =
 
 
 newFetchClientRegistry :: MonadSTM m
-                       => m (FetchClientRegistry peer header block m)
+                       => m (FetchClientRegistry peer header block matchedBlock m)
 newFetchClientRegistry = FetchClientRegistry <$> newEmptyTMVarIO
                                              <*> newTVarIO Map.empty
                                              <*> newTVarIO Map.empty
@@ -72,13 +72,13 @@ newFetchClientRegistry = FetchClientRegistry <$> newEmptyTMVarIO
 --
 -- It also manages synchronisation with the corresponding chain sync client.
 --
-bracketFetchClient :: forall m a peer header block version.
+bracketFetchClient :: forall m a peer header block matchedBlock version.
                       (MonadFork m, MonadMask m, MonadTimer m, Ord peer)
-                   => FetchClientRegistry peer header block m
+                   => FetchClientRegistry peer header block matchedBlock m
                    -> KeepAliveRegistry peer m
                    -> version
                    -> peer
-                   -> (FetchClientContext header block m -> m a)
+                   -> (FetchClientContext header block matchedBlock m -> m a)
                    -> m a
 bracketFetchClient FetchClientRegistry { ctxVar, fetchRegistry, syncRegistry }
                    KeepAliveRegistry { dqRegistry, keepRegistry, dyingRegistry }
@@ -90,7 +90,7 @@ bracketFetchClient FetchClientRegistry { ctxVar, fetchRegistry, syncRegistry }
     onExceptionTimeout = 1
 
     register :: StrictTMVar m ()
-             -> m ( FetchClientContext header block m
+             -> m ( FetchClientContext header block matchedBlock m
                   , (ThreadId m, StrictTMVar m ()) )
     register ksVar = do
       tid <- myThreadId
@@ -153,7 +153,7 @@ bracketFetchClient FetchClientRegistry { ctxVar, fetchRegistry, syncRegistry }
          )
 
     unregister :: StrictTMVar m ()
-               -> ( FetchClientContext header block m
+               -> ( FetchClientContext header block matchedBlock m
                   , (ThreadId m, StrictTMVar m ()) )
                -> ExitCase a
                -> m ()
@@ -214,10 +214,10 @@ bracketFetchClient FetchClientRegistry { ctxVar, fetchRegistry, syncRegistry }
 -- This must be used for the chain sync client /outside/ of its own state
 -- registration and deregistration.
 --
-bracketSyncWithFetchClient :: forall m a peer header block.
+bracketSyncWithFetchClient :: forall m a peer header block matchedBlock.
                               (MonadSTM m, MonadFork m, MonadCatch m,
                                Ord peer)
-                           => FetchClientRegistry peer header block m
+                           => FetchClientRegistry peer header block matchedBlock m
                            -> peer
                            -> m a
                            -> m a
@@ -257,9 +257,9 @@ bracketSyncWithFetchClient FetchClientRegistry { syncRegistry } peer action = do
           Map.delete peer m
 
 setFetchClientContext :: MonadSTM m
-                      => FetchClientRegistry peer header block m
+                      => FetchClientRegistry peer header block matchedBlock m
                       -> Tracer m (TraceLabelPeer peer (TraceFetchClientState header))
-                      -> STM m (FetchClientPolicy header block m)
+                      -> STM m (FetchClientPolicy header block matchedBlock m)
                       -> m ()
 setFetchClientContext FetchClientRegistry { ctxVar } tracer mkPolicy =
     atomically $ do
@@ -270,7 +270,7 @@ setFetchClientContext FetchClientRegistry { ctxVar } tracer mkPolicy =
 -- fetch clients in the 'FetchClientRegistry'.
 --
 readFetchClientsStatus :: MonadSTM m
-                       => FetchClientRegistry peer header block m
+                       => FetchClientRegistry peer header block matchedBlock m
                        -> STM m (Map peer (PeerFetchStatus header))
 readFetchClientsStatus FetchClientRegistry { fetchRegistry } =
   readTVar fetchRegistry >>= traverse (readTVar . fetchClientStatusVar)
@@ -279,6 +279,6 @@ readFetchClientsStatus FetchClientRegistry { fetchRegistry } =
 -- clients in the 'FetchClientRegistry'.
 --
 readFetchClientsStateVars :: MonadSTM m
-                          => FetchClientRegistry peer header block m
+                          => FetchClientRegistry peer header block matchedBlock m
                           -> STM m (Map peer (FetchClientStateVars m header))
 readFetchClientsStateVars FetchClientRegistry { fetchRegistry } = readTVar fetchRegistry

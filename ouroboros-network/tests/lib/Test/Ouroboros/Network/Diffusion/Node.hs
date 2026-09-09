@@ -375,7 +375,7 @@ run blockGeneratorArgs ni na
         })
 
     blockFetchPolicy :: NodeKernel BlockHeader Block s txid m
-                     -> BlockFetchConsensusInterface NtNAddr BlockHeader Block m
+                     -> BlockFetchConsensusInterface NtNAddr BlockHeader Block Block m
     blockFetchPolicy nodeKernel =
         BlockFetchConsensusInterface {
           readCandidateChains    = readTVar (nkClientChains nodeKernel)
@@ -398,7 +398,7 @@ run blockGeneratorArgs ni na
               },
 
           blockFetchSize         = \_ -> 1000,
-          blockMatchesHeader     = \_ _ -> True,
+          blockMatchesHeader     = \_ blk -> Just blk,
 
           headerForgeUTCTime,
 
