@@ -20,7 +20,7 @@ import NoThunks.Class
 
 import Control.Concurrent.Class.MonadSTM qualified as Lazy
 import Control.Concurrent.Class.MonadSTM.Strict
-import Control.Monad (void)
+import Control.Monad (replicateM_, void)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadSay
@@ -29,7 +29,7 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.IOSim
-import Control.Tracer (Tracer, contramap, mkTracer, nullTracer)
+import Control.Tracer (Tracer, contramap, mkTracer, nullTracer, traceWith)
 
 import Data.ByteString.Lazy qualified as BSL
 import Data.Foldable (traverse_)
@@ -47,6 +47,8 @@ import Data.Monoid (Sum (..))
 import Data.Set qualified as Set
 import Data.Typeable (Typeable)
 import Data.Word (Word64)
+
+import Network.TypedProtocol.Codec (AnyMessage (..))
 
 import Ouroboros.Network.Channel
 import Ouroboros.Network.ControlMessage (ControlMessage (..), ControlMessageSTM)
@@ -116,6 +118,8 @@ tests = testGroup "AppV2"
                                  $ BaseQC.withNumTests 25
                                  prop_sharedTxStateInvariant
   , testCase     "counterEmission/cadence"      unit_counterEmission_cadence
+  , testCase     "counterEmission/subMsDurations"
+                                        unit_counterEmission_subMsDurations
   , testCase     "score/wellBehavedStaysAtZero" unit_score_wellBehavedStaysAtZero
   , testCase     "score/persistentBadStaysHigh" unit_score_persistentBadStaysHigh
   , testCase     "score/recoversAfterBurst"     unit_score_recoversAfterBurst
@@ -283,7 +287,7 @@ runTxSubmission tracer tracerTxLogic countersTracer inboundTracer st0
                                         getTxSize
                                         api
                                 runPipelinedPeerWithLimits
-                                  (("INBOUND " ++ show addr,) `contramap` sayTracer)
+                                  (("INBOUND " ++ show addr,) `contramap` tracer)
                                   txSubmissionCodec2
                                   (byteLimitsTxSubmission2 (fromIntegral . BSL.length))
                                   timeLimitsTxSubmission2
@@ -313,6 +317,11 @@ runTxSubmission tracer tracerTxLogic countersTracer inboundTracer st0
 
         cancel countersAid
         traverse_ cancel cancelAids
+
+        -- Every peer has exited, so the retired-peers accumulator is the
+        -- complete total.  Emit it as the final snapshot so the properties
+        -- can compare it against the protocol trace.
+        readTVarIO txCountersVar >>= traceWith countersTracer . emittedCounters
 
         finalSharedState <- readTVarIO sharedTxStateVar
         inmp     <- readMempool inboundMempool
@@ -538,19 +547,69 @@ unit_counterEmission_cadence =
       pure (threadStart, reverse timeline)
 
 
+-- | Durations shorter than a millisecond must still accumulate.
+--
+-- The counters are published in whole milliseconds.  Truncating each
+-- sample as it was accumulated discarded every wait shorter than one, so
+-- a peer with thousands of fast blocking replies, pipeline episodes or
+-- mempool submissions reported the corresponding wait as 0 indefinitely.
+unit_counterEmission_subMsDurations :: Assertion
+unit_counterEmission_subMsDurations = do
+    assertEqual "txIdBlockingWait" 2 (txIdBlockingWait counters)
+    assertEqual "txPipelineWait"   2 (txPipelineWait   counters)
+    assertEqual "txSubmissionWait" 2 (txSubmissionWait counters)
+  where
+    counters = runSimOrThrow simulation
+
+    -- Three 900 us samples accumulate 2.7 ms, which is 2 ms once
+    -- converted for emission.
+    subMs :: DiffTime
+    subMs = 0.0009
+
+    simulation :: forall s. IOSim s TxSubmissionCounters
+    simulation = do
+      mempool          <- emptyMempool
+      sharedTxStateVar <- newSharedTxStateVar
+                            (emptySharedTxState :: SharedTxState Int TxId)
+      registry         <- newPeerTxRegistry
+                            :: IOSim s (PeerTxRegistry (IOSim s) Int)
+      countersVar      <- newTxSubmissionCountersVar mempty
+      withPeer defaultTxDecisionPolicy (getMempoolReader mempool)
+               sharedTxStateVar registry countersVar (0 :: Int)
+        $ \PeerTxAPI { applyReceivedTxIds, runNextPeerAction, applySubmittedTxs } -> do
+            now <- getMonotonicTime
+            -- Every call takes the empty peer state, so the calls are
+            -- independent of one another.
+            replicateM_ 3 $ do
+              void (applyReceivedTxIds now (Just subMs) 0 [] emptyPeerTxLocalState)
+              void (runNextPeerAction  now (Just subMs) emptyPeerTxLocalState)
+              void (applySubmittedTxs  now subMs [] [] emptyPeerTxLocalState)
+      -- 'withPeer' flushes the peer's cell into the accumulator on exit.
+      emittedCounters <$> readTVarIO countersVar
+
+
 -- | Invariants over the counter snapshots emitted by 'txCountersThreadV2'.
 -- Asserts monotonicity of every field, protocol-level causality bounds,
--- decomposition of total txid sends into blocking and pipelined, and body
--- accounting (received bounded by requested, classified bounded by received).
-prop_counterInvariants :: SimTrace a -> Property
-prop_counterInvariants tr =
+-- agreement of the txid request counters with the @MsgRequestTxIds@
+-- messages the inbound driver actually sent, and body accounting
+-- (received bounded by requested, classified bounded by received).
+--
+-- The wire check compares the final snapshot, which 'runTxSubmission'
+-- emits after every peer has exited.  @slack@ is how many requests may
+-- have been counted but never sent: a server cancelled mid-protocol can
+-- be interrupted between the counter bump in 'runNextPeerAction' and the
+-- driver's send, at most once per cancelled peer.  Clean and exception
+-- exits have no such gap, so their callers pass 0 and the check is an
+-- equality.
+prop_counterInvariants :: Word64 -> SimTrace a -> Property
+prop_counterInvariants slack tr =
     let snapshots :: [TxSubmissionCounters]
         snapshots = selectTraceEventsDynamic tr in
         counterexample ("snapshots: " ++ show (length snapshots))
       $ conjoin
           [ counterexample "monotonicity"  (checkMonotonic snapshots)
           , counterexample "causality"     (conjoin (checkCausality       <$> snapshots))
-          , counterexample "decomposition" (conjoin (checkDecomp          <$> snapshots))
+          , counterexample "wire"          (checkWire snapshots)
           , counterexample "body-accounting"
               (conjoin (checkBodyAccounting <$> snapshots))
           ]
@@ -571,9 +630,9 @@ prop_counterInvariants tr =
       , ("txsRejected",           txsRejected)
       , ("txIdBlockingReqsSent",  txIdBlockingReqsSent)
       , ("txIdPipelinedReqsSent", txIdPipelinedReqsSent)
-      , ("txIdBlockingWaitMs",    txIdBlockingWaitMs)
-      , ("txPipelineWaitMs",      txPipelineWaitMs)
-      , ("txSubmissionWaitMs",    txSubmissionWaitMs)
+      , ("txIdBlockingWaitMs",    txIdBlockingWait)
+      , ("txPipelineWaitMs",      txPipelineWait)
+      , ("txSubmissionWaitMs",    txSubmissionWait)
       ]
 
     checkMonotonic xs = conjoin
@@ -594,10 +653,43 @@ prop_counterInvariants tr =
           (txsReceived s <= txsRequested s)
       ]
 
-    checkDecomp s =
-        counterexample "txIdMessagesSent /= blocking + pipelined"
-      $ txIdMessagesSent s
-      === txIdBlockingReqsSent s + txIdPipelinedReqsSent s
+    -- Only the inbound side sends 'MsgRequestTxIds', so every send event
+    -- in the trace is one of ours.
+    wire :: [TraceSendRecv (TxSubmission2 Int (Tx Int))]
+    wire = map snd wireEvents
+
+    wireEvents :: [(String, TraceSendRecv (TxSubmission2 Int (Tx Int)))]
+    wireEvents = selectTraceEventsDynamic tr
+
+    wireBlocking, wirePipelined :: Word64
+    wireBlocking  = fromIntegral (length (filter isBlockingRequest  wire))
+    wirePipelined = fromIntegral (length (filter isPipelinedRequest wire))
+
+    isBlockingRequest, isPipelinedRequest
+      :: TraceSendRecv (TxSubmission2 Int (Tx Int)) -> Bool
+    isBlockingRequest
+      (TraceSendMsg (AnyMessage (MsgRequestTxIds SingBlocking _ _)))    = True
+    isBlockingRequest _                                                 = False
+    isPipelinedRequest
+      (TraceSendMsg (AnyMessage (MsgRequestTxIds SingNonBlocking _ _))) = True
+    isPipelinedRequest _                                                = False
+
+    checkWire [] = counterexample "no final counters snapshot" False
+    checkWire snapshots =
+      let final = last snapshots in
+      conjoin
+        [ bounded "txIdBlockingReqsSent"  (txIdBlockingReqsSent final)  wireBlocking
+        , bounded "txIdPipelinedReqsSent" (txIdPipelinedReqsSent final) wirePipelined
+        , bounded "txIdMessagesSent"      (txIdMessagesSent final)
+                                          (wireBlocking + wirePipelined)
+        ]
+
+    bounded :: String -> Word64 -> Word64 -> Property
+    bounded name counter sent =
+        counterexample (name ++ ": counter " ++ show counter
+                             ++ ", sent on wire " ++ show sent
+                             ++ ", slack " ++ show slack)
+      $ sent <= counter && counter <= sent + slack
 
     checkBodyAccounting s =
         counterexample
@@ -640,7 +732,7 @@ prop_txSubmission st@(TxSubmissionState peers _ _) =
          Right (inmp, outmps, finalState) ->
              counterexample (ppSayTrace tr)
            $ conjoin (validate inmp `map` outmps)
-             .&&. prop_counterInvariants tr
+             .&&. prop_counterInvariants 0 tr
              .&&. prop_sharedStateClean finalState
   where
     -- | Asserts that every txid produced is present in the consumer set.
@@ -724,7 +816,7 @@ prop_txSubmission_inflight st@(TxSubmissionState state _ policy) =
           . counterexample ("hasInvalidSize: " <> show hasInvalidSize)
           . counterexample ("Result valid [(txid, repeated)]:\n" <> show resultRepeatedValidTxs)
           . counterexample ("Testcase max valid [(txid, repeated)]:\n" <> show maxRepeatedValidTxs)
-          . (\p -> p .&&. prop_counterInvariants trace
+          . (\p -> p .&&. prop_counterInvariants 0 trace
                      .&&. prop_sharedStateClean finalState)
           . conjoin . Map.elems $ if hasInvalidSize
               then merge (mapMissing \_txid _left  -> error "impossible")
@@ -847,7 +939,7 @@ prop_txSubmission_resilientToImpairment (TxSubmissionImpairmentState st) =
              counterexample (ppSayTrace tr)
            $ conjoin (validateWellBehaved inmp `map` wbPeerTxs)
              .&&. noContamination allOutIds inmp
-             .&&. prop_counterInvariants tr
+             .&&. prop_counterInvariants 0 tr
              .&&. prop_sharedStateClean finalState
   where
     -- Same shape as 'validate' inside 'prop_txSubmission'. Only assert
@@ -1079,6 +1171,11 @@ prop_txSubmission_peerDisconnect cs@(TxSubmissionDisconnectState st schedule) =
     let allAddrs    = Map.keysSet (peerMap st)
         disconnected = Map.keysSet schedule
         survivors    = allAddrs `Set.difference` disconnected
+        -- Upper bound on requests counted but never sent, see
+        -- 'prop_counterInvariants'.
+        cancelledPeers :: Word64
+        cancelledPeers = fromIntegral
+          (length [ () | (_, ExitCancel) <- Map.elems schedule ])
         survivorTxs = [ txs | addr <- Set.toList survivors
                             , let (txs, _, _) = peerMap st Map.! addr ]
         allOutIds   = Set.fromList
@@ -1119,7 +1216,7 @@ prop_txSubmission_peerDisconnect cs@(TxSubmissionDisconnectState st schedule) =
              counterexample (ppSayTrace tr)
            $ conjoin (validateSurvivor inmp `map` survivorTxs)
              .&&. noContamination allOutIds inmp
-             .&&. prop_counterInvariants tr
+             .&&. prop_counterInvariants cancelledPeers tr
              .&&. prop_sharedStateClean finalState
   where
     validateSurvivor :: [Tx Int] -> [Tx Int] -> Property

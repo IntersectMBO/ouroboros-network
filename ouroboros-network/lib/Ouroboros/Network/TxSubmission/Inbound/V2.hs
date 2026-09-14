@@ -153,8 +153,7 @@ txSubmissionInboundV2
       applyReceivedTxs,
       applySubmittedTxs,
       resolveTxRequest,
-      resolveBufferedTxs,
-      addCounters
+      resolveBufferedTxs
     } =
     TxSubmissionServerPipelined $ do
       case initDelay of
@@ -182,16 +181,18 @@ txSubmissionInboundV2
     serverIdle :: StatefulM (PeerTxLocalState tx) Z txid tx m
     serverIdle = StatefulM $ \peerState -> do
       now <- getMonotonicTime
-      -- When the pipeline fully drains, emit the body-download episode
+      -- When the pipeline fully drains, report the body-download episode
       -- duration (covers all overlapping body and txid pipelined requests).
-      peerState' <- case peerDownloadStartTime peerState of
-                         Nothing        -> pure peerState
-                         Just startTime -> do
-                           addCounters mempty { txPipelineWaitMs =
-                                                  diffTimeToMilliseconds (now `diffTime` startTime) }
-                           pure $ peerState { peerDownloadStartTime = Nothing }
+      let (mDownloadTime, peerState') =
+            case peerDownloadStartTime peerState of
+              Nothing -> (Nothing, peerState)
+              Just startTime ->
+                ( Just (now `diffTime` startTime)
+                , peerState { peerDownloadStartTime = Nothing } )
       traceCanRequest Zero peerState'
-      (peerAction, peerState'') <- runNextPeerAction now (State.drainPeerScore policy now peerState')
+      (peerAction, peerState'') <-
+        runNextPeerAction now mDownloadTime
+          (State.drainPeerScore policy now peerState')
       case peerAction of
            PeerDoNothing generation mDelay -> do
              -- An Active->Idle transition means this peer has just become
@@ -243,8 +244,8 @@ txSubmissionInboundV2
           rejectedCount    = length rejectedTxs
           delta            = end `diffTime` start
 
-      addCounters mempty { txSubmissionWaitMs = diffTimeToMilliseconds delta }
-      peerState' <- applySubmittedTxs end resolvedTxKeys rejectedKeys peerState
+      peerState' <- applySubmittedTxs end delta resolvedTxKeys rejectedKeys
+                                      peerState
       let (score, peerState'') =
             State.applyPeerEvents policy end acceptedCount rejectedCount peerState'
       traceWith tracer $
@@ -334,21 +335,20 @@ txSubmissionInboundV2
       if StrictSeq.null (peerUnacknowledgedTxIds peerState)
          then do
            sendTime <- getMonotonicTime
-           addCounters mempty { txIdBlockingReqsSent = 1 }
            pure $ SendMsgRequestTxIdsBlocking
                     txIdsToAck
                     txIdsToReq
                     (traceWith tracer TraceTxInboundTerminated)
                     (\txids -> do
                         now <- getMonotonicTime
-                        addCounters mempty { txIdBlockingWaitMs = diffTimeToMilliseconds (now `diffTime` sendTime) }
                         let txids' = NonEmpty.toList txids
                         unless (length txids' <= fromIntegral txIdsToReq) $
                           throwIO ProtocolErrorTxIdsNotRequested
-                        peerState' <- applyReceivedTxIds now txIdsToReq txids' peerState
+                        peerState' <- applyReceivedTxIds now
+                                        (Just (now `diffTime` sendTime))
+                                        txIdsToReq txids' peerState
                         continueWithStateM serverIdle peerState')
-         else do
-           addCounters mempty { txIdPipelinedReqsSent = 1 }
+         else
            pure $ SendMsgRequestTxIdsPipelined
                     txIdsToAck
                     txIdsToReq
@@ -356,8 +356,7 @@ txSubmissionInboundV2
 
     -- Pipelined request at depth > 0. Sends a pipelined message and continues
     -- to @handleReplies@.
-    serverReqTxIds n@Succ{} txIdsToAck txIdsToReq = StatefulM $ \peerState -> do
-      addCounters mempty { txIdPipelinedReqsSent = 1 }
+    serverReqTxIds n@Succ{} txIdsToAck txIdsToReq = StatefulM $ \peerState ->
       pure $ SendMsgRequestTxIdsPipelined
                txIdsToAck
                txIdsToReq
@@ -379,7 +378,7 @@ txSubmissionInboundV2
         unless (length txids <= fromIntegral txIdsToReq) $
           throwIO ProtocolErrorTxIdsNotRequested
         now <- getMonotonicTime
-        peerState' <- applyReceivedTxIds now txIdsToReq txids peerState
+        peerState' <- applyReceivedTxIds now Nothing txIdsToReq txids peerState
         continueWithStateM (continueAfterReplies n) peerState'
 
       CollectTxs requested txs -> do
