@@ -34,7 +34,7 @@ import Ouroboros.Network.TxSubmission.Inbound.V2 (TxDecisionPolicy (..),
 import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (newPeerTxRegistry,
            newSharedTxStateVar, newTxSubmissionCountersVar, withPeer)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types (TxSubmissionCounters,
-           emptySharedTxState)
+           emittedCounters, emptySharedTxState)
 
 import Test.Ouroboros.Network.TxSubmission.Types (Tx (..), TxId, emptyMempool,
            getMempoolReader, getMempoolWriter, readMempool)
@@ -144,7 +144,7 @@ runDirectServerBenchmark DirectServerFixture {
 
   (DirectServerResult
     . length <$> readMempool inboundMempool)
-    <*> readTVarIO countersVar
+    <*> (emittedCounters <$> readTVarIO countersVar)
 
 
 driveServer

@@ -44,7 +44,10 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Types
   , TxSubmissionMempoolWriter (..)
     -- ** Traces
   , TraceTxSubmissionInbound (..)
-  , TxSubmissionCounters (..)
+  , TxSubmissionCountersOf (..)
+  , TxSubmissionCounters
+  , TxSubmissionCountersAcc
+  , emittedCounters
     -- ** Protocol Error
   , TxSubmissionProtocolError (..)
   , RequestedTxBatch (..)
@@ -299,7 +302,13 @@ data PeerScore = PeerScore {
 -- protocol sends, receives replies, or cheaply classifies received bodies.
 -- They are kept separate from 'SharedTxState' so that emission can read a
 -- small dedicated counter cell without scanning protocol state.
-data TxSubmissionCounters = TxSubmissionCounters {
+--
+-- @t@ is the type of the three duration fields: 'TxSubmissionCountersAcc'
+-- accumulates them as 'DiffTime', and 'emittedCounters' converts to the
+-- whole milliseconds of 'TxSubmissionCounters'.  Accumulating a duration
+-- in its own type keeps the peer threads free of per-sample conversion
+-- and rounding.
+data TxSubmissionCountersOf t = TxSubmissionCounters {
     txIdMessagesSent      :: !Word64,
     -- ^ Number of txid request messages sent (@MsgRequestTxIds@, blocking or
     -- pipelined).
@@ -332,46 +341,61 @@ data TxSubmissionCounters = TxSubmissionCounters {
     -- ^ Txid request messages sent as blocking requests.
     txIdPipelinedReqsSent :: !Word64,
     -- ^ Txid request messages sent as pipelined (non-blocking) requests.
-    txIdBlockingWaitMs    :: !Word64,
-    -- ^ Cumulative milliseconds spent waiting for replies to blocking txid
+    txIdBlockingWait      :: !t,
+    -- ^ Cumulative time spent waiting for replies to blocking txid
     -- requests.  High values indicate the system is mostly idle (no new
     -- transactions available from peers).
-    txPipelineWaitMs      :: !Word64,
-    -- ^ Cumulative milliseconds the pipeline was active, measured from the
-    -- first 'MsgRequestTxs' send until all pipelined requests (both body and
+    txPipelineWait        :: !t,
+    -- ^ Cumulative time the pipeline was active, measured from the first
+    -- 'MsgRequestTxs' send until all pipelined requests (both body and
     -- txid) have been replied to and the pipeline fully drains.  Proxy for
     -- the "loading" state where the peer is actively downloading transactions.
-    txSubmissionWaitMs    :: !Word64
-    -- ^ Cumulative milliseconds spent inside 'mempoolAddTxs'.  Covers both
-    -- normal submission latency and time blocked due to a full mempool.
-    -- High values relative to the other duration fields indicate mempool
+    txSubmissionWait      :: !t
+    -- ^ Cumulative time spent inside 'mempoolAddTxs'.  Covers both normal
+    -- submission latency and time blocked due to a full mempool.  High
+    -- values relative to the other duration fields indicate mempool
     -- backpressure.
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass NFData
 
-instance Semigroup TxSubmissionCounters where
-  a <> b = TxSubmissionCounters {
-    txIdMessagesSent    = txIdMessagesSent a + txIdMessagesSent b,
-    txIdsRequested      = txIdsRequested a + txIdsRequested b,
-    txIdRepliesReceived = txIdRepliesReceived a + txIdRepliesReceived b,
-    txIdsReceived      = txIdsReceived a + txIdsReceived b,
-    txMessagesSent = txMessagesSent a + txMessagesSent b,
-    txsRequested = txsRequested a + txsRequested b,
-    txRepliesReceived = txRepliesReceived a + txRepliesReceived b,
-    txsReceived = txsReceived a + txsReceived b,
-    txsOmitted = txsOmitted a + txsOmitted b,
-    lateBodies = lateBodies a + lateBodies b,
-    txsAccepted = txsAccepted a + txsAccepted b,
-    txsRejected = txsRejected a + txsRejected b,
-    txIdBlockingReqsSent  = txIdBlockingReqsSent  a + txIdBlockingReqsSent  b,
-    txIdPipelinedReqsSent = txIdPipelinedReqsSent a + txIdPipelinedReqsSent b,
-    txIdBlockingWaitMs    = txIdBlockingWaitMs    a + txIdBlockingWaitMs    b,
-    txPipelineWaitMs      = txPipelineWaitMs      a + txPipelineWaitMs      b,
-    txSubmissionWaitMs    = txSubmissionWaitMs    a + txSubmissionWaitMs    b
+-- | The counters as traced and published: durations in whole milliseconds.
+type TxSubmissionCounters = TxSubmissionCountersOf Word64
+
+-- | The counters as accumulated by each peer and by the retired-peers
+-- accumulator: durations exact, so no sample is lost to rounding and no
+-- field can overflow.
+type TxSubmissionCountersAcc = TxSubmissionCountersOf DiffTime
+
+instance Functor TxSubmissionCountersOf where
+  fmap f c = c {
+      txIdBlockingWait = f (txIdBlockingWait c),
+      txPipelineWait   = f (txPipelineWait c),
+      txSubmissionWait = f (txSubmissionWait c)
     }
 
-instance Monoid TxSubmissionCounters where
+instance Num t => Semigroup (TxSubmissionCountersOf t) where
+  a <> b = TxSubmissionCounters {
+    txIdMessagesSent      = txIdMessagesSent a + txIdMessagesSent b,
+    txIdsRequested        = txIdsRequested a + txIdsRequested b,
+    txIdRepliesReceived   = txIdRepliesReceived a + txIdRepliesReceived b,
+    txIdsReceived         = txIdsReceived a + txIdsReceived b,
+    txMessagesSent        = txMessagesSent a + txMessagesSent b,
+    txsRequested          = txsRequested a + txsRequested b,
+    txRepliesReceived     = txRepliesReceived a + txRepliesReceived b,
+    txsReceived           = txsReceived a + txsReceived b,
+    txsOmitted            = txsOmitted a + txsOmitted b,
+    lateBodies            = lateBodies a + lateBodies b,
+    txsAccepted           = txsAccepted a + txsAccepted b,
+    txsRejected           = txsRejected a + txsRejected b,
+    txIdBlockingReqsSent  = txIdBlockingReqsSent  a + txIdBlockingReqsSent  b,
+    txIdPipelinedReqsSent = txIdPipelinedReqsSent a + txIdPipelinedReqsSent b,
+    txIdBlockingWait      = txIdBlockingWait      a + txIdBlockingWait      b,
+    txPipelineWait        = txPipelineWait        a + txPipelineWait        b,
+    txSubmissionWait      = txSubmissionWait      a + txSubmissionWait      b
+    }
+
+instance Num t => Monoid (TxSubmissionCountersOf t) where
   mempty = TxSubmissionCounters {
     txIdMessagesSent = 0,
     txIdsRequested = 0,
@@ -387,10 +411,19 @@ instance Monoid TxSubmissionCounters where
     txsRejected = 0,
     txIdBlockingReqsSent  = 0,
     txIdPipelinedReqsSent = 0,
-    txIdBlockingWaitMs    = 0,
-    txPipelineWaitMs      = 0,
-    txSubmissionWaitMs    = 0
+    txIdBlockingWait      = 0,
+    txPipelineWait        = 0,
+    txSubmissionWait      = 0
   }
+
+-- | Convert accumulated counters for emission: the duration fields to
+-- whole milliseconds, the counts unchanged.
+--
+-- This is the only place a duration is rounded, so the loss is at most a
+-- millisecond per field on a cumulative total rather than every
+-- sub-millisecond sample.
+emittedCounters :: TxSubmissionCountersAcc -> TxSubmissionCounters
+emittedCounters = fmap diffTimeToMilliseconds
 
 -- | Convert a non-negative 'DiffTime' to whole milliseconds (truncated).
 --

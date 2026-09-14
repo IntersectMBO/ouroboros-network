@@ -116,6 +116,8 @@ tests = testGroup "AppV2"
                                  $ BaseQC.withNumTests 25
                                  prop_sharedTxStateInvariant
   , testCase     "counterEmission/cadence"      unit_counterEmission_cadence
+  , testCase     "counterEmission/subMsDurations"
+                                        unit_counterEmission_subMsDurations
   , testCase     "score/wellBehavedStaysAtZero" unit_score_wellBehavedStaysAtZero
   , testCase     "score/persistentBadStaysHigh" unit_score_persistentBadStaysHigh
   , testCase     "score/recoversAfterBurst"     unit_score_recoversAfterBurst
@@ -538,6 +540,39 @@ unit_counterEmission_cadence =
       pure (threadStart, reverse timeline)
 
 
+-- | Durations shorter than a millisecond must still accumulate.
+--
+-- The counters are published in whole milliseconds.  Truncating each
+-- sample as it was accumulated discarded every wait shorter than one, so
+-- a peer making thousands of fast mempool submissions reported
+-- @txSubmissionWaitMs = 0@ indefinitely.
+unit_counterEmission_subMsDurations :: Assertion
+unit_counterEmission_subMsDurations =
+    assertEqual "txSubmissionWait" 2 (txSubmissionWait counters)
+  where
+    counters = runSimOrThrow simulation
+
+    -- Three 900 us submissions accumulate 2.7 ms, which is 2 ms once
+    -- converted for emission.
+    simulation :: forall s. IOSim s TxSubmissionCounters
+    simulation = do
+      mempool          <- emptyMempool
+      sharedTxStateVar <- newSharedTxStateVar
+                            (emptySharedTxState :: SharedTxState Int TxId)
+      registry         <- newPeerTxRegistry
+                            :: IOSim s (PeerTxRegistry (IOSim s) Int)
+      countersVar      <- newTxSubmissionCountersVar mempty
+      withPeer defaultTxDecisionPolicy (getMempoolReader mempool)
+               sharedTxStateVar registry countersVar (0 :: Int)
+        $ \PeerTxAPI { applySubmittedTxs } -> do
+            now <- getMonotonicTime
+            traverse_ (\_ -> void (applySubmittedTxs now 0.0009 [] []
+                                                     emptyPeerTxLocalState))
+                      [1 :: Int .. 3]
+      -- 'withPeer' flushes the peer's cell into the accumulator on exit.
+      emittedCounters <$> readTVarIO countersVar
+
+
 -- | Invariants over the counter snapshots emitted by 'txCountersThreadV2'.
 -- Asserts monotonicity of every field, protocol-level causality bounds,
 -- decomposition of total txid sends into blocking and pipelined, and body
@@ -571,9 +606,9 @@ prop_counterInvariants tr =
       , ("txsRejected",           txsRejected)
       , ("txIdBlockingReqsSent",  txIdBlockingReqsSent)
       , ("txIdPipelinedReqsSent", txIdPipelinedReqsSent)
-      , ("txIdBlockingWaitMs",    txIdBlockingWaitMs)
-      , ("txPipelineWaitMs",      txPipelineWaitMs)
-      , ("txSubmissionWaitMs",    txSubmissionWaitMs)
+      , ("txIdBlockingWaitMs",    txIdBlockingWait)
+      , ("txPipelineWaitMs",      txPipelineWait)
+      , ("txSubmissionWaitMs",    txSubmissionWait)
       ]
 
     checkMonotonic xs = conjoin

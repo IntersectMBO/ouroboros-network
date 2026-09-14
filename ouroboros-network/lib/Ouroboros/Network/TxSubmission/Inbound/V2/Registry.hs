@@ -27,6 +27,8 @@ import Data.IntSet (IntSet)
 import Data.IntSet qualified as IntSet
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
+import Data.Maybe (fromMaybe)
+import Data.Sequence.Strict qualified as StrictSeq
 import Data.Void (Void)
 import Data.Word (Word64)
 import GHC.Stack (HasCallStack)
@@ -46,7 +48,8 @@ type SharedTxStateVar m peeraddr txid = StrictTVar m (SharedTxState peeraddr txi
 -- | STM handle for V2 monotonic counters.  Used both for each peer's
 -- private counters cell and for the shared retired-peers accumulator
 -- (see 'withPeer' and 'txCountersThreadV2').
-type TxSubmissionCountersVar m = StrictTVar m TxSubmissionCounters
+--
+type TxSubmissionCountersVar m = StrictTVar m TxSubmissionCountersAcc
 
 -- | Per-peer in-flight TVar.
 type PeerTxInFlightVar m = StrictTVar m PeerTxInFlight
@@ -71,7 +74,7 @@ newSharedTxStateVar = newTVarIO
 
 newTxSubmissionCountersVar
   :: MonadSTM m
-  => TxSubmissionCounters
+  => TxSubmissionCountersAcc
   -> m (TxSubmissionCountersVar m)
 newTxSubmissionCountersVar = newTVarIO
 
@@ -177,7 +180,7 @@ snapshotCounters retiredCountersVar registry = do
     retired <- readTVar retiredCountersVar
     peers   <- readTVar registry
     live    <- traverse (readTVar . snd) (Map.elems peers)
-    pure $! mconcat (retired : live)
+    pure $! emittedCounters (mconcat (retired : live))
 
 -- | Peer-facing coordination API.
 --
@@ -195,6 +198,7 @@ data PeerTxAPI m txid tx = PeerTxAPI {
 
     -- | Compute the next action for this peer in non-pipelined mode.
     runNextPeerAction    :: Time
+                         -> Maybe DiffTime
                          -> PeerTxLocalState tx
                          -> m (PeerAction, PeerTxLocalState tx),
 
@@ -205,6 +209,7 @@ data PeerTxAPI m txid tx = PeerTxAPI {
 
     -- | Process a batch of txids received from this peer.
     applyReceivedTxIds   :: Time
+                         -> Maybe DiffTime
                          -> NumTxIdsToReq
                          -> [(txid, SizeInBytes)]
                          -> PeerTxLocalState tx
@@ -218,6 +223,7 @@ data PeerTxAPI m txid tx = PeerTxAPI {
 
     -- | Mark txs as submitted to the mempool and update shared state.
     applySubmittedTxs    :: Time
+                         -> DiffTime
                          -> [TxKey]
                          -> [TxKey]
                          -> PeerTxLocalState tx
@@ -233,10 +239,7 @@ data PeerTxAPI m txid tx = PeerTxAPI {
     -- `PeerTxLocalState`.  It is ensured by `pickSubmitAction`.
     resolveBufferedTxs   :: PeerTxLocalState tx
                          -> [TxKey]
-                         -> m [(TxKey, txid, tx)],
-
-    -- | Add a delta to the V2 monotonic counters.
-    addCounters          :: TxSubmissionCounters -> m ()
+                         -> m [(TxKey, txid, tx)]
   }
 
 --
@@ -303,7 +306,6 @@ withPeer policy TxSubmissionMempoolReader { mempoolGetSnapshot }
                                 peerInFlightVar peerCountersVar peeraddr
         , resolveTxRequest = resolveTxRequestImp sharedStateVar
         , resolveBufferedTxs = resolveBufferedTxsImp sharedStateVar
-        , addCounters = \delta -> atomically $ modifyTVar peerCountersVar (<> delta)
         }
 
 -- | Reverse this peer's still-outstanding contributions to the shared
@@ -413,24 +415,46 @@ writePeerInFlightIfChanged var before after
   | before == after = pure ()
   | otherwise       = writeTVar var after
 
+-- | Which txid request message the server will send for a
+-- 'PeerRequestTxIds' action.
+data TxIdRequestKind = BlockingTxIdRequest | PipelinedTxIdRequest
+
+-- | Classify the txid request the non-pipelined loop will send for this
+-- post-action peer state.  Must agree with 'serverReqTxIds'.
+txIdRequestKind :: PeerTxLocalState tx -> TxIdRequestKind
+txIdRequestKind peerState =
+    if StrictSeq.null (peerUnacknowledgedTxIds peerState)
+       then BlockingTxIdRequest
+       else PipelinedTxIdRequest
+
 -- | Update the counters for the action chosen by the peer scheduler.
 --
 updateCountersForAction :: MonadSTM m
                         => TxSubmissionCountersVar m
+                        -> TxIdRequestKind
                         -> PeerAction
                         -> STM m ()
-updateCountersForAction countersVar peerAction =
+updateCountersForAction countersVar kind peerAction =
   case peerAction of
     PeerRequestTxIds txIdsToAck txIdsToReq
       | txIdsToAck /= 0 || txIdsToReq /= 0 ->
-          modifyTVar countersVar (<> mempty
-            { txIdMessagesSent = 1
-            , txIdsRequested   = fromIntegral txIdsToReq
-            })
+          modifyTVar countersVar $ \c -> c
+            { txIdMessagesSent      = txIdMessagesSent c + 1
+            , txIdsRequested        = txIdsRequested c + fromIntegral txIdsToReq
+            , txIdBlockingReqsSent  = txIdBlockingReqsSent c + blockingSent
+            , txIdPipelinedReqsSent = txIdPipelinedReqsSent c + pipelinedSent
+            }
     PeerRequestTxs txKeys ->
-      modifyTVar countersVar (<> mempty { txMessagesSent = 1
-                                        , txsRequested   = fromIntegral (length txKeys) })
+      modifyTVar countersVar $ \c -> c
+        { txMessagesSent = txMessagesSent c + 1
+        , txsRequested   = txsRequested c + fromIntegral (length txKeys)
+        }
     _ -> pure ()
+  where
+    (blockingSent, pipelinedSent) =
+      case kind of
+        BlockingTxIdRequest  -> (1, 0)
+        PipelinedTxIdRequest -> (0, 1)
 
 -- | Compute the next action for this peer in non-pipelined mode.
 runNextPeerActionImp :: ( MonadSTM m
@@ -441,10 +465,11 @@ runNextPeerActionImp :: ( MonadSTM m
                      -> TxSubmissionCountersVar m
                      -> peeraddr
                      -> Time
+                     -> Maybe DiffTime
                      -> PeerTxLocalState tx
                      -> m (PeerAction, PeerTxLocalState tx)
 runNextPeerActionImp policy sharedStateVar peerInFlightVar countersVar peeraddr
-                     now peerState = atomically $ do
+                     now downloadTime_m peerState = atomically $ do
   sharedState <- readTVar sharedStateVar
   peerInFlight <- readTVar peerInFlightVar
   let sharedGeneration0 = sharedGeneration sharedState
@@ -453,7 +478,11 @@ runNextPeerActionImp policy sharedStateVar peerInFlightVar countersVar peeraddr
         State.nextPeerAction now policy peeraddr peerState peerInFlight sharedState
   writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedRevision0 sharedState'
   writePeerInFlightIfChanged peerInFlightVar peerInFlight peerInFlight'
-  updateCountersForAction countersVar peerAction
+  case downloadTime_m of
+    Nothing -> pure ()
+    Just d  ->
+      modifyTVar countersVar $ \c -> c { txPipelineWait = txPipelineWait c + d }
+  updateCountersForAction countersVar (txIdRequestKind peerState') peerAction
   return (peerAction, peerState')
 
 -- | Compute the next action for this peer in pipelined mode.
@@ -479,7 +508,7 @@ runNextPeerActionPipelinedImp policy sharedStateVar peerInFlightVar countersVar
                                           peerInFlight sharedState
       writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedRevision0 sharedState'
       writePeerInFlightIfChanged peerInFlightVar peerInFlight peerInFlight'
-      updateCountersForAction countersVar peerAction
+      updateCountersForAction countersVar PipelinedTxIdRequest peerAction
       return (peerAction, peerState')
 
 -- | Process a batch of txids received from this peer.
@@ -491,6 +520,8 @@ applyReceivedTxIdsImp :: ( MonadSTM m
                       -> PeerTxInFlightVar m
                       -> TxSubmissionCountersVar m
                       -> Time
+                      -> Maybe DiffTime
+                      -- ^ time spent waiting for a blocking reply
                       -> NumTxIdsToReq
                       -- ^ number of requested txid's
                       -> [(txid, SizeInBytes)]
@@ -498,7 +529,8 @@ applyReceivedTxIdsImp :: ( MonadSTM m
                       -> PeerTxLocalState tx
                       -> m (PeerTxLocalState tx)
 applyReceivedTxIdsImp policy mempoolGetSnapshot sharedStateVar peerInFlightVar
-                      countersVar now txIdsToReq txidsAndSizes peerState = do
+                      countersVar now blockingWait_m txIdsToReq txidsAndSizes
+                      peerState = do
   -- Snapshot the mempool outside the per-peer STM transaction so mempool
   -- writers don't kick the hot path into retries.  Stale answers are
   -- benign: a false positive delays re-fetch by 'bufferedTxsMinLifetime'
@@ -515,8 +547,11 @@ applyReceivedTxIdsImp policy mempoolGetSnapshot sharedStateVar peerInFlightVar
                                     peerState peerInFlight sharedState
     writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedRevision0 sharedState'
     writePeerInFlightIfChanged peerInFlightVar peerInFlight peerInFlight'
-    modifyTVar countersVar (<> mempty { txIdRepliesReceived = 1
-                                      , txIdsReceived       = fromIntegral (length txidsAndSizes) })
+    modifyTVar countersVar $ \c -> c
+      { txIdRepliesReceived = txIdRepliesReceived c + 1
+      , txIdsReceived       = txIdsReceived c + fromIntegral (length txidsAndSizes)
+      , txIdBlockingWait    = txIdBlockingWait c + fromMaybe 0 blockingWait_m
+      }
     return peerState'
 
 -- | Process a batch of tx bodies received from this peer.
@@ -548,12 +583,12 @@ applyReceivedTxsImp policy mempoolGetSnapshot sharedStateVar peerInFlightVar
                                   peerState peerInFlight sharedState
     writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedRevision0 sharedState'
     writePeerInFlightIfChanged peerInFlightVar peerInFlight peerInFlight'
-    modifyTVar countersVar (<> mempty {
-                        txRepliesReceived = 1,
-                        txsReceived       = fromIntegral (length txs),
-                        txsOmitted        = fromIntegral omittedCount,
-                        lateBodies        = fromIntegral lateCount
-                      })
+    modifyTVar countersVar $ \c -> c
+      { txRepliesReceived = txRepliesReceived c + 1
+      , txsReceived       = txsReceived c + fromIntegral (length txs)
+      , txsOmitted        = txsOmitted c + fromIntegral omittedCount
+      , lateBodies        = lateBodies c + fromIntegral lateCount
+      }
     return (omittedCount + lateCount, peerState')
 
 -- | Mark txs as submitted to the mempool and update shared state.
@@ -565,12 +600,14 @@ applySubmittedTxsImp :: ( MonadSTM m
                      -> TxSubmissionCountersVar m
                      -> peeraddr
                      -> Time
+                     -> DiffTime
+                     -- ^ time spent inside 'mempoolAddTxs'
                      -> [TxKey]
                      -> [TxKey]
                      -> PeerTxLocalState tx
                      -> m (PeerTxLocalState tx)
 applySubmittedTxsImp policy sharedStateVar peerInFlightVar countersVar peeraddr
-                     now acceptedTxs rejectedTxs peerState =
+                     now submissionWait acceptedTxs rejectedTxs peerState =
   atomically $ do
     sharedState <- readTVar sharedStateVar
     peerInFlight <- readTVar peerInFlightVar
@@ -581,8 +618,11 @@ applySubmittedTxsImp policy sharedStateVar peerInFlightVar countersVar peeraddr
                                    rejectedTxs peerState peerInFlight sharedState
     writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedRevision0 sharedState'
     writePeerInFlightIfChanged peerInFlightVar peerInFlight peerInFlight'
-    modifyTVar countersVar (<> mempty { txsAccepted = fromIntegral (length acceptedTxs)
-                                      , txsRejected = fromIntegral (length rejectedTxs) })
+    modifyTVar countersVar $ \c -> c
+      { txsAccepted      = txsAccepted c + fromIntegral (length acceptedTxs)
+      , txsRejected      = txsRejected c + fromIntegral (length rejectedTxs)
+      , txSubmissionWait = txSubmissionWait c + submissionWait
+      }
     return peerState'
 
 -- | Resolve txids and advertised sizes for a batch of tx keys to request.
