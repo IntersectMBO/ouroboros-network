@@ -23,7 +23,6 @@ module Ouroboros.Network.Protocol.ObjectDiffusion.Test
 
 import Control.Monad (void)
 import Data.ByteString.Lazy (ByteString)
-import Data.List.NonEmpty (NonEmpty ((:|)))
 import Data.List.NonEmpty qualified as NonEmpty
 
 import Control.Monad.Class.MonadAsync (MonadAsync)
@@ -61,8 +60,8 @@ import GHC.Generics
 import GHC.Natural (Natural)
 import Ouroboros.Network.Protocol.ObjectDiffusion.Direct (directPipelined)
 import Ouroboros.Network.Protocol.ObjectDiffusion.Examples
-           (TraceObjectDiffusionTestImplem, WithCaughtUpDetection (..),
-           testObjectDiffusionInbound, testObjectDiffusionOutbound)
+           (TraceObjectDiffusionTestImplem, testObjectDiffusionInbound,
+           testObjectDiffusionOutbound)
 import Ouroboros.Network.Protocol.ObjectDiffusion.Inbound
            (ObjectDiffusionInboundPipelined,
            objectDiffusionInboundPeerPipelined)
@@ -112,15 +111,8 @@ newtype Object = Object { getObjectId :: ObjectId }
 instance ShowProxy Object where
     showProxy _ = "Object"
 
-newtype ObjectId = ObjectId (Maybe Word64)
-  deriving (Eq, Ord, Show, Serialise, Generic, NFData)
-
-instance Arbitrary ObjectId where
-  -- | We never generate the `Nothing` variant, since it is reserved for the sentinel value used to detect that the peer is caught up.
-  arbitrary = ObjectId . Just <$> arbitrary
-
-instance WithCaughtUpDetection ObjectId where
-  caughtUpSentinel = ObjectId Nothing :| []
+newtype ObjectId = ObjectId Word64
+  deriving (Eq, Ord, Show, Arbitrary, Serialise, Generic, NFData)
 
 instance ShowProxy ObjectId where
     showProxy _ = "ObjectId"
@@ -133,29 +125,53 @@ instance (Arbitrary objectId, Arbitrary object)
   arbitrary = oneof
     [ pure $ AnyMessage MsgInit
     , AnyMessage
-        <$> ( MsgRequestObjectIds SingBlocking
+        <$> ( MsgRequestObjectIds RequestObjectIdsBlocking
             <$> arbitrary
             <*> arbitrary
             )
 
     , AnyMessage
-        <$> ( MsgRequestObjectIds SingNonBlocking
+        <$> ( MsgRequestObjectIds RequestObjectIdsNonBlocking
             <$> arbitrary
             <*> arbitrary
             )
 
-    , AnyMessage
-        <$> MsgReplyObjectIds
-        <$> ( BlockingReply
-            . NonEmpty.fromList
-            . QC.getNonEmpty
+    , ( \objectIds ->
+          AnyMessage
+            ( MsgReplyObjectIds (BlockingReply objectIds)
+                :: Message
+                    (ObjectDiffusion objectId object)
+                    (StObjectIds ('StObjectIdsBlocking 'StCanAwait))
+                    StIdle
             )
+      )
+        <$> (NonEmpty.fromList . QC.getNonEmpty <$> arbitrary)
+
+    , ( \objectIds ->
+          AnyMessage
+            ( MsgReplyObjectIds (BlockingReply objectIds)
+                :: Message
+                    (ObjectDiffusion objectId object)
+                    (StObjectIds ('StObjectIdsBlocking 'StMustReply))
+                    StIdle
+            )
+      )
+        <$> (NonEmpty.fromList . QC.getNonEmpty <$> arbitrary)
+
+    , ( \objectIds ->
+          AnyMessage
+            ( MsgReplyObjectIds (NonBlockingReply objectIds)
+                :: Message
+                    (ObjectDiffusion objectId object)
+                    (StObjectIds 'StObjectIdsNonBlocking)
+                    StIdle
+            )
+      )
         <$> arbitrary
 
-    , AnyMessage
-        <$> MsgReplyObjectIds
-        <$> NonBlockingReply
-        <$> arbitrary
+    , pure $ AnyMessage MsgServerIdle
+
+    , pure $ AnyMessage MsgAwaitReply
 
     , AnyMessage
         <$> MsgRequestObjects
@@ -175,12 +191,12 @@ instance (Eq objectId, Eq object)
   (==) (AnyMessage MsgInit)
        (AnyMessage MsgInit) = True
 
-  (==) (AnyMessage (MsgRequestObjectIds SingBlocking ackNo  reqNo))
-       (AnyMessage (MsgRequestObjectIds SingBlocking ackNo' reqNo')) =
+  (==) (AnyMessage (MsgRequestObjectIds RequestObjectIdsBlocking ackNo  reqNo))
+       (AnyMessage (MsgRequestObjectIds RequestObjectIdsBlocking ackNo' reqNo')) =
     (ackNo, reqNo) == (ackNo', reqNo')
 
-  (==) (AnyMessage (MsgRequestObjectIds SingNonBlocking ackNo  reqNo))
-       (AnyMessage (MsgRequestObjectIds SingNonBlocking ackNo' reqNo')) =
+  (==) (AnyMessage (MsgRequestObjectIds RequestObjectIdsNonBlocking ackNo  reqNo))
+       (AnyMessage (MsgRequestObjectIds RequestObjectIdsNonBlocking ackNo' reqNo')) =
     (ackNo, reqNo) == (ackNo', reqNo')
 
   (==) (AnyMessage (MsgReplyObjectIds (BlockingReply objectIds)))
@@ -190,6 +206,12 @@ instance (Eq objectId, Eq object)
   (==) (AnyMessage (MsgReplyObjectIds (NonBlockingReply objectIds)))
        (AnyMessage (MsgReplyObjectIds (NonBlockingReply objectIds'))) =
     objectIds == objectIds'
+
+  (==) (AnyMessage MsgServerIdle)
+       (AnyMessage MsgServerIdle) = True
+
+  (==) (AnyMessage MsgAwaitReply)
+       (AnyMessage MsgAwaitReply) = True
 
   (==) (AnyMessage (MsgRequestObjects objectIds))
        (AnyMessage (MsgRequestObjects objectIds')) = objectIds == objectIds'
@@ -266,6 +288,8 @@ labelMsg (AnyMessage msg) =
            MsgInit                -> "MsgInit"
            MsgRequestObjectIds {} -> "MsgRequestObjectIds"
            MsgReplyObjectIds as   -> "MsgReplyObjectIds " ++ renderRanges 3 (length as)
+           MsgAwaitReply          -> "MsgAwaitReply"
+           MsgServerIdle          -> "MsgServerIdle"
            MsgRequestObjects as   -> "MsgRequestObjects " ++ renderRanges 3 (length as)
            MsgReplyObjects as     -> "MsgReplyObjects "   ++ renderRanges 3 (length as)
            MsgDone                -> "MsgDone"
@@ -301,7 +325,8 @@ positiveWord16ToNat :: ChannelSize -> Natural
 positiveWord16ToNat (Positive (Small n)) = fromIntegral n
 
 testInboundPipelined
-  :: Tracer m (TraceObjectDiffusionTestImplem ObjectId Object)
+  :: Applicative m
+  => Tracer m (TraceObjectDiffusionTestImplem ObjectId Object)
   -> ObjectDiffusionTestParams
   -> ObjectDiffusionInboundPipelined ObjectId Object m [Object]
 testInboundPipelined
