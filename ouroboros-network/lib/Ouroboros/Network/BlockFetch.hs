@@ -176,7 +176,7 @@ data GenesisBlockFetchConfiguration =
 --
 -- This runs forever and should be shut down using mechanisms such as async.
 --
-blockFetchLogic :: forall addr header block m.
+blockFetchLogic :: forall addr header block matchedBlock m.
                    ( HasHeader header
                    , HasHeader block
                    , HeaderHash header ~ HeaderHash block
@@ -187,8 +187,8 @@ blockFetchLogic :: forall addr header block m.
                    )
                 => Tracer m (TraceDecisionEvent addr header)
                 -> Tracer m (TraceLabelPeer addr (TraceFetchClientState header))
-                -> BlockFetchConsensusInterface addr header block m
-                -> FetchClientRegistry addr header block m
+                -> BlockFetchConsensusInterface addr header block matchedBlock m
+                -> FetchClientRegistry addr header block matchedBlock m
                 -> KeepAliveRegistry addr m
                 -> BlockFetchConfiguration
                 -> m Void
@@ -207,7 +207,7 @@ blockFetchLogic decisionTracer clientStateTracer
       fetchNonTriggerVariables
       demoteChainSyncJumpingDynamo
   where
-    mkFetchClientPolicy :: STM m (FetchClientPolicy header block m)
+    mkFetchClientPolicy :: STM m (FetchClientPolicy header block matchedBlock m)
     mkFetchClientPolicy = do
       addFetchedBlock <- mkAddFetchedBlock
       pure FetchClientPolicy {

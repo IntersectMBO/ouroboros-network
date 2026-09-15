@@ -786,12 +786,12 @@ unit_bracketSyncWithFetchClient step = do
     return ()
 
   where
-    dummyPolicy :: forall b h m. (MonadSTM m) => STM m (FetchClientPolicy h b m)
+    dummyPolicy :: forall b h m. (MonadSTM m) => STM m (FetchClientPolicy h b b m)
     dummyPolicy =
       let addFetchedBlock _ _ = return ()
           forgeTime _ = read "2000-01-01 00:00:00 UTC"
           bfSize _ = 1024
-          matchesHeader _ _ = True in
+          matchesHeader _ b = Just b in
       pure $ FetchClientPolicy
           bfSize
           matchesHeader

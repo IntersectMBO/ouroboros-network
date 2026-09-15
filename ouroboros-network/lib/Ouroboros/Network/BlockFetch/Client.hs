@@ -62,21 +62,21 @@ instance Exception BlockFetchProtocolFailure
 -- | TODO: use a fetch client wrapper type rather than the raw
 --         PeerPipelined, and eliminate this alias. It is only here
 --         to avoid large types leaking into the consensus layer.
-type BlockFetchClient header block m a =
-  FetchClientContext header block m ->
+type BlockFetchClient header block matchedBlock m a =
+  FetchClientContext header block matchedBlock m ->
   ClientPipelined (BlockFetch block (Point block)) BFIdle m a
 
 -- | The implementation of the client side of block fetch protocol designed to
 -- work in conjunction with our fetch logic.
 --
-blockFetchClient :: forall header block versionNumber m.
+blockFetchClient :: forall header block matchedBlock versionNumber m.
                     (MonadSTM m, MonadThrow m, MonadTime m,
                      MonadMonotonicTime m, HasHeader header,
                      HasHeader block, HeaderHash header ~ HeaderHash block)
                  => versionNumber
                  -> ControlMessageSTM m
                  -> FetchedMetricsTracer m
-                 -> FetchClientContext header block m
+                 -> FetchClientContext header block matchedBlock m
                  -> ClientPipelined (BlockFetch block (Point block)) BFIdle m ()
 blockFetchClient _version controlMessageSTM reportFetched
                  FetchClientContext {
@@ -253,9 +253,13 @@ blockFetchClient _version controlMessageSTM reportFetched
             unless (blockPoint header == castPoint (blockPoint block)) $
               throwIO BlockFetchProtocolFailureWrongBlock
 
-            -- This is moderately expensive.
-            unless (blockMatchesHeader header block) $
-              throwIO BlockFetchProtocolFailureInvalidBody
+            -- This is moderately expensive. It also yields whatever the
+            -- consensus layer derives from the header/block pair, which is
+            -- what 'addFetchedBlock' consumes below; deriving it here is what
+            -- ties it to the very header this block was matched against.
+            matchedBlock <- case blockMatchesHeader header block of
+              Nothing      -> throwIO BlockFetchProtocolFailureInvalidBody
+              Just matched -> pure matched
 
             -- write it to the volatile block store
             --FIXME: this is not atomic wrt the in-flight and status updates
@@ -265,7 +269,7 @@ blockFetchClient _version controlMessageSTM reportFetched
             -- interleaving
 
             -- Add the block to the chain DB, notifying of any new chains.
-            addFetchedBlock (castPoint (blockPoint header)) block
+            addFetchedBlock (castPoint (blockPoint header)) matchedBlock
 
             let blockDelay = diffUTCTime now (headerForgeUTCTime header)
 
