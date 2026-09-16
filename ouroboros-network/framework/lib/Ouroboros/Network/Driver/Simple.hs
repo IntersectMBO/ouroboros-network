@@ -319,8 +319,7 @@ runPipelinedAnnotatedPeer tracer codec channel peer =
 -- | Run a codec incremental decoder 'DecodeStep' against a channel. It also
 -- takes any extra input data and returns any unused trailing data.
 --
-runDecoderWithChannel :: ( Monad m
-                         , MonadEvaluate m
+runDecoderWithChannel :: ( MonadEvaluate m
                          , NFData failure
                          )
                       => Channel m bytes
@@ -338,8 +337,7 @@ runDecoderWithChannel Channel{recv} = go
 
 runAnnotatedDecoderWithChannel
   :: forall m bytes failure a.
-     ( Monad m
-     , MonadEvaluate m
+     ( MonadEvaluate m
      , Monoid bytes
      , NFData failure
      )

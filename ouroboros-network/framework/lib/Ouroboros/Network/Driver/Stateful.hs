@@ -76,8 +76,7 @@ import Control.Tracer (Tracer (..), contramap, traceWith)
 
 
 driverStateful :: forall ps (pr :: PeerRole) failure bytes (f :: ps -> Type) m.
-                ( MonadAsync       m
-                , MonadEvaluate    m
+                ( MonadEvaluate    m
                 , MonadMask        m
                 , NFData failure
                 , Show failure
@@ -134,8 +133,7 @@ driverStateful tracer Codec{encode, decode} channel@Channel{send} = do
 --
 runPeer
   :: forall ps (st :: ps) pr failure bytes f m a .
-     ( MonadAsync    m
-     , MonadEvaluate m
+     ( MonadEvaluate m
      , MonadMask     m
      , NFData a
      , NFData failure
@@ -163,8 +161,7 @@ runPeer tracer codec channel f peer =
 -- | Run a codec incremental decoder 'DecodeStep' against a channel. It also
 -- takes any extra input data and returns any unused trailing data.
 --
-runDecoderWithChannel :: ( Monad m
-                         , MonadEvaluate m
+runDecoderWithChannel :: ( MonadEvaluate m
                          , NFData failure
                          )
                       => Channel m bytes

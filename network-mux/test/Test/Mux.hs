@@ -2553,7 +2553,6 @@ prop_mux_trailing_bytes
      , MonadMask          m
      , MonadTimer         m
      , MonadThrow    (STM m)
-     , MonadSay           m
      )
   => BL.ByteString
   -> NonEmptyByteString

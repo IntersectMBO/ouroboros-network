@@ -64,7 +64,7 @@ library
     containers >=0.5 && <0.9,
     contra-tracer ^>=0.2.1,
     formatting,
-    io-classes:{io-classes, si-timers, strict-stm} ^>=1.8,
+    io-classes:{io-classes, si-timers, strict-stm} ^>=1.11,
     monoidal-synchronisation >=0.1 && <0.2,
     network ^>=3.2.7,
     process ^>=1.6,
