@@ -424,8 +424,9 @@ The protocol uses the following messages.
 \newcommand{\StPropose}{\state{StPropose}}
 \newcommand{\StConfirm}{\state{StConfirm}}
 \newcommand{\MsgProposeVersions}{\msg{MsgProposeVersions}}
-\newcommand{\MsgReplyVersions}{\msg{MsgReplyVersion}}
+\newcommand{\MsgReplyVersions}{\msg{MsgReplyVersions}}
 \newcommand{\MsgAcceptVersion}{\msg{MsgAcceptVersion}}
+\newcommand{\MsgQueryReply}{\msg{MsgQueryReply}}
 \newcommand{\MsgRefuse}{\msg{MsgRefuse}}
 
 \newcommand{\VersionMismatch}{\msg{VersionMismatch}}
@@ -455,9 +456,10 @@ The handshake mini protocol is designed to handle simultaneous TCP open.
     \node[state, right of=Confirm]   (StDone)    at (7,  0) {\StDone};
 
     \draw (StPropose) --node[above=1em]{\MsgProposeVersions} (StConfirm);
-    \draw[->] (StConfirm.10)  to [out=15,  in=150] node[above]{\MsgAcceptVersion} (StDone.170);
-    \draw[->] (StConfirm.350) to [out=-15, in=210] node[below]{\MsgRefuse}        (StDone.190);
+    \draw[->] (StConfirm.30)  to [out=35,  in=145] node[above]{\MsgAcceptVersion} (StDone.150);
+    \draw[->] (StConfirm.10)  to [out=15,  in=165] node[above]{\MsgQueryReply}    (StDone.170);
     \draw[->] (StConfirm)     -- node[fill=white,above=-0.8em]{\MsgReplyVersions} (StDone.west);
+    \draw[->] (StConfirm.350) to [out=-15, in=210] node[below]{\MsgRefuse}        (StDone.190);
   \end{tikzpicture}
 \end{figure}
 
@@ -484,6 +486,13 @@ Messages of the protocol:
       decoding as \MsgProposeVersions{}.
   \item [\MsgAcceptVersion{} {\boldmath $(versionNumber,extraParameters)$}]
       The server accepts $versionNumber$ and returns possible extra protocol parameters.
+  \item [\MsgQueryReply{} {\boldmath $(versionTable)$}]
+      The server replies with all the versions it supports together with their
+      version data, and the connection is terminated.  This message is sent
+      instead of \MsgAcceptVersion{} whenever the negotiated version data
+      requests a version query (see the \texttt{query} flag of the
+      node-to-node and node-to-client version data below).  No mini-protocols
+      are run in this case.
   \item [\MsgRefuse{} {\boldmath $(reason)$}]
       The server refuses the proposed versions.
 \end{description}
@@ -495,6 +504,7 @@ Messages of the protocol:
     \StPropose & \MsgProposeVersions & $versionTable$                & \StConfirm \\
     \StConfirm & \MsgReplyVersions   & $versionTable$                & \StDone \\
     \StConfirm & \MsgAcceptVersion   & $(versionNumber,versionData)$ & \StDone \\
+    \StConfirm & \MsgQueryReply      & $versionTable$                & \StDone \\
     \StConfirm & \MsgRefuse          & $reason$                      & \StDone \\
   \end{tabular}
 \end{table}
@@ -550,11 +560,18 @@ of
   \item[network magic] a \texttt{Word32} value;
   \item[diffusion mode] a boolean value: \texttt{True} value indicates
     initiator only mode, \texttt{False} - initiator and responder mode;
-  \item[peer sharing] either $0$ or $1$: $1$ indicates that the node
-    will engage in peer sharing (and thus it will run the PeerSharing
-    mini-protocol);
-  \item[query] a boolean value: \texttt{True} will send back all supported
-    versions \& version data and terminate the connection.
+  \item[peer sharing] either $0$ or $1$: $1$ indicates that the node is
+    willing to engage in peer sharing.  Note that this is the value
+    \emph{proposed} by a node; the PeerSharing mini-protocol is run only if
+    the \emph{negotiated} value is $1$;
+  \item[query] a boolean value: \texttt{True} asks the remote side to send
+    back all supported versions \& version data and terminate the connection;
+  \item[peras support] a boolean value: \texttt{True} indicates that the node
+    supports the Peras mini-protocols.  As for peer sharing, this is the value
+    \emph{proposed} by a node; the Peras mini-protocols are run only if the
+    \emph{negotiated} value is \texttt{True}.  This field is only present from
+    \texttt{NodeToNodeV\_16} on; for earlier versions it MUST NOT be encoded
+    and it is negotiated as \texttt{False}.
 \end{description}
 
 When negotiating a connection, each side will have access to local and remote
@@ -565,12 +582,34 @@ negotiation is a new version data record which consists of:
     data, otherwise the negotiation fails;
   \item diffusion mode SHOULD be initiator only if and only if any side proposes the
     initiator-only mode (i.e. the logical disjunction operator);
-  \item peer sharing SHOULD be inherited from the remote side;
-  \item query SHOULD be inherited from the client (the side that sent
-      \MsgProposeVersions{}).
+  \item peer sharing SHOULD be enabled (i.e. $1$) if and only if both sides
+    propose it enabled (i.e. the logical conjunction operator);
+  \item peras support SHOULD be \texttt{True} if and only if both sides propose
+    \texttt{True} (i.e. the logical conjunction operator);
+  \item query SHOULD be \texttt{True} if and only if any side proposes
+    \texttt{True} (i.e. the logical disjunction operator).
 \end{itemize}
-If the negotiation is successful, the negotiated version data is sent back
-using \MsgAcceptVersion{}, otherwise \MsgRefuse{} SHOULD be sent.
+Note that both mini-protocol feature flags -- peer sharing and peras support
+-- are combined with conjunction.  This is necessary because the negotiated
+value decides which mini-protocols are run by the multiplexer on both ends of
+the connection, and hence both ends MUST arrive at the same value: a node
+which does not support a feature will not run the corresponding mini-protocol,
+not even its responder side.
+
+The rules above are \emph{symmetric}, i.e. they do not depend on which side is
+the client and which one is the server.  This is required to support TCP
+simultaneous open, in which case both sides compute the negotiated version
+data independently, see section~\ref{sec:handshake-implementation}.  They are
+also \emph{idempotent} in the following sense: applying them to the local
+version data and an already negotiated version data gives back the negotiated
+version data.  This is required because the client verifies the version data
+received with \MsgAcceptVersion{} by re-running the negotiation against its
+own local version data.
+
+If the negotiated query flag is \texttt{True}, the server MUST reply with
+\MsgQueryReply{}, see section~\ref{sec:handshake-implementation}.  Otherwise,
+if the negotiation is successful, the negotiated version data is sent back
+using \MsgAcceptVersion{}, and if it fails \MsgRefuse{} SHOULD be sent.
 
 \subsubsection{Size limits per state}
 
@@ -608,12 +647,12 @@ a message.  If a timeout is violated, the connection SHOULD be torn down.
 \subsection{Node-to-client handshake}
 \codechaddockref{Cardano.Network.NodeToClient}{cardano-diffusion/Cardano-Network-NodeToClient.html\#v:nodeToClientHandshakeCodec}\\
 
-The node-to-node handshake instantiates version data to a record which consists
+The node-to-client handshake instantiates version data to a record which consists
 of
 \begin{description}
   \item[network magic] a \texttt{Word32} value;
-  \item[query] a boolean value: \texttt{True} will send back all supported;
-    versions \& version data and terminate the connection.
+  \item[query] a boolean value: \texttt{True} asks the remote side to send
+    back all supported versions \& version data and terminate the connection.
 \end{description}
 
 The negotiated version data is computed similarly as in the node-to-node
@@ -621,11 +660,13 @@ protocol:
 \begin{itemize}\label{alg:node-to-client-negotiation}
   \item if the network magic agrees, then it is inherited by the negotiated version
     data, otherwise the negotiation fails;
-  \item query SHOULD be inherited from the client (the side that sent
-    \MsgProposeVersions{}).
+  \item query SHOULD be \texttt{True} if and only if any side proposes
+    \texttt{True} (i.e. the logical disjunction operator).
 \end{itemize}
-If the negotiation is successful, the negotiated version data is sent back
-using \MsgAcceptVersion{}, otherwise \MsgRefuse{} SHOULD be sent.
+If the negotiated query flag is \texttt{True}, the server MUST reply with
+\MsgQueryReply{}, see section~\ref{sec:handshake-implementation}.  Otherwise,
+if the negotiation is successful, the negotiated version data is sent back
+using \MsgAcceptVersion{}, and if it fails \MsgRefuse{} SHOULD be sent.
 
 \subsubsection{Size limits per state}
 
@@ -649,6 +690,7 @@ connection SHOULD be torn down.
 No timeouts are used for node-to-client handshake.
 
 \subsection{Client and Server Implementation}
+\label{sec:handshake-implementation}
 Section~\ref{handshake-cddl} contains the CDDL specification of the binary format of the handshake messages.
 The version table is encoded as a CBOR table with the version number as the key
 and the protocol parameters as a value.
@@ -660,8 +702,10 @@ table. Therefore, the CDDL specification uses a table with keys from 1 to 4 as a
 In a run of the handshake mini protocol, the peers exchange only two messages:
 The client initiates the protocol with a \MsgProposeVersions{} message that
 contains information about all protocol versions it wants to support. The
-server replies either with an \MsgAcceptVersion{} message containing the
-negotiated version number and version data or a \MsgRefuse{} message.
+server replies with an \MsgAcceptVersion{} message containing the negotiated
+version number and version data, with a \MsgQueryReply{} message containing
+all the versions it supports (if the negotiated query flag is set), or with
+a \MsgRefuse{} message.
 The \MsgRefuse{} message contains one of three alternative refuse reasons:
 \VersionMismatch{}, \HandshakeDecodeError{} or just \Refused{}.
 
@@ -688,18 +732,36 @@ compute the response:
   If the test refuses the parameters:
     Reply with \MsgRefuse(\Refused), the selected version number and an error message.
 \item
-  Otherwise, compute negotiation parameters according to the
+  Otherwise, compute the negotiated version data according to the
     algorithm~\ref{alg:node-to-node-negotiation} or
-    \ref{alg:node-to-client-negotiation}, encode them with the corresponding
-    CBOR codec and reply with \MsgAcceptVersion, the selected version number
-    and the extra parameters.
+    \ref{alg:node-to-client-negotiation}.
+\item
+  If the query flag of the negotiated version data is set:
+  Reply with \MsgQueryReply{} and the version table containing all the
+  versions the server supports together with their version data, and terminate
+  the connection.  No mini-protocols are run in this case.
+\item
+  Otherwise, encode the negotiated version data with the corresponding CBOR
+    codec and reply with \MsgAcceptVersion, the selected version number
+    and the negotiated version data.
 \end{enumerate}
-Note that in step 4), 6) and 8) the handshake protocol uses the callback functions that are specific
-for a set of protocols that the server supports.
+Note that in step 4), 6), 8) and 10) the handshake protocol uses the callback
+functions that are specific for a set of protocols that the server supports.
 The handshake protocol is designed
 so that a server can always handle requests for protocol versions that it does not support.
 The server simply ignores the CBOR terms that represent the protocol parameters of unsupported
 versions.
+
+When the client receives \MsgAcceptVersion{}, it MUST verify the server's
+choice: it MUST reject a version number which it did not propose, and it MUST
+check that the received version data is acceptable to it.  This check SHOULD
+be done by re-running the negotiation algorithm on the client's own local
+version data and the received version data; its result is then the version
+data the client uses.  If the check fails, the client MUST abort the
+handshake.  Since the negotiation algorithm is idempotent (see
+algorithm~\ref{alg:node-to-node-negotiation}
+and~\ref{alg:node-to-client-negotiation}) a well behaved server will always
+pass this check.
 
 In case of simultaneous open of a TCP connection, both handshake clients will
 send their \MsgProposeVersions{}, and both will interpret the incoming message as
@@ -772,7 +834,14 @@ instantiations, e.g., different protocol versions and version data carried in
 messages.  First, one is used by the node-to-node protocol, and the other is used by the
 node-to-client protocol.
 \subsubsection{Node-to-node handshake mini-protocol}
+The version data is specified in two separate listings, imported by the
+handshake specification under the \texttt{v14} and \texttt{v16} namespaces:
+\texttt{NodeToNodeV\_14} and \texttt{NodeToNodeV\_15} use the former,
+\texttt{NodeToNodeV\_16} the latter (which adds the \texttt{perasSupport}
+field).
 \lstinputlisting[style=cddl]{../../cardano-diffusion/protocols/cddl/specs/handshake-node-to-node-v14.cddl}
+\lstinputlisting[style=cddl]{../../cardano-diffusion/protocols/cddl/specs/node-to-node-version-data-v14.cddl}
+\lstinputlisting[style=cddl]{../../cardano-diffusion/protocols/cddl/specs/node-to-node-version-data-v16.cddl}
 
 \subsubsection{Node-to-client handshake mini-protocol}
 \lstinputlisting[style=cddl]{../../cardano-diffusion/protocols/cddl/specs/handshake-node-to-client.cddl}
