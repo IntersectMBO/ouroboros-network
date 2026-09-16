@@ -1246,8 +1246,8 @@ The block fetching mechanism enables a node to download a range of blocks.
   The server tells the client that it does not have all of the blocks in the requested {\boldmath $range$}.
 \item [\MsgStartBatch]
   The server starts block streaming.
-\item [\MsgBlock{} {\boldmath $(body)$}]
-  Stream a single block's body.
+\item [\MsgBlock{} {\boldmath $(block)$}]
+  Stream a single block.
 \item [\MsgBatchDone]
   The server ends block streaming.
 \item [\MsgClientDone]
@@ -1264,7 +1264,7 @@ The transitions are shown in table~\ref{table:block-fetch}.
       \StIdle       & \MsgRequestRange & $range$    & \StBusy      \\
       \StBusy       & \MsgNoBlocks     &            & \StIdle      \\
       \StBusy       & \MsgStartBatch   &            & \StStreaming \\
-      \StStreaming  & \MsgBlock        & $body$     & \StStreaming \\
+      \StStreaming  & \MsgBlock        & $block$    & \StStreaming \\
       \StStreaming  & \MsgBatchDone    &            & \StIdle      \\
     \end{tabular}
   \end{center}
