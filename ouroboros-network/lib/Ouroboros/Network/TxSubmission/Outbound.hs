@@ -11,6 +11,7 @@ module Ouroboros.Network.TxSubmission.Outbound
   ) where
 
 import Data.Foldable (find)
+import Data.Foldable qualified as Foldable
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Maybe (catMaybes, isNothing, mapMaybe)
 import Data.Sequence.Strict (StrictSeq)
@@ -107,28 +108,32 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version co
                 > fromIntegral maxUnacked) $
             throwIO (ProtocolErrorRequestedTooManyTxids reqNo unackedNo maxUnacked)
 
-          -- Update our tracking state to remove the number of txids that the
-          -- peer has acknowledged.
-          let !unackedSeq' = Seq.drop (fromIntegral ackNo) unackedSeq
+          let -- Update our tracking state to remove the number of txids that the
+              -- peer has acknowledged.
+              !unackedSeq' = Seq.drop (fromIntegral ackNo) unackedSeq
 
-          -- Update our tracking state with any extra txs available.
-          let update txs =
+              -- Update our tracking state with any extra txs available.
+              next :: forall f. Foldable f
+                   => f (txid, idx, SizeInBytes)
+                   -> ClientStIdle txid tx m ()
+              next txs =
                 -- These txs should all be fresh
                 assert (all (\(_, idx, _) -> idx > lastIdx) txs) $
-                  let !unackedSeq'' = unackedSeq' <> Seq.fromList
-                                        [ (txid, idx) | (txid, idx, _) <- txs ]
-                      !lastIdx'
-                        | null txs  = lastIdx
-                        | otherwise = idx where (_, idx, _) = last txs
-                      txs'         :: [(txid, SizeInBytes)]
-                      txs'          = [ (txid, size) | (txid, _, size) <- txs ]
-                      client'       = client unackedSeq'' lastIdx'
-                  in  (txs', client')
+                let diff = Seq.fromList
+                             [ (txid, idx) | (txid, idx, _) <- Foldable.toList txs ]
+                    !unackedSeq'' = unackedSeq' <> diff
+                    !lastIdx' =
+                      case diff of
+                        Seq.Empty          -> lastIdx
+                        _ Seq.:|> (_, idx) -> idx
+                in client unackedSeq'' lastIdx'
 
           -- Grab info about any new txs after the last tx idx we've seen,
           -- up to the number that the peer has requested.
           case blocking of
             SingBlocking -> do
+              -- This guard allows us to use partial `NonEmpty.fromList` in
+              -- a safe way below.
               when (reqNo == 0) $
                 throwIO ProtocolErrorRequestedNothing
               unless (Seq.null unackedSeq') $
@@ -137,20 +142,21 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version co
               mbtxs <- timeoutWithControlMessage controlMessageSTM $
                 do
                   MempoolSnapshot{mempoolTxIdsAfter} <- mempoolGetSnapshot
-                  let txs = mempoolTxIdsAfter lastIdx
-                  check (not $ null txs)
-                  pure (take (fromIntegral reqNo) txs)
+                  case NonEmpty.nonEmpty (mempoolTxIdsAfter lastIdx) of
+                    Nothing ->
+                      retry
+                    Just txs' ->
+                      -- We're guaranteed that `reqNo > 0` thus
+                      -- `NonEmpty.fromList` is safe
+                      return . NonEmpty.fromList
+                             . NonEmpty.take (fromIntegral reqNo)
+                             $ txs'
 
-              case mbtxs of
-                Nothing -> pure (SendMsgDone ())
-                Just txs ->
-                  let !(txs', client') = update txs
-                      txs'' = case NonEmpty.nonEmpty txs' of
-                        Just x -> x
-                        -- Assert txs is non-empty: we blocked until txs was non-null,
-                        -- and we know reqNo > 0, hence `take reqNo txs` is non-null.
-                        Nothing -> error "txSubmissionOutbound: empty transaction's list"
-                  in  pure (SendMsgReplyTxIds (BlockingReply txs'') client')
+              pure $ case mbtxs of
+                Nothing  -> SendMsgDone ()
+                Just txs -> SendMsgReplyTxIds
+                              (BlockingReply $ (\(txid, _idx, size) -> (txid, size)) <$> txs)
+                              (next txs)
 
             SingNonBlocking -> do
               when (reqNo == 0 && ackNo == 0) $
@@ -158,13 +164,13 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version co
               when (Seq.null unackedSeq') $
                 throwIO ProtocolErrorRequestNonBlocking
 
-              txs <- atomically $ do
+              atomically $ do
                 MempoolSnapshot{mempoolTxIdsAfter} <- mempoolGetSnapshot
-                let txs = mempoolTxIdsAfter lastIdx
-                return (take (fromIntegral reqNo) txs)
-
-              let !(txs', client') = update txs
-              pure (SendMsgReplyTxIds (NonBlockingReply txs') client')
+                let txs = take (fromIntegral reqNo)
+                        $ mempoolTxIdsAfter lastIdx
+                pure $ SendMsgReplyTxIds
+                        (NonBlockingReply $ (\(txid, _idx, size) -> (txid, size)) <$> txs)
+                        (next txs)
 
         recvMsgRequestTxs :: [txid]
                           -> m (ClientStTxs txid tx m ())
