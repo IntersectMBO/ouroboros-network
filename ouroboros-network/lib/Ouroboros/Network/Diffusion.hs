@@ -15,8 +15,9 @@ module Ouroboros.Network.Diffusion
   ( run
   , runM
   , mkInterfaces
-  , socketAddressType
   , module Ouroboros.Network.Diffusion.Types
+    -- * Utils
+  , readIPAndPort
   ) where
 
 
@@ -41,9 +42,11 @@ import Data.Bits ((.|.))
 import System.Posix.Files qualified as Unix
 #endif
 import Data.ByteString.Lazy (ByteString)
+import Data.Either (partitionEithers)
 import Data.Hashable (Hashable)
 import Data.IP qualified as IP
 import Data.List.NonEmpty (NonEmpty (..))
+import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Maybe (catMaybes)
@@ -57,7 +60,6 @@ import Network.Mux qualified as Mx
 import Network.Mux.Bearer (withReadBufferIO)
 import Network.Mux.Types
 import Network.Socket (Socket)
-import Network.Socket qualified as Socket
 
 import Ouroboros.Network.ConnectionHandler
 import Ouroboros.Network.ConnectionManager.Core qualified as CM
@@ -90,12 +92,6 @@ import Ouroboros.Network.Snocket (LocalAddress (..), LocalSocket (..),
 import Ouroboros.Network.Snocket qualified as Snocket
 import Ouroboros.Network.Socket (configureSocket, configureSystemdSocket)
 import Ouroboros.Network.Util (PrettyShow (..))
-
-
-socketAddressType :: Socket.SockAddr -> Maybe AddressType
-socketAddressType Socket.SockAddrInet {}  = Just IPv4Address
-socketAddressType Socket.SockAddrInet6 {} = Just IPv6Address
-socketAddressType Socket.SockAddrUnix {}  = Nothing
 
 
 runM
@@ -167,7 +163,6 @@ runM Interfaces
        , diWithBuffer
        , diNtnConfigureSocket
        , diNtnConfigureSystemdSocket
-       , diNtnAddressType
        , diNtnToPeerAddr
        , diNtcSnocket
        , diNtcBearer
@@ -221,8 +216,7 @@ runM Interfaces
        , daSRVPrefix
        }
      Configuration
-       { dcIPv4Address
-       , dcIPv6Address
+       { dcAddresses
        , dcLocalAddress
        , dcAcceptedConnectionsLimit
        , dcMode = diffusionMode
@@ -369,9 +363,8 @@ runM Interfaces
               CM.with CM.Arguments {
                   CM.tracer              = dtLocalConnectionManagerTracer,
                   CM.trTracer            = nullTracer, -- TODO: issue #3320
-                  CM.ipv4Address         = Nothing,
-                  CM.ipv6Address         = Nothing,
-                  CM.addressType         = const Nothing,
+                  CM.ipv4Address         = [],
+                  CM.ipv6Address         = [],
                   CM.snocket             = diNtcSnocket,
                   CM.makeBearer          = diNtcBearer,
                   CM.withBuffer          = diWithBuffer,
@@ -424,31 +417,24 @@ runM Interfaces
           epErrorDelay  = daRepromoteErrorDelay
         }
 
-      ipv4Address
-        <- traverse (either (Snocket.getLocalAddr diNtnSnocket) pure)
-                    dcIPv4Address
-      case ipv4Address of
-        Just addr | Just IPv4Address <- diNtnAddressType addr
-                  -> pure ()
-                  | otherwise
-                  -> throwIO (UnexpectedIPv4Address addr)
-        Nothing   -> pure ()
+      addrs <- (either (traverse $ Snocket.getLocalAddr diNtnSnocket) pure) dcAddresses
+      let (ipv4Addresses, ipv6Addresses) =
+              partitionEithers
+            $ catMaybes
+            $ map (\addr ->
+                   case Snocket.addrFamily diNtnSnocket addr of
+                     Snocket.AFInet    -> Just $ Left addr
+                     Snocket.AFInet6   -> Just $ Right addr
+                     Snocket.AFLocal{} -> Nothing
+                  )
+            $ NonEmpty.toList
+            $ addrs
 
-      ipv6Address
-        <- traverse (either (Snocket.getLocalAddr diNtnSnocket) pure)
-                    dcIPv6Address
-      case ipv6Address of
-        Just addr | Just IPv6Address <- diNtnAddressType addr
-                  -> pure ()
-                  | otherwise
-                  -> throwIO (UnexpectedIPv6Address addr)
-        Nothing   -> pure ()
-
-      lookupReqs <- case (ipv4Address, ipv6Address) of
-                           (Just _ , Nothing) -> return RootPeersDNS.LookupReqAOnly
-                           (Nothing, Just _ ) -> return RootPeersDNS.LookupReqAAAAOnly
-                           (Just _ , Just _ ) -> return RootPeersDNS.LookupReqAAndAAAA
-                           (Nothing, Nothing) -> throwIO NoSocket
+      lookupReqs <- case (ipv4Addresses, ipv6Addresses) of
+                           (_:_, [] ) -> return RootPeersDNS.LookupReqAOnly
+                           ([] , _:_) -> return RootPeersDNS.LookupReqAAAAOnly
+                           (_:_, _:_) -> return RootPeersDNS.LookupReqAAndAAAA
+                           ([] , [] ) -> throwIO NoSocket
 
       localRootsVar <- newTVarIO mempty
 
@@ -493,9 +479,8 @@ runM Interfaces
               CM.trTracer            =
                 fmap CM.abstractState
                 `contramap` dtConnectionManagerTransitionTracer,
-              CM.ipv4Address,
-              CM.ipv6Address,
-              CM.addressType         = diNtnAddressType,
+              CM.ipv4Address         = ipv4Addresses,
+              CM.ipv6Address         = ipv6Addresses,
               CM.snocket             = diNtnSnocket,
               CM.makeBearer          = diNtnBearer,
               CM.withBuffer          = diWithBuffer,
@@ -727,11 +712,7 @@ runM Interfaces
             withSockets tracer diNtnSnocket
               (\sock addr -> diNtnConfigureSocket sock (Just addr))
               (\sock addr -> diNtnConfigureSystemdSocket sock addr)
-              ( catMaybes
-                [ dcIPv4Address
-                , dcIPv6Address
-                ]
-              )
+              dcAddresses
               f
 
           -- run node-to-node server
@@ -946,7 +927,6 @@ mkInterfaces iocp tracer egressPollInterval = do
     diNtnConfigureSystemdSocket =
       configureSystemdSocket
         (SystemdSocketConfiguration `contramap` tracer),
-    diNtnAddressType            = socketAddressType,
     diNtnToPeerAddr             = curry IP.toSockAddr,
     diNtcSnocket                = Snocket.localSnocket iocp,
     diNtcBearer                 = makeLocalBearer,

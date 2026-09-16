@@ -14,6 +14,8 @@
 module Cardano.Network.Diffusion
   ( module Cardano.Network.Diffusion.Types
   , run
+    -- * Utils
+  , Diffusion.readIPAndPort
   ) where
 
 import Control.DeepSeq (NFData)
