@@ -1731,6 +1731,16 @@ The Peer-Sharing mini-protocol is a simple Request-Reply mini-protocol. The mini
 
   The server should only share peers with which it has (or recently had) an
   successful inbound or outbound session.
+
+  A $peerAddress$ is a resolved socket address: an \texttt{IPv4} or
+  \texttt{IPv6} address together with a port number, see
+  section~\ref{peersharing-cddl} for the encoding.  The mini-protocol carries
+  neither DNS names nor \texttt{SRV} records
+  (\href{https://cips.cardano.org/cip/CIP-0155}{CIP-0155}); a peer which is
+  configured with a domain name, e.g. in a topology file, is shared as
+  a resolved socket address, never by its name.  The encoding of
+  $peerAddress$ is the same for all currently supported node-to-node
+  versions.
 \item [\MsgDone]
   Terminating message.
 \end{description}
