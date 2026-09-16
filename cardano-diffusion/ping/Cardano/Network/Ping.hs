@@ -415,7 +415,7 @@ instance Exception AddressResolutionError where
   displayException (NoPortNumberError addr)
     = "missing port number for " ++ ppSomeAddress addr
   displayException (DNSError addr err)
-    = ppSomeAddress addr ++ ": " ++ displayException err
+    = displayException err ++ " for " ++ ppSomeAddress addr
 
 -- | Log messages to stderr.
 --
@@ -912,14 +912,14 @@ resolveAddress
        -> IO ([Address Resolved], [AddressResolutionError])
 
     -- 1. Resolve an SRV record
-    go addr@(SRV dns) = do
+    go (SRV dns) = do
       let hostname = BS.Char.pack $ case srvPrefix of
                                       [] -> dns
                                       _  -> srvPrefix ++ "." ++ dns
       r <- DNS.lookupRaw resolver hostname DNS.SRV
       case r >>= flip DNS.fromDNSMessage selectSRV of
         Left err -> do
-          let err' = DNSError (SomeAddress addr) err
+          let err' = DNSError (SomeAddress (SRV $ BS.Char.unpack hostname)) err
           traceWith stderr (AddressResolutionError err')
           case acceptFilePath of
             AddressMightBeAFilePath ->
@@ -978,7 +978,7 @@ resolveAddress
         (ips, errs) -> do
           let errs' = [ DNSError (SomeAddress addr) err | err <- errs ]
           traverse_ (traceWith stderr . AddressResolutionError) errs'
-          unless pingOptsQuiet $
+          unless (pingOptsQuiet || null ips) $
             traceWith stderr $ DNSResolution hostname ips port
           return ( [ IP ip port | ip <- ips ]
                  , errs'
