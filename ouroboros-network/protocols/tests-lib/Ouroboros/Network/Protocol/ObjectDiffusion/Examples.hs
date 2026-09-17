@@ -128,6 +128,12 @@ testObjectDiffusionOutbound tracer objectId maxUnacked =
 
             return $! case (requestKind, unackedExtra) of
               (RequestObjectIdsBlocking, []) ->
+                -- The test server is not also a client for the purpose of the
+                -- object diffusion protocol, and does not produce votes or
+                -- certificates. This means there is no source for which new
+                -- objects can be created. Hence, after sending `MsgAwaitReply`,
+                -- the server can immediately send `MsgServerIdle`. The client
+                -- interprets this as the end of the test.
                 SendMsgAwaitReply $ pure $
                   SendMsgServerIdle
                     (outboundIdle unackedSeq'' unackedMap'' remainingObjects')
@@ -223,13 +229,19 @@ testObjectDiffusionInbound
         SendMsgRequestObjectIdsBlocking
           (numObjectsToAcknowledge st)
           numObjectIdsToRequest
+          -- There is nothing for this example client to record when the server
+          -- reports that it must await new object IDs.
           (pure ())
+          -- If object IDs are available, handle them like any other collected
+          -- batch and continue running the protocol.
           (handleReply accum Zero st {
                     numObjectsToAcknowledge    = 0,
                     requestedObjectIdsInFlight = numObjectIdsToRequest
                   }
                   . CollectObjectIds numObjectIdsToRequest
                   . NonEmpty.toList)
+          -- The example server uses 'MsgServerIdle' to signal that the
+          -- test is over, so terminate and return all collected objects.
           (SendMsgDone accum)
 
     inboundIdle accum (Succ n) st

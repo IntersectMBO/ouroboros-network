@@ -75,13 +75,13 @@ timeLimitsObjectDiffusion = ProtocolTimeLimits stateToLimit
          ActiveState st
       => StateToken st
       -> Maybe DiffTime
-    stateToLimit SingInit = waitForever
-    stateToLimit (SingObjectIds SingObjectIdsNonBlocking) = shortWait
-    stateToLimit (SingObjectIds (SingObjectIdsBlocking SingCanAwait)) = shortWait
+    stateToLimit SingInit                                              = waitForever
+    stateToLimit (SingObjectIds SingObjectIdsNonBlocking)              = shortWait
+    stateToLimit (SingObjectIds (SingObjectIdsBlocking SingCanAwait))  = shortWait
     stateToLimit (SingObjectIds (SingObjectIdsBlocking SingMustReply)) = longWait
-    stateToLimit SingObjects = shortWait
-    stateToLimit SingIdle = waitForever
-    stateToLimit a@SingDone = notActiveState a
+    stateToLimit SingObjects                                           = shortWait
+    stateToLimit SingIdle                                              = waitForever
+    stateToLimit a@SingDone                                            = notActiveState a
 
 codecObjectDiffusion
   :: forall (objectId :: Type) (object :: Type) m.
@@ -191,14 +191,14 @@ decodeObjectDiffusion decodeObjectId decodeObject = decode
           return $! if blocking
             then SomeMessage $ MsgRequestObjectIds RequestObjectIdsBlocking ackNo reqNo
             else SomeMessage $ MsgRequestObjectIds RequestObjectIdsNonBlocking ackNo reqNo
-        (SingObjectIds kind, 2, 2) -> withSingI kind $ do
+        (SingObjectIds singKind, 2, 2) -> withSingI singKind $ do
           CBOR.decodeListLenIndef
           objIds <- CBOR.decodeSequenceLenIndef
                       (flip (:))
                       []
                       reverse
                       decodeObjectId
-          case (kind, objIds) of
+          case (singKind, objIds) of
             (SingObjectIdsBlocking _, t : ts) ->
               return
                 $ SomeMessage

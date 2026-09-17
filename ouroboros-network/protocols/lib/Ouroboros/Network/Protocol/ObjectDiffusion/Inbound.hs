@@ -20,12 +20,12 @@ module Ouroboros.Network.Protocol.ObjectDiffusion.Inbound
   , objectDiffusionInboundPeerPipelined
   ) where
 
+import Data.Functor (($>))
 import Data.List.NonEmpty (NonEmpty)
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Peer (Peer, PeerPipelined (..))
 import Network.TypedProtocol.Peer.Client
 import Ouroboros.Network.Protocol.ObjectDiffusion.Type
-import Data.Functor (($>))
 
 data ObjectDiffusionInboundPipelined objectId object m a where
   ObjectDiffusionInboundPipelined
@@ -85,21 +85,20 @@ objectDiffusionInboundPeerPipelined (ObjectDiffusionInboundPipelined inboundSt) 
       :: InboundStIdle n objectId object m a
       -> Peer (ObjectDiffusion objectId object) AsClient (Pipelined n (Collect objectId object)) StIdle m a
 
-    run (SendMsgRequestObjectIdsBlocking ackNo reqNo onAwaitReply k onServerIdle) =
+    run (SendMsgRequestObjectIdsBlocking ackNo reqNo onAwaitReply onReplyIds onServerIdle) =
           Yield (MsgRequestObjectIds RequestObjectIdsBlocking ackNo reqNo)
             $ Await
             $ \case
                 MsgReplyObjectIds (BlockingReply objectIds) ->
-                  run (k objectIds)
+                  run (onReplyIds objectIds)
                 MsgAwaitReply ->
                   Effect $
                     onAwaitReply $>
-                    (Await $ \case
+                    Await (\case
                       MsgReplyObjectIds (BlockingReply objectIds) ->
-                        run (k objectIds)
+                        run (onReplyIds objectIds)
                       MsgServerIdle ->
-                        run onServerIdle
-                    )
+                        run onServerIdle)
     run (SendMsgRequestObjectIdsPipelined ackNo reqNo k) =
           YieldPipelined
             (MsgRequestObjectIds RequestObjectIdsNonBlocking ackNo reqNo)
