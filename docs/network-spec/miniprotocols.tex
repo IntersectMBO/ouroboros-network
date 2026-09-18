@@ -2452,10 +2452,9 @@ See appendix \ref{cddl-common} for common definitions.
 Protocol pipelining is a technique that improves the performance of some protocols.
 The underlying idea is that a client that wants to perform several requests
 just transmits those requests in sequence without blocking and waiting for the reply from the server.
-In the reference implementation, pipelining is used by the clients of all mini-protocols except Chain-Sync.
-Those mini-protocols follow a request-response pattern that is amenable to pipelining such
-that pipelining becomes a feature of the client implementation and does not require any
-modifications to the server implementation.
+Mini-protocols which follow a request-response pattern are amenable to pipelining
+such that pipelining becomes a feature of the client implementation and does not
+require any modifications to the server implementation.
 
 As an example, let's consider the Block-Fetch mini protocol.
 When a client follows the protocol and sends a sequence of \MsgRequestRange{}~messages to the server, the data stream from the client to the server will only consist of \MsgRequestRange~messages
