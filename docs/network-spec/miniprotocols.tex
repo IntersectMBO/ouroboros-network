@@ -4,7 +4,9 @@
 \newcommand{\Client}{\textcolor{mygreen}{\textbf{Client}}}
 \newcommand{\Server}{\textcolor{myblue}{\textbf{Server}}}
 
-\section{Mini Protocols and Protocol Families}https://hackage.haskell.org/package/typed-protocols-doc
+\section{Mini Protocols and Protocol Families}
+\noindent\href{https://hackage.haskell.org/package/typed-protocols}{\emph{typed-protocols documentation}}
+
 A mini protocol is a well-defined and modular building block of
 the network protocol.
 Structuring a protocol around mini-protocols helps manage the overall complexity of
@@ -175,15 +177,15 @@ framework.
     {Ping Pong Protocol}
     {ping-pong-protocol}
     {A simple ping-pong protocol for testing.}
-    {typed-protocols/src/Network/TypedProtocol/PingPong/Type.hs}
-    {https://input-output-hk.github.io/typed-protocols/typed-protocols-examples/Network-TypedProtocol-PingPong-Type.html\#t:PingPong}
+    {typed-protocols/examples/Network/TypedProtocol/PingPong/Type.hs}
+    {https://intersectmbo.github.io/typed-protocols/typed-protocols/examples/Network-TypedProtocol-PingPong-Type.html\#t:PingPong}
 
 \miniEntry
     {Request Response Protocol}
     {request-response-protocol}
     {A ping-pong-like protocol which allows the exchange of data.}
-    {typed-protocols/src/Network/TypedProtocol/ReqResp/Type.hs}
-    {https://input-output-hk.github.io/typed-protocols/typed-protocols-examples/Network-TypedProtocol-ReqResp-Type.html\#t:ReqResp}
+    {typed-protocols/examples/Network/TypedProtocol/ReqResp/Type.hs}
+    {https://intersectmbo.github.io/typed-protocols/typed-protocols/examples/Network-TypedProtocol-ReqResp-Type.html\#t:ReqResp}
 
 \subsection{Handshake}
 
@@ -254,7 +256,7 @@ node-to-client protocol, it is used with full blocks rather than just headers.
     {local-state-query-protocol}
     {Protocol used by local clients to query ledger state}
     {ouroboros-network/protocols/lib/Ouroboros/Network/Protocol/LocalStateQuery/Type.hs}
-    {https://ouroboros-network.cardano.intersectmbo.org/cardano-diffusion/protocols/Cardano-Network-Protocol-LocalStateQuery-Type.html\#t:LocalStateQuery}
+    {https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network/protocols/Ouroboros-Network-Protocol-LocalStateQuery-Type.html\#t:LocalStateQuery}
 
 \miniEntry
     {Local Tx Submission Mini Protocol}
@@ -305,7 +307,7 @@ Dummy protocols are only used for testing and are not needed either for
 Node-to-Node nor for the Node-to-Client protocols.
 \subsection{Ping-Pong mini-protocol}
 \label{ping-pong-protocol}
-\haddockrefraw{Network.TypedProtocol.PingPong.Type}{https://input-output-hk.github.io/typed-protocols/typed-protocols-examples/Network-TypedProtocol-PingPong-Type.html\#t:PingPong}
+\haddockrefraw{Network.TypedProtocol.PingPong.Type}{https://intersectmbo.github.io/typed-protocols/typed-protocols/examples/Network-TypedProtocol-PingPong-Type.html\#t:PingPong}
 \newcommand{\Ping}{\msg{MsgPing}}
 \newcommand{\Pong}{\msg{MsgPong}}
 
@@ -360,7 +362,7 @@ The messages of the Ping-Pong protocol do not carry any data.
 
 \subsection{Request-Response mini-protocol}
 \label{request-response-protocol}
-\haddockrefraw{Network.TypedProtocol.ReqResp.Type}{https://input-output-hk.github.io/typed-protocols/typed-protocols-examples/Network-TypedProtocol-ReqResp-Type.html\#t:ReqResp}
+\haddockrefraw{Network.TypedProtocol.ReqResp.Type}{https://intersectmbo.github.io/typed-protocols/typed-protocols/examples/Network-TypedProtocol-ReqResp-Type.html\#t:ReqResp}
 \renewcommand{\StIdle}{\state{StIdle}}
 \renewcommand{\StBusy}{\state{StBusy}}
 \renewcommand{\StDone}{\state{StDone}}
@@ -415,7 +417,8 @@ The protocol uses the following messages.
 
 \section{Handshake mini-protocol}
 \protocolhaddockref{Ouroboros.Network.Protocol.Handshake.Type}{ouroboros-network/framework/Ouroboros-Network-Protocol-Handshake-Type.html\#t:Handshake}\\
-\codechaddockref{Ouroboros.Network.Protocol.Handshake.Codec}{ouroboros-network/framework/Ouroboros-Network-Protocol-Handshake-Codec.html\#v:codecHandshake}\\
+\codechaddockref{Cardano.Network.Protocol.Handshake.Codec}{cardano-diffusion/protocols/Cardano-Network-Protocol-Handshake-Codec.html\#v:nodeToNodeHandshakeCodec}\\
+\codechaddockref{Cardano.Network.Protocol.Handshake.Codec}{cardano-diffusion/protocols/Cardano-Network-Protocol-Handshake-Codec.html\#v:nodeToClientHandshakeCodec}\\
 \hyperref[table:node-to-node-protocol-numbers]{\textit{node-to-node mini-protocol number}}: \texttt{0}\\
 \hyperref[table:node-to-client-protocol-numbers]{\textit{node-to-client mini-protocol number}}: \texttt{0}\\
 \hyperref[sec:nodetoclientcddl]{node-to-client handshake CDDL spec}
@@ -786,7 +789,7 @@ following sense.
                     deriving Eq
 \end{verbatim}
     See
-    \href{https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network-framework/Ouroboros-Network-Protocol-Handshake-Version.html#t:Acceptable}{ref}.
+    \href{https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network/framework/Ouroboros-Network-Protocol-Handshake-Version.html#t:Acceptable}{ref}.
     Both \texttt{acceptable local remote} and \texttt{acceptable remote local}
     must satisfy the following conditions:
     \begin{itemize}
@@ -803,7 +806,7 @@ A weaker condition, in which the return values are equal if they both return
 \texttt{Accept} does not guarantee this property.  We also verify that the
 whole Handshake protocol, not just the \texttt{acceptable} satisfies the above
 property, see
-\href{https://github.com/intersectmbo/ouroboros-network/blob/master/ouroboros-network/protocol-tests/Ouroboros/Network/Protocol/Handshake/Test.hs}{Ouroboros-Network
+\href{https://github.com/intersectmbo/ouroboros-network/blob/master/ouroboros-network/protocols/tests-lib/Ouroboros/Network/Protocol/Handshake/Test.hs}{Ouroboros-Network
 test suite}.
 
 The fact that we are using non-injective encoding in the handshake protocol
@@ -816,7 +819,7 @@ true for the handshake protocol.  Even though the opening message
 other side as a termination message \MsgReplyVersions{}, and the same will
 happen to the \MsgProposeVersions{} transmitted in the other direction.
 We include a special test case
-(\href{https://github.com/intersectmbo/ouroboros-network/blob/master/ouroboros-network/protocol-tests/Ouroboros/Network/Protocol/Handshake/Test.hs\#L551}{\texttt{prop\_channel\_simultaneous\_open}})
+(\href{https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network/protocols-tests-lib/Ouroboros-Network-Protocol-Handshake-Test.html\#v:prop\_channel\_simultaneous\_open}{\texttt{prop\_channel\_simultaneous\_open}})
 to verify that simultaneous open behaves well and does not lead to protocol
 errors.
 
@@ -844,6 +847,7 @@ field).
 \lstinputlisting[style=cddl]{../../cardano-diffusion/protocols/cddl/specs/node-to-node-version-data-v16.cddl}
 
 \subsubsection{Node-to-client handshake mini-protocol}
+\label{sec:nodetoclientcddl}
 \lstinputlisting[style=cddl]{../../cardano-diffusion/protocols/cddl/specs/handshake-node-to-client.cddl}
 
 \section{Chain-Sync mini-protocol}
@@ -1682,7 +1686,7 @@ a message.  If a timeout is violated, the connection SHOULD be torn down.
 
 \section{Peer Sharing mini-protocol}
 \protocolhaddockref{Ouroboros.Network.Protocol.PeerSharing.Type}{ouroboros-network/protocols/Ouroboros-Network-Protocol-PeerSharing-Type.html\#t:PeerSharing}\\
-\codechaddockref{Ouroboros.Network.Protocol.PeerSharing.Codec}{ouroboros-network/protocols/Ouroboros-Network-Protocol-PeerSharing-Codec.html\#v:codecPeerSharing}\\
+\codechaddockref{Cardano.Network.Protocol.PeerSharing.Codec}{cardano-diffusion/protocols/Cardano-Network-Protocol-PeerSharing-Codec.html\#v:codecPeerSharing}\\
 \hyperref[table:node-to-node-protocol-numbers]{\textit{node-to-node mini-protocol number}}: \texttt{10}\\
 \label{peer-sharing-protocol}
 \subsection{Description}
@@ -1931,7 +1935,7 @@ See appendix \ref{cddl-common} for common definitions.
 
 \section{Local State Query mini-protocol}
 \label{local-state-query-protocol}
-\protocolhaddockref{Cardano.Network.Protocol.LocalStateQuery.Type}{cardano-diffusion/protocols/Cardano-Network-Protocol-LocalStateQuery-Type.html\#t:LocalStateQuery}\\
+\protocolhaddockref{Ouroboros.Network.Protocol.LocalStateQuery.Type}{ouroboros-network/protocols/Ouroboros-Network-Protocol-LocalStateQuery-Type.html\#t:LocalStateQuery}\\
 \codechaddockref{Cardano.Network.Protocol.LocalStateQuery.Codec}{cardano-diffusion/protocols/Cardano-Network-Protocol-LocalStateQuery-Codec.html\#v:codecLocalStateQuery}\\
 \hyperref[table:node-to-client-protocol-numbers]{\textit{node-to-client mini-protocol number}}: \texttt{7}\\
 \newcommand{\StAcquiring}{\state{Acquiring}}
@@ -2064,7 +2068,7 @@ No timeouts.
 See appendix \ref{cddl-common} for common definitions.
 
 \section{Local Tx-Monitor mini-protocol}
-\protocolhaddockref{Cardano.Network.Protocol.LocalTxMonitor.Type}{cardano-diffusion/protocols/Cardano-Network-Protocol-LocalTxMonitor-Type.html\#t:LocalTxMonitor}\\
+\protocolhaddockref{Ouroboros.Network.Protocol.LocalTxMonitor.Type}{ouroboros-network/protocols/Ouroboros-Network-Protocol-LocalTxMonitor-Type.html\#t:LocalTxMonitor}\\
 \codechaddockref{Cardano.Network.Protocol.LocalTxMonitor.Codec}{cardano-diffusion/protocols/Cardano-Network-Protocol-LocalTxMonitor-Codec.html\#v:codecLocalTxMonitor}\\
 \hyperref[table:node-to-client-protocol-numbers]{\textit{node-to-client mini-protocol number}}: \texttt{9}\\
 \label{local-tx-monitor-protocol}
@@ -2247,8 +2251,8 @@ the server treats this case as a protocol violation of the peer
 
 \section{Node-to-node protocol}
 \label{section:node-to-node-protocol}
-\haddockref{Ouroboros.Network.NodeToNode}{ouroboros-network/Ouroboros-Network-NodeToNode}\newline
-\haddockref{Ouroboros.Network.NodeToNode.Version}{ouroboros-network-api/Ouroboros-Network-NodeToNode-Version}\newline
+\haddockref{Cardano.Network.NodeToNode}{cardano-diffusion/Cardano-Network-NodeToNode}\newline
+\haddockref{Cardano.Network.NodeToNode.Version}{cardano-diffusion/api/Cardano-Network-NodeToNode-Version}\newline
 
 The \textit{node-to-node protocol} consists of the following protocols:
 \begin{itemize}
@@ -2323,8 +2327,8 @@ who owns its ingress buffer.
 
 \section{Node-to-client protocol}
 \label{section:node-to-client-protocol}
-\haddockref{Ouroboros.Network.NodeToClient}{ouroboros-network/Ouroboros-Network-NodeToClient}\newline
-\haddockref{Ouroboros.Network.NodeToClient.Version}{ouroboros-network-api/Ouroboros-Network-NodeToClient-Version}\newline
+\haddockref{Cardano.Network.NodeToClient}{cardano-diffusion/Cardano-Network-NodeToClient}\newline
+\haddockref{Cardano.Network.NodeToClient.Version}{cardano-diffusion/api/Cardano-Network-NodeToClient-Version}\newline
 
 The \textit{node-to-client protocol} consists of the following protocols:
 \begin{itemize}

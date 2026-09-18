@@ -381,7 +381,7 @@ two multiplexer threads (muxer \& demuxer threads).  However, all these threads
 are spawned and managed by the multiplexer, which has the property that if any
 of the threads throws an exception, all of the threads will be killed.  This
 property allows us to have a single error handling policy (called
-\href{https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network-framework/Ouroboros-Network-RethrowPolicy.html\#t:RethrowPolicy}{\texttt{RethrowPolicy}})
+\href{https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network/framework/Ouroboros-Network-RethrowPolicy.html\#t:RethrowPolicy}{\texttt{RethrowPolicy}})
 per connection handler thread. A \texttt{RethrowPolicy} classifies exceptions
 into two categories, depending on whether an exception should terminate the
 connection or be propagated to terminate the whole process.
