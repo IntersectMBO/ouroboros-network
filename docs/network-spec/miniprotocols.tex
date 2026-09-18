@@ -1699,6 +1699,28 @@ a message.  If a timeout is violated, the connection SHOULD be torn down.
 \subsection{Description}
 The Peer-Sharing mini-protocol is a simple Request-Reply mini-protocol. The mini-protocol is used by nodes to share their upstream peers (a subset of their Known Peers).
 
+\paragraph{Participation}
+Whether a node participates in peer sharing is a configuration choice.  The
+configured value is the one \emph{proposed} in the handshake version data, and
+the mini-protocol is run only if the \emph{negotiated} value is $1$, i.e. only
+if both sides propose it enabled, see
+algorithm~\ref{alg:node-to-node-negotiation}.
+
+A relay node SHOULD enable peer sharing; a block producer SHOULD NOT.  These
+are the defaults provided by
+\href{https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network/Ouroboros-Network-Diffusion-Configuration.html\#v:defaultPeerSharing}{\texttt{defaultPeerSharing}}.
+The distinction matters because the flag governs more than whether this
+mini-protocol is run:
+\begin{itemize}
+  \item a node MUST NOT share the address of a peer which proposed peer
+    sharing disabled.  Proposing peer sharing disabled is therefore how a node
+    opts out of having its own address diffused, which is the reason a block
+    producer disables it;
+  \item a node which is configured with peer sharing disabled does not request
+    peers over this mini-protocol, and it also does not learn addresses from
+    its inbound connections.
+\end{itemize}
+
 \newcommand{\PsClient}{\state{StIdle}}
 \newcommand{\PsServer}{\state{StBusy}}
 \newcommand{\MsgShareRequest}{\trans{MsgShareRequest}}
@@ -1743,7 +1765,7 @@ The Peer-Sharing mini-protocol is a simple Request-Reply mini-protocol. The mini
   It is a protocol error to send more peers than it was requested.
 
   The server should only share peers with which it has (or recently had) an
-  successful inbound or outbound session.
+  successful inbound or outbound session, and which have not failed since.
 
   A $peerAddress$ is a resolved socket address: an \texttt{IPv4} or
   \texttt{IPv6} address together with a port number, see
@@ -2520,9 +2542,9 @@ assigned to each node-to-node mini-protocol.
       \hyperref[block-fetch-protocol]{Block-Fetch}                       & $3$  \\
       \hyperref[tx-submission-protocol2]{Tx-Submission}                  & $4$  \\
       \hyperref[keep-alive-protocol]{Keep-Alive}                         & $8$  \\
-      \hyperref[peer-sharing-protocol]{Peer-Sharing} \small{(optional)}  & $10$ \\
-      \hyperref[object-diffusion-protocol]{Peras certificate diffusion}  & $16$ \\
-      \hyperref[object-diffusion-protocol]{Peras vote diffusion}         & $17$ \\
+      \hyperref[peer-sharing-protocol]{Peer-Sharing} \small{(if negotiated)}          & $10$ \\
+      \hyperref[object-diffusion-protocol]{Peras certificate diffusion} \small{(if negotiated)} & $16$ \\
+      \hyperref[object-diffusion-protocol]{Peras vote diffusion} \small{(if negotiated)}        & $17$ \\
     \end{tabular}
   \end{center}
   \caption{Node-to-node protocol numbers}
