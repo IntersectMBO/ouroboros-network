@@ -238,6 +238,13 @@ In this section, we list all the mini-protocols that constitute the node-to-node
     {ouroboros-network/protocols/lib/Ouroboros/Network/Protocol/PeerSharing/Type.hs}
     {https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network/protocols/Ouroboros-Network-Protocol-PeerSharing-Type.html\#t:PeerSharing}
 
+\miniEntry
+    {Object-Diffusion Protocol}
+    {object-diffusion-protocol}
+    {A generic mini-protocol for diffusing objects; instantiated for Peras certificates and votes}
+    {ouroboros-network/protocols/lib/Ouroboros/Network/Protocol/ObjectDiffusion/Type.hs}
+    {https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network/protocols/Ouroboros-Network-Protocol-ObjectDiffusion-Type.html\#t:ObjectDiffusion}
+
 \subsection{Node-to-client mini-protocols}
 
 Mini-protocols used by node-to-client protocol.  The chain-sync mini-protocol
@@ -1856,6 +1863,225 @@ function application all the way to diffusion and share the relevant parts of
 \subsection{CDDL encoding specification ($\geq 14$)}\label{peersharing-cddl}
 \lstinputlisting[style=cddl]{../../cardano-diffusion/protocols/cddl/specs/peer-sharing-v14.cddl}
 
+\section{Object-Diffusion mini-protocol}
+\protocolhaddockref{Ouroboros.Network.Protocol.ObjectDiffusion.Type}{ouroboros-network/protocols/Ouroboros-Network-Protocol-ObjectDiffusion-Type.html\#t:ObjectDiffusion}\\
+\codechaddockref{Ouroboros.Network.Protocol.ObjectDiffusion.Codec}{ouroboros-network/protocols/Ouroboros-Network-Protocol-ObjectDiffusion-Codec.html\#v:codecObjectDiffusion}\\
+\hyperref[table:node-to-node-protocol-numbers]{\textit{node-to-node mini-protocol numbers}}: \texttt{16}, \texttt{17}\\
+\label{object-diffusion-protocol}
+\label{peras-protocol}
+
+\subsection{Description}
+
+The \textit{object-diffusion mini-protocol} diffuses a stream of objects of
+a single kind from one node to another.  It is generic: it is parametrised by
+the type of the objects and by the type of their identifiers, and the encoding
+of $objectId$ and $object$ is supplied by the instantiation (see
+section~\ref{object-diffusion-cddl}).
+
+The node-to-node protocol instantiates it twice, for the diffusion of Peras
+certificates and of Peras votes.  Both instances are run only if \textit{peras
+support} was negotiated, which requires both sides to propose it (see
+algorithm~\ref{alg:node-to-node-negotiation}), hence they are available from
+\texttt{NodeToNodeV\_16} onwards.  The two instantiations differ only in the
+mini-protocol number, the object type and the limits given in
+table~\ref{table:peras-instantiations}.
+
+The protocol is pull-based, like \textit{chain-sync} and \textit{block-fetch}
+and unlike \textit{tx-submission}: the client is the side which
+\textit{receives} objects and it drives the exchange, while the server sends
+objects when asked to.  Objects are transferred in two steps: the client first
+asks for object identifiers and then asks for those objects it is interested
+in.  This makes the protocol usable in a trustless setting, where each side has
+to guard against resource consumption attacks from the other.
+
+The protocol maintains a notional FIFO queue of \textit{outstanding} object
+identifiers, which the server has announced but the client has not acknowledged
+yet.  Only outstanding objects can be requested; they can be requested in any
+order, but at most once.  Identifiers are acknowledged in the FIFO order in
+which they were announced, and the acknowledgement is piggybacked on the
+message which asks for more identifiers.  It is a protocol error to put the
+number of outstanding identifiers over the limit given in
+table~\ref{table:peras-instantiations}.
+
+\newcommand{\StObjectIdsB}      {\state{StObjectIdsBlocking}}
+\newcommand{\StObjectIdsNB}     {\state{StObjectIdsNonBlocking}}
+\newcommand{\StObjects}         {\state{StObjects}}
+\newcommand{\MsgRequestObjIdsB} {\msg{MsgRequestObjectIdsBlocking}}
+\newcommand{\MsgRequestObjIdsNB}{\msg{MsgRequestObjectIdsNonBlocking}}
+\newcommand{\MsgReplyObjectIds} {\msg{MsgReplyObjectIds}}
+\newcommand{\MsgRequestObjects} {\msg{MsgRequestObjects}}
+\newcommand{\MsgReplyObjects}   {\msg{MsgReplyObjects}}
+
+\subsection{State machine}
+
+\begin{figure}[h!]
+\begin{tikzpicture}[->,shorten >=1pt,auto,node distance=4.5cm, semithick]
+  \tikzstyle{every state}=[fill=red,draw=none,text=white]
+  \node[state, mygreen, initial] (I) at (-4,  0) {\StInit};
+  \node[state, mygreen]          (A) at ( 0,  0) {\StIdle};
+  \node[state]                   (B) at ( 8,  0) {\StDone};
+  \node[state, myblue]           (C) at ( 4, -4) {\StObjectIdsB};
+  \node[state, myblue]           (D) at (-4, -4) {\StObjectIdsNB};
+  \node[state, myblue]           (E) at ( 0,  4) {\StObjects};
+  \draw (I) edge[above]               node[above]{\MsgInit}                                                   (A);
+  \draw (A) edge[above]               node[above]{\MsgDone}                                                   (B);
+  \draw (A) edge[left, bend left=45]  node[fill = white, anchor = center]{\MsgRequestObjIdsB}                 (C);
+  \draw (C) edge[right, bend left=15] node[fill = white, anchor = center, above = 2pt]{\MsgReplyObjectIds}    (A);
+  \draw (D) edge[right, bend left=45] node[fill = white, anchor = center]{\MsgReplyObjectIds}                 (A);
+  \draw (A) edge[right, bend left=15] node[fill = white, anchor = center, below = 2pt]{\MsgRequestObjIdsNB}   (D);
+  \draw (A) edge[left, bend right=45] node[fill = white, anchor = center, above = 2pt]{\MsgRequestObjects}    (E);
+  \draw (E) edge[right, bend right=45]node[fill = white, anchor = center, below = 2pt]{\MsgReplyObjects}      (A);
+\end{tikzpicture}
+  \caption{State machine of the Object-Diffusion mini-protocol.}
+  \label{object-diffusion-automata}
+\end{figure}
+
+\begin{figure}[h]
+  \begin{center}
+    \begin{tabular}{l|l}
+      \header{state} & \header{agency} \\\hline
+      \StInit        & \Client \\
+      \StIdle        & \Client \\
+      \StObjectIdsB  & \Server \\
+      \StObjectIdsNB & \Server \\
+      \StObjects     & \Server \\
+    \end{tabular}
+    \caption{Object-Diffusion state agencies}
+  \end{center}
+\end{figure}
+
+\paragraph{Protocol messages}
+\begin{description}
+\item [\MsgInit]
+  Initial message of the protocol.  It carries no payload and, unlike in
+  \textit{tx-submission}, it does not transfer agency: the next message is sent
+  by the client as well.  It is kept so that the mini-protocol starts with
+  a client message, and to leave room for a future payload which would let the
+  server resume from the last point known to the client.
+\item [\MsgRequestObjIdsB{} {\boldmath $(ack,req)$}]
+  The client acknowledges $ack$ outstanding object identifiers and asks for up
+  to $req$ new ones; $req$ MUST be greater than zero.
+
+  This is a blocking operation: the reply will contain at least one identifier
+  and there is no timeout.  It covers the case when there is nothing else to do
+  but wait.  This variant MUST be used if and only if no unacknowledged
+  identifiers remain after taking $ack$ into account.
+\item [\MsgRequestObjIdsNB{} {\boldmath $(ack,req)$}]
+  As above, but a non-blocking operation: the reply may be empty and a prompt
+  response is expected.  It covers the high throughput case, in which requests
+  for identifiers are interleaved with requests for objects and hence must not
+  block.  Either $ack$ or $req$ MUST be non-zero.  This variant MUST be used if
+  and only if unacknowledged identifiers remain after taking $ack$ into
+  account.
+
+  Both variants are encoded as a single message, distinguished by a boolean
+  flag; see section~\ref{object-diffusion-cddl}.
+\item [\MsgReplyObjectIds{} {\boldmath ($\langle objectId \rangle$)}]
+  The server replies with the identifiers of available objects, in the order in
+  which it wishes to submit them.  The list MUST NOT be longer than $req$; it
+  MUST be non-empty in the blocking case and MAY be empty in the non-blocking
+  case.  The identifiers are appended to the FIFO of outstanding identifiers.
+\item [\MsgRequestObjects{} {\boldmath ($\langle objectId \rangle$)}]
+  The client requests objects by their identifiers.  It is a protocol error to
+  ask for an identifier which was not announced by \MsgReplyObjectIds{}, which
+  is no longer outstanding, or which was already asked for.  While the server
+  is responsible for staying within the in-flight limits, the client must
+  cooperate by keeping the total requested across all in-flight requests within
+  them as well.
+\item [\MsgReplyObjects{} {\boldmath ($\langle object \rangle$)}]
+  The server replies with the requested objects.  An object may have become
+  invalid between being announced and being requested, hence the reply MAY omit
+  objects; omitted objects are to be treated as if the server had never
+  announced them, which is no guarantee that they are invalid --- they may
+  still be available from another peer.
+\item [\MsgDone]
+  Terminating message, sent by the client when idle.
+\end{description}
+
+\begin{table}[h!]
+  \small
+  \setlength{\tabcolsep}{3pt}
+  \begin{tabular}{l|l|l|l}
+    \header{from state} & \header{message}      & \header{parameters}            & \header{to state} \\\hline
+    \StInit             & \MsgInit              &                                & \StIdle           \\
+    \StIdle             & \MsgRequestObjIdsB    & $ack$,$req$                    & \StObjectIdsB     \\
+    \StIdle             & \MsgRequestObjIdsNB   & $ack$,$req$                    & \StObjectIdsNB    \\
+    \StObjectIdsB       & \MsgReplyObjectIds    & $\langle objectId \rangle$     & \StIdle           \\
+    \StObjectIdsNB      & \MsgReplyObjectIds    & $\langle objectId \rangle$     & \StIdle           \\
+    \StIdle             & \MsgRequestObjects    & $\langle objectId \rangle$     & \StObjects        \\
+    \StObjects          & \MsgReplyObjects      & $\langle object \rangle$       & \StIdle           \\
+    \StIdle             & \MsgDone              &                                & \StDone           \\
+  \end{tabular}
+  \caption{Object-Diffusion mini-protocol messages.}
+\end{table}
+
+\subsection{Size limits per state}
+
+Table~\ref{table:object-diffusion-size-limits} specifies how many bytes can be
+sent in a given state; indirectly, this limits the payload size of each
+message.  If a space limit is violated, the connection SHOULD be torn down.
+
+\begin{table}[h!]
+  \begin{center}
+    \begin{tabular}{l|r}
+      \header{state} & \header{size limit in bytes} \\\hline
+      \StInit        & \texttt{65535} \\
+      \StIdle        & \texttt{65535} \\
+      \StObjectIdsB  & \texttt{2500000} \\
+      \StObjectIdsNB & \texttt{2500000} \\
+      \StObjects     & \texttt{2500000} \\
+    \end{tabular}
+    \caption{size limits per state}
+    \label{table:object-diffusion-size-limits}
+  \end{center}
+\end{table}
+
+\subsection{Timeouts per state}
+
+Table~\ref{table:object-diffusion-timeouts} specifies message timeouts in
+a given state.  If a timeout is violated, the connection SHOULD be torn down.
+
+\begin{table}[h!]
+  \begin{center}
+    \begin{tabular}{l|r}
+      \header{state} & \header{timeout} \\\hline
+      \StInit        & - \\
+      \StIdle        & - \\
+      \StObjectIdsB  & - \\
+      \StObjectIdsNB & \texttt{10}s \\
+      \StObjects     & \texttt{10}s \\
+    \end{tabular}
+    \caption{timeouts per state}
+    \label{table:object-diffusion-timeouts}
+  \end{center}
+\end{table}
+
+\subsection{Peras instantiations}
+
+\begin{table}[h!]
+  \begin{center}
+    \begin{tabular}{l|c|r|r}
+      \header{instantiation}       & \header{mini-protocol} & \header{max.\ outstanding} & \header{ingress buffer} \\
+                                   & \header{number}        & \header{identifiers}       & \header{size in bytes}  \\\hline
+      Peras certificate diffusion  & $16$                   & $10$                       & $220\,000$ \\
+      Peras vote diffusion         & $17$                   & $50$                       & $55\,000$  \\
+    \end{tabular}
+    \caption{Peras instantiations of the Object-Diffusion mini-protocol}
+    \label{table:peras-instantiations}
+  \end{center}
+\end{table}
+
+\noindent
+The limits on the number of outstanding identifiers, and thus the ingress
+buffer sizes derived from them (see
+table~\ref{table:node-to-node-ingress-buffer-limits}), are provisional; they
+are tracked in
+\href{https://github.com/tweag/cardano-peras/issues/97}{\textit{Tracking
+magic numbers to be tuned}} (\texttt{tweag/cardano-peras\#97}).
+
+\subsection{CDDL encoding specification}\label{object-diffusion-cddl}
+\lstinputlisting[style=cddl]{../../cardano-diffusion/protocols/cddl/specs/object-diffusion.cddl}
+
 \section{Local Tx-Submission mini-protocol}
 \protocolhaddockref{Ouroboros.Network.Protocol.LocalTxSubmission.Type}{ouroboros-network/protocols/Ouroboros-Network-Protocol-LocalTxSubmission-Type.html\#t:LocalTxSubmission}\\
 \codechaddockref{Ouroboros.Network.Protocol.LocalTxSubmission.Codec}{ouroboros-network/protocols/Ouroboros-Network-Protocol-LocalTxSubmission-Codec.html\#v:codecLocalTxSubmission}\\
@@ -2262,6 +2488,9 @@ The \textit{node-to-node protocol} consists of the following protocols:
     2 is used  (section~\ref{tx-submission-protocol2})
   \item \textit{keep alive mini-protocol}; from \texttt{NodeToNodeV\_3} (section~\ref{keep-alive-protocol})
   \item \textit{peer-sharing mini-protocol}; from \texttt{NodeToNodeV\_11} (section~\ref{peer-sharing-protocol})
+  \item \textit{object-diffusion mini-protocol}, instantiated for Peras
+    certificates and Peras votes; from \texttt{NodeToNodeV\_16}, and only if
+    \textit{peras support} was negotiated (section~\ref{object-diffusion-protocol})
 \end{itemize}
 Currently supported versions of the \textit{node-to-node protocol} are listed
 in table~\ref{table:node-to-node-protocol-versions}.
@@ -2293,6 +2522,8 @@ assigned to each node-to-node mini-protocol.
       \hyperref[tx-submission-protocol2]{Tx-Submission}                  & $4$  \\
       \hyperref[keep-alive-protocol]{Keep-Alive}                         & $8$  \\
       \hyperref[peer-sharing-protocol]{Peer-Sharing} \small{(optional)}  & $10$ \\
+      \hyperref[object-diffusion-protocol]{Peras certificate diffusion}  & $16$ \\
+      \hyperref[object-diffusion-protocol]{Peras vote diffusion}         & $17$ \\
     \end{tabular}
   \end{center}
   \caption{Node-to-node protocol numbers}
@@ -2319,11 +2550,19 @@ who owns its ingress buffer.
       \hyperref[tx-submission-protocol2]{Tx-Submission} &  $721\,424$ \\
       \hyperref[keep-alive-protocol]{Keep-Alive}        &  $1\,408$ \\
       \hyperref[peer-sharing-protocol]{Peer-Sharing}    &  $5\,760$ \\
+      \hyperref[object-diffusion-protocol]{Peras certificate diffusion} &  $220\,000$ \\
+      \hyperref[object-diffusion-protocol]{Peras vote diffusion}        &  $55\,000$ \\
     \end{tabular}
     \caption{Mux ingress buffer sizes for each mini-protocol}
     \label{table:node-to-node-ingress-buffer-limits}
   \end{center}
 \end{table}
+
+The two Peras limits are derived from the maximal number of unacknowledged
+object identifiers (see table~\ref{table:peras-instantiations}) and are
+provisional; they are tracked in
+\href{https://github.com/tweag/cardano-peras/issues/97}{\textit{Tracking
+magic numbers to be tuned}} (\texttt{tweag/cardano-peras\#97}).
 
 \section{Node-to-client protocol}
 \label{section:node-to-client-protocol}
