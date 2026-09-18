@@ -934,7 +934,7 @@ The protocol uses the following messages:
 \item [\MsgRollForward{} {\boldmath $(header, tip)$}]
       Tell the consumer to extend their chain with the given $header$.
       The message also tells the consumer about the $tip$ of the producer's chain.
-\item [\MsgRollBackward{} {\boldmath $(point_{old}, tip$}]
+\item [\MsgRollBackward{} {\boldmath $(point_{old}, tip)$}]
       Tell the consumer to roll back to a given $point_{old}$ on their chain.
       The message also tells the consumer about the current  $tip$ of the chain the producer is following.
 \item [\MsgFindIntersect{} {\boldmath $\langle point_{head} \rangle $}]
