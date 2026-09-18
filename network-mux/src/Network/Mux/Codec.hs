@@ -29,8 +29,8 @@ import Network.Mux.Types
 -- * transmission time: time when the SDU was sent
 -- * @d@: mini-protocol direction (`MiniProtocolDir`):
 --
---     * 1 - initiator direction
---     * 0 - responder direction
+--     * 0 - initiator direction
+--     * 1 - responder direction
 --
 -- * mini-protocol number (`MiniProtocolNum`)
 -- * length: length of the payload
