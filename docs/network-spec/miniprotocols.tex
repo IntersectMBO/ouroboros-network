@@ -4,7 +4,9 @@
 \newcommand{\Client}{\textcolor{mygreen}{\textbf{Client}}}
 \newcommand{\Server}{\textcolor{myblue}{\textbf{Server}}}
 
-\section{Mini Protocols and Protocol Families}https://hackage.haskell.org/package/typed-protocols-doc
+\section{Mini Protocols and Protocol Families}
+\noindent\href{https://hackage.haskell.org/package/typed-protocols}{\emph{typed-protocols documentation}}
+
 A mini protocol is a well-defined and modular building block of
 the network protocol.
 Structuring a protocol around mini-protocols helps manage the overall complexity of
@@ -175,15 +177,15 @@ framework.
     {Ping Pong Protocol}
     {ping-pong-protocol}
     {A simple ping-pong protocol for testing.}
-    {typed-protocols/src/Network/TypedProtocol/PingPong/Type.hs}
-    {https://input-output-hk.github.io/typed-protocols/typed-protocols-examples/Network-TypedProtocol-PingPong-Type.html\#t:PingPong}
+    {typed-protocols/examples/Network/TypedProtocol/PingPong/Type.hs}
+    {https://intersectmbo.github.io/typed-protocols/typed-protocols/examples/Network-TypedProtocol-PingPong-Type.html\#t:PingPong}
 
 \miniEntry
     {Request Response Protocol}
     {request-response-protocol}
     {A ping-pong-like protocol which allows the exchange of data.}
-    {typed-protocols/src/Network/TypedProtocol/ReqResp/Type.hs}
-    {https://input-output-hk.github.io/typed-protocols/typed-protocols-examples/Network-TypedProtocol-ReqResp-Type.html\#t:ReqResp}
+    {typed-protocols/examples/Network/TypedProtocol/ReqResp/Type.hs}
+    {https://intersectmbo.github.io/typed-protocols/typed-protocols/examples/Network-TypedProtocol-ReqResp-Type.html\#t:ReqResp}
 
 \subsection{Handshake}
 
@@ -236,6 +238,13 @@ In this section, we list all the mini-protocols that constitute the node-to-node
     {ouroboros-network/protocols/lib/Ouroboros/Network/Protocol/PeerSharing/Type.hs}
     {https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network/protocols/Ouroboros-Network-Protocol-PeerSharing-Type.html\#t:PeerSharing}
 
+\miniEntry
+    {Object-Diffusion Protocol}
+    {object-diffusion-protocol}
+    {A generic mini-protocol for diffusing objects; instantiated for Peras certificates and votes}
+    {ouroboros-network/protocols/lib/Ouroboros/Network/Protocol/ObjectDiffusion/Type.hs}
+    {https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network/protocols/Ouroboros-Network-Protocol-ObjectDiffusion-Type.html\#t:ObjectDiffusion}
+
 \subsection{Node-to-client mini-protocols}
 
 Mini-protocols used by node-to-client protocol.  The chain-sync mini-protocol
@@ -254,7 +263,7 @@ node-to-client protocol, it is used with full blocks rather than just headers.
     {local-state-query-protocol}
     {Protocol used by local clients to query ledger state}
     {ouroboros-network/protocols/lib/Ouroboros/Network/Protocol/LocalStateQuery/Type.hs}
-    {https://ouroboros-network.cardano.intersectmbo.org/cardano-diffusion/protocols/Cardano-Network-Protocol-LocalStateQuery-Type.html\#t:LocalStateQuery}
+    {https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network/protocols/Ouroboros-Network-Protocol-LocalStateQuery-Type.html\#t:LocalStateQuery}
 
 \miniEntry
     {Local Tx Submission Mini Protocol}
@@ -305,7 +314,7 @@ Dummy protocols are only used for testing and are not needed either for
 Node-to-Node nor for the Node-to-Client protocols.
 \subsection{Ping-Pong mini-protocol}
 \label{ping-pong-protocol}
-\haddockrefraw{Network.TypedProtocol.PingPong.Type}{https://input-output-hk.github.io/typed-protocols/typed-protocols-examples/Network-TypedProtocol-PingPong-Type.html\#t:PingPong}
+\haddockrefraw{Network.TypedProtocol.PingPong.Type}{https://intersectmbo.github.io/typed-protocols/typed-protocols/examples/Network-TypedProtocol-PingPong-Type.html\#t:PingPong}
 \newcommand{\Ping}{\msg{MsgPing}}
 \newcommand{\Pong}{\msg{MsgPong}}
 
@@ -360,7 +369,7 @@ The messages of the Ping-Pong protocol do not carry any data.
 
 \subsection{Request-Response mini-protocol}
 \label{request-response-protocol}
-\haddockrefraw{Network.TypedProtocol.ReqResp.Type}{https://input-output-hk.github.io/typed-protocols/typed-protocols-examples/Network-TypedProtocol-ReqResp-Type.html\#t:ReqResp}
+\haddockrefraw{Network.TypedProtocol.ReqResp.Type}{https://intersectmbo.github.io/typed-protocols/typed-protocols/examples/Network-TypedProtocol-ReqResp-Type.html\#t:ReqResp}
 \renewcommand{\StIdle}{\state{StIdle}}
 \renewcommand{\StBusy}{\state{StBusy}}
 \renewcommand{\StDone}{\state{StDone}}
@@ -415,7 +424,8 @@ The protocol uses the following messages.
 
 \section{Handshake mini-protocol}
 \protocolhaddockref{Ouroboros.Network.Protocol.Handshake.Type}{ouroboros-network/framework/Ouroboros-Network-Protocol-Handshake-Type.html\#t:Handshake}\\
-\codechaddockref{Ouroboros.Network.Protocol.Handshake.Codec}{ouroboros-network/framework/Ouroboros-Network-Protocol-Handshake-Codec.html\#v:codecHandshake}\\
+\codechaddockref{Cardano.Network.Protocol.Handshake.Codec}{cardano-diffusion/protocols/Cardano-Network-Protocol-Handshake-Codec.html\#v:nodeToNodeHandshakeCodec}\\
+\codechaddockref{Cardano.Network.Protocol.Handshake.Codec}{cardano-diffusion/protocols/Cardano-Network-Protocol-Handshake-Codec.html\#v:nodeToClientHandshakeCodec}\\
 \hyperref[table:node-to-node-protocol-numbers]{\textit{node-to-node mini-protocol number}}: \texttt{0}\\
 \hyperref[table:node-to-client-protocol-numbers]{\textit{node-to-client mini-protocol number}}: \texttt{0}\\
 \hyperref[sec:nodetoclientcddl]{node-to-client handshake CDDL spec}
@@ -424,8 +434,9 @@ The protocol uses the following messages.
 \newcommand{\StPropose}{\state{StPropose}}
 \newcommand{\StConfirm}{\state{StConfirm}}
 \newcommand{\MsgProposeVersions}{\msg{MsgProposeVersions}}
-\newcommand{\MsgReplyVersions}{\msg{MsgReplyVersion}}
+\newcommand{\MsgReplyVersions}{\msg{MsgReplyVersions}}
 \newcommand{\MsgAcceptVersion}{\msg{MsgAcceptVersion}}
+\newcommand{\MsgQueryReply}{\msg{MsgQueryReply}}
 \newcommand{\MsgRefuse}{\msg{MsgRefuse}}
 
 \newcommand{\VersionMismatch}{\msg{VersionMismatch}}
@@ -455,9 +466,10 @@ The handshake mini protocol is designed to handle simultaneous TCP open.
     \node[state, right of=Confirm]   (StDone)    at (7,  0) {\StDone};
 
     \draw (StPropose) --node[above=1em]{\MsgProposeVersions} (StConfirm);
-    \draw[->] (StConfirm.10)  to [out=15,  in=150] node[above]{\MsgAcceptVersion} (StDone.170);
-    \draw[->] (StConfirm.350) to [out=-15, in=210] node[below]{\MsgRefuse}        (StDone.190);
+    \draw[->] (StConfirm.30)  to [out=35,  in=145] node[above]{\MsgAcceptVersion} (StDone.150);
+    \draw[->] (StConfirm.10)  to [out=15,  in=165] node[above]{\MsgQueryReply}    (StDone.170);
     \draw[->] (StConfirm)     -- node[fill=white,above=-0.8em]{\MsgReplyVersions} (StDone.west);
+    \draw[->] (StConfirm.350) to [out=-15, in=210] node[below]{\MsgRefuse}        (StDone.190);
   \end{tikzpicture}
 \end{figure}
 
@@ -484,6 +496,13 @@ Messages of the protocol:
       decoding as \MsgProposeVersions{}.
   \item [\MsgAcceptVersion{} {\boldmath $(versionNumber,extraParameters)$}]
       The server accepts $versionNumber$ and returns possible extra protocol parameters.
+  \item [\MsgQueryReply{} {\boldmath $(versionTable)$}]
+      The server replies with all the versions it supports together with their
+      version data, and the connection is terminated.  This message is sent
+      instead of \MsgAcceptVersion{} whenever the negotiated version data
+      requests a version query (see the \texttt{query} flag of the
+      node-to-node and node-to-client version data below).  No mini-protocols
+      are run in this case.
   \item [\MsgRefuse{} {\boldmath $(reason)$}]
       The server refuses the proposed versions.
 \end{description}
@@ -495,6 +514,7 @@ Messages of the protocol:
     \StPropose & \MsgProposeVersions & $versionTable$                & \StConfirm \\
     \StConfirm & \MsgReplyVersions   & $versionTable$                & \StDone \\
     \StConfirm & \MsgAcceptVersion   & $(versionNumber,versionData)$ & \StDone \\
+    \StConfirm & \MsgQueryReply      & $versionTable$                & \StDone \\
     \StConfirm & \MsgRefuse          & $reason$                      & \StDone \\
   \end{tabular}
 \end{table}
@@ -513,7 +533,7 @@ connection SHOULD be torn down.
       \StPropose & \texttt{5760} \\
       \StConfirm & \texttt{5760} \\
     \end{tabular}
-    % \caption{size limits per state}
+    \caption{size limits per state}
     \label{table:handshake-size-limits}
   \end{center}
 \end{table}
@@ -550,11 +570,18 @@ of
   \item[network magic] a \texttt{Word32} value;
   \item[diffusion mode] a boolean value: \texttt{True} value indicates
     initiator only mode, \texttt{False} - initiator and responder mode;
-  \item[peer sharing] either $0$ or $1$: $1$ indicates that the node
-    will engage in peer sharing (and thus it will run the PeerSharing
-    mini-protocol);
-  \item[query] a boolean value: \texttt{True} will send back all supported
-    versions \& version data and terminate the connection.
+  \item[peer sharing] either $0$ or $1$: $1$ indicates that the node is
+    willing to engage in peer sharing.  Note that this is the value
+    \emph{proposed} by a node; the PeerSharing mini-protocol is run only if
+    the \emph{negotiated} value is $1$;
+  \item[query] a boolean value: \texttt{True} asks the remote side to send
+    back all supported versions \& version data and terminate the connection;
+  \item[peras support] a boolean value: \texttt{True} indicates that the node
+    supports the Peras mini-protocols.  As for peer sharing, this is the value
+    \emph{proposed} by a node; the Peras mini-protocols are run only if the
+    \emph{negotiated} value is \texttt{True}.  This field is only present from
+    \texttt{NodeToNodeV\_16} on; for earlier versions it MUST NOT be encoded
+    and it is negotiated as \texttt{False}.
 \end{description}
 
 When negotiating a connection, each side will have access to local and remote
@@ -565,12 +592,34 @@ negotiation is a new version data record which consists of:
     data, otherwise the negotiation fails;
   \item diffusion mode SHOULD be initiator only if and only if any side proposes the
     initiator-only mode (i.e. the logical disjunction operator);
-  \item peer sharing SHOULD be inherited from the remote side;
-  \item query SHOULD be inherited from the client (the side that sent
-      \MsgProposeVersions{}).
+  \item peer sharing SHOULD be enabled (i.e. $1$) if and only if both sides
+    propose it enabled (i.e. the logical conjunction operator);
+  \item peras support SHOULD be \texttt{True} if and only if both sides propose
+    \texttt{True} (i.e. the logical conjunction operator);
+  \item query SHOULD be \texttt{True} if and only if any side proposes
+    \texttt{True} (i.e. the logical disjunction operator).
 \end{itemize}
-If the negotiation is successful, the negotiated version data is sent back
-using \MsgAcceptVersion{}, otherwise \MsgRefuse{} SHOULD be sent.
+Note that both mini-protocol feature flags -- peer sharing and peras support
+-- are combined with conjunction.  This is necessary because the negotiated
+value decides which mini-protocols are run by the multiplexer on both ends of
+the connection, and hence both ends MUST arrive at the same value: a node
+which does not support a feature will not run the corresponding mini-protocol,
+not even its responder side.
+
+The rules above are \emph{symmetric}, i.e. they do not depend on which side is
+the client and which one is the server.  This is required to support TCP
+simultaneous open, in which case both sides compute the negotiated version
+data independently, see section~\ref{sec:handshake-implementation}.  They are
+also \emph{idempotent} in the following sense: applying them to the local
+version data and an already negotiated version data gives back the negotiated
+version data.  This is required because the client verifies the version data
+received with \MsgAcceptVersion{} by re-running the negotiation against its
+own local version data.
+
+If the negotiated query flag is \texttt{True}, the server MUST reply with
+\MsgQueryReply{}, see section~\ref{sec:handshake-implementation}.  Otherwise,
+if the negotiation is successful, the negotiated version data is sent back
+using \MsgAcceptVersion{}, and if it fails \MsgRefuse{} SHOULD be sent.
 
 \subsubsection{Size limits per state}
 
@@ -585,7 +634,7 @@ connection SHOULD be torn down.
       \StPropose & \texttt{5760} \\
       \StConfirm & \texttt{5760} \\
     \end{tabular}
-    % \caption{size limits per state}
+    \caption{size limits per state}
   \end{center}
 \end{table}
 
@@ -601,19 +650,19 @@ a message.  If a timeout is violated, the connection SHOULD be torn down.
       \StPropose     & \texttt{10}s \\
       \StConfirm     & \texttt{10}s \\
     \end{tabular}
-    % \caption{timeouts per state}
+    \caption{timeouts per state}
   \end{center}
 \end{table}
 
 \subsection{Node-to-client handshake}
 \codechaddockref{Cardano.Network.NodeToClient}{cardano-diffusion/Cardano-Network-NodeToClient.html\#v:nodeToClientHandshakeCodec}\\
 
-The node-to-node handshake instantiates version data to a record which consists
+The node-to-client handshake instantiates version data to a record which consists
 of
 \begin{description}
   \item[network magic] a \texttt{Word32} value;
-  \item[query] a boolean value: \texttt{True} will send back all supported;
-    versions \& version data and terminate the connection.
+  \item[query] a boolean value: \texttt{True} asks the remote side to send
+    back all supported versions \& version data and terminate the connection.
 \end{description}
 
 The negotiated version data is computed similarly as in the node-to-node
@@ -621,11 +670,13 @@ protocol:
 \begin{itemize}\label{alg:node-to-client-negotiation}
   \item if the network magic agrees, then it is inherited by the negotiated version
     data, otherwise the negotiation fails;
-  \item query SHOULD be inherited from the client (the side that sent
-    \MsgProposeVersions{}).
+  \item query SHOULD be \texttt{True} if and only if any side proposes
+    \texttt{True} (i.e. the logical disjunction operator).
 \end{itemize}
-If the negotiation is successful, the negotiated version data is sent back
-using \MsgAcceptVersion{}, otherwise \MsgRefuse{} SHOULD be sent.
+If the negotiated query flag is \texttt{True}, the server MUST reply with
+\MsgQueryReply{}, see section~\ref{sec:handshake-implementation}.  Otherwise,
+if the negotiation is successful, the negotiated version data is sent back
+using \MsgAcceptVersion{}, and if it fails \MsgRefuse{} SHOULD be sent.
 
 \subsubsection{Size limits per state}
 
@@ -640,7 +691,7 @@ connection SHOULD be torn down.
       \StPropose & \texttt{5760} \\
       \StConfirm & \texttt{5760} \\
     \end{tabular}
-    % \caption{size limits per state}
+    \caption{size limits per state}
   \end{center}
 \end{table}
 
@@ -649,6 +700,7 @@ connection SHOULD be torn down.
 No timeouts are used for node-to-client handshake.
 
 \subsection{Client and Server Implementation}
+\label{sec:handshake-implementation}
 Section~\ref{handshake-cddl} contains the CDDL specification of the binary format of the handshake messages.
 The version table is encoded as a CBOR table with the version number as the key
 and the protocol parameters as a value.
@@ -660,8 +712,10 @@ table. Therefore, the CDDL specification uses a table with keys from 1 to 4 as a
 In a run of the handshake mini protocol, the peers exchange only two messages:
 The client initiates the protocol with a \MsgProposeVersions{} message that
 contains information about all protocol versions it wants to support. The
-server replies either with an \MsgAcceptVersion{} message containing the
-negotiated version number and version data or a \MsgRefuse{} message.
+server replies with an \MsgAcceptVersion{} message containing the negotiated
+version number and version data, with a \MsgQueryReply{} message containing
+all the versions it supports (if the negotiated query flag is set), or with
+a \MsgRefuse{} message.
 The \MsgRefuse{} message contains one of three alternative refuse reasons:
 \VersionMismatch{}, \HandshakeDecodeError{} or just \Refused{}.
 
@@ -688,18 +742,36 @@ compute the response:
   If the test refuses the parameters:
     Reply with \MsgRefuse(\Refused), the selected version number and an error message.
 \item
-  Otherwise, compute negotiation parameters according to the
+  Otherwise, compute the negotiated version data according to the
     algorithm~\ref{alg:node-to-node-negotiation} or
-    \ref{alg:node-to-client-negotiation}, encode them with the corresponding
-    CBOR codec and reply with \MsgAcceptVersion, the selected version number
-    and the extra parameters.
+    \ref{alg:node-to-client-negotiation}.
+\item
+  If the query flag of the negotiated version data is set:
+  Reply with \MsgQueryReply{} and the version table containing all the
+  versions the server supports together with their version data, and terminate
+  the connection.  No mini-protocols are run in this case.
+\item
+  Otherwise, encode the negotiated version data with the corresponding CBOR
+    codec and reply with \MsgAcceptVersion, the selected version number
+    and the negotiated version data.
 \end{enumerate}
-Note that in step 4), 6) and 8) the handshake protocol uses the callback functions that are specific
-for a set of protocols that the server supports.
+Note that in step 4), 6), 8) and 10) the handshake protocol uses the callback
+functions that are specific for a set of protocols that the server supports.
 The handshake protocol is designed
 so that a server can always handle requests for protocol versions that it does not support.
 The server simply ignores the CBOR terms that represent the protocol parameters of unsupported
 versions.
+
+When the client receives \MsgAcceptVersion{}, it MUST verify the server's
+choice: it MUST reject a version number which it did not propose, and it MUST
+check that the received version data is acceptable to it.  This check SHOULD
+be done by re-running the negotiation algorithm on the client's own local
+version data and the received version data; its result is then the version
+data the client uses.  If the check fails, the client MUST abort the
+handshake.  Since the negotiation algorithm is idempotent (see
+algorithm~\ref{alg:node-to-node-negotiation}
+and~\ref{alg:node-to-client-negotiation}) a well behaved server will always
+pass this check.
 
 In case of simultaneous open of a TCP connection, both handshake clients will
 send their \MsgProposeVersions{}, and both will interpret the incoming message as
@@ -724,7 +796,7 @@ following sense.
                     deriving Eq
 \end{verbatim}
     See
-    \href{https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network-framework/Ouroboros-Network-Protocol-Handshake-Version.html#t:Acceptable}{ref}.
+    \href{https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network/framework/Ouroboros-Network-Protocol-Handshake-Version.html#t:Acceptable}{ref}.
     Both \texttt{acceptable local remote} and \texttt{acceptable remote local}
     must satisfy the following conditions:
     \begin{itemize}
@@ -741,7 +813,7 @@ A weaker condition, in which the return values are equal if they both return
 \texttt{Accept} does not guarantee this property.  We also verify that the
 whole Handshake protocol, not just the \texttt{acceptable} satisfies the above
 property, see
-\href{https://github.com/intersectmbo/ouroboros-network/blob/master/ouroboros-network/protocol-tests/Ouroboros/Network/Protocol/Handshake/Test.hs}{Ouroboros-Network
+\href{https://github.com/intersectmbo/ouroboros-network/blob/master/ouroboros-network/protocols/tests-lib/Ouroboros/Network/Protocol/Handshake/Test.hs}{Ouroboros-Network
 test suite}.
 
 The fact that we are using non-injective encoding in the handshake protocol
@@ -754,7 +826,7 @@ true for the handshake protocol.  Even though the opening message
 other side as a termination message \MsgReplyVersions{}, and the same will
 happen to the \MsgProposeVersions{} transmitted in the other direction.
 We include a special test case
-(\href{https://github.com/intersectmbo/ouroboros-network/blob/master/ouroboros-network/protocol-tests/Ouroboros/Network/Protocol/Handshake/Test.hs\#L551}{\texttt{prop\_channel\_simultaneous\_open}})
+(\href{https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network/protocols-tests-lib/Ouroboros-Network-Protocol-Handshake-Test.html\#v:prop\_channel\_simultaneous\_open}{\texttt{prop\_channel\_simultaneous\_open}})
 to verify that simultaneous open behaves well and does not lead to protocol
 errors.
 
@@ -772,9 +844,17 @@ instantiations, e.g., different protocol versions and version data carried in
 messages.  First, one is used by the node-to-node protocol, and the other is used by the
 node-to-client protocol.
 \subsubsection{Node-to-node handshake mini-protocol}
+The version data is specified in two separate listings, imported by the
+handshake specification under the \texttt{v14} and \texttt{v16} namespaces:
+\texttt{NodeToNodeV\_14} and \texttt{NodeToNodeV\_15} use the former,
+\texttt{NodeToNodeV\_16} the latter (which adds the \texttt{perasSupport}
+field).
 \lstinputlisting[style=cddl]{../../cardano-diffusion/protocols/cddl/specs/handshake-node-to-node-v14.cddl}
+\lstinputlisting[style=cddl]{../../cardano-diffusion/protocols/cddl/specs/node-to-node-version-data-v14.cddl}
+\lstinputlisting[style=cddl]{../../cardano-diffusion/protocols/cddl/specs/node-to-node-version-data-v16.cddl}
 
 \subsubsection{Node-to-client handshake mini-protocol}
+\label{sec:nodetoclientcddl}
 \lstinputlisting[style=cddl]{../../cardano-diffusion/protocols/cddl/specs/handshake-node-to-client.cddl}
 
 \section{Chain-Sync mini-protocol}
@@ -861,7 +941,7 @@ The protocol uses the following messages:
 \item [\MsgRollForward{} {\boldmath $(header, tip)$}]
       Tell the consumer to extend their chain with the given $header$.
       The message also tells the consumer about the $tip$ of the producer's chain.
-\item [\MsgRollBackward{} {\boldmath $(point_{old}, tip$}]
+\item [\MsgRollBackward{} {\boldmath $(point_{old}, tip)$}]
       Tell the consumer to roll back to a given $point_{old}$ on their chain.
       The message also tells the consumer about the current  $tip$ of the chain the producer is following.
 \item [\MsgFindIntersect{} {\boldmath $\langle point_{head} \rangle $}]
@@ -933,13 +1013,15 @@ violated, the connection SHOULD be torn down.
 
 The table~\ref{table:chain-sync-timeouts} specifies message timeouts in a given
 state.  If a timeout is violated, the connection SHOULD be torn down.
+The timeout on state \StIdle{} is configurable and it can be disabled
+altogether; the value given below is the default used by Cardano Node.
 The timeout on state \StMustReply{} only applies if the peer is not trustable. Trusted peers are assumed to be honest and will send new headers as soon as they receive them. If a trusted peer has not sent new headers for an extended period, it is assumed that no new headers are available. Typically, trusted peers are operated by the same organisation, such as all nodes managed by a single SPO.
 
 \begin{table}[h!]
   \begin{center}
     \begin{tabular}{l|r}
       \header{state} & \header{timeout} \\\hline
-      \StIdle        & \texttt{3673}s \\
+      \StIdle        & \texttt{3373}s \\
       \StCanAwait    & \texttt{10}s   \\
       \StMustReply   & random between \texttt{601}s and \texttt{911}s \\
       \StIntersect   & \texttt{10}s   \\
@@ -1177,8 +1259,8 @@ The block fetching mechanism enables a node to download a range of blocks.
   The server tells the client that it does not have all of the blocks in the requested {\boldmath $range$}.
 \item [\MsgStartBatch]
   The server starts block streaming.
-\item [\MsgBlock{} {\boldmath $(body)$}]
-  Stream a single block's body.
+\item [\MsgBlock{} {\boldmath $(block)$}]
+  Stream a single block.
 \item [\MsgBatchDone]
   The server ends block streaming.
 \item [\MsgClientDone]
@@ -1195,7 +1277,7 @@ The transitions are shown in table~\ref{table:block-fetch}.
       \StIdle       & \MsgRequestRange & $range$    & \StBusy      \\
       \StBusy       & \MsgNoBlocks     &            & \StIdle      \\
       \StBusy       & \MsgStartBatch   &            & \StStreaming \\
-      \StStreaming  & \MsgBlock        & $body$     & \StStreaming \\
+      \StStreaming  & \MsgBlock        & $block$    & \StStreaming \\
       \StStreaming  & \MsgBatchDone    &            & \StIdle      \\
     \end{tabular}
   \end{center}
@@ -1217,7 +1299,7 @@ connection SHOULD be torn down.
       \StBusy        & \texttt{65535} \\
       \StStreaming   & \texttt{2500000} \\
     \end{tabular}
-    % \caption{size limits per state}
+    \caption{size limits per state}
     \label{table:block-fetch-size-limits}
   \end{center}
 \end{table}
@@ -1435,8 +1517,8 @@ a space limit is violated, the connection SHOULD be torn down.
   \begin{center}
     \begin{tabular}{l|r}
       \header{state}      & \header{size limit in bytes} \\\hline
-      \StInit             & \texttt{5760} \\
-      \StIdle             & \texttt{5760} \\
+      \StInit             & \texttt{65535} \\
+      \StIdle             & \texttt{65535} \\
       \StTxIdsBlocking    & \texttt{2500000} \\
       \StTxIdsNonBlocking & \texttt{2500000} \\
       \StTxs              & \texttt{2500000} \\
@@ -1584,7 +1666,7 @@ connection SHOULD be torn down.
       \StClient      & \texttt{65535} \\
       \StServer      & \texttt{65535} \\
     \end{tabular}
-    % \caption{size limits per state}
+    \caption{size limits per state}
     \label{table:keep-alive-size-limits}
   \end{center}
 \end{table}
@@ -1611,11 +1693,33 @@ a message.  If a timeout is violated, the connection SHOULD be torn down.
 
 \section{Peer Sharing mini-protocol}
 \protocolhaddockref{Ouroboros.Network.Protocol.PeerSharing.Type}{ouroboros-network/protocols/Ouroboros-Network-Protocol-PeerSharing-Type.html\#t:PeerSharing}\\
-\codechaddockref{Ouroboros.Network.Protocol.PeerSharing.Codec}{ouroboros-network/protocols/Ouroboros-Network-Protocol-PeerSharing-Codec.html\#v:codecPeerSharing}\\
+\codechaddockref{Cardano.Network.Protocol.PeerSharing.Codec}{cardano-diffusion/protocols/Cardano-Network-Protocol-PeerSharing-Codec.html\#v:codecPeerSharing}\\
 \hyperref[table:node-to-node-protocol-numbers]{\textit{node-to-node mini-protocol number}}: \texttt{10}\\
 \label{peer-sharing-protocol}
 \subsection{Description}
 The Peer-Sharing mini-protocol is a simple Request-Reply mini-protocol. The mini-protocol is used by nodes to share their upstream peers (a subset of their Known Peers).
+
+\paragraph{Participation}
+Whether a node participates in peer sharing is a configuration choice.  The
+configured value is the one \emph{proposed} in the handshake version data, and
+the mini-protocol is run only if the \emph{negotiated} value is $1$, i.e. only
+if both sides propose it enabled, see
+algorithm~\ref{alg:node-to-node-negotiation}.
+
+A relay node SHOULD enable peer sharing; a block producer SHOULD NOT.  These
+are the defaults provided by
+\href{https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network/Ouroboros-Network-Diffusion-Configuration.html\#v:defaultPeerSharing}{\texttt{defaultPeerSharing}}.
+The distinction matters because the flag governs more than whether this
+mini-protocol is run:
+\begin{itemize}
+  \item a node MUST NOT share the address of a peer which proposed peer
+    sharing disabled.  Proposing peer sharing disabled is therefore how a node
+    opts out of having its own address diffused, which is the reason a block
+    producer disables it;
+  \item a node which is configured with peer sharing disabled does not request
+    peers over this mini-protocol, and it also does not learn addresses from
+    its inbound connections.
+\end{itemize}
 
 \newcommand{\PsClient}{\state{StIdle}}
 \newcommand{\PsServer}{\state{StBusy}}
@@ -1661,7 +1765,17 @@ The Peer-Sharing mini-protocol is a simple Request-Reply mini-protocol. The mini
   It is a protocol error to send more peers than it was requested.
 
   The server should only share peers with which it has (or recently had) an
-  successful inbound or outbound session.
+  successful inbound or outbound session, and which have not failed since.
+
+  A $peerAddress$ is a resolved socket address: an \texttt{IPv4} or
+  \texttt{IPv6} address together with a port number, see
+  section~\ref{peersharing-cddl} for the encoding.  The mini-protocol carries
+  neither DNS names nor \texttt{SRV} records
+  (\href{https://cips.cardano.org/cip/CIP-0155}{CIP-0155}); a peer which is
+  configured with a domain name, e.g. in a topology file, is shared as
+  a resolved socket address, never by its name.  The encoding of
+  $peerAddress$ is the same for all currently supported node-to-node
+  versions.
 \item [\MsgDone]
   Terminating message.
 \end{description}
@@ -1679,7 +1793,7 @@ connection SHOULD be torn down.
       \StIdle        & \texttt{5760} \\
       \StBusy        & \texttt{5760} \\
     \end{tabular}
-    % \caption{size limits per state}
+    \caption{size limits per state}
     \label{table:peer-share-size-limits}
   \end{center}
 \end{table}
@@ -1771,6 +1885,225 @@ function application all the way to diffusion and share the relevant parts of
 \subsection{CDDL encoding specification ($\geq 14$)}\label{peersharing-cddl}
 \lstinputlisting[style=cddl]{../../cardano-diffusion/protocols/cddl/specs/peer-sharing-v14.cddl}
 
+\section{Object-Diffusion mini-protocol}
+\protocolhaddockref{Ouroboros.Network.Protocol.ObjectDiffusion.Type}{ouroboros-network/protocols/Ouroboros-Network-Protocol-ObjectDiffusion-Type.html\#t:ObjectDiffusion}\\
+\codechaddockref{Ouroboros.Network.Protocol.ObjectDiffusion.Codec}{ouroboros-network/protocols/Ouroboros-Network-Protocol-ObjectDiffusion-Codec.html\#v:codecObjectDiffusion}\\
+\hyperref[table:node-to-node-protocol-numbers]{\textit{node-to-node mini-protocol numbers}}: \texttt{16}, \texttt{17}\\
+\label{object-diffusion-protocol}
+\label{peras-protocol}
+
+\subsection{Description}
+
+The \textit{object-diffusion mini-protocol} diffuses a stream of objects of
+a single kind from one node to another.  It is generic: it is parametrised by
+the type of the objects and by the type of their identifiers, and the encoding
+of $objectId$ and $object$ is supplied by the instantiation (see
+section~\ref{object-diffusion-cddl}).
+
+The node-to-node protocol instantiates it twice, for the diffusion of Peras
+certificates and of Peras votes.  Both instances are run only if \textit{peras
+support} was negotiated, which requires both sides to propose it (see
+algorithm~\ref{alg:node-to-node-negotiation}), hence they are available from
+\texttt{NodeToNodeV\_16} onwards.  The two instantiations differ only in the
+mini-protocol number, the object type and the limits given in
+table~\ref{table:peras-instantiations}.
+
+The protocol is pull-based, like \textit{chain-sync} and \textit{block-fetch}
+and unlike \textit{tx-submission}: the client is the side which
+\textit{receives} objects and it drives the exchange, while the server sends
+objects when asked to.  Objects are transferred in two steps: the client first
+asks for object identifiers and then asks for those objects it is interested
+in.  This makes the protocol usable in a trustless setting, where each side has
+to guard against resource consumption attacks from the other.
+
+The protocol maintains a notional FIFO queue of \textit{outstanding} object
+identifiers, which the server has announced but the client has not acknowledged
+yet.  Only outstanding objects can be requested; they can be requested in any
+order, but at most once.  Identifiers are acknowledged in the FIFO order in
+which they were announced, and the acknowledgement is piggybacked on the
+message which asks for more identifiers.  It is a protocol error to put the
+number of outstanding identifiers over the limit given in
+table~\ref{table:peras-instantiations}.
+
+\newcommand{\StObjectIdsB}      {\state{StObjectIdsBlocking}}
+\newcommand{\StObjectIdsNB}     {\state{StObjectIdsNonBlocking}}
+\newcommand{\StObjects}         {\state{StObjects}}
+\newcommand{\MsgRequestObjIdsB} {\msg{MsgRequestObjectIdsBlocking}}
+\newcommand{\MsgRequestObjIdsNB}{\msg{MsgRequestObjectIdsNonBlocking}}
+\newcommand{\MsgReplyObjectIds} {\msg{MsgReplyObjectIds}}
+\newcommand{\MsgRequestObjects} {\msg{MsgRequestObjects}}
+\newcommand{\MsgReplyObjects}   {\msg{MsgReplyObjects}}
+
+\subsection{State machine}
+
+\begin{figure}[h!]
+\begin{tikzpicture}[->,shorten >=1pt,auto,node distance=4.5cm, semithick]
+  \tikzstyle{every state}=[fill=red,draw=none,text=white]
+  \node[state, mygreen, initial] (I) at (-4,  0) {\StInit};
+  \node[state, mygreen]          (A) at ( 0,  0) {\StIdle};
+  \node[state]                   (B) at ( 8,  0) {\StDone};
+  \node[state, myblue]           (C) at ( 4, -4) {\StObjectIdsB};
+  \node[state, myblue]           (D) at (-4, -4) {\StObjectIdsNB};
+  \node[state, myblue]           (E) at ( 0,  4) {\StObjects};
+  \draw (I) edge[above]               node[above]{\MsgInit}                                                   (A);
+  \draw (A) edge[above]               node[above]{\MsgDone}                                                   (B);
+  \draw (A) edge[left, bend left=45]  node[fill = white, anchor = center]{\MsgRequestObjIdsB}                 (C);
+  \draw (C) edge[right, bend left=15] node[fill = white, anchor = center, above = 2pt]{\MsgReplyObjectIds}    (A);
+  \draw (D) edge[right, bend left=45] node[fill = white, anchor = center]{\MsgReplyObjectIds}                 (A);
+  \draw (A) edge[right, bend left=15] node[fill = white, anchor = center, below = 2pt]{\MsgRequestObjIdsNB}   (D);
+  \draw (A) edge[left, bend right=45] node[fill = white, anchor = center, above = 2pt]{\MsgRequestObjects}    (E);
+  \draw (E) edge[right, bend right=45]node[fill = white, anchor = center, below = 2pt]{\MsgReplyObjects}      (A);
+\end{tikzpicture}
+  \caption{State machine of the Object-Diffusion mini-protocol.}
+  \label{object-diffusion-automata}
+\end{figure}
+
+\begin{figure}[h]
+  \begin{center}
+    \begin{tabular}{l|l}
+      \header{state} & \header{agency} \\\hline
+      \StInit        & \Client \\
+      \StIdle        & \Client \\
+      \StObjectIdsB  & \Server \\
+      \StObjectIdsNB & \Server \\
+      \StObjects     & \Server \\
+    \end{tabular}
+    \caption{Object-Diffusion state agencies}
+  \end{center}
+\end{figure}
+
+\paragraph{Protocol messages}
+\begin{description}
+\item [\MsgInit]
+  Initial message of the protocol.  It carries no payload and, unlike in
+  \textit{tx-submission}, it does not transfer agency: the next message is sent
+  by the client as well.  It is kept so that the mini-protocol starts with
+  a client message, and to leave room for a future payload which would let the
+  server resume from the last point known to the client.
+\item [\MsgRequestObjIdsB{} {\boldmath $(ack,req)$}]
+  The client acknowledges $ack$ outstanding object identifiers and asks for up
+  to $req$ new ones; $req$ MUST be greater than zero.
+
+  This is a blocking operation: the reply will contain at least one identifier
+  and there is no timeout.  It covers the case when there is nothing else to do
+  but wait.  This variant MUST be used if and only if no unacknowledged
+  identifiers remain after taking $ack$ into account.
+\item [\MsgRequestObjIdsNB{} {\boldmath $(ack,req)$}]
+  As above, but a non-blocking operation: the reply may be empty and a prompt
+  response is expected.  It covers the high throughput case, in which requests
+  for identifiers are interleaved with requests for objects and hence must not
+  block.  Either $ack$ or $req$ MUST be non-zero.  This variant MUST be used if
+  and only if unacknowledged identifiers remain after taking $ack$ into
+  account.
+
+  Both variants are encoded as a single message, distinguished by a boolean
+  flag; see section~\ref{object-diffusion-cddl}.
+\item [\MsgReplyObjectIds{} {\boldmath ($\langle objectId \rangle$)}]
+  The server replies with the identifiers of available objects, in the order in
+  which it wishes to submit them.  The list MUST NOT be longer than $req$; it
+  MUST be non-empty in the blocking case and MAY be empty in the non-blocking
+  case.  The identifiers are appended to the FIFO of outstanding identifiers.
+\item [\MsgRequestObjects{} {\boldmath ($\langle objectId \rangle$)}]
+  The client requests objects by their identifiers.  It is a protocol error to
+  ask for an identifier which was not announced by \MsgReplyObjectIds{}, which
+  is no longer outstanding, or which was already asked for.  While the server
+  is responsible for staying within the in-flight limits, the client must
+  cooperate by keeping the total requested across all in-flight requests within
+  them as well.
+\item [\MsgReplyObjects{} {\boldmath ($\langle object \rangle$)}]
+  The server replies with the requested objects.  An object may have become
+  invalid between being announced and being requested, hence the reply MAY omit
+  objects; omitted objects are to be treated as if the server had never
+  announced them, which is no guarantee that they are invalid --- they may
+  still be available from another peer.
+\item [\MsgDone]
+  Terminating message, sent by the client when idle.
+\end{description}
+
+\begin{table}[h!]
+  \small
+  \setlength{\tabcolsep}{3pt}
+  \begin{tabular}{l|l|l|l}
+    \header{from state} & \header{message}      & \header{parameters}            & \header{to state} \\\hline
+    \StInit             & \MsgInit              &                                & \StIdle           \\
+    \StIdle             & \MsgRequestObjIdsB    & $ack$,$req$                    & \StObjectIdsB     \\
+    \StIdle             & \MsgRequestObjIdsNB   & $ack$,$req$                    & \StObjectIdsNB    \\
+    \StObjectIdsB       & \MsgReplyObjectIds    & $\langle objectId \rangle$     & \StIdle           \\
+    \StObjectIdsNB      & \MsgReplyObjectIds    & $\langle objectId \rangle$     & \StIdle           \\
+    \StIdle             & \MsgRequestObjects    & $\langle objectId \rangle$     & \StObjects        \\
+    \StObjects          & \MsgReplyObjects      & $\langle object \rangle$       & \StIdle           \\
+    \StIdle             & \MsgDone              &                                & \StDone           \\
+  \end{tabular}
+  \caption{Object-Diffusion mini-protocol messages.}
+\end{table}
+
+\subsection{Size limits per state}
+
+Table~\ref{table:object-diffusion-size-limits} specifies how many bytes can be
+sent in a given state; indirectly, this limits the payload size of each
+message.  If a space limit is violated, the connection SHOULD be torn down.
+
+\begin{table}[h!]
+  \begin{center}
+    \begin{tabular}{l|r}
+      \header{state} & \header{size limit in bytes} \\\hline
+      \StInit        & \texttt{65535} \\
+      \StIdle        & \texttt{65535} \\
+      \StObjectIdsB  & \texttt{2500000} \\
+      \StObjectIdsNB & \texttt{2500000} \\
+      \StObjects     & \texttt{2500000} \\
+    \end{tabular}
+    \caption{size limits per state}
+    \label{table:object-diffusion-size-limits}
+  \end{center}
+\end{table}
+
+\subsection{Timeouts per state}
+
+Table~\ref{table:object-diffusion-timeouts} specifies message timeouts in
+a given state.  If a timeout is violated, the connection SHOULD be torn down.
+
+\begin{table}[h!]
+  \begin{center}
+    \begin{tabular}{l|r}
+      \header{state} & \header{timeout} \\\hline
+      \StInit        & - \\
+      \StIdle        & - \\
+      \StObjectIdsB  & - \\
+      \StObjectIdsNB & \texttt{10}s \\
+      \StObjects     & \texttt{10}s \\
+    \end{tabular}
+    \caption{timeouts per state}
+    \label{table:object-diffusion-timeouts}
+  \end{center}
+\end{table}
+
+\subsection{Peras instantiations}
+
+\begin{table}[h!]
+  \begin{center}
+    \begin{tabular}{l|c|r|r}
+      \header{instantiation}       & \header{mini-protocol} & \header{max.\ outstanding} & \header{ingress buffer} \\
+                                   & \header{number}        & \header{identifiers}       & \header{size in bytes}  \\\hline
+      Peras certificate diffusion  & $16$                   & $10$                       & $220\,000$ \\
+      Peras vote diffusion         & $17$                   & $50$                       & $55\,000$  \\
+    \end{tabular}
+    \caption{Peras instantiations of the Object-Diffusion mini-protocol}
+    \label{table:peras-instantiations}
+  \end{center}
+\end{table}
+
+\noindent
+The limits on the number of outstanding identifiers, and thus the ingress
+buffer sizes derived from them (see
+table~\ref{table:node-to-node-ingress-buffer-limits}), are provisional; they
+are tracked in
+\href{https://github.com/tweag/cardano-peras/issues/97}{\textit{Tracking
+magic numbers to be tuned}} (\texttt{tweag/cardano-peras\#97}).
+
+\subsection{CDDL encoding specification}\label{object-diffusion-cddl}
+\lstinputlisting[style=cddl]{../../cardano-diffusion/protocols/cddl/specs/object-diffusion.cddl}
+
 \section{Local Tx-Submission mini-protocol}
 \protocolhaddockref{Ouroboros.Network.Protocol.LocalTxSubmission.Type}{ouroboros-network/protocols/Ouroboros-Network-Protocol-LocalTxSubmission-Type.html\#t:LocalTxSubmission}\\
 \codechaddockref{Ouroboros.Network.Protocol.LocalTxSubmission.Codec}{ouroboros-network/protocols/Ouroboros-Network-Protocol-LocalTxSubmission-Codec.html\#v:codecLocalTxSubmission}\\
@@ -1850,7 +2183,7 @@ See appendix \ref{cddl-common} for common definitions.
 
 \section{Local State Query mini-protocol}
 \label{local-state-query-protocol}
-\protocolhaddockref{Cardano.Network.Protocol.LocalStateQuery.Type}{cardano-diffusion/protocols/Cardano-Network-Protocol-LocalStateQuery-Type.html\#t:LocalStateQuery}\\
+\protocolhaddockref{Ouroboros.Network.Protocol.LocalStateQuery.Type}{ouroboros-network/protocols/Ouroboros-Network-Protocol-LocalStateQuery-Type.html\#t:LocalStateQuery}\\
 \codechaddockref{Cardano.Network.Protocol.LocalStateQuery.Codec}{cardano-diffusion/protocols/Cardano-Network-Protocol-LocalStateQuery-Codec.html\#v:codecLocalStateQuery}\\
 \hyperref[table:node-to-client-protocol-numbers]{\textit{node-to-client mini-protocol number}}: \texttt{7}\\
 \newcommand{\StAcquiring}{\state{Acquiring}}
@@ -1983,7 +2316,7 @@ No timeouts.
 See appendix \ref{cddl-common} for common definitions.
 
 \section{Local Tx-Monitor mini-protocol}
-\protocolhaddockref{Cardano.Network.Protocol.LocalTxMonitor.Type}{cardano-diffusion/protocols/Cardano-Network-Protocol-LocalTxMonitor-Type.html\#t:LocalTxMonitor}\\
+\protocolhaddockref{Ouroboros.Network.Protocol.LocalTxMonitor.Type}{ouroboros-network/protocols/Ouroboros-Network-Protocol-LocalTxMonitor-Type.html\#t:LocalTxMonitor}\\
 \codechaddockref{Cardano.Network.Protocol.LocalTxMonitor.Codec}{cardano-diffusion/protocols/Cardano-Network-Protocol-LocalTxMonitor-Codec.html\#v:codecLocalTxMonitor}\\
 \hyperref[table:node-to-client-protocol-numbers]{\textit{node-to-client mini-protocol number}}: \texttt{9}\\
 \label{local-tx-monitor-protocol}
@@ -2078,7 +2411,7 @@ the client.
     server responds with a single transaction if one is available in the
     mempool. This must be a transaction that was not previously sent to the
     client for this particular snapshot.
-  \item[\MsgHasTx{}] The client checks whether the server knows of a particular
+  \item[\MsgHasTx{ $txid$}] The client checks whether the server knows of a particular
     transaction identified by its id.
   \item[\MsgReplyHasTx{} (Bool)] The server responds \texttt{True} when the given tx
     is present in the snapshot, \texttt{False} otherwise.
@@ -2112,8 +2445,8 @@ the client.
     \StAcquired            & \MsgRelease           &                                          & \StIdle \\
     \StAcquired            & \MsgNextTx            &                                          & \StBusy\ \NextTx\\
     \StBusy\ \NextTx       & \MsgReplyNextTx       & (\textbf{Nothing} | \textbf{Just} $tx$)  & \StAcquired\\
-    \StAcquired            & \MsgHasTx             &                                          & \StBusy\ \HasTx\\
-    \StBusy\ \HasTx        & \MsgReplyNextTx       & Bool                                     & \StAcquired\\
+    \StAcquired            & \MsgHasTx             & $txid$                                   & \StBusy\ \HasTx\\
+    \StBusy\ \HasTx        & \MsgReplyHasTx        & Bool                                     & \StAcquired\\
     \StAcquired            & \MsgGetSizes          &                                          & \StBusy\ \GetSizes\\
     \StBusy\ \GetSizes     & \MsgReplyGetSizes     & Word32,Word32,Word32                     & \StAcquired\\
     \StAcquired            & \MsgGetMeasures       &                                          & \StBusy\ \GetMeasures\\
@@ -2141,10 +2474,9 @@ See appendix \ref{cddl-common} for common definitions.
 Protocol pipelining is a technique that improves the performance of some protocols.
 The underlying idea is that a client that wants to perform several requests
 just transmits those requests in sequence without blocking and waiting for the reply from the server.
-In the reference implementation, pipelining is used by the clients of all mini-protocols except Chain-Sync.
-Those mini-protocols follow a request-response pattern that is amenable to pipelining such
-that pipelining becomes a feature of the client implementation and does not require any
-modifications to the server implementation.
+Mini-protocols which follow a request-response pattern are amenable to pipelining
+such that pipelining becomes a feature of the client implementation and does not
+require any modifications to the server implementation.
 
 As an example, let's consider the Block-Fetch mini protocol.
 When a client follows the protocol and sends a sequence of \MsgRequestRange{}~messages to the server, the data stream from the client to the server will only consist of \MsgRequestRange~messages
@@ -2166,8 +2498,8 @@ the server treats this case as a protocol violation of the peer
 
 \section{Node-to-node protocol}
 \label{section:node-to-node-protocol}
-\haddockref{Ouroboros.Network.NodeToNode}{ouroboros-network/Ouroboros-Network-NodeToNode}\newline
-\haddockref{Ouroboros.Network.NodeToNode.Version}{ouroboros-network-api/Ouroboros-Network-NodeToNode-Version}\newline
+\haddockref{Cardano.Network.NodeToNode}{cardano-diffusion/Cardano-Network-NodeToNode}\newline
+\haddockref{Cardano.Network.NodeToNode.Version}{cardano-diffusion/api/Cardano-Network-NodeToNode-Version}\newline
 
 The \textit{node-to-node protocol} consists of the following protocols:
 \begin{itemize}
@@ -2177,6 +2509,9 @@ The \textit{node-to-node protocol} consists of the following protocols:
     2 is used  (section~\ref{tx-submission-protocol2})
   \item \textit{keep alive mini-protocol}; from \texttt{NodeToNodeV\_3} (section~\ref{keep-alive-protocol})
   \item \textit{peer-sharing mini-protocol}; from \texttt{NodeToNodeV\_11} (section~\ref{peer-sharing-protocol})
+  \item \textit{object-diffusion mini-protocol}, instantiated for Peras
+    certificates and Peras votes; from \texttt{NodeToNodeV\_16}, and only if
+    \textit{peras support} was negotiated (section~\ref{object-diffusion-protocol})
 \end{itemize}
 Currently supported versions of the \textit{node-to-node protocol} are listed
 in table~\ref{table:node-to-node-protocol-versions}.
@@ -2207,7 +2542,9 @@ assigned to each node-to-node mini-protocol.
       \hyperref[block-fetch-protocol]{Block-Fetch}                       & $3$  \\
       \hyperref[tx-submission-protocol2]{Tx-Submission}                  & $4$  \\
       \hyperref[keep-alive-protocol]{Keep-Alive}                         & $8$  \\
-      \hyperref[peer-sharing-protocol]{Peer-Sharing} \small{(optional)}  & $10$ \\
+      \hyperref[peer-sharing-protocol]{Peer-Sharing} \small{(if negotiated)}          & $10$ \\
+      \hyperref[object-diffusion-protocol]{Peras certificate diffusion} \small{(if negotiated)} & $16$ \\
+      \hyperref[object-diffusion-protocol]{Peras vote diffusion} \small{(if negotiated)}        & $17$ \\
     \end{tabular}
   \end{center}
   \caption{Node-to-node protocol numbers}
@@ -2230,20 +2567,28 @@ who owns its ingress buffer.
       \header{mini-protocol}                            & \header{ingress size limit in bytes} \\\hline
       \hyperref[handshake-protocol]{Handshake}          &  - \\
       \hyperref[chain-sync-protocol]{Chain-Sync}        &  $462\,000$ \\
-      \hyperref[block-fetch-protocol]{Block-Fetch}      &  $230\,686\,940$ \\
+      \hyperref[block-fetch-protocol]{Block-Fetch}      &  $23\,068\,694$ \\
       \hyperref[tx-submission-protocol2]{Tx-Submission} &  $721\,424$ \\
       \hyperref[keep-alive-protocol]{Keep-Alive}        &  $1\,408$ \\
       \hyperref[peer-sharing-protocol]{Peer-Sharing}    &  $5\,760$ \\
+      \hyperref[object-diffusion-protocol]{Peras certificate diffusion} &  $220\,000$ \\
+      \hyperref[object-diffusion-protocol]{Peras vote diffusion}        &  $55\,000$ \\
     \end{tabular}
     \caption{Mux ingress buffer sizes for each mini-protocol}
     \label{table:node-to-node-ingress-buffer-limits}
   \end{center}
 \end{table}
 
+The two Peras limits are derived from the maximal number of unacknowledged
+object identifiers (see table~\ref{table:peras-instantiations}) and are
+provisional; they are tracked in
+\href{https://github.com/tweag/cardano-peras/issues/97}{\textit{Tracking
+magic numbers to be tuned}} (\texttt{tweag/cardano-peras\#97}).
+
 \section{Node-to-client protocol}
 \label{section:node-to-client-protocol}
-\haddockref{Ouroboros.Network.NodeToClient}{ouroboros-network/Ouroboros-Network-NodeToClient}\newline
-\haddockref{Ouroboros.Network.NodeToClient.Version}{ouroboros-network-api/Ouroboros-Network-NodeToClient-Version}\newline
+\haddockref{Cardano.Network.NodeToClient}{cardano-diffusion/Cardano-Network-NodeToClient}\newline
+\haddockref{Cardano.Network.NodeToClient.Version}{cardano-diffusion/api/Cardano-Network-NodeToClient-Version}\newline
 
 The \textit{node-to-client protocol} consists of the following protocols:
 \begin{itemize}
