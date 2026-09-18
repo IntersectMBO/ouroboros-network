@@ -2159,7 +2159,7 @@ the client.
     server responds with a single transaction if one is available in the
     mempool. This must be a transaction that was not previously sent to the
     client for this particular snapshot.
-  \item[\MsgHasTx{}] The client checks whether the server knows of a particular
+  \item[\MsgHasTx{ $txid$}] The client checks whether the server knows of a particular
     transaction identified by its id.
   \item[\MsgReplyHasTx{} (Bool)] The server responds \texttt{True} when the given tx
     is present in the snapshot, \texttt{False} otherwise.
@@ -2193,8 +2193,8 @@ the client.
     \StAcquired            & \MsgRelease           &                                          & \StIdle \\
     \StAcquired            & \MsgNextTx            &                                          & \StBusy\ \NextTx\\
     \StBusy\ \NextTx       & \MsgReplyNextTx       & (\textbf{Nothing} | \textbf{Just} $tx$)  & \StAcquired\\
-    \StAcquired            & \MsgHasTx             &                                          & \StBusy\ \HasTx\\
-    \StBusy\ \HasTx        & \MsgReplyNextTx       & Bool                                     & \StAcquired\\
+    \StAcquired            & \MsgHasTx             & $txid$                                   & \StBusy\ \HasTx\\
+    \StBusy\ \HasTx        & \MsgReplyHasTx        & Bool                                     & \StAcquired\\
     \StAcquired            & \MsgGetSizes          &                                          & \StBusy\ \GetSizes\\
     \StBusy\ \GetSizes     & \MsgReplyGetSizes     & Word32,Word32,Word32                     & \StAcquired\\
     \StAcquired            & \MsgGetMeasures       &                                          & \StBusy\ \GetMeasures\\
