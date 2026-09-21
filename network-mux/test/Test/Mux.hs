@@ -58,6 +58,7 @@ import Control.Monad.IOSim
 import Control.Tracer
 
 #if defined(mingw32_HOST_OS)
+import Data.Unique (hashUnique, newUnique)
 import System.Win32.Async qualified as Win32.Async
 import System.Win32.File qualified as Win32.File
 #if MIN_VERSION_Win32_network(0,2,0)
@@ -842,7 +843,13 @@ runWithPipe :: DummyCapability
 runWithPipe cap initApps respApps =
 #if defined(mingw32_HOST_OS)
     withIOManager $ \ioManager -> do
-      let pipeName = "\\\\.\\pipe\\mux-test-pipe"
+      -- Named pipes share a global namespace, while `tasty` runs properties
+      -- concurrently.  With a fixed name and `pIPE_UNLIMITED_INSTANCES` the
+      -- client end of one property can be connected to the server instance
+      -- created by another one, which then receives SDUs for a mini-protocol
+      -- it does not know about.
+      uniq <- newUnique
+      let pipeName = "\\\\.\\pipe\\mux-test-pipe-" ++ show (hashUnique uniq)
       bracket
         (Win32.NamedPipes.createNamedPipe
           pipeName
