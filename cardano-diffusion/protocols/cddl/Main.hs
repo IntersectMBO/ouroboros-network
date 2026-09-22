@@ -158,8 +158,8 @@ tests CDDLSpecs { cddlChainSync
                 , cddlHandshakeNodeToNodeV14ToLast
                 , cddlHandshakeNodeToClient
                 , cddlPeerSharingNodeToNodeV14ToLast
-                , cddlNodeToNodeVersionDataV14ToV15
-                , cddlNodeToNodeVersionDataV16ToLast
+                , cddlNodeToNodeVersionDataV14ToV16
+                , cddlNodeToNodeVersionDataV17ToLast
                 } =
   adjustOption (const $ QuickCheckMaxSize 10) $
   testGroup "cddl"
@@ -197,10 +197,10 @@ tests CDDLSpecs { cddlChainSync
       , testProperty "PeerSharing V14 to Last" (prop_encodePeerSharingV14ToLast
                                                   cddlPeerSharingNodeToNodeV14ToLast)
 
-      , testProperty "NodeToNodeVersionData V14 to V15"  (prop_encodeNodeToNodeVersionDataV14ToV15
-                                                            cddlNodeToNodeVersionDataV14ToV15)
-      , testProperty "NodeToNodeVersionData V16 to Last" (prop_encodeNodeToNodeVersionDataV16ToLast
-                                                            cddlNodeToNodeVersionDataV16ToLast)
+      , testProperty "NodeToNodeVersionData V14 to V16"  (prop_encodeNodeToNodeVersionDataV14ToV16
+                                                            cddlNodeToNodeVersionDataV14ToV16)
+      , testProperty "NodeToNodeVersionData V17 to Last" (prop_encodeNodeToNodeVersionDataV17ToLast
+                                                            cddlNodeToNodeVersionDataV17ToLast)
       ]
     , testGroup "decoding"
       -- validate decoder by generating messages from the specification
@@ -230,10 +230,10 @@ tests CDDLSpecs { cddlChainSync
       , testCase "PeerSharing V14 to Last" (unit_decodePeerSharingV14ToLast
                                                 cddlPeerSharingNodeToNodeV14ToLast)
 
-      , testCase "NodeToNodeVersionData V14 to V15"  (unit_decodeNodeToNodeVersionDataV14ToV15
-                                                        cddlNodeToNodeVersionDataV14ToV15)
-      , testCase "NodeToNodeVersionData V16 to Last" (unit_decodeNodeToNodeVersionDataV16ToLast
-                                                        cddlNodeToNodeVersionDataV16ToLast)
+      , testCase "NodeToNodeVersionData V14 to V16"  (unit_decodeNodeToNodeVersionDataV14ToV16
+                                                        cddlNodeToNodeVersionDataV14ToV16)
+      , testCase "NodeToNodeVersionData V17 to Last" (unit_decodeNodeToNodeVersionDataV17ToLast
+                                                        cddlNodeToNodeVersionDataV17ToLast)
       ]
     ]
 
@@ -257,8 +257,8 @@ data CDDLSpecs = CDDLSpecs {
 
     cddlPeerSharingNodeToNodeV14ToLast :: CDDLSpec (PeerSharing.PeerSharing SockAddr),
 
-    cddlNodeToNodeVersionDataV14ToV15  :: CDDLSpec NodeToNodeVersionData,
-    cddlNodeToNodeVersionDataV16ToLast :: CDDLSpec NodeToNodeVersionData
+    cddlNodeToNodeVersionDataV14ToV16  :: CDDLSpec NodeToNodeVersionData,
+    cddlNodeToNodeVersionDataV17ToLast :: CDDLSpec NodeToNodeVersionData
   }
 
 
@@ -290,8 +290,8 @@ readCDDLSpecs = do
     localStateQuery       <- cddlc (dir </> "local-state-query.cddl")
 
     peerSharingNodeToNodeV14ToLast <- cddlc (dir </> "peer-sharing-v14.cddl")
-    nodeToNodeVersionDataV14ToV15  <- cddlc (dir </> "node-to-node-version-data-v14.cddl")
-    nodeToNodeVersionDataV16ToLast <- cddlc (dir </> "node-to-node-version-data-v16.cddl")
+    nodeToNodeVersionDataV14ToV16  <- cddlc (dir </> "node-to-node-version-data-v14.cddl")
+    nodeToNodeVersionDataV17ToLast <- cddlc (dir </> "node-to-node-version-data-v17.cddl")
 
     return CDDLSpecs {
         cddlHandshakeNodeToClient          = CDDLSpec handshakeNodeToClient,
@@ -306,8 +306,8 @@ readCDDLSpecs = do
         cddlLocalStateQuery                = CDDLSpec localStateQuery,
 
         cddlPeerSharingNodeToNodeV14ToLast = CDDLSpec peerSharingNodeToNodeV14ToLast,
-        cddlNodeToNodeVersionDataV14ToV15  = CDDLSpec nodeToNodeVersionDataV14ToV15,
-        cddlNodeToNodeVersionDataV16ToLast = CDDLSpec nodeToNodeVersionDataV16ToLast
+        cddlNodeToNodeVersionDataV14ToV16  = CDDLSpec nodeToNodeVersionDataV14ToV16,
+        cddlNodeToNodeVersionDataV17ToLast = CDDLSpec nodeToNodeVersionDataV17ToLast
       }
 
 --
@@ -614,36 +614,36 @@ newtype NtNVersionV14ToLast = NtNVersionV14ToLast NodeToNodeVersion
 instance Arbitrary NtNVersionV14ToLast where
   arbitrary = NtNVersionV14ToLast <$> elements [NodeToNodeV_14 ..]
 
-newtype NtNVersionDataV14ToV15 = NtNVersionDataV14ToV15 (NodeToNodeVersion, NodeToNodeVersionData)
+newtype NtNVersionDataV14ToV16 = NtNVersionDataV14ToV16 (NodeToNodeVersion, NodeToNodeVersionData)
   deriving Show
 
-instance Arbitrary NtNVersionDataV14ToV15 where
+instance Arbitrary NtNVersionDataV14ToV16 where
   arbitrary = do
-    ntnVersion <- elements [NodeToNodeV_14 .. NodeToNodeV_15]
+    ntnVersion <- elements [NodeToNodeV_14 .. NodeToNodeV_16]
     ntnVersionData <- genValidNtnVersionDataForVersion ntnVersion
-    return (NtNVersionDataV14ToV15 (ntnVersion, ntnVersionData))
+    return (NtNVersionDataV14ToV16 (ntnVersion, ntnVersionData))
 
-prop_encodeNodeToNodeVersionDataV14ToV15
+prop_encodeNodeToNodeVersionDataV14ToV16
     :: CDDLSpec NodeToNodeVersionData
-    -> NtNVersionDataV14ToV15
+    -> NtNVersionDataV14ToV16
     -> Property
-prop_encodeNodeToNodeVersionDataV14ToV15 spec (NtNVersionDataV14ToV15 (v, a)) =
+prop_encodeNodeToNodeVersionDataV14ToV16 spec (NtNVersionDataV14ToV16 (v, a)) =
   validateVersionDataEncoder spec nodeToNodeVersionDataCodec v a
 
-newtype NtNVersionDataV16ToLast = NtNVersionDataV16ToLast (NodeToNodeVersion, NodeToNodeVersionData)
+newtype NtNVersionDataV17ToLast = NtNVersionDataV17ToLast (NodeToNodeVersion, NodeToNodeVersionData)
   deriving Show
 
-instance Arbitrary NtNVersionDataV16ToLast where
+instance Arbitrary NtNVersionDataV17ToLast where
   arbitrary = do
-    ntnVersion <- elements [NodeToNodeV_16 ..]
+    ntnVersion <- elements [NodeToNodeV_17 ..]
     ntnVersionData <- genValidNtnVersionDataForVersion ntnVersion
-    return (NtNVersionDataV16ToLast (ntnVersion, ntnVersionData))
+    return (NtNVersionDataV17ToLast (ntnVersion, ntnVersionData))
 
-prop_encodeNodeToNodeVersionDataV16ToLast
+prop_encodeNodeToNodeVersionDataV17ToLast
     :: CDDLSpec NodeToNodeVersionData
-    -> NtNVersionDataV16ToLast
+    -> NtNVersionDataV17ToLast
     -> Property
-prop_encodeNodeToNodeVersionDataV16ToLast spec (NtNVersionDataV16ToLast (v, a)) =
+prop_encodeNodeToNodeVersionDataV17ToLast spec (NtNVersionDataV17ToLast (v, a)) =
   validateVersionDataEncoder spec nodeToNodeVersionDataCodec v a
 
 --
@@ -992,18 +992,18 @@ unit_decodePeerSharingV14ToLast spec =
       ]
       100
 
-unit_decodeNodeToNodeVersionDataV14ToV15
+unit_decodeNodeToNodeVersionDataV14ToV16
     :: CDDLSpec NodeToNodeVersionData
     -> Assertion
-unit_decodeNodeToNodeVersionDataV14ToV15 spec =
-    forM_ [NodeToNodeV_14 .. NodeToNodeV_15] $
+unit_decodeNodeToNodeVersionDataV14ToV16 spec =
+    forM_ [NodeToNodeV_14 .. NodeToNodeV_16] $
       validateVersionDataDecoder Nothing 100 spec nodeToNodeVersionDataCodec
 
-unit_decodeNodeToNodeVersionDataV16ToLast
+unit_decodeNodeToNodeVersionDataV17ToLast
     :: CDDLSpec NodeToNodeVersionData
     -> Assertion
-unit_decodeNodeToNodeVersionDataV16ToLast spec =
-    forM_ [NodeToNodeV_16 ..] $
+unit_decodeNodeToNodeVersionDataV17ToLast spec =
+    forM_ [NodeToNodeV_17 ..] $
       validateVersionDataDecoder Nothing 100 spec nodeToNodeVersionDataCodec
 
 

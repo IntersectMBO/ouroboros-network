@@ -1,10 +1,13 @@
 ;
-; NodeToNodeVersionData, v16
+; NodeToNodeVersionData, v17
 ;
 
 nodeToNodeVersionData = [ networkMagic, initiatorOnlyDiffusionMode, peerSharing, query, perasSupport ]
 
-; range between 0 and 0xffffffff
+; 32bit positive integer values
+; since NodeToNodeV_16 we might encode it either as an Int (if it fits into
+; `Int32`) or otherwise as an anbounded Integer - this is to support `32bit`
+; architectures.
 networkMagic = base.word32
 initiatorOnlyDiffusionMode = bool
 ; range between 0 and 1

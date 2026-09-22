@@ -8,21 +8,21 @@ handshakeMessage
     / msgQueryReply
 
 msgProposeVersions = [0, versionTable]
-msgAcceptVersion   = [1, versionNumber_v14_to_v15, v14.nodeToNodeVersionData]
-                   / [1, versionNumber_v16_to_last, v16.nodeToNodeVersionData]
+msgAcceptVersion   = [1, versionNumber_v14_to_v16, v14.nodeToNodeVersionData]
+                   / [1, versionNumber_v17_to_last, v17.nodeToNodeVersionData]
 msgRefuse          = [2, refuseReason]
 msgQueryReply      = [3, versionTable]
 
 ; The codec only accepts definite-length maps.
-versionTable = { * versionNumber_v14_to_v15 => v14.nodeToNodeVersionData
-               , * versionNumber_v16_to_last => v16.nodeToNodeVersionData
+versionTable = { * versionNumber_v14_to_v16  => v14.nodeToNodeVersionData
+               , * versionNumber_v17_to_last => v17.nodeToNodeVersionData
                }
 
-versionNumber_v14_to_v15 = 14 / 15
-versionNumber_v16_to_last = 16
+versionNumber_v14_to_v16  = 14 / 15 / 16
+versionNumber_v17_to_last = 17
 
 ; All version numbers
-versionNumbers = versionNumber_v14_to_v15 / versionNumber_v16_to_last
+versionNumbers = versionNumber_v14_to_v16 / versionNumber_v17_to_last
 
 refuseReason
     = refuseReasonVersionMismatch
@@ -34,5 +34,5 @@ refuseReasonHandshakeDecodeError = [1, versionNumbers, tstr]
 refuseReasonRefused              = [2, versionNumbers, tstr]
 
 ;# import node-to-node-version-data-v14 as v14
-;# import node-to-node-version-data-v16 as v16
+;# import node-to-node-version-data-v17 as v17
 ;# import network.base as base

@@ -77,7 +77,7 @@ genValidNtnVersionDataForVersion version =
 -- to ensure the data is valid for the version.
 fixNtnVersionDataForVersion :: NodeToNodeVersion -> NodeToNodeVersionData -> NodeToNodeVersionData
 fixNtnVersionDataForVersion version ntnData =
-  if version < NodeToNodeV_16
+  if version < minPerasVersion
     then ntnData { perasSupport = PerasUnsupported }
     else ntnData
 

@@ -3,6 +3,7 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE LambdaCase         #-}
 {-# LANGUAGE NamedFieldPuns     #-}
+{-# LANGUAGE TypeApplications   #-}
 
 module Cardano.Network.NodeToClient.Version
   ( NodeToClientVersion (..)
@@ -71,6 +72,8 @@ data NodeToClientVersion
     | NodeToClientV_23
     -- ^ added @QueryDRepsDelegations@,
     -- LedgerPeerSnapshot CBOR encoding contains block hash and NetworkMagic
+    | NodeToClientV_24
+    -- ^ Support handshake on 32bit systems.
   deriving stock (Eq, Ord, Enum, Bounded, Show, Generic)
   deriving anyclass (NFData, PrettyShow)
 
@@ -93,6 +96,7 @@ nodeToClientVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
           NodeToClientV_21 -> enc 21
           NodeToClientV_22 -> enc 22
           NodeToClientV_23 -> enc 23
+          NodeToClientV_24 -> enc 24
         where
           enc :: Int -> CBOR.Term
           enc = CBOR.TInt . (`setBit` nodeToClientVersionBit)
@@ -107,6 +111,7 @@ nodeToClientVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
             21 -> Right NodeToClientV_21
             22 -> Right NodeToClientV_22
             23 -> Right NodeToClientV_23
+            24 -> Right NodeToClientV_24
             n  -> Left (unknownTag n)
         where
           dec :: CBOR.Term -> Either (Text, Maybe Int) Int
@@ -149,21 +154,30 @@ instance Queryable NodeToClientVersionData where
     queryVersion = query
 
 nodeToClientCodecCBORTerm :: NodeToClientVersion -> CodecCBORTerm Text NodeToClientVersionData
-nodeToClientCodecCBORTerm _v = CodecCBORTerm {encodeTerm, decodeTerm}
+nodeToClientCodecCBORTerm v = CodecCBORTerm {encodeTerm, decodeTerm}
     where
       encodeTerm :: NodeToClientVersionData -> CBOR.Term
       encodeTerm NodeToClientVersionData { networkMagic, query }
+        | v < NodeToClientV_24
         = CBOR.TList [CBOR.TInt (fromIntegral $ unNetworkMagic networkMagic), CBOR.TBool query]
+        | otherwise
+        = CBOR.TList [CBOR.TInteger (fromIntegral $ unNetworkMagic networkMagic), CBOR.TBool query]
 
       decodeTerm :: CBOR.Term -> Either Text NodeToClientVersionData
       decodeTerm (CBOR.TList [CBOR.TInt x, CBOR.TBool query])
+        = decoder (fromIntegral x) query
+      decodeTerm (CBOR.TList [CBOR.TInteger x, CBOR.TBool query])
         = decoder x query
       decodeTerm t
         = Left $ T.pack $ "unknown encoding: " ++ show t
 
-      decoder :: Int -> Bool -> Either Text NodeToClientVersionData
-      decoder x query | x >= 0 && x <= 0xffffffff = Right (NodeToClientVersionData (NetworkMagic $ fromIntegral x) query)
-                      | otherwise                 = Left $ T.pack $ "networkMagic out of bound: " <> show x
+      decoder :: Integer -> Bool -> Either Text NodeToClientVersionData
+      decoder x query | x >= 0
+                      , x <= 0xffffffff
+                      = Right (NodeToClientVersionData (NetworkMagic $ fromIntegral x) query)
+
+                      | otherwise
+                      = Left $ T.pack $ "networkMagic out of bound: " <> show x
 
 
 nodeToClientVersionDataCodec :: VersionDataCodec NodeToClientVersion NodeToClientVersionData

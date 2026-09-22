@@ -127,6 +127,7 @@ test-suite api-tests
     QuickCheck,
     base >=4.14 && <4.23,
     cardano-diffusion:{api, api-tests-lib},
+    cborg,
     ouroboros-network:api,
     tasty,
     tasty-hunit,
