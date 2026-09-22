@@ -22,8 +22,9 @@ import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI hiding (timeout)
-import Control.Tracer (Tracer)
+import Control.Tracer (Tracer, traceWith)
 
+import Network.Mux.Egress.Bucket (BucketHandle, awaitGrant)
 import Network.Mux.Timeout
 import Network.Mux.Types
 
@@ -144,15 +145,32 @@ muxer
        )
     => EgressQueue m
     -> Tracer m BearerTrace
+    -> Maybe (BucketHandle m)
+    -- ^ the node-global egress bucket, if egress is scheduled
     -> Bearer m
     -> m void
-muxer egressQueue tracer Bearer { writeMany, sduSize, batchSize, egressInterval } =
+muxer egressQueue tracer bucket_m
+      Bearer { writeMany, sduSize, batchSize, egressInterval, awaitWritable } =
     withTimeoutSerial $ \timeout ->
     forever $ do
       start <- getMonotonicTime
       TLSRDemand mpc md d <- atomically $ readTBQueue egressQueue
       sdu <- processSingleWanton egressQueue sduSize mpc md d
       sdus <- buildBatch [sdu] (sduLength sdu)
+
+      -- Scheduled egress: the batch is written only once the bearer can take
+      -- it without blocking AND the bucket has granted its bytes.
+      -- A bearer whose peer is not draining never consumes tokens.
+      case bucket_m of
+        Nothing -> return ()
+        Just bucketHandle -> do
+          t0 <- getMonotonicTime
+          awaitWritable
+          t1 <- getMonotonicTime
+          let len = sum (map sduLength sdus)
+          awaitGrant bucketHandle len
+          t2 <- getMonotonicTime
+          traceWith tracer (TraceEgressGrant len (t1 `diffTime` t0) (t2 `diffTime` t1))
       void $ writeMany tracer timeout sdus
       end <- getMonotonicTime
       empty <- atomically $ isEmptyTBQueue egressQueue

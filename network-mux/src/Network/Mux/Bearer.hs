@@ -13,6 +13,8 @@ module Network.Mux.Bearer
   , BearerTrace (..)
   , makeSocketBearer
   , makeSocketBearer'
+  , makeSocketBearerWith
+  , tcpNotSentLowWat
   , makePipeChannelBearer
   , makeQueueChannelBearer
 #if defined(mingw32_HOST_OS)
@@ -26,8 +28,10 @@ import           Control.Concurrent.Class.MonadSTM.Strict
 import           Control.Monad.Class.MonadThrow
 import           Control.Monad.Class.MonadTime.SI
 
+import           Control.Exception (IOException)
 import           Data.ByteString.Lazy qualified as BL
 import           Network.Socket (Socket)
+import           Network.Socket qualified as Socket
 #if defined(mingw32_HOST_OS)
 import           System.Win32 (HANDLE)
 #endif
@@ -80,8 +84,38 @@ makeSocketBearer'
   :: DiffTime
   -- ^ egress interval
   -> MakeBearer IO Socket
-makeSocketBearer' egressInterval = MakeBearer $ pureBearer $ \sduTimeout fd rb ->
-    socketAsBearer size batch rb sduTimeout egressInterval fd
+makeSocketBearer' egressInterval = makeSocketBearerWith egressInterval Nothing
+
+-- | @TCP_NOTSENT_LOWAT@ for this platform, if it has one.  FreeBSD and Windows
+-- have none: there "writable" means space in the send buffer, and the egress
+-- gate closes on a stalled peer only once that buffer is full.
+tcpNotSentLowWat :: Maybe Socket.SocketOption
+#if defined(linux_HOST_OS)
+tcpNotSentLowWat = Just (Socket.SockOpt 6 25)      -- IPPROTO_TCP, TCP_NOTSENT_LOWAT
+#elif defined(darwin_HOST_OS)
+tcpNotSentLowWat = Just (Socket.SockOpt 6 0x201)   -- Darwin's value, same writability semantics
+#else
+tcpNotSentLowWat = Nothing
+#endif
+
+-- | Socket bearer with an egress interval and, optionally, @TCP_NOTSENT_LOWAT@
+-- (bytes) set on the socket.  The low-water mark bounds the bytes the kernel
+-- holds unsent beyond the congestion window, so that a writable socket is one
+-- that can put bytes on the wire now rather than into a buffer.  Silently
+-- skipped where the platform lacks the option or refuses it.
+makeSocketBearerWith
+  :: DiffTime
+  -- ^ egress interval
+  -> Maybe Int
+  -- ^ @TCP_NOTSENT_LOWAT@ in bytes; 'Nothing' or @<= 0@ leaves the socket alone
+  -> MakeBearer IO Socket
+makeSocketBearerWith egressInterval notSentLowWat = MakeBearer $ \sduTimeout fd rb -> do
+    case (tcpNotSentLowWat, notSentLowWat) of
+      (Just opt, Just lowat) | lowat > 0 ->
+        Socket.setSocketOption fd opt lowat
+          `catch` \(_ :: IOException) -> return ()
+      _ -> return ()
+    return (socketAsBearer size batch rb sduTimeout egressInterval fd)
   where
     size = SDUSize 12_288
     batch = 131_072
