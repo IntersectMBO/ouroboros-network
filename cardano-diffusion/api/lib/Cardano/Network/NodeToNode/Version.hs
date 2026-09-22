@@ -3,6 +3,7 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE LambdaCase         #-}
 {-# LANGUAGE NamedFieldPuns     #-}
+{-# LANGUAGE TypeApplications   #-}
 
 module Cardano.Network.NodeToNode.Version
   ( NodeToNodeVersion (..)
@@ -19,6 +20,7 @@ module Cardano.Network.NodeToNode.Version
   , getLocalPerasSupport
   ) where
 
+import Data.Int (Int32)
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text (Text)
@@ -198,9 +200,14 @@ nodeToNodeCodecCBORTerm version = CodecCBORTerm { encodeTerm = encodeTerm, decod
         <*> decodeQuery query
         <*> decodePerasSupportOptional perasSupportOptional
           where
+            decodeNetworkMagic :: Int -> Either Text NetworkMagic
             decodeNetworkMagic x
-              | x >= 0 , x <= 0xffffffff = pure $ NetworkMagic (fromIntegral x)
-              | otherwise                = err $ "networkMagic out of bound: " <> show x
+              | x >= 0
+              , x <= fromIntegral @Int32 maxBound
+              = pure $ NetworkMagic (fromIntegral x)
+
+              | otherwise
+              = err $ "networkMagic out of bound: " <> show x
 
             decodeDiffusionMode dm = pure $
               if dm

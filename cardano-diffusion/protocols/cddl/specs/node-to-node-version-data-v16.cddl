@@ -4,8 +4,8 @@
 
 nodeToNodeVersionData = [ networkMagic, initiatorOnlyDiffusionMode, peerSharing, query, perasSupport ]
 
-; range between 0 and 0xffffffff
-networkMagic = base.word32
+; 32bit positive integer values
+networkMagic = 0..2147483647
 initiatorOnlyDiffusionMode = bool
 ; range between 0 and 1
 peerSharing = 0..1

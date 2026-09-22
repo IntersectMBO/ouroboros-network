@@ -1,7 +1,11 @@
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE NamedFieldPuns   #-}
+{-# LANGUAGE TypeApplications #-}
+
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Test.Cardano.Network.NodeToClient.Version (tests) where
+
+import Data.Int (Int32)
 
 import Cardano.Network.NodeToClient.Version
 
@@ -28,8 +32,11 @@ instance Arbitrary NodeToClientVersion where
 instance Arbitrary VersionAndVersionData where
     arbitrary =
       VersionAndVersionData
-        <$> elements [ minBound .. maxBound]
-        <*> (NodeToClientVersionData . NetworkMagic <$> arbitrary <*> arbitrary)
+        <$> elements [minBound .. maxBound]
+        <*> (NodeToClientVersionData . NetworkMagic
+            <$> arbitrary `suchThat` (<= fromIntegral @Int32 maxBound)
+                          `suchThat` (>= 0)
+            <*> arbitrary)
 
 
 prop_nodeToClientVersionCodec :: NodeToClientVersion
