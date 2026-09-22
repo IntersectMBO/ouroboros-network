@@ -281,6 +281,11 @@ data Bearer m = Bearer {
     , name           :: String
     -- | Egress poll interval
     , egressInterval :: DiffTime
+    -- | Block until the bearer can take another write without blocking,
+    -- for a socket, until it is writable. The egress scheduler gates token
+    -- grants on this, so tokens go only to bearers that can put bytes on
+    -- the wire now. Bearers without back-pressure return immediately.
+    , awaitWritable  :: m ()
     }
 
 newtype SDUSize = SDUSize { getSDUSize :: Word16 }
@@ -364,6 +369,7 @@ data BearerTrace =
     | TraceSDUReadTimeoutException
     | TraceSDUWriteTimeoutException
     | TraceTCPInfo StructTCPInfo Word16
+    | TraceEgressGrant Int DiffTime DiffTime
 
 instance Show BearerTrace where
     show TraceRecvHeaderStart = printf "Bearer Receive Header Start"
@@ -382,6 +388,8 @@ instance Show BearerTrace where
     show TraceSendEnd = printf "Bearer Send End"
     show TraceSDUReadTimeoutException = "Timed out reading SDU"
     show TraceSDUWriteTimeoutException = "Timed out writing SDU"
+    show (TraceEgressGrant len tw tt) =
+      printf "Egress grant: bytes %d waited writable %s waited tokens %s" len (show tw) (show tt)
 #ifdef linux_HOST_OS
     show (TraceTCPInfo StructTCPInfo
             { tcpi_snd_mss, tcpi_rcv_mss, tcpi_lost, tcpi_retrans

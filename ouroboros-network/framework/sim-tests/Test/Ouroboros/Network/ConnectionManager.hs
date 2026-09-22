@@ -355,7 +355,8 @@ makeFDBearer = MakeBearer $ \_ _ _ ->
           Mx.sduSize        = Mx.SDUSize 1500,
           Mx.batchSize      = 1500,
           Mx.name           = "FD",
-          Mx.egressInterval = 0
+          Mx.egressInterval = 0,
+          Mx.awaitWritable  = return ()
         }
 
 -- | We only keep exceptions here which should not be handled by the test

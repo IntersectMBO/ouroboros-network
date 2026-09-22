@@ -117,6 +117,13 @@ instance LogFormatting Mux.BearerTrace where
       , "msg"  .= String "Timed out writing SDU"
       ]
     forMachine _dtal Mux.TraceEmitDeltaQ = mempty
+    forMachine _dtal (Mux.TraceEgressGrant len waitedWritable waitedTokens) = mconcat
+      [ "kind" .= String "Mux.TraceEgressGrant"
+      , "msg"  .= String "Egress grant"
+      , "length" .= String (showT len)
+      , "waitedWritable" .= String (showT waitedWritable)
+      , "waitedTokens" .= String (showT waitedTokens)
+      ]
 #ifdef linux_HOST_OS
     forMachine _dtal (Mux.TraceTCPInfo StructTCPInfo
             { tcpi_snd_mss, tcpi_rcv_mss, tcpi_lost, tcpi_retrans
@@ -170,6 +177,10 @@ instance LogFormatting Mux.BearerTrace where
     forHuman Mux.TraceSDUWriteTimeoutException =
       "Timed out writing SDU"
     forHuman Mux.TraceEmitDeltaQ = mempty
+    forHuman (Mux.TraceEgressGrant len waitedWritable waitedTokens) =
+      sformat ("Egress grant: bytes " % int % " waited writable " % shown
+               % " waited tokens " % shown)
+        len waitedWritable waitedTokens
 #ifdef linux_HOST_OS
     forHuman (Mux.TraceTCPInfo StructTCPInfo
             { tcpi_snd_mss, tcpi_rcv_mss, tcpi_lost, tcpi_retrans
@@ -217,6 +228,8 @@ instance MetaTrace Mux.BearerTrace where
       Namespace [] ["TraceEmitDeltaQ"]
     namespaceFor Mux.TraceTCPInfo {}               =
       Namespace [] ["TCPInfo"]
+    namespaceFor Mux.TraceEgressGrant {}           =
+      Namespace [] ["EgressGrant"]
 
     severityFor (Namespace _ ["RecvHeaderStart"]) _          = Just Debug
     severityFor (Namespace _ ["RecvRaw"]) _                  = Just Debug
@@ -230,6 +243,7 @@ instance MetaTrace Mux.BearerTrace where
     severityFor (Namespace _ ["SDUReadTimeoutException"]) _  = Just Notice
     severityFor (Namespace _ ["SDUWriteTimeoutException"]) _ = Just Notice
     severityFor (Namespace _ ["TCPInfo"]) _                  = Just Debug
+    severityFor (Namespace _ ["EgressGrant"]) _              = Just Debug
     severityFor (Namespace _ ["TraceEmitDeltaQ"]) _          = Nothing
     severityFor _ _                                          = Nothing
 
@@ -258,6 +272,9 @@ instance MetaTrace Mux.BearerTrace where
     documentFor (Namespace _ ["TraceEmitDeltaQ"])       = Nothing
     documentFor (Namespace _ ["TCPInfo"])               = Just
       "TCPInfo."
+    documentFor (Namespace _ ["EgressGrant"])           = Just
+      "Egress scheduler granted a batch: bytes, time waited for the bearer to \
+      \become writable, and time waited for tokens."
     documentFor _                                       = Nothing
 
     allNamespaces = [
@@ -274,6 +291,7 @@ instance MetaTrace Mux.BearerTrace where
       , Namespace [] ["SDUWriteTimeoutException"]
       , Namespace [] ["TraceEmitDeltaQ"]
       , Namespace [] ["TCPInfo"]
+      , Namespace [] ["EgressGrant"]
       ]
 
 instance LogFormatting Mux.ChannelTrace where
