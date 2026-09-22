@@ -18,6 +18,7 @@
 module Network.Mux
   ( -- * Defining 'Mux' protocol bundles
     new
+  , newWithEgressBucket
   , Mux
   , Mode (..)
   , HasInitiator
@@ -40,6 +41,12 @@ module Network.Mux
   , ReadBuffer
   , MonadReadBuffer (..)
   , SDUSize (..)
+    -- * Egress scheduling
+  , Bucket
+  , newBucket
+  , setBucketRate
+  , Rank (..)
+  , setEgressRank
     -- * Monitoring
   , miniProtocolStateMap
   , stopped
@@ -84,6 +91,8 @@ import Control.Tracer
 import Network.Mux.Bearer
 import Network.Mux.Channel
 import Network.Mux.Egress as Egress
+import Network.Mux.Egress.Bucket (Bucket, BucketHandle, Rank (..), newBucket,
+           registerBearer, setBucketRate, setRank)
 import Network.Mux.Ingress as Ingress
 import Network.Mux.Timeout
 import Network.Mux.Trace
@@ -102,7 +111,10 @@ data Mux (mode :: Mode) m =
                                    (MiniProtocolState mode m)),
        muxControlCmdQueue :: !(StrictTQueue m (ControlCmd mode m)),
        muxStatus          :: StrictTVar m Status,
-       muxTracers         :: Tracers m
+       muxTracers         :: Tracers m,
+       muxEgressBucket    :: !(Maybe (BucketHandle m))
+       -- ^ this connection's handle on the node-global egress bucket, if
+       -- egress is scheduled ('newWithEgressBucket')
      }
 
 
@@ -135,7 +147,28 @@ new :: forall (mode :: Mode) m.
     -- ^ description of protocols run by the mux layer.  Only these protocols
     -- one will be able to execute.
     -> m (Mux mode m)
-new muxTracers ptcls = do
+new = mkMux Nothing
+
+-- | Like 'new', with this connection's egress scheduled by the node-global
+-- bucket: the muxer takes a grant for every batch it writes.
+--
+newWithEgressBucket :: forall (mode :: Mode) m.
+                       MonadLabelledSTM m
+                    => Bucket m
+                    -> Tracers m
+                    -> [MiniProtocolInfo mode]
+                    -> m (Mux mode m)
+newWithEgressBucket bucket muxTracers ptcls = do
+    handle <- registerBearer bucket
+    mkMux (Just handle) muxTracers ptcls
+
+mkMux :: forall (mode :: Mode) m.
+         MonadLabelledSTM m
+      => Maybe (BucketHandle m)
+      -> Tracers m
+      -> [MiniProtocolInfo mode]
+      -> m (Mux mode m)
+mkMux muxEgressBucket muxTracers ptcls = do
     traceWith (tracer_ muxTracers) (TraceNewMux ptcls)
     muxMiniProtocols   <- mkMiniProtocolStateMap ptcls
     muxControlCmdQueue <- atomically newTQueue
@@ -144,8 +177,18 @@ new muxTracers ptcls = do
       muxMiniProtocols,
       muxControlCmdQueue,
       muxStatus,
-      muxTracers
+      muxTracers,
+      muxEgressBucket
     }
+
+-- | Service order of this connection under scheduled egress (lower first).
+-- No effect on a mux created with 'new'.
+--
+setEgressRank :: MonadSTM m => Mux mode m -> Rank -> STM m ()
+setEgressRank Mux { muxEgressBucket } rank =
+    case muxEgressBucket of
+         Just handle -> setRank handle rank
+         Nothing     -> return ()
 
 mkMiniProtocolStateMap :: MonadSTM m
                        => [MiniProtocolInfo mode]
@@ -240,7 +283,8 @@ run Mux { muxMiniProtocols,
           muxTracers = tracers@TracersI {
               tracer_,
               bearerTracer_
-            }
+            },
+          muxEgressBucket
         }
     bearer@Bearer{name} = do
 
@@ -278,7 +322,7 @@ run Mux { muxMiniProtocols,
   where
 
     muxerJob egressQueue =
-      JobPool.Job (muxer egressQueue bearerTracer_ bearer)
+      JobPool.Job (muxer egressQueue bearerTracer_ muxEgressBucket bearer)
                   (return . MuxerException)
                   MuxJob
                   (name ++ "-muxer")
