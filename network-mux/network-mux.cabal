@@ -94,6 +94,7 @@ library
     Network.Mux.DeltaQ.TraceTransformer
     Network.Mux.DeltaQ.TraceTypes
     Network.Mux.Egress
+    Network.Mux.Egress.Bucket
     Network.Mux.Ingress
     Network.Mux.TCPInfo
     Network.Mux.Time
@@ -208,6 +209,29 @@ executable mux-demo
     build-depends:
       directory,
       network,
+
+executable mux-bucket-demo
+  import: demo-deps
+  hs-source-dirs:
+    demo
+    test
+
+  main-is: mux-bucket-demo.hs
+  other-modules: Test.Mux.ReqResp
+  ghc-options: -rtsopts "-with-rtsopts=-N4"
+  build-depends:
+    Win32-network,
+    base >=4.14 && <4.23,
+    binary,
+    bytestring,
+    cborg,
+    contra-tracer,
+    io-classes:{io-classes, si-timers, strict-stm},
+    network,
+    network-mux,
+    optparse-applicative,
+    primitive,
+    serialise,
 
 executable mux-leios-demo
   import: demo-deps

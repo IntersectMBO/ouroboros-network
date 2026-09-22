@@ -45,7 +45,8 @@ queueChannelAsBearer sduSize QueueChannel { writeQueue, readQueue } = do
         Mx.sduSize        = sduSize,
         Mx.batchSize      = 2 * fromIntegral (Mx.getSDUSize sduSize),
         Mx.name           = "queue-channel",
-        Mx.egressInterval = 0
+        Mx.egressInterval = 0,
+        Mx.awaitWritable  = atomically $ isFullTBQueue writeQueue >>= check . not
       }
     where
       readMux :: Tracer m Mx.BearerTrace -> Mx.TimeoutFn m -> m (Mx.SDU, Time)

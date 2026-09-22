@@ -80,6 +80,7 @@ import Network.Mux.Bearer.AttenuatedChannel as AttenuatedChannel
 import Network.Mux.Bearer.Pipe qualified as Mx
 import Network.Mux.Bearer.Queues as Mx
 import Network.Mux.Codec qualified as Mx
+import Network.Mux.Egress.Bucket qualified as Bucket
 import Network.Mux.Types (MiniProtocolInfo (..), MiniProtocolLimits (..))
 import Network.Mux.Types qualified as Mx
 import Network.Socket qualified as Socket
@@ -111,6 +112,18 @@ tests =
   , testProperty "trailing bytes (IO)"          prop_mux_trailing_bytes_io
   , testProperty "pure exception (Sim)"         prop_mux_pure_exception_iosim
   , testProperty "pure exception (IO)"          prop_mux_pure_exception_io
+  , testGroup "Egress bucket"
+    [ testProperty "grantAt: earliest instant"    prop_grantAt_ready
+    , testProperty "grantAt: not late"            prop_grantAt_tight
+    , testProperty "grantAt: takes what it grants" prop_grantAt_take
+    , testProperty "grantAt: rate zero disables"  prop_grantAt_disabled
+    , testProperty "wakeAt: within a microsecond" prop_wakeAt
+    , testProperty "atRate: keeps the level"      prop_atRate
+    , testProperty "schedule matches the replay"  prop_bucket_schedule
+    , testProperty "cancellation is safe"         prop_bucket_cancel
+    , testProperty "disabled bucket never waits"  prop_bucket_disabled
+    , testProperty "rate change takes effect"     prop_bucket_rate_change
+    ]
   , testGroup "Generators"
     [ testProperty "genByteString"              prop_arbitrary_genByteString
     , testProperty "genLargeByteString"         prop_arbitrary_genLargeByteString
@@ -2661,3 +2674,534 @@ compareErrors Mx.SDUReadTimeout {}      Mx.SDUReadTimeout {}      = True
 compareErrors Mx.SDUWriteTimeout {}     Mx.SDUWriteTimeout {}     = True
 compareErrors Mx.Shutdown {}            Mx.Shutdown {}            = True
 compareErrors _ _                                                 = False
+
+
+--
+-- Egress bucket
+--
+-- The arithmetic is the pure 'Bucket.grantAt', checked on its own.  The queue
+-- is checked by driving concurrent requests through a real bucket in IOSim and
+-- comparing every grant instant, exactly, with a replay through the pure core
+-- in (rank, arrival) order: rate, work conservation, priority and FIFO all
+-- follow.  Liveness under cancellation is checked separately.
+
+-- | 10 kB/s .. 1 GB/s: schedules from microseconds to seconds.  'byteEps' is
+-- sized for the top of this range.
+genRate :: Gen Double
+genRate = do
+    e <- choose (4, 8 :: Int)
+    m <- choose (1, 9.99 :: Double)
+    return (m * 10 ^^ e)
+
+genCapacity :: Gen Int
+genCapacity = (4096 *) <$> choose (1, 8)
+
+-- | Exactly @n@ picoseconds: @1e-12 :: DiffTime@ is the resolution.
+picos :: Integer -> DiffTime
+picos n = fromIntegral n * 1e-12
+
+-- | A 'Time' as whole picoseconds.  'DiffTime' is fixed point, so going
+-- through 'Rational' loses nothing.
+picosOf :: Time -> Integer
+picosOf t = round (toRational (t `diffTime` Time 0) * 1e12)
+
+-- | Sizes straddle the capacity; an oversized request is the one case that
+-- puts the bucket in debt.
+genBytes :: Int -> Gen Int
+genBytes cap = frequency [ (3, choose (1, cap))
+                         , (2, choose (cap, 2 * cap))
+                         , (1, choose (1, 64)) ]
+
+--
+-- Pure core
+--
+
+-- | One take from a bucket in any state, from long full to deep in debt.
+data BucketTake = BucketTake {
+    tkRate :: !Double,
+    tkCap  :: !Int,
+    tkNow  :: !Time,
+    tkFull :: !Time,
+    tkNeed :: !Int
+  }
+  deriving Show
+
+instance Arbitrary BucketTake where
+    arbitrary = do
+      rate <- genRate
+      cap  <- genCapacity
+      now  <- Time . realToFrac <$> choose (0, 100 :: Double)
+      let fillTime = fromIntegral cap / rate :: Double
+      d    <- choose (-2 * fillTime, 3 * fillTime)
+      need <- genBytes cap
+      return BucketTake { tkRate = rate, tkCap = cap, tkNow = now,
+                          tkFull = realToFrac d `addTime` now, tkNeed = need }
+
+    shrink tk@BucketTake { tkRate, tkCap, tkNow, tkFull, tkNeed } =
+         -- the bucket's state is the offset of @tkFull@ from @tkNow@, so move
+         -- @tkNow@ to the origin and carry @tkFull@ with it
+         [ tk { tkNow = Time 0, tkFull = (tkFull `diffTime` tkNow) `addTime` Time 0 }
+         | tkNow /= Time 0 ]
+      ++ [ tk { tkFull = tkNow } | tkFull /= tkNow ]           -- exactly full
+         -- then halve what is left, so an offset that must stay non-zero
+         -- still reaches a small round number
+      ++ [ tk { tkFull = (offset / 2) `addTime` tkNow }
+         | let offset = tkFull `diffTime` tkNow, abs offset > 1e-12 ]
+      ++ [ tk { tkNeed = n }
+         | n <- [1, tkCap, tkCap + 1], n < tkNeed ]            -- the credit boundary
+      ++ [ tk { tkCap = 4096 } | tkCap > 4096 ]
+      ++ [ tk { tkRate = r } | r <- [1e4, 1e6], r < tkRate ]
+
+-- | Slack in bytes, at a given rate, for the picosecond truncation in the
+-- pure core: @realToFrac :: Double -> DiffTime@ truncates, so each conversion
+-- can lose a whole picosecond's worth of bytes, and a law that recomputes a
+-- level stacks two of them.  The constant term covers float error at low
+-- rates, where a picosecond is worth almost nothing.
+byteEps :: Double -> Double
+byteEps rate = 4 * rate * 1e-12 + 1e-9
+
+-- | The cases that matter for the pure laws: an oversized request is served
+-- on credit, and 'Bucket.tokenLevel' saturates once the bucket is full, so a
+-- law stated over the level alone says little about those grants.
+labelTake :: BucketTake -> Property -> Property
+labelTake BucketTake { tkRate, tkCap, tkNow, tkFull, tkNeed } =
+      classify (tkNeed >= tkCap) "oversized"
+    . classify (ready == tkNow)  "granted at once"
+    . classify (level < 0)       "in debt"
+  where
+    (ready, _) = Bucket.grantAt tkRate tkCap tkFull tkNow tkNeed
+    level      = Bucket.tokenLevel tkRate tkCap tkFull tkNow
+
+-- | Grants at the earliest instant the bytes are there: never before the
+-- request, and if it waits, exactly when the level reaches the target.
+prop_grantAt_ready :: BucketTake -> Property
+prop_grantAt_ready tk@BucketTake { tkRate, tkCap, tkNow, tkFull, tkNeed } =
+    labelTake tk $
+    counterexample (show (ready, level, target)) $
+         ready >= tkNow
+      && level >= target - eps
+      && (ready == tkNow || level <= target + eps)
+  where
+    (ready, _) = Bucket.grantAt tkRate tkCap tkFull tkNow tkNeed
+    level      = Bucket.tokenLevel tkRate tkCap tkFull ready
+    target     = fromIntegral (min tkNeed tkCap) :: Double
+    eps        = byteEps tkRate
+
+-- | A take that must wait, held as the generator's own inputs so that
+-- shrinking any of them still waits: the bucket is full again @bwExtra@
+-- picoseconds past the instant its level would reach the target, so the target
+-- is out of reach at @bwNow@ and 'Bucket.grantAt' cannot serve it there.
+data BucketWait = BucketWait {
+    bwRate  :: !Double,
+    bwCap   :: !Int,
+    bwNeed  :: !Int,
+    bwNow   :: !Time,
+    bwExtra :: !Integer   -- ^ picoseconds past the deficit, at least one
+  }
+  deriving Show
+
+waitTake :: BucketWait -> BucketTake
+waitTake BucketWait { bwRate, bwCap, bwNeed, bwNow, bwExtra } =
+    BucketTake { tkRate = bwRate, tkCap = bwCap, tkNeed = bwNeed,
+                 tkNow  = bwNow,
+                 tkFull = (deficit spare + picos bwExtra) `addTime` bwNow }
+  where
+    -- the bucket reaches the target this far below its capacity
+    spare = bwCap - min bwNeed bwCap
+
+    -- the same expression as the accrual inside 'Bucket.grantAt', so the
+    -- offset is exact and the wait is a whole number of picoseconds
+    deficit :: Int -> DiffTime
+    deficit n = realToFrac (fromIntegral n / bwRate)
+
+instance Arbitrary BucketWait where
+    arbitrary = do
+      rate  <- genRate
+      cap   <- genCapacity
+      need  <- genBytes cap
+      now   <- Time . realToFrac <$> choose (0, 100 :: Double)
+      let perByte = max 1 (ceiling (1e12 / rate))                     :: Integer
+          perFill = max 1 (ceiling (1e12 * fromIntegral cap / rate))  :: Integer
+      extra <- frequency [ (1, return 1)                  -- tightest wait
+                         , (3, choose (1, perByte))       -- under a byte
+                         , (3, choose (1, perFill))       -- part of a fill
+                         , (1, choose (1, 3 * perFill)) ] -- in debt
+      return BucketWait { bwRate = rate, bwCap = cap, bwNeed = need,
+                          bwNow = now, bwExtra = extra }
+
+    shrink bw@BucketWait { bwRate, bwCap, bwNeed, bwNow, bwExtra } =
+         [ bw { bwNow   = Time 0 } | bwNow /= Time 0 ]
+      ++ [ bw { bwExtra = e } | e <- shrinkIntegral bwExtra, e >= 1 ]
+      ++ [ bw { bwNeed  = n } | n <- [1, bwCap, bwCap + 1], n < bwNeed ]
+      ++ [ bw { bwCap   = 4096 } | bwCap > 4096 ]
+      ++ [ bw { bwRate  = r } | r <- [1e4, 1e6], r < bwRate ]
+
+-- | A grant that waited is not late: one byte's accrual before it, the bucket
+-- was still short of the target.  'prop_grantAt_ready' cannot check this,
+-- because 'Bucket.tokenLevel' clamps at the capacity and a request of at least
+-- the capacity targets all of it: there the level reads as the target at
+-- @ready@ and at every instant after, so an arbitrarily late grant passes.
+-- Before @ready@ the level is still rising.
+--
+-- @probe@ negates a converted positive, as the implementation's own accrual
+-- does: 'realToFrac' floors to the picosecond, so converting the negative
+-- overshoots by one.  For the tightest waits @probe@ falls before @tkNow@,
+-- which is sound: 'Bucket.tokenLevel' is linear there and @probe@ stays below
+-- @tkFull@, so it is clear of the clamp.
+prop_grantAt_tight :: BucketWait -> Property
+prop_grantAt_tight bw =
+    labelTake tk $
+    counterexample (show (ready, probe, level, target)) $
+         ready > tkNow          -- the generator guarantees a wait, so a grant
+                                -- that never waits is caught here
+      && level <= target - 1 + byteEps tkRate
+  where
+    tk@BucketTake { tkRate, tkCap, tkNow, tkFull, tkNeed } = waitTake bw
+    (ready, _) = Bucket.grantAt tkRate tkCap tkFull tkNow tkNeed
+    probe      = negate (realToFrac (1 / tkRate)) `addTime` ready
+    level      = Bucket.tokenLevel tkRate tkCap tkFull probe
+    target     = fromIntegral (min tkNeed tkCap) :: Double
+
+-- | Taking lowers the level, as of the grant instant, by exactly the bytes
+-- granted.
+prop_grantAt_take :: BucketTake -> Property
+prop_grantAt_take tk@BucketTake { tkRate, tkCap, tkNow, tkFull, tkNeed } =
+    labelTake tk $
+    classify (tkFull <= ready) "full at the grant" $
+    counterexample (show (levelBefore, levelAfter)) $
+      abs (levelAfter - (levelBefore - fromIntegral tkNeed)) <= byteEps tkRate
+  where
+    (ready, full') = Bucket.grantAt tkRate tkCap tkFull tkNow tkNeed
+    levelBefore = Bucket.tokenLevel tkRate tkCap tkFull ready
+    levelAfter  = Bucket.tokenLevel tkRate tkCap full' ready
+
+-- | A rate of zero grants everything at once.
+prop_grantAt_disabled :: BucketTake -> Property
+prop_grantAt_disabled BucketTake { tkCap, tkNow, tkFull, tkNeed } =
+    fst (Bucket.grantAt 0 tkCap tkFull tkNow tkNeed) === tkNow
+
+-- | A short bearer wakes no earlier than its bytes are there and less than a
+-- microsecond later.
+prop_wakeAt :: BucketTake -> Property
+prop_wakeAt BucketTake { tkRate, tkCap, tkNow, tkFull, tkNeed } =
+    counterexample (show (ready, wake)) $
+      ready == tkNow || (wake >= ready && wake `diffTime` ready < 1e-6)
+  where
+    (ready, _) = Bucket.grantAt tkRate tkCap tkFull tkNow tkNeed
+    wake       = Bucket.wakeAt tkNow ready
+
+-- | A rate change keeps the token level.
+prop_atRate :: BucketTake -> Property
+prop_atRate BucketTake { tkRate, tkCap, tkNow, tkFull } =
+    forAll genRate $ \rate' ->
+      let full'  = Bucket.atRate tkRate rate' tkCap tkNow tkFull
+          levelBefore = Bucket.tokenLevel tkRate tkCap tkFull tkNow
+          levelAfter  = Bucket.tokenLevel rate'  tkCap full'  tkNow
+      in counterexample (show (levelBefore, levelAfter)) $
+           abs (levelAfter - levelBefore) <= byteEps (max tkRate rate')
+
+--
+-- Queue
+--
+
+-- | One bearer: its rank, when it first asks, and the takes it makes -- all
+-- on one handle, as the muxer does, each one asking again after its previous
+-- grant.  Times are counted in rounds, a round being one picosecond per bearer
+-- in the run; see 'askAt'.
+data BucketBearer = BucketBearer {
+    bbRank  :: !Word32,
+    bbStart :: !Integer,           -- ^ rounds before the first request
+    bbFirst :: !Int,               -- ^ bytes of the first take
+    bbMore  :: ![(Integer, Int)],  -- ^ rounds after a grant, then bytes
+    bbKill  :: !(Maybe Int)        -- ^ cancel it this far, in 256ths, into
+                                   --   the first wait the replay gives it
+  }
+  deriving (Eq, Show)
+
+-- | A bucket and the bearers taking from it.
+data BucketSched = BucketSched {
+    schRate     :: !Double,        -- ^ bytes/s
+    schCapacity :: !Int,           -- ^ bytes
+    schBearers  :: ![BucketBearer]
+  }
+  deriving Show
+
+instance Arbitrary BucketSched where
+    arbitrary = do
+      rate <- genRate
+      cap  <- genCapacity
+      n    <- choose (1, 12)
+      BucketSched rate cap <$> vectorOf n (genBucketBearer rate cap n)
+
+    shrink sch@BucketSched { schRate, schCapacity, schBearers } =
+         [ sch { schBearers = bs }
+         | bs <- shrinkList shrinkBearer schBearers, not (null bs) ]
+      ++ [ sch { schCapacity = 4096 } | schCapacity > 4096 ]
+      ++ [ sch { schRate = r } | r <- [1e4, 1e6], r < schRate ]
+      where
+        shrinkBearer b =
+             [ b { bbRank  = 0 }  | bbRank b /= 0 ]
+          ++ [ b { bbStart = 0 }  | bbStart b /= 0 ]
+          ++ [ b { bbMore  = ms } | ms <- shrinkList shrinkTake (bbMore b) ]
+          ++ [ b { bbFirst = sz } | sz <- [1024, schCapacity], sz < bbFirst b ]
+          ++ [ b { bbKill  = Nothing } | Just _ <- [bbKill b] ]
+          ++ [ b { bbKill  = Just f }
+             | Just f0 <- [bbKill b], f <- [0, 128], f < f0 ]
+
+        shrinkTake (k, sz) =
+             [ (0, sz)  | k /= 0 ]
+          ++ [ (k, sz') | sz' <- [1024, schCapacity], sz' < sz ]
+
+-- | Few ranks, so ties are common.  Asking again at once, and starting in the
+-- opening burst, are both weighted up: those are what make bearers queue.
+genBucketBearer :: Double -> Int -> Int -> Gen BucketBearer
+genBucketBearer rate cap n =
+    BucketBearer <$> choose (0, 3)
+                 <*> genRounds
+                 <*> genBytes cap
+                 <*> (do extra <- frequency [ (3, return 0), (4, choose (1, 3)) ]
+                         vectorOf extra ((,) <$> genRounds <*> genBytes cap))
+                 <*> frequency [ (3, return Nothing)
+                               , (1, Just <$> choose (0, 255))
+                               , (1, Just <$> choose (192, 255)) ]
+  where
+    fillPs   = ceiling (1e12 * fromIntegral cap / rate) :: Integer
+    rounds k = k `div` fromIntegral n
+    genRounds = frequency [ (4, return 0)                      -- at once
+                          , (3, choose (0, rounds fillPs))
+                          , (1, choose (0, rounds (4 * fillPs))) ]
+
+-- | One request: which bearer made it and which of its takes this is, its rank
+-- and size, when it was made, and what that bearer has still to ask for.
+data Arrival = Arrival {
+    arBearer :: !Int,
+    arTake   :: !Int,
+    arRank   :: !Word32,
+    arBytes  :: !Int,
+    arAt     :: !Time,
+    arMore   :: ![(Integer, Int)]
+  }
+  deriving (Eq, Show)
+
+-- | When bearer @i@ of @n@ asks, @k@ rounds after @t@: the first instant past
+-- @t@ congruent to @i@ modulo @n@ picoseconds, plus @k@ whole rounds.  Every
+-- request a bearer makes therefore lands on a picosecond no other bearer can
+-- use, so no two requests in a run are ever simultaneous, tickets are handed
+-- out in request order, and the replay never has to guess whose came first.
+askAt :: Int -> Int -> Integer -> Time -> Time
+askAt n i k t = picos ((k + 1) * fromIntegral n + delta) `addTime` t
+  where
+    delta = (fromIntegral i - picosOf t) `mod` fromIntegral n
+
+-- | The first request of every bearer.
+arrivals :: BucketSched -> [Arrival]
+arrivals BucketSched { schBearers } =
+    [ Arrival { arBearer = i, arTake = 0, arRank = bbRank, arBytes = bbFirst,
+                arAt = askAt n i bbStart (Time 0), arMore = bbMore }
+    | (i, BucketBearer { bbRank, bbStart, bbFirst, bbMore }) <- zip [0 ..] schBearers
+    ]
+  where
+    n = length schBearers
+
+-- | The same bearer's next request, once this one is granted at @t@.
+nextArrival :: Int -> Arrival -> Time -> Maybe Arrival
+nextArrival n a t =
+    case arMore a of
+      []                -> Nothing
+      (k, bytes) : more -> Just a { arTake  = arTake a + 1
+                                  , arBytes = bytes
+                                  , arAt    = askAt n (arBearer a) k t
+                                  , arMore  = more }
+
+labelBucket :: BucketSched -> Property -> Property
+labelBucket BucketSched { schBearers } =
+    classify (any (not . null . bbMore) schBearers) "reuses a handle"
+
+-- | Grant instants from a real bucket in IOSim, by bearer and take.  Each
+-- bearer keeps one handle for all of its takes.
+runBucketSched :: BucketSched -> [((Int, Int), Time)]
+runBucketSched sch@BucketSched { schRate, schCapacity, schBearers } =
+    concat $ runSimOrThrow $ do
+      bucket <- Bucket.newBucket schRate schCapacity
+      forConcurrently (arrivals sch) $ \a0 -> do
+        h <- Bucket.registerBearer bucket
+        atomically $ Bucket.setRank h (Bucket.Rank (arRank a0))
+        let takeAll a = do
+              now <- getMonotonicTime
+              threadDelay (arAt a `diffTime` now)
+              Bucket.awaitGrant h (arBytes a)
+              t <- getMonotonicTime
+              (((arBearer a, arTake a), t) :)
+                <$> maybe (return []) takeAll (nextArrival n a t)
+        takeAll a0
+  where
+    n = length schBearers
+
+-- | Grant instants from the pure core, with each take's request instant
+-- alongside: the head of the queue is the lowest (rank, request); it takes at
+-- once if its bytes are there, else sleeps until 'Bucket.wakeAt' -- unless a
+-- lower key arrives first and takes the head.  A granted bearer re-joins with
+-- its next take.
+replayRun :: BucketSched -> [((Int, Int), (Time, Time))]
+replayRun sch@BucketSched { schRate, schCapacity, schBearers } =
+    go (Time 0) (Time 0) (List.sortOn arAt (arrivals sch)) [] Nothing
+  where
+    n = length schBearers
+
+    key a = (arRank a, arAt a)
+
+    headOf waiting = case List.sortOn key waiting of
+                          []    -> Nothing
+                          h : _ -> Just h
+
+    enqueue = List.insertBy (\x y -> compare (arAt x) (arAt y))
+
+    -- pending: not yet requested, by request instant
+    -- waiting: queued; the head is the lowest key
+    -- wake:    when a short head checks again
+    go now full pending waiting wake
+      -- a head that has not checked yet checks now
+      | Just h <- headOf waiting, Nothing <- wake =
+          let (ready, full') = Bucket.grantAt schRate schCapacity full now
+                                              (arBytes h)
+          in if ready == now
+                then ((arBearer h, arTake h), (arAt h, now))
+                   : go now full'
+                        (maybe pending (`enqueue` pending) (nextArrival n h now))
+                        (List.delete h waiting) Nothing
+                else go now full pending waiting (Just (Bucket.wakeAt now ready))
+      -- a request before the head wakes; a lower key takes the head
+      | p : ps <- pending, all (arAt p <) wake =
+          let displaces = maybe False ((key p <) . key) (headOf waiting)
+          in go (arAt p) full ps (p : waiting) (if displaces then Nothing else wake)
+      -- the head wakes and takes
+      | Just w <- wake = go w full pending waiting Nothing
+      | otherwise = []
+
+replaySched :: BucketSched -> [((Int, Int), Time)]
+replaySched = map (\(k, (_, granted)) -> (k, granted)) . replayRun
+
+-- | Where each take is granted when nothing ever waits, so the chain follows
+-- from the schedule alone.
+instantGrants :: BucketSched -> [((Int, Int), Time)]
+instantGrants sch@BucketSched { schBearers } = concatMap chain (arrivals sch)
+  where
+    n = length schBearers
+    chain a = ((arBearer a, arTake a), arAt a)
+            : maybe [] chain (nextArrival n a (arAt a))
+
+-- | Every grant happens exactly when the replay says.
+prop_bucket_schedule :: BucketSched -> Property
+prop_bucket_schedule sch =
+    labelBucket sch $
+    classify (queued == 0) "nothing queued" $
+      List.sortOn fst (runBucketSched sch) === List.sortOn fst (replaySched sch)
+  where
+    queued = length [ () | (_, (asked, granted)) <- replayRun sch
+                         , granted > asked ]
+
+-- | Killing a bearer mid-wait hands the queue on: every other bearer still
+-- completes all of its takes, and the cancellation itself returns.  A
+-- cancelled head must wake its successor, or the bucket wedges.
+--
+-- The instant comes from the replay, so a cancellation always lands inside
+-- 'Bucket.awaitGrant' rather than whenever a fixed delay happens to fall:
+-- @bbKill@ says how far into the bearer's first wait to strike, and a bearer
+-- the replay never makes wait is left alone.  Waiting on the cancellations as
+-- well as on the survivors keeps the property meaningful even when every
+-- bearer is killed, which would otherwise leave nothing to wait for.
+prop_bucket_cancel :: BucketSched -> Property
+prop_bucket_cancel sch@BucketSched { schRate, schCapacity, schBearers } =
+    labelBucket sch
+      $ classify (not (null killed))    "kills someone"
+      $ classify (any killsHead killed) "kills the next to be served"
+      $ counterexample ("kept " ++ show (length kept))
+      $ outcome === Just (length kept)
+  where
+    n    = length schBearers
+    run  = replayRun sch
+
+    plan   = [ (a, bbKill b >>= strikeAt (arBearer a))
+             | (a, b) <- zip (arrivals sch) schBearers ]
+    killed = [ (a, t) | (a, Just t)  <- plan ]
+    kept   = [ a      | (a, Nothing) <- plan ]
+
+    -- @f@ 256ths into the first wait this bearer has, if it has one
+    strikeAt b f =
+      case List.sortOn fst [ (tk, (asked, granted))
+                           | ((b', tk), (asked, granted)) <- run
+                           , b' == b, granted > asked ] of
+        []                        -> Nothing
+        (_, (asked, granted)) : _ -> Just (part asked granted f)
+
+    part asked granted f =
+      picos (picosOf asked
+              + ((picosOf granted - picosOf asked) * fromIntegral f) `div` 256)
+        `addTime` Time 0
+
+    -- of the bearers waiting at @t@, the one the queue is about to serve
+    killsHead (a, t) =
+      case [ (granted, b) | ((b, _), (asked, granted)) <- run
+                          , asked <= t, t < granted ] of
+        [] -> False
+        ws -> snd (minimum ws) == arBearer a
+
+    -- generous: the last first-request, every gap, four times the fluid time
+    -- for every byte, and a second
+    limit = maximum [ arAt a `diffTime` Time 0 | a <- arrivals sch ]
+          + picos (sum [ (k + 2) * fromIntegral n
+                       | b <- schBearers, (k, _) <- bbMore b ])
+          + realToFrac (4 * bytes / schRate) + 1
+    bytes = sum [ fromIntegral (bbFirst b) + sum (map (fromIntegral . snd) (bbMore b))
+                | b <- schBearers ] :: Double
+
+    outcome = runSimOrThrow $ do
+      bucket <- Bucket.newBucket schRate schCapacity
+      as <- forM plan $ \(a0, kill) -> do
+        h <- Bucket.registerBearer bucket
+        atomically $ Bucket.setRank h (Bucket.Rank (arRank a0))
+        let takeAll a = do
+              now <- getMonotonicTime
+              threadDelay (arAt a `diffTime` now)
+              Bucket.awaitGrant h (arBytes a)
+              t <- getMonotonicTime
+              maybe (return ()) takeAll (nextArrival n a t)
+        asy <- async (takeAll a0)
+        return (kill, asy)
+
+      killers <- forM [ (asy, t) | (Just t, asy) <- as ] $ \(asy, t) ->
+        async $ do
+          now <- getMonotonicTime
+          threadDelay (t `diffTime` now)
+          cancel asy
+
+      fmap length <$> timeout limit
+        (do mapM_ wait killers                        -- each cancel returns
+            mapM wait [ asy | (Nothing, asy) <- as ]) -- survivors finish
+
+-- | A rate of zero disables the bucket: nothing ever waits.
+prop_bucket_disabled :: BucketSched -> Property
+prop_bucket_disabled sch =
+    labelBucket sch $
+      List.sortOn fst (runBucketSched sch { schRate = 0 })
+        === List.sortOn fst (instantGrants sch)
+
+-- | 'Bucket.setBucketRate' takes effect: later grants are paced by the new
+-- rate.  (A bearer already asleep is not woken early.)
+prop_bucket_rate_change :: BucketSched -> Property
+prop_bucket_rate_change BucketSched { schRate, schCapacity } =
+    counterexample (show (spent, expected)) (abs (spent - expected) <= tolerance)
+  where
+    n         = 4 :: Int
+    newRate   = 8 * schRate
+    expected  = fromIntegral (n * schCapacity) / newRate
+    tolerance = expected * 0.02 + fromIntegral n * 1e-6
+    spent = runSimOrThrow $ do
+      bucket <- Bucket.newBucket schRate schCapacity
+      h      <- Bucket.registerBearer bucket
+      Bucket.awaitGrant h schCapacity        -- drains the full bucket
+      t0 <- getMonotonicTime
+      atomically $ Bucket.setBucketRate bucket t0 newRate
+      replicateM_ n (Bucket.awaitGrant h schCapacity)
+      t1 <- getMonotonicTime
+      return (realToFrac (t1 `diffTime` t0) :: Double)
