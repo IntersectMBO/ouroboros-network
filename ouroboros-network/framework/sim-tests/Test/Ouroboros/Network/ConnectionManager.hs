@@ -32,7 +32,7 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.IOSim
-import Control.Tracer (Tracer (..), contramap)
+import Control.Tracer (Tracer, contramap)
 
 import GHC.Generics
 import GHC.IO.Exception
