@@ -278,7 +278,8 @@ attenuationChannelAsBearer sduSize sduTimeout chan =
       sduSize,
       batchSize      = fromIntegral $ getSDUSize sduSize,
       name           = "attenuation-channel",
-      egressInterval = 0
+      egressInterval = 0,
+      awaitWritable  = return ()
     }
   where
     readMux :: Tracer m BearerTrace -> TimeoutFn m -> m (SDU, Time)

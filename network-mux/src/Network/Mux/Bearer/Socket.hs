@@ -18,10 +18,12 @@ import Control.Monad.Class.MonadTimer.SI hiding (timeout)
 
 import Network.Socket qualified as Socket
 #if !defined(mingw32_HOST_OS)
+import Control.Concurrent (threadWaitWrite)
 import Data.ByteString.Internal (create)
 import Foreign.Marshal.Utils
 import Network.Socket.ByteString qualified as Socket (sendMany)
 import Network.Socket.ByteString.Lazy qualified as Socket (recv, sendAll)
+import System.Posix.Types (Fd (..))
 #else
 import System.Win32.Async.Socket.ByteString.Lazy qualified as Win32.Async
 #endif
@@ -63,9 +65,20 @@ socketAsBearer sduSize batchSize readBuffer_m sduTimeout egressInterval sd =
         Mx.sduSize        = sduSize,
         Mx.batchSize      = batchSize,
         Mx.name           = "socket-bearer",
-        Mx.egressInterval
+        Mx.egressInterval,
+        Mx.awaitWritable  = awaitWritableSocket
       }
     where
+      -- POLLOUT through the IO manager.  With TCP_NOTSENT_LOWAT set on the
+      -- socket this means "unsent bytes below the mark and room in the
+      -- buffer"; without it, "room in the send buffer".
+      awaitWritableSocket :: IO ()
+#if defined(mingw32_HOST_OS)
+      awaitWritableSocket = return ()
+#else
+      awaitWritableSocket = Socket.withFdSocket sd $ \fd -> threadWaitWrite (Fd fd)
+#endif
+
       readSocket :: Tracer IO BearerTrace -> Mx.TimeoutFn IO -> IO (Mx.SDU, Time)
       readSocket tracer timeout = do
           traceWith tracer Mx.TraceRecvHeaderStart
