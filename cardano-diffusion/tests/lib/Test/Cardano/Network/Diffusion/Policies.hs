@@ -41,6 +41,7 @@ tests :: TestTree
 tests = testGroup "Policies"
   [ testProperty "HotToWarm" prop_hotToWarm
   , testProperty "WarmToCooling" prop_randomDemotion
+  , testProperty "HotPeerScores" prop_hotPeerScores
   ]
 
 newtype ArbitrarySockAddr = ArbitrarySockAddr SockAddr deriving (Eq, Ord, Show)
@@ -171,12 +172,12 @@ prop_hotToWarmM ArbitraryPolicyArguments{..} seed = do
             rngVar
             (readTVar cmVar)
             metrics
-    picked <- atomically $ policyPickHotPeersToDemote policies
-                  (const PeerSourceLocalRoot)
-                  peerConnectFailCount
-                  peerIsTepid
-                  (Map.keysSet apaAvailable)
-                  apaPickNum
+    (picked, _) <- atomically $ policyPickHotPeersToDemote policies
+                       (const PeerSourceLocalRoot)
+                       peerConnectFailCount
+                       peerIsTepid
+                       (Map.keysSet apaAvailable)
+                       apaPickNum
     noneWorse metrics picked
 
   where
@@ -211,6 +212,53 @@ prop_hotToWarmM ArbitraryPolicyArguments{..} seed = do
       where
         fn :: SockAddr -> a -> Bool
         fn peer _ = Set.member peer pickedSet
+
+
+prop_hotPeerScores :: ArbitraryPolicyArguments
+                   -> Int
+                   -> Property
+prop_hotPeerScores args seed = runSimOrThrow $ prop_hotPeerScoresM args seed
+
+-- Verify that the demotion policy picks as many peers as requested, that the
+-- scores it returns for tracing cover every available peer, and that no
+-- demoted peer scores higher than any peer which stays hot.
+prop_hotPeerScoresM :: forall m. MonadLabelledSTM m
+                    => ArbitraryPolicyArguments
+                    -> Int
+                    -> m Property
+prop_hotPeerScoresM ArbitraryPolicyArguments{..} seed = do
+    let rng = mkStdGen seed
+    rngVar <- newTVarIO rng
+    cmVar <- newTVarIO apaChurnMode
+    metrics <- newPeerMetric' apaHeaderMetric apaFetchedMetric
+                              PeerMetricsConfiguration { maxEntriesToTrack = 180 }
+
+    let policies =
+          simpleChurnModePeerSelectionPolicy
+            rngVar
+            (readTVar cmVar)
+            metrics
+        available = Map.keysSet apaAvailable
+    (picked, scores) <- atomically $
+      policyPickHotPeersToDemote policies
+        (const PeerSourceLocalRoot)
+        peerConnectFailCount
+        peerIsTepid
+        available
+        apaPickNum
+    let (demoted, retained) =
+          Map.partitionWithKey (\peer _ -> Set.member peer picked) scores
+    return $ counterexample (show (picked, scores)) $
+           Set.size picked === min apaPickNum (Set.size available)
+      .&&. Map.keysSet scores === available
+      .&&. ( Map.null demoted || Map.null retained
+          || maximum (Map.elems demoted) <= minimum (Map.elems retained))
+  where
+    peerConnectFailCount p =
+        maybe (error "peerConnectFailCount") piFailCount (Map.lookup p apaAvailable)
+
+    peerIsTepid p =
+        maybe (error "peerIsTepid") piTepid (Map.lookup p apaAvailable)
 
 
 prop_randomDemotion :: ArbitraryPolicyArguments
