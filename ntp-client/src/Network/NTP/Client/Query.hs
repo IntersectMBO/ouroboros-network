@@ -24,7 +24,7 @@ import           Control.Concurrent.Async
 import           Control.Concurrent.STM
 import           Control.Exception (Exception (..), IOException, bracket, catch, throwIO)
 import           Control.Monad (foldM, forM_, replicateM_, when)
-import           Control.Tracer
+import           Hermod.Tracing.API.Tracer
 import           Data.Binary (decodeOrFail, encode)
 import           Data.Bifunctor (bimap)
 import qualified Data.ByteString.Lazy as LBS

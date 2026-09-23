@@ -22,7 +22,7 @@ import           Control.Concurrent.STM (STM, atomically, check)
 import           Control.Concurrent.STM.TVar
 import           Control.Monad (when)
 import           System.IO.Error (tryIOError)
-import           Control.Tracer
+import           Hermod.Tracing.API.Tracer
 import           Data.Void (Void)
 
 import           System.IOManager

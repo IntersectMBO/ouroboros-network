@@ -4,7 +4,7 @@ module Main where
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.Async
 import Control.Monad (forever)
-import Control.Tracer
+import Hermod.Tracing.API.Tracer
 
 import Network.NTP.Client (NtpClient (..), NtpSettings (..), withNtpClient)
 
