@@ -153,7 +153,7 @@ simplePeerSelectionPolicy :: forall m peerAddr.
 simplePeerSelectionPolicy rngVar metrics = PeerSelectionPolicy {
       policyPickKnownPeersForPeerShare = simplePromotionPolicy,
       policyPickColdPeersToPromote     = simplePromotionPolicy,
-      policyPickWarmPeersToPromote     = simplePromotionPolicy,
+      policyPickWarmPeersToPromote     = warmPromotionPolicy,
       policyPickInboundPeers           = simplePromotionPolicy,
 
       policyPickHotPeersToDemote  = mkHotDemotionPolicy rngVar (deadlineHotScores metrics),
@@ -171,8 +171,9 @@ simplePeerSelectionPolicy rngVar metrics = PeerSelectionPolicy {
     }
   where
 
-    -- Randomly pick peers to demote, peers with knownPeerTepid set are twice
-    -- as likely to be demoted.
+    -- Randomly pick peers to demote. Halving r for peers with
+    -- knownPeerTepid set makes a tepid peer win a pairwise draw against a
+    -- non-tepid one with probability 3/4.
     warmDemotionPolicy :: PickPolicy peerAddr (STM m)
     warmDemotionPolicy _ _ isTepid available pickNum = do
       available' <- addRand rngVar available (tepidWeight isTepid)
@@ -189,6 +190,18 @@ simplePeerSelectionPolicy rngVar metrics = PeerSelectionPolicy {
     coldForgetPolicy :: PickPolicy peerAddr (STM m)
     coldForgetPolicy _ failCnt _ available pickNum = do
       available' <- addRand rngVar available (failWeight failCnt)
+      return $ Set.fromList
+             . map fst
+             . take pickNum
+             . sortOn snd
+             . Map.assocs
+             $ available'
+
+    -- Randomly pick warm peers to promote, peers with knownPeerTepid set
+    -- are less likely to be re-promoted.
+    warmPromotionPolicy :: PickPolicy peerAddr (STM m)
+    warmPromotionPolicy _ _ isTepid available pickNum = do
+      available' <- addRand rngVar available (promoteWeight isTepid)
       return $ Set.fromList
              . map fst
              . take pickNum
@@ -222,6 +235,17 @@ simplePeerSelectionPolicy rngVar metrics = PeerSelectionPolicy {
     tepidWeight isTepid peer r =
           if isTepid peer then (peer, r `div` 2)
                           else (peer, r)
+
+    -- The inverse of 'tepidWeight': everyone else's r is quartered. The
+    -- lowest r wins, so a tepid peer beats one non-tepid peer with
+    -- probability 1/8, and a larger pool with less.
+    promoteWeight :: (peerAddr -> Bool)
+                  -> peerAddr
+                  -> Word32
+                  -> (peerAddr, Word32)
+    promoteWeight isTepid peer r =
+          if isTepid peer then (peer, r)
+                          else (peer, r `div` 4)
 
 
  -- Add scaled random number in order to prevent ordering based on SockAddr
