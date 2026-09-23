@@ -150,7 +150,7 @@ simplePeerSelectionPolicy :: forall m peerAddr.
 simplePeerSelectionPolicy rngVar metrics = PeerSelectionPolicy {
       policyPickKnownPeersForPeerShare = simplePromotionPolicy,
       policyPickColdPeersToPromote     = simplePromotionPolicy,
-      policyPickWarmPeersToPromote     = simplePromotionPolicy,
+      policyPickWarmPeersToPromote     = warmPromotionPolicy,
       policyPickInboundPeers           = simplePromotionPolicy,
 
       policyPickHotPeersToDemote  = mkHotDemotionPolicy rngVar (deadlineHotScores metrics),
@@ -193,6 +193,18 @@ simplePeerSelectionPolicy rngVar metrics = PeerSelectionPolicy {
              . Map.assocs
              $ available'
 
+    -- Randomly pick warm peers to promote, peers with knownPeerTepid set
+    -- are less likely to be re-promoted.
+    warmPromotionPolicy :: PickPolicy peerAddr (STM m)
+    warmPromotionPolicy _ _ isTepid available pickNum = do
+      available' <- addRand rngVar available (promoteWeight isTepid)
+      return $ Set.fromList
+             . map fst
+             . take pickNum
+             . sortOn snd
+             . Map.assocs
+             $ available'
+
     simplePromotionPolicy :: PickPolicy peerAddr (STM m)
     simplePromotionPolicy _ _ _ available pickNum = do
       available' <- addRand rngVar available (,)
@@ -219,6 +231,16 @@ simplePeerSelectionPolicy rngVar metrics = PeerSelectionPolicy {
     tepidWeight isTepid peer r =
           if isTepid peer then (peer, r `div` 2)
                           else (peer, r)
+
+    -- The inverse of 'tepidWeight': everyone else's r is quartered, so
+    -- a tepid peer has a quarter of the weight.
+    promoteWeight :: (peerAddr -> Bool)
+                  -> peerAddr
+                  -> Word32
+                  -> (peerAddr, Word32)
+    promoteWeight isTepid peer r =
+          if isTepid peer then (peer, r)
+                          else (peer, r `div` 4)
 
 
  -- Add scaled random number in order to prevent ordering based on SockAddr
