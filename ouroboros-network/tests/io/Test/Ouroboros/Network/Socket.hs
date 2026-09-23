@@ -133,11 +133,8 @@ testVersionCodecCBORTerm !_ =
     decodeTerm :: CBOR.Term -> Either Text TestVersionData
     decodeTerm (CBOR.TList [CBOR.TInt x])
       | x >= 0
-#if !defined(wasm32_HOST_ARCH)
-      , x <= 0xffffffff
-#else
+        -- `maxBound @Word32` is more than enough for the tests
       , x <= 0x7fffffff
-#endif
       = Right
           TestVersionData {
               networkMagic = NetworkMagic (fromIntegral x)
