@@ -1,3 +1,5 @@
+{-# LANGUAGE TypeApplications #-}
+
 -- | QuickCheck generators and shrinkers for 'NodeToNodeVersion' and
 -- 'NodeToNodeVersionData', including helpers for generating valid and invalid
 -- version + data combinations.
@@ -11,10 +13,11 @@ module Cardano.Network.NodeToNode.Version.TestUtils
   , fixNtnVersionDataForVersion
   ) where
 
+import Data.Int (Int32)
+
 import Cardano.Network.NodeToNode.Version
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
-import Test.QuickCheck (Gen, arbitrary, arbitraryBoundedEnum, elements, oneof,
-           shrink)
+import Test.QuickCheck
 
 
 -- | Generator for 'NodeToNodeVersion'.
@@ -31,7 +34,8 @@ shrinkNodeToNodeVersion v
 genNodeToNodeVersionData :: Gen NodeToNodeVersionData
 genNodeToNodeVersionData =
       NodeToNodeVersionData
-  <$> (NetworkMagic <$> arbitrary)
+  <$> (NetworkMagic <$> arbitrary `suchThat` (<= fromIntegral @Int32 maxBound)
+                                  `suchThat` (>= 0))
   <*> oneof [ pure InitiatorOnlyDiffusionMode
             , pure InitiatorAndResponderDiffusionMode
             ]

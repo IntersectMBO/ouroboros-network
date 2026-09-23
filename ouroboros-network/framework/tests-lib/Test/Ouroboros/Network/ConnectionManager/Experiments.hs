@@ -98,7 +98,8 @@ import Ouroboros.Network.Protocol.Handshake.Unversioned
 import Ouroboros.Network.RethrowPolicy
 import Ouroboros.Network.Server (RemoteTransitionTrace)
 import Ouroboros.Network.Server qualified as Server
-import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
+import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit,
+           mkAcceptedConnectionsLimit)
 import Ouroboros.Network.Snocket (Snocket)
 import Ouroboros.Network.Snocket qualified as Snocket
 import Ouroboros.Network.Util (PrettyShow (..))
@@ -721,7 +722,7 @@ runInitiatorProtocols singMuxMode mux bundle controlBundle connId = do
 
 -- | Max bound AcceptedConnectionsLimit
 maxAcceptedConnectionsLimit :: AcceptedConnectionsLimit
-maxAcceptedConnectionsLimit = AcceptedConnectionsLimit maxBound maxBound 0
+maxAcceptedConnectionsLimit = mkAcceptedConnectionsLimit maxBound maxBound 0
 
 
 -- | This test runs an initiator only connection manager (client side) and bidirectional

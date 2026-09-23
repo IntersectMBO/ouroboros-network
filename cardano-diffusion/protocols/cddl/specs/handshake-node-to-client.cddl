@@ -25,7 +25,8 @@ versionNumber = 32791
 ; As of version 15 and higher
 nodeToClientVersionData = [networkMagic, query]
 
-networkMagic = uint
+; 32bit positive integer values
+networkMagic = 0..2147483647
 query        = bool
 
 refuseReason

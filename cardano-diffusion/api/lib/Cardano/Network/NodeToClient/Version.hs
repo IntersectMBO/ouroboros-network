@@ -3,6 +3,7 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE LambdaCase         #-}
 {-# LANGUAGE NamedFieldPuns     #-}
+{-# LANGUAGE TypeApplications   #-}
 
 module Cardano.Network.NodeToClient.Version
   ( NodeToClientVersion (..)
@@ -16,6 +17,7 @@ import Codec.CBOR.Term qualified as CBOR
 import Control.DeepSeq
 import Control.Monad ((>=>))
 import Data.Bits (clearBit, setBit, testBit)
+import Data.Int (Int32)
 import Data.Text (Text)
 import Data.Text qualified as T
 import GHC.Generics
@@ -148,8 +150,12 @@ nodeToClientCodecCBORTerm _v = CodecCBORTerm {encodeTerm, decodeTerm}
         = Left $ T.pack $ "unknown encoding: " ++ show t
 
       decoder :: Int -> Bool -> Either Text NodeToClientVersionData
-      decoder x query | x >= 0 && x <= 0xffffffff = Right (NodeToClientVersionData (NetworkMagic $ fromIntegral x) query)
-                      | otherwise                 = Left $ T.pack $ "networkMagic out of bound: " <> show x
+      decoder x query | x >= 0
+                      , x <= fromIntegral @Int32 maxBound
+                      = Right (NodeToClientVersionData (NetworkMagic $ fromIntegral x) query)
+
+                      | otherwise
+                      = Left $ T.pack $ "networkMagic out of bound: " <> show x
 
 
 nodeToClientVersionDataCodec :: VersionDataCodec NodeToClientVersion NodeToClientVersionData

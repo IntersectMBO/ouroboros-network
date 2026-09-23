@@ -24,7 +24,8 @@ module Test.Ouroboros.Network.Diffusion.Node
   , NtCVersionData
   , Node.NtNAddr_ (..)
     -- * extra types used by the node
-  , AcceptedConnectionsLimit (..)
+  , AcceptedConnectionsLimit
+  , mkAcceptedConnectionsLimit
   , DiffusionMode (..)
   , PeerAdvertise (..)
   , PeerSelectionTargets (..)
@@ -105,7 +106,8 @@ import Ouroboros.Network.PeerSelection.RootPeersDNS (DNSLookupType (..),
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers (HotValency,
            LocalRootConfig, WarmValency)
 import Ouroboros.Network.PeerSelection.Types (PublicExtraPeersAPI (..))
-import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
+import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit,
+           mkAcceptedConnectionsLimit)
 import Ouroboros.Network.Snocket (MakeBearer, Snocket, TestAddress (..),
            invalidFileDescriptor)
 import Ouroboros.Network.Util (PrettyShow (..))
