@@ -18,6 +18,7 @@ module Ouroboros.Network.OrphanInstances
   , networkTopologyToJSON
   , localRootPeersGroupsToJSON
   , peerSelectionTargetsToObject
+  , demotionScoresToJSON
   , JSONField (..)
   ) where
 
@@ -1125,11 +1126,12 @@ instance ( ToJSON extraDebugState
            , "actualEstablished" .= aEst
            , "peer" .= p
            ]
-  toJSON (TraceDemoteHotPeers tActive aActive sp) =
+  toJSON (TraceDemoteHotPeers tActive aActive sp scores) =
     object [ "kind" .= String "DemoteHotPeers"
            , "targetActive" .= tActive
            , "actualActive" .= aActive
            , "selectedPeers" .= toList sp
+           , "scores" .= demotionScoresToJSON scores
            ]
   toJSON (TraceDemoteLocalHotPeers taa sp) =
     object [ "kind" .= String "DemoteLocalHotPeers"
@@ -1149,11 +1151,12 @@ instance ( ToJSON extraDebugState
            , "actualActive" .= aActive
            , "peer" .= p
            ]
-  toJSON (TraceDemoteHotBigLedgerPeers tActive aActive sp) =
+  toJSON (TraceDemoteHotBigLedgerPeers tActive aActive sp scores) =
     object [ "kind" .= String "DemoteHotBigLedgerPeers"
            , "targetActive" .= tActive
            , "actualActive" .= aActive
            , "selectedPeers" .= toList sp
+           , "scores" .= demotionScoresToJSON scores
            ]
   toJSON (TraceDemoteHotBigLedgerPeerFailed tActive aActive p err) =
     object [ "kind" .= String "DemoteHotBigLedgerPeerFailed"
@@ -1249,6 +1252,13 @@ instance ( ToJSON extraDebugState
           , "ledgerStateJudgement" .= dpssExtraState ds
           , "associationMode" .= dpssAssociationMode ds
           ]
+
+-- | Render the scores of the peers available to demote, @null@ for a peer
+-- without a score.
+demotionScoresToJSON :: ToJSON peeraddr => Map.Map peeraddr (Maybe Int) -> Value
+demotionScoresToJSON scores =
+    toJSONList [ object [ "peer" .= peer, "score" .= score ]
+               | (peer, score) <- Map.toList scores ]
 
 peerSelectionTargetsToObject :: PeerSelectionTargets -> Value
 peerSelectionTargetsToObject
