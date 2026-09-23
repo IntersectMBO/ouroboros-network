@@ -11,7 +11,8 @@ module Ouroboros.Network.Diffusion.Configuration
   , defaultBulkChurnInterval
   , BlockProducerOrRelay (..)
     -- re-exports
-  , AcceptedConnectionsLimit (..)
+  , AcceptedConnectionsLimit
+  , mkAcceptedConnectionsLimit
   , DiffusionMode (..)
   , PeerSelectionTargets (..)
   , PeerSharing (..)
@@ -42,7 +43,7 @@ import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.PeerSharing (ps_POLICY_PEER_SHARE_MAX_PEERS,
            ps_POLICY_PEER_SHARE_STICKY_TIME)
 import Ouroboros.Network.Protocol.Handshake (handshake_QUERY_SHUTDOWN_DELAY)
-import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
+import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit, mkAcceptedConnectionsLimit)
 
 -- | Outbound governor targets
 -- Targets may vary depending on whether a node is operating in
@@ -74,11 +75,7 @@ defaultDeadlineTargets bp =
 -- | Inbound governor targets
 --
 defaultAcceptedConnectionsLimit :: AcceptedConnectionsLimit
-defaultAcceptedConnectionsLimit =
-  AcceptedConnectionsLimit {
-    acceptedConnectionsHardLimit = 512,
-    acceptedConnectionsSoftLimit = 384,
-    acceptedConnectionsDelay     = 5 }
+defaultAcceptedConnectionsLimit = mkAcceptedConnectionsLimit 512 384 5
 
 -- | Node's peer sharing participation flag
 --

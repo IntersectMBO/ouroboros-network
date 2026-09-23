@@ -780,11 +780,7 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
             connectionDataFlow = id,
             prunePolicy = simplePrunePolicy,
             stdGen = Random.mkStdGen rnd,
-            connectionsLimits = AcceptedConnectionsLimit {
-                acceptedConnectionsHardLimit = maxBound,
-                acceptedConnectionsSoftLimit = maxBound,
-                acceptedConnectionsDelay     = 0
-              },
+            connectionsLimits = mkAcceptedConnectionsLimit maxBound maxBound 0,
             timeWaitTimeout = testTimeWaitTimeout,
             outboundIdleTimeout = testOutboundIdleTimeout,
             updateVersionData = \a _ -> a,

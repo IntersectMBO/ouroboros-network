@@ -77,7 +77,7 @@ import Ouroboros.Network.Protocol.Handshake
 import Ouroboros.Network.Protocol.Handshake.Unversioned
 import Ouroboros.Network.RethrowPolicy
 import Ouroboros.Network.Server qualified as Server
-import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
+import Ouroboros.Network.Server.RateLimiting (mkAcceptedConnectionsLimit)
 import Ouroboros.Network.Snocket (Snocket, socketSnocket)
 import Ouroboros.Network.Snocket qualified as Snocket
 import Ouroboros.Network.Socket ()
@@ -273,11 +273,7 @@ withBidirectionalConnectionManager snocket makeBearer socket
                   connectionDataFlow = \_ -> Duplex,
                   prunePolicy = simplePrunePolicy,
                   stdGen      = stdGen,
-                  connectionsLimits = AcceptedConnectionsLimit {
-                      acceptedConnectionsHardLimit = maxBound,
-                      acceptedConnectionsSoftLimit = maxBound,
-                      acceptedConnectionsDelay     = 0
-                    },
+                  connectionsLimits = mkAcceptedConnectionsLimit maxBound maxBound 0,
                   updateVersionData = \a _ -> a,
                   connStateIdSupply,
                   classifyHandlerError = (\_ -> HandshakeFailure)
@@ -292,7 +288,7 @@ withBidirectionalConnectionManager snocket makeBearer socket
           sockets = socket :| [],
           snocket = snocket,
           tracer = ("server",) `contramap` debugTracer, -- ServerTrace
-          connectionLimits = AcceptedConnectionsLimit maxBound maxBound 0,
+          connectionLimits = mkAcceptedConnectionsLimit maxBound maxBound 0,
           inboundGovernorArgs =
               InboundGovernor.Arguments {
                   transitionTracer = nullTracer,

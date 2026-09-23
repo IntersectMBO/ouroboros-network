@@ -1210,7 +1210,7 @@ diffusionSimulationM
       let readUseBootstrapPeers = stepScriptSTM' useBootstrapPeersScriptVar
           (bgaRng, rng) = Random.splitGen $ mkStdGen seed
           acceptedConnectionsLimit =
-            Node.AcceptedConnectionsLimit maxBound maxBound 0
+            Node.mkAcceptedConnectionsLimit maxBound maxBound 0
           readLocalRootPeers  = readTVar lrpVar
           readPublicRootPeers = return publicRoots
           readUseLedgerPeers  = return (UseLedgerPeers (After 0))
