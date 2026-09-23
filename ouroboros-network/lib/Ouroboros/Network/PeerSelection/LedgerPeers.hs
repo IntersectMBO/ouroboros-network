@@ -46,7 +46,6 @@ import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
-import Control.Tracer (Tracer, traceWith)
 import Data.IP qualified as IP
 import Data.List as List (foldl')
 import Data.List.NonEmpty (NonEmpty (..))
@@ -61,6 +60,7 @@ import Data.Void (Void)
 import Data.Word (Word16, Word64)
 import Formatting (formatToString, (%+))
 import Formatting qualified as F
+import Hermod.Tracing.API.Tracer (Tracer, traceWith)
 import Network.DNS qualified as DNS
 import System.Random
 

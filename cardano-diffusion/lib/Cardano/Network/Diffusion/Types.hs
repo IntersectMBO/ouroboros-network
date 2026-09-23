@@ -24,7 +24,7 @@ module Cardano.Network.Diffusion.Types
 
 
 import Control.Concurrent.Class.MonadSTM.Strict
-import Control.Tracer (Tracer)
+import Hermod.Tracing.API.Tracer (Tracer)
 import Network.Socket (Socket)
 
 import Cardano.Network.ConsensusMode as Reexports (ConsensusMode (..))

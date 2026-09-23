@@ -35,7 +35,6 @@ import Control.DeepSeq (NFData (..))
 import Control.Monad (when)
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadTime.SI
-import Control.Tracer (Tracer, contramap, mkTracer, nullTracer)
 import Data.Bifunctor (Bifunctor (..))
 import Data.IntPSQ (IntPSQ)
 import Data.IntPSQ qualified as IntPSQ
@@ -46,6 +45,7 @@ import Data.Monoid (Sum (..))
 import Data.OrdPSQ (OrdPSQ)
 import Data.OrdPSQ qualified as OrdPSQ
 import GHC.Generics
+import Hermod.Tracing.API.Tracer (Tracer, contramap, mkTracer, nullTracer)
 
 import NoThunks.Class
 import NoThunks.Class.Orphans ()

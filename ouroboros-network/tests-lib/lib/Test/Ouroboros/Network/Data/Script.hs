@@ -45,7 +45,7 @@ import Control.DeepSeq
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer (Tracer, traceWith)
+import Hermod.Tracing.API.Tracer (Tracer, traceWith)
 
 import Test.Ouroboros.Network.Utils (ShrinkCarefully, prop_shrink_nonequal,
            shrinkVector)

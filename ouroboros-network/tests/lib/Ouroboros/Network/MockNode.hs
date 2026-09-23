@@ -29,7 +29,7 @@ import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadSay
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer (nullTracer)
+import Hermod.Tracing.API.Tracer (nullTracer)
 
 import Network.TypedProtocol.Codec
 import Network.TypedProtocol.Peer.Client qualified as TP

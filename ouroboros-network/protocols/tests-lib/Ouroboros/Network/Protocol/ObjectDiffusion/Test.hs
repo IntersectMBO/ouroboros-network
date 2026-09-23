@@ -55,10 +55,10 @@ import Test.Ouroboros.Network.Utils (DistinctList (..), renderRanges)
 import Control.DeepSeq
 import Control.Monad.Class.MonadThrow (MonadEvaluate, MonadThrow)
 import Control.Monad.IOSim (runSimOrThrow)
-import Control.Tracer (Tracer, nullTracer)
 import Data.Word (Word16, Word64)
 import GHC.Generics
 import GHC.Natural (Natural)
+import Hermod.Tracing.API.Tracer (Tracer, nullTracer)
 import Ouroboros.Network.Protocol.ObjectDiffusion.Direct (directPipelined)
 import Ouroboros.Network.Protocol.ObjectDiffusion.Examples
            (TraceObjectDiffusionTestImplem, WithCaughtUpDetection (..),

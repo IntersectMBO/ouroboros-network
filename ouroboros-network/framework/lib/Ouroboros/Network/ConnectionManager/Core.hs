@@ -38,7 +38,6 @@ import Control.Monad.Class.MonadThrow hiding (handle)
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.Fix
-import Control.Tracer (Tracer, contramap, traceWith)
 import Data.Bifunctor
 import Data.Foldable (foldMap', traverse_)
 import Data.Function (on)
@@ -46,6 +45,7 @@ import Data.Functor (void, ($>))
 import Data.Proxy (Proxy (..))
 import Data.Typeable (Typeable)
 import GHC.Stack (CallStack, HasCallStack, callStack)
+import Hermod.Tracing.API.Tracer (Tracer, contramap, traceWith)
 import System.Random (StdGen)
 import System.Random qualified as Random
 

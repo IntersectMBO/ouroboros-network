@@ -55,7 +55,7 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.IOSim
-import Control.Tracer
+import Hermod.Tracing.API.Tracer
 
 #if defined(mingw32_HOST_OS)
 import System.Win32.Async qualified as Win32.Async

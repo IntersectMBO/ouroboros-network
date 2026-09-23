@@ -9,13 +9,13 @@ import Control.Exception (bracket)
 import Control.Monad (forever, replicateM_, unless, when)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer
 import Data.ByteString.Builder (Builder, toLazyByteString)
 import Data.ByteString.Lazy qualified as BL
 import Data.Functor (void)
 import Data.Int
 import Data.Strict.Tuple as Strict (Pair ((:!:)))
 import Data.Word
+import Hermod.Tracing.API.Tracer
 import Network.Socket (Socket)
 import Network.Socket qualified as Socket
 import Network.Socket.ByteString.Lazy qualified as Socket (recv)

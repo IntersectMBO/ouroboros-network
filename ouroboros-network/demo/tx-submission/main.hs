@@ -30,8 +30,6 @@ import Control.Concurrent.MVar (MVar, newMVar, withMVar)
 import Control.Exception
 import Control.Monad
 import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer (Tracer, mkTracer)
-import Control.Tracer qualified as Tracer
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import Data.ByteString.Builder qualified as BS.Builder
@@ -46,6 +44,8 @@ import Data.Vector qualified as Vec
 import Data.Word (Word32, Word8)
 import GHC.Generics (Generic)
 import GHC.IO.Exception (IOErrorType (..), IOException (..))
+import Hermod.Tracing.API.Tracer (Tracer, mkTracer)
+import Hermod.Tracing.API.Tracer qualified as Tracer
 import NoThunks.Class (NoThunks (..))
 import Options.Applicative
 import Statistics.Quantile qualified as Stat

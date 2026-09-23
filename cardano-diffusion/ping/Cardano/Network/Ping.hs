@@ -64,7 +64,8 @@ import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer (Tracer, mkTracer, nullTracer, traceWith, (>$<))
+import Hermod.Tracing.API.Tracer (Tracer, mkTracer, nullTracer, traceWith,
+           (>$<))
 
 import Codec.CBOR.Read qualified as CBOR
 import Codec.CBOR.Term qualified as CBOR

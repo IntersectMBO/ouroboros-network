@@ -21,7 +21,7 @@ import Control.DeepSeq (NFData (..))
 import Control.Monad (when)
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer (Tracer, mkTracer, traceWith)
+import Hermod.Tracing.API.Tracer (Tracer, mkTracer, traceWith)
 
 import Data.Foldable as Foldable (foldl', foldr')
 import Data.List (sortOn)

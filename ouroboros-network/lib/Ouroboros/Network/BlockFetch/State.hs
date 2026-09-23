@@ -34,7 +34,7 @@ import Control.Exception (assert)
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer (Tracer, traceWith)
+import Hermod.Tracing.API.Tracer (Tracer, traceWith)
 
 import Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import Ouroboros.Network.AnchoredFragment qualified as AF

@@ -8,7 +8,7 @@ module Data.Cache
   ) where
 
 import Control.Monad (when)
-import Control.Tracer (Tracer, traceWith)
+import Hermod.Tracing.API.Tracer (Tracer, traceWith)
 
 -- | Cache newtype wrapper allows to perform an action only if the cache
 -- is not up-to-date, i.e. different than another value dimmed more recent.

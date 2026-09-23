@@ -29,7 +29,7 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.IOSim
-import Control.Tracer (Tracer, contramap, mkTracer, nullTracer)
+import Hermod.Tracing.API.Tracer (Tracer, contramap, mkTracer, nullTracer)
 
 import Data.ByteString.Lazy qualified as BSL
 import Data.Foldable (traverse_)

@@ -57,7 +57,7 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.ST.Unsafe (unsafeIOToST)
-import Control.Tracer (Tracer, contramap, contramapM, traceWith)
+import Hermod.Tracing.API.Tracer (Tracer, contramap, contramapM, traceWith)
 
 import GHC.IO.Exception
 

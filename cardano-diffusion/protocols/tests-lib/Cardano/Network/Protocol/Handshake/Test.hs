@@ -24,7 +24,7 @@ import Control.DeepSeq (NFData)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
 import Control.Monad.IOSim (runSimOrThrow)
-import Control.Tracer (nullTracer)
+import Hermod.Tracing.API.Tracer (nullTracer)
 
 import Network.TypedProtocol.Codec
 

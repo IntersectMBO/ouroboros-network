@@ -32,7 +32,7 @@ import Control.Exception (AssertionFailed (..), catch, evaluate)
 import Control.Monad (when)
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer (Tracer, mkTracer)
+import Hermod.Tracing.API.Tracer (Tracer, mkTracer)
 
 import Data.Bifoldable (bitraverse_)
 import Data.ByteString.Char8 qualified as BS

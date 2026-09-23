@@ -13,7 +13,7 @@ import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow
 import Control.Monad.IOSim (runSimOrThrow)
 import Control.Monad.ST (runST)
-import Control.Tracer (nullTracer)
+import Hermod.Tracing.API.Tracer (nullTracer)
 
 import Codec.CBOR.Read qualified as CBOR
 import Data.ByteString.Lazy (ByteString)

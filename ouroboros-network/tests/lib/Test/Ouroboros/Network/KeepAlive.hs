@@ -17,9 +17,9 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.IOSim
-import Control.Tracer
 import Data.ByteString.Lazy qualified as BL
 import Data.Typeable (Typeable)
+import Hermod.Tracing.API.Tracer
 import System.Random
 
 

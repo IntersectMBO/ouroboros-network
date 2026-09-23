@@ -128,7 +128,7 @@ import Control.Monad.Class.MonadTime.SI (MonadMonotonicTime (getMonotonicTime),
            addTime)
 import Control.Monad.Trans.Maybe (MaybeT (MaybeT, runMaybeT))
 import Control.Monad.Trans.Writer.CPS (Writer, runWriter, tell)
-import Control.Tracer (Tracer, traceWith)
+import Hermod.Tracing.API.Tracer (Tracer, traceWith)
 import Data.Bifunctor (Bifunctor (..), first)
 import Data.DList (DList)
 import Data.DList qualified as DList

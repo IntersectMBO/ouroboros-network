@@ -17,7 +17,7 @@ import Control.Monad.Class.MonadAsync (MonadAsync)
 import Control.Monad.Class.MonadThrow (MonadThrow)
 import Control.Monad.Class.MonadTime.SI
 
-import Control.Tracer (Tracer)
+import Hermod.Tracing.API.Tracer (Tracer)
 
 import Data.Bifunctor (first)
 import Data.Map (Map)

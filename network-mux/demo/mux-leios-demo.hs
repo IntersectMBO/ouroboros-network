@@ -22,7 +22,7 @@ import Control.Concurrent (forkIO)
 import Control.Concurrent.STM (atomically)
 import Control.Exception
 import Control.Monad
-import Control.Tracer
+import Hermod.Tracing.API.Tracer
 
 import System.Environment qualified as SysEnv
 import System.Exit

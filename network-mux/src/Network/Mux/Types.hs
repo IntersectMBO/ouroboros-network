@@ -50,7 +50,6 @@ module Network.Mux.Types
 import Prelude hiding (read)
 
 import Control.Exception
-import Control.Tracer (Tracer)
 import Data.ByteString.Builder (Builder)
 import Data.ByteString.Lazy qualified as BL
 import Data.Functor (void)
@@ -62,6 +61,7 @@ import Data.Word
 import Foreign.Ptr (Ptr)
 import Formatting (formatToString, (%+))
 import Formatting qualified as F
+import Hermod.Tracing.API.Tracer (Tracer)
 import Quiet
 
 import GHC.Generics (Generic)

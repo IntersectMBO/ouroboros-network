@@ -21,11 +21,11 @@ import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer (Tracer, traceWith)
 import Data.ByteString.Lazy qualified as BL
 import Data.Functor (void)
 import Data.Typeable (Typeable)
 import Data.Void (Void)
+import Hermod.Tracing.API.Tracer (Tracer, traceWith)
 
 import Network.Mux qualified as Mx
 

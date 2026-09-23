@@ -29,7 +29,7 @@ import Control.Monad.Class.MonadFork (MonadFork (throwTo),
            MonadThread (ThreadId, myThreadId))
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer (Tracer)
+import Hermod.Tracing.API.Tracer (Tracer)
 
 import Ouroboros.Network.BlockFetch.ClientState
 import Ouroboros.Network.Diffusion.Policies (deactivateTimeout)

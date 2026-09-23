@@ -54,7 +54,7 @@ module Ouroboros.Network.Diffusion.Types
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (Exception, SomeException)
 import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer (Tracer, nullTracer)
+import Hermod.Tracing.API.Tracer (Tracer, nullTracer)
 
 import Codec.CBOR.Term qualified as CBOR
 import Data.ByteString.Lazy (ByteString)

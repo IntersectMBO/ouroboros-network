@@ -12,7 +12,7 @@ import Data.Int (Int64)
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer
+import Hermod.Tracing.API.Tracer
 
 import Network.Mux.Codec qualified as Mx
 import Network.Mux.Time qualified as Mx

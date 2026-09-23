@@ -24,7 +24,7 @@ import Data.Word (Word16)
 
 import Control.Exception (assert)
 import Control.Monad (when)
-import Control.Tracer (Tracer, traceWith)
+import Hermod.Tracing.API.Tracer (Tracer, traceWith)
 
 import Network.TypedProtocol.Core (N, Nat (..))
 

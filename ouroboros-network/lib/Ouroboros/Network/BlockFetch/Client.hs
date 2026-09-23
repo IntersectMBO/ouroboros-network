@@ -28,7 +28,7 @@ import Control.Monad (unless)
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 
-import Control.Tracer (traceWith)
+import Hermod.Tracing.API.Tracer (traceWith)
 
 import Ouroboros.Network.Block
 

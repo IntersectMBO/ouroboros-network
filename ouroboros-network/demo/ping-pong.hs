@@ -16,7 +16,7 @@ import Data.Void (Void)
 
 import Control.Concurrent.Async
 import Control.Monad (when)
-import Control.Tracer
+import Hermod.Tracing.API.Tracer
 
 import Formatting (formatToString, (%+))
 import Formatting qualified as F

@@ -9,7 +9,7 @@ module Ouroboros.Network.PeerSelection.PeerMetric.Type
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadTime.SI
-import Control.Tracer (Tracer)
+import Hermod.Tracing.API.Tracer (Tracer)
 
 import Cardano.Slotting.Slot (SlotNo (..))
 import Ouroboros.Network.SizeInBytes (SizeInBytes)

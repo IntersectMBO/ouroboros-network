@@ -46,7 +46,7 @@ import Control.DeepSeq (NFData, force)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
-import Control.Tracer (Tracer, contramap, traceWith)
+import Hermod.Tracing.API.Tracer (Tracer, contramap, traceWith)
 
 
 -- $intro

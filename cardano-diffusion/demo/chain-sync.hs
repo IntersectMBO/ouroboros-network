@@ -32,7 +32,7 @@ import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception
 import Control.Monad (when)
 import Control.Monad.Class.MonadTime.SI (Time (..))
-import Control.Tracer
+import Hermod.Tracing.API.Tracer
 
 import System.Directory
 import System.Random (RandomGen, SplitGen, StdGen)

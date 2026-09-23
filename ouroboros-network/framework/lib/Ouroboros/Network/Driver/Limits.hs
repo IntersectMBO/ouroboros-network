@@ -55,7 +55,7 @@ import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer (Tracer, contramap, traceWith)
+import Hermod.Tracing.API.Tracer (Tracer, contramap, traceWith)
 
 import Network.Mux.Timeout
 import Network.TypedProtocol.Codec

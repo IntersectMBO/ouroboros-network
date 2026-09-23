@@ -17,10 +17,10 @@ import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow
 import Control.Monad.IOSim (runSimOrThrow)
 import Control.Monad.ST (runST)
-import Control.Tracer (nullTracer)
 import Data.ByteString.Lazy qualified as BL
 import Data.Foldable as Foldable (foldl')
 import Data.Word (Word8)
+import Hermod.Tracing.API.Tracer (nullTracer)
 
 import Network.TypedProtocol.Codec
 import Network.TypedProtocol.Codec.Properties

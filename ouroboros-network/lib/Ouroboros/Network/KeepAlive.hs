@@ -17,9 +17,9 @@ import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (assert)
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer (Tracer, traceWith)
 import Data.Map.Strict qualified as M
 import Data.Maybe (fromJust)
+import Hermod.Tracing.API.Tracer (Tracer, traceWith)
 import System.Random (StdGen, random)
 
 import Ouroboros.Network.ControlMessage (ControlMessage (..), ControlMessageSTM)

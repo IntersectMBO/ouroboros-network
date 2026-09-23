@@ -41,11 +41,11 @@ import Formatting qualified as F
 
 import Control.Exception hiding (throwIO)
 import Control.Monad.Class.MonadThrow
-import Control.Tracer (Tracer, nullTracer)
 import Data.Bifunctor (Bifunctor (..))
 import Data.Functor.Contravariant (contramap, (>$<))
 import Data.Functor.Identity
 import GHC.Generics (Generic (..))
+import Hermod.Tracing.API.Tracer (Tracer, nullTracer)
 import Quiet (Quiet (..))
 
 import Network.Mux.Types

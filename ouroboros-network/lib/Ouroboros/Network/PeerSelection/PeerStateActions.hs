@@ -47,7 +47,7 @@ import Control.Monad.Class.MonadTimer.SI
 
 import Control.Concurrent.JobPool (Job (..), JobPool)
 import Control.Concurrent.JobPool qualified as JobPool
-import Control.Tracer (Tracer, traceWith)
+import Hermod.Tracing.API.Tracer (Tracer, traceWith)
 
 import Data.ByteString.Lazy (ByteString)
 import Data.Functor (void, ($>))

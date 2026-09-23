@@ -58,7 +58,7 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.IOSim
-import Control.Tracer
+import Hermod.Tracing.API.Tracer
 
 import Test.Ouroboros.Network.Orphans ()
 import Test.Ouroboros.Network.Utils (sayTracer)

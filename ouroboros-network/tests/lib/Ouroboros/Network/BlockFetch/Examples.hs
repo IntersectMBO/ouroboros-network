@@ -32,7 +32,7 @@ import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer (Tracer, contramap, nullTracer)
+import Hermod.Tracing.API.Tracer (Tracer, contramap, nullTracer)
 
 import Ouroboros.Network.AnchoredFragment (AnchoredFragment, anchorPoint)
 import Ouroboros.Network.AnchoredFragment qualified as AnchoredFragment

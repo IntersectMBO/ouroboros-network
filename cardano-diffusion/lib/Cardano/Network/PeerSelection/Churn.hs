@@ -31,10 +31,10 @@ import Control.Monad (when)
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer (Tracer, traceWith)
 import Data.Functor (void, ($>))
 import Data.Monoid.Synchronisation (FirstToFinish (..))
 import GHC.Generics (Generic)
+import Hermod.Tracing.API.Tracer (Tracer, traceWith)
 import Quiet (Quiet (..))
 import System.Random
 

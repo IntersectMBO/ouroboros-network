@@ -27,7 +27,7 @@ import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
 
-import Control.Tracer
+import Hermod.Tracing.API.Tracer
 
 import Network.Mux qualified as Mx
 import Network.Mux.Bearer qualified as Mx

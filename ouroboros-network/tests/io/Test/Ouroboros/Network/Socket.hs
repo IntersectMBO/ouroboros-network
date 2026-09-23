@@ -26,7 +26,7 @@ import Control.Monad
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork hiding (ThreadId)
 import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer
+import Hermod.Tracing.API.Tracer
 
 import Network.Mux qualified as Mx
 

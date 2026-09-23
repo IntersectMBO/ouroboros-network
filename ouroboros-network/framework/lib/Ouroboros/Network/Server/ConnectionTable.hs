@@ -27,7 +27,7 @@ module Ouroboros.Network.Server.ConnectionTable
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad (when)
---import           Control.Tracer XXX Not Yet
+--import           Hermod.Tracing.API.Tracer XXX Not Yet
 import Data.Map.Strict qualified as M
 import Data.Set (Set)
 import Data.Set qualified as S
@@ -169,7 +169,7 @@ addConnection ConnectionTable{ctTable} remoteAddr localAddr dir ref_m = do
               , cteLocalAddresses = S.insert localAddr (cteLocalAddresses cte)
               }
 
--- TODO This should use Control.Tracer
+-- TODO This should use Hermod.Tracing.API.Tracer
 -- TODO shoult this be removed? Doesn't seem to be used anywhere
 _dumpConnectionTable
     :: ConnectionTable IO Socket.SockAddr

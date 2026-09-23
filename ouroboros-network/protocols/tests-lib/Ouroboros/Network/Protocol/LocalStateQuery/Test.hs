@@ -32,7 +32,7 @@ import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow
 import Control.Monad.IOSim
 import Control.Monad.ST (runST)
-import Control.Tracer (nullTracer)
+import Hermod.Tracing.API.Tracer (nullTracer)
 
 import Codec.Serialise (DeserialiseFailure)
 import Codec.Serialise qualified as Serialise (decode, encode)

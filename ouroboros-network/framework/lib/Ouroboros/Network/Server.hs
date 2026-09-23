@@ -42,7 +42,7 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.Fix (MonadFix)
 
-import Control.Tracer (Tracer, contramap, traceWith)
+import Hermod.Tracing.API.Tracer (Tracer, contramap, traceWith)
 
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NonEmpty

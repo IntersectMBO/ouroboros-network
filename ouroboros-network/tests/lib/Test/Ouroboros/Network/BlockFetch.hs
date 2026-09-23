@@ -32,7 +32,7 @@ import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.IOSim
-import Control.Tracer (contramap, nullTracer)
+import Hermod.Tracing.API.Tracer (contramap, nullTracer)
 
 import Ouroboros.Network.ControlMessage (ControlMessage (..))
 import Ouroboros.Network.DeltaQ

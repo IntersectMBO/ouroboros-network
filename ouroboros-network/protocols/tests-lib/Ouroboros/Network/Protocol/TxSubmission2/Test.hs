@@ -31,7 +31,7 @@ import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow
 import Control.Monad.IOSim
 import Control.Monad.ST (runST)
-import Control.Tracer (Tracer, contramap, nullTracer)
+import Hermod.Tracing.API.Tracer (Tracer, contramap, nullTracer)
 
 import Codec.CBOR.Write qualified as CBOR
 import Codec.Serialise (DeserialiseFailure, Serialise)

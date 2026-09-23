@@ -33,12 +33,12 @@ import Control.Exception
 import Control.Monad (join)
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer (Tracer, traceWith)
 import Data.ByteString.Lazy qualified as BSL
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Void (Void)
+import Hermod.Tracing.API.Tracer (Tracer, traceWith)
 
 import Network.Mux qualified as Mx
 

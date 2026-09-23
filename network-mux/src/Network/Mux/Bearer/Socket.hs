@@ -7,9 +7,9 @@
 module Network.Mux.Bearer.Socket (socketAsBearer) where
 
 import Control.Monad (when)
-import Control.Tracer
 import Data.ByteString.Lazy qualified as BL
 import Data.Int
+import Hermod.Tracing.API.Tracer
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadThrow

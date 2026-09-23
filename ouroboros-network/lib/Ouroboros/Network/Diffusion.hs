@@ -35,7 +35,7 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.Fix (MonadFix)
-import Control.Tracer (Tracer, contramap, nullTracer, traceWith)
+import Hermod.Tracing.API.Tracer (Tracer, contramap, nullTracer, traceWith)
 #if !defined(mingw32_HOST_OS) && !defined(wasm32_HOST_ARCH)
 import Data.Bits ((.|.))
 import System.Posix.Files qualified as Unix

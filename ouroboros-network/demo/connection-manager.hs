@@ -33,7 +33,8 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI (MonadTime (..))
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.Fix (MonadFix)
-import Control.Tracer (Tracer, contramap, mkTracer, nullTracer, traceWith)
+import Hermod.Tracing.API.Tracer (Tracer, contramap, mkTracer, nullTracer,
+           traceWith)
 
 import Data.ByteString.Lazy (ByteString)
 import Data.Either (partitionEithers)

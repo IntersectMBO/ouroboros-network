@@ -23,7 +23,7 @@ import Ouroboros.Network.PeerSelection.PeerMetric
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing)
 
 #ifdef POSIX
-import Control.Tracer (traceWith)
+import Hermod.Tracing.API.Tracer (traceWith)
 
 import Cardano.Network.PeerSelection.Governor.Types qualified as Cardano
 import Ouroboros.Network.ConnectionManager.Core (Trace (..))

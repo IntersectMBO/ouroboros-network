@@ -52,7 +52,8 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.Fix
 import Control.Monad.IOSim (IOSim)
-import Control.Tracer (Tracer, contramap, mkTracer, nullTracer, traceWith)
+import Hermod.Tracing.API.Tracer (Tracer, contramap, mkTracer, nullTracer,
+           traceWith)
 
 import Data.Bifunctor (first)
 import Data.Bool (bool)

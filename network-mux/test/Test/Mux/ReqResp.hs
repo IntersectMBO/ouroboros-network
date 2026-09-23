@@ -47,7 +47,7 @@ import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
 
 import Control.Monad.Class.MonadST
-import Control.Tracer (Tracer, traceWith)
+import Hermod.Tracing.API.Tracer (Tracer, traceWith)
 
 import Network.Mux.Channel
 

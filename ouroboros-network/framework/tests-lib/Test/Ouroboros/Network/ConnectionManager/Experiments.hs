@@ -48,7 +48,7 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.Fix (MonadFix)
-import Control.Tracer (Tracer, contramap, nullTracer)
+import Hermod.Tracing.API.Tracer (Tracer, contramap, nullTracer)
 
 import Codec.Serialise.Class (Serialise)
 import Data.ByteString.Lazy (ByteString)

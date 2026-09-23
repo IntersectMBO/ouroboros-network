@@ -34,7 +34,7 @@ import Control.Monad
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTimer.SI (threadDelay)
-import Control.Tracer
+import Hermod.Tracing.API.Tracer
 
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Peer.Client (Client)

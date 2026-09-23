@@ -56,8 +56,8 @@ import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadSay
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.IOSim (IOSim, traceM)
-import Control.Tracer (Contravariant (contramap), Tracer, contramapM, mkTracer,
-           traceWith)
+import Hermod.Tracing.API.Tracer (Contravariant (contramap), Tracer, contramapM,
+           mkTracer, traceWith)
 
 import Data.Bitraversable (bimapAccumR)
 import Data.List (delete, nub)

@@ -8,7 +8,7 @@ module Test.Ouroboros.Network.RawBearer where
 
 import Control.Monad.Class.MonadSay
 import Control.Monad.IOSim hiding (liftST)
-import Control.Tracer (Tracer, mkTracer, nullTracer)
+import Hermod.Tracing.API.Tracer (Tracer, mkTracer, nullTracer)
 
 import Ouroboros.Network.Snocket
 import Simulation.Network.Snocket as SimSnocket

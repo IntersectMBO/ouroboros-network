@@ -32,7 +32,7 @@ import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer (Tracer, contramap, nullTracer)
+import Hermod.Tracing.API.Tracer (Tracer, contramap, nullTracer)
 
 import Codec.CBOR.Read qualified as CBOR
 import Codec.Serialise qualified as Serialise

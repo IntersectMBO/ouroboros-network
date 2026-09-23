@@ -41,7 +41,7 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.Fix (MonadFix)
 import Control.Monad.IOSim
-import Control.Tracer (Tracer, mkTracer, nullTracer)
+import Hermod.Tracing.API.Tracer (Tracer, mkTracer, nullTracer)
 
 import Codec.Serialise.Class (Serialise)
 import Data.Bifoldable

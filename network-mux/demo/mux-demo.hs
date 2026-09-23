@@ -19,7 +19,7 @@ import Control.Concurrent (forkIO)
 import Control.Concurrent.STM (atomically)
 import Control.Exception (finally)
 import Control.Monad
-import Control.Tracer (Tracer, mkTracer)
+import Hermod.Tracing.API.Tracer (Tracer, mkTracer)
 
 import System.Environment qualified as SysEnv
 import System.Exit

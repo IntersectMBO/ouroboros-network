@@ -8,8 +8,8 @@ module Network.Mux.DeltaQ.TraceTransformer
   ) where
 
 import Control.Concurrent.Class.MonadSTM.Strict
-import Control.Tracer
 import Data.Functor.Identity
+import Hermod.Tracing.API.Tracer
 
 import Network.Mux.DeltaQ.TraceStats
 import Network.Mux.Trace

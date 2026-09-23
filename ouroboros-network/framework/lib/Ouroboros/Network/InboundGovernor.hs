@@ -51,7 +51,7 @@ import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer (Tracer, mkTracer, traceWith)
+import Hermod.Tracing.API.Tracer (Tracer, mkTracer, traceWith)
 
 import Data.Bifunctor (first)
 import Data.ByteString.Lazy (ByteString)

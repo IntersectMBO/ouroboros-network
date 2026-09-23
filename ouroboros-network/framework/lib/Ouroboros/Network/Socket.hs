@@ -84,7 +84,7 @@ import Network.Socket (SockAddr, Socket)
 #endif
 import Network.Socket qualified as Socket
 
-import Control.Tracer
+import Hermod.Tracing.API.Tracer
 
 import Network.Mux qualified as Mx
 import Network.Mux.Bearer qualified as Mx

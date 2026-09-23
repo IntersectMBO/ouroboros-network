@@ -18,9 +18,9 @@ module Cardano.Network.Diffusion
 
 import Control.DeepSeq (NFData)
 import Control.Monad.Class.MonadThrow
-import Control.Tracer (traceWith)
 import Data.Set qualified as Set
 import Data.Void (Void)
+import Hermod.Tracing.API.Tracer (traceWith)
 import System.Exit (ExitCode)
 
 import Cardano.Network.Diffusion.Configuration qualified as Cardano

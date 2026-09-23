@@ -21,7 +21,6 @@ import Control.Monad (when)
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer (Tracer, traceWith)
 import Data.IntMap.Strict qualified as IntMap
 import Data.IntSet (IntSet)
 import Data.IntSet qualified as IntSet
@@ -30,6 +29,7 @@ import Data.Map.Strict qualified as Map
 import Data.Void (Void)
 import Data.Word (Word64)
 import GHC.Stack (HasCallStack)
+import Hermod.Tracing.API.Tracer (Tracer, traceWith)
 
 import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Ouroboros.Network.RegisteredDelay (RegisteredDelay)

@@ -37,7 +37,7 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.IOSim (runSimOrThrow)
-import Control.Tracer (nullTracer)
+import Hermod.Tracing.API.Tracer (nullTracer)
 
 import Network.Mux.Bearer qualified as Mx
 import Network.Mux.Types (MiniProtocolDir (..), MiniProtocolNum (..),

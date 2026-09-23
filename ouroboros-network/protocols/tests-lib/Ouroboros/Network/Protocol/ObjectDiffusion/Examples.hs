@@ -24,7 +24,6 @@ import Ouroboros.Network.Protocol.ObjectDiffusion.Type (BlockingReplyList (..),
 
 import Control.Exception (assert)
 import Control.Monad (when)
-import Control.Tracer (Tracer, traceWith)
 import Data.Foldable qualified as Foldable
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.List.NonEmpty qualified as NonEmpty
@@ -35,6 +34,7 @@ import Data.Sequence.Strict qualified as Seq
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Word (Word16)
+import Hermod.Tracing.API.Tracer (Tracer, traceWith)
 
 -- | This helper typeclass allows the inbound and outbound tests implementation
 -- to finish the protocol gracefully when all the desired objects have been sent.

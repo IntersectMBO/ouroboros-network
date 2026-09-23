@@ -79,7 +79,7 @@ import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTimer.SI hiding (timeout)
-import Control.Tracer
+import Hermod.Tracing.API.Tracer
 
 import Network.Mux.Bearer
 import Network.Mux.Channel

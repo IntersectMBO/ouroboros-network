@@ -13,10 +13,10 @@ module Ouroboros.Network.Diffusion.Utils
 
 
 import Control.Monad.Class.MonadThrow
-import Control.Tracer (Tracer, traceWith)
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Typeable (Typeable)
+import Hermod.Tracing.API.Tracer (Tracer, traceWith)
 
 import Ouroboros.Network.Snocket (FileDescriptor, Snocket)
 import Ouroboros.Network.Snocket qualified as Snocket

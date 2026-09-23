@@ -18,7 +18,7 @@ import Control.Concurrent.Class.MonadSTM qualified as Lazy
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.DeepSeq (NFData)
 import Control.Monad.Class.MonadAsync (mapConcurrently_)
-import Control.Tracer (nullTracer)
+import Hermod.Tracing.API.Tracer (nullTracer)
 
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Strict (Map)

@@ -17,11 +17,11 @@ import Control.Monad.Class.MonadFork (labelThisThread)
 import Control.Monad.Class.MonadST (MonadST, stToIO)
 import Control.Monad.Class.MonadThrow (MonadThrow, bracket, finally, throwIO)
 import Control.Monad.ST.Unsafe (unsafeIOToST)
-import Control.Tracer (Tracer, traceWith)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import Foreign.Marshal (copyBytes, free, mallocBytes)
 import Foreign.Ptr (castPtr, plusPtr)
+import Hermod.Tracing.API.Tracer (Tracer, traceWith)
 
 import Test.QuickCheck
 

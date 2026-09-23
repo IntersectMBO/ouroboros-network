@@ -112,7 +112,7 @@ import Data.Void
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer (Tracer)
+import Hermod.Tracing.API.Tracer (Tracer)
 
 import GHC.Generics (Generic)
 

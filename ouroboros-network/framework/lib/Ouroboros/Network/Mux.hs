@@ -61,7 +61,7 @@ module Ouroboros.Network.Mux
 import Control.DeepSeq (NFData)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
-import Control.Tracer (Tracer)
+import Hermod.Tracing.API.Tracer (Tracer)
 
 import Data.Foldable (fold)
 import Data.Hashable

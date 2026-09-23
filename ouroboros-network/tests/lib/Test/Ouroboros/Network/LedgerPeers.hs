@@ -25,7 +25,6 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.IOSim hiding (SimResult)
-import Control.Tracer (Tracer, mkTracer, nullTracer, traceWith)
 import Data.Aeson
 import Data.Aeson.Types as Aeson
 import Data.ByteString.Builder (toLazyByteString, word64BE)
@@ -43,6 +42,7 @@ import Data.Ratio
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Word
+import Hermod.Tracing.API.Tracer (Tracer, mkTracer, nullTracer, traceWith)
 import System.Random
 
 import Network.DNS (Domain)

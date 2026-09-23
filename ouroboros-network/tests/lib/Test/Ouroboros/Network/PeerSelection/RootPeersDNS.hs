@@ -68,7 +68,8 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.Class.MonadTimer.SI qualified as MonadTimer
 import Control.Monad.IOSim
-import Control.Tracer (Tracer, contramap, mkTracer, nullTracer, traceWith)
+import Hermod.Tracing.API.Tracer (Tracer, contramap, mkTracer, nullTracer,
+           traceWith)
 
 import Ouroboros.Network.ConnectionManager.Types (Provenance (Outbound))
 import Ouroboros.Network.DiffusionMode

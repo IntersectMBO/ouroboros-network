@@ -13,8 +13,8 @@ import Test.Ouroboros.Network.RawBearer.Utils
 
 import Control.Concurrent.Class.MonadMVar
 import Control.Monad.Class.MonadThrow (catchJust, finally)
-import Control.Tracer (Tracer, nullTracer)
 import Data.Word (Word32)
+import Hermod.Tracing.API.Tracer (Tracer, nullTracer)
 import Network.Socket qualified as Socket
 import System.Directory (removeFile)
 import System.IO.Error (ioeGetErrorType, isDoesNotExistErrorType)
