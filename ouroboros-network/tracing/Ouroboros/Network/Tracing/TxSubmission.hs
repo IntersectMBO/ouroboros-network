@@ -8,7 +8,7 @@ import Data.Aeson
 import Data.IntMap.Strict qualified as IntMap
 import Data.Map.Strict qualified as Map
 
-import Cardano.Logging
+import Hermod.Tracing.API
 import Ouroboros.Network.Tx (HasRawTxId)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
 

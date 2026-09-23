@@ -4,9 +4,9 @@
 
 module Cardano.Network.Tracing.Churn () where
 
-import Cardano.Logging
 import Data.Aeson (Value (..), (.=))
 import Data.Text (pack)
+import Hermod.Tracing.API
 
 import Cardano.Network.PeerSelection.Churn
 

@@ -4,8 +4,8 @@
 
 module Ouroboros.Network.Tracing.ConnectionId () where
 
-import Cardano.Logging
 import Data.Aeson (Value (String), (.=))
+import Hermod.Tracing.API
 import Ouroboros.Network.ConnectionId (ConnectionId (..))
 
 --------------------------------------------------------------------------------

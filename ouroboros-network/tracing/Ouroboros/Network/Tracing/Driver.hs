@@ -9,7 +9,7 @@ module Ouroboros.Network.Tracing.Driver () where
 
 import Data.Aeson (Value (String), (.=))
 
-import Cardano.Logging
+import Hermod.Tracing.API
 import Ouroboros.Network.Driver.Simple qualified as Simple
 import Ouroboros.Network.Driver.Stateful qualified as Stateful
 

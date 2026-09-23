@@ -16,7 +16,7 @@ import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text (pack)
 
-import Cardano.Logging
+import Hermod.Tracing.API
 import Ouroboros.Network.ConnectionHandler (ConnectionHandlerTrace (..))
 import Ouroboros.Network.ConnectionId (ConnectionId (..))
 import Ouroboros.Network.ConnectionManager.ConnMap (ConnMap (..))

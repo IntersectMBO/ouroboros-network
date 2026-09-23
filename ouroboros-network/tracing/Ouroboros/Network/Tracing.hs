@@ -10,7 +10,7 @@ import Data.IP qualified as IP
 import Data.Text (Text, pack)
 import Network.Socket (SockAddr (..))
 
-import Cardano.Logging
+import Hermod.Tracing.API
 import Network.TypedProtocol.Codec (AnyMessage (..))
 import Ouroboros.Network.Protocol.Handshake.Type qualified as HS
 import Ouroboros.Network.Snocket (LocalAddress (..), RemoteAddress)

@@ -14,7 +14,7 @@ import Data.Text (Text)
 import Data.Typeable
 import Formatting
 
-import Cardano.Logging
+import Hermod.Tracing.API
 import Network.Mux qualified as Mux
 #ifdef linux_HOST_OS
 import Network.Mux.TCPInfo (StructTCPInfo (..))
@@ -455,7 +455,7 @@ instance LogFormatting Mux.Trace where
         -- Somewhat awkward to "catch" this Consensus exception here, but
         -- Diffusion Layer is indeed the ultimate manager of the per-peer
         -- threads.
-        [ CounterM txsMempoolTimeoutHardCounterName Nothing
+        [ CounterM txsMempoolTimeoutHardCounterName CounterIncrement
         | impliesMempoolTimeoutHard ev
         ]
       Mux.TraceStartEagerly{} -> []

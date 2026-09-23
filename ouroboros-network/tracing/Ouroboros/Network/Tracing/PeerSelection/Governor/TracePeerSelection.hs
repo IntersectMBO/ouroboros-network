@@ -17,7 +17,7 @@ import Data.Bifunctor (first)
 import Data.Foldable (toList)
 import Data.Text (pack)
 
-import Cardano.Logging
+import Hermod.Tracing.API
 import Ouroboros.Network.Diffusion.Types
 import Ouroboros.Network.OrphanInstances (JSONField (..))
 import Ouroboros.Network.PeerSelection.Governor.Types
