@@ -7,11 +7,10 @@ import Control.Concurrent.Class.MonadSTM.Strict
 
 import Cardano.Network.FetchMode (FetchMode (..), PraosFetchMode (..))
 import Cardano.Network.PeerSelection.Churn (ChurnMode (..))
-import Data.List (sortOn)
-import Data.Map.Strict qualified as Map
-import Data.Set qualified as Set
-import Ouroboros.Network.Diffusion.Policies (addRand, optionalMerge,
-           simplePeerSelectionPolicy)
+import Data.Map.Strict (Map)
+import Ouroboros.Network.Block (SlotNo)
+import Ouroboros.Network.Diffusion.Policies (deadlineHotScores,
+           mkHotDemotionPolicy, optionalMerge, simplePeerSelectionPolicy)
 import Ouroboros.Network.PeerSelection.Governor.Types
 import Ouroboros.Network.PeerSelection.PeerMetric
 import System.Random
@@ -27,39 +26,25 @@ simpleChurnModePeerSelectionPolicy
   -> PeerSelectionPolicy peerAddr m
 simpleChurnModePeerSelectionPolicy rngVar getChurnMode metrics =
   (simplePeerSelectionPolicy rngVar metrics) {
-    policyPickHotPeersToDemote = hotDemotionPolicy
+    policyPickHotPeersToDemote = mkHotDemotionPolicy rngVar hotScores
   }
   where
-    hotDemotionPolicy :: PickPolicy peerAddr (STM m)
-    hotDemotionPolicy _ _ _ available pickNum = do
+    -- The score this policy ranks hot peers by for demotion: in deadline mode
+    -- the peer's 'upstreamyness' plus its 'fetchynessBlocks', while syncing
+    -- its 'fetchynessBytes', with 'joinedPeerMetricAt' as the tie-break.
+    hotScores :: STM m (Map peerAddr (Int, Maybe SlotNo))
+    hotScores = do
         mode <- getChurnMode
-        scores <- case mode of
-                       ChurnMode (PraosFetchMode FetchModeDeadline) -> do
-                           jpm <- joinedPeerMetricAt metrics
-                           hup <- upstreamyness metrics
-                           bup <- fetchynessBlocks metrics
-                           return $ Map.unionWith (+) hup bup `optionalMerge` jpm
+        case mode of
+             ChurnMode (PraosFetchMode FetchModeDeadline) ->
+                 deadlineHotScores metrics
+             ChurnMode (PraosFetchMode FetchModeBulkSync) ->
+                 bytesScores
+             ChurnMode GenesisFetchMode ->
+                 bytesScores
 
-                       ChurnMode (PraosFetchMode FetchModeBulkSync) -> do
-                           jpm <- joinedPeerMetricAt metrics
-                           bup <- fetchynessBytes metrics
-                           return $ bup `optionalMerge` jpm
-
-                       ChurnMode GenesisFetchMode -> do
-                           jpm <- joinedPeerMetricAt metrics
-                           bup <- fetchynessBytes metrics
-                           return $ bup `optionalMerge` jpm
-
-        available' <- addRand rngVar available (,)
-        return $ Set.fromList
-             . map fst
-             . take pickNum
-               -- order the results, resolve the ties using slot number when
-               -- a peer joined the leader board.
-               --
-               -- note: this will prefer to preserve newer peers, whose results
-               -- less certain than peers who entered leader board earlier.
-             . sortOn (\(peer, rn) ->
-                          (Map.findWithDefault (0, Nothing) peer scores, rn))
-             . Map.assocs
-             $ available'
+    bytesScores :: STM m (Map peerAddr (Int, Maybe SlotNo))
+    bytesScores = do
+        jpm <- joinedPeerMetricAt metrics
+        bup <- fetchynessBytes metrics
+        return $ bup `optionalMerge` jpm

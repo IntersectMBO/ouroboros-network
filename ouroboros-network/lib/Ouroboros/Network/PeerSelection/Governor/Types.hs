@@ -30,10 +30,13 @@ module Ouroboros.Network.PeerSelection.Governor.Types
   , nullPeerSelectionTargets
   , sanePeerSelectionTargets
   , PickPolicy
+  , PickPolicyWith
+  , HotDemotionPolicy
   , c_PEER_DEMOTION_TIMEOUT
     -- ** Cardano Node specific functions
   , pickPeers
   , pickUnknownPeers
+  , pickHotPeersToDemote
     -- * P2P governor low level API
     -- These records are needed to run the peer selection.
   , PeerStateActions (..)
@@ -127,7 +130,11 @@ import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharingAmount,
 --
 -- Peer selection API is using `STM m` monad, internally it is using `m`.
 --
-type PickPolicy peeraddr m =
+type PickPolicy peeraddr m = PickPolicyWith peeraddr m (Set peeraddr)
+
+-- | A 'PickPolicy' with an arbitrary result type, see 'HotDemotionPolicy'.
+--
+type PickPolicyWith peeraddr m result =
          -- Extra peer attributes available to use in the picking policy.
          -- As more attributes are needed, extend this with more such functions.
          (peeraddr -> PeerSource) -- Where the peer is known from
@@ -135,7 +142,15 @@ type PickPolicy peeraddr m =
       -> (peeraddr -> Bool)       -- Found to be tepid flag
       -> Set peeraddr             -- The set to pick from
       -> Int                      -- Max number to choose, fewer is ok.
-      -> m (Set peeraddr)         -- The set picked.
+      -> m result                 -- Normally the set picked.
+
+-- | A pick policy which also returns the scores it ranked the peers by, one
+-- entry per peer in the set it was given, so that the governor can trace the
+-- demotion decision (see 'TraceDemoteHotPeers').  'pickHotPeersToDemote'
+-- checks that every peer is scored.
+--
+type HotDemotionPolicy peeraddr m =
+       PickPolicyWith peeraddr m (Set peeraddr, Map peeraddr Int)
 
 
 data PeerSelectionPolicy peeraddr m = PeerSelectionPolicy {
@@ -143,7 +158,7 @@ data PeerSelectionPolicy peeraddr m = PeerSelectionPolicy {
        policyPickKnownPeersForPeerShare :: PickPolicy peeraddr (STM m),
        policyPickColdPeersToPromote     :: PickPolicy peeraddr (STM m),
        policyPickWarmPeersToPromote     :: PickPolicy peeraddr (STM m),
-       policyPickHotPeersToDemote       :: PickPolicy peeraddr (STM m),
+       policyPickHotPeersToDemote       :: HotDemotionPolicy peeraddr (STM m),
        policyPickWarmPeersToDemote      :: PickPolicy peeraddr (STM m),
        policyPickColdPeersToForget      :: PickPolicy peeraddr (STM m),
        policyPickInboundPeers           :: PickPolicy peeraddr (STM m),
@@ -1456,25 +1471,26 @@ assertPeerSelectionState extraPeersToSet invariantExtraPeers PeerSelectionState{
 pickPeers' :: (Ord peeraddr, Functor m, HasCallStack)
            => (Int -> Set peeraddr -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn -> Bool)
            -- ^ precondition
+           -> (Int -> Set peeraddr -> result -> Bool)
+           -- ^ postcondition, on the clamped number, the set to pick from and
+           -- the result
            -> (peeraddr -> extraPeers -> Bool)
            -- ^ This function comes from 'PublicExtraPeersAPI'
            --
            -- It is needed to compute membership of the
            -- extraPeers data type.
            -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
-           -> PickPolicy peeraddr m
-           -> Set peeraddr -> Int -> m (Set peeraddr)
-pickPeers' precondition memberExtraPeers st@PeerSelectionState{localRootPeers, publicRootPeers, knownPeers}
-          pick available num =
+           -> PickPolicyWith peeraddr m result
+           -> Set peeraddr -> Int -> m result
+pickPeers' precondition postcondition memberExtraPeers
+           st@PeerSelectionState{localRootPeers, publicRootPeers, knownPeers}
+           pick available num =
     assert (precondition num available st) $
-    fmap (\picked -> assert (postcondition picked) picked)
+    fmap (\result -> assert (postcondition numClamped available result) result)
          (pick peerSource peerConnectFailCount peerTepidFlag
                available numClamped)
   where
-    postcondition picked = not (Set.null picked)
-                        && Set.size picked <= numClamped
-                        && picked `Set.isSubsetOf` available
-    numClamped           = min num (Set.size available)
+    numClamped = min num (Set.size available)
 
     peerSource p
       | PublicRootPeers.member
@@ -1501,6 +1517,45 @@ pickPeers' precondition memberExtraPeers st@PeerSelectionState{localRootPeers, p
              ++ " which is outside of the set given to pick from"
 
 
+-- | The set to pick from is non-empty, at least one peer is requested and
+-- every peer to pick from is known.
+--
+knownPeersPrecondition :: Ord peeraddr
+                       => Int -> Set peeraddr
+                       -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
+                       -> Bool
+knownPeersPrecondition num available PeerSelectionState { knownPeers } =
+       not (Set.null available) && num > 0
+    && available `Set.isSubsetOf` KnownPeers.toSet knownPeers
+
+-- | As 'knownPeersPrecondition', but not all the peers to pick from are known.
+--
+unknownPeersPrecondition :: Ord peeraddr
+                         => Int -> Set peeraddr
+                         -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
+                         -> Bool
+unknownPeersPrecondition num available PeerSelectionState { knownPeers } =
+       not (Set.null available) && num > 0
+    && not (available `Set.isSubsetOf` KnownPeers.toSet knownPeers)
+
+-- | The picked set is non-empty, no bigger than the (clamped) number
+-- requested, and a subset of the peers to pick from.
+--
+pickedPostcondition :: Ord peeraddr
+                    => Int -> Set peeraddr -> Set peeraddr -> Bool
+pickedPostcondition numClamped available picked =
+       not (Set.null picked)
+    && Set.size picked <= numClamped
+    && picked `Set.isSubsetOf` available
+
+-- | As 'pickedPostcondition'; in addition every peer to pick from is scored.
+--
+scoredPostcondition :: Ord peeraddr
+                    => Int -> Set peeraddr -> (Set peeraddr, Map peeraddr Int) -> Bool
+scoredPostcondition numClamped available (picked, scores) =
+       pickedPostcondition numClamped available picked
+    && Map.keysSet scores == available
+
 -- | Pick some known peers.
 --
 pickPeers :: (Ord peeraddr, Functor m, HasCallStack)
@@ -1513,11 +1568,7 @@ pickPeers :: (Ord peeraddr, Functor m, HasCallStack)
           -> PickPolicy peeraddr m
           -> Set peeraddr -> Int -> m (Set peeraddr)
 {-# INLINE pickPeers #-}
-pickPeers memberExtraPeers =
-  pickPeers' (\num available PeerSelectionState { knownPeers } ->
-       not (Set.null available) && num > 0
-    && available `Set.isSubsetOf` KnownPeers.toSet knownPeers)
-             memberExtraPeers
+pickPeers = pickPeers' knownPeersPrecondition pickedPostcondition
 
 -- | Pick some unknown peers.
 --
@@ -1531,11 +1582,22 @@ pickUnknownPeers :: (Ord peeraddr, Functor m, HasCallStack)
                  -> PickPolicy peeraddr m
                  -> Set peeraddr -> Int -> m (Set peeraddr)
 {-# INLINE pickUnknownPeers #-}
-pickUnknownPeers memberExtraPeers =
-  pickPeers' (\num available PeerSelectionState { knownPeers } ->
-       not (Set.null available) && num > 0
-    && not (available `Set.isSubsetOf` KnownPeers.toSet knownPeers))
-             memberExtraPeers
+pickUnknownPeers = pickPeers' unknownPeersPrecondition pickedPostcondition
+
+-- | Pick some hot peers to demote, together with the scores the policy ranked
+-- them by; see 'HotDemotionPolicy'.
+--
+pickHotPeersToDemote :: (Ord peeraddr, Functor m, HasCallStack)
+                     => (peeraddr -> extraPeers -> Bool)
+                     -- ^ This function comes from 'PublicExtraPeersAPI'
+                     --
+                     -- It is needed to compute membership of the
+                     -- extraPeers data type.
+                     -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
+                     -> HotDemotionPolicy peeraddr m
+                     -> Set peeraddr -> Int -> m (Set peeraddr, Map peeraddr Int)
+{-# INLINE pickHotPeersToDemote #-}
+pickHotPeersToDemote = pickPeers' knownPeersPrecondition scoredPostcondition
 
 ---------------------------
 -- Peer Selection Decisions
@@ -1767,8 +1829,9 @@ data TracePeerSelection extraDebugState extraFlags extraPeers peeraddr =
      -- Demote Hot Peers
      --
 
-     -- | target active, actual active, selected peers
-     | TraceDemoteHotPeers     Int Int (Set peeraddr)
+     -- | target active, actual active, selected peers, and the scores of all
+     -- the peers which were available to demote (see 'HotDemotionPolicy')
+     | TraceDemoteHotPeers     Int Int (Set peeraddr) (Map peeraddr Int)
      -- | local per-group (target active, actual active), selected peers
      | TraceDemoteLocalHotPeers [(HotValency, Int)] (Set peeraddr)
      -- | target active, actual active, peer, reason
@@ -1777,8 +1840,9 @@ data TracePeerSelection extraDebugState extraFlags extraPeers peeraddr =
      | TraceDemoteHotDone      Int Int peeraddr
 
      -- | target active big ledger peers, actual active big ledger peers,
-     -- selected peers
-     | TraceDemoteHotBigLedgerPeers      Int Int (Set peeraddr)
+     -- selected peers, and the scores of all the big ledger peers which were
+     -- available to demote (see 'HotDemotionPolicy')
+     | TraceDemoteHotBigLedgerPeers      Int Int (Set peeraddr) (Map peeraddr Int)
      -- | target active big ledger peers, actual active big ledger peers, peer,
      -- reason
      | TraceDemoteHotBigLedgerPeerFailed Int Int peeraddr SomeException

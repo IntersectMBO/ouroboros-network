@@ -15,6 +15,7 @@ import Data.Word (Word32)
 import System.Random
 import System.Random qualified as Rnd
 
+import Ouroboros.Network.Block (SlotNo)
 import Ouroboros.Network.ConnectionManager.Types (ConnectionType (..),
            Provenance (..), PrunePolicy)
 import Ouroboros.Network.ExitPolicy as ExitPolicy
@@ -96,6 +97,49 @@ optionalMerge = Map.merge (Map.mapMissing (\_ a -> (a, Nothing)))
 
 
 
+-- | The score by which 'simplePeerSelectionPolicy' ranks hot peers for
+-- demotion: the peer's 'upstreamyness' plus its 'fetchynessBlocks', with
+-- 'joinedPeerMetricAt' as the tie-break.
+--
+deadlineHotScores :: (MonadSTM m, Ord peerAddr)
+                  => PeerMetrics m peerAddr
+                  -> STM m (Map peerAddr (Int, Maybe SlotNo))
+deadlineHotScores metrics = do
+    jpm <- joinedPeerMetricAt metrics
+    hup <- upstreamyness metrics
+    bup <- fetchynessBlocks metrics
+    return $ Map.unionWith (+) hup bup `optionalMerge` jpm
+
+
+-- | A hot demotion policy which picks the lowest scoring peers, and returns
+-- the scores it ranked them by so that the governor can trace the decision.
+--
+mkHotDemotionPolicy :: (MonadSTM m, Ord peerAddr)
+                    => StrictTVar m StdGen
+                    -> STM m (Map peerAddr (Int, Maybe SlotNo))
+                    -- ^ the scores, with a slot number as the tie-break, see
+                    -- 'joinedPeerMetricAt'
+                    -> HotDemotionPolicy peerAddr (STM m)
+mkHotDemotionPolicy rngVar hotScores _ _ _ available pickNum = do
+    scores     <- hotScores
+    available' <- addRand rngVar available (,)
+    let picked = Set.fromList
+               . map fst
+               . take pickNum
+                 -- order the results, resolve the ties using slot number when
+                 -- a peer joined the leader board.
+                 --
+                 -- note: this will prefer to preserve newer peers, whose results
+                 -- less certain than peers who entered leader board earlier.
+               . sortOn (\(peer, rn) ->
+                            (Map.findWithDefault (0, Nothing) peer scores, rn))
+               . Map.assocs
+               $ available'
+    return ( picked
+           , Map.fromSet (\peer -> maybe 0 fst (Map.lookup peer scores)) available
+           )
+
+
 simplePeerSelectionPolicy :: forall m peerAddr.
                              ( MonadSTM m
                              , Ord peerAddr
@@ -109,7 +153,7 @@ simplePeerSelectionPolicy rngVar metrics = PeerSelectionPolicy {
       policyPickWarmPeersToPromote     = simplePromotionPolicy,
       policyPickInboundPeers           = simplePromotionPolicy,
 
-      policyPickHotPeersToDemote  = hotDemotionPolicy,
+      policyPickHotPeersToDemote  = mkHotDemotionPolicy rngVar (deadlineHotScores metrics),
       policyPickWarmPeersToDemote = warmDemotionPolicy,
       policyPickColdPeersToForget = coldForgetPolicy,
 
@@ -123,28 +167,6 @@ simplePeerSelectionPolicy rngVar metrics = PeerSelectionPolicy {
       policyClearFailCountDelay        = 120   -- seconds
     }
   where
-
-    hotDemotionPolicy :: PickPolicy peerAddr (STM m)
-    hotDemotionPolicy _ _ _ available pickNum = do
-        jpm <- joinedPeerMetricAt metrics
-        hup <- upstreamyness metrics
-        bup <- fetchynessBlocks metrics
-
-        let scores = Map.unionWith (+) hup bup `optionalMerge` jpm
-
-        available' <- addRand rngVar available (,)
-        return $ Set.fromList
-               . map fst
-               . take pickNum
-                 -- order the results, resolve the ties using slot number when
-                 -- a peer joined the leader board.
-                 --
-                 -- note: this will prefer to preserve newer peers, whose results
-                 -- less certain than peers who entered leader board earlier.
-               . sortOn (\(peer, rn) ->
-                            (Map.findWithDefault (0, Nothing) peer scores, rn))
-               . Map.assocs
-               $ available'
 
     -- Randomly pick peers to demote, peers with knownPeerTepid set are twice
     -- as likely to be demoted.

@@ -712,7 +712,9 @@ mockPeerSelectionPolicy GovernorMockEnvironment {
       policyPickKnownPeersForPeerShare = \_ _ _ -> interpretPickScript pickKnownPeersForPeerShareVar,
       policyPickColdPeersToPromote  = \_ _ _ -> interpretPickScript pickColdPeersToPromoteVar,
       policyPickWarmPeersToPromote  = \_ _ _ -> interpretPickScript pickWarmPeersToPromoteVar,
-      policyPickHotPeersToDemote    = \_ _ _ -> interpretPickScript pickHotPeersToDemoteVar,
+      policyPickHotPeersToDemote    = \_ _ _ available num ->
+        (\picked -> (picked, Map.fromSet (const 0) available))
+          <$> interpretPickScript pickHotPeersToDemoteVar available num,
       policyPickWarmPeersToDemote   = \_ _ _ -> interpretPickScript pickWarmPeersToDemoteVar,
       policyPickColdPeersToForget   = \_ _ _ -> interpretPickScript pickColdPeersToForgetVar,
       policyPickInboundPeers        = \_ _ _ -> interpretPickScript pickInboundPeersVar,
@@ -791,11 +793,11 @@ tracerTracePeerSelection = contramap f tracerTestTraceEvent
     f a@(TraceDemoteWarmBigLedgerPeers !_ !_ !_)                   = GovernorEvent a
     f a@(TraceDemoteWarmBigLedgerPeerFailed !_ !_ !_ !_)           = GovernorEvent a
     f a@(TraceDemoteWarmBigLedgerPeerDone !_ !_ !_)                = GovernorEvent a
-    f a@(TraceDemoteHotPeers !_ !_ !_)                             = GovernorEvent a
+    f a@(TraceDemoteHotPeers !_ !_ !_ !_)                          = GovernorEvent a
     f a@(TraceDemoteLocalHotPeers !_ !_)                           = GovernorEvent a
     f a@(TraceDemoteHotFailed !_ !_ !_ !_)                         = GovernorEvent a
     f a@(TraceDemoteHotDone !_ !_ !_)                              = GovernorEvent a
-    f a@(TraceDemoteHotBigLedgerPeers !_ !_ !_)                    = GovernorEvent a
+    f a@(TraceDemoteHotBigLedgerPeers !_ !_ !_ !_)                 = GovernorEvent a
     f a@(TraceDemoteHotBigLedgerPeerFailed !_ !_ !_ !_)            = GovernorEvent a
     f a@(TraceDemoteHotBigLedgerPeerDone !_ !_ !_)                 = GovernorEvent a
     f a@(TraceDemoteAsynchronous !_)                               = GovernorEvent a

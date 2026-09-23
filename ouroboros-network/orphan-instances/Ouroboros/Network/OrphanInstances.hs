@@ -1125,11 +1125,13 @@ instance ( ToJSON extraDebugState
            , "actualEstablished" .= aEst
            , "peer" .= p
            ]
-  toJSON (TraceDemoteHotPeers tActive aActive sp) =
+  toJSON (TraceDemoteHotPeers tActive aActive sp scores) =
     object [ "kind" .= String "DemoteHotPeers"
            , "targetActive" .= tActive
            , "actualActive" .= aActive
            , "selectedPeers" .= toList sp
+           , "scores" .= [ object [ "peer" .= p, "score" .= s ]
+                         | (p, s) <- Map.toList scores ]
            ]
   toJSON (TraceDemoteLocalHotPeers taa sp) =
     object [ "kind" .= String "DemoteLocalHotPeers"
@@ -1149,11 +1151,13 @@ instance ( ToJSON extraDebugState
            , "actualActive" .= aActive
            , "peer" .= p
            ]
-  toJSON (TraceDemoteHotBigLedgerPeers tActive aActive sp) =
+  toJSON (TraceDemoteHotBigLedgerPeers tActive aActive sp scores) =
     object [ "kind" .= String "DemoteHotBigLedgerPeers"
            , "targetActive" .= tActive
            , "actualActive" .= aActive
            , "selectedPeers" .= toList sp
+           , "scores" .= [ object [ "peer" .= p, "score" .= s ]
+                         | (p, s) <- Map.toList scores ]
            ]
   toJSON (TraceDemoteHotBigLedgerPeerFailed tActive aActive p err) =
     object [ "kind" .= String "DemoteHotBigLedgerPeerFailed"
