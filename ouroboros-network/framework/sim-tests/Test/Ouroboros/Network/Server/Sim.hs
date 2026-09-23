@@ -96,7 +96,8 @@ import Ouroboros.Network.Protocol.Handshake.Codec (noTimeLimitsHandshake,
 import Ouroboros.Network.Protocol.Handshake.Unversioned
 import Ouroboros.Network.Server (RemoteTransitionTrace)
 import Ouroboros.Network.Server qualified as Server
-import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
+import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit)
+import Ouroboros.Network.Server.RateLimiting qualified as RateLimiting
 import Ouroboros.Network.Snocket (Snocket, TestAddress (..))
 import Ouroboros.Network.Snocket qualified as Snocket
 import Ouroboros.Network.Util (PrettyShow (..))
@@ -455,7 +456,7 @@ prop_generator_MultiNodeScript (MultiNodeScript script _) =
 
 -- | Max bound AcceptedConnectionsLimit
 maxAcceptedConnectionsLimit :: AcceptedConnectionsLimit
-maxAcceptedConnectionsLimit = AcceptedConnectionsLimit maxBound maxBound 0
+maxAcceptedConnectionsLimit = RateLimiting.mkAcceptedConnectionsLimit maxBound maxBound 0
 
 -- | This Script has a percentage of events more favourable to trigger pruning
 --   transitions. And forces a bidirectional connection between each server.
@@ -480,7 +481,7 @@ instance (Eq req, Arbitrary req) =>
     events <- go (ScriptState [] [] [] [] []) (len :: Integer)
     attenuationMap <- genAttenuationMap events
     return
-      $ MultiNodePruningScript (AcceptedConnectionsLimit hardLimit softLimit 0)
+      $ MultiNodePruningScript (RateLimiting.mkAcceptedConnectionsLimit hardLimit softLimit 0)
                                events
                                attenuationMap
    where
@@ -542,10 +543,13 @@ instance (Eq req, Arbitrary req) =>
   -- we could miss which change actually introduces the failure, and be lift
   -- with a larger counter example.
   shrink (MultiNodePruningScript
-            acl@(AcceptedConnectionsLimit hardLimit softLimit delay)
+            acl
             events
             attenuationMap) =
-    let acls = AcceptedConnectionsLimit
+    let hardLimit = RateLimiting.acceptedConnectionsHardLimit acl
+        softLimit = RateLimiting.acceptedConnectionsSoftLimit acl
+        delay = RateLimiting.acceptedConnectionsDelay acl
+        acls = RateLimiting.mkAcceptedConnectionsLimit
                 <$> shrink hardLimit
                 <*> shrink softLimit
                 <*> pure delay in
@@ -2152,12 +2156,12 @@ prop_never_above_hardlimit :: Fixed Int
                            -> Property
 prop_never_above_hardlimit (Fixed rnd) serverAcc
                            (MultiNodePruningScript
-                             acceptedConnLimit@AcceptedConnectionsLimit
-                               { acceptedConnectionsHardLimit = hardlimit }
+                             acceptedConnLimit
                              events
                              attenuationMap
                            ) =
-  let trace = runSimTrace sim
+  let hardlimit = RateLimiting.acceptedConnectionsHardLimit acceptedConnLimit
+      trace = runSimTrace sim
 
       connectionManagerEvents :: Trace (SimResult ())
                                        (CM.Trace

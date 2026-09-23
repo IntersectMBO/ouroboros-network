@@ -4,7 +4,11 @@
 -- | Rage limiting of accepted connections
 --
 module Ouroboros.Network.Server.RateLimiting
-  ( AcceptedConnectionsLimit (..)
+  ( AcceptedConnectionsLimit
+  , acceptedConnectionsHardLimit
+  , acceptedConnectionsSoftLimit
+  , acceptedConnectionsDelay
+  , mkAcceptedConnectionsLimit
   , runConnectionRateLimits
     -- * Tracing
   , AcceptConnectionsPolicyTrace (..)
@@ -16,6 +20,7 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer, traceWith)
 
+import Data.Int (Int32)
 import Data.Word
 import Formatting (formatToString, (%+))
 import Formatting qualified as F
@@ -27,11 +32,13 @@ data AcceptedConnectionsLimit = AcceptedConnectionsLimit {
 
     -- | Hard limit of accepted connections.
     --
+    -- Maximum value `0x7fffffff` (e.g. `maxBound :: Int32`)
     acceptedConnectionsHardLimit :: !Word32,
 
     -- | Soft limit of accepted connections.  If we are above this threshold,
     -- we will start rate limiting.
     --
+    -- Maximum value `0x7fffffff` (e.g. `maxBound :: Int32`)
     acceptedConnectionsSoftLimit :: !Word32,
 
     -- | Max delay for limiting accepted connections.  We use linear
@@ -42,6 +49,24 @@ data AcceptedConnectionsLimit = AcceptedConnectionsLimit {
   }
   deriving (Eq, Ord, Show)
 
+
+mkAcceptedConnectionsLimit
+  :: Word32
+  -- ^ hard limit
+  -> Word32
+  -- ^ soft limit
+  -> DiffTime
+  -- ^ delay
+  -> AcceptedConnectionsLimit
+mkAcceptedConnectionsLimit hardLimit softLimit delay =
+  AcceptedConnectionsLimit {
+    acceptedConnectionsHardLimit = hardLimit `min` bound,
+    acceptedConnectionsSoftLimit = softLimit `min` bound,
+    acceptedConnectionsDelay     = delay
+  }
+  where
+    bound :: Word32
+    bound = fromIntegral (maxBound :: Int32)
 
 -- | Rate limiting instruction.
 --

@@ -89,7 +89,8 @@ import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
 import Ouroboros.Network.Server qualified as Server
 import Ouroboros.Network.Server.RateLimiting (AcceptConnectionsPolicyTrace (..),
-           AcceptedConnectionsLimit (..))
+           AcceptedConnectionsLimit)
+import Ouroboros.Network.Server.RateLimiting qualified as RateLimiting
 import Ouroboros.Network.Snocket (LocalAddress (..), RemoteAddress)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types (ProcessedTxCount (..),
            SharedTxState (..), TraceTxLogic (..), TraceTxSubmissionInbound (..),
@@ -284,24 +285,24 @@ instance ToJSON WarmValency where
   toJSON (WarmValency v) = toJSON v
 
 instance ToJSON AcceptedConnectionsLimit where
-  toJSON AcceptedConnectionsLimit
-          { acceptedConnectionsHardLimit
-          , acceptedConnectionsSoftLimit
-          , acceptedConnectionsDelay
-          } =
+  toJSON limits =
     object [ "AcceptedConnectionsLimit" .=
       object [ "hardLimit" .=
-                  toJSON acceptedConnectionsHardLimit
+                  toJSON hardLimit
              , "softLimit" .=
-                  toJSON acceptedConnectionsSoftLimit
+                  toJSON softLimit
              , "delay" .=
-                  toJSON acceptedConnectionsDelay
+                  toJSON delay
              ]
            ]
+    where
+      hardLimit = RateLimiting.acceptedConnectionsHardLimit limits
+      softLimit = RateLimiting.acceptedConnectionsSoftLimit limits
+      delay     = RateLimiting.acceptedConnectionsDelay limits
 
 instance FromJSON AcceptedConnectionsLimit where
   parseJSON = withObject "AcceptedConnectionsLimit" $ \v ->
-    AcceptedConnectionsLimit
+    RateLimiting.mkAcceptedConnectionsLimit
       <$> v .: "hardLimit"
       <*> v .: "softLimit"
       <*> v .: "delay"

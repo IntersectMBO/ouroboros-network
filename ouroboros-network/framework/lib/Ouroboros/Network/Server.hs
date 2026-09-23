@@ -136,8 +136,7 @@ with Arguments {
       sockets = socks,
       snocket,
       tracer,
-      connectionLimits =
-        limits@AcceptedConnectionsLimit { acceptedConnectionsHardLimit = hardLimit },
+      connectionLimits = limits,
       inboundGovernorArgs
     }
     k
@@ -177,6 +176,8 @@ with Arguments {
     fn :: Either x Void -> x
     fn (Left x)  = x
     fn (Right v) = absurd v
+
+    hardLimit = acceptedConnectionsHardLimit limits
 
     raceAll asyncs = withAsyncAll asyncs (fmap snd . waitAny)
 

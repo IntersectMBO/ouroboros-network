@@ -99,28 +99,28 @@ genAcceptedConnectionsLimit limit = do
     hardLimit <- resize limit arbitrary
     softLimit <- resize (fromIntegral hardLimit) arbitrary
     delay <- toDiffTime <$> arbitrary
-    pure $ AcceptedConnectionsLimit {
-        acceptedConnectionsHardLimit = hardLimit,
-        acceptedConnectionsSoftLimit = softLimit,
-        acceptedConnectionsDelay     = delay
-      }
+    pure $ mkAcceptedConnectionsLimit hardLimit softLimit delay
 
 shrinkAcceptedConnectionsLimit :: AcceptedConnectionsLimit -> [AcceptedConnectionsLimit]
-shrinkAcceptedConnectionsLimit (AcceptedConnectionsLimit hardLimit softLimit delay) =
-  [ AcceptedConnectionsLimit hardLimit' softLimit delay
+shrinkAcceptedConnectionsLimit limits =
+  [ mkAcceptedConnectionsLimit hardLimit' softLimit delay
   | hardLimit' <- shrink hardLimit
   , hardLimit' >= softLimit
   ]
   ++
-  [ AcceptedConnectionsLimit hardLimit softLimit' delay
+  [ mkAcceptedConnectionsLimit hardLimit softLimit' delay
   | softLimit' <- shrink softLimit
   , softLimit' >= 0
   ]
   ++
-  [ AcceptedConnectionsLimit hardLimit softLimit delay'
+  [ mkAcceptedConnectionsLimit hardLimit softLimit delay'
   | delay' <- fromRational `map` shrink (toRational delay)
   , delay' >= 0 && delay' /= delay
   ]
+  where
+    hardLimit = acceptedConnectionsHardLimit limits
+    softLimit = acceptedConnectionsSoftLimit limits
+    delay     = acceptedConnectionsDelay limits
 
 
 instance Arbitrary (Arb ([Event], AcceptedConnectionsLimit)) where
@@ -268,25 +268,23 @@ interpr _         ConnectionTerminated {} m = pred m `max` 0
 numberOfTurnsAboveHardLimit :: AcceptedConnectionsLimit
                             -> [Event]
                             -> Int
-numberOfTurnsAboveHardLimit AcceptedConnectionsLimit
-                              {acceptedConnectionsHardLimit} =
+numberOfTurnsAboveHardLimit limits =
       length
     . filter (>= hardLimit)
     . scanl' (flip (interpr hardLimit)) 0
   where
-    hardLimit = fromIntegral acceptedConnectionsHardLimit
+    hardLimit = fromIntegral (acceptedConnectionsHardLimit limits)
 
 
 numberOfTurnsAboveSoftLimit :: AcceptedConnectionsLimit
                             -> [Event]
                             -> Int
-numberOfTurnsAboveSoftLimit AcceptedConnectionsLimit
-                              {acceptedConnectionsSoftLimit} =
+numberOfTurnsAboveSoftLimit limits =
       length
     . filter (>= softLimit)
     . scanl' (flip (interpr softLimit)) 0
   where
-    softLimit = fromIntegral acceptedConnectionsSoftLimit
+    softLimit = fromIntegral (acceptedConnectionsSoftLimit limits)
 
 
 buckets :: Int -> String

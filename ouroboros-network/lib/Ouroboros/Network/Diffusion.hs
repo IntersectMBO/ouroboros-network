@@ -333,7 +333,7 @@ runM Interfaces
       $ \localSocket -> do
         localInbInfoChannel <- newInformationChannel
 
-        let localConnectionLimits = AcceptedConnectionsLimit maxBound maxBound 0
+        let localConnectionLimits = mkAcceptedConnectionsLimit maxBound maxBound 0
 
             mkLocalConnectionHandler :: MkNodeToClientConnectionHandler
                                           ntcFd ntcAddr ntcVersion ntcVersionData m

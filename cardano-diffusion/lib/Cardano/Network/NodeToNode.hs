@@ -30,7 +30,8 @@ module Cardano.Network.NodeToNode
   , NetworkConnectTracers (..)
   , nullNetworkConnectTracers
   , connectTo
-  , AcceptedConnectionsLimit (..)
+  , AcceptedConnectionsLimit
+  , mkAcceptedConnectionsLimit
   , ntnDataFlow
   , addSafetyMargin
     -- * P2P Governor
