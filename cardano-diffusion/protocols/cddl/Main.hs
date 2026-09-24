@@ -123,6 +123,7 @@ import Cardano.Network.Protocol.TxSubmission2.Type qualified as TxSubmission2
 import Network.Socket (SockAddr (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 
+import Cardano.Network.Version.TestUtils (genNetworkMagic)
 import Ouroboros.Network.Mock.ChainGenerators ()
 import Ouroboros.Network.Mock.ConcreteBlock qualified as Concrete (Block)
 import Test.Data.CDDL (Any (..))
@@ -503,7 +504,7 @@ instance Arbitrary (AnyMessage (Handshake NodeToClientVersion CBOR.Term)) where
 
         genData :: Gen NodeToClientVersionData
         genData = NodeToClientVersionData
-              <$> (NetworkMagic <$> arbitrary)
+              <$> genNetworkMagic
               <*> arbitrary
 
         genRefuseReason :: Gen (Handshake.RefuseReason NodeToClientVersion)

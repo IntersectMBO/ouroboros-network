@@ -11,9 +11,13 @@ import Codec.CBOR.Term qualified as CBOR
 import Codec.CBOR.Write qualified as CBOR
 import Control.Exception (SomeException, evaluate, try)
 import Data.Bits (finiteBitSize)
+import Data.ByteString.Lazy qualified as BL
+import Data.Text (Text)
+import Data.Text qualified as T
 
 import Cardano.Network.NodeToNode.Version
 import Cardano.Network.NodeToNode.Version.TestUtils
+import Cardano.Network.Version.TestUtils
 
 import Ouroboros.Network.CodecCBORTerm
 
@@ -26,6 +30,9 @@ tests :: TestTree
 tests = testGroup "Cardano.Network.NodeToNode.Version"
     [ testProperty "nodeToNodeVersionCodec"           prop_nodeToNodeVersionCodec
     , testProperty "nodeToNodeCodecCBORTerm"          prop_nodeToNodeCodec
+    , testProperty "nodeToNodeCodecCBORTermWire"      prop_nodeToNodeCodecWire
+    , testProperty "nodeToNodeCodecCBORTermOutOfRange"
+                   prop_nodeToNodeCodecOutOfRange
     , testProperty "nodeToNodeCodecHandleInvalidData" prop_nodeToNodeCodecHandleInvalidData
     , testProperty "nodeToNodeCodecMagicIsTInt"       prop_nodeToNodeCodecMagicIsTInt
     ]
@@ -114,3 +121,69 @@ prop_nodeToNodeCodecMagicIsTInt ntnVersion rawNtnData =
           . CBOR.encodeTerm
           $ encodeData ntnVersion ntnData
     expected = toInteger (unNetworkMagic (networkMagic ntnData))
+
+
+-- | Round-trip through the serialised form, as the handshake does.
+--
+-- `cborg` normalises an unsigned integer to `CBOR.TInt` whenever it fits
+-- `Int`, so a term built with `CBOR.TInteger` is handed back as `CBOR.TInt`.
+-- `prop_nodeToNodeCodec` compares terms directly and so cannot observe this;
+-- only a round-trip through the wire can catch a decoder which accepts just
+-- one of the two representations.
+--
+prop_nodeToNodeCodecWire :: NodeToNodeVersion
+                         -> NodeToNodeVersionData
+                         -> Property
+prop_nodeToNodeCodecWire ntnVersion rawNtnData =
+    case CBOR.deserialiseFromBytes CBOR.decodeTerm bytes of
+      Right (rest, term)
+        | BL.null rest -> decodeData ntnVersion term === Right ntnData
+        | otherwise    -> counterexample ("trailing bytes: " ++ show rest)
+                                         False
+      Left err         -> counterexample (show err) False
+  where
+    ntnData = fixNtnVersionDataForVersion ntnVersion rawNtnData
+    VersionDataCodec { encodeData, decodeData } = nodeToNodeVersionDataCodec
+    bytes = CBOR.toLazyByteString
+          . CBOR.encodeTerm
+          $ encodeData ntnVersion ntnData
+
+
+-- | The decoder must reject a network magic outside the 'Word32' range.
+--
+-- It goes through the wire, so that `cborg`'s choice between `CBOR.TInt` and
+-- `CBOR.TInteger` - which for negative values switches at `minBound :: Int` -
+-- is the one the decoder actually sees.
+--
+-- NOTE: 'decode' runs the network magic first and 'Either' short-circuits, so
+-- the magic's error is the one reported whatever the remaining fields are.
+--
+prop_nodeToNodeCodecOutOfRange :: NodeToNodeVersion
+                               -> NodeToNodeVersionData
+                               -> OutOfRangeMagic
+                               -> Property
+prop_nodeToNodeCodecOutOfRange ntnVersion rawNtnData (OutOfRangeMagic networkMagic) =
+    case CBOR.deserialiseFromBytes CBOR.decodeTerm bytes of
+      Right (_, term) -> decodeData ntnVersion term === Left outOfBound
+      Left err        -> counterexample (show err) False
+  where
+    NodeToNodeVersionData {
+        diffusionMode,
+        peerSharing,
+        query,
+        perasSupport
+      } = fixNtnVersionDataForVersion ntnVersion rawNtnData
+    VersionDataCodec { decodeData } = nodeToNodeVersionDataCodec
+
+    bytes = CBOR.toLazyByteString
+          . CBOR.encodeTerm
+          $ encodeNodeToNodeVersionDataHelper
+              ntnVersion
+              networkMagic
+              diffusionMode
+              peerSharing
+              query
+              perasSupport
+
+    outOfBound :: Text
+    outOfBound = T.pack ("networkMagic out of bound: " ++ show networkMagic)

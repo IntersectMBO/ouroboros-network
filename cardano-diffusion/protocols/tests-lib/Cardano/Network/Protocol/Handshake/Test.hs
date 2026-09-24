@@ -45,6 +45,8 @@ import Ouroboros.Network.Protocol.Handshake.Test hiding (tests)
 import Ouroboros.Network.Protocol.Handshake.Type
 import Ouroboros.Network.Protocol.Handshake.Version
 
+import Cardano.Network.Version.TestUtils (genNetworkMagic)
+
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
@@ -177,7 +179,7 @@ instance Arbitrary ArbitraryNodeToClientVersionData where
     arbitrary = ( (ArbitraryNodeToClientVersionData .)
                 . NodeToClientVersionData
                 )
-            <$> (NetworkMagic <$> arbitrary)
+            <$> genNetworkMagic
             <*> arbitrary
     shrink (ArbitraryNodeToClientVersionData
              (NodeToClientVersionData magic query)) =

@@ -12,6 +12,7 @@ module Cardano.Network.NodeToNode.Version.TestUtils
   ) where
 
 import Cardano.Network.NodeToNode.Version
+import Cardano.Network.Version.TestUtils (genNetworkMagic)
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Test.QuickCheck (Gen, arbitrary, arbitraryBoundedEnum, elements, oneof,
            shrink)
@@ -31,7 +32,7 @@ shrinkNodeToNodeVersion v
 genNodeToNodeVersionData :: Gen NodeToNodeVersionData
 genNodeToNodeVersionData =
       NodeToNodeVersionData
-  <$> (NetworkMagic <$> arbitrary)
+  <$> genNetworkMagic
   <*> oneof [ pure InitiatorOnlyDiffusionMode
             , pure InitiatorAndResponderDiffusionMode
             ]

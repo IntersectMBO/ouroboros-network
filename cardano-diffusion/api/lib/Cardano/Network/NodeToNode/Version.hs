@@ -2,7 +2,6 @@
 {-# LANGUAGE DeriveGeneric      #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE LambdaCase         #-}
-{-# LANGUAGE MultiWayIf         #-}
 {-# LANGUAGE NamedFieldPuns     #-}
 {-# LANGUAGE TypeApplications   #-}
 
@@ -20,9 +19,10 @@ module Cardano.Network.NodeToNode.Version
   , isValidNtnVersionDataForVersion
   , getLocalPerasSupport
   , minPerasVersion
+    -- * Internals exported for testing purposes
+  , encodeNodeToNodeVersionDataHelper
   ) where
 
-import Data.Int (Int32)
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text (Text)
@@ -177,6 +177,41 @@ getLocalPerasSupport featureFlags v =
     then PerasSupported
     else PerasUnsupported
 
+
+-- | A helper function used to encode `NodeToNodeVersionData`.
+--
+encodeNodeToNodeVersionDataHelper
+  :: NodeToNodeVersion
+  -> Integer -- ^ NetworkMagic
+  -> DiffusionMode
+  -> PeerSharing
+  -> Bool
+  -> PerasSupport
+  -> CBOR.Term
+encodeNodeToNodeVersionDataHelper
+  version networkMagic diffusionMode peerSharing query perasSupport
+  =
+  CBOR.TList $
+      [ -- 'CBOR.TInteger' serialises to the same bytes as 'CBOR.TInt' for any
+        -- value the latter can hold, and `cborg` decodes it back as a
+        -- 'CBOR.TInt' whenever it fits 'Int', so nodes which only accept
+        -- 'CBOR.TInt' still decode it.  Unlike 'CBOR.TInt', it doesn't wrap on
+        -- 32bit platforms.
+        CBOR.TInteger networkMagic
+
+       , CBOR.TBool (case diffusionMode of
+                     InitiatorOnlyDiffusionMode         -> True
+                     InitiatorAndResponderDiffusionMode -> False)
+       , CBOR.TInt (case peerSharing of
+                     PeerSharingDisabled -> 0
+                     PeerSharingEnabled  -> 1)
+       , CBOR.TBool query
+       ]
+    ++ [CBOR.TBool (perasSupportToBool perasSupport)
+       | version >= NodeToNodeV_17
+       ]
+
+
 -- | Beware, encoding an invalid NodeToNodeVersionData (see `isValidNtnVersionDataForVersion`) for
 -- a given version will fail if a future field is set to a value other than its default forwards
 -- compatibility one. This way `encodeTerm` and `decodeTerm` are only inverses for valid data.
@@ -186,35 +221,18 @@ nodeToNodeCodecCBORTerm version = CodecCBORTerm { encodeTerm = encodeTerm, decod
     encodeTerm :: NodeToNodeVersionData -> CBOR.Term
     encodeTerm ntnData@NodeToNodeVersionData{ networkMagic, diffusionMode, peerSharing, query, perasSupport }
       | not (isValidNtnVersionDataForVersion version ntnData) = error "perasSupport should be PerasUnsupported for versions strictly before NodeToNodeV_17"
-      | otherwise =
-        CBOR.TList $
-            [ if | version < NodeToNodeV_16
-                 -> CBOR.TInt (fromIntegral $ unNetworkMagic networkMagic)
+      | otherwise = encodeNodeToNodeVersionDataHelper
+                      version
+                      (fromIntegral $ unNetworkMagic networkMagic)
+                      diffusionMode
+                      peerSharing
+                      query
+                      perasSupport
 
-                 | -- the NetworkMagic fits `Int` even on `32bit` architectures
-                   unNetworkMagic networkMagic <= fromIntegral (maxBound :: Int32)
-                 -> CBOR.TInt (fromIntegral $ unNetworkMagic networkMagic)
-
-                 | -- the NetworkMagic doesn't fit `Int` even on `32bit` architectures
-                   otherwise
-                 -> CBOR.TInteger (fromIntegral $ unNetworkMagic networkMagic)
-
-             , CBOR.TBool (case diffusionMode of
-                           InitiatorOnlyDiffusionMode         -> True
-                           InitiatorAndResponderDiffusionMode -> False)
-             , CBOR.TInt (case peerSharing of
-                           PeerSharingDisabled -> 0
-                           PeerSharingEnabled  -> 1)
-             , CBOR.TBool query
-             ]
-          ++ [CBOR.TBool (perasSupportToBool perasSupport)
-             | version >= NodeToNodeV_17
-             ]
-
-    -- Before NodeToNodeV_16 we only supported `CBOR.Int` for network magic,
-    -- since its introduction we support both `CBOR.TInt` and `CBOR.TInteger`
-    -- for all versions, e.g. we are restrictive on the encoder and permissive on
-    -- the decoder.
+    -- The network magic is accepted either as a 'CBOR.TInt' or a
+    -- 'CBOR.TInteger': `cborg` decodes an unsigned integer as a 'CBOR.TInt'
+    -- only if it fits 'Int', which on 32bit platforms excludes magics above
+    -- `maxBound :: Int32`.
     decodeTerm :: CBOR.Term -> Either Text NodeToNodeVersionData
     decodeTerm = \case
         (CBOR.TList

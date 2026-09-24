@@ -106,6 +106,7 @@ library api-tests-lib
   hs-source-dirs: api/tests-lib
   exposed-modules:
     Cardano.Network.NodeToNode.Version.TestUtils
+    Cardano.Network.Version.TestUtils
 
   build-depends:
     QuickCheck,
@@ -126,12 +127,14 @@ test-suite api-tests
   build-depends:
     QuickCheck,
     base >=4.14 && <4.23,
+    bytestring,
     cardano-diffusion:{api, api-tests-lib},
     cborg,
     ouroboros-network:api,
     tasty,
     tasty-hunit,
     tasty-quickcheck,
+    text,
     with-utf8,
 
   ghc-options:

@@ -11,6 +11,8 @@ module Cardano.Network.NodeToClient.Version
   , nodeToClientVersionCodec
   , nodeToClientVersionDataCodec
   , NetworkMagic (..)
+    -- * Internals exported for testing purposes
+  , encodeNodeToClientVersionDataHelper
   ) where
 
 import Codec.CBOR.Term qualified as CBOR
@@ -153,15 +155,27 @@ instance Acceptable NodeToClientVersionData where
 instance Queryable NodeToClientVersionData where
     queryVersion = query
 
+-- | A helper function used to encode `NodeToClientVersionData`.
+--
+encodeNodeToClientVersionDataHelper
+  :: NodeToClientVersion
+  -> Integer -- ^ NetworkMagic
+  -> Bool
+  -> CBOR.Term
+encodeNodeToClientVersionDataHelper _version networkMagic query =
+    -- 'CBOR.TInteger' serialises to the same bytes as 'CBOR.TInt' for any value
+    -- the latter can hold, and `cborg` decodes it back as a 'CBOR.TInt'
+    -- whenever it fits 'Int', so nodes which only accept 'CBOR.TInt' still
+    -- decode it.  Unlike 'CBOR.TInt', it doesn't wrap on 32bit platforms.
+    CBOR.TList [CBOR.TInteger networkMagic, CBOR.TBool query]
+
+
 nodeToClientCodecCBORTerm :: NodeToClientVersion -> CodecCBORTerm Text NodeToClientVersionData
 nodeToClientCodecCBORTerm v = CodecCBORTerm {encodeTerm, decodeTerm}
     where
       encodeTerm :: NodeToClientVersionData -> CBOR.Term
-      encodeTerm NodeToClientVersionData { networkMagic, query }
-        | v < NodeToClientV_24
-        = CBOR.TList [CBOR.TInt (fromIntegral $ unNetworkMagic networkMagic), CBOR.TBool query]
-        | otherwise
-        = CBOR.TList [CBOR.TInteger (fromIntegral $ unNetworkMagic networkMagic), CBOR.TBool query]
+      encodeTerm NodeToClientVersionData { networkMagic, query } =
+        encodeNodeToClientVersionDataHelper v (fromIntegral $ unNetworkMagic networkMagic) query
 
       decodeTerm :: CBOR.Term -> Either Text NodeToClientVersionData
       decodeTerm (CBOR.TList [CBOR.TInt x, CBOR.TBool query])
