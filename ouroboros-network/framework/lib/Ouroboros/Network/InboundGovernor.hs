@@ -44,7 +44,7 @@ import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM qualified as LazySTM
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.DeepSeq (NFData)
-import Control.Exception (SomeAsyncException (..))
+import Control.Exception (SomeAsyncException (..), toException)
 import Control.Monad (foldM, forM_, forever, when)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
@@ -90,6 +90,26 @@ inboundMaturePeerDelay = 15 * 60
 --
 inactionTimeout :: DiffTime
 inactionTimeout = 31.415927
+
+
+-- | Bound on how long the governor will await a mux reaching a terminal status
+-- in the 'MuxFinished' branch.
+--
+-- That await is a plain blocking STM executed sequentially over the gathered
+-- events, so a mux that never leaves 'Ready' or 'Stopping' stops the governor
+-- for every peer, for the lifetime of the process.  The connection is being
+-- unregistered either way, so giving up is strictly better than hanging.
+--
+muxFinishedAwaitTimeout :: DiffTime
+muxFinishedAwaitTimeout = 60
+
+
+-- | Message carried by the synthetic exception raised when
+-- 'muxFinishedAwaitTimeout' expires.  Distinctive so it can be grepped out of
+-- the node journal; it surfaces as an ordinary @TrMuxErrored@.
+--
+muxFinishedAwaitTimedOut :: String
+muxFinishedAwaitTimedOut = "inbound governor: Mux.stopped await timed out"
 
 
 data Arguments muxMode handlerTrace socket peerAddr initiatorCtx responderCtx
@@ -394,7 +414,15 @@ with
 
           MuxFinished connId result -> do
 
-            merr <- atomically result
+            -- `result` is `Mux.stopped csMux`, which retries while that mux is
+            -- `Ready` or `Stopping`.  `csMux` is resolved by looking the peer up
+            -- in live state rather than from the trace, so a reconnect under an
+            -- identical `ConnectionId` can substitute a live mux here and the
+            -- await never returns.  Bound it rather than wedging the governor.
+            mmerr <- timeout muxFinishedAwaitTimeout (atomically result)
+            let merr = case mmerr of
+                  Just m  -> m
+                  Nothing -> Just (toException (userError muxFinishedAwaitTimedOut))
             case merr of
               Nothing  -> traceWith tracer (TrMuxCleanExit connId)
               Just err -> traceWith tracer (TrMuxErrored connId err)
