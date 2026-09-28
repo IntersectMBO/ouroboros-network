@@ -20,6 +20,9 @@ module Cardano.Network.Diffusion.Configuration
   , ChainSyncIdleTimeout (..)
   , BlockFetchConfiguration (..)
   , MiniProtocolParameters (..)
+  , Salt
+  , mkSalt
+  , mkSaltIO
   ) where
 
 import Cardano.Network.NodeToNode (MiniProtocolParameters (..),
@@ -29,6 +32,7 @@ import Cardano.Network.PeerSelection.Governor.PeerSelectionState
 
 import Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..),
            GenesisBlockFetchConfiguration (..))
+import Ouroboros.Network.Hashable (Salt, mkSalt, mkSaltIO)
 import Ouroboros.Network.PeerSelection.Governor.Types
            (PeerSelectionTargets (..))
 import Ouroboros.Network.PeerSelection.RelayAccessPoint (SRVPrefix)
@@ -82,7 +86,7 @@ srvPrefix = "_cardano._tcp"
 
 -- | Configuration for FetchDecisionPolicy.
 --
-defaultBlockFetchConfiguration :: Int -> BlockFetchConfiguration
+defaultBlockFetchConfiguration :: Salt -> BlockFetchConfiguration
 defaultBlockFetchConfiguration bfcSalt =
   BlockFetchConfiguration {
     bfcMaxConcurrencyBulkSync = 1,

@@ -314,7 +314,6 @@ library
     dlist,
     dns,
     formatting,
-    hashable,
     io-classes:{io-classes, mtl, si-timers, strict-stm} ^>=1.8 || ^>=1.9,
     iproute,
     monoidal-synchronisation,
@@ -355,6 +354,7 @@ library framework
     Ouroboros.Network.Driver.Limits
     Ouroboros.Network.Driver.Simple
     Ouroboros.Network.Driver.Stateful
+    Ouroboros.Network.Hashable
     Ouroboros.Network.IOManager
     Ouroboros.Network.InboundGovernor
     Ouroboros.Network.InboundGovernor.InformationChannel

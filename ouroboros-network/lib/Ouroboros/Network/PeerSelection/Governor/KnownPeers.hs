@@ -12,8 +12,6 @@ module Ouroboros.Network.PeerSelection.Governor.KnownPeers
   , aboveTarget
   ) where
 
-import Data.Bifunctor (first)
-import Data.Hashable
 import Data.List (sortBy)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -30,6 +28,7 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 
 import Ouroboros.Network.Diffusion.Policies qualified as Policies
+import Ouroboros.Network.Hashable
 import Ouroboros.Network.PeerSelection.Governor.Types
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
@@ -181,7 +180,7 @@ belowTarget enableAction
           numPeersToReq :: PeerSharingAmount
           !numPeersToReq = fromIntegral
                          $ min 255 (max 8 (objective `div` numPeerShareReqs))
-          (salt, stdGen'') = first Salt $ random stdGen'
+          (salt, stdGen'') = mkSalt stdGen'
 
       return $ \now -> Decision {
         decisionTrace = [TracePeerShareRequests
@@ -229,8 +228,6 @@ belowTarget enableAction
 ---------------------------
 -- Peer sharing job
 --
-
-newtype Salt = Salt { getSalt :: Int }
 
 newtype Objective = Objective { getObjective :: Int }
   deriving newtype Num
@@ -281,7 +278,7 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
     -- will be unpredictable.
     takeNPeers :: Objective -> [peeraddr] -> [peeraddr]
     takeNPeers n addrs = take (getObjective n) $
-      sortBy (\a b -> compare (hashWithSalt (getSalt salt) a) (hashWithSalt (getSalt salt) b))
+      sortBy (\a b -> compare (hashWithSalt salt a) (hashWithSalt salt b))
       addrs
 
     handler :: [peeraddr] -> SomeException -> m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)

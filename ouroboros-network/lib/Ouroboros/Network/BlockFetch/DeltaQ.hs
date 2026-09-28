@@ -18,11 +18,11 @@ module Ouroboros.Network.BlockFetch.DeltaQ
 
 import Control.Monad.Class.MonadTime.SI
 import Data.Fixed as Fixed (Pico)
-import Data.Hashable
 import Data.Set (Set)
 import Data.Set qualified as Set
 
 import Ouroboros.Network.DeltaQ
+import Ouroboros.Network.Hashable
 
 
 data PeerFetchInFlightLimits = PeerFetchInFlightLimits {
@@ -40,7 +40,7 @@ comparePeerGSV :: forall peer.
       , Ord peer
       )
       => Set peer
-      -> Int
+      -> Salt
       -> (PeerGSV, peer)
       -> (PeerGSV, peer)
       -> Ordering
@@ -72,7 +72,7 @@ comparePeerGSV' :: forall peer.
       ( Hashable peer
       , Ord peer
       )
-      => Int
+      => Salt
       -> (PeerGSV, peer)
       -> (PeerGSV, peer)
       -> Ordering
