@@ -33,7 +33,12 @@ module Network.Mux.Egress.Bucket
   , Rotation (..)
   , awaitGrant
   , awaitGrantBorrowing
+  , awaitGrantWaited
   , takeOnCredit
+    -- * Counters
+  , BucketStats (..)
+  , waitBounds
+  , bucketSnapshot
     -- * Pure core
   , tokenLevel
   , grantAt
@@ -84,8 +89,63 @@ data Bucket m = Bucket {
   bWaiters  :: !(StrictTVar m (Map WaitKey (StrictTVar m Bool))),
     -- ^ queued bearers, by key, with their wake variables
   bTickets  :: !(StrictTVar m Ticket),
-  bBearers  :: !(StrictTVar m Word64)    -- ^ next bearer id
+  bBearers  :: !(StrictTVar m Word64),   -- ^ next bearer id
+  bStats    :: !(StrictTVar m BucketStats)
   }
+
+-- | What a bucket has handed out since it was created.
+data BucketStats = BucketStats {
+  bsBytes        :: !Word64,     -- ^ granted, own or borrowed
+  bsBatches      :: !Word64,
+  bsBorrowed     :: !Word64,     -- ^ of the bytes granted, those borrowed from a budget
+  bsCredited     :: !Word64,     -- ^ taken on credit by 'takeOnCredit'
+  bsWaitTokens   :: !DiffTime,   -- ^ summed over grants: request to grant
+  bsWaitWritable :: !DiffTime,   -- ^ summed over grants: the writability gate before it
+  bsWaitsOver    :: ![Word64]    -- ^ grants whose token wait exceeded each of 'waitBounds'
+  }
+  deriving (Eq, Show)
+
+-- | The token-wait bounds 'bsWaitsOver' counts against.
+waitBounds :: [DiffTime]
+waitBounds = [0.001, 0.01, 0.1, 1, 10]
+
+-- | One zero per bound, each evaluated.
+zeros :: [a] -> [Word64]
+zeros xs = strictZipWith (\_ _ -> 0) xs xs
+
+-- | 'zipWith' with the spine and every element evaluated. The bound counters
+-- live in a TVar for the bucket's whole life, where a lazy element would hold
+-- every update before it.
+strictZipWith :: (a -> b -> c) -> [a] -> [b] -> [c]
+strictZipWith f (a : as) (b : bs) = let !c  = f a b
+                                        !cs = strictZipWith f as bs
+                                    in c : cs
+strictZipWith _ _ _ = []
+
+emptyBucketStats :: BucketStats
+emptyBucketStats = BucketStats 0 0 0 0 0 0 (zeros waitBounds)
+
+recordGrant :: Bool -> Int -> DiffTime -> DiffTime -> BucketStats -> BucketStats
+recordGrant borrowed need waitedWritable waitedTokens st =
+  st { bsBytes        = bsBytes st + n
+     , bsBatches      = bsBatches st + 1
+     , bsBorrowed     = bsBorrowed st + (if borrowed then n else 0)
+     , bsWaitTokens   = bsWaitTokens st + waitedTokens
+     , bsWaitWritable = bsWaitWritable st + waitedWritable
+     , bsWaitsOver    = strictZipWith (\b c -> if waitedTokens > b then c + 1 else c)
+                                waitBounds (bsWaitsOver st)
+     }
+  where
+    n = fromIntegral need
+
+-- | The counters, the token level and the number of bearers queued, at @now@.
+bucketSnapshot :: MonadSTM m => Bucket m -> Time -> STM m (BucketStats, Double, Int)
+bucketSnapshot Bucket { bRate, bCapacity, bFull, bWaiters, bStats } now = do
+  rate    <- readTVar bRate
+  full    <- readTVar bFull
+  waiters <- readTVar bWaiters
+  st      <- readTVar bStats
+  return (st, tokenLevel rate bCapacity full now, Map.size waiters)
 
 newBucket :: (MonadSTM m, MonadMonotonicTime m)
           => Double          -- ^ rate, bytes/s
@@ -99,7 +159,9 @@ newBucket rate capacity bRotation = do
   bWaiters <- newTVarIO Map.empty
   bTickets <- newTVarIO (Ticket 0)
   bBearers <- newTVarIO 0
-  return Bucket { bRate, bCapacity = capacity, bRotation, bFull, bWaiters, bTickets, bBearers }
+  bStats   <- newTVarIO emptyBucketStats
+  return Bucket { bRate, bCapacity = capacity, bRotation, bFull, bWaiters, bTickets, bBearers,
+                  bStats }
 
 -- | Change the rate, keeping the token level as of @now@.
 setBucketRate :: MonadSTM m => Bucket m -> Time -> Double -> STM m ()
@@ -221,7 +283,14 @@ tryTake Bucket { bRate, bCapacity, bFull } now need = do
 
 -- | Take @need@ bytes on credit: never waits, the bucket repays later.
 takeOnCredit :: MonadSTM m => Bucket m -> Time -> Int -> STM m ()
-takeOnCredit Bucket { bRate, bFull } now need = do
+takeOnCredit bucket@Bucket { bStats } now need = do
+  chargeCredit bucket now need
+  modifyTVar bStats (\st -> st { bsCredited = bsCredited st + fromIntegral need })
+
+-- | 'takeOnCredit' without counting it: a slice's charge on the budget, which
+-- the slice counts itself.
+chargeCredit :: MonadSTM m => Bucket m -> Time -> Int -> STM m ()
+chargeCredit Bucket { bRate, bFull } now need = do
   rate <- readTVar bRate
   modifyTVar bFull (\full -> chargeAt rate full now need)
 
@@ -238,7 +307,7 @@ data Attempt = Granted | Borrowed | Displaced | ShortUntil !Time
 -- | Block until @need@ bytes are granted to this bearer.
 awaitGrant :: forall m. (MonadTimer m, MonadMask m)
            => BucketHandle m -> Int -> m ()
-awaitGrant h need = void (awaitGrantWith Nothing h need)
+awaitGrant h need = void (awaitGrantWith Nothing 0 h need)
 
 -- | As 'awaitGrant', but when the bearer's own bucket is short the batch may
 -- come from @budget@ instead, if nobody is waiting on it and it has the bytes
@@ -247,12 +316,18 @@ awaitGrant h need = void (awaitGrantWith Nothing h need)
 -- against the budget. Returns whether the batch was borrowed.
 awaitGrantBorrowing :: forall m. (MonadTimer m, MonadMask m)
                     => BucketHandle m -> Bucket m -> Int -> m Bool
-awaitGrantBorrowing h budget = awaitGrantWith (Just budget) h
+awaitGrantBorrowing h budget = awaitGrantWith (Just budget) 0 h
+
+-- | 'awaitGrant' or, given a budget, 'awaitGrantBorrowing', recording how
+-- long the bearer already waited for the writability gate before asking.
+awaitGrantWaited :: forall m. (MonadTimer m, MonadMask m)
+                 => Maybe (Bucket m) -> DiffTime -> BucketHandle m -> Int -> m Bool
+awaitGrantWaited = awaitGrantWith
 
 awaitGrantWith :: forall m. (MonadTimer m, MonadMask m)
-               => Maybe (Bucket m) -> BucketHandle m -> Int -> m Bool
-awaitGrantWith borrow_m
-               BucketHandle { bhBucket = bucket@Bucket { bWaiters, bTickets, bRotation }
+               => Maybe (Bucket m) -> DiffTime -> BucketHandle m -> Int -> m Bool
+awaitGrantWith borrow_m waitedWritable
+               BucketHandle { bhBucket = bucket@Bucket { bWaiters, bTickets, bRotation, bStats }
                             , bhId, bhRank, bhWake }
                need =
   -- masked until the exception handler is in place: a bearer killed on its
@@ -265,7 +340,7 @@ awaitGrantWith borrow_m
     r <- atomically $ do
       waiters <- readTVar bWaiters
       fast <- if Map.null waiters
-                 then takeOrBorrow now
+                 then takeOrBorrow now now
                  else return (Left now)
       case fast of
            Right borrowed -> return (Left borrowed)
@@ -282,18 +357,29 @@ awaitGrantWith borrow_m
 
     case r of
          Left borrowed -> return borrowed
-         Right key     -> unmask (loop key) `onException` cancel key
+         Right key     -> unmask (loop now key) `onException` cancel key
   where
     -- take from our bucket; failing that, from the budget if it is idle:
     -- nobody waiting and the bytes there. Idle but short, the wait is until
     -- whichever bucket has the bytes first. Right: taken, and whether it was
-    -- borrowed; Left: the instant to check again.
-    takeOrBorrow :: Time -> STM m (Either Time Bool)
-    takeOrBorrow now = do
+    -- borrowed; Left: the instant to check again. A grant is counted here,
+    -- with the wait since the request at @asked@.
+    takeOrBorrow :: Time -> Time -> STM m (Either Time Bool)
+    takeOrBorrow asked now = do
+      r <- takeOrBorrow' now
+      case r of
+           Right borrowed ->
+             modifyTVar bStats
+               (recordGrant borrowed need waitedWritable (now `diffTime` asked))
+           Left _ -> return ()
+      return r
+
+    takeOrBorrow' :: Time -> STM m (Either Time Bool)
+    takeOrBorrow' now = do
       own <- tryTake bucket now need
       case (own, borrow_m) of
            (Right (), Nothing)       -> return (Right False)
-           (Right (), Just budget)   -> Right False <$ takeOnCredit budget now need
+           (Right (), Just budget)   -> Right False <$ chargeCredit budget now need
            (Left ready, Nothing)     -> return (Left ready)
            (Left ready, Just budget@Bucket { bWaiters = budgetWaiters }) -> do
              idle <- Map.null <$> readTVar budgetWaiters
@@ -305,8 +391,8 @@ awaitGrantWith borrow_m
                        Right ()         -> return (Right True)
                        Left readyBudget -> return (Left (min ready readyBudget))
 
-    loop :: WaitKey -> m Bool
-    loop key = do
+    loop :: Time -> WaitKey -> m Bool
+    loop asked key = do
       atHead <- atomically $
         (== Just key) . fmap fst . Map.lookupMin <$> readTVar bWaiters
 
@@ -319,7 +405,7 @@ awaitGrantWith borrow_m
              w <- readTVar bhWake
              check w
              writeTVar bhWake False
-           loop key
+           loop asked key
          else do
            now <- getMonotonicTime
            r <- atomically $ do
@@ -328,7 +414,7 @@ awaitGrantWith borrow_m
              if fmap fst (Map.lookupMin waiters) /= Just key
                then return Displaced
                else do
-                 taken <- takeOrBorrow now
+                 taken <- takeOrBorrow asked now
                  case taken of
                       Right borrowed -> do
                         let waiters' = Map.delete key waiters
@@ -341,7 +427,7 @@ awaitGrantWith borrow_m
            case r of
                 Granted          -> return False
                 Borrowed         -> return True
-                Displaced        -> loop key
+                Displaced        -> loop asked key
                 ShortUntil ready -> do
                   -- sleep until the bytes are there; wake early if a lower
                   -- key takes the head
@@ -350,7 +436,7 @@ awaitGrantWith borrow_m
                       (LazySTM.readTVar delayVar >>= check)
                     `orElse`
                       (readTVar bWaiters >>= check . (/= Just key) . fmap fst . Map.lookupMin)
-                  loop key
+                  loop asked key
 
     -- on cancellation leave the queue; if we were its head, pass the baton
     cancel :: WaitKey -> m ()

@@ -1,3 +1,4 @@
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE BangPatterns          #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -30,9 +31,11 @@ import Control.Tracer (Tracer, traceWith)
 
 import Data.Char (toLower)
 
-import Network.Mux.Egress.Bucket (Bucket, BucketHandle, awaitGrant, awaitGrantBorrowing,
+import Network.Mux.Counters (MuxCounters, countGateTimeout)
+import Network.Mux.Egress.Bucket (Bucket, BucketHandle, awaitGrantWaited,
            takeOnCredit)
 import Network.Mux.Timeout
+import Network.Mux.Trace (Error (SDUWriteTimeout))
 import Network.Mux.Types
 
 -- $servicingsSemantics
@@ -178,10 +181,11 @@ muxer
        )
     => EgressQueue m
     -> Tracer m BearerTrace
+    -> Maybe (MuxCounters m)
     -> LaneEgress m
     -> Bearer m
     -> m void
-muxer egressQueue tracer laneEgress
+muxer egressQueue tracer counters laneEgress
       Bearer { writeMany, sduSize, batchSize, egressInterval, awaitWritable } =
     withTimeoutSerial $ \timeout ->
     forever $ do
@@ -198,17 +202,19 @@ muxer egressQueue tracer laneEgress
       let len = sum (map sduLength sdus)
       case laneEgress of
            Unscheduled -> return ()
-           Credit _ -> awaitWritable tracer timeout
+           Credit _ -> gate timeout
            Reserved slice budget -> do
-             awaitWritable tracer timeout
+             t0 <- getMonotonicTime
+             gate timeout
+             t1 <- getMonotonicTime
              -- the slice's own share, charged to the budget on credit in the
              -- same transaction, or the budget's idle capacity
-             void $ awaitGrantBorrowing slice budget len
+             void $ awaitGrantWaited (Just budget) (t1 `diffTime` t0) slice len
            Scheduled_ bucketHandle -> do
              t0 <- getMonotonicTime
-             awaitWritable tracer timeout
+             gate timeout
              t1 <- getMonotonicTime
-             awaitGrant bucketHandle len
+             void $ awaitGrantWaited Nothing (t1 `diffTime` t0) bucketHandle len
              t2 <- getMonotonicTime
              traceWith tracer (TraceEgressGrant len (t1 `diffTime` t0) (t2 `diffTime` t1))
       void $ writeMany tracer timeout sdus
@@ -223,6 +229,14 @@ muxer egressQueue tracer laneEgress
         threadDelay (egressInterval - delta)
 
   where
+    -- the writability gate; a timeout there is counted before it kills the mux
+    gate :: TimeoutFn m -> m ()
+    gate timeout =
+      awaitWritable tracer timeout `catch` \e -> do
+        case (fromException e, counters) of
+             (Just SDUWriteTimeout, Just c) -> atomically (countGateTimeout c)
+             _                              -> return ()
+        throwIO (e :: SomeException)
     maxSDUsPerBatch :: Int
     maxSDUsPerBatch = 100
 
