@@ -238,6 +238,7 @@ withBidirectionalConnectionManager snocket makeBearer socket
         mkConnectionHandler = makeConnectionHandler
           muxTracers
           noBindForkPolicy
+          Nothing                  -- no mux counters
           Nothing                  -- no scheduled egress
           HandshakeArguments {
               -- TraceSendRecv
