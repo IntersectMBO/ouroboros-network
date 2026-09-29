@@ -38,6 +38,9 @@ module Network.Mux.Egress.Bucket
     -- * Counters
   , BucketStats (..)
   , waitBounds
+  , burstBounds
+  , burstWidths
+  , emptyBucketStats
   , bucketSnapshot
     -- * Pure core
   , tokenLevel
@@ -90,7 +93,16 @@ data Bucket m = Bucket {
     -- ^ queued bearers, by key, with their wake variables
   bTickets  :: !(StrictTVar m Ticket),
   bBearers  :: !(StrictTVar m Word64),   -- ^ next bearer id
-  bStats    :: !(StrictTVar m BucketStats)
+  bStats    :: !(StrictTVar m BucketStats),
+  bBurst    :: !(StrictTVar m BurstState)
+  }
+
+-- | The busy period in progress, if any: since when bearers have been queued,
+-- since when two or more, and the most at once.
+data BurstState = BurstState {
+  buSince          :: !(Maybe Time),
+  buContendedSince :: !(Maybe Time),
+  buPeak           :: !Int
   }
 
 -- | What a bucket has handed out since it was created.
@@ -101,9 +113,23 @@ data BucketStats = BucketStats {
   bsCredited     :: !Word64,     -- ^ taken on credit by 'takeOnCredit'
   bsWaitTokens   :: !DiffTime,   -- ^ summed over grants: request to grant
   bsWaitWritable :: !DiffTime,   -- ^ summed over grants: the writability gate before it
-  bsWaitsOver    :: ![Word64]    -- ^ grants whose token wait exceeded each of 'waitBounds'
+  bsWaitsOver    :: ![Word64],   -- ^ grants whose token wait exceeded each of 'waitBounds'
+  bsBursts        :: !Word64,    -- ^ busy periods: from a first bearer queued to none
+  bsBusyTime      :: !DiffTime,  -- ^ time with a bearer queued
+  bsContendedTime :: !DiffTime,  -- ^ time with two or more queued, when the order decides
+  bsBurstsOver    :: ![Word64],  -- ^ busy periods longer than each of 'burstBounds'
+  bsBurstsWider   :: ![Word64]   -- ^ busy periods with at least each of 'burstWidths'
+                                 --   bearers queued at once
   }
   deriving (Eq, Show)
+
+-- | The busy-period lengths 'bsBurstsOver' counts against.
+burstBounds :: [DiffTime]
+burstBounds = [0.1, 1, 10, 60]
+
+-- | The queue widths 'bsBurstsWider' counts against.
+burstWidths :: [Int]
+burstWidths = [2, 8, 32]
 
 -- | The token-wait bounds 'bsWaitsOver' counts against.
 waitBounds :: [DiffTime]
@@ -124,6 +150,33 @@ strictZipWith _ _ _ = []
 
 emptyBucketStats :: BucketStats
 emptyBucketStats = BucketStats 0 0 0 0 0 0 (zeros waitBounds)
+                               0 0 0 (zeros burstBounds) (zeros burstWidths)
+
+-- | The queue went from @n0@ to @n1@ bearers at @now@.
+burstStep :: Time -> Int -> Int -> (BurstState, BucketStats) -> (BurstState, BucketStats)
+burstStep !now n0 n1 (bu0, st0) = ended (contended (started (bu0, st0)))
+  where
+    started (bu, st)
+      | n0 == 0 && n1 >= 1 = (bu { buSince = Just now, buPeak = n1 },
+                              st { bsBursts = bsBursts st + 1 })
+      | otherwise          = (bu { buPeak = max (buPeak bu) n1 }, st)
+    contended (bu, st)
+      | n0 < 2 && n1 >= 2
+      = (bu { buContendedSince = Just now }, st)
+      | n0 >= 2 && n1 < 2, Just c <- buContendedSince bu
+      = (bu { buContendedSince = Nothing },
+         st { bsContendedTime = bsContendedTime st + (now `diffTime` c) })
+      | otherwise = (bu, st)
+    ended (bu, st)
+      | n0 >= 1 && n1 == 0, Just since <- buSince bu
+      = let len = now `diffTime` since
+        in ( BurstState Nothing Nothing 0
+           , st { bsBusyTime    = bsBusyTime st + len
+                , bsBurstsOver  = strictZipWith (\b c -> if len > b then c + 1 else c)
+                                          burstBounds (bsBurstsOver st)
+                , bsBurstsWider = strictZipWith (\w c -> if buPeak bu >= w then c + 1 else c)
+                                          burstWidths (bsBurstsWider st) } )
+      | otherwise = (bu, st)
 
 recordGrant :: Bool -> Int -> DiffTime -> DiffTime -> BucketStats -> BucketStats
 recordGrant borrowed need waitedWritable waitedTokens st =
@@ -140,12 +193,17 @@ recordGrant borrowed need waitedWritable waitedTokens st =
 
 -- | The counters, the token level and the number of bearers queued, at @now@.
 bucketSnapshot :: MonadSTM m => Bucket m -> Time -> STM m (BucketStats, Double, Int)
-bucketSnapshot Bucket { bRate, bCapacity, bFull, bWaiters, bStats } now = do
+bucketSnapshot Bucket { bRate, bCapacity, bFull, bWaiters, bStats, bBurst } now = do
   rate    <- readTVar bRate
   full    <- readTVar bFull
   waiters <- readTVar bWaiters
   st      <- readTVar bStats
-  return (st, tokenLevel rate bCapacity full now, Map.size waiters)
+  bu      <- readTVar bBurst
+  -- a busy period in progress counts up to now, so the times only ever grow
+  let upToNow = maybe 0 (now `diffTime`)
+      st' = st { bsBusyTime      = bsBusyTime st + upToNow (buSince bu)
+               , bsContendedTime = bsContendedTime st + upToNow (buContendedSince bu) }
+  return (st', tokenLevel rate bCapacity full now, Map.size waiters)
 
 newBucket :: (MonadSTM m, MonadMonotonicTime m)
           => Double          -- ^ rate, bytes/s
@@ -160,8 +218,9 @@ newBucket rate capacity bRotation = do
   bTickets <- newTVarIO (Ticket 0)
   bBearers <- newTVarIO 0
   bStats   <- newTVarIO emptyBucketStats
+  bBurst   <- newTVarIO (BurstState Nothing Nothing 0)
   return Bucket { bRate, bCapacity = capacity, bRotation, bFull, bWaiters, bTickets, bBearers,
-                  bStats }
+                  bStats, bBurst }
 
 -- | Change the rate, keeping the token level as of @now@.
 setBucketRate :: MonadSTM m => Bucket m -> Time -> Double -> STM m ()
@@ -327,7 +386,8 @@ awaitGrantWaited = awaitGrantWith
 awaitGrantWith :: forall m. (MonadTimer m, MonadMask m)
                => Maybe (Bucket m) -> DiffTime -> BucketHandle m -> Int -> m Bool
 awaitGrantWith borrow_m waitedWritable
-               BucketHandle { bhBucket = bucket@Bucket { bWaiters, bTickets, bRotation, bStats }
+               BucketHandle { bhBucket = bucket@Bucket { bWaiters, bTickets, bRotation, bStats
+                                                       , bBurst }
                             , bhId, bhRank, bhWake }
                need =
   -- masked until the exception handler is in place: a bearer killed on its
@@ -353,12 +413,22 @@ awaitGrantWith borrow_m waitedWritable
 
              writeTVar bhWake False
              writeTVar bWaiters (Map.insert key bhWake waiters)
+             queueChanged now (Map.size waiters) (Map.size waiters + 1)
              return (Right key)
 
     case r of
          Left borrowed -> return borrowed
          Right key     -> unmask (loop now key) `onException` cancel key
   where
+    -- the queue went from @n0@ to @n1@ bearers: account for busy periods
+    queueChanged :: Time -> Int -> Int -> STM m ()
+    queueChanged now n0 n1 = when (n0 /= n1) $ do
+      bu <- readTVar bBurst
+      st <- readTVar bStats
+      let (bu', st') = burstStep now n0 n1 (bu, st)
+      writeTVar bBurst bu'
+      writeTVar bStats st'
+
     -- take from our bucket; failing that, from the budget if it is idle:
     -- nobody waiting and the bytes there. Idle but short, the wait is until
     -- whichever bucket has the bytes first. Right: taken, and whether it was
@@ -420,6 +490,7 @@ awaitGrantWith borrow_m waitedWritable
                         let waiters' = Map.delete key waiters
 
                         writeTVar bWaiters waiters'
+                        queueChanged now (Map.size waiters) (Map.size waiters')
                         wakeHead waiters'
 
                         return (if borrowed then Borrowed else Granted)
@@ -440,11 +511,14 @@ awaitGrantWith borrow_m waitedWritable
 
     -- on cancellation leave the queue; if we were its head, pass the baton
     cancel :: WaitKey -> m ()
-    cancel key = atomically $ do
+    cancel key = do
+     now <- getMonotonicTime
+     atomically $ do
       waiters <- readTVar bWaiters
 
       let wasHead  = fmap fst (Map.lookupMin waiters) == Just key
           waiters' = Map.delete key waiters
 
       writeTVar bWaiters waiters'
+      queueChanged now (Map.size waiters) (Map.size waiters')
       when wasHead (wakeHead waiters')

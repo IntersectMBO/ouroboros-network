@@ -3144,6 +3144,11 @@ data ReplayPay = FromBudget | FromSlice | Borrowed
 data ReplayEvent = RGrant !ReplayPay ((Int, Int), (Time, Time))
                  | RSleptOnBudget
                  | RTie
+                 | RBudgetQueue !Time !Int !(Int, Int) !Bool
+                   -- ^ the budget's queue changed: when, its new length, whose
+                   -- request, and whether it joined
+                 | RSliceQueue !Time !Int !(Int, Int) !Bool
+                   -- ^ the same, for the slice's queue
   deriving (Eq, Show)
 
 -- | Grant instants from the pure core, with each take's request instant
@@ -3191,6 +3196,7 @@ replayEvents sch@BucketSched { schRate, schCapacity, schRotation, schSlice, schB
               lst'         = Just (now, True)
           in if ready == now
                 then RGrant FromBudget (grant h)
+                   : RBudgetQueue now (length wb - 1) (arBearer h, arTake h) False
                    : go now fb' fs (next h now pending) (List.delete h wb) ws Nothing ks lst'
                 else go now fb fs pending wb ws (Just (Bucket.wakeAt now ready)) ks lst'
       -- the slice's head checks: its own bucket, else the budget's idle capacity
@@ -3202,11 +3208,13 @@ replayEvents sch@BucketSched { schRate, schCapacity, schRotation, schSlice, schB
           in if crossed False then [RTie] else
              if readyS == now
                 then RGrant FromSlice (grant h)
+                   : RSliceQueue now (length ws - 1) (arBearer h, arTake h) False
                    : go now (Bucket.chargeAt schRate fb now need) fs'
                         (next h now pending) wb (List.delete h ws) kb Nothing
                         (Just (now, False))
              else if idle && readyB == now
                 then RGrant Borrowed (grant h)
+                   : RSliceQueue now (length ws - 1) (arBearer h, arTake h) False
                    : go now fb' fs (next h now pending) wb (List.delete h ws) kb Nothing
                         (Just (now, False))
              else [ RSleptOnBudget | idle, readyB < readyS ]
@@ -3218,9 +3226,11 @@ replayEvents sch@BucketSched { schRate, schCapacity, schRotation, schSlice, schB
       | p : ps <- pending, all (arAt p <) kb, all (arAt p <) ks =
           if arSlice p
              then let displaces = maybe False ((keyS p <) . keyS) (headBy keyS ws)
-                  in go (arAt p) fb fs ps wb (p : ws) kb (if displaces then Nothing else ks) lst
+                  in RSliceQueue (arAt p) (length ws + 1) (arBearer p, arTake p) True
+                   : go (arAt p) fb fs ps wb (p : ws) kb (if displaces then Nothing else ks) lst
              else let displaces = maybe False ((keyB p <) . keyB) (headBy keyB wb)
-                  in go (arAt p) fb fs ps (p : wb) ws (if displaces then Nothing else kb) ks lst
+                  in RBudgetQueue (arAt p) (length wb + 1) (arBearer p, arTake p) True
+                   : go (arAt p) fb fs ps (p : wb) ws (if displaces then Nothing else kb) ks lst
       -- the earlier wake fires
       | otherwise =
           case (kb, ks) of
@@ -3244,11 +3254,52 @@ replayRun sch = [ g | RGrant _ g <- replayEvents sch ]
 -- | The counters each bucket should hold after the replay's grants.
 replayStats :: BucketSched -> (Bucket.BucketStats, Maybe Bucket.BucketStats)
 replayStats sch@BucketSched { schSlice, schBearers } =
-    ( stats [ g | RGrant FromBudget g <- events ] []
-    , stats [ g | RGrant pay g <- events, pay /= FromBudget ]
-            [ g | RGrant Borrowed g <- events ] <$ schSlice )
+    ( withBursts budgetQueue (stats [ g | RGrant FromBudget g <- events ] [])
+    , withBursts sliceQueue (stats [ g | RGrant pay g <- events, pay /= FromBudget ]
+                                   [ g | RGrant Borrowed g <- events ]) <$ schSlice )
   where
     events = replayEvents sch
+
+    -- the budget's queue as the bucket sees it: a request that joins an empty
+    -- queue and is granted at once took the fast path and never queued
+    budgetQueue = dropFastPath [ (t, n, k, j) | RBudgetQueue t n k j <- events ]
+    sliceQueue  = dropFastPath [ (t, n, k, j) | RSliceQueue t n k j <- events ]
+
+    dropFastPath ((t, 1, k, True) : (t', 0, k', False) : rest)
+      | t == t' && k == k' = dropFastPath rest
+    dropFastPath (e : rest) = e : dropFastPath rest
+    dropFastPath []         = []
+
+    -- busy periods from the queue's lengths, in the order they changed
+    withBursts q st = go 0 Nothing Nothing 0 st [ (t, n) | (t, n, _, _) <- q ]
+      where
+        go _ _ _ _ acc [] = acc
+        go n0 since cSince peak acc ((t, n1) : rest) =
+          let started = n0 == 0 && n1 >= 1
+              since'  = if started then Just t else since
+              peak'   = if started then n1 else max peak n1
+              acc1    = if started then acc { Bucket.bsBursts = Bucket.bsBursts acc + 1 } else acc
+              (cSince', acc2)
+                | n0 < 2 && n1 >= 2, Nothing <- cSince = (Just t, acc1)
+                | n0 >= 2 && n1 < 2, Just c <- cSince  =
+                    (Nothing, acc1 { Bucket.bsContendedTime =
+                                       Bucket.bsContendedTime acc1 + (t `diffTime` c) })
+                | otherwise = (cSince, acc1)
+          in if n0 >= 1 && n1 == 0
+                then case since' of
+                       Just s0 ->
+                         let len = t `diffTime` s0
+                             acc3 = acc2 {
+                               Bucket.bsBusyTime    = Bucket.bsBusyTime acc2 + len,
+                               Bucket.bsBurstsOver  =
+                                 zipWith (\b c -> if len > b then c + 1 else c)
+                                         Bucket.burstBounds (Bucket.bsBurstsOver acc2),
+                               Bucket.bsBurstsWider =
+                                 zipWith (\w c -> if peak' >= w then c + 1 else c)
+                                         Bucket.burstWidths (Bucket.bsBurstsWider acc2) }
+                         in go n1 Nothing cSince' 0 acc3 rest
+                       Nothing -> go n1 Nothing cSince' 0 acc2 rest
+                else go n1 since' cSince' peak' acc2 rest
 
     -- bytes of take @k@ of bearer @b@
     bytesOf (b, k) = let bb = schBearers !! b
@@ -3265,7 +3316,12 @@ replayStats sch@BucketSched { schSlice, schBearers } =
            Bucket.bsWaitTokens   = sum waits,
            Bucket.bsWaitWritable = 0,
            Bucket.bsWaitsOver    = [ fromIntegral (length (filter (> b) waits))
-                                   | b <- Bucket.waitBounds ]
+                                   | b <- Bucket.waitBounds ],
+           Bucket.bsBursts        = 0,
+           Bucket.bsBusyTime      = 0,
+           Bucket.bsContendedTime = 0,
+           Bucket.bsBurstsOver    = map (const 0) Bucket.burstBounds,
+           Bucket.bsBurstsWider   = map (const 0) Bucket.burstWidths
          }
 
 replaySched :: BucketSched -> [((Int, Int), Time)]
@@ -3290,6 +3346,8 @@ prop_bucket_schedule sch
       classify (paid Borrowed)                "borrowed" $
       classify (paid FromSlice)               "slice paid, charged on credit" $
       classify (RSleptOnBudget `elem` events) "slice slept on the budget" $
+      classify (Bucket.bsBursts (fst (replayStats sch)) > 0) "the budget was busy" $
+      classify (Bucket.bsContendedTime (fst (replayStats sch)) > 0) "bearers contended" $
         (List.sortOn fst grants === List.sortOn fst (replaySched sch)
          .&&. counterexample "counters" (stats === replayStats sch))
   where
@@ -3318,7 +3376,9 @@ prop_bucket_cancel' sch@BucketSched { schRate, schCapacity, schRotation, schBear
       $ classify (not (null killed))    "kills someone"
       $ classify (any killsHead killed) "kills the next to be served"
       $ counterexample ("kept " ++ show (length kept))
-      $ outcome === Just (length kept)
+      -- and once everyone is done, killed or served, no busy period is left
+      -- open: a cancelled waiter must close it as it leaves the queue
+      $ outcome === Just (length kept, False)
   where
     n    = length schBearers
     run  = replayRun sch
@@ -3377,9 +3437,18 @@ prop_bucket_cancel' sch@BucketSched { schRate, schCapacity, schRotation, schBear
           threadDelay (t `diffTime` now)
           cancel asy
 
-      fmap length <$> timeout limit
+      done <- timeout limit
         (do mapM_ wait killers                        -- each cancel returns
             mapM wait [ asy | (Nothing, asy) <- as ]) -- survivors finish
+      case done of
+           Nothing -> return Nothing
+           Just rs -> do
+             t0 <- getMonotonicTime
+             (st0, _, _) <- atomically $ Bucket.bucketSnapshot bucket t0
+             threadDelay 1
+             t1 <- getMonotonicTime
+             (st1, _, _) <- atomically $ Bucket.bucketSnapshot bucket t1
+             return (Just (length rs, Bucket.bsBusyTime st1 /= Bucket.bsBusyTime st0))
 
 -- | A rate of zero disables the bucket: nothing ever waits.
 prop_bucket_disabled :: BucketSched -> Property

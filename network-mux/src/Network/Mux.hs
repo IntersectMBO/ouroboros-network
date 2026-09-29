@@ -69,6 +69,8 @@ module Network.Mux
   , countersLoop
   , countersInterval
   , egressWaitBounds
+  , egressBurstBounds
+  , egressBurstWidths
     -- * Errors
   , Error (..)
   , RuntimeError (..)
