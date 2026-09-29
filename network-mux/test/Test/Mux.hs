@@ -128,6 +128,10 @@ tests =
                    (BaseQC.withNumTests 30 prop_mux_lanes)
     , testProperty "a torn-down head hands the queue on"
                    prop_mux_egress_head_torn_down
+    , testProperty "own requests wait at the gate, charged once written"
+                   (BaseQC.withNumTests 30 prop_mux_direct_gate)
+    , testProperty "counters are snapshotted every interval"
+                   prop_egress_counters_loop
     ]
   , testGroup "Counters"
     [ testProperty "each failure is counted once, where it belongs"
@@ -3090,8 +3094,13 @@ labelBucket BucketSched { schRotation, schSlice, schBearers } =
 -- | Grant instants from a real bucket in IOSim, by bearer and take.  Each
 -- bearer keeps one handle for all of its takes.
 runBucketSched :: BucketSched -> [((Int, Int), Time)]
-runBucketSched sch@BucketSched { schRate, schCapacity, schRotation, schSlice, schBearers } =
-    concat $ runSimOrThrow $ do
+runBucketSched = fst . runBucketSchedStats
+
+-- | 'runBucketSched', with the budget's and the slice's counters at the end.
+runBucketSchedStats :: BucketSched
+                    -> ([((Int, Int), Time)], (Bucket.BucketStats, Maybe Bucket.BucketStats))
+runBucketSchedStats sch@BucketSched { schRate, schCapacity, schRotation, schSlice, schBearers } =
+    runSimOrThrow $ do
       bucket <- Bucket.newBucket schRate schCapacity schRotation
       slice  <- traverse (\pct -> Bucket.newBucket (schRate * fromIntegral pct / 100)
                                                   schCapacity Nothing) schSlice
@@ -3100,7 +3109,7 @@ runBucketSched sch@BucketSched { schRate, schCapacity, schRotation, schSlice, sc
       -- is a slice
       hs <- mapM (const (Bucket.registerBearer bucket)) schBearers
       ss <- mapM (const (traverse Bucket.registerBearer slice)) schBearers
-      forConcurrently (zip3 hs ss (arrivals sch)) $ \(h, s_m, a0) -> do
+      grants <- forConcurrently (zip3 hs ss (arrivals sch)) $ \(h, s_m, a0) -> do
         atomically $ Bucket.setRank h (Bucket.Rank (arRank a0))
         forM_ s_m $ \s -> atomically $ Bucket.setRank s (Bucket.Rank (arRank a0))
         -- what the slice lane does: its own bucket, charged to the budget on
@@ -3116,6 +3125,12 @@ runBucketSched sch@BucketSched { schRate, schCapacity, schRotation, schSlice, sc
               (((arBearer a, arTake a), t) :)
                 <$> maybe (return []) takeAll (nextArrival n a t)
         takeAll a0
+      now <- getMonotonicTime
+      stats <- atomically $ do
+        (b, _, _) <- Bucket.bucketSnapshot bucket now
+        s' <- traverse (\sl -> (\(st, _, _) -> st) <$> Bucket.bucketSnapshot sl now) slice
+        return (b, s')
+      return (concat grants, stats)
   where
     n = length schBearers
 
@@ -3226,6 +3241,33 @@ replayEvents sch@BucketSched { schRate, schCapacity, schRotation, schSlice, schB
 replayRun :: BucketSched -> [((Int, Int), (Time, Time))]
 replayRun sch = [ g | RGrant _ g <- replayEvents sch ]
 
+-- | The counters each bucket should hold after the replay's grants.
+replayStats :: BucketSched -> (Bucket.BucketStats, Maybe Bucket.BucketStats)
+replayStats sch@BucketSched { schSlice, schBearers } =
+    ( stats [ g | RGrant FromBudget g <- events ] []
+    , stats [ g | RGrant pay g <- events, pay /= FromBudget ]
+            [ g | RGrant Borrowed g <- events ] <$ schSlice )
+  where
+    events = replayEvents sch
+
+    -- bytes of take @k@ of bearer @b@
+    bytesOf (b, k) = let bb = schBearers !! b
+                     in if k == 0 then bbFirst bb else snd (bbMore bb !! (k - 1))
+
+    stats gs borrowed =
+      let waits = [ granted `diffTime` asked | (_, (asked, granted)) <- gs ]
+          bytesIn = sum . map (fromIntegral . bytesOf . fst)
+      in Bucket.BucketStats {
+           Bucket.bsBytes        = bytesIn gs,
+           Bucket.bsBatches      = fromIntegral (length gs),
+           Bucket.bsBorrowed     = bytesIn borrowed,
+           Bucket.bsCredited     = 0,
+           Bucket.bsWaitTokens   = sum waits,
+           Bucket.bsWaitWritable = 0,
+           Bucket.bsWaitsOver    = [ fromIntegral (length (filter (> b) waits))
+                                   | b <- Bucket.waitBounds ]
+         }
+
 replaySched :: BucketSched -> [((Int, Int), Time)]
 replaySched = map (\(k, (_, granted)) -> (k, granted)) . replayRun
 
@@ -3248,9 +3290,11 @@ prop_bucket_schedule sch
       classify (paid Borrowed)                "borrowed" $
       classify (paid FromSlice)               "slice paid, charged on credit" $
       classify (RSleptOnBudget `elem` events) "slice slept on the budget" $
-        List.sortOn fst (runBucketSched sch) === List.sortOn fst (replaySched sch)
+        (List.sortOn fst grants === List.sortOn fst (replaySched sch)
+         .&&. counterexample "counters" (stats === replayStats sch))
   where
     events = replayEvents sch
+    (grants, stats) = runBucketSchedStats sch
     paid k = any (\e -> case e of { RGrant k' _ -> k' == k; _ -> False }) events
     queued = length [ () | (_, (asked, granted)) <- replayRun sch
                          , granted > asked ]
@@ -3579,6 +3623,108 @@ prop_mux_lanes lc@LaneCase { lcRate, lcSlicePct, lcBatches } =
     laneRule (Mx.MiniProtocolNum 4) Mx.InitiatorDir = Mx.Slice
     laneRule num dir                             = Mx.directionSplit num dir
 
+-- | Own requests through a bearer whose peer stops and starts draining: the
+-- gate is shut and the link stalls in the closed phases, and in the open ones
+-- the link drains at a rate, so a batch may block half written.
+data GateCase = GateCase {
+    gcMsgs   :: ![(Int, Int)],   -- ^ ms after the previous send, and bytes
+    gcPhases :: ![Int],          -- ^ phase lengths in ms, closed first, alternating
+    gcRate   :: !Int             -- ^ bytes per ms the open link drains
+  }
+  deriving Show
+
+instance Arbitrary GateCase where
+    arbitrary = GateCase <$> listOf1 ((,) <$> choose (0, 20)
+                                          <*> frequency [ (1, choose (1, 2000))
+                                                        , (2, choose (1, 200000)) ])
+                         <*> listOf1 (choose (1, 40))
+                         <*> choose (1000, 50000)
+    shrink gc@GateCase { gcMsgs, gcPhases } =
+         [ gc { gcMsgs = ms }   | ms <- shrinkList shrinkMsg gcMsgs, not (null ms) ]
+      ++ [ gc { gcPhases = ps } | ps <- shrinkList shrinkIntegral gcPhases, not (null ps), all (> 0) ps ]
+      where
+        shrinkMsg (d, n) = [ (d', n) | d' <- shrinkIntegral d ] ++ [ (d, n') | n' <- shrinkIntegral n, n' > 0 ]
+
+-- | The node's own requests are charged to the budget on credit, never made
+-- to wait for tokens -- but only for bytes handed to the bearer, and only once
+-- the bearer can take them. Sampled every 100 us while the phases run: no byte
+-- is handed over while the gate is shut, and the budget's credited bytes never
+-- run ahead of the bytes handed over; once the link stays open, the two are
+-- equal and every message has gone.
+prop_mux_direct_gate :: GateCase -> Property
+prop_mux_direct_gate gc@GateCase { gcMsgs, gcPhases, gcRate } =
+    counterexample (show gc) $
+    classify (any (\(_, n) -> n > 12288) gcMsgs) "a message of several SDUs" $
+    classify (any (\(_, n) -> n <= 2000) gcMsgs) "a small message" $
+    classify (length gcPhases > 2) "the gate shuts again" $
+      case runSimOrThrow run of
+           (closedWrites, ahead, final) ->
+                  counterexample "handed over while shut" (closedWrites === [])
+             .&&. counterexample "charged ahead of the write" (ahead === [])
+             .&&. counterexample "at the end, credited /= handed or a message missing"
+                    (final === Just (True, sum (map snd gcMsgs)))
+  where
+    num = Mx.MiniProtocolNum 2
+
+    run :: IOSim s ([(Time, Int)], [(Time, Int, Int)], Maybe (Bool, Int))
+    run = do
+      open    <- newTVarIO False
+      handed  <- newTVarIO (0 :: Int)
+      w <- atomically $ newTBQueue 2
+      r <- atomically $ newTBQueue 2
+      base <- getBearer makeQueueChannelBearer (-1)
+                QueueChannel { writeQueue = w, readQueue = r } Nothing
+      let bearer = base
+            { Mx.awaitWritable = \_ _ -> atomically (readTVar open >>= check)
+            , Mx.writeMany     = \tr to sdus -> do
+                t <- Mx.writeMany base tr to sdus
+                atomically $ modifyTVar handed
+                  (+ sum [ 8 + fromIntegral (BL.length (Mx.msBlob s)) | s <- sdus ])
+                return t }
+          info :: MiniProtocolInfo Mx.InitiatorMode
+          info = MiniProtocolInfo {
+              miniProtocolNum        = num,
+              miniProtocolDir        = Mx.InitiatorDirectionOnly,
+              miniProtocolLimits     = MiniProtocolLimits { maximumIngressQueue = 16 },
+              miniProtocolCapability = Nothing }
+      budget <- Bucket.newBucket 1e9 65536 Nothing
+      let policy = Mx.EgressPolicy { Mx.egressBudget = budget, Mx.egressSlice = Nothing,
+                                     Mx.egressLaneOf = Mx.directionSplit }
+          credited = (\(st, _, _) -> fromIntegral (Bucket.bsCredited st))
+                       <$> (getMonotonicTime >>= atomically . Bucket.bucketSnapshot budget)
+      mux <- Mx.newWithEgress policy Mx.nullTracers [info]
+      -- the peer: reads at the link rate while open, not at all while shut
+      _ <- async $ forever $ do
+        bs <- atomically $ do readTVar open >>= check; readTBQueue w
+        threadDelay (realToFrac (fromIntegral (BL.length bs) / fromIntegral gcRate / 1000 :: Double))
+      withAsync (Mx.run mux bearer) $ \_ -> do
+        received <- newTVarIO (0 :: Int)
+        _ <- Mx.runMiniProtocol mux num Mx.InitiatorDirectionOnly Mx.StartEagerly $ \chan -> do
+          forM_ gcMsgs $ \(d, n) -> do
+            threadDelay (fromIntegral d / 1000)
+            Mx.send chan (BL.replicate (fromIntegral n) 7)
+            atomically $ modifyTVar received (+ n)
+          return ((), Nothing)
+        -- the phases, sampled
+        samples <- fmap concat $ forM (zip (cycle [False, True]) gcPhases) $ \(isOpen, ms) -> do
+          atomically $ writeTVar open isOpen
+          forM [1 .. ms * 10] $ \_ -> do
+            h0 <- readTVarIO handed
+            threadDelay 0.0001
+            h1 <- readTVarIO handed
+            c  <- credited
+            now <- getMonotonicTime
+            return (now, isOpen, h0, h1, c)
+        let closedWrites = [ (t, h1 - h0) | (t, False, h0, h1, _) <- samples, h1 /= h0 ]
+            ahead        = [ (t, c, h1) | (t, _, _, h1, c) <- samples, c > h1 ]
+        -- then open for good, until every message is handed over
+        atomically $ writeTVar open True
+        final <- timeout 60 $ do
+          atomically $ readTVar received >>= check . (== sum (map snd gcMsgs))
+          threadDelay 1
+          (,) <$> ((==) <$> credited <*> readTVarIO handed) <*> readTVarIO received
+        return (closedWrites, ahead, final)
+
 -- | Several muxes share one budget; one of them, the head of its queue, is
 -- torn down mid-wait.
 data HeadKill = HeadKill {
@@ -3704,7 +3850,7 @@ headKillClient n chan = do
 
 -- | The ways a mux can fail that the counters distinguish.
 data MuxFailure = ReadTimeout | PeerClosed | DecodeError | UnknownProtocol
-                | InitiatorOnlyData | Overrun | WriteTimeout
+                | InitiatorOnlyData | Overrun | WriteTimeout | GateTimeout
   deriving (Show, Eq, Enum, Bounded)
 
 instance Arbitrary MuxFailure where
@@ -3723,13 +3869,15 @@ prop_mux_counters_failure failure =
 
     expected :: MuxFailure -> (Mx.EgressCounts, Mx.IngressCounts)
     expected f = case f of
-      WriteTimeout      -> (Mx.EgressCounts 1, Mx.IngressCounts 0 0 0 0)
-      ReadTimeout       -> (Mx.EgressCounts 0, Mx.IngressCounts 1 0 0 0)
-      Overrun           -> (Mx.EgressCounts 0, Mx.IngressCounts 0 1 0 0)
-      DecodeError       -> (Mx.EgressCounts 0, Mx.IngressCounts 0 0 1 0)
-      UnknownProtocol   -> (Mx.EgressCounts 0, Mx.IngressCounts 0 0 1 0)
-      InitiatorOnlyData -> (Mx.EgressCounts 0, Mx.IngressCounts 0 0 1 0)
-      PeerClosed        -> (Mx.EgressCounts 0, Mx.IngressCounts 0 0 0 1)
+      WriteTimeout      -> (Mx.EgressCounts 1 0 Nothing, Mx.IngressCounts 0 0 0 0)
+      -- a write timeout, at the gate of a scheduled mux
+      GateTimeout       -> (Mx.EgressCounts 1 1 Nothing, Mx.IngressCounts 0 0 0 0)
+      ReadTimeout       -> (Mx.EgressCounts 0 0 Nothing, Mx.IngressCounts 1 0 0 0)
+      Overrun           -> (Mx.EgressCounts 0 0 Nothing, Mx.IngressCounts 0 1 0 0)
+      DecodeError       -> (Mx.EgressCounts 0 0 Nothing, Mx.IngressCounts 0 0 1 0)
+      UnknownProtocol   -> (Mx.EgressCounts 0 0 Nothing, Mx.IngressCounts 0 0 1 0)
+      InitiatorOnlyData -> (Mx.EgressCounts 0 0 Nothing, Mx.IngressCounts 0 0 1 0)
+      PeerClosed        -> (Mx.EgressCounts 0 0 Nothing, Mx.IngressCounts 0 0 0 1)
 
     -- an SDU as the peer would send it
     sdu n dir payload = Mx.encodeSDU Mx.SDU {
@@ -3750,6 +3898,7 @@ prop_mux_counters_failure failure =
             ReadTimeout  -> base { Mx.read      = \_ _   -> throwIO Mx.SDUReadTimeout }
             PeerClosed   -> base { Mx.read      = \_ _   -> throwIO (Mx.BearerClosed "peer") }
             WriteTimeout -> base { Mx.writeMany = \_ _ _ -> throwIO Mx.SDUWriteTimeout }
+            GateTimeout  -> base { Mx.awaitWritable = \_ _ -> throwIO Mx.SDUWriteTimeout }
             _            -> base
           info :: MiniProtocolInfo Mx.InitiatorMode
           info = MiniProtocolInfo {
@@ -3757,7 +3906,13 @@ prop_mux_counters_failure failure =
               miniProtocolDir        = Mx.InitiatorDirectionOnly,
               miniProtocolLimits     = MiniProtocolLimits { maximumIngressQueue = 16 },
               miniProtocolCapability = Nothing }
-      mux <- Mx.withCounters counters <$> Mx.new Mx.nullTracers [info]
+      budget <- Bucket.newBucket 1e9 65536 Nothing
+      let policy = Mx.EgressPolicy { Mx.egressBudget = budget, Mx.egressSlice = Nothing,
+                                     Mx.egressLaneOf = \_ _ -> Mx.Scheduled }
+      mux <- Mx.withCounters counters <$>
+               case failure of
+                    GateTimeout -> Mx.newWithEgress policy Mx.nullTracers [info]
+                    _           -> Mx.new Mx.nullTracers [info]
       withAsync (Mx.run mux bearer) $ \muxA -> do
         case failure of
              DecodeError       -> atomically $ writeTBQueue r (BL.replicate 3 0)
@@ -3765,7 +3920,7 @@ prop_mux_counters_failure failure =
              -- data from an initiator, for a responder this mux does not run
              InitiatorOnlyData -> atomically $ writeTBQueue r (sdu num Mx.InitiatorDir (BL8.pack "x"))
              Overrun           -> atomically $ writeTBQueue r (sdu num Mx.ResponderDir (BL.replicate 100 0))
-             WriteTimeout      ->
+             _ | failure `elem` [WriteTimeout, GateTimeout] ->
                void $ Mx.runMiniProtocol mux num Mx.InitiatorDirectionOnly Mx.StartEagerly
                         (\chan -> Mx.send chan (BL8.pack "x") >> return ((), Nothing))
              _                 -> return ()
@@ -3782,9 +3937,9 @@ prop_mux_counters_loop (Positive k) =
          map fst seen === concat [ replicate 4 ((fromIntegral i * interval) `addTime` Time 0)
                                  | i <- [1 .. 3 :: Int] ]
     .&&. map snd seen === concat (replicate 3
-           [ Mx.TraceRemoteEgress (Mx.EgressCounts 0)
+           [ Mx.TraceRemoteEgress (Mx.EgressCounts 0 0 Nothing)
            , Mx.TraceRemoteIngress (Mx.IngressCounts 0 0 0 1)
-           , Mx.TraceLocalEgress (Mx.EgressCounts 1)
+           , Mx.TraceLocalEgress (Mx.EgressCounts 1 0 Nothing)
            , Mx.TraceLocalIngress (Mx.IngressCounts 0 0 0 0) ])
   where
     interval = fromIntegral (1 + k `mod` 10) :: DiffTime
@@ -3800,6 +3955,81 @@ prop_mux_counters_loop (Positive k) =
       let tracer = mkTracer $ \ev -> do
             t <- getMonotonicTime
             atomically $ modifyTVar v ((t, ev) :)
-      _ <- async (Mx.countersLoop remote local interval tracer)
+      _ <- async (Mx.countersLoop remote local Nothing interval tracer)
       threadDelay (3 * interval + interval / 2)
       reverse <$> readTVarIO v
+-- | A snapshot loop over a budget that one bearer takes from and the direct
+-- lane charges on credit.
+data CountersCase = CountersCase {
+    ccInterval :: !Integer,        -- ^ seconds
+    ccRate     :: !Double,         -- ^ bytes/s
+    ccTakes    :: ![(Integer, Int)],
+      -- ^ milliseconds before each take, and its bytes
+    ccCredits  :: ![(Integer, Int)]
+      -- ^ milliseconds before each charge on credit, and its bytes
+  }
+  deriving Show
+
+instance Arbitrary CountersCase where
+    arbitrary = do
+      interval <- choose (1, 10)
+      rate     <- (* 1e4) <$> choose (1, 100)
+      let step = (,) <$> choose (0, 500) <*> choose (1, 8192)
+      CountersCase interval rate <$> listOf step <*> listOf step
+    shrink cc@CountersCase { ccTakes, ccCredits } =
+         [ cc { ccTakes = ts }   | ts <- shrinkList (const []) ccTakes ]
+      ++ [ cc { ccCredits = cs } | cs <- shrinkList (const []) ccCredits ]
+
+-- | Snapshots arrive exactly every interval; every counter only grows; and
+-- once the traffic is over, the last snapshot holds exactly what was sent.
+prop_egress_counters_loop :: CountersCase -> Property
+prop_egress_counters_loop cc@CountersCase { ccInterval, ccRate, ccTakes, ccCredits } =
+    counterexample (show cc) $
+    counterexample (show snapshots) $
+         counterexample "snapshot times"
+           (map fst snapshots === [ (fromIntegral k * interval) `addTime` Time 0
+                                  | k <- [1 .. length snapshots] ])
+    .&&. counterexample "counters shrank" (and (zipWith grows cs (drop 1 cs)))
+    .&&. counterexample "final counters"
+           (fmap (\c -> (Mx.scScheduledBytes c, Mx.scScheduledBatches c, Mx.scDirectBytes c))
+                 (lastMaybe cs)
+              === Just (sum (map (fromIntegral . snd) ccTakes), fromIntegral (length ccTakes),
+                        sum (map (fromIntegral . snd) ccCredits)) )
+  where
+    interval = fromIntegral ccInterval :: DiffTime
+    -- time for all the traffic at the budget rate, and three snapshots after
+    horizon  = realToFrac (fromIntegral (sum (map snd (ccTakes ++ ccCredits))) / ccRate)
+             + fromIntegral (length (ccTakes ++ ccCredits)) * 0.5
+             + 3 * interval + interval / 2
+
+    cs = map snd snapshots
+    lastMaybe xs = if null xs then Nothing else Just (last xs)
+
+    grows a b =  Mx.scScheduledBytes a   <= Mx.scScheduledBytes b
+              && Mx.scScheduledBatches a <= Mx.scScheduledBatches b
+              && Mx.scDirectBytes a      <= Mx.scDirectBytes b
+              && Mx.scWaitTokens a       <= Mx.scWaitTokens b
+              && and (zipWith (<=) (map snd (Mx.scWaitsOver a)) (map snd (Mx.scWaitsOver b)))
+
+    snapshots :: [(Time, Mx.SchedulingCounts)]
+    snapshots = runSimOrThrow $ do
+      budget <- Bucket.newBucket ccRate 16384 Nothing
+      h      <- Bucket.registerBearer budget
+      seen   <- newTVarIO []
+      remote <- Mx.newMuxCounters
+      local  <- Mx.newMuxCounters
+      let tracer = mkTracer $ \ev -> case ev of
+            Mx.TraceRemoteEgress Mx.EgressCounts { Mx.ecScheduling = Just c } -> do
+              t <- getMonotonicTime
+              atomically $ modifyTVar seen ((t, c) :)
+            _ -> return ()
+      _ <- async (Mx.countersLoop remote local (Just (budget, Nothing)) interval tracer)
+      _ <- async $ forM_ ccTakes $ \(ms, bytes) -> do
+             threadDelay (fromIntegral ms / 1000)
+             Bucket.awaitGrant h bytes
+      _ <- async $ forM_ ccCredits $ \(ms, bytes) -> do
+             threadDelay (fromIntegral ms / 1000)
+             now <- getMonotonicTime
+             atomically $ Bucket.takeOnCredit budget now bytes
+      threadDelay horizon
+      reverse <$> readTVarIO seen
