@@ -28,7 +28,7 @@ module Test.Cardano.Network.PeerSelection (tests) where
 
 import Control.Arrow ((&&&))
 import Control.Concurrent.Class.MonadSTM.Strict
-import Control.Exception (AssertionFailed (..), catch, evaluate)
+import Control.Exception (AssertionFailed (..), SomeException, catch, evaluate)
 import Control.Monad (when)
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
@@ -36,10 +36,11 @@ import Control.Tracer (Tracer, mkTracer)
 
 import Data.Bifoldable (bitraverse_)
 import Data.ByteString.Char8 qualified as BS
+import Data.Either (rights)
 import Data.Foldable (traverse_)
 import Data.Function (on)
 import Data.IP qualified as IP
-import Data.List as List (foldl', groupBy, intercalate)
+import Data.List as List (foldl', groupBy, intercalate, partition)
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.List.Trace qualified as Trace
 import Data.Map.Strict (Map)
@@ -202,6 +203,8 @@ tests =
     ]
   , testProperty "governor repromote delay with fuzz"   prop_governor_repromote_delay
   , testProperty "governor peer share reachable in 1hr" prop_governor_peershare_1hr
+  , testProperty "governor peer share more peers than needed"
+                 prop_governor_peershare_more_peers_than_needed
   , testProperty "governor connection status"           prop_governor_connstatus
   , testProperty "governor no livelock"                 prop_governor_nolivelock
 
@@ -1537,6 +1540,14 @@ prop_governor_target_active_public (MaxTime maxTime) env =
 --    This also helps to strengthen the second property by ensuring monotonic
 --    progress, except when we overshoot targets or when targets are reduced.
 --
+-- 6. When the governor receives peer sharing results, it adds as many of the
+--    new peers as it was missing to reach its target when it made the
+--    request, and no more.
+--
+--    This strengthens property 4, which only tracks the peers the governor
+--    decided to add: new peers must not be discarded while they are still
+--    needed.
+--
 -- The overall progress argument is then an semi-formal argument, structured
 -- much like classic proofs about loops. A classic loop proof has two parts: 1.
 -- if the loop does terminate it gets the right result, and 2. it must
@@ -1588,6 +1599,8 @@ prop_governor_target_known_below maxTime env =
       (prop_governor_target_known_4_results_used      maxTime env)
  .&&. counterexample "shrinked below"
       (prop_governor_target_known_5_no_shrink_below   maxTime env)
+ .&&. counterexample "peer share objective not met"
+      (prop_governor_target_known_6_peershare_objective maxTime env)
 
 prop_governor_target_known_big_ledger_peers_below :: MaxTime -> GovernorMockEnvironment -> Property
 prop_governor_target_known_big_ledger_peers_below maxTime env =
@@ -2311,6 +2324,303 @@ prop_governor_target_known_5_no_shrink_big_ledger_peers_below (MaxTime maxTime) 
                  <*> govKnownPeersSig
                  <*> knownPeersShrinksSig
                  <*> unexpectedShrink)
+
+
+-- | When the governor makes a peer sharing request, it computes how many peers
+-- it is missing to reach its target of known peers: the /objective/.  When
+-- the results come back, the governor should add as many of the newly
+-- discovered peers as it needs to meet the objective, but no more.
+--
+-- The results of a single request are processed in up to two phases, which
+-- share the objective (see 'jobPeerShare').  For each phase we compute the
+-- /candidates/: the returned peers which are neither known nor big ledger
+-- peers, according to the governor state traced just before the results were
+-- processed.  We check that:
+--
+-- * only candidates are added to the known peers;
+-- * the number of peers added in response to a request does not exceed its
+--   objective;
+-- * a candidate is left out only if the objective has been met.
+--
+-- The generated targets of known peers are much larger than the generated
+-- peer graphs, so peer sharing hardly ever returns more peers than needed.
+-- 'prop_governor_peershare_more_peers_than_needed' covers that case.
+--
+prop_governor_target_known_6_peershare_objective
+  :: MaxTime -> GovernorMockEnvironment -> Property
+prop_governor_target_known_6_peershare_objective maxTime env =
+    let completions = mockPeerShareCompletions maxTime env
+    in cover 10 (any (not . null . pscCandidates) (rights completions))
+             "peer sharing returned new peers" $
+       checkPeerShareCompletions completions
+
+
+-- | Peer sharing returns more new peers than the governor needs, see
+-- 'GovernorMockEnvironmentSmallKnownTargets'.
+--
+prop_governor_peershare_more_peers_than_needed
+  :: GovernorMockEnvironmentSmallKnownTargets -> Property
+prop_governor_peershare_more_peers_than_needed
+    (GovernorMockEnvironmentSmallKnownTargets env) =
+    let completions = mockPeerShareCompletions defaultMaxTime env
+     in checkCoverage
+      . cover 15 (any peerShareMoreThanNeeded (rights completions))
+                 "peer sharing returned more peers than needed"
+      $ checkPeerShareCompletions completions
+
+
+-- | A 'GovernorMockEnvironment' in which peer sharing is likely to return more
+-- peers than the governor needs: peer sharing is enabled for all peers, and
+-- the targets of known peers are just above the number of root peers.  With
+-- the generated targets, which are much larger than the generated peer
+-- graphs, this hardly ever happens.
+--
+newtype GovernorMockEnvironmentSmallKnownTargets =
+    GovernorMockEnvironmentSmallKnownTargets GovernorMockEnvironment
+  deriving Show
+
+instance Arbitrary GovernorMockEnvironmentSmallKnownTargets where
+    arbitrary = do
+      env   <- arbitrary
+      extra <- choose (1, 5)
+      return . GovernorMockEnvironmentSmallKnownTargets
+             $ smallKnownTargets extra env
+
+    shrink (GovernorMockEnvironmentSmallKnownTargets env) =
+      GovernorMockEnvironmentSmallKnownTargets <$> shrink env
+
+
+-- | Enable peer sharing for all peers, set the targets of known peers to the
+-- number of root peers plus @extra@, and ask for at least one established
+-- peer.
+--
+-- The other targets are adjusted to respect the valencies of local root
+-- peers, like the 'GovernorMockEnvironment' generator does.
+--
+smallKnownTargets :: Int -> GovernorMockEnvironment -> GovernorMockEnvironment
+smallKnownTargets extra env@GovernorMockEnvironment { peerGraph = PeerGraph graph,
+                                                      localRootPeers,
+                                                      publicRootPeers,
+                                                      targets } =
+    env { peerGraph       = PeerGraph [ (addr, addrs, enablePeerSharing scripts)
+                                      | (addr, addrs, scripts) <- graph ],
+          targets         = adjustTargets <$> targets,
+          peerSharingFlag = PeerSharingEnabled }
+  where
+    enablePeerSharing scripts =
+      scripts { peerSharingScript = singletonScript PeerSharingEnabled }
+
+    adjustTargets ((deadlineTargets, syncTargets), delay) =
+      ((adjust deadlineTargets, adjust syncTargets), delay)
+
+    HotValency  localHot  = LocalRootPeers.hotTarget  localRootPeers
+    WarmValency localWarm = LocalRootPeers.warmTarget localRootPeers
+
+    known = Set.size (LocalRootPeers.keysSet localRootPeers)
+          + Set.size (PublicRootPeers.toSet Cardano.ExtraPeers.toSet publicRootPeers
+                        Set.\\ PublicRootPeers.getBigLedgerPeers publicRootPeers)
+          + extra
+
+    adjust t =
+      let established = max (max 1 localWarm)
+                            (min known (targetNumberOfEstablishedPeers t))
+      in t { targetNumberOfKnownPeers       = known,
+             targetNumberOfRootPeers        = min (targetNumberOfRootPeers t)
+                                                  (known - localWarm),
+             targetNumberOfEstablishedPeers = established,
+             targetNumberOfActivePeers      = max localHot
+                                                  (min established
+                                                       (targetNumberOfActivePeers t)) }
+
+
+-- | Run the governor in the mock environment and attribute the peer sharing
+-- results it processed to their requests.
+--
+mockPeerShareCompletions :: MaxTime
+                         -> GovernorMockEnvironment
+                         -> [Either String PeerShareCompletion]
+mockPeerShareCompletions (MaxTime maxTime) =
+    peerShareCompletions
+  . takeWhile (\(t, _) -> t < maxTime)
+  . selectPeerSelectionTraceEvents
+      @Cardano.ExtraState
+      @PeerTrustable
+      @(Cardano.ExtraPeers PeerAddr)
+  . runGovernorInMockEnvironment
+
+
+-- | Check each processed batch of peer sharing results against its objective,
+-- see 'prop_governor_target_known_6_peershare_objective'.
+--
+checkPeerShareCompletions :: [Either String PeerShareCompletion] -> Property
+checkPeerShareCompletions =
+    conjoin . map (either (`counterexample` False) checkCompletion)
+  where
+    checkCompletion :: PeerShareCompletion -> Property
+    checkCompletion PeerShareCompletion { pscTime, pscObjective, pscAddedBefore,
+                                          pscResults, pscCandidates, pscAdded } =
+        counterexample
+          (intercalate "\n"
+            [ "peer share results processed at " ++ show pscTime
+            , "objective: "    ++ show pscObjective
+            , "added before: " ++ show pscAddedBefore
+            , "results: "      ++ show pscResults
+            , "candidates: "   ++ show pscCandidates
+            , "added: "        ++ show pscAdded
+            ]) $
+             counterexample "added peers which are not candidates"
+               (added `Set.isSubsetOf` candidates)
+        .&&. counterexample "added more peers than the objective"
+               (addedTotal <= pscObjective)
+        .&&. counterexample "left out candidates before meeting the objective"
+               (candidates `Set.isSubsetOf` added || addedTotal >= pscObjective)
+      where
+        candidates = Set.fromList pscCandidates
+        added      = Set.fromList pscAdded
+        -- like 'jobPeerShare', count duplicates
+        addedTotal = pscAddedBefore + length pscAdded
+
+
+-- | Peer sharing returned more new peers than the governor needed.
+--
+peerShareMoreThanNeeded :: PeerShareCompletion -> Bool
+peerShareMoreThanNeeded PeerShareCompletion { pscObjective, pscAddedBefore,
+                                              pscCandidates } =
+    Set.size (Set.fromList pscCandidates) > pscObjective - pscAddedBefore
+
+
+-- | A peer sharing request whose results have not all been processed by the
+-- governor.
+--
+data PeerShareRequest = PeerShareRequest {
+    psrObjective :: !Int,
+    -- ^ number of peers the governor was missing to meet its target of known
+    -- peers when it made the request
+    psrAdded     :: !Int,
+    -- ^ number of peers added from the results processed so far
+    psrPending   :: !(Set PeerAddr)
+    -- ^ peers whose results were not processed yet
+  }
+
+-- | Results of a peer sharing request processed by the governor in a single
+-- decision.
+--
+data PeerShareCompletion = PeerShareCompletion {
+    pscTime        :: !Time,
+    pscObjective   :: !Int,
+    -- ^ objective of the request
+    pscAddedBefore :: !Int,
+    -- ^ number of peers added from results of the same request processed
+    -- earlier
+    pscResults     :: ![(PeerAddr, Either SomeException (PeerSharingResult PeerAddr))],
+    pscCandidates  :: ![PeerAddr],
+    -- ^ returned peers which were neither known nor big ledger peers
+    pscAdded       :: ![PeerAddr]
+    -- ^ peers added to the known peers
+  }
+
+-- | Attribute the peer sharing results processed by the governor to their
+-- requests.
+--
+-- Results are attributed to requests by peer addresses.  This is sound, since
+-- a peer cannot be part of two outstanding requests: the governor does not
+-- ask a peer again for 'policyPeerShareRetryTime', or for
+-- 'policyPeerShareActivationDelay' after it was promoted to warm, both of
+-- which are longer than 'policyPeerShareOverallTimeout'.
+--
+-- The candidates are computed using the state traced by the governor just
+-- before it processed the results, i.e. the last 'TraceGovernorState'.
+--
+peerShareCompletions
+  :: forall extraState extraFlags extraPeers.
+     [(Time, TestTraceEvent extraState extraFlags extraPeers)]
+  -> [Either String PeerShareCompletion]
+peerShareCompletions = go Set.empty Set.empty [] Nothing
+  where
+    go :: Set PeerAddr
+       -- ^ known peers
+       -> Set PeerAddr
+       -- ^ big ledger peers
+       -> [PeerShareRequest]
+       -- ^ outstanding requests
+       -> Maybe (Time, [(PeerAddr, Either SomeException (PeerSharingResult PeerAddr))])
+       -- ^ results traced by the current decision, not yet followed by
+       -- 'TracePeerShareResultsFiltered'
+       -> [(Time, TestTraceEvent extraState extraFlags extraPeers)]
+       -> [Either String PeerShareCompletion]
+    go _ _ _ _ [] = []
+
+    go !known !bigLedgerPeers !reqs results ((t, ev) : evs) =
+      case ev of
+        GovernorDebug (TraceGovernorState _ _ st) ->
+          flush $ \reqs' ->
+            go (KnownPeers.toSet (Governor.knownPeers st))
+               (PublicRootPeers.getBigLedgerPeers (Governor.publicRootPeers st))
+               reqs' Nothing evs
+
+        GovernorEvent (TracePeerShareRequests target numKnown _ _ selected) ->
+          go known bigLedgerPeers
+             (PeerShareRequest (target - numKnown) 0 selected : reqs)
+             results evs
+
+        GovernorEvent (TracePeerShareResults rs) ->
+          flush $ \reqs' -> go known bigLedgerPeers reqs' (Just (t, rs)) evs
+
+        GovernorEvent (TracePeerShareResultsFiltered added) ->
+          case results of
+            Just (t', rs) ->
+              let (cs, reqs') = complete t' rs added
+              in cs ++ go known bigLedgerPeers reqs' Nothing evs
+            Nothing ->
+                Left ("TracePeerShareResultsFiltered without results at " ++ show t)
+              : go known bigLedgerPeers reqs Nothing evs
+
+        _ -> go known bigLedgerPeers reqs results evs
+      where
+        -- If the results were traced without 'TracePeerShareResultsFiltered',
+        -- the peer sharing job failed and no peers were added.
+        flush k =
+          case results of
+            Nothing       -> k reqs
+            Just (t', rs) -> let (cs, reqs') = complete t' rs []
+                             in cs ++ k reqs'
+
+        complete :: Time
+                 -> [(PeerAddr, Either SomeException (PeerSharingResult PeerAddr))]
+                 -> [PeerAddr]
+                 -> ([Either String PeerShareCompletion], [PeerShareRequest])
+        complete t' rs added
+          | Set.null peers
+          = ( [ Left ("peers added without results at " ++ show t')
+              | not (null added) ]
+            , reqs )
+
+          | ([req], reqs') <- List.partition (not . Set.disjoint peers . psrPending) reqs
+          , peers `Set.isSubsetOf` psrPending req
+          = let completion = PeerShareCompletion {
+                    pscTime        = t',
+                    pscObjective   = psrObjective req,
+                    pscAddedBefore = psrAdded req,
+                    pscResults     = rs,
+                    pscCandidates  = candidates,
+                    pscAdded       = added
+                  }
+                req' = req { psrAdded   = psrAdded req + length added,
+                             psrPending = psrPending req Set.\\ peers }
+            in ( [Right completion]
+               , if Set.null (psrPending req') then reqs' else req' : reqs' )
+
+          | otherwise
+          = ( [Left ("cannot attribute peer share results at " ++ show t'
+                     ++ " to a request: " ++ show rs)]
+            , reqs )
+          where
+            peers = Set.fromList (map fst rs)
+            candidates = [ p | (_, Right (PeerSharingResult ps)) <- rs
+                             , p <- ps
+                             , p `Set.notMember` known
+                             , p `Set.notMember` bigLedgerPeers
+                             ]
 
 
 -- | The governor should shrink its known peer set within a bounded time when

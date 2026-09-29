@@ -50,7 +50,6 @@ module Ouroboros.Network.PeerSelection.Governor
   ) where
 
 import Data.Foldable (traverse_)
-import Data.Hashable
 import Data.Map.Strict (Map)
 import Data.Void (Void)
 
@@ -66,6 +65,7 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer (..), traceWith)
 import System.Random
 
+import Ouroboros.Network.Hashable (Hashable)
 import Ouroboros.Network.PeerSelection.Governor.ActivePeers qualified as ActivePeers
 import Ouroboros.Network.PeerSelection.Governor.BigLedgerPeers qualified as BigLedgerPeers
 import Ouroboros.Network.PeerSelection.Governor.EstablishedPeers qualified as EstablishedPeers

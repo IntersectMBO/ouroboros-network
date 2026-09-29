@@ -1,16 +1,17 @@
-{-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeOperators       #-}
+{-# LANGUAGE BangPatterns               #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TypeOperators              #-}
 
 module Ouroboros.Network.PeerSelection.Governor.KnownPeers
   ( belowTarget
   , aboveTarget
   ) where
 
-import Data.Hashable
 import Data.List (sortBy)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -27,6 +28,7 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 
 import Ouroboros.Network.Diffusion.Policies qualified as Policies
+import Ouroboros.Network.Hashable
 import Ouroboros.Network.PeerSelection.Governor.Types
 import Ouroboros.Network.PeerSelection.PeerAdvertise (PeerAdvertise (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
@@ -178,7 +180,7 @@ belowTarget enableAction
           numPeersToReq :: PeerSharingAmount
           !numPeersToReq = fromIntegral
                          $ min 255 (max 8 (objective `div` numPeerShareReqs))
-          (salt, stdGen'') = random stdGen'
+          (salt, stdGen'') = mkSalt stdGen'
 
       return $ \now -> Decision {
         decisionTrace = [TracePeerShareRequests
@@ -197,7 +199,7 @@ belowTarget enableAction
                           stdGen = stdGen''
                         },
         decisionJobs  =
-          [jobPeerShare actions policy objective salt numPeersToReq
+          [jobPeerShare actions policy salt (Objective objective) numPeersToReq
              (Set.toList selectedForPeerShare)]
       }
 
@@ -227,6 +229,8 @@ belowTarget enableAction
 -- Peer sharing job
 --
 
+newtype Objective = Objective { getObjective :: Int }
+  deriving newtype Num
 
 -- | The peer sharing job is run in two stages. The expected path is for all
 -- peer sharing request to return within a short timeout. The second phase is
@@ -253,8 +257,8 @@ jobPeerShare
       peerconn
       m
   -> PeerSelectionPolicy peeraddr m
-  -> Int
-  -> Int
+  -> Salt
+  -> Objective
   -> PeerSharingAmount
   -> [peeraddr]
   -> Job () m (Completion m extraState extraDebugState extraFlags extraPeers
@@ -272,8 +276,8 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
     -- Every jobPeerShare will be called with a new random salt.
     -- This means that even if presented with the same list peers their ordering
     -- will be unpredictable.
-    takeNPeers :: Int -> [peeraddr] -> [peeraddr]
-    takeNPeers n addrs = take n $
+    takeNPeers :: Objective -> [peeraddr] -> [peeraddr]
+    takeNPeers n addrs = take (getObjective n) $
       sortBy (\a b -> compare (hashWithSalt salt a) (hashWithSalt salt b))
       addrs
 
@@ -375,14 +379,14 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
                                  inProgressPeerShareReqs = inProgressPeerShareReqs st
                                                          - length peerResults
                                }
-                         , decisionJobs  = [Job (jobPhase2 (maxAmount - length newPeers) peersRemaining
+                         , decisionJobs  = [Job (jobPhase2 (maxAmount - fromIntegral (length newPeers)) peersRemaining
                                                  peerSharesRemaining)
                                                 (handler peersRemaining)
                                                 ()
                                                 "peerSharePhase2"]
                          }
 
-    jobPhase2 :: Int -> [peeraddr] -> [Async m (PeerSharingResult peeraddr)]
+    jobPhase2 :: Objective -> [peeraddr] -> [Async m (PeerSharingResult peeraddr)]
               -> m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
     jobPhase2 maxRemaining peers peerShares = do
 

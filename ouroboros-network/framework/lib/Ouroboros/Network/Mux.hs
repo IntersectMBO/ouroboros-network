@@ -64,7 +64,6 @@ import Control.Monad.Class.MonadThrow
 import Control.Tracer (Tracer)
 
 import Data.Foldable (fold)
-import Data.Hashable
 import Data.Kind (Type)
 import Data.Void (Void)
 
@@ -84,6 +83,7 @@ import Ouroboros.Network.Context (ExpandedInitiatorContext,
            MinimalInitiatorContext, ResponderContext)
 import Ouroboros.Network.Driver
 import Ouroboros.Network.Driver.Stateful qualified as Stateful
+import Ouroboros.Network.Hashable
 import Ouroboros.Network.Util.ShowProxy (ShowProxy)
 
 
@@ -483,7 +483,7 @@ noBindForkPolicy = ForkPolicy (\_ _ _ -> Nothing)
 -- capabilities.
 --
 responderForkPolicy :: Hashable peerAddr
-                    => Int -- ^ salt
+                    => Salt -- ^ salt
                     -> Int -- ^ number of capabilities
                     -> ForkPolicy peerAddr
 responderForkPolicy salt numCapabilities = ForkPolicy {
