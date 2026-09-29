@@ -8,7 +8,7 @@
 
 module Network.Mux.Tracing () where
 
-import Data.Aeson (Value (String), (.=))
+import Data.Aeson (Value (String), object, (.=))
 import Data.List (isPrefixOf)
 import Data.Text (Text)
 import Data.Typeable
@@ -594,11 +594,33 @@ instance LogFormatting Mux.CountersTrace where
       Mux.TraceLocalEgress   c -> egressObject "Local" c
       Mux.TraceLocalIngress  c -> ingressObject "Local" c
       where
-        egressObject side Mux.EgressCounts { Mux.ecWriteTimeouts } = mconcat
+        egressObject side Mux.EgressCounts { Mux.ecWriteTimeouts, Mux.ecWriteTimeoutsGate
+                                           , Mux.ecScheduling } = mconcat $
           [ "kind" .= String "EgressCounts"
           , "side" .= String side
           , "writeTimeouts" .= ecWriteTimeouts
-          ]
+          , "writeTimeoutsGate" .= ecWriteTimeoutsGate
+          ] ++
+          [ "scheduling" .= schedulingObject sc | Just sc <- [ecScheduling] ]
+        schedulingObject Mux.SchedulingCounts { Mux.scDirectBytes, Mux.scSliceBytes
+                                              , Mux.scSliceBorrowedBytes, Mux.scScheduledBytes
+                                              , Mux.scScheduledBatches, Mux.scWaitTokens
+                                              , Mux.scWaitWritable, Mux.scWaitsOver
+                                              , Mux.scBudgetLevel, Mux.scBudgetQueued
+                                              , Mux.scSliceQueued } =
+          object
+            [ "directBytes" .= scDirectBytes
+            , "sliceBytes" .= scSliceBytes
+            , "sliceBorrowedBytes" .= scSliceBorrowedBytes
+            , "scheduledBytes" .= scScheduledBytes
+            , "scheduledBatches" .= scScheduledBatches
+            , "waitTokens" .= (realToFrac scWaitTokens :: Double)
+            , "waitWritable" .= (realToFrac scWaitWritable :: Double)
+            , "waitsOver" .= [ (realToFrac b :: Double, n) | (b, n) <- scWaitsOver ]
+            , "budgetLevel" .= scBudgetLevel
+            , "budgetQueued" .= scBudgetQueued
+            , "sliceQueued" .= scSliceQueued
+            ]
         ingressObject side Mux.IngressCounts { Mux.icReadTimeouts, Mux.icOverruns
                                              , Mux.icProtocolErrors, Mux.icBearerClosed } =
           mconcat
@@ -616,8 +638,33 @@ instance LogFormatting Mux.CountersTrace where
       Mux.TraceLocalEgress   c -> egressMetrics "localEgress" c
       Mux.TraceLocalIngress  c -> ingressMetrics "localIngress" c
       where
-        egressMetrics prefix Mux.EgressCounts { Mux.ecWriteTimeouts } =
-          [ IntM (prefix <> ".writeTimeouts") (fromIntegral ecWriteTimeouts) ]
+        egressMetrics prefix Mux.EgressCounts { Mux.ecWriteTimeouts, Mux.ecWriteTimeoutsGate
+                                              , Mux.ecScheduling } =
+          [ IntM (prefix <> ".writeTimeouts")      (fromIntegral ecWriteTimeouts)
+          , IntM (prefix <> ".writeTimeouts.gate") (fromIntegral ecWriteTimeoutsGate)
+          ] ++
+          maybe [] (schedulingMetrics prefix) ecScheduling
+        schedulingMetrics prefix Mux.SchedulingCounts { Mux.scDirectBytes, Mux.scSliceBytes
+                                                      , Mux.scSliceBorrowedBytes
+                                                      , Mux.scScheduledBytes
+                                                      , Mux.scScheduledBatches
+                                                      , Mux.scWaitTokens, Mux.scWaitWritable
+                                                      , Mux.scWaitsOver, Mux.scBudgetLevel
+                                                      , Mux.scBudgetQueued
+                                                      , Mux.scSliceQueued } =
+          [ IntM    (prefix <> ".direct.bytes")           (fromIntegral scDirectBytes)
+          , IntM    (prefix <> ".slice.bytes")            (fromIntegral scSliceBytes)
+          , IntM    (prefix <> ".slice.borrowedBytes")    (fromIntegral scSliceBorrowedBytes)
+          , IntM    (prefix <> ".scheduled.bytes")        (fromIntegral scScheduledBytes)
+          , IntM    (prefix <> ".scheduled.batches")      (fromIntegral scScheduledBatches)
+          , DoubleM (prefix <> ".scheduled.waitTokens")   (realToFrac scWaitTokens)
+          , DoubleM (prefix <> ".scheduled.waitWritable") (realToFrac scWaitWritable)
+          , IntM    (prefix <> ".budget.level")           (fromIntegral scBudgetLevel)
+          , IntM    (prefix <> ".budget.queued")          (fromIntegral scBudgetQueued)
+          , IntM    (prefix <> ".slice.queued")           (fromIntegral scSliceQueued)
+          ] ++
+          [ IntM (prefix <> waitsOverSuffix (realToFrac b)) (fromIntegral n)
+          | (b, n) <- scWaitsOver ]
         ingressMetrics prefix Mux.IngressCounts { Mux.icReadTimeouts, Mux.icOverruns
                                                 , Mux.icProtocolErrors, Mux.icBearerClosed } =
           [ IntM (prefix <> ".readTimeouts")   (fromIntegral icReadTimeouts)
@@ -644,7 +691,28 @@ instance MetaTrace Mux.CountersTrace where
 
     metricsDocFor (Namespace _ [side, "Egress"]) =
       [ (egressPrefix side <> ".writeTimeouts",
-         "Muxes dropped because the peer took nothing within the SDU timeout.") ]
+         "Muxes dropped because the peer took nothing within the SDU timeout.")
+      , (egressPrefix side <> ".writeTimeouts.gate",
+         "Of those, the ones that timed out at the writability gate of scheduled egress.")
+      ] ++
+      [ (egressPrefix side <> name, doc)
+      | side /= "Local"
+      , (name, doc) <-
+          [ (".direct.bytes",           "Bytes of the node's own requests, charged on credit.")
+          , (".slice.bytes",            "Bytes the slice sent from its own share.")
+          , (".slice.borrowedBytes",    "Bytes the slice sent on the budget's idle capacity.")
+          , (".scheduled.bytes",        "Bytes served through the ranked queue.")
+          , (".scheduled.batches",      "Batches served through the ranked queue.")
+          , (".scheduled.waitTokens",   "Seconds batches waited for tokens, summed.")
+          , (".scheduled.waitWritable", "Seconds batches waited for the socket, summed.")
+          , (".budget.level",
+             "Token level of the budget, bytes; negative while repaying credit.")
+          , (".budget.queued",          "Bearers waiting on the budget.")
+          , (".slice.queued",           "Bearers waiting on the slice.")
+          ] ++
+          [ (waitsOverSuffix (realToFrac b), "Batches whose token wait exceeded this bound.")
+          | b <- Mux.egressWaitBounds ]
+      ]
     metricsDocFor (Namespace _ [side, "Ingress"]) =
       [ (ingressPrefix side <> ".readTimeouts",
          "Muxes dropped because an SDU did not arrive in full within the SDU timeout.")
@@ -664,6 +732,12 @@ instance MetaTrace Mux.CountersTrace where
       , Namespace [] ["Local", "Egress"]
       , Namespace [] ["Local", "Ingress"]
       ]
+
+-- | @.scheduled.waitsOver.1ms@ and so on, one per bound.
+waitsOverSuffix :: Double -> Text
+waitsOverSuffix b
+  | b < 1     = ".scheduled.waitsOver." <> showT (round (b * 1000) :: Integer) <> "ms"
+  | otherwise = ".scheduled.waitsOver." <> showT (round b :: Integer) <> "s"
 
 sideDoc :: Text -> Text
 sideDoc "Local" = "node-to-client"
