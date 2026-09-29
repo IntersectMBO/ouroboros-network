@@ -18,6 +18,8 @@ module Network.Mux.Counters
   , countersLoop
   , countersInterval
   , egressWaitBounds
+  , egressBurstBounds
+  , egressBurstWidths
   ) where
 
 import Control.Concurrent.Class.MonadSTM.Strict
@@ -29,7 +31,8 @@ import Control.Tracer (Tracer, traceWith)
 
 import Data.Word (Word64)
 
-import Network.Mux.Egress.Bucket (BucketStats (..), Bucket, bucketSnapshot, waitBounds)
+import Network.Mux.Egress.Bucket (BucketStats (..), Bucket, bucketSnapshot, burstBounds,
+           burstWidths, emptyBucketStats, waitBounds)
 import Network.Mux.Trace (Error (..))
 
 -- | The write side.
@@ -57,7 +60,14 @@ data SchedulingCounts = SchedulingCounts {
     -- ^ grants whose token wait exceeded each bound
   scBudgetLevel        :: !Int,        -- ^ bytes; negative while repaying credit
   scBudgetQueued       :: !Int,
-  scSliceQueued        :: !Int
+  scSliceQueued        :: !Int,
+  scBursts             :: !Word64,     -- ^ busy periods of the budget's queue
+  scBusyTime           :: !DiffTime,   -- ^ time with a bearer queued on the budget
+  scContendedTime      :: !DiffTime,   -- ^ time with two or more, when the order decides
+  scBurstsOver         :: ![(DiffTime, Word64)],
+    -- ^ busy periods longer than each bound
+  scBurstsWider        :: ![(Int, Word64)]
+    -- ^ busy periods with at least this many bearers queued at once
   }
   deriving (Eq, Show)
 
@@ -120,6 +130,14 @@ data CountersTrace =
 egressWaitBounds :: [DiffTime]
 egressWaitBounds = waitBounds
 
+-- | The busy-period lengths 'scBurstsOver' counts against.
+egressBurstBounds :: [DiffTime]
+egressBurstBounds = burstBounds
+
+-- | The queue widths 'scBurstsWider' counts against.
+egressBurstWidths :: [Int]
+egressBurstWidths = burstWidths
+
 -- | A prime, so that snapshots do not keep step with other periodic work such
 -- as keep-alive, and below a 10 s scrape.
 countersInterval :: DiffTime
@@ -164,7 +182,12 @@ schedulingCounts now (budget, slice_m) = do
     scWaitsOver          = zip waitBounds (zipWith (+) (bsWaitsOver b) (bsWaitsOver slice)),
     scBudgetLevel        = floor level,
     scBudgetQueued       = queued,
-    scSliceQueued        = sliceQueued
+    scSliceQueued        = sliceQueued,
+    scBursts             = bsBursts b,
+    scBusyTime           = bsBusyTime b,
+    scContendedTime      = bsContendedTime b,
+    scBurstsOver         = zip burstBounds (bsBurstsOver b),
+    scBurstsWider        = zip burstWidths (bsBurstsWider b)
   }
   where
-    emptyStats = BucketStats 0 0 0 0 0 0 (map (const 0) waitBounds)
+    emptyStats = emptyBucketStats
