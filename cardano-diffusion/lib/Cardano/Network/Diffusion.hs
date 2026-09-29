@@ -111,6 +111,7 @@ run CardanoNodeArguments {
                    >> throwIO (Diffusion.DiffusionError e))
          $ withIOManager $ \iocp -> do
              interfaces <- Diffusion.mkInterfaces iocp tracer (Diffusion.dcEgressPollInterval config)
+                             (Diffusion.dcEgressScheduling config >>= Diffusion.esNotSentLowWat)
              Diffusion.runM
                interfaces
                tracers

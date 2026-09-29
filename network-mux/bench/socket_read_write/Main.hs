@@ -245,7 +245,7 @@ startServerEgresss pollInterval sndSizeV ad = forever $ do
       -- The muxer's byte counters, or none, as a node that keeps no counters
       -- gives its muxes.
       slots <- mkSlots (if counted then [41, 42] else [])
-      withAsync (muxer eq activeTracer slots bearer) $ \aid -> do
+      withAsync (muxer eq activeTracer slots Unscheduled bearer) $ \aid -> do
 
         replicateM_ numberOfCalls $ do
           let payload42s = replicate 10 $ BL.replicate sndSize 42
