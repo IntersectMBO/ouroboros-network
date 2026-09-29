@@ -259,11 +259,15 @@ runM Interfaces
     -- node-wide mux counters, one set per side, snapshotted for as long as
     -- diffusion runs
     remoteCounters <- Mx.newMuxCounters
+    -- the buckets behind scheduled egress, shared by every node-to-node mux
+    -- and read by the counters loop
+    egressPolicy <- traverse mkEgressPolicy dcEgressScheduling
     localCounters  <- Mx.newMuxCounters
     -- race the counters with diffusion, so a failing counters loop ends it
     fmap (either id id) $
       (do labelThisThread "Mux counters"
-          Mx.countersLoop remoteCounters localCounters Mx.countersInterval
+          Mx.countersLoop remoteCounters localCounters
+                          (Mx.egressBuckets <$> egressPolicy) Mx.countersInterval
                           dtMuxCountersTracer)
       `Async.race`
 
@@ -272,11 +276,11 @@ runM Interfaces
       case dcLocalAddress of
         Just addr ->
           fmap (either id id) $
-            mkRemoteThread mainThreadId remoteCounters
+            mkRemoteThread mainThreadId remoteCounters egressPolicy
             `Async.race`
             mkLocalThread mainThreadId localCounters addr
         Nothing ->
-            mkRemoteThread mainThreadId remoteCounters
+            mkRemoteThread mainThreadId remoteCounters egressPolicy
 
   where
     (ledgerPeersRng, rng1) = splitGen diRng
@@ -444,8 +448,8 @@ runM Interfaces
 
     -- | mkRemoteThread - create remote connection manager
     --
-    mkRemoteThread :: ThreadId m -> Mx.MuxCounters m -> m Void
-    mkRemoteThread mainThreadId remoteCounters = do
+    mkRemoteThread :: ThreadId m -> Mx.MuxCounters m -> Maybe (Mx.EgressPolicy m) -> m Void
+    mkRemoteThread mainThreadId remoteCounters egressPolicy = do
       labelThisThread "diffusion-remote"
       let
         exitPolicy :: ExitPolicy a
@@ -509,8 +513,6 @@ runM Interfaces
       --
       -- Part (a): plumb data flow and define common functions
       --
-
-      egressPolicy <- traverse mkEgressPolicy dcEgressScheduling
 
       let connectionManagerArguments'
             :: forall handle b.

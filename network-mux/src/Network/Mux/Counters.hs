@@ -8,28 +8,56 @@ module Network.Mux.Counters
   ( MuxCounters
   , newMuxCounters
   , EgressCounts (..)
+  , SchedulingCounts (..)
   , IngressCounts (..)
   , CountersTrace (..)
   , countMuxerFailure
   , countDemuxerFailure
+  , countGateTimeout
   , readMuxCounters
   , countersLoop
   , countersInterval
+  , egressWaitBounds
   ) where
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (SomeException, fromException)
 import Control.Monad (forever)
+import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer, traceWith)
 
 import Data.Word (Word64)
 
+import Network.Mux.Egress.Bucket (BucketStats (..), Bucket, bucketSnapshot, waitBounds)
 import Network.Mux.Trace (Error (..))
 
 -- | The write side.
 data EgressCounts = EgressCounts {
-  ecWriteTimeouts :: !Word64      -- ^ peers that took nothing within the SDU timeout
+  ecWriteTimeouts     :: !Word64,  -- ^ peers that took nothing within the SDU timeout
+  ecWriteTimeoutsGate :: !Word64,  -- ^ of those, at the writability gate of
+                                   --   scheduled egress, before the write
+  ecScheduling        :: !(Maybe SchedulingCounts)
+    -- ^ scheduled egress, in a snapshot of node-to-node counters when egress
+    -- is scheduled
+  }
+  deriving (Eq, Show)
+
+-- | Scheduled egress. Counters are cumulative; the level and the queue
+-- lengths are values at the snapshot.
+data SchedulingCounts = SchedulingCounts {
+  scDirectBytes        :: !Word64,     -- ^ the node's own requests, on credit
+  scSliceBytes         :: !Word64,     -- ^ the slice, from its own share
+  scSliceBorrowedBytes :: !Word64,     -- ^ the slice, on the budget's idle capacity
+  scScheduledBytes     :: !Word64,
+  scScheduledBatches   :: !Word64,
+  scWaitTokens         :: !DiffTime,   -- ^ scheduled and slice grants together
+  scWaitWritable       :: !DiffTime,
+  scWaitsOver          :: ![(DiffTime, Word64)],
+    -- ^ grants whose token wait exceeded each bound
+  scBudgetLevel        :: !Int,        -- ^ bytes; negative while repaying credit
+  scBudgetQueued       :: !Int,
+  scSliceQueued        :: !Int
   }
   deriving (Eq, Show)
 
@@ -52,7 +80,7 @@ data Sides a b = Sides !a !b
   deriving (Eq, Show)
 
 newMuxCounters :: MonadSTM m => m (MuxCounters m)
-newMuxCounters = MuxCounters <$> newTVarIO (Sides (EgressCounts 0) (IngressCounts 0 0 0 0))
+newMuxCounters = MuxCounters <$> newTVarIO (Sides (EgressCounts 0 0 Nothing) (IngressCounts 0 0 0 0))
 
 readMuxCounters :: MonadSTM m => MuxCounters m -> STM m (EgressCounts, IngressCounts)
 readMuxCounters (MuxCounters v) = (\(Sides eg ing) -> (eg, ing)) <$> readTVar v
@@ -64,6 +92,12 @@ countMuxerFailure (MuxCounters v) e =
        Just SDUWriteTimeout ->
          modifyTVar v (\(Sides eg ing) -> Sides eg { ecWriteTimeouts = ecWriteTimeouts eg + 1 } ing)
        _ -> return ()
+
+-- | Count a writability gate that timed out; the write timeout itself is
+-- counted by 'countMuxerFailure' when the mux dies of it.
+countGateTimeout :: MonadSTM m => MuxCounters m -> STM m ()
+countGateTimeout (MuxCounters v) =
+  modifyTVar v (\(Sides eg ing) -> Sides eg { ecWriteTimeoutsGate = ecWriteTimeoutsGate eg + 1 } ing)
 
 -- | Count the exception a mux's demuxer died with.
 countDemuxerFailure :: MonadSTM m => MuxCounters m -> SomeException -> STM m ()
@@ -87,23 +121,55 @@ data CountersTrace =
   | TraceLocalIngress  IngressCounts
   deriving (Eq, Show)
 
+-- | The token-wait bounds 'scWaitsOver' counts against.
+egressWaitBounds :: [DiffTime]
+egressWaitBounds = waitBounds
+
 -- | A prime, so that snapshots do not keep step with other periodic work such
 -- as keep-alive, and below a 10 s scrape.
 countersInterval :: DiffTime
 countersInterval = 7
 
 -- | Every @interval@, snapshot the node-to-node and the node-to-client
--- counters and trace both sides of each.
+-- counters and trace both sides of each; with scheduled egress, the budget's
+-- bucket and the slice's, if any, go into the node-to-node egress snapshot.
 countersLoop :: (MonadDelay m, MonadSTM m)
              => MuxCounters m    -- ^ node-to-node
              -> MuxCounters m    -- ^ node-to-client
+             -> Maybe (Bucket m, Maybe (Bucket m))
              -> DiffTime
              -> Tracer m CountersTrace
              -> m void
-countersLoop remote local interval tracer = forever $ do
+countersLoop remote local buckets interval tracer = forever $ do
   threadDelay interval
-  ((re, ri), (le, li)) <- atomically $ (,) <$> readMuxCounters remote <*> readMuxCounters local
-  traceWith tracer (TraceRemoteEgress re)
+  now <- getMonotonicTime
+  ((re, ri), (le, li), sc) <- atomically $
+    (,,) <$> readMuxCounters remote
+         <*> readMuxCounters local
+         <*> traverse (schedulingCounts now) buckets
+  traceWith tracer (TraceRemoteEgress re { ecScheduling = sc })
   traceWith tracer (TraceRemoteIngress ri)
   traceWith tracer (TraceLocalEgress le)
   traceWith tracer (TraceLocalIngress li)
+
+schedulingCounts :: MonadSTM m => Time -> (Bucket m, Maybe (Bucket m)) -> STM m SchedulingCounts
+schedulingCounts now (budget, slice_m) = do
+  (b, level, queued) <- bucketSnapshot budget now
+  s_m <- traverse (`bucketSnapshot` now) slice_m
+  let slice       = maybe emptyStats (\(st, _, _) -> st) s_m
+      sliceQueued = maybe 0 (\(_, _, q) -> q) s_m
+  return SchedulingCounts {
+    scDirectBytes        = bsCredited b,
+    scSliceBytes         = bsBytes slice - bsBorrowed slice,
+    scSliceBorrowedBytes = bsBorrowed slice,
+    scScheduledBytes     = bsBytes b,
+    scScheduledBatches   = bsBatches b,
+    scWaitTokens         = bsWaitTokens b + bsWaitTokens slice,
+    scWaitWritable       = bsWaitWritable b + bsWaitWritable slice,
+    scWaitsOver          = zip waitBounds (zipWith (+) (bsWaitsOver b) (bsWaitsOver slice)),
+    scBudgetLevel        = floor level,
+    scBudgetQueued       = queued,
+    scSliceQueued        = sliceQueued
+  }
+  where
+    emptyStats = BucketStats 0 0 0 0 0 0 (map (const 0) waitBounds)
