@@ -17,6 +17,7 @@ module Ouroboros.Network.Diffusion.Configuration
   , PeerSharing (..)
   , defaultEgressPollInterval
   , defaultMuxCountersInterval
+  , defaultEgressSchedulingWith
   , deactivateTimeout
   , closeConnectionTimeout
   , peerMetricsConfiguration
@@ -38,6 +39,8 @@ import Ouroboros.Network.ConnectionManager.Core (defaultProtocolIdleTimeout,
            defaultResetTimeout, defaultTimeWaitTimeout)
 import Ouroboros.Network.Diffusion.Policies (closeConnectionTimeout,
            deactivateTimeout, peerMetricsConfiguration)
+import Network.Mux.Types (MiniProtocolDir, MiniProtocolNum)
+import Ouroboros.Network.Diffusion.Types (EgressScheduling (..))
 import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.PeerSelection.Governor.Types
            (PeerSelectionTargets (..))
@@ -119,3 +122,17 @@ defaultEgressPollInterval = 0
 -- 'Ouroboros.Network.Diffusion.Types.dcMuxCountersInterval'; zero keeps none.
 defaultMuxCountersInterval :: DiffTime
 defaultMuxCountersInterval = Mx.countersInterval
+
+-- | Scheduled egress at a 250 Mb/s budget, the line rate of a 1 Gb/s uplink:
+-- a bucket of two batches, 15% of it reserved for the slice lane, the order
+-- within a tier re-dealt every 599 s, and TCP_NOTSENT_LOWAT at one batch. The
+-- lane rule is the caller's, since it names the tx-submission protocol.
+defaultEgressSchedulingWith :: (MiniProtocolNum -> MiniProtocolDir -> Mx.Lane) -> EgressScheduling
+defaultEgressSchedulingWith laneOf = EgressScheduling {
+    esBudget         = 250e6 / 8,
+    esCapacity       = 2 * 131072,
+    esSlicePercent   = 15,
+    esRotationPeriod = 599,
+    esNotSentLowWat  = Just 131072,
+    esLaneOf         = laneOf
+  }

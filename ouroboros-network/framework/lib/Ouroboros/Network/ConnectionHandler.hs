@@ -261,6 +261,8 @@ makeConnectionHandler
     -> ForkPolicy peerAddr
     -> Maybe (Mx.Counters m)
     -- ^ Node-wide counters every mux this handler creates is counted in.
+    -> Maybe (Mx.EgressPolicy m)
+    -- ^ scheduled egress, shared by every connection this handler creates
     -> HandshakeArguments (ConnectionId peerAddr) versionNumber versionData m
     -> Versions versionNumber versionData
                 (OuroborosBundle muxMode initiatorCtx responderCtx ByteString m a b)
@@ -270,7 +272,7 @@ makeConnectionHandler
     -> MkMuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr versionNumber versionData ByteString m a b
     -> MuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr
                             versionNumber versionData ByteString m a b
-makeConnectionHandler muxTracers forkPolicy muxCounters
+makeConnectionHandler muxTracers forkPolicy muxCounters egressPolicy
                       handshakeArguments
                       versionedApplication
                       (mainThreadId, rethrowPolicy) =
@@ -285,10 +287,13 @@ makeConnectionHandler muxTracers forkPolicy muxCounters
         (outboundConnectionHandler connectionDataFlow $ InResponderMode (inboundGovernorMuxTracer, connectionDataFlow))
         (inboundConnectionHandler connectionDataFlow inboundGovernorMuxTracer)
   where
-    -- A mux counted in the node-wide counters, when there are any.
+    -- a mux on the node's scheduled egress, or a plain one, counted in the
+    -- node-wide counters when there are any
     newMux :: forall (mode :: Mx.Mode).
               Mx.Tracers m -> [Mx.MiniProtocolInfo mode] -> m (Mx.Mux mode m)
-    newMux tracers ptcls = Mx.new tracers muxCounters ptcls
+    newMux tracers ptcls = case egressPolicy of
+                  Nothing     -> Mx.new tracers muxCounters ptcls
+                  Just policy -> Mx.newWithEgress policy tracers muxCounters ptcls
 
     -- install classify exception handler
     classifyExceptions :: forall x.
