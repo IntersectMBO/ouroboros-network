@@ -39,7 +39,7 @@ namedPipeAsBearer sduSize h =
         Mx.batchSize      = fromIntegral $ Mx.getSDUSize sduSize,
         Mx.name           = "named-pipe",
         Mx.egressInterval = 0,
-        Mx.awaitWritable  = return ()
+        Mx.awaitWritable  = \_ _ -> return ()
       }
   where
     readNamedPipe :: Tracer IO Mx.BearerTrace -> Mx.TimeoutFn IO -> IO (Mx.SDU, Time)
