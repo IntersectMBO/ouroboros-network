@@ -291,6 +291,7 @@ withInitiatorOnlyConnectionManager name timeouts trTracer tracer stdGen snocket 
         makeConnectionHandler
           muxTracers
           noBindForkPolicy
+          Nothing                  -- no mux counters
           Nothing                  -- no scheduled egress
           HandshakeArguments {
               -- TraceSendRecv
@@ -494,6 +495,7 @@ withBidirectionalConnectionManager name timeouts
           makeConnectionHandler
             ((Compose . WithName name) `Mx.contramapTracers'` muxTracer)
             noBindForkPolicy
+            Nothing                  -- no mux counters
             egressPolicy
             HandshakeArguments {
                 -- TraceSendRecv
