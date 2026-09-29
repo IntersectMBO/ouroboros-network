@@ -134,6 +134,12 @@ tests =
     , testProperty "a torn-down head hands the queue on"
                    prop_mux_egress_head_torn_down
     ]
+  , testGroup "Counters"
+    [ testProperty "each failure is counted once, where it belongs"
+                   prop_mux_counters_failure
+    , testProperty "both sides are snapshotted every interval"
+                   prop_mux_counters_loop
+    ]
   , testGroup "Generators"
     [ testProperty "genByteString"              prop_arbitrary_genByteString
     , testProperty "genLargeByteString"         prop_arbitrary_genLargeByteString
@@ -3790,3 +3796,109 @@ headKillClient n chan = do
                       Just bs -> go (m - fromIntegral (BL.length bs))
     go n
     return ((), Nothing)
+
+--
+-- Counters
+--
+
+-- | The ways a mux can fail that the counters distinguish.
+data MuxFailure = ReadTimeout | PeerClosed | DecodeError | UnknownProtocol
+                | InitiatorOnlyData | Overrun | WriteTimeout
+  deriving (Show, Eq, Enum, Bounded)
+
+instance Arbitrary MuxFailure where
+    arbitrary = arbitraryBoundedEnum
+
+-- | A mux that fails in the given way counts that failure, once, and nothing
+-- else. The protocol-level failures come from real SDUs through the demuxer;
+-- the timeouts and the close are thrown by the bearer, as the socket bearer
+-- does.
+prop_mux_counters_failure :: MuxFailure -> Property
+prop_mux_counters_failure failure =
+    counterexample (show failure) $
+      runSimOrThrow run === Just (expected failure)
+  where
+    num = Mx.MiniProtocolNum 2
+
+    expected :: MuxFailure -> (Mx.EgressCounts, Mx.IngressCounts)
+    expected f = case f of
+      WriteTimeout      -> (Mx.EgressCounts 1, Mx.IngressCounts 0 0 0 0)
+      ReadTimeout       -> (Mx.EgressCounts 0, Mx.IngressCounts 1 0 0 0)
+      Overrun           -> (Mx.EgressCounts 0, Mx.IngressCounts 0 1 0 0)
+      DecodeError       -> (Mx.EgressCounts 0, Mx.IngressCounts 0 0 1 0)
+      UnknownProtocol   -> (Mx.EgressCounts 0, Mx.IngressCounts 0 0 1 0)
+      InitiatorOnlyData -> (Mx.EgressCounts 0, Mx.IngressCounts 0 0 1 0)
+      PeerClosed        -> (Mx.EgressCounts 0, Mx.IngressCounts 0 0 0 1)
+
+    -- an SDU as the peer would send it
+    sdu n dir payload = Mx.encodeSDU Mx.SDU {
+        Mx.msHeader = Mx.SDUHeader { Mx.mhTimestamp = Mx.RemoteClockModel 0
+                                   , Mx.mhNum       = n
+                                   , Mx.mhDir       = dir
+                                   , Mx.mhLength    = fromIntegral (BL.length payload) },
+        Mx.msBlob   = payload }
+
+    run :: IOSim s (Maybe (Mx.EgressCounts, Mx.IngressCounts))
+    run = do
+      counters <- Mx.newMuxCounters
+      w <- atomically $ newTBQueue 10
+      r <- atomically $ newTBQueue 10
+      base <- getBearer makeQueueChannelBearer (-1)
+                QueueChannel { writeQueue = w, readQueue = r } Nothing
+      let bearer = case failure of
+            ReadTimeout  -> base { Mx.read      = \_ _   -> throwIO Mx.SDUReadTimeout }
+            PeerClosed   -> base { Mx.read      = \_ _   -> throwIO (Mx.BearerClosed "peer") }
+            WriteTimeout -> base { Mx.writeMany = \_ _ _ -> throwIO Mx.SDUWriteTimeout }
+            _            -> base
+          info :: MiniProtocolInfo Mx.InitiatorMode
+          info = MiniProtocolInfo {
+              miniProtocolNum        = num,
+              miniProtocolDir        = Mx.InitiatorDirectionOnly,
+              miniProtocolLimits     = MiniProtocolLimits { maximumIngressQueue = 16 },
+              miniProtocolCapability = Nothing }
+      mux <- Mx.withCounters counters <$> Mx.new Mx.nullTracers [info]
+      withAsync (Mx.run mux bearer) $ \muxA -> do
+        case failure of
+             DecodeError       -> atomically $ writeTBQueue r (BL.replicate 3 0)
+             UnknownProtocol   -> atomically $ writeTBQueue r (sdu (Mx.MiniProtocolNum 99) Mx.ResponderDir "x")
+             -- data from an initiator, for a responder this mux does not run
+             InitiatorOnlyData -> atomically $ writeTBQueue r (sdu num Mx.InitiatorDir "x")
+             Overrun           -> atomically $ writeTBQueue r (sdu num Mx.ResponderDir (BL.replicate 100 0))
+             WriteTimeout      ->
+               void $ Mx.runMiniProtocol mux num Mx.InitiatorDirectionOnly Mx.StartEagerly
+                        (\chan -> Mx.send chan "x" >> return ((), Nothing))
+             _                 -> return ()
+        done <- timeout 10 (waitCatch muxA)
+        case done of
+             Nothing -> return Nothing
+             Just _  -> Just <$> atomically (Mx.readMuxCounters counters)
+
+-- | The loop traces both sides of both counter sets every interval, and the
+-- values it traces are the counters at that instant.
+prop_mux_counters_loop :: Positive Int -> Property
+prop_mux_counters_loop (Positive k) =
+    counterexample (show seen) $
+         map fst seen === concat [ replicate 4 ((fromIntegral i * interval) `addTime` Time 0)
+                                 | i <- [1 .. 3 :: Int] ]
+    .&&. map snd seen === concat (replicate 3
+           [ Mx.TraceRemoteEgress (Mx.EgressCounts 0)
+           , Mx.TraceRemoteIngress (Mx.IngressCounts 0 0 0 1)
+           , Mx.TraceLocalEgress (Mx.EgressCounts 1)
+           , Mx.TraceLocalIngress (Mx.IngressCounts 0 0 0 0) ])
+  where
+    interval = fromIntegral (1 + k `mod` 10) :: DiffTime
+
+    seen :: [(Time, Mx.CountersTrace)]
+    seen = runSimOrThrow $ do
+      remote <- Mx.newMuxCounters
+      local  <- Mx.newMuxCounters
+      atomically $ do
+        Mx.countDemuxerFailure remote (toException (Mx.BearerClosed "peer"))
+        Mx.countMuxerFailure local (toException Mx.SDUWriteTimeout)
+      v <- newTVarIO []
+      let tracer = mkTracer $ \ev -> do
+            t <- getMonotonicTime
+            atomically $ modifyTVar v ((t, ev) :)
+      _ <- async (Mx.countersLoop remote local interval tracer)
+      threadDelay (3 * interval + interval / 2)
+      reverse <$> readTVarIO v
