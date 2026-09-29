@@ -239,6 +239,7 @@ withBidirectionalConnectionManager snocket makeBearer socket
           muxTracers
           noBindForkPolicy
           Nothing                  -- no mux counters
+          Nothing                  -- no scheduled egress
           HandshakeArguments {
               -- TraceSendRecv
               haHandshakeTracer = ("handshake",) `contramap` debugTracer,

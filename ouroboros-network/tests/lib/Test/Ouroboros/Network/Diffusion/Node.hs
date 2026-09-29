@@ -176,6 +176,8 @@ data Arguments extraChurnArgs extraFlags m = Arguments
     , aMuxCountersInterval  :: DiffTime
       -- ^ how often diffusion traces the node-to-node muxes' counters; zero,
       -- and the node keeps none
+    , aEgressScheduling     :: Maybe Diffusion.EgressScheduling
+      -- ^ scheduled egress for this node's node-to-node connections
     }
 
 run :: forall extraState extraDebugState extraAPI
@@ -483,6 +485,7 @@ run blockGeneratorArgs ni na
       , Diffusion.dcLocalMuxForkPolicy     = noBindForkPolicy
       , Diffusion.dcMuxCountersInterval    = aMuxCountersInterval na
       , Diffusion.dcEgressPollInterval     = 0.001
+      , Diffusion.dcEgressScheduling       = aEgressScheduling na
       }
 
 --- Utils

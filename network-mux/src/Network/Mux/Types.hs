@@ -306,6 +306,18 @@ data Bearer m = Bearer {
     , name           :: String
     -- | Egress poll interval
     , egressInterval :: DiffTime
+    -- | Block until the bearer is writable: for a socket, until the kernel
+    -- reports room, which is not room for a whole batch, so the write may
+    -- still block. The egress scheduler gates token grants on this, so
+    -- tokens go only to bearers that could put bytes on the wire as they
+    -- passed it; another lane of the same bearer may fill the socket by a
+    -- batch in between. Bearers without back-pressure return immediately.
+    -- A socket that does not become writable within one SDU timeout fails
+    -- with 'SDUWriteTimeout': one timeout for a batch of any size, where
+    -- the write itself has one per SDU, so a peer that drains less than
+    -- about half the TCP_NOTSENT_LOWAT mark in that time, the kernel's
+    -- POLLOUT threshold, loses the connection.
+    , awaitWritable  :: Tracer m BearerTrace -> TimeoutFn m -> m ()
     }
 
 newtype SDUSize = SDUSize { getSDUSize :: Word16 }
@@ -389,6 +401,7 @@ data BearerTrace =
     | TraceSDUReadTimeoutException
     | TraceSDUWriteTimeoutException
     | TraceTCPInfo StructTCPInfo Word16
+    | TraceEgressGrant Int DiffTime DiffTime
 
 instance Show BearerTrace where
     show TraceRecvHeaderStart = "Bearer Receive Header Start"
@@ -425,6 +438,10 @@ instance Show BearerTrace where
     show TraceSendEnd = "Bearer Send End"
     show TraceSDUReadTimeoutException = "Timed out reading SDU"
     show TraceSDUWriteTimeoutException = "Timed out writing SDU"
+    show (TraceEgressGrant len tw tt) =
+      formatToString
+        ("Egress grant: bytes" %+ F.int %+ "waited writable" %+ F.shown %+ "waited tokens" %+ F.shown)
+        len tw tt
 #ifdef linux_HOST_OS
     show (TraceTCPInfo StructTCPInfo
             { tcpi_snd_mss, tcpi_rcv_mss, tcpi_lost, tcpi_retrans

@@ -16,6 +16,7 @@ module Cardano.Network.Diffusion.Configuration
   , TxSubmissionLogicVersion (..)
   , defaultTxSubmissionLogicVersion
   , defaultNodeTxSubmissionConfig
+  , defaultEgressScheduling
   , srvPrefix
     -- * Re-exports
   , ChainSyncIdleTimeout (..)
@@ -28,7 +29,12 @@ module Cardano.Network.Diffusion.Configuration
   ) where
 
 import Cardano.Network.NodeToNode (MiniProtocolParameters (..),
-           NodeTxSubmissionConfig (..), mkDefaultMiniProtocolParameters)
+           NodeTxSubmissionConfig (..), mkDefaultMiniProtocolParameters,
+           txSubmissionMiniProtocolNum)
+import Network.Mux qualified as Mx
+import Network.Mux.Types (MiniProtocolDir (..))
+import Ouroboros.Network.Diffusion.Configuration qualified as Diffusion
+import Ouroboros.Network.Diffusion.Types (EgressScheduling)
 import Cardano.Network.PeerSelection.Governor.PeerSelectionState
            (NumberOfBigLedgerPeers (..))
 
@@ -42,6 +48,19 @@ import Ouroboros.Network.Protocol.ChainSync.Codec (ChainSyncIdleTimeout (..))
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy qualified as V2
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
            (TxSubmissionLogicVersion (..))
+
+-- | Scheduled egress ('Diffusion.defaultEgressSchedulingWith'):
+--
+-- Responder traffic is ranked in the budget's bucket, its own requests go
+-- direct, and the tx bodies its peers pull go in the reserved slice. In
+-- tx-submission the responder is the side that asks, so its requests go
+-- direct too, and the initiator's replies, the bodies, are the slice's.
+defaultEgressScheduling :: EgressScheduling
+defaultEgressScheduling = Diffusion.defaultEgressSchedulingWith laneOf
+  where
+    laneOf num InitiatorDir | num == txSubmissionMiniProtocolNum = Mx.Slice
+    laneOf num ResponderDir | num == txSubmissionMiniProtocolNum = Mx.Direct
+    laneOf num dir = Mx.directionSplit num dir
 
 -- | Default number of bootstrap peers
 --
