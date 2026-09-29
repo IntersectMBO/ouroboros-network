@@ -217,7 +217,7 @@ startServerEgresss pollInterval sndSizeV ad = forever $ do
           numberOfCalls = numberOfSdus `div` 10 :: Int
           runtSdus = numberOfSdus `mod` 10 :: Int
 
-      withAsync (muxer eq activeTracer Unscheduled bearer) $ \aid -> do
+      withAsync (muxer eq activeTracer Nothing Unscheduled bearer) $ \aid -> do
 
         replicateM_ numberOfCalls $ do
           let payload42s = replicate 10 $ BL.replicate sndSize 42
