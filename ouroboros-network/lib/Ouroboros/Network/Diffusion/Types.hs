@@ -13,6 +13,7 @@ module Ouroboros.Network.Diffusion.Types
   , Tracers (..)
   , nullTracers
   , Configuration (..)
+  , EgressScheduling (..)
   , Applications (..)
   , Arguments (..)
   , Interfaces (..)
@@ -68,7 +69,7 @@ import Data.Word (Word32)
 import System.Random (StdGen)
 
 import Network.Mux qualified as Mx
-import Network.Mux.Types (ReadBuffer)
+import Network.Mux.Types (MiniProtocolDir, MiniProtocolNum, ReadBuffer)
 import Network.Socket qualified as Socket
 
 import Ouroboros.Network.Mux (OuroborosApplicationWithMinimalCtx,
@@ -583,6 +584,25 @@ data Configuration extraFlags m ntnFd ntnAddr ntcFd ntcAddr = Configuration {
     -- | Mux egress queue's poll interval
     , dcEgressPollInterval :: DiffTime
 
+    -- | Scheduled egress for node-to-node connections; 'Nothing' leaves the
+    -- mux unscheduled. Node-to-client connections are never scheduled.
+    , dcEgressScheduling :: Maybe EgressScheduling
+
+  }
+
+-- | One token bucket for the uplink budget, shared by every node-to-node
+-- connection; a slice of it reserved for the lane the lane rule names
+-- 'Mx.Slice'; the order within a tier re-dealt every period; and
+-- TCP_NOTSENT_LOWAT on every node-to-node socket, so a peer that stops reading
+-- holds at most one batch.
+data EgressScheduling = EgressScheduling {
+    esBudget         :: Double,       -- ^ bytes per second
+    esCapacity       :: Int,          -- ^ bucket capacity, bytes: a couple of batches
+    esSlicePercent   :: Int,          -- ^ share reserved for the slice lane; 0 for none
+    esRotationPeriod :: DiffTime,     -- ^ how often the order within a tier is
+                                      --   re-dealt; 0 for none, FIFO within a tier
+    esNotSentLowWat  :: Maybe Int,    -- ^ bytes
+    esLaneOf         :: MiniProtocolNum -> MiniProtocolDir -> Mx.Lane
   }
 
 
