@@ -260,6 +260,18 @@ tests =
                    prop_only_bootstrap_peers_in_fallback_state_iosim
     , testProperty "bootstrap peers timeout"
                    prop_bootstrap_timeout_iosim
+    , testGroup "Egress scheduling"
+      [ testProperty "tx chain integrity"
+                     prop_egress_txSubmission_chainIntegrity
+      , testProperty "no failure"
+                     prop_egress_diffusion_nofail
+      , testProperty "no livelock"
+                     prop_egress_diffusion_nolivelock
+      , testProperty "connection manager valid transitions"
+                     prop_egress_diffusion_cm_valid_transitions
+      , testProperty "inbound governor valid transitions"
+                     prop_egress_diffusion_ig_valid_transitions
+      ]
     , testGroup "local root diffusion mode"
         [ testProperty "InitiatorOnly"
           (unit_local_root_diffusion_mode InitiatorOnlyDiffusionMode)
@@ -427,7 +439,7 @@ unit_cm_valid_transitions =
             , abiSDUSize                 = LargeSDU
             }
       ds = DiffusionScript
-            (SimArgs 1 10 defaultTxDecisionPolicy)
+            (SimArgs 1 10 defaultTxDecisionPolicy Nothing)
             (Script ((Map.empty, ShortDelay) :| [(Map.empty, LongDelay)]))
             [ ( NodeArgs
                   (-2)
@@ -646,7 +658,7 @@ unit_connection_manager_trace_coverage =
 
     script@(DiffusionScript _ _ nodes) =
       DiffusionScript
-        (SimArgs 1 20 defaultTxDecisionPolicy)
+        (SimArgs 1 20 defaultTxDecisionPolicy Nothing)
         (singletonTimedScript Map.empty)
         [ -- a relay node
           (NodeArgs {
@@ -772,7 +784,7 @@ unit_connection_manager_transitions_coverage =
 
     script@(DiffusionScript _ _ nodes) =
       DiffusionScript
-        (SimArgs 1 20 defaultTxDecisionPolicy)
+        (SimArgs 1 20 defaultTxDecisionPolicy Nothing)
         (singletonTimedScript Map.empty)
         [ -- a relay node
           (NodeArgs {
@@ -948,7 +960,7 @@ prop_txSubmission_allTransactions (ArbTxDecisionPolicy decisionPolicy)
                           IsNotTrustable
       diffScript =
         DiffusionScript
-          (SimArgs 1 10 decisionPolicy)
+          (SimArgs 1 10 decisionPolicy Nothing)
           (singletonTimedScript Map.empty)
           [(NodeArgs
               (-3)
@@ -1142,7 +1154,7 @@ txChainIntegrityDiffScript (ArbTxDecisionPolicy decisionPolicy)
         }
 
   in DiffusionScript
-       (SimArgs 1 10 decisionPolicy)
+       (SimArgs 1 10 decisionPolicy Nothing)
        (singletonTimedScript Map.empty)
        [ ( NodeArgs
              (-1)
@@ -1441,7 +1453,7 @@ txScoreImpairmentDiffScript ScoreImpairmentInput { siiTxCount, siiBDelayMul, sii
         cImpairment = noImpairment { impairBodyDelay = Just cDelay }
 
     in DiffusionScript
-         (SimArgs 1 10 txScoreImpairmentPolicy)
+         (SimArgs 1 10 txScoreImpairmentPolicy Nothing)
          (singletonTimedScript Map.empty)
          [ ( NodeArgs
                (-1)
@@ -1965,7 +1977,7 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
   where
     script :: DiffusionScript
     script =
-      DiffusionScript (SimArgs 1 10 defaultTxDecisionPolicy)
+      DiffusionScript (SimArgs 1 10 defaultTxDecisionPolicy Nothing)
         (singletonTimedScript Map.empty)
         [ ( NodeArgs (-6) InitiatorAndResponderDiffusionMode
               (Map.fromList [(RelayAccessDomain "test2" 65_535, DoAdvertisePeer)])
@@ -2624,7 +2636,7 @@ unit_4191 = testWithIOSim prop_diffusion_dns_can_recover long_trace absInfo scri
         }
     script =
       DiffusionScript
-        (SimArgs 1 20 defaultTxDecisionPolicy)
+        (SimArgs 1 20 defaultTxDecisionPolicy Nothing)
         (singletonTimedScript $
            Map.fromList
              [ (("test2", DNS.A), Left [ (read "810b:4c8a:b3b5:741:8c0c:b437:64cf:1bd9", 300)
@@ -2752,7 +2764,7 @@ prop_connect_failure (AbsIOError ioerr) =
 
     script =
       DiffusionScript
-        (SimArgs 1 20 defaultTxDecisionPolicy)
+        (SimArgs 1 20 defaultTxDecisionPolicy Nothing)
         (singletonTimedScript Map.empty)
         [ (NodeArgs {
             naSeed = 0,
@@ -2882,7 +2894,7 @@ prop_accept_failure (AbsIOError ioerr) =
 
     script =
       DiffusionScript
-        (SimArgs 1 20 defaultTxDecisionPolicy)
+        (SimArgs 1 20 defaultTxDecisionPolicy Nothing)
         (singletonTimedScript Map.empty)
         [ (NodeArgs {
             naSeed = 0,
@@ -4009,7 +4021,8 @@ async_demotion_network_script =
     simArgs = SimArgs {
         saSlot             = secondsToDiffTime 1,
         saQuota            = 5,  -- 5% chance of producing a block
-        saTxDecisionPolicy = defaultTxDecisionPolicy
+        saTxDecisionPolicy = defaultTxDecisionPolicy,
+        saEgress = Nothing
       }
     peerTargets = Governor.nullPeerSelectionTargets {
       targetNumberOfKnownPeers = 1,
@@ -4578,7 +4591,7 @@ prop_unit_4258 =
                      abiSDUSize = LargeSDU
                    }
       diffScript = DiffusionScript
-        (SimArgs 1 10 defaultTxDecisionPolicy)
+        (SimArgs 1 10 defaultTxDecisionPolicy Nothing)
         (singletonTimedScript Map.empty)
         [( NodeArgs (-3) InitiatorAndResponderDiffusionMode
              Map.empty
@@ -4685,7 +4698,7 @@ prop_unit_reconnect :: Property
 prop_unit_reconnect =
   let diffScript =
         DiffusionScript
-          (SimArgs 1 10 defaultTxDecisionPolicy)
+          (SimArgs 1 10 defaultTxDecisionPolicy Nothing)
           (singletonTimedScript Map.empty)
           [(NodeArgs
               (-3)
@@ -5873,7 +5886,7 @@ unit_local_root_diffusion_mode diffusionMode =
 
     script =
       DiffusionScript
-        (SimArgs 1 20 defaultTxDecisionPolicy)
+        (SimArgs 1 20 defaultTxDecisionPolicy Nothing)
         (singletonTimedScript Map.empty)
         [ -- a relay node
           (NodeArgs {
@@ -6215,6 +6228,7 @@ labelDiffusionScript (DiffusionScript args _ nodes) =
               ++ renderSimArgs args)
     . label ("Nº nodes: "
               ++ show (length nodes))
+    . label ("egress: " ++ maybe "off" (const "on") (saEgress args))
     . label ("Nº nodes in InitiatorOnlyDiffusionMode: "
               ++ show (length $ filter ((== InitiatorOnlyDiffusionMode) . naDiffusionMode . fst) nodes))
     -- todo: add label for GenesisMode syncTargets
@@ -6251,3 +6265,64 @@ showBucket size a | a < size
                            , show (a `div` size * size + size)
                            , ")"
                            ]
+
+
+--
+-- Egress scheduling
+--
+-- Every node runs with scheduled egress ('EgressArgs'): a budget and a bucket
+-- small enough for the simulation's traffic to wait, TxSubmission's initiator
+-- on a slice that borrows the budget's idle capacity, and a within-tier order
+-- re-dealt every few minutes. The oracle is what holds without it: timing
+-- changes, but no invariant may break and nothing may stop arriving. A wedged
+-- queue, a lost wake-up or a starved slice shows up as data that never
+-- arrives.
+
+-- | Every tx still reaches the nodes it should, with TxSubmission's
+-- initiator on the slice.
+prop_egress_txSubmission_chainIntegrity :: EgressArgs
+                                        -> ArbTxDecisionPolicy
+                                        -> ChainedPeerTxs
+                                        -> Property
+prop_egress_txSubmission_chainIntegrity egress argPolicy chainedTxs =
+  let diffScript = txChainIntegrityDiffScript argPolicy chainedTxs
+      expected   = txChainIntegrityExpected chainedTxs in
+  counterexample (show egress) $
+  checkTxChainIntegrity
+    chainedTxs
+    expected
+    (runSimTrace (diffusionSimulationWithEgress egress noAttenuation diffScript))
+    long_trace
+
+-- | The governor's state stays valid.
+prop_egress_diffusion_nofail :: EgressArgs -> AbsBearerInfo -> DiffusionScript -> Property
+prop_egress_diffusion_nofail egress =
+  egressIOSim egress prop_diffusion_nofail long_trace
+
+-- | No burst of events without time advancing: a wake-up storm among bearers
+-- sharing a bucket would show up here.
+prop_egress_diffusion_nolivelock :: EgressArgs -> AbsBearerInfo -> DiffusionScript -> Property
+prop_egress_diffusion_nolivelock egress =
+  egressIOSim egress prop_diffusion_nolivelock long_trace
+
+-- | Scheduling changes when connections change state, never which states
+-- they pass through.
+prop_egress_diffusion_cm_valid_transitions
+  :: EgressArgs -> AbsBearerInfo -> DiffusionScript -> Property
+prop_egress_diffusion_cm_valid_transitions egress =
+  egressIOSim egress prop_diffusion_cm_valid_transitions long_trace
+
+prop_egress_diffusion_ig_valid_transitions
+  :: EgressArgs -> AbsBearerInfo -> DiffusionScript -> Property
+prop_egress_diffusion_ig_valid_transitions egress =
+  egressIOSim egress prop_diffusion_ig_valid_transitions long_trace
+
+egressIOSim :: EgressArgs
+            -> (SimTrace DiffSimResult -> Int -> Property)
+            -> Int
+            -> AbsBearerInfo
+            -> DiffusionScript
+            -> Property
+egressIOSim egress prop traceNumber bi ds =
+  counterexample (show egress) $
+  testWithIOSim' (diffusionSimulationWithEgress egress) prop traceNumber bi ds
