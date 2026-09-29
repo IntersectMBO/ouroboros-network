@@ -200,6 +200,7 @@ runM Interfaces
        , dtLocalServerTracer
        , dtLocalInboundGovernorTracer
        , dtDnsTracer
+       , dtMuxCountersTracer
        }
      Arguments
        { daNtnDataFlow
@@ -255,16 +256,27 @@ runM Interfaces
     -- Thread to which 'RethrowPolicy' will throw fatal exceptions.
     mainThreadId <- myThreadId
 
-    -- If we have a local address, race the remote and local threads. Otherwise
-    -- just launch the remote thread.
-    case dcLocalAddress of
-      Just addr ->
-        fmap (either id id) $
-          mkRemoteThread mainThreadId
-          `Async.race`
-          mkLocalThread mainThreadId addr
-      Nothing ->
-          mkRemoteThread mainThreadId
+    -- node-wide mux counters, one set per side, snapshotted for as long as
+    -- diffusion runs
+    remoteCounters <- Mx.newMuxCounters
+    localCounters  <- Mx.newMuxCounters
+    -- race the counters with diffusion, so a failing counters loop ends it
+    fmap (either id id) $
+      (do labelThisThread "Mux counters"
+          Mx.countersLoop remoteCounters localCounters Mx.countersInterval
+                          dtMuxCountersTracer)
+      `Async.race`
+
+      -- If we have a local address, race the remote and local threads.
+      -- Otherwise just launch the remote thread.
+      case dcLocalAddress of
+        Just addr ->
+          fmap (either id id) $
+            mkRemoteThread mainThreadId remoteCounters
+            `Async.race`
+            mkLocalThread mainThreadId localCounters addr
+        Nothing ->
+            mkRemoteThread mainThreadId remoteCounters
 
   where
     (ledgerPeersRng, rng1) = splitGen diRng
@@ -340,8 +352,8 @@ runM Interfaces
 
     -- | mkLocalThread - create local connection manager
     --
-    mkLocalThread :: ThreadId m -> Either ntcFd ntcAddr -> m Void
-    mkLocalThread mainThreadId localAddr = do
+    mkLocalThread :: ThreadId m -> Mx.MuxCounters m -> Either ntcFd ntcAddr -> m Void
+    mkLocalThread mainThreadId localCounters localAddr = do
      labelThisThread "diffusion-local"
      withLocalSocket tracer diNtcGetFileDescriptor
                      diNtcConfigureSocketFile
@@ -361,6 +373,7 @@ runM Interfaces
                   Mx.bearerTracer  = dtLocalBearerTracer
                 }
                 dcLocalMuxForkPolicy
+                (Just localCounters)
                 Nothing                       -- node-to-client egress is not scheduled
                 daNtcHandshakeArguments
                 ( ( \ (OuroborosApplication apps)
@@ -431,8 +444,8 @@ runM Interfaces
 
     -- | mkRemoteThread - create remote connection manager
     --
-    mkRemoteThread :: ThreadId m -> m Void
-    mkRemoteThread mainThreadId = do
+    mkRemoteThread :: ThreadId m -> Mx.MuxCounters m -> m Void
+    mkRemoteThread mainThreadId remoteCounters = do
       labelThisThread "diffusion-remote"
       let
         exitPolicy :: ExitPolicy a
@@ -547,6 +560,7 @@ runM Interfaces
                 Mx.bearerTracer  = dtBearerTracer
               }
               dcMuxForkPolicy
+              (Just remoteCounters)
               egressPolicy
               daNtnHandshakeArguments
               versions

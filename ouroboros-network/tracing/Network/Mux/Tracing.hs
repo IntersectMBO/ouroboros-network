@@ -582,3 +582,95 @@ instance MetaTrace Mux.Trace where
       , Namespace [] ["Stopping"]
       , Namespace [] ["Stopped"]
       ]
+
+--------------------------------------------------------------------------------
+-- Mux counters
+--------------------------------------------------------------------------------
+
+instance LogFormatting Mux.CountersTrace where
+    forMachine _dtal = \case
+      Mux.TraceRemoteEgress  c -> egressObject "Remote" c
+      Mux.TraceRemoteIngress c -> ingressObject "Remote" c
+      Mux.TraceLocalEgress   c -> egressObject "Local" c
+      Mux.TraceLocalIngress  c -> ingressObject "Local" c
+      where
+        egressObject side Mux.EgressCounts { Mux.ecWriteTimeouts } = mconcat
+          [ "kind" .= String "EgressCounts"
+          , "side" .= String side
+          , "writeTimeouts" .= ecWriteTimeouts
+          ]
+        ingressObject side Mux.IngressCounts { Mux.icReadTimeouts, Mux.icOverruns
+                                             , Mux.icProtocolErrors, Mux.icBearerClosed } =
+          mconcat
+            [ "kind" .= String "IngressCounts"
+            , "side" .= String side
+            , "readTimeouts" .= icReadTimeouts
+            , "overruns" .= icOverruns
+            , "protocolErrors" .= icProtocolErrors
+            , "bearerClosed" .= icBearerClosed
+            ]
+    forHuman = showT
+    asMetrics = \case
+      Mux.TraceRemoteEgress  c -> egressMetrics "egress" c
+      Mux.TraceRemoteIngress c -> ingressMetrics "ingress" c
+      Mux.TraceLocalEgress   c -> egressMetrics "localEgress" c
+      Mux.TraceLocalIngress  c -> ingressMetrics "localIngress" c
+      where
+        egressMetrics prefix Mux.EgressCounts { Mux.ecWriteTimeouts } =
+          [ IntM (prefix <> ".writeTimeouts") (fromIntegral ecWriteTimeouts) ]
+        ingressMetrics prefix Mux.IngressCounts { Mux.icReadTimeouts, Mux.icOverruns
+                                                , Mux.icProtocolErrors, Mux.icBearerClosed } =
+          [ IntM (prefix <> ".readTimeouts")   (fromIntegral icReadTimeouts)
+          , IntM (prefix <> ".overruns")       (fromIntegral icOverruns)
+          , IntM (prefix <> ".protocolErrors") (fromIntegral icProtocolErrors)
+          , IntM (prefix <> ".bearerClosed")   (fromIntegral icBearerClosed)
+          ]
+
+instance MetaTrace Mux.CountersTrace where
+    namespaceFor Mux.TraceRemoteEgress {}  = Namespace [] ["Remote", "Egress"]
+    namespaceFor Mux.TraceRemoteIngress {} = Namespace [] ["Remote", "Ingress"]
+    namespaceFor Mux.TraceLocalEgress {}   = Namespace [] ["Local", "Egress"]
+    namespaceFor Mux.TraceLocalIngress {}  = Namespace [] ["Local", "Ingress"]
+
+    severityFor (Namespace _ [_, "Egress"])  _ = Just Info
+    severityFor (Namespace _ [_, "Ingress"]) _ = Just Info
+    severityFor _ _                            = Nothing
+
+    documentFor (Namespace _ [side, "Egress"]) = Just $
+      "Node-wide write-side counters of " <> sideDoc side <> " muxes, every counters interval."
+    documentFor (Namespace _ [side, "Ingress"]) = Just $
+      "Node-wide read-side counters of " <> sideDoc side <> " muxes, every counters interval."
+    documentFor _ = Nothing
+
+    metricsDocFor (Namespace _ [side, "Egress"]) =
+      [ (egressPrefix side <> ".writeTimeouts",
+         "Muxes dropped because the peer took nothing within the SDU timeout.") ]
+    metricsDocFor (Namespace _ [side, "Ingress"]) =
+      [ (ingressPrefix side <> ".readTimeouts",
+         "Muxes dropped because an SDU did not arrive in full within the SDU timeout.")
+      , (ingressPrefix side <> ".overruns",
+         "Muxes dropped because the peer exceeded a mini-protocol's ingress limit.")
+      , (ingressPrefix side <> ".protocolErrors",
+         "Muxes dropped for undecodable SDUs, unknown mini-protocols, or data "
+           <> "an initiator-only mux cannot take.")
+      , (ingressPrefix side <> ".bearerClosed",
+         "Muxes that ended because the peer closed the connection.")
+      ]
+    metricsDocFor _ = []
+
+    allNamespaces =
+      [ Namespace [] ["Remote", "Egress"]
+      , Namespace [] ["Remote", "Ingress"]
+      , Namespace [] ["Local", "Egress"]
+      , Namespace [] ["Local", "Ingress"]
+      ]
+
+sideDoc :: Text -> Text
+sideDoc "Local" = "node-to-client"
+sideDoc _       = "node-to-node"
+
+egressPrefix, ingressPrefix :: Text -> Text
+egressPrefix  "Local" = "localEgress"
+egressPrefix  _       = "egress"
+ingressPrefix "Local" = "localIngress"
+ingressPrefix _       = "ingress"
