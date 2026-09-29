@@ -293,6 +293,9 @@ data Tracers ntnAddr ntnVersion ntnVersionData
 
     , dtDnsTracer :: Tracer m DNSTrace
 
+      -- | Node-wide mux counters, both sides, every 'Mx.countersInterval'
+    , dtMuxCountersTracer :: Tracer m Mx.CountersTrace
+
       --
       -- NodeToClient tracers
       --
@@ -347,6 +350,7 @@ nullTracers = Tracers {
   , dtLocalServerTracer                          = nullTracer
   , dtLocalInboundGovernorTracer                 = nullTracer
   , dtDnsTracer                                  = nullTracer
+  , dtMuxCountersTracer                          = nullTracer
   }
 
 -- | Diffusion arguments which allow to instantiate a completely different

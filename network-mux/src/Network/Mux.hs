@@ -54,6 +54,18 @@ module Network.Mux
     -- * Monitoring
   , miniProtocolStateMap
   , stopped
+    -- * Counters
+  , MuxCounters
+  , newMuxCounters
+  , withCounters
+  , readMuxCounters
+  , countMuxerFailure
+  , countDemuxerFailure
+  , EgressCounts (..)
+  , IngressCounts (..)
+  , CountersTrace (..)
+  , countersLoop
+  , countersInterval
     -- * Errors
   , Error (..)
   , RuntimeError (..)
@@ -94,6 +106,7 @@ import Control.Tracer
 
 import Network.Mux.Bearer
 import Network.Mux.Channel
+import Network.Mux.Counters
 import Network.Mux.Egress as Egress
 import Network.Mux.Egress.Bucket (Bucket, BucketHandle, Rank (..), Rotation (..),
            newBucket, registerBearer, setBucketRate, setRank)
@@ -116,6 +129,9 @@ data Mux (mode :: Mode) m =
        muxControlCmdQueue :: !(StrictTQueue m (ControlCmd mode m)),
        muxStatus          :: StrictTVar m Status,
        muxTracers         :: Tracers m,
+       muxCounters        :: !(Maybe (MuxCounters m)),
+       -- ^ node-wide counters this mux's failures are counted in
+       -- ('withCounters')
        muxEgress          :: !(Maybe (MuxEgress m))
        -- ^ this connection's part of the node's scheduled egress, if any
        -- ('newWithEgress')
@@ -153,6 +169,12 @@ miniProtocolStateMap :: MonadSTM m
                             (STM m MiniProtocolStatus)
 miniProtocolStateMap = fmap (readTVar . miniProtocolStatusVar)
                      . muxMiniProtocols
+
+-- | Count the mux's failures in node-wide 'MuxCounters', shared with every
+-- other mux given the same counters.
+--
+withCounters :: MuxCounters m -> Mux mode m -> Mux mode m
+withCounters counters mux = mux { muxCounters = Just counters }
 
 -- | Await until mux stopped.
 --
@@ -209,6 +231,7 @@ mkMux muxEgress muxTracers ptcls = do
       muxControlCmdQueue,
       muxStatus,
       muxTracers,
+      muxCounters = Nothing,
       muxEgress
     }
 
@@ -315,6 +338,7 @@ run Mux { muxMiniProtocols,
               tracer_,
               bearerTracer_
             },
+          muxCounters,
           muxEgress
         }
     bearer@Bearer{name} = do
@@ -336,6 +360,7 @@ run Mux { muxMiniProtocols,
         -- Outstanding jobs are shut down Upon completion of withJobPool.
         withTimeoutSerial $ \timeout ->
           monitor tracers
+                  muxCounters
                   timeout
                   jobpool
                   lanes
@@ -521,6 +546,7 @@ monitor :: forall mode m.
            , MonadThrow (STM m)
            )
         => Tracers m
+        -> Maybe (MuxCounters m)
         -> TimeoutFn m
         -> JobPool.JobPool Group m JobResult
         -> Lanes m
@@ -531,7 +557,7 @@ monitor tracers@TracersI {
           tracer_       = tracer,
           bearerTracer_ = bearerTracer
         }
-        timeout jobpool lanes cmdQueue muxStatus =
+        counters timeout jobpool lanes cmdQueue muxStatus =
     go (MonitorCtx Map.empty Map.empty)
   where
     go :: MonitorCtx m mode -> m ()
@@ -583,11 +609,18 @@ monitor tracers@TracersI {
         -- the source of the failure, e.g. specific mini-protocol. If we're
         -- propagating exceptions, we don't need to log them.
         EventJobResult (MuxerException e) -> do
-          atomically $ writeTVar muxStatus $ Failed e
+          atomically $ do
+            writeTVar muxStatus $ Failed e
+            case counters of
+                 Just c  -> countMuxerFailure c e
+                 Nothing -> return ()
           traceWith tracer (TraceState Dead)
           throwIO e
         EventJobResult (DemuxerException e) -> do
           r <- atomically $ do
+            case counters of
+                 Just c  -> countDemuxerFailure c e
+                 Nothing -> return ()
             size <- JobPool.readGroupSize jobpool MiniProtocolJob
             case size of
               0  | Just BearerClosed {} <- fromException e
