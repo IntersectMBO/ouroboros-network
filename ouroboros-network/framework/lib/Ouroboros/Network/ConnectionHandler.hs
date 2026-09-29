@@ -259,6 +259,8 @@ makeConnectionHandler
        )
     => Mx.TracersWithBearer (ConnectionId peerAddr) m
     -> ForkPolicy peerAddr
+    -> Maybe (Mx.EgressPolicy m)
+    -- ^ scheduled egress, shared by every connection this handler creates
     -> HandshakeArguments (ConnectionId peerAddr) versionNumber versionData m
     -> Versions versionNumber versionData
                 (OuroborosBundle muxMode initiatorCtx responderCtx ByteString m a b)
@@ -268,7 +270,7 @@ makeConnectionHandler
     -> MkMuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr versionNumber versionData ByteString m a b
     -> MuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr
                             versionNumber versionData ByteString m a b
-makeConnectionHandler muxTracers forkPolicy
+makeConnectionHandler muxTracers forkPolicy egressPolicy
                       handshakeArguments
                       versionedApplication
                       (mainThreadId, rethrowPolicy) =
@@ -283,6 +285,13 @@ makeConnectionHandler muxTracers forkPolicy
         (outboundConnectionHandler $ InResponderMode (inboundGovernorMuxTracer, connectionDataFlow))
         (inboundConnectionHandler inboundGovernorMuxTracer)
   where
+    -- a mux on the node's scheduled egress, or a plain one
+    newMux :: forall (mode :: Mx.Mode).
+              Mx.Tracers m -> [Mx.MiniProtocolInfo mode] -> m (Mx.Mux mode m)
+    newMux = case egressPolicy of
+                  Nothing     -> Mx.new
+                  Just policy -> Mx.newWithEgress policy
+
     -- install classify exception handler
     classifyExceptions :: forall x.
                           Tracer m (ConnectionHandlerTrace versionNumber versionData)
@@ -367,7 +376,7 @@ makeConnectionHandler muxTracers forkPolicy
                         -- If this is InitiatorOnly, or a server where unidirectional flow was negotiated
                         -- the IG will never be informed of this remote for obvious reasons.
                         pure $ Mx.tracersWithBearer connectionId muxTracers
-                mux <- Mx.new muxTracers' (mkMiniProtocolInfos (runForkPolicy forkPolicy remoteAddress) app)
+                mux <- newMux muxTracers' (mkMiniProtocolInfos (runForkPolicy forkPolicy remoteAddress) app)
                 let !handle = Handle {
                         hMux            = mux,
                         hMuxBundle      = app,
@@ -435,7 +444,7 @@ makeConnectionHandler muxTracers forkPolicy
                      <*> newTVarIO Continue
 
                countersVar <- newTVarIO . SJust $ ResponderCounters 0 0
-               mux <- Mx.new (Mx.tracersWithBearer connectionId muxTracers {
+               mux <- newMux (Mx.tracersWithBearer connectionId muxTracers {
                                Mx.tracer = Mx.tracer muxTracers <> inboundGovernorMuxTracer countersVar
                              })
                              (mkMiniProtocolInfos (runForkPolicy forkPolicy remoteAddress) app)

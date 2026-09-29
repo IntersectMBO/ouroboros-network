@@ -478,6 +478,7 @@ run blockGeneratorArgs ni na
       , Diffusion.dcMuxForkPolicy          = noBindForkPolicy
       , Diffusion.dcLocalMuxForkPolicy     = noBindForkPolicy
       , Diffusion.dcEgressPollInterval     = 0.001
+      , Diffusion.dcEgressScheduling       = Nothing
       }
 
 --- Utils

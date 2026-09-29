@@ -50,11 +50,11 @@ import Data.Maybe (catMaybes)
 import Data.Typeable (Proxy (..), Typeable)
 import Data.Void (Void)
 import System.Exit (ExitCode)
-import System.Random (StdGen, newStdGen, splitGen)
+import System.Random (StdGen, genWord64, newStdGen, splitGen)
 
 import Network.DNS (Resolver)
 import Network.Mux qualified as Mx
-import Network.Mux.Bearer (withReadBufferIO)
+import Network.Mux.Bearer (makeSocketBearerWith, withReadBufferIO)
 import Network.Mux.Types
 import Network.Socket (Socket)
 import Network.Socket qualified as Socket
@@ -85,8 +85,7 @@ import Ouroboros.Network.Protocol.Handshake
 import Ouroboros.Network.RethrowPolicy
 import Ouroboros.Network.Server qualified as Server
 import Ouroboros.Network.Snocket (LocalAddress (..), LocalSocket (..),
-           RemoteAddress, localSocketFileDescriptor, makeLocalBearer,
-           makeSocketBearer')
+           RemoteAddress, localSocketFileDescriptor, makeLocalBearer)
 import Ouroboros.Network.Snocket qualified as Snocket
 import Ouroboros.Network.Socket (configureSocket, configureSystemdSocket)
 import Ouroboros.Network.Util (PrettyShow (..))
@@ -239,6 +238,7 @@ runM Interfaces
        , dcReadLedgerPeerSnapshot
        , dcMuxForkPolicy
        , dcLocalMuxForkPolicy
+       , dcEgressScheduling
        }
      Applications
        { daApplicationInitiatorMode
@@ -272,7 +272,23 @@ runM Interfaces
     (fuzzRng,        rng3) = splitGen rng2
     (cmLocalStdGen,  rng4) = splitGen rng3
     (cmStdGen1,      rng5) = splitGen rng4
-    (cmStdGen2, peerSelectionActionsRng) = splitGen rng5
+    (cmStdGen2,      rng6) = splitGen rng5
+    (egressRng, peerSelectionActionsRng) = splitGen rng6
+
+    -- the buckets behind scheduled egress, shared by every node-to-node
+    -- connection; the rotation's seed comes from the diffusion RNG
+    mkEgressPolicy :: EgressScheduling -> m (Mx.EgressPolicy m)
+    mkEgressPolicy EgressScheduling { esBudget, esCapacity, esSlicePercent,
+                                      esRotationPeriod, esLaneOf } = do
+      let rotation = Mx.Rotation { Mx.roSeed   = fst (genWord64 egressRng)
+                                 , Mx.roPeriod = esRotationPeriod }
+      budget <- Mx.newBucket esBudget esCapacity (Just rotation)
+      slice  <- if esSlicePercent > 0
+                   then Just <$> Mx.newBucket (esBudget * fromIntegral esSlicePercent / 100)
+                                              esCapacity Nothing
+                   else return Nothing
+      return Mx.EgressPolicy { Mx.egressBudget = budget, Mx.egressSlice = slice,
+                               Mx.egressLaneOf = esLaneOf }
 
     mkInboundPeersMap :: IG.PublicState ntnAddr ntnVersionData
                       -> Map ntnAddr PeerSharing
@@ -345,6 +361,7 @@ runM Interfaces
                   Mx.bearerTracer  = dtLocalBearerTracer
                 }
                 dcLocalMuxForkPolicy
+                Nothing                       -- node-to-client egress is not scheduled
                 daNtcHandshakeArguments
                 ( ( \ (OuroborosApplication apps)
                    -> TemperatureBundle
@@ -480,6 +497,8 @@ runM Interfaces
       -- Part (a): plumb data flow and define common functions
       --
 
+      egressPolicy <- traverse mkEgressPolicy dcEgressScheduling
+
       let connectionManagerArguments'
             :: forall handle b.
                PrunePolicy ntnAddr
@@ -528,6 +547,7 @@ runM Interfaces
                 Mx.bearerTracer  = dtBearerTracer
               }
               dcMuxForkPolicy
+              egressPolicy
               daNtnHandshakeArguments
               versions
               (mainThreadId, rethrowPolicy <> daRethrowPolicy)
@@ -911,6 +931,7 @@ run extraParams tracers args apps = do
          $ withIOManager $ \iocp -> do
 
              interfaces <- mkInterfaces iocp tracer (dcEgressPollInterval args)
+                                        (dcEgressScheduling args >>= esNotSentLowWat)
 
              runM interfaces
                   tracers
@@ -924,14 +945,15 @@ run extraParams tracers args apps = do
 
 mkInterfaces :: IOManager
              -> Tracer IO (DiffusionTracer ntnAddr LocalAddress)
-             -> DiffTime
+             -> DiffTime      -- ^ mux egress poll interval
+             -> Maybe Int     -- ^ TCP_NOTSENT_LOWAT for node-to-node sockets
              -> IO (Interfaces Socket
                                RemoteAddress
                                LocalSocket
                                LocalAddress
                                Resolver
                                IO)
-mkInterfaces iocp tracer egressPollInterval = do
+mkInterfaces iocp tracer egressPollInterval notSentLowWat = do
   diRng <- newStdGen
   diConnStateIdSupply <- atomically $ CM.newConnStateIdSupply Proxy
 
@@ -940,7 +962,7 @@ mkInterfaces iocp tracer egressPollInterval = do
 
   return $ Interfaces {
     diNtnSnocket                = Snocket.socketSnocket iocp,
-    diNtnBearer                 = makeSocketBearer' egressInterval,
+    diNtnBearer                 = makeSocketBearerWith egressInterval notSentLowWat,
     diWithBuffer                = withReadBufferIO,
     diNtnConfigureSocket        = configureSocket,
     diNtnConfigureSystemdSocket =
