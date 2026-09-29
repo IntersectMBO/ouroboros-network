@@ -287,8 +287,10 @@ data Bearer m = Bearer {
     -- | Block until the bearer can take another write without blocking,
     -- for a socket, until it is writable. The egress scheduler gates token
     -- grants on this, so tokens go only to bearers that can put bytes on
-    -- the wire now. Bearers without back-pressure return immediately.
-    , awaitWritable  :: m ()
+    -- the wire now. Bearers without back-pressure return immediately. A
+    -- socket that does not become writable within the SDU timeout fails
+    -- with 'SDUWriteTimeout', as a blocked write would.
+    , awaitWritable  :: Tracer m BearerTrace -> TimeoutFn m -> m ()
     }
 
 newtype SDUSize = SDUSize { getSDUSize :: Word16 }
