@@ -62,6 +62,7 @@ library
     io-classes:{io-classes, si-timers, strict-stm} ^>=1.8,
     monoidal-synchronisation >=0.1 && <0.2,
     network ^>=3.2.7,
+    splitmix,
     process ^>=1.6,
     quiet,
     statistics-linreg >=0.3 && <0.4,

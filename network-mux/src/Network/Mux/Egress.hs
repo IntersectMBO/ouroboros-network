@@ -7,6 +7,10 @@
 
 module Network.Mux.Egress
   ( muxer
+  , Lane (..)
+  , laneName
+  , LaneEgress (..)
+  , Lanes (..)
     -- $egress
     -- $servicingsSemantics
   , EgressQueue
@@ -24,7 +28,10 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI hiding (timeout)
 import Control.Tracer (Tracer, traceWith)
 
-import Network.Mux.Egress.Bucket (BucketHandle, awaitGrant)
+import Data.Char (toLower)
+
+import Network.Mux.Egress.Bucket (Bucket, BucketHandle, awaitGrant, awaitGrantBorrowing,
+           takeOnCredit)
 import Network.Mux.Timeout
 import Network.Mux.Types
 
@@ -116,6 +123,32 @@ import Network.Mux.Types
 
 type EgressQueue m = StrictTBQueue m (TranslocationServiceRequest m)
 
+-- | Which egress lane an SDU travels in. 'Direct' is the node's own requests:
+-- charged to the budget on credit, never waiting. 'Slice' is a reserved share
+-- with its own bucket, also charged to the budget. 'Scheduled' is what the
+-- node serves, ranked in the budget's bucket.
+data Lane = Direct | Slice | Scheduled
+  deriving (Eq, Ord, Show, Enum, Bounded)
+
+laneName :: Lane -> String
+laneName = map toLower . show
+
+-- | What a lane's muxer does before writing a batch.
+data LaneEgress m =
+    Unscheduled
+  | Credit     !(Bucket m)                      -- ^ 'Direct': the budget, on credit
+  | Reserved   !(BucketHandle m) !(Bucket m)    -- ^ 'Slice': its bucket or the budget's idle
+                                                --   capacity; the former charged on credit
+  | Scheduled_ !(BucketHandle m)                -- ^ 'Scheduled': the budget, ranked
+
+-- | A bearer's egress queues, one per lane in use, and the lane of each
+-- mini-protocol. An unscheduled mux has one queue and every SDU goes to it.
+data Lanes m = Lanes {
+    laneQueue :: Lane -> EgressQueue m,
+    laneOf    :: MiniProtocolNum -> MiniProtocolDir -> Lane,
+    laneAll   :: [(Lane, EgressQueue m)]
+  }
+
 -- | A TranslocationServiceRequest is a demand for the translocation
 --  of a single mini-protocol message. This message can be of
 --  arbitrary (yet bounded) size. This multiplexing layer is
@@ -145,11 +178,10 @@ muxer
        )
     => EgressQueue m
     -> Tracer m BearerTrace
-    -> Maybe (BucketHandle m)
-    -- ^ the node-global egress bucket, if egress is scheduled
+    -> LaneEgress m
     -> Bearer m
     -> m void
-muxer egressQueue tracer bucket_m
+muxer egressQueue tracer laneEgress
       Bearer { writeMany, sduSize, batchSize, egressInterval, awaitWritable } =
     withTimeoutSerial $ \timeout ->
     forever $ do
@@ -158,21 +190,33 @@ muxer egressQueue tracer bucket_m
       sdu <- processSingleWanton egressQueue sduSize mpc md d
       sdus <- buildBatch [sdu] (sduLength sdu)
 
-      -- Scheduled egress: the batch is written only once the bearer can take
-      -- it without blocking AND the bucket has granted its bytes.
-      -- A bearer whose peer is not draining never consumes tokens.
-      case bucket_m of
-        Nothing -> return ()
-        Just bucketHandle -> do
-          t0 <- getMonotonicTime
-          awaitWritable
-          t1 <- getMonotonicTime
-          let len = sum (map sduLength sdus)
-          awaitGrant bucketHandle len
-          t2 <- getMonotonicTime
-          traceWith tracer (TraceEgressGrant len (t1 `diffTime` t0) (t2 `diffTime` t1))
+      -- Scheduled egress: a batch is written only once the bearer can take it
+      -- without blocking AND its lane has the bytes -- granted by the budget's
+      -- bucket or the slice's, or, for the node's own requests, taken on
+      -- credit once written. A bearer whose peer is not draining never
+      -- consumes tokens.
+      let len = sum (map sduLength sdus)
+      case laneEgress of
+           Unscheduled -> return ()
+           Credit _ -> awaitWritable tracer timeout
+           Reserved slice budget -> do
+             awaitWritable tracer timeout
+             -- the slice's own share, charged to the budget on credit in the
+             -- same transaction, or the budget's idle capacity
+             void $ awaitGrantBorrowing slice budget len
+           Scheduled_ bucketHandle -> do
+             t0 <- getMonotonicTime
+             awaitWritable tracer timeout
+             t1 <- getMonotonicTime
+             awaitGrant bucketHandle len
+             t2 <- getMonotonicTime
+             traceWith tracer (TraceEgressGrant len (t1 `diffTime` t0) (t2 `diffTime` t1))
       void $ writeMany tracer timeout sdus
       end <- getMonotonicTime
+      -- after the write, so a charge means bytes handed to the kernel
+      case laneEgress of
+           Credit budget -> atomically $ takeOnCredit budget end len
+           _ -> return ()
       empty <- atomically $ isEmptyTBQueue egressQueue
       when empty $ do
         let delta = diffTime end start
