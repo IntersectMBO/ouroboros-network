@@ -4664,6 +4664,7 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
                 policyFindPublicRootTimeout   = 5,
                 policyMaxInProgressPeerShareReqs = 0,
                 policyPeerShareRetryTime         = 0, -- seconds
+                policyPeerShareFailureRetryTime  = 0, -- seconds
                 policyPeerShareBatchWaitTime     = 0, -- seconds
                 policyPeerShareOverallTimeout    = 0, -- seconds
                 policyPeerShareActivationDelay   = 2, -- seconds

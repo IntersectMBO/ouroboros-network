@@ -266,6 +266,7 @@ jobPeerShare
 jobPeerShare PeerSelectionActions{requestPeerShare}
              PeerSelectionPolicy { policyPeerShareBatchWaitTime
                                  , policyPeerShareOverallTimeout
+                                 , policyPeerShareFailureRetryTime
                                  }
              salt maxAmount
              requestAmount =
@@ -308,7 +309,7 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
       results <- waitAllCatchOrTimeout peerShares policyPeerShareBatchWaitTime
       case results of
         Right totalResults ->
-          return $ Completion $ \st _ ->
+          return $ Completion $ \st now ->
            let peerResults = zip peers totalResults
                newPeers    = takeNPeers maxAmount $
                                  [ p | Right (PeerSharingResult ps) <- totalResults
@@ -319,7 +320,12 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
                                           , TracePeerShareResultsFiltered newPeers
                                           ]
                         , decisionState =
-                           st { -- TODO: also update with the failures
+                           st { -- back off peers whose peer-share request failed
+                                establishedPeers =
+                                  EstablishedPeers.setPeerShareTime
+                                    (Set.fromList [ p | (p, Left{}) <- peerResults ])
+                                    (addTime policyPeerShareFailureRetryTime now)
+                                    (establishedPeers st),
                                 knownPeers = KnownPeers.alter
                                               (\x -> case x of
                                                 Nothing ->
@@ -352,7 +358,7 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
               peerSharesRemaining = [  a
                                     | (a, Nothing) <- zip peerShares partialResults ]
 
-          return $ Completion $ \st _ ->
+          return $ Completion $ \st now ->
             let newPeers = takeNPeers maxAmount $
                                [ p | Just (Right (PeerSharingResult ps)) <- partialResults
                                , p <- ps
@@ -362,7 +368,12 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
                                            , TracePeerShareResultsFiltered newPeers
                                            ]
                          , decisionState =
-                            st { -- TODO: also update with the failures
+                            st { -- back off peers whose peer-share request failed
+                                 establishedPeers =
+                                   EstablishedPeers.setPeerShareTime
+                                     (Set.fromList [ p | (p, Left{}) <- peerResults ])
+                                     (addTime policyPeerShareFailureRetryTime now)
+                                     (establishedPeers st),
                                  knownPeers = KnownPeers.alter
                                                (\x -> case x of
                                                  Nothing ->
@@ -410,7 +421,7 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
 
       mapM_ cancel peerSharesIncomplete
 
-      return $ Completion $ \st _ ->
+      return $ Completion $ \st now ->
         let newPeers = takeNPeers maxRemaining $
               case results of
                 Right totalResults  -> [ p | Right (PeerSharingResult ps) <- totalResults
@@ -426,7 +437,12 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
                                        , TracePeerShareResultsFiltered newPeers
                                        ]
                      , decisionState =
-                        st { -- TODO: also update with the failures
+                        st { -- back off peers whose peer-share request failed
+                             establishedPeers =
+                               EstablishedPeers.setPeerShareTime
+                                 (Set.fromList [ p | (p, Left{}) <- peerResults ])
+                                 (addTime policyPeerShareFailureRetryTime now)
+                                 (establishedPeers st),
                              knownPeers = KnownPeers.alter
                                            (\x -> case x of
                                              Nothing ->
