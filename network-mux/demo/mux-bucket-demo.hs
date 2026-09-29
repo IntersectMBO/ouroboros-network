@@ -28,6 +28,7 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer
 
 import Data.Binary.Put qualified as Bin
+import Data.Word (Word64)
 import Data.ByteString qualified as BS
 import Data.ByteString.Char8 qualified as BSC
 import Data.ByteString.Lazy qualified as BL
@@ -55,11 +56,12 @@ import Test.Mux.ReqResp
 -- Options
 --
 
-data Order = Fifo | Arrival
+data Order = Fifo | Arrival | Random
 
 orderName :: Order -> String
 orderName Fifo    = "fifo"
 orderName Arrival = "arrival"
+orderName Random  = "random"
 
 data ServerOpts = ServerOpts {
   soPort       :: Int,
@@ -69,6 +71,11 @@ data ServerOpts = ServerOpts {
   soBudgetMbps :: Double,
   soLowat      :: Int,
   soOrder      :: Order,
+  soSeed       :: Word64,
+  soPeriod     :: Double,
+  soLanes      :: Bool,
+  soTxMbps     :: Double,
+  soSlicePct   :: Int,
   soSduTimeout :: Double,
   soHorizon    :: Double
   }
@@ -79,7 +86,8 @@ data ClientOpts = ClientOpts {
   coPeers        :: Int,
   coStall        :: Int,
   coStallReadBps :: Int,
-  coHorizon      :: Double
+  coHorizon      :: Double,
+  coLinger       :: Double
   }
 
 data Command = ServerCmd ServerOpts | ClientCmd ClientOpts
@@ -124,11 +132,43 @@ serverOptsParser = ServerOpts
     <> showDefault )
   <*> option order
     (  long "order"
-    <> help ("Service order among connections: fifo (equal per-batch share) or arrival "
-             ++ "(strict priority by connection order)")
+    <> help ("Service order among connections: fifo (equal per-batch share), arrival "
+             ++ "(strict priority by connection order) or random (strict priority in a "
+             ++ "seeded order, re-dealt every period)")
     <> metavar "ORDER"
     <> value Fifo
     <> showDefaultWith orderName )
+  <*> option auto
+    (  long "seed"
+    <> help "Seed of the random order"
+    <> metavar "N"
+    <> value 1
+    <> showDefault )
+  <*> option auto
+    (  long "period"
+    <> help "Period after which the random order is re-dealt, in seconds"
+    <> metavar "SECONDS"
+    <> value 599
+    <> showDefault )
+  <*> option onOff
+    (  long "lanes"
+    <> help ("Egress lanes: on (the server's own requests go direct, the tx stream on its "
+             ++ "slice) or off (everything scheduled)")
+    <> metavar "on|off"
+    <> value True
+    <> showDefaultWith (\b -> if b then "on" else "off") )
+  <*> option auto
+    (  long "tx-mbps"
+    <> help "A tx-like stream the server pushes to all peers, total Mb/s (0: none)"
+    <> metavar "MBPS"
+    <> value 0
+    <> showDefault )
+  <*> option auto
+    (  long "slice-pct"
+    <> help "Share of the budget reserved for the tx stream"
+    <> metavar "PERCENT"
+    <> value 15
+    <> showDefault )
   <*> option auto
     (  long "sdu-timeout"
     <> help "Bearer SDU write timeout, in seconds"
@@ -145,7 +185,12 @@ serverOptsParser = ServerOpts
     order = eitherReader $ \case
       "fifo"    -> Right Fifo
       "arrival" -> Right Arrival
-      _         -> Left "expected fifo or arrival"
+      "random"  -> Right Random
+      _         -> Left "expected fifo, arrival or random"
+    onOff = eitherReader $ \case
+      "on"  -> Right True
+      "off" -> Right False
+      _     -> Left "expected on or off"
 
 clientOptsParser :: Parser ClientOpts
 clientOptsParser = ClientOpts
@@ -185,6 +230,13 @@ clientOptsParser = ClientOpts
     <> metavar "SECONDS"
     <> value 120
     <> showDefault )
+  <*> option auto
+    (  long "linger"
+    <> help ("Keep the connections up this many seconds after every EB is done, so the "
+             ++ "server's tx stream runs on an idle link")
+    <> metavar "SECONDS"
+    <> value 0
+    <> showDefault )
 
 commandParser :: Parser Command
 commandParser = hsubparser
@@ -213,14 +265,43 @@ main = do
 -- Shared
 --
 
-ebProtocol :: MiniProtocolDirection mode -> [MiniProtocolInfo mode]
-ebProtocol miniProtocolDir =
-  [ MiniProtocolInfo {
-      miniProtocolNum        = MiniProtocolNum 2,
-      miniProtocolDir,
-      miniProtocolLimits     = MiniProtocolLimits { maximumIngressQueue = 64_000_000 },
-      miniProtocolCapability = Nothing
-    } ]
+-- | The mini-protocols, from the server's side: it serves the EB (2) and
+-- initiates the probe (3) and the tx-like stream (4). The client mirrors it.
+serverProtocols, clientProtocols :: [MiniProtocolInfo InitiatorResponderMode]
+serverProtocols = [ protocol ebNum ResponderDirection, protocol probeNum InitiatorDirection
+                  , protocol txNum InitiatorDirection ]
+clientProtocols = [ protocol ebNum InitiatorDirection, protocol probeNum ResponderDirection
+                  , protocol txNum ResponderDirection ]
+
+ebNum, probeNum, txNum :: MiniProtocolNum
+ebNum    = MiniProtocolNum 2
+probeNum = MiniProtocolNum 3
+txNum    = MiniProtocolNum 4
+
+protocol :: MiniProtocolNum -> MiniProtocolDirection InitiatorResponderMode
+         -> MiniProtocolInfo InitiatorResponderMode
+protocol miniProtocolNum miniProtocolDir = MiniProtocolInfo {
+  miniProtocolNum,
+  miniProtocolDir,
+  miniProtocolLimits     = MiniProtocolLimits { maximumIngressQueue = 64_000_000 },
+  miniProtocolCapability = Nothing
+  }
+
+-- | Which lane each protocol travels in on the server: the EB it serves is
+-- scheduled, the probe -- standing in for the node's own requests -- goes
+-- direct, the tx-like stream takes the slice.
+laneRule :: MiniProtocolNum -> MiniProtocolDir -> Mx.Lane
+laneRule num InitiatorDir | num == txNum = Mx.Slice
+laneRule num dir = Mx.directionSplit num dir
+
+-- | Read until @n@ bytes have arrived.
+drainBytes :: ByteChannel IO -> Int -> IO ()
+drainBytes _    n | n <= 0 = return ()
+drainBytes chan n = do
+  mbs <- recv chan
+  case mbs of
+       Nothing -> return ()
+       Just bs -> drainBytes chan (n - fromIntegral (BL.length bs))
 
 batchBytes :: Int
 batchBytes = 131_072
@@ -263,12 +344,18 @@ ebBurst shape = ReqRespServerBurst $ \_ -> return (go (ebChunks shape))
 data Stats = Stats {
   stGrants   :: !Int,
   stBytes    :: !Int,
-  stSumWrit  :: !Double, stMaxWrit :: !Double,   -- seconds waited for writability
-  stSumTok   :: !Double, stMaxTok  :: !Double    -- seconds waited for tokens
+  stSumWrit  :: !Double, stMaxWrit  :: !Double,  -- seconds waited for writability
+  stSumTok   :: !Double, stMaxTok   :: !Double,  -- seconds waited for tokens
+  stProbes   :: !Int,
+  stSumProbe :: !Double, stMaxProbe :: !Double   -- probe round trips, seconds
   }
 
 emptyStats :: Stats
-emptyStats = Stats 0 0 0 0 0 0
+emptyStats = Stats 0 0 0 0 0 0 0 0 0
+
+addProbe :: Double -> Stats -> Stats
+addProbe rtt st = st { stProbes = stProbes st + 1, stSumProbe = stSumProbe st + rtt
+                     , stMaxProbe = max (stMaxProbe st) rtt }
 
 addGrant :: Int -> DiffTime -> DiffTime -> Stats -> Stats
 addGrant len waitedWritable waitedTokens st =
@@ -285,6 +372,7 @@ addGrant len waitedWritable waitedTokens st =
 data ConnResult = ConnResult {
   crPeer    :: !Int,
   crOutcome :: Either String Double,   -- ^ why it did not finish, or seconds taken
+  crLife    :: !Double,                -- ^ seconds from accept to close
   crStats   :: !Stats
   }
 
@@ -292,31 +380,51 @@ server :: ServerOpts -> IO ()
 server opts = withIOManager $ \ioManager -> do
   let shape = ebShape opts
 
-  bucket_m <- newBucketFor opts
+  buckets_m <- newBucketsFor opts
   printServerBanner opts shape
 
   withListenSocket ioManager (soPort opts) $ \lsock -> do
     conns <- forM [0 .. soPeers opts - 1] $ \i -> do
       (sock, _) <- Socket.accept lsock
       associateWithIOManager ioManager (Right sock)
-      async (serveConn opts shape bucket_m i sock)
+      async (serveConn opts shape buckets_m i sock)
     results <- mapM wait conns
     printServerSummary opts results
 
-newBucketFor :: ServerOpts -> IO (Maybe (Mx.Bucket IO))
-newBucketFor opts
-  | soBudgetMbps opts > 0 = Just <$> Mx.newBucket (soBudgetMbps opts * 1e6 / 8) (2 * batchBytes)
-  | otherwise             = return Nothing
+-- | The budget's bucket and, when a tx stream is offered, the slice's.
+newBucketsFor :: ServerOpts -> IO (Maybe (Mx.Bucket IO, Maybe (Mx.Bucket IO)))
+newBucketsFor opts
+  | soBudgetMbps opts > 0 = do
+      budget <- Mx.newBucket rate (2 * batchBytes) rotation
+      slice  <- if soTxMbps opts > 0
+                   then Just <$> Mx.newBucket (rate * fromIntegral (soSlicePct opts) / 100)
+                                              (2 * batchBytes) Nothing
+                   else return Nothing
+      return (Just (budget, slice))
+  | otherwise = return Nothing
+  where
+    rate = soBudgetMbps opts * 1e6 / 8
+    rotation = case soOrder opts of
+                    Random -> Just Mx.Rotation { Mx.roSeed   = soSeed opts
+                                               , Mx.roPeriod = realToFrac (soPeriod opts) }
+                    _      -> Nothing
 
 printServerBanner :: ServerOpts -> EbShape -> IO ()
 printServerBanner opts shape =
   printf ("==== mux-bucket-demo server: %d peers x %.1f MB (%d chunks), "
-          ++ "budget %s, lowat %d, order %s ====\n")
+          ++ "budget %s, lowat %d, order %s%s, lanes %s%s ====\n")
     (soPeers opts) (fromIntegral (ebBytes shape) / 1e6 :: Double)
-    (length (ebChunks shape)) budgetStr (soLowat opts) (orderName (soOrder opts))
+    (length (ebChunks shape)) budgetStr (soLowat opts) (orderName (soOrder opts)) orderDetail
+    (if soLanes opts then "on" else "off" :: String) txDetail
   where
+    txDetail | soTxMbps opts > 0 = printf ", tx stream %.1f Mb/s on a %d%% slice"
+                                          (soTxMbps opts) (soSlicePct opts)
+             | otherwise         = "" :: String
     budgetStr | soBudgetMbps opts > 0 = printf "%.0f Mb/s" (soBudgetMbps opts)
               | otherwise             = "off" :: String
+    orderDetail = case soOrder opts of
+                       Random -> printf " (seed %d, period %.0f s)" (soSeed opts) (soPeriod opts)
+                       _      -> "" :: String
 
 withListenSocket :: IOManager -> Int -> (Socket.Socket -> IO a) -> IO a
 withListenSocket ioManager port k = do
@@ -356,9 +464,10 @@ reportLowat lowat sock =
          putStrLn ("TCP_NOTSENT_LOWAT: unsupported on this platform, "
                    ++ "gate is send-buffer space")
 
-serveConn :: ServerOpts -> EbShape -> Maybe (Mx.Bucket IO) -> Int -> Socket.Socket
-  -> IO ConnResult
-serveConn opts shape bucket_m i sock = do
+serveConn :: ServerOpts -> EbShape -> Maybe (Mx.Bucket IO, Maybe (Mx.Bucket IO)) -> Int
+  -> Socket.Socket -> IO ConnResult
+serveConn opts shape buckets_m i sock = do
+  tStart <- getMonotonicTime
   (statsVar, tracers) <- newStatsTracer
   let lowat     = soLowat opts
       horizonDt = realToFrac (soHorizon opts) :: DiffTime
@@ -367,13 +476,18 @@ serveConn opts shape bucket_m i sock = do
   bearer <- getBearer mkBearer (realToFrac (soSduTimeout opts)) sock Nothing
   when (i == 0 && lowat > 0) $
     reportLowat lowat sock
-  mux <- case bucket_m of
-              Just b  -> Mx.newWithEgressBucket b tracers (ebProtocol ResponderDirectionOnly)
-              Nothing -> Mx.new tracers (ebProtocol ResponderDirectionOnly)
+  let policy (budget, slice) = Mx.EgressPolicy {
+          Mx.egressBudget = budget,
+          Mx.egressSlice  = slice,
+          Mx.egressLaneOf = if soLanes opts then laneRule else \_ _ -> Mx.Scheduled }
+  mux <- case buckets_m of
+              Just bs -> Mx.newWithEgress (policy bs) tracers serverProtocols
+              Nothing -> Mx.new tracers serverProtocols
 
   case soOrder opts of
-       Arrival -> atomically $ Mx.setEgressRank mux (Mx.Rank (fromIntegral i))
+       Arrival -> atomically $ Mx.setEgressRank mux (Mx.Rank (fromIntegral (min 255 i)))
        Fifo    -> return ()
+       Random  -> return ()          -- the bucket's rotation orders tier 0
 
   let serveEb chan = do
         t0 <- getMonotonicTime
@@ -382,7 +496,11 @@ serveConn opts shape bucket_m i sock = do
         return (secs t0 t1, trailing)
 
   r <- withAsync (Mx.run mux bearer) $ \muxA -> do
-    await <- Mx.runMiniProtocol mux (MiniProtocolNum 2) ResponderDirectionOnly StartOnDemand serveEb
+    await <- Mx.runMiniProtocol mux ebNum ResponderDirection StartOnDemand serveEb
+    _ <- Mx.runMiniProtocol mux probeNum InitiatorDirection StartEagerly (probe statsVar)
+    when (soTxMbps opts > 0) $
+      void $ Mx.runMiniProtocol mux txNum InitiatorDirection StartEagerly
+               (txStream (soTxMbps opts * 1e6 / 8 / fromIntegral (soPeers opts)))
 
     res <- timeout horizonDt (atomically await)
     -- the protocol completing means its bytes left the wanton, not that they
@@ -395,10 +513,33 @@ serveConn opts shape bucket_m i sock = do
 
   closeQuietly sock
   st <- readTVarIO statsVar
+  tEnd <- getMonotonicTime
+  let life = secs tStart tEnd
   case r of
-       Just (Right dt) -> return $ ConnResult i (Right dt) st
-       Just (Left e)   -> return $ ConnResult i (Left (show e)) st
-       Nothing         -> return $ ConnResult i (Left "horizon") st
+       Just (Right dt) -> return $ ConnResult i (Right dt) life st
+       Just (Left e)   -> return $ ConnResult i (Left (show e)) life st
+       Nothing         -> return $ ConnResult i (Left "horizon") life st
+
+-- | Every 250 ms: 32 bytes to the peer and its echo back. The round trip is
+-- what the node's own requests would see on this connection.
+probe :: StrictTVar IO Stats -> ByteChannel IO -> IO ((), Maybe BL.ByteString)
+probe statsVar chan = forever $ do
+  t0 <- getMonotonicTime
+  send chan (BL.replicate 32 0x70)
+  drainBytes chan 32
+  t1 <- getMonotonicTime
+  atomically $ modifyTVar statsVar (addProbe (secs t0 t1))
+  threadDelay 0.25
+
+-- | A tx-like stream: 4 kB messages offered at @bps@ at most; the lane decides
+-- how fast they actually go, and a message the lane held back is not made up
+-- for afterwards.
+txStream :: Double -> ByteChannel IO -> IO ((), Maybe BL.ByteString)
+txStream bps chan = forever $ do
+  t0 <- getMonotonicTime
+  send chan (BL.replicate 4096 0x74)
+  t1 <- getMonotonicTime
+  threadDelay (realToFrac (4096 / bps) - (t1 `diffTime` t0))
 
 printServerSummary :: ServerOpts -> [ConnResult] -> IO ()
 printServerSummary opts results = do
@@ -410,12 +551,15 @@ printServerSummary opts results = do
       totG (fromIntegral (tot stBytes) / 1e6 :: Double)
       (1e3 * mean (tot stSumWrit)) (1e3 * maxOf stMaxWrit)
       (1e3 * mean (tot stSumTok))  (1e3 * maxOf stMaxTok)
-    forM_ failed $ \(i, why, st) ->
-      printf "  conn %3d (%s): %d grants, %.2f MB, waited writable max %.1f ms, total %.1f s\n"
+    forM_ failed $ \(i, why, life, st) ->
+      printf "  conn %3d (%s): %d grants, %.2f MB, waited writable max %.1f ms, closed after %.1f s\n"
         i why (stGrants st) (fromIntegral (stBytes st) / 1e6 :: Double)
-        (1e3 * stMaxWrit st) (stSumWrit st)
+        (1e3 * stMaxWrit st) life
+  printf "probes: %d; round trip mean %.2f ms max %.2f ms\n"
+    totP (1e3 * tot stSumProbe / fromIntegral (max 1 totP)) (1e3 * maxOf stMaxProbe)
   where
-    failed  = [ (crPeer r, why, crStats r) | r <- results, Left why <- [crOutcome r] ]
+    totP    = tot stProbes
+    failed  = [ (crPeer r, why, crLife r, crStats r) | r <- results, Left why <- [crOutcome r] ]
     tot f   = sum [ f (crStats r) | r <- results ]
     totG    = tot stGrants
     mean s  = if totG == 0
@@ -452,15 +596,28 @@ client :: ClientOpts -> IO ()
 client opts = withIOManager $ \ioManager -> do
   (barrier, release) <- newBarrier (coPeers opts)
   addr:_ <- Socket.getAddrInfo Nothing (Just (coHost opts)) (Just (show (coPort opts)))
+  txVar <- newTVarIO (0 :: Int)
+  -- a connection stays up until every peer has its EB, so the probes and the
+  -- tx stream are measured over the whole run on every connection
+  (done, releaseDone) <- newBarrier (coPeers opts - coStall opts)
+  doneA <- async $ do
+    t <- releaseDone
+    b <- readTVarIO txVar
+    return (t, b)
   let peer i | i < coStall opts = stalledPeer opts barrier
-             | otherwise        = muxPeer opts barrier
+             | otherwise        = muxPeer opts barrier done txVar
   peersA <- forM [0 .. coPeers opts - 1] $ \i ->
     async $ bracket (connectTo ioManager addr) closeQuietly (peer i)
   t0 <- release
   printf ("==== mux-bucket-demo client: %d peers (%d stalled), "
           ++ "all requests fired at once ====\n") (coPeers opts) (coStall opts)
   results <- mapM wait peersA
-  printClientSummary opts t0 results
+  txBytes <- readTVarIO txVar
+  -- the tx stream after the last EB, on an otherwise idle link
+  atDone_m <- timeout (realToFrac (coHorizon opts) :: DiffTime) (wait doneA)
+  let linger = [ (coLinger opts, txBytes - txAtDone)
+               | coLinger opts > 0, Just (_, txAtDone) <- [atDone_m] ]
+  printClientSummary opts t0 results txBytes linger
 
 connectTo :: IOManager -> Socket.AddrInfo -> IO Socket.Socket
 connectTo ioManager addr = do
@@ -469,12 +626,14 @@ connectTo ioManager addr = do
   Socket.connect sock (Socket.addrAddress addr)
   return sock
 
--- | A normal peer: request the EB at the barrier, count the response bytes.
-muxPeer :: ClientOpts -> Barrier -> Socket.Socket -> IO (Maybe (Time, Int))
-muxPeer opts barrier sock = do
+-- | A normal peer: request the EB at the barrier, count the response bytes;
+-- meanwhile echo the server's probes and sink its tx stream.
+muxPeer :: ClientOpts -> Barrier -> Barrier -> StrictTVar IO Int -> Socket.Socket
+        -> IO (Maybe (Time, Int))
+muxPeer opts barrier done txVar sock = do
   let horizon = realToFrac (coHorizon opts) :: DiffTime
   bearer <- getBearer makeSocketBearer 30 sock Nothing
-  mux <- Mx.new Mx.nullTracers (ebProtocol InitiatorDirectionOnly)
+  mux <- Mx.new Mx.nullTracers clientProtocols
   let fetchEb chan = do
         barrierReady barrier
         barrierWait barrier
@@ -484,14 +643,25 @@ muxPeer opts barrier sock = do
         return ((t, bytes), trailing)
 
   r <- withAsync (Mx.run mux bearer) $ \_ -> do
-    await <- Mx.runMiniProtocol mux (MiniProtocolNum 2) InitiatorDirectionOnly StartEagerly fetchEb
+    _ <- Mx.runMiniProtocol mux probeNum ResponderDirection StartOnDemand echo
+    _ <- Mx.runMiniProtocol mux txNum ResponderDirection StartOnDemand sink
+    await <- Mx.runMiniProtocol mux ebNum InitiatorDirection StartEagerly fetchEb
     res <- timeout horizon (atomically await)
+    barrierReady done
+    _ <- timeout horizon (barrierWait done)
+    threadDelay (realToFrac (coLinger opts))
     Mx.stop mux
     return res
   case r of
        Just (Right x) -> return $ Just x
        _              -> return Nothing
   where
+    echo chan = forever $ recv chan >>= maybe (return ()) (send chan)
+    sink chan = forever $ recv chan >>= \mbs ->
+      case mbs of
+           Just bs -> atomically $ modifyTVar txVar (+ fromIntegral (BL.length bs))
+           Nothing -> return ()
+
     countBytes :: Int -> ReqRespClientLoop BS.ByteString IO Int
     countBytes !acc = AwaitResp {
       handleMsgDone = return acc,
@@ -528,8 +698,9 @@ requestSdu req = encodeSDU SDU {
       Bin.putWord32be (fromIntegral (BS.length req))
       Bin.putByteString req
 
-printClientSummary :: ClientOpts -> Time -> [Maybe (Time, Int)] -> IO ()
-printClientSummary opts t0 results = do
+printClientSummary :: ClientOpts -> Time -> [Maybe (Time, Int)] -> Int -> [(Double, Int)]
+                   -> IO ()
+printClientSummary opts t0 results txBytes linger = do
   forM_ [0.25, 0.5, 0.75, 0.95 :: Double] $ \q -> do
     let k = ceiling (q * fromIntegral (coPeers opts)) :: Int
     if k <= n
@@ -540,7 +711,15 @@ printClientSummary opts t0 results = do
     printf "  aggregate: %.1f MB in %.2f s = %.0f Mb/s\n"
       (fromIntegral bytes / 1e6 :: Double) (last done)
       (fromIntegral bytes * 8 / 1e6 / last done)
+  when (n > 0 && txBytes > 0) $
+    printf "  tx stream: %.1f MB in %.2f s = %.1f Mb/s\n"
+      (fromIntegral txDuring / 1e6 :: Double) (last done)
+      (fromIntegral txDuring * 8 / 1e6 / last done)
+  forM_ linger $ \(secs', bytes') ->
+    printf "  tx stream on the idle link: %.1f MB in %.1f s = %.1f Mb/s\n"
+      (fromIntegral bytes' / 1e6 :: Double) secs' (fromIntegral bytes' * 8 / 1e6 / secs')
   where
-    done  = sort [ secs t0 t | Just (t, _) <- results ]
-    bytes = sum [ b | Just (_, b) <- results ]
-    n     = length done
+    done     = sort [ secs t0 t | Just (t, _) <- results ]
+    bytes    = sum [ b | Just (_, b) <- results ]
+    n        = length done
+    txDuring = txBytes - sum (map snd linger)
