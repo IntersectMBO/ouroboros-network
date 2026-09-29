@@ -172,6 +172,8 @@ data Arguments extraChurnArgs extraFlags m = Arguments
     , aExtraChurnArgs       :: extraChurnArgs
     , aTxDecisionPolicy     :: TxDecisionPolicy
     , aTxs                  :: [Tx Int]
+    , aEgressScheduling     :: Maybe Diffusion.EgressScheduling
+      -- ^ scheduled egress for this node's node-to-node connections
     }
 
 run :: forall extraState extraDebugState extraAPI
@@ -478,7 +480,7 @@ run blockGeneratorArgs ni na
       , Diffusion.dcMuxForkPolicy          = noBindForkPolicy
       , Diffusion.dcLocalMuxForkPolicy     = noBindForkPolicy
       , Diffusion.dcEgressPollInterval     = 0.001
-      , Diffusion.dcEgressScheduling       = Nothing
+      , Diffusion.dcEgressScheduling       = aEgressScheduling na
       }
 
 --- Utils
