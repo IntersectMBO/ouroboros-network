@@ -11,7 +11,9 @@
 -- pure 'grantAt', so grant instants are exact.
 --
 -- Service order is @('Rank', ticket)@: lower rank first, FIFO among equals;
--- with every bearer at 'Rank' 0 (the default) that is an equal share.  A short
+-- with every bearer at 'Rank' 0 (the default) that is an equal share. With a
+-- 'Rotation' the rank set by the application is the tier, and within a tier
+-- every bearer is dealt a random place that is re-dealt each period. A short
 -- head sleeps until its bytes are there, at microsecond resolution.
 --
 -- Fast path: with nobody queued and enough tokens, a take is one transaction.
@@ -24,56 +26,79 @@ module Network.Mux.Egress.Bucket
   , setBucketRate
   , BucketHandle
   , registerBearer
+  , bearerId
   , Rank (..)
   , setRank
+  , Rotation (..)
   , awaitGrant
+  , awaitGrantBorrowing
+  , takeOnCredit
     -- * Pure core
   , tokenLevel
   , grantAt
   , wakeAt
   , atRate
+  , rotatedRank
+  , queueRank
+  , chargeAt
   ) where
 
 import Control.Concurrent.Class.MonadSTM qualified as LazySTM
 import Control.Concurrent.Class.MonadSTM.Strict
-import Control.Monad (when)
+import Control.Monad (void, when)
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 
+import Data.Bits (shiftL, xor, (.&.), (.|.))
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Word (Word32, Word64)
+import Data.Word (Word32, Word64, Word8)
+import System.Random.SplitMix qualified as SM
 
 
-newtype Rank = Rank Word32
+-- | A bearer's tier: lower is served first.
+newtype Rank = Rank Word8
   deriving (Eq, Ord, Show)
 
 newtype Ticket = Ticket Word64
   deriving (Eq, Ord, Show)
 
-type WaitKey = (Rank, Ticket)
+-- | Where a waiter queues ('queueRank'), then when it joined.
+type WaitKey = (Word32, Ticket)
+
+-- | How the order within a tier is drawn: a node-local seed, and the period
+-- after which every bearer is dealt a new place.
+data Rotation = Rotation {
+  roSeed   :: !Word64,
+  roPeriod :: !DiffTime      -- ^ e.g. 599 s; zero or less is no rotation
+  }
+  deriving Show
 
 data Bucket m = Bucket {
   bRate     :: !(StrictTVar m Double),   -- ^ bytes/s; @<= 0@ disables the bucket
   bCapacity :: !Int,                     -- ^ bytes; a small multiple of the batch size
+  bRotation :: !(Maybe Rotation),        -- ^ order within a tier, if rotating
   bFull     :: !(StrictTVar m Time),     -- ^ the instant the bucket is full again
   bWaiters  :: !(StrictTVar m (Map WaitKey (StrictTVar m Bool))),
     -- ^ queued bearers, by key, with their wake variables
-  bTickets  :: !(StrictTVar m Ticket)
+  bTickets  :: !(StrictTVar m Ticket),
+  bBearers  :: !(StrictTVar m Word64)    -- ^ next bearer id
   }
 
 newBucket :: (MonadSTM m, MonadMonotonicTime m)
-          => Double  -- ^ rate, bytes/s
-          -> Int     -- ^ capacity, bytes
+          => Double          -- ^ rate, bytes/s
+          -> Int             -- ^ capacity, bytes
+          -> Maybe Rotation
           -> m (Bucket m)
-newBucket rate capacity = do
+newBucket rate capacity bRotation = do
   now      <- getMonotonicTime
   bRate    <- newTVarIO rate
   bFull    <- newTVarIO now
   bWaiters <- newTVarIO Map.empty
   bTickets <- newTVarIO (Ticket 0)
-  return Bucket { bRate, bCapacity = capacity, bFull, bWaiters, bTickets }
+  bBearers <- newTVarIO 0
+  return Bucket { bRate, bCapacity = capacity, bRotation, bFull, bWaiters, bTickets, bBearers }
 
 -- | Change the rate, keeping the token level as of @now@.
 setBucketRate :: MonadSTM m => Bucket m -> Time -> Double -> STM m ()
@@ -134,15 +159,49 @@ atRate rate rate' cap now full
   | otherwise =
       realToFrac ((fromIntegral cap - tokenLevel rate cap full now) / rate') `addTime` now
 
+-- | The full instant after taking @need@ bytes at @now@ without waiting: a
+-- bucket that is short goes into debt, a full one starts from @now@.
+chargeAt :: Double -> Time -> Time -> Int -> Time
+chargeAt rate full now need
+  | rate <= 0 = now
+  | otherwise = realToFrac (fromIntegral need / rate) `addTime` max full now
+
+-- | The place a bearer is dealt within its tier for the period that contains
+-- @now@: the same for every request in that period, a fresh permutation in the
+-- next. 24 bits, leaving the top byte of the queue key to the tier. With a
+-- period of zero or less there is no rotation: every bearer is dealt place 0,
+-- so its tier is served FIFO.
+rotatedRank :: Rotation -> Word64 -> Time -> Word32
+rotatedRank Rotation { roSeed, roPeriod } bearer (Time now)
+  | roPeriod <= 0 = 0
+  | otherwise     =
+      fst (SM.nextWord32 (SM.mkSMGen (periodSeed `xor` bearer))) .&. 0x00ffffff
+  where
+    period     = floor (now / roPeriod) :: Word64
+    periodSeed = fst (SM.nextWord64 (SM.mkSMGen (roSeed `xor` period)))
+
+-- | Where a bearer queues, lower first: the tier set with 'setRank' in the top
+-- byte, and below it the place the rotation deals it, or 0 without one.
+queueRank :: Maybe Rotation -> Word64 -> Rank -> Time -> Word32
+queueRank rotation bearer (Rank tier) now =
+  fromIntegral tier `shiftL` 24 .|. maybe 0 (\ro -> rotatedRank ro bearer now) rotation
+
 
 data BucketHandle m = BucketHandle {
   bhBucket :: !(Bucket m),
+  bhId     :: !Word64,
   bhRank   :: !(StrictTVar m Rank),
   bhWake   :: !(StrictTVar m Bool)       -- ^ set by the bearer ahead of us when it is granted
   }
 
 registerBearer :: MonadSTM m => Bucket m -> m (BucketHandle m)
-registerBearer bucket = BucketHandle bucket <$> newTVarIO (Rank 0) <*> newTVarIO False
+registerBearer bucket@Bucket { bBearers } = do
+  bhId <- atomically $ stateTVar bBearers (\n -> (n, n + 1))
+  BucketHandle bucket bhId <$> newTVarIO (Rank 0) <*> newTVarIO False
+
+-- | Handed out in registration order, from 0.
+bearerId :: BucketHandle m -> Word64
+bearerId = bhId
 
 setRank :: MonadSTM m => BucketHandle m -> Rank -> STM m ()
 setRank BucketHandle { bhRank } = writeTVar bhRank
@@ -159,6 +218,12 @@ tryTake Bucket { bRate, bCapacity, bFull } now need = do
      then Right () <$ writeTVar bFull full'
      else return (Left ready)
 
+-- | Take @need@ bytes on credit: never waits, the bucket repays later.
+takeOnCredit :: MonadSTM m => Bucket m -> Time -> Int -> STM m ()
+takeOnCredit Bucket { bRate, bFull } now need = do
+  rate <- readTVar bRate
+  modifyTVar bFull (\full -> chargeAt rate full now need)
+
 -- | Wake the bearer at the head of the queue, if any.
 wakeHead :: MonadSTM m => Map WaitKey (StrictTVar m Bool) -> STM m ()
 wakeHead waiters =
@@ -167,13 +232,28 @@ wakeHead waiters =
        Nothing        -> return ()
 
 
-data Attempt = Granted | Displaced | ShortUntil !Time
+data Attempt = Granted | Borrowed | Displaced | ShortUntil !Time
 
 -- | Block until @need@ bytes are granted to this bearer.
 awaitGrant :: forall m. (MonadTimer m, MonadMask m)
            => BucketHandle m -> Int -> m ()
-awaitGrant BucketHandle { bhBucket = bucket@Bucket { bWaiters, bTickets }, bhRank, bhWake }
-           need =
+awaitGrant h need = void (awaitGrantWith Nothing h need)
+
+-- | As 'awaitGrant', but when the bearer's own bucket is short the batch may
+-- come from @budget@ instead, if nobody is waiting on it and it has the bytes
+-- to spare: capacity nobody else is using. A batch our own bucket pays for is
+-- charged to @budget@ on credit in the same transaction, so it always counts
+-- against the budget. Returns whether the batch was borrowed.
+awaitGrantBorrowing :: forall m. (MonadTimer m, MonadMask m)
+                    => BucketHandle m -> Bucket m -> Int -> m Bool
+awaitGrantBorrowing h budget = awaitGrantWith (Just budget) h
+
+awaitGrantWith :: forall m. (MonadTimer m, MonadMask m)
+               => Maybe (Bucket m) -> BucketHandle m -> Int -> m Bool
+awaitGrantWith borrow_m
+               BucketHandle { bhBucket = bucket@Bucket { bWaiters, bTickets, bRotation }
+                            , bhId, bhRank, bhWake }
+               need =
   -- masked until the exception handler is in place: a bearer killed on its
   -- way into the queue must not leave a dead entry at the head
   mask $ \unmask -> do
@@ -181,27 +261,48 @@ awaitGrant BucketHandle { bhBucket = bucket@Bucket { bWaiters, bTickets }, bhRan
 
     -- one transaction: take at once if nothing is queued and the tokens are
     -- there, otherwise join the queue.  Nothing can slip in between.
-    key_m <- atomically $ do
+    r <- atomically $ do
       waiters <- readTVar bWaiters
-      granted <- if Map.null waiters
-                    then either (const False) (const True) <$> tryTake bucket now need
-                    else return False
-      if granted
-         then return Nothing
-         else do
-           ticket <- stateTVar bTickets (\t@(Ticket n) -> (t, Ticket (n + 1)))
-           rank   <- readTVar bhRank
-           let key = (rank, ticket)
+      fast <- if Map.null waiters
+                 then takeOrBorrow now
+                 else return (Left now)
+      case fast of
+           Right borrowed -> return (Left borrowed)
+           Left _ -> do
+             ticket <- stateTVar bTickets (\t@(Ticket n) -> (t, Ticket (n + 1)))
+             tier   <- readTVar bhRank
+             let key = (queueRank bRotation bhId tier now, ticket)
 
-           writeTVar bhWake False
-           writeTVar bWaiters (Map.insert key bhWake waiters)
-           return (Just key)
+             writeTVar bhWake False
+             writeTVar bWaiters (Map.insert key bhWake waiters)
+             return (Right key)
 
-    case key_m of
-         Nothing  -> return ()
-         Just key -> unmask (loop key) `onException` cancel key
+    case r of
+         Left borrowed -> return borrowed
+         Right key     -> unmask (loop key) `onException` cancel key
   where
-    loop :: WaitKey -> m ()
+    -- take from our bucket; failing that, from the budget if it is idle:
+    -- nobody waiting and the bytes there. Idle but short, the wait is until
+    -- whichever bucket has the bytes first. Right: taken, and whether it was
+    -- borrowed; Left: the instant to check again.
+    takeOrBorrow :: Time -> STM m (Either Time Bool)
+    takeOrBorrow now = do
+      own <- tryTake bucket now need
+      case (own, borrow_m) of
+           (Right (), Nothing)       -> return (Right False)
+           (Right (), Just budget)   -> Right False <$ takeOnCredit budget now need
+           (Left ready, Nothing)     -> return (Left ready)
+           (Left ready, Just budget@Bucket { bWaiters = budgetWaiters }) -> do
+             idle <- Map.null <$> readTVar budgetWaiters
+             if not idle
+                then return (Left ready)
+                else do
+                  lent <- tryTake budget now need
+                  case lent of
+                       Right ()         -> return (Right True)
+                       Left readyBudget -> return (Left (min ready readyBudget))
+
+    loop :: WaitKey -> m Bool
     loop key = do
       atHead <- atomically $
         (== Just key) . fmap fst . Map.lookupMin <$> readTVar bWaiters
@@ -224,18 +325,19 @@ awaitGrant BucketHandle { bhBucket = bucket@Bucket { bWaiters, bTickets }, bhRan
              if fmap fst (Map.lookupMin waiters) /= Just key
                then return Displaced
                else do
-                 taken <- tryTake bucket now need
+                 taken <- takeOrBorrow now
                  case taken of
-                      Right ()   -> do
+                      Right borrowed -> do
                         let waiters' = Map.delete key waiters
 
                         writeTVar bWaiters waiters'
                         wakeHead waiters'
 
-                        return Granted
+                        return (if borrowed then Borrowed else Granted)
                       Left ready -> return (ShortUntil ready)
            case r of
-                Granted          -> return ()
+                Granted          -> return False
+                Borrowed         -> return True
                 Displaced        -> loop key
                 ShortUntil ready -> do
                   -- sleep until the bytes are there; wake early if a lower

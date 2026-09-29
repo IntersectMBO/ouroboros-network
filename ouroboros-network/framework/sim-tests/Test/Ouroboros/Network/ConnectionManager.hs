@@ -356,7 +356,7 @@ makeFDBearer = MakeBearer $ \_ _ _ ->
           Mx.batchSize      = 1500,
           Mx.name           = "FD",
           Mx.egressInterval = 0,
-          Mx.awaitWritable  = return ()
+          Mx.awaitWritable  = \_ _ -> return ()
         }
 
 -- | We only keep exceptions here which should not be handled by the test
