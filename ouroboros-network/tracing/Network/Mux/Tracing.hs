@@ -607,7 +607,9 @@ instance LogFormatting Mux.CountersTrace where
                                               , Mux.scScheduledBatches, Mux.scWaitTokens
                                               , Mux.scWaitWritable, Mux.scWaitsOver
                                               , Mux.scBudgetLevel, Mux.scBudgetQueued
-                                              , Mux.scSliceQueued } =
+                                              , Mux.scSliceQueued, Mux.scBursts
+                                              , Mux.scBusyTime, Mux.scContendedTime
+                                              , Mux.scBurstsOver, Mux.scBurstsWider } =
           object
             [ "directBytes" .= scDirectBytes
             , "sliceBytes" .= scSliceBytes
@@ -620,6 +622,11 @@ instance LogFormatting Mux.CountersTrace where
             , "budgetLevel" .= scBudgetLevel
             , "budgetQueued" .= scBudgetQueued
             , "sliceQueued" .= scSliceQueued
+            , "bursts" .= scBursts
+            , "busyTime" .= (realToFrac scBusyTime :: Double)
+            , "contendedTime" .= (realToFrac scContendedTime :: Double)
+            , "burstsOver" .= [ (realToFrac b :: Double, n) | (b, n) <- scBurstsOver ]
+            , "burstsWider" .= scBurstsWider
             ]
         ingressObject side Mux.IngressCounts { Mux.icReadTimeouts, Mux.icOverruns
                                              , Mux.icProtocolErrors, Mux.icBearerClosed } =
@@ -651,7 +658,11 @@ instance LogFormatting Mux.CountersTrace where
                                                       , Mux.scWaitTokens, Mux.scWaitWritable
                                                       , Mux.scWaitsOver, Mux.scBudgetLevel
                                                       , Mux.scBudgetQueued
-                                                      , Mux.scSliceQueued } =
+                                                      , Mux.scSliceQueued, Mux.scBursts
+                                                      , Mux.scBusyTime
+                                                      , Mux.scContendedTime
+                                                      , Mux.scBurstsOver
+                                                      , Mux.scBurstsWider } =
           [ IntM    (prefix <> ".direct.bytes")           (fromIntegral scDirectBytes)
           , IntM    (prefix <> ".slice.bytes")            (fromIntegral scSliceBytes)
           , IntM    (prefix <> ".slice.borrowedBytes")    (fromIntegral scSliceBorrowedBytes)
@@ -662,7 +673,14 @@ instance LogFormatting Mux.CountersTrace where
           , IntM    (prefix <> ".budget.level")           (fromIntegral scBudgetLevel)
           , IntM    (prefix <> ".budget.queued")          (fromIntegral scBudgetQueued)
           , IntM    (prefix <> ".slice.queued")           (fromIntegral scSliceQueued)
+          , IntM    (prefix <> ".budget.bursts")          (fromIntegral scBursts)
+          , DoubleM (prefix <> ".budget.busyTime")        (realToFrac scBusyTime)
+          , DoubleM (prefix <> ".budget.contendedTime")   (realToFrac scContendedTime)
           ] ++
+          [ IntM (prefix <> burstsOverSuffix (realToFrac b)) (fromIntegral n)
+          | (b, n) <- scBurstsOver ] ++
+          [ IntM (prefix <> ".budget.burstsWider." <> showT w) (fromIntegral n)
+          | (w, n) <- scBurstsWider ] ++
           [ IntM (prefix <> waitsOverSuffix (realToFrac b)) (fromIntegral n)
           | (b, n) <- scWaitsOver ]
         ingressMetrics prefix Mux.IngressCounts { Mux.icReadTimeouts, Mux.icOverruns
@@ -711,7 +729,19 @@ instance MetaTrace Mux.CountersTrace where
           , (".slice.queued",           "Bearers waiting on the slice.")
           ] ++
           [ (waitsOverSuffix (realToFrac b), "Batches whose token wait exceeded this bound.")
-          | b <- Mux.egressWaitBounds ]
+          | b <- Mux.egressWaitBounds ] ++
+          [ (".budget.bursts",
+             "Busy periods of the budget: from a first bearer queued to none.")
+          , (".budget.busyTime",
+             "Seconds with a bearer queued on the budget, the budget binding.")
+          , (".budget.contendedTime",
+             "Seconds with two or more bearers queued, strict priority deciding.")
+          ] ++
+          [ (burstsOverSuffix (realToFrac b), "Busy periods longer than this bound.")
+          | b <- Mux.egressBurstBounds ] ++
+          [ (".budget.burstsWider." <> showT w,
+             "Busy periods with at least this many bearers queued at once.")
+          | w <- Mux.egressBurstWidths ]
       ]
     metricsDocFor (Namespace _ [side, "Ingress"]) =
       [ (ingressPrefix side <> ".readTimeouts",
@@ -738,6 +768,12 @@ waitsOverSuffix :: Double -> Text
 waitsOverSuffix b
   | b < 1     = ".scheduled.waitsOver." <> showT (round (b * 1000) :: Integer) <> "ms"
   | otherwise = ".scheduled.waitsOver." <> showT (round b :: Integer) <> "s"
+
+-- | @.budget.burstsOver.100ms@ and so on, one per bound.
+burstsOverSuffix :: Double -> Text
+burstsOverSuffix b
+  | b < 1     = ".budget.burstsOver." <> showT (round (b * 1000) :: Integer) <> "ms"
+  | otherwise = ".budget.burstsOver." <> showT (round b :: Integer) <> "s"
 
 sideDoc :: Text -> Text
 sideDoc "Local" = "node-to-client"
