@@ -69,14 +69,21 @@ socketAsBearer sduSize batchSize readBuffer_m sduTimeout egressInterval sd =
         Mx.awaitWritable  = awaitWritableSocket
       }
     where
-      -- POLLOUT through the IO manager.  With TCP_NOTSENT_LOWAT set on the
-      -- socket this means "unsent bytes below the mark and room in the
-      -- buffer"; without it, "room in the send buffer".
-      awaitWritableSocket :: IO ()
+      -- Wait for POLLOUT: some room in the send buffer (with TCP_NOTSENT_LOWAT,
+      -- unsent bytes below the mark), not room for a whole batch, so the write
+      -- can still block. Nothing drained within sduTimeout fails the bearer
+      -- with 'SDUWriteTimeout'. A no-op on Windows.
+      awaitWritableSocket :: Tracer IO Mx.BearerTrace -> Mx.TimeoutFn IO -> IO ()
 #if defined(mingw32_HOST_OS)
-      awaitWritableSocket = return ()
+      awaitWritableSocket _ _ = return ()
 #else
-      awaitWritableSocket = Socket.withFdSocket sd $ \fd -> threadWaitWrite (Fd fd)
+      awaitWritableSocket tracer timeout = do
+          r <- timeout sduTimeout $ Socket.withFdSocket sd $ \fd -> threadWaitWrite (Fd fd)
+          case r of
+               Nothing -> do
+                 traceWith tracer Mx.TraceSDUWriteTimeoutException
+                 throwIO Mx.SDUWriteTimeout
+               Just () -> return ()
 #endif
 
       readSocket :: Tracer IO BearerTrace -> Mx.TimeoutFn IO -> IO (Mx.SDU, Time)

@@ -31,7 +31,7 @@ import Data.ByteString.Lazy.Char8 qualified as BL8 (pack)
 import Data.List (dropWhileEnd, nub)
 import Data.List qualified as List
 import Data.Map qualified as M
-import Data.Maybe (fromMaybe, isNothing)
+import Data.Maybe (fromMaybe, isJust, isNothing)
 import Data.Tuple (swap)
 import Data.Word
 import System.Random.SplitMix qualified as SM
@@ -115,10 +115,19 @@ tests =
     , testProperty "grantAt: rate zero disables"  prop_grantAt_disabled
     , testProperty "wakeAt: within a microsecond" prop_wakeAt
     , testProperty "atRate: keeps the level"      prop_atRate
+    , testProperty "rotatedRank: re-dealt each period" prop_rotatedRank
+    , testProperty "queueRank: zero period is none"   prop_queueRank_zeroPeriod
+    , testProperty "chargeAt: takes without waiting"  prop_chargeAt
     , testProperty "schedule matches the replay"  prop_bucket_schedule
     , testProperty "cancellation is safe"         prop_bucket_cancel
     , testProperty "disabled bucket never waits"  prop_bucket_disabled
     , testProperty "rate change takes effect"     prop_bucket_rate_change
+    ]
+  , testGroup "Egress lanes"
+    [ testProperty "own requests never wait, the slice gets its share"
+                   (BaseQC.withNumTests 30 prop_mux_lanes)
+    , testProperty "a torn-down head hands the queue on"
+                   prop_mux_egress_head_torn_down
     ]
   , testGroup "Generators"
     [ testProperty "genByteString"              prop_arbitrary_genByteString
@@ -2867,6 +2876,71 @@ prop_atRate BucketTake { tkRate, tkCap, tkNow, tkFull } =
       in counterexample (show (levelBefore, levelAfter)) $
            abs (levelAfter - levelBefore) <= byteEps (max tkRate rate')
 
+-- | Taking on credit lowers the level at @now@ by exactly the bytes, whatever
+-- the state of the bucket -- there is no wait to move the instant.
+prop_chargeAt :: BucketTake -> Property
+prop_chargeAt tk@BucketTake { tkRate, tkCap, tkNow, tkFull, tkNeed } =
+    labelTake tk $
+    counterexample (show (levelBefore, levelAfter)) $
+      abs (levelAfter - (levelBefore - fromIntegral tkNeed)) <= byteEps tkRate
+  where
+    full'       = Bucket.chargeAt tkRate tkFull tkNow tkNeed
+    levelBefore = Bucket.tokenLevel tkRate tkCap tkFull tkNow
+    levelAfter  = Bucket.tokenLevel tkRate tkCap full' tkNow
+
+-- | A rotation, a period number, and two offsets into that period.
+data RotationCase = RotationCase {
+    rcRotation :: !Bucket.Rotation,
+    rcPeriod   :: !Word64,
+    rcOffsets  :: !(Integer, Integer)   -- ^ picoseconds into the period
+  }
+  deriving Show
+
+instance Arbitrary RotationCase where
+    arbitrary = do
+      seed   <- arbitrary
+      -- a millisecond to a day
+      period <- picos <$> choose (1000000000, 86400000000000000)
+      p      <- choose (0, 10000)
+      let inside = choose (0, picosOf (period `addTime` Time 0) - 1)
+      offs   <- (,) <$> inside <*> inside
+      return RotationCase { rcRotation = Bucket.Rotation seed period,
+                            rcPeriod = p, rcOffsets = offs }
+
+    shrink rc@RotationCase { rcRotation = Bucket.Rotation seed period, rcPeriod, rcOffsets } =
+         [ rc { rcRotation = Bucket.Rotation 0 period } | seed /= 0 ]
+      ++ [ rc { rcPeriod = 0 } | rcPeriod /= 0 ]
+      ++ [ rc { rcOffsets = (0, snd rcOffsets) } | fst rcOffsets /= 0 ]
+      ++ [ rc { rcOffsets = (fst rcOffsets, 0) } | snd rcOffsets /= 0 ]
+
+-- | Within a period a bearer keeps its place, and it fits in 24 bits; across
+-- a boundary the places are re-dealt: of a hundred bearers, at most a few keep
+-- theirs (each does with probability 2^-24).
+prop_rotatedRank :: RotationCase -> Property
+prop_rotatedRank RotationCase { rcRotation = ro, rcPeriod, rcOffsets = (o1, o2) } =
+    counterexample (show (kept, map (rank t1) bearers)) $
+         all (\b -> rank t1 b == rank t2 b) bearers
+      && all (\b -> rank t1 b < 2 ^ (24 :: Int)) bearers
+      && length kept <= 3
+  where
+    bearers = [0 .. 99]
+    at p o  = picos (p * picosOf (Bucket.roPeriod ro `addTime` Time 0) + o) `addTime` Time 0
+    t1      = at (fromIntegral rcPeriod) o1
+    t2      = at (fromIntegral rcPeriod) o2
+    t3      = at (fromIntegral rcPeriod + 1) o1
+    rank t b = Bucket.rotatedRank ro b t
+    kept    = [ b | b <- bearers, rank t1 b == rank t3 b ]
+
+-- | A rotation with a period of zero is no rotation: a bearer queues exactly
+-- where it would without one.
+prop_queueRank_zeroPeriod :: Word64 -> Word64 -> Word8 -> NonNegative Integer
+                          -> Property
+prop_queueRank_zeroPeriod seed bearer tier (NonNegative ps) =
+    Bucket.queueRank (Just (Bucket.Rotation seed 0)) bearer (Bucket.Rank tier) t
+      === Bucket.queueRank Nothing bearer (Bucket.Rank tier) t
+  where
+    t = picos ps `addTime` Time 0
+
 --
 -- Queue
 --
@@ -2876,12 +2950,14 @@ prop_atRate BucketTake { tkRate, tkCap, tkNow, tkFull } =
 -- grant.  Times are counted in rounds, a round being one picosecond per bearer
 -- in the run; see 'askAt'.
 data BucketBearer = BucketBearer {
-    bbRank  :: !Word32,
+    bbRank  :: !Word8,
     bbStart :: !Integer,           -- ^ rounds before the first request
     bbFirst :: !Int,               -- ^ bytes of the first take
     bbMore  :: ![(Integer, Int)],  -- ^ rounds after a grant, then bytes
-    bbKill  :: !(Maybe Int)        -- ^ cancel it this far, in 256ths, into
+    bbKill  :: !(Maybe Int),       -- ^ cancel it this far, in 256ths, into
                                    --   the first wait the replay gives it
+    bbSlice :: !Bool               -- ^ asks the slice, borrowing the budget;
+                                   --   only when the schedule has a slice
   }
   deriving (Eq, Show)
 
@@ -2889,6 +2965,8 @@ data BucketBearer = BucketBearer {
 data BucketSched = BucketSched {
     schRate     :: !Double,        -- ^ bytes/s
     schCapacity :: !Int,           -- ^ bytes
+    schRotation :: !(Maybe Bucket.Rotation),
+    schSlice    :: !(Maybe Int),   -- ^ the slice's share of the rate, percent
     schBearers  :: ![BucketBearer]
   }
   deriving Show
@@ -2898,11 +2976,16 @@ instance Arbitrary BucketSched where
       rate <- genRate
       cap  <- genCapacity
       n    <- choose (1, 12)
-      BucketSched rate cap <$> vectorOf n (genBucketBearer rate cap n)
+      BucketSched rate cap
+        <$> frequency [ (1, return Nothing), (2, Just <$> genRotation rate cap) ]
+        <*> frequency [ (1, return Nothing), (1, Just <$> choose (5, 50)) ]
+        <*> vectorOf n (genBucketBearer rate cap n)
 
-    shrink sch@BucketSched { schRate, schCapacity, schBearers } =
+    shrink sch@BucketSched { schRate, schCapacity, schRotation, schSlice, schBearers } =
          [ sch { schBearers = bs }
          | bs <- shrinkList shrinkBearer schBearers, not (null bs) ]
+      ++ [ sch { schSlice = Nothing } | Just _ <- [schSlice] ]
+      ++ [ sch { schRotation = Nothing } | Just _ <- [schRotation] ]
       ++ [ sch { schCapacity = 4096 } | schCapacity > 4096 ]
       ++ [ sch { schRate = r } | r <- [1e4, 1e6], r < schRate ]
       where
@@ -2914,10 +2997,19 @@ instance Arbitrary BucketSched where
           ++ [ b { bbKill  = Nothing } | Just _ <- [bbKill b] ]
           ++ [ b { bbKill  = Just f }
              | Just f0 <- [bbKill b], f <- [0, 128], f < f0 ]
+          ++ [ b { bbSlice = False } | bbSlice b ]
 
         shrinkTake (k, sz) =
              [ (0, sz)  | k /= 0 ]
           ++ [ (k, sz') | sz' <- [1024, schCapacity], sz' < sz ]
+
+-- | Periods of a quarter to four fill times, so that schedules straddle a
+-- boundary.
+genRotation :: Double -> Int -> Gen Bucket.Rotation
+genRotation rate cap = do
+    seed <- arbitrary
+    f    <- choose (0.25, 4 :: Double)
+    return (Bucket.Rotation seed (realToFrac (f * fromIntegral cap / rate)))
 
 -- | Few ranks, so ties are common.  Asking again at once, and starting in the
 -- opening burst, are both weighted up: those are what make bearers queue.
@@ -2931,6 +3023,7 @@ genBucketBearer rate cap n =
                  <*> frequency [ (3, return Nothing)
                                , (1, Just <$> choose (0, 255))
                                , (1, Just <$> choose (192, 255)) ]
+                 <*> arbitrary
   where
     fillPs   = ceiling (1e12 * fromIntegral cap / rate) :: Integer
     rounds k = k `div` fromIntegral n
@@ -2943,10 +3036,11 @@ genBucketBearer rate cap n =
 data Arrival = Arrival {
     arBearer :: !Int,
     arTake   :: !Int,
-    arRank   :: !Word32,
+    arRank   :: !Word8,
     arBytes  :: !Int,
     arAt     :: !Time,
-    arMore   :: ![(Integer, Int)]
+    arMore   :: ![(Integer, Int)],
+    arSlice  :: !Bool              -- ^ asks the slice, borrowing the budget
   }
   deriving (Eq, Show)
 
@@ -2962,10 +3056,11 @@ askAt n i k t = picos ((k + 1) * fromIntegral n + delta) `addTime` t
 
 -- | The first request of every bearer.
 arrivals :: BucketSched -> [Arrival]
-arrivals BucketSched { schBearers } =
+arrivals BucketSched { schSlice, schBearers } =
     [ Arrival { arBearer = i, arTake = 0, arRank = bbRank, arBytes = bbFirst,
-                arAt = askAt n i bbStart (Time 0), arMore = bbMore }
-    | (i, BucketBearer { bbRank, bbStart, bbFirst, bbMore }) <- zip [0 ..] schBearers
+                arAt = askAt n i bbStart (Time 0), arMore = bbMore,
+                arSlice = bbSlice && isJust schSlice }
+    | (i, BucketBearer { bbRank, bbStart, bbFirst, bbMore, bbSlice }) <- zip [0 ..] schBearers
     ]
   where
     n = length schBearers
@@ -2981,22 +3076,36 @@ nextArrival n a t =
                                   , arMore  = more }
 
 labelBucket :: BucketSched -> Property -> Property
-labelBucket BucketSched { schBearers } =
-    classify (any (not . null . bbMore) schBearers) "reuses a handle"
+labelBucket BucketSched { schRotation, schSlice, schBearers } =
+      classify (any (not . null . bbMore) schBearers) "reuses a handle"
+    . classify (isJust schRotation)                   "rotating"
+    . classify (isJust schSlice)                      "with a slice"
 
 -- | Grant instants from a real bucket in IOSim, by bearer and take.  Each
 -- bearer keeps one handle for all of its takes.
 runBucketSched :: BucketSched -> [((Int, Int), Time)]
-runBucketSched sch@BucketSched { schRate, schCapacity, schBearers } =
+runBucketSched sch@BucketSched { schRate, schCapacity, schRotation, schSlice, schBearers } =
     concat $ runSimOrThrow $ do
-      bucket <- Bucket.newBucket schRate schCapacity
-      forConcurrently (arrivals sch) $ \a0 -> do
-        h <- Bucket.registerBearer bucket
+      bucket <- Bucket.newBucket schRate schCapacity schRotation
+      slice  <- traverse (\pct -> Bucket.newBucket (schRate * fromIntegral pct / 100)
+                                                  schCapacity Nothing) schSlice
+      -- registered on the budget in schedule order, so bearer @i@ has id @i@,
+      -- as the replay assumes; every bearer also has a slice handle if there
+      -- is a slice
+      hs <- mapM (const (Bucket.registerBearer bucket)) schBearers
+      ss <- mapM (const (traverse Bucket.registerBearer slice)) schBearers
+      forConcurrently (zip3 hs ss (arrivals sch)) $ \(h, s_m, a0) -> do
         atomically $ Bucket.setRank h (Bucket.Rank (arRank a0))
-        let takeAll a = do
+        forM_ s_m $ \s -> atomically $ Bucket.setRank s (Bucket.Rank (arRank a0))
+        -- what the slice lane does: its own bucket, charged to the budget on
+        -- credit, or the budget's idle capacity
+        let grant a = case s_m of
+              Just s | arSlice a -> void $ Bucket.awaitGrantBorrowing s bucket (arBytes a)
+              _                  -> Bucket.awaitGrant h (arBytes a)
+            takeAll a = do
               now <- getMonotonicTime
               threadDelay (arAt a `diffTime` now)
-              Bucket.awaitGrant h (arBytes a)
+              grant a
               t <- getMonotonicTime
               (((arBearer a, arTake a), t) :)
                 <$> maybe (return []) takeAll (nextArrival n a t)
@@ -3004,46 +3113,112 @@ runBucketSched sch@BucketSched { schRate, schCapacity, schBearers } =
   where
     n = length schBearers
 
+-- | How a replayed grant was paid for.
+data ReplayPay = FromBudget | FromSlice | Borrowed
+  deriving (Eq, Show)
+
+-- | What the replay saw: a grant, a slice head that went to sleep on the
+-- budget's ready instant, or two events in the same instant whose order the
+-- replay cannot know.
+data ReplayEvent = RGrant !ReplayPay ((Int, Int), (Time, Time))
+                 | RSleptOnBudget
+                 | RTie
+  deriving (Eq, Show)
+
 -- | Grant instants from the pure core, with each take's request instant
--- alongside: the head of the queue is the lowest (rank, request); it takes at
--- once if its bytes are there, else sleeps until 'Bucket.wakeAt' -- unless a
--- lower key arrives first and takes the head.  A granted bearer re-joins with
--- its next take.
-replayRun :: BucketSched -> [((Int, Int), (Time, Time))]
-replayRun sch@BucketSched { schRate, schCapacity, schBearers } =
-    go (Time 0) (Time 0) (List.sortOn arAt (arrivals sch)) [] Nothing
+-- alongside.  Each bucket has its own queue, served lowest (rank, request)
+-- first: the head takes at once if its bytes are there, else sleeps until
+-- 'Bucket.wakeAt' -- unless a lower key arrives first and takes the head.  A
+-- slice head that is short borrows the budget if nobody is queued on it and
+-- the bytes are there; short on both, it sleeps until the earlier of the two,
+-- and nothing but its own queue wakes it.  A slice-paid grant is charged to
+-- the budget on credit.  A granted bearer re-joins with its next take.
+--
+-- The two queues run concurrently, so two checks in the same instant, one on
+-- each queue, happen in an order the replay cannot see. Those end the replay
+-- with 'RTie'.
+replayEvents :: BucketSched -> [ReplayEvent]
+replayEvents sch@BucketSched { schRate, schCapacity, schRotation, schSlice, schBearers } =
+    go (Time 0) (Time 0) (Time 0) (List.sortOn arAt (arrivals sch)) [] [] Nothing Nothing Nothing
   where
-    n = length schBearers
+    n         = length schBearers
+    sliceRate = maybe 0 (\pct -> schRate * fromIntegral pct / 100) schSlice
 
-    key a = (arRank a, arAt a)
+    -- the rank a request queues with, as each bucket computes it
+    keyB a = ( Bucket.queueRank schRotation (fromIntegral (arBearer a))
+                                (Bucket.Rank (arRank a)) (arAt a)
+             , arAt a )
+    keyS a = (Bucket.queueRank Nothing 0 (Bucket.Rank (arRank a)) (arAt a), arAt a)
 
-    headOf waiting = case List.sortOn key waiting of
-                          []    -> Nothing
-                          h : _ -> Just h
+    headBy k waiting = case List.sortOn k waiting of
+                            []    -> Nothing
+                            h : _ -> Just h
 
     enqueue = List.insertBy (\x y -> compare (arAt x) (arAt y))
 
+    next h now pending = maybe pending (`enqueue` pending) (nextArrival n h now)
+
     -- pending: not yet requested, by request instant
-    -- waiting: queued; the head is the lowest key
-    -- wake:    when a short head checks again
-    go now full pending waiting wake
-      -- a head that has not checked yet checks now
-      | Just h <- headOf waiting, Nothing <- wake =
-          let (ready, full') = Bucket.grantAt schRate schCapacity full now
-                                              (arBytes h)
+    -- wb, ws:  the budget's and the slice's queues; each head is the lowest key
+    -- kb, ks:  when each queue's short head checks again
+    -- lst:     the instant and queue of the last check
+    go now fb fs pending wb ws kb ks lst
+      -- the budget's head checks
+      | Just h <- headBy keyB wb, Nothing <- kb =
+          if crossed True then [RTie] else
+          let (ready, fb') = Bucket.grantAt schRate schCapacity fb now (arBytes h)
+              lst'         = Just (now, True)
           in if ready == now
-                then ((arBearer h, arTake h), (arAt h, now))
-                   : go now full'
-                        (maybe pending (`enqueue` pending) (nextArrival n h now))
-                        (List.delete h waiting) Nothing
-                else go now full pending waiting (Just (Bucket.wakeAt now ready))
-      -- a request before the head wakes; a lower key takes the head
-      | p : ps <- pending, all (arAt p <) wake =
-          let displaces = maybe False ((key p <) . key) (headOf waiting)
-          in go (arAt p) full ps (p : waiting) (if displaces then Nothing else wake)
-      -- the head wakes and takes
-      | Just w <- wake = go w full pending waiting Nothing
-      | otherwise = []
+                then RGrant FromBudget (grant h)
+                   : go now fb' fs (next h now pending) (List.delete h wb) ws Nothing ks lst'
+                else go now fb fs pending wb ws (Just (Bucket.wakeAt now ready)) ks lst'
+      -- the slice's head checks: its own bucket, else the budget's idle capacity
+      | Just h <- headBy keyS ws, Nothing <- ks =
+          let need          = arBytes h
+              (readyS, fs') = Bucket.grantAt sliceRate schCapacity fs now need
+              (readyB, fb') = Bucket.grantAt schRate schCapacity fb now need
+              idle          = null wb
+          in if crossed False then [RTie] else
+             if readyS == now
+                then RGrant FromSlice (grant h)
+                   : go now (Bucket.chargeAt schRate fb now need) fs'
+                        (next h now pending) wb (List.delete h ws) kb Nothing
+                        (Just (now, False))
+             else if idle && readyB == now
+                then RGrant Borrowed (grant h)
+                   : go now fb' fs (next h now pending) wb (List.delete h ws) kb Nothing
+                        (Just (now, False))
+             else [ RSleptOnBudget | idle, readyB < readyS ]
+               ++ go now fb fs pending wb ws kb
+                     (Just (Bucket.wakeAt now (if idle then min readyS readyB else readyS)))
+                     (Just (now, False))
+      -- a request before both wakes joins its own queue; a lower key takes
+      -- that queue's head
+      | p : ps <- pending, all (arAt p <) kb, all (arAt p <) ks =
+          if arSlice p
+             then let displaces = maybe False ((keyS p <) . keyS) (headBy keyS ws)
+                  in go (arAt p) fb fs ps wb (p : ws) kb (if displaces then Nothing else ks) lst
+             else let displaces = maybe False ((keyB p <) . keyB) (headBy keyB wb)
+                  in go (arAt p) fb fs ps (p : wb) ws (if displaces then Nothing else kb) ks lst
+      -- the earlier wake fires
+      | otherwise =
+          case (kb, ks) of
+               (Just b, Just s') | b == s'   -> [RTie]
+                                 | b < s'    -> go b  fb fs pending wb ws Nothing ks lst
+                                 | otherwise -> go s' fb fs pending wb ws kb Nothing lst
+               (Just b, Nothing)  -> go b  fb fs pending wb ws Nothing ks lst
+               (Nothing, Just s') -> go s' fb fs pending wb ws kb Nothing lst
+               (Nothing, Nothing) -> []
+      where
+        grant h = ((arBearer h, arTake h), (arAt h, now))
+        -- the last check was on the other queue, in this same instant
+        crossed onBudget = case lst of
+                                Just (t, q) -> t == now && q /= onBudget
+                                Nothing     -> False
+
+-- | The grants of 'replayEvents', whatever it could not order.
+replayRun :: BucketSched -> [((Int, Int), (Time, Time))]
+replayRun sch = [ g | RGrant _ g <- replayEvents sch ]
 
 replaySched :: BucketSched -> [((Int, Int), Time)]
 replaySched = map (\(k, (_, granted)) -> (k, granted)) . replayRun
@@ -3059,11 +3234,18 @@ instantGrants sch@BucketSched { schBearers } = concatMap chain (arrivals sch)
 
 -- | Every grant happens exactly when the replay says.
 prop_bucket_schedule :: BucketSched -> Property
-prop_bucket_schedule sch =
-    labelBucket sch $
-    classify (queued == 0) "nothing queued" $
-      List.sortOn fst (runBucketSched sch) === List.sortOn fst (replaySched sch)
+prop_bucket_schedule sch
+  | RTie `elem` events = discard
+  | otherwise =
+      labelBucket sch $
+      classify (queued == 0)                  "nothing queued" $
+      classify (paid Borrowed)                "borrowed" $
+      classify (paid FromSlice)               "slice paid, charged on credit" $
+      classify (RSleptOnBudget `elem` events) "slice slept on the budget" $
+        List.sortOn fst (runBucketSched sch) === List.sortOn fst (replaySched sch)
   where
+    events = replayEvents sch
+    paid k = any (\e -> case e of { RGrant k' _ -> k' == k; _ -> False }) events
     queued = length [ () | (_, (asked, granted)) <- replayRun sch
                          , granted > asked ]
 
@@ -3078,7 +3260,10 @@ prop_bucket_schedule sch =
 -- well as on the survivors keeps the property meaningful even when every
 -- bearer is killed, which would otherwise leave nothing to wait for.
 prop_bucket_cancel :: BucketSched -> Property
-prop_bucket_cancel sch@BucketSched { schRate, schCapacity, schBearers } =
+prop_bucket_cancel sch0 = prop_bucket_cancel' sch0 { schSlice = Nothing }
+
+prop_bucket_cancel' :: BucketSched -> Property
+prop_bucket_cancel' sch@BucketSched { schRate, schCapacity, schRotation, schBearers } =
     labelBucket sch
       $ classify (not (null killed))    "kills someone"
       $ classify (any killsHead killed) "kills the next to be served"
@@ -3123,9 +3308,9 @@ prop_bucket_cancel sch@BucketSched { schRate, schCapacity, schBearers } =
                 | b <- schBearers ] :: Double
 
     outcome = runSimOrThrow $ do
-      bucket <- Bucket.newBucket schRate schCapacity
-      as <- forM plan $ \(a0, kill) -> do
-        h <- Bucket.registerBearer bucket
+      bucket <- Bucket.newBucket schRate schCapacity schRotation
+      hs <- mapM (const (Bucket.registerBearer bucket)) schBearers
+      as <- forM (zip hs plan) $ \(h, (a0, kill)) -> do
         atomically $ Bucket.setRank h (Bucket.Rank (arRank a0))
         let takeAll a = do
               now <- getMonotonicTime
@@ -3164,7 +3349,7 @@ prop_bucket_rate_change BucketSched { schRate, schCapacity } =
     expected  = fromIntegral (n * schCapacity) / newRate
     tolerance = expected * 0.02 + fromIntegral n * 1e-6
     spent = runSimOrThrow $ do
-      bucket <- Bucket.newBucket schRate schCapacity
+      bucket <- Bucket.newBucket schRate schCapacity Nothing
       h      <- Bucket.registerBearer bucket
       Bucket.awaitGrant h schCapacity        -- drains the full bucket
       t0 <- getMonotonicTime
@@ -3172,3 +3357,337 @@ prop_bucket_rate_change BucketSched { schRate, schCapacity } =
       replicateM_ n (Bucket.awaitGrant h schCapacity)
       t1 <- getMonotonicTime
       return (realToFrac (t1 `diffTime` t0) :: Double)
+
+
+--
+-- Egress lanes
+--
+-- A scheduled server mux over the Queues bearer, in IOSim: a bulk responder
+-- protocol saturating the scheduled lane, a small request protocol the server
+-- initiates on the direct lane, and a stream it initiates on a reserved slice.
+-- The client mux is unscheduled. The same run with every protocol on the
+-- scheduled lane is the control: there the requests do queue behind the bulk.
+
+data LaneCase = LaneCase {
+    lcRate     :: !Double,   -- ^ budget, bytes/s
+    lcSlicePct :: !Int,      -- ^ the slice's share of it
+    lcBatches  :: !Int       -- ^ the bulk protocol serves this many batches
+  }
+  deriving Show
+
+instance Arbitrary LaneCase where
+    arbitrary = do
+      e   <- choose (5, 7 :: Int)
+      m   <- choose (1, 9.99 :: Double)
+      pct <- choose (5, 30)
+      n   <- choose (20, 200)
+      return LaneCase { lcRate = m * 10 ^^ e, lcSlicePct = pct, lcBatches = n }
+    shrink LaneCase { lcRate, lcSlicePct, lcBatches } =
+         [ LaneCase r lcSlicePct lcBatches | r <- [1e5, 1e6], r < lcRate ]
+      ++ [ LaneCase lcRate p lcBatches | p <- [5, 15], p < lcSlicePct ]
+      ++ [ LaneCase lcRate lcSlicePct n | n <- [20, 50], n < lcBatches ]
+
+-- | The Queues bearer writes two SDUs per batch.
+laneBatch :: Int
+laneBatch = 2 * fromIntegral (Mx.getSDUSize laneSduSize)
+
+-- | What a run measured: the bulk's transfer time, the longest probe round
+-- trip, and the bytes the slice stream delivered while the bulk was running.
+data LaneRun = LaneRun {
+    lrBulkTime   :: !Double,
+    lrProbeMax   :: !Double,
+    lrProbes     :: !Int,
+    lrSliced     :: !Int,      -- ^ slice bytes delivered while the bulk ran
+    lrIdle       :: !Double,   -- ^ seconds the link was idle before the bulk
+    lrSlicedIdle :: !Int       -- ^ slice bytes delivered in that time
+  }
+  deriving Show
+
+laneSduSize :: Mx.SDUSize
+laneSduSize = Mx.SDUSize 12288
+
+runLanes :: (Mx.MiniProtocolNum -> Mx.MiniProtocolDir -> Mx.Lane) -> LaneCase -> LaneRun
+runLanes laneOf LaneCase { lcRate, lcSlicePct, lcBatches } = runSimOrThrow $ do
+    let cap    = 2 * laneBatch                                    -- two batches
+        lcBulk = lcBatches * laneBatch
+        -- a probe every quarter of a batch's worth of budget
+        probeEvery = realToFrac (fromIntegral laneBatch / lcRate / 4) :: DiffTime
+        -- the bulk starts after thirty batches' worth of idle link, during
+        -- which the slice stream has the budget to itself
+        idlePhase  = realToFrac (30 * fromIntegral laneBatch / lcRate) :: DiffTime
+    budget <- Bucket.newBucket lcRate cap Nothing
+    slice  <- Bucket.newBucket (lcRate * fromIntegral lcSlicePct / 100) cap Nothing
+
+    client_w <- atomically $ newTBQueue 10
+    client_r <- atomically $ newTBQueue 10
+    clientBearer <- getBearer makeQueueChannelBearer (-1)
+                      QueueChannel { writeQueue = client_w, readQueue = client_r } Nothing
+    serverBearer <- getBearer makeQueueChannelBearer (-1)
+                      QueueChannel { writeQueue = client_r, readQueue = client_w } Nothing
+
+    stopVar   <- newTVarIO False
+    probeVar  <- newTVarIO (0 :: Int, 0 :: Double)     -- probes done, longest round trip
+    slicedVar <- newTVarIO (0 :: Int)
+
+    let info :: Mx.MiniProtocolNum -> Mx.MiniProtocolDirection Mx.InitiatorResponderMode
+             -> MiniProtocolInfo Mx.InitiatorResponderMode
+        info num dir = MiniProtocolInfo {
+            miniProtocolNum = num, miniProtocolDir = dir,
+            miniProtocolLimits = MiniProtocolLimits { maximumIngressQueue = 16000000 },
+            miniProtocolCapability = Nothing }
+        bulkN = Mx.MiniProtocolNum 2
+        probeN = Mx.MiniProtocolNum 3
+        sliceN = Mx.MiniProtocolNum 4
+
+        policy = Mx.EgressPolicy { Mx.egressBudget = budget, Mx.egressSlice = Just slice,
+                                   Mx.egressLaneOf = laneOf }
+    serverMux <- Mx.newWithEgress policy Mx.nullTracers
+                   [ info bulkN Mx.ResponderDirection, info probeN Mx.InitiatorDirection
+                   , info sliceN Mx.InitiatorDirection ]
+    clientMux <- Mx.new Mx.nullTracers
+                   [ info bulkN Mx.InitiatorDirection, info probeN Mx.ResponderDirection
+                   , info sliceN Mx.ResponderDirection ]
+
+    let untilStopped act = do
+          stopped <- readTVarIO stopVar
+          unless stopped act
+
+        -- the bulk: one request, lcBulk bytes back in 8 kB messages
+        bulkServer chan = do
+          _ <- Mx.recv chan
+          forM_ (chunks lcBulk) $ \n -> Mx.send chan (BL.replicate (fromIntegral n) 0x78)
+          return ((), Nothing)
+        bulkClient chan = do
+          threadDelay idlePhase
+          slicedIdle <- readTVarIO slicedVar
+          t0 <- getMonotonicTime
+          Mx.send chan (BL8.pack "req")
+          drain chan lcBulk
+          t1 <- getMonotonicTime
+          return ((realToFrac (t1 `diffTime` t0) :: Double, slicedIdle), Nothing)
+
+        -- the probe: 32 bytes out, 32 back, every quarter batch
+        probeServer chan = do
+          let loop = untilStopped $ do
+                t0 <- getMonotonicTime
+                Mx.send chan (BL.replicate 32 0x70)
+                drain chan 32
+                t1 <- getMonotonicTime
+                atomically $ modifyTVar probeVar $ \(n, mx) ->
+                  (n + 1, max mx (realToFrac (t1 `diffTime` t0)))
+                threadDelay probeEvery
+                loop
+          loop
+          return ((), Nothing)
+        echo chan = do
+          let loop = do
+                mbs <- Mx.recv chan
+                case mbs of
+                  Nothing -> return ()
+                  Just bs -> Mx.send chan bs >> loop
+          loop
+          return ((), Nothing)
+
+        -- the slice stream: 4 kB messages as fast as the lane takes them
+        sliceServer chan = do
+          let loop = untilStopped $ Mx.send chan (BL.replicate 4096 0x74) >> loop
+          loop
+          return ((), Nothing)
+        sink chan = do
+          let loop = do
+                mbs <- Mx.recv chan
+                case mbs of
+                  Nothing -> return ()
+                  Just bs -> do
+                    stopped <- readTVarIO stopVar
+                    unless stopped $
+                      atomically $ modifyTVar slicedVar (+ fromIntegral (BL.length bs))
+                    loop
+          loop
+          return ((), Nothing)
+
+    withAsync (Mx.run serverMux serverBearer) $ \_ ->
+      withAsync (Mx.run clientMux clientBearer) $ \_ -> do
+        _ <- Mx.runMiniProtocol serverMux bulkN  Mx.ResponderDirection Mx.StartOnDemand bulkServer
+        _ <- Mx.runMiniProtocol serverMux probeN Mx.InitiatorDirection Mx.StartEagerly probeServer
+        _ <- Mx.runMiniProtocol serverMux sliceN Mx.InitiatorDirection Mx.StartEagerly sliceServer
+        _ <- Mx.runMiniProtocol clientMux probeN Mx.ResponderDirection Mx.StartOnDemand echo
+        _ <- Mx.runMiniProtocol clientMux sliceN Mx.ResponderDirection Mx.StartOnDemand sink
+        bulk <- Mx.runMiniProtocol clientMux bulkN Mx.InitiatorDirection Mx.StartEagerly bulkClient
+        r <- atomically bulk
+        atomically $ writeTVar stopVar True
+        (probes, probeMax) <- readTVarIO probeVar
+        sliced <- readTVarIO slicedVar
+        Mx.stop serverMux
+        Mx.stop clientMux
+        case r of
+          Left e -> throwIO e
+          Right (bulkTime, slicedIdle) ->
+            return LaneRun { lrBulkTime = bulkTime, lrProbeMax = probeMax, lrProbes = probes,
+                             lrSliced = sliced - slicedIdle,
+                             lrIdle = realToFrac idlePhase, lrSlicedIdle = slicedIdle }
+  where
+    chunks n | n <= 0    = []
+             | otherwise = min 8192 n : chunks (n - 8192)
+
+    -- read until @n@ bytes have arrived
+    drain :: Monad m => Mx.ByteChannel m -> Int -> m ()
+    drain _    n | n <= 0 = return ()
+    drain chan n = do
+      mbs <- Mx.recv chan
+      case mbs of
+        Nothing -> return ()
+        Just bs -> drain chan (n - fromIntegral (BL.length bs))
+
+-- | With the lanes: no probe ever waits (in IOSim the direct path takes no
+-- simulated time at all); while the link is idle the slice stream borrows the
+-- budget and runs near the link rate; while the bulk runs the slice delivers
+-- its share -- no less than most of it, no more than its bucket allows, which
+-- is its capacity's burst plus its rate -- and the bulk gets the rest.
+-- Without the lanes, everything scheduled, the probes queue behind the bulk's
+-- batches, which is the failure the lanes exist to prevent.
+prop_mux_lanes :: LaneCase -> Property
+prop_mux_lanes lc@LaneCase { lcRate, lcSlicePct, lcBatches } =
+    counterexample (show (lc, lanes, control)) $
+         counterexample "probe waited"            (lrProbeMax lanes < batchTime / 100)
+    .&&. counterexample "slice did not borrow the idle link"
+           (fromIntegral (lrSlicedIdle lanes) >= 0.7 * lcRate * lrIdle lanes)
+    .&&. counterexample "no probes"               (lrProbes lanes > 0)
+    .&&. counterexample "slice short of its share" (sliced >= 0.7 * slice * bulkTime)
+    .&&. counterexample "slice over its bucket"    (sliced <= cap + slice * bulkTime + batch)
+    .&&. counterexample "bulk faster than budget"  (bulkTime >= 0.9 * fluid)
+    .&&. counterexample "bulk starved"             (bulkTime <= 1.3 * fluid / (1 - share))
+    .&&. counterexample "control did not queue"    (lrProbeMax control >= batchTime / 8)
+  where
+    lanes     = runLanes laneRule lc
+    control   = runLanes (\_ _ -> Mx.Scheduled) lc
+    share     = fromIntegral lcSlicePct / 100
+    slice     = share * lcRate
+    bulkTime  = lrBulkTime lanes
+    sliced    = fromIntegral (lrSliced lanes) :: Double
+    batch     = fromIntegral laneBatch :: Double
+    batchTime = batch / lcRate
+    fluid     = fromIntegral lcBatches * batchTime
+    cap       = 2 * batch                     -- the slice bucket's capacity, as 'runLanes' sizes it
+
+    laneRule (Mx.MiniProtocolNum 4) Mx.InitiatorDir = Mx.Slice
+    laneRule num dir                             = Mx.directionSplit num dir
+
+-- | Several muxes share one budget; one of them, the head of its queue, is
+-- torn down mid-wait.
+data HeadKill = HeadKill {
+    hkRate    :: !Double,        -- ^ budget, bytes/s
+    hkMuxes   :: !Int,           -- ^ muxes, the victim among them
+    hkBatches :: !Int,           -- ^ batches each serves
+    hkAt      :: !Int,           -- ^ tear the victim down this far, in 256ths,
+                                 --   into its own transfer
+    hkHow     :: !TearDown
+  }
+  deriving Show
+
+data TearDown = StopMux | CancelRun
+  deriving (Show, Eq, Enum, Bounded)
+
+instance Arbitrary HeadKill where
+    arbitrary = HeadKill <$> ((* 1e5) <$> choose (1, 99))
+                         <*> choose (2, 5)
+                         <*> choose (10, 60)
+                         <*> choose (16, 240)
+                         <*> arbitraryBoundedEnum
+    shrink hk@HeadKill { hkMuxes, hkBatches, hkHow } =
+         [ hk { hkMuxes = 2 }       | hkMuxes > 2 ]
+      ++ [ hk { hkBatches = 10 }    | hkBatches > 10 ]
+      ++ [ hk { hkHow = CancelRun } | hkHow == StopMux ]
+
+-- | Tearing down the head of the budget's queue hands the queue on: every
+-- other mux still delivers all of its bulk. The victim has rank 0 and the rest
+-- rank 1, so whenever the victim waits for tokens it is the head, with the
+-- others waiting behind it on their own wake variables; writes to the Queues
+-- bearer take no simulated time, so at any instant of its transfer it is
+-- asleep at the head. A head that leaves without waking its successor wedges
+-- everyone behind it.
+prop_mux_egress_head_torn_down :: HeadKill -> Property
+prop_mux_egress_head_torn_down hk@HeadKill { hkRate, hkMuxes, hkBatches, hkAt, hkHow } =
+    counterexample (show hk) $
+    tabulate "tear-down" [show hkHow] $
+      runSimOrThrow run === Just (hkMuxes - 1)
+  where
+    bulk     = hkBatches * laneBatch
+    batch    = fromIntegral laneBatch :: Double
+    victimT  = realToFrac (fromIntegral hkBatches * batch / hkRate) :: DiffTime
+    killAt   = victimT * fromIntegral hkAt / 256
+    -- everyone's bulk at the budget rate, twice over, the 2 s drain, a margin
+    deadline = realToFrac (2 * fromIntegral (hkMuxes * hkBatches) * batch / hkRate) + 5
+
+    run :: IOSim s (Maybe Int)
+    run = do
+      budget <- Bucket.newBucket hkRate (2 * laneBatch) Nothing
+      let policy = Mx.EgressPolicy { Mx.egressBudget = budget, Mx.egressSlice = Nothing,
+                                     Mx.egressLaneOf = Mx.directionSplit }
+      pairs <- forM [0 .. hkMuxes - 1] $ \i -> do
+        (serverMux, clientMux, serverBearer, clientBearer) <- headKillPair policy
+        atomically $ Mx.setEgressRank serverMux (Bucket.Rank (if i == 0 then 0 else 1))
+        serverA <- async (Mx.run serverMux serverBearer)
+        _       <- async (Mx.run clientMux clientBearer)
+        _ <- Mx.runMiniProtocol serverMux bulkNum Mx.ResponderDirection Mx.StartOnDemand
+               (headKillServer bulk)
+        done <- Mx.runMiniProtocol clientMux bulkNum Mx.InitiatorDirection Mx.StartEagerly
+                  (headKillClient bulk)
+        return (serverMux, serverA, done)
+      case pairs of
+           [] -> return Nothing
+           (victimMux, victimA, _) : others -> do
+             _ <- async $ do
+               threadDelay killAt
+               case hkHow of
+                    StopMux   -> Mx.stop victimMux
+                    CancelRun -> cancel victimA
+             timeout deadline $
+               length <$> mapM (\(_, _, done) -> atomically done) others
+
+bulkNum :: Mx.MiniProtocolNum
+bulkNum = Mx.MiniProtocolNum 2
+
+-- | A scheduled server mux and a plain client mux over a pair of Queues
+-- bearers, each with the bulk protocol.
+headKillPair :: Mx.EgressPolicy (IOSim s)
+         -> IOSim s ( Mx.Mux Mx.InitiatorResponderMode (IOSim s)
+                    , Mx.Mux Mx.InitiatorResponderMode (IOSim s)
+                    , Mx.Bearer (IOSim s), Mx.Bearer (IOSim s) )
+headKillPair policy = do
+    client_w <- atomically $ newTBQueue 10
+    client_r <- atomically $ newTBQueue 10
+    clientBearer <- getBearer makeQueueChannelBearer (-1)
+                      QueueChannel { writeQueue = client_w, readQueue = client_r } Nothing
+    serverBearer <- getBearer makeQueueChannelBearer (-1)
+                      QueueChannel { writeQueue = client_r, readQueue = client_w } Nothing
+    let info dir = MiniProtocolInfo {
+            miniProtocolNum = bulkNum, miniProtocolDir = dir,
+            miniProtocolLimits = MiniProtocolLimits { maximumIngressQueue = 16000000 },
+            miniProtocolCapability = Nothing }
+    serverMux <- Mx.newWithEgress policy Mx.nullTracers [info Mx.ResponderDirection]
+    clientMux <- Mx.new Mx.nullTracers [info Mx.InitiatorDirection]
+    return (serverMux, clientMux, serverBearer, clientBearer)
+
+-- | One request, then @n@ bytes back in 8 kB messages.
+headKillServer :: Int -> Mx.ByteChannel (IOSim s) -> IOSim s ((), Maybe BL.ByteString)
+headKillServer n chan = do
+    _ <- Mx.recv chan
+    forM_ (chunksOf8k n) $ \k -> Mx.send chan (BL.replicate (fromIntegral k) 0x78)
+    return ((), Nothing)
+  where
+    chunksOf8k m | m <= 0    = []
+                 | otherwise = min 8192 m : chunksOf8k (m - 8192)
+
+-- | Ask, then read until @n@ bytes have arrived.
+headKillClient :: Int -> Mx.ByteChannel (IOSim s) -> IOSim s ((), Maybe BL.ByteString)
+headKillClient n chan = do
+    Mx.send chan (BL8.pack "req")
+    let go m | m <= 0    = return ()
+             | otherwise = do
+                 mbs <- Mx.recv chan
+                 case mbs of
+                      Nothing -> return ()
+                      Just bs -> go (m - fromIntegral (BL.length bs))
+    go n
+    return ((), Nothing)
