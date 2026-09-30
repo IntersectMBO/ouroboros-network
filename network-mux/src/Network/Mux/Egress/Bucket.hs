@@ -38,6 +38,7 @@ module Network.Mux.Egress.Bucket
   , takeOnCredit
     -- * Counters
   , BucketStats (..)
+  , TierGrants (..)
   , waitBounds
   , burstBounds
   , burstWidths
@@ -60,7 +61,7 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 
-import Data.Bits (shiftL, xor, (.&.), (.|.))
+import Data.Bits (shiftL, shiftR, xor, (.&.), (.|.))
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Word (Word32, Word64, Word8)
@@ -119,10 +120,27 @@ data BucketStats = BucketStats {
   bsBusyTime      :: !DiffTime,  -- ^ time with a bearer queued
   bsContendedTime :: !DiffTime,  -- ^ time with two or more queued, when the order decides
   bsBurstsOver    :: ![Word64],  -- ^ busy periods longer than each of 'burstBounds'
-  bsBurstsWider   :: ![Word64]   -- ^ busy periods with at least each of 'burstWidths'
+  bsBurstsWider   :: ![Word64],  -- ^ busy periods with at least each of 'burstWidths'
                                  --   bearers queued at once
+  bsTiers         :: !(Map Word8 TierGrants)
+                                 -- ^ what was granted from the queue, by the tier the
+                                 --   bearer queued at; the fast path is not ranked
   }
   deriving (Eq, Show)
+
+-- | Grants to bearers of one tier.
+data TierGrants = TierGrants {
+  tgBytes   :: !Word64,
+  tgBatches :: !Word64
+  }
+  deriving (Eq, Show)
+
+instance Semigroup TierGrants where
+  TierGrants b1 n1 <> TierGrants b2 n2 = TierGrants (b1 + b2) (n1 + n2)
+
+-- | The tier a queued bearer's key was made with: the top byte of the rank.
+tierOfKey :: WaitKey -> Word8
+tierOfKey (rank, _) = fromIntegral (rank `shiftR` 24)
 
 -- | The busy-period lengths 'bsBurstsOver' counts against.
 burstBounds :: [DiffTime]
@@ -152,6 +170,7 @@ strictZipWith _ _ _ = []
 emptyBucketStats :: BucketStats
 emptyBucketStats = BucketStats 0 0 0 0 0 0 (zeros waitBounds)
                                0 0 0 (zeros burstBounds) (zeros burstWidths)
+                               Map.empty
 
 -- | The queue went from @n0@ to @n1@ bearers at @now@.
 burstStep :: Time -> Int -> Int -> (BurstState, BucketStats) -> (BurstState, BucketStats)
@@ -179,8 +198,9 @@ burstStep !now n0 n1 (bu0, st0) = ended (contended (started (bu0, st0)))
                                           burstWidths (bsBurstsWider st) } )
       | otherwise = (bu, st)
 
-recordGrant :: Bool -> Int -> DiffTime -> DiffTime -> BucketStats -> BucketStats
-recordGrant borrowed need waitedWritable waitedTokens st =
+recordGrant :: Maybe Word8  -- ^ the tier it queued at, if it queued
+            -> Bool -> Int -> DiffTime -> DiffTime -> BucketStats -> BucketStats
+recordGrant tier_m borrowed need waitedWritable waitedTokens st =
   st { bsBytes        = bsBytes st + n
      , bsBatches      = bsBatches st + 1
      , bsBorrowed     = bsBorrowed st + (if borrowed then n else 0)
@@ -188,12 +208,17 @@ recordGrant borrowed need waitedWritable waitedTokens st =
      , bsWaitWritable = bsWaitWritable st + waitedWritable
      , bsWaitsOver    = strictZipWith (\b c -> if waitedTokens > b then c + 1 else c)
                                 waitBounds (bsWaitsOver st)
+     , bsTiers        = case tier_m of
+                             Just tier -> Map.insertWith (<>) tier (TierGrants n 1) (bsTiers st)
+                             Nothing   -> bsTiers st
      }
   where
     n = fromIntegral need
 
--- | The counters, the token level and the number of bearers queued, at @now@.
-bucketSnapshot :: MonadSTM m => Bucket m -> Time -> STM m (BucketStats, Double, Int)
+-- | The counters, the token level, the number of bearers queued and how many
+-- of them at each tier, at @now@.
+bucketSnapshot :: MonadSTM m => Bucket m -> Time
+               -> STM m (BucketStats, Double, Int, Map Word8 Int)
 bucketSnapshot Bucket { bRate, bCapacity, bFull, bWaiters, bStats, bBurst } now = do
   rate    <- readTVar bRate
   full    <- readTVar bFull
@@ -204,7 +229,8 @@ bucketSnapshot Bucket { bRate, bCapacity, bFull, bWaiters, bStats, bBurst } now 
   let upToNow = maybe 0 (now `diffTime`)
       st' = st { bsBusyTime      = bsBusyTime st + upToNow (buSince bu)
                , bsContendedTime = bsContendedTime st + upToNow (buContendedSince bu) }
-  return (st', tokenLevel rate bCapacity full now, Map.size waiters)
+      queuedByTier = Map.fromListWith (+) [ (tierOfKey k, 1) | k <- Map.keys waiters ]
+  return (st', tokenLevel rate bCapacity full now, Map.size waiters, queuedByTier)
 
 newBucket :: (MonadSTM m, MonadMonotonicTime m)
           => Double          -- ^ rate, bytes/s
@@ -409,7 +435,7 @@ awaitGrantWith borrow_m waitedWritable
     r <- atomically $ do
       waiters <- readTVar bWaiters
       fast <- if Map.null waiters
-                 then takeOrBorrow now now
+                 then takeOrBorrow Nothing now now
                  else return (Left now)
       case fast of
            Right borrowed -> return (Left borrowed)
@@ -442,14 +468,14 @@ awaitGrantWith borrow_m waitedWritable
     -- nobody waiting and the bytes there. Idle but short, the wait is until
     -- whichever bucket has the bytes first. Right: taken, and whether it was
     -- borrowed; Left: the instant to check again. A grant is counted here,
-    -- with the wait since the request at @asked@.
-    takeOrBorrow :: Time -> Time -> STM m (Either Time Bool)
-    takeOrBorrow asked now = do
+    -- with the wait since the request at @asked@ and the tier it queued at.
+    takeOrBorrow :: Maybe Word8 -> Time -> Time -> STM m (Either Time Bool)
+    takeOrBorrow tier_m asked now = do
       r <- takeOrBorrow' now
       case r of
            Right borrowed ->
              modifyTVar bStats
-               (recordGrant borrowed need waitedWritable (now `diffTime` asked))
+               (recordGrant tier_m borrowed need waitedWritable (now `diffTime` asked))
            Left _ -> return ()
       return r
 
@@ -493,7 +519,7 @@ awaitGrantWith borrow_m waitedWritable
              if fmap fst (Map.lookupMin waiters) /= Just key
                then return Displaced
                else do
-                 taken <- takeOrBorrow asked now
+                 taken <- takeOrBorrow (Just (tierOfKey key)) asked now
                  case taken of
                       Right borrowed -> do
                         let waiters' = Map.delete key waiters

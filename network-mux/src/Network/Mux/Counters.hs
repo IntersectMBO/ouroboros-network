@@ -9,6 +9,7 @@ module Network.Mux.Counters
   , newMuxCounters
   , EgressCounts (..)
   , SchedulingCounts (..)
+  , TierCounts (..)
   , IngressCounts (..)
   , CountersTrace (..)
   , countMuxerFailure
@@ -29,9 +30,12 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer, traceWith)
 
-import Data.Word (Word64)
+import Data.Map.Merge.Strict qualified as Map
+import Data.Map.Strict qualified as Map
+import Data.Word (Word64, Word8)
 
-import Network.Mux.Egress.Bucket (BucketStats (..), Bucket, bucketSnapshot, burstBounds,
+import Network.Mux.Egress.Bucket (BucketStats (..), Bucket, TierGrants (..), bucketSnapshot,
+           burstBounds,
            burstWidths, emptyBucketStats, waitBounds)
 import Network.Mux.Trace (Error (..))
 
@@ -66,8 +70,19 @@ data SchedulingCounts = SchedulingCounts {
   scContendedTime      :: !DiffTime,   -- ^ time with two or more, when the order decides
   scBurstsOver         :: ![(DiffTime, Word64)],
     -- ^ busy periods longer than each bound
-  scBurstsWider        :: ![(Int, Word64)]
+  scBurstsWider        :: ![(Int, Word64)],
     -- ^ busy periods with at least this many bearers queued at once
+  scTiers              :: ![(Word8, TierCounts)]
+    -- ^ by tier: what the queue granted its bearers, and how many wait now
+  }
+  deriving (Eq, Show)
+
+-- | The budget's queue seen from one tier: 0 local roots, 1 partners, 2 the
+-- rest, 255 unranked bearers. The fast path is not ranked and counts nowhere.
+data TierCounts = TierCounts {
+  tcBytes   :: !Word64,
+  tcBatches :: !Word64,
+  tcQueued  :: !Int
   }
   deriving (Eq, Show)
 
@@ -172,10 +187,15 @@ countersLoop remote local buckets interval tracer = forever $ do
 
 schedulingCounts :: MonadSTM m => Time -> (Bucket m, Maybe (Bucket m)) -> STM m SchedulingCounts
 schedulingCounts now (budget, slice_m) = do
-  (b, level, queued) <- bucketSnapshot budget now
+  (b, level, queued, queuedByTier) <- bucketSnapshot budget now
   s_m <- traverse (`bucketSnapshot` now) slice_m
-  let slice       = maybe emptyStats (\(st, _, _) -> st) s_m
-      sliceQueued = maybe 0 (\(_, _, q) -> q) s_m
+  let slice       = maybe emptyStats (\(st, _, _, _) -> st) s_m
+      sliceQueued = maybe 0 (\(_, _, q, _) -> q) s_m
+      tiers       = Map.toList $ Map.merge
+                      (Map.mapMissing (\_ (TierGrants n k) -> TierCounts n k 0))
+                      (Map.mapMissing (\_ q -> TierCounts 0 0 q))
+                      (Map.zipWithMatched (\_ (TierGrants n k) q -> TierCounts n k q))
+                      (bsTiers b) queuedByTier
   return SchedulingCounts {
     scDirectBytes        = bsCredited b,
     scSliceBytes         = bsBytes slice - bsBorrowed slice,
@@ -192,7 +212,8 @@ schedulingCounts now (budget, slice_m) = do
     scBusyTime           = bsBusyTime b,
     scContendedTime      = bsContendedTime b,
     scBurstsOver         = zip burstBounds (bsBurstsOver b),
-    scBurstsWider        = zip burstWidths (bsBurstsWider b)
+    scBurstsWider        = zip burstWidths (bsBurstsWider b),
+    scTiers              = tiers
   }
   where
     emptyStats = emptyBucketStats
