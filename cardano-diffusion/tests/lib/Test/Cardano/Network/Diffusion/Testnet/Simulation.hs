@@ -1044,7 +1044,8 @@ data EgressArgs = EgressArgs {
     eaBudget   :: Double,     -- ^ bytes/s
     eaCapacity :: Int,        -- ^ bytes
     eaSlicePct :: Int,
-    eaPeriod   :: DiffTime
+    eaPeriod   :: DiffTime,
+    eaTenure   :: DiffTime    -- ^ before a hot-both-ways peer is a partner
   }
   deriving Show
 
@@ -1057,8 +1058,9 @@ instance Arbitrary EgressArgs where
       cap    <- choose (1024, 24576)
       pct    <- elements [0, 5, 15, 30, 50]
       period <- secondsToDiffTime <$> choose (5, 600)
+      tenure <- secondsToDiffTime <$> choose (0, 3600)
       return EgressArgs { eaBudget = budget, eaCapacity = cap,
-                          eaSlicePct = pct, eaPeriod = period }
+                          eaSlicePct = pct, eaPeriod = period, eaTenure = tenure }
     shrink ea@EgressArgs { eaBudget, eaCapacity, eaSlicePct } =
          [ ea { eaBudget = b }   | b <- [64000], b > eaBudget ]
       ++ [ ea { eaCapacity = c } | c <- [24576], c > eaCapacity ]
@@ -1074,16 +1076,18 @@ genSharedEgress = frequency
             EgressArgs <$> ((* 1e6) <$> choose (1, 100))
                        <*> choose (24576, 262144)
                        <*> elements [0, 5, 15, 30]
-                       <*> (secondsToDiffTime <$> choose (5, 600))) ]
+                       <*> (secondsToDiffTime <$> choose (5, 600))
+                       <*> (secondsToDiffTime <$> choose (0, 3600))) ]
 
 egressScheduling :: EgressArgs -> Diffusion.EgressScheduling
-egressScheduling EgressArgs { eaBudget, eaCapacity, eaSlicePct, eaPeriod } =
+egressScheduling EgressArgs { eaBudget, eaCapacity, eaSlicePct, eaPeriod, eaTenure } =
     Cardano.defaultEgressScheduling {
-      Diffusion.esBudget         = eaBudget,
-      Diffusion.esCapacity       = eaCapacity,
-      Diffusion.esSlicePercent   = eaSlicePct,
-      Diffusion.esRotationPeriod = eaPeriod,
-      Diffusion.esNotSentLowWat  = Nothing
+      Diffusion.esBudget          = eaBudget,
+      Diffusion.esCapacity        = eaCapacity,
+      Diffusion.esSlicePercent    = eaSlicePct,
+      Diffusion.esRotationPeriod  = eaPeriod,
+      Diffusion.esNotSentLowWat   = Nothing,
+      Diffusion.esTenureThreshold = eaTenure
     }
 
 -- | A script whose nodes all run scheduled egress, for the egress

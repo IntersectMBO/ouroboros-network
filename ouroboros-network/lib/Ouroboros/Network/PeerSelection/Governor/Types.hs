@@ -659,6 +659,11 @@ data PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn =
     --
     activePeers                 :: !(Set peeraddr),
 
+    -- | When each active peer was promoted; its keys are exactly
+    -- 'activePeers'.  The egress tiers gate on this tenure.
+    --
+    activeSince                 :: !(Map peeraddr Time),
+
     -- | A counter to manage the exponential backoff strategy for when to
     -- retry querying for more public root peers. It is negative for retry
     -- counts after failure, and positive for retry counts that are
@@ -841,6 +846,8 @@ makeDebugPeerSelectionState PeerSelectionState {..} up bp es am getPromotedHotTi
 data PublicPeerSelectionState peeraddr =
   PublicPeerSelectionState {
     availableToShare :: !(Set peeraddr),
+    -- | When each hot upstream peer was promoted; the egress tiers gate on it.
+    hotUpstreamSince :: !(Map peeraddr Time),
     -- | The local roots' addresses; inbound tx-submission's fetch tiers keep
     -- them fast by standing.  A root is recognised on an inbound connection
     -- by its remote address being one of these, which holds when the root
@@ -859,6 +866,7 @@ emptyPublicPeerSelectionState :: Ord peeraddr
 emptyPublicPeerSelectionState =
   PublicPeerSelectionState {
     availableToShare = mempty,
+    hotUpstreamSince = Map.empty,
     localRootAddrs   = Set.empty
   }
 
@@ -874,10 +882,11 @@ makePublicPeerSelectionStateVar = newTVarIO emptyPublicPeerSelectionState
 --
 toPublicState :: PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
               -> PublicPeerSelectionState peeraddr
-toPublicState PeerSelectionState { knownPeers, localRootPeers } =
+toPublicState PeerSelectionState { knownPeers, activeSince, localRootPeers } =
    PublicPeerSelectionState {
      availableToShare =
        KnownPeers.getPeerSharingResponsePeers knownPeers,
+     hotUpstreamSince = activeSince,
      localRootAddrs   = LocalRootPeers.keysSet localRootPeers
    }
 
@@ -1161,6 +1170,7 @@ emptyPeerSelectionState rng es ep =
       knownPeers                  = KnownPeers.empty,
       establishedPeers            = EstablishedPeers.empty,
       activePeers                 = Set.empty,
+      activeSince                 = Map.empty,
       publicRootBackoffs          = 0,
       publicRootRetryTime         = Time 0,
       inProgressPublicRootsReq    = False,
@@ -1386,6 +1396,7 @@ assertPeerSelectionState extraPeersToSet invariantExtraPeers PeerSelectionState{
     -- The activePeers is a subset of the establishedPeers
     -- which is a subset of the known peers
   . assert (Set.isSubsetOf activePeersSet establishedReadySet)
+  . assert (Map.keysSet activeSince == activePeersSet)
   . assert (Set.isSubsetOf establishedPeersSet knownPeersSet)
 
    -- The localRootPeers and publicRootPeers must not overlap.
