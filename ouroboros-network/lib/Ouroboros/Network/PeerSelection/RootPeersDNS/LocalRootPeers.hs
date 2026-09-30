@@ -95,19 +95,20 @@ localRootPeersProvider tracer
                        rootPeersGroupVar =
       atomically do
         domainsGroups <- readLocalRootPeers
-        writeTVar rootPeersGroupVar (getLocalRootPeersGroups Map.empty domainsGroups)
         (,,) <$> newTVar rng0 <*> newDNSLocalRootSemaphore <*> pure domainsGroups
   >>= loop'
   where
-    loop' (varRng, sem, domGroups) = loop varRng sem domGroups
+    loop' (varRng, sem, domGroups) = loop varRng sem Map.empty domGroups
     -- | Loop function that monitors DNS Domain resolution threads and restarts
     -- if either these threads fail or detects the local configuration changed.
     --
     loop :: StrictTVar m StdGen
          -> DNSSemaphore m
+         -> Map RelayAccessPoint [peerAddr]
+         -- ^ the last DNS results, carried across a reconfiguration or a restart
          -> [(HotValency, WarmValency, Map RelayAccessPoint (LocalRootConfig extraFlags))]
          -> m Void
-    loop varRng dnsSemaphore domainsGroups = do
+    loop varRng dnsSemaphore lastDNSDomainMap domainsGroups = do
       traceWith tracer (TraceLocalRootDomains domainsGroups)
       rr <- dnsAsyncResolverResource resolvConf
       let
@@ -121,15 +122,25 @@ localRootPeersProvider tracer
                         _otherwise            -> True
                     ]
 
-          -- Initial DNS Domain Map has all domains entries empty
+          -- Domains still configured keep what they had resolved to; new
+          -- domains start empty
           initialDNSDomainMap :: Map RelayAccessPoint [peerAddr]
           initialDNSDomainMap =
-            Map.fromList $ map (, []) domains
+            Map.fromList [ (d, Map.findWithDefault [] d lastDNSDomainMap) | d <- domains ]
 
       -- Create TVar to store DNS lookup results
       dnsDomainMapVar <- newTVarIO initialDNSDomainMap
 
       traceWith tracer (TraceLocalRootDNSMap initialDNSDomainMap)
+      -- Apply the configuration now: its IP addresses need no resolution, and
+      -- a configuration without domain names would otherwise never be applied
+      rootPeersGroups <- atomically $ do
+        let rootPeersGroups = getLocalRootPeersGroups initialDNSDomainMap domainsGroups
+        oldRootPeersGroups <- readTVar rootPeersGroupVar
+        when (oldRootPeersGroups /= rootPeersGroups) $
+          writeTVar rootPeersGroupVar rootPeersGroups
+        return rootPeersGroups
+      traceWith tracer (TraceLocalRootGroups rootPeersGroups)
 
       -- Launch DomainAddress monitoring threads and wait for threads to error
       -- or for local configuration changes.
@@ -142,7 +153,7 @@ localRootPeersProvider tracer
       -- static local root peers groups and for each domain it finds, it is
       -- going to lookup into the new DNS Domain Map and replace that entry
       -- with the lookup result.
-      domainsGroups' <-
+      (domainsGroups', dnsDomainMap') <-
         withAsyncAllWithCtx (monitorDomain rr dnsSemaphore dnsDomainMapVar varRng `map` domains) $ \as -> do
           let tagErrWithDomain (domain, _, res) = either (Left . (domain,)) absurd res
           res <- atomically $
@@ -154,18 +165,19 @@ localRootPeersProvider tracer
                       -- wait until the input domains groups changes
                       check (a /= domainsGroups)
                       return (Right a))
+          dnsDomainMap' <- readTVarIO dnsDomainMapVar
           case res of
             Left (domain, err)    -> traceWith tracer (TraceLocalRootError domain err)
                                   -- current domain groups haven't changed, we
                                   -- can return them
-                                  >> return domainsGroups
+                                  >> return (domainsGroups, dnsDomainMap')
             Right domainsGroups'  -> traceWith tracer (TraceLocalRootReconfigured domainsGroups domainsGroups')
                                   -- current domain groups changed, we should
                                   -- return them
-                                  >> return domainsGroups'
+                                  >> return (domainsGroups', dnsDomainMap')
       -- we continue the loop outside of 'withAsyncAll',  this makes sure that
       -- all the monitoring threads are killed.
-      loop varRng dnsSemaphore domainsGroups'
+      loop varRng dnsSemaphore dnsDomainMap' domainsGroups'
 
 
     -- | Function that runs on a monitoring thread. This function will, every
