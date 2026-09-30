@@ -94,6 +94,8 @@ tests =
                       prop_local_resolvesDomainsCorrectly
        , testProperty "updates domains correctly"
                       prop_local_updatesDomainsCorrectly
+       , testProperty "reconfigures IP addresses"
+                      prop_local_reconfiguresIPs
        ]
     , testGroup "publicRootPeersProvider"
        [ testProperty "resolves domains correctly"
@@ -462,11 +464,16 @@ mockLocalRootPeersProvider :: forall m.
                               )
                            => Tracer m (TestTraceEvent (TraceLocalRootPeers () SockAddr))
                            -> MockRoots
+                           -> Maybe [( HotValency
+                                     , WarmValency
+                                     , Map RelayAccessPoint (LocalRootConfig ()))]
+                           -- ^ a reconfiguration, applied after 100 s
                            -> Script DNSTimeout
                            -> Script DNSLookupDelay
                            -> TestSeed
-                           -> m ()
-mockLocalRootPeersProvider tracer (MockRoots localRootPeers dnsMapScript _ _)
+                           -> m [(HotValency, WarmValency, Map SockAddr (LocalRootConfig ()))]
+                           -- ^ the local root groups as the provider left them
+mockLocalRootPeersProvider tracer (MockRoots localRootPeers dnsMapScript _ _) reconfiguration
                            dnsTimeoutScript dnsLookupDelayScript dnsSeed = do
       dnsMapScriptVar <- initScript' dnsMapScript
       dnsMap <- stepScript' dnsMapScriptVar
@@ -476,7 +483,8 @@ mockLocalRootPeersProvider tracer (MockRoots localRootPeers dnsMapScript _ _)
       dnsLookupDelayScriptVar <- initScript' dnsLookupDelayScript
       localRootPeersVar <- newTVarIO localRootPeers
       resultVar <- newTVarIO mempty
-      withAsync (updateDNSMap dnsMapScriptVar dnsMapVar) $ \_ -> do
+      withAsync (updateDNSMap dnsMapScriptVar dnsMapVar) $ \_ ->
+        withAsync (reconfigure localRootPeersVar) $ \_ -> do
         void $ MonadTimer.timeout 3600 $
           localRootPeersProvider (contramap Left tracer)
                                  PeerActionsDNS {
@@ -499,7 +507,18 @@ mockLocalRootPeersProvider tracer (MockRoots localRootPeers dnsMapScript _ _)
         -- By reading & writing to the `TVar` we are forcing it to run at least
         -- once.
         atomically $ readTVar resultVar >>= writeTVar resultVar
+        readTVarIO resultVar
   where
+    reconfigure :: StrictTVar m [( HotValency
+                                 , WarmValency
+                                 , Map RelayAccessPoint (LocalRootConfig ()))]
+                -> m ()
+    reconfigure localRootPeersVar = do
+      threadDelay 100
+      case reconfiguration of
+           Just localRootPeers' -> atomically (writeTVar localRootPeersVar localRootPeers')
+           Nothing              -> return ()
+
     updateDNSMap :: StrictTVar m (Script MockDNSMap)
                  -> StrictTVar m MockDNSMap
                  -> m Void
@@ -685,6 +704,7 @@ prop_local_preservesIPs mockRoots@(MockRoots localRoots _ _ _)
            $ runSimTrace
            $ mockLocalRootPeersProvider tracerTraceLocalRoots
                                         mockRoots
+                                        Nothing
                                         dnsTimeoutScript
                                         dnsLookupDelayScript
                                         dnsSeed
@@ -727,6 +747,53 @@ prop_local_preservesIPs mockRoots@(MockRoots localRoots _ _ _)
         $ localRootAddressesSet `Set.isSubsetOf` localGroupEventsAddressesSet
         .&&. checkAll t
 
+-- | After a reconfiguration the provider applies the new local root groups, IP
+-- addresses included, even when the new configuration has no domain name to
+-- resolve: the groups it leaves behind hold every IP address of the new
+-- configuration.
+--
+prop_local_reconfiguresIPs :: MockRoots
+                           -> MockRoots
+                           -> Bool
+                           -> Script DNSTimeout
+                           -> Script DNSLookupDelay
+                           -> TestSeed
+                           -> Property
+prop_local_reconfiguresIPs mockRoots@(MockRoots localRoots _ _ _) (MockRoots newRoots _ _ _)
+                           ipOnly dnsTimeoutScript dnsLookupDelayScript dnsSeed =
+    let newRoots'
+          | ipOnly    = [ (h, w, Map.filterWithKey (\rap _ -> isAddress rap) m)
+                        | (h, w, m) <- newRoots ]
+          | otherwise = newRoots
+        simTrace = runSimTrace
+                 $ mockLocalRootPeersProvider tracerTraceLocalRoots
+                                              mockRoots
+                                              (Just newRoots')
+                                              dnsTimeoutScript
+                                              dnsLookupDelayScript
+                                              dnsSeed
+        tr = selectLocalRootPeersWithDNSEvents simTrace
+        reconfigured = or [ True | (_, Left TraceLocalRootReconfigured {}) <- tr ]
+        wanted = Set.fromList [ toSockAddr (ip, port)
+                              | (_, _, m) <- newRoots'
+                              , RelayAccessAddress ip port <- Map.keys m ]
+        final = case traceResult False simTrace of
+                     Right groups -> Set.fromList (concatMap (\(_, _, m) -> Map.keys m) groups)
+                     Left failure -> error (show failure)
+    in counterexample (intercalate "\n" $ map show tr)
+     $ classify (all (\(_, _, m) -> all isAddress (Map.keys m)) newRoots')
+                "new configuration has no domain names"
+     $ classify (Set.null wanted) "new configuration has no IP addresses"
+     $ if newRoots' == localRoots
+          then label "unchanged configuration" True
+          else counterexample "the configuration change was not seen" reconfigured
+               .&&. counterexample (show (Set.toList wanted) ++ " not all in "
+                                    ++ show (Set.toList final))
+                                   (wanted `Set.isSubsetOf` final)
+  where
+    isAddress RelayAccessAddress {} = True
+    isAddress _                     = False
+
 -- | The 'localRootPeersProvider' should preserve the local root peers
 -- group number and respective targets. This property tests whether local
 -- root peer groups update due to DNS resolution results, does not alter
@@ -746,6 +813,7 @@ prop_local_preservesGroupNumberAndTargets mockRoots@(MockRoots lrp _ _ _)
            $ runSimTrace
            $ mockLocalRootPeersProvider tracerTraceLocalRoots
                                         mockRoots
+                                        Nothing
                                         dnsTimeoutScript
                                         dnsLookupDelayScript
                                         dnsSeed
@@ -786,6 +854,7 @@ prop_local_resolvesDomainsCorrectly mockRoots@(MockRoots localRoots lDNSMap _ _)
            $ runSimTrace
            $ mockLocalRootPeersProvider tracerTraceLocalRoots
                                         mockRoots'
+                                        Nothing
                                         dnsTimeoutScript
                                         dnsLookupDelayScript
                                         dnsSeed
@@ -875,6 +944,7 @@ prop_local_updatesDomainsCorrectly mockRoots@(MockRoots lrp _ _ _)
            $ runSimTrace
            $ mockLocalRootPeersProvider tracerTraceLocalRoots
                                         mockRoots
+                                        Nothing
                                         dnsTimeoutScript
                                         dnsLookupDelayScript
                                         dnsSeed
