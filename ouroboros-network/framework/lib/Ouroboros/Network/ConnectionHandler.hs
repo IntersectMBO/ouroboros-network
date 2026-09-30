@@ -264,7 +264,7 @@ makeConnectionHandler
     -> Maybe (Mx.EgressPolicy m)
     -- ^ scheduled egress, shared by every connection this handler creates
     -> (peerAddr -> STM m Mx.Rank)
-    -- ^ the egress tier of a peer's connections, set as each mux is created
+    -- ^ the egress tier of a peer's connections, asked as their bearers queue
     -> HandshakeArguments (ConnectionId peerAddr) versionNumber versionData m
     -> Versions versionNumber versionData
                 (OuroborosBundle muxMode initiatorCtx responderCtx ByteString m a b)
@@ -297,10 +297,11 @@ makeConnectionHandler muxTracers forkPolicy muxCounters egressPolicy egressRankO
                   Nothing     -> Mx.new tracers ptcls
                   Just policy -> do
                     mux <- Mx.newWithEgress policy tracers ptcls
+                    -- the rule is kept, not its answer, and asked whenever the
+                    -- bearer joins the queue, so a reload takes effect at once
                     rank <- atomically $ do
-                      rank <- egressRankOf remoteAddress
-                      Mx.setEgressRank mux rank
-                      return rank
+                      Mx.setEgressRankSource mux (egressRankOf remoteAddress)
+                      egressRankOf remoteAddress
                     traceWith tracer_ (Mx.TraceEgressRank rank)
                     return mux
       return $ case muxCounters of
