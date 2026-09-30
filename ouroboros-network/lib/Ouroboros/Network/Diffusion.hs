@@ -114,7 +114,7 @@ runM
        , MonadLabelledSTM m
        , MonadTraceSTM    m
        , MonadMask        m
-       , MonadThrow  (STM m)
+       , MonadCatch  (STM m)
        , MonadTime        m
        , MonadTimer       m
        , MonadMVar        m

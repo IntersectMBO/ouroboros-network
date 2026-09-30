@@ -106,7 +106,7 @@ with :: forall muxMode socket peerAddr initiatorCtx responderCtx handle handlerT
        , MonadEvaluate m
        , MonadLabelledSTM  m
        , MonadMask     m
-       , MonadThrow   (STM m)
+       , MonadCatch   (STM m)
        , MonadTime     m
        , MonadTimer    m
        , HasResponder muxMode ~ True
