@@ -52,6 +52,7 @@ module Network.Mux
   , Rank (..)
   , Rotation (..)
   , setEgressRank
+  , setEgressRankSource
     -- * Monitoring
   , miniProtocolStateMap
   , stopped
@@ -114,7 +115,7 @@ import Network.Mux.Channel
 import Network.Mux.Counters
 import Network.Mux.Egress as Egress
 import Network.Mux.Egress.Bucket (Bucket, BucketHandle, Rotation (..),
-           newBucket, registerBearer, setBucketRate, setRank)
+           newBucket, registerBearer, setBucketRate, setRank, setRankSource)
 import Network.Mux.Ingress as Ingress
 import Network.Mux.Timeout
 import Network.Mux.Trace
@@ -251,6 +252,13 @@ setEgressRank :: MonadSTM m => Mux mode m -> Rank -> STM m ()
 setEgressRank Mux { muxEgress } rank =
     case muxEgress of
          Just MuxEgress { meBudgetHandle } -> setRank meBudgetHandle rank
+         Nothing                           -> return ()
+
+-- | Like 'setEgressRank', with a rule asked whenever the bearer joins the queue.
+setEgressRankSource :: MonadSTM m => Mux mode m -> STM m Rank -> STM m ()
+setEgressRankSource Mux { muxEgress } rank =
+    case muxEgress of
+         Just MuxEgress { meBudgetHandle } -> setRankSource meBudgetHandle rank
          Nothing                           -> return ()
 
 mkMiniProtocolStateMap :: MonadSTM m

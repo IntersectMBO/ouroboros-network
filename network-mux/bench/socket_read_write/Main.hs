@@ -6,7 +6,7 @@ module Main (main) where
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (bracket)
-import Control.Monad (forM, forever, replicateM, replicateM_, unless, when)
+import Control.Monad (forM, forM_, forever, replicateM, replicateM_, unless, when)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer
@@ -27,7 +27,7 @@ import Network.Mux
 import Network.Mux.Bearer
 import Network.Mux.Codec (decodeSDU, encodeSDU)
 import Network.Mux.Egress
-import Network.Mux.Egress.Bucket (awaitGrant, registerBearer)
+import Network.Mux.Egress.Bucket (awaitGrant, registerBearer, setRankSource)
 import Network.Mux.Ingress
 import Network.Mux.Timeout (withTimeoutSerial)
 import Network.Mux.Types
@@ -285,7 +285,10 @@ scheduledLane = do
 -- | The tier of a peer as a rule over the local root groups, evaluated in the
 -- transaction that queues the bearer, against a stored rank.
 rankRule :: StrictTVar IO [(Int, Int, Map Socket.SockAddr ())] -> Socket.SockAddr -> IO Rank
-rankRule groupsVar addr = atomically $ do
+rankRule groupsVar addr = atomically (rankRuleSTM groupsVar addr)
+
+rankRuleSTM :: StrictTVar IO [(Int, Int, Map Socket.SockAddr ())] -> Socket.SockAddr -> STM IO Rank
+rankRuleSTM groupsVar addr = do
     groups <- readTVar groupsVar
     return $ if any (\(_, _, m) -> Map.member addr m) groups
                 then Rank 0
@@ -302,10 +305,19 @@ rootAddr i j = Socket.SockAddrInet (fromIntegral (3000 + i)) (fromIntegral (i * 
 -- | @bearers@ contending for one budget, each taking @grants `div` bearers@
 -- batches of 128 KiB: at 10 GB/s every take joins the queue and sleeps for
 -- its tokens; unlimited, the queue only forms under contention.
-bucketContention :: Int -> Double -> Maybe Rotation -> Int -> IO ()
-bucketContention bearers rate rotation grants = do
+bucketContention :: Int -> Double -> Maybe Rotation
+                 -> Maybe (StrictTVar IO [(Int, Int, Map Socket.SockAddr ())])
+                 -- ^ rank the bearers by this rule, half of them members
+                 -> Int -> IO ()
+bucketContention bearers rate rotation rule grants = do
     bucket <- newBucket rate (2 * batch) rotation
     hs <- replicateM bearers (registerBearer bucket)
+    case rule of
+         Just groupsVar ->
+           forM_ (zip [0 :: Int ..] hs) $ \(i, h) ->
+             atomically $ setRankSource h $ rankRuleSTM groupsVar $
+               if even i then rootAddr 3 (i `mod` 8 + 1) else rootAddr 0 i
+         Nothing -> return ()
     as <- forM hs $ \h -> async (replicateM_ (grants `div` bearers) (awaitGrant h batch))
     mapM_ wait as
   where
@@ -352,6 +364,7 @@ main = do
         addrS <- setupServer ad5
         -- the tier decision, stored and as a rule over generated local roots
         rankVar <- newTVarIO (Rank 1)
+        ruleVar <- newTVarIO (localRootGroups 3 8)
         rankBenches <- forM [(1, 8), (3, 8), (3, 64), (10, 64)] $ \(g, n) -> do
           groupsVar <- newTVarIO (localRootGroups g n)
           let label = show g ++ " groups of " ++ show n
@@ -413,11 +426,13 @@ main = do
                       : concat rankBenches
                     -- the slow path: bearers queue for one budget
                   , bgroup "contention" [
-                      bench "8 bearers, 10 GB/s"              $ nfIO $ bucketContention 8  10e9 Nothing 4096
-                    , bench "64 bearers, 10 GB/s"             $ nfIO $ bucketContention 64 10e9 Nothing 4096
-                    , bench "8 bearers, unlimited"            $ nfIO $ bucketContention 8  1e15 Nothing 4096
-                    , bench "64 bearers, unlimited"           $ nfIO $ bucketContention 64 1e15 Nothing 4096
-                    , bench "64 bearers, unlimited, rotation" $ nfIO $ bucketContention 64 1e15 (Just (Rotation 42 599)) 4096
+                      bench "8 bearers, 10 GB/s"               $ nfIO $ bucketContention 8  10e9 Nothing Nothing 4096
+                    , bench "64 bearers, 10 GB/s"              $ nfIO $ bucketContention 64 10e9 Nothing Nothing 4096
+                    , bench "64 bearers, 10 GB/s, rank rule"   $ nfIO $ bucketContention 64 10e9 Nothing (Just ruleVar) 4096
+                    , bench "8 bearers, unlimited"             $ nfIO $ bucketContention 8  1e15 Nothing Nothing 4096
+                    , bench "64 bearers, unlimited"            $ nfIO $ bucketContention 64 1e15 Nothing Nothing 4096
+                    , bench "64 bearers, unlimited, rotation"  $ nfIO $ bucketContention 64 1e15 (Just (Rotation 42 599)) Nothing 4096
+                    , bench "64 bearers, unlimited, rank rule" $ nfIO $ bucketContention 64 1e15 Nothing (Just ruleVar) 4096
                     ]
                     -- the fast path over a socket: the unscheduled twins are the
                     -- 0ms Poll Mux Benchmarks above
