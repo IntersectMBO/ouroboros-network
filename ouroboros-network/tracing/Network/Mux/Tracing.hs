@@ -442,6 +442,10 @@ instance LogFormatting Mux.Trace where
       [ "kind" .= String "Mux.TraceStopped"
       , "msg"  .= String "Mux stoppped"
       ]
+    forMachine _dtal (Mux.TraceEgressRank (Mux.Rank rank)) = mconcat
+      [ "kind" .= String "Mux.TraceEgressRank"
+      , "rank" .= rank
+      ]
 
     forHuman (Mux.TraceState new) =
       sformat ("State: " % shown) new
@@ -465,6 +469,7 @@ instance LogFormatting Mux.Trace where
     forHuman Mux.TraceStarting = "Mux Starting"
     forHuman Mux.TraceStopping = "Mux stopping"
     forHuman Mux.TraceStopped = "Mux stoppped"
+    forHuman (Mux.TraceEgressRank (Mux.Rank rank)) = "Egress rank " <> showT rank
 
     asMetrics = \case
       Mux.TraceState{} -> []
@@ -485,6 +490,7 @@ instance LogFormatting Mux.Trace where
       Mux.TraceStarting{} -> []
       Mux.TraceStopping{} -> []
       Mux.TraceStopped{} -> []
+      Mux.TraceEgressRank{} -> []
 
 instance MetaTrace Mux.Trace where
     namespaceFor Mux.TraceState {}                 =
@@ -511,6 +517,8 @@ instance MetaTrace Mux.Trace where
       Namespace [] ["Stopping"]
     namespaceFor Mux.TraceStopped                  =
       Namespace [] ["Stopped"]
+    namespaceFor Mux.TraceEgressRank {}            =
+      Namespace [] ["EgressRank"]
 
     severityFor (Namespace _ ["State"]) _            = Just Info
     severityFor (Namespace _ ["CleanExit"]) _        = Just Notice
@@ -524,6 +532,7 @@ instance MetaTrace Mux.Trace where
     severityFor (Namespace _ ["Starting"]) _         = Just Debug
     severityFor (Namespace _ ["Stopping"]) _         = Just Debug
     severityFor (Namespace _ ["Stopped"]) _          = Just Debug
+    severityFor (Namespace _ ["EgressRank"]) _       = Just Debug
     severityFor _ _                                  = Nothing
 
     documentFor (Namespace _ ["State"])                 = Just
@@ -550,6 +559,8 @@ instance MetaTrace Mux.Trace where
       "Mux shutdown."
     documentFor (Namespace _ ["Stopped"])               = Just
       "Mux shutdown."
+    documentFor (Namespace _ ["EgressRank"])            = Just
+      "The tier the peer is served in by scheduled egress; 0 for local roots."
     documentFor _ = Nothing
 
     metricsDocFor (Namespace _ ["State"])               = []
@@ -566,6 +577,7 @@ instance MetaTrace Mux.Trace where
     metricsDocFor (Namespace _ ["Starting"])            = []
     metricsDocFor (Namespace _ ["Stopping"])            = []
     metricsDocFor (Namespace _ ["Stopped"])             = []
+    metricsDocFor (Namespace _ ["EgressRank"])          = []
     metricsDocFor _                                     = []
 
     allNamespaces = [
@@ -581,6 +593,7 @@ instance MetaTrace Mux.Trace where
       , Namespace [] ["Starting"]
       , Namespace [] ["Stopping"]
       , Namespace [] ["Stopped"]
+      , Namespace [] ["EgressRank"]
       ]
 
 --------------------------------------------------------------------------------

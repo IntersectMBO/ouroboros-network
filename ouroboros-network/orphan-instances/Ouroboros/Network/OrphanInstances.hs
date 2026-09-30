@@ -626,6 +626,10 @@ instance ToJSON Mux.Trace where
     Mux.TraceStopped ->
       object [ "type" .= String "Stopped"
              ]
+    Mux.TraceEgressRank (Mux.Rank rank) ->
+      object [ "type" .= String "EgressRank"
+             , "rank" .= rank
+             ]
 
 
 instance ToJSON Mux.ChannelTrace where

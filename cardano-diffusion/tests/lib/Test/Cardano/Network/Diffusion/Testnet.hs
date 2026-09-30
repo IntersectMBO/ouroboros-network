@@ -88,6 +88,8 @@ import Ouroboros.Network.PeerSelection.Governor qualified as Governor
 import Ouroboros.Network.PeerSelection.Governor.Types
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
 import Ouroboros.Network.PeerSelection.RootPeersDNS (DNSorIOError (DNSError))
+import Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
+           (TraceLocalRootPeers (..))
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
@@ -273,6 +275,8 @@ tests =
                      prop_egress_diffusion_ig_valid_transitions
       , testProperty "shrinking never re-runs the same simulation"
                      prop_egress_shrink
+      , testProperty "local roots are served first"
+                     prop_egress_local_roots_first
       ]
     , testGroup "local root diffusion mode"
         [ testProperty "InitiatorOnly"
@@ -6295,6 +6299,48 @@ prop_egress_txSubmission_chainIntegrity egress argPolicy chainedTxs =
     expected
     (runSimTrace (diffusionSimulation noAttenuation diffScript))
     long_trace
+
+-- | Scheduled egress ranks a node's local roots first.
+prop_egress_local_roots_first :: AbsBearerInfo -> EgressScript -> Property
+prop_egress_local_roots_first =
+  egressIOSim prop_local_roots_first long_trace
+
+-- | A connection's mux is ranked 0 iff its peer is one of the node's resolved
+-- local roots, and 1 otherwise. The handler reads the roots from the variable
+-- the resolver writes; the resolver traces them a moment after writing, so a
+-- rank is judged by the roots traced last before it or first after it.
+prop_local_roots_first :: SimTrace DiffSimResult -> Int -> Property
+prop_local_roots_first ioSimTrace traceNumber =
+  let events = fmap (\(WithTime t (WithName name b)) -> WithName name (WithTime t b))
+             . withTimeNameTraceEvents @DiffusionTestTrace @NtNAddr
+             . Trace.take traceNumber
+             $ ioSimTrace
+      ranks  = concatMap nodeRanks (Trace.toList (splitWithNameTrace events))
+      judged = [ r | r@(_, _, _, roots) <- ranks, not (null roots) ]
+  in classify (any (\(_, _, rank, _) -> rank == Mx.Rank 0) judged) "a local root ranked first"
+   . classify (length judged < length ranks) "a rank before any roots were traced"
+   . classify (null ranks) "no scheduled connection"
+   $ conjoin
+       [ counterexample (show (node, addr, rank, roots)) $
+           property (rank `elem` [ rankOf (addr `Set.member` rs) | rs <- roots ])
+       | (node, addr, rank, roots) <- judged ]
+  where
+    rankOf isRoot = if isRoot then Mx.Rank 0 else Mx.Rank 1
+
+    -- one node's ranks, each with the root sets it may be judged by
+    nodeRanks :: [WithName NtNAddr (WithTime DiffusionTestTrace)]
+              -> [(NtNAddr, NtNAddr, Mx.Rank, [Set NtNAddr])]
+    nodeRanks evs =
+      [ (node, addr, rank, [ rs | (_, rs) <- take 1 (reverse earlier) ++ take 1 later ])
+      | (i, WithName node (WithTime _ (DiffusionMuxTrace
+            (Mx.WithBearer ConnectionId { remoteAddress = addr } (Mx.TraceEgressRank rank)))))
+          <- indexed
+      , let (earlier, later) = span ((< i) . fst) groups ]
+      where
+        indexed = zip [0 :: Int ..] evs
+        groups  = [ (i, LocalRootPeers.keysSet (LocalRootPeers.fromGroups gs))
+                  | (i, WithName _ (WithTime _ (DiffusionLocalRootPeerTrace
+                                                  (TraceLocalRootGroups gs)))) <- indexed ]
 
 -- | The governor's state stays valid.
 prop_egress_diffusion_nofail :: AbsBearerInfo -> EgressScript -> Property
