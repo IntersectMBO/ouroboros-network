@@ -29,6 +29,7 @@ module Network.Mux.Counters
   , readSlots
   , countMuxerFailure
   , countDemuxerFailure
+  , countGateTimeout
   , countMiniProtocolFailure
   , snapshotCountersWith
   ) where
@@ -39,6 +40,7 @@ import Control.Monad (forM_, forever, unless, (<$!>))
 import Control.Monad.Class.MonadAsync (MonadAsync, race)
 import Control.Monad.Class.MonadFork (labelThisThread)
 import Control.Monad.Class.MonadThrow (MonadMask, bracket)
+import Control.Monad.Class.MonadTime.SI (getMonotonicTime)
 import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer, traceWith)
 
@@ -52,6 +54,8 @@ import Data.Word (Word64)
 import Foreign.C.Error (Errno (..), eCONNRESET, ePIPE)
 import GHC.IO.Exception (IOException (..))
 
+import Network.Mux.Egress.Bucket (Bucket)
+import Network.Mux.Egress.Counters (SchedulingCounts, schedulingCounts)
 import Network.Mux.Trace (Error (..))
 import Network.Mux.Types (IngressQueue, IngressQueueState (..), MiniProtocolDir,
            MiniProtocolNum, RuntimeError)
@@ -62,6 +66,11 @@ data Failures = Failures {
     -- The muxer.
     mfWriteTimeouts  :: !Word64,
     -- ^ the peer took nothing within the SDU timeout
+    mfGateTimeouts   :: !Word64,
+    -- ^ at the writability gate of scheduled egress, before the write:
+    -- counted by the lane that timed out as it dies, so with two lanes
+    -- timing out on one stalled peer, or a gate firing during the stop,
+    -- it may exceed 'mfWriteTimeouts', which counts the mux's death once
     mfWriteErrors    :: !Word64,
     -- ^ the bearer's write failed otherwise: a timed-out connection, a
     -- host unreachable
@@ -97,7 +106,7 @@ data Failures = Failures {
 
 -- | No failure counted.
 noFailures :: Failures
-noFailures = Failures 0 0 0 0 0 0 0 0 Map.empty
+noFailures = Failures 0 0 0 0 0 0 0 0 0 Map.empty
 
 -- | One side's counters at an instant.
 data Counts = Counts {
@@ -354,6 +363,12 @@ countMuxerFailure counters = countFailure counters . muxerFailure
 countDemuxerFailure :: MonadSTM m => Maybe (Counters m) -> SomeException -> STM m ()
 countDemuxerFailure counters = countFailure counters . demuxerFailure
 
+-- | Count a writability gate that timed out; the write timeout itself is
+-- counted by 'countMuxerFailure' when the mux dies of it.
+countGateTimeout :: MonadSTM m => Maybe (Counters m) -> STM m ()
+countGateTimeout counters =
+  countFailure counters (Just (\f -> f { mfGateTimeouts = mfGateTimeouts f + 1 }))
+
 -- | Count a failure, if there is one to count and a set to count it in.
 countFailure :: MonadSTM m
              => Maybe (Counters m)
@@ -381,6 +396,8 @@ countMiniProtocolFailure counters num dir e =
 data CountersTrace =
     TraceRemoteCounters Counts  -- ^ the remote muxes
   | TraceLocalCounters  Counts  -- ^ the local muxes
+  | TraceEgressCounters SchedulingCounts
+    -- ^ scheduled egress: the budget's bucket and the slice's
   deriving (Eq, Show)
 
 -- | A prime, so that snapshots do not keep step with other periodic work such
@@ -389,21 +406,27 @@ countersInterval :: DiffTime
 countersInterval = 7
 
 -- | Every @interval@, a second at least, snapshot the remote and the local
--- set, each if there is one, and trace each. 'withCounters' runs it for
--- the sets it makes.
+-- set, each if there is one, and trace each; with scheduled egress, the
+-- budget's bucket and the slice's, if any, are snapshotted and traced too.
+-- 'withCounters' runs it for the sets it makes.
 countersLoop :: (MonadDelay m, MonadSTM m)
              => Maybe (Counters m)    -- ^ the remote set, if any
              -> Maybe (Counters m)    -- ^ the local set, if any
+             -> Maybe (Bucket m, Maybe (Bucket m))
+             -- ^ the buckets behind scheduled egress, if it is scheduled
              -> DiffTime
              -> Tracer m CountersTrace
              -> m void
-countersLoop remote local interval tracer = forever $ do
+countersLoop remote local buckets interval tracer = forever $ do
   threadDelay delay
   -- Small transactions, one for the totals and one per counter: the counters
   -- need no consistency across them, and one over everything the muxes write
   -- would be restarted by every batch.
   forM_ remote $ \c ->
     snapshotCountersWith atomically c >>= traceWith tracer . TraceRemoteCounters
+  forM_ buckets $ \bs -> do
+    now <- getMonotonicTime
+    atomically (schedulingCounts now bs) >>= traceWith tracer . TraceEgressCounters
   forM_ local  $ \c ->
     snapshotCountersWith atomically c >>= traceWith tracer . TraceLocalCounters
   where
@@ -422,14 +445,16 @@ countersLoop remote local interval tracer = forever $ do
 withCounters :: (MonadAsync m, MonadDelay m)
                 => DiffTime
                 -> Bool                 -- ^ a local set too
+                -> Maybe (Bucket m, Maybe (Bucket m))
+                -- ^ the buckets behind scheduled egress, if it is scheduled
                 -> Tracer m CountersTrace
                 -> (Maybe (Counters m) -> Maybe (Counters m) -> m a)
                 -> m a
-withCounters interval localToo tracer k
+withCounters interval localToo buckets tracer k
   | interval <= 0 = k Nothing Nothing
   | otherwise = do
       remote <- newCounters
       local  <- if localToo then Just <$> newCounters else return Nothing
       either absurd id <$>
-        race (labelThisThread "mux-counters" >> countersLoop (Just remote) local interval tracer)
+        race (labelThisThread "mux-counters" >> countersLoop (Just remote) local buckets interval tracer)
              (k (Just remote) local)
