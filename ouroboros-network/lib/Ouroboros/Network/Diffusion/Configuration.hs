@@ -127,5 +127,9 @@ defaultEgressSchedulingWith laneOf = EgressScheduling {
     esSlicePercent   = 15,
     esRotationPeriod = 599,
     esNotSentLowWat  = Just 131072,
-    esLaneOf         = laneOf
+    esLaneOf         = laneOf,
+    -- two deadline churn rounds at their longest, an interval plus the churn
+    -- governor's 600 s of fuzz each, plus the time it waits for the demotions
+    -- of the second to complete: a partner has outlived two churns for certain
+    esTenureThreshold = 2 * (defaultDeadlineChurnInterval + 600) + deactivateTimeout
   }

@@ -6304,7 +6304,8 @@ prop_egress_local_roots_first egress =
   egressIOSim egress prop_local_roots_first long_trace
 
 -- | A connection's mux is ranked 0 iff its peer is one of the node's resolved
--- local roots, and 1 otherwise. The handler reads the roots from the variable
+-- local roots, and 2 otherwise: at setup no peer runs our hot mini-protocols
+-- yet, so none is a partner. The handler reads the roots from the variable
 -- the resolver writes; the resolver traces them a moment after writing, so a
 -- rank is judged by the roots traced last before it or first after it.
 prop_local_roots_first :: SimTrace DiffSimResult -> Int -> Property
@@ -6323,7 +6324,7 @@ prop_local_roots_first ioSimTrace traceNumber =
            property (rank `elem` [ rankOf (addr `Set.member` rs) | rs <- roots ])
        | (node, addr, rank, roots) <- judged ]
   where
-    rankOf isRoot = if isRoot then Mx.Rank 0 else Mx.Rank 1
+    rankOf isRoot = if isRoot then Mx.Rank 0 else Mx.Rank 2
 
     -- one node's ranks, each with the root sets it may be judged by
     nodeRanks :: [WithName NtNAddr (WithTime DiffusionTestTrace)]

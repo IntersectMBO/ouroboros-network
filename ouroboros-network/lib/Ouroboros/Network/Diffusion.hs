@@ -377,7 +377,7 @@ runM Interfaces
                 dcLocalMuxForkPolicy
                 (Just localCounters)
                 Nothing                       -- node-to-client egress is not scheduled
-                (\_ -> return (Mx.Rank 0))
+                (\_ _ _ _ -> return (Mx.Rank 0))
                 daNtcHandshakeArguments
                 ( ( \ (OuroborosApplication apps)
                    -> TemperatureBundle
@@ -485,14 +485,25 @@ runM Interfaces
 
       localRootsVar <- newTVarIO mempty
 
-      -- local roots are served first: tier 0, everyone else tier 1; asked as a
-      -- bearer joins the egress queue, so a reload takes effect at once
-      let egressRankOf :: ntnAddr -> STM m Mx.Rank
-          egressRankOf addr = do
+      -- the egress tier of a peer, asked as its bearer joins the queue: local
+      -- roots first, then partners of long standing, duplex peers hot both
+      -- ways for 'esTenureThreshold', then the rest
+      let tenureThreshold = case dcEgressScheduling of
+                                 Just es -> esTenureThreshold es
+                                 Nothing -> 0
+          egressRankOf :: EgressRankRule m ntnAddr
+          egressRankOf addr dataFlow remoteHot now = do
             groups <- readTVar localRootsVar
-            return $ if any (\(_, _, m) -> Map.member addr m) groups
-                        then Mx.Rank 0
-                        else Mx.Rank 1
+            if any (\(_, _, m) -> Map.member addr m) groups
+               then return (Mx.Rank 0)
+               else do
+                 since <- Map.lookup addr . PeerSelection.hotUpstreamSince
+                            <$> readTVar dcPublicPeerSelectionVar
+                 partner <- case since of
+                                 Just t | Duplex <- dataFlow
+                                        , now `diffTime` t >= tenureThreshold -> remoteHot
+                                 _ -> return False
+                 return $ if partner then Mx.Rank 1 else Mx.Rank 2
 
       -- churn will set initial targets
       peerSelectionTargetsVar <- newTVarIO PeerSelection.nullPeerSelectionTargets

@@ -3116,8 +3116,8 @@ runBucketSchedStats sch@BucketSched { schRate, schCapacity, schRotation, schSlic
         -- the rank as a rule over a variable, as the node does: the variable
         -- holds each take's rank before it is asked for
         rankVar <- newTVarIO (Bucket.Rank (arRank a0))
-        atomically $ Bucket.setRankSource h (readTVar rankVar)
-        forM_ s_m $ \s -> atomically $ Bucket.setRankSource s (readTVar rankVar)
+        atomically $ Bucket.setRankSource h (\_ -> readTVar rankVar)
+        forM_ s_m $ \s -> atomically $ Bucket.setRankSource s (\_ -> readTVar rankVar)
         -- what the slice lane does: its own bucket, charged to the budget on
         -- credit, or the budget's idle capacity
         let grant a = case s_m of
