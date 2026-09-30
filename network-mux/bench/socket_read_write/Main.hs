@@ -315,7 +315,7 @@ bucketContention bearers rate rotation rule grants = do
     case rule of
          Just groupsVar ->
            forM_ (zip [0 :: Int ..] hs) $ \(i, h) ->
-             atomically $ setRankSource h $ rankRuleSTM groupsVar $
+             atomically $ setRankSource h $ \_ -> rankRuleSTM groupsVar $
                if even i then rootAddr 3 (i `mod` 8 + 1) else rootAddr 0 i
          Nothing -> return ()
     as <- forM hs $ \h -> async (replicateM_ (grants `div` bearers) (awaitGrant h batch))

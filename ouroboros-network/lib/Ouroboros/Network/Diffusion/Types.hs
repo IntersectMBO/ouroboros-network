@@ -606,7 +606,10 @@ data EgressScheduling = EgressScheduling {
     esRotationPeriod :: DiffTime,     -- ^ how often the order within a tier is
                                       --   re-dealt; 0 for none, FIFO within a tier
     esNotSentLowWat  :: Maybe Int,    -- ^ bytes
-    esLaneOf         :: MiniProtocolNum -> MiniProtocolDir -> Mx.Lane
+    esLaneOf         :: MiniProtocolNum -> MiniProtocolDir -> Mx.Lane,
+    esTenureThreshold :: DiffTime
+    -- ^ how long a duplex peer must have been hot upstream before, hot both
+    -- ways, it is served as a partner: tier 1, behind local roots
   }
 
 
