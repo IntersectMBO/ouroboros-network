@@ -20,6 +20,7 @@ module Network.Mux
   , newWithEgress
   , EgressPolicy (..)
   , directionSplit
+  , egressBuckets
   , Lane (..)
   , Mux
   , Mode (..)
@@ -62,8 +63,12 @@ module Network.Mux
   , noFailures
   , noCounts
   , ByteCounts
+  , SchedulingCounts (..)
   , CountersTrace (..)
   , countersInterval
+  , egressWaitBounds
+  , egressBurstBounds
+  , egressBurstWidths
     -- * Errors
   , Error (..)
   , RuntimeError (..)
@@ -105,8 +110,10 @@ import Network.Mux.Bearer
 import Network.Mux.Channel
 import Network.Mux.Counters
 import Network.Mux.Egress as Egress
-import Network.Mux.Egress.Bucket (Bucket, BucketHandle, Rank (..),
-           Rotation (..), newBucket, registerBearer, setBucketRate, setRank)
+import Network.Mux.Egress.Bucket (Bucket, BucketHandle, Rotation (..),
+           newBucket, registerBearer, setBucketRate, setRank)
+import Network.Mux.Egress.Counters (SchedulingCounts (..), egressBurstBounds,
+           egressBurstWidths, egressWaitBounds)
 import Network.Mux.Ingress as Ingress
 import Network.Mux.Timeout
 import Network.Mux.Trace
@@ -143,6 +150,10 @@ data EgressPolicy m = EgressPolicy {
     egressSlice  :: Maybe (Bucket m),
     egressLaneOf :: MiniProtocolNum -> MiniProtocolDir -> Lane
   }
+
+-- | The buckets behind a policy, for 'countersLoop'.
+egressBuckets :: EgressPolicy m -> (Bucket m, Maybe (Bucket m))
+egressBuckets EgressPolicy { egressBudget, egressSlice } = (egressBudget, egressSlice)
 
 -- | Our own requests go direct; what we serve is scheduled.
 directionSplit :: MiniProtocolNum -> MiniProtocolDir -> Lane
@@ -426,7 +437,7 @@ run Mux { muxMiniProtocols,
       return q
 
     muxerJob label q sent laneEgress b =
-      JobPool.Job (muxer q bearerTracer_ sent laneEgress b)
+      JobPool.Job (muxer q bearerTracer_ sent muxCounters laneEgress b)
                   (return . MuxerException)
                   MuxJob
                   (name ++ "-" ++ label)
