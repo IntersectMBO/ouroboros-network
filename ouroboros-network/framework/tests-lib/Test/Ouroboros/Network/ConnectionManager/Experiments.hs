@@ -27,6 +27,7 @@ module Test.Ouroboros.Network.ConnectionManager.Experiments
   ( ClientAndServerData (..)
   , unidirectionalExperiment
   , bidirectionalExperiment
+  , bidirectionalExperimentWith
   , ConnectionManagerMonad
   , withInitiatorOnlyConnectionManager
   , withBidirectionalConnectionManager
@@ -847,8 +848,54 @@ bidirectionalExperiment
     -> ClientAndServerData req
     -> ClientAndServerData req
     -> m Property
-bidirectionalExperiment
-    useLock stdGen timeouts snocket makeBearer confSock socket0 socket1 localAddr0 localAddr1
+bidirectionalExperiment = bidirectionalExperimentWith nullTracer Mx.nullTracers
+
+
+-- | Like `bidirectionalExperiment`, but with the given inbound governor and
+-- mux tracers.  The inbound governor tracer runs on the inbound governor
+-- thread, which allows tests to delay it.
+--
+bidirectionalExperimentWith
+    :: forall peerAddr socket acc req resp m.
+       ( ConnectionManagerMonad m
+       , MonadAsync m
+       , MonadDelay m
+       , MonadFix m
+       , MonadLabelledSTM m
+       , MonadTraceSTM m
+       , MonadSay m
+
+       , acc ~ [req], resp ~ [req]
+       , Ord peerAddr
+       , PrettyShow peerAddr
+       , Typeable peerAddr
+       , Eq peerAddr
+       , Hashable peerAddr
+
+       , Serialise req, Show req, NFData req
+       , Serialise resp, Show resp, Eq resp
+       , Typeable req, Typeable resp
+       , Show acc
+       )
+    => Tracer m (WithName String (InboundGovernor.Trace peerAddr))
+    -- ^ inbound governor tracer (of both nodes)
+    -> Mx.Tracers' m (WithNameAndBearer String peerAddr)
+    -- ^ mux tracers (of both nodes)
+    -> Bool
+    -> StdGen
+    -> Timeouts
+    -> Snocket m socket peerAddr
+    -> Mx.MakeBearer m socket
+    -> (socket -> m ()) -- ^ configure socket
+    -> socket
+    -> socket
+    -> peerAddr
+    -> peerAddr
+    -> ClientAndServerData req
+    -> ClientAndServerData req
+    -> m Property
+bidirectionalExperimentWith
+    inboundTracer muxTracers useLock stdGen timeouts snocket makeBearer confSock socket0 socket1 localAddr0 localAddr1
     clientAndServerData0 clientAndServerData1 = do
       let (stdGen', stdGen'') = Random.splitGen stdGen
       lock <- newTMVarIO ()
@@ -856,7 +903,7 @@ bidirectionalExperiment
       nextRequests0 <- oneshotNextRequests clientAndServerData0
       nextRequests1 <- oneshotNextRequests clientAndServerData1
       withBidirectionalConnectionManager "node-0" timeouts
-                                         nullTracer nullTracer nullTracer nullTracer Mx.nullTracers
+                                         nullTracer nullTracer nullTracer inboundTracer muxTracers
                                          nullTracer stdGen' snocket makeBearer
                                          connStateIdSupply confSock
                                          socket0 (Just localAddr0)
@@ -866,7 +913,7 @@ bidirectionalExperiment
                                          maxAcceptedConnectionsLimit
         (\connectionManager0 _serverAddr0 _serverAsync0 -> do
           withBidirectionalConnectionManager "node-1" timeouts
-                                             nullTracer nullTracer nullTracer nullTracer Mx.nullTracers
+                                             nullTracer nullTracer nullTracer inboundTracer muxTracers
                                              nullTracer stdGen'' snocket makeBearer
                                              connStateIdSupply confSock
                                              socket1 (Just localAddr1)
