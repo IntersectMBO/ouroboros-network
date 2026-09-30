@@ -263,6 +263,8 @@ makeConnectionHandler
     -- ^ node-wide counters every mux this handler creates is counted in
     -> Maybe (Mx.EgressPolicy m)
     -- ^ scheduled egress, shared by every connection this handler creates
+    -> (peerAddr -> STM m Mx.Rank)
+    -- ^ the egress tier of a peer's connections, set as each mux is created
     -> HandshakeArguments (ConnectionId peerAddr) versionNumber versionData m
     -> Versions versionNumber versionData
                 (OuroborosBundle muxMode initiatorCtx responderCtx ByteString m a b)
@@ -272,7 +274,7 @@ makeConnectionHandler
     -> MkMuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr versionNumber versionData ByteString m a b
     -> MuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr
                             versionNumber versionData ByteString m a b
-makeConnectionHandler muxTracers forkPolicy muxCounters egressPolicy
+makeConnectionHandler muxTracers forkPolicy muxCounters egressPolicy egressRankOf
                       handshakeArguments
                       versionedApplication
                       (mainThreadId, rethrowPolicy) =
@@ -287,13 +289,20 @@ makeConnectionHandler muxTracers forkPolicy muxCounters egressPolicy
         (outboundConnectionHandler $ InResponderMode (inboundGovernorMuxTracer, connectionDataFlow))
         (inboundConnectionHandler inboundGovernorMuxTracer)
   where
-    -- a mux on the node's scheduled egress, or a plain one
+    -- a mux on the node's scheduled egress, ranked by its peer, or a plain one
     newMux :: forall (mode :: Mx.Mode).
-              Mx.Tracers m -> [Mx.MiniProtocolInfo mode] -> m (Mx.Mux mode m)
-    newMux tracers ptcls = do
+              Mx.Tracers m -> peerAddr -> [Mx.MiniProtocolInfo mode] -> m (Mx.Mux mode m)
+    newMux tracers@TracersI { tracer_ } remoteAddress ptcls = do
       mux <- case egressPolicy of
                   Nothing     -> Mx.new tracers ptcls
-                  Just policy -> Mx.newWithEgress policy tracers ptcls
+                  Just policy -> do
+                    mux <- Mx.newWithEgress policy tracers ptcls
+                    rank <- atomically $ do
+                      rank <- egressRankOf remoteAddress
+                      Mx.setEgressRank mux rank
+                      return rank
+                    traceWith tracer_ (Mx.TraceEgressRank rank)
+                    return mux
       return $ case muxCounters of
                     Nothing -> mux
                     Just c  -> Mx.withCounters c mux
@@ -382,7 +391,8 @@ makeConnectionHandler muxTracers forkPolicy muxCounters egressPolicy
                         -- If this is InitiatorOnly, or a server where unidirectional flow was negotiated
                         -- the IG will never be informed of this remote for obvious reasons.
                         pure $ Mx.tracersWithBearer connectionId muxTracers
-                mux <- newMux muxTracers' (mkMiniProtocolInfos (runForkPolicy forkPolicy remoteAddress) app)
+                mux <- newMux muxTracers' remoteAddress
+                              (mkMiniProtocolInfos (runForkPolicy forkPolicy remoteAddress) app)
                 let !handle = Handle {
                         hMux            = mux,
                         hMuxBundle      = app,
@@ -453,6 +463,7 @@ makeConnectionHandler muxTracers forkPolicy muxCounters egressPolicy
                mux <- newMux (Mx.tracersWithBearer connectionId muxTracers {
                                Mx.tracer = Mx.tracer muxTracers <> inboundGovernorMuxTracer countersVar
                              })
+                             remoteAddress
                              (mkMiniProtocolInfos (runForkPolicy forkPolicy remoteAddress) app)
 
                let !handle = Handle {
