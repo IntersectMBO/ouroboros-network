@@ -65,6 +65,7 @@ module Network.Mux
   , countDemuxerFailure
   , EgressCounts (..)
   , SchedulingCounts (..)
+  , TierCounts (..)
   , IngressCounts (..)
   , CountersTrace (..)
   , countersLoop
