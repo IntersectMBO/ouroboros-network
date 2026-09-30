@@ -2963,7 +2963,8 @@ data BucketBearer = BucketBearer {
     bbRank  :: !Word8,
     bbStart :: !Integer,           -- ^ rounds before the first request
     bbFirst :: !Int,               -- ^ bytes of the first take
-    bbMore  :: ![(Integer, Int)],  -- ^ rounds after a grant, then bytes
+    bbMore  :: ![(Integer, Int, Word8)],
+                                   -- ^ rounds after a grant, then bytes and rank
     bbKill  :: !(Maybe Int),       -- ^ cancel it this far, in 256ths, into
                                    --   the first wait the replay gives it
     bbSlice :: !Bool               -- ^ asks the slice, borrowing the budget;
@@ -3009,9 +3010,10 @@ instance Arbitrary BucketSched where
              | Just f0 <- [bbKill b], f <- [0, 128], f < f0 ]
           ++ [ b { bbSlice = False } | bbSlice b ]
 
-        shrinkTake (k, sz) =
-             [ (0, sz)  | k /= 0 ]
-          ++ [ (k, sz') | sz' <- [1024, schCapacity], sz' < sz ]
+        shrinkTake (k, sz, r) =
+             [ (0, sz, r)  | k /= 0 ]
+          ++ [ (k, sz', r) | sz' <- [1024, schCapacity], sz' < sz ]
+          ++ [ (k, sz, 0)  | r /= 0 ]
 
 -- | Periods of a quarter to four fill times, so that schedules straddle a
 -- boundary.
@@ -3029,7 +3031,7 @@ genBucketBearer rate cap n =
                  <*> genRounds
                  <*> genBytes cap
                  <*> (do extra <- frequency [ (3, return 0), (4, choose (1, 3)) ]
-                         vectorOf extra ((,) <$> genRounds <*> genBytes cap))
+                         vectorOf extra ((,,) <$> genRounds <*> genBytes cap <*> choose (0, 3)))
                  <*> frequency [ (3, return Nothing)
                                , (1, Just <$> choose (0, 255))
                                , (1, Just <$> choose (192, 255)) ]
@@ -3049,7 +3051,7 @@ data Arrival = Arrival {
     arRank   :: !Word8,
     arBytes  :: !Int,
     arAt     :: !Time,
-    arMore   :: ![(Integer, Int)],
+    arMore   :: ![(Integer, Int, Word8)],
     arSlice  :: !Bool              -- ^ asks the slice, borrowing the budget
   }
   deriving (Eq, Show)
@@ -3080,14 +3082,17 @@ nextArrival :: Int -> Arrival -> Time -> Maybe Arrival
 nextArrival n a t =
     case arMore a of
       []                -> Nothing
-      (k, bytes) : more -> Just a { arTake  = arTake a + 1
+      (k, bytes, rank) : more -> Just a { arTake  = arTake a + 1
                                   , arBytes = bytes
+                                  , arRank  = rank
                                   , arAt    = askAt n (arBearer a) k t
                                   , arMore  = more }
 
 labelBucket :: BucketSched -> Property -> Property
 labelBucket BucketSched { schRotation, schSlice, schBearers } =
       classify (any (not . null . bbMore) schBearers) "reuses a handle"
+    . classify (any (\b -> any (\(_, _, r) -> r /= bbRank b) (bbMore b)) schBearers)
+               "changes rank between takes"
     . classify (isJust schRotation)                   "rotating"
     . classify (isJust schSlice)                      "with a slice"
 
@@ -3110,8 +3115,11 @@ runBucketSchedStats sch@BucketSched { schRate, schCapacity, schRotation, schSlic
       hs <- mapM (const (Bucket.registerBearer bucket)) schBearers
       ss <- mapM (const (traverse Bucket.registerBearer slice)) schBearers
       grants <- forConcurrently (zip3 hs ss (arrivals sch)) $ \(h, s_m, a0) -> do
-        atomically $ Bucket.setRank h (Bucket.Rank (arRank a0))
-        forM_ s_m $ \s -> atomically $ Bucket.setRank s (Bucket.Rank (arRank a0))
+        -- the rank as a rule over a variable, as the node does: the variable
+        -- holds each take's rank before it is asked for
+        rankVar <- newTVarIO (Bucket.Rank (arRank a0))
+        atomically $ Bucket.setRankSource h (readTVar rankVar)
+        forM_ s_m $ \s -> atomically $ Bucket.setRankSource s (readTVar rankVar)
         -- what the slice lane does: its own bucket, charged to the budget on
         -- credit, or the budget's idle capacity
         let grant a = case s_m of
@@ -3120,6 +3128,7 @@ runBucketSchedStats sch@BucketSched { schRate, schCapacity, schRotation, schSlic
             takeAll a = do
               now <- getMonotonicTime
               threadDelay (arAt a `diffTime` now)
+              atomically $ writeTVar rankVar (Bucket.Rank (arRank a))
               grant a
               t <- getMonotonicTime
               (((arBearer a, arTake a), t) :)
@@ -3303,7 +3312,7 @@ replayStats sch@BucketSched { schSlice, schBearers } =
 
     -- bytes of take @k@ of bearer @b@
     bytesOf (b, k) = let bb = schBearers !! b
-                     in if k == 0 then bbFirst bb else snd (bbMore bb !! (k - 1))
+                     in if k == 0 then bbFirst bb else (\(_, sz, _) -> sz) (bbMore bb !! (k - 1))
 
     stats gs borrowed =
       let waits = [ granted `diffTime` asked | (_, (asked, granted)) <- gs ]
@@ -3412,9 +3421,9 @@ prop_bucket_cancel' sch@BucketSched { schRate, schCapacity, schRotation, schBear
     -- for every byte, and a second
     limit = maximum [ arAt a `diffTime` Time 0 | a <- arrivals sch ]
           + picos (sum [ (k + 2) * fromIntegral n
-                       | b <- schBearers, (k, _) <- bbMore b ])
+                       | b <- schBearers, (k, _, _) <- bbMore b ])
           + realToFrac (4 * bytes / schRate) + 1
-    bytes = sum [ fromIntegral (bbFirst b) + sum (map (fromIntegral . snd) (bbMore b))
+    bytes = sum [ fromIntegral (bbFirst b) + sum (map (\(_, sz, _) -> fromIntegral sz) (bbMore b))
                 | b <- schBearers ] :: Double
 
     outcome = runSimOrThrow $ do

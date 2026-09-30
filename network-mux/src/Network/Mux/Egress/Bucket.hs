@@ -30,6 +30,7 @@ module Network.Mux.Egress.Bucket
   , bearerId
   , Rank (..)
   , setRank
+  , setRankSource
   , Rotation (..)
   , awaitGrant
   , awaitGrantBorrowing
@@ -54,7 +55,7 @@ module Network.Mux.Egress.Bucket
 
 import Control.Concurrent.Class.MonadSTM qualified as LazySTM
 import Control.Concurrent.Class.MonadSTM.Strict
-import Control.Monad (void, when)
+import Control.Monad (void, when, join)
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
@@ -312,21 +313,27 @@ queueRank rotation bearer (Rank tier) now =
 data BucketHandle m = BucketHandle {
   bhBucket :: !(Bucket m),
   bhId     :: !Word64,
-  bhRank   :: !(StrictTVar m Rank),
+  bhRank   :: !(StrictTVar m (STM m Rank)),   -- ^ the tier, asked as the bearer
+                                              --   joins the queue
   bhWake   :: !(StrictTVar m Bool)       -- ^ set by the bearer ahead of us when it is granted
   }
 
 registerBearer :: MonadSTM m => Bucket m -> m (BucketHandle m)
 registerBearer bucket@Bucket { bBearers } = do
   bhId <- atomically $ stateTVar bBearers (\n -> (n, n + 1))
-  BucketHandle bucket bhId <$> newTVarIO (Rank 0) <*> newTVarIO False
+  BucketHandle bucket bhId <$> newTVarIO (return (Rank 0)) <*> newTVarIO False
 
 -- | Handed out in registration order, from 0.
 bearerId :: BucketHandle m -> Word64
 bearerId = bhId
 
 setRank :: MonadSTM m => BucketHandle m -> Rank -> STM m ()
-setRank BucketHandle { bhRank } = writeTVar bhRank
+setRank BucketHandle { bhRank } rank = writeTVar bhRank (return rank)
+
+-- | A rule for the tier instead of a value: asked in the transaction that
+-- queues the bearer, so whatever it reads is current at that moment.
+setRankSource :: MonadSTM m => BucketHandle m -> STM m Rank -> STM m ()
+setRankSource BucketHandle { bhRank } = writeTVar bhRank
 
 
 -- | Take @need@ bytes if they are there at @now@, else the instant they will
@@ -407,7 +414,7 @@ awaitGrantWith borrow_m waitedWritable
            Left _ -> do
              -- evaluated, or the queued key holds a thunk for each until compared
              !ticket <- stateTVar bTickets (\t@(Ticket n) -> (t, Ticket (n + 1)))
-             tier    <- readTVar bhRank
+             tier    <- join (readTVar bhRank)
              let !rank = queueRank bRotation bhId tier now
                  key   = (rank, ticket)
 

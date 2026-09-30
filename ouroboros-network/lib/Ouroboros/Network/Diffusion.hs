@@ -487,11 +487,12 @@ runM Interfaces
 
       localRootsVar <- newTVarIO mempty
 
-      -- local roots are served first: tier 0, everyone else tier 1
+      -- local roots are served first: tier 0, everyone else tier 1; asked as a
+      -- bearer joins the egress queue, so a reload takes effect at once
       let egressRankOf :: ntnAddr -> STM m Mx.Rank
           egressRankOf addr = do
             groups <- readTVar localRootsVar
-            return $ if LocalRootPeers.member addr (LocalRootPeers.fromGroups groups)
+            return $ if any (\(_, _, m) -> Map.member addr m) groups
                         then Mx.Rank 0
                         else Mx.Rank 1
 
