@@ -6,7 +6,7 @@ module Main (main) where
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (bracket)
-import Control.Monad (forever, replicateM_, unless, when)
+import Control.Monad (forM, forever, replicateM, replicateM_, unless, when)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer
@@ -14,6 +14,8 @@ import Data.ByteString.Builder (Builder, toLazyByteString)
 import Data.ByteString.Lazy qualified as BL
 import Data.Functor (void)
 import Data.Int
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
 import Data.Strict.Tuple as Strict (Pair ((:!:)))
 import Data.Word
 import Network.Socket (Socket)
@@ -24,6 +26,7 @@ import Test.Tasty.Bench
 import Network.Mux
 import Network.Mux.Bearer
 import Network.Mux.Egress
+import Network.Mux.Egress.Bucket (awaitGrant, registerBearer)
 import Network.Mux.Ingress
 import Network.Mux.Timeout (withTimeoutSerial)
 import Network.Mux.Types
@@ -202,8 +205,8 @@ startServerMany sndSizeV ad = forever $ do
 -- It will send streams of data over the 41 and 42 miniprotocol.
 -- Multiplexing is done with a separate thread running
 -- the Egress.muxer function.
-startServerEgresss :: DiffTime -> StrictTMVar IO Int64 -> Socket -> IO ()
-startServerEgresss pollInterval sndSizeV ad = forever $ do
+startServerEgresss :: DiffTime -> IO (LaneEgress IO) -> StrictTMVar IO Int64 -> Socket -> IO ()
+startServerEgresss pollInterval mkLane sndSizeV ad = forever $ do
     (sd, _) <- Socket.accept ad
     withReadBufferIO (\buffer -> do
       bearer <- getBearer (makeSocketBearer' pollInterval) sduTimeout sd buffer
@@ -217,7 +220,8 @@ startServerEgresss pollInterval sndSizeV ad = forever $ do
           numberOfCalls = numberOfSdus `div` 10 :: Int
           runtSdus = numberOfSdus `mod` 10 :: Int
 
-      withAsync (muxer eq activeTracer Nothing Unscheduled bearer) $ \aid -> do
+      laneEgress <- mkLane
+      withAsync (muxer eq activeTracer Nothing laneEgress bearer) $ \aid -> do
 
         replicateM_ numberOfCalls $ do
           let payload42s = replicate 10 $ BL.replicate sndSize 42
@@ -256,6 +260,42 @@ startServerEgresss pollInterval sndSizeV ad = forever $ do
              writeTBQueue eq (TLSRDemand mc md $ Wanton w)
          else retry
 
+-- | A scheduled lane on its own unlimited budget: every batch takes the fast
+-- path, so the difference to 'Unscheduled' is the scheduler's per-batch cost.
+scheduledLane :: IO (LaneEgress IO)
+scheduledLane = do
+    bucket <- newBucket 1e15 (1024 * 1024) Nothing
+    Scheduled_ <$> registerBearer bucket
+
+-- | The tier of a peer as a rule over the local root groups, evaluated in the
+-- transaction that queues the bearer, against a stored rank.
+rankRule :: StrictTVar IO [(Int, Int, Map Socket.SockAddr ())] -> Socket.SockAddr -> IO Rank
+rankRule groupsVar addr = atomically $ do
+    groups <- readTVar groupsVar
+    return $ if any (\(_, _, m) -> Map.member addr m) groups
+                then Rank 0
+                else Rank 1
+
+-- | @g@ groups of @n@ distinct addresses each.
+localRootGroups :: Int -> Int -> [(Int, Int, Map Socket.SockAddr ())]
+localRootGroups g n =
+    [ (i, i, Map.fromList [ (rootAddr i j, ()) | j <- [1 .. n] ]) | i <- [1 .. g] ]
+
+rootAddr :: Int -> Int -> Socket.SockAddr
+rootAddr i j = Socket.SockAddrInet (fromIntegral (3000 + i)) (fromIntegral (i * 1000 + j))
+
+-- | @bearers@ contending for one budget, each taking @grants `div` bearers@
+-- batches of 128 KiB: at 10 GB/s every take joins the queue and sleeps for
+-- its tokens; unlimited, the queue only forms under contention.
+bucketContention :: Int -> Double -> Maybe Rotation -> Int -> IO ()
+bucketContention bearers rate rotation grants = do
+    bucket <- newBucket rate (2 * batch) rotation
+    hs <- replicateM bearers (registerBearer bucket)
+    as <- forM hs $ \h -> async (replicateM_ (grants `div` bearers) (awaitGrant h batch))
+    mapM_ wait as
+  where
+    batch = 131072
+
 setupServer :: Socket -> IO Socket.SockAddr
 setupServer ad = do
   muxAddress:_ <- Socket.getAddrInfo Nothing (Just "127.0.0.1") (Just "0")
@@ -275,16 +315,18 @@ main = do
         ad2 <- Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol
         ad3 <- Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol
         ad4 <- Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol
+        ad5 <- Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol
 
-        return (ad1, ad2, ad3, ad4)
+        return (ad1, ad2, ad3, ad4, ad5)
       )
-      (\(ad1, ad2, ad3, ad4) -> do
+      (\(ad1, ad2, ad3, ad4, ad5) -> do
         Socket.close ad1
         Socket.close ad2
         Socket.close ad3
         Socket.close ad4
+        Socket.close ad5
       )
-      (\(ad1, ad2, ad3, ad4) -> do
+      (\(ad1, ad2, ad3, ad4, ad5) -> do
         sndSizeV <- newEmptyTMVarIO
         sndSizeMV <- newEmptyTMVarIO
         sndSizeEV <- newEmptyTMVarIO
@@ -292,10 +334,20 @@ main = do
         addrM <- setupServer ad2
         addrE <- setupServer ad3
         addrF <- setupServer ad4
+        addrS <- setupServer ad5
+        -- the tier decision, stored and as a rule over generated local roots
+        rankVar <- newTVarIO (Rank 1)
+        rankBenches <- forM [(1, 8), (3, 8), (3, 64), (10, 64)] $ \(g, n) -> do
+          groupsVar <- newTVarIO (localRootGroups g n)
+          let label = show g ++ " groups of " ++ show n
+          return [ bench (label ++ ", member")   $ whnfIO (rankRule groupsVar (rootAddr g n))
+                 , bench (label ++ ", stranger") $ whnfIO (rankRule groupsVar (rootAddr 0 0)) ]
 
         withAsync (startServer sndSizeV ad1) $ \said -> do
           withAsync (startServerMany sndSizeMV ad2) $ \saidM -> do
-            withAsync (startServerEgresss 0.001 sndSizeEV ad3) $ \saidE -> withAsync (startServerEgresss 0 sndSizeEV ad4) $ \saidF -> do
+            withAsync (startServerEgresss 0.001 (pure Unscheduled) sndSizeEV ad3) $ \saidE ->
+             withAsync (startServerEgresss 0 (pure Unscheduled) sndSizeEV ad4) $ \saidF ->
+             withAsync (startServerEgresss 0 scheduledLane sndSizeEV ad5) $ \saidS -> do
               defaultMain [
                   -- Suggested Max SDU size for Socket bearer
                   bench "Read/Write Benchmark 12288 byte SDUs"  $ nfIO $ readBenchmark sndSizeV 12288 addr
@@ -320,9 +372,29 @@ main = do
                   -- Use standard demuxer
                 , bench "Read/Write Demuxer Queuing Benchmark 10 byte SDUs"  $ nfIO $ readDemuxerQueueBenchmark sndSizeV 10 addr
                 , bench "Read/Write Demuxer Queuing Benchmark 256 byte SDUs"  $ nfIO $ readDemuxerQueueBenchmark sndSizeV 256 addr
+                , bgroup "Egress" [
+                    -- a bearer's tier as it joins the queue: today's stored rank
+                    -- against a rule over the local root groups
+                    bgroup "rank" $
+                      bench "stored" (whnfIO (atomically (readTVar rankVar)))
+                      : concat rankBenches
+                    -- the slow path: bearers queue for one budget
+                  , bgroup "contention" [
+                      bench "8 bearers, 10 GB/s"              $ nfIO $ bucketContention 8  10e9 Nothing 4096
+                    , bench "64 bearers, 10 GB/s"             $ nfIO $ bucketContention 64 10e9 Nothing 4096
+                    , bench "8 bearers, unlimited"            $ nfIO $ bucketContention 8  1e15 Nothing 4096
+                    , bench "64 bearers, unlimited"           $ nfIO $ bucketContention 64 1e15 Nothing 4096
+                    , bench "64 bearers, unlimited, rotation" $ nfIO $ bucketContention 64 1e15 (Just (Rotation 42 599)) 4096
+                    ]
+                    -- the fast path over a socket: the unscheduled twins are the
+                    -- 0ms Poll Mux Benchmarks above
+                  , bench "Read/Write Mux Benchmark 800+10 byte SDUs, 0ms Poll, scheduled"   $ nfIO $ readDemuxerBenchmark sndSizeEV 800 addrS
+                  , bench "Read/Write Mux Benchmark 12288+10 byte SDUs, 0ms Poll, scheduled" $ nfIO $ readDemuxerBenchmark sndSizeEV 12288 addrS
+                  ]
                 ]
               cancel said
               cancel saidM
               cancel saidE
               cancel saidF
+              cancel saidS
       )

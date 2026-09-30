@@ -267,6 +267,7 @@ benchmark socket-read-write-benchmarks
   build-depends:
     base >=4.14 && <4.23,
     bytestring,
+    containers,
     contra-tracer,
     io-classes:{io-classes, si-timers, strict-stm},
     network,
