@@ -113,7 +113,7 @@ import Network.Mux.Bearer
 import Network.Mux.Channel
 import Network.Mux.Counters
 import Network.Mux.Egress as Egress
-import Network.Mux.Egress.Bucket (Bucket, BucketHandle, Rank (..), Rotation (..),
+import Network.Mux.Egress.Bucket (Bucket, BucketHandle, Rotation (..),
            newBucket, registerBearer, setBucketRate, setRank)
 import Network.Mux.Ingress as Ingress
 import Network.Mux.Timeout

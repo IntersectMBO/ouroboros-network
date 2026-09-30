@@ -379,6 +379,7 @@ runM Interfaces
                 dcLocalMuxForkPolicy
                 (Just localCounters)
                 Nothing                       -- node-to-client egress is not scheduled
+                (\_ -> return (Mx.Rank 0))
                 daNtcHandshakeArguments
                 ( ( \ (OuroborosApplication apps)
                    -> TemperatureBundle
@@ -486,6 +487,14 @@ runM Interfaces
 
       localRootsVar <- newTVarIO mempty
 
+      -- local roots are served first: tier 0, everyone else tier 1
+      let egressRankOf :: ntnAddr -> STM m Mx.Rank
+          egressRankOf addr = do
+            groups <- readTVar localRootsVar
+            return $ if LocalRootPeers.member addr (LocalRootPeers.fromGroups groups)
+                        then Mx.Rank 0
+                        else Mx.Rank 1
+
       -- churn will set initial targets
       peerSelectionTargetsVar <- newTVarIO PeerSelection.nullPeerSelectionTargets
 
@@ -564,6 +573,7 @@ runM Interfaces
               dcMuxForkPolicy
               (Just remoteCounters)
               egressPolicy
+              egressRankOf
               daNtnHandshakeArguments
               versions
               (mainThreadId, rethrowPolicy <> daRethrowPolicy)
