@@ -107,6 +107,7 @@ import Control.Monad
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI (Time)
 import Control.Monad.Class.MonadTimer.SI hiding (timeout)
 import Control.Tracer
 
@@ -254,8 +255,9 @@ setEgressRank Mux { muxEgress } rank =
          Just MuxEgress { meBudgetHandle } -> setRank meBudgetHandle rank
          Nothing                           -> return ()
 
--- | Like 'setEgressRank', with a rule asked whenever the bearer joins the queue.
-setEgressRankSource :: MonadSTM m => Mux mode m -> STM m Rank -> STM m ()
+-- | Like 'setEgressRank', with a rule asked whenever the bearer joins the
+-- queue, given that moment.
+setEgressRankSource :: MonadSTM m => Mux mode m -> (Time -> STM m Rank) -> STM m ()
 setEgressRankSource Mux { muxEgress } rank =
     case muxEgress of
          Just MuxEgress { meBudgetHandle } -> setRankSource meBudgetHandle rank

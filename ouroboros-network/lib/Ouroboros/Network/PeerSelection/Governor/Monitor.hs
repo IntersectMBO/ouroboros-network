@@ -230,6 +230,8 @@ connections PeerSelectionActions{
               decisionJobs  = [],
               decisionState = st {
                                 activePeers       = activePeers',
+                                activeSince       = Map.restrictKeys (activeSince st)
+                                                                     activePeers',
                                 establishedPeers  = establishedPeers',
                                 knownPeers        = knownPeers',
                                 publicRootPeers   = publicRootPeers',
