@@ -1392,6 +1392,10 @@ Version 2 is used since \texttt{NodeToNode\_V6} of the node-to-node protocol.
 
       It is an error to ask for transaction identifiers that are not
       outstanding or that were already asked for.
+
+      It is an error to ask for the same transaction identifier more than
+      once in a single \MsgRequestTxs{}, i.e. $\langle ids \rangle$ MUST NOT
+      contain duplicates.
 \item [\MsgReplyTxs{} {\boldmath ($\langle txs \rangle$})]
       The client replies with a list of transactions.  It may implicitly
       discard transaction-ids which were requested.
