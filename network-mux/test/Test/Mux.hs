@@ -31,6 +31,7 @@ import Data.ByteString.Lazy.Char8 qualified as BL8 (pack)
 import Data.List (dropWhileEnd, nub)
 import Data.List qualified as List
 import Data.Map qualified as M
+import Data.Set qualified as Set
 import Data.Maybe (fromMaybe, isJust, isNothing)
 import Data.Tuple (swap)
 import Data.Word
@@ -3134,8 +3135,8 @@ runBucketSchedStats sch@BucketSched { schRate, schCapacity, schRotation, schSlic
         takeAll a0
       now <- getMonotonicTime
       stats <- atomically $ do
-        (b, _, _) <- Bucket.bucketSnapshot bucket now
-        s' <- traverse (\sl -> (\(st, _, _) -> st) <$> Bucket.bucketSnapshot sl now) slice
+        (b, _, _, _) <- Bucket.bucketSnapshot bucket now
+        s' <- traverse (\sl -> (\(st, _, _, _) -> st) <$> Bucket.bucketSnapshot sl now) slice
         return (b, s')
       return (concat grants, stats)
   where
@@ -3261,8 +3262,9 @@ replayRun sch = [ g | RGrant _ g <- replayEvents sch ]
 -- | The counters each bucket should hold after the replay's grants.
 replayStats :: BucketSched -> (Bucket.BucketStats, Maybe Bucket.BucketStats)
 replayStats sch@BucketSched { schSlice, schBearers } =
-    ( withBursts budgetQueue (stats [ g | RGrant FromBudget g <- events ] [])
-    , withBursts sliceQueue (stats [ g | RGrant pay g <- events, pay /= FromBudget ]
+    ( withBursts budgetQueue (stats (queuedIn budgetQueue) [ g | RGrant FromBudget g <- events ] [])
+    , withBursts sliceQueue (stats (queuedIn sliceQueue)
+                                   [ g | RGrant pay g <- events, pay /= FromBudget ]
                                    [ g | RGrant Borrowed g <- events ]) <$ schSlice )
   where
     events = replayEvents sch
@@ -3308,11 +3310,16 @@ replayStats sch@BucketSched { schSlice, schBearers } =
                        Nothing -> go n1 Nothing cSince' 0 acc2 rest
                 else go n1 since' cSince' peak' acc2 rest
 
-    -- bytes of take @k@ of bearer @b@
+    -- bytes and rank of take @k@ of bearer @b@
     bytesOf (b, k) = let bb = schBearers !! b
                      in if k == 0 then bbFirst bb else (\(_, sz, _) -> sz) (bbMore bb !! (k - 1))
+    rankOf  (b, k) = let bb = schBearers !! b
+                     in if k == 0 then bbRank bb else (\(_, _, r) -> r) (bbMore bb !! (k - 1))
 
-    stats gs borrowed =
+    -- the requests that joined a queue: the fast path leaves no trace
+    queuedIn q = Set.fromList [ k | (_, _, k, True) <- q ]
+
+    stats queued gs borrowed =
       let waits = [ granted `diffTime` asked | (_, (asked, granted)) <- gs ]
           bytesIn = sum . map (fromIntegral . bytesOf . fst)
       in Bucket.BucketStats {
@@ -3328,7 +3335,10 @@ replayStats sch@BucketSched { schSlice, schBearers } =
            Bucket.bsBusyTime      = 0,
            Bucket.bsContendedTime = 0,
            Bucket.bsBurstsOver    = map (const 0) Bucket.burstBounds,
-           Bucket.bsBurstsWider   = map (const 0) Bucket.burstWidths
+           Bucket.bsBurstsWider   = map (const 0) Bucket.burstWidths,
+           Bucket.bsTiers         = M.fromListWith (<>)
+                                      [ (rankOf k, Bucket.TierGrants (fromIntegral (bytesOf k)) 1)
+                                      | (k, _) <- gs, k `Set.member` queued ]
          }
 
 replaySched :: BucketSched -> [((Int, Int), Time)]
@@ -3451,10 +3461,10 @@ prop_bucket_cancel' sch@BucketSched { schRate, schCapacity, schRotation, schBear
            Nothing -> return Nothing
            Just rs -> do
              t0 <- getMonotonicTime
-             (st0, _, _) <- atomically $ Bucket.bucketSnapshot bucket t0
+             (st0, _, _, _) <- atomically $ Bucket.bucketSnapshot bucket t0
              threadDelay 1
              t1 <- getMonotonicTime
-             (st1, _, _) <- atomically $ Bucket.bucketSnapshot bucket t1
+             (st1, _, _, _) <- atomically $ Bucket.bucketSnapshot bucket t1
              return (Just (length rs, Bucket.bsBusyTime st1 /= Bucket.bsBusyTime st0))
 
 -- | A rate of zero disables the bucket: nothing ever waits.
