@@ -254,12 +254,17 @@ runM Interfaces
        , daPeerSharingRegistry
        }
   = do
+    -- The buckets behind scheduled egress, shared by every node-to-node mux
+    -- and read by the counters loop.
+    egressPolicy <- traverse mkEgressPolicy dcEgressScheduling
+
     -- The mux counters, traced every interval for as long as diffusion runs:
     -- a set for the node-to-node muxes and, with a local address, one for
     -- the node-to-client muxes; at an interval of zero, or less, none. If we
     -- have a local address, race the remote and local threads. Otherwise
     -- just launch the remote thread.
-    Mx.withCounters dcMuxCountersInterval (isJust dcLocalAddress) dtMuxCountersTracer $
+    Mx.withCounters dcMuxCountersInterval (isJust dcLocalAddress)
+                    (Mx.egressBuckets <$> egressPolicy) dtMuxCountersTracer $
       \muxCounters localMuxCounters -> do
         -- Thread to which 'RethrowPolicy' will throw fatal exceptions: the
         -- one that runs the remote thread, or waits on its race with the
@@ -268,11 +273,11 @@ runM Interfaces
         case dcLocalAddress of
           Just addr ->
             fmap (either id id) $
-              mkRemoteThread mainThreadId muxCounters
+              mkRemoteThread mainThreadId muxCounters egressPolicy
               `Async.race`
               mkLocalThread mainThreadId addr localMuxCounters
           Nothing ->
-              mkRemoteThread mainThreadId muxCounters
+              mkRemoteThread mainThreadId muxCounters egressPolicy
 
   where
     (ledgerPeersRng, rng1) = splitGen diRng
@@ -371,6 +376,7 @@ runM Interfaces
                 dcLocalMuxForkPolicy
                 localMuxCounters
                 Nothing                       -- node-to-client egress is not scheduled
+                (\_ -> return (Mx.Rank 0))
                 daNtcHandshakeArguments
                 ( ( \ (OuroborosApplication apps)
                    -> TemperatureBundle
@@ -440,8 +446,8 @@ runM Interfaces
 
     -- | mkRemoteThread - create remote connection manager
     --
-    mkRemoteThread :: ThreadId m -> Maybe (Mx.Counters m) -> m Void
-    mkRemoteThread mainThreadId muxCounters = do
+    mkRemoteThread :: ThreadId m -> Maybe (Mx.Counters m) -> Maybe (Mx.EgressPolicy m) -> m Void
+    mkRemoteThread mainThreadId muxCounters egressPolicy = do
       labelThisThread "diffusion-remote"
       let
         exitPolicy :: ExitPolicy a
@@ -478,6 +484,14 @@ runM Interfaces
 
       localRootsVar <- newTVarIO mempty
 
+      -- local roots are served first: tier 0, everyone else tier 1
+      let egressRankOf :: ntnAddr -> STM m Mx.Rank
+          egressRankOf addr = do
+            groups <- readTVar localRootsVar
+            return $ if LocalRootPeers.member addr (LocalRootPeers.fromGroups groups)
+                        then Mx.Rank 0
+                        else Mx.Rank 1
+
       -- churn will set initial targets
       peerSelectionTargetsVar <- newTVarIO PeerSelection.nullPeerSelectionTargets
 
@@ -505,8 +519,6 @@ runM Interfaces
       --
       -- Part (a): plumb data flow and define common functions
       --
-
-      egressPolicy <- traverse mkEgressPolicy dcEgressScheduling
 
       let connectionManagerArguments'
             :: forall handle b.
@@ -558,6 +570,7 @@ runM Interfaces
               dcMuxForkPolicy
               muxCounters
               egressPolicy
+              egressRankOf
               daNtnHandshakeArguments
               versions
               (mainThreadId, rethrowPolicy <> daRethrowPolicy)

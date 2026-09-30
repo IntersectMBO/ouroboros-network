@@ -17,6 +17,7 @@ module Network.Mux.Trace
   , handleIOException
     -- * Trace events
   , Trace (..)
+  , Rank (..)
   , ChannelTrace (..)
   , BearerTrace (..)
     -- * Tracers
@@ -48,6 +49,7 @@ import Data.Functor.Identity
 import GHC.Generics (Generic (..))
 import Quiet (Quiet (..))
 
+import Network.Mux.Egress.Bucket (Rank (..))
 import Network.Mux.Types
 
 
@@ -177,6 +179,9 @@ data Trace =
     | TraceStarting
     | TraceStopping
     | TraceStopped
+    | TraceEgressRank Rank
+      -- ^ the rank the mux's rule first answers, as the connection is set
+      -- up; the rank of each later batch is in 'TraceEgressGrant'
 
 instance Show Trace where
     show (TraceState new) =
@@ -216,6 +221,7 @@ instance Show Trace where
     show TraceStarting = "Mux starting"
     show TraceStopping = "Mux stopping"
     show TraceStopped  = "Mux stoppped"
+    show (TraceEgressRank rank) = "Egress rank " ++ show rank
 
 
 -- | Bundle of tracers used directly by mux.
