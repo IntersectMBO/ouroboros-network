@@ -31,6 +31,7 @@ module Network.Mux
   , stop
     -- ** Run a mini-protocol
   , runMiniProtocol
+  , runMiniProtocolSTM
   , StartOnDemandOrEagerly (..)
   , ByteChannel
   , Channel (..)
@@ -731,46 +732,21 @@ traceBearerState tracer state =
 -- Starting mini-protocol threads
 --
 
--- | Arrange to run a protocol thread (for a particular 'MiniProtocolNum' and
--- 'MiniProtocolDirection') to interact on this protocol's 'Channel'.
+-- | An underlying STM version of `runMiniProtocol`.
 --
--- The protocol thread can either be started eagerly or on-demand:
---
--- * With 'StartEagerly', the thread is started promptly. This is appropriate
---   for mini-protocols where the opening message may be sent by this thread.
---
--- * With 'StartOnDemand', the thread is not started until the first data is
---   received for this mini-protocol. This is appropriate for mini-protocols
---   where the opening message is sent by the remote peer.
---
--- The result is a STM action to block and wait on the protocol completion.
--- It is safe to call this completion action multiple times: it will always
--- return the same result once the protocol thread completes.
--- In case the Mux has stopped, either due to an exception or because of a call
--- to muxStop a `Left Error` will be returned from the STM action.
---
--- It is an error to start a new protocol thread while one is still running,
--- for the same 'MiniProtocolNum' and 'MiniProtocolDirection'. This can easily be
--- avoided by using the STM completion action to wait for the previous one to
--- finish.
---
--- It is safe to ask to start a protocol thread before 'run'. In this case
--- the protocol thread will not actually start until 'run' is called,
--- irrespective of the 'StartOnDemandOrEagerly' value.
---
-runMiniProtocol :: forall mode m a.
-                   ( Alternative (STM m)
-                   , MonadSTM   m
-                   , MonadThrow m
-                   , MonadThrow (STM m)
-                   )
-                => Mux mode m
-                -> MiniProtocolNum
-                -> MiniProtocolDirection mode
-                -> StartOnDemandOrEagerly
-                -> (ByteChannel m -> m (a, Maybe BL.ByteString))
-                -> m (STM m (Either SomeException a))
-runMiniProtocol Mux { muxMiniProtocols,
+runMiniProtocolSTM
+  :: forall mode m a.
+     ( Alternative (STM m)
+     , MonadSTM   m
+     , MonadThrow (STM m)
+     )
+  => Mux mode m
+  -> MiniProtocolNum
+  -> MiniProtocolDirection mode
+  -> StartOnDemandOrEagerly
+  -> (ByteChannel m -> m (a, Maybe BL.ByteString))
+  -> STM m (STM m (Either SomeException a))
+runMiniProtocolSTM Mux { muxMiniProtocols,
                       muxControlCmdQueue,
                       muxStatus
                     }
@@ -782,7 +758,7 @@ runMiniProtocol Mux { muxMiniProtocols,
   | Just ptclState@MiniProtocolState{miniProtocolStatusVar}
       <- Map.lookup (ptclNum, ptclDir') muxMiniProtocols
 
-  = atomically $ do
+  = do
       st <- readTVar muxStatus
       case st of
         Stopping -> throwSTM (Shutdown Nothing st)
@@ -814,7 +790,7 @@ runMiniProtocol Mux { muxMiniProtocols,
     -- It is a programmer error to get the wrong protocol, but this is also
     -- very easy to avoid.
   | otherwise
-  = throwIO (UnknownProtocolInternalError ptclNum ptclDir')
+  = throwSTM (UnknownProtocolInternalError ptclNum ptclDir')
   where
     ptclDir' = protocolDirEnum ptclDir
 
@@ -834,3 +810,46 @@ runMiniProtocol Mux { muxMiniProtocols,
                    <|> return (Left $ toException (Shutdown Nothing st))
            Failed e -> readTMVar completionVar
                    <|> return (Left $ toException (Shutdown (Just e) st))
+
+
+-- | Arrange to run a protocol thread (for a particular 'MiniProtocolNum' and
+-- 'MiniProtocolDirection') to interact on this protocol's 'Channel'.
+--
+-- The protocol thread can either be started eagerly or on-demand:
+--
+-- * With 'StartEagerly', the thread is started promptly. This is appropriate
+--   for mini-protocols where the opening message may be sent by this thread.
+--
+-- * With 'StartOnDemand', the thread is not started until the first data is
+--   received for this mini-protocol. This is appropriate for mini-protocols
+--   where the opening message is sent by the remote peer.
+--
+-- The result is a STM action to block and wait on the protocol completion.
+-- It is safe to call this completion action multiple times: it will always
+-- return the same result once the protocol thread completes.
+-- In case the Mux has stopped, either due to an exception or because of a call
+-- to muxStop a `Left Error` will be returned from the STM action.
+--
+-- It is an error to start a new protocol thread while one is still running,
+-- for the same 'MiniProtocolNum' and 'MiniProtocolDirection'. This can easily be
+-- avoided by using the STM completion action to wait for the previous one to
+-- finish.
+--
+-- It is safe to ask to start a protocol thread before 'run'. In this case
+-- the protocol thread will not actually start until 'run' is called,
+-- irrespective of the 'StartOnDemandOrEagerly' value.
+--
+runMiniProtocol
+  :: forall mode m a.
+     ( Alternative (STM m)
+     , MonadSTM   m
+     , MonadThrow (STM m)
+     )
+  => Mux mode m
+  -> MiniProtocolNum
+  -> MiniProtocolDirection mode
+  -> StartOnDemandOrEagerly
+  -> (ByteChannel m -> m (a, Maybe BL.ByteString))
+  -> m (STM m (Either SomeException a))
+runMiniProtocol mux ptclNum ptclDir startMode protocolAction =
+    atomically $ runMiniProtocolSTM mux ptclNum ptclDir startMode protocolAction

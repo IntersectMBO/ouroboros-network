@@ -191,7 +191,7 @@ run :: forall extraState extraDebugState extraAPI
        , MonadST          m
        , MonadTime        m
        , MonadTimer       m
-       , MonadThrow       (STM m)
+       , MonadCatch       (STM m)
        , MonadMVar        m
 
        , Eq extraFlags

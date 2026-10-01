@@ -45,7 +45,7 @@ import Control.Concurrent.Class.MonadSTM qualified as LazySTM
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.DeepSeq (NFData)
 import Control.Exception (SomeAsyncException (..))
-import Control.Monad (foldM, forM_, forever, when)
+import Control.Monad (foldM, forM_, forever, void, when)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
@@ -64,6 +64,7 @@ import Data.OrdPSQ (OrdPSQ)
 import Data.OrdPSQ qualified as OrdPSQ
 import Data.Set (Set)
 import Data.Set qualified as Set
+import Data.Traversable (for)
 import Data.Void (Void)
 
 import Network.Mux qualified as Mux
@@ -149,7 +150,7 @@ with :: forall (muxMode :: Mux.Mode) socket peerAddr initiatorCtx responderCtx
         , MonadEvaluate    m
         , MonadLabelledSTM m
         , MonadThrow       m
-        , MonadThrow  (STM m)
+        , MonadCatch  (STM m)
         , MonadTime        m
         , MonadTimer       m
         , MonadMask        m
@@ -183,12 +184,12 @@ with
     = do
     stateVar <- newTVarIO emptyState
     labelTVarIO stateVar "inbound-governor-state-var"
-    active   <- newTVarIO True -- ^ inbound governor status: True = Active
+    activeVar <- newTVarIO True -- ^ inbound governor status: True = Active
     let connectionHandler =
           mkConnectionHandler $ inboundGovernorMuxTracer infoChannel
                                                          connectionDataFlow
                                                          stateVar
-                                                         active
+                                                         activeVar
     withConnectionManager connectionHandler \connectionManager ->
       withAsync
         (  labelThisThread "inbound-governor" >>
@@ -196,7 +197,7 @@ with
          `catch` \e -> do
            -- following the next statement, the ig tracer will no longer
            -- write to the info channel queue.
-           atomically $ writeTVar active False
+           atomically $ writeTVar activeVar False
            -- To avoid the risk of a full information channel queue
            -- and blocking on mux traces which will prevent connection cleanup,
            -- we drain it here just in case one last time.
@@ -292,105 +293,109 @@ with
                 traceWith tracer (TrNewConnection provenance connId)
                 let responderContext = ResponderContext { rcConnectionId = connId }
 
-                connections <- Map.alterF
-                  (\case
-                    -- connection
-                    Nothing -> do
-                      let csMPMHot =
-                            [ ( miniProtocolNum mpH
-                              , MiniProtocolData mpH responderContext Hot
+                case Map.lookup connId (connections state) of
+                  -- inbound governor might be notified about a connection
+                  -- which is already tracked.  In such case we preserve its
+                  -- state.
+                  --
+                  -- In particular we preserve an ongoing timeout on
+                  -- 'RemoteIdle' state and the freshness of the peer.
+                  Just _ ->
+                    return . Just $ StateWithPeerTransition state connId
+
+                  Nothing -> do
+                    let csMPMHot =
+                          [ ( miniProtocolNum mpH
+                            , MiniProtocolData mpH responderContext Hot
+                            )
+                          | mpH <- projectBundle SingHot muxBundle
+                          ]
+                        csMPMWarm =
+                          [ ( miniProtocolNum mpW
+                            , MiniProtocolData mpW responderContext Warm
+                            )
+                          | mpW <- projectBundle SingWarm muxBundle
+                          ]
+                        csMPMEstablished =
+                          [ ( miniProtocolNum mpE
+                            , MiniProtocolData mpE responderContext Established
+                            )
+                          | mpE <- projectBundle SingEstablished muxBundle
+                          ]
+                        csMiniProtocolMap =
+                            Map.fromList
+                            (csMPMHot ++ csMPMWarm ++ csMPMEstablished)
+
+                    mv <- traverse registerDelay idleTimeout
+                    let -- initial state is 'RemoteIdle', if the remote end will not
+                        -- start any responders this will unregister the inbound side.
+                        csRemoteState :: RemoteState m
+                        csRemoteState = RemoteIdle (case mv of
+                                                      Nothing -> pure False
+                                                      Just v  -> LazySTM.readTVar v)
+
+                    -- Start all responders and write the new state in
+                    -- a single transaction.  The mux can start a responder
+                    -- (on demand) only once this transaction commits, and by
+                    -- then 'inboundGovernorMuxTracer' finds the connection
+                    -- in the state.  Otherwise the tracer would stop tracking
+                    -- the connection and its responders would never be
+                    -- restarted.
+                    mState <-
+                      mask_ $
+                        -- the STM action is non-blocking, since
+                        -- `runMiniProtocolSTM` is; `mask_` is added just to
+                        -- make sure we log events once the STM action is done.
+                        atomically (do
+                          started <-
+                            foldM
+                              (\acc mpd@MiniProtocolData { mpdMiniProtocol } ->
+                                case acc of
+                                  Left _ -> return acc
+                                  Right () ->
+                                    runResponder csMux mpd >>= \case
+                                      Left err ->
+                                        return (Left (miniProtocolNum mpdMiniProtocol, err))
+                                      Right () ->
+                                        return (Right ())
                               )
-                            | mpH <- projectBundle SingHot muxBundle
-                            ]
-                          csMPMWarm =
-                            [ ( miniProtocolNum mpW
-                              , MiniProtocolData mpW responderContext Warm
-                              )
-                            | mpW <- projectBundle SingWarm muxBundle
-                            ]
-                          csMPMEstablished =
-                            [ ( miniProtocolNum mpE
-                              , MiniProtocolData mpE responderContext Established
-                              )
-                            | mpE <- projectBundle SingEstablished muxBundle
-                            ]
-                          csMiniProtocolMap =
-                              Map.fromList
-                              (csMPMHot ++ csMPMWarm ++ csMPMEstablished)
+                              (Right ())
+                              csMiniProtocolMap
+                          for started $ \() -> do
+                            let connState = ConnectionState {
+                                    csMux,
+                                    csVersionData,
+                                    csMiniProtocolMap,
+                                    csRemoteState
+                                  }
+                                state' = updateCountersCache
+                                       $ state {
+                                           connections      = Map.insert connId connState (connections state),
+                                           freshDuplexPeers = case dataFlow of
+                                             Unidirectional -> freshDuplexPeers state
+                                             Duplex         -> OrdPSQ.insert (remoteAddress connId) time csVersionData
+                                                                             (freshDuplexPeers state)
+                                         }
+                            writeTVar stateVar state'
+                            return state'
+                        ) >>= \case
+                          a@(Left (num, err)) -> do
+                            traceWith tracer (TrResponderStartFailure connId num err)
+                            pure a
+                          a@(Right state') -> do
+                            traceWith trTracer (mkRemoteTransitionTrace connId state state')
+                            return a
 
-                      mCompletionMap
-                        <-
-                        foldM
-                          (\acc mpd@MiniProtocolData { mpdMiniProtocol } ->
-                            runResponder csMux mpd >>= \case
-                              -- synchronous exceptions when starting
-                              -- a mini-protocol are non-recoverable; we
-                              -- close the connection and allow the server
-                              -- to continue.
-                              Left err -> do
-                                traceWith tracer (TrResponderStartFailure connId (miniProtocolNum mpdMiniProtocol) err)
-                                Mux.stop csMux
-                                return Nothing
+                    case mState of
+                      -- synchronous exceptions when starting a mini-protocol
+                      -- are non-recoverable; we close the connection and
+                      -- allow the server to continue.
+                      Left {} -> do
+                        Mux.stop csMux
+                        return Nothing
 
-                              Right completion ->  do
-                                let acc' = Map.insert (miniProtocolNum mpdMiniProtocol)
-                                                      completion
-                                       <$> acc
-                                -- force under lazy 'Maybe'
-                                case acc' of
-                                  Just !_ -> return acc'
-                                  Nothing -> return acc'
-                          )
-                          (Just Map.empty)
-                          csMiniProtocolMap
-
-                      case mCompletionMap of
-                        -- there was an error when starting one of the
-                        -- responders, we let the server continue without this
-                        -- connection.
-                        Nothing -> return Nothing
-
-                        Just csCompletionMap -> do
-                          mv <- traverse registerDelay idleTimeout
-                          let -- initial state is 'RemoteIdle', if the remote end will not
-                              -- start any responders this will unregister the inbound side.
-                              csRemoteState :: RemoteState m
-                              csRemoteState = RemoteIdle (case mv of
-                                                            Nothing -> pure False
-                                                            Just v  -> LazySTM.readTVar v)
-
-                              connState = ConnectionState {
-                                  csMux,
-                                  csVersionData,
-                                  csMiniProtocolMap,
-                                  csCompletionMap,
-                                  csRemoteState
-                                }
-
-                          return (Just connState)
-
-                    -- inbound governor might be notified about a connection
-                    -- which is already tracked.  In such case we preserve its
-                    -- state.
-                    --
-                    -- In particular we preserve an ongoing timeout on
-                    -- 'RemoteIdle' state.
-                    Just connState -> return (Just connState)
-
-                  )
-                  connId
-                  (connections state)
-
-                -- update state and continue the recursive loop
-                let state' = state {
-                        connections,
-                        freshDuplexPeers =
-                          case dataFlow of
-                            Unidirectional -> freshDuplexPeers state
-                            Duplex         -> OrdPSQ.insert (remoteAddress connId) time csVersionData
-                                                            (freshDuplexPeers state)
-                      }
-                return . Just $ StateWithPeerTransition state' connId
+                      Right state' ->
+                        return . Just $ OnlyTraceCounters state'
 
           MuxFinished connId
             | Just mux <- csMux <$> Map.lookup connId (connections state) -> do
@@ -400,7 +405,9 @@ with
                   Just err -> traceWith tracer (TrMuxErrored connId err)
 
                 -- the connection manager does should realise this on itself.
-                let state' = unregisterConnection connId state
+                let state' = updateCountersCache
+                           . unregisterConnection connId
+                           $ state
                 return . Just $ StateWithPeerTransition state' connId
                 -- ^ even though it might not be true, but it's benign
 
@@ -414,9 +421,13 @@ with
                 tMiniProtocolData = mpd@MiniProtocolData { mpdMiniProtocol = miniProtocol },
                 tResult
               } -> do
-            tResult' <- atomically tResult
             let num = miniProtocolNum miniProtocol
-            case tResult' of
+            -- 'tResult' is the outcome of the run which terminated, as
+            -- reported by the mux ('Mux.TraceCleanExit' or
+            -- 'Mux.TraceExceptionExit').  The mux reports it only once the
+            -- run's completion is recorded and the mini-protocol is idle, so
+            -- there is nothing to wait for.
+            case tResult of
               Left e -> do
                 -- a mini-protocol errored.  In this case mux will shutdown, and
                 -- the connection manager will tear down the socket. Before bailing out,
@@ -427,20 +438,27 @@ with
                   TrResponderErrored tConnId num e
                 return Nothing
 
-              Right _ ->
-                runResponder tMux mpd >>= \case
-                  Right completionAction -> do
-                    traceWith tracer (TrResponderRestarted tConnId num)
-                    let state' = updateMiniProtocol tConnId num completionAction state
-                    return . Just $ OnlyStateChange state'
+              Right ()
+                -- the connection was already unregistered (e.g. after
+                -- 'CommitRemote'), there is nothing to restart.
+                | not (tConnId `Map.member` connections state)
+                -> do
+                  traceWith tracer (TrResponderTerminated tConnId num)
+                  return Nothing
 
-                  Left err -> do
-                    -- there is no way to recover from synchronous exceptions; we
-                    -- stop mux which allows to close resources held by
-                    -- connection manager.
-                    traceWith tracer (TrResponderStartFailure tConnId num err)
-                    Mux.stop tMux
-                    return Nothing
+                | otherwise ->
+                    atomically (runResponder tMux mpd) >>= \case
+                      Right () -> do
+                        traceWith tracer (TrResponderRestarted tConnId num)
+                        -- restarting a responder does not change the state
+                        return . Just $ OnlyTraceCounters state
+                      Left err -> do
+                        -- there is no way to recover from synchronous exceptions; we
+                        -- stop mux which allows to close resources held by
+                        -- connection manager.
+                        traceWith tracer (TrResponderStartFailure tConnId num err)
+                        Mux.stop tMux
+                        return Nothing
 
           WaitIdleRemote connId -> do
             -- @
@@ -459,7 +477,9 @@ with
                       Nothing -> pure False
                       Just v  -> LazySTM.readTVar v
 
-                    state' = updateRemoteState connId (RemoteIdle timeoutSTM) state
+                    state' = updateCountersCache
+                           . updateRemoteState connId (RemoteIdle timeoutSTM)
+                           $ state
 
                 return . Just $ StateWithPeerTransition state' connId
               -- if the connection handler failed by this time, it will have
@@ -487,20 +507,23 @@ with
             res <- promotedToWarmRemote connectionManager connId
             traceWith tracer (TrPromotedToWarmRemote connId res)
 
-            let state' = updateRemoteState
-                           connId
-                           RemoteWarm
-                           state
+            let state' = updateCountersCache
+                       . updateRemoteState connId RemoteWarm
+                       $ state
             return . Just $ StateWithPeerTransition state' connId
 
           RemotePromotedToHot connId -> do
             traceWith tracer (TrPromotedToHotRemote connId)
-            let state' = updateRemoteState connId RemoteHot state
+            let state' = updateCountersCache
+                       . updateRemoteState connId RemoteHot
+                       $ state
             return . Just $ StateWithPeerTransition state' connId
 
           RemoteDemotedToWarm connId -> do
             traceWith tracer (TrDemotedToWarmRemote connId)
-            let state' = updateRemoteState connId RemoteWarm state
+            let state' = updateCountersCache
+                       . updateRemoteState connId RemoteWarm
+                       $ state
             return . Just $ StateWithPeerTransition state' connId
 
           CommitRemote connId -> do
@@ -518,7 +541,9 @@ with
                     --    Commit^{dataFlow}_{Remote} : InboundIdleState dataFlow
                     --                               → TerminatingState
                     -- @
-                    let state' = unregisterConnection connId state
+                    let state' = updateCountersCache
+                               . unregisterConnection connId
+                               $ state
                     return . Just $ StateWithPeerTransition state' connId
 
                   -- the connection is still used by p2p-governor, carry on but put
@@ -539,7 +564,9 @@ with
                   -- idleness expires rather than as soon as the connection
                   -- manager was requested outbound connection.
                   KeepTr -> do
-                    let state' = updateRemoteState connId RemoteCold state
+                    let state' = updateCountersCache
+                               . updateRemoteState connId RemoteCold
+                               $ state
                     return . Just $ StateWithPeerTransition state' connId
 
               _otherwise -> return Nothing
@@ -547,9 +574,12 @@ with
           MaturedDuplexPeers newMatureDuplexPeers freshDuplexPeers -> do
             traceWith tracer $ TrMaturedConnections (Map.keysSet newMatureDuplexPeers)
                                                     (Set.fromList $ OrdPSQ.keys freshDuplexPeers)
-            return . Just $ OnlyStateChange state { matureDuplexPeers = newMatureDuplexPeers
-                                                               <> matureDuplexPeers state,
-                                                    freshDuplexPeers }
+            let state' = updateCountersCache
+                       $ state { matureDuplexPeers = newMatureDuplexPeers
+                                                  <> matureDuplexPeers state,
+                                 freshDuplexPeers
+                               }
+            return . Just $ OnlyStateChange state'
 
           InactivityTimeout -> do
             traceWith tracer $ TrInactive ((\(a,b,_) -> (a,b)) <$> OrdPSQ.toList (freshDuplexPeers state))
@@ -560,36 +590,33 @@ with
             Just (OnlyStateChange state') -> do
               atomically $ writeTVar stateVar state'
               traceWith debugTracer (Debug state')
-            Just (StateWithPeerTransition state' p) -> do
+            Just (StateWithPeerTransition state' connId) -> do
               atomically $ writeTVar stateVar state'
               traceWith debugTracer (Debug state')
-              traceWith trTracer (mkRemoteTransitionTrace p state state')
-            _otherwise -> pure ()
+              traceWith trTracer (mkRemoteTransitionTrace connId state state')
+            Just (OnlyTraceCounters state') ->
+              traceWith debugTracer (Debug state')
+            Nothing -> pure ()
 
-        case decision of
-          _ | Just state' <- withState -> do
+        case loopDecisionState <$> decision of
+          Just state' -> do
                 mapTraceWithCache TrInboundGovernorCounters
                                   tracer
-                                  (countersCache state')
+                                  (countersCache state)
                                   (counters state')
                 traceWith tracer $ TrRemoteState $
                       mkRemoteSt . csRemoteState
                   <$> connections state'
 
-                -- Update Inbound Governor Counters cache values
-                let newCounters       = counters state'
-                    Cache oldCounters = countersCache state'
-                    state'' | newCounters /= oldCounters = state' { countersCache = Cache newCounters }
-                            | otherwise                 = state'
+          Nothing -> return ()
 
-                atomically $ writeTVar stateVar state''
-            where
-              withState = case decision of
-                Just (OnlyStateChange s)            -> Just s
-                Just (StateWithPeerTransition s _p) -> Just s
-                _otherwise                          -> Nothing
-
-          _otherwise -> return ()
+    updateCountersCache state =
+      -- Update Inbound Governor Counters cache values
+      let newCounters       = counters state
+          Cache oldCounters = countersCache state
+          state' | newCounters /= oldCounters = state { countersCache = Cache newCounters }
+                 | otherwise                  = state
+      in state'
 
 -- | The tracer embedded with the mux tracer by the connection handler
 -- for inbound or outbound duplex connections for efficient tracking
@@ -650,14 +677,13 @@ inboundGovernorMuxTracer infoChannel connectionDataFlow stateVar activeVar count
 
           _otherwise -> writeTVar countersVar SNothing
 
-      (_, True) | Just miniProtocolNum <- miniProtocolTerminated trace -> atomically do
+      (_, True) | Just (miniProtocolNum, tResult) <- miniProtocolTerminated trace -> atomically do
         connections <- connections <$> readTVar stateVar
         mCounters   <- readTVar countersVar
         case (Map.lookup peer connections, mCounters) of
           (Just (ConnectionState { csMux,
                                    csVersionData,
-                                   csMiniProtocolMap,
-                                   csCompletionMap }),
+                                   csMiniProtocolMap }),
            SJust rc@ResponderCounters { numTraceHotResponders,
                                         numTraceNonHotResponders }) -> do
             InfoChannel.writeMessage infoChannel $
@@ -666,7 +692,7 @@ inboundGovernorMuxTracer infoChannel connectionDataFlow stateVar activeVar count
                 tMux = csMux,
                 tMiniProtocolData = csMiniProtocolMap Map.! miniProtocolNum,
                 tDataFlow = connectionDataFlow csVersionData,
-                tResult = csCompletionMap Map.! miniProtocolNum }
+                tResult }
             case trace of
               Mux.TraceCleanExit {} -> do
                 let miniProtocolTemp = getProtocolTemp miniProtocolNum csMiniProtocolMap
@@ -706,9 +732,10 @@ inboundGovernorMuxTracer infoChannel connectionDataFlow stateVar activeVar count
         let miniData = csMiniProtocolMap Map.! miniProtocolNum
          in mpdMiniProtocolTemp miniData
 
+      -- a terminated responder, and the outcome of its run
       miniProtocolTerminated = \case
-        Mux.TraceCleanExit miniProtocolNum Mux.ResponderDir -> Just miniProtocolNum
-        Mux.TraceExceptionExit miniProtocolNum Mux.ResponderDir _e -> Just miniProtocolNum
+        Mux.TraceCleanExit miniProtocolNum Mux.ResponderDir -> Just (miniProtocolNum, Right ())
+        Mux.TraceExceptionExit miniProtocolNum Mux.ResponderDir e -> Just (miniProtocolNum, Left e)
         _otherwise -> Nothing
 
       miniProtocolStarted = \case
@@ -720,6 +747,10 @@ inboundGovernorMuxTracer infoChannel connectionDataFlow stateVar activeVar count
 
 -- | Run a responder mini-protocol.
 --
+-- The outcome of the run is not returned: it is reported by the mux, and
+-- passed to the inbound governor by 'inboundGovernorMuxTracer' in
+-- 'MiniProtocolTerminated'.
+--
 -- @'HasResponder' mode ~ True@ is used to rule out
 -- 'InitiatorProtocolOnly' case.
 --
@@ -730,13 +761,13 @@ runResponder :: forall (mode :: Mux.Mode) initiatorCtx peerAddr m a b.
                  , MonadLabelledSTM m
                  , MonadCatch       m
                  , MonadMask        m
-                 , MonadThrow  (STM m)
+                 , MonadCatch  (STM m)
                  , NFData a
                  , NFData b
                  )
               => Mux.Mux mode m
               -> MiniProtocolData mode initiatorCtx peerAddr m a b
-              -> m (Either SomeException (STM m (Either SomeException b)))
+              -> STM m (Either SomeException ())
 runResponder mux
              MiniProtocolData {
                mpdMiniProtocol     = miniProtocol,
@@ -748,14 +779,14 @@ runResponder mux
               Nothing                     -> Just e) $
       case miniProtocolRun miniProtocol of
         ResponderProtocolOnly responder ->
-          Mux.runMiniProtocol
+          void $ Mux.runMiniProtocolSTM
             mux (miniProtocolNum miniProtocol)
             Mux.ResponderDirectionOnly
             (miniProtocolStart miniProtocol)
             (runMiniProtocolCb responder responderContext)
 
         InitiatorAndResponderProtocol _ responder ->
-          Mux.runMiniProtocol
+          void $ Mux.runMiniProtocolSTM
             mux (miniProtocolNum miniProtocol)
             Mux.ResponderDirection
             (miniProtocolStart miniProtocol)
@@ -903,7 +934,9 @@ data Terminated muxMode initiatorCtx peerAddr m a b = Terminated {
     tMux              :: !(Mux.Mux muxMode m),
     tMiniProtocolData :: !(MiniProtocolData muxMode initiatorCtx peerAddr m a b),
     tDataFlow         :: !DataFlow,
-    tResult           :: STM m (Either SomeException b) -- !(Either SomeException b)
+    -- | Outcome of the run, as reported by the mux: 'Mux.TraceCleanExit' or
+    -- 'Mux.TraceExceptionExit'.
+    tResult           :: !(Either SomeException ())
   }
 
 
@@ -933,6 +966,8 @@ data Trace peerAddr
     | TrResponderErrored             !(ConnectionId peerAddr) !MiniProtocolNum !SomeException
     | TrResponderStarted             !(ConnectionId peerAddr) !MiniProtocolNum
     | TrResponderTerminated          !(ConnectionId peerAddr) !MiniProtocolNum
+    -- ^ A responder terminated cleanly, but it is not restarted, since its
+    -- connection was already released.
     | TrPromotedToWarmRemote         !(ConnectionId peerAddr) !(OperationResult AbstractState)
     | TrPromotedToHotRemote          !(ConnectionId peerAddr)
     | TrDemotedToWarmRemote          !(ConnectionId peerAddr)
@@ -955,5 +990,12 @@ data Trace peerAddr
 data Debug peerAddr versionData = forall muxMode initiatorCtx m a b.
     Debug (State muxMode initiatorCtx peerAddr versionData m a b)
 
-data LoopDecision state peer = OnlyStateChange         !state
+data LoopDecision state peer = OnlyTraceCounters       !state
+                             | OnlyStateChange         !state
                              | StateWithPeerTransition !state !peer
+
+loopDecisionState :: LoopDecision state peer -> state
+loopDecisionState = \case
+  (OnlyTraceCounters s)          -> s
+  (OnlyStateChange s)            -> s
+  (StateWithPeerTransition s _p) -> s

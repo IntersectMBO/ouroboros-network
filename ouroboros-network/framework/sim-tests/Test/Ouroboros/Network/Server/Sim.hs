@@ -51,6 +51,7 @@ import Data.ByteString.Lazy (ByteString)
 import Data.Dynamic (fromDynamic)
 import Data.Foldable (foldMap')
 import Data.Functor (void, ($>), (<&>))
+import Data.Functor.Compose (Compose (..))
 import Data.List as List (delete, foldl', intercalate, nub, (\\))
 import Data.List.Trace qualified as Trace
 import Data.Map.Strict (Map)
@@ -79,6 +80,7 @@ import Test.Tasty.QuickCheck
 import Control.Concurrent.JobPool
 
 import Network.Mux qualified as Mux
+import Network.Mux.Types (MiniProtocolDir (..))
 
 import Ouroboros.Network.ConnectionHandler
 import Ouroboros.Network.ConnectionId
@@ -150,6 +152,8 @@ tests =
   , testGroup "Server"
     [ testProperty "unidirectional Sim"     prop_unidirectional_Sim
     , testProperty "bidirectional Sim"      prop_bidirectional_Sim
+    , testProperty "bidirectional Sim (IG delay)" prop_bidirectional_Sim_IG_delay
+    , testProperty "bidirectional Sim (IG race)"  prop_bidirectional_Sim_IG_race
     , testProperty "never above hardlimit"  prop_never_above_hardlimit
     , testProperty "accept errors"          prop_server_accept_error
     ]
@@ -209,6 +213,170 @@ prop_bidirectional_Sim (Fixed rnd) data0 data1 =
                                         socket0 socket1
                                         addr0 addr1
                                         data0 data1
+
+
+-- | Delay the inbound governor when it starts handling a new connection.
+--
+-- `IG.TrNewConnection` is traced on the inbound governor thread, before the
+-- responders of the connection are started.  The delay lets the remote side
+-- send its first messages, so they are already queued when the responders
+-- are started (on demand): the mux can start a responder at the same
+-- simulated time at which the inbound governor registers the connection, and
+-- `inboundGovernorMuxTracer` must find the connection in the inbound
+-- governor's state.
+--
+delayNewConnectionTracer :: MonadDelay m
+                         => DiffTime
+                         -> Tracer m (WithName String (IG.Trace peerAddr))
+delayNewConnectionTracer d = mkTracer $ \(WithName _ ev) ->
+    case ev of
+      IG.TrNewConnection {} -> threadDelay d
+      _                     -> pure ()
+
+-- | Inbound governor and mux events of both nodes.  They are logged as one
+-- type, so that their relative order is preserved in the 'SimTrace'.
+--
+data IGRaceEvent =
+    IGRaceIG  Time String (IG.Trace (Snocket.TestAddress Int))
+  | IGRaceMux Time String (ConnectionId (Snocket.TestAddress Int)) Mux.Trace
+  deriving Show
+
+bidirectional_IG_delay_sim :: Int
+                           -> ClientAndServerData Int
+                           -> ClientAndServerData Int
+                           -> IOSim s Property
+bidirectional_IG_delay_sim rnd data0 data1 =
+    withSnocket nullTracer
+                noAttenuation
+                Map.empty
+                $ \snock _ ->
+      bracket ((,) <$> Snocket.open snock Snocket.TestFamily
+                   <*> Snocket.open snock Snocket.TestFamily)
+              (\ (socket0, socket1) -> Snocket.close snock socket0 >>
+                                       Snocket.close snock socket1)
+        $ \ (socket0, socket1) -> do
+          let addr0 = Snocket.TestAddress (0 :: Int)
+              addr1 = Snocket.TestAddress 1
+          Snocket.bind   snock socket0 addr0
+          Snocket.bind   snock socket1 addr1
+          Snocket.listen snock socket0
+          Snocket.listen snock socket1
+          bidirectionalExperimentWith
+            (   mkTracer (\(WithName name ev) -> do
+                      t <- getMonotonicTime
+                      traceM (IGRaceIG t name ev))
+             <> delayNewConnectionTracer 1)
+            Mux.Tracers {
+              Mux.tracer        = mkTracer $ \(Compose (WithName name (Mux.WithBearer connId ev))) -> do
+                                    t <- getMonotonicTime
+                                    traceM (IGRaceMux t name connId ev),
+              Mux.channelTracer = nullTracer,
+              Mux.bearerTracer  = nullTracer
+            }
+            False (mkStdGen rnd) simTimeouts snock
+            makeFDBearer
+            (\_ -> pure ())
+            socket0 socket1
+            addr0 addr1
+            data0 data1
+
+-- | Every clean exit of a responder must be followed by the inbound governor
+-- restarting it (or failing to restart it, e.g. when the connection is being
+-- torn down).  If the inbound governor lost track of the connection, the
+-- responder is never restarted.
+--
+-- A clean exit which is followed by the connection being torn down at the
+-- same time is not required to be restarted: the inbound governor might not
+-- have handled it before the simulation ended.  This is what happens at the
+-- end of the experiment, when both sides close the connection as soon as all
+-- requests are answered.
+--
+prop_responders_restarted :: [IGRaceEvent] -> Property
+prop_responders_restarted = go Map.empty
+  where
+    go :: Map (String, ConnectionId (Snocket.TestAddress Int), Mux.MiniProtocolNum) [Time]
+       -- ^ times of clean exits which were not yet restarted
+       -> [IGRaceEvent]
+       -> Property
+    go pending [] =
+      counterexample
+        (unlines
+          [ name ++ ": responder " ++ show num ++ " of " ++ show connId
+            ++ " exited cleanly at " ++ show t
+            ++ ", but the inbound governor did not restart it"
+          | ((name, connId, num), ts) <- Map.toList pending
+          , t <- reverse ts
+          ])
+      (Map.null pending)
+
+    go pending (IGRaceMux t name connId (Mux.TraceCleanExit num ResponderDir) : evs) =
+      go (Map.insertWith (++) (name, connId, num) [t] pending) evs
+
+    go pending (IGRaceIG _ name (IG.TrResponderRestarted connId num) : evs) =
+      go (Map.update restarted (name, connId, num) pending) evs
+
+    go pending (IGRaceIG _ name (IG.TrResponderStartFailure connId num _) : evs) =
+      go (Map.update restarted (name, connId, num) pending) evs
+
+    -- the connection was torn down; forgive clean exits which happened at the
+    -- same time
+    go pending (IGRaceMux t name connId (Mux.TraceState Mux.Dead) : evs) =
+      go (Map.mapMaybeWithKey
+            (\(name', connId', _) ts ->
+              if name' == name && connId' == connId
+                then case filter (/= t) ts of
+                       []  -> Nothing
+                       ts' -> Just ts'
+                else Just ts)
+            pending)
+         evs
+
+    go pending (_ : evs) = go pending evs
+
+    -- the oldest clean exit was restarted
+    restarted :: [Time] -> Maybe [Time]
+    restarted ts = case init ts of
+                     []  -> Nothing
+                     ts' -> Just ts'
+
+-- | `prop_bidirectional_Sim` with a delayed inbound governor, default
+-- schedule only.
+--
+prop_bidirectional_Sim_IG_delay :: Fixed Int
+                                -> ClientAndServerData Int
+                                -> ClientAndServerData Int
+                                -> Property
+prop_bidirectional_Sim_IG_delay (Fixed rnd) data0 data1 =
+    let tr = runSimTrace (timeout 7200 (bidirectional_IG_delay_sim rnd data0 data1))
+    in igRaceProperty tr
+
+-- | `prop_bidirectional_Sim` with a delayed inbound governor, explored with
+-- IOSimPOR.  If the inbound governor registers a connection only after its
+-- responders become startable, some schedule starts a responder first; the
+-- inbound governor then stops tracking the connection, its responders are
+-- never restarted and the experiment times out.
+--
+prop_bidirectional_Sim_IG_race :: Fixed Int
+                               -> ClientAndServerData Int
+                               -> ClientAndServerData Int
+                               -> Property
+prop_bidirectional_Sim_IG_race (Fixed rnd) data0 data1 =
+    exploreSimTrace id sim $ \_ tr -> igRaceProperty tr
+  where
+    sim :: IOSim s (Maybe Property)
+    sim = exploreRaces >> timeout 7200 (bidirectional_IG_delay_sim rnd data0 data1)
+
+-- | Check `prop_responders_restarted` first, so that a lost connection is
+-- reported as such rather than by its consequences, then the result of the
+-- experiment.
+--
+igRaceProperty :: SimTrace (Maybe Property) -> Property
+igRaceProperty tr =
+         prop_responders_restarted (selectTraceEventsDynamic' tr)
+    .&&. case traceResult False tr of
+           Left failure ->
+             counterexample ("Failure:\n" ++ displayException failure) False
+           Right prop -> fromMaybe (counterexample "timeout" $ property False) prop
 
 --
 -- Multi-node experiment
@@ -2306,7 +2474,7 @@ prop_server_accept_error (Fixed rnd) (AbsIOError ioerr) =
 multiNodeSimTracer :: ( Alternative (STM m), Monad m, MonadFix m
                       , MonadDelay m, MonadTimer m, MonadLabelledSTM m
                       , MonadTraceSTM m, MonadMask m, MonadTime m
-                      , MonadThrow (STM m), MonadSay m, MonadAsync m
+                      , MonadCatch (STM m), MonadSay m, MonadAsync m
                       , MonadEvaluate m, MonadFork m, MonadST m
                       , Serialise req, Show req, Eq req, Typeable req
                       , NFData req
