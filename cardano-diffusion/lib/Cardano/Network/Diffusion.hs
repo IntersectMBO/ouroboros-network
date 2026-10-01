@@ -38,6 +38,7 @@ import Cardano.Network.PeerSelection.Governor.PeerSelectionState qualified as Ca
 import Cardano.Network.PeerSelection.Governor.Types qualified as Cardano.Types
 
 import Ouroboros.Network.Diffusion qualified as Diffusion
+import Ouroboros.Network.Diffusion.PoolRelays (sockAddrWithoutPort)
 import Ouroboros.Network.IOManager
 import Ouroboros.Network.PeerSelection.PeerStateActions
 import Ouroboros.Network.Protocol.Handshake
@@ -160,6 +161,7 @@ run CardanoNodeArguments {
                       Cardano.Churn.consensusMode      = consensusMode,
                       Cardano.Churn.tracerChurnMode    = tracerChurnMode
                     },
-                  daSRVPrefix                         = Cardano.srvPrefix
+                  daSRVPrefix                         = Cardano.srvPrefix,
+                  daEgressPoolKey                     = sockAddrWithoutPort
                 }
                config apps

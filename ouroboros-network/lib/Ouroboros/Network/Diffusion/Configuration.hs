@@ -18,6 +18,7 @@ module Ouroboros.Network.Diffusion.Configuration
   , defaultEgressPollInterval
   , defaultMuxCountersInterval
   , defaultEgressSchedulingWith
+  , tenureThresholdFor
   , deactivateTimeout
   , closeConnectionTimeout
   , peerMetricsConfiguration
@@ -34,12 +35,11 @@ module Ouroboros.Network.Diffusion.Configuration
 import Control.Monad.Class.MonadTime.SI
 
 import Network.Mux qualified as Mx
-
+import Network.Mux.Types (MiniProtocolDir, MiniProtocolNum)
 import Ouroboros.Network.ConnectionManager.Core (defaultProtocolIdleTimeout,
            defaultResetTimeout, defaultTimeWaitTimeout)
 import Ouroboros.Network.Diffusion.Policies (closeConnectionTimeout,
            deactivateTimeout, peerMetricsConfiguration)
-import Network.Mux.Types (MiniProtocolDir, MiniProtocolNum)
 import Ouroboros.Network.Diffusion.Types (EgressScheduling (..))
 import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.PeerSelection.Governor.Types
@@ -135,5 +135,20 @@ defaultEgressSchedulingWith laneOf = EgressScheduling {
     esSlicePercent   = 15,
     esRotationPeriod = 599,
     esNotSentLowWat  = Just 131072,
-    esLaneOf         = laneOf
+    esLaneOf         = laneOf,
+    esTenureThreshold = tenureThresholdFor defaultDeadlineChurnInterval,
+    -- an 88 kB block, a 37 kB list and a 1 MiB closure, announced in one
+    -- block out of twenty slots
+    esFreshMaxBytes       = 88000 + 37000 + 1048576,
+    esFreshBytesPerSecond = fromIntegral (88000 + 37000 + 1048576 :: Int) * 0.05,
+    -- the protocol numbers are the application's to name
+    esUnchargedProtocols  = []
   }
+
+-- | The tenure threshold for a deadline churn interval: two rounds at their
+-- longest, the interval plus the churn governor's 600 s of fuzz each, plus
+-- the time it waits for the demotions of the second to complete, so a
+-- partner has outlived two churns for certain. A configuration with another
+-- interval sets 'esTenureThreshold' with it.
+tenureThresholdFor :: DiffTime -> DiffTime
+tenureThresholdFor churnInterval = 2 * (churnInterval + 600) + deactivateTimeout

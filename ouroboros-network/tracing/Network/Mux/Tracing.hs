@@ -17,7 +17,7 @@ import Data.Map.Strict qualified as Map
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Typeable
-import Data.Word (Word64)
+import Data.Word (Word64, Word8)
 import Formatting
 
 import Cardano.Logging
@@ -717,7 +717,8 @@ instance LogFormatting Mux.CountersTrace where
                                               , Mux.scBudgetLevel, Mux.scBudgetQueued
                                               , Mux.scSliceQueued, Mux.scBursts
                                               , Mux.scBusyTime, Mux.scContendedTime
-                                              , Mux.scBurstsOver, Mux.scBurstsWider } =
+                                              , Mux.scBurstsOver, Mux.scBurstsWider
+                                              , Mux.scTiers } =
           object
             [ "directBytes" .= scDirectBytes
             , "sliceBytes" .= scSliceBytes
@@ -738,6 +739,10 @@ instance LogFormatting Mux.CountersTrace where
             , "contendedTime" .= (realToFrac scContendedTime :: Double)
             , "burstsOver" .= [ (realToFrac b :: Double, n) | (b, n) <- scBurstsOver ]
             , "burstsWider" .= scBurstsWider
+            , "tiers" .= [ object [ "tier" .= t, "name" .= tierName t
+                                  , "bytes" .= Mux.tcBytes c, "batches" .= Mux.tcBatches c
+                                  , "queued" .= Mux.tcQueued c ]
+                         | (t, c) <- scTiers ]
             ]
     forHuman = \case
       Mux.TraceRemoteCounters c -> "Node-to-node mux counters: " <> countsLine c
@@ -797,7 +802,8 @@ instance LogFormatting Mux.CountersTrace where
                                                       , Mux.scBusyTime
                                                       , Mux.scContendedTime
                                                       , Mux.scBurstsOver
-                                                      , Mux.scBurstsWider } =
+                                                      , Mux.scBurstsWider
+                                                      , Mux.scTiers } =
           [ IntM    (prefix <> ".direct.bytes")           (fromIntegral scDirectBytes)
           , IntM    (prefix <> ".slice.bytes")            (fromIntegral scSliceBytes)
           , IntM    (prefix <> ".slice.borrowedBytes")    (fromIntegral scSliceBorrowedBytes)
@@ -819,6 +825,10 @@ instance LogFormatting Mux.CountersTrace where
           | (b, n) <- scBurstsOver ] ++
           [ IntM (prefix <> ".budget.burstsWider." <> showT w) (fromIntegral n)
           | (w, n) <- scBurstsWider ] ++
+          concat [ [ IntM (tier <> ".bytes")   (fromIntegral (Mux.tcBytes c))
+                   , IntM (tier <> ".batches") (fromIntegral (Mux.tcBatches c))
+                   , IntM (tier <> ".queued")  (fromIntegral (Mux.tcQueued c)) ]
+                 | (t, c) <- scTiers, let tier = prefix <> ".tier." <> tierName t ] ++
           [ IntM (prefix <> waitsOverSuffix (realToFrac b)) (fromIntegral n)
           | (b, n) <- scWaitsOver ]
 
@@ -895,7 +905,16 @@ egressMetricsDoc =
       | b <- Mux.egressBurstBounds ] ++
       [ (".budget.burstsWider." <> showT w,
          "Busy periods with at least this many bearers queued at once.")
-      | w <- Mux.egressBurstWidths ]
+      | w <- Mux.egressBurstWidths ] ++
+      concat [ [ (".tier." <> name <> ".bytes",   "Bytes the queue granted " <> who <> ".")
+               , (".tier." <> name <> ".batches", "Batches the queue granted " <> who <> ".")
+               , (".tier." <> name <> ".queued",
+                  "Bearers of " <> who <> " waiting on the budget.") ]
+             | (name, who) <- [ ("localRoot", "local roots"), ("partner", "partners")
+                              , ("pool", "big-ledger pool relays with credit")
+                              , ("stranger", "other peers with credit")
+                              , ("rest", "peers at zero credit")
+                              , ("unranked", "unranked bearers") ] ]
   ]
 
 -- | @.scheduled.waitsOver.1ms@ and so on, one per bound.
@@ -909,6 +928,18 @@ burstsOverSuffix :: Double -> Text
 burstsOverSuffix b
   | b < 1     = ".budget.burstsOver." <> showT (round (b * 1000) :: Integer) <> "ms"
   | otherwise = ".budget.burstsOver." <> showT (round b :: Integer) <> "s"
+
+-- | The tiers diffusion assigns; any other number is shown as such. 2 and 3
+-- are the residual tier's credit classes; until the buckets exist every
+-- residual peer is at 4.
+tierName :: Word8 -> Text
+tierName 0   = "localRoot"
+tierName 1   = "partner"
+tierName 2   = "pool"
+tierName 3   = "stranger"
+tierName 4   = "rest"
+tierName 255 = "unranked"
+tierName t   = "tier" <> showT t
 
 -- | The metrics of one side. The per-protocol ones, named by the
 -- application's numbers, are described with their totals.

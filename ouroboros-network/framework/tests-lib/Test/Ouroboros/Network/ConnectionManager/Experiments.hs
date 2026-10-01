@@ -295,7 +295,6 @@ withInitiatorOnlyConnectionManager name timeouts trTracer tracer stdGen snocket 
           noBindForkPolicy
           Nothing                  -- no mux counters
           Nothing                  -- no scheduled egress
-          (\_ -> return (Mx.Rank 0))
           HandshakeArguments {
               -- TraceSendRecv
               haHandshakeTracer = WithName name `contramap` nullTracer,
@@ -499,8 +498,9 @@ withBidirectionalConnectionManager name timeouts
             ((Compose . WithName name) `Mx.contramapTracers'` muxTracer)
             noBindForkPolicy
             Nothing                  -- no mux counters
-            egressPolicy
-            (\_ -> return (Mx.Rank 0))
+            -- every connection of the experiments ranks alike
+            ((\policy -> (policy, \_ _ _ -> return (\_ -> return (Mx.Rank 0), \_ _ _ -> return ())))
+               <$> egressPolicy)
             HandshakeArguments {
                 -- TraceSendRecv
                 haHandshakeTracer = WithName name `contramap` nullTracer,
