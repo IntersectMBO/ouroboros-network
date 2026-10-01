@@ -52,6 +52,9 @@ module Network.Mux
   , Rank (..)
   , Rotation (..)
   , setEgressRank
+  , setEgressRankSource
+  , ChargeSink
+  , setEgressChargeSink
     -- * Monitoring
   , miniProtocolStateMap
   , stopped
@@ -64,6 +67,7 @@ module Network.Mux
   , noCounts
   , ByteCounts
   , SchedulingCounts (..)
+  , TierCounts (..)
   , CountersTrace (..)
   , countersInterval
   , egressWaitBounds
@@ -103,6 +107,7 @@ import Control.Monad
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI (Time)
 import Control.Monad.Class.MonadTimer.SI hiding (timeout)
 import Control.Tracer
 
@@ -111,9 +116,9 @@ import Network.Mux.Channel
 import Network.Mux.Counters
 import Network.Mux.Egress as Egress
 import Network.Mux.Egress.Bucket (Bucket, BucketHandle, Rotation (..),
-           newBucket, registerBearer, setBucketRate, setRank)
-import Network.Mux.Egress.Counters (SchedulingCounts (..), egressBurstBounds,
-           egressBurstWidths, egressWaitBounds)
+           newBucket, registerBearer, setBucketRate, setRank, setRankSource)
+import Network.Mux.Egress.Counters (SchedulingCounts (..), TierCounts (..),
+           egressBurstBounds, egressBurstWidths, egressWaitBounds)
 import Network.Mux.Ingress as Ingress
 import Network.Mux.Timeout
 import Network.Mux.Trace
@@ -165,7 +170,9 @@ data MuxEgress m = MuxEgress {
     meBudget       :: Bucket m,
     meBudgetHandle :: BucketHandle m,
     meSlice        :: Maybe (BucketHandle m),
-    meLaneOf       :: MiniProtocolNum -> MiniProtocolDir -> Lane
+    meLaneOf       :: MiniProtocolNum -> MiniProtocolDir -> Lane,
+    meCharge       :: StrictTVar m (ChargeSink m)
+    -- ^ where the scheduled lane reports what it wrote; a no-op until installed
   }
 
 
@@ -218,8 +225,9 @@ newWithEgress :: forall (mode :: Mode) m.
 newWithEgress EgressPolicy { egressBudget, egressSlice, egressLaneOf } muxTracers muxCounters ptcls = do
     meBudgetHandle <- registerBearer egressBudget
     meSlice        <- traverse registerBearer egressSlice
+    meCharge       <- newTVarIO (\_ _ _ -> return ())
     mkMux (Just MuxEgress { meBudget = egressBudget, meBudgetHandle, meSlice,
-                            meLaneOf = egressLaneOf })
+                            meLaneOf = egressLaneOf, meCharge })
           muxTracers muxCounters ptcls
 
 mkMux :: forall (mode :: Mode) m.
@@ -251,6 +259,22 @@ setEgressRank Mux { muxEgress } rank =
     case muxEgress of
          Just MuxEgress { meBudgetHandle } -> setRank meBudgetHandle rank
          Nothing                           -> return ()
+
+-- | Like 'setEgressRank', with a rule asked whenever the bearer joins the
+-- queue, given that moment.
+setEgressRankSource :: MonadSTM m => Mux mode m -> (Time -> STM m Rank) -> STM m ()
+setEgressRankSource Mux { muxEgress } rank =
+    case muxEgress of
+         Just MuxEgress { meBudgetHandle } -> setRankSource meBudgetHandle rank
+         Nothing                           -> return ()
+
+-- | Install where the scheduled lane reports the bytes it wrote, per
+-- mini-protocol. Nothing on an unscheduled mux.
+setEgressChargeSink :: MonadSTM m => Mux mode m -> ChargeSink m -> STM m ()
+setEgressChargeSink Mux { muxEgress } sink =
+    case muxEgress of
+         Just MuxEgress { meCharge } -> writeTVar meCharge sink
+         Nothing                     -> return ()
 
 mkMiniProtocolStateMap :: MonadSTM m
                        => [MiniProtocolInfo mode]
@@ -410,7 +434,7 @@ run Mux { muxMiniProtocols,
                        , laneAll   = [(Scheduled, q)] }
                , \sent -> [muxerJob "muxer" q sent Unscheduled bearer] )
 
-      Just MuxEgress { meBudget, meBudgetHandle, meSlice, meLaneOf } -> do
+      Just MuxEgress { meBudget, meBudgetHandle, meSlice, meLaneOf, meCharge } -> do
         lock <- newTMVarIO ()
         let locked = bearer { writeMany = \tr timeout sdus ->
                                 bracket_ (atomically (takeTMVar lock))
@@ -419,7 +443,7 @@ run Mux { muxMiniProtocols,
             inUse  = [Direct, Scheduled] ++ [Slice | isJust meSlice]
             egressOf Direct    = Credit meBudget
             egressOf Slice     = maybe (Credit meBudget) (`Reserved` meBudget) meSlice
-            egressOf Scheduled = Scheduled_ meBudgetHandle
+            egressOf Scheduled = Scheduled_ meBudgetHandle meCharge
         qs <- forM inUse $ \lane -> (\q -> (lane, q)) <$> newQueue ("egress-" ++ laneName lane)
         let queueOf lane = case lookup lane qs of
                                 Just q  -> q

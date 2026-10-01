@@ -29,14 +29,14 @@ module Cardano.Network.Diffusion.Configuration
   ) where
 
 import Cardano.Network.NodeToNode (MiniProtocolParameters (..),
-           NodeTxSubmissionConfig (..), mkDefaultMiniProtocolParameters,
-           txSubmissionMiniProtocolNum)
+           NodeTxSubmissionConfig (..), keepAliveMiniProtocolNum,
+           mkDefaultMiniProtocolParameters, txSubmissionMiniProtocolNum)
+import Cardano.Network.PeerSelection.Governor.PeerSelectionState
+           (NumberOfBigLedgerPeers (..))
 import Network.Mux qualified as Mx
 import Network.Mux.Types (MiniProtocolDir (..))
 import Ouroboros.Network.Diffusion.Configuration qualified as Diffusion
-import Ouroboros.Network.Diffusion.Types (EgressScheduling)
-import Cardano.Network.PeerSelection.Governor.PeerSelectionState
-           (NumberOfBigLedgerPeers (..))
+import Ouroboros.Network.Diffusion.Types (EgressScheduling (..))
 
 import Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..),
            GenesisBlockFetchConfiguration (..))
@@ -56,7 +56,10 @@ import Ouroboros.Network.TxSubmission.Inbound.V2.Types
 -- tx-submission the responder is the side that asks, so its requests go
 -- direct too, and the initiator's replies, the bodies, are the slice's.
 defaultEgressScheduling :: EgressScheduling
-defaultEgressScheduling = Diffusion.defaultEgressSchedulingWith laneOf
+defaultEgressScheduling = (Diffusion.defaultEgressSchedulingWith laneOf) {
+    -- one small reply per request, nothing a client can drive to volume
+    esUnchargedProtocols = [keepAliveMiniProtocolNum]
+  }
   where
     laneOf num InitiatorDir | num == txSubmissionMiniProtocolNum = Mx.Slice
     laneOf num ResponderDir | num == txSubmissionMiniProtocolNum = Mx.Direct

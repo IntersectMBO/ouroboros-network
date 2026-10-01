@@ -591,6 +591,8 @@ jobPromoteWarmPeer PeerSelectionActions{ peerStateActions =
                                              peeraddr],
                       decisionState = st {
                                         activePeers           = activePeers',
+                                        activeSince           = Map.insert peeraddr now
+                                                                  (activeSince st),
                                         inProgressPromoteWarm = Set.delete peeraddr
                                                                   (inProgressPromoteWarm st),
                                         knownPeers            = knownPeers'
@@ -1035,7 +1037,9 @@ jobDemoteActivePeer PeerSelectionActions{peerStateActions = PeerStateActions {de
                                 inProgressDemoteHot = inProgressDemoteHot',
                                 establishedPeers    = establishedPeers',
                                 knownPeers          = knownPeers',
-                                activePeers         = activePeers'
+                                activePeers         = activePeers',
+                                activeSince         = Map.restrictKeys (activeSince st)
+                                                                       activePeers'
                               },
               decisionJobs  = []
             }
@@ -1072,6 +1076,8 @@ jobDemoteActivePeer PeerSelectionActions{peerStateActions = PeerStateActions {de
                                      peeraddr],
               decisionState = st {
                                 activePeers         = activePeers',
+                                activeSince         = Map.restrictKeys (activeSince st)
+                                                                       activePeers',
                                 knownPeers          = knownPeers',
                                 inProgressDemoteHot = Set.delete peeraddr
                                                         (inProgressDemoteHot st)

@@ -38,6 +38,7 @@ import Data.List (dropWhileEnd, nub)
 import Data.List qualified as List
 import Data.Map qualified as M
 import Data.Maybe (fromMaybe, isJust, isNothing)
+import Data.Set qualified as Set
 import Data.Tuple (swap)
 import Data.Word
 import Foreign.C.Error (eCONNRESET, eNETDOWN, ePIPE, errnoToIOError)
@@ -4708,7 +4709,8 @@ data BucketBearer = BucketBearer {
     bbRank  :: !Word8,
     bbStart :: !Integer,           -- ^ rounds before the first request
     bbFirst :: !Int,               -- ^ bytes of the first take
-    bbMore  :: ![(Integer, Int)],  -- ^ rounds after a grant, then bytes
+    bbMore  :: ![(Integer, Int, Word8)],
+                                   -- ^ rounds after a grant, then bytes and rank
     bbKill  :: !(Maybe Int),       -- ^ cancel it this far, in 256ths, into
                                    --   the first wait the replay gives it
     bbSlice :: !Bool               -- ^ asks the slice, borrowing the budget;
@@ -4754,9 +4756,10 @@ instance Arbitrary BucketSched where
              | Just f0 <- [bbKill b], f <- [0, 128], f < f0 ]
           ++ [ b { bbSlice = False } | bbSlice b ]
 
-        shrinkTake (k, sz) =
-             [ (0, sz)  | k /= 0 ]
-          ++ [ (k, sz') | sz' <- [1024, schCapacity], sz' < sz ]
+        shrinkTake (k, sz, r) =
+             [ (0, sz, r)  | k /= 0 ]
+          ++ [ (k, sz', r) | sz' <- [1024, schCapacity], sz' < sz ]
+          ++ [ (k, sz, 0)  | r /= 0 ]
 
 -- | Periods of a quarter to four fill times, so that schedules straddle a
 -- boundary.
@@ -4774,7 +4777,7 @@ genBucketBearer rate cap n =
                  <*> genRounds
                  <*> genBytes cap
                  <*> (do extra <- frequency [ (3, return 0), (4, choose (1, 3)) ]
-                         vectorOf extra ((,) <$> genRounds <*> genBytes cap))
+                         vectorOf extra ((,,) <$> genRounds <*> genBytes cap <*> choose (0, 3)))
                  <*> frequency [ (3, return Nothing)
                                , (1, Just <$> choose (0, 255))
                                , (1, Just <$> choose (192, 255)) ]
@@ -4794,7 +4797,7 @@ data Arrival = Arrival {
     arRank   :: !Word8,
     arBytes  :: !Int,
     arAt     :: !Time,
-    arMore   :: ![(Integer, Int)],
+    arMore   :: ![(Integer, Int, Word8)],
     arSlice  :: !Bool              -- ^ asks the slice, borrowing the budget
   }
   deriving (Eq, Show)
@@ -4825,14 +4828,17 @@ nextArrival :: Int -> Arrival -> Time -> Maybe Arrival
 nextArrival n a t =
     case arMore a of
       []                -> Nothing
-      (k, bytes) : more -> Just a { arTake  = arTake a + 1
+      (k, bytes, rank) : more -> Just a { arTake  = arTake a + 1
                                   , arBytes = bytes
+                                  , arRank  = rank
                                   , arAt    = askAt n (arBearer a) k t
                                   , arMore  = more }
 
 labelBucket :: BucketSched -> Property -> Property
 labelBucket BucketSched { schRotation, schSlice, schBearers } =
       classify (any (not . null . bbMore) schBearers) "reuses a handle"
+    . classify (any (\b -> any (\(_, _, r) -> r /= bbRank b) (bbMore b)) schBearers)
+               "changes rank between takes"
     . classify (isJust schRotation)                   "rotating"
     . classify (isJust schSlice)                      "with a slice"
 
@@ -4855,8 +4861,11 @@ runBucketSchedStats sch@BucketSched { schRate, schCapacity, schRotation, schSlic
       hs <- mapM (const (Bucket.registerBearer bucket)) schBearers
       ss <- mapM (const (traverse Bucket.registerBearer slice)) schBearers
       grants <- forConcurrently (zip3 hs ss (arrivals sch)) $ \(h, s_m, a0) -> do
-        atomically $ Bucket.setRank h (Bucket.Rank (arRank a0))
-        forM_ s_m $ \s -> atomically $ Bucket.setRank s (Bucket.Rank (arRank a0))
+        -- the rank as a rule over a variable, as the node does: the variable
+        -- holds each take's rank before it is asked for
+        rankVar <- newTVarIO (Bucket.Rank (arRank a0))
+        atomically $ Bucket.setRankSource h (\_ -> readTVar rankVar)
+        forM_ s_m $ \s -> atomically $ Bucket.setRankSource s (\_ -> readTVar rankVar)
         -- what the slice lane does: its own bucket, charged to the budget on
         -- credit, or the budget's idle capacity
         let grant a = case s_m of
@@ -4865,6 +4874,7 @@ runBucketSchedStats sch@BucketSched { schRate, schCapacity, schRotation, schSlic
             takeAll a = do
               now <- getMonotonicTime
               threadDelay (arAt a `diffTime` now)
+              atomically $ writeTVar rankVar (Bucket.Rank (arRank a))
               grant a
               t <- getMonotonicTime
               (((arBearer a, arTake a), t) :)
@@ -4872,8 +4882,8 @@ runBucketSchedStats sch@BucketSched { schRate, schCapacity, schRotation, schSlic
         takeAll a0
       now <- getMonotonicTime
       stats <- atomically $ do
-        (b, _, _) <- Bucket.bucketSnapshot bucket now
-        s' <- traverse (\sl -> (\(st, _, _) -> st) <$> Bucket.bucketSnapshot sl now) slice
+        (b, _, _, _) <- Bucket.bucketSnapshot bucket now
+        s' <- traverse (\sl -> (\(st, _, _, _) -> st) <$> Bucket.bucketSnapshot sl now) slice
         return (b, s')
       return (concat grants, stats)
   where
@@ -4999,8 +5009,9 @@ replayRun sch = [ g | RGrant _ g <- replayEvents sch ]
 -- | The counters each bucket should hold after the replay's grants.
 replayStats :: BucketSched -> (Bucket.BucketStats, Maybe Bucket.BucketStats)
 replayStats sch@BucketSched { schSlice, schBearers } =
-    ( withBursts budgetQueue (stats [ g | RGrant FromBudget g <- events ] [])
-    , withBursts sliceQueue (stats [ g | RGrant pay g <- events, pay /= FromBudget ]
+    ( withBursts budgetQueue (stats (queuedIn budgetQueue) [ g | RGrant FromBudget g <- events ] [])
+    , withBursts sliceQueue (stats (queuedIn sliceQueue)
+                                   [ g | RGrant pay g <- events, pay /= FromBudget ]
                                    [ g | RGrant Borrowed g <- events ]) <$ schSlice )
   where
     events = replayEvents sch
@@ -5046,11 +5057,16 @@ replayStats sch@BucketSched { schSlice, schBearers } =
                        Nothing -> go n1 Nothing cSince' 0 acc2 rest
                 else go n1 since' cSince' peak' acc2 rest
 
-    -- bytes of take @k@ of bearer @b@
+    -- bytes and rank of take @k@ of bearer @b@
     bytesOf (b, k) = let bb = schBearers !! b
-                     in if k == 0 then bbFirst bb else snd (bbMore bb !! (k - 1))
+                     in if k == 0 then bbFirst bb else (\(_, sz, _) -> sz) (bbMore bb !! (k - 1))
+    rankOf  (b, k) = let bb = schBearers !! b
+                     in if k == 0 then bbRank bb else (\(_, _, r) -> r) (bbMore bb !! (k - 1))
 
-    stats gs borrowed =
+    -- the requests that joined a queue: the fast path leaves no trace
+    queuedIn q = Set.fromList [ k | (_, _, k, True) <- q ]
+
+    stats queued gs borrowed =
       let waits = [ granted `diffTime` asked | (_, (asked, granted)) <- gs ]
           bytesIn = sum . map (fromIntegral . bytesOf . fst)
       in Bucket.BucketStats {
@@ -5066,7 +5082,10 @@ replayStats sch@BucketSched { schSlice, schBearers } =
            Bucket.bsBusyTime      = 0,
            Bucket.bsContendedTime = 0,
            Bucket.bsBurstsOver    = map (const 0) Bucket.burstBounds,
-           Bucket.bsBurstsWider   = map (const 0) Bucket.burstWidths
+           Bucket.bsBurstsWider   = map (const 0) Bucket.burstWidths,
+           Bucket.bsTiers         = M.fromListWith (<>)
+                                      [ (rankOf k, Bucket.TierGrants (fromIntegral (bytesOf k)) 1)
+                                      | (k, _) <- gs, k `Set.member` queued ]
          }
 
 replaySched :: BucketSched -> [((Int, Int), Time)]
@@ -5157,9 +5176,9 @@ prop_bucket_cancel' sch@BucketSched { schRate, schCapacity, schRotation, schBear
     -- for every byte, and a second
     limit = maximum [ arAt a `diffTime` Time 0 | a <- arrivals sch ]
           + picos (sum [ (k + 2) * fromIntegral n
-                       | b <- schBearers, (k, _) <- bbMore b ])
+                       | b <- schBearers, (k, _, _) <- bbMore b ])
           + realToFrac (4 * bytes / schRate) + 1
-    bytes = sum [ fromIntegral (bbFirst b) + sum (map (fromIntegral . snd) (bbMore b))
+    bytes = sum [ fromIntegral (bbFirst b) + sum (map (\(_, sz, _) -> fromIntegral sz) (bbMore b))
                 | b <- schBearers ] :: Double
 
     outcome = runSimOrThrow $ do
@@ -5189,10 +5208,10 @@ prop_bucket_cancel' sch@BucketSched { schRate, schCapacity, schRotation, schBear
            Nothing -> return Nothing
            Just rs -> do
              t0 <- getMonotonicTime
-             (st0, _, _) <- atomically $ Bucket.bucketSnapshot bucket t0
+             (st0, _, _, _) <- atomically $ Bucket.bucketSnapshot bucket t0
              threadDelay 1
              t1 <- getMonotonicTime
-             (st1, _, _) <- atomically $ Bucket.bucketSnapshot bucket t1
+             (st1, _, _, _) <- atomically $ Bucket.bucketSnapshot bucket t1
              return (Just (length rs, Bucket.bsBusyTime st1 /= Bucket.bsBusyTime st0))
 
 -- | A rate of zero disables the bucket: nothing ever waits.
@@ -5263,7 +5282,11 @@ data LaneRun = LaneRun {
     lrProbes     :: !Int,
     lrSliced     :: !Int,      -- ^ slice bytes delivered while the bulk ran
     lrIdle       :: !Double,   -- ^ seconds the link was idle before the bulk
-    lrSlicedIdle :: !Int       -- ^ slice bytes delivered in that time
+    lrSlicedIdle :: !Int,      -- ^ slice bytes delivered in that time
+    lrCharged    :: !(M.Map Mx.MiniProtocolNum Int),
+    -- ^ what the charge sink was handed, per mini-protocol
+    lrExpected   :: !(M.Map Mx.MiniProtocolNum Int)
+    -- ^ what the bearer wrote on scheduled-lane protocols, headers included
   }
   deriving Show
 
@@ -5297,6 +5320,18 @@ runLanesWith withSlice laneOf LaneCase { lcRate, lcSlicePct, lcBatches } = runSi
     stopVar   <- newTVarIO False
     probeVar  <- newTVarIO (0 :: Int, 0 :: Double)     -- probes done, longest round trip
     slicedVar <- newTVarIO (0 :: Int)
+    -- the oracle for the charge sink: every SDU the server bearer writes, by
+    -- mini-protocol and direction, header included
+    writtenVar <- newTVarIO (M.empty :: M.Map (Mx.MiniProtocolNum, Mx.MiniProtocolDir) Int)
+    chargedVar <- newTVarIO (M.empty :: M.Map Mx.MiniProtocolNum Int)
+    let sduBytes sdu = fromIntegral Mx.msHeaderLength + fromIntegral (Mx.msLength sdu)
+        recorded = serverBearer {
+          Mx.writeMany = \tr to sdus -> do
+            atomically $ modifyTVar writtenVar $ \m ->
+              foldr (\sdu -> M.insertWith (+) (Mx.mhNum (Mx.msHeader sdu), Mx.mhDir (Mx.msHeader sdu))
+                                                (sduBytes sdu))
+                    m sdus
+            Mx.writeMany serverBearer tr to sdus }
 
     let info :: Mx.MiniProtocolNum -> Mx.MiniProtocolDirection Mx.InitiatorResponderMode
              -> MiniProtocolInfo Mx.InitiatorResponderMode
@@ -5314,6 +5349,8 @@ runLanesWith withSlice laneOf LaneCase { lcRate, lcSlicePct, lcBatches } = runSi
     serverMux <- Mx.newWithEgress policy Mx.nullTracers Nothing
                    [ info bulkN Mx.ResponderDirection, info probeN Mx.InitiatorDirection
                    , info sliceN Mx.InitiatorDirection ]
+    atomically $ Mx.setEgressChargeSink serverMux $ \_ num n ->
+      modifyTVar chargedVar (M.insertWith (+) num n)
     clientMux <- Mx.new Mx.nullTracers Nothing
                    [ info bulkN Mx.InitiatorDirection, info probeN Mx.ResponderDirection
                    , info sliceN Mx.ResponderDirection ]
@@ -5380,7 +5417,7 @@ runLanesWith withSlice laneOf LaneCase { lcRate, lcSlicePct, lcBatches } = runSi
           loop
           return ((), Nothing)
 
-    withAsync (Mx.run serverMux serverBearer) $ \_ ->
+    withAsync (Mx.run serverMux recorded) $ \_ ->
       withAsync (Mx.run clientMux clientBearer) $ \_ -> do
         _ <- Mx.runMiniProtocol serverMux bulkN  Mx.ResponderDirection Mx.StartOnDemand bulkServer
         _ <- Mx.runMiniProtocol serverMux probeN Mx.InitiatorDirection Mx.StartEagerly probeServer
@@ -5394,12 +5431,19 @@ runLanesWith withSlice laneOf LaneCase { lcRate, lcSlicePct, lcBatches } = runSi
         sliced <- readTVarIO slicedVar
         Mx.stop serverMux
         Mx.stop clientMux
+        written <- readTVarIO writtenVar
+        charged <- readTVarIO chargedVar
+        let effective Mx.Slice | not withSlice = Mx.Scheduled
+            effective lane                     = lane
+            expected = M.fromListWith (+) [ (num, n) | ((num, dir), n) <- M.toList written
+                                                     , effective (laneOf num dir) == Mx.Scheduled ]
         case r of
           Left e -> throwIO e
           Right (bulkTime, slicedIdle) ->
             return LaneRun { lrBulkTime = bulkTime, lrProbeMax = probeMax, lrProbes = probes,
                              lrSliced = sliced - slicedIdle,
-                             lrIdle = realToFrac idlePhase, lrSlicedIdle = slicedIdle }
+                             lrIdle = realToFrac idlePhase, lrSlicedIdle = slicedIdle,
+                             lrCharged = charged, lrExpected = expected }
   where
     chunks n | n <= 0    = []
              | otherwise = min 8192 n : chunks (n - 8192)
@@ -5434,6 +5478,13 @@ prop_mux_lanes lc@LaneCase { lcRate, lcSlicePct, lcBatches } =
     .&&. counterexample "bulk faster than budget"  (bulkTime >= 0.9 * fluid)
     .&&. counterexample "bulk starved"             (bulkTime <= 1.3 * fluid / (1 - share))
     .&&. counterexample "control did not queue"    (lrProbeMax control >= batchTime / 8)
+    -- the charge sink sees exactly the scheduled lane's bytes: the bulk alone
+    -- with the lanes, everything in the control, headers included, never a
+    -- direct or slice byte
+    .&&. counterexample "charged /= scheduled bytes"  (lrCharged lanes === lrExpected lanes)
+    .&&. counterexample "control charged /= all bytes" (lrCharged control === lrExpected control)
+    .&&. counterexample "no slice: charged /= scheduled and slice bytes"
+           (lrCharged noSlice === lrExpected noSlice)
     .&&. counterexample "no slice: probe waited"       (lrProbeMax noSlice < batchTime / 100)
   where
     lanes     = runLanes laneRule lc
@@ -5518,7 +5569,7 @@ prop_mux_direct_gate gc@GateCase { gcMsgs, gcPhases, gcRate } =
       budget <- Bucket.newBucket 1e9 65536 Nothing
       let policy = Mx.EgressPolicy { Mx.egressBudget = budget, Mx.egressSlice = Nothing,
                                      Mx.egressLaneOf = Mx.directionSplit }
-          credited = (\(st, _, _) -> fromIntegral (Bucket.bsCredited st))
+          credited = (\(st, _, _, _) -> fromIntegral (Bucket.bsCredited st))
                        <$> (getMonotonicTime >>= atomically . Bucket.bucketSnapshot budget)
       mux <- Mx.newWithEgress policy Mx.nullTracers Nothing [info]
       -- the peer: reads at the link rate while open, not at all while shut
