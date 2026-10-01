@@ -26,6 +26,7 @@ module Ouroboros.Network.Diffusion.PoolAllowances
   , PoolAllowances (..)
   , newPoolAllowances
   , rebuild
+  , reindex
   , BucketRef (..)
   , bucketsFor
   , hasCredit
@@ -116,6 +117,10 @@ rebuild PoolAllowances { .. } now n index = do
   writeTVar paBuckets (IntMap.fromList buckets)
   writeTVar paIndex index
   modifyTVar paGeneration (+ 1)
+
+-- | Swap the address index alone: the same list, its relays resolved anew.
+reindex :: MonadSTM m => PoolAllowances m addr -> Map addr [Int] -> STM m ()
+reindex PoolAllowances { paIndex } = writeTVar paIndex
 
 -- | A bearer's view: its pools' buckets, and the generation they came from.
 data BucketRef m = BucketRef {
