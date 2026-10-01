@@ -230,6 +230,7 @@ library
     Ouroboros.Network.Diffusion.Configuration
     Ouroboros.Network.Diffusion.Policies
     Ouroboros.Network.Diffusion.PoolAllowances
+    Ouroboros.Network.Diffusion.PoolRelays
     Ouroboros.Network.Diffusion.Topology
     Ouroboros.Network.Diffusion.Types
     Ouroboros.Network.Diffusion.Utils
@@ -1005,6 +1006,7 @@ library ouroboros-network-tests-lib
     Test.Ouroboros.Network.PeerSelection.PeerMetric
     Test.Ouroboros.Network.PeerSelection.RootPeersDNS
     Test.Ouroboros.Network.Diffusion.PoolAllowances
+    Test.Ouroboros.Network.Diffusion.PoolRelays
     Test.Ouroboros.Network.TxSubmission
     Test.Ouroboros.Network.TxSubmission.AppV1
     Test.Ouroboros.Network.TxSubmission.AppV2
@@ -1049,6 +1051,7 @@ test-suite ouroboros-network-io-tests
   hs-source-dirs: tests/io
   main-is: Main.hs
   other-modules:
+    Test.Ouroboros.Network.Diffusion.PoolRelays.IO
     Test.Ouroboros.Network.Pipe
     Test.Ouroboros.Network.Socket
 
@@ -1064,7 +1067,8 @@ test-suite ouroboros-network-io-tests
     monoidal-synchronisation,
     network,
     network-mux,
-    ouroboros-network:{api, api-tests-lib, framework, protocols, protocols-tests-lib, tests-lib},
+    ouroboros-network:{ouroboros-network, api, api-tests-lib, framework, protocols, protocols-tests-lib, tests-lib},
+    random,
     serialise,
     tasty,
     tasty-quickcheck,

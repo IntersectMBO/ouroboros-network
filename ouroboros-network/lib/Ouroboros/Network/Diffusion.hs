@@ -46,7 +46,7 @@ import Data.IP qualified as IP
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map (Map)
 import Data.Map qualified as Map
-import Data.Maybe (catMaybes)
+import Data.Maybe (catMaybes, maybeToList)
 import Data.Typeable (Proxy (..), Typeable)
 import Data.Void (Void)
 import System.Exit (ExitCode)
@@ -66,6 +66,8 @@ import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.Context (ExpandedInitiatorContext)
 import Ouroboros.Network.Diffusion.Configuration
 import Ouroboros.Network.Diffusion.Policies qualified as Diffusion.Policies
+import Ouroboros.Network.Diffusion.PoolAllowances
+import Ouroboros.Network.Diffusion.PoolRelays
 import Ouroboros.Network.Diffusion.Types
 import Ouroboros.Network.Diffusion.Utils
 import Ouroboros.Network.ExitPolicy
@@ -201,6 +203,7 @@ runM Interfaces
        , dtLocalInboundGovernorTracer
        , dtDnsTracer
        , dtMuxCountersTracer
+       , dtPoolRelaysTracer
        }
      Arguments
        { daNtnDataFlow
@@ -219,6 +222,7 @@ runM Interfaces
        , daPeerChurnGovernor
        , daExtraChurnArgs
        , daSRVPrefix
+       , daEgressPoolKey
        }
      Configuration
        { dcIPv4Address
@@ -262,6 +266,12 @@ runM Interfaces
     -- the buckets behind scheduled egress, shared by every node-to-node mux
     -- and read by the counters loop
     egressPolicy <- traverse mkEgressPolicy dcEgressScheduling
+    -- the residual tier's credit buckets, one per big-ledger pool, refilled
+    -- by the clock from the protocol parameters
+    t0 <- getMonotonicTime
+    poolAllowances <- traverse (\es -> newPoolAllowances (Allowance (esFreshMaxBytes es))
+                                                         (freshAt (esFreshBytesPerSecond es) t0))
+                               dcEgressScheduling
     localCounters  <- Mx.newMuxCounters
     -- race the counters with diffusion, so a failing counters loop ends it
     fmap (either id id) $
@@ -276,11 +286,11 @@ runM Interfaces
       case dcLocalAddress of
         Just addr ->
           fmap (either id id) $
-            mkRemoteThread mainThreadId remoteCounters egressPolicy
+            mkRemoteThread mainThreadId remoteCounters egressPolicy poolAllowances
             `Async.race`
             mkLocalThread mainThreadId localCounters addr
         Nothing ->
-            mkRemoteThread mainThreadId remoteCounters egressPolicy
+            mkRemoteThread mainThreadId remoteCounters egressPolicy poolAllowances
 
   where
     (ledgerPeersRng, rng1) = splitGen diRng
@@ -289,7 +299,8 @@ runM Interfaces
     (cmLocalStdGen,  rng4) = splitGen rng3
     (cmStdGen1,      rng5) = splitGen rng4
     (cmStdGen2,      rng6) = splitGen rng5
-    (egressRng, peerSelectionActionsRng) = splitGen rng6
+    (egressRng,      rng7) = splitGen rng6
+    (poolRelaysRng, peerSelectionActionsRng) = splitGen rng7
 
     -- the buckets behind scheduled egress, shared by every node-to-node
     -- connection; the rotation's seed comes from the diffusion RNG
@@ -449,8 +460,9 @@ runM Interfaces
 
     -- | mkRemoteThread - create remote connection manager
     --
-    mkRemoteThread :: ThreadId m -> Mx.MuxCounters m -> Maybe (Mx.EgressPolicy m) -> m Void
-    mkRemoteThread mainThreadId remoteCounters egressPolicy = do
+    mkRemoteThread :: ThreadId m -> Mx.MuxCounters m -> Maybe (Mx.EgressPolicy m)
+                   -> Maybe (PoolAllowances m ntnAddr) -> m Void
+    mkRemoteThread mainThreadId remoteCounters egressPolicy poolAllowances = do
       labelThisThread "diffusion-remote"
       let
         exitPolicy :: ExitPolicy a
@@ -658,6 +670,35 @@ runM Interfaces
               paToPeerAddr = diNtnToPeerAddr
             , paDnsActions = diDnsActions dtDnsTracer lookupReqs diNtnToPeerAddr
             }
+
+          -- the thread that keeps the credit buckets' address index in step
+          -- with the ledger's big pools, when egress is scheduled at all; on
+          -- its own DNS semaphore so the governor's lookups never wait on it
+          withPoolRelays :: forall x. (Maybe (Async m Void) -> m x) -> m x
+          withPoolRelays k =
+            case poolAllowances of
+                 Nothing -> k Nothing
+                 Just allowances ->
+                   Async.withAsync
+                     (do labelThisThread "Pool relays"
+                         poolRelaysSemaphore <- RootPeersDNS.newPoolRelaysDNSSemaphore
+                         poolRelaysThread PoolRelaysArgs {
+                             prTracer       = dtPoolRelaysTracer,
+                             prConsensus    = daLedgerPeersCtx,
+                             prUseLedger    = dcReadUseLedgerPeers,
+                             prSnapshot     = dcReadLedgerPeerSnapshot,
+                             prSRVPrefix    = daSRVPrefix,
+                             prDNS          = dnsActions,
+                             prSemaphore    = poolRelaysSemaphore,
+                             prRng          = poolRelaysRng,
+                             prAddressKey   = daEgressPoolKey,
+                             -- the ledger peers thread's cadence, a different
+                             -- prime so the two never fall into step; the list
+                             -- changes once an epoch, and a relay that moved
+                             -- sits in the stranger class until the next poll
+                             prPollInterval = 1871
+                           } allowances)
+                     (k . Just)
       --
       -- Run peer selection (p2p governor)
       --
@@ -822,7 +863,8 @@ runM Interfaces
       --
       -- Part (b): capturing the major control-flow of runM:
       --
-      case diffusionMode of
+      withPoolRelays $ \poolRelaysThread_m ->
+       case diffusionMode of
 
         -- InitiatorOnly mode, run peer selection only:
         InitiatorOnlyDiffusionMode ->
@@ -843,7 +885,8 @@ runM Interfaces
                       peerChurnGovernor' $ \churnGovernorThread ->
                       -- wait for any thread to fail:
                       snd <$> Async.waitAny
-                                [ledgerPeersThread, localRootPeersProviderThread, governorThread, churnGovernorThread]
+                                ([ledgerPeersThread, localRootPeersProviderThread, governorThread, churnGovernorThread]
+                                 ++ maybeToList poolRelaysThread_m)
 
         -- InitiatorAndResponder mode, run peer selection and the server:
         InitiatorAndResponderDiffusionMode -> do
@@ -878,12 +921,12 @@ runM Interfaces
                                                       peerChurnGovernor') $
                                     \churnGovernorThread ->
                                       -- wait for any thread to fail:
-                                      snd <$> Async.waitAny [ ledgerPeersThread
-                                                            , localRootPeersProviderThread
-                                                            , governorThread
-                                                            , churnGovernorThread
-                                                            , inboundGovernorThread
-                                                            ]
+                                      snd <$> Async.waitAny ([ ledgerPeersThread
+                                                             , localRootPeersProviderThread
+                                                             , governorThread
+                                                             , churnGovernorThread
+                                                             , inboundGovernorThread
+                                                             ] ++ maybeToList poolRelaysThread_m)
 
 -- | Main entry point for data diffusion service.  It allows to:
 --

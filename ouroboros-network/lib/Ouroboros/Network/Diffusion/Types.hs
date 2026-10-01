@@ -82,6 +82,7 @@ import Ouroboros.Network.ConnectionManager.Core qualified as CM
 import Ouroboros.Network.ConnectionManager.State qualified as CM
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.Context
+import Ouroboros.Network.Diffusion.PoolRelays (TracePoolRelays)
 import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.Driver.Simple (TraceSendRecv)
 import Ouroboros.Network.ExitPolicy
@@ -260,6 +261,11 @@ data Tracers ntnAddr ntnVersion ntnVersionData
     , dtTraceLedgerPeersTracer
         :: Tracer m TraceLedgerPeers
 
+      -- | The thread that maps big-ledger relays to the residual tier's
+      -- credit buckets
+    , dtPoolRelaysTracer
+        :: Tracer m TracePoolRelays
+
     , dtTracePeerSelectionTracer
         :: Tracer m (TracePeerSelection extraDebugState extraFlags extraPeers ntnAddr)
 
@@ -337,6 +343,7 @@ nullTracers = Tracers {
   , dtTraceLocalRootPeersTracer                  = nullTracer
   , dtTracePublicRootPeersTracer                 = nullTracer
   , dtTraceLedgerPeersTracer                     = nullTracer
+  , dtPoolRelaysTracer                           = nullTracer
   , dtTracePeerSelectionTracer                   = nullTracer
   , dtDebugPeerSelectionTracer                   = nullTracer
   , dtTracePeerSelectionCounters                 = nullTracer
@@ -470,6 +477,12 @@ data Arguments extraState extraDebugState extraFlags extraPeers
     -- | SRV Prefix, as defined in CIP#0155
     --
   , daSRVPrefix :: SRVPrefix
+
+    -- | The address as the residual tier's credit buckets key it: a peer's
+    -- address with its port removed, since a relay behind a NAT may connect
+    -- from an ephemeral one and must still find its pool's bucket
+    --
+  , daEgressPoolKey :: ntnAddr -> ntnAddr
   }
 
 -- | Required Diffusion Arguments to run network layer
