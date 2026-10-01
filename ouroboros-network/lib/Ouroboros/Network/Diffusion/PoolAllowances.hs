@@ -31,6 +31,10 @@ module Ouroboros.Network.Diffusion.PoolAllowances
   , bucketsFor
   , hasCredit
   , chargeBuckets
+    -- * A connection's rule and sink
+  , Standing (..)
+  , rankFor
+  , mkEgressRule
   ) where
 
 import Control.Concurrent.Class.MonadSTM.Strict
@@ -39,6 +43,7 @@ import Data.IntMap.Strict (IntMap)
 import Data.IntMap.Strict qualified as IntMap
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
+import Network.Mux (MiniProtocolNum, Rank (..))
 
 -- | Bytes of fresh need announced so far: a monotone reading.
 newtype Fresh = Fresh { unFresh :: Int }
@@ -158,3 +163,66 @@ chargeBuckets :: MonadSTM m
               => PoolAllowances m addr -> Time -> Int -> [StrictTVar m Charged] -> STM m ()
 chargeBuckets PoolAllowances { paAllowance, paFreshAt } now n =
   mapM_ (\tv -> modifyTVar tv (charge paAllowance (paFreshAt now) n))
+
+-- | What the governor says about a peer, read as its bearer queues.
+data Standing = LocalRoot | Partner | Other
+  deriving (Eq, Show)
+
+-- | A peer's rank from its standing and its credit: local roots first,
+-- partners next, then the residual tier's classes: a big-ledger pool's
+-- relay with credit, a stranger with credit, and at zero credit the rest.
+rankFor :: Standing -> Bool -> Bool -> Rank
+rankFor LocalRoot _       _     = Rank 0
+rankFor Partner   _       _     = Rank 1
+rankFor Other     matched hasAny
+  | not hasAny = Rank 4
+  | matched    = Rank 2
+  | otherwise  = Rank 3
+
+-- | A connection's rank rule and charge sink, sharing one view of the
+-- buckets: its pools' buckets, looked up again whenever the list was
+-- rebuilt, or when it belongs to no pool its own bucket, full as the
+-- connection starts. Bytes on the uncharged protocols are never charged.
+mkEgressRule :: (MonadSTM m, Ord addr)
+             => PoolAllowances m addr
+             -> [MiniProtocolNum]
+             -> addr
+             -> (Time -> STM m Standing)
+             -> Time
+             -> m (Time -> STM m Rank, Time -> MiniProtocolNum -> Int -> STM m ())
+mkEgressRule allowances@PoolAllowances { paAllowance, paFreshAt, paGeneration, paIndexGen }
+             uncharged key standing t0 = do
+  stranger <- newTVarIO (resetCharged paAllowance (paFreshAt t0))
+  cached   <- newTVarIO BucketRef { brGeneration = -1, brIndexGen = -1, brBuckets = [] }
+  let buckets = do
+        ref <- readTVar cached
+        generation <- readTVar paGeneration
+        indexGen   <- readTVar paIndexGen
+        if brGeneration ref == generation && brIndexGen ref == indexGen
+           then return (brBuckets ref)
+           else do
+             ref' <- bucketsFor allowances key
+             writeTVar cached ref'
+             return (brBuckets ref')
+
+      rule now = do
+        s <- standing now
+        case s of
+             Other -> do
+               bs <- buckets
+               hasAny <- case bs of
+                              [] -> (> 0) . credit paAllowance (paFreshAt now) <$> readTVar stranger
+                              _  -> hasCredit allowances now bs
+               return (rankFor Other (not (null bs)) hasAny)
+             _ -> return (rankFor s False False)
+
+      sink now num n
+        | num `elem` uncharged = return ()
+        | otherwise = do
+            bs <- buckets
+            case bs of
+                 [] -> modifyTVar stranger (charge paAllowance (paFreshAt now) n)
+                 _  -> chargeBuckets allowances now n bs
+
+  return (rule, sink)
+

@@ -626,9 +626,13 @@ data EgressScheduling = EgressScheduling {
     esFreshMaxBytes       :: Int,
     -- ^ the most fresh bytes one object can announce: block body, EB list and
     -- EB closure at their maxima; sizes the residual tier's credit buckets
-    esFreshBytesPerSecond :: Double
+    esFreshBytesPerSecond :: Double,
     -- ^ the prototype's refill reading: 'esFreshMaxBytes' times the active
     -- slot coefficient, until consensus counts announcements instead
+    esUnchargedProtocols  :: [MiniProtocolNum]
+    -- ^ scheduled-lane protocols whose bytes never count against a bucket:
+    -- only what a client cannot drive to volume, keep-alive and the
+    -- server-push notifications; everything else is charged
   }
 
 

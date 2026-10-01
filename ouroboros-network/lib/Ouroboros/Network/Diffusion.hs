@@ -390,7 +390,7 @@ runM Interfaces
                 dcLocalMuxForkPolicy
                 (Just localCounters)
                 Nothing                       -- node-to-client egress is not scheduled
-                (\_ _ _ _ -> return (Mx.Rank 0))
+                (\_ _ _ -> return (\_ -> return (Mx.Rank 0), \_ _ _ -> return ()))
                 daNtcHandshakeArguments
                 ( ( \ (OuroborosApplication apps)
                    -> TemperatureBundle
@@ -499,17 +499,20 @@ runM Interfaces
 
       localRootsVar <- newTVarIO mempty
 
-      -- the egress tier of a peer, asked as its bearer joins the queue: local
-      -- roots first, then partners of long standing, duplex peers hot both
-      -- ways for 'esTenureThreshold', then the rest
+      -- a peer's standing, read as its bearer joins the queue: a local root,
+      -- a partner of long standing, a duplex peer hot both ways for
+      -- 'esTenureThreshold', or one of the rest, whom the credit buckets
+      -- then class
       let tenureThreshold = case dcEgressScheduling of
                                  Just es -> esTenureThreshold es
                                  Nothing -> 0
-          egressRankOf :: EgressRankRule m ntnAddr
-          egressRankOf addr dataFlow remoteHot now = do
+          uncharged = maybe [] esUnchargedProtocols dcEgressScheduling
+
+          standingOf :: ntnAddr -> DataFlow -> STM m Bool -> Time -> STM m Standing
+          standingOf addr dataFlow remoteHot now = do
             groups <- readTVar localRootsVar
             if any (\(_, _, m) -> Map.member addr m) groups
-               then return (Mx.Rank 0)
+               then return LocalRoot
                else do
                  since <- Map.lookup addr . PeerSelection.hotUpstreamSince
                             <$> readTVar dcPublicPeerSelectionVar
@@ -517,9 +520,20 @@ runM Interfaces
                                  Just t | Duplex <- dataFlow
                                         , now `diffTime` t >= tenureThreshold -> remoteHot
                                  _ -> return False
-                 -- ranks 2 and 3 are the residual tier's credit classes
-                 -- (pool, stranger); without the buckets everyone else is at rest
-                 return $ if partner then Mx.Rank 1 else Mx.Rank 4
+                 return (if partner then Partner else Other)
+
+          -- per connection: its rank rule and the sink its scheduled bytes
+          -- go to, sharing the buckets of its pool or its own
+          egressRuleOf :: EgressPolicyRule m ntnAddr
+          egressRuleOf addr dataFlow remoteHot =
+            case poolAllowances of
+                 Nothing ->
+                   return ( \now -> (\s -> rankFor s False False) <$> standingOf addr dataFlow remoteHot now
+                          , \_ _ _ -> return () )
+                 Just allowances -> do
+                   now <- getMonotonicTime
+                   mkEgressRule allowances uncharged (daEgressPoolKey addr)
+                                (standingOf addr dataFlow remoteHot) now
 
       -- churn will set initial targets
       peerSelectionTargetsVar <- newTVarIO PeerSelection.nullPeerSelectionTargets
@@ -599,7 +613,7 @@ runM Interfaces
               dcMuxForkPolicy
               (Just remoteCounters)
               egressPolicy
-              egressRankOf
+              egressRuleOf
               daNtnHandshakeArguments
               versions
               (mainThreadId, rethrowPolicy <> daRethrowPolicy)
