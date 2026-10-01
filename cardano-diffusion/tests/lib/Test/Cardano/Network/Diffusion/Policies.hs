@@ -41,6 +41,8 @@ tests :: TestTree
 tests = testGroup "Policies"
   [ testProperty "HotToWarm" prop_hotToWarm
   , testProperty "WarmToCooling" prop_randomDemotion
+  , testProperty "HotPeerScores" prop_hotPeerScores
+  , testProperty "WarmToHot"     prop_tepidPromotion
   ]
 
 newtype ArbitrarySockAddr = ArbitrarySockAddr SockAddr deriving (Eq, Ord, Show)
@@ -171,12 +173,12 @@ prop_hotToWarmM ArbitraryPolicyArguments{..} seed = do
             rngVar
             (readTVar cmVar)
             metrics
-    picked <- atomically $ policyPickHotPeersToDemote policies
-                  (const PeerSourceLocalRoot)
-                  peerConnectFailCount
-                  peerIsTepid
-                  (Map.keysSet apaAvailable)
-                  apaPickNum
+    (picked, _) <- atomically $ policyPickHotPeersToDemote policies
+                       (const PeerSourceLocalRoot)
+                       peerConnectFailCount
+                       peerIsTepid
+                       (Map.keysSet apaAvailable)
+                       apaPickNum
     noneWorse metrics picked
 
   where
@@ -211,6 +213,142 @@ prop_hotToWarmM ArbitraryPolicyArguments{..} seed = do
       where
         fn :: SockAddr -> a -> Bool
         fn peer _ = Set.member peer pickedSet
+
+
+prop_hotPeerScores :: ArbitraryPolicyArguments
+                   -> Int
+                   -> Property
+prop_hotPeerScores args seed = runSimOrThrow $ prop_hotPeerScoresM args seed
+
+-- Verify that the demotion policy picks as many peers as requested, that the
+-- scores it returns for tracing cover every available peer, and that no
+-- demoted peer scores higher than any peer which stays hot.
+prop_hotPeerScoresM :: forall m. MonadLabelledSTM m
+                    => ArbitraryPolicyArguments
+                    -> Int
+                    -> m Property
+prop_hotPeerScoresM ArbitraryPolicyArguments{..} seed = do
+    let rng = mkStdGen seed
+    rngVar <- newTVarIO rng
+    cmVar <- newTVarIO apaChurnMode
+    metrics <- newPeerMetric' apaHeaderMetric apaFetchedMetric
+                              PeerMetricsConfiguration { maxEntriesToTrack = 180 }
+
+    let policies =
+          simpleChurnModePeerSelectionPolicy
+            rngVar
+            (readTVar cmVar)
+            metrics
+        available = Map.keysSet apaAvailable
+    (picked, scores) <- atomically $
+      policyPickHotPeersToDemote policies
+        (const PeerSourceLocalRoot)
+        peerConnectFailCount
+        peerIsTepid
+        available
+        apaPickNum
+    let (demoted, retained) =
+          Map.partitionWithKey (\peer _ -> Set.member peer picked) scores
+    return $ counterexample (show (picked, scores)) $
+           Set.size picked === min apaPickNum (Set.size available)
+      .&&. Map.keysSet scores === available
+      .&&. ( Map.null demoted || Map.null retained
+          || maximum (Map.elems demoted) <= minimum (Map.elems retained))
+  where
+    peerConnectFailCount p =
+        maybe (error "peerConnectFailCount") piFailCount (Map.lookup p apaAvailable)
+
+    peerIsTepid p =
+        maybe (error "peerIsTepid") piTepid (Map.lookup p apaAvailable)
+
+
+prop_tepidPromotion :: ArbitraryPolicyArguments
+                    -> Int
+                    -> Property
+prop_tepidPromotion args seed = runSimOrThrow $ prop_tepidPromotionM args seed
+
+-- Verifies that tepid (recently demoted) peers are less likely to be promoted
+-- from warm to hot than the others, the mirror of 'prop_randomDemotion'.
+prop_tepidPromotionM :: forall m. MonadLabelledSTM m
+                     => ArbitraryPolicyArguments
+                     -> Int
+                     -> m Property
+prop_tepidPromotionM ArbitraryPolicyArguments{..} seed = do
+    let rng = mkStdGen seed
+    rngVar <- newTVarIO rng
+    cmVar <- newTVarIO apaChurnMode
+    metrics <- newPeerMetric' apaHeaderMetric apaFetchedMetric
+                              PeerMetricsConfiguration { maxEntriesToTrack = 180 }
+
+    let policies =
+          simpleChurnModePeerSelectionPolicy
+            rngVar
+            (readTVar cmVar)
+            metrics
+    doPromotion numberOfTries policies Map.empty
+  where
+    numberOfTries = 10000
+
+    peerConnectFailCount p =
+        maybe (error "peerConnectFailCount") piFailCount (Map.lookup p apaAvailable)
+
+    peerIsTepid p =
+        maybe (error "peerIsTepid") piTepid (Map.lookup p apaAvailable)
+
+    doPromotion :: Int
+                -> PeerSelectionPolicy SockAddr m
+                -> Map SockAddr Int
+                -> m Property
+    doPromotion 0 _ countMap = do
+        let (!nonTepids, !nonTepidSum, !tepids, !tepidSum) =
+                List.foldl' byTepid (0,0,0,0) $ Map.toList countMap
+            meanNonTepid = if nonTepids == 0
+                              then 0 :: Double
+                              else fromIntegral nonTepidSum /
+                                     fromIntegral nonTepids
+            meanTepid = if tepids == 0
+                           then 0 :: Double
+                           else fromIntegral tepidSum /
+                                  fromIntegral tepids
+        if apaPickNum == Map.size apaAvailable
+           then return $ property True
+           else if meanNonTepid /= 0 && meanTepid /= 0
+           then return $ counterexample (show (meanNonTepid, meanTepid))
+                       $ meanTepid < meanNonTepid
+           else return $ property True
+      where
+        byTepid :: (Int, Int, Int, Int)
+                -> (SockAddr, Int)
+                -> (Int, Int, Int, Int)
+        byTepid (!nonTepids, !nonTepidSum, !tepids, !tepidSum) (addr, cnt) =
+            case Map.lookup addr apaAvailable of
+                 Just kpi ->
+                     if piTepid kpi
+                        then ( nonTepids, nonTepidSum
+                             , tepids + 1, tepidSum + cnt)
+                        else ( nonTepids + 1, nonTepidSum + cnt
+                             , tepids, tepidSum)
+                 Nothing -> error "picked unknown addr"
+
+    doPromotion !n policies countMap = do
+        picked <- atomically $ policyPickWarmPeersToPromote policies
+                    (const PeerSourceLocalRoot)
+                    peerConnectFailCount
+                    peerIsTepid
+                    (Map.keysSet apaAvailable)
+                    apaPickNum
+        if Set.size picked /= apaPickNum
+           then return $ property False
+           else do
+               let countMap' = List.foldl' fn countMap picked
+               doPromotion (n-1) policies countMap'
+      where
+        fn :: Map SockAddr Int -> SockAddr -> Map SockAddr Int
+        fn m addr = Map.alter add addr m
+
+        add :: Maybe Int -> Maybe Int
+        add Nothing  = Just 1
+        add (Just c) = Just $! c + 1
 
 
 prop_randomDemotion :: ArbitraryPolicyArguments

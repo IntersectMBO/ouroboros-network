@@ -4658,7 +4658,9 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
                 policyPickColdPeersToForget   = \_ _ _ -> pickTrivially,
                 policyPickColdPeersToPromote  = \_ _ _ -> pickTrivially,
                 policyPickWarmPeersToPromote  = \_ _ _ -> pickTrivially,
-                policyPickHotPeersToDemote    = \_ _ _ -> pickTrivially,
+                policyPickHotPeersToDemote    = \_ _ _ available num ->
+                  (\picked -> (picked, Map.fromSet (const Nothing) available))
+                    <$> pickTrivially available num,
                 policyPickWarmPeersToDemote   = \_ _ _ -> pickTrivially,
                 policyPickInboundPeers        = \_ _ _ -> pickTrivially,
                 policyFindPublicRootTimeout   = 5,
