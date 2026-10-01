@@ -135,5 +135,7 @@ defaultEgressSchedulingWith laneOf = EgressScheduling {
     -- an 88 kB block, a 37 kB list and a 1 MiB closure, announced in one
     -- block out of twenty slots
     esFreshMaxBytes       = 88000 + 37000 + 1048576,
-    esFreshBytesPerSecond = fromIntegral (88000 + 37000 + 1048576 :: Int) * 0.05
+    esFreshBytesPerSecond = fromIntegral (88000 + 37000 + 1048576 :: Int) * 0.05,
+    -- the protocol numbers are the application's to name
+    esUnchargedProtocols  = []
   }
