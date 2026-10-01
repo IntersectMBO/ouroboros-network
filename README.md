@@ -12,84 +12,190 @@ This repository contains specification and implementation of the network
 protocols and applications for Ouroboros family of protocols, primarily used by
 [cardano-node], [cardano-cli], [cardano-db-sync] or [cardano-wallet].
 
-The following graph shows the dependency tree.  The top-level package is
-`ouroboros-consensus-diffusion` which is part of [ouroboros-consensus]. Note
-that we abbreviate `ouroboros-{consensus,network}` to `o-{c,n}` in the labels.
+The following graph shows the dependency tree between the libraries in this
+repository and in [ouroboros-consensus].  The top-level component is
+`ouroboros-consensus:diffusion`, a public sublibrary of the
+[ouroboros-consensus] package.  `ouroboros-network`, `cardano-diffusion` and
+`ouroboros-consensus` are each a single Cabal package exposing several public
+sublibraries; node labels follow `build-depends` syntax: a bare name (e.g.
+`ouroboros-network`) refers to a package's main library, `pkg:sublib` refers
+to one of its public sublibraries.
 
 ```mermaid
 flowchart TB
   subgraph ouroboros-consensus
-    I[o-c-diffusion]
-    L[o-c]
-    click I "https://github.com/intersectmbo/ouroboros-consensus/" _blank
-    click L "https://github.com/intersectmbo/ouroboros-consensus/" _blank
+    ocCardano[cardano]
+    ocProtocol[protocol]
+    ocMain[ouroboros-consensus]
+    ocDiffusion[diffusion]
+    ocLsm[lsm]
+
+    click ocCardano "https://github.com/intersectmbo/ouroboros-consensus/" _blank
+    click ocProtocol "https://github.com/intersectmbo/ouroboros-consensus/" _blank
+    click ocMain "https://github.com/intersectmbo/ouroboros-consensus/" _blank
+    click ocDiffusion "https://github.com/intersectmbo/ouroboros-consensus/" _blank
+    click ocLsm "https://github.com/intersectmbo/ouroboros-consensus/" _blank
   end
 
   subgraph ouroboros-network
-    M[cardano-ping]      --> A[network-mux]
-    D[o-n-framework]     --> A
-    D                    --> E[o-n-api]
-    F[ouroboros-network] --> D
-    F                    --> G[o-n-protocols]
-    J[cardano-client]    --> F
-    I                    --> F
-    L                    --> E
-    G                    --> E
-    K[ntp-client]
+    onApi[api]
+    onMain[ouroboros-network]
+    onFramework[framework]
+    onProtocols[protocols]
+    onTracing[tracing]
+    onOrphan[orphan-instances]
 
-    click A "https://ouroboros-network.cardano.intersectmbo.org/network-mux/" _blank
-    click M "https://ouroboros-network.cardano.intersectmbo.org/cardano-ping/" _blank
-    click D "https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network-framework/" _blank
-    click E "https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network-api/" _blank
-    click F "https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network/" _blank
-    click G "https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network-protocols/" _blank
-    click J "https://ouroboros-network.cardano.intersectmbo.org/cardano-client/" _blank
-    click K "https://ouroboros-network.cardano.intersectmbo.org/ntp-client/" _blank
+    click onApi "https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network/api/" _blank
+    click onMain "https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network/" _blank
+    click onFramework "https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network/framework/" _blank
+    click onProtocols "https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network/protocols/" _blank
+    click onTracing "https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network/tracing/" _blank
+    click onOrphan "https://ouroboros-network.cardano.intersectmbo.org/ouroboros-network/orphan-instances/" _blank
   end
 
-  subgraph network
-    B[network]     
-    N[Win32-network]
+  subgraph cardano-diffusion
+    cdApi[api]
+    cdMain[cardano-diffusion]
+    cdProtocols[protocols]
+    cdOrphan[orphan-instances]
+    cdTracing[tracing]
+    cdSubscription[subscription]
+    cdPing[ping]
 
-    click B "https://hackage.haskell.org/package/network" _blank
-    click N "https://input-output-hk.github.io/typed-protocols" _blank
+    click cdApi "https://ouroboros-network.cardano.intersectmbo.org/cardano-diffusion/api/" _blank
+    click cdMain "https://ouroboros-network.cardano.intersectmbo.org/cardano-diffusion/" _blank
+    click cdProtocols "https://ouroboros-network.cardano.intersectmbo.org/cardano-diffusion/protocols/" _blank
+    click cdOrphan "https://ouroboros-network.cardano.intersectmbo.org/cardano-diffusion/orphan-instances/" _blank
+    click cdTracing "https://ouroboros-network.cardano.intersectmbo.org/cardano-diffusion/tracing/" _blank
+    click cdSubscription "https://ouroboros-network.cardano.intersectmbo.org/cardano-diffusion/subscription/" _blank
+    click cdPing "https://ouroboros-network.cardano.intersectmbo.org/cardano-diffusion/ping/" _blank
+  end
+
+  networkMux[network-mux]
+  ntpClient[ntp-client]
+
+  click networkMux "https://ouroboros-network.cardano.intersectmbo.org/network-mux/" _blank
+  click ntpClient "https://ouroboros-network.cardano.intersectmbo.org/ntp-client/" _blank
+
+  subgraph network
+    net[network]
+    win32[Win32-network]
+
+    click net "https://hackage.haskell.org/package/network" _blank
+    click win32 "https://hackage.haskell.org/package/Win32-network" _blank
   end
 
   subgraph typed-protocols
-    H[typed-protocols]
+    tp[typed-protocols]
 
-    click H "https://github.com/input-output-hk/typed-protocols/" _blank
+    click tp "https://github.com/input-output-hk/typed-protocols/" _blank
   end
 
-  A --> network
-  K --> network
+  %% ouroboros-consensus
+  ocCardano --> ocProtocol
+  ocProtocol --> ocMain
+  ocProtocol --> onFramework
+  ocMain --> cdApi
+  ocMain --> onProtocols
+  ocLsm --> ocMain
+  ocDiffusion --> cdMain
+  ocDiffusion --> ocProtocol
 
-  E --> typed-protocols
-  G --> typed-protocols
+  %% ouroboros-network
+  onFramework --> onApi
+  onProtocols --> onApi
+  onMain --> onFramework
+  onMain --> onProtocols
+  onOrphan --> onMain
+  onTracing --> onOrphan
+  onApi --> networkMux
+
+  %% cardano-diffusion
+  cdApi --> onApi
+  cdProtocols --> cdApi
+  cdProtocols --> onFramework
+  cdProtocols --> onProtocols
+  cdMain --> cdProtocols
+  cdMain --> onMain
+  cdOrphan --> cdMain
+  cdOrphan --> onOrphan
+  cdTracing --> cdMain
+  cdSubscription --> cdMain
+  cdPing --> cdOrphan
+
+  %% external packages
+  onApi --> typed-protocols
+  onFramework --> network
+  networkMux --> network
+  ntpClient --> network
 ```
 
 * `network-mux` - implementation of a general network multiplexer.
-* `ouroboros-network-api` - shared API between `network` and `consensus` components.
-* `ouroboros-network-framework` - low-level network components, e.g. snockets,
-  connection manager, inbound governor, handshake mini-protocol, network
-  simulator. 
-* `ouroboros-network-protocols` - implementation of all /node-to-node/
-  & /node-to-client/ protocols.  Also contains a testing library which is
-  implementing various applications for testing purposes.
-* `ouroboros-network` - top-level integration of all network components also
-  defines `node-to-node` and `node-to-client` API.  It contains the implementation
-  of the outbound governor.
-* `ouroboros-network-mock` & `ouroboros-network-testing` - shared testing code.
+* `ouroboros-network` - networking library which supports the /Ouroboros/
+  family of protocols.  It is a single Cabal package with several public
+  sublibraries:
+  * `ouroboros-network:api` - shared API between `ouroboros-network` and
+    `ouroboros-consensus`.
+  * `ouroboros-network:framework` - low-level network components, e.g.
+    snockets, connection manager, inbound governor, handshake mini-protocol,
+    network simulator.
+  * `ouroboros-network:protocols` - implementation of all /node-to-node/ &
+    /node-to-client/ protocols.
+  * `ouroboros-network` (main library) - top-level integration of all network
+    components; defines the outbound governor, block-fetch and
+    tx-submission logic.
+  * `ouroboros-network:tracing` & `ouroboros-network:orphan-instances` -
+    tracing and orphan instances, split out to keep the libraries above
+    dependency-light.
+* `cardano-diffusion` - networking layer specific to the Cardano blockchain
+  protocol.  Like `ouroboros-network`, it is a single Cabal package with
+  several public sublibraries:
+  * `cardano-diffusion:api` - shared Cardano-specific API.
+  * `cardano-diffusion` (main library) - the Cardano `Diffusion`,
+    `NodeToNode` & `NodeToClient` API, combining `ouroboros-network` with
+    Cardano-specific configuration and peer selection.
+  * `cardano-diffusion:protocols` - Cardano-specific protocol codecs;
+    re-exports the rest of `ouroboros-network:protocols` under the
+    `Cardano.Network` namespace.
+  * `cardano-diffusion:subscription` - a subscription mechanism for
+    `node-to-client` connections to a `cardano-node` (formerly the
+    standalone `cardano-client` package).
+  * `cardano-diffusion:ping` - implements the core functionality of the
+    `cardano-cli ping` command (formerly the standalone `cardano-ping`
+    package).
+  * `cardano-diffusion:tracing` & `cardano-diffusion:orphan-instances` - as
+    above, split out for a lighter dependency footprint.
 * `ntp-client` - an `ntp` client (used by `cardano-wallet`).
-* `cardano-ping` - a library which implements the core functionality of
-  `cardano-cli ping` command.
-* `cardano-client` - a subscription for `node-to-client` which wants to connect
-  to a `cardano-node`.
+
+Each package above also has several `*-tests-lib` public sublibraries and
+test-suites providing shared testing code (e.g. mock chains, simulated
+network snockets); these are omitted from the graph above for clarity.
+
+The [ouroboros-consensus] repository underwent a similar consolidation: what
+used to be four separate packages (`ouroboros-consensus`,
+`ouroboros-consensus-protocol`, `ouroboros-consensus-diffusion`,
+`ouroboros-consensus-cardano`) are now public sublibraries of a single
+`ouroboros-consensus` package:
+
+* `ouroboros-consensus` (main library) - the consensus layer core: ledger,
+  mempool, ChainDB, HardFork combinator, etc.
+* `ouroboros-consensus:protocol` - the Praos & TPraos protocol
+  implementations.
+* `ouroboros-consensus:diffusion` - wires the consensus layer to the network
+  layer; this is the historical `ouroboros-consensus-diffusion` package and
+  the top-level component of the whole dependency tree above.
+* `ouroboros-consensus:cardano` - the Cardano ledger eras (Byron, Shelley,
+  Allegra, ...) instantiated on top of the consensus core; this is the
+  historical `ouroboros-consensus-cardano` package.
+* `ouroboros-consensus:lsm` - an LSM-tree backed `LedgerDB` V2 storage
+  backend.
 
 Libraries:
 
 * `monoidal-synchronisation` - a small standalone package which contains
   synchronisation primitives.
+* `acts-generic` - generic instances for the `Act` type class.
+* `quickcheck-monoids` - QuickCheck utilities for monoids.
 
 
 ## Documentation
