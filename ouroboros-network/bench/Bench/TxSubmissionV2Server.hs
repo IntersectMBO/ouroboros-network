@@ -28,7 +28,7 @@ import GHC.Generics (Generic)
 import Ouroboros.Network.Protocol.TxSubmission2.Server
 import Ouroboros.Network.Protocol.TxSubmission2.Type
            (NumTxIdsToReq (getNumTxIdsToReq), SizeInBytes (..))
-import Ouroboros.Network.TxSubmission.Inbound.V2 (TxDecisionPolicy (..),
+import Ouroboros.Network.TxSubmission.Inbound.V2 (TxDecisionPolicy,
            TxSubmissionInitDelay (NoTxSubmissionInitDelay),
            defaultTxDecisionPolicy, txSubmissionInboundV2)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (newPeerTxRegistry,
@@ -82,10 +82,11 @@ mkDirectServerFixture batches =
 -- peers find the txid in the retained set and ack-skip without ever
 -- requesting the body.
 --
--- The fixture disables pipelined txid requests so the benchmark measures
--- STM contention on the shared state without picker cycles introduced by
--- the pipelined-txid loosening.  Body requests still use the protocol's
--- pipelined wire form.
+-- What this measures is STM contention on the shared state: the txid
+-- picker only ever ends up issuing blocking requests here (a pipelined
+-- txid request needs a non-zero ack and a non-zero request count), so
+-- the txid path contributes no wire-level churn of its own.  Body
+-- requests still use the protocol's pipelined wire form.
 mkMultiPeerFixture
   :: Int -- ^ peer count
   -> Int -- ^ batches per peer
@@ -95,9 +96,7 @@ mkMultiPeerFixture peers batches =
     { dsPeerCount        = peers
     , dsTxIdReplyBatches = batches
     , dsTxSize           = SizeInBytes 1024
-    , dsPolicy           = defaultTxDecisionPolicy {
-                             disablePipelinedTxIdRequests = True
-                           }
+    , dsPolicy           = defaultTxDecisionPolicy
     }
 
 
