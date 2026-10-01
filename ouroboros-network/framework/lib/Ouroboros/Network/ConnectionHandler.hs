@@ -36,6 +36,7 @@ module Ouroboros.Network.ConnectionHandler
   , MkMuxConnectionHandler (..)
   , MuxConnectionHandler
   , makeConnectionHandler
+  , EgressPolicyRule
   , MuxConnectionManager
   , ConnectionManagerWithExpandedCtx
     -- * tracing
@@ -55,6 +56,7 @@ import Control.Tracer (Tracer, traceWith)
 
 import Data.ByteString.Lazy (ByteString)
 import Data.Map (Map)
+import Data.Map qualified as Map
 import Data.Maybe.Strict
 import Data.Text (Text)
 import Data.Typeable (Typeable)
@@ -62,6 +64,7 @@ import Data.Typeable (Typeable)
 import Network.Mux (Mux)
 import Network.Mux qualified as Mx
 import Network.Mux.Trace
+import Network.Mux.Types (MiniProtocolDir (..), MiniProtocolStatus (..))
 
 import Ouroboros.Network.ConnectionId (ConnectionId (..))
 import Ouroboros.Network.ConnectionManager.Types
@@ -229,6 +232,14 @@ type ConnectionManagerWithExpandedCtx muxMode socket peerAddr extraFlags version
                       (HandlerError versionNumber)
                       m
 
+-- | The egress tier of a peer's connection, asked as its bearer queues: from
+-- the peer's address, the connection's data flow, whether the peer runs a
+-- hot mini-protocol against us at that moment, and the moment itself.
+--
+type EgressPolicyRule m peerAddr =
+       peerAddr -> DataFlow -> STM m Bool
+    -> m (Time -> STM m Mx.Rank, Mx.ChargeSink m)
+
 -- | To be used as `makeConnectionHandler` field of 'ConnectionManagerArguments'.
 --
 -- Note: We need to pass `MiniProtocolBundle` what forces us to have two
@@ -261,10 +272,10 @@ makeConnectionHandler
     -> ForkPolicy peerAddr
     -> Maybe (Mx.Counters m)
     -- ^ Node-wide counters every mux this handler creates is counted in.
-    -> Maybe (Mx.EgressPolicy m)
-    -- ^ scheduled egress, shared by every connection this handler creates
-    -> (peerAddr -> STM m Mx.Rank)
-    -- ^ the egress tier of a peer's connections, set as each mux is created
+    -> Maybe (Mx.EgressPolicy m, EgressPolicyRule m peerAddr)
+    -- ^ scheduled egress: the policy shared by every connection this
+    -- handler creates, and per connection the rule asked as its bearer
+    -- queues and the sink its scheduled bytes are reported to
     -> HandshakeArguments (ConnectionId peerAddr) versionNumber versionData m
     -> Versions versionNumber versionData
                 (OuroborosBundle muxMode initiatorCtx responderCtx ByteString m a b)
@@ -274,7 +285,7 @@ makeConnectionHandler
     -> MkMuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr versionNumber versionData ByteString m a b
     -> MuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr
                             versionNumber versionData ByteString m a b
-makeConnectionHandler muxTracers forkPolicy muxCounters egressPolicy egressRankOf
+makeConnectionHandler muxTracers forkPolicy muxCounters egress
                       handshakeArguments
                       versionedApplication
                       (mainThreadId, rethrowPolicy) =
@@ -283,6 +294,7 @@ makeConnectionHandler muxTracers forkPolicy muxCounters egressPolicy egressRankO
       ConnectionHandler . WithInitiatorMode
       $ outboundConnectionHandler (const Unidirectional) NotInResponderMode
     MuxResponderConnectionHandler inboundGovernorMuxTracer ->
+      -- a responder-only node fetches from no one, so no peer is its partner
       ConnectionHandler . WithResponderMode . inboundConnectionHandler (const Unidirectional) $ inboundGovernorMuxTracer
     MuxInitiatorResponderConnectionHandler connectionDataFlow inboundGovernorMuxTracer ->
       ConnectionHandler $ WithInitiatorResponderMode
@@ -292,16 +304,34 @@ makeConnectionHandler muxTracers forkPolicy muxCounters egressPolicy egressRankO
     -- a mux on the node's scheduled egress, ranked by its peer, or a plain
     -- one, counted in the node-wide counters when there are any
     newMux :: forall (mode :: Mx.Mode).
-              Mx.Tracers m -> peerAddr -> [Mx.MiniProtocolInfo mode] -> m (Mx.Mux mode m)
-    newMux tracers@TracersI { tracer_ } remoteAddress ptcls =
-      case egressPolicy of
-           Nothing     -> Mx.new tracers muxCounters ptcls
-           Just policy -> do
+              Mx.Tracers m -> peerAddr -> DataFlow
+           -> OuroborosBundle mode initiatorCtx responderCtx ByteString m a b
+           -> [Mx.MiniProtocolInfo mode] -> m (Mx.Mux mode m)
+    newMux tracers@TracersI { tracer_ } remoteAddress dataFlow app ptcls =
+      case egress of
+           Nothing -> Mx.new tracers muxCounters ptcls
+           Just (policy, egressRuleOf) -> do
              mux <- Mx.newWithEgress policy tracers muxCounters ptcls
+             -- the rule is kept, not its answer, and asked whenever the
+             -- bearer joins the queue; whether the peer runs a hot
+             -- mini-protocol against us at that moment, the inbound
+             -- governor's notion of a hot peer, is read off this mux, the
+             -- one place that knows all of them. Any of them, not all: the
+             -- block-fetch responder starts on demand and stays unstarted
+             -- until the peer first fetches from us, however hot it is.
+             let hotNums = map miniProtocolNum (withoutProtocolTemperature (withHot app))
+                 hotResponders =
+                   [ status
+                   | ((num, ResponderDir), status)
+                       <- Map.toList (Mx.miniProtocolStateMap mux)
+                   , num `elem` hotNums ]
+                 remoteHot = any (== StatusRunning) <$> sequence hotResponders
+             (rule, sink) <- egressRuleOf remoteAddress dataFlow remoteHot
+             now  <- getMonotonicTime
              rank <- atomically $ do
-               rank <- egressRankOf remoteAddress
-               Mx.setEgressRank mux rank
-               return rank
+               Mx.setEgressRankSource mux rule
+               Mx.setEgressChargeSink mux sink
+               rule now
              traceWith tracer_ (Mx.TraceEgressRank rank)
              return mux
 
@@ -396,7 +426,7 @@ makeConnectionHandler muxTracers forkPolicy muxCounters egressPolicy egressRankO
                                                     Outbound
                                                     (dataFlow agreedOptions)
                                                     app
-                mux <- newMux muxTracers' remoteAddress
+                mux <- newMux muxTracers' remoteAddress (dataFlow agreedOptions) app
                               mpInfos
                 let !handle = Handle {
                         hMux            = mux,
@@ -475,7 +505,7 @@ makeConnectionHandler muxTracers forkPolicy muxCounters egressPolicy egressRankO
                mux <- newMux (Mx.tracersWithBearer connectionId muxTracers {
                                Mx.tracer = Mx.tracer muxTracers <> inboundGovernorMuxTracer countersVar
                              })
-                             remoteAddress
+                             remoteAddress (dataFlow agreedOptions) app
                              mpInfos
 
                let !handle = Handle {
