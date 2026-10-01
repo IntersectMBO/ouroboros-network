@@ -36,7 +36,7 @@ module Ouroboros.Network.ConnectionHandler
   , MkMuxConnectionHandler (..)
   , MuxConnectionHandler
   , makeConnectionHandler
-  , EgressRankRule
+  , EgressPolicyRule
   , MuxConnectionManager
   , ConnectionManagerWithExpandedCtx
     -- * tracing
@@ -247,8 +247,9 @@ type ConnectionManagerWithExpandedCtx muxMode socket peerAddr extraFlags version
 -- the peer's address, the connection's data flow, whether the peer runs every
 -- hot mini-protocol against us at that moment, and the moment itself.
 --
-type EgressRankRule m peerAddr =
-       peerAddr -> DataFlow -> STM m Bool -> Time -> STM m Mx.Rank
+type EgressPolicyRule m peerAddr =
+       peerAddr -> DataFlow -> STM m Bool
+    -> m (Time -> STM m Mx.Rank, Mx.ChargeSink m)
 
 makeConnectionHandler
     :: forall initiatorCtx responderCtx peerAddr muxMode socket versionNumber versionData m a b.
@@ -273,8 +274,9 @@ makeConnectionHandler
     -- ^ node-wide counters every mux this handler creates is counted in
     -> Maybe (Mx.EgressPolicy m)
     -- ^ scheduled egress, shared by every connection this handler creates
-    -> EgressRankRule m peerAddr
-    -- ^ the egress tier of a peer's connections, asked as their bearers queue
+    -> EgressPolicyRule m peerAddr
+    -- ^ per connection, the egress tier rule asked as its bearer queues and
+    -- the sink its scheduled bytes are reported to
     -> HandshakeArguments (ConnectionId peerAddr) versionNumber versionData m
     -> Versions versionNumber versionData
                 (OuroborosBundle muxMode initiatorCtx responderCtx ByteString m a b)
@@ -284,7 +286,7 @@ makeConnectionHandler
     -> MkMuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr versionNumber versionData ByteString m a b
     -> MuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr
                             versionNumber versionData ByteString m a b
-makeConnectionHandler muxTracers forkPolicy muxCounters egressPolicy egressRankOf
+makeConnectionHandler muxTracers forkPolicy muxCounters egressPolicy egressRuleOf
                       handshakeArguments
                       versionedApplication
                       (mainThreadId, rethrowPolicy) =
@@ -324,10 +326,11 @@ makeConnectionHandler muxTracers forkPolicy muxCounters egressPolicy egressRankO
                         remoteHot
                           | null hotResponders = return False
                           | otherwise = all (== StatusRunning) <$> sequence hotResponders
-                        rule = egressRankOf remoteAddress dataFlow remoteHot
+                    (rule, sink) <- egressRuleOf remoteAddress dataFlow remoteHot
                     now  <- getMonotonicTime
                     rank <- atomically $ do
                       Mx.setEgressRankSource mux rule
+                      Mx.setEgressChargeSink mux sink
                       rule now
                     traceWith tracer_ (Mx.TraceEgressRank rank)
                     return mux
