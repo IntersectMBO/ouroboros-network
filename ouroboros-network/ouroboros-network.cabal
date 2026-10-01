@@ -229,6 +229,7 @@ library
     Ouroboros.Network.Diffusion
     Ouroboros.Network.Diffusion.Configuration
     Ouroboros.Network.Diffusion.Policies
+    Ouroboros.Network.Diffusion.PoolAllowances
     Ouroboros.Network.Diffusion.Topology
     Ouroboros.Network.Diffusion.Types
     Ouroboros.Network.Diffusion.Utils
@@ -1003,6 +1004,7 @@ library ouroboros-network-tests-lib
     Test.Ouroboros.Network.PeerSelection.PeerGraph
     Test.Ouroboros.Network.PeerSelection.PeerMetric
     Test.Ouroboros.Network.PeerSelection.RootPeersDNS
+    Test.Ouroboros.Network.Diffusion.PoolAllowances
     Test.Ouroboros.Network.TxSubmission
     Test.Ouroboros.Network.TxSubmission.AppV1
     Test.Ouroboros.Network.TxSubmission.AppV2

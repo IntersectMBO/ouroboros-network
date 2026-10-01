@@ -600,16 +600,22 @@ data Configuration extraFlags m ntnFd ntnAddr ntcFd ntcAddr = Configuration {
 -- TCP_NOTSENT_LOWAT on every node-to-node socket, so a peer that stops reading
 -- holds at most one batch.
 data EgressScheduling = EgressScheduling {
-    esBudget         :: Double,       -- ^ bytes per second
-    esCapacity       :: Int,          -- ^ bucket capacity, bytes: a couple of batches
-    esSlicePercent   :: Int,          -- ^ share reserved for the slice lane; 0 for none
-    esRotationPeriod :: DiffTime,     -- ^ how often the order within a tier is
+    esBudget              :: Double,       -- ^ bytes per second
+    esCapacity            :: Int,          -- ^ bucket capacity, bytes: a couple of batches
+    esSlicePercent        :: Int,          -- ^ share reserved for the slice lane; 0 for none
+    esRotationPeriod      :: DiffTime,     -- ^ how often the order within a tier is
                                       --   re-dealt; 0 for none, FIFO within a tier
-    esNotSentLowWat  :: Maybe Int,    -- ^ bytes
-    esLaneOf         :: MiniProtocolNum -> MiniProtocolDir -> Mx.Lane,
-    esTenureThreshold :: DiffTime
+    esNotSentLowWat       :: Maybe Int,    -- ^ bytes
+    esLaneOf              :: MiniProtocolNum -> MiniProtocolDir -> Mx.Lane,
+    esTenureThreshold     :: DiffTime,
     -- ^ how long a duplex peer must have been hot upstream before, hot both
     -- ways, it is served as a partner: tier 1, behind local roots
+    esFreshMaxBytes       :: Int,
+    -- ^ the most fresh bytes one object can announce: block body, EB list and
+    -- EB closure at their maxima; sizes the residual tier's credit buckets
+    esFreshBytesPerSecond :: Double
+    -- ^ the prototype's refill reading: 'esFreshMaxBytes' times the active
+    -- slot coefficient, until consensus counts announcements instead
   }
 
 
