@@ -7,6 +7,7 @@ import Test.ChainProducerState qualified (tests)
 
 import Test.Ouroboros.Network.BlockFetch qualified (tests)
 import Test.Ouroboros.Network.Diffusion.PoolAllowances qualified (tests)
+import Test.Ouroboros.Network.Diffusion.PoolRelays qualified (tests)
 import Test.Ouroboros.Network.KeepAlive qualified (tests)
 import Test.Ouroboros.Network.LedgerPeers qualified (tests)
 import Test.Ouroboros.Network.MockNode qualified (tests)
@@ -37,6 +38,7 @@ tests =
   , Test.Ouroboros.Network.PeerSelection.PeerMetric.tests
   , Test.Ouroboros.Network.PeerSelection.RootPeersDNS.tests
   , Test.Ouroboros.Network.Diffusion.PoolAllowances.tests
+  , Test.Ouroboros.Network.Diffusion.PoolRelays.tests
 
     -- pseudo system-level
   , Test.Ouroboros.Network.MockNode.tests
