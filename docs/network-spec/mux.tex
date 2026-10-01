@@ -39,7 +39,7 @@ The multiplexer is agnostic to the bearer it runs over. However, it assumes that
 the bearer guarantees an ordered and reliable transport layer\footnote{Slightly
 more relaxed property is required: in order delivery of multiplexer segments
 which belong to the same mini-protocol.} and it requires the bearer to be
-\href{https://www.wikiwand.com/en/Duplex_(telecommunications)\#/Full-duplex}{full-duplex}
+\href{https://www.wikiwand.com/en/Duplex\_(telecommunications)\#Full\_duplex}{full-duplex}
 to allow simultaneous reads and writes\footnote{Note that one can always pair
 two unidirectional bearers to form a duplex bearer; we use this to define
 a duplex bearer out of unix pipes or queues (for intra-process communication
@@ -146,8 +146,8 @@ a \textit{30s} timeout is used.
 
 \section{Node-to-node and node-to-client protocol numbers}
 \noindent\haddockref{Network.Mux.Types}{network-mux/Network-Mux-Types}
-\newline\haddockref{Ouroboros.Network.NodeToNode}{ouroboros-network/Ouroboros-Network-NodeToNode}
-\newline\haddockref{Ouroboros.Network.NodeToClient}{ouroboros-network/Ouroboros-Network-NodeToClient}
+\newline\haddockref{Cardano.Network.NodeToNode}{cardano-diffusion/Cardano-Network-NodeToNode}
+\newline\haddockref{Cardano.Network.NodeToClient}{cardano-diffusion/Cardano-Network-NodeToClient}
 
 Ouroboros network defines two protocols: \emph{node-to-node} and
 \emph{node-to-client} protocols.  \emph{Node-to-node} is used for inter-node
