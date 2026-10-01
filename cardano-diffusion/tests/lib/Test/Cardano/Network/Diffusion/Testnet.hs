@@ -6298,7 +6298,9 @@ prop_egress_txSubmission_chainIntegrity egress argPolicy chainedTxs =
     (runSimTrace (diffusionSimulationWithEgress egress noAttenuation diffScript))
     long_trace
 
--- | Scheduled egress ranks a node's local roots first.
+-- | Scheduled egress ranks a node's local roots first; anyone else starts in
+-- one of the residual tier's credit classes, a pool relay or a stranger, and
+-- never at rest, since every bucket is full as a connection begins.
 prop_egress_local_roots_first :: EgressArgs -> AbsBearerInfo -> DiffusionScript -> Property
 prop_egress_local_roots_first egress =
   egressIOSim egress prop_local_roots_first long_trace
@@ -6317,14 +6319,15 @@ prop_local_roots_first ioSimTrace traceNumber =
       ranks  = concatMap nodeRanks (Trace.toList (splitWithNameTrace events))
       judged = [ r | r@(_, _, _, roots) <- ranks, not (null roots) ]
   in classify (any (\(_, _, rank, _) -> rank == Mx.Rank 0) judged) "a local root ranked first"
+   . classify (any (\(_, _, rank, _) -> rank == Mx.Rank 2) judged) "a big-ledger relay ranked as a pool"
    . classify (length judged < length ranks) "a rank before any roots were traced"
    . classify (null ranks) "no scheduled connection"
    $ conjoin
        [ counterexample (show (node, addr, rank, roots)) $
-           property (rank `elem` [ rankOf (addr `Set.member` rs) | rs <- roots ])
+           property (or [ rank `elem` ranksOf (addr `Set.member` rs) | rs <- roots ])
        | (node, addr, rank, roots) <- judged ]
   where
-    rankOf isRoot = if isRoot then Mx.Rank 0 else Mx.Rank 4
+    ranksOf isRoot = if isRoot then [Mx.Rank 0] else [Mx.Rank 2, Mx.Rank 3]
 
     -- one node's ranks, each with the root sets it may be judged by
     nodeRanks :: [WithName NtNAddr (WithTime DiffusionTestTrace)]

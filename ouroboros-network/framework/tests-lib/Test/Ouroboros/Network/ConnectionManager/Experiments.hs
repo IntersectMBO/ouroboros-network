@@ -293,7 +293,7 @@ withInitiatorOnlyConnectionManager name timeouts trTracer tracer stdGen snocket 
           noBindForkPolicy
           Nothing                  -- no mux counters
           Nothing                  -- no scheduled egress
-          (\_ _ _ _ -> return (Mx.Rank 0))
+          (\_ _ _ -> return (\_ -> return (Mx.Rank 0), \_ _ _ -> return ()))
           HandshakeArguments {
               -- TraceSendRecv
               haHandshakeTracer = WithName name `contramap` nullTracer,
@@ -498,7 +498,7 @@ withBidirectionalConnectionManager name timeouts
             noBindForkPolicy
             Nothing                  -- no mux counters
             egressPolicy
-            (\_ _ _ _ -> return (Mx.Rank 0))
+            (\_ _ _ -> return (\_ -> return (Mx.Rank 0), \_ _ _ -> return ()))
             HandshakeArguments {
                 -- TraceSendRecv
                 haHandshakeTracer = WithName name `contramap` nullTracer,
