@@ -26,6 +26,7 @@ module Ouroboros.Network.Diffusion.PoolAllowances
   , PoolAllowances (..)
   , newPoolAllowances
   , rebuild
+  , reindex
   , BucketRef (..)
   , bucketsFor
   , hasCredit
@@ -93,6 +94,7 @@ data PoolAllowances m addr = PoolAllowances {
     paAllowance  :: !Allowance,
     paFreshAt    :: !(Time -> Fresh),
     paGeneration :: !(StrictTVar m Int),
+    paIndexGen   :: !(StrictTVar m Int),
     paBuckets    :: !(StrictTVar m (IntMap (StrictTVar m Charged))),
     paIndex      :: !(StrictTVar m (Map addr [Int]))
   }
@@ -101,6 +103,7 @@ newPoolAllowances :: MonadSTM m
                   => Allowance -> (Time -> Fresh) -> m (PoolAllowances m addr)
 newPoolAllowances paAllowance paFreshAt = do
   paGeneration <- newTVarIO 0
+  paIndexGen   <- newTVarIO 0
   paBuckets    <- newTVarIO IntMap.empty
   paIndex      <- newTVarIO Map.empty
   return PoolAllowances { .. }
@@ -117,9 +120,18 @@ rebuild PoolAllowances { .. } now n index = do
   writeTVar paIndex index
   modifyTVar paGeneration (+ 1)
 
--- | A bearer's view: its pools' buckets, and the generation they came from.
+-- | Swap the address index alone: the same list, its relays resolved anew.
+-- Every connection looks its buckets up again on its next use.
+reindex :: MonadSTM m => PoolAllowances m addr -> Map addr [Int] -> STM m ()
+reindex PoolAllowances { paIndex, paIndexGen } index = do
+  writeTVar paIndex index
+  modifyTVar paIndexGen (+ 1)
+
+-- | A bearer's view: its pools' buckets, and the generation and index they
+-- came from.
 data BucketRef m = BucketRef {
     brGeneration :: !Int,
+    brIndexGen   :: !Int,
     brBuckets    :: ![StrictTVar m Charged]
   }
 
@@ -128,6 +140,7 @@ bucketsFor :: (MonadSTM m, Ord addr)
            => PoolAllowances m addr -> addr -> STM m (BucketRef m)
 bucketsFor PoolAllowances { .. } addr = do
   brGeneration <- readTVar paGeneration
+  brIndexGen   <- readTVar paIndexGen
   index        <- readTVar paIndex
   buckets      <- readTVar paBuckets
   let brBuckets = [ tv | i <- Map.findWithDefault [] addr index
