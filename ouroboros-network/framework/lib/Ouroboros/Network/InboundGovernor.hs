@@ -442,7 +442,9 @@ with
                 -- the connection was already unregistered (e.g. after
                 -- 'CommitRemote'), there is nothing to restart.
                 | not (tConnId `Map.member` connections state)
-                -> return Nothing
+                -> do
+                  traceWith tracer (TrResponderTerminated tConnId num)
+                  return Nothing
 
                 | otherwise ->
                     atomically (runResponder tMux mpd) >>= \case
@@ -964,6 +966,8 @@ data Trace peerAddr
     | TrResponderErrored             !(ConnectionId peerAddr) !MiniProtocolNum !SomeException
     | TrResponderStarted             !(ConnectionId peerAddr) !MiniProtocolNum
     | TrResponderTerminated          !(ConnectionId peerAddr) !MiniProtocolNum
+    -- ^ A responder terminated cleanly, but it is not restarted, since its
+    -- connection was already released.
     | TrPromotedToWarmRemote         !(ConnectionId peerAddr) !(OperationResult AbstractState)
     | TrPromotedToHotRemote          !(ConnectionId peerAddr)
     | TrDemotedToWarmRemote          !(ConnectionId peerAddr)
