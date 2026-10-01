@@ -1602,6 +1602,10 @@ instance (ToJSON addr, ToJSONKey addr, Show addr)
            , "connectionId" .= toJSON connId
            , "reason" .= show s
            ]
+  toJSON (InboundGovernor.TrStaleMuxFinished connId)           =
+    object [ "kind" .= String "StaleMuxFinished"
+           , "connectionId" .= toJSON connId
+           ]
   toJSON (InboundGovernor.TrInboundGovernorCounters counters) =
     object [ "kind" .= String "InboundGovernorCounters"
            , "idlePeers" .= InboundGovernor.idlePeersRemote counters

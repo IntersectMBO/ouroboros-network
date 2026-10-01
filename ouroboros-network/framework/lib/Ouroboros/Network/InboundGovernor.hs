@@ -400,17 +400,32 @@ with
 
           MuxFinished connId
             | Just mux <- csMux <$> Map.lookup connId (connections state) -> do
-                merr <- atomically $ Mux.stopped mux
-                case merr of
-                  Nothing  -> traceWith tracer (TrMuxCleanExit connId)
-                  Just err -> traceWith tracer (TrMuxErrored connId err)
+                -- The mux sets its status to `Stopped` or `Failed` before it
+                -- traces `TraceStopped` or `TraceState Dead`, hence the mux
+                -- which emitted `MuxFinished` is already stopped.  If the
+                -- registered mux is not, `MuxFinished` was emitted by
+                -- another mux which used the same `ConnectionId`, and the
+                -- registered connection must not be unregistered.  We must
+                -- not block either: waiting for the registered mux to stop
+                -- would stall the inbound governor.
+                mStopped <- atomically $ (Just <$> Mux.stopped mux)
+                                         `orElse` pure Nothing
+                case mStopped of
+                  Nothing -> do
+                    traceWith tracer (TrStaleMuxFinished connId)
+                    return Nothing
 
-                -- the connection manager does should realise this on itself.
-                let state' = updateCountersCache
-                           . unregisterConnection connId
-                           $ state
-                return . Just $ StateWithPeerTransition state' connId
-                -- ^ even though it might not be true, but it's benign
+                  Just merr -> do
+                    case merr of
+                      Nothing  -> traceWith tracer (TrMuxCleanExit connId)
+                      Just err -> traceWith tracer (TrMuxErrored connId err)
+
+                    -- the connection manager does should realise this on itself.
+                    let state' = updateCountersCache
+                               . unregisterConnection connId
+                               $ state
+                    return . Just $ StateWithPeerTransition state' connId
+                    -- ^ even though it might not be true, but it's benign
 
             -- we could legitimately hit here after 'CommitRemote' succeeded
             | otherwise -> return Nothing
@@ -1003,7 +1018,12 @@ data Trace peerAddr
     | TrWaitIdleRemote               !(ConnectionId peerAddr) !(OperationResult AbstractState)
     | TrMuxCleanExit                 !(ConnectionId peerAddr)
     | TrMuxErrored                   !(ConnectionId peerAddr) SomeException
-    | TrInboundGovernorCounters      !Counters
+    | TrStaleMuxFinished             !(ConnectionId peerAddr)
+    -- ^ A mux of a connection stopped, but the mux of the connection
+    -- registered with the same `ConnectionId` is running, so it was emitted
+    -- by another connection which used the same `ConnectionId`.  It is
+    -- ignored.
+    | TrInboundGovernorCounters     !Counters
     | TrRemoteState                  !(Map (ConnectionId peerAddr) RemoteSt)
     | TrUnexpectedlyFalseAssertion   !(IGAssertionLocation peerAddr)
     -- ^ This case is unexpected at call site.

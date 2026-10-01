@@ -202,6 +202,8 @@ inboundGovernorTraceMap (IG.TrMuxCleanExit _)                   =
   "TrMuxCleanExit"
 inboundGovernorTraceMap (IG.TrMuxErrored _ se)                  =
   "TrMuxErrored " ++ show se
+inboundGovernorTraceMap (IG.TrStaleMuxFinished _)               =
+  "TrStaleMuxFinished"
 inboundGovernorTraceMap (IG.TrInboundGovernorCounters _)       =
   "TrInboundGovernorCounters"
 inboundGovernorTraceMap (IG.TrRemoteState _)                   =
