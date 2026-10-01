@@ -2,6 +2,32 @@
 
 <!-- scriv-insert-here -->
 
+<a id='changelog-1.3.0.0'></a>
+## 1.3.0.0 -- 2026-10-01
+
+### Breaking
+
+- Removed `NodeToClientV_16` - `NodeToClientV_22`.
+
+- `simpleChurnModePeerSelectionPolicy` builds its hot demotion policy with
+  `mkHotDemotionPolicy` from the mode-dependent score, so the traced scores
+  are the ones the demotion ranked by.
+
+- `cardano-diffusion:cardano-diffusion-tests-lib`:
+  `Test.Cardano.Network.Diffusion.Testnet.Simulation.diffusionSimulationM`
+  requires `MonadCatch (STM m)` instead of `MonadThrow (STM m)`.
+
+### Non-Breaking
+
+- `cardano-diffusion:ping` - don't require a DNS resolver (and thus access to
+  `/etc/resolv.conf`) if all addresses parsed as IP port number pairs.
+
+- Change cabal assert flag from `manual: False` to `manual: True`
+
+### Patch
+
+- Propagate the addition of matchedBlock to BlockFetchConsensusInterface
+
 <a id='changelog-1.1.1.0'></a>
 ## 1.1.1.0 -- 2026-08-05
 

@@ -2,6 +2,22 @@
 
 <!-- scriv-insert-here -->
 
+<a id='changelog-0.12.0.0'></a>
+## 0.12.0.0 -- 2026-10-01
+
+### Breaking
+
+- Create two kinds of JobPools, one with a completion queue and one without
+- Add asserts cabal flag
+
+### Non-Breaking
+
+- More efficient codec for mux header
+
+- Added `runMiniProtocolSTM`, an `STM` variant of `runMiniProtocol`, which
+  allows starting a mini-protocol atomically with other `STM` actions.
+- `runMiniProtocol` no longer requires `MonadThrow m`.
+
 <a id='changelog-0.11.0.0'></a>
 ## 0.11.0.0 -- 2026-07-28
 
