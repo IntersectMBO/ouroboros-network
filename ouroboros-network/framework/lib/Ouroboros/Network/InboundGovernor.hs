@@ -387,7 +387,6 @@ with
                             traceWith tracer (TrResponderStartFailure connId num err)
                             pure a
                           a@(Right state') -> do
-                            traceWith debugTracer (Debug state')
                             traceWith trTracer (mkRemoteTransitionTrace connId state state')
                             return a
 
@@ -612,7 +611,8 @@ with
               atomically $ writeTVar stateVar state'
               traceWith debugTracer (Debug state')
               traceWith trTracer (mkRemoteTransitionTrace connId state state')
-            Just (OnlyTraceCounters {}) -> pure ()
+            Just (OnlyTraceCounters state') ->
+              traceWith debugTracer (Debug state')
             Nothing -> pure ()
 
         case loopDecisionState <$> decision of
