@@ -19,7 +19,6 @@ module Ouroboros.Network.InboundGovernor.State
   , Counters (..)
   , counters
   , unregisterConnection
-  , updateMiniProtocol
   , RemoteState (.., RemoteEstablished)
   , RemoteSt (..)
   , mkRemoteSt
@@ -30,7 +29,6 @@ module Ouroboros.Network.InboundGovernor.State
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (assert)
-import Control.Monad.Class.MonadThrow hiding (handle)
 import Control.Monad.Class.MonadTime.SI
 
 import Data.ByteString.Lazy (ByteString)
@@ -179,11 +177,6 @@ data ConnectionState muxMode initiatorCtx peerAddr versionData m a b = Connectio
       csMiniProtocolMap :: !(Map MiniProtocolNum
                                  (MiniProtocolData muxMode initiatorCtx peerAddr m a b)),
 
-      -- | Map of all running mini-protocol completion STM actions.
-      --
-      csCompletionMap   :: !(Map MiniProtocolNum
-                                 (STM m (Either SomeException b))),
-
       -- | State of the connection.
       --
       csRemoteState     :: !(RemoteState m)
@@ -219,31 +212,6 @@ unregisterConnection connId state =
 
             freshDuplexPeers =
               OrdPSQ.delete (remoteAddress connId) (freshDuplexPeers state)
-          }
-
-
--- | Update a mini-protocol in 'ConnectionState'.  Once a mini-protocol was
--- restarted we put the new completion action into 'csCompletionMap'.
---
-updateMiniProtocol :: Ord peerAddr
-                   => ConnectionId peerAddr
-                   -> MiniProtocolNum
-                   -> STM m (Either SomeException b)
-                   -> State muxMode initiatorCtx peerAddr versionData m a b
-                   -> State muxMode initiatorCtx peerAddr versionData m a b
-updateMiniProtocol connId miniProtocolNum completionAction state =
-    state { connections =
-              Map.adjust (\connState@ConnectionState { csCompletionMap } ->
-                           connState {
-                             csCompletionMap =
-                               assert (miniProtocolNum `Map.member` csCompletionMap) $
-                               Map.insert miniProtocolNum
-                                          completionAction
-                                          csCompletionMap
-                            }
-                         )
-                         connId
-                         (connections state)
           }
 
 

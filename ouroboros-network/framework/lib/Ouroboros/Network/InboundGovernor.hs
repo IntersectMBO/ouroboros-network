@@ -45,7 +45,7 @@ import Control.Concurrent.Class.MonadSTM qualified as LazySTM
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.DeepSeq (NFData)
 import Control.Exception (SomeAsyncException (..))
-import Control.Monad (foldM, forM_, forever, when)
+import Control.Monad (foldM, forM_, forever, void, when)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
@@ -338,9 +338,8 @@ with
                     -- a single transaction.  The mux can start a responder
                     -- (on demand) only once this transaction commits, and by
                     -- then 'inboundGovernorMuxTracer' finds the connection
-                    -- in the state, together with all its completion
-                    -- actions.  Otherwise the tracer would stop tracking the
-                    -- connection and its responders would never be
+                    -- in the state.  Otherwise the tracer would stop tracking
+                    -- the connection and its responders would never be
                     -- restarted.
                     mState <-
                       mask_ $
@@ -348,28 +347,25 @@ with
                         -- `runMiniProtocolSTM` is; `mask_` is added just to
                         -- make sure we log events once the STM action is done.
                         atomically (do
-                          mCompletionMap <-
+                          started <-
                             foldM
                               (\acc mpd@MiniProtocolData { mpdMiniProtocol } ->
                                 case acc of
                                   Left _ -> return acc
-                                  Right completionMap ->
+                                  Right () ->
                                     runResponder csMux mpd >>= \case
                                       Left err ->
                                         return (Left (miniProtocolNum mpdMiniProtocol, err))
-                                      Right completion ->
-                                        return $! Right $! Map.insert (miniProtocolNum mpdMiniProtocol)
-                                                                       completion
-                                                                       completionMap
+                                      Right () ->
+                                        return (Right ())
                               )
-                              (Right Map.empty)
+                              (Right ())
                               csMiniProtocolMap
-                          for mCompletionMap $ \csCompletionMap -> do
+                          for started $ \() -> do
                             let connState = ConnectionState {
                                     csMux,
                                     csVersionData,
                                     csMiniProtocolMap,
-                                    csCompletionMap,
                                     csRemoteState
                                   }
                                 state' = updateCountersCache
@@ -422,49 +418,38 @@ with
             Terminated {
                 tConnId,
                 tMux,
-                tMiniProtocolData = mpd@MiniProtocolData { mpdMiniProtocol = miniProtocol }
-              }
-            -- The completion action of the run which terminated.  It is
-            -- always recorded by now: a responder can only terminate after it
-            -- was started, and the event which started it ('NewConnection' or
-            -- a previous 'MiniProtocolTerminated') was fully processed, and
-            -- its state written, before this event was read from the
-            -- information channel.
-            | Just tResult <- Map.lookup tConnId (connections state)
-                              >>= Map.lookup (miniProtocolNum miniProtocol)
-                                . csCompletionMap
-            -> do
-                tResult' <- atomically tResult
-                let num = miniProtocolNum miniProtocol
-                case tResult' of
-                  Left e -> do
-                    -- a mini-protocol errored.  In this case mux will shutdown, and
-                    -- the connection manager will tear down the socket. Before bailing out,
-                    -- the IG tracer will emit BearState Dead which will unregister the connection
-                    -- in some following iteration via MuxFinished, but for this peer it should
-                    -- be the very next message.
-                    traceWith tracer $
-                      TrResponderErrored tConnId num e
-                    return Nothing
+                tMiniProtocolData = mpd@MiniProtocolData { mpdMiniProtocol = miniProtocol },
+                tResult
+              } -> do
+            let num = miniProtocolNum miniProtocol
+            -- 'tResult' is the outcome of the run which terminated, as
+            -- reported by the mux ('Mux.TraceCleanExit' or
+            -- 'Mux.TraceExceptionExit').  The mux reports it only once the
+            -- run's completion is recorded and the mini-protocol is idle, so
+            -- there is nothing to wait for.
+            case tResult of
+              Left e -> do
+                -- a mini-protocol errored.  In this case mux will shutdown, and
+                -- the connection manager will tear down the socket. Before bailing out,
+                -- the IG tracer will emit BearState Dead which will unregister the connection
+                -- in some following iteration via MuxFinished, but for this peer it should
+                -- be the very next message.
+                traceWith tracer $
+                  TrResponderErrored tConnId num e
+                return Nothing
 
-                  Right _ ->
-                    atomically
-                      -- restart responder and update stateVar in one atomic
-                      -- transaction
-                      ( runResponder tMux mpd
-                        >>= \case
-                          Right completionAction -> do
-                            let state' = updateCountersCache
-                                       . updateMiniProtocol tConnId num completionAction
-                                       $ state
-                            writeTVar stateVar state'
-                            return $ Right (OnlyTraceCounters state')
-                          Left err -> pure (Left err)
-                      )
-                    >>= \case
-                      Right r -> do
+              Right ()
+                -- the connection was already unregistered (e.g. after
+                -- 'CommitRemote'), there is nothing to restart.
+                | not (tConnId `Map.member` connections state)
+                -> return Nothing
+
+                | otherwise ->
+                    atomically (runResponder tMux mpd) >>= \case
+                      Right () -> do
                         traceWith tracer (TrResponderRestarted tConnId num)
-                        return . Just $ r
+                        -- restarting a responder does not change the state
+                        return . Just $ OnlyTraceCounters state
                       Left err -> do
                         -- there is no way to recover from synchronous exceptions; we
                         -- stop mux which allows to close resources held by
@@ -472,10 +457,6 @@ with
                         traceWith tracer (TrResponderStartFailure tConnId num err)
                         Mux.stop tMux
                         return Nothing
-
-            -- the connection was already unregistered (e.g. after 'MuxFinished'
-            -- or 'CommitRemote'), there is nothing to restart.
-            | otherwise -> return Nothing
 
           WaitIdleRemote connId -> do
             -- @
@@ -694,7 +675,7 @@ inboundGovernorMuxTracer infoChannel connectionDataFlow stateVar activeVar count
 
           _otherwise -> writeTVar countersVar SNothing
 
-      (_, True) | Just miniProtocolNum <- miniProtocolTerminated trace -> atomically do
+      (_, True) | Just (miniProtocolNum, tResult) <- miniProtocolTerminated trace -> atomically do
         connections <- connections <$> readTVar stateVar
         mCounters   <- readTVar countersVar
         case (Map.lookup peer connections, mCounters) of
@@ -708,7 +689,8 @@ inboundGovernorMuxTracer infoChannel connectionDataFlow stateVar activeVar count
                 tConnId = peer,
                 tMux = csMux,
                 tMiniProtocolData = csMiniProtocolMap Map.! miniProtocolNum,
-                tDataFlow = connectionDataFlow csVersionData }
+                tDataFlow = connectionDataFlow csVersionData,
+                tResult }
             case trace of
               Mux.TraceCleanExit {} -> do
                 let miniProtocolTemp = getProtocolTemp miniProtocolNum csMiniProtocolMap
@@ -748,9 +730,10 @@ inboundGovernorMuxTracer infoChannel connectionDataFlow stateVar activeVar count
         let miniData = csMiniProtocolMap Map.! miniProtocolNum
          in mpdMiniProtocolTemp miniData
 
+      -- a terminated responder, and the outcome of its run
       miniProtocolTerminated = \case
-        Mux.TraceCleanExit miniProtocolNum Mux.ResponderDir -> Just miniProtocolNum
-        Mux.TraceExceptionExit miniProtocolNum Mux.ResponderDir _e -> Just miniProtocolNum
+        Mux.TraceCleanExit miniProtocolNum Mux.ResponderDir -> Just (miniProtocolNum, Right ())
+        Mux.TraceExceptionExit miniProtocolNum Mux.ResponderDir e -> Just (miniProtocolNum, Left e)
         _otherwise -> Nothing
 
       miniProtocolStarted = \case
@@ -761,6 +744,10 @@ inboundGovernorMuxTracer infoChannel connectionDataFlow stateVar activeVar count
 
 
 -- | Run a responder mini-protocol.
+--
+-- The outcome of the run is not returned: it is reported by the mux, and
+-- passed to the inbound governor by 'inboundGovernorMuxTracer' in
+-- 'MiniProtocolTerminated'.
 --
 -- @'HasResponder' mode ~ True@ is used to rule out
 -- 'InitiatorProtocolOnly' case.
@@ -778,7 +765,7 @@ runResponder :: forall (mode :: Mux.Mode) initiatorCtx peerAddr m a b.
                  )
               => Mux.Mux mode m
               -> MiniProtocolData mode initiatorCtx peerAddr m a b
-              -> STM m (Either SomeException (STM m (Either SomeException b)))
+              -> STM m (Either SomeException ())
 runResponder mux
              MiniProtocolData {
                mpdMiniProtocol     = miniProtocol,
@@ -788,6 +775,7 @@ runResponder mux
     tryJust (\e -> case fromException e of
               Just (SomeAsyncException _) -> Nothing
               Nothing                     -> Just e) $
+      void $
       case miniProtocolRun miniProtocol of
         ResponderProtocolOnly responder ->
           Mux.runMiniProtocolSTM
@@ -940,15 +928,14 @@ type EventSignal (muxMode :: Mux.Mode) handle initiatorCtx peerAddr versionData 
 -- and pass it to the main loop.  This is just enough to decide if we need to
 -- restart a mini-protocol and to do the restart.
 --
--- The completion action of the terminated mini-protocol is not included: the
--- inbound governor looks it up in its own state when it handles the event
--- (see 'MiniProtocolTerminated' in 'inboundGovernorStep').
---
 data Terminated muxMode initiatorCtx peerAddr m a b = Terminated {
     tConnId           :: !(ConnectionId peerAddr),
     tMux              :: !(Mux.Mux muxMode m),
     tMiniProtocolData :: !(MiniProtocolData muxMode initiatorCtx peerAddr m a b),
-    tDataFlow         :: !DataFlow
+    tDataFlow         :: !DataFlow,
+    -- | Outcome of the run, as reported by the mux: 'Mux.TraceCleanExit' or
+    -- 'Mux.TraceExceptionExit'.
+    tResult           :: !(Either SomeException ())
   }
 
 
