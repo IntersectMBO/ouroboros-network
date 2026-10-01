@@ -134,6 +134,10 @@ forMachineGov _dtal (TrMuxErrored connId s)               =
             , "connectionId" .= toJSON connId
             , "reason" .= show s
             ]
+forMachineGov _dtal (TrStaleMuxFinished connId)           =
+  mconcat [ "kind" .= String "StaleMuxFinished"
+            , "connectionId" .= toJSON connId
+            ]
 forMachineGov _dtal (TrInboundGovernorCounters counters) =
   mconcat [ "kind" .= String "InboundGovernorCounters"
             , "idlePeers" .= idlePeersRemote counters
@@ -177,6 +181,7 @@ instance MetaTrace (InboundGovernor.Trace addr) where
     namespaceFor TrWaitIdleRemote {}        = Namespace [] ["WaitIdleRemote"]
     namespaceFor TrMuxCleanExit {}          = Namespace [] ["MuxCleanExit"]
     namespaceFor TrMuxErrored {}            = Namespace [] ["MuxErrored"]
+    namespaceFor TrStaleMuxFinished {}      = Namespace [] ["StaleMuxFinished"]
     namespaceFor TrInboundGovernorCounters {} = Namespace [] ["InboundGovernorCounters"]
     namespaceFor TrRemoteState {}            = Namespace [] ["RemoteState"]
     namespaceFor InboundGovernor.TrUnexpectedlyFalseAssertion {} =
@@ -201,6 +206,7 @@ instance MetaTrace (InboundGovernor.Trace addr) where
     severityFor (Namespace _ ["WaitIdleRemote"]) _             = Just Debug
     severityFor (Namespace _ ["MuxCleanExit"]) _               = Just Debug
     severityFor (Namespace _ ["MuxErrored"]) _                 = Just Info
+    severityFor (Namespace _ ["StaleMuxFinished"]) _           = Just Debug
     severityFor (Namespace _ ["InboundGovernorCounters"]) _    = Just Info
     severityFor (Namespace _ ["RemoteState"]) _                = Just Debug
     severityFor (Namespace _ ["UnexpectedlyFalseAssertion"]) _ = Just Error
@@ -228,6 +234,10 @@ instance MetaTrace (InboundGovernor.Trace addr) where
     documentFor (Namespace _ ["WaitIdleRemote"]) = Just ""
     documentFor (Namespace _ ["MuxCleanExit"]) = Just ""
     documentFor (Namespace _ ["MuxErrored"]) = Just ""
+    documentFor (Namespace _ ["StaleMuxFinished"]) = Just $ mconcat
+      [ "A mux stopped, but the connection registered with the same connection"
+      , " id runs another mux.  The event is ignored."
+      ]
     documentFor (Namespace _ ["InboundGovernorCounters"]) = Just ""
     documentFor (Namespace _ ["RemoteState"]) = Just ""
     documentFor (Namespace _ ["UnexpectedlyFalseAssertion"]) = Just ""
@@ -278,6 +288,7 @@ instance MetaTrace (InboundGovernor.Trace addr) where
       , Namespace [] ["WaitIdleRemote"]
       , Namespace [] ["MuxCleanExit"]
       , Namespace [] ["MuxErrored"]
+      , Namespace [] ["StaleMuxFinished"]
       , Namespace [] ["InboundGovernorCounters"]
       , Namespace [] ["RemoteState"]
       , Namespace [] ["UnexpectedlyFalseAssertion"]
