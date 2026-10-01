@@ -9,10 +9,10 @@
 module Network.Mux.Tracing () where
 
 import Data.Aeson (Value (String), object, (.=))
-import Data.Word (Word8)
 import Data.List (isPrefixOf)
 import Data.Text (Text)
 import Data.Typeable
+import Data.Word (Word8)
 import Formatting
 
 import Cardano.Logging
@@ -771,7 +771,10 @@ instance MetaTrace Mux.CountersTrace where
                    , (".tier." <> name <> ".queued",
                       "Bearers of " <> who <> " waiting on the budget.") ]
                  | (name, who) <- [ ("localRoot", "local roots"), ("partner", "partners")
-                                  , ("residual", "the rest"), ("unranked", "unranked bearers") ] ]
+                                  , ("pool", "big-ledger pool relays with credit")
+                                  , ("stranger", "other peers with credit")
+                                  , ("rest", "peers at zero credit")
+                                  , ("unranked", "unranked bearers") ] ]
       ]
     metricsDocFor (Namespace _ [side, "Ingress"]) =
       [ (ingressPrefix side <> ".readTimeouts",
@@ -805,11 +808,15 @@ burstsOverSuffix b
   | b < 1     = ".budget.burstsOver." <> showT (round (b * 1000) :: Integer) <> "ms"
   | otherwise = ".budget.burstsOver." <> showT (round b :: Integer) <> "s"
 
--- | The tiers diffusion assigns; any other number is shown as such.
+-- | The tiers diffusion assigns; any other number is shown as such. 2 and 3
+-- are the residual tier's credit classes; until the buckets exist every
+-- residual peer is at 4.
 tierName :: Word8 -> Text
 tierName 0   = "localRoot"
 tierName 1   = "partner"
-tierName 2   = "residual"
+tierName 2   = "pool"
+tierName 3   = "stranger"
+tierName 4   = "rest"
 tierName 255 = "unranked"
 tierName t   = "tier" <> showT t
 

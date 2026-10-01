@@ -31,8 +31,8 @@ import Data.ByteString.Lazy.Char8 qualified as BL8 (pack)
 import Data.List (dropWhileEnd, nub)
 import Data.List qualified as List
 import Data.Map qualified as M
-import Data.Set qualified as Set
 import Data.Maybe (fromMaybe, isJust, isNothing)
+import Data.Set qualified as Set
 import Data.Tuple (swap)
 import Data.Word
 import System.Random.SplitMix qualified as SM
@@ -3535,7 +3535,11 @@ data LaneRun = LaneRun {
     lrProbes     :: !Int,
     lrSliced     :: !Int,      -- ^ slice bytes delivered while the bulk ran
     lrIdle       :: !Double,   -- ^ seconds the link was idle before the bulk
-    lrSlicedIdle :: !Int       -- ^ slice bytes delivered in that time
+    lrSlicedIdle :: !Int,      -- ^ slice bytes delivered in that time
+    lrCharged    :: !(M.Map Mx.MiniProtocolNum Int),
+    -- ^ what the charge sink was handed, per mini-protocol
+    lrExpected   :: !(M.Map Mx.MiniProtocolNum Int)
+    -- ^ what the bearer wrote on scheduled-lane protocols, headers included
   }
   deriving Show
 
@@ -3564,6 +3568,18 @@ runLanes laneOf LaneCase { lcRate, lcSlicePct, lcBatches } = runSimOrThrow $ do
     stopVar   <- newTVarIO False
     probeVar  <- newTVarIO (0 :: Int, 0 :: Double)     -- probes done, longest round trip
     slicedVar <- newTVarIO (0 :: Int)
+    -- the oracle for the charge sink: every SDU the server bearer writes, by
+    -- mini-protocol and direction, header included
+    writtenVar <- newTVarIO (M.empty :: M.Map (Mx.MiniProtocolNum, Mx.MiniProtocolDir) Int)
+    chargedVar <- newTVarIO (M.empty :: M.Map Mx.MiniProtocolNum Int)
+    let sduBytes sdu = fromIntegral Mx.msHeaderLength + fromIntegral (Mx.msLength sdu)
+        recorded = serverBearer {
+          Mx.writeMany = \tr to sdus -> do
+            atomically $ modifyTVar writtenVar $ \m ->
+              foldr (\sdu -> M.insertWith (+) (Mx.mhNum (Mx.msHeader sdu), Mx.mhDir (Mx.msHeader sdu))
+                                                (sduBytes sdu))
+                    m sdus
+            Mx.writeMany serverBearer tr to sdus }
 
     let info :: Mx.MiniProtocolNum -> Mx.MiniProtocolDirection Mx.InitiatorResponderMode
              -> MiniProtocolInfo Mx.InitiatorResponderMode
@@ -3580,6 +3596,8 @@ runLanes laneOf LaneCase { lcRate, lcSlicePct, lcBatches } = runSimOrThrow $ do
     serverMux <- Mx.newWithEgress policy Mx.nullTracers
                    [ info bulkN Mx.ResponderDirection, info probeN Mx.InitiatorDirection
                    , info sliceN Mx.InitiatorDirection ]
+    atomically $ Mx.setEgressChargeSink serverMux $ \_ num n ->
+      modifyTVar chargedVar (M.insertWith (+) num n)
     clientMux <- Mx.new Mx.nullTracers
                    [ info bulkN Mx.InitiatorDirection, info probeN Mx.ResponderDirection
                    , info sliceN Mx.ResponderDirection ]
@@ -3642,7 +3660,7 @@ runLanes laneOf LaneCase { lcRate, lcSlicePct, lcBatches } = runSimOrThrow $ do
           loop
           return ((), Nothing)
 
-    withAsync (Mx.run serverMux serverBearer) $ \_ ->
+    withAsync (Mx.run serverMux recorded) $ \_ ->
       withAsync (Mx.run clientMux clientBearer) $ \_ -> do
         _ <- Mx.runMiniProtocol serverMux bulkN  Mx.ResponderDirection Mx.StartOnDemand bulkServer
         _ <- Mx.runMiniProtocol serverMux probeN Mx.InitiatorDirection Mx.StartEagerly probeServer
@@ -3656,12 +3674,17 @@ runLanes laneOf LaneCase { lcRate, lcSlicePct, lcBatches } = runSimOrThrow $ do
         sliced <- readTVarIO slicedVar
         Mx.stop serverMux
         Mx.stop clientMux
+        written <- readTVarIO writtenVar
+        charged <- readTVarIO chargedVar
+        let expected = M.fromListWith (+) [ (num, n) | ((num, dir), n) <- M.toList written
+                                                    , laneOf num dir == Mx.Scheduled ]
         case r of
           Left e -> throwIO e
           Right (bulkTime, slicedIdle) ->
             return LaneRun { lrBulkTime = bulkTime, lrProbeMax = probeMax, lrProbes = probes,
                              lrSliced = sliced - slicedIdle,
-                             lrIdle = realToFrac idlePhase, lrSlicedIdle = slicedIdle }
+                             lrIdle = realToFrac idlePhase, lrSlicedIdle = slicedIdle,
+                             lrCharged = charged, lrExpected = expected }
   where
     chunks n | n <= 0    = []
              | otherwise = min 8192 n : chunks (n - 8192)
@@ -3694,6 +3717,11 @@ prop_mux_lanes lc@LaneCase { lcRate, lcSlicePct, lcBatches } =
     .&&. counterexample "bulk faster than budget"  (bulkTime >= 0.9 * fluid)
     .&&. counterexample "bulk starved"             (bulkTime <= 1.3 * fluid / (1 - share))
     .&&. counterexample "control did not queue"    (lrProbeMax control >= batchTime / 8)
+    -- the charge sink sees exactly the scheduled lane's bytes: the bulk alone
+    -- with the lanes, everything in the control, headers included, never a
+    -- direct or slice byte
+    .&&. counterexample "charged /= scheduled bytes"  (lrCharged lanes === lrExpected lanes)
+    .&&. counterexample "control charged /= all bytes" (lrCharged control === lrExpected control)
   where
     lanes     = runLanes laneRule lc
     control   = runLanes (\_ _ -> Mx.Scheduled) lc
@@ -3707,7 +3735,7 @@ prop_mux_lanes lc@LaneCase { lcRate, lcSlicePct, lcBatches } =
     cap       = 2 * batch                     -- the slice bucket's capacity, as 'runLanes' sizes it
 
     laneRule (Mx.MiniProtocolNum 4) Mx.InitiatorDir = Mx.Slice
-    laneRule num dir                             = Mx.directionSplit num dir
+    laneRule num dir                                = Mx.directionSplit num dir
 
 -- | Several muxes share one budget; one of them, the head of its queue, is
 -- torn down mid-wait.

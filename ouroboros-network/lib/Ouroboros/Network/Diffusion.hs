@@ -503,7 +503,9 @@ runM Interfaces
                                  Just t | Duplex <- dataFlow
                                         , now `diffTime` t >= tenureThreshold -> remoteHot
                                  _ -> return False
-                 return $ if partner then Mx.Rank 1 else Mx.Rank 2
+                 -- ranks 2 and 3 are the residual tier's credit classes
+                 -- (pool, stranger); without the buckets everyone else is at rest
+                 return $ if partner then Mx.Rank 1 else Mx.Rank 4
 
       -- churn will set initial targets
       peerSelectionTargetsVar <- newTVarIO PeerSelection.nullPeerSelectionTargets
