@@ -10,6 +10,7 @@ import Data.Text (pack)
 import Numeric (showOct)
 
 import Cardano.Logging
+import Ouroboros.Network.Diffusion.PoolRelays (TracePoolRelays (..))
 import Ouroboros.Network.Diffusion.Types qualified as Diff
 import Ouroboros.Network.OrphanInstances ()
 import Ouroboros.Network.PeerSelection.LedgerPeers (NumberOfPeers (..),
@@ -426,3 +427,63 @@ instance MetaTrace TraceLedgerPeers where
       , Namespace [] ["TraceLedgerPeersDomains"]
       , Namespace [] ["UsingBigLedgerPeerSnapshot"]
       ]
+
+--
+-- Pool relays: the big-ledger pools' relays behind the egress scheduler's
+-- credit buckets
+--
+
+instance LogFormatting TracePoolRelays where
+  forMachine _dtal (PoolRelaysRebuilt pools addresses) =
+    mconcat
+      [ "kind" .= String "PoolRelaysRebuilt"
+      , "pools" .= pools
+      , "addresses" .= addresses
+      ]
+  forMachine _dtal (PoolRelaysResolved addresses) =
+    mconcat
+      [ "kind" .= String "PoolRelaysResolved"
+      , "addresses" .= addresses
+      ]
+  forMachine _dtal PoolRelaysDisabled =
+    mconcat
+      [ "kind" .= String "PoolRelaysDisabled"
+      ]
+  forMachine _dtal (PoolRelaysResolveFailed reason) =
+    mconcat
+      [ "kind" .= String "PoolRelaysResolveFailed"
+      , "reason" .= reason
+      ]
+
+  forHuman = pack . show
+
+instance MetaTrace TracePoolRelays where
+    namespaceFor PoolRelaysRebuilt {}       = Namespace [] ["Rebuilt"]
+    namespaceFor PoolRelaysResolved {}      = Namespace [] ["Resolved"]
+    namespaceFor PoolRelaysDisabled {}      = Namespace [] ["Disabled"]
+    namespaceFor PoolRelaysResolveFailed {} = Namespace [] ["ResolveFailed"]
+
+    severityFor (Namespace _ ["Rebuilt"]) _       = Just Info
+    severityFor (Namespace _ ["Resolved"]) _      = Just Debug
+    severityFor (Namespace _ ["Disabled"]) _      = Just Info
+    severityFor (Namespace _ ["ResolveFailed"]) _ = Just Warning
+    severityFor _ _                               = Nothing
+
+    documentFor (Namespace _ ["Rebuilt"]) = Just $ mconcat
+      [ "The ledger's list of big pools changed: the credit buckets were rebuilt,"
+      , " with the number of pools and of relay addresses indexed." ]
+    documentFor (Namespace _ ["Resolved"]) = Just
+      "The same list's relays were resolved again, with the number of addresses indexed."
+    documentFor (Namespace _ ["Disabled"]) = Just
+      "Ledger peers are disabled, so no pool has a credit bucket."
+    documentFor (Namespace _ ["ResolveFailed"]) = Just
+      "Resolving the relays failed; the previous index stays until the next poll."
+    documentFor _ = Nothing
+
+    allNamespaces = [
+        Namespace [] ["Rebuilt"]
+      , Namespace [] ["Resolved"]
+      , Namespace [] ["Disabled"]
+      , Namespace [] ["ResolveFailed"]
+      ]
+
