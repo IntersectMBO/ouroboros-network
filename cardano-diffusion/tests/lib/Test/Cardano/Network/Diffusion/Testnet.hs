@@ -6326,7 +6326,7 @@ prop_local_roots_first ioSimTrace traceNumber =
            property (rank `elem` [ rankOf (addr `Set.member` rs) | rs <- roots ])
        | (node, addr, rank, roots) <- judged ]
   where
-    rankOf isRoot = if isRoot then Mx.Rank 0 else Mx.Rank 2
+    rankOf isRoot = if isRoot then Mx.Rank 0 else Mx.Rank 4
 
     -- one node's ranks, each with the root sets it may be judged by
     nodeRanks :: [WithName NtNAddr (WithTime DiffusionTestTrace)]

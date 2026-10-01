@@ -53,6 +53,8 @@ module Network.Mux
   , Rotation (..)
   , setEgressRank
   , setEgressRankSource
+  , ChargeSink
+  , setEgressChargeSink
     -- * Monitoring
   , miniProtocolStateMap
   , stopped
@@ -169,7 +171,9 @@ data MuxEgress m = MuxEgress {
     meBudget       :: Bucket m,
     meBudgetHandle :: BucketHandle m,
     meSlice        :: Maybe (BucketHandle m),
-    meLaneOf       :: MiniProtocolNum -> MiniProtocolDir -> Lane
+    meLaneOf       :: MiniProtocolNum -> MiniProtocolDir -> Lane,
+    meCharge       :: StrictTVar m (ChargeSink m)
+    -- ^ where the scheduled lane reports what it wrote; a no-op until installed
   }
 
 
@@ -223,8 +227,9 @@ newWithEgress :: forall (mode :: Mode) m.
 newWithEgress EgressPolicy { egressBudget, egressSlice, egressLaneOf } muxTracers ptcls = do
     meBudgetHandle <- registerBearer egressBudget
     meSlice        <- traverse registerBearer egressSlice
+    meCharge       <- newTVarIO (\_ _ _ -> return ())
     mkMux (Just MuxEgress { meBudget = egressBudget, meBudgetHandle, meSlice,
-                            meLaneOf = egressLaneOf })
+                            meLaneOf = egressLaneOf, meCharge })
           muxTracers ptcls
 
 mkMux :: forall (mode :: Mode) m.
@@ -263,6 +268,14 @@ setEgressRankSource Mux { muxEgress } rank =
     case muxEgress of
          Just MuxEgress { meBudgetHandle } -> setRankSource meBudgetHandle rank
          Nothing                           -> return ()
+
+-- | Install where the scheduled lane reports the bytes it wrote, per
+-- mini-protocol. Nothing on an unscheduled mux.
+setEgressChargeSink :: MonadSTM m => Mux mode m -> ChargeSink m -> STM m ()
+setEgressChargeSink Mux { muxEgress } sink =
+    case muxEgress of
+         Just MuxEgress { meCharge } -> writeTVar meCharge sink
+         Nothing                     -> return ()
 
 mkMiniProtocolStateMap :: MonadSTM m
                        => [MiniProtocolInfo mode]
@@ -410,7 +423,7 @@ run Mux { muxMiniProtocols,
                        , laneAll   = [(Scheduled, q)] }
                , [muxerJob "muxer" q Unscheduled bearer] )
 
-      Just MuxEgress { meBudget, meBudgetHandle, meSlice, meLaneOf } -> do
+      Just MuxEgress { meBudget, meBudgetHandle, meSlice, meLaneOf, meCharge } -> do
         lock <- newTMVarIO ()
         let locked = bearer { writeMany = \tr timeout sdus ->
                                 bracket_ (atomically (takeTMVar lock))
@@ -419,7 +432,7 @@ run Mux { muxMiniProtocols,
             inUse  = [Direct, Scheduled] ++ [Slice | isJust meSlice]
             egressOf Direct    = Credit meBudget
             egressOf Slice     = maybe (Credit meBudget) (`Reserved` meBudget) meSlice
-            egressOf Scheduled = Scheduled_ meBudgetHandle
+            egressOf Scheduled = Scheduled_ meBudgetHandle meCharge
         qs <- forM inUse $ \lane -> (\q -> (lane, q)) <$> newQueue ("egress-" ++ laneName lane)
         let queueOf lane = case lookup lane qs of
                                 Just q  -> q
