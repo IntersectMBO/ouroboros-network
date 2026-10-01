@@ -6703,13 +6703,16 @@ prop_egress_txSubmission_chainIntegrity egress argPolicy argConfig argVersion ch
     (runSimTrace (diffusionSimulation noAttenuation diffScript))
     long_trace
 
--- | Scheduled egress ranks a node's local roots first.
+-- | Scheduled egress ranks a node's local roots first; anyone else starts in
+-- one of the residual tier's credit classes, a pool relay or a stranger, and
+-- never at rest, since every bucket is full as a connection begins.
 prop_egress_local_roots_first :: AbsBearerInfo -> EgressScript -> Property
 prop_egress_local_roots_first =
   egressIOSim prop_local_roots_first long_trace
 
 -- | A connection's mux is ranked 0 iff its peer is one of the node's resolved
--- local roots, and 1 otherwise. The handler reads the roots from the variable
+-- local roots, and 2 otherwise: at setup no peer runs our hot mini-protocols
+-- yet, so none is a partner. The handler reads the roots from the variable
 -- the resolver writes; the resolver traces them a moment after writing, so a
 -- rank is judged by the roots traced last before it or first after it.
 prop_local_roots_first :: SimTrace DiffSimResult -> Int -> Property
@@ -6721,14 +6724,15 @@ prop_local_roots_first ioSimTrace traceNumber =
       ranks  = concatMap nodeRanks (Trace.toList (splitWithNameTrace events))
       judged = [ r | r@(_, _, _, roots) <- ranks, not (null roots) ]
   in classify (any (\(_, _, rank, _) -> rank == Mx.Rank 0) judged) "a local root ranked first"
+   . classify (any (\(_, _, rank, _) -> rank == Mx.Rank 2) judged) "a big-ledger relay ranked as a pool"
    . classify (length judged < length ranks) "a rank before any roots were traced"
    . classify (null ranks) "no scheduled connection"
    $ conjoin
        [ counterexample (show (node, addr, rank, roots)) $
-           property (rank `elem` [ rankOf (addr `Set.member` rs) | rs <- roots ])
+           property (or [ rank `elem` ranksOf (addr `Set.member` rs) | rs <- roots ])
        | (node, addr, rank, roots) <- judged ]
   where
-    rankOf isRoot = if isRoot then Mx.Rank 0 else Mx.Rank 1
+    ranksOf isRoot = if isRoot then [Mx.Rank 0] else [Mx.Rank 2, Mx.Rank 3]
 
     -- one node's ranks, each with the root sets it may be judged by
     nodeRanks :: [WithName NtNAddr (WithTime DiffusionTestTrace)]
