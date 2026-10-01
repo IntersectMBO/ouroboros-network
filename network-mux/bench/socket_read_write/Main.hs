@@ -265,7 +265,9 @@ startServerEgresss pollInterval mkLane sndSizeV ad = forever $ do
 scheduledLane :: IO (LaneEgress IO)
 scheduledLane = do
     bucket <- newBucket 1e15 (1024 * 1024) Nothing
-    Scheduled_ <$> registerBearer bucket
+    -- nothing charges what the benchmark sends
+    sink <- newTVarIO (\_ _ _ -> return ())
+    Scheduled_ <$> registerBearer bucket <*> pure sink
 
 -- | The tier of a peer as a rule over the local root groups, evaluated in the
 -- transaction that queues the bearer, against a stored rank.

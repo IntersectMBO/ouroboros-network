@@ -1,9 +1,9 @@
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE BangPatterns          #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeFamilies          #-}
 
 module Network.Mux.Egress
@@ -11,6 +11,7 @@ module Network.Mux.Egress
   , Lane (..)
   , laneName
   , LaneEgress (..)
+  , ChargeSink
   , Lanes (..)
     -- $egress
     -- $servicingsSemantics
@@ -21,6 +22,7 @@ module Network.Mux.Egress
 
 import Control.Monad
 import Data.ByteString.Lazy qualified as BL
+import Data.Map.Strict qualified as Map
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadAsync
@@ -142,7 +144,15 @@ data LaneEgress m =
   | Credit     !(Bucket m)                      -- ^ 'Direct': the budget, on credit
   | Reserved   !(BucketHandle m) !(Bucket m)    -- ^ 'Slice': its bucket or the budget's idle
                                                 --   capacity; the former charged on credit
-  | Scheduled_ !(BucketHandle m)                -- ^ 'Scheduled': the budget, ranked
+  | Scheduled_ !(BucketHandle m)                -- ^ 'Scheduled': the budget, ranked; what
+               !(StrictTVar m (ChargeSink m))   --   a batch carried is handed to the sink
+
+-- | Where the scheduled lane reports what it wrote: bytes per mini-protocol,
+-- SDU headers included, once the batch has been handed to the kernel, and
+-- when. The policy that installs it decides what counts against which
+-- allowance; the mux only reports. Direct and slice batches are never
+-- reported, so what rides those lanes is never charged.
+type ChargeSink m = Time -> MiniProtocolNum -> Int -> STM m ()
 
 -- | A bearer's egress queues, one per lane in use, and the lane of each
 -- mini-protocol. An unscheduled mux has one queue and every SDU goes to it.
@@ -192,14 +202,13 @@ muxer egressQueue tracer counters laneEgress
       start <- getMonotonicTime
       TLSRDemand mpc md d <- atomically $ readTBQueue egressQueue
       sdu <- processSingleWanton egressQueue sduSize mpc md d
-      sdus <- buildBatch [sdu] (sduLength sdu)
+      (sdus, len, perProtocol) <- buildBatch sdu mpc
 
       -- Scheduled egress: a batch is written only once the bearer can take it
       -- without blocking AND its lane has the bytes -- granted by the budget's
       -- bucket or the slice's, or, for the node's own requests, taken on
       -- credit once written. A bearer whose peer is not draining never
       -- consumes tokens.
-      let len = sum (map sduLength sdus)
       case laneEgress of
            Unscheduled -> return ()
            Credit _ -> gate timeout
@@ -210,7 +219,7 @@ muxer egressQueue tracer counters laneEgress
              -- the slice's own share, charged to the budget on credit in the
              -- same transaction, or the budget's idle capacity
              void $ awaitGrantWaited (Just budget) (t1 `diffTime` t0) slice len
-           Scheduled_ bucketHandle -> do
+           Scheduled_ bucketHandle _ -> do
              t0 <- getMonotonicTime
              gate timeout
              t1 <- getMonotonicTime
@@ -221,6 +230,9 @@ muxer egressQueue tracer counters laneEgress
       end <- getMonotonicTime
       -- after the write, so a charge means bytes handed to the kernel
       case laneEgress of
+           Scheduled_ _ chargeVar -> atomically $ do
+             sink <- readTVar chargeVar
+             forM_ (Map.toList perProtocol) (uncurry (sink end))
            Credit budget -> atomically $ takeOnCredit budget end len
            _ -> return ()
       empty <- atomically $ isEmptyTBQueue egressQueue
@@ -249,17 +261,23 @@ muxer egressQueue tracer counters laneEgress
     -- The batch size is either limited by the bearer
     -- (e.g the SO_SNDBUF for Socket) or number of SDUs.
     --
-    buildBatch s sl = reverse <$> go s sl
+    -- Returns the SDUs in order, their length with headers, and that length
+    -- per mini-protocol, all accumulated as the batch is built so nothing
+    -- walks it again.
+    buildBatch :: SDU -> MiniProtocolNum -> m ([SDU], Int, Map.Map MiniProtocolNum Int)
+    buildBatch sdu0 mpc0 = go [sdu0] 1 len0 (Map.singleton mpc0 len0)
      where
-      go sdus _ | length sdus >= maxSDUsPerBatch   = return sdus
-      go sdus sdusLength | sdusLength >= batchSize = return sdus
-      go sdus !sdusLength = do
-        demand_m <- atomically $ tryReadTBQueue egressQueue
-        case demand_m of
-             Just (TLSRDemand mpc md d) -> do
-               sdu <- processSingleWanton egressQueue sduSize mpc md d
-               go (sdu:sdus) (sdusLength + sduLength sdu)
-             Nothing -> return sdus
+      len0 = sduLength sdu0
+      go sdus !n !len per
+        | n >= maxSDUsPerBatch || len >= batchSize = return (reverse sdus, len, per)
+        | otherwise = do
+            demand_m <- atomically $ tryReadTBQueue egressQueue
+            case demand_m of
+                 Just (TLSRDemand mpc md d) -> do
+                   sdu <- processSingleWanton egressQueue sduSize mpc md d
+                   let !l = sduLength sdu
+                   go (sdu:sdus) (n + 1) (len + l) (Map.insertWith (+) mpc l per)
+                 Nothing -> return (reverse sdus, len, per)
 
 -- | Pull a `maxSDU`s worth of data out out the `Wanton` - if there is
 -- data remaining requeue the `TranslocationServiceRequest` (this
