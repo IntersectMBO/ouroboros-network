@@ -334,6 +334,7 @@ run blockGeneratorArgs ni na
               , Diffusion.daPeerChurnGovernor                 = peerChurnGovernor
               , Diffusion.daExtraChurnArgs                    = aExtraChurnArgs na
               , Diffusion.daSRVPrefix                         = iSRVPrefix ni
+              , Diffusion.daEgressPoolKey                     = id
               }
 
         withAsync
