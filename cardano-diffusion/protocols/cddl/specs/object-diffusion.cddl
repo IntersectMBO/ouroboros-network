@@ -14,6 +14,8 @@ objectDiffusion2Message
     / msgRequestObjects
     / msgReplyObjects
     / msgDone
+    / msgServerIdle
+    / msgAwaitReply
 
 
 msgInit             = [0]
@@ -22,6 +24,8 @@ msgReplyObjectIds   = [2, objectIdList ]
 msgRequestObjects   = [3, objectIdList ]
 msgReplyObjects     = [4, objectList ]
 msgDone             = [5]
+msgServerIdle       = [6]
+msgAwaitReply       = [7]
 
 tsBlocking          = false / true
 objectCount         = base.word16

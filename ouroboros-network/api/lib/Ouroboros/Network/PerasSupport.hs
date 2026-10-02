@@ -10,6 +10,7 @@ module Ouroboros.Network.PerasSupport
 
 import Control.DeepSeq (NFData)
 import GHC.Generics (Generic)
+import NoThunks.Class (NoThunks)
 
 -- | The flag which indicates whether the node can support Peras protocol.
 --
@@ -19,7 +20,7 @@ import GHC.Generics (Generic)
 
 data PerasSupport = PerasUnsupported | PerasSupported
   deriving stock    (Eq, Ord, Show, Bounded, Generic)
-  deriving anyclass (NFData)
+  deriving anyclass (NFData, NoThunks)
 
 
 perasSupportToBool :: PerasSupport -> Bool
