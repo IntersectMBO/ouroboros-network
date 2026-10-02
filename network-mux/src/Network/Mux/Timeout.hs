@@ -40,8 +40,13 @@ type TimeoutFn m = forall a. DiffTime -> m a -> m (Maybe a)
 
 -- | A 'System.Timeout.timeout' that is reasonably efficient for all platforms.
 --
--- On Unix it uses exactly 'System.Timeout.timeout' and on Windows it uses
--- 'withTimeoutSerialAlternative'.
+-- It uses 'withTimeoutSerialAlternative' everywhere. 'System.Timeout.timeout'
+-- registers and cancels a timer on GHC's single global timer manager on every
+-- call; each is an 'atomicModifyIORef'' on one shared 'IORef', which installs
+-- a thunk the caller then forces. A caller descheduled in between leaves every
+-- other caller, and the timer manager itself, blocked on its black hole for a
+-- timeslice. With hundreds of bearer threads calling it per SDU this
+-- serialised all reads and writes.
 --
 -- > withTimeoutSerial $ \timeout ->
 -- >   -- now use timeout as one would use System.Timeout.timeout
@@ -56,11 +61,7 @@ withTimeoutSerial, withTimeoutSerialNative
                   MonadMask m, MonadThrow (STM m))
   => (TimeoutFn m -> m b) -> m b
 
-#if defined(mingw32_HOST_OS)
 withTimeoutSerial = withTimeoutSerialAlternative
-#else
-withTimeoutSerial = withTimeoutSerialNative
-#endif
 
 -- | This version simply passes the native platform's 'MonadTimer.timeout'.
 --
