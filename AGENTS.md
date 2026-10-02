@@ -41,6 +41,23 @@ Do not run the script without flags — that reformats all `.hs` files in the re
 
 Config: `.stylish-haskell-network.yaml`. Requires `fd`/`fdfind` and `stylish-haskell`.
 
+## Releasing
+
+Follow "Releasing packages to CHaP" in CONTRIBUTING.md.  The description of a
+release PR must list the PRs included in the release, grouped by package; this
+list is used to update the [release board].  For each released package, find
+the PRs merged since its previous release tag:
+
+```bash
+git log --first-parent --oneline <package>-<previous-version>..HEAD -- <package>
+```
+
+Merge commit subjects only contain the PR number (`Merge pull request #NNNN
+from ...`); get each title with `gh pr view NNNN --json title -q .title`, and
+list every PR as `#NNNN <title>`.
+
+[release board]: https://github.com/orgs/IntersectMBO/projects/5/views/18
+
 ## Important Notes
 
 - When using si-timers from io-classes; **`threadDelay`, `timeout`, `registerDelay` take `DiffTime` (seconds), not microseconds.** Using `3_000_000` means three months, not three seconds.

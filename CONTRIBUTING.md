@@ -300,18 +300,27 @@ Linux, MacOS, and cross compiled to Windows using `wine` (on Linux).
 
 New versions of packages are published to [CHaP].
 
+The release scripts require `gh`, `yq` (https://github.com/mikefarah/yq),
+`fd` (or `fdfind`) and `scriv` (available in `nix develop`).
+`./scripts/build-with-chap.sh` requires a clean working tree: it restores
+packages to their published revisions, builds them, and then runs
+`git reset --hard HEAD`.
+
 ### Checking a pre-release branch
 
-If you have a branch which you want to check if it's releasable, you can run:
+If you have a branch which you want to check if it's releasable, push it to
+`origin` first: `./scripts/release-to-chap.sh` fetches the revision from GitHub,
+so it fails for a commit which only exists locally.  Then run:
 ```sh
 ./scripts/release-to-chap.sh -t
-./scripts/build-with-chap.sh
+./scripts/build-with-chap.sh -t
 ```
-The last command should fail with an error that the current revision is not on
-the `master` or a `release/*` branch.  After running both commands, you will
-need to delete branch created in `cardano-haskell-packages`.
+The `-t` switch skips the check that the current revision is on the `main` or a
+`release/*` branch, and `release-to-chap.sh -t` does not create any tags.
+After running both commands, you will need to delete the branch
+(`network/release-*-DO_NOT_MERGE`) created in `cardano-haskell-packages`.
 
-### Release from master or release/* branch
+### Release from main or release/* branch
 
 * First run `./scripts/release-to-chap.sh -r` to see which changes can be
   published.
@@ -321,16 +330,21 @@ need to delete branch created in `cardano-haskell-packages`.
   - for a breaking release from a `release/*` branch, bump `y` in `x.y.z.w`
   This policy allows us to introduce breaking changes in already released packages.
 * Collect `CHANGELOG.md` using `scriv collect` (available in `nix develop`)
-* Run `./scripts/release-to-chap.sh` which will create a branch in
+* Run `./scripts/release-to-chap.sh` which will create tags for the released
+  packages and a branch with the relevant commit(s) in
   `cardano-haskell-packages` repo (pointed by `CARDANO_HASKELL_PACKAGES_DIR`
   environment variable or `/tmp/chap` if it's not defined).
   * To enable pushing this branch, cd to the chap repo and execute:
     `git remote set-url origin git@github.com:IntersectMBO/cardano-haskell-packages.git`
     then return to the previous repo (`cd -`)
-* Before merging that branch, run `./scripts/build-with-chap.sh`.  It will use the new branch in
+* Push that branch and create a PR in `cardano-haskell-packages`.  This must be
+  done before the next step, since `./scripts/build-with-chap.sh` comments on
+  that PR.
+* Before merging that PR, run `./scripts/build-with-chap.sh`.  It will use the new branch in
   `cardano-haskell-packages` to restore the `ouroboros-network` repository to the
-  state published in `CHaP`.
-  * If you need to re-run this script after fixing errors, you will need to delete the tags created
+  state published in `CHaP`, build it, check that the released revisions are on
+  the `main` or a `release/*` branch, and on success comment on the `CHaP` PR.
+  * If you need to re-run `./scripts/release-to-chap.sh` after fixing errors, you will need to delete the tags created
     by the previous run. You can do so with the following command:
     ```
     git tag -d $(git tag --points-at)
@@ -341,11 +355,9 @@ need to delete branch created in `cardano-haskell-packages`.
     For eg, if cabal build-depends had version bounds changes, then that component itself
     may need a version bump.
   * One must resolve all compilation issues before
-    merging the `CHaP` branch.  On a successful run, the script will create
-    relevant commit(s) in your local `CHaP` repo. You should push those and create
-    a PR now.
+    merging the `CHaP` PR.
 * After the versions were published to `CHaP`, push the tags created by
-  `./script/release-to-chap.sh` to `origin`.  Usually this command will push
+  `./scripts/release-to-chap.sh` to `origin`.  Usually this command will push
   all the tags:
   ```
   git push origin $(git tag --points-at=HEAD)
@@ -355,25 +367,25 @@ need to delete branch created in `cardano-haskell-packages`.
 ## Release Branches
 
 When needed we use release branches: `release/*`, but most often we just
-release from `master`.
+release from `main`.
 
 Note that `CHaP` allows us to make releases of packages independently of each
 other (especially non-breaking changes), so there might be other release
 branches, e.g.  `release/network-mux-*`.  They MUST follow the following
 naming convention: `release/${package-name}-${version}`.
 
-All commits in the release branch MUST be cherry-picked from `master`.  Each
-time one wants to add new commits from `master`, one SHOULD:
+All commits in the release branch MUST be cherry-picked from `main`.  Each
+time one wants to add new commits from `main`, one SHOULD:
 
 * cherry-pick them to a new branch,
 * create a PR which targets the right release branch,
-* mention in the PR's description from which original PR(s) (to the `master`
+* mention in the PR's description from which original PR(s) (to the `main`
   branch) the commits are coming from ([example](https://github.com/intersectmbo/ouroboros-network/pull/4120)).
 
 This forces the changes to go through the normal pull request review process
 & let CI validate the release patch set.
 
-Note that we never merge release branches back to `master`.
+Note that we never merge release branches back to `main`.
 
 ## Updating dependencies (`index-state`)
 
@@ -433,7 +445,7 @@ of the content. There are two relatively straightforward ways to do this:
 2. Calculate the hash with `nix-shell -p nix-prefetch-git --run 'nix-prefetch-git <URL> <COMMIT_HASH>'`
 
 
-[CODEOWNERS]: https://github.com/intersectmbo/ouroboros-network/blob/master/.github/CODEOWNERS
+[CODEOWNERS]: https://github.com/intersectmbo/ouroboros-network/blob/main/.github/CODEOWNERS
 [`ghcup`]: https://www.haskell.org/ghcup/
 [`QuickCheck`]: https://hackage.haskell.org/package/QuickCheck
 [`io-sim`]: https://github.com/input-output-hk/io-sim
