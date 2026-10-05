@@ -11,6 +11,7 @@ import Data.IntMap.Strict qualified as IntMap
 import Data.Map.Strict qualified as Map
 import Data.Word (Word16)
 import Network.Mux (MiniProtocolNum (..), Rank (..))
+import Network.Mux.Egress.Floor (FloorClass (..), floorClass)
 import Test.QuickCheck
 import Test.Tasty
 import Test.Tasty.QuickCheck (testProperty)
@@ -21,6 +22,7 @@ tests :: TestTree
 tests =
   testGroup "Ouroboros.Network.Diffusion.EgressRule"
     [ testProperty "a connection's rule and sink follow the decision table" prop_rule
+    , testProperty "the floor's classes are the rule's tiers" prop_floorClass_follows_rank
     ]
 
 -- | What happens to a connection, at a time in seconds: its rank is asked,
@@ -136,3 +138,24 @@ prop_rule c@Case { cStanding, cPools, cOps } =
     got = run c
     isRebuild Rebuild {} = True
     isRebuild _          = False
+
+-- | What gives the floor's tier numbers their meaning is 'rankFor'. Over
+-- every standing and credit state: a local root has no class, a partner is
+-- class 0, a pool relay with credit class 1, a stranger with credit class 2,
+-- and a peer without credit has none. A renumbering of the tiers on either
+-- side fails here.
+prop_floorClass_follows_rank :: Property
+prop_floorClass_follows_rank = once $ conjoin
+  [ counterexample (show (standing, matched, hasAny))
+  $ floorClass tier === expected
+  | standing <- [LocalRoot, Partner, Other]
+  , matched  <- [False, True]
+  , hasAny   <- [False, True]
+  , let Rank tier = rankFor standing matched hasAny
+        expected = case standing of
+                        LocalRoot -> Nothing
+                        Partner   -> Just (FloorClass 0)
+                        Other | not hasAny -> Nothing
+                              | matched    -> Just (FloorClass 1)
+                              | otherwise  -> Just (FloorClass 2)
+  ]
