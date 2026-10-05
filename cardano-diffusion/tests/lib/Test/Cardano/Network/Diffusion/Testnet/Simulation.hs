@@ -1045,13 +1045,15 @@ data EgressArgs = EgressArgs {
     eaCapacity :: Int,        -- ^ bytes
     eaSlicePct :: Int,
     eaPeriod   :: DiffTime,
-    eaTenure   :: DiffTime    -- ^ before a hot-both-ways peer is a partner
+    eaTenure   :: DiffTime,   -- ^ before a hot-both-ways peer is a partner
+    eaLock     :: DiffTime    -- ^ before a stranger's own bucket opens
   }
   deriving Show
 
 -- | Budgets from a trickle to a few times what the simulation sends, so grants
 -- wait; capacities below one SDU up to two; the slice anywhere from none to
--- half; rotation periods short enough to re-deal within a run.
+-- half; rotation periods short enough to re-deal within a run; a stranger
+-- lock of none, a minute or a quarter of an hour.
 instance Arbitrary EgressArgs where
     arbitrary = do
       budget <- (* 1000) <$> choose (1, 64)
@@ -1059,12 +1061,14 @@ instance Arbitrary EgressArgs where
       pct    <- elements [0, 5, 15, 30, 50]
       period <- secondsToDiffTime <$> choose (5, 600)
       tenure <- secondsToDiffTime <$> choose (0, 3600)
-      return EgressArgs { eaBudget = budget, eaCapacity = cap,
-                          eaSlicePct = pct, eaPeriod = period, eaTenure = tenure }
-    shrink ea@EgressArgs { eaBudget, eaCapacity, eaSlicePct } =
+      lock   <- secondsToDiffTime <$> elements [0, 60, 887]
+      return EgressArgs { eaBudget = budget, eaCapacity = cap, eaSlicePct = pct,
+                          eaPeriod = period, eaTenure = tenure, eaLock = lock }
+    shrink ea@EgressArgs { eaBudget, eaCapacity, eaSlicePct, eaLock } =
          [ ea { eaBudget = b }   | b <- [64000], b > eaBudget ]
       ++ [ ea { eaCapacity = c } | c <- [24576], c > eaCapacity ]
       ++ [ ea { eaSlicePct = 0 } | eaSlicePct /= 0 ]
+      ++ [ ea { eaLock = 0 }     | eaLock /= 0 ]
 
 -- | Egress for every generated script: engaged but rarely binding. The budget
 -- is far above the simulation's traffic, so properties that depend on timing
@@ -1077,17 +1081,19 @@ genSharedEgress = frequency
                        <*> choose (24576, 262144)
                        <*> elements [0, 5, 15, 30]
                        <*> (secondsToDiffTime <$> choose (5, 600))
-                       <*> (secondsToDiffTime <$> choose (0, 3600))) ]
+                       <*> (secondsToDiffTime <$> choose (0, 3600))
+                       <*> (secondsToDiffTime <$> elements [0, 60, 887])) ]
 
 egressScheduling :: EgressArgs -> Diffusion.EgressScheduling
-egressScheduling EgressArgs { eaBudget, eaCapacity, eaSlicePct, eaPeriod, eaTenure } =
+egressScheduling EgressArgs { eaBudget, eaCapacity, eaSlicePct, eaPeriod, eaTenure, eaLock } =
     Cardano.defaultEgressScheduling {
       Diffusion.esBudget          = eaBudget,
       Diffusion.esCapacity        = eaCapacity,
       Diffusion.esSlicePercent    = eaSlicePct,
       Diffusion.esRotationPeriod  = eaPeriod,
       Diffusion.esNotSentLowWat   = Nothing,
-      Diffusion.esTenureThreshold = eaTenure
+      Diffusion.esTenureThreshold = eaTenure,
+      Diffusion.esStrangerLock    = eaLock
     }
 
 -- | A script whose nodes all run scheduled egress, for the egress
