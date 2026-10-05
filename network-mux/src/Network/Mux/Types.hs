@@ -60,7 +60,7 @@ import Data.Scientific qualified as F (FPFormat (..), fromFloatDigits)
 import Data.Strict.Tuple as Strict (Pair)
 import Data.Word
 import Foreign.Ptr (Ptr)
-import Formatting (formatToString, (%+))
+import Formatting (formatToString, (%), (%+))
 import Formatting qualified as F
 import Quiet
 
@@ -374,7 +374,8 @@ data BearerTrace =
     | TraceSDUReadTimeoutException
     | TraceSDUWriteTimeoutException
     | TraceTCPInfo StructTCPInfo Word16
-    | TraceEgressGrant Int DiffTime DiffTime
+    | TraceEgressGrant Int DiffTime DiffTime Bool
+      -- ^ bytes, waited for writability, waited for tokens, from the floor
 
 instance Show BearerTrace where
     show TraceRecvHeaderStart = "Bearer Receive Header Start"
@@ -411,10 +412,10 @@ instance Show BearerTrace where
     show TraceSendEnd = "Bearer Send End"
     show TraceSDUReadTimeoutException = "Timed out reading SDU"
     show TraceSDUWriteTimeoutException = "Timed out writing SDU"
-    show (TraceEgressGrant len tw tt) =
+    show (TraceEgressGrant len tw tt fromFloor) =
       formatToString
-        ("Egress grant: bytes" %+ F.int %+ "waited writable" %+ F.shown %+ "waited tokens" %+ F.shown)
-        len tw tt
+        ("Egress grant: bytes" %+ F.int %+ "waited writable" %+ F.shown %+ "waited tokens" %+ F.shown % F.string)
+        len tw tt (if fromFloor then " from the floor" else "")
 #ifdef linux_HOST_OS
     show (TraceTCPInfo StructTCPInfo
             { tcpi_snd_mss, tcpi_rcv_mss, tcpi_lost, tcpi_retrans
