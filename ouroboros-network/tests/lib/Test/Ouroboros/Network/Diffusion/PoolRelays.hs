@@ -167,7 +167,7 @@ runSchedule (Schedule phases) = runSimOrThrow $ do
     timeouts   <- initScript' (singletonScript (DNSTimeout 10))
     delays     <- initScript' (singletonScript (DNSLookupDelay 0.01))
     semaphore  <- newPoolRelaysDNSSemaphore
-    allowances <- newPoolAllowances (Allowance 1000) (const (Fresh 0))
+    allowances <- newPoolAllowances (Allowance 1000) (const (Fresh 0)) (Fresh 0)
     inFlight   <- newTVarIO (0 :: Int, 0 :: Int)      -- now, and the most ever
     let apply Phase { phPools, phDns } = atomically $ do
           writeTVar ledgerVar (maybe [] toLedger phPools)

@@ -267,10 +267,13 @@ runM Interfaces
     -- and read by the counters loop
     egressPolicy <- traverse mkEgressPolicy dcEgressScheduling
     -- the residual tier's credit buckets, one per big-ledger pool, refilled
-    -- by the clock from the protocol parameters
+    -- by the clock from the protocol parameters; a stranger's own bucket is
+    -- locked for what that clock reads over 'esStrangerLock'
     t0 <- getMonotonicTime
     poolAllowances <- traverse (\es -> newPoolAllowances (Allowance (esFreshMaxBytes es))
-                                                         (freshAt (esFreshBytesPerSecond es) t0))
+                                                         (freshAt (esFreshBytesPerSecond es) t0)
+                                                         (freshAt (esFreshBytesPerSecond es) t0
+                                                                  (esStrangerLock es `addTime` t0)))
                                dcEgressScheduling
     localCounters  <- Mx.newMuxCounters
     -- race the counters with diffusion, so a failing counters loop ends it
