@@ -371,7 +371,8 @@ data BearerTrace =
     | TraceSDUReadTimeoutException
     | TraceSDUWriteTimeoutException
     | TraceTCPInfo StructTCPInfo Word16
-    | TraceEgressGrant Int DiffTime DiffTime
+    | TraceEgressGrant Int DiffTime DiffTime Bool
+      -- ^ bytes, waited for writability, waited for tokens, from the floor
 
 instance Show BearerTrace where
     show TraceRecvHeaderStart = printf "Bearer Receive Header Start"
@@ -390,8 +391,9 @@ instance Show BearerTrace where
     show TraceSendEnd = printf "Bearer Send End"
     show TraceSDUReadTimeoutException = "Timed out reading SDU"
     show TraceSDUWriteTimeoutException = "Timed out writing SDU"
-    show (TraceEgressGrant len tw tt) =
-      printf "Egress grant: bytes %d waited writable %s waited tokens %s" len (show tw) (show tt)
+    show (TraceEgressGrant len tw tt fromFloor) =
+      printf "Egress grant: bytes %d waited writable %s waited tokens %s%s" len (show tw) (show tt)
+             (if fromFloor then " from the floor" else "" :: String)
 #ifdef linux_HOST_OS
     show (TraceTCPInfo StructTCPInfo
             { tcpi_snd_mss, tcpi_rcv_mss, tcpi_lost, tcpi_retrans

@@ -120,8 +120,11 @@ tests =
     , testProperty "queueRank: zero period is none"   prop_queueRank_zeroPeriod
     , testProperty "chargeAt: takes without waiting"  prop_chargeAt
     , testProperty "schedule matches the replay"  prop_bucket_schedule
+    , testProperty "schedule matches the replay, idle floor attached" prop_bucket_schedule_idle_floor
     , testProperty "cancellation is safe"         prop_bucket_cancel
+    , testProperty "cancellation is safe with a floor" prop_bucket_cancel_floor
     , testProperty "disabled bucket never waits"  prop_bucket_disabled
+    , testProperty "disabled bucket never waits, floor attached" prop_bucket_disabled_floor
     , testProperty "rate change takes effect"     prop_bucket_rate_change
     ]
   , testGroup "Egress lanes"
@@ -2979,6 +2982,7 @@ data BucketSched = BucketSched {
     schCapacity :: !Int,           -- ^ bytes
     schRotation :: !(Maybe Bucket.Rotation),
     schSlice    :: !(Maybe Int),   -- ^ the slice's share of the rate, percent
+    schFloor    :: !(Maybe Int),   -- ^ the floor's share of the rate, percent
     schBearers  :: ![BucketBearer]
   }
   deriving Show
@@ -2991,12 +2995,14 @@ instance Arbitrary BucketSched where
       BucketSched rate cap
         <$> frequency [ (1, return Nothing), (2, Just <$> genRotation rate cap) ]
         <*> frequency [ (1, return Nothing), (1, Just <$> choose (5, 50)) ]
+        <*> pure Nothing
         <*> vectorOf n (genBucketBearer rate cap n)
 
-    shrink sch@BucketSched { schRate, schCapacity, schRotation, schSlice, schBearers } =
+    shrink sch@BucketSched { schRate, schCapacity, schRotation, schSlice, schFloor, schBearers } =
          [ sch { schBearers = bs }
          | bs <- shrinkList shrinkBearer schBearers, not (null bs) ]
       ++ [ sch { schSlice = Nothing } | Just _ <- [schSlice] ]
+      ++ [ sch { schFloor = Nothing } | Just _ <- [schFloor] ]
       ++ [ sch { schRotation = Nothing } | Just _ <- [schRotation] ]
       ++ [ sch { schCapacity = 4096 } | schCapacity > 4096 ]
       ++ [ sch { schRate = r } | r <- [1e4, 1e6], r < schRate ]
@@ -3090,8 +3096,9 @@ nextArrival n a t =
                                   , arMore  = more }
 
 labelBucket :: BucketSched -> Property -> Property
-labelBucket BucketSched { schRotation, schSlice, schBearers } =
+labelBucket BucketSched { schRotation, schSlice, schFloor, schBearers } =
       classify (any (not . null . bbMore) schBearers) "reuses a handle"
+    . classify (isJust schFloor)                      "with a floor"
     . classify (any (\b -> any (\(_, _, r) -> r /= bbRank b) (bbMore b)) schBearers)
                "changes rank between takes"
     . classify (isJust schRotation)                   "rotating"
@@ -3105,9 +3112,11 @@ runBucketSched = fst . runBucketSchedStats
 -- | 'runBucketSched', with the budget's and the slice's counters at the end.
 runBucketSchedStats :: BucketSched
                     -> ([((Int, Int), Time)], (Bucket.BucketStats, Maybe Bucket.BucketStats))
-runBucketSchedStats sch@BucketSched { schRate, schCapacity, schRotation, schSlice, schBearers } =
+runBucketSchedStats sch@BucketSched { schRate, schCapacity, schRotation, schSlice, schFloor,
+                                      schBearers } =
     runSimOrThrow $ do
       bucket <- Bucket.newBucket schRate schCapacity schRotation
+      forM_ schFloor $ \pct -> Bucket.attachFloor bucket (fromIntegral pct / 100)
       slice  <- traverse (\pct -> Bucket.newBucket (schRate * fromIntegral pct / 100)
                                                   schCapacity Nothing) schSlice
       -- registered on the budget in schedule order, so bearer @i@ has id @i@,
@@ -3340,7 +3349,8 @@ replayStats sch@BucketSched { schSlice, schBearers } =
            Bucket.bsBurstsWider   = map (const 0) Bucket.burstWidths,
            Bucket.bsTiers         = M.fromListWith (<>)
                                       [ (rankOf k, Bucket.TierGrants (fromIntegral (bytesOf k)) 1)
-                                      | (k, _) <- gs, k `Set.member` queued ]
+                                      | (k, _) <- gs, k `Set.member` queued ],
+           Bucket.bsFloorTiers    = M.empty
          }
 
 replaySched :: BucketSched -> [((Int, Int), Time)]
@@ -3390,14 +3400,15 @@ prop_bucket_cancel :: BucketSched -> Property
 prop_bucket_cancel sch0 = prop_bucket_cancel' sch0 { schSlice = Nothing }
 
 prop_bucket_cancel' :: BucketSched -> Property
-prop_bucket_cancel' sch@BucketSched { schRate, schCapacity, schRotation, schBearers } =
+prop_bucket_cancel' sch@BucketSched { schRate, schCapacity, schRotation, schFloor, schBearers } =
     labelBucket sch
       $ classify (not (null killed))    "kills someone"
       $ classify (any killsHead killed) "kills the next to be served"
       $ counterexample ("kept " ++ show (length kept))
       -- and once everyone is done, killed or served, no busy period is left
-      -- open: a cancelled waiter must close it as it leaves the queue
-      $ outcome === Just (length kept, False)
+      -- open: a cancelled waiter must close it as it leaves the queue; nor is
+      -- anyone left in the floor's queue
+      $ outcome === Just (length kept, False, 0)
   where
     n    = length schBearers
     run  = replayRun sch
@@ -3438,6 +3449,7 @@ prop_bucket_cancel' sch@BucketSched { schRate, schCapacity, schRotation, schBear
 
     outcome = runSimOrThrow $ do
       bucket <- Bucket.newBucket schRate schCapacity schRotation
+      forM_ schFloor $ \pct -> Bucket.attachFloor bucket (fromIntegral pct / 100)
       hs <- mapM (const (Bucket.registerBearer bucket)) schBearers
       as <- forM (zip hs plan) $ \(h, (a0, kill)) -> do
         atomically $ Bucket.setRank h (Bucket.Rank (arRank a0))
@@ -3467,7 +3479,32 @@ prop_bucket_cancel' sch@BucketSched { schRate, schCapacity, schRotation, schBear
              threadDelay 1
              t1 <- getMonotonicTime
              (st1, _, _, _) <- atomically $ Bucket.bucketSnapshot bucket t1
-             return (Just (length rs, Bucket.bsBusyTime st1 /= Bucket.bsBusyTime st0))
+             pending <- atomically $ Bucket.floorPending bucket
+             return (Just (length rs, Bucket.bsBusyTime st1 /= Bucket.bsBusyTime st0, pending))
+
+-- | 'prop_bucket_cancel' with a floor attached: the generated ranks 1 to 3
+-- are credited, so cancellations land on bearers waiting in both queues.
+prop_bucket_cancel_floor :: BucketSched -> Positive Int -> Property
+prop_bucket_cancel_floor sch0 (Positive pct) =
+    prop_bucket_cancel' sch0 { schSlice = Nothing, schFloor = Just (5 + pct `mod` 30) }
+
+-- | A disabled budget disables its floor with it: still nothing ever waits.
+prop_bucket_disabled_floor :: BucketSched -> Positive Int -> Property
+prop_bucket_disabled_floor sch (Positive pct) =
+    prop_bucket_disabled sch { schFloor = Just (5 + pct `mod` 30) }
+
+-- | A floor nobody is eligible for adds nothing to the budget's path: with
+-- every rank at 0 or above 3, the schedule still matches the replay exactly.
+-- The replay orders by rank value, so moving ranks 1 to 3 up by three keeps
+-- its prediction and takes every bearer out of the floor's classes.
+prop_bucket_schedule_idle_floor :: BucketSched -> Positive Int -> Property
+prop_bucket_schedule_idle_floor sch (Positive pct) =
+    prop_bucket_schedule sch { schFloor   = Just (5 + pct `mod` 30)
+                             , schBearers = map uncredited (schBearers sch) }
+  where
+    uncredited b = b { bbRank = up (bbRank b)
+                     , bbMore = [ (k, sz, up r) | (k, sz, r) <- bbMore b ] }
+    up r = if r == 0 then 0 else r + 3
 
 -- | A rate of zero disables the bucket: nothing ever waits.
 prop_bucket_disabled :: BucketSched -> Property

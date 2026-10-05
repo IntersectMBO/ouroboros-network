@@ -616,6 +616,10 @@ data EgressScheduling = EgressScheduling {
     esBudget              :: Double,       -- ^ bytes per second
     esCapacity            :: Int,          -- ^ bucket capacity, bytes: a couple of batches
     esSlicePercent        :: Int,          -- ^ share reserved for the slice lane; 0 for none
+    esFloorPercent        :: Int,
+    -- ^ the floor's share of the budget, percent: a small allowance handed out
+    -- in bytes across the credited classes the strict order does not reach,
+    -- charged to the budget on credit; zero disables it
     esRotationPeriod      :: DiffTime,     -- ^ how often the order within a tier is
                                       --   re-dealt; 0 for none, FIFO within a tier
     esNotSentLowWat       :: Maybe Int,    -- ^ bytes
