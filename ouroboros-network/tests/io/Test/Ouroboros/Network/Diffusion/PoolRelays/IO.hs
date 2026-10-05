@@ -65,7 +65,7 @@ prop_failed_poll_released Down { dPools, dProbe, dAfter } = ioProperty $ do
     polls      <- newTVarIO (0 :: Int)
     probeVar   <- newTVarIO Nothing
     semaphore  <- newPoolRelaysDNSSemaphore
-    allowances <- newPoolAllowances (Allowance 1000) (const (Fresh 0))
+    allowances <- newPoolAllowances (Allowance 1000) (const (Fresh 0)) (Fresh 0)
     w <- arm probeVar
     let -- every poll a new list, naming the probe at the probed poll
         ledger = do
