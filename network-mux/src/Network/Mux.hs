@@ -48,6 +48,7 @@ module Network.Mux
     -- * Egress scheduling
   , Bucket
   , newBucket
+  , attachFloor
   , setBucketRate
   , Rank (..)
   , Rotation (..)
@@ -119,7 +120,8 @@ import Network.Mux.Channel
 import Network.Mux.Counters
 import Network.Mux.Egress as Egress
 import Network.Mux.Egress.Bucket (Bucket, BucketHandle, Rotation (..),
-           newBucket, registerBearer, setBucketRate, setRank, setRankSource)
+           attachFloor, newBucket, registerBearer, setBucketRate, setRank,
+           setRankSource)
 import Network.Mux.Ingress as Ingress
 import Network.Mux.Timeout
 import Network.Mux.Trace

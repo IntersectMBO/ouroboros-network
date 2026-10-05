@@ -134,6 +134,7 @@ test-suite test
   other-modules:
     Test.Mux
     Test.Mux.Floor
+    Test.Mux.FloorBucket
     Test.Mux.ReqResp
     Test.Mux.Timeout
 

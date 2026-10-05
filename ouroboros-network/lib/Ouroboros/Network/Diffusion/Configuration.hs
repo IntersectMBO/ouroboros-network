@@ -125,6 +125,7 @@ defaultEgressSchedulingWith laneOf = EgressScheduling {
     esBudget         = 950e6 / 8,
     esCapacity       = 2 * 131072,
     esSlicePercent   = 15,
+    esFloorPercent   = 10,
     esRotationPeriod = 599,
     esNotSentLowWat  = Just 131072,
     esLaneOf         = laneOf,

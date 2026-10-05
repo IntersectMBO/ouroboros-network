@@ -34,8 +34,8 @@ import Control.Tracer (Tracer, traceWith)
 import Data.Char (toLower)
 
 import Network.Mux.Counters (MuxCounters, countGateTimeout)
-import Network.Mux.Egress.Bucket (Bucket, BucketHandle, awaitGrantWaited,
-           takeOnCredit)
+import Network.Mux.Egress.Bucket (Bucket, BucketHandle, GrantSource (..),
+           awaitGrantWaited, takeOnCredit)
 import Network.Mux.Timeout
 import Network.Mux.Trace (Error (SDUWriteTimeout))
 import Network.Mux.Types
@@ -223,9 +223,10 @@ muxer egressQueue tracer counters laneEgress
              t0 <- getMonotonicTime
              gate timeout
              t1 <- getMonotonicTime
-             void $ awaitGrantWaited Nothing (t1 `diffTime` t0) bucketHandle len
+             source <- awaitGrantWaited Nothing (t1 `diffTime` t0) bucketHandle len
              t2 <- getMonotonicTime
-             traceWith tracer (TraceEgressGrant len (t1 `diffTime` t0) (t2 `diffTime` t1))
+             traceWith tracer (TraceEgressGrant len (t1 `diffTime` t0) (t2 `diffTime` t1)
+                                                (source == FromFloor))
       void $ writeMany tracer timeout sdus
       end <- getMonotonicTime
       -- after the write, so a charge means bytes handed to the kernel

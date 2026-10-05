@@ -28,12 +28,12 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer
 
 import Data.Binary.Put qualified as Bin
-import Data.Word (Word64)
 import Data.ByteString qualified as BS
 import Data.ByteString.Char8 qualified as BSC
 import Data.ByteString.Lazy qualified as BL
 import Data.Functor.Identity (runIdentity)
 import Data.List (sort)
+import Data.Word (Word64)
 import Options.Applicative
 import Text.Printf (printf)
 
@@ -45,10 +45,10 @@ import System.IOManager
 
 import Network.Mux as Mx
 import Network.Mux.Bearer (makeSocketBearer, makeSocketBearerWith,
-  tcpNotSentLowWat)
+           tcpNotSentLowWat)
 import Network.Mux.Codec (encodeSDU)
 import Network.Mux.Types (MiniProtocolDir (..), RemoteClockModel (..), SDU (..),
-  SDUHeader (..))
+           SDUHeader (..))
 
 import Test.Mux.ReqResp
 
@@ -448,7 +448,7 @@ newStatsTracer = do
   statsVar <- newTVarIO emptyStats
   let grantTracer :: Tracer IO BearerTrace
       grantTracer = Tracer $ emit $ \case
-        TraceEgressGrant len tw tt -> atomically $ modifyTVar statsVar (addGrant len tw tt)
+        TraceEgressGrant len tw tt _ -> atomically $ modifyTVar statsVar (addGrant len tw tt)
         _                          -> return ()
   return ( statsVar
          , Mx.nullTracers { Mx.bearerTracer = contramap runIdentity grantTracer } )

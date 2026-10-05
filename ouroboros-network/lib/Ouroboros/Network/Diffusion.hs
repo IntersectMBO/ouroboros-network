@@ -305,11 +305,13 @@ runM Interfaces
     -- the buckets behind scheduled egress, shared by every node-to-node
     -- connection; the rotation's seed comes from the diffusion RNG
     mkEgressPolicy :: EgressScheduling -> m (Mx.EgressPolicy m)
-    mkEgressPolicy EgressScheduling { esBudget, esCapacity, esSlicePercent,
+    mkEgressPolicy EgressScheduling { esBudget, esCapacity, esSlicePercent, esFloorPercent,
                                       esRotationPeriod, esLaneOf } = do
       let rotation = Mx.Rotation { Mx.roSeed   = fst (genWord64 egressRng)
                                  , Mx.roPeriod = esRotationPeriod }
       budget <- Mx.newBucket esBudget esCapacity (Just rotation)
+      when (esFloorPercent > 0) $
+        Mx.attachFloor budget (fromIntegral esFloorPercent / 100)
       slice  <- if esSlicePercent > 0
                    then Just <$> Mx.newBucket (esBudget * fromIntegral esSlicePercent / 100)
                                               esCapacity Nothing

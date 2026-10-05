@@ -118,12 +118,13 @@ instance LogFormatting Mux.BearerTrace where
       , "msg"  .= String "Timed out writing SDU"
       ]
     forMachine _dtal Mux.TraceEmitDeltaQ = mempty
-    forMachine _dtal (Mux.TraceEgressGrant len waitedWritable waitedTokens) = mconcat
+    forMachine _dtal (Mux.TraceEgressGrant len waitedWritable waitedTokens fromFloor) = mconcat
       [ "kind" .= String "Mux.TraceEgressGrant"
       , "msg"  .= String "Egress grant"
       , "length" .= String (showT len)
       , "waitedWritable" .= String (showT waitedWritable)
       , "waitedTokens" .= String (showT waitedTokens)
+      , "floor" .= fromFloor
       ]
 #ifdef linux_HOST_OS
     forMachine _dtal (Mux.TraceTCPInfo StructTCPInfo
@@ -178,10 +179,10 @@ instance LogFormatting Mux.BearerTrace where
     forHuman Mux.TraceSDUWriteTimeoutException =
       "Timed out writing SDU"
     forHuman Mux.TraceEmitDeltaQ = mempty
-    forHuman (Mux.TraceEgressGrant len waitedWritable waitedTokens) =
+    forHuman (Mux.TraceEgressGrant len waitedWritable waitedTokens fromFloor) =
       sformat ("Egress grant: bytes " % int % " waited writable " % shown
-               % " waited tokens " % shown)
-        len waitedWritable waitedTokens
+               % " waited tokens " % shown % stext)
+        len waitedWritable waitedTokens (if fromFloor then " from the floor" else "")
 #ifdef linux_HOST_OS
     forHuman (Mux.TraceTCPInfo StructTCPInfo
             { tcpi_snd_mss, tcpi_rcv_mss, tcpi_lost, tcpi_retrans
