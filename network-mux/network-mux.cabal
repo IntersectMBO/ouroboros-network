@@ -94,6 +94,7 @@ library
     Network.Mux.DeltaQ.TraceTypes
     Network.Mux.Egress
     Network.Mux.Egress.Bucket
+    Network.Mux.Egress.Floor
     Network.Mux.Ingress
     Network.Mux.TCPInfo
     Network.Mux.Time
@@ -131,6 +132,7 @@ test-suite test
   main-is: Main.hs
   other-modules:
     Test.Mux
+    Test.Mux.Floor
     Test.Mux.ReqResp
     Test.Mux.Timeout
 
