@@ -34,6 +34,7 @@ module Ouroboros.Network.Diffusion.PoolAllowances
   , chargeBuckets
     -- * A connection's rule and sink
   , Standing (..)
+  , restTier
   , rankFor
   , mkEgressRule
   ) where
@@ -44,7 +45,8 @@ import Data.IntMap.Strict (IntMap)
 import Data.IntMap.Strict qualified as IntMap
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Network.Mux (MiniProtocolNum, Rank (..))
+import Data.Word (Word8)
+import Network.Mux (MiniProtocolNum, Rank (..), Tier (..), tierNumber)
 
 -- | Bytes of fresh need announced so far: a monotone reading.
 newtype Fresh = Fresh { unFresh :: Int }
@@ -181,16 +183,22 @@ chargeBuckets PoolAllowances { paAllowance, paFreshAt } now n =
 data Standing = LocalRoot | Partner | Other
   deriving (Eq, Show)
 
+-- | The rest: the tier of a peer without credit, served from what the tiers
+-- above leave idle. From here up bearers take turns rather than being dealt
+-- a place, so a newcomer among a flood still gets its share of that.
+restTier :: Word8
+restTier = tierNumber RestTier
+
 -- | A peer's rank from its standing and its credit: local roots first,
 -- partners next, then the residual tier's classes: a big-ledger pool's
 -- relay with credit, a stranger with credit, and at zero credit the rest.
 rankFor :: Standing -> Bool -> Bool -> Rank
-rankFor LocalRoot _       _     = Rank 0
-rankFor Partner   _       _     = Rank 1
+rankFor LocalRoot _       _     = Rank (tierNumber LocalRootTier)
+rankFor Partner   _       _     = Rank (tierNumber PartnerTier)
 rankFor Other     matched hasAny
-  | not hasAny = Rank 4
-  | matched    = Rank 2
-  | otherwise  = Rank 3
+  | not hasAny = Rank restTier
+  | matched    = Rank (tierNumber PoolTier)
+  | otherwise  = Rank (tierNumber StrangerTier)
 
 -- | A connection's rank rule and charge sink, sharing one view of the
 -- buckets: its pools' buckets, looked up again whenever the list was

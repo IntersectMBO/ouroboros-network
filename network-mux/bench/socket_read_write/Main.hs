@@ -400,7 +400,7 @@ main = do
                     , bench "64 bearers, 10 GB/s, rank rule"   $ nfIO $ bucketContention 64 10e9 Nothing (Just ruleVar) 4096
                     , bench "8 bearers, unlimited"             $ nfIO $ bucketContention 8  1e15 Nothing Nothing 4096
                     , bench "64 bearers, unlimited"            $ nfIO $ bucketContention 64 1e15 Nothing Nothing 4096
-                    , bench "64 bearers, unlimited, rotation"  $ nfIO $ bucketContention 64 1e15 (Just (Rotation 42 599)) Nothing 4096
+                    , bench "64 bearers, unlimited, rotation"  $ nfIO $ bucketContention 64 1e15 (Just (Rotation 42 599 maxBound)) Nothing 4096
                     , bench "64 bearers, unlimited, rank rule" $ nfIO $ bucketContention 64 1e15 Nothing (Just ruleVar) 4096
                     ]
                     -- the fast path over a socket: the unscheduled twins are the

@@ -78,6 +78,7 @@ import Network.Mux.Bearer.Pipe qualified as Mx
 import Network.Mux.Bearer.Queues as Mx
 import Network.Mux.Codec qualified as Mx
 import Network.Mux.Egress.Bucket qualified as Bucket
+import Network.Mux.Egress.Floor (floorClass)
 import Network.Mux.Types (MiniProtocolInfo (..), MiniProtocolLimits (..))
 import Network.Mux.Types qualified as Mx
 import Network.Socket qualified as Socket
@@ -118,6 +119,7 @@ tests =
     , testProperty "atRate: keeps the level"      prop_atRate
     , testProperty "rotatedRank: re-dealt each period" prop_rotatedRank
     , testProperty "queueRank: zero period is none"   prop_queueRank_zeroPeriod
+    , testProperty "queueRank: turns from the threshold" prop_queueRank_turns
     , testProperty "chargeAt: takes without waiting"  prop_chargeAt
     , testProperty "schedule matches the replay"  prop_bucket_schedule
     , testProperty "schedule matches the replay, idle floor attached" prop_bucket_schedule_idle_floor
@@ -126,6 +128,8 @@ tests =
     , testProperty "disabled bucket never waits"  prop_bucket_disabled
     , testProperty "disabled bucket never waits, floor attached" prop_bucket_disabled_floor
     , testProperty "rate change takes effect"     prop_bucket_rate_change
+    , testProperty "tiers: one number each, one name each, the floor on the credited"
+                   prop_tiers
     ]
   , testGroup "Egress lanes"
     [ testProperty "own requests never wait, the slice gets its share"
@@ -2750,6 +2754,36 @@ instance Arbitrary BucketTake where
 byteEps :: Double -> Double
 byteEps rate = 4 * rate * 1e-12 + 1e-9
 
+-- | Over every place in the queue and every tier: a tier's place maps back to
+-- it, the places past the tiers have none, every place has its own name, a
+-- tier's place is named after it, and the floor serves exactly the credited
+-- tiers -- partners, pool relays, strangers -- in a class each; and the
+-- names, which metric names carry, are the ones dashboards know.
+prop_tiers :: Property
+prop_tiers = once $
+       counterexample "a tier's place is not its own"
+         (conjoin [ Mx.numberTier (Mx.tierNumber t) === Just t | t <- tiers ])
+  .&&. counterexample "a place past the tiers has one"
+         (conjoin [ Mx.numberTier n === Nothing | n <- places, n > Mx.tierNumber maxBound ])
+  .&&. counterexample "two places share a name" (length (nub names) === length names)
+  .&&. counterexample "a tier's place is not named after it"
+         (conjoin [ Mx.numberName (Mx.tierNumber t) === Mx.tierName t | t <- tiers ])
+  .&&. counterexample "the floor serves other than the credited"
+         (conjoin [ counterexample (Mx.numberName n) $
+                      isJust (floorClass n) === (Mx.numberTier n `elem` map Just credited)
+                  | n <- places ])
+  .&&. counterexample "credited tiers share a floor class"
+         (length (nub [ floorClass (Mx.tierNumber t) | t <- credited ]) === length credited)
+    -- the names are in metric names, so dashboards depend on them
+  .&&. counterexample "a metric name changed"
+         (map Mx.numberName [0 .. 4] ++ [Mx.numberName maxBound]
+            === ["localRoot", "partner", "pool", "stranger", "rest", "unranked"])
+  where
+    tiers    = [minBound .. maxBound] :: [Mx.Tier]
+    places   = [minBound .. maxBound] :: [Word8]
+    names    = map Mx.numberName places
+    credited = [Mx.PartnerTier, Mx.PoolTier, Mx.StrangerTier]
+
 -- | The cases that matter for the pure laws: an oversized request is served
 -- on credit, and 'Bucket.tokenLevel' saturates once the bucket is full, so a
 -- law stated over the level alone says little about those grants.
@@ -2918,11 +2952,11 @@ instance Arbitrary RotationCase where
       p      <- choose (0, 10000)
       let inside = choose (0, picosOf (period `addTime` Time 0) - 1)
       offs   <- (,) <$> inside <*> inside
-      return RotationCase { rcRotation = Bucket.Rotation seed period,
+      return RotationCase { rcRotation = Bucket.Rotation seed period maxBound,
                             rcPeriod = p, rcOffsets = offs }
 
-    shrink rc@RotationCase { rcRotation = Bucket.Rotation seed period, rcPeriod, rcOffsets } =
-         [ rc { rcRotation = Bucket.Rotation 0 period } | seed /= 0 ]
+    shrink rc@RotationCase { rcRotation = Bucket.Rotation seed period _, rcPeriod, rcOffsets } =
+         [ rc { rcRotation = Bucket.Rotation 0 period maxBound } | seed /= 0 ]
       ++ [ rc { rcPeriod = 0 } | rcPeriod /= 0 ]
       ++ [ rc { rcOffsets = (0, snd rcOffsets) } | fst rcOffsets /= 0 ]
       ++ [ rc { rcOffsets = (fst rcOffsets, 0) } | snd rcOffsets /= 0 ]
@@ -2947,10 +2981,25 @@ prop_rotatedRank RotationCase { rcRotation = ro, rcPeriod, rcOffsets = (o1, o2) 
 
 -- | A rotation with a period of zero is no rotation: a bearer queues exactly
 -- where it would without one.
+-- | From the threshold up a tier queues as without a rotation, so its order
+-- is the tickets' and backlogged bearers take turns; below it the dealt
+-- place still decides. The tier byte is untouched either way.
+prop_queueRank_turns :: Word64 -> Word64 -> Word8 -> Word8 -> Positive Integer
+                     -> NonNegative Integer -> Property
+prop_queueRank_turns seed bearer tier from (Positive period) (NonNegative ps) =
+    classify (tier >= from) "takes turns" $
+    if tier >= from
+       then with === Bucket.queueRank Nothing bearer (Bucket.Rank tier) t
+       else with === (fromIntegral tier `shiftL` 24 .|. Bucket.rotatedRank ro bearer t)
+  where
+    ro   = Bucket.Rotation seed (picos period) from
+    with = Bucket.queueRank (Just ro) bearer (Bucket.Rank tier) t
+    t    = Time (picos ps)
+
 prop_queueRank_zeroPeriod :: Word64 -> Word64 -> Word8 -> NonNegative Integer
                           -> Property
 prop_queueRank_zeroPeriod seed bearer tier (NonNegative ps) =
-    Bucket.queueRank (Just (Bucket.Rotation seed 0)) bearer (Bucket.Rank tier) t
+    Bucket.queueRank (Just (Bucket.Rotation seed 0 maxBound)) bearer (Bucket.Rank tier) t
       === Bucket.queueRank Nothing bearer (Bucket.Rank tier) t
   where
     t = picos ps `addTime` Time 0
@@ -3028,7 +3077,7 @@ genRotation :: Double -> Int -> Gen Bucket.Rotation
 genRotation rate cap = do
     seed <- arbitrary
     f    <- choose (0.25, 4 :: Double)
-    return (Bucket.Rotation seed (realToFrac (f * fromIntegral cap / rate)))
+    return (Bucket.Rotation seed (realToFrac (f * fromIntegral cap / rate)) maxBound)
 
 -- | Few ranks, so ties are common.  Asking again at once, and starting in the
 -- opening burst, are both weighted up: those are what make bearers queue.
