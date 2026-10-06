@@ -22,7 +22,7 @@ tests :: TestTree
 tests =
   testGroup "Ouroboros.Network.Diffusion.EgressRule"
     [ testProperty "a connection's rule and sink follow the decision table" prop_rule
-    , testProperty "the floor's classes are the rule's tiers" prop_floorClass_follows_rank
+    , testProperty "the floor's classes and the turns threshold follow the rule's tiers" prop_floorClass_follows_rank
     ]
 
 -- | What happens to a connection, at a time in seconds: its rank is asked,
@@ -151,12 +151,14 @@ prop_rule c@Case { cStanding, cPools, cLock, cOps } =
 -- | What gives the floor's tier numbers their meaning is 'rankFor'. Over
 -- every standing and credit state: a local root has no class, a partner is
 -- class 0, a pool relay with credit class 1, a stranger with credit class 2,
--- and a peer without credit has none. A renumbering of the tiers on either
--- side fails here.
+-- and a peer without credit has none; and exactly the peers without credit
+-- are at or above 'restTier', where the order within a tier is turns. A
+-- renumbering of the tiers on either side fails here.
 prop_floorClass_follows_rank :: Property
 prop_floorClass_follows_rank = once $ conjoin
   [ counterexample (show (standing, matched, hasAny))
   $ floorClass tier === expected
+    .&&. (tier >= restTier) === (standing == Other && not hasAny)
   | standing <- [LocalRoot, Partner, Other]
   , matched  <- [False, True]
   , hasAny   <- [False, True]

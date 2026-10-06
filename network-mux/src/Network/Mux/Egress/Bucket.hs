@@ -14,8 +14,9 @@
 -- Service order is @('Rank', ticket)@: lower rank first, FIFO among equals;
 -- with every bearer at 'Rank' 0 (the default) that is an equal share. With a
 -- 'Rotation' the rank set by the application is the tier, and within a tier
--- every bearer is dealt a random place that is re-dealt each period. A short
--- head sleeps until its bytes are there, at microsecond resolution.
+-- every bearer is dealt a random place that is re-dealt each period; from
+-- 'roTurnsFrom' up, the rest of the cascade, bearers take turns instead. A
+-- short head sleeps until its bytes are there, at microsecond resolution.
 --
 -- Fast path: with nobody queued and enough tokens, a take is one transaction.
 -- Otherwise the bearer queues and blocks on its own wake variable; the bearer
@@ -83,6 +84,7 @@ import Data.Word (Word32, Word64, Word8)
 import System.Random.SplitMix qualified as SM
 
 import Network.Mux.Egress.Floor
+import Network.Mux.Types (unrankedNumber)
 
 
 -- | A bearer's tier: lower is served first.
@@ -98,8 +100,13 @@ type WaitKey = (Word32, Ticket)
 -- | How the order within a tier is drawn: a node-local seed, and the period
 -- after which every bearer is dealt a new place.
 data Rotation = Rotation {
-  roSeed   :: !Word64,
-  roPeriod :: !DiffTime      -- ^ e.g. 599 s; zero or less is no rotation
+  roSeed      :: !Word64,
+  roPeriod    :: !DiffTime,  -- ^ e.g. 599 s; zero or less is no rotation
+  roTurnsFrom :: !Word8
+    -- ^ tiers at or above this take turns instead of a dealt place: every
+    -- request queues behind the tier's current waiters, so backlogged bearers
+    -- rotate one batch at a time. The rest of the cascade, where finishing one
+    -- transfer first serves nobody and a newcomer must not wait out a flood.
   }
   deriving Show
 
@@ -395,10 +402,14 @@ rotatedRank Rotation { roSeed, roPeriod } bearer (Time now)
     periodSeed = fst (SM.nextWord64 (SM.mkSMGen (roSeed `xor` period)))
 
 -- | Where a bearer queues, lower first: the tier set with 'setRank' in the top
--- byte, and below it the place the rotation deals it, or 0 without one.
+-- byte, and below it the place the rotation deals it, or 0 without one and
+-- 0 in the tiers that take turns.
 queueRank :: Maybe Rotation -> Word64 -> Rank -> Time -> Word32
 queueRank rotation bearer (Rank tier) now =
-  fromIntegral tier `shiftL` 24 .|. maybe 0 (\ro -> rotatedRank ro bearer now) rotation
+  fromIntegral tier `shiftL` 24 .|. maybe 0 place rotation
+  where
+    place ro | tier >= roTurnsFrom ro = 0
+             | otherwise              = rotatedRank ro bearer now
 
 
 data BucketHandle m = BucketHandle {
@@ -414,7 +425,7 @@ registerBearer bucket@Bucket { bBearers } = do
   bhId <- atomically $ stateTVar bBearers (\n -> (n, n + 1))
   -- unranked bearers are served last, so a bearer that queued before its rule
   -- was installed would lose out rather than jump the queue
-  BucketHandle bucket bhId <$> newTVarIO (\_ -> return (Rank maxBound)) <*> newTVarIO False
+  BucketHandle bucket bhId <$> newTVarIO (\_ -> return (Rank unrankedNumber)) <*> newTVarIO False
 
 -- | Handed out in registration order, from 0.
 bearerId :: BucketHandle m -> Word64

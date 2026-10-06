@@ -135,7 +135,8 @@ prop_bidirectional_IO_scheduled (Fixed rnd) data0 data1 =
     ioProperty $ do
       withIOManager $ \iomgr -> do
         budget <- Mx.newBucket (950e6 / 8) (2 * 131072)
-                    (Just Mx.Rotation { Mx.roSeed = fromIntegral rnd, Mx.roPeriod = 599 })
+                    (Just Mx.Rotation { Mx.roSeed = fromIntegral rnd, Mx.roPeriod = 599
+                                      , Mx.roTurnsFrom = 4 })
         slice  <- Mx.newBucket (950e6 / 8 * 0.15) (2 * 131072) Nothing
         let policy = Mx.EgressPolicy { Mx.egressBudget = budget
                                      , Mx.egressSlice  = Just slice

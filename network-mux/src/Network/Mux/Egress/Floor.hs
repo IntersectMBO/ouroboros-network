@@ -47,6 +47,8 @@ import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Word (Word8)
 
+import Network.Mux.Types (Tier (..), numberTier)
+
 
 -- | The classes the floor serves: partners, pool relays, strangers with
 -- credit. Local roots have no class, they head the cascade; neither has
@@ -54,15 +56,15 @@ import Data.Word (Word8)
 newtype FloorClass = FloorClass Word8
   deriving (Eq, Ord, Show)
 
--- | The class of a tier, if the tier is served by the floor: 1 partners,
--- 2 pool relays, 3 strangers; tier 0 and anything from 4 up, none.
+-- | The class of a tier, if the tier is served by the floor: partners, pool
+-- relays and strangers; local roots, the rest and the unranked, none.
 floorClass :: Word8 -> Maybe FloorClass
-floorClass tier =
-  case tier of
-       1 -> Just (FloorClass 0)
-       2 -> Just (FloorClass 1)
-       3 -> Just (FloorClass 2)
-       _ -> Nothing
+floorClass n =
+  case numberTier n of
+       Just PartnerTier  -> Just (FloorClass 0)
+       Just PoolTier     -> Just (FloorClass 1)
+       Just StrangerTier -> Just (FloorClass 2)
+       _                 -> Nothing
 
 floorClasses :: [FloorClass]
 floorClasses = map FloorClass [0 .. 2]
