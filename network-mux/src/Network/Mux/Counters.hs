@@ -29,6 +29,7 @@ module Network.Mux.Counters
   , egressWaitBounds
   , egressBurstBounds
   , egressBurstWidths
+  , egressServedWindow
   ) where
 
 import Control.Concurrent.Class.MonadSTM.Strict
@@ -41,14 +42,13 @@ import Control.Tracer (Tracer, traceWith)
 
 import Data.IntMap.Strict (IntMap)
 import Data.IntMap.Strict qualified as IntMap
-import Data.Map.Merge.Strict qualified as Map
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Word (Word64, Word8)
 
 import Network.Mux.Egress.Bucket (Bucket, BucketStats (..), TierGrants (..),
            bucketSnapshot, burstBounds, burstWidths, emptyBucketStats,
-           waitBounds)
+           servedByTier, servedWindow, servedWithin, waitBounds)
 import Network.Mux.Trace (Error (..))
 import Network.Mux.Types (MiniProtocolDir, MiniProtocolNum)
 
@@ -92,12 +92,14 @@ data SchedulingCounts = SchedulingCounts {
   }
   deriving (Eq, Show)
 
--- | The budget's queue seen from one tier: 0 local roots, 1 partners, 2 the
--- rest, 255 unranked bearers. The fast path is not ranked and counts nowhere.
+-- | The budget's queue seen from one tier: 0 local roots, 1 partners, 2 pool
+-- relays, 3 strangers, 4 the rest, 255 unranked bearers. The fast path is not
+-- ranked for the bytes and batches, but its bearers count as served.
 data TierCounts = TierCounts {
   tcBytes   :: !Word64,
   tcBatches :: !Word64,
-  tcQueued  :: !Int
+  tcQueued  :: !Int,
+  tcServed  :: !Int     -- ^ bearers granted within 'egressServedWindow'
   }
   deriving (Eq, Show)
 
@@ -260,6 +262,10 @@ egressBurstBounds = burstBounds
 egressBurstWidths :: [Int]
 egressBurstWidths = burstWidths
 
+-- | How long a grant keeps its bearer in 'tcServed'.
+egressServedWindow :: DiffTime
+egressServedWindow = servedWindow
+
 -- | A prime, so that snapshots do not keep step with other periodic work such
 -- as keep-alive, and below a 10 s scrape.
 countersInterval :: DiffTime
@@ -302,11 +308,12 @@ schedulingCountsWith runTx now (budget, slice_m) = do
   s_m <- traverse (runTx . (`bucketSnapshot` now)) slice_m
   let slice       = maybe emptyStats (\(st, _, _, _) -> st) s_m
       sliceQueued = maybe 0 (\(_, _, q, _) -> q) s_m
-      tiers       = Map.toList $ Map.merge
-                      (Map.mapMissing (\_ (TierGrants n k) -> TierCounts n k 0))
-                      (Map.mapMissing (\_ q -> TierCounts 0 0 q))
-                      (Map.zipWithMatched (\_ (TierGrants n k) q -> TierCounts n k q))
-                      (bsTiers b) queuedByTier
+      tiers       = Map.toList $ Map.unionsWith plus
+                      [ (\(TierGrants n k) -> TierCounts n k 0 0) <$> bsTiers b
+                      , (\q -> TierCounts 0 0 q 0) <$> queuedByTier
+                      , TierCounts 0 0 0 <$> servedByTier (servedWithin servedWindow now (bsServed b)) ]
+      plus (TierCounts n k q s) (TierCounts n' k' q' s') =
+        TierCounts (n + n') (k + k') (q + q') (s + s')
   return SchedulingCounts {
     scDirectBytes        = bsCredited b,
     scSliceBytes         = bsBytes slice - bsBorrowed slice,
