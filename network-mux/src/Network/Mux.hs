@@ -82,6 +82,7 @@ module Network.Mux
   , egressWaitBounds
   , egressBurstBounds
   , egressBurstWidths
+  , egressServedWindow
     -- * Errors
   , Error (..)
   , RuntimeError (..)

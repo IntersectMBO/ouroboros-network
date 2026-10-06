@@ -379,7 +379,10 @@ prop_accounting fr =
   let (gs, st) = runFloor True fr
       observed = Map.fromListWith (+) [ (gTier g, fromIntegral (gBytes g)) | g <- gs, gSource g == FromFloor ]
       counted  = Map.map Bucket.tgBytes (Bucket.bsFloorTiers st)
-  in counterexample (show (observed, counted)) $ observed === counted
+      -- every grant, the floor's included, leaves its bearer's last at its tier
+      served   = Map.fromListWith max [ ((gTier g, fromIntegral (gBearer g)), gAt g) | g <- gs ]
+  in counterexample (show (observed, counted)) (observed === counted)
+     .&&. counterexample "served" (served === Bucket.bsServed st)
 
 -- | After 'setBucketRate' the floor hands out its share of the new rate: a
 -- credited bearer served only by the floor, behind two saturators, receives

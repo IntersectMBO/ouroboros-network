@@ -60,6 +60,8 @@ module Network.Mux.Egress.Bucket
   , burstWidths
   , emptyBucketStats
   , bucketSnapshot
+  , servedWindow
+  , tierRefresh
     -- * Pure core
   , tokenLevel
   , grantAt
@@ -68,6 +70,9 @@ module Network.Mux.Egress.Bucket
   , rotatedRank
   , queueRank
   , chargeAt
+  , recordServed
+  , servedWithin
+  , servedByTier
   ) where
 
 import Control.Concurrent.Class.MonadSTM qualified as LazySTM
@@ -165,8 +170,15 @@ data BucketStats = BucketStats {
   bsTiers         :: !(Map Word8 TierGrants),
                                  -- ^ what was granted from the queue, by the tier the
                                  --   bearer queued at; the fast path is not ranked
-  bsFloorTiers    :: !(Map Word8 TierGrants)
+  bsFloorTiers    :: !(Map Word8 TierGrants),
                                  -- ^ of 'bsTiers', what the floor granted
+  bsServed        :: !(Map (Word8, Word64) Time),
+                                 -- ^ the last grant by tier and bearer id, the
+                                 --   fast path included at the tier last asked
+                                 --   within 'tierRefresh'; pruned by
+                                 --   'recordServed', so never older than two
+                                 --   'servedWindow's
+  bsServedPruned  :: !Time       -- ^ when 'bsServed' was last pruned
   }
   deriving (Eq, Show)
 
@@ -212,7 +224,7 @@ strictZipWith _ _ _ = []
 emptyBucketStats :: BucketStats
 emptyBucketStats = BucketStats 0 0 0 0 0 0 (zeros waitBounds)
                                0 0 0 (zeros burstBounds) (zeros burstWidths)
-                               Map.empty Map.empty
+                               Map.empty Map.empty Map.empty (Time 0)
 
 -- | The queue went from @n0@ to @n1@ bearers at @now@.
 burstStep :: Time -> Int -> Int -> (BurstState, BucketStats) -> (BurstState, BucketStats)
@@ -260,6 +272,35 @@ recordGrant tier_m source need waitedWritable waitedTokens st =
      }
   where
     n = fromIntegral need
+
+-- | How long a grant keeps its bearer counted as served at its tier, and how
+-- often the record of them is pruned.
+servedWindow :: DiffTime
+servedWindow = 59
+
+-- | How long a bearer's tier, once asked, labels its unqueued grants in
+-- 'bsServed': as often as the counters read them.
+tierRefresh :: DiffTime
+tierRefresh = 7
+
+-- | A grant to bearer @b@ at @tier@ at @now@. Once a 'servedWindow' after the
+-- last prune it also drops the bearers not granted within the window, so the
+-- record stays bounded whether or not anything reads it.
+recordServed :: Word8 -> Word64 -> Time -> BucketStats -> BucketStats
+recordServed !tier !b now st
+  | now `diffTime` bsServedPruned st >= servedWindow
+  = st { bsServed       = Map.insert (tier, b) now (servedWithin servedWindow now (bsServed st))
+       , bsServedPruned = now }
+  | otherwise
+  = st { bsServed = Map.insert (tier, b) now (bsServed st) }
+
+-- | The bearers granted within @window@ of @now@.
+servedWithin :: DiffTime -> Time -> Map (Word8, Word64) Time -> Map (Word8, Word64) Time
+servedWithin window now = Map.filter (\t -> now `diffTime` t <= window)
+
+-- | Bearers served at each tier; one that changed tier counts at each.
+servedByTier :: Map (Word8, Word64) a -> Map Word8 Int
+servedByTier m = Map.fromListWith (+) [ (tier, 1) | (tier, _) <- Map.keys m ]
 
 -- | The counters, the token level, the number of bearers queued and how many
 -- of them at each tier, at @now@.
@@ -417,27 +458,37 @@ data BucketHandle m = BucketHandle {
   bhId     :: !Word64,
   bhRank   :: !(StrictTVar m (Time -> STM m Rank)),
   -- ^ the tier, asked as the bearer joins the queue, at that moment
+  bhTier   :: !(StrictTVar m TierAsked), -- ^ the tier last asked, for the fast path
   bhWake   :: !(StrictTVar m Bool)       -- ^ set by the bearer ahead of us when it is granted
   }
+
+-- | The tier a bearer's rule last answered, and when.
+data TierAsked = NeverAsked
+               | TierAsked !Word8 !Time
 
 registerBearer :: MonadSTM m => Bucket m -> m (BucketHandle m)
 registerBearer bucket@Bucket { bBearers } = do
   bhId <- atomically $ stateTVar bBearers (\n -> (n, n + 1))
   -- unranked bearers are served last, so a bearer that queued before its rule
   -- was installed would lose out rather than jump the queue
-  BucketHandle bucket bhId <$> newTVarIO (\_ -> return (Rank unrankedNumber)) <*> newTVarIO False
+  BucketHandle bucket bhId <$> newTVarIO (\_ -> return (Rank unrankedNumber)) <*> newTVarIO NeverAsked
+                           <*> newTVarIO False
 
 -- | Handed out in registration order, from 0.
 bearerId :: BucketHandle m -> Word64
 bearerId = bhId
 
 setRank :: MonadSTM m => BucketHandle m -> Rank -> STM m ()
-setRank BucketHandle { bhRank } rank = writeTVar bhRank (\_ -> return rank)
+setRank BucketHandle { bhRank, bhTier } rank = do
+  writeTVar bhRank (\_ -> return rank)
+  writeTVar bhTier NeverAsked
 
 -- | A rule for the tier instead of a value: asked in the transaction that
 -- queues the bearer, with that moment, so whatever it reads is current then.
 setRankSource :: MonadSTM m => BucketHandle m -> (Time -> STM m Rank) -> STM m ()
-setRankSource BucketHandle { bhRank } = writeTVar bhRank
+setRankSource BucketHandle { bhRank, bhTier } rule = do
+  writeTVar bhRank rule
+  writeTVar bhTier NeverAsked
 
 
 -- | Take @need@ bytes if they are there at @now@, else the instant they will
@@ -503,7 +554,7 @@ awaitGrantWith :: forall m. (MonadTimer m, MonadMask m)
 awaitGrantWith borrow_m waitedWritable
                BucketHandle { bhBucket = bucket@Bucket { bWaiters, bTickets, bRotation, bStats
                                                        , bBurst, bFloor }
-                            , bhId, bhRank, bhWake }
+                            , bhId, bhRank, bhTier, bhWake }
                need =
   -- masked until the exception handler is in place: a bearer killed on its
   -- way into the queue must not leave a dead entry at the head
@@ -523,6 +574,7 @@ awaitGrantWith borrow_m waitedWritable
              -- evaluated, or the queued key holds a thunk for each until compared
              !ticket <- stateTVar bTickets (\t@(Ticket n) -> (t, Ticket (n + 1)))
              tier    <- readTVar bhRank >>= ($ now)
+             writeTVar bhTier (TierAsked (tierOf tier) now)
              let !rank = queueRank bRotation bhId tier now
                  key   = (rank, ticket)
 
@@ -583,8 +635,9 @@ awaitGrantWith borrow_m waitedWritable
       writeTVar (flState fl) (floorGranted c need st)
       wakeFloorPick fl fw'
       modifyTVar bStats
-        (recordGrant (Just (tierOfKey key)) FromFloor need
-                     waitedWritable (now `diffTime` asked))
+        ( recordServed (tierOfKey key) bhId now
+        . recordGrant (Just (tierOfKey key)) FromFloor need
+                      waitedWritable (now `diffTime` asked))
 
     -- the queue went from @n0@ to @n1@ bearers: account for busy periods
     queueChanged :: Time -> Int -> Int -> STM m ()
@@ -604,11 +657,26 @@ awaitGrantWith borrow_m waitedWritable
     takeOrBorrow tier_m asked now = do
       r <- takeOrBorrow' now
       case r of
-           Right source ->
+           Right source -> do
+             served <- maybe (fastTier now) return tier_m
              modifyTVar bStats
-               (recordGrant tier_m source need waitedWritable (now `diffTime` asked))
+               ( recordServed served bhId now
+               . recordGrant tier_m source need waitedWritable (now `diffTime` asked))
            Left _ -> return ()
       return r
+
+    -- the fast path is not ranked: label its grant in 'bsServed' with the tier
+    -- last asked, asking the rule only once that is 'tierRefresh' old, so the
+    -- grant rarely reads what the rule reads
+    fastTier :: Time -> STM m Word8
+    fastTier now = do
+      asked <- readTVar bhTier
+      case asked of
+           TierAsked tier at | now `diffTime` at < tierRefresh -> return tier
+           _ -> do
+             tier <- tierOf <$> (readTVar bhRank >>= ($ now))
+             writeTVar bhTier (TierAsked tier now)
+             return tier
 
     takeOrBorrow' :: Time -> STM m (Either Time GrantSource)
     takeOrBorrow' now = do

@@ -650,7 +650,8 @@ instance LogFormatting Mux.CountersTrace where
             , "burstsWider" .= scBurstsWider
             , "tiers" .= [ object [ "tier" .= t, "name" .= tierName t
                                   , "bytes" .= Mux.tcBytes c, "batches" .= Mux.tcBatches c
-                                  , "queued" .= Mux.tcQueued c ]
+                                  , "queued" .= Mux.tcQueued c
+                                  , "served" .= Mux.tcServed c ]
                          | (t, c) <- scTiers ]
             ]
         ingressObject side Mux.IngressCounts { Mux.icReadTimeouts, Mux.icOverruns
@@ -716,7 +717,8 @@ instance LogFormatting Mux.CountersTrace where
           | (w, n) <- scBurstsWider ] ++
           concat [ [ IntM (tier <> ".bytes")   (fromIntegral (Mux.tcBytes c))
                    , IntM (tier <> ".batches") (fromIntegral (Mux.tcBatches c))
-                   , IntM (tier <> ".queued")  (fromIntegral (Mux.tcQueued c)) ]
+                   , IntM (tier <> ".queued")  (fromIntegral (Mux.tcQueued c))
+                   , IntM (tier <> ".served")  (fromIntegral (Mux.tcServed c)) ]
                  | (t, c) <- scTiers, let tier = prefix <> ".tier." <> tierName t ] ++
           [ IntM (prefix <> waitsOverSuffix (realToFrac b)) (fromIntegral n)
           | (b, n) <- scWaitsOver ]
@@ -793,7 +795,11 @@ instance MetaTrace Mux.CountersTrace where
           concat [ [ (".tier." <> name <> ".bytes",   "Bytes the queue granted " <> who <> ".")
                    , (".tier." <> name <> ".batches", "Batches the queue granted " <> who <> ".")
                    , (".tier." <> name <> ".queued",
-                      "Bearers of " <> who <> " waiting on the budget.") ]
+                      "Bearers of " <> who <> " waiting on the budget.")
+                   , (".tier." <> name <> ".served",
+                      "Bearers of " <> who <> " granted a batch within the last "
+                        <> showT (realToFrac Mux.egressServedWindow :: Double)
+                        <> " s, the fast path included.") ]
                  | (name, who) <- [ (Text.pack (Mux.tierName t), tierWho t) | t <- [minBound .. maxBound] ]
                                   ++ [ (Text.pack (Mux.numberName maxBound), "unranked bearers") ] ]
       ]

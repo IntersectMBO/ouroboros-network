@@ -121,6 +121,10 @@ tests =
     , testProperty "atRate: keeps the level"      prop_atRate
     , testProperty "rotatedRank: re-dealt each period" prop_rotatedRank
     , testProperty "queueRank: zero period is none"   prop_queueRank_zeroPeriod
+    , testProperty "served: each bearer once per tier, within the window" prop_served_window
+    , testProperty "served: the counters drop the stale bearers" prop_served_counters
+    , testProperty "served: the record prunes itself, bounded" prop_served_bounded
+    , testProperty "served: an unqueued grant asks its tier once a refresh" prop_served_fast_tier
     , testProperty "queueRank: turns from the threshold" prop_queueRank_turns
     , testProperty "chargeAt: takes without waiting"  prop_chargeAt
     , testProperty "schedule matches the replay"  prop_bucket_schedule
@@ -3012,6 +3016,223 @@ prop_queueRank_zeroPeriod seed bearer tier (NonNegative ps) =
   where
     t = picos ps `addTime` Time 0
 
+-- | Grants at tiers and bearers, recorded in time order, then counted at
+-- @now@: a tier counts each bearer it granted within the window once,
+-- however often, and none granted only before it.
+prop_served_window :: ServedGrants -> Property
+prop_served_window (ServedGrants window now grants) =
+    classify (any (\(_, _, t) -> now `diffTime` t == window) grants) "a grant on the boundary" $
+    classify (any (\(_, _, t) -> now `diffTime` t > window) grants)  "a grant aged out" $
+    classify (M.size oracle > 1)                                     "several tiers" $
+    classify (any (> 1) (M.elems oracle))                            "several bearers in a tier" $
+      Bucket.servedByTier (Bucket.servedWithin window now recorded) === oracle
+  where
+    recorded = Bucket.bsServed $ List.foldl'
+                 (\st (tier, b, t) -> Bucket.recordServed tier b t st)
+                 Bucket.emptyBucketStats grants
+    oracle = servedOracle window now grants
+
+-- | The served record with nothing else running: replayed exactly against the
+-- model after every grant, never holding a grant two windows old, and
+-- counting at each grant's instant what the oracle counts over the whole
+-- history.
+prop_served_bounded :: ServedHistory -> Property
+prop_served_bounded (ServedHistory grants) =
+    classify (snd (servedModel grants) > Time 0)                 "pruned" $
+    classify (any (== w) gaps)                                   "a gap of exactly the window" $
+    classify (any (\(st, (_, _, t)) -> any (\s -> t `diffTime` s > w) (M.elems (Bucket.bsServed st)))
+                  (zip states grants))                           "a grant kept past one window" $
+      conjoin
+        [ counterexample ("after grant " ++ show i) $
+               (Bucket.bsServed st, Bucket.bsServedPruned st) === servedModel prefix
+          .&&. counterexample "older than two windows"
+                 (all (\s -> t `diffTime` s <= 2 * w) (M.elems (Bucket.bsServed st)))
+          .&&. Bucket.servedByTier (Bucket.servedWithin w t (Bucket.bsServed st))
+                 === servedOracle w t prefix
+        | (i, st, prefix, (_, _, t)) <- zip4 [1 :: Int ..] states (drop 1 (List.inits grants)) grants ]
+  where
+    w      = Bucket.servedWindow
+    states = drop 1 (scanl (\st (tier, b, t) -> Bucket.recordServed tier b t st)
+                           Bucket.emptyBucketStats grants)
+    gaps   = zipWith (\(_, _, a) (_, _, b) -> b `diffTime` a) grants (drop 1 grants)
+    zip4 (a : as) (b : bs) (c : cs) (d : ds) = (a, b, c, d) : zip4 as bs cs ds
+    zip4 _ _ _ _                             = []
+
+-- | The served record and when it was last pruned, after grants in time
+-- order: once a window after the last prune, a grant drops every bearer not
+-- granted within the window.
+servedModel :: [(Word8, Word64, Time)] -> (M.Map (Word8, Word64) Time, Time)
+servedModel = List.foldl' step (M.empty, Time 0)
+  where
+    w = Bucket.servedWindow
+    step (m, pruned) (tier, b, t)
+      | t `diffTime` pruned >= w = (M.insert (tier, b) t (M.filter (\s -> t `diffTime` s <= w) m), t)
+      | otherwise                = (M.insert (tier, b) t m, pruned)
+
+-- | Grants in time order, gaps in whole seconds with exactly the window
+-- weighted up, so prunes land on the boundary and past it.
+newtype ServedHistory = ServedHistory [(Word8, Word64, Time)]
+  deriving Show
+
+instance Arbitrary ServedHistory where
+    arbitrary = do
+      let w = round (realToFrac Bucket.servedWindow :: Double) :: Integer
+      gaps <- listOf1 (frequency [ (3, choose (0, 5)), (2, choose (6, w - 1))
+                                 , (2, pure w), (1, choose (w + 1, 3 * w)) ])
+      let times = map (Time . fromIntegral) (scanl1 (+) gaps)
+      ServedHistory <$> mapM (\t -> (,,) <$> elements [0, 1, 2, 3, 4, 255]
+                                         <*> (fromIntegral <$> choose (0, 5 :: Int))
+                                         <*> pure t) times
+    shrink (ServedHistory grants) =
+      [ ServedHistory gs | gs <- shrinkList (const []) grants, not (null gs) ]
+
+-- | Per tier, the bearers with a grant within @window@ of @now@.
+servedOracle :: DiffTime -> Time -> [(Word8, Word64, Time)] -> M.Map Word8 Int
+servedOracle window now grants =
+    M.fromListWith (+)
+      [ (tier, 1)
+      | (tier, b) <- Set.toList (Set.fromList [ (tier, b) | (tier, b, _) <- grants ])
+      , any (\(tier', b', t) -> tier' == tier && b' == b && now `diffTime` t <= window)
+            grants ]
+
+-- | The same grants through a real bucket, every one on the fast path, and
+-- the counters' snapshot at @now@: its served count per tier is the oracle's
+-- over 'Bucket.servedWindow'. The times are stretched so that the window
+-- splits them.
+prop_served_counters :: ServedGrants -> Property
+prop_served_counters (ServedGrants _ now0 grants0) =
+    classify (any (\(_, _, t) -> now `diffTime` t == Bucket.servedWindow) grants) "a grant on the boundary" $
+    classify (any (\(_, _, t) -> now `diffTime` t > Bucket.servedWindow) grants)  "a grant aged out" $
+      counted === M.toList (servedOracle Bucket.servedWindow now grants)
+  where
+    stretch (Time d) = Time (4 * d)
+    now    = stretch now0
+    grants = [ (tier, b, stretch t) | (tier, b, t) <- grants0 ]
+    counted = runSimOrThrow $ do
+      bucket <- Bucket.newBucket 1e12 (1024 * 1024) Nothing
+      hs <- mapM (const (Bucket.registerBearer bucket)) [0 .. 5 :: Int]
+      forM_ grants $ \(tier, b, t) -> do
+        t0 <- getMonotonicTime
+        threadDelay (t `diffTime` t0)
+        let h = hs !! fromIntegral b
+        atomically $ Bucket.setRank h (Bucket.Rank tier)
+        Bucket.awaitGrant h 1
+      t0 <- getMonotonicTime
+      threadDelay (now `diffTime` t0)
+      sc <- atomically $ Counters.schedulingCounts now (bucket, Nothing)
+      return [ (tier, Counters.tcServed c) | (tier, c) <- Counters.scTiers sc
+                                           , Counters.tcServed c > 0 ]
+
+-- | Grants that never queue record the tier their bearer's rule last gave,
+-- asking it again only once that answer is 'Bucket.tierRefresh' old or the
+-- rule is installed anew.  A rule over a variable per bearer, changed and
+-- reinstalled between requests, is replayed exactly: the record and how many
+-- times the rules were asked.
+prop_served_fast_tier :: FastTiers -> Property
+prop_served_fast_tier (FastTiers n events) =
+    classify (boundary > 0) "a request exactly a refresh after its ask" $
+    classify (stale > 0)    "a grant recorded at a tier its rule no longer gives" $
+    classify (any reinstalls events) "a rule installed again" $
+      observed === (served, asks)
+  where
+    (served, asks, boundary, stale) = fastTierOracle events
+    reinstalls (_, FastReinstall _) = True
+    reinstalls _                    = False
+    observed = runSimOrThrow $ do
+      bucket <- Bucket.newBucket 1e12 (1024 * 1024) Nothing
+      asked  <- newTVarIO (0 :: Int)
+      let rule v = \_ -> modifyTVar asked (+ 1) >> readTVar v
+      hvs <- forM [1 .. n] $ \_ -> do
+        h <- Bucket.registerBearer bucket
+        v <- newTVarIO (Bucket.Rank 0)
+        atomically $ Bucket.setRankSource h (rule v)
+        return (h, v)
+      forM_ events $ \(t, e) -> do
+        t0 <- getMonotonicTime
+        threadDelay (t `diffTime` t0)
+        case e of
+             FastRequest b    -> void $ Bucket.awaitGrant (fst (hvs !! b)) 1
+             FastSetTier b r  -> atomically $ writeTVar (snd (hvs !! b)) (Bucket.Rank r)
+             FastReinstall b  -> let (h, v) = hvs !! b
+                                 in atomically $ Bucket.setRankSource h (rule v)
+      now <- getMonotonicTime
+      (st, _, _, _) <- atomically $ Bucket.bucketSnapshot bucket now
+      (,) (Bucket.bsServed st) <$> readTVarIO asked
+
+-- | The record and the number of asks, and how many requests came exactly a
+-- refresh after their bearer's last ask and how many grants were recorded at
+-- a tier other than the rule's.
+fastTierOracle :: [(Time, FastEvent)] -> (M.Map (Word8, Word64) Time, Int, Int, Int)
+fastTierOracle = go M.empty M.empty [] 0 0 0
+  where
+    go _ _ served asks boundary stale [] = (fst (servedModel (reverse served)), asks, boundary, stale)
+    go tiers cache served asks boundary stale ((t, e) : rest) = case e of
+      FastSetTier b r -> go (M.insert b r tiers) cache served asks boundary stale rest
+      FastReinstall b -> go tiers (M.delete b cache) served asks boundary stale rest
+      FastRequest b ->
+        let current  = M.findWithDefault 0 b tiers
+            onEdge   = maybe False (\(_, at) -> t `diffTime` at == Bucket.tierRefresh)
+                             (M.lookup b cache)
+            (tier, cache', asks') = case M.lookup b cache of
+              Just (r, at) | t `diffTime` at < Bucket.tierRefresh -> (r, cache, asks)
+              _ -> (current, M.insert b (current, t) cache, asks + 1)
+        in go tiers cache' ((tier, fromIntegral b, t) : served) asks'
+              (boundary + fromEnum onEdge) (stale + fromEnum (tier /= current)) rest
+
+data FastEvent = FastRequest Int        -- ^ the bearer asks for one byte
+               | FastSetTier Int Word8  -- ^ the bearer's rule gives this tier from now
+               | FastReinstall Int      -- ^ the bearer's rule is installed again
+  deriving (Eq, Show)
+
+-- | Bearers, and their events in time order on a one-second grid, with gaps
+-- of exactly a refresh weighted up.
+data FastTiers = FastTiers Int [(Time, FastEvent)]
+  deriving Show
+
+instance Arbitrary FastTiers where
+    arbitrary = do
+      n   <- choose (1, 3)
+      len <- choose (1, 30)
+      let refresh = round (realToFrac Bucket.tierRefresh :: Double) :: Integer
+          steps :: Int -> Time -> Gen [(Time, FastEvent)]
+          steps 0 _ = return []
+          steps k t = do
+            gap <- frequency [ (3, return 0), (4, choose (1, refresh - 1))
+                             , (3, return refresh), (1, choose (refresh + 1, 2 * refresh)) ]
+            e   <- frequency [ (3, FastRequest <$> choose (0, n - 1))
+                             , (1, FastSetTier <$> choose (0, n - 1) <*> choose (0, 3))
+                             , (1, FastReinstall <$> choose (0, n - 1)) ]
+            let t' = fromIntegral gap `addTime` t
+            ((t', e) :) <$> steps (k - 1) t'
+      FastTiers n <$> steps len (Time 0)
+
+    shrink (FastTiers n events) =
+         [ FastTiers n es | es <- shrinkList (const []) events, not (null es) ]
+      ++ [ FastTiers n (take i events ++ [(t, FastSetTier b 0)] ++ drop (i + 1) events)
+         | (i, (t, FastSetTier b r)) <- zip [0 ..] events, r /= 0 ]
+
+-- | A window, the instant of the count, and grants in time order before it,
+-- on a coarse grid so that some land exactly on the window's edge.
+data ServedGrants = ServedGrants DiffTime Time [(Word8, Word64, Time)]
+  deriving Show
+
+instance Arbitrary ServedGrants where
+    arbitrary = do
+      window <- (fromIntegral :: Int -> DiffTime) <$> choose (0, 30)
+      steps  <- listOf (choose (0, 3 :: Int))
+      let times = map (\s -> Time (fromIntegral s)) (scanl1 (+) steps)
+      grants <- mapM (\t -> (,,) <$> elements [0, 1, 2, 3, 4, 255]
+                                  <*> (fromIntegral <$> choose (0, 5 :: Int))
+                                  <*> pure t) times
+      extra  <- choose (0, 10 :: Int)
+      let lastT = maybe (Time 0) (\(_, _, t) -> t) (lastMaybe grants)
+      return (ServedGrants window (fromIntegral extra `addTime` lastT) grants)
+      where
+        lastMaybe xs = if null xs then Nothing else Just (last xs)
+    shrink (ServedGrants window now grants) =
+      [ ServedGrants window now gs | gs <- shrinkList (const []) grants ]
+      ++ [ ServedGrants w now grants | w <- [0, window / 2], w < window ]
+
 --
 -- Queue
 --
@@ -3407,8 +3628,30 @@ replayStats sch@BucketSched { schSlice, schBearers } =
            Bucket.bsTiers         = M.fromListWith (<>)
                                       [ (rankOf k, Bucket.TierGrants (fromIntegral (bytesOf k)) 1)
                                       | (k, _) <- gs, k `Set.member` queued ],
-           Bucket.bsFloorTiers    = M.empty
+           Bucket.bsFloorTiers    = M.empty,
+           Bucket.bsServed        = served,
+           Bucket.bsServedPruned  = pruned
          }
+      where
+        (served, pruned) = servedModel (List.sortOn (\(_, _, t) -> t)
+                             [ (tier, fromIntegral (fst k), granted)
+                             | (k, tier, granted) <- servedTiers queued gs ])
+
+    -- the tier each grant records: a queued one its rank, asked as it joined;
+    -- an unqueued one the tier last asked, unless that is 'Bucket.tierRefresh'
+    -- old, when its own rank is asked
+    servedTiers queued gs =
+      concatMap (go Nothing . List.sortOn (snd . fst))
+                (M.elems (M.fromListWith (++) [ (fst k, [g]) | g@(k, _) <- gs ]))
+      where
+        go _ [] = []
+        go cache ((k, (asked, granted)) : rest)
+          | k `Set.member` queued
+          = (k, rankOf k, granted) : go (Just (rankOf k, asked)) rest
+          | Just (tier, at) <- cache, granted `diffTime` at < Bucket.tierRefresh
+          = (k, tier, granted) : go cache rest
+          | otherwise
+          = (k, rankOf k, granted) : go (Just (rankOf k, granted)) rest
 
 replaySched :: BucketSched -> [((Int, Int), Time)]
 replaySched = map (\(k, (_, granted)) -> (k, granted)) . replayRun
