@@ -33,7 +33,7 @@ import Control.Tracer (Tracer, traceWith)
 
 import Data.Char (toLower)
 
-import Network.Mux.Counters (MuxCounters, countGateTimeout)
+import Network.Mux.Counters (ByteCounts, MuxCounters, countGateTimeout)
 import Network.Mux.Egress.Bucket (Bucket, BucketHandle, GrantSource (..),
            awaitGrantWaited, takeOnCredit)
 import Network.Mux.Timeout
@@ -192,17 +192,21 @@ muxer
     => EgressQueue m
     -> Tracer m BearerTrace
     -> Maybe (MuxCounters m)
+    -> Maybe (StrictTVar m ByteCounts)
+    -- ^ this mux's sent bytes, when it counts them
     -> LaneEgress m
     -> Bearer m
     -> m void
-muxer egressQueue tracer counters laneEgress
+muxer egressQueue tracer counters sentCell laneEgress
       Bearer { writeMany, sduSize, batchSize, egressInterval, awaitWritable } =
     withTimeoutSerial $ \timeout ->
     forever $ do
       start <- getMonotonicTime
       TLSRDemand mpc md d <- atomically $ readTBQueue egressQueue
       sdu <- processSingleWanton egressQueue sduSize mpc md d
-      (sdus, len, perProtocol) <- buildBatch sdu mpc
+      (sdus, len, perProtocol) <- buildBatch sdu mpc md
+      let count = forM_ sentCell $ \cell ->
+                    modifyTVar cell (Map.unionWith (+) (Map.map fromIntegral perProtocol))
 
       -- Scheduled egress: a batch is written only once the bearer can take it
       -- without blocking AND its lane has the bytes -- granted by the budget's
@@ -229,12 +233,16 @@ muxer egressQueue tracer counters laneEgress
                                                 (source == FromFloor))
       void $ writeMany tracer timeout sdus
       end <- getMonotonicTime
-      -- after the write, so a charge means bytes handed to the kernel
-      case laneEgress of
-           Scheduled_ _ chargeVar -> atomically $ do
+      -- after the write, so a charge or a count means bytes handed to the kernel
+      case (laneEgress, sentCell) of
+           (Scheduled_ _ chargeVar, _) -> atomically $ do
+             count
              sink <- readTVar chargeVar
-             forM_ (Map.toList perProtocol) (uncurry (sink end))
-           Credit budget -> atomically $ takeOnCredit budget end len
+             forM_ (Map.toList (Map.mapKeysWith (+) fst perProtocol)) (uncurry (sink end))
+           (Credit budget, _) -> atomically $ do
+             count
+             takeOnCredit budget end len
+           (_, Just _) -> atomically count
            _ -> return ()
       empty <- atomically $ isEmptyTBQueue egressQueue
       when empty $ do
@@ -263,10 +271,11 @@ muxer egressQueue tracer counters laneEgress
     -- (e.g the SO_SNDBUF for Socket) or number of SDUs.
     --
     -- Returns the SDUs in order, their length with headers, and that length
-    -- per mini-protocol, all accumulated as the batch is built so nothing
-    -- walks it again.
-    buildBatch :: SDU -> MiniProtocolNum -> m ([SDU], Int, Map.Map MiniProtocolNum Int)
-    buildBatch sdu0 mpc0 = go [sdu0] 1 len0 (Map.singleton mpc0 len0)
+    -- per mini-protocol and direction, all accumulated as the batch is built
+    -- so nothing walks it again.
+    buildBatch :: SDU -> MiniProtocolNum -> MiniProtocolDir
+               -> m ([SDU], Int, Map.Map (MiniProtocolNum, MiniProtocolDir) Int)
+    buildBatch sdu0 mpc0 md0 = go [sdu0] 1 len0 (Map.singleton (mpc0, md0) len0)
      where
       len0 = sduLength sdu0
       go sdus !n !len per
@@ -277,7 +286,7 @@ muxer egressQueue tracer counters laneEgress
                  Just (TLSRDemand mpc md d) -> do
                    sdu <- processSingleWanton egressQueue sduSize mpc md d
                    let !l = sduLength sdu
-                   go (sdu:sdus) (n + 1) (len + l) (Map.insertWith (+) mpc l per)
+                   go (sdu:sdus) (n + 1) (len + l) (Map.insertWith (+) (mpc, md) l per)
                  Nothing -> return (reverse sdus, len, per)
 
 -- | Pull a `maxSDU`s worth of data out out the `Wanton` - if there is

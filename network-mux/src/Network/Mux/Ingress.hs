@@ -17,6 +17,7 @@ import Data.ByteString.Builder.Internal (lazyByteStringInsert,
            lazyByteStringThreshold)
 import Data.ByteString.Lazy qualified as BL
 import Data.List (nub)
+import Data.Map.Strict qualified as Map
 import Data.Strict.Tuple (pattern (:!:))
 
 import Control.Concurrent.Class.MonadSTM.Strict
@@ -26,6 +27,8 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTimer.SI hiding (timeout)
 import Control.Tracer (Tracer)
 
+import Data.Word (Word64)
+import Network.Mux.Counters (ByteSlots)
 import Network.Mux.Timeout
 import Network.Mux.Trace
 import Network.Mux.Types as Mx
@@ -94,6 +97,8 @@ data MiniProtocolDispatchInfo m =
      MiniProtocolDispatchInfo
        !(IngressQueue m)
        !Int
+       !(Maybe (StrictTVar m Word64))
+       -- ^ bytes read for this mini-protocol and direction, when counted
    | MiniProtocolDirUnused
 
 
@@ -103,12 +108,26 @@ demuxer :: (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
             MonadTimer m)
       => [MiniProtocolState mode m]
       -> Tracer m BearerTrace
+      -> Maybe (StrictTVar m (ByteSlots m))
+      -- ^ where this mux publishes its read-byte counters, when it counts
       -> Bearer m
       -> m void
-demuxer ptcls tracer bearer =
-  let !dispatchTable = setupDispatchTable ptcls in
-  withTimeoutSerial $ \timeout ->
-  forever $ do
+demuxer ptcls tracer recvCell bearer = do
+  -- one counter per mini-protocol and direction the mux runs, made once and
+  -- carried in the dispatch table, so counting an SDU is one variable update
+  -- on the entry the demuxer looks up anyway; an SDU for anything else has
+  -- no entry and is never counted
+  slots <- case recvCell of
+    Nothing   -> return Map.empty
+    Just cell -> atomically $ do
+      s <- Map.fromList <$> sequence
+             [ (,) key <$> newTVar 0
+             | MiniProtocolState { miniProtocolInfo = MiniProtocolInfo { miniProtocolNum, miniProtocolDir } } <- ptcls
+             , let key = (miniProtocolNum, protocolDirEnum miniProtocolDir) ]
+      writeTVar cell s
+      return s
+  let !dispatchTable = setupDispatchTable ptcls slots
+  withTimeoutSerial $ \timeout -> forever $ do
     (sdu, _) <- Mx.read bearer tracer timeout
     -- say $ printf "demuxing sdu on mid %s mode %s lenght %d " (show $ msId sdu) (show $ msDir sdu)
     --             (BL.length $ msBlob sdu)
@@ -119,8 +138,12 @@ demuxer ptcls tracer bearer =
       Nothing   -> throwIO (UnknownMiniProtocol (msNum sdu))
       Just MiniProtocolDirUnused ->
                    throwIO (InitiatorOnly (msNum sdu))
-      Just (MiniProtocolDispatchInfo q qMax) ->
-        atomically $ do
+      Just (MiniProtocolDispatchInfo q qMax counter) -> do
+        -- the bytes are counted whether the queue takes them or overruns, so
+        -- the overrun is thrown after the transaction rather than inside it
+        accepted <- atomically $ do
+          forM_ counter $ \c ->
+            modifyTVar c (+ fromIntegral (msHeaderLength + BL.length (msBlob sdu)))
           len :!: buf <- readTVar q
           let !len' = len + BL.length (msBlob sdu)
           if len' <= fromIntegral qMax
@@ -131,7 +154,9 @@ demuxer ptcls tracer bearer =
                                else -- Copy payloads smaller than 128 bytes
                                  buf <> lazyByteStringThreshold 128 (msBlob sdu)
                 writeTVar q $ len' :!: buf'
-              else throwSTM $ IngressQueueOverRun (msNum sdu) (msDir sdu)
+                return True
+              else return False
+        unless accepted $ throwIO $ IngressQueueOverRun (msNum sdu) (msDir sdu)
 
 lookupMiniProtocol :: MiniProtocolDispatch m
                    -> MiniProtocolNum
@@ -146,8 +171,10 @@ lookupMiniProtocol (MiniProtocolDispatch pnumArray ptclArray) pnum pdir
 -- 'MiniProtocolDispatchInfo'. Use 'lookupMiniProtocol' to index it.
 --
 setupDispatchTable :: forall mode m.
-                      [MiniProtocolState mode m] -> MiniProtocolDispatch m
-setupDispatchTable ptcls =
+                      [MiniProtocolState mode m]
+                   -> ByteSlots m   -- ^ read-byte counters, by protocol and direction
+                   -> MiniProtocolDispatch m
+setupDispatchTable ptcls slots =
     MiniProtocolDispatch pnumArray ptclArray
   where
     -- The 'MiniProtocolNum' space is sparse but we don't want a huge single
@@ -177,7 +204,7 @@ setupDispatchTable ptcls =
                                    (maxpix, ResponderDir)) ]
 
              -- And override with the ones actually used.
-         ++ [ ((pix, dir), MiniProtocolDispatchInfo q qMax)
+         ++ [ ((pix, dir), MiniProtocolDispatchInfo q qMax (Map.lookup (miniProtocolNum, dir) slots))
             | MiniProtocolState {
                 miniProtocolInfo =
                   MiniProtocolInfo {

@@ -6,7 +6,8 @@ module Main (main) where
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (bracket)
-import Control.Monad (forM, forM_, forever, replicateM, replicateM_, unless, when)
+import Control.Monad (forM, forM_, forever, replicateM, replicateM_, unless,
+           when)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer
@@ -85,7 +86,7 @@ readDemuxerQueueBenchmark sndSizeV sndSize addr = do
       withReadBufferIO (\buffer -> do
         bearer <- getBearer makeSocketBearer sduTimeout sd buffer
         ms42 <- mkMiniProtocolState 42
-        withAsync (demuxer [ms42] activeTracer bearer) $ \aid -> do
+        withAsync (demuxer [ms42] activeTracer Nothing bearer) $ \aid -> do
           doRead 0xa5 (totalPayloadLen sndSize) (miniProtocolIngressQueue ms42)
           cancel aid
        )
@@ -118,7 +119,7 @@ readDemuxerBenchmark sndSizeV sndSize addr = do
         bearer <- getBearer makeSocketBearer sduTimeout sd buffer
         ms42 <- mkMiniProtocolState 42
         ms41 <- mkMiniProtocolState 41
-        withAsync (demuxer [ms41, ms42] activeTracer bearer) $ \aid -> do
+        withAsync (demuxer [ms41, ms42] activeTracer Nothing bearer) $ \aid -> do
           withAsync (doRead 42 (totalPayloadLen sndSize) (miniProtocolIngressQueue ms42) 0) $ \aid42 -> do
             withAsync (doRead 41 (totalPayloadLen 10) (miniProtocolIngressQueue ms41) 0) $ \aid41 -> do
               _ <- waitBoth aid42 aid41
@@ -221,7 +222,7 @@ startServerEgresss pollInterval mkLane sndSizeV ad = forever $ do
           runtSdus = numberOfSdus `mod` 10 :: Int
 
       laneEgress <- mkLane
-      withAsync (muxer eq activeTracer Nothing laneEgress bearer) $ \aid -> do
+      withAsync (muxer eq activeTracer Nothing Nothing laneEgress bearer) $ \aid -> do
 
         replicateM_ numberOfCalls $ do
           let payload42s = replicate 10 $ BL.replicate sndSize 42

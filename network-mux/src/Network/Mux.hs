@@ -75,6 +75,7 @@ module Network.Mux
   , SchedulingCounts (..)
   , TierCounts (..)
   , IngressCounts (..)
+  , ByteCounts
   , CountersTrace (..)
   , countersLoop
   , countersInterval
@@ -390,10 +391,13 @@ run Mux { muxMiniProtocols,
     labelTVarIO muxStatus (name ++ "-mux-status")
     labelTQueueIO muxControlCmdQueue (name ++ "-mux-ctrl")
 
-    JobPool.withJobPool
+    -- the cells outlive the job pool, so every byte a muxer or the demuxer
+    -- counted is in them when they are retired
+    withByteCells muxCounters $ \cells ->
+     JobPool.withJobPool
       (\jobpool -> do
-        mapM_ (JobPool.forkJob jobpool) laneMuxers
-        JobPool.forkJob jobpool demuxerJob
+        mapM_ (JobPool.forkJob jobpool) (laneMuxers (mbcSent <$> cells))
+        JobPool.forkJob jobpool (demuxerJob (mbcRecv <$> cells))
         traceWith tracer_ (TraceState Mature)
 
         -- Wait for someone to shut us down by calling muxStop or an error.
@@ -421,14 +425,14 @@ run Mux { muxMiniProtocols,
     -- so their batches never interleave on the wire. The lock is held for the
     -- write only, never while a lane waits for a grant, so a direct SDU waits
     -- for at most one batch of another lane.
-    mkLanes :: m (Lanes m, [JobPool.Job Group m JobResult])
+    mkLanes :: m (Lanes m, Maybe (StrictTVar m ByteCounts) -> [JobPool.Job Group m JobResult])
     mkLanes = case muxEgress of
       Nothing -> do
         q <- newQueue "egress"
         return ( Lanes { laneQueue = const q
                        , laneOf    = \_ _ -> Scheduled
                        , laneAll   = [(Scheduled, q)] }
-               , [muxerJob "muxer" q Unscheduled bearer] )
+               , \sent -> [muxerJob "muxer" q Unscheduled sent bearer] )
 
       Just MuxEgress { meBudget, meBudgetHandle, meSlice, meLaneOf, meCharge } -> do
         lock <- newTMVarIO ()
@@ -445,22 +449,22 @@ run Mux { muxMiniProtocols,
                                 Just q  -> q
                                 Nothing -> queueOf Direct     -- 'Slice' without a slice bucket
         return ( Lanes { laneQueue = queueOf, laneOf = meLaneOf, laneAll = qs }
-               , [ muxerJob ("muxer-" ++ laneName lane) q (egressOf lane) locked
-                 | (lane, q) <- qs ] )
+               , \sent -> [ muxerJob ("muxer-" ++ laneName lane) q (egressOf lane) sent locked
+                          | (lane, q) <- qs ] )
 
     newQueue label = do
       q <- atomically $ newTBQueue 100
       labelTBQueueIO q (name ++ "-mux-" ++ label)
       return q
 
-    muxerJob label q laneEgress b =
-      JobPool.Job (muxer q bearerTracer_ muxCounters laneEgress b)
+    muxerJob label q laneEgress sent b =
+      JobPool.Job (muxer q bearerTracer_ muxCounters sent laneEgress b)
                   (return . MuxerException)
                   MuxJob
                   (name ++ "-" ++ label)
 
-    demuxerJob =
-      JobPool.Job (demuxer (Map.elems muxMiniProtocols) bearerTracer_ bearer)
+    demuxerJob recv =
+      JobPool.Job (demuxer (Map.elems muxMiniProtocols) bearerTracer_ recv bearer)
                   (return . DemuxerException)
                   MuxJob
                   (name ++ "-demuxer")
