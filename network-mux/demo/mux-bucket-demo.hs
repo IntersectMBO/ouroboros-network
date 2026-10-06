@@ -405,8 +405,9 @@ newBucketsFor opts
   where
     rate = soBudgetMbps opts * 1e6 / 8
     rotation = case soOrder opts of
-                    Random -> Just Mx.Rotation { Mx.roSeed   = soSeed opts
-                                               , Mx.roPeriod = realToFrac (soPeriod opts) }
+                    Random -> Just Mx.Rotation { Mx.roSeed      = soSeed opts
+                                               , Mx.roPeriod    = realToFrac (soPeriod opts)
+                                               , Mx.roTurnsFrom = 4 }
                     _      -> Nothing
 
 printServerBanner :: ServerOpts -> EbShape -> IO ()

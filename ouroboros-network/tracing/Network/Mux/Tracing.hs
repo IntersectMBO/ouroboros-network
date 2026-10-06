@@ -11,6 +11,7 @@ module Network.Mux.Tracing () where
 import Data.Aeson (Value (String), object, (.=))
 import Data.List (isPrefixOf)
 import Data.Text (Text)
+import Data.Text qualified as Text
 import Data.Typeable
 import Data.Word (Word8)
 import Formatting
@@ -771,11 +772,8 @@ instance MetaTrace Mux.CountersTrace where
                    , (".tier." <> name <> ".batches", "Batches the queue granted " <> who <> ".")
                    , (".tier." <> name <> ".queued",
                       "Bearers of " <> who <> " waiting on the budget.") ]
-                 | (name, who) <- [ ("localRoot", "local roots"), ("partner", "partners")
-                                  , ("pool", "big-ledger pool relays with credit")
-                                  , ("stranger", "other peers with credit")
-                                  , ("rest", "peers at zero credit")
-                                  , ("unranked", "unranked bearers") ] ]
+                 | (name, who) <- [ (Text.pack (Mux.tierName t), tierWho t) | t <- [minBound .. maxBound] ]
+                                  ++ [ (Text.pack (Mux.numberName maxBound), "unranked bearers") ] ]
       ]
     metricsDocFor (Namespace _ [side, "Ingress"]) =
       [ (ingressPrefix side <> ".readTimeouts",
@@ -813,13 +811,15 @@ burstsOverSuffix b
 -- are the residual tier's credit classes; until the buckets exist every
 -- residual peer is at 4.
 tierName :: Word8 -> Text
-tierName 0   = "localRoot"
-tierName 1   = "partner"
-tierName 2   = "pool"
-tierName 3   = "stranger"
-tierName 4   = "rest"
-tierName 255 = "unranked"
-tierName t   = "tier" <> showT t
+tierName = Text.pack . Mux.numberName
+
+-- | Who a tier's metrics count, for their descriptions.
+tierWho :: Mux.Tier -> Text
+tierWho Mux.LocalRootTier = "local roots"
+tierWho Mux.PartnerTier   = "partners"
+tierWho Mux.PoolTier      = "big-ledger pool relays with credit"
+tierWho Mux.StrangerTier  = "other peers with credit"
+tierWho Mux.RestTier      = "peers at zero credit"
 
 sideDoc :: Text -> Text
 sideDoc "Local" = "node-to-client"

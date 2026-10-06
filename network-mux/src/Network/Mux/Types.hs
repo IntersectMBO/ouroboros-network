@@ -44,6 +44,13 @@ module Network.Mux.Types
   , RuntimeError (..)
   , ReadBuffer (..)
   , BearerTrace (..)
+    -- * Egress tiers
+  , Tier (..)
+  , tierNumber
+  , numberTier
+  , unrankedNumber
+  , tierName
+  , numberName
   ) where
 
 import Prelude hiding (read)
@@ -289,6 +296,41 @@ data Bearer m = Bearer {
     -- with 'SDUWriteTimeout', as a blocked write would.
     , awaitWritable  :: Tracer m BearerTrace -> TimeoutFn m -> m ()
     }
+
+-- | The tiers scheduled egress ranks bearers in, lowest first: local roots
+-- head the cascade, partners follow; the residual tier is a big-ledger
+-- pool's relay with credit, then any other peer with credit; at zero credit
+-- a peer is at rest. The one place their numbering is written down.
+data Tier = LocalRootTier | PartnerTier | PoolTier | StrangerTier | RestTier
+  deriving (Eq, Ord, Enum, Bounded, Show)
+
+-- | A tier's place in the queue.
+tierNumber :: Tier -> Word8
+tierNumber = fromIntegral . fromEnum
+
+-- | The tier at a place in the queue, if any.
+numberTier :: Word8 -> Maybe Tier
+numberTier n
+  | n <= tierNumber maxBound = Just (toEnum (fromIntegral n))
+  | otherwise                = Nothing
+
+-- | Where a bearer without a rank queues: after every tier.
+unrankedNumber :: Word8
+unrankedNumber = maxBound
+
+tierName :: Tier -> String
+tierName LocalRootTier = "localRoot"
+tierName PartnerTier   = "partner"
+tierName PoolTier      = "pool"
+tierName StrangerTier  = "stranger"
+tierName RestTier      = "rest"
+
+-- | The name of a place in the queue: its tier's, "unranked", or the number.
+numberName :: Word8 -> String
+numberName n = case numberTier n of
+  Just t                        -> tierName t
+  Nothing | n == unrankedNumber -> "unranked"
+          | otherwise           -> "tier" ++ show n
 
 newtype SDUSize = SDUSize { getSDUSize :: Word16 }
   deriving Generic

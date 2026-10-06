@@ -19,8 +19,8 @@ import Control.Monad.IOSim
 import Data.Map.Strict qualified as Map
 import Data.Word (Word8)
 
-import Network.Mux.Egress.Bucket qualified as Bucket
 import Network.Mux.Egress.Bucket (GrantSource (..))
+import Network.Mux.Egress.Bucket qualified as Bucket
 import Network.Mux.Egress.Floor (FloorClass, floorClass)
 
 import Test.QuickCheck
@@ -39,6 +39,9 @@ tests =
     , testProperty "an idle floor changes nothing"        prop_idle_floor
     , testProperty "counters match the grants"            prop_accounting
     , testProperty "the floor follows the budget's rate"  prop_floor_follows_rate
+    , testProperty "the rest tier takes turns"            prop_rest_turns
+    , testProperty "a rest bearer waits at most a round"  prop_rest_wait
+    , testProperty "a credited tier is served head first" prop_credited_head_first
     ]
 
 --
@@ -142,13 +145,20 @@ data Grant = Grant {
 -- | Run the bearers against a budget with the floor attached (or not), until
 -- 'endTime'; returns the grants and the budget's counters.
 runFloor :: Bool -> FloorRun -> ([Grant], Bucket.BucketStats)
-runFloor withFloor fr@FloorRun { frRate, frCapacity, frPercent, frRotation, frBearers } =
+runFloor withFloor fr = let (gs, st, _) = runFloor' withFloor fr in (gs, st)
+
+-- | The same, also returning the requests still waiting at 'endTime', each
+-- with the instant it was made: a bearer starved for the whole run shows up
+-- here and nowhere else.
+runFloor' :: Bool -> FloorRun -> ([Grant], Bucket.BucketStats, [(Int, Time)])
+runFloor' withFloor fr@FloorRun { frRate, frCapacity, frPercent, frRotation, frBearers } =
   runSimOrThrow $ do
     budget <- Bucket.newBucket frRate frCapacity frRotation
     if withFloor && frPercent > 0
        then Bucket.attachFloor budget (fromIntegral frPercent / 100)
        else return ()
-    grants <- newTVarIO []
+    grants  <- newTVarIO []
+    pending <- newTVarIO Map.empty
     as <- forM (zip [0 ..] frBearers) $ \(i, FBearer { fbTier, fbBatch, fbStart }) -> do
       h <- Bucket.registerBearer budget
       atomically $ Bucket.setRank h (Bucket.Rank fbTier)
@@ -159,18 +169,22 @@ runFloor withFloor fr@FloorRun { frRate, frCapacity, frPercent, frRotation, frBe
         -- blocking STM and stays interruptible
         let loop = do
               asked <- getMonotonicTime
+              atomically $ modifyTVar pending (Map.insert i asked)
               mask_ $ do
                 src <- Bucket.awaitGrantWaited Nothing 0 h fbBatch
                 at <- getMonotonicTime
-                atomically $ modifyTVar grants (Grant i fbTier asked at fbBatch src :)
+                atomically $ do
+                  modifyTVar grants (Grant i fbTier asked at fbBatch src :)
+                  modifyTVar pending (Map.delete i)
               loop
         loop
     now <- getMonotonicTime
     threadDelay (endTime fr `diffTime` now)
+    waiting <- Map.toList <$> readTVarIO pending
     mapM_ cancel as
     gs <- reverse <$> readTVarIO grants
     (st, _, _, _) <- atomically $ Bucket.bucketSnapshot budget (endTime fr)
-    return (gs, st)
+    return (gs, st, waiting)
 
 credited :: Word8 -> Bool
 credited t = t >= 1 && t <= 3
@@ -290,7 +304,68 @@ prop_same_tier =
       let cap = frCapacity fr
           bearers = [ FBearer 1 cap s | s <- starts ]
       return fr { frBearers = bearers
-                , frRotation = Just (Bucket.Rotation seed (10 * frDuration fr + 100)) }
+                , frRotation = Just (Bucket.Rotation seed (10 * frDuration fr + 100) 4) }
+
+-- | Bulk bearers and a few small senders, all in one tier, rotation longer
+-- than the run, floor off: what the order within the tier does on its own.
+genOneTier :: Word8 -> Gen FloorRun
+genOneTier tier = do
+  fr     <- genRun (pure (const True))
+  nBulk  <- choose (2, 12)
+  nSmall <- choose (1, 3)
+  let cap = frCapacity fr
+  bulk   <- vectorOf nBulk  (choose (cap `div` 4, cap))
+  small  <- vectorOf nSmall (choose (256, max 256 (cap `div` 32)))
+  starts <- genStarts (nBulk + nSmall)
+  seed   <- arbitrary
+  return fr { frBearers  = zipWith (FBearer tier) (bulk ++ small) starts
+            , frPercent  = 0
+            , frRotation = Just (Bucket.Rotation seed (10 * frDuration fr + 100) 4) }
+
+shrinkOneTier :: FloorRun -> [FloorRun]
+shrinkOneTier fr@FloorRun { frBearers, frDuration } =
+     [ fr { frBearers = bs } | bs <- shrinkList (const []) frBearers, length bs >= 2 ]
+  ++ [ fr { frDuration = d } | d <- [1, 2], d < frDuration ]
+
+-- | In the rest tier backlogged bearers take turns: over the steady window
+-- their grant counts differ by at most one, bulk and small alike.
+prop_rest_turns :: Property
+prop_rest_turns =
+  forAllShrink (genOneTier 4) shrinkOneTier $ \fr ->
+    let (gs0, _) = runFloor False fr
+        gs = steady fr gs0
+        counts = [ length [ () | g <- gs, gBearer g == i ] | i <- [0 .. length (frBearers fr) - 1] ]
+    in classify (length gs > 2 * length (frBearers fr)) "several rounds" $
+       counterexample (show counts)
+     $ maximum counts - minimum counts <= 1
+
+-- | A rest bearer never waits longer than one round: a batch for every other
+-- bearer, its own, and a capacity to refill, at the budget's rate. Judged on
+-- every grant and on every request still waiting when the run ends, so a
+-- bearer that is never served fails it rather than escaping it.
+prop_rest_wait :: Property
+prop_rest_wait =
+  forAllShrink (genOneTier 4) shrinkOneTier $ \fr ->
+    let (gs0, _, waiting) = runFloor' False fr
+        gs = steady fr gs0
+        batches = sum (map fbBatch (frBearers fr))
+        bound b = realToFrac (fromIntegral (batches + b + frCapacity fr) / frRate fr :: Double)
+                  + 0.001 :: DiffTime
+        late = [ (Left (gBearer g), gAt g `diffTime` gAsked g) | g <- gs, gAt g `diffTime` gAsked g > bound (gBytes g) ]
+            ++ [ (Right i, w) | (i, asked) <- waiting, asked >= Time (lastStart fr)
+               , let w = endTime fr `diffTime` asked, w > bound (fbBatch (frBearers fr !! i)) ]
+    in classify (not (null waiting)) "requests still waiting at the end" $
+       counterexample (show (take 2 late)) $ null late
+
+-- | Below the threshold the dealt place decides and a backlogged head keeps
+-- the tier: in a credited tier under a rotation longer than the run, with
+-- the floor off, exactly one bearer is served in the steady window.
+prop_credited_head_first :: Property
+prop_credited_head_first =
+  forAllShrink (genOneTier 2) shrinkOneTier $ \fr ->
+    let (gs0, _) = runFloor False fr
+        served = Map.keys (Map.fromList [ (gBearer g, ()) | g <- steady fr gs0 ])
+    in counterexample (show served) $ length served === 1
 
 -- | With nobody credited, the run with the floor is the run without it.
 prop_idle_floor :: Property

@@ -310,8 +310,9 @@ runM Interfaces
     mkEgressPolicy :: EgressScheduling -> m (Mx.EgressPolicy m)
     mkEgressPolicy EgressScheduling { esBudget, esCapacity, esSlicePercent, esFloorPercent,
                                       esRotationPeriod, esLaneOf } = do
-      let rotation = Mx.Rotation { Mx.roSeed   = fst (genWord64 egressRng)
-                                 , Mx.roPeriod = esRotationPeriod }
+      let rotation = Mx.Rotation { Mx.roSeed      = fst (genWord64 egressRng)
+                                 , Mx.roPeriod    = esRotationPeriod
+                                 , Mx.roTurnsFrom = restTier }
       budget <- Mx.newBucket esBudget esCapacity (Just rotation)
       when (esFloorPercent > 0) $
         Mx.attachFloor budget (fromIntegral esFloorPercent / 100)
