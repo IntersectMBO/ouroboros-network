@@ -124,12 +124,13 @@ instance LogFormatting Mux.BearerTrace where
       , "msg"  .= String "Timed out writing SDU"
       ]
     forMachine _dtal Mux.TraceEmitDeltaQ = mempty
-    forMachine _dtal (Mux.TraceEgressGrant len waitedWritable waitedTokens) = mconcat
+    forMachine _dtal (Mux.TraceEgressGrant len waitedWritable waitedTokens fromFloor) = mconcat
       [ "kind" .= String "Mux.TraceEgressGrant"
       , "msg"  .= String "Egress grant"
       , "length" .= String (showT len)
       , "waitedWritable" .= String (showT waitedWritable)
       , "waitedTokens" .= String (showT waitedTokens)
+      , "floor" .= fromFloor
       ]
 #ifdef linux_HOST_OS
     forMachine _dtal (Mux.TraceTCPInfo StructTCPInfo
@@ -184,10 +185,10 @@ instance LogFormatting Mux.BearerTrace where
     forHuman Mux.TraceSDUWriteTimeoutException =
       "Timed out writing SDU"
     forHuman Mux.TraceEmitDeltaQ = mempty
-    forHuman (Mux.TraceEgressGrant len waitedWritable waitedTokens) =
+    forHuman (Mux.TraceEgressGrant len waitedWritable waitedTokens fromFloor) =
       sformat ("Egress grant: bytes " % int % " waited writable " % shown
-               % " waited tokens " % shown)
-        len waitedWritable waitedTokens
+               % " waited tokens " % shown % stext)
+        len waitedWritable waitedTokens (if fromFloor then " from the floor" else "")
 #ifdef linux_HOST_OS
     forHuman (Mux.TraceTCPInfo StructTCPInfo
             { tcpi_snd_mss, tcpi_rcv_mss, tcpi_lost, tcpi_retrans
@@ -910,11 +911,8 @@ egressMetricsDoc =
                , (".tier." <> name <> ".batches", "Batches the queue granted " <> who <> ".")
                , (".tier." <> name <> ".queued",
                   "Bearers of " <> who <> " waiting on the budget.") ]
-             | (name, who) <- [ ("localRoot", "local roots"), ("partner", "partners")
-                              , ("pool", "big-ledger pool relays with credit")
-                              , ("stranger", "other peers with credit")
-                              , ("rest", "peers at zero credit")
-                              , ("unranked", "unranked bearers") ] ]
+             | (name, who) <- [ (Text.pack (Mux.tierName t), tierWho t) | t <- [minBound .. maxBound] ]
+                              ++ [ (Text.pack (Mux.numberName maxBound), "unranked bearers") ] ]
   ]
 
 -- | @.scheduled.waitsOver.1ms@ and so on, one per bound.
@@ -933,13 +931,15 @@ burstsOverSuffix b
 -- are the residual tier's credit classes; until the buckets exist every
 -- residual peer is at 4.
 tierName :: Word8 -> Text
-tierName 0   = "localRoot"
-tierName 1   = "partner"
-tierName 2   = "pool"
-tierName 3   = "stranger"
-tierName 4   = "rest"
-tierName 255 = "unranked"
-tierName t   = "tier" <> showT t
+tierName = Text.pack . Mux.numberName
+
+-- | Who a tier's metrics count, for their descriptions.
+tierWho :: Mux.Tier -> Text
+tierWho Mux.LocalRootTier = "local roots"
+tierWho Mux.PartnerTier   = "partners"
+tierWho Mux.PoolTier      = "big-ledger pool relays with credit"
+tierWho Mux.StrangerTier  = "other peers with credit"
+tierWho Mux.RestTier      = "peers at zero credit"
 
 -- | The metrics of one side. The per-protocol ones, named by the
 -- application's numbers, are described with their totals.

@@ -20,7 +20,7 @@ module Ouroboros.Network.Diffusion.PoolAllowances
   , capacity
   , credit
   , charge
-  , resetCharged
+  , lockedCharged
   , freshAt
     -- * Buckets by pool
   , PoolKey
@@ -29,11 +29,13 @@ module Ouroboros.Network.Diffusion.PoolAllowances
   , newPoolAllowances
   , rebuild
   , reindex
+  , patchIndex
   , bucketsFor
   , hasCredit
   , chargeBuckets
     -- * A connection's rule and sink
   , Standing (..)
+  , restTier
   , rankFor
   , mkEgressRule
   ) where
@@ -46,7 +48,8 @@ import Data.IntMap.Strict qualified as IntMap
 import Data.List.NonEmpty (NonEmpty)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Network.Mux (MiniProtocolNum, Rank (..))
+import Data.Word (Word8)
+import Network.Mux (MiniProtocolNum, Rank (..), Tier (..), tierNumber)
 
 import Ouroboros.Network.PeerSelection.RelayAccessPoint (RelayAccessPoint)
 
@@ -87,19 +90,19 @@ charge al fresh n ch@(Charged c)
   | credit al fresh ch > 0 = Charged (max c (kappa fresh - capacity al) + n)
   | otherwise              = ch
 
--- | A full bucket at this reading.
-resetCharged :: Allowance -> Fresh -> Charged
-resetCharged al fresh = Charged (kappa fresh - capacity al)
-
--- | The prototype's reading: fresh bytes grow at a rate from the protocol
--- parameters, (B_max + L_max + F_max)·f per second, from an origin.
-freshAt :: Double -> Time -> Time -> Fresh
-freshAt rate t0 now = Fresh (max 0 (floor (rate * realToFrac (now `diffTime` t0) :: Double)))
+-- | An empty bucket that opens @lock@ fresh bytes after this reading: the
+-- charged total is set at κ of the reading plus the lock, so the credit reads
+-- zero until the reading has moved past the lock, then fills from empty at the
+-- fresh rate. Nothing is charged meanwhile, since 'charge' leaves a dry bucket
+-- alone. A lock is an empty bucket opened later: @lockedCharged f lock@ is
+-- @lockedCharged (f + lock) 0@.
+lockedCharged :: Fresh -> Fresh -> Charged
+lockedCharged (Fresh f) (Fresh lock) = Charged (kappa (Fresh (f + lock)))
 
 -- | A pool as the buckets know it: its relay list as the ledger carries it
 -- and, among pools registering the same list, which of them. A pool keeps
 -- its bucket from poll to poll by this key, whatever its stake or position;
--- re-registered with other relays it is a new pool, with a fresh bucket.
+-- re-registered with other relays it is a new pool, with an empty bucket.
 type PoolKey = (NonEmpty RelayAccessPoint, Int)
 
 -- | The list's keys, in its order: each relay list with its ordinal among
@@ -112,27 +115,37 @@ poolKeys = go Map.empty
       let n = Map.findWithDefault 0 rs seen
       in (rs, n) : go (Map.insert rs (n + 1) seen) rest
 
+-- | The prototype's reading: fresh bytes grow at a rate from the protocol
+-- parameters, (B_max + L_max + F_max)·f per second, from an origin.
+freshAt :: Double -> Time -> Time -> Fresh
+freshAt rate t0 now = Fresh (max 0 (floor (rate * realToFrac (now `diffTime` t0) :: Double)))
+
 -- | One bucket per big-ledger pool, by position in the stake-sorted list,
 -- each with the pool's key, and the resolved addresses that map to each
--- position.
+-- position. A stranger's own bucket is locked for 'paStrangerLock' fresh
+-- bytes from its connection's start.
 data PoolAllowances m addr = PoolAllowances {
-    paAllowance :: !Allowance,
-    paFreshAt   :: !(Time -> Fresh),
-    paBuckets   :: !(StrictTVar m (IntMap (PoolKey, StrictTVar m Charged))),
-    paIndex     :: !(StrictTVar m (Map addr [Int]))
+    paAllowance    :: !Allowance,
+    paFreshAt      :: !(Time -> Fresh),
+    paStrangerLock :: !Fresh,
+    paBuckets      :: !(StrictTVar m (IntMap (PoolKey, StrictTVar m Charged))),
+    paIndex        :: !(StrictTVar m (Map addr [Int]))
   }
 
 newPoolAllowances :: MonadSTM m
-                  => Allowance -> (Time -> Fresh) -> m (PoolAllowances m addr)
-newPoolAllowances paAllowance paFreshAt = do
+                  => Allowance -> (Time -> Fresh) -> Fresh -> m (PoolAllowances m addr)
+newPoolAllowances paAllowance paFreshAt paStrangerLock = do
   paBuckets <- newTVarIO IntMap.empty
   paIndex   <- newTVarIO Map.empty
   return PoolAllowances { .. }
 
 -- | Install the list as read: a pool known by its key keeps its bucket, one
--- new to the list gets a full one at @now@, one that left loses its; and
--- the addresses that resolve to each position. Returns how many buckets
--- were kept: a change of stake or order moves a pool's bucket with it.
+-- new to the list gets an empty one at this reading, one that left loses
+-- its; and the addresses that resolve to each position. Returns how many
+-- buckets were kept. Empty for the newcomers, so that nothing which changes
+-- the list hands out credit: a pool re-registered with other relays is a
+-- newcomer with nothing, and a change of stake or order moves a pool's
+-- bucket with it.
 rebuild :: MonadSTM m
         => PoolAllowances m addr -> Time -> [NonEmpty RelayAccessPoint] -> Map addr [Int] -> STM m Int
 rebuild PoolAllowances { .. } now relays index = do
@@ -142,7 +155,7 @@ rebuild PoolAllowances { .. } now relays index = do
     case Map.lookup key known of
          Just tv -> return (i, (key, tv), True)
          Nothing -> do
-           tv <- newTVar (resetCharged paAllowance (paFreshAt now))
+           tv <- newTVar (lockedCharged (paFreshAt now) (Fresh 0))
            return (i, (key, tv), False)
   writeTVar paBuckets (IntMap.fromList [ (i, b) | (i, b, _) <- buckets ])
   writeTVar paIndex index
@@ -151,6 +164,13 @@ rebuild PoolAllowances { .. } now relays index = do
 -- | Swap the address index alone: the same list, its relays resolved anew.
 reindex :: MonadSTM m => PoolAllowances m addr -> Map addr [Int] -> STM m ()
 reindex PoolAllowances { paIndex } index = writeTVar paIndex index
+
+-- | Change some addresses' entries: the positions each maps to now, none
+-- removing the address.
+patchIndex :: (MonadSTM m, Ord addr) => PoolAllowances m addr -> [(addr, [Int])] -> STM m ()
+patchIndex PoolAllowances { paIndex } changes =
+  modifyTVar paIndex $ \index ->
+    foldr (\(addr, ps) -> if null ps then Map.delete addr else Map.insert addr ps) index changes
 
 -- | The buckets an address maps to now; none for a stranger.
 bucketsFor :: (MonadSTM m, Ord addr)
@@ -177,21 +197,28 @@ chargeBuckets PoolAllowances { paAllowance, paFreshAt } now n =
 data Standing = LocalRoot | Partner | Other
   deriving (Eq, Show)
 
+-- | The rest: the tier of a peer without credit, served from what the tiers
+-- above leave idle. From here up bearers take turns rather than being dealt
+-- a place, so a newcomer among a flood still gets its share of that.
+restTier :: Word8
+restTier = tierNumber RestTier
+
 -- | A peer's rank from its standing and its credit: local roots first,
 -- partners next, then the residual tier's classes: a big-ledger pool's
 -- relay with credit, a stranger with credit, and at zero credit the rest.
 rankFor :: Standing -> Bool -> Bool -> Rank
-rankFor LocalRoot _       _     = Rank 0
-rankFor Partner   _       _     = Rank 1
+rankFor LocalRoot _       _     = Rank (tierNumber LocalRootTier)
+rankFor Partner   _       _     = Rank (tierNumber PartnerTier)
 rankFor Other     matched hasAny
-  | not hasAny = Rank 4
-  | matched    = Rank 2
-  | otherwise  = Rank 3
+  | not hasAny = Rank restTier
+  | matched    = Rank (tierNumber PoolTier)
+  | otherwise  = Rank (tierNumber StrangerTier)
 
 -- | A connection's rank rule and charge sink, sharing one view of the
 -- buckets: its pools' buckets, looked up at every use, or when it belongs
--- to no pool its own bucket, full as the connection starts. Bytes on the
--- uncharged protocols are never charged.
+-- to no pool its own bucket, which opens empty once the connection has
+-- outlived the stranger lock, so a reconnection starts the wait over. Bytes
+-- on the uncharged protocols are never charged.
 mkEgressRule :: (MonadSTM m, Ord addr)
              => PoolAllowances m addr
              -> [MiniProtocolNum]
@@ -199,9 +226,9 @@ mkEgressRule :: (MonadSTM m, Ord addr)
              -> (Time -> STM m Standing)
              -> Time
              -> m (Time -> STM m Rank, Time -> MiniProtocolNum -> Int -> STM m ())
-mkEgressRule allowances@PoolAllowances { paAllowance, paFreshAt }
+mkEgressRule allowances@PoolAllowances { paAllowance, paFreshAt, paStrangerLock }
              uncharged key standing t0 = do
-  stranger <- newTVarIO (resetCharged paAllowance (paFreshAt t0))
+  stranger <- newTVarIO (lockedCharged (paFreshAt t0) paStrangerLock)
   let rule now = do
         s <- standing now
         case s of
@@ -222,4 +249,3 @@ mkEgressRule allowances@PoolAllowances { paAllowance, paFreshAt }
                  _  -> chargeBuckets allowances now n bs
 
   return (rule, sink)
-

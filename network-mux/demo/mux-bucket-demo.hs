@@ -28,12 +28,12 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer
 
 import Data.Binary.Put qualified as Bin
-import Data.Word (Word64)
 import Data.ByteString qualified as BS
 import Data.ByteString.Char8 qualified as BSC
 import Data.ByteString.Lazy qualified as BL
 import Data.Functor.Identity (runIdentity)
 import Data.List (sort)
+import Data.Word (Word64)
 import Options.Applicative
 import Text.Printf (printf)
 
@@ -45,10 +45,10 @@ import System.IOManager
 
 import Network.Mux as Mx
 import Network.Mux.Bearer (makeSocketBearer, makeSocketBearerWith,
-  tcpNotSentLowWat)
+           tcpNotSentLowWat)
 import Network.Mux.Codec (encodeSDU)
 import Network.Mux.Types (MiniProtocolDir (..), RemoteClockModel (..), SDU (..),
-  SDUHeader (..))
+           SDUHeader (..))
 
 import Test.Mux.ReqResp
 
@@ -405,8 +405,9 @@ newBucketsFor opts
   where
     rate = soBudgetMbps opts * 1e6 / 8
     rotation = case soOrder opts of
-                    Random -> Just Mx.Rotation { Mx.roSeed   = soSeed opts
-                                               , Mx.roPeriod = realToFrac (soPeriod opts) }
+                    Random -> Just Mx.Rotation { Mx.roSeed      = soSeed opts
+                                               , Mx.roPeriod    = realToFrac (soPeriod opts)
+                                               , Mx.roTurnsFrom = 4 }
                     _      -> Nothing
 
 printServerBanner :: ServerOpts -> EbShape -> IO ()
@@ -448,7 +449,7 @@ newStatsTracer = do
   statsVar <- newTVarIO emptyStats
   let grantTracer :: Tracer IO BearerTrace
       grantTracer = Tracer $ emit $ \case
-        TraceEgressGrant len tw tt -> atomically $ modifyTVar statsVar (addGrant len tw tt)
+        TraceEgressGrant len tw tt _ -> atomically $ modifyTVar statsVar (addGrant len tw tt)
         _                          -> return ()
   return ( statsVar
          , Mx.nullTracers { Mx.bearerTracer = contramap runIdentity grantTracer } )
@@ -487,7 +488,9 @@ serveConn opts shape buckets_m i sock = do
   case soOrder opts of
        Arrival -> atomically $ Mx.setEgressRank mux (Mx.Rank (fromIntegral (min 255 i)))
        Fifo    -> return ()
-       Random  -> return ()          -- the bucket's rotation orders tier 0
+       -- a credited tier, whose places the rotation deals; the unranked
+       -- tier takes turns
+       Random  -> atomically $ Mx.setEgressRank mux (Mx.Rank 2)
 
   let serveEb chan = do
         t0 <- getMonotonicTime
