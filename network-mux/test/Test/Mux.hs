@@ -91,6 +91,7 @@ import Network.Mux.Counters qualified as Counters
 import Network.Mux.Egress (egressSoftBufferLimit)
 import Network.Mux.Egress qualified as Egress
 import Network.Mux.Egress.Bucket qualified as Bucket
+import Network.Mux.Egress.Floor (floorClass)
 import Network.Mux.Timeout (TimeoutFn)
 import Network.Mux.Types (MiniProtocolInfo (..), MiniProtocolLimits (..))
 import Network.Mux.Types qualified as Mx
@@ -155,11 +156,17 @@ tests =
     , testProperty "atRate: keeps the level"      prop_atRate
     , testProperty "rotatedRank: re-dealt each period" prop_rotatedRank
     , testProperty "queueRank: zero period is none"   prop_queueRank_zeroPeriod
+    , testProperty "queueRank: turns from the threshold" prop_queueRank_turns
     , testProperty "chargeAt: takes without waiting"  prop_chargeAt
     , testProperty "schedule matches the replay"  prop_bucket_schedule
+    , testProperty "schedule matches the replay, idle floor attached" prop_bucket_schedule_idle_floor
     , testProperty "cancellation is safe"         prop_bucket_cancel
+    , testProperty "cancellation is safe with a floor" prop_bucket_cancel_floor
     , testProperty "disabled bucket never waits"  prop_bucket_disabled
+    , testProperty "disabled bucket never waits, floor attached" prop_bucket_disabled_floor
     , testProperty "rate change takes effect"     prop_bucket_rate_change
+    , testProperty "tiers: one number each, one name each, the floor on the credited"
+                   prop_tiers
     ]
   , testGroup "Egress lanes"
     [ testProperty "own requests never wait, the slice gets its share"
@@ -4492,6 +4499,36 @@ instance Arbitrary BucketTake where
 byteEps :: Double -> Double
 byteEps rate = 4 * rate * 1e-12 + 1e-9
 
+-- | Over every place in the queue and every tier: a tier's place maps back to
+-- it, the places past the tiers have none, every place has its own name, a
+-- tier's place is named after it, and the floor serves exactly the credited
+-- tiers -- partners, pool relays, strangers -- in a class each; and the
+-- names, which metric names carry, are the ones dashboards know.
+prop_tiers :: Property
+prop_tiers = once $
+       counterexample "a tier's place is not its own"
+         (conjoin [ Mx.numberTier (Mx.tierNumber t) === Just t | t <- tiers ])
+  .&&. counterexample "a place past the tiers has one"
+         (conjoin [ Mx.numberTier n === Nothing | n <- places, n > Mx.tierNumber maxBound ])
+  .&&. counterexample "two places share a name" (length (nub names) === length names)
+  .&&. counterexample "a tier's place is not named after it"
+         (conjoin [ Mx.numberName (Mx.tierNumber t) === Mx.tierName t | t <- tiers ])
+  .&&. counterexample "the floor serves other than the credited"
+         (conjoin [ counterexample (Mx.numberName n) $
+                      isJust (floorClass n) === (Mx.numberTier n `elem` map Just credited)
+                  | n <- places ])
+  .&&. counterexample "credited tiers share a floor class"
+         (length (nub [ floorClass (Mx.tierNumber t) | t <- credited ]) === length credited)
+    -- the names are in metric names, so dashboards depend on them
+  .&&. counterexample "a metric name changed"
+         (map Mx.numberName [0 .. 4] ++ [Mx.numberName maxBound]
+            === ["localRoot", "partner", "pool", "stranger", "rest", "unranked"])
+  where
+    tiers    = [minBound .. maxBound] :: [Mx.Tier]
+    places   = [minBound .. maxBound] :: [Word8]
+    names    = map Mx.numberName places
+    credited = [Mx.PartnerTier, Mx.PoolTier, Mx.StrangerTier]
+
 -- | The cases that matter for the pure laws: an oversized request is served
 -- on credit, and 'Bucket.tokenLevel' saturates once the bucket is full, so a
 -- law stated over the level alone says little about those grants.
@@ -4660,11 +4697,11 @@ instance Arbitrary RotationCase where
       p      <- choose (0, 10000)
       let inside = choose (0, picosOf (period `addTime` Time 0) - 1)
       offs   <- (,) <$> inside <*> inside
-      return RotationCase { rcRotation = Bucket.Rotation seed period,
+      return RotationCase { rcRotation = Bucket.Rotation seed period maxBound,
                             rcPeriod = p, rcOffsets = offs }
 
-    shrink rc@RotationCase { rcRotation = Bucket.Rotation seed period, rcPeriod, rcOffsets } =
-         [ rc { rcRotation = Bucket.Rotation 0 period } | seed /= 0 ]
+    shrink rc@RotationCase { rcRotation = Bucket.Rotation seed period _, rcPeriod, rcOffsets } =
+         [ rc { rcRotation = Bucket.Rotation 0 period maxBound } | seed /= 0 ]
       ++ [ rc { rcPeriod = 0 } | rcPeriod /= 0 ]
       ++ [ rc { rcOffsets = (0, snd rcOffsets) } | fst rcOffsets /= 0 ]
       ++ [ rc { rcOffsets = (fst rcOffsets, 0) } | snd rcOffsets /= 0 ]
@@ -4689,10 +4726,25 @@ prop_rotatedRank RotationCase { rcRotation = ro, rcPeriod, rcOffsets = (o1, o2) 
 
 -- | A rotation with a period of zero is no rotation: a bearer queues exactly
 -- where it would without one.
+-- | From the threshold up a tier queues as without a rotation, so its order
+-- is the tickets' and backlogged bearers take turns; below it the dealt
+-- place still decides. The tier byte is untouched either way.
+prop_queueRank_turns :: Word64 -> Word64 -> Word8 -> Word8 -> Positive Integer
+                     -> NonNegative Integer -> Property
+prop_queueRank_turns seed bearer tier from (Positive period) (NonNegative ps) =
+    classify (tier >= from) "takes turns" $
+    if tier >= from
+       then with === Bucket.queueRank Nothing bearer (Bucket.Rank tier) t
+       else with === (fromIntegral tier `shiftL` 24 .|. Bucket.rotatedRank ro bearer t)
+  where
+    ro   = Bucket.Rotation seed (picos period) from
+    with = Bucket.queueRank (Just ro) bearer (Bucket.Rank tier) t
+    t    = Time (picos ps)
+
 prop_queueRank_zeroPeriod :: Word64 -> Word64 -> Word8 -> NonNegative Integer
                           -> Property
 prop_queueRank_zeroPeriod seed bearer tier (NonNegative ps) =
-    Bucket.queueRank (Just (Bucket.Rotation seed 0)) bearer (Bucket.Rank tier) t
+    Bucket.queueRank (Just (Bucket.Rotation seed 0 maxBound)) bearer (Bucket.Rank tier) t
       === Bucket.queueRank Nothing bearer (Bucket.Rank tier) t
   where
     t = picos ps `addTime` Time 0
@@ -4724,6 +4776,7 @@ data BucketSched = BucketSched {
     schCapacity :: !Int,           -- ^ bytes
     schRotation :: !(Maybe Bucket.Rotation),
     schSlice    :: !(Maybe Int),   -- ^ the slice's share of the rate, percent
+    schFloor    :: !(Maybe Int),   -- ^ the floor's share of the rate, percent
     schBearers  :: ![BucketBearer]
   }
   deriving Show
@@ -4736,12 +4789,14 @@ instance Arbitrary BucketSched where
       BucketSched rate cap
         <$> frequency [ (1, return Nothing), (2, Just <$> genRotation rate cap) ]
         <*> frequency [ (1, return Nothing), (1, Just <$> choose (5, 50)) ]
+        <*> pure Nothing
         <*> vectorOf n (genBucketBearer rate cap n)
 
-    shrink sch@BucketSched { schRate, schCapacity, schRotation, schSlice, schBearers } =
+    shrink sch@BucketSched { schRate, schCapacity, schRotation, schSlice, schFloor, schBearers } =
          [ sch { schBearers = bs }
          | bs <- shrinkList shrinkBearer schBearers, not (null bs) ]
       ++ [ sch { schSlice = Nothing } | Just _ <- [schSlice] ]
+      ++ [ sch { schFloor = Nothing } | Just _ <- [schFloor] ]
       ++ [ sch { schRotation = Nothing } | Just _ <- [schRotation] ]
       ++ [ sch { schCapacity = 4096 } | schCapacity > 4096 ]
       ++ [ sch { schRate = r } | r <- [1e4, 1e6], r < schRate ]
@@ -4767,7 +4822,7 @@ genRotation :: Double -> Int -> Gen Bucket.Rotation
 genRotation rate cap = do
     seed <- arbitrary
     f    <- choose (0.25, 4 :: Double)
-    return (Bucket.Rotation seed (realToFrac (f * fromIntegral cap / rate)))
+    return (Bucket.Rotation seed (realToFrac (f * fromIntegral cap / rate)) maxBound)
 
 -- | Few ranks, so ties are common.  Asking again at once, and starting in the
 -- opening burst, are both weighted up: those are what make bearers queue.
@@ -4835,8 +4890,9 @@ nextArrival n a t =
                                   , arMore  = more }
 
 labelBucket :: BucketSched -> Property -> Property
-labelBucket BucketSched { schRotation, schSlice, schBearers } =
+labelBucket BucketSched { schRotation, schSlice, schFloor, schBearers } =
       classify (any (not . null . bbMore) schBearers) "reuses a handle"
+    . classify (isJust schFloor)                      "with a floor"
     . classify (any (\b -> any (\(_, _, r) -> r /= bbRank b) (bbMore b)) schBearers)
                "changes rank between takes"
     . classify (isJust schRotation)                   "rotating"
@@ -4850,9 +4906,11 @@ runBucketSched = fst . runBucketSchedStats
 -- | 'runBucketSched', with the budget's and the slice's counters at the end.
 runBucketSchedStats :: BucketSched
                     -> ([((Int, Int), Time)], (Bucket.BucketStats, Maybe Bucket.BucketStats))
-runBucketSchedStats sch@BucketSched { schRate, schCapacity, schRotation, schSlice, schBearers } =
+runBucketSchedStats sch@BucketSched { schRate, schCapacity, schRotation, schSlice, schFloor,
+                                      schBearers } =
     runSimOrThrow $ do
       bucket <- Bucket.newBucket schRate schCapacity schRotation
+      forM_ schFloor $ \pct -> Bucket.attachFloor bucket (fromIntegral pct / 100)
       slice  <- traverse (\pct -> Bucket.newBucket (schRate * fromIntegral pct / 100)
                                                   schCapacity Nothing) schSlice
       -- registered on the budget in schedule order, so bearer @i@ has id @i@,
@@ -5135,14 +5193,15 @@ prop_bucket_cancel :: BucketSched -> Property
 prop_bucket_cancel sch0 = prop_bucket_cancel' sch0 { schSlice = Nothing }
 
 prop_bucket_cancel' :: BucketSched -> Property
-prop_bucket_cancel' sch@BucketSched { schRate, schCapacity, schRotation, schBearers } =
+prop_bucket_cancel' sch@BucketSched { schRate, schCapacity, schRotation, schFloor, schBearers } =
     labelBucket sch
       $ classify (not (null killed))    "kills someone"
       $ classify (any killsHead killed) "kills the next to be served"
       $ counterexample ("kept " ++ show (length kept))
       -- and once everyone is done, killed or served, no busy period is left
-      -- open: a cancelled waiter must close it as it leaves the queue
-      $ outcome === Just (length kept, False)
+      -- open: a cancelled waiter must close it as it leaves the queue; nor is
+      -- anyone left in the floor's queue
+      $ outcome === Just (length kept, False, 0)
   where
     n    = length schBearers
     run  = replayRun sch
@@ -5183,6 +5242,7 @@ prop_bucket_cancel' sch@BucketSched { schRate, schCapacity, schRotation, schBear
 
     outcome = runSimOrThrow $ do
       bucket <- Bucket.newBucket schRate schCapacity schRotation
+      forM_ schFloor $ \pct -> Bucket.attachFloor bucket (fromIntegral pct / 100)
       hs <- mapM (const (Bucket.registerBearer bucket)) schBearers
       as <- forM (zip hs plan) $ \(h, (a0, kill)) -> do
         atomically $ Bucket.setRank h (Bucket.Rank (arRank a0))
@@ -5212,7 +5272,32 @@ prop_bucket_cancel' sch@BucketSched { schRate, schCapacity, schRotation, schBear
              threadDelay 1
              t1 <- getMonotonicTime
              (st1, _, _, _) <- atomically $ Bucket.bucketSnapshot bucket t1
-             return (Just (length rs, Bucket.bsBusyTime st1 /= Bucket.bsBusyTime st0))
+             pending <- atomically $ Bucket.floorPending bucket
+             return (Just (length rs, Bucket.bsBusyTime st1 /= Bucket.bsBusyTime st0, pending))
+
+-- | 'prop_bucket_cancel' with a floor attached: the generated ranks 1 to 3
+-- are credited, so cancellations land on bearers waiting in both queues.
+prop_bucket_cancel_floor :: BucketSched -> Positive Int -> Property
+prop_bucket_cancel_floor sch0 (Positive pct) =
+    prop_bucket_cancel' sch0 { schSlice = Nothing, schFloor = Just (5 + pct `mod` 30) }
+
+-- | A disabled budget disables its floor with it: still nothing ever waits.
+prop_bucket_disabled_floor :: BucketSched -> Positive Int -> Property
+prop_bucket_disabled_floor sch (Positive pct) =
+    prop_bucket_disabled sch { schFloor = Just (5 + pct `mod` 30) }
+
+-- | A floor nobody is eligible for adds nothing to the budget's path: with
+-- every rank at 0 or above 3, the schedule still matches the replay exactly.
+-- The replay orders by rank value, so moving ranks 1 to 3 up by three keeps
+-- its prediction and takes every bearer out of the floor's classes.
+prop_bucket_schedule_idle_floor :: BucketSched -> Positive Int -> Property
+prop_bucket_schedule_idle_floor sch (Positive pct) =
+    prop_bucket_schedule sch { schFloor   = Just (5 + pct `mod` 30)
+                             , schBearers = map uncredited (schBearers sch) }
+  where
+    uncredited b = b { bbRank = up (bbRank b)
+                     , bbMore = [ (k, sz, up r) | (k, sz, r) <- bbMore b ] }
+    up r = if r == 0 then 0 else r + 3
 
 -- | A rate of zero disables the bucket: nothing ever waits.
 prop_bucket_disabled :: BucketSched -> Property

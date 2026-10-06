@@ -47,6 +47,13 @@ module Network.Mux.Types
   , RuntimeError (..)
   , ReadBuffer (..)
   , BearerTrace (..)
+    -- * Egress tiers
+  , Tier (..)
+  , tierNumber
+  , numberTier
+  , unrankedNumber
+  , tierName
+  , numberName
   ) where
 
 import Prelude hiding (read)
@@ -61,7 +68,7 @@ import Data.Ix (Ix (..))
 import Data.Scientific qualified as F (FPFormat (..), fromFloatDigits)
 import Data.Word
 import Foreign.Ptr (Ptr)
-import Formatting (formatToString, (%+))
+import Formatting (formatToString, (%), (%+))
 import Formatting qualified as F
 import Quiet
 
@@ -317,6 +324,41 @@ data Bearer m = Bearer {
     , awaitWritable  :: Tracer m BearerTrace -> TimeoutFn m -> m ()
     }
 
+-- | The tiers scheduled egress ranks bearers in, lowest first: local roots
+-- head the cascade, partners follow; the residual tier is a big-ledger
+-- pool's relay with credit, then any other peer with credit; at zero credit
+-- a peer is at rest. The one place their numbering is written down.
+data Tier = LocalRootTier | PartnerTier | PoolTier | StrangerTier | RestTier
+  deriving (Eq, Ord, Enum, Bounded, Show)
+
+-- | A tier's place in the queue.
+tierNumber :: Tier -> Word8
+tierNumber = fromIntegral . fromEnum
+
+-- | The tier at a place in the queue, if any.
+numberTier :: Word8 -> Maybe Tier
+numberTier n
+  | n <= tierNumber maxBound = Just (toEnum (fromIntegral n))
+  | otherwise                = Nothing
+
+-- | Where a bearer without a rank queues: after every tier.
+unrankedNumber :: Word8
+unrankedNumber = maxBound
+
+tierName :: Tier -> String
+tierName LocalRootTier = "localRoot"
+tierName PartnerTier   = "partner"
+tierName PoolTier      = "pool"
+tierName StrangerTier  = "stranger"
+tierName RestTier      = "rest"
+
+-- | The name of a place in the queue: its tier's, "unranked", or the number.
+numberName :: Word8 -> String
+numberName n = case numberTier n of
+  Just t                        -> tierName t
+  Nothing | n == unrankedNumber -> "unranked"
+          | otherwise           -> "tier" ++ show n
+
 newtype SDUSize = SDUSize { getSDUSize :: Word16 }
   deriving Generic
   deriving Show via Quiet SDUSize
@@ -398,7 +440,8 @@ data BearerTrace =
     | TraceSDUReadTimeoutException
     | TraceSDUWriteTimeoutException
     | TraceTCPInfo StructTCPInfo Word16
-    | TraceEgressGrant Int DiffTime DiffTime
+    | TraceEgressGrant Int DiffTime DiffTime Bool
+      -- ^ bytes, waited for writability, waited for tokens, from the floor
 
 instance Show BearerTrace where
     show TraceRecvHeaderStart = "Bearer Receive Header Start"
@@ -435,10 +478,10 @@ instance Show BearerTrace where
     show TraceSendEnd = "Bearer Send End"
     show TraceSDUReadTimeoutException = "Timed out reading SDU"
     show TraceSDUWriteTimeoutException = "Timed out writing SDU"
-    show (TraceEgressGrant len tw tt) =
+    show (TraceEgressGrant len tw tt fromFloor) =
       formatToString
-        ("Egress grant: bytes" %+ F.int %+ "waited writable" %+ F.shown %+ "waited tokens" %+ F.shown)
-        len tw tt
+        ("Egress grant: bytes" %+ F.int %+ "waited writable" %+ F.shown %+ "waited tokens" %+ F.shown % F.string)
+        len tw tt (if fromFloor then " from the floor" else "")
 #ifdef linux_HOST_OS
     show (TraceTCPInfo StructTCPInfo
             { tcpi_snd_mss, tcpi_rcv_mss, tcpi_lost, tcpi_retrans

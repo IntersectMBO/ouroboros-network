@@ -37,8 +37,8 @@ import Control.Tracer (Tracer, traceWith)
 import Data.Char (toLower)
 
 import Network.Mux.Counters (ByteSlots, Counters, countGateTimeout)
-import Network.Mux.Egress.Bucket (Bucket, BucketHandle, awaitGrantWaited,
-           takeOnCredit)
+import Network.Mux.Egress.Bucket (Bucket, BucketHandle, GrantSource (..),
+           awaitGrantWaited, takeOnCredit)
 import Network.Mux.Timeout
 import Network.Mux.Trace (Error (SDUWriteTimeout))
 import Network.Mux.Types
@@ -281,9 +281,10 @@ muxer egressQueue tracer byteSlots counters laneEgress
              t0 <- getMonotonicTime
              gate timeout
              t1 <- getMonotonicTime
-             void $ awaitGrantWaited Nothing (t1 `diffTime` t0) bucketHandle len
+             source <- awaitGrantWaited Nothing (t1 `diffTime` t0) bucketHandle len
              t2 <- getMonotonicTime
-             traceWith tracer (TraceEgressGrant len (t1 `diffTime` t0) (t2 `diffTime` t1))
+             traceWith tracer (TraceEgressGrant len (t1 `diffTime` t0) (t2 `diffTime` t1)
+                                                (source == FromFloor))
       -- A write that throws, part of the batch sent or none, is not counted:
       -- the connection is gone with it.
       unmask (void (writeMany tracer timeout sdus))

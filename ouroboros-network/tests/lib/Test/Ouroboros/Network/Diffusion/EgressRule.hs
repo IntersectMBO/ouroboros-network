@@ -12,6 +12,7 @@ import Data.IntMap.Strict qualified as IntMap
 import Data.Map.Strict qualified as Map
 import Data.Word (Word16)
 import Network.Mux (MiniProtocolNum (..), Rank (..))
+import Network.Mux.Egress.Floor (FloorClass (..), floorClass)
 import Test.QuickCheck
 import Test.Tasty
 import Test.Tasty.QuickCheck (testProperty)
@@ -24,6 +25,7 @@ tests :: TestTree
 tests =
   testGroup "Ouroboros.Network.Diffusion.EgressRule"
     [ testProperty "a connection's rule and sink follow the decision table" prop_rule
+    , testProperty "the floor's classes and the turns threshold follow the rule's tiers" prop_floorClass_follows_rank
     ]
 
 -- | What happens to a connection, at a time in seconds: its rank is asked,
@@ -38,6 +40,7 @@ data Case = Case {
     cStanding  :: Standing,
     cPools     :: [Int],       -- ^ the matched buckets' charged totals; none for a stranger
     cUncharged :: [Word16],
+    cLock      :: Double,      -- ^ the stranger lock, in seconds of the clock
     cOps       :: [Op]
   }
   deriving Show
@@ -61,25 +64,28 @@ instance Arbitrary Case where
     k          <- frequency [ (1, pure 0), (2, choose (1, 3)) ]
     cPools     <- vectorOf k (choose (- cap, 3 * cap))
     cUncharged <- sublistOf [2, 3, 8, 18]
+    cLock      <- frequency [ (1, pure 0), (3, choose (0, 100)) ]
     n          <- choose (0, 60)
     deltas     <- vectorOf n (choose (0, 5 :: Double))
     cOps       <- forM (scanl1 (+) deltas) $ \t -> frequency
                     [ (3, pure (Ask t))
                     , (3, Charge t <$> elements [2, 3, 4, 8, 10, 18, 19] <*> choose (1, 2 * freshMax))
                     , (1, pure (Rebuild t)) ]
-    return Case { cStanding, cPools, cUncharged, cOps }
+    return Case { cStanding, cPools, cUncharged, cLock, cOps }
     where cap = capacity allowance
-  shrink Case { cStanding, cPools, cUncharged, cOps } =
-       [ Case cStanding cPools cUncharged ops | ops <- shrinkList (const []) cOps ]
-    ++ [ Case cStanding ps cUncharged cOps    | ps  <- shrinkList (const []) cPools ]
-    ++ [ Case cStanding cPools us cOps        | us  <- shrinkList (const []) cUncharged ]
-    ++ [ Case Other cPools cUncharged cOps    | cStanding /= Other ]
+  shrink c@Case { cStanding, cPools, cUncharged, cLock, cOps } =
+       [ c { cOps = ops }         | ops <- shrinkList (const []) cOps ]
+    ++ [ c { cPools = ps }        | ps  <- shrinkList (const []) cPools ]
+    ++ [ c { cUncharged = us }    | us  <- shrinkList (const []) cUncharged ]
+    ++ [ c { cStanding = Other }  | cStanding /= Other ]
+    ++ [ c { cLock = 0 }          | cLock /= 0 ]
 
 -- | The table, stepped by hand with the ranks written out, so the rule's own
 -- 'rankFor' is judged rather than echoed: ranks at every ask and the pool
 -- buckets at the end.
 model :: Case -> ([Rank], [Charged])
-model Case { cStanding, cPools, cUncharged, cOps } = go (map Charged cPools) (resetCharged allowance (clock (at 0))) cOps
+model Case { cStanding, cPools, cUncharged, cLock, cOps } =
+    go (map Charged cPools) (lockedCharged (clock (at 0)) (clock (at cLock))) cOps
   where
     matched = not (null cPools)
     go pools _ [] = ([], pools)
@@ -102,14 +108,14 @@ model Case { cStanding, cPools, cUncharged, cOps } = go (map Charged cPools) (re
              | matched   -> go (map (charge allowance (clock (at t)) n) pools) stranger ops
              | otherwise -> go pools (charge allowance (clock (at t)) n stranger) ops
            Rebuild t ->
-             go (map (const (resetCharged allowance (clock (at t)))) pools) stranger ops
+             go (map (const (Charged (kappa (clock (at t))))) pools) stranger ops
 
 -- | The same, through 'mkEgressRule' and the buckets in IOSim: the reading
 -- is the clock's at each op's time, and a rebuild installs a list of new
 -- pools, so its buckets start empty.
 run :: Case -> ([Rank], [Charged])
-run Case { cStanding, cPools, cUncharged, cOps } = runSimOrThrow $ do
-    pa <- newPoolAllowances allowance clock
+run Case { cStanding, cPools, cUncharged, cLock, cOps } = runSimOrThrow $ do
+    pa <- newPoolAllowances allowance clock (clock (at cLock))
     let key   = "peer" :: String
         k     = length cPools
         index = if k > 0 then Map.singleton key [0 .. k - 1] else Map.empty
@@ -132,9 +138,11 @@ run Case { cStanding, cPools, cUncharged, cOps } = runSimOrThrow $ do
     return (ranks, final)
 
 prop_rule :: Case -> Property
-prop_rule c@Case { cStanding, cPools, cOps } =
+prop_rule c@Case { cStanding, cPools, cLock, cOps } =
     classify (cStanding == Other) "one of the rest"
   . classify (not (null cPools)) "a pool relay"
+  . classify lockedStranger "a locked stranger"
+  . classify (lockedStranger && any askedAfter cOps) "a stranger asked after its lock"
   . classify (any isRebuild cOps) "the list is rebuilt under it"
   . classify (Rank 4 `elem` fst got) "goes to rest at some point"
   . classify (Rank 2 `elem` fst got) "served as a pool relay at some point"
@@ -142,5 +150,31 @@ prop_rule c@Case { cStanding, cPools, cOps } =
   $ got === model c
   where
     got = run c
+    lockedStranger = cStanding == Other && null cPools && cLock > 0
+    askedAfter (Ask t) = t > cLock
+    askedAfter _       = False
     isRebuild Rebuild {} = True
     isRebuild _          = False
+
+-- | What gives the floor's tier numbers their meaning is 'rankFor'. Over
+-- every standing and credit state: a local root has no class, a partner is
+-- class 0, a pool relay with credit class 1, a stranger with credit class 2,
+-- and a peer without credit has none; and exactly the peers without credit
+-- are at or above 'restTier', where the order within a tier is turns. A
+-- renumbering of the tiers on either side fails here.
+prop_floorClass_follows_rank :: Property
+prop_floorClass_follows_rank = once $ conjoin
+  [ counterexample (show (standing, matched, hasAny))
+  $ floorClass tier === expected
+    .&&. (tier >= restTier) === (standing == Other && not hasAny)
+  | standing <- [LocalRoot, Partner, Other]
+  , matched  <- [False, True]
+  , hasAny   <- [False, True]
+  , let Rank tier = rankFor standing matched hasAny
+        expected = case standing of
+                        LocalRoot -> Nothing
+                        Partner   -> Just (FloorClass 0)
+                        Other | not hasAny -> Nothing
+                              | matched    -> Just (FloorClass 1)
+                              | otherwise  -> Just (FloorClass 2)
+  ]

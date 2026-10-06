@@ -17,15 +17,13 @@ import Data.Maybe (isNothing)
 import Data.Ratio ((%))
 import System.Mem (performMajorGC)
 import System.Mem.Weak (Weak, deRefWeak, mkWeakPtr)
-import System.Random (mkStdGen)
 
 import Ouroboros.Network.Block (SlotNo (..))
 import Ouroboros.Network.Diffusion.PoolAllowances
 import Ouroboros.Network.Diffusion.PoolRelays
 import Ouroboros.Network.PeerSelection.LedgerPeers
 import Ouroboros.Network.PeerSelection.RootPeersDNS (DNSActions (..),
-           DNSorIOError (..), PeerActionsDNS (..), constantResource,
-           newPoolRelaysDNSSemaphore)
+           DNSorIOError (..), PeerActionsDNS (..), constantResource)
 import Ouroboros.Network.Point (WithOrigin (..))
 
 import Test.QuickCheck
@@ -64,8 +62,7 @@ prop_failed_poll_released :: Down -> Property
 prop_failed_poll_released Down { dPools, dProbe, dAfter } = ioProperty $ do
     polls      <- newTVarIO (0 :: Int)
     probeVar   <- newTVarIO Nothing
-    semaphore  <- newPoolRelaysDNSSemaphore
-    allowances <- newPoolAllowances (Allowance 1000) (const (Fresh 0))
+    allowances <- newPoolAllowances (Allowance 1000) (const (Fresh 0)) (Fresh 0)
     w <- arm probeVar
     let -- every poll a new list, naming the probe at the probed poll
         ledger = do
@@ -89,7 +86,9 @@ prop_failed_poll_released Down { dPools, dProbe, dAfter } = ioProperty $ do
         down = DNSActions {
             dnsResolverResource      = const noResolver,
             dnsAsyncResolverResource = const noResolver,
-            dnsLookupWithTTL         = \_ _ _ _ _ -> error "no resolver, no lookup"
+            dnsLookupWithTTL         = \_ _ _ _ _ -> error "no resolver, no lookup",
+            dnsLookupSRV             = \_ _ _ _ -> error "no resolver, no lookup",
+            dnsLookupIPs             = \_ _ _ _ -> error "no resolver, no lookup"
           }
         args :: PoolRelaysArgs () () () IO
         args = PoolRelaysArgs {
@@ -99,8 +98,6 @@ prop_failed_poll_released Down { dPools, dProbe, dAfter } = ioProperty $ do
             prSnapshot     = pure Nothing,
             prSRVPrefix    = "_cardano._tcp",
             prDNS          = PeerActionsDNS { paToPeerAddr = \_ _ -> (), paDnsActions = down },
-            prSemaphore    = semaphore,
-            prRng          = mkStdGen 0,
             prAddressKey   = id,
             prPollInterval = 0.001
           }

@@ -131,6 +131,7 @@ defaultEgressSchedulingWith laneOf = EgressScheduling {
     esBudget         = 250e6 / 8,
     esCapacity       = 2 * 131072,
     esSlicePercent   = 15,
+    esFloorPercent   = 10,
     esRotationPeriod = 599,
     esNotSentLowWat  = Just 131072,
     esLaneOf         = laneOf,
@@ -142,6 +143,9 @@ defaultEgressSchedulingWith laneOf = EgressScheduling {
     -- block out of twenty slots
     esFreshMaxBytes       = 88000 + 37000 + 1048576,
     esFreshBytesPerSecond = fromIntegral (88000 + 37000 + 1048576 :: Int) * 0.05,
+    -- about a quarter of an hour; a prime, like the other periods, so it does
+    -- not compete with them
+    esStrangerLock        = 887,
     -- the protocol numbers are the application's to name
     esUnchargedProtocols  = []
   }

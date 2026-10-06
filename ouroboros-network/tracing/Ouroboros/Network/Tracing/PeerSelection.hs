@@ -435,12 +435,13 @@ instance MetaTrace TraceLedgerPeers where
 --
 
 instance LogFormatting TracePoolRelays where
-  forMachine _dtal (PoolRelaysPolled pools kept addresses) =
+  forMachine _dtal (PoolRelaysPolled pools kept addresses held) =
     mconcat
       [ "kind" .= String "PoolRelaysPolled"
       , "pools" .= pools
       , "kept" .= kept
       , "addresses" .= addresses
+      , "held" .= held
       ]
   forMachine _dtal PoolRelaysDisabled =
     mconcat
@@ -466,7 +467,8 @@ instance MetaTrace TracePoolRelays where
 
     documentFor (Namespace _ ["Polled"]) = Just $ mconcat
       [ "A poll of the ledger's big pools is through: the pools in the list, how many"
-      , " kept their credit bucket from the poll before, and the relay addresses indexed." ]
+      , " kept their credit bucket from the poll before, the relay addresses indexed,"
+      , " and the names kept as last known because their lookup failed for the moment." ]
     documentFor (Namespace _ ["Disabled"]) = Just
       "Ledger peers are disabled, so no pool has a credit bucket."
     documentFor (Namespace _ ["ResolveFailed"]) = Just

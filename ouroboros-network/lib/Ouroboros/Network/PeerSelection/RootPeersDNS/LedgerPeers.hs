@@ -6,10 +6,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 
-module Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers
-  ( resolveLedgerPeers
-  , resolveRelays
-  ) where
+module Ouroboros.Network.PeerSelection.RootPeersDNS.LedgerPeers (resolveLedgerPeers) where
 
 import Control.Monad.Class.MonadAsync
 import Data.List qualified as List (foldl')
@@ -48,35 +45,16 @@ resolveLedgerPeers
   -> [RelayAccessPoint]
   -> StdGen
   -> m (Map DNS.Domain (Set peerAddr))
-resolveLedgerPeers dnsSemaphore resolvConf dnsActions peerKind =
-    resolveRelays dnsSemaphore resolvConf dnsActions
-                  (DNSLedgerPeer (SomeLedgerPeersKind peerKind))
-
--- | 'resolveLedgerPeers' for any kind of lookup.  The kind decides how an
--- SRV name resolves, see 'DNSPeersKind'.
-resolveRelays
-  :: forall m peerAddr resolver.
-     ( Ord peerAddr
-     , MonadThrow m
-     , MonadAsync m
-     )
-  => DNSSemaphore m
-  -> DNS.ResolvConf
-  -> DNSActions peerAddr resolver m
-  -> DNSPeersKind
-  -> [RelayAccessPoint]
-  -> StdGen
-  -> m (Map DNS.Domain (Set peerAddr))
-resolveRelays dnsSemaphore
-              resolvConf
-              DNSActions {
-                 dnsResolverResource,
-                 dnsLookupWithTTL
-               }
-              peerKind
-              domains
-              rng
-              = do
+resolveLedgerPeers dnsSemaphore
+                   resolvConf
+                   DNSActions {
+                      dnsResolverResource,
+                      dnsLookupWithTTL
+                    }
+                   peerKind
+                   domains
+                   rng
+                   = do
     rr <- dnsResolverResource resolvConf
     resourceVar <- newTVarIO rr
     resolveDomains resourceVar
@@ -95,7 +73,7 @@ resolveRelays dnsSemaphore
             let lookups =
                   [ (domain',) <$> withDNSSemaphore dnsSemaphore
                                      (dnsLookupWithTTL
-                                       peerKind
+                                       (DNSLedgerPeer (SomeLedgerPeersKind peerKind))
                                        domain
                                        resolvConf
                                        resolver
