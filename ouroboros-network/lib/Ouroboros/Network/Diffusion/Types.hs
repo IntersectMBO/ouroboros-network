@@ -14,6 +14,7 @@ module Ouroboros.Network.Diffusion.Types
   , nullTracers
   , Configuration (..)
   , EgressScheduling (..)
+  , egressSharesFit
   , Applications (..)
   , Arguments (..)
   , Interfaces (..)
@@ -144,6 +145,8 @@ data Failure where
   UnexpectedIPv4Address  :: forall ntnAddr. (Show ntnAddr, Typeable ntnAddr) => ntnAddr -> Failure
   UnexpectedIPv6Address  :: forall ntnAddr. (Show ntnAddr, Typeable ntnAddr) => ntnAddr -> Failure
   NoSocket               :: Failure
+  -- | the slice's and the floor's shares, percent, over the budget together
+  EgressSharesOverBudget :: Int -> Int -> Failure
   DiffusionError         :: SomeException -> Failure
 
 deriving instance Show Failure
@@ -631,6 +634,11 @@ data EgressScheduling = EgressScheduling {
     -- message rides this lane, so without a slice a demoted peer at the
     -- rest tier waits its turn for it under a saturated budget, which can
     -- outlast the deactivation timeout and cost the connection
+    esFloorPercent        :: Int,
+    -- ^ the floor's share of the budget, percent: a small allowance handed out
+    -- in bytes across the credited classes the strict order does not reach,
+    -- charged to the budget on credit; zero disables it. With the slice's
+    -- share at most 100, see 'egressSharesFit'
     esRotationPeriod      :: DiffTime,     -- ^ how often the order within a tier is
                                       --   re-dealt; 0 for none, FIFO within a tier
     esNotSentLowWat       :: Maybe Int,    -- ^ bytes
@@ -647,11 +655,23 @@ data EgressScheduling = EgressScheduling {
     esFreshBytesPerSecond :: Double,
     -- ^ the prototype's refill reading: 'esFreshMaxBytes' times the active
     -- slot coefficient, until consensus counts announcements instead
+    esStrangerLock        :: DiffTime,
+    -- ^ how long a stranger stays connected before its own bucket opens: it
+    -- opens empty and fills at the fresh rate, and a reconnection starts the
+    -- wait over. Kept in the reading's fresh bytes, this times
+    -- 'esFreshBytesPerSecond', so it is announcements watched, not seconds,
+    -- once consensus supplies the reading
     esUnchargedProtocols  :: [MiniProtocolNum]
     -- ^ scheduled-lane protocols whose bytes never count against a bucket:
     -- only what a client cannot drive to volume, keep-alive and the
     -- server-push notifications; everything else is charged
   }
+
+-- | Whether the slice's and the floor's shares fit the budget: both charge
+-- it on credit, so beyond it the budget runs into unbounded debt and its own
+-- queue starves.
+egressSharesFit :: EgressScheduling -> Bool
+egressSharesFit es = esSlicePercent es + esFloorPercent es <= 100
 
 
 -- | Versioned mini-protocol bundles run on a negotiated connection.

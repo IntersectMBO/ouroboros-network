@@ -28,7 +28,8 @@ import Network.Mux.Bearer
 import Network.Mux.Codec (decodeSDU, encodeSDU)
 import Network.Mux.Counters (ByteSlots, newByteSlots)
 import Network.Mux.Egress
-import Network.Mux.Egress.Bucket (awaitGrant, registerBearer, setRankSource)
+import Network.Mux.Egress.Bucket (awaitGrant, registerBearer, setRank,
+           setRankSource)
 import Network.Mux.Ingress
 import Network.Mux.Timeout (withTimeoutSerial)
 import Network.Mux.Types
@@ -333,7 +334,9 @@ bucketContention bearers rate rotation rule grants = do
            forM_ (zip [0 :: Int ..] hs) $ \(i, h) ->
              atomically $ setRankSource h $ \_ -> rankRuleSTM groupsVar $
                if even i then rootAddr 3 (i `mod` 8 + 1) else rootAddr 0 i
-         Nothing -> return ()
+         -- the rest tier: dealt a place by a rotation, FIFO without one, and
+         -- not counted as credited either way
+         Nothing -> forM_ hs $ \h -> atomically $ setRank h (Rank 4)
     as <- forM hs $ \h -> async (replicateM_ (grants `div` bearers) (awaitGrant h batch))
     mapM_ wait as
   where
@@ -450,7 +453,7 @@ main = do
                       , bench "64 bearers, 10 GB/s, rank rule"   $ nfIO $ bucketContention 64 10e9 Nothing (Just ruleVar) 4096
                       , bench "8 bearers, unlimited"             $ nfIO $ bucketContention 8  1e15 Nothing Nothing 4096
                       , bench "64 bearers, unlimited"            $ nfIO $ bucketContention 64 1e15 Nothing Nothing 4096
-                      , bench "64 bearers, unlimited, rotation"  $ nfIO $ bucketContention 64 1e15 (Just (Rotation 42 599)) Nothing 4096
+                      , bench "64 bearers, unlimited, rotation"  $ nfIO $ bucketContention 64 1e15 (Just (Rotation 42 599 maxBound)) Nothing 4096
                       , bench "64 bearers, unlimited, rank rule" $ nfIO $ bucketContention 64 1e15 Nothing (Just ruleVar) 4096
                       ]
                       -- the fast path over a socket: the unscheduled twins are the

@@ -21,6 +21,7 @@ import Data.Word (Word64, Word8)
 import Network.Mux.Egress.Bucket (Bucket, BucketStats (..), TierGrants (..),
            bucketSnapshot, burstBounds, burstWidths, emptyBucketStats,
            waitBounds)
+import Network.Mux.Types (tierNumber, unrankedNumber)
 
 -- | Scheduled egress. Counters are cumulative; the level and the queue
 -- lengths are values at the snapshot.
@@ -80,11 +81,16 @@ schedulingCounts now (budget, slice_m) = do
   s_m <- traverse (`bucketSnapshot` now) slice_m
   let slice       = maybe emptyStats (\(st, _, _, _) -> st) s_m
       sliceQueued = maybe 0 (\(_, _, q, _) -> q) s_m
-      tiers       = Map.toList $ Map.merge
-                      (Map.mapMissing (\_ (TierGrants n k) -> TierCounts n k 0))
-                      (Map.mapMissing (\_ q -> TierCounts 0 0 q))
-                      (Map.zipWithMatched (\_ (TierGrants n k) q -> TierCounts n k q))
-                      (bsTiers b) queuedByTier
+      everyTier   = map tierNumber [minBound .. maxBound] ++ [unrankedNumber]
+      -- every tier is listed, an idle one at zero, so a gauge that showed a
+      -- tier once reads zero when the tier empties
+      tiers       = Map.toList $ Map.union
+                      (Map.merge
+                         (Map.mapMissing (\_ (TierGrants n k) -> TierCounts n k 0))
+                         (Map.mapMissing (\_ q -> TierCounts 0 0 q))
+                         (Map.zipWithMatched (\_ (TierGrants n k) q -> TierCounts n k q))
+                         (bsTiers b) queuedByTier)
+                      (Map.fromList [ (t, TierCounts 0 0 0) | t <- everyTier ])
   return SchedulingCounts {
     scDirectBytes        = bsCredited b,
     scSliceBytes         = bsBytes slice - bsBorrowed slice,
