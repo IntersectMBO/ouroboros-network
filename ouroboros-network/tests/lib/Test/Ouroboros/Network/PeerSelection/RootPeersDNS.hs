@@ -414,7 +414,9 @@ mockDNSActions tracer ofType0 toPeerAddr dnsMapVar dnsTimeoutScript dnsLookupDel
     DNSActions {
       dnsResolverResource,
       dnsAsyncResolverResource,
-      dnsLookupWithTTL = dispatchLookupWithTTL ofType0 mockLookup tracer toPeerAddr
+      dnsLookupWithTTL = dispatchLookupWithTTL ofType0 mockLookup tracer toPeerAddr,
+      dnsLookupSRV     = \kind d conf resolver -> srvTargetsWithTTL tracer kind d (mockLookup resolver conf),
+      dnsLookupIPs     = \kind d conf resolver -> addressLookupsWithTTL tracer ofType0 kind d (mockLookup resolver conf)
     }
  where
    dnsResolverResource      _ = return (Right <$> constantResource ())
