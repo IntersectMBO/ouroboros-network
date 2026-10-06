@@ -25,9 +25,7 @@ import Control.Concurrent.Class.MonadMVar (MonadMVar)
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.DeepSeq (NFData)
 import Control.Exception (IOException)
-#if !defined(mingw32_HOST_OS) && !defined(wasm32_HOST_ARCH)
 import Control.Monad (when)
-#endif
 import Control.Monad.Class.MonadAsync (Async, MonadAsync)
 import Control.Monad.Class.MonadAsync qualified as Async
 import Control.Monad.Class.MonadFork
@@ -261,11 +259,14 @@ runM Interfaces
     -- Scheduled egress, when configured: the buckets behind it, shared by
     -- every node-to-node mux and read by the counters loop, and the
     -- residual tier's credit buckets, one per big-ledger pool, refilled by
-    -- the clock from the protocol parameters
+    -- the clock from the protocol parameters; a stranger's own bucket is
+    -- locked for what that clock reads over 'esStrangerLock'
     t0 <- getMonotonicTime
     egress <- traverse (\es -> (,,) es <$> mkEgressPolicy es
                                        <*> newPoolAllowances (Allowance (esFreshMaxBytes es))
-                                                             (freshAt (esFreshBytesPerSecond es) t0))
+                                                             (freshAt (esFreshBytesPerSecond es) t0)
+                                                             (freshAt (esFreshBytesPerSecond es) t0
+                                                                      (esStrangerLock es `addTime` t0)))
                        dcEgressScheduling
 
     -- The mux counters, traced every interval for as long as diffusion runs:
@@ -297,16 +298,19 @@ runM Interfaces
     (cmStdGen1,      rng5) = splitGen rng4
     (cmStdGen2,      rng6) = splitGen rng5
     (egressRng,      rng7) = splitGen rng6
-    (poolRelaysRng, peerSelectionActionsRng) = splitGen rng7
+    peerSelectionActionsRng = rng7
 
     -- the buckets behind scheduled egress, shared by every node-to-node
     -- connection; the rotation's seed comes from the diffusion RNG
     mkEgressPolicy :: EgressScheduling -> m (Mx.EgressPolicy m)
-    mkEgressPolicy EgressScheduling { esBudget, esCapacity, esSlicePercent,
+    mkEgressPolicy EgressScheduling { esBudget, esCapacity, esSlicePercent, esFloorPercent,
                                       esRotationPeriod, esLaneOf } = do
-      let rotation = Mx.Rotation { Mx.roSeed   = fst (genWord64 egressRng)
-                                 , Mx.roPeriod = esRotationPeriod }
+      let rotation = Mx.Rotation { Mx.roSeed      = fst (genWord64 egressRng)
+                                 , Mx.roPeriod    = esRotationPeriod
+                                 , Mx.roTurnsFrom = restTier }
       budget <- Mx.newBucket esBudget esCapacity (Just rotation)
+      when (esFloorPercent > 0) $
+        Mx.attachFloor budget (fromIntegral esFloorPercent / 100)
       slice  <- if esSlicePercent > 0
                    then Just <$> Mx.newBucket (esBudget * fromIntegral esSlicePercent / 100)
                                               esCapacity Nothing
@@ -677,15 +681,14 @@ runM Interfaces
           -- the thread that keeps the credit buckets' address index in step
           -- with the ledger's big pools, when egress is scheduled and the
           -- node serves: an initiator-only node queues nothing at the pool
-          -- tier. On its own DNS semaphore so the governor's lookups never
-          -- wait on it
+          -- tier. On lookup workers of its own, so the governor's lookups
+          -- never wait on it
           withPoolRelays :: forall x. (Maybe (Async m Void) -> m x) -> m x
           withPoolRelays k =
             case (diffusionMode, egress) of
                  (InitiatorAndResponderDiffusionMode, Just (_, _, allowances)) ->
                    Async.withAsync
                      (do labelThisThread "Pool relays"
-                         poolRelaysSemaphore <- RootPeersDNS.newPoolRelaysDNSSemaphore
                          poolRelaysThread PoolRelaysArgs {
                              prTracer       = dtPoolRelaysTracer,
                              prConsensus    = daLedgerPeersCtx,
@@ -693,14 +696,16 @@ runM Interfaces
                              prSnapshot     = dcReadLedgerPeerSnapshot,
                              prSRVPrefix    = daSRVPrefix,
                              prDNS          = dnsActions,
-                             prSemaphore    = poolRelaysSemaphore,
-                             prRng          = poolRelaysRng,
                              prAddressKey   = daEgressPoolKey,
                              -- the ledger peers thread's cadence, a different
-                             -- prime so the two never fall into step; the list
-                             -- changes once an epoch, and a relay that moved
-                             -- sits in the stranger class until the next poll
-                             prPollInterval = 1871
+                             -- prime so the two never fall into step; stake
+                             -- changes once an epoch, relays whenever a pool
+                             -- re-registers, and a relay that moved sits in
+                             -- the stranger class until the next poll
+                             prPollInterval = 1871,
+                             -- a boot before DNS answers, or a poll that
+                             -- failed, is tried again sooner
+                             prRetryInterval = 61
                            } allowances)
                      (k . Just)
                  _ -> k Nothing
