@@ -713,9 +713,10 @@ runM Interfaces
                              prRng          = poolRelaysRng,
                              prAddressKey   = daEgressPoolKey,
                              -- the ledger peers thread's cadence, a different
-                             -- prime so the two never fall into step; the list
-                             -- changes once an epoch, and a relay that moved
-                             -- sits in the stranger class until the next poll
+                             -- prime so the two never fall into step; stake
+                             -- changes once an epoch, relays whenever a pool
+                             -- re-registers, and a relay that moved sits in
+                             -- the stranger class until the next poll
                              prPollInterval = 1871
                            } allowances)
                      (k . Just)

@@ -56,9 +56,9 @@ data PoolRelaysArgs extraAPI ntnAddr resolver m = PoolRelaysArgs {
 
 data TracePoolRelays =
     PoolRelaysRebuilt Int Int
-    -- ^ the list changed: pools, addresses indexed
+    -- ^ the number of pools changed: pools, addresses indexed
   | PoolRelaysResolved Int
-    -- ^ the same list resolved again: addresses indexed
+    -- ^ as many pools as before, resolved again: addresses indexed
   | PoolRelaysDisabled
     -- ^ ledger peers are off, so there are no buckets
   | PoolRelaysResolveFailed String
@@ -74,9 +74,11 @@ data Followed = Followed {
 
 -- | Follow the big-ledger pools: on every poll take the same selection the
 -- ledger peers thread samples from, the ledger when young enough and the
--- snapshot when too old, and resolve every relay. When the list changed the
--- buckets are rebuilt; when it has not, only the index is swapped. With
--- ledger peers disabled there are no buckets at all.
+-- snapshot when too old, and resolve every relay. Only a change in the number
+-- of pools rebuilds the buckets, and they start empty; any other change, of
+-- stake, order or relays, swaps the index and leaves every bucket as it was,
+-- so re-registering relays or shifting stake never refills one. With ledger
+-- peers disabled there are no buckets at all.
 poolRelaysThread :: forall extraAPI ntnAddr resolver m.
                     ( MonadAsync m
                     , MonadCatch m
@@ -89,23 +91,21 @@ poolRelaysThread :: forall extraAPI ntnAddr resolver m.
 poolRelaysThread PoolRelaysArgs { .. } allowances =
     go prRng (Followed Map.empty Map.empty Nothing) Nothing
   where
-    -- @built@ is the list the buckets came from, @Just Map.empty@ once
-    -- cleared for disabled ledger peers, @Nothing@ before the first build
-    go :: StdGen -> Followed
-       -> Maybe (Map AccPoolStake (PoolStake, NonEmpty RelayAccessPoint))
-       -> m Void
+    -- @built@ is how many buckets there are, @Just 0@ once cleared for
+    -- disabled ledger peers, @Nothing@ before the first build
+    go :: StdGen -> Followed -> Maybe Int -> m Void
     go rng followed built = do
       useLedger <- atomically prUseLedger
       (followed', built', rng') <-
         case useLedger of
              DontUseLedgerPeers -> do
                case built of
-                    Just m | Map.null m -> return ()
+                    Just 0 -> return ()
                     _ -> do
                       now <- getMonotonicTime
                       atomically $ rebuild allowances now 0 Map.empty
                       traceWith prTracer PoolRelaysDisabled
-               return (followed, Just Map.empty, rng)
+               return (followed, Just 0, rng)
 
              UseLedgerPeers useLedgerAfter -> do
                (ledgerWithOrigin, ledgerPeers, peerSnapshot) <- atomically $
@@ -124,9 +124,10 @@ poolRelaysThread PoolRelaysArgs { .. } allowances =
                          srvPrefix  = prSRVPrefix
                        }
                    followedNow = Followed peerMap bigPeerMap cachedSlot
-                   changed     = Just bigPeerMap /= built
+                   count       = Map.size bigPeerMap
+                   changed     = Just count /= built
                (ok, rng') <- resolveAndApply rng changed bigPeerMap
-               return (followedNow, if changed && ok then Just bigPeerMap else built, rng')
+               return (followedNow, if changed && ok then Just count else built, rng')
 
       threadDelay prPollInterval
       go rng' followed' built'
