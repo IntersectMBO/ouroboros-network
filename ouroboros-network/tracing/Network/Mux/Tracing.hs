@@ -10,6 +10,7 @@ module Network.Mux.Tracing () where
 
 import Data.Aeson (Value (String), object, (.=))
 import Data.List (isPrefixOf)
+import Data.Map.Strict qualified as Map
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Typeable
@@ -21,7 +22,8 @@ import Network.Mux qualified as Mux
 #ifdef linux_HOST_OS
 import Network.Mux.TCPInfo (StructTCPInfo (..))
 #endif
-import Network.Mux.Types (SDUHeader (..), unRemoteClockModel)
+import Network.Mux.Types (MiniProtocolDir (..), SDUHeader (..),
+           unRemoteClockModel)
 
 --------------------------------------------------------------------------------
 -- Mux Tracer
@@ -611,11 +613,13 @@ instance LogFormatting Mux.CountersTrace where
       Mux.TraceLocalIngress  c -> ingressObject "Local" c
       where
         egressObject side Mux.EgressCounts { Mux.ecWriteTimeouts, Mux.ecWriteTimeoutsGate
-                                           , Mux.ecScheduling } = mconcat $
+                                           , Mux.ecScheduling, Mux.ecBytes } = mconcat $
           [ "kind" .= String "EgressCounts"
           , "side" .= String side
           , "writeTimeouts" .= ecWriteTimeouts
           , "writeTimeoutsGate" .= ecWriteTimeoutsGate
+          , "bytes" .= sum ecBytes
+          , "bytesByProtocol" .= bytesObject ecBytes
           ] ++
           [ "scheduling" .= schedulingObject sc | Just sc <- [ecScheduling] ]
         schedulingObject Mux.SchedulingCounts { Mux.scDirectBytes, Mux.scSliceBytes
@@ -650,7 +654,8 @@ instance LogFormatting Mux.CountersTrace where
                          | (t, c) <- scTiers ]
             ]
         ingressObject side Mux.IngressCounts { Mux.icReadTimeouts, Mux.icOverruns
-                                             , Mux.icProtocolErrors, Mux.icBearerClosed } =
+                                             , Mux.icProtocolErrors, Mux.icBearerClosed
+                                             , Mux.icBytes } =
           mconcat
             [ "kind" .= String "IngressCounts"
             , "side" .= String side
@@ -658,7 +663,12 @@ instance LogFormatting Mux.CountersTrace where
             , "overruns" .= icOverruns
             , "protocolErrors" .= icProtocolErrors
             , "bearerClosed" .= icBearerClosed
+            , "bytes" .= sum icBytes
+            , "bytesByProtocol" .= bytesObject icBytes
             ]
+        bytesObject counts =
+          [ object [ "protocol" .= n, "direction" .= dirName d, "bytes" .= b ]
+          | ((Mux.MiniProtocolNum n, d), b) <- Map.toList counts ]
     forHuman = showT
     asMetrics = \case
       Mux.TraceRemoteEgress  c -> egressMetrics "egress" c
@@ -667,10 +677,11 @@ instance LogFormatting Mux.CountersTrace where
       Mux.TraceLocalIngress  c -> ingressMetrics "localIngress" c
       where
         egressMetrics prefix Mux.EgressCounts { Mux.ecWriteTimeouts, Mux.ecWriteTimeoutsGate
-                                              , Mux.ecScheduling } =
+                                              , Mux.ecScheduling, Mux.ecBytes } =
           [ IntM (prefix <> ".writeTimeouts")      (fromIntegral ecWriteTimeouts)
           , IntM (prefix <> ".writeTimeouts.gate") (fromIntegral ecWriteTimeoutsGate)
           ] ++
+          bytesMetrics prefix ecBytes ++
           maybe [] (schedulingMetrics prefix) ecScheduling
         schedulingMetrics prefix Mux.SchedulingCounts { Mux.scDirectBytes, Mux.scSliceBytes
                                                       , Mux.scSliceBorrowedBytes
@@ -710,12 +721,20 @@ instance LogFormatting Mux.CountersTrace where
           [ IntM (prefix <> waitsOverSuffix (realToFrac b)) (fromIntegral n)
           | (b, n) <- scWaitsOver ]
         ingressMetrics prefix Mux.IngressCounts { Mux.icReadTimeouts, Mux.icOverruns
-                                                , Mux.icProtocolErrors, Mux.icBearerClosed } =
+                                                , Mux.icProtocolErrors, Mux.icBearerClosed
+                                                , Mux.icBytes } =
           [ IntM (prefix <> ".readTimeouts")   (fromIntegral icReadTimeouts)
           , IntM (prefix <> ".overruns")       (fromIntegral icOverruns)
           , IntM (prefix <> ".protocolErrors") (fromIntegral icProtocolErrors)
           , IntM (prefix <> ".bearerClosed")   (fromIntegral icBearerClosed)
-          ]
+          ] ++
+          bytesMetrics prefix icBytes
+        -- the total, and one counter per mini-protocol number and direction;
+        -- the numbers are the application's, so the names carry them
+        bytesMetrics prefix counts =
+            IntM (prefix <> ".bytes") (fromIntegral (sum counts))
+          : [ IntM (prefix <> ".bytes." <> showT n <> "." <> dirName d) (fromIntegral b)
+            | ((Mux.MiniProtocolNum n, d), b) <- Map.toList counts ]
 
 instance MetaTrace Mux.CountersTrace where
     namespaceFor Mux.TraceRemoteEgress {}  = Namespace [] ["Remote", "Egress"]
@@ -734,7 +753,10 @@ instance MetaTrace Mux.CountersTrace where
     documentFor _ = Nothing
 
     metricsDocFor (Namespace _ [side, "Egress"]) =
-      [ (egressPrefix side <> ".writeTimeouts",
+      [ (egressPrefix side <> ".bytes",
+         "Bytes written, SDU headers included, on every lane; per mini-protocol and "
+           <> "direction in .bytes.<num>.<initiator|responder>.")
+      , (egressPrefix side <> ".writeTimeouts",
          "Muxes dropped because the peer took nothing within the SDU timeout.")
       , (egressPrefix side <> ".writeTimeouts.gate",
          "Of those, the ones that timed out at the writability gate of scheduled egress.")
@@ -785,6 +807,9 @@ instance MetaTrace Mux.CountersTrace where
            <> "an initiator-only mux cannot take.")
       , (ingressPrefix side <> ".bearerClosed",
          "Muxes that ended because the peer closed the connection.")
+      , (ingressPrefix side <> ".bytes",
+         "Bytes read, SDU headers included, including SDUs that overran an ingress "
+           <> "limit; per mini-protocol and direction in .bytes.<num>.<initiator|responder>.")
       ]
     metricsDocFor _ = []
 
@@ -820,6 +845,11 @@ tierWho Mux.PartnerTier   = "partners"
 tierWho Mux.PoolTier      = "big-ledger pool relays with credit"
 tierWho Mux.StrangerTier  = "other peers with credit"
 tierWho Mux.RestTier      = "peers at zero credit"
+
+-- | Our side's direction of a mini-protocol, as metric names and JSON carry it.
+dirName :: MiniProtocolDir -> Text
+dirName InitiatorDir = "initiator"
+dirName ResponderDir = "responder"
 
 sideDoc :: Text -> Text
 sideDoc "Local" = "node-to-client"
