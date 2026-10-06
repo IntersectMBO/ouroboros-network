@@ -303,7 +303,7 @@ runM Interfaces
     (cmStdGen1,      rng5) = splitGen rng4
     (cmStdGen2,      rng6) = splitGen rng5
     (egressRng,      rng7) = splitGen rng6
-    (poolRelaysRng, peerSelectionActionsRng) = splitGen rng7
+    peerSelectionActionsRng = rng7
 
     -- the buckets behind scheduled egress, shared by every node-to-node
     -- connection; the rotation's seed comes from the diffusion RNG
@@ -710,12 +710,12 @@ runM Interfaces
                              prSRVPrefix    = daSRVPrefix,
                              prDNS          = dnsActions,
                              prSemaphore    = poolRelaysSemaphore,
-                             prRng          = poolRelaysRng,
                              prAddressKey   = daEgressPoolKey,
                              -- the ledger peers thread's cadence, a different
-                             -- prime so the two never fall into step; the list
-                             -- changes once an epoch, and a relay that moved
-                             -- sits in the stranger class until the next poll
+                             -- prime so the two never fall into step; stake
+                             -- changes once an epoch, relays whenever a pool
+                             -- re-registers, and a relay that moved sits in
+                             -- the stranger class until the next poll
                              prPollInterval = 1871
                            } allowances)
                      (k . Just)

@@ -104,9 +104,9 @@ freshAt :: Double -> Time -> Time -> Fresh
 freshAt rate t0 now = Fresh (max 0 (floor (rate * realToFrac (now `diffTime` t0) :: Double)))
 
 -- | One bucket per big-ledger pool, by position in the stake-sorted list, and
--- the resolved addresses that map to each. Replaced as a whole when the
--- ledger list changes; the generation lets a bearer notice and look its
--- buckets up again, so no bucket outlives the list it came from. A stranger's
+-- the resolved addresses that map to each. Replaced as a whole, empty, when
+-- the number of pools changes; the generation lets a bearer notice and look
+-- its buckets up again. A stranger's
 -- own bucket is locked for 'paStrangerLock' fresh bytes from its connection's
 -- start.
 data PoolAllowances m addr = PoolAllowances {
@@ -128,12 +128,13 @@ newPoolAllowances paAllowance paFreshAt paStrangerLock = do
   paIndex      <- newTVarIO Map.empty
   return PoolAllowances { .. }
 
--- | Install a new list: @n@ pools, every bucket full at @now@, and the
--- addresses that resolve to each position.
+-- | Install a new list: @n@ pools, every bucket empty at @now@ and filling at
+-- the fresh rate, and the addresses that resolve to each position. Empty, so
+-- that nothing which changes the pool count hands out credit.
 rebuild :: MonadSTM m
         => PoolAllowances m addr -> Time -> Int -> Map addr [Int] -> STM m ()
 rebuild PoolAllowances { .. } now n index = do
-  buckets <- mapM (\i -> do tv <- newTVar (resetCharged paAllowance (paFreshAt now))
+  buckets <- mapM (\i -> do tv <- newTVar (lockedCharged (paFreshAt now) (Fresh 0))
                             return (i, tv))
                   [0 .. n - 1]
   writeTVar paBuckets (IntMap.fromList buckets)

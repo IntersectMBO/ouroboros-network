@@ -440,10 +440,11 @@ instance LogFormatting TracePoolRelays where
       , "pools" .= pools
       , "addresses" .= addresses
       ]
-  forMachine _dtal (PoolRelaysResolved addresses) =
+  forMachine _dtal (PoolRelaysResolved addresses kept) =
     mconcat
       [ "kind" .= String "PoolRelaysResolved"
       , "addresses" .= addresses
+      , "kept" .= kept
       ]
   forMachine _dtal PoolRelaysDisabled =
     mconcat

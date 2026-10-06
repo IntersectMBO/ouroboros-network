@@ -105,7 +105,7 @@ model Case { cStanding, cPools, cUncharged, cLock, cOps } =
              | matched   -> go (map (charge allowance (clock (at t)) n) pools) stranger ops
              | otherwise -> go pools (charge allowance (clock (at t)) n stranger) ops
            Rebuild t ->
-             go (map (const (resetCharged allowance (clock (at t)))) pools) stranger ops
+             go (map (const (Charged (kappa (clock (at t))))) pools) stranger ops
 
 -- | The same, through 'mkEgressRule' and the buckets in IOSim.
 run :: Case -> ([Rank], [Charged])
