@@ -52,6 +52,11 @@ module Network.Mux
   , attachFloor
   , setBucketRate
   , Rank (..)
+  , Tier (..)
+  , tierNumber
+  , numberTier
+  , tierName
+  , numberName
   , Rotation (..)
   , setEgressRank
   , setEgressRankSource
