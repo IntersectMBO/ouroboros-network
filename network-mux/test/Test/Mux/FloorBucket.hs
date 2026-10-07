@@ -1,6 +1,13 @@
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE DerivingVia         #-}
+{-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE NumericUnderscores  #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving  #-}
+
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 -- | The floor's guarantee at the bucket, in IOSim: bearers are threads asking
 -- the budget for batches; the oracle is the simulated clock and arithmetic
@@ -8,20 +15,28 @@
 --
 module Test.Mux.FloorBucket (tests) where
 
+import Control.Applicative ((<|>))
 import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Exception (evaluate)
 import Control.Monad (forM)
 import Control.Monad.Class.MonadAsync
-import Control.Monad.Class.MonadThrow (mask_)
+import Control.Monad.Class.MonadThrow (MonadMask, mask_)
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.IOSim
 
+import Data.IORef (modifyIORef', newIORef, readIORef)
 import Data.Map.Strict qualified as Map
+import Data.Maybe (isNothing)
 import Data.Word (Word8)
 
+import Network.Mux.Counters qualified as Counters
 import Network.Mux.Egress.Bucket (GrantSource (..))
 import Network.Mux.Egress.Bucket qualified as Bucket
-import Network.Mux.Egress.Floor (FloorClass, floorClass)
+import Network.Mux.Egress.Floor (FloorClass, FloorState, floorClass)
+import Network.Mux.Types (MiniProtocolDir, MiniProtocolNum)
+import NoThunks.Class (NoThunks (..), OnlyCheckWhnfNamed (..), noThunks,
+           unsafeNoThunks)
 
 import Test.QuickCheck
 import Test.Tasty
@@ -38,6 +53,8 @@ tests =
     , testProperty "same tier: nobody starves under rotation" prop_same_tier
     , testProperty "an idle floor changes nothing"        prop_idle_floor
     , testProperty "counters match the grants"            prop_accounting
+    , testProperty "the counters hold no thunks"          prop_stats_no_thunks
+    , testProperty "in IO, the state holds no thunks"     prop_state_no_thunks_io
     , testProperty "the floor follows the budget's rate"  prop_floor_follows_rate
     , testProperty "the rest tier takes turns"            prop_rest_turns
     , testProperty "a rest bearer waits at most a round"  prop_rest_wait
@@ -151,18 +168,27 @@ runFloor withFloor fr = let (gs, st, _) = runFloor' withFloor fr in (gs, st)
 -- with the instant it was made: a bearer starved for the whole run shows up
 -- here and nowhere else.
 runFloor' :: Bool -> FloorRun -> ([Grant], Bucket.BucketStats, [(Int, Time)])
-runFloor' withFloor fr@FloorRun { frRate, frCapacity, frPercent, frRotation, frBearers } =
-  runSimOrThrow $ do
+runFloor' withFloor fr = runSimOrThrow (runFloorM Nothing withFloor fr)
+
+-- | 'runFloor'' in any monad, with times relative to the run's start. Given
+-- @inspect@, it is handed the budget and the bearers' handles halfway through
+-- the run and again after it; without, the run is exactly the IOSim one.
+runFloorM :: forall m. (MonadAsync m, MonadDelay m, MonadMask m, MonadTimer m)
+          => Maybe (Bucket.Bucket m -> [Bucket.BucketHandle m] -> m ())
+          -> Bool -> FloorRun -> m ([Grant], Bucket.BucketStats, [(Int, Time)])
+runFloorM inspect_m withFloor fr@FloorRun { frRate, frCapacity, frPercent, frRotation, frBearers } = do
+    t0 <- getMonotonicTime
+    let end = (endTime fr `diffTime` Time 0) `addTime` t0
     budget <- Bucket.newBucket frRate frCapacity frRotation
     if withFloor && frPercent > 0
        then Bucket.attachFloor budget (fromIntegral frPercent / 100)
        else return ()
     grants  <- newTVarIO []
     pending <- newTVarIO Map.empty
-    as <- forM (zip [0 ..] frBearers) $ \(i, FBearer { fbTier, fbBatch, fbStart }) -> do
+    hsas <- forM (zip [0 ..] frBearers) $ \(i, FBearer { fbTier, fbBatch, fbStart }) -> do
       h <- Bucket.registerBearer budget
       atomically $ Bucket.setRank h (Bucket.Rank fbTier)
-      async $ do
+      fmap ((,) h) $ async $ do
         threadDelay fbStart
         -- masked: a grant is recorded before a cancellation can land, so the
         -- harness sees every grant the bucket counted; the wait itself is
@@ -178,12 +204,19 @@ runFloor' withFloor fr@FloorRun { frRate, frCapacity, frPercent, frRotation, frB
                   modifyTVar pending (Map.delete i)
               loop
         loop
+    let (hs, as) = unzip hsas
+    case inspect_m of
+         Nothing -> return ()
+         Just inspect -> do
+           threadDelay ((end `diffTime` t0) / 2)
+           inspect budget hs
     now <- getMonotonicTime
-    threadDelay (endTime fr `diffTime` now)
+    threadDelay (end `diffTime` now)
     waiting <- Map.toList <$> readTVarIO pending
     mapM_ cancel as
     gs <- reverse <$> readTVarIO grants
-    (st, _, _, _) <- atomically $ Bucket.bucketSnapshot budget (endTime fr)
+    (st, _, _, _) <- atomically $ Bucket.bucketSnapshot budget end
+    mapM_ (\inspect -> inspect budget hs) inspect_m
     return (gs, st, waiting)
 
 credited :: Word8 -> Bool
@@ -373,6 +406,62 @@ prop_idle_floor =
   forAll (genRun (pure (\t -> t == 0 || t >= 4))) $ \fr ->
     let strip (gs, _) = [ (gBearer g, gAt g, gBytes g) | g <- gs ]
     in strip (runFloor True fr) === strip (runFloor False fr)
+
+-- | So the no-thunks properties here and in "Test.Mux" can inspect a
+-- bucket's counters, and in IO its whole state.
+instance NoThunks Bucket.BucketStats
+instance NoThunks Bucket.TierGrants
+instance NoThunks (Bucket.Bucket IO)
+instance NoThunks (Bucket.Floor IO)
+instance NoThunks (Bucket.BucketHandle IO)
+instance NoThunks Bucket.BurstState
+instance NoThunks Bucket.Rotation
+instance NoThunks Bucket.Ticket
+instance NoThunks Bucket.TierAsked
+instance NoThunks FloorState
+instance NoThunks FloorClass
+
+-- | And the mux counters, in IO.
+instance NoThunks (Counters.MuxCounters IO)
+instance NoThunks (Counters.MuxByteCells IO)
+instance (NoThunks a, NoThunks b) => NoThunks (Counters.Sides a b)
+instance NoThunks Counters.EgressCounts
+instance NoThunks Counters.IngressCounts
+instance NoThunks Counters.SchedulingCounts
+instance NoThunks Counters.TierCounts
+deriving via OnlyCheckWhnfNamed "MiniProtocolNum" MiniProtocolNum
+  instance NoThunks MiniProtocolNum
+deriving via OnlyCheckWhnfNamed "MiniProtocolDir" MiniProtocolDir
+  instance NoThunks MiniProtocolDir
+
+-- | A strict TVar in IO is a GHC TVar, whose contents nothunks reads.
+instance NoThunks a => NoThunks (StrictTVar IO a) where
+  showTypeOf _ = "StrictTVar IO"
+  wNoThunks ctxt = wNoThunks ctxt . toLazyTVar
+
+-- | With a floor attached, the budget's counters hold no thunks either.
+prop_stats_no_thunks :: FloorRun -> Property
+prop_stats_no_thunks fr = case runFloor True fr of
+  (_, !st) -> counterexample (show (unsafeNoThunks st)) (isNothing (unsafeNoThunks st))
+
+-- | In IO, where a TVar's contents can be inspected: halfway through a run
+-- and after it, the budget, its floor and the bearers' handles hold no thunks.
+-- Wall-clock time, so the runs are short; leaving state behind does not need
+-- a long one.
+prop_state_no_thunks_io :: FloorRun -> Property
+prop_state_no_thunks_io fr0 = withNumTests 20 $ ioProperty $ do
+    found <- newIORef []
+    _ <- runFloorM (Just $ \budget hs -> do
+                     -- the list is the harness's, built lazily; the handles in it are not
+                     _ <- evaluate (foldr seq () hs)
+                     r <- (<|>) <$> noThunks ["budget"] budget <*> noThunks ["handles"] hs
+                     mapM_ (\info -> modifyIORef' found (info :)) r)
+                   True fr
+    infos <- readIORef found
+    return $ counterexample (show infos) (null infos)
+  where
+    fr = fr0 { frDuration = min 0.3 (frDuration fr0)
+             , frBearers  = [ b { fbStart = min 0.1 (fbStart b) } | b <- frBearers fr0 ] }
 
 prop_accounting :: FloorRun -> Property
 prop_accounting fr =
