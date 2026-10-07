@@ -26,8 +26,11 @@ import Control.Exception (ErrorCall (..))
 import Control.Monad
 import Data.Binary.Put qualified as Bin
 import Data.Bits
+import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BL
+import Data.ByteString.Lazy.Internal qualified as BLI
 import Data.ByteString.Lazy.Char8 qualified as BL8 (pack)
+import Data.Functor.Identity (Identity (..))
 import Data.List (dropWhileEnd, nub)
 import Data.List qualified as List
 import Data.Map qualified as M
@@ -82,6 +85,7 @@ import Network.Mux.Bearer.Pipe qualified as Mx
 import Network.Mux.Bearer.Queues as Mx
 import Network.Mux.Codec qualified as Mx
 import Network.Mux.Counters qualified as Counters
+import Network.Mux.Egress (forcePrefix)
 import Network.Mux.Egress qualified as Egress
 import Network.Mux.Egress.Bucket qualified as Bucket
 import Network.Mux.Egress.Floor (floorClass)
@@ -126,6 +130,8 @@ tests =
     , testProperty "rotatedRank: re-dealt each period" prop_rotatedRank
     , testProperty "queueRank: zero period is none"   prop_queueRank_zeroPeriod
     , testProperty "served: each bearer once per tier, within the window" prop_served_window
+    , testProperty "forcePrefix: evaluates up to the limit, no further" prop_forcePrefix
+    , testProperty "send forces a message only up to the soft limit" prop_mux_send_forces_prefix_only
     , testProperty "served: the counters drop the stale bearers" prop_served_counters
     , testProperty "served: the record prunes itself, bounded" prop_served_bounded
     , testProperty "served: an unqueued grant asks its tier once a refresh" prop_served_fast_tier
@@ -3026,6 +3032,103 @@ prop_queueRank_zeroPeriod seed bearer tier (NonNegative ps) =
       === Bucket.queueRank Nothing bearer (Bucket.Rank tier) t
   where
     t = picos ps `addTime` Time 0
+
+-- | 'forcePrefix' evaluates chunks until they hold at least the limit, and
+-- nothing after: a tail that throws when evaluated is reached exactly when the
+-- chunks before it hold fewer bytes than the limit.
+prop_forcePrefix :: Property
+prop_forcePrefix =
+    forAllShrink genSizes (shrinkList (map getPositive . shrink . Positive)) $ \sizes ->
+    forAll (genLimit (sum sizes)) $ \limit ->
+      let size    = sum sizes
+          tailBomb = error "forcePrefix: evaluated past the limit"
+          bs      = foldr (\s rest -> BLI.Chunk (BS.replicate s 0) rest) tailBomb sizes
+      in classify (fromIntegral limit == size) "limit at the end of the chunks" $
+         classify (limit <= 0)                   "no limit" $
+         classify (fromIntegral limit > size)    "limit past the chunks" $
+         ioProperty $ do
+           r <- try (evaluate (forcePrefix limit bs))
+           return $ counterexample (show (size, limit))
+                  $ either (\(_ :: ErrorCall) -> True) (const False) r === (fromIntegral size < limit)
+  where
+    genSizes = listOf (choose (1, 3000))
+    genLimit n = frequency [ (1, choose (-10, 0))
+                           , (2, pure (fromIntegral n))
+                           , (2, pure (fromIntegral n + 1))
+                           , (2, pure (max 0 (fromIntegral n - 1)))
+                           , (3, choose (0, fromIntegral n + 3000)) ]
+
+-- | The same bound on the real send path. A responder sends a message whose
+-- tail throws when evaluated, through a mux whose channel tracer evaluates
+-- every event, then a second message the soft limit holds back while the
+-- muxer holds the first batch for a budget too slow to grant it. The send
+-- forces the soft limit's worth and the trace one byte more; the soft-limit
+-- check, run again on every retry, counts the buffer up to the limit, so at
+-- most the limit past what the muxer has taken. The tail sits beyond both:
+-- the first send returns, the second waits, and the protocol has not
+-- failed. Measuring the whole message, as before, reaches it.
+prop_mux_send_forces_prefix_only :: Positive Int -> NonNegative Int -> Property
+prop_mux_send_forces_prefix_only (Positive chunk0) (NonNegative extra0) =
+    BaseQC.withNumTests 20 $
+    counterexample (show (chunk, prefix)) $
+      ioProperty $ (=== (True, False, Nothing)) <$> run
+  where
+    softLimit = 0x3ffff :: Int
+    chunk     = 1 + chunk0 `mod` 20000
+    -- past the first send's forcing and the limit beyond the muxer's
+    -- batch, at most two 24 KiB SDUs and the one that crosses the batch size
+    prefix    = 2 * (softLimit + 1) + 3 * 24576 + extra0 `mod` 20000
+    message   = foldr (\n rest -> BLI.Chunk (BS.replicate n 0x61) rest)
+                      (error "send: evaluated past the soft limit")
+                      (chunks prefix)
+    chunks n | n <= 0    = []
+             | otherwise = min chunk n : chunks (n - chunk)
+
+    -- in IO, where an exception raised evaluating a transaction is the
+    -- protocol thread's for certain
+    run :: IO (Bool, Bool, Maybe String)
+    run = do
+      -- a budget too slow to grant the muxer's first batch within the run
+      budget <- Bucket.newBucket 1 1 Nothing
+      let policy = Mx.EgressPolicy { Mx.egressBudget = budget, Mx.egressSlice = Nothing,
+                                     Mx.egressLaneOf = Mx.directionSplit }
+          evaluating = Tracer (emit (\(Identity ev) -> case length (show ev) of n -> n `seq` return ()))
+          tracers = (Mx.nullTracers :: Mx.Tracers IO) { Mx.channelTracer = evaluating }
+      client_w <- atomically $ newTBQueue 10
+      client_r <- atomically $ newTBQueue 10
+      clientBearer <- getBearer makeQueueChannelBearer (-1)
+                        QueueChannel { writeQueue = client_w, readQueue = client_r } Nothing
+      serverBearer <- getBearer makeQueueChannelBearer (-1)
+                        QueueChannel { writeQueue = client_r, readQueue = client_w } Nothing
+      let info dir = MiniProtocolInfo {
+              miniProtocolNum = bulkNum, miniProtocolDir = dir,
+              miniProtocolLimits = MiniProtocolLimits { maximumIngressQueue = 16000000 },
+              miniProtocolCapability = Nothing }
+      serverMux <- Mx.newWithEgress policy tracers [info Mx.ResponderDirection]
+      clientMux <- Mx.new Mx.nullTracers [info Mx.InitiatorDirection]
+      _ <- async (Mx.run serverMux serverBearer)
+      _ <- async (Mx.run clientMux clientBearer)
+      first  <- newTVarIO False
+      second <- newTVarIO False
+      failed <- newTVarIO Nothing
+      -- a send that reaches the tail throws in the protocol's thread; caught
+      -- here, since a failing protocol takes the mux down with it
+      let sending var bs chan = do
+            r <- try (Mx.send chan bs)
+            case r of
+                 Left (e :: ErrorCall) -> atomically (writeTVar failed (Just (show e)))
+                 Right ()              -> atomically (writeTVar var True)
+      _ <- Mx.runMiniProtocol serverMux bulkNum Mx.ResponderDirection Mx.StartOnDemand $ \chan -> do
+                      _ <- Mx.recv chan
+                      sending first message chan
+                      sending second (BL8.pack "after") chan
+                      return ((), Nothing)
+      _ <- Mx.runMiniProtocol clientMux bulkNum Mx.InitiatorDirection Mx.StartEagerly $ \chan -> do
+             Mx.send chan (BL8.pack "req")
+             return ((), Nothing)
+      _ <- timeout 5 $ atomically $ readTVar first >>= check
+      threadDelay 0.2
+      atomically $ (,,) <$> readTVar first <*> readTVar second <*> readTVar failed
 
 -- | Grants at tiers and bearers, recorded in time order, then counted at
 -- @now@: a tier counts each bearer it granted within the window once,

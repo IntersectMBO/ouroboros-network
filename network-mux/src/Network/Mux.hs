@@ -880,16 +880,32 @@ muxChannel tracer egressQueue want@(Wanton w) mc md q =
     egressSoftBufferLimit :: Int64
     egressSoftBufferLimit = 0x3ffff
 
+    -- the length of a lazy 'BL.ByteString', counting no further than @n@
+    lengthUpTo :: Int64 -> BL.ByteString -> Int64
+    lengthUpTo n = BL.length . BL.take n
+
     send :: BL.ByteString -> m ()
     send encoding = do
         -- We send CBOR encoded messages by encoding them into by ByteString
         -- forwarding them to the 'mux' thread, see 'Desired servicing semantics'.
 
-        traceWith tracer $ TraceChannelSendStart mc (fromIntegral $ BL.length encoding)
+        -- Encoded here, in the mini-protocol's thread, up to the soft limit:
+        -- unforced, a message waiting for egress capacity keeps alive, through
+        -- every garbage collection, whatever the encoder refers to. A longer
+        -- tail is encoded by the muxer as it is sent, so a large message's
+        -- first bytes are not held back for the rest.
+        let !() = forcePrefix egressSoftBufferLimit encoding
+        -- and no further: the trace carries the length up to one byte past
+        -- the soft limit, and the limit is checked as far as it reaches, so
+        -- neither forces the rest of a long message, here or on a retry (the
+        -- check relied on bytestring's length/compare rewrite rule before,
+        -- which an unoptimised build does not apply)
+        traceWith tracer $ TraceChannelSendStart mc
+                             (fromIntegral $ lengthUpTo (egressSoftBufferLimit + 1) encoding)
 
         atomically $ do
             buf <- readTVar w
-            if BL.length buf < egressSoftBufferLimit
+            if lengthUpTo egressSoftBufferLimit buf < egressSoftBufferLimit
                then do
                    let wasEmpty = BL.null buf
                    writeTVar w (BL.append buf encoding)
