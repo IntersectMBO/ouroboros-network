@@ -10,6 +10,7 @@ module Cardano.Network.NodeToNode.Version
   , DiffusionMode (..)
   , ConnectionMode (..)
   , PerasSupport (..)
+  , minPerasVersion
     -- * Codecs
   , nodeToNodeVersionCodec
   , nodeToNodeVersionDataCodec
@@ -88,6 +89,8 @@ data NodeToNodeVersion =
   | NodeToNodeV_15
     -- ^ SRV support
   | NodeToNodeV_16
+    -- ^ TxSubmission outbound V2
+  | NodeToNodeV_17
     -- ^ Experimental.
     --
     -- Adds support for Peras mini-protocols (if 'PerasFlag' is set).
@@ -100,10 +103,12 @@ nodeToNodeVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
     encodeTerm NodeToNodeV_14 = CBOR.TInt 14
     encodeTerm NodeToNodeV_15 = CBOR.TInt 15
     encodeTerm NodeToNodeV_16 = CBOR.TInt 16
+    encodeTerm NodeToNodeV_17 = CBOR.TInt 17
 
     decodeTerm (CBOR.TInt 14) = Right NodeToNodeV_14
     decodeTerm (CBOR.TInt 15) = Right NodeToNodeV_15
     decodeTerm (CBOR.TInt 16) = Right NodeToNodeV_16
+    decodeTerm (CBOR.TInt 17) = Right NodeToNodeV_17
     decodeTerm (CBOR.TInt n) = Left ( T.pack "decode NodeToNodeVersion: unknown tag: "
                                         <> T.pack (show n)
                                     , Just n
@@ -150,17 +155,22 @@ instance Acceptable NodeToNodeVersionData where
 instance Queryable NodeToNodeVersionData where
     queryVersion = query
 
--- | `perasSupport` field is introduced with `NodeToNodeV_16`, and thus should be
+-- | NodeToNodeVersion which introduced Peras support
+--
+minPerasVersion :: NodeToNodeVersion
+minPerasVersion = NodeToNodeV_17
+
+-- | `perasSupport` field is introduced with `NodeToNodeV_17`, and thus should be
 -- set to `PerasUnsupported` (and not be serialized) for versions before that.
 isValidNtnVersionDataForVersion :: NodeToNodeVersion -> NodeToNodeVersionData -> Bool
 isValidNtnVersionDataForVersion version ntnData =
-  version >= NodeToNodeV_16 || perasSupport ntnData == PerasUnsupported
+  version >= minPerasVersion || perasSupport ntnData == PerasUnsupported
 
 
 -- | Determine the local node's Peras support status based on feature flags and version.
 getLocalPerasSupport :: Set CardanoFeatureFlag -> NodeToNodeVersion -> PerasSupport
 getLocalPerasSupport featureFlags v =
-  if Set.member PerasFlag featureFlags && v >= NodeToNodeV_16
+  if Set.member PerasFlag featureFlags && v >= minPerasVersion
     then PerasSupported
     else PerasUnsupported
 
@@ -172,7 +182,8 @@ nodeToNodeCodecCBORTerm version = CodecCBORTerm { encodeTerm = encodeTerm, decod
   where
     encodeTerm :: NodeToNodeVersionData -> CBOR.Term
     encodeTerm ntnData@NodeToNodeVersionData{ networkMagic, diffusionMode, peerSharing, query, perasSupport }
-      | not (isValidNtnVersionDataForVersion version ntnData) = error "perasSupport should be PerasUnsupported for versions strictly before NodeToNodeV_16"
+      | not (isValidNtnVersionDataForVersion version ntnData)
+      = error ("perasSupport should be PerasUnsupported for versions strictly before " ++ show minPerasVersion)
       | otherwise =
         CBOR.TList $
              [ CBOR.TInt (fromIntegral $ unNetworkMagic networkMagic)
@@ -185,7 +196,7 @@ nodeToNodeCodecCBORTerm version = CodecCBORTerm { encodeTerm = encodeTerm, decod
              , CBOR.TBool query
              ]
           ++ [CBOR.TBool (perasSupportToBool perasSupport)
-             | version >= NodeToNodeV_16
+             | version >= minPerasVersion
              ]
 
     decodeTerm :: CBOR.Term -> Either Text NodeToNodeVersionData
@@ -215,8 +226,8 @@ nodeToNodeCodecCBORTerm version = CodecCBORTerm { encodeTerm = encodeTerm, decod
             decodeQuery = pure
 
             decodePerasSupportOptional = \case
-              []                        | version <  NodeToNodeV_16 -> pure PerasUnsupported
-              [CBOR.TBool perasSupport] | version >= NodeToNodeV_16 -> pure $
+              []                        | version <  minPerasVersion -> pure PerasUnsupported
+              [CBOR.TBool perasSupport] | version >= minPerasVersion -> pure $
                 if perasSupport
                   then PerasSupported
                   else PerasUnsupported
