@@ -1249,7 +1249,7 @@ pingClient' stdout infoTracer headerTracer stderr opts@PingOpts{..} signalVar ad
                      query         = case pingOptsMode of
                                         QueryMode -> True
                                         _         -> False,
-                     perasSupport  = if versionNumber >= NodeToNodeV_16
+                     perasSupport  = if versionNumber >= minPerasVersion
                                      then PerasSupported
                                      else PerasUnsupported
                    }
