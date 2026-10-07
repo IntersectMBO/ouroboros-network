@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE NumericUnderscores  #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -62,6 +63,10 @@ module Network.Mux.Egress.Bucket
   , bucketSnapshot
   , servedWindow
   , tierRefresh
+    -- * State, named for the tests' instances
+  , Ticket
+  , BurstState
+  , TierAsked
     -- * Pure core
   , tokenLevel
   , grantAt
@@ -86,6 +91,7 @@ import Data.Bits (shiftL, shiftR, xor, (.&.), (.|.))
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Word (Word32, Word64, Word8)
+import GHC.Generics (Generic)
 import System.Random.SplitMix qualified as SM
 
 import Network.Mux.Egress.Floor
@@ -97,7 +103,7 @@ newtype Rank = Rank Word8
   deriving (Eq, Ord, Show)
 
 newtype Ticket = Ticket Word64
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show, Generic)
 
 -- | Where a waiter queues ('queueRank'), then when it joined.
 type WaitKey = (Word32, Ticket)
@@ -113,7 +119,7 @@ data Rotation = Rotation {
     -- rotate one batch at a time. The rest of the cascade, where finishing one
     -- transfer first serves nobody and a newcomer must not wait out a flood.
   }
-  deriving Show
+  deriving (Show, Generic)
 
 data Bucket m = Bucket {
   bRate     :: !(StrictTVar m Double),   -- ^ bytes/s; @<= 0@ disables the bucket
@@ -129,6 +135,7 @@ data Bucket m = Bucket {
   bFloor    :: !(StrictTVar m (Maybe (Floor m)))
     -- ^ the floor for the credited bearers the order does not reach, if any
   }
+  deriving Generic
 
 -- | The floor hung on a budget: its own bucket, charged to the budget on
 -- credit; the credited bearers waiting, by class and ticket, with the bytes
@@ -139,6 +146,7 @@ data Floor m = Floor {
   flWaiters :: !(StrictTVar m (Map (FloorClass, Ticket) (Int, StrictTVar m Bool))),
   flState   :: !(StrictTVar m FloorState)
   }
+  deriving Generic
 
 -- | Where a grant came from.
 data GrantSource = FromBucket | FromBorrow | FromFloor
@@ -151,6 +159,7 @@ data BurstState = BurstState {
   buContendedSince :: !(Maybe Time),
   buPeak           :: !Int
   }
+  deriving Generic
 
 -- | What a bucket has handed out since it was created.
 data BucketStats = BucketStats {
@@ -180,14 +189,14 @@ data BucketStats = BucketStats {
                                  --   'servedWindow's
   bsServedPruned  :: !Time       -- ^ when 'bsServed' was last pruned
   }
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic)
 
 -- | Grants to bearers of one tier.
 data TierGrants = TierGrants {
   tgBytes   :: !Word64,
   tgBatches :: !Word64
   }
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic)
 
 instance Semigroup TierGrants where
   TierGrants b1 n1 <> TierGrants b2 n2 = TierGrants (b1 + b2) (n1 + n2)
@@ -461,10 +470,12 @@ data BucketHandle m = BucketHandle {
   bhTier   :: !(StrictTVar m TierAsked), -- ^ the tier last asked, for the fast path
   bhWake   :: !(StrictTVar m Bool)       -- ^ set by the bearer ahead of us when it is granted
   }
+  deriving Generic
 
 -- | The tier a bearer's rule last answered, and when.
 data TierAsked = NeverAsked
                | TierAsked !Word8 !Time
+  deriving Generic
 
 registerBearer :: MonadSTM m => Bucket m -> m (BucketHandle m)
 registerBearer bucket@Bucket { bBearers } = do

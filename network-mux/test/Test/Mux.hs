@@ -36,6 +36,7 @@ import Data.Maybe (fromMaybe, isJust, isNothing)
 import Data.Set qualified as Set
 import Data.Tuple (swap)
 import Data.Word
+import NoThunks.Class (unsafeNoThunks)
 import System.Random.SplitMix qualified as SM
 import Test.Cardano.Base.QuickCheck qualified as BaseQC
 import Test.QuickCheck hiding ((.&.))
@@ -69,6 +70,7 @@ import System.Process (createPipe)
 #endif
 import System.IOManager
 
+import Test.Mux.FloorBucket ()
 import Test.Mux.ReqResp
 
 import Network.Mux (Mux)
@@ -128,6 +130,7 @@ tests =
     , testProperty "queueRank: turns from the threshold" prop_queueRank_turns
     , testProperty "chargeAt: takes without waiting"  prop_chargeAt
     , testProperty "schedule matches the replay"  prop_bucket_schedule
+    , testProperty "the counters hold no thunks"  prop_bucket_stats_no_thunks
     , testProperty "schedule matches the replay, idle floor attached" prop_bucket_schedule_idle_floor
     , testProperty "cancellation is safe"         prop_bucket_cancel
     , testProperty "cancellation is safe with a floor" prop_bucket_cancel_floor
@@ -158,6 +161,8 @@ tests =
                    prop_mux_counters_snapshot_split
     , testProperty "the scheduling counters take a transaction per bucket"
                    prop_scheduling_counts_split
+    , testProperty "the counters hold no thunks, and sum every mux and failure"
+                   prop_mux_counters_no_thunks
     ]
   , testGroup "Generators"
     [ testProperty "genByteString"              prop_arbitrary_genByteString
@@ -3665,6 +3670,21 @@ instantGrants sch@BucketSched { schBearers } = concatMap chain (arrivals sch)
     chain a = ((arBearer a, arTake a), arAt a)
             : maybe [] chain (nextArrival n a (arAt a))
 
+-- | Whatever the schedule, the counters the budget and the slice keep hold no
+-- thunks: one left behind per grant would grow with every batch sent.
+prop_bucket_stats_no_thunks :: BucketSched -> Property
+prop_bucket_stats_no_thunks sch =
+    labelBucket sch $
+    case runBucketSchedStats sch of
+      (_, (!budget, slice_m)) ->
+             noThunksIn "budget" budget
+        .&&. case slice_m of
+               Just !slice -> noThunksIn "slice" slice
+               Nothing     -> property True
+  where
+    noThunksIn what st = counterexample (what ++ ": " ++ show (unsafeNoThunks st))
+                                        (isNothing (unsafeNoThunks st))
+
 -- | Every grant happens exactly when the replay says.
 prop_bucket_schedule :: BucketSched -> Property
 prop_bucket_schedule sch
@@ -4416,6 +4436,23 @@ instance Arbitrary CountersOp where
     shrink (RetireMux s r) = [ RetireMux s' r | s' <- shrinkList (const []) s ]
                           ++ [ RetireMux s r' | r' <- shrinkList (const []) r ]
     shrink _               = []
+
+-- | In IO, where a TVar's contents can be inspected: halfway through a run
+-- of muxes ending and failures counted, and after it, a counter set holds no
+-- thunks; and what it reads is the sum of every mux and every counted kind.
+prop_mux_counters_no_thunks :: [CountersOp] -> Property
+prop_mux_counters_no_thunks ops = ioProperty $ do
+    -- the record itself is built lazily, once; what matters is inside it
+    counters <- Mx.newMuxCounters >>= evaluate
+    let (first, second) = splitAt (length ops `div` 2) ops
+    mapM_ (countersStep counters) first
+    half <- evaluate (unsafeNoThunks counters)
+    mapM_ (countersStep counters) second
+    end  <- evaluate (unsafeNoThunks counters)
+    got  <- atomically (Mx.readMuxCounters counters)
+    return $ counterexample (show half) (isNothing half)
+        .&&. counterexample (show end)  (isNothing end)
+        .&&. got === countersModel ops
 
 -- | A byte-count key as the mux builds its own: evaluated, since a map of
 -- one never compares them.

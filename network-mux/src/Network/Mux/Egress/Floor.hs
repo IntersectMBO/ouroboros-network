@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -46,6 +47,7 @@ import Data.List (foldl')
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Word (Word8)
+import GHC.Generics (Generic)
 
 import Network.Mux.Types (Tier (..), numberTier)
 
@@ -54,7 +56,7 @@ import Network.Mux.Types (Tier (..), numberTier)
 -- credit. Local roots have no class, they head the cascade; neither has
 -- anything at or below rest, the exhausted and the unranked.
 newtype FloorClass = FloorClass Word8
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show, Generic)
 
 -- | The class of a tier, if the tier is served by the floor: partners, pool
 -- relays and strangers; local roots, the rest and the unranked, none.
@@ -85,7 +87,7 @@ data FloorState = FloorState {
     fsVirtual :: !Integer,
     fsFinish  :: !(Map FloorClass Integer)
   }
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic)
 
 newFloorState :: FloorState
 newFloorState = FloorState { fsVirtual = 0, fsFinish = Map.empty }

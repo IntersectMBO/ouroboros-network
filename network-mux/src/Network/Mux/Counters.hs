@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric  #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RankNTypes     #-}
 
@@ -7,6 +8,7 @@
 --
 module Network.Mux.Counters
   ( MuxCounters
+  , Sides
   , newMuxCounters
   , EgressCounts (..)
   , SchedulingCounts (..)
@@ -45,6 +47,7 @@ import Data.IntMap.Strict qualified as IntMap
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Word (Word64, Word8)
+import GHC.Generics (Generic)
 
 import Network.Mux.Egress.Bucket (Bucket, BucketStats (..), TierGrants (..),
            bucketSnapshot, burstBounds, burstWidths, emptyBucketStats,
@@ -63,7 +66,7 @@ data EgressCounts = EgressCounts {
   ecBytes             :: !ByteCounts
     -- ^ bytes written, by mini-protocol and direction
   }
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic)
 
 -- | Scheduled egress. Counters are cumulative; the level and the queue
 -- lengths are values at the snapshot.
@@ -90,7 +93,7 @@ data SchedulingCounts = SchedulingCounts {
   scTiers              :: ![(Word8, TierCounts)]
     -- ^ by tier: what the queue granted its bearers, and how many wait now
   }
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic)
 
 -- | The budget's queue seen from one tier: 0 local roots, 1 partners, 2 pool
 -- relays, 3 strangers, 4 the rest, 255 unranked bearers. The fast path is not
@@ -101,7 +104,7 @@ data TierCounts = TierCounts {
   tcQueued  :: !Int,
   tcServed  :: !Int     -- ^ bearers granted within 'egressServedWindow'
   }
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic)
 
 -- | The read side.
 data IngressCounts = IngressCounts {
@@ -112,7 +115,7 @@ data IngressCounts = IngressCounts {
   icBearerClosed   :: !Word64,    -- ^ the peer closed the connection
   icBytes          :: !ByteCounts -- ^ bytes read, by mini-protocol and direction
   }
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic)
 
 -- | Bytes on the wire, SDU headers included, by mini-protocol number and the
 -- direction of our side of it: what our initiators and our responders sent,
@@ -130,6 +133,7 @@ data MuxByteCells m = MuxByteCells {
   mbcSent :: !(StrictTVar m ByteCounts),
   mbcRecv :: !(StrictTVar m (ByteSlots m))
   }
+  deriving Generic
 
 -- | The counters as counts, leaving out the ones still at zero, as the sent
 -- side does: a protocol appears once it has carried something.
@@ -145,11 +149,12 @@ data MuxCounters m = MuxCounters {
   mcNext     :: !(StrictTVar m Int),
   mcRetired  :: !(StrictTVar m (Sides ByteCounts ByteCounts))
   }
+  deriving Generic
 
 -- | The write side's count and the read side's, each evaluated as it is
 -- stored, so an update never leaves the previous count behind a thunk.
 data Sides a b = Sides !a !b
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic)
 
 newMuxCounters :: MonadSTM m => m (MuxCounters m)
 newMuxCounters =
