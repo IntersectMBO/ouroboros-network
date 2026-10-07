@@ -26,6 +26,7 @@ module Ouroboros.Network.Protocol.TxSubmission2.Type
   , BlockingReplyList (..)
   , NumTxIdsToAck (..)
   , NumTxIdsToReq (..)
+  , NumTxsToReq (..)
     -- re-exports
   , SizeInBytes (..)
   ) where
@@ -145,6 +146,13 @@ newtype NumTxIdsToAck = NumTxIdsToAck { getNumTxIdsToAck :: Word16 }
   deriving Show via (Quiet NumTxIdsToAck)
 
 newtype NumTxIdsToReq = NumTxIdsToReq { getNumTxIdsToReq :: Word16 }
+  deriving (Eq, Ord, NFData, Generic)
+  deriving newtype (Num, Enum, Real, Integral, Bounded, NoThunks)
+  deriving Semigroup via (Sum Word16)
+  deriving Monoid via (Sum Word16)
+  deriving Show via (Quiet NumTxIdsToReq)
+
+newtype NumTxsToReq = NumTxsToReq { getNumTxsToReq :: Word16 }
   deriving (Eq, Ord, NFData, Generic)
   deriving newtype (Num, Enum, Real, Integral, Bounded, NoThunks)
   deriving Semigroup via (Sum Word16)

@@ -26,6 +26,9 @@ module Test.Ouroboros.Network.TxSubmission.Types
   , txSubmissionCodec2
   , evaluateTrace
   , verboseTracer
+  , TxSubmissionConfig (..)
+  , ArbTxSubmissionConfig (..)
+  , ArbTxOutboundVersion (..)
   ) where
 
 import Prelude hiding (seq)
@@ -66,6 +69,7 @@ import Ouroboros.Network.TxSubmission.Inbound.V1
 import Ouroboros.Network.TxSubmission.Mempool.Reader
 import Ouroboros.Network.TxSubmission.Mempool.Simple (Mempool)
 import Ouroboros.Network.TxSubmission.Mempool.Simple qualified as Mempool
+import Ouroboros.Network.TxSubmission.Outbound (TxOutboundVersion (..))
 import Ouroboros.Network.Util.ShowProxy
 
 import Test.Ouroboros.Network.Utils (WithThreadAndTime (..), sayTracer,
@@ -322,3 +326,41 @@ verboseTracer :: forall a m.
                        )
                => Tracer m a
 verboseTracer = tracerWithThreadAndTime sayTracer
+
+
+newtype ArbTxSubmissionConfig = ArbTxSubmissionConfig TxSubmissionConfig
+  deriving Show
+
+instance Arbitrary ArbTxSubmissionConfig where
+  arbitrary =
+    fmap ArbTxSubmissionConfig $
+    TxSubmissionConfig <$> ((NumTxIdsToAck . getPositive) <$> arbitrary)
+                       <*> (NumTxIdsToReq <$> arbitrary `suchThat` (>= 3))
+                       <*> (NumTxsToReq <$> arbitrary `suchThat` (>= 2))
+
+  shrink (ArbTxSubmissionConfig config) =
+    fmap ArbTxSubmissionConfig $
+    [ config { maxNumUnacknowledgedTxIds = x }
+    | (Positive (Small x)) <- shrink (Positive (Small (maxNumUnacknowledgedTxIds config)))
+    ]
+    ++
+    [ config { maxNumTxIdsToRequest = x }
+    | (Positive (Small x)) <- shrink (Positive (Small (maxNumTxIdsToRequest config)))
+    ]
+    ++
+    [ config { maxNumTxsToRequest = x }
+    | (Positive (Small x)) <- shrink (Positive (Small (maxNumTxsToRequest config)))
+    ]
+
+
+
+newtype ArbTxOutboundVersion = ArbTxOutboundVersion TxOutboundVersion
+  deriving Show
+
+instance Arbitrary ArbTxOutboundVersion  where
+  arbitrary = ArbTxOutboundVersion <$> elements [minBound..maxBound]
+  shrink (ArbTxOutboundVersion v) =
+    fmap ArbTxOutboundVersion $
+    case v of
+      TxOutboundV_1 -> []
+      TxOutboundV_2 -> [TxOutboundV_1]

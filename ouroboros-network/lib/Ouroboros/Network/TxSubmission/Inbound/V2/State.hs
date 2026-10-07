@@ -44,6 +44,8 @@ data PeerActionContext peeraddr txid tx = PeerActionContext {
     pacNow          :: !Time,
     -- | Decision policy that governs request, retry, and scoring limits.
     pacPolicy       :: !TxDecisionPolicy,
+    -- | Configuration options
+    pacConfig       :: !TxSubmissionConfig,
     -- | Address of the peer whose next action is being chosen.
     pacPeerAddr     :: !peeraddr,
     -- | Current peer-local state after local pruning has been applied.
@@ -78,15 +80,17 @@ data PeerActionChoice peeraddr =
 --
 mkPeerActionContext :: Time
                     -> TxDecisionPolicy
+                    -> TxSubmissionConfig
                     -> peeraddr
                     -> PeerTxLocalState tx
                     -> PeerTxInFlight
                     -> SharedTxState peeraddr txid
                     -> PeerActionContext peeraddr txid tx
-mkPeerActionContext now policy peeraddr peerState peerInFlight sharedState =
+mkPeerActionContext now policy config peeraddr peerState peerInFlight sharedState =
   PeerActionContext {
     pacNow = now,
     pacPolicy = policy,
+    pacConfig = config,
     pacPeerAddr = peeraddr,
     pacPeerState = peerState',
     pacPeerInFlight = peerInFlight',
@@ -133,6 +137,7 @@ mkPeerActionContext now policy peeraddr peerState peerInFlight sharedState =
 nextPeerAction :: Ord peeraddr
                => Time
                -> TxDecisionPolicy
+               -> TxSubmissionConfig
                -> peeraddr
                -> PeerTxLocalState tx
                -> PeerTxInFlight
@@ -145,6 +150,7 @@ nextPeerAction = nextPeerActionWithMode AllowAnyTxIdRequests
 nextPeerActionPipelined :: Ord peeraddr
                         => Time
                         -> TxDecisionPolicy
+                        -> TxSubmissionConfig
                         -> peeraddr
                         -> PeerTxLocalState tx
                         -> PeerTxInFlight
@@ -166,12 +172,13 @@ nextPeerActionWithMode :: Ord peeraddr
                        => TxIdRequestMode
                        -> Time
                        -> TxDecisionPolicy
+                       -> TxSubmissionConfig
                        -> peeraddr
                        -> PeerTxLocalState tx
                        -> PeerTxInFlight
                        -> SharedTxState peeraddr txid
                        -> (PeerAction, PeerTxLocalState tx, PeerTxInFlight, SharedTxState peeraddr txid)
-nextPeerActionWithMode txIdRequestMode now policy peeraddr peerState peerInFlight sharedState =
+nextPeerActionWithMode txIdRequestMode now policy config peeraddr peerState peerInFlight sharedState =
     let (action, peerState', peerInFlight', sharedState'') =
           applyPeerActionChoice ctx (pickPeerActionChoice txIdRequestMode ctx)
         newPhase = phaseForAction txIdRequestMode (peerPhase peerState) action
@@ -181,7 +188,7 @@ nextPeerActionWithMode txIdRequestMode now policy peeraddr peerState peerInFligh
     in (action, peerState'', peerInFlight', sharedState'')
   where
     sharedState' = bumpStuckEntries now policy (peerDownloadedTxs peerState) sharedState
-    ctx = mkPeerActionContext now policy peeraddr peerState peerInFlight sharedState'
+    ctx = mkPeerActionContext now policy config peeraddr peerState peerInFlight sharedState'
 
 -- | Compute the new 'PeerPhase' for the chosen 'PeerAction'.
 --
@@ -480,7 +487,7 @@ pickRequestTxsAction ctx@PeerActionContext { pacNow, pacPolicy, pacPeerState, pa
 pickRequestTxIdsAction :: TxIdRequestMode
                        -> PeerActionContext peeraddr txid tx
                        -> Maybe ([TxKey], NumTxIdsToAck, NumTxIdsToReq, StrictSeq.StrictSeq TxKey)
-pickRequestTxIdsAction txIdRequestMode ctx@PeerActionContext { pacPolicy, pacPeerState }
+pickRequestTxIdsAction txIdRequestMode ctx@PeerActionContext { pacPolicy, pacConfig, pacPeerState }
   | txIdsToAcknowledge <= 0 && txIdsToRequest <= 0 = Nothing
 
   -- Benchmark hook: when 'disablePipelinedTxIdRequests' is set, never
@@ -557,8 +564,8 @@ pickRequestTxIdsAction txIdRequestMode ctx@PeerActionContext { pacPolicy, pacPee
     -- request limit ('maxNumTxIdsToRequest - numOfRequested').
     txIdsToRequest =
       fromIntegral $ max 0 $ min
-        (fromIntegral (maxUnacknowledgedTxIds pacPolicy) - unackedAndRequested + numOfAcked)
-        (fromIntegral (maxNumTxIdsToRequest pacPolicy) - numOfRequested)
+        (fromIntegral (maxNumUnacknowledgedTxIds pacConfig) - unackedAndRequested + numOfAcked)
+        (fromIntegral (maxNumTxIdsToRequest pacConfig) - numOfRequested)
 
 -- | Compute the time delay until the peer should next wake to check for work.
 nextWakeDelay :: PeerActionContext peeraddr txid tx

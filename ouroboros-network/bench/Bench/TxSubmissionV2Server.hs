@@ -29,8 +29,10 @@ import Ouroboros.Network.Protocol.TxSubmission2.Server
 import Ouroboros.Network.Protocol.TxSubmission2.Type
            (NumTxIdsToReq (getNumTxIdsToReq), SizeInBytes (..))
 import Ouroboros.Network.TxSubmission.Inbound.V2 (TxDecisionPolicy (..),
+           TxSubmissionConfig (..),
            TxSubmissionInitDelay (NoTxSubmissionInitDelay),
-           defaultTxDecisionPolicy, txSubmissionInboundV2)
+           defaultTxDecisionPolicy, defaultTxSubmissionConfigV2,
+           txSubmissionInboundV2)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (newPeerTxRegistry,
            newSharedTxStateVar, newTxSubmissionCountersVar, withPeer)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types (TxSubmissionCounters,
@@ -45,6 +47,7 @@ data DirectServerFixture = DirectServerFixture
   , dsTxIdReplyBatches :: !Int
   , dsTxSize           :: !SizeInBytes
   , dsPolicy           :: !TxDecisionPolicy
+  , dsConfig           :: !TxSubmissionConfig
   }
   deriving stock    (Eq, Show, Generic)
   deriving anyclass NFData
@@ -66,11 +69,15 @@ data PendingReply
 mkDirectServerFixture
   :: Int -> DirectServerFixture
 mkDirectServerFixture batches =
+  let config = defaultTxSubmissionConfigV2
+      policy = defaultTxDecisionPolicy config
+  in
   DirectServerFixture
     { dsPeerCount        = 1
     , dsTxIdReplyBatches = batches
     , dsTxSize           = SizeInBytes 1024
-    , dsPolicy           = defaultTxDecisionPolicy
+    , dsPolicy           = policy
+    , dsConfig           = config
     }
 
 
@@ -91,13 +98,17 @@ mkMultiPeerFixture
   -> Int -- ^ batches per peer
   -> DirectServerFixture
 mkMultiPeerFixture peers batches =
+  let config = defaultTxSubmissionConfigV2
+      policy = (defaultTxDecisionPolicy config) {
+                 disablePipelinedTxIdRequests = True
+               }
+  in
   DirectServerFixture
     { dsPeerCount        = peers
     , dsTxIdReplyBatches = batches
     , dsTxSize           = SizeInBytes 1024
-    , dsPolicy           = defaultTxDecisionPolicy {
-                             disablePipelinedTxIdRequests = True
-                           }
+    , dsPolicy           = policy
+    , dsConfig           = config
     }
 
 
@@ -107,7 +118,8 @@ runDirectServerBenchmark DirectServerFixture {
       dsPeerCount,
       dsTxIdReplyBatches,
       dsTxSize,
-      dsPolicy
+      dsPolicy,
+      dsConfig
     } = do
   inboundMempool <- emptyMempool
   duplicateTxIdsVar <- Lazy.newTVarIO []
@@ -120,6 +132,7 @@ runDirectServerBenchmark DirectServerFixture {
       runPeer addr =
         withPeer
           dsPolicy
+          dsConfig
           (getMempoolReader inboundMempool)
           sharedStateVar
           inFlightRegistry

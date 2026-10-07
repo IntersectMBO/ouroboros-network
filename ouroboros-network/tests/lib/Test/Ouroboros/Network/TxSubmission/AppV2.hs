@@ -138,12 +138,16 @@ data TxSubmissionState =
                          -- 'timeLimitsTxSubmission2' will kick in.
                          )
     , peerImpairment :: Map Int Impairment
+    , outboundVersion :: TxOutboundVersion
     , decisionPolicy :: TxDecisionPolicy
+    , submissionConfig :: TxSubmissionConfig
   } deriving (Eq, Show)
 
 instance Arbitrary TxSubmissionState where
   arbitrary = do
+    ArbTxOutboundVersion outboundVersion <- arbitrary
     ArbTxDecisionPolicy decisionPolicy <- arbitrary
+    ArbTxSubmissionConfig config <- arbitrary
     peersN <- choose (1, 10)
     txsN <- choose (1, 10)
     -- NOTE: using sortOn would forces tx-decision logic to download txs in the
@@ -155,14 +159,23 @@ instance Arbitrary TxSubmissionState where
               <$> vectorOf peersN arbitrary
     return TxSubmissionState  { peerMap = Map.fromList (zip peers peersState),
                                 peerImpairment = Map.empty,
-                                decisionPolicy
+                                outboundVersion,
+                                decisionPolicy,
+                                submissionConfig = config
                               }
-  shrink TxSubmissionState { peerMap, peerImpairment, decisionPolicy } =
-       [ TxSubmissionState peerMap' peerImpairment decisionPolicy
+  -- TODO: peerImpairment shrinking is missing
+  shrink st@TxSubmissionState { peerMap, outboundVersion, decisionPolicy, submissionConfig } =
+       [ st { peerMap = peerMap' }
        | peerMap' <- shrinkMap1 peerMap
        ]
-    ++ [ TxSubmissionState peerMap peerImpairment policy
+    ++ [ st { decisionPolicy = policy }
        | ArbTxDecisionPolicy policy <- shrink (ArbTxDecisionPolicy decisionPolicy)
+       ]
+    ++ [ st { submissionConfig = config }
+       | ArbTxSubmissionConfig config <- shrink (ArbTxSubmissionConfig submissionConfig)
+       ]
+    ++ [ st { outboundVersion = version }
+       | ArbTxOutboundVersion version <- shrink (ArbTxOutboundVersion outboundVersion)
        ]
     where
       shrinkMap1 :: (Eq v, Ord k, Arbitrary k, Arbitrary v) => Map k v -> [Map k v]
@@ -230,11 +243,17 @@ runTxSubmission
   -> Map peeraddr DiffTime
      -- ^ cancel the server async for each listed peer at the given
      --   time, simulating an abrupt disconnect mid-protocol
+  -> TxOutboundVersion
   -> TxDecisionPolicy
+  -> TxSubmissionConfig
   -> m ([Tx txid], [[Tx txid]], SharedTxState peeraddr txid)
   -- ^ inbound mempool, outbound mempools, final shared state
-runTxSubmission tracer tracerTxLogic countersTracer inboundTracer st0
-                peerImpairmentMap cancelSchedule txDecisionPolicy = do
+runTxSubmission tracer tracerTxLogic countersTracer inboundTracer
+                st0
+                peerImpairmentMap cancelSchedule
+                txOutboundVersion
+                txDecisionPolicy
+                submissionConfig = do
     st <- traverse (\(b, c, d, e) -> do
         mempool <- newMempool b
         (outChannel, inChannel) <- createConnectedChannels
@@ -255,10 +274,11 @@ runTxSubmission tracer tracerTxLogic countersTracer inboundTracer st0
     let clients = (\(addr, (mempool {- txs -}, ctrlMsgSTM, outDelay, _, outChannel, _)) -> do
                     let baseClient = txSubmissionOutbound
                                        (mkTracer $ say . show)
-                                       (NumTxIdsToAck $ getNumTxIdsToReq
-                                         $ maxUnacknowledgedTxIds txDecisionPolicy)
+                                       submissionConfig
+                                       -- (NumTxIdsToAck $ getNumTxIdsToReq
+                                       --   $ maxUnacknowledgedTxIds txDecisionPolicy)
                                        (getMempoolReader mempool)
-                                       (maxBound :: TestVersion)
+                                       txOutboundVersion
                                        ctrlMsgSTM
                         imp        = Map.findWithDefault noImpairment addr peerImpairmentMap
                     client <- applyImpairment imp mkUnrequested baseClient
@@ -273,6 +293,7 @@ runTxSubmission tracer tracerTxLogic countersTracer inboundTracer st0
 
         servers = (\(addr, (_, _, _, inDelay, _, inChannel)) ->
                      withPeer txDecisionPolicy
+                              submissionConfig
                               (getMempoolReader inboundMempool)
                               sharedTxStateVar
                               inFlightRegistry
@@ -354,7 +375,15 @@ runTxSubmission tracer tracerTxLogic countersTracer inboundTracer st0
 txSubmissionSimulation :: forall s . TxSubmissionState
                        -> IOSim s ([Tx Int], [[Tx Int]], SharedTxState PeerAddr TxId)
                        -- ^ inbound mempool, outbound mempools, final shared state
-txSubmissionSimulation (TxSubmissionState state peerImpairment txDecisionPolicy) = do
+txSubmissionSimulation
+  TxSubmissionState {
+    peerMap = state,
+    peerImpairment,
+    outboundVersion,
+    decisionPolicy,
+    submissionConfig
+  }
+  = do
   state' <- traverse (\(txs, mbOutDelay, mbInDelay) -> do
                       let mbOutDelayTime = getSmallDelay . getPositive <$> mbOutDelay
                           mbInDelayTime  = getSmallDelay . getPositive <$> mbInDelay
@@ -392,8 +421,12 @@ txSubmissionSimulation (TxSubmissionState state peerImpairment txDecisionPolicy)
     ) \_ -> do
       let tracer :: forall a. (Show a, Typeable a) => Tracer (IOSim s) a
           tracer = dynamicTracer <> sayTracer -- <> verboseTracer <> debugTracer
-      runTxSubmission tracer tracer tracer tracer state'' peerImpairment
-                      Map.empty txDecisionPolicy
+      runTxSubmission tracer tracer tracer tracer
+                      state'' peerImpairment
+                      Map.empty
+                      outboundVersion
+                      decisionPolicy
+                      submissionConfig
 
 filterValidTxs :: [Tx txid] -> [Tx txid]
 filterValidTxs
@@ -422,34 +455,40 @@ ppSayTrace tr =
 -- | Documented invariants of a 'TxSubmissionState' produced by the
 -- 'Arbitrary' instance.  Used by the generator/shrinker meta-tests.
 validTxSubmissionState :: TxSubmissionState -> Bool
-validTxSubmissionState (TxSubmissionState peerMap peerImpairment policy) =
+validTxSubmissionState TxSubmissionState { peerMap,
+                                           peerImpairment,
+                                           decisionPolicy = policy,
+                                           submissionConfig = config
+                                         } =
      not (Map.null peerMap)
   && Map.keysSet peerImpairment `Set.isSubsetOf` Map.keysSet peerMap
   && all validPeer (Map.elems peerMap)
-  && validPolicy policy
+  && validPolicy policy config
   where
     validPeer (txs, _, _) =
       let txids = getTxId <$> txs in
          not (null txs)
       && length txids == Set.size (Set.fromList txids)
 
-validPolicy :: TxDecisionPolicy -> Bool
+validPolicy :: TxDecisionPolicy -> TxSubmissionConfig -> Bool
 validPolicy TxDecisionPolicy
-            { maxNumTxIdsToRequest, maxUnacknowledgedTxIds
-            , txsSizeInflightPerPeer, maxOutstandingTxBatchesPerPeer
+            { txsSizeInflightPerPeer, maxOutstandingTxBatchesPerPeer
             , txInflightMultiplicity, bufferedTxsMinLifetime
             , scoreRate, scoreMax, interTxSpace, inflightTimeout
-            } =
-     getNumTxIdsToReq maxNumTxIdsToRequest    >= 1
-  && getNumTxIdsToReq maxUnacknowledgedTxIds  >= 1
-  && getSizeInBytes txsSizeInflightPerPeer    >= 1
-  && maxOutstandingTxBatchesPerPeer           >= 1
-  && txInflightMultiplicity                   >= 1
-  && bufferedTxsMinLifetime                   >= 0
-  && scoreRate                                >= 0
-  && scoreMax                                 >= 0
-  && interTxSpace                             >= 0
-  && inflightTimeout                          >  interTxSpace
+            }
+            TxSubmissionConfig
+            {  maxNumTxIdsToRequest, maxNumUnacknowledgedTxIds }
+            =
+     getNumTxIdsToReq maxNumTxIdsToRequest      >= 1
+  && getNumTxIdsToAck maxNumUnacknowledgedTxIds >= 1
+  && getSizeInBytes txsSizeInflightPerPeer      >= 1
+  && maxOutstandingTxBatchesPerPeer             >= 1
+  && txInflightMultiplicity                     >= 1
+  && bufferedTxsMinLifetime                     >= 0
+  && scoreRate                                  >= 0
+  && scoreMax                                   >= 0
+  && interTxSpace                               >= 0
+  && inflightTimeout                            >  interTxSpace
 
 prop_TxSubmissionState_validGen :: TxSubmissionState -> Property
 prop_TxSubmissionState_validGen st =
@@ -526,7 +565,8 @@ unit_counterEmission_cadence =
       txCountersVar    <- newTxSubmissionCountersVar mempty
       recorder         <- newTVarIO []
 
-      let policy = defaultTxDecisionPolicy
+      let config = defaultTxSubmissionConfigV2
+          policy = defaultTxDecisionPolicy config
           tracer = mkTracer $ \counters -> do
                      now <- getMonotonicTime
                      atomically (modifyTVar recorder ((now, counters):))
@@ -574,7 +614,9 @@ unit_counterEmission_subMsDurations = do
       registry         <- newPeerTxRegistry
                             :: IOSim s (PeerTxRegistry (IOSim s) Int)
       countersVar      <- newTxSubmissionCountersVar mempty
-      withPeer defaultTxDecisionPolicy (getMempoolReader mempool)
+      let config = defaultTxSubmissionConfigV2
+          policy = defaultTxDecisionPolicy config
+      withPeer policy config (getMempoolReader mempool)
                sharedTxStateVar registry countersVar (0 :: Int)
         $ \PeerTxAPI { applyReceivedTxIds, runNextPeerAction, applySubmittedTxs } -> do
             now <- getMonotonicTime
@@ -702,8 +744,9 @@ prop_counterInvariants slack tr =
 -- property test are the same as for tx submission v1. We need this to know we
 -- didn't regress.
 --
-prop_txSubmission :: TxSubmissionState -> Property
-prop_txSubmission st@(TxSubmissionState peers _ _) =
+prop_txSubmission :: TxSubmissionState
+                  -> Property
+prop_txSubmission st@TxSubmissionState { peerMap = peers } =
     let tr = runSimTrace (txSubmissionSimulation st)
         numPeersWithWronglySizedTx :: Int
         numPeersWithWronglySizedTx =
@@ -791,8 +834,11 @@ prop_txSubmission st@(TxSubmissionState peers _ _) =
 --
 -- TODO: have we generated enough outbound mempools which interact in interesting
 -- ways?
-prop_txSubmission_inflight :: TxSubmissionState -> Property
-prop_txSubmission_inflight st@(TxSubmissionState state _ policy) =
+prop_txSubmission_inflight :: TxSubmissionState
+                           -> Property
+prop_txSubmission_inflight st@TxSubmissionState { peerMap = state,
+                                                  decisionPolicy = policy
+                                                } =
   let maxRepeatedValidTxs = Map.foldr (\(txs, _, _) r -> foldr fn r txs)
                                       Map.empty
                                       state
@@ -917,8 +963,11 @@ shrinkImpairmentMap m =
      , imp' <- shrinkImpairment imp
      ]
 
-prop_txSubmission_resilientToImpairment :: TxSubmissionImpairmentState -> Property
-prop_txSubmission_resilientToImpairment (TxSubmissionImpairmentState st) =
+prop_txSubmission_resilientToImpairment :: TxSubmissionImpairmentState
+                                        -> Property
+prop_txSubmission_resilientToImpairment
+    (TxSubmissionImpairmentState st)
+    =
     let imp       = peerImpairment st
         allAddrs  = Map.keysSet (peerMap st)
         wbAddrs   = allAddrs `Set.difference` Map.keysSet imp
@@ -1089,7 +1138,14 @@ txSubmissionSimulationDisconnect
   -> IOSim s ( [Tx Int], [[Tx Int]], SharedTxState PeerAddr TxId )
 txSubmissionSimulationDisconnect
     (TxSubmissionDisconnectState
-       (TxSubmissionState state peerImpairment txDecisionPolicy) schedule) = do
+      TxSubmissionState { peerMap = state,
+                          peerImpairment,
+                          outboundVersion,
+                          decisionPolicy,
+                          submissionConfig
+                        }
+      schedule)
+  = do
   state' <- traverse (\(txs, mbOutDelay, mbInDelay) -> do
                       let mbOutDelayTime = getSmallDelay . getPositive <$> mbOutDelay
                           mbInDelayTime  = getSmallDelay . getPositive <$> mbInDelay
@@ -1151,8 +1207,13 @@ txSubmissionSimulationDisconnect
                  [ x | x@(_, (_, ExitClean)) <- Map.toList schedule ]
       let tracer :: forall a. (Show a, Typeable a) => Tracer (IOSim s) a
           tracer = dynamicTracer <> sayTracer
-      result <- runTxSubmission tracer tracer tracer tracer combinedState peerImpairment
-                                cancelSchedule txDecisionPolicy
+      result <- runTxSubmission tracer tracer tracer tracer
+                                combinedState
+                                peerImpairment
+                                cancelSchedule
+                                outboundVersion
+                                decisionPolicy
+                                submissionConfig
       traverse_ cancel disconnectAids
       pure result
 
@@ -1166,8 +1227,11 @@ txSubmissionSimulationDisconnect
 -- Exercises the 'withPeer' bracket finalizer scrub on mid-protocol
 -- exit, including 'pifSubmitting'-non-empty paths reached when a peer
 -- is cancelled while bodies are in submission.
-prop_txSubmission_peerDisconnect :: TxSubmissionDisconnectState -> Property
-prop_txSubmission_peerDisconnect cs@(TxSubmissionDisconnectState st schedule) =
+prop_txSubmission_peerDisconnect :: TxSubmissionDisconnectState
+                                 -> Property
+prop_txSubmission_peerDisconnect
+    cs@(TxSubmissionDisconnectState st schedule)
+    =
     let allAddrs    = Map.keysSet (peerMap st)
         disconnected = Map.keysSet schedule
         survivors    = allAddrs `Set.difference` disconnected
@@ -1304,11 +1368,15 @@ peerFinalScore = peerScoresBy const
 -- cannot drain back to zero before the run ends.
 unit_score_persistentBadStaysHigh :: Assertion
 unit_score_persistentBadStaysHigh = do
-    let st = TxSubmissionState
+    let config = defaultTxSubmissionConfigV2
+        policy = defaultTxDecisionPolicy config
+        st = TxSubmissionState
               { peerMap        = Map.singleton 1
                                    ([ mkTx i False | i <- [0..9] ], Nothing, Nothing)
               , peerImpairment = Map.empty
-              , decisionPolicy = defaultTxDecisionPolicy
+              , outboundVersion = maxBound
+              , decisionPolicy = policy
+              , submissionConfig = config
               }
         tr          = runSimTrace (void $ txSubmissionSimulation st)
         peakScores  = peerPeakScore tr
@@ -1321,7 +1389,7 @@ unit_score_persistentBadStaysHigh = do
     assertBool (ctx ++ "\npeer1 must accumulate score from mempool rejects")
                (peakPeer1 > 0)
     assertBool (ctx ++ "\npeer1 score must stay within scoreMax")
-               (peakPeer1 <= scoreMax defaultTxDecisionPolicy)
+               (peakPeer1 <= scoreMax policy)
     assertBool (ctx ++ "\npeer1 has no accepts to offset the rejections, score must stay above zero")
                (finalPeer1 > 0)
 
@@ -1334,13 +1402,17 @@ unit_score_recoversAfterBurst :: Assertion
 unit_score_recoversAfterBurst = do
     let invalids = 5
         valids   = 10
+        config = defaultTxSubmissionConfigV2
+        policy = defaultTxDecisionPolicy config
         st = TxSubmissionState
               { peerMap        = Map.singleton 1
                                    ( [ mkTx i False | i <- [0..invalids - 1] ]
                                   ++ [ mkTx i True  | i <- [invalids .. invalids + valids - 1] ]
                                    , Nothing, Nothing)
               , peerImpairment = Map.empty
-              , decisionPolicy = defaultTxDecisionPolicy
+              , outboundVersion = maxBound
+              , decisionPolicy = policy
+              , submissionConfig = config
               }
         tr          = runSimTrace (void $ txSubmissionSimulation st)
         peakScores  = peerPeakScore tr
@@ -1362,11 +1434,15 @@ unit_score_recoversAfterBurst = do
 -- not push the score below the floor when there is nothing to drain.
 unit_score_wellBehavedStaysAtZero :: Assertion
 unit_score_wellBehavedStaysAtZero = do
-    let st = TxSubmissionState
+    let config = defaultTxSubmissionConfigV2
+        policy = defaultTxDecisionPolicy config
+        st = TxSubmissionState
               { peerMap        = Map.singleton 1
                                    ([ mkTx i True | i <- [0..9] ], Nothing, Nothing)
               , peerImpairment = Map.empty
-              , decisionPolicy = defaultTxDecisionPolicy
+              , outboundVersion = maxBound
+              , decisionPolicy = policy
+              , submissionConfig = config
               }
         tr         = runSimTrace (void $ txSubmissionSimulation st)
         peakScores = peerPeakScore tr
@@ -1377,8 +1453,11 @@ unit_score_wellBehavedStaysAtZero = do
                 peakPeer1
 
 
-prop_sharedTxStateInvariant :: TxSubmissionState -> Property
-prop_sharedTxStateInvariant initialState@(TxSubmissionState st0 _ _) =
+prop_sharedTxStateInvariant :: TxSubmissionState
+                            -> Property
+prop_sharedTxStateInvariant
+  initialState@TxSubmissionState { peerMap = st0 }
+  =
   let tr = runSimTrace (void $ txSubmissionSimulation initialState)
       pTrace = ppSayTrace tr
   in case traceResult True tr of
