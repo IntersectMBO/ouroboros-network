@@ -20,6 +20,7 @@ module Ouroboros.Network.Protocol.ObjectDiffusion.Inbound
   , objectDiffusionInboundPeerPipelined
   ) where
 
+import Data.Functor (($>))
 import Data.List.NonEmpty (NonEmpty)
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Peer (Peer, PeerPipelined (..))
@@ -48,7 +49,9 @@ data InboundStIdle (n :: N) objectId object m a where
   SendMsgRequestObjectIdsBlocking
     :: NumObjectIdsAck -- ^ number of objectIds to acknowledge
     -> NumObjectIdsReq -- ^ number of objectIds to request
+    -> m () -- ^ promptly invoked on receiving 'MsgAwaitReply'
     -> (NonEmpty objectId -> InboundStIdle Z objectId object m a)
+    -> InboundStIdle Z objectId object m a
     -> InboundStIdle Z objectId object m a
   SendMsgRequestObjectIdsPipelined
     :: NumObjectIdsAck
@@ -72,7 +75,7 @@ data InboundStIdle (n :: N) objectId object m a where
 -- | Transform a 'ObjectDiffusionInboundPipelined' into a 'PeerPipelined'.
 objectDiffusionInboundPeerPipelined
   :: forall objectId object m a.
-     (Functor m)
+     Functor m
   => ObjectDiffusionInboundPipelined objectId object m a
   -> PeerPipelined (ObjectDiffusion objectId object) AsClient StInit m a
 objectDiffusionInboundPeerPipelined (ObjectDiffusionInboundPipelined inboundSt) =
@@ -82,15 +85,23 @@ objectDiffusionInboundPeerPipelined (ObjectDiffusionInboundPipelined inboundSt) 
       :: InboundStIdle n objectId object m a
       -> Peer (ObjectDiffusion objectId object) AsClient (Pipelined n (Collect objectId object)) StIdle m a
 
-    run (SendMsgRequestObjectIdsBlocking ackNo reqNo k) =
-          Yield (MsgRequestObjectIds SingBlocking ackNo reqNo)
+    run (SendMsgRequestObjectIdsBlocking ackNo reqNo onAwaitReply onReplyIds onServerIdle) =
+          Yield (MsgRequestObjectIds RequestObjectIdsBlocking ackNo reqNo)
             $ Await
             $ \case
                 MsgReplyObjectIds (BlockingReply objectIds) ->
-                  run (k objectIds)
+                  run (onReplyIds objectIds)
+                MsgAwaitReply ->
+                  Effect $
+                    onAwaitReply $>
+                    Await (\case
+                      MsgReplyObjectIds (BlockingReply objectIds) ->
+                        run (onReplyIds objectIds)
+                      MsgServerIdle ->
+                        run onServerIdle)
     run (SendMsgRequestObjectIdsPipelined ackNo reqNo k) =
           YieldPipelined
-            (MsgRequestObjectIds SingNonBlocking ackNo reqNo)
+            (MsgRequestObjectIds RequestObjectIdsNonBlocking ackNo reqNo)
             (ReceiverAwait
               $ \(MsgReplyObjectIds (NonBlockingReply objectIds)) ->
                   ReceiverDone (CollectObjectIds reqNo objectIds)
