@@ -885,6 +885,12 @@ muxChannel tracer egressQueue want@(Wanton w) mc md q =
         -- We send CBOR encoded messages by encoding them into by ByteString
         -- forwarding them to the 'mux' thread, see 'Desired servicing semantics'.
 
+        -- Encoded here, in the mini-protocol's thread, up to the soft limit:
+        -- unforced, a message waiting for egress capacity keeps alive, through
+        -- every garbage collection, whatever the encoder refers to. A longer
+        -- tail is encoded by the muxer as it is sent, so a large message's
+        -- first bytes are not held back for the rest.
+        let !() = forcePrefix egressSoftBufferLimit encoding
         traceWith tracer $ TraceChannelSendStart mc (fromIntegral $ BL.length encoding)
 
         atomically $ do

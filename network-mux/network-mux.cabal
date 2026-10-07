@@ -263,6 +263,30 @@ executable mux-leios-demo
     -rtsopts
     -threaded
 
+benchmark send-encode-benchmarks
+  type: exitcode-stdio-1.0
+  hs-source-dirs: bench/send_encode
+  main-is: Main.hs
+  build-depends:
+    base >=4.14 && <4.23,
+    bytestring,
+    cborg,
+    deepseq,
+    network-mux,
+    tasty-bench,
+
+  default-extensions:
+    ImportQualifiedPost
+    NumericUnderscores
+
+  ghc-options:
+    -rtsopts
+    -Wall
+    -Wcompat
+    -Wunused-packages
+
+  default-language: Haskell2010
+
 benchmark socket-read-write-benchmarks
   type: exitcode-stdio-1.0
   hs-source-dirs: bench/socket_read_write

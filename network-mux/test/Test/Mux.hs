@@ -26,7 +26,9 @@ import Control.Exception (ErrorCall (..))
 import Control.Monad
 import Data.Binary.Put qualified as Bin
 import Data.Bits
+import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BL
+import Data.ByteString.Lazy.Internal qualified as BLI
 import Data.ByteString.Lazy.Char8 qualified as BL8 (pack)
 import Data.List (dropWhileEnd, nub)
 import Data.List qualified as List
@@ -81,6 +83,7 @@ import Network.Mux.Bearer.Pipe qualified as Mx
 import Network.Mux.Bearer.Queues as Mx
 import Network.Mux.Codec qualified as Mx
 import Network.Mux.Counters qualified as Counters
+import Network.Mux.Egress (forcePrefix)
 import Network.Mux.Egress.Bucket qualified as Bucket
 import Network.Mux.Egress.Floor (floorClass)
 import Network.Mux.Types (MiniProtocolInfo (..), MiniProtocolLimits (..))
@@ -124,6 +127,7 @@ tests =
     , testProperty "rotatedRank: re-dealt each period" prop_rotatedRank
     , testProperty "queueRank: zero period is none"   prop_queueRank_zeroPeriod
     , testProperty "served: each bearer once per tier, within the window" prop_served_window
+    , testProperty "forcePrefix: evaluates up to the limit, no further" prop_forcePrefix
     , testProperty "served: the counters drop the stale bearers" prop_served_counters
     , testProperty "served: the record prunes itself, bounded" prop_served_bounded
     , testProperty "served: an unqueued grant asks its tier once a refresh" prop_served_fast_tier
@@ -3020,6 +3024,31 @@ prop_queueRank_zeroPeriod seed bearer tier (NonNegative ps) =
       === Bucket.queueRank Nothing bearer (Bucket.Rank tier) t
   where
     t = picos ps `addTime` Time 0
+
+-- | 'forcePrefix' evaluates chunks until they hold at least the limit, and
+-- nothing after: a tail that throws when evaluated is reached exactly when the
+-- chunks before it hold fewer bytes than the limit.
+prop_forcePrefix :: Property
+prop_forcePrefix =
+    forAllShrink genSizes (shrinkList (map getPositive . shrink . Positive)) $ \sizes ->
+    forAll (genLimit (sum sizes)) $ \limit ->
+      let size    = sum sizes
+          tailBomb = error "forcePrefix: evaluated past the limit"
+          bs      = foldr (\s rest -> BLI.Chunk (BS.replicate s 0) rest) tailBomb sizes
+      in classify (fromIntegral limit == size) "limit at the end of the chunks" $
+         classify (limit <= 0)                   "no limit" $
+         classify (fromIntegral limit > size)    "limit past the chunks" $
+         ioProperty $ do
+           r <- try (evaluate (forcePrefix limit bs))
+           return $ counterexample (show (size, limit))
+                  $ either (\(_ :: ErrorCall) -> True) (const False) r === (fromIntegral size < limit)
+  where
+    genSizes = listOf (choose (1, 3000))
+    genLimit n = frequency [ (1, choose (-10, 0))
+                           , (2, pure (fromIntegral n))
+                           , (2, pure (fromIntegral n + 1))
+                           , (2, pure (max 0 (fromIntegral n - 1)))
+                           , (3, choose (0, fromIntegral n + 3000)) ]
 
 -- | Grants at tiers and bearers, recorded in time order, then counted at
 -- @now@: a tier counts each bearer it granted within the window once,
