@@ -58,7 +58,20 @@ data OutboundStIdle objectId object m a = OutboundStIdle {
       recvMsgDone             :: m a
     }
 
-data OutboundStObjectIds kind objectId object m a where
+-- | The outbound node has agency; it must reply with a list of object
+-- identifiers that it wishes to submit.
+--
+-- A non-blocking request has one prompt reply state. A blocking request has
+-- two phases, distinguishing the prompt reply state from the state entered
+-- after the server has reported that it must await new objects.
+--
+-- Parameterizing this data type with `kind :: StObjectIdsKind` instead of
+-- creating 3 separate data types enables parametric polymorphism. The advantage
+-- of parametric polymorphism is that code that is oblivious to the distinction
+-- expressed by the parameter does not have to be duplicated.
+-- `SendMsgReplyObjectIds` is an example of this. Without parametric
+-- polymorphism, we would need 3 versions of it.
+data OutboundStObjectIds (kind :: StObjectIdsKind) objectId object m a where
   SendMsgReplyObjectIds
     :: ObjectIdsReplyList kind objectId
     -> OutboundStIdle objectId object m a

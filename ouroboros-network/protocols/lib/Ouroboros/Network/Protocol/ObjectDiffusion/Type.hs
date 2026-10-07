@@ -67,6 +67,13 @@ data ObjectDiffusion objectId object where
   -- A non-blocking request has one prompt reply state. A blocking request has
   -- two phases, distinguishing the prompt reply state from the state entered
   -- after the server has reported that it must await new objects.
+  --
+  -- Parameterizing this constructor with `StObjectIdsKind` instead of creating
+  -- 3 separate constructors enables parametric polymorphism. The advantage of
+  -- parametric polymorphism is that code that is oblivious to the distinction
+  -- expressed by the parameter does not have to be duplicated.
+  -- `MsgReplyObjectIds` is an example of this. Without parametric polymorphism,
+  -- we would need 3 versions of it.
   StObjectIds
     :: StObjectIdsKind
     -> ObjectDiffusion objectId object
@@ -91,8 +98,15 @@ instance ( ShowProxy objectId
 instance ShowProxy (StIdle :: ObjectDiffusion objectId object) where
   showProxy _ = "StIdle"
 
--- | The two phases of a blocking object-ID reply.
-data StObjectIdsPhase = StCanAwait | StMustReply
+-- | Sub-cases of the 'StObjectIds' state. This is needed since the server can
+-- either send one reply back, or two.
+--
+-- This corresponds to and is inspired by `Ouroboros.Network.Protocol.ChainSync.Type.StNextKind`.
+data StObjectIdsPhase where
+  -- | The server can reply or send an await msg.
+  StCanAwait  :: StObjectIdsPhase
+  -- | The server must now reply, having already sent an await message.
+  StMustReply :: StObjectIdsPhase
 
 data SingStObjectIdsPhase (phase :: StObjectIdsPhase) where
   SingCanAwait :: SingStObjectIdsPhase 'StCanAwait
