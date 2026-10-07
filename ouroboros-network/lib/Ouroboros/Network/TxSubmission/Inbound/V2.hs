@@ -14,6 +14,8 @@ module Ouroboros.Network.TxSubmission.Inbound.V2
   , TxDecisionPolicy (..)
   , defaultTxDecisionPolicy
   , TxSubmissionInitDelay (..)
+  , TxSubmissionConfig (..)
+  , defaultTxSubmissionConfigV2
   ) where
 
 import Data.List.NonEmpty qualified as NonEmpty
