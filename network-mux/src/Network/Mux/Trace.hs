@@ -139,6 +139,9 @@ data ChannelTrace =
       TraceChannelRecvStart MiniProtocolNum
     | TraceChannelRecvEnd MiniProtocolNum Int
     | TraceChannelSendStart MiniProtocolNum Int
+      -- ^ the message's length, counted no further than one byte past the
+      -- channel's 256 KiB soft limit, so a longer message is not encoded
+      -- to trace it
     | TraceChannelSendEnd MiniProtocolNum
 
 instance Show ChannelTrace where

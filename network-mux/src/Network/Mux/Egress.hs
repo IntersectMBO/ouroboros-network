@@ -18,10 +18,14 @@ module Network.Mux.Egress
   , EgressQueue
   , TranslocationServiceRequest (..)
   , Wanton (..)
+  , forcePrefix
   ) where
 
 import Control.Monad
+import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BL
+import Data.ByteString.Lazy.Internal qualified as BLI
+import Data.Int (Int64)
 import Data.Map.Strict qualified as Map
 
 import Control.Concurrent.Class.MonadSTM.Strict
@@ -174,6 +178,15 @@ data TranslocationServiceRequest m =
 --  TVar becoming empty indicates -- that the last fragment of the data has
 --  been enqueued on the -- underlying bearer.
 newtype Wanton m = Wanton { want :: StrictTVar m BL.ByteString }
+
+-- | Evaluate the chunks of a lazy 'BL.ByteString' until at least @n@ bytes
+-- have been produced, or it ends; the rest is left as it is.
+forcePrefix :: Int64 -> BL.ByteString -> ()
+forcePrefix n bs
+  | n <= 0    = ()
+  | otherwise = case bs of
+                     BLI.Empty        -> ()
+                     BLI.Chunk c rest -> forcePrefix (n - fromIntegral (BS.length c)) rest
 
 
 -- | Process the messages from the mini protocols - there is a single
