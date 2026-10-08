@@ -126,9 +126,11 @@ import Ouroboros.Network.Protocol.TxSubmission2.Codec (byteLimitsTxSubmission2,
            timeLimitsTxSubmission2)
 import Ouroboros.Network.Server qualified as Server
 import Ouroboros.Network.Snocket (Snocket, TestAddress (..))
-import Ouroboros.Network.TxSubmission.Inbound.V2.Policy (TxDecisionPolicy)
+import Ouroboros.Network.TxSubmission.Inbound.V2.Policy (TxDecisionPolicy,
+           TxSubmissionConfig)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types (TraceTxLogic,
            TraceTxSubmissionInbound)
+import Ouroboros.Network.TxSubmission.Outbound (TxOutboundVersion)
 import Ouroboros.Network.Util (PrettyShow (..))
 
 import Ouroboros.Network.Mock.ConcreteBlock (Block (..), BlockHeader (..))
@@ -150,7 +152,8 @@ import Test.Ouroboros.Network.PeerSelection.RootPeersDNS qualified as PeerSelect
            (tests)
 import Test.Ouroboros.Network.TxSubmission.Impaired (Impairment, noImpairment)
 import Test.Ouroboros.Network.TxSubmission.TxLogic (ArbTxDecisionPolicy (..))
-import Test.Ouroboros.Network.TxSubmission.Types (Tx (..))
+import Test.Ouroboros.Network.TxSubmission.Types (ArbTxOutboundVersion (..),
+           ArbTxSubmissionConfig (..), Tx (..))
 import Test.Ouroboros.Network.Utils
 
 import Test.Cardano.Network.Diffusion.Testnet.MiniProtocols qualified as Node
@@ -165,27 +168,41 @@ import Test.QuickCheck
 --
 data SimArgs =
   SimArgs
-    { saSlot             :: DiffTime
+    { saSlot               :: DiffTime
       -- ^ 'randomBlockGenerationArgs' slot duration argument
-    , saQuota            :: Int
+    , saQuota              :: Int
       -- ^ 'randomBlockGenerationArgs' quota value
-    , saTxDecisionPolicy :: TxDecisionPolicy
+    , saTxDecisionPolicy   :: TxDecisionPolicy
       -- ^ Decision policy for tx submission protocol
+    , saTxSubmissionConfig :: TxSubmissionConfig
+      -- ^ Tx submission configuration shared by the inbound and outbound
+      -- sides.  All nodes must use the same one, since the outbound side
+      -- enforces `maxNumUnacknowledgedTxIds`.
+    , saTxOutboundVersion  :: TxOutboundVersion
+      -- ^ Tx submission outbound version.  All simulations nodes run the same
+      -- `TxOutboundVersion`, since we use `UnversionedProtocol`
     }
 
--- | Render `SimArgs`, ignores `saTxDecisionPolicy`; useful for quickcheck
--- coverage checking.
+-- | Render `SimArgs`, ignores the tx submission arguments; useful for
+-- quickcheck coverage checking.
 --
 renderSimArgs :: SimArgs -> String
 renderSimArgs SimArgs { saSlot, saQuota } =
     "slotDuration: " ++ show saSlot ++ " quota: " ++ show saQuota
 
 instance Show SimArgs where
-    show SimArgs { saSlot, saQuota, saTxDecisionPolicy } =
+    show SimArgs { saSlot,
+                   saQuota,
+                   saTxDecisionPolicy,
+                   saTxSubmissionConfig,
+                   saTxOutboundVersion
+                 } =
       unwords [ "SimArgs"
               , show saSlot
               , show saQuota
               , "(" ++ show saTxDecisionPolicy ++ ")"
+              , "(" ++ show saTxSubmissionConfig ++ ")"
+              , show saTxOutboundVersion
               ]
 
 data ServiceDomainName =
@@ -349,14 +366,19 @@ fixupCommands (_:t) = fixupCommands t
 --
 mainnetSimArgs :: Int
                -> TxDecisionPolicy
+               -> TxSubmissionConfig
+               -> TxOutboundVersion
                -> SimArgs
-mainnetSimArgs numberOfNodes txDecisionPolicy =
+mainnetSimArgs numberOfNodes txDecisionPolicy txSubmissionConfig
+               txOutboundVersion =
   SimArgs {
       saSlot  = secondsToDiffTime 1,
       saQuota = if numberOfNodes > 0
                 then 20 `div` numberOfNodes
                 else 100,
-      saTxDecisionPolicy = txDecisionPolicy
+      saTxDecisionPolicy   = txDecisionPolicy,
+      saTxSubmissionConfig = txSubmissionConfig,
+      saTxOutboundVersion  = txOutboundVersion
     }
 
 
@@ -654,7 +676,12 @@ genDiffusionScript genLocalRootPeers
                    relays
                    = do
     ArbTxDecisionPolicy txDecisionPolicy <- arbitrary
-    let simArgs = mainnetSimArgs (length relays') txDecisionPolicy
+    ArbTxSubmissionConfig txSubmissionConfig <- arbitrary
+    ArbTxOutboundVersion txOutboundVersion <- arbitrary
+    let simArgs = mainnetSimArgs (length relays')
+                                 txDecisionPolicy
+                                 txSubmissionConfig
+                                 txOutboundVersion
     dnsMapScript <- genDomainMapScript relays
     txs <- makeUniqueIds 0
        <$> vectorOf (length relays') (choose (10, 100) >>= \c -> vectorOf c arbitrary)
@@ -1174,6 +1201,8 @@ diffusionSimulationM
             { saSlot                  = bgaSlotDuration
             , saQuota                 = quota
             , saTxDecisionPolicy      = txDecisionPolicy
+            , saTxSubmissionConfig    = txSubmissionConfig
+            , saTxOutboundVersion     = txOutboundVersion
             }
             NodeArgs
             { naSeed                   = seed
@@ -1397,6 +1426,8 @@ diffusionSimulationM
                 , Node.aaPeerSharing         = Node.aPeerSharing arguments
                 , Node.aaPeerMetrics         = peerMetrics
                 , Node.aaTxDecisionPolicy    = Node.aTxDecisionPolicy arguments
+                , Node.aaTxSubmissionConfig  = txSubmissionConfig
+                , Node.aaTxOutboundVersion   = txOutboundVersion
                 , Node.aaTxImpairment        = txImpairment
                 }
 
