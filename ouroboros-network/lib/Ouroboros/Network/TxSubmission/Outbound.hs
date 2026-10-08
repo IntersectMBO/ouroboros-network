@@ -6,7 +6,9 @@
 {-# LANGUAGE StandaloneDeriving  #-}
 
 module Ouroboros.Network.TxSubmission.Outbound
-  ( txSubmissionOutbound
+  ( TxSubmissionConfig (..)
+  , TxOutboundVersion (..)
+  , txSubmissionOutbound
   , TraceTxSubmissionOutbound (..)
   , TxSubmissionProtocolError (..)
   ) where
@@ -29,6 +31,8 @@ import Ouroboros.Network.ControlMessage (ControlMessage, ControlMessageSTM,
            timeoutWithControlMessage)
 import Ouroboros.Network.Protocol.TxSubmission2.Client
 import Ouroboros.Network.Protocol.TxSubmission2.Type
+import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
+           (TxSubmissionConfig (..))
 import Ouroboros.Network.TxSubmission.Mempool.Reader (MempoolSnapshot (..),
            TxSubmissionMempoolReader (..))
 
@@ -82,18 +86,26 @@ instance Exception TxSubmissionProtocolError where
       "The peer requested duplicate txIds: " ++ show txids
 
 
+data TxOutboundVersion =
+    TxOutboundV_1
+  | TxOutboundV_2
+  deriving (Show, Eq, Ord, Enum, Bounded)
+
+
 txSubmissionOutbound
-  :: forall version txid tx idx m.
+  :: forall txid tx idx m.
      (Ord txid, Show txid, Ord idx, MonadSTM m, MonadThrow m)
   => Tracer m (TraceTxSubmissionOutbound txid tx)
-  -> NumTxIdsToAck  -- ^ Maximum number of unacknowledged txids allowed
+  -> TxSubmissionConfig
   -> TxSubmissionMempoolReader txid tx idx m
-  -> version
+  -> TxOutboundVersion
   -> ControlMessageSTM m
   -> TxSubmissionClient txid tx m ()
-txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version controlMessageSTM =
+txSubmissionOutbound tracer config TxSubmissionMempoolReader{..} version controlMessageSTM =
     TxSubmissionClient (pure (client Seq.empty mempoolZeroIdx))
   where
+    maxUnacked = maxNumUnacknowledgedTxIds config
+
     client :: StrictSeq (txid, idx) -> idx -> ClientStIdle txid tx m ()
     client !unackedSeq !lastIdx =
         ClientStIdle { recvMsgRequestTxIds, recvMsgRequestTxs }
@@ -103,12 +115,19 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version co
                             -> NumTxIdsToAck
                             -> NumTxIdsToReq
                             -> m (ClientStTxIds blocking txid tx m ())
-        recvMsgRequestTxIds blocking ackNo reqNo = do
+        recvMsgRequestTxIds blocking ackNo reqNo0 = do
           when (getNumTxIdsToAck ackNo > fromIntegral (Seq.length unackedSeq)) $
             throwIO ProtocolErrorAckedTooManyTxids
 
           let unackedNo :: Int
               unackedNo = Seq.length unackedSeq
+
+              reqNo = case version of
+                TxOutboundV_1
+                  -> reqNo0
+                TxOutboundV_2
+                  -> reqNo0 `min` maxNumTxIdsToRequest config
+
           when (  unackedNo
                 - fromIntegral ackNo
                 + fromIntegral reqNo

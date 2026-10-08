@@ -68,16 +68,16 @@ shrinkNodeToNodeVersionData (NodeToNodeVersionData magic mode ps qry psup) =
     shrinkPerasSupport PerasSupported   = [PerasUnsupported]
 
 -- | Generate valid 'NodeToNodeVersionData' for a given version.
--- For versions before 'NodeToNodeV_16', 'perasSupport' is set to 'PerasUnsupported'.
+-- For versions before 'NodeToNodeV_17', 'perasSupport' is set to 'PerasUnsupported'.
 genValidNtnVersionDataForVersion :: NodeToNodeVersion -> Gen NodeToNodeVersionData
 genValidNtnVersionDataForVersion version =
   fixNtnVersionDataForVersion version <$> genNodeToNodeVersionData
 
--- | For versions before 'NodeToNodeV_16', set 'perasSupport' to 'PerasUnsupported'
+-- | For versions before 'NodeToNodeV_17', set 'perasSupport' to 'PerasUnsupported'
 -- to ensure the data is valid for the version.
 fixNtnVersionDataForVersion :: NodeToNodeVersion -> NodeToNodeVersionData -> NodeToNodeVersionData
 fixNtnVersionDataForVersion version ntnData =
-  if version < NodeToNodeV_16
+  if version < minPerasVersion
     then ntnData { perasSupport = PerasUnsupported }
     else ntnData
 
@@ -89,5 +89,5 @@ fixNtnVersionDataForVersion version ntnData =
 genInvalidNtnVersionAndDataPair :: Gen (NodeToNodeVersion, NodeToNodeVersionData)
 genInvalidNtnVersionAndDataPair = do
   rawNtnData <- genNodeToNodeVersionData
-  v <- elements [minBound .. pred NodeToNodeV_16]
+  v <- elements [minBound .. pred minPerasVersion]
   pure (v, rawNtnData { perasSupport = PerasSupported })

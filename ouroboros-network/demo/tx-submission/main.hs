@@ -85,15 +85,16 @@ main :: IO ()
 main =
   execParser (info (optionParser <**> helper) fullDesc)
     >>= \case
-      InboundOptions addr maxNumTxIdsToRequest maxUnacknowledgedTxIds version txDelay -> do
-        let txDecisionPolicy = V2.defaultTxDecisionPolicy
+      InboundOptions addr maxNumTxIdsToRequest maxNumUnacknowledgedTxIds version txDelay -> do
+        let txSubmissionConfig = V2.defaultTxSubmissionConfigV2
               { V2.maxNumTxIdsToRequest,
-                V2.maxUnacknowledgedTxIds
+                V2.maxNumUnacknowledgedTxIds
               }
-        runTxInbound addr txDecisionPolicy version (microsecondsAsIntToDiffTime txDelay)
-      OutboundOptions addr bindAddr maxUnacknowledgedTxIds version filePath num -> do
-        let txDecisionPolicy = V2.defaultTxDecisionPolicy
-              { V2.maxUnacknowledgedTxIds
+            txDecisionPolicy = V2.defaultTxDecisionPolicy txSubmissionConfig
+        runTxInbound addr txDecisionPolicy txSubmissionConfig version (microsecondsAsIntToDiffTime txDelay)
+      OutboundOptions addr bindAddr maxNumUnacknowledgedTxIds version filePath num -> do
+        let txSubmissionConfig = V2.defaultTxSubmissionConfigV2
+              { V2.maxNumUnacknowledgedTxIds
               }
         lock <- newMVar ()
         let stderrTracer = mkTracer $ \msg -> withMVar lock $ \_ -> hPutStrLn stderr msg
@@ -102,7 +103,7 @@ main =
                          [0..(num - 1)]
         runConcurrently
           $ foldMap
-            (\bindAddr' -> Concurrently $ runTxOutbound stderrTracer addr bindAddr' txDecisionPolicy version filePath)
+            (\bindAddr' -> Concurrently $ runTxOutbound stderrTracer addr bindAddr' txSubmissionConfig version filePath)
             addrs
       GenerateTxs num filePath ->
         runTxsGenerator num filePath
@@ -113,14 +114,14 @@ data Options =
     InboundOptions
       Addr -- ^ address of the inbound side
       Tx.NumTxIdsToReq -- ^ maximum number txids to request
-      Tx.NumTxIdsToReq -- ^ unacked txids
+      Tx.NumTxIdsToAck -- ^ unacked txids
       TxSubmissionLogicVersion
       Int -- ^ tx validation time in microseconds
 
   | OutboundOptions
       Addr -- ^ address of the inbound side
       Addr -- ^ ip address of the outbound side, for `n > 0` port number will be incremented
-      Tx.NumTxIdsToReq -- ^ unacked txids
+      Tx.NumTxIdsToAck -- ^ unacked txids
       TxSubmissionLogicVersion
       FilePath -- ^ file path of tx cache
       Int -- ^ number of outbound clients to fork
@@ -193,14 +194,14 @@ optionParser =
         <*> option (Tx.NumTxIdsToReq <$> auto)
             (    long "txids-to-request"
               <> help "maximum number of txids to request"
-              <> value (V2.maxNumTxIdsToRequest V2.defaultTxDecisionPolicy)
+              <> value (V2.maxNumTxIdsToRequest V2.defaultTxSubmissionConfigV2)
               <> showDefaultWith (show . Tx.getNumTxIdsToReq)
             )
-        <*> option (Tx.NumTxIdsToReq <$> auto)
+        <*> option (Tx.NumTxIdsToAck <$> auto)
             (    long "unacked-txids"
               <> help "size of unacknowledged txid buffer"
-              <> value (V2.maxUnacknowledgedTxIds V2.defaultTxDecisionPolicy)
-              <> showDefaultWith (show . Tx.getNumTxIdsToReq)
+              <> value (V2.maxNumUnacknowledgedTxIds V2.defaultTxSubmissionConfigV2)
+              <> showDefaultWith (show . Tx.getNumTxIdsToAck)
             )
         <*> flag TxSubmissionLogicV2
                  TxSubmissionLogicV1
@@ -245,11 +246,11 @@ optionParser =
               <> value defaultPort
               <> showDefault
               )
-        <*> option (Tx.NumTxIdsToReq <$> auto)
+        <*> option (Tx.NumTxIdsToAck <$> auto)
             (    long "unacked-txids"
               <> help "size of unacknowledged txid buffer"
-              <> value (V2.maxUnacknowledgedTxIds V2.defaultTxDecisionPolicy)
-              <> showDefaultWith (show . Tx.getNumTxIdsToReq)
+              <> value (V2.maxNumUnacknowledgedTxIds V2.defaultTxSubmissionConfigV2)
+              <> showDefaultWith (show . Tx.getNumTxIdsToAck)
             )
         <*> flag TxSubmissionLogicV2
                  TxSubmissionLogicV1
@@ -447,10 +448,11 @@ printTracer lock = mkTracer $ \(Mx.WithBearer addr a) ->
 
 runTxInbound :: Addr
              -> V2.TxDecisionPolicy
+             -> V2.TxSubmissionConfig
              -> TxSubmissionLogicVersion
              -> DiffTime
              -> IO ()
-runTxInbound Addr { addr, port } txDecisionPolicy version txDelay = do
+runTxInbound Addr { addr, port } txDecisionPolicy txSubmissionConfig version txDelay = do
     traceLock <- newMVar ()
     let hints = Socket.defaultHints
                   { Socket.addrFlags = [Socket.AI_ADDRCONFIG]
@@ -545,15 +547,15 @@ runTxInbound Addr { addr, port } txDecisionPolicy version txDelay = do
                             $ V1.txSubmissionInbound
                                 Tracer.nullTracer
                                 V1.NoTxSubmissionInitDelay
-                                (fromIntegral $ V2.maxUnacknowledgedTxIds txDecisionPolicy)
+                                txSubmissionConfig
                                 reader
                                 writer
-                                ()
                             )
 
                         TxSubmissionLogicV2 ->
                           V2.withPeer
                             txDecisionPolicy
+                            txSubmissionConfig
                             reader
                             txSharedState
                             txRegistry
@@ -581,12 +583,12 @@ runTxInbound Addr { addr, port } txDecisionPolicy version txDelay = do
 runTxOutbound :: Tracer IO String
               -> Addr -- ^ address to connect to
               -> Addr -- ^ address to bind to
-              -> V2.TxDecisionPolicy
+              -> V2.TxSubmissionConfig
               -> TxSubmissionLogicVersion
               -> FilePath
               -> IO ()
 runTxOutbound stderrTracer inboundAddr outboundAddr
-                           txDecisionPolicy _version filePath = do
+                           txSubmissionConfig _version filePath = do
     traceLock <- newMVar ()
     mempool <- readTxs filePath
            >>= Mempool.new getTxId
@@ -655,7 +657,7 @@ runTxOutbound stderrTracer inboundAddr outboundAddr
                   ( Tx.Outbound.txSubmissionClientPeer
                   $ txSubmissionOutbound
                       Tracer.nullTracer
-                      (Tx.NumTxIdsToAck . Tx.getNumTxIdsToReq $ V2.maxUnacknowledgedTxIds txDecisionPolicy)
+                      (Tx.NumTxIdsToAck . Tx.getNumTxIdsToAck $ V2.maxNumUnacknowledgedTxIds txSubmissionConfig)
                       reader
                   )
               )

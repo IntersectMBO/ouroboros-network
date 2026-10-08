@@ -30,7 +30,6 @@ import Data.ByteString.Lazy qualified as BSL
 import Data.Function (on)
 import Data.List (intercalate, nubBy)
 import Data.Maybe (fromMaybe)
-import Data.Word (Word16)
 
 import Ouroboros.Network.Channel
 import Ouroboros.Network.ControlMessage (ControlMessage (..), ControlMessageSTM)
@@ -83,15 +82,20 @@ txSubmissionSimulation
      , txid ~ Int
      )
   => Tracer m (String, TraceSendRecv (TxSubmission2 txid (Tx txid)))
-  -> NumTxIdsToAck
+  -> TxSubmissionConfig
+  -> TxOutboundVersion
   -> [Tx txid]
   -> ControlMessageSTM m
   -> Maybe DiffTime
   -> Maybe DiffTime
   -> m ([Tx txid], [Tx txid])
-txSubmissionSimulation tracer maxUnacked outboundTxs
+txSubmissionSimulation tracer
+                       config
+                       version
+                       outboundTxs
                        controlMessageSTM
-                       inboundDelay outboundDelay = do
+                       inboundDelay
+                       outboundDelay = do
 
     inboundMempool  <- emptyMempool
     duplicateTxIdsVar <- newTVarIO []
@@ -121,14 +125,13 @@ txSubmissionSimulation tracer maxUnacked outboundTxs
     outmp <- readMempool outboundMempool
     return (inmp, outmp)
   where
-
     outboundPeer :: Mempool m txid (Tx txid) -> TxSubmissionClient txid (Tx txid) m ()
     outboundPeer outboundMempool =
       txSubmissionOutbound
         nullTracer
-        maxUnacked
+        config
         (getMempoolReader outboundMempool)
-        (maxBound :: TestVersion)
+        version
         controlMessageSTM
 
     inboundPeer :: TVar m [txid]
@@ -138,19 +141,26 @@ txSubmissionSimulation tracer maxUnacked outboundTxs
       txSubmissionInbound
         (("INBOUND",) `contramap` verboseTracer)
         NoTxSubmissionInitDelay
-        maxUnacked
+        config
         (getMempoolReader inboundMempool)
         (getMempoolWriter duplicateTxIdsVar inboundMempool)
-        (maxBound :: TestVersion)
 
-prop_txSubmission :: Positive Word16
+
+
+prop_txSubmission :: ArbTxSubmissionConfig
+                  -> ArbTxOutboundVersion
                   -> NonEmptyList (Tx Int)
                   -> Maybe (Positive SmallDelay)
                   -- ^ The delay must be smaller (<) than 5s, so that overall
                   -- delay is less than 10s, otherwise 'smallDelay' in
                   -- 'timeLimitsTxSubmission2' will kick in.
                   -> Property
-prop_txSubmission (Positive maxUnacked) (NonEmpty outboundTxs) delay =
+prop_txSubmission
+    (ArbTxSubmissionConfig config)
+    (ArbTxOutboundVersion version)
+    (NonEmpty outboundTxs)
+    delay
+    =
     let mbDelayTime = getSmallDelay . getPositive <$> delay
         tr = runSimTrace $ do
                controlMessageVar <- newTVarIO Continue
@@ -162,7 +172,9 @@ prop_txSubmission (Positive maxUnacked) (NonEmpty outboundTxs) delay =
                    atomically (writeTVar controlMessageVar Terminate)
                txSubmissionSimulation
                  verboseTracer
-                 (NumTxIdsToAck maxUnacked) outboundTxs
+                 config
+                 version
+                 outboundTxs
                  (readTVar controlMessageVar)
                  mbDelayTime mbDelayTime
     in

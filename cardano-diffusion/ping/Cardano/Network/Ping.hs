@@ -1318,7 +1318,7 @@ pingClient' stdout infoTracer headerTracer stderr opts@PingOpts{..} signalVar ad
                                                        NodeToClient -> NodeToClient.localChainSyncMiniProtocolNum,
                             miniProtocolDir        = Mx.InitiatorDirectionOnly,
                             miniProtocolLimits     = case protocol of
-                                                       NodeToNode -> NodeToNode.chainSyncProtocolLimits NodeToNode.defaultMiniProtocolParameters
+                                                       NodeToNode -> NodeToNode.chainSyncProtocolLimits version NodeToNode.defaultMiniProtocolParameters
                                                        NodeToClient -> NodeToClient.maximumMiniProtocolLimits,
                             miniProtocolCapability = Nothing
                           }]
@@ -1349,14 +1349,14 @@ pingClient' stdout infoTracer headerTracer stderr opts@PingOpts{..} signalVar ad
 
                 (NodeToNode, PingMode) -> do
                   --
-                  -- run keepalive client to get RTT samples
+                  -- run keep-alive client to get RTT samples
                   --
                   mx <- Mx.new
                           Mx.nullTracers
                           [MiniProtocolInfo {
                             miniProtocolNum        = NodeToNode.keepAliveMiniProtocolNum,
                             miniProtocolDir        = Mx.InitiatorDirectionOnly,
-                            miniProtocolLimits     = NodeToNode.keepAliveProtocolLimits NodeToNode.defaultMiniProtocolParameters,
+                            miniProtocolLimits     = NodeToNode.keepAliveProtocolLimits version NodeToNode.defaultMiniProtocolParameters,
                             miniProtocolCapability = Nothing
                           }]
                   withAsync (Mx.run mx bearer) $ \_ ->

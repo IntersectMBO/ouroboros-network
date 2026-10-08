@@ -4,6 +4,9 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Policy
   ( TxDecisionPolicy (..)
   , defaultTxDecisionPolicy
   , saneTxDecisionPolicy
+  , TxSubmissionConfig (..)
+  , TxSubmissionProtocolVersion (..)
+  , defaultTxSubmissionConfigV2
   , max_TX_SIZE
     -- * Re-exports
   , NumTxIdsToReq (..)
@@ -11,7 +14,8 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Policy
 
 import Control.DeepSeq
 import Control.Monad.Class.MonadTime.SI
-import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToReq (..))
+import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToAck (..),
+           NumTxIdsToReq (..), NumTxsToReq (..))
 import Ouroboros.Network.SizeInBytes (SizeInBytes (..))
 
 
@@ -30,14 +34,6 @@ max_TX_SIZE = 65_540
 -- | Policy for making decisions
 --
 data TxDecisionPolicy = TxDecisionPolicy {
-      maxNumTxIdsToRequest           :: !NumTxIdsToReq,
-      -- ^ a maximal number of txids requested at once.
-
-      maxUnacknowledgedTxIds         :: !NumTxIdsToReq,
-      -- ^ maximal number of unacknowledgedTxIds.  Measured in `NumTxIdsToReq`
-      -- since we enforce this policy by requesting not more txids than what
-      -- this limit allows.
-
       --
       -- Configuration of tx decision logic.
       --
@@ -87,12 +83,10 @@ data TxDecisionPolicy = TxDecisionPolicy {
 instance NFData TxDecisionPolicy where
   rnf TxDecisionPolicy{} = ()
 
-defaultTxDecisionPolicy :: TxDecisionPolicy
-defaultTxDecisionPolicy =
+defaultTxDecisionPolicy :: TxSubmissionConfig -> TxDecisionPolicy
+defaultTxDecisionPolicy config =
   TxDecisionPolicy {
-    maxNumTxIdsToRequest   = 6,
-    maxUnacknowledgedTxIds = 10, -- must be the same as txSubmissionMaxUnacked
-    txsSizeInflightPerPeer = max_TX_SIZE * 6,
+    txsSizeInflightPerPeer = max_TX_SIZE * (fromIntegral (maxNumTxIdsToRequest config)),
     maxOutstandingTxBatchesPerPeer = 4,
     txInflightMultiplicity = 2,
     bufferedTxsMinLifetime = 2,
@@ -105,6 +99,41 @@ defaultTxDecisionPolicy =
     disablePipelinedTxIdRequests = False
   }
 
+-- | Shared options between the inbound and outbound side.
+--
+data TxSubmissionConfig =
+    TxSubmissionConfig {
+      maxNumUnacknowledgedTxIds :: !NumTxIdsToAck,
+      -- ^ this is a protocol parameter which sets how large the buffers could
+      -- be; must not be changed without a new node-to-node version
+      maxNumTxIdsToRequest      :: !NumTxIdsToReq,
+      -- ^ number of txids an outbound server can respond with and at the same
+      -- time number of txids an inbound client can request.
+      maxNumTxsToRequest        ::  NumTxsToReq
+      -- ^ number of txs a `TxSubmissionLogicV1` inbound client can request at a time
+      -- TODO: remove when the `TxSubmissionLogicV1` is removed
+    }
+  deriving (Eq, Show)
+
+instance NFData TxSubmissionConfig where
+  rnf TxSubmissionConfig{} = ()
+
+-- | `TxSubmissionConfig` for `TxSubmissionLogicV2`.
+--
+defaultTxSubmissionConfigV2 :: TxSubmissionConfig
+defaultTxSubmissionConfigV2 = TxSubmissionConfig {
+    maxNumUnacknowledgedTxIds = NumTxIdsToAck 10,
+    maxNumTxIdsToRequest      = NumTxIdsToReq 6,
+    maxNumTxsToRequest        = error "TxLogic.V2 should not use this value"
+  }
+
+-- | Protocol version.
+data TxSubmissionProtocolVersion =
+    TxSubmisionProtocolVersion_1
+    -- The outbound side is enforcing fixed `TxSubmissionConfig`
+  | TxSubmissionProtocolVersion_2
+    -- The outbound side responds according to `TxSubmissionConfig`
+
 -- | Sanity check for a 'TxDecisionPolicy': 'True' when every field lies
 -- in the range the decision logic assumes.
 --
@@ -114,10 +143,11 @@ defaultTxDecisionPolicy =
 -- (their difference is used as a non-negative delay when bumping a stuck
 -- entry's inflight-multiplicity cap).  'defaultTxDecisionPolicy' satisfies
 -- it.
-saneTxDecisionPolicy :: TxDecisionPolicy -> Bool
-saneTxDecisionPolicy p =
-       maxNumTxIdsToRequest           p >= 1
-    && maxUnacknowledgedTxIds         p >= 1
+saneTxDecisionPolicy :: TxDecisionPolicy -> TxSubmissionConfig -> Bool
+saneTxDecisionPolicy p c =
+       maxNumUnacknowledgedTxIds      c >= 1
+    && maxNumTxIdsToRequest           c >= 1
+    && maxNumTxsToRequest             c >= 1
     && txsSizeInflightPerPeer         p >  0
     && maxOutstandingTxBatchesPerPeer p >= 1
     && txInflightMultiplicity         p >= 1
