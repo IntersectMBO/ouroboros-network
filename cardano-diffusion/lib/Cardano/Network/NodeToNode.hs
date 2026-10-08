@@ -25,6 +25,8 @@ module Cardano.Network.NodeToNode
   , perasCertDiffusionProtocolLimits
   , perasVoteDiffusionProtocolLimits
   , defaultMiniProtocolParameters
+  , TxOutboundVersion (..)
+  , txOutboundVersion
   , NodeToNodeVersion (..)
   , NodeToNodeVersionData (..)
   , NetworkConnectTracers (..)
@@ -117,8 +119,11 @@ import Ouroboros.Network.Server.RateLimiting
 import Ouroboros.Network.SizeInBytes
 import Ouroboros.Network.Snocket
 import Ouroboros.Network.Socket
-import Ouroboros.Network.TxSubmission.Inbound.V2.Policy (TxDecisionPolicy (..),
-           defaultTxDecisionPolicy, max_TX_SIZE)
+import Ouroboros.Network.TxSubmission.Inbound.V1 qualified as V1
+import Ouroboros.Network.TxSubmission.Inbound.V2 qualified as V2
+import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
+           (TxSubmissionConfig (..), max_TX_SIZE)
+import Ouroboros.Network.TxSubmission.Outbound (TxOutboundVersion (..))
 
 
 data NodeToNodeProtocols appType initiatorCtx responderCtx bytes m a b = NodeToNodeProtocols {
@@ -175,8 +180,10 @@ data MiniProtocolParameters = MiniProtocolParameters {
       blockFetchPipeliningMax                    :: !Word16,
       -- ^ maximal number of pipelined messages in 'block-fetch' mini-protocol.
 
-      txDecisionPolicy                           :: !TxDecisionPolicy,
-      -- ^ tx submission protocol decision logic parameters
+      txSubmissionConfigV1                       :: !TxSubmissionConfig,
+      -- ^ tx submission protocol parameters for V1 (< NodeToNodeV_16)
+      txSubmissionConfigV2                       :: !TxSubmissionConfig,
+      -- ^ tx submission protocol parameters for V2 (>= NodeToNodeV_16)
 
       perasCertDiffusionMaxObjectsUnacknowledged :: !NumObjectsUnacknowledged,
       -- ^ Maximum number of PerasCerts in the outbound peer's outstanding FIFO.
@@ -210,7 +217,8 @@ defaultMiniProtocolParameters = MiniProtocolParameters {
       chainSyncPipeliningLowMark      = 200
     , chainSyncPipeliningHighMark     = 300
     , blockFetchPipeliningMax         = 100
-    , txDecisionPolicy                = defaultTxDecisionPolicy
+    , txSubmissionConfigV1            = V1.defaultTxSubmissionConfigV1
+    , txSubmissionConfigV2            = V2.defaultTxSubmissionConfigV2
     -- | TODO: this value is still being discussed.
     -- See https://github.com/tweag/cardano-peras/issues/97 for reference.
     , perasCertDiffusionMaxObjectsUnacknowledged = 10
@@ -247,7 +255,7 @@ nodeToNodeProtocols
   -- ^ negotiated version data
   -> OuroborosBundle muxMode initiatorCtx responderCtx bytes m a b
 nodeToNodeProtocols _featureFlags miniProtocolParameters protocols
-                    _version NodeToNodeVersionData { peerSharing, perasSupport }
+                    version NodeToNodeVersionData { peerSharing, perasSupport }
                     =
     TemperatureBundle
       -- Hot protocols: 'chain-sync', 'block-fetch' and 'tx-submission'.
@@ -262,19 +270,19 @@ nodeToNodeProtocols _featureFlags miniProtocolParameters protocols
             [ MiniProtocol {
                 miniProtocolNum    = chainSyncMiniProtocolNum,
                 miniProtocolStart  = StartOnDemand,
-                miniProtocolLimits = chainSyncProtocolLimits miniProtocolParameters,
+                miniProtocolLimits = chainSyncProtocolLimits version miniProtocolParameters,
                 miniProtocolRun    = chainSyncProtocol
               }
             , MiniProtocol {
                 miniProtocolNum    = blockFetchMiniProtocolNum,
                 miniProtocolStart  = StartOnDemand,
-                miniProtocolLimits = blockFetchProtocolLimits miniProtocolParameters,
+                miniProtocolLimits = blockFetchProtocolLimits version miniProtocolParameters,
                 miniProtocolRun    = blockFetchProtocol
               }
             , MiniProtocol {
                 miniProtocolNum    = txSubmissionMiniProtocolNum,
                 miniProtocolStart  = StartOnDemand,
-                miniProtocolLimits = txSubmissionProtocolLimits miniProtocolParameters,
+                miniProtocolLimits = txSubmissionProtocolLimits version miniProtocolParameters,
                 miniProtocolRun    = txSubmissionProtocol
               }
             ]
@@ -286,13 +294,13 @@ nodeToNodeProtocols _featureFlags miniProtocolParameters protocols
                [ MiniProtocol {
                    miniProtocolNum    = perasCertDiffusionMiniProtocolNum,
                    miniProtocolStart  = StartOnDemand,
-                   miniProtocolLimits = perasCertDiffusionProtocolLimits miniProtocolParameters,
+                   miniProtocolLimits = perasCertDiffusionProtocolLimits version miniProtocolParameters,
                    miniProtocolRun    = perasCertDiffusionProtocol
                  }
                , MiniProtocol {
                    miniProtocolNum    = perasVoteDiffusionMiniProtocolNum,
                    miniProtocolStart  = StartOnDemand,
-                   miniProtocolLimits = perasVoteDiffusionProtocolLimits miniProtocolParameters,
+                   miniProtocolLimits = perasVoteDiffusionProtocolLimits version miniProtocolParameters,
                    miniProtocolRun    = perasVoteDiffusionProtocol
                  }
                ])
@@ -308,7 +316,7 @@ nodeToNodeProtocols _featureFlags miniProtocolParameters protocols
               MiniProtocol {
                 miniProtocolNum    = keepAliveMiniProtocolNum,
                 miniProtocolStart  = StartOnDemandAny,
-                miniProtocolLimits = keepAliveProtocolLimits miniProtocolParameters,
+                miniProtocolLimits = keepAliveProtocolLimits version miniProtocolParameters,
                 miniProtocolRun    = keepAliveProtocol
               }
             : case peerSharing of
@@ -316,7 +324,7 @@ nodeToNodeProtocols _featureFlags miniProtocolParameters protocols
                   [ MiniProtocol {
                       miniProtocolNum    = peerSharingMiniProtocolNum,
                       miniProtocolStart  = StartOnDemand,
-                      miniProtocolLimits = peerSharingProtocolLimits miniProtocolParameters,
+                      miniProtocolLimits = peerSharingProtocolLimits version miniProtocolParameters,
                       miniProtocolRun    = peerSharingProtocol
                     }
                   ]
@@ -327,15 +335,21 @@ nodeToNodeProtocols _featureFlags miniProtocolParameters protocols
 addSafetyMargin :: Int -> Int
 addSafetyMargin x = x + x `div` 10
 
+-- | Select `TxOutboundVersion` based on `NodeToNodeVersion`.
+--
+txOutboundVersion :: NodeToNodeVersion -> TxOutboundVersion
+txOutboundVersion v | v < NodeToNodeV_16 = TxOutboundV_1
+                    | otherwise          = TxOutboundV_2
+
 chainSyncProtocolLimits
   , blockFetchProtocolLimits
   , txSubmissionProtocolLimits
   , keepAliveProtocolLimits
   , peerSharingProtocolLimits
   , perasCertDiffusionProtocolLimits
-  , perasVoteDiffusionProtocolLimits :: MiniProtocolParameters -> MiniProtocolLimits
+  , perasVoteDiffusionProtocolLimits :: NodeToNodeVersion -> MiniProtocolParameters -> MiniProtocolLimits
 
-chainSyncProtocolLimits MiniProtocolParameters { chainSyncPipeliningHighMark } =
+chainSyncProtocolLimits _v MiniProtocolParameters { chainSyncPipeliningHighMark } =
   MiniProtocolLimits {
       -- The largest message over ChainSync is @MsgRollForward@ which mainly
       -- consists of a BlockHeader.
@@ -345,7 +359,7 @@ chainSyncProtocolLimits MiniProtocolParameters { chainSyncPipeliningHighMark } =
         fromIntegral chainSyncPipeliningHighMark * 1400
     }
 
-blockFetchProtocolLimits MiniProtocolParameters { blockFetchPipeliningMax } = MiniProtocolLimits {
+blockFetchProtocolLimits _v MiniProtocolParameters { blockFetchPipeliningMax } = MiniProtocolLimits {
     -- block-fetch client can pipeline at most 'blockFetchPipeliningMax'
     -- blocks (currently '10').  This is currently hard coded in
     -- 'Ouroboros.Network.BlockFetch.blockFetchLogic' (where
@@ -367,9 +381,10 @@ blockFetchProtocolLimits MiniProtocolParameters { blockFetchPipeliningMax } = Mi
       max (10 * 2_097_154 :: Int) (fromIntegral blockFetchPipeliningMax * 90_112)
   }
 
-txSubmissionProtocolLimits MiniProtocolParameters
-                             { txDecisionPolicy = TxDecisionPolicy { maxUnacknowledgedTxIds }
-                             } = MiniProtocolLimits {
+txSubmissionProtocolLimits v MiniProtocolParameters
+                               { txSubmissionConfigV1
+                               , txSubmissionConfigV2
+                               } = MiniProtocolLimits {
       -- tx-submission server can pipeline both 'MsgRequestTxIds' and
       -- 'MsgRequestTx'. This means that there can be many
       -- 'MsgReplyTxIds', 'MsgReplyTxs' messages in an inbound queue (their
@@ -434,14 +449,20 @@ txSubmissionProtocolLimits MiniProtocolParameters
       maximumIngressQueue = addSafetyMargin $
           fromIntegral maxUnacknowledgedTxIds * (44 + fromIntegral @SizeInBytes @Int max_TX_SIZE)
     }
+  where
+    maxUnacknowledgedTxIds =
+      case txOutboundVersion v of
+        TxOutboundV_1 -> maxNumUnacknowledgedTxIds txSubmissionConfigV1
+        TxOutboundV_2 -> maxNumUnacknowledgedTxIds txSubmissionConfigV2
 
-keepAliveProtocolLimits _ =
+
+keepAliveProtocolLimits _v _ =
   MiniProtocolLimits {
       -- One small outstanding message.
       maximumIngressQueue = addSafetyMargin 1280
     }
 
-peerSharingProtocolLimits _ =
+peerSharingProtocolLimits _v _ =
   MiniProtocolLimits {
   -- This protocol does not need to be pipelined and a peer can only ask
   -- for a maximum of 255 peers each time. Hence a reply can have up to
@@ -452,7 +473,7 @@ peerSharingProtocolLimits _ =
   maximumIngressQueue = 4 * 1440
   }
 
-perasCertDiffusionProtocolLimits MiniProtocolParameters { perasCertDiffusionMaxObjectsUnacknowledged } =
+perasCertDiffusionProtocolLimits _v MiniProtocolParameters { perasCertDiffusionMaxObjectsUnacknowledged } =
   MiniProtocolLimits {
       -- The reasoning here is very similar to the 'txSubmissionProtocolLimits'.
       --
@@ -463,7 +484,7 @@ perasCertDiffusionProtocolLimits MiniProtocolParameters { perasCertDiffusionMaxO
         fromIntegral perasCertDiffusionMaxObjectsUnacknowledged * 20_000
     }
 
-perasVoteDiffusionProtocolLimits MiniProtocolParameters { perasVoteDiffusionMaxObjectsUnacknowledged } =
+perasVoteDiffusionProtocolLimits _v MiniProtocolParameters { perasVoteDiffusionMaxObjectsUnacknowledged } =
   MiniProtocolLimits {
       -- Peras votes are expected to be much smaller than Peras certificates.
       -- We assume an upper bound of 1 kB per vote.
