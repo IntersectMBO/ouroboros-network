@@ -18,14 +18,16 @@ module Test.Mux.FloorBucket (tests) where
 import Control.Applicative ((<|>))
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (evaluate)
-import Control.Monad (forM)
+import Control.Monad (forM, forM_, forever, when)
 import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadFork (labelThisThread)
 import Control.Monad.Class.MonadThrow (MonadMask, mask_)
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.IOSim
 
 import Data.IORef (modifyIORef', newIORef, readIORef)
+import Data.List (stripPrefix)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (isNothing)
 import Data.Word (Word8)
@@ -41,6 +43,7 @@ import NoThunks.Class (NoThunks (..), OnlyCheckWhnfNamed (..), noThunks,
 import Test.QuickCheck
 import Test.Tasty
 import Test.Tasty.QuickCheck (testProperty)
+import Text.Read (readMaybe)
 
 tests :: TestTree
 tests =
@@ -59,6 +62,10 @@ tests =
     , testProperty "the rest tier takes turns"            prop_rest_turns
     , testProperty "a rest bearer waits at most a round"  prop_rest_wait
     , testProperty "a credited tier is served head first" prop_credited_head_first
+    , testProperty "a queued bearer follows its rule"      prop_rule_followed_while_queued
+    , testProperty "no timer outlives its request"           prop_timers_follow_requests
+    , testProperty "a shared credit is spent once, by whole batches" prop_shared_credit_spent_once
+    , testProperty "the fast path charges the rank its rule answers now" prop_fast_path_charges_current_rank
     ]
 
 --
@@ -189,6 +196,7 @@ runFloorM inspect_m withFloor fr@FloorRun { frRate, frCapacity, frPercent, frRot
       h <- Bucket.registerBearer budget
       atomically $ Bucket.setRank h (Bucket.Rank fbTier)
       fmap ((,) h) $ async $ do
+        labelThisThread (bearerLabel i)
         threadDelay fbStart
         -- masked: a grant is recorded before a cancellation can land, so the
         -- harness sees every grant the bucket counted; the wait itself is
@@ -407,6 +415,97 @@ prop_idle_floor =
     let strip (gs, _) = [ (gBearer g, gAt g, gBytes g) | g <- gs ]
     in strip (runFloor True fr) === strip (runFloor False fr)
 
+-- | A bearer's rule changes while it waits. Two tier-0 saturators keep the
+-- budget busy, so a bearer at rest never reaches it. Forward: a bearer queues
+-- at rest, its rule turns credited at @rcAt@, and the floor must serve it
+-- within a refresh of that. Backward: a credited bearer takes one batch from
+-- the floor and queues for the next while the floor refills, slowly enough
+-- that the refresh comes first; its rule turns rest at @rcAt@, and within a
+-- refresh it has left the floor's queue and waits at rest; cancelled then,
+-- it leaves the budget's queue under the keys it holds now, not the ones it
+-- queued with.
+data RuleChange = RuleChange {
+    rcRate    :: !Double,
+    rcCap     :: !Int,
+    rcPercent :: !Int,
+    rcTier    :: !Word8,     -- ^ the credited tier
+    rcAt      :: !DiffTime,  -- ^ when the rule changes, after the bearer queued
+    rcToRest  :: !Bool       -- ^ credited to rest, else rest to credited
+  }
+  deriving Show
+
+instance Arbitrary RuleChange where
+  arbitrary = do
+    rcCap     <- elements [16384, 65536, 131072]
+    rcPercent <- choose (5, 30)
+    rcTier    <- choose (1, 3)
+    rcToRest  <- arbitrary
+    -- backward, the floor must not refill the bearer's next batch before the
+    -- refresh after the change sees it: a refill time past a refresh and
+    -- the change early in it
+    (rcRate, rcAt) <-
+      if rcToRest
+         then do
+           refill <- choose (realToFrac Bucket.tierRefresh + 1, 40 :: Double)
+           at'    <- choose (0.1, 2 :: Double)
+           return (fromIntegral rcCap / (refill * fromIntegral rcPercent / 100), realToFrac at')
+         else (,) <$> choose (1e5, 1e6) <*> (realToFrac <$> choose (0.1, 3 :: Double))
+    return RuleChange { rcRate, rcCap, rcPercent, rcTier, rcAt, rcToRest }
+  shrink rc@RuleChange { rcTier, rcPercent } =
+       [ rc { rcTier = 1 }     | rcTier /= 1 ]
+    ++ [ rc { rcPercent = 10 } | rcPercent /= 10 ]
+
+prop_rule_followed_while_queued :: RuleChange -> Property
+prop_rule_followed_while_queued rc@RuleChange { rcRate, rcCap, rcPercent, rcTier, rcAt, rcToRest } =
+    counterexample (show rc) $
+    classify rcToRest "credited to rest" $
+      runSimOrThrow $ do
+        budget <- Bucket.newBucket rcRate rcCap Nothing
+        Bucket.attachFloor budget (fromIntegral rcPercent / 100)
+        -- the saturators, a whole capacity at a time, forever
+        sats <- forM [0, 0.001] $ \d -> do
+          h <- Bucket.registerBearer budget
+          atomically $ Bucket.setRank h (Bucket.Rank 0)
+          async $ threadDelay d >> forever (Bucket.awaitGrant h rcCap)
+        -- the bearer whose rule will change
+        ruleVar <- newTVarIO (Bucket.Rank (if rcToRest then rcTier else 4))
+        h <- Bucket.registerBearer budget
+        atomically $ Bucket.setRankSource h (\_ -> readTVar ruleVar)
+        threadDelay 0.01
+        t0 <- getMonotonicTime
+        victim <- async $ do
+          when rcToRest $ Bucket.awaitGrant h rcCap      -- the floor's full bucket, at once
+          Bucket.awaitGrant h (if rcToRest then rcCap else need)
+          getMonotonicTime
+        threadDelay rcAt
+        atomically $ writeTVar ruleVar (Bucket.Rank (if rcToRest then 4 else rcTier))
+        r <- if rcToRest
+                then do
+                  -- within a refresh: out of the floor's queue, waiting at rest
+                  threadDelay (Bucket.tierRefresh + 0.1)
+                  still <- poll victim
+                  fp <- atomically $ Bucket.floorPending budget
+                  (_, _, _, byTier) <- getMonotonicTime >>= atomically . Bucket.bucketSnapshot budget
+                  -- cancelled, it leaves the budget's queue under its current keys
+                  cancel victim
+                  fp' <- atomically $ Bucket.floorPending budget
+                  (_, _, queued', _) <- getMonotonicTime >>= atomically . Bucket.bucketSnapshot budget
+                  return $ counterexample (show (still, fp, Map.toList byTier, fp', queued'))
+                         $ isNothing still .&&. fp === 0 .&&. Map.lookup 4 byTier === Just 1
+                           .&&. fp' === 0 .&&. queued' === 2
+                else do
+                  -- within a refresh and the floor's own time for the batch
+                  let bound = rcAt + Bucket.tierRefresh
+                            + realToFrac (fromIntegral need / (rcRate * fromIntegral rcPercent / 100) :: Double)
+                            + 0.1
+                  served <- timeout bound (wait victim)
+                  return $ counterexample ("served " ++ show (fmap (`diffTime` t0) served) ++ " bound " ++ show bound)
+                         $ maybe False (\at -> at `diffTime` t0 <= bound) served
+        mapM_ cancel sats
+        return r
+  where
+    need = max 256 (rcCap `div` 4)
+
 -- | So the no-thunks properties here and in "Test.Mux" can inspect a
 -- bucket's counters, and in IO its whole state.
 instance NoThunks Bucket.BucketStats
@@ -462,6 +561,193 @@ prop_state_no_thunks_io fr0 = withNumTests 20 $ ioProperty $ do
   where
     fr = fr0 { frDuration = min 0.3 (frDuration fr0)
              , frBearers  = [ b { fbStart = min 0.1 (fbStart b) } | b <- frBearers fr0 ] }
+
+-- | Connections sharing one allowance, as a big-ledger pool's relays share
+-- the pool's bucket, all queued behind a saturating local root with the
+-- floor on. Their rule answers the pool tier while the shared credit is
+-- positive and the rest once it is spent; each grant charges the credit in
+-- the transaction that grants, while it is positive. The credit is spent by
+-- whole batches: exactly as many grants are charged as it takes to empty
+-- it, and the floor, which serves only credited tiers, serves none of them
+-- beyond those: a request queued at the pool tier is moved to the rest
+-- before it is served, not a refresh later.
+data SharedCase = SharedCase {
+    scRate   :: Double,
+    scCap    :: Int,
+    scPool   :: Int,      -- ^ connections sharing the allowance
+    scBatch  :: Int,
+    scCredit :: Int
+  }
+  deriving Show
+
+instance Arbitrary SharedCase where
+  arbitrary = do
+    rate  <- choose (1e5, 1e6)
+    cap   <- elements [16384, 65536, 131072]
+    k     <- choose (2, 12)
+    batch <- choose (256, cap `div` 2)
+    c     <- choose (1, 4 * batch)
+    return (SharedCase rate cap k batch c)
+  shrink sc@SharedCase { scPool, scCredit } =
+       [ sc { scPool = k } | k <- shrink scPool, k >= 2 ]
+    ++ [ sc { scCredit = c } | c <- shrink scCredit, c >= 1 ]
+
+prop_shared_credit_spent_once :: SharedCase -> Property
+prop_shared_credit_spent_once sc@SharedCase { scPool, scBatch, scCredit } =
+    counterexample (show (charges, floorGrants, poolGrants)) $
+    classify (needed < scPool) "fewer batches paid for than connections queued" $
+    cover 80 (floorGrants > 0) "the floor served the pool" $
+         counterexample "charges while in credit" (paid === min needed poolGrants)
+    .&&. counterexample "floor grants beyond those" (floorGrants <= paid)
+    .&&. counterexample "every grant charged once" (length charges === poolGrants)
+  where
+    needed = (scCredit + scBatch - 1) `div` scBatch
+    (charges, floorGrants, poolGrants) = runShared sc
+    paid = length (filter (> 0) charges)
+
+-- | A partner's grants with nobody else asking: every grant takes the fast
+-- path. Its rule answers the partner tier while its own credit lasts, its
+-- pool's tier while the pool's lasts, and the rest after; each grant charges
+-- the bucket that gave the rank the rule last answered. Asked at every
+-- charging grant, the rule moves on as each credit runs out: the own credit
+-- pays for as many whole batches as it takes to spend it, then the pool's,
+-- then nothing. A rank cached from an earlier grant would keep charging the
+-- spent own credit, which charges nothing, and leave the pool's untouched.
+data FastCase = FastCase { fcBatch :: Int, fcOwn :: Int, fcPool :: Int }
+  deriving Show
+
+instance Arbitrary FastCase where
+  arbitrary = do
+    b <- choose (256, 4096)
+    FastCase b <$> choose (1, 5 * b) <*> choose (1, 5 * b)
+  shrink fc@FastCase { fcOwn, fcPool } =
+       [ fc { fcOwn = o } | o <- shrink fcOwn, o >= 1 ]
+    ++ [ fc { fcPool = q } | q <- shrink fcPool, q >= 1 ]
+
+prop_fast_path_charges_current_rank :: FastCase -> Property
+prop_fast_path_charges_current_rank fc@FastCase { fcBatch, fcOwn, fcPool } =
+    counterexample (show fc) $
+      runSimOrThrow run === expected
+  where
+    batches c = (c + fcBatch - 1) `div` fcBatch
+    grants    = batches fcOwn + batches fcPool + 3
+    expected  = replicate (batches fcOwn) "own" ++ replicate (batches fcPool) "pool"
+             ++ replicate 3 "nothing"
+
+    run :: IOSim s [String]
+    run = do
+      budget <- Bucket.newBucket 1e12 1000000000 Nothing
+      own    <- newTVarIO fcOwn
+      pool   <- newTVarIO fcPool
+      last_  <- newTVarIO (4 :: Word8)
+      log_   <- newTVarIO []
+      h <- Bucket.registerBearer budget
+      let rule _ = do
+            o <- readTVar own
+            q <- readTVar pool
+            let tier | o > 0     = 1
+                     | q > 0     = 2
+                     | otherwise = 4
+            writeTVar last_ tier
+            return (Bucket.Rank tier)
+          spend var name = do
+            c <- readTVar var
+            if c > 0 then writeTVar var (c - fcBatch) >> modifyTVar log_ (name :)
+                     else modifyTVar log_ ("nothing" :)
+          charge _ = do
+            t <- readTVar last_
+            case t of
+                 1 -> spend own "own"
+                 2 -> spend pool "pool"
+                 _ -> modifyTVar log_ ("nothing" :)
+      atomically $ Bucket.setRankSource h rule
+      forM_ [1 .. grants] $ \_ -> Bucket.awaitGrantCharged Nothing 0 charge h fcBatch
+      reverse <$> readTVarIO log_
+
+-- | The run: the credit before each charge, in order, and the pool
+-- connections' floor grants and all their grants.
+runShared :: SharedCase -> ([Int], Int, Int)
+runShared SharedCase { scRate, scCap, scPool, scBatch, scCredit } = runSimOrThrow $ do
+    budget <- Bucket.newBucket scRate scCap Nothing
+    Bucket.attachFloor budget 0.1
+    credit  <- newTVarIO scCredit
+    charges <- newTVarIO []
+    grants  <- newTVarIO []
+    let end = 2 :: DiffTime
+    -- two local roots asking a capacity at a time keep the budget's queue
+    -- full, so every pool request queues
+    roots <- forM [0, 0.001 :: DiffTime] $ \start -> do
+      h <- Bucket.registerBearer budget
+      atomically $ Bucket.setRank h (Bucket.Rank 0)
+      async $ threadDelay start >> forever (Bucket.awaitGrant h scCap)
+    let rule _ = do
+          c <- readTVar credit
+          return (Bucket.Rank (if c > 0 then 2 else 4))
+        charge _ = do
+          c <- readTVar credit
+          modifyTVar charges (c :)
+          when (c > 0) $ writeTVar credit (c - scBatch)
+    pool <- forM [1 .. scPool] $ \i -> do
+      h <- Bucket.registerBearer budget
+      atomically $ Bucket.setRankSource h rule
+      async $ do
+        threadDelay (0.01 + fromIntegral i / 1000)
+        forever $ mask_ $ do
+          src <- Bucket.awaitGrantCharged Nothing 0 charge h scBatch
+          atomically $ modifyTVar grants (src :)
+    threadDelay end
+    -- read before cancelling, so no grant is half recorded
+    (cs, gs) <- atomically $ (,) <$> readTVar charges <*> readTVar grants
+    mapM_ cancel (roots ++ pool)
+    return (reverse cs, length (filter (== FromFloor) gs), length gs)
+
+-- | The label of a bearer's thread in 'runFloorM', and the bearer it names.
+bearerLabel :: Int -> String
+bearerLabel i = "bearer " ++ show i
+
+bearerOf :: String -> Maybe Int
+bearerOf lbl = stripPrefix "bearer " lbl >>= readMaybe
+
+-- | No timer outlives the request it was set for. A queued request sets a
+-- refresh timer, and one more for each sleep until the bytes are there; when
+-- the request is granted or cancelled, every timer it set has fired or is
+-- cancelled in that instant, so what the runtime holds for the queue is the
+-- queue, not the recent turnover. Read off the IOSim trace: a timer belongs
+-- to a request its bearer had under way when it was created, and must have
+-- fired or been cancelled by the instant that request was granted, or the
+-- run's end that cancelled it.
+prop_timers_follow_requests :: FloorRun -> Property
+prop_timers_follow_requests fr =
+  case traceResult False trace of
+    Left e -> counterexample (show e) False
+    Right (grants, _, waiting) ->
+      let windows = Map.fromListWith (++) $
+               [ (gBearer g, [(gAsked g, gAt g)]) | g <- grants ]
+            ++ [ (i, [(asked, endTime fr)]) | (i, asked) <- waiting ]
+          -- the requests under way at @c@: the fast path grants in the
+          -- instant it asks, so many share an instant with the one queued
+          requestEnd i c = case [ d | (a, d) <- Map.findWithDefault [] i windows, a <= c, c <= d ] of
+                                [] -> Nothing
+                                ds -> Just (maximum ds)
+          outlives (i, tmid, c) = case (requestEnd i c, Map.lookup tmid ends) of
+                                       (Just d, Just (_, e)) -> e > d
+                                       _                     -> True
+          bad = filter outlives created
+      in cover 90 (not (null created)) "a timer set" $
+         cover 70 (any ((== Just True) . fmap fst . (`Map.lookup` ends) . (\(_, t, _) -> t)) created)
+                  "a timer cancelled" $
+         counterexample (show (take 5 bad)) (null bad)
+  where
+    trace  = runSimTrace (runFloorM Nothing True fr)
+    events = traceEvents trace
+    created = [ (i, tmid, t) | (t, _, Just lbl, EventTimerCreated tmid _ _) <- events
+                             , Just i <- [bearerOf lbl] ]
+    -- when each timer ended, and whether by cancellation
+    ends = Map.fromListWith (\a b -> if snd a <= snd b then a else b)
+             [ (tmid, (cancelled, t)) | (t, _, _, e) <- events, Just (tmid, cancelled) <- [endOf e] ]
+    endOf (EventTimerCancelled tmid) = Just (tmid, True)
+    endOf (EventTimerFired tmid)     = Just (tmid, False)
+    endOf _                          = Nothing
 
 prop_accounting :: FloorRun -> Property
 prop_accounting fr =

@@ -205,7 +205,8 @@ rankFor Other     matched hasAny
 -- buckets: its pools' buckets, looked up again whenever the list was
 -- rebuilt, or when it belongs to no pool its own bucket, which opens empty
 -- once the connection has outlived the stranger lock, so a reconnection
--- starts the wait over. Bytes on the uncharged protocols are never charged.
+-- starts the wait over. The sink runs in the transaction that grants a
+-- batch. Bytes on the uncharged protocols are never charged.
 mkEgressRule :: (MonadSTM m, Ord addr)
              => PoolAllowances m addr
              -> [MiniProtocolNum]

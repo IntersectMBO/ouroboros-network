@@ -159,7 +159,7 @@ tests =
                    prop_egress_counters_loop
     , testProperty "bytes the bearer took are counted and charged, cancelled or not"
                    prop_mux_written_is_accounted
-    , testProperty "a write blocked part way takes the cancellation, nothing charged"
+    , testProperty "a write blocked part way takes the cancellation, nothing counted"
                    prop_mux_partial_write_cancelled
     ]
   , testGroup "Counters"
@@ -3751,9 +3751,10 @@ replayStats sch@BucketSched { schSlice, schBearers } =
                              [ (tier, fromIntegral (fst k), granted)
                              | (k, tier, granted) <- servedTiers queued gs ])
 
-    -- the tier each grant records: a queued one its rank, asked as it joined;
-    -- an unqueued one the tier last asked, unless that is 'Bucket.tierRefresh'
-    -- old, when its own rank is asked
+    -- the tier each grant records: a queued one its rank, asked as it joined
+    -- and again at every refresh it waited through, the last of which stamps
+    -- the cache; an unqueued one the tier last asked, unless that is
+    -- 'Bucket.tierRefresh' old, when its own rank is asked
     servedTiers queued gs =
       concatMap (go Nothing . List.sortOn (snd . fst))
                 (M.elems (M.fromListWith (++) [ (fst k, [g]) | g@(k, _) <- gs ]))
@@ -3761,11 +3762,20 @@ replayStats sch@BucketSched { schSlice, schBearers } =
         go _ [] = []
         go cache ((k, (asked, granted)) : rest)
           | k `Set.member` queued
-          = (k, rankOf k, granted) : go (Just (rankOf k, asked)) rest
+          = (k, rankOf k, granted) : go (Just (rankOf k, lastRefresh asked granted)) rest
           | Just (tier, at) <- cache, granted `diffTime` at < Bucket.tierRefresh
           = (k, tier, granted) : go cache rest
           | otherwise
           = (k, rankOf k, granted) : go (Just (rankOf k, granted)) rest
+
+    -- the last refresh a wait from @asked@ to @granted@ went through: the
+    -- refreshes fall at @asked@ plus whole refresh intervals, and one that
+    -- falls at the grant's instant is overtaken by the grant
+    lastRefresh asked granted =
+      let waited = realToFrac (granted `diffTime` asked) :: Double
+          period = realToFrac Bucket.tierRefresh :: Double
+          n      = max 0 (ceiling (waited / period) - 1) :: Int
+      in (fromIntegral n * Bucket.tierRefresh) `addTime` asked
 
 replaySched :: BucketSched -> [((Int, Int), Time)]
 replaySched = map (\(k, (_, granted)) -> (k, granted)) . replayRun
@@ -4518,30 +4528,34 @@ prop_mux_written_is_accounted wc =
 
 -- | The bearer takes part of the batch and then waits for room that never
 -- comes, as a socket with a full send buffer does. Cancelled then, the
--- muxer is gone in the same instant, and the half-sent batch is neither
--- counted nor charged.
+-- muxer is gone in the same instant, and the half-sent batch is not
+-- counted; the scheduled lane's allowance was charged the whole batch when
+-- it was granted, the direct lane's credit nothing.
 prop_mux_partial_write_cancelled :: WriteCase -> Property
-prop_mux_partial_write_cancelled wc =
+prop_mux_partial_write_cancelled wc@WriteCase { wcLane } =
   case traceResult False (runSimTrace sim) of
     Left e -> counterexample (show e) False
-    Right r@(waited, written, counted, charged) ->
+    Right r@(waited, written, batch, counted, charged) ->
       counterexample (show r) $
            counterexample "the cancellation waited" (waited === 0)
-      .&&. counterexample "part of the batch was written" (written > 0)
-      .&&. counted === 0 .&&. charged === 0
+      .&&. counterexample "part of the batch was written" (written > 0 && written < batch)
+      .&&. counterexample "counted" (counted === 0)
+      .&&. counterexample "charged" (charged === (if wcLane == WriteScheduled then batch else 0))
   where
-    sim :: forall s. IOSim s (DiffTime, Int, Int, Int)
+    sim :: forall s. IOSim s (DiffTime, Int, Int, Int, Int)
     sim = do
       written <- newTVarIO 0
+      batch   <- newTVarIO 0
       room    <- newTVarIO False
       (mx, counted, charged) <- withWriteMuxer wc $ \sdus -> do
-        atomically $ modifyTVar written (+ max 1 (sum (map writtenBytes sdus) `div` 2))
+        let whole = sum (map writtenBytes sdus)
+        atomically $ writeTVar batch whole >> modifyTVar written (+ max 1 (whole `div` 2))
         atomically $ readTVar room >>= check
       atomically $ readTVar written >>= check . (> 0)
       t0 <- getMonotonicTime
       cancel mx
       t1 <- getMonotonicTime
-      (,,,) (t1 `diffTime` t0) <$> readTVarIO written <*> counted <*> charged
+      (,,,,) (t1 `diffTime` t0) <$> readTVarIO written <*> readTVarIO batch <*> counted <*> charged
 
 --
 -- Counters
