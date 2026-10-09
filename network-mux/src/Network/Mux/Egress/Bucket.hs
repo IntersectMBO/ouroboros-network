@@ -288,7 +288,8 @@ servedWindow :: DiffTime
 servedWindow = 59
 
 -- | How long a bearer's tier, once asked, labels its unqueued grants in
--- 'bsServed': as often as the counters read them.
+-- 'bsServed', and how often a queued bearer asks its rule again: as often as
+-- the counters read them.
 tierRefresh :: DiffTime
 tierRefresh = 7
 
@@ -600,11 +601,12 @@ awaitGrantWith borrow_m waitedWritable
                  modifyTVar (flWaiters fl) (Map.insert (cls, ticket) (need, bhWake))
                  return (Just (fl, (cls, ticket)))
                _ -> return Nothing
-             return (Right (key, fkey_m))
+             entry <- newTVar (key, fkey_m)
+             return (Right entry)
 
     case r of
-         Left source           -> return source
-         Right (key, fkey_m)   -> unmask (loop now key fkey_m) `onException` cancel key fkey_m
+         Left source -> return source
+         Right entry -> unmask (waitQueued now entry) `onException` cancel entry
   where
     tierOf :: Rank -> Word8
     tierOf (Rank t) = t
@@ -706,8 +708,83 @@ awaitGrantWith borrow_m waitedWritable
                        Right ()         -> return (Right FromBorrow)
                        Left readyBudget -> return (Left (min ready readyBudget))
 
-    loop :: Time -> WaitKey -> Maybe (Floor m, (FloorClass, Ticket)) -> m GrantSource
-    loop asked key fkey_m = do
+    -- wait for a grant, asking the rule again every 'tierRefresh': a bearer
+    -- whose tier changed while it waited moves to the new tier's place,
+    -- keeping its ticket, and joins or leaves the floor with it. Credit that
+    -- refills with time, a lock that expires and a standing that changes
+    -- all reach a waiting request this way, within a refresh.
+    waitQueued :: Time -> StrictTVar m (WaitKey, Maybe (Floor m, (FloorClass, Ticket))) -> m GrantSource
+    waitQueued asked entry = do
+      period <- registerDelay tierRefresh >>= newTVarIO
+      loop asked period entry
+
+    -- the refresh fell due: ask the rule again, start the next period, and
+    -- say whether the bearer moved
+    refresh :: StrictTVar m (LazySTM.TVar m Bool)
+            -> StrictTVar m (WaitKey, Maybe (Floor m, (FloorClass, Ticket))) -> m Bool
+    refresh period entry = do
+      now <- getMonotonicTime
+      moved <- atomically (askAgain now entry)
+      registerDelay tierRefresh >>= atomically . writeTVar period
+      return moved
+
+    -- the rule asked again at @now@: if the tier changed, move to it
+    askAgain :: Time -> StrictTVar m (WaitKey, Maybe (Floor m, (FloorClass, Ticket))) -> STM m Bool
+    askAgain now entry = do
+      (key@(_, ticket), fkey_m) <- readTVar entry
+      tier <- readTVar bhRank >>= ($ now)
+      writeTVar bhTier (TierAsked (tierOf tier) now)
+      if tierOf tier == tierOfKey key
+         then return False
+         else do
+           waiters <- readTVar bWaiters
+           let !rank    = queueRank bRotation bhId tier now
+               key'     = (rank, ticket)
+               waiters' = Map.insert key' bhWake (Map.delete key waiters)
+           writeTVar bWaiters waiters'
+           when (fmap fst (Map.lookupMin waiters') /= fmap fst (Map.lookupMin waiters))
+                (wakeHead waiters')
+           fl_m <- readTVar bFloor
+           fkey' <- case (fl_m, floorClass (tierOf tier)) of
+             (Just fl, Just cls) -> do
+               fw <- readTVar (flWaiters fl)
+               let fw' = Map.insert (cls, ticket) (need, bhWake)
+                           (maybe fw (\(_, fkey) -> Map.delete fkey fw) fkey_m)
+               writeTVar (flWaiters fl) fw'
+               wakeFloorPick fl fw'
+               return (Just (fl, (cls, ticket)))
+             _ -> do
+               floorLeave fkey_m
+               return Nothing
+           writeTVar entry (key', fkey')
+           return True
+
+    -- block until @ready@ holds; at each refresh in between the rule is
+    -- asked again, and the wait goes on unless the bearer moved. The timer
+    -- or wake-up waited for is the caller's and survives a refresh, so a
+    -- bearer that stays put wakes exactly when it would have.
+    awaitOr :: StrictTVar m (LazySTM.TVar m Bool)
+            -> StrictTVar m (WaitKey, Maybe (Floor m, (FloorClass, Ticket))) -> STM m () -> m ()
+    awaitOr period entry ready = do
+      refreshVar <- readTVarIO period
+      isDue <- atomically $ (False <$ ready) `orElse` (True <$ (LazySTM.readTVar refreshVar >>= check))
+      when isDue $ do
+        moved <- refresh period entry
+        if moved then return () else awaitOr period entry ready
+
+    -- the one wake-up a queued bearer blocks on: its own variable, set by the
+    -- bearer ahead of it when that one is granted or gives up, or by the
+    -- floor when it is the pick
+    woken :: STM m ()
+    woken = do
+      w <- readTVar bhWake
+      check w
+      writeTVar bhWake False
+
+    loop :: Time -> StrictTVar m (LazySTM.TVar m Bool)
+         -> StrictTVar m (WaitKey, Maybe (Floor m, (FloorClass, Ticket))) -> m GrantSource
+    loop asked period entry = do
+      (key, fkey_m) <- readTVarIO entry
       atHead <- atomically $
         (== Just key) . fmap fst . Map.lookupMin <$> readTVar bWaiters
 
@@ -715,10 +792,9 @@ awaitGrantWith borrow_m waitedWritable
          then case fkey_m of
               Nothing -> do
                 -- block on our own wake variable and nothing else, so a change
-                -- to the queue wakes the one bearer it concerns; the bearer
-                -- ahead of us sets it when it is granted or gives up
-                awaitWake
-                loop asked key fkey_m
+                -- to the queue wakes the one bearer it concerns
+                awaitOr period entry woken
+                loop asked period entry
               Just (fl, fkey) -> do
                 -- not the head: the floor may serve us if we are its pick
                 now <- getMonotonicTime
@@ -740,20 +816,20 @@ awaitGrantWith borrow_m waitedWritable
                             _ -> return FloorNotPick
                 case r of
                      FloorGranted -> return FromFloor
-                     BecameHead   -> loop asked key fkey_m
+                     BecameHead   -> loop asked period entry
                      FloorNotPick -> do
-                       awaitWake
-                       loop asked key fkey_m
+                       awaitOr period entry woken
+                       loop asked period entry
                      FloorShortUntil ready -> do
                        -- sleep until the floor has the bytes; wake early if
                        -- the queues move us
                        delayVar <- registerDelay (wakeAt now ready `diffTime` now)
-                       atomically $
+                       awaitOr period entry $
                            (LazySTM.readTVar delayVar >>= check)
                          `orElse`
                            (readTVar bhWake >>= check)
                        atomically $ writeTVar bhWake False
-                       loop asked key fkey_m
+                       loop asked period entry
          else do
            now <- getMonotonicTime
            r <- atomically $ do
@@ -793,31 +869,27 @@ awaitGrantWith borrow_m waitedWritable
                 Granted          -> return FromBucket
                 Borrowed         -> return FromBorrow
                 FromTheFloor     -> return FromFloor
-                Displaced        -> loop asked key fkey_m
+                Displaced        -> loop asked period entry
                 ShortUntil ready -> do
                   -- sleep until the bytes are there; wake early if a lower
                   -- key takes the head, or the floor makes us its pick
                   delayVar <- registerDelay (wakeAt now ready `diffTime` now)
-                  atomically $
+                  awaitOr period entry $
                       (LazySTM.readTVar delayVar >>= check)
                     `orElse`
                       (readTVar bWaiters >>= check . (/= Just key) . fmap fst . Map.lookupMin)
                     `orElse`
                       (readTVar bhWake >>= check)
                   atomically $ writeTVar bhWake False
-                  loop asked key fkey_m
+                  loop asked period entry
 
-    awaitWake :: m ()
-    awaitWake = atomically $ do
-      w <- readTVar bhWake
-      check w
-      writeTVar bhWake False
-
-    -- on cancellation leave the queues; if we were the head, pass the baton
-    cancel :: WaitKey -> Maybe (Floor m, (FloorClass, Ticket)) -> m ()
-    cancel key fkey_m = do
+    -- on cancellation leave the queues, under whatever keys we hold now; if
+    -- we were the head, pass the baton
+    cancel :: StrictTVar m (WaitKey, Maybe (Floor m, (FloorClass, Ticket))) -> m ()
+    cancel entry = do
      now <- getMonotonicTime
      atomically $ do
+      (key, fkey_m) <- readTVar entry
       waiters <- readTVar bWaiters
 
       let wasHead  = fmap fst (Map.lookupMin waiters) == Just key

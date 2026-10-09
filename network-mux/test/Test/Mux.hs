@@ -3671,9 +3671,10 @@ replayStats sch@BucketSched { schSlice, schBearers } =
                              [ (tier, fromIntegral (fst k), granted)
                              | (k, tier, granted) <- servedTiers queued gs ])
 
-    -- the tier each grant records: a queued one its rank, asked as it joined;
-    -- an unqueued one the tier last asked, unless that is 'Bucket.tierRefresh'
-    -- old, when its own rank is asked
+    -- the tier each grant records: a queued one its rank, asked as it joined
+    -- and again at every refresh it waited through, the last of which stamps
+    -- the cache; an unqueued one the tier last asked, unless that is
+    -- 'Bucket.tierRefresh' old, when its own rank is asked
     servedTiers queued gs =
       concatMap (go Nothing . List.sortOn (snd . fst))
                 (M.elems (M.fromListWith (++) [ (fst k, [g]) | g@(k, _) <- gs ]))
@@ -3681,11 +3682,20 @@ replayStats sch@BucketSched { schSlice, schBearers } =
         go _ [] = []
         go cache ((k, (asked, granted)) : rest)
           | k `Set.member` queued
-          = (k, rankOf k, granted) : go (Just (rankOf k, asked)) rest
+          = (k, rankOf k, granted) : go (Just (rankOf k, lastRefresh asked granted)) rest
           | Just (tier, at) <- cache, granted `diffTime` at < Bucket.tierRefresh
           = (k, tier, granted) : go cache rest
           | otherwise
           = (k, rankOf k, granted) : go (Just (rankOf k, granted)) rest
+
+    -- the last refresh a wait from @asked@ to @granted@ went through: the
+    -- refreshes fall at @asked@ plus whole refresh intervals, and one that
+    -- falls at the grant's instant is overtaken by the grant
+    lastRefresh asked granted =
+      let waited = realToFrac (granted `diffTime` asked) :: Double
+          period = realToFrac Bucket.tierRefresh :: Double
+          n      = max 0 (ceiling (waited / period) - 1) :: Int
+      in (fromIntegral n * Bucket.tierRefresh) `addTime` asked
 
 replaySched :: BucketSched -> [((Int, Int), Time)]
 replaySched = map (\(k, (_, granted)) -> (k, granted)) . replayRun

@@ -4,13 +4,17 @@
 module Test.Ouroboros.Network.Diffusion.EgressRule (tests) where
 
 import Control.Concurrent.Class.MonadSTM.Strict
-import Control.Monad (forM, forM_)
-import Control.Monad.Class.MonadTime.SI (Time (..))
+import Control.Monad (forM, forM_, forever, when)
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadTime.SI (Time (..), diffTime, getMonotonicTime)
+import Control.Monad.Class.MonadTimer.SI (threadDelay, timeout)
 import Control.Monad.IOSim (runSimOrThrow)
 import Data.IntMap.Strict qualified as IntMap
 import Data.Map.Strict qualified as Map
+import Data.Maybe (isJust)
 import Data.Word (Word16)
 import Network.Mux (MiniProtocolNum (..), Rank (..))
+import Network.Mux.Egress.Bucket qualified as Bucket
 import Network.Mux.Egress.Floor (FloorClass (..), floorClass)
 import Test.QuickCheck
 import Test.Tasty
@@ -23,6 +27,7 @@ tests =
   testGroup "Ouroboros.Network.Diffusion.EgressRule"
     [ testProperty "a connection's rule and sink follow the decision table" prop_rule
     , testProperty "the floor's classes and the turns threshold follow the rule's tiers" prop_floorClass_follows_rank
+    , testProperty "a relay queued dry is served once its credit refills" prop_refill_reaches_queued
     ]
 
 -- | What happens to a connection, at a time in seconds: its rank is asked,
@@ -147,6 +152,50 @@ prop_rule c@Case { cStanding, cPools, cLock, cOps } =
     askedAfter _       = False
     isRebuild Rebuild {} = True
     isRebuild _          = False
+
+-- | A pool relay queues for a batch while its allowance is spent, behind two
+-- local roots that keep the budget busy, so at rest it never reaches the
+-- budget. Its credit refills with fresh bytes alone, no write to any
+-- variable; the same request, never resubmitted, must be served once the
+-- rule answers the pool's tier, within a refresh and the floor's time for
+-- the batch. (The review's F2, through the real rule and buckets.)
+prop_refill_reaches_queued :: Property
+prop_refill_reaches_queued = once $ runSimOrThrow $ do
+    budget <- Bucket.newBucket 1000 100 (Just (Bucket.Rotation 42 599 4))
+    Bucket.attachFloor budget 0.1
+    pa <- newPoolAllowances (Allowance 100) (freshAt 100 (Time 0)) (Fresh 100)
+    atomically $ rebuild pa (Time 0) 1 (Map.singleton ("relay" :: String) [0])
+    (rule, sink) <- mkEgressRule pa [] "relay" (const (return Other)) (Time 0)
+    roots <- forM [1 .. 2 :: Int] $ \_ -> do
+      h <- Bucket.registerBearer budget
+      atomically $ Bucket.setRank h (Rank 0)
+      async $ forever $ Bucket.awaitGrant h 100
+    threadDelay 0.01
+    h <- Bucket.registerBearer budget
+    now <- getMonotonicTime
+    entry <- atomically $ do
+      sink now (MiniProtocolNum 2) 10        -- spent: the small initial credit is gone
+      Bucket.setRankSource h rule
+      rule now
+    victim <- async $ Bucket.awaitGrant h 10 >> getMonotonicTime
+    -- when the rule first answers the pool's tier again, sampled
+    credited <- newTVarIO Nothing
+    sampler <- async $ forever $ do
+      t <- getMonotonicTime
+      r <- atomically (rule t)
+      when (r /= Rank 4) $ atomically $ modifyTVar credited (maybe (Just t) Just)
+      threadDelay 0.1
+    served <- timeout 60 (wait victim)
+    firstCredited <- readTVarIO credited
+    mapM_ cancel (sampler : roots)
+    let bound = Bucket.tierRefresh + 1.1 + 0.1   -- a refresh, the floor's 100 B at 100 B/s, a sample
+    return $ counterexample (show (entry, firstCredited, served))
+           $ entry === Rank 4
+        .&&. property (isJust firstCredited)
+        .&&. maybe (property False)
+                   (\servedAt -> counterexample "served late"
+                             (property (maybe False (\c -> servedAt `diffTime` c <= bound) firstCredited)))
+                   served
 
 -- | What gives the floor's tier numbers their meaning is 'rankFor'. Over
 -- every standing and credit state: a local root has no class, a partner is

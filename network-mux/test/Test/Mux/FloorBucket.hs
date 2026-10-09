@@ -18,7 +18,7 @@ module Test.Mux.FloorBucket (tests) where
 import Control.Applicative ((<|>))
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (evaluate)
-import Control.Monad (forM)
+import Control.Monad (forM, forever, when)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow (MonadMask, mask_)
 import Control.Monad.Class.MonadTime.SI
@@ -59,6 +59,7 @@ tests =
     , testProperty "the rest tier takes turns"            prop_rest_turns
     , testProperty "a rest bearer waits at most a round"  prop_rest_wait
     , testProperty "a credited tier is served head first" prop_credited_head_first
+    , testProperty "a queued bearer follows its rule"      prop_rule_followed_while_queued
     ]
 
 --
@@ -406,6 +407,97 @@ prop_idle_floor =
   forAll (genRun (pure (\t -> t == 0 || t >= 4))) $ \fr ->
     let strip (gs, _) = [ (gBearer g, gAt g, gBytes g) | g <- gs ]
     in strip (runFloor True fr) === strip (runFloor False fr)
+
+-- | A bearer's rule changes while it waits. Two tier-0 saturators keep the
+-- budget busy, so a bearer at rest never reaches it. Forward: a bearer queues
+-- at rest, its rule turns credited at @rcAt@, and the floor must serve it
+-- within a refresh of that. Backward: a credited bearer takes one batch from
+-- the floor and queues for the next while the floor refills, slowly enough
+-- that the refresh comes first; its rule turns rest at @rcAt@, and within a
+-- refresh it has left the floor's queue and waits at rest; cancelled then,
+-- it leaves the budget's queue under the keys it holds now, not the ones it
+-- queued with.
+data RuleChange = RuleChange {
+    rcRate    :: !Double,
+    rcCap     :: !Int,
+    rcPercent :: !Int,
+    rcTier    :: !Word8,     -- ^ the credited tier
+    rcAt      :: !DiffTime,  -- ^ when the rule changes, after the bearer queued
+    rcToRest  :: !Bool       -- ^ credited to rest, else rest to credited
+  }
+  deriving Show
+
+instance Arbitrary RuleChange where
+  arbitrary = do
+    rcCap     <- elements [16384, 65536, 131072]
+    rcPercent <- choose (5, 30)
+    rcTier    <- choose (1, 3)
+    rcToRest  <- arbitrary
+    -- backward, the floor must not refill the bearer's next batch before the
+    -- refresh after the change sees it: a refill time past a refresh and
+    -- the change early in it
+    (rcRate, rcAt) <-
+      if rcToRest
+         then do
+           refill <- choose (realToFrac Bucket.tierRefresh + 1, 40 :: Double)
+           at'    <- choose (0.1, 2 :: Double)
+           return (fromIntegral rcCap / (refill * fromIntegral rcPercent / 100), realToFrac at')
+         else (,) <$> choose (1e5, 1e6) <*> (realToFrac <$> choose (0.1, 3 :: Double))
+    return RuleChange { rcRate, rcCap, rcPercent, rcTier, rcAt, rcToRest }
+  shrink rc@RuleChange { rcTier, rcPercent } =
+       [ rc { rcTier = 1 }     | rcTier /= 1 ]
+    ++ [ rc { rcPercent = 10 } | rcPercent /= 10 ]
+
+prop_rule_followed_while_queued :: RuleChange -> Property
+prop_rule_followed_while_queued rc@RuleChange { rcRate, rcCap, rcPercent, rcTier, rcAt, rcToRest } =
+    counterexample (show rc) $
+    classify rcToRest "credited to rest" $
+      runSimOrThrow $ do
+        budget <- Bucket.newBucket rcRate rcCap Nothing
+        Bucket.attachFloor budget (fromIntegral rcPercent / 100)
+        -- the saturators, a whole capacity at a time, forever
+        sats <- forM [0, 0.001] $ \d -> do
+          h <- Bucket.registerBearer budget
+          atomically $ Bucket.setRank h (Bucket.Rank 0)
+          async $ threadDelay d >> forever (Bucket.awaitGrant h rcCap)
+        -- the bearer whose rule will change
+        ruleVar <- newTVarIO (Bucket.Rank (if rcToRest then rcTier else 4))
+        h <- Bucket.registerBearer budget
+        atomically $ Bucket.setRankSource h (\_ -> readTVar ruleVar)
+        threadDelay 0.01
+        t0 <- getMonotonicTime
+        victim <- async $ do
+          when rcToRest $ Bucket.awaitGrant h rcCap      -- the floor's full bucket, at once
+          Bucket.awaitGrant h (if rcToRest then rcCap else need)
+          getMonotonicTime
+        threadDelay rcAt
+        atomically $ writeTVar ruleVar (Bucket.Rank (if rcToRest then 4 else rcTier))
+        r <- if rcToRest
+                then do
+                  -- within a refresh: out of the floor's queue, waiting at rest
+                  threadDelay (Bucket.tierRefresh + 0.1)
+                  still <- poll victim
+                  fp <- atomically $ Bucket.floorPending budget
+                  (_, _, _, byTier) <- getMonotonicTime >>= atomically . Bucket.bucketSnapshot budget
+                  -- cancelled, it leaves the budget's queue under its current keys
+                  cancel victim
+                  fp' <- atomically $ Bucket.floorPending budget
+                  (_, _, queued', _) <- getMonotonicTime >>= atomically . Bucket.bucketSnapshot budget
+                  return $ counterexample (show (still, fp, Map.toList byTier, fp', queued'))
+                         $ isNothing still .&&. fp === 0 .&&. Map.lookup 4 byTier === Just 1
+                           .&&. fp' === 0 .&&. queued' === 2
+                else do
+                  -- within a refresh and the floor's own time for the batch
+                  let bound = rcAt + Bucket.tierRefresh
+                            + realToFrac (fromIntegral need / (rcRate * fromIntegral rcPercent / 100) :: Double)
+                            + 0.1
+                  served <- timeout bound (wait victim)
+                  return $ counterexample ("served " ++ show (fmap (`diffTime` t0) served) ++ " bound " ++ show bound)
+                         $ maybe False (\at -> at `diffTime` t0 <= bound) served
+        mapM_ cancel sats
+        return r
+  where
+    need = max 256 (rcCap `div` 4)
 
 -- | So the no-thunks properties here and in "Test.Mux" can inspect a
 -- bucket's counters, and in IO its whole state.
