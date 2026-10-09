@@ -15,11 +15,17 @@ import Control.Exception (fromException)
 import Data.Aeson (ToJSON, ToJSONKey, Value (String), toJSON, toJSONList, (.=))
 import Data.Bifunctor (first)
 import Data.Foldable (toList)
-import Data.Text (pack)
+import Data.List (sort, sortOn)
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Maybe (fromMaybe, isNothing)
+import Data.Set (Set)
+import Data.Set qualified as Set
+import Data.Text (Text, pack)
 
 import Cardano.Logging
 import Ouroboros.Network.Diffusion.Types
-import Ouroboros.Network.OrphanInstances (JSONField (..))
+import Ouroboros.Network.OrphanInstances (JSONField (..), demotionScoresToJSON)
 import Ouroboros.Network.PeerSelection.Governor.Types
            (DebugPeerSelectionState (..), DemotionTimeoutException,
            SupportsPeerSelectionState (..), TracePeerSelection (..))
@@ -256,11 +262,12 @@ instance ( Show extraDebugState
              , "actualEstablished" .= aEst
              , "peer" .= toJSON p
              ]
-  forMachine _dtal (TraceDemoteHotPeers tActive aActive sp) =
+  forMachine _dtal (TraceDemoteHotPeers tActive aActive sp scores) =
     mconcat [ "kind" .= String "DemoteHotPeers"
              , "targetActive" .= tActive
              , "actualActive" .= aActive
              , "selectedPeers" .= toJSONList (toList sp)
+             , "scores" .= demotionScoresToJSON scores
              ]
   forMachine _dtal (TraceDemoteLocalHotPeers taa sp) =
     mconcat [ "kind" .= String "DemoteLocalHotPeers"
@@ -280,11 +287,12 @@ instance ( Show extraDebugState
              , "actualActive" .= aActive
              , "peer" .= toJSON p
              ]
-  forMachine _dtal (TraceDemoteHotBigLedgerPeers tActive aActive sp) =
+  forMachine _dtal (TraceDemoteHotBigLedgerPeers tActive aActive sp scores) =
     mconcat [ "kind" .= String "DemoteHotBigLedgerPeers"
              , "targetActive" .= tActive
              , "actualActive" .= aActive
              , "selectedPeers" .= toJSONList (toList sp)
+             , "scores" .= demotionScoresToJSON scores
              ]
   forMachine _dtal (TraceDemoteHotBigLedgerPeerFailed tActive aActive p err) =
     mconcat [ "kind" .= String "DemoteHotBigLedgerPeerFailed"
@@ -386,6 +394,10 @@ instance ( Show extraDebugState
     [ DoubleM ("peerSelection.churn" <> pack (show action) <> ".duration")
               (realToFrac duration)
     ]
+  asMetrics (TraceDemoteHotPeers _ _ demoted scores) =
+    hotDemotionMetrics "peerSelection.churn.hot." demoted scores
+  asMetrics (TraceDemoteHotBigLedgerPeers _ _ demoted scores) =
+    hotDemotionMetrics "peerSelection.churn.bigLedger." demoted scores
   asMetrics _ = []
 
 
@@ -623,7 +635,9 @@ instance MetaTrace (ToExtraTrace extraPeers)
     documentFor (Namespace [] ["DemoteWarmDone"]) = Just
       "target established, actual established, peer"
     documentFor (Namespace [] ["DemoteHotPeers"]) = Just
-      "target active, actual active, selected peers"
+      "target active, actual active, selected peers, scores of the peers available to demote"
+    documentFor (Namespace [] ["DemoteHotBigLedgerPeers"]) = Just
+      "target active big ledger peers, actual active big ledger peers, selected peers, scores of the peers available to demote"
     documentFor (Namespace [] ["DemoteLocalHotPeers"]) = Just
       "local per-group (target active, actual active), selected peers"
     documentFor (Namespace [] ["DemoteHotFailed"]) = Just
@@ -654,6 +668,10 @@ instance MetaTrace (ToExtraTrace extraPeers)
      , ("peerSelection.churn.DecreasedKnownPeers.duration", "")
      , ("peerSelection.churn.DecreasedKnownBigLedgerPeers.duration", "")
      ]
+    metricsDocFor (Namespace [] ["DemoteHotPeers"]) =
+      hotDemotionMetricsDoc "peerSelection.churn.hot." "hot peers"
+    metricsDocFor (Namespace [] ["DemoteHotBigLedgerPeers"]) =
+      hotDemotionMetricsDoc "peerSelection.churn.bigLedger." "hot big ledger peers"
     metricsDocFor ns = metricsDocFor (nsCast ns :: Namespace (ToExtraTrace extraPeers))
 
     allNamespaces = [
@@ -744,3 +762,143 @@ instance MetaTrace (ViewExtraPeers (NoExtraPeers peeraddr)) where
   severityFor _ _ = Nothing
   documentFor _ = Nothing
   allNamespaces = [Namespace [] ["Counters"]]
+
+
+--------------------------------------------------------------------------------
+-- Hot demotion metrics
+--------------------------------------------------------------------------------
+
+-- | Gauges describing a hot demotion decision, derived from the scores of the
+-- peers which were available to demote and the set which was picked:
+--
+-- * @demotedTopScore@: the highest score among the demoted peers, i.e. the
+--   score a peer had to beat in order to stay hot;
+-- * @retainedBottomScore@, @retainedMedianScore@, @retainedTopScore@: the
+--   lowest, (lower) median and highest score among the peers which stayed
+--   hot; the top one is the incumbent an attacker would have to out-score;
+-- * @zeroScorers@: how many of the available peers had no score at all;
+--   the policy demotes these before any peer which scored 0;
+-- * @scoreSum@: the sum of the scores of all available peers;
+-- * @eligiblePeers@: how many peers were available to demote, so that the
+--   counts above can be read as fractions;
+-- * @retainedGiniPermille@: the Gini coefficient of the retained peers'
+--   scores, in per-mille, a scale-free measure of how concentrated the
+--   scores are among the peers which stay hot;
+-- * @topDSharePermille@: the share of the total score held by as many of
+--   the strongest peers as were demoted, in per-mille.
+--
+-- The order statistics are undefined when the set they describe is empty,
+-- the top share when no peer was demoted or no peer had a score, and the
+-- Gini coefficient when no peer stayed hot.  These are emitted as -1,
+-- which no score or per-mille value can take, so that every decision
+-- refreshes every gauge instead of leaving a previous decision's value in
+-- the metrics store.  The Gini coefficient of an all-zero set is 0, all
+-- scores being equal.
+--
+hotDemotionMetrics :: Ord peeraddr
+                   => Text
+                   -- ^ metric name prefix
+                   -> Set peeraddr
+                   -- ^ demoted peers
+                   -> Map peeraddr (Maybe Int)
+                   -- ^ scores of all the peers available to demote, 'Nothing'
+                   -- for a peer without one
+                   -> [Metric]
+hotDemotionMetrics prefix demoted scores =
+    [ IntM (prefix <> "demotedTopScore")
+           (orUndefined (maximumMay demotedScores))
+    , IntM (prefix <> "retainedBottomScore")
+           (orUndefined (minimumMay retainedScores))
+    , IntM (prefix <> "retainedMedianScore")
+           (orUndefined (medianMay retainedScores))
+    , IntM (prefix <> "retainedTopScore")
+           (orUndefined (maximumMay retainedScores))
+    , IntM (prefix <> "zeroScorers")
+           (fromIntegral (Map.size (Map.filter isNothing scores)))
+    , IntM (prefix <> "scoreSum")      (fromIntegral (sum scored))
+    , IntM (prefix <> "eligiblePeers") (fromIntegral (Map.size scores))
+    , IntM (prefix <> "retainedGiniPermille")
+           (giniPermille (Map.elems retainedScores))
+    , IntM (prefix <> "topDSharePermille")
+           (topSharePermille (Set.size demoted) (Map.elems scored))
+    ]
+  where
+    -- a peer without a score counts as 0, which is how the policy ranks it
+    scored         = fromMaybe 0 <$> scores
+    demotedScores  = Map.restrictKeys scored demoted
+    retainedScores = Map.withoutKeys scored demoted
+
+    -- gauge value for an undefined statistic
+    undefinedGauge :: Integer
+    undefinedGauge = -1
+
+    orUndefined :: Maybe Int -> Integer
+    orUndefined = maybe undefinedGauge fromIntegral
+
+    -- Gini coefficient, sorted-order formula; 0 for an all-zero set
+    giniPermille :: [Int] -> Integer
+    giniPermille xs
+      | null xs    = undefinedGauge
+      | total == 0 = 0
+      | otherwise  = round (1000 * num / (fromIntegral n * total))
+      where
+        sorted = sort xs
+        n      = length xs
+        total  = fromIntegral (sum xs) :: Double
+        num    = sum [ fromIntegral ((2 * i - n - 1) * x) | (i, x) <- zip [1 ..] sorted ] :: Double
+    -- share of the total score held by the d highest scores
+    topSharePermille :: Int -> [Int] -> Integer
+    topSharePermille d xs
+      | d <= 0 || null xs || total == 0 = undefinedGauge
+      | otherwise = round (1000 * top / total)
+      where
+        total = fromIntegral (sum xs) :: Double
+        top   = fromIntegral (sum (take d (sortOn negate xs))) :: Double
+    maximumMay m
+      | Map.null m = Nothing
+      | otherwise  = Just (maximum m)
+    minimumMay m
+      | Map.null m = Nothing
+      | otherwise  = Just (minimum m)
+    -- the lower median
+    medianMay m
+      | Map.null m = Nothing
+      | otherwise  = Just (sort (Map.elems m) !! ((Map.size m - 1) `div` 2))
+
+-- | Documentation of the gauges produced by 'hotDemotionMetrics'.
+--
+hotDemotionMetricsDoc :: Text
+                      -- ^ metric name prefix
+                      -> Text
+                      -- ^ what the peers are, e.g. @"hot peers"@
+                      -> [(Text, Text)]
+hotDemotionMetricsDoc prefix what =
+    [ ( prefix <> "demotedTopScore"
+      , "highest demotion score among the " <> what <> " demoted to warm; "
+        <> "the score a peer had to beat to stay hot; -1 when no peer was "
+        <> "demoted" )
+    , ( prefix <> "retainedBottomScore"
+      , "lowest demotion score among the " <> what <> " which stayed hot; "
+        <> "-1 when none stayed hot" )
+    , ( prefix <> "retainedMedianScore"
+      , "median demotion score among the " <> what <> " which stayed hot; "
+        <> "-1 when none stayed hot" )
+    , ( prefix <> "retainedTopScore"
+      , "highest demotion score among the " <> what <> " which stayed hot; "
+        <> "the incumbent an attacker would have to out-score; -1 when none "
+        <> "stayed hot" )
+    , ( prefix <> "zeroScorers"
+      , "number of " <> what <> " without any demotion score" )
+    , ( prefix <> "scoreSum"
+      , "sum of the demotion scores of all " <> what )
+    , ( prefix <> "eligiblePeers"
+      , "number of " <> what <> " which were available to demote" )
+    , ( prefix <> "retainedGiniPermille"
+      , "Gini coefficient, in per-mille, of the demotion scores of the "
+        <> what <> " which stayed hot; 0 when they are all equal, -1 when "
+        <> "none stayed hot" )
+    , ( prefix <> "topDSharePermille"
+      , "share, in per-mille, of all demotion scores held by as many of the "
+        <> "strongest " <> what <> " as were demoted; -1 when no peer was "
+        <> "demoted or no peer had a score" )
+    ]

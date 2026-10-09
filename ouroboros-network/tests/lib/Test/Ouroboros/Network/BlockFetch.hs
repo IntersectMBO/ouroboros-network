@@ -47,6 +47,7 @@ import Ouroboros.Network.BlockFetch.Decision.Trace (TraceDecisionEvent)
 import Ouroboros.Network.BlockFetch.DeltaQ
 import Ouroboros.Network.BlockFetch.Examples
 import Ouroboros.Network.Driver (TraceSendRecv)
+import Ouroboros.Network.Hashable (mkUnsafeSalt)
 import Ouroboros.Network.Mock.Chain qualified as Chain
 import Ouroboros.Network.Mock.ChainGenerators (TestChainFork (..))
 import Ouroboros.Network.Mock.ConcreteBlock
@@ -990,8 +991,9 @@ instance Arbitrary PeerGSVT where
 
 -- | Check that comparePeerGSV satisfies Ord axioms
 prop_comparePeerGSV :: Int -> Int -> Int -> PeerGSVT -> PeerGSVT -> Bool -> Bool -> Property
-prop_comparePeerGSV salt pa pb (PeerGSVT a) (PeerGSVT b) aActive bActive =
-    let peerSet = case (aActive, bActive) of
+prop_comparePeerGSV salt' pa pb (PeerGSVT a) (PeerGSVT b) aActive bActive =
+    let salt = mkUnsafeSalt salt'
+        peerSet = case (aActive, bActive) of
                        (False, False) -> Set.empty
                        (True, False)  -> Set.singleton pa
                        (False, True)  -> Set.singleton pb
@@ -1006,4 +1008,4 @@ prop_comparePeerGSVEq :: Int -> Int -> PeerGSVT -> Bool -> Property
 prop_comparePeerGSVEq salt p (PeerGSVT a) aActive =
     let peerSet = if aActive then Set.singleton p
                              else Set.empty in
-    comparePeerGSV peerSet salt (a, p) (a, p) === EQ
+    comparePeerGSV peerSet (mkUnsafeSalt salt) (a, p) (a, p) === EQ

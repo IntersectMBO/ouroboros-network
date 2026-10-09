@@ -57,10 +57,10 @@ import Ouroboros.Network.Point (WithOrigin (..))
 
 import Test.Ouroboros.Network.Data.Script
 import Test.Ouroboros.Network.PeerSelection.RootPeersDNS
+import Test.Ouroboros.Network.Utils (WithThreadAndTime (..))
 import Test.QuickCheck
 import Test.Tasty
 import Test.Tasty.QuickCheck
-import Text.Printf
 
 tests :: TestTree
 tests = testGroup "Ouroboros.Network.LedgerPeers"
@@ -69,9 +69,8 @@ tests = testGroup "Ouroboros.Network.LedgerPeers"
   , testProperty "accumulateBigLedgerStake" prop_accumulateBigLedgerStake
   , testProperty "recomputeRelativeStake" prop_recomputeRelativeStake
   , testProperty "getLedgerPeers invariants" prop_getLedgerPeers
-  , testProperty "LedgerPeerSnapshot CBOR version 2" prop_ledgerPeerSnapshotCBORV2
   , testProperty "LedgerPeerSnapshot CBOR version 3" prop_ledgerPeerSnapshotCBORV3
-  , testProperty "LedgerPeerSnapshot JSON version 2/3" prop_ledgerPeerSnapshotJSON
+  , testProperty "LedgerPeerSnapshot JSON version 3" prop_ledgerPeerSnapshotJSON
   ]
 
 type ExtraTestInterface = ()
@@ -177,12 +176,11 @@ instance Arbitrary StakeMapOverSource where
     (peerMap, bigPeerMap, cachedSlot) <-
       return $ case peerSnapshot of
                  Nothing -> (Map.empty, Map.empty, Nothing)
-                 Just (LedgerPeerSnapshotV2 (At slot, accPools))
+                 Just peerSnapshot'@(LedgerBigPeerSnapshotV23 point _magic _accPools)
                    ->
-                     let accPools' =
-                           fmap (fmap (fmap (fmap (prefixLedgerRelayAccessPoint cardanoSRVPrefix)))) accPools
-                     in (Map.fromList accPools', Map.fromList accPools', Just slot)
-                 _otherwise -> error "impossible!"
+                     let (_ptSlot, accPools') =
+                           getRelayAccessPointsFromBigLedgerPeersSnapshot cardanoSRVPrefix peerSnapshot'
+                     in (Map.fromList accPools', Map.fromList accPools', Just (atSlot point))
     return $ StakeMapOverSource {
       ledgerWithOrigin,
       ledgerPeers,
@@ -198,9 +196,10 @@ instance Arbitrary StakeMapOverSource where
         slotNo <- arbitrary
         return $ if slotNo == 0 then Origin else At slotNo
       genPeerSnapshot = do
-        slotNo <- At . getPositive <$> arbitrary
+        pt <- BlockPoint <$> arbitrary <*> pure (RawBlockHash "0xdeadbeef")
+        let magic = NetworkMagic 1
         pools <- accumulateBigLedgerStake . getLedgerPools <$> arbitrary
-        return $ LedgerPeerSnapshotV2 (slotNo, pools)
+        return $ LedgerBigPeerSnapshotV23 pt magic pools
 
 -- | This test checks whether requesting ledger peers works as intended
 -- when snapshot data is available. For each request, peers must be returned from the right
@@ -334,7 +333,6 @@ prop_pick100 seed (NonNegative n) ledgerPeersKind (MockRoots _ dnsMapScript _ _)
              SimDeadLock trace -> do
                  return $ counterexample (intercalate "\n" $ "Deadlock" : trace) False
              SimReturn peers _trace -> do
-                 -- printf "Log: %s\n" (intercalate "\n" _trace)
                  return $ peers === [ RelayAccessAddress (read "1.1.1.1") 1 ]
 
 -- | Verify that given at least one peer we manage to pick `count` peers.
@@ -526,57 +524,6 @@ prop_getLedgerPeers curSlot
                   (pure (Map.elems (accPoolStake lps)))
                   ()
 
-instance Arbitrary LedgerPeerSnapshotSRVSupport where
-  arbitrary = elements [ LedgerPeerSnapshotSupportsSRV
-                       , LedgerPeerSnapshotDoesntSupportSRV
-                       ]
-
--- | Checks validity of LedgerPeerSnapshot CBOR encoding, and whether
---   round trip cycle is the identity function
---
--- TODO: move to `ouroboros-network-api:test`
-prop_ledgerPeerSnapshotCBORV2 :: LedgerPeerSnapshotSRVSupport
-                              -> SlotNo
-                              -> LedgerPools
-                              -> Property
-prop_ledgerPeerSnapshotCBORV2 srvSupport slotNo
-                              ledgerPools =
-  counterexample (show someSnapshot) $
-         counterexample ("Invalid CBOR encoding" <> show encoded)
-                        (validFlatTerm encoded)
-    .&&. either ((`counterexample` False) . ("CBOR decode failed: " <>))
-                (counterexample . ("CBOR round trip failed: " <>) . show <*> (result ==))
-                decoded
-  where
-    someSnapshot = snapshotV2 slotNo ledgerPools
-    encoded = case someSnapshot of
-      SomeLedgerPeerSnapshot snapshot ->
-        toFlatTerm (encodeLedgerPeerSnapshot srvSupport snapshot)
-    decoded = case someLedgerPeerSnapshotKind someSnapshot of
-      SomeLedgerPeersKind ledgerPeersKind ->
-        fromFlatTerm (SomeLedgerPeerSnapshot <$> decodeLedgerPeerSnapshot ledgerPeersKind) encoded
-
-    result = case someSnapshot of
-      SomeLedgerPeerSnapshot lps@(LedgerPeerSnapshotV2 (slotNo', peers)) ->
-        SomeLedgerPeerSnapshot $
-          case srvSupport of
-            LedgerPeerSnapshotSupportsSRV      -> lps
-            LedgerPeerSnapshotDoesntSupportSRV ->
-              LedgerPeerSnapshotV2
-                ( slotNo'
-                , [ (accStake, (stake, NonEmpty.fromList relays'))
-                  | (accStake, (stake, relays)) <- peers
-                  , let relays' = NonEmpty.filter
-                          (\case
-                             LedgerRelayAccessSRVDomain {} -> False
-                             _ -> True
-                          )
-                          relays
-                  , not (null relays')
-                  ]
-                )
-      _otherwise -> error "impossible"
-
 
 -- TODO: move to `ouroboros-network:api-tests`
 prop_ledgerPeerSnapshotCBORV3 :: SlotNo -> Word32 -> LedgerPools -> Bool -> Property
@@ -591,7 +538,7 @@ prop_ledgerPeerSnapshotCBORV3 slotNo magic ledgerPools big =
     someSnapshot = snapshotV3 slotNo (NetworkMagic magic) ledgerPools big
     encoded = case someSnapshot of
       SomeLedgerPeerSnapshot snapshot ->
-        toFlatTerm (encodeLedgerPeerSnapshot LedgerPeerSnapshotSupportsSRV snapshot)
+        toFlatTerm (encodeLedgerPeerSnapshot snapshot)
     decoded = case someLedgerPeerSnapshotKind someSnapshot of
       SomeLedgerPeersKind ledgerPeersKind ->
         fromFlatTerm (SomeLedgerPeerSnapshot <$> decodeLedgerPeerSnapshot ledgerPeersKind) encoded
@@ -601,11 +548,11 @@ prop_ledgerPeerSnapshotCBORV3 slotNo magic ledgerPools big =
 --
 -- TODO: move to `ouroboros-network-api:test`
 prop_ledgerPeerSnapshotJSON :: SlotNo
-                            -> (Bool, Bool)
+                            -> Bool
                             -> Word32
                             -> LedgerPools
                             -> Property
-prop_ledgerPeerSnapshotJSON slotNo (v3, big) pureMagic ledgerPools =
+prop_ledgerPeerSnapshotJSON slotNo big pureMagic ledgerPools =
   counterexample (show someSnapshot) $
      either ((`counterexample` False) . renderMsg)
             (    counterexample . ("JSON round trip failed: " <>) . show
@@ -618,10 +565,7 @@ prop_ledgerPeerSnapshotJSON slotNo (v3, big) pureMagic ledgerPools =
                                                                 SomeLedgerPeerSnapshot lps -> toJSON lps
                             ]
 
-    someSnapshot =
-      if v3
-        then snapshotV3 slotNo (NetworkMagic pureMagic) ledgerPools big
-        else snapshotV2 slotNo ledgerPools
+    someSnapshot = snapshotV3 slotNo (NetworkMagic pureMagic) ledgerPools big
 
     jsonResult = case someSnapshot of
       SomeLedgerPeerSnapshot lps -> case lps of
@@ -631,28 +575,12 @@ prop_ledgerPeerSnapshotJSON slotNo (v3, big) pureMagic ledgerPools =
         lps'@LedgerAllPeerSnapshotV23{} ->
           SomeLedgerPeerSnapshot <$>
             (fromJSON @(LedgerPeerSnapshot AllLedgerPeers) . toJSON $ lps')
-        lps'@LedgerPeerSnapshotV2{}     ->
-          SomeLedgerPeerSnapshot <$>
-            (fromJSON @(LedgerPeerSnapshot BigLedgerPeers) . toJSON $ lps')
 
     someRoundTrip = case jsonResult of
       Aeson.Success s -> Right s
       Error str       -> Left str
 
     nearlyEqualModuloFullyQualified :: SomeLedgerPeerSnapshot -> SomeLedgerPeerSnapshot -> Property
-    nearlyEqualModuloFullyQualified (SomeLedgerPeerSnapshot
-                                      (LedgerPeerSnapshotV2 (wOrigin, relaysWithAccStake)))
-                                    (SomeLedgerPeerSnapshot
-                                      (LedgerPeerSnapshotV2 (wOrigin', relaysWithAccStake'))) =
-      let strippedRelaysWithAccStake = stripFQN <$> relaysWithAccStake
-          strippedRelaysWithAccStake' = stripFQN <$> relaysWithAccStake'
-      in
-             wOrigin === wOrigin'
-        .&&. counterexample "fully qualified name"
-                            (strippedRelaysWithAccStake === strippedRelaysWithAccStake')
-        .&&. counterexample "approximation error"
-                            (compareApprox relaysWithAccStake relaysWithAccStake')
-
     nearlyEqualModuloFullyQualified (SomeLedgerPeerSnapshot
                                       (LedgerBigPeerSnapshotV23 point magic relaysWithAccStake))
                                     (SomeLedgerPeerSnapshot
@@ -706,20 +634,8 @@ prop_ledgerPeerSnapshotJSON slotNo (v3, big) pureMagic ledgerPools =
 
       in all (uncurry go) (zip left' right')
 
--- | helper functions for ledgerpeersnapshot encoding tests
+-- | helper function for ledgerpeersnapshot encoding tests
 --
-snapshotV2 :: SlotNo
-           -> LedgerPools
-           -> SomeLedgerPeerSnapshot
-snapshotV2 slot
-           (LedgerPools pools) =
-  SomeLedgerPeerSnapshot $ LedgerPeerSnapshotV2 (originOrSlot, poolStakeWithAccumulation)
-  where
-    poolStakeWithAccumulation = Map.assocs . accPoolStake $ pools
-    originOrSlot = if slot == 0
-                   then Origin
-                   else At slot
-
 snapshotV3 :: SlotNo -> NetworkMagic -> LedgerPools -> Bool -> SomeLedgerPeerSnapshot
 snapshotV3 slotNo magic (LedgerPools pools) big = snapshot
   where
@@ -762,15 +678,6 @@ evaluateTrace = go []
         Right (TraceInternalError e)                 -> error ("IOSim: " ++ e)
         Left  (SomeException e)                      -> pure $ SimException (SomeException e) (reverse as)
 
-data WithThreadAndTime a = WithThreadAndTime {
-      wtatOccuredAt    :: !Time
-    , wtatWithinThread :: !String
-    , wtatEvent        :: !a
-    }
-
-instance (Show a) => Show (WithThreadAndTime a) where
-    show WithThreadAndTime {wtatOccuredAt, wtatWithinThread, wtatEvent} =
-        printf "%s: %s: %s" (show wtatOccuredAt) (show wtatWithinThread) (show wtatEvent)
 
 verboseTracer :: forall a m. (MonadSay m, Show a)
                => Tracer m a
@@ -780,8 +687,8 @@ threadAndTimeTracer :: forall a m.
                        ( MonadAsync m
                        , MonadMonotonicTime m
                        )
-                    => Tracer m (WithThreadAndTime a) -> Tracer m a
+                    => Tracer m (WithThreadAndTime m a) -> Tracer m a
 threadAndTimeTracer tr = mkTracer $ \s -> do
     !now <- getMonotonicTime
-    !tid <- show <$> myThreadId
+    !tid <- myThreadId
     traceWith tr $! WithThreadAndTime now tid s

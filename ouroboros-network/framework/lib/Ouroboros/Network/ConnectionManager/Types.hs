@@ -932,7 +932,7 @@ instance Show state
       => Show (Transition' state) where
     show Transition { fromState, toState } =
       concat [ show fromState
-             , " → "
+             , " -> "
              , show toState
              ]
 

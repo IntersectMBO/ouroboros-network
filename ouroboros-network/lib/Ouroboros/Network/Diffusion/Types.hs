@@ -437,11 +437,11 @@ data Arguments extraState extraDebugState extraFlags extraPeers
       :: Maybe (    PeerActionsDNS ntnAddr resolver m
                  -> DNSSemaphore m
                  -> (Map ntnAddr PeerAdvertise -> extraPeers)
-                 -> ( (NumberOfPeers -> SomeLedgerPeersKind -> m (Maybe (Set ntnAddr, DiffTime)))
+                 -> (NumberOfPeers -> SomeLedgerPeersKind -> m (Maybe (Set ntnAddr, DiffTime)))
                  -> SomeLedgerPeersKind
                  -> StdGen
                  -> Int
-                 -> m (PublicRootPeers extraPeers ntnAddr, DiffTime)))
+                 -> m (PublicRootPeers extraPeers ntnAddr, DiffTime))
 
     -- | Peer Churn Governor if no custom churn governor is required just
     -- use the default one from

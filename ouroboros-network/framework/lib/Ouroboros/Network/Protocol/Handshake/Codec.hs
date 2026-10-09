@@ -2,6 +2,7 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -27,7 +28,8 @@ import Data.Either (partitionEithers)
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Maybe (mapMaybe)
-import Text.Printf
+import Formatting (formatToString, (%+))
+import Formatting qualified as F
 
 import Network.TypedProtocol.Codec.CBOR
 import Network.TypedProtocol.Core
@@ -179,9 +181,13 @@ codecHandshake versionNumberCodec = mkCodecCborLazyBS encodeMsg decodeMsg
             pure $ SomeMessage $ MsgQueryReply vMap
 
           (SingPropose, _, _) ->
-            fail $ printf "codecHandshake (%s) unexpected key (%d, %d)" (show stok) key len
+            fail $ formatToString
+                     ("codecHandshake" %+ F.parenthesised F.shown %+ "unexpected key" %+ F.parenthesised (F.int F.% "," %+ F.int))
+                     stok key len
           (SingConfirm, _, _) ->
-            fail $ printf "codecHandshake (%s) unexpected key (%d, %d)" (show stok) key len
+            fail $ formatToString
+                     ("codecHandshake" %+ F.parenthesised F.shown %+ "unexpected key" %+ F.parenthesised (F.int F.% "," %+ F.int))
+                     stok key len
           (SingDone, _, _) -> notActiveState stok
 
 

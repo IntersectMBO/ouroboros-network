@@ -6,6 +6,7 @@
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE NumericUnderscores  #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -44,7 +45,8 @@ import Data.Map qualified as Map
 import Data.Maybe (isNothing)
 import Data.Set (Set)
 import Data.Set qualified as Set
-import Text.Printf
+import Formatting (formatToString, (%), (%+))
+import Formatting qualified as F
 
 import Ouroboros.Network.ConnectionId
 import Ouroboros.Network.Driver.Simple
@@ -167,8 +169,14 @@ codecReqResp = mkCodecCborLazyBS encodeMsg decodeMsg
           return (SomeMessage $ MsgResp payload)
         (SingIdle, 1, 3) ->
           return (SomeMessage MsgDone)
-        (SingIdle, _, _) -> fail (printf "codecReqResp.StIdle: unexpected key (%d, %d)" key len)
-        (SingBusy, _, _) -> fail (printf "codecReqResp.StBusy: unexpected key (%d, %d)" key len)
+        (SingIdle, _, _) -> fail (formatToString
+                                   ("codecReqResp.StIdle: unexpected key " % F.parenthesised (F.int % "," %+ F.int))
+                                   key len
+                                 )
+        (SingBusy, _, _) -> fail (formatToString
+                                   ("codecReqResp.StBusy: unexpected key " % F.parenthesised (F.int % "," %+ F.int))
+                                    key len
+                                 )
         (SingDone, _, _) -> notActiveState stok
 
 
@@ -269,7 +277,7 @@ clientServerSimulation payloads =
               -- server mux tracer
               mxTracer :: forall x. Show x => Tracer m x
               mxTracer =
-                (("server", connId,)
+                (("server" :: String, connId,)
                    `contramap`
                    traceTime sayTracer)
           bracket
@@ -323,7 +331,7 @@ clientServerSimulation payloads =
                       -- client mux tracer
                       mxTracer :: forall x. Show x => Tracer m x
                       mxTracer =
-                        (("client", connId,)
+                        (("client" :: String, connId,)
                            `contramap`
                            traceTime sayTracer)
 

@@ -62,6 +62,7 @@ import Network.DNS (Domain, TYPE)
 import System.Random (StdGen, splitGen)
 
 import Ouroboros.Network.CodecCBORTerm
+import Ouroboros.Network.Hashable (mkUnsafeSalt)
 import Ouroboros.Network.Mux (noBindForkPolicy)
 import Ouroboros.Network.Protocol.Handshake (HandshakeArguments (..))
 import Ouroboros.Network.Protocol.Handshake.Codec (noTimeLimitsHandshake,
@@ -190,7 +191,7 @@ run :: forall extraState extraDebugState extraAPI
        , MonadST          m
        , MonadTime        m
        , MonadTimer       m
-       , MonadThrow       (STM m)
+       , MonadCatch       (STM m)
        , MonadMVar        m
 
        , Eq extraFlags
@@ -371,7 +372,7 @@ run blockGeneratorArgs ni na
           bfcDecisionLoopIntervalPraos = 0.01,
           bfcGenesisBFConfig        = GenesisBlockFetchConfiguration
             { gbfcGracePeriod = 10 },  -- second
-          bfcSalt                   = 0
+          bfcSalt                   = mkUnsafeSalt 0
         })
 
     blockFetchPolicy :: NodeKernel BlockHeader Block s txid m

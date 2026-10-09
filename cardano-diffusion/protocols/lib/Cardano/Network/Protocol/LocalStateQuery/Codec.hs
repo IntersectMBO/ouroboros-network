@@ -39,11 +39,5 @@ codecLocalStateQuery
   -> (forall result . query result -> result -> CBOR.Encoding)
   -> (forall result . query result -> forall s . CBOR.Decoder s result)
   -> Stateful.Codec (LocalStateQuery block point query) CBOR.DeserialiseFailure State m ByteString
-codecLocalStateQuery version =
-    Codec.codecLocalStateQuery localStateQueryVersion
-  where
-    localStateQueryVersion
-      | version < NodeToClientV_16
-      = Codec.LocalStateQuery_V1
-      | otherwise
-      = Codec.LocalStateQuery_V2
+codecLocalStateQuery _version =
+    Codec.codecLocalStateQuery Codec.LocalStateQuery_V2

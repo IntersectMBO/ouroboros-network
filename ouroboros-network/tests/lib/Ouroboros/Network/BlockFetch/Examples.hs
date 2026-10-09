@@ -48,6 +48,7 @@ import Ouroboros.Network.Channel
 import Ouroboros.Network.ControlMessage
 import Ouroboros.Network.DeltaQ
 import Ouroboros.Network.Driver
+import Ouroboros.Network.Hashable (mkUnsafeSalt)
 import Ouroboros.Network.Protocol.BlockFetch.Codec
 import Ouroboros.Network.Protocol.BlockFetch.Server
 import Ouroboros.Network.Protocol.BlockFetch.Type
@@ -150,7 +151,7 @@ blockFetchExample0 fetchMode decisionTracer clientStateTracer clientMsgTracer
             bfcMaxRequestsInflight    = 10,
             bfcDecisionLoopIntervalGenesis = 0.04,
             bfcDecisionLoopIntervalPraos = 0.01,
-            bfcSalt                   = 0,
+            bfcSalt                   = mkUnsafeSalt 0,
             bfcGenesisBFConfig        = GenesisBlockFetchConfiguration
               { gbfcGracePeriod = 10 -- seconds
               }
@@ -269,7 +270,7 @@ blockFetchExample1 fetchMode decisionTracer clientStateTracer clientMsgTracer
             bfcMaxRequestsInflight    = 10,
             bfcDecisionLoopIntervalGenesis = 0.04,
             bfcDecisionLoopIntervalPraos = 0.01,
-            bfcSalt                   = 0,
+            bfcSalt                   = mkUnsafeSalt 0,
             bfcGenesisBFConfig        = GenesisBlockFetchConfiguration
               { gbfcGracePeriod = 10 -- seconds
               }

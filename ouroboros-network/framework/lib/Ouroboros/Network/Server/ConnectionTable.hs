@@ -2,6 +2,7 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -30,8 +31,9 @@ import Control.Monad (when)
 import Data.Map.Strict qualified as M
 import Data.Set (Set)
 import Data.Set qualified as S
+import Formatting ((%+))
+import Formatting qualified as F
 import Network.Socket qualified as Socket
-import Text.Printf
 
 -- A ConnectionTable represent a set of connections that is shared between
 -- servers and subscription workers. It's main purpose is to avoid the creation of duplicate
@@ -174,7 +176,7 @@ _dumpConnectionTable
     -> IO ()
 _dumpConnectionTable ConnectionTable{ctTable} = do
     tbl <- atomically $ readTVar ctTable
-    printf "Dumping Table:\n"
+    putStrLn "Dumping Table:"
     mapM_ dumpTableEntry (M.toList tbl)
   where
     dumpTableEntry :: ((Socket.SockAddr, ConnectionDirection), ConnectionTableEntry IO Socket.SockAddr) -> IO ()
@@ -182,8 +184,15 @@ _dumpConnectionTable ConnectionTable{ctTable} = do
         refs <- mapM (atomically . readTVar . vcRef) (S.elems $ cteRefs ce)
         let rids = map vcId $ S.elems $ cteRefs ce
             refids = zip rids refs
-        printf "Remote Address: %s\nLocal Addresses %s\nDirection %s\nReferenses %s\n"
-            (show remoteAddr) (show $ cteLocalAddresses ce) (show dir) (show refids)
+        F.fprint
+            (       "Remote Address:" %+ F.shown
+              F.% "\nLocal Addresses:" %+ F.shown
+              F.% "\nDirection:" %+ F.shown
+              F.% "\nReferenses:" %+ F.shown)
+            remoteAddr
+            (cteLocalAddresses ce)
+            dir
+            refids
 
 -- | Remove a Connection.
 removeConnectionSTM

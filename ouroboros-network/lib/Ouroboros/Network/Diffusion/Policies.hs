@@ -15,6 +15,7 @@ import Data.Word (Word32)
 import System.Random
 import System.Random qualified as Rnd
 
+import Ouroboros.Network.Block (SlotNo)
 import Ouroboros.Network.ConnectionManager.Types (ConnectionType (..),
            Provenance (..), PrunePolicy)
 import Ouroboros.Network.ExitPolicy as ExitPolicy
@@ -96,44 +97,36 @@ optionalMerge = Map.merge (Map.mapMissing (\_ a -> (a, Nothing)))
 
 
 
-simplePeerSelectionPolicy :: forall m peerAddr.
-                             ( MonadSTM m
-                             , Ord peerAddr
-                             )
-                          => StrictTVar m StdGen
-                          -> PeerMetrics m peerAddr
-                          -> PeerSelectionPolicy peerAddr m
-simplePeerSelectionPolicy rngVar metrics = PeerSelectionPolicy {
-      policyPickKnownPeersForPeerShare = simplePromotionPolicy,
-      policyPickColdPeersToPromote     = simplePromotionPolicy,
-      policyPickWarmPeersToPromote     = simplePromotionPolicy,
-      policyPickInboundPeers           = simplePromotionPolicy,
+-- | The score by which 'simplePeerSelectionPolicy' ranks hot peers for
+-- demotion: the peer's 'upstreamyness' plus its 'fetchynessBlocks', with
+-- 'joinedPeerMetricAt' as the tie-break.
+--
+deadlineHotScores :: (MonadSTM m, Ord peerAddr)
+                  => PeerMetrics m peerAddr
+                  -> STM m (Map peerAddr (Int, Maybe SlotNo))
+deadlineHotScores metrics = do
+    jpm <- joinedPeerMetricAt metrics
+    hup <- upstreamyness metrics
+    bup <- fetchynessBlocks metrics
+    return $ Map.unionWith (+) hup bup `optionalMerge` jpm
 
-      policyPickHotPeersToDemote  = hotDemotionPolicy,
-      policyPickWarmPeersToDemote = warmDemotionPolicy,
-      policyPickColdPeersToForget = coldForgetPolicy,
 
-      policyFindPublicRootTimeout      = 5,    -- seconds
-      policyMaxInProgressPeerShareReqs = 2,
-      policyPeerShareRetryTime         = 900,  -- seconds
-      policyPeerShareBatchWaitTime     = 3,    -- seconds
-      policyPeerShareOverallTimeout    = 10,   -- seconds
-      policyPeerShareActivationDelay   = 300,  -- seconds
-      policyMaxConnectionRetries       = 5,
-      policyClearFailCountDelay        = 120   -- seconds
-    }
-  where
-
-    hotDemotionPolicy :: PickPolicy peerAddr (STM m)
-    hotDemotionPolicy _ _ _ available pickNum = do
-        jpm <- joinedPeerMetricAt metrics
-        hup <- upstreamyness metrics
-        bup <- fetchynessBlocks metrics
-
-        let scores = Map.unionWith (+) hup bup `optionalMerge` jpm
-
-        available' <- addRand rngVar available (,)
-        return $ Set.fromList
+-- | A hot demotion policy which picks the lowest scoring peers, and returns
+-- the scores it ranked them by so that the governor can trace the decision.
+-- A peer without a score is ranked as if it scored 0 but before every peer
+-- which did, and is returned as 'Nothing' so that the trace keeps the two
+-- apart.
+--
+mkHotDemotionPolicy :: (MonadSTM m, Ord peerAddr)
+                    => StrictTVar m StdGen
+                    -> STM m (Map peerAddr (Int, Maybe SlotNo))
+                    -- ^ the scores, with a slot number as the tie-break, see
+                    -- 'joinedPeerMetricAt'
+                    -> HotDemotionPolicy peerAddr (STM m)
+mkHotDemotionPolicy rngVar hotScores _ _ _ available pickNum = do
+    scores     <- hotScores
+    available' <- addRand rngVar available (,)
+    let picked = Set.fromList
                . map fst
                . take pickNum
                  -- order the results, resolve the ties using slot number when
@@ -145,9 +138,43 @@ simplePeerSelectionPolicy rngVar metrics = PeerSelectionPolicy {
                             (Map.findWithDefault (0, Nothing) peer scores, rn))
                . Map.assocs
                $ available'
+    return ( picked
+           , Map.fromSet (\peer -> fst <$> Map.lookup peer scores) available
+           )
 
-    -- Randomly pick peers to demote, peers with knownPeerTepid set are twice
-    -- as likely to be demoted.
+
+simplePeerSelectionPolicy :: forall m peerAddr.
+                             ( MonadSTM m
+                             , Ord peerAddr
+                             )
+                          => StrictTVar m StdGen
+                          -> PeerMetrics m peerAddr
+                          -> PeerSelectionPolicy peerAddr m
+simplePeerSelectionPolicy rngVar metrics = PeerSelectionPolicy {
+      policyPickKnownPeersForPeerShare = simplePromotionPolicy,
+      policyPickColdPeersToPromote     = simplePromotionPolicy,
+      policyPickWarmPeersToPromote     = warmPromotionPolicy,
+      policyPickInboundPeers           = simplePromotionPolicy,
+
+      policyPickHotPeersToDemote  = mkHotDemotionPolicy rngVar (deadlineHotScores metrics),
+      policyPickWarmPeersToDemote = warmDemotionPolicy,
+      policyPickColdPeersToForget = coldForgetPolicy,
+
+      policyFindPublicRootTimeout      = 5,    -- seconds
+      policyMaxInProgressPeerShareReqs = 2,
+      policyPeerShareRetryTime         = 900,  -- seconds
+      policyPeerShareFailureRetryTime  = 3600, -- seconds (4x)
+      policyPeerShareBatchWaitTime     = 3,    -- seconds
+      policyPeerShareOverallTimeout    = 10,   -- seconds
+      policyPeerShareActivationDelay   = 300,  -- seconds
+      policyMaxConnectionRetries       = 5,
+      policyClearFailCountDelay        = 120   -- seconds
+    }
+  where
+
+    -- Randomly pick peers to demote. Halving r for peers with
+    -- knownPeerTepid set makes a tepid peer win a pairwise draw against a
+    -- non-tepid one with probability 3/4.
     warmDemotionPolicy :: PickPolicy peerAddr (STM m)
     warmDemotionPolicy _ _ isTepid available pickNum = do
       available' <- addRand rngVar available (tepidWeight isTepid)
@@ -164,6 +191,18 @@ simplePeerSelectionPolicy rngVar metrics = PeerSelectionPolicy {
     coldForgetPolicy :: PickPolicy peerAddr (STM m)
     coldForgetPolicy _ failCnt _ available pickNum = do
       available' <- addRand rngVar available (failWeight failCnt)
+      return $ Set.fromList
+             . map fst
+             . take pickNum
+             . sortOn snd
+             . Map.assocs
+             $ available'
+
+    -- Randomly pick warm peers to promote, peers with knownPeerTepid set
+    -- are less likely to be re-promoted.
+    warmPromotionPolicy :: PickPolicy peerAddr (STM m)
+    warmPromotionPolicy _ _ isTepid available pickNum = do
+      available' <- addRand rngVar available (promoteWeight isTepid)
       return $ Set.fromList
              . map fst
              . take pickNum
@@ -197,6 +236,17 @@ simplePeerSelectionPolicy rngVar metrics = PeerSelectionPolicy {
     tepidWeight isTepid peer r =
           if isTepid peer then (peer, r `div` 2)
                           else (peer, r)
+
+    -- The inverse of 'tepidWeight': everyone else's r is quartered. The
+    -- lowest r wins, so a tepid peer beats one non-tepid peer with
+    -- probability 1/8, and a larger pool with less.
+    promoteWeight :: (peerAddr -> Bool)
+                  -> peerAddr
+                  -> Word32
+                  -> (peerAddr, Word32)
+    promoteWeight isTepid peer r =
+          if isTepid peer then (peer, r)
+                          else (peer, r `div` 4)
 
 
  -- Add scaled random number in order to prevent ordering based on SockAddr

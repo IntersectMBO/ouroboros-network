@@ -1,4 +1,5 @@
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE NamedFieldPuns    #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 -- | Rage limiting of accepted connections
 --
@@ -16,7 +17,8 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer, traceWith)
 
 import Data.Word
-import Text.Printf
+import Formatting (formatToString, (%+))
+import Formatting qualified as F
 
 
 -- | Policy which governs how to limit the number of accepted connections.
@@ -147,13 +149,14 @@ data AcceptConnectionsPolicyTrace
 
 instance Show AcceptConnectionsPolicyTrace where
     show (ServerTraceAcceptConnectionRateLimiting delay numberOfConnections) =
-      printf
-        "rate limiting accepting connections, delaying next accept for %s, currently serving %s connections"
-        (show delay) (show numberOfConnections)
+      formatToString
+        ("rate limiting accepting connections, delaying next accept for" %+ F.shown F.% ", currently serving" %+ F.shown %+ "connections")
+        delay numberOfConnections
     show (ServerTraceAcceptConnectionHardLimit limit) =
-      printf
-        "hard rate limit reached, waiting until the number of connections drops below %s"
-        (show limit)
+      formatToString
+        ("hard rate limit reached, waiting until the number of connections drops below" %+ F.shown)
+        limit
     show (ServerTraceAcceptConnectionResume numberOfConnections) =
-      printf "hard rate limit over, accepting connections again, currently serving %d connections"
+      formatToString
+        ("hard rate limit over, accepting connections again, currently serving" %+ F.int %+ "connections")
         numberOfConnections

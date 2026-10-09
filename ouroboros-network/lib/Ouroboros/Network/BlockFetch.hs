@@ -106,7 +106,6 @@ module Ouroboros.Network.BlockFetch
   , SizeInBytes
   ) where
 
-import Data.Hashable (Hashable)
 import Data.Void
 
 import Control.Monad.Class.MonadSTM
@@ -117,6 +116,7 @@ import Control.Tracer (Tracer)
 import GHC.Generics (Generic)
 
 import Ouroboros.Network.Block
+import Ouroboros.Network.Hashable
 import Ouroboros.Network.SizeInBytes (SizeInBytes)
 
 import Ouroboros.Network.BlockFetch.ClientRegistry (FetchClientPolicy (..),
@@ -153,7 +153,7 @@ data BlockFetchConfiguration =
          bfcDecisionLoopIntervalPraos   :: !DiffTime,
 
          -- | Salt used when comparing peers
-         bfcSalt                        :: !Int,
+         bfcSalt                        :: !Salt,
 
          -- | Genesis-specific parameters
          bfcGenesisBFConfig             :: !GenesisBlockFetchConfiguration

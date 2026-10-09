@@ -1053,7 +1053,7 @@ diffusionSimulationM
                , MonadMask        m
                , MonadTime        m
                , MonadTimer       m
-               , MonadThrow  (STM m)
+               , MonadCatch  (STM m)
                , MonadMVar        m
                , forall a. Semigroup a => Semigroup (m a)
                )

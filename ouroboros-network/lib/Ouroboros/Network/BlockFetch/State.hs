@@ -20,7 +20,6 @@ module Ouroboros.Network.BlockFetch.State
   ) where
 
 import Data.Functor.Contravariant (contramap)
-import Data.Hashable (Hashable)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Sequence (Seq (Empty))
@@ -39,6 +38,7 @@ import Control.Tracer (Tracer, traceWith)
 import Ouroboros.Network.AnchoredFragment (AnchoredFragment)
 import Ouroboros.Network.AnchoredFragment qualified as AF
 import Ouroboros.Network.Block
+import Ouroboros.Network.Hashable (Hashable)
 
 import Ouroboros.Network.BlockFetch.ClientState (FetchClientStateVars (..),
            FetchRequest (..), PeerFetchInFlight (..), PeerFetchStatus (..),

@@ -258,7 +258,7 @@ blockFetchClient _version controlMessageSTM reportFetched
             -- what 'addFetchedBlock' consumes below; deriving it here is what
             -- ties it to the very header this block was matched against.
             matchedBlock <- case blockMatchesHeader header block of
-              Nothing -> throwIO BlockFetchProtocolFailureInvalidBody
+              Nothing      -> throwIO BlockFetchProtocolFailureInvalidBody
               Just matched -> pure matched
 
             -- write it to the volatile block store

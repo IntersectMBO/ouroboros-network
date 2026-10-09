@@ -507,10 +507,10 @@ mockPeerSelectionActions' tracer
       -> m (CardanoPublicRootPeers PeerAddr, DiffTime)
     requestPublicRootPeers ledgerPeersKind _rng _n = do
       traceWith tracer TraceEnvRequestPublicRootPeers
-      let ttl :: DiffTime
-          ttl = 60
+      let ttl :: TTL
+          ttl = mkClippedTTL (60 :: Int)
       _ <- async $ do
-        threadDelay ttl
+        threadDelay (ttlDiffTime ttl)
         traceWith tracer TraceEnvPublicRootTTL
 
       -- Read the current ledger state judgement
@@ -539,7 +539,7 @@ mockPeerSelectionActions' tracer
                        PublicRootPeers.fromBigLedgerPeers bigLedgerPeers
 
       traceWith tracer (TraceEnvRootsResult (Set.toList (PublicRootPeers.toSet Cardano.ExtraPeers.toSet result)))
-      return (result, ttl)
+      return (result, ttlDiffTime ttl)
 
     requestPeerShare :: PeerSharingAmount -> PeerAddr -> m (PeerSharingResult PeerAddr)
     requestPeerShare _ addr = do
@@ -712,14 +712,17 @@ mockPeerSelectionPolicy GovernorMockEnvironment {
       policyPickKnownPeersForPeerShare = \_ _ _ -> interpretPickScript pickKnownPeersForPeerShareVar,
       policyPickColdPeersToPromote  = \_ _ _ -> interpretPickScript pickColdPeersToPromoteVar,
       policyPickWarmPeersToPromote  = \_ _ _ -> interpretPickScript pickWarmPeersToPromoteVar,
-      policyPickHotPeersToDemote    = \_ _ _ -> interpretPickScript pickHotPeersToDemoteVar,
+      policyPickHotPeersToDemote    = \_ _ _ available num ->
+        (\picked -> (picked, Map.fromSet (const Nothing) available))
+          <$> interpretPickScript pickHotPeersToDemoteVar available num,
       policyPickWarmPeersToDemote   = \_ _ _ -> interpretPickScript pickWarmPeersToDemoteVar,
       policyPickColdPeersToForget   = \_ _ _ -> interpretPickScript pickColdPeersToForgetVar,
       policyPickInboundPeers        = \_ _ _ -> interpretPickScript pickInboundPeersVar,
       policyFindPublicRootTimeout   = 5,    -- seconds
       policyMaxInProgressPeerShareReqs = 2,
-      policyPeerShareRetryTime         = 3600, -- seconds
-      policyPeerShareBatchWaitTime     = 3,    -- seconds
+      policyPeerShareRetryTime         = 3600,  -- seconds
+      policyPeerShareFailureRetryTime  = 14400, -- seconds (4x)
+      policyPeerShareBatchWaitTime     = 3,     -- seconds
       policyPeerShareOverallTimeout    = 10,   -- seconds
       policyPeerShareActivationDelay   = 300,  -- seconds
       policyMaxConnectionRetries       = 5,
@@ -791,11 +794,11 @@ tracerTracePeerSelection = contramap f tracerTestTraceEvent
     f a@(TraceDemoteWarmBigLedgerPeers !_ !_ !_)                   = GovernorEvent a
     f a@(TraceDemoteWarmBigLedgerPeerFailed !_ !_ !_ !_)           = GovernorEvent a
     f a@(TraceDemoteWarmBigLedgerPeerDone !_ !_ !_)                = GovernorEvent a
-    f a@(TraceDemoteHotPeers !_ !_ !_)                             = GovernorEvent a
+    f a@(TraceDemoteHotPeers !_ !_ !_ !_)                          = GovernorEvent a
     f a@(TraceDemoteLocalHotPeers !_ !_)                           = GovernorEvent a
     f a@(TraceDemoteHotFailed !_ !_ !_ !_)                         = GovernorEvent a
     f a@(TraceDemoteHotDone !_ !_ !_)                              = GovernorEvent a
-    f a@(TraceDemoteHotBigLedgerPeers !_ !_ !_)                    = GovernorEvent a
+    f a@(TraceDemoteHotBigLedgerPeers !_ !_ !_ !_)                 = GovernorEvent a
     f a@(TraceDemoteHotBigLedgerPeerFailed !_ !_ !_ !_)            = GovernorEvent a
     f a@(TraceDemoteHotBigLedgerPeerDone !_ !_ !_)                 = GovernorEvent a
     f a@(TraceDemoteAsynchronous !_)                               = GovernorEvent a

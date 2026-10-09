@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -22,7 +23,8 @@ import Codec.CBOR.Read qualified as CBOR
 import Data.ByteString.Lazy (ByteString)
 import Data.Kind (Type)
 import Data.Singletons.Decide
-import Text.Printf
+import Formatting (formatToString, (%+))
+import Formatting qualified as F
 
 import Network.TypedProtocol.Codec (CodecFailure (..), DecodeStep (..),
            SomeMessage (..))
@@ -193,15 +195,22 @@ codecLocalStateQuery version
         --
 
         (SingIdle, _, _, _) ->
-          fail (printf "codecLocalStateQuery (%s) unexpected key (%d, %d)" (show stok) key len)
+          fail (formatToString fmterr (activeAgency :: ActiveAgency st) stok key len)
         (SingAcquired, _, _, _) ->
-          fail (printf "codecLocalStateQuery (%s) unexpected key (%d, %d)" (show stok) key len)
+          fail (formatToString fmterr (activeAgency :: ActiveAgency st) stok key len)
         (SingAcquiring, _, _, _) ->
-          fail (printf "codecLocalStateQuery (%s) unexpected key (%d, %d)" (show stok) key len)
+          fail (formatToString fmterr (activeAgency :: ActiveAgency st) stok key len)
         (SingQuerying {}, _, _, _) ->
-          fail (printf "codecLocalStateQuery (%s) unexpected key (%d, %d)" (show stok) key len)
+          fail (formatToString fmterr (activeAgency :: ActiveAgency st) stok key len)
 
         (SingDone, _, _, _) -> notActiveState stok
+
+    fmterr :: forall (st :: LocalStateQuery block point query) r.
+              F.Format r (ActiveAgency st -> StateToken st -> Word -> Int -> r)
+    fmterr = "codecLocalStateQuery"
+          %+ F.parenthesised (F.shown F.% "," %+ F.shown)
+          %+ "unexpected key"
+          %+ F.parenthesised (F.int F.% "," %+ F.int)
 
 
 -- | An identity 'Codec' for the 'LocalStateQuery' protocol. It does not do

@@ -25,13 +25,13 @@ import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad (when)
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
-import Data.Hashable (Hashable (..))
 import Data.List (sortBy)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Monoid.Synchronisation (FirstToFinish (..), runFirstToFinish)
 import Data.Set qualified as Set
 import Ouroboros.Network.ControlMessage (ControlMessage (..), ControlMessageSTM)
+import Ouroboros.Network.Hashable
 import Ouroboros.Network.PeerSelection.Governor.Types (PublicPeerSelectionState,
            availableToShare)
 import Ouroboros.Network.Protocol.PeerSharing.Client (PeerSharingClient (..))
@@ -221,10 +221,10 @@ computePeerSharingPeers PeerSharingAPI{ psPublicPeerSelectionStateVar,
     if reSaltAt <= now
        then do
          writeTVar psReSaltAtVar $ addTime psPolicyPeerShareStickyTime now
-         stateTVar psGenVar random
+         stateTVar psGenVar mkSalt
        else do
          gen <- readTVar psGenVar
-         return $ fst $ random gen
+         return $ fst $ mkSalt gen
 
   let availableToShareSet = availableToShare publicState
       randomList = take (fromIntegral psPolicyPeerShareMaxPeers

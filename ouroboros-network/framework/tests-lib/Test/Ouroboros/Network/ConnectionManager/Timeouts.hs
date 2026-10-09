@@ -1,5 +1,6 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE PackageImports      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -42,7 +43,8 @@ import Data.Maybe (fromJust, fromMaybe, isJust)
 import Data.Monoid (Sum (Sum))
 import Data.Typeable
 
-import Text.Printf (printf)
+import Formatting (formatToString, (%+))
+import Formatting qualified as F
 
 import Test.QuickCheck
 #if !MIN_VERSION_QuickCheck(2,16,0)
@@ -87,8 +89,10 @@ verifyAllTimeouts inDiffusion =
    (\ trs ->
        Every
      $ counterexample
-         (printf "AbstractTransitionTrace %s:\n" (show $ typeRep (Proxy :: Proxy addr))
-         ++ unlines (map (uncurry ppTransitionTrace) trs)
+         (formatToString
+           ("AbstractTransitionTrace " %+ F.shown F.% "\n" F.% F.unlined F.string)
+           (typeRep (Proxy :: Proxy addr))
+           (map (uncurry ppTransitionTrace) trs)
          )
      $ verifyTimeouts Nothing inDiffusion trs)
 
@@ -614,9 +618,19 @@ within_ a b = let x = b `div` a in
 
 ppTransition :: AbstractTransition -> String
 ppTransition Transition {fromState, toState} =
-    printf "%-30s → %s" (show fromState) (show toState)
+    formatToString
+      (F.right 30 ' ' %+ "→" %+ F.string)
+      (show fromState)
+      (show toState)
 
 ppTransitionTrace :: PrettyShow addr => Time -> AbstractTransitionTrace addr -> String
-ppTransitionTrace (Time s) (TransitionTrace addr tr) =
-  printf "%-18s @%-3s %s" (show s) (prettyShow addr) (ppTransition tr)
-
+ppTransitionTrace (Time time) (TransitionTrace addr tr) =
+  formatToString
+    (     F.right 18 ' '
+      %+  "@"
+      F.% F.right 3 ' '
+      %+  F.string
+    )
+    (show time)
+    (prettyShow addr)
+    (ppTransition tr)
