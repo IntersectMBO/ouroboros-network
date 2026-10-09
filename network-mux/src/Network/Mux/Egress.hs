@@ -39,7 +39,7 @@ import Data.Char (toLower)
 
 import Network.Mux.Counters (ByteCounts, MuxCounters, countGateTimeout)
 import Network.Mux.Egress.Bucket (Bucket, BucketHandle, GrantSource (..),
-           awaitGrantWaited, takeOnCredit)
+           awaitGrantCharged, awaitGrantWaited, takeOnCredit)
 import Network.Mux.Timeout
 import Network.Mux.Trace (Error (SDUWriteTimeout))
 import Network.Mux.Types
@@ -151,9 +151,10 @@ data LaneEgress m =
   | Scheduled_ !(BucketHandle m)                -- ^ 'Scheduled': the budget, ranked; what
                !(StrictTVar m (ChargeSink m))   --   a batch carried is handed to the sink
 
--- | Where the scheduled lane reports what it wrote: bytes per mini-protocol,
--- SDU headers included, once the batch has been handed to the kernel, and
--- when. The policy that installs it decides what counts against which
+-- | Where the scheduled lane reports what a batch carries: bytes per
+-- mini-protocol, SDU headers included, and when, in the transaction that
+-- grants the batch, so the rank rule asked by the next grant already sees
+-- it. The policy that installs it decides what counts against which
 -- allowance; the mux only reports. Direct and slice batches are never
 -- reported, so what rides those lanes is never charged.
 type ChargeSink m = Time -> MiniProtocolNum -> Int -> STM m ()
@@ -236,16 +237,22 @@ muxer egressQueue tracer counters sentCell laneEgress
              -- the slice's own share, charged to the budget on credit in the
              -- same transaction, or the budget's idle capacity
              void $ awaitGrantWaited (Just budget) (t1 `diffTime` t0) slice len
-           Scheduled_ bucketHandle _ -> do
+           Scheduled_ bucketHandle chargeVar -> do
+             let chargeNow t = do
+                   sink <- readTVar chargeVar
+                   forM_ (Map.toList (Map.mapKeysWith (+) fst perProtocol)) (uncurry (sink t))
              t0 <- getMonotonicTime
              gate timeout
              t1 <- getMonotonicTime
-             source <- awaitGrantWaited Nothing (t1 `diffTime` t0) bucketHandle len
+             -- charged in the grant's transaction, so connections sharing
+             -- an allowance see each other's spending at once
+             source <- awaitGrantCharged Nothing (t1 `diffTime` t0) chargeNow bucketHandle len
              t2 <- getMonotonicTime
              traceWith tracer (TraceEgressGrant len (t1 `diffTime` t0) (t2 `diffTime` t1)
                                                 (source == FromFloor))
-      -- after the write, so a charge or a count means bytes handed to the
-      -- kernel; and the write with its accounting masked, so a
+      -- after the write, so a count or a credit charge means bytes handed
+      -- to the kernel (the scheduled lane's allowance was charged at its
+      -- grant); and the write with its accounting masked, so a
       -- cancellation lands only where the write blocks, waiting for room
       -- in the socket buffer, never between bytes taken and their
       -- accounting. A blocked wait is interruptible, so the bearer's
@@ -256,10 +263,6 @@ muxer egressQueue tracer counters sentCell laneEgress
         void $ writeMany tracer timeout sdus
         end <- getMonotonicTime
         case (laneEgress, sentCell) of
-             (Scheduled_ _ chargeVar, _) -> atomically $ do
-               count
-               sink <- readTVar chargeVar
-               forM_ (Map.toList (Map.mapKeysWith (+) fst perProtocol)) (uncurry (sink end))
              (Credit budget, _) -> atomically $ do
                count
                takeOnCredit budget end len

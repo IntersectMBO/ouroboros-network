@@ -183,7 +183,8 @@ data MuxEgress m = MuxEgress {
     meSlice        :: Maybe (BucketHandle m),
     meLaneOf       :: MiniProtocolNum -> MiniProtocolDir -> Lane,
     meCharge       :: StrictTVar m (ChargeSink m)
-    -- ^ where the scheduled lane reports what it wrote; a no-op until installed
+    -- ^ where the scheduled lane reports what a batch carries as it is
+    --   granted; a no-op until installed
   }
 
 
@@ -279,8 +280,8 @@ setEgressRankSource Mux { muxEgress } rank =
          Just MuxEgress { meBudgetHandle } -> setRankSource meBudgetHandle rank
          Nothing                           -> return ()
 
--- | Install where the scheduled lane reports the bytes it wrote, per
--- mini-protocol. Nothing on an unscheduled mux.
+-- | Install where the scheduled lane reports the bytes each batch carries, per
+-- mini-protocol, as the batch is granted. Nothing on an unscheduled mux.
 setEgressChargeSink :: MonadSTM m => Mux mode m -> ChargeSink m -> STM m ()
 setEgressChargeSink Mux { muxEgress } sink =
     case muxEgress of
