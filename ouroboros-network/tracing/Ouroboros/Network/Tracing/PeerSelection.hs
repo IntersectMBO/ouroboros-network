@@ -9,7 +9,7 @@ import Data.List qualified as List
 import Data.Text (pack)
 import Numeric (showOct)
 
-import Cardano.Logging
+import Hermod.Tracing.API
 import Ouroboros.Network.Diffusion.Types qualified as Diff
 import Ouroboros.Network.OrphanInstances ()
 import Ouroboros.Network.PeerSelection.LedgerPeers (NumberOfPeers (..),

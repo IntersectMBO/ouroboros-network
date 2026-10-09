@@ -13,8 +13,8 @@
 module Ouroboros.Network.Tracing.PeerSelection.Governor.PeerSelectionCounters () where
 
 --------------------------------------------------------------------------------
-import Cardano.Logging
 import Data.Aeson
+import Hermod.Tracing.API
 import Ouroboros.Network.PeerSelection.Governor.Types (PeerSelectionCounters,
            PeerSelectionView (..), SupportsPeerSelectionState (..),
            pattern PeerSelectionCountersHWC)

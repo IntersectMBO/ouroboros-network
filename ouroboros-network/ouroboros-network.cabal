@@ -653,12 +653,12 @@ library tracing
     base >=4.14 && <4.23,
     containers,
     formatting,
+    hermod-tracing-api:public ^>=1.1,
     iproute,
     network,
     network-mux,
     ouroboros-network:{ouroboros-network, api, framework, orphan-instances, protocols},
     text,
-    trace-dispatcher ^>=2.13.0,
     typed-protocols:{typed-protocols, stateful},
 
   if flag(asserts)

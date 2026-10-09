@@ -6,7 +6,7 @@ module Ouroboros.Network.Tracing.PeerSelection.RootPeersDNS.PublicRootPeers () w
 import Data.Aeson (Value (String), toJSON, toJSONList, (.=))
 import Data.Text (pack)
 
-import Cardano.Logging
+import Hermod.Tracing.API
 import Ouroboros.Network.OrphanInstances qualified ()
 import Ouroboros.Network.PeerSelection.RootPeersDNS.PublicRootPeers
            (TracePublicRootPeers (..))

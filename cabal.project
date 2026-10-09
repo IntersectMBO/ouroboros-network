@@ -18,7 +18,7 @@ index-state:
   , hackage.haskell.org 2026-06-29T22:49:53Z
 
   -- Bump this if you need newer packages from CHaP
-  , cardano-haskell-packages 2026-07-02T10:10:00Z
+  , cardano-haskell-packages 2026-09-16T14:05:36Z
 
 active-repositories:
   , :rest
@@ -79,3 +79,18 @@ if impl (ghc >= 9.14)
 
     -- https://github.com/serokell/haskell-with-utf8/issues/41
     , with-utf8:base
+
+-- TEMPORARY, for review only: remove before merging.
+--
+-- hermod-tracing-api 1.1.0 is not on CHaP yet; it is
+-- IntersectMBO/hermod-tracing#21. The tracing sublibraries of
+-- ouroboros-network and cardano-diffusion depend on hermod-tracing-api:public
+-- and on nothing else from hermod, which is the point of an instance-only
+-- package.
+source-repository-package
+  type: git
+  location: https://github.com/IntersectMBO/hermod-tracing.git
+  tag: 669277989719e9da50e7dad3945355fbd69ac7a8
+  subdir:
+    hermod-tracing-api
+  --sha256: sha256-Na/GlZVp+HtxKz4ClKRO6DxD0o/Zb3tspmUV2IpVZMI=

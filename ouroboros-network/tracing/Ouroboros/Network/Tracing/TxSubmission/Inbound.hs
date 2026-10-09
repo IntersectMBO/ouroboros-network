@@ -7,7 +7,7 @@ module Ouroboros.Network.Tracing.TxSubmission.Inbound () where
 import Data.Aeson
 import Data.Text qualified as Text
 
-import Cardano.Logging
+import Hermod.Tracing.API
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
 
 --------------------------------------------------------------------------------
@@ -83,12 +83,12 @@ instance (Show txid, Show tx)
          _otherwise -> mempty
 
   asMetrics (TraceTxSubmissionCollected txids) =
-    [CounterM "submissions.submitted" (Just (length txids))]
+    [CounterM "submissions.submitted" (CounterAdd (fromIntegral (length txids)))]
   asMetrics (TraceTxSubmissionProcessed processed) =
     [ CounterM "submissions.accepted"
-        (Just (ptxcAccepted processed))
+        (CounterAdd (fromIntegral (ptxcAccepted processed)))
     , CounterM "submissions.rejected"
-        (Just (ptxcRejected processed))
+        (CounterAdd (fromIntegral (ptxcRejected processed)))
     ]
   asMetrics _ = []
 

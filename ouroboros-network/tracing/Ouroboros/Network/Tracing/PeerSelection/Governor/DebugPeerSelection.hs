@@ -8,9 +8,9 @@
 
 module Ouroboros.Network.Tracing.PeerSelection.Governor.DebugPeerSelection () where
 
-import Cardano.Logging
 import Data.Aeson (Value (String), (.=))
 import Data.Text (pack)
+import Hermod.Tracing.API
 import Ouroboros.Network.PeerSelection.Governor.Types
 
 import Ouroboros.Network.Tracing.PeerSelection.Governor.Utils

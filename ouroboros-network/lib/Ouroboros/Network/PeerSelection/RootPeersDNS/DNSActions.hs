@@ -60,7 +60,7 @@ import Control.Monad.Except
 #else
 import Control.Monad.Except hiding (fix)
 #endif
-import Control.Tracer (Tracer (..), traceWith)
+import Control.Tracer (Tracer, traceWith)
 
 #if !defined(mingw32_HOST_OS)
 import System.Directory (getModificationTime)

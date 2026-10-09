@@ -9,7 +9,7 @@ module Ouroboros.Network.Tracing.InboundGovernor () where
 import Data.Aeson (Object, ToJSON, ToJSONKey, Value (String), toJSON, (.=))
 import Data.Text (pack)
 
-import Cardano.Logging
+import Hermod.Tracing.API
 import Ouroboros.Network.ConnectionManager.Types qualified as ConnectionManager
 import Ouroboros.Network.InboundGovernor as InboundGovernor (Trace (..))
 import Ouroboros.Network.InboundGovernor qualified as InboundGovernor

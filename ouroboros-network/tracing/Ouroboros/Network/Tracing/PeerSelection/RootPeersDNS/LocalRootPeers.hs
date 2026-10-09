@@ -10,7 +10,7 @@ import Data.Aeson (ToJSON, ToJSONKey, Value (String), toJSON, (.=))
 import Data.Text (pack)
 
 -- Needed for `ToJSON PeerSelection.State.LocalRootPeers.LocalRootConfig`
-import Cardano.Logging
+import Hermod.Tracing.API
 import Ouroboros.Network.OrphanInstances (JSONField (..))
 import Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
            (TraceLocalRootPeers (..))
