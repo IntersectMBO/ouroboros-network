@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
 
@@ -86,9 +87,9 @@ instance LogFormatting TxSubmissionCounters where
             , "txsRejected" .= txsRejected
             , "txIdBlockingReqsSent" .= txIdBlockingReqsSent
             , "txIdPipelinedReqsSent" .= txIdPipelinedReqsSent
-            , "txIdBlockingWaitMs" .= txIdBlockingWaitMs
-            , "txPipelineWaitMs" .= txPipelineWaitMs
-            , "txSubmissionWaitMs" .= txSubmissionWaitMs
+            , "txIdBlockingWaitMs" .= txIdBlockingWait
+            , "txPipelineWaitMs" .= txPipelineWait
+            , "txSubmissionWaitMs" .= txSubmissionWait
             ]
 
   asMetrics TxSubmissionCounters {..} =
@@ -106,9 +107,9 @@ instance LogFormatting TxSubmissionCounters where
     , IntM "txSubmission.txsRejected" (fromIntegral txsRejected)
     , IntM "txSubmission.txIdBlockingReqsSent"  (fromIntegral txIdBlockingReqsSent)
     , IntM "txSubmission.txIdPipelinedReqsSent" (fromIntegral txIdPipelinedReqsSent)
-    , IntM "txSubmission.txIdBlockingWaitMs" (fromIntegral txIdBlockingWaitMs)
-    , IntM "txSubmission.txPipelineWaitMs"   (fromIntegral txPipelineWaitMs)
-    , IntM "txSubmission.txSubmissionWaitMs" (fromIntegral txSubmissionWaitMs)
+    , IntM "txSubmission.txIdBlockingWaitMs" (fromIntegral txIdBlockingWait)
+    , IntM "txSubmission.txPipelineWaitMs"   (fromIntegral txPipelineWait)
+    , IntM "txSubmission.txSubmissionWaitMs" (fromIntegral txSubmissionWait)
     ]
 
 instance MetaTrace TxSubmissionCounters where

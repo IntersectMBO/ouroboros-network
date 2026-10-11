@@ -18,6 +18,8 @@ function usage {
 REPORT=0
 TEST=0
 
+FD="$(which fdfind 2>/dev/null || which fd 2>/dev/null)"
+
 optstring="hrt"
 while getopts ${optstring} arg; do
   case ${arg} in
@@ -50,7 +52,7 @@ function trace() {
 
 if [[ $REPORT == 1 ]] then
   # walk through cabal files and git log the changes
-  for cbl in $(fd -e cabal); do
+  for cbl in $($FD -e cabal); do
     v=$(grep '^version:' $cbl | awk '{print $2}')
     n=$(dirname $cbl)
     x=$(git --no-pager log --oneline $n-$v.. -- $(dirname $cbl) || true | wc -l)
@@ -70,7 +72,7 @@ else
   gitsha=$(git rev-parse HEAD)
   gitdir=$(git rev-parse --show-toplevel)
 
-  cabal_files=$(fd -ae 'cabal')
+  cabal_files=$($FD -ae 'cabal')
 
   if [[ !(-d $CHAP_DIR) ]]; then
     trace "clone CHaP to $CHAP_DIR"

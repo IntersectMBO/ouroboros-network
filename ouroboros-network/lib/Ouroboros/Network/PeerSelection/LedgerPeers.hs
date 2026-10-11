@@ -59,9 +59,10 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Void (Void)
 import Data.Word (Word16, Word64)
+import Formatting (formatToString, (%+))
+import Formatting qualified as F
 import Network.DNS qualified as DNS
 import System.Random
-import Text.Printf
 
 import Ouroboros.Network.Block (SlotNo)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
@@ -523,40 +524,71 @@ data TraceLedgerPeers =
 
 instance Show TraceLedgerPeers where
     show (PickedBigLedgerPeer addr ackStake stake) =
-        printf "PickedBigLedgerPeer %s ack stake %s ( %.04f) relative stake %s ( %.04f )"
-            (show addr)
-            (show $ unAccPoolStake ackStake)
-            (fromRational (unAccPoolStake ackStake) :: Double)
-            (show $ unPoolStake stake)
-            (fromRational (unPoolStake stake) :: Double)
+        let scifmt :: forall r. F.Format r (Double -> r)
+            scifmt = F.fixed 4
+        in
+        formatToString
+          (    "PickedBigLedgerPeer" %+ F.shown
+            %+ "ack stake"           %+ F.shown %+ F.parenthesised scifmt
+            %+ "relative stake"      %+ F.shown %+ F.parenthesised scifmt
+          )
+          addr
+          (unAccPoolStake ackStake)
+          (fromRational (unAccPoolStake ackStake) :: Double)
+          (unPoolStake stake)
+          (fromRational (unPoolStake stake) :: Double)
     show (PickedLedgerPeer addr ackStake stake) =
-        printf "PickedLedgerPeer %s ack stake %s ( %.04f) relative stake %s ( %.04f )"
-            (show addr)
-            (show $ unAccPoolStake ackStake)
-            (fromRational (unAccPoolStake ackStake) :: Double)
-            (show $ unPoolStake stake)
-            (fromRational (unPoolStake stake) :: Double)
+        let scifmt :: forall r. F.Format r (Double -> r)
+            scifmt = F.fixed 4
+        in
+        formatToString
+          (    "PickedLedgerPeer" %+ F.shown
+            %+ "ack stake"        %+ F.shown %+ F.parenthesised scifmt
+            %+ "relative stake"   %+ F.shown %+ F.parenthesised scifmt
+          )
+          addr
+          (unAccPoolStake ackStake)
+          (fromRational (unAccPoolStake ackStake) :: Double)
+          (unPoolStake stake)
+          (fromRational (unPoolStake stake) :: Double)
     show (PickedBigLedgerPeers (NumberOfPeers n) peers) =
-        printf "PickedBigLedgerPeers %d %s" n (show peers)
+        formatToString
+          ("PickedBigLedgerPeers " %+ F.int %+ F.shown)
+          n peers
     show (PickedLedgerPeers (NumberOfPeers n) peers) =
-        printf "PickedLedgerPeers %d %s" n (show peers)
+        formatToString
+          ("PickedLedgerPeers " %+ F.int %+ F.shown)
+          n peers
     show (FetchingNewLedgerState cnt bigCnt) =
-        printf "Fetching new ledgerstate, %d registered pools, %d registered big ledger pools"
-            cnt bigCnt
+        formatToString
+          (    "Fetching new ledgerstate," %+ F.int
+            %+ "registered pools," %+ F.int
+            %+ "registered big ledger pools"
+          )
+          cnt bigCnt
     show (TraceUseLedgerPeers ulp) =
-        printf "UseLedgerPeers state %s"
-            (show ulp)
+        formatToString
+          ("UseLedgerPeers state" %+ F.shown)
+          ulp
     show WaitingOnRequest = "WaitingOnRequest"
-    show (RequestForPeers (NumberOfPeers cnt)) = printf "RequestForPeers %d" cnt
-    show (ReusingLedgerState cnt age) =
-        printf "ReusingLedgerState %d peers age %s"
+    show (RequestForPeers (NumberOfPeers cnt)) =
+        formatToString
+          ("RequestForPeers" %+ F.int)
           cnt
-          (show age)
+    show (ReusingLedgerState cnt age) =
+        formatToString
+          ("ReusingLedgerState" %+ F.int %+ "peers age" %+ F.shown)
+          cnt
+          age
     show FallingBackToPublicRootPeers = "Falling back to public root peers"
     show DisabledLedgerPeers = "LedgerPeers is disabled"
     show (NotEnoughBigLedgerPeers (NumberOfPeers n) numOfBigLedgerPeers) =
-      printf "Not enough big ledger peers to pick %d out of %d" n numOfBigLedgerPeers
+        formatToString
+          ("Not enough big ledger peers to pick" %+ F.int %+ "out of" %+ F.int)
+          n numOfBigLedgerPeers
     show (NotEnoughLedgerPeers (NumberOfPeers n) numOfLedgerPeers) =
-      printf "Not enough ledger peers to pick %d out of %d" n numOfLedgerPeers
+        formatToString
+          ("Not enough ledger peers to pick" %+ F.int %+ "out of" %+ F.int)
+          n numOfLedgerPeers
     show (TraceLedgerPeersDomains domains) = "Resolving " ++ show domains
     show UsingBigLedgerPeerSnapshot = "Using peer snapshot for big ledger peers"

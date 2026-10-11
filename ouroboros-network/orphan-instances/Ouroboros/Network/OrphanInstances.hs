@@ -18,6 +18,7 @@ module Ouroboros.Network.OrphanInstances
   , networkTopologyToJSON
   , localRootPeersGroupsToJSON
   , peerSelectionTargetsToObject
+  , demotionScoresToJSON
   , JSONField (..)
   ) where
 
@@ -1125,11 +1126,12 @@ instance ( ToJSON extraDebugState
            , "actualEstablished" .= aEst
            , "peer" .= p
            ]
-  toJSON (TraceDemoteHotPeers tActive aActive sp) =
+  toJSON (TraceDemoteHotPeers tActive aActive sp scores) =
     object [ "kind" .= String "DemoteHotPeers"
            , "targetActive" .= tActive
            , "actualActive" .= aActive
            , "selectedPeers" .= toList sp
+           , "scores" .= demotionScoresToJSON scores
            ]
   toJSON (TraceDemoteLocalHotPeers taa sp) =
     object [ "kind" .= String "DemoteLocalHotPeers"
@@ -1149,11 +1151,12 @@ instance ( ToJSON extraDebugState
            , "actualActive" .= aActive
            , "peer" .= p
            ]
-  toJSON (TraceDemoteHotBigLedgerPeers tActive aActive sp) =
+  toJSON (TraceDemoteHotBigLedgerPeers tActive aActive sp scores) =
     object [ "kind" .= String "DemoteHotBigLedgerPeers"
            , "targetActive" .= tActive
            , "actualActive" .= aActive
            , "selectedPeers" .= toList sp
+           , "scores" .= demotionScoresToJSON scores
            ]
   toJSON (TraceDemoteHotBigLedgerPeerFailed tActive aActive p err) =
     object [ "kind" .= String "DemoteHotBigLedgerPeerFailed"
@@ -1250,6 +1253,13 @@ instance ( ToJSON extraDebugState
           , "associationMode" .= dpssAssociationMode ds
           ]
 
+-- | Render the scores of the peers available to demote, @null@ for a peer
+-- without a score.
+demotionScoresToJSON :: ToJSON peeraddr => Map.Map peeraddr (Maybe Int) -> Value
+demotionScoresToJSON scores =
+    toJSONList [ object [ "peer" .= peer, "score" .= score ]
+               | (peer, score) <- Map.toList scores ]
+
 peerSelectionTargetsToObject :: PeerSelectionTargets -> Value
 peerSelectionTargetsToObject
   PeerSelectionTargets { targetNumberOfRootPeers,
@@ -1339,6 +1349,12 @@ instance (Show addr, Show versionNumber, Show agreedOptions,
       object
         [ "kind" .= String "InboundConnectionNotFound"
         , "remoteAddress" .= peerAddr
+        ]
+    TrMutableConnStateId peerAddr (ConnStateId connStateId) ->
+      object
+        [ "kind" .= String "MutableConnStateId"
+        , "remoteAddress" .= peerAddr
+        , "connStateId" .= connStateId
         ]
     TrIncludeConnection prov peerAddr ->
       object
@@ -1634,6 +1650,9 @@ instance ToJSON addr
              , "to"      .= ConnMgr.toState tr
              ]
 
+instance ToJSON TTL where
+  toJSON = toJSON . ttlDiffTime
+
 instance ToJSON DNSTrace where
   toJSON (DNSLookupResult peerKind domain Nothing results) =
     object [ "type" .= String "DNSLookupResult"
@@ -1667,7 +1686,7 @@ instance ToJSON DNSTrace where
     object [ "type" .= String "SRVLookupResult"
            , "peer" .= show peerKind
            , "domain" .= String (Text.decodeUtf8With Text.ignore domain)
-           , "results" .= (\(domain', a, b, c, d) -> (show domain', a, b, c, d))
+           , "results" .= (\(domain', a, b, c, ttl) -> (show domain', a, b, c, ttl))
                           `map` results
            ]
   toJSON (SRVLookupError peerKind domain) =

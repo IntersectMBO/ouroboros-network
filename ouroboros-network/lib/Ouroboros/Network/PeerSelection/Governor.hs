@@ -1,5 +1,6 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
@@ -49,13 +50,12 @@ module Ouroboros.Network.PeerSelection.Governor
   ) where
 
 import Data.Foldable (traverse_)
-import Data.Hashable
 import Data.Map.Strict (Map)
 import Data.Void (Void)
 
 import Control.Applicative (Alternative ((<|>)))
 import Control.Concurrent.Class.MonadSTM.Strict
-import Control.Concurrent.JobPool (JobPool)
+import Control.Concurrent.JobPool (HasQueue (..), JobPool)
 import Control.Concurrent.JobPool qualified as JobPool
 import Control.Exception (SomeAsyncException (..))
 import Control.Monad.Class.MonadAsync
@@ -65,6 +65,7 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer (..), traceWith)
 import System.Random
 
+import Ouroboros.Network.Hashable (Hashable)
 import Ouroboros.Network.PeerSelection.Governor.ActivePeers qualified as ActivePeers
 import Ouroboros.Network.PeerSelection.Governor.BigLedgerPeers qualified as BigLedgerPeers
 import Ouroboros.Network.PeerSelection.Governor.EstablishedPeers qualified as EstablishedPeers
@@ -535,7 +536,7 @@ peerSelectionGovernorLoop :: forall m extraState extraDebugState extraFlags extr
                           -> PeerSelectionInterfaces
                               extraState extraFlags extraPeers
                               peeraddr peerconn m
-                          -> JobPool () m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
+                          -> JobPool WithQueue () m (Completion m extraState extraDebugState extraFlags extraPeers peeraddr peerconn)
                           -> PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
                           -> m Void
 peerSelectionGovernorLoop tracer

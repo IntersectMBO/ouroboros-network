@@ -1,10 +1,10 @@
-{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 {-# OPTIONS_GHC -Wno-orphans     #-}
@@ -15,7 +15,6 @@ import Data.ByteString.Lazy qualified as BL
 import Data.Either (fromRight)
 import Data.List (mapAccumL)
 import Data.Monoid.Synchronisation (FirstToFinish (..))
-import Data.Time.Clock (UTCTime, getCurrentTime)
 import Data.Void (Void)
 #ifndef mingw32_HOST_OS
 import System.Directory (removeFile)
@@ -29,12 +28,10 @@ import System.Win32.Async.Socket.ByteString.Lazy qualified as Win32.Async
 import Network.Socket.ByteString.Lazy qualified as Socket (sendAll)
 #endif
 
-import Control.Concurrent (ThreadId)
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (IOException)
 import Control.Monad
 import Control.Monad.Class.MonadAsync
-import Control.Monad.Class.MonadFork hiding (ThreadId)
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTimer.SI (threadDelay)
 import Control.Tracer
@@ -66,12 +63,12 @@ import Ouroboros.Network.Protocol.Handshake
 import Ouroboros.Network.Protocol.Handshake.Unversioned
 
 import Test.Ouroboros.Network.Orphans ()
+import Test.Ouroboros.Network.Utils (tracerWithThreadAndTime)
 
 import Test.Cardano.Base.QuickCheck qualified as BaseQC
 import Test.QuickCheck
 import Test.Tasty (DependencyType (..), TestTree, after, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
-import Text.Printf
 import Text.Show.Functions ()
 
 --
@@ -550,22 +547,5 @@ prop_socket_client_connect_error _ xs =
     pure $ fromRight True res
 
 
-
-data WithThreadAndTime a = WithThreadAndTime {
-      wtatOccuredAt    :: !UTCTime
-    , wtatWithinThread :: !ThreadId
-    , wtatEvent        :: !a
-    }
-
-instance (Show a) => Show (WithThreadAndTime a) where
-    show WithThreadAndTime {wtatOccuredAt, wtatWithinThread, wtatEvent} =
-        printf "%s: %s: %s" (show wtatOccuredAt) (show wtatWithinThread) (show wtatEvent)
-
 _verboseTracer :: Show a => Tracer IO a
-_verboseTracer = threadAndTimeTracer $ show >$< stdoutTracer
-
-threadAndTimeTracer :: Tracer IO (WithThreadAndTime a) -> Tracer IO a
-threadAndTimeTracer tr = mkTracer $ \s -> do
-    !now <- getCurrentTime
-    !tid <- myThreadId
-    traceWith tr $ WithThreadAndTime now tid s
+_verboseTracer = tracerWithThreadAndTime $ show >$< stdoutTracer

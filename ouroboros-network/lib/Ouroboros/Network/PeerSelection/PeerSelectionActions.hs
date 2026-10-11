@@ -21,7 +21,6 @@ import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
-import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer)
 
@@ -161,7 +160,7 @@ requestPublicRootPeersImpl
     Nothing -> do
       (extraPeers, dt) <- first toExtraPeers
                       <$> getExtraPeers n
-      pure (PublicRootPeers.empty extraPeers, dt)
+      pure (PublicRootPeers.empty extraPeers, ttlDiffTime dt)
     Just (ledgerPeers, dt) ->
       case ledgerPeersKind of
         SomeLedgerPeersKind SingAllLedgerPeers ->
@@ -169,7 +168,7 @@ requestPublicRootPeersImpl
         SomeLedgerPeersKind SingBigLedgerPeers ->
           pure (PublicRootPeers.fromBigLedgerPeers ledgerPeers, dt)
   where
-    getExtraPeers :: Int -> m (Map peeraddr PeerAdvertise, DiffTime)
+    getExtraPeers :: Int -> m (Map peeraddr PeerAdvertise, TTL)
     getExtraPeers x =
       -- NOTE: we don't set `resolvConcurrent` because of
       -- https://github.com/kazu-yamamoto/dns/issues/174

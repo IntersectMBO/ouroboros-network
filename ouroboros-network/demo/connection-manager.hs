@@ -144,7 +144,7 @@ genClientAndServerData g0 len = ClientAndServerData {
 type ConnectionManagerMonad m =
        ( Alternative (STM m), MonadAsync m, MonadCatch m, MonadEvaluate m,
          MonadFork m, MonadMask m, MonadST m, MonadTime m, MonadTimer m,
-         MonadThrow m, MonadThrow (STM m)
+         MonadThrow m, MonadCatch (STM m)
        )
 
 

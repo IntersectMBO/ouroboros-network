@@ -110,8 +110,6 @@ demuxer ptcls tracer bearer =
   withTimeoutSerial $ \timeout ->
   forever $ do
     (sdu, _) <- Mx.read bearer tracer timeout
-    -- say $ printf "demuxing sdu on mid %s mode %s lenght %d " (show $ msId sdu) (show $ msDir sdu)
-    --             (BL.length $ msBlob sdu)
     case lookupMiniProtocol dispatchTable (msNum sdu)
                             -- Notice the mode reversal, ResponderDir is
                             -- delivered to InitiatorDir and vice versa:

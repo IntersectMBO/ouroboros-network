@@ -5,6 +5,7 @@
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
@@ -55,11 +56,13 @@ import Data.ByteString.Lazy qualified as BL
 import Data.Functor (void)
 import Data.Int
 import Data.Ix (Ix (..))
+import Data.Scientific qualified as F (FPFormat (..), fromFloatDigits)
 import Data.Strict.Tuple as Strict (Pair)
 import Data.Word
 import Foreign.Ptr (Ptr)
+import Formatting (formatToString, (%+))
+import Formatting qualified as F
 import Quiet
-import Text.Printf
 
 import GHC.Generics (Generic)
 
@@ -366,20 +369,38 @@ data BearerTrace =
     | TraceTCPInfo StructTCPInfo Word16
 
 instance Show BearerTrace where
-    show TraceRecvHeaderStart = printf "Bearer Receive Header Start"
-    show (TraceRecvHeaderEnd SDUHeader { mhTimestamp, mhNum, mhDir, mhLength }) = printf "Bearer Receive Header End: ts: 0x%08x (%s) %s len %d"
-        (unRemoteClockModel mhTimestamp) (show mhNum) (show mhDir) mhLength
-    show (TraceRecvDeltaQObservation SDUHeader { mhTimestamp, mhLength } ts) = printf "Bearer DeltaQ observation: remote ts %d local ts %s length %d"
-        (unRemoteClockModel mhTimestamp) (show ts) mhLength
-    show (TraceRecvDeltaQSample d sp so dqs dqvm dqvs estR sdud) = printf "Bearer DeltaQ Sample: duration %.3e packets %d sumBytes %d DeltaQ_S %.3e DeltaQ_VMean %.3e DeltaQ_VVar %.3e DeltaQ_estR %.3e sizeDist %s"
-         d sp so dqs dqvm dqvs estR sdud
+    show TraceRecvHeaderStart = "Bearer Receive Header Start"
+    show (TraceRecvHeaderEnd SDUHeader { mhTimestamp, mhNum, mhDir, mhLength }) =
+      formatToString
+        ("Bearer Receive Header End: ts:" %+ F.hexPrefix 8 %+ F.parenthesised F.shown %+ F.shown %+ "length" %+ F.int)
+        (unRemoteClockModel mhTimestamp) mhNum mhDir mhLength
+    show (TraceRecvDeltaQObservation SDUHeader { mhTimestamp, mhLength } ts) =
+      formatToString ("Bearer DeltaQ observation: remote ts" %+ F.int %+ "local ts" %+ F.shown %+ "length" %+ F.int)
+        (unRemoteClockModel mhTimestamp) ts mhLength
+    show (TraceRecvDeltaQSample d sp so dqs dqvm dqvs estR sdud) =
+      let scifmt :: forall r. F.Format r (Double -> r)
+          scifmt = F.fromFloatDigits `F.mapf` F.scifmt F.Exponent (Just 3) in
+      formatToString
+        ("Bearer DeltaQ Sample: duration" %+ scifmt %+ "packets" %+ F.int %+ "sumBytes" %+ F.int %+ "DeltaQ_S" %+ scifmt %+ "DeltaQ_VMean" %+ scifmt %+ "DeltaQ_VVar" %+ scifmt %+ "DeltaQ_estR" %+ scifmt %+ "sizeDist" %+ F.string)
+        d sp so dqs dqvm dqvs estR sdud
     show TraceEmitDeltaQ = "emit DeltaQ"
-    show (TraceRecvRaw len) = printf "Bearer Receive Raw: length %d" len
-    show (TraceRecvStart len) = printf "Bearer Receive Start: length %d" len
-    show (TraceRecvEnd len) = printf "Bearer Receive End: length %d" len
-    show (TraceSendStart SDUHeader { mhTimestamp, mhNum, mhDir, mhLength }) = printf "Bearer Send Start: ts: 0x%08x (%s) %s length %d"
-        (unRemoteClockModel mhTimestamp) (show mhNum) (show mhDir) mhLength
-    show TraceSendEnd = printf "Bearer Send End"
+    show (TraceRecvRaw len) =
+      formatToString
+        ("Bearer Receive Raw: length" %+ F.int)
+        len
+    show (TraceRecvStart len) =
+      formatToString
+        ("Bearer Receive Start: length" %+ F.int)
+        len
+    show (TraceRecvEnd len) =
+      formatToString
+        ("Bearer Receive End: length" %+ F.int)
+        len
+    show (TraceSendStart SDUHeader { mhTimestamp, mhNum, mhDir, mhLength }) =
+      formatToString
+        ("Bearer Send Start: ts:" %+ F.hexPrefix 8 %+ F.parenthesised F.shown %+ F.shown %+ "length" %+ F.int)
+        (unRemoteClockModel mhTimestamp) mhNum mhDir mhLength
+    show TraceSendEnd = "Bearer Send End"
     show TraceSDUReadTimeoutException = "Timed out reading SDU"
     show TraceSDUWriteTimeoutException = "Timed out writing SDU"
 #ifdef linux_HOST_OS
@@ -387,13 +408,25 @@ instance Show BearerTrace where
             { tcpi_snd_mss, tcpi_rcv_mss, tcpi_lost, tcpi_retrans
             , tcpi_rtt, tcpi_rttvar, tcpi_snd_cwnd }
             len)
-                                     =
-      printf "TCPInfo rtt %d rttvar %d cwnd %d smss %d rmss %d lost %d retrans %d len %d"
-        (fromIntegral tcpi_rtt :: Word) (fromIntegral tcpi_rttvar :: Word)
-        (fromIntegral tcpi_snd_cwnd :: Word) (fromIntegral tcpi_snd_mss :: Word)
-        (fromIntegral tcpi_rcv_mss :: Word) (fromIntegral tcpi_lost :: Word)
+      =
+      formatToString
+        (    "TCPInfo rtt" %+ F.int
+          %+ "rttvar" %+ F.int
+          %+ "cwnd" %+ F.int
+          %+ "smss" %+ F.int
+          %+ "rmss" %+ F.int
+          %+ "lost" %+ F.int
+          %+ "retrans" %+ F.int
+          %+ "len" %+ F.int
+        )
+        (fromIntegral tcpi_rtt :: Word)
+        (fromIntegral tcpi_rttvar :: Word)
+        (fromIntegral tcpi_snd_cwnd :: Word)
+        (fromIntegral tcpi_snd_mss :: Word)
+        (fromIntegral tcpi_rcv_mss :: Word)
+        (fromIntegral tcpi_lost :: Word)
         (fromIntegral tcpi_retrans :: Word)
         len
 #else
-    show (TraceTCPInfo _ len) = printf "TCPInfo len %d" len
+    show (TraceTCPInfo _ len) = formatToString ("TCPInfo len" %+ F.int) len
 #endif

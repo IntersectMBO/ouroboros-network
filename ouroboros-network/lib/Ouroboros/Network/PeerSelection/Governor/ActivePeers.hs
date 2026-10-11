@@ -721,10 +721,10 @@ aboveTargetBigLedgerPeers actions@PeerSelectionActions {
                               Set.\\ LocalRootPeers.keysSet localRootPeers
   , not (Set.null availableToDemote)
   = Guarded Nothing $ do
-      selectedToDemote <- pickPeers memberExtraPeers st
-                            policyPickHotPeersToDemote
-                            availableToDemote
-                            numPeersToDemote
+      (selectedToDemote, scores) <- pickHotPeersToDemote memberExtraPeers st
+                                      policyPickHotPeersToDemote
+                                      availableToDemote
+                                      numPeersToDemote
       let selectedToDemote' :: Map peeraddr peerconn
           selectedToDemote' = EstablishedPeers.toMap establishedPeers
                                 `Map.restrictKeys` selectedToDemote
@@ -733,7 +733,8 @@ aboveTargetBigLedgerPeers actions@PeerSelectionActions {
         decisionTrace = [TraceDemoteHotBigLedgerPeers
                            targetNumberOfActiveBigLedgerPeers
                            numActiveBigLedgerPeers
-                           selectedToDemote],
+                           selectedToDemote
+                           scores],
         decisionState = st {
                           inProgressDemoteHot = inProgressDemoteHot
                                              <> selectedToDemote
@@ -829,10 +830,10 @@ aboveTargetLocal actions@PeerSelectionActions {
   = Guarded Nothing $ do
       selectedToDemote <-
         Set.unions <$> sequence
-          [ pickPeers memberExtraPeers st
-              policyPickHotPeersToDemote
-              membersAvailableToDemote
-              numMembersToDemote
+          [ fst <$> pickHotPeersToDemote memberExtraPeers st
+                      policyPickHotPeersToDemote
+                      membersAvailableToDemote
+                      numMembersToDemote
           | (numMembersToDemote,
              membersAvailableToDemote) <- groupsAvailableToDemote ]
       let selectedToDemote' :: Map peeraddr peerconn
@@ -923,10 +924,10 @@ aboveTargetOther actions@PeerSelectionActions {
                               Set.\\ inProgressDemoteToCold
   , not (Set.null availableToDemote)
   = Guarded Nothing $ do
-      selectedToDemote <- pickPeers memberExtraPeers st
-                            policyPickHotPeersToDemote
-                            availableToDemote
-                            numPeersToDemote
+      (selectedToDemote, scores) <- pickHotPeersToDemote memberExtraPeers st
+                                      policyPickHotPeersToDemote
+                                      availableToDemote
+                                      numPeersToDemote
       let selectedToDemote' :: Map peeraddr peerconn
           selectedToDemote' = EstablishedPeers.toMap establishedPeers
                                 `Map.restrictKeys` selectedToDemote
@@ -935,7 +936,8 @@ aboveTargetOther actions@PeerSelectionActions {
         decisionTrace = [TraceDemoteHotPeers
                            targetNumberOfActivePeers
                            numActivePeers
-                           selectedToDemote],
+                           selectedToDemote
+                           scores],
         decisionState = st {
                           inProgressDemoteHot = inProgressDemoteHot
                                              <> selectedToDemote

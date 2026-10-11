@@ -66,10 +66,10 @@ import Ouroboros.Network.Protocol.BlockFetch.Type (ChainRange (..))
 -- | The context that is passed into the block fetch protocol client when it
 -- is started.
 --
-data FetchClientContext header block m =
+data FetchClientContext header block matchedBlock m =
      FetchClientContext {
        fetchClientCtxTracer    :: Tracer m (TraceFetchClientState header),
-       fetchClientCtxPolicy    :: FetchClientPolicy header block m,
+       fetchClientCtxPolicy    :: FetchClientPolicy header block matchedBlock m,
        fetchClientCtxStateVars :: FetchClientStateVars m header
      }
 
@@ -77,11 +77,11 @@ data FetchClientContext header block m =
 -- | The policy used by the fetch clients. It is set by the central block fetch
 -- logic, and passed to them via the 'FetchClientRegistry'.
 --
-data FetchClientPolicy header block m =
+data FetchClientPolicy header block matchedBlock m =
      FetchClientPolicy {
        blockFetchSize     :: header -> SizeInBytes,
-       blockMatchesHeader :: header -> block -> Bool,
-       addFetchedBlock    :: Point block -> block -> m (),
+       blockMatchesHeader :: header -> block -> Maybe matchedBlock,
+       addFetchedBlock    :: Point block -> matchedBlock -> m (),
        headerForgeUTCTime :: header -> UTCTime
      }
 

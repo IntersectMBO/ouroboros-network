@@ -31,7 +31,6 @@ module Ouroboros.Network.BlockFetch.Decision
 import Data.Set qualified as Set
 
 import Data.Function (on)
-import Data.Hashable
 import Data.List as List (foldl', groupBy, sortBy, transpose)
 import Data.Maybe (fromMaybe, mapMaybe)
 import Data.Set (Set)
@@ -43,6 +42,7 @@ import Control.Monad.Class.MonadTime.SI (DiffTime)
 import Ouroboros.Network.AnchoredFragment (AnchoredFragment, AnchoredSeq (..))
 import Ouroboros.Network.AnchoredFragment qualified as AF
 import Ouroboros.Network.Block
+import Ouroboros.Network.Hashable
 import Ouroboros.Network.Point (withOriginToMaybe)
 
 import Ouroboros.Network.BlockFetch.ClientState (FetchRequest (..),
@@ -62,7 +62,7 @@ data FetchDecisionPolicy header = FetchDecisionPolicy {
        maxConcurrencyDeadline      :: Word,
        decisionLoopIntervalGenesis :: DiffTime,
        decisionLoopIntervalPraos   :: DiffTime,
-       peerSalt                    :: Int,
+       peerSalt                    :: Salt,
        bulkSyncGracePeriod         :: DiffTime,
 
        blockFetchSize              :: header -> SizeInBytes
@@ -735,7 +735,7 @@ prioritisePeerChains
    , Ord peer
    )
   => PraosFetchMode
-  -> Int
+  -> Salt
   -> (AnchoredFragment header -> AnchoredFragment header -> Ordering)
   -> (header -> SizeInBytes)
   -> [(FetchDecision (CandidateFragments header), PeerFetchInFlight header,

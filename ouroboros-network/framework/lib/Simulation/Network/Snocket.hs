@@ -7,6 +7,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE MultiWayIf            #-}
 {-# LANGUAGE NamedFieldPuns        #-}
+{-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE StandaloneDeriving    #-}
@@ -70,8 +71,9 @@ import Data.Map.Strict qualified as Map
 import Data.Typeable (Typeable)
 import Foreign.Marshal (copyBytes)
 import Foreign.Ptr (castPtr)
+import Formatting (formatToString, (%+))
+import Formatting qualified as F
 import Numeric.Natural (Natural)
-import Text.Printf (printf)
 
 import Data.Monoid.Synchronisation (FirstToFinish (..))
 import Data.Wedge
@@ -666,7 +668,9 @@ makeFDRawBearer tracer = MakeRawBearer go
       { ioe_handle      = Nothing
       , ioe_type        = InvalidArgument
       , ioe_location    = "Ouroboros.Network.Snocket.Sim.toRawBearer"
-      , ioe_description = printf "Invalid argument (%s)" (show fd_)
+      , ioe_description = formatToString
+                            ("Invalid argument" %+ F.parenthesised F.shown)
+                            fd_
       , ioe_errno       = Nothing
       , ioe_filename    = Nothing
       }
@@ -699,7 +703,9 @@ makeFDBearer = MakeBearer $ \sduTimeout FD { fdVar } _ -> do
       { ioe_handle      = Nothing
       , ioe_type        = InvalidArgument
       , ioe_location    = "Ouroboros.Network.Snocket.Sim.toBearer"
-      , ioe_description = printf "Invalid argument (%s)" (show fd_)
+      , ioe_description = formatToString
+                            ("Invalid argument" %+ F.parenthesised F.shown)
+                            fd_
       , ioe_errno       = Nothing
       , ioe_filename    = Nothing
       }
@@ -856,7 +862,9 @@ mkSnocket state tr = Snocket { getLocalAddr
                 { ioe_handle      = Nothing
                 , ioe_type        = InvalidArgument
                 , ioe_location    = "Ouroboros.Network.Snocket.Sim.getLocalAddr"
-                , ioe_description = printf "Transport endpoint (%s) is not connected" (show fd_)
+                , ioe_description = formatToString
+                                      ("Transport endpoint" %+ F.parenthesised F.shown %+ "is not connected")
+                                      fd_
                 , ioe_errno       = Nothing
                 , ioe_filename    = Nothing
                 }
@@ -873,7 +881,9 @@ mkSnocket state tr = Snocket { getLocalAddr
           { ioe_handle      = Nothing
           , ioe_type        = InvalidArgument
           , ioe_location    = "Ouroboros.Network.Snocket.Sim.getRemoteAddr"
-          , ioe_description = printf "Transport endpoint is not connected" (show fd_)
+          , ioe_description = formatToString
+                               ("Transport endpoint" %+ F.parenthesised F.shown %+ "is not connected")
+                               fd_
           , ioe_errno       = Nothing
           , ioe_filename    = Nothing
           }
@@ -1136,7 +1146,10 @@ mkSnocket state tr = Snocket { getLocalAddr
           { ioe_handle      = Nothing
           , ioe_type        = OtherError
           , ioe_location    = "Ouroboros.Network.Snocket.Sim.connect"
-          , ioe_description = printf "connect failure (%s): (%s)" (show connId) desc
+          , ioe_description = formatToString
+                                ("connect failure" %+ F.parenthesised F.shown F.% ":" %+ F.parenthesised F.string)
+                                connId
+                                desc
           , ioe_errno       = Nothing
           , ioe_filename    = Nothing
           }
@@ -1146,7 +1159,9 @@ mkSnocket state tr = Snocket { getLocalAddr
           { ioe_handle      = Nothing
           , ioe_type        = AlreadyExists
           , ioe_location    = "Ouroboros.Network.Snocket.Sim.connect"
-          , ioe_description = printf "Transport endpoint (%s) is already connected" (show fd_)
+          , ioe_description = formatToString
+                                ("Transport endpoint" %+ F.parenthesised F.shown %+ "is already connected")
+                                fd_
           , ioe_errno       = Nothing
           , ioe_filename    = Nothing
           }
@@ -1156,7 +1171,9 @@ mkSnocket state tr = Snocket { getLocalAddr
           { ioe_handle      = Nothing
           , ioe_type        = InvalidArgument
           , ioe_location    = "Ouroboros.Network.Snocket.Sim.bind"
-          , ioe_description = printf "Invalid argument (%s)" (show fd_)
+          , ioe_description = formatToString
+                                ("Invalid argument" %+ F.parenthesised F.shown)
+                                fd_
           , ioe_errno       = Nothing
           , ioe_filename    = Nothing
           }
@@ -1182,7 +1199,9 @@ mkSnocket state tr = Snocket { getLocalAddr
           { ioe_handle      = Nothing
           , ioe_type        = InvalidArgument
           , ioe_location    = "Ouroboros.Network.Snocket.Sim.bind"
-          , ioe_description = printf "Invalid argument (%s)" (show fd_)
+          , ioe_description = formatToString
+                                ("Invalid argument" %+ F.parenthesised F.shown)
+                                fd_
           , ioe_errno       = Nothing
           , ioe_filename    = Nothing
           }
@@ -1220,7 +1239,9 @@ mkSnocket state tr = Snocket { getLocalAddr
           { ioe_handle      = Nothing
           , ioe_type        = InvalidArgument
           , ioe_location    = "Ouroboros.Network.Snocket.Sim.listen"
-          , ioe_description = printf "Invalid argument (%s)" (show fd_)
+          , ioe_description = formatToString
+                                ("Invalid argument" %+ F.parenthesised F.shown)
+                                fd_
           , ioe_errno       = Nothing
           , ioe_filename    = Nothing
           }
@@ -1384,7 +1405,9 @@ mkSnocket state tr = Snocket { getLocalAddr
           { ioe_handle      = Nothing
           , ioe_type        = InvalidArgument
           , ioe_location    = "Ouroboros.Network.Snocket.Sim.accept"
-          , ioe_description = printf "Invalid argument (%s)" (show fd)
+          , ioe_description = formatToString
+                                ("Invalid argument" %+ F.parenthesised F.shown)
+                                fd
           , ioe_errno       = Nothing
           , ioe_filename    = Nothing
           }

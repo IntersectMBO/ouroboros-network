@@ -1,6 +1,6 @@
 cabal-version: 3.4
 name: ouroboros-network
-version: 1.1.0.0
+version: 1.3.0.0
 synopsis: A networking layer for the Ouroboros blockchain protocol
 description: A networking layer for the Ouroboros blockchain protocol.
 license: Apache-2.0
@@ -17,7 +17,7 @@ extra-doc-files: CHANGELOG.md
 
 flag asserts
   description: Enable assertions
-  manual: False
+  manual: True
   default: False
 
 flag ipv6
@@ -126,7 +126,7 @@ library api
     iproute ^>=1.7.15,
     measures,
     network ^>=3.2.7,
-    network-mux ^>=0.10.1.0,
+    network-mux ^>=0.12.0.0,
     nothunks,
     quiet,
     random,
@@ -313,7 +313,7 @@ library
     deepseq,
     dlist,
     dns,
-    hashable,
+    formatting,
     io-classes:{io-classes, mtl, si-timers, strict-stm} ^>=1.8 || ^>=1.9,
     iproute,
     monoidal-synchronisation,
@@ -354,6 +354,7 @@ library framework
     Ouroboros.Network.Driver.Limits
     Ouroboros.Network.Driver.Simple
     Ouroboros.Network.Driver.Stateful
+    Ouroboros.Network.Hashable
     Ouroboros.Network.IOManager
     Ouroboros.Network.InboundGovernor
     Ouroboros.Network.InboundGovernor.InformationChannel
@@ -368,6 +369,7 @@ library framework
     Ouroboros.Network.Protocol.Handshake.Unversioned
     Ouroboros.Network.Protocol.Handshake.Version
     Ouroboros.Network.RawBearer
+    Ouroboros.Network.RegisteredDelay
     Ouroboros.Network.RethrowPolicy
     Ouroboros.Network.Server
     Ouroboros.Network.Server.ConnectionTable
@@ -388,11 +390,12 @@ library framework
     containers >=0.5 && <0.9,
     contra-tracer,
     deepseq,
+    formatting,
     hashable,
     io-classes:{io-classes, si-timers, strict-stm} ^>=1.8,
     monoidal-synchronisation ^>=0.1.0.7,
     network ^>=3.2.7,
-    network-mux ^>=0.10.1.0,
+    network-mux ^>=0.12.0.0,
     nothunks ^>=0.1.4 || ^>=0.2 || ^>=0.3,
     ouroboros-network:{api, tests-lib},
     psqueues,
@@ -451,6 +454,7 @@ library tests-lib
     contra-tracer,
     deepseq,
     deque ^>=0.4,
+    formatting,
     io-classes:{io-classes, si-timers, strict-stm} ^>=1.8,
     io-sim,
     network-mux,
@@ -515,6 +519,7 @@ library framework-tests-lib
     containers,
     contra-tracer,
     deepseq,
+    formatting,
     hashable,
     io-classes:{io-classes, si-timers, strict-stm},
     io-sim,
@@ -548,6 +553,7 @@ test-suite framework-sim-tests
     containers,
     contra-tracer,
     deepseq,
+    formatting,
     io-classes:{io-classes, si-timers, strict-stm},
     io-sim,
     monoidal-synchronisation,
@@ -591,6 +597,7 @@ test-suite framework-io-tests
     cardano-base:testlib >=0.1.5.0,
     contra-tracer,
     directory,
+    formatting,
     io-classes:{io-classes, si-timers, strict-stm},
     io-sim,
     monoidal-synchronisation,
@@ -651,7 +658,7 @@ library tracing
     network-mux,
     ouroboros-network:{ouroboros-network, api, framework, orphan-instances, protocols},
     text,
-    trace-dispatcher ^>=2.12.0,
+    trace-dispatcher ^>=2.13.0,
     typed-protocols:{typed-protocols, stateful},
 
   if flag(asserts)
@@ -711,6 +718,7 @@ executable demo-ping-pong
     bytestring,
     contra-tracer,
     directory,
+    formatting,
     network-mux,
     ouroboros-network:{api, framework},
     typed-protocols:examples,
@@ -845,6 +853,7 @@ library protocols
     constraints,
     containers,
     deepseq,
+    formatting,
     io-classes:{io-classes, si-timers} ^>=1.8,
     nothunks,
     ouroboros-network:api,
@@ -962,6 +971,7 @@ library ouroboros-network-tests-lib
     contra-tracer,
     deepseq,
     dns,
+    formatting,
     hashable,
     io-classes:{io-classes, si-timers, strict-stm},
     io-sim,

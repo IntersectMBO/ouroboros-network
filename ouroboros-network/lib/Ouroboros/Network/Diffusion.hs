@@ -41,7 +41,6 @@ import Data.Bits ((.|.))
 import System.Posix.Files qualified as Unix
 #endif
 import Data.ByteString.Lazy (ByteString)
-import Data.Hashable (Hashable)
 import Data.IP qualified as IP
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map (Map)
@@ -69,6 +68,7 @@ import Ouroboros.Network.Diffusion.Policies qualified as Diffusion.Policies
 import Ouroboros.Network.Diffusion.Types
 import Ouroboros.Network.Diffusion.Utils
 import Ouroboros.Network.ExitPolicy
+import Ouroboros.Network.Hashable (Hashable)
 import Ouroboros.Network.InboundGovernor qualified as IG
 import Ouroboros.Network.InboundGovernor.InformationChannel (InformationChannel,
            newInformationChannel)
@@ -114,7 +114,7 @@ runM
        , MonadLabelledSTM m
        , MonadTraceSTM    m
        , MonadMask        m
-       , MonadThrow  (STM m)
+       , MonadCatch  (STM m)
        , MonadTime        m
        , MonadTimer       m
        , MonadMVar        m

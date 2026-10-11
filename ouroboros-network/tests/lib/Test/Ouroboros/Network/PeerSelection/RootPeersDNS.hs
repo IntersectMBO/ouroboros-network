@@ -51,7 +51,7 @@ import Data.Set qualified as Set
 import Data.Time.Clock (picosecondsToDiffTime)
 import Data.Void (Void)
 import Data.Word (Word16)
-import Network.DNS (DNSError (NameError), DNSMessage, ResourceRecord (..), TTL,
+import Network.DNS (DNSError (NameError), DNSMessage, ResourceRecord (..),
            answer, defaultResponse)
 import Network.DNS qualified as DNS
 import Network.DNS.Resolver qualified as DNSResolver
@@ -126,7 +126,7 @@ genDomainName = elements $ (\i -> "test" <> (BSC.pack . show $ i)) <$> [1..6 :: 
 
 -- TODO: this type alias should be turned into a newtype with a `Show` instance
 -- which displays `IP` as a string literal.
-type MockDNSLookupResult = Either [(IP, TTL)]
+type MockDNSLookupResult = Either [(IP, DNS.TTL)]
                                   [( DNS.Domain
                                    , Word16 -- ^ priority
                                    , Word16 -- ^ weight
@@ -247,7 +247,7 @@ genMockRoots = sized $ \relaysNumber -> do
                            genIPv4
       localRootDomainTTLs <- blocks ipsPerDomain
               <$> vectorOf (ipsPerDomain * length localRootDomains)
-                           (arbitrary :: Gen TTL)
+                           (arbitrary :: Gen DNS.TTL)
 
       let localRootDomainsIP_TTls = zipWith zip localRootDomainIPs localRootDomainTTLs
           rootDomainKeys = (, DNS.A) <$> localRootDomains
@@ -528,7 +528,7 @@ mockPublicRootPeersProvider :: forall m a.
                             -> Script DNSTimeout
                             -> Script DNSLookupDelay
                             -> TestSeed
-                            -> ((Int -> m (Map SockAddr PeerAdvertise, DiffTime)) -> m a)
+                            -> ((Int -> m (Map SockAddr PeerAdvertise, TTL)) -> m a)
                             -> m ()
 mockPublicRootPeersProvider tracer (MockRoots _ _ publicRootPeers dnsMapScript)
                             dnsTimeoutScript dnsLookupDelayScript dnsSeed action = do

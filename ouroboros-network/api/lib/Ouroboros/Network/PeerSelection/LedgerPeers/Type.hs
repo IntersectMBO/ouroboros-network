@@ -37,7 +37,6 @@ module Ouroboros.Network.PeerSelection.LedgerPeers.Type
   , SomeLedgerPeerSnapshot (..)
   , someLedgerPeerSnapshotKind
   , RawBlockHash (..)
-  , LedgerPeerSnapshotSRVSupport (..)
   , encodeLedgerPeerSnapshot
   , decodeLedgerPeerSnapshot
   , encodeWithOrigin
@@ -59,23 +58,19 @@ module Ouroboros.Network.PeerSelection.LedgerPeers.Type
   ) where
 
 
-import Control.Applicative ((<|>))
 import Control.Concurrent.Class.MonadSTM
 import Control.DeepSeq (NFData (..))
 import Control.Monad (forM)
 import Data.Aeson hiding (decode, encode)
-import Data.Bifunctor (second)
 import Data.ByteString.Base16 qualified as Base16
 import Data.ByteString.Short (ShortByteString)
 import Data.ByteString.Short qualified as SBS
 import Data.Kind (Type)
 import Data.List.NonEmpty (NonEmpty)
-import Data.List.NonEmpty qualified as NonEmpty
 import Data.Text.Encoding qualified as Text
 import GHC.Generics (Generic)
 import NoThunks.Class
 
--- TODO: remove `FromCBOR` and `ToCBOR` instances when ntc V22 is no longer supported
 import Cardano.Binary (FromCBOR (..), ToCBOR (..))
 import Cardano.Binary qualified as Codec
 import Ouroboros.Network.Block
@@ -111,9 +106,6 @@ deriving instance Show SomeLedgerPeersKind
 -- | A snapshot of ledger peers extracted from the ledger state at some point
 --
 data LedgerPeerSnapshot (a :: LedgerPeersKind) where
-  LedgerPeerSnapshotV2
-    :: (WithOrigin SlotNo, [(AccPoolStake, (PoolStake, NonEmpty LedgerRelayAccessPoint))])
-    -> LedgerPeerSnapshot BigLedgerPeers
   LedgerBigPeerSnapshotV23
     :: !(Point RawBlockHash)
     -> !NetworkMagic
@@ -129,7 +121,6 @@ deriving instance Eq (LedgerPeerSnapshot a)
 deriving instance Show (LedgerPeerSnapshot a)
 
 ledgerPeerSnapshotKind :: LedgerPeerSnapshot a -> SingLedgerPeersKind a
-ledgerPeerSnapshotKind LedgerPeerSnapshotV2 {}     = SingBigLedgerPeers
 ledgerPeerSnapshotKind LedgerBigPeerSnapshotV23 {} = SingBigLedgerPeers
 ledgerPeerSnapshotKind LedgerAllPeerSnapshotV23 {} = SingAllLedgerPeers
 
@@ -162,7 +153,6 @@ data SomeLedgerPeerSnapshot = forall k. SomeLedgerPeerSnapshot !(LedgerPeerSnaps
 instance Eq SomeLedgerPeerSnapshot where
   (SomeLedgerPeerSnapshot u) == (SomeLedgerPeerSnapshot v) =
     case (u, v) of
-      (LedgerPeerSnapshotV2 {}, LedgerPeerSnapshotV2 {})         -> u == v
       (LedgerAllPeerSnapshotV23 {}, LedgerAllPeerSnapshotV23 {}) -> u == v
       (LedgerBigPeerSnapshotV23 {}, LedgerBigPeerSnapshotV23 {}) -> u == v
       _otherwise                                                 -> False
@@ -177,8 +167,6 @@ getRelayAccessPointsFromBigLedgerPeersSnapshot
   -> LedgerPeerSnapshot BigLedgerPeers
   -> (WithOrigin SlotNo, [(AccPoolStake, (PoolStake, NonEmpty RelayAccessPoint))])
 getRelayAccessPointsFromBigLedgerPeersSnapshot srvPrefix = \case
-  LedgerPeerSnapshotV2 as ->
-    fmap (fmap (fmap (fmap (fmap (prefixLedgerRelayAccessPoint srvPrefix))))) as
   LedgerBigPeerSnapshotV23 pt _magic as ->
     let as' = fmap (fmap (fmap (fmap (prefixLedgerRelayAccessPoint srvPrefix)))) as
      in  (pointSlot pt, as')
@@ -195,17 +183,6 @@ getRelayAccessPointsFromAllLedgerPeersSnapshot srvPrefix = \case
 
 
 instance ToJSON (LedgerPeerSnapshot a) where
-  toJSON (LedgerPeerSnapshotV2 (slot, pools)) =
-    object [ "version" .= (2 :: Int)
-           , "slotNo" .= slot
-           , "bigLedgerPools" .= [ object
-                                   [ "accumulatedStake" .= fromRational @Double accStake
-                                   , "relativeStake"    .= fromRational @Double relStake
-                                   , "relays"           .= relays
-                                   ]
-                                 | (AccPoolStake accStake, (PoolStake relStake, relays)) <- pools
-                                 ]
-           ]
   toJSON (LedgerAllPeerSnapshotV23 pt magic pools) =
     object [ "NodeToClientVersion" .= (23 :: Int)
            , "Point" .= toJSON pt
@@ -232,8 +209,7 @@ instance ToJSON (LedgerPeerSnapshot a) where
 
 instance FromJSON (LedgerPeerSnapshot AllLedgerPeers) where
   parseJSON = withObject "LedgerPeerSnapshot" \v -> do
-    -- TODO: remove "version" key after NtC V22 support is removed
-    vNum :: Int <- v .: "version" <|> v .: "NodeToClientVersion"
+    vNum :: Int <- v .: "NodeToClientVersion"
     allPools    <- v .: "allLedgerPools"
     case vNum of
       23 -> do
@@ -253,34 +229,8 @@ instance FromJSON (LedgerPeerSnapshot AllLedgerPeers) where
 
 instance FromJSON (LedgerPeerSnapshot BigLedgerPeers) where
   parseJSON = withObject "LedgerPeerSnapshot" \v -> do
-    -- TODO: remove "version" key after NtC V22 support is removed
-    vNum :: Int <- v .: "version" <|> v .: "NodeToClientVersion"
+    vNum :: Int <- v .: "NodeToClientVersion"
     case vNum of
-      1 -> do
-        slot      <- v .: "slotNo"
-        bigPools  <- v .: "bigLedgerPools"
-        bigPools' <- forM (zip [0 :: Int ..] bigPools) \(idx, poolO) -> do
-                       let f poolV = do
-                               accStake <- poolV .: "accumulatedStake"
-                               reStake  <- poolV .: "relativeStake"
-                               -- decode using `LedgerRelayAccessPointV1` instance
-                               relays <- fmap getLedgerRelayAccessPointV1 <$> poolV .: "relays"
-                               return (accStake, (reStake, relays))
-                       withObject ("bigLedgerPools[" <> show idx <> "]") f (Object poolO)
-
-        return $ LedgerPeerSnapshotV2 (slot, bigPools')
-      2 -> do
-        slot      <- v .: "slotNo"
-        bigPools  <- v .: "bigLedgerPools"
-        bigPools' <- forM (zip [0 :: Int ..] bigPools) \(idx, poolO) -> do
-                       let f poolV = do
-                               accStake <- poolV .: "accumulatedStake"
-                               reStake  <- poolV .: "relativeStake"
-                               relays   <- poolV .: "relays"
-                               return (accStake, (reStake, relays))
-                       withObject ("bigLedgerPools[" <> show idx <> "]") f (Object poolO)
-
-        return $ LedgerPeerSnapshotV2 (slot, bigPools')
       23 -> do
         point     <- v .: "Point"
         magic     <- v .: "NetworkMagic"
@@ -299,43 +249,10 @@ instance FromJSON (LedgerPeerSnapshot BigLedgerPeers) where
             <> show vNum
 
 
-data LedgerPeerSnapshotSRVSupport
-  = LedgerPeerSnapshotSupportsSRV
-  -- ^ since `NodeToClientV_22`
-  | LedgerPeerSnapshotDoesntSupportSRV
-  deriving (Show, Eq)
+encodeLedgerPeerSnapshot :: LedgerPeerSnapshot a -> Codec.Encoding
 
 
-encodeLedgerPeerSnapshot :: LedgerPeerSnapshotSRVSupport -> LedgerPeerSnapshot a -> Codec.Encoding
-encodeLedgerPeerSnapshot LedgerPeerSnapshotDoesntSupportSRV (LedgerPeerSnapshotV2 (wOrigin, pools)) =
-     Codec.encodeListLen 2
-  <> Codec.encodeWord8 1 -- internal version
-  <> Codec.encodeListLen 2
-  <> encodeWithOrigin wOrigin
-  <> toCBOR pools'
-  where
-    pools' =
-      [(accPoolStake, (relStake, NonEmpty.fromList relays))
-      | (accPoolStake, (relStake, relays)) <-
-          -- filter out SRV domains, not supported by `< NodeToClientV_22`
-          map
-            (second $ second $ NonEmpty.filter
-              (\case
-                  LedgerRelayAccessSRVDomain {} -> False
-                  _ -> True)
-            )
-          pools
-      , not (null relays)
-      ]
-
-encodeLedgerPeerSnapshot LedgerPeerSnapshotSupportsSRV (LedgerPeerSnapshotV2 (wOrigin, pools)) =
-     Codec.encodeListLen 2
-  <> Codec.encodeWord8 1 -- internal version
-  <> Codec.encodeListLen 2
-  <> encodeWithOrigin wOrigin
-  <> toCBOR pools
-
-encodeLedgerPeerSnapshot _LedgerPeerSnapshotSupportsSRV (LedgerBigPeerSnapshotV23 pt magic pools) =
+encodeLedgerPeerSnapshot (LedgerBigPeerSnapshotV23 pt magic pools) =
      Codec.encodeListLen 2
   <> Codec.encodeWord8 2 -- internal version
   <> Codec.encodeListLen 3
@@ -343,7 +260,7 @@ encodeLedgerPeerSnapshot _LedgerPeerSnapshotSupportsSRV (LedgerBigPeerSnapshotV2
   <> Codec.encodeWord32 (unNetworkMagic magic)
   <> encodeBigStakePools pools
 
-encodeLedgerPeerSnapshot _LedgerPeerSnapshotSupportsSRV (LedgerAllPeerSnapshotV23 pt magic pools) =
+encodeLedgerPeerSnapshot (LedgerAllPeerSnapshotV23 pt magic pools) =
      Codec.encodeListLen 2
   <> Codec.encodeWord8 3 -- internal version
   <> Codec.encodeListLen 3
@@ -359,19 +276,16 @@ decodeLedgerPeerSnapshot ledgerPeerKind = do
     Codec.decodeListLenOf 2
     version <- Codec.decodeWord8
     case (ledgerPeerKind, version) of
-      (SingBigLedgerPeers, 1) -> do
-        _ <- Codec.decodeListLenOf 2
-        LedgerPeerSnapshotV2 <$> ((,) <$> decodeWithOrigin <*> fromCBOR)
       (SingBigLedgerPeers, 2) -> do
         _ <- Codec.decodeListLenOf 3
-        (LedgerBigPeerSnapshotV23 <$> decodeLedgerPeerSnapshotPoint
+        LedgerBigPeerSnapshotV23 <$> decodeLedgerPeerSnapshotPoint
                                   <*> (NetworkMagic <$> Codec.decodeWord32)
-                                  <*> decodeBigStakePools)
+                                  <*> decodeBigStakePools
       (SingAllLedgerPeers, 3) -> do
         _ <- Codec.decodeListLenOf 3
-        (LedgerAllPeerSnapshotV23 <$> decodeLedgerPeerSnapshotPoint
+        LedgerAllPeerSnapshotV23 <$> decodeLedgerPeerSnapshotPoint
                                   <*> (NetworkMagic <$> Codec.decodeWord32)
-                                  <*> decodeAllStakePools)
+                                  <*> decodeAllStakePools
       _ -> fail $ "LedgerPeers.Type: no decoder could be found for version " <> show version
 
 
@@ -489,8 +403,7 @@ isLedgerPeersEnabled UseLedgerPeers {}  = True
 --
 newtype PoolStake = PoolStake { unPoolStake :: Rational }
   deriving (Eq, Ord, Show)
-  deriving newtype (Fractional, Num, NFData, FromJSON, ToJSON, ToCBOR, FromCBOR)
-  -- the ToCBOR and FromCBOR instances can be removed once V22 is no longer supported
+  deriving newtype (Fractional, Num, NFData, FromJSON, ToJSON)
 
 
 -- | The accumulated relative stake of a stake pool, like PoolStake but it also includes the
@@ -498,8 +411,7 @@ newtype PoolStake = PoolStake { unPoolStake :: Rational }
 --
 newtype AccPoolStake = AccPoolStake { unAccPoolStake :: Rational }
   deriving (Eq, Ord, Show)
-  deriving newtype (Fractional, Num, NFData, FromJSON, ToJSON, FromCBOR, ToCBOR)
-  -- the ToCBOR and FromCBOR instances can be removed once V22 is no longer supported
+  deriving newtype (Fractional, Num, NFData, FromJSON, ToJSON)
 
 
 -- | Identifies a peer as coming from ledger or not.

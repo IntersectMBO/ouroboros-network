@@ -2,6 +2,245 @@
 
 <!-- scriv-insert-here -->
 
+<a id='changelog-1.3.0.0'></a>
+## 1.3.0.0 -- 2026-10-01
+
+### Breaking
+
+- Adapt to JobPools with and without completion queues
+- Change cabal assert flag from `manual: False` to `manual: True`
+
+- Removed `LocalStateQuery_V1 :: LocalStateQueryVersion`.
+- Removed `LedgerPeerSnapshotV2 :: LedgerPeerSnapshot`
+
+- `TxSubmissionCounters` is parameterised over its duration type and is now
+  a synonym for `TxSubmissionCountersOf Word64`. Peers accumulate into
+  `TxSubmissionCountersAcc` (`TxSubmissionCountersOf DiffTime`), which
+  `emittedCounters` converts for tracing. Modules declaring instances for
+  `TxSubmissionCounters` need `FlexibleInstances`.
+- The duration fields lost their unit suffix: `txIdBlockingWait`,
+  `txPipelineWait` and `txSubmissionWait`. The traced JSON keys and metric
+  names are unchanged.
+- `PeerTxAPI` no longer has an `addCounters` field; the counters for each
+  protocol event are updated by the transaction that applies it.
+  `runNextPeerAction`, `applyReceivedTxIds` and `applySubmittedTxs` take the
+  duration they account for.
+- `TxSubmissionCountersVar` and `newTxSubmissionCountersVar` use
+  `TxSubmissionCountersAcc`.
+
+- Add `matchedBlock` type variable to `BlockFetchConsensusInterface`, so
+  Consensus can pass annotations through the BlockFetch dataflow to itself.
+
+- `policyPickHotPeersToDemote` is a `HotDemotionPolicy`: it also returns the
+  scores it ranked the peers by, `Nothing` for a peer without one, so the
+  decision can be traced. `Ouroboros.Network.Diffusion.Policies` exports
+  `mkHotDemotionPolicy` and `deadlineHotScores` to build one from a score.
+- `TraceDemoteHotPeers` and `TraceDemoteHotBigLedgerPeers` carry those scores.
+
+- Added `Ouroboros.Network.Hashable` which includes `Salt` newtype wrapper.
+  `defaultBlockFetchConfiguration` and `BlockFetchConfiguration` are using now
+  the `Salt` wrapper.
+
+- Added `policyPeerShareFailureRetryTime` to `PeerSelectionPolicy`
+  to back off on peer share requests from a peer who is failing them
+
+- `Ouroboros.Network.InboundGovernor.with`, `Ouroboros.Network.Server.with`
+  and `Ouroboros.Network.Diffusion.runM` require `MonadCatch (STM m)` instead
+  of `MonadThrow (STM m)`.
+- `ouroboros-network:framework-tests-lib`: `ConnectionManagerMonad` requires
+  `MonadCatch (STM m)` instead of `MonadThrow (STM m)`.
+- `ouroboros-network:ouroboros-network-tests-lib`:
+  `Test.Ouroboros.Network.Diffusion.Node.run` requires `MonadCatch (STM m)`
+  instead of `MonadThrow (STM m)`.
+- `Ouroboros.Network.InboundGovernor.State`: removed the `csCompletionMap`
+  field of `ConnectionState`, and `updateMiniProtocol`.  The inbound governor
+  no longer keeps the completion actions of responders.
+
+### Non-Breaking
+
+- Fixed the tx-submission duration counters truncating each sample to whole
+  milliseconds, which reported 0 for every wait shorter than a millisecond.
+
+- New gauges `peerSelection.churn.{hot,bigLedger}.{demotedTopScore,
+  retainedBottomScore,retainedMedianScore,retainedTopScore,zeroScorers,
+  scoreSum,eligiblePeers,retainedGiniPermille,topDSharePermille}`, set on
+  every demotion decision; an undefined statistic reads -1.
+- `Ouroboros.Network.OrphanInstances` exports `demotionScoresToJSON`.
+- Warm to hot promotion quarters the random key of non-tepid peers, so a
+  tepid peer (demoted from hot) wins a pairwise draw with probability 1/8.
+  About 30% of churn-demoted peers used to be promoted straight back.
+
+- `ouroboros-network:framework-tests-lib`: added
+  `bidirectionalExperimentWith`, a variant of `bidirectionalExperiment` which
+  takes inbound governor and mux tracers.
+
+### Patch
+
+- Fixed a race in the inbound governor: if the remote side had already sent
+  data when a new connection was announced, a responder could start before
+  the inbound governor registered the connection.  The inbound governor then
+  stopped tracking the connection: its responders were never restarted and
+  its remote state was never updated.  Responders are now started in the same
+  `STM` transaction which registers the connection.
+- The inbound governor takes the outcome of a terminated responder from the
+  mux trace which reported it, instead of waiting on the responder's
+  completion action.  An error of a responder is now traced
+  (`TrResponderErrored`) also if its connection was already released.
+- The inbound governor traces `TrResponderTerminated` when a responder
+  terminates cleanly after its connection was released (so it is not
+  restarted); previously this was not traced.
+
+<a id='changelog-1.2.0.0'></a>
+## 1.2.0.0 -- 2026-07-28
+
+### Breaking
+
+- `VersionDataCodec` and `cborTermVersionDataCodec` moved to
+  `ouroboros-network:api` package (`Ouroboros.Network.CodecCBORTerm` module).
+- `VersionDataCodec`: removed the `bytes` polymorphic variable, since it was
+  always instantiated to `CBOR.Term`.
+- `CodecCBORTerm` module provides now `VersionedCodecCBORTerm` a versioned
+  version of `CodecCBORTerm`, and a pattern synonym `VersionDataCodec` as used
+  in the rest of the codebase.  The `cborTermVersionDataCodec` was renamed as
+  `mkVersionedCodecCBORTerm`.  Also added its inverse `unVersionCodecCBORTerm`.
+
+- Added `nodeTo{Client,Node}VersionDataCodec` to `DMQ.NodeTo{Client,Node}`
+  modules.
+- Removed `nodeTo{Client,Node}CodecCBORTerm`, use the above binding instead.
+
+- Introduced `PrettyShow` typeclass. `Ouroboro.Network.Diffusion.run` requires
+  `PrettyShow addr` constraint.
+- Removed `debugTracerG` from `ouroboros-network:tests-lib`
+
+- `Ouroboros.Network.Socket` API is now parametrised by a monad `m`, except for
+  `connectToNodeSocket` which is kept in `IO`
+
+- Added export list to `Ouroboros.Network.Diffusion.Topology`.  No longer exporting:
+  * `rootConfigToRelayAccessPoint`
+  * `localRootsToRelayAccessPoint`
+
+- Added `TraceForgottenPeers` to `TracePeerSelection`
+
+- Removed `ouroboros-network:framework-tracing`.  All  instances are moved to
+  `ouroboros-network:tracing`.  The latter package exposes now only two modules:
+  * `Network.Mux.Tracing`
+  * `Ouroboros.Network.Tracing`
+  which expose all instances.
+
+- Removed `AcquireConnectionError` trace from `PeerSelectionActionsTrace`, a more
+  detailed trace is provided by `TrConnectError` by `ConnectionManager.Tracer`
+
+- Renamed `FetchModeGenesis` as `GenesisFetchMode`.
+
+- Add getTxParent to test suit's Tx type
+
+- `submitTxToMempool` returns the `TxMempoolResult`
+
+- Added `Interfaces.diNtcConfigureSocketFile`.  It recieves the file path of
+  the local socket.
+- Added `DiffusionTracer` constructors: `ConfiguredLocalSocket` (fired
+  after the local socket's permissions are tightened),
+  `InsecureLocalSocketDirectory` (warning when the parent directory of the
+  local socket has group or other write permission) and
+  `InsecureLocalSocketPermissions` (warning when the socket is readable or
+  writable by `other`).
+- `mkInterfaces`'s tracer type is now specialised to `LocalAddress`
+  (`Tracer IO (DiffusionTracer ntnAddr LocalAddress)`).
+
+- Upgraded to `contra-tracer ^>=0.2.1`. The `Tracer` data constructor is no
+  longer exported; use `mkTracer` instead. `Diffusion.Types.nullTracers` and
+  `Socket.nullNetworkConnectTracers` now require `Monad m` rather than
+  `Applicative m`.
+- Capped `QuickCheck < 2.18`.
+
+- Split `FetchClientRegistry` into two parts
+  - `FetchClientRegistry` - block-fetch related
+  - `KeepAliveRegistry` - keep-alive related
+  Added `newKeepAliveRegistry` to create `KeepAliveRegistry`, it should be
+  called along side `newFetchClientRegistry` whenever `block-fetch` is used.
+- `FetchClientRegistry` record fields where renamed, the `fcr` prefix was
+  dropped,  `KeepAliveRegistry` field names were kept without the prefix too.
+
+- Add HasRawTxId type class
+- Remove central decision from tx-submission v2
+
+- Bumped `trace-dispatcher` to `^>=2.13`.
+
+- `Ouroboros.Network.TxSubmission.Inbound.V2.Registry.awaitSharedChange` is now
+  an STM action, but it requires to pass a registered delay.
+
+- Provide & use `TTL` newtype wrapper.  It is used by:
+  - `requestPublicRootPeers` and `publicRootPeersProvider`
+  - `localRootPeersProvider`
+  Note, we don't use `TTL` in `ledgerPeersThread`, since these are not coming
+  from `DNS`; `DiffTime` is used instead which is not limited by the `TTL`
+  invariants.
+
+### Non-Breaking
+
+- Added `Ouroboros.Network.PerasSupport` module containing the `PerasSupport` flag type used in `NodeToNodeVersionData` starting from `NodeToNodeV_16`.
+- Added ObjectDiffusion mini-protocol for Ouroboros Peras.
+
+- Using tracers defined in `Test.Ouroboros.Network.Utils` rather than providing ones own.
+- Fixed `prop_timeouts_enforced` in `ouroboros-network:framework-sim-tests`.
+- Improved thread labels.
+- Improved error location for the arbitrary `AbsIOError` generator.
+
+- Added `Test.Ouroboros.Network.Data.Signal.ppEvents`
+
+- `ToJSON` instance of `LocalRootConfig` was updated to include `behindFirewall` fieldj
+- `ToJSON` instance of `LocalRootConfig` was updated to avoid a generic field name `extraFlags`
+
+- Fixed `MetaTrace (Simple.AnyMessage ps)` instance.
+
+- Added `ouroboros-network:exe:demo-tx-submission`.
+
+- Fix test suits mempool writer's counting of valid and invalid txs
+
+- Minor tweaks to tracing irregularities
+
+- Trace a warning at start-up if the local-socket permissions are too broad
+  (e.g. `other` has read or write access to it).  We leave it to the user to
+  control file permissions created by the running process, e.g. by `umask`.
+- Trace a warning at start-up if the parent directory of the local-socket
+  path has `group` or `other` write permission, since a `0600` socket
+  inside such a directory remains vulnerable to manipulation by another
+  local user with write access to that directory.
+
+- Improved haddocs, added type signatures, code style improvements
+- Fixed a typo in `network-spec` (issue [#5346](https://github.com/IntersectMBO/ouroboros-network/issues/5346))
+
+- Added `NoExtraConfig` to `Ouroboros.Network.Diffusion.Types` (previously defined in `dmq-node`).
+- Added `NoExtraAPI` to `Ouroboros.Network.Diffusion.Types` (previously defined in `dmq-node`).
+- Added `NoExtraChurnArgs` to `Ouroboros.Network.Diffusion.Types` (previously defined in `dmq-node`).
+- Added `JSONField NoExtraFlags` instance (ouroboros-network:orphaned-instances).
+- Added `ToJSON NoExtraFlags` instance (ouroboros-network:orphaned-instances).
+- Added `ToJSON NoExtraDebugState` instance (ouroboros-network:orphaned-instances).
+- Exported `Ouroboros.Network.KeepAlive.Registry` module from `Ouroboros.Network.KeepAlive`
+
+- Removed the `QuickCheck < 2.18` upper bound, allowing QuickCheck 2.18+.
+- Added `cardano-base:testlib >=0.1.5.0` dependency.
+
+- Efficient handling of the common case in setCurrentTime. Used by the governor.
+
+- Make the testcase prop_socket_send_recv less flakey
+
+- Revert aeson lower bound
+
+- Added `Ouroboros.Network.RegisteredDelay` to `ouroboros-network:framework`
+
+- `fixupTTL` maps DNS.TTL 0 to `minTTL`, later `fixupTTL` is removed by the `TTL` newtype wrapper.
+
+- Cleanup some racy conditions
+
+### Patch
+
+- Fix TxSubmissionProtocolError Eq instance
+
+- Tracing instances cleanup
+
+- Fixed tracing severity queries for `InsecureLocalSocket`.
+
 <a id='changelog-1.1.0.0'></a>
 ## 1.1.0.0 -- 2026-03-12
 

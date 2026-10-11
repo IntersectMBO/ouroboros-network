@@ -44,6 +44,15 @@
           overlays = [
             # haskellNix.overlay can be configured by later overlays, so need to come before them.
             inputs.haskellNix.overlay
+            # Pin `cddl` to Ruby 3.3 — the cddl-0.12.9 gem `require`s base64
+            # but doesn't declare it as a Bundler dep, and Ruby 3.4 dropped
+            # base64 from default gems. Stay on 3.3 until upstream nixpkgs
+            # fixes the Gemfile.
+            (final: prev: {
+              cddl = prev.cddl.override {
+                bundlerApp = prev.bundlerApp.override { ruby = prev.ruby_3_3; };
+              };
+            })
             (import ./nix/tools.nix inputs)
             (import ./nix/ouroboros-network.nix inputs)
             (import ./nix/network-docs.nix inputs)

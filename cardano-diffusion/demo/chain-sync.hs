@@ -52,6 +52,7 @@ import Cardano.Network.NodeToNode
 import Ouroboros.Network.AnchoredFragment qualified as AF
 import Ouroboros.Network.Block
 import Ouroboros.Network.ControlMessage (continueForever)
+import Ouroboros.Network.Hashable (mkUnsafeSalt)
 import Ouroboros.Network.Mock.Chain qualified as Chain
 import Ouroboros.Network.Mock.ConcreteBlock
 import Ouroboros.Network.Mux
@@ -413,7 +414,7 @@ clientBlockFetch sockAddrs maxSlotNo = withIOManager $ \iocp -> do
                                     nullTracer clientCtx)
 
         blockFetchPolicy :: BlockFetchConsensusInterface
-                             LocalConnectionId BlockHeader Block IO
+                             LocalConnectionId BlockHeader Block Block IO
         blockFetchPolicy =
             BlockFetchConsensusInterface {
               readCandidateChains    = readTVar candidateChainsVar
@@ -434,7 +435,7 @@ clientBlockFetch sockAddrs maxSlotNo = withIOManager $ \iocp -> do
                   },
 
               blockFetchSize         = \_ -> 1000,
-              blockMatchesHeader     = \_ _ -> True,
+              blockMatchesHeader     = \_ blk -> Just blk,
 
               headerForgeUTCTime,
               readChainSelStarvation = pure (ChainSelStarvationEndedAt (Time 0)),
@@ -512,7 +513,7 @@ clientBlockFetch sockAddrs maxSlotNo = withIOManager $ \iocp -> do
                         bfcMaxRequestsInflight    = 10,
                         bfcDecisionLoopIntervalGenesis = 0.04,
                         bfcDecisionLoopIntervalPraos = 0.01,
-                        bfcSalt                   = 0,
+                        bfcSalt                   = mkUnsafeSalt 0,
                         bfcGenesisBFConfig        = GenesisBlockFetchConfiguration
                           { gbfcGracePeriod = 10 -- seconds
                           }

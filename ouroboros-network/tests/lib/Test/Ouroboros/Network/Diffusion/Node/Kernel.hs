@@ -292,7 +292,7 @@ data NodeKernel header block s txid m = NodeKernel {
         :: StrictTVar m (ChainProducerState block),
 
       nkFetchClientRegistry
-        :: FetchClientRegistry NtNAddr header block m,
+        :: FetchClientRegistry NtNAddr header block block m,
 
       nkKeepAliveRegistry
         :: KeepAliveRegistry NtNAddr m,

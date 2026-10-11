@@ -4,7 +4,10 @@
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE OverloadedStrings          #-}
+#if defined(mingw32_HOST_OS)
 {-# LANGUAGE PackageImports             #-}
+#endif
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TupleSections              #-}
@@ -34,13 +37,14 @@ import Data.Map qualified as M
 import Data.Maybe (fromMaybe, isNothing)
 import Data.Tuple (swap)
 import Data.Word
+import Formatting (formatToString, (%), (%+))
+import Formatting qualified as F
 import System.Random.SplitMix qualified as SM
 import Test.Cardano.Base.QuickCheck qualified as BaseQC
 import Test.QuickCheck hiding ((.&.))
 import Test.QuickCheck.Instances.ByteString ()
 import Test.Tasty
 import Test.Tasty.QuickCheck (testProperty)
-import Text.Printf
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadAsync
@@ -107,6 +111,7 @@ tests =
   , testProperty "trailing bytes (IO)"          prop_mux_trailing_bytes_io
   , testProperty "pure exception (Sim)"         prop_mux_pure_exception_iosim
   , testProperty "pure exception (IO)"          prop_mux_pure_exception_io
+  , testProperty "sdu codec"                    prop_sdu_codec
   , testGroup "Generators"
     [ testProperty "genByteString"              prop_arbitrary_genByteString
     , testProperty "genLargeByteString"         prop_arbitrary_genLargeByteString
@@ -144,10 +149,9 @@ newtype DummyPayload = DummyPayload {
     } deriving Eq
 
 instance Show DummyPayload where
-    show d = printf "DummyPayload %d\n" (BL.length $ unDummyPayload d)
+    show d = formatToString ("DummyPayload" %+ F.int % "\n") (BL.length $ unDummyPayload d)
 
--- |
--- Generate a byte string of a given size.
+-- | Generate a byte string of a given size.
 --
 genByteString :: Int -> Gen BL.ByteString
 genByteString size = do
@@ -167,7 +171,7 @@ prop_arbitrary_genByteString (NonNegative (Small size)) = ioProperty $ do
   return $ fromIntegral size == BL.length bs
 
 genLargeByteString :: Int -> Int -> Gen BL.ByteString
-genLargeByteString chunkSize  size | chunkSize < size = do
+genLargeByteString chunkSize size | chunkSize < size = do
   chunk <- genByteString chunkSize
   return $ BL.concat $
         replicate (size `div` chunkSize) chunk
@@ -175,8 +179,7 @@ genLargeByteString chunkSize  size | chunkSize < size = do
         [BL.take (fromIntegral $ size `mod` chunkSize) chunk]
 genLargeByteString _chunkSize size = genByteString size
 
--- |
--- Large Int values, but not too large, up to @1024*1024@.
+-- | Large Int values, but not too large, up to @1024*1024@.
 --
 newtype LargeInt = LargeInt Int
   deriving (Eq, Ord, Num, Show)
@@ -241,12 +244,13 @@ data InvalidSDU = InvalidSDU {
     }
 
 instance Show InvalidSDU where
-    show a = printf "InvalidSDU 0x%08x 0x%04x 0x%04x 0x%04x 0x%02x\n"
-                    (Mx.unRemoteClockModel $ isTimestamp a)
-                    (isIdAndMode a)
-                    (isLength a)
-                    (isRealLength a)
-                    (isPattern a)
+    show a = formatToString
+              ("InvalidSDU" %+ F.hexPrefix 8 %+ F.hexPrefix 4 %+ F.hexPrefix 4 %+ F.hexPrefix 4 %+ F.hexPrefix 2 F.% "\n")
+              (Mx.unRemoteClockModel $ isTimestamp a)
+              (isIdAndMode a)
+              (isLength a)
+              (isRealLength a)
+              (isPattern a)
 
 data ArbitrarySDU = ArbitraryInvalidSDU InvalidSDU Mx.Error
                   | ArbitraryValidSDU DummyPayload (Maybe Mx.Error)
@@ -307,8 +311,8 @@ newtype DummyCapability = DummyCapability {
 instance Arbitrary DummyCapability where
     arbitrary =
       frequency [ (1, return $ DummyCapability Nothing)
-                , (8, (DummyCapability . Just) <$> choose (0, 7))
-                , (1, (DummyCapability . Just) <$> arbitrary)
+                , (8, DummyCapability . Just <$> choose (0, 7))
+                , (1, DummyCapability . Just <$> arbitrary)
                 ]
 
 
@@ -363,8 +367,8 @@ prop_mux_snd_recv (DummyRun messages) = ioProperty $ do
                          sduLen
                          QueueChannel { writeQueue = server_w, readQueue = server_r }
 
-        clientTracer' = contramap (Mx.WithBearer "client") activeTracer
-        serverTracer' = contramap (Mx.WithBearer "server") activeTracer
+        clientTracer' = contramap (Mx.WithBearer ("client" :: String)) activeTracer
+        serverTracer' = contramap (Mx.WithBearer ("server" :: String)) activeTracer
         clientTracer = Mx.TracersI clientTracer' clientTracer' clientTracer'
         serverTracer = Mx.TracersI serverTracer' serverTracer' serverTracer'
 
@@ -394,7 +398,7 @@ prop_mux_snd_recv (DummyRun messages) = ioProperty $ do
         Mx.stop clientMux
         wait serverAsync
         wait clientAsync
-        return $ r
+        return r
 
   where
     step _ _ _ _ [] = return $ property True
@@ -426,8 +430,8 @@ prop_mux_snd_recv_bi (DummyRun messages) (DummyCapability clientCap) (DummyCapab
     let server_w = client_r
         server_r = client_w
 
-        clientTracer' = contramap (Mx.WithBearer "client") activeTracer
-        serverTracer' = contramap (Mx.WithBearer "server") activeTracer
+        clientTracer' = contramap (Mx.WithBearer ("client" :: String)) activeTracer
+        serverTracer' = contramap (Mx.WithBearer ("server" :: String)) activeTracer
         clientTracer  = Mx.TracersI clientTracer' clientTracer' clientTracer'
         serverTracer  = Mx.TracersI serverTracer' serverTracer' serverTracer'
 
@@ -539,8 +543,8 @@ prop_mux_snd_recv_compat messages = ioProperty $ do
     let server_w = client_r
         server_r = client_w
 
-        clientTracer' = contramap (Mx.WithBearer "client") activeTracer
-        serverTracer' = contramap (Mx.WithBearer "server") activeTracer
+        clientTracer' = contramap (Mx.WithBearer ("client" :: String)) activeTracer
+        serverTracer' = contramap (Mx.WithBearer ("server" :: String)) activeTracer
         clientTracer  = Mx.TracersI clientTracer' clientTracer' clientTracer'
         serverTracer  = Mx.TracersI serverTracer' serverTracer' serverTracer'
 
@@ -753,8 +757,8 @@ runMuxApplication :: DummyCapability
                   -> Mx.Bearer IO
                   -> IO Bool
 runMuxApplication (DummyCapability rspCap) initApps initBearer respApps respBearer = do
-    let clientTracer' = contramap (Mx.WithBearer "client") activeTracer
-        serverTracer' = contramap (Mx.WithBearer "server") activeTracer
+    let clientTracer' = contramap (Mx.WithBearer ("client" :: String)) activeTracer
+        serverTracer' = contramap (Mx.WithBearer ("server" :: String)) activeTracer
         clientTracer  = Mx.TracersI clientTracer' clientTracer' clientTracer'
         serverTracer  = Mx.TracersI serverTracer' serverTracer' serverTracer'
         protNum = [1..]
@@ -1017,8 +1021,8 @@ prop_mux_starvation (Uneven response0 response1) =
     let server_w = client_r
         server_r = client_w
 
-        clientTracer' = contramap (Mx.WithBearer "client") activeTracer
-        serverTracer' = contramap (Mx.WithBearer "server") activeTracer
+        clientTracer' = contramap (Mx.WithBearer ("client" :: String)) activeTracer
+        serverTracer' = contramap (Mx.WithBearer ("server" :: String)) activeTracer
         clientTracer  = Mx.TracersI clientTracer' clientTracer' (clientTracer' <> headerTracer)
         serverTracer  = Mx.TracersI serverTracer' serverTracer' serverTracer'
 
@@ -1148,6 +1152,71 @@ encodeInvalidMuxSDU sdu =
         Bin.putWord16be $ isIdAndMode sdu
         Bin.putWord16be $ isLength sdu
 
+-- | An 'Mx.SDU' header for the codec round-trip test: covers both
+-- directions as well as boundary timestamps, mini-protocol numbers and
+-- payload lengths.
+--
+data SDUCodecCase = SDUCodecCase Word32 Word16 Mx.MiniProtocolDir Word16
+  deriving Show
+
+instance Arbitrary SDUCodecCase where
+    arbitrary =
+        SDUCodecCase
+          <$> boundary [0, maxBound]                  -- timestamp
+          <*> ((.&. 0x7fff) <$> boundary [0, 0x7fff]) -- mini-protocol number
+          <*> elements [Mx.InitiatorDir, Mx.ResponderDir]
+          <*> boundary [0, 1, maxBound]               -- payload length
+      where
+        boundary :: Arbitrary a => [a] -> Gen a
+        boundary xs = frequency ([(1, pure x) | x <- xs] ++ [(3, arbitrary)])
+
+-- | Wire format and round-trip check of 'Mx.encodeSDU' / 'Mx.decodeSDU'.
+--
+-- The encoding must be byte identical to a reference 'Bin.runPut' based
+-- encoder (the previous implementation of 'Mx.encodeSDU') and
+-- 'Mx.decodeSDU' must recover the header exactly.  Note that
+-- 'Mx.decodeSDU' rejects zero length SDUs and truncated headers.
+--
+prop_sdu_codec :: SDUCodecCase -> Property
+prop_sdu_codec (SDUCodecCase ts num dir len) =
+         counterexample "wire format differs from reference encoder"
+           (encoded === reference)
+    .&&. forAll (choose (0, Mx.msHeaderLength - 1)) (\k ->
+           counterexample ("truncated header of length " ++ show k ++ " not rejected") $
+             case Mx.decodeSDU (BL.take k encoded) of
+               Left (Mx.SDUDecodeError _) -> True
+               _                          -> False)
+    .&&. case Mx.decodeSDU encoded of
+           Left (Mx.SDUDecodeError e) ->
+             counterexample ("unexpected decode error: " ++ e) (len === 0)
+           Left e ->
+             counterexample ("unexpected error: " ++ show e) False
+           Right sdu' ->
+                  len =/= 0
+             .&&. Mx.unRemoteClockModel (Mx.msTimestamp sdu') === ts
+             .&&. Mx.msNum sdu'    === Mx.MiniProtocolNum num
+             .&&. Mx.msDir sdu'    === dir
+             .&&. Mx.msLength sdu' === len
+  where
+    blob = BL.replicate (fromIntegral len) 0xa5
+    sdu  = Mx.SDU {
+        Mx.msHeader = Mx.SDUHeader {
+            Mx.mhTimestamp = Mx.RemoteClockModel ts,
+            Mx.mhNum       = Mx.MiniProtocolNum num,
+            Mx.mhDir       = dir,
+            Mx.mhLength    = len
+          },
+        Mx.msBlob = blob
+      }
+    encoded   = Mx.encodeSDU sdu
+    reference = Bin.runPut refPut `BL.append` blob
+    refPut = do
+        Bin.putWord32be ts
+        Bin.putWord16be $ case dir of
+                            Mx.InitiatorDir -> num
+                            Mx.ResponderDir -> num .|. 0x8000
+        Bin.putWord16be len
+
 -- | Verify ingress processing of valid and invalid SDUs.
 --
 prop_demux_sdu :: forall m.
@@ -1260,11 +1329,17 @@ prop_demux_sdu a = do
                     Nothing -> return $ counterexample (show e) False
             Right _ -> return $ counterexample "expected an exception" False
 
+    plainServer :: MiniProtocolInfo  mode
+                -> (Mx.ByteChannel m -> m (a, Maybe BL.ByteString))
+                -> m ( StrictTBQueue m BL.ByteString
+                     , Async m ()
+                     , STM m (Either SomeException a), Mx.Mux mode m
+                     )
     plainServer serverApp server_mp = do
         server_w <- atomically $ newTBQueue 10
         server_r <- atomically $ newTBQueue 10
 
-        let serverTracer' = contramap (Mx.WithBearer "server") activeTracer
+        let serverTracer' = contramap (Mx.WithBearer ("server" :: String)) activeTracer
             serverTracer  = Mx.TracersI serverTracer' serverTracer' serverTracer'
 
         serverBearer <- getBearer makeQueueChannelBearer
@@ -1275,18 +1350,24 @@ prop_demux_sdu a = do
                           Nothing
 
         serverMux <- Mx.new serverTracer [serverApp]
-        serverRes <- Mx.runMiniProtocol serverMux (Mx.miniProtocolNum serverApp) (Mx.miniProtocolDir serverApp)
-                 Mx.StartEagerly server_mp
+        serverRes <- Mx.runMiniProtocol serverMux
+                                        (Mx.miniProtocolNum serverApp)
+                                        (Mx.miniProtocolDir serverApp)
+                                        Mx.StartEagerly
+                                        server_mp
 
         said <- async $ Mx.run serverMux serverBearer
         return (server_r, said, serverRes, serverMux)
 
     -- Server that expects to receive a specific ByteString.
     -- Doesn't send a reply.
+    serverRsp :: StrictTMVar m BL.ByteString
+              -> Mx.ByteChannel m
+              -> m ((), Maybe BL.ByteString)
     serverRsp stopVar chan =
         atomically (takeTMVar stopVar) >>= loop
       where
-        loop e | e == BL.empty = return ((), Nothing)
+        loop e | BL.null e = return ((), Nothing)
         loop e = do
             msg_m <- Mx.recv chan
             case msg_m of
@@ -1296,7 +1377,11 @@ prop_demux_sdu a = do
                           Nothing -> error "recv corruption"
                  Nothing -> error "eof corruption"
 
-    writeSdu _ payload | payload == BL.empty = return ()
+
+    writeSdu :: StrictTBQueue m BL.ByteString
+             -> BL.ByteString
+             -> m ()
+    writeSdu _ payload | BL.null payload = return ()
     writeSdu queue payload = do
         let (!frag, !rest) = BL.splitAt 0xffff payload
             sdu' = Mx.SDU
@@ -1394,7 +1479,7 @@ data DummyApps =
 
 instance Arbitrary DummyApps where
     arbitrary = do
-        nums <- listOf1 $ arbitrary
+        nums <- listOf1 arbitrary
         apps <- mapM genApp $ nub nums
         mode <- arbitrary
         case mode of
@@ -1443,7 +1528,7 @@ data DummyRestartingApps =
 
 instance Arbitrary DummyRestartingApps where
     arbitrary = do
-        nums <- listOf1 $ arbitrary
+        nums <- listOf1 arbitrary
         apps <- mapM genApp $ nub nums
         mode <- arbitrary
         case mode of
@@ -1542,11 +1627,11 @@ prop_mux_start_mX apps runTime = do
              DummyAppSucceed ->
                  case r of
                       Left _  -> return (counterexample
-                                          (printf "%s ≰ %s" (show minRunTime) (show totTime))
+                                          (formatToString (F.shown %+ "≰" %+ F.shown) minRunTime totTime)
                                           (minRunTime <= totTime)
                                         , r)
                       Right _ -> return (counterexample
-                                          (printf "%s ≱ %s" (show minRunTime) (show totTime))
+                                          (formatToString (F.shown %+ "≱" %+ F.shown) minRunTime totTime)
                                           (minRunTime >= totTime)
                                         , r)
              DummyAppFail ->
@@ -1905,7 +1990,11 @@ data WithThreadAndTime a = WithThreadAndTime {
 
 instance (Show a) => Show (WithThreadAndTime a) where
     show WithThreadAndTime {wtatOccuredAt, wtatWithinThread, wtatEvent} =
-        printf "%s: %s: %s" (show wtatOccuredAt) (show wtatWithinThread) (show wtatEvent)
+        formatToString
+          (F.shown F.% ":" %+ F.shown F.% ":" %+ F.shown)
+          wtatOccuredAt
+          wtatWithinThread
+          wtatEvent
 
 verboseTracer :: forall a m.
                        ( MonadAsync m
@@ -2212,11 +2301,21 @@ close_experiment
                               (show serverError)
                               False
 #ifdef mingw32_HOST_OS
-              -- this fails on Windows for ~1% of cases
+              -- these cases fail on Windows for ~1% of cases: when the bearer
+              -- gets a Windows "network name no longer available" IOException,
+              -- either side can surface it as Shutdown (Just IOException) Failed.
+              (_, Left (Right clientError), _)
+                 | iotest
+                 , Just (Mx.Shutdown (Just e) _) <- fromException clientError
+                 , Just (Mx.IOException _ msg) <- fromException e
+                 , msg == "recv errored"
+                -> return $ label ("client-error: " ++ show fault) True
+
               (_, Right _, Left (Right serverError))
                  | iotest
                  , Just (Mx.Shutdown (Just e) _) <- fromException serverError
-                 , Just Mx.IOException {} <- fromException e
+                 , Just (Mx.IOException _ msg) <- fromException e
+                 , msg == "recv errored"
                 -> return $ label ("server-error: " ++ show fault) True
 #endif
 
