@@ -495,7 +495,7 @@ instance MetaTrace Mux.Trace where
       Namespace [] ["Stopped"]
 
     severityFor (Namespace _ ["State"]) _            = Just Info
-    severityFor (Namespace _ ["CleanExit"]) _        = Just Notice
+    severityFor (Namespace _ ["CleanExit"]) _        = Just Info
     severityFor (Namespace _ ["ExceptionExit"]) _    = Just Notice
     severityFor (Namespace _ ["StartEagerly"]) _     = Just Debug
     severityFor (Namespace _ ["StartOnDemand"]) _    = Just Debug
