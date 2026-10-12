@@ -217,8 +217,9 @@ rankFor Other     matched hasAny
 -- | A connection's rank rule and charge sink, sharing one view of the
 -- buckets: its pools' buckets, looked up at every use, or when it belongs
 -- to no pool its own bucket, which opens empty once the connection has
--- outlived the stranger lock, so a reconnection starts the wait over. Bytes
--- on the uncharged protocols are never charged.
+-- outlived the stranger lock, so a reconnection starts the wait over. The
+-- sink runs in the transaction that grants a batch. Bytes on the uncharged
+-- protocols are never charged.
 mkEgressRule :: (MonadSTM m, Ord addr)
              => PoolAllowances m addr
              -> [MiniProtocolNum]
