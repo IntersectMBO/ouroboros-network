@@ -230,7 +230,7 @@ instance MetaTrace Mux.BearerTrace where
     severityFor (Namespace _ ["SDUReadTimeoutException"]) _  = Just Notice
     severityFor (Namespace _ ["SDUWriteTimeoutException"]) _ = Just Notice
     severityFor (Namespace _ ["TCPInfo"]) _                  = Just Debug
-    severityFor (Namespace _ ["TraceEmitDeltaQ"]) _          = Nothing
+    severityFor (Namespace _ ["TraceEmitDeltaQ"]) _          = Just Debug
     severityFor _ _                                          = Nothing
 
     documentFor (Namespace _ ["RecvHeaderStart"])       = Just
@@ -255,7 +255,8 @@ instance MetaTrace Mux.BearerTrace where
       "Timed out reading SDU."
     documentFor (Namespace _ ["SDUWriteTimeoutException"]) = Just
       "Timed out writing SDU."
-    documentFor (Namespace _ ["TraceEmitDeltaQ"])       = Nothing
+    documentFor (Namespace _ ["TraceEmitDeltaQ"])       = Just
+      "Bearer emits its DeltaQ sample."
     documentFor (Namespace _ ["TCPInfo"])               = Just
       "TCPInfo."
     documentFor _                                       = Nothing
