@@ -220,7 +220,7 @@ prop_rule_follows_reindex (Reindexes n steps) =
     classify (any moved (zip (map fst steps) (drop 1 (map fst steps)))) "positions move, membership kept" $
       observed === expected
   where
-    expected = [ [ rankFor Other (not (null ps)) (any (`elem` credited) ps)
+    expected = [ [ rankFor Other False (if null ps then Nothing else Just (any (`elem` credited) ps))
                  | a <- addresses, let ps = Map.findWithDefault [] a idx ]
                | (idx, credited) <- steps ]
     observed = runSimOrThrow $ do

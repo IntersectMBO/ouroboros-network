@@ -534,7 +534,7 @@ runM Interfaces
           egressRuleOf addr dataFlow remoteHot =
             case poolAllowances of
                  Nothing ->
-                   return ( \now -> (\s -> rankFor s False False) <$> standingOf addr dataFlow remoteHot now
+                   return ( \now -> (\s -> rankFor s False Nothing) <$> standingOf addr dataFlow remoteHot now
                           , \_ _ _ -> return () )
                  Just allowances -> do
                    now <- getMonotonicTime
