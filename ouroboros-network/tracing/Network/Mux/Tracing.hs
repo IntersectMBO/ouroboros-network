@@ -686,6 +686,7 @@ instance LogFormatting Mux.CountersTrace where
       Mux.TraceEgressCounters c -> mconcat
         [ "kind" .= String "Mux.TraceEgressCounters"
         , "scheduling" .= schedulingObject c ]
+      Mux.TraceEgressBurst ago b -> burstObject ago b
       where
         countsObject :: Text -> Mux.Counts -> Object
         countsObject kind
@@ -708,6 +709,27 @@ instance LogFormatting Mux.CountersTrace where
           [ object [ "protocol" .= n, "direction" .= String (showT d), what .= b ]
           | ((Mux.MiniProtocolNum n, d), b) <- Map.toList counts
           ]
+        -- the burst's instants relative to the trace's own time, since the
+        -- monotonic clock means nothing outside the process
+        burstObject ago b@Mux.Burst { Mux.bCapped, Mux.bBytes
+                                    , Mux.bBatches, Mux.bTiers, Mux.bFiller, Mux.bWidth
+                                    , Mux.bPeakQueued, Mux.bWaitTokens, Mux.bWaitWritable } =
+          mconcat
+            [ "kind" .= String "Mux.TraceEgressBurst"
+            , "endedAgo" .= (realToFrac ago :: Double)
+            , "duration" .= (realToFrac (Mux.burstDuration b) :: Double)
+            , "capped" .= bCapped
+            , "bytes" .= bBytes
+            , "batches" .= bBatches
+            , "tiers" .= [ object [ "tier" .= t, "name" .= tierName t
+                                  , "bytes" .= Mux.tgBytes g, "batches" .= Mux.tgBatches g ]
+                         | (t, g) <- Map.toList bTiers ]
+            , "fillerBytes" .= bFiller
+            , "width" .= bWidth
+            , "peakQueued" .= bPeakQueued
+            , "maxWaitTokens" .= (realToFrac bWaitTokens :: Double)
+            , "waitWritable" .= (realToFrac bWaitWritable :: Double)
+            ]
         schedulingObject :: Mux.SchedulingCounts -> Value
         schedulingObject Mux.SchedulingCounts { Mux.scDirectBytes, Mux.scSliceBytes
                                               , Mux.scSliceBorrowedBytes, Mux.scSliceBatches
@@ -719,7 +741,7 @@ instance LogFormatting Mux.CountersTrace where
                                               , Mux.scSliceQueued, Mux.scBursts
                                               , Mux.scBusyTime, Mux.scContendedTime
                                               , Mux.scBurstsOver, Mux.scBurstsWider
-                                              , Mux.scTiers } =
+                                              , Mux.scBurstsDropped, Mux.scTiers } =
           object
             [ "directBytes" .= scDirectBytes
             , "sliceBytes" .= scSliceBytes
@@ -740,15 +762,19 @@ instance LogFormatting Mux.CountersTrace where
             , "contendedTime" .= (realToFrac scContendedTime :: Double)
             , "burstsOver" .= [ (realToFrac b :: Double, n) | (b, n) <- scBurstsOver ]
             , "burstsWider" .= scBurstsWider
+            , "burstsDropped" .= scBurstsDropped
             , "tiers" .= [ object [ "tier" .= t, "name" .= tierName t
                                   , "bytes" .= Mux.tcBytes c, "batches" .= Mux.tcBatches c
-                                  , "queued" .= Mux.tcQueued c ]
+                                  , "queued" .= Mux.tcQueued c
+                                  , "served" .= Mux.tcServed c ]
                          | (t, c) <- scTiers ]
             ]
     forHuman = \case
       Mux.TraceRemoteCounters c -> "Node-to-node mux counters: " <> countsLine c
       Mux.TraceLocalCounters  c -> "Node-to-client mux counters: " <> countsLine c
       Mux.TraceEgressCounters c -> "Scheduled egress counters: " <> showT c
+      Mux.TraceEgressBurst ago b ->
+        "Egress burst, ended " <> showT (realToFrac ago :: Double) <> " s ago: " <> showT b
       where
         -- The byte totals, and the failure counts that are not zero.
         countsLine :: Mux.Counts -> Text
@@ -768,6 +794,7 @@ instance LogFormatting Mux.CountersTrace where
       Mux.TraceRemoteCounters c -> countsMetrics Remote c
       Mux.TraceLocalCounters  c -> countsMetrics Local c
       Mux.TraceEgressCounters c -> schedulingMetrics egressPrefix c
+      Mux.TraceEgressBurst {}   -> []
       where
         countsMetrics :: Side -> Mux.Counts -> [Metric]
         countsMetrics side
@@ -804,6 +831,7 @@ instance LogFormatting Mux.CountersTrace where
                                                       , Mux.scContendedTime
                                                       , Mux.scBurstsOver
                                                       , Mux.scBurstsWider
+                                                      , Mux.scBurstsDropped
                                                       , Mux.scTiers } =
           [ IntM    (prefix <> ".direct.bytes")           (fromIntegral scDirectBytes)
           , IntM    (prefix <> ".slice.bytes")            (fromIntegral scSliceBytes)
@@ -821,6 +849,7 @@ instance LogFormatting Mux.CountersTrace where
           , IntM    (prefix <> ".budget.bursts")          (fromIntegral scBursts)
           , DoubleM (prefix <> ".budget.busyTime")        (realToFrac scBusyTime)
           , DoubleM (prefix <> ".budget.contendedTime")   (realToFrac scContendedTime)
+          , IntM    (prefix <> ".budget.burstsDropped")   (fromIntegral scBurstsDropped)
           ] ++
           [ IntM (prefix <> burstsOverSuffix (realToFrac b)) (fromIntegral n)
           | (b, n) <- scBurstsOver ] ++
@@ -828,7 +857,8 @@ instance LogFormatting Mux.CountersTrace where
           | (w, n) <- scBurstsWider ] ++
           concat [ [ IntM (tier <> ".bytes")   (fromIntegral (Mux.tcBytes c))
                    , IntM (tier <> ".batches") (fromIntegral (Mux.tcBatches c))
-                   , IntM (tier <> ".queued")  (fromIntegral (Mux.tcQueued c)) ]
+                   , IntM (tier <> ".queued")  (fromIntegral (Mux.tcQueued c))
+                   , IntM (tier <> ".served")  (fromIntegral (Mux.tcServed c)) ]
                  | (t, c) <- scTiers, let tier = prefix <> ".tier." <> tierName t ] ++
           [ IntM (prefix <> waitsOverSuffix (realToFrac b)) (fromIntegral n)
           | (b, n) <- scWaitsOver ]
@@ -837,15 +867,25 @@ instance MetaTrace Mux.CountersTrace where
     namespaceFor Mux.TraceRemoteCounters {} = Namespace [] ["Remote"]
     namespaceFor Mux.TraceLocalCounters {}  = Namespace [] ["Local"]
     namespaceFor Mux.TraceEgressCounters {} = Namespace [] ["Egress"]
+    namespaceFor Mux.TraceEgressBurst {}    = Namespace [] ["Burst"]
 
     severityFor (Namespace _ ["Remote"]) _ = Just Info
     severityFor (Namespace _ ["Local"])  _ = Just Info
     severityFor (Namespace _ ["Egress"]) _ = Just Info
+    severityFor (Namespace _ ["Burst"])  _ = Just Info
     severityFor _ _                        = Nothing
 
     documentFor (Namespace _ ["Remote"]) = Just (countersDoc Remote)
     documentFor (Namespace _ ["Local"])  = Just (countersDoc Local)
     documentFor (Namespace _ ["Egress"]) = Just egressCountersDoc
+    documentFor (Namespace _ ["Burst"])  = Just $
+      "One burst of credited demand on the egress budget, from the first grant of at least "
+        <> showT Mux.egressBurstGrantFloor <> " bytes to a credited bearer after an idle gap of "
+        <> showT (realToFrac Mux.egressBurstGap :: Double)
+        <> " s (or the budget's refill time, if longer) to the last before the next, "
+        <> "with what was granted meanwhile at rest rank or under the floor as filler; a burst longer than "
+        <> showT (realToFrac Mux.egressBurstCap :: Double)
+        <> " s is closed and the next opened. Traced with the egress snapshot that follows its end."
     documentFor _                        = Nothing
 
     metricsDocFor (Namespace _ ["Remote"]) = metricsDoc Remote
@@ -853,7 +893,8 @@ instance MetaTrace Mux.CountersTrace where
     metricsDocFor (Namespace _ ["Egress"]) = egressMetricsDoc
     metricsDocFor _                        = []
 
-    allNamespaces = [ Namespace [] ["Remote"], Namespace [] ["Local"], Namespace [] ["Egress"] ]
+    allNamespaces = [ Namespace [] ["Remote"], Namespace [] ["Local"], Namespace [] ["Egress"]
+                    , Namespace [] ["Burst"] ]
 
 -- | What a side's snapshots are.
 countersDoc :: Side -> Text
@@ -896,21 +937,27 @@ egressMetricsDoc =
       [ (waitsOverSuffix (realToFrac b), "Ranked batches whose token wait exceeded this bound.")
       | b <- Mux.egressWaitBounds ] ++
       [ (".budget.bursts",
-         "Busy periods of the budget: from a first bearer queued to none.")
+         "Busy periods of the budget: from a first credited bearer queued to none.")
       , (".budget.busyTime",
-         "Seconds with a bearer queued on the budget, the budget binding.")
+         "Seconds with a credited bearer queued on the budget, the budget binding.")
       , (".budget.contendedTime",
-         "Seconds with two or more bearers queued, strict priority deciding.")
+         "Seconds with two or more credited bearers queued, strict priority deciding.")
+      , (".budget.burstsDropped",
+         "Burst records closed with no room to keep them until the next snapshot.")
       ] ++
       [ (burstsOverSuffix (realToFrac b), "Busy periods longer than this bound.")
       | b <- Mux.egressBurstBounds ] ++
       [ (".budget.burstsWider." <> showT w,
-         "Busy periods with at least this many bearers queued at once.")
+         "Busy periods with at least this many credited bearers queued at once.")
       | w <- Mux.egressBurstWidths ] ++
       concat [ [ (".tier." <> name <> ".bytes",   "Bytes the queue granted " <> who <> ".")
                , (".tier." <> name <> ".batches", "Batches the queue granted " <> who <> ".")
                , (".tier." <> name <> ".queued",
-                  "Bearers of " <> who <> " waiting on the budget.") ]
+                  "Bearers of " <> who <> " waiting on the budget.")
+               , (".tier." <> name <> ".served",
+                  "Bearers of " <> who <> " granted a batch within the last "
+                    <> showT (realToFrac Mux.egressServedWindow :: Double)
+                    <> " s, the fast path included.") ]
              | (name, who) <- [ (Text.pack (Mux.tierName t), tierWho t) | t <- [minBound .. maxBound] ]
                               ++ [ (Text.pack (Mux.numberName maxBound), "unranked bearers") ] ]
   ]

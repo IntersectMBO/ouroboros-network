@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric  #-}
 {-# LANGUAGE NamedFieldPuns #-}
 
 -- | Counters of scheduled egress: a snapshot of the node's buckets, taken by
@@ -9,18 +10,23 @@ module Network.Mux.Egress.Counters
   , egressWaitBounds
   , egressBurstBounds
   , egressBurstWidths
+  , egressBurstGap
+  , egressBurstCap
+  , egressBurstGrantFloor
+  , egressServedWindow
   ) where
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadTime.SI
 
-import Data.Map.Merge.Strict qualified as Map
 import Data.Map.Strict qualified as Map
 import Data.Word (Word64, Word8)
+import GHC.Generics (Generic)
 
 import Network.Mux.Egress.Bucket (Bucket, BucketStats (..), TierGrants (..),
            bucketSnapshot, burstBounds, burstWidths, emptyBucketStats,
-           waitBounds)
+           servedByTier, servedWindow, servedWithin, waitBounds)
+import Network.Mux.Egress.Burst (burstCap, burstGap, burstGrantFloor)
 
 -- | Scheduled egress. Counters are cumulative; the level and the queue
 -- lengths are values at the snapshot.
@@ -40,26 +46,31 @@ data SchedulingCounts = SchedulingCounts {
   scBudgetLevel        :: !Int,        -- ^ bytes; negative while repaying credit
   scBudgetQueued       :: !Int,
   scSliceQueued        :: !Int,
-  scBursts             :: !Word64,     -- ^ busy periods of the budget's queue
-  scBusyTime           :: !DiffTime,   -- ^ time with a bearer queued on the budget
+  scBursts             :: !Word64,     -- ^ busy periods of the budget's queue:
+                                       --   from a first credited bearer queued to none
+  scBusyTime           :: !DiffTime,   -- ^ time with a credited bearer queued on the budget
   scContendedTime      :: !DiffTime,   -- ^ time with two or more, when the order decides
   scBurstsOver         :: ![(DiffTime, Word64)],
     -- ^ busy periods longer than each bound
   scBurstsWider        :: ![(Int, Word64)],
-    -- ^ busy periods with at least this many bearers queued at once
+    -- ^ busy periods with at least this many credited bearers queued at once
+  scBurstsDropped      :: !Word64,
+    -- ^ burst records closed with no room to keep them until the next trace
   scTiers              :: ![(Word8, TierCounts)]
     -- ^ by tier: what the queue granted its bearers, and how many wait now
   }
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic)
 
--- | The budget's queue seen from one tier: 0 local roots, 1 partners, 2 the
--- rest, 255 unranked bearers. The fast path is not ranked and counts nowhere.
+-- | The budget's queue seen from one tier: 0 local roots, 1 partners, 2 pool
+-- relays, 3 strangers, 4 the rest, 255 unranked bearers. The fast path is not
+-- ranked for the bytes and batches, but its bearers count as served.
 data TierCounts = TierCounts {
   tcBytes   :: !Word64,
   tcBatches :: !Word64,
-  tcQueued  :: !Int
+  tcQueued  :: !Int,
+  tcServed  :: !Int     -- ^ bearers granted within 'egressServedWindow'
   }
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic)
 
 -- | The token-wait bounds 'scWaitsOver' counts against.
 egressWaitBounds :: [DiffTime]
@@ -73,6 +84,22 @@ egressBurstBounds = burstBounds
 egressBurstWidths :: [Int]
 egressBurstWidths = burstWidths
 
+-- | The least idle time that ends a burst of credited demand.
+egressBurstGap :: DiffTime
+egressBurstGap = burstGap
+
+-- | The longest burst record; a longer burst is closed and the next opened.
+egressBurstCap :: DiffTime
+egressBurstCap = burstCap
+
+-- | The least grant that opens or extends a burst; smaller ones are filler.
+egressBurstGrantFloor :: Int
+egressBurstGrantFloor = burstGrantFloor
+
+-- | How long a grant keeps its bearer in 'tcServed'.
+egressServedWindow :: DiffTime
+egressServedWindow = servedWindow
+
 -- | The budget's bucket and the slice's, if any, at an instant.
 schedulingCounts :: MonadSTM m => Time -> (Bucket m, Maybe (Bucket m)) -> STM m SchedulingCounts
 schedulingCounts now (budget, slice_m) = do
@@ -80,11 +107,12 @@ schedulingCounts now (budget, slice_m) = do
   s_m <- traverse (`bucketSnapshot` now) slice_m
   let slice       = maybe emptyStats (\(st, _, _, _) -> st) s_m
       sliceQueued = maybe 0 (\(_, _, q, _) -> q) s_m
-      tiers       = Map.toList $ Map.merge
-                      (Map.mapMissing (\_ (TierGrants n k) -> TierCounts n k 0))
-                      (Map.mapMissing (\_ q -> TierCounts 0 0 q))
-                      (Map.zipWithMatched (\_ (TierGrants n k) q -> TierCounts n k q))
-                      (bsTiers b) queuedByTier
+      tiers       = Map.toList $ Map.unionsWith plus
+                      [ (\(TierGrants n k) -> TierCounts n k 0 0) <$> bsTiers b
+                      , (\q -> TierCounts 0 0 q 0) <$> queuedByTier
+                      , TierCounts 0 0 0 <$> servedByTier (servedWithin servedWindow now (bsServed b)) ]
+      plus (TierCounts n k q s) (TierCounts n' k' q' s') =
+        TierCounts (n + n') (k + k') (q + q') (s + s')
   return SchedulingCounts {
     scDirectBytes        = bsCredited b,
     scSliceBytes         = bsBytes slice - bsBorrowed slice,
@@ -105,6 +133,7 @@ schedulingCounts now (budget, slice_m) = do
     scContendedTime      = bsContendedTime b,
     scBurstsOver         = zip burstBounds (bsBurstsOver b),
     scBurstsWider        = zip burstWidths (bsBurstsWider b),
+    scBurstsDropped      = bsBurstsDropped b,
     scTiers              = tiers
   }
   where

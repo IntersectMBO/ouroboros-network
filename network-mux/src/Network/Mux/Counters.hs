@@ -40,7 +40,7 @@ import Control.Monad (forM_, forever, unless, (<$!>))
 import Control.Monad.Class.MonadAsync (MonadAsync, race)
 import Control.Monad.Class.MonadFork (labelThisThread)
 import Control.Monad.Class.MonadThrow (MonadMask, bracket)
-import Control.Monad.Class.MonadTime.SI (getMonotonicTime)
+import Control.Monad.Class.MonadTime.SI (diffTime, getMonotonicTime)
 import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer, traceWith)
 
@@ -54,7 +54,7 @@ import Data.Word (Word64)
 import Foreign.C.Error (Errno (..), eCONNRESET, ePIPE)
 import GHC.IO.Exception (IOException (..))
 
-import Network.Mux.Egress.Bucket (Bucket)
+import Network.Mux.Egress.Bucket (Bucket, Burst (..), takeBurstsAt)
 import Network.Mux.Egress.Counters (SchedulingCounts, schedulingCounts)
 import Network.Mux.Trace (Error (..))
 import Network.Mux.Types (IngressQueue, IngressQueueState (..), MiniProtocolDir,
@@ -392,12 +392,16 @@ countMiniProtocolFailure counters num dir e =
     unless (muxOwn e || isAsync e) $ modifyTVar countersFailures $ \f ->
       f { mfMiniProtocols = Map.insertWith (+) (num, dir) 1 (mfMiniProtocols f) }
 
--- | A snapshot of one set's counters.
+-- | A snapshot of one set's counters, of scheduled egress, or one burst of
+-- credited demand on the budget, closed by the time of the snapshot that
+-- carries it.
 data CountersTrace =
     TraceRemoteCounters Counts  -- ^ the remote muxes
   | TraceLocalCounters  Counts  -- ^ the local muxes
   | TraceEgressCounters SchedulingCounts
     -- ^ scheduled egress: the budget's bucket and the slice's
+  | TraceEgressBurst    DiffTime Burst
+    -- ^ a burst, and how long before the snapshot that carries it it ended
   deriving (Eq, Show)
 
 -- | A prime, so that snapshots do not keep step with other periodic work such
@@ -407,8 +411,9 @@ countersInterval = 7
 
 -- | Every @interval@, a second at least, snapshot the remote and the local
 -- set, each if there is one, and trace each; with scheduled egress, the
--- budget's bucket and the slice's, if any, are snapshotted and traced too.
--- 'withCounters' runs it for the sets it makes.
+-- budget's bucket and the slice's, if any, are snapshotted and traced too,
+-- and the bursts the budget closed since the last snapshot follow, one
+-- trace each. 'withCounters' runs it for the sets it makes.
 countersLoop :: (MonadDelay m, MonadSTM m)
              => Maybe (Counters m)    -- ^ the remote set, if any
              -> Maybe (Counters m)    -- ^ the local set, if any
@@ -424,9 +429,11 @@ countersLoop remote local buckets interval tracer = forever $ do
   -- would be restarted by every batch.
   forM_ remote $ \c ->
     snapshotCountersWith atomically c >>= traceWith tracer . TraceRemoteCounters
-  forM_ buckets $ \bs -> do
+  forM_ buckets $ \bs@(budget, _) -> do
     now <- getMonotonicTime
     atomically (schedulingCounts now bs) >>= traceWith tracer . TraceEgressCounters
+    bursts <- atomically (takeBurstsAt budget now)
+    mapM_ (\b -> traceWith tracer (TraceEgressBurst (now `diffTime` bEnd b) b)) bursts
   forM_ local  $ \c ->
     snapshotCountersWith atomically c >>= traceWith tracer . TraceLocalCounters
   where

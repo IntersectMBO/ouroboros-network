@@ -312,13 +312,14 @@ makeConnectionHandler muxTracers forkPolicy muxCounters egress
            Nothing -> Mx.new tracers muxCounters ptcls
            Just (policy, egressRuleOf) -> do
              mux <- Mx.newWithEgress policy tracers muxCounters ptcls
-             -- the rule is kept, not its answer, and asked whenever the
-             -- bearer joins the queue; whether the peer runs a hot
-             -- mini-protocol against us at that moment, the inbound
-             -- governor's notion of a hot peer, is read off this mux, the
-             -- one place that knows all of them. Any of them, not all: the
-             -- block-fetch responder starts on demand and stays unstarted
-             -- until the peer first fetches from us, however hot it is.
+             -- the rule is kept, not its answer, and asked at every grant
+             -- and, while the bearer waits, at every refresh; whether the
+             -- peer runs a hot mini-protocol against us at that moment, the
+             -- inbound governor's notion of a hot peer, is read off this
+             -- mux, the one place that knows all of them. Any of them, not
+             -- all: the block-fetch responder starts on demand and stays
+             -- unstarted until the peer first fetches from us, however hot
+             -- it is.
              let hotNums = map miniProtocolNum (withoutProtocolTemperature (withHot app))
                  hotResponders =
                    [ status
