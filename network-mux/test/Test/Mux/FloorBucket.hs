@@ -73,6 +73,8 @@ tests =
     , testProperty "rest bearers alone open no burst"      prop_rest_alone_no_burst
     , testProperty "a cancellation after the grant leaves the counts whole" prop_cancel_after_grant
     , testProperty "a waiting bearer follows the deal"       prop_waiting_follows_deal
+    , testProperty "local roots take turns"                   prop_local_root_turns
+    , testProperty "a local root's small reply is not held behind a sibling's backlog" prop_local_root_small_reply
     , testProperty "the drain sweeps the burst in progress" prop_drain_sweeps
     ]
 
@@ -389,6 +391,52 @@ prop_rest_turns =
     in classify (length gs > 2 * length (frBearers fr)) "several rounds" $
        counterexample (show counts)
      $ maximum counts - minimum counts <= 1
+
+-- | Local roots take turns like the rest tier, under a rotation whatever
+-- the seed: backlogged roots' grant counts over the steady window differ
+-- by at most one, bulk and small alike.
+prop_local_root_turns :: Property
+prop_local_root_turns =
+  forAllShrink (genOneTier 0) shrinkOneTier $ \fr ->
+    let (gs0, _) = runFloor False fr
+        gs = steady fr gs0
+        counts = [ length [ () | g <- gs, gBearer g == i ] | i <- [0 .. length (frBearers fr) - 1] ]
+    in classify (length gs > 2 * length (frBearers fr)) "several rounds" $
+       counterexample (show counts)
+     $ maximum counts - minimum counts <= 1
+
+-- | The review's scenario: a local root backlogged a capacity at a time, a
+-- partner backlogged too, and a second local root asking for a small reply
+-- shortly after, under the default rotation period and whatever seed. The
+-- reply is served within two batches, the sibling's in flight and its own,
+-- rather than behind the sibling's backlog for the period.
+data SmallReply = SmallReply {
+    srSeed :: !Word64,
+    srRate :: !Double,
+    srCap  :: !Int
+  }
+  deriving Show
+
+instance Arbitrary SmallReply where
+  arbitrary = SmallReply <$> arbitrary <*> choose (1e5, 1e6) <*> elements [16384, 65536, 131072]
+  shrink SmallReply { srSeed, srRate, srCap } =
+       [ SmallReply 0 srRate srCap | srSeed /= 0 ]
+    ++ [ SmallReply srSeed srRate 16384 | srCap /= 16384 ]
+
+prop_local_root_small_reply :: SmallReply -> Property
+prop_local_root_small_reply SmallReply { srSeed, srRate, srCap } =
+    counterexample (show (served, bound)) $
+      maybe False (<= Time bound) served
+  where
+    batch = realToFrac (fromIntegral srCap / srRate :: Double) :: DiffTime
+    bound = 0.01 + 2 * batch + 0.01
+    fr = FloorRun { frRate = srRate, frCapacity = srCap, frPercent = 10, frDuration = 2 * batch + 1
+                  , frRotation = Just (Bucket.Rotation srSeed 599 4)
+                  , frBearers = [ FBearer 0 srCap 0, FBearer 0 256 0.01, FBearer 1 srCap 0.01 ] }
+    (gs, _) = runFloor True fr
+    served = case [ gAt g | g <- gs, gBearer g == 1 ] of
+                  [] -> Nothing
+                  ts -> Just (minimum ts)
 
 -- | A rest bearer never waits longer than one round: a batch for every other
 -- bearer, its own, and a capacity to refill, at the budget's rate. Judged on
@@ -715,9 +763,9 @@ prop_cancel_after_grant =
       bursts <- atomically $ Bucket.takeBurstsAt budget (3 `addTime` now)
       return (survived, Bucket.bsBusyTime st, length bursts)
 
--- | Two tier-0 bearers, both backlogged a capacity at a time, under a
--- rotation of nine to twelve seconds with the floor off: the strict cascade
--- serves whichever holds the lower key, and the other waits. The served
+-- | Two partners, both backlogged a capacity at a time, under a rotation
+-- of nine to twelve seconds with the floor off: the strict cascade serves
+-- whichever holds the lower key, and the other waits. The served
 -- bearer re-asks on every request, so its place is the current period's
 -- within a batch of each boundary; the waiting one re-asks only at its
 -- refreshes, every 'Bucket.tierRefresh' from its request, so until then it
@@ -763,7 +811,7 @@ prop_waiting_follows_deal Deal { dlSeed, dlPeriod, dlRate, dlCap } =
     starts   = [0, 0.001]
     fr = FloorRun { frRate = dlRate, frCapacity = dlCap, frPercent = 0, frDuration = run - 0.001
                   , frRotation = Just rotation
-                  , frBearers = [ FBearer 0 dlCap st | st <- starts ] }
+                  , frBearers = [ FBearer 1 dlCap st | st <- starts ] }
     (gs, _) = runFloor False fr
     place b t = Bucket.rotatedRank rotation b (Time t)
     -- a key: the place, then the ticket, which follows the start order

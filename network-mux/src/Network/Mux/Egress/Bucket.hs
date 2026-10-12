@@ -15,9 +15,10 @@
 -- Service order is @('Rank', ticket)@: lower rank first, FIFO among equals;
 -- with every bearer at 'Rank' 0 (the default) that is an equal share. With a
 -- 'Rotation' the rank set by the application is the tier, and within a tier
--- every bearer is dealt a random place that is re-dealt each period; from
--- 'roTurnsFrom' up, the rest of the cascade, bearers take turns instead. A
--- short head sleeps until its bytes are there, at microsecond resolution.
+-- every bearer is dealt a random place that is re-dealt each period; the
+-- local roots, tier 0, and from 'roTurnsFrom' up, the rest of the cascade,
+-- take turns instead. A short head sleeps until its bytes are there, at
+-- microsecond resolution.
 --
 -- Fast path: with nobody queued and enough tokens, a take is one transaction.
 -- Otherwise the bearer queues and blocks on its own wake variable; the bearer
@@ -103,7 +104,7 @@ import System.Random.SplitMix qualified as SM
 
 import Network.Mux.Egress.Burst
 import Network.Mux.Egress.Floor
-import Network.Mux.Types (unrankedNumber)
+import Network.Mux.Types (Tier (..), tierNumber, unrankedNumber)
 
 
 -- | A bearer's tier: lower is served first.
@@ -129,6 +130,9 @@ data Rotation = Rotation {
     -- request queues behind the tier's current waiters, so backlogged bearers
     -- rotate one batch at a time. The rest of the cascade, where finishing one
     -- transfer first serves nobody and a newcomer must not wait out a flood.
+    -- The local roots take turns whatever this says: a producer and its
+    -- sibling relays are not substitutes for one another, and a dealt order
+    -- would have one wait a whole period behind another's backlog.
   }
   deriving (Show, Generic)
 
@@ -485,13 +489,14 @@ rotatedRank Rotation { roSeed, roPeriod } bearer (Time now)
 
 -- | Where a bearer queues, lower first: the tier set with 'setRank' in the top
 -- byte, and below it the place the rotation deals it, or 0 without one and
--- 0 in the tiers that take turns.
+-- 0 in the tiers that take turns, the local roots and from 'roTurnsFrom' up.
 queueRank :: Maybe Rotation -> Word64 -> Rank -> Time -> Word32
 queueRank rotation bearer (Rank tier) now =
   fromIntegral tier `shiftL` 24 .|. maybe 0 place rotation
   where
-    place ro | tier >= roTurnsFrom ro = 0
-             | otherwise              = rotatedRank ro bearer now
+    place ro | tier == tierNumber LocalRootTier = 0
+             | tier >= roTurnsFrom ro           = 0
+             | otherwise                        = rotatedRank ro bearer now
 
 
 data BucketHandle m = BucketHandle {
