@@ -2,15 +2,18 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
--- | Credit buckets for the residual tier of the egress scheduler.
+-- | Credit buckets for the egress scheduler's partner and residual tiers.
 --
 -- A bucket is refilled by the fresh need the chain announces and charged by
 -- what a peer is served. It gates class, not rate: while its credit is
--- positive the peer is served at residual rank, at zero it is served at rest
--- and nothing is charged. The arithmetic is pure and exact over a monotone
--- reading of fresh bytes; where the reading comes from, a clock from the
--- protocol parameters in the prototype, an announcement counter from
--- consensus eventually, is the caller's business.
+-- positive the peer is served at its tier, at zero it falls to the next
+-- class it qualifies for, rest at the last, and nothing is charged there. A
+-- partner spends its own bucket at the partner tier; a big-ledger pool's
+-- relays share the pool's; a stranger spends its own at the stranger tier.
+-- The arithmetic is pure and exact over a monotone reading of fresh bytes;
+-- where the reading comes from, a clock from the protocol parameters in the
+-- prototype, an announcement counter from consensus eventually, is the
+-- caller's business.
 module Ouroboros.Network.Diffusion.PoolAllowances
   ( -- * The pure core
     Allowance (..)
@@ -190,23 +193,37 @@ data Standing = LocalRoot | Partner | Other
 restTier :: Word8
 restTier = tierNumber RestTier
 
--- | A peer's rank from its standing and its credit: local roots first,
--- partners next, then the residual tier's classes: a big-ledger pool's
--- relay with credit, a stranger with credit, and at zero credit the rest.
-rankFor :: Standing -> Bool -> Bool -> Rank
-rankFor LocalRoot _       _     = Rank (tierNumber LocalRootTier)
-rankFor Partner   _       _     = Rank (tierNumber PartnerTier)
-rankFor Other     matched hasAny
-  | not hasAny = Rank restTier
-  | matched    = Rank (tierNumber PoolTier)
-  | otherwise  = Rank (tierNumber StrangerTier)
+-- | A peer's rank from its standing and its credit: local roots first; a
+-- partner with credit in its own bucket next, and one without is the peer
+-- it would otherwise be; then the residual tier's classes: a big-ledger
+-- pool's relay with credit in the pool's buckets, a stranger with credit in
+-- its own, and at zero credit the rest. The pool credit is 'Nothing' for a
+-- peer that belongs to no pool.
+rankFor :: Standing
+        -> Bool        -- ^ credit in the connection's own bucket
+        -> Maybe Bool  -- ^ credit in its pool's buckets, if it has a pool
+        -> Rank
+rankFor LocalRoot _   _     = Rank (tierNumber LocalRootTier)
+rankFor Partner   own pools
+  | own                     = Rank (tierNumber PartnerTier)
+  | otherwise               = rankFor Other own pools
+rankFor Other     own pools =
+  case pools of
+       Just True   -> Rank (tierNumber PoolTier)
+       Just False  -> Rank restTier
+       Nothing
+         | own     -> Rank (tierNumber StrangerTier)
+         | otherwise -> Rank restTier
 
 -- | A connection's rank rule and charge sink, sharing one view of the
 -- buckets: its pools' buckets, looked up again whenever the list was
--- rebuilt, or when it belongs to no pool its own bucket, which opens empty
--- once the connection has outlived the stranger lock, so a reconnection
--- starts the wait over. The sink runs in the transaction that grants a
--- batch. Bytes on the uncharged protocols are never charged.
+-- rebuilt, and its own bucket, which opens empty once the connection has
+-- outlived the stranger lock, so a reconnection starts the wait over. The
+-- sink runs in the transaction that grants a batch, just after the rule was
+-- asked there, and charges the bucket that gave the rank the rule last
+-- answered: a partner's own bucket at the partner tier, the pool's buckets
+-- at the pool's, the own bucket at the stranger's; at rest nothing. Bytes on
+-- the uncharged protocols are never charged.
 mkEgressRule :: (MonadSTM m, Ord addr)
              => PoolAllowances m addr
              -> [MiniProtocolNum]
@@ -216,8 +233,9 @@ mkEgressRule :: (MonadSTM m, Ord addr)
              -> m (Time -> STM m Rank, Time -> MiniProtocolNum -> Int -> STM m ())
 mkEgressRule allowances@PoolAllowances { paAllowance, paFreshAt, paStrangerLock, paGeneration, paIndexGen }
              uncharged key standing t0 = do
-  stranger <- newTVarIO (lockedCharged (paFreshAt t0) paStrangerLock)
-  cached   <- newTVarIO BucketRef { brGeneration = -1, brIndexGen = -1, brBuckets = [] }
+  own       <- newTVarIO (lockedCharged (paFreshAt t0) paStrangerLock)
+  asPartner <- newTVarIO False   -- the rule's last answer was the partner tier
+  cached    <- newTVarIO BucketRef { brGeneration = -1, brIndexGen = -1, brBuckets = [] }
   let buckets = do
         ref <- readTVar cached
         generation <- readTVar paGeneration
@@ -231,22 +249,27 @@ mkEgressRule allowances@PoolAllowances { paAllowance, paFreshAt, paStrangerLock,
 
       rule now = do
         s <- standing now
-        case s of
-             Other -> do
+        rank <- case s of
+             LocalRoot -> return (rankFor LocalRoot False Nothing)
+             _ -> do
                bs <- buckets
-               hasAny <- case bs of
-                              [] -> (> 0) . credit paAllowance (paFreshAt now) <$> readTVar stranger
-                              _  -> hasCredit allowances now bs
-               return (rankFor Other (not (null bs)) hasAny)
-             _ -> return (rankFor s False False)
+               ownCredit <- (> 0) . credit paAllowance (paFreshAt now) <$> readTVar own
+               pools     <- case bs of
+                                 [] -> return Nothing
+                                 _  -> Just <$> hasCredit allowances now bs
+               return (rankFor s ownCredit pools)
+        writeTVar asPartner (rank == Rank (tierNumber PartnerTier))
+        return rank
 
       sink now num n
         | num `elem` uncharged = return ()
         | otherwise = do
-            bs <- buckets
-            case bs of
-                 [] -> modifyTVar stranger (charge paAllowance (paFreshAt now) n)
-                 _  -> chargeBuckets allowances now n bs
+            partner <- readTVar asPartner
+            bs      <- buckets
+            case (partner, bs) of
+                 (True, _)   -> modifyTVar own (charge paAllowance (paFreshAt now) n)
+                 (False, []) -> modifyTVar own (charge paAllowance (paFreshAt now) n)
+                 (False, _)  -> chargeBuckets allowances now n bs
 
   return (rule, sink)
 
