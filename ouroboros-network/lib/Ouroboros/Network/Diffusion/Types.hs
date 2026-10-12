@@ -621,7 +621,8 @@ data EgressScheduling = EgressScheduling {
     -- in bytes across the credited classes the strict order does not reach,
     -- charged to the budget on credit; zero disables it
     esRotationPeriod      :: DiffTime,     -- ^ how often the order within a tier is
-                                      --   re-dealt; 0 for none, FIFO within a tier
+                                      --   re-dealt; 0 for none, FIFO within a tier;
+                                      --   local roots take turns regardless
     esNotSentLowWat       :: Maybe Int,    -- ^ bytes
     esLaneOf              :: MiniProtocolNum -> MiniProtocolDir -> Mx.Lane,
     esTenureThreshold     :: DiffTime,
