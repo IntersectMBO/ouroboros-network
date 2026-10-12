@@ -32,7 +32,10 @@ tests =
 
 -- | What happens to a connection, at a time in seconds: its rank is asked,
 -- its scheduled bytes on a protocol are reported, or the pool list is
--- rebuilt under it.
+-- rebuilt under it. A partner's own bucket starts under the same lock as a
+-- stranger's, so a partner asked early falls through to what it otherwise
+-- is, and one asked after the lock holds the partner tier until it has
+-- spent two refills.
 data Op = Ask Double
         | Charge Double Word16 Int
         | Rebuild Double
@@ -84,33 +87,38 @@ instance Arbitrary Case where
 
 -- | The table, stepped by hand with the ranks written out, so the rule's own
 -- 'rankFor' is judged rather than echoed: ranks at every ask and the pool
--- buckets at the end.
+-- buckets at the end. The sink charges whichever bucket the last answer
+-- came from: a partner's own at tier 1, the pool's at tier 2, the own at
+-- tier 3, nothing at rest; before any answer, as a non-partner.
 model :: Case -> ([Rank], [Charged])
 model Case { cStanding, cPools, cUncharged, cLock, cOps } =
-    go (map Charged cPools) (lockedCharged (clock (at 0)) (clock (at cLock))) cOps
+    go (map Charged cPools) (lockedCharged (clock (at 0)) (clock (at cLock))) False cOps
   where
     matched = not (null cPools)
-    go pools _ [] = ([], pools)
-    go pools stranger (op : ops) =
+    go pools _ _ [] = ([], pools)
+    go pools own asPartner (op : ops) =
       case op of
            Ask t ->
-             let fresh  = clock (at t)
-                 hasAny | matched   = any ((> 0) . credit allowance fresh) pools
-                        | otherwise = credit allowance fresh stranger > 0
+             let fresh      = clock (at t)
+                 ownCredit  = credit allowance fresh own > 0
+                 poolCredit = any ((> 0) . credit allowance fresh) pools
+                 other | matched    = if poolCredit then Rank 2 else Rank 4
+                       | ownCredit  = Rank 3
+                       | otherwise  = Rank 4
                  rank = case cStanding of
                              LocalRoot -> Rank 0
-                             Partner   -> Rank 1
-                             Other | not hasAny -> Rank 4
-                                   | matched    -> Rank 2
-                                   | otherwise  -> Rank 3
-                 (ranks, final) = go pools stranger ops
+                             Partner | ownCredit  -> Rank 1
+                                     | otherwise  -> other
+                             Other -> other
+                 (ranks, final) = go pools own (rank == Rank 1) ops
              in (rank : ranks, final)
            Charge t num n
-             | num `elem` cUncharged -> go pools stranger ops
-             | matched   -> go (map (charge allowance (clock (at t)) n) pools) stranger ops
-             | otherwise -> go pools (charge allowance (clock (at t)) n stranger) ops
+             | num `elem` cUncharged -> go pools own asPartner ops
+             | asPartner -> go pools (charge allowance (clock (at t)) n own) asPartner ops
+             | matched   -> go (map (charge allowance (clock (at t)) n) pools) own asPartner ops
+             | otherwise -> go pools (charge allowance (clock (at t)) n own) asPartner ops
            Rebuild t ->
-             go (map (const (Charged (kappa (clock (at t))))) pools) stranger ops
+             go (map (const (Charged (kappa (clock (at t))))) pools) own asPartner ops
 
 -- | The same, through 'mkEgressRule' and the buckets in IOSim.
 run :: Case -> ([Rank], [Charged])
@@ -137,6 +145,11 @@ run Case { cStanding, cPools, cUncharged, cLock, cOps } = runSimOrThrow $ do
 prop_rule :: Case -> Property
 prop_rule c@Case { cStanding, cPools, cLock, cOps } =
     classify (cStanding == Other) "one of the rest"
+  . classify (cStanding == Partner) "a partner"
+  . classify (cStanding == Partner && Rank 1 `elem` fst got && any (/= Rank 1) (fst got))
+             "a partner both at its tier and fallen through"
+  . classify (cStanding == Partner && not (null cPools) && Rank 2 `elem` fst got)
+             "a partner served as its pool's relay"
   . classify (not (null cPools)) "a pool relay"
   . classify lockedStranger "a locked stranger"
   . classify (lockedStranger && any askedAfter cOps) "a stranger asked after its lock"
@@ -198,24 +211,30 @@ prop_refill_reaches_queued = once $ runSimOrThrow $ do
                    served
 
 -- | What gives the floor's tier numbers their meaning is 'rankFor'. Over
--- every standing and credit state: a local root has no class, a partner is
--- class 0, a pool relay with credit class 1, a stranger with credit class 2,
--- and a peer without credit has none; and exactly the peers without credit
--- are at or above 'restTier', where the order within a tier is turns. A
--- renumbering of the tiers on either side fails here.
+-- every standing and credit state: a local root has no class, a partner
+-- with its own credit is class 0, a pool relay with pool credit class 1, a
+-- stranger with its own credit class 2, and a peer without the credit its
+-- tier needs has none; and exactly the peers without credit are at or above
+-- 'restTier', where the order within a tier is turns. A partner without
+-- its own credit is classed as the peer it otherwise is. A renumbering of
+-- the tiers on either side fails here.
 prop_floorClass_follows_rank :: Property
 prop_floorClass_follows_rank = once $ conjoin
-  [ counterexample (show (standing, matched, hasAny))
+  [ counterexample (show (standing, own, pools))
   $ floorClass tier === expected
-    .&&. (tier >= restTier) === (standing == Other && not hasAny)
+    .&&. (tier >= restTier) === (expected == Nothing && standing /= LocalRoot)
   | standing <- [LocalRoot, Partner, Other]
-  , matched  <- [False, True]
-  , hasAny   <- [False, True]
-  , let Rank tier = rankFor standing matched hasAny
+  , own      <- [False, True]
+  , pools    <- [Nothing, Just False, Just True]
+  , let Rank tier = rankFor standing own pools
+        other = case pools of
+                     Just True        -> Just (FloorClass 1)
+                     Just False       -> Nothing
+                     Nothing | own    -> Just (FloorClass 2)
+                             | otherwise -> Nothing
         expected = case standing of
-                        LocalRoot -> Nothing
-                        Partner   -> Just (FloorClass 0)
-                        Other | not hasAny -> Nothing
-                              | matched    -> Just (FloorClass 1)
-                              | otherwise  -> Just (FloorClass 2)
+                        LocalRoot      -> Nothing
+                        Partner | own  -> Just (FloorClass 0)
+                                | otherwise -> other
+                        Other          -> other
   ]
