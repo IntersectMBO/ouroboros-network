@@ -6,13 +6,16 @@
 -- from the first grant after a gap to the last before the next, one record
 -- each, for the counters loop to trace.
 --
--- A grant counts when its bearer holds a credited tier; a grant at rest rank
--- or unranked is filler, the capacity the credited left over, so a peer
--- catching up at rest rank never keeps a burst open. The burst ends when no
--- credited bearer has been granted for the gap and none is queued, at its
--- last grant: a credited bearer queued across a gap is a stall inside the
--- burst, not its end. A record is closed after 'burstCap' whatever the
--- demand, so a saturated hour reads as capped records rather than one.
+-- A grant counts when its bearer holds a credited tier and the grant is at
+-- least 'burstGrantFloor': a grant at rest rank or unranked is filler, the
+-- capacity the credited left over, so a peer catching up at rest rank never
+-- keeps a burst open, and so is a small one, a header or a keep-alive, so
+-- the control traffic of a chatty peer neither opens a burst nor keeps one
+-- open. The burst ends when no counting grant has been made for the gap and
+-- no credited bearer is queued, at its last grant: a credited bearer queued
+-- across a gap is a stall inside the burst, not its end. A record is closed
+-- after 'burstCap' whatever the demand, so a saturated hour reads as capped
+-- records rather than one.
 --
 -- Nothing here keeps time. The end is noticed at the next event, a grant, a
 -- change of the queue or the counters loop's sweep, and the record is closed
@@ -28,11 +31,14 @@ module Network.Mux.Egress.Burst
   , burstGap
   , burstCap
   , burstKeep
+  , burstGrantFloor
   , gapFor
   , creditedTier
+  , countsAsBurst
   , burstGrant
   , burstQueued
   , burstSweep
+  , closeOpen
   , takeBursts
   , burstsDropped
   ) where
@@ -67,7 +73,8 @@ data Burst = Burst {
   bBatches      :: !Word64,
   bTiers        :: !(Map Word8 TierGrants),
                                -- ^ the same, by tier
-  bFiller       :: !Word64,    -- ^ granted at rest rank or unranked meanwhile
+  bFiller       :: !Word64,    -- ^ granted meanwhile without counting: at rest
+                               --   rank, unranked, or under the floor
   bWidth        :: !Int,       -- ^ distinct credited bearers granted
   bPeakQueued   :: !Int,       -- ^ the most credited bearers queued at once
   bWaitTokens   :: !DiffTime,  -- ^ the longest token wait of a credited grant
@@ -122,6 +129,16 @@ burstCap = 60
 burstKeep :: Int
 burstKeep = 128
 
+-- | The least grant that opens or extends a burst: a body or closure job
+-- is 64 KiB, a header or a keep-alive reply under 1 KiB.
+burstGrantFloor :: Int
+burstGrantFloor = 4096
+
+-- | Whether a grant opens or extends a burst: a credited bearer, and at
+-- least the floor.
+countsAsBurst :: Word8 -> Int -> Bool
+countsAsBurst tier need = creditedTier tier && need >= burstGrantFloor
+
 -- | The gap for a bucket: at least the time it takes to refill from empty,
 -- so a burst at a low budget is not cut by the budget's own pacing.
 gapFor :: Double  -- ^ bytes/s
@@ -135,7 +152,7 @@ gapFor rate capacity
 creditedTier :: Word8 -> Bool
 creditedTier tier = tier < tierNumber RestTier
 
--- | A grant at @now@ to bearer @bearer@ holding @tier@: credited, it opens
+-- | A grant at @now@ to bearer @bearer@ holding @tier@: counting, it opens
 -- or extends the burst; otherwise it is filler while one is open.
 burstGrant :: DiffTime  -- ^ the gap
            -> Time -> Word8 -> Word64 -> Int
@@ -143,7 +160,7 @@ burstGrant :: DiffTime  -- ^ the gap
            -> DiffTime  -- ^ its writability wait
            -> Detector -> Detector
 burstGrant gap now tier bearer need waitTokens waitWritable d0
-  | creditedTier tier
+  | countsAsBurst tier need
   = let !o = maybe fresh extend (dOpen d) in d { dOpen = Just o }
   | otherwise
   = case dOpen d of
@@ -196,6 +213,12 @@ close capped o d@Detector { dClosed, dKept, dDropped }
                    , bFiller = oFiller o, bWidth = Set.size (oBearers o)
                    , bPeakQueued = oPeakQueued o
                    , bWaitTokens = oWaitTokens o, bWaitWritable = oWaitWritable o }
+
+-- | Close the burst in progress now, as it stands: for a drain that must
+-- not wait for the gap, at shutdown or in a test.
+closeOpen :: Detector -> Detector
+closeOpen d@Detector { dOpen = Just o } = close False o d
+closeOpen d                             = d
 
 -- | The records closed so far, oldest first, and the detector without them.
 takeBursts :: Detector -> ([Burst], Detector)

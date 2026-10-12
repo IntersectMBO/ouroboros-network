@@ -68,6 +68,7 @@ module Network.Mux.Egress.Bucket
   , Burst (..)
   , burstDuration
   , takeBurstsAt
+  , drainBurstsAt
     -- * State, named for the tests' instances
   , Ticket
   , BurstState
@@ -362,10 +363,18 @@ newBucket rate capacity bRotation = do
 -- | The bursts closed since the last call, oldest first, the one in
 -- progress closed first if it is over by @now@.
 takeBurstsAt :: MonadSTM m => Bucket m -> Time -> STM m [Burst]
-takeBurstsAt Bucket { bRate, bCapacity, bDetector } now = do
+takeBurstsAt = takeBurstsWith id
+
+-- | The same, the one in progress closed as it stands whether or not it is
+-- over: for a test that ends before the queue drains.
+drainBurstsAt :: MonadSTM m => Bucket m -> Time -> STM m [Burst]
+drainBurstsAt = takeBurstsWith closeOpen
+
+takeBurstsWith :: MonadSTM m => (Detector -> Detector) -> Bucket m -> Time -> STM m [Burst]
+takeBurstsWith finish Bucket { bRate, bCapacity, bDetector } now = do
   rate <- readTVar bRate
   det  <- readTVar bDetector
-  let (bursts, det') = takeBursts (burstSweep (gapFor rate bCapacity) now det)
+  let (bursts, det') = takeBursts (finish (burstSweep (gapFor rate bCapacity) now det))
   writeTVar bDetector det'
   return bursts
 
