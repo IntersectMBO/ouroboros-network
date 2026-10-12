@@ -94,6 +94,7 @@ library
     Network.Mux.DeltaQ.TraceTypes
     Network.Mux.Egress
     Network.Mux.Egress.Bucket
+    Network.Mux.Egress.Burst
     Network.Mux.Egress.Floor
     Network.Mux.Ingress
     Network.Mux.TCPInfo
@@ -132,6 +133,7 @@ test-suite test
   main-is: Main.hs
   other-modules:
     Test.Mux
+    Test.Mux.Burst
     Test.Mux.Floor
     Test.Mux.FloorBucket
     Test.Mux.ReqResp

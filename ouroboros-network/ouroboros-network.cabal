@@ -1025,10 +1025,19 @@ test-suite ouroboros-network-sim-tests
   type: exitcode-stdio-1.0
   hs-source-dirs: tests/sim
   main-is: Main.hs
+  other-modules:
+    Test.Ouroboros.Network.Tracing.MuxCounters
+
   build-depends:
+    QuickCheck,
     base >=4.14 && <4.23,
-    ouroboros-network:{ouroboros-network-tests-lib, protocols-tests-lib},
+    containers,
+    io-classes:si-timers,
+    network-mux,
+    ouroboros-network:{ouroboros-network-tests-lib, protocols-tests-lib, tracing},
     tasty,
+    tasty-quickcheck,
+    trace-dispatcher,
     with-utf8,
 
   ghc-options:

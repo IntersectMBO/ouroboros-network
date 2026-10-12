@@ -21,13 +21,15 @@ import Control.Exception (evaluate)
 import Control.Monad (forM, forM_, forever, when)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork (labelThisThread)
+import Control.Monad.Class.MonadTest (exploreRaces)
 import Control.Monad.Class.MonadThrow (MonadMask, mask_)
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.IOSim
+import Control.Monad.IOSim qualified as IOSim
 
 import Data.IORef (modifyIORef', newIORef, readIORef)
-import Data.List (stripPrefix)
+import Data.List (foldl', sortOn, stripPrefix)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (isNothing)
 import Data.Word (Word8)
@@ -35,6 +37,7 @@ import Data.Word (Word8)
 import Network.Mux.Counters qualified as Counters
 import Network.Mux.Egress.Bucket (GrantSource (..))
 import Network.Mux.Egress.Bucket qualified as Bucket
+import Network.Mux.Egress.Burst qualified as Burst
 import Network.Mux.Egress.Floor (FloorClass, FloorState, floorClass)
 import Network.Mux.Types (MiniProtocolDir, MiniProtocolNum)
 import NoThunks.Class (NoThunks (..), OnlyCheckWhnfNamed (..), noThunks,
@@ -66,6 +69,9 @@ tests =
     , testProperty "no timer outlives its request"           prop_timers_follow_requests
     , testProperty "a shared credit is spent once, by whole batches" prop_shared_credit_spent_once
     , testProperty "the fast path charges the rank its rule answers now" prop_fast_path_charges_current_rank
+    , testProperty "the bursts are the fold of the grants" prop_bursts_match_grants
+    , testProperty "rest bearers alone open no burst"      prop_rest_alone_no_burst
+    , testProperty "a cancellation after the grant leaves the counts whole" prop_cancel_after_grant
     ]
 
 --
@@ -514,6 +520,9 @@ instance NoThunks (Bucket.Bucket IO)
 instance NoThunks (Bucket.Floor IO)
 instance NoThunks (Bucket.BucketHandle IO)
 instance NoThunks Bucket.BurstState
+instance NoThunks Bucket.Detector
+instance NoThunks Bucket.Open
+instance NoThunks Bucket.Burst
 instance NoThunks Bucket.Rotation
 instance NoThunks Bucket.Ticket
 instance NoThunks Bucket.TierAsked
@@ -561,6 +570,120 @@ prop_state_no_thunks_io fr0 = withNumTests 20 $ ioProperty $ do
   where
     fr = fr0 { frDuration = min 0.3 (frDuration fr0)
              , frBearers  = [ b { fbStart = min 0.1 (fbStart b) } | b <- frBearers fr0 ] }
+
+-- | A run, with the bursts the budget closed over it: drained a gap and a
+-- second after the end, when whatever was open is over.
+runFloorBursts :: FloorRun -> ([Grant], [(Int, Time)], [Bucket.Burst])
+runFloorBursts fr = runSimOrThrow $ do
+    calls  <- newTVarIO (0 :: Int)
+    bursts <- newTVarIO []
+    let drain budget _ = do
+          n <- atomically $ stateTVar calls (\c -> (c, c + 1))
+          -- the second call is the one after the run
+          when (n == 1) $ do
+            threadDelay (gap + 1)
+            now <- getMonotonicTime
+            atomically (Bucket.takeBurstsAt budget now >>= writeTVar bursts)
+    (gs, _, waiting) <- runFloorM (Just drain) True fr
+    (,,) gs waiting <$> readTVarIO bursts
+  where
+    gap = Burst.gapFor (frRate fr) (frCapacity fr)
+
+-- | What the budget closes over a run is the fold of the grants the harness
+-- saw over the detector's own rules, each queued request of a credited
+-- bearer counted in the credited queue from its request to its grant, or
+-- to the end if it is still waiting then. The peak queue is compared within
+-- one: two queue changes in the same simulated instant are ordered by the
+-- scheduler, not by the clock, and a request granted the instant it queued
+-- is a fast-path grant to the harness.
+prop_bursts_match_grants :: FloorRun -> Property
+prop_bursts_match_grants fr =
+    classify (length got > 1) "more than one burst" $
+    classify (any ((> 0) . Bucket.bFiller) got) "filler counted" $
+    counterexample (show (got, want)) $
+         counterexample "records" (map strip got === map strip want)
+    .&&. counterexample "peaks" (and (zipWith (\a b -> abs (Bucket.bPeakQueued a - Bucket.bPeakQueued b) <= 1) got want))
+  where
+    (gs, waiting, got) = runFloorBursts fr
+    gap  = Burst.gapFor (frRate fr) (frCapacity fr)
+    end  = endTime fr
+    strip b = b { Bucket.bPeakQueued = 0 }
+    -- the events the bucket told the detector, as (instant, order, event)
+    events = sortOn (\(t, o, _) -> (t, o)) $
+         [ (gAt g, 1 :: Int, Left g) | g <- gs ]
+      ++ concat [ [ (gAsked g, 2, Right 1), (gAt g, 0, Right (-1)) ]
+                | g <- gs, gAsked g < gAt g, Burst.creditedTier (gTier g) ]
+      ++ concat [ [ (asked, 2, Right 1), (end, 0, Right (-1)) ]
+                | (i, asked) <- waiting, Burst.creditedTier (fbTier (frBearers fr !! i))
+                  -- a request still pending when the harness looked can be
+                  -- granted in the final instant, as the bearers ahead of it
+                  -- are cancelled; then it is a grant, not a wait
+                , not (any (\g -> gBearer g == i && gAsked g == asked) gs) ]
+    step (q, d) (t, _, ev) = case ev of
+      Left g  -> (q, Burst.burstGrant gap t (gTier g) (fromIntegral (gBearer g)) (gBytes g)
+                                      (gAt g `diffTime` gAsked g) 0 d)
+      Right k -> let q' = q + k in (q', Burst.burstQueued gap t q' d)
+    want = fst $ Burst.takeBursts $ Burst.burstSweep gap ((gap + 1) `addTime` end)
+                                  $ snd $ foldl' step (0, Burst.emptyDetector) events
+
+-- | A bearer catching up at rest rank, or several: no burst, no busy period.
+prop_rest_alone_no_burst :: Property
+prop_rest_alone_no_burst =
+  forAllShrink (genOneTier 4) shrinkOneTier $ \fr ->
+    let (gs, _, got) = runFloorBursts fr
+        (_, st) = runFloor False fr
+    in classify (length gs > 10) "many grants" $
+       counterexample (show (got, Bucket.bsBursts st, Bucket.bsBusyTime st)) $
+         got === [] .&&. Bucket.bsBursts st === 0 .&&. Bucket.bsBusyTime st === 0
+
+-- | A bearer cancelled in the instant its queued grant commits: the
+-- exception lands after the grant's transaction and before the mask is
+-- back, when the request is already out of the queue, and the credited
+-- queue count must come out right. The canceller waits for the queue to
+-- empty, so its throw always follows the commit; the bearer's thread dies
+-- holding its grant, which is the caller's problem, not the bucket's.
+-- Explored with IOSimPOR, whose default schedule lands the throw in the
+-- window. A rank-0 bearer empties the bucket, a rank-2 bearer queues for a
+-- second and is cancelled as it is granted, a third then queues for a
+-- second. Busy time is the seconds a credited bearer was queued, and the
+-- one burst closes after the gap only if the count is back at zero.
+prop_cancel_after_grant :: Property
+prop_cancel_after_grant =
+  IOSim.exploreSimTrace id sim $ \_ trace ->
+    case IOSim.traceResult False trace of
+      Left e -> counterexample (show e) False
+      Right (survived, busy, bursts) ->
+        classify survived "the bearer returned before the throw" $
+        counterexample (show (survived, busy, bursts)) $
+          busy === 2 .&&. bursts === 1
+  where
+    sim :: forall s. IOSim s (Bool, DiffTime, Int)
+    sim = do
+      exploreRaces
+      budget <- Bucket.newBucket 4096 4096 Nothing
+      let bearer tier = do
+            h <- Bucket.registerBearer budget
+            atomically $ Bucket.setRank h (Bucket.Rank tier)
+            return h
+          queued = do
+            (_, _, n, _) <- Bucket.bucketSnapshot budget (Time 0)
+            return n
+      a <- bearer 0
+      b <- bearer 2
+      d <- bearer 2
+      Bucket.awaitGrant a 4096                 -- the bucket is empty for a second
+      bt <- async (Bucket.awaitGrant b 4096)   -- queued until the tokens are back
+      canceller <- async $ do
+        atomically (queued >>= check . (== 1))  -- queued
+        atomically (queued >>= check . (== 0))  -- granted: the transaction committed
+        cancel bt
+      wait canceller
+      survived <- either (const False) (const True) <$> waitCatch bt
+      Bucket.awaitGrant d 4096
+      now <- getMonotonicTime
+      (st, _, _, _) <- atomically $ Bucket.bucketSnapshot budget now
+      bursts <- atomically $ Bucket.takeBurstsAt budget (3 `addTime` now)
+      return (survived, Bucket.bsBusyTime st, length bursts)
 
 -- | Connections sharing one allowance, as a big-ledger pool's relays share
 -- the pool's bucket, all queued behind a saturating local root with the
