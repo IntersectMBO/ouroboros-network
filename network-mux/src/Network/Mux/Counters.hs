@@ -19,6 +19,9 @@ module Network.Mux.Counters
   , MuxByteCells (..)
   , withByteCells
   , CountersTrace (..)
+  , Burst (..)
+  , burstDuration
+  , TierGrants (..)
   , countMuxerFailure
   , countDemuxerFailure
   , countGateTimeout
@@ -31,12 +34,14 @@ module Network.Mux.Counters
   , egressWaitBounds
   , egressBurstBounds
   , egressBurstWidths
+  , egressBurstGap
+  , egressBurstCap
   , egressServedWindow
   ) where
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (SomeException, fromException)
-import Control.Monad (forever)
+import Control.Monad (forM_, forever)
 import Control.Monad.Class.MonadThrow (MonadMask, bracket)
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
@@ -49,9 +54,11 @@ import Data.Map.Strict qualified as Map
 import Data.Word (Word64, Word8)
 import GHC.Generics (Generic)
 
-import Network.Mux.Egress.Bucket (Bucket, BucketStats (..), TierGrants (..),
-           bucketSnapshot, burstBounds, burstWidths, emptyBucketStats,
-           servedByTier, servedWindow, servedWithin, waitBounds)
+import Network.Mux.Egress.Bucket (Bucket, BucketStats (..), Burst (..),
+           TierGrants (..), bucketSnapshot, burstBounds, burstDuration,
+           burstWidths, emptyBucketStats, servedByTier, servedWindow,
+           servedWithin, takeBurstsAt, waitBounds)
+import Network.Mux.Egress.Burst (burstCap, burstGap)
 import Network.Mux.Trace (Error (..))
 import Network.Mux.Types (MiniProtocolDir, MiniProtocolNum)
 
@@ -83,13 +90,16 @@ data SchedulingCounts = SchedulingCounts {
   scBudgetLevel        :: !Int,        -- ^ bytes; negative while repaying credit
   scBudgetQueued       :: !Int,
   scSliceQueued        :: !Int,
-  scBursts             :: !Word64,     -- ^ busy periods of the budget's queue
-  scBusyTime           :: !DiffTime,   -- ^ time with a bearer queued on the budget
+  scBursts             :: !Word64,     -- ^ busy periods of the budget's queue:
+                                       --   from a first credited bearer queued to none
+  scBusyTime           :: !DiffTime,   -- ^ time with a credited bearer queued on the budget
   scContendedTime      :: !DiffTime,   -- ^ time with two or more, when the order decides
   scBurstsOver         :: ![(DiffTime, Word64)],
     -- ^ busy periods longer than each bound
   scBurstsWider        :: ![(Int, Word64)],
-    -- ^ busy periods with at least this many bearers queued at once
+    -- ^ busy periods with at least this many credited bearers queued at once
+  scBurstsDropped      :: !Word64,
+    -- ^ burst records closed with no room to keep them until the next trace
   scTiers              :: ![(Word8, TierCounts)]
     -- ^ by tier: what the queue granted its bearers, and how many wait now
   }
@@ -247,12 +257,15 @@ countDemuxerFailure MuxCounters { mcFailures = v } e =
   where
     bump f = modifyTVar v (\(Sides eg ing) -> Sides eg (f ing))
 
--- | A snapshot of one side's counters.
+-- | A snapshot of one side's counters, or one burst of credited demand on
+-- the budget, closed by the time of the snapshot that carries it.
 data CountersTrace =
     TraceRemoteEgress  EgressCounts
   | TraceRemoteIngress IngressCounts
   | TraceLocalEgress   EgressCounts
   | TraceLocalIngress  IngressCounts
+  | TraceEgressBurst   DiffTime Burst
+    -- ^ a burst, and how long before the snapshot that carries it it ended
   deriving (Eq, Show)
 
 -- | The token-wait bounds 'scWaitsOver' counts against.
@@ -267,6 +280,14 @@ egressBurstBounds = burstBounds
 egressBurstWidths :: [Int]
 egressBurstWidths = burstWidths
 
+-- | The least idle time that ends a burst of credited demand.
+egressBurstGap :: DiffTime
+egressBurstGap = burstGap
+
+-- | The longest burst record; a longer burst is closed and the next opened.
+egressBurstCap :: DiffTime
+egressBurstCap = burstCap
+
 -- | How long a grant keeps its bearer in 'tcServed'.
 egressServedWindow :: DiffTime
 egressServedWindow = servedWindow
@@ -278,7 +299,9 @@ countersInterval = 7
 
 -- | Every @interval@, snapshot the node-to-node and the node-to-client
 -- counters and trace both sides of each; with scheduled egress, the budget's
--- bucket and the slice's, if any, go into the node-to-node egress snapshot.
+-- bucket and the slice's, if any, go into the node-to-node egress snapshot,
+-- and the bursts the budget closed since the last snapshot follow it, one
+-- trace each.
 countersLoop :: (MonadDelay m, MonadSTM m)
              => MuxCounters m    -- ^ node-to-node
              -> MuxCounters m    -- ^ node-to-client
@@ -299,6 +322,9 @@ countersLoop remote local buckets interval tracer = forever $ do
   traceWith tracer (TraceRemoteIngress ri)
   traceWith tracer (TraceLocalEgress le)
   traceWith tracer (TraceLocalIngress li)
+  forM_ buckets $ \(budget, _) -> do
+    bursts <- atomically (takeBurstsAt budget now)
+    mapM_ (\b -> traceWith tracer (TraceEgressBurst (now `diffTime` bEnd b) b)) bursts
 
 -- | The scheduling counters, in one transaction.
 schedulingCounts :: MonadSTM m => Time -> (Bucket m, Maybe (Bucket m)) -> STM m SchedulingCounts
@@ -336,6 +362,7 @@ schedulingCountsWith runTx now (budget, slice_m) = do
     scContendedTime      = bsContendedTime b,
     scBurstsOver         = zip burstBounds (bsBurstsOver b),
     scBurstsWider        = zip burstWidths (bsBurstsWider b),
+    scBurstsDropped      = bsBurstsDropped b,
     scTiers              = tiers
   }
   where

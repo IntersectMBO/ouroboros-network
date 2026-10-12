@@ -78,11 +78,16 @@ module Network.Mux
   , IngressCounts (..)
   , ByteCounts
   , CountersTrace (..)
+  , Burst (..)
+  , burstDuration
+  , TierGrants (..)
   , countersLoop
   , countersInterval
   , egressWaitBounds
   , egressBurstBounds
   , egressBurstWidths
+  , egressBurstGap
+  , egressBurstCap
   , egressServedWindow
     -- * Errors
   , Error (..)

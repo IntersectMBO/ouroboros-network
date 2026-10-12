@@ -3781,9 +3781,15 @@ replayStats sch@BucketSched { schSlice, schBearers } =
     dropFastPath (e : rest) = e : dropFastPath rest
     dropFastPath []         = []
 
-    -- busy periods from the queue's lengths, in the order they changed
-    withBursts q st = go 0 Nothing Nothing 0 st [ (t, n) | (t, n, _, _) <- q ]
+    -- busy periods from the credited queue's lengths, in the order they
+    -- changed: a bearer at rest rank or beyond joins and leaves unseen
+    withBursts q st = go 0 Nothing Nothing 0 st (creditedLengths 0 q)
       where
+        creditedLengths _ [] = []
+        creditedLengths c ((t, _, k, joined) : rest)
+          | rankOf k < 4 = let c' = if joined then c + 1 else c - 1
+                           in (t, c') : creditedLengths c' rest
+          | otherwise    = creditedLengths c rest
         go _ _ _ _ acc [] = acc
         go n0 since cSince peak acc ((t, n1) : rest) =
           let started = n0 == 0 && n1 >= 1
@@ -3843,7 +3849,8 @@ replayStats sch@BucketSched { schSlice, schBearers } =
                                       | (k, _) <- gs, k `Set.member` queued ],
            Bucket.bsFloorTiers    = M.empty,
            Bucket.bsServed        = served,
-           Bucket.bsServedPruned  = pruned
+           Bucket.bsServedPruned  = pruned,
+           Bucket.bsBurstsDropped = 0
          }
       where
         (served, pruned) = servedModel (List.sortOn (\(_, _, t) -> t)
