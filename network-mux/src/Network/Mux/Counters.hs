@@ -36,6 +36,7 @@ module Network.Mux.Counters
   , egressBurstWidths
   , egressBurstGap
   , egressBurstCap
+  , egressBurstGrantFloor
   , egressServedWindow
   ) where
 
@@ -58,7 +59,7 @@ import Network.Mux.Egress.Bucket (Bucket, BucketStats (..), Burst (..),
            TierGrants (..), bucketSnapshot, burstBounds, burstDuration,
            burstWidths, emptyBucketStats, servedByTier, servedWindow,
            servedWithin, takeBurstsAt, waitBounds)
-import Network.Mux.Egress.Burst (burstCap, burstGap)
+import Network.Mux.Egress.Burst (burstCap, burstGap, burstGrantFloor)
 import Network.Mux.Trace (Error (..))
 import Network.Mux.Types (MiniProtocolDir, MiniProtocolNum)
 
@@ -287,6 +288,10 @@ egressBurstGap = burstGap
 -- | The longest burst record; a longer burst is closed and the next opened.
 egressBurstCap :: DiffTime
 egressBurstCap = burstCap
+
+-- | The least grant that opens or extends a burst; smaller ones are filler.
+egressBurstGrantFloor :: Int
+egressBurstGrantFloor = burstGrantFloor
 
 -- | How long a grant keeps its bearer in 'tcServed'.
 egressServedWindow :: DiffTime
