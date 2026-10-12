@@ -75,10 +75,17 @@ module Network.Mux
   , SchedulingCounts (..)
   , TierCounts (..)
   , CountersTrace (..)
+  , Burst (..)
+  , burstDuration
+  , TierGrants (..)
   , countersInterval
   , egressWaitBounds
   , egressBurstBounds
   , egressBurstWidths
+  , egressBurstGap
+  , egressBurstCap
+  , egressBurstGrantFloor
+  , egressServedWindow
     -- * Errors
   , Error (..)
   , RuntimeError (..)
@@ -121,11 +128,13 @@ import Network.Mux.Bearer
 import Network.Mux.Channel
 import Network.Mux.Counters
 import Network.Mux.Egress as Egress
-import Network.Mux.Egress.Bucket (Bucket, BucketHandle, Rotation (..),
-           attachFloor, newBucket, registerBearer, setBucketRate, setRank,
-           setRankSource)
+import Network.Mux.Egress.Bucket (Bucket, BucketHandle, Burst (..),
+           Rotation (..), TierGrants (..), attachFloor, burstDuration,
+           newBucket, registerBearer, setBucketRate, setRank, setRankSource)
 import Network.Mux.Egress.Counters (SchedulingCounts (..), TierCounts (..),
-           egressBurstBounds, egressBurstWidths, egressWaitBounds)
+           egressBurstBounds, egressBurstCap, egressBurstGap,
+           egressBurstGrantFloor, egressBurstWidths, egressServedWindow,
+           egressWaitBounds)
 import Network.Mux.Ingress as Ingress
 import Network.Mux.Timeout
 import Network.Mux.Trace
@@ -179,7 +188,8 @@ data MuxEgress m = MuxEgress {
     meSlice        :: Maybe (BucketHandle m),
     meLaneOf       :: MiniProtocolNum -> MiniProtocolDir -> Lane,
     meCharge       :: StrictTVar m (ChargeSink m)
-    -- ^ where the scheduled lane reports what it wrote; a no-op until installed
+    -- ^ where the scheduled lane reports what a batch carries as it is
+    --   granted; a no-op until installed
   }
 
 
@@ -275,8 +285,8 @@ setEgressRankSource Mux { muxEgress } rank =
          Just MuxEgress { meBudgetHandle } -> setRankSource meBudgetHandle rank
          Nothing                           -> return ()
 
--- | Install where the scheduled lane reports the bytes it wrote, per
--- mini-protocol. Nothing on an unscheduled mux.
+-- | Install where the scheduled lane reports the bytes each batch carries, per
+-- mini-protocol, as the batch is granted. Nothing on an unscheduled mux.
 setEgressChargeSink :: MonadSTM m => Mux mode m -> ChargeSink m -> STM m ()
 setEgressChargeSink Mux { muxEgress } sink =
     case muxEgress of

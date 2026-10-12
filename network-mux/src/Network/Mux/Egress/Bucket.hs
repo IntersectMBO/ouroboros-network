@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE NumericUnderscores  #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -47,6 +48,7 @@ module Network.Mux.Egress.Bucket
   , awaitGrant
   , awaitGrantBorrowing
   , awaitGrantWaited
+  , awaitGrantCharged
   , takeOnCredit
     -- * The floor
   , Floor
@@ -60,6 +62,18 @@ module Network.Mux.Egress.Bucket
   , burstWidths
   , emptyBucketStats
   , bucketSnapshot
+  , servedWindow
+  , tierRefresh
+    -- * Bursts
+  , Burst (..)
+  , burstDuration
+  , takeBurstsAt
+  , drainBurstsAt
+    -- * State, named for the tests' instances
+  , Ticket
+  , BurstState
+  , Detector
+  , Open
     -- * Pure core
   , tokenLevel
   , grantAt
@@ -68,9 +82,11 @@ module Network.Mux.Egress.Bucket
   , rotatedRank
   , queueRank
   , chargeAt
+  , recordServed
+  , servedWithin
+  , servedByTier
   ) where
 
-import Control.Concurrent.Class.MonadSTM qualified as LazySTM
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad (void, when)
 import Control.Monad.Class.MonadThrow
@@ -81,8 +97,10 @@ import Data.Bits (shiftL, shiftR, xor, (.&.), (.|.))
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Word (Word32, Word64, Word8)
+import GHC.Generics (Generic)
 import System.Random.SplitMix qualified as SM
 
+import Network.Mux.Egress.Burst
 import Network.Mux.Egress.Floor
 import Network.Mux.Types (unrankedNumber)
 
@@ -92,10 +110,13 @@ newtype Rank = Rank Word8
   deriving (Eq, Ord, Show)
 
 newtype Ticket = Ticket Word64
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord, Show, Generic)
 
 -- | Where a waiter queues ('queueRank'), then when it joined.
 type WaitKey = (Word32, Ticket)
+
+-- | A cancellable timer: whether it fired, and its cancellation.
+type Delay m = (STM m TimeoutState, m ())
 
 -- | How the order within a tier is drawn: a node-local seed, and the period
 -- after which every bearer is dealt a new place.
@@ -108,7 +129,7 @@ data Rotation = Rotation {
     -- rotate one batch at a time. The rest of the cascade, where finishing one
     -- transfer first serves nobody and a newcomer must not wait out a flood.
   }
-  deriving Show
+  deriving (Show, Generic)
 
 data Bucket m = Bucket {
   bRate     :: !(StrictTVar m Double),   -- ^ bytes/s; @<= 0@ disables the bucket
@@ -121,9 +142,11 @@ data Bucket m = Bucket {
   bBearers  :: !(StrictTVar m Word64),   -- ^ next bearer id
   bStats    :: !(StrictTVar m BucketStats),
   bBurst    :: !(StrictTVar m BurstState),
+  bDetector :: !(StrictTVar m Detector),  -- ^ the bursts of credited demand
   bFloor    :: !(StrictTVar m (Maybe (Floor m)))
     -- ^ the floor for the credited bearers the order does not reach, if any
   }
+  deriving Generic
 
 -- | The floor hung on a budget: its own bucket, charged to the budget on
 -- credit; the credited bearers waiting, by class and ticket, each with its
@@ -134,18 +157,23 @@ data Floor m = Floor {
   flWaiters :: !(StrictTVar m (Map (FloorClass, Ticket) (StrictTVar m Bool))),
   flState   :: !(StrictTVar m FloorState)
   }
+  deriving Generic
 
 -- | Where a grant came from.
 data GrantSource = FromBucket | FromBorrow | FromFloor
   deriving (Eq, Show)
 
--- | The busy period in progress, if any: since when bearers have been queued,
--- since when two or more, and the most at once.
+-- | The busy period in progress, if any: since when credited bearers have
+-- been queued, since when two or more, and the most at once; how many now
+-- is the detector's count. Bearers at rest rank or unranked wait for what
+-- the credited leave, so they are not counted: a queue of them alone is not
+-- contention.
 data BurstState = BurstState {
   buSince          :: !(Maybe Time),
   buContendedSince :: !(Maybe Time),
   buPeak           :: !Int
   }
+  deriving Generic
 
 -- | What a bucket has handed out since it was created.
 data BucketStats = BucketStats {
@@ -156,39 +184,41 @@ data BucketStats = BucketStats {
   bsWaitTokens    :: !DiffTime,   -- ^ summed over grants: request to grant
   bsWaitWritable  :: !DiffTime,   -- ^ summed over grants: the writability gate before it
   bsWaitsOver     :: ![Word64],   -- ^ grants whose token wait exceeded each of 'waitBounds'
-  bsBursts        :: !Word64,    -- ^ busy periods: from a first bearer queued to none
-  bsBusyTime      :: !DiffTime,  -- ^ time with a bearer queued
+  bsBursts        :: !Word64,    -- ^ busy periods: from a first credited bearer
+                                 --   queued to none
+  bsBusyTime      :: !DiffTime,  -- ^ time with a credited bearer queued
   bsContendedTime :: !DiffTime,  -- ^ time with two or more queued, when the order decides
   bsBurstsOver    :: ![Word64],  -- ^ busy periods longer than each of 'burstBounds'
   bsBurstsWider   :: ![Word64],  -- ^ busy periods with at least each of 'burstWidths'
-                                 --   bearers queued at once
-  bsTiers         :: !(Map Word8 TierGrants)
+                                 --   credited bearers queued at once
+  bsTiers         :: !(Map Word8 TierGrants),
                                  -- ^ what was granted from the queue, by the tier the
                                  --   bearer queued at; the fast path is not ranked
+  bsServed        :: !(Map (Word8, Word64) Time),
+                                 -- ^ the last grant by tier and bearer id, the
+                                 --   fast path included at the tier its rule
+                                 --   answers at the grant; pruned by
+                                 --   'recordServed', so never older than two
+                                 --   'servedWindow's
+  bsServedPruned  :: !Time,      -- ^ when 'bsServed' was last pruned
+  bsBurstsDropped :: !Word64     -- ^ burst records closed with no room to keep
+                                 --   them; held by the detector, filled in by
+                                 --   'bucketSnapshot'
   }
-  deriving (Eq, Show)
-
--- | Grants to bearers of one tier.
-data TierGrants = TierGrants {
-  tgBytes   :: !Word64,
-  tgBatches :: !Word64
-  }
-  deriving (Eq, Show)
-
-instance Semigroup TierGrants where
-  TierGrants b1 n1 <> TierGrants b2 n2 = TierGrants (b1 + b2) (n1 + n2)
+  deriving (Eq, Show, Generic)
 
 -- | The tier a queued bearer's key was made with: the top byte of the rank.
 tierOfKey :: WaitKey -> Word8
 tierOfKey (rank, _) = fromIntegral (rank `shiftR` 24)
 
--- | The busy-period lengths 'bsBurstsOver' counts against.
+-- | The busy-period lengths 'bsBurstsOver' counts against: a fan-out at a
+-- high budget is tens of milliseconds, at a low one seconds.
 burstBounds :: [DiffTime]
-burstBounds = [0.1, 1, 10, 60]
+burstBounds = [0.01, 0.03, 0.1, 0.3, 1]
 
 -- | The queue widths 'bsBurstsWider' counts against.
 burstWidths :: [Int]
-burstWidths = [2, 8, 32]
+burstWidths = [2, 4, 8, 16, 32]
 
 -- | The token-wait bounds 'bsWaitsOver' counts against.
 waitBounds :: [DiffTime]
@@ -210,11 +240,11 @@ strictZipWith _ _ _ = []
 emptyBucketStats :: BucketStats
 emptyBucketStats = BucketStats 0 0 0 0 0 0 (zeros waitBounds)
                                0 0 0 (zeros burstBounds) (zeros burstWidths)
-                               Map.empty
+                               Map.empty Map.empty (Time 0) 0
 
--- | The queue went from @n0@ to @n1@ bearers at @now@. The clock is read
--- before the transaction, so @now@ can trail the step before this one: no
--- length goes negative.
+-- | The credited bearers queued went from @n0@ to @n1@ at @now@. The clock
+-- is read before the transaction, so @now@ can trail the step before this
+-- one: no length goes negative.
 burstStep :: Time -> Int -> Int -> (BurstState, BucketStats) -> (BurstState, BucketStats)
 burstStep !now n0 n1 (bu0, st0) = ended (contended (started (bu0, st0)))
   where
@@ -232,7 +262,7 @@ burstStep !now n0 n1 (bu0, st0) = ended (contended (started (bu0, st0)))
     ended (bu, st)
       | n0 >= 1 && n1 == 0, Just since <- buSince bu
       = let len = max 0 (now `diffTime` since)
-        in ( BurstState Nothing Nothing 0
+        in ( bu { buSince = Nothing, buContendedSince = Nothing, buPeak = 0 }
            , st { bsBusyTime    = bsBusyTime st + len
                 , bsBurstsOver  = strictZipWith (\b c -> if len > b then c + 1 else c)
                                           burstBounds (bsBurstsOver st)
@@ -257,21 +287,52 @@ recordGrant tier_m source need waitedWritable waitedTokens st =
   where
     n = fromIntegral need
 
+-- | How long a grant keeps its bearer counted as served at its tier, and how
+-- often the record of them is pruned.
+servedWindow :: DiffTime
+servedWindow = 59
+
+-- | How often a queued bearer asks its rule again: as often as the counters
+-- read them.
+tierRefresh :: DiffTime
+tierRefresh = 7
+
+-- | A grant to bearer @b@ at @tier@ at @now@. Once a 'servedWindow' after the
+-- last prune it also drops the bearers not granted within the window, so the
+-- record stays bounded whether or not anything reads it.
+recordServed :: Word8 -> Word64 -> Time -> BucketStats -> BucketStats
+recordServed !tier !b now st
+  | now `diffTime` bsServedPruned st >= servedWindow
+  = st { bsServed       = Map.insert (tier, b) now (servedWithin servedWindow now (bsServed st))
+       , bsServedPruned = now }
+  | otherwise
+  = st { bsServed = Map.insert (tier, b) now (bsServed st) }
+
+-- | The bearers granted within @window@ of @now@.
+servedWithin :: DiffTime -> Time -> Map (Word8, Word64) Time -> Map (Word8, Word64) Time
+servedWithin window now = Map.filter (\t -> now `diffTime` t <= window)
+
+-- | Bearers served at each tier; one that changed tier counts at each.
+servedByTier :: Map (Word8, Word64) a -> Map Word8 Int
+servedByTier m = Map.fromListWith (+) [ (tier, 1) | (tier, _) <- Map.keys m ]
+
 -- | The counters, the token level, the number of bearers queued and how many
 -- of them at each tier, at @now@.
 bucketSnapshot :: MonadSTM m => Bucket m -> Time
                -> STM m (BucketStats, Double, Int, Map Word8 Int)
-bucketSnapshot Bucket { bRate, bCapacity, bFull, bWaiters, bStats, bBurst } now = do
+bucketSnapshot Bucket { bRate, bCapacity, bFull, bWaiters, bStats, bBurst, bDetector } now = do
   rate    <- readTVar bRate
   full    <- readTVar bFull
   waiters <- readTVar bWaiters
   st      <- readTVar bStats
   bu      <- readTVar bBurst
+  det     <- readTVar bDetector
   -- a busy period in progress counts up to now, so the times only ever grow;
   -- a clock read that trails the period's start counts nothing
   let upToNow = maybe 0 (max 0 . (now `diffTime`))
       st' = st { bsBusyTime      = bsBusyTime st + upToNow (buSince bu)
-               , bsContendedTime = bsContendedTime st + upToNow (buContendedSince bu) }
+               , bsContendedTime = bsContendedTime st + upToNow (buContendedSince bu)
+               , bsBurstsDropped = burstsDropped det }
       queuedByTier = Map.fromListWith (+) [ (tierOfKey k, 1) | k <- Map.keys waiters ]
   return (st', tokenLevel rate bCapacity full now, Map.size waiters, queuedByTier)
 
@@ -289,9 +350,28 @@ newBucket rate capacity bRotation = do
   bBearers <- newTVarIO 0
   bStats   <- newTVarIO emptyBucketStats
   bBurst   <- newTVarIO (BurstState Nothing Nothing 0)
+  bDetector <- newTVarIO emptyDetector
   bFloor   <- newTVarIO Nothing
   return Bucket { bRate, bCapacity = capacity, bRotation, bFull, bWaiters, bTickets, bBearers,
-                  bStats, bBurst, bFloor }
+                  bStats, bBurst, bDetector, bFloor }
+
+-- | The bursts closed since the last call, oldest first, the one in
+-- progress closed first if it is over by @now@.
+takeBurstsAt :: MonadSTM m => Bucket m -> Time -> STM m [Burst]
+takeBurstsAt = takeBurstsWith id
+
+-- | The same, the one in progress closed as it stands whether or not it is
+-- over: for a test that ends before the queue drains.
+drainBurstsAt :: MonadSTM m => Bucket m -> Time -> STM m [Burst]
+drainBurstsAt = takeBurstsWith closeOpen
+
+takeBurstsWith :: MonadSTM m => (Detector -> Detector) -> Bucket m -> Time -> STM m [Burst]
+takeBurstsWith finish Bucket { bRate, bCapacity, bDetector } now = do
+  rate <- readTVar bRate
+  det  <- readTVar bDetector
+  let (bursts, det') = takeBursts (finish (burstSweep (gapFor rate bCapacity) now det))
+  writeTVar bDetector det'
+  return bursts
 
 -- | Hang a floor on a budget: its own bucket at @share@ of the budget's
 -- rate, following it through 'setBucketRate', with the budget's capacity,
@@ -413,9 +493,11 @@ data BucketHandle m = BucketHandle {
   bhBucket :: !(Bucket m),
   bhId     :: !Word64,
   bhRank   :: !(StrictTVar m (Time -> STM m Rank)),
-  -- ^ the tier, asked as the bearer joins the queue, at that moment
+  -- ^ the tier, asked as the bearer joins the queue and as a fast-path
+  -- grant charges, at that moment
   bhWake   :: !(StrictTVar m Bool)       -- ^ set by the bearer ahead of us when it is granted
   }
+  deriving Generic
 
 registerBearer :: MonadSTM m => Bucket m -> m (BucketHandle m)
 registerBearer bucket@Bucket { bBearers } = do
@@ -478,7 +560,7 @@ data FloorAttempt = FloorGranted | FloorNotPick | FloorShortUntil !Time | Became
 -- | Block until @need@ bytes are granted to this bearer.
 awaitGrant :: forall m. (MonadTimer m, MonadMask m)
            => BucketHandle m -> Int -> m ()
-awaitGrant h need = void (awaitGrantWith Nothing 0 h need)
+awaitGrant h need = void (awaitGrantWaited Nothing 0 h need)
 
 -- | As 'awaitGrant', but when the bearer's own bucket is short the batch may
 -- come from @budget@ instead, if nobody is waiting on it and it has the bytes
@@ -487,19 +569,32 @@ awaitGrant h need = void (awaitGrantWith Nothing 0 h need)
 -- against the budget. Returns whether the batch was borrowed.
 awaitGrantBorrowing :: forall m. (MonadTimer m, MonadMask m)
                     => BucketHandle m -> Bucket m -> Int -> m Bool
-awaitGrantBorrowing h budget need = (== FromBorrow) <$> awaitGrantWith (Just budget) 0 h need
+awaitGrantBorrowing h budget need = (== FromBorrow) <$> awaitGrantWaited (Just budget) 0 h need
 
 -- | 'awaitGrant' or, given a budget, 'awaitGrantBorrowing', recording how
 -- long the bearer already waited for the writability gate before asking.
 awaitGrantWaited :: forall m. (MonadTimer m, MonadMask m)
                  => Maybe (Bucket m) -> DiffTime -> BucketHandle m -> Int -> m GrantSource
-awaitGrantWaited = awaitGrantWith
+awaitGrantWaited borrow_m waited = awaitGrantWith borrow_m waited Nothing
+
+-- | 'awaitGrantWaited' with a charge run in the transaction that grants:
+-- what the bearer's rank rule spends is spent the instant the bytes are
+-- granted. A queued request is granted only at the tier its rule answers
+-- then, so a credit that another grant has just spent moves it to the place
+-- the rule gives now, before it is served; the fast path, with nobody
+-- waiting, is served whatever its rank and charged all the same.
+awaitGrantCharged :: forall m. (MonadTimer m, MonadMask m)
+                  => Maybe (Bucket m) -> DiffTime -> (Time -> STM m ())
+                  -> BucketHandle m -> Int -> m GrantSource
+awaitGrantCharged borrow_m waited charge = awaitGrantWith borrow_m waited (Just charge)
 
 awaitGrantWith :: forall m. (MonadTimer m, MonadMask m)
-               => Maybe (Bucket m) -> DiffTime -> BucketHandle m -> Int -> m GrantSource
-awaitGrantWith borrow_m waitedWritable
+               => Maybe (Bucket m) -> DiffTime -> Maybe (Time -> STM m ())
+               -> BucketHandle m -> Int -> m GrantSource
+awaitGrantWith borrow_m waitedWritable charge_m
                BucketHandle { bhBucket = bucket@Bucket { bWaiters, bTickets, bRotation, bStats
-                                                       , bBurst, bFloor }
+                                                       , bBurst, bDetector, bRate, bCapacity
+                                                       , bFloor }
                             , bhId, bhRank, bhWake }
                need =
   -- masked until the exception handler is in place: a bearer killed on its
@@ -525,7 +620,7 @@ awaitGrantWith borrow_m waitedWritable
 
              writeTVar bhWake False
              writeTVar bWaiters (Map.insert key bhWake waiters)
-             queueChanged now (Map.size waiters) (Map.size waiters + 1)
+             queueChanged now (tierOf tier) 1
 
              -- a credited bearer also waits at the floor
              fl_m <- readTVar bFloor
@@ -534,11 +629,12 @@ awaitGrantWith borrow_m waitedWritable
                  modifyTVar (flWaiters fl) (Map.insert (cls, ticket) bhWake)
                  return (Just (fl, (cls, ticket)))
                _ -> return Nothing
-             return (Right (key, fkey_m))
+             entry <- newTVar (key, fkey_m)
+             return (Right entry)
 
     case r of
-         Left source           -> return source
-         Right (key, fkey_m)   -> unmask (loop now key fkey_m) `onException` cancel key fkey_m
+         Left source -> return source
+         Right entry -> unmask (waitQueued now entry) `onException` cancel entry
   where
     tierOf :: Rank -> Word8
     tierOf (Rank t) = t
@@ -575,14 +671,17 @@ awaitGrantWith borrow_m waitedWritable
                -> Map (FloorClass, Ticket) (StrictTVar m Bool) -> FloorState -> STM m ()
     floorGrant asked now key fl fkey c waiters fw st = do
       chargeCredit bucket now need
+      charge now
       leaveBudget now key waiters
       let fw' = Map.delete fkey fw
       writeTVar (flWaiters fl) fw'
       writeTVar (flState fl) (floorGranted c need st)
       wakeFloorPick fl fw'
       modifyTVar bStats
-        (recordGrant (Just (tierOfKey key)) FromFloor need
-                     waitedWritable (now `diffTime` asked))
+        ( recordServed (tierOfKey key) bhId now
+        . recordGrant (Just (tierOfKey key)) FromFloor need
+                      waitedWritable (now `diffTime` asked))
+      noteGrant asked now (tierOfKey key)
 
     -- leave the budget's queue at @now@; if we were the head, the next in
     -- line takes it
@@ -590,7 +689,7 @@ awaitGrantWith borrow_m waitedWritable
     leaveBudget now key waiters = do
       let waiters' = Map.delete key waiters
       writeTVar bWaiters waiters'
-      queueChanged now (Map.size waiters) (Map.size waiters')
+      queueChanged now (tierOfKey key) (-1)
       when (fmap fst (Map.lookupMin waiters) == Just key) (wakeHead waiters')
 
     -- the floor's answer to a bearer waiting there: a grant if we are its
@@ -610,14 +709,30 @@ awaitGrantWith borrow_m waitedWritable
                     return FloorGranted
            _ -> return FloorNotPick
 
-    -- the queue went from @n0@ to @n1@ bearers: account for busy periods
-    queueChanged :: Time -> Int -> Int -> STM m ()
-    queueChanged now n0 n1 = when (n0 /= n1) $ do
-      bu <- readTVar bBurst
-      st <- readTVar bStats
-      let (bu', st') = burstStep now n0 n1 (bu, st)
+    -- a bearer of @tier@ joined (+1) or left (-1) the queue at @now@: when
+    -- it is credited, account for the busy period and tell the detector
+    queueChanged :: Time -> Word8 -> Int -> STM m ()
+    queueChanged now tier delta = when (creditedTier tier) $ do
+      bu  <- readTVar bBurst
+      st  <- readTVar bStats
+      det <- readTVar bDetector
+      let n0 = dQueued det
+          n1 = n0 + delta
+          (bu', st') = burstStep now n0 n1 (bu, st)
       writeTVar bBurst bu'
       writeTVar bStats st'
+      gap <- gapNow
+      writeTVar bDetector (burstQueued gap now n1 det)
+
+    -- a grant at @now@ to this bearer at @tier@, asked for at @asked@
+    noteGrant :: Time -> Time -> Word8 -> STM m ()
+    noteGrant asked now tier = do
+      gap <- gapNow
+      modifyTVar bDetector
+        (burstGrant gap now tier bhId need (now `diffTime` asked) waitedWritable)
+
+    gapNow :: STM m DiffTime
+    gapNow = (`gapFor` bCapacity) <$> readTVar bRate
 
     -- take from our bucket; failing that, from the budget if it is idle:
     -- nobody waiting and the bytes there. Idle but short, the wait is until
@@ -628,11 +743,23 @@ awaitGrantWith borrow_m waitedWritable
     takeOrBorrow tier_m asked now = do
       r <- takeOrBorrow' now
       case r of
-           Right source ->
+           Right source -> do
+             -- a queued grant asked the rule in this transaction; the fast
+             -- path asks it now
+             served <- case tier_m of
+                            Just tier -> return tier
+                            Nothing   -> tierOf <$> (readTVar bhRank >>= ($ now))
+             charge now
              modifyTVar bStats
-               (recordGrant tier_m source need waitedWritable (now `diffTime` asked))
+               ( recordServed served bhId now
+               . recordGrant tier_m source need waitedWritable (now `diffTime` asked))
+             noteGrant asked now served
            Left _ -> return ()
       return r
+
+    -- what a grant charges, if anything
+    charge :: Time -> STM m ()
+    charge now = maybe (return ()) ($ now) charge_m
 
     takeOrBorrow' :: Time -> STM m (Either Time GrantSource)
     takeOrBorrow' now = do
@@ -651,8 +778,115 @@ awaitGrantWith borrow_m waitedWritable
                        Right ()         -> return (Right FromBorrow)
                        Left readyBudget -> return (Left (min ready readyBudget))
 
-    loop :: Time -> WaitKey -> Maybe (Floor m, (FloorClass, Ticket)) -> m GrantSource
-    loop asked key fkey_m = do
+    -- wait for a grant, asking the rule again every 'tierRefresh': a bearer
+    -- whose tier changed while it waited moves to the new tier's place,
+    -- keeping its ticket, and joins or leaves the floor with it. Credit that
+    -- refills with time, a lock that expires and a standing that changes
+    -- all reach a waiting request this way, within a refresh. The
+    -- refresh timer goes with the wait: a grant or a cancellation cancels
+    -- it, so no timer outlives the request it was set for.
+    waitQueued :: Time -> StrictTVar m (WaitKey, Maybe (Floor m, (FloorClass, Ticket))) -> m GrantSource
+    waitQueued asked entry =
+      mask $ \unmask -> do
+        period <- registerDelayCancellable tierRefresh >>= newTVarIO
+        unmask (loop asked period entry) `finally` (readTVarIO period >>= snd)
+
+    -- the refresh fell due: ask the rule again, start the next period, and
+    -- say whether the bearer moved. The timer that fell due is spent; the
+    -- next is installed masked, so a cancellation cannot land between its
+    -- creation and the handler that cancels it.
+    refresh :: StrictTVar m (Delay m)
+            -> StrictTVar m (WaitKey, Maybe (Floor m, (FloorClass, Ticket))) -> m Bool
+    refresh period entry = do
+      now <- getMonotonicTime
+      moved <- atomically (askAgain now entry)
+      mask_ $ registerDelayCancellable tierRefresh >>= atomically . writeTVar period
+      return moved
+
+    -- the rule asked again at @now@: if the tier changed, move to it
+    askAgain :: Time -> StrictTVar m (WaitKey, Maybe (Floor m, (FloorClass, Ticket))) -> STM m Bool
+    askAgain now entry = do
+      (key@(_, ticket), fkey_m) <- readTVar entry
+      tier <- readTVar bhRank >>= ($ now)
+      if tierOf tier == tierOfKey key
+         then return False
+         else do
+           waiters <- readTVar bWaiters
+           let !rank    = queueRank bRotation bhId tier now
+               key'     = (rank, ticket)
+               waiters' = Map.insert key' bhWake (Map.delete key waiters)
+           writeTVar bWaiters waiters'
+           when (fmap fst (Map.lookupMin waiters') /= fmap fst (Map.lookupMin waiters))
+                (wakeHead waiters')
+           -- in or out of the credited, the busy period follows
+           when (creditedTier (tierOfKey key) /= creditedTier (tierOf tier)) $ do
+             queueChanged now (tierOfKey key) (-1)
+             queueChanged now (tierOf tier) 1
+           fl_m <- readTVar bFloor
+           fkey' <- case (fl_m, floorClass (tierOf tier)) of
+             (Just fl, Just cls) -> do
+               fw <- readTVar (flWaiters fl)
+               let fw' = Map.insert (cls, ticket) bhWake
+                           (maybe fw (\(_, fkey) -> Map.delete fkey fw) fkey_m)
+               writeTVar (flWaiters fl) fw'
+               wakeFloorPick fl fw'
+               return (Just (fl, (cls, ticket)))
+             _ -> do
+               floorLeave fkey_m
+               return Nothing
+           writeTVar entry (key', fkey')
+           return True
+
+    -- the rule asked again as a grant is about to be made: if the tier it
+    -- answers now is not the one the request queued at, the request moves to
+    -- its place now, and is not served at a tier it no longer has. A credit
+    -- spent by another grant reaches a waiting request here, not a refresh
+    -- later. The deal of a new period is left to the refresh.
+    tierMoved :: Time -> WaitKey -> StrictTVar m (WaitKey, Maybe (Floor m, (FloorClass, Ticket))) -> STM m Bool
+    tierMoved now key entry = do
+      tier <- tierOf <$> (readTVar bhRank >>= ($ now))
+      if tier == tierOfKey key
+         then return False
+         else askAgain now entry
+
+    -- block until @ready@ holds; at each refresh in between the rule is
+    -- asked again, and the wait goes on unless the bearer moved. The timer
+    -- or wake-up waited for is the caller's and survives a refresh, so a
+    -- bearer that stays put wakes exactly when it would have.
+    awaitOr :: StrictTVar m (Delay m)
+            -> StrictTVar m (WaitKey, Maybe (Floor m, (FloorClass, Ticket))) -> STM m () -> m ()
+    awaitOr period entry ready = do
+      (due, _) <- readTVarIO period
+      isDue <- atomically $ (False <$ ready) `orElse` (True <$ fired due)
+      when isDue $ do
+        moved <- refresh period entry
+        if moved then return () else awaitOr period entry ready
+
+    -- a timer's due check
+    fired :: STM m TimeoutState -> STM m ()
+    fired due = due >>= check . (== TimeoutFired)
+
+    -- sleep until @ready@, or until @early@ holds, through the refreshes in
+    -- between; the sleep's timer is cancelled with it
+    sleepOr :: Time -> Time -> StrictTVar m (Delay m)
+            -> StrictTVar m (WaitKey, Maybe (Floor m, (FloorClass, Ticket))) -> STM m () -> m ()
+    sleepOr now ready period entry early =
+      bracket (registerDelayCancellable (wakeAt now ready `diffTime` now)) snd $ \(due, _) ->
+        awaitOr period entry (fired due `orElse` early)
+
+    -- the one wake-up a queued bearer blocks on: its own variable, set by the
+    -- bearer ahead of it when that one is granted or gives up, or by the
+    -- floor when it is the pick
+    woken :: STM m ()
+    woken = do
+      w <- readTVar bhWake
+      check w
+      writeTVar bhWake False
+
+    loop :: Time -> StrictTVar m (Delay m)
+         -> StrictTVar m (WaitKey, Maybe (Floor m, (FloorClass, Ticket))) -> m GrantSource
+    loop asked period entry = do
+      (key, fkey_m) <- readTVarIO entry
       atHead <- atomically $
         (== Just key) . fmap fst . Map.lookupMin <$> readTVar bWaiters
 
@@ -660,40 +894,37 @@ awaitGrantWith borrow_m waitedWritable
          then case fkey_m of
               Nothing -> do
                 -- block on our own wake variable and nothing else, so a change
-                -- to the queue wakes the one bearer it concerns; the bearer
-                -- ahead of us sets it when it is granted or gives up
-                awaitWake
-                loop asked key fkey_m
+                -- to the queue wakes the one bearer it concerns
+                awaitOr period entry woken
+                loop asked period entry
               Just (fl, fkey) -> do
                 -- not the head: the floor may serve us if we are its pick
                 now <- getMonotonicTime
                 r <- atomically $ do
                   waiters <- readTVar bWaiters
-                  if fmap fst (Map.lookupMin waiters) == Just key
+                  stale <- tierMoved now key entry
+                  if stale || fmap fst (Map.lookupMin waiters) == Just key
                      then return BecameHead
                      else tryFloor asked now key fl fkey waiters
                 case r of
                      FloorGranted -> return FromFloor
-                     BecameHead   -> loop asked key fkey_m
+                     BecameHead   -> loop asked period entry
                      FloorNotPick -> do
-                       awaitWake
-                       loop asked key fkey_m
+                       awaitOr period entry woken
+                       loop asked period entry
                      FloorShortUntil ready -> do
                        -- sleep until the floor has the bytes; wake early if
                        -- the queues move us
-                       delayVar <- registerDelay (wakeAt now ready `diffTime` now)
-                       atomically $
-                           (LazySTM.readTVar delayVar >>= check)
-                         `orElse`
-                           (readTVar bhWake >>= check)
+                       sleepOr now ready period entry (readTVar bhWake >>= check)
                        atomically $ writeTVar bhWake False
-                       loop asked key fkey_m
+                       loop asked period entry
          else do
            now <- getMonotonicTime
            r <- atomically $ do
              waiters <- readTVar bWaiters
 
-             if fmap fst (Map.lookupMin waiters) /= Just key
+             stale <- tierMoved now key entry
+             if stale || fmap fst (Map.lookupMin waiters) /= Just key
                then return Displaced
                else do
                  taken <- takeOrBorrow (Just (tierOfKey key)) asked now
@@ -717,32 +948,28 @@ awaitGrantWith borrow_m waitedWritable
                 Granted          -> return FromBucket
                 Borrowed         -> return FromBorrow
                 FromTheFloor     -> return FromFloor
-                Displaced        -> loop asked key fkey_m
+                Displaced        -> loop asked period entry
                 ShortUntil ready -> do
                   -- sleep until the bytes are there; wake early if a lower
                   -- key takes the head, or the floor makes us its pick
-                  delayVar <- registerDelay (wakeAt now ready `diffTime` now)
-                  atomically $
-                      (LazySTM.readTVar delayVar >>= check)
-                    `orElse`
+                  sleepOr now ready period entry $
                       (readTVar bWaiters >>= check . (/= Just key) . fmap fst . Map.lookupMin)
                     `orElse`
                       (readTVar bhWake >>= check)
                   atomically $ writeTVar bhWake False
-                  loop asked key fkey_m
+                  loop asked period entry
 
-    awaitWake :: m ()
-    awaitWake = atomically $ do
-      w <- readTVar bhWake
-      check w
-      writeTVar bhWake False
-
-    -- on cancellation leave the queues; if we were the head, pass the baton
-    cancel :: WaitKey -> Maybe (Floor m, (FloorClass, Ticket)) -> m ()
-    cancel key fkey_m = do
+    -- on cancellation leave the queues, under whatever keys we hold now; if
+    -- we were the head, pass the baton. A cancellation that lands after the
+    -- grant's transaction and before the mask is back finds the request
+    -- already gone, and must leave the counts alone.
+    cancel :: StrictTVar m (WaitKey, Maybe (Floor m, (FloorClass, Ticket))) -> m ()
+    cancel entry = do
      now <- getMonotonicTime
      atomically $ do
+      (key, fkey_m) <- readTVar entry
       waiters <- readTVar bWaiters
 
-      leaveBudget now key waiters
-      floorLeave fkey_m
+      when (Map.member key waiters) $ do
+        leaveBudget now key waiters
+        floorLeave fkey_m

@@ -16,6 +16,7 @@ import Test.Ouroboros.Network.PeerSelection.KnownPeers qualified
 import Test.Ouroboros.Network.PeerSelection.LocalRootPeers qualified
 import Test.Ouroboros.Network.PeerSelection.PeerMetric qualified
 import Test.Ouroboros.Network.PeerSelection.RootPeersDNS qualified
+import Test.Ouroboros.Network.Tracing.MuxCounters qualified (tests)
 import Test.Ouroboros.Network.TxSubmission qualified (tests)
 import Test.Ouroboros.Network.TxSubmission.Mempool.Simple qualified (tests)
 
@@ -41,6 +42,7 @@ tests =
   , Test.Ouroboros.Network.Diffusion.PoolAllowances.tests
   , Test.Ouroboros.Network.Diffusion.EgressRule.tests
   , Test.Ouroboros.Network.Diffusion.PoolRelays.tests
+  , Test.Ouroboros.Network.Tracing.MuxCounters.tests
 
     -- pseudo system-level
   , Test.Ouroboros.Network.MockNode.tests
