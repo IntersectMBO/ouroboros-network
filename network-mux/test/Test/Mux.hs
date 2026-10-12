@@ -3581,11 +3581,35 @@ replayEvents sch@BucketSched { schRate, schCapacity, schRotation, schSlice, schB
     n         = length schBearers
     sliceRate = maybe 0 (\pct -> schRate * fromIntegral pct / 100) schSlice
 
-    -- the rank a request queues with, as each bucket computes it
-    keyB a = ( Bucket.queueRank schRotation (fromIntegral (arBearer a))
-                                (Bucket.Rank (arRank a)) (arAt a)
-             , arAt a )
+    -- the rank a request holds at @t@, as each bucket computes it: on the
+    -- budget the place dealt at its last refresh at or before @t@, or where
+    -- it queued, since a waiting request asks again every
+    -- 'Bucket.tierRefresh' and moves to the place of the period it then
+    -- finds itself in, checking the queue in the same instant. (A head
+    -- whose wake falls in the very instant of its refresh checks first and
+    -- refreshes after; the replay does not model that coincidence, which
+    -- needs a token instant to land on a whole microsecond seven seconds
+    -- after a request.) The slice deals no places.
+    keyB t a = ( Bucket.queueRank schRotation (fromIntegral (arBearer a))
+                                  (Bucket.Rank (arRank a)) (refreshUpTo (arAt a) t)
+               , arAt a )
+    -- the same with the refreshes at @t@ still to come
+    keyBefore t a = ( Bucket.queueRank schRotation (fromIntegral (arBearer a))
+                                       (Bucket.Rank (arRank a)) (refreshBefore (arAt a) t)
+                    , arAt a )
     keyS a = (Bucket.queueRank Nothing 0 (Bucket.Rank (arRank a)) (arAt a), arAt a)
+
+    refreshBefore asked t = refreshNth asked (max 0 (ceiling (waited asked t / period) - 1))
+    refreshUpTo   asked t = refreshNth asked (max 0 (floor   (waited asked t / period)))
+    refreshNth asked k    = (fromIntegral (k :: Int) * Bucket.tierRefresh) `addTime` asked
+    waited asked t        = realToFrac (t `diffTime` asked) :: Double
+    period                = realToFrac Bucket.tierRefresh :: Double
+
+    -- the next refresh of any request waiting on the budget after @now@,
+    -- and whose it is; no two share an instant, since requests do not
+    nextRefresh now wb = case [ (refreshNth (arAt a) (floor (waited (arAt a) now / period) + 1), a) | a <- wb ] of
+                              [] -> Nothing
+                              rs -> Just (List.minimumBy (\(t, _) (t', _) -> compare t t') rs)
 
     headBy k waiting = case List.sortOn k waiting of
                             []    -> Nothing
@@ -3601,7 +3625,7 @@ replayEvents sch@BucketSched { schRate, schCapacity, schRotation, schSlice, schB
     -- lst:     the instant and queue of the last check
     go now fb fs pending wb ws kb ks lst
       -- the budget's head checks
-      | Just h <- headBy keyB wb, Nothing <- kb =
+      | Just h <- headBy (keyB now) wb, Nothing <- kb =
           if crossed True then [RTie] else
           let (ready, fb') = Bucket.grantAt schRate schCapacity fb now (arBytes h)
               lst'         = Just (now, True)
@@ -3632,6 +3656,17 @@ replayEvents sch@BucketSched { schRate, schCapacity, schRotation, schSlice, schB
                ++ go now fb fs pending wb ws kb
                      (Just (Bucket.wakeAt now (if idle then min readyS readyB else readyS)))
                      (Just (now, False))
+      -- a waiting request's refresh before both wakes and the next request:
+      -- if its key moves, whoever is then the budget's head checks at once,
+      -- the request itself if it stays or becomes the head, or the one its
+      -- move hands the head to
+      | Just (r, a) <- nextRefresh now wb, all (r <) kb, all (r <) ks, all ((r <) . arAt) (take 1 pending) =
+          let moved   = keyBefore r a /= keyB r a
+              headWas = fmap keyOf (headBy (keyBefore r) wb)
+              headNow = fmap keyOf (headBy (keyB r) wb)
+              checks  = moved && (headNow /= headWas || headNow == Just (keyOf a))
+              keyOf x = (arBearer x, arTake x)
+          in go r fb fs pending wb ws (if checks then Nothing else kb) ks lst
       -- a request before both wakes joins its own queue; a lower key takes
       -- that queue's head
       | p : ps <- pending, all (arAt p <) kb, all (arAt p <) ks =
@@ -3639,7 +3674,7 @@ replayEvents sch@BucketSched { schRate, schCapacity, schRotation, schSlice, schB
              then let displaces = maybe False ((keyS p <) . keyS) (headBy keyS ws)
                   in RSliceQueue (arAt p) (length ws + 1) (arBearer p, arTake p) True
                    : go (arAt p) fb fs ps wb (p : ws) kb (if displaces then Nothing else ks) lst
-             else let displaces = maybe False ((keyB p <) . keyB) (headBy keyB wb)
+             else let displaces = maybe False ((keyB (arAt p) p <) . keyB (arAt p)) (headBy (keyB (arAt p)) wb)
                   in RBudgetQueue (arAt p) (length wb + 1) (arBearer p, arTake p) True
                    : go (arAt p) fb fs ps (p : wb) ws (if displaces then Nothing else kb) ks lst
       -- the earlier wake fires
