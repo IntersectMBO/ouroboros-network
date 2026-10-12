@@ -87,6 +87,7 @@ module Network.Mux
   , egressBurstWidths
   , egressBurstGap
   , egressBurstCap
+  , egressBurstGrantFloor
   , egressServedWindow
     -- * Errors
   , Error (..)

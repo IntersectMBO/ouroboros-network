@@ -72,6 +72,7 @@ tests =
     , testProperty "the bursts are the fold of the grants" prop_bursts_match_grants
     , testProperty "rest bearers alone open no burst"      prop_rest_alone_no_burst
     , testProperty "a cancellation after the grant leaves the counts whole" prop_cancel_after_grant
+    , testProperty "the drain sweeps the burst in progress" prop_drain_sweeps
     ]
 
 --
@@ -185,7 +186,8 @@ runFloor' withFloor fr = runSimOrThrow (runFloorM Nothing withFloor fr)
 
 -- | 'runFloor'' in any monad, with times relative to the run's start. Given
 -- @inspect@, it is handed the budget and the bearers' handles halfway through
--- the run and again after it; without, the run is exactly the IOSim one.
+-- the run, at its end before the bearers are cancelled, and again after;
+-- without, the run is exactly the IOSim one.
 runFloorM :: forall m. (MonadAsync m, MonadDelay m, MonadMask m, MonadTimer m)
           => Maybe (Bucket.Bucket m -> [Bucket.BucketHandle m] -> m ())
           -> Bool -> FloorRun -> m ([Grant], Bucket.BucketStats, [(Int, Time)])
@@ -227,6 +229,7 @@ runFloorM inspect_m withFloor fr@FloorRun { frRate, frCapacity, frPercent, frRot
     now <- getMonotonicTime
     threadDelay (end `diffTime` now)
     waiting <- Map.toList <$> readTVarIO pending
+    mapM_ (\inspect -> inspect budget hs) inspect_m
     mapM_ cancel as
     gs <- reverse <$> readTVarIO grants
     (st, _, _, _) <- atomically $ Bucket.bucketSnapshot budget end
@@ -571,31 +574,31 @@ prop_state_no_thunks_io fr0 = withNumTests 20 $ ioProperty $ do
     fr = fr0 { frDuration = min 0.3 (frDuration fr0)
              , frBearers  = [ b { fbStart = min 0.1 (fbStart b) } | b <- frBearers fr0 ] }
 
--- | A run, with the bursts the budget closed over it: drained a gap and a
--- second after the end, when whatever was open is over.
+-- | A run, with the bursts the budget closed over it, drained at the end
+-- before the bearers are cancelled, the one in progress closed as it
+-- stands: the cancellation instant interleaves leaves and grants in the
+-- scheduler's order, which decides what a lapsed burst held open by the
+-- queue counts, so it is kept out.
 runFloorBursts :: FloorRun -> ([Grant], [(Int, Time)], [Bucket.Burst])
 runFloorBursts fr = runSimOrThrow $ do
     calls  <- newTVarIO (0 :: Int)
     bursts <- newTVarIO []
     let drain budget _ = do
           n <- atomically $ stateTVar calls (\c -> (c, c + 1))
-          -- the second call is the one after the run
+          -- the second call is the one at the end, before the cancellation
           when (n == 1) $ do
-            threadDelay (gap + 1)
             now <- getMonotonicTime
-            atomically (Bucket.takeBurstsAt budget now >>= writeTVar bursts)
+            atomically (Bucket.drainBurstsAt budget now >>= writeTVar bursts)
     (gs, _, waiting) <- runFloorM (Just drain) True fr
     (,,) gs waiting <$> readTVarIO bursts
-  where
-    gap = Burst.gapFor (frRate fr) (frCapacity fr)
 
--- | What the budget closes over a run is the fold of the grants the harness
--- saw over the detector's own rules, each queued request of a credited
--- bearer counted in the credited queue from its request to its grant, or
--- to the end if it is still waiting then. The peak queue is compared within
--- one: two queue changes in the same simulated instant are ordered by the
--- scheduler, not by the clock, and a request granted the instant it queued
--- is a fast-path grant to the harness.
+-- | What the budget holds at the end of a run is the fold of the grants the
+-- harness saw before it over the detector's own rules, each queued request
+-- of a credited bearer counted in the credited queue from its request to
+-- its grant, or to the end if it is still waiting then. The peak queue is
+-- compared within one: two queue changes in the same simulated instant are
+-- ordered by the scheduler, not by the clock, and a request granted the
+-- instant it queued is a fast-path grant to the harness.
 prop_bursts_match_grants :: FloorRun -> Property
 prop_bursts_match_grants fr =
     classify (length got > 1) "more than one burst" $
@@ -608,22 +611,20 @@ prop_bursts_match_grants fr =
     gap  = Burst.gapFor (frRate fr) (frCapacity fr)
     end  = endTime fr
     strip b = b { Bucket.bPeakQueued = 0 }
-    -- the events the bucket told the detector, as (instant, order, event)
+    -- the events the bucket told the detector before the end, as (instant,
+    -- order, event); a request still waiting at the end stays queued
+    before = [ g | g <- gs, gAt g < end ]
     events = sortOn (\(t, o, _) -> (t, o)) $
-         [ (gAt g, 1 :: Int, Left g) | g <- gs ]
+         [ (gAt g, 1 :: Int, Left g) | g <- before ]
       ++ concat [ [ (gAsked g, 2, Right 1), (gAt g, 0, Right (-1)) ]
-                | g <- gs, gAsked g < gAt g, Burst.creditedTier (gTier g) ]
-      ++ concat [ [ (asked, 2, Right 1), (end, 0, Right (-1)) ]
-                | (i, asked) <- waiting, Burst.creditedTier (fbTier (frBearers fr !! i))
-                  -- a request still pending when the harness looked can be
-                  -- granted in the final instant, as the bearers ahead of it
-                  -- are cancelled; then it is a grant, not a wait
-                , not (any (\g -> gBearer g == i && gAsked g == asked) gs) ]
+                | g <- before, gAsked g < gAt g, Burst.creditedTier (gTier g) ]
+      ++ [ (asked, 2, Right 1)
+         | (i, asked) <- waiting, Burst.creditedTier (fbTier (frBearers fr !! i)) ]
     step (q, d) (t, _, ev) = case ev of
       Left g  -> (q, Burst.burstGrant gap t (gTier g) (fromIntegral (gBearer g)) (gBytes g)
                                       (gAt g `diffTime` gAsked g) 0 d)
       Right k -> let q' = q + k in (q', Burst.burstQueued gap t q' d)
-    want = fst $ Burst.takeBursts $ Burst.burstSweep gap ((gap + 1) `addTime` end)
+    want = fst $ Burst.takeBursts $ Burst.closeOpen $ Burst.burstSweep gap end
                                   $ snd $ foldl' step (0, Burst.emptyDetector) events
 
 -- | A bearer catching up at rest rank, or several: no burst, no busy period.
@@ -635,6 +636,34 @@ prop_rest_alone_no_burst =
     in classify (length gs > 10) "many grants" $
        counterexample (show (got, Bucket.bsBursts st, Bucket.bsBusyTime st)) $
          got === [] .&&. Bucket.bsBursts st === 0 .&&. Bucket.bsBusyTime st === 0
+
+-- | One credited grant, then silence: the counters' drain returns its burst
+-- once the gap has passed, and nothing before.
+prop_drain_sweeps :: Property
+prop_drain_sweeps =
+  forAllShrink gen (const []) $ \(rate, cap, delay) ->
+    let gap = Burst.gapFor rate cap
+        (early, late) = runSimOrThrow $ do
+          budget <- Bucket.newBucket rate cap Nothing
+          h <- Bucket.registerBearer budget
+          atomically $ Bucket.setRank h (Bucket.Rank 2)
+          Bucket.awaitGrant h cap
+          t0 <- getMonotonicTime
+          e <- atomically $ Bucket.takeBurstsAt budget (delay `addTime` t0)
+          l <- atomically $ Bucket.takeBurstsAt budget ((gap + 1) `addTime` t0)
+          return (e, l)
+    in classify (delay > gap) "drained after the gap" $
+       counterexample (show (gap, delay, early, late)) $
+         if delay > gap
+            then length early === 1 .&&. late === []
+            else early === [] .&&. length late === 1
+  where
+    -- the delay straddles the gap, which depends on the rate and capacity
+    gen = do
+      rate <- choose (1e5, 2e6)
+      cap  <- elements [16384, 65536, 131072]
+      f    <- choose (0.05, 3 :: Double)
+      return (rate, cap, realToFrac f * Burst.gapFor rate cap)
 
 -- | A bearer cancelled in the instant its queued grant commits: the
 -- exception lands after the grant's transaction and before the mask is

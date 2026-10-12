@@ -781,10 +781,11 @@ instance MetaTrace Mux.CountersTrace where
     documentFor (Namespace _ [side, "Ingress"]) = Just $
       "Node-wide read-side counters of " <> sideDoc side <> " muxes, every counters interval."
     documentFor (Namespace _ [_, "Burst"]) = Just $
-      "One burst of credited demand on the egress budget, from the first grant to a "
-        <> "credited bearer after an idle gap of " <> showT (realToFrac Mux.egressBurstGap :: Double)
+      "One burst of credited demand on the egress budget, from the first grant of at least "
+        <> showT Mux.egressBurstGrantFloor <> " bytes to a credited bearer after an idle gap of "
+        <> showT (realToFrac Mux.egressBurstGap :: Double)
         <> " s (or the budget's refill time, if longer) to the last before the next, "
-        <> "with what was granted meanwhile at rest rank as filler; a burst longer than "
+        <> "with what was granted meanwhile at rest rank or under the floor as filler; a burst longer than "
         <> showT (realToFrac Mux.egressBurstCap :: Double)
         <> " s is closed and the next opened. Traced with the egress snapshot that follows its end."
     documentFor _ = Nothing

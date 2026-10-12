@@ -27,7 +27,7 @@ tests =
     [ testProperty "the records are the replay's"               prop_replay
     , testProperty "every credited grant is in exactly one record" prop_partition
     , testProperty "no record is longer than the cap"            prop_cap
-    , testProperty "without credited grants there is no burst"   prop_no_credited
+    , testProperty "without counting grants there is no burst"   prop_no_credited
     ]
 
 -- | One thing the bucket tells the detector, at an offset from the start.
@@ -78,7 +78,9 @@ genEvent :: DiffTime -> Gen Event
 genEvent t = Event t <$> frequency
   [ (6, EGrant <$> (GrantEv <$> frequency [ (4, choose (0, 3)), (2, pure 4), (1, pure 255), (1, pure 7) ]
                             <*> choose (0, 5)
-                            <*> choose (1, 65536)
+                            <*> frequency [ (3, choose (1, burstGrantFloor - 1))
+                                          , (1, pure burstGrantFloor)
+                                          , (6, choose (burstGrantFloor, 65536)) ]
                             <*> (realToFrac <$> choose (0, 2 :: Double))
                             <*> (realToFrac <$> choose (0, 0.5 :: Double))))
   , (2, EQueued <$> choose (0, 3))
@@ -94,8 +96,8 @@ instance Arbitrary Script where
        [ Script scGap es | es <- shrinkList shrinkEvent scEvents ]
     where
       shrinkEvent e@Event { evWhat = EGrant g@GrantEv { gvTier, gvBytes } }
-        | gvTier /= 4   = [ e { evWhat = EGrant g { gvTier = 4 } } ]
-        | gvBytes /= 1  = [ e { evWhat = EGrant g { gvBytes = 1 } } ]
+        | gvTier /= 4                = [ e { evWhat = EGrant g { gvTier = 4 } } ]
+        | gvBytes /= burstGrantFloor = [ e { evWhat = EGrant g { gvBytes = burstGrantFloor } } ]
       shrinkEvent _ = []
 
 -- | The detector run over the script, closed by a sweep well after the end.
@@ -117,12 +119,13 @@ at d = d `addTime` Time 0
 far :: [Event] -> DiffTime
 far es = maximum (0 : map evAt es) + burstCap + 1
 
--- | The oracle: the credited grants cut into runs. A run ends at the first
--- event (the final sweep included) that comes more than the gap after the
--- run's last grant while nothing credited is queued, or more than the cap
--- after its first; the next credited grant starts the next run. Filler is
--- what was granted uncredited while a run was open, and the peak is the
--- largest credited queue told to the detector while it was.
+-- | The oracle: the counting grants, credited and at least the floor, cut
+-- into runs. A run ends at the first event (the final sweep included) that
+-- comes more than the gap after the run's last grant while nothing credited
+-- is queued, or more than the cap after its first; the next counting grant
+-- starts the next run. Filler is what was granted without counting while a
+-- run was open, and the peak is the largest credited queue told to the
+-- detector while it was.
 oracle :: Script -> [Burst]
 oracle Script { scGap, scEvents } = go 0 Nothing (scEvents ++ [Event (far scEvents) ESweep])
   where
@@ -135,7 +138,7 @@ oracle Script { scGap, scEvents } = go 0 Nothing (scEvents ++ [Event (far scEven
             _ -> ([], open)
       in closed ++ case evWhat of
            EGrant GrantEv { gvTier, gvBearer, gvBytes, gvWaitTokens, gvWaitWritable }
-             | creditedTier gvTier ->
+             | creditedTier gvTier && gvBytes >= burstGrantFloor ->
                  let n = fromIntegral gvBytes
                      r = case open' of
                        Nothing -> Run t t n 1 (Map.singleton gvTier (TierGrants n 1)) 0
@@ -171,15 +174,20 @@ data Run = Run {
     rWaitWritable :: !DiffTime
   }
 
-creditedGrants :: Script -> [Event]
-creditedGrants Script { scEvents } =
-  [ e | e@Event { evWhat = EGrant GrantEv { gvTier } } <- scEvents, creditedTier gvTier ]
+-- | The grants that open or extend a burst.
+countingGrants :: Script -> [Event]
+countingGrants Script { scEvents } =
+  [ e | e@Event { evWhat = EGrant GrantEv { gvTier, gvBytes } } <- scEvents
+      , creditedTier gvTier, gvBytes >= burstGrantFloor ]
 
 prop_replay :: Script -> Property
 prop_replay sc =
     classify (length got > 1) "more than one record" $
     classify (any bCapped got) "a record closed by the cap" $
     classify (any ((> 0) . bFiller) got) "filler counted" $
+    classify (any (\Event { evWhat } -> case evWhat of
+                      EGrant GrantEv { gvTier, gvBytes } -> creditedTier gvTier && gvBytes < burstGrantFloor
+                      _ -> False) (scEvents sc)) "a credited grant under the floor" $
     classify (any ((> 1) . bWidth) got) "more than one bearer in a record" $
     classify (any ((> 0) . bPeakQueued) got) "a credited queue inside a record" $
     counterexample (show got) $
@@ -187,8 +195,8 @@ prop_replay sc =
   where
     got = runDetector sc
 
--- | The records are disjoint, in order, start and end at credited grants,
--- and between them hold every credited grant once.
+-- | The records are disjoint, in order, start and end at counting grants,
+-- and between them hold every counting grant once.
 prop_partition :: Script -> Property
 prop_partition sc =
     counterexample (show got) $
@@ -201,7 +209,7 @@ prop_partition sc =
            (sum (map bBatches got) === fromIntegral (length instants))
   where
     got = runDetector sc
-    instants = map (at . evAt) (creditedGrants sc)
+    instants = map (at . evAt) (countingGrants sc)
 
 prop_cap :: Script -> Property
 prop_cap sc =
@@ -210,12 +218,17 @@ prop_cap sc =
   where
     got = runDetector sc
 
--- | A peer catching up at rest rank, however long: no burst.
-prop_no_credited :: Script -> Property
-prop_no_credited sc@Script { scEvents } =
+-- | A peer catching up at rest rank, however long, or a credited one that
+-- only ever sends small things: no burst.
+prop_no_credited :: Script -> Bool -> Property
+prop_no_credited sc@Script { scEvents } small =
+    classify small "small grants instead of rest rank" $
     counterexample (show got) $ got === []
   where
-    rest e@Event { evWhat } = case evWhat of
-      EGrant g@GrantEv { gvTier } | creditedTier gvTier -> e { evWhat = EGrant g { gvTier = 4 } }
+    quiet e@Event { evWhat } = case evWhat of
+      EGrant g@GrantEv { gvTier, gvBytes }
+        | creditedTier gvTier ->
+            e { evWhat = EGrant (if small then g { gvBytes = min gvBytes (burstGrantFloor - 1) }
+                                          else g { gvTier = 4 }) }
       _ -> e
-    got = runDetector sc { scEvents = map rest scEvents }
+    got = runDetector sc { scEvents = map quiet scEvents }
