@@ -31,8 +31,8 @@ import Control.Monad.IOSim qualified as IOSim
 import Data.IORef (modifyIORef', newIORef, readIORef)
 import Data.List (foldl', sortOn, stripPrefix)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (isNothing)
-import Data.Word (Word8)
+import Data.Maybe (isJust, isNothing)
+import Data.Word (Word64, Word8)
 
 import Network.Mux.Counters qualified as Counters
 import Network.Mux.Egress.Bucket (GrantSource (..))
@@ -72,6 +72,7 @@ tests =
     , testProperty "the bursts are the fold of the grants" prop_bursts_match_grants
     , testProperty "rest bearers alone open no burst"      prop_rest_alone_no_burst
     , testProperty "a cancellation after the grant leaves the counts whole" prop_cancel_after_grant
+    , testProperty "a waiting bearer follows the deal"       prop_waiting_follows_deal
     , testProperty "the drain sweeps the burst in progress" prop_drain_sweeps
     ]
 
@@ -713,6 +714,79 @@ prop_cancel_after_grant =
       (st, _, _, _) <- atomically $ Bucket.bucketSnapshot budget now
       bursts <- atomically $ Bucket.takeBurstsAt budget (3 `addTime` now)
       return (survived, Bucket.bsBusyTime st, length bursts)
+
+-- | Two tier-0 bearers, both backlogged a capacity at a time, under a
+-- rotation of nine to twelve seconds with the floor off: the strict cascade
+-- serves whichever holds the lower key, and the other waits. The served
+-- bearer re-asks on every request, so its place is the current period's
+-- within a batch of each boundary; the waiting one re-asks only at its
+-- refreshes, every 'Bucket.tierRefresh' from its request, so until then it
+-- holds the place it queued with. It is served at the first instant its
+-- key is the lower, within two batches, and never before. The places come
+-- from the pure deal, not from the bucket. Those periods keep every
+-- boundary at least a second from every refresh over five periods, and a
+-- batch is a third of a second at most, so no two key changes fall inside
+-- one service window.
+data Deal = Deal {
+    dlSeed   :: !Word64,
+    dlPeriod :: !DiffTime,
+    dlRate   :: !Double,
+    dlCap    :: !Int
+  }
+  deriving Show
+
+instance Arbitrary Deal where
+  arbitrary = Deal <$> arbitrary
+                   <*> (fromIntegral <$> choose (9, 12 :: Int))
+                   <*> choose (2e5, 1e6)
+                   <*> elements [16384, 65536]
+  shrink Deal { dlSeed, dlPeriod, dlRate, dlCap } =
+       [ Deal 0 dlPeriod dlRate dlCap | dlSeed /= 0 ]
+    ++ [ Deal dlSeed 9 dlRate dlCap | dlPeriod /= 9 ]
+    ++ [ Deal dlSeed dlPeriod dlRate 16384 | dlCap /= 16384 ]
+
+prop_waiting_follows_deal :: Deal -> Property
+prop_waiting_follows_deal Deal { dlSeed, dlPeriod, dlRate, dlCap } =
+    classify (isJust turn) "the waiting bearer's key becomes the lower" $
+    classify (maybe False snd turn) "at one of its refreshes" $
+    counterexample (show (turn, firstGrant)) $
+      case turn of
+           Nothing       -> counterexample "served although never the lower" (isNothing firstGrant)
+           Just (at', _) -> let bound = at' + 2 * batch + 0.01
+                            in counterexample ("bound " ++ show bound) $
+                                 maybe False (\t -> t <= Time bound) firstGrant
+  where
+    rotation = Bucket.Rotation dlSeed dlPeriod 4
+    periods  = 5 :: Int
+    run      = fromIntegral periods * dlPeriod + Bucket.tierRefresh + 1
+    batch    = realToFrac (fromIntegral dlCap / dlRate :: Double) :: DiffTime
+    starts   = [0, 0.001]
+    fr = FloorRun { frRate = dlRate, frCapacity = dlCap, frPercent = 0, frDuration = run - 0.001
+                  , frRotation = Just rotation
+                  , frBearers = [ FBearer 0 dlCap st | st <- starts ] }
+    (gs, _) = runFloor False fr
+    place b t = Bucket.rotatedRank rotation b (Time t)
+    -- a key: the place, then the ticket, which follows the start order
+    keyOf b t = (place b t, b)
+    loser = if keyOf 0 0 < keyOf 1 0.001 then 1 else 0 :: Word64
+    winner = 1 - loser
+    -- the instants at which a key can change: boundaries for the served
+    -- bearer, its refreshes for the waiting one; the first at which the
+    -- waiting bearer's key is the lower, and whether it was a refresh
+    boundaries = [ fromIntegral k * dlPeriod | k <- [1 .. periods] ]
+    refreshes  = takeWhile (< run) [ starts !! fromIntegral loser + fromIntegral n * Bucket.tierRefresh | n <- [1 :: Int ..] ]
+    events = sortOn fst ([ (t, False) | t <- boundaries ] ++ [ (t, True) | t <- refreshes ])
+    turn = go (keyOf loser (starts !! fromIntegral loser)) events
+      where
+        go _ [] = Nothing
+        go lk ((t, refresh) : rest) =
+          let lk' = if refresh then keyOf loser t else lk
+          in if lk' < keyOf winner t then Just (t, refresh) else go lk' rest
+    -- the fast path serves the first request at once, before anyone is
+    -- queued; the deal orders the queue, so only queued grants count
+    firstGrant = case [ gAt g | g <- gs, fromIntegral (gBearer g) == loser, gAsked g < gAt g ] of
+                      [] -> Nothing
+                      ts -> Just (minimum ts)
 
 -- | Connections sharing one allowance, as a big-ledger pool's relays share
 -- the pool's bucket, all queued behind a saturating local root with the

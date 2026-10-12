@@ -791,9 +791,10 @@ awaitGrantWith borrow_m waitedWritable charge_m
 
     -- wait for a grant, asking the rule again every 'tierRefresh': a bearer
     -- whose tier changed while it waited moves to the new tier's place,
-    -- keeping its ticket, and joins or leaves the floor with it. Credit that
-    -- refills with time, a lock that expires and a standing that changes
-    -- all reach a waiting request this way, within a refresh. The
+    -- keeping its ticket, and joins or leaves the floor with it; one whose
+    -- tier is dealt anew in a new period moves to its new place. Credit that
+    -- refills with time, a lock that expires, a standing that changes and
+    -- the deal all reach a waiting request this way, within a refresh. The
     -- refresh timer goes with the wait: a grant or a cancellation cancels
     -- it, so no timer outlives the request it was set for.
     waitQueued :: Time -> StrictTVar m (WaitKey, Maybe (Floor m, (FloorClass, Ticket))) -> m GrantSource
@@ -814,18 +815,19 @@ awaitGrantWith borrow_m waitedWritable charge_m
       mask_ $ registerDelayCancellable tierRefresh >>= atomically . writeTVar period
       return moved
 
-    -- the rule asked again at @now@: if the tier changed, move to it
+    -- the rule asked again at @now@: if the place it gives now differs from
+    -- the one queued at, the tier or the deal of a new period, move to it
     askAgain :: Time -> StrictTVar m (WaitKey, Maybe (Floor m, (FloorClass, Ticket))) -> STM m Bool
     askAgain now entry = do
       (key@(_, ticket), fkey_m) <- readTVar entry
       tier <- readTVar bhRank >>= ($ now)
       writeTVar bhTier (TierAsked (tierOf tier) now)
-      if tierOf tier == tierOfKey key
+      let !rank = queueRank bRotation bhId tier now
+      if rank == fst key
          then return False
          else do
            waiters <- readTVar bWaiters
-           let !rank    = queueRank bRotation bhId tier now
-               key'     = (rank, ticket)
+           let key'     = (rank, ticket)
                waiters' = Map.insert key' bhWake (Map.delete key waiters)
            writeTVar bWaiters waiters'
            when (fmap fst (Map.lookupMin waiters') /= fmap fst (Map.lookupMin waiters))
