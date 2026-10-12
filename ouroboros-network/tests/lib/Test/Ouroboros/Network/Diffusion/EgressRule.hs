@@ -5,13 +5,17 @@
 module Test.Ouroboros.Network.Diffusion.EgressRule (tests) where
 
 import Control.Concurrent.Class.MonadSTM.Strict
-import Control.Monad (forM, forM_)
-import Control.Monad.Class.MonadTime.SI (Time (..))
+import Control.Monad (forM, forM_, forever, when)
+import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadTime.SI (Time (..), diffTime, getMonotonicTime)
+import Control.Monad.Class.MonadTimer.SI (threadDelay, timeout)
 import Control.Monad.IOSim (runSimOrThrow)
 import Data.IntMap.Strict qualified as IntMap
 import Data.Map.Strict qualified as Map
+import Data.Maybe (isJust)
 import Data.Word (Word16)
 import Network.Mux (MiniProtocolNum (..), Rank (..))
+import Network.Mux.Egress.Bucket qualified as Bucket
 import Network.Mux.Egress.Floor (FloorClass (..), floorClass)
 import Test.QuickCheck
 import Test.Tasty
@@ -26,6 +30,7 @@ tests =
   testGroup "Ouroboros.Network.Diffusion.EgressRule"
     [ testProperty "a connection's rule and sink follow the decision table" prop_rule
     , testProperty "the floor's classes and the turns threshold follow the rule's tiers" prop_floorClass_follows_rank
+    , testProperty "a relay queued dry is served once its credit refills" prop_refill_reaches_queued
     ]
 
 -- | What happens to a connection, at a time in seconds: its rank is asked,
@@ -155,6 +160,92 @@ prop_rule c@Case { cStanding, cPools, cLock, cOps } =
     askedAfter _       = False
     isRebuild Rebuild {} = True
     isRebuild _          = False
+
+-- | A pool relay queues for a batch while its allowance is spent, behind
+-- two local roots that keep the budget busy, so at rest it never reaches
+-- the budget. Its credit refills with the reading alone, no write to any
+-- variable of its own; the same request, never resubmitted, must be served
+-- once the rule answers the pool's tier, within a refresh, the floor's time
+-- for the batch and a sample. Over budgets, batches, floors, allowances and
+-- refill rates: the floor is the relay's only way while the roots keep the
+-- budget, and the refresh the only way a queued request learns its tier.
+data Refill = Refill {
+    rfRate  :: !Double,   -- ^ the budget, bytes/s
+    rfCap   :: !Int,      -- ^ its capacity, and the roots' batch
+    rfFloor :: !Int,      -- ^ the floor, percent
+    rfBatch :: !Int,      -- ^ the relay's batch
+    rfFresh :: !Double,   -- ^ fresh bytes a second
+    rfMax   :: !Int       -- ^ the allowance: the most one announcement carries
+  }
+  deriving Show
+
+-- | Budgets and capacities such that the roots take at most a hundred
+-- batches a second, and refill rates such that the credit is back within
+-- twenty seconds: a few thousand grants a run.
+instance Arbitrary Refill where
+  arbitrary = do
+    rfRate  <- choose (1e3, 1e5)
+    rfCap   <- elements [1000, 10000]
+    rfFloor <- choose (5, 30)
+    rfBatch <- choose (1, rfCap)
+    rfFresh <- choose (100, 1e4)
+    rfMax   <- choose (10, 1000)
+    return Refill { .. }
+  shrink rf@Refill { rfCap, rfBatch, rfMax } =
+       [ rf { rfBatch = b }          | b <- shrink rfBatch, b >= 1 ]
+    ++ [ rf { rfCap = c, rfBatch = min rfBatch c } | c <- [1000], c < rfCap ]
+    ++ [ rf { rfMax = m }            | m <- shrink rfMax, m >= 10 ]
+
+prop_refill_reaches_queued :: Refill -> Property
+prop_refill_reaches_queued Refill { rfRate, rfCap, rfFloor, rfBatch, rfFresh, rfMax } =
+    counterexample (show (entry, firstCredited, served, bound)) $
+         counterexample "not at rest while spent" (entry === Rank 4)
+    .&&. counterexample "the credit never came back" (property (isJust firstCredited))
+    .&&. case (served, firstCredited) of
+           (Just servedAt, Just c) ->
+             counterexample "served late" (property (servedAt `diffTime` c <= bound))
+           _ -> counterexample "never served" (property False)
+  where
+    floorRate = rfRate * fromIntegral rfFloor / 100
+    samplePeriod = 0.1
+    -- a refresh; the floor's time for the batch, after a capacity to
+    -- refill; a sample's lateness in noticing the credit
+    bound = Bucket.tierRefresh
+          + realToFrac (fromIntegral (rfBatch + rfCap) / floorRate :: Double)
+          + samplePeriod
+    -- the credit is back once the reading has grown by two allowances
+    refill = realToFrac (2 * fromIntegral rfMax / rfFresh :: Double)
+    (entry, firstCredited, served) = runSimOrThrow $ do
+      budget <- Bucket.newBucket rfRate rfCap (Just (Bucket.Rotation 42 599 4))
+      Bucket.attachFloor budget (fromIntegral rfFloor / 100)
+      t0 <- getMonotonicTime
+      pa <- newPoolAllowances (Allowance rfMax) (freshAt rfFresh t0) (Fresh 1)
+      _ <- atomically $ rebuild pa t0 (relaysOf 0 1) (Map.singleton ("relay" :: String) [0])
+      (rule, sink) <- mkEgressRule pa [] "relay" (const (return Other)) t0
+      roots <- forM [1 .. 2 :: Int] $ \_ -> do
+        h <- Bucket.registerBearer budget
+        atomically $ Bucket.setRank h (Rank 0)
+        async $ forever $ Bucket.awaitGrant h rfCap
+      threadDelay 0.01
+      h <- Bucket.registerBearer budget
+      now <- getMonotonicTime
+      entered <- atomically $ do
+        -- spent: whatever the first ticks granted is charged away
+        sink now (MiniProtocolNum 2) (capacity (Allowance rfMax))
+        Bucket.setRankSource h rule
+        rule now
+      victim <- async $ Bucket.awaitGrant h rfBatch >> getMonotonicTime
+      -- when the rule first answers the pool's tier again, sampled
+      credited <- newTVarIO Nothing
+      sampler <- async $ forever $ do
+        t <- getMonotonicTime
+        r <- atomically (rule t)
+        when (r /= Rank 4) $ atomically $ modifyTVar credited (maybe (Just t) Just)
+        threadDelay samplePeriod
+      outcome <- timeout (refill + 3 * bound + 10) (wait victim)
+      creditedAt <- readTVarIO credited
+      mapM_ cancel (sampler : roots)
+      return (entered, creditedAt, outcome)
 
 -- | What gives the floor's tier numbers their meaning is 'rankFor'. Over
 -- every standing and credit state: a local root has no class, a partner is
