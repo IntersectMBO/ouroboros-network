@@ -3110,19 +3110,30 @@ prop_rotatedRank RotationCase { rcRotation = ro, rcPeriod, rcOffsets = (o1, o2) 
 -- | A rotation with a period of zero is no rotation: a bearer queues exactly
 -- where it would without one.
 -- | From the threshold up a tier queues as without a rotation, so its order
--- is the tickets' and backlogged bearers take turns; below it the dealt
--- place still decides. The tier byte is untouched either way.
-prop_queueRank_turns :: Word64 -> Word64 -> Word8 -> Word8 -> Positive Integer
+-- is the tickets' and backlogged bearers take turns, and so do the local
+-- roots, tier 0, whatever the threshold; below it the dealt place still
+-- decides. The tier byte is untouched either way.
+prop_queueRank_turns :: Word64 -> Word64 -> TierArg -> Word8 -> Positive Integer
                      -> NonNegative Integer -> Property
-prop_queueRank_turns seed bearer tier from (Positive period) (NonNegative ps) =
+prop_queueRank_turns seed bearer (TierArg tier) from (Positive period) (NonNegative ps) =
     classify (tier >= from) "takes turns" $
-    if tier >= from
+    classify (tier == 0 && from > 0) "a local root below the threshold" $
+    if tier >= from || tier == 0
        then with === Bucket.queueRank Nothing bearer (Bucket.Rank tier) t
        else with === (fromIntegral tier `shiftL` 24 .|. Bucket.rotatedRank ro bearer t)
   where
     ro   = Bucket.Rotation seed (picos period) from
     with = Bucket.queueRank (Just ro) bearer (Bucket.Rank tier) t
     t    = Time (picos ps)
+
+-- | A tier for the rank laws: the local roots often, the small tiers often,
+-- and any byte.
+newtype TierArg = TierArg Word8
+  deriving Show
+
+instance Arbitrary TierArg where
+  arbitrary = TierArg <$> frequency [ (1, pure 0), (1, choose (1, 5)), (1, arbitrary) ]
+  shrink (TierArg t) = [ TierArg t' | t' <- shrink t ]
 
 prop_queueRank_zeroPeriod :: Word64 -> Word64 -> Word8 -> NonNegative Integer
                           -> Property
