@@ -65,9 +65,7 @@ import Ouroboros.Network.TxSubmission.Inbound.V2.Types
 import Ouroboros.Network.TxSubmission.Outbound
 import Ouroboros.Network.Util.ShowProxy
 
-import Test.Ouroboros.Network.TxSubmission.Impaired (Impairment (..),
-           applyImpairment, genOneImpairment, kindOf, noImpairment,
-           shrinkImpairment, validImpairment)
+import Test.Ouroboros.Network.TxSubmission.Impaired
 import Test.Ouroboros.Network.TxSubmission.TxLogic hiding (tests)
 import Test.Ouroboros.Network.TxSubmission.Types
 import Test.Ouroboros.Network.Utils hiding (debugTracer)
@@ -111,6 +109,8 @@ tests = testGroup "AppV2"
           prop_TxSubmissionDisconnectState_shrinkNoDups
       ]
   , testProperty "txSubmission"          prop_txSubmission
+  , testProperty "txSubmission/splitAcknowledgements"
+      prop_txSubmission_splitAcknowledgements
   , testProperty "inflight"              prop_txSubmission_inflight
   , testProperty "resilientToImpairment" prop_txSubmission_resilientToImpairment
   , testProperty "peerDisconnect"        prop_txSubmission_peerDisconnect
@@ -356,7 +356,12 @@ runTxSubmission tracer tracerTxLogic countersTracer inboundTracer
     waitAllServers :: [(Async m x, Async m x)] -> m [Either SomeException x]
     waitAllServers [] = return []
     waitAllServers ((client, server):as) = do
-      r <- waitCatch server
+      -- Observe outbound failures too: a blocking inbound request has no
+      -- timeout and would otherwise wait forever after an outbound exception.
+      r <- waitEitherCatch client server >>= \case
+        Left (Left e)  -> throwIO e
+        Left (Right _) -> waitCatch server
+        Right result   -> pure result
       -- cancel client as soon as the server exits
       cancel client
       rs <- waitAllServers as
@@ -827,6 +832,17 @@ prop_txSubmission st@TxSubmissionState { peerMap = peers } =
            -- duplicate txids we're content with completing the protocol
            -- without error.
            property True
+
+
+-- | Reuse the application property while exercising acknowledgement-only
+-- requests, which the production inbound scheduler normally suppresses.
+prop_txSubmission_splitAcknowledgements :: TxSubmissionState -> Property
+prop_txSubmission_splitAcknowledgements st@TxSubmissionState{peerMap} =
+    prop_txSubmission st {
+      peerImpairment =
+        -- use `impairmentSplitAcknowledgements` for all peers
+        impairmentSplitAcknowledgements <$ peerMap
+    }
 
 
 -- | This test checks that all txs are downloaded from all available peers if
