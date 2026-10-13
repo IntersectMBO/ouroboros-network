@@ -24,7 +24,7 @@ import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer (Tracer (..), traceWith)
+import Control.Tracer (Tracer, traceWith)
 import System.Random
 
 import Control.Applicative (Alternative)

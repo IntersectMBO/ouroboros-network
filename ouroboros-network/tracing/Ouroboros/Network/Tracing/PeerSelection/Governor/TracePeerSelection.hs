@@ -23,7 +23,7 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text (Text, pack)
 
-import Cardano.Logging
+import Hermod.Tracing.API
 import Ouroboros.Network.Diffusion.Types
 import Ouroboros.Network.OrphanInstances (JSONField (..), demotionScoresToJSON)
 import Ouroboros.Network.PeerSelection.Governor.Types

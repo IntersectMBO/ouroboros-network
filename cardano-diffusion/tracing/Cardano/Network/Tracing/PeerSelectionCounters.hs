@@ -6,9 +6,9 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module Cardano.Network.Tracing.PeerSelectionCounters () where
 
-import Cardano.Logging
 import Data.Aeson
 import Data.Text qualified as Text
+import Hermod.Tracing.API
 
 import Cardano.Network.PeerSelection.ExtraRootPeers
 --------------------------------------------------------------------------------

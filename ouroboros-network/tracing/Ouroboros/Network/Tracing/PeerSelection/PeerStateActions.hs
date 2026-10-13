@@ -7,7 +7,7 @@ module Ouroboros.Network.Tracing.PeerSelection.PeerStateActions () where
 import Data.Aeson (ToJSON (..), Value (String), (.=))
 import Data.Text (pack)
 
-import Cardano.Logging
+import Hermod.Tracing.API
 import Ouroboros.Network.PeerSelection.PeerStateActions
            (PeerSelectionActionsTrace (..))
 -- Needed for `instance ToJSON ConnectionId`.

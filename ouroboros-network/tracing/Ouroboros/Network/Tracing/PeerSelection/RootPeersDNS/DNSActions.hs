@@ -8,7 +8,7 @@ import Data.Aeson (ToJSON, Value (String), toJSON, (.=))
 import Data.IP qualified as IP
 import Data.Text (pack)
 
-import Cardano.Logging
+import Hermod.Tracing.API
 import Ouroboros.Network.OrphanInstances qualified ()
 import Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions (DNSTrace (..))
 

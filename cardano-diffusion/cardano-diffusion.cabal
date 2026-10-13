@@ -595,8 +595,8 @@ library tracing
     aeson,
     base >=4.14 && <4.23,
     cardano-diffusion,
+    hermod-tracing-api:public ^>=1.1,
     text,
-    trace-dispatcher ^>=2.13.0,
 
   if flag(asserts)
     ghc-options: -fno-ignore-asserts

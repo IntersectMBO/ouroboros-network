@@ -47,7 +47,7 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI (DiffTime, MonadTime, Time (..))
 import Control.Monad.Class.MonadTimer.SI (MonadDelay, MonadTimer)
 import Control.Monad.Fix (MonadFix)
-import Control.Tracer (Tracer (..), nullTracer)
+import Control.Tracer (Tracer, nullTracer)
 
 import Codec.CBOR.Term qualified as CBOR
 import Data.Foldable as Foldable (foldl')

@@ -151,8 +151,7 @@ instance Exception Failure
 -- $plain-ouroboros-network
 --
 -- Convenience types for plain Ouroboros Network instantiation without any
--- extra peers configured. This is supported by the bundled trace-dispatcher
--- instances in the tracing libraries.
+-- extra peers configured.
 
 data NoExtraFlags = NoExtraFlags
   deriving (Eq, Show)

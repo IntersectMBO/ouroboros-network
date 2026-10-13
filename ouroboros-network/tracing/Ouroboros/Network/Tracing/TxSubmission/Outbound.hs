@@ -8,7 +8,7 @@ module Ouroboros.Network.Tracing.TxSubmission.Outbound () where
 import Data.Aeson
 import Data.Text qualified as Text
 
-import Cardano.Logging
+import Hermod.Tracing.API
 import Ouroboros.Network.TxSubmission.Outbound
 
 --------------------------------------------------------------------------------
