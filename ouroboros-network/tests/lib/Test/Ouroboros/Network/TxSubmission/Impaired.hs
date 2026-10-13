@@ -1,4 +1,5 @@
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -15,8 +16,10 @@ module Test.Ouroboros.Network.TxSubmission.Impaired
   , omitBodies
   , extraTxIds
   , unrequestedTx
+  , splitAcknowledgements
   , Impairment (..)
   , noImpairment
+  , impairmentSplitAcknowledgements
   , validImpairment
   , applyImpairment
   , genOneImpairment
@@ -210,19 +213,63 @@ unrequestedTx mkBad (TxSubmissionClient mIdle) =
         SendMsgReplyTxs (txs ++ [mkBad txids x]) (wrapIdle k)
 
 
+-- | This function is used to test `txSubmissionOutbound` against a client which
+-- splits non-blocking txid requests carrying acknowledgements and requests into
+-- an acknowledgement-only request followed by a request-only request. The
+-- receiver gets just the second reply. Both requests are legal because the
+-- original non-blocking request leaves at least one ID unacknowledged.
+--
+splitAcknowledgements
+  :: forall txid tx m a.
+     Monad m
+  => TxSubmissionClient txid tx m a
+  -> TxSubmissionClient txid tx m a
+splitAcknowledgements (TxSubmissionClient mIdle) =
+    TxSubmissionClient (wrapIdle <$> mIdle)
+  where
+    wrapIdle :: ClientStIdle txid tx m a -> ClientStIdle txid tx m a
+    wrapIdle
+      ClientStIdle {
+        recvMsgRequestTxIds = requestIds,
+        recvMsgRequestTxs   = requestTxs
+      }
+      =
+      ClientStIdle {
+        recvMsgRequestTxIds = \blocking ack req -> do
+          reply <- case blocking of
+            -- split a non blocking request into two requests
+            SingNonBlocking | ack > 0 && req > 0 ->
+              -- 1. Acknowledge txids
+              requestIds SingNonBlocking ack 0 >>= \case
+                (SendMsgReplyTxIds _ k) ->
+                  -- 2. Request txids
+                  recvMsgRequestTxIds k SingNonBlocking 0 req
+
+            _ -> requestIds blocking ack req
+          pure $ case reply of
+            SendMsgReplyTxIds txids k -> SendMsgReplyTxIds txids (wrapIdle k)
+            SendMsgDone a             -> SendMsgDone a
+      , recvMsgRequestTxs = \txids -> do
+          SendMsgReplyTxs txs k <- requestTxs txids
+          pure (SendMsgReplyTxs txs (wrapIdle k))
+      }
+
+
 -- | Behavioural fault injection on a peer's outbound 'TxSubmissionClient'.
 -- Peers configured with 'noImpairment' run unwrapped.
 data Impairment = Impairment
-  { impairBodyDelay     :: Maybe DiffTime
+  { impairBodyDelay             :: Maybe DiffTime
     -- ^ added before each MsgReplyTxs; txid replies are unaffected
-  , impairOmitProb      :: Double
+  , impairOmitProb              :: Double
     -- ^ per-body Bernoulli drop probability, in [0, 1]
-  , impairSeed          :: Int
+  , impairSeed                  :: Int
     -- ^ seed for the per-peer StdGen used by 'omitBodies'
-  , impairExtraTxIds    :: Word16
+  , impairExtraTxIds            :: Word16
     -- ^ pad each MsgReplyTxIds with this many duplicate entries; 0 = off
-  , impairUnrequestedTx :: Bool
+  , impairUnrequestedTx         :: Bool
     -- ^ append one fabricated body whose txid is not in the request
+  , impairSplitAcknowledgements :: Bool
+    -- ^ exercise acknowledgement-only txid requests at the outbound peer
   } deriving (Eq, Show)
 
 -- | The neutral impairment: no delay, no omission. Equivalent to running the
@@ -233,7 +280,11 @@ noImpairment = Impairment { impairBodyDelay     = Nothing
                           , impairSeed          = 0
                           , impairExtraTxIds    = 0
                           , impairUnrequestedTx = False
+                          , impairSplitAcknowledgements = False
                           }
+
+impairmentSplitAcknowledgements :: Impairment
+impairmentSplitAcknowledgements = noImpairment { impairSplitAcknowledgements = True }
 
 -- | The invariants the 'Arbitrary' generator and 'shrinkImpairment' must
 -- preserve: the omission probability is in [0, 1] and any body delay is
@@ -256,7 +307,8 @@ applyImpairment :: (MonadDelay m, MonadSTM m)
                 -> TxSubmissionClient txid tx m a
                 -> m (TxSubmissionClient txid tx m a)
 applyImpairment Impairment { impairBodyDelay, impairOmitProb, impairSeed
-                           , impairExtraTxIds, impairUnrequestedTx } mkBad c0 = do
+                           , impairExtraTxIds, impairUnrequestedTx
+                           , impairSplitAcknowledgements } mkBad c0 = do
     c1 <- if impairOmitProb > 0
             then do
               genVar <- newTVarIO (mkStdGen impairSeed)
@@ -269,7 +321,7 @@ applyImpairment Impairment { impairBodyDelay, impairOmitProb, impairSeed
            | otherwise            = c2
         c4 | impairUnrequestedTx = unrequestedTx mkBad c3
            | otherwise           = c3
-    pure c4
+    pure $ if impairSplitAcknowledgements then splitAcknowledgements c4 else c4
 
 
 -- | Generate a single 'Impairment': a mix of body delay, per-body
@@ -300,7 +352,8 @@ genOneImpairment = oneof [genOmit, genDelay, genBoth, genExtraTxIds, genUnreques
 -- | Shrink an 'Impairment' towards 'noImpairment'.
 shrinkImpairment :: Impairment -> [Impairment]
 shrinkImpairment imp = List.nub $
-     [ imp { impairUnrequestedTx = False } | impairUnrequestedTx imp ]
+     [ imp { impairSplitAcknowledgements = False } | impairSplitAcknowledgements imp ]
+  ++ [ imp { impairUnrequestedTx = False } | impairUnrequestedTx imp ]
   ++ [ imp { impairExtraTxIds = a }        | a <- shrink (impairExtraTxIds imp) ]
   ++ [ imp { impairBodyDelay = Nothing }   | isJust (impairBodyDelay imp) ]
   ++ [ imp { impairOmitProb = 0 }          | impairOmitProb imp > 0 ]
@@ -318,6 +371,7 @@ shrinkImpairment imp = List.nub $
 
 -- | A short label classifying an 'Impairment', for test labelling.
 kindOf :: Impairment -> String
+kindOf Impairment { impairSplitAcknowledgements = True } = "split-acknowledgements"
 kindOf Impairment { impairUnrequestedTx = True }                    = "unrequested-tx"
 kindOf Impairment { impairExtraTxIds = n }                | n > 0   = "extra-txids"
 kindOf Impairment { impairBodyDelay = Just _,  impairOmitProb = 0 } = "delay-only"

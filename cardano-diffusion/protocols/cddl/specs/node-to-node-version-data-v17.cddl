@@ -1,5 +1,5 @@
 ;
-; NodeToNodeVersionData, v16
+; NodeToNodeVersionData, v17
 ;
 
 nodeToNodeVersionData = [ networkMagic, initiatorOnlyDiffusionMode, peerSharing, query, perasSupport ]
