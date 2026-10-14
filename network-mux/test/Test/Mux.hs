@@ -158,6 +158,8 @@ tests =
                    (BaseQC.withNumTests 30 prop_mux_lanes)
     , testProperty "a torn-down head hands the queue on"
                    prop_mux_egress_head_torn_down
+    , testProperty "a final message is written before completion is reported"
+                   prop_mux_final_message_before_release
     , testProperty "own requests wait at the gate, charged once written"
                    (BaseQC.withNumTests 30 prop_mux_direct_gate)
     , testProperty "counters are snapshotted every interval"
@@ -4541,6 +4543,96 @@ prop_mux_egress_head_torn_down hk@HeadKill { hkRate, hkMuxes, hkBatches, hkAt, h
              timeout deadline $
                length <$> mapM (\(_, _, done) -> atomically done) others
 
+-- | A demoted peer's last message: a protocol sends it and completes while
+-- the budget is busy with another connection's bulk, so the muxer holds the
+-- batch waiting for its grant. As the connection manager does on release,
+-- the connection's thread is cancelled the moment the protocol reports
+-- completion; completion waits for the held batch to be written, so the
+-- peer has the whole message. Or the mux is stopped as soon as the message
+-- is sent, as on a timeout: the drain waits up to two seconds for the held
+-- batch, and the bulk ahead of it takes at most one.
+data FinalCase = FinalCase {
+    fcRate    :: !Double,   -- ^ budget, bytes/s
+    fcBatches :: !Int,      -- ^ the other connection's bulk, in batches
+    fcFinal   :: !Int,      -- ^ the last message, bytes
+    fcRank    :: !Word8,    -- ^ the demoted peer's tier
+    fcHow     :: !FinalEnd
+  }
+  deriving Show
+
+data FinalEnd = CancelOnCompletion | StopWhenSent
+  deriving (Show, Eq, Enum, Bounded)
+
+instance Arbitrary FinalCase where
+  arbitrary = FinalCase <$> choose (1e5, 1e6) <*> choose (2, 20)
+                        <*> choose (1, 20000) <*> choose (1, 4)
+                        <*> elements [minBound .. maxBound]
+  shrink fc@FinalCase { fcBatches, fcFinal } =
+       [ fc { fcBatches = b } | b <- shrink fcBatches, b >= 2 ]
+    ++ [ fc { fcFinal = f } | f <- shrink fcFinal, f >= 1 ]
+
+prop_mux_final_message_before_release :: FinalCase -> Property
+prop_mux_final_message_before_release fc@FinalCase { fcRate, fcBatches, fcFinal, fcRank, fcHow } =
+    counterexample (show fc) $
+    tabulate "end" [show fcHow] $
+      runSimOrThrow run === Just fcFinal
+  where
+    -- stopped, the bulk ahead must clear within a second of the drain's two
+    bulk     = case fcHow of
+                    CancelOnCompletion -> fcBatches * laneBatch
+                    StopWhenSent       -> min (fcBatches * laneBatch) (floor (fcRate * 0.5))
+    deadline = realToFrac (2 * fromIntegral (bulk + fcFinal) / fcRate) + 5 :: DiffTime
+
+    run :: IOSim s (Maybe Int)
+    run = do
+      budget <- Bucket.newBucket fcRate (2 * laneBatch) Nothing
+      let policy = Mx.EgressPolicy { Mx.egressBudget = budget, Mx.egressSlice = Nothing,
+                                     Mx.egressLaneOf = Mx.directionSplit }
+      -- the busy connection: a local root taking the budget
+      (busyMux, busyClient, busyBearer, busyClientBearer) <- headKillPair policy
+      atomically $ Mx.setEgressRank busyMux (Bucket.Rank 0)
+      _ <- async (Mx.run busyMux busyBearer)
+      _ <- async (Mx.run busyClient busyClientBearer)
+      _ <- Mx.runMiniProtocol busyMux bulkNum Mx.ResponderDirection Mx.StartOnDemand
+             (headKillServer bulk)
+      _ <- Mx.runMiniProtocol busyClient bulkNum Mx.InitiatorDirection Mx.StartEagerly
+             (headKillClient bulk)
+      -- the demoted peer: one request, one last message, done
+      (peerMux, peerClient, peerBearer, peerClientBearer) <- headKillPair policy
+      atomically $ Mx.setEgressRank peerMux (Bucket.Rank fcRank)
+      peerA <- async (Mx.run peerMux peerBearer)
+      _     <- async (Mx.run peerClient peerClientBearer)
+      threadDelay 0.001     -- the bulk has the budget first
+      sent <- newTVarIO False
+      completion <- Mx.runMiniProtocol peerMux bulkNum Mx.ResponderDirection Mx.StartOnDemand $ \chan -> do
+                      _ <- Mx.recv chan
+                      Mx.send chan (BL.replicate (fromIntegral fcFinal) 0x78)
+                      atomically (writeTVar sent True)
+                      return ((), Nothing)
+      received <- newTVarIO 0
+      _ <- Mx.runMiniProtocol peerClient bulkNum Mx.InitiatorDirection Mx.StartEagerly $ \chan -> do
+             Mx.send chan (BL8.pack "req")
+             let go = do
+                   mbs <- Mx.recv chan
+                   case mbs of
+                        Nothing -> return ()
+                        Just bs -> atomically (modifyTVar received (+ fromIntegral (BL.length bs))) >> go
+             go
+             return ((), Nothing)
+      case fcHow of
+           -- the release: cancel the connection as soon as the protocol is done
+           CancelOnCompletion -> do
+             _ <- atomically completion
+             cancel peerA
+           -- a stop with the message sent, not yet written
+           StopWhenSent -> do
+             atomically (readTVar sent >>= check)
+             Mx.stop peerMux
+      timeout deadline $ atomically $ do
+        n <- readTVar received
+        check (n >= fcFinal)
+        return n
+
 bulkNum :: Mx.MiniProtocolNum
 bulkNum = Mx.MiniProtocolNum 2
 
@@ -4631,9 +4723,12 @@ withWriteMuxer WriteCase { wcLane, wcMsgs } write = do
         atomically $ Bucket.setRank h (Bucket.Rank 2)
         sink <- newTVarIO (\_ _ n -> modifyTVar charged (+ n))
         return (Egress.Scheduled_ h sink)
+    muxHeld <- newTVarIO 0
     forM_ wcMsgs $ \n -> do
-      w <- newTVarIO (BL.replicate (fromIntegral n) 0x55)
-      atomically $ writeTBQueue q (Egress.TLSRDemand (Mx.MiniProtocolNum 2) Mx.InitiatorDir (Egress.Wanton w))
+      wt <- Egress.newWanton muxHeld
+      atomically $ do
+        writeTVar (Egress.want wt) (BL.replicate (fromIntegral n) 0x55)
+        writeTBQueue q (Egress.TLSRDemand (Mx.MiniProtocolNum 2) Mx.InitiatorDir wt)
     let bearer = Mx.Bearer {
             Mx.write          = \_ _ _ -> error "single writes are not used",
             Mx.writeMany      = \_ _ sdus -> write sdus >> getMonotonicTime,

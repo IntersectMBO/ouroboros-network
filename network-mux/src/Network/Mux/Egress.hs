@@ -18,6 +18,7 @@ module Network.Mux.Egress
   , EgressQueue
   , TranslocationServiceRequest (..)
   , Wanton (..)
+  , newWanton
   , forcePrefix
   ) where
 
@@ -164,7 +165,9 @@ type ChargeSink m = Time -> MiniProtocolNum -> Int -> STM m ()
 data Lanes m = Lanes {
     laneQueue :: Lane -> EgressQueue m,
     laneOf    :: MiniProtocolNum -> MiniProtocolDir -> Lane,
-    laneAll   :: [(Lane, EgressQueue m)]
+    laneAll   :: [(Lane, EgressQueue m)],
+    laneHeld  :: StrictTVar m Int
+    -- ^ batches the mux's muxers hold, taken and not yet written
   }
 
 -- | A TranslocationServiceRequest is a demand for the translocation
@@ -176,9 +179,24 @@ data TranslocationServiceRequest m =
      TLSRDemand !MiniProtocolNum !MiniProtocolDir !(Wanton m)
 
 -- | A Wanton represent the concrete data to be translocated, note that the
---  TVar becoming empty indicates -- that the last fragment of the data has
---  been enqueued on the -- underlying bearer.
-newtype Wanton m = Wanton { want :: StrictTVar m BL.ByteString }
+--  TVar becoming empty indicates that the last fragment of the data has been
+--  taken by a muxer, and 'held' reaching zero that the muxer has written it.
+data Wanton m = Wanton {
+    want    :: !(StrictTVar m BL.ByteString),
+    held    :: !(StrictTVar m Int),
+    -- ^ batches a muxer has taken some of this mini-protocol's bytes into
+    -- and not yet written: a protocol is not done until this is zero
+    muxHeld :: !(StrictTVar m Int)
+    -- ^ batches the mux's muxers hold, shared by every mini-protocol of the
+    -- mux, for the shutdown drain
+  }
+
+-- | An empty 'Wanton' counting into the mux's @muxHeld@.
+newWanton :: MonadSTM m => StrictTVar m Int -> m (Wanton m)
+newWanton muxHeld = do
+    want <- newTVarIO BL.empty
+    held <- newTVarIO 0
+    return Wanton { want, held, muxHeld }
 
 -- | Evaluate the chunks of a lazy 'BL.ByteString' until at least @n@ bytes
 -- have been produced, or it ends; the rest is left as it is.
@@ -216,9 +234,19 @@ muxer egressQueue tracer counters sentCell laneEgress
     withTimeoutSerial $ \timeout ->
     forever $ do
       start <- getMonotonicTime
-      TLSRDemand mpc md d <- atomically $ readTBQueue egressQueue
-      sdu <- processSingleWanton egressQueue sduSize mpc md d
-      (sdus, len, perProtocol) <- buildBatch sdu mpc md
+      -- the demand and its fragment in one transaction: between the two the
+      -- queue would read empty with nothing held, and a drain waiting for
+      -- both would let the mux go with the fragment unsent
+      (mpc, md, d, sdu) <- atomically $ do
+        TLSRDemand mpc md d <- readTBQueue egressQueue
+        sdu <- takeSingleWanton egressQueue sduSize mpc md d True
+        modifyTVar (muxHeld d) (+ 1)
+        return (mpc, md, d, sdu)
+      (sdus, len, perProtocol, taken) <- buildBatch sdu mpc md d
+      -- the batch, and each mini-protocol it carries, released once written
+      let release = do
+            modifyTVar (muxHeld d) (subtract 1)
+            forM_ taken $ \w -> modifyTVar (held w) (subtract 1)
       let count = forM_ sentCell $ \cell ->
                     modifyTVar cell (Map.unionWith (+) (Map.map fromIntegral perProtocol))
 
@@ -259,17 +287,21 @@ muxer egressQueue tracer counters sentCell laneEgress
       -- timeout and a cancellation still reach a write that cannot finish.
       -- A write that throws, part of the batch sent or none, is neither
       -- counted nor charged: the connection is gone with it.
-      end <- mask_ $ do
+      (end, empty) <- mask_ $ do
         void $ writeMany tracer timeout sdus
         end <- getMonotonicTime
-        case (laneEgress, sentCell) of
-             (Credit budget, _) -> atomically $ do
-               count
-               takeOnCredit budget end len
-             (_, Just _) -> atomically count
-             _ -> return ()
-        return end
-      empty <- atomically $ isEmptyTBQueue egressQueue
+        -- one transaction after every write: the release, the accounting
+        -- and whether there is more to send
+        empty <- atomically $ do
+          release
+          case (laneEgress, sentCell) of
+               (Credit budget, _) -> do
+                 count
+                 takeOnCredit budget end len
+               (_, Just _) -> count
+               _ -> return ()
+          isEmptyTBQueue egressQueue
+        return (end, empty)
       when empty $ do
         let delta = diffTime end start
         threadDelay (egressInterval - delta)
@@ -298,21 +330,24 @@ muxer egressQueue tracer counters sentCell laneEgress
     -- Returns the SDUs in order, their length with headers, and that length
     -- per mini-protocol and direction, all accumulated as the batch is built
     -- so nothing walks it again.
-    buildBatch :: SDU -> MiniProtocolNum -> MiniProtocolDir
-               -> m ([SDU], Int, Map.Map (MiniProtocolNum, MiniProtocolDir) Int)
-    buildBatch sdu0 mpc0 md0 = go [sdu0] 1 len0 (Map.singleton (mpc0, md0) len0)
+    buildBatch :: SDU -> MiniProtocolNum -> MiniProtocolDir -> Wanton m
+               -> m ([SDU], Int, Map.Map (MiniProtocolNum, MiniProtocolDir) Int, [Wanton m])
+    buildBatch sdu0 mpc0 md0 w0 = go [sdu0] 1 len0 (Map.singleton (mpc0, md0) len0) [w0]
      where
       len0 = sduLength sdu0
-      go sdus !n !len per
-        | n >= maxSDUsPerBatch || len >= batchSize = return (reverse sdus, len, per)
+      go sdus !n !len per taken
+        | n >= maxSDUsPerBatch || len >= batchSize = return (reverse sdus, len, per, taken)
         | otherwise = do
             demand_m <- atomically $ tryReadTBQueue egressQueue
             case demand_m of
                  Just (TLSRDemand mpc md d) -> do
-                   sdu <- processSingleWanton egressQueue sduSize mpc md d
+                   -- a mini-protocol is held once per batch, at its first SDU
+                   let first = Map.notMember (mpc, md) per
+                   sdu <- processSingleWanton egressQueue sduSize mpc md d first
                    let !l = sduLength sdu
                    go (sdu:sdus) (n + 1) (len + l) (Map.insertWith (+) (mpc, md) l per)
-                 Nothing -> return (reverse sdus, len, per)
+                      (if first then d : taken else taken)
+                 Nothing -> return (reverse sdus, len, per, taken)
 
 -- | Pull a `maxSDU`s worth of data out out the `Wanton` - if there is
 -- data remaining requeue the `TranslocationServiceRequest` (this
@@ -324,10 +359,23 @@ processSingleWanton :: MonadSTM m
                     -> MiniProtocolNum
                     -> MiniProtocolDir
                     -> Wanton m
+                    -> Bool         -- ^ the batch's first SDU of this mini-protocol
                     -> m SDU
-processSingleWanton egressQueue (SDUSize sduSize)
-                    mpc md wanton = do
-    blob <- atomically $ do
+processSingleWanton egressQueue sduSize mpc md wanton first =
+    atomically (takeSingleWanton egressQueue sduSize mpc md wanton first)
+
+-- | 'processSingleWanton' as a transaction.
+takeSingleWanton :: MonadSTM m
+                 => EgressQueue m
+                 -> SDUSize
+                 -> MiniProtocolNum
+                 -> MiniProtocolDir
+                 -> Wanton m
+                 -> Bool
+                 -> STM m SDU
+takeSingleWanton egressQueue (SDUSize sduSize)
+                 mpc md wanton first = do
+    blob <- do
       -- extract next SDU
       d <- readTVar (want wanton)
       let (frag, rest) = BL.splitAt (fromIntegral sduSize) d
@@ -340,6 +388,9 @@ processSingleWanton egressQueue (SDUSize sduSize)
           -- must be inside the same STM transaction.
           writeTVar (want wanton) rest
           writeTBQueue egressQueue (TLSRDemand mpc md wanton)
+      -- held until written, once per batch: the muxer releases it after
+      -- the write
+      when first $ modifyTVar (held wanton) (+ 1)
       -- return data to send
       pure frag
     let sdu = SDU {
