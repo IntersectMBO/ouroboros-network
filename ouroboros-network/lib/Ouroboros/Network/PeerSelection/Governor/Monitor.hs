@@ -361,18 +361,20 @@ localRoots actions@PeerSelectionActions{ readLocalRootPeers
       check (localRootPeers' /= localRootPeers)
       --TODO: trace when the clamping kicks in, and warn operators
 
-      let added, removed :: Map peeraddr (LocalRootConfig extraFlags)
-          added        = LocalRootPeers.toMap localRootPeers' Map.\\
-                         LocalRootPeers.toMap localRootPeers
+      let removed :: Map peeraddr (LocalRootConfig extraFlags)
           removed      = LocalRootPeers.toMap localRootPeers  Map.\\
                          LocalRootPeers.toMap localRootPeers'
-          -- LocalRoots are not ledger!
-          addedInfoMap = Map.map
+          -- LocalRoots are not ledger! Every configured local root is
+          -- inserted with its current advertise flag, the kept ones too, so
+          -- that a flag changed in the configuration reaches the known
+          -- peers. Removed roots keep their last flag, as removed peers of
+          -- every source do.
+          rootInfoMap  = Map.map
                            (\LocalRootConfig { peerAdvertise } ->
                              (Nothing, Just peerAdvertise))
-                           added
+                           (LocalRootPeers.toMap localRootPeers')
           removedSet   = Map.keysSet removed
-          knownPeers'  = KnownPeers.insert addedInfoMap knownPeers
+          knownPeers'  = KnownPeers.insert rootInfoMap knownPeers
                         -- We do not immediately remove old ones from the
                         -- known peers set because we may have established
                         -- connections
