@@ -177,7 +177,9 @@ newtype NumObjectsUnacknowledged = NumObjectsUnacknowledged {getNumObjectsUnackn
   deriving (Show)      via (Quiet NumObjectsUnacknowledged)
 
 -- | The two legal object-ID request kinds, indexed by the state in which the
--- server must reply.
+-- server must reply. This can be @'StObjectIdsNonBlocking@ or
+-- @'StObjectIdsBlocking 'StCanAwait@. but not @'StObjectIdsBlocking
+-- 'StMustReply@, which can only be reached via 'MsgAwaitReply'.
 data ObjectIdsRequestKind (kind :: StObjectIdsKind) where
   RequestObjectIdsNonBlocking
     :: ObjectIdsRequestKind 'StObjectIdsNonBlocking
@@ -270,6 +272,13 @@ instance Protocol (ObjectDiffusion objectId object) where
     -- This covers high throughput use cases where we wish to pipeline, by
     -- interleaving requests for additional object identifiers with requests
     -- for objects, which requires these requests not block.
+    --
+    -- Notice that this is requiring an 'ObjectIdsRequestKind' argument instead
+    -- of a 'SingStObjectIdsKind' argument to limit @kind@ to
+    -- @'StObjectIdsNonBlocking@ and @'StObjectIdsBlocking 'StCanAwait@.
+    -- 'SingStObjectIdsKind' would additionally allow the invalid
+    -- @'StObjectIdsBlocking 'StMustReply@, which can only be reached via
+    -- 'MsgAwaitReply'.
     --
     -- The request gives the maximum number of object identifiers that can be
     -- accepted in the response. This must be greater than zero in the
