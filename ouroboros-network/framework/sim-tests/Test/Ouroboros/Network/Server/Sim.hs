@@ -39,6 +39,7 @@ import Control.Monad.Class.MonadTest
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
+import Control.Monad.Class.MonadUnique (MonadUnique)
 import Control.Monad.Fix (MonadFix)
 import Control.Monad.IOSim
 import Control.Tracer (Tracer, mkTracer, nullTracer)
@@ -2472,7 +2473,7 @@ prop_server_accept_error (Fixed rnd) (AbsIOError ioerr) =
 
 
 multiNodeSimTracer :: ( Alternative (STM m), Monad m, MonadFix m
-                      , MonadDelay m, MonadTimer m, MonadLabelledSTM m
+                      , MonadDelay m, MonadUnique m, MonadTimer m, MonadLabelledSTM m
                       , MonadTraceSTM m, MonadMask m, MonadTime m
                       , MonadCatch (STM m), MonadSay m, MonadAsync m
                       , MonadEvaluate m, MonadFork m, MonadST m

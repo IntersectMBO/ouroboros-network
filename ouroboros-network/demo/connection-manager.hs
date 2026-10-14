@@ -32,6 +32,7 @@ import Control.Monad.Class.MonadST (MonadST)
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI (MonadTime (..))
 import Control.Monad.Class.MonadTimer.SI
+import Control.Monad.Class.MonadUnique (MonadUnique)
 import Control.Monad.Fix (MonadFix)
 import Control.Tracer (Tracer, contramap, mkTracer, nullTracer, traceWith)
 
@@ -144,7 +145,7 @@ genClientAndServerData g0 len = ClientAndServerData {
 type ConnectionManagerMonad m =
        ( Alternative (STM m), MonadAsync m, MonadCatch m, MonadEvaluate m,
          MonadFork m, MonadMask m, MonadST m, MonadTime m, MonadTimer m,
-         MonadThrow m, MonadCatch (STM m)
+         MonadThrow m, MonadCatch (STM m), MonadUnique m
        )
 
 

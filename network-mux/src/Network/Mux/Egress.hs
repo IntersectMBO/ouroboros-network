@@ -22,6 +22,7 @@ import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI hiding (timeout)
+import Control.Monad.Class.MonadUnique (MonadUnique)
 import Control.Tracer (Tracer)
 
 import Network.Mux.Timeout
@@ -141,6 +142,7 @@ muxer
        , MonadMask m
        , MonadThrow (STM m)
        , MonadTimer m
+       , MonadUnique m
        )
     => EgressQueue m
     -> Tracer m BearerTrace

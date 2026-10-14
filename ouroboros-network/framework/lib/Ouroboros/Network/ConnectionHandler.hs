@@ -51,6 +51,7 @@ import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow hiding (handle)
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
+import Control.Monad.Class.MonadUnique (MonadUnique)
 import Control.Tracer (Tracer, traceWith)
 
 import Data.ByteString.Lazy (ByteString)
@@ -250,6 +251,7 @@ makeConnectionHandler
        , MonadLabelledSTM m
        , MonadThrow (STM m)
        , MonadTimer    m
+       , MonadUnique   m
        , MonadMask     m
        , NFData   versionData
        , NFData   versionNumber

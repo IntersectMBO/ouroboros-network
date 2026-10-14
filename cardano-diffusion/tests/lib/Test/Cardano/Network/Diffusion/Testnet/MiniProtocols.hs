@@ -32,6 +32,7 @@ import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
+import Control.Monad.Class.MonadUnique (MonadUnique)
 import Control.Tracer (Tracer (..), contramap, nullTracer)
 
 import Codec.CBOR.Read qualified as CBOR
@@ -263,6 +264,7 @@ applications :: forall block header s m.
                 , MonadThrow m
                 , MonadTime  m
                 , MonadTimer m
+                , MonadUnique m
                 , MonadThrow (STM m)
                 , HasHeader header
                 , HasHeader block

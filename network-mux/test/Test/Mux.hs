@@ -54,6 +54,7 @@ import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
+import Control.Monad.Class.MonadUnique (MonadUnique)
 import Control.Monad.IOSim
 import Control.Tracer
 
@@ -1230,6 +1231,7 @@ prop_demux_sdu :: forall m.
                     , MonadSay m
                     , MonadThrow (STM m)
                     , MonadTimer m
+                    , MonadUnique m
                     )
                  => ArbitrarySDU
                  -> m Property
@@ -1586,6 +1588,7 @@ prop_mux_start_mX :: forall m.
                        , MonadSay m
                        , MonadThrow (STM m)
                        , MonadTimer m
+                       , MonadUnique m
                        )
                     => DummyApps
                     -> DiffTime
@@ -1650,6 +1653,7 @@ prop_mux_restart_m :: forall m.
                        , MonadSay m
                        , MonadThrow (STM m)
                        , MonadTimer m
+                       , MonadUnique m
                        )
                     => DummyRestartingApps
                     -> m Property
@@ -1821,6 +1825,7 @@ prop_mux_start_m :: forall m.
                        , MonadSay m
                        , MonadThrow (STM m)
                        , MonadTimer m
+                       , MonadUnique m
                        )
                     => Mx.Bearer m
                     -- ^ Mux bearer
@@ -2070,6 +2075,7 @@ close_experiment
        , MonadLabelledSTM m
        , MonadMask        m
        , MonadTimer       m
+       , MonadUnique      m
        , MonadThrow  (STM m)
        , MonadST          m
        , Serialise req
@@ -2552,8 +2558,8 @@ prop_mux_trailing_bytes
      , MonadLabelledSTM   m
      , MonadMask          m
      , MonadTimer         m
+     , MonadUnique        m
      , MonadThrow    (STM m)
-     , MonadSay           m
      )
   => BL.ByteString
   -> NonEmptyByteString
@@ -2664,6 +2670,7 @@ prop_mux_pure_exception
      , MonadLabelledSTM   m
      , MonadMask          m
      , MonadTimer         m
+     , MonadUnique        m
      , MonadThrow    (STM m)
      )
   => m Property

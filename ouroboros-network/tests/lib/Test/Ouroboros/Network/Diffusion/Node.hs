@@ -46,6 +46,7 @@ import Control.Monad.Class.MonadST (MonadST)
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI (DiffTime, MonadTime, Time (..))
 import Control.Monad.Class.MonadTimer.SI (MonadDelay, MonadTimer)
+import Control.Monad.Class.MonadUnique (MonadUnique)
 import Control.Monad.Fix (MonadFix)
 import Control.Tracer (Tracer (..), nullTracer)
 
@@ -191,6 +192,7 @@ run :: forall extraState extraDebugState extraAPI
        , MonadST          m
        , MonadTime        m
        , MonadTimer       m
+       , MonadUnique      m
        , MonadCatch       (STM m)
        , MonadMVar        m
 
