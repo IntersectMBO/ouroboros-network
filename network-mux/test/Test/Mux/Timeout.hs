@@ -179,6 +179,12 @@ tests =
 
       , testProperty "prop_exception_during_delivery_io withTimeoutSerialAlternative" $
           prop_exception_during_delivery_io withTimeoutSerialAlternative
+
+      , testProperty "prop_masked_scope_io withTimeoutSerialNative" $
+          prop_masked_scope_io withTimeoutSerialNative
+
+      , testProperty "prop_masked_scope_io withTimeoutSerialAlternative" $
+          prop_masked_scope_io withTimeoutSerialAlternative
       ]
     ]
 
@@ -274,6 +280,17 @@ exceptionDuringDelivery withTimeout =
         throwIO ActionException :: m ()
       threadDelay 0.02
       return $ result === Left ActionException
+
+
+-- The monitor must remain cancellable when its entire scope is masked.
+-- This runs in IO: native timeout in io-sim-1.8.0.1 also fails this scenario
+-- by delivering a timeout after the call has ended.
+maskedScope :: TimeoutConstraints m => WithTimeout m -> m Property
+maskedScope withTimeout =
+    uninterruptibleMask_ $
+      withTimeout $ \timeout -> do
+        result <- timeout 0.01 $ threadDelay 0.05
+        return $ result === Just ()
 
 
 type TimeoutConstraints m =
@@ -729,6 +746,11 @@ prop_exception_at_deadline_io withTimeout =
 prop_exception_during_delivery_io :: WithTimeout IO -> Property
 prop_exception_during_delivery_io withTimeout =
     once $ ioProperty $ exceptionDuringDelivery withTimeout
+
+
+prop_masked_scope_io :: WithTimeout IO -> Property
+prop_masked_scope_io withTimeout =
+    once $ ioProperty $ maskedScope withTimeout
 
 
 --

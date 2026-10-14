@@ -123,8 +123,9 @@ withTimeoutSerialAlternative body = do
     -- State shared between the timeouts and the monitoring thread.
     monitorState <- newMonitorState
 
-    -- Run the monitoring thread but ensure it terminates when the body is done.
-    withAsync (monitoringThread monitorState) $ \_ ->
+    -- The monitor must remain cancellable even if the scope is entered with
+    -- asynchronous exceptions uninterruptibly masked.
+    withAsyncWithUnmask (\unmask -> unmask $ monitoringThread monitorState) $ \_ ->
 
       -- Run the body and pass it the @timeout@ function.
       body (timeout monitorState)
