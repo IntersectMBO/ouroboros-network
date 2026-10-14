@@ -15,9 +15,10 @@
 -- Service order is @('Rank', ticket)@: lower rank first, FIFO among equals;
 -- with every bearer at 'Rank' 0 (the default) that is an equal share. With a
 -- 'Rotation' the rank set by the application is the tier, and within a tier
--- every bearer is dealt a random place that is re-dealt each period; from
--- 'roTurnsFrom' up, the rest of the cascade, bearers take turns instead. A
--- short head sleeps until its bytes are there, at microsecond resolution.
+-- every bearer is dealt a random place that is re-dealt each period; the
+-- local roots, tier 0, and from 'roTurnsFrom' up, the rest of the cascade,
+-- take turns instead. A short head sleeps until its bytes are there, at
+-- microsecond resolution.
 --
 -- Fast path: with nobody queued and enough tokens, a take is one transaction.
 -- Otherwise the bearer queues and blocks on its own wake variable; the bearer
@@ -102,7 +103,7 @@ import System.Random.SplitMix qualified as SM
 
 import Network.Mux.Egress.Burst
 import Network.Mux.Egress.Floor
-import Network.Mux.Types (unrankedNumber)
+import Network.Mux.Types (Tier (..), tierNumber, unrankedNumber)
 
 
 -- | A bearer's tier: lower is served first.
@@ -128,6 +129,9 @@ data Rotation = Rotation {
     -- request queues behind the tier's current waiters, so backlogged bearers
     -- rotate one batch at a time. The rest of the cascade, where finishing one
     -- transfer first serves nobody and a newcomer must not wait out a flood.
+    -- The local roots take turns whatever this says: a producer and its
+    -- sibling relays are not substitutes for one another, and a dealt order
+    -- would have one wait a whole period behind another's backlog.
   }
   deriving (Show, Generic)
 
@@ -477,13 +481,14 @@ rotatedRank Rotation { roSeed, roPeriod } bearer (Time now)
 
 -- | Where a bearer queues, lower first: the tier set with 'setRank' in the top
 -- byte, and below it the place the rotation deals it, or 0 without one and
--- 0 in the tiers that take turns.
+-- 0 in the tiers that take turns, the local roots and from 'roTurnsFrom' up.
 queueRank :: Maybe Rotation -> Word64 -> Rank -> Time -> Word32
 queueRank rotation bearer (Rank tier) now =
   fromIntegral tier `shiftL` 24 .|. maybe 0 place rotation
   where
-    place ro | tier >= roTurnsFrom ro = 0
-             | otherwise              = rotatedRank ro bearer now
+    place ro | tier == tierNumber LocalRootTier = 0
+             | tier >= roTurnsFrom ro           = 0
+             | otherwise                        = rotatedRank ro bearer now
 
 
 data BucketHandle m = BucketHandle {
@@ -777,9 +782,10 @@ awaitGrantWith borrow_m waitedWritable charge_m
 
     -- wait for a grant, asking the rule again every 'tierRefresh': a bearer
     -- whose tier changed while it waited moves to the new tier's place,
-    -- keeping its ticket, and joins or leaves the floor with it. Credit that
-    -- refills with time, a lock that expires and a standing that changes
-    -- all reach a waiting request this way, within a refresh. The
+    -- keeping its ticket, and joins or leaves the floor with it; one whose
+    -- tier is dealt anew in a new period moves to its new place. Credit that
+    -- refills with time, a lock that expires, a standing that changes and
+    -- the deal all reach a waiting request this way, within a refresh. The
     -- refresh timer goes with the wait: a grant or a cancellation cancels
     -- it, so no timer outlives the request it was set for.
     waitQueued :: Time -> StrictTVar m (WaitKey, Maybe (Floor m, (FloorClass, Ticket))) -> m GrantSource
@@ -800,17 +806,18 @@ awaitGrantWith borrow_m waitedWritable charge_m
       mask_ $ registerDelayCancellable tierRefresh >>= atomically . writeTVar period
       return moved
 
-    -- the rule asked again at @now@: if the tier changed, move to it
+    -- the rule asked again at @now@: if the place it gives now differs from
+    -- the one queued at, the tier or the deal of a new period, move to it
     askAgain :: Time -> StrictTVar m (WaitKey, Maybe (Floor m, (FloorClass, Ticket))) -> STM m Bool
     askAgain now entry = do
       (key@(_, ticket), fkey_m) <- readTVar entry
       tier <- readTVar bhRank >>= ($ now)
-      if tierOf tier == tierOfKey key
+      let !rank = queueRank bRotation bhId tier now
+      if rank == fst key
          then return False
          else do
            waiters <- readTVar bWaiters
-           let !rank    = queueRank bRotation bhId tier now
-               key'     = (rank, ticket)
+           let key'     = (rank, ticket)
                waiters' = Map.insert key' bhWake (Map.delete key waiters)
            writeTVar bWaiters waiters'
            when (fmap fst (Map.lookupMin waiters') /= fmap fst (Map.lookupMin waiters))
