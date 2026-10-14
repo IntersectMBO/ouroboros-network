@@ -112,7 +112,7 @@ import Data.ByteString.Lazy qualified as BL
 import Data.Int (Int64)
 import Data.Map (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (isJust, isNothing)
+import Data.Maybe (isJust)
 import Data.Monoid.Synchronisation (FirstToFinish (..))
 import Data.Strict.Tuple (pattern (:!:))
 
@@ -437,9 +437,11 @@ run Mux { muxMiniProtocols,
     mkLanes = case muxEgress of
       Nothing -> do
         q <- newQueue "egress"
+        held <- newTVarIO 0
         return ( Lanes { laneQueue = const q
                        , laneOf    = \_ _ -> Scheduled
-                       , laneAll   = [(Scheduled, q)] }
+                       , laneAll   = [(Scheduled, q)]
+                       , laneHeld  = held }
                , \sent -> [muxerJob "muxer" q Unscheduled sent bearer] )
 
       Just MuxEgress { meBudget, meBudgetHandle, meSlice, meLaneOf, meCharge } -> do
@@ -456,7 +458,8 @@ run Mux { muxMiniProtocols,
         let queueOf lane = case lookup lane qs of
                                 Just q  -> q
                                 Nothing -> queueOf Direct     -- 'Slice' without a slice bucket
-        return ( Lanes { laneQueue = queueOf, laneOf = meLaneOf, laneAll = qs }
+        held <- newTVarIO 0
+        return ( Lanes { laneQueue = queueOf, laneOf = meLaneOf, laneAll = qs, laneHeld = held }
                , \sent -> [ muxerJob ("muxer-" ++ laneName lane) q (egressOf lane) sent locked
                           | (lane, q) <- qs ] )
 
@@ -495,7 +498,7 @@ miniProtocolJob TracersI {
                   tracer_,
                   channelTracer_
                 }
-                Lanes { laneQueue, laneOf }
+                Lanes { laneQueue, laneOf, laneHeld }
                 MiniProtocolState {
                   miniProtocolInfo =
                     MiniProtocolInfo {
@@ -515,19 +518,21 @@ miniProtocolJob TracersI {
                 ("prtcl-" ++ (case miniProtocolNum of { MiniProtocolNum a -> show a}) ++ "." ++ show miniProtocolDirEnum)
   where
     jobAction = do
-      w <- newTVarIO BL.empty
+      wanton@Wanton { want = w, held } <- newWanton laneHeld
       let egressQueue = laneQueue (laneOf miniProtocolNum miniProtocolDirEnum)
-          chan = muxChannel channelTracer_ egressQueue (Wanton w)
+          chan = muxChannel channelTracer_ egressQueue wanton
                             miniProtocolNum miniProtocolDirEnum
                             miniProtocolIngressQueue
       (result, remainder) <- miniProtocolAction chan
       traceWith tracer_ (TraceTerminating miniProtocolNum miniProtocolDirEnum)
       atomically $ do
-        -- The Wanton w is the SDUs that are queued but not yet sent for this job.
-        -- Job threads will be prevented from exiting until all their SDUs have been
-        -- transmitted unless an exception/error is encountered. In that case all
-        -- jobs will be cancelled directly.
+        -- The Wanton w is the SDUs that are queued but not yet sent for this job,
+        -- and 'held' what a muxer has taken from it into a batch it has not yet
+        -- written. Job threads will be prevented from exiting until all their
+        -- SDUs have been written unless an exception/error is encountered. In
+        -- that case all jobs will be cancelled directly.
         readTVar w >>= check . BL.null
+        readTVar held >>= check . (== 0)
         writeTVar miniProtocolStatusVar StatusIdle
         putTMVar completionVar (Right result)
           `orElse` throwSTM (BlockedOnCompletionVar miniProtocolNum)
@@ -752,11 +757,13 @@ monitor tracers@TracersI {
           traceWith tracer TraceStopping
           atomically $ writeTVar muxStatus Stopping
           JobPool.cancelGroup jobpool MiniProtocolJob
-          -- wait for 2 seconds before every lane's egress queue is drained
+          -- wait for 2 seconds before every lane's egress queue is drained and
+          -- every batch a muxer holds is written
           _ <- timeout 2 $
             atomically $ do
-              heads <- mapM (tryPeekTBQueue . snd) (laneAll lanes)
-              check (all isNothing heads)
+              empties <- mapM (isEmptyTBQueue . snd) (laneAll lanes)
+              check (and empties)
+              readTVar (laneHeld lanes) >>= check . (== 0)
           atomically $ writeTVar muxStatus Stopped
           traceWith tracer TraceStopped
           -- by exiting the 'monitor' loop we let the job pool kill demuxer and
@@ -874,7 +881,7 @@ muxChannel
     -> MiniProtocolDir
     -> IngressQueue m
     -> ByteChannel m
-muxChannel tracer egressQueue want@(Wanton w) mc md q =
+muxChannel tracer egressQueue want@Wanton { want = w } mc md q =
     Channel { send, recv }
   where
     -- A soft limit on the egress buffer (Wanton) size.

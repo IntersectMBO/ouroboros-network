@@ -213,8 +213,10 @@ startServerEgresss pollInterval mkLane sndSizeV ad = forever $ do
       bearer <- getBearer (makeSocketBearer' pollInterval) sduTimeout sd buffer
       sndSize <- atomically $ takeTMVar sndSizeV
       eq <- atomically $ newTBQueue 100
-      w42 <- newTVarIO BL.empty
-      w41 <- newTVarIO BL.empty
+      heldAll <- newTVarIO 0
+      wt42 <- newWanton heldAll
+      wt41 <- newWanton heldAll
+      let w42 = want wt42
 
       let maxData = totalPayloadLen sndSize
           numberOfSdus = fromIntegral $ maxData `div` sndSize
@@ -227,13 +229,13 @@ startServerEgresss pollInterval mkLane sndSizeV ad = forever $ do
         replicateM_ numberOfCalls $ do
           let payload42s = replicate 10 $ BL.replicate sndSize 42
           let payload41s = replicate 10 $ BL.replicate 10 41
-          mapM_ (sendToMux w42 eq (MiniProtocolNum 42) ResponderDir) payload42s
-          mapM_ (sendToMux w41 eq (MiniProtocolNum 41) ResponderDir) payload41s
+          mapM_ (sendToMux wt42 eq (MiniProtocolNum 42) ResponderDir) payload42s
+          mapM_ (sendToMux wt41 eq (MiniProtocolNum 41) ResponderDir) payload41s
         when (runtSdus > 0) $ do
           let payload42s = replicate runtSdus $ BL.replicate sndSize 42
           let payload41s = replicate runtSdus $ BL.replicate 10 41
-          mapM_ (sendToMux w42 eq (MiniProtocolNum 42) ResponderDir) payload42s
-          mapM_ (sendToMux w41 eq (MiniProtocolNum 41) ResponderDir) payload41s
+          mapM_ (sendToMux wt42 eq (MiniProtocolNum 42) ResponderDir) payload42s
+          mapM_ (sendToMux wt41 eq (MiniProtocolNum 41) ResponderDir) payload41s
 
         -- Wait for the egress queue to empty
         atomically $ do
@@ -248,9 +250,9 @@ startServerEgresss pollInterval mkLane sndSizeV ad = forever $ do
         cancel aid
      )
   where
-    sendToMux :: StrictTVar IO BL.ByteString -> EgressQueue IO -> MiniProtocolNum -> MiniProtocolDir
+    sendToMux :: Wanton IO -> EgressQueue IO -> MiniProtocolNum -> MiniProtocolDir
               -> BL.ByteString -> IO ()
-    sendToMux w eq mc md msg = do
+    sendToMux wt@Wanton { want = w } eq mc md msg = do
      atomically $ do
       buf <- readTVar w
       if BL.length buf < 0x3ffff
@@ -258,7 +260,7 @@ startServerEgresss pollInterval mkLane sndSizeV ad = forever $ do
            let wasEmpty = BL.null buf
            writeTVar w (BL.append buf msg)
            when wasEmpty $
-             writeTBQueue eq (TLSRDemand mc md $ Wanton w)
+             writeTBQueue eq (TLSRDemand mc md wt)
          else retry
 
 -- | A scheduled lane on its own unlimited budget: every batch takes the fast
