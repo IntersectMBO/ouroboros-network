@@ -94,20 +94,18 @@ withTimeoutSerialNative body = body MonadTimer.timeout
 -- applications but not for network timers which have to be created and
 -- altered\/cancelled with very high frequency.
 --
--- The implementation here only relies upon 'threadDelay' which has an
--- efficient implementation on all platforms. It uses a separate monitoring
--- thread which will throw an exception to terminate the action if the
--- timeout expires. This is why it uses the \"with\" style: because it keeps
--- a monitoring thread over a region of execution that may use many timeouts.
--- The cost of allocating this thread is amortised over all the timeouts used.
+-- A monitoring thread is shared by all the timeouts in the scope. When a
+-- timeout completes, it only cancels its own STM state: the monitor can keep
+-- waiting on the existing 'registerDelay'. Once that delay expires, it picks
+-- up the latest timeout. This amortises timer registration over many calls
+-- when their deadlines keep moving forwards, as on mux's ingress path.
 --
--- This implementation is simplified by the constraint that the timeouts only
--- be used serially. In addition, it has the limitation that timeouts may not
--- always be detected promptly: e.g. a 10s timeout on an action that finishes
--- immediately, followed by a 5s timeout on an action will only actually be
--- interrupted after 10s. So it's possible that action with the 5s timeout runs
--- for up to 10s. This is ok for many applications provided that the variance
--- in timeouts is not too large and the timeouts don't need to be too tight.
+-- An earlier deadline wakes the monitor so it can register a shorter delay.
+-- The previous 'registerDelay' is left to expire. Thus repeatedly moving
+-- deadlines backwards does not benefit from the same amortisation.
+--
+-- Calls using the same timeout function must not overlap, including nested
+-- calls.
 --
 withTimeoutSerialAlternative
   :: forall m b. (MonadAsync m, MonadFork m,
@@ -144,7 +142,7 @@ data NextTimeout m = NoNextTimeout
                    | NextTimeout
                        !(ThreadId m)           -- Which thread to interrupt
                        !Time                   -- When to interrupt it
-                       !(TVar m TimeoutState)  -- Synchronisation state
+                       !(TVar m (TimeoutState m))  -- Synchronisation state
 
 
 newMonitorState :: MonadSTM m => m (MonitorState m)
@@ -161,7 +159,7 @@ setNewTimer :: MonadSTM m
             => MonitorState m
             -> ThreadId m
             -> Time
-            -> TVar m TimeoutState
+            -> TVar m (TimeoutState m)
             -> m ()
 setNewTimer MonitorState{nextTimeoutVar, curDeadlineVar, deadlineResetVar}
             !tid !deadline !stateVar =
@@ -178,7 +176,7 @@ setNewTimer MonitorState{nextTimeoutVar, curDeadlineVar, deadlineResetVar}
 --
 readNextTimeout :: MonadSTM m
                 => MonitorState m
-                -> m (ThreadId m, Time, TVar m TimeoutState)
+                -> m (ThreadId m, Time, TVar m (TimeoutState m))
 readNextTimeout MonitorState{nextTimeoutVar, curDeadlineVar, deadlineResetVar} = do
     atomically $ do
       nextTimeout <- readTVar nextTimeoutVar
@@ -196,18 +194,12 @@ readNextTimeout MonitorState{nextTimeoutVar, curDeadlineVar, deadlineResetVar} =
           return (tid, deadline, stateVar)
 
 
--- | Three normal states of the timeout, plus one pseudo state. We use these
--- states to provide proper communication between the action thread and the
--- monitoring thread.
+-- | Cancellation and expiry race to change 'TimeoutPending'. If expiry wins,
+-- cleanup must also stop the exception-delivery thread before returning.
 --
--- The valid transitions are from 'TimeoutPending' to 'TimeoutCancelled', and
--- from 'TimeoutPending' to 'TimeoutFired'. Additionally there is a transition
--- from 'TimeoutFired' to 'TimeoutTerminated'.
---
-data TimeoutState = TimeoutPending
-                  | TimeoutCancelled
-                  | TimeoutFired
-                  | TimeoutTerminated
+data TimeoutState m = TimeoutPending
+                    | TimeoutCancelled
+                    | TimeoutFired !(Async m ())
 
 
 -- | Exception used by 'withTimeoutSerial' to terminate the action when the
@@ -223,88 +215,44 @@ instance Exception TimeoutException where
 -- | The @timeout@ action we pass to the body in 'withTimeoutSerial'.
 --
 timeout :: forall m a.
-           (MonadFork m, MonadMonotonicTime m, MonadTimer m,
+           (MonadAsync m, MonadMonotonicTime m,
             MonadMask m, MonadThrow (STM m))
         => MonitorState m
         -> DiffTime -> m a -> m (Maybe a)
 timeout _            delay action | delay <  0 = Just <$> action
 timeout _            delay _      | delay == 0 = return Nothing
 timeout monitorState delay action =
-
-    -- We have to be very careful with async exceptions of course.
-    mask $ \restore -> do
-
-      -- Set up the timeout and pass it over to the monitoring thread.
-      -- This overwrites any previous timeout.
+    handle (\TimeoutException -> return Nothing) $
+      bracket register cancelTimeout (\_ -> Just <$> action)
+  where
+    register = do
       tid <- myThreadId
       timeoutStateVar <- newTVarIO TimeoutPending
       now <- getMonotonicTime
-      let deadline = addTime delay now
-      setNewTimer monitorState tid deadline timeoutStateVar
+      setNewTimer monitorState tid (delay `addTime` now) timeoutStateVar
+      return timeoutStateVar
 
-      -- Now we unmask exceptions to run the action. If we get the timeout
-      -- exception then we drop straight down to the outer 'catch' handler.
-      result <- restore action
-
-      -- The action completed without us getting an exception, but there's
-      -- a race condition with the monitoringThread to resolve. It could be
-      -- just about to send us an async exception when we drop out of the
-      -- masked region, or worse, outside of the scope of the 'catch' handler.
-      --
-      -- So we must synchronise with the monitoringThread to ensure that we
-      -- know positively one way or the other whether the timeout exception is
-      -- or is not going to be sent.
-      --
-      -- We do that by having both this thread and the monitoringThread do
-      -- an STM tx on the timeoutStateVar, to atomically move it into the
-      -- cancelled or fired state, depending on which thread gets there first.
-      -- So this is a race, but it's a race where we can positively establish
-      -- the outcome. If this thread gets there first we move it to the
-      -- cancelled state. If the monitoringThread gets there first it moves it
-      -- to the fired state.
-      --
-      -- This STM tx is not blocking, so we're guaranteed not to be interrupted
-      -- while we have async exceptions masked.
-      --
-      timeoutFired <- atomically $ do
+    -- This runs for successful actions and exceptions alike. Cancelling a
+    -- delivery thread interrupts even a blocked throwTo. It must finish before
+    -- another exception can let us leave the handler for this timeout.
+    cancelTimeout timeoutStateVar = uninterruptibleMask_ $ do
+      deliveryWorker <- atomically $ do
         st <- readTVar timeoutStateVar
         case st of
-          TimeoutFired   -> return True
-          TimeoutPending -> writeTVar timeoutStateVar TimeoutCancelled
-                         >> return False
-          _              -> throwSTM TimeoutImpossibleTimeoutState
-
-      -- If we established that the monitoring thread is definitely not firing
-      -- the timeout exception then we're done.
-      --
-      -- If on the other hand we lost the race and the monitoring thread is
-      -- about to come for us then it's crucial that we block and wait for
-      -- our own demise, otherwise we could escape the scope of the outer
-      -- 'catch' handler.
-      --
-      -- We do that blocking wait with another STM tx on the timeoutStateVar,
-      -- this time waiting for the monitoring thread to set it to the
-      -- TimeoutTerminated state. But the monitoring thread only sets it to
-      -- that state /after/ raising the async exception in this thread. So
-      -- we will never actually reach that terminated state.
-      --
-      -- Note also that blocking STM txs are points where async exceptions that
-      -- are pending (due to our masked state) can be raised. Hence there is no
-      -- need for us to unmask for this bit.
-      --
-      if not timeoutFired
-        then return (Just result)
-        else atomically $ do
-               st <- readTVar timeoutStateVar
-               case st of
-                 TimeoutFired      -> retry
-                 TimeoutTerminated -> throwSTM TimeoutImpossibleReachedTerminated
-                 _                 -> throwSTM TimeoutImpossibleTimeoutState
-
-    `catch` \TimeoutException -> return Nothing
+          TimeoutPending -> do
+            writeTVar timeoutStateVar TimeoutCancelled
+            return Nothing
+          TimeoutFired deliveryWorker ->
+            return (Just deliveryWorker)
+          TimeoutCancelled ->
+            throwSTM TimeoutImpossibleTimeoutState
+      -- Cancel and wait for the delivery thread to exit to so no timeout
+      -- can arrive after we leave this timeout's handler.
+      mapM_ cancel deliveryWorker
 
 
-monitoringThread :: (MonadFork m, MonadSTM m,
+monitoringThread :: forall m.
+                    (MonadAsync m, MonadFork m, MonadMask m,
                      MonadMonotonicTime m,
                      MonadTimer m, MonadThrow (STM m))
                  => MonitorState m -> m ()
@@ -328,46 +276,58 @@ monitoringThread monitorState@MonitorState{deadlineResetVar} = do
         -- or to be notified that the timer deadline moved backwards
         (readTVar deadlineResetVar >>= check)
 
-    -- Having woken up, we check to see if we need to send the timeout
-    -- exception. If the timeoutStateVar we grabbed is still in the pending
-    -- state after we have waited for the deadline then clearly it went over
-    -- and we will send the timeout exception.
-    --
-    -- As described above, there is a race between the timeout and the action
-    -- completing and we have to establish which happens first. So this is
-    -- the other side of that race. Here if we win the race we move to the
-    -- TimeoutFired state.
-    cancelled <- atomically $ do
-                   st <- readTVar timeoutStateVar
-                   case st of
-                     TimeoutPending   -> writeTVar timeoutStateVar TimeoutFired
-                                      >> return False
-                     TimeoutCancelled -> return True
-                     _                -> throwSTM TimeoutImpossibleMonitorState
+    -- Avoid allocating a delivery thread for the usual case: an action that
+    -- has already completed. Recheck when publishing the worker, since cleanup
+    -- can still win the race while the worker is being created.
+    pending <- atomically $ do
+      st <- readTVar timeoutStateVar
+      case st of
+        TimeoutPending   -> return True
+        TimeoutCancelled -> return False
+        TimeoutFired _   -> throwSTM TimeoutImpossibleMonitorState
 
-    -- If it turns out that the timeout was cancelled before the timeout
-    -- expired then we do nothing and go back to the start.
-    --
-    -- But if it was not cancelled then we will send it the asynchronous
-    -- exception. As described above there is a corner case where we won
-    -- the race very narrowly and so the other thread has to block and wait
-    -- for us to send the asynchronous exception. The way we make it block to
-    -- wait for us -- without any concern that it might be classed as being
-    -- blocked indefinitely -- is to make it wait for a state change that we
-    -- will only perform /after/ we have raised the exception in the target
-    -- thread.
-    --
-    unless cancelled $ do
-      throwTo tid TimeoutException
-      -- Set the state the other thread may be waiting for /after/ raising the
-      -- exception in the other thread.
-      atomically $ writeTVar timeoutStateVar TimeoutTerminated
+    when pending $
+      withAsync (deliveryWorker timeoutStateVar tid) $
+        \deliveryWorkerHandle -> do
+          atomically $ do
+            st <- readTVar timeoutStateVar
+            case st of
+              TimeoutPending ->
+                -- Publish the worker so `cancelTimeout` can cancel it before
+                -- the worker is allowed to attempt delivery.
+                writeTVar timeoutStateVar (TimeoutFired deliveryWorkerHandle)
+              TimeoutCancelled -> return ()
+              TimeoutFired _   -> throwSTM TimeoutImpossibleMonitorState
+          -- Cancellation by the action's cleanup is normal. In either case the
+          -- monitor can go on to the next timeout once delivery has finished.
+          void $ waitCatch deliveryWorkerHandle
+  where
+    deliveryWorker :: TVar m (TimeoutState m) -> ThreadId m -> m ()
+    deliveryWorker timeoutStateVar tid = do
+      -- The delivery thread. Do not throw until `cancelTimeout` can find
+      -- and cancel this worker.
+      fire <- atomically $ do
+        st <- readTVar timeoutStateVar
+        case st of
+          TimeoutPending   -> retry
+          TimeoutCancelled -> return False
+          TimeoutFired _   -> return True
+      when fire $
+        -- Deliver a timeout exception. This may block while the target
+        -- masks exceptions.  If the action exits before delivery,
+        -- `cancelTimeout` cancels this worker before leaving the timeout
+        -- handler.
+        --
+        -- While `cancelTimeout` is uninterruptibly masked, a pending
+        -- timeout cannot be delivered.  Cancelling the `deliveryWorker`
+        -- interrupts its blocked `throwTo`, thus the race between both is
+        -- resolved.
+        throwTo tid TimeoutException
 
 
 -- | These are all \"impossible\" errors.
 --
-data TimeoutAssertion = TimeoutImpossibleReachedTerminated
-                      | TimeoutImpossibleTimeoutState
+data TimeoutAssertion = TimeoutImpossibleTimeoutState
                       | TimeoutImpossibleMonitorState
   deriving Show
 
