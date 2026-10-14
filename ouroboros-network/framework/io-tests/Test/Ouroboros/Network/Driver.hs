@@ -57,6 +57,7 @@ import Control.Monad.Class.MonadTest
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
+import Control.Monad.Class.MonadUnique (MonadUnique)
 import Control.Monad.IOSim
 import Control.Tracer
 
@@ -379,6 +380,7 @@ prop_channel_reqresp
      , MonadMask     m
      , MonadThrow (STM m)
      , MonadTimer    m
+     , MonadUnique   m
      )
   => Tracer m (TraceSendRecv (ReqResp String ()))
   -> Word
@@ -482,6 +484,7 @@ prop_channel_ping_pong_with_limits
      , MonadMask       m
      , MonadTest       m
      , MonadTimer      m
+     , MonadUnique     m
      , MonadThrow (STM m)
      )
   => DiffTime

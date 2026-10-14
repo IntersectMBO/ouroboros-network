@@ -80,6 +80,7 @@ import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTimer.SI hiding (timeout)
+import Control.Monad.Class.MonadUnique (MonadUnique)
 import Control.Tracer
 
 import Network.Mux.Bearer
@@ -230,6 +231,7 @@ run :: forall m (mode :: Mode).
        , Alternative (STM m)
        , MonadThrow (STM m)
        , MonadTimer m
+       , MonadUnique m
        , MonadMask m
        )
     => Mux mode m

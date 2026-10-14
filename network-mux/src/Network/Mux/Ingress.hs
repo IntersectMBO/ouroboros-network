@@ -24,6 +24,7 @@ import Control.Monad
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTimer.SI hiding (timeout)
+import Control.Monad.Class.MonadUnique (MonadUnique)
 import Control.Tracer (Tracer)
 
 import Network.Mux.Timeout
@@ -100,7 +101,7 @@ data MiniProtocolDispatchInfo m =
 -- | demux runs as a single separate thread and reads complete 'SDU's from
 -- the underlying Bearer and forwards it to the matching ingress queue.
 demuxer :: (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
-            MonadTimer m)
+            MonadTimer m, MonadUnique m)
       => [MiniProtocolState mode m]
       -> Tracer m BearerTrace
       -> Bearer m

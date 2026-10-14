@@ -28,6 +28,7 @@ import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
+import Control.Monad.Class.MonadUnique (MonadUnique)
 import Control.Monad.IOSim
 import Control.Tracer (Tracer (..), contramap, contramapM, nullTracer)
 
@@ -205,6 +206,7 @@ clientServerSimulation
        , MonadST          m
        , MonadThrow  (STM m)
        , MonadTimer       m
+       , MonadUnique      m
 
        , Serialise payload
        , Eq payload

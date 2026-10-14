@@ -32,6 +32,7 @@ import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
+import Control.Monad.Class.MonadUnique (MonadUnique)
 import Control.Tracer (Tracer, contramap, nullTracer)
 
 import Ouroboros.Network.AnchoredFragment (AnchoredFragment, anchorPoint)
@@ -67,7 +68,7 @@ data NodeToNodeVersion = NodeToNodeTestVersion
 --
 blockFetchExample0 :: forall m.
                       (MonadST m, MonadAsync m, MonadDelay m, MonadEvaluate m, MonadFork m,
-                       MonadTime m, MonadTimer m, MonadMask m, MonadThrow (STM m))
+                       MonadTime m, MonadUnique m, MonadTimer m, MonadMask m, MonadThrow (STM m))
                    => FetchMode
                    -> Tracer m (TraceDecisionEvent Int BlockHeader)
                    -> Tracer m (TraceLabelPeer Int
@@ -186,7 +187,7 @@ blockFetchExample0 fetchMode decisionTracer clientStateTracer clientMsgTracer
 --
 blockFetchExample1 :: forall m.
                       (MonadST m, MonadAsync m, MonadDelay m, MonadEvaluate m, MonadFork m,
-                       MonadTime m, MonadTimer m, MonadMask m, MonadThrow (STM m))
+                       MonadTime m, MonadUnique m, MonadTimer m, MonadMask m, MonadThrow (STM m))
                    => FetchMode
                    -> Tracer m (TraceDecisionEvent Int BlockHeader)
                    -> Tracer m (TraceLabelPeer Int
@@ -357,6 +358,7 @@ runFetchClient :: ( MonadAsync m
                   , MonadST m
                   , MonadTime m
                   , MonadTimer m
+                  , MonadUnique m
                   , Ord peerid
                   , Serialise block
                   , Serialise point
@@ -389,6 +391,7 @@ runFetchServer :: forall block point m a.
                   , MonadST m
                   , MonadTime m
                   , MonadTimer m
+                  , MonadUnique m
                   , Serialise block
                   , Serialise point
                   , ShowProxy block
@@ -416,6 +419,7 @@ runFetchClientAndServerAsync
                   , MonadST m
                   , MonadTime m
                   , MonadTimer m
+                  , MonadUnique m
                   , Ord peerid
                   , Show peerid
                   , Serialise block

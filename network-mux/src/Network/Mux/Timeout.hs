@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
@@ -32,6 +33,7 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI (MonadTimer, registerDelay)
 import Control.Monad.Class.MonadTimer.SI qualified as MonadTimer
+import Control.Monad.Class.MonadUnique (MonadUnique (..))
 
 
 -- | The type of the 'System.Timeout.timeout' function.
@@ -50,10 +52,10 @@ type TimeoutFn m = forall a. DiffTime -> m a -> m (Maybe a)
 -- The implementation has a serial constraint: the body action that calls
 -- @timeout@ can /only do so from one thread at once/.
 --
-withTimeoutSerial, withTimeoutSerialNative
+withTimeoutSerial
   :: forall m b. (MonadAsync m, MonadFork m,
                   MonadMonotonicTime m, MonadTimer m,
-                  MonadMask m, MonadThrow (STM m))
+                  MonadMask m, MonadThrow (STM m), MonadUnique m)
   => (TimeoutFn m -> m b) -> m b
 
 #if defined(mingw32_HOST_OS)
@@ -64,6 +66,9 @@ withTimeoutSerial = withTimeoutSerialNative
 
 -- | This version simply passes the native platform's 'MonadTimer.timeout'.
 --
+withTimeoutSerialNative
+  :: MonadTimer m
+  => (TimeoutFn m -> m b) -> m b
 withTimeoutSerialNative body = body MonadTimer.timeout
 
 
@@ -105,12 +110,13 @@ withTimeoutSerialNative body = body MonadTimer.timeout
 -- deadlines backwards does not benefit from the same amortisation.
 --
 -- Calls using the same timeout function must not overlap, including nested
--- calls.
+-- calls. Separate scopes may be nested. Each scope allocates a unique value
+-- once and uses its hash to identify its timeout exceptions.
 --
 withTimeoutSerialAlternative
   :: forall m b. (MonadAsync m, MonadFork m,
                   MonadMonotonicTime m, MonadTimer m,
-                  MonadMask m, MonadThrow (STM m))
+                  MonadMask m, MonadThrow (STM m), MonadUnique m)
   => (TimeoutFn m -> m b) -> m b
 withTimeoutSerialAlternative body = do
 
@@ -135,7 +141,10 @@ data MonitorState m =
        curDeadlineVar   :: !(TVar m Time),
 
        -- written by timeout combinator, read and reset by monitoring thread
-       deadlineResetVar :: !(TVar m Bool)
+       deadlineResetVar :: !(TVar m Bool),
+
+       -- shared `TimeoutFnId` between `timeout` and `monitoringThread`
+       timeoutFnId      :: !TimeoutFnId
      }
 
 data NextTimeout m = NoNextTimeout
@@ -145,11 +154,15 @@ data NextTimeout m = NoNextTimeout
                        !(TVar m (TimeoutState m))  -- Synchronisation state
 
 
-newMonitorState :: MonadSTM m => m (MonitorState m)
+newMonitorState :: ( MonadSTM m
+                   , MonadUnique m
+                   )
+                => m (MonitorState m)
 newMonitorState = do
     nextTimeoutVar   <- newTVarIO NoNextTimeout
     curDeadlineVar   <- newTVarIO (Time 0)
     deadlineResetVar <- newTVarIO False
+    timeoutFnId      <- TimeoutFnId . hashUnique <$> newUnique
     return MonitorState{..}
 
 
@@ -201,11 +214,18 @@ data TimeoutState m = TimeoutPending
                     | TimeoutCancelled
                     | TimeoutFired !(Async m ())
 
-
--- | Exception used by 'withTimeoutSerial' to terminate the action when the
--- timeout occurs.
+-- | A unique identifier for timeouts of a given timeout function.  It allows
+-- us to distinguish scoped `withTimeoutSerialAlternative` timeout exceptions.
 --
-data TimeoutException = TimeoutException deriving Show
+newtype TimeoutFnId = TimeoutFnId Int
+  deriving (Eq, Show)
+
+-- | The hash of a unique value identifies the scope, keeping the exception
+-- independent of the monad and the state parameter of 'IOSim'. This assumes
+-- that 'hashUnique' does not collide between overlapping scopes.
+--
+newtype TimeoutException = TimeoutException TimeoutFnId
+  deriving (Eq, Show)
 
 instance Exception TimeoutException where
   toException   = asyncExceptionToException
@@ -221,8 +241,14 @@ timeout :: forall m a.
         -> DiffTime -> m a -> m (Maybe a)
 timeout _            delay action | delay <  0 = Just <$> action
 timeout _            delay _      | delay == 0 = return Nothing
-timeout monitorState delay action =
-    handle (\TimeoutException -> return Nothing) $
+timeout monitorState@MonitorState { timeoutFnId } delay action =
+    handleJust (\case
+                e@(TimeoutException fnid)
+                  | fnid == timeoutFnId
+                  -> Just e
+                  | otherwise
+                  -> Nothing)
+               (\_ -> return Nothing) $
       bracket register cancelTimeout (\_ -> Just <$> action)
   where
     register = do
@@ -256,7 +282,7 @@ monitoringThread :: forall m.
                      MonadMonotonicTime m,
                      MonadTimer m, MonadThrow (STM m))
                  => MonitorState m -> m ()
-monitoringThread monitorState@MonitorState{deadlineResetVar} = do
+monitoringThread monitorState@MonitorState{deadlineResetVar, timeoutFnId} = do
   threadId <- myThreadId
   labelThread threadId "timeout-monitoring-thread"
   forever $ do
@@ -322,7 +348,7 @@ monitoringThread monitorState@MonitorState{deadlineResetVar} = do
         -- timeout cannot be delivered.  Cancelling the `deliveryWorker`
         -- interrupts its blocked `throwTo`, thus the race between both is
         -- resolved.
-        throwTo tid TimeoutException
+        throwTo tid (TimeoutException timeoutFnId)
 
 
 -- | These are all \"impossible\" errors.

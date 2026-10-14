@@ -70,6 +70,7 @@ import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
+import Control.Monad.Class.MonadUnique (MonadUnique)
 import Data.Bifunctor (first)
 import Data.ByteString.Lazy qualified as BL
 import Data.Foldable (traverse_)
@@ -273,6 +274,7 @@ connectToNode
      , Mx.MonadReadBuffer m
      , MonadSTM           m
      , MonadTimer         m
+     , MonadUnique        m
      , MonadThrow         m
      , MonadThrow    (STM m)
      , NFData vData
@@ -312,6 +314,7 @@ connectToNodeWithMux
      , Mx.MonadReadBuffer m
      , MonadSTM           m
      , MonadTimer         m
+     , MonadUnique        m
      , MonadThrow         m
      , MonadThrow    (STM m)
      , NFData vData
@@ -375,6 +378,7 @@ connectToNode'
      , Mx.MonadReadBuffer m
      , MonadSTM           m
      , MonadTimer         m
+     , MonadUnique        m
      , MonadThrow         m
      , MonadThrow   (STM m)
      , NFData vData
@@ -410,6 +414,7 @@ connectToNodeWithMux'
      , Mx.MonadReadBuffer m
      , MonadSTM           m
      , MonadTimer         m
+     , MonadUnique        m
      , MonadThrow         m
      , MonadThrow    (STM m)
      , NFData vData

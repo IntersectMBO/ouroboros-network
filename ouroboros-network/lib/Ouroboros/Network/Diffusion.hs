@@ -34,6 +34,7 @@ import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
+import Control.Monad.Class.MonadUnique (MonadUnique)
 import Control.Monad.Fix (MonadFix)
 import Control.Tracer (Tracer, contramap, nullTracer, traceWith)
 #if !defined(mingw32_HOST_OS) && !defined(wasm32_HOST_ARCH)
@@ -117,6 +118,7 @@ runM
        , MonadCatch  (STM m)
        , MonadTime        m
        , MonadTimer       m
+       , MonadUnique      m
        , MonadMVar        m
        , Typeable   ntnAddr
        , Hashable   ntnAddr

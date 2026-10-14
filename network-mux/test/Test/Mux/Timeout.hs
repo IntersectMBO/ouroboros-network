@@ -19,6 +19,7 @@ import Control.Monad.Class.MonadTest (exploreRaces)
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI hiding (timeout)
+import Control.Monad.Class.MonadUnique (MonadUnique)
 import Control.Monad.IOSim
 
 import Network.Mux.Time (microsecondsToDiffTime)
@@ -65,6 +66,18 @@ tests =
       , testProperty "prop_caught_async_exception_sim withTimeoutSerialAlternative" $
           prop_caught_async_exception_sim withTimeoutSerialAlternative
 
+      , testProperty "prop_outer_timeout_sim withTimeoutSerialNative" $
+          prop_outer_timeout_sim withTimeoutSerialNative
+
+      , testProperty "prop_outer_timeout_sim withTimeoutSerialAlternative" $
+          prop_outer_timeout_sim withTimeoutSerialAlternative
+
+      , testProperty "prop_inner_timeout_sim withTimeoutSerialNative" $
+          prop_inner_timeout_sim withTimeoutSerialNative
+
+      , testProperty "prop_inner_timeout_sim withTimeoutSerialAlternative" $
+          prop_inner_timeout_sim withTimeoutSerialAlternative
+
         -- The native timeout in io-sim-1.8.0.1 delivers a stale exception
         -- at the deadline; its Sim test is omitted until that is fixed.
       , testProperty "prop_exception_at_deadline_sim withTimeoutSerialAlternative" $
@@ -89,6 +102,18 @@ tests =
 
       , testProperty "prop_caught_async_exception_simpor withTimeoutSerialAlternative" $
           prop_caught_async_exception_simpor withTimeoutSerialAlternative
+
+      , testProperty "prop_outer_timeout_simpor withTimeoutSerialNative" $
+          prop_outer_timeout_simpor withTimeoutSerialNative
+
+      , testProperty "prop_outer_timeout_simpor withTimeoutSerialAlternative" $
+          prop_outer_timeout_simpor withTimeoutSerialAlternative
+
+      , testProperty "prop_inner_timeout_simpor withTimeoutSerialNative" $
+          prop_inner_timeout_simpor withTimeoutSerialNative
+
+      , testProperty "prop_inner_timeout_simpor withTimeoutSerialAlternative" $
+          prop_inner_timeout_simpor withTimeoutSerialAlternative
 
       , testProperty "prop_exception_at_deadline_simpor withTimeoutSerialNative" $
           prop_exception_at_deadline_simpor withTimeoutSerialNative
@@ -130,6 +155,18 @@ tests =
 
       , testProperty "prop_caught_async_exception_io withTimeoutSerialAlternative" $
           prop_caught_async_exception_io withTimeoutSerialAlternative
+
+      , testProperty "prop_outer_timeout_io withTimeoutSerialNative" $
+          prop_outer_timeout_io withTimeoutSerialNative
+
+      , testProperty "prop_outer_timeout_io withTimeoutSerialAlternative" $
+          prop_outer_timeout_io withTimeoutSerialAlternative
+
+      , testProperty "prop_inner_timeout_io withTimeoutSerialNative" $
+          prop_inner_timeout_io withTimeoutSerialNative
+
+      , testProperty "prop_inner_timeout_io withTimeoutSerialAlternative" $
+          prop_inner_timeout_io withTimeoutSerialAlternative
 
       , testProperty "prop_exception_at_deadline_io withTimeoutSerialNative" $
           prop_exception_at_deadline_io withTimeoutSerialNative
@@ -193,6 +230,23 @@ caughtAsyncException withTimeout =
           return $ result === Left ActionException
 
 
+-- Independent scopes must handle only their own timeout exceptions.
+nestedTimeouts :: TimeoutConstraints m
+               => WithTimeout m
+               -> DiffTime
+               -- ^ outer delay
+               -> DiffTime
+               -- ^ inner delay
+               -> Maybe (Maybe ())
+               -- ^ expected result
+               -> m Property
+nestedTimeouts withTimeout outerDelay innerDelay expected =
+    withTimeout $ \outer ->
+      withTimeout $ \inner -> do
+        result <- outer outerDelay $ inner innerDelay $ atomically retry
+        return $ result === expected
+
+
 -- The action can throw just as the monitor starts sending its exception.
 -- Either result is valid, but delivery must be cancelled before leaving timeout.
 exceptionAtDeadline :: forall m. TimeoutConstraints m => WithTimeout m -> m Property
@@ -228,6 +282,7 @@ type TimeoutConstraints m =
       , MonadFork  m
       , MonadTime  m
       , MonadTimer m
+      , MonadUnique m
       , MonadMask  m
       , MonadThrow (STM m)
       )
@@ -533,6 +588,18 @@ prop_caught_async_exception_sim withTimeout =
       caughtAsyncException withTimeout
 
 
+prop_outer_timeout_sim :: (forall s. WithTimeout (IOSim s)) -> Property
+prop_outer_timeout_sim withTimeout =
+    once $ either (\err -> counterexample (show err) False) id $ runSim $
+      nestedTimeouts withTimeout 0.01 0.1 Nothing
+
+
+prop_inner_timeout_sim :: (forall s. WithTimeout (IOSim s)) -> Property
+prop_inner_timeout_sim withTimeout =
+    once $ either (\err -> counterexample (show err) False) id $ runSim $
+      nestedTimeouts withTimeout 0.1 0.01 (Just Nothing)
+
+
 prop_exception_at_deadline_sim :: (forall s. WithTimeout (IOSim s)) -> Property
 prop_exception_at_deadline_sim withTimeout =
     once $ either (\err -> counterexample (show err) False) id $ runSim $
@@ -566,6 +633,24 @@ prop_caught_async_exception_simpor withTimeout =
     once $ exploreSimTrace (withScheduleBound 100) (do
       exploreRaces
       caughtAsyncException withTimeout) $ \_ trace ->
+        either (\err -> counterexample (show err) False) id $
+          traceResult False trace
+
+
+prop_outer_timeout_simpor :: (forall s. WithTimeout (IOSim s)) -> Property
+prop_outer_timeout_simpor withTimeout =
+    once $ exploreSimTrace (withScheduleBound 100) (do
+      exploreRaces
+      nestedTimeouts withTimeout 0.01 0.1 Nothing) $ \_ trace ->
+        either (\err -> counterexample (show err) False) id $
+          traceResult False trace
+
+
+prop_inner_timeout_simpor :: (forall s. WithTimeout (IOSim s)) -> Property
+prop_inner_timeout_simpor withTimeout =
+    once $ exploreSimTrace (withScheduleBound 100) (do
+      exploreRaces
+      nestedTimeouts withTimeout 0.1 0.01 (Just Nothing)) $ \_ trace ->
         either (\err -> counterexample (show err) False) id $
           traceResult False trace
 
@@ -624,6 +709,16 @@ prop_caught_action_exception_io withTimeout =
 prop_caught_async_exception_io :: WithTimeout IO -> Property
 prop_caught_async_exception_io withTimeout =
     once $ ioProperty $ caughtAsyncException withTimeout
+
+
+prop_outer_timeout_io :: WithTimeout IO -> Property
+prop_outer_timeout_io withTimeout =
+    once $ ioProperty $ nestedTimeouts withTimeout 0.01 0.1 Nothing
+
+
+prop_inner_timeout_io :: WithTimeout IO -> Property
+prop_inner_timeout_io withTimeout =
+    once $ ioProperty $ nestedTimeouts withTimeout 0.1 0.01 (Just Nothing)
 
 
 prop_exception_at_deadline_io :: WithTimeout IO -> Property
