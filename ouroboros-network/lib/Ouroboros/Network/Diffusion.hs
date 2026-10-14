@@ -502,10 +502,10 @@ runM Interfaces
 
       localRootsVar <- newTVarIO mempty
 
-      -- a peer's standing, read at every query of the rule: a local root,
-      -- a partner of long standing, a duplex peer hot both ways for
-      -- 'esTenureThreshold', or one of the rest, whom the credit buckets
-      -- then class
+      -- a peer's standing, read at every query of the rule: a local root; a
+      -- partner, a duplex peer hot both ways for 'esTenureThreshold', served
+      -- as one while its own bucket has credit; or one of the rest, whom the
+      -- credit buckets then class
       let standingOf :: DiffTime -> ntnAddr -> DataFlow -> STM m Bool -> Time -> STM m Standing
           standingOf tenureThreshold addr dataFlow remoteHot now = do
             -- the governor's view of the groups: a group with a zero

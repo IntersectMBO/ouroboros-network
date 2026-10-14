@@ -640,7 +640,8 @@ data EgressScheduling = EgressScheduling {
     -- charged to the budget on credit; zero disables it. With the slice's
     -- share at most 100, see 'egressSharesFit'
     esRotationPeriod      :: DiffTime,     -- ^ how often the order within a tier is
-                                      --   re-dealt; 0 for none, FIFO within a tier
+                                      --   re-dealt; 0 for none, FIFO within a tier;
+                                      --   local roots take turns regardless
     esNotSentLowWat       :: Maybe Int,    -- ^ bytes
     esLaneOf              :: MiniProtocolNum -> MiniProtocolDir -> Mx.Lane,
     esTenureThreshold     :: DiffTime,
