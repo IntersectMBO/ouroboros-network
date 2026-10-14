@@ -30,7 +30,7 @@ module Test.Ouroboros.Network.PeerSelection.RootPeersDNS
   ) where
 
 import Control.Applicative (Alternative)
-import Control.Monad (forever, replicateM_)
+import Control.Monad (forever, replicateM_, when)
 import Data.Bifunctor (bimap)
 import Data.ByteString.Char8 (pack)
 import Data.ByteString.Char8 qualified as BSC
@@ -45,10 +45,10 @@ import Data.List.NonEmpty (NonEmpty (..))
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (mapMaybe)
+import Data.Maybe (listToMaybe, mapMaybe)
 import Data.Set (Set)
 import Data.Set qualified as Set
-import Data.Time.Clock (picosecondsToDiffTime)
+import Data.Time.Clock (diffTimeToPicoseconds, picosecondsToDiffTime)
 import Data.Void (Void)
 import Data.Word (Word16)
 import Network.DNS (DNSError (NameError), DNSMessage, ResourceRecord (..),
@@ -60,7 +60,7 @@ import System.Random
 
 import Control.Concurrent.Class.MonadSTM qualified as LazySTM
 import Control.Concurrent.Class.MonadSTM.Strict
-import Control.Exception (throw)
+import Control.Exception (IOException, throw)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadSay (MonadSay (..))
 import Control.Monad.Class.MonadThrow
@@ -94,6 +94,10 @@ tests =
                       prop_local_resolvesDomainsCorrectly
        , testProperty "updates domains correctly"
                       prop_local_updatesDomainsCorrectly
+       , testProperty "reconfigures IP addresses"
+                      prop_local_reconfiguresIPs
+       , testProperty "publishes IP addresses before setting up a resolver"
+                      prop_local_publishesBeforeResolver
        ]
     , testGroup "publicRootPeersProvider"
        [ testProperty "resolves domains correctly"
@@ -369,6 +373,16 @@ genDiffTime lo hi =
     . getNonNegative
   <$> resize (fromIntegral hi) arbitrary
 
+-- | Whether the timeouts and delays are whole milliseconds, as 'genDiffTime'
+-- draws them and their shrinkers keep them; the reload instant of
+-- 'reloadDelay' relies on it.
+wholeMilliseconds :: Script DNSTimeout -> Script DNSLookupDelay -> Bool
+wholeMilliseconds (Script timeouts) (Script delays) =
+     all (wholeMillisecond . getDNSTimeout) timeouts
+  && all (wholeMillisecond . getDNSLookupDelay) delays
+  where
+    wholeMillisecond t = diffTimeToPicoseconds t `mod` 1_000_000_000 == 0
+
 
 newtype DNSTimeout = DNSTimeout { getDNSTimeout :: DiffTime }
   deriving Show
@@ -449,6 +463,14 @@ mockDNSActions tracer ofType0 toPeerAddr dnsMapVar dnsTimeoutScript dnsLookupDel
                       | (domain', prio, weight, port) <- ds
                       , let rdata = DNS.RD_SRV prio weight (fromIntegral port) domain']}
 
+-- | When 'mockLocalRootPeersProvider' applies its reconfiguration: half a
+-- millisecond past the second, when no lookup completes, as the delays and
+-- timeouts are whole milliseconds and the TTL waits whole seconds. An answer
+-- committed in the instant of the reload could have its thread stopped before
+-- it is traced.
+reloadDelay :: DiffTime
+reloadDelay = 100.0005
+
 -- | 'localRootPeersProvider' running with a given MockRoots env
 --
 mockLocalRootPeersProvider :: forall m.
@@ -462,11 +484,15 @@ mockLocalRootPeersProvider :: forall m.
                               )
                            => Tracer m (TestTraceEvent (TraceLocalRootPeers () SockAddr))
                            -> MockRoots
+                           -> Maybe [( HotValency
+                                     , WarmValency
+                                     , Map RelayAccessPoint (LocalRootConfig ()))]
+                           -- ^ a reconfiguration, applied after 'reloadDelay'
                            -> Script DNSTimeout
                            -> Script DNSLookupDelay
                            -> TestSeed
                            -> m ()
-mockLocalRootPeersProvider tracer (MockRoots localRootPeers dnsMapScript _ _)
+mockLocalRootPeersProvider tracer (MockRoots localRootPeers dnsMapScript _ _) reconfiguration
                            dnsTimeoutScript dnsLookupDelayScript dnsSeed = do
       dnsMapScriptVar <- initScript' dnsMapScript
       dnsMap <- stepScript' dnsMapScriptVar
@@ -476,7 +502,9 @@ mockLocalRootPeersProvider tracer (MockRoots localRootPeers dnsMapScript _ _)
       dnsLookupDelayScriptVar <- initScript' dnsLookupDelayScript
       localRootPeersVar <- newTVarIO localRootPeers
       resultVar <- newTVarIO mempty
-      withAsync (updateDNSMap dnsMapScriptVar dnsMapVar) $ \_ -> do
+      traceTVarIO resultVar (\_ groups -> pure (TraceDynamic (Published groups)))
+      withAsync (updateDNSMap dnsMapScriptVar dnsMapVar) $ \_ ->
+        withAsync (reconfigure localRootPeersVar) $ \_ -> do
         void $ MonadTimer.timeout 3600 $
           localRootPeersProvider (contramap Left tracer)
                                  PeerActionsDNS {
@@ -494,12 +522,22 @@ mockLocalRootPeersProvider tracer (MockRoots localRootPeers dnsMapScript _ _)
                                  (mkStdGen $ unTestSeed dnsSeed)
                                  (readTVar localRootPeersVar)
                                  resultVar
-        -- if there's no dns domain, `localRootPeersProvider` will never write
-        -- to `resultVar`; thus the `traceTVarIO` callback will never execute.
-        -- By reading & writing to the `TVar` we are forcing it to run at least
-        -- once.
+        -- if the groups never differ from the empty ones `resultVar` starts
+        -- with, `localRootPeersProvider` never writes to it, and the
+        -- `traceTVarIO` callback never executes. By reading & writing to the
+        -- `TVar` we are forcing it to run at least once.
         atomically $ readTVar resultVar >>= writeTVar resultVar
   where
+    reconfigure :: StrictTVar m [( HotValency
+                                 , WarmValency
+                                 , Map RelayAccessPoint (LocalRootConfig ()))]
+                -> m ()
+    reconfigure localRootPeersVar = do
+      threadDelay reloadDelay
+      case reconfiguration of
+           Just localRootPeers' -> atomically (writeTVar localRootPeersVar localRootPeers')
+           Nothing              -> return ()
+
     updateDNSMap :: StrictTVar m (Script MockDNSMap)
                  -> StrictTVar m MockDNSMap
                  -> m Void
@@ -685,6 +723,7 @@ prop_local_preservesIPs mockRoots@(MockRoots localRoots _ _ _)
            $ runSimTrace
            $ mockLocalRootPeersProvider tracerTraceLocalRoots
                                         mockRoots
+                                        Nothing
                                         dnsTimeoutScript
                                         dnsLookupDelayScript
                                         dnsSeed
@@ -727,6 +766,241 @@ prop_local_preservesIPs mockRoots@(MockRoots localRoots _ _ _)
         $ localRootAddressesSet `Set.isSubsetOf` localGroupEventsAddressesSet
         .&&. checkAll t
 
+-- | The configuration without its domain names.
+ipEntriesOnly :: [(HotValency, WarmValency, Map RelayAccessPoint (LocalRootConfig ()))]
+              -> [(HotValency, WarmValency, Map RelayAccessPoint (LocalRootConfig ()))]
+ipEntriesOnly = map (\(h, w, m) -> (h, w, Map.filterWithKey (\rap _ -> isRelayAccessAddress rap) m))
+
+-- | The IP entries of a group, as the provider publishes them.
+ipAddressesOf :: Map RelayAccessPoint (LocalRootConfig ()) -> Map SockAddr (LocalRootConfig ())
+ipAddressesOf m =
+  Map.fromList [ (toSockAddr (ip, port), c) | (RelayAccessAddress ip port, c) <- Map.toList m ]
+
+-- | After a reconfiguration the provider applies the new local root groups at
+-- once, IP addresses included, even when the new configuration has no domain
+-- name to resolve.
+--
+-- From the reload at 100 s on, every value the provider publishes has the
+-- groups and targets of the new configuration, every IP address of a group
+-- with its own configuration, and nothing else but addresses of the group's
+-- domains, each with that domain's configuration.
+--
+-- At the reload a kept domain contributes the addresses it had, which must be
+-- there, and no other domain contributes: a new one is not resolved yet. Every
+-- kept domain is then looked up again. For a configuration without domain
+-- names this is equality with the configured groups.
+--
+prop_local_reconfiguresIPs :: MockRoots
+                           -> MockRoots
+                           -> Bool
+                           -> Script DNSTimeout
+                           -> Script DNSLookupDelay
+                           -> TestSeed
+                           -> Property
+prop_local_reconfiguresIPs mockRoots@(MockRoots localRoots (Script dnsMaps) _ _)
+                           (MockRoots newRoots _ _ _)
+                           ipOnly dnsTimeoutScript dnsLookupDelayScript dnsSeed =
+    let newRoots'
+          | ipOnly    = ipEntriesOnly newRoots
+          | otherwise = newRoots
+        simTrace = runSimTrace
+                 $ mockLocalRootPeersProvider tracerTraceLocalRoots
+                                              mockRoots
+                                              (Just newRoots')
+                                              dnsTimeoutScript
+                                              dnsLookupDelayScript
+                                              dnsSeed
+        tr = selectLocalRootPeersWithDNSEvents simTrace
+        published = [ (t, groups)
+                    | (t, Published groups) <- selectTraceEventsDynamicWithTime simTrace ]
+        reload = Time reloadDelay
+        changed = newRoots' /= localRoots
+        -- the groups published at the reload: the last by then, as no answer
+        -- of the old lookup threads is published in the instant of the reload
+        atReload = last ([] : [ groups | (t, groups) <- published, t <= reload ])
+        -- the groups the provider wrote in that instant, if any, which it
+        -- traces right after the domains, and only then
+        writtenAtReload = [ groups | (t, groups) <- published, t == reload ]
+        tracedAtReload  = case [ ev | (_, Left ev) <- after ] of
+                            _ : TraceLocalRootDomains _ : TraceLocalRootGroups g : _ -> [g]
+                            _ -> []
+        oldDomains = Set.fromList [ rap | (_, _, m) <- localRoots
+                                        , rap <- Map.keys m, not (isRelayAccessAddress rap) ]
+        -- the trace up to the provider seeing the change, and from then on
+        (before, after) = break isReconfigured tr
+        isReconfigured (_, Left TraceLocalRootReconfigured {}) = True
+        isReconfigured _                                       = False
+        reconfigured = case after of
+                         (t, _) : _ -> t >= reload
+                         []         -> False
+        -- the addresses the provider had resolved when it saw the change, and
+        -- the ones it started the new configuration from: those of each kept
+        -- domain, none for the others. The last traced map is the last
+        -- committed one, as IOSim resumes threads in the order they committed
+        resolvedBefore = last (Map.empty : [ m | (_, Left (TraceLocalRootDNSMap m)) <- before ])
+        startedFrom    = listToMaybe [ m | (_, Left (TraceLocalRootDNSMap m)) <- after ]
+        expectedStart  = Map.fromList [ (rap, Map.findWithDefault [] rap resolvedBefore)
+                                      | (_, _, m) <- newRoots'
+                                      , rap <- Map.keys m
+                                      , not (isRelayAccessAddress rap)
+                                      ]
+        -- the addresses of the IP entries and the kept domains at the reload,
+        -- each with the configuration of its IP entry, if any, else of the
+        -- first domain of its group that holds it, as the provider gives an
+        -- address held by several entries
+        requiredAtReload =
+          [ ipAddressesOf m
+            `Map.union`
+            Map.fromListWith (\_ first -> first)
+              [ (a, c)
+              | (rap, c) <- Map.toList m, not (isRelayAccessAddress rap)
+              , a <- Map.findWithDefault [] rap expectedStart ]
+          | (_, _, m) <- newRoots' ]
+        missingAtReload
+          | changed   = [ show (a, c) ++ " missing at the reload in " ++ show pm
+                        | (required, (_, _, pm)) <- zip requiredAtReload atReload
+                        , (a, c) <- Map.toList required
+                        , Map.lookup a pm /= Just c ]
+          | otherwise = []
+        -- the kept domains are looked up again
+        lookedUp = Set.fromList [ d | (_, Right ev) <- after, Just d <- [lookedUpDomain ev] ]
+        notLookedUp
+          | changed   = [ rap | (_, _, m) <- newRoots', rap <- Map.keys m
+                              , rap `Set.member` oldDomains
+                              , Just d <- [relayAccessPointDomain rap], d `Set.notMember` lookedUp ]
+          | otherwise = []
+    in counterexample (intercalate "\n" $ map show tr)
+     $ classify (all (\(_, _, m) -> all isRelayAccessAddress (Map.keys m)) newRoots')
+                "new configuration has no domain names"
+     $ classify (null [ () | (_, _, m) <- newRoots', rap <- Map.keys m, isRelayAccessAddress rap ])
+                "new configuration has no IP addresses"
+     $ classify (newRoots' == localRoots) "unchanged configuration"
+     $ counterexample "the simulation failed"
+         (either (const False) (const True) (traceResult False simTrace))
+       .&&. counterexample "the configuration change was not seen at the reload"
+              (not changed || reconfigured)
+       .&&. counterexample ("the reload instant relies on whole-millisecond "
+                            ++ "timeouts and delays")
+              (wholeMilliseconds dnsTimeoutScript dnsLookupDelayScript)
+       .&&. counterexample ("the provider started from " ++ show startedFrom
+                            ++ " rather than " ++ show expectedStart)
+              (not changed || startedFrom == Just expectedStart)
+       .&&. (case missingAtReload of
+               []    -> property True
+               e : _ -> counterexample e False)
+       .&&. counterexample ("the groups written at the reload " ++ show writtenAtReload
+                            ++ " are traced as " ++ show tracedAtReload)
+              (not changed || writtenAtReload == tracedAtReload)
+       .&&. counterexample ("kept domains not looked up again: " ++ show notLookedUp)
+              (null notLookedUp)
+       .&&. counterexample "at the reload" (applies newRoots' (`Set.member` oldDomains) atReload)
+       .&&. conjoin [ counterexample ("at " ++ show t) (applies newRoots' (const True) groups)
+                    | (t, groups) <- published, t > reload ]
+  where
+    -- the domain a lookup trace is of; the subordinate of an SRV domain is
+    -- traced with it
+    lookedUpDomain :: DNSTrace -> Maybe DNS.Domain
+    lookedUpDomain = \case
+      DNSLookupResult _ d Nothing _  -> Just d
+      DNSLookupResult _ _ (Just d) _ -> Just d
+      DNSLookupError _ _ d _         -> Just d
+      SRVLookupResult _ d _          -> Just d
+      SRVLookupError _ d             -> Just d
+
+    -- the addresses a relay access point can stand for, in any step of the
+    -- DNS script
+    resolvable :: RelayAccessPoint -> Set SockAddr
+    resolvable = \case
+      RelayAccessAddress ip port -> Set.singleton (toSockAddr (ip, port))
+      RelayAccessDomain d port   -> aRecords d port
+      RelayAccessSRVDomain d     ->
+        Set.unions [ aRecords d' port
+                   | dnsMap <- NonEmpty.toList dnsMaps
+                   , Just (Right srvs) <- [Map.lookup (d, DNS.SRV) dnsMap]
+                   , (d', _, _, port) <- srvs ]
+    aRecords d port =
+      Set.fromList [ toSockAddr (ip, port)
+                   | dnsMap <- NonEmpty.toList dnsMaps
+                   , Just (Left ips) <- [Map.lookup (d, DNS.A) dnsMap]
+                   , (ip, _) <- ips ]
+
+    -- the published groups are those of the new configuration, where only
+    -- the domains 'resolved' admits may have contributed addresses
+    applies :: [(HotValency, WarmValency, Map RelayAccessPoint (LocalRootConfig ()))]
+            -> (RelayAccessPoint -> Bool)
+            -> [(HotValency, WarmValency, Map SockAddr (LocalRootConfig ()))]
+            -> Property
+    applies conf resolved groups =
+         counterexample ("groups or targets differ: " ++ show groups)
+           (map (\(h, w, _) -> (h, w)) groups == map (\(h, w, _) -> (h, w)) conf)
+      .&&. conjoin (zipWith group conf groups)
+      where
+        group (_, _, m) (_, _, pm) =
+               conjoin [ counterexample (show a ++ " missing or misconfigured in " ++ show pm)
+                                        (Map.lookup a pm == Just c)
+                       | (RelayAccessAddress ip port, c) <- Map.toList m
+                       , let a = toSockAddr (ip, port) ]
+          .&&. conjoin [ counterexample (show (a, c) ++ " is not from the configuration " ++ show m)
+                                        (any (\(rap, c') -> c == c'
+                                                         && (isRelayAccessAddress rap || resolved rap)
+                                                         && a `Set.member` resolvable rap)
+                                             (Map.toList m))
+                       | (a, c) <- Map.toList pm ]
+
+-- | The provider publishes the IP addresses of its configuration before it
+-- sets up a DNS resolver, so they are in place even if that fails: at
+-- startup, or, when the first set-up succeeds, at a reload to a
+-- configuration without domain names after 'reloadDelay'.
+prop_local_publishesBeforeResolver :: MockRoots -> MockRoots -> Bool -> Property
+prop_local_publishesBeforeResolver (MockRoots localRoots (Script dnsMaps) _ _)
+                                   (MockRoots newRoots _ _ _)
+                                   atReload =
+    classify (atReload && newRoots' /= localRoots) "the set-up fails at a reload" $
+    case runSim sim of
+      Left failure -> counterexample (show failure) False
+      Right groups -> groups === addressesOf (if atReload then newRoots' else localRoots)
+  where
+    newRoots' :: LocalRootsConfig
+    newRoots' = ipEntriesOnly newRoots
+
+    addressesOf :: LocalRootsConfig
+                -> [(HotValency, WarmValency, Map SockAddr (LocalRootConfig ()))]
+    addressesOf conf = [ (h, w, ipAddressesOf m) | (h, w, m) <- conf ]
+
+    sim :: IOSim s [(HotValency, WarmValency, Map SockAddr (LocalRootConfig ()))]
+    sim = do
+      dnsMapVar <- newTVarIO (NonEmpty.head dnsMaps)
+      timeouts  <- initScript' (singletonScript (DNSTimeout 10))
+      delays    <- initScript' (singletonScript (DNSLookupDelay 0))
+      confVar   <- newTVarIO localRoots
+      resultVar <- newTVarIO []
+      let mock = mockDNSActions nullTracer LookupReqAOnly (curry toSockAddr)
+                                dnsMapVar timeouts delays
+          actions = mock {
+            dnsAsyncResolverResource = \conf -> do
+              -- the set-up fails at startup, or under the new configuration
+              conf' <- readTVarIO confVar
+              if not atReload || conf' == newRoots'
+                then throwIO (userError "no resolver")
+                else dnsAsyncResolverResource mock conf
+          }
+      withAsync (when atReload $ do
+                   threadDelay reloadDelay
+                   atomically (writeTVar confVar newRoots')) $ \_ ->
+        void $ MonadTimer.timeout (reloadDelay + 100) $
+          try @_ @IOException $
+            localRootPeersProvider nullTracer
+                                   PeerActionsDNS { paToPeerAddr = curry toSockAddr,
+                                                    paDnsActions = actions }
+                                   DNSResolver.defaultResolvConf
+                                   (mkStdGen 0)
+                                   (readTVar confVar)
+                                   resultVar
+      readTVarIO resultVar
+
+-- | The groups the provider published, one write at a time.
+newtype Published = Published [(HotValency, WarmValency, Map SockAddr (LocalRootConfig ()))]
+
 -- | The 'localRootPeersProvider' should preserve the local root peers
 -- group number and respective targets. This property tests whether local
 -- root peer groups update due to DNS resolution results, does not alter
@@ -746,6 +1020,7 @@ prop_local_preservesGroupNumberAndTargets mockRoots@(MockRoots lrp _ _ _)
            $ runSimTrace
            $ mockLocalRootPeersProvider tracerTraceLocalRoots
                                         mockRoots
+                                        Nothing
                                         dnsTimeoutScript
                                         dnsLookupDelayScript
                                         dnsSeed
@@ -786,6 +1061,7 @@ prop_local_resolvesDomainsCorrectly mockRoots@(MockRoots localRoots lDNSMap _ _)
            $ runSimTrace
            $ mockLocalRootPeersProvider tracerTraceLocalRoots
                                         mockRoots'
+                                        Nothing
                                         dnsTimeoutScript
                                         dnsLookupDelayScript
                                         dnsSeed
@@ -875,6 +1151,7 @@ prop_local_updatesDomainsCorrectly mockRoots@(MockRoots lrp _ _ _)
            $ runSimTrace
            $ mockLocalRootPeersProvider tracerTraceLocalRoots
                                         mockRoots
+                                        Nothing
                                         dnsTimeoutScript
                                         dnsLookupDelayScript
                                         dnsSeed
