@@ -2532,7 +2532,7 @@ prop_diffusion_dns_can_recover ioSimTrace traceNumber =
       case ev of
         DiffusionLocalRootPeerTrace
           (TraceLocalRootFailure rap (DNSError err)) ->
-            let dns = extractDomainName rap
+            let dns = fromJust (relayAccessPointDomain rap)
                 ttl = fromMaybe 0 $ Map.lookup dns ttlMap
                 ttl' = ttlForDnsError ttl err
                 ttlMap' = Map.insert dns ttl' ttlMap
@@ -2556,10 +2556,6 @@ prop_diffusion_dns_can_recover ioSimTrace traceNumber =
         DiffusionSimulationTrace TrReconfiguringNode ->
           verify Map.empty ttlMap recovered t evs
         _ -> verify toRecover ttlMap recovered time evs
-
-    extractDomainName (RelayAccessDomain d _)  = d
-    extractDomainName (RelayAccessSRVDomain d) = d
-    extractDomainName _                        = error "impossible!"
 
     getTTLs (_, _, it) = it
 
