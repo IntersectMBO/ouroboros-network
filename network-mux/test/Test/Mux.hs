@@ -181,6 +181,8 @@ tests =
                    (BaseQC.withNumTests 30 prop_mux_lanes)
     , testProperty "a torn-down head hands the queue on"
                    prop_mux_egress_head_torn_down
+    , testProperty "a final message is written before completion is reported"
+                   prop_mux_final_message_before_release
     , testProperty "own requests wait at the gate, charged once written"
                    (BaseQC.withNumTests 30 prop_mux_direct_gate)
     , testProperty "counters are snapshotted every interval"
@@ -3398,14 +3400,11 @@ prop_mux_counters_failure failure =
       let onceRunning :: Mx.Error -> IOSim s a
           onceRunning e = atomically (readTVar running >>= check) >> throwIO e
 
-          -- Once the initiator has finished and gone idle, as the write of
-          -- its last data can find the peer gone.
-          onceIdle :: Mx.Error -> IOSim s a
-          onceIdle e = do
-            atomically $ do
-              status <- Mx.miniProtocolStateMap mux M.! (num, Mx.InitiatorDir)
-              check (status == Mx.StatusIdle)
-            throwIO e
+          -- Once the initiator has finished its action, its last data held
+          -- in a batch, as the write of it can find the peer gone; the
+          -- protocol is not idle until that write has returned.
+          onceTerminated :: Mx.Error -> IOSim s a
+          onceTerminated e = atomically (readTVar terminating >>= check) >> throwIO e
 
           -- Once the test has killed the initiator and waited on its status.
           onceKilled :: Mx.Error -> IOSim s a
@@ -3446,7 +3445,7 @@ prop_mux_counters_failure failure =
             GateTimeout              -> base { Mx.awaitWritable = \_ _ -> throwIO Mx.SDUWriteTimeout }
             WriteError               -> base { Mx.writeMany = \_ _ _ -> throwIO ioError' }
             WriteReset               -> base { Mx.writeMany = \_ _ _ -> onceRunning writeReset }
-            WriteResetIdle           -> base { Mx.writeMany = \_ _ _ -> onceIdle writeReset }
+            WriteResetIdle           -> base { Mx.writeMany = \_ _ _ -> onceTerminated writeReset }
             WriteOther               -> base { Mx.writeMany = \_ _ _ -> throwIO otherKind }
             _                        -> base
       withAsync (Mx.run mux bearer) $ \muxA -> do
@@ -4134,12 +4133,16 @@ newWriteMuxer write = do
         bearer = modelledBearer (const (error "the muxer does not read"))
                                 (\sdus -> write sdus >> getMonotonicTime)
     mx <- async (void (Egress.muxer q nullTracer byteSlots Nothing Egress.Unscheduled bearer))
+    muxHeld <- newTVarIO 0
     return WriteMuxer {
         muxer   = mx,
         enqueue = \msgs -> atomically $ forM_ msgs $ \(n, initiator, bytes) -> do
-          w <- newTVar (BL.replicate (fromIntegral bytes) 0x55)
+          w    <- newTVar (BL.replicate (fromIntegral bytes) 0x55)
+          held <- newTVar 0
           let dir = if initiator then Mx.InitiatorDir else Mx.ResponderDir
-          writeTBQueue q (Egress.TLSRDemand (Mx.MiniProtocolNum n) dir (Egress.Wanton w)),
+              wanton = Egress.Wanton { Egress.want = w, Egress.held = held,
+                                       Egress.muxHeld = muxHeld }
+          writeTBQueue q (Egress.TLSRDemand (Mx.MiniProtocolNum n) dir wanton),
         counted = atomically (Counters.readSlots byteSlots)
       }
 
@@ -4735,19 +4738,30 @@ prop_rotatedRank RotationCase { rcRotation = ro, rcPeriod, rcOffsets = (o1, o2) 
 -- | A rotation with a period of zero is no rotation: a bearer queues exactly
 -- where it would without one.
 -- | From the threshold up a tier queues as without a rotation, so its order
--- is the tickets' and backlogged bearers take turns; below it the dealt
--- place still decides. The tier byte is untouched either way.
-prop_queueRank_turns :: Word64 -> Word64 -> Word8 -> Word8 -> Positive Integer
+-- is the tickets' and backlogged bearers take turns, and so do the local
+-- roots, tier 0, whatever the threshold; below it the dealt place still
+-- decides. The tier byte is untouched either way.
+prop_queueRank_turns :: Word64 -> Word64 -> TierArg -> Word8 -> Positive Integer
                      -> NonNegative Integer -> Property
-prop_queueRank_turns seed bearer tier from (Positive period) (NonNegative ps) =
+prop_queueRank_turns seed bearer (TierArg tier) from (Positive period) (NonNegative ps) =
     classify (tier >= from) "takes turns" $
-    if tier >= from
+    classify (tier == 0 && from > 0) "a local root below the threshold" $
+    if tier >= from || tier == 0
        then with === Bucket.queueRank Nothing bearer (Bucket.Rank tier) t
        else with === (fromIntegral tier `shiftL` 24 .|. Bucket.rotatedRank ro bearer t)
   where
     ro   = Bucket.Rotation seed (picos period) from
     with = Bucket.queueRank (Just ro) bearer (Bucket.Rank tier) t
     t    = Time (picos ps)
+
+-- | A tier for the rank laws: the local roots often, the small tiers often,
+-- and any byte.
+newtype TierArg = TierArg Word8
+  deriving Show
+
+instance Arbitrary TierArg where
+  arbitrary = TierArg <$> frequency [ (1, pure 0), (1, choose (1, 5)), (1, arbitrary) ]
+  shrink (TierArg t) = [ TierArg t' | t' <- shrink t ]
 
 prop_queueRank_zeroPeriod :: Word64 -> Word64 -> Word8 -> NonNegative Integer
                           -> Property
@@ -5200,11 +5214,35 @@ replayEvents sch@BucketSched { schRate, schCapacity, schRotation, schSlice, schB
     n         = length schBearers
     sliceRate = maybe 0 (\pct -> schRate * fromIntegral pct / 100) schSlice
 
-    -- the rank a request queues with, as each bucket computes it
-    keyB a = ( Bucket.queueRank schRotation (fromIntegral (arBearer a))
-                                (Bucket.Rank (arRank a)) (arAt a)
-             , arAt a )
+    -- the rank a request holds at @t@, as each bucket computes it: on the
+    -- budget the place dealt at its last refresh at or before @t@, or where
+    -- it queued, since a waiting request asks again every
+    -- 'Bucket.tierRefresh' and moves to the place of the period it then
+    -- finds itself in, checking the queue in the same instant. (A head
+    -- whose wake falls in the very instant of its refresh checks first and
+    -- refreshes after; the replay does not model that coincidence, which
+    -- needs a token instant to land on a whole microsecond seven seconds
+    -- after a request.) The slice deals no places.
+    keyB t a = ( Bucket.queueRank schRotation (fromIntegral (arBearer a))
+                                  (Bucket.Rank (arRank a)) (refreshUpTo (arAt a) t)
+               , arAt a )
+    -- the same with the refreshes at @t@ still to come
+    keyBefore t a = ( Bucket.queueRank schRotation (fromIntegral (arBearer a))
+                                       (Bucket.Rank (arRank a)) (refreshBefore (arAt a) t)
+                    , arAt a )
     keyS a = (Bucket.queueRank Nothing 0 (Bucket.Rank (arRank a)) (arAt a), arAt a)
+
+    refreshBefore asked t = refreshNth asked (max 0 (ceiling (waited asked t / period) - 1))
+    refreshUpTo   asked t = refreshNth asked (max 0 (floor   (waited asked t / period)))
+    refreshNth asked k    = (fromIntegral (k :: Int) * Bucket.tierRefresh) `addTime` asked
+    waited asked t        = realToFrac (t `diffTime` asked) :: Double
+    period                = realToFrac Bucket.tierRefresh :: Double
+
+    -- the next refresh of any request waiting on the budget after @now@,
+    -- and whose it is; no two share an instant, since requests do not
+    nextRefresh now wb = case [ (refreshNth (arAt a) (floor (waited (arAt a) now / period) + 1), a) | a <- wb ] of
+                              [] -> Nothing
+                              rs -> Just (List.minimumBy (\(t, _) (t', _) -> compare t t') rs)
 
     headBy k waiting = case List.sortOn k waiting of
                             []    -> Nothing
@@ -5220,7 +5258,7 @@ replayEvents sch@BucketSched { schRate, schCapacity, schRotation, schSlice, schB
     -- lst:     the instant and queue of the last check
     go now fb fs pending wb ws kb ks lst
       -- the budget's head checks
-      | Just h <- headBy keyB wb, Nothing <- kb =
+      | Just h <- headBy (keyB now) wb, Nothing <- kb =
           if crossed True then [RTie] else
           let (ready, fb') = Bucket.grantAt schRate schCapacity fb now (arBytes h)
               lst'         = Just (now, True)
@@ -5251,6 +5289,17 @@ replayEvents sch@BucketSched { schRate, schCapacity, schRotation, schSlice, schB
                ++ go now fb fs pending wb ws kb
                      (Just (Bucket.wakeAt now (if idle then min readyS readyB else readyS)))
                      (Just (now, False))
+      -- a waiting request's refresh before both wakes and the next request:
+      -- if its key moves, whoever is then the budget's head checks at once,
+      -- the request itself if it stays or becomes the head, or the one its
+      -- move hands the head to
+      | Just (r, a) <- nextRefresh now wb, all (r <) kb, all (r <) ks, all ((r <) . arAt) (take 1 pending) =
+          let moved   = keyBefore r a /= keyB r a
+              headWas = fmap keyOf (headBy (keyBefore r) wb)
+              headNow = fmap keyOf (headBy (keyB r) wb)
+              checks  = moved && (headNow /= headWas || headNow == Just (keyOf a))
+              keyOf x = (arBearer x, arTake x)
+          in go r fb fs pending wb ws (if checks then Nothing else kb) ks lst
       -- a request before both wakes joins its own queue; a lower key takes
       -- that queue's head
       | p : ps <- pending, all (arAt p <) kb, all (arAt p <) ks =
@@ -5258,7 +5307,7 @@ replayEvents sch@BucketSched { schRate, schCapacity, schRotation, schSlice, schB
              then let displaces = maybe False ((keyS p <) . keyS) (headBy keyS ws)
                   in RSliceQueue (arAt p) (length ws + 1) (arBearer p, arTake p) True
                    : go (arAt p) fb fs ps wb (p : ws) kb (if displaces then Nothing else ks) lst
-             else let displaces = maybe False ((keyB p <) . keyB) (headBy keyB wb)
+             else let displaces = maybe False ((keyB (arAt p) p <) . keyB (arAt p)) (headBy (keyB (arAt p)) wb)
                   in RBudgetQueue (arAt p) (length wb + 1) (arBearer p, arTake p) True
                    : go (arAt p) fb fs ps (p : wb) ws (if displaces then Nothing else kb) ks lst
       -- the earlier wake fires
@@ -6009,6 +6058,97 @@ prop_mux_egress_head_torn_down hk@HeadKill { hkRate, hkMuxes, hkBatches, hkAt, h
                     CancelRun -> cancel victimA
              timeout deadline $
                length <$> mapM (\(_, _, done) -> atomically done) others
+
+-- | A demoted peer's last message: a protocol sends it and completes while
+-- the budget is busy with another connection's bulk, so the muxer holds the
+-- batch waiting for its grant. As the connection manager does on release,
+-- the connection's thread is cancelled the moment the protocol reports
+-- completion; completion waits for the held batch to be written, so the
+-- peer has the whole message. Or the mux is stopped as soon as the message
+-- is sent, as on a timeout: the drain waits up to two seconds for the held
+-- batch, and the bulk ahead of it takes at most one.
+data FinalCase = FinalCase {
+    fcRate    :: !Double,   -- ^ budget, bytes/s
+    fcBatches :: !Int,      -- ^ the other connection's bulk, in batches
+    fcFinal   :: !Int,      -- ^ the last message, bytes
+    fcRank    :: !Word8,    -- ^ the demoted peer's tier
+    fcHow     :: !FinalEnd
+  }
+  deriving Show
+
+data FinalEnd = CancelOnCompletion | StopWhenSent
+  deriving (Show, Eq, Enum, Bounded)
+
+instance Arbitrary FinalCase where
+  arbitrary = FinalCase <$> choose (1e5, 1e6) <*> choose (2, 20)
+                        <*> choose (1, 20000) <*> choose (1, 4)
+                        <*> elements [minBound .. maxBound]
+  shrink fc@FinalCase { fcBatches, fcFinal } =
+       [ fc { fcBatches = b } | b <- shrink fcBatches, b >= 2 ]
+    ++ [ fc { fcFinal = f } | f <- shrink fcFinal, f >= 1 ]
+
+prop_mux_final_message_before_release :: FinalCase -> Property
+prop_mux_final_message_before_release fc@FinalCase { fcRate, fcBatches, fcFinal, fcRank, fcHow } =
+    counterexample (show fc) $
+    tabulate "end" [show fcHow] $
+      runSimOrThrow run === Just fcFinal
+  where
+    -- stopped, the bulk ahead must clear within a second of the drain's two
+    bulk     = case fcHow of
+                    CancelOnCompletion -> fcBatches * laneBatch
+                    StopWhenSent       -> min (fcBatches * laneBatch) (floor (fcRate * 0.5))
+    deadline = realToFrac (2 * fromIntegral (bulk + fcFinal) / fcRate) + 5 :: DiffTime
+
+    run :: IOSim s (Maybe Int)
+    run = do
+      budget <- Bucket.newBucket fcRate (2 * laneBatch) Nothing
+      let policy = Mx.EgressPolicy { Mx.egressBudget = budget, Mx.egressSlice = Nothing,
+                                     Mx.egressLaneOf = Mx.directionSplit }
+      -- the busy connection: a local root taking the budget
+      (busyMux, busyClient, busyBearer, busyClientBearer) <- headKillPair policy
+      atomically $ Mx.setEgressRank busyMux (Bucket.Rank 0)
+      _ <- async (Mx.run busyMux busyBearer)
+      _ <- async (Mx.run busyClient busyClientBearer)
+      _ <- Mx.runMiniProtocol busyMux bulkNum Mx.ResponderDirection Mx.StartOnDemand
+             (headKillServer bulk)
+      _ <- Mx.runMiniProtocol busyClient bulkNum Mx.InitiatorDirection Mx.StartEagerly
+             (headKillClient bulk)
+      -- the demoted peer: one request, one last message, done
+      (peerMux, peerClient, peerBearer, peerClientBearer) <- headKillPair policy
+      atomically $ Mx.setEgressRank peerMux (Bucket.Rank fcRank)
+      peerA <- async (Mx.run peerMux peerBearer)
+      _     <- async (Mx.run peerClient peerClientBearer)
+      threadDelay 0.001     -- the bulk has the budget first
+      sent <- newTVarIO False
+      completion <- Mx.runMiniProtocol peerMux bulkNum Mx.ResponderDirection Mx.StartOnDemand $ \chan -> do
+                      _ <- Mx.recv chan
+                      Mx.send chan (BL.replicate (fromIntegral fcFinal) 0x78)
+                      atomically (writeTVar sent True)
+                      return ((), Nothing)
+      received <- newTVarIO 0
+      _ <- Mx.runMiniProtocol peerClient bulkNum Mx.InitiatorDirection Mx.StartEagerly $ \chan -> do
+             Mx.send chan (BL8.pack "req")
+             let go = do
+                   mbs <- Mx.recv chan
+                   case mbs of
+                        Nothing -> return ()
+                        Just bs -> atomically (modifyTVar received (+ fromIntegral (BL.length bs))) >> go
+             go
+             return ((), Nothing)
+      case fcHow of
+           -- the release: cancel the connection as soon as the protocol is done
+           CancelOnCompletion -> do
+             _ <- atomically completion
+             cancel peerA
+           -- a stop with the message sent, not yet written
+           StopWhenSent -> do
+             atomically (readTVar sent >>= check)
+             Mx.stop peerMux
+      timeout deadline $ atomically $ do
+        n <- readTVar received
+        check (n >= fcFinal)
+        return n
+
 
 bulkNum :: Mx.MiniProtocolNum
 bulkNum = Mx.MiniProtocolNum 2
