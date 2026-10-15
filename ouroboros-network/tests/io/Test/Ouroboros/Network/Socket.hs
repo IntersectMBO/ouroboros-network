@@ -37,6 +37,7 @@ import Ouroboros.Network.Socket
 -- import Cardano.Network.NodeToNode
 
 import Ouroboros.Network.Block (Tip, decodeTip, encodeTip)
+import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.IOManager
 import Ouroboros.Network.Magic
 import Ouroboros.Network.Mock.Chain (Chain, ChainUpdate, Point)
@@ -269,6 +270,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
         (maxBound :: TestVersion)
         TestVersionData { networkMagic = NetworkMagic 0 }
         (\_ -> SomeResponderApplication responderApp))
+      (const Unidirectional)
       $ \producerAddress' _ -> do
       withAsync
         (connectToNode
@@ -286,6 +288,7 @@ demo chain0 updates = withIOManager $ \iocp -> do
             (maxBound :: TestVersion)
             TestVersionData { networkMagic  = NetworkMagic 0 }
             (\_ -> initiatorApp))
+          (const Unidirectional)
           (Just consumerAddress)
           producerAddress')
         $ \connAsync -> do

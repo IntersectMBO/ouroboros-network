@@ -509,7 +509,7 @@ connectTo
   -> Socket.SockAddr
   -> IO (Either SomeException (Either a b))
 #if !defined(wasm32_HOST_ARCH)
-connectTo sn tr =
+connectTo sn tr versions local remote =
     connectToNode sn makeSocketBearer
                   ConnectToArgs {
                     ctaHandshakeCodec      = nodeToNodeHandshakeCodec,
@@ -519,6 +519,10 @@ connectTo sn tr =
                     ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
                   }
                   configureOutboundSocket
+                  versions
+                  (const Unidirectional)
+                  local
+                  remote
   where
     configureOutboundSocket :: Socket -> IO ()
     configureOutboundSocket sock = do

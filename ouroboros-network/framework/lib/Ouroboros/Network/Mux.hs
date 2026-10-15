@@ -79,6 +79,8 @@ import Network.Mux.Types (MiniProtocolInfo, MiniProtocolLimits,
 import Network.Mux.Types qualified as Mux
 
 import Ouroboros.Network.Channel
+import Ouroboros.Network.ConnectionManager.Types (DataFlow (..),
+           Provenance (..))
 import Ouroboros.Network.Context (ExpandedInitiatorContext,
            MinimalInitiatorContext, ResponderContext)
 import Ouroboros.Network.Driver
@@ -252,9 +254,11 @@ data MiniProtocol (mode :: Mux.Mode) initiatorCtx responderCtx bytes m a b =
      }
 
 mkMiniProtocolInfo :: ForkPolicyCb
+                   -> Provenance
+                   -> DataFlow
                    -> MiniProtocol mode initiatorCtx responderCtx bytes m a b
                    -> [MiniProtocolInfo mode]
-mkMiniProtocolInfo forkPolicy MiniProtocol {
+mkMiniProtocolInfo forkPolicy provenance dataFlow MiniProtocol {
      miniProtocolNum,
      miniProtocolLimits,
      miniProtocolRun
@@ -271,8 +275,12 @@ mkMiniProtocolInfo forkPolicy MiniProtocol {
   | dir <- case miniProtocolRun of
              InitiatorProtocolOnly{}         -> [ Mux.InitiatorDirectionOnly ]
              ResponderProtocolOnly{}         -> [ Mux.ResponderDirectionOnly ]
-             InitiatorAndResponderProtocol{} -> [ Mux.InitiatorDirection
-                                                , Mux.ResponderDirection ]
+             InitiatorAndResponderProtocol{} ->
+               case (provenance, dataFlow) of
+                 (Inbound, Unidirectional)  -> [ Mux.ResponderDirection ]
+                 (Outbound, Unidirectional) -> [ Mux.InitiatorDirection ]
+                 (_p, Duplex) -> [ Mux.InitiatorDirection
+                                 , Mux.ResponderDirection ]
   ]
 
 
@@ -498,10 +506,12 @@ responderForkPolicy salt numCapabilities = ForkPolicy {
 
 
 toMiniProtocolInfos :: ForkPolicyCb
+                    -> Provenance
+                    -> DataFlow
                     -> OuroborosApplication mode initiatorCtx responderCtx bytes m a b
                     -> [MiniProtocolInfo mode]
-toMiniProtocolInfos forkPolicy =
-    foldMap (mkMiniProtocolInfo forkPolicy) . getOuroborosApplication
+toMiniProtocolInfos forkPolicy provenance dataFlow =
+    foldMap (mkMiniProtocolInfo forkPolicy provenance dataFlow) . getOuroborosApplication
 
 
 contramapInitiatorCtx :: (initiatorCtx' -> initiatorCtx)
@@ -525,7 +535,9 @@ contramapInitiatorCtx f (OuroborosApplication ptcls) = OuroborosApplication
 -- 'newMux'.
 --
 mkMiniProtocolInfos :: ForkPolicyCb
+                    -> Provenance
+                    -> DataFlow
                     -> OuroborosBundle mode initiatorCtx responderCtx bytes m a b
                     -> [MiniProtocolInfo mode]
-mkMiniProtocolInfos forkPolicy = foldMap (foldMap (mkMiniProtocolInfo forkPolicy))
-
+mkMiniProtocolInfos forkPolicy provenance dataFlow =
+  foldMap (foldMap (mkMiniProtocolInfo forkPolicy provenance dataFlow))

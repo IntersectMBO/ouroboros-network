@@ -31,6 +31,8 @@ import Data.Void (Void)
 import Network.Mux qualified as Mx
 
 import Ouroboros.Network.ConnectionId
+import Ouroboros.Network.ConnectionManager.Types (DataFlow (..),
+           Provenance (..))
 import Ouroboros.Network.Mux
 import Ouroboros.Network.Protocol.Handshake
 import Ouroboros.Network.Server (isECONNABORTED, server_CONNABORTED_DELAY)
@@ -75,11 +77,13 @@ with :: forall fd addr vNumber vData m a b.
      -- ^ handshake arguments
      -> Versions vNumber vData (SomeResponderApplication addr BL.ByteString m b)
      -- ^ applications to run on each connection
+     -> (vData -> DataFlow)
+     -- ^ Unidirectional or Duplex based on handshake, ref. implementation 'ntnDataFlow'
      -> (addr -> Async m Void -> m a)
      -- ^ continuation for an internally used `withAsync` function that runs
      -- server accept loop
      -> m a
-with sn tracer muxTracers makeBearer configureSock addr handshakeArgs versions k =
+with sn tracer muxTracers makeBearer configureSock addr handshakeArgs versions negotiatedDataFlow k =
    JobPool.withJobPool_ $ \jobPool ->
    bracket
      (do sd <- Snocket.open sn (Snocket.addrFamily sn addr)
@@ -134,10 +138,12 @@ with sn tracer muxTracers makeBearer configureSock addr handshakeArgs versions k
                     Left (HandshakeProtocolError e) -> throwIO e
                     Right HandshakeQueryResult {}   -> error "handshake query is not supported"
                     Right (HandshakeNegotiationResult (SomeResponderApplication app) vNumber vData) -> do
+                      let mpInfos = toMiniProtocolInfos (runForkPolicy noBindForkPolicy remoteAddress)
+                                                        Inbound
+                                                        (negotiatedDataFlow vData)
+                                                        app
                       mux <- Mx.new (connId `Mx.tracersWithBearer` muxTracers)
-                                    (toMiniProtocolInfos
-                                      (runForkPolicy noBindForkPolicy remoteAddress)
-                                      app)
+                                   mpInfos
                       withAsync (Mx.run mux bearer) $ \aid -> do
                         void $ simpleMuxCallback connId vNumber vData app mux aid
 

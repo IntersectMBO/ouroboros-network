@@ -80,6 +80,7 @@ import Cardano.Network.Protocol.LocalStateQuery.Type qualified as LocalStateQuer
 import Cardano.Network.Protocol.LocalTxMonitor.Client as LocalTxMonitor
 import Cardano.Network.Protocol.LocalTxMonitor.Type qualified as LocalTxMonitor
 
+import Ouroboros.Network.ConnectionManager.Types (DataFlow(..))
 import Ouroboros.Network.Context
 import Ouroboros.Network.Driver (TraceSendRecv (..))
 import Ouroboros.Network.Driver.Limits (ProtocolLimitFailure (..))
@@ -248,6 +249,7 @@ connectTo snocket tracers versions path =
       }
       mempty
       versions
+      (const Unidirectional)
       Nothing
       (localAddressFromPath path)
   where
@@ -297,6 +299,7 @@ connectToWithMux snocket tracers versions path k =
     }
     mempty
     versions
+    (const Unidirectional)
     Nothing
     (localAddressFromPath path)
     k

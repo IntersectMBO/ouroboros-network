@@ -44,6 +44,7 @@ import Network.TypedProtocol.ReqResp.Examples qualified as ReqResp
 import Network.TypedProtocol.ReqResp.Server qualified as ReqResp
 import Network.TypedProtocol.ReqResp.Type qualified as ReqResp
 
+import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.Context
 import Ouroboros.Network.Driver
 import Ouroboros.Network.IOManager
@@ -265,6 +266,7 @@ prop_socket_send_recv initiatorAddr responderAddr configureSock f xs =
 
         }
         (unversionedProtocol (SomeResponderApplication responderApp))
+        (const Unidirectional)
         $ \localAddress _ -> do
           void $ connectToNode
             snocket
@@ -278,6 +280,7 @@ prop_socket_send_recv initiatorAddr responderAddr configureSock f xs =
             }
             (`configureSock` Nothing)
             (unversionedProtocol initiatorApp)
+            (const Unidirectional)
             (Just initiatorAddr)
             localAddress
           -- connectToNode has returned, so the client mux is stopped and its
@@ -362,7 +365,7 @@ prop_socket_recv_error f rerr =
                     _ <- async $ do
                       threadDelay 0.1
                       atomically $ putTMVar lock ()
-                    mux <- Mx.new Mx.nullTracers (toMiniProtocolInfos (\_ _ -> Nothing) app)
+                    mux <- Mx.new Mx.nullTracers (toMiniProtocolInfos (\_ _ -> Nothing) Inbound Duplex app)
                     let respCtx = ResponderContext connectionId
                     resOps <- sequence
                       [ Mx.runMiniProtocol
@@ -540,6 +543,7 @@ prop_socket_client_connect_error _ xs =
         }
         (`configureSocket` Nothing)
         (unversionedProtocol app)
+        (const Unidirectional)
         (Just $ Socket.addrAddress clientAddr)
         (Socket.addrAddress serverAddr)
 

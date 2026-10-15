@@ -51,6 +51,7 @@ import System.Process (createPipe)
 #endif
 
 import Ouroboros.Network.Block (decodeTip, encodeTip)
+import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.Context
 import Ouroboros.Network.Mock.Chain (Chain, ChainUpdate, Point)
 import Ouroboros.Network.Mock.Chain qualified as Chain
@@ -205,7 +206,7 @@ demo chain0 updates = do
 
         _ <- async $ do
               clientMux <- Mx.new (Mx.Tracers activeTracer activeTracer activeTracer)
-                                  (toMiniProtocolInfos (\_ _ -> Nothing) consumerApp)
+                                  (toMiniProtocolInfos (\_ _ -> Nothing) Outbound Duplex consumerApp)
               let initCtx = MinimalInitiatorContext (ConnectionId "consumer" "producer")
               resOps <- sequence
                 [ Mx.runMiniProtocol
@@ -231,7 +232,7 @@ demo chain0 updates = do
 
         _ <- async $ do
               serverMux <- Mx.new (Mx.Tracers activeTracer activeTracer activeTracer)
-                                  (toMiniProtocolInfos (\_ _ -> Nothing) producerApp)
+                                  (toMiniProtocolInfos (\_ _ -> Nothing) Inbound Duplex producerApp)
               let respCtx = ResponderContext (ConnectionId "consumer" "producer")
               resOps <- sequence
                 [ Mx.runMiniProtocol

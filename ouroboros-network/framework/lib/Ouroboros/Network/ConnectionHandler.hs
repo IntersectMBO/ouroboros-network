@@ -275,13 +275,13 @@ makeConnectionHandler muxTracers forkPolicy
   \case
     MuxInitiatorConnectionHandler ->
       ConnectionHandler . WithInitiatorMode
-      $ outboundConnectionHandler NotInResponderMode
+      $ outboundConnectionHandler (const Unidirectional) NotInResponderMode
     MuxResponderConnectionHandler inboundGovernorMuxTracer ->
-      ConnectionHandler . WithResponderMode . inboundConnectionHandler $ inboundGovernorMuxTracer
+      ConnectionHandler . WithResponderMode . inboundConnectionHandler (const Unidirectional) $ inboundGovernorMuxTracer
     MuxInitiatorResponderConnectionHandler connectionDataFlow inboundGovernorMuxTracer ->
       ConnectionHandler $ WithInitiatorResponderMode
-        (outboundConnectionHandler $ InResponderMode (inboundGovernorMuxTracer, connectionDataFlow))
-        (inboundConnectionHandler inboundGovernorMuxTracer)
+        (outboundConnectionHandler connectionDataFlow $ InResponderMode (inboundGovernorMuxTracer, connectionDataFlow))
+        (inboundConnectionHandler connectionDataFlow inboundGovernorMuxTracer)
   where
     -- install classify exception handler
     classifyExceptions :: forall x.
@@ -307,7 +307,8 @@ makeConnectionHandler muxTracers forkPolicy
               throwIO (ExceptionInHandler remoteAddress err)
 
     outboundConnectionHandler
-      :: InResponderMode muxMode (   StrictTVar m (StrictMaybe ResponderCounters)
+      :: (versionData -> DataFlow)
+      -> InResponderMode muxMode (   StrictTVar m (StrictMaybe ResponderCounters)
                                   -> Tracer m (WithBearer (ConnectionId peerAddr) Trace)
                                  , versionData -> DataFlow)
       -> ConnectionHandlerFn (ConnectionHandlerTrace versionNumber versionData)
@@ -318,7 +319,8 @@ makeConnectionHandler muxTracers forkPolicy
                              versionNumber
                              versionData
                              m
-    outboundConnectionHandler inResponderMode
+    outboundConnectionHandler dataFlow
+                              inResponderMode
                               versionDataFn
                               socket
                               PromiseWriter { writePromise }
@@ -367,7 +369,13 @@ makeConnectionHandler muxTracers forkPolicy
                         -- If this is InitiatorOnly, or a server where unidirectional flow was negotiated
                         -- the IG will never be informed of this remote for obvious reasons.
                         pure $ Mx.tracersWithBearer connectionId muxTracers
-                mux <- Mx.new muxTracers' (mkMiniProtocolInfos (runForkPolicy forkPolicy remoteAddress) app)
+
+                let mpInfos   = mkMiniProtocolInfos (runForkPolicy forkPolicy remoteAddress)
+                                                    Outbound
+                                                    (dataFlow agreedOptions)
+                                                    app
+                mux <- Mx.new muxTracers'
+                             mpInfos
                 let !handle = Handle {
                         hMux            = mux,
                         hMuxBundle      = app,
@@ -385,8 +393,9 @@ makeConnectionHandler muxTracers forkPolicy
 
 
     inboundConnectionHandler
-      :: (   StrictTVar m (StrictMaybe ResponderCounters)
-          -> Tracer m (WithBearer (ConnectionId peerAddr) Trace))
+      :: (versionData -> DataFlow)
+      ->  (   StrictTVar m (StrictMaybe ResponderCounters)
+           -> Tracer m (WithBearer (ConnectionId peerAddr) Trace))
       -> ConnectionHandlerFn (ConnectionHandlerTrace versionNumber versionData)
                              socket
                              peerAddr
@@ -395,7 +404,8 @@ makeConnectionHandler muxTracers forkPolicy
                              versionNumber
                              versionData
                              m
-    inboundConnectionHandler inboundGovernorMuxTracer
+    inboundConnectionHandler dataFlow
+                             inboundGovernorMuxTracer
                              updateVersionDataFn
                              socket
                              PromiseWriter { writePromise }
@@ -435,10 +445,15 @@ makeConnectionHandler muxTracers forkPolicy
                      <*> newTVarIO Continue
 
                countersVar <- newTVarIO . SJust $ ResponderCounters 0 0
+               let mpInfos   = mkMiniProtocolInfos (runForkPolicy forkPolicy remoteAddress)
+                                                   Inbound
+                                                   (dataFlow agreedOptions)
+                                                   app
+
                mux <- Mx.new (Mx.tracersWithBearer connectionId muxTracers {
                                Mx.tracer = Mx.tracer muxTracers <> inboundGovernorMuxTracer countersVar
                              })
-                             (mkMiniProtocolInfos (runForkPolicy forkPolicy remoteAddress) app)
+                             mpInfos
 
                let !handle = Handle {
                        hMux            = mux,
