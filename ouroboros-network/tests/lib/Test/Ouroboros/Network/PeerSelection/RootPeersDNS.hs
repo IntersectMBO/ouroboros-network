@@ -30,7 +30,7 @@ module Test.Ouroboros.Network.PeerSelection.RootPeersDNS
   ) where
 
 import Control.Applicative (Alternative)
-import Control.Monad (forever, replicateM_, when)
+import Control.Monad (foldM, forever, replicateM_, when)
 import Data.Bifunctor (bimap)
 import Data.ByteString.Char8 (pack)
 import Data.ByteString.Char8 qualified as BSC
@@ -45,7 +45,7 @@ import Data.List.NonEmpty (NonEmpty (..))
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (listToMaybe, mapMaybe)
+import Data.Maybe (isJust, listToMaybe, mapMaybe)
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Time.Clock (diffTimeToPicoseconds, picosecondsToDiffTime)
@@ -156,7 +156,7 @@ genMockRoots :: Gen MockRoots
 genMockRoots = sized $ \relaysNumber -> do
     -- Generate LocalRootPeers
     --
-    relaysPerGroup <- chooseEnum (1, relaysNumber `div` 3)
+    relaysPerGroup <- chooseEnum (1, max 1 (relaysNumber `div` 3))
 
     -- concat unique identifier to DNS domains to simplify tests
     taggedLocalRelays <- tagRelays <$> vectorOf relaysNumber arbitrary
@@ -164,24 +164,13 @@ genMockRoots = sized $ \relaysNumber -> do
     peerAdvertise <- blocks relaysPerGroup
                       <$> vectorOf relaysNumber arbitrary
 
-    let ipsPerDomain = 2
-        genLookup relays = do
-          let (_relayAddress, relayDomains, relaySRVs) =
-                foldl' threeWay ([], [], []) relays
-          lookupIP <- genDomainIPLookupTable ipsPerDomain (dapDomain <$> relayDomains)
-          srvs <- dealDomains relayDomains relaySRVs
-          let srvs' = bimap dapDomain (map dapDomain) <$> srvs
-          lookupSRV <- Map.fromList . map (bimap (,DNS.SRV) Right)
-                       <$> genGroupSrvs srvs'
-          return $ Map.union lookupIP lookupSRV
-
-        localRelaysBlocks = blocks relaysPerGroup taggedLocalRelays
+    let localRelaysBlocks = blocks relaysPerGroup taggedLocalRelays
         localRelaysMap    = map Map.fromList $ zipWith zip localRelaysBlocks
                                                            peerAdvertise
         localRootPeers    = zipWith (\(h, w) g -> (h, w, g)) targets localRelaysMap
 
     lrpDNSMap <- Script . NonEmpty.fromList
-              <$> listOf1 (genLookup taggedLocalRelays)
+              <$> listOf1 (genDNSLookupMap taggedLocalRelays)
 
     -- Generate PublicRootPeers
     --
@@ -189,7 +178,7 @@ genMockRoots = sized $ \relaysNumber -> do
     let publicRootAdvertise = vectorOf relaysNumber arbitrary
 
     publicRootPeers <- Map.fromList . zip publicRootRelays <$> publicRootAdvertise
-    publicRootPeersDNSMap <- Script . NonEmpty.fromList <$> listOf1 (genLookup publicRootRelays)
+    publicRootPeersDNSMap <- Script . NonEmpty.fromList <$> listOf1 (genDNSLookupMap publicRootRelays)
 
     return (MockRoots {
       mockLocalRootPeers        = localRootPeers,
@@ -197,6 +186,35 @@ genMockRoots = sized $ \relaysNumber -> do
       mockPublicRootPeers       = publicRootPeers,
       mockPublicRootPeersDNSMap = publicRootPeersDNSMap
     })
+  where
+    tagRelays =
+      zipWith
+        (\tag rel
+          -> case rel of
+               RelayAccessDomain domain port ->
+                 RelayAccessDomain (domain <> (pack . show) tag) port
+               RelayAccessSRVDomain domain ->
+                 RelayAccessSRVDomain (domain <> (pack . show) tag)
+               x -> x
+        )
+        [(0 :: Int), 1 .. ]
+
+blocks :: Int -> [a] -> [[a]]
+blocks _ [] = []
+blocks s l  = take s l : blocks s (drop s l)
+
+-- | DNS answers for the domains among the relays: two addresses for each
+-- plain domain, and for each SRV domain some of the plain ones.
+genDNSLookupMap :: [RelayAccessPoint] -> Gen MockDNSMap
+genDNSLookupMap relays = do
+    let (_relayAddress, relayDomains, relaySRVs) =
+          foldl' threeWay ([], [], []) relays
+    lookupIP <- genDomainIPLookupTable 2 (dapDomain <$> relayDomains)
+    srvs <- dealDomains relayDomains relaySRVs
+    let srvs' = bimap dapDomain (map dapDomain) <$> srvs
+    lookupSRV <- Map.fromList . map (bimap (,DNS.SRV) Right)
+                 <$> genGroupSrvs srvs'
+    return $ Map.union lookupIP lookupSRV
   where
     dapDomain (DomainAccessPoint d _p) = d
     dapDomain (DomainSRVAccessPoint d) = d
@@ -235,12 +253,6 @@ genMockRoots = sized $ \relaysNumber -> do
       RelayAccessDomain d p  -> (rAddressAcc, DomainAccessPoint d p : rDomainAcc, rSRVAcc)
       RelayAccessSRVDomain d -> (rAddressAcc, rDomainAcc, DomainSRVAccessPoint d : rSRVAcc)
 
-    genTargets :: Gen (HotValency, WarmValency)
-    genTargets = do
-      warmValency <- WarmValency <$> chooseEnum (1, 5)
-      hotValency <- HotValency <$> chooseEnum (1, getWarmValency warmValency)
-      return (hotValency, warmValency)
-
     genDomainIPLookupTable :: Int -> [DNS.Domain] -> Gen (Map (DNS.Domain, DNS.TYPE)
                                                               MockDNSLookupResult)
     genDomainIPLookupTable ipsPerDomain localRootDomains = do
@@ -258,21 +270,6 @@ genMockRoots = sized $ \relaysNumber -> do
           lrpDNSMap = Map.fromList $ zip rootDomainKeys (Left <$> localRootDomainsIP_TTls)
 
       return lrpDNSMap
-
-    tagRelays =
-      zipWith
-        (\tag rel
-          -> case rel of
-               RelayAccessDomain domain port ->
-                 RelayAccessDomain (domain <> (pack . show) tag) port
-               RelayAccessSRVDomain domain ->
-                 RelayAccessSRVDomain (domain <> (pack . show) tag)
-               x -> x
-        )
-        [(0 :: Int), 1 .. ]
-
-    blocks _ [] = []
-    blocks s l  = take s l : blocks s (drop s l)
 
 -- assigns weights and priorities to SRV record's subordinate domains
 -- such that several subdomains may have the same priority level and port
@@ -298,6 +295,81 @@ genGroupSrvs = go []
           worker grouped' (count - howMany) (drop howMany domains')
     organized <- worker [] (length subordinates) subordinates
     go ((srv, organized) : acc) srvs
+
+genTargets :: Gen (HotValency, WarmValency)
+genTargets = do
+  warmValency <- WarmValency <$> chooseEnum (1, 5)
+  hotValency <- HotValency <$> chooseEnum (1, getWarmValency warmValency)
+  return (hotValency, warmValency)
+
+type LocalRootsConfig = [( HotValency
+                         , WarmValency
+                         , Map RelayAccessPoint (LocalRootConfig ()))]
+
+-- | The local root groups the provider publishes.
+type LocalRootGroups = [( HotValency
+                        , WarmValency
+                        , Map SockAddr (LocalRootConfig ()))]
+
+data Edit = EditFlags | EditTargets | Remove | Add
+  deriving (Bounded, Enum)
+
+-- | A new local roots configuration for a reload of the given one: a
+-- configuration of its own at an independent size, none at all, the same
+-- one, or an edit of it which changes flags or targets, removes entries or
+-- groups, or adds entries, IP addresses and domains of its own.
+genReconfiguration :: LocalRootsConfig -> Gen LocalRootsConfig
+genReconfiguration old =
+    frequency [ (2, sized $ \n -> do
+                      n' <- choose (0, n)
+                      mockLocalRootPeers <$> resize n' genMockRoots)
+              , (1, pure [])
+              , (1, pure old)
+              , (8, do edits <- frequency
+                                  [ (3, (: []) <$> elements [minBound .. maxBound])
+                                  , (1, sublistOf [minBound .. maxBound]) ]
+                       foldM edit old edits)
+              ]
+  where
+    edit :: LocalRootsConfig -> Edit -> Gen LocalRootsConfig
+    edit conf EditFlags =
+      traverse (\(h, w, m) -> (h, w,) <$> traverse (\c -> oneof [pure c, arbitrary]) m) conf
+    edit conf EditTargets =
+      traverse (\g@(_, _, m) -> oneof [pure g, (\(h, w) -> (h, w, m)) <$> genTargets]) conf
+    edit conf Remove =
+      sublistOf conf
+      >>= traverse (\(h, w, m) -> (h, w,) . Map.fromList <$> sublistOf (Map.toList m))
+    edit conf Add = do
+      new <- fmap Map.fromList . listOf1 $ (,) <$> genEntry <*> arbitrary
+      i <- chooseInt (0, length conf)
+      if i == length conf
+        then (\(h, w) -> conf ++ [(h, w, new)]) <$> genTargets
+        else pure [ if j == i then (h, w, m <> new) else g
+                  | (j, g@(h, w, m)) <- zip [0 ..] conf ]
+
+    -- an entry of the new configuration's own: a domain is named apart from
+    -- those of 'genMockRoots'
+    genEntry :: Gen RelayAccessPoint
+    genEntry = frequency [ (2, RelayAccessAddress <$> genIPv4 <*> genPort)
+                         , (1, RelayAccessDomain <$> genNewDomain <*> genPort)
+                         , (1, RelayAccessSRVDomain <$> genNewDomain) ]
+    genPort = fromIntegral <$> chooseInt (1, 65535)
+    genNewDomain = (<> "new") <$> genDomainName
+
+-- | Shrinks groups away, entries out of groups, targets towards one, and
+-- entries towards a plain configuration.
+shrinkLocalRootsConfig :: LocalRootsConfig -> [LocalRootsConfig]
+shrinkLocalRootsConfig = shrinkList group
+  where
+    group (h, w, m) =
+         [ (h', w', m) | (h', w') <- targets (h, w) ]
+      ++ [ (h, w, Map.fromList m') | m' <- shrinkList entry (Map.toList m) ]
+    targets (h, w) =
+      [ (1, 1) | (h, w) /= (1, 1) ]
+      ++ [ (1, w) | h /= 1, w /= 1 ]
+      ++ [ (h, WarmValency (getHotValency h)) | getHotValency h < getWarmValency w, h /= 1 ]
+    entry (rap, c) = [ (rap, plain) | c /= plain ]
+    plain = LocalRootConfig DoNotAdvertisePeer InitiatorAndResponderDiffusionMode Outbound ()
 
 instance Arbitrary MockRoots where
     arbitrary = genMockRoots
@@ -389,10 +461,11 @@ newtype DNSTimeout = DNSTimeout { getDNSTimeout :: DiffTime }
 
 instance Arbitrary DNSTimeout where
     arbitrary = DNSTimeout <$> genDiffTime 110 300
+    -- in whole milliseconds, as drawn
     shrink (DNSTimeout delta) =
-      [ DNSTimeout (fromRational delta')
-      | delta' <- shrink (realToFrac delta)
-      , delta' >= 110
+      [ DNSTimeout (fromIntegral ms / 1000)
+      | ms <- shrink (round (delta * 1000) :: Integer)
+      , ms >= 110
       ]
 
 
@@ -401,10 +474,11 @@ newtype DNSLookupDelay = DNSLookupDelay { getDNSLookupDelay :: DiffTime }
 
 instance Arbitrary DNSLookupDelay where
     arbitrary = DNSLookupDelay <$> genDiffTime 20 120
+    -- in whole milliseconds, as drawn
     shrink (DNSLookupDelay delta) =
-      [ DNSLookupDelay (fromRational delta')
-      | delta' <- shrink (realToFrac delta)
-      , delta' >= 20
+      [ DNSLookupDelay (fromIntegral ms / 1000)
+      | ms <- shrink (round (delta * 1000) :: Integer)
+      , ms >= 20
       ]
 
 -- | Mock DNSActions data structure for testing purposes.
@@ -780,29 +854,30 @@ ipAddressesOf m =
 -- once, IP addresses included, even when the new configuration has no domain
 -- name to resolve.
 --
--- From the reload at 100 s on, every value the provider publishes has the
--- groups and targets of the new configuration, every IP address of a group
--- with its own configuration, and nothing else but addresses of the group's
--- domains, each with that domain's configuration.
+-- The provider sees the change at the reload, after 'reloadDelay', and from
+-- then on every value it publishes has the groups and targets of the new
+-- configuration, every IP address of a group with its own configuration, and
+-- nothing else but addresses of the group's domains, each with that domain's
+-- configuration.
 --
 -- At the reload a kept domain contributes the addresses it had, which must be
 -- there, and no other domain contributes: a new one is not resolved yet. Every
 -- kept domain is then looked up again. For a configuration without domain
 -- names this is equality with the configured groups.
 --
-prop_local_reconfiguresIPs :: MockRoots
-                           -> MockRoots
-                           -> Bool
-                           -> Script DNSTimeout
+prop_local_reconfiguresIPs :: Script DNSTimeout
                            -> Script DNSLookupDelay
                            -> TestSeed
                            -> Property
-prop_local_reconfiguresIPs mockRoots@(MockRoots localRoots (Script dnsMaps) _ _)
-                           (MockRoots newRoots _ _ _)
-                           ipOnly dnsTimeoutScript dnsLookupDelayScript dnsSeed =
-    let newRoots'
+prop_local_reconfiguresIPs dnsTimeoutScript dnsLookupDelayScript dnsSeed =
+    checkCoverage $
+    forAllShrink genRoots shrinkRoots $
+    \(mockRoots@(MockRoots localRoots (Script dnsMaps) _ _), newRoots, ipOnly) ->
+    let newRoots' :: LocalRootsConfig
+        newRoots'
           | ipOnly    = ipEntriesOnly newRoots
           | otherwise = newRoots
+        simTrace :: SimTrace ()
         simTrace = runSimTrace
                  $ mockLocalRootPeersProvider tracerTraceLocalRoots
                                               mockRoots
@@ -810,26 +885,40 @@ prop_local_reconfiguresIPs mockRoots@(MockRoots localRoots (Script dnsMaps) _ _)
                                               dnsTimeoutScript
                                               dnsLookupDelayScript
                                               dnsSeed
+        tr :: [(Time, TestTraceEvent (TraceLocalRootPeers () SockAddr))]
         tr = selectLocalRootPeersWithDNSEvents simTrace
+        published :: [(Time, LocalRootGroups)]
         published = [ (t, groups)
-                    | (t, Published groups) <- selectTraceEventsDynamicWithTime simTrace ]
+                    | (t, Published groups) <- selectTraceEventsDynamicWithTime simTrace
+                    ]
+        reload :: Time
         reload = Time reloadDelay
+        changed :: Bool
         changed = newRoots' /= localRoots
         -- the groups published at the reload: the last by then, as no answer
         -- of the old lookup threads is published in the instant of the reload
+        atReload :: LocalRootGroups
         atReload = last ([] : [ groups | (t, groups) <- published, t <= reload ])
         -- the groups the provider wrote in that instant, if any, which it
         -- traces right after the domains, and only then
+        writtenAtReload, tracedAtReload :: [LocalRootGroups]
         writtenAtReload = [ groups | (t, groups) <- published, t == reload ]
         tracedAtReload  = case [ ev | (_, Left ev) <- after ] of
                             _ : TraceLocalRootDomains _ : TraceLocalRootGroups g : _ -> [g]
                             _ -> []
-        oldDomains = Set.fromList [ rap | (_, _, m) <- localRoots
-                                        , rap <- Map.keys m, not (isRelayAccessAddress rap) ]
+        oldDomains :: Set RelayAccessPoint
+        oldDomains = Set.fromList [ rap
+                                  | (_, _, m) <- localRoots
+                                  , rap <- Map.keys m
+                                  , not (isRelayAccessAddress rap)
+                                  ]
         -- the trace up to the provider seeing the change, and from then on
+        before, after :: [(Time, TestTraceEvent (TraceLocalRootPeers () SockAddr))]
         (before, after) = break isReconfigured tr
+        isReconfigured :: (Time, TestTraceEvent (TraceLocalRootPeers () SockAddr)) -> Bool
         isReconfigured (_, Left TraceLocalRootReconfigured {}) = True
         isReconfigured _                                       = False
+        reconfigured :: Bool
         reconfigured = case after of
                          (t, _) : _ -> t >= reload
                          []         -> False
@@ -837,46 +926,96 @@ prop_local_reconfiguresIPs mockRoots@(MockRoots localRoots (Script dnsMaps) _ _)
         -- the ones it started the new configuration from: those of each kept
         -- domain, none for the others. The last traced map is the last
         -- committed one, as IOSim resumes threads in the order they committed
+        resolvedBefore :: Map RelayAccessPoint [SockAddr]
         resolvedBefore = last (Map.empty : [ m | (_, Left (TraceLocalRootDNSMap m)) <- before ])
-        startedFrom    = listToMaybe [ m | (_, Left (TraceLocalRootDNSMap m)) <- after ]
-        expectedStart  = Map.fromList [ (rap, Map.findWithDefault [] rap resolvedBefore)
-                                      | (_, _, m) <- newRoots'
-                                      , rap <- Map.keys m
-                                      , not (isRelayAccessAddress rap)
-                                      ]
+        startedFrom :: Maybe (Map RelayAccessPoint [SockAddr])
+        startedFrom = listToMaybe [ m | (_, Left (TraceLocalRootDNSMap m)) <- after ]
+        expectedStart :: Map RelayAccessPoint [SockAddr]
+        expectedStart = Map.fromList [ (rap, Map.findWithDefault [] rap resolvedBefore)
+                                     | (_, _, m) <- newRoots'
+                                     , rap <- Map.keys m
+                                     , not (isRelayAccessAddress rap)
+                                     ]
         -- the addresses of the IP entries and the kept domains at the reload,
         -- each with the configuration of its IP entry, if any, else of the
         -- first domain of its group that holds it, as the provider gives an
         -- address held by several entries
+        requiredAtReload :: [Map SockAddr (LocalRootConfig ())]
         requiredAtReload =
           [ ipAddressesOf m
             `Map.union`
             Map.fromListWith (\_ first -> first)
               [ (a, c)
-              | (rap, c) <- Map.toList m, not (isRelayAccessAddress rap)
-              , a <- Map.findWithDefault [] rap expectedStart ]
-          | (_, _, m) <- newRoots' ]
+              | (rap, c) <- Map.toList m
+              , not (isRelayAccessAddress rap)
+              , a <- Map.findWithDefault [] rap expectedStart
+              ]
+          | (_, _, m) <- newRoots'
+          ]
+        missingAtReload :: [String]
         missingAtReload
           | changed   = [ show (a, c) ++ " missing at the reload in " ++ show pm
                         | (required, (_, _, pm)) <- zip requiredAtReload atReload
                         , (a, c) <- Map.toList required
-                        , Map.lookup a pm /= Just c ]
+                        , Map.lookup a pm /= Just c
+                        ]
           | otherwise = []
         -- the kept domains are looked up again
-        lookedUp = Set.fromList [ d | (_, Right ev) <- after, Just d <- [lookedUpDomain ev] ]
+        lookedUp :: Set DNS.Domain
+        lookedUp = Set.fromList [ d
+                                | (_, Right ev) <- after
+                                , Just d <- [lookedUpDomain ev]
+                                ]
+        notLookedUp :: [RelayAccessPoint]
         notLookedUp
-          | changed   = [ rap | (_, _, m) <- newRoots', rap <- Map.keys m
-                              , rap `Set.member` oldDomains
-                              , Just d <- [relayAccessPointDomain rap], d `Set.notMember` lookedUp ]
+          | changed   = [ rap
+                        | (_, _, m) <- newRoots'
+                        , rap <- Map.keys m
+                        , rap `Set.member` oldDomains
+                        , Just d <- [relayAccessPointDomain rap]
+                        , d `Set.notMember` lookedUp
+                        ]
           | otherwise = []
+        sameShape :: (   (HotValency, WarmValency, Map RelayAccessPoint (LocalRootConfig ()))
+                      -> (HotValency, WarmValency, Map RelayAccessPoint (LocalRootConfig ()))
+                      -> Bool)
+                  -> Bool
+        sameShape f = changed
+                   && length newRoots' == length localRoots
+                   && and (zipWith f newRoots' localRoots)
+        allowedOld, allowedLater :: [Map SockAddr [LocalRootConfig ()]]
+        allowedOld   = map (allowedBy dnsMaps (`Set.member` oldDomains)) newRoots'
+        allowedLater = map (allowedBy dnsMaps (const True)) newRoots'
+        -- once the groups match the new configuration, an address beyond
+        -- those of its IP entries and old domains is a new domain's
+        newDomainContributes :: Bool
+        newDomainContributes =
+          any (\(t, groups) -> t > reload && isJust (discrepancy newRoots' allowedOld groups))
+              published
     in counterexample (intercalate "\n" $ map show tr)
-     $ classify (all (\(_, _, m) -> all isRelayAccessAddress (Map.keys m)) newRoots')
+     $ cover 30 (all (all isRelayAccessAddress . Map.keys . entriesOf) newRoots')
                 "new configuration has no domain names"
-     $ classify (null [ () | (_, _, m) <- newRoots', rap <- Map.keys m, isRelayAccessAddress rap ])
+     $ cover 1 (null [ ()
+                     | (_, _, m) <- newRoots'
+                     , rap <- Map.keys m
+                     , isRelayAccessAddress rap
+                     ])
                 "new configuration has no IP addresses"
-     $ classify (newRoots' == localRoots) "unchanged configuration"
-     $ counterexample "the simulation failed"
-         (either (const False) (const True) (traceResult False simTrace))
+     $ cover 1 (newRoots' == localRoots) "unchanged configuration"
+     $ cover 1 (null localRoots && not (null newRoots')) "from no groups"
+     $ cover 1 (not (null localRoots) && null newRoots') "to no groups"
+     $ cover 1 (sameShape (\g g' -> targetsOf g == targetsOf g'
+                                  && Map.keys (entriesOf g) == Map.keys (entriesOf g')))
+               "only flags change"
+     $ cover 1 (sameShape (\g g' -> entriesOf g == entriesOf g')) "only targets change"
+     $ cover 1 (newRoots' /= localRoots && removalOf newRoots' localRoots) "only removals"
+     $ cover 5 (any (\rap -> not (isRelayAccessAddress rap) && rap `Set.member` oldDomains)
+                    (concatMap (Map.keys . entriesOf) newRoots'))
+               "a domain is kept"
+     $ cover 5 newDomainContributes "a new domain contributes"
+     $ (case traceResult False simTrace of
+          Left e  -> counterexample ("the simulation failed: " ++ show e) False
+          Right _ -> property True)
        .&&. counterexample "the configuration change was not seen at the reload"
               (not changed || reconfigured)
        .&&. counterexample ("the reload instant relies on whole-millisecond "
@@ -893,9 +1032,16 @@ prop_local_reconfiguresIPs mockRoots@(MockRoots localRoots (Script dnsMaps) _ _)
               (not changed || writtenAtReload == tracedAtReload)
        .&&. counterexample ("kept domains not looked up again: " ++ show notLookedUp)
               (null notLookedUp)
-       .&&. counterexample "at the reload" (applies newRoots' (`Set.member` oldDomains) atReload)
-       .&&. conjoin [ counterexample ("at " ++ show t) (applies newRoots' (const True) groups)
-                    | (t, groups) <- published, t > reload ]
+       .&&. (case discrepancy newRoots' allowedOld atReload of
+               Nothing -> property True
+               Just e  -> counterexample ("at the reload: " ++ e) False)
+       .&&. (case [ "at " ++ show t ++ ": " ++ e
+                  | (t, groups) <- published
+                  , t > reload
+                  , Just e <- [discrepancy newRoots' allowedLater groups]
+                  ] of
+               []    -> property True
+               e : _ -> counterexample e False)
   where
     -- the domain a lookup trace is of; the subordinate of an SRV domain is
     -- traced with it
@@ -907,45 +1053,126 @@ prop_local_reconfiguresIPs mockRoots@(MockRoots localRoots (Script dnsMaps) _ _)
       SRVLookupResult _ d _          -> Just d
       SRVLookupError _ d             -> Just d
 
+    genRoots :: Gen (MockRoots, LocalRootsConfig, Bool)
+    genRoots = do
+      roots <- arbitrary
+      noGroups <- frequency [(1, pure True), (5, pure False)]
+      let roots' | noGroups  = roots { mockLocalRootPeers = [] }
+                 | otherwise = roots
+      newRoots <- genReconfiguration (mockLocalRootPeers roots')
+      -- the domains the new configuration adds get answers too; for the
+      -- old ones the script's own entries take precedence
+      newDNSMap <- genDNSLookupMap (concatMap (Map.keys . entriesOf) newRoots)
+      let roots'' = roots' { mockLocalRootPeersDNSMap =
+                               (`Map.union` newDNSMap) <$> mockLocalRootPeersDNSMap roots' }
+      ipOnly <- frequency [(1, pure True), (2, pure False)]
+      return (roots'', newRoots, ipOnly)
+
+    -- the old configuration only loses entries, and the new one loses them
+    -- too, so a kept domain stays kept and a new one new; an unchanged
+    -- configuration stays unchanged
+    shrinkRoots :: (MockRoots, LocalRootsConfig, Bool) -> [(MockRoots, LocalRootsConfig, Bool)]
+    shrinkRoots (roots@MockRoots { mockLocalRootPeers = old }, newRoots, ipOnly) =
+         [ (roots { mockLocalRootPeers = old' }, newRoots', ipOnly)
+         | old' <- shrinkList (\(h, w, m) -> [ (h, w, Map.fromList m')
+                                             | m' <- shrinkList (const []) (Map.toList m)
+                                             ])
+                              old
+         , let removed = keysOf old `Set.difference` keysOf old'
+               newRoots' | newRoots == old = old'
+                         | otherwise       = without removed newRoots
+         ]
+      ++ [ (roots, newRoots', ipOnly)
+         | newRoots /= old
+         , newRoots' <- shrinkLocalRootsConfig newRoots
+         ]
+      -- the public roots play no part
+      ++ [ ( roots { mockPublicRootPeers       = Map.empty
+                   , mockPublicRootPeersDNSMap = singletonScript Map.empty }
+           , newRoots, ipOnly )
+         | not (Map.null (mockPublicRootPeers roots))
+         ]
+      where
+        keysOf :: LocalRootsConfig -> Set RelayAccessPoint
+        keysOf conf = Set.fromList (concatMap (Map.keys . entriesOf) conf)
+
+        without :: Set RelayAccessPoint -> LocalRootsConfig -> LocalRootsConfig
+        without removed = map (\(h, w, m) -> (h, w, m `Map.withoutKeys` removed))
+
+    -- the new groups are the old ones with groups or entries left out
+    removalOf :: LocalRootsConfig -> LocalRootsConfig -> Bool
+    removalOf [] _ = True
+    removalOf _ [] = False
+    removalOf new@((h, w, m) : new') ((h', w', m') : old')
+      | h == h', w == w', m `Map.isSubmapOf` m' = removalOf new' old'
+      | otherwise                               = removalOf new old'
+
     -- the addresses a relay access point can stand for, in any step of the
     -- DNS script
-    resolvable :: RelayAccessPoint -> Set SockAddr
-    resolvable = \case
+    resolvable :: NonEmpty MockDNSMap -> RelayAccessPoint -> Set SockAddr
+    resolvable dnsMaps = \case
       RelayAccessAddress ip port -> Set.singleton (toSockAddr (ip, port))
-      RelayAccessDomain d port   -> aRecords d port
+      RelayAccessDomain d port   -> aRecords dnsMaps d port
       RelayAccessSRVDomain d     ->
-        Set.unions [ aRecords d' port
+        Set.unions [ aRecords dnsMaps d' port
                    | dnsMap <- NonEmpty.toList dnsMaps
                    , Just (Right srvs) <- [Map.lookup (d, DNS.SRV) dnsMap]
-                   , (d', _, _, port) <- srvs ]
-    aRecords d port =
+                   , (d', _, _, port) <- srvs
+                   ]
+
+    aRecords :: NonEmpty MockDNSMap -> DNS.Domain -> PortNumber -> Set SockAddr
+    aRecords dnsMaps d port =
       Set.fromList [ toSockAddr (ip, port)
                    | dnsMap <- NonEmpty.toList dnsMaps
                    , Just (Left ips) <- [Map.lookup (d, DNS.A) dnsMap]
-                   , (ip, _) <- ips ]
+                   , (ip, _) <- ips
+                   ]
 
-    -- the published groups are those of the new configuration, where only
-    -- the domains 'resolved' admits may have contributed addresses
-    applies :: [(HotValency, WarmValency, Map RelayAccessPoint (LocalRootConfig ()))]
-            -> (RelayAccessPoint -> Bool)
-            -> [(HotValency, WarmValency, Map SockAddr (LocalRootConfig ()))]
-            -> Property
-    applies conf resolved groups =
-         counterexample ("groups or targets differ: " ++ show groups)
-           (map (\(h, w, _) -> (h, w)) groups == map (\(h, w, _) -> (h, w)) conf)
-      .&&. conjoin (zipWith group conf groups)
+    -- the addresses each group may hold, with the configurations each may
+    -- have, when only the domains 'resolved' admits have contributed
+    allowedBy :: NonEmpty MockDNSMap
+              -> (RelayAccessPoint -> Bool)
+              -> (HotValency, WarmValency, Map RelayAccessPoint (LocalRootConfig ()))
+              -> Map SockAddr [LocalRootConfig ()]
+    allowedBy dnsMaps resolved (_, _, m) =
+      Map.fromListWith (++) [ (a, [c])
+                            | (rap, c) <- Map.toList m
+                            , isRelayAccessAddress rap || resolved rap
+                            , a <- Set.toList (resolvable dnsMaps rap)
+                            ]
+
+    -- the first way the published groups differ from those of the new
+    -- configuration, if any
+    discrepancy :: LocalRootsConfig
+                -> [Map SockAddr [LocalRootConfig ()]]
+                -> [(HotValency, WarmValency, Map SockAddr (LocalRootConfig ()))]
+                -> Maybe String
+    discrepancy conf allowed groups
+      | map targetsOf groups /= map targetsOf conf
+      = Just ("groups or targets differ: " ++ show groups)
+      | otherwise
+      = listToMaybe (concat (zipWith3 group conf allowed groups))
       where
-        group (_, _, m) (_, _, pm) =
-               conjoin [ counterexample (show a ++ " missing or misconfigured in " ++ show pm)
-                                        (Map.lookup a pm == Just c)
-                       | (RelayAccessAddress ip port, c) <- Map.toList m
-                       , let a = toSockAddr (ip, port) ]
-          .&&. conjoin [ counterexample (show (a, c) ++ " is not from the configuration " ++ show m)
-                                        (any (\(rap, c') -> c == c'
-                                                         && (isRelayAccessAddress rap || resolved rap)
-                                                         && a `Set.member` resolvable rap)
-                                             (Map.toList m))
-                       | (a, c) <- Map.toList pm ]
+        group :: (HotValency, WarmValency, Map RelayAccessPoint (LocalRootConfig ()))
+              -> Map SockAddr [LocalRootConfig ()]
+              -> (HotValency, WarmValency, Map SockAddr (LocalRootConfig ()))
+              -> [String]
+        group (_, _, m) ok (_, _, pm) =
+             [ show a ++ " missing or misconfigured in " ++ show pm
+             | (RelayAccessAddress ip port, c) <- Map.toList m
+             , let a = toSockAddr (ip, port)
+             , Map.lookup a pm /= Just c
+             ]
+          ++ [ show (a, c) ++ " is not from the configuration " ++ show m
+             | (a, c) <- Map.toList pm
+             , c `notElem` Map.findWithDefault [] a ok
+             ]
+
+    targetsOf :: (HotValency, WarmValency, entries) -> (HotValency, WarmValency)
+    targetsOf (h, w, _) = (h, w)
+
+    entriesOf :: (HotValency, WarmValency, entries) -> entries
+    entriesOf (_, _, m) = m
 
 -- | The provider publishes the IP addresses of its configuration before it
 -- sets up a DNS resolver, so they are in place even if that fails: at
@@ -963,8 +1190,7 @@ prop_local_publishesBeforeResolver (MockRoots localRoots (Script dnsMaps) _ _)
     newRoots' :: LocalRootsConfig
     newRoots' = ipEntriesOnly newRoots
 
-    addressesOf :: LocalRootsConfig
-                -> [(HotValency, WarmValency, Map SockAddr (LocalRootConfig ()))]
+    addressesOf :: LocalRootsConfig -> LocalRootGroups
     addressesOf conf = [ (h, w, ipAddressesOf m) | (h, w, m) <- conf ]
 
     sim :: IOSim s [(HotValency, WarmValency, Map SockAddr (LocalRootConfig ()))]
