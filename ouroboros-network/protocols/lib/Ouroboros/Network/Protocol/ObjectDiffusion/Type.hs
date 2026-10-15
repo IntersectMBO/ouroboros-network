@@ -18,7 +18,7 @@ module Ouroboros.Network.Protocol.ObjectDiffusion.Type
   ( ObjectDiffusion (..)
   , Message (..)
   , ObjectIdsReplyList (..)
-  , ObjectIdsRequestKind (..)
+  , SingObjectIdsRequestKind (..)
   , singObjectIdsRequestKind
   , SingObjectDiffusion (..)
   , SingStObjectIdsKind (..)
@@ -194,25 +194,25 @@ newtype NumObjectsUnacknowledged = NumObjectsUnacknowledged {getNumObjectsUnackn
 -- server must reply. This can be @'StObjectIdsNonBlocking@ or
 -- @'StObjectIdsBlocking 'StCanAwait@. but not @'StObjectIdsBlocking
 -- 'StMustReply@, which can only be reached via 'MsgAwaitReply'.
-data ObjectIdsRequestKind (kind :: StObjectIdsKind) where
-  RequestObjectIdsNonBlocking
-    :: ObjectIdsRequestKind 'StObjectIdsNonBlocking
-  RequestObjectIdsBlocking
-    :: ObjectIdsRequestKind ('StObjectIdsBlocking 'StCanAwait)
+data SingObjectIdsRequestKind (kind :: StObjectIdsKind) where
+  SingRequestObjectIdsNonBlocking
+    :: SingObjectIdsRequestKind 'StObjectIdsNonBlocking
+  SingRequestObjectIdsBlocking
+    :: SingObjectIdsRequestKind ('StObjectIdsBlocking 'StCanAwait)
 
-deriving instance Eq (ObjectIdsRequestKind kind)
-deriving instance Show (ObjectIdsRequestKind kind)
+deriving instance Eq (SingObjectIdsRequestKind kind)
+deriving instance Show (SingObjectIdsRequestKind kind)
 
-instance NFData (ObjectIdsRequestKind kind) where
-  rnf RequestObjectIdsNonBlocking = ()
-  rnf RequestObjectIdsBlocking    = ()
+instance NFData (SingObjectIdsRequestKind kind) where
+  rnf SingRequestObjectIdsNonBlocking = ()
+  rnf SingRequestObjectIdsBlocking    = ()
 
 singObjectIdsRequestKind
-  :: ObjectIdsRequestKind kind
+  :: SingObjectIdsRequestKind kind
   -> SingStObjectIdsKind kind
-singObjectIdsRequestKind RequestObjectIdsNonBlocking =
+singObjectIdsRequestKind SingRequestObjectIdsNonBlocking =
   SingObjectIdsNonBlocking
-singObjectIdsRequestKind RequestObjectIdsBlocking =
+singObjectIdsRequestKind SingRequestObjectIdsBlocking =
   SingObjectIdsBlocking SingCanAwait
 
 -- | Object-ID replies indexed by the protocol state in which they can be
@@ -276,19 +276,18 @@ instance Protocol (ObjectDiffusion objectId object) where
     -- | Request a list of object identifiers from the server, and confirm a
     -- number of outstanding object identifiers.
     --
-    -- With 'RequestObjectIdsBlocking' this is a blocking operation: the server
+    -- With 'SingRequestObjectIdsBlocking' this is a blocking operation: the server
     -- either replies promptly with at least one object identifier or sends
     -- 'MsgAwaitReply'. After 'MsgAwaitReply', it waits for new objects and
     -- eventually replies with identifiers or 'MsgServerIdle'.
     --
-    -- With 'RequestObjectIdsNonBlocking' this is a non-blocking operation: the
+    -- With 'SingRequestObjectIdsNonBlocking' this is a non-blocking operation: the
     -- response may be an empty list and this does expect a prompt response.
     -- This covers high throughput use cases where we wish to pipeline, by
     -- interleaving requests for additional object identifiers with requests
     -- for objects, which requires these requests not block.
     --
-    -- Notice that this is requiring an 'ObjectIdsRequestKind' argument instead
-    -- of a 'SingStObjectIdsKind' argument to limit @kind@ to
+    -- A 'SingObjectIdsRequestKind' argument restricts @kind@ to
     -- @'StObjectIdsNonBlocking@ and @'StObjectIdsBlocking 'StCanAwait@.
     -- 'SingStObjectIdsKind' would additionally allow the invalid
     -- @'StObjectIdsBlocking 'StMustReply@, which can only be reached via
@@ -296,8 +295,8 @@ instance Protocol (ObjectDiffusion objectId object) where
     --
     -- The request gives the maximum number of object identifiers that can be
     -- accepted in the response. This must be greater than zero in the
-    -- 'RequestObjectIdsBlocking' case. In the
-    -- 'RequestObjectIdsNonBlocking' case either the numbers acknowledged or
+    -- 'SingRequestObjectIdsBlocking' case. In the
+    -- 'SingRequestObjectIdsNonBlocking' case either the numbers acknowledged or
     -- the number requested __MUST__ be non-zero. In either case, the number
     -- requested __MUST__ not put the total outstanding over the fixed protocol
     -- limit.
@@ -319,7 +318,7 @@ instance Protocol (ObjectDiffusion objectId object) where
 
     MsgRequestObjectIds
       :: forall (kind :: StObjectIdsKind) objectId object.
-         ObjectIdsRequestKind kind
+         SingObjectIdsRequestKind kind
       -> NumObjectIdsAck -- ^ Acknowledge this number of outstanding objects
       -> NumObjectIdsReq -- ^ Request up to this number of object ids
       -> Message (ObjectDiffusion objectId object) StIdle (StObjectIds kind)

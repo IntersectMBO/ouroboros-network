@@ -127,11 +127,11 @@ instance (Arbitrary objectId, Arbitrary object)
     , do
         ackNo <- arbitrary
         reqNo <- arbitrary
-        pure $ AnyMessage $ MsgRequestObjectIds RequestObjectIdsBlocking ackNo reqNo
+        pure $ AnyMessage $ MsgRequestObjectIds SingRequestObjectIdsBlocking ackNo reqNo
     , do
         ackNo <- arbitrary
         reqNo <- arbitrary
-        pure $ AnyMessage $ MsgRequestObjectIds RequestObjectIdsNonBlocking ackNo reqNo
+        pure $ AnyMessage $ MsgRequestObjectIds SingRequestObjectIdsNonBlocking ackNo reqNo
     , do
         objectIds <- NonEmpty.fromList . QC.getNonEmpty <$> arbitrary
         pure $
@@ -179,12 +179,12 @@ instance (Eq objectId, Eq object)
   (==) (AnyMessage MsgInit)
        (AnyMessage MsgInit) = True
 
-  (==) (AnyMessage (MsgRequestObjectIds RequestObjectIdsBlocking ackNo  reqNo))
-       (AnyMessage (MsgRequestObjectIds RequestObjectIdsBlocking ackNo' reqNo')) =
+  (==) (AnyMessage (MsgRequestObjectIds SingRequestObjectIdsBlocking ackNo  reqNo))
+       (AnyMessage (MsgRequestObjectIds SingRequestObjectIdsBlocking ackNo' reqNo')) =
     (ackNo, reqNo) == (ackNo', reqNo')
 
-  (==) (AnyMessage (MsgRequestObjectIds RequestObjectIdsNonBlocking ackNo  reqNo))
-       (AnyMessage (MsgRequestObjectIds RequestObjectIdsNonBlocking ackNo' reqNo')) =
+  (==) (AnyMessage (MsgRequestObjectIds SingRequestObjectIdsNonBlocking ackNo  reqNo))
+       (AnyMessage (MsgRequestObjectIds SingRequestObjectIdsNonBlocking ackNo' reqNo')) =
     (ackNo, reqNo) == (ackNo', reqNo')
 
   (==) (AnyMessage (MsgReplyObjectIds (BlockingReply objectIds)))

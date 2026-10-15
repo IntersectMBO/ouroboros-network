@@ -49,7 +49,7 @@ newtype ObjectDiffusionOutbound objectId object m a = ObjectDiffusionOutbound {
 -- It must be prepared to handle any of these.
 data OutboundStIdle objectId object m a = OutboundStIdle {
       recvMsgRequestObjectIds :: forall kind.
-                                 ObjectIdsRequestKind kind
+                                 SingObjectIdsRequestKind kind
                               -> NumObjectIdsAck
                               -> NumObjectIdsReq
                               -> m (OutboundStObjectIds kind objectId object m a),
@@ -125,7 +125,7 @@ objectDiffusionOutboundPeer (ObjectDiffusionOutbound outboundSt) =
                     (MsgReplyObjectIds objectIds)
                     (run k)
               -- Matching 'SendMsgServerIdle' refines @kind@ to the blocking
-              -- 'StMustReply' state, but 'ObjectIdsRequestKind' has no
+              -- 'StMustReply' state, but 'SingObjectIdsRequestKind' has no
               -- constructor for that state. A request can only enter the
               -- non-blocking state or blocking 'StCanAwait'; 'StMustReply' is
               -- reached later by sending 'MsgAwaitReply'. The empty case
