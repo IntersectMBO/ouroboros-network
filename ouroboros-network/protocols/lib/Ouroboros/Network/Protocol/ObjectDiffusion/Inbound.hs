@@ -86,7 +86,7 @@ objectDiffusionInboundPeerPipelined (ObjectDiffusionInboundPipelined inboundSt) 
       -> Peer (ObjectDiffusion objectId object) AsClient (Pipelined n (Collect objectId object)) StIdle m a
 
     run (SendMsgRequestObjectIdsBlocking ackNo reqNo onAwaitReply onReplyIds onServerIdle) =
-          Yield (MsgRequestObjectIds RequestObjectIdsBlocking ackNo reqNo)
+          Yield (MsgRequestObjectIds SingRequestObjectIdsBlocking ackNo reqNo)
             $ Await
             $ \case
                 MsgReplyObjectIds (BlockingReply objectIds) ->
@@ -101,7 +101,7 @@ objectDiffusionInboundPeerPipelined (ObjectDiffusionInboundPipelined inboundSt) 
                         run onServerIdle)
     run (SendMsgRequestObjectIdsPipelined ackNo reqNo k) =
           YieldPipelined
-            (MsgRequestObjectIds RequestObjectIdsNonBlocking ackNo reqNo)
+            (MsgRequestObjectIds SingRequestObjectIdsNonBlocking ackNo reqNo)
             (ReceiverAwait
               $ \(MsgReplyObjectIds (NonBlockingReply objectIds)) ->
                   ReceiverDone (CollectObjectIds reqNo objectIds)

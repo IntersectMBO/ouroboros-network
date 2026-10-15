@@ -20,7 +20,7 @@ import Ouroboros.Network.Protocol.ObjectDiffusion.Inbound
 import Ouroboros.Network.Protocol.ObjectDiffusion.Outbound
 import Ouroboros.Network.Protocol.ObjectDiffusion.Type (NumObjectIdsAck (..),
            NumObjectIdsReq (..), ObjectIdsReplyList (..),
-           ObjectIdsRequestKind (..))
+           SingObjectIdsRequestKind (..))
 
 import Control.Exception (assert)
 import Control.Monad (when)
@@ -85,7 +85,7 @@ testObjectDiffusionOutbound tracer objectId maxUnacked =
               (Map.fromList [ (x, ()) | x <- Foldable.toList unackedSeq ])
 
           recvMsgRequestObjectIds :: forall kind.
-                                     ObjectIdsRequestKind kind
+                                     SingObjectIdsRequestKind kind
                                   -> NumObjectIdsAck
                                   -> NumObjectIdsReq
                                   -> m (OutboundStObjectIds kind objectId object m ())
@@ -110,7 +110,7 @@ testObjectDiffusionOutbound tracer objectId maxUnacked =
                                 (Seq.take (fromIntegral ackNo) unackedSeq)
 
             case requestKind of
-              RequestObjectIdsBlocking | not (Seq.null unackedSeq')
+              SingRequestObjectIdsBlocking | not (Seq.null unackedSeq')
                 -> error $ "testObjectDiffusionOutbound.recvMsgRequestObjectIds: "
                         <> "peer made a blocking request for more object IDs when "
                         <> "there are still unacknowledged object IDs."
@@ -127,7 +127,7 @@ testObjectDiffusionOutbound tracer objectId maxUnacked =
                 remainingObjects' = drop (fromIntegral reqNo) remainingObjects
 
             return $! case (requestKind, unackedExtra) of
-              (RequestObjectIdsBlocking, []) ->
+              (SingRequestObjectIdsBlocking, []) ->
                 -- The test server is not also a client for the purpose of the
                 -- object diffusion protocol, and does not produce votes or
                 -- certificates. This means there is no source for which new
@@ -138,12 +138,12 @@ testObjectDiffusionOutbound tracer objectId maxUnacked =
                   SendMsgServerIdle
                     (outboundIdle unackedSeq'' unackedMap'' remainingObjects')
 
-              (RequestObjectIdsBlocking, obj : objs) ->
+              (SingRequestObjectIdsBlocking, obj : objs) ->
                 SendMsgReplyObjectIds
                   (BlockingReply (fmap objectId (obj :| objs)))
                   (outboundIdle unackedSeq'' unackedMap'' remainingObjects')
 
-              (RequestObjectIdsNonBlocking, objs) ->
+              (SingRequestObjectIdsNonBlocking, objs) ->
                 SendMsgReplyObjectIds
                   (NonBlockingReply (fmap objectId objs))
                   (outboundIdle unackedSeq'' unackedMap'' remainingObjects')
