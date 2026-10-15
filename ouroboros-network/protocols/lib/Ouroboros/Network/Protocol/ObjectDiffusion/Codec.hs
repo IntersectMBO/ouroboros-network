@@ -128,8 +128,8 @@ encodeObjectDiffusion encodeObjectId encodeObject = encode
       <> CBOR.encodeWord 1
       <> CBOR.encodeBool
            ( case requestKind of
-               RequestObjectIdsBlocking    -> True
-               RequestObjectIdsNonBlocking -> False
+               SingRequestObjectIdsBlocking    -> True
+               SingRequestObjectIdsNonBlocking -> False
            )
       <> CBOR.encodeWord16 ackNo
       <> CBOR.encodeWord16 reqNo
@@ -189,8 +189,8 @@ decodeObjectDiffusion decodeObjectId decodeObject = decode
           ackNo <- NumObjectIdsAck <$> CBOR.decodeWord16
           reqNo <- NumObjectIdsReq <$> CBOR.decodeWord16
           return $! if blocking
-            then SomeMessage $ MsgRequestObjectIds RequestObjectIdsBlocking ackNo reqNo
-            else SomeMessage $ MsgRequestObjectIds RequestObjectIdsNonBlocking ackNo reqNo
+            then SomeMessage $ MsgRequestObjectIds SingRequestObjectIdsBlocking ackNo reqNo
+            else SomeMessage $ MsgRequestObjectIds SingRequestObjectIdsNonBlocking ackNo reqNo
         (SingObjectIds singKind, 2, 2) -> withSingI singKind $ do
           CBOR.decodeListLenIndef
           objIds <- CBOR.decodeSequenceLenIndef
@@ -282,9 +282,9 @@ codecObjectDiffusionId = Codec {encode, decode}
       return $ case (stok, bytes) of
         (SingInit, Just (AnyMessage msg@MsgInit)) ->
           DecodeDone (SomeMessage msg) Nothing
-        (SingIdle, Just (AnyMessage msg@(MsgRequestObjectIds RequestObjectIdsBlocking _ _))) ->
+        (SingIdle, Just (AnyMessage msg@(MsgRequestObjectIds SingRequestObjectIdsBlocking _ _))) ->
           DecodeDone (SomeMessage msg) Nothing
-        (SingIdle, Just (AnyMessage msg@(MsgRequestObjectIds RequestObjectIdsNonBlocking _ _))) ->
+        (SingIdle, Just (AnyMessage msg@(MsgRequestObjectIds SingRequestObjectIdsNonBlocking _ _))) ->
           DecodeDone (SomeMessage msg) Nothing
         (SingIdle, Just (AnyMessage msg@(MsgRequestObjects {}))) ->
           DecodeDone (SomeMessage msg) Nothing
