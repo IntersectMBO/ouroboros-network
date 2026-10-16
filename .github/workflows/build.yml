@@ -36,7 +36,7 @@ jobs:
       if: runner.os == 'Windows'
       shell: 'C:/msys64/usr/bin/bash.exe -e {0}'
       run: |
-        /usr/bin/pacman -S --noconfirm mingw-w64-x86_64-pkg-config mingw-w64-x86_64-openssl mingw-w64-x86_64-sed base-devel autoconf-wrapper autoconf automake libtool make
+        /usr/bin/pacman -S --noconfirm mingw-w64-x86_64-pkg-config mingw-w64-x86_64-openssl base-devel autoconf-wrapper autoconf automake libtool make
 
     - name: Install Haskell
       uses: input-output-hk/actions/haskell@latest
