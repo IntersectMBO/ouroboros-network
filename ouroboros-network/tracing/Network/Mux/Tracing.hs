@@ -288,26 +288,26 @@ instance LogFormatting Mux.ChannelTrace where
       , "miniProtocolNum" .= String (showT mid)
       , "length" .= String (showT len)
       ]
-    forMachine _dtal (Mux.TraceChannelSendStart mid len) = mconcat
+    forMachine _dtal (Mux.TraceChannelSendStart mid) = mconcat
       [ "kind" .= String "Mux.TraceChannelSendStart"
       , "msg"  .= String "Channel Send Start"
       , "miniProtocolNum" .= String (showT mid)
-      , "length" .= String (showT len)
       ]
-    forMachine _dtal (Mux.TraceChannelSendEnd mid) = mconcat
+    forMachine _dtal (Mux.TraceChannelSendEnd mid len) = mconcat
       [ "kind" .= String "Mux.TraceChannelSendEnd"
       , "msg"  .= String "Channel Send End"
       , "miniProtocolNum" .= String (showT mid)
+      , "length" .= String (showT len)
       ]
 
     forHuman (Mux.TraceChannelRecvStart mid) =
       sformat ("Channel Receive Start on " % shown) mid
     forHuman (Mux.TraceChannelRecvEnd mid len) =
       sformat ("Channel Receive End on (" % shown % ") " % int) mid len
-    forHuman (Mux.TraceChannelSendStart mid len) =
-      sformat ("Channel Send Start on (" % shown % ") " % int) mid len
-    forHuman (Mux.TraceChannelSendEnd mid) =
-      sformat ("Channel Send End on " % shown) mid
+    forHuman (Mux.TraceChannelSendStart mid) =
+      sformat ("Channel Send Start on " % shown) mid
+    forHuman (Mux.TraceChannelSendEnd mid len) =
+      sformat ("Channel Send End on (" % shown % ") " % int) mid len
 
 instance MetaTrace Mux.ChannelTrace where
     namespaceFor Mux.TraceChannelRecvStart {}      =
