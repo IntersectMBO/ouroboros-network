@@ -2,11 +2,10 @@
 
 module Main (main) where
 
+import Bench.Env (prepareEnv)
 import Bench.TxSubmissionV2Server qualified as DirectV2
+import Bench.TxSubmissionV2Sweep qualified as Sweep
 
-import Control.DeepSeq (NFData, rnf)
-import Control.Exception (evaluate)
-import System.Mem (performMajorGC)
 import Test.Tasty.Bench
 
 import Test.Ouroboros.Network.PeerSelection.PeerMetric
@@ -63,12 +62,7 @@ main =
               $ \fixture ->
                 bench "server/direct-interpreter/multi-peer/100peers/1000batches" $
                   nfAppIO DirectV2.runDirectServerBenchmark fixture
+          , Sweep.benchmarks
           ]
         ]
       ]
-
-prepareEnv :: NFData a => a -> IO a
-prepareEnv a = do
-  _ <- evaluate (rnf a)
-  performMajorGC
-  pure a
