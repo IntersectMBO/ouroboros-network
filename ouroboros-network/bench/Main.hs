@@ -36,6 +36,9 @@ main =
           [ env (prepareEnv (TX.mkReceiveDuplicateFixture 100 3)) $ \fixture ->
                 bench ("handleReceivedTxIds/duplicate-active/100existing/3txids/" ++ benchLoopsLabel) $
                   nfAppIO (TX.runReceiveDuplicateLoop benchLoops) fixture
+          , env (prepareEnv (TX.mkReceiveRetainedFixture 100 3)) $ \fixture ->
+                bench ("handleReceivedTxIds/duplicate-retained/100existing/3txids/" ++ benchLoopsLabel) $
+                  nfAppIO (TX.runReceiveDuplicateLoop benchLoops) fixture
           , env (prepareEnv (TX.mkResolvedAckFixture 100 10)) $ \fixture ->
                 bench ("nextPeerAction/ack-resolved-retained/100advertisers/10txids/" ++ benchLoopsLabel) $
                   nfAppIO (TX.runPeerActionLoop benchLoops) fixture
