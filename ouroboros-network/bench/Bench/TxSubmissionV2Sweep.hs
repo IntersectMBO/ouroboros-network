@@ -9,14 +9,16 @@ module Bench.TxSubmissionV2Sweep (benchmarks) where
 
 import Control.Monad.Class.MonadTime.SI (DiffTime, Time (..), addTime)
 import Data.IntMap.Strict qualified as IntMap
-import Data.IntSet qualified as IntSet
 import Data.Map.Strict qualified as Map
 import Test.Tasty.Bench
 
-import Ouroboros.Network.TxSubmission.Inbound.V2.State (sweepSharedState)
+import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (sweepBatch)
+import Ouroboros.Network.TxSubmission.Inbound.V2.State (expireSharedStateUpTo,
+           sweepSharedState, sweepSharedStateUpTo)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
 
 import Bench.Env (prepareEnv)
+import Test.Ouroboros.Network.TxSubmission.TxLogic (swept)
 import Test.Ouroboros.Network.TxSubmission.Types ()
 
 now :: Time
@@ -41,8 +43,8 @@ retainedState n e =
     }
 
 -- | 'retainedState' with @a@ active entries above the retained keys, half
--- of them attempted, all of them referenced by some peer, as advertised
--- txids are until acked: what the orphan check walks on every sweep.
+-- of them attempted, each advertised by a peer, as advertised txids are:
+-- what the walk examines.
 activeState :: Int -> Int -> SharedTxState Int Int
 activeState n a = activeStateExpired n a 0
 
@@ -50,23 +52,32 @@ activeState n a = activeStateExpired n a 0
 activeStateExpired :: Int -> Int -> Int -> SharedTxState Int Int
 activeStateExpired n a e =
   (retainedState n e)
-    { sharedTxTable   = IntMap.fromList [ (k, entry k) | k <- active ]
-    , sharedTxIdToKey = Map.fromList [ (k, TxKey k) | k <- [0 .. n + a - 1] ]
-    , sharedKeyToTxId = IntMap.fromList [ (k, k) | k <- [0 .. n + a - 1] ]
-    , sharedNextTxKey = n + a
+    { sharedTxTable    = IntMap.fromList [ (k, entry k) | k <- active ]
+    , sharedTxIdToKey  = Map.fromList [ (k, TxKey k) | k <- [0 .. n + a - 1] ]
+    , sharedKeyToTxId  = IntMap.fromList [ (k, k) | k <- [0 .. n + a - 1] ]
+    , sharedNextTxKey  = n + a
     }
   where
     active = [n .. n + a - 1]
     entry k = TxEntry {
         txLease = TxClaimable now,
         txAttempt = if even k then 1 else 0,
+        txAdvertisers = 1,
         txInSubmission = False,
         currentMaxInflightMultiplicity = 1
       }
 
--- | The keys the peers reference in 'activeState': its active entries.
-activeLive :: Int -> Int -> IntSet.IntSet
-activeLive n a = IntSet.fromList [n .. n + a - 1]
+-- | One sweep, then expiry-only batches as the counters thread runs them,
+-- until none remain.
+drain :: SharedTxState Int Int -> SharedTxState Int Int
+drain st0 =
+  case sweepSharedStateUpTo sweepBatch now sweepStart st0 of
+    (st, True, _)  -> go st
+    (st, False, _) -> st
+  where
+    go st = case expireSharedStateUpTo sweepBatch now st of
+              (st', True)  -> go st'
+              (st', False) -> st'
 
 benchmarks :: Benchmark
 benchmarks =
@@ -78,13 +89,32 @@ benchmarks =
     , bgroup "unbounded"
         [ env (prepareEnv (retainedState n e)) $ \st ->
             bench (show n ++ "retained/" ++ show e ++ "expired") $
-              whnf (sweepSharedState now IntSet.empty) st
+              whnf (sweepSharedState now) st
         | (n, e) <- sizes ]
     , bgroup "active"
-        [ env (prepareEnv (activeState n a, activeLive n a)) $ \ ~(st, live) ->
+        [ env (prepareEnv (activeState n a)) $ \st ->
             bench (show n ++ "retained/" ++ show a ++ "active/0expired") $
-              whnf (sweepSharedState now live) st
+              whnf (sweepSharedState now) st
         | (n, a) <- [(100_000, 10_000), (100_000, 50_000)] ]
+    , bgroup "bounded"
+        [ env (prepareEnv (retainedState n e)) $ \st ->
+            bench (show n ++ "retained/" ++ show e ++ "expired/" ++ show sweepBatch) $
+              whnf (swept . sweepSharedStateUpTo sweepBatch now sweepStart) st
+        | (n, e) <- sizes ]
+    , bgroup "walk"
+        [ env (prepareEnv (activeState n a)) $ \st ->
+            bench (show n ++ "retained/" ++ show a ++ "active/0expired/" ++ show sweepBatch) $
+              whnf (swept . sweepSharedStateUpTo sweepBatch now sweepStart) st
+        | (n, a) <- [(100_000, 10_000), (100_000, 50_000)] ]
+    , bgroup "expire"
+        [ env (prepareEnv (activeStateExpired n a e)) $ \st ->
+            bench (show n ++ "retained/" ++ show a ++ "active/" ++ show e ++ "expired/" ++ show sweepBatch) $
+              whnf (fst . expireSharedStateUpTo sweepBatch now) st
+        | (n, a, e) <- [(100_000, 50_000, 0), (100_000, 50_000, 1_000)] ]
+    , bgroup "drain"
+        [ env (prepareEnv (retainedState n n)) $ \st ->
+            bench (show n ++ "retained/allexpired/" ++ show sweepBatch) $ whnf drain st
+        | n <- [100_000, 1_000_000] ]
     ]
   where
     sizes = [(100_000, 0), (100_000, 1_000), (100_000, 10_000), (100_000, 100_000)]

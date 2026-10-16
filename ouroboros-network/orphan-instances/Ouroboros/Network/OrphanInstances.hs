@@ -27,6 +27,7 @@ import Control.Exception (Exception (..))
 import Control.Monad (zipWithM)
 import Control.Monad.Class.MonadTime.SI (Time (..))
 import Data.Aeson
+import Data.Aeson.Key qualified as Key
 import Data.Aeson.Types (Pair, Parser, listValue)
 import Data.Bifunctor (first)
 import Data.Bool (bool)
@@ -94,8 +95,8 @@ import Ouroboros.Network.Server.RateLimiting (AcceptConnectionsPolicyTrace (..),
 import Ouroboros.Network.Snocket (LocalAddress (..), RemoteAddress)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types (ProcessedTxCount (..),
            SharedTxState (..), TraceTxLogic (..), TraceTxSubmissionInbound (..),
-           TxEntry (..), TxLease (..), TxSubmissionLogicVersion (..),
-           retainedSize, retainedToList)
+           TxSubmissionLogicVersion (..), retainedToList,
+           sharedTxStateCountFields, sharedTxStateCounts)
 import Ouroboros.Network.TxSubmission.Outbound (TraceTxSubmissionOutbound (..))
 
 -- Helper function for ToJSON instances with a "kind" field
@@ -1858,23 +1859,24 @@ traceSharedTxStateToJSON
   :: (Show addr, Show txid, HasRawTxId txid)
   => SharedTxState addr txid
   -> Value
-traceSharedTxStateToJSON SharedTxState {
+traceSharedTxStateToJSON st@SharedTxState {
                            sharedTxTable,
                            sharedRetainedTxs,
                            sharedTxIdToKey,
                            sharedKeyToTxId,
-                           sharedGeneration
+                           sharedGeneration,
+                           sharedRevision
                          } =
-    object
+    object $
       [ "sharedGeneration" .= sharedGeneration
-      , "activeTxCount" .= IntMap.size sharedTxTable
-      , "retainedTxCount" .= retainedSize sharedRetainedTxs
-      , "internedTxCount" .= Map.size sharedTxIdToKey
-      , "leasedTxCount" .= leasedTxCount
-      , "claimableTxCount" .= claimableTxCount
-      , "totalAttemptCount" .= totalAttemptCount
-      , "submittingTxCount" .= submittingTxCount
-      , "sharedTxTable" .= [ (renderTxId txKey, show txEntry)
+      , "sharedRevision" .= sharedRevision
+      ]
+      ++
+      [ Key.fromString name .= n
+      | (name, n) <- sharedTxStateCountFields (sharedTxStateCounts st)
+      ]
+      ++
+      [ "sharedTxTable" .= [ (renderTxId txKey, show txEntry)
                            | (txKey, txEntry) <- IntMap.toList sharedTxTable
                            ]
       , "sharedRetainedTxs" .= [ (renderTxId txKey, show retainUntil)
@@ -1883,20 +1885,6 @@ traceSharedTxStateToJSON SharedTxState {
       , "internedTxIds" .= fmap show (Map.keys sharedTxIdToKey)
       ]
   where
-    activeEntries = IntMap.elems sharedTxTable
-
-    leasedTxCount =
-      length [ () | TxEntry { txLease = TxLeased _ _ } <- activeEntries ]
-
-    claimableTxCount =
-      length [ () | TxEntry { txLease = TxClaimable _ } <- activeEntries ]
-
-    totalAttemptCount =
-      sum [ txAttempt | TxEntry { txAttempt } <- activeEntries ]
-
-    submittingTxCount =
-      length [ () | TxEntry { txInSubmission = True } <- activeEntries ]
-
     renderTxId txKey =
       maybe "<missing-txid>" show (IntMap.lookup txKey sharedKeyToTxId)
 
