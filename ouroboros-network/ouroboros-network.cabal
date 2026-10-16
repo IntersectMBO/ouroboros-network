@@ -308,7 +308,7 @@ library
     cardano-prelude,
     cardano-strict-containers >=0.1.4,
     cborg >=0.2.1 && <0.3,
-    containers,
+    containers >=0.6.7,
     contra-tracer,
     deepseq,
     dlist,
@@ -1107,11 +1107,14 @@ benchmark sim-benchmarks
 
   build-depends:
     base,
+    bytestring,
     containers,
     contra-tracer,
     deepseq,
     io-classes:{io-classes, si-timers, strict-stm},
+    nothunks,
     ouroboros-network,
+    ouroboros-network:api,
     ouroboros-network:ouroboros-network-tests-lib,
     ouroboros-network:protocols,
     pretty-simple,
