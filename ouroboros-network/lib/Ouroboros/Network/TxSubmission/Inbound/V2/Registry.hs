@@ -11,7 +11,13 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Registry
   , newPeerTxRegistry
   , newTxSubmissionCountersVar
   , txCountersThreadV2
+  , sweepInterval
+  , sweepBatch
+  , drainPause
   , withPeer
+    -- * For tests
+  , scrubFromPeerInFlight
+  , writeSharedStateIfChanged
     -- re-exports
   , RegisteredDelay
   ) where
@@ -23,7 +29,6 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer, traceWith)
 import Data.IntMap.Strict qualified as IntMap
-import Data.IntSet (IntSet)
 import Data.IntSet qualified as IntSet
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -54,17 +59,15 @@ type TxSubmissionCountersVar m = StrictTVar m TxSubmissionCountersAcc
 -- | Per-peer in-flight TVar.
 type PeerTxInFlightVar m = StrictTVar m PeerTxInFlight
 
--- | Registry of every live peer's coordination TVars: its in-flight
--- contributions and its private counters cell.
+-- | Registry of every live peer's private counters cell.
 --
--- 'withPeer' adds the pair on bracket-enter and removes it on
+-- 'withPeer' adds the cell on bracket-enter and removes it on
 -- bracket-exit (after scrubbing any contributions the peer still has
 -- to shared state and flushing its counters into the retired
--- accumulator).  'snapshotLiveReferences' reads the in-flight vars to
--- compute the @liveAdvertised@ union; 'snapshotCounters' reads the
--- counter cells to aggregate for emission.
+-- accumulator); 'snapshotCounters' reads the cells to aggregate for
+-- emission.
 type PeerTxRegistry m peeraddr =
-       StrictTVar m (Map peeraddr (PeerTxInFlightVar m, TxSubmissionCountersVar m))
+       StrictTVar m (Map peeraddr (TxSubmissionCountersVar m))
 
 newSharedTxStateVar
   :: MonadSTM m
@@ -85,15 +88,18 @@ newPeerTxRegistry = newTVarIO Map.empty
 
 -- | Central bookkeeping thread for V2.
 --
--- Wakes every @'bufferedTxsMinLifetime' policy \/ 4@ seconds (capped
--- between 100 ms and 1 s) to run 'State.sweepSharedState' on the
--- shared tx state.  The sweep needs the union of every live peer's
--- 'pifAdvertised' to decide which entries are still wanted; the
--- registry is read inside the same STM transaction as the sweep so
--- the snapshot is coherent.  On a slower cadence (every
--- 'countersInterval' seconds of elapsed time) it also emits the
--- aggregated counters -- the retired-peers accumulator plus every
--- live peer's cell -- when they differ from the last emission, and a
+-- Wakes every 'sweepInterval' to run 'State.sweepSharedStateUpTo' on the
+-- shared tx state, which reads nothing else.  Each sweep
+-- expires at most 'sweepBatch' retained entries and examines as many
+-- entries of the tx table from where the last one stopped, so its
+-- transaction stays short however large the state and however far behind
+-- it is; while expired entries remain it goes on with
+-- 'State.expireSharedStateUpTo' in further such transactions, 'drainPause'
+-- apart so that peers' transactions commit between them, for at most one
+-- interval before the next sweep.  On a fixed cadence (every
+-- 'countersInterval' seconds, kept whatever a drain delays) it also emits
+-- the aggregated counters -- the retired-peers accumulator plus every live
+-- peer's cell -- when they differ from the last emission, and a
 -- 'TraceSharedTxState' snapshot when @sharedRevision@ or
 -- @sharedGeneration@ has moved since the last emission.
 txCountersThreadV2
@@ -110,57 +116,122 @@ txCountersThreadV2 policy countersTracer sharedStateTracer retiredCountersVar
                    sharedStateVar registry = do
     now <- getMonotonicTime
     initialSt <- readTVarIO sharedStateVar
-    go mempty
+    go interval
+       sweepStart
+       mempty
        (sharedRevision   initialSt)
        (sharedGeneration initialSt)
        (addTime countersInterval now)
   where
-    sweepInterval :: DiffTime
-    sweepInterval = max 0.1 (min 1 (bufferedTxsMinLifetime policy / 4))
+    interval :: DiffTime
+    interval = sweepInterval policy
 
     countersInterval :: DiffTime
     countersInterval = 7
 
-    go !previous !lastRev !lastGen !nextEmitAt = do
-      threadDelay sweepInterval
+    go !delay !cursor !previous !lastRev !lastGen !nextEmitAt = do
+      threadDelay delay
+      tickAt <- getMonotonicTime
+      (backlog, cursor') <- sweepWith $ \st ->
+        case State.sweepSharedStateUpTo sweepBatch tickAt cursor st of
+          (st', more, next) -> (st', (more, next))
+      _ <- drain backlog tickAt
+      drained <- getMonotonicTime
+      (previous', lastRev', lastGen', nextEmitAt') <-
+        if drained >= nextEmitAt
+           then emit previous lastRev lastGen (nextEmission drained nextEmitAt)
+           else pure (previous, lastRev, lastGen, nextEmitAt)
+      -- The next sweep: an interval after this one, whatever the drain and
+      -- an emission took, and a pause at least, so that the writes stay a
+      -- pause apart when a transaction overran the interval.
       now <- getMonotonicTime
-      atomically $ do
-        liveReferences <- snapshotLiveReferences registry
-        st <- readTVar sharedStateVar
-        let st' = State.sweepSharedState now liveReferences st
-        when (sharedRevision st' /= sharedRevision st) $
-          writeTVar sharedStateVar st'
-      if now >= nextEmitAt
-         then do
-           current <- atomically (snapshotCounters retiredCountersVar registry)
-           when (current /= previous) $ traceWith countersTracer current
-           st <- readTVarIO sharedStateVar
-           let curRev = sharedRevision   st
-               curGen = sharedGeneration st
-           (lastRev', lastGen') <-
-             if curRev /= lastRev || curGen /= lastGen
-                then do
-                  traceWith sharedStateTracer (TraceSharedTxState st)
-                  pure (curRev, curGen)
-                else pure (lastRev, lastGen)
-           go current lastRev' lastGen' (addTime countersInterval now)
-         else go previous lastRev lastGen nextEmitAt
+      let delay' = max drainPause (addTime interval tickAt `diffTime` now)
+      go delay' cursor' previous' lastRev' lastGen' nextEmitAt'
 
--- | Read every live peer's 'pifAcksPending' and union them.  This is the
--- set of keys still referenced by some peer (advertised for fetch, or
--- held in @peerUnacknowledgedTxIds@ awaiting ack) and is used by the
--- sweep to know which lookup table entries can be safely reclaimed.
---
--- 'pifAcksPending' is a superset of 'pifAdvertised', so the advertised
--- set need not be unioned in separately.
-snapshotLiveReferences
-  :: MonadSTM m
-  => PeerTxRegistry m peeraddr
-  -> STM m IntSet
-snapshotLiveReferences registry = do
-    peers <- readTVar registry
-    pifs  <- traverse (readTVar . fst) (Map.elems peers)
-    pure $! IntSet.unions (map pifAcksPending pifs)
+    -- An emission: the counters when they changed since the last one, the
+    -- shared state when a counter of it moved; what the next one carries.
+    emit :: TxSubmissionCounters -> Word64 -> Word64 -> Time
+         -> m (TxSubmissionCounters, Word64, Word64, Time)
+    emit previous lastRev lastGen nextEmitAt = do
+      current <- atomically (snapshotCounters retiredCountersVar registry)
+      when (current /= previous) $ traceWith countersTracer current
+      st <- readTVarIO sharedStateVar
+      let curRev = sharedRevision   st
+          curGen = sharedGeneration st
+      if curRev /= lastRev || curGen /= lastGen
+         then do
+           traceWith sharedStateTracer (TraceSharedTxState st)
+           pure (current, curRev, curGen, nextEmitAt)
+         else pure (current, lastRev, lastGen, nextEmitAt)
+
+    -- One transaction over the state alone: the step applied, the state
+    -- written when it changed, the step's result returned.
+    sweepWith :: (     SharedTxState peeraddr txid
+                    -> (SharedTxState peeraddr txid, a))
+              -> m a
+    sweepWith step = atomically $ do
+      st <- readTVar sharedStateVar
+      let (st', result) = step st
+      when (sharedRevision st' /= sharedRevision st) $
+        writeTVar sharedStateVar st'
+      return result
+
+    -- Drain a backlog in expiry-only transactions 'drainPause' apart,
+    -- each run only if its pause and the one before the next sweep, due an
+    -- interval after this one, still fit; whether the last transaction
+    -- reported expired entries remaining.
+    drain :: Bool -> Time -> m Bool
+    drain False _ = return False
+    drain True tickAt = do
+      now <- getMonotonicTime
+      if addTime (2 * drainPause) now `diffTime` tickAt > interval
+         then return True
+         else do
+           threadDelay drainPause
+           now' <- getMonotonicTime
+           more <- sweepWith (State.expireSharedStateUpTo sweepBatch now')
+           drain more tickAt
+
+    -- The emission after the one due at the given time: 'countersInterval'
+    -- later, so a drain delaying this one does not delay the next; or, were
+    -- that already past, that much after now.
+    nextEmission :: Time -> Time -> Time
+    nextEmission now dueAt
+      | next > now = next
+      | otherwise  = addTime countersInterval now
+      where
+        next = addTime countersInterval dueAt
+
+-- | How often the counters thread sweeps: a quarter of the retention
+-- lifetime, kept between 100 ms and 1 s.
+sweepInterval :: TxDecisionPolicy -> DiffTime
+sweepInterval policy = max 0.1 (min 1 (bufferedTxsMinLifetime policy / 4))
+
+-- | Retained entries one sweep expires at most, and entries of the tx
+-- table it examines: positive, so a sweep that finds work makes progress
+-- on it.  Bounds the sweep's transaction, about 0.3 ms at this size,
+-- against the peers' writes to the shared state, each of which restarts
+-- it: at R writes a second it commits with probability about
+-- exp(-R * 0.3 ms) per attempt, a few attempts at the thousands of writes
+-- a second of a loaded relay.  Not a policy knob: the transaction length
+-- is a property of this node's STM, not of the protocol, and the drain
+-- rate it gives with 'drainPause', a hundred thousand entries a second,
+-- exceeds any arrival rate, which is what the expiry rate equals whatever
+-- the retention lifetime; only 'sweepInterval' follows the policy.  Steady
+-- state expires the arrivals of one sweep interval, a few hundred at most.
+-- An orphan waits for the walk to pass, a sweep per limit of table
+-- entries: a larger walk would lengthen the transaction the limit is there
+-- to bound, for the memory of an abandoned entry.
+sweepBatch :: Int
+sweepBatch = 1000
+
+-- | The pause before each expiry-only transaction of a drain, so that
+-- peers' transactions, which every write to the shared state restarts,
+-- commit between them: at most a hundred such writes a second while a
+-- backlog drains.  Well under the shortest 'sweepInterval'.
+drainPause :: DiffTime
+drainPause = 0.01
+
 
 -- | Aggregate the V2 counters for emission: the retired-peers
 -- accumulator plus every live peer's private counters cell.
@@ -179,7 +250,7 @@ snapshotCounters
 snapshotCounters retiredCountersVar registry = do
     retired <- readTVar retiredCountersVar
     peers   <- readTVar registry
-    live    <- traverse (readTVar . snd) (Map.elems peers)
+    live    <- traverse readTVar (Map.elems peers)
     pure $! emittedCounters (mconcat (retired : live))
 
 -- | Peer-facing coordination API.
@@ -271,8 +342,7 @@ withPeer policy TxSubmissionMempoolReader { mempoolGetSnapshot }
     acquire = do
       peerInFlightVar <- newTVarIO emptyPeerTxInFlight
       peerCountersVar <- newTVarIO mempty
-      atomically $ modifyTVar registry
-                     (Map.insert peeraddr (peerInFlightVar, peerCountersVar))
+      atomically $ modifyTVar registry (Map.insert peeraddr peerCountersVar)
       pure (peerInFlightVar, peerCountersVar)
 
     -- On exit: reverse this peer's in-flight contributions to shared
@@ -286,7 +356,9 @@ withPeer policy TxSubmissionMempoolReader { mempoolGetSnapshot }
       now <- getMonotonicTime
       atomically $ do
         pif <- readTVar peerInFlightVar
-        modifyTVar sharedStateVar (scrubFromPeerInFlight peeraddr now pif)
+        sharedState <- readTVar sharedStateVar
+        writeSharedStateIfChanged sharedStateVar (sharedRevision sharedState)
+                                  (scrubFromPeerInFlight peeraddr now pif sharedState)
         peerCounters <- readTVar peerCountersVar
         modifyTVar retiredCountersVar (<> peerCounters)
         modifyTVar registry (Map.delete peeraddr)
@@ -310,7 +382,10 @@ withPeer policy TxSubmissionMempoolReader { mempoolGetSnapshot }
 
 -- | Reverse this peer's still-outstanding contributions to the shared
 -- 'TxEntry' counters.  Run by the bracket finalizer; uses the per-peer
--- TVar snapshot taken at exit time.
+-- TVar snapshot taken at exit time.  Touches only the keys still in the
+-- table, and returns the state as it was, counters included, when none
+-- of the peer's keys is: the rest expired or were dropped meanwhile,
+-- nothing of this peer's left on them.
 --
 -- 'pifLeased' is best-effort (another peer can steal the lease in the
 -- meantime), so the lease release verifies the entry still names this
@@ -323,36 +398,39 @@ scrubFromPeerInFlight
   -> SharedTxState peeraddr txid
   -> SharedTxState peeraddr txid
 scrubFromPeerInFlight peeraddr now pif st
-  | nothingToDo = st
-  | otherwise   = st {
-        sharedTxTable    = sharedTxTable',
-        sharedGeneration = sharedGeneration st + 1
-      }
+  | IntSet.null presentKeys = st
+  | otherwise =
+      st {
+          sharedTxTable    = sharedTxTable',
+          -- A released lease, attempt or submission may grant another
+          -- peer an option: a wake.  An advertiser fewer grants none; the
+          -- entry it leaves abandoned is the sweep's to drop.
+          sharedGeneration = if tableWork then sharedGeneration st + 1
+                                          else sharedGeneration st,
+          sharedRevision   = sharedRevision st + 1
+        }
   where
-    -- 'pifAdvertised' and 'pifAcksPending' are not checked here: the
-    -- bracket releaser also removes the peer from the registry, so the
-    -- next sweep no longer sees this peer's keys in @liveReferences@ and
-    -- reclaims the lookup tables itself.  Only the per-tx counters on
-    -- 'sharedTxTable' need active scrubbing.
-    nothingToDo =
-         IntSet.null (pifLeased pif)
-      && IntSet.null (pifAttempting pif)
-      && IntSet.null (pifSubmitting pif)
-
-    -- Walk each unique key once and apply all three modifications in a
-    -- single 'IntMap.adjust'.  Keys typically appear in two of the
-    -- three sets ('pifLeased' is a subset of 'pifAttempting ∪
-    -- pifSubmitting').
-    allKeys = pifLeased pif
+    -- Walk each unique key once and apply all the modifications in a
+    -- single 'IntMap.adjust'.  Keys typically appear in several of the
+    -- sets ('pifLeased' is a subset of 'pifAttempting ∪ pifSubmitting',
+    -- and a leased key is advertised).
+    workKeys = pifLeased pif
         `IntSet.union` pifAttempting pif
         `IntSet.union` pifSubmitting pif
 
-    sharedTxTable' = IntSet.foldl' scrubOne (sharedTxTable st) allKeys
+    allKeys = workKeys `IntSet.union` pifAdvertised pif
+
+    presentKeys = IntMap.keysSet (sharedTxTable st `IntMap.restrictKeys` allKeys)
+
+    tableWork = not (IntSet.null (presentKeys `IntSet.intersection` workKeys))
+
+    sharedTxTable' = IntSet.foldl' scrubOne (sharedTxTable st) presentKeys
 
     scrubOne tbl k = IntMap.adjust (modifyEntry k) k tbl
 
     modifyEntry k =
-        applyIf (IntSet.member k (pifSubmitting pif)) clearSubmission
+        applyIf (IntSet.member k (pifAdvertised pif)) State.dropAdvertiser
+      . applyIf (IntSet.member k (pifSubmitting pif)) clearSubmission
       . applyIf (IntSet.member k (pifAttempting pif)) decAttempt
       . applyIf (IntSet.member k (pifLeased     pif)) releaseLease
 
@@ -391,19 +469,21 @@ awaitSharedChangeImp sharedStateVar generation mRegisteredDelay =
          expired <- RegisteredDelay.read registeredDelay
          check (sharedGeneration sharedState /= generation || expired)
 
--- | Avoid rewriting the shared TVar when the pure state step made no shared
--- change. Callers use 'sharedGeneration' as the dirty bit for shared state.
+-- | Write the shared TVar when the pure state step moved the revision,
+-- with 'sharedRevision' one past the revision read whatever the step
+-- bumped it by: the revision counts committed writes, and one step may
+-- bump it twice (a stuck-entry bump and a submission in one transaction).
+-- Every bump of the wake counter comes with one of the revision, so the
+-- revision alone says whether the step changed the state.
 writeSharedStateIfChanged :: MonadSTM m
                           => SharedTxStateVar m peeraddr txid
-                          -> Word64                 -- ^ pre-step 'sharedGeneration'
                           -> Word64                 -- ^ pre-step 'sharedRevision'
                           -> SharedTxState peeraddr txid
                           -> STM m ()
-writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedRevision0 sharedState'
-  | sharedGeneration sharedState' == sharedGeneration0
-  , sharedRevision   sharedState' == sharedRevision0
-  = pure ()
-  | otherwise = writeTVar sharedStateVar sharedState'
+writeSharedStateIfChanged sharedStateVar sharedRevision0 sharedState'
+  | sharedRevision sharedState' == sharedRevision0 = pure ()
+  | otherwise =
+      writeTVar sharedStateVar sharedState' { sharedRevision = sharedRevision0 + 1 }
 
 -- | Avoid rewriting the per-peer TVar when nothing changed.
 writePeerInFlightIfChanged :: MonadSTM m
@@ -482,11 +562,10 @@ runNextPeerActionImp policy sharedStateVar peerInFlightVar countersVar peeraddr
                      now downloadTime_m peerState = atomically $ do
   sharedState <- readTVar sharedStateVar
   peerInFlight <- readTVar peerInFlightVar
-  let sharedGeneration0 = sharedGeneration sharedState
-      sharedRevision0   = sharedRevision   sharedState
+  let sharedRevision0 = sharedRevision sharedState
       (peerAction, peerState', peerInFlight', sharedState') =
         State.nextPeerAction now policy peeraddr peerState peerInFlight sharedState
-  writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedRevision0 sharedState'
+  writeSharedStateIfChanged sharedStateVar sharedRevision0 sharedState'
   writePeerInFlightIfChanged peerInFlightVar peerInFlight peerInFlight'
   updateCountersForAction countersVar (txIdRequestKind peerState') downloadTime_m
                           peerAction
@@ -508,12 +587,11 @@ runNextPeerActionPipelinedImp policy sharedStateVar peerInFlightVar countersVar
     atomically $ do
       sharedState <- readTVar sharedStateVar
       peerInFlight <- readTVar peerInFlightVar
-      let sharedGeneration0 = sharedGeneration sharedState
-          sharedRevision0   = sharedRevision   sharedState
+      let sharedRevision0 = sharedRevision sharedState
           (peerAction, peerState', peerInFlight', sharedState') =
             State.nextPeerActionPipelined now policy peeraddr peerState
                                           peerInFlight sharedState
-      writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedRevision0 sharedState'
+      writeSharedStateIfChanged sharedStateVar sharedRevision0 sharedState'
       writePeerInFlightIfChanged peerInFlightVar peerInFlight peerInFlight'
       -- The pipeline cannot have drained at depth above zero.
       updateCountersForAction countersVar PipelinedTxIdRequest Nothing peerAction
@@ -548,12 +626,11 @@ applyReceivedTxIdsImp policy mempoolGetSnapshot sharedStateVar peerInFlightVar
   atomically $ do
     sharedState <- readTVar sharedStateVar
     peerInFlight <- readTVar peerInFlightVar
-    let sharedGeneration0 = sharedGeneration sharedState
-        sharedRevision0   = sharedRevision   sharedState
+    let sharedRevision0 = sharedRevision sharedState
         (peerState', peerInFlight', sharedState') =
           State.handleReceivedTxIds mempoolHasTx now policy txIdsToReq txidsAndSizes
                                     peerState peerInFlight sharedState
-    writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedRevision0 sharedState'
+    writeSharedStateIfChanged sharedStateVar sharedRevision0 sharedState'
     writePeerInFlightIfChanged peerInFlightVar peerInFlight peerInFlight'
     modifyTVar countersVar $ \c -> c
       { txIdRepliesReceived = txIdRepliesReceived c + 1
@@ -584,12 +661,11 @@ applyReceivedTxsImp policy mempoolGetSnapshot sharedStateVar peerInFlightVar
   atomically $ do
     sharedState <- readTVar sharedStateVar
     peerInFlight <- readTVar peerInFlightVar
-    let sharedGeneration0 = sharedGeneration sharedState
-        sharedRevision0   = sharedRevision   sharedState
+    let sharedRevision0 = sharedRevision sharedState
         (omittedCount, lateCount, peerState', peerInFlight', sharedState') =
           State.handleReceivedTxs mempoolHasTx now policy peeraddr txs
                                   peerState peerInFlight sharedState
-    writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedRevision0 sharedState'
+    writeSharedStateIfChanged sharedStateVar sharedRevision0 sharedState'
     writePeerInFlightIfChanged peerInFlightVar peerInFlight peerInFlight'
     modifyTVar countersVar $ \c -> c
       { txRepliesReceived = txRepliesReceived c + 1
@@ -619,12 +695,11 @@ applySubmittedTxsImp policy sharedStateVar peerInFlightVar countersVar peeraddr
   atomically $ do
     sharedState <- readTVar sharedStateVar
     peerInFlight <- readTVar peerInFlightVar
-    let sharedGeneration0 = sharedGeneration sharedState
-        sharedRevision0   = sharedRevision   sharedState
+    let sharedRevision0 = sharedRevision sharedState
         (peerState', peerInFlight', sharedState') =
           State.handleSubmittedTxs now policy peeraddr acceptedTxs
                                    rejectedTxs peerState peerInFlight sharedState
-    writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedRevision0 sharedState'
+    writeSharedStateIfChanged sharedStateVar sharedRevision0 sharedState'
     writePeerInFlightIfChanged peerInFlightVar peerInFlight peerInFlight'
     modifyTVar countersVar $ \c -> c
       { txsAccepted      = txsAccepted c + fromIntegral (length acceptedTxs)
