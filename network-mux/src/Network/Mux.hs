@@ -669,7 +669,8 @@ data JobResult =
 --
 muxChannel
     :: forall m.
-       ( MonadSTM m
+       ( MonadEvaluate m
+       , MonadSTM m
        )
     => Tracer m ChannelTrace
     -> EgressQueue m
@@ -681,26 +682,29 @@ muxChannel
 muxChannel tracer egressQueue want@(Wanton w) mc md q =
     Channel { send, recv }
   where
-    -- A soft limit on the egress buffer (Wanton) size.
-    --
-    -- We can only append to `Wanton` if the current size is below the soft
-    -- limit, but we don't have a hard limit.  An investigation showed that
-    -- would only limit performance of data intensive mini-protocols.  Mux is
-    -- already fair, when the bandwidth is limited. See issue #5271.
-    --
-    egressSoftBufferLimit :: Int64
-    egressSoftBufferLimit = 0x3ffff
+    -- The length of a lazy 'BL.ByteString' counted no further than @n@
+    -- bytes. It forces the chunks holding them and nothing after, so it is
+    -- below @n@ exactly when the string ended within @n@.
+    lengthUpTo :: Int64 -> BL.ByteString -> Int64
+    lengthUpTo n = BL.length . BL.take n
 
     send :: BL.ByteString -> m ()
     send encoding = do
         -- We send CBOR encoded messages by encoding them into by ByteString
         -- forwarding them to the 'mux' thread, see 'Desired servicing semantics'.
+        traceWith tracer $ TraceChannelSendStart mc
 
-        traceWith tracer $ TraceChannelSendStart mc (fromIntegral $ BL.length encoding)
+        -- Force the encoding up to the soft limit here, in the mini-protocol's
+        -- thread, to a chunk boundary: unforced, a waiting message keeps alive
+        -- whatever its encoder refers to. The muxer encodes the rest as it
+        -- sends it.
+        held <- evaluate (lengthUpTo egressSoftBufferLimit encoding)
 
         atomically $ do
             buf <- readTVar w
-            if BL.length buf < egressSoftBufferLimit
+            -- Count no further than the limit, so the check forces nothing
+            -- past it; BL.length only stops there with -O, by a rewrite rule.
+            if lengthUpTo egressSoftBufferLimit buf < egressSoftBufferLimit
                then do
                    let wasEmpty = BL.null buf
                    writeTVar w (BL.append buf encoding)
@@ -708,7 +712,12 @@ muxChannel tracer egressQueue want@(Wanton w) mc md q =
                      writeTBQueue egressQueue (TLSRDemand mc md want)
                else retry
 
-        traceWith tracer $ TraceChannelSendEnd mc
+        -- The length: the count already made for a message that ended within
+        -- the limit; for a longer one, counted as the event is rendered.
+        let len = if held < egressSoftBufferLimit
+                     then fromIntegral held
+                     else fromIntegral (BL.length encoding)
+        traceWith tracer $ TraceChannelSendEnd mc len
 
     recv :: m (Maybe BL.ByteString)
     recv = do

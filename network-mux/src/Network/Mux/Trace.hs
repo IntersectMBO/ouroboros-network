@@ -136,18 +136,24 @@ data WithBearer peerid a = WithBearer {
 data ChannelTrace =
       TraceChannelRecvStart MiniProtocolNum
     | TraceChannelRecvEnd MiniProtocolNum Int
-    | TraceChannelSendStart MiniProtocolNum Int
-    | TraceChannelSendEnd MiniProtocolNum
+    | TraceChannelSendStart MiniProtocolNum
+    | TraceChannelSendEnd MiniProtocolNum Int
+      -- ^ The message's length, queued for the muxer by then: counted
+      -- already for a message that ended within the channel's soft limit;
+      -- for a longer one, counted as the event is rendered, which encodes
+      -- the whole message in the mini-protocol's thread, so a tracer that
+      -- keeps the event unrendered keeps the message alive until it renders
+      -- it.
 
 instance Show ChannelTrace where
     show (TraceChannelRecvStart mid) =
       formatToString ("Channel Receive Start on" %+ F.shown) mid
     show (TraceChannelRecvEnd mid len)   =
       formatToString ("Channel Receive End on" %+ F.parenthesised F.shown %+ F.int) mid len
-    show (TraceChannelSendStart mid len) =
-      formatToString ("Channel Send Start on" %+ F.parenthesised F.shown %+ F.int) mid len
-    show (TraceChannelSendEnd mid) =
-      formatToString ("Channel Send End on" %+ F.shown) mid
+    show (TraceChannelSendStart mid) =
+      formatToString ("Channel Send Start on" %+ F.shown) mid
+    show (TraceChannelSendEnd mid len) =
+      formatToString ("Channel Send End on" %+ F.parenthesised F.shown %+ F.int) mid len
 
 
 data State = Mature
