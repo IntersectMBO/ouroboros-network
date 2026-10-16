@@ -240,14 +240,17 @@ txSubmissionInboundV2
       -- rejected (see 'TxSubmissionMempoolWriter'); map each verdict's
       -- txids back to our 'TxKey's via the submitted batch.
       let submittedKeyOf   = Map.fromList [ (txid', txKey) | (txKey, txid') <- submitted ]
-          resolvedTxKeys   = mapMaybe (`Map.lookup` submittedKeyOf) acceptedTxIds
+          -- the accepted keys with their txids, for the state to retain a
+          -- tx by txid when it has forgotten the key meanwhile
+          acceptedKeyed    = [ (txKey, txid') | txid' <- acceptedTxIds
+                                              , Just txKey <- [Map.lookup txid' submittedKeyOf] ]
           rejectedKeys     = mapMaybe ((`Map.lookup` submittedKeyOf) . fst) rejectedTxs
           rejectedForTrace = fmap fst rejectedTxs
           acceptedCount    = length acceptedTxIds
           rejectedCount    = length rejectedTxs
           delta            = end `diffTime` start
 
-      peerState' <- applySubmittedTxs end delta resolvedTxKeys rejectedKeys
+      peerState' <- applySubmittedTxs end delta acceptedKeyed rejectedKeys
                                       peerState
       let (score, peerState'') =
             State.applyPeerEvents policy end acceptedCount rejectedCount peerState'
