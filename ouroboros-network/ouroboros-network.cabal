@@ -1100,14 +1100,16 @@ benchmark sim-benchmarks
   hs-source-dirs: bench
   main-is: Main.hs
   other-modules:
+    Bench.Env
     Bench.TxSubmissionV2Server
+    Bench.TxSubmissionV2Sweep
 
   build-depends:
     base,
     containers,
     contra-tracer,
     deepseq,
-    io-classes:{io-classes, strict-stm},
+    io-classes:{io-classes, si-timers, strict-stm},
     ouroboros-network,
     ouroboros-network:ouroboros-network-tests-lib,
     ouroboros-network:protocols,
