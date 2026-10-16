@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns               #-}
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveAnyClass             #-}
+{-# LANGUAGE DeriveDataTypeable         #-}
 {-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingVia                #-}
@@ -31,7 +32,15 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Types
   , retainedDeleteKeys
   , retainedKeysSet
   , retainedRestrictKeys
-  , retainedExpiredKeys
+  , retainedExpireUpTo
+  , retainedDueBy
+    -- ** Sweep cursor
+  , SweepCursor (..)
+  , sweepStart
+    -- ** Counts for tracing
+  , SharedTxStateCounts (..)
+  , sharedTxStateCounts
+  , sharedTxStateCountFields
     -- * Traces
   , TraceTxLogic (..)
   , TxSubmissionInitDelay (..)
@@ -78,9 +87,11 @@ import Control.Monad.Class.MonadTime.SI
 import NoThunks.Class (NoThunks)
 import NoThunks.Class.Orphans ()
 
+import Data.Data (Data, cast, constrFields, gmapQ, toConstr)
 import Data.List as List (foldl')
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
+import Data.Maybe (fromJust)
 import Data.Sequence.Strict (StrictSeq)
 import Data.Time.Clock (diffTimeToPicoseconds)
 import Data.Typeable (Typeable, eqT, (:~:) (Refl))
@@ -161,6 +172,17 @@ data TxEntry peeraddr = TxEntry {
     -- contains this key.
     txInSubmission                 :: !Bool,
 
+    -- | Number of registered peers with this key in their 'pifAdvertised':
+    -- one more when a peer comes to advertise the entry, one fewer when it
+    -- omits the body, has it rejected, or leaves.  Kept on the entry by
+    -- the peers' own writes so that the sweep reads no peer's variables:
+    -- an entry nobody advertises, leases, attempts or submits is
+    -- abandoned.
+    --
+    -- Invariant: equals the number of registered peers whose
+    -- 'pifAdvertised' contains this key.
+    txAdvertisers                  :: !Int,
+
     -- | Effective per-tx inflight multiplicity cap.
     --
     -- Initialised from 'txInflightMultiplicity' of the policy when the
@@ -175,61 +197,48 @@ data TxEntry peeraddr = TxEntry {
 -- | Per-peer in-flight tracking, owned by 'withPeer'.
 --
 -- The peer thread updates this TVar in the same STM transaction as
--- the shared 'TxEntry' so the two stay coherent.  Two readers:
---
--- * On exception, 'withPeer's bracket finalizer reads it and reverses
---   each per-peer contribution: releases any held lease, decrements
---   'txAttempt' for each attempted key, clears 'txInSubmission' for
---   any in-flight submission.
---
--- * The sweep walks every live peer's TVar to compute the union of
---   advertised keys and skips those entries when looking for orphans
---   to retire (the entry is still wanted by an active peer that
---   may simply be slow to claim).
+-- the shared 'TxEntry' so the two stay coherent.  Its one other reader
+-- is 'withPeer's bracket finalizer, which on exit reverses each per-peer
+-- contribution: releases any held lease, decrements 'txAttempt' for each
+-- attempted key, clears 'txInSubmission' for any in-flight submission.
+-- The sweep never reads it.
 --
 -- Invariant: 'pifAttempting' and 'pifSubmitting' are disjoint; a key
 -- moves from the former to the latter atomically on the submit
 -- transition.  'pifLeased' is a subset of their union.
 data PeerTxInFlight = PeerTxInFlight {
-    -- | Keys this peer currently has in its advertised window.  Used
-    -- by the orphan sweep to know the entry is still wanted, and by
+    -- | Keys this peer currently has in its advertised window.  Used by
     -- 'nextWakeDelay' to scan for the earliest claim wake.
     --
     -- Invariant: a subset of the live keys (active 'sharedTxTable'
-    -- union retained 'sharedRetainedTxs').
-    pifAdvertised  :: !IntSet,
+    -- union retained 'sharedRetainedTxs'), but for a key whose retention
+    -- expired before this peer acknowledged it; the acknowledgement
+    -- follows ('txIdAckable').
+    pifAdvertised :: !IntSet,
 
     -- | Keys this peer currently holds 'TxLeased' on.  Cleared on
     -- omit, accept, reject, lease-loss and bracket exit.
-    pifLeased      :: !IntSet,
+    pifLeased     :: !IntSet,
 
     -- | Keys this peer currently counts toward 'txAttempt'.  Spans
     -- the @claim -> download -> buffer@ phases; the key moves to
     -- 'pifSubmitting' on the @submit@ transition.
-    pifAttempting  :: !IntSet,
+    pifAttempting :: !IntSet,
 
     -- | Keys this peer currently counts toward 'txInSubmission'.
     -- Set on 'PeerSubmitTxs' / 'markSubmittingTxs', cleared on accept
     -- or reject.
-    pifSubmitting  :: !IntSet,
-
-    -- | Keys this peer holds in 'peerUnacknowledgedTxIds'.  A superset
-    -- of 'pifAdvertised': also tracks keys the peer learned about via
-    -- the retained-or-mempool path of 'handleReceivedTxIds' that are
-    -- not advertised for fetch but still pending an ack.  Used by the
-    -- sweep to know whether the txid lookup tables can be reclaimed.
-    pifAcksPending :: !IntSet
+    pifSubmitting :: !IntSet
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (NFData, NoThunks)
 
 emptyPeerTxInFlight :: PeerTxInFlight
 emptyPeerTxInFlight = PeerTxInFlight {
-    pifAdvertised = IntSet.empty,
-    pifLeased     = IntSet.empty,
-    pifAttempting = IntSet.empty,
-    pifSubmitting = IntSet.empty,
-    pifAcksPending = IntSet.empty
+    pifAdvertised  = IntSet.empty,
+    pifLeased      = IntSet.empty,
+    pifAttempting  = IntSet.empty,
+    pifSubmitting  = IntSet.empty
   }
 
 -- | The next peer-local action chosen by the V2 worker thread.
@@ -527,7 +536,8 @@ emptyPeerTxLocalState = PeerTxLocalState {
 --   sets are disjoint.
 -- * 'sharedTxIdToKey' and 'sharedKeyToTxId' are mutual inverses (equal
 --   size, round-tripping in both directions).
--- * every live key (active union retained) is present in those two maps.
+-- * the keys of those two maps are exactly the live keys (active union
+--   retained): a lookup entry lives with its residence and goes with it.
 -- * 'sharedNextTxKey' is strictly greater than every live key, so a
 --   freshly interned key never collides with a live one.
 --
@@ -677,24 +687,101 @@ retainedRestrictKeys (RetainedTxs queue keys) ks =
       | otherwise          = id
 {-# INLINE retainedRestrictKeys #-}
 
-retainedExpiredKeys :: Time -> RetainedTxs -> IntSet
-retainedExpiredKeys currentTime retained =
-    -- Quick exit if no TX has expired.
-    case IntPSQ.findMin queue of
-      Just (_, earliest, _) | earliest <= currentTime -> go IntSet.empty queue
-      _                                               -> IntSet.empty
+-- | The keys whose retention has expired by @currentTime@, earliest
+-- first, at most @limit@ of them (none for a limit of zero or less), and
+-- the retained entries without them.  Bounds the work of one sweep, so a
+-- backlog of expired entries is drained over several sweeps rather than in
+-- one transaction that grows with it; the queue is unwound once, for the
+-- keys and the remainder together.
+retainedExpireUpTo :: Int -> Time -> RetainedTxs -> (IntSet, RetainedTxs)
+retainedExpireUpTo limit currentTime retained@(RetainedTxs queue keys)
+  | limit > 0, retainedDueBy currentTime retained = go limit IntSet.empty queue
+  | otherwise                                     = (IntSet.empty, retained)
   where
-    queue = retainedQueue retained
-    go expired r =
-      case IntPSQ.minView r of
-        Just (k, retainUntil, (), r')
-          | retainUntil <= currentTime ->
-              go (IntSet.insert k expired) r'
-          | otherwise ->
-              expired
-        Nothing ->
-          expired
-{-# INLINE retainedExpiredKeys #-}
+    go !n !expired r
+      | n <= 0 = done expired r
+      | otherwise =
+          case IntPSQ.minView r of
+            Just (k, retainUntil, (), r')
+              | retainUntil <= currentTime ->
+                  go (n - 1) (IntSet.insert k expired) r'
+            _ -> done expired r
+    done expired r = (expired, RetainedTxs r (keys `IntSet.difference` expired))
+{-# INLINE retainedExpireUpTo #-}
+
+-- | Where a bounded sweep goes on from: the next key to examine in
+-- 'sharedTxTable'.
+newtype SweepCursor = SweepCursor { sweepFrom :: Int }
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (NFData, NoThunks)
+
+-- | The cursor at the start of the table.
+sweepStart :: SweepCursor
+sweepStart = SweepCursor 0
+
+-- | The sizes a 'SharedTxState' is traced by, each under its field's name
+-- ('sharedTxStateCountFields').
+data SharedTxStateCounts = SharedTxStateCounts {
+    -- | Entries of 'sharedTxTable'.
+    activeTxCount     :: !Int,
+    -- | Entries of 'sharedRetainedTxs'.
+    retainedTxCount   :: !Int,
+    -- | Lookup entries.
+    internedTxCount   :: !Int,
+    leasedTxCount     :: !Int,
+    claimableTxCount  :: !Int,
+    totalAttemptCount :: !Int,
+    submittingTxCount :: !Int,
+    -- | Advertisers over the active entries, one per peer and key.
+    advertiserCount   :: !Int
+  }
+  deriving stock (Eq, Show, Generic, Data)
+
+sharedTxStateCounts :: SharedTxState peeraddr txid -> SharedTxStateCounts
+sharedTxStateCounts SharedTxState { sharedTxTable, sharedRetainedTxs,
+                                    sharedTxIdToKey } =
+  SharedTxStateCounts {
+      activeTxCount     = active,
+      retainedTxCount   = retained,
+      internedTxCount   = interned,
+      leasedTxCount     = leased,
+      claimableTxCount  = claimable,
+      totalAttemptCount = attempts,
+      submittingTxCount = submitting,
+      advertiserCount   = advertisers
+    }
+  where
+    active   = IntMap.size sharedTxTable
+    retained = retainedSize sharedRetainedTxs
+    interned = Map.size sharedTxIdToKey
+
+    (leased, claimable, attempts, submitting, advertisers) =
+      IntMap.foldl' count (0, 0, 0, 0, 0) sharedTxTable
+
+    count (!l, !c, !a, !s, !v) TxEntry { txLease, txAttempt, txInSubmission, txAdvertisers } =
+      ( case txLease of TxLeased {}    -> l + 1
+                        TxClaimable {} -> l
+      , case txLease of TxClaimable {} -> c + 1
+                        TxLeased {}    -> c
+      , a + txAttempt
+      , if txInSubmission then s + 1 else s
+      , v + txAdvertisers
+      )
+
+-- | The counts by their fields' names, the names they are traced under:
+-- every field, so that one that is not a count fails here rather than
+-- shifting the names after it onto other values.
+sharedTxStateCountFields :: SharedTxStateCounts -> [(String, Int)]
+sharedTxStateCountFields counts =
+  zip (constrFields (toConstr counts)) (map fromJust (gmapQ cast counts))
+
+-- | Whether any retained entry is due by @currentTime@.
+retainedDueBy :: Time -> RetainedTxs -> Bool
+retainedDueBy currentTime retained =
+    case IntPSQ.findMin (retainedQueue retained) of
+      Just (_, earliest, _) -> earliest <= currentTime
+      Nothing               -> False
+{-# INLINE retainedDueBy #-}
 
 lookupTxKey :: HasRawTxId txid
             => txid

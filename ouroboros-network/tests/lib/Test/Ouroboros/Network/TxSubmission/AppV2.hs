@@ -20,7 +20,7 @@ import NoThunks.Class
 
 import Control.Concurrent.Class.MonadSTM qualified as Lazy
 import Control.Concurrent.Class.MonadSTM.Strict
-import Control.Monad (replicateM_, void)
+import Control.Monad (replicateM_, void, when)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadSay
@@ -110,6 +110,7 @@ tests = testGroup "AppV2"
           prop_TxSubmissionDisconnectState_shrinkNoDups
       ]
   , testProperty "txSubmission"          prop_txSubmission
+  , testProperty "backpressure"          prop_txSubmission_backpressure
   , testProperty "inflight"              prop_txSubmission_inflight
   , testProperty "resilientToImpairment" prop_txSubmission_resilientToImpairment
   , testProperty "peerDisconnect"        prop_txSubmission_peerDisconnect
@@ -229,11 +230,14 @@ runTxSubmission
   -> Map peeraddr DiffTime
      -- ^ cancel the server async for each listed peer at the given
      --   time, simulating an abrupt disconnect mid-protocol
+  -> DiffTime
+     -- ^ the inbound mempool blocks every add until this long after the
+     --   start: backpressure
   -> TxDecisionPolicy
   -> m ([Tx txid], [[Tx txid]], SharedTxState peeraddr txid)
   -- ^ inbound mempool, outbound mempools, final shared state
 runTxSubmission tracer tracerTxLogic countersTracer inboundTracer st0
-                peerImpairmentMap cancelSchedule txDecisionPolicy = do
+                peerImpairmentMap cancelSchedule mempoolStall txDecisionPolicy = do
     st <- traverse (\(b, c, d, e) -> do
         mempool <- newMempool b
         (outChannel, inChannel) <- createConnectedChannels
@@ -247,6 +251,16 @@ runTxSubmission tracer tracerTxLogic countersTracer inboundTracer st0
     duplicateTxIdsVar <- Lazy.newTVarIO []
     sharedTxStateVar <- newSharedTxStateVar emptySharedTxState
     inFlightRegistry <- newPeerTxRegistry
+    releaseAt <- addTime mempoolStall <$> getMonotonicTime
+    let writer0 = getMempoolWriter duplicateTxIdsVar inboundMempool
+        -- Under backpressure every add blocks until the mempool has room;
+        -- here, until the release time.
+        stalledWriter = writer0 {
+            mempoolAddTxs = \txs -> do
+              now <- getMonotonicTime
+              when (now < releaseAt) $ threadDelay (releaseAt `diffTime` now)
+              mempoolAddTxs writer0 txs
+          }
     txCountersVar <- newTxSubmissionCountersVar mempty
     traceTVarIO sharedTxStateVar \_ -> return . TraceDynamic . TxStateTrace
     labelTVarIO sharedTxStateVar "shared-tx-state"
@@ -282,7 +296,7 @@ runTxSubmission tracer tracerTxLogic countersTracer inboundTracer st0
                                         (PeerInboundTrace addr `contramap` inboundTracer)
                                         NoTxSubmissionInitDelay
                                         txDecisionPolicy
-                                        (getMempoolWriter duplicateTxIdsVar inboundMempool)
+                                        stalledWriter
                                         getTxSize
                                         api
                                 runPipelinedPeerWithLimits
@@ -308,10 +322,11 @@ runTxSubmission tracer tracerTxLogic countersTracer inboundTracer st0
         _ <- waitAllServers as
 
         -- All peers have scrubbed their per-peer state via the
-        -- 'withPeer' bracket finalizer.  Wait long enough for retained
-        -- entries to expire so a sweep tick (still firing inside the
-        -- running counters thread) can clear them along with any
-        -- orphans and stale lookups.
+        -- 'withPeer' bracket finalizer, which left the entries they alone
+        -- advertised abandoned.  Wait long enough for retained entries to
+        -- expire so a sweep tick (still firing inside the running counters
+        -- thread) clears them and the abandoned entries with their lookup
+        -- entries.
         threadDelay (bufferedTxsMinLifetime txDecisionPolicy + 1)
 
         cancel countersAid
@@ -353,7 +368,15 @@ runTxSubmission tracer tracerTxLogic countersTracer inboundTracer st0
 txSubmissionSimulation :: forall s . TxSubmissionState
                        -> IOSim s ([Tx Int], [[Tx Int]], SharedTxState PeerAddr TxId)
                        -- ^ inbound mempool, outbound mempools, final shared state
-txSubmissionSimulation (TxSubmissionState state peerImpairment txDecisionPolicy) = do
+txSubmissionSimulation = txSubmissionSimulationStalled 0
+
+-- | 'txSubmissionSimulation' with the inbound mempool blocking every add
+-- until the given time after the start: backpressure, under which a peer
+-- that submitted holds its other advertised txids unrequested until the
+-- mempool has room again.
+txSubmissionSimulationStalled :: forall s . DiffTime -> TxSubmissionState
+                              -> IOSim s ([Tx Int], [[Tx Int]], SharedTxState PeerAddr TxId)
+txSubmissionSimulationStalled mempoolStall (TxSubmissionState state peerImpairment txDecisionPolicy) = do
   state' <- traverse (\(txs, mbOutDelay, mbInDelay) -> do
                       let mbOutDelayTime = getSmallDelay . getPositive <$> mbOutDelay
                           mbInDelayTime  = getSmallDelay . getPositive <$> mbInDelay
@@ -392,7 +415,7 @@ txSubmissionSimulation (TxSubmissionState state peerImpairment txDecisionPolicy)
       let tracer :: forall a. (Show a, Typeable a) => Tracer (IOSim s) a
           tracer = dynamicTracer <> sayTracer -- <> verboseTracer <> debugTracer
       runTxSubmission tracer tracer tracer tracer state'' peerImpairment
-                      Map.empty txDecisionPolicy
+                      Map.empty mempoolStall txDecisionPolicy
 
 filterValidTxs :: [Tx txid] -> [Tx txid]
 filterValidTxs
@@ -702,8 +725,17 @@ prop_counterInvariants slack tr =
 -- didn't regress.
 --
 prop_txSubmission :: TxSubmissionState -> Property
-prop_txSubmission st@(TxSubmissionState peers _ _) =
-    let tr = runSimTrace (txSubmissionSimulation st)
+prop_txSubmission = prop_txSubmissionStalled 0
+
+-- | 'prop_txSubmission' under five minutes of mempool backpressure from the
+-- start: every valid tx must still reach the mempool afterwards, so no
+-- txid may be acknowledged unfetched while its peer waits for room.
+prop_txSubmission_backpressure :: TxSubmissionState -> Property
+prop_txSubmission_backpressure = prop_txSubmissionStalled 300
+
+prop_txSubmissionStalled :: DiffTime -> TxSubmissionState -> Property
+prop_txSubmissionStalled mempoolStall st@(TxSubmissionState peers _ _) =
+    let tr = runSimTrace (txSubmissionSimulationStalled mempoolStall st)
         numPeersWithWronglySizedTx :: Int
         numPeersWithWronglySizedTx =
           foldr
@@ -1151,7 +1183,7 @@ txSubmissionSimulationDisconnect
       let tracer :: forall a. (Show a, Typeable a) => Tracer (IOSim s) a
           tracer = dynamicTracer <> sayTracer
       result <- runTxSubmission tracer tracer tracer tracer combinedState peerImpairment
-                                cancelSchedule txDecisionPolicy
+                                cancelSchedule 0 txDecisionPolicy
       traverse_ cancel disconnectAids
       pure result
 
