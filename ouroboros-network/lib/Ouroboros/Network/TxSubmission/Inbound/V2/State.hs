@@ -14,6 +14,12 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.State
   , peerClaimDelay
   , applyPeerEvents
   , sweepSharedState
+  , sweepSharedStateUpTo
+  , expireSharedStateUpTo
+  , dropAdvertiser
+    -- * For tests
+  , walkFrom
+  , residentKey
   ) where
 
 import Control.Exception (assert)
@@ -109,8 +115,8 @@ mkPeerActionContext now policy peeraddr peerState peerInFlight sharedState =
     -- re-advertisement (via 'txPeerHasAttempt') and cause the bracket
     -- finalizer to over-decrement 'txAttempt' on a freshly re-interned
     -- entry.  The other in-flight sets are unaffected: 'pifAdvertised'
-    -- and 'pifAcksPending' are managed by the txid path and must stay
-    -- in lockstep with the peer's queue; 'pifSubmitting' is only set
+    -- is managed by the txid path and must stay in lockstep with the
+    -- peer's queue; 'pifSubmitting' is only set
     -- via 'markSubmittingTxs', which cannot fire for an entry that's
     -- already been pruned.
     downloaded  = peerDownloadedTxs peerState
@@ -324,8 +330,7 @@ applyRequestTxIdsChoice ctx acknowledgedTxIds txIdsToAcknowledge txIdsToRequest 
       }
     pif = pacPeerInFlight ctx
     peerInFlight'' = pif {
-        pifAdvertised  = pifAdvertised  pif `IntSet.difference` acknowledgedKeys,
-        pifAcksPending = pifAcksPending pif `IntSet.difference` acknowledgedKeys
+        pifAdvertised = pifAdvertised pif `IntSet.difference` acknowledgedKeys
       }
 
 -- | Construct a 'PeerDoNothing' action.
@@ -357,8 +362,9 @@ pickSubmitAction PeerActionContext { pacPeerState, pacSharedState } =
     --
     -- * 'sharedTxTable' has 'Nothing' for the key: the tx was resolved at
     --   some point (a peer submitted it to the mempool) and the entry was
-    --   deleted.  Orphan sweep cannot drop an entry while any peer still
-    --   tracks the key, so 'Nothing' here implies resolution; safe to skip
+    --   deleted, or this peer omitted the body or had it rejected and so
+    --   stopped advertising it.  The sweep drops no entry a peer still
+    --   advertises, so 'Nothing' here means one of those; safe to skip
     --   and continue past, regardless of whether the retained marker has
     --   since expired or the mempool has since evicted.
     -- * 'sharedTxTable' has 'Just' but we don't have the body buffered, or
@@ -649,7 +655,8 @@ bumpStuckEntries :: forall peeraddr txid tx.
 bumpStuckEntries now policy downloadedTxs st =
     if anyBumped
        then st { sharedTxTable    = txTable',
-                 sharedGeneration = sharedGeneration st + 1 }
+                 sharedGeneration = sharedGeneration st + 1,
+                 sharedRevision   = sharedRevision st + 1 }
        else st
   where
     (anyBumped, txTable') =
@@ -834,98 +841,180 @@ txIdAckable PeerActionContext { pacPeerState, pacPeerInFlight, pacSharedState }
 
 -- | Shared-state cleanup
 --
--- Drops three kinds of dead entries in one pass:
+-- Drops two kinds of dead entries in one pass:
 --
--- * Retained entries whose retention deadline has passed.  Only the
---   'sharedRetainedTxs' membership is removed; the txid lookup tables
---   ('sharedTxIdToKey', 'sharedKeyToTxId') are preserved here because
---   peers may still hold the key in 'peerUnacknowledgedTxIds' until
---   they ack it.
--- * Orphaned 'sharedTxTable' entries: entries with a released lease,
---   no in-flight attempt, and no live peer still tracking the key.
---   These are safe to fully tear down (lookup tables included): by
---   definition no peer references them.
--- * Stale lookup-table entries: keys present only in 'sharedTxIdToKey'
---   / 'sharedKeyToTxId' with no peer still referencing them.  Bounds
---   the lookup tables so they don't grow unboundedly.
+-- * Retained entries whose retention deadline has passed, with their
+--   lookup entries ('sharedTxIdToKey', 'sharedKeyToTxId'): a lookup entry
+--   lives with its residence.  A peer still holding the key in its
+--   unacknowledged queue acknowledges it as resolved ('txIdAckable'), and
+--   a body arriving for it counts as late.
+-- * Abandoned 'sharedTxTable' entries: no peer advertises, leases,
+--   attempts or submits them, their advertisers having left or omitted
+--   the body.  They go with their lookup entries.
 --
--- The @liveReferences@ set is the union of every active peer's
--- 'pifAdvertised' and 'pifAcksPending', snapshotted by the caller in
--- the same STM transaction as this function so it is coherent with the
--- 'sharedTxTable' read.
+-- Neither kind needs a peer's variables: the advertisers are counted on
+-- the entry ('txAdvertisers') by the peers' own writes, so the sweep reads
+-- nothing but the state and never drops an entry a peer still
+-- advertises.
 --
 -- Bumps only 'sharedRevision' (the structural dirty bit), not
--- 'sharedGeneration' (the wake counter).  None of the three cleanup
--- categories grant other peers new options: expired-retained drops
--- and orphan removals never affect a referenced key, and stale-lookup
--- removal doesn't touch any peer-visible state.  Waking parked peers
--- here would cost a full 'nextPeerAction' pass per peer for nothing.
+-- 'sharedGeneration' (the wake counter): neither removal grants another
+-- peer an option.  Waking parked peers here would cost a full
+-- 'nextPeerAction' pass per peer for nothing.
 sweepSharedState :: HasRawTxId txid
                  => Time
-                 -> IntSet
                  -> SharedTxState peeraddr txid
                  -> SharedTxState peeraddr txid
-sweepSharedState now liveReferences st
-    | IntSet.null orphans
-   && IntSet.null expiredRetained
-   && IntSet.null staleLookups = st
+sweepSharedState now st =
+    case sweepSharedStateUpTo maxBound now sweepStart st of
+      (st', _, _) -> st'
+{-# INLINABLE sweepSharedState #-}
+
+-- | 'sweepSharedState' bounded: does at most @limit@ units of work.  It
+-- expires up to half of them, rounded up, as retained entries, the
+-- earliest first, the rest waiting, and examines what the expiry left of
+-- the limit as entries of 'sharedTxTable' for abandoned ones, from its
+-- cursor on and round the table, so that repeated bounded sweeps cover
+-- what one unbounded sweep does.  Also whether any expired entry remains,
+-- so the caller can go on with 'expireSharedStateUpTo' at once, and the
+-- cursor to go on from.  A limit of zero or less does nothing but still
+-- reports the backlog.
+sweepSharedStateUpTo :: HasRawTxId txid
+                     => Int
+                     -> Time
+                     -> SweepCursor
+                     -> SharedTxState peeraddr txid
+                     -> (SharedTxState peeraddr txid, Bool, SweepCursor)
+sweepSharedStateUpTo limit now cursor st
+    | expired == 0 && IntSet.null abandoned = (st, more, cursor')
     | otherwise =
-        ( dropLookupOnly staleLookups
-        . dropTxKeys orphans
-        $ st { sharedRetainedTxs =
-                 retainedDeleteKeys expiredRetained (sharedRetainedTxs st) }
-        ) { sharedRevision = sharedRevision st + 1 }
+        ( swept { sharedRevision = sharedRevision st + 1 }
+        , more
+        , cursor' )
   where
-    expiredRetained = retainedExpiredKeys now (sharedRetainedTxs st)
-    orphans =
-      IntMap.keysSet
-        (IntMap.filterWithKey isOrphan (sharedTxTable st))
+    -- The expiry takes at most half the limit, rounded up, so that a
+    -- backlog of expired entries never starves the walk: the drain between
+    -- sweeps is where a backlog goes.
+    (expiredSt, more, expired) = expireUpTo (limit - limit `div` 2) now st
+    swept = dropTxKeys abandoned expiredSt
 
-    retainedAfter  = retainedKeysSet (sharedRetainedTxs st)
-                      `IntSet.difference` expiredRetained
-    referencedKeys = IntMap.keysSet (sharedTxTable st)
-                      `IntSet.union` retainedAfter
-                      `IntSet.union` liveReferences
-    staleLookups   = IntMap.keysSet (sharedKeyToTxId st)
-                      `IntSet.difference` referencedKeys
+    -- Abandoned entries among the next table entries: no advertiser, no
+    -- lease, no attempt, no submission.  They go with their lookup entries
+    -- in 'dropTxKeys'.  The walk takes what the expiry left of the limit:
+    -- one transaction does at most the limit of work in all.
+    (tableEntries, from') =
+      walkFrom (limit - expired) (sweepFrom cursor) (sharedTxTable expiredSt)
+    abandoned =
+      IntSet.fromList [ k | (k, entry) <- tableEntries, isAbandoned entry ]
+    cursor' = SweepCursor from'
 
-    isOrphan _ TxEntry { txLease = TxLeased {} } = False
-    isOrphan k TxEntry { txAttempt, txInSubmission }
-      | txAttempt > 0                     = False
-      | txInSubmission                    = False
-      | IntSet.member k liveReferences    = False
-      | otherwise                         = True
+    isAbandoned TxEntry { txLease = TxLeased {} } = False
+    isAbandoned TxEntry { txAttempt, txInSubmission, txAdvertisers }
+      | txAttempt > 0  = False
+      | txInSubmission = False
+      | otherwise      = txAdvertisers <= 0
+{-# INLINABLE sweepSharedStateUpTo #-}
 
-    -- Remove transaction entries from all shared state maps by key.
-    dropTxKeys keys s
-      | IntSet.null keys = s
-      | otherwise =
-          s {
-            sharedTxTable     = IntMap.withoutKeys (sharedTxTable s) keys,
-            sharedRetainedTxs = retainedDeleteKeys keys (sharedRetainedTxs s),
-            sharedTxIdToKey   = IntSet.foldl' (deleteTxId (sharedKeyToTxId s))
-                                              (sharedTxIdToKey s) keys,
-            sharedKeyToTxId   = IntMap.withoutKeys (sharedKeyToTxId s) keys
-          }
+-- | At most @limit@ entries of the map in key order from the key on, going
+-- on from the start once the end is reached, so that a walk takes its
+-- limit or the whole map; and the key to go on from, the one after the
+-- last entry taken.  Keys are non-negative and far from 'maxBound'.
+walkFrom :: Int -> Int -> IntMap.IntMap a -> ([(Int, a)], Int)
+walkFrom limit from m
+    | limit <= 0 = ([], from)
+    | otherwise =
+        case splitAt limit entries of
+          ([], _)    -> ([], 0)
+          (taken, _) -> (taken, fst (last taken) + 1)
+  where
+    -- The entries from the key on, then those before it.
+    entries = IntMap.toAscList onward ++ IntMap.toAscList before
+    (before, onward) =
+      case IntMap.splitLookup from m of
+        (lt, Nothing, gt) -> (lt, gt)
+        (lt, Just v, gt)  -> (lt, IntMap.insert from v gt)
+{-# INLINABLE walkFrom #-}
 
-    -- Remove only the txid <-> key lookup entries.  Used for keys that
-    -- have outlived their 'sharedTxTable' and retained residence but had
-    -- their lookup entries kept while peers still carried the txid in
-    -- 'peerUnacknowledgedTxIds'.
-    dropLookupOnly keys s
-      | IntSet.null keys = s
-      | otherwise =
-          s {
-            sharedTxIdToKey = IntSet.foldl' (deleteTxId (sharedKeyToTxId s))
-                                            (sharedTxIdToKey s) keys,
-            sharedKeyToTxId = IntMap.withoutKeys (sharedKeyToTxId s) keys
-          }
+-- | Expiry alone: 'sweepSharedStateUpTo' without the walks, for draining a
+-- backlog.
+expireSharedStateUpTo :: HasRawTxId txid
+                      => Int
+                      -> Time
+                      -> SharedTxState peeraddr txid
+                      -> (SharedTxState peeraddr txid, Bool)
+expireSharedStateUpTo limit now st
+    | expired > 0 = (bumped, more)
+    | otherwise   = (st, more)
+  where
+    (expiredSt, more, expired) = expireUpTo limit now st
+    bumped = expiredSt { sharedRevision = sharedRevision st + 1 }
+{-# INLINABLE expireSharedStateUpTo #-}
 
+-- | Expire at most @limit@ retained entries, the earliest first, with
+-- their lookup entries.  Also whether any expired entry remains, and
+-- how many expired; the revision is the caller's to bump.
+expireUpTo :: HasRawTxId txid
+           => Int
+           -> Time
+           -> SharedTxState peeraddr txid
+           -> (SharedTxState peeraddr txid, Bool, Int)
+expireUpTo limit now st
+    | IntSet.null expiredRetained = (st, more, 0)
+    | otherwise =
+        ( dropLookupEntries expiredRetained st { sharedRetainedTxs = retained' }
+        , more
+        , IntSet.size expiredRetained )
+  where
+    (expiredRetained, retained') =
+      retainedExpireUpTo limit now (sharedRetainedTxs st)
+    -- a backlog is a fact about the state, whatever the limit allowed:
+    -- a sweep left no budget still asks for the drain
+    more = retainedDueBy now retained'
+{-# INLINABLE expireUpTo #-}
+
+-- | One advertiser fewer for an entry: a peer omitted its body, had it
+-- rejected, or left.  Not saturating: a count below zero is a release
+-- without a registration, which the tests' invariants then see, and
+-- which the sweep treats as abandonment rather than keeping the entry.
+dropAdvertiser :: TxEntry peeraddr -> TxEntry peeraddr
+dropAdvertiser entry = entry { txAdvertisers = txAdvertisers entry - 1 }
+
+-- | Whether a key is in the tx table or retained.
+residentKey :: SharedTxState peeraddr txid -> Int -> Bool
+residentKey st k =
+  IntMap.member k (sharedTxTable st) || retainedMember k (sharedRetainedTxs st)
+
+-- | Remove transaction entries from all shared state maps by key.
+dropTxKeys :: HasRawTxId txid
+           => IntSet -> SharedTxState peeraddr txid -> SharedTxState peeraddr txid
+dropTxKeys keys s@SharedTxState { sharedTxTable, sharedRetainedTxs }
+  | IntSet.null keys = s
+  | otherwise =
+      dropLookupEntries keys
+        s { sharedTxTable     = IntMap.withoutKeys sharedTxTable keys,
+            sharedRetainedTxs = retainedDeleteKeys keys sharedRetainedTxs }
+{-# INLINABLE dropTxKeys #-}
+
+-- | Remove only the txid <-> key lookup entries.  Used for keys that have
+-- outlived their 'sharedTxTable' and retained residence but had their
+-- lookup entries kept while peers still carried the txid in
+-- 'peerUnacknowledgedTxIds'.
+dropLookupEntries :: HasRawTxId txid
+                  => IntSet -> SharedTxState peeraddr txid -> SharedTxState peeraddr txid
+dropLookupEntries keys s
+  | IntSet.null keys = s
+  | otherwise =
+      s {
+        sharedTxIdToKey = IntSet.foldl' (deleteTxId (sharedKeyToTxId s))
+                                        (sharedTxIdToKey s) keys,
+        sharedKeyToTxId = IntMap.withoutKeys (sharedKeyToTxId s) keys
+      }
+  where
     deleteTxId keyToTxId txIdToKey k =
       case IntMap.lookup k keyToTxId of
         Just txid -> Map.delete (getRawTxId txid) txIdToKey
         Nothing   -> txIdToKey
-{-# INLINABLE sweepSharedState #-}
+{-# INLINABLE dropLookupEntries #-}
 
 -- | Handle a batch of tx bodies received from one peer.
 --
@@ -980,6 +1069,7 @@ handleReceivedTxs mempoolHasTx now policy peeraddr txs peerState peerInFlight sh
       , sharedStateHandled
       , peerDownloadedTxs'
       , wakeChangeFromHandle
+      , unmatchedBodies
       ) =
       List.foldl'
         handleOne
@@ -989,6 +1079,7 @@ handleReceivedTxs mempoolHasTx now policy peeraddr txs peerState peerInFlight sh
         , sharedState
         , peerDownloadedTxs peerState
         , False
+        , 0 :: Int
         )
         txs
 
@@ -997,8 +1088,18 @@ handleReceivedTxs mempoolHasTx now policy peeraddr txs peerState peerInFlight sh
     --
     -- @wakeChangeFromOmit@ is set only when a lease is actually released
     -- (other advertisers can now claim).
-    (omittedCount, sharedStateReleased, wakeChangeFromOmit) =
-      IntSet.foldl' handleOmitted (0, sharedStateHandled, False) pendingRequestedKeys
+    --
+    -- A pending key whose residence ended meanwhile, resolved by another
+    -- peer and expired, has no lookup entry any more, so a body for it
+    -- arrives under an unknown txid, or under a fresh key if the txid was
+    -- advertised again since: one body answering no pending key accounts
+    -- for one such key, late rather than omitted.  Counting pairs them
+    -- exactly, as the client rejects a reply naming a txid it did not
+    -- request: every body is for a txid of this batch.
+    (livePending, deadPending) = IntSet.partition keyWasLive pendingRequestedKeys
+    (omittedLive, sharedStateReleased, wakeChangeFromOmit) =
+      IntSet.foldl' handleOmitted (0, sharedStateHandled, False) livePending
+    omittedCount = omittedLive + max 0 (IntSet.size deadPending - unmatchedBodies)
 
     -- Keys this peer is no longer attempting (everything in the batch
     -- except still-buffered keys).  Used to update both the per-peer
@@ -1009,10 +1110,27 @@ handleReceivedTxs mempoolHasTx now policy peeraddr txs peerState peerInFlight sh
     -- need to react to.  In the common case (all bodies received, no
     -- mempool race) no bump fires and the structural-but-pointer-different
     -- 'sharedStateReleased' is discarded by 'writeSharedStateIfChanged'.
+    -- The released keys this peer advertised have one advertiser fewer
+    -- where their entries remain: a structural change that grants no one
+    -- an option.
+    droppedAdvertising =
+      IntSet.filter (\k -> IntMap.member k (sharedTxTable sharedStateReleased))
+                    (releasedKeys `IntSet.intersection` pifAdvertised peerInFlight)
+    sharedStateAdjusted =
+      sharedStateReleased {
+        sharedTxTable =
+          IntSet.foldl' (\tbl k -> IntMap.adjust dropAdvertiser k tbl)
+                        (sharedTxTable sharedStateReleased) droppedAdvertising
+      }
+
     sharedState'
       | wakeChangeFromHandle || wakeChangeFromOmit =
-          sharedStateReleased {
+          sharedStateAdjusted {
             sharedGeneration = sharedGeneration sharedState + 1,
+            sharedRevision   = sharedRevision   sharedState + 1
+          }
+      | not (IntSet.null droppedAdvertising) =
+          sharedStateAdjusted {
             sharedRevision   = sharedRevision   sharedState + 1
           }
       | otherwise =
@@ -1035,9 +1153,7 @@ handleReceivedTxs mempoolHasTx now policy peeraddr txs peerState peerInFlight sh
         pifAdvertised = pifAdvertised peerInFlight `IntSet.difference` releasedKeys
       }
 
-    keyWasLive k =
-         IntMap.member k (sharedTxTable sharedState)
-      || retainedMember k (sharedRetainedTxs sharedState)
+    keyWasLive = residentKey sharedState
 
     -- Fold function over received txs: classify as late, already in mempool, or buffer for
     -- download.
@@ -1048,6 +1164,7 @@ handleReceivedTxs mempoolHasTx now policy peeraddr txs peerState peerInFlight sh
       , !sharedAcc
       , !downloadedAcc
       , !wakeAcc
+      , !unmatchedAcc
       )
       (txid, tx) =
         case Map.lookup (getRawTxId txid) txidToKey of
@@ -1058,6 +1175,7 @@ handleReceivedTxs mempoolHasTx now policy peeraddr txs peerState peerInFlight sh
                , sharedAcc
                , downloadedAcc
                , wakeAcc
+               , unmatchedAcc + 1
                )
              Just (TxKey k)
                | retainedMember k (sharedRetainedTxs sharedAcc) ->
@@ -1074,6 +1192,7 @@ handleReceivedTxs mempoolHasTx now policy peeraddr txs peerState peerInFlight sh
                    , sharedAcc
                    , downloadedAcc
                    , wakeAcc
+                   , unmatchedFor k
                    )
                | mempoolHasTx txid ->
                    let sharedAcc' =
@@ -1088,17 +1207,24 @@ handleReceivedTxs mempoolHasTx now policy peeraddr txs peerState peerInFlight sh
                       , sharedAcc'
                       , downloadedAcc
                       , True
+                      , unmatchedFor k
                       )
                | otherwise ->
                    case IntMap.lookup k (sharedTxTable sharedAcc) of
                         Just _txEntry
-                          | IntSet.member k (pifAttempting peerInFlight) ->
+                          -- The body answers this batch.  One for a key this
+                          -- peer requested in a later batch, the txid interned
+                          -- afresh since, is late here and comes again with
+                          -- that batch's reply.
+                          | IntSet.member k (pifAttempting peerInFlight)
+                          , IntSet.member k pendingKeysAcc ->
                               ( lateCountAcc
                               , IntSet.delete k pendingKeysAcc
                               , IntSet.insert k bufferedAcc
                               , sharedAcc
                               , IntMap.insert k tx downloadedAcc
                               , wakeAcc
+                              , unmatchedAcc
                               )
                         _ ->
                               ( lateCountAcc + 1
@@ -1107,25 +1233,30 @@ handleReceivedTxs mempoolHasTx now policy peeraddr txs peerState peerInFlight sh
                               , sharedAcc
                               , downloadedAcc
                               , wakeAcc
+                              , unmatchedFor k
                               )
+
+      where
+        -- A body answering no pending key: the txid re-interned since the
+        -- request, or never requested.
+        unmatchedFor k
+          | IntSet.member k pendingKeysAcc = unmatchedAcc
+          | otherwise                      = unmatchedAcc + 1
 
     -- Handle omitted (not received) txs: release this peer's lease so
     -- another advertiser can claim the tx, decrement 'txAttempt'.
-    handleOmitted (!omittedCountAcc, !sharedAcc, !wakeAcc) k
-      | keyWasLive k =
-          case IntMap.lookup k (sharedTxTable sharedAcc) of
-            Just txEntry ->
-              ( omittedCountAcc + 1
-              , sharedAcc {
-                  sharedTxTable =
-                    IntMap.insert k (releaseLease txEntry)
-                      (sharedTxTable sharedAcc)
-                }
-              , True
-              )
-            Nothing ->
-              (omittedCountAcc + 1, sharedAcc, wakeAcc)
-      | otherwise =
+    handleOmitted (!omittedCountAcc, !sharedAcc, !wakeAcc) k =
+      case IntMap.lookup k (sharedTxTable sharedAcc) of
+        Just txEntry ->
+          ( omittedCountAcc + 1
+          , sharedAcc {
+              sharedTxTable =
+                IntMap.insert k (releaseLease txEntry)
+                  (sharedTxTable sharedAcc)
+            }
+          , True
+          )
+        Nothing ->
           (omittedCountAcc + 1, sharedAcc, wakeAcc)
 
     releaseLease txEntry@TxEntry { txLease, txAttempt } =
@@ -1141,14 +1272,17 @@ handleReceivedTxs mempoolHasTx now policy peeraddr txs peerState peerInFlight sh
 -- | Handle the result of submitting buffered txs to the mempool.
 --
 -- Accepted txs leave the active table and move into the retained set so later
--- txid advertisements can be acknowledged without re-requesting the body.
+-- txid advertisements can be acknowledged without re-requesting the body;
+-- one whose key is gone meanwhile is retained under a fresh key, which
+-- is why the accepted txids come along.
 -- Txs rejected by the mempool release this peer's lease and clear
 -- 'txInSubmission' so another advertiser may try later.
-handleSubmittedTxs :: Eq peeraddr
+handleSubmittedTxs :: (Eq peeraddr, HasRawTxId txid)
                    => Time
                    -> TxDecisionPolicy
                    -> peeraddr
-                   -> [TxKey]
+                   -> [(TxKey, txid)]
+                   -- ^ the accepted txs, by the key they were submitted under
                    -> [TxKey]
                    -> PeerTxLocalState tx
                    -> PeerTxInFlight
@@ -1157,7 +1291,7 @@ handleSubmittedTxs :: Eq peeraddr
 handleSubmittedTxs now policy peeraddr acceptedTxs rejectedTxs peerState peerInFlight sharedState =
   (peerState', peerInFlight', sharedState')
   where
-    acceptedKeys = IntSet.fromList (unTxKey <$> acceptedTxs)
+    acceptedKeys = IntSet.fromList (unTxKey . fst <$> acceptedTxs)
     rejectedKeys = IntSet.fromList (unTxKey <$> rejectedTxs)
     submittedKeys = acceptedKeys `IntSet.union` rejectedKeys
 
@@ -1190,22 +1324,49 @@ handleSubmittedTxs now policy peeraddr acceptedTxs rejectedTxs peerState peerInF
     -- reject releases the lease (other advertisers can claim).
     sharedState' =
       sharedStateAfterRejected {
-        sharedGeneration = sharedGeneration sharedState + 1
+        sharedGeneration = sharedGeneration sharedState + 1,
+        sharedRevision   = sharedRevision   sharedState + 1
       }
 
     retainedUntil = addTime (bufferedTxsMinLifetime policy) now
 
-    acceptSubmittedTx sharedAcc (TxKey k) =
-      sharedAcc {
-        sharedTxTable = IntMap.delete k (sharedTxTable sharedAcc),
-        sharedRetainedTxs =
-          retainedInsertMax k retainedUntil (sharedRetainedTxs sharedAcc)
-      }
+    acceptSubmittedTx sharedAcc (TxKey k, txid)
+      | IntMap.member k (sharedKeyToTxId sharedAcc) =
+          sharedAcc {
+            sharedTxTable = IntMap.delete k (sharedTxTable sharedAcc),
+            sharedRetainedTxs =
+              retainedInsertMax k retainedUntil (sharedRetainedTxs sharedAcc)
+          }
+      -- The key's lookup entries are gone: another peer found the tx in
+      -- the mempool and retained it meanwhile, and that retention expired
+      -- while this submission was blocked.  The txid is retained afresh,
+      -- under the key it gets now, so that a lagging peer's advertisement
+      -- of it is acknowledged rather than fetched and rejected; unless it
+      -- was interned again meanwhile: active under another key, by such
+      -- an advertisement, that entry runs its own course and is left
+      -- alone, for a retained key would also be active; retained again,
+      -- the retention is extended.
+      | otherwise =
+          case Map.lookup (getRawTxId txid) (sharedTxIdToKey sharedAcc) of
+            Just (TxKey k')
+              | IntMap.member k' (sharedTxTable sharedAcc) -> sharedAcc
+              | otherwise -> retainUnder k' sharedAcc
+            Nothing ->
+              let (_, TxKey k', sharedAcc') = internTxId txid sharedAcc
+              in retainUnder k' sharedAcc'
 
+    retainUnder k' st =
+      st { sharedRetainedTxs = retainedInsertMax k' retainedUntil (sharedRetainedTxs st) }
+
+    -- A rejected key stays active, this peer advertising it no longer.
     updateRejected sharedAcc k =
       sharedAcc {
-        sharedTxTable = IntMap.adjust markRejected k (sharedTxTable sharedAcc)
+        sharedTxTable = IntMap.adjust (adjustRejected k) k (sharedTxTable sharedAcc)
       }
+
+    adjustRejected k
+      | IntSet.member k (pifAdvertised peerInFlight) = dropAdvertiser . markRejected
+      | otherwise                                    = markRejected
 
     markRejected txEntry@TxEntry { txLease } =
       txEntry {
@@ -1271,7 +1432,6 @@ handleReceivedTxIds mempoolHasTx now policy requestedTxIds txidsAndSizes
     (peerState'', peerInFlight'', sharedState'')
   where
     peerAdvertisedKeys0 = pifAdvertised peerInFlight
-    peerAcksPending0    = pifAcksPending peerInFlight
 
     -- Fold over received txids: build unacknowledged list, update tables.
     --
@@ -1288,7 +1448,6 @@ handleReceivedTxIds mempoolHasTx now policy requestedTxIds txidsAndSizes
       , peerAvailableTxIds'
       , sharedStateHandled
       , peerAdvertisedKeys'
-      , peerAcksPending'
       , wakeChange
       , revisionOnlyChange
       ) =
@@ -1298,7 +1457,6 @@ handleReceivedTxIds mempoolHasTx now policy requestedTxIds txidsAndSizes
         , peerAvailableTxIds peerState
         , sharedState
         , peerAdvertisedKeys0
-        , peerAcksPending0
         , False
         , False
         )
@@ -1315,15 +1473,12 @@ handleReceivedTxIds mempoolHasTx now policy requestedTxIds txidsAndSizes
         peerAvailableTxIds = peerAvailableTxIds'
       }
 
-    -- An empty reply leaves both sets unchanged (the fold doesn't fire),
-    -- so skip the record rebuild.
+    -- An empty reply leaves the advertised set unchanged (the fold doesn't
+    -- fire), so skip the record rebuild.
     peerInFlight'' =
         if null txidsAndSizes
            then peerInFlight
-           else peerInFlight {
-               pifAdvertised  = peerAdvertisedKeys',
-               pifAcksPending = peerAcksPending'
-             }
+           else peerInFlight { pifAdvertised = peerAdvertisedKeys' }
 
     sharedState''
       | wakeChange =
@@ -1346,7 +1501,6 @@ handleReceivedTxIds mempoolHasTx now policy requestedTxIds txidsAndSizes
          , IntMap.IntMap SizeInBytes
          , SharedTxState peeraddr txid
          , IntSet.IntSet
-         , IntSet.IntSet
          , Bool                     -- wakeChange
          , Bool                     -- revisionOnlyChange
          )
@@ -1354,7 +1508,6 @@ handleReceivedTxIds mempoolHasTx now policy requestedTxIds txidsAndSizes
       -> ( [TxKey]
          , IntMap.IntMap SizeInBytes
          , SharedTxState peeraddr txid
-         , IntSet.IntSet
          , IntSet.IntSet
          , Bool
          , Bool
@@ -1364,7 +1517,6 @@ handleReceivedTxIds mempoolHasTx now policy requestedTxIds txidsAndSizes
       , !availableAcc
       , !sharedAcc
       , !peerAdvertisedKeysAcc
-      , !peerAcksPendingAcc
       , !wakeAcc
       , !revOnlyAcc
       )
@@ -1376,7 +1528,6 @@ handleReceivedTxIds mempoolHasTx now policy requestedTxIds txidsAndSizes
           , IntMap.delete k availableAcc
           , sharedAcc'
           , IntSet.delete k peerAdvertisedKeysAcc
-          , IntSet.insert k peerAcksPendingAcc
           , wakeAcc
           , revOnlyAcc'
           )
@@ -1391,7 +1542,6 @@ handleReceivedTxIds mempoolHasTx now policy requestedTxIds txidsAndSizes
                 retainedInsertMax k retainUntil (sharedRetainedTxs sharedAcc')
             }
           , IntSet.delete k peerAdvertisedKeysAcc
-          , IntSet.insert k peerAcksPendingAcc
           , True
           , True
           )
@@ -1403,6 +1553,7 @@ handleReceivedTxIds mempoolHasTx now policy requestedTxIds txidsAndSizes
               let txEntry = TxEntry {
                               txLease = TxClaimable now,
                               txAttempt = 0,
+                              txAdvertisers = 1,
                               txInSubmission = False,
                               currentMaxInflightMultiplicity =
                                 txInflightMultiplicity policy
@@ -1413,21 +1564,32 @@ handleReceivedTxIds mempoolHasTx now policy requestedTxIds txidsAndSizes
                      sharedTxTable = IntMap.insert k txEntry (sharedTxTable sharedAcc')
                    }
                  , IntSet.insert k peerAdvertisedKeysAcc
-                 , IntSet.insert k peerAcksPendingAcc
                  , wakeAcc
                  , True
                  )
-            Just _ ->
-              -- Existing entry; another peer already advertised.  No
-              -- 'sharedTxTable' change beyond optional interning.
-              ( txKey : unacknowledgedAcc
-              , IntMap.insert k txSize availableAcc
-              , sharedAcc'
-              , IntSet.insert k peerAdvertisedKeysAcc
-              , IntSet.insert k peerAcksPendingAcc
-              , wakeAcc
-              , revOnlyAcc'
-              )
+            Just _
+              | IntSet.member k peerAdvertisedKeysAcc ->
+                  -- Existing entry this peer advertises already, the txid
+                  -- repeated: nothing shared changes beyond interning.
+                  ( txKey : unacknowledgedAcc
+                  , IntMap.insert k txSize availableAcc
+                  , sharedAcc'
+                  , peerAdvertisedKeysAcc
+                  , wakeAcc
+                  , revOnlyAcc'
+                  )
+              | otherwise ->
+                  -- Existing entry; one more advertiser.
+                  ( txKey : unacknowledgedAcc
+                  , IntMap.insert k txSize availableAcc
+                  , sharedAcc' {
+                      sharedTxTable =
+                        IntMap.adjust addAdvertiser k (sharedTxTable sharedAcc')
+                    }
+                  , IntSet.insert k peerAdvertisedKeysAcc
+                  , wakeAcc
+                  , True
+                  )
       where
         retainedAcc = sharedRetainedTxs sharedAcc'
         revOnlyAcc' = revOnlyAcc || txKeyWasNew
@@ -1436,4 +1598,6 @@ handleReceivedTxIds mempoolHasTx now policy requestedTxIds txidsAndSizes
     lookupOrInternTxId txid st =
       let (_, key, st') = internTxId txid st
       in (key, sharedNextTxKey st' /= sharedNextTxKey st, st')
+
+    addAdvertiser entry = entry { txAdvertisers = txAdvertisers entry + 1 }
 {-# INLINABLE handleReceivedTxIds #-}

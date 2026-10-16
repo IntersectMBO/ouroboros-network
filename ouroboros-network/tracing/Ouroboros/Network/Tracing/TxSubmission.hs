@@ -6,6 +6,7 @@
 module Ouroboros.Network.Tracing.TxSubmission () where
 
 import Data.Aeson
+import Data.Aeson.Key qualified as Key
 import Data.IntMap.Strict qualified as IntMap
 import Data.Map.Strict qualified as Map
 
@@ -14,32 +15,16 @@ import Ouroboros.Network.Tx (HasRawTxId)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
 
 instance (Show txid, Show peeraddr, HasRawTxId txid) => LogFormatting (TraceTxLogic peeraddr txid tx) where
-  forMachine dtal (TraceSharedTxState SharedTxState {..}) =
+  forMachine dtal (TraceSharedTxState st@SharedTxState {..}) =
       mconcat $ [ "kind" .= String "TraceSharedTxState"
                 , "sharedGeneration" .= sharedGeneration
-                , "activeTxCount" .= IntMap.size sharedTxTable
-                , "retainedTxCount" .= retainedSize sharedRetainedTxs
-                , "internedTxCount" .= Map.size sharedTxIdToKey
-                , "leasedTxCount" .= leasedTxCount
-                , "claimableTxCount" .= claimableTxCount
-                , "totalAttemptCount" .= totalAttemptCount
-                , "submittingTxCount" .= submittingTxCount
-                ] ++ more
+                , "sharedRevision" .= sharedRevision
+                ]
+             ++ [ Key.fromString name .= n
+                | (name, n) <- sharedTxStateCountFields (sharedTxStateCounts st)
+                ]
+             ++ more
     where
-      activeEntries = IntMap.elems sharedTxTable
-
-      leasedTxCount =
-        length [ () | TxEntry { txLease = TxLeased _ _ } <- activeEntries ]
-
-      claimableTxCount =
-        length [ () | TxEntry { txLease = TxClaimable _ } <- activeEntries ]
-
-      totalAttemptCount =
-        sum [ txAttempt entry | entry <- activeEntries ]
-
-      submittingTxCount =
-        length [ () | TxEntry { txInSubmission = True } <- activeEntries ]
-
       renderTxId txKey =
         maybe "<missing-txid>" show (IntMap.lookup txKey sharedKeyToTxId)
 
