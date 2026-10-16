@@ -1,5 +1,4 @@
 {-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -89,9 +88,7 @@ publicRootPeersProvider tracer
           Left (IOError  err) -> throwIO err
           Right resolver -> do
             let (doms, relayAddrs) =
-                  flip partition (Map.assocs domains) $ \case
-                    (RelayAccessAddress {}, _) -> False
-                    _otherwise                 -> True
+                  partition (not . isRelayAccessAddress . fst) (Map.assocs domains)
                 lookups =
                   [ (, pa)
                       <$> (do
@@ -104,10 +101,6 @@ publicRootPeersProvider tracer
                               resolver
                               rng))
                   | (domain, pa) <- doms
-                  , case domain of
-                      RelayAccessAddress {}   -> False
-                      RelayAccessDomain  {}   -> True
-                      RelayAccessSRVDomain {} -> True
                   ]
             -- The timeouts here are handled by the 'lookupWithTTL'. They're
             -- configured via the DNS.ResolvConf resolvTimeout field and defaults
