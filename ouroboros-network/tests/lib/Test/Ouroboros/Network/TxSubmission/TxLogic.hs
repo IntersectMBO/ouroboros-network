@@ -58,9 +58,11 @@ import NoThunks.Class (NoThunks, unsafeNoThunks)
 import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Ouroboros.Network.Tx (HasRawTxId (..), getRawTxId)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
-import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (SharedTxStateVar,
+import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (PeerRegistration,
+           PeerTxRegistry (..), SharedTxStateVar, TxSubmissionCountersVar,
            drainPause, newPeerTxRegistry, newSharedTxStateVar,
-           newTxSubmissionCountersVar, scrubFromPeerInFlight, sweepBatch,
+           newTxSubmissionCountersVar, registerPeerCounters, retirePeerCounters,
+           scrubFromPeerInFlight, snapshotCountersWith, sweepBatch,
            sweepInterval, txCountersThreadV2, writeSharedStateIfChanged)
 import Ouroboros.Network.TxSubmission.Inbound.V2.State
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
@@ -130,6 +132,8 @@ tests =
     , localOption (QuickCheckTests 20) $ testProperty "an emission does not delay the counters thread's next sweep" prop_thread_emissionCost
     , testProperty "the shared state's counts are traced under every field's name" prop_countFields_everyField
     , testProperty "nanosecond deadlines never expire early, and expire within 1 ns" prop_retainDeadline_rounding
+    , testProperty "counters snapshot counts every peer exactly once" prop_snapshotCounters_exactlyOnce
+    , testProperty "a release removes its own registration, not another under its address" prop_registry_releaseOwn
     , testProperty "nextPeerActionPipelined rejects request-only (ack=0, req=N) messages" prop_nextPeerActionPipelined_rejectsRequestOnly
     , testCaseSteps "nextPeerActionPipelined rejects pure-ack (ack=N, req=0) messages" unit_nextPeerActionPipelined_rejectsPureAck
     , testProperty "nextPeerActionPipelined emits a pipelined txid request when ack and request fire together" prop_nextPeerActionPipelined_requestsTxIds
@@ -1689,6 +1693,177 @@ prop_nextPeerAction_keepsRetained (ArbTxDecisionPolicy policy)
     sharedState' = sweepSharedState now sharedState0
   in
     retainedSize (sharedRetainedTxs sharedState') === n
+
+-- | What happens between two of the counters snapshot's transactions: a
+-- live peer counts once more, a live peer retires, or a new peer registers
+-- with a fresh cell.  Ops on a peer in the wrong state do nothing.
+data CounterOp = Bump Int | Retire Int | Register Int
+  deriving Show
+
+-- | How many peers are registered at the start, and the ops to run before
+-- each of the snapshot's transactions, in order.
+--
+-- Every count is a base-3 digit of its own in the total: peer @p@ starts
+-- at @3^p@ and the @i@-th 'Bump' of the script adds
+-- @3^('initialDigits' + i)@, so the snapshot's total says how many times
+-- it took each count.  The digits fit a 'Word64', which bounds the bumps.
+data CounterScript = CounterScript Int [[CounterOp]]
+  deriving Show
+
+-- | Digits reserved for the peers registered at the start.
+initialDigits :: Int
+initialDigits = 6
+
+-- | Digits in all: @3^40 - 1@ fits a 'Word64'.
+counterDigits :: Int
+counterDigits = 40
+
+instance Arbitrary CounterScript where
+  arbitrary = do
+    peers <- choose (0, initialDigits)
+    CounterScript peers . capBumps
+      <$> listOf (listOf (oneof [ Bump <$> peer
+                                , Retire <$> peer
+                                , Register <$> choose (initialDigits, 9) ]))
+    where
+      peer = choose (0, 9)
+
+      -- Only as many bumps as there are digits for them.
+      capBumps :: [[CounterOp]] -> [[CounterOp]]
+      capBumps = snd . mapAccumL batch 0
+
+      batch :: Int -> [CounterOp] -> (Int, [CounterOp])
+      batch n [] = (n, [])
+      batch n (Bump p : ops)
+        | n >= counterDigits - initialDigits = batch n ops
+        | otherwise                          = (Bump p :) <$> batch (n + 1) ops
+      batch n (op : ops) = (op :) <$> batch n ops
+  shrink (CounterScript peers bs) =
+       [ CounterScript peers' bs | peers' <- shrink peers ]
+    ++ [ CounterScript peers bs' | bs' <- shrinkList (shrinkList (const [])) bs ]
+
+-- | The variables a counters script runs against: the snapshot's own
+-- retired accumulator and registry, every cell a peer ever had, the bumps
+-- seen so far, the transactions each applied bump ran after, by its digit,
+-- the transactions run so far, and the ops still to run.
+data CounterEnv s = CounterEnv {
+    ceRetired  :: TxSubmissionCountersVar (IOSim s),
+    ceRegistry :: PeerTxRegistry (IOSim s) Int,
+    ceAllCells :: StrictTVar (IOSim s) (Map.Map Int (TxSubmissionCountersVar (IOSim s))),
+    ceBumps    :: StrictTVar (IOSim s) Int,
+    ceApplied  :: StrictTVar (IOSim s) (Map.Map Int Int),
+    ceTxs      :: StrictTVar (IOSim s) Int,
+    cePending  :: StrictTVar (IOSim s) [[CounterOp]]
+  }
+
+-- | However peers count, retire and register between its transactions, a
+-- snapshot takes every count there was before it started exactly once,
+-- every count made during it at most once, and nothing else: no peer is
+-- missed or counted twice.
+prop_snapshotCounters_exactlyOnce :: CounterScript -> Property
+prop_snapshotCounters_exactlyOnce (CounterScript peers batches) = runSimOrThrow $ do
+    ceRetired  <- newTVarIO mempty
+    cells      <- mapM (newTVarIO . counted . (3 ^)) [0 .. peers - 1]
+    ceRegistry <- PeerTxRegistry
+                    <$> newTVarIO (Map.fromList [ ((p, fromIntegral p), c)
+                                                | (p, c) <- zip [0 ..] cells ])
+                    <*> newTVarIO (fromIntegral peers)
+    ceAllCells <- newTVarIO (Map.fromList (zip [0 ..] cells))
+    ceBumps    <- newTVarIO 0
+    ceApplied  <- newTVarIO Map.empty
+    ceTxs      <- newTVarIO 0
+    cePending  <- newTVarIO batches
+    let env = CounterEnv { ceRetired, ceRegistry, ceAllCells, ceBumps,
+                           ceApplied, ceTxs, cePending }
+    s       <- txsReceived <$> snapshotCountersWith (runTx env) ceRetired ceRegistry
+    applied <- readTVarIO ceApplied
+    pure $ counterexample (show (s, applied)) $ conjoin
+      [ counterexample ("digit " ++ show i ++ ", " ++ what
+                        ++ ", taken " ++ show times)
+          (lo <= times && times <= hi)
+      | i <- [0 .. counterDigits - 1]
+      , let times           = digit i s
+            (lo, hi, what)  = expected applied i
+      ]
+  where
+    digit :: Int -> Word64 -> Int
+    digit i s = fromIntegral ((s `div` 3 ^ i) `mod` 3)
+
+    -- How many times the snapshot must have taken the count of a digit:
+    -- the initial counts and those made before its first transaction
+    -- once, those made during it at most once, the rest not at all.
+    expected :: Map.Map Int Int -> Int -> (Int, Int, String)
+    expected applied i
+      | i < peers                      = (1, 1, "an initial count")
+      | Map.lookup i applied == Just 0 = (1, 1, "a count before the snapshot")
+      | Map.member i applied           = (0, 1, "a count during the snapshot")
+      | otherwise                      = (0, 0, "no count")
+
+    -- A live peer's registration and cell.
+    registrationOf :: PeerTxRegistry (IOSim s) Int -> Int
+                   -> STM (IOSim s) (Maybe (PeerRegistration Int, TxSubmissionCountersVar (IOSim s)))
+    registrationOf PeerTxRegistry { registeredPeers } p =
+      listToMaybe . filter ((== p) . fst . fst) . Map.toList <$> readTVar registeredPeers
+
+    -- Run the ops due before this transaction, then the transaction.
+    runTx :: CounterEnv s -> STM (IOSim s) a -> IOSim s a
+    runTx env@CounterEnv { cePending, ceTxs } tx = do
+      next <- atomically $ do
+        bs <- readTVar cePending
+        case bs of
+          b : rest -> writeTVar cePending rest >> pure b
+          []       -> pure []
+      mapM_ (apply env) next
+      atomically $ modifyTVar ceTxs (+ 1)
+      atomically tx
+
+    apply :: CounterEnv s -> CounterOp -> IOSim s ()
+    apply CounterEnv { ceRegistry, ceBumps, ceApplied, ceTxs } (Bump p) =
+      atomically $ do
+        i <- readTVar ceBumps
+        writeTVar ceBumps (i + 1)
+        live <- registrationOf ceRegistry p
+        case live of
+          Just (_, c) -> do
+            modifyTVar c (<> counted (3 ^ (initialDigits + i)))
+            txs <- readTVar ceTxs
+            modifyTVar ceApplied (Map.insert (initialDigits + i) txs)
+          Nothing     -> pure ()
+    apply CounterEnv { ceRetired, ceRegistry } (Retire p) = atomically $ do
+      live <- registrationOf ceRegistry p
+      case live of
+        Just (registration, c) -> retirePeerCounters ceRetired ceRegistry registration c
+        Nothing                -> pure ()
+    apply CounterEnv { ceRegistry, ceAllCells } (Register p) = do
+      known <- Map.member p <$> readTVarIO ceAllCells
+      if known then pure () else do
+        c <- newTVarIO mempty
+        atomically $ do
+          modifyTVar ceAllCells (Map.insert p c)
+          _ <- registerPeerCounters ceRegistry p c
+          pure ()
+
+-- | Two peers registered under one address, the first retiring: the second
+-- stays registered, and a snapshot counts both, the first through the
+-- accumulator.
+prop_registry_releaseOwn :: Word64 -> Word64 -> Property
+prop_registry_releaseOwn a b = runSimOrThrow $ do
+    retired  <- newTVarIO mempty
+    registry <- newPeerTxRegistry
+    cellA    <- newTVarIO (counted a)
+    cellB    <- newTVarIO (counted b)
+    keyA     <- atomically (registerPeerCounters registry (1 :: Int) cellA)
+    keyB     <- atomically (registerPeerCounters registry 1 cellB)
+    atomically $ retirePeerCounters retired registry keyA cellA
+    still    <- Map.keys <$> readTVarIO (registeredPeers registry)
+    s        <- txsReceived <$> snapshotCountersWith atomically retired registry
+    pure $ counterexample (show (keyA, keyB, still, s)) $
+           counterexample "registered after the first release" (still === [keyB])
+      .&&. counterexample "counted" (s === a + b)
+
+-- | A counters accumulator with that many txs received.
+counted :: Word64 -> TxSubmissionCountersAcc
+counted k = mempty { txsReceived = k }
 
 -- | Expiry alone drops the expired keys with their lookup entries and
 -- keeps the others; the tx table is left alone, and the backlog flag is
