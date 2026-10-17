@@ -1,9 +1,11 @@
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Ouroboros.Network.TxSubmission.Inbound.V2.Registry
   ( SharedTxStateVar
-  , PeerTxRegistry
+  , PeerTxRegistry (..)
+  , PeerRegistration
   , PeerTxAPI (..)
   , TxSubmissionCountersVar
   , newSharedTxStateVar
@@ -19,6 +21,9 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Registry
     -- * For tests
   , scrubFromPeerInFlight
   , writeSharedStateIfChanged
+  , snapshotCountersWith
+  , retirePeerCounters
+  , registerPeerCells
     -- re-exports
   , RegisteredDelay
   ) where
@@ -62,6 +67,9 @@ type TxSubmissionCountersVar m = StrictTVar m TxSubmissionCountersAcc
 -- | Per-peer in-flight TVar.
 type PeerTxInFlightVar m = StrictTVar m PeerTxInFlight
 
+-- | A peer's key in the registry: its address and its registration number.
+type PeerRegistration peeraddr = (peeraddr, Word64)
+
 -- | A live peer's cells: its counters, and its in-flight sets, which the
 -- counters thread's review of doomed entries reads, one peer per
 -- transaction ('heldDoomed').
@@ -70,16 +78,23 @@ data PeerCells m = PeerCells {
     peerInFlightCell :: !(PeerTxInFlightVar m)
   }
 
--- | Registry of every live peer's cells.
+-- | Registry of every live peer's cells, keyed by the peer's address and
+-- registration number, so that a release removes its own entry whatever
+-- else registered under the address.
 --
 -- 'withPeer' adds the cells on bracket-enter and removes them on
 -- bracket-exit (after scrubbing any contributions the peer still has
 -- to shared state and flushing its counters into the retired
--- accumulator); 'snapshotCounters' reads the counters cells to
+-- accumulator); 'snapshotCountersWith' reads the counters cells to
 -- aggregate for emission, 'heldDoomed' the in-flight cells for the
 -- holders of doomed entries.
-type PeerTxRegistry m peeraddr =
-       StrictTVar m (Map peeraddr (PeerCells m))
+data PeerTxRegistry m peeraddr = PeerTxRegistry {
+    -- | The live peers' cells.
+    registeredPeers  :: !(StrictTVar m (Map (PeerRegistration peeraddr)
+                                            (PeerCells m))),
+    -- | The next registration number.
+    nextRegistration :: !(StrictTVar m Word64)
+  }
 
 newSharedTxStateVar
   :: MonadSTM m
@@ -96,7 +111,7 @@ newTxSubmissionCountersVar = newTVarIO
 newPeerTxRegistry
   :: MonadSTM m
   => m (PeerTxRegistry m peeraddr)
-newPeerTxRegistry = newTVarIO Map.empty
+newPeerTxRegistry = PeerTxRegistry <$> newTVarIO Map.empty <*> newTVarIO 0
 
 -- | What the counters thread carries from one tick to the next.
 data TickState = TickState {
@@ -135,9 +150,10 @@ data TickState = TickState {
 -- sweep dooms the active entries abandoned for a grace ('doomGrace'), and
 -- the next tick reviews them ('heldDoomed', then 'State.reviewDoomed' in
 -- the sweep's transaction): every live peer's advertised set in a
--- transaction of its own, then one over the state that drops the doomed
--- entries no peer holds; entries doomed before the thread started, by an
--- earlier run over the same state, are reviewed at its first tick.
+-- transaction of its own, like the counters' cells, then one over the
+-- state that drops the doomed entries no peer holds; entries doomed
+-- before the thread started, by an earlier run over the same state, are
+-- reviewed at its first tick.
 txCountersThreadV2
   :: forall m peeraddr txid tx.
      (MonadDelay m, MonadSTM m, HasRawTxId txid)
@@ -218,7 +234,7 @@ txCountersThreadV2 policy countersTracer sharedStateTracer retiredCountersVar
     -- shared state when it was written since; what the next one carries.
     emit :: TickState -> m TickState
     emit tick@TickState { tickCounters, tickRevision } = do
-      current <- atomically (snapshotCounters retiredCountersVar registry)
+      current <- snapshotCountersWith atomically retiredCountersVar registry
       when (current /= tickCounters) $ traceWith countersTracer current
       st <- readTVarIO sharedStateVar
       let revision = sharedRevision st
@@ -302,42 +318,76 @@ drainPause = 0.01
 -- | Aggregate the V2 counters for emission: the retired-peers
 -- accumulator plus every live peer's private counters cell.
 --
--- Read in a single STM transaction so the snapshot is coherent with
--- 'withPeer' disconnect flushes (which move a peer's counters into the
--- retired accumulator and drop it from the registry atomically),
--- keeping the emitted aggregate monotonic.  The transaction is
--- read-only, so the hot-path per-peer writers never block on it; only
--- this reader (at the 'countersInterval' cadence) retries on conflict.
-snapshotCounters
-  :: MonadSTM m
-  => TxSubmissionCountersVar m
+-- Small transactions, as for the mux counters: one reads the retired
+-- accumulator together with the list of live cells, then each cell is
+-- read on its own.  One transaction over every cell would be restarted by
+-- every peer's write, and under load never commit.  A peer that retires
+-- in between is still counted exactly once: 'retirePeerCounters' moves its
+-- counts into the accumulator in the transaction that unregisters it, after
+-- the accumulator was read, and its cell keeps its final counts.  Every
+-- cell only grows, so the emitted aggregate stays monotonic.
+snapshotCountersWith
+  :: (MonadSTM m, Monad n)
+  => (forall a. STM m a -> n a)
+  -> TxSubmissionCountersVar m
   -> PeerTxRegistry m peeraddr
-  -> STM m TxSubmissionCounters
-snapshotCounters retiredCountersVar registry = do
-    retired <- readTVar retiredCountersVar
-    peers   <- readTVar registry
-    live    <- traverse (readTVar . peerCountersCell) (Map.elems peers)
+  -> n TxSubmissionCounters
+snapshotCountersWith runTx retiredCountersVar registry = do
+    (retired, cells) <- runTx $
+      (,) <$> readTVar retiredCountersVar
+          <*> (Map.elems <$> readTVar (registeredPeers registry))
+    live <- mapM (runTx . readTVar . peerCountersCell) cells
     pure $! emittedCounters (mconcat (retired : live))
 
 -- | The keys among the given ones that some live peer advertises, read
--- from one peer's in-flight cell per transaction.  A peer registered
--- after the cells were listed could not have advertised a doomed key
--- before the doom, and its reply after it clears the doom; a peer that
--- left meanwhile shows its last set, which spares at worst, and is not
--- listed next time.  Forced here, so that the sweep's transaction, which
--- takes the result, does none of the work.
+-- from one peer's in-flight cell per transaction like the counters'
+-- cells.  A peer registered after the cells were listed could not have
+-- advertised a doomed key before the doom, and its reply after it clears
+-- the doom; a peer that left meanwhile shows its last set, which spares
+-- at worst, and is not listed next time.  Forced here, so that the
+-- sweep's transaction, which takes the result, does none of the work.
 heldDoomed
   :: MonadSTM m
   => PeerTxRegistry m peeraddr
   -> IntSet.IntSet
   -> m IntSet.IntSet
 heldDoomed registry doomed = do
-    cells <- Map.elems <$> readTVarIO registry
+    cells <- Map.elems <$> readTVarIO (registeredPeers registry)
     held <- mapM (\cell -> do
                     pif <- readTVarIO (peerInFlightCell cell)
                     pure $! IntSet.intersection doomed (pifAdvertised pif))
                  cells
     pure $! IntSet.unions held
+
+-- | Register a joining peer's cells under its address and a fresh
+-- registration number: the key 'retirePeerCounters' takes.
+registerPeerCells
+  :: (MonadSTM m, Ord peeraddr)
+  => PeerTxRegistry m peeraddr
+  -> peeraddr
+  -> TxSubmissionCountersVar m
+  -> PeerTxInFlightVar m
+  -> STM m (PeerRegistration peeraddr)
+registerPeerCells registry peeraddr peerCountersVar peerInFlightVar = do
+    n <- stateTVar (nextRegistration registry) (\i -> (i, i + 1))
+    modifyTVar (registeredPeers registry)
+               (Map.insert (peeraddr, n) (PeerCells peerCountersVar peerInFlightVar))
+    pure (peeraddr, n)
+
+-- | Move a leaving peer's counts into the retired accumulator and drop its
+-- registration, in one transaction, so 'snapshotCountersWith' counts it
+-- exactly once.
+retirePeerCounters
+  :: (MonadSTM m, Ord peeraddr)
+  => TxSubmissionCountersVar m
+  -> PeerTxRegistry m peeraddr
+  -> PeerRegistration peeraddr
+  -> TxSubmissionCountersVar m
+  -> STM m ()
+retirePeerCounters retiredCountersVar registry registration peerCountersVar = do
+    peerCounters <- readTVar peerCountersVar
+    modifyTVar retiredCountersVar (<> peerCounters)
+    modifyTVar (registeredPeers registry) (Map.delete registration)
 
 -- | Peer-facing coordination API.
 --
@@ -435,30 +485,28 @@ withPeer policy config TxSubmissionMempoolReader { mempoolGetSnapshot }
     acquire = do
       peerInFlightVar <- newTVarIO emptyPeerTxInFlight
       peerCountersVar <- newTVarIO mempty
-      atomically $
-        modifyTVar registry
-          (Map.insert peeraddr (PeerCells peerCountersVar peerInFlightVar))
-      pure (peerInFlightVar, peerCountersVar)
+      registration <- atomically
+                        (registerPeerCells registry peeraddr peerCountersVar peerInFlightVar)
+      pure (registration, peerInFlightVar, peerCountersVar)
 
     -- On exit: reverse this peer's in-flight contributions to shared
     -- state, flush its accumulated counters into the retired
     -- accumulator (so the emitted aggregate stays monotonic across
     -- disconnects), then drop it from the registry.  Flush and removal
-    -- commit in one transaction so 'snapshotCounters' counts this peer
+    -- commit in one transaction so 'snapshotCountersWith' counts this peer
     -- exactly once: via its live cell before exit, via the retired
     -- accumulator after.
-    release (peerInFlightVar, peerCountersVar) = do
+    release (registration, peerInFlightVar, peerCountersVar) = do
       now <- getMonotonicTime
       atomically $ do
         pif <- readTVar peerInFlightVar
         sharedState <- readTVar sharedStateVar
         writeSharedStateIfChanged sharedStateVar (sharedRevision sharedState)
                                   (scrubFromPeerInFlight peeraddr now pif sharedState)
-        peerCounters <- readTVar peerCountersVar
-        modifyTVar retiredCountersVar (<> peerCounters)
-        modifyTVar registry (Map.delete peeraddr)
+        retirePeerCounters retiredCountersVar registry registration
+                           peerCountersVar
 
-    run (peerInFlightVar, peerCountersVar) = io PeerTxAPI {
+    run (_, peerInFlightVar, peerCountersVar) = io PeerTxAPI {
           awaitSharedChange = awaitSharedChangeImp sharedStateVar
         , runNextPeerAction = runNextPeerActionImp policy config sharedStateVar
                                 peerInFlightVar peerCountersVar peeraddr
