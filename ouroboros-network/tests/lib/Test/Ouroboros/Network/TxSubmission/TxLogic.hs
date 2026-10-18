@@ -61,6 +61,7 @@ import Data.Maybe (listToMaybe)
 import Data.Proxy (Proxy (..))
 import Data.Sequence.Strict qualified as StrictSeq
 import Data.Set qualified as Set
+import Data.Time.Clock (picosecondsToDiffTime)
 import Data.Word (Word16, Word64)
 import GHC.Generics (C, D, K1 (..), M1 (..), Rep, S, Selector (..), (:*:) (..))
 import GHC.Generics qualified as Generics (from)
@@ -165,6 +166,7 @@ tests =
     , localOption (QuickCheckTests 20) $ testProperty "a drain expires nothing before its time" prop_thread_drainNotEarly
     , localOption (QuickCheckTests 20) $ testProperty "an emission does not delay the counters thread's next sweep" prop_thread_emissionCost
     , testProperty "the shared state's counts are traced under every field's name, each the count its name says" prop_countFields_everyField
+    , testProperty "nanosecond deadlines never expire early, and expire within 1 ns" prop_retainDeadline_rounding
     , testProperty "nextPeerActionPipelined acks the ackable prefix but one and requests the window room, or waits" prop_nextPeerActionPipelined_rejectsRequestOnly
     , testCaseSteps "nextPeerActionPipelined rejects pure-ack (ack=N, req=0) messages" unit_nextPeerActionPipelined_rejectsPureAck
     , testProperty "nextPeerActionPipelined emits a pipelined txid request when ack and request fire together" prop_nextPeerActionPipelined_requestsTxIds
@@ -1189,7 +1191,7 @@ prop_handleReceivedTxIds (ArbTxDecisionPolicy policy) (NonEmpty taggedInput) =
     expectedUnacked =
       [ lookupKeyOrFail txid sharedState' | (txid, _) <- txidsAndSizes ]
 
-    retainUntil = addTime (bufferedTxsMinLifetime policy) now
+    retainUntil = retainDeadline (addTime (bufferedTxsMinLifetime policy) now)
 
     checkNew (txid, _) =
       let k = keyOf txid in
@@ -1431,7 +1433,7 @@ prop_handleReceivedTxs_keyFates (NonEmpty requested) =
       -- moves the entry out of the table
       sharedChanged = liveOmitted
                    || or [ True | (_, RequestedKey MempoolKey _) <- txids ]
-      retainUntil = addTime (bufferedTxsMinLifetime policy) now
+      retainUntil = retainDeadline (addTime (bufferedTxsMinLifetime policy) now)
   in counterexample (show (peerState', pif', shared')) $
        checkCoverage $
        cover 10 liveOmitted "omits a live key" $
@@ -1583,7 +1585,7 @@ prop_handleSubmittedTxs_deadKeys (ArbTxDecisionPolicy policy) (NonEmpty submitte
           txInSubmission = False,
           currentMaxInflightMultiplicity = txInflightMultiplicity policy
         }
-      deadlineAt d = addTime (fromIntegral (d :: Int)) now
+      deadlineAt d = retainDeadline (addTime (fromIntegral (d :: Int)) now)
       againKey txid = unTxKey (lookupKeyOrFail txid shared2)
       accepted = [ (TxKey k, txid) | (k, txid, SubmittedKey _ True _) <- keyed ]
       rejected = [ TxKey k | (k, _, SubmittedKey _ False _) <- keyed ]
@@ -1599,7 +1601,7 @@ prop_handleSubmittedTxs_deadKeys (ArbTxDecisionPolicy policy) (NonEmpty submitte
         }
       (peerState', pif', shared') =
         handleSubmittedTxs now policy peerAddr accepted rejected peerState pif shared2
-      retainUntil = addTime (bufferedTxsMinLifetime policy) now
+      retainUntil = retainDeadline (addTime (bufferedTxsMinLifetime policy) now)
       -- every accepted txid is retained, the live ones under their key, the
       -- dead ones under keys allocated by this step, or under the key they
       -- are active again under; one retained again stays retained
@@ -1875,7 +1877,7 @@ prop_handleSubmittedTxs_retainsAcceptedAndDropsRejected
     (_, peerStateAfterEvents) =
       applyPeerEvents policy now (length accepted) (length rejected) peerState'
 
-    retainUntil = addTime (bufferedTxsMinLifetime policy) now
+    retainUntil = retainDeadline (addTime (bufferedTxsMinLifetime policy) now)
 
     checkAccepted k =
       counterexample ("accepted " ++ show k) $ conjoin
@@ -2443,7 +2445,7 @@ unit_nextPeerAction_clearsInFlightForPrunedBody = do
         -- Simulate a sibling advertiser submitting the first tx to the
         -- mempool.  Its entry moves to 'sharedRetainedTxs' and peer A's
         -- buffer for it is orphaned; the second key's entry stays active.
-        retainUntil = addTime (bufferedTxsMinLifetime policy) now
+        retainUntil = retainDeadline (addTime (bufferedTxsMinLifetime policy) now)
         sharedState3 = sharedState2 {
             sharedTxTable     = IntMap.delete keyInt (sharedTxTable sharedState2),
             sharedRetainedTxs =
@@ -2486,20 +2488,20 @@ prop_expireUpTo_lookupEntries ss@SweepState { ssLimit } =
       before  = retainedToList (sharedRetainedTxs st)
       after   = retainedToList (sharedRetainedTxs st')
       removed = [ t | (k, t) <- before, k `notElem` map fst after ]
-      dueLeft = [ t | (_, t) <- after, t <= now ]
-      due     = length [ () | (_, t) <- before, t <= now ]
+      dueLeft = [ t | (_, t) <- after, t <= retainNow now ]
+      due     = length [ () | (_, t) <- before, t <= retainNow now ]
   in counterexample (show st') $
        classify (due > ssLimit) "more due than the limit" $
        counterexample "tx table changed" (sharedTxTable st' === sharedTxTable st)
        .&&. counterexample "expired the earliest due, as many as the limit allows"
               (length removed === min ssLimit due
-               .&&. all (<= now) removed
+               .&&. all (<= retainNow now) removed
                .&&. (null dueLeft || null removed || maximum removed <= minimum dueLeft))
        .&&. counterexample "lookup entries"
               (IntMap.keysSet (sharedKeyToTxId st')
                  === IntMap.keysSet (sharedKeyToTxId st) `IntSet.difference` expired)
        .&&. counterexample "backlog flag"
-              (more === any (\(_, t) -> t <= now) (retainedToList (sharedRetainedTxs st')))
+              (more === any (\(_, t) -> t <= retainNow now) (retainedToList (sharedRetainedTxs st')))
        .&&. counterexample "the write"
               (sharedRevision st' === sharedRevision st + (if IntSet.null expired then 0 else 1))
        .&&. counterexample "the expiry" (wakesNobody st st')
@@ -2546,8 +2548,8 @@ retainedBacklog n =
   where
     keys = [0 .. n - 1]
 
-    due :: Int -> Time
-    due k = Time (fromIntegral k / 1000000000)
+    due :: Int -> RetainTime
+    due k = retainDeadline (Time (fromIntegral k / 1000000000))
 
 -- | @n@ retained entries, keys @0 .. n-1@, key @k@ due half an interval
 -- after tick @k@: each tick's sweep expires one, so every sweep writes,
@@ -2563,8 +2565,8 @@ dueEachTick interval n =
   where
     keys = [0 .. n - 1]
 
-    due :: Int -> Time
-    due k = Time (fromIntegral k * interval + interval / 2)
+    due :: Int -> RetainTime
+    due k = retainDeadline (Time (fromIntegral k * interval + interval / 2))
 
 -- | The state with @n@ more expired retained entries, fresh keys, due at
 -- once: a backlog arriving while the counters thread runs.
@@ -2578,8 +2580,8 @@ addBacklog n st =
   where
     keys = [ sharedNextTxKey st .. sharedNextTxKey st + n - 1 ]
 
-    due :: Time
-    due = Time 0
+    due :: RetainTime
+    due = retainDeadline (Time 0)
 
 -- | The counters thread's first sweep, at 'sweepInterval', is the unbounded
 -- sweep at that time, revision aside: what the state has due by then
@@ -2714,9 +2716,9 @@ prop_thread_drainNotEarly (Lifetime lifetime) = runSimOrThrow $
     st0 = let st = retainedBacklog (2 * sweepBatch)
           in st { sharedRetainedTxs =
                     retainedInsertMax nearKey
-                      (Time (interval + 2 * drainPause + drainPause / 2))
+                      (retainDeadline (Time (interval + 2 * drainPause + drainPause / 2)))
                       (retainedInsertMax lateKey
-                         (Time (1.5 * interval))
+                         (retainDeadline (Time (1.5 * interval)))
                          (sharedRetainedTxs st)),
                   sharedTxIdToKey   = Map.insert nearKey (TxKey nearKey)
                                         (Map.insert lateKey (TxKey lateKey)
@@ -2868,7 +2870,7 @@ prop_thread_drainCap (Lifetime lifetime) = runSimOrThrow $
     lateKey :: Int
     lateKey = 4 * (ceiling (interval / drainPause) + 1) * sweepBatch + 4 * sweepBatch
     withLate st =
-      st { sharedRetainedTxs = retainedInsertMax lateKey (Time (4 * interval + 0.001))
+      st { sharedRetainedTxs = retainedInsertMax lateKey (retainDeadline (Time (4 * interval + 0.001)))
                                                  (sharedRetainedTxs st),
            sharedTxIdToKey   = Map.insert lateKey (TxKey lateKey) (sharedTxIdToKey st),
            sharedKeyToTxId   = IntMap.insert lateKey lateKey (sharedKeyToTxId st),
@@ -3140,6 +3142,68 @@ prop_countFields_everyField ss@SweepState { ssActive } dooms =
     doomAt e DoomedNow       = e { txDoom = Doomed }
 
 
+-- | A deadline and a current time, in picoseconds: the deadline anywhere
+-- from before the clock's origin (a non-positive lifetime) through the
+-- first nanoseconds to weeks of uptime, about the end of the 'Word64'
+-- nanosecond range, or on a whole nanosecond; the current time within two
+-- nanoseconds of it either side, or within the nanosecond after it, never
+-- negative.
+data DeadlineCase = DeadlineCase Integer Integer
+  deriving Show
+
+instance Arbitrary DeadlineCase where
+  arbitrary = DeadlineCase <$> oneof [ choose (-10000, 10000)
+                                     , choose (0, 10 ^ (18 :: Int))
+                                     , choose (rangeEnd - 10000, rangeEnd + 10000)
+                                       -- on a whole nanosecond, where the
+                                       -- roundings agree
+                                     , (* 1000) <$> choose (-10, 10 ^ (15 :: Int)) ]
+                           <*> oneof [ choose (-2000, 2000)
+                                       -- within the nanosecond after the
+                                       -- deadline, where they differ
+                                     , choose (0, 999) ]
+    where rangeEnd = 1000 * 2 ^ (64 :: Int)
+  shrink (DeadlineCase r g) =
+       [ DeadlineCase r' g | r' <- shrink r ]
+    ++ [ DeadlineCase r g' | g' <- shrink g ]
+
+-- | An entry retained until a deadline expires exactly when the clock
+-- reaches the deadline rounded up to a whole nanosecond: never early, and
+-- at most a nanosecond late.  A negative deadline is due at once, and one
+-- past the range of the nanosecond clock is due at its end, where the
+-- clock itself saturates.  The expiry and the backlog flag are observed
+-- through 'expireSharedStateUpTo', so the rounding of the clock it
+-- compares against is under test, not the converters alone.
+prop_retainDeadline_rounding :: DeadlineCase -> Property
+prop_retainDeadline_rounding (DeadlineCase r gap) =
+  let deadline = Time (picosecondsToDiffTime r)
+      current  = Time (picosecondsToDiffTime (max 0 (r + gap)))
+      -- the deadline in whole nanoseconds, rounded up, within the clock's
+      -- range
+      dueAt    = Time (picosecondsToDiffTime
+                         (1000 * max 0 (min lastNanosecond ((r + 999) `div` 1000))))
+      due      = current >= dueAt
+      st0      = (retainedBacklog 1)
+                   { sharedRetainedTxs = retainedSingleton 0 (retainDeadline deadline) }
+      (st', more)  = expireSharedStateUpTo 1 current st0
+      (_, backlog) = expireSharedStateUpTo 0 current st0
+      gone     = not (retainedMember 0 (sharedRetainedTxs st'))
+  in checkCoverage $
+     counterexample (show (deadline, current, dueAt)) $
+     cover 5 (r < 0) "a negative deadline" $
+     cover 5 (r > 1000 * lastNanosecond) "a deadline past the range" $
+     cover 5 (r + gap >= 1000 * lastNanosecond) "the clock saturated" $
+     cover 5 (r `mod` 1000 == 0) "a deadline on a whole nanosecond" $
+     cover 20 due "due" $
+     cover 20 (not due) "not yet due" $
+     cover 5 (not due && current >= deadline) "the deadline passed, the nanosecond not yet" $
+          counterexample "expired" (gone === due)
+     .&&. counterexample "nothing left due" (more === False)
+     .&&. counterexample "the backlog flag" (backlog === due)
+     .&&. counterexample "the state" (sharedTxStateInvariant st')
+  where
+    lastNanosecond = toInteger (maxBound :: Word64)
+
 -- | The grace before a claimable entry is doomed, as the counters thread
 -- has it under the default policy.
 grace :: DiffTime
@@ -3160,7 +3224,7 @@ prop_sweepUpTo_reportsBacklog limit ss =
      cover 10 (not (IntSet.null doomed)) "dooms something" $
      cover 10 more "reports a backlog" $
      cover 10 (not more) "no backlog" $
-     more === any (\(_, t) -> t <= now) (retainedToList (sharedRetainedTxs st'))
+     more === any (\(_, t) -> t <= retainNow now) (retainedToList (sharedRetainedTxs st'))
 
 -- | A shared state as the sweep finds it: retained entries due a few
 -- seconds either side of a time, and active entries of every kind,
@@ -3205,7 +3269,7 @@ sweepStateAt :: Time -> SweepState -> SharedTxState PeerAddr TxId
 sweepStateAt t SweepState { ssRetained, ssActive } =
   emptySharedTxState {
       sharedTxTable     = IntMap.fromList [ (k, entry n kind) | (k, n, kind) <- ssActive ],
-      sharedRetainedTxs = retainedFromList [ (k, addTime (fromIntegral d) t) | (k, d) <- ssRetained ],
+      sharedRetainedTxs = retainedFromList [ (k, retainDeadline (addTime (fromIntegral d) t)) | (k, d) <- ssRetained ],
       sharedTxIdToKey   = Map.fromList [ (k, TxKey k) | k <- keys ],
       sharedKeyToTxId   = IntMap.fromList [ (k, k) | k <- keys ],
       sharedNextTxKey   = maximum (0 : map (+ 1) keys)
@@ -3719,7 +3783,7 @@ prop_sweep_rotation ss@SweepState { ssLimit } =
 
     -- Whether an expired retained entry remains, as the retained set
     -- says: the drain goes on iff this is true.
-    due st = any (\(_, t) -> t <= now) (retainedToList (sharedRetainedTxs st))
+    due st = any (\(_, t) -> t <= retainNow now) (retainedToList (sharedRetainedTxs st))
 
     rotate :: SharedTxState PeerAddr TxId -> SweepCursor -> Int -> Int
            -> (SharedTxState PeerAddr TxId, Int, [Property])
@@ -3751,7 +3815,7 @@ prop_sweepUpTo_boundedWork ss@SweepState { ssActive, ssLimit } =
       before  = retainedToList (sharedRetainedTxs st)
       after   = retainedToList (sharedRetainedTxs st')
       removed = [ t | (k, t) <- before, k `notElem` map fst after ]
-      leftExpired = [ t | (_, t) <- after, t <= now ]
+      leftExpired = [ t | (_, t) <- after, t <= retainNow now ]
       candidates = length [ () | (_, _, Claimable) <- ssActive ]
       -- The entries the walk may examine: what the expiry left of the
       -- limit, from the start of the table, a first pass.  Dooming a subset
@@ -3775,7 +3839,7 @@ prop_sweepUpTo_boundedWork ss@SweepState { ssActive, ssLimit } =
      cover 20 (expired > 0 && candidates > ssLimit - expired) "the expiry cuts the walk short" $
      cover 10 (not (null leftExpired)) "expired entries left for the next sweep" $
           counterexample "retained" (expired <= expiryLimit)
-     .&&. counterexample "the expired removed are due" (all (<= now) removed)
+     .&&. counterexample "the expired removed are due" (all (<= retainNow now) removed)
      .&&. counterexample "the expired removed are the earliest due"
             (null leftExpired || null removed || maximum removed <= minimum leftExpired)
      .&&. counterexample "the expiry stops short of its limit only with none left"
@@ -4294,7 +4358,7 @@ unit_nextPeerAction_acksSafePrefixBeforeBlockedBufferedTx step = do
           }
         sharedState = emptySharedTxState
           { sharedTxTable = IntMap.singleton kBlocked blockedEntry
-          , sharedRetainedTxs = retainedSingleton kResolved (addTime 17 now)
+          , sharedRetainedTxs = retainedSingleton kResolved (retainDeadline (addTime 17 now))
           , sharedTxIdToKey = Map.fromList
               [(getRawTxId (1 :: TxId), resolvedKey), (getRawTxId (2 :: TxId), blockedKey)]
           , sharedKeyToTxId = IntMap.fromList [(kResolved, 1 :: TxId), (kBlocked, 2 :: TxId)]
@@ -4713,7 +4777,7 @@ prop_nextPeerAction_nonOwnerWaitsUntilResolved (ArbTxDecisionPolicy policy)
       }
     resolvedSharedState = unresolvedSharedState
       { sharedTxTable = IntMap.empty
-      , sharedRetainedTxs = retainedSingleton k (addTime 17 now)
+      , sharedRetainedTxs = retainedSingleton k (retainDeadline (addTime 17 now))
       }
     peerState0 = emptyPeerTxLocalState
       { peerUnacknowledgedTxIds = StrictSeq.singleton key
@@ -5227,7 +5291,7 @@ buildTriggerState policy perPeer =
     retainedTxids = [ txid | txid <- allTxids
                     , categoryOf (map snd (triggersFor txid)) == CatAck ]
 
-    retainedUntil   = addTime 600 now
+    retainedUntil   = retainDeadline (addTime 600 now)
     retainedEntries = [ (txidKey txid, retainedUntil) | txid <- retainedTxids ]
 
     mkPeerState :: PeerAddr -> [ActionTrigger]
@@ -5673,7 +5737,7 @@ genSharedTxState = sized $ \n -> do
   where
     genRetainedEntry txid = do
       retainUntil <- genSharedExpiryTime
-      pure (txid, retainUntil)
+      pure (txid, retainDeadline retainUntil)
 
 -- Generate one active tx entry using a mix of leased and claimable shapes.
 genActiveTxEntry :: [PeerAddr] -> TxId -> Gen (TxId, TxEntry PeerAddr)
@@ -5715,7 +5779,7 @@ genClaimableTxEntry = do
 -- Rebuild a shared state from tx-centric fixtures while preserving interned keys.
 buildSharedTxState
   :: [(TxId, TxEntry PeerAddr)]
-  -> [(TxId, Time)]
+  -> [(TxId, RetainTime)]
   -> Word64
   -> SharedTxState PeerAddr TxId
 buildSharedTxState activeEntries retainedEntries sharedGeneration =
@@ -5918,7 +5982,7 @@ seedRetainedTxids policy entries st0 =
                   retainedKeys
   }
   where
-    retainUntil         = addTime (bufferedTxsMinLifetime policy) now
+    retainUntil         = retainDeadline (addTime (bufferedTxsMinLifetime policy) now)
     (_, stInterned)     = internTxIds (fmap fst entries) st0
     retainedKeys        = [ unTxKey (lookupKeyOrFail txid stInterned)
                           | (txid, _) <- entries
@@ -6163,7 +6227,8 @@ retainAllActiveTxs st@SharedTxState { sharedTxTable, sharedRetainedTxs, sharedGe
       sharedGeneration = sharedGeneration + 1
     }
   where
-    retainUntil = addTime (bufferedTxsMinLifetime (unsafeMkTxDecisionPolicy defaultTxSubmissionConfigV2)) now
+    retainUntil = retainDeadline (addTime retainLifetime now)
+    retainLifetime = bufferedTxsMinLifetime (unsafeMkTxDecisionPolicy defaultTxSubmissionConfigV2)
 
     retainOne retainedAcc k _ =
       retainedInsertMax k retainUntil retainedAcc

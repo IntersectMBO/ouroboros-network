@@ -70,9 +70,9 @@ hashOf k = HashTxId (Short.pack (take 32 (bytes (mkSMGen (fromIntegral k)))))
 
 -- | @n@ retained entries one millisecond apart, the first @e@ of them past
 -- their deadline at the clock.
-retained :: Time -> Int -> Int -> [(Int, Time)]
+retained :: Time -> Int -> Int -> [(Int, RetainTime)]
 retained at n e =
-  [ (k, addTime (fromIntegral (k - e + 1) * (0.001 :: DiffTime)) at)
+  [ (k, retainDeadline (addTime (fromIntegral (k - e + 1) * (0.001 :: DiffTime)) at))
   | k <- [0 .. n - 1] ]
 
 -- | The retained entries with their lookup entries, as interning leaves
