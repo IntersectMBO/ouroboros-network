@@ -94,9 +94,9 @@ import Ouroboros.Network.Server.RateLimiting (AcceptConnectionsPolicyTrace (..),
            AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket (LocalAddress (..), RemoteAddress)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types (ProcessedTxCount (..),
-           SharedTxState (..), TraceTxLogic (..), TraceTxSubmissionInbound (..),
-           TxSubmissionLogicVersion (..), retainTimeSeconds, retainedToList,
-           sharedTxStateCountFields, sharedTxStateCounts)
+           SharedTxState (..), SharedTxStateCounts, TraceTxLogic (..),
+           TraceTxSubmissionInbound (..), TxSubmissionLogicVersion (..),
+           retainTimeSeconds, retainedToList, sharedTxStateCountFields)
 import Ouroboros.Network.TxSubmission.Outbound (TraceTxSubmissionOutbound (..))
 
 -- Helper function for ToJSON instances with a "kind" field
@@ -1858,22 +1858,23 @@ instance ( ToJSON txid
 traceSharedTxStateToJSON
   :: (Show addr, Show txid, HasRawTxId txid)
   => SharedTxState addr txid
+  -> SharedTxStateCounts
   -> Value
-traceSharedTxStateToJSON st@SharedTxState {
+traceSharedTxStateToJSON SharedTxState {
                            sharedTxTable,
                            sharedRetainedTxs,
                            sharedTxIdToKey,
                            sharedKeyToTxId,
                            sharedGeneration,
                            sharedRevision
-                         } =
+                         } counts =
     object $
       [ "sharedGeneration" .= sharedGeneration
       , "sharedRevision" .= sharedRevision
       ]
       ++
       [ Key.fromString name .= n
-      | (name, n) <- sharedTxStateCountFields (sharedTxStateCounts st)
+      | (name, n) <- sharedTxStateCountFields counts
       ]
       ++
       [ "sharedTxTable" .= [ (renderTxId txKey, show txEntry)
@@ -1896,9 +1897,9 @@ instance ( Show addr
          , HasRawTxId txid
          )
        => ToJSON (TraceTxLogic addr txid tx) where
-  toJSON (TraceSharedTxState st) =
+  toJSON (TraceSharedTxState st counts) =
     object [ "kind" .= String "SharedTxState"
-           , "sharedTxState" .= traceSharedTxStateToJSON st
+           , "sharedTxState" .= traceSharedTxStateToJSON st counts
            ]
 
 
