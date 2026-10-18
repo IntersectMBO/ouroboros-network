@@ -2833,16 +2833,19 @@ prop_thread_emissionCost (Lifetime lifetime) (EmissionShare share) = runSimOrThr
 prop_countFields_everyField :: SweepState -> Property
 prop_countFields_everyField ss =
   let counts = sharedTxStateCounts (sweepStateOf ss)
-  in sharedTxStateCountFields counts
-       === [ ("activeTxCount",     activeTxCount     counts)
-           , ("retainedTxCount",   retainedTxCount   counts)
-           , ("internedTxCount",   internedTxCount   counts)
-           , ("leasedTxCount",     leasedTxCount     counts)
-           , ("claimableTxCount",  claimableTxCount  counts)
-           , ("totalAttemptCount", totalAttemptCount counts)
-           , ("submittingTxCount", submittingTxCount counts)
-           , ("advertiserCount",   advertiserCount   counts)
-           ]
+  in      counterexample "the traced list against the record"
+            (sharedTxStateCountFields counts
+               === [ ("activeTxCount",     activeTxCount     counts)
+                   , ("retainedTxCount",   retainedTxCount   counts)
+                   , ("internedTxCount",   internedTxCount   counts)
+                   , ("leasedTxCount",     leasedTxCount     counts)
+                   , ("claimableTxCount",  claimableTxCount  counts)
+                   , ("totalAttemptCount", totalAttemptCount counts)
+                   , ("submittingTxCount", submittingTxCount counts)
+                   , ("advertiserCount",   advertiserCount   counts)
+                   ])
+     .&&. counterexample "the docs against the traced names"
+            (map fst sharedTxStateCountDocs === map fst (sharedTxStateCountFields counts))
 
 -- | A deadline and a current time, in picoseconds: the deadline anywhere
 -- from before the clock's origin (a non-positive lifetime) through the

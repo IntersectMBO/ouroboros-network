@@ -45,6 +45,7 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Types
   , SharedTxStateCounts (..)
   , sharedTxStateCounts
   , sharedTxStateCountFields
+  , sharedTxStateCountDocs
     -- * Traces
   , TraceTxLogic (..)
   , TxSubmissionInitDelay (..)
@@ -91,11 +92,9 @@ import Control.Monad.Class.MonadTime.SI
 import NoThunks.Class (NoThunks)
 import NoThunks.Class.Orphans ()
 
-import Data.Data (Data, cast, constrFields, gmapQ, toConstr)
 import Data.List as List (foldl')
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromJust)
 import Data.Sequence.Strict (StrictSeq)
 import Data.Time.Clock (diffTimeToPicoseconds)
 import Data.Typeable (Typeable, eqT, (:~:) (Refl))
@@ -765,7 +764,7 @@ data SharedTxStateCounts = SharedTxStateCounts {
     -- | Advertisers over the active entries, one per peer and key.
     advertiserCount   :: !Int
   }
-  deriving stock (Eq, Show, Generic, Data)
+  deriving stock (Eq, Show, Generic)
 
 sharedTxStateCounts :: SharedTxState peeraddr txid -> SharedTxStateCounts
 sharedTxStateCounts SharedTxState { sharedTxTable, sharedRetainedTxs,
@@ -798,12 +797,34 @@ sharedTxStateCounts SharedTxState { sharedTxTable, sharedRetainedTxs,
       , v + txAdvertisers
       )
 
--- | The counts by their fields' names, the names they are traced under:
--- every field, so that one that is not a count fails here rather than
--- shifting the names after it onto other values.
+-- | The counts by their fields' names, the names they are traced under,
+-- listed by hand: a field added to the record without a line here is
+-- missing from the traces, not a failure inside the counters thread.
 sharedTxStateCountFields :: SharedTxStateCounts -> [(String, Int)]
 sharedTxStateCountFields counts =
-  zip (constrFields (toConstr counts)) (map fromJust (gmapQ cast counts))
+  [ ("activeTxCount",     activeTxCount     counts)
+  , ("retainedTxCount",   retainedTxCount   counts)
+  , ("internedTxCount",   internedTxCount   counts)
+  , ("leasedTxCount",     leasedTxCount     counts)
+  , ("claimableTxCount",  claimableTxCount  counts)
+  , ("totalAttemptCount", totalAttemptCount counts)
+  , ("submittingTxCount", submittingTxCount counts)
+  , ("advertiserCount",   advertiserCount   counts)
+  ]
+
+-- | What each count of 'sharedTxStateCountFields' is documented as, by its
+-- field's name: beside the fields, so that a field change changes both.
+sharedTxStateCountDocs :: [(String, String)]
+sharedTxStateCountDocs =
+  [ ("activeTxCount",     "entries of the active tx table")
+  , ("retainedTxCount",   "keys retained after reaching the mempool")
+  , ("internedTxCount",   "lookup entries in all")
+  , ("leasedTxCount",     "active entries leased for download")
+  , ("claimableTxCount",  "active entries nobody is downloading")
+  , ("totalAttemptCount", "download attempts over the active entries")
+  , ("submittingTxCount", "active entries being added to the mempool")
+  , ("advertiserCount",   "advertisers over the active entries, one per peer and key")
+  ]
 
 -- | Whether any retained entry is due by @currentTime@.
 retainedDueBy :: RetainTime -> RetainedTxs -> Bool
@@ -873,7 +894,9 @@ data TxSubmissionLogicVersion =
 -- | TxLogic tracer.
 --
 data TraceTxLogic peeraddr txid tx =
-    TraceSharedTxState (SharedTxState peeraddr txid)
+    TraceSharedTxState (SharedTxState peeraddr txid) SharedTxStateCounts
+    -- ^ the state and its counts, folded once by the counters thread for
+    -- every renderer
   deriving Show
 
 
