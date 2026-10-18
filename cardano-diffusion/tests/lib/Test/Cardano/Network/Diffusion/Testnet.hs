@@ -2006,7 +2006,7 @@ prop_check_inflight_ratio bi ds@(DiffusionScript simArgs _ _) =
         $ Signal.eventsToList
         $ Signal.selectEvents
            (\case
-               DiffusionTxLogic (TraceSharedTxState d) -> Just (inflightAttemptCounts d)
+               DiffusionTxLogic (TraceSharedTxState d _) -> Just (inflightAttemptCounts d)
                _                                       -> Nothing
            )
           events
