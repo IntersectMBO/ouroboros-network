@@ -19,6 +19,8 @@ module Ouroboros.Network.OrphanInstances
   , localRootPeersGroupsToJSON
   , peerSelectionTargetsToObject
   , demotionScoresToJSON
+  , sharedTxStateCounterPairs
+  , sharedTxStateTablePairs
   , JSONField (..)
   ) where
 
@@ -94,9 +96,9 @@ import Ouroboros.Network.Server.RateLimiting (AcceptConnectionsPolicyTrace (..),
            AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket (LocalAddress (..), RemoteAddress)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types (ProcessedTxCount (..),
-           SharedTxState (..), TraceTxLogic (..), TraceTxSubmissionInbound (..),
-           TxSubmissionLogicVersion (..), retainTimeSeconds, retainedToList,
-           sharedTxStateCountFields, sharedTxStateCounts)
+           SharedTxState (..), SharedTxStateCounts, TraceTxLogic (..),
+           TraceTxSubmissionInbound (..), TxSubmissionLogicVersion (..),
+           retainTimeSeconds, retainedToList, sharedTxStateCountFields)
 import Ouroboros.Network.TxSubmission.Outbound (TraceTxSubmissionOutbound (..))
 
 -- Helper function for ToJSON instances with a "kind" field
@@ -1860,35 +1862,37 @@ instance ( ToJSON txid
       , "numTxsToRequest" .= reqs
       ]
 
-traceSharedTxStateToJSON
+-- | The shared state's counters and counts as JSON pairs: what every
+-- rendering of a 'TraceSharedTxState' carries.
+sharedTxStateCounterPairs :: SharedTxState addr txid -> SharedTxStateCounts -> [Pair]
+sharedTxStateCounterPairs SharedTxState { sharedGeneration, sharedRevision } counts =
+    [ "sharedGeneration" .= sharedGeneration
+    , "sharedRevision" .= sharedRevision
+    ]
+    ++
+    [ Key.fromString name .= n
+    | (name, n) <- sharedTxStateCountFields counts
+    ]
+
+-- | The shared state's tables as JSON pairs, for a rendering in full.
+sharedTxStateTablePairs
   :: (Show addr, Show txid, HasRawTxId txid)
   => SharedTxState addr txid
-  -> Value
-traceSharedTxStateToJSON st@SharedTxState {
-                           sharedTxTable,
-                           sharedRetainedTxs,
-                           sharedTxIdToKey,
-                           sharedKeyToTxId,
-                           sharedGeneration,
-                           sharedRevision
-                         } =
-    object $
-      [ "sharedGeneration" .= sharedGeneration
-      , "sharedRevision" .= sharedRevision
-      ]
-      ++
-      [ Key.fromString name .= n
-      | (name, n) <- sharedTxStateCountFields (sharedTxStateCounts st)
-      ]
-      ++
-      [ "sharedTxTable" .= [ (renderTxId txKey, show txEntry)
-                           | (txKey, txEntry) <- IntMap.toList sharedTxTable
-                           ]
-      , "sharedRetainedTxs" .= [ (renderTxId txKey, retainTimeSeconds retainUntil)
-                               | (txKey, retainUntil) <- retainedToList sharedRetainedTxs
-                               ]
-      , "internedTxIds" .= fmap show (Map.keys sharedTxIdToKey)
-      ]
+  -> [Pair]
+sharedTxStateTablePairs SharedTxState {
+                          sharedTxTable,
+                          sharedRetainedTxs,
+                          sharedTxIdToKey,
+                          sharedKeyToTxId
+                        } =
+    [ "sharedTxTable" .= [ (renderTxId txKey, show txEntry)
+                         | (txKey, txEntry) <- IntMap.toList sharedTxTable
+                         ]
+    , "sharedRetainedTxs" .= [ (renderTxId txKey, retainTimeSeconds retainUntil)
+                             | (txKey, retainUntil) <- retainedToList sharedRetainedTxs
+                             ]
+    , "internedTxIds" .= fmap show (Map.keys sharedTxIdToKey)
+    ]
   where
     renderTxId txKey =
       maybe "<missing-txid>" show (IntMap.lookup txKey sharedKeyToTxId)
@@ -1901,9 +1905,10 @@ instance ( Show addr
          , HasRawTxId txid
          )
        => ToJSON (TraceTxLogic addr txid tx) where
-  toJSON (TraceSharedTxState st) =
+  toJSON (TraceSharedTxState st counts) =
     object [ "kind" .= String "SharedTxState"
-           , "sharedTxState" .= traceSharedTxStateToJSON st
+           , "sharedTxState" .= object (sharedTxStateCounterPairs st counts
+                                        ++ sharedTxStateTablePairs st)
            ]
 
 

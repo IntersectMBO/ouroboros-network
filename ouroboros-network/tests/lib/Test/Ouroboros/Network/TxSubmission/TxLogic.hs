@@ -3001,9 +3001,9 @@ instance Arbitrary Lifetime where
 prop_thread_emissionCadence :: Lifetime -> Backlogs -> Property
 prop_thread_emissionCadence (Lifetime lifetime) (Backlogs backlogs) = runSimOrThrow $ do
     emissions <- newTVarIO []
-    let tracer = Tracer $ emit $ \(TraceSharedTxState st) -> do
+    let tracer = Tracer $ emit $ \(TraceSharedTxState st counts) -> do
           t <- getMonotonicTime
-          atomically (modifyTVar emissions ((t, st) :))
+          atomically (modifyTVar emissions ((t, st, counts) :))
         policy = (unsafeMkTxDecisionPolicy defaultTxSubmissionConfigV2)
                    { bufferedTxsMinLifetime = lifetime }
     withCountersThread policy tracer emptySharedTxState $ \sharedStateVar -> do
@@ -3013,7 +3013,7 @@ prop_thread_emissionCadence (Lifetime lifetime) (Backlogs backlogs) = runSimOrTh
         atomically $ modifyTVar sharedStateVar (addBacklog n)
       threadDelay 35
       es <- reverse <$> readTVarIO emissions
-      let ts = [ t | (t, _) <- es ]
+      let ts = [ t | (t, _, _) <- es ]
       -- every backlog changes the state, so the cadence point after each
       -- arrival emits, by the end of the first tick at or past it: the
       -- tick whose drain crosses the point, or that first tick, emits
@@ -3028,9 +3028,12 @@ prop_thread_emissionCadence (Lifetime lifetime) (Backlogs backlogs) = runSimOrTh
                      | due <- dues ]
         .&&. conjoin [ counterexample (show t) (offset t <= 2 * interval)
                      | t <- ts ]
+        .&&. conjoin [ counterexample ("emission " ++ show t ++ " reports " ++ show counts)
+                         (counts === sharedTxStateCounts st)
+                     | (t, st, counts) <- es ]
         .&&. conjoin [ counterexample ("emission " ++ show t ++ " carries a bad state")
                          (sharedTxStateInvariant st)
-                     | (t, st) <- es ]
+                     | (t, st, _) <- es ]
   where
     arrivals :: [(Int, Time)]
     arrivals = [ (n, Time (7 * fromIntegral k - fromIntegral lead / 1000))
@@ -3373,6 +3376,8 @@ prop_countFields_everyField ss@SweepState { ssActive } dooms =
                    , ("submittingTxCount", count txInSubmission)
                    , ("doomedTxCount",     count ((== Doomed) . txDoom))
                    ])
+     .&&. counterexample "the docs against the traced names"
+            (map fst sharedTxStateCountDocs === map fst (sharedTxStateCountFields counts))
   where
     isSpared e = case txDoom e of Spared {} -> True; _ -> False
     isLeased e = case txLease e of TxLeased {} -> True; TxClaimable {} -> False
