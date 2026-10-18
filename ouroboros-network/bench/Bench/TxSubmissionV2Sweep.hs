@@ -26,9 +26,9 @@ now = Time 100_000
 
 -- | @n@ retained entries one millisecond apart, the first @e@ of them past
 -- their deadline at 'now'.
-retained :: Int -> Int -> [(Int, Time)]
+retained :: Int -> Int -> [(Int, RetainTime)]
 retained n e =
-  [ (k, addTime (fromIntegral (k - e + 1) * (0.001 :: DiffTime)) now)
+  [ (k, retainDeadline (addTime (fromIntegral (k - e + 1) * (0.001 :: DiffTime)) now))
   | k <- [0 .. n - 1] ]
 
 -- | The retained entries with their lookup entries, as interning leaves
