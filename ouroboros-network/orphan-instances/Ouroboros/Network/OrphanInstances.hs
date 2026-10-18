@@ -95,7 +95,7 @@ import Ouroboros.Network.Server.RateLimiting (AcceptConnectionsPolicyTrace (..),
 import Ouroboros.Network.Snocket (LocalAddress (..), RemoteAddress)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types (ProcessedTxCount (..),
            SharedTxState (..), TraceTxLogic (..), TraceTxSubmissionInbound (..),
-           TxSubmissionLogicVersion (..), retainedToList,
+           TxSubmissionLogicVersion (..), retainTimeSeconds, retainedToList,
            sharedTxStateCountFields, sharedTxStateCounts)
 import Ouroboros.Network.TxSubmission.Outbound (TraceTxSubmissionOutbound (..))
 
@@ -1879,7 +1879,7 @@ traceSharedTxStateToJSON st@SharedTxState {
       [ "sharedTxTable" .= [ (renderTxId txKey, show txEntry)
                            | (txKey, txEntry) <- IntMap.toList sharedTxTable
                            ]
-      , "sharedRetainedTxs" .= [ (renderTxId txKey, show retainUntil)
+      , "sharedRetainedTxs" .= [ (renderTxId txKey, retainTimeSeconds retainUntil)
                                | (txKey, retainUntil) <- retainedToList sharedRetainedTxs
                                ]
       , "internedTxIds" .= fmap show (Map.keys sharedTxIdToKey)
