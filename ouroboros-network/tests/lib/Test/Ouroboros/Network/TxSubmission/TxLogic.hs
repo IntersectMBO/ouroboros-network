@@ -55,6 +55,7 @@ import Data.Map.Strict qualified as Map
 import Data.Maybe (listToMaybe)
 import Data.Sequence.Strict qualified as StrictSeq
 import Data.Set qualified as Set
+import Data.Time.Clock (picosecondsToDiffTime)
 import Data.Word (Word16, Word64)
 
 import Control.Tracer (Tracer (..), emit, nullTracer)
@@ -154,6 +155,7 @@ tests =
     , localOption (QuickCheckTests 20) $ testProperty "under a backlog the counters thread's sweeps are at most an interval apart" prop_thread_drainCap
     , localOption (QuickCheckTests 20) $ testProperty "an emission does not delay the counters thread's next sweep" prop_thread_emissionCost
     , testProperty "the shared state's counts are traced under every field's name" prop_countFields_everyField
+    , testProperty "nanosecond deadlines never expire early, and expire within 1 ns" prop_retainDeadline_rounding
     , testProperty "nextPeerActionPipelined rejects request-only (ack=0, req=N) messages" prop_nextPeerActionPipelined_rejectsRequestOnly
     , testCaseSteps "nextPeerActionPipelined rejects pure-ack (ack=N, req=0) messages" unit_nextPeerActionPipelined_rejectsPureAck
     , testProperty "nextPeerActionPipelined emits a pipelined txid request when ack and request fire together" prop_nextPeerActionPipelined_requestsTxIds
@@ -1148,7 +1150,7 @@ prop_handleReceivedTxIds (ArbTxDecisionPolicy policy) (NonEmpty taggedInput) =
     expectedUnacked =
       [ lookupKeyOrFail txid sharedState' | (txid, _) <- txidsAndSizes ]
 
-    retainUntil = addTime (bufferedTxsMinLifetime policy) now
+    retainUntil = retainDeadline (addTime (bufferedTxsMinLifetime policy) now)
 
     checkNew (txid, _) =
       let k = keyOf txid in
@@ -1473,7 +1475,7 @@ prop_handleSubmittedTxs_deadKeys (ArbTxDecisionPolicy policy) (NonEmpty submitte
           txInSubmission = False,
           currentMaxInflightMultiplicity = txInflightMultiplicity policy
         }
-      deadlineAt d = addTime (fromIntegral (d :: Int)) now
+      deadlineAt d = retainDeadline (addTime (fromIntegral (d :: Int)) now)
       againKey txid = unTxKey (lookupKeyOrFail txid shared2)
       accepted = [ (TxKey k, txid) | (k, txid, SubmittedKey _ True _) <- keyed ]
       rejected = [ TxKey k | (k, _, SubmittedKey _ False _) <- keyed ]
@@ -1488,7 +1490,7 @@ prop_handleSubmittedTxs_deadKeys (ArbTxDecisionPolicy policy) (NonEmpty submitte
         }
       (peerState', pif', shared') =
         handleSubmittedTxs now policy peerAddr accepted rejected peerState pif shared2
-      retainUntil = addTime (bufferedTxsMinLifetime policy) now
+      retainUntil = retainDeadline (addTime (bufferedTxsMinLifetime policy) now)
       -- every accepted txid is retained, the live ones under their key, the
       -- dead ones under keys allocated by this step, or under the key they
       -- are active again under; one retained again stays retained
@@ -1752,7 +1754,7 @@ prop_handleSubmittedTxs_retainsAcceptedAndDropsRejected
     (_, peerStateAfterEvents) =
       applyPeerEvents policy now (length accepted) (length rejected) peerState'
 
-    retainUntil = addTime (bufferedTxsMinLifetime policy) now
+    retainUntil = retainDeadline (addTime (bufferedTxsMinLifetime policy) now)
 
     checkAccepted k =
       counterexample ("accepted " ++ show k) $ conjoin
@@ -2313,7 +2315,7 @@ unit_nextPeerAction_clearsInFlightForPrunedBody = do
         -- Simulate a sibling advertiser submitting the same tx to the
         -- mempool.  The active entry moves to 'sharedRetainedTxs'; peer
         -- A's local body buffer is now orphaned.
-        retainUntil = addTime (bufferedTxsMinLifetime policy) now
+        retainUntil = retainDeadline (addTime (bufferedTxsMinLifetime policy) now)
         sharedState3 = sharedState2 {
             sharedTxTable     = IntMap.delete keyInt (sharedTxTable sharedState2),
             sharedRetainedTxs =
@@ -2390,7 +2392,7 @@ prop_expireUpTo_lookupEntries ss@SweepState { ssLimit } =
               (IntMap.keysSet (sharedKeyToTxId st')
                  === IntMap.keysSet (sharedKeyToTxId st) `IntSet.difference` expired)
        .&&. counterexample "backlog flag"
-              (more === any (\(_, t) -> t <= now) (retainedToList (sharedRetainedTxs st')))
+              (more === any (\(_, t) -> t <= retainNow now) (retainedToList (sharedRetainedTxs st')))
        .&&. sharedTxStateInvariant st'
 
 -- | The counters thread over a shared state, beside an experiment with the
@@ -2421,8 +2423,8 @@ retainedBacklog n =
   where
     keys = [0 .. n - 1]
 
-    due :: Int -> Time
-    due k = Time (fromIntegral k / 1000000000)
+    due :: Int -> RetainTime
+    due k = retainDeadline (Time (fromIntegral k / 1000000000))
 
 -- | The state with @n@ more expired retained entries, fresh keys, due at
 -- once: a backlog arriving while the counters thread runs.
@@ -2436,8 +2438,8 @@ addBacklog n st =
   where
     keys = [ sharedNextTxKey st .. sharedNextTxKey st + n - 1 ]
 
-    due :: Time
-    due = Time 0
+    due :: RetainTime
+    due = retainDeadline (Time 0)
 
 -- | The counters thread's first sweep, at 'sweepInterval', is the unbounded
 -- sweep at that time, revision aside: what the state has due by then
@@ -2669,18 +2671,50 @@ prop_countFields_everyField ss =
            , ("advertiserCount",   advertiserCount   counts)
            ]
 
+-- | A deadline and a current time, in picoseconds: the deadline anywhere
+-- from before the clock's origin (a non-positive lifetime) through the
+-- first nanoseconds to weeks of uptime, or about the end of the 'Word64'
+-- nanosecond range; the current time within two nanoseconds of it either
+-- side, never negative.
+data DeadlineCase = DeadlineCase Integer Integer
+  deriving Show
+
+instance Arbitrary DeadlineCase where
+  arbitrary = DeadlineCase <$> oneof [ choose (-10000, 10000)
+                                     , choose (0, 10 ^ (18 :: Int))
+                                     , choose (rangeEnd - 10000, rangeEnd + 10000) ]
+                           <*> choose (-2000, 2000)
+    where rangeEnd = 1000 * 2 ^ (64 :: Int)
+  shrink (DeadlineCase r g) =
+       [ DeadlineCase r' g | r' <- shrink r ]
+    ++ [ DeadlineCase r g' | g' <- shrink g ]
+
+-- | Deadlines round up and the current time rounds down, so an entry
+-- expires only once its deadline has passed, and at most one nanosecond
+-- late; past the end of the range, where the clock itself saturates, a
+-- deadline is due.
+prop_retainDeadline_rounding :: DeadlineCase -> Property
+prop_retainDeadline_rounding (DeadlineCase r gap) =
+  let deadline = Time (picosecondsToDiffTime r)
+      current  = Time (picosecondsToDiffTime (max 0 (r + gap)))
+      expired  = retainDeadline deadline <= retainNow current
+  in counterexample (show (deadline, current, expired)) $
+       counterexample "expired early"
+         (not expired || deadline <= current || retainNow current == maxBound)
+       .&&. counterexample "expired late" (current < addTime 1e-9 deadline || expired)
+
 -- | Retained entries alone: distinct keys, each due a few seconds either
 -- side of 'now', so a sweep at 'now' finds some expired and some not, ties
 -- included.
-newtype RetainedOnly = RetainedOnly [(Int, Time)]
+newtype RetainedOnly = RetainedOnly [(Int, RetainTime)]
   deriving Show
 
 instance Arbitrary RetainedOnly where
   arbitrary = do
     keys <- nub <$> listOf (choose (0, 200))
     RetainedOnly <$> mapM (\k -> (,) k . offset <$> choose (-5, 5)) keys
-    where offset :: Int -> Time
-          offset d = addTime (fromIntegral d) now
+    where offset :: Int -> RetainTime
+          offset d = retainDeadline (addTime (fromIntegral d) now)
   shrink (RetainedOnly kts) = RetainedOnly <$> shrinkList (const []) kts
 
 retainedOnlyState :: RetainedOnly -> SharedTxState PeerAddr TxId
@@ -2699,10 +2733,10 @@ prop_sweepUpTo_bounded limit ro =
       after   = retainedToList (sharedRetainedTxs
                   (swept (sweepSharedStateUpTo limit now sweepStart (retainedOnlyState ro))))
       removed = [ t | (k, t) <- before, k `notElem` map fst after ]
-      leftExpired = [ t | (_, t) <- after, t <= now ]
+      leftExpired = [ t | (_, t) <- after, t <= retainNow now ]
   in counterexample (show (removed, leftExpired)) $
        length removed <= expiryLimit
-       .&&. all (<= now) removed
+       .&&. all (<= retainNow now) removed
        .&&. (null leftExpired || null removed || maximum removed <= minimum leftExpired)
        .&&. (length removed == expiryLimit || null leftExpired)
   where
@@ -2715,7 +2749,7 @@ prop_sweepUpTo_reportsBacklog :: Int -> RetainedOnly -> Property
 prop_sweepUpTo_reportsBacklog limit ro =
   let (st', more, _) = sweepSharedStateUpTo limit now sweepStart (retainedOnlyState ro)
   in classify (limit <= 0) "no budget" $
-     more === any (\(_, t) -> t <= now) (retainedToList (sharedRetainedTxs st'))
+     more === any (\(_, t) -> t <= retainNow now) (retainedToList (sharedRetainedTxs st'))
 
 -- | Sweeping with a limit until nothing changes leaves the retained entries
 -- one unbounded sweep leaves.
@@ -2772,7 +2806,7 @@ sweepStateAt :: Time -> SweepState -> SharedTxState PeerAddr TxId
 sweepStateAt t SweepState { ssRetained, ssActive } =
   emptySharedTxState {
       sharedTxTable     = IntMap.fromList [ (k, entry n kind) | (k, n, kind) <- ssActive ],
-      sharedRetainedTxs = retainedFromList [ (k, addTime (fromIntegral d) t) | (k, d) <- ssRetained ],
+      sharedRetainedTxs = retainedFromList [ (k, retainDeadline (addTime (fromIntegral d) t)) | (k, d) <- ssRetained ],
       sharedTxIdToKey   = Map.fromList [ (k, TxKey k) | k <- keys ],
       sharedKeyToTxId   = IntMap.fromList [ (k, k) | k <- keys ],
       sharedNextTxKey   = maximum (0 : map (+ 1) keys)
@@ -3397,7 +3431,7 @@ unit_nextPeerAction_acksSafePrefixBeforeBlockedBufferedTx step = do
           }
         sharedState = emptySharedTxState
           { sharedTxTable = IntMap.singleton kBlocked blockedEntry
-          , sharedRetainedTxs = retainedSingleton kResolved (addTime 17 now)
+          , sharedRetainedTxs = retainedSingleton kResolved (retainDeadline (addTime 17 now))
           , sharedTxIdToKey = Map.fromList
               [(getRawTxId (1 :: TxId), resolvedKey), (getRawTxId (2 :: TxId), blockedKey)]
           , sharedKeyToTxId = IntMap.fromList [(kResolved, 1 :: TxId), (kBlocked, 2 :: TxId)]
@@ -3816,7 +3850,7 @@ prop_nextPeerAction_nonOwnerWaitsUntilResolved (ArbTxDecisionPolicy policy)
       }
     resolvedSharedState = unresolvedSharedState
       { sharedTxTable = IntMap.empty
-      , sharedRetainedTxs = retainedSingleton k (addTime 17 now)
+      , sharedRetainedTxs = retainedSingleton k (retainDeadline (addTime 17 now))
       }
     peerState0 = emptyPeerTxLocalState
       { peerUnacknowledgedTxIds = StrictSeq.singleton key
@@ -4307,7 +4341,7 @@ buildTriggerState policy perPeer =
     retainedTxids = [ txid | txid <- allTxids
                     , categoryOf (map snd (triggersFor txid)) == CatAck ]
 
-    retainedUntil   = addTime 600 now
+    retainedUntil   = retainDeadline (addTime 600 now)
     retainedEntries = [ (txidKey txid, retainedUntil) | txid <- retainedTxids ]
 
     mkPeerState :: PeerAddr -> [ActionTrigger]
@@ -4748,7 +4782,7 @@ genSharedTxState = sized $ \n -> do
   where
     genRetainedEntry txid = do
       retainUntil <- genSharedExpiryTime
-      pure (txid, retainUntil)
+      pure (txid, retainDeadline retainUntil)
 
 -- Generate one active tx entry using a mix of leased and claimable shapes.
 genActiveTxEntry :: [PeerAddr] -> TxId -> Gen (TxId, TxEntry PeerAddr)
@@ -4790,7 +4824,7 @@ genClaimableTxEntry = do
 -- Rebuild a shared state from tx-centric fixtures while preserving interned keys.
 buildSharedTxState
   :: [(TxId, TxEntry PeerAddr)]
-  -> [(TxId, Time)]
+  -> [(TxId, RetainTime)]
   -> Word64
   -> SharedTxState PeerAddr TxId
 buildSharedTxState activeEntries retainedEntries sharedGeneration =
@@ -4993,7 +5027,7 @@ seedRetainedTxids policy entries st0 =
                   retainedKeys
   }
   where
-    retainUntil         = addTime (bufferedTxsMinLifetime policy) now
+    retainUntil         = retainDeadline (addTime (bufferedTxsMinLifetime policy) now)
     (_, stInterned)     = internTxIds (fmap fst entries) st0
     retainedKeys        = [ unTxKey (lookupKeyOrFail txid stInterned)
                           | (txid, _) <- entries
@@ -5238,7 +5272,8 @@ retainAllActiveTxs st@SharedTxState { sharedTxTable, sharedRetainedTxs, sharedGe
       sharedGeneration = sharedGeneration + 1
     }
   where
-    retainUntil = addTime (bufferedTxsMinLifetime (unsafeMkTxDecisionPolicy defaultTxSubmissionConfigV2)) now
+    retainUntil = retainDeadline (addTime retainLifetime now)
+    retainLifetime = bufferedTxsMinLifetime (unsafeMkTxDecisionPolicy defaultTxSubmissionConfigV2)
 
     retainOne retainedAcc k _ =
       retainedInsertMax k retainUntil retainedAcc
