@@ -9,6 +9,7 @@ import Data.Aeson
 import Data.Aeson.Key qualified as Key
 import Data.IntMap.Strict qualified as IntMap
 import Data.Map.Strict qualified as Map
+import Data.Text qualified as Text
 
 import Cardano.Logging
 import Ouroboros.Network.Tx (HasRawTxId)
@@ -40,6 +41,19 @@ instance (Show txid, Show peeraddr, HasRawTxId txid) => LogFormatting (TraceTxLo
                   ]
         _otherwise -> []
 
+  -- The counts as gauges, under the trace's cadence, whatever the trace's
+  -- severity: the write counter (revision), the wake counter (generation)
+  -- and the sizes.
+  asMetrics (TraceSharedTxState st@SharedTxState {..}) =
+       IntM (sharedStateMetric "revision") (fromIntegral sharedRevision)
+     : IntM (sharedStateMetric "generation") (fromIntegral sharedGeneration)
+     : [ IntM (sharedStateMetric name) (fromIntegral n)
+       | (name, n) <- sharedTxStateCountFields (sharedTxStateCounts st)
+       ]
+
+-- | The metric name of a shared-state count, by its field's name.
+sharedStateMetric :: String -> Text.Text
+sharedStateMetric name = "txSubmission.sharedState." <> Text.pack name
 
 instance MetaTrace (TraceTxLogic peeraddr txid tx) where
   namespaceFor TraceSharedTxState {} =
@@ -50,6 +64,20 @@ instance MetaTrace (TraceTxLogic peeraddr txid tx) where
   documentFor (Namespace [] ["TraceSharedTxState"]) =
     Just "Internal bookkeeping of tx-submission shared state for peer coordination"
   documentFor _ = Nothing
+
+  metricsDocFor (Namespace [] ["TraceSharedTxState"]) =
+    [ (sharedStateMetric "revision", "writes of the shared tx state, one per transaction")
+    , (sharedStateMetric "generation", "wake-ups of the parked peers")
+    , (sharedStateMetric "activeTxCount", "entries of the active tx table")
+    , (sharedStateMetric "retainedTxCount", "keys retained after reaching the mempool")
+    , (sharedStateMetric "internedTxCount", "lookup entries in all")
+    , (sharedStateMetric "leasedTxCount", "active entries leased for download")
+    , (sharedStateMetric "claimableTxCount", "active entries nobody is downloading")
+    , (sharedStateMetric "totalAttemptCount", "download attempts over the active entries")
+    , (sharedStateMetric "submittingTxCount", "active entries being added to the mempool")
+    , (sharedStateMetric "advertiserCount", "advertisers over the active entries, one per peer and key")
+    ]
+  metricsDocFor _ = []
 
   allNamespaces = [
     Namespace [] ["TraceSharedTxState"]
