@@ -175,7 +175,7 @@ txCountersThreadV2 policy countersTracer sharedStateTracer retiredCountersVar
           curGen = sharedGeneration st
       if curRev /= lastRev || curGen /= lastGen
          then do
-           traceWith sharedStateTracer (TraceSharedTxState st)
+           traceWith sharedStateTracer (TraceSharedTxState st (sharedTxStateCounts st))
            pure (current, curRev, curGen, nextEmitAt)
          else pure (current, lastRev, lastGen, nextEmitAt)
 
