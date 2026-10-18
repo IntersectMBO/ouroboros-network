@@ -6,40 +6,37 @@
 module Ouroboros.Network.Tracing.TxSubmission () where
 
 import Data.Aeson
-import Data.Aeson.Key qualified as Key
-import Data.IntMap.Strict qualified as IntMap
-import Data.Map.Strict qualified as Map
+import Data.Aeson.KeyMap qualified as KeyMap
+import Data.Text qualified as Text
 
 import Cardano.Logging
+import Ouroboros.Network.OrphanInstances (sharedTxStateCounterPairs,
+           sharedTxStateTablePairs)
 import Ouroboros.Network.Tx (HasRawTxId)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
 
 instance (Show txid, Show peeraddr, HasRawTxId txid) => LogFormatting (TraceTxLogic peeraddr txid tx) where
-  forMachine dtal (TraceSharedTxState st@SharedTxState {..}) =
-      mconcat $ [ "kind" .= String "TraceSharedTxState"
-                , "sharedGeneration" .= sharedGeneration
-                , "sharedRevision" .= sharedRevision
-                ]
-             ++ [ Key.fromString name .= n
-                | (name, n) <- sharedTxStateCountFields (sharedTxStateCounts st)
-                ]
-             ++ more
-    where
-      renderTxId txKey =
-        maybe "<missing-txid>" show (IntMap.lookup txKey sharedKeyToTxId)
+  forMachine dtal (TraceSharedTxState st counts) =
+    KeyMap.fromList $
+        ("kind" .= String "TraceSharedTxState")
+      : sharedTxStateCounterPairs st counts
+     ++ case dtal of
+          DMaximum   -> sharedTxStateTablePairs st
+          _otherwise -> []
 
-      more = case dtal of
-        DMaximum ->
-                  [ "sharedTxTable" .= [ (renderTxId txKey, show txEntry)
-                                       | (txKey, txEntry) <- IntMap.toList sharedTxTable
-                                       ]
-                  , "sharedRetainedTxs" .= [ (renderTxId txKey, retainTimeSeconds retainUntil)
-                                           | (txKey, retainUntil) <- retainedToList sharedRetainedTxs
-                                           ]
-                  , "internedTxIds" .= fmap show (Map.keys sharedTxIdToKey)
-                  ]
-        _otherwise -> []
+  -- The counts as gauges, under the trace's cadence, whatever the trace's
+  -- severity: the write counter (revision), the wake counter (generation)
+  -- and the sizes.
+  asMetrics (TraceSharedTxState SharedTxState {..} counts) =
+       IntM (sharedStateMetric "revision") (fromIntegral sharedRevision)
+     : IntM (sharedStateMetric "generation") (fromIntegral sharedGeneration)
+     : [ IntM (sharedStateMetric name) (fromIntegral n)
+       | (name, n) <- sharedTxStateCountFields counts
+       ]
 
+-- | The metric name of a shared-state count, by its field's name.
+sharedStateMetric :: String -> Text.Text
+sharedStateMetric name = "txSubmission.sharedState." <> Text.pack name
 
 instance MetaTrace (TraceTxLogic peeraddr txid tx) where
   namespaceFor TraceSharedTxState {} =
@@ -50,6 +47,13 @@ instance MetaTrace (TraceTxLogic peeraddr txid tx) where
   documentFor (Namespace [] ["TraceSharedTxState"]) =
     Just "Internal bookkeeping of tx-submission shared state for peer coordination"
   documentFor _ = Nothing
+
+  metricsDocFor (Namespace [] ["TraceSharedTxState"]) =
+    [ (sharedStateMetric "revision", "writes of the shared tx state, one per transaction")
+    , (sharedStateMetric "generation", "wake-ups of the parked peers")
+    ] ++
+    [ (sharedStateMetric name, Text.pack doc) | (name, doc) <- sharedTxStateCountDocs ]
+  metricsDocFor _ = []
 
   allNamespaces = [
     Namespace [] ["TraceSharedTxState"]

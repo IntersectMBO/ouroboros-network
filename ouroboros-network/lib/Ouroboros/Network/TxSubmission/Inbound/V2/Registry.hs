@@ -239,7 +239,7 @@ txCountersThreadV2 policy countersTracer sharedStateTracer retiredCountersVar
       st <- readTVarIO sharedStateVar
       let revision = sharedRevision st
       when (revision /= tickRevision) $
-        traceWith sharedStateTracer (TraceSharedTxState st)
+        traceWith sharedStateTracer (TraceSharedTxState st (sharedTxStateCounts st))
       pure tick { tickCounters = current, tickRevision = revision }
 
     -- One transaction over the state alone: the step applied, the state

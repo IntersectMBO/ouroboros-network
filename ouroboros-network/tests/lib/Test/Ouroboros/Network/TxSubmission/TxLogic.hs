@@ -3107,6 +3107,8 @@ prop_countFields_everyField ss dooms =
                    , ("submittingTxCount", count txInSubmission)
                    , ("doomedTxCount",     count ((== Doomed) . txDoom))
                    ])
+     .&&. counterexample "the docs against the traced names"
+            (map fst sharedTxStateCountDocs === map fst (sharedTxStateCountFields counts))
   where
     doomAt e (UndoomedFor _) = e
     doomAt e (SparedFor n)   = e { txDoom = Spared (addTime (negate (fromIntegral n)) now) }
