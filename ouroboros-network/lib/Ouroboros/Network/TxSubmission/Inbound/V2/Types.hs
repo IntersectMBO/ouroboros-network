@@ -21,6 +21,8 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Types
     SharedTxState (..)
     -- * RetainedTxs with helper functions
   , RetainedTxs
+  , retainDeadline
+  , retainNow
   , retainedEmpty
   , retainedSingleton
   , retainedFromList
@@ -600,13 +602,15 @@ deriving anyclass instance (NoThunks peeraddr, NoThunks txid, HasRawTxId txid) =
 --
 -- Backed by two indexes:
 --
--- * 'retainedQueue' is keyed on 'Time' for cheap earliest-expiry queries.
+-- * 'retainedQueue' is keyed on the deadline in nanoseconds of monotonic
+--   time for cheap earliest-expiry queries: machine-word comparisons, where
+--   'Time' compares 'Integer' picoseconds.
 -- * 'retainedSet'   shadows the keys for O(min(n, W)) 'retainedMember'
 --   queries (the hot path: every received txid is checked here).
 --
 -- Both are kept in lockstep by the 'retained*' helpers below.
 data RetainedTxs = RetainedTxs {
-    retainedQueue :: !(IntPSQ Time ()),
+    retainedQueue :: !(IntPSQ Word64 ()),
     retainedSet   :: !IntSet
   }
   deriving stock    (Eq, Show, Generic)
@@ -626,17 +630,34 @@ emptySharedTxState = SharedTxState {
 retainedEmpty :: RetainedTxs
 retainedEmpty = RetainedTxs IntPSQ.empty IntSet.empty
 
-retainedSingleton :: Int -> Time -> RetainedTxs
+-- | A retention deadline: 'Time' in nanoseconds, rounded up, so that with
+-- 'retainNow' rounding down an entry never expires before its deadline.
+-- 'Word64' nanoseconds of monotonic time last 584 years; a negative time,
+-- as a non-positive lifetime gives, is due at once, and a time past the
+-- range is due at its end, rather than wrapping.
+retainDeadline :: Time -> Word64
+retainDeadline (Time t) =
+  clampNanoseconds ((diffTimeToPicoseconds t + 999) `div` 1000)
+
+-- | The current time for expiry: 'Time' in nanoseconds, rounded down.
+retainNow :: Time -> Word64
+retainNow (Time t) = clampNanoseconds (diffTimeToPicoseconds t `div` 1000)
+
+-- | Nanoseconds as a 'Word64', saturating at either end.
+clampNanoseconds :: Integer -> Word64
+clampNanoseconds = fromInteger . max 0 . min (toInteger (maxBound :: Word64))
+
+retainedSingleton :: Int -> Word64 -> RetainedTxs
 retainedSingleton k retainUntil =
     RetainedTxs (IntPSQ.insert k retainUntil () IntPSQ.empty)
                 (IntSet.singleton k)
 
-retainedFromList :: [(Int, Time)] -> RetainedTxs
+retainedFromList :: [(Int, Word64)] -> RetainedTxs
 retainedFromList =
     List.foldl' (\retained (k, retainUntil) -> retainedInsertMax k retainUntil retained)
                 retainedEmpty
 
-retainedToList :: RetainedTxs -> [(Int, Time)]
+retainedToList :: RetainedTxs -> [(Int, Word64)]
 retainedToList =
     sortOn fst
   . fmap (\(k, retainUntil, ()) -> (k, retainUntil))
@@ -647,7 +668,7 @@ retainedSize :: RetainedTxs -> Int
 retainedSize = IntSet.size . retainedSet
 {-# INLINE retainedSize #-}
 
-retainedLookup :: Int -> RetainedTxs -> Maybe Time
+retainedLookup :: Int -> RetainedTxs -> Maybe Word64
 retainedLookup k retained =
     fmap fst (IntPSQ.lookup k (retainedQueue retained))
 {-# INLINE retainedLookup #-}
@@ -656,7 +677,7 @@ retainedMember :: Int -> RetainedTxs -> Bool
 retainedMember k = IntSet.member k . retainedSet
 {-# INLINE retainedMember #-}
 
-retainedInsertMax :: Int -> Time -> RetainedTxs -> RetainedTxs
+retainedInsertMax :: Int -> Word64 -> RetainedTxs -> RetainedTxs
 retainedInsertMax k retainUntil (RetainedTxs queue keys) =
     RetainedTxs (IntPSQ.insert k retainUntil' () queue)
                 (IntSet.insert k keys)
@@ -693,7 +714,7 @@ retainedRestrictKeys (RetainedTxs queue keys) ks =
 -- backlog of expired entries is drained over several sweeps rather than in
 -- one transaction that grows with it; the queue is unwound once, for the
 -- keys and the remainder together.
-retainedExpireUpTo :: Int -> Time -> RetainedTxs -> (IntSet, RetainedTxs)
+retainedExpireUpTo :: Int -> Word64 -> RetainedTxs -> (IntSet, RetainedTxs)
 retainedExpireUpTo limit currentTime retained@(RetainedTxs queue keys)
   | limit > 0, retainedDueBy currentTime retained = go limit IntSet.empty queue
   | otherwise                                     = (IntSet.empty, retained)
@@ -776,7 +797,7 @@ sharedTxStateCountFields counts =
   zip (constrFields (toConstr counts)) (map fromJust (gmapQ cast counts))
 
 -- | Whether any retained entry is due by @currentTime@.
-retainedDueBy :: Time -> RetainedTxs -> Bool
+retainedDueBy :: Word64 -> RetainedTxs -> Bool
 retainedDueBy currentTime retained =
     case IntPSQ.findMin (retainedQueue retained) of
       Just (_, earliest, _) -> earliest <= currentTime

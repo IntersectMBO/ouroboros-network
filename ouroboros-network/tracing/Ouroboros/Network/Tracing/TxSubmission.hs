@@ -33,7 +33,7 @@ instance (Show txid, Show peeraddr, HasRawTxId txid) => LogFormatting (TraceTxLo
                   [ "sharedTxTable" .= [ (renderTxId txKey, show txEntry)
                                        | (txKey, txEntry) <- IntMap.toList sharedTxTable
                                        ]
-                  , "sharedRetainedTxs" .= [ (renderTxId txKey, show retainUntil)
+                  , "sharedRetainedTxs" .= [ (renderTxId txKey, fromIntegral retainUntil / 1e9 :: Double)
                                            | (txKey, retainUntil) <- retainedToList sharedRetainedTxs
                                            ]
                   , "internedTxIds" .= fmap show (Map.keys sharedTxIdToKey)

@@ -10,6 +10,7 @@ module Bench.TxSubmissionV2Sweep (benchmarks) where
 import Control.Monad.Class.MonadTime.SI (DiffTime, Time (..), addTime)
 import Data.IntMap.Strict qualified as IntMap
 import Data.Map.Strict qualified as Map
+import Data.Word (Word64)
 import Test.Tasty.Bench
 
 import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (sweepBatch)
@@ -26,9 +27,9 @@ now = Time 100_000
 
 -- | @n@ retained entries one millisecond apart, the first @e@ of them past
 -- their deadline at 'now'.
-retained :: Int -> Int -> [(Int, Time)]
+retained :: Int -> Int -> [(Int, Word64)]
 retained n e =
-  [ (k, addTime (fromIntegral (k - e + 1) * (0.001 :: DiffTime)) now)
+  [ (k, retainDeadline (addTime (fromIntegral (k - e + 1) * (0.001 :: DiffTime)) now))
   | k <- [0 .. n - 1] ]
 
 -- | The retained entries with their lookup entries, as interning leaves
