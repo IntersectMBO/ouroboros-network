@@ -965,9 +965,10 @@ expireUpTo limit now st
         , more
         , IntSet.size expiredRetained )
   where
+    now' = retainNow now
     (expiredRetained, retained') =
-      retainedExpireUpTo limit now (sharedRetainedTxs st)
-    more = limit > 0 && retainedDueBy now retained'
+      retainedExpireUpTo limit now' (sharedRetainedTxs st)
+    more = limit > 0 && retainedDueBy now' retained'
 {-# INLINABLE expireUpTo #-}
 
 -- | One advertiser fewer for an entry: a peer omitted its body, had it
@@ -1037,7 +1038,7 @@ handleReceivedTxs mempoolHasTx now policy peeraddr txs peerState peerInFlight sh
     txidToKey = sharedTxIdToKey sharedState
 
     requestedKeys = requestedTxBatchSet requestedBatch
-    retainUntil   = addTime (bufferedTxsMinLifetime policy) now
+    retainUntil   = retainDeadline (addTime (bufferedTxsMinLifetime policy) now)
 
     -- Dequeue the next requested tx batch to process.
     (requestedBatch, remainingRequestedBatches) =
@@ -1326,7 +1327,7 @@ handleSubmittedTxs now policy peeraddr acceptedTxs rejectedTxs peerState peerInF
         sharedRevision   = sharedRevision   sharedState + 1
       }
 
-    retainedUntil = addTime (bufferedTxsMinLifetime policy) now
+    retainedUntil = retainDeadline (addTime (bufferedTxsMinLifetime policy) now)
 
     acceptSubmittedTx sharedAcc (TxKey k, txid)
       | IntMap.member k (sharedKeyToTxId sharedAcc) =
@@ -1482,7 +1483,7 @@ handleReceivedTxIds mempoolHasTx now policy requestedTxIds txidsAndSizes
       | otherwise =
           sharedState
 
-    retainUntil = addTime (bufferedTxsMinLifetime policy) now
+    retainUntil = retainDeadline (addTime (bufferedTxsMinLifetime policy) now)
 
     -- Process each received txid: classify as retained, in mempool, or new entry.
     step
