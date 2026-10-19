@@ -81,11 +81,15 @@ data CardanoConsensusArguments ntnAddr m =
     ledgerPeersAPI         :: LedgerPeersConsensusInterface (Cardano.LedgerPeersConsensusInterface m) m,
     -- ^ ledger and consensus APIs
 
-    readUseBootstrapPeers  :: STM m UseBootstrapPeers
+    readUseBootstrapPeers  :: STM m UseBootstrapPeers,
     -- ^ `UseBootstrapPeers` from topology file.
     --
     -- `readUseBootstrapPeers` is created in `cardano-node`, then passed to
     -- consensus through `RunNodeArgs`, from which it is passed to diffusion.
+
+    freshBytes             :: Maybe (STM m Int)
+    -- ^ the bytes the chain has freshly announced, counted by consensus; the
+    -- egress credit buckets refill from it (see `Diffusion.daFreshBytes`)
   }
 
 type CardanoTracers m =

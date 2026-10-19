@@ -223,6 +223,7 @@ runM Interfaces
        , daExtraChurnArgs
        , daSRVPrefix
        , daEgressPoolKey
+       , daFreshBytes
        }
      Configuration
        { dcIPv4Address
@@ -267,11 +268,15 @@ runM Interfaces
     -- and read by the counters loop
     egressPolicy <- traverse mkEgressPolicy dcEgressScheduling
     -- the residual tier's credit buckets, one per big-ledger pool, refilled
-    -- by the clock from the protocol parameters; a stranger's own bucket is
-    -- locked for what that clock reads over 'esStrangerLock'
+    -- by the bytes the chain freshly announces, or without that count by the
+    -- clock from the protocol parameters; a stranger's own bucket is locked
+    -- for what that clock reads over 'esStrangerLock', the protocol's
+    -- fresh need over that time
     t0 <- getMonotonicTime
     poolAllowances <- traverse (\es -> newPoolAllowances (Allowance (esFreshMaxBytes es))
-                                                         (freshAt (esFreshBytesPerSecond es) t0)
+                                                         (case daFreshBytes of
+                                                            Just fresh -> \_ -> Fresh <$> fresh
+                                                            Nothing    -> return . freshAt (esFreshBytesPerSecond es) t0)
                                                          (freshAt (esFreshBytesPerSecond es) t0
                                                                   (esStrangerLock es `addTime` t0)))
                                dcEgressScheduling

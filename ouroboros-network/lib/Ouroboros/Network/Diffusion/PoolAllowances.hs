@@ -11,9 +11,8 @@
 -- partner spends its own bucket at the partner tier; a big-ledger pool's
 -- relays share the pool's; a stranger spends its own at the stranger tier.
 -- The arithmetic is pure and exact over a monotone reading of fresh bytes;
--- where the reading comes from, a clock from the protocol parameters in the
--- prototype, an announcement counter from consensus eventually, is the
--- caller's business.
+-- where the reading comes from, consensus's count of freshly announced bytes
+-- or a clock from the protocol parameters, is the caller's business.
 module Ouroboros.Network.Diffusion.PoolAllowances
   ( -- * The pure core
     Allowance (..)
@@ -101,8 +100,9 @@ resetCharged al fresh = Charged (kappa fresh - capacity al)
 lockedCharged :: Fresh -> Fresh -> Charged
 lockedCharged (Fresh f) (Fresh lock) = Charged (kappa (Fresh (f + lock)))
 
--- | The prototype's reading: fresh bytes grow at a rate from the protocol
--- parameters, (B_max + L_max + F_max)·f per second, from an origin.
+-- | The clock reading, without consensus's count: fresh bytes grow at a rate
+-- from the protocol parameters, (B_max + L_max + F_max)·f per second, from an
+-- origin.
 freshAt :: Double -> Time -> Time -> Fresh
 freshAt rate t0 now = Fresh (max 0 (floor (rate * realToFrac (now `diffTime` t0) :: Double)))
 
@@ -114,7 +114,7 @@ freshAt rate t0 now = Fresh (max 0 (floor (rate * realToFrac (now `diffTime` t0)
 -- start.
 data PoolAllowances m addr = PoolAllowances {
     paAllowance    :: !Allowance,
-    paFreshAt      :: !(Time -> Fresh),
+    paFreshAt      :: !(Time -> STM m Fresh),
     paStrangerLock :: !Fresh,
     paGeneration   :: !(StrictTVar m Int),
     paIndexGen     :: !(StrictTVar m Int),
@@ -123,7 +123,7 @@ data PoolAllowances m addr = PoolAllowances {
   }
 
 newPoolAllowances :: MonadSTM m
-                  => Allowance -> (Time -> Fresh) -> Fresh -> m (PoolAllowances m addr)
+                  => Allowance -> (Time -> STM m Fresh) -> Fresh -> m (PoolAllowances m addr)
 newPoolAllowances paAllowance paFreshAt paStrangerLock = do
   paGeneration <- newTVarIO 0
   paIndexGen   <- newTVarIO 0
@@ -137,7 +137,8 @@ newPoolAllowances paAllowance paFreshAt paStrangerLock = do
 rebuild :: MonadSTM m
         => PoolAllowances m addr -> Time -> Int -> Map addr [Int] -> STM m ()
 rebuild PoolAllowances { .. } now n index = do
-  buckets <- mapM (\i -> do tv <- newTVar (lockedCharged (paFreshAt now) (Fresh 0))
+  fresh <- paFreshAt now
+  buckets <- mapM (\i -> do tv <- newTVar (lockedCharged fresh (Fresh 0))
                             return (i, tv))
                   [0 .. n - 1]
   writeTVar paBuckets (IntMap.fromList buckets)
@@ -174,14 +175,16 @@ bucketsFor PoolAllowances { .. } addr = do
 -- | Any of the buckets has credit at @now@.
 hasCredit :: MonadSTM m
           => PoolAllowances m addr -> Time -> [StrictTVar m Charged] -> STM m Bool
-hasCredit PoolAllowances { paAllowance, paFreshAt } now =
-  fmap or . mapM (\tv -> (> 0) . credit paAllowance (paFreshAt now) <$> readTVar tv)
+hasCredit PoolAllowances { paAllowance, paFreshAt } now tvs = do
+  fresh <- paFreshAt now
+  or <$> mapM (\tv -> (> 0) . credit paAllowance fresh <$> readTVar tv) tvs
 
 -- | Charge every bucket that has credit at @now@.
 chargeBuckets :: MonadSTM m
               => PoolAllowances m addr -> Time -> Int -> [StrictTVar m Charged] -> STM m ()
-chargeBuckets PoolAllowances { paAllowance, paFreshAt } now n =
-  mapM_ (\tv -> modifyTVar tv (charge paAllowance (paFreshAt now) n))
+chargeBuckets PoolAllowances { paAllowance, paFreshAt } now n tvs = do
+  fresh <- paFreshAt now
+  mapM_ (\tv -> modifyTVar tv (charge paAllowance fresh n)) tvs
 
 -- | What the governor says about a peer, read as its bearer queues.
 data Standing = LocalRoot | Partner | Other
@@ -233,7 +236,7 @@ mkEgressRule :: (MonadSTM m, Ord addr)
              -> m (Time -> STM m Rank, Time -> MiniProtocolNum -> Int -> STM m ())
 mkEgressRule allowances@PoolAllowances { paAllowance, paFreshAt, paStrangerLock, paGeneration, paIndexGen }
              uncharged key standing t0 = do
-  own       <- newTVarIO (lockedCharged (paFreshAt t0) paStrangerLock)
+  own       <- newTVarIO . (`lockedCharged` paStrangerLock) =<< atomically (paFreshAt t0)
   asPartner <- newTVarIO False   -- the rule's last answer was the partner tier
   cached    <- newTVarIO BucketRef { brGeneration = -1, brIndexGen = -1, brBuckets = [] }
   let buckets = do
@@ -253,7 +256,8 @@ mkEgressRule allowances@PoolAllowances { paAllowance, paFreshAt, paStrangerLock,
              LocalRoot -> return (rankFor LocalRoot False Nothing)
              _ -> do
                bs <- buckets
-               ownCredit <- (> 0) . credit paAllowance (paFreshAt now) <$> readTVar own
+               fresh     <- paFreshAt now
+               ownCredit <- (> 0) . credit paAllowance fresh <$> readTVar own
                pools     <- case bs of
                                  [] -> return Nothing
                                  _  -> Just <$> hasCredit allowances now bs
@@ -266,9 +270,10 @@ mkEgressRule allowances@PoolAllowances { paAllowance, paFreshAt, paStrangerLock,
         | otherwise = do
             partner <- readTVar asPartner
             bs      <- buckets
+            fresh   <- paFreshAt now
             case (partner, bs) of
-                 (True, _)   -> modifyTVar own (charge paAllowance (paFreshAt now) n)
-                 (False, []) -> modifyTVar own (charge paAllowance (paFreshAt now) n)
+                 (True, _)   -> modifyTVar own (charge paAllowance fresh n)
+                 (False, []) -> modifyTVar own (charge paAllowance fresh n)
                  (False, _)  -> chargeBuckets allowances now n bs
 
   return (rule, sink)

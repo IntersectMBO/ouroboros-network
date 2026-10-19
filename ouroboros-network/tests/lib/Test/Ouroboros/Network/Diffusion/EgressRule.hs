@@ -123,7 +123,7 @@ model Case { cStanding, cPools, cUncharged, cLock, cOps } =
 -- | The same, through 'mkEgressRule' and the buckets in IOSim.
 run :: Case -> ([Rank], [Charged])
 run Case { cStanding, cPools, cUncharged, cLock, cOps } = runSimOrThrow $ do
-    pa <- newPoolAllowances allowance clock (clock (at cLock))
+    pa <- newPoolAllowances allowance (return . clock) (clock (at cLock))
     let key   = "peer" :: String
         k     = length cPools
         index = if k > 0 then Map.singleton key [0 .. k - 1] else Map.empty
@@ -176,7 +176,7 @@ prop_refill_reaches_queued :: Property
 prop_refill_reaches_queued = once $ runSimOrThrow $ do
     budget <- Bucket.newBucket 1000 100 (Just (Bucket.Rotation 42 599 4))
     Bucket.attachFloor budget 0.1
-    pa <- newPoolAllowances (Allowance 100) (freshAt 100 (Time 0)) (Fresh 100)
+    pa <- newPoolAllowances (Allowance 100) (return . freshAt 100 (Time 0)) (Fresh 100)
     atomically $ rebuild pa (Time 0) 1 (Map.singleton ("relay" :: String) [0])
     (rule, sink) <- mkEgressRule pa [] "relay" (const (return Other)) (Time 0)
     roots <- forM [1 .. 2 :: Int] $ \_ -> do

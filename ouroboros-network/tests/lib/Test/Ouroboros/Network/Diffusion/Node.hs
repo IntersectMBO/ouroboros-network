@@ -335,6 +335,7 @@ run blockGeneratorArgs ni na
               , Diffusion.daExtraChurnArgs                    = aExtraChurnArgs na
               , Diffusion.daSRVPrefix                         = iSRVPrefix ni
               , Diffusion.daEgressPoolKey                     = id
+              , Diffusion.daFreshBytes                        = Nothing
               }
 
         withAsync
