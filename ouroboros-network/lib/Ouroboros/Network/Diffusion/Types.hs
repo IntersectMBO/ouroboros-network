@@ -483,6 +483,12 @@ data Arguments extraState extraDebugState extraFlags extraPeers
     -- from an ephemeral one and must still find its pool's bucket
     --
   , daEgressPoolKey :: ntnAddr -> ntnAddr
+
+    -- | The bytes the chain has freshly announced, a monotone count that
+    -- refills the egress credit buckets; without one they refill by a clock
+    -- from the protocol parameters
+    --
+  , daFreshBytes :: Maybe (STM m Int)
   }
 
 -- | Required Diffusion Arguments to run network layer
