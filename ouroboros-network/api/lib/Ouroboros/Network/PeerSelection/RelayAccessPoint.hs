@@ -10,6 +10,8 @@ module Ouroboros.Network.PeerSelection.RelayAccessPoint
   , LedgerRelayAccessPointV1 (..)
   , SRVPrefix
   , prefixLedgerRelayAccessPoint
+  , isRelayAccessAddress
+  , relayAccessPointDomain
   , IP.IP (..)
     -- * Socket type re-exports
   , Socket.PortNumber
@@ -83,6 +85,21 @@ instance FromJSON RelayAccessPoint where
       fullyQualified = \case
         domain | Just (_, '.') <- BSC.unsnoc domain -> domain
                | otherwise -> domain `BSC.snoc` '.'
+
+-- | Whether the relay is given by its IP address, so that reaching it takes
+-- no DNS lookup.
+--
+isRelayAccessAddress :: RelayAccessPoint -> Bool
+isRelayAccessAddress RelayAccessAddress {} = True
+isRelayAccessAddress _                     = False
+
+-- | The domain name a relay is given by, if any: that of a plain domain or
+-- of an SRV domain.
+--
+relayAccessPointDomain :: RelayAccessPoint -> Maybe DNS.Domain
+relayAccessPointDomain (RelayAccessDomain d _)  = Just d
+relayAccessPointDomain (RelayAccessSRVDomain d) = Just d
+relayAccessPointDomain RelayAccessAddress {}    = Nothing
 
 isValidDestinationIPAddr :: IP.IP -> Bool
 isValidDestinationIPAddr (IP.IPv4 ipv4) = IP.fromIPv4w ipv4 /= 0
