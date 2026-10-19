@@ -44,7 +44,7 @@ import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadSTM qualified as LazySTM
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.DeepSeq (NFData)
-import Control.Exception (SomeAsyncException (..))
+import Control.Exception (SomeAsyncException (..), toException)
 import Control.Monad (foldM, forM_, forever, void, when)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
@@ -91,6 +91,21 @@ inboundMaturePeerDelay = 15 * 60
 --
 inactionTimeout :: DiffTime
 inactionTimeout = 31.415927
+
+
+-- | Bound on how long the governor will await a mux reaching a terminal status
+-- in the 'MuxFinished' branch. A reconnect under the same 'ConnectionId' can
+-- substitute a live mux in the connection map, so an unbounded wait would
+-- stop the governor for every peer.
+--
+muxFinishedAwaitTimeout :: DiffTime
+muxFinishedAwaitTimeout = 60
+
+
+-- | Distinctive message surfaced through 'TrMuxErrored' when the await expires.
+--
+muxFinishedAwaitTimedOut :: String
+muxFinishedAwaitTimedOut = "inbound governor: Mux.stopped await timed out"
 
 
 data Arguments muxMode handlerTrace socket peerAddr initiatorCtx responderCtx
@@ -399,7 +414,12 @@ with
 
           MuxFinished connId
             | Just mux <- csMux <$> Map.lookup connId (connections state) -> do
-                merr <- atomically $ Mux.stopped mux
+                -- Mux.stopped retries while the mux is Ready or Stopping.
+                -- Bound the wait so a stale event cannot wedge the governor.
+                mmerr <- timeout muxFinishedAwaitTimeout (atomically $ Mux.stopped mux)
+                let merr = case mmerr of
+                      Just m  -> m
+                      Nothing -> Just (toException (userError muxFinishedAwaitTimedOut))
                 case merr of
                   Nothing  -> traceWith tracer (TrMuxCleanExit connId)
                   Just err -> traceWith tracer (TrMuxErrored connId err)
