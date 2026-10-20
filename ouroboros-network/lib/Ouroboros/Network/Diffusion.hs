@@ -270,15 +270,13 @@ runM Interfaces
     -- the residual tier's credit buckets, one per big-ledger pool, refilled
     -- by the bytes the chain freshly announces, or without that count by the
     -- clock from the protocol parameters; a stranger's own bucket is locked
-    -- for what that clock reads over 'esStrangerLock', the protocol's
-    -- fresh need over that time
+    -- for 'esStrangerLock' of wall-clock time from its connection
     t0 <- getMonotonicTime
     poolAllowances <- traverse (\es -> newPoolAllowances (Allowance (esFreshMaxBytes es))
                                                          (case daFreshBytes of
                                                             Just fresh -> \_ -> Fresh <$> fresh
                                                             Nothing    -> return . freshAt (esFreshBytesPerSecond es) t0)
-                                                         (freshAt (esFreshBytesPerSecond es) t0
-                                                                  (esStrangerLock es `addTime` t0)))
+                                                         (esStrangerLock es))
                                dcEgressScheduling
     localCounters  <- Mx.newMuxCounters
     -- race the counters with diffusion, so a failing counters loop ends it

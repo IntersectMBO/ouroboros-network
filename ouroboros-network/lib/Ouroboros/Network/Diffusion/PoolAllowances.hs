@@ -42,7 +42,7 @@ module Ouroboros.Network.Diffusion.PoolAllowances
   ) where
 
 import Control.Concurrent.Class.MonadSTM.Strict
-import Control.Monad.Class.MonadTime.SI (Time, diffTime)
+import Control.Monad.Class.MonadTime.SI (DiffTime, Time, addTime, diffTime)
 import Data.IntMap.Strict (IntMap)
 import Data.IntMap.Strict qualified as IntMap
 import Data.Map.Strict (Map)
@@ -109,13 +109,13 @@ freshAt rate t0 now = Fresh (max 0 (floor (rate * realToFrac (now `diffTime` t0)
 -- | One bucket per big-ledger pool, by position in the stake-sorted list, and
 -- the resolved addresses that map to each. Replaced as a whole, empty, when
 -- the number of pools changes; the generation lets a bearer notice and look
--- its buckets up again. A stranger's
--- own bucket is locked for 'paStrangerLock' fresh bytes from its connection's
--- start.
+-- its buckets up again. A stranger's own bucket is locked for
+-- 'paStrangerLock' of wall-clock time from its connection's start, then opens
+-- empty at that moment's reading and fills at the fresh rate.
 data PoolAllowances m addr = PoolAllowances {
     paAllowance    :: !Allowance,
     paFreshAt      :: !(Time -> STM m Fresh),
-    paStrangerLock :: !Fresh,
+    paStrangerLock :: !DiffTime,
     paGeneration   :: !(StrictTVar m Int),
     paIndexGen     :: !(StrictTVar m Int),
     paBuckets      :: !(StrictTVar m (IntMap (StrictTVar m Charged))),
@@ -123,7 +123,7 @@ data PoolAllowances m addr = PoolAllowances {
   }
 
 newPoolAllowances :: MonadSTM m
-                  => Allowance -> (Time -> STM m Fresh) -> Fresh -> m (PoolAllowances m addr)
+                  => Allowance -> (Time -> STM m Fresh) -> DiffTime -> m (PoolAllowances m addr)
 newPoolAllowances paAllowance paFreshAt paStrangerLock = do
   paGeneration <- newTVarIO 0
   paIndexGen   <- newTVarIO 0
@@ -236,10 +236,29 @@ mkEgressRule :: (MonadSTM m, Ord addr)
              -> m (Time -> STM m Rank, Time -> MiniProtocolNum -> Int -> STM m ())
 mkEgressRule allowances@PoolAllowances { paAllowance, paFreshAt, paStrangerLock, paGeneration, paIndexGen }
              uncharged key standing t0 = do
-  own       <- newTVarIO . (`lockedCharged` paStrangerLock) =<< atomically (paFreshAt t0)
+  -- the connection's own bucket: nothing until the lock has passed, then
+  -- empty at the reading of its first use after that, filling at the fresh
+  -- rate; a reconnection is a new rule and starts the wait over
+  own       <- newTVarIO Nothing
   asPartner <- newTVarIO False   -- the rule's last answer was the partner tier
   cached    <- newTVarIO BucketRef { brGeneration = -1, brIndexGen = -1, brBuckets = [] }
-  let buckets = do
+  let unlockAt = paStrangerLock `addTime` t0
+      ownAt now fresh = do
+        mb <- readTVar own
+        case mb of
+             Just _ -> return mb
+             Nothing
+               | now < unlockAt -> return Nothing
+               | otherwise -> do
+                   let opened = Just (lockedCharged fresh (Fresh 0))
+                   writeTVar own opened
+                   return opened
+      chargeOwn now fresh n = do
+        mb <- ownAt now fresh
+        case mb of
+             Just ch -> writeTVar own (Just (charge paAllowance fresh n ch))
+             Nothing -> return ()
+      buckets = do
         ref <- readTVar cached
         generation <- readTVar paGeneration
         indexGen   <- readTVar paIndexGen
@@ -257,7 +276,7 @@ mkEgressRule allowances@PoolAllowances { paAllowance, paFreshAt, paStrangerLock,
              _ -> do
                bs <- buckets
                fresh     <- paFreshAt now
-               ownCredit <- (> 0) . credit paAllowance fresh <$> readTVar own
+               ownCredit <- maybe False ((> 0) . credit paAllowance fresh) <$> ownAt now fresh
                pools     <- case bs of
                                  [] -> return Nothing
                                  _  -> Just <$> hasCredit allowances now bs
@@ -272,8 +291,8 @@ mkEgressRule allowances@PoolAllowances { paAllowance, paFreshAt, paStrangerLock,
             bs      <- buckets
             fresh   <- paFreshAt now
             case (partner, bs) of
-                 (True, _)   -> modifyTVar own (charge paAllowance fresh n)
-                 (False, []) -> modifyTVar own (charge paAllowance fresh n)
+                 (True, _)   -> chargeOwn now fresh n
+                 (False, []) -> chargeOwn now fresh n
                  (False, _)  -> chargeBuckets allowances now n bs
 
   return (rule, sink)
