@@ -26,6 +26,7 @@ tests :: TestTree
 tests =
   testGroup "Ouroboros.Network.Diffusion.EgressRule"
     [ testProperty "a connection's rule and sink follow the decision table" prop_rule
+    , testProperty "a stranger's lock is wall-clock time, whatever the reading does" prop_lock_is_time
     , testProperty "the floor's classes and the turns threshold follow the rule's tiers" prop_floorClass_follows_rank
     , testProperty "a relay queued dry is served once its credit refills" prop_refill_reaches_queued
     ]
@@ -92,15 +93,27 @@ instance Arbitrary Case where
 -- tier 3, nothing at rest; before any answer, as a non-partner.
 model :: Case -> ([Rank], [Charged])
 model Case { cStanding, cPools, cUncharged, cLock, cOps } =
-    go (map Charged cPools) (lockedCharged (clock (at 0)) (clock (at cLock))) False cOps
+    go (map Charged cPools) Nothing False cOps
   where
     matched = not (null cPools)
+    -- the own bucket: locked until the lock has passed, then empty at the
+    -- reading of its first use after that. A use is a rank asked for anyone
+    -- but a local root, or a charge that goes to the own bucket: a partner's,
+    -- or one without a pool, on a charged protocol.
+    openAt t own = case own of
+      Just _ -> own
+      Nothing | t >= cLock -> Just (lockedCharged (clock (at t)) (Fresh 0))
+              | otherwise  -> Nothing
     go pools _ _ [] = ([], pools)
-    go pools own asPartner (op : ops) =
-      case op of
+    go pools own0 asPartner (op : ops) =
+      let own = case op of
+                  Ask t | cStanding /= LocalRoot -> openAt t own0
+                  Charge t num _ | num `notElem` cUncharged, asPartner || not matched -> openAt t own0
+                  _ -> own0
+      in case op of
            Ask t ->
              let fresh      = clock (at t)
-                 ownCredit  = credit allowance fresh own > 0
+                 ownCredit  = maybe False ((> 0) . credit allowance fresh) own
                  poolCredit = any ((> 0) . credit allowance fresh) pools
                  other | matched    = if poolCredit then Rank 2 else Rank 4
                        | ownCredit  = Rank 3
@@ -114,16 +127,16 @@ model Case { cStanding, cPools, cUncharged, cLock, cOps } =
              in (rank : ranks, final)
            Charge t num n
              | num `elem` cUncharged -> go pools own asPartner ops
-             | asPartner -> go pools (charge allowance (clock (at t)) n own) asPartner ops
+             | asPartner -> go pools (charge allowance (clock (at t)) n <$> own) asPartner ops
              | matched   -> go (map (charge allowance (clock (at t)) n) pools) own asPartner ops
-             | otherwise -> go pools (charge allowance (clock (at t)) n own) asPartner ops
+             | otherwise -> go pools (charge allowance (clock (at t)) n <$> own) asPartner ops
            Rebuild t ->
              go (map (const (Charged (kappa (clock (at t))))) pools) own asPartner ops
 
 -- | The same, through 'mkEgressRule' and the buckets in IOSim.
 run :: Case -> ([Rank], [Charged])
 run Case { cStanding, cPools, cUncharged, cLock, cOps } = runSimOrThrow $ do
-    pa <- newPoolAllowances allowance (return . clock) (clock (at cLock))
+    pa <- newPoolAllowances allowance (return . clock) (realToFrac cLock)
     let key   = "peer" :: String
         k     = length cPools
         index = if k > 0 then Map.singleton key [0 .. k - 1] else Map.empty
@@ -176,7 +189,7 @@ prop_refill_reaches_queued :: Property
 prop_refill_reaches_queued = once $ runSimOrThrow $ do
     budget <- Bucket.newBucket 1000 100 (Just (Bucket.Rotation 42 599 4))
     Bucket.attachFloor budget 0.1
-    pa <- newPoolAllowances (Allowance 100) (return . freshAt 100 (Time 0)) (Fresh 100)
+    pa <- newPoolAllowances (Allowance 100) (return . freshAt 100 (Time 0)) 1
     atomically $ rebuild pa (Time 0) 1 (Map.singleton ("relay" :: String) [0])
     (rule, sink) <- mkEgressRule pa [] "relay" (const (return Other)) (Time 0)
     roots <- forM [1 .. 2 :: Int] $ \_ -> do
@@ -238,3 +251,30 @@ prop_floorClass_follows_rank = once $ conjoin
                                 | otherwise -> other
                         Other          -> other
   ]
+
+-- | The requirement behind the lock: a stranger's own credit is zero for the
+-- lock's length of wall-clock time after its connection, however fast the
+-- reading moves; at the lock the bucket opens empty; after it the bucket
+-- fills at the fresh rate, so once the reading has moved by two fresh bytes
+-- the stranger is served at its own tier. Judged through the rule's answers,
+-- for a connection with no pool and no partner standing: rank 4 while dry,
+-- rank 3 with credit.
+prop_lock_is_time :: Positive Double -> NonNegative Double -> Double -> Positive Double -> Property
+prop_lock_is_time (Positive rate) (NonNegative lock) before (Positive delay) =
+    counterexample ("early " ++ show early ++ ", at the lock " ++ show opening ++ ", later " ++ show later) $
+      conjoin
+        [ counterexample "credit before the lock" (lock == 0 .||. early === Rank 4)
+        , counterexample "not empty at the lock" (opening === Rank 4)
+        , counterexample "no credit after the lock" (rate * delay < 2 .||. later === Rank 3)
+        ]
+  where
+    reading = freshAt rate (Time 0)
+    -- some point before the lock (the lock itself when there is none)
+    tEarly = lock * (before - fromIntegral (floor before :: Int)) * 0.999
+    (early, opening, later) = runSimOrThrow $ do
+      pa <- newPoolAllowances allowance (return . reading) (realToFrac lock)
+      (rule, _) <- mkEgressRule pa [] ("peer" :: String) (const (return Other)) (at 0)
+      e <- atomically (rule (at tEarly))
+      o <- atomically (rule (at lock))
+      l <- atomically (rule (at (lock + delay)))
+      return (e, o, l)

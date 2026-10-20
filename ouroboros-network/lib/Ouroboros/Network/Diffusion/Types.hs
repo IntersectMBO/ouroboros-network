@@ -641,11 +641,10 @@ data EgressScheduling = EgressScheduling {
     -- ^ the prototype's refill reading: 'esFreshMaxBytes' times the active
     -- slot coefficient, until consensus counts announcements instead
     esStrangerLock        :: DiffTime,
-    -- ^ how long a stranger stays connected before its own bucket opens: it
-    -- opens empty and fills at the fresh rate, and a reconnection starts the
-    -- wait over. Kept in the reading's fresh bytes, this times
-    -- 'esFreshBytesPerSecond', so it is announcements watched, not seconds,
-    -- once consensus supplies the reading
+    -- ^ how long a stranger stays connected before its own bucket opens:
+    -- wall-clock time from the connection; the bucket then opens empty at
+    -- that moment's reading and fills at the fresh rate, and a reconnection
+    -- starts the wait over
     esUnchargedProtocols  :: [MiniProtocolNum]
     -- ^ scheduled-lane protocols whose bytes never count against a bucket:
     -- only what a client cannot drive to volume, keep-alive and the
