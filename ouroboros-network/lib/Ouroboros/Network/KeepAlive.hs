@@ -106,7 +106,11 @@ keepAliveClient tracer inRng controlMessageSTM peer dqCtx KeepAliveInterval { ke
 keepAliveServer
   :: forall m.  Applicative m
   => KeepAliveServer m ()
-keepAliveServer = KeepAliveServer {
-    recvMsgKeepAlive = pure keepAliveServer,
-    recvMsgDone      = pure ()
-  }
+keepAliveServer = server
+  where
+    server :: KeepAliveServer m ()
+    server =
+      KeepAliveServer {
+        recvMsgKeepAlive = pure server,
+        recvMsgDone      = pure ()
+      }
