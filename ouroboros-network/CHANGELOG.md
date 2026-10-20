@@ -2,6 +2,47 @@
 
 <!-- scriv-insert-here -->
 
+<a id='changelog-2.0.0.0'></a>
+## 2.0.0.0 -- 2026-10-21
+
+### Breaking
+
+- Added a negotiated data flow callback to 'Server.Simple.with'
+- 'mkMiniProtocolInfo' and 'toMiniProtocolInfos' now take Provenance
+  and DataFlow parameters to filter supported set of miniprotocols
+- connectToNode, connectToNode', connectToNodeWithMux, connectToNodeWithMux',
+  connectToNodeSocket now take a negotiated data flow callback like Simple.with
+
+### Non-Breaking
+
+- Added `isRelayAccessAddress` and `relayAccessPointDomain` to
+  `Ouroboros.Network.PeerSelection.RelayAccessPoint`.
+
+- The renderers of `ChannelTrace` follow network-mux in moving a message's
+  length from the start of its send to the end: the `length` field leaves
+  `Mux.TraceChannelSendStart` and appears on `Mux.TraceChannelSendEnd`, in the
+  machine-readable rendering and in the JSON instance alike.
+
+### Patch
+
+- The local root peers provider applies a reconfiguration at once, instead of
+  only with the next DNS answer: its groups, targets and IP addresses are
+  published before its domain names are resolved, a kept domain name with the
+  addresses it already had, and a configuration without domain names is
+  applied at all.
+- `TraceLocalRootReconfigured` is traced once a reconfiguration is applied,
+  against the configuration applied before it, so a change undone before it is
+  applied is not traced; `TraceLocalRootDomains` marks every restart.
+
+- The governor applies a changed advertise flag of an existing local root to
+  its known peers, so revoking it stops the peer being shared.
+
+- Fixed a small memory leak in keepAliveServer
+
+- Avoid a peer selection governor assertion when a peer sharing request fails
+  after its peer has disconnected. Apply the peer sharing retry delay only to
+  peers which are still established when the request completes.
+
 <a id='changelog-1.3.0.0'></a>
 ## 1.3.0.0 -- 2026-10-01
 

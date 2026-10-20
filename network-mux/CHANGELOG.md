@@ -2,6 +2,30 @@
 
 <!-- scriv-insert-here -->
 
+<a id='changelog-1.0.0.0'></a>
+## 1.0.0.0 -- 2026-10-21
+
+### Breaking
+
+- `TraceChannelSendStart` no longer carries the message's length;
+  `TraceChannelSendEnd` carries it, as the receive events do, counted as the
+  event is rendered rather than before the message is queued.
+
+- version bump
+
+### Non-Breaking
+
+- Added `egressSoftBufferLimit`, the soft limit of a mini-protocol's egress
+  buffer, 0x3ffff bytes, to `Network.Mux.Egress`.
+
+### Patch
+
+- A mini-protocol's `send` encodes a message up to the channel's soft buffer
+  limit, 0x3ffff bytes, to a chunk boundary, in the mini-protocol's thread, so
+  a message waiting in its egress buffer does not keep alive whatever its
+  encoder refers to; a longer tail is still encoded by the muxer as it is
+  sent.
+
 <a id='changelog-0.12.0.0'></a>
 ## 0.12.0.0 -- 2026-10-01
 
