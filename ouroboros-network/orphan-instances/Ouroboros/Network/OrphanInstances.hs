@@ -639,14 +639,14 @@ instance ToJSON Mux.ChannelTrace where
              , "miniProtocolNum" .= miniProtocolNum
              , "length" .= len
              ]
-    Mux.TraceChannelSendStart miniProtocolNum len ->
+    Mux.TraceChannelSendStart miniProtocolNum ->
       object [ "type" .= String "SendStart"
              , "miniProtocolNum" .= miniProtocolNum
-             , "length" .= len
              ]
-    Mux.TraceChannelSendEnd miniProtocolNum ->
+    Mux.TraceChannelSendEnd miniProtocolNum len ->
       object [ "type" .= String "SendEnd"
              , "miniProtocolNum" .= miniProtocolNum
+             , "length" .= len
              ]
 
 

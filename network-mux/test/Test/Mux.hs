@@ -29,8 +29,10 @@ import Control.Exception (ErrorCall (..))
 import Control.Monad
 import Data.Binary.Put qualified as Bin
 import Data.Bits
+import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BL
 import Data.ByteString.Lazy.Char8 qualified as BL8 (pack)
+import Data.Functor.Identity (Identity (..))
 import Data.List (dropWhileEnd, nub)
 import Data.List qualified as List
 import Data.Map qualified as M
@@ -80,6 +82,7 @@ import Network.Mux.Bearer.AttenuatedChannel as AttenuatedChannel
 import Network.Mux.Bearer.Pipe qualified as Mx
 import Network.Mux.Bearer.Queues as Mx
 import Network.Mux.Codec qualified as Mx
+import Network.Mux.Egress (egressSoftBufferLimit)
 import Network.Mux.Types (MiniProtocolInfo (..), MiniProtocolLimits (..))
 import Network.Mux.Types qualified as Mx
 import Network.Socket qualified as Socket
@@ -112,6 +115,9 @@ tests =
   , testProperty "pure exception (Sim)"         prop_mux_pure_exception_iosim
   , testProperty "pure exception (IO)"          prop_mux_pure_exception_io
   , testProperty "sdu codec"                    prop_sdu_codec
+  , testProperty "send forces a prefix (IO)"    prop_mux_send_forces_prefix_only_io
+  , testProperty "send forces a prefix (Sim)"   prop_mux_send_forces_prefix_only_sim
+  , testProperty "send traces the length (Sim)" prop_mux_send_end_length
   , testGroup "Generators"
     [ testProperty "genByteString"              prop_arbitrary_genByteString
     , testProperty "genLargeByteString"         prop_arbitrary_genLargeByteString
@@ -2727,3 +2733,303 @@ compareErrors Mx.SDUReadTimeout {}      Mx.SDUReadTimeout {}      = True
 compareErrors Mx.SDUWriteTimeout {}     Mx.SDUWriteTimeout {}     = True
 compareErrors Mx.Shutdown {}            Mx.Shutdown {}            = True
 compareErrors _ _                                                 = False
+
+-- | A send forces a message up to the soft limit and no further. A responder
+-- sends a message with a chunk that throws when evaluated, through a mux
+-- whose bearer never completes a write, so the muxer holds its first batch,
+-- then a second message; the channel tracer evaluates every event, or none.
+-- A chunk within the limit's worth throws in the first send; with the trace
+-- evaluated one anywhere else throws there too, as the end of the send
+-- counts the whole message; with no trace, one at the limit is reached by
+-- the second send's check, counting the buffer from where the batch left
+-- it, and one beyond is never reached. 'sendExpected' says which sends
+-- return. In IOSim the chunk at the limit is left out: an exception from
+-- evaluating a transaction escapes the simulation.
+prop_mux_send_forces_prefix_only :: Runner -> (SendCase -> SendOutcome -> Property) -> Property
+prop_mux_send_forces_prefix_only runner runWith =
+    BaseQC.withNumTests 30 $
+    forAllShrink genCase shrinkCase $ \c ->
+    classify (inside c) "the throwing chunk is inside the prefix" $
+    classify (evaluated c) "the channel tracer evaluates the trace" $
+      runWith c (sendExpected c)
+  where
+    softLimit :: Int
+    softLimit = fromIntegral egressSoftBufferLimit
+
+    genCase :: Gen SendCase
+    genCase = do
+      ev       <- arbitrary
+      len      <- choose (1, 20000)
+      isInside <- arbitrary
+      off      <- if isInside
+                    then frequency [ (4, pure least), (2, pure 1), (3, choose (least, softLimit)) ]
+                    else choose (0, 20000)
+      return SendCase {
+               evaluated   = ev,
+               chunkLength = len,
+               inside      = isInside,
+               offset      = off
+             }
+
+    shrinkCase :: SendCase -> [SendCase]
+    shrinkCase c@SendCase { evaluated, chunkLength, offset } =
+      filter runnable $
+           [ c { evaluated = False } | evaluated ]
+        ++ [ c { chunkLength = len }
+           | len <- shrink chunkLength
+           , len >= 1
+           ]
+        ++ [ c { offset = off } | off <- shrink offset ]
+
+    -- In IOSim, not the chunk at the limit, which the second send's check
+    -- reaches in a transaction.
+    least :: Int
+    least = case runner of
+                 InIO  -> 0
+                 InSim -> 1
+
+    runnable :: SendCase -> Bool
+    runnable SendCase { inside, offset } = not inside || offset >= least
+
+prop_mux_send_forces_prefix_only_io :: Property
+prop_mux_send_forces_prefix_only_io =
+    prop_mux_send_forces_prefix_only InIO $ \c want ->
+      ioProperty $ (=== want) <$> sendForcesPrefixOnly c
+
+prop_mux_send_forces_prefix_only_sim :: Property
+prop_mux_send_forces_prefix_only_sim =
+    prop_mux_send_forces_prefix_only InSim $ \c want ->
+      runSimOrThrow (sendForcesPrefixOnly c) === want
+
+-- | Where 'prop_mux_send_forces_prefix_only' runs its sends.
+data Runner = InIO | InSim
+
+-- | A case of 'prop_mux_send_forces_prefix_only'.
+data SendCase =
+     SendCase {
+       evaluated   :: Bool,
+       -- ^ The channel tracer evaluates every event.
+       chunkLength :: Int,
+       -- ^ The length of the message's chunks.
+       inside      :: Bool,
+       -- ^ The throwing chunk is inside the prefix a send forces.
+       offset      :: Int
+       -- ^ The throwing chunk's offset from the region's boundary: the limit
+       -- inside, and beyond it the first byte the second send's check cannot
+       -- reach.
+     }
+  deriving Show
+
+-- | What the sends of a case did: whether the first returned, the second
+-- returned, and one threw.
+data SendOutcome =
+     SendOutcome {
+       firstReturned  :: Bool,
+       secondReturned :: Bool,
+       threw          :: Bool
+     }
+  deriving (Eq, Show)
+
+-- | The outcome expected of a case.
+sendExpected :: SendCase -> SendOutcome
+sendExpected SendCase { evaluated, inside, offset }
+  | inside, offset > 0 = SendOutcome { firstReturned = False, secondReturned = True,  threw = True }
+  | evaluated          = SendOutcome { firstReturned = False, secondReturned = False, threw = True }
+  | inside             = SendOutcome { firstReturned = True,  secondReturned = False, threw = True }
+  | otherwise          = SendOutcome { firstReturned = True,  secondReturned = False, threw = False }
+
+-- | A pair of queue bearers, each writing what the other reads, for the send
+-- properties.
+queueBearerPair :: (MonadSTM m, MonadMonotonicTime m, MonadThrow m)
+                => m (Mx.Bearer m, Mx.Bearer m)
+queueBearerPair = do
+    client_w <- atomically $ newTBQueue 10
+    client_r <- atomically $ newTBQueue 10
+    clientBearer <- getBearer makeQueueChannelBearer (-1)
+                      QueueChannel { writeQueue = client_w, readQueue = client_r } Nothing
+    serverBearer <- getBearer makeQueueChannelBearer (-1)
+                      QueueChannel { writeQueue = client_r, readQueue = client_w } Nothing
+    return (clientBearer, serverBearer)
+
+-- | The mini-protocol the send properties run, in a direction.
+sendProtocol :: Mx.MiniProtocolNum
+sendProtocol = Mx.MiniProtocolNum 2
+
+-- | The mini-protocol's info, in a direction.
+sendProtocolInfo :: Mx.MiniProtocolDirection mode -> MiniProtocolInfo mode
+sendProtocolInfo dir =
+    MiniProtocolInfo {
+      miniProtocolNum        = sendProtocol,
+      miniProtocolDir        = dir,
+      miniProtocolLimits     = MiniProtocolLimits { maximumIngressQueue = 16000000 },
+      miniProtocolCapability = Nothing
+    }
+
+sendForcesPrefixOnly
+  :: forall m.
+     ( Alternative   (STM m)
+     , MonadAsync         m
+     , MonadDelay         m
+     , MonadEvaluate      m
+     , MonadFork          m
+     , MonadLabelledSTM   m
+     , MonadMask          m
+     , MonadTimer         m
+     , MonadThrow    (STM m)
+     )
+  => SendCase -> m SendOutcome
+sendForcesPrefixOnly c@SendCase { evaluated, chunkLength, inside, offset } = do
+    (clientBearer, serverBearer) <- queueBearerPair
+    serverMux <- Mx.new tracers [sendProtocolInfo Mx.ResponderDirection]
+    clientMux <- Mx.new Mx.nullTracers [sendProtocolInfo Mx.InitiatorDirection]
+    first   <- newTVarIO False
+    second  <- newTVarIO False
+    failed  <- newTVarIO False
+    entered <- newTVarIO False
+    let outcome :: STM m SendOutcome
+        outcome = SendOutcome <$> readTVar first <*> readTVar second <*> readTVar failed
+    withAsync (Mx.run serverMux (stuck serverBearer)) $ \_ ->
+      withAsync (Mx.run clientMux clientBearer) $ \_ -> do
+        -- A send that reaches the throwing chunk throws in the protocol's
+        -- thread; it is caught there, as a failing protocol takes the mux
+        -- down.
+        let sending :: StrictTVar m Bool -> BL.ByteString -> Mx.ByteChannel m -> m ()
+            sending var bs chan = do
+              r <- try (Mx.send chan bs)
+              case r of
+                   Left (_ :: ErrorCall) -> atomically (writeTVar failed True)
+                   Right ()              -> atomically (writeTVar var True)
+        _ <- Mx.runMiniProtocol serverMux sendProtocol Mx.ResponderDirection Mx.StartOnDemand $ \chan -> do
+               _ <- Mx.recv chan
+               sending first (message serverBearer) chan
+               atomically (writeTVar entered True)
+               sending second (BL8.pack "after") chan
+               return ((), Nothing)
+        _ <- Mx.runMiniProtocol clientMux sendProtocol Mx.InitiatorDirection Mx.StartEagerly $ \chan -> do
+               Mx.send chan (BL8.pack "req")
+               return ((), Nothing)
+        -- The second send has been entered and the outcome has reached the
+        -- one expected, within a bound; what must stay false has then stayed
+        -- so for a while.
+        _ <- timeout 5 $ atomically $ do
+               e <- readTVar entered
+               o <- outcome
+               check (e && o == sendExpected c)
+        threadDelay 0.1
+        atomically outcome
+  where
+    softLimit :: Int
+    softLimit = fromIntegral egressSoftBufferLimit
+
+    -- The bytes the bearer puts before the throwing chunk, in chunks, and
+    -- then the chunk.
+    message :: Mx.Bearer m -> BL.ByteString
+    message bearer = BL.fromChunks (map (`BS.replicate` 0x61) (chunks (bombAt bearer)))
+                     <> error "send: evaluated past the soft limit"
+
+    -- The bytes before the throwing chunk: inside, up to the limit; beyond,
+    -- past the limit, the batch the muxer takes, at most a batch size and
+    -- an SDU, the limit's worth the check counts past it, and the chunk
+    -- that may straddle.
+    bombAt :: Mx.Bearer m -> Int
+    bombAt bearer
+      | inside    = softLimit - offset
+      | otherwise = softLimit + 1 + Mx.batchSize bearer
+                  + fromIntegral (Mx.getSDUSize (Mx.sduSize bearer))
+                  + chunkLength + offset
+
+    chunks :: Int -> [Int]
+    chunks n | n <= 0    = []
+             | otherwise = min chunkLength n : chunks (n - chunkLength)
+
+    -- Evaluated as it is traced, in the protocol's thread.
+    evaluating :: Tracer m (Identity Mx.ChannelTrace)
+    evaluating = Tracer (emit (\(Identity ev) -> void (evaluate (length (show ev)))))
+
+    tracers :: Mx.Tracers m
+    tracers | evaluated = Mx.nullTracers { Mx.channelTracer = evaluating }
+            | otherwise = Mx.nullTracers
+
+    -- A bearer whose writes never complete.
+    stuck :: Mx.Bearer m -> Mx.Bearer m
+    stuck bearer = bearer { Mx.write     = \_ _ _ -> forever (threadDelay 1)
+                          , Mx.writeMany = \_ _ _ -> forever (threadDelay 1) }
+
+-- | The channel trace at the end of a send carries the message's length: a
+-- mini-protocol sends messages of drawn lengths, in chunks of a drawn size,
+-- through a mux whose bearer drains into another mux, and a channel tracer
+-- collecting every event sees each send's start followed by its end with the
+-- length. Some chunk sizes divide the soft limit, so that a chunk ends on it
+-- and a longer message's forcing stops there exactly.
+prop_mux_send_end_length :: Property
+prop_mux_send_end_length =
+    forAllShrink genCase shrinkCase $ \(chunk, lens) ->
+      case traverse project (runSimOrThrow (sendEvents chunk lens)) of
+           Left ev    -> counterexample ("unexpected channel event: " ++ show ev) False
+           Right seen -> seen === concat [ [Nothing, Just len] | len <- lens ]
+  where
+    softLimit :: Int
+    softLimit = fromIntegral egressSoftBufferLimit
+
+    -- A few messages, up to twice the soft limit, so a send waits behind
+    -- one, and few enough for the receiving mux's ingress queue; the limit
+    -- is 511 * 513.
+    genCase :: Gen (Int, [Int])
+    genCase = do
+      chunk <- frequency [ (1, pure 511), (1, pure 513), (2, choose (256, 20000)) ]
+      n     <- choose (1, 4)
+      lens  <- vectorOf n (frequency [ (1, pure softLimit), (1, pure (softLimit + 1))
+                                     , (3, choose (1, 2 * softLimit)) ])
+      return (chunk, lens)
+
+    shrinkCase :: (Int, [Int]) -> [(Int, [Int])]
+    shrinkCase (chunk, lens) =
+         [ (chunk, lens') | lens' <- shrinkList (filter (>= 1) . shrink) lens ]
+      ++ [ (chunk', lens)
+         | chunk' <- shrink chunk
+         , chunk' >= 256
+         ]
+
+    -- The length the trace at the end of a send carries, and nothing for the
+    -- trace at its start.
+    project :: Mx.ChannelTrace -> Either Mx.ChannelTrace (Maybe Int)
+    project (Mx.TraceChannelSendStart _)   = Right Nothing
+    project (Mx.TraceChannelSendEnd _ len) = Right (Just len)
+    project ev                             = Left ev
+
+-- | The channel events of a mini-protocol sending messages of the lengths
+-- given, in chunks of the length given, through a mux whose bearer drains
+-- into another mux.
+sendEvents
+  :: forall m.
+     ( Alternative   (STM m)
+     , MonadAsync         m
+     , MonadDelay         m
+     , MonadEvaluate      m
+     , MonadFork          m
+     , MonadLabelledSTM   m
+     , MonadMask          m
+     , MonadTimer         m
+     , MonadThrow    (STM m)
+     )
+  => Int -> [Int] -> m [Mx.ChannelTrace]
+sendEvents chunk lens = do
+    (clientBearer, serverBearer) <- queueBearerPair
+    events <- newTVarIO []
+    let collecting :: Tracer m (Identity Mx.ChannelTrace)
+        collecting = Tracer (emit (\(Identity ev) -> atomically (modifyTVar events (ev :))))
+        tracers :: Mx.Tracers m
+        tracers = Mx.nullTracers { Mx.channelTracer = collecting }
+    clientMux <- Mx.new tracers [sendProtocolInfo Mx.InitiatorDirection]
+    serverMux <- Mx.new Mx.nullTracers [sendProtocolInfo Mx.ResponderDirection]
+    withAsync (Mx.run clientMux clientBearer) $ \_ ->
+      withAsync (Mx.run serverMux serverBearer) $ \_ -> do
+        done <- Mx.runMiniProtocol clientMux sendProtocol Mx.InitiatorDirection Mx.StartEagerly $ \chan -> do
+                  forM_ lens $ \len -> Mx.send chan (message len)
+                  return ((), Nothing)
+        _ <- atomically done
+        reverse <$> readTVarIO events
+  where
+    message :: Int -> BL.ByteString
+    message len = BL.fromChunks (replicate (len `div` chunk) (BS.replicate chunk 0x61)
+                                 ++ [ BS.replicate (len `mod` chunk) 0x61 | len `mod` chunk > 0 ])

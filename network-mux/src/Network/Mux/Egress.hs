@@ -12,10 +12,12 @@ module Network.Mux.Egress
   , EgressQueue
   , TranslocationServiceRequest (..)
   , Wanton (..)
+  , egressSoftBufferLimit
   ) where
 
 import Control.Monad
 import Data.ByteString.Lazy qualified as BL
+import Data.Int (Int64)
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadAsync
@@ -127,6 +129,22 @@ data TranslocationServiceRequest m =
 --  TVar becoming empty indicates -- that the last fragment of the data has
 --  been enqueued on the -- underlying bearer.
 newtype Wanton m = Wanton { want :: StrictTVar m BL.ByteString }
+
+-- | A soft limit on the egress buffer ('Wanton') size, 0x3ffff bytes, one
+-- short of 256 KiB. A mini-protocol's send appends to its buffer only while
+-- the buffer holds fewer bytes, and forces its message's encoding up to it,
+-- to a chunk boundary; the one limit bounds both by design: the check counts
+-- the buffer no further, and a message within it is admitted whole and
+-- forced whole. A sender blocked behind the limit holds its buffer, the
+-- limit's worth and more, and the forced prefix of the message it waits
+-- with, so a channel's forced footprint is up to about twice the limit.
+--
+-- There is no hard limit: an investigation showed that one would only limit
+-- the performance of data-intensive mini-protocols, and the mux is already
+-- fair when the bandwidth is limited. See issue #5271.
+--
+egressSoftBufferLimit :: Int64
+egressSoftBufferLimit = 0x3ffff
 
 
 -- | Process the messages from the mini protocols - there is a single
