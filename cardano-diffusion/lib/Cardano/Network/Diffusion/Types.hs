@@ -87,9 +87,14 @@ data CardanoConsensusArguments ntnAddr m =
     -- `readUseBootstrapPeers` is created in `cardano-node`, then passed to
     -- consensus through `RunNodeArgs`, from which it is passed to diffusion.
 
-    freshBytes             :: Maybe (STM m Int)
+    freshBytes             :: STM m Int,
     -- ^ the bytes the chain has freshly announced, counted by consensus; the
     -- egress credit buckets refill from it (see `Diffusion.daFreshBytes`)
+
+    freshMaxBytes          :: STM m Int
+    -- ^ the most bytes one announcement can carry under the chain's current
+    -- parameters, from consensus; sizes the egress credit buckets (see
+    -- `Diffusion.daFreshMaxBytes`)
   }
 
 type CardanoTracers m =

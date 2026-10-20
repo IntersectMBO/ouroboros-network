@@ -133,10 +133,6 @@ defaultEgressSchedulingWith laneOf = EgressScheduling {
     -- governor's 600 s of fuzz each, plus the time it waits for the demotions
     -- of the second to complete: a partner has outlived two churns for certain
     esTenureThreshold = 2 * (defaultDeadlineChurnInterval + 600) + deactivateTimeout,
-    -- an 88 kB block, a 37 kB list and a 1 MiB closure, announced in one
-    -- block out of twenty slots
-    esFreshMaxBytes       = 88000 + 37000 + 1048576,
-    esFreshBytesPerSecond = fromIntegral (88000 + 37000 + 1048576 :: Int) * 0.05,
     -- about a quarter of an hour; a prime, like the other periods, so it does
     -- not compete with them
     esStrangerLock        = 887,

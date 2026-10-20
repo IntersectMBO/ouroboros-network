@@ -27,6 +27,7 @@ tests =
   testGroup "Ouroboros.Network.Diffusion.EgressRule"
     [ testProperty "a connection's rule and sink follow the decision table" prop_rule
     , testProperty "a stranger's lock is wall-clock time, whatever the reading does" prop_lock_is_time
+    , testProperty "the allowance is read at every use, so a smaller one caps a charge at once" prop_allowance_follows_reading
     , testProperty "the floor's classes and the turns threshold follow the rule's tiers" prop_floorClass_follows_rank
     , testProperty "a relay queued dry is served once its credit refills" prop_refill_reaches_queued
     ]
@@ -136,7 +137,7 @@ model Case { cStanding, cPools, cUncharged, cLock, cOps } =
 -- | The same, through 'mkEgressRule' and the buckets in IOSim.
 run :: Case -> ([Rank], [Charged])
 run Case { cStanding, cPools, cUncharged, cLock, cOps } = runSimOrThrow $ do
-    pa <- newPoolAllowances allowance (return . clock) (realToFrac cLock)
+    pa <- newPoolAllowances (return allowance) (return . clock) (realToFrac cLock)
     let key   = "peer" :: String
         k     = length cPools
         index = if k > 0 then Map.singleton key [0 .. k - 1] else Map.empty
@@ -189,7 +190,7 @@ prop_refill_reaches_queued :: Property
 prop_refill_reaches_queued = once $ runSimOrThrow $ do
     budget <- Bucket.newBucket 1000 100 (Just (Bucket.Rotation 42 599 4))
     Bucket.attachFloor budget 0.1
-    pa <- newPoolAllowances (Allowance 100) (return . freshAt 100 (Time 0)) 1
+    pa <- newPoolAllowances (return (Allowance 100)) (return . freshAt 100 (Time 0)) 1
     atomically $ rebuild pa (Time 0) 1 (Map.singleton ("relay" :: String) [0])
     (rule, sink) <- mkEgressRule pa [] "relay" (const (return Other)) (Time 0)
     roots <- forM [1 .. 2 :: Int] $ \_ -> do
@@ -272,9 +273,56 @@ prop_lock_is_time (Positive rate) (NonNegative lock) before (Positive delay) =
     -- some point before the lock (the lock itself when there is none)
     tEarly = lock * (before - fromIntegral (floor before :: Int)) * 0.999
     (early, opening, later) = runSimOrThrow $ do
-      pa <- newPoolAllowances allowance (return . reading) (realToFrac lock)
+      pa <- newPoolAllowances (return allowance) (return . reading) (realToFrac lock)
       (rule, _) <- mkEgressRule pa [] ("peer" :: String) (const (return Other)) (at 0)
       e <- atomically (rule (at tEarly))
       o <- atomically (rule (at lock))
       l <- atomically (rule (at (lock + delay)))
       return (e, o, l)
+
+-- | The requirement behind reading the allowance at every use: when the chain's
+-- maxima shrink, a bucket's credit is capped at the new capacity from the next
+-- use on. A pool relay with a full bucket under a large allowance; the
+-- allowance is switched to a small one; a charge of at least the small
+-- capacity drains the bucket, so the next ask leaves the pool's tier, whereas
+-- under the large allowance the same charge would not have.
+prop_allowance_follows_reading :: Positive Int -> Positive Int -> Positive Int -> Property
+prop_allowance_follows_reading (Positive big) (Positive small0) (Positive extra) =
+    counterexample ("after the switch and a charge of " ++ show n ++ ": " ++ show (afterSwitch, stillBig)) $
+      conjoin
+        [ counterexample "the charge did not drain the bucket at the small allowance" (afterSwitch === Rank 4)
+        , counterexample "the same charge drained it at the large allowance" (stillBig === Rank 2)
+        ]
+  where
+    small = min small0 big
+    large = Allowance (big + small)          -- strictly larger capacity than the small one
+    tiny  = Allowance small
+    -- at least the small capacity, short of the large one: drains the one, not the other
+    n     = capacity tiny + extra `mod` (capacity large - capacity tiny)
+    reading = freshAt 1000 (Time 0)
+    key = "relay" :: String
+    (afterSwitch, stillBig) = runSimOrThrow $ do
+      alVar <- newTVarIO large
+      pa <- newPoolAllowances (readTVar alVar) (return . reading) 0
+      atomically $ rebuild pa (at 0) 1 (Map.singleton key [0])
+      buckets <- readTVarIO (paBuckets pa)
+      -- the bucket full under the large allowance
+      atomically $ writeTVar (buckets IntMap.! 0) (resetCharged large (reading (at 0)))
+      (rule, sink) <- mkEgressRule pa [] key (const (return Other)) (at 0)
+      r0 <- atomically (rule (at 0))
+      -- switch, charge, ask
+      a <- atomically $ do
+        writeTVar alVar tiny
+        sink (at 0) (MiniProtocolNum 2) n
+        rule (at 0)
+      -- the same from a full bucket under the large allowance alone
+      pa' <- newPoolAllowances (return large) (return . reading) 0
+      atomically $ rebuild pa' (at 0) 1 (Map.singleton key [0])
+      buckets' <- readTVarIO (paBuckets pa')
+      atomically $ writeTVar (buckets' IntMap.! 0) (resetCharged large (reading (at 0)))
+      (rule', sink') <- mkEgressRule pa' [] key (const (return Other)) (at 0)
+      b <- atomically $ do
+        _ <- rule' (at 0)
+        sink' (at 0) (MiniProtocolNum 2) n
+        rule' (at 0)
+      return (if r0 == Rank 2 then a else Rank 0, b)

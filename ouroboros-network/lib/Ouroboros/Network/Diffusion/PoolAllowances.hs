@@ -111,9 +111,11 @@ freshAt rate t0 now = Fresh (max 0 (floor (rate * realToFrac (now `diffTime` t0)
 -- the number of pools changes; the generation lets a bearer notice and look
 -- its buckets up again. A stranger's own bucket is locked for
 -- 'paStrangerLock' of wall-clock time from its connection's start, then opens
--- empty at that moment's reading and fills at the fresh rate.
+-- empty at that moment's reading and fills at the fresh rate. The allowance
+-- is read at every use, so a parameter change on the chain takes effect at the
+-- next one: credit above a smaller capacity is clamped, a larger one has room.
 data PoolAllowances m addr = PoolAllowances {
-    paAllowance    :: !Allowance,
+    paAllowance    :: !(STM m Allowance),
     paFreshAt      :: !(Time -> STM m Fresh),
     paStrangerLock :: !DiffTime,
     paGeneration   :: !(StrictTVar m Int),
@@ -123,7 +125,7 @@ data PoolAllowances m addr = PoolAllowances {
   }
 
 newPoolAllowances :: MonadSTM m
-                  => Allowance -> (Time -> STM m Fresh) -> DiffTime -> m (PoolAllowances m addr)
+                  => STM m Allowance -> (Time -> STM m Fresh) -> DiffTime -> m (PoolAllowances m addr)
 newPoolAllowances paAllowance paFreshAt paStrangerLock = do
   paGeneration <- newTVarIO 0
   paIndexGen   <- newTVarIO 0
@@ -176,15 +178,17 @@ bucketsFor PoolAllowances { .. } addr = do
 hasCredit :: MonadSTM m
           => PoolAllowances m addr -> Time -> [StrictTVar m Charged] -> STM m Bool
 hasCredit PoolAllowances { paAllowance, paFreshAt } now tvs = do
+  al    <- paAllowance
   fresh <- paFreshAt now
-  or <$> mapM (\tv -> (> 0) . credit paAllowance fresh <$> readTVar tv) tvs
+  or <$> mapM (\tv -> (> 0) . credit al fresh <$> readTVar tv) tvs
 
 -- | Charge every bucket that has credit at @now@.
 chargeBuckets :: MonadSTM m
               => PoolAllowances m addr -> Time -> Int -> [StrictTVar m Charged] -> STM m ()
 chargeBuckets PoolAllowances { paAllowance, paFreshAt } now n tvs = do
+  al    <- paAllowance
   fresh <- paFreshAt now
-  mapM_ (\tv -> modifyTVar tv (charge paAllowance fresh n)) tvs
+  mapM_ (\tv -> modifyTVar tv (charge al fresh n)) tvs
 
 -- | What the governor says about a peer, read as its bearer queues.
 data Standing = LocalRoot | Partner | Other
@@ -256,7 +260,8 @@ mkEgressRule allowances@PoolAllowances { paAllowance, paFreshAt, paStrangerLock,
       chargeOwn now fresh n = do
         mb <- ownAt now fresh
         case mb of
-             Just ch -> writeTVar own (Just (charge paAllowance fresh n ch))
+             Just ch -> do al <- paAllowance
+                           writeTVar own (Just (charge al fresh n ch))
              Nothing -> return ()
       buckets = do
         ref <- readTVar cached
@@ -275,8 +280,9 @@ mkEgressRule allowances@PoolAllowances { paAllowance, paFreshAt, paStrangerLock,
              LocalRoot -> return (rankFor LocalRoot False Nothing)
              _ -> do
                bs <- buckets
+               al        <- paAllowance
                fresh     <- paFreshAt now
-               ownCredit <- maybe False ((> 0) . credit paAllowance fresh) <$> ownAt now fresh
+               ownCredit <- maybe False ((> 0) . credit al fresh) <$> ownAt now fresh
                pools     <- case bs of
                                  [] -> return Nothing
                                  _  -> Just <$> hasCredit allowances now bs
