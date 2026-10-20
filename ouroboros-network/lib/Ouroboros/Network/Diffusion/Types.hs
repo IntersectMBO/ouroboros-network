@@ -484,11 +484,17 @@ data Arguments extraState extraDebugState extraFlags extraPeers
     --
   , daEgressPoolKey :: ntnAddr -> ntnAddr
 
-    -- | The bytes the chain has freshly announced, a monotone count that
-    -- refills the egress credit buckets; without one they refill by a clock
-    -- from the protocol parameters
+    -- | The bytes the chain has freshly announced, a monotone count from
+    -- consensus that refills the egress credit buckets
     --
-  , daFreshBytes :: Maybe (STM m Int)
+  , daFreshBytes :: STM m Int
+
+    -- | The most bytes one announcement can carry under the chain's current
+    -- parameters, from consensus: the block body plus, where the chain has
+    -- Leios, an endorser block and its closure, each at its maximum. Sizes
+    -- the credit buckets and follows the parameters as they change.
+    --
+  , daFreshMaxBytes :: STM m Int
   }
 
 -- | Required Diffusion Arguments to run network layer
@@ -634,12 +640,6 @@ data EgressScheduling = EgressScheduling {
     esTenureThreshold     :: DiffTime,
     -- ^ how long a duplex peer must have been hot upstream before, hot both
     -- ways, it is served as a partner: tier 1, behind local roots
-    esFreshMaxBytes       :: Int,
-    -- ^ the most fresh bytes one object can announce: block body, EB list and
-    -- EB closure at their maxima; sizes the residual tier's credit buckets
-    esFreshBytesPerSecond :: Double,
-    -- ^ the prototype's refill reading: 'esFreshMaxBytes' times the active
-    -- slot coefficient, until consensus counts announcements instead
     esStrangerLock        :: DiffTime,
     -- ^ how long a stranger stays connected before its own bucket opens:
     -- wall-clock time from the connection; the bucket then opens empty at

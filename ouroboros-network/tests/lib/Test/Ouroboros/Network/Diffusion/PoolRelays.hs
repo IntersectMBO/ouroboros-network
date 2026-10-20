@@ -306,7 +306,7 @@ newHarness slow = do
     timeouts   <- initScript' (singletonScript (DNSTimeout 10))
     delays     <- initScript' (singletonScript (DNSLookupDelay 0.01))
     semaphore  <- newPoolRelaysDNSSemaphore
-    allowances <- newPoolAllowances testAllowance (const (return (Fresh 0))) 0
+    allowances <- newPoolAllowances (return testAllowance) (const (return (Fresh 0))) 0
     inFlight   <- newTVarIO (0 :: Int, 0 :: Int)      -- now, and the most ever
     let apply Phase { phPools, phDns, phSrv, phTransient, phSrvTransient } = atomically $ do
           writeTVar ledgerVar (maybe [] toLedger phPools)

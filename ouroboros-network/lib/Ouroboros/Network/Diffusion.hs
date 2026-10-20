@@ -224,6 +224,7 @@ runM Interfaces
        , daSRVPrefix
        , daEgressPoolKey
        , daFreshBytes
+       , daFreshMaxBytes
        }
      Configuration
        { dcIPv4Address
@@ -268,14 +269,12 @@ runM Interfaces
     -- and read by the counters loop
     egressPolicy <- traverse mkEgressPolicy dcEgressScheduling
     -- the residual tier's credit buckets, one per big-ledger pool, refilled
-    -- by the bytes the chain freshly announces, or without that count by the
-    -- clock from the protocol parameters; a stranger's own bucket is locked
-    -- for 'esStrangerLock' of wall-clock time from its connection
-    t0 <- getMonotonicTime
-    poolAllowances <- traverse (\es -> newPoolAllowances (Allowance (esFreshMaxBytes es))
-                                                         (case daFreshBytes of
-                                                            Just fresh -> \_ -> Fresh <$> fresh
-                                                            Nothing    -> return . freshAt (esFreshBytesPerSecond es) t0)
+    -- by the bytes the chain freshly announces and sized by the most one
+    -- announcement can carry, both read from consensus; a stranger's own
+    -- bucket is locked for 'esStrangerLock' of wall-clock time from its
+    -- connection
+    poolAllowances <- traverse (\es -> newPoolAllowances (Allowance <$> daFreshMaxBytes)
+                                                         (\_ -> Fresh <$> daFreshBytes)
                                                          (esStrangerLock es))
                                dcEgressScheduling
     localCounters  <- Mx.newMuxCounters

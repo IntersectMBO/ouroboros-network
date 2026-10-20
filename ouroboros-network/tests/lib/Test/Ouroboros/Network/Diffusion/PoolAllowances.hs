@@ -224,7 +224,7 @@ prop_rule_follows_reindex (Reindexes n steps) =
                  | a <- addresses, let ps = Map.findWithDefault [] a idx ]
                | (idx, credited) <- steps ]
     observed = runSimOrThrow $ do
-      pa <- newPoolAllowances (Allowance 1_000) (const (return (Fresh 0))) 1_000_000
+      pa <- newPoolAllowances (return (Allowance 1_000)) (const (return (Fresh 0))) 1_000_000
       atomically $ rebuild pa (Time 0) n Map.empty
       rules <- mapM (\a -> fst <$> mkEgressRule pa [] a (\_ -> return Other) (Time 0)) addresses
       -- every rule looks its buckets up once, before the first reindex
