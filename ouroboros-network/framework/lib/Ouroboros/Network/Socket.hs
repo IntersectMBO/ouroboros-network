@@ -91,6 +91,8 @@ import Network.Mux.Bearer qualified as Mx
 import Network.Mux.DeltaQ.TraceTransformer
 import Network.TypedProtocol.Codec hiding (decode, encode)
 
+import Ouroboros.Network.ConnectionManager.Types (DataFlow (..),
+           Provenance (..))
 import Ouroboros.Network.Context
 import Ouroboros.Network.Driver.Limits
 import Ouroboros.Network.Handshake (HandshakeCallbacks (..))
@@ -289,13 +291,16 @@ connectToNode
   -> ConnectToArgs m fd addr vNumber vData
   -> (fd -> m ()) -- ^ configure socket
   -> Versions vNumber vData (OuroborosApplicationWithMinimalCtx muxMode addr BL.ByteString m a b)
+  -> (vData -> DataFlow)
+  -- ^ Unidirectional or Duplex based on handshake, ref. implementation 'ntnDataFlow'
   -> Maybe addr
   -- ^ local address; the created socket will bind to it
   -> addr
   -- ^ remote address
   -> m (Either SomeException (Either a b))
-connectToNode sn mkBearer args configureSock versions localAddr remoteAddr =
-  connectToNodeWithMux sn mkBearer args configureSock versions localAddr remoteAddr simpleMuxCallback
+connectToNode sn mkBearer args configureSock versions negotiatedDataFlow localAddr remoteAddr =
+  connectToNodeWithMux sn mkBearer args configureSock versions
+                       negotiatedDataFlow localAddr remoteAddr simpleMuxCallback
 
 
 -- | A version `connectToNode` which allows one to control which mini-protocols
@@ -327,9 +332,12 @@ connectToNodeWithMux
   -> (fd -> m ()) -- ^ configure socket
   -> Versions vNumber vData (OuroborosApplicationWithMinimalCtx muxMode addr BL.ByteString m a b)
   -- ^ application to run over the connection
-  -- ^ remote address
+  -> (vData -> DataFlow)
+  -- ^ Unidirectional or Duplex based on handshake, ref. implementation 'ntnDataFlow'
   -> Maybe addr
+  -- ^ local address
   -> addr
+  -- ^ remote address
   -> (    ConnectionId addr
        -> vNumber
        -> vData
@@ -343,7 +351,7 @@ connectToNodeWithMux
   --
   -- NOTE: when the callback returns or errors, the mux thread will be killed.
   -> m x
-connectToNodeWithMux sn mkBearer args configureSock versions localAddr remoteAddr k
+connectToNodeWithMux sn mkBearer args configureSock versions negotiatedDataFlow localAddr remoteAddr k
   =
   bracket
     (Snocket.openToConnect sn remoteAddr)
@@ -352,7 +360,7 @@ connectToNodeWithMux sn mkBearer args configureSock versions localAddr remoteAdd
       configureSock sd
       traverse_ (Snocket.bind sn sd) localAddr
       Snocket.connect sn sd remoteAddr
-      connectToNodeWithMux' sn mkBearer args versions sd k
+      connectToNodeWithMux' sn mkBearer args versions negotiatedDataFlow sd k
     )
 
 
@@ -392,10 +400,12 @@ connectToNode'
   -- ^ a configured socket to use to connect to a remote service provider
   -> Versions vNumber vData (OuroborosApplicationWithMinimalCtx muxMode addr BL.ByteString m a b)
   -- ^ application to run over the connection
+  -> (vData -> DataFlow)
+  -- ^ Unidirectional or Duplex based on handshake, ref. implementation 'ntnDataFlow'
   -> fd
   -> m (Either SomeException (Either a b))
-connectToNode' sn mkBearer args versions as =
-  connectToNodeWithMux' sn mkBearer args versions as simpleMuxCallback
+connectToNode' sn mkBearer args versions negotiatedDataFlow as =
+  connectToNodeWithMux' sn mkBearer args versions negotiatedDataFlow as simpleMuxCallback
 
 
 connectToNodeWithMux'
@@ -424,8 +434,10 @@ connectToNodeWithMux'
   -> ConnectToArgs m fd addr vNumber vData
   -> Versions vNumber vData (OuroborosApplicationWithMinimalCtx muxMode addr BL.ByteString m a b)
   -- ^ application to run over the connection
-  -- ^ a configured socket to use to connect to a remote service provider
+  -> (vData -> DataFlow)
+  -- ^ Unidirectional or Duplex based on handshake, ref. implementation 'ntnDataFlow'
   -> fd
+  -- ^ a configured socket to use to connect to a remote service provider
   -> (    ConnectionId addr
        -> vNumber
        -> vData
@@ -452,7 +464,7 @@ connectToNodeWithMux'
         },
       ctaHandshakeCallbacks  = handshakeCallbacks
   }
-  versions sd k = do
+  versions negotiatedDataFlow sd k = do
     connectionId <- (\localAddress remoteAddress -> ConnectionId { localAddress, remoteAddress })
                 <$> Snocket.getLocalAddr sn sd <*> Snocket.getRemoteAddr sn sd
     muxTracers <- initDeltaQTracers $ Mx.tracersWithBearer connectionId nctMuxTracers
@@ -483,7 +495,11 @@ connectToNodeWithMux'
        Right (HandshakeNegotiationResult app versionNumber agreedOptions) ->
          Mx.withReadBufferIO $ \buffer -> do
            bearer <- Mx.getBearer makeBearer sduTimeout sd buffer
-           mux <- Mx.new muxTracers (toMiniProtocolInfos (runForkPolicy noBindForkPolicy remoteAddress) app)
+           let mpInfos = toMiniProtocolInfos (runForkPolicy noBindForkPolicy remoteAddress)
+                                             Outbound
+                                             (negotiatedDataFlow agreedOptions)
+                                             app
+           mux <- Mx.new muxTracers mpInfos
            withAsync (Mx.run mux bearer) $ \aid ->
              k connectionId versionNumber agreedOptions app mux aid
 
@@ -562,14 +578,17 @@ connectToNodeSocket
   -> ConnectToArgs IO Socket.Socket Socket.SockAddr vNumber vData
   -> Versions vNumber vData (OuroborosApplicationWithMinimalCtx muxMode Socket.SockAddr BL.ByteString IO a b)
   -- ^ application to run over the connection
+  -> (vData -> DataFlow)
+  -- ^ Unidirectional or Duplex based on handshake, ref. implementation 'ntnDataFlow'
   -> Socket.Socket
   -> IO (Either SomeException (Either a b))
-connectToNodeSocket iocp args versions sd =
+connectToNodeSocket iocp args versions negotiatedDataFlow sd =
     connectToNode'
       (Snocket.socketSnocket iocp)
       Mx.makeSocketBearer
       args
       versions
+      negotiatedDataFlow
       sd
 
 -- | Wrapper for OuroborosResponderApplication and

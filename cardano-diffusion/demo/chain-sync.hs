@@ -80,6 +80,7 @@ import Ouroboros.Network.BlockFetch.ConsensusInterface (ChainSelStarvation (..),
            initialWithFingerprint)
 import Ouroboros.Network.DeltaQ (defaultGSV)
 
+import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.Server.Simple qualified as Server.Simple
 
 
@@ -244,6 +245,7 @@ clientChainSync sockPaths maxSlotNo = withIOManager $ \iocp ->
            UnversionedProtocol
            UnversionedProtocolData
            (\_ -> app))
+        (const Unidirectional)
         Nothing
         (localAddressFromPath sockPath)
 
@@ -285,7 +287,8 @@ serverChainSync sockAddr slotLength seed = withIOManager $ \iocp -> do
       (simpleSingletonVersions
         UnversionedProtocol
         UnversionedProtocolData
-      (\_ -> SomeResponderApplication (app prng)))
+        (\_ -> SomeResponderApplication (app prng)))
+      (const Unidirectional)
       $ \_ serverAsync ->
         wait serverAsync   -- block until async exception
   where
@@ -496,6 +499,7 @@ clientBlockFetch sockAddrs maxSlotNo = withIOManager $ \iocp -> do
                             UnversionedProtocol
                             UnversionedProtocolData
                             (\_ -> app))
+                          (const Unidirectional)
                           Nothing
                           (localAddressFromPath sockAddr)
                     | sockAddr <- sockAddrs ]
@@ -566,6 +570,7 @@ serverBlockFetch sockAddr slotLength seed = withIOManager $ \iocp -> do
         UnversionedProtocol
         UnversionedProtocolData
         (\_ -> SomeResponderApplication (app prng)))
+      (const Unidirectional)
       $ \_ serverAsync ->
         wait serverAsync   -- block until async exception
   where
@@ -896,4 +901,3 @@ shiftAnchoredFragment :: HasHeader block
                       -> AF.AnchoredFragment block
 shiftAnchoredFragment n b af =
   AF.anchorNewest (fromIntegral (AF.length af - n)) af AF.:> b
-

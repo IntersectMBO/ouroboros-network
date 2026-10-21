@@ -2,6 +2,16 @@
 
 <!-- scriv-insert-here -->
 
+<a id='changelog-1.3.0.1'></a>
+## 1.3.0.1 -- 2026-10-21
+
+### Patch
+
+- The governor applies a changed advertise flag of an existing local root to
+  its known peers, so revoking it stops the peer being shared.
+
+- Integrate changes in framework
+
 <a id='changelog-1.3.0.0'></a>
 ## 1.3.0.0 -- 2026-10-01
 

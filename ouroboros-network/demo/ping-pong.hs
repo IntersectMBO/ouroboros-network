@@ -35,6 +35,7 @@ import Ouroboros.Network.Snocket qualified as Snocket
 import Ouroboros.Network.Socket
 import Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 
+import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.Protocol.Handshake (HandshakeArguments (..))
 import Ouroboros.Network.Protocol.Handshake.Codec
 import Ouroboros.Network.Protocol.Handshake.Unversioned
@@ -137,6 +138,7 @@ clientPingPong pipelined =
       }
       mempty
       (unversionedProtocol app)
+      (const Unidirectional)
       Nothing
       defaultLocalSocketAddr
   where
@@ -181,6 +183,7 @@ serverPingPong =
         haTimeLimits            = noTimeLimitsHandshake
       }
       (unversionedProtocol (SomeResponderApplication app))
+      (const Unidirectional)
       $ \_ serverAsync -> wait serverAsync -- block until server finishes
   where
     app :: OuroborosApplicationWithMinimalCtx
@@ -234,6 +237,7 @@ clientPingPong2 flood =
       }
       mempty
       (unversionedProtocol app)
+      (const Unidirectional)
       Nothing
       defaultLocalSocketAddr
   where
@@ -283,6 +287,7 @@ serverPingPong2 =
         haTimeLimits       = noTimeLimitsHandshake
       }
       (unversionedProtocol (SomeResponderApplication app))
+      (const Unidirectional)
       $ \_ serverAsync -> wait serverAsync -- block until async exception
   where
     app :: OuroborosApplicationWithMinimalCtx
@@ -304,5 +309,3 @@ serverPingPong2 =
         , codecPingPong
         , pingPongServerPeer pingPongServerStandard
         )
-
-
