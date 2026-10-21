@@ -992,8 +992,7 @@ firstPeerCommitRemote
 
 
 data IGAssertionLocation peerAddr
-  = InboundGovernorLoop !(Maybe (ConnectionId peerAddr)) !AbstractState
-  | InboundGovernorMuxTracer !(ConnectionId peerAddr) !MiniProtocolNum
+  = InboundGovernorMuxTracer !(ConnectionId peerAddr) !MiniProtocolNum
     -- ^ a responder of a connection registered by the inbound governor
     -- started or terminated, but the inbound governor does not track the
     -- responders of the connection any more.
