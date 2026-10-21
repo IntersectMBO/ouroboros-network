@@ -32,6 +32,7 @@ import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTimer.SI
+import Control.Monad.Class.MonadUnique (MonadUnique)
 import Control.Tracer (Tracer, contramap)
 
 import Codec.CBOR.Read qualified as CBOR
@@ -143,6 +144,7 @@ runHandshakeClient
        , MonadEvaluate m
        , MonadFork m
        , MonadTimer m
+       , MonadUnique m
        , MonadMask m
        , MonadThrow (STM m)
        , Ord versionNumber
@@ -184,6 +186,7 @@ runHandshakeClientWithRTT
        , MonadEvaluate m
        , MonadFork m
        , MonadTimer m
+       , MonadUnique m
        , MonadMask m
        , MonadThrow (STM m)
        , Ord versionNumber
@@ -241,6 +244,7 @@ runHandshakeServer
        , MonadEvaluate m
        , MonadFork m
        , MonadTimer m
+       , MonadUnique m
        , MonadMask m
        , MonadThrow (STM m)
        , Ord versionNumber

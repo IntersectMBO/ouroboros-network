@@ -22,6 +22,7 @@ import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTimer.SI
+import Control.Monad.Class.MonadUnique (MonadUnique)
 import Control.Tracer (Tracer, traceWith)
 import Data.ByteString.Lazy qualified as BL
 import Data.Functor (void)
@@ -52,6 +53,7 @@ with :: forall fd addr vNumber vData m a b.
           MonadLabelledSTM m,
           MonadMask  m,
           MonadTimer m,
+          MonadUnique m,
           MonadThrow (STM m),
           NFData vData,
           NFData vNumber,

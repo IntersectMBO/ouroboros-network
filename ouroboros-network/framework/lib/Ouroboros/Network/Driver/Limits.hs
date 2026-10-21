@@ -55,6 +55,7 @@ import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTimer.SI
+import Control.Monad.Class.MonadUnique (MonadUnique)
 import Control.Tracer (Tracer (..), contramap, traceWith)
 
 import Network.Mux.Timeout
@@ -405,6 +406,7 @@ runPeerWithLimits
      , MonadMask m
      , MonadThrow (STM m)
      , MonadTimer m
+     , MonadUnique m
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
      , NFData a
@@ -434,6 +436,7 @@ runAnnotatedPeerWithLimits
      , MonadMask m
      , MonadThrow (STM m)
      , MonadTimer m
+     , MonadUnique m
      , Monoid bytes
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
@@ -465,6 +468,7 @@ runPeerWithLimitsRnd
      , MonadMask m
      , MonadThrow (STM m)
      , MonadTimer m
+     , MonadUnique m
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
      , NFData a
@@ -501,6 +505,7 @@ runPipelinedPeerWithLimits
      , MonadFork m
      , MonadMask m
      , MonadTimer m
+     , MonadUnique m
      , MonadThrow (STM m)
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
@@ -528,6 +533,7 @@ runPipelinedAnnotatedPeerWithLimits
      , MonadFork m
      , MonadMask m
      , MonadTimer m
+     , MonadUnique m
      , MonadThrow (STM m)
      , Monoid bytes
      , ShowProxy ps
@@ -559,6 +565,7 @@ runPipelinedPeerWithLimitsRnd
      , MonadFork m
      , MonadMask m
      , MonadTimer m
+     , MonadUnique m
      , MonadThrow (STM m)
      , ShowProxy ps
      , forall (st' :: ps) stok. stok ~ StateToken st' => Show stok
@@ -596,6 +603,7 @@ runConnectedPeersWithLimits
      , MonadFork        m
      , MonadMask        m
      , MonadTimer       m
+     , MonadUnique      m
      , MonadThrow  (STM m)
      , NFData a
      , NFData b
@@ -634,6 +642,7 @@ runConnectedPeersWithLimitsRnd
      , MonadFork        m
      , MonadMask        m
      , MonadTimer       m
+     , MonadUnique      m
      , MonadThrow  (STM m)
      , NFData a
      , NFData b
@@ -682,6 +691,7 @@ runConnectedPipelinedPeersWithLimits
      , MonadFork       m
      , MonadMask       m
      , MonadTimer      m
+     , MonadUnique     m
      , MonadThrow (STM m)
      , Exception failure
      , NFData a
@@ -718,6 +728,7 @@ runConnectedPipelinedPeersWithLimitsRnd
      , MonadFork       m
      , MonadMask       m
      , MonadTimer      m
+     , MonadUnique     m
      , MonadThrow (STM m)
      , Exception failure
      , NFData a

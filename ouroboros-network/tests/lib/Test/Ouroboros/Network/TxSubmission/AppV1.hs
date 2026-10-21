@@ -23,6 +23,7 @@ import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
+import Control.Monad.Class.MonadUnique (MonadUnique)
 import Control.Monad.IOSim hiding (SimResult)
 import Control.Tracer (Tracer (..), contramap, nullTracer)
 
@@ -72,6 +73,7 @@ txSubmissionSimulation
      , MonadSTM   m
      , MonadTime  m
      , MonadTimer m
+     , MonadUnique m
      , MonadThrow m
      , MonadThrow (STM m)
      , MonadMonotonicTime m

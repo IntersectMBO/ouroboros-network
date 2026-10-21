@@ -16,6 +16,7 @@ import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
+import Control.Monad.Class.MonadUnique (MonadUnique)
 import Control.Monad.IOSim
 import Control.Tracer
 import Data.ByteString.Lazy qualified as BL
@@ -50,6 +51,7 @@ runKeepAliveClient
         , MonadMask m
         , MonadST m
         , MonadTimer m
+        , MonadUnique m
         , MonadThrow (STM m)
         , Ord peer)
     => Tracer m (TraceKeepAliveClient peer)
@@ -79,6 +81,7 @@ runKeepAliveServer
         , MonadMask m
         , MonadST m
         , MonadTimer m
+        , MonadUnique m
         , MonadThrow (STM m)
         )
     => Channel m BL.ByteString
@@ -103,6 +106,7 @@ runKeepAliveClientAndServer
         , MonadSay m
         , MonadST m
         , MonadTimer m
+        , MonadUnique m
         , MonadThrow (STM m)
         , Ord peer
         )
@@ -142,6 +146,7 @@ prop_keepAlive_convergenceM
         , MonadSay m
         , MonadST m
         , MonadTimer m
+        , MonadUnique m
         , MonadThrow (STM m)
         )
     => Tracer m (TraceKeepAliveClient String)

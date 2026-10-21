@@ -22,6 +22,7 @@ import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
+import Control.Monad.Class.MonadUnique (MonadUnique)
 import Control.Monad.IOSim
 import Control.Tracer
 
@@ -97,6 +98,7 @@ demo :: forall m block.
         , MonadThrow (STM m)
         , MonadTime m
         , MonadTimer m
+        , MonadUnique m
         , Chain.HasHeader block
         , Serialise (Chain.HeaderHash block)
         , Serialise block
