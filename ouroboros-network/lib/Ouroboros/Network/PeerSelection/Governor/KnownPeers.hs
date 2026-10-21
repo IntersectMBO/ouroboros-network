@@ -244,6 +244,9 @@ newtype Objective = Objective { getObjective :: Int }
 --
 -- If we ask for more peers than needed a random subset of the peers in the filtered result
 -- is used.
+--
+-- A peer can disconnect while its request is in flight.  Back off failed
+-- requests only for peers which are still established when the results arrive.
 jobPeerShare
   :: forall m extraState extraDebugState extraFlags extraPeers
               extraAPI peeraddr peerconn.
@@ -323,7 +326,8 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
                            st { -- back off peers whose peer-share request failed
                                 establishedPeers =
                                   EstablishedPeers.setPeerShareTime
-                                    (Set.fromList [ p | (p, Left{}) <- peerResults ])
+                                    (Set.fromList [ p | (p, Left{}) <- peerResults
+                                                      , EstablishedPeers.member p (establishedPeers st) ])
                                     (addTime policyPeerShareFailureRetryTime now)
                                     (establishedPeers st),
                                 knownPeers = KnownPeers.alter
@@ -371,7 +375,8 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
                             st { -- back off peers whose peer-share request failed
                                  establishedPeers =
                                    EstablishedPeers.setPeerShareTime
-                                     (Set.fromList [ p | (p, Left{}) <- peerResults ])
+                                     (Set.fromList [ p | (p, Left{}) <- peerResults
+                                                       , EstablishedPeers.member p (establishedPeers st) ])
                                      (addTime policyPeerShareFailureRetryTime now)
                                      (establishedPeers st),
                                  knownPeers = KnownPeers.alter
@@ -440,7 +445,8 @@ jobPeerShare PeerSelectionActions{requestPeerShare}
                         st { -- back off peers whose peer-share request failed
                              establishedPeers =
                                EstablishedPeers.setPeerShareTime
-                                 (Set.fromList [ p | (p, Left{}) <- peerResults ])
+                                 (Set.fromList [ p | (p, Left{}) <- peerResults
+                                                   , EstablishedPeers.member p (establishedPeers st) ])
                                  (addTime policyPeerShareFailureRetryTime now)
                                  (establishedPeers st),
                              knownPeers = KnownPeers.alter
