@@ -186,7 +186,8 @@ with
     labelTVarIO stateVar "inbound-governor-state-var"
     activeVar <- newTVarIO True -- ^ inbound governor status: True = Active
     let connectionHandler =
-          mkConnectionHandler $ inboundGovernorMuxTracer infoChannel
+          mkConnectionHandler $ inboundGovernorMuxTracer tracer
+                                                         infoChannel
                                                          connectionDataFlow
                                                          stateVar
                                                          activeVar
@@ -399,17 +400,32 @@ with
 
           MuxFinished connId
             | Just mux <- csMux <$> Map.lookup connId (connections state) -> do
-                merr <- atomically $ Mux.stopped mux
-                case merr of
-                  Nothing  -> traceWith tracer (TrMuxCleanExit connId)
-                  Just err -> traceWith tracer (TrMuxErrored connId err)
+                -- The mux sets its status to `Stopped` or `Failed` before it
+                -- traces `TraceStopped` or `TraceState Dead`, hence the mux
+                -- which emitted `MuxFinished` is already stopped.  If the
+                -- registered mux is not, `MuxFinished` was emitted by
+                -- another mux which used the same `ConnectionId`, and the
+                -- registered connection must not be unregistered.  We must
+                -- not block either: waiting for the registered mux to stop
+                -- would stall the inbound governor.
+                mStopped <- atomically $ (Just <$> Mux.stopped mux)
+                                         `orElse` pure Nothing
+                case mStopped of
+                  Nothing -> do
+                    traceWith tracer (TrStaleMuxFinished connId)
+                    return Nothing
 
-                -- the connection manager does should realise this on itself.
-                let state' = updateCountersCache
-                           . unregisterConnection connId
-                           $ state
-                return . Just $ StateWithPeerTransition state' connId
-                -- ^ even though it might not be true, but it's benign
+                  Just merr -> do
+                    case merr of
+                      Nothing  -> traceWith tracer (TrMuxCleanExit connId)
+                      Just err -> traceWith tracer (TrMuxErrored connId err)
+
+                    -- the connection manager does should realise this on itself.
+                    let state' = updateCountersCache
+                               . unregisterConnection connId
+                               $ state
+                    return . Just $ StateWithPeerTransition state' connId
+                    -- ^ even though it might not be true, but it's benign
 
             -- we could legitimately hit here after 'CommitRemote' succeeded
             | otherwise -> return Nothing
@@ -624,20 +640,21 @@ with
 --
 inboundGovernorMuxTracer
   :: (MonadSTM m, Ord peerAddr)
-  => InboundGovernorInfoChannel muxMode initiatorCtx peerAddr versionData ByteString m a b
+  => Tracer m (Trace peerAddr)
+  -> InboundGovernorInfoChannel muxMode initiatorCtx peerAddr versionData ByteString m a b
   -> (versionData -> DataFlow)
   -> StrictTVar m (State muxMode initiatorCtx peerAddr versionData m a b)
   -> StrictTVar m Bool
   -> StrictTVar m (StrictMaybe ResponderCounters)
   -> Tracer m (Mux.WithBearer (ConnectionId peerAddr) Mux.Trace)
-inboundGovernorMuxTracer infoChannel connectionDataFlow stateVar activeVar countersVar =
+inboundGovernorMuxTracer tracer infoChannel connectionDataFlow stateVar activeVar countersVar =
   mkTracer \(Mux.WithBearer peer trace) -> do
     -- hello from muxer main thread
     -- code here is running in the context of the connection handler/muxer
     -- so care must be taken not to deadlock ourselves
     active <- readTVarIO activeVar
     case (trace, active) of
-      (_, True) | Just miniProtocolNum <- miniProtocolStarted trace -> atomically do
+      (_, True) | Just miniProtocolNum <- miniProtocolStarted trace -> traceAssertion =<< atomically do
         connections <- connections <$> readTVar stateVar
         mCounters   <- readTVar countersVar
         case (Map.lookup peer connections, mCounters) of
@@ -661,13 +678,14 @@ inboundGovernorMuxTracer infoChannel connectionDataFlow stateVar activeVar count
                     _orNot -> writeTVar countersVar $
                                 SJust rc { numTraceNonHotResponders =
                                              succ numTraceNonHotResponders }
+                  return Nothing
 
             case csRemoteState of
               -- we retry on expired because we let the IG
               -- loop handle this peer. If the connection is released,
               -- and CM reports CommitTr, this peer will disappear
               -- from the connections so on retry we will hit the
-              -- _otherwise clause instead and promotion will fail,
+              -- @(Nothing, _)@ clause instead and promotion will fail,
               -- as it should. Otherwise, if KeepTr is returned,
               -- we can handle 'AwakeRemote' from this peer.
               RemoteIdle timeoutSTM -> do
@@ -675,9 +693,17 @@ inboundGovernorMuxTracer infoChannel connectionDataFlow stateVar activeVar count
                 if expired then retry else commit
               _ -> commit
 
-          _otherwise -> writeTVar countersVar SNothing
+          -- the connection is registered, but its responders are not tracked
+          -- any more; this is not expected, since the connection is
+          -- registered before any of its responders can start.
+          (Just {}, SNothing) ->
+            return (Just (InboundGovernorMuxTracer peer miniProtocolNum))
 
-      (_, True) | Just (miniProtocolNum, tResult) <- miniProtocolTerminated trace -> atomically do
+          (Nothing, _) -> do
+            writeTVar countersVar SNothing
+            return Nothing
+
+      (_, True) | Just (miniProtocolNum, tResult) <- miniProtocolTerminated trace -> traceAssertion =<< atomically do
         connections <- connections <$> readTVar stateVar
         mCounters   <- readTVar countersVar
         case (Map.lookup peer connections, mCounters) of
@@ -712,8 +738,16 @@ inboundGovernorMuxTracer infoChannel connectionDataFlow stateVar activeVar count
                                              pred numTraceNonHotResponders }
 
               _otherwise -> writeTVar countersVar SNothing
+            return Nothing
 
-          _otherwise -> writeTVar countersVar SNothing
+          -- the connection is registered, but its responders are not tracked
+          -- any more; not expected, as for a started responder.
+          (Just {}, SNothing) ->
+            return (Just (InboundGovernorMuxTracer peer miniProtocolNum))
+
+          (Nothing, _) -> do
+            writeTVar countersVar SNothing
+            return Nothing
 
 
       (_, True) | muxStopped trace -> atomically do
@@ -723,6 +757,8 @@ inboundGovernorMuxTracer infoChannel connectionDataFlow stateVar activeVar count
 
       _otherwise -> return ()
     where
+      traceAssertion = mapM_ (traceWith tracer . TrUnexpectedlyFalseAssertion)
+
       muxStopped = \case
         Mux.TraceStopped -> True
         Mux.TraceState Mux.Dead -> True
@@ -956,7 +992,10 @@ firstPeerCommitRemote
 
 
 data IGAssertionLocation peerAddr
-  = InboundGovernorLoop !(Maybe (ConnectionId peerAddr)) !AbstractState
+  = InboundGovernorMuxTracer !(ConnectionId peerAddr) !MiniProtocolNum
+    -- ^ a responder of a connection registered by the inbound governor
+    -- started or terminated, but the inbound governor does not track the
+    -- responders of the connection any more.
   deriving Show
 
 data Trace peerAddr
@@ -977,7 +1016,12 @@ data Trace peerAddr
     | TrWaitIdleRemote               !(ConnectionId peerAddr) !(OperationResult AbstractState)
     | TrMuxCleanExit                 !(ConnectionId peerAddr)
     | TrMuxErrored                   !(ConnectionId peerAddr) SomeException
-    | TrInboundGovernorCounters      !Counters
+    | TrStaleMuxFinished             !(ConnectionId peerAddr)
+    -- ^ A mux of a connection stopped, but the mux of the connection
+    -- registered with the same `ConnectionId` is running, so it was emitted
+    -- by another connection which used the same `ConnectionId`.  It is
+    -- ignored.
+    | TrInboundGovernorCounters     !Counters
     | TrRemoteState                  !(Map (ConnectionId peerAddr) RemoteSt)
     | TrUnexpectedlyFalseAssertion   !(IGAssertionLocation peerAddr)
     -- ^ This case is unexpected at call site.
