@@ -223,6 +223,8 @@ runM Interfaces
        , daExtraChurnArgs
        , daSRVPrefix
        , daEgressPoolKey
+       , daFreshBytes
+       , daFreshMaxBytes
        }
      Configuration
        { dcIPv4Address
@@ -261,14 +263,14 @@ runM Interfaces
     -- Scheduled egress, when configured: the buckets behind it, shared by
     -- every node-to-node mux and read by the counters loop, and the
     -- residual tier's credit buckets, one per big-ledger pool, refilled by
-    -- the clock from the protocol parameters; a stranger's own bucket is
-    -- locked for what that clock reads over 'esStrangerLock'
-    t0 <- getMonotonicTime
+    -- the bytes the chain freshly announces and sized by the most one
+    -- announcement can carry, both read from consensus; a stranger's own
+    -- bucket is locked for 'esStrangerLock' of wall-clock time from its
+    -- connection
     egress <- traverse (\es -> (,,) es <$> mkEgressPolicy es
-                                       <*> newPoolAllowances (Allowance (esFreshMaxBytes es))
-                                                             (freshAt (esFreshBytesPerSecond es) t0)
-                                                             (freshAt (esFreshBytesPerSecond es) t0
-                                                                      (esStrangerLock es `addTime` t0)))
+                                       <*> newPoolAllowances (Allowance <$> daFreshMaxBytes)
+                                                             (Fresh <$> daFreshBytes)
+                                                             (esStrangerLock es))
                        dcEgressScheduling
 
     -- The mux counters, traced every interval for as long as diffusion runs:

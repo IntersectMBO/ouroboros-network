@@ -14,6 +14,7 @@ module Network.Mux.Egress.Counters
   , egressBurstCap
   , egressBurstGrantFloor
   , egressServedWindow
+  , egressSlowdownBounds
   ) where
 
 import Control.Concurrent.Class.MonadSTM.Strict
@@ -25,7 +26,8 @@ import GHC.Generics (Generic)
 
 import Network.Mux.Egress.Bucket (Bucket, BucketStats (..), TierGrants (..),
            bucketSnapshot, burstBounds, burstWidths, emptyBucketStats,
-           servedByTier, servedWindow, servedWithin, waitBounds)
+           servedByTier, servedWindow, servedWithin, slowdownBounds,
+           slowedByTier, waitBounds)
 import Network.Mux.Egress.Burst (burstCap, burstGap, burstGrantFloor)
 
 -- | Scheduled egress. Counters are cumulative; the level and the queue
@@ -68,7 +70,11 @@ data TierCounts = TierCounts {
   tcBytes   :: !Word64,
   tcBatches :: !Word64,
   tcQueued  :: !Int,
-  tcServed  :: !Int     -- ^ bearers granted within 'egressServedWindow'
+  tcServed  :: !Int,    -- ^ bearers granted within 'egressServedWindow'
+  tcSlowed  :: ![(Double, Int)]
+    -- ^ of those, the bearers whose batches have lately taken at least this
+    -- many times their own time, waiting for tokens the rest: one count per
+    -- bound of 'egressSlowdownBounds'
   }
   deriving (Eq, Show, Generic)
 
@@ -96,9 +102,14 @@ egressBurstCap = burstCap
 egressBurstGrantFloor :: Int
 egressBurstGrantFloor = burstGrantFloor
 
--- | How long a grant keeps its bearer in 'tcServed'.
+-- | How long a grant keeps its bearer in 'tcServed', and over how long its
+-- slowdown is weighted.
 egressServedWindow :: DiffTime
 egressServedWindow = servedWindow
+
+-- | The slowdowns 'tcSlowed' counts bearers against.
+egressSlowdownBounds :: [Double]
+egressSlowdownBounds = slowdownBounds
 
 -- | The budget's bucket and the slice's, if any, at an instant.
 schedulingCounts :: MonadSTM m => Time -> (Bucket m, Maybe (Bucket m)) -> STM m SchedulingCounts
@@ -107,12 +118,16 @@ schedulingCounts now (budget, slice_m) = do
   s_m <- traverse (`bucketSnapshot` now) slice_m
   let slice       = maybe emptyStats (\(st, _, _, _) -> st) s_m
       sliceQueued = maybe 0 (\(_, _, q, _) -> q) s_m
+      served      = servedWithin servedWindow now (bsServed b)
+      none        = map (\f -> (f, 0)) slowdownBounds
       tiers       = Map.toList $ Map.unionsWith plus
-                      [ (\(TierGrants n k) -> TierCounts n k 0 0) <$> bsTiers b
-                      , (\q -> TierCounts 0 0 q 0) <$> queuedByTier
-                      , TierCounts 0 0 0 <$> servedByTier (servedWithin servedWindow now (bsServed b)) ]
-      plus (TierCounts n k q s) (TierCounts n' k' q' s') =
+                      [ (\(TierGrants n k) -> TierCounts n k 0 0 none) <$> bsTiers b
+                      , (\q -> TierCounts 0 0 q 0 none) <$> queuedByTier
+                      , (\s -> TierCounts 0 0 0 s none) <$> servedByTier served
+                      , TierCounts 0 0 0 0 . zip slowdownBounds <$> slowedByTier served ]
+      plus (TierCounts n k q s sl) (TierCounts n' k' q' s' sl') =
         TierCounts (n + n') (k + k') (q + q') (s + s')
+                   (zipWith (\(f, c) (_, c') -> (f, c + c')) sl sl')
   return SchedulingCounts {
     scDirectBytes        = bsCredited b,
     scSliceBytes         = bsBytes slice - bsBorrowed slice,

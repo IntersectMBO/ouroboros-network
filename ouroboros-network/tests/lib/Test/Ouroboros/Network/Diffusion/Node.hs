@@ -39,13 +39,14 @@ module Test.Ouroboros.Network.Diffusion.Node
 import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadMVar (MonadMVar)
 import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Monad (forever)
 import Control.Monad.Class.MonadAsync (MonadAsync (wait, withAsync))
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadSay
 import Control.Monad.Class.MonadST (MonadST)
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI (DiffTime, MonadTime, Time (..))
-import Control.Monad.Class.MonadTimer.SI (MonadDelay, MonadTimer)
+import Control.Monad.Class.MonadTimer.SI (MonadDelay, MonadTimer, threadDelay)
 import Control.Monad.Fix (MonadFix)
 import Control.Tracer (Tracer (..), nullTracer)
 
@@ -267,6 +268,11 @@ run blockGeneratorArgs ni na
       $ \ nodeKernel nodeKernelThread -> do
         dnsTimeoutScriptVar <- newTVarIO (aDNSTimeoutScript na)
         dnsLookupDelayScriptVar <- newTVarIO (aDNSLookupDelayScript na)
+        -- what consensus would count: fresh bytes growing by the clock, at
+        -- the maxima of an 88 kB block, a 37 kB list and a 1 MiB closure
+        -- announced once in twenty slots, the reading the node used before
+        -- consensus counted announcements
+        freshVar <- newTVarIO (0 :: Int)
 
         let -- diffusion interfaces
             interfaces :: Diffusion.Interfaces (NtNFD m) NtNAddr
@@ -338,9 +344,20 @@ run blockGeneratorArgs ni na
               , Diffusion.daExtraChurnArgs                    = aExtraChurnArgs na
               , Diffusion.daSRVPrefix                         = iSRVPrefix ni
               , Diffusion.daEgressPoolKey                     = id
+              , Diffusion.daFreshBytes                        = readTVar freshVar
+              , Diffusion.daFreshMaxBytes                     = return testFreshMaxBytes
               }
 
-        withAsync
+        -- the clock runs only with scheduled egress on, whose buckets are
+        -- its one reader: off, an idle timer would spend part of the
+        -- properties' trace budget on nothing
+        let freshClock = case aEgressScheduling na of
+                              Nothing -> return ()
+                              Just _  -> forever $ do
+                                threadDelay 1
+                                atomically (modifyTVar freshVar (+ testFreshBytesPerSecond))
+        withAsync freshClock $ \_freshClock ->
+         withAsync
            (Diffusion.runM interfaces
                            tracers
                            extraParameters
@@ -507,3 +524,10 @@ ntnToIPv6 (TestAddress _)                                  = Nothing
 
 config_REPROMOTE_DELAY :: RepromoteDelay
 config_REPROMOTE_DELAY = 10
+
+-- | The most one announcement could carry on the prototype chain the tests
+-- were written against, and what it announced per second at that: an 88 kB
+-- block, a 37 kB list and a 1 MiB closure, once in twenty slots.
+testFreshMaxBytes, testFreshBytesPerSecond :: Int
+testFreshMaxBytes = 88000 + 37000 + 1048576
+testFreshBytesPerSecond = testFreshMaxBytes `div` 20

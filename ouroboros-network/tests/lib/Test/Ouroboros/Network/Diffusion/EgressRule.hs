@@ -23,12 +23,15 @@ import Test.Tasty.QuickCheck (testProperty)
 
 import Ouroboros.Network.Diffusion.PoolAllowances
 
-import Test.Ouroboros.Network.Diffusion.PoolAllowances (relaysOf)
+import Test.Ouroboros.Network.Diffusion.PoolAllowances (freshAt, fullCharged,
+           relaysOf)
 
 tests :: TestTree
 tests =
   testGroup "Ouroboros.Network.Diffusion.EgressRule"
     [ testProperty "a connection's rule and sink follow the decision table" prop_rule
+    , testProperty "a stranger's lock is wall-clock time, whatever the reading does" prop_lock_is_time
+    , testProperty "the allowance is read at every use, so a smaller one caps a charge at once" prop_allowance_follows_reading
     , testProperty "the floor's classes and the turns threshold follow the rule's tiers" prop_floorClass_follows_rank
     , testProperty "a relay queued dry is served once its credit refills" prop_refill_reaches_queued
     ]
@@ -95,15 +98,27 @@ instance Arbitrary Case where
 -- tier 3, nothing at rest; before any answer, as a non-partner.
 model :: Case -> ([Rank], [Charged])
 model Case { cStanding, cPools, cUncharged, cLock, cOps } =
-    go (map Charged cPools) (lockedCharged (clock (at 0)) (clock (at cLock))) False cOps
+    go (map Charged cPools) Nothing False cOps
   where
     matched = not (null cPools)
+    -- the own bucket: locked until the lock has passed, then empty at the
+    -- reading of its first use after that. A use is a rank asked for anyone
+    -- but a local root, or a charge that goes to the own bucket: a partner's,
+    -- or one without a pool, on a charged protocol.
+    openAt t own = case own of
+      Just _ -> own
+      Nothing | t >= cLock -> Just (emptyCharged (clock (at t)))
+              | otherwise  -> Nothing
     go pools _ _ [] = ([], pools)
-    go pools own asPartner (op : ops) =
-      case op of
+    go pools own0 asPartner (op : ops) =
+      let own = case op of
+                  Ask t | cStanding /= LocalRoot -> openAt t own0
+                  Charge t num _ | num `notElem` cUncharged, asPartner || not matched -> openAt t own0
+                  _ -> own0
+      in case op of
            Ask t ->
              let fresh      = clock (at t)
-                 ownCredit  = credit allowance fresh own > 0
+                 ownCredit  = maybe False ((> 0) . credit allowance fresh) own
                  poolCredit = any ((> 0) . credit allowance fresh) pools
                  other | matched    = if poolCredit then Rank 2 else Rank 4
                        | ownCredit  = Rank 3
@@ -117,34 +132,37 @@ model Case { cStanding, cPools, cUncharged, cLock, cOps } =
              in (rank : ranks, final)
            Charge t num n
              | num `elem` cUncharged -> go pools own asPartner ops
-             | asPartner -> go pools (charge allowance (clock (at t)) n own) asPartner ops
+             | asPartner -> go pools (charge allowance (clock (at t)) n <$> own) asPartner ops
              | matched   -> go (map (charge allowance (clock (at t)) n) pools) own asPartner ops
-             | otherwise -> go pools (charge allowance (clock (at t)) n own) asPartner ops
+             | otherwise -> go pools (charge allowance (clock (at t)) n <$> own) asPartner ops
            Rebuild t ->
-             go (map (const (Charged (kappa (clock (at t))))) pools) own asPartner ops
+             go (map (const (emptyCharged (clock (at t)))) pools) own asPartner ops
 
 -- | The same, through 'mkEgressRule' and the buckets in IOSim: the reading
 -- is the clock's at each op's time, and a rebuild installs a list of new
 -- pools, so its buckets start empty.
 run :: Case -> ([Rank], [Charged])
 run Case { cStanding, cPools, cUncharged, cLock, cOps } = runSimOrThrow $ do
-    pa <- newPoolAllowances allowance clock (clock (at cLock))
+    reading <- newTVarIO (Fresh 0)
+    pa <- newPoolAllowances (return allowance) (readTVar reading) (realToFrac cLock)
     let key   = "peer" :: String
         k     = length cPools
         index = if k > 0 then Map.singleton key [0 .. k - 1] else Map.empty
-    _ <- atomically $ rebuild pa (at 0) (relaysOf 0 k) index
+    _ <- atomically $ rebuild pa (relaysOf 0 k) index
     buckets0 <- readTVarIO (paBuckets pa)
     forM_ (zip [0 ..] cPools) $ \(i, c) ->
       atomically $ writeTVar (snd (buckets0 IntMap.! i)) (Charged c)
     generation <- newTVarIO (0 :: Int)
     (rule, sink) <- mkEgressRule pa (map MiniProtocolNum cUncharged) key
                                  (const (return cStanding)) (at 0)
+    let tick t = writeTVar reading (clock (at t))
     ranks <- fmap concat . forM cOps $ \op ->
       case op of
-           Ask t          -> (: []) <$> atomically (rule (at t))
-           Charge t num n -> [] <$ atomically (sink (at t) (MiniProtocolNum num) n)
-           Rebuild t      -> [] <$ atomically (do g <- stateTVar generation (\g -> (g + 1, g + 1))
-                                                  _ <- rebuild pa (at t) (relaysOf g k) index
+           Ask t          -> (: []) <$> atomically (tick t >> rule (at t))
+           Charge t num n -> [] <$ atomically (tick t >> sink (at t) (MiniProtocolNum num) n)
+           Rebuild t      -> [] <$ atomically (do tick t
+                                                  g <- stateTVar generation (\g -> (g + 1, g + 1))
+                                                  _ <- rebuild pa (relaysOf g k) index
                                                   return ())
     buckets <- readTVarIO (paBuckets pa)
     final   <- mapM (readTVarIO . snd) (IntMap.elems buckets)
@@ -220,20 +238,26 @@ prop_refill_reaches_queued Refill { rfRate, rfCap, rfFloor, rfBatch, rfFresh, rf
            _ -> counterexample "never served" (property False)
   where
     floorRate = rfRate * fromIntegral rfFloor / 100
+    tick      = 0.01
     samplePeriod = 0.1
     -- a refresh; the floor's time for the batch, after a capacity to
-    -- refill; a sample's lateness in noticing the credit
+    -- refill; a sample's lateness in noticing the credit; a tick
     bound = Bucket.tierRefresh
           + realToFrac (fromIntegral (rfBatch + rfCap) / floorRate :: Double)
-          + samplePeriod
+          + samplePeriod + tick
     -- the credit is back once the reading has grown by two allowances
     refill = realToFrac (2 * fromIntegral rfMax / rfFresh :: Double)
     (entry, firstCredited, served) = runSimOrThrow $ do
       budget <- Bucket.newBucket rfRate rfCap (Just (Bucket.Rotation 42 599 4))
       Bucket.attachFloor budget (fromIntegral rfFloor / 100)
+      reading <- newTVarIO (Fresh 0)
       t0 <- getMonotonicTime
-      pa <- newPoolAllowances (Allowance rfMax) (freshAt rfFresh t0) (Fresh 1)
-      _ <- atomically $ rebuild pa t0 (relaysOf 0 1) (Map.singleton ("relay" :: String) [0])
+      clockThread <- async $ forever $ do
+        threadDelay tick
+        now <- getMonotonicTime
+        atomically $ writeTVar reading (freshAt rfFresh t0 now)
+      pa <- newPoolAllowances (return (Allowance rfMax)) (readTVar reading) 1
+      _ <- atomically $ rebuild pa (relaysOf 0 1) (Map.singleton ("relay" :: String) [0])
       (rule, sink) <- mkEgressRule pa [] "relay" (const (return Other)) t0
       roots <- forM [1 .. 2 :: Int] $ \_ -> do
         h <- Bucket.registerBearer budget
@@ -257,7 +281,7 @@ prop_refill_reaches_queued Refill { rfRate, rfCap, rfFloor, rfBatch, rfFresh, rf
         threadDelay samplePeriod
       outcome <- timeout (refill + 3 * bound + 10) (wait victim)
       creditedAt <- readTVarIO credited
-      mapM_ cancel (sampler : roots)
+      mapM_ cancel (clockThread : sampler : roots)
       return (entered, creditedAt, outcome)
 
 -- | What gives the floor's tier numbers their meaning is 'rankFor'. Over
@@ -288,3 +312,79 @@ prop_floorClass_follows_rank = once $ conjoin
                                 | otherwise -> other
                         Other          -> other
   ]
+
+-- | The requirement behind the lock: a stranger's own credit is zero for the
+-- lock's length of wall-clock time after its connection, however fast the
+-- reading moves; at the lock the bucket opens empty; after it the bucket
+-- fills at the fresh rate, so once the reading has moved by two fresh bytes
+-- the stranger is served at its own tier. Judged through the rule's answers,
+-- for a connection with no pool and no partner standing: rank 4 while dry,
+-- rank 3 with credit.
+prop_lock_is_time :: Positive Double -> NonNegative Double -> Double -> Positive Double -> Property
+prop_lock_is_time (Positive rate) (NonNegative lock) before (Positive delay) =
+    counterexample ("early " ++ show early ++ ", at the lock " ++ show opening ++ ", later " ++ show later) $
+      conjoin
+        [ counterexample "credit before the lock" (lock == 0 .||. early === Rank 4)
+        , counterexample "not empty at the lock" (opening === Rank 4)
+        , counterexample "no credit after the lock" (rate * delay < 2 .||. later === Rank 3)
+        ]
+  where
+    reading = freshAt rate (Time 0)
+    -- some point before the lock (the lock itself when there is none)
+    tEarly = lock * (before - fromIntegral (floor before :: Int)) * 0.999
+    (early, opening, later) = runSimOrThrow $ do
+      readingVar <- newTVarIO (Fresh 0)
+      pa <- newPoolAllowances (return allowance) (readTVar readingVar) (realToFrac lock)
+      (rule, _) <- mkEgressRule pa [] ("peer" :: String) (const (return Other)) (at 0)
+      -- the rule asked at a time, with the clock's reading then
+      let ask t = atomically (writeTVar readingVar (reading (at t)) >> rule (at t))
+      e <- ask tEarly
+      o <- ask lock
+      l <- ask (lock + delay)
+      return (e, o, l)
+
+-- | The requirement behind reading the allowance at every use: when the chain's
+-- maxima shrink, a bucket's credit is capped at the new capacity from the next
+-- use on. A pool relay with a full bucket under a large allowance; the
+-- allowance is switched to a small one; a charge of at least the small
+-- capacity drains the bucket, so the next ask leaves the pool's tier, whereas
+-- under the large allowance the same charge would not have.
+prop_allowance_follows_reading :: Positive Int -> Positive Int -> Positive Int -> Property
+prop_allowance_follows_reading (Positive big) (Positive small0) (Positive extra) =
+    counterexample ("after the switch and a charge of " ++ show n ++ ": " ++ show (afterSwitch, stillBig)) $
+      conjoin
+        [ counterexample "the charge did not drain the bucket at the small allowance" (afterSwitch === Rank 4)
+        , counterexample "the same charge drained it at the large allowance" (stillBig === Rank 2)
+        ]
+  where
+    small = min small0 big
+    large = Allowance (big + small)          -- strictly larger capacity than the small one
+    tiny  = Allowance small
+    -- at least the small capacity, short of the large one: drains the one, not the other
+    n     = capacity tiny + extra `mod` (capacity large - capacity tiny)
+    key = "relay" :: String
+    (afterSwitch, stillBig) = runSimOrThrow $ do
+      alVar <- newTVarIO large
+      pa <- newPoolAllowances (readTVar alVar) (return (Fresh 0)) 0
+      _ <- atomically $ rebuild pa (relaysOf 0 1) (Map.singleton key [0])
+      buckets <- readTVarIO (paBuckets pa)
+      -- the bucket full under the large allowance
+      atomically $ writeTVar (snd (buckets IntMap.! 0)) (fullCharged large (Fresh 0))
+      (rule, sink) <- mkEgressRule pa [] key (const (return Other)) (at 0)
+      r0 <- atomically (rule (at 0))
+      -- switch, charge, ask
+      a <- atomically $ do
+        writeTVar alVar tiny
+        sink (at 0) (MiniProtocolNum 2) n
+        rule (at 0)
+      -- the same from a full bucket under the large allowance alone
+      pa' <- newPoolAllowances (return large) (return (Fresh 0)) 0
+      _ <- atomically $ rebuild pa' (relaysOf 0 1) (Map.singleton key [0])
+      buckets' <- readTVarIO (paBuckets pa')
+      atomically $ writeTVar (snd (buckets' IntMap.! 0)) (fullCharged large (Fresh 0))
+      (rule', sink') <- mkEgressRule pa' [] key (const (return Other)) (at 0)
+      b <- atomically $ do
+        _ <- rule' (at 0)
+        sink' (at 0) (MiniProtocolNum 2) n
+        rule' (at 0)
+      return (if r0 == Rank 2 then a else Rank 0, b)
