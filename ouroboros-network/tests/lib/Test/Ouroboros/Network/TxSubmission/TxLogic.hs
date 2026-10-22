@@ -35,6 +35,7 @@ import Data.IntMap.Strict qualified as IntMap
 import Data.IntSet qualified as IntSet
 import Data.List (elemIndex, mapAccumL, nub, nubBy, sortBy)
 import Data.List as List (foldl')
+import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map.Strict qualified as Map
 import Data.Maybe (listToMaybe)
 import Data.Sequence.Strict qualified as StrictSeq
@@ -88,6 +89,7 @@ tests =
     , testProperty "handleSubmittedTxs retains accepted and drops rejected" prop_handleSubmittedTxs_retainsAcceptedAndDropsRejected
     , testProperty "nextPeerAction returns the current shared generation when idle" prop_nextPeerAction_returnsSharedGeneration
     , testProperty "nextPeerAction respects the inflight size budget" prop_nextPeerAction_picksTxsRespectingBudget
+    , testProperty "nextPeerAction caps each body batch independently of the inflight window" prop_nextPeerAction_capsBodyBatches
     , testProperty "nextPeerAction submits buffered owned txs before acking" prop_nextPeerAction_ownerSubmitsBuffered
     , testCase     "nextPeerAction claims a duplicated advertised txid only once" unit_nextPeerAction_dedupsBodyRequestOnDuplicateTxIds
     , testCase     "nextPeerAction submits a duplicated buffered txid only once"  unit_nextPeerAction_dedupsSubmitOnDuplicateTxIds
@@ -535,6 +537,8 @@ instance Arbitrary ArbTxDecisionPolicy where
             ArbTxDecisionPolicy <$> (
               TxDecisionPolicy
                 <$> (SizeInBytes . getPositive <$> arbitrary)
+                <*> (SizeInBytes <$> choose (getSizeInBytes max_TX_SIZE,
+                      getSizeInBytes (txsSizePerBatch (defaultTxDecisionPolicy defaultTxSubmissionConfigV2))))
                 <*> choose (1, 10)
                 <*> (getSmall . getPositive <$> arbitrary)
                 <*> (realToFrac <$> choose (0 :: Double, 2))
@@ -553,6 +557,10 @@ instance Arbitrary ArbTxDecisionPolicy where
           ArbTxDecisionPolicy (defaultTxDecisionPolicy defaultTxSubmissionConfigV2)
         :  [ ArbTxDecisionPolicy a { txsSizeInflightPerPeer = SizeInBytes s }
            | Positive s <- shrink (Positive (getSizeInBytes (txsSizeInflightPerPeer a)))
+           ]
+        ++ [ ArbTxDecisionPolicy a { txsSizePerBatch = SizeInBytes s }
+           | s <- shrink (getSizeInBytes (txsSizePerBatch a))
+           , s >= getSizeInBytes max_TX_SIZE
            ]
         ++ [ ArbTxDecisionPolicy a { maxOutstandingTxBatchesPerPeer = x }
            | x <- shrink (maxOutstandingTxBatchesPerPeer a), x >= 1
@@ -1138,6 +1146,178 @@ prop_nextPeerAction_picksTxsRespectingBudget (ArbTxDecisionPolicy policy0)
         -- the same and dedupe stripped them) the scheduler may pick
         -- something else; just check the action type isn't junk.
         counterexample (show action) True
+  where
+    peerAddr = 1 :: PeerAddr
+
+-- | Advertised transaction sizes and a policy covering either a large
+-- inflight window, or a first transaction at or above the hard batch limit
+-- with a smaller soft inflight limit. Sizes are at least two so all policy
+-- limits can remain positive.
+--
+data ArbBodyBatchScenario = ArbBodyBatchScenario {
+      bbsTxSizes :: NonEmpty SizeInBytes,
+      bbsPolicy  :: TxDecisionPolicy
+    }
+  deriving Show
+
+instance Arbitrary ArbBodyBatchScenario where
+    arbitrary = do
+      otherCount <- choose (1, 199)
+      let genSize = chooseEnum (2, max_TX_SIZE)
+      sizes@(firstSize :| _) <-
+        (:|) <$> genSize <*> vectorOf otherCount genSize
+      -- Bound the count and sizes to keep their Word32 sum in range.
+      (txsSizePerBatch, txsSizeInflightPerPeer) <- oneof
+        [ (,) <$> frequency
+                    [ (1, pure (maximum sizes))
+                    , (1, pure (sum sizes - 1))
+                    , (3, chooseEnum (maximum sizes, sum sizes - 1))
+                    ]
+              <*> chooseEnum (sum sizes, 2 * sum sizes)
+        , (,) <$> pure firstSize <*> chooseEnum (1, firstSize - 1)
+        , (,) <$> chooseEnum (1, firstSize - 1) <*> chooseEnum (1, firstSize - 1)
+        ]
+      pure ArbBodyBatchScenario {
+          bbsTxSizes = sizes,
+          bbsPolicy = (defaultTxDecisionPolicy defaultTxSubmissionConfigV2)
+            { txsSizePerBatch
+            , txsSizeInflightPerPeer
+            , maxOutstandingTxBatchesPerPeer = length sizes
+            }
+        }
+
+    shrink scenario@ArbBodyBatchScenario { bbsTxSizes, bbsPolicy } =
+        let TxDecisionPolicy { txsSizePerBatch, txsSizeInflightPerPeer } =
+              bbsPolicy
+        in filter validScenario $
+           [ scenario { bbsTxSizes = sizes }
+           | sizes <- shrinkMap (fmap SizeInBytes) (fmap getSizeInBytes)
+                                bbsTxSizes
+           , all (>= 2) sizes
+           ]
+        ++ [ scenario { bbsPolicy = bbsPolicy
+                          { txsSizePerBatch = limit } }
+           | limit <- shrinkIntegral txsSizePerBatch
+           ]
+        ++ [ scenario { bbsPolicy = bbsPolicy
+                          { txsSizeInflightPerPeer = limit } }
+           | limit <- shrinkIntegral txsSizeInflightPerPeer
+           ]
+      where
+        validScenario ArbBodyBatchScenario { bbsTxSizes = sizes@(firstSize :| _)
+                                          , bbsPolicy = policy
+                                          } =
+          let TxDecisionPolicy { txsSizePerBatch, txsSizeInflightPerPeer } =
+                policy
+          in txsSizePerBatch > 0 && txsSizeInflightPerPeer > 0
+          && (   (maximum sizes <= txsSizePerBatch
+               && txsSizePerBatch < sum sizes
+               && sum sizes <= txsSizeInflightPerPeer)
+              || (txsSizePerBatch <= firstSize
+               && txsSizeInflightPerPeer < firstSize))
+
+
+-- | A large inflight window may span several batches. Each batch respects
+-- its hard limit, while all advertised transactions can still be requested
+-- in order. The hard limit also applies to the first transaction, even when
+-- the soft inflight limit would otherwise allow it.
+--
+prop_nextPeerAction_capsBodyBatches :: ArbBodyBatchScenario -> Property
+prop_nextPeerAction_capsBodyBatches ArbBodyBatchScenario {
+    bbsTxSizes = txSizes@(firstSize :| _),
+    bbsPolicy  = policy@TxDecisionPolicy { txsSizePerBatch, txsSizeInflightPerPeer }
+  } =
+    checkCoverage $
+    let sizes = toList txSizes
+        txCount = length sizes
+        config = defaultTxSubmissionConfigV2
+          { maxNumUnacknowledgedTxIds = fromIntegral txCount
+          , maxNumTxIdsToRequest = fromIntegral txCount
+          }
+        txidsAndSizes ::  [(TxId, SizeInBytes)]
+        txidsAndSizes = zip [1 ..] sizes
+
+        initialState@(peerState, _, sharedState) =
+          handleReceivedTxIds (const False) now policy
+            (fromIntegral txCount) txidsAndSizes
+            (emptyPeerTxLocalState
+              { peerRequestedTxIds = fromIntegral txCount })
+            emptyPeerTxInFlight emptySharedTxState
+
+        advertisedKeys :: [TxKey]
+        advertisedKeys =
+          [ lookupKeyOrFail txid sharedState | (txid, _) <- txidsAndSizes ]
+
+        expectedKeys :: [TxKey]
+        expectedKeys
+          | firstSize > txsSizePerBatch       = []
+          | firstSize > txsSizeInflightPerPeer = take 1 advertisedKeys
+          | otherwise                        = advertisedKeys
+
+        sizeOf :: TxKey -> SizeInBytes
+        sizeOf key = peerAvailableTxIds peerState IntMap.! unTxKey key
+
+        step
+          :: (PeerTxLocalState tx, PeerTxInFlight, SharedTxState PeerAddr txid)
+          -> (  Time
+             -> TxDecisionPolicy
+             -> TxSubmissionConfig
+             -> PeerAddr
+             -> PeerTxLocalState tx
+             -> PeerTxInFlight
+             -> SharedTxState PeerAddr txid
+             -> ( PeerAction
+                , PeerTxLocalState tx
+                , PeerTxInFlight
+                , SharedTxState PeerAddr txid
+                )
+             )
+          -> ( (PeerTxLocalState tx, PeerTxInFlight, SharedTxState PeerAddr txid)
+             , PeerAction
+             )
+        step (ps, pif, ss) next =
+          let (action, ps', pif', ss') =
+                next now policy config peerAddr ps pif ss
+          in ((ps', pif', ss'), action)
+
+        -- At most one request per transaction is needed. Keep the run
+        -- bounded so a failure to make progress produces a counterexample.
+        ((finalPeerState, _, _), actions) =
+          mapAccumL step initialState
+            (nextPeerAction
+              : replicate (txCount - 1) nextPeerActionPipelined)
+
+        batches :: [[TxKey]]
+        batches = [keys | PeerRequestTxs keys <- actions]
+
+        batchSizes :: [SizeInBytes]
+        batchSizes = map (sum . map sizeOf) batches
+
+    in cover 20 (length batches > 1) "more than one batch"
+     $ cover 5  (length batches > 2) "more than two batches"
+     $ cover 20
+         (firstSize == txsSizePerBatch && firstSize > txsSizeInflightPerPeer)
+         "first transaction at the hard limit"
+     $ cover 20
+         (firstSize > txsSizePerBatch && firstSize > txsSizeInflightPerPeer)
+         "first transaction above the hard limit"
+     $ cover 50 (length (nub sizes) > 1) "mixed transaction sizes"
+     $ conjoin
+         [ counterexample "batch exceeds the hard size limit"
+             (all (<= txsSizePerBatch) batchSizes)
+         , counterexample "empty body request"
+             (all (not . null) batches)
+         , counterexample "batch left room for the next transaction"
+             (and [ batchSize + sizeOf nextKey > txsSizePerBatch
+                  | (batchSize, nextKey : _) <-
+                      zip batchSizes (drop 1 batches)
+                  ])
+         , counterexample "requests must match the policy's allowed prefix"
+             (concat batches === expectedKeys)
+         , counterexample "incorrect total inflight size"
+             (peerRequestedTxsSize finalPeerState
+                === sum (map sizeOf expectedKeys))
+         ]
   where
     peerAddr = 1 :: PeerAddr
 

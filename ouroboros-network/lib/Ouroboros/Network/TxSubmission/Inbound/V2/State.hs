@@ -411,11 +411,10 @@ pickRequestTxsAction ctx@PeerActionContext { pacNow, pacPolicy, pacPeerState, pa
      then Nothing
      else Just (txsToRequest, txsToRequestSize, sharedState')
   where
-
     -- Picks txs from the peer's available set that are not yet requested or
     -- downloaded, assigning leases with expiry timestamps.
-    -- Respects 'maxOutstandingTxBatchesPerPeer' and 'txsSizeInflightPerPeer' policy
-    -- constraints.
+    -- Respects 'maxOutstandingTxBatchesPerPeer', 'txsSizeInflightPerPeer' and
+    -- 'txsSizePerBatch' policy constraints.
     pickTxsToRequest =
       if StrictSeq.length (peerRequestedTxBatches pacPeerState) >=
            maxOutstandingTxBatchesPerPeer pacPolicy
@@ -481,11 +480,13 @@ pickRequestTxsAction ctx@PeerActionContext { pacNow, pacPolicy, pacPeerState, pa
         --
         -- The inflight size limit is soft by up to one tx size, so a peer with
         -- spare capacity may still request its first tx in a batch even when
-        -- that single tx exceeds the remaining byte budget.
+        -- that single tx exceeds the remaining byte budget. The per-batch
+        -- limit is hard, including for the first transaction.
         exceedsBudget selectedSize txSize
-          | selectedSize + txSize <= sizeBudget = False
-          | selectedSize /= 0 = True
-          | otherwise = peerRequestedTxsSize pacPeerState >= txsSizeInflightPerPeer pacPolicy
+            | selectedSize + txSize > txsSizePerBatch pacPolicy = True
+            | selectedSize + txSize <= sizeBudget = False
+            | selectedSize /= 0 = True
+            | otherwise = peerRequestedTxsSize pacPeerState >= txsSizeInflightPerPeer pacPolicy
 
         -- Remaining bytes available for requesting new tx, based on the
         -- per-peer inflight size limit.
