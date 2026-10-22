@@ -674,7 +674,8 @@ instance LogFormatting Mux.CountersTrace where
             , "tiers" .= [ object [ "tier" .= t, "name" .= tierName t
                                   , "bytes" .= Mux.tcBytes c, "batches" .= Mux.tcBatches c
                                   , "queued" .= Mux.tcQueued c
-                                  , "served" .= Mux.tcServed c ]
+                                  , "served" .= Mux.tcServed c
+                                  , "slowed" .= Mux.tcSlowed c ]
                          | (t, c) <- scTiers ]
             ]
         ingressObject side Mux.IngressCounts { Mux.icReadTimeouts, Mux.icOverruns
@@ -745,6 +746,7 @@ instance LogFormatting Mux.CountersTrace where
                    , IntM (tier <> ".batches") (fromIntegral (Mux.tcBatches c))
                    , IntM (tier <> ".queued")  (fromIntegral (Mux.tcQueued c))
                    , IntM (tier <> ".served")  (fromIntegral (Mux.tcServed c)) ]
+                   ++ [ IntM (tier <> slowedSuffix f) (fromIntegral n) | (f, n) <- Mux.tcSlowed c ]
                  | (t, c) <- scTiers, let tier = prefix <> ".tier." <> tierName t ] ++
           [ IntM (prefix <> waitsOverSuffix (realToFrac b)) (fromIntegral n)
           | (b, n) <- scWaitsOver ]
@@ -838,6 +840,11 @@ instance MetaTrace Mux.CountersTrace where
                       "Bearers of " <> who <> " granted a batch within the last "
                         <> showT (realToFrac Mux.egressServedWindow :: Double)
                         <> " s, the fast path included.") ]
+                   ++ [ (".tier." <> name <> slowedSuffix f,
+                         "Of those, the bearers whose batches have lately taken at least "
+                           <> showT (round f :: Integer)
+                           <> " times their own time at the socket, waiting for tokens the rest.")
+                      | f <- Mux.egressSlowdownBounds ]
                  | (name, who) <- [ (Text.pack (Mux.tierName t), tierWho t) | t <- [minBound .. maxBound] ]
                                   ++ [ (Text.pack (Mux.numberName maxBound), "unranked bearers") ] ]
       ]
@@ -870,6 +877,10 @@ waitsOverSuffix :: Double -> Text
 waitsOverSuffix b
   | b < 1     = ".scheduled.waitsOver." <> showT (round (b * 1000) :: Integer) <> "ms"
   | otherwise = ".scheduled.waitsOver." <> showT (round b :: Integer) <> "s"
+
+-- | @.slowed.4x@ and so on, one per bound, after a tier's prefix.
+slowedSuffix :: Double -> Text
+slowedSuffix f = ".slowed." <> showT (round f :: Integer) <> "x"
 
 -- | @.budget.burstsOver.100ms@ and so on, one per bound.
 burstsOverSuffix :: Double -> Text

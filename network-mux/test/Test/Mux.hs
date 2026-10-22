@@ -31,14 +31,14 @@ import Data.Binary.Put qualified as Bin
 import Data.Bits
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BL
-import Data.ByteString.Lazy.Internal qualified as BLI
 import Data.ByteString.Lazy.Char8 qualified as BL8 (pack)
+import Data.ByteString.Lazy.Internal qualified as BLI
 import Data.Functor.Identity (Identity (..))
 import Data.List (dropWhileEnd, nub)
 import Data.List qualified as List
 import Data.Map qualified as M
 import Data.Map.Strict qualified as MS
-import Data.Maybe (fromMaybe, isJust, isNothing)
+import Data.Maybe (fromJust, fromMaybe, isJust, isNothing)
 import Data.Set qualified as Set
 import Data.Tuple (swap)
 import Data.Word
@@ -140,6 +140,9 @@ tests =
     , testProperty "served: the counters drop the stale bearers" prop_served_counters
     , testProperty "served: the record prunes itself, bounded" prop_served_bounded
     , testProperty "served: an unqueued grant asks its tier once a refresh" prop_served_fast_tier
+    , testProperty "slowed: a standing is a decayed ratio" prop_slowdown_laws
+    , testProperty "slowed: counted per tier"              prop_slowed_by_tier
+    , testProperty "slowed: the counters count the slowed bearers of each tier" prop_slowed_counters
     , testProperty "queueRank: turns from the threshold" prop_queueRank_turns
     , testProperty "chargeAt: takes without waiting"  prop_chargeAt
     , testProperty "schedule matches the replay"  prop_bucket_schedule
@@ -158,6 +161,8 @@ tests =
                    (BaseQC.withNumTests 30 prop_mux_lanes)
     , testProperty "a torn-down head hands the queue on"
                    prop_mux_egress_head_torn_down
+    , testProperty "the muxer reports the gate and the write to the budget"
+                   prop_mux_scheduled_own_time
     , testProperty "a final message is written before completion is reported"
                    prop_mux_final_message_before_release
     , testProperty "own requests wait at the gate, charged once written"
@@ -3254,7 +3259,7 @@ prop_served_window (ServedGrants window now grants) =
       Bucket.servedByTier (Bucket.servedWithin window now recorded) === oracle
   where
     recorded = Bucket.bsServed $ List.foldl'
-                 (\st (tier, b, t) -> Bucket.recordServed tier b t st)
+                 (\st (tier, b, t) -> Bucket.recordServed tier b t 0 0 st)
                  Bucket.emptyBucketStats grants
     oracle = servedOracle window now grants
 
@@ -3264,36 +3269,47 @@ prop_served_window (ServedGrants window now grants) =
 -- history.
 prop_served_bounded :: ServedHistory -> Property
 prop_served_bounded (ServedHistory grants) =
-    classify (snd (servedModel grants) > Time 0)                 "pruned" $
+    classify (snd (servedModel (map plain grants)) > Time 0)     "pruned" $
     classify (any (== w) gaps)                                   "a gap of exactly the window" $
-    classify (any (\(st, (_, _, t)) -> any (\s -> t `diffTime` s > w) (M.elems (Bucket.bsServed st)))
+    classify (any (\(st, (_, _, t)) -> any (\s -> t `diffTime` s > w) (lasts st))
                   (zip states grants))                           "a grant kept past one window" $
       conjoin
         [ counterexample ("after grant " ++ show i) $
-               (Bucket.bsServed st, Bucket.bsServedPruned st) === servedModel prefix
+               (Bucket.bsServed st, Bucket.bsServedPruned st) === servedModel (map plain prefix)
           .&&. counterexample "older than two windows"
-                 (all (\s -> t `diffTime` s <= 2 * w) (M.elems (Bucket.bsServed st)))
+                 (all (\s -> t `diffTime` s <= 2 * w) (lasts st))
           .&&. Bucket.servedByTier (Bucket.servedWithin w t (Bucket.bsServed st))
                  === servedOracle w t prefix
         | (i, st, prefix, (_, _, t)) <- zip4 [1 :: Int ..] states (drop 1 (List.inits grants)) grants ]
   where
     w      = Bucket.servedWindow
-    states = drop 1 (scanl (\st (tier, b, t) -> Bucket.recordServed tier b t st)
+    states = drop 1 (scanl (\st (tier, b, t) -> Bucket.recordServed tier b t 0 0 st)
                            Bucket.emptyBucketStats grants)
+    lasts  = map Bucket.svLast . M.elems . Bucket.bsServed
     gaps   = zipWith (\(_, _, a) (_, _, b) -> b `diffTime` a) grants (drop 1 grants)
     zip4 (a : as) (b : bs) (c : cs) (d : ds) = (a, b, c, d) : zip4 as bs cs ds
     zip4 _ _ _ _                             = []
 
 -- | The served record and when it was last pruned, after grants in time
--- order: once a window after the last prune, a grant drops every bearer not
--- granted within the window.
-servedModel :: [(Word8, Word64, Time)] -> (M.Map (Word8, Word64) Time, Time)
+-- order, each with its token wait and the bearer's own time: once a window
+-- after the last prune, a grant drops every bearer not granted within the
+-- window.
+servedModel :: [(Word8, Word64, Time, DiffTime, DiffTime)]
+            -> (M.Map (Word8, Word64) Bucket.Served, Time)
 servedModel = List.foldl' step (M.empty, Time 0)
   where
     w = Bucket.servedWindow
-    step (m, pruned) (tier, b, t)
-      | t `diffTime` pruned >= w = (M.insert (tier, b) t (M.filter (\s -> t `diffTime` s <= w) m), t)
-      | otherwise                = (M.insert (tier, b) t m, pruned)
+    step (m, pruned) (tier, b, t, waited, own)
+      | t `diffTime` pruned >= w
+      = (record (M.filter (\sv -> t `diffTime` Bucket.svLast sv <= w) m), t)
+      | otherwise
+      = (record m, pruned)
+      where
+        record = M.alter (Just . Bucket.servedStep t waited own) (tier, b)
+
+-- | A grant that neither waited nor reported any own time.
+plain :: (Word8, Word64, Time) -> (Word8, Word64, Time, DiffTime, DiffTime)
+plain (tier, b, t) = (tier, b, t, 0, 0)
 
 -- | Grants in time order, gaps in whole seconds with exactly the window
 -- weighted up, so prunes land on the boundary and past it.
@@ -3388,10 +3404,11 @@ prop_served_fast_tier (FastTiers n events) =
 -- | The record and the number of asks, and how many requests came exactly a
 -- refresh after their bearer's last ask and how many grants were recorded at
 -- a tier other than the rule's.
-fastTierOracle :: [(Time, FastEvent)] -> (M.Map (Word8, Word64) Time, Int, Int, Int)
+fastTierOracle :: [(Time, FastEvent)] -> (M.Map (Word8, Word64) Bucket.Served, Int, Int, Int)
 fastTierOracle = go M.empty M.empty [] 0 0 0
   where
-    go _ _ served asks boundary stale [] = (fst (servedModel (reverse served)), asks, boundary, stale)
+    go _ _ served asks boundary stale [] =
+      (fst (servedModel (map plain (reverse served))), asks, boundary, stale)
     go tiers cache served asks boundary stale ((t, e) : rest) = case e of
       FastSetTier b r -> go (M.insert b r tiers) cache served asks boundary stale rest
       FastReinstall b -> go tiers (M.delete b cache) served asks boundary stale rest
@@ -3436,6 +3453,197 @@ instance Arbitrary FastTiers where
          [ FastTiers n es | es <- shrinkList (const []) events, not (null es) ]
       ++ [ FastTiers n (take i events ++ [(t, FastSetTier b 0)] ++ drop (i + 1) events)
          | (i, (t, FastSetTier b r)) <- zip [0 ..] events, r /= 0 ]
+
+-- | A bearer's standing after grants in time order, each with its token wait
+-- and the bearer's own time. The sums decay, so the verdicts of
+-- 'Bucket.slowedBy' are those of a ratio over the recent window: scaling
+-- every time by a power of two leaves them unchanged, exactly; a bearer that
+-- only waited is slowed by every bound and one that never waited by none; an
+-- idle window carries @e@ less of the standing into the next grant; and
+-- after a long idle a grant stands alone.
+prop_slowdown_laws :: SlowHistory -> Property
+prop_slowdown_laws (SlowHistory k grants) =
+    classify (any (\(_, w, _) -> w == 0) grants) "a grant that did not wait" $
+    classify (any (\(_, _, o) -> o == 0) grants) "a grant with no own time" $
+    classify (or verdicts)                        "slowed by some bound" $
+    classify (and verdicts)                       "slowed by every bound" $
+    conjoin
+      [ counterexample "a sum is negative"
+          (Bucket.svWaited standing >= 0 && Bucket.svOwn standing >= 0)
+      , counterexample "slowed by a bound but not by a smaller one"
+          (and (zipWith (>=) verdicts (drop 1 verdicts)))
+      , counterexample "scaling every time changed a verdict"
+          (map (`Bucket.slowedBy` standingOf scaled) Bucket.slowdownBounds === verdicts)
+      , counterexample "waited only, yet not slowed by every bound"
+          (not (all (\(_, _, o) -> o == 0) grants && any (\(_, w, _) -> w > 0) grants) || and verdicts)
+      , counterexample "never waited, yet slowed"
+          (any (\(_, w, _) -> w > 0) grants || not (or verdicts))
+      , counterexample "an idle window does not carry e less" $
+          let rested = Bucket.servedStep (Bucket.servedWindow `addTime` lastT) 0 0 (Just standing)
+          in (Bucket.svWaited rested, Bucket.svOwn rested)
+               === (Bucket.svWaited standing * exp (-1), Bucket.svOwn standing * exp (-1))
+      , counterexample "after a long idle a grant does not stand alone" $
+          let alone = Bucket.servedStep ((100 * Bucket.servedWindow) `addTime` lastT) w0 o0 (Just standing)
+          in close (Bucket.svWaited alone) (realToFrac w0) && close (Bucket.svOwn alone) (realToFrac o0)
+      ]
+  where
+    standing     = standingOf grants
+    verdicts     = map (`Bucket.slowedBy` standing) Bucket.slowdownBounds
+    scaled       = [ (t, w * 2 ^ k, o * 2 ^ k) | (t, w, o) <- grants ]
+    lastT        = (\(t, _, _) -> t) (last grants)
+    (_, w0, o0)  = head grants
+    close a b    = abs (a - b) <= 1e-12 * max 1 b
+    standingOf   = fromJust . List.foldl' (\sv_m (t, w, o) -> Just (Bucket.servedStep t w o sv_m)) Nothing
+
+-- | One bearer's grants in time order, gaps of up to two windows, and a
+-- scale: whole microseconds, waits and own times of the same size so the
+-- verdicts fall on both sides of every bound and, at times, exactly on one.
+data SlowHistory = SlowHistory Int [(Time, DiffTime, DiffTime)]
+  deriving Show
+
+instance Arbitrary SlowHistory where
+    arbitrary = do
+      k    <- choose (0, 20)
+      n    <- frequency [ (1, choose (1, 3)), (2, choose (1, 30)) ]
+      gaps <- vectorOf n (frequency [ (2, pure 0), (3, choose (1, 10000000))
+                                    , (1, choose (1, 120000000 :: Int)) ])
+      let times = map (\us -> Time (fromIntegral us / 1000000)) (scanl1 (+) gaps)
+      grants <- forM times $ \t -> do
+        own    <- genOwn
+        waited <- frequency [ (1, pure 0), (3, genOwn)
+                            , (2, (\f -> (realToFrac f - 1) * own) <$> elements Bucket.slowdownBounds) ]
+        return (t, waited, own)
+      return (SlowHistory k grants)
+      where
+        genOwn = frequency [ (2, pure 0)
+                           , (3, (\us -> fromIntegral (us :: Int) / 1000000) <$> choose (1, 10000000)) ]
+    shrink (SlowHistory k grants) =
+         [ SlowHistory k gs | gs <- shrinkList (const []) grants, not (null gs) ]
+      ++ [ SlowHistory 0 grants | k /= 0 ]
+
+-- | Per tier, 'Bucket.slowedByTier' counts the bearers whose standing is
+-- slowed by at least each bound; the count is stated literally.
+prop_slowed_by_tier :: Standings -> Property
+prop_slowed_by_tier (Standings m) =
+    classify (M.size m > 1)         "several bearers" $
+    classify (any onBound (M.elems m)) "a standing exactly on a bound" $
+      Bucket.slowedByTier m === M.fromListWith (zipWith (+))
+        [ (tier, [ if Bucket.svWaited sv > 0 && Bucket.svWaited sv >= (f - 1) * Bucket.svOwn sv
+                      then 1 else 0
+                 | f <- Bucket.slowdownBounds ])
+        | ((tier, _), sv) <- M.toList m ]
+  where
+    onBound sv = any (\f -> Bucket.svWaited sv == (f - 1) * Bucket.svOwn sv) Bucket.slowdownBounds
+
+newtype Standings = Standings (M.Map (Word8, Word64) Bucket.Served)
+  deriving Show
+
+instance Arbitrary Standings where
+    arbitrary = do
+      n <- choose (0, 12)
+      Standings . M.fromList <$> vectorOf n ((,) <$> key <*> standing)
+      where
+        key = (,) <$> elements [0, 1, 2, 3, 4, 255] <*> (fromIntegral <$> choose (0, 5 :: Int))
+        standing = do
+          own    <- frequency [ (1, pure 0), (3, choose (0, 20)) ]
+          waited <- frequency [ (1, pure 0), (3, choose (0, 20))
+                              , (2, (\f -> (f - 1) * own) <$> elements Bucket.slowdownBounds) ]
+          return (Bucket.Served (Time 0) waited own)
+    shrink (Standings m) = [ Standings (M.fromList kvs) | kvs <- shrinkList (const []) (M.toList m) ]
+
+-- | Bearers at fixed tiers, each reporting a gate wait and a write with
+-- every request, served by a bucket slow enough to queue them; the counters'
+-- snapshot counts per tier the bearers served within the window and, of
+-- those, the ones slowed by each bound, as the model says from the waits the
+-- harness saw.
+prop_slowed_counters :: SlowRun -> Property
+prop_slowed_counters SlowRun { srRate, srCapacity, srBearers, srAfter } =
+    classify (any (\(_, _, asked, granted, _, _) -> granted > asked) grants) "a grant that waited" $
+    classify (any (\(_, _, _, granted, _, _) -> now `diffTime` granted > Bucket.servedWindow) grants)
+             "a grant aged out" $
+    classify (any (\(_, _, slowed) -> any ((> 0) . snd) slowed) counted) "a bearer slowed" $
+      counted === oracle
+  where
+    (now, grants, counted) = runSimOrThrow $ do
+      bucket <- Bucket.newBucket srRate srCapacity Nothing
+      -- registered in order, so bearer @i@ has id @i@
+      hs <- mapM (const (Bucket.registerBearer bucket)) srBearers
+      gs <- forConcurrently (zip hs srBearers) $ \(h, SlowBearer { sbTier, sbStart, sbTakes }) -> do
+        atomically $ Bucket.setRank h (Bucket.Rank sbTier)
+        threadDelay sbStart
+        forM sbTakes $ \(gap, bytes, gate, wrote) -> do
+          threadDelay gap
+          asked <- getMonotonicTime
+          void $ Bucket.awaitGrantWaited Nothing gate wrote h bytes
+          granted <- getMonotonicTime
+          return (asked, granted, gate, wrote)
+      threadDelay srAfter
+      end <- getMonotonicTime
+      sc  <- atomically $ Counters.schedulingCounts end (bucket, Nothing)
+      return ( end
+             , [ (sbTier b, i, asked, granted, gate, wrote)
+               | (i, b, g) <- zip3 [0 ..] srBearers gs, (asked, granted, gate, wrote) <- g ]
+             , [ (t, Counters.tcServed c, Counters.tcSlowed c)
+               | (t, c) <- Counters.scTiers sc, Counters.tcServed c > 0 ] )
+    standings = fst (servedModel (List.sortOn (\(_, _, t, _, _) -> t)
+                       [ (tier, i, granted, granted `diffTime` asked, gate + wrote)
+                       | (tier, i, asked, granted, gate, wrote) <- grants ]))
+    recent    = M.filter (\sv -> now `diffTime` Bucket.svLast sv <= Bucket.servedWindow) standings
+    oracle    = [ (tier, length svs, [ (f, length (filter (Bucket.slowedBy f) svs))
+                                     | f <- Bucket.slowdownBounds ])
+                | tier <- nub [ t | (t, _) <- M.keys recent ]
+                , let svs = [ sv | ((t, _), sv) <- M.toList recent, t == tier ] ]
+
+data SlowBearer = SlowBearer {
+    sbTier  :: !Word8,
+    sbStart :: !DiffTime,
+    sbTakes :: ![(DiffTime, Int, DiffTime, DiffTime)]
+      -- ^ after the previous grant: the gap before asking, the bytes, the
+      -- gate wait and the write reported with the request
+  }
+  deriving Show
+
+data SlowRun = SlowRun {
+    srRate     :: !Double,
+    srCapacity :: !Int,
+    srBearers  :: ![SlowBearer],
+    srAfter    :: !DiffTime        -- ^ from the last grant to the snapshot
+  }
+  deriving Show
+
+instance Arbitrary SlowRun where
+    arbitrary = do
+      rate <- genRate
+      cap  <- genCapacity
+      n    <- choose (1, 4)
+      -- asking again at once is weighted up: that is what makes bearers
+      -- queue; the gate waits and writes are short next to a queued wait
+      bearers <- vectorOf n $ do
+        tier  <- elements [0, 1, 2, 3, 4, 255]
+        start <- millis 1000
+        takes <- choose (1, 10 :: Int) >>= \m -> vectorOf m $
+          (,,,) <$> frequency [ (3, pure 0), (2, millis 500) ] <*> genBytes cap
+                <*> frequency [ (1, pure 0), (2, millis 200) ]
+                <*> frequency [ (1, pure 0), (2, millis 20) ]
+        return (SlowBearer tier start takes)
+      rest <- elements [0, w / 2, w, 2 * w]
+      return (SlowRun rate cap bearers rest)
+      where
+        w = Bucket.servedWindow
+        millis m = (\k -> fromIntegral (k :: Int) / 1000) <$> choose (0, m)
+    shrink run@SlowRun { srBearers, srAfter } =
+         [ run { srBearers = bs } | bs <- shrinkList shrinkBearer srBearers, not (null bs) ]
+      ++ [ run { srAfter = 0 } | srAfter /= 0 ]
+      where
+        shrinkBearer b =
+             [ b { sbTakes = ts } | ts <- shrinkList shrinkTake (sbTakes b), not (null ts) ]
+          ++ [ b { sbTier = 0 } | sbTier b /= 0 ]
+          ++ [ b { sbStart = 0 } | sbStart b /= 0 ]
+        shrinkTake (gap, bytes, gate, wrote) =
+             [ (0, bytes, gate, wrote) | gap /= 0 ]
+          ++ [ (gap, bytes, 0, wrote)  | gate /= 0 ]
+          ++ [ (gap, bytes, gate, 0)   | wrote /= 0 ]
+          ++ [ (gap, 1024, gate, wrote) | bytes > 1024 ]
 
 -- | A window, the instant of the count, and grants in time order before it,
 -- on a coarse grid so that some land exactly on the window's edge.
@@ -3901,9 +4109,11 @@ replayStats sch@BucketSched { schSlice, schBearers } =
            Bucket.bsBurstsDropped = 0
          }
       where
-        (served, pruned) = servedModel (List.sortOn (\(_, _, t) -> t)
-                             [ (tier, fromIntegral (fst k), granted)
-                             | (k, tier, granted) <- servedTiers queued gs ])
+        -- the harness reports no gate waits or writes, so a standing is the
+        -- token waits alone
+        (served, pruned) = servedModel (List.sortOn (\(_, _, t, _, _) -> t)
+                             [ (tier, fromIntegral (fst k), granted, granted `diffTime` asked, 0)
+                             | (k, tier, asked, granted) <- servedTiers queued gs ])
 
     -- the tier each grant records: a queued one its rank, asked as it joined
     -- and again at every refresh it waited through, the last of which stamps
@@ -3916,11 +4126,11 @@ replayStats sch@BucketSched { schSlice, schBearers } =
         go _ [] = []
         go cache ((k, (asked, granted)) : rest)
           | k `Set.member` queued
-          = (k, rankOf k, granted) : go (Just (rankOf k, lastRefresh asked granted)) rest
+          = (k, rankOf k, asked, granted) : go (Just (rankOf k, lastRefresh asked granted)) rest
           | Just (tier, at) <- cache, granted `diffTime` at < Bucket.tierRefresh
-          = (k, tier, granted) : go cache rest
+          = (k, tier, asked, granted) : go cache rest
           | otherwise
-          = (k, rankOf k, granted) : go (Just (rankOf k, granted)) rest
+          = (k, rankOf k, asked, granted) : go (Just (rankOf k, granted)) rest
 
     -- the last refresh a wait from @asked@ to @granted@ went through: the
     -- refreshes fall at @asked@ plus whole refresh intervals, and one that
@@ -4368,6 +4578,89 @@ prop_mux_lanes lc@LaneCase { lcRate, lcSlicePct, lcBatches } =
 
     laneRule (Mx.MiniProtocolNum 4) Mx.InitiatorDir = Mx.Slice
     laneRule num dir                                = Mx.directionSplit num dir
+
+-- | Through the muxer, every scheduled batch reports to the budget the time
+-- it waited at the writability gate and the time the batch before it took to
+-- write. Over a bearer whose gate and writes take a known time, with one
+-- message at a time and a pause between them so that each is one batch, the
+-- bearer's standing is exactly the model's over those times, and the gate
+-- waits sum to one per message; nothing waits for tokens.
+prop_mux_scheduled_own_time :: OwnTimeCase -> Property
+prop_mux_scheduled_own_time oc@OwnTimeCase { otGate, otWrite, otMsgs } =
+    counterexample (show oc) $
+    classify (otGate == 0)       "no gate wait" $
+    classify (otWrite == 0)      "writes take no time" $
+    classify (length otMsgs > 1) "several batches" $
+    case runSimOrThrow run of
+      (st, sent) ->
+             counterexample "standing" (Bucket.bsServed st === fst (servedModel (model sent)))
+        .&&. counterexample "gate waits"
+               (Bucket.bsWaitWritable st === fromIntegral (length otMsgs) * otGate)
+  where
+    num   = Mx.MiniProtocolNum 2
+    pause = otGate + otWrite + 0.001
+
+    -- the bearer is the budget's first and has no rank: unranked, id 0;
+    -- a batch is granted once its gate opens, and reports the gate and the
+    -- write before it, none before the first
+    model sent = [ (255, 0, otGate `addTime` t, 0, otGate + (if k == 0 then 0 else otWrite))
+                 | (k, t) <- zip [0 :: Int ..] sent ]
+
+    run :: IOSim s (Bucket.BucketStats, [Time])
+    run = do
+      w <- atomically $ newTBQueue 2
+      r <- atomically $ newTBQueue 2
+      base <- getBearer makeQueueChannelBearer (-1)
+                QueueChannel { writeQueue = w, readQueue = r } Nothing
+      let bearer = base
+            { Mx.awaitWritable = \_ _ -> threadDelay otGate
+            , Mx.writeMany     = \tr to sdus -> threadDelay otWrite >> Mx.writeMany base tr to sdus }
+          info :: MiniProtocolInfo Mx.InitiatorMode
+          info = MiniProtocolInfo {
+              miniProtocolNum        = num,
+              miniProtocolDir        = Mx.InitiatorDirectionOnly,
+              miniProtocolLimits     = MiniProtocolLimits { maximumIngressQueue = 16 },
+              miniProtocolCapability = Nothing }
+      budget <- Bucket.newBucket 1e9 65536 Nothing
+      let policy = Mx.EgressPolicy { Mx.egressBudget = budget, Mx.egressSlice = Nothing,
+                                     Mx.egressLaneOf = \_ _ -> Mx.Scheduled }
+      mux <- Mx.newWithEgress policy Mx.nullTracers [info]
+      -- the peer takes everything
+      _ <- async $ forever $ atomically (readTBQueue w)
+      withAsync (Mx.run mux bearer) $ \_ -> do
+        sent <- newTVarIO []
+        _ <- Mx.runMiniProtocol mux num Mx.InitiatorDirectionOnly Mx.StartEagerly $ \chan -> do
+          forM_ otMsgs $ \n -> do
+            t <- getMonotonicTime
+            Mx.send chan (BL.replicate (fromIntegral n) 7)
+            atomically $ modifyTVar sent (t :)
+            threadDelay pause
+          return ((), Nothing)
+        atomically $ readTVar sent >>= check . (== length otMsgs) . length
+        threadDelay pause
+        now <- getMonotonicTime
+        (st, _, _, _) <- atomically $ Bucket.bucketSnapshot budget now
+        (,) st . reverse <$> readTVarIO sent
+
+-- | A gate wait and a write time, whole microseconds up to 50 ms and often
+-- none, and messages of one SDU each: the queue bearer's SDU is 1280 bytes.
+data OwnTimeCase = OwnTimeCase {
+    otGate  :: !DiffTime,
+    otWrite :: !DiffTime,
+    otMsgs  :: ![Int]
+  }
+  deriving Show
+
+instance Arbitrary OwnTimeCase where
+    arbitrary = OwnTimeCase <$> micros <*> micros
+                            <*> listOf1 (choose (1, 1280))
+      where
+        micros = frequency [ (1, pure 0)
+                           , (3, (\us -> fromIntegral (us :: Int) / 1000000) <$> choose (1, 50000)) ]
+    shrink oc@OwnTimeCase { otGate, otWrite, otMsgs } =
+         [ oc { otMsgs = ms } | ms <- shrinkList (const []) otMsgs, not (null ms) ]
+      ++ [ oc { otGate = 0 }  | otGate /= 0 ]
+      ++ [ oc { otWrite = 0 } | otWrite /= 0 ]
 
 -- | Own requests through a bearer whose peer stops and starts draining: the
 -- gate is shut and the link stalls in the closed phases, and in the open ones
