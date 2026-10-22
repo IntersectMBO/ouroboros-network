@@ -37,7 +37,8 @@ import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Ouroboros.Network.RegisteredDelay (RegisteredDelay)
 import Ouroboros.Network.RegisteredDelay qualified as RegisteredDelay
 import Ouroboros.Network.Tx (HasRawTxId)
-import Ouroboros.Network.TxSubmission.Inbound.V2.Policy (TxDecisionPolicy (..))
+import Ouroboros.Network.TxSubmission.Inbound.V2.Policy (TxDecisionPolicy (..),
+           TxSubmissionConfig (..))
 import Ouroboros.Network.TxSubmission.Inbound.V2.State qualified as State
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
 import Ouroboros.Network.TxSubmission.Mempool.Reader
@@ -257,6 +258,7 @@ withPeer
      , HasRawTxId txid
      )
   => TxDecisionPolicy
+  -> TxSubmissionConfig
   -> TxSubmissionMempoolReader txid tx idx m
   -> SharedTxStateVar m peeraddr txid
   -> PeerTxRegistry m peeraddr
@@ -264,7 +266,7 @@ withPeer
   -> peeraddr
   -> (PeerTxAPI m txid tx -> m a)
   -> m a
-withPeer policy TxSubmissionMempoolReader { mempoolGetSnapshot }
+withPeer policy config TxSubmissionMempoolReader { mempoolGetSnapshot }
          sharedStateVar registry retiredCountersVar peeraddr io =
     bracket acquire release run
   where
@@ -293,9 +295,10 @@ withPeer policy TxSubmissionMempoolReader { mempoolGetSnapshot }
 
     run (peerInFlightVar, peerCountersVar) = io PeerTxAPI {
           awaitSharedChange = awaitSharedChangeImp sharedStateVar
-        , runNextPeerAction = runNextPeerActionImp policy sharedStateVar
+        , runNextPeerAction = runNextPeerActionImp policy config sharedStateVar
                                 peerInFlightVar peerCountersVar peeraddr
-        , runNextPeerActionPipelined = runNextPeerActionPipelinedImp policy
+        , runNextPeerActionPipelined = runNextPeerActionPipelinedImp
+                                         policy config
                                          sharedStateVar peerInFlightVar
                                          peerCountersVar peeraddr
         , applyReceivedTxIds = applyReceivedTxIdsImp policy mempoolGetSnapshot
@@ -470,6 +473,7 @@ updateCountersForAction countersVar kind pipelineWait_m peerAction =
 runNextPeerActionImp :: ( MonadSTM m
                         , Ord peeraddr )
                      => TxDecisionPolicy
+                     -> TxSubmissionConfig
                      -> SharedTxStateVar m peeraddr txid
                      -> PeerTxInFlightVar m
                      -> TxSubmissionCountersVar m
@@ -478,14 +482,14 @@ runNextPeerActionImp :: ( MonadSTM m
                      -> Maybe DiffTime
                      -> PeerTxLocalState tx
                      -> m (PeerAction, PeerTxLocalState tx)
-runNextPeerActionImp policy sharedStateVar peerInFlightVar countersVar peeraddr
+runNextPeerActionImp policy config sharedStateVar peerInFlightVar countersVar peeraddr
                      now downloadTime_m peerState = atomically $ do
   sharedState <- readTVar sharedStateVar
   peerInFlight <- readTVar peerInFlightVar
   let sharedGeneration0 = sharedGeneration sharedState
       sharedRevision0   = sharedRevision   sharedState
       (peerAction, peerState', peerInFlight', sharedState') =
-        State.nextPeerAction now policy peeraddr peerState peerInFlight sharedState
+        State.nextPeerAction now policy config peeraddr peerState peerInFlight sharedState
   writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedRevision0 sharedState'
   writePeerInFlightIfChanged peerInFlightVar peerInFlight peerInFlight'
   updateCountersForAction countersVar (txIdRequestKind peerState') downloadTime_m
@@ -496,6 +500,7 @@ runNextPeerActionImp policy sharedStateVar peerInFlightVar countersVar peeraddr
 runNextPeerActionPipelinedImp :: ( MonadSTM m
                                   , Ord peeraddr )
                               => TxDecisionPolicy
+                              -> TxSubmissionConfig
                               -> SharedTxStateVar m peeraddr txid
                               -> PeerTxInFlightVar m
                               -> TxSubmissionCountersVar m
@@ -503,7 +508,7 @@ runNextPeerActionPipelinedImp :: ( MonadSTM m
                               -> Time
                               -> PeerTxLocalState tx
                               -> m (PeerAction, PeerTxLocalState tx)
-runNextPeerActionPipelinedImp policy sharedStateVar peerInFlightVar countersVar
+runNextPeerActionPipelinedImp policy config sharedStateVar peerInFlightVar countersVar
                               peeraddr now peerState =
     atomically $ do
       sharedState <- readTVar sharedStateVar
@@ -511,7 +516,7 @@ runNextPeerActionPipelinedImp policy sharedStateVar peerInFlightVar countersVar
       let sharedGeneration0 = sharedGeneration sharedState
           sharedRevision0   = sharedRevision   sharedState
           (peerAction, peerState', peerInFlight', sharedState') =
-            State.nextPeerActionPipelined now policy peeraddr peerState
+            State.nextPeerActionPipelined now policy config peeraddr peerState
                                           peerInFlight sharedState
       writeSharedStateIfChanged sharedStateVar sharedGeneration0 sharedRevision0 sharedState'
       writePeerInFlightIfChanged peerInFlightVar peerInFlight peerInFlight'
