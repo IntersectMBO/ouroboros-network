@@ -401,7 +401,8 @@ pickSubmitAction PeerActionContext { pacPeerState, pacSharedState } =
 -- Tx keys to request (in the peer's advertisement order)
 -- Total serialized size of the requested txs
 -- Updated shared state with new lease ownership for selected txs
-pickRequestTxsAction :: Eq peeraddr
+pickRequestTxsAction :: forall peeraddr txid tx.
+                        Eq peeraddr
                      => PeerActionContext peeraddr txid tx
                      -> Maybe ([TxKey], SizeInBytes, IntMap.IntMap (TxEntry peeraddr))
 pickRequestTxsAction ctx@PeerActionContext { pacNow, pacPolicy, pacPeerState, pacSharedState } =
@@ -421,13 +422,6 @@ pickRequestTxsAction ctx@PeerActionContext { pacNow, pacPolicy, pacPeerState, pa
          then ([], 0, sharedTxTable pacSharedState)
          else go IntSet.empty [] 0 (sharedTxTable pacSharedState) candidates
       where
-        -- Remaining bytes available for requesting new tx, based on the
-        -- per-peer inflight size limit.
-        sizeBudget =
-          if peerRequestedTxsSize pacPeerState >= txsSizeInflightPerPeer pacPolicy
-             then 0
-             else txsSizeInflightPerPeer pacPolicy - peerRequestedTxsSize pacPeerState
-
         leaseUntil = addTime (interTxSpace pacPolicy) pacNow
 
         -- Iterate the peer's unacknowledged queue, which preserves the order
@@ -435,6 +429,7 @@ pickRequestTxsAction ctx@PeerActionContext { pacNow, pacPolicy, pacPeerState, pa
         -- order aligns our fetch order with the peer's advertisement order,
         -- which preserves whatever submission-validity ordering the peer
         -- intended within the batch.
+        candidates :: [(Int, SizeInBytes)]
         candidates =
           [ (k, txSize)
           | TxKey k <- toList (peerUnacknowledgedTxIds pacPeerState)
@@ -453,6 +448,15 @@ pickRequestTxsAction ctx@PeerActionContext { pacNow, pacPolicy, pacPeerState, pa
         -- 'Map txid SizeInBytes' already deduplicates, and we must not
         -- inflate 'txAttempt' or 'peerRequestedTxsSize' with phantom
         -- second claims.
+        go :: IntSet
+           -> [TxKey]
+           -- ^ selected `TxKey`s to request
+           -> SizeInBytes
+           -- ^ overall size of the requested txs
+           -> IntMap.IntMap (TxEntry peeraddr)
+           -> [(Int, SizeInBytes)]
+           -- ^ candidates
+           -> ([TxKey], SizeInBytes, IntMap.IntMap (TxEntry peeraddr))
         go _    selectedRev selectedSize txTable [] = (reverse selectedRev, selectedSize, txTable)
         go seen selectedRev selectedSize txTable ((k, txSize) : rest)
           | IntSet.member k seen = go seen selectedRev selectedSize txTable rest
@@ -482,6 +486,14 @@ pickRequestTxsAction ctx@PeerActionContext { pacNow, pacPolicy, pacPeerState, pa
           | selectedSize + txSize <= sizeBudget = False
           | selectedSize /= 0 = True
           | otherwise = peerRequestedTxsSize pacPeerState >= txsSizeInflightPerPeer pacPolicy
+
+        -- Remaining bytes available for requesting new tx, based on the
+        -- per-peer inflight size limit.
+        sizeBudget =
+          if peerRequestedTxsSize pacPeerState >= txsSizeInflightPerPeer pacPolicy
+             then 0
+             else txsSizeInflightPerPeer pacPolicy - peerRequestedTxsSize pacPeerState
+
 
 -- | Determine txid acknowledgment and request counts, if any work is available.
 pickRequestTxIdsAction :: TxIdRequestMode
