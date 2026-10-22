@@ -20,6 +20,7 @@ instance (Show txid, Show peeraddr, HasRawTxId txid) => LogFormatting (TraceTxLo
       mconcat $ [ "kind" .= String "TraceSharedTxState"
                 , "sharedGeneration" .= sharedGeneration
                 , "sharedRevision" .= sharedRevision
+                , "sharedClaimable" .= sharedClaimable
                 ]
              ++ [ Key.fromString name .= n
                 | (name, n) <- sharedTxStateCountFields counts
@@ -47,6 +48,7 @@ instance (Show txid, Show peeraddr, HasRawTxId txid) => LogFormatting (TraceTxLo
   asMetrics (TraceSharedTxState SharedTxState {..} counts) =
        IntM (sharedStateMetric "revision") (fromIntegral sharedRevision)
      : IntM (sharedStateMetric "generation") (fromIntegral sharedGeneration)
+     : IntM (sharedStateMetric "claimable") (fromIntegral sharedClaimable)
      : [ IntM (sharedStateMetric name) (fromIntegral n)
        | (name, n) <- sharedTxStateCountFields counts
        ]
@@ -68,6 +70,7 @@ instance MetaTrace (TraceTxLogic peeraddr txid tx) where
   metricsDocFor (Namespace [] ["TraceSharedTxState"]) =
     [ (sharedStateMetric "revision", "writes of the shared tx state, one per transaction")
     , (sharedStateMetric "generation", "wake-ups of the parked peers")
+    , (sharedStateMetric "claimable", "wake-ups of the slow tier's parked peers: an entry became claimable, a lease was released or a stuck cap raised")
     , (sharedStateMetric "activeTxCount", "entries of the active tx table")
     , (sharedStateMetric "retainedTxCount", "keys retained after reaching the mempool")
     , (sharedStateMetric "internedTxCount", "lookup entries in all")
@@ -100,6 +103,7 @@ instance LogFormatting TxSubmissionCounters where
             , "txsRejected" .= txsRejected
             , "txIdBlockingReqsSent" .= txIdBlockingReqsSent
             , "txIdPipelinedReqsSent" .= txIdPipelinedReqsSent
+            , "txIdSlowReqsSent" .= txIdSlowReqsSent
             , "txIdBlockingWaitMs" .= txIdBlockingWait
             , "txPipelineWaitMs" .= txPipelineWait
             , "txSubmissionWaitMs" .= txSubmissionWait
@@ -120,6 +124,7 @@ instance LogFormatting TxSubmissionCounters where
     , IntM "txSubmission.txsRejected" (fromIntegral txsRejected)
     , IntM "txSubmission.txIdBlockingReqsSent"  (fromIntegral txIdBlockingReqsSent)
     , IntM "txSubmission.txIdPipelinedReqsSent" (fromIntegral txIdPipelinedReqsSent)
+    , IntM "txSubmission.txIdSlowReqsSent"      (fromIntegral txIdSlowReqsSent)
     , IntM "txSubmission.txIdBlockingWaitMs" (fromIntegral txIdBlockingWait)
     , IntM "txSubmission.txPipelineWaitMs"   (fromIntegral txPipelineWait)
     , IntM "txSubmission.txSubmissionWaitMs" (fromIntegral txSubmissionWait)
@@ -147,6 +152,7 @@ instance MetaTrace TxSubmissionCounters where
     , ("txSubmission.txsRejected", "number of tx bodies rejected by the mempool")
     , ("txSubmission.txIdBlockingReqsSent",  "number of blocking txid request messages sent")
     , ("txSubmission.txIdPipelinedReqsSent", "number of pipelined txid request messages sent")
+    , ("txSubmission.txIdSlowReqsSent",      "number of txid request messages sent to peers on the slow fetch tier")
     , ("txSubmission.txIdBlockingWaitMs", "cumulative milliseconds spent waiting for blocking txid replies (idle state proxy)")
     , ("txSubmission.txPipelineWaitMs",   "cumulative milliseconds the pipeline was active from first body request until full drain (loading state proxy)")
     , ("txSubmission.txSubmissionWaitMs", "cumulative milliseconds spent in mempoolAddTxs; high values indicate mempool backpressure")

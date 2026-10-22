@@ -1866,11 +1866,13 @@ traceSharedTxStateToJSON SharedTxState {
                            sharedTxIdToKey,
                            sharedKeyToTxId,
                            sharedGeneration,
-                           sharedRevision
+                           sharedRevision,
+                           sharedClaimable
                          } counts =
     object $
       [ "sharedGeneration" .= sharedGeneration
       , "sharedRevision" .= sharedRevision
+      , "sharedClaimable" .= sharedClaimable
       ]
       ++
       [ Key.fromString name .= n

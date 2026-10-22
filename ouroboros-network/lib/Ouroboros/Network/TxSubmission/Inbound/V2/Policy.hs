@@ -31,9 +31,10 @@ max_TX_SIZE = 65_540
 --
 data TxDecisionPolicy = TxDecisionPolicy {
       maxNumTxIdsToRequest           :: !NumTxIdsToReq,
-      -- ^ a maximal number of txids requested at once: the window's worth,
-      -- so a peer hands over what accumulated between two requests in one
-      -- exchange.
+      -- ^ a maximal number of txids requested at once.  Best kept at the
+      -- window while a slow fetch tier exists, so a slow peer hands over
+      -- what accumulated during its wait in one exchange; below it the
+      -- peer catches up only as blocks clear its mempool.
 
       maxUnacknowledgedTxIds         :: !NumTxIdsToReq,
       -- ^ maximal number of unacknowledgedTxIds.  Measured in `NumTxIdsToReq`
@@ -75,8 +76,29 @@ data TxDecisionPolicy = TxDecisionPolicy {
       -- ^ Maximum time a peer's attempt may sit between claim and
       -- entering submission before the per-entry inflight-multiplicity
       -- cap is bumped, allowing another peer to attempt in parallel.
-      maxPeerClaimDelay              :: !DiffTime
+      maxPeerClaimDelay              :: !DiffTime,
       -- ^ Maximum delay penalty for poor performing peers.
+
+      -- Fetch tiers: see 'Ouroboros.Network.TxSubmission.Inbound.V2.Tier'.
+      --
+      txFastPeers                    :: !Int,
+      -- ^ how many inbound peers the coin keeps on the fast tier, polled
+      -- for txids as soon as there is something to acknowledge.  Local
+      -- roots and tx sources are fast besides.
+      txSlowCadence                  :: !DiffTime,
+      -- ^ the least time between two txid requests to a slow-tier peer,
+      -- blocking ones included, before jitter.
+      txSlowJitter                   :: !Double,
+      -- ^ the fraction of 'txSlowCadence' each wait is jittered by, drawn
+      -- afresh per request, so slow peers never fire together.  In @[0, 1)@.
+      txTierRotation                 :: !DiffTime,
+      -- ^ how often the coin redraws the fast tier.
+      txSourceRate                   :: !Double,
+      -- ^ a peer delivering novel accepted txs at this rate (per second,
+      -- sustained over 'txSourceWindow') is a tx source and fast while it
+      -- lasts.  Zero disables the rule.
+      txSourceWindow                 :: !DiffTime
+      -- ^ the window 'txSourceRate' is measured over.
     }
   deriving (Eq, Show)
 
@@ -97,7 +119,13 @@ defaultTxDecisionPolicy =
     scoreAcceptDecrement   = 3,
     interTxSpace           = 0.250,
     inflightTimeout        = 0.600,
-    maxPeerClaimDelay      = 0.250
+    maxPeerClaimDelay      = 0.250,
+    txFastPeers            = 20,
+    txSlowCadence          = 0.500,
+    txSlowJitter           = 0.2,
+    txTierRotation         = 293,
+    txSourceRate           = 1,
+    txSourceWindow         = 10
   }
 
 -- | Sanity check for a 'TxDecisionPolicy': 'True' when every field lies
@@ -107,8 +135,9 @@ defaultTxDecisionPolicy =
 -- peer can make no progress), the rate, score and delay parameters must
 -- be non-negative, and 'inflightTimeout' must be at least 'interTxSpace'
 -- (their difference is used as a non-negative delay when bumping a stuck
--- entry's inflight-multiplicity cap).  'defaultTxDecisionPolicy' satisfies
--- it.
+-- entry's inflight-multiplicity cap).  The tier fields must be
+-- non-negative, the jitter below one and the rotation and source window
+-- positive.  'defaultTxDecisionPolicy' satisfies it.
 saneTxDecisionPolicy :: TxDecisionPolicy -> Bool
 saneTxDecisionPolicy p =
        maxNumTxIdsToRequest           p >= 1
@@ -123,3 +152,10 @@ saneTxDecisionPolicy p =
     && interTxSpace                   p >= 0
     && inflightTimeout                p >= interTxSpace p
     && maxPeerClaimDelay              p >= 0
+    && txFastPeers                    p >= 0
+    && txSlowCadence                  p >= 0
+    && txSlowJitter                   p >= 0
+    && txSlowJitter                   p <  1
+    && txTierRotation                 p >  0
+    && txSourceRate                   p >= 0
+    && txSourceWindow                 p >  0
