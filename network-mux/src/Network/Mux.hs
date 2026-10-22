@@ -86,6 +86,7 @@ module Network.Mux
   , egressBurstCap
   , egressBurstGrantFloor
   , egressServedWindow
+  , egressSlowdownBounds
     -- * Errors
   , Error (..)
   , RuntimeError (..)
@@ -134,7 +135,7 @@ import Network.Mux.Egress.Bucket (Bucket, BucketHandle, Burst (..),
 import Network.Mux.Egress.Counters (SchedulingCounts (..), TierCounts (..),
            egressBurstBounds, egressBurstCap, egressBurstGap,
            egressBurstGrantFloor, egressBurstWidths, egressServedWindow,
-           egressWaitBounds)
+           egressSlowdownBounds, egressWaitBounds)
 import Network.Mux.Ingress as Ingress
 import Network.Mux.Timeout
 import Network.Mux.Trace

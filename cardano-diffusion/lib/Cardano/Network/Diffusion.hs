@@ -76,7 +76,9 @@ run CardanoNodeArguments {
       churnModeVar,
       churnMetrics,
       ledgerPeersAPI,
-      readUseBootstrapPeers
+      readUseBootstrapPeers,
+      freshBytes,
+      freshMaxBytes
     }
     tracers config apps = do
     let tracer = Diffusion.dtDiffusionTracer tracers
@@ -162,6 +164,8 @@ run CardanoNodeArguments {
                       Cardano.Churn.tracerChurnMode    = tracerChurnMode
                     },
                   daSRVPrefix                         = Cardano.srvPrefix,
-                  daEgressPoolKey                     = sockAddrWithoutPort
+                  daEgressPoolKey                     = sockAddrWithoutPort,
+                  daFreshBytes                        = freshBytes,
+                  daFreshMaxBytes                     = freshMaxBytes
                 }
                config apps
