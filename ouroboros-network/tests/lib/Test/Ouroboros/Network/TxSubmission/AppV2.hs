@@ -1363,7 +1363,12 @@ unit_score_persistentBadStaysHigh = do
 -- 1 and equal-or-greater valid count).
 unit_score_recoversAfterBurst :: Assertion
 unit_score_recoversAfterBurst = do
-    let invalids = 5
+    -- The score nets each submitted batch: rejections up, accepts down by
+    -- 'scoreAcceptDecrement'.  The burst must outsize a batch, or a batch
+    -- mixing the tail of the burst with enough accepts nets to nothing
+    -- and the peak is never seen; 20 invalids fill two full requests at
+    -- the default cap, and 10 accepts drain them afterwards.
+    let invalids = 20
         valids   = 10
         st = TxSubmissionState
               { peerMap        = Map.singleton 1

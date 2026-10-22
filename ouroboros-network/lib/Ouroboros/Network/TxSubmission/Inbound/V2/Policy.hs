@@ -31,7 +31,9 @@ max_TX_SIZE = 65_540
 --
 data TxDecisionPolicy = TxDecisionPolicy {
       maxNumTxIdsToRequest           :: !NumTxIdsToReq,
-      -- ^ a maximal number of txids requested at once.
+      -- ^ a maximal number of txids requested at once: the window's worth,
+      -- so a peer hands over what accumulated between two requests in one
+      -- exchange.
 
       maxUnacknowledgedTxIds         :: !NumTxIdsToReq,
       -- ^ maximal number of unacknowledgedTxIds.  Measured in `NumTxIdsToReq`
@@ -84,7 +86,7 @@ instance NFData TxDecisionPolicy where
 defaultTxDecisionPolicy :: TxDecisionPolicy
 defaultTxDecisionPolicy =
   TxDecisionPolicy {
-    maxNumTxIdsToRequest   = 6,
+    maxNumTxIdsToRequest   = 10,
     maxUnacknowledgedTxIds = 10, -- must be the same as txSubmissionMaxUnacked
     txsSizeInflightPerPeer = max_TX_SIZE * 6,
     maxOutstandingTxBatchesPerPeer = 4,
