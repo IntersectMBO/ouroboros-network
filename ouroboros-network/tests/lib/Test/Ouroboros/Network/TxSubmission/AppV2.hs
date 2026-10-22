@@ -60,6 +60,7 @@ import Ouroboros.Network.Tx (HasRawTxId)
 import Ouroboros.Network.TxSubmission.Inbound.V2 (txSubmissionInboundV2)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
 import Ouroboros.Network.TxSubmission.Inbound.V2.Registry
+import Ouroboros.Network.TxSubmission.Inbound.V2.Tier (sourceCount)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
 import Ouroboros.Network.TxSubmission.Outbound
 import Ouroboros.Network.Util.ShowProxy
@@ -655,6 +656,7 @@ prop_counterInvariants slack tr =
       , ("txIdBlockingReqsSent",  txIdBlockingReqsSent)
       , ("txIdPipelinedReqsSent", txIdPipelinedReqsSent)
       , ("txIdSlowReqsSent",      txIdSlowReqsSent)
+      , ("txIdsReceivedSlow",     txIdsReceivedSlow)
       , ("txIdBlockingWaitMs",    txIdBlockingWait)
       , ("txPipelineWaitMs",      txPipelineWait)
       , ("txSubmissionWaitMs",    txSubmissionWait)
@@ -672,6 +674,8 @@ prop_counterInvariants slack tr =
           (txIdRepliesReceived s <= txIdMessagesSent s)
       , counterexample "txIdSlowReqsSent > txIdMessagesSent"
           (txIdSlowReqsSent s <= txIdMessagesSent s)
+      , counterexample "txIdsReceivedSlow > txIdsReceived"
+          (txIdsReceivedSlow s <= txIdsReceived s)
       , counterexample "txRepliesReceived > txMessagesSent"
           (txRepliesReceived s <= txMessagesSent s)
       , counterexample "txIdsReceived > txIdsRequested"
@@ -743,6 +747,29 @@ prop_txSubmission_allSlow st =
                                                 , txSlowJitter  = 0.2
                                                 , txSourceRate  = 0 } }
 
+-- | The slow tier's txid counter against the policy: a slow request yields
+-- at most the request cap of ids, and with no fast tier to be had (no coin
+-- slots, no source rule; the simulation has no local roots) every id
+-- received came on the slow tier.
+prop_tierCounterBounds :: TxDecisionPolicy -> SimTrace a -> Property
+prop_tierCounterBounds policy tr =
+    conjoin
+      [ counterexample ("txIdsReceivedSlow " ++ show (txIdsReceivedSlow s)
+                          ++ " > txIdSlowReqsSent " ++ show (txIdSlowReqsSent s)
+                          ++ " * cap " ++ show cap)
+          (txIdsReceivedSlow s <= txIdSlowReqsSent s * cap)
+      .&&. (if allSlow
+               then counterexample ("every peer slow, yet txIdsReceivedSlow "
+                                      ++ show (txIdsReceivedSlow s) ++ " /= txIdsReceived "
+                                      ++ show (txIdsReceived s))
+                      (txIdsReceivedSlow s === txIdsReceived s)
+               else property True)
+      | s <- selectTraceEventsDynamic tr :: [TxSubmissionCounters]
+      ]
+  where
+    cap     = fromIntegral (getNumTxIdsToReq (maxNumTxIdsToRequest policy))
+    allSlow = txFastPeers policy == 0 && sourceCount policy == 0
+
 -- | 'prop_txSubmission' under five minutes of mempool backpressure from the
 -- start: every valid tx must still reach the mempool afterwards, so no
 -- txid may be acknowledged unfetched while its peer waits for room.
@@ -780,6 +807,7 @@ prop_txSubmissionStalled mempoolStall st@(TxSubmissionState peers _ _) =
              counterexample (ppSayTrace tr)
            $ conjoin (validate inmp `map` outmps)
              .&&. prop_counterInvariants 0 tr
+             .&&. prop_tierCounterBounds (decisionPolicy st) tr
              .&&. prop_sharedStateClean finalState
   where
     -- | Asserts that every txid produced is present in the consumer set.

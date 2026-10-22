@@ -60,15 +60,17 @@ import Ouroboros.Network.RegisteredDelay qualified as RegisteredDelay
 import Ouroboros.Network.Tx (HasRawTxId (..), getRawTxId)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
 import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (PeerRegistration,
-           PeerTxRegistry (..), SharedTxStateVar, TxSubmissionCountersVar,
-           awaitClaimableChangeImp, drainPause, newPeerTxRegistry,
-           newSharedTxStateVar, newTxSubmissionCountersVar,
+           PeerTierEntry (..), PeerTxRegistry (..), SharedTxStateVar,
+           TxSubmissionCountersVar, awaitClaimableChangeImp, drainPause,
+           newPeerTxRegistry, newSharedTxStateVar, newTxSubmissionCountersVar,
            registerPeerCounters, registerPeerTier, retirePeerCounters,
            rotateTiers, scrubFromPeerInFlight, snapshotCountersWith, sweepBatch,
-           sweepInterval, txCountersThreadV2, writeSharedStateIfChanged)
+           sweepInterval, tierCensus, txCountersThreadV2, withTier,
+           writeSharedStateIfChanged)
 import Ouroboros.Network.TxSubmission.Inbound.V2.State
-import Ouroboros.Network.TxSubmission.Inbound.V2.Tier (drawFastTier, isSource,
-           nextJitter, recordNovel, slowWait, sourceCount)
+import Ouroboros.Network.TxSubmission.Inbound.V2.Tier (censusOf, drawFastTier,
+           effectiveTier, isSource, nextJitter, recordNovel, slowWait,
+           sourceCount, standingOf)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
 
 import Test.Ouroboros.Network.TxSubmission.Types
@@ -166,6 +168,8 @@ tests =
         , testProperty "a gated txid request parks on the claimable counter read then" prop_tier_gateParksOnClaimable
         , testProperty "the gate holds txid requests only; a buffered body keeps the generation" prop_tier_gateHoldsOnlyTxIdRequests
         , testProperty "local roots are fast by standing and hold no coin slot" prop_tier_rootsOutsideCoin
+        , testProperty "the census counts each standing once, root before coin before source" prop_tier_censusOracle
+        , testProperty "a decision's tier read writes the standing it is served on" prop_tier_withTierStanding
         ]
     , testGroup "Claimable"
         [ testProperty "the claimable counter moves on an omitted body or a rejection, and only then" prop_claimable_releases
@@ -2120,13 +2124,15 @@ watchWrites st0 sharedStateVar for = do
          , [ t | ((t, size), (_, before)) <- zip (drop 1 obs) obs, size < before ]
          )
 
--- | What an emission's traces take, as a share of the sweep interval: up
--- to half of it, which the interval has room for.
+-- | What each of an emission's traces takes, as a share of the sweep
+-- interval: up to a third of it, which the interval has room for with the
+-- three traces an emission carries at most (counters, census, shared
+-- state).
 newtype EmissionShare = EmissionShare Int
   deriving Show
 
 instance Arbitrary EmissionShare where
-  arbitrary = EmissionShare <$> choose (1, 50)
+  arbitrary = EmissionShare <$> choose (1, 33)
   shrink (EmissionShare p) = [ EmissionShare p' | p' <- shrink p, p' >= 1 ]
 
 -- | An emission, however long its traces take, does not delay the sweep
@@ -4190,7 +4196,8 @@ genPeerTxLocalState = sized $ \n -> do
       peerTier = FastTier,
       peerNovelAt = StrictSeq.empty,
       peerSlowGate = Nothing,
-      peerJitterSeed = 0
+      peerJitterSeed = 0,
+      peerRequestTier = FastTier
     }
   where
     genAvailableTx key = do
@@ -4947,11 +4954,11 @@ prop_tier_registry (ArbTxDecisionPolicy policy) (NonNegative n0) seed =
       c <- newTVarIO mempty
       atomically $ do
         r <- registerPeerCounters registry (p :: Int) c
-        (v, _) <- registerPeerTier policy registry r (pure False)
-        pure (r, v)
+        (e, _) <- registerPeerTier policy registry r (pure False)
+        pure (r, pteCoin e)
     fastCount registry = do
       tiers <- readTVarIO (peerTiers registry)
-      length . filter (== FastTier) <$> mapM (readTVarIO . fst) (Map.elems tiers)
+      length . filter (== FastTier) <$> mapM (readTVarIO . pteCoin) (Map.elems tiers)
 
 
 -- | Every decision of a stream run: the time, the action, the local state
@@ -5048,7 +5055,8 @@ prop_tier_gateHoldsOnlyTxIdRequests (ArbTxDecisionPolicy policy0)
 -- | Local roots are fast by standing and hold none of the coin's slots:
 -- after registration and after a rotation every root is fast and exactly
 -- min(k, n) of the others are; roots that lose their standing join the
--- next draw like the rest.
+-- next draw like the rest.  The registry's census says the same at each
+-- step, with no source among peers that never delivered.
 prop_tier_rootsOutsideCoin :: ArbTxDecisionPolicy -> [Bool] -> Int -> Property
 prop_tier_rootsOutsideCoin (ArbTxDecisionPolicy policy) roots0 seed =
     cover 30 (nRoots > 0 && n > k) "roots beside a full coin" $
@@ -5059,20 +5067,30 @@ prop_tier_rootsOutsideCoin (ArbTxDecisionPolicy policy) roots0 seed =
         rootVar <- newTVarIO isRoot
         atomically $ do
           r <- registerPeerCounters registry (p :: Int) c
-          (v, _) <- registerPeerTier policy registry r (readTVar rootVar)
-          pure (rootVar, v)
+          (e, _) <- registerPeerTier policy registry r (readTVar rootVar)
+          pure (rootVar, pteCoin e)
       placed <- census regs
+      placedCensus <- atomically (tierCensus registry)
       atomically (rotateTiers policy registry)
       rotated <- census regs
+      rotatedCensus <- atomically (tierCensus registry)
       forM_ regs $ \(rootVar, _) -> atomically (writeTVar rootVar False)
       atomically (rotateTiers policy registry)
       demoted <- census regs
+      demotedCensus <- atomically (tierCensus registry)
       pure $ conjoin
         [ counterexample ("placed "  ++ show placed)  (placed  === (nRoots, min k nOthers))
         , counterexample ("rotated " ++ show rotated) (rotated === (nRoots, min k nOthers))
         , counterexample ("demoted " ++ show demoted) (demoted === (0, min k n))
+        , counterexample "placed census"  (placedCensus  === expectedCensus nRoots nOthers)
+        , counterexample "rotated census" (rotatedCensus === expectedCensus nRoots nOthers)
+        , counterexample "demoted census" (demotedCensus === expectedCensus 0 n)
         ]
   where
+    expectedCensus r o = TierCensus { censusFastByRoot   = r
+                                    , censusFastByCoin   = min k o
+                                    , censusFastBySource = 0
+                                    , censusSlow         = o - min k o }
     roots   = take 50 roots0
     n       = length roots
     nRoots  = length (filter id roots)
@@ -5083,6 +5101,55 @@ prop_tier_rootsOutsideCoin (ArbTxDecisionPolicy policy) roots0 seed =
       pairs <- forM regs $ \(rootVar, v) -> (,) <$> readTVarIO rootVar <*> readTVarIO v
       pure ( length [ () | (True,  FastTier) <- pairs ]
            , length [ () | (False, FastTier) <- pairs ] )
+
+-- | The census counts each standing once and classifies root before coin
+-- before source, against explicit counts over generated peers.
+prop_tier_censusOracle :: [(Bool, Bool, Bool)] -> Property
+prop_tier_censusOracle peers =
+      cover 20 (any (\(r, c, s) -> not r && not c && s) peers) "a source"
+    $ cover 20 (any (\(r, _, _) -> r) peers) "a root"
+    $ censusOf standings === TierCensus
+        { censusFastByRoot   = length [ () | (True, _, _) <- peers ]
+        , censusFastByCoin   = length [ () | (False, True, _) <- peers ]
+        , censusFastBySource = length [ () | (False, False, True) <- peers ]
+        , censusSlow         = length [ () | (False, False, False) <- peers ]
+        }
+  where
+    standings = [ standingOf root coin (if root || coinFast || source then FastTier else SlowTier)
+                | (root, coinFast, source) <- peers
+                , let coin = if coinFast then FastTier else SlowTier ]
+
+-- | A decision's tier read puts the peer on root-or-coin and writes the
+-- standing it is served on, source rule included, to the registry's
+-- entry; reading again changes nothing.
+prop_tier_withTierStanding
+  :: ArbTxDecisionPolicy -> Bool -> Bool -> Bool -> NonNegative Int -> Property
+prop_tier_withTierStanding (ArbTxDecisionPolicy policy0) root coinFast promote (NonNegative extra) =
+      cover 10 (not root && not coinFast && source) "promoted source"
+    $ cover 10 (not root && not coinFast && not source) "slow"
+    $ runSimOrThrow $ do
+        entry <- PeerTierEntry <$> newTVarIO coin <*> pure (pure root)
+                               <*> newTVarIO StandingSlow
+        ps'  <- atomically (withTier policy t0 entry ps)
+        s1   <- readTVarIO (pteStanding entry)
+        ps'' <- atomically (withTier policy t0 entry ps')
+        s2   <- readTVarIO (pteStanding entry)
+        pure $ conjoin
+          [ counterexample "tier" (peerTier ps' === if root then FastTier else coin)
+          , counterexample "standing" (s1 === standingOf root coin (effectiveTier policy t0 ps'))
+          , counterexample "source" ((s1 == StandingSource) === (not root && not coinFast && source))
+          , counterexample "second read" (ps'' === ps' .&&. s2 === s1)
+          ]
+  where
+    policy = policy0 { txSourceRate = max 1 (txSourceRate policy0) }
+    t0     = Time 100
+    coin   = if coinFast then FastTier else SlowTier
+    -- accepts at or above the source count, or short of it
+    accepts | promote   = sourceCount policy + extra
+            | otherwise = max 0 (sourceCount policy - 1 - extra)
+    ps     = emptyPeerTxLocalState { peerNovelAt = recordNovel policy t0 accepts StrictSeq.empty }
+               :: PeerTxLocalState (Tx TxId)
+    source = isSource policy t0 (peerNovelAt ps)
 
 -- | One fetch cycle for a peer: txids it advertises, which of the requested
 -- bodies it delivers, and which of the delivered ones the mempool rejects.

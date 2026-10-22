@@ -353,7 +353,8 @@ applyRequestTxIdsChoice ctx acknowledgedTxIds txIdsToAcknowledge txIdsToRequest 
         peerAvailableTxIds =
           IntMap.withoutKeys (peerAvailableTxIds peerState0) acknowledgedKeys,
         peerUnacknowledgedTxIds = unacknowledgedTxIds',
-        peerRequestedTxIds = peerRequestedTxIds peerState0 + txIdsToRequest
+        peerRequestedTxIds = peerRequestedTxIds peerState0 + txIdsToRequest,
+        peerRequestTier = pacTier ctx
       }
     -- on the slow tier the request sets the gate for the next one, at the
     -- cadence jittered by a draw from the peer's own generator
