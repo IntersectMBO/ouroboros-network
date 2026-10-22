@@ -74,7 +74,7 @@ let
     # CHaP input map, so we can find CHaP packages (needs to be more
     # recent than the index-state we set!). Can be updated with
     #
-    #  nix flake lock --update-input CHaP
+    #  nix flake update CHaP
     #
     inputMap = {
       "https://chap.intersectmbo.org/" = inputs.CHaP;

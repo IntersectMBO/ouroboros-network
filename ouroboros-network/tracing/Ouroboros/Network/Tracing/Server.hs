@@ -6,7 +6,7 @@ module Ouroboros.Network.Tracing.Server () where
 import Data.Aeson (ToJSON, Value (String), toJSON, (.=))
 import Data.Text (pack)
 
-import Cardano.Logging
+import Hermod.Tracing.API
 import Ouroboros.Network.Server as Server
 import Ouroboros.Network.Server.RateLimiting qualified as SRL
 -- Needed for `instance ToJSON (ConnectionId addr) where`
