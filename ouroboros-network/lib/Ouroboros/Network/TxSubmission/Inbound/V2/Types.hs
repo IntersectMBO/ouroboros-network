@@ -70,6 +70,10 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Types
   , PeerAction (..)
   , PeerPhase (..)
   , PeerTier (..)
+  , recordRequestTier
+  , takeReplyTier
+  , TierStanding (..)
+  , TierCensus (..)
   , PeerScore (..)
   , PeerTxLocalState (..)
   , PeerTxInFlight (..)
@@ -312,6 +316,33 @@ data PeerTier
 
 instance NoThunks PeerTier
 
+-- | Why a peer is served on the tier it is: the standing the registry keeps
+-- per peer for the tier census.  A peer with several claims to the fast
+-- tier counts once, root first, coin before source, since the coin's
+-- slot is its whatever the source rule says.
+data TierStanding
+  = StandingRoot
+    -- ^ fast by standing: a local root
+  | StandingCoin
+    -- ^ fast by the coin's draw
+  | StandingSource
+    -- ^ fast by the source rule while the coin left it slow
+  | StandingSlow
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving anyclass NFData
+
+instance NoThunks TierStanding
+
+-- | How many live peers are served on each standing.
+data TierCensus = TierCensus {
+    censusFastByRoot   :: !Int,
+    censusFastByCoin   :: !Int,
+    censusFastBySource :: !Int,
+    censusSlow         :: !Int
+  }
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass NFData
+
 -- | Peer usefulness score.
 --
 -- Lower is better. The current score is also interpreted as milliseconds of
@@ -371,6 +402,9 @@ data TxSubmissionCountersOf t = TxSubmissionCounters {
     txIdSlowReqsSent      :: !Word64,
     -- ^ Txid request messages sent to peers on the slow tier (a subset of
     -- 'txIdMessagesSent').
+    txIdsReceivedSlow     :: !Word64,
+    -- ^ Txids received in replies to requests sent on the slow tier (a
+    -- subset of 'txIdsReceived').
     txIdBlockingWait      :: !t,
     -- ^ Cumulative time spent waiting for replies to blocking txid
     -- requests.  High values indicate the system is mostly idle (no new
@@ -414,6 +448,7 @@ instance Num t => Semigroup (TxSubmissionCountersOf t) where
     txIdBlockingReqsSent  = txIdBlockingReqsSent  a + txIdBlockingReqsSent  b,
     txIdPipelinedReqsSent = txIdPipelinedReqsSent a + txIdPipelinedReqsSent b,
     txIdSlowReqsSent      = txIdSlowReqsSent      a + txIdSlowReqsSent      b,
+    txIdsReceivedSlow     = txIdsReceivedSlow     a + txIdsReceivedSlow     b,
     txIdBlockingWait      = txIdBlockingWait      a + txIdBlockingWait      b,
     txPipelineWait        = txPipelineWait        a + txPipelineWait        b,
     txSubmissionWait      = txSubmissionWait      a + txSubmissionWait      b
@@ -436,6 +471,7 @@ instance Num t => Monoid (TxSubmissionCountersOf t) where
     txIdBlockingReqsSent  = 0,
     txIdPipelinedReqsSent = 0,
     txIdSlowReqsSent = 0,
+    txIdsReceivedSlow = 0,
     txIdBlockingWait      = 0,
     txPipelineWait        = 0,
     txSubmissionWait      = 0
@@ -546,10 +582,30 @@ data PeerTxLocalState tx = PeerTxLocalState {
 
     -- | The generator state the slow tier's jitter is drawn from, seeded by
     -- the registry at registration.
-    peerJitterSeed            :: !Word64
+    peerJitterSeed            :: !Word64,
+
+    -- | The tiers the outstanding txid requests went out on, the oldest
+    -- first: replies come in that order, and each reply's txids are counted
+    -- on the tier that asked for them, whatever the tier is when they
+    -- arrive or became while an earlier request was still out.
+    peerRequestTiers          :: !(StrictSeq PeerTier)
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (NFData, NoThunks)
+
+-- | Record the tier a txid request goes out on, behind the outstanding
+-- ones ('peerRequestTiers').
+recordRequestTier :: PeerTier -> PeerTxLocalState tx -> PeerTxLocalState tx
+recordRequestTier tier peerState =
+  peerState { peerRequestTiers = peerRequestTiers peerState StrictSeq.|> tier }
+
+-- | The tier the oldest outstanding txid request went out on, the one a
+-- reply answers, and the state without it; 'FastTier' when none is out.
+takeReplyTier :: PeerTxLocalState tx -> (PeerTier, PeerTxLocalState tx)
+takeReplyTier peerState =
+  case peerRequestTiers peerState of
+    tier StrictSeq.:<| rest -> (tier, peerState { peerRequestTiers = rest })
+    _                       -> (FastTier, peerState)
 
 emptyPeerTxLocalState :: PeerTxLocalState tx
 emptyPeerTxLocalState = PeerTxLocalState {
@@ -567,7 +623,8 @@ emptyPeerTxLocalState = PeerTxLocalState {
     peerTier                  = FastTier,
     peerNovelAt               = StrictSeq.empty,
     peerSlowGate              = Nothing,
-    peerJitterSeed            = 0
+    peerJitterSeed            = 0,
+    peerRequestTiers          = StrictSeq.empty
   }
 
 -- | Shared V2 state.
@@ -938,6 +995,8 @@ data TraceTxLogic peeraddr txid tx =
     TraceSharedTxState (SharedTxState peeraddr txid) SharedTxStateCounts
     -- ^ the state and its counts, folded once by the counters thread for
     -- every renderer
+  | TraceTxTiers TierCensus
+    -- ^ the live peers by the standing they are served on
   deriving Show
 
 

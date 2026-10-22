@@ -26,6 +26,9 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Tier
   , nextJitter
     -- * The coin
   , drawFastTier
+    -- * The census
+  , standingOf
+  , censusOf
   ) where
 
 import Control.Monad.Class.MonadTime.SI
@@ -117,3 +120,21 @@ drawFastTier k g0 keys
               sj = Seq.index s j
               s' = Seq.update i sj (Seq.update j si s)
           in go (i + 1) g' s'
+
+-- | A peer's standing from whether it is a local root, the coin's tier for
+-- it and its effective tier: root first, coin before source.
+standingOf :: Bool -> PeerTier -> PeerTier -> TierStanding
+standingOf root coin effective
+  | root                  = StandingRoot
+  | coin == FastTier      = StandingCoin
+  | effective == FastTier = StandingSource
+  | otherwise             = StandingSlow
+
+-- | The census over the live peers' standings.
+censusOf :: [TierStanding] -> TierCensus
+censusOf = foldr step (TierCensus 0 0 0 0)
+  where
+    step StandingRoot   c = c { censusFastByRoot   = censusFastByRoot   c + 1 }
+    step StandingCoin   c = c { censusFastByCoin   = censusFastByCoin   c + 1 }
+    step StandingSource c = c { censusFastBySource = censusFastBySource c + 1 }
+    step StandingSlow   c = c { censusSlow         = censusSlow         c + 1 }

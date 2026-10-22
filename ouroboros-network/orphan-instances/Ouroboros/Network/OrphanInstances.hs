@@ -94,9 +94,10 @@ import Ouroboros.Network.Server.RateLimiting (AcceptConnectionsPolicyTrace (..),
            AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket (LocalAddress (..), RemoteAddress)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types (ProcessedTxCount (..),
-           SharedTxState (..), SharedTxStateCounts, TraceTxLogic (..),
-           TraceTxSubmissionInbound (..), TxSubmissionLogicVersion (..),
-           retainTimeSeconds, retainedToList, sharedTxStateCountFields)
+           SharedTxState (..), SharedTxStateCounts, TierCensus (..),
+           TraceTxLogic (..), TraceTxSubmissionInbound (..),
+           TxSubmissionLogicVersion (..), retainTimeSeconds, retainedToList,
+           sharedTxStateCountFields)
 import Ouroboros.Network.TxSubmission.Outbound (TraceTxSubmissionOutbound (..))
 
 -- Helper function for ToJSON instances with a "kind" field
@@ -1902,6 +1903,14 @@ instance ( Show addr
   toJSON (TraceSharedTxState st counts) =
     object [ "kind" .= String "SharedTxState"
            , "sharedTxState" .= traceSharedTxStateToJSON st counts
+           ]
+  toJSON (TraceTxTiers TierCensus { censusFastByRoot, censusFastByCoin,
+                                    censusFastBySource, censusSlow }) =
+    object [ "kind" .= String "TxTiers"
+           , "fastByRoot" .= censusFastByRoot
+           , "fastByCoin" .= censusFastByCoin
+           , "fastBySource" .= censusFastBySource
+           , "slow" .= censusSlow
            ]
 
 

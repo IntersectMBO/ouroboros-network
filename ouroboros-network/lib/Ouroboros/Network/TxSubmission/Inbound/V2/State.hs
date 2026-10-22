@@ -348,8 +348,9 @@ applyRequestTxIdsChoice ctx acknowledgedTxIds txIdsToAcknowledge txIdsToRequest 
   where
     peerState0 = pacPeerState ctx
     acknowledgedKeys = IntSet.fromList (unTxKey <$> acknowledgedTxIds)
+    -- the request's tier is recorded behind the earlier outstanding ones
     peerState' =
-      peerState0 {
+      recordRequestTier (pacTier ctx) peerState0 {
         peerAvailableTxIds =
           IntMap.withoutKeys (peerAvailableTxIds peerState0) acknowledgedKeys,
         peerUnacknowledgedTxIds = unacknowledgedTxIds',
@@ -1528,7 +1529,8 @@ handleReceivedTxIds mempoolHasTx now policy requestedTxIds txidsAndSizes
     peerUnacknowledgedTxIds' =
       peerUnacknowledgedTxIds peerState <> StrictSeq.fromList (reverse receivedTxKeysRev)
 
-    peerState'' = peerState {
+    -- the reply answers the oldest outstanding request
+    peerState'' = (snd (takeReplyTier peerState)) {
         peerUnacknowledgedTxIds = peerUnacknowledgedTxIds',
         peerRequestedTxIds =
           assert (requestedTxIds <= peerRequestedTxIds peerState)
