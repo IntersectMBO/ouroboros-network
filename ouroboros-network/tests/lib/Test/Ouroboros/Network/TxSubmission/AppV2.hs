@@ -76,6 +76,7 @@ import Test.QuickCheck
 #if !MIN_VERSION_QuickCheck(2,16,0)
 import "quickcheck-monoids" Test.QuickCheck.Monoids
 #endif
+import System.Random (mkStdGen)
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.HUnit (Assertion, assertBool, assertEqual, testCase)
 import Test.Tasty.QuickCheck (testProperty)
@@ -110,6 +111,7 @@ tests = testGroup "AppV2"
           prop_TxSubmissionDisconnectState_shrinkNoDups
       ]
   , testProperty "txSubmission"          prop_txSubmission
+  , testProperty "txSubmission/allSlow"  prop_txSubmission_allSlow
   , testProperty "backpressure"          prop_txSubmission_backpressure
   , testProperty "inflight"              prop_txSubmission_inflight
   , testProperty "resilientToImpairment" prop_txSubmission_resilientToImpairment
@@ -250,7 +252,7 @@ runTxSubmission tracer tracerTxLogic countersTracer inboundTracer st0
 
     duplicateTxIdsVar <- Lazy.newTVarIO []
     sharedTxStateVar <- newSharedTxStateVar emptySharedTxState
-    inFlightRegistry <- newPeerTxRegistry
+    inFlightRegistry <- newPeerTxRegistry (mkStdGen 7)
     releaseAt <- addTime mempoolStall <$> getMonotonicTime
     let writer0 = getMempoolWriter duplicateTxIdsVar inboundMempool
         -- Under backpressure every add blocks until the mempool has room;
@@ -290,7 +292,7 @@ runTxSubmission tracer tracerTxLogic countersTracer inboundTracer st0
                               sharedTxStateVar
                               inFlightRegistry
                               txCountersVar
-                              addr $ \api -> do
+                              addr (pure False) $ \api -> do
                                 let server =
                                       txSubmissionInboundV2
                                         (PeerInboundTrace addr `contramap` inboundTracer)
@@ -543,7 +545,7 @@ unit_counterEmission_cadence =
     simulation = do
       sharedTxStateVar <- newSharedTxStateVar
                             (emptySharedTxState :: SharedTxState Int Int)
-      inFlightRegistry <- newPeerTxRegistry
+      inFlightRegistry <- newPeerTxRegistry (mkStdGen 7)
                             :: IOSim s (PeerTxRegistry (IOSim s) Int)
       txCountersVar    <- newTxSubmissionCountersVar mempty
       recorder         <- newTVarIO []
@@ -593,11 +595,11 @@ unit_counterEmission_subMsDurations = do
       mempool          <- emptyMempool
       sharedTxStateVar <- newSharedTxStateVar
                             (emptySharedTxState :: SharedTxState Int TxId)
-      registry         <- newPeerTxRegistry
+      registry         <- newPeerTxRegistry (mkStdGen 7)
                             :: IOSim s (PeerTxRegistry (IOSim s) Int)
       countersVar      <- newTxSubmissionCountersVar mempty
       withPeer defaultTxDecisionPolicy (getMempoolReader mempool)
-               sharedTxStateVar registry countersVar (0 :: Int)
+               sharedTxStateVar registry countersVar (0 :: Int) (pure False)
         $ \PeerTxAPI { applyReceivedTxIds, runNextPeerAction, applySubmittedTxs } -> do
             now <- getMonotonicTime
             -- Every call takes the empty peer state, so the calls are
@@ -652,6 +654,7 @@ prop_counterInvariants slack tr =
       , ("txsRejected",           txsRejected)
       , ("txIdBlockingReqsSent",  txIdBlockingReqsSent)
       , ("txIdPipelinedReqsSent", txIdPipelinedReqsSent)
+      , ("txIdSlowReqsSent",      txIdSlowReqsSent)
       , ("txIdBlockingWaitMs",    txIdBlockingWait)
       , ("txPipelineWaitMs",      txPipelineWait)
       , ("txSubmissionWaitMs",    txSubmissionWait)
@@ -667,6 +670,8 @@ prop_counterInvariants slack tr =
     checkCausality s = conjoin
       [ counterexample "txIdRepliesReceived > txIdMessagesSent"
           (txIdRepliesReceived s <= txIdMessagesSent s)
+      , counterexample "txIdSlowReqsSent > txIdMessagesSent"
+          (txIdSlowReqsSent s <= txIdMessagesSent s)
       , counterexample "txRepliesReceived > txMessagesSent"
           (txRepliesReceived s <= txMessagesSent s)
       , counterexample "txIdsReceived > txIdsRequested"
@@ -726,6 +731,17 @@ prop_counterInvariants slack tr =
 --
 prop_txSubmission :: TxSubmissionState -> Property
 prop_txSubmission = prop_txSubmissionStalled 0
+
+-- | 'prop_txSubmission' with every peer on the slow tier and no source
+-- rule: the gate spaces the txid requests, and every valid tx must still
+-- reach the mempool.
+prop_txSubmission_allSlow :: TxSubmissionState -> Property
+prop_txSubmission_allSlow st =
+    prop_txSubmissionStalled 0
+      st { decisionPolicy = (decisionPolicy st) { txFastPeers   = 0
+                                                , txSlowCadence = 0.1
+                                                , txSlowJitter  = 0.2
+                                                , txSourceRate  = 0 } }
 
 -- | 'prop_txSubmission' under five minutes of mempool backpressure from the
 -- start: every valid tx must still reach the mempool afterwards, so no

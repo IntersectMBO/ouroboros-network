@@ -262,6 +262,7 @@ library
     Ouroboros.Network.TxSubmission.Inbound.V2.Policy
     Ouroboros.Network.TxSubmission.Inbound.V2.Registry
     Ouroboros.Network.TxSubmission.Inbound.V2.State
+    Ouroboros.Network.TxSubmission.Inbound.V2.Tier
     Ouroboros.Network.TxSubmission.Inbound.V2.Types
     Ouroboros.Network.TxSubmission.Mempool.Reader
     Ouroboros.Network.TxSubmission.Mempool.Simple
@@ -326,6 +327,7 @@ library
     ouroboros-network:{api, framework, protocols},
     psqueues >=0.2.3 && <0.3,
     random,
+    splitmix,
     strict-checked-vars ^>=0.2,
     time,
     transformers,
@@ -766,6 +768,7 @@ executable demo-tx-submission
     optparse-applicative,
     ouroboros-network:{ouroboros-network, api, framework, protocols},
     quickcheck-instances,
+    random,
     serialise,
     splitmix,
     statistics,
@@ -1121,6 +1124,7 @@ benchmark sim-benchmarks
     Bench.TxSubmissionV2Sweep
 
   build-depends:
+    random,
     base,
     containers,
     contra-tracer,

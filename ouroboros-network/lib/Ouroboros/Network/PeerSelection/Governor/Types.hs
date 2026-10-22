@@ -839,7 +839,10 @@ data PublicPeerSelectionState peeraddr =
   PublicPeerSelectionState {
     availableToShare :: Set peeraddr,
     -- | When each hot upstream peer was promoted; the egress tiers gate on it.
-    hotUpstreamSince :: Map peeraddr Time
+    hotUpstreamSince :: Map peeraddr Time,
+    -- | The local roots' addresses; inbound tx-submission's fetch tiers keep
+    -- them fast by standing.
+    localRootAddrs   :: Set peeraddr
   }
   deriving Show
 
@@ -848,7 +851,8 @@ emptyPublicPeerSelectionState :: Ord peeraddr
 emptyPublicPeerSelectionState =
   PublicPeerSelectionState {
     availableToShare = mempty,
-    hotUpstreamSince = Map.empty
+    hotUpstreamSince = Map.empty,
+    localRootAddrs   = Set.empty
   }
 
 makePublicPeerSelectionStateVar
@@ -863,11 +867,12 @@ makePublicPeerSelectionStateVar = newTVarIO emptyPublicPeerSelectionState
 --
 toPublicState :: PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
               -> PublicPeerSelectionState peeraddr
-toPublicState PeerSelectionState { knownPeers, activeSince } =
+toPublicState PeerSelectionState { knownPeers, activeSince, localRootPeers } =
    PublicPeerSelectionState {
      availableToShare =
        KnownPeers.getPeerSharingResponsePeers knownPeers,
-     hotUpstreamSince = activeSince
+     hotUpstreamSince = activeSince,
+     localRootAddrs   = LocalRootPeers.keysSet localRootPeers
    }
 
 -- | Peer selection view.

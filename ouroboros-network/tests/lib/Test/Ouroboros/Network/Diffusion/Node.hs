@@ -113,7 +113,8 @@ import Ouroboros.Network.Snocket (MakeBearer, Snocket, TestAddress (..),
 import Ouroboros.Network.Util (PrettyShow (..))
 
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy (TxDecisionPolicy)
-import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (txCountersThreadV2)
+import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (txCountersThreadV2,
+           txTierRotationThreadV2)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types (TraceTxLogic)
 
 import Simulation.Network.Snocket (AddressType (..), FD)
@@ -363,10 +364,15 @@ run blockGeneratorArgs ni na
                               (nkSharedTxStateVar nodeKernel)
                               (nkPeerTxRegistry nodeKernel))
                    $ \txCountersAid ->
+                     withAsync (txTierRotationThreadV2
+                                  (aTxDecisionPolicy na)
+                                  (nkPeerTxRegistry nodeKernel))
+                       $ \txTierAid ->
                           wait diffusionThread
                        <> wait blockFetchLogicThread
                        <> wait nodeKernelThread
                        <> wait txCountersAid
+                       <> wait txTierAid
   where
     blockFetch :: NodeKernel BlockHeader Block s txid m
                -> m Void
