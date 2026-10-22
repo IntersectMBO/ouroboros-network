@@ -231,8 +231,12 @@ muxer
     -> m void
 muxer egressQueue tracer counters sentCell laneEgress
       Bearer { writeMany, sduSize, batchSize, egressInterval, awaitWritable } =
-    withTimeoutSerial $ \timeout ->
-    forever $ do
+    withTimeoutSerial $ \timeout -> batch timeout 0
+  where
+    -- one batch, then the next, carrying how long the batch took to write,
+    -- for the bearer's standing in the budget's counters
+    batch :: TimeoutFn m -> DiffTime -> m void
+    batch timeout !wrote = do
       start <- getMonotonicTime
       -- the demand and its fragment in one transaction: between the two the
       -- queue would read empty with nothing held, and a drain waiting for
@@ -254,17 +258,18 @@ muxer egressQueue tracer counters sentCell laneEgress
       -- without blocking AND its lane has the bytes -- granted by the budget's
       -- bucket or the slice's, or, for the node's own requests, taken on
       -- credit once written. A bearer whose peer is not draining never
-      -- consumes tokens.
-      case laneEgress of
-           Unscheduled -> return ()
-           Credit _ -> gate timeout
+      -- consumes tokens. Each lane ends at the instant the write may start.
+      t2 <- case laneEgress of
+           Unscheduled -> getMonotonicTime
+           Credit _ -> gate timeout >> getMonotonicTime
            Reserved slice budget -> do
              t0 <- getMonotonicTime
              gate timeout
              t1 <- getMonotonicTime
              -- the slice's own share, charged to the budget on credit in the
              -- same transaction, or the budget's idle capacity
-             void $ awaitGrantWaited (Just budget) (t1 `diffTime` t0) slice len
+             void $ awaitGrantWaited (Just budget) (t1 `diffTime` t0) wrote slice len
+             getMonotonicTime
            Scheduled_ bucketHandle chargeVar -> do
              let chargeNow t = do
                    sink <- readTVar chargeVar
@@ -274,10 +279,11 @@ muxer egressQueue tracer counters sentCell laneEgress
              t1 <- getMonotonicTime
              -- charged in the grant's transaction, so connections sharing
              -- an allowance see each other's spending at once
-             source <- awaitGrantCharged Nothing (t1 `diffTime` t0) chargeNow bucketHandle len
+             source <- awaitGrantCharged Nothing (t1 `diffTime` t0) wrote chargeNow bucketHandle len
              t2 <- getMonotonicTime
              traceWith tracer (TraceEgressGrant len (t1 `diffTime` t0) (t2 `diffTime` t1)
                                                 (source == FromFloor))
+             return t2
       -- after the write, so a count or a credit charge means bytes handed
       -- to the kernel (the scheduled lane's allowance was charged at its
       -- grant); and the write with its accounting masked, so a
@@ -305,8 +311,8 @@ muxer egressQueue tracer counters sentCell laneEgress
       when empty $ do
         let delta = diffTime end start
         threadDelay (egressInterval - delta)
+      batch timeout (end `diffTime` t2)
 
-  where
     -- the writability gate; a timeout there is counted before it kills the mux
     gate :: TimeoutFn m -> m ()
     gate timeout =

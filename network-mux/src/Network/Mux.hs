@@ -90,6 +90,7 @@ module Network.Mux
   , egressBurstCap
   , egressBurstGrantFloor
   , egressServedWindow
+  , egressSlowdownBounds
     -- * Errors
   , Error (..)
   , RuntimeError (..)

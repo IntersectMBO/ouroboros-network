@@ -58,9 +58,11 @@ module Network.Mux.Egress.Bucket
     -- * Counters
   , BucketStats (..)
   , TierGrants (..)
+  , Served (..)
   , waitBounds
   , burstBounds
   , burstWidths
+  , slowdownBounds
   , emptyBucketStats
   , bucketSnapshot
   , servedWindow
@@ -85,8 +87,11 @@ module Network.Mux.Egress.Bucket
   , queueRank
   , chargeAt
   , recordServed
+  , servedStep
   , servedWithin
   , servedByTier
+  , slowedBy
+  , slowedByTier
   ) where
 
 import Control.Concurrent.Class.MonadSTM.Strict
@@ -201,18 +206,64 @@ data BucketStats = BucketStats {
                                  --   bearer queued at; the fast path is not ranked
   bsFloorTiers    :: !(Map Word8 TierGrants),
                                  -- ^ of 'bsTiers', what the floor granted
-  bsServed        :: !(Map (Word8, Word64) Time),
-                                 -- ^ the last grant by tier and bearer id, the
-                                 --   fast path included at the tier last asked
-                                 --   within 'tierRefresh'; pruned by
-                                 --   'recordServed', so never older than two
-                                 --   'servedWindow's
+  bsServed        :: !(Map (Word8, Word64) Served),
+                                 -- ^ each bearer's standing at each tier it was
+                                 --   granted at, the fast path included at the
+                                 --   tier last asked within 'tierRefresh';
+                                 --   pruned by 'recordServed', so no last grant
+                                 --   is older than two 'servedWindow's
   bsServedPruned  :: !Time,      -- ^ when 'bsServed' was last pruned
   bsBurstsDropped :: !Word64     -- ^ burst records closed with no room to keep
                                  --   them; held by the detector, filled in by
                                  --   'bucketSnapshot'
   }
   deriving (Eq, Show, Generic)
+
+-- | A bearer's standing at a tier, as 'bsServed' keeps it: its last grant
+-- there and, decayed by @e@ over a 'servedWindow', how long its batches
+-- waited for tokens and how long they were the bearer's own, at the
+-- writability gate and in the write. The ratio of the two is what the
+-- budget's order has lately cost the bearer, whatever its demand: a bearer
+-- whose peer drains slowly waits at the gate, not for tokens, and reads as
+-- served; one whose batches wait for tokens many times longer than they
+-- take to write is slowed by the order, however little it sends.
+data Served = Served {
+  svLast   :: !Time,
+  svWaited :: !Double,   -- ^ seconds waited for tokens, decayed
+  svOwn    :: !Double    -- ^ seconds at the gate and writing, decayed
+  }
+  deriving (Eq, Show, Generic)
+
+-- | The slowdowns 'slowedByTier' counts bearers against: how many times
+-- its own time a bearer's batches took.
+slowdownBounds :: [Double]
+slowdownBounds = [2, 4, 8, 16]
+
+-- | A grant at @now@ that waited @waited@ for tokens and had @own@ of the
+-- bearer's own time before it, on top of the bearer's standing, if any.
+servedStep :: Time -> DiffTime -> DiffTime -> Maybe Served -> Served
+servedStep now waited own sv_m =
+  Served { svLast   = now
+         , svWaited = carried svWaited + realToFrac waited
+         , svOwn    = carried svOwn + realToFrac own }
+  where
+    carried f = case sv_m of
+      Nothing -> 0
+      Just sv -> f sv * exp (negate (realToFrac (max 0 (now `diffTime` svLast sv)) / window))
+    window = realToFrac servedWindow :: Double
+
+-- | Whether a bearer's batches took at least @factor@ times its own time:
+-- it waited at least @factor - 1@ times what was its own. A bearer that
+-- never waited is not slowed, whatever its own time.
+slowedBy :: Double -> Served -> Bool
+slowedBy factor Served { svWaited, svOwn } = svWaited > 0 && svWaited >= (factor - 1) * svOwn
+
+-- | Per tier, how many bearers are slowed by at least each of
+-- 'slowdownBounds'.
+slowedByTier :: Map (Word8, Word64) Served -> Map Word8 [Int]
+slowedByTier m = Map.fromListWith (zipWith (+))
+                   [ (tier, [ fromEnum (slowedBy f sv) | f <- slowdownBounds ])
+                   | ((tier, _), sv) <- Map.toList m ]
 
 -- | The tier a queued bearer's key was made with: the top byte of the rank.
 tierOfKey :: WaitKey -> Word8
@@ -307,20 +358,23 @@ servedWindow = 59
 tierRefresh :: DiffTime
 tierRefresh = 7
 
--- | A grant to bearer @b@ at @tier@ at @now@. Once a 'servedWindow' after the
+-- | A grant to bearer @b@ at @tier@ at @now@, after waiting @waited@ for
+-- tokens and @own@ of the bearer's own time. Once a 'servedWindow' after the
 -- last prune it also drops the bearers not granted within the window, so the
 -- record stays bounded whether or not anything reads it.
-recordServed :: Word8 -> Word64 -> Time -> BucketStats -> BucketStats
-recordServed !tier !b now st
+recordServed :: Word8 -> Word64 -> Time -> DiffTime -> DiffTime -> BucketStats -> BucketStats
+recordServed !tier !b now waited own st
   | now `diffTime` bsServedPruned st >= servedWindow
-  = st { bsServed       = Map.insert (tier, b) now (servedWithin servedWindow now (bsServed st))
+  = st { bsServed       = record (servedWithin servedWindow now (bsServed st))
        , bsServedPruned = now }
   | otherwise
-  = st { bsServed = Map.insert (tier, b) now (bsServed st) }
+  = st { bsServed = record (bsServed st) }
+  where
+    record = Map.alter (Just . servedStep now waited own) (tier, b)
 
 -- | The bearers granted within @window@ of @now@.
-servedWithin :: DiffTime -> Time -> Map (Word8, Word64) Time -> Map (Word8, Word64) Time
-servedWithin window now = Map.filter (\t -> now `diffTime` t <= window)
+servedWithin :: DiffTime -> Time -> Map (Word8, Word64) Served -> Map (Word8, Word64) Served
+servedWithin window now = Map.filter (\sv -> now `diffTime` svLast sv <= window)
 
 -- | Bearers served at each tier; one that changed tier counts at each.
 servedByTier :: Map (Word8, Word64) a -> Map Word8 Int
@@ -580,7 +634,7 @@ data FloorAttempt = FloorGranted | FloorNotPick | FloorShortUntil !Time | Became
 -- | Block until @need@ bytes are granted to this bearer.
 awaitGrant :: forall m. (MonadTimer m, MonadMask m)
            => BucketHandle m -> Int -> m ()
-awaitGrant h need = void (awaitGrantWaited Nothing 0 h need)
+awaitGrant h need = void (awaitGrantWaited Nothing 0 0 h need)
 
 -- | As 'awaitGrant', but when the bearer's own bucket is short the batch may
 -- come from @budget@ instead, if nobody is waiting on it and it has the bytes
@@ -589,13 +643,19 @@ awaitGrant h need = void (awaitGrantWaited Nothing 0 h need)
 -- against the budget. Returns whether the batch was borrowed.
 awaitGrantBorrowing :: forall m. (MonadTimer m, MonadMask m)
                     => BucketHandle m -> Bucket m -> Int -> m Bool
-awaitGrantBorrowing h budget need = (== FromBorrow) <$> awaitGrantWaited (Just budget) 0 h need
+awaitGrantBorrowing h budget need = (== FromBorrow) <$> awaitGrantWaited (Just budget) 0 0 h need
 
 -- | 'awaitGrant' or, given a budget, 'awaitGrantBorrowing', recording how
--- long the bearer already waited for the writability gate before asking.
+-- long the bearer already waited for the writability gate before asking and
+-- how long its previous batch took to write: with the wait for tokens, the
+-- three make up the bearer's standing in 'bsServed'. The write is known only
+-- once it is done, so it rides the next request; what counts is the sum.
 awaitGrantWaited :: forall m. (MonadTimer m, MonadMask m)
-                 => Maybe (Bucket m) -> DiffTime -> BucketHandle m -> Int -> m GrantSource
-awaitGrantWaited borrow_m waited = awaitGrantWith borrow_m waited Nothing
+                 => Maybe (Bucket m)
+                 -> DiffTime   -- ^ waited at the writability gate
+                 -> DiffTime   -- ^ the previous batch's write
+                 -> BucketHandle m -> Int -> m GrantSource
+awaitGrantWaited borrow_m waited wrote = awaitGrantWith borrow_m waited wrote Nothing
 
 -- | 'awaitGrantWaited' with a charge run in the transaction that grants:
 -- what the bearer's rank rule spends is spent the instant the bytes are
@@ -604,14 +664,17 @@ awaitGrantWaited borrow_m waited = awaitGrantWith borrow_m waited Nothing
 -- the rule gives now, before it is served; the fast path, with nobody
 -- waiting, is served whatever its rank and charged all the same.
 awaitGrantCharged :: forall m. (MonadTimer m, MonadMask m)
-                  => Maybe (Bucket m) -> DiffTime -> (Time -> STM m ())
+                  => Maybe (Bucket m)
+                  -> DiffTime   -- ^ waited at the writability gate
+                  -> DiffTime   -- ^ the previous batch's write
+                  -> (Time -> STM m ())
                   -> BucketHandle m -> Int -> m GrantSource
-awaitGrantCharged borrow_m waited charge = awaitGrantWith borrow_m waited (Just charge)
+awaitGrantCharged borrow_m waited wrote charge = awaitGrantWith borrow_m waited wrote (Just charge)
 
 awaitGrantWith :: forall m. (MonadTimer m, MonadMask m)
-               => Maybe (Bucket m) -> DiffTime -> Maybe (Time -> STM m ())
+               => Maybe (Bucket m) -> DiffTime -> DiffTime -> Maybe (Time -> STM m ())
                -> BucketHandle m -> Int -> m GrantSource
-awaitGrantWith borrow_m waitedWritable charge_m
+awaitGrantWith borrow_m waitedWritable wrote charge_m
                BucketHandle { bhBucket = bucket@Bucket { bWaiters, bTickets, bRotation, bStats
                                                        , bBurst, bDetector, bRate, bCapacity
                                                        , bFloor }
@@ -698,10 +761,15 @@ awaitGrantWith borrow_m waitedWritable charge_m
       writeTVar (flState fl) (floorGranted c need st)
       wakeFloorPick fl fw'
       modifyTVar bStats
-        ( recordServed (tierOfKey key) bhId now
+        ( recordServed (tierOfKey key) bhId now (now `diffTime` asked) ownTime
         . recordGrant (Just (tierOfKey key)) FromFloor need
                       waitedWritable (now `diffTime` asked))
       noteGrant asked now (tierOfKey key)
+
+    -- the bearer's own time before this request: at the gate, and the
+    -- previous batch's write
+    ownTime :: DiffTime
+    ownTime = waitedWritable + wrote
 
     -- a bearer of @tier@ joined (+1) or left (-1) the queue at @now@: when
     -- it is credited, account for the busy period and tell the detector
@@ -747,7 +815,7 @@ awaitGrantWith borrow_m waitedWritable charge_m
                             (Nothing, Nothing) -> fastTier now
              charge now
              modifyTVar bStats
-               ( recordServed served bhId now
+               ( recordServed served bhId now (now `diffTime` asked) ownTime
                . recordGrant tier_m source need waitedWritable (now `diffTime` asked))
              noteGrant asked now served
            Left _ -> return ()
