@@ -1,5 +1,6 @@
 {-# LANGUAGE NamedFieldPuns     #-}
 {-# LANGUAGE NumericUnderscores #-}
+{-# LANGUAGE TypeApplications   #-}
 
 module Ouroboros.Network.TxSubmission.Inbound.V2.Policy
   ( TxDecisionPolicy (..)
@@ -14,11 +15,13 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Policy
   ) where
 
 import Control.DeepSeq
-import Control.Exception (Exception)
+import Control.Exception (Exception, assert)
 import Control.Monad (unless)
 import Control.Monad.Class.MonadTime.SI
+import Ouroboros.Network.Protocol.Limits (sizeLimitForState)
+import Ouroboros.Network.Protocol.TxSubmission2.Codec (byteLimitsTxSubmission2)
 import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToAck (..),
-           NumTxIdsToReq (..))
+           NumTxIdsToReq (..), SingTxSubmission (SingTxs))
 import Ouroboros.Network.SizeInBytes (SizeInBytes (..))
 
 
@@ -44,6 +47,11 @@ data TxDecisionPolicy = TxDecisionPolicy {
       txsSizeInflightPerPeer         :: !SizeInBytes,
       -- ^ a limit of tx size in-flight from a single peer.
       -- It can be exceed by max tx size.
+
+      txsSizePerBatch                :: !SizeInBytes,
+      -- ^ Hard limit on the total advertised transaction size in one body
+      -- request batch. The default reserves space for reply framing.
+      -- MUST be equal or larger than a maximum tx size (see `max_TX_SIZE`).
 
       maxOutstandingTxBatchesPerPeer :: !Int,
       -- ^ a limit of outstanding tx-body request batches from a single peer.
@@ -97,7 +105,23 @@ mkTxDecisionPolicy config =
     policy <$ saneTxDecisionPolicy policy config
   where
     policy = TxDecisionPolicy {
-      txsSizeInflightPerPeer = max_TX_SIZE * (fromIntegral (maxNumTxIdsToRequest config)),
+      txsSizeInflightPerPeer =
+        assert (    fromIntegral max_TX_SIZE * fromIntegral (maxNumTxIdsToRequest config)
+                 <= fromIntegral @SizeInBytes @Integer maxBound
+               )
+        max_TX_SIZE * (fromIntegral (maxNumTxIdsToRequest config)),
+      -- MsgReplyTxs has four bytes of CBOR framing: the outer list, message
+      -- tag, indefinite transaction list and break marker.
+      txsSizePerBatch =
+        let sizePerBatch =
+                safeLimit
+              $ fromIntegral
+                  (sizeLimitForState
+                    (byteLimitsTxSubmission2 (error "invariant violation!"))
+                    SingTxs)
+              - 4
+        in assert (sizePerBatch >= max_TX_SIZE)
+           sizePerBatch,
       maxOutstandingTxBatchesPerPeer = 4,
       txInflightMultiplicity = 2,
       bufferedTxsMinLifetime = 2,
@@ -109,6 +133,9 @@ mkTxDecisionPolicy config =
       maxPeerClaimDelay      = 0.250,
       disablePipelinedTxIdRequests = False
     }
+    -- for `~2.5MB`, leave 50KB room
+    safeLimit :: SizeInBytes -> SizeInBytes
+    safeLimit limit = limit - limit `div` 50
 
 -- | Shared options between the inbound and outbound side.
 --
@@ -142,8 +169,12 @@ data TxConfigurationError
   = NumUnacknowledgedTxIdsTooSmall NumTxIdsToAck
   -- | `maxNumTxIdsToRequest` must be positive
   | MaxNumTxIdsToRequestTooSmall NumTxIdsToReq
+  -- | @max_TX_SIZE * maxNumTxIdsToRequest@ doesn't fit in `SizeInBytes`
+  | MaxNumTxIdsToRequestTooLarge NumTxIdsToReq
   -- | `txsSizeInflightPerPeer` must be positive
   | TxsSizeInflightPerPeerTooSmall SizeInBytes
+  -- | `txsSizePerBatch` must be positive
+  | TxsSizePerBatchTooSmall SizeInBytes
   -- | `maxOutstandingTxBatchesPerPeer` must be positive
   | MaxOutstandingTxBatchesPerPeerTooSmall Int
   -- | `txInflightMultiplicity` must be positive
@@ -171,17 +202,18 @@ instance Exception TxConfigurationError
 -- in the range the decision logic assumes, otherwise the first violated
 -- bound as a 'TxConfigurationError'.
 --
--- The window and per-peer limit fields must be positive (otherwise the
--- peer can make no progress), the rate, score and delay parameters must
+-- All window and size limits must be positive (otherwise the peer can make
+-- no progress), the rate, score and delay parameters must
 -- be non-negative, and 'inflightTimeout' must be at least 'interTxSpace'
 -- (their difference is used as a non-negative delay when bumping a stuck
 -- entry's inflight-multiplicity cap).  'mkTxDecisionPolicy' satisfies
--- it.
+-- it.  `txsSizePerBatch` MUST be equal or greater than `max_TX_SIZE`.
 saneTxDecisionPolicy :: TxDecisionPolicy
                      -> TxSubmissionConfig
                      -> Either TxConfigurationError ()
 saneTxDecisionPolicy TxDecisionPolicy {
                        txsSizeInflightPerPeer,
+                       txsSizePerBatch,
                        maxOutstandingTxBatchesPerPeer,
                        txInflightMultiplicity,
                        bufferedTxsMinLifetime,
@@ -200,8 +232,13 @@ saneTxDecisionPolicy TxDecisionPolicy {
       $ Left (NumUnacknowledgedTxIdsTooSmall maxNumUnacknowledgedTxIds)
     unless (maxNumTxIdsToRequest >= 1)
       $ Left (MaxNumTxIdsToRequestTooSmall maxNumTxIdsToRequest)
+    unless (    toInteger max_TX_SIZE * toInteger maxNumTxIdsToRequest
+             <= toInteger (maxBound :: SizeInBytes))
+      $ Left (MaxNumTxIdsToRequestTooLarge maxNumTxIdsToRequest)
     unless (txsSizeInflightPerPeer > 0)
       $ Left (TxsSizeInflightPerPeerTooSmall txsSizeInflightPerPeer)
+    unless (txsSizePerBatch > 0)
+      $ Left (TxsSizePerBatchTooSmall txsSizePerBatch)
     unless (maxOutstandingTxBatchesPerPeer >= 1)
       $ Left (MaxOutstandingTxBatchesPerPeerTooSmall maxOutstandingTxBatchesPerPeer)
     unless (txInflightMultiplicity >= 1)
