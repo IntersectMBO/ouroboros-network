@@ -4,12 +4,14 @@
 module Test.Ouroboros.Network.Diffusion.PoolAllowances
   ( tests
     -- * For the egress rule's tests
+  , fullCharged
+  , freshAt
   , relaysOf
   ) where
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad (forM, forM_)
-import Control.Monad.Class.MonadTime.SI (Time (..))
+import Control.Monad.Class.MonadTime.SI (Time (..), diffTime)
 import Control.Monad.IOSim (runSimOrThrow)
 import Data.ByteString.Char8 qualified as BSC
 import Data.IntMap.Strict qualified as IntMap
@@ -30,15 +32,18 @@ tests =
     , testProperty "credit within bounds and monotone in fresh"     prop_bounds
     , testProperty "nothing charged at zero credit"                  prop_zero
     , testProperty "a full bucket reads the capacity"                prop_full
-    , testProperty "the clock reading starts at zero and grows"      prop_clock
-    , testProperty "behind the lock it reads zero and takes no charge" prop_locked
-    , testProperty "opened later, never more credit"                 prop_later_never_more
+    , testProperty "an empty bucket reads zero and fills at kappa"   prop_empty
     , testProperty "a connection's rule follows every reindex"        prop_rule_follows_reindex
     ]
 
 -- | A full bucket at this reading: the capacity's worth of credit.
 fullCharged :: Allowance -> Fresh -> Charged
 fullCharged al fresh = Charged (kappa fresh - capacity al)
+
+-- | A clock reading: fresh bytes growing at a rate from an origin, the
+-- reading the tests use where production reads consensus's count.
+freshAt :: Double -> Time -> Time -> Fresh
+freshAt rate t0 now = Fresh (max 0 (floor (rate * realToFrac (now `diffTime` t0) :: Double)))
 
 -- | @n@ pools' relay lists, distinct from every other generation's.
 relaysOf :: Int -> Int -> [NonEmpty RelayAccessPoint]
@@ -50,8 +55,8 @@ relaysOf generation n =
 data Op = Advance Int | Charge Int
   deriving Show
 
--- | How a bucket starts: full, or empty behind a lock of so many fresh bytes.
-data Start = Full | Locked Int
+-- | How a bucket starts: full, or empty.
+data Start = Full | Empty
   deriving Show
 
 data Run = Run {
@@ -64,7 +69,7 @@ data Run = Run {
 instance Arbitrary Run where
   arbitrary = do
     fmax  <- choose (1_000, 20_000_000)
-    start <- frequency [ (1, pure Full), (2, Locked <$> choose (0, 3 * fmax)) ]
+    start <- elements [Full, Empty]
     n     <- choose (0, 200)
     ops   <- vectorOf n $ frequency
                [ (3, Advance <$> choose (1, fmax))        -- up to one object at a time
@@ -77,19 +82,19 @@ instance Arbitrary Run where
     where
       shrinkOp (Advance d) = [ Advance d' | d' <- shrink d, d' >= 1 ]
       shrinkOp (Charge n)  = [ Charge n'  | n' <- shrink n, n' >= 1 ]
-      shrinkStart Full       = []
-      shrinkStart (Locked l) = Full : [ Locked l' | l' <- shrink l, l' >= 0 ]
+      shrinkStart Full  = []
+      shrinkStart Empty = [Full]
 
--- | The oracle: an explicit token bucket. Tokens start full, or κ of the lock
--- in debt, an advance adds κ of the bytes capped at the capacity, a charge
--- subtracts while tokens are positive and may run them into debt, and the
--- credit shown is the tokens floored at zero. Refills follow κ of the
--- cumulative reading so the rounding is the implementation's.
+-- | The oracle: an explicit token bucket. Tokens start full or at zero, an
+-- advance adds κ of the bytes capped at the capacity, a charge subtracts
+-- while tokens are positive and may run them into debt, and the credit
+-- shown is the tokens floored at zero. Refills follow κ of the cumulative
+-- reading so the rounding is the implementation's.
 oracle :: Allowance -> Start -> [Op] -> [Int]
 oracle al start = go (tokens0 start) (Fresh 0)
   where
-    tokens0 Full       = capacity al
-    tokens0 (Locked l) = negate (kappa (Fresh l))
+    tokens0 Full  = capacity al
+    tokens0 Empty = 0
     go _ _ [] = []
     go tokens fresh (op : ops) =
       case op of
@@ -105,8 +110,8 @@ oracle al start = go (tokens0 start) (Fresh 0)
 impl :: Allowance -> Start -> [Op] -> [Int]
 impl al start = go (Fresh 0) (charged0 start)
   where
-    charged0 Full       = fullCharged al (Fresh 0)
-    charged0 (Locked l) = lockedCharged (Fresh 0) (Fresh l)
+    charged0 Full  = fullCharged al (Fresh 0)
+    charged0 Empty = emptyCharged (Fresh 0)
     go _ _ [] = []
     go fresh ch (op : ops) =
       case op of
@@ -121,12 +126,12 @@ prop_oracle :: Run -> Property
 prop_oracle Run { rAllowance, rStart, rOps } =
   let got = impl rAllowance rStart rOps
       zeros = length (filter (== 0) got)
-      locked = case rStart of { Locked _ -> True; Full -> False }
+      empty = case rStart of { Empty -> True; Full -> False }
   in classify (zeros > 0) "runs dry at some point"
    . classify (zeros > length got `div` 2) "dry more than half the time"
    . classify (any (== capacity rAllowance) got) "reads the capacity at some point"
-   . classify locked "starts locked"
-   . classify (locked && any (> 0) got) "opens during the run"
+   . classify empty "starts empty"
+   . classify (empty && any (> 0) got) "earns credit during the run"
    $ got === oracle rAllowance rStart rOps
 
 -- | A reading and a charged total, unrelated: any point of the state space.
@@ -159,56 +164,16 @@ prop_full :: Point -> Property
 prop_full (Point al fresh _) =
   credit al fresh (fullCharged al fresh) === capacity al
 
--- | Behind the lock the bucket reads zero and a charge changes nothing, at
--- any reading up to the lock's end. Lock, age and charge are drawn to the
--- allowance's scale, a few capacities at most.
-prop_locked :: Point -> Property
-prop_locked (Point al fresh _) =
-  forAllShrink gen shr $ \(lock, age, n) ->
-    let ch  = lockedCharged fresh (Fresh lock)
-        now = Fresh (unFresh fresh + age)
-    in classify (age == lock) "at the lock's end"
-     . classify (n > capacity al) "charged more than a capacity"
-     $ credit al now ch === 0 .&&. charge al now n ch === ch
-  where
-    gen = do
-      lock <- choose (0, 4 * capacity al)
-      age  <- frequency [ (1, pure lock), (4, choose (0, lock)) ]  -- the end is the edge
-      n    <- choose (1, 2 * capacity al)
-      return (lock, age, n)
-    shr (lock, age, n) =
-         [ (lock', min age lock', n) | lock' <- shrink lock, lock' >= 0 ]
-      ++ [ (lock, age', n)           | age'  <- shrink age,  age'  >= 0 ]
-      ++ [ (lock, age, n')           | n'    <- shrink n,    n'    >= 1 ]
-
--- | A connection opened later never holds more credit than one opened
--- earlier, at any reading after both have opened: reconnecting buys nothing.
-prop_later_never_more :: Point -> Property
-prop_later_never_more (Point al fresh _) =
-  forAllShrink gen shr $ \(lock, d1, d) ->
-    let f1    = Fresh (unFresh fresh + d1)
-        now   = Fresh (unFresh f1 + d)
-        early = credit al now (lockedCharged fresh (Fresh lock))
-        late  = credit al now (lockedCharged f1 (Fresh lock))
-    in classify (late > 0) "the later one has credit"
-     . classify (early == capacity al) "the earlier one is full"
-     . counterexample (show (early, late))
-     $ late <= early
-  where
-    gen = (,,) <$> choose (0, 4 * capacity al)
-               <*> choose (0, 4 * capacity al)
-               <*> choose (0, 4 * capacity al)
-    shr (lock, d1, d) =
-         [ (lock', d1, d) | lock' <- shrink lock, lock' >= 0 ]
-      ++ [ (lock, d1', d) | d1'   <- shrink d1,   d1'   >= 0 ]
-      ++ [ (lock, d1, d') | d'    <- shrink d,    d'    >= 0 ]
-
-prop_clock :: Positive Double -> NonNegative Double -> NonNegative Double -> Property
-prop_clock (Positive rate) (NonNegative t0) (NonNegative dt) =
-  let origin = Time (realToFrac t0)
-      later  = Time (realToFrac (t0 + dt))
-  in freshAt rate origin origin === Fresh 0 .&&. freshAt rate origin later >= Fresh 0
-     .&&. freshAt rate origin later >= freshAt rate origin origin
+-- | An empty bucket reads zero at its reading, takes no charge there, and
+-- at a later reading holds what κ granted in between, up to the capacity.
+prop_empty :: Point -> Positive Int -> NonNegative Int -> Property
+prop_empty (Point al fresh _) (Positive n) (NonNegative d) =
+  let ch    = emptyCharged fresh
+      later = Fresh (unFresh fresh + d)
+  in counterexample (show (credit al later ch))
+   $    credit al fresh ch === 0
+   .&&. charge al fresh n ch === ch
+   .&&. credit al later ch === min (capacity al) (kappa later - kappa fresh)
 
 -- | A pool list of @n@ positions, and steps: the index swapped in, by address,
 -- and the positions holding credit at that step.
@@ -241,8 +206,8 @@ prop_rule_follows_reindex (Reindexes n steps) =
                  | a <- addresses, let ps = Map.findWithDefault [] a idx ]
                | (idx, credited) <- steps ]
     observed = runSimOrThrow $ do
-      pa <- newPoolAllowances (Allowance 1_000) (const (Fresh 0)) (Fresh 1_000_000)
-      _  <- atomically $ rebuild pa (Time 0) (relaysOf 0 n) Map.empty
+      pa <- newPoolAllowances (return (Allowance 1_000)) (return (Fresh 0)) 1_000_000
+      _  <- atomically $ rebuild pa (relaysOf 0 n) Map.empty
       rules <- mapM (\a -> fst <$> mkEgressRule pa [] a (\_ -> return Other) (Time 0)) addresses
       -- every rule looks its buckets up once, before the first reindex
       mapM_ (\r -> atomically (r (Time 0))) rules

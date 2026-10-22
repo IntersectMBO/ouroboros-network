@@ -483,6 +483,18 @@ data Arguments extraState extraDebugState extraFlags extraPeers
     -- from an ephemeral one and must still find its pool's bucket
     --
   , daEgressPoolKey :: ntnAddr -> ntnAddr
+
+    -- | The bytes the chain has freshly announced, a monotone count from
+    -- consensus that refills the egress credit buckets
+    --
+  , daFreshBytes :: STM m Int
+
+    -- | The most bytes one announcement can carry under the chain's current
+    -- parameters, from consensus: the block body plus, where the chain has
+    -- Leios, an endorser block and its closure, each at its maximum. Sizes
+    -- the credit buckets and follows the parameters as they change.
+    --
+  , daFreshMaxBytes :: STM m Int
   }
 
 -- | Required Diffusion Arguments to run network layer
@@ -623,35 +635,28 @@ data Configuration extraFlags m ntnFd ntnAddr ntcFd ntcAddr = Configuration {
 -- TCP_NOTSENT_LOWAT on every node-to-node socket, so a peer that stops reading
 -- holds at most one batch.
 data EgressScheduling = EgressScheduling {
-    esBudget              :: Double,       -- ^ bytes per second
-    esCapacity            :: Int,          -- ^ bucket capacity, bytes: a couple of batches
-    esSlicePercent        :: Int,          -- ^ share reserved for the slice lane; 0 for
-                                           --   none, the lane's traffic scheduled instead
-    esFloorPercent        :: Int,
+    esBudget             :: Double,       -- ^ bytes per second
+    esCapacity           :: Int,          -- ^ bucket capacity, bytes: a couple of batches
+    esSlicePercent       :: Int,          -- ^ share reserved for the slice lane; 0 for
+                                          --   none, the lane's traffic scheduled instead
+    esFloorPercent       :: Int,
     -- ^ the floor's share of the budget, percent: a small allowance handed out
     -- in bytes across the credited classes the strict order does not reach,
     -- charged to the budget on credit; zero disables it
-    esRotationPeriod      :: DiffTime,     -- ^ how often the order within a tier is
+    esRotationPeriod     :: DiffTime,     -- ^ how often the order within a tier is
                                       --   re-dealt; 0 for none, FIFO within a tier;
                                       --   local roots take turns regardless
-    esNotSentLowWat       :: Maybe Int,    -- ^ bytes
-    esLaneOf              :: MiniProtocolNum -> MiniProtocolDir -> Mx.Lane,
-    esTenureThreshold     :: DiffTime,
+    esNotSentLowWat      :: Maybe Int,    -- ^ bytes
+    esLaneOf             :: MiniProtocolNum -> MiniProtocolDir -> Mx.Lane,
+    esTenureThreshold    :: DiffTime,
     -- ^ how long a duplex peer must have been hot upstream before, hot both
     -- ways, it is served as a partner: tier 1, behind local roots
-    esFreshMaxBytes       :: Int,
-    -- ^ the most fresh bytes one object can announce: block body, EB list and
-    -- EB closure at their maxima; sizes the residual tier's credit buckets
-    esFreshBytesPerSecond :: Double,
-    -- ^ the prototype's refill reading: 'esFreshMaxBytes' times the active
-    -- slot coefficient, until consensus counts announcements instead
-    esStrangerLock        :: DiffTime,
-    -- ^ how long a stranger stays connected before its own bucket opens: it
-    -- opens empty and fills at the fresh rate, and a reconnection starts the
-    -- wait over. Kept in the reading's fresh bytes, this times
-    -- 'esFreshBytesPerSecond', so it is announcements watched, not seconds,
-    -- once consensus supplies the reading
-    esUnchargedProtocols  :: [MiniProtocolNum]
+    esStrangerLock       :: DiffTime,
+    -- ^ how long a stranger stays connected before its own bucket opens:
+    -- wall-clock time from the connection; the bucket then opens empty at
+    -- that moment's reading and fills at the fresh rate, and a reconnection
+    -- starts the wait over
+    esUnchargedProtocols :: [MiniProtocolNum]
     -- ^ scheduled-lane protocols whose bytes never count against a bucket:
     -- only what a client cannot drive to volume, keep-alive and the
     -- server-push notifications; everything else is charged
