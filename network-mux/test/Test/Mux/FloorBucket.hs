@@ -222,7 +222,7 @@ runFloorM inspect_m withFloor fr@FloorRun { frRate, frCapacity, frPercent, frRot
               asked <- getMonotonicTime
               atomically $ modifyTVar pending (Map.insert i asked)
               mask_ $ do
-                src <- Bucket.awaitGrantWaited Nothing 0 h fbBatch
+                src <- Bucket.awaitGrantWaited Nothing 0 0 h fbBatch
                 at <- getMonotonicTime
                 atomically $ do
                   modifyTVar grants (Grant i fbTier asked at fbBatch src :)
@@ -625,6 +625,7 @@ prop_rule_followed_while_queued rc@RuleChange { rcRate, rcCap, rcPercent, rcTier
 -- bucket's counters, and in IO its whole state.
 instance NoThunks Bucket.BucketStats
 instance NoThunks Bucket.TierGrants
+instance NoThunks Bucket.Served
 instance NoThunks (Bucket.Bucket IO)
 instance NoThunks (Bucket.Floor IO)
 instance NoThunks (Bucket.BucketHandle IO)
@@ -987,7 +988,7 @@ prop_fast_path_charges_current_rank fc@FastCase { fcBatch, fcOwn, fcPool } =
                  2 -> spend pool "pool"
                  _ -> modifyTVar log_ ("nothing" :)
       atomically $ Bucket.setRankSource h rule
-      forM_ [1 .. grants] $ \_ -> Bucket.awaitGrantCharged Nothing 0 charge h fcBatch
+      forM_ [1 .. grants] $ \_ -> Bucket.awaitGrantCharged Nothing 0 0 charge h fcBatch
       reverse <$> readTVarIO log_
 
 -- | The run: the credit before each charge, in order, and the pool
@@ -1019,7 +1020,7 @@ runShared SharedCase { scRate, scCap, scPool, scBatch, scCredit } = runSimOrThro
       async $ do
         threadDelay (0.01 + fromIntegral i / 1000)
         forever $ mask_ $ do
-          src <- Bucket.awaitGrantCharged Nothing 0 charge h scBatch
+          src <- Bucket.awaitGrantCharged Nothing 0 0 charge h scBatch
           atomically $ modifyTVar grants (src :)
     threadDelay end
     -- read before cancelling, so no grant is half recorded
@@ -1081,7 +1082,7 @@ prop_accounting :: FloorRun -> Property
 prop_accounting fr =
   let (gs, st) = runFloor True fr
       served   = Map.fromListWith max [ ((gTier g, fromIntegral (gBearer g)), gAt g) | g <- gs ]
-  in counterexample "served" (served === Bucket.bsServed st)
+  in counterexample "served" (served === Map.map Bucket.svLast (Bucket.bsServed st))
 
 -- | A bearer asleep at the floor under the old rate is woken by
 -- 'setBucketRate': a credited bearer behind two saturators, served by the
@@ -1148,7 +1149,7 @@ prop_floor_follows_rate =
                 h <- Bucket.registerBearer budget
                 atomically $ Bucket.setRank h (Bucket.Rank tier)
                 async $ let loop = do
-                              src <- Bucket.awaitGrantWaited Nothing 0 h need
+                              src <- Bucket.awaitGrantWaited Nothing 0 0 h need
                               when' (src == FromFloor) $ atomically $ modifyTVar bytes (+ need)
                               loop
                         in loop

@@ -138,8 +138,7 @@ poolRelaysThread PoolRelaysArgs { .. } allowances =
         case useLedger of
              DontUseLedgerPeers -> do
                unless cleared $ do
-                 now <- getMonotonicTime
-                 _ <- atomically $ rebuild allowances now [] Map.empty
+                 _ <- atomically $ rebuild allowances [] Map.empty
                  traceWith prTracer PoolRelaysDisabled
                return (followed, True, known, False)
 
@@ -163,8 +162,7 @@ poolRelaysThread PoolRelaysArgs { .. } allowances =
                    pools       = Map.elems bigPeerMap
                -- what is known serves at once; a pool new to the list
                -- starts empty
-               now  <- getMonotonicTime
-               kept <- atomically $ rebuild allowances now (map snd pools) (indexOf pools known)
+               kept <- atomically $ rebuild allowances (map snd pools) (indexOf pools known)
                knownVar <- newTVarIO known
                r <- try $ resolvePools pools knownVar
                (knownNow, soon) <- case r of
