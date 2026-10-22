@@ -12,6 +12,7 @@
   and DataFlow parameters to filter supported set of miniprotocols
 - connectToNode, connectToNode', connectToNodeWithMux, connectToNodeWithMux',
   connectToNodeSocket now take a negotiated data flow callback like Simple.with
+- `Ouroboros.Network.InboundGovernor.Trace`: added `TrStaleMuxFinished`.
 
 ### Non-Breaking
 
@@ -42,6 +43,20 @@
 - Avoid a peer selection governor assertion when a peer sharing request fails
   after its peer has disconnected. Apply the peer sharing retry delay only to
   peers which are still established when the request completes.
+
+- The inbound governor now traces `TrUnexpectedlyFalseAssertion` when a
+  responder of a registered connection starts or terminates while the
+  governor no longer tracks that connection's responders. The trace identifies
+  the connection and mini-protocol; previously this condition was not traced.
+- Removed the unused internal `InboundGovernorLoop` constructor from
+  `IGAssertionLocation` in `Ouroboros.Network.InboundGovernor`.
+
+- The inbound governor checks `MuxFinished` without blocking. If the event
+  belongs to an earlier connection with the same `ConnectionId`, and the
+  currently registered mux has not stopped, the event is ignored and traced
+  as `TrStaleMuxFinished`. Previously this could stall the entire inbound
+  governor until the replacement mux stopped, potentially waiting indefinitely,
+  and then unregister the replacement connection.
 
 <a id='changelog-1.3.0.0'></a>
 ## 1.3.0.0 -- 2026-10-01
