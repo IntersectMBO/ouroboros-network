@@ -41,7 +41,7 @@ import Data.Foldable (toList)
 import Data.Function (on)
 import Data.IntMap.Strict qualified as IntMap
 import Data.IntSet qualified as IntSet
-import Data.List (elemIndex, mapAccumL, nub, nubBy, sortBy, sortOn)
+import Data.List (elemIndex, mapAccumL, nub, nubBy, sortBy, sortOn, unfoldr)
 import Data.List as List (foldl')
 import Data.Map.Strict qualified as Map
 import Data.Maybe (listToMaybe)
@@ -55,6 +55,7 @@ import NoThunks.Class (NoThunks, unsafeNoThunks)
 
 
 
+import Ouroboros.Network.Hashable (hashWithSalt, mkSalt)
 import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Ouroboros.Network.RegisteredDelay qualified as RegisteredDelay
 import Ouroboros.Network.Tx (HasRawTxId (..), getRawTxId)
@@ -62,20 +63,21 @@ import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
 import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (PeerRegistration,
            PeerTierEntry (..), PeerTxRegistry (..), SharedTxStateVar,
            TxSubmissionCountersVar, awaitClaimableChangeImp, drainPause,
-           newPeerTxRegistry, newSharedTxStateVar, newTxSubmissionCountersVar,
-           registerPeerCounters, registerPeerTier, retirePeerCounters,
-           rotateTiers, scrubFromPeerInFlight, snapshotCountersWith, sweepBatch,
-           sweepInterval, tierCensus, txCountersThreadV2, withTier,
-           writeSharedStateIfChanged)
+           joinTier, leaveTier, newPeerTxRegistry, newSharedTxStateVar,
+           newTxSubmissionCountersVar, registerPeerCounters, registerPeerTier,
+           retirePeerCounters, rotateTiers, scrubFromPeerInFlight,
+           snapshotCountersWith, sweepBatch, sweepInterval, tierCensus,
+           txCountersThreadV2, withTier, writeSharedStateIfChanged)
 import Ouroboros.Network.TxSubmission.Inbound.V2.State
-import Ouroboros.Network.TxSubmission.Inbound.V2.Tier (censusOf, drawFastTier,
-           effectiveTier, isSource, nextJitter, recordNovel, slowWait,
-           sourceCount, standingOf)
+import Ouroboros.Network.TxSubmission.Inbound.V2.Tier (censusOf, effectiveTier,
+           isSource, nextJitter, orderFast, recordNovel, slowWait, sourceCount,
+           standingOf)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
 
 import Test.Ouroboros.Network.TxSubmission.Types
 
 import System.Random (mkStdGen)
+import System.Random.SplitMix (mkSMGen, nextWord64)
 import Test.QuickCheck
 import Test.Tasty (TestTree, localOption, testGroup)
 import Test.Tasty.HUnit (Assertion, assertBool, assertFailure, testCase,
@@ -161,10 +163,10 @@ tests =
         , testProperty "a fast peer is served as under a zero cadence" prop_tier_fastIgnoresCadence
         , testProperty "a slow peer's txid request sets the gate within the jitter band" prop_tier_slowSetsGate
         , testProperty "isSource agrees with the count of accepts inside the window" prop_tier_sourceOracle
-        , testProperty "the coin draws exactly min(k, n) distinct keys" prop_tier_drawCount
-        , localOption (QuickCheckTests 20) $ testProperty "the coin is fair" prop_tier_drawUniform
+        , testProperty "the order places exactly the first k by salted rank after every join, leave and rotation" prop_tier_orderOracle
+        , localOption (QuickCheckTests 20) $ testProperty "the salted order is fair" prop_tier_orderUniform
         , testProperty "the slow wait lies in the jitter band and the generator moves" prop_tier_jitterBand
-        , testProperty "registration fills the fast tier and a rotation keeps it at min(k, n)" prop_tier_registry
+        , testProperty "a leaving fast peer's slot goes to the next in order at once; a peer holds none before its first decision" prop_tier_registry
         , testProperty "a gated txid request parks on the claimable counter read then" prop_tier_gateParksOnClaimable
         , testProperty "the gate holds txid requests only; a buffered body keeps the generation" prop_tier_gateHoldsOnlyTxIdRequests
         , testProperty "local roots are fast by standing and hold no coin slot" prop_tier_rootsOutsideCoin
@@ -1813,6 +1815,7 @@ prop_snapshotCounters_exactlyOnce (CounterScript peers batches) = runSimOrThrow 
                                                 | (p, c) <- zip [0 ..] cells ])
                     <*> newTVarIO (fromIntegral peers)
                     <*> newTVarIO Map.empty
+                    <*> newTVarIO (fst (mkSalt (mkStdGen 7)))
                     <*> newTVarIO (mkStdGen 7)
     ceAllCells <- newTVarIO (Map.fromList (zip [0 ..] cells))
     ceBumps    <- newTVarIO 0
@@ -4874,37 +4877,143 @@ prop_tier_sourceOracle (Accepts (ArbTxDecisionPolicy policy0) events askAt) =
     addTime' t d = addTime d t
     oracle = n >= 1 && inWindow >= n
 
--- | The coin draws exactly min(k, n) distinct keys from the n given.
-prop_tier_drawCount :: Int -> NonNegative Int -> Int -> Property
-prop_tier_drawCount k (NonNegative n0) seed =
-    conjoin
-      [ counterexample "count" (length drawn === min (max 0 k) n)
-      , counterexample "distinct" (length (nub drawn) === length drawn)
-      , counterexample "subset" (all (`elem` keys) drawn)
-      ]
-  where
-    n = n0 `mod` 40
-    keys = [0 .. n - 1] :: [Int]
-    (drawn, _) = drawFastTier k (mkStdGen seed) keys
+-- | One step of a tier script over a few peer ids: a peer registering and
+-- taking its first decision, registering only, deciding later, leaving,
+-- or a rotation.  Ids repeat, so leaves find peers.
+data TierEvent
+  = TierJoin Int Bool
+  | TierRegister Int Bool
+  | TierStart Int
+  | TierLeave Int
+  | TierRotate
+  deriving (Eq, Show)
 
--- | The coin is fair: over many draws every key is fast about k/n of the
--- time.  Two thousand draws put the standard error below 0.012, so the
--- 0.1 band is nine of them.
-prop_tier_drawUniform :: Int -> Property
-prop_tier_drawUniform seed0 =
+newtype TierScript = TierScript [TierEvent]
+  deriving Show
+
+instance Arbitrary TierScript where
+  arbitrary = TierScript <$> listOf event
+    where
+      peer  = choose (0, 7 :: Int)
+      root  = frequency [(3, pure False), (1, pure True)]
+      event = frequency
+        [ (4, TierJoin <$> peer <*> root)
+        , (1, TierRegister <$> peer <*> root)
+        , (1, TierStart <$> peer)
+        , (3, TierLeave <$> peer)
+        , (1, pure TierRotate)
+        ]
+  shrink (TierScript es) = TierScript <$> shrinkList shrinkEvent es
+    where
+      shrinkEvent (TierJoin p r)     = [ TierJoin p' r | p' <- shrink p ] ++ [ TierJoin p False | r ]
+      shrinkEvent (TierRegister p r) = [ TierRegister p' r | p' <- shrink p ] ++ [ TierRegister p False | r ]
+      shrinkEvent (TierStart p)      = [ TierStart p' | p' <- shrink p ]
+      shrinkEvent (TierLeave p)      = [ TierLeave p' | p' <- shrink p ]
+      shrinkEvent TierRotate         = []
+
+-- | The placement against the exact oracle after every step of a script:
+-- the order holds exactly the peers that have decided; every root in it
+-- is fast; of the others exactly the first k by salted rank are, the rank
+-- recomputed here from the salt the registry holds; a peer that has not
+-- decided is slow; and a rotation changes the salt.
+prop_tier_orderOracle :: ArbTxDecisionPolicy -> NonNegative Int -> TierScript -> Int -> Property
+prop_tier_orderOracle (ArbTxDecisionPolicy policy0) (NonNegative k0) (TierScript events) seed =
+    runSimOrThrow $ do
+      registry <- newPeerTxRegistry (mkStdGen seed)
+      (checks, backfills) <- go registry Map.empty events
+      pure $ cover 30 (backfills > 0) "a fast peer left a full order"
+           $ conjoin checks
+  where
+    k      = k0 `mod` 5
+    policy = policy0 { txFastPeers = k }
+
+    -- live peers by id: registration, entry, root variable, decided yet
+    go _ _ [] = pure ([], 0 :: Int)
+    go registry live (ev : rest) = do
+      (live', backfill, extra) <- step registry live ev
+      verdict <- oracle registry live'
+      (checks, backfills) <- go registry live' rest
+      pure (counterexample (show ev) (extra .&&. verdict) : checks, backfill + backfills)
+
+    step registry live ev = case ev of
+      TierJoin p root     -> register registry live p root >>= start registry p
+      TierRegister p root -> (\live' -> (live', 0, property True)) <$> register registry live p root
+      TierStart p         -> start registry p live
+      TierLeave p         -> case Map.lookup p live of
+        Nothing -> pure (live, 0, property True)
+        Just (r, e, _, _) -> do
+          wasFast <- (== FastTier) <$> readTVarIO (pteCoin e)
+          inOrder <- Map.size <$> readTVarIO (peerTiers registry)
+          atomically (leaveTier policy registry r)
+          pure (Map.delete p live, if wasFast && inOrder > k then 1 else 0, property True)
+      TierRotate -> do
+        before <- saltKey registry
+        atomically (rotateTiers policy registry)
+        after <- saltKey registry
+        pure (live, 0, counterexample "salt unchanged" (before =/= after))
+
+    register registry live p root
+      | Map.member p live = pure live
+      | otherwise = do
+          c <- newTVarIO mempty
+          rootVar <- newTVarIO root
+          (r, e) <- atomically $ do
+            r <- registerPeerCounters registry p c
+            (e, _) <- registerPeerTier registry (readTVar rootVar)
+            pure (r, e)
+          pure (Map.insert p (r, e, rootVar, False) live)
+
+    start registry p live = case Map.lookup p live of
+      Just (r, e, rootVar, False) -> do
+        atomically (joinTier policy registry r e)
+        pure (Map.insert p (r, e, rootVar, True) live, 0, property True)
+      _ -> pure (live, 0, property True)
+
+    -- the salt, as the hash it gives a fixed key: distinct salts hash it apart
+    saltKey registry = (\salt -> hashWithSalt salt (0 :: Int)) <$> readTVarIO (registrySalt registry)
+
+    oracle registry live = do
+      tiers <- readTVarIO (peerTiers registry)
+      salt  <- readTVarIO (registrySalt registry)
+      rows  <- forM (Map.toList live) $ \(p, (r, e, rootVar, decided)) -> do
+        root <- readTVarIO rootVar
+        coin <- readTVarIO (pteCoin e)
+        pure (p, r, root, decided, coin)
+      let decidedSet = Set.fromList [ r | (_, r, _, True, _) <- rows ]
+          others     = [ r | (_, r, False, True, _) <- rows ]
+          rank (addr, n) = (fst (nextWord64 (mkSMGen (fromIntegral (hashWithSalt salt addr)))), n)
+          fastSet    = Set.fromList (take k (sortOn rank others))
+          expected (_, r, root, decided, _)
+            | not decided         = SlowTier
+            | root                = FastTier
+            | Set.member r fastSet = FastTier
+            | otherwise           = SlowTier
+      pure $ conjoin
+        [ counterexample "the order holds the decided peers" (Map.keysSet tiers === decidedSet)
+        , conjoin [ counterexample ("peer " ++ show p ++ " root " ++ show root ++ " decided " ++ show decided)
+                                   (coin === expected row)
+                  | row@(p, _, root, decided, coin) <- rows ]
+        ]
+
+-- | The salted order is fair: over many salts every key is among the first
+-- k about k/n of the time, whatever the keys' own hashes do.  Two thousand
+-- salts put the standard error below 0.012, so the 0.1 band is nine of
+-- them.
+prop_tier_orderUniform :: Int -> Property
+prop_tier_orderUniform seed0 =
     forAll (choose (2, 6)) $ \n ->
     forAll (choose (1, n - 1)) $ \k ->
-      let keys   = [0 .. n - 1] :: [Int]
+      let keys   = [ (key, 0) | key <- [0 .. n - 1] ] :: [(Int, Word64)]
           draws  = 2000 :: Int
-          step (g, acc) _ =
-            let (drawn, g') = drawFastTier k g keys
-            in (g', foldr (\key -> Map.insertWith (+) key (1 :: Int)) acc drawn)
-          (_, counts) = foldl step (mkStdGen seed0, Map.empty) [1 .. draws]
+          salts  = take draws (unfoldr (Just . mkSalt) (mkStdGen seed0))
+          counts = foldl (\acc salt -> foldr (\(key, _) -> Map.insertWith (+) key (1 :: Int)) acc
+                                            (orderFast k salt keys))
+                         Map.empty salts
           expected = fromIntegral k / fromIntegral n :: Double
       in conjoin
-           [ counterexample ("key " ++ show key ++ " drawn " ++ show c ++ " of " ++ show draws)
+           [ counterexample ("key " ++ show key ++ " fast " ++ show c ++ " of " ++ show draws)
                (abs (fromIntegral c / fromIntegral draws - expected) < 0.1)
-           | key <- keys
+           | (key, _) <- keys
            , let c = Map.findWithDefault 0 key counts
            ]
 
@@ -4922,31 +5031,37 @@ prop_tier_jitterBand (ArbTxDecisionPolicy policy) seed =
     lo = txSlowCadence policy * realToFrac (1 - txSlowJitter policy)
     hi = txSlowCadence policy * realToFrac (1 + txSlowJitter policy)
 
--- | Registration fills the fast tier to 'txFastPeers' and no further; a
--- rotation keeps exactly min(k, n) peers fast; a peer leaving a fast slot
--- has it refilled by the next arrival.
+-- | The first decisions fill the fast tier to 'txFastPeers' and no
+-- further and a rotation keeps exactly min(k, n) peers fast; a peer
+-- leaving a fast slot hands it to the next in the order at once, before
+-- any arrival; a peer that registered but has not decided holds nothing,
+-- and takes its place at its first decision.
 prop_tier_registry :: ArbTxDecisionPolicy -> NonNegative Int -> Int -> Property
 prop_tier_registry (ArbTxDecisionPolicy policy) (NonNegative n0) seed =
     runSimOrThrow $ do
       registry <- newPeerTxRegistry (mkStdGen seed)
-      regs <- mapM (register registry) [1 .. n]
+      regs <- mapM (joinPeer registry) [1 .. n]
       placed <- fastCount registry
       atomically (rotateTiers policy registry)
       rotated <- fastCount registry
-      -- a fast peer leaves, a new one arrives
       fastRegs <- filterM (\(_, v) -> (== FastTier) <$> readTVarIO v) regs
-      refilled <- case fastRegs of
-        [] -> pure (min k n)
+      churn <- case fastRegs of
+        [] -> pure []
         ((r, _) : _) -> do
-          c <- newTVarIO mempty
-          atomically $ retirePeerCounters c registry r c
-          _ <- register registry (n + 1)
-          fastCount registry
-      pure $ conjoin
+          atomically (leaveTier policy registry r)
+          refilled <- fastCount registry
+          (r', e') <- register registry (n + 1)
+          waiting <- fastCount registry
+          atomically (joinTier policy registry r' e')
+          decided <- fastCount registry
+          pure [ counterexample ("refilled " ++ show refilled) (refilled === min k (n - 1))
+               , counterexample ("waiting "  ++ show waiting)  (waiting  === min k (n - 1))
+               , counterexample ("decided "  ++ show decided)  (decided  === min k n)
+               ]
+      pure $ conjoin $
         [ counterexample ("placed " ++ show placed)   (placed   === min k n)
         , counterexample ("rotated " ++ show rotated) (rotated  === min k n)
-        , counterexample ("refilled " ++ show refilled) (refilled === min k n)
-        ]
+        ] ++ churn
   where
     n = n0 `mod` 50
     k = txFastPeers policy
@@ -4954,8 +5069,12 @@ prop_tier_registry (ArbTxDecisionPolicy policy) (NonNegative n0) seed =
       c <- newTVarIO mempty
       atomically $ do
         r <- registerPeerCounters registry (p :: Int) c
-        (e, _) <- registerPeerTier policy registry r (pure False)
-        pure (r, pteCoin e)
+        (e, _) <- registerPeerTier registry (pure False)
+        pure (r, e)
+    joinPeer registry p = do
+      (r, e) <- register registry p
+      atomically (joinTier policy registry r e)
+      pure (r, pteCoin e)
     fastCount registry = do
       tiers <- readTVarIO (peerTiers registry)
       length . filter (== FastTier) <$> mapM (readTVarIO . pteCoin) (Map.elems tiers)
@@ -5053,10 +5172,10 @@ prop_tier_gateHoldsOnlyTxIdRequests (ArbTxDecisionPolicy policy0)
     isRequest _                   = False
 
 -- | Local roots are fast by standing and hold none of the coin's slots:
--- after registration and after a rotation every root is fast and exactly
--- min(k, n) of the others are; roots that lose their standing join the
--- next draw like the rest.  The registry's census says the same at each
--- step, with no source among peers that never delivered.
+-- after the first decisions and after a rotation every root is fast and
+-- exactly min(k, n) of the others are; roots that lose their standing
+-- join the next order like the rest.  The registry's census says the same
+-- at each step, with no source among peers that never delivered.
 prop_tier_rootsOutsideCoin :: ArbTxDecisionPolicy -> [Bool] -> Int -> Property
 prop_tier_rootsOutsideCoin (ArbTxDecisionPolicy policy) roots0 seed =
     cover 30 (nRoots > 0 && n > k) "roots beside a full coin" $
@@ -5067,7 +5186,8 @@ prop_tier_rootsOutsideCoin (ArbTxDecisionPolicy policy) roots0 seed =
         rootVar <- newTVarIO isRoot
         atomically $ do
           r <- registerPeerCounters registry (p :: Int) c
-          (e, _) <- registerPeerTier policy registry r (readTVar rootVar)
+          (e, _) <- registerPeerTier registry (readTVar rootVar)
+          joinTier policy registry r e
           pure (rootVar, pteCoin e)
       placed <- census regs
       placedCensus <- atomically (tierCensus registry)
@@ -5129,7 +5249,7 @@ prop_tier_withTierStanding (ArbTxDecisionPolicy policy0) root coinFast promote (
     $ cover 10 (not root && not coinFast && not source) "slow"
     $ runSimOrThrow $ do
         entry <- PeerTierEntry <$> newTVarIO coin <*> pure (pure root)
-                               <*> newTVarIO StandingSlow
+                               <*> newTVarIO StandingSlow <*> newTVarIO True
         ps'  <- atomically (withTier policy t0 entry ps)
         s1   <- readTVarIO (pteStanding entry)
         ps'' <- atomically (withTier policy t0 entry ps')

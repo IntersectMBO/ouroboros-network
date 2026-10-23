@@ -103,7 +103,7 @@ instance MetaTrace (TraceTxLogic peeraddr txid tx) where
     ]
   metricsDocFor (Namespace [] ["TraceTxTiers"]) =
     [ (tiersMetric "fastByRoot",   "peers polled at full speed by standing: local roots")
-    , (tiersMetric "fastByCoin",   "peers polled at full speed by the coin's draw")
+    , (tiersMetric "fastByCoin",   "peers polled at full speed by the coin's salted order")
     , (tiersMetric "fastBySource", "peers polled at full speed as tx sources while the coin left them slow")
     , (tiersMetric "slow",         "peers polled on the slow tier's cadence")
     ]

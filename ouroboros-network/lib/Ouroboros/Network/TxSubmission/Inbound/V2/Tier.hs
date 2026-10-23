@@ -7,10 +7,14 @@
 -- txid it carries is a duplicate.  The tiers bound the set of peers polled
 -- at full speed without judging peers on what they deliver: local roots are
 -- always fast; a peer that is itself a tx source ('isSource') is fast while
--- it produces; 'txFastPeers' inbound peers drawn at random ('drawFastTier')
--- are fast until the next draw; everyone else waits 'slowWait' between
--- txid requests, blocking ones included.  Promotion is upward only:
--- nothing a peer sends can move another peer down.
+-- it produces; the first 'txFastPeers' of the other peers in a salted order
+-- ('orderFast') are fast until the coin draws the next salt; everyone else
+-- waits 'slowWait' between txid requests, blocking ones included.  The
+-- order is a function of the salt and the peers in it, as the peer-sharing
+-- responder's answer is: a departure moves the next peer up at once and an
+-- arrival takes its place.  A peer enters the order at its first decision,
+-- after the server's initial delay, so a peer not polling yet holds no
+-- fast slot.  Nothing a peer sends can move another peer down.
 --
 -- The pure core lives here; "Ouroboros.Network.TxSubmission.Inbound.V2.State"
 -- applies the gate and "Ouroboros.Network.TxSubmission.Inbound.V2.Registry"
@@ -24,21 +28,22 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Tier
     -- * The slow tier's wait
   , slowWait
   , nextJitter
-    -- * The coin
-  , drawFastTier
+    -- * The salted order
+  , orderFast
+  , tierRank
     -- * The census
   , standingOf
   , censusOf
   ) where
 
 import Control.Monad.Class.MonadTime.SI
-import Data.Sequence qualified as Seq
+import Data.List (sortOn)
 import Data.Sequence.Strict (StrictSeq)
 import Data.Sequence.Strict qualified as StrictSeq
 import Data.Word (Word64)
-import System.Random (RandomGen, uniformR)
-import System.Random.SplitMix (mkSMGen, nextDouble, unseedSMGen)
+import System.Random.SplitMix (mkSMGen, nextDouble, nextWord64, unseedSMGen)
 
+import Ouroboros.Network.Hashable (Hashable, Salt, hashWithSalt)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
 
@@ -102,24 +107,20 @@ nextJitter seed = (u, fst (unseedSMGen g'))
   where
     (u, g') = nextDouble (mkSMGen seed)
 
--- | The coin: @k@ of the keys, uniformly without replacement, all of them
--- when there are no more than @k@.
-drawFastTier :: RandomGen g => Int -> g -> [k] -> ([k], g)
-drawFastTier k g0 keys
-  | k >= n    = (keys, g0)
-  | k <= 0    = ([], g0)
-  | otherwise = go 0 g0 (Seq.fromList keys)
-  where
-    n = length keys
-    -- partial Fisher–Yates: positions [0, k) are the draw
-    go i g s
-      | i >= k    = (foldr (:) [] (Seq.take k s), g)
-      | otherwise =
-          let (j, g') = uniformR (i, n - 1) g
-              si = Seq.index s i
-              sj = Seq.index s j
-              s' = Seq.update i sj (Seq.update j si s)
-          in go (i + 1) g' s'
+-- | A peer's rank in the salted order: its address hashed with the salt
+-- and passed through a SplitMix step, so the order is uniform whatever the
+-- address type's hash makes of small salts, then its registration number
+-- for ties.
+tierRank :: Hashable addr => Salt -> (addr, Word64) -> (Word64, Word64)
+tierRank salt (addr, n) =
+    (fst (nextWord64 (mkSMGen (fromIntegral (hashWithSalt salt addr)))), n)
+
+-- | The fast tier from the salted order: the first @k@ keys by 'tierRank',
+-- all of them when there are no more than @k@.
+orderFast :: Hashable addr => Int -> Salt -> [(addr, Word64)] -> [(addr, Word64)]
+orderFast k salt
+  | k <= 0    = const []
+  | otherwise = take k . sortOn (tierRank salt)
 
 -- | A peer's standing from whether it is a local root, the coin's tier for
 -- it and its effective tier: root first, coin before source.

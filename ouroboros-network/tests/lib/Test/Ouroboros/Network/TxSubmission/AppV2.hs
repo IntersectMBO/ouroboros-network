@@ -33,6 +33,7 @@ import Control.Tracer (Tracer, contramap, mkTracer, nullTracer, traceWith)
 
 import Data.Foldable (traverse_)
 import Data.Function (on)
+import Data.Hashable (Hashable)
 import Data.IntMap.Strict qualified as IntMap
 import Data.IntSet qualified as IntSet
 import Data.List (nubBy)
@@ -217,6 +218,7 @@ runTxSubmission
      , Show peeraddr
      , Ord peeraddr
      , Typeable peeraddr
+     , Hashable peeraddr
 
      , txid ~ Int
      )
