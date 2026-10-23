@@ -22,11 +22,12 @@ module Test.Mux (tests) where
 
 import Codec.CBOR.Decoding as CBOR
 import Codec.CBOR.Encoding as CBOR
-import Codec.Serialise (Serialise (..))
+import Codec.Serialise (Serialise (..), serialise)
 import Control.Applicative
 import Control.Arrow ((&&&))
 import Control.Exception (ErrorCall (..))
 import Control.Monad
+import Data.Bifunctor qualified as Bifunctor
 import Data.Binary.Put qualified as Bin
 import Data.Bits
 import Data.ByteString qualified as BS
@@ -39,8 +40,10 @@ import Data.Map qualified as M
 import Data.Maybe (fromMaybe, isNothing)
 import Data.Tuple (swap)
 import Data.Word
+import Foreign.C.Error (Errno (..), eCONNRESET, eNETDOWN, ePIPE)
 import Formatting (formatToString, (%), (%+))
 import Formatting qualified as F
+import GHC.IO.Exception (IOErrorType (..), IOException (..))
 import System.Random.SplitMix qualified as SM
 import Test.Cardano.Base.QuickCheck qualified as BaseQC
 import Test.QuickCheck hiding ((.&.))
@@ -53,6 +56,7 @@ import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadSay
 import Control.Monad.Class.MonadST
+import Control.Monad.Class.MonadTest (exploreRaces)
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
@@ -82,7 +86,9 @@ import Network.Mux.Bearer.AttenuatedChannel as AttenuatedChannel
 import Network.Mux.Bearer.Pipe qualified as Mx
 import Network.Mux.Bearer.Queues as Mx
 import Network.Mux.Codec qualified as Mx
+import Network.Mux.Counters qualified as Counters
 import Network.Mux.Egress (egressSoftBufferLimit)
+import Network.Mux.Egress qualified as Egress
 import Network.Mux.Types (MiniProtocolInfo (..), MiniProtocolLimits (..))
 import Network.Mux.Types qualified as Mx
 import Network.Socket qualified as Socket
@@ -118,6 +124,22 @@ tests =
   , testProperty "send forces a prefix (IO)"    prop_mux_send_forces_prefix_only_io
   , testProperty "send forces a prefix (Sim)"   prop_mux_send_forces_prefix_only_sim
   , testProperty "send traces the length (Sim)" prop_mux_send_end_length
+  , testGroup "Counters"
+    [ testProperty "each failure is counted once, where it belongs"
+                   prop_mux_counters_failure
+    , testProperty "the sets given are snapshotted every interval"
+                   prop_mux_counters_loop
+    , testProperty "a close after every mini-protocol finished counts nothing"
+                   prop_mux_close_after_exit
+    , testProperty "a snapshot reads a counter per transaction, a step whole or not at all"
+                   prop_mux_counters_snapshot_split
+    , testProperty "bytes the bearer took are counted, cancelled or not"
+                   prop_mux_written_is_counted
+    , testProperty "bytes the bearer delivered are counted, cancelled or not"
+                   prop_mux_read_is_counted
+    , testProperty "a write blocked part way takes the cancellation, nothing counted"
+                   prop_mux_partial_write_cancelled
+    ]
   , testGroup "Generators"
     [ testProperty "genByteString"              prop_arbitrary_genByteString
     , testProperty "genLargeByteString"         prop_arbitrary_genLargeByteString
@@ -481,20 +503,71 @@ prop_mux_snd_recv_bi (DummyRun messages) (DummyCapability clientCap) (DummyCapab
                      ]
 
 
-    clientMux <- Mx.new clientTracer clientApps
+    clientCounters <- Mx.newMuxCounters
+    serverCounters <- Mx.newMuxCounters
+    clientMux <- Mx.withCounters clientCounters <$> Mx.new clientTracer clientApps
     clientAsync <- async $ Mx.run clientMux clientBearer
 
-    serverMux <- Mx.new serverTracer serverApps
+    serverMux <- Mx.withCounters serverCounters <$> Mx.new serverTracer serverApps
     serverAsync <- async $ Mx.run serverMux serverBearer
 
     r <- step clientMux clientApps serverMux serverApps messages
+    -- Each side's counters, read while both muxes are live and again once
+    -- both have ended and their counts are retired into the totals: no
+    -- failures, and the bytes of its messages. A last message is counted
+    -- after its peer could read it, so the live read waits for the counts
+    -- to settle rather than sleep.
+    let expected :: Mx.MuxCounts
+        expected = expectedCounts (Mx.sduSize clientBearer)
+
+        snapshot :: STM IO (Mx.MuxCounts, Mx.MuxCounts)
+        snapshot = (,) <$> Mx.readMuxCounters clientCounters
+                       <*> Mx.readMuxCounters serverCounters
+    _ <- timeout 10 $ atomically $ snapshot >>= check . (== (expected, expected))
+    live <- atomically snapshot
     Mx.stop clientMux
     Mx.stop serverMux
     wait serverAsync
     wait clientAsync
-    return r
+    ended <- atomically snapshot
+    return $ r .&&. counterexample ("live " ++ show live) (live === (expected, expected))
+               .&&. counterexample ("ended " ++ show ended) (ended === (expected, expected))
 
   where
+    -- What each side counts: both run the same exchanges in both directions,
+    -- so the requests and the done are sent by the initiator and read by the
+    -- responder, the responses the other way round, each message alone in
+    -- its SDUs with a header per SDU.
+    expectedCounts :: Mx.SDUSize -> Mx.MuxCounts
+    expectedCounts sduSize = Mx.MuxCounts Mx.noFailures sent received
+      where
+        initiator, responder :: (Mx.MiniProtocolNum, Mx.MiniProtocolDir)
+        initiator = (Mx.MiniProtocolNum 2, Mx.InitiatorDir)
+        responder = (Mx.MiniProtocolNum 2, Mx.ResponderDir)
+
+        sent, received :: Mx.ByteCounts
+        sent     = M.fromList [ (initiator, asked), (responder, answered) ]
+        received = M.fromList [ (initiator, answered), (responder, asked) ]
+
+        asked, answered :: Word64
+        asked    = sum [ onWire (MsgReq req)
+                       | DummyTrace msgs <- messages
+                       , (req, _) <- msgs
+                       ]
+                 + fromIntegral (length messages) * onWire MsgDone
+        answered = sum [ onWire (MsgResp resp)
+                       | DummyTrace msgs <- messages
+                       , (_, resp) <- msgs
+                       ]
+
+        -- The message's encoding, and a header per SDU it is cut into.
+        onWire :: MsgReqResp DummyPayload DummyPayload -> Word64
+        onWire msg = len + fromIntegral Mx.msHeaderLength * ((len + sdu - 1) `div` sdu)
+          where
+            len, sdu :: Word64
+            len = fromIntegral (BL.length (serialise msg))
+            sdu = fromIntegral (Mx.getSDUSize sduSize)
+
     step _ _ _ _ [] = return $ property True
     step clientMux clientApps serverMux serverApps (msgs:msgss) = do
         (client_mp, server_mp) <- setupMiniReqRsp (return ()) msgs
@@ -1257,7 +1330,7 @@ prop_demux_sdu a = do
                            miniProtocolCapability = Nothing
                          }
 
-        (client_w, said, waitServerRes, mux) <- plainServer server_mps (serverRsp stopVar)
+        (client_w, said, waitServerRes, mux, counters) <- plainServer server_mps (serverRsp stopVar)
 
         writeSdu client_w $! unDummyPayload sdu
 
@@ -1266,12 +1339,16 @@ prop_demux_sdu a = do
         _ <- atomically waitServerRes
         Mx.stop mux
         res <- waitCatch said
+        counts <- atomically (Mx.readMuxCounters counters)
         case res of
             Left e  ->
                 case fromException e of
                     Just me ->
                       return $ case me of
-                        Mx.IngressQueueOverRun {} -> property True
+                        -- The overrun is counted; the SDU that overran is not,
+                        -- the write that would have counted it aborted.
+                        Mx.IngressQueueOverRun {} ->
+                          counted counts (countsOf Mx.noFailures { Mx.mfOverruns = 1 } [])
                         _ -> counterexample (show me) False
                     Nothing -> return $ counterexample (show e) False
             Right _ -> return $ counterexample "expected an exception" False
@@ -1286,7 +1363,7 @@ prop_demux_sdu a = do
                             miniProtocolCapability = Nothing
                           }
 
-        (client_w, said, waitServerRes, mux) <- plainServer server_mps (serverRsp stopVar)
+        (client_w, said, waitServerRes, mux, counters) <- plainServer server_mps (serverRsp stopVar)
 
         atomically $! putTMVar stopVar $! unDummyPayload sdu
         writeSdu client_w $ unDummyPayload sdu
@@ -1294,6 +1371,7 @@ prop_demux_sdu a = do
         _ <- atomically waitServerRes
         Mx.stop mux
         res <- waitCatch said
+        counts <- atomically (Mx.readMuxCounters counters)
         case res of
             Left e  ->
                 case fromException e of
@@ -1302,7 +1380,10 @@ prop_demux_sdu a = do
                                                        $ me `compareErrors` err
                                     Nothing  -> return $ counterexample (show me) False
                     Nothing -> return $ counterexample (show e) False
-            Right _ -> return $ counterexample "expected an exception" $ isNothing err_m
+            -- Every SDU read is counted, header included, under our responder.
+            Right _ -> return $ counterexample "expected an exception" (isNothing err_m)
+                          .&&. counted counts
+                                 (countsOf Mx.noFailures (fragments (unDummyPayload sdu)))
 
     run (ArbitraryInvalidSDU badSdu err) = do
         stopVar <- newEmptyTMVarIO
@@ -1314,7 +1395,7 @@ prop_demux_sdu a = do
                             miniProtocolCapability = Nothing
                           }
 
-        (client_w, said, waitServerRes, mux) <- plainServer server_mps (serverRsp stopVar)
+        (client_w, said, waitServerRes, mux, counters) <- plainServer server_mps (serverRsp stopVar)
 
         atomically $ writeTBQueue client_w $
                        BL.take (fromIntegral (isRealLength badSdu))
@@ -1327,11 +1408,15 @@ prop_demux_sdu a = do
         _ <- atomically waitServerRes
         Mx.stop mux
         res <- waitCatch said
+        counts <- atomically (Mx.readMuxCounters counters)
         case res of
             Left e  ->
                 case fromException e of
-                    Just me -> return $ counterexample (show me)
-                                      $ me `compareErrors` err
+                    -- A protocol error, and nothing read: an unknown protocol
+                    -- has no slot, and an undecodable SDU never reaches one.
+                    Just me -> return $ counterexample (show me) (me `compareErrors` err)
+                                   .&&. counted counts
+                                          (countsOf Mx.noFailures { Mx.mfProtocolErrors = 1 } [])
                     Nothing -> return $ counterexample (show e) False
             Right _ -> return $ counterexample "expected an exception" False
 
@@ -1340,6 +1425,7 @@ prop_demux_sdu a = do
                 -> m ( StrictTBQueue m BL.ByteString
                      , Async m ()
                      , STM m (Either SomeException a), Mx.Mux mode m
+                     , Mx.MuxCounters m
                      )
     plainServer serverApp server_mp = do
         server_w <- atomically $ newTBQueue 10
@@ -1355,7 +1441,8 @@ prop_demux_sdu a = do
                                        }
                           Nothing
 
-        serverMux <- Mx.new serverTracer [serverApp]
+        counters  <- Mx.newMuxCounters
+        serverMux <- Mx.withCounters counters <$> Mx.new serverTracer [serverApp]
         serverRes <- Mx.runMiniProtocol serverMux
                                         (Mx.miniProtocolNum serverApp)
                                         (Mx.miniProtocolDir serverApp)
@@ -1363,7 +1450,7 @@ prop_demux_sdu a = do
                                         server_mp
 
         said <- async $ Mx.run serverMux serverBearer
-        return (server_r, said, serverRes, serverMux)
+        return (server_r, said, serverRes, serverMux, counters)
 
     -- Server that expects to receive a specific ByteString.
     -- Doesn't send a reply.
@@ -1387,10 +1474,9 @@ prop_demux_sdu a = do
     writeSdu :: StrictTBQueue m BL.ByteString
              -> BL.ByteString
              -> m ()
-    writeSdu _ payload | BL.null payload = return ()
-    writeSdu queue payload = do
-        let (!frag, !rest) = BL.splitAt 0xffff payload
-            sdu' = Mx.SDU
+    writeSdu queue payload =
+      forM_ (fragments payload) $ \frag -> do
+        let sdu' = Mx.SDU
                     (Mx.SDUHeader
                       (Mx.RemoteClockModel 0)
                       (Mx.MiniProtocolNum 2)
@@ -1398,9 +1484,33 @@ prop_demux_sdu a = do
                       (fromIntegral $ BL.length frag))
                     frag
             !pkt = Mx.encodeSDU (sdu' :: Mx.SDU)
-
         atomically $ writeTBQueue queue pkt
-        writeSdu queue rest
+
+    -- The payload cut into the SDUs 'writeSdu' sends, of at most 0xffff bytes.
+    fragments :: BL.ByteString -> [BL.ByteString]
+    fragments payload
+      | BL.null payload = []
+      | otherwise       = frag : fragments rest
+      where
+        (frag, rest) = BL.splitAt 0xffff payload
+
+    -- The counters once the mux has ended: the failures, and the SDUs the
+    -- demuxer read, header included, under our responder.
+    countsOf :: Mx.MuxFailures -> [BL.ByteString] -> Mx.MuxCounts
+    countsOf failures frags = Mx.noCounts { Mx.mcFailures = failures, Mx.mcReceived = received }
+      where
+        received :: Mx.ByteCounts
+        received = M.fromList [ ((Mx.MiniProtocolNum 2, Mx.ResponderDir), bytes)
+                              | not (null frags)
+                              ]
+
+        bytes :: Word64
+        bytes = sum [ fromIntegral Mx.msHeaderLength + fromIntegral (BL.length frag)
+                    | frag <- frags
+                    ]
+
+    counted :: Mx.MuxCounts -> Mx.MuxCounts -> Property
+    counted counts expected = counterexample (show counts) (counts === expected)
 
     stateLabel (ArbitraryInvalidSDU _ _) = "Invalid"
     stateLabel (ArbitraryValidSDU _ _)   = "Valid"
@@ -2066,6 +2176,21 @@ withNetworkCtx NetworkCtx { ncSocket, ncClose, ncMuxBearer } k =
     bracket ncSocket ncClose (\sock -> ncMuxBearer sock k)
 
 
+-- | What a side's counters must show once the close experiment is over, by
+-- what its mini-protocol saw.
+data CountersJudgement =
+    Exactly Mx.MuxFailures
+    -- ^ these failures, exactly
+  | AtMostOnePeerClose
+    -- ^ nothing, or one close counted: a protocol's last transaction, which
+    -- clears its running status, runs after its action has returned, so a
+    -- close read in between is counted as a peer close although the
+    -- protocol returned normally; on Windows a close arrives as an I/O
+    -- error, counted as a read error whether or not a protocol runs
+  | Unjudged
+    -- ^ an end the experiment does not judge
+  deriving Show
+
 close_experiment
     :: forall sock acc req resp m.
        ( Alternative (STM m)
@@ -2105,9 +2230,11 @@ close_experiment
         serverMuxTracer' = (Server,) `contramap` muxTracer
         clientMuxTracer  = Mx.TracersI clientMuxTracer' nullTracer nullTracer
         serverMuxTracer  = Mx.TracersI serverMuxTracer' nullTracer nullTracer
+    clientCounters <- Mx.newMuxCounters
+    serverCounters <- Mx.newMuxCounters
     withAsync
       -- run client thread
-      (bracket (Mx.new clientMuxTracer
+      (bracket (Mx.withCounters clientCounters <$> Mx.new clientMuxTracer
                        [ MiniProtocolInfo {
                            miniProtocolNum,
                            miniProtocolDir = Mx.InitiatorDirectionOnly,
@@ -2127,7 +2254,7 @@ close_experiment
       $ \clientAsync ->
         withAsync
           -- run server thread
-          (bracket ( Mx.new serverMuxTracer
+          (bracket (Mx.withCounters serverCounters <$> Mx.new serverMuxTracer
                             [ MiniProtocolInfo {
                                 miniProtocolNum,
                                 miniProtocolDir = Mx.ResponderDirectionOnly,
@@ -2151,7 +2278,7 @@ close_experiment
             -- @Left (Right _)@ is the error return by 'runMiniProtocol'
             (resClient, resServer) <- (,) <$> (reassocE <$> waitCatch clientAsync)
                                           <*> (reassocE <$> waitCatch serverAsync)
-            case (fault, resClient, resServer) of
+            outcome <- case (fault, resClient, resServer) of
               (CleanShutdown, Right (Right resps), Right _)
                  | expected <- expectedResps (List.length resps)
                  , resps == expected
@@ -2330,6 +2457,12 @@ close_experiment
                        $ counterexample ("Client: " ++ show clientRes)
                        $ counterexample ("Server: " ++ show serverRes)
                        $ False
+            -- What each side counted, judged by what its mini-protocol saw.
+            counts <- (,) <$> atomically (Mx.readMuxCounters clientCounters)
+                          <*> atomically (Mx.readMuxCounters serverCounters)
+            return $ outcome
+                .&&. judged "client" (clientFailures resClient) (fst counts)
+                .&&. judged "server" (serverFailures resServer) (snd counts)
 
   where
     collapsE :: Either a a -> a
@@ -2340,6 +2473,58 @@ close_experiment
     reassocE (Left e)          = Left (Left e)
     reassocE (Right (Left e))  = Left (Right e)
     reassocE (Right (Right a)) = Right a
+
+    -- A side's counters against what its end says they must show.
+    judged :: String -> CountersJudgement -> Mx.MuxCounts -> Property
+    judged side judgement Mx.MuxCounts { Mx.mcFailures = failures } =
+      counterexample (side ++ " counted " ++ show failures ++ ", judged " ++ show judgement) $
+        case judgement of
+          Exactly expected   -> failures === expected
+          AtMostOnePeerClose ->
+            classify (closesCounted failures == 1)
+                     (side ++ ": a close counted after the protocol returned") $
+                 withoutCloses failures === Mx.noFailures
+            .&&. closesCounted failures <= 1
+          Unjudged           -> property True
+
+    -- How a peer's close is counted on this platform: as a peer close, or
+    -- on Windows, where the socket library reports it as an I/O error with
+    -- neither an errno nor the vanished kind, as a read error.
+    closesCounted :: Mx.MuxFailures -> Word64
+    withoutCloses :: Mx.MuxFailures -> Mx.MuxFailures
+#ifdef mingw32_HOST_OS
+    closesCounted f = Mx.mfPeerClosed f + Mx.mfReadErrors f
+    withoutCloses f = f { Mx.mfPeerClosed = 0, Mx.mfReadErrors = 0 }
+#else
+    closesCounted f = Mx.mfPeerClosed f
+    withoutCloses f = f { Mx.mfPeerClosed = 0 }
+#endif
+
+    -- The client's close is its own, after its mux is cancelled; its
+    -- initiator returning says the server's close, if any, came after it,
+    -- or while its exit was in flight.
+    clientFailures :: Either (Either SomeException SomeException) a -> CountersJudgement
+    clientFailures (Right _) = AtMostOnePeerClose
+    clientFailures (Left _)  = Unjudged
+
+    -- The server counts a peer close exactly when the close met its
+    -- responder running, which ends the responder with a failed shutdown
+    -- carrying the close; a stopped shutdown means nothing was running; a
+    -- normal return means the close came after the responder returned, or
+    -- while its exit was in flight. The simulated close is lost, as a close
+    -- without lingering is, so there the server's read times out instead,
+    -- and that is counted as a read timeout. Any other end, as an I/O error
+    -- on Windows, is not judged here.
+    serverFailures :: Either (Either SomeException SomeException) a -> CountersJudgement
+    serverFailures (Right _) = AtMostOnePeerClose
+    serverFailures (Left e)  = case fromException (collapsE e) of
+      Just (Mx.Shutdown Nothing _) -> Exactly Mx.noFailures
+      Just (Mx.Shutdown (Just e') _)
+        | Just Mx.BearerClosed {} <- fromException e'
+        -> Exactly Mx.noFailures { Mx.mfPeerClosed = 1 }
+        | Just Mx.SDUReadTimeout <- fromException e'
+        -> Exactly Mx.noFailures { Mx.mfReadTimeouts = 1 }
+      _                            -> Unjudged
 
 
     clientTracer,
@@ -3033,3 +3218,914 @@ sendEvents chunk lens = do
     message :: Int -> BL.ByteString
     message len = BL.fromChunks (replicate (len `div` chunk) (BS.replicate chunk 0x61)
                                  ++ [ BS.replicate (len `mod` chunk) 0x61 | len `mod` chunk > 0 ])
+
+
+--
+-- Counters
+--
+
+-- | A connection reset, as the socket bearer sees a peer's close with no
+-- lingering.
+resetError :: IOException
+resetError = (userError "connection reset by peer") { ioe_errno = Just reset }
+  where Errno reset = eCONNRESET
+
+-- | The ways a mux can end that the counters tell apart, and three they do
+-- not count: the peer closing, or resetting, met by a read or a write
+-- while no mini-protocol is running.
+data MuxFailure = ReadTimeout | ReadError | ReadReset | ReadResetIdle | PeerClosed | PeerClosedIdle
+                | DecodeError | UnknownProtocol | InitiatorOnlyData | Overrun | ReadOther
+                | WriteTimeout | WriteError | WriteReset | WriteResetIdle | WriteOther
+                | ProtocolFailure
+  deriving (Show, Eq, Enum, Bounded)
+
+instance Arbitrary MuxFailure where
+    arbitrary = arbitraryBoundedEnum
+
+-- | A mux that fails in the given way counts that failure, once, and nothing
+-- else; a close with nothing running counts nothing. The protocol-level
+-- failures come from real SDUs through the demuxer; the timeouts, the I/O
+-- errors and the closes are thrown by the bearer, as the socket bearer does,
+-- and so is an error of another kind, as an encoding that would not force
+-- surfaces in a write; the mini-protocol failure is the initiator's own
+-- exception.
+prop_mux_counters_failure :: MuxFailure -> Property
+prop_mux_counters_failure failure =
+    counterexample (show failure) $
+      runSimOrThrow run === Just (expected failure)
+  where
+    num :: Mx.MiniProtocolNum
+    num = Mx.MiniProtocolNum 2
+
+    -- Bytes too: nothing is written when the write fails, and nothing read is
+    -- counted: an SDU that overruns is not, the write that would have counted
+    -- it aborted, and an unknown or unwanted protocol never is.
+    expected :: MuxFailure -> Mx.MuxCounts
+    expected f = case f of
+      WriteTimeout      -> failed Mx.noFailures { Mx.mfWriteTimeouts = 1 }
+      WriteError        -> failed Mx.noFailures { Mx.mfWriteErrors = 1 }
+      WriteReset        -> failed Mx.noFailures { Mx.mfPeerClosed = 1 }
+      WriteResetIdle    -> failed Mx.noFailures
+      WriteOther        -> failed Mx.noFailures { Mx.mfOtherErrors = 1 }
+      ReadTimeout       -> failed Mx.noFailures { Mx.mfReadTimeouts = 1 }
+      ReadError         -> failed Mx.noFailures { Mx.mfReadErrors = 1 }
+      ReadReset         -> failed Mx.noFailures { Mx.mfPeerClosed = 1 }
+      ReadResetIdle     -> failed Mx.noFailures
+      ReadOther         -> failed Mx.noFailures { Mx.mfOtherErrors = 1 }
+      Overrun           -> failed Mx.noFailures { Mx.mfOverruns = 1 }
+      DecodeError       -> failed Mx.noFailures { Mx.mfProtocolErrors = 1 }
+      UnknownProtocol   -> failed Mx.noFailures { Mx.mfProtocolErrors = 1 }
+      InitiatorOnlyData -> failed Mx.noFailures { Mx.mfProtocolErrors = 1 }
+      PeerClosed        -> failed Mx.noFailures { Mx.mfPeerClosed = 1 }
+      PeerClosedIdle    -> failed Mx.noFailures
+      ProtocolFailure   -> failed Mx.noFailures
+                             { Mx.mfMiniProtocols = M.singleton (num, Mx.InitiatorDir) 1 }
+
+    -- The failures, and no bytes.
+    failed :: Mx.MuxFailures -> Mx.MuxCounts
+    failed f = Mx.noCounts { Mx.mcFailures = f }
+
+    -- An SDU as the peer would send it.
+    sdu :: Mx.MiniProtocolNum -> Mx.MiniProtocolDir -> BL.ByteString -> BL.ByteString
+    sdu n dir payload = Mx.encodeSDU Mx.SDU {
+        Mx.msHeader = Mx.SDUHeader { Mx.mhTimestamp = Mx.RemoteClockModel 0
+                                   , Mx.mhNum       = n
+                                   , Mx.mhDir       = dir
+                                   , Mx.mhLength    = fromIntegral (BL.length payload) },
+        Mx.msBlob   = payload }
+
+    -- A bearer's I/O error, as the socket bearer wraps it.
+    ioError' :: Mx.Error
+    ioError' = Mx.IOException (userError "connection reset by peer") "recv errored"
+
+    run :: forall s. IOSim s (Maybe Mx.MuxCounts)
+    run = do
+      counters <- Mx.newMuxCounters
+      w <- atomically $ newTBQueue 10
+      r <- atomically $ newTBQueue 10
+      -- The initiator says when it runs, and a close the bearer throws waits
+      -- for that, so the mux fails with a mini-protocol running.
+      running <- newTVarIO False
+      base <- getBearer makeQueueChannelBearer (-1)
+                QueueChannel { writeQueue = w, readQueue = r } Nothing
+      let info :: MiniProtocolInfo Mx.InitiatorMode
+          info = MiniProtocolInfo {
+              miniProtocolNum        = num,
+              miniProtocolDir        = Mx.InitiatorDirectionOnly,
+              miniProtocolLimits     = MiniProtocolLimits { maximumIngressQueue = 16 },
+              miniProtocolCapability = Nothing }
+      mux <- Mx.withCounters counters <$> Mx.new Mx.nullTracers [info]
+      let onceRunning :: Mx.Error -> IOSim s a
+          onceRunning e = atomically (readTVar running >>= check) >> throwIO e
+
+          -- Once the initiator has finished and gone idle, as the write of
+          -- its last data can find the peer gone.
+          onceIdle :: Mx.Error -> IOSim s a
+          onceIdle e = do
+            atomically $ do
+              status <- Mx.miniProtocolStateMap mux M.! (num, Mx.InitiatorDir)
+              check (status == Mx.StatusIdle)
+            throwIO e
+
+          -- A reset, as the socket bearer wraps it on a read or a write.
+          readReset, writeReset :: Mx.Error
+          readReset  = Mx.IOException resetError "recv errored"
+          writeReset = Mx.IOException resetError "sendAll errored"
+
+          -- An exception of a kind the mux does not know: a lazy encoding
+          -- that fails, forced by a write, or a bug.
+          otherKind :: ErrorCall
+          otherKind = ErrorCall "an encoding that would not force"
+
+          bearer :: Mx.Bearer (IOSim s)
+          bearer = case failure of
+            ReadTimeout    -> base { Mx.read      = \_ _   -> throwIO Mx.SDUReadTimeout }
+            ReadError      -> base { Mx.read      = \_ _   -> throwIO ioError' }
+            ReadReset      -> base { Mx.read      = \_ _   -> onceRunning readReset }
+            ReadResetIdle  -> base { Mx.read      = \_ _   -> throwIO readReset }
+            PeerClosed     -> base { Mx.read      = \_ _   -> onceRunning (Mx.BearerClosed "peer") }
+            PeerClosedIdle -> base { Mx.read      = \_ _   -> throwIO (Mx.BearerClosed "peer") }
+            ReadOther      -> base { Mx.read      = \_ _   -> throwIO otherKind }
+            WriteTimeout   -> base { Mx.writeMany = \_ _ _ -> throwIO Mx.SDUWriteTimeout }
+            WriteError     -> base { Mx.writeMany = \_ _ _ -> throwIO ioError' }
+            WriteReset     -> base { Mx.writeMany = \_ _ _ -> onceRunning writeReset }
+            WriteResetIdle -> base { Mx.writeMany = \_ _ _ -> onceIdle writeReset }
+            WriteOther     -> base { Mx.writeMany = \_ _ _ -> throwIO otherKind }
+            _              -> base
+      withAsync (Mx.run mux bearer) $ \muxA -> do
+        let initiator :: (Mx.ByteChannel (IOSim s) -> IOSim s ()) -> IOSim s ()
+            initiator body =
+              void $ Mx.runMiniProtocol mux num Mx.InitiatorDirectionOnly Mx.StartEagerly
+                       (\chan -> body chan >> return ((), Nothing))
+
+            -- Bytes from the peer, as its bearer sent them.
+            fromPeer :: BL.ByteString -> IOSim s ()
+            fromPeer = atomically . writeTBQueue r
+
+            x :: BL.ByteString
+            x = BL8.pack "x"
+
+            nowRunning :: IOSim s ()
+            nowRunning = atomically (writeTVar running True)
+
+            protocolBroken :: IOError
+            protocolBroken = userError "the peer broke the protocol"
+        case failure of
+             DecodeError       -> fromPeer (BL.replicate 3 0)
+             UnknownProtocol   -> fromPeer (sdu (Mx.MiniProtocolNum 99) Mx.ResponderDir x)
+             -- Data from an initiator, for a responder this mux does not run.
+             InitiatorOnlyData -> fromPeer (sdu num Mx.InitiatorDir x)
+             Overrun           -> fromPeer (sdu num Mx.ResponderDir (BL.replicate 100 0))
+             WriteTimeout      -> initiator (\chan -> Mx.send chan x)
+             WriteError        -> initiator (\chan -> Mx.send chan x)
+             WriteReset        -> initiator $ \chan ->
+                                    Mx.send chan x >> nowRunning >> void (Mx.recv chan)
+             WriteResetIdle    -> initiator (\chan -> Mx.send chan x)
+             WriteOther        -> initiator (\chan -> Mx.send chan x)
+             PeerClosed        -> initiator (\chan -> nowRunning >> void (Mx.recv chan))
+             ReadReset         -> initiator (\chan -> nowRunning >> void (Mx.recv chan))
+             ProtocolFailure   -> initiator (\_ -> throwIO protocolBroken)
+             _                 -> return ()
+        done <- timeout 10 (waitCatch muxA)
+        case done of
+             Nothing -> return Nothing
+             Just _  -> Just <$> atomically (Mx.readMuxCounters counters)
+
+-- | An interval for the loop, in whole seconds from five under its floor of
+-- one second to ten above it.
+newtype LoopInterval = LoopInterval Int
+  deriving Show
+
+instance Arbitrary LoopInterval where
+    arbitrary = LoopInterval <$> choose (-5, 10)
+    shrink (LoopInterval k) = map LoopInterval (shrink k)
+
+-- | The loop traces the counter sets it is given every interval, a second
+-- at least, the node-to-node one first, and the values it traces are the
+-- counters at that instant; without a node-to-client set, one event per
+-- interval. The first three rounds are judged off the simulation's trace,
+-- so a loop that spins shows as events too early, not as a hang.
+prop_mux_counters_loop :: LoopInterval -> Bool -> Property
+prop_mux_counters_loop (LoopInterval k) withLocal =
+    counterexample (show seen) $
+         map fst seen === concat [ replicate (length perInterval) (roundAt i)
+                                 | i <- [1 .. 3 :: Int]
+                                 ]
+    .&&. map snd seen === concat (replicate 3 perInterval)
+  where
+    interval :: DiffTime
+    interval = fromIntegral k
+
+    delay :: DiffTime
+    delay = max 1 interval
+
+    -- The instant of the i-th round.
+    roundAt :: Int -> Time
+    roundAt i = (fromIntegral i * delay) `addTime` Time 0
+
+    perInterval :: [Mx.CountersTrace]
+    perInterval =
+        Mx.TraceRemoteCounters (failures Mx.noFailures { Mx.mfPeerClosed = 1 })
+      : [ Mx.TraceLocalCounters (failures Mx.noFailures { Mx.mfWriteTimeouts = 1 })
+        | withLocal
+        ]
+
+    -- The failures, and no bytes.
+    failures :: Mx.MuxFailures -> Mx.MuxCounts
+    failures f = Mx.noCounts { Mx.mcFailures = f }
+
+    -- The first three rounds of events, each with the time it was traced at.
+    seen :: [(Time, Mx.CountersTrace)]
+    seen = take (3 * length perInterval) $ selectTraceEventsDynamicWithTime $ runSimTrace $ do
+      remote <- Mx.newMuxCounters
+      local  <- Mx.newMuxCounters
+      atomically $ do
+        Counters.countDemuxerFailure (Just remote) True (toException (Mx.BearerClosed "peer"))
+        Counters.countMuxerFailure (Just local) True (toException Mx.SDUWriteTimeout)
+      _ <- async (Mx.countersLoop (Just remote) (if withLocal then Just local else Nothing)
+                                  interval (mkTracer traceM))
+      threadDelay (3 * delay + delay / 2)
+
+-- | An SDU from the peer on a protocol and direction, as it would send it.
+peerSDU :: Mx.MiniProtocolNum -> Mx.MiniProtocolDir -> Int -> Mx.SDU
+peerSDU num dir bytes = Mx.SDU {
+    Mx.msHeader = Mx.SDUHeader { Mx.mhTimestamp = Mx.RemoteClockModel 0
+                               , Mx.mhNum       = num
+                               , Mx.mhDir       = dir
+                               , Mx.mhLength    = fromIntegral bytes },
+    Mx.msBlob   = BL.replicate (fromIntegral bytes) 0xaa }
+
+-- | A peer closing after our responder has finished: the protocol's number
+-- and the size of the message the responder answers.
+data CloseCase = CloseCase Word16 Int
+  deriving Show
+
+instance Arbitrary CloseCase where
+    arbitrary = CloseCase <$> elements [2, 3] <*> choose (1, 1000)
+    shrink (CloseCase n bytes) = [ CloseCase n b | b <- shrink bytes, b >= 1 ]
+
+-- | A close after every mini-protocol has finished is not a failure, in every
+-- schedule: the responder, started on demand by the peer's message, answers
+-- it and returns, and once it has and its status is idle the bearer closes.
+-- Explored with IOSimPOR, so the close also lands between the responder's
+-- exit and its job's deregistration: nothing is counted, and the mux ends
+-- as stopped, in every schedule.
+prop_mux_close_after_exit :: CloseCase -> Property
+prop_mux_close_after_exit (CloseCase n bytes) =
+  exploreSimTrace (\o -> o { explorationScheduleBound = 40 }) sim $ \_ trace ->
+    case traceResult False trace of
+      Left e  -> counterexample (show e) False
+      Right r -> counterexample (show r) $ r === (Mx.noFailures, True)
+  where
+    num :: Mx.MiniProtocolNum
+    num = Mx.MiniProtocolNum n
+
+    sim :: forall s. IOSim s (Mx.MuxFailures, Bool)
+    sim = do
+      exploreRaces
+      counters <- Mx.newMuxCounters
+      -- The peer's message, delivered by the first read; a later read waits
+      -- for the responder to have answered and gone idle, then closes.
+      pending  <- newTVarIO (Just (peerSDU num Mx.InitiatorDir bytes))
+      answered <- newTVarIO False
+      let info :: MiniProtocolInfo Mx.ResponderMode
+          info = MiniProtocolInfo {
+              miniProtocolNum        = num,
+              miniProtocolDir        = Mx.ResponderDirectionOnly,
+              miniProtocolLimits     = MiniProtocolLimits { maximumIngressQueue = 4000 },
+              miniProtocolCapability = Nothing }
+      mux <- Mx.withCounters counters <$> Mx.new Mx.nullTracers [info]
+      let idle :: STM (IOSim s) ()
+          idle = do
+            readTVar answered >>= check
+            status <- Mx.miniProtocolStateMap mux M.! (num, Mx.ResponderDir)
+            check (status == Mx.StatusIdle)
+
+          -- The next read: the peer's message, or, once the responder has
+          -- answered and gone idle, the close.
+          readNext :: IOSim s (Mx.SDU, Time)
+          readNext = do
+            next <- atomically $ stateTVar pending (, Nothing)
+            case next of
+                 Just sdu -> (,) sdu <$> getMonotonicTime
+                 Nothing  -> atomically idle >> throwIO (Mx.BearerClosed "peer")
+
+          bearer :: Mx.Bearer (IOSim s)
+          bearer = Mx.Bearer {
+              Mx.write          = \_ _ _ -> getMonotonicTime,
+              Mx.writeMany      = \_ _ _ -> getMonotonicTime,
+              Mx.read           = \_ _ -> readNext,
+              Mx.sduSize        = Mx.SDUSize 12288,
+              Mx.batchSize      = 1000000,
+              Mx.name           = "modelled",
+              Mx.egressInterval = 0
+            }
+      _ <- Mx.runMiniProtocol mux num Mx.ResponderDirectionOnly Mx.StartOnDemand $ \chan -> do
+             _ <- Mx.recv chan
+             Mx.send chan (BL8.pack "ok")
+             atomically (writeTVar answered True)
+             return ((), Nothing)
+      muxA  <- async (Mx.run mux bearer)
+      ended <- waitCatch muxA
+      failures <- Mx.mcFailures <$> atomically (Mx.readMuxCounters counters)
+      return (failures, either (const False) (const True) ended)
+
+--
+-- The counter set under concurrent steps
+--
+
+-- | One step against a counter set: a mux that ends with these bytes sent and
+-- read, by protocol and direction, or a failure counted.
+data CountersOp = RetireMux [((Word16, Bool), Word64)] [((Word16, Bool), Word64)]
+                | MuxerDied Int    -- ^ of the n-th of 'muxerErrors'
+                | DemuxerDied Int  -- ^ of the n-th of 'demuxerErrors'
+                | ProtocolDied Word16 Bool Int
+                  -- ^ a mini-protocol, by number and whether our initiator,
+                  -- of the n-th of 'protocolErrors'
+  deriving Show
+
+-- | One more error of a kind not listed.
+otherError :: Mx.MuxFailures -> Mx.MuxFailures
+otherError f = f { Mx.mfOtherErrors = Mx.mfOtherErrors f + 1 }
+
+-- | What the muxer can die of, with whether a mini-protocol was running
+-- then, each with what it counts: the counted kinds, and ones that are not.
+muxerErrors :: [(Bool, SomeException, Mx.MuxFailures -> Mx.MuxFailures)]
+muxerErrors =
+  [ ( True, toException Mx.SDUWriteTimeout
+    , \f -> f { Mx.mfWriteTimeouts = Mx.mfWriteTimeouts f + 1 } )
+  , ( True, toException wrappedIOError
+    , \f -> f { Mx.mfWriteErrors = Mx.mfWriteErrors f + 1 } )
+  , ( False, toException rawIOError
+    , \f -> f { Mx.mfWriteErrors = Mx.mfWriteErrors f + 1 } )
+  , ( True, toException (Mx.IOException resetError "sendAll errored")
+    , \f -> f { Mx.mfPeerClosed = Mx.mfPeerClosed f + 1 } )
+  , ( False, toException (Mx.IOException resetError "sendAll errored")
+    , id )
+  , ( True, toException brokenPipeError
+    , \f -> f { Mx.mfPeerClosed = Mx.mfPeerClosed f + 1 } )
+  , ( False, toException brokenPipeError
+    , id )
+  , ( True, toException netDownError
+    , \f -> f { Mx.mfWriteErrors = Mx.mfWriteErrors f + 1 } )
+  , ( False, toException netDownError
+    , \f -> f { Mx.mfWriteErrors = Mx.mfWriteErrors f + 1 } )
+  , ( True, toException Mx.SDUReadTimeout
+    , otherError )
+  , ( True, toException (ErrorCall "an encoding that would not force")
+    , otherError )
+  , ( False, toException (ErrorCall "an encoding that would not force")
+    , otherError )
+  , ( True, toException AsyncCancelled
+    , id )
+  ]
+
+-- | What the demuxer can die of, with whether a mini-protocol was running
+-- then, each with what it counts: the counted kinds, and ones that are not.
+demuxerErrors :: [(Bool, SomeException, Mx.MuxFailures -> Mx.MuxFailures)]
+demuxerErrors =
+  [ ( True, toException Mx.SDUReadTimeout
+    , \f -> f { Mx.mfReadTimeouts = Mx.mfReadTimeouts f + 1 } )
+  , ( True, toException (Mx.IngressQueueOverRun (Mx.MiniProtocolNum 2) Mx.InitiatorDir)
+    , \f -> f { Mx.mfOverruns = Mx.mfOverruns f + 1 } )
+  , ( True, toException (Mx.UnknownMiniProtocol (Mx.MiniProtocolNum 99))
+    , \f -> f { Mx.mfProtocolErrors = Mx.mfProtocolErrors f + 1 } )
+  , ( False, toException (Mx.InitiatorOnly (Mx.MiniProtocolNum 2))
+    , \f -> f { Mx.mfProtocolErrors = Mx.mfProtocolErrors f + 1 } )
+  , ( True, toException (Mx.SDUDecodeError "x")
+    , \f -> f { Mx.mfProtocolErrors = Mx.mfProtocolErrors f + 1 } )
+  , ( True, toException (Mx.BearerClosed "peer")
+    , \f -> f { Mx.mfPeerClosed = Mx.mfPeerClosed f + 1 } )
+  , ( False, toException (Mx.BearerClosed "peer")
+    , id )
+  , ( True, toException (Mx.IOException resetError "recv errored")
+    , \f -> f { Mx.mfPeerClosed = Mx.mfPeerClosed f + 1 } )
+  , ( False, toException (Mx.IOException resetError "recv errored")
+    , id )
+  , ( True, toException resetError
+    , \f -> f { Mx.mfPeerClosed = Mx.mfPeerClosed f + 1 } )
+  , ( False, toException resetError
+    , id )
+  , ( True, toException vanishedError
+    , \f -> f { Mx.mfPeerClosed = Mx.mfPeerClosed f + 1 } )
+  , ( False, toException vanishedError
+    , id )
+  , ( True, toException netDownError
+    , \f -> f { Mx.mfReadErrors = Mx.mfReadErrors f + 1 } )
+  , ( False, toException netDownError
+    , \f -> f { Mx.mfReadErrors = Mx.mfReadErrors f + 1 } )
+  , ( False, toException wrappedIOError
+    , \f -> f { Mx.mfReadErrors = Mx.mfReadErrors f + 1 } )
+  , ( True, toException rawIOError
+    , \f -> f { Mx.mfReadErrors = Mx.mfReadErrors f + 1 } )
+  , ( True, toException Mx.SDUWriteTimeout
+    , otherError )
+  , ( True, toException (ErrorCall "a bug")
+    , otherError )
+  , ( False, toException (ErrorCall "a bug")
+    , otherError )
+  , ( True, toException AsyncCancelled
+    , id )
+  ]
+
+-- | What a mini-protocol's thread can die of, each with whether it counts:
+-- its own exception does; a cancellation and the mux's own errors do not.
+protocolErrors :: [(SomeException, Bool)]
+protocolErrors =
+  [ (toException (userError "the peer broke the protocol"), True)
+  , (toException AsyncCancelled, False)
+  , (toException (Mx.BearerClosed "the mux died"), False)
+  , (toException (Mx.BlockedOnCompletionVar (Mx.MiniProtocolNum 2)), False)
+  ]
+
+-- | A bearer's I/O error as the socket bearer wraps it, and as the
+-- simulation's channel throws it.
+wrappedIOError :: Mx.Error
+wrappedIOError = Mx.IOException rawIOError "recv errored"
+
+rawIOError :: IOException
+rawIOError = userError "connection reset by peer"
+
+-- | A broken pipe, as a write finds a peer gone, and a connection vanished
+-- without an errno, as the simulation's channel reports its end.
+brokenPipeError, vanishedError :: IOException
+brokenPipeError = (userError "broken pipe") { ioe_errno = Just pipe }
+  where Errno pipe = ePIPE
+vanishedError = (userError "resource vanished") { ioe_type = ResourceVanished }
+
+-- | The network down, which base files under the vanished kind too: not a
+-- close, its errno says.
+netDownError :: IOException
+netDownError = (userError "network is down") { ioe_type  = ResourceVanished
+                                              , ioe_errno = Just netDown }
+  where Errno netDown = eNETDOWN
+
+-- | Byte counts as a generator makes them: a protocol number, whether our
+-- side is the initiator, and the bytes.
+genByteCounts :: Gen [((Word16, Bool), Word64)]
+genByteCounts = listOf $ (,) <$> ((,) <$> choose (0, 3) <*> arbitrary) <*> choose (1, 1000000)
+
+instance Arbitrary CountersOp where
+    arbitrary = frequency
+      [ (3, RetireMux <$> genByteCounts <*> genByteCounts)
+      , (1, MuxerDied <$> choose (0, length muxerErrors - 1))
+      , (2, DemuxerDied <$> choose (0, length demuxerErrors - 1))
+      , (1, ProtocolDied <$> choose (0, 3) <*> arbitrary <*> choose (0, length protocolErrors - 1))
+      ]
+    shrink (RetireMux s r) =
+         [ RetireMux s' r | s' <- shrinkList (const []) s ]
+      ++ [ RetireMux s r' | r' <- shrinkList (const []) r ]
+    shrink _ = []
+
+-- | A byte-count key as the mux builds its own.
+countersKey :: (Word16, Bool) -> (Mx.MiniProtocolNum, Mx.MiniProtocolDir)
+countersKey (n, initiator) =
+    (Mx.MiniProtocolNum n, if initiator then Mx.InitiatorDir else Mx.ResponderDir)
+
+countersMap :: [((Word16, Bool), Word64)] -> Mx.ByteCounts
+countersMap = M.fromListWith (+) . map (Bifunctor.first countersKey)
+
+-- | The keys a mux with these sent and read counts needs, and one more for a
+-- step that grows it, each once.
+slotKeys :: [((Word16, Bool), Word64)] -> [((Word16, Bool), Word64)]
+         -> [(Mx.MiniProtocolNum, Mx.MiniProtocolDir)]
+slotKeys sent recv =
+    nub (countersKey (0, True) : M.keys (countersMap sent `M.union` countersMap recv))
+
+-- | Set a mux's slots to these counts, as its muxer would have.
+fillSlots :: MonadSTM m => Counters.ByteSlots m -> Mx.ByteCounts -> STM m ()
+fillSlots slots counts =
+    forM_ (M.toList counts) $ \(k, b) -> forM_ (M.lookup k slots) $ \slot -> writeTVar slot b
+
+-- | Ingress queues under these keys, nothing read.
+newQueues :: MonadSTM m
+          => [(Mx.MiniProtocolNum, Mx.MiniProtocolDir)]
+          -> m (M.Map (Mx.MiniProtocolNum, Mx.MiniProtocolDir) (Mx.IngressQueue m))
+newQueues keys = M.fromList <$> mapM (\k -> (,) k <$> Mx.newIngressQueue) keys
+
+-- | Set the queues' read counts, as the mux's demuxer would have.
+fillQueues :: MonadSTM m
+           => M.Map (Mx.MiniProtocolNum, Mx.MiniProtocolDir) (Mx.IngressQueue m)
+           -> Mx.ByteCounts
+           -> STM m ()
+fillQueues queues counts =
+    forM_ (M.toList counts) $ \(k, b) ->
+      forM_ (M.lookup k queues) $ \q -> modifyTVar q (\iq -> iq { Mx.iqReceived = b })
+
+-- | Apply one step to a counter set: a mux that registers, writes its cells
+-- and ends, or a failure counted.
+countersStep :: (MonadSTM m, MonadMask m) => Mx.MuxCounters m -> CountersOp -> m ()
+countersStep counters op = case op of
+  RetireMux sent recv -> do
+    queues <- newQueues (slotKeys sent recv)
+    Counters.withByteCells (Just counters) queues $ \cells ->
+      atomically $ do
+        fillSlots (Counters.mbcSent cells) (countersMap sent)
+        fillQueues (Counters.mbcRecv cells) (countersMap recv)
+  MuxerDied i   ->
+    let (running, err, _) = muxerErrors !! i
+    in atomically $ Counters.countMuxerFailure (Just counters) running err
+  DemuxerDied i ->
+    let (running, err, _) = demuxerErrors !! i
+    in atomically $ Counters.countDemuxerFailure (Just counters) running err
+  ProtocolDied n initiator i ->
+    let (num, dir) = countersKey (n, initiator)
+        (err, _)   = protocolErrors !! i
+    in atomically $ Counters.countMiniProtocolFailure (Just counters) num dir err
+
+-- | What a counter set reads after these steps: every mux's bytes, ended or
+-- not, and every counted failure.
+countersModel :: [CountersOp] -> Mx.MuxCounts
+countersModel ops = Mx.MuxCounts {
+    Mx.mcFailures = foldr failureOf Mx.noFailures ops,
+    Mx.mcSent     = M.unionsWith (+) [ countersMap s | RetireMux s _ <- ops ],
+    Mx.mcReceived = M.unionsWith (+) [ countersMap r | RetireMux _ r <- ops ]
+  }
+  where
+    failureOf :: CountersOp -> Mx.MuxFailures -> Mx.MuxFailures
+    failureOf op = case op of
+      RetireMux {}  -> id
+      MuxerDied i   -> case muxerErrors !! i of (_, _, count) -> count
+      DemuxerDied i -> case demuxerErrors !! i of (_, _, count) -> count
+      ProtocolDied n initiator i
+        | snd (protocolErrors !! i) ->
+            \f -> f { Mx.mfMiniProtocols =
+                        M.insertWith (+) (countersKey (n, initiator)) 1 (Mx.mfMiniProtocols f) }
+        | otherwise -> id
+
+-- | A counter set's history for a snapshot: steps done, and muxes that are
+-- still running, each holding its cells, written once.
+data SplitOp = Ended CountersOp
+             | Live [((Word16, Bool), Word64)] [((Word16, Bool), Word64)]
+  deriving Show
+
+instance Arbitrary SplitOp where
+    arbitrary = frequency
+      [ (2, Ended <$> arbitrary)
+      , (3, Live <$> genByteCounts <*> genByteCounts)
+      ]
+    shrink (Ended op) = map Ended (shrink op)
+    shrink (Live s r) =
+         [ Live s' r | s' <- shrinkList (const []) s ]
+      ++ [ Live s r' | r' <- shrinkList (const []) r ]
+
+-- | One step taken while a snapshot runs, before its @k@-th transaction.
+data SplitStep = SplitStep Int Step
+  deriving Show
+
+data Step = StepEnd Int        -- ^ the n-th live mux ends, modulo how many there are
+          | StepStart [((Word16, Bool), Word64)] [((Word16, Bool), Word64)]
+                               -- ^ a mux starts, with these bytes
+          | StepGrow Int Word64 -- ^ the n-th live mux sends this much more
+          | StepFail CountersOp -- ^ a failure is counted
+  deriving Show
+
+instance Arbitrary SplitStep where
+    arbitrary = SplitStep <$> choose (0, 12) <*> frequency
+      [ (3, StepEnd <$> arbitrary)
+      , (1, StepStart <$> genByteCounts <*> genByteCounts)
+      , (2, StepGrow <$> arbitrary <*> choose (1, 1000000))
+      , (1, StepFail <$> (arbitrary `suchThat` isFailure))
+      ]
+      where
+        isFailure :: CountersOp -> Bool
+        isFailure op = case op of
+          RetireMux {} -> False
+          _            -> True
+    shrink (SplitStep k s) = [ SplitStep k' s | k' <- shrink k ]
+
+-- | A live mux the harness holds open: its thread, the flag that ends it, and
+-- its cells.
+data LiveMux m = LiveMux (Async m ()) (StrictTVar m Bool) (Counters.MuxByteCells m)
+
+-- | A snapshot in small transactions sees one concurrent step whole or not
+-- at all: with the step taken before the snapshot's @k@-th transaction, what
+-- it reads is the exact total before the step or after it, so a mux that
+-- ends in between is counted once, never twice and never not at all; and it
+-- runs one transaction for the totals and one per counter of each live mux,
+-- a slot or a queue.
+prop_mux_counters_snapshot_split :: [SplitOp] -> SplitStep -> Property
+prop_mux_counters_snapshot_split ops (SplitStep k step) =
+    classify injected                              "a step taken mid-snapshot" $
+    classify (injected && isEnd && liveBefore > 0) "a mux ends mid-snapshot" $
+    classify (liveBefore > 0)                      "live muxes" $
+         counterexample ("transactions " ++ show txs
+                           ++ ", counters at the totals " ++ show countersAtTotals)
+           (txs === 1 + countersAtTotals)
+    .&&. counterexample ("read " ++ show result ++ "\nbefore " ++ show totalBefore
+                           ++ "\nafter " ++ show totalAfter)
+           (if injected
+               then result == totalBefore || result == totalAfter
+               else result == totalBefore)
+  where
+    txs :: Int
+    result :: Mx.MuxCounts
+    injected :: Bool
+    (txs, result, injected) = runSimOrThrow run
+
+    isEnd :: Bool
+    isEnd = case step of
+      StepEnd {} -> True
+      _          -> False
+
+    liveBefore :: Int
+    liveBefore = length [ () | Live {} <- ops ]
+
+    -- The counters of the live muxes when the totals are read, a slot and a
+    -- queue per key of each: a step before the first transaction has already
+    -- started or ended a mux.
+    countersAtTotals :: Int
+    countersAtTotals
+      | injected && k == 0 = sum liveCounters + case step of
+                               StepStart s r               -> countersOf s r
+                               StepEnd i  | liveBefore > 0 -> negate (endedCounters i)
+                               _                           -> 0
+      | otherwise = sum liveCounters
+
+    -- The counters of each live mux, in order, and of the one a step ends,
+    -- the i-th modulo how many there are.
+    liveCounters :: [Int]
+    liveCounters = [ countersOf s r | Live s r <- ops ]
+
+    endedCounters :: Int -> Int
+    endedCounters i = liveCounters !! (i `mod` liveBefore)
+
+    countersOf :: [((Word16, Bool), Word64)] -> [((Word16, Bool), Word64)] -> Int
+    countersOf s r = 2 * length (slotKeys s r)
+
+    asOp :: SplitOp -> CountersOp
+    asOp (Ended op) = op
+    asOp (Live s r) = RetireMux s r
+
+    totalBefore, totalAfter :: Mx.MuxCounts
+    totalBefore = countersModel (map asOp ops)
+    totalAfter  = countersModel (map asOp ops ++ case step of
+               StepStart s r                 -> [RetireMux s r]
+               StepGrow _ d | liveBefore > 0 -> [RetireMux [((0, True), d)] []]
+               StepFail op                   -> [op]
+               _                             -> [])
+
+    run :: forall s. IOSim s (Int, Mx.MuxCounts, Bool)
+    run = do
+      counters <- Mx.newMuxCounters
+      mapM_ (countersStep counters) [ op | Ended op <- ops ]
+      lives <- forM [ (s, r) | Live s r <- ops ] (startLive counters)
+      liveVar     <- newTVarIO lives
+      txCount     <- newTVarIO (0 :: Int)
+      injectedVar <- newTVarIO False
+      let inject :: IOSim s ()
+          inject = do
+            ls <- readTVarIO liveVar
+            case step of
+              StepEnd i | not (null ls) -> do
+                let n = i `mod` length ls
+                    LiveMux a stop _ = ls !! n
+                atomically (writeTVar stop True)
+                wait a
+                atomically (writeTVar liveVar (take n ls ++ drop (n + 1) ls))
+              StepStart s r -> do
+                lm <- startLive counters (s, r)
+                atomically (modifyTVar liveVar (++ [lm]))
+              StepGrow i d | not (null ls) -> do
+                let LiveMux _ _ cells = ls !! (i `mod` length ls)
+                atomically $
+                  forM_ (M.lookup (countersKey (0, True)) (Counters.mbcSent cells)) $ \slot ->
+                    modifyTVar slot (+ d)
+              StepFail op -> countersStep counters op
+              _ -> return ()
+
+          runTx :: forall a. STM (IOSim s) a -> IOSim s a
+          runTx tx = do
+            n <- atomically $ stateTVar txCount (\c -> (c, c + 1))
+            when (n == k) $ do
+              inject
+              atomically (writeTVar injectedVar True)
+            atomically tx
+      got <- Counters.snapshotMuxCountersWith runTx counters
+      ls  <- readTVarIO liveVar
+      forM_ ls $ \(LiveMux a stop _) -> atomically (writeTVar stop True) >> wait a
+      (,,) <$> readTVarIO txCount <*> pure got <*> readTVarIO injectedVar
+
+    -- A mux that registers, writes its cells and holds them until told to end.
+    startLive :: Mx.MuxCounters (IOSim s)
+              -> ([((Word16, Bool), Word64)], [((Word16, Bool), Word64)])
+              -> IOSim s (LiveMux (IOSim s))
+    startLive counters (s, r) = do
+      cellsVar <- newTVarIO Nothing
+      stop     <- newTVarIO False
+      queues   <- newQueues (slotKeys s r)
+      a <- async $ Counters.withByteCells (Just counters) queues $ \cells -> do
+        atomically $ do
+          fillSlots (Counters.mbcSent cells) (countersMap s)
+          fillQueues (Counters.mbcRecv cells) (countersMap r)
+          writeTVar cellsVar (Just cells)
+        atomically (readTVar stop >>= check)
+      cells <- atomically (readTVar cellsVar >>= maybe retry return)
+      return (LiveMux a stop cells)
+
+--
+-- The muxer's write and the count after it: bytes the bearer took are counted
+-- whatever cancels the muxer, and a write blocked part way through still
+-- takes the cancellation.
+--
+
+-- | Messages queued before the muxer starts, each on a mini-protocol number
+-- and our side's direction, so its first batch carries them all.
+newtype WriteCase = WriteCase [(Word16, Bool, Int)]
+  deriving Show
+
+instance Arbitrary WriteCase where
+    arbitrary = WriteCase <$> (choose (1, 3) >>= \n -> vectorOf n msg)
+      where
+        msg :: Gen (Word16, Bool, Int)
+        msg = (,,) <$> choose (0, 3) <*> arbitrary <*> choose (1, 30000)
+    shrink (WriteCase msgs) =
+      [ WriteCase ms
+      | ms <- shrinkList shrinkMsg msgs
+      , not (null ms)
+      ]
+      where
+        shrinkMsg :: (Word16, Bool, Int) -> [(Word16, Bool, Int)]
+        shrinkMsg (n, initiator, bytes) = [ (n, initiator, b) | b <- shrink bytes, b >= 1 ]
+
+-- | The bytes a bearer took, headers included, by mini-protocol and direction
+-- as the SDU headers carry them.
+writtenBytes :: [Mx.SDU] -> Mx.ByteCounts
+writtenBytes sdus = M.fromListWith (+)
+  [ ((Mx.mhNum h, Mx.mhDir h), fromIntegral Mx.msHeaderLength + fromIntegral (Mx.mhLength h))
+  | sdu <- sdus
+  , let h = Mx.msHeader sdu
+  ]
+
+-- | The muxer over a modelled bearer whose batch write is @write@; returns
+-- the muxer and the bytes counted for this mux.
+withWriteMuxer :: forall s. WriteCase -> ([Mx.SDU] -> IOSim s ())
+               -> IOSim s (Async (IOSim s) (), IOSim s Mx.ByteCounts)
+withWriteMuxer (WriteCase msgs) write = do
+    q         <- newTBQueueIO 100
+    sentSlots <- atomically $ Counters.newByteSlots
+                   [ (Mx.MiniProtocolNum n, dir)
+                   | n <- [0 .. 3]
+                   , dir <- [Mx.InitiatorDir, Mx.ResponderDir]
+                   ]
+    forM_ msgs $ \(n, initiator, bytes) -> do
+      w <- newTVarIO (BL.replicate (fromIntegral bytes) 0x55)
+      let dir = if initiator then Mx.InitiatorDir else Mx.ResponderDir
+      atomically $ writeTBQueue q (Egress.TLSRDemand (Mx.MiniProtocolNum n) dir (Egress.Wanton w))
+    let bearer :: Mx.Bearer (IOSim s)
+        bearer = Mx.Bearer {
+            Mx.write          = \_ _ _ -> error "single writes are not used",
+            Mx.writeMany      = \_ _ sdus -> write sdus >> getMonotonicTime,
+            Mx.read           = \_ _ -> error "the muxer does not read",
+            Mx.sduSize        = Mx.SDUSize 12288,
+            Mx.batchSize      = 1000000,
+            Mx.name           = "modelled",
+            Mx.egressInterval = 0
+          }
+    mx <- async (void (Egress.muxer q nullTracer sentSlots bearer))
+    let counted :: IOSim s Mx.ByteCounts
+        counted = atomically (Counters.readSlots sentSlots)
+    return (mx, counted)
+
+-- | The bearer takes the whole batch and says so; a canceller waiting for
+-- that cancels the muxer. Explored with IOSimPOR, so the cancellation also
+-- lands between the write's return and the count: the bytes taken are
+-- counted in every schedule, by protocol and direction as the SDUs carry
+-- them.
+prop_mux_written_is_counted :: WriteCase -> Property
+prop_mux_written_is_counted wc =
+  exploreSimTrace (\o -> o { explorationScheduleBound = 40 }) sim $ \_ trace ->
+    case traceResult False trace of
+      Left e -> counterexample (show e) False
+      Right r@(written, counted) ->
+        counterexample (show r) $ written === counted
+  where
+    sim :: forall s. IOSim s (Mx.ByteCounts, Mx.ByteCounts)
+    sim = do
+      exploreRaces
+      written <- newTVarIO M.empty
+      (mx, counted) <- withWriteMuxer wc $ \sdus ->
+        atomically $ modifyTVar written (M.unionWith (+) (writtenBytes sdus))
+      canceller <- async $ do
+        atomically $ readTVar written >>= check . not . M.null
+        cancel mx
+      wait canceller
+      (,) <$> readTVarIO written <*> counted
+
+-- | The bearer takes part of the batch and then waits for room that never
+-- comes, as a socket with a full send buffer does. Cancelled then, the
+-- muxer is gone in the same instant, and the half-sent batch is not
+-- counted.
+prop_mux_partial_write_cancelled :: WriteCase -> Property
+prop_mux_partial_write_cancelled wc =
+  case traceResult False (runSimTrace sim) of
+    Left e -> counterexample (show e) False
+    Right r@(waited, written, counted) ->
+      counterexample (show r) $
+           counterexample "the cancellation waited" (waited === 0)
+      .&&. counterexample "part of the batch was written" (written > 0)
+      .&&. counted === M.empty
+  where
+    sim :: forall s. IOSim s (DiffTime, Int, Mx.ByteCounts)
+    sim = do
+      written <- newTVarIO 0
+      room    <- newTVarIO False
+      (mx, counted) <- withWriteMuxer wc $ \sdus -> do
+        atomically $ modifyTVar written (+ max 1 (fromIntegral (sum (writtenBytes sdus)) `div` 2))
+        atomically $ readTVar room >>= check
+      atomically $ readTVar written >>= check . (> 0)
+      t0 <- getMonotonicTime
+      cancel mx
+      t1 <- getMonotonicTime
+      (,,) (t1 `diffTime` t0) <$> readTVarIO written <*> counted
+
+-- | SDUs the peer sends, each on a mini-protocol the mux runs, from the
+-- peer's responder to our initiator, small enough to fit the ingress limit
+-- together.
+newtype ReadCase = ReadCase [(Word16, Int)]
+  deriving Show
+
+readNums :: [Word16]
+readNums = [2, 3]
+
+instance Arbitrary ReadCase where
+    arbitrary = ReadCase <$> (choose (1, 3) >>= \n -> vectorOf n sdu)
+      where
+        sdu :: Gen (Word16, Int)
+        sdu = (,) <$> elements readNums <*> choose (1, 1000)
+    shrink (ReadCase sdus) =
+      [ ReadCase ss
+      | ss <- shrinkList shrinkSdu sdus
+      , not (null ss)
+      ]
+      where
+        shrinkSdu :: (Word16, Int) -> [(Word16, Int)]
+        shrinkSdu (n, bytes) = [ (n, b) | b <- shrink bytes, b >= 1 ]
+
+-- | The bearer delivers the SDUs one per read, says so, then blocks; a
+-- canceller waiting for the last one stops the mux. Explored with IOSimPOR,
+-- so the cancellation also lands between a read's return and its count: the
+-- bytes delivered are counted in every schedule and retired with the mux, by
+-- protocol and our direction, the initiator's.
+prop_mux_read_is_counted :: ReadCase -> Property
+prop_mux_read_is_counted (ReadCase sdus) =
+  exploreSimTrace (\o -> o { explorationScheduleBound = 40 }) sim $ \_ trace ->
+    case traceResult False trace of
+      Left e -> counterexample (show e) False
+      Right r@(delivered, counted) ->
+        counterexample (show r) $ delivered === counted
+  where
+    sim :: forall s. IOSim s (Mx.ByteCounts, Mx.ByteCounts)
+    sim = do
+      exploreRaces
+      counters  <- Mx.newMuxCounters
+      pending   <- newTVarIO [ peerSDU (Mx.MiniProtocolNum n) Mx.ResponderDir bytes
+                             | (n, bytes) <- sdus
+                             ]
+      delivered <- newTVarIO M.empty
+      let -- The next SDU, counted as delivered as it is handed over.
+          deliver :: IOSim s (Mx.SDU, Time)
+          deliver = do
+            sdu <- atomically $ do
+              queue <- readTVar pending
+              case queue of
+                   []         -> retry
+                   sdu : rest -> do
+                     writeTVar pending rest
+                     modifyTVar delivered (M.insertWith (+) (ourKey sdu) (sduBytes sdu))
+                     return sdu
+            t <- getMonotonicTime
+            return (sdu, t)
+
+          bearer :: Mx.Bearer (IOSim s)
+          bearer = Mx.Bearer {
+              Mx.write          = \_ _ _ -> error "the demuxer does not write",
+              Mx.writeMany      = \_ _ _ -> error "the demuxer does not write",
+              Mx.read           = \_ _ -> deliver,
+              Mx.sduSize        = Mx.SDUSize 12288,
+              Mx.batchSize      = 1000000,
+              Mx.name           = "modelled",
+              Mx.egressInterval = 0
+            }
+
+          apps :: [MiniProtocolInfo Mx.InitiatorMode]
+          apps = [ MiniProtocolInfo {
+                       miniProtocolNum        = Mx.MiniProtocolNum n,
+                       miniProtocolDir        = Mx.InitiatorDirectionOnly,
+                       miniProtocolLimits     = MiniProtocolLimits { maximumIngressQueue = 4000 },
+                       miniProtocolCapability = Nothing }
+                 | n <- readNums
+                 ]
+      mux  <- Mx.withCounters counters <$> Mx.new Mx.nullTracers apps
+      muxA <- async (Mx.run mux bearer)
+      atomically $ readTVar pending >>= check . null
+      cancel muxA
+      counted <- Mx.mcReceived <$> atomically (Mx.readMuxCounters counters)
+      (,) <$> readTVarIO delivered <*> pure counted
+
+    -- The key the mux counts it under: our side of the protocol.
+    ourKey :: Mx.SDU -> (Mx.MiniProtocolNum, Mx.MiniProtocolDir)
+    ourKey sdu = (Mx.mhNum (Mx.msHeader sdu), Mx.InitiatorDir)
+
+    sduBytes :: Mx.SDU -> Word64
+    sduBytes sdu = fromIntegral Mx.msHeaderLength + fromIntegral (Mx.mhLength (Mx.msHeader sdu))

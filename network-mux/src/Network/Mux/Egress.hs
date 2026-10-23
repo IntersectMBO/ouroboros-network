@@ -3,6 +3,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeFamilies          #-}
 
 module Network.Mux.Egress
@@ -18,6 +19,8 @@ module Network.Mux.Egress
 import Control.Monad
 import Data.ByteString.Lazy qualified as BL
 import Data.Int (Int64)
+import Data.Map.Strict qualified as Map
+import Data.Word (Word64)
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadAsync
@@ -26,6 +29,7 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI hiding (timeout)
 import Control.Tracer (Tracer)
 
+import Network.Mux.Counters (ByteSlots)
 import Network.Mux.Timeout
 import Network.Mux.Types
 
@@ -162,18 +166,38 @@ muxer
        )
     => EgressQueue m
     -> Tracer m BearerTrace
+    -> ByteSlots m
+    -- ^ This mux's sent-byte counters.
     -> Bearer m
     -> m void
-muxer egressQueue tracer Bearer { writeMany, sduSize, batchSize, egressInterval } =
+muxer egressQueue tracer sentSlots Bearer { writeMany, sduSize, batchSize, egressInterval } =
     withTimeoutSerial $ \timeout ->
     forever $ do
       start <- getMonotonicTime
       TLSRDemand mpc md d <- atomically $ readTBQueue egressQueue
       sdu <- processSingleWanton egressQueue sduSize mpc md d
       sdus <- buildBatch [sdu] (sduLength sdu)
-      void $ writeMany tracer timeout sdus
-      end <- getMonotonicTime
-      empty <- atomically $ isEmptyTBQueue egressQueue
+      -- Counted after the write, so a count means bytes handed to the kernel,
+      -- and the write with its count masked, so a cancellation lands only
+      -- where the write blocks, waiting for room in the socket buffer, never
+      -- between bytes taken and their count. A blocked wait is interruptible,
+      -- so the bearer's timeout and a cancellation still reach a write that
+      -- cannot finish. A write that throws, part of the batch sent or none,
+      -- is not counted: the connection is gone with it.
+      (end, empty) <- mask_ $ do
+        void $ writeMany tracer timeout sdus
+        end <- getMonotonicTime
+        -- The batch summed by mini-protocol and direction first, so the
+        -- transaction updates a slot once per protocol in the batch, not
+        -- once per SDU; a mux without counters has no slots and sums nothing.
+        let !bytes = if Map.null sentSlots then [] else batchBytes sdus
+        empty <- atomically $ do
+          forM_ bytes $ \(key, n) ->
+            forM_ (Map.lookup key sentSlots) $ \slot -> do
+              c <- readTVar slot
+              writeTVar slot $! c + n
+          isEmptyTBQueue egressQueue
+        return (end, empty)
       when empty $ do
         let delta = diffTime end start
         threadDelay (egressInterval - delta)
@@ -184,6 +208,38 @@ muxer egressQueue tracer Bearer { writeMany, sduSize, batchSize, egressInterval 
 
     sduLength :: SDU -> Int
     sduLength sdu = fromIntegral msHeaderLength + fromIntegral (msLength sdu)
+
+    -- The bytes of a batch by mini-protocol and direction, header included,
+    -- as a list: a batch holds few protocols, so it is short. A run of SDUs
+    -- on one protocol is summed as it goes and merged once, at its end, so a
+    -- batch on one protocol merges once.
+    batchBytes :: [SDU] -> [((MiniProtocolNum, MiniProtocolDir), Word64)]
+    batchBytes []           = []
+    batchBytes (sdu : sdus) = runs [] (keyOf sdu) (bytesOf sdu) sdus
+      where
+        runs :: [((MiniProtocolNum, MiniProtocolDir), Word64)]
+             -> (MiniProtocolNum, MiniProtocolDir) -> Word64 -> [SDU]
+             -> [((MiniProtocolNum, MiniProtocolDir), Word64)]
+        runs acc key !n []            = insert key n acc
+        runs acc key !n (sdu' : rest)
+          | key' == key = runs acc key (n + bytesOf sdu') rest
+          | otherwise   = runs (insert key n acc) key' (bytesOf sdu') rest
+          where
+            key' = keyOf sdu'
+
+        keyOf :: SDU -> (MiniProtocolNum, MiniProtocolDir)
+        keyOf sdu' = (msNum sdu', msDir sdu')
+
+        bytesOf :: SDU -> Word64
+        bytesOf = fromIntegral . sduLength
+
+        insert :: (MiniProtocolNum, MiniProtocolDir) -> Word64
+               -> [((MiniProtocolNum, MiniProtocolDir), Word64)]
+               -> [((MiniProtocolNum, MiniProtocolDir), Word64)]
+        insert key n [] = [(key, n)]
+        insert key n ((key', n') : rest)
+          | key == key' = let !m = n' + n in (key', m) : rest
+          | otherwise   = (key', n') : insert key n rest
 
     -- Build a batch of SDUs to submit in one go to the bearer.
     -- The egress queue is still processed one SDU at the time

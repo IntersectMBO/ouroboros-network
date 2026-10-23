@@ -53,6 +53,7 @@ import Codec.CBOR.Term qualified as CBOR
 import Data.Foldable as Foldable (foldl')
 import Data.IP (IP (..))
 import Data.Map (Map)
+import Data.Maybe (fromMaybe)
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text (Text)
@@ -61,6 +62,7 @@ import Data.Void (Void)
 import Network.DNS (Domain, TYPE)
 import System.Random (StdGen, splitGen)
 
+import Network.Mux qualified as Mx
 import Ouroboros.Network.CodecCBORTerm
 import Ouroboros.Network.Hashable (mkUnsafeSalt)
 import Ouroboros.Network.Mux (noBindForkPolicy)
@@ -173,6 +175,9 @@ data Arguments extraChurnArgs extraFlags m = Arguments
     , aExtraChurnArgs       :: extraChurnArgs
     , aTxDecisionPolicy     :: TxDecisionPolicy
     , aTxs                  :: [Tx Int]
+    , aMuxCountersInterval  :: Maybe DiffTime
+      -- ^ how often to trace the node-to-node muxes' counters, which the
+      -- node keeps only when given this
     }
 
 run :: forall extraState extraDebugState extraAPI
@@ -262,6 +267,9 @@ run blockGeneratorArgs ni na
       $ \ nodeKernel nodeKernelThread -> do
         dnsTimeoutScriptVar <- newTVarIO (aDNSTimeoutScript na)
         dnsLookupDelayScriptVar <- newTVarIO (aDNSLookupDelayScript na)
+        -- The node-to-node muxes' counters, if asked for, traced on the
+        -- counters tracer; the node has no node-to-client side.
+        muxCounters <- traverse (const Mx.newMuxCounters) (aMuxCountersInterval na)
 
         let -- diffusion interfaces
             interfaces :: Diffusion.Interfaces (NtNFD m) NtNAddr
@@ -338,7 +346,7 @@ run blockGeneratorArgs ni na
            (Diffusion.runM interfaces
                            tracers
                            extraParameters
-                           (mkArgs (nkPublicPeerSelectionVar nodeKernel))
+                           (mkArgs (nkPublicPeerSelectionVar nodeKernel) muxCounters)
                            (mkApps nodeKernel keepAliveStdGen))
            $ \ diffusionThread ->
                withAsync (blockFetch nodeKernel) $ \blockFetchLogicThread ->
@@ -457,8 +465,9 @@ run blockGeneratorArgs ni na
         decodeData _ _                                            = Left (Text.pack "unversionedDataCodec: unexpected term")
 
     mkArgs :: StrictTVar m (PublicPeerSelectionState NtNAddr)
+           -> Maybe (Mx.MuxCounters m)
            -> Diffusion.Configuration extraFlags m (NtNFD m) NtNAddr (NtCFD m) NtCAddr
-    mkArgs dcPublicPeerSelectionVar = Diffusion.Configuration
+    mkArgs dcPublicPeerSelectionVar muxCounters = Diffusion.Configuration
       { Diffusion.dcIPv4Address   = Right <$> (ntnToIPv4 . aIPAddress) na
       , Diffusion.dcIPv6Address   = Right <$> (ntnToIPv6 . aIPAddress) na
       , Diffusion.dcLocalAddress  = Nothing
@@ -478,6 +487,9 @@ run blockGeneratorArgs ni na
       , Diffusion.dcReadLedgerPeerSnapshot = pure Nothing -- ^ tested independently
       , Diffusion.dcMuxForkPolicy          = noBindForkPolicy
       , Diffusion.dcLocalMuxForkPolicy     = noBindForkPolicy
+      , Diffusion.dcMuxCounters            = muxCounters
+      , Diffusion.dcLocalMuxCounters       = Nothing
+      , Diffusion.dcMuxCountersInterval    = fromMaybe Mx.countersInterval (aMuxCountersInterval na)
       , Diffusion.dcEgressPollInterval     = 0.001
       }
 

@@ -45,7 +45,7 @@ import Data.IP qualified as IP
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map (Map)
 import Data.Map qualified as Map
-import Data.Maybe (catMaybes)
+import Data.Maybe (catMaybes, isJust)
 import Data.Typeable (Proxy (..), Typeable)
 import Data.Void (Void)
 import System.Exit (ExitCode)
@@ -201,6 +201,7 @@ runM Interfaces
        , dtLocalServerTracer
        , dtLocalInboundGovernorTracer
        , dtDnsTracer
+       , dtMuxCountersTracer
        }
      Arguments
        { daNtnDataFlow
@@ -239,6 +240,9 @@ runM Interfaces
        , dcReadLedgerPeerSnapshot
        , dcMuxForkPolicy
        , dcLocalMuxForkPolicy
+       , dcMuxCounters
+       , dcLocalMuxCounters
+       , dcMuxCountersInterval
        }
      Applications
        { daApplicationInitiatorMode
@@ -257,16 +261,29 @@ runM Interfaces
 
     -- If we have a local address, race the remote and local threads. Otherwise
     -- just launch the remote thread.
-    case dcLocalAddress of
-      Just addr ->
-        fmap (either id id) $
-          mkRemoteThread mainThreadId
-          `Async.race`
-          mkLocalThread mainThreadId addr
-      Nothing ->
-          mkRemoteThread mainThreadId
+    withCountersLoop $
+      case dcLocalAddress of
+        Just addr ->
+          fmap (either id id) $
+            mkRemoteThread mainThreadId
+            `Async.race`
+            mkLocalThread mainThreadId addr
+        Nothing ->
+            mkRemoteThread mainThreadId
 
   where
+    -- The mux counters loop, when the node keeps counters, raced with the
+    -- rest as the remote and local threads are.
+    withCountersLoop :: m Void -> m Void
+    withCountersLoop diffusion
+      | isJust dcMuxCounters || isJust dcLocalMuxCounters =
+          fmap (either id id) $
+            (do labelThisThread "diffusion-mux-counters"
+                Mx.countersLoop dcMuxCounters dcLocalMuxCounters
+                                dcMuxCountersInterval dtMuxCountersTracer)
+            `Async.race` diffusion
+      | otherwise = diffusion
+
     (ledgerPeersRng, rng1) = splitGen diRng
     (churnRng,       rng2) = splitGen rng1
     (fuzzRng,        rng3) = splitGen rng2
@@ -345,6 +362,7 @@ runM Interfaces
                   Mx.bearerTracer  = dtLocalBearerTracer
                 }
                 dcLocalMuxForkPolicy
+                dcLocalMuxCounters
                 daNtcHandshakeArguments
                 ( ( \ (OuroborosApplication apps)
                    -> TemperatureBundle
@@ -528,6 +546,7 @@ runM Interfaces
                 Mx.bearerTracer  = dtBearerTracer
               }
               dcMuxForkPolicy
+              dcMuxCounters
               daNtnHandshakeArguments
               versions
               (mainThreadId, rethrowPolicy <> daRethrowPolicy)
