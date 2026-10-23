@@ -505,16 +505,18 @@ data PeerTxAPI m txid tx = PeerTxAPI {
                          -> Maybe (RegisteredDelay m)
                          -> STM m (),
 
-    -- | Compute the next action for this peer in non-pipelined mode.
+    -- | Compute the next action for this peer in non-pipelined mode,
+    -- resolved against the state it was decided in.
     runNextPeerAction    :: Time
                          -> Maybe DiffTime
                          -> PeerTxLocalState tx
-                         -> m (PeerAction, PeerTxLocalState tx),
+                         -> m (ResolvedPeerAction txid tx, PeerTxLocalState tx),
 
-    -- | Compute the next action for this peer in pipelined mode.
+    -- | Compute the next action for this peer in pipelined mode, resolved
+    -- against the state it was decided in.
     runNextPeerActionPipelined :: Time
                                -> PeerTxLocalState tx
-                               -> m (PeerAction, PeerTxLocalState tx),
+                               -> m (ResolvedPeerAction txid tx, PeerTxLocalState tx),
 
     -- | Process a batch of txids received from this peer.
     applyReceivedTxIds   :: Time
@@ -538,19 +540,7 @@ data PeerTxAPI m txid tx = PeerTxAPI {
                          -> [(TxKey, txid)]
                          -> [TxKey]
                          -> PeerTxLocalState tx
-                         -> m (PeerTxLocalState tx),
-
-    -- | Resolve txids and advertised sizes for a batch of tx keys to request.
-    resolveTxRequest     :: PeerTxLocalState tx
-                         -> [TxKey]
-                         -> m (Map txid SizeInBytes),
-    -- | Resolve buffered tx bodies into full submission records.
-    --
-    -- pre-condition: the list of keys is in `peerDownloadedTxs` field of
-    -- `PeerTxLocalState`.  It is ensured by `pickSubmitAction`.
-    resolveBufferedTxs   :: PeerTxLocalState tx
-                         -> [TxKey]
-                         -> m [(TxKey, txid, tx)]
+                         -> m (PeerTxLocalState tx)
   }
 
 --
@@ -618,19 +608,18 @@ withPeer policy TxSubmissionMempoolReader { mempoolGetSnapshot }
         , joinTiers = atomically (joinTier policy registry registration entry)
         , awaitSharedChange = awaitSharedChangeImp sharedStateVar
         , awaitClaimableChange = awaitClaimableChangeImp claimableVar
-        , runNextPeerAction = runNextPeerActionImp policy registry sharedStateVar
-                                peerInFlightVar peerCountersVar entry peeraddr
-        , runNextPeerActionPipelined = runNextPeerActionPipelinedImp policy registry
-                                         sharedStateVar peerInFlightVar
-                                         peerCountersVar entry peeraddr
+        , runNextPeerAction = \now downloadTime_m ->
+            runDecisionImp policy registry sharedStateVar peerInFlightVar peerCountersVar
+                           entry peeraddr (NonPipelined downloadTime_m) now
+        , runNextPeerActionPipelined =
+            runDecisionImp policy registry sharedStateVar peerInFlightVar peerCountersVar
+                           entry peeraddr Pipelined
         , applyReceivedTxIds = applyReceivedTxIdsImp policy mempoolGetSnapshot claimableVar
                                  sharedStateVar peerInFlightVar peerCountersVar
         , applyReceivedTxs = applyReceivedTxsImp policy mempoolGetSnapshot claimableVar
                                sharedStateVar peerInFlightVar peerCountersVar peeraddr
         , applySubmittedTxs = applySubmittedTxsImp policy claimableVar sharedStateVar
                                 peerInFlightVar peerCountersVar peeraddr
-        , resolveTxRequest = resolveTxRequestImp sharedStateVar
-        , resolveBufferedTxs = resolveBufferedTxsImp sharedStateVar
         }
     claimableVar = registryClaimable registry
 
@@ -840,23 +829,32 @@ updateCountersForAction countersVar kind tier pipelineWait_m peerAction =
       SlowTier -> 1
       FastTier -> 0
 
--- | Compute the next action for this peer in non-pipelined mode.
-runNextPeerActionImp :: ( MonadSTM m
-                        , Ord peeraddr
-                        , Hashable peeraddr )
-                     => TxDecisionPolicy
-                     -> PeerTxRegistry m peeraddr
-                     -> SharedTxStateVar m peeraddr txid
-                     -> PeerTxInFlightVar m
-                     -> TxSubmissionCountersVar m
-                     -> PeerTierEntry m
-                     -> peeraddr
-                     -> Time
-                     -> Maybe DiffTime
-                     -> PeerTxLocalState tx
-                     -> m (PeerAction, PeerTxLocalState tx)
-runNextPeerActionImp policy registry sharedStateVar peerInFlightVar countersVar entry
-                     peeraddr now downloadTime_m peerState = do
+-- | How a decision is run: outside a pipeline, with the duration of the
+-- body-download episode that has just drained, if one did; or inside one,
+-- where the pipeline cannot have drained and a txid request is pipelined.
+data DecisionMode
+  = NonPipelined (Maybe DiffTime)
+  | Pipelined
+
+-- | Compute the next action for this peer, resolved against the state it
+-- was decided in.
+runDecisionImp :: ( MonadSTM m
+                  , Ord peeraddr
+                  , Hashable peeraddr
+                  , Ord txid )
+               => TxDecisionPolicy
+               -> PeerTxRegistry m peeraddr
+               -> SharedTxStateVar m peeraddr txid
+               -> PeerTxInFlightVar m
+               -> TxSubmissionCountersVar m
+               -> PeerTierEntry m
+               -> peeraddr
+               -> DecisionMode
+               -> Time
+               -> PeerTxLocalState tx
+               -> m (ResolvedPeerAction txid tx, PeerTxLocalState tx)
+runDecisionImp policy registry sharedStateVar peerInFlightVar countersVar entry peeraddr
+               mode now peerState = do
   -- the tier is read in a transaction of its own: the governor rewrites
   -- its public state every iteration, and reading it inside the decision
   -- transaction would retry every in-flight decision on each tick
@@ -866,14 +864,18 @@ runNextPeerActionImp policy registry sharedStateVar peerInFlightVar countersVar 
     peerInFlight <- readTVar peerInFlightVar
     let sharedRevision0 = sharedRevision sharedState
         (peerAction, peerState', peerInFlight', sharedState') =
-          State.nextPeerAction now policy peeraddr peerState0 peerInFlight sharedState
+          step now policy peeraddr peerState0 peerInFlight sharedState
     writeSharedStateIfChanged (registryClaimable registry) sharedStateVar
                               sharedRevision0 sharedState'
     writePeerInFlightIfChanged peerInFlightVar peerInFlight peerInFlight'
-    updateCountersForAction countersVar (txIdRequestKind peerState')
+    updateCountersForAction countersVar (kind peerState')
                             (effectiveTier policy now peerState0) downloadTime_m
                             peerAction
-    return (peerAction, peerState')
+    return (resolvePeerAction sharedState' peerState' peerAction, peerState')
+  where
+    (step, kind, downloadTime_m) = case mode of
+      NonPipelined d -> (State.nextPeerAction, txIdRequestKind, d)
+      Pipelined      -> (State.nextPeerActionPipelined, const PipelinedTxIdRequest, Nothing)
 
 -- | The peer's tier, read into its local state before a decision, in a
 -- transaction of its own: a local root is fast whatever the coin said.
@@ -900,38 +902,6 @@ withTier policy now registry PeerTierEntry { pteState, pteLocalRoot } peerState 
             else pure (ptsCoin s')
   let tier = if root then FastTier else coin
   pure $ if peerTier peerState == tier then peerState else peerState { peerTier = tier }
-
--- | Compute the next action for this peer in pipelined mode.
-runNextPeerActionPipelinedImp :: ( MonadSTM m
-                                  , Ord peeraddr
-                                  , Hashable peeraddr )
-                              => TxDecisionPolicy
-                              -> PeerTxRegistry m peeraddr
-                              -> SharedTxStateVar m peeraddr txid
-                              -> PeerTxInFlightVar m
-                              -> TxSubmissionCountersVar m
-                              -> PeerTierEntry m
-                              -> peeraddr
-                              -> Time
-                              -> PeerTxLocalState tx
-                              -> m (PeerAction, PeerTxLocalState tx)
-runNextPeerActionPipelinedImp policy registry sharedStateVar peerInFlightVar countersVar
-                              entry peeraddr now peerState = do
-    peerState0 <- atomically $ withTier policy now registry entry peerState
-    atomically $ do
-      sharedState <- readTVar sharedStateVar
-      peerInFlight <- readTVar peerInFlightVar
-      let sharedRevision0 = sharedRevision sharedState
-          (peerAction, peerState', peerInFlight', sharedState') =
-            State.nextPeerActionPipelined now policy peeraddr peerState0
-                                          peerInFlight sharedState
-      writeSharedStateIfChanged (registryClaimable registry) sharedStateVar
-                                sharedRevision0 sharedState'
-      writePeerInFlightIfChanged peerInFlightVar peerInFlight peerInFlight'
-      -- The pipeline cannot have drained at depth above zero.
-      updateCountersForAction countersVar PipelinedTxIdRequest
-                              (effectiveTier policy now peerState0) Nothing peerAction
-      return (peerAction, peerState')
 
 -- | Process a batch of txids received from this peer.
 applyReceivedTxIdsImp :: ( MonadSTM m
@@ -1074,45 +1044,43 @@ applySubmittedTxsImp policy claimableVar sharedStateVar peerInFlightVar counters
       }
     return peerState'
 
--- | Resolve txids and advertised sizes for a batch of tx keys to request.
-resolveTxRequestImp :: ( HasCallStack
-                       , MonadSTM m
-                       , Ord txid )
-                    => SharedTxStateVar m peeraddr txid
-                    -> PeerTxLocalState tx
-                    -> [TxKey]
-                    -> m (Map txid SizeInBytes)
-resolveTxRequestImp sharedStateVar peerState txKeys = do
-  sharedState <- readTVarIO sharedStateVar
-  return $ Map.fromList (fmap (resolveOne sharedState) txKeys)
+-- | A decision as the peer thread carries it out, resolved against the
+-- state it was made in: the txids and advertised sizes of the bodies to
+-- request, the buffered bodies to submit.  Pure, called in the deciding
+-- transaction, so a key that leaves the state afterwards cannot fail it.
+resolvePeerAction :: ( HasCallStack
+                     , Ord txid )
+                  => SharedTxState peeraddr txid
+                  -> PeerTxLocalState tx
+                  -> PeerAction
+                  -> ResolvedPeerAction txid tx
+resolvePeerAction sharedState peerState action =
+  case action of
+    PeerDoNothing generation delay_m claimable_m ->
+      ResolvedDoNothing generation delay_m claimable_m
+    PeerRequestTxIds toAck toReq ->
+      ResolvedRequestTxIds toAck toReq
+    PeerRequestTxs txKeys ->
+      ResolvedRequestTxs (Map.fromList (fmap resolveRequested txKeys))
+    PeerSubmitTxs txKeys ->
+      ResolvedSubmitTxs (fmap resolveBuffered txKeys)
   where
-    resolveOne sharedState key@(TxKey k) =
+    resolveRequested key@(TxKey k) =
       ( resolveTxKey sharedState key
       , case IntMap.lookup k (peerAvailableTxIds peerState) of
              Just txSize -> txSize
              Nothing     -> error $
-               "TxSubmission.V2.resolveTxRequestImp: missing tx size for key "
+               "TxSubmission.V2.resolvePeerAction: missing tx size for key "
                ++ show k
       )
-
--- | Resolve buffered tx bodies into full submission records.
-resolveBufferedTxsImp :: ( HasCallStack
-                         , MonadSTM m
-                         )
-                       => SharedTxStateVar m peeraddr txid
-                       -> PeerTxLocalState tx
-                       -> [TxKey]
-                       -> m [(TxKey, txid, tx)]
-resolveBufferedTxsImp sharedStateVar peerState txKeys = do
-  sharedState <- readTVarIO sharedStateVar
-  return $ fmap (resolveOne sharedState) txKeys
-  where
-    resolveOne sharedState key@(TxKey k) =
+    -- pre-condition: the key is in 'peerDownloadedTxs', ensured by
+    -- 'pickSubmitAction'
+    resolveBuffered key@(TxKey k) =
       ( key
       , resolveTxKey sharedState key
       , case IntMap.lookup k (peerDownloadedTxs peerState) of
              Just tx -> tx
              Nothing -> error $
-               "TxSubmission.V2.resolveBufferedTxsImp: missing buffered tx for key "
+               "TxSubmission.V2.resolvePeerAction: missing buffered tx for key "
                ++ show k
       )
