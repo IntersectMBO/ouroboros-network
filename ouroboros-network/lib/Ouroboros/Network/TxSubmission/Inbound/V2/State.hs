@@ -1267,20 +1267,21 @@ handleReceivedTxs mempoolHasTx now policy peeraddr txs peerState peerInFlight sh
 
     -- Release this peer's lease on every pending key whose entry lives,
     -- where it still held one, and count the omitted: the requested keys
-    -- no body answered, every body being for a txid of this batch, as
-    -- the client rejects a reply naming one it did not request; the live
-    -- pending keys at least.  A pending key whose residence ended
+    -- no body answered, every body answering a distinct txid of this
+    -- batch, as the client rejects a reply naming one it did not request
+    -- or naming one twice.  A pending key whose residence ended
     -- meanwhile, resolved by another peer and expired, has no lookup
     -- entry any more, so a body for it arrives under an unknown txid, or
     -- under a fresh key if the txid was advertised again since, and
-    -- answers one such key: late rather than omitted.
+    -- answers one such key: late rather than omitted, and the live
+    -- pending keys never outnumber the requested keys left unanswered.
     --
     -- @wakeChangeFromOmit@ is set only when a lease is actually released
     -- (other advertisers can now claim).
     livePending = IntSet.filter keyWasLive pendingRequestedKeys
     (sharedStateReleased, wakeChangeFromOmit) =
       IntSet.foldl' handleOmitted (sharedStateHandled, False) livePending
-    omittedCount = max (IntSet.size livePending) (IntSet.size requestedKeys - length txs)
+    omittedCount = IntSet.size requestedKeys - length txs
 
     -- Keys this peer is no longer attempting (everything in the batch
     -- except still-buffered keys).  Used to update both the per-peer
