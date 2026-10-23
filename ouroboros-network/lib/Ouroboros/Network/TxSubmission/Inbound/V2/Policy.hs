@@ -82,9 +82,9 @@ data TxDecisionPolicy = TxDecisionPolicy {
       -- Fetch tiers: see 'Ouroboros.Network.TxSubmission.Inbound.V2.Tier'.
       --
       txFastPeers                    :: !Int,
-      -- ^ how many inbound peers the coin keeps on the fast tier, polled
-      -- for txids as soon as there is something to acknowledge.  Local
-      -- roots and tx sources are fast besides.
+      -- ^ how many inbound peers the salted order keeps on the fast tier,
+      -- polled for txids as soon as there is something to acknowledge.
+      -- Local roots and tx sources are fast besides.
       txSlowCadence                  :: !DiffTime,
       -- ^ the least time between two txid requests to a slow-tier peer,
       -- blocking ones included, before jitter.
@@ -92,7 +92,7 @@ data TxDecisionPolicy = TxDecisionPolicy {
       -- ^ the fraction of 'txSlowCadence' each wait is jittered by, drawn
       -- afresh per request, so slow peers never fire together.  In @[0, 1)@.
       txTierRotation                 :: !DiffTime,
-      -- ^ how often the coin redraws the fast tier.
+      -- ^ how often the coin draws a new salt, reordering the fast tier.
       txSourceRate                   :: !Double,
       -- ^ a peer delivering novel accepted txs at this rate (per second,
       -- sustained over 'txSourceWindow') is a tx source and fast while it

@@ -324,7 +324,7 @@ data TierStanding
   = StandingRoot
     -- ^ fast by standing: a local root
   | StandingCoin
-    -- ^ fast by the coin's draw
+    -- ^ fast by the coin: among the first in the salted order
   | StandingSource
     -- ^ fast by the source rule while the coin left it slow
   | StandingSlow
