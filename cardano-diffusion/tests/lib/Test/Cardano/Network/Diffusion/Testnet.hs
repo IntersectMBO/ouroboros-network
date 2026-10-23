@@ -57,6 +57,7 @@ import System.Random (mkStdGen)
 import Text.Printf as Text
 
 import Network.DNS.Types qualified as DNS
+import Network.Mux qualified as Mux
 import Network.Mux.Trace qualified as Mx
 
 import Cardano.Network.ConsensusMode
@@ -142,6 +143,8 @@ tests =
                                  prop_diffusion_nofail_iosimpor
     , nightlyTest $ testProperty "no livelock"
                                  prop_diffusion_nolivelock_iosimpor
+    , nightlyTest $ testProperty "mux counters"
+                                 prop_diffusion_mux_counters_iosimpor
     , nightlyTest $ testProperty "dns can recover from fails"
                                  prop_diffusion_dns_can_recover_iosimpor
     , nightlyTest $ testProperty "target established public"
@@ -204,6 +207,8 @@ tests =
                    prop_diffusion_nofail_iosim
     , testProperty "no livelock"
                    prop_diffusion_nolivelock_iosim
+    , testProperty "mux counters"
+                   prop_diffusion_mux_counters_iosim
     , testProperty "dns can recover from fails"
                    prop_diffusion_dns_can_recover_iosim
     , testProperty "unit #4191"
@@ -392,12 +397,24 @@ testWithIOSimPOR :: (forall r. Show r => SimTrace r -> Int -> Property)
                  -> DiffusionScript
                  -- ^ sim-net configuration
                  -> Property
-testWithIOSimPOR prop traceNumber bi ds =
+testWithIOSimPOR = testWithIOSimPOR' diffusionSimulation
+
+testWithIOSimPOR' :: (forall s. BearerInfo -> DiffusionScript -> IOSim s DiffSimResult)
+                  -- ^ diffusion simulation
+                  -> (forall r. Show r => SimTrace r -> Int -> Property)
+                  -- ^ property to verify
+                  -> Int
+                  -- ^ number of trace events to analyse
+                  -> AbsBearerInfo
+                  -- ^ bearer configuration
+                  -> DiffusionScript
+                  -- ^ sim-net configuration
+                  -> Property
+testWithIOSimPOR' simulation prop traceNumber bi ds =
   let sim :: forall s. IOSim s DiffSimResult
       sim = do
         exploreRaces
-        diffusionSimulation (toBearerInfo bi)
-                            ds
+        simulation (toBearerInfo bi) ds
    in labelDiffusionScript ds
     $ exploreSimTrace id sim $ \_ trace ->
         -- we don't capture the time in the say trace, we add it here
@@ -605,6 +622,168 @@ prop_diffusion_nofail_iosim
   :: AbsBearerInfo -> DiffusionScript -> Property
 prop_diffusion_nofail_iosim
   = testWithIOSim prop_diffusion_nofail long_trace
+
+-- | How often the simulated nodes trace their mux counters: the default
+-- interval a third of the time, otherwise a whole number of seconds up to
+-- thirty. Shrinks towards the default, by its distance from it, so a failure
+-- that does not depend on the interval shows the default.
+newtype MuxCountersInterval = MuxCountersInterval DiffTime
+  deriving Show
+
+instance Arbitrary MuxCountersInterval where
+  arbitrary = MuxCountersInterval <$> frequency
+    [ (1, pure Mux.countersInterval)
+    , (2, fromIntegral <$> choose (1, 30 :: Int))
+    ]
+  shrink (MuxCountersInterval interval) =
+    [ MuxCountersInterval interval'
+    | offset <- shrink (truncate (interval - Mux.countersInterval) :: Int)
+    , let interval' = Mux.countersInterval + fromIntegral offset
+    , interval' >= 1
+    ]
+
+-- | One run of a node: from joining the network to being killed, erroring or
+-- terminating, or to the end of the trace, with what the run traced.
+data Run = Run {
+    runStart      :: Time,
+    runEnd        :: Time,
+    runSnapshots  :: [(Time, Mux.MuxCounts)],
+    -- ^ the node-to-node counters, as traced
+    runLocal      :: [Time]
+    -- ^ node-to-client snapshots, of which none is expected
+  }
+
+-- | The mux counters diffusion traces for every node, from the node-to-node
+-- set the simulated node keeps, over each of the node's runs, from joining
+-- the network to being killed or to the end of the trace:
+--
+-- * a snapshot every interval given, the first at least an interval after
+--   the join, as the loop starts with its delay once diffusion is up, each
+--   next one exactly an interval later, and none missing before the run
+--   ends;
+--
+-- * counts that never go down from one snapshot to the next, as muxes end
+--   and their counts retire;
+--
+-- * no protocol error or overrun anywhere, every node speaking the same
+--   protocols.
+--
+-- The node has no node-to-client set, so none is ever traced.
+prop_diffusion_mux_counters :: forall r. MuxCountersInterval -> SimTrace r -> Int -> Property
+prop_diffusion_mux_counters (MuxCountersInterval interval) ioSimTrace traceNumber =
+    tabulate "mux counters interval"
+             [ if interval == Mux.countersInterval then "the default" else show interval ] $
+    tabulate "snapshots in a run"
+             [ showBucket 5 (length (runSnapshots nodeRun)) | nodeRun <- allRuns ] $
+    classify (any ((> 1) . length . runSnapshots) allRuns) "a run with two or more snapshots" $
+    classify (any ((< traceEnd) . runEnd) allRuns)          "a run ended before the trace" $
+    conjoin [ counterexample (show name) (runProperty nodeRun)
+            | (name, nodeRun) <- namedRuns
+            ]
+  where
+    events :: [WithName NtNAddr (WithTime DiffusionTestTrace)]
+    events = map swapTimeWithName
+           . Trace.toList
+           . withTimeNameTraceEvents @DiffusionTestTrace @NtNAddr
+           . Trace.take traceNumber
+           $ ioSimTrace
+
+    -- The last instant the trace covers; a snapshot due then may be cut.
+    traceEnd :: Time
+    traceEnd = case reverse events of
+      WithName _ (WithTime t _) : _ -> t
+      []                            -> Time 0
+
+    -- Each node's events, in their order.
+    perNode :: [(NtNAddr, [(Time, DiffusionTestTrace)])]
+    perNode = [ (name, reverse evs)
+              | (name, evs) <- Map.toList byName
+              ]
+      where
+        byName :: Map NtNAddr [(Time, DiffusionTestTrace)]
+        byName = Map.fromListWith (++)
+                   [ (name, [(t, ev)]) | WithName name (WithTime t ev) <- events ]
+
+    namedRuns :: [(NtNAddr, Run)]
+    namedRuns = [ (name, nodeRun)
+                | (name, evs) <- perNode
+                , nodeRun <- runs evs
+                ]
+
+    allRuns :: [Run]
+    allRuns = map snd namedRuns
+
+    runs :: [(Time, DiffusionTestTrace)] -> [Run]
+    runs evs = case dropWhile (not . joining . snd) evs of
+      []             -> []
+      (t0, _) : rest ->
+        let (inRun, later) = break (ending . snd) rest
+
+            t1 :: Time
+            t1 = case later of
+                   (t, _) : _ -> t
+                   []         -> traceEnd
+
+            countersEvents :: [(Time, Mux.CountersTrace)]
+            countersEvents = [ (t, c) | (t, DiffusionMuxCountersTrace c) <- inRun ]
+        in Run { runStart      = t0,
+                 runEnd        = t1,
+                 runSnapshots  = [ (t, c) | (t, Mux.TraceRemoteCounters c) <- countersEvents ],
+                 runLocal      = [ t | (t, Mux.TraceLocalCounters _) <- countersEvents ]
+               }
+           : runs later
+      where
+        joining, ending :: DiffusionTestTrace -> Bool
+        joining (DiffusionSimulationTrace TrJoiningNetwork {}) = True
+        joining _                                              = False
+        ending (DiffusionSimulationTrace TrKillingNode) = True
+        ending (DiffusionSimulationTrace TrErrored {})  = True
+        ending (DiffusionSimulationTrace TrTerminated)  = True
+        ending _                                        = False
+
+    runProperty :: Run -> Property
+    runProperty Run { runStart = t0, runEnd = t1, runSnapshots = snapshots, runLocal } =
+      counterexample ("run from " ++ show t0 ++ " to " ++ show t1) $ conjoin
+        [ counterexample ("snapshots at " ++ show (map fst snapshots)) $
+            case map fst snapshots of
+              []     -> t1 `diffTime` t0 < 2 * interval
+              s : ss ->    s `diffTime` t0 >= interval
+                        && and (zipWith (\a b -> b `diffTime` a == interval) (s : ss) ss)
+                        && t1 `diffTime` last (s : ss) <= interval
+        , counterexample ("a count went down: " ++ show snapshots) $
+            and (zipWith nonDecreasing (map snd snapshots) (drop 1 (map snd snapshots)))
+        , counterexample ("a protocol error or an overrun: " ++ show snapshots) $
+            and [ Mux.mfProtocolErrors f == 0 && Mux.mfOverruns f == 0
+                | (_, Mux.MuxCounts { Mux.mcFailures = f }) <- snapshots
+                ]
+        , counterexample ("the node-to-client set traced at " ++ show runLocal) $
+            null runLocal
+        ]
+
+    -- Every count of the later snapshot at least the earlier one's; keys are
+    -- only ever added.
+    nonDecreasing :: Mux.MuxCounts -> Mux.MuxCounts -> Bool
+    nonDecreasing a b = failuresNonDecreasing (Mux.mcFailures a) (Mux.mcFailures b)
+
+    failuresNonDecreasing :: Mux.MuxFailures -> Mux.MuxFailures -> Bool
+    failuresNonDecreasing a b =
+         and [ f a <= f b
+             | f <- [ Mux.mfWriteTimeouts, Mux.mfWriteErrors, Mux.mfReadTimeouts, Mux.mfOverruns
+                    , Mux.mfProtocolErrors, Mux.mfReadErrors, Mux.mfPeerClosed ]
+             ]
+      && Map.isSubmapOfBy (<=) (Mux.mfMiniProtocols a) (Mux.mfMiniProtocols b)
+
+prop_diffusion_mux_counters_iosimpor
+  :: MuxCountersInterval -> AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_mux_counters_iosimpor interval@(MuxCountersInterval seconds)
+  = testWithIOSimPOR' (diffusionSimulationWithCounters seconds)
+                      (prop_diffusion_mux_counters interval) short_trace
+
+prop_diffusion_mux_counters_iosim
+  :: MuxCountersInterval -> AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_mux_counters_iosim interval@(MuxCountersInterval seconds)
+  = testWithIOSim' (diffusionSimulationWithCounters seconds)
+                   (prop_diffusion_mux_counters interval) long_trace
 
 -- | This test coverage of 'CM.Trace' constructors.
 --

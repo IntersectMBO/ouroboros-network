@@ -8,10 +8,16 @@
 
 module Network.Mux.Tracing () where
 
-import Data.Aeson (Value (String), (.=))
+import Data.Aeson (Object, Value (String), object, (.=))
+import Data.Aeson.Key (Key)
+import Data.Aeson.Key qualified as Key
 import Data.List (isPrefixOf)
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
 import Data.Text (Text)
+import Data.Text qualified as Text
 import Data.Typeable
+import Data.Word (Word64)
 import Formatting
 
 import Cardano.Logging
@@ -19,7 +25,8 @@ import Network.Mux qualified as Mux
 #ifdef linux_HOST_OS
 import Network.Mux.TCPInfo (StructTCPInfo (..))
 #endif
-import Network.Mux.Types (SDUHeader (..), unRemoteClockModel)
+import Network.Mux.Types (MiniProtocolDir (..), SDUHeader (..),
+           unRemoteClockModel)
 
 --------------------------------------------------------------------------------
 -- Mux Tracer
@@ -564,3 +571,174 @@ instance MetaTrace Mux.Trace where
       , Namespace [] ["Stopping"]
       , Namespace [] ["Stopped"]
       ]
+
+--------------------------------------------------------------------------------
+-- Mux counters
+--------------------------------------------------------------------------------
+
+-- | Which muxes a counters snapshot is of.
+data Side = Remote | Local
+
+sideName :: Side -> Text
+sideName Remote = "Remote"
+sideName Local  = "Local"
+
+sideOf :: Text -> Maybe Side
+sideOf "Remote" = Just Remote
+sideOf "Local"  = Just Local
+sideOf _        = Nothing
+
+sideDoc :: Side -> Text
+sideDoc Remote = "node-to-node"
+sideDoc Local  = "node-to-client"
+
+egressPrefix, ingressPrefix, protocolsPrefix :: Side -> Text
+egressPrefix    Remote = "egress"
+egressPrefix    Local  = "localEgress"
+ingressPrefix   Remote = "ingress"
+ingressPrefix   Local  = "localIngress"
+protocolsPrefix Remote = "miniProtocols"
+protocolsPrefix Local  = "localMiniProtocols"
+
+-- | Where a failure count's metric lives: in the egress or the ingress
+-- family of its side, or by itself, as a read or a write meets a close.
+data Family = Egress | Ingress | EitherSide
+
+-- | A metric's name on a side: under the family's prefix, or by itself,
+-- marked local on the local side as the prefixes are.
+metricName :: Side -> Family -> Text -> Text
+metricName side family name = case family of
+  Egress     -> egressPrefix side <> "." <> name
+  Ingress    -> ingressPrefix side <> "." <> name
+  EitherSide -> case side of
+    Remote -> name
+    Local  -> "local" <> Text.toUpper (Text.take 1 name) <> Text.drop 1 name
+
+-- | The failure counts of the bearer sides, each with its metric's family,
+-- its name, which is the JSON key and the metric name, and its label; the
+-- mini-protocols' are by protocol, apart.
+failureCounts :: Mux.MuxFailures -> [(Family, Text, Text, Word64)]
+failureCounts Mux.MuxFailures {
+                Mux.mfWriteTimeouts, Mux.mfWriteErrors, Mux.mfReadTimeouts,
+                Mux.mfOverruns, Mux.mfProtocolErrors, Mux.mfReadErrors,
+                Mux.mfPeerClosed, Mux.mfOtherErrors } =
+  [ (Egress,     "writeTimeouts",  "write timeouts",  mfWriteTimeouts)
+  , (Egress,     "writeErrors",    "write errors",    mfWriteErrors)
+  , (Ingress,    "readTimeouts",   "read timeouts",   mfReadTimeouts)
+  , (Ingress,    "overruns",       "overruns",        mfOverruns)
+  , (Ingress,    "protocolErrors", "protocol errors", mfProtocolErrors)
+  , (Ingress,    "readErrors",     "read errors",     mfReadErrors)
+  , (EitherSide, "peerClosed",     "peers closed",    mfPeerClosed)
+  , (EitherSide, "otherErrors",    "other errors",    mfOtherErrors)
+  ]
+
+-- | Our side's direction of a mini-protocol, as metric names and JSON carry it.
+dirName :: MiniProtocolDir -> Text
+dirName InitiatorDir = "initiator"
+dirName ResponderDir = "responder"
+
+instance LogFormatting Mux.CountersTrace where
+    forMachine _dtal = \case
+      Mux.TraceRemoteCounters c -> countsObject Remote c
+      Mux.TraceLocalCounters  c -> countsObject Local c
+      where
+        countsObject :: Side -> Mux.MuxCounts -> Object
+        countsObject side Mux.MuxCounts { Mux.mcFailures = failures } =
+          mconcat $
+               [ "kind" .= String "MuxCounters"
+               , "side" .= String (sideName side) ]
+            ++ [ Key.fromText name .= n | (_, name, _, n) <- failureCounts failures ]
+            ++ [ "miniProtocolFailures" .= sum protocols
+               , "miniProtocolFailuresByProtocol" .= byProtocol "failures" protocols
+               ]
+          where
+            protocols :: Map (Mux.MiniProtocolNum, MiniProtocolDir) Word64
+            protocols = Mux.mfMiniProtocols failures
+        byProtocol :: Key -> Map (Mux.MiniProtocolNum, MiniProtocolDir) Word64 -> [Value]
+        byProtocol what counts =
+          [ object [ "protocol" .= n, "direction" .= dirName d, what .= b ]
+          | ((Mux.MiniProtocolNum n, d), b) <- Map.toList counts
+          ]
+    forHuman = \case
+      Mux.TraceRemoteCounters c -> "Node-to-node mux counters: " <> countsLine c
+      Mux.TraceLocalCounters  c -> "Node-to-client mux counters: " <> countsLine c
+      where
+        -- The failure counts that are not zero.
+        countsLine :: Mux.MuxCounts -> Text
+        countsLine Mux.MuxCounts { Mux.mcFailures = failures } =
+          (\parts -> if null parts then "no failures" else Text.intercalate ", " parts) $
+               [ showT n <> " " <> label
+               | (_, _, label, n) <- failureCounts failures
+               , n /= 0
+               ]
+            ++ [ showT n <> " mini-protocol failures"
+               | let n = sum (Mux.mfMiniProtocols failures)
+               , n /= 0
+               ]
+    asMetrics = \case
+      Mux.TraceRemoteCounters c -> countsMetrics Remote c
+      Mux.TraceLocalCounters  c -> countsMetrics Local c
+      where
+        countsMetrics :: Side -> Mux.MuxCounts -> [Metric]
+        countsMetrics side Mux.MuxCounts { Mux.mcFailures = failures } =
+             [ IntM (metricName side family name) (fromIntegral n)
+             | (family, name, _, n) <- failureCounts failures
+             ]
+          ++ perProtocol (protocolsPrefix side <> ".failures") (Mux.mfMiniProtocols failures)
+
+        -- The total, and one counter per mini-protocol number and direction;
+        -- the numbers are the application's, so the names carry them.
+        perProtocol :: Text -> Map (Mux.MiniProtocolNum, MiniProtocolDir) Word64 -> [Metric]
+        perProtocol name counts =
+            IntM name (fromIntegral (sum counts))
+          : [ IntM (name <> "." <> showT n <> "." <> dirName d) (fromIntegral b)
+            | ((Mux.MiniProtocolNum n, d), b) <- Map.toList counts
+            ]
+
+instance MetaTrace Mux.CountersTrace where
+    namespaceFor Mux.TraceRemoteCounters {} = Namespace [] [sideName Remote]
+    namespaceFor Mux.TraceLocalCounters {}  = Namespace [] [sideName Local]
+
+    severityFor (Namespace _ [s]) _ | Just _ <- sideOf s = Just Info
+    severityFor _ _                                      = Nothing
+
+    documentFor (Namespace _ [s]) | Just side <- sideOf s = Just $
+      "Node-wide counters of the " <> sideDoc side <> " muxes, every counters "
+        <> "interval: how they have failed."
+    documentFor _ = Nothing
+
+    metricsDocFor (Namespace _ [s]) | Just side <- sideOf s = metricsDoc side
+    metricsDocFor _ = []
+
+    allNamespaces = [ Namespace [] [sideName side] | side <- [Remote, Local] ]
+
+-- | The metrics of one side. The per-protocol ones, named by the
+-- application's numbers, are described with their totals.
+metricsDoc :: Side -> [(Text, Text)]
+metricsDoc side =
+  [ (egressPrefix side <> ".writeTimeouts",
+     "Muxes dropped because the peer took nothing within the SDU timeout.")
+  , (egressPrefix side <> ".writeErrors",
+     "Muxes dropped because a write failed otherwise than by the peer closing.")
+  , (ingressPrefix side <> ".readTimeouts",
+     "Muxes dropped because an SDU did not arrive in full within the SDU timeout.")
+  , (ingressPrefix side <> ".overruns",
+     "Muxes dropped because the peer exceeded a mini-protocol's ingress limit.")
+  , (ingressPrefix side <> ".protocolErrors",
+     "Muxes dropped for undecodable SDUs, unknown mini-protocols, or data "
+       <> "an initiator-only mux cannot take.")
+  , (ingressPrefix side <> ".readErrors",
+     "Muxes dropped because a read failed otherwise than by the peer closing: "
+       <> "a connection that timed out, a host unreachable.")
+  , (metricName side EitherSide "peerClosed",
+     "Muxes dropped because the peer closed the connection while a mini-protocol "
+       <> "was running: read as its end, or met as a reset or a broken pipe by a "
+       <> "read or a write.")
+  , (metricName side EitherSide "otherErrors",
+     "Muxes dropped because the muxer or the demuxer died with an exception of "
+       <> "a kind not listed: an encoding that would not force, a bug.")
+  , (protocolsPrefix side <> ".failures",
+     "Muxes dropped because a mini-protocol's thread died with an exception of its "
+       <> "own; the same per mini-protocol and direction under "
+       <> ".failures.<num>.<initiator|responder>.")
+  ]

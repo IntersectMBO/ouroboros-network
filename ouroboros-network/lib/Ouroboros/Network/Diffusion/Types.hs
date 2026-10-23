@@ -292,6 +292,9 @@ data Tracers ntnAddr ntnVersion ntnVersionData
 
     , dtDnsTracer :: Tracer m DNSTrace
 
+      -- | The mux counters diffusion was given, every 'dcMuxCountersInterval'.
+    , dtMuxCountersTracer :: Tracer m Mx.CountersTrace
+
       --
       -- NodeToClient tracers
       --
@@ -346,6 +349,7 @@ nullTracers = Tracers {
   , dtLocalServerTracer                          = nullTracer
   , dtLocalInboundGovernorTracer                 = nullTracer
   , dtDnsTracer                                  = nullTracer
+  , dtMuxCountersTracer                          = nullTracer
   }
 
 -- | Diffusion arguments which allow to instantiate a completely different
@@ -579,6 +583,21 @@ data Configuration extraFlags m ntnFd ntnAddr ntcFd ntcAddr = Configuration {
     -- | A fork policy for node-to-client mini-protocols threads spawn by mux.
     --
     , dcLocalMuxForkPolicy :: Mx.ForkPolicy ntcAddr
+
+      -- | Node-wide counters the node-to-node muxes count their failures in,
+      -- if the node keeps any; diffusion traces them every
+      -- 'dcMuxCountersInterval' on 'dtMuxCountersTracer'.
+      --
+    , dcMuxCounters :: Maybe (Mx.MuxCounters m)
+
+      -- | The same for the node-to-client muxes.
+      --
+    , dcLocalMuxCounters :: Maybe (Mx.MuxCounters m)
+
+      -- | How often diffusion traces the mux counters it was given;
+      -- 'Mx.countersInterval' unless a deployment aligns it with its scrape.
+      --
+    , dcMuxCountersInterval :: DiffTime
 
     -- | Mux egress queue's poll interval
     , dcEgressPollInterval :: DiffTime
