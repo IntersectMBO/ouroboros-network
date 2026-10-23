@@ -180,7 +180,8 @@ extraTxIds n (TxSubmissionClient mIdle) =
 
 -- | Append a fabricated body to each non-empty 'MsgReplyTxs' whose txid
 -- is not in the corresponding request list. Models a peer that replies
--- with bodies that were never asked for.
+-- with a body that was not asked for: one whose txid is not in the
+-- request, or a second copy of one that is.
 --
 -- Triggers 'ProtocolErrorTxNotRequested' on the inbound side. The
 -- fabricated body is produced by @mkBad reqs orig@ where @orig@ is the
@@ -297,6 +298,18 @@ splitAcknowledgements (TxSubmissionClient mIdle) =
       }
 
 
+-- | Send the first body of each non-empty 'MsgReplyTxs' twice.  Models a
+-- peer answering a requested txid with two copies of its body: the second
+-- answers no pending key, and would pass for a late body that cancels an
+-- omission.  Triggers 'ProtocolErrorTxNotRequested' on the inbound side.
+duplicateBody
+  :: forall txid tx m a.
+     Monad m
+  => TxSubmissionClient txid tx m a
+  -> TxSubmissionClient txid tx m a
+duplicateBody = unrequestedTx (\_ x -> x)
+
+
 -- | Behavioural fault injection on a peer's outbound 'TxSubmissionClient'.
 -- Peers configured with 'noImpairment' run unwrapped.
 data Impairment = Impairment
@@ -314,6 +327,8 @@ data Impairment = Impairment
     -- ^ exercise acknowledgement-only txid requests at the outbound peer
   , impairOversizedTxIds        :: Bool
     -- ^ advertise a txid with a size above 'max_TX_SIZE'
+  , impairDuplicateBody         :: Bool
+    -- ^ send the first body of each non-empty reply twice
   } deriving (Eq, Show)
 
 -- | The neutral impairment: no delay, no omission. Equivalent to running the
@@ -326,6 +341,7 @@ noImpairment = Impairment { impairBodyDelay     = Nothing
                           , impairUnrequestedTx = False
                           , impairSplitAcknowledgements = False
                           , impairOversizedTxIds = False
+                          , impairDuplicateBody = False
                           }
 
 impairmentSplitAcknowledgements :: Impairment
@@ -354,7 +370,8 @@ applyImpairment :: (MonadDelay m, MonadSTM m)
 applyImpairment Impairment { impairBodyDelay, impairOmitProb, impairSeed
                            , impairExtraTxIds, impairUnrequestedTx
                            , impairSplitAcknowledgements
-                           , impairOversizedTxIds } mkBad c0 = do
+                           , impairOversizedTxIds
+                           , impairDuplicateBody } mkBad c0 = do
     c1 <- if impairOmitProb > 0
             then do
               genVar <- newTVarIO (mkStdGen impairSeed)
@@ -369,7 +386,9 @@ applyImpairment Impairment { impairBodyDelay, impairOmitProb, impairSeed
            | otherwise           = c3
         c5 | impairOversizedTxIds = oversizedTxIds c4
            | otherwise            = c4
-    pure $ if impairSplitAcknowledgements then splitAcknowledgements c5 else c5
+        c6 | impairDuplicateBody = duplicateBody c5
+           | otherwise           = c5
+    pure $ if impairSplitAcknowledgements then splitAcknowledgements c6 else c6
 
 
 -- | Generate a single 'Impairment': a mix of body delay, per-body
@@ -377,7 +396,7 @@ applyImpairment Impairment { impairBodyDelay, impairOmitProb, impairSeed
 -- advertised txid.
 genOneImpairment :: Gen Impairment
 genOneImpairment = oneof [ genOmit, genDelay, genBoth, genExtraTxIds
-                         , genUnrequestedTx, genOversizedTxIds ]
+                         , genUnrequestedTx, genOversizedTxIds, genDuplicateBody ]
   where
     genOmit = do
       p    <- choose (0.1 :: Double, 0.9)
@@ -399,6 +418,7 @@ genOneImpairment = oneof [ genOmit, genDelay, genBoth, genExtraTxIds
       pure noImpairment { impairExtraTxIds = fromIntegral n }
     genUnrequestedTx = pure noImpairment { impairUnrequestedTx = True }
     genOversizedTxIds = pure noImpairment { impairOversizedTxIds = True }
+    genDuplicateBody = pure noImpairment { impairDuplicateBody = True }
 
 -- | Shrink an 'Impairment' towards 'noImpairment'.
 shrinkImpairment :: Impairment -> [Impairment]
@@ -406,6 +426,7 @@ shrinkImpairment imp = List.nub $
      [ imp { impairSplitAcknowledgements = False } | impairSplitAcknowledgements imp ]
   ++ [ imp { impairUnrequestedTx = False } | impairUnrequestedTx imp ]
   ++ [ imp { impairOversizedTxIds = False } | impairOversizedTxIds imp ]
+  ++ [ imp { impairDuplicateBody = False } | impairDuplicateBody imp ]
   ++ [ imp { impairExtraTxIds = a }        | a <- shrink (impairExtraTxIds imp) ]
   ++ [ imp { impairBodyDelay = Nothing }   | isJust (impairBodyDelay imp) ]
   ++ [ imp { impairOmitProb = 0 }          | impairOmitProb imp > 0 ]
@@ -426,6 +447,7 @@ kindOf :: Impairment -> String
 kindOf Impairment { impairSplitAcknowledgements = True } = "split-acknowledgements"
 kindOf Impairment { impairUnrequestedTx = True }                    = "unrequested-tx"
 kindOf Impairment { impairOversizedTxIds = True }                   = "oversized-txids"
+kindOf Impairment { impairDuplicateBody = True }                    = "duplicate-body"
 kindOf Impairment { impairExtraTxIds = n }                | n > 0   = "extra-txids"
 kindOf Impairment { impairBodyDelay = Just _,  impairOmitProb = 0 } = "delay-only"
 kindOf Impairment { impairBodyDelay = Just _,  impairOmitProb = _ } = "delay+omit"
