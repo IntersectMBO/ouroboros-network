@@ -941,14 +941,30 @@ applyReceivedTxIdsImp policy mempoolGetSnapshot sharedStateVar peerInFlightVar
         -- the reply answers the oldest outstanding request, on the tier
         -- recorded when it went out
         replyTier = fst (takeReplyTier peerState)
+        (r0, r1, r2, r5, r10) = replyBucket (length txidsAndSizes)
     modifyTVar countersVar $ \c -> c
       { txIdRepliesReceived = txIdRepliesReceived c + 1
       , txIdsReceived       = txIdsReceived c + received
       , txIdsReceivedSlow   = txIdsReceivedSlow c
                             + (if replyTier == SlowTier then received else 0)
+      , txIdReplies0        = txIdReplies0 c + r0
+      , txIdReplies1        = txIdReplies1 c + r1
+      , txIdReplies2to4     = txIdReplies2to4 c + r2
+      , txIdReplies5to9     = txIdReplies5to9 c + r5
+      , txIdReplies10       = txIdReplies10 c + r10
       , txIdBlockingWait    = txIdBlockingWait c + fromMaybe 0 blockingWait_m
       }
     return peerState'
+
+-- | Which of the five reply-size counters a txid reply of the given size
+-- bumps: none, one, two to four, five to nine, ten or more.
+replyBucket :: Int -> (Word64, Word64, Word64, Word64, Word64)
+replyBucket n
+  | n <= 0    = (1, 0, 0, 0, 0)
+  | n == 1    = (0, 1, 0, 0, 0)
+  | n <= 4    = (0, 0, 1, 0, 0)
+  | n <= 9    = (0, 0, 0, 1, 0)
+  | otherwise = (0, 0, 0, 0, 1)
 
 -- | Process a batch of tx bodies received from this peer.
 applyReceivedTxsImp :: ( MonadSTM m

@@ -134,6 +134,11 @@ instance LogFormatting TxSubmissionCounters where
             , "txIdPipelinedReqsSent" .= txIdPipelinedReqsSent
             , "txIdSlowReqsSent" .= txIdSlowReqsSent
             , "txIdsReceivedSlow" .= txIdsReceivedSlow
+            , "txIdReplies0" .= txIdReplies0
+            , "txIdReplies1" .= txIdReplies1
+            , "txIdReplies2to4" .= txIdReplies2to4
+            , "txIdReplies5to9" .= txIdReplies5to9
+            , "txIdReplies10" .= txIdReplies10
             , "txIdBlockingWaitMs" .= txIdBlockingWait
             , "txPipelineWaitMs" .= txPipelineWait
             , "txSubmissionWaitMs" .= txSubmissionWait
@@ -156,6 +161,11 @@ instance LogFormatting TxSubmissionCounters where
     , IntM "txSubmission.txIdPipelinedReqsSent" (fromIntegral txIdPipelinedReqsSent)
     , IntM "txSubmission.txIdSlowReqsSent"      (fromIntegral txIdSlowReqsSent)
     , IntM "txSubmission.txIdsReceivedSlow"     (fromIntegral txIdsReceivedSlow)
+    , IntM "txSubmission.txIdReplies.0"         (fromIntegral txIdReplies0)
+    , IntM "txSubmission.txIdReplies.1"         (fromIntegral txIdReplies1)
+    , IntM "txSubmission.txIdReplies.2to4"      (fromIntegral txIdReplies2to4)
+    , IntM "txSubmission.txIdReplies.5to9"      (fromIntegral txIdReplies5to9)
+    , IntM "txSubmission.txIdReplies.10"        (fromIntegral txIdReplies10)
     , IntM "txSubmission.txIdBlockingWaitMs" (fromIntegral txIdBlockingWait)
     , IntM "txSubmission.txPipelineWaitMs"   (fromIntegral txPipelineWait)
     , IntM "txSubmission.txSubmissionWaitMs" (fromIntegral txSubmissionWait)
@@ -185,6 +195,11 @@ instance MetaTrace TxSubmissionCounters where
     , ("txSubmission.txIdPipelinedReqsSent", "number of pipelined txid request messages sent")
     , ("txSubmission.txIdSlowReqsSent",      "number of txid request messages sent to peers on the slow fetch tier")
     , ("txSubmission.txIdsReceivedSlow",     "number of txids received in replies to requests sent on the slow fetch tier")
+    , ("txSubmission.txIdReplies.0",         "number of txid replies carrying no txid")
+    , ("txSubmission.txIdReplies.1",         "number of txid replies carrying one txid")
+    , ("txSubmission.txIdReplies.2to4",      "number of txid replies carrying two to four txids")
+    , ("txSubmission.txIdReplies.5to9",      "number of txid replies carrying five to nine txids")
+    , ("txSubmission.txIdReplies.10",        "number of txid replies carrying ten or more txids")
     , ("txSubmission.txIdBlockingWaitMs", "cumulative milliseconds spent waiting for blocking txid replies (idle state proxy)")
     , ("txSubmission.txPipelineWaitMs",   "cumulative milliseconds the pipeline was active from first body request until full drain (loading state proxy)")
     , ("txSubmission.txSubmissionWaitMs", "cumulative milliseconds spent in mempoolAddTxs; high values indicate mempool backpressure")
