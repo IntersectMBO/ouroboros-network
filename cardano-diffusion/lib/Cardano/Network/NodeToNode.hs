@@ -205,6 +205,12 @@ data MiniProtocolParameters = MiniProtocolParameters {
       -- understand why this indirectly limits the number of pipelined requests.
     }
 
+
+-- | Default value of `MiniProtocolParameters`.
+--
+-- Ouroboros-Consensus is using `defaultMiniProtocolParameters` in
+-- `Ouroboros.Consensus.Node.mkNodeKernelArgs`
+--
 defaultMiniProtocolParameters :: MiniProtocolParameters
 defaultMiniProtocolParameters = MiniProtocolParameters {
       chainSyncPipeliningLowMark      = 200
