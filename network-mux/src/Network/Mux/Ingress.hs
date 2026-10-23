@@ -17,7 +17,6 @@ import Data.ByteString.Builder.Internal (lazyByteStringInsert,
            lazyByteStringThreshold)
 import Data.ByteString.Lazy qualified as BL
 import Data.List (nub)
-import Data.Strict.Tuple (pattern (:!:))
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad
@@ -107,8 +106,11 @@ demuxer :: (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
       -> m void
 demuxer ptcls tracer bearer =
   let !dispatchTable = setupDispatchTable ptcls in
+  -- The read with its count masked, as the muxer's write is: a blocked read
+  -- is interruptible, so the bearer's timeout and a cancellation still reach
+  -- it, and an SDU that was read is queued and counted before either lands.
   withTimeoutSerial $ \timeout ->
-  forever $ do
+  forever $ mask_ $ do
     (sdu, _) <- Mx.read bearer tracer timeout
     case lookupMiniProtocol dispatchTable (msNum sdu)
                             -- Notice the mode reversal, ResponderDir is
@@ -119,8 +121,12 @@ demuxer ptcls tracer bearer =
                    throwIO (InitiatorOnly (msNum sdu))
       Just (MiniProtocolDispatchInfo q qMax) ->
         atomically $ do
-          len :!: buf <- readTVar q
+          IngressQueueState len buf received <- readTVar q
           let !len' = len + BL.length (msBlob sdu)
+              -- The bytes read for the mini-protocol, header included, in
+              -- the write that queues them.
+              !received' = received + fromIntegral msHeaderLength
+                                    + fromIntegral (msLength sdu)
           if len' <= fromIntegral qMax
               then do
                 let !buf' = if len == 0
@@ -128,7 +134,7 @@ demuxer ptcls tracer bearer =
                                  lazyByteStringInsert $ msBlob sdu
                                else -- Copy payloads smaller than 128 bytes
                                  buf <> lazyByteStringThreshold 128 (msBlob sdu)
-                writeTVar q $ len' :!: buf'
+                writeTVar q $ IngressQueueState len' buf' received'
               else throwSTM $ IngressQueueOverRun (msNum sdu) (msDir sdu)
 
 lookupMiniProtocol :: MiniProtocolDispatch m

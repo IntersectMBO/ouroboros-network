@@ -643,13 +643,18 @@ instance LogFormatting Mux.CountersTrace where
       Mux.TraceLocalCounters  c -> countsObject Local c
       where
         countsObject :: Side -> Mux.MuxCounts -> Object
-        countsObject side Mux.MuxCounts { Mux.mcFailures = failures } =
+        countsObject side
+                     Mux.MuxCounts { Mux.mcFailures = failures, Mux.mcSent, Mux.mcReceived } =
           mconcat $
                [ "kind" .= String "MuxCounters"
                , "side" .= String (sideName side) ]
             ++ [ Key.fromText name .= n | (_, name, _, n) <- failureCounts failures ]
             ++ [ "miniProtocolFailures" .= sum protocols
                , "miniProtocolFailuresByProtocol" .= byProtocol "failures" protocols
+               , "bytesSent" .= sum mcSent
+               , "bytesSentByProtocol" .= byProtocol "bytes" mcSent
+               , "bytesReceived" .= sum mcReceived
+               , "bytesReceivedByProtocol" .= byProtocol "bytes" mcReceived
                ]
           where
             protocols :: Map (Mux.MiniProtocolNum, MiniProtocolDir) Word64
@@ -663,11 +668,13 @@ instance LogFormatting Mux.CountersTrace where
       Mux.TraceRemoteCounters c -> "Node-to-node mux counters: " <> countsLine c
       Mux.TraceLocalCounters  c -> "Node-to-client mux counters: " <> countsLine c
       where
-        -- The failure counts that are not zero.
+        -- The byte totals, and the failure counts that are not zero.
         countsLine :: Mux.MuxCounts -> Text
-        countsLine Mux.MuxCounts { Mux.mcFailures = failures } =
-          (\parts -> if null parts then "no failures" else Text.intercalate ", " parts) $
-               [ showT n <> " " <> label
+        countsLine Mux.MuxCounts { Mux.mcFailures = failures, Mux.mcSent, Mux.mcReceived } =
+          Text.intercalate ", " $
+               [ showT (sum mcSent) <> " bytes sent"
+               , showT (sum mcReceived) <> " bytes received" ]
+            ++ [ showT n <> " " <> label
                | (_, _, label, n) <- failureCounts failures
                , n /= 0
                ]
@@ -680,11 +687,14 @@ instance LogFormatting Mux.CountersTrace where
       Mux.TraceLocalCounters  c -> countsMetrics Local c
       where
         countsMetrics :: Side -> Mux.MuxCounts -> [Metric]
-        countsMetrics side Mux.MuxCounts { Mux.mcFailures = failures } =
+        countsMetrics side
+                      Mux.MuxCounts { Mux.mcFailures = failures, Mux.mcSent, Mux.mcReceived } =
              [ IntM (metricName side family name) (fromIntegral n)
              | (family, name, _, n) <- failureCounts failures
              ]
           ++ perProtocol (protocolsPrefix side <> ".failures") (Mux.mfMiniProtocols failures)
+          ++ perProtocol (egressPrefix side    <> ".bytes")    mcSent
+          ++ perProtocol (ingressPrefix side   <> ".bytes")    mcReceived
 
         -- The total, and one counter per mini-protocol number and direction;
         -- the numbers are the application's, so the names carry them.
@@ -704,7 +714,7 @@ instance MetaTrace Mux.CountersTrace where
 
     documentFor (Namespace _ [s]) | Just side <- sideOf s = Just $
       "Node-wide counters of the " <> sideDoc side <> " muxes, every counters "
-        <> "interval: how they have failed."
+        <> "interval: how they have failed, and the bytes they sent and read."
     documentFor _ = Nothing
 
     metricsDocFor (Namespace _ [s]) | Just side <- sideOf s = metricsDoc side
@@ -720,6 +730,10 @@ metricsDoc side =
      "Muxes dropped because the peer took nothing within the SDU timeout.")
   , (egressPrefix side <> ".writeErrors",
      "Muxes dropped because a write failed otherwise than by the peer closing.")
+  , (egressPrefix side <> ".bytes",
+     "Bytes written, SDU headers included; the same per mini-protocol and "
+       <> "direction under .bytes.<num>.<initiator|responder>, the numbers "
+       <> "the application's.")
   , (ingressPrefix side <> ".readTimeouts",
      "Muxes dropped because an SDU did not arrive in full within the SDU timeout.")
   , (ingressPrefix side <> ".overruns",
@@ -737,6 +751,10 @@ metricsDoc side =
   , (metricName side EitherSide "otherErrors",
      "Muxes dropped because the muxer or the demuxer died with an exception of "
        <> "a kind not listed: an encoding that would not force, a bug.")
+  , (ingressPrefix side <> ".bytes",
+     "Bytes read, SDU headers included; an SDU that overran its ingress limit is "
+       <> "not counted; the same per mini-protocol and direction under "
+       <> ".bytes.<num>.<initiator|responder>.")
   , (protocolsPrefix side <> ".failures",
      "Muxes dropped because a mini-protocol's thread died with an exception of its "
        <> "own; the same per mini-protocol and direction under "

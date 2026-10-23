@@ -584,8 +584,8 @@ data Configuration extraFlags m ntnFd ntnAddr ntcFd ntcAddr = Configuration {
     --
     , dcLocalMuxForkPolicy :: Mx.ForkPolicy ntcAddr
 
-      -- | Node-wide counters the node-to-node muxes count their failures in,
-      -- if the node keeps any; diffusion traces them every
+      -- | Node-wide counters the node-to-node muxes count their failures and
+      -- bytes in, if the node keeps any; diffusion traces them every
       -- 'dcMuxCountersInterval' on 'dtMuxCountersTracer'.
       --
     , dcMuxCounters :: Maybe (Mx.MuxCounters m)

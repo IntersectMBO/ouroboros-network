@@ -281,7 +281,6 @@ benchmark socket-read-write-benchmarks
     io-classes:{io-classes, si-timers, strict-stm},
     network,
     network-mux,
-    strict,
     tasty-bench,
 
   default-extensions: ImportQualifiedPost
