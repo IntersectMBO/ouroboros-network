@@ -1523,6 +1523,13 @@ shrinkImpairmentMap m =
      , imp' <- shrinkImpairment imp
      ]
 
+-- | Resilience to impaired peers: the well-behaved peers' valid txs reach
+-- the mempool, no txid nobody advertised leaks in, the counters stay
+-- consistent and the shared state is reclaimed; and the inbound answers
+-- each kind of impairment as it should: an oversized txid ends the peer
+-- with a size error, and a reply carrying a body twice, beside every
+-- body asked for or in place of one, is rejected whole as a body not
+-- requested, so no tx only that peer carries reaches the mempool.
 prop_txSubmission_resilientToImpairment :: TxSubmissionImpairmentState
                                         -> Property
 prop_txSubmission_resilientToImpairment
@@ -1533,32 +1540,49 @@ prop_txSubmission_resilientToImpairment
         wbAddrs   = allAddrs `Set.difference` Map.keysSet imp
         wbPeerTxs = [ txs | addr <- Set.toList wbAddrs
                           , let (txs, _, _) = peerMap st Map.! addr ]
-        allOutIds = Set.fromList
-                  $ concatMap (\(txs, _, _) -> getTxId <$> txs)
-                  $ Map.elems (peerMap st)
+        idsOf addr = let (txs, _, _) = peerMap st Map.! addr in Set.fromList (getTxId <$> txs)
+        allOutIds = Set.unions (map idsOf (Set.toList allAddrs))
         tr        = runSimTrace (txSubmissionSimulation st)
+        events    = selectTraceEventsDynamic tr :: [PeerInboundTraceType]
         -- every peer has a tx to advertise, so the first (blocking) reply of
         -- an 'impairOversizedTxIds' peer always carries an oversized txid
         oversizedAddrs = Map.keysSet (Map.filter impairOversizedTxIds imp)
         sizeErrorAddrs = Set.fromList
-          [ addr
-          | PeerInboundTrace addr
-              (TraceTxInboundError ProtocolErrorTxSizeTooLarge {})
-              <- selectTraceEventsDynamic tr :: [PeerInboundTraceType]
-          ]
+          [ addr | PeerInboundTrace addr (TraceTxInboundError ProtocolErrorTxSizeTooLarge {}) <- events ]
+        -- a duplicate-body peer asked for bodies doubles its first reply,
+        -- which is rejected as a body not requested; the txids only it
+        -- carries never reach the mempool (a shrunk state may give
+        -- another peer the same txid, which that peer delivers)
+        duplicateAddrs = Map.keysSet (Map.filter (isJust . impairDuplicateBody) imp)
+        askedAddrs     = Set.fromList
+          [ addr | PeerInboundTrace addr (TraceTxInboundRequestTxs (_ : _)) <- events ]
+        notRequestedAddrs = Set.fromList
+          [ addr | PeerInboundTrace addr (TraceTxInboundError ProtocolErrorTxNotRequested) <- events ]
+        duplicateAsked = duplicateAddrs `Set.intersection` askedAddrs
+        exclusiveOf addr = idsOf addr `Set.difference` Set.unions [ idsOf a | a <- Set.toList allAddrs, a /= addr ]
+        duplicateOwn   = Set.unions (map exclusiveOf (Set.toList duplicateAddrs))
     in label ("impaired peers: "     ++ show (Map.size imp))
      $ label ("well-behaved peers: " ++ show (Set.size wbAddrs))
      $ tabulate "impairment kind" (kindOf <$> Map.elems imp)
+     $ checkCoverage
+     $ cover 10 (not (Set.null duplicateAsked)) "a duplicate-body peer asked for bodies"
      $ case traceResult True tr of
          Left e -> counterexample (show e)
                  . counterexample (ppSayTrace tr)
                  $ False
          Right (inmp, _, finalState) ->
+             let inIds = Set.fromList (getTxId <$> inmp) in
              counterexample (ppSayTrace tr)
            $ conjoin (validateWellBehaved inmp `map` wbPeerTxs)
              .&&. noContamination allOutIds inmp
              .&&. counterexample "ProtocolErrorTxSizeTooLarge not raised exactly for the oversized-txids peers"
                     (sizeErrorAddrs === oversizedAddrs)
+             .&&. counterexample ("a duplicate-body peer asked for bodies, its reply not rejected: "
+                                    ++ show (Set.toList (duplicateAsked `Set.difference` notRequestedAddrs)))
+                    (duplicateAsked `Set.isSubsetOf` notRequestedAddrs)
+             .&&. counterexample ("a duplicate-body peer's own txs in the mempool: "
+                                    ++ show (Set.toList (duplicateOwn `Set.intersection` inIds)))
+                    (Set.null (duplicateOwn `Set.intersection` inIds))
              .&&. prop_counterInvariants tr
              .&&. prop_sharedStateClean finalState
   where
