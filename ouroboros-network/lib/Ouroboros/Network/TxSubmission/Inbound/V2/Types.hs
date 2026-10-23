@@ -68,6 +68,7 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Types
   , TxLease (..)
   , TxEntry (..)
   , PeerAction (..)
+  , ResolvedPeerAction (..)
   , PeerPhase (..)
   , PeerTier (..)
   , recordRequestTier
@@ -270,6 +271,18 @@ data PeerAction
     PeerSubmitTxs ![TxKey]
   deriving stock (Eq, Show, Generic)
   deriving anyclass NFData
+
+-- | A 'PeerAction' with what carrying it out takes from the shared state,
+-- resolved in the deciding transaction: the txids and advertised sizes of
+-- the bodies to request, the buffered bodies to submit with their txids.
+-- A key that leaves the state once the decision is made, by another peer's
+-- submission of the same tx and the retention's expiry, cannot fail the
+-- resolution afterwards.
+data ResolvedPeerAction txid tx
+  = ResolvedDoNothing !Word64 !(Maybe DiffTime) !(Maybe Word64)
+  | ResolvedRequestTxIds !NumTxIdsToAck !NumTxIdsToReq
+  | ResolvedRequestTxs !(Map txid SizeInBytes)
+  | ResolvedSubmitTxs ![(TxKey, txid, tx)]
 
 
 -- | A batch of transaction body requests sent to a peer.
