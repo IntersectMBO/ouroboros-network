@@ -61,13 +61,14 @@ import Ouroboros.Network.RegisteredDelay qualified as RegisteredDelay
 import Ouroboros.Network.Tx (HasRawTxId (..), getRawTxId)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
 import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (PeerRegistration,
-           PeerTierEntry (..), PeerTxRegistry (..), SharedTxStateVar,
-           TxSubmissionCountersVar, awaitClaimableChangeImp, drainPause,
-           joinTier, leaveTier, newPeerTxRegistry, newSharedTxStateVar,
-           newTxSubmissionCountersVar, registerPeerCounters, registerPeerTier,
-           retirePeerCounters, rotateTiers, scrubFromPeerInFlight,
-           snapshotCountersWith, sweepBatch, sweepInterval, tierCensus,
-           txCountersThreadV2, withTier, writeSharedStateIfChanged)
+           PeerTierEntry (..), PeerTxAPI (..), PeerTxRegistry (..),
+           SharedTxStateVar, TxSubmissionCountersVar, awaitClaimableChangeImp,
+           drainPause, joinTier, leaveTier, newPeerTxRegistry,
+           newSharedTxStateVar, newTxSubmissionCountersVar,
+           registerPeerCounters, registerPeerTier, retirePeerCounters,
+           rotateTiers, scrubFromPeerInFlight, snapshotCountersWith, sweepBatch,
+           sweepInterval, tierCensus, txCountersThreadV2, withPeer, withTier,
+           writeSharedStateIfChanged)
 import Ouroboros.Network.TxSubmission.Inbound.V2.State
 import Ouroboros.Network.TxSubmission.Inbound.V2.Tier (censusOf, effectiveTier,
            isSource, nextJitter, orderFast, recordNovel, slowWait, sourceCount,
@@ -142,6 +143,7 @@ tests =
     , testProperty "the shared state's counts are traced under every field's name" prop_countFields_everyField
     , testProperty "nanosecond deadlines never expire early, and expire within 1 ns" prop_retainDeadline_rounding
     , testProperty "counters snapshot counts every peer exactly once" prop_snapshotCounters_exactlyOnce
+    , testProperty "the reply-size counters bucket each txid reply by the txids it carried" prop_replySizeCounters
     , testProperty "a release removes its own registration, not another under its address" prop_registry_releaseOwn
     , testProperty "nextPeerActionPipelined rejects request-only (ack=0, req=N) messages" prop_nextPeerActionPipelined_rejectsRequestOnly
     , testCaseSteps "nextPeerActionPipelined rejects pure-ack (ack=N, req=0) messages" unit_nextPeerActionPipelined_rejectsPureAck
@@ -5270,6 +5272,44 @@ prop_tier_withTierStanding (ArbTxDecisionPolicy policy0) root coinFast promote (
     ps     = emptyPeerTxLocalState { peerNovelAt = recordNovel policy t0 accepts StrictSeq.empty }
                :: PeerTxLocalState (Tx TxId)
     source = isSource policy t0 (peerNovelAt ps)
+
+-- | The reply-size counters through the registry: two txid replies of
+-- the same @n@ txids bump the bucket of @n@ twice and no other bucket,
+-- for @n@ across every bucket and its boundaries.
+prop_replySizeCounters :: ArbTxDecisionPolicy -> NonNegative Int -> Property
+prop_replySizeCounters (ArbTxDecisionPolicy policy0) (NonNegative n0) =
+    runSimOrThrow $ do
+      registry  <- newPeerTxRegistry (mkStdGen 3)
+      sharedVar <- newSharedTxStateVar (emptySharedTxState :: SharedTxState PeerAddr TxId)
+      retired   <- newTxSubmissionCountersVar mempty
+      mempool   <- emptyMempool
+      _ <- withPeer policy (getMempoolReader mempool) sharedVar registry retired
+                    (0 :: PeerAddr) (pure False) $ \api -> do
+        -- each reply answers a request for n ids
+        ps1 <- applyReceivedTxIds api t1 Nothing (fromIntegral n) ids
+                 emptyPeerTxLocalState { peerRequestedTxIds = fromIntegral n }
+        applyReceivedTxIds api t2 Nothing (fromIntegral n) ids
+          ps1 { peerRequestedTxIds = fromIntegral n }
+      c <- snapshotCountersWith atomically retired registry
+      let buckets = (txIdReplies0 c, txIdReplies1 c, txIdReplies2to4 c, txIdReplies5to9 c, txIdReplies10 c)
+      pure $ conjoin
+        [ counterexample ("replies " ++ show (txIdRepliesReceived c)) (txIdRepliesReceived c === 2)
+        , counterexample ("received " ++ show (txIdsReceived c)) (txIdsReceived c === 2 * fromIntegral n)
+        , counterexample ("buckets " ++ show buckets) (buckets === expectedBuckets)
+        ]
+  where
+    policy = policy0 { txSourceRate = 0 }
+    n      = n0 `mod` 13
+    t1     = Time 11
+    t2     = Time 12
+    ids    = [ (i, 100) | i <- [1 .. n] ] :: [(TxId, SizeInBytes)]
+    expectedBuckets :: (Word64, Word64, Word64, Word64, Word64)
+    expectedBuckets
+      | n == 0    = (2, 0, 0, 0, 0)
+      | n == 1    = (0, 2, 0, 0, 0)
+      | n <= 4    = (0, 0, 2, 0, 0)
+      | n <= 9    = (0, 0, 0, 2, 0)
+      | otherwise = (0, 0, 0, 0, 2)
 
 -- | One fetch cycle for a peer: txids it advertises, which of the requested
 -- bodies it delivers, and which of the delivered ones the mempool rejects.

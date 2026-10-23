@@ -766,6 +766,9 @@ prop_tierCounterBounds policy tr =
                                       ++ show (txIdsReceived s))
                       (txIdsReceivedSlow s === txIdsReceived s)
                else property True)
+      .&&. counterexample "reply sizes partition the replies"
+             (txIdReplies0 s + txIdReplies1 s + txIdReplies2to4 s + txIdReplies5to9 s + txIdReplies10 s
+                === txIdRepliesReceived s)
       | s <- selectTraceEventsDynamic tr :: [TxSubmissionCounters]
       ]
   where
