@@ -30,7 +30,6 @@ import Data.IntSet qualified as IntSet
 import Data.List as List (foldl')
 import Data.Map.Strict qualified as Map
 import Data.Sequence.Strict qualified as StrictSeq
-import Data.Word (Word64)
 import GHC.Stack (HasCallStack)
 
 import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToAck,
@@ -81,11 +80,11 @@ data PeerActionChoice peeraddr =
     -- whether the message is blocking or pipelined based on the
     -- (post-ack) unack queue.
   | ChooseRequestTxIds ![TxKey] !NumTxIdsToAck !NumTxIdsToReq !(StrictSeq.StrictSeq TxKey)
-    -- | Park until the shared state advances or the wake delay elapses:
-    -- the generation seen, an optional wake delay and, for the slow
-    -- tier's wait while its gate holds a txid request, the claimable
-    -- counter seen, to park on instead of the generation.
-  | ChooseDoNothing !Word64 !(Maybe DiffTime) !(Maybe Word64)
+    -- | Park until the counter moves or the wake delay elapses: an
+    -- optional wake delay and the counter, the claimable one for the slow
+    -- tier's wait while its gate holds a txid request, the wake counter
+    -- otherwise.
+  | ChooseDoNothing !(Maybe DiffTime) !ParkCounter
 
 -- | Build a precomputed context for selecting the next action for a peer.
 --
@@ -244,9 +243,8 @@ pickPeerActionChoice txIdRequestMode ctx
   , noBuffered =
       waitGate gateUntil
   | otherwise =
-      ChooseDoNothing generation (nextWakeDelay ctx) Nothing
+      ChooseDoNothing (nextWakeDelay ctx) WakeCounter
   where
-    generation = sharedGeneration (pacSharedState ctx)
     noBuffered = IntMap.null (peerDownloadedTxs (pacPeerState ctx))
 
     -- Wait for the gate, or less for a timed claim or bump, parked on the
@@ -257,12 +255,12 @@ pickPeerActionChoice txIdRequestMode ctx
     -- peer's accept may be what lets it submit that body, and the gate is
     -- only meant to space txid requests.
     waitGate gateUntil =
-        ChooseDoNothing generation (Just delay) park
+        ChooseDoNothing (Just delay) park
       where
         gateDelay = gateUntil `diffTime` pacNow ctx
         delay     = maybe gateDelay (min gateDelay) (nextWakeDelay ctx)
-        park | noBuffered = Just $! sharedClaimable (pacSharedState ctx)
-             | otherwise  = Nothing
+        park | noBuffered = ClaimableCounter
+             | otherwise  = WakeCounter
 
 -- | Execute a chosen peer action and compute resulting state updates
 applyPeerActionChoice :: PeerActionContext peeraddr txid tx
@@ -278,8 +276,8 @@ applyPeerActionChoice ctx choice =
                           unacknowledgedTxIds' ->
          applyRequestTxIdsChoice ctx acknowledgedTxIds txIdsToAcknowledge txIdsToRequest
                                  unacknowledgedTxIds'
-       ChooseDoNothing generation wakeDelay park ->
-         applyDoNothingChoice ctx generation wakeDelay park
+       ChooseDoNothing wakeDelay park ->
+         applyDoNothingChoice ctx wakeDelay park
 
 -- | The slow tier's gate on a txid request: the time it opens, when the
 -- peer is slow and the gate set by the previous request has not passed.
@@ -401,12 +399,11 @@ applyRequestTxIdsChoice ctx acknowledgedTxIds txIdsToAcknowledge txIdsToRequest 
 -- | Construct a 'PeerDoNothing' action.
 applyDoNothingChoice
   :: PeerActionContext peeraddr txid tx
-  -> Word64
   -> Maybe DiffTime
-  -> Maybe Word64
+  -> ParkCounter
   -> (PeerAction, PeerTxLocalState tx, PeerTxInFlight, SharedTxState peeraddr txid)
-applyDoNothingChoice ctx generation wakeDelay park =
-  ( PeerDoNothing generation wakeDelay park
+applyDoNothingChoice ctx wakeDelay park =
+  ( PeerDoNothing wakeDelay park
   , pacPeerState ctx
   , pacPeerInFlight ctx
   , pacSharedState ctx
@@ -735,7 +732,7 @@ nextStuckBumpWake _ _ _ = Nothing
 -- happen for downloaded TXs.
 --
 -- 'sharedGeneration' is bumped when entries change so other peers wake out
--- of 'awaitSharedChange' and re-evaluate eligibility under the new cap.
+-- of 'awaitPark' and re-evaluate eligibility under the new cap.
 bumpStuckEntries :: forall peeraddr txid tx.
                     Time
                  -> TxDecisionPolicy
