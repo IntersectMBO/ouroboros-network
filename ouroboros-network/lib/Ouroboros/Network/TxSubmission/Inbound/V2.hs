@@ -393,7 +393,12 @@ txSubmissionInboundV2
       CollectTxs requested txs -> do
         let received = Map.fromList [ (txId tx, tx) | tx <- txs ]
             wrongSizedTxs = collectWrongSizedTxs requested received
-        unless (Map.keysSet received `Set.isSubsetOf` Map.keysSet requested) $
+        -- every body answers a requested txid, and no txid twice: a second
+        -- copy would answer no pending key and pass for a late body,
+        -- cancelling the omission of a key the peer left out
+        unless (Map.keysSet received `Set.isSubsetOf` Map.keysSet requested
+                && Map.size received == length txs) $ do
+          traceWith tracer (TraceTxInboundError ProtocolErrorTxNotRequested)
           throwIO ProtocolErrorTxNotRequested
         traceWith tracer $ TraceTxSubmissionCollected (txId <$> txs)
         unless (null wrongSizedTxs) $ do

@@ -118,6 +118,7 @@ tests = testGroup "AppV2"
   , testProperty "backpressure"          prop_txSubmission_backpressure
   , testProperty "inflight"              prop_txSubmission_inflight
   , testProperty "resilientToImpairment" prop_txSubmission_resilientToImpairment
+  , testProperty "duplicateBodyRejected" prop_txSubmission_duplicateBodyRejected
   , testProperty "peerDisconnect"        prop_txSubmission_peerDisconnect
   , testProperty "SharedTxState" $ withMaxSize 25
                                  $ BaseQC.withNumTests 25
@@ -1055,6 +1056,25 @@ prop_txSubmission_resilientToImpairment (TxSubmissionImpairmentState st) =
           extras = inIds `Set.difference` allOutIds in
         counterexample ("contaminating txids: " ++ show (Set.toList extras))
       $ property (Set.null extras)
+
+-- | A peer answering a requested txid with two copies of its body is a
+-- protocol error on the inbound side: the second copy would answer no
+-- pending key and pass for a late body that cancels an omission.
+prop_txSubmission_duplicateBodyRejected :: TxSubmissionImpairmentState -> Property
+prop_txSubmission_duplicateBodyRejected (TxSubmissionImpairmentState st0) =
+    case [ a | (a, (txs, _, _)) <- Map.toList (peerMap st0), not (null txs) ] of
+      [] -> label "no peer with bodies" (property True)
+      addr : _ ->
+        let st = st0 { peerImpairment = Map.singleton addr noImpairment { impairDuplicateBody = True } }
+            tr = runSimTrace (txSubmissionSimulation st)
+            events = [ e | PeerInboundTrace a e <- selectTraceEventsDynamic tr :: [PeerInboundTraceType]
+                         , a == addr ]
+            asked    = or [ True | TraceTxInboundRequestTxs (_ : _) <- events ]
+            rejected = or [ True | TraceTxInboundError ProtocolErrorTxNotRequested <- events ]
+        in cover 50 asked "bodies requested from the impaired peer"
+         $ counterexample (ppSayTrace tr)
+         $ counterexample "bodies requested, the doubled reply not rejected"
+         $ not asked || rejected
 
 prop_TxSubmissionImpairmentState_validGen :: TxSubmissionImpairmentState -> Property
 prop_TxSubmissionImpairmentState_validGen st =
