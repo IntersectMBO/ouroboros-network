@@ -69,6 +69,8 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Types
   , TxDoom (..)
   , TxEntry (..)
   , PeerAction (..)
+  , ResolvedPeerAction (..)
+  , ParkCounter (..)
   , PeerPhase (..)
   , PeerTier (..)
   , TxIdRequest (..)
@@ -233,7 +235,7 @@ data TxEntry peeraddr = TxEntry {
 -- transition.  'pifLeased' is a subset of their union.
 data PeerTxInFlight = PeerTxInFlight {
     -- | Keys this peer currently has in its advertised window.  Used by
-    -- 'nextWakeDelay' to scan for the earliest claim wake.
+    -- 'advertisedOutlook' to scan for the earliest claim wake.
     --
     -- Invariant: a subset of the live keys (active 'sharedTxTable'
     -- union retained 'sharedRetainedTxs'), but for a key whose retention
@@ -266,18 +268,28 @@ emptyPeerTxInFlight = PeerTxInFlight {
     pifSubmitting  = IntSet.empty
   }
 
+-- | The counter a parked peer waits on: the wake counter
+-- ('sharedGeneration'); the claimable counter ('sharedClaimable'), the
+-- slow fetch tier's park while its gate holds a txid request; or none,
+-- the park of a gated peer with no body buffered and no advertised key
+-- with a live entry, which waits for its gate alone, since nothing the
+-- claimable counter announces is its to claim before then.  A park on no
+-- counter always has a delay.
+data ParkCounter = WakeCounter | ClaimableCounter | NoCounter
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass NFData
+
 -- | The next peer-local action chosen by the V2 worker thread.
 --
 -- V2 drives progress from the peer thread itself. Shared state only decides
 -- whether a peer is allowed to perform an action; the peer thread then carries
 -- it out directly.
 data PeerAction
-  = -- | No immediate work is available.  The peer should wait for either a
-    -- shared-state generation change or the optional timeout; or, when the
-    -- third field is set, for the 'sharedClaimable' counter to move past it
-    -- instead of the generation: the slow fetch tier's park while its gate
-    -- holds a txid request.
-    PeerDoNothing !Word64 !(Maybe DiffTime) !(Maybe Word64)
+  = -- | No immediate work is available: the peer parks until the counter
+    -- moves or the optional delay expires.  The value to wait past is the
+    -- registry's to read, in the deciding transaction
+    -- ('ResolvedDoNothing').
+    PeerDoNothing !(Maybe DiffTime) !ParkCounter
   | -- | Send a txid protocol message acknowledging the first argument and
     -- requesting the second argument.
     PeerRequestTxIds !NumTxIdsToAck !NumTxIdsToReq
@@ -288,6 +300,20 @@ data PeerAction
     PeerSubmitTxs ![TxKey]
   deriving stock (Eq, Show, Generic)
   deriving anyclass NFData
+
+-- | A 'PeerAction' with what carrying it out takes from the shared state,
+-- resolved in the deciding transaction: the txids and advertised sizes of
+-- the bodies to request, the buffered bodies to submit with their txids.
+-- A key that leaves the state once the decision is made, by another peer's
+-- submission of the same tx and the retention's expiry, cannot fail the
+-- resolution afterwards.
+data ResolvedPeerAction txid tx
+  = ResolvedDoNothing !(Maybe DiffTime) !ParkCounter !Word64
+    -- ^ the park's counter and its value as the deciding transaction read
+    -- it, to wait past
+  | ResolvedRequestTxIds !NumTxIdsToAck !NumTxIdsToReq
+  | ResolvedRequestTxs !(Map txid SizeInBytes)
+  | ResolvedSubmitTxs ![(TxKey, txid, tx)]
 
 
 -- | A batch of transaction body requests sent to a peer.
@@ -584,7 +610,7 @@ data PeerTxLocalState tx = PeerTxLocalState {
     -- | Coarse phase of this peer's worker thread. Updated by
     -- 'nextPeerAction' / 'nextPeerActionPipelined' when an action is
     -- chosen and inspected in 'serverIdle' to decide whether to skip
-    -- 'awaitSharedChange' on an Active->Idle transition.
+    -- 'awaitPark' on an Active->Idle transition.
     peerPhase               :: !PeerPhase,
 
     -- | Unacknowledged txids in the order advertised by the peer.
@@ -730,7 +756,7 @@ data SharedTxState peeraddr txid = SharedTxState {
     sharedNextTxKey   :: !Int,
     -- | Wake counter.  Bumped on transitions that may grant other peers a
     -- new option (lease release, new entry accepted into the mempool, cap
-    -- bump, ...).  Parked peers watch this via 'awaitSharedChange'.
+    -- bump, ...).  Parked peers watch this via 'awaitPark'.
     sharedGeneration  :: !Word64,
     -- | Write counter.  Bumped by every step that changes the state, the
     -- ones that bump 'sharedGeneration' included; 'writeSharedStateIfChanged'

@@ -31,7 +31,6 @@ import Data.IntSet qualified as IntSet
 import Data.List as List (foldl')
 import Data.Map.Strict qualified as Map
 import Data.Sequence.Strict qualified as StrictSeq
-import Data.Word (Word64)
 import GHC.Stack (HasCallStack)
 
 import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToAck,
@@ -82,11 +81,11 @@ data PeerActionChoice peeraddr =
     -- whether the message is blocking or pipelined based on the
     -- (post-ack) unack queue.
   | ChooseRequestTxIds ![TxKey] !NumTxIdsToAck !NumTxIdsToReq !(StrictSeq.StrictSeq TxKey)
-    -- | Park until the shared state advances or the wake delay elapses:
-    -- the generation seen, an optional wake delay and, for the slow
-    -- tier's wait while its gate holds a txid request, the claimable
-    -- counter seen, to park on instead of the generation.
-  | ChooseDoNothing !Word64 !(Maybe DiffTime) !(Maybe Word64)
+    -- | Park until the counter moves or the wake delay elapses: an
+    -- optional wake delay and the counter, the claimable one for the slow
+    -- tier's wait while its gate holds a txid request, the wake counter
+    -- otherwise.
+  | ChooseDoNothing !(Maybe DiffTime) !ParkCounter
 
 -- | Build a precomputed context for selecting the next action for a peer.
 --
@@ -252,25 +251,32 @@ pickPeerActionChoice txIdRequestMode ctx
   , noBuffered =
       waitGate gateUntil
   | otherwise =
-      ChooseDoNothing generation (nextWakeDelay ctx) Nothing
+      ChooseDoNothing wakeDelay WakeCounter
   where
-    generation = sharedGeneration (pacSharedState ctx)
     noBuffered = IntMap.null (peerDownloadedTxs (pacPeerState ctx))
+
+    -- one pass over the advertised keys, for the wake and the gate's park
+    (anyLive, claimWake) = advertisedOutlook ctx
+    wakeDelay = nextWakeDelay ctx claimWake
 
     -- Wait for the gate, or less for a timed claim or bump, parked on the
     -- claimable counter rather than the generation, which moves on every
     -- accept: a slow peer re-evaluating at each of those would cost what
-    -- the tier saves, while a lease released elsewhere still wakes it.  A
+    -- the tier saves, while a lease released elsewhere still wakes it; on
+    -- no counter when no key it advertises has a live entry, since the
+    -- keys it holds stay dead until it acknowledges them, after the gate,
+    -- and nothing the claimable counter announces is its to claim.  A
     -- peer holding a buffered body keeps the generation, since another
     -- peer's accept may be what lets it submit that body, and the gate is
     -- only meant to space txid requests.
     waitGate gateUntil =
-        ChooseDoNothing generation (Just delay) park
+        ChooseDoNothing (Just delay) park
       where
         gateDelay = gateUntil `diffTime` pacNow ctx
-        delay     = maybe gateDelay (min gateDelay) (nextWakeDelay ctx)
-        park | noBuffered = Just $! sharedClaimable (pacSharedState ctx)
-             | otherwise  = Nothing
+        delay     = maybe gateDelay (min gateDelay) wakeDelay
+        park | not noBuffered = WakeCounter
+             | anyLive        = ClaimableCounter
+             | otherwise      = NoCounter
 
 -- | Execute a chosen peer action and compute resulting state updates
 applyPeerActionChoice :: PeerActionContext peeraddr txid tx
@@ -286,8 +292,8 @@ applyPeerActionChoice ctx choice =
                           unacknowledgedTxIds' ->
          applyRequestTxIdsChoice ctx acknowledgedTxIds txIdsToAcknowledge txIdsToRequest
                                  unacknowledgedTxIds'
-       ChooseDoNothing generation wakeDelay park ->
-         applyDoNothingChoice ctx generation wakeDelay park
+       ChooseDoNothing wakeDelay park ->
+         applyDoNothingChoice ctx wakeDelay park
 
 -- | The slow tier's gate on a txid request: the time it opens, when the
 -- peer is slow and the gate set by the previous request for txids has
@@ -417,12 +423,11 @@ applyRequestTxIdsChoice ctx acknowledgedTxIds txIdsToAcknowledge txIdsToRequest 
 -- | Construct a 'PeerDoNothing' action.
 applyDoNothingChoice
   :: PeerActionContext peeraddr txid tx
-  -> Word64
   -> Maybe DiffTime
-  -> Maybe Word64
+  -> ParkCounter
   -> (PeerAction, PeerTxLocalState tx, PeerTxInFlight, SharedTxState peeraddr txid)
-applyDoNothingChoice ctx generation wakeDelay park =
-  ( PeerDoNothing generation wakeDelay park
+applyDoNothingChoice ctx wakeDelay park =
+  ( PeerDoNothing wakeDelay park
   , pacPeerState ctx
   , pacPeerInFlight ctx
   , pacSharedState ctx
@@ -664,43 +669,48 @@ pickRequestTxIdsAction txIdRequestMode ctx@PeerActionContext { pacConfig, pacPee
             (fromIntegral (maxNumUnacknowledgedTxIds pacConfig) - unackedAndRequested + numOfAcked)
             (fromIntegral (maxNumTxIdsToRequest pacConfig) - numOfRequested)
 
--- | Compute the time delay until the peer should next wake to check for work.
-nextWakeDelay :: PeerActionContext peeraddr txid tx
-              -> Maybe DiffTime
-nextWakeDelay PeerActionContext { pacNow, pacPolicy, pacClaimDelay
-                                , pacPeerState, pacPeerInFlight, pacSharedState } =
-    (`diffTime` pacNow) <$> minMaybe nextClaimWake nextBumpWake
+-- | What the keys this peer advertises hold for it, in one pass over
+-- them: whether any has a live entry, and the earliest claim-ready time
+-- after now among those entries.
+advertisedOutlook :: PeerActionContext peeraddr txid tx
+                  -> (Bool, Maybe Time)
+advertisedOutlook PeerActionContext { pacNow, pacClaimDelay, pacPeerInFlight, pacSharedState } =
+    IntSet.foldl' step (False, Nothing) (pifAdvertised pacPeerInFlight)
   where
-    -- Wake at the earliest claim-ready time among txs this peer advertises.
-    nextClaimWake =
-      IntSet.foldl' stepClaim Nothing (pifAdvertised pacPeerInFlight)
-
-    -- Wake at the earliest bump-ready time among txs this peer holds buffered.
-    -- Scoped to 'peerDownloadedTxs' to match 'bumpStuckEntries': only peers
-    -- with the body buffered can issue a bump, so non-buffering peers don't
-    -- schedule wakes for entries they can't touch.
-    nextBumpWake =
-      IntMap.foldlWithKey' stepBump Nothing (peerDownloadedTxs pacPeerState)
-
-    stepClaim acc k =
+    step (!live, !acc) k =
       case IntMap.lookup k (sharedTxTable pacSharedState) of
-        Just txEntry -> minMaybe acc (futureClaimWake txEntry)
-        Nothing      -> acc
-
-    stepBump acc k _tx =
-      case IntMap.lookup k (sharedTxTable pacSharedState) of
-        Just txEntry -> minMaybe acc (nextStuckBumpWake pacNow pacPolicy txEntry)
-        Nothing      -> acc
+        Just txEntry -> (True, minMaybe acc (futureClaimWake txEntry))
+        Nothing      -> (live, acc)
 
     futureClaimWake txEntry =
       let claimWake = txClaimReadyAt pacClaimDelay txEntry in
       if claimWake > pacNow then Just claimWake
                             else Nothing
 
-    minMaybe :: Ord a => Maybe a -> Maybe a -> Maybe a
-    minMaybe Nothing y         = y
-    minMaybe x Nothing         = x
-    minMaybe (Just x) (Just y) = Just (min x y)
+-- | Compute the time delay until the peer should next wake to check for
+-- work, from the outlook's claim wake ('advertisedOutlook'): the earlier
+-- of that and the earliest bump-ready time among the txs this peer holds
+-- buffered.  Scoped to 'peerDownloadedTxs' to match 'bumpStuckEntries':
+-- only peers with the body buffered can issue a bump, so non-buffering
+-- peers don't schedule wakes for entries they can't touch.
+nextWakeDelay :: PeerActionContext peeraddr txid tx
+              -> Maybe Time
+              -> Maybe DiffTime
+nextWakeDelay PeerActionContext { pacNow, pacPolicy, pacPeerState, pacSharedState } nextClaimWake =
+    (`diffTime` pacNow) <$> minMaybe nextClaimWake nextBumpWake
+  where
+    nextBumpWake =
+      IntMap.foldlWithKey' stepBump Nothing (peerDownloadedTxs pacPeerState)
+
+    stepBump acc k _tx =
+      case IntMap.lookup k (sharedTxTable pacSharedState) of
+        Just txEntry -> minMaybe acc (nextStuckBumpWake pacNow pacPolicy txEntry)
+        Nothing      -> acc
+
+minMaybe :: Ord a => Maybe a -> Maybe a -> Maybe a
+minMaybe Nothing y         = y
+minMaybe x Nothing         = x
+minMaybe (Just x) (Just y) = Just (min x y)
 
 -- | Assign a tx lease to a peer and increment the attempt count.
 claimTx :: peeraddr
@@ -762,7 +772,7 @@ nextStuckBumpWake _ _ _ = Nothing
 -- happen for downloaded TXs.
 --
 -- 'sharedGeneration' is bumped when entries change so other peers wake out
--- of 'awaitSharedChange' and re-evaluate eligibility under the new cap.
+-- of 'awaitPark' and re-evaluate eligibility under the new cap.
 bumpStuckEntries :: forall peeraddr txid tx.
                     Time
                  -> TxDecisionPolicy
