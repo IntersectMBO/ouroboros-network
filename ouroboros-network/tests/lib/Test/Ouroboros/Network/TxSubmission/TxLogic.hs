@@ -5624,8 +5624,8 @@ prop_requestTier_recorded (ArbTxDecisionPolicy policy0) isRoot =
         (action, ps) <- runNextPeerAction api (Time 1) Nothing
                           emptyPeerTxLocalState { peerJitterSeed = apiJitterSeed api }
         let requested = case action of
-              PeerRequestTxIds {} -> True
-              _                   -> False
+              ResolvedRequestTxIds {} -> True
+              _                       -> False
         pure $ counterexample "not a txid request" requested
           .&&. counterexample ("tiers " ++ show (peerRequestTiers ps))
                  (peerRequestTiers ps === StrictSeq.fromList [if isRoot then FastTier else SlowTier])
