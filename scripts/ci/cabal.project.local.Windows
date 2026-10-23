@@ -27,3 +27,11 @@ package ouroboros-network
 
 package cardano-diffusion
   flags: +asserts -cddl
+
+--
+-- finitary is disabled on Windows: it uses GHC plugins, which are not
+-- supported in cross compilation ("Plugins require -fno-external-interpreter")
+--
+
+package acts
+  flags: -finitary
