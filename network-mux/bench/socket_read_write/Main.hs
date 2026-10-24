@@ -26,7 +26,6 @@ import Test.Tasty.Bench
 import Network.Mux
 import Network.Mux.Bearer
 import Network.Mux.Codec (decodeSDU, encodeSDU)
-import Network.Mux.Counters (ByteSlots, newByteSlots)
 import Network.Mux.Egress
 import Network.Mux.Egress.Bucket (awaitGrant, registerBearer, setRankSource)
 import Network.Mux.Ingress
@@ -146,21 +145,15 @@ readDemuxerBenchmark sndSizeV sndSize counted addr = do
 
 -- | Byte counters for these mini-protocols, a slot per number and direction,
 -- as a mux with node-wide counters keeps for its muxer.
-mkSlots :: [Word16] -> IO (ByteSlots IO)
-mkSlots nums = atomically $ newByteSlots
-  [ (MiniProtocolNum n, dir)
-  | n <- nums
-  , dir <- [InitiatorDir, ResponderDir]
-  ]
-
 mkMiniProtocolState :: MonadSTM m => Word16 -> m (MiniProtocolState 'InitiatorMode m)
 mkMiniProtocolState num = do
   mpq <- newIngressQueue
+  mev    <- newEgressVar
   mpv    <- newTVarIO StatusRunning
 
   let mpi = MiniProtocolInfo (MiniProtocolNum num) InitiatorDirectionOnly
                              (MiniProtocolLimits maxBound) Nothing
-  return $ MiniProtocolState mpi mpq mpv
+  return $ MiniProtocolState mpi mpq mev mpv
 
 -- | Run a server that accept connections on `ad`.
 startServer :: StrictTMVar IO Int64 -> Socket -> IO ()
@@ -236,11 +229,10 @@ startServerEgresss pollInterval mkLane sndSizeV ad = forever $ do
     (sd, _) <- Socket.accept ad
     withReadBufferIO (\buffer -> do
       bearer <- getBearer (makeSocketBearer' pollInterval) sduTimeout sd buffer
-      (sndSize, counted) <- atomically $ takeTMVar sndSizeV
+      (sndSize, _counted) <- atomically $ takeTMVar sndSizeV
       eq <- atomically $ newTBQueue 100
-      heldAll <- newTVarIO 0
-      wt42 <- newWanton heldAll
-      wt41 <- newWanton heldAll
+      wt42 <- newEgressVar >>= newWanton
+      wt41 <- newEgressVar >>= newWanton
       let w42 = want wt42
           w41 = want wt41
 
@@ -249,11 +241,8 @@ startServerEgresss pollInterval mkLane sndSizeV ad = forever $ do
           numberOfCalls = numberOfSdus `div` 10 :: Int
           runtSdus = numberOfSdus `mod` 10 :: Int
 
-      -- The muxer's byte counters, or none, as a node that keeps no counters
-      -- gives its muxes.
-      slots <- mkSlots (if counted then [41, 42] else [])
       laneEgress <- mkLane
-      withAsync (muxer eq activeTracer slots Nothing laneEgress bearer) $ \aid -> do
+      withAsync (muxer eq activeTracer Nothing laneEgress bearer) $ \aid -> do
 
         replicateM_ numberOfCalls $ do
           let payload42s = replicate 10 $ BL.replicate sndSize 42

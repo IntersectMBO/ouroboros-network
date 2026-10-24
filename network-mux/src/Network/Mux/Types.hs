@@ -26,6 +26,9 @@ module Network.Mux.Types
   , IngressQueue
   , IngressQueueState (..)
   , newIngressQueue
+  , EgressState (..)
+  , EgressVar
+  , newEgressVar
   , MiniProtocolIx
   , MiniProtocolDir (..)
   , protocolDirEnum
@@ -227,6 +230,22 @@ type IngressQueue m = StrictTVar m IngressQueueState
 newIngressQueue :: MonadSTM m => m (IngressQueue m)
 newIngressQueue = newTVarIO (IngressQueueState 0 mempty 0)
 
+-- | A mini-protocol's standing with the muxers: the batches a muxer has taken
+-- some of its bytes into and not yet written, so the protocol is not done
+-- until this is zero, and the bytes written for it since the mux started,
+-- SDU headers included, which the mux counters report; both change in the
+-- write that releases a batch.
+data EgressState = EgressState {
+    esHeld :: {-# UNPACK #-} !Int,
+    esSent :: {-# UNPACK #-} !Word64
+  }
+
+type EgressVar m = StrictTVar m EgressState
+
+-- | Nothing held, nothing written.
+newEgressVar :: MonadSTM m => m (EgressVar m)
+newEgressVar = newTVarIO (EgressState 0 0)
+
 -- | The index of a protocol in a MuxApplication, used for array indices
 newtype MiniProtocolIx = MiniProtocolIx Int
   deriving (Eq, Ord, Num, Enum, Ix, Show)
@@ -243,6 +262,7 @@ protocolDirEnum ResponderDirection     = ResponderDir
 data MiniProtocolState mode m = MiniProtocolState {
        miniProtocolInfo         :: MiniProtocolInfo mode,
        miniProtocolIngressQueue :: IngressQueue m,
+       miniProtocolEgressVar    :: EgressVar m,
        miniProtocolStatusVar    :: StrictTVar m MiniProtocolStatus
      }
 

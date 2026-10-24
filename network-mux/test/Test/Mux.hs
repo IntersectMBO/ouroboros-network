@@ -3820,10 +3820,11 @@ slotKeys :: [((Word16, Bool), Word64)] -> [((Word16, Bool), Word64)]
 slotKeys sent recv =
     nub (countersKey (0, True) : M.keys (countersMap sent `M.union` countersMap recv))
 
--- | Set a mux's slots to these counts, as its muxer would have.
+-- | Set a mux's slots to these counts, as its muxers would have.
 fillSlots :: MonadSTM m => Counters.ByteSlots m -> Mx.ByteCounts -> STM m ()
 fillSlots slots counts =
-    forM_ (M.toList counts) $ \(k, b) -> forM_ (M.lookup k slots) $ \slot -> writeTVar slot b
+    forM_ (M.toList counts) $ \(k, b) ->
+      forM_ (M.lookup k slots) $ \slot -> modifyTVar slot (\es -> es { Mx.esSent = b })
 
 -- | Ingress queues under these keys, nothing read.
 newQueues :: MonadSTM m
@@ -3845,8 +3846,9 @@ fillQueues queues counts =
 countersStep :: (MonadSTM m, MonadMask m) => Mx.Counters m -> CountersOp -> m ()
 countersStep counters op = case op of
   RetireMux sent recv -> do
+    slots  <- atomically $ Counters.newByteSlots (slotKeys sent recv)
     queues <- newQueues (slotKeys sent recv)
-    Counters.withByteCells (Just counters) queues $ \slots ->
+    Counters.withByteCells (Just counters) slots queues $
       atomically $ do
         fillSlots slots (countersMap sent)
         fillQueues queues (countersMap recv)
@@ -4018,7 +4020,7 @@ prop_mux_counters_snapshot_split ops (SplitStep k step) =
                 let LiveMux _ _ slots = ls !! (i `mod` length ls)
                 atomically $
                   forM_ (M.lookup (countersKey (0, True)) slots) $ \slot ->
-                    modifyTVar slot (+ d)
+                    modifyTVar slot (\es -> es { Mx.esSent = Mx.esSent es + d })
               StepFail op -> countersStep counters op
               _ -> return ()
 
@@ -4039,16 +4041,18 @@ prop_mux_counters_snapshot_split ops (SplitStep k step) =
               -> ([((Word16, Bool), Word64)], [((Word16, Bool), Word64)])
               -> IOSim s (LiveMux (IOSim s))
     startLive counters (s, r) = do
-      slotsVar <- newTVarIO Nothing
-      stop     <- newTVarIO False
-      queues   <- newQueues (slotKeys s r)
-      a <- async $ Counters.withByteCells (Just counters) queues $ \slots -> do
+      ready  <- newTVarIO False
+      stop   <- newTVarIO False
+      slots  <- atomically $ Counters.newByteSlots (slotKeys s r)
+      queues <- newQueues (slotKeys s r)
+      a <- async $ Counters.withByteCells (Just counters) slots queues $ do
         atomically $ do
           fillSlots slots (countersMap s)
           fillQueues queues (countersMap r)
-          writeTVar slotsVar (Just slots)
+          writeTVar ready True
+        atomically (readTVar ready >>= check)
         atomically (readTVar stop >>= check)
-      slots <- atomically (readTVar slotsVar >>= maybe retry return)
+      atomically (readTVar ready >>= check)
       return (LiveMux a stop slots)
 
 --
@@ -4137,16 +4141,15 @@ newWriteMuxer write = do
     let bearer :: Mx.Bearer (IOSim s)
         bearer = modelledBearer (const (error "the muxer does not read"))
                                 (\sdus -> write sdus >> getMonotonicTime)
-    mx <- async (void (Egress.muxer q nullTracer byteSlots Nothing Egress.Unscheduled bearer))
-    muxHeld <- newTVarIO 0
+    mx <- async (void (Egress.muxer q nullTracer Nothing Egress.Unscheduled bearer))
     return WriteMuxer {
         muxer   = mx,
         enqueue = \msgs -> atomically $ forM_ msgs $ \(n, initiator, bytes) -> do
-          w    <- newTVar (BL.replicate (fromIntegral bytes) 0x55)
-          held <- newTVar 0
+          w <- newTVar (BL.replicate (fromIntegral bytes) 0x55)
           let dir = if initiator then Mx.InitiatorDir else Mx.ResponderDir
-              wanton = Egress.Wanton { Egress.want = w, Egress.held = held,
-                                       Egress.muxHeld = muxHeld }
+              -- the protocol's own variable, as in a mux
+              wanton = Egress.Wanton { Egress.want = w,
+                                       Egress.held = byteSlots M.! (Mx.MiniProtocolNum n, dir) }
           writeTBQueue q (Egress.TLSRDemand (Mx.MiniProtocolNum n) dir wanton),
         counted = atomically (Counters.readSlots byteSlots)
       }

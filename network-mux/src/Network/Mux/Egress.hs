@@ -26,7 +26,6 @@ import Control.Monad
 import Data.ByteString.Lazy qualified as BL
 import Data.Int (Int64)
 import Data.Map.Strict qualified as Map
-import Data.Word (Word64)
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadAsync
@@ -37,7 +36,7 @@ import Control.Tracer (Tracer, traceWith)
 
 import Data.Char (toLower)
 
-import Network.Mux.Counters (ByteSlots, Counters, countGateTimeout)
+import Network.Mux.Counters (Counters, countGateTimeout)
 import Network.Mux.Egress.Bucket (Bucket, BucketHandle, GrantSource (..),
            awaitGrantCharged, awaitGrantWaited, takeOnCredit)
 import Network.Mux.Timeout
@@ -164,9 +163,7 @@ type ChargeSink m = Time -> MiniProtocolNum -> Int -> STM m ()
 data Lanes m = Lanes {
     laneQueue :: Lane -> EgressQueue m,
     laneOf    :: MiniProtocolNum -> MiniProtocolDir -> Lane,
-    laneAll   :: [(Lane, EgressQueue m)],
-    laneHeld  :: StrictTVar m Int
-    -- ^ batches the mux's muxers hold, taken and not yet written
+    laneAll   :: [(Lane, EgressQueue m)]
   }
 
 -- | A TranslocationServiceRequest is a demand for the translocation
@@ -181,21 +178,18 @@ data TranslocationServiceRequest m =
 --  TVar becoming empty indicates that the last fragment of the data has been
 --  taken by a muxer, and 'held' reaching zero that the muxer has written it.
 data Wanton m = Wanton {
-    want    :: !(StrictTVar m BL.ByteString),
-    held    :: !(StrictTVar m Int),
-    -- ^ batches a muxer has taken some of this mini-protocol's bytes into
-    -- and not yet written: a protocol is not done until this is zero
-    muxHeld :: !(StrictTVar m Int)
-    -- ^ batches the mux's muxers hold, shared by every mini-protocol of the
-    -- mux, for the shutdown drain
+    want :: !(StrictTVar m BL.ByteString),
+    held :: !(EgressVar m)
+    -- ^ the mini-protocol's standing: batches a muxer has taken some of its
+    -- bytes into and not yet written, and the bytes written for it, counted
+    -- in the write that releases a batch
   }
 
--- | An empty 'Wanton' counting into the mux's @muxHeld@.
-newWanton :: MonadSTM m => StrictTVar m Int -> m (Wanton m)
-newWanton muxHeld = do
+-- | An empty 'Wanton' on the mini-protocol's @held@.
+newWanton :: MonadSTM m => EgressVar m -> m (Wanton m)
+newWanton held = do
     want <- newTVarIO BL.empty
-    held <- newTVarIO 0
-    return Wanton { want, held, muxHeld }
+    return Wanton { want, held }
 
 -- | A soft limit on the egress buffer ('Wanton') size, 0x3ffff bytes, one
 -- short of 256 KiB. A mini-protocol's send appends to its buffer only while
@@ -214,29 +208,6 @@ egressSoftBufferLimit :: Int64
 egressSoftBufferLimit = 0x3ffff
 
 
--- | The bytes of a batch by mini-protocol and direction: a strict list, so
--- the sums stay unboxed and merging a run leaves no thunk.
---
-data BatchBytes
-    = NoBatchBytes
-    | BatchBytes !MiniProtocolNum !MiniProtocolDir {-# UNPACK #-} !Word64 !BatchBytes
-
--- | Add the bytes of a run to the entry of its mini-protocol and direction,
--- or append one.
---
-insertBatchBytes
-  :: MiniProtocolNum
-  -> MiniProtocolDir
-  -> Word64
-  -> BatchBytes
-  -> BatchBytes
-insertBatchBytes !num !dir !n NoBatchBytes = BatchBytes num dir n NoBatchBytes
-insertBatchBytes !num !dir !n (BatchBytes num' dir' n' rest)
-  | num == num'
-  , dir == dir' = BatchBytes num' dir' (n' + n) rest
-  | otherwise   = BatchBytes num' dir' n' (insertBatchBytes num dir n rest)
-
-
 -- | Process the messages from the mini protocols - there is a single
 -- shared FIFO that contains the items of work. This is processed so
 -- that each active demand gets a `maxSDU`s work of data processed
@@ -252,14 +223,12 @@ muxer
        )
     => EgressQueue m
     -> Tracer m BearerTrace
-    -> ByteSlots m
-    -- ^ This mux's byte slots, one per mini-protocol and direction it runs.
     -> Maybe (Counters m)
     -- ^ the node's counters, for a gate that times out
     -> LaneEgress m
     -> Bearer m
     -> m void
-muxer egressQueue tracer byteSlots counters laneEgress
+muxer egressQueue tracer counters laneEgress
       Bearer { writeMany, sduSize, batchSize, egressInterval, awaitWritable } =
     withTimeoutSerial $ \timeout ->
     -- The loop runs masked, so a count means bytes handed to the kernel:
@@ -287,13 +256,16 @@ muxer egressQueue tracer byteSlots counters laneEgress
       (mpc, md, d, sdu) <- atomically $ do
         TLSRDemand mpc md d <- readTBQueue egressQueue
         sdu <- takeSingleWanton egressQueue sduSize mpc md d True
-        modifyTVar (muxHeld d) (+ 1)
         return (mpc, md, d, sdu)
       (sdus, len, perProtocol, taken) <- buildBatch sdu mpc md d
-      -- the batch, and each mini-protocol it carries, released once written
-      let release = do
-            modifyTVar (muxHeld d) (subtract 1)
-            forM_ taken $ \w -> modifyTVar (held w) (subtract 1)
+      -- the batch, and each mini-protocol it carries, released once written,
+      -- and the protocol's bytes counted in the same write: the count rides
+      -- a variable the release updates anyway, so it costs no update of its
+      -- own
+      let release =
+            forM_ taken $ \(key, w) ->
+              let n = fromIntegral (Map.findWithDefault 0 key perProtocol)
+              in modifyTVar (held w) (\(EgressState h s) -> EgressState (h - 1) (s + n))
 
       -- Scheduled egress: a batch is written only once the bearer can take it
       -- without blocking AND its lane has the bytes -- granted by the budget's
@@ -329,16 +301,12 @@ muxer egressQueue tracer byteSlots counters laneEgress
       -- counted nor charged: the connection is gone with it.
       unmask (void (writeMany tracer timeout sdus))
       end <- getMonotonicTime
-      -- The batch summed by mini-protocol and direction first, so the
-      -- transaction updates a slot once per protocol in the batch, not once
-      -- per SDU; a mux without counters has no slots and sums nothing.
-      let !bytes = if Map.null byteSlots then NoBatchBytes else batchBytes sdus
-      -- one transaction after every write: the release, the accounting (a
-      -- credit charge means bytes handed to the kernel; the scheduled lane's
-      -- allowance was charged at its grant) and whether there is more to send
+      -- one transaction after every write: the release, which counts the
+      -- bytes, the credit charge (bytes handed to the kernel; the scheduled
+      -- lane's allowance was charged at its grant) and whether there is more
+      -- to send
       empty <- atomically $ do
         release
-        countBytes bytes
         case laneEgress of
              Credit budget -> takeOnCredit budget end len
              _             -> return ()
@@ -362,38 +330,6 @@ muxer egressQueue tracer byteSlots counters laneEgress
     sduLength :: SDU -> Int
     sduLength sdu = fromIntegral msHeaderLength + fromIntegral (msLength sdu)
 
-    -- The bytes of a batch by mini-protocol and direction, header included:
-    -- a batch holds few protocols, so the list is short. A run of SDUs on
-    -- one protocol is summed as it goes, unboxed, and merged once, at its
-    -- end, so a batch on one protocol merges once.
-    batchBytes :: [SDU] -> BatchBytes
-    batchBytes []           = NoBatchBytes
-    batchBytes (sdu : sdus) = runs NoBatchBytes (msNum sdu) (msDir sdu) (bytesOf sdu) sdus
-      where
-        runs :: BatchBytes
-             -> MiniProtocolNum
-             -> MiniProtocolDir
-             -> Word64
-             -> [SDU] -> BatchBytes
-        runs !acc !num !dir !n []
-          = insertBatchBytes num dir n acc
-        runs !acc !num !dir !n (sdu' : rest)
-          | msNum sdu' == num, msDir sdu' == dir
-          = runs acc num dir (n + bytesOf sdu') rest
-          | otherwise
-          = runs (insertBatchBytes num dir n acc) (msNum sdu') (msDir sdu') (bytesOf sdu') rest
-
-        bytesOf :: SDU -> Word64
-        bytesOf = fromIntegral . sduLength
-
-    -- Add a batch's bytes to its slots, in the transaction that polls the
-    -- queue.
-    countBytes :: BatchBytes -> STM m ()
-    countBytes NoBatchBytes = return ()
-    countBytes (BatchBytes num dir n rest) = do
-      forM_ (Map.lookup (num, dir) byteSlots) $ \slot -> modifyTVar slot (+ n)
-      countBytes rest
-
     -- Build a batch of SDUs to submit in one go to the bearer.
     -- The egress queue is still processed one SDU at the time
     -- to ensure that we don't cause starvation.
@@ -401,13 +337,16 @@ muxer egressQueue tracer byteSlots counters laneEgress
     -- (e.g the SO_SNDBUF for Socket) or number of SDUs.
     --
     -- Returns the SDUs in order, their length with headers, and that length
-    -- per mini-protocol and direction, all accumulated as the batch is built
-    -- so nothing walks it again.
+    -- per mini-protocol and direction, and the mini-protocols held with
+    -- their keys, all accumulated as the batch is built so nothing walks it
+    -- again.
     buildBatch :: SDU -> MiniProtocolNum -> MiniProtocolDir -> Wanton m
-               -> m ([SDU], Int, Map.Map (MiniProtocolNum, MiniProtocolDir) Int, [Wanton m])
-    buildBatch sdu0 mpc0 md0 w0 = go [sdu0] 1 len0 (Map.singleton (mpc0, md0) len0) [w0]
+               -> m ([SDU], Int, Map.Map (MiniProtocolNum, MiniProtocolDir) Int,
+                     [((MiniProtocolNum, MiniProtocolDir), Wanton m)])
+    buildBatch sdu0 mpc0 md0 w0 = go [sdu0] 1 len0 (Map.singleton key0 len0) [(key0, w0)]
      where
       len0 = sduLength sdu0
+      key0 = (mpc0, md0)
       go sdus !n !len per taken
         | n >= maxSDUsPerBatch || len >= batchSize = return (reverse sdus, len, per, taken)
         | otherwise = do
@@ -415,11 +354,12 @@ muxer egressQueue tracer byteSlots counters laneEgress
             case demand_m of
                  Just (TLSRDemand mpc md d) -> do
                    -- a mini-protocol is held once per batch, at its first SDU
-                   let first = Map.notMember (mpc, md) per
+                   let key   = (mpc, md)
+                       first = Map.notMember key per
                    sdu <- processSingleWanton egressQueue sduSize mpc md d first
                    let !l = sduLength sdu
-                   go (sdu:sdus) (n + 1) (len + l) (Map.insertWith (+) (mpc, md) l per)
-                      (if first then d : taken else taken)
+                   go (sdu:sdus) (n + 1) (len + l) (Map.insertWith (+) key l per)
+                      (if first then (key, d) : taken else taken)
                  Nothing -> return (reverse sdus, len, per, taken)
 
 -- | Pull a `maxSDU`s worth of data out out the `Wanton` - if there is
@@ -463,7 +403,7 @@ takeSingleWanton egressQueue (SDUSize sduSize)
           writeTBQueue egressQueue (TLSRDemand mpc md wanton)
       -- held until written, once per batch: the muxer releases it after
       -- the write
-      when first $ modifyTVar (held wanton) (+ 1)
+      when first $ modifyTVar (held wanton) (\es -> es { esHeld = esHeld es + 1 })
       -- return data to send
       pure frag
     let sdu = SDU {
