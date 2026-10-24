@@ -310,10 +310,12 @@ mkMiniProtocolState :: MonadSTM m
                     -> m (MiniProtocolState mode m)
 mkMiniProtocolState miniProtocolInfo = do
     miniProtocolIngressQueue <- newIngressQueue
+    miniProtocolEgressVar    <- newEgressVar
     miniProtocolStatusVar    <- newTVarIO StatusIdle
     return MiniProtocolState {
        miniProtocolInfo,
        miniProtocolIngressQueue,
+       miniProtocolEgressVar,
        miniProtocolStatusVar
      }
 
@@ -400,12 +402,15 @@ run Mux { muxMiniProtocols,
     labelTVarIO muxStatus (name ++ "-mux-status")
     labelTQueueIO muxControlCmdQueue (name ++ "-mux-ctrl")
 
-    -- the cells outlive the job pool, so every byte a muxer counted is in
-    -- them when they are retired; the demuxer counts in the ingress queues
-    withByteCells muxCounters (miniProtocolIngressQueue <$> muxMiniProtocols) $ \cells ->
+    -- the counts live in the mini-protocols' own variables, which outlive
+    -- the job pool, so every byte the muxers and the demuxer counted is in
+    -- them when the cells are retired
+    withByteCells muxCounters
+                  MuxByteCells { mbcSent = miniProtocolEgressVar    <$> muxMiniProtocols,
+                                 mbcRecv = miniProtocolIngressQueue <$> muxMiniProtocols } $
      JobPool.withJobPool
       (\jobpool -> do
-        mapM_ (JobPool.forkJob jobpool) (laneMuxers (mbcSent <$> cells))
+        mapM_ (JobPool.forkJob jobpool) laneMuxers
         JobPool.forkJob jobpool demuxerJob
         traceWith tracer_ (TraceState Mature)
 
@@ -434,7 +439,7 @@ run Mux { muxMiniProtocols,
     -- so their batches never interleave on the wire. The lock is held for the
     -- write only, never while a lane waits for a grant, so a direct SDU waits
     -- for at most one batch of another lane.
-    mkLanes :: m (Lanes m, Maybe (StrictTVar m ByteCounts) -> [JobPool.Job Group m JobResult])
+    mkLanes :: m (Lanes m, [JobPool.Job Group m JobResult])
     mkLanes = case muxEgress of
       Nothing -> do
         q <- newQueue "egress"
@@ -443,7 +448,7 @@ run Mux { muxMiniProtocols,
                        , laneOf    = \_ _ -> Scheduled
                        , laneAll   = [(Scheduled, q)]
                        , laneHeld  = held }
-               , \sent -> [muxerJob "muxer" q Unscheduled sent bearer] )
+               , [muxerJob "muxer" q Unscheduled bearer] )
 
       Just MuxEgress { meBudget, meBudgetHandle, meSlice, meLaneOf, meCharge } -> do
         lock <- newTMVarIO ()
@@ -461,16 +466,16 @@ run Mux { muxMiniProtocols,
                                 Nothing -> queueOf Direct     -- 'Slice' without a slice bucket
         held <- newTVarIO 0
         return ( Lanes { laneQueue = queueOf, laneOf = meLaneOf, laneAll = qs, laneHeld = held }
-               , \sent -> [ muxerJob ("muxer-" ++ laneName lane) q (egressOf lane) sent locked
-                          | (lane, q) <- qs ] )
+               , [ muxerJob ("muxer-" ++ laneName lane) q (egressOf lane) locked
+                 | (lane, q) <- qs ] )
 
     newQueue label = do
       q <- atomically $ newTBQueue 100
       labelTBQueueIO q (name ++ "-mux-" ++ label)
       return q
 
-    muxerJob label q laneEgress sent b =
-      JobPool.Job (muxer q bearerTracer_ muxCounters sent laneEgress b)
+    muxerJob label q laneEgress b =
+      JobPool.Job (muxer q bearerTracer_ muxCounters laneEgress b)
                   (return . MuxerException)
                   MuxJob
                   (name ++ "-" ++ label)
@@ -507,6 +512,7 @@ miniProtocolJob TracersI {
                       miniProtocolDir
                     },
                   miniProtocolIngressQueue,
+                  miniProtocolEgressVar,
                   miniProtocolStatusVar
                 }
                MiniProtocolAction {
@@ -519,7 +525,7 @@ miniProtocolJob TracersI {
                 ("prtcl-" ++ (case miniProtocolNum of { MiniProtocolNum a -> show a}) ++ "." ++ show miniProtocolDirEnum)
   where
     jobAction = do
-      wanton@Wanton { want = w, held } <- newWanton laneHeld
+      wanton@Wanton { want = w, held } <- newWanton miniProtocolEgressVar laneHeld
       let egressQueue = laneQueue (laneOf miniProtocolNum miniProtocolDirEnum)
           chan = muxChannel channelTracer_ egressQueue wanton
                             miniProtocolNum miniProtocolDirEnum
@@ -533,7 +539,7 @@ miniProtocolJob TracersI {
         -- SDUs have been written unless an exception/error is encountered. In
         -- that case all jobs will be cancelled directly.
         readTVar w >>= check . BL.null
-        readTVar held >>= check . (== 0)
+        readTVar held >>= check . (== 0) . esHeld
         writeTVar miniProtocolStatusVar StatusIdle
         putTMVar completionVar (Right result)
           `orElse` throwSTM (BlockedOnCompletionVar miniProtocolNum)

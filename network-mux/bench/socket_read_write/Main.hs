@@ -145,11 +145,12 @@ readDemuxerBenchmark sndSizeV sndSize addr = do
 mkMiniProtocolState :: MonadSTM m => Word16 -> m (MiniProtocolState 'InitiatorMode m)
 mkMiniProtocolState num = do
   mpq <- newIngressQueue
-  mpv    <- newTVarIO StatusRunning
+  mev <- newEgressVar
+  mpv <- newTVarIO StatusRunning
 
   let mpi = MiniProtocolInfo (MiniProtocolNum num) InitiatorDirectionOnly
                              (MiniProtocolLimits maxBound) Nothing
-  return $ MiniProtocolState mpi mpq mpv
+  return $ MiniProtocolState mpi mpq mev mpv
 
 -- | Run a server that accept connections on `ad`.
 startServer :: StrictTMVar IO Int64 -> Socket -> IO ()
@@ -228,8 +229,8 @@ startServerEgresss pollInterval mkLane sndSizeV ad = forever $ do
       sndSize <- atomically $ takeTMVar sndSizeV
       eq <- atomically $ newTBQueue 100
       heldAll <- newTVarIO 0
-      wt42 <- newWanton heldAll
-      wt41 <- newWanton heldAll
+      wt42 <- newEgressVar >>= (`newWanton` heldAll)
+      wt41 <- newEgressVar >>= (`newWanton` heldAll)
       let w42 = want wt42
 
       let maxData = totalPayloadLen sndSize
@@ -238,7 +239,7 @@ startServerEgresss pollInterval mkLane sndSizeV ad = forever $ do
           runtSdus = numberOfSdus `mod` 10 :: Int
 
       laneEgress <- mkLane
-      withAsync (muxer eq activeTracer Nothing Nothing laneEgress bearer) $ \aid -> do
+      withAsync (muxer eq activeTracer Nothing laneEgress bearer) $ \aid -> do
 
         replicateM_ numberOfCalls $ do
           let payload42s = replicate 10 $ BL.replicate sndSize 42

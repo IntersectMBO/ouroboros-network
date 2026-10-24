@@ -39,7 +39,8 @@ import Network.Mux.Egress.Bucket (GrantSource (..))
 import Network.Mux.Egress.Bucket qualified as Bucket
 import Network.Mux.Egress.Burst qualified as Burst
 import Network.Mux.Egress.Floor (FloorClass, FloorState, floorClass)
-import Network.Mux.Types (IngressQueueState, MiniProtocolDir, MiniProtocolNum)
+import Network.Mux.Types (EgressState, IngressQueueState, MiniProtocolDir,
+           MiniProtocolNum)
 import NoThunks.Class (NoThunks (..), OnlyCheckWhnfNamed (..), noThunks,
            unsafeNoThunks)
 
@@ -594,10 +595,13 @@ deriving via OnlyCheckWhnfNamed "MiniProtocolNum" MiniProtocolNum
   instance NoThunks MiniProtocolNum
 deriving via OnlyCheckWhnfNamed "MiniProtocolDir" MiniProtocolDir
   instance NoThunks MiniProtocolDir
--- an ingress queue's state is strict in every field, and its builder is a
--- function, so its weak head is all there is to check
+-- an ingress queue's state and a mini-protocol's egress state are strict in
+-- every field (the builder is a function), so their weak head is all there
+-- is to check
 deriving via OnlyCheckWhnfNamed "IngressQueueState" IngressQueueState
   instance NoThunks IngressQueueState
+deriving via OnlyCheckWhnfNamed "EgressState" EgressState
+  instance NoThunks EgressState
 
 -- | A strict TVar in IO is a GHC TVar, whose contents nothunks reads.
 instance NoThunks a => NoThunks (StrictTVar IO a) where
