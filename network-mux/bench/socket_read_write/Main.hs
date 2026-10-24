@@ -26,7 +26,6 @@ import Test.Tasty.Bench
 import Network.Mux
 import Network.Mux.Bearer
 import Network.Mux.Codec (decodeSDU, encodeSDU)
-import Network.Mux.Counters (ByteSlots, newByteSlots)
 import Network.Mux.Egress
 import Network.Mux.Egress.Bucket (awaitGrant, registerBearer, setRank,
            setRankSource)
@@ -107,15 +106,14 @@ readDemuxerQueueBenchmark sndSizeV sndSize addr = do
         then return ()
         else error "corrupt stream"
 
--- Like readBenchmark but uses a demuxer thread. The server's muxer counts the
--- bytes it writes when @counted@, as a mux with node-wide counters does.
-readDemuxerBenchmark :: StrictTMVar IO (Int64, Bool) -> Int64 -> Bool -> Socket.SockAddr -> IO ()
-readDemuxerBenchmark sndSizeV sndSize counted addr = do
+-- Like readBenchmark but uses a demuxer thread.
+readDemuxerBenchmark :: StrictTMVar IO Int64 -> Int64 -> Socket.SockAddr -> IO ()
+readDemuxerBenchmark sndSizeV sndSize addr = do
   bracket
     (Socket.socket Socket.AF_INET Socket.Stream Socket.defaultProtocol)
     Socket.close
     (\sd -> do
-      atomically $ putTMVar sndSizeV (sndSize, counted)
+      atomically $ putTMVar sndSizeV sndSize
 
       Socket.connect sd addr
       withReadBufferIO (\buffer -> do
@@ -147,21 +145,15 @@ readDemuxerBenchmark sndSizeV sndSize counted addr = do
 
 -- | Byte counters for these mini-protocols, a slot per number and direction,
 -- as a mux with node-wide counters keeps for its muxer.
-mkSlots :: [Word16] -> IO (ByteSlots IO)
-mkSlots nums = atomically $ newByteSlots
-  [ (MiniProtocolNum n, dir)
-  | n <- nums
-  , dir <- [InitiatorDir, ResponderDir]
-  ]
-
 mkMiniProtocolState :: MonadSTM m => Word16 -> m (MiniProtocolState 'InitiatorMode m)
 mkMiniProtocolState num = do
   mpq <- newIngressQueue
+  mev    <- newEgressVar
   mpv    <- newTVarIO StatusRunning
 
   let mpi = MiniProtocolInfo (MiniProtocolNum num) InitiatorDirectionOnly
                              (MiniProtocolLimits maxBound) Nothing
-  return $ MiniProtocolState mpi mpq mpv
+  return $ MiniProtocolState mpi mpq mev mpv
 
 -- | Run a server that accept connections on `ad`.
 startServer :: StrictTMVar IO Int64 -> Socket -> IO ()
@@ -232,16 +224,15 @@ decodeHdr b = case decodeSDU b of
 -- It will send streams of data over the 41 and 42 miniprotocol.
 -- Multiplexing is done with a separate thread running
 -- the Egress.muxer function.
-startServerEgresss :: DiffTime -> IO (LaneEgress IO) -> StrictTMVar IO (Int64, Bool) -> Socket -> IO ()
+startServerEgresss :: DiffTime -> IO (LaneEgress IO) -> StrictTMVar IO Int64 -> Socket -> IO ()
 startServerEgresss pollInterval mkLane sndSizeV ad = forever $ do
     (sd, _) <- Socket.accept ad
     withReadBufferIO (\buffer -> do
       bearer <- getBearer (makeSocketBearer' pollInterval) sduTimeout sd buffer
-      (sndSize, counted) <- atomically $ takeTMVar sndSizeV
+      sndSize <- atomically $ takeTMVar sndSizeV
       eq <- atomically $ newTBQueue 100
-      heldAll <- newTVarIO 0
-      wt42 <- newWanton heldAll
-      wt41 <- newWanton heldAll
+      wt42 <- newEgressVar >>= newWanton
+      wt41 <- newEgressVar >>= newWanton
       let w42 = want wt42
           w41 = want wt41
 
@@ -250,11 +241,8 @@ startServerEgresss pollInterval mkLane sndSizeV ad = forever $ do
           numberOfCalls = numberOfSdus `div` 10 :: Int
           runtSdus = numberOfSdus `mod` 10 :: Int
 
-      -- The muxer's byte counters, or none, as a node that keeps no counters
-      -- gives its muxes.
-      slots <- mkSlots (if counted then [41, 42] else [])
       laneEgress <- mkLane
-      withAsync (muxer eq activeTracer slots Nothing laneEgress bearer) $ \aid -> do
+      withAsync (muxer eq activeTracer Nothing laneEgress bearer) $ \aid -> do
 
         replicateM_ numberOfCalls $ do
           let payload42s = replicate 10 $ BL.replicate sndSize 42
@@ -429,16 +417,12 @@ main = do
                   , bench "Read/Write-Many Benchmark 10 byte SDUs"  $ nfIO $ readBenchmark sndSizeMV 10 addrM
 
                     -- Use standard muxer and demuxer, 1ms poll
-                  , bench "Read/Write Mux Benchmark 800+10 byte SDUs, 1ms Poll"  $ nfIO $ readDemuxerBenchmark sndSizeEV 800 True addrE
-                  , bench "Read/Write Mux Benchmark 12288+10 byte SDUs, 1ms Poll"  $ nfIO $ readDemuxerBenchmark sndSizeEV 12288 True addrE
+                  , bench "Read/Write Mux Benchmark 800+10 byte SDUs, 1ms Poll"  $ nfIO $ readDemuxerBenchmark sndSizeEV 800 addrE
+                  , bench "Read/Write Mux Benchmark 12288+10 byte SDUs, 1ms Poll"  $ nfIO $ readDemuxerBenchmark sndSizeEV 12288 addrE
 
                     -- Use standard muxer and demuxer, 0ms poll
-                  , bench "Read/Write Mux Benchmark 800+10 byte SDUs, 0ms Poll"  $ nfIO $ readDemuxerBenchmark sndSizeEV 800 True addrF
-                  , bench "Read/Write Mux Benchmark 12288+10 byte SDUs, 0ms Poll"  $ nfIO $ readDemuxerBenchmark sndSizeEV 12288 True addrF
-
-                    -- The same with the muxer counting no bytes, as a node that keeps no counters runs
-                  , bench "Read/Write Mux Benchmark 800+10 byte SDUs, 0ms Poll, no counters"  $ nfIO $ readDemuxerBenchmark sndSizeEV 800 False addrF
-                  , bench "Read/Write Mux Benchmark 12288+10 byte SDUs, 0ms Poll, no counters"  $ nfIO $ readDemuxerBenchmark sndSizeEV 12288 False addrF
+                  , bench "Read/Write Mux Benchmark 800+10 byte SDUs, 0ms Poll"  $ nfIO $ readDemuxerBenchmark sndSizeEV 800 addrF
+                  , bench "Read/Write Mux Benchmark 12288+10 byte SDUs, 0ms Poll"  $ nfIO $ readDemuxerBenchmark sndSizeEV 12288 addrF
 
                     -- Use standard demuxer
                   , bench "Read/Write Demuxer Queuing Benchmark 10 byte SDUs"  $ nfIO $ readDemuxerQueueBenchmark sndSizeV 10 addr
@@ -461,8 +445,8 @@ main = do
                       ]
                       -- the fast path over a socket: the unscheduled twins are the
                       -- 0ms Poll Mux Benchmarks above
-                    , bench "Read/Write Mux Benchmark 800+10 byte SDUs, 0ms Poll, scheduled"   $ nfIO $ readDemuxerBenchmark sndSizeEV 800 True addrS
-                    , bench "Read/Write Mux Benchmark 12288+10 byte SDUs, 0ms Poll, scheduled" $ nfIO $ readDemuxerBenchmark sndSizeEV 12288 True addrS
+                    , bench "Read/Write Mux Benchmark 800+10 byte SDUs, 0ms Poll, scheduled"   $ nfIO $ readDemuxerBenchmark sndSizeEV 800 addrS
+                    , bench "Read/Write Mux Benchmark 12288+10 byte SDUs, 0ms Poll, scheduled" $ nfIO $ readDemuxerBenchmark sndSizeEV 12288 addrS
                     ]
                   ]
                 ]
