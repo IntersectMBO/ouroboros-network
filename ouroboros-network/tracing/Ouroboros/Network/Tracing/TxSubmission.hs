@@ -6,40 +6,27 @@
 module Ouroboros.Network.Tracing.TxSubmission () where
 
 import Data.Aeson
+import Data.Aeson.Key qualified as Key
 import Data.IntMap.Strict qualified as IntMap
 import Data.Map.Strict qualified as Map
+import Data.Text qualified as Text
 
 import Cardano.Logging
 import Ouroboros.Network.Tx (HasRawTxId)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
 
 instance (Show txid, Show peeraddr, HasRawTxId txid) => LogFormatting (TraceTxLogic peeraddr txid tx) where
-  forMachine dtal (TraceSharedTxState SharedTxState {..}) =
+  forMachine dtal (TraceSharedTxState SharedTxState {..} counts) =
       mconcat $ [ "kind" .= String "TraceSharedTxState"
                 , "sharedGeneration" .= sharedGeneration
-                , "activeTxCount" .= IntMap.size sharedTxTable
-                , "retainedTxCount" .= retainedSize sharedRetainedTxs
-                , "internedTxCount" .= Map.size sharedTxIdToKey
-                , "leasedTxCount" .= leasedTxCount
-                , "claimableTxCount" .= claimableTxCount
-                , "totalAttemptCount" .= totalAttemptCount
-                , "submittingTxCount" .= submittingTxCount
-                ] ++ more
+                , "sharedRevision" .= sharedRevision
+                , "sharedClaimable" .= sharedClaimable
+                ]
+             ++ [ Key.fromString name .= n
+                | (name, n) <- sharedTxStateCountFields counts
+                ]
+             ++ more
     where
-      activeEntries = IntMap.elems sharedTxTable
-
-      leasedTxCount =
-        length [ () | TxEntry { txLease = TxLeased _ _ } <- activeEntries ]
-
-      claimableTxCount =
-        length [ () | TxEntry { txLease = TxClaimable _ } <- activeEntries ]
-
-      totalAttemptCount =
-        sum [ txAttempt entry | entry <- activeEntries ]
-
-      submittingTxCount =
-        length [ () | TxEntry { txInSubmission = True } <- activeEntries ]
-
       renderTxId txKey =
         maybe "<missing-txid>" show (IntMap.lookup txKey sharedKeyToTxId)
 
@@ -48,26 +35,84 @@ instance (Show txid, Show peeraddr, HasRawTxId txid) => LogFormatting (TraceTxLo
                   [ "sharedTxTable" .= [ (renderTxId txKey, show txEntry)
                                        | (txKey, txEntry) <- IntMap.toList sharedTxTable
                                        ]
-                  , "sharedRetainedTxs" .= [ (renderTxId txKey, show retainUntil)
+                  , "sharedRetainedTxs" .= [ (renderTxId txKey, retainTimeSeconds retainUntil)
                                            | (txKey, retainUntil) <- retainedToList sharedRetainedTxs
                                            ]
                   , "internedTxIds" .= fmap show (Map.keys sharedTxIdToKey)
                   ]
         _otherwise -> []
 
+  -- The counts as gauges, under the trace's cadence, whatever the trace's
+  -- severity: the write counter (revision), the wake counter (generation)
+  -- and the sizes.
+  forMachine _dtal (TraceTxTiers TierCensus {..}) =
+    mconcat [ "kind" .= String "TraceTxTiers"
+            , "fastByRoot" .= censusFastByRoot
+            , "fastByCoin" .= censusFastByCoin
+            , "fastBySource" .= censusFastBySource
+            , "slow" .= censusSlow
+            ]
+
+  asMetrics (TraceSharedTxState SharedTxState {..} counts) =
+       IntM (sharedStateMetric "revision") (fromIntegral sharedRevision)
+     : IntM (sharedStateMetric "generation") (fromIntegral sharedGeneration)
+     : IntM (sharedStateMetric "claimable") (fromIntegral sharedClaimable)
+     : [ IntM (sharedStateMetric name) (fromIntegral n)
+       | (name, n) <- sharedTxStateCountFields counts
+       ]
+  asMetrics (TraceTxTiers TierCensus {..}) =
+    [ IntM (tiersMetric "fastByRoot")   (fromIntegral censusFastByRoot)
+    , IntM (tiersMetric "fastByCoin")   (fromIntegral censusFastByCoin)
+    , IntM (tiersMetric "fastBySource") (fromIntegral censusFastBySource)
+    , IntM (tiersMetric "slow")         (fromIntegral censusSlow)
+    ]
+
+-- | The metric name of a tier census count.
+tiersMetric :: String -> Text.Text
+tiersMetric name = "txSubmission.tiers." <> Text.pack name
+
+-- | The metric name of a shared-state count, by its field's name.
+sharedStateMetric :: String -> Text.Text
+sharedStateMetric name = "txSubmission.sharedState." <> Text.pack name
 
 instance MetaTrace (TraceTxLogic peeraddr txid tx) where
   namespaceFor TraceSharedTxState {} =
     Namespace [] ["TraceSharedTxState"]
+  namespaceFor TraceTxTiers {} =
+    Namespace [] ["TraceTxTiers"]
 
   severityFor _ _ = Just Debug
 
   documentFor (Namespace [] ["TraceSharedTxState"]) =
     Just "Internal bookkeeping of tx-submission shared state for peer coordination"
+  documentFor (Namespace [] ["TraceTxTiers"]) =
+    Just "The inbound peers by the fetch tier standing they are served on"
   documentFor _ = Nothing
+
+  metricsDocFor (Namespace [] ["TraceSharedTxState"]) =
+    [ (sharedStateMetric "revision", "writes of the shared tx state, one per transaction")
+    , (sharedStateMetric "generation", "wake-ups of the parked peers")
+    , (sharedStateMetric "claimable", "wake-ups of the slow tier's parked peers: an entry became claimable, a lease was released or a stuck cap raised")
+    , (sharedStateMetric "activeTxCount", "entries of the active tx table")
+    , (sharedStateMetric "retainedTxCount", "keys retained after reaching the mempool")
+    , (sharedStateMetric "internedTxCount", "lookup entries in all")
+    , (sharedStateMetric "leasedTxCount", "active entries leased for download")
+    , (sharedStateMetric "claimableTxCount", "active entries nobody is downloading")
+    , (sharedStateMetric "totalAttemptCount", "download attempts over the active entries")
+    , (sharedStateMetric "submittingTxCount", "active entries being added to the mempool")
+    , (sharedStateMetric "advertiserCount", "advertisers over the active entries, one per peer and key")
+    ]
+  metricsDocFor (Namespace [] ["TraceTxTiers"]) =
+    [ (tiersMetric "fastByRoot",   "peers polled at full speed by standing: local roots")
+    , (tiersMetric "fastByCoin",   "peers polled at full speed by the coin's salted order")
+    , (tiersMetric "fastBySource", "peers polled at full speed as tx sources while the coin left them slow")
+    , (tiersMetric "slow",         "peers polled on the slow tier's cadence")
+    ]
+  metricsDocFor _ = []
 
   allNamespaces = [
     Namespace [] ["TraceSharedTxState"]
+    , Namespace [] ["TraceTxTiers"]
     ]
 
 instance LogFormatting TxSubmissionCounters where
@@ -87,6 +132,13 @@ instance LogFormatting TxSubmissionCounters where
             , "txsRejected" .= txsRejected
             , "txIdBlockingReqsSent" .= txIdBlockingReqsSent
             , "txIdPipelinedReqsSent" .= txIdPipelinedReqsSent
+            , "txIdSlowReqsSent" .= txIdSlowReqsSent
+            , "txIdsReceivedSlow" .= txIdsReceivedSlow
+            , "txIdReplies0" .= txIdReplies0
+            , "txIdReplies1" .= txIdReplies1
+            , "txIdReplies2to4" .= txIdReplies2to4
+            , "txIdReplies5to9" .= txIdReplies5to9
+            , "txIdReplies10" .= txIdReplies10
             , "txIdBlockingWaitMs" .= txIdBlockingWait
             , "txPipelineWaitMs" .= txPipelineWait
             , "txSubmissionWaitMs" .= txSubmissionWait
@@ -107,6 +159,13 @@ instance LogFormatting TxSubmissionCounters where
     , IntM "txSubmission.txsRejected" (fromIntegral txsRejected)
     , IntM "txSubmission.txIdBlockingReqsSent"  (fromIntegral txIdBlockingReqsSent)
     , IntM "txSubmission.txIdPipelinedReqsSent" (fromIntegral txIdPipelinedReqsSent)
+    , IntM "txSubmission.txIdSlowReqsSent"      (fromIntegral txIdSlowReqsSent)
+    , IntM "txSubmission.txIdsReceivedSlow"     (fromIntegral txIdsReceivedSlow)
+    , IntM "txSubmission.txIdReplies.0"         (fromIntegral txIdReplies0)
+    , IntM "txSubmission.txIdReplies.1"         (fromIntegral txIdReplies1)
+    , IntM "txSubmission.txIdReplies.2to4"      (fromIntegral txIdReplies2to4)
+    , IntM "txSubmission.txIdReplies.5to9"      (fromIntegral txIdReplies5to9)
+    , IntM "txSubmission.txIdReplies.10"        (fromIntegral txIdReplies10)
     , IntM "txSubmission.txIdBlockingWaitMs" (fromIntegral txIdBlockingWait)
     , IntM "txSubmission.txPipelineWaitMs"   (fromIntegral txPipelineWait)
     , IntM "txSubmission.txSubmissionWaitMs" (fromIntegral txSubmissionWait)
@@ -134,6 +193,13 @@ instance MetaTrace TxSubmissionCounters where
     , ("txSubmission.txsRejected", "number of tx bodies rejected by the mempool")
     , ("txSubmission.txIdBlockingReqsSent",  "number of blocking txid request messages sent")
     , ("txSubmission.txIdPipelinedReqsSent", "number of pipelined txid request messages sent")
+    , ("txSubmission.txIdSlowReqsSent",      "number of txid request messages sent to peers on the slow fetch tier")
+    , ("txSubmission.txIdsReceivedSlow",     "number of txids received in replies to requests sent on the slow fetch tier")
+    , ("txSubmission.txIdReplies.0",         "number of txid replies carrying no txid")
+    , ("txSubmission.txIdReplies.1",         "number of txid replies carrying one txid")
+    , ("txSubmission.txIdReplies.2to4",      "number of txid replies carrying two to four txids")
+    , ("txSubmission.txIdReplies.5to9",      "number of txid replies carrying five to nine txids")
+    , ("txSubmission.txIdReplies.10",        "number of txid replies carrying ten or more txids")
     , ("txSubmission.txIdBlockingWaitMs", "cumulative milliseconds spent waiting for blocking txid replies (idle state proxy)")
     , ("txSubmission.txPipelineWaitMs",   "cumulative milliseconds the pipeline was active from first body request until full drain (loading state proxy)")
     , ("txSubmission.txSubmissionWaitMs", "cumulative milliseconds spent in mempoolAddTxs; high values indicate mempool backpressure")

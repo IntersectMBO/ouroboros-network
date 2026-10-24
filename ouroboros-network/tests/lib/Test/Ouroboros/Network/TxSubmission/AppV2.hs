@@ -20,7 +20,7 @@ import NoThunks.Class
 
 import Control.Concurrent.Class.MonadSTM qualified as Lazy
 import Control.Concurrent.Class.MonadSTM.Strict
-import Control.Monad (replicateM_, void)
+import Control.Monad (replicateM_, void, when)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadSay
@@ -34,6 +34,7 @@ import Control.Tracer (Tracer, contramap, mkTracer, nullTracer, traceWith)
 import Data.ByteString.Lazy qualified as BSL
 import Data.Foldable (traverse_)
 import Data.Function (on)
+import Data.Hashable (Hashable)
 import Data.IntMap.Strict qualified as IntMap
 import Data.IntSet qualified as IntSet
 import Data.List (nubBy)
@@ -61,6 +62,7 @@ import Ouroboros.Network.Tx (HasRawTxId)
 import Ouroboros.Network.TxSubmission.Inbound.V2 (txSubmissionInboundV2)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
 import Ouroboros.Network.TxSubmission.Inbound.V2.Registry
+import Ouroboros.Network.TxSubmission.Inbound.V2.Tier (sourceCount)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
 import Ouroboros.Network.TxSubmission.Outbound
 import Ouroboros.Network.Util.ShowProxy
@@ -77,6 +79,7 @@ import Test.QuickCheck
 #if !MIN_VERSION_QuickCheck(2,16,0)
 import "quickcheck-monoids" Test.QuickCheck.Monoids
 #endif
+import System.Random (mkStdGen)
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.HUnit (Assertion, assertBool, assertEqual, testCase)
 import Test.Tasty.QuickCheck (testProperty)
@@ -111,8 +114,11 @@ tests = testGroup "AppV2"
           prop_TxSubmissionDisconnectState_shrinkNoDups
       ]
   , testProperty "txSubmission"          prop_txSubmission
+  , testProperty "txSubmission/allSlow"  prop_txSubmission_allSlow
+  , testProperty "backpressure"          prop_txSubmission_backpressure
   , testProperty "inflight"              prop_txSubmission_inflight
   , testProperty "resilientToImpairment" prop_txSubmission_resilientToImpairment
+  , testProperty "duplicateBodyRejected" prop_txSubmission_duplicateBodyRejected
   , testProperty "peerDisconnect"        prop_txSubmission_peerDisconnect
   , testProperty "SharedTxState" $ withMaxSize 25
                                  $ BaseQC.withNumTests 25
@@ -214,6 +220,7 @@ runTxSubmission
      , Show peeraddr
      , Ord peeraddr
      , Typeable peeraddr
+     , Hashable peeraddr
 
      , txid ~ Int
      )
@@ -230,11 +237,14 @@ runTxSubmission
   -> Map peeraddr DiffTime
      -- ^ cancel the server async for each listed peer at the given
      --   time, simulating an abrupt disconnect mid-protocol
+  -> DiffTime
+     -- ^ the inbound mempool blocks every add until this long after the
+     --   start: backpressure
   -> TxDecisionPolicy
   -> m ([Tx txid], [[Tx txid]], SharedTxState peeraddr txid)
   -- ^ inbound mempool, outbound mempools, final shared state
 runTxSubmission tracer tracerTxLogic countersTracer inboundTracer st0
-                peerImpairmentMap cancelSchedule txDecisionPolicy = do
+                peerImpairmentMap cancelSchedule mempoolStall txDecisionPolicy = do
     st <- traverse (\(b, c, d, e) -> do
         mempool <- newMempool b
         (outChannel, inChannel) <- createConnectedChannels
@@ -247,7 +257,17 @@ runTxSubmission tracer tracerTxLogic countersTracer inboundTracer st0
 
     duplicateTxIdsVar <- Lazy.newTVarIO []
     sharedTxStateVar <- newSharedTxStateVar emptySharedTxState
-    inFlightRegistry <- newPeerTxRegistry
+    inFlightRegistry <- newPeerTxRegistry (mkStdGen 7)
+    releaseAt <- addTime mempoolStall <$> getMonotonicTime
+    let writer0 = getMempoolWriter duplicateTxIdsVar inboundMempool
+        -- Under backpressure every add blocks until the mempool has room;
+        -- here, until the release time.
+        stalledWriter = writer0 {
+            mempoolAddTxs = \txs -> do
+              now <- getMonotonicTime
+              when (now < releaseAt) $ threadDelay (releaseAt `diffTime` now)
+              mempoolAddTxs writer0 txs
+          }
     txCountersVar <- newTxSubmissionCountersVar mempty
     traceTVarIO sharedTxStateVar \_ -> return . TraceDynamic . TxStateTrace
     labelTVarIO sharedTxStateVar "shared-tx-state"
@@ -277,13 +297,13 @@ runTxSubmission tracer tracerTxLogic countersTracer inboundTracer st0
                               sharedTxStateVar
                               inFlightRegistry
                               txCountersVar
-                              addr $ \api -> do
+                              addr (pure False) $ \api -> do
                                 let server =
                                       txSubmissionInboundV2
                                         (PeerInboundTrace addr `contramap` inboundTracer)
                                         NoTxSubmissionInitDelay
                                         txDecisionPolicy
-                                        (getMempoolWriter duplicateTxIdsVar inboundMempool)
+                                        stalledWriter
                                         getTxSize
                                         api
                                 runPipelinedPeerWithLimits
@@ -309,10 +329,11 @@ runTxSubmission tracer tracerTxLogic countersTracer inboundTracer st0
         _ <- waitAllServers as
 
         -- All peers have scrubbed their per-peer state via the
-        -- 'withPeer' bracket finalizer.  Wait long enough for retained
-        -- entries to expire so a sweep tick (still firing inside the
-        -- running counters thread) can clear them along with any
-        -- orphans and stale lookups.
+        -- 'withPeer' bracket finalizer, which left the entries they alone
+        -- advertised abandoned.  Wait long enough for retained entries to
+        -- expire so a sweep tick (still firing inside the running counters
+        -- thread) clears them and the abandoned entries with their lookup
+        -- entries.
         threadDelay (bufferedTxsMinLifetime txDecisionPolicy + 1)
 
         cancel countersAid
@@ -354,7 +375,15 @@ runTxSubmission tracer tracerTxLogic countersTracer inboundTracer st0
 txSubmissionSimulation :: forall s . TxSubmissionState
                        -> IOSim s ([Tx Int], [[Tx Int]], SharedTxState PeerAddr TxId)
                        -- ^ inbound mempool, outbound mempools, final shared state
-txSubmissionSimulation (TxSubmissionState state peerImpairment txDecisionPolicy) = do
+txSubmissionSimulation = txSubmissionSimulationStalled 0
+
+-- | 'txSubmissionSimulation' with the inbound mempool blocking every add
+-- until the given time after the start: backpressure, under which a peer
+-- that submitted holds its other advertised txids unrequested until the
+-- mempool has room again.
+txSubmissionSimulationStalled :: forall s . DiffTime -> TxSubmissionState
+                              -> IOSim s ([Tx Int], [[Tx Int]], SharedTxState PeerAddr TxId)
+txSubmissionSimulationStalled mempoolStall (TxSubmissionState state peerImpairment txDecisionPolicy) = do
   state' <- traverse (\(txs, mbOutDelay, mbInDelay) -> do
                       let mbOutDelayTime = getSmallDelay . getPositive <$> mbOutDelay
                           mbInDelayTime  = getSmallDelay . getPositive <$> mbInDelay
@@ -393,7 +422,7 @@ txSubmissionSimulation (TxSubmissionState state peerImpairment txDecisionPolicy)
       let tracer :: forall a. (Show a, Typeable a) => Tracer (IOSim s) a
           tracer = dynamicTracer <> sayTracer -- <> verboseTracer <> debugTracer
       runTxSubmission tracer tracer tracer tracer state'' peerImpairment
-                      Map.empty txDecisionPolicy
+                      Map.empty mempoolStall txDecisionPolicy
 
 filterValidTxs :: [Tx txid] -> [Tx txid]
 filterValidTxs
@@ -521,7 +550,7 @@ unit_counterEmission_cadence =
     simulation = do
       sharedTxStateVar <- newSharedTxStateVar
                             (emptySharedTxState :: SharedTxState Int Int)
-      inFlightRegistry <- newPeerTxRegistry
+      inFlightRegistry <- newPeerTxRegistry (mkStdGen 7)
                             :: IOSim s (PeerTxRegistry (IOSim s) Int)
       txCountersVar    <- newTxSubmissionCountersVar mempty
       recorder         <- newTVarIO []
@@ -571,11 +600,11 @@ unit_counterEmission_subMsDurations = do
       mempool          <- emptyMempool
       sharedTxStateVar <- newSharedTxStateVar
                             (emptySharedTxState :: SharedTxState Int TxId)
-      registry         <- newPeerTxRegistry
+      registry         <- newPeerTxRegistry (mkStdGen 7)
                             :: IOSim s (PeerTxRegistry (IOSim s) Int)
       countersVar      <- newTxSubmissionCountersVar mempty
       withPeer defaultTxDecisionPolicy (getMempoolReader mempool)
-               sharedTxStateVar registry countersVar (0 :: Int)
+               sharedTxStateVar registry countersVar (0 :: Int) (pure False)
         $ \PeerTxAPI { applyReceivedTxIds, runNextPeerAction, applySubmittedTxs } -> do
             now <- getMonotonicTime
             -- Every call takes the empty peer state, so the calls are
@@ -620,6 +649,11 @@ prop_counterInvariants slack tr =
       , ("txIdsRequested",        txIdsRequested)
       , ("txIdRepliesReceived",   txIdRepliesReceived)
       , ("txIdsReceived",         txIdsReceived)
+      , ("txIdReplies0",          txIdReplies0)
+      , ("txIdReplies1",          txIdReplies1)
+      , ("txIdReplies2to4",       txIdReplies2to4)
+      , ("txIdReplies5to9",       txIdReplies5to9)
+      , ("txIdReplies10",         txIdReplies10)
       , ("txMessagesSent",        txMessagesSent)
       , ("txsRequested",          txsRequested)
       , ("txRepliesReceived",     txRepliesReceived)
@@ -630,6 +664,8 @@ prop_counterInvariants slack tr =
       , ("txsRejected",           txsRejected)
       , ("txIdBlockingReqsSent",  txIdBlockingReqsSent)
       , ("txIdPipelinedReqsSent", txIdPipelinedReqsSent)
+      , ("txIdSlowReqsSent",      txIdSlowReqsSent)
+      , ("txIdsReceivedSlow",     txIdsReceivedSlow)
       , ("txIdBlockingWaitMs",    txIdBlockingWait)
       , ("txPipelineWaitMs",      txPipelineWait)
       , ("txSubmissionWaitMs",    txSubmissionWait)
@@ -645,6 +681,10 @@ prop_counterInvariants slack tr =
     checkCausality s = conjoin
       [ counterexample "txIdRepliesReceived > txIdMessagesSent"
           (txIdRepliesReceived s <= txIdMessagesSent s)
+      , counterexample "txIdSlowReqsSent > txIdMessagesSent"
+          (txIdSlowReqsSent s <= txIdMessagesSent s)
+      , counterexample "txIdsReceivedSlow > txIdsReceived"
+          (txIdsReceivedSlow s <= txIdsReceived s)
       , counterexample "txRepliesReceived > txMessagesSent"
           (txRepliesReceived s <= txMessagesSent s)
       , counterexample "txIdsReceived > txIdsRequested"
@@ -703,8 +743,54 @@ prop_counterInvariants slack tr =
 -- didn't regress.
 --
 prop_txSubmission :: TxSubmissionState -> Property
-prop_txSubmission st@(TxSubmissionState peers _ _) =
-    let tr = runSimTrace (txSubmissionSimulation st)
+prop_txSubmission = prop_txSubmissionStalled 0
+
+-- | 'prop_txSubmission' with every peer on the slow tier and no source
+-- rule: the gate spaces the txid requests, and every valid tx must still
+-- reach the mempool.
+prop_txSubmission_allSlow :: TxSubmissionState -> Property
+prop_txSubmission_allSlow st =
+    prop_txSubmissionStalled 0
+      st { decisionPolicy = (decisionPolicy st) { txFastPeers   = 0
+                                                , txSlowCadence = 0.1
+                                                , txSlowJitter  = 0.2
+                                                , txSourceRate  = 0 } }
+
+-- | The slow tier's txid counter against the policy: a slow request yields
+-- at most the request cap of ids, and with no fast tier to be had (no coin
+-- slots, no source rule; the simulation has no local roots) every id
+-- received came on the slow tier.
+prop_tierCounterBounds :: TxDecisionPolicy -> SimTrace a -> Property
+prop_tierCounterBounds policy tr =
+    conjoin
+      [ counterexample ("txIdsReceivedSlow " ++ show (txIdsReceivedSlow s)
+                          ++ " > txIdSlowReqsSent " ++ show (txIdSlowReqsSent s)
+                          ++ " * cap " ++ show cap)
+          (txIdsReceivedSlow s <= txIdSlowReqsSent s * cap)
+      .&&. (if allSlow
+               then counterexample ("every peer slow, yet txIdsReceivedSlow "
+                                      ++ show (txIdsReceivedSlow s) ++ " /= txIdsReceived "
+                                      ++ show (txIdsReceived s))
+                      (txIdsReceivedSlow s === txIdsReceived s)
+               else property True)
+      .&&. counterexample "reply sizes partition the replies"
+             (txIdReplies0 s + txIdReplies1 s + txIdReplies2to4 s + txIdReplies5to9 s + txIdReplies10 s
+                === txIdRepliesReceived s)
+      | s <- selectTraceEventsDynamic tr :: [TxSubmissionCounters]
+      ]
+  where
+    cap     = fromIntegral (getNumTxIdsToReq (maxNumTxIdsToRequest policy))
+    allSlow = txFastPeers policy == 0 && sourceCount policy == 0
+
+-- | 'prop_txSubmission' under five minutes of mempool backpressure from the
+-- start: every valid tx must still reach the mempool afterwards, so no
+-- txid may be acknowledged unfetched while its peer waits for room.
+prop_txSubmission_backpressure :: TxSubmissionState -> Property
+prop_txSubmission_backpressure = prop_txSubmissionStalled 300
+
+prop_txSubmissionStalled :: DiffTime -> TxSubmissionState -> Property
+prop_txSubmissionStalled mempoolStall st@(TxSubmissionState peers _ _) =
+    let tr = runSimTrace (txSubmissionSimulationStalled mempoolStall st)
         numPeersWithWronglySizedTx :: Int
         numPeersWithWronglySizedTx =
           foldr
@@ -733,6 +819,7 @@ prop_txSubmission st@(TxSubmissionState peers _ _) =
              counterexample (ppSayTrace tr)
            $ conjoin (validate inmp `map` outmps)
              .&&. prop_counterInvariants 0 tr
+             .&&. prop_tierCounterBounds (decisionPolicy st) tr
              .&&. prop_sharedStateClean finalState
   where
     -- | Asserts that every txid produced is present in the consumer set.
@@ -970,6 +1057,25 @@ prop_txSubmission_resilientToImpairment (TxSubmissionImpairmentState st) =
         counterexample ("contaminating txids: " ++ show (Set.toList extras))
       $ property (Set.null extras)
 
+-- | A peer answering a requested txid with two copies of its body is a
+-- protocol error on the inbound side: the second copy would answer no
+-- pending key and pass for a late body that cancels an omission.
+prop_txSubmission_duplicateBodyRejected :: TxSubmissionImpairmentState -> Property
+prop_txSubmission_duplicateBodyRejected (TxSubmissionImpairmentState st0) =
+    case [ a | (a, (txs, _, _)) <- Map.toList (peerMap st0), not (null txs) ] of
+      [] -> label "no peer with bodies" (property True)
+      addr : _ ->
+        let st = st0 { peerImpairment = Map.singleton addr noImpairment { impairDuplicateBody = True } }
+            tr = runSimTrace (txSubmissionSimulation st)
+            events = [ e | PeerInboundTrace a e <- selectTraceEventsDynamic tr :: [PeerInboundTraceType]
+                         , a == addr ]
+            asked    = or [ True | TraceTxInboundRequestTxs (_ : _) <- events ]
+            rejected = or [ True | TraceTxInboundError ProtocolErrorTxNotRequested <- events ]
+        in cover 50 asked "bodies requested from the impaired peer"
+         $ counterexample (ppSayTrace tr)
+         $ counterexample "bodies requested, the doubled reply not rejected"
+         $ not asked || rejected
+
 prop_TxSubmissionImpairmentState_validGen :: TxSubmissionImpairmentState -> Property
 prop_TxSubmissionImpairmentState_validGen st =
     counterexample (show st)
@@ -1152,7 +1258,7 @@ txSubmissionSimulationDisconnect
       let tracer :: forall a. (Show a, Typeable a) => Tracer (IOSim s) a
           tracer = dynamicTracer <> sayTracer
       result <- runTxSubmission tracer tracer tracer tracer combinedState peerImpairment
-                                cancelSchedule txDecisionPolicy
+                                cancelSchedule 0 txDecisionPolicy
       traverse_ cancel disconnectAids
       pure result
 
@@ -1332,7 +1438,12 @@ unit_score_persistentBadStaysHigh = do
 -- 1 and equal-or-greater valid count).
 unit_score_recoversAfterBurst :: Assertion
 unit_score_recoversAfterBurst = do
-    let invalids = 5
+    -- The score nets each submitted batch: rejections up, accepts down by
+    -- 'scoreAcceptDecrement'.  The burst must outsize a batch, or a batch
+    -- mixing the tail of the burst with enough accepts nets to nothing
+    -- and the peak is never seen; 20 invalids fill two full requests at
+    -- the default cap, and 10 accepts drain them afterwards.
+    let invalids = 20
         valids   = 10
         st = TxSubmissionState
               { peerMap        = Map.singleton 1

@@ -2,11 +2,10 @@
 
 module Main (main) where
 
+import Bench.Env (prepareEnv)
 import Bench.TxSubmissionV2Server qualified as DirectV2
+import Bench.TxSubmissionV2Sweep qualified as Sweep
 
-import Control.DeepSeq (NFData, rnf)
-import Control.Exception (evaluate)
-import System.Mem (performMajorGC)
 import Test.Tasty.Bench
 
 import Test.Ouroboros.Network.PeerSelection.PeerMetric
@@ -37,6 +36,9 @@ main =
           [ env (prepareEnv (TX.mkReceiveDuplicateFixture 100 3)) $ \fixture ->
                 bench ("handleReceivedTxIds/duplicate-active/100existing/3txids/" ++ benchLoopsLabel) $
                   nfAppIO (TX.runReceiveDuplicateLoop benchLoops) fixture
+          , env (prepareEnv (TX.mkReceiveRetainedFixture 100 3)) $ \fixture ->
+                bench ("handleReceivedTxIds/duplicate-retained/100existing/3txids/" ++ benchLoopsLabel) $
+                  nfAppIO (TX.runReceiveDuplicateLoop benchLoops) fixture
           , env (prepareEnv (TX.mkResolvedAckFixture 100 10)) $ \fixture ->
                 bench ("nextPeerAction/ack-resolved-retained/100advertisers/10txids/" ++ benchLoopsLabel) $
                   nfAppIO (TX.runPeerActionLoop benchLoops) fixture
@@ -63,12 +65,7 @@ main =
               $ \fixture ->
                 bench "server/direct-interpreter/multi-peer/100peers/1000batches" $
                   nfAppIO DirectV2.runDirectServerBenchmark fixture
+          , Sweep.benchmarks
           ]
         ]
       ]
-
-prepareEnv :: NFData a => a -> IO a
-prepareEnv a = do
-  _ <- evaluate (rnf a)
-  performMajorGC
-  pure a

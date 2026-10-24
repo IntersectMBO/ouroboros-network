@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns               #-}
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveAnyClass             #-}
+{-# LANGUAGE DeriveDataTypeable         #-}
 {-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingVia                #-}
@@ -20,6 +21,10 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Types
     SharedTxState (..)
     -- * RetainedTxs with helper functions
   , RetainedTxs
+  , RetainTime
+  , retainTimeSeconds
+  , retainDeadline
+  , retainNow
   , retainedEmpty
   , retainedSingleton
   , retainedFromList
@@ -31,7 +36,15 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Types
   , retainedDeleteKeys
   , retainedKeysSet
   , retainedRestrictKeys
-  , retainedExpiredKeys
+  , retainedExpireUpTo
+  , retainedDueBy
+    -- ** Sweep cursor
+  , SweepCursor (..)
+  , sweepStart
+    -- ** Counts for tracing
+  , SharedTxStateCounts (..)
+  , sharedTxStateCounts
+  , sharedTxStateCountFields
     -- * Traces
   , TraceTxLogic (..)
   , TxSubmissionInitDelay (..)
@@ -55,7 +68,13 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Types
   , TxLease (..)
   , TxEntry (..)
   , PeerAction (..)
+  , ResolvedPeerAction (..)
   , PeerPhase (..)
+  , PeerTier (..)
+  , recordRequestTier
+  , takeReplyTier
+  , TierStanding (..)
+  , TierCensus (..)
   , PeerScore (..)
   , PeerTxLocalState (..)
   , PeerTxInFlight (..)
@@ -161,6 +180,17 @@ data TxEntry peeraddr = TxEntry {
     -- contains this key.
     txInSubmission                 :: !Bool,
 
+    -- | Number of registered peers with this key in their 'pifAdvertised':
+    -- one more when a peer comes to advertise the entry, one fewer when it
+    -- omits the body, has it rejected, or leaves.  Kept on the entry by
+    -- the peers' own writes so that the sweep reads no peer's variables:
+    -- an entry nobody advertises, leases, attempts or submits is
+    -- abandoned.
+    --
+    -- Invariant: equals the number of registered peers whose
+    -- 'pifAdvertised' contains this key.
+    txAdvertisers                  :: !Int,
+
     -- | Effective per-tx inflight multiplicity cap.
     --
     -- Initialised from 'txInflightMultiplicity' of the policy when the
@@ -175,61 +205,48 @@ data TxEntry peeraddr = TxEntry {
 -- | Per-peer in-flight tracking, owned by 'withPeer'.
 --
 -- The peer thread updates this TVar in the same STM transaction as
--- the shared 'TxEntry' so the two stay coherent.  Two readers:
---
--- * On exception, 'withPeer's bracket finalizer reads it and reverses
---   each per-peer contribution: releases any held lease, decrements
---   'txAttempt' for each attempted key, clears 'txInSubmission' for
---   any in-flight submission.
---
--- * The sweep walks every live peer's TVar to compute the union of
---   advertised keys and skips those entries when looking for orphans
---   to retire (the entry is still wanted by an active peer that
---   may simply be slow to claim).
+-- the shared 'TxEntry' so the two stay coherent.  Its one other reader
+-- is 'withPeer's bracket finalizer, which on exit reverses each per-peer
+-- contribution: releases any held lease, decrements 'txAttempt' for each
+-- attempted key, clears 'txInSubmission' for any in-flight submission.
+-- The sweep never reads it.
 --
 -- Invariant: 'pifAttempting' and 'pifSubmitting' are disjoint; a key
 -- moves from the former to the latter atomically on the submit
 -- transition.  'pifLeased' is a subset of their union.
 data PeerTxInFlight = PeerTxInFlight {
-    -- | Keys this peer currently has in its advertised window.  Used
-    -- by the orphan sweep to know the entry is still wanted, and by
+    -- | Keys this peer currently has in its advertised window.  Used by
     -- 'nextWakeDelay' to scan for the earliest claim wake.
     --
     -- Invariant: a subset of the live keys (active 'sharedTxTable'
-    -- union retained 'sharedRetainedTxs').
-    pifAdvertised  :: !IntSet,
+    -- union retained 'sharedRetainedTxs'), but for a key whose retention
+    -- expired before this peer acknowledged it; the acknowledgement
+    -- follows ('txIdAckable').
+    pifAdvertised :: !IntSet,
 
     -- | Keys this peer currently holds 'TxLeased' on.  Cleared on
     -- omit, accept, reject, lease-loss and bracket exit.
-    pifLeased      :: !IntSet,
+    pifLeased     :: !IntSet,
 
     -- | Keys this peer currently counts toward 'txAttempt'.  Spans
     -- the @claim -> download -> buffer@ phases; the key moves to
     -- 'pifSubmitting' on the @submit@ transition.
-    pifAttempting  :: !IntSet,
+    pifAttempting :: !IntSet,
 
     -- | Keys this peer currently counts toward 'txInSubmission'.
     -- Set on 'PeerSubmitTxs' / 'markSubmittingTxs', cleared on accept
     -- or reject.
-    pifSubmitting  :: !IntSet,
-
-    -- | Keys this peer holds in 'peerUnacknowledgedTxIds'.  A superset
-    -- of 'pifAdvertised': also tracks keys the peer learned about via
-    -- the retained-or-mempool path of 'handleReceivedTxIds' that are
-    -- not advertised for fetch but still pending an ack.  Used by the
-    -- sweep to know whether the txid lookup tables can be reclaimed.
-    pifAcksPending :: !IntSet
+    pifSubmitting :: !IntSet
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (NFData, NoThunks)
 
 emptyPeerTxInFlight :: PeerTxInFlight
 emptyPeerTxInFlight = PeerTxInFlight {
-    pifAdvertised = IntSet.empty,
-    pifLeased     = IntSet.empty,
-    pifAttempting = IntSet.empty,
-    pifSubmitting = IntSet.empty,
-    pifAcksPending = IntSet.empty
+    pifAdvertised  = IntSet.empty,
+    pifLeased      = IntSet.empty,
+    pifAttempting  = IntSet.empty,
+    pifSubmitting  = IntSet.empty
   }
 
 -- | The next peer-local action chosen by the V2 worker thread.
@@ -239,8 +256,11 @@ emptyPeerTxInFlight = PeerTxInFlight {
 -- it out directly.
 data PeerAction
   = -- | No immediate work is available.  The peer should wait for either a
-    -- shared-state generation change or the optional timeout.
-    PeerDoNothing !Word64 !(Maybe DiffTime)
+    -- shared-state generation change or the optional timeout; or, when the
+    -- third field is set, for the 'sharedClaimable' counter to move past it
+    -- instead of the generation: the slow fetch tier's park while its gate
+    -- holds a txid request.
+    PeerDoNothing !Word64 !(Maybe DiffTime) !(Maybe Word64)
   | -- | Send a txid protocol message acknowledging the first argument and
     -- requesting the second argument.
     PeerRequestTxIds !NumTxIdsToAck !NumTxIdsToReq
@@ -251,6 +271,18 @@ data PeerAction
     PeerSubmitTxs ![TxKey]
   deriving stock (Eq, Show, Generic)
   deriving anyclass NFData
+
+-- | A 'PeerAction' with what carrying it out takes from the shared state,
+-- resolved in the deciding transaction: the txids and advertised sizes of
+-- the bodies to request, the buffered bodies to submit with their txids.
+-- A key that leaves the state once the decision is made, by another peer's
+-- submission of the same tx and the retention's expiry, cannot fail the
+-- resolution afterwards.
+data ResolvedPeerAction txid tx
+  = ResolvedDoNothing !Word64 !(Maybe DiffTime) !(Maybe Word64)
+  | ResolvedRequestTxIds !NumTxIdsToAck !NumTxIdsToReq
+  | ResolvedRequestTxs !(Map txid SizeInBytes)
+  | ResolvedSubmitTxs ![(TxKey, txid, tx)]
 
 
 -- | A batch of transaction body requests sent to a peer.
@@ -285,6 +317,44 @@ data PeerPhase
   deriving anyclass NFData
 
 instance NoThunks PeerPhase
+
+-- | A peer's fetch tier (see "Ouroboros.Network.TxSubmission.Inbound.V2.Tier"):
+-- fast peers are polled for txids as soon as there is something to
+-- acknowledge, slow peers at 'txSlowCadence'.
+data PeerTier
+  = FastTier
+  | SlowTier
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving anyclass NFData
+
+instance NoThunks PeerTier
+
+-- | Why a peer is served on the tier it is: the standing the registry keeps
+-- per peer for the tier census.  A peer with several claims to the fast
+-- tier counts once, root first, coin before source, since the coin's
+-- slot is its whatever the source rule says.
+data TierStanding
+  = StandingRoot
+    -- ^ fast by standing: a local root
+  | StandingCoin
+    -- ^ fast by the coin: among the first in the salted order
+  | StandingSource
+    -- ^ fast by the source rule while the coin left it slow
+  | StandingSlow
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving anyclass NFData
+
+instance NoThunks TierStanding
+
+-- | How many live peers are served on each standing.
+data TierCensus = TierCensus {
+    censusFastByRoot   :: !Int,
+    censusFastByCoin   :: !Int,
+    censusFastBySource :: !Int,
+    censusSlow         :: !Int
+  }
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass NFData
 
 -- | Peer usefulness score.
 --
@@ -342,6 +412,20 @@ data TxSubmissionCountersOf t = TxSubmissionCounters {
     -- ^ Txid request messages sent as blocking requests.
     txIdPipelinedReqsSent :: !Word64,
     -- ^ Txid request messages sent as pipelined (non-blocking) requests.
+    txIdSlowReqsSent      :: !Word64,
+    -- ^ Txid request messages sent to peers on the slow tier (a subset of
+    -- 'txIdMessagesSent').
+    txIdsReceivedSlow     :: !Word64,
+    -- ^ Txids received in replies to requests sent on the slow tier (a
+    -- subset of 'txIdsReceived').
+    txIdReplies0          :: !Word64,
+    txIdReplies1          :: !Word64,
+    txIdReplies2to4       :: !Word64,
+    txIdReplies5to9       :: !Word64,
+    txIdReplies10         :: !Word64,
+    -- ^ Txid replies by the number of txids they carried: none, one, two
+    -- to four, five to nine, ten or more (a partition of
+    -- 'txIdRepliesReceived').
     txIdBlockingWait      :: !t,
     -- ^ Cumulative time spent waiting for replies to blocking txid
     -- requests.  High values indicate the system is mostly idle (no new
@@ -384,6 +468,13 @@ instance Num t => Semigroup (TxSubmissionCountersOf t) where
     txsRejected           = txsRejected a + txsRejected b,
     txIdBlockingReqsSent  = txIdBlockingReqsSent  a + txIdBlockingReqsSent  b,
     txIdPipelinedReqsSent = txIdPipelinedReqsSent a + txIdPipelinedReqsSent b,
+    txIdSlowReqsSent      = txIdSlowReqsSent      a + txIdSlowReqsSent      b,
+    txIdsReceivedSlow     = txIdsReceivedSlow     a + txIdsReceivedSlow     b,
+    txIdReplies0          = txIdReplies0          a + txIdReplies0          b,
+    txIdReplies1          = txIdReplies1          a + txIdReplies1          b,
+    txIdReplies2to4       = txIdReplies2to4       a + txIdReplies2to4       b,
+    txIdReplies5to9       = txIdReplies5to9       a + txIdReplies5to9       b,
+    txIdReplies10         = txIdReplies10         a + txIdReplies10         b,
     txIdBlockingWait      = txIdBlockingWait      a + txIdBlockingWait      b,
     txPipelineWait        = txPipelineWait        a + txPipelineWait        b,
     txSubmissionWait      = txSubmissionWait      a + txSubmissionWait      b
@@ -405,6 +496,13 @@ instance Num t => Monoid (TxSubmissionCountersOf t) where
     txsRejected = 0,
     txIdBlockingReqsSent  = 0,
     txIdPipelinedReqsSent = 0,
+    txIdSlowReqsSent = 0,
+    txIdsReceivedSlow = 0,
+    txIdReplies0 = 0,
+    txIdReplies1 = 0,
+    txIdReplies2to4 = 0,
+    txIdReplies5to9 = 0,
+    txIdReplies10 = 0,
     txIdBlockingWait      = 0,
     txPipelineWait        = 0,
     txSubmissionWait      = 0
@@ -496,10 +594,49 @@ data PeerTxLocalState tx = PeerTxLocalState {
     -- | Set on a txid reply that returned zero new txids; cleared on a
     -- non-empty txid reply or when the mempool accepts at least one tx
     -- delivered by this peer.
-    peerLastTxIdReplyWasEmpty :: !Bool
+    peerLastTxIdReplyWasEmpty :: !Bool,
+
+    -- | The tier the coin or the peer's standing put it on, written by the
+    -- registry before each decision.  A tx source is fast whatever this
+    -- says (see 'peerNovelAt').
+    peerTier                  :: !PeerTier,
+
+    -- | When the mempool last accepted txs this peer delivered, newest
+    -- last, at most as many as 'txSourceRate' over 'txSourceWindow'
+    -- amounts to: the peer is a source while the oldest is inside the
+    -- window.
+    peerNovelAt               :: !(StrictSeq Time),
+
+    -- | On the slow tier, the time before which no further txid request
+    -- goes out, set when one is sent.
+    peerSlowGate              :: !(Maybe Time),
+
+    -- | The generator state the slow tier's jitter is drawn from, seeded by
+    -- the registry at registration.
+    peerJitterSeed            :: !Word64,
+
+    -- | The tiers the outstanding txid requests went out on, the oldest
+    -- first: replies come in that order, and each reply's txids are counted
+    -- on the tier that asked for them, whatever the tier is when they
+    -- arrive or became while an earlier request was still out.
+    peerRequestTiers          :: !(StrictSeq PeerTier)
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (NFData, NoThunks)
+
+-- | Record the tier a txid request goes out on, behind the outstanding
+-- ones ('peerRequestTiers').
+recordRequestTier :: PeerTier -> PeerTxLocalState tx -> PeerTxLocalState tx
+recordRequestTier tier peerState =
+  peerState { peerRequestTiers = peerRequestTiers peerState StrictSeq.|> tier }
+
+-- | The tier the oldest outstanding txid request went out on, the one a
+-- reply answers, and the state without it; 'FastTier' when none is out.
+takeReplyTier :: PeerTxLocalState tx -> (PeerTier, PeerTxLocalState tx)
+takeReplyTier peerState =
+  case peerRequestTiers peerState of
+    tier StrictSeq.:<| rest -> (tier, peerState { peerRequestTiers = rest })
+    _                       -> (FastTier, peerState)
 
 emptyPeerTxLocalState :: PeerTxLocalState tx
 emptyPeerTxLocalState = PeerTxLocalState {
@@ -513,7 +650,12 @@ emptyPeerTxLocalState = PeerTxLocalState {
     peerDownloadedTxs         = IntMap.empty,
     peerDownloadStartTime     = Nothing,
     peerScore                 = emptyPeerScore (Time 0),
-    peerLastTxIdReplyWasEmpty = False
+    peerLastTxIdReplyWasEmpty = False,
+    peerTier                  = FastTier,
+    peerNovelAt               = StrictSeq.empty,
+    peerSlowGate              = Nothing,
+    peerJitterSeed            = 0,
+    peerRequestTiers          = StrictSeq.empty
   }
 
 -- | Shared V2 state.
@@ -527,7 +669,8 @@ emptyPeerTxLocalState = PeerTxLocalState {
 --   sets are disjoint.
 -- * 'sharedTxIdToKey' and 'sharedKeyToTxId' are mutual inverses (equal
 --   size, round-tripping in both directions).
--- * every live key (active union retained) is present in those two maps.
+-- * the keys of those two maps are exactly the live keys (active union
+--   retained): a lookup entry lives with its residence and goes with it.
 -- * 'sharedNextTxKey' is strictly greater than every live key, so a
 --   freshly interned key never collides with a live one.
 --
@@ -558,7 +701,14 @@ data SharedTxState peeraddr txid = SharedTxState {
     -- | Structural dirty bit.  Bumped on most structural changes; used by
     -- 'writeSharedStateIfChanged' (paired with 'sharedGeneration') to skip
     -- redundant TVar writes.  A change to either counter triggers a write.
-    sharedRevision    :: !Word64
+    sharedRevision    :: !Word64,
+    -- | Bumped when an entry becomes claimable for another peer: a lease
+    -- released by a rejection or an omitted body, a stuck entry's cap
+    -- raised, a leaving peer's leases scrubbed.  The slow fetch tier parks
+    -- on it instead of 'sharedGeneration', which also moves on every
+    -- accept, so a held txid request costs no re-evaluation per accept but
+    -- a re-fetch chain still runs at round-trip speed.
+    sharedClaimable   :: !Word64
   }
   deriving stock Generic
 
@@ -590,13 +740,15 @@ deriving anyclass instance (NoThunks peeraddr, NoThunks txid, HasRawTxId txid) =
 --
 -- Backed by two indexes:
 --
--- * 'retainedQueue' is keyed on 'Time' for cheap earliest-expiry queries.
+-- * 'retainedQueue' is keyed on the deadline, a 'RetainTime', for cheap
+--   earliest-expiry queries: machine-word comparisons, where 'Time'
+--   compares 'Integer' picoseconds.
 -- * 'retainedSet'   shadows the keys for O(min(n, W)) 'retainedMember'
 --   queries (the hot path: every received txid is checked here).
 --
 -- Both are kept in lockstep by the 'retained*' helpers below.
 data RetainedTxs = RetainedTxs {
-    retainedQueue :: !(IntPSQ Time ()),
+    retainedQueue :: !(IntPSQ RetainTime ()),
     retainedSet   :: !IntSet
   }
   deriving stock    (Eq, Show, Generic)
@@ -610,23 +762,53 @@ emptySharedTxState = SharedTxState {
     sharedKeyToTxId        = IntMap.empty,
     sharedNextTxKey        = 0,
     sharedGeneration       = 0,
-    sharedRevision         = 0
+    sharedRevision         = 0,
+    sharedClaimable        = 0
   }
 
 retainedEmpty :: RetainedTxs
 retainedEmpty = RetainedTxs IntPSQ.empty IntSet.empty
 
-retainedSingleton :: Int -> Time -> RetainedTxs
+-- | An instant on the retention clock: whole nanoseconds of monotonic
+-- time, a deadline rounded up ('retainDeadline') or a current time rounded
+-- down ('retainNow').  Only ever compared, never computed with, so that a
+-- revision or a count cannot stand in for it.
+newtype RetainTime = RetainTime Word64
+  deriving stock (Show, Generic)
+  deriving newtype (Eq, Ord, Bounded, NFData, NoThunks)
+
+-- | The instant in seconds, for traces.
+retainTimeSeconds :: RetainTime -> Double
+retainTimeSeconds (RetainTime ns) = fromIntegral ns / 1e9
+
+-- | A retention deadline: 'Time' in nanoseconds, rounded up, so that with
+-- 'retainNow' rounding down an entry never expires before its deadline.
+-- 'Word64' nanoseconds of monotonic time last 584 years; a negative time,
+-- as a non-positive lifetime gives, is due at once, and a time past the
+-- range is due at its end, rather than wrapping.
+retainDeadline :: Time -> RetainTime
+retainDeadline (Time t) =
+  RetainTime (clampNanoseconds ((diffTimeToPicoseconds t + 999) `div` 1000))
+
+-- | The current time for expiry: 'Time' in nanoseconds, rounded down.
+retainNow :: Time -> RetainTime
+retainNow (Time t) = RetainTime (clampNanoseconds (diffTimeToPicoseconds t `div` 1000))
+
+-- | Nanoseconds as a 'Word64', saturating at either end.
+clampNanoseconds :: Integer -> Word64
+clampNanoseconds = fromInteger . max 0 . min (toInteger (maxBound :: Word64))
+
+retainedSingleton :: Int -> RetainTime -> RetainedTxs
 retainedSingleton k retainUntil =
     RetainedTxs (IntPSQ.insert k retainUntil () IntPSQ.empty)
                 (IntSet.singleton k)
 
-retainedFromList :: [(Int, Time)] -> RetainedTxs
+retainedFromList :: [(Int, RetainTime)] -> RetainedTxs
 retainedFromList =
     List.foldl' (\retained (k, retainUntil) -> retainedInsertMax k retainUntil retained)
                 retainedEmpty
 
-retainedToList :: RetainedTxs -> [(Int, Time)]
+retainedToList :: RetainedTxs -> [(Int, RetainTime)]
 retainedToList =
     sortOn fst
   . fmap (\(k, retainUntil, ()) -> (k, retainUntil))
@@ -637,7 +819,7 @@ retainedSize :: RetainedTxs -> Int
 retainedSize = IntSet.size . retainedSet
 {-# INLINE retainedSize #-}
 
-retainedLookup :: Int -> RetainedTxs -> Maybe Time
+retainedLookup :: Int -> RetainedTxs -> Maybe RetainTime
 retainedLookup k retained =
     fmap fst (IntPSQ.lookup k (retainedQueue retained))
 {-# INLINE retainedLookup #-}
@@ -646,7 +828,7 @@ retainedMember :: Int -> RetainedTxs -> Bool
 retainedMember k = IntSet.member k . retainedSet
 {-# INLINE retainedMember #-}
 
-retainedInsertMax :: Int -> Time -> RetainedTxs -> RetainedTxs
+retainedInsertMax :: Int -> RetainTime -> RetainedTxs -> RetainedTxs
 retainedInsertMax k retainUntil (RetainedTxs queue keys) =
     RetainedTxs (IntPSQ.insert k retainUntil' () queue)
                 (IntSet.insert k keys)
@@ -677,24 +859,109 @@ retainedRestrictKeys (RetainedTxs queue keys) ks =
       | otherwise          = id
 {-# INLINE retainedRestrictKeys #-}
 
-retainedExpiredKeys :: Time -> RetainedTxs -> IntSet
-retainedExpiredKeys currentTime retained =
-    -- Quick exit if no TX has expired.
-    case IntPSQ.findMin queue of
-      Just (_, earliest, _) | earliest <= currentTime -> go IntSet.empty queue
-      _                                               -> IntSet.empty
+-- | The keys whose retention has expired by @currentTime@, earliest
+-- first, at most @limit@ of them (none for a limit of zero or less), and
+-- the retained entries without them.  Bounds the work of one sweep, so a
+-- backlog of expired entries is drained over several sweeps rather than in
+-- one transaction that grows with it; the queue is unwound once, for the
+-- keys and the remainder together.
+retainedExpireUpTo :: Int -> RetainTime -> RetainedTxs -> (IntSet, RetainedTxs)
+retainedExpireUpTo limit currentTime retained@(RetainedTxs queue keys)
+  | limit > 0, retainedDueBy currentTime retained = go limit IntSet.empty queue
+  | otherwise                                     = (IntSet.empty, retained)
   where
-    queue = retainedQueue retained
-    go expired r =
-      case IntPSQ.minView r of
-        Just (k, retainUntil, (), r')
-          | retainUntil <= currentTime ->
-              go (IntSet.insert k expired) r'
-          | otherwise ->
-              expired
-        Nothing ->
-          expired
-{-# INLINE retainedExpiredKeys #-}
+    go !n !expired r
+      | n <= 0 = done expired r
+      | otherwise =
+          case IntPSQ.minView r of
+            Just (k, retainUntil, (), r')
+              | retainUntil <= currentTime ->
+                  go (n - 1) (IntSet.insert k expired) r'
+            _ -> done expired r
+    done expired r = (expired, RetainedTxs r (keys `IntSet.difference` expired))
+{-# INLINE retainedExpireUpTo #-}
+
+-- | Where a bounded sweep goes on from: the next key to examine in
+-- 'sharedTxTable'.
+newtype SweepCursor = SweepCursor { sweepFrom :: Int }
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (NFData, NoThunks)
+
+-- | The cursor at the start of the table.
+sweepStart :: SweepCursor
+sweepStart = SweepCursor 0
+
+-- | The sizes a 'SharedTxState' is traced by, each under its field's name
+-- ('sharedTxStateCountFields').
+data SharedTxStateCounts = SharedTxStateCounts {
+    -- | Entries of 'sharedTxTable'.
+    activeTxCount     :: !Int,
+    -- | Entries of 'sharedRetainedTxs'.
+    retainedTxCount   :: !Int,
+    -- | Lookup entries.
+    internedTxCount   :: !Int,
+    leasedTxCount     :: !Int,
+    claimableTxCount  :: !Int,
+    totalAttemptCount :: !Int,
+    submittingTxCount :: !Int,
+    -- | Advertisers over the active entries, one per peer and key.
+    advertiserCount   :: !Int
+  }
+  deriving stock (Eq, Show, Generic)
+
+sharedTxStateCounts :: SharedTxState peeraddr txid -> SharedTxStateCounts
+sharedTxStateCounts SharedTxState { sharedTxTable, sharedRetainedTxs,
+                                    sharedTxIdToKey } =
+  SharedTxStateCounts {
+      activeTxCount     = active,
+      retainedTxCount   = retained,
+      internedTxCount   = interned,
+      leasedTxCount     = leased,
+      claimableTxCount  = claimable,
+      totalAttemptCount = attempts,
+      submittingTxCount = submitting,
+      advertiserCount   = advertisers
+    }
+  where
+    active   = IntMap.size sharedTxTable
+    retained = retainedSize sharedRetainedTxs
+    interned = Map.size sharedTxIdToKey
+
+    (leased, claimable, attempts, submitting, advertisers) =
+      IntMap.foldl' count (0, 0, 0, 0, 0) sharedTxTable
+
+    count (!l, !c, !a, !s, !v) TxEntry { txLease, txAttempt, txInSubmission, txAdvertisers } =
+      ( case txLease of TxLeased {}    -> l + 1
+                        TxClaimable {} -> l
+      , case txLease of TxClaimable {} -> c + 1
+                        TxLeased {}    -> c
+      , a + txAttempt
+      , if txInSubmission then s + 1 else s
+      , v + txAdvertisers
+      )
+
+-- | The counts by their fields' names, the names they are traced under,
+-- listed by hand: a field added to the record without a line here is
+-- missing from the traces, not a failure inside the counters thread.
+sharedTxStateCountFields :: SharedTxStateCounts -> [(String, Int)]
+sharedTxStateCountFields counts =
+  [ ("activeTxCount",     activeTxCount     counts)
+  , ("retainedTxCount",   retainedTxCount   counts)
+  , ("internedTxCount",   internedTxCount   counts)
+  , ("leasedTxCount",     leasedTxCount     counts)
+  , ("claimableTxCount",  claimableTxCount  counts)
+  , ("totalAttemptCount", totalAttemptCount counts)
+  , ("submittingTxCount", submittingTxCount counts)
+  , ("advertiserCount",   advertiserCount   counts)
+  ]
+
+-- | Whether any retained entry is due by @currentTime@.
+retainedDueBy :: RetainTime -> RetainedTxs -> Bool
+retainedDueBy currentTime retained =
+    case IntPSQ.findMin (retainedQueue retained) of
+      Just (_, earliest, _) -> earliest <= currentTime
+      Nothing               -> False
+{-# INLINE retainedDueBy #-}
 
 lookupTxKey :: HasRawTxId txid
             => txid
@@ -756,7 +1023,11 @@ data TxSubmissionLogicVersion =
 -- | TxLogic tracer.
 --
 data TraceTxLogic peeraddr txid tx =
-    TraceSharedTxState (SharedTxState peeraddr txid)
+    TraceSharedTxState (SharedTxState peeraddr txid) SharedTxStateCounts
+    -- ^ the state and its counts, folded once by the counters thread for
+    -- every renderer
+  | TraceTxTiers TierCensus
+    -- ^ the live peers by the standing they are served on
   deriving Show
 
 

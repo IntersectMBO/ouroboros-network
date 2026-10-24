@@ -31,7 +31,10 @@ max_TX_SIZE = 65_540
 --
 data TxDecisionPolicy = TxDecisionPolicy {
       maxNumTxIdsToRequest           :: !NumTxIdsToReq,
-      -- ^ a maximal number of txids requested at once.
+      -- ^ a maximal number of txids requested at once.  Best kept at the
+      -- window while a slow fetch tier exists, so a slow peer hands over
+      -- what accumulated during its wait in one exchange; below it the
+      -- peer catches up only as blocks clear its mempool.
 
       maxUnacknowledgedTxIds         :: !NumTxIdsToReq,
       -- ^ maximal number of unacknowledgedTxIds.  Measured in `NumTxIdsToReq`
@@ -76,11 +79,26 @@ data TxDecisionPolicy = TxDecisionPolicy {
       maxPeerClaimDelay              :: !DiffTime,
       -- ^ Maximum delay penalty for poor performing peers.
 
-      disablePipelinedTxIdRequests   :: !Bool
-      -- ^ When 'True', the txid picker never issues pipelined
-      -- @MsgRequestTxIds@ messages; only blocking requests fire (and
-      -- only when the unack window has been fully drained). Used
-      -- by some benchmarks.
+      -- Fetch tiers: see 'Ouroboros.Network.TxSubmission.Inbound.V2.Tier'.
+      --
+      txFastPeers                    :: !Int,
+      -- ^ how many inbound peers the salted order keeps on the fast tier,
+      -- polled for txids as soon as there is something to acknowledge.
+      -- Local roots and tx sources are fast besides.
+      txSlowCadence                  :: !DiffTime,
+      -- ^ the least time between two txid requests to a slow-tier peer,
+      -- blocking ones included, before jitter.
+      txSlowJitter                   :: !Double,
+      -- ^ the fraction of 'txSlowCadence' each wait is jittered by, drawn
+      -- afresh per request, so slow peers never fire together.  In @[0, 1)@.
+      txTierRotation                 :: !DiffTime,
+      -- ^ how often the coin draws a new salt, reordering the fast tier.
+      txSourceRate                   :: !Double,
+      -- ^ a peer delivering novel accepted txs at this rate (per second,
+      -- sustained over 'txSourceWindow') is a tx source and fast while it
+      -- lasts.  Zero disables the rule.
+      txSourceWindow                 :: !DiffTime
+      -- ^ the window 'txSourceRate' is measured over.
     }
   deriving (Eq, Show)
 
@@ -90,7 +108,7 @@ instance NFData TxDecisionPolicy where
 defaultTxDecisionPolicy :: TxDecisionPolicy
 defaultTxDecisionPolicy =
   TxDecisionPolicy {
-    maxNumTxIdsToRequest   = 6,
+    maxNumTxIdsToRequest   = 10,
     maxUnacknowledgedTxIds = 10, -- must be the same as txSubmissionMaxUnacked
     txsSizeInflightPerPeer = max_TX_SIZE * 6,
     maxOutstandingTxBatchesPerPeer = 4,
@@ -102,7 +120,12 @@ defaultTxDecisionPolicy =
     interTxSpace           = 0.250,
     inflightTimeout        = 0.600,
     maxPeerClaimDelay      = 0.250,
-    disablePipelinedTxIdRequests = False
+    txFastPeers            = 20,
+    txSlowCadence          = 0.500,
+    txSlowJitter           = 0.2,
+    txTierRotation         = 293,
+    txSourceRate           = 1,
+    txSourceWindow         = 10
   }
 
 -- | Sanity check for a 'TxDecisionPolicy': 'True' when every field lies
@@ -112,8 +135,9 @@ defaultTxDecisionPolicy =
 -- peer can make no progress), the rate, score and delay parameters must
 -- be non-negative, and 'inflightTimeout' must be at least 'interTxSpace'
 -- (their difference is used as a non-negative delay when bumping a stuck
--- entry's inflight-multiplicity cap).  'defaultTxDecisionPolicy' satisfies
--- it.
+-- entry's inflight-multiplicity cap).  The tier fields must be
+-- non-negative, the jitter below one and the rotation and source window
+-- positive.  'defaultTxDecisionPolicy' satisfies it.
 saneTxDecisionPolicy :: TxDecisionPolicy -> Bool
 saneTxDecisionPolicy p =
        maxNumTxIdsToRequest           p >= 1
@@ -128,3 +152,10 @@ saneTxDecisionPolicy p =
     && interTxSpace                   p >= 0
     && inflightTimeout                p >= interTxSpace p
     && maxPeerClaimDelay              p >= 0
+    && txFastPeers                    p >= 0
+    && txSlowCadence                  p >= 0
+    && txSlowJitter                   p >= 0
+    && txSlowJitter                   p <  1
+    && txTierRotation                 p >  0
+    && txSourceRate                   p >= 0
+    && txSourceWindow                 p >  0

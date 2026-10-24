@@ -27,6 +27,7 @@ import Control.Exception (Exception (..))
 import Control.Monad (zipWithM)
 import Control.Monad.Class.MonadTime.SI (Time (..))
 import Data.Aeson
+import Data.Aeson.Key qualified as Key
 import Data.Aeson.Types (Pair, Parser, listValue)
 import Data.Bifunctor (first)
 import Data.Bool (bool)
@@ -93,9 +94,10 @@ import Ouroboros.Network.Server.RateLimiting (AcceptConnectionsPolicyTrace (..),
            AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket (LocalAddress (..), RemoteAddress)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types (ProcessedTxCount (..),
-           SharedTxState (..), TraceTxLogic (..), TraceTxSubmissionInbound (..),
-           TxEntry (..), TxLease (..), TxSubmissionLogicVersion (..),
-           retainedSize, retainedToList)
+           SharedTxState (..), SharedTxStateCounts, TierCensus (..),
+           TraceTxLogic (..), TraceTxSubmissionInbound (..),
+           TxSubmissionLogicVersion (..), retainTimeSeconds, retainedToList,
+           sharedTxStateCountFields)
 import Ouroboros.Network.TxSubmission.Outbound (TraceTxSubmissionOutbound (..))
 
 -- Helper function for ToJSON instances with a "kind" field
@@ -1857,46 +1859,36 @@ instance ( ToJSON txid
 traceSharedTxStateToJSON
   :: (Show addr, Show txid, HasRawTxId txid)
   => SharedTxState addr txid
+  -> SharedTxStateCounts
   -> Value
 traceSharedTxStateToJSON SharedTxState {
                            sharedTxTable,
                            sharedRetainedTxs,
                            sharedTxIdToKey,
                            sharedKeyToTxId,
-                           sharedGeneration
-                         } =
-    object
+                           sharedGeneration,
+                           sharedRevision,
+                           sharedClaimable
+                         } counts =
+    object $
       [ "sharedGeneration" .= sharedGeneration
-      , "activeTxCount" .= IntMap.size sharedTxTable
-      , "retainedTxCount" .= retainedSize sharedRetainedTxs
-      , "internedTxCount" .= Map.size sharedTxIdToKey
-      , "leasedTxCount" .= leasedTxCount
-      , "claimableTxCount" .= claimableTxCount
-      , "totalAttemptCount" .= totalAttemptCount
-      , "submittingTxCount" .= submittingTxCount
-      , "sharedTxTable" .= [ (renderTxId txKey, show txEntry)
+      , "sharedRevision" .= sharedRevision
+      , "sharedClaimable" .= sharedClaimable
+      ]
+      ++
+      [ Key.fromString name .= n
+      | (name, n) <- sharedTxStateCountFields counts
+      ]
+      ++
+      [ "sharedTxTable" .= [ (renderTxId txKey, show txEntry)
                            | (txKey, txEntry) <- IntMap.toList sharedTxTable
                            ]
-      , "sharedRetainedTxs" .= [ (renderTxId txKey, show retainUntil)
+      , "sharedRetainedTxs" .= [ (renderTxId txKey, retainTimeSeconds retainUntil)
                                | (txKey, retainUntil) <- retainedToList sharedRetainedTxs
                                ]
       , "internedTxIds" .= fmap show (Map.keys sharedTxIdToKey)
       ]
   where
-    activeEntries = IntMap.elems sharedTxTable
-
-    leasedTxCount =
-      length [ () | TxEntry { txLease = TxLeased _ _ } <- activeEntries ]
-
-    claimableTxCount =
-      length [ () | TxEntry { txLease = TxClaimable _ } <- activeEntries ]
-
-    totalAttemptCount =
-      sum [ txAttempt | TxEntry { txAttempt } <- activeEntries ]
-
-    submittingTxCount =
-      length [ () | TxEntry { txInSubmission = True } <- activeEntries ]
-
     renderTxId txKey =
       maybe "<missing-txid>" show (IntMap.lookup txKey sharedKeyToTxId)
 
@@ -1908,9 +1900,17 @@ instance ( Show addr
          , HasRawTxId txid
          )
        => ToJSON (TraceTxLogic addr txid tx) where
-  toJSON (TraceSharedTxState st) =
+  toJSON (TraceSharedTxState st counts) =
     object [ "kind" .= String "SharedTxState"
-           , "sharedTxState" .= traceSharedTxStateToJSON st
+           , "sharedTxState" .= traceSharedTxStateToJSON st counts
+           ]
+  toJSON (TraceTxTiers TierCensus { censusFastByRoot, censusFastByCoin,
+                                    censusFastBySource, censusSlow }) =
+    object [ "kind" .= String "TxTiers"
+           , "fastByRoot" .= censusFastByRoot
+           , "fastByCoin" .= censusFastByCoin
+           , "fastBySource" .= censusFastBySource
+           , "slow" .= censusSlow
            ]
 
 
