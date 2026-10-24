@@ -310,10 +310,12 @@ mkMiniProtocolState :: MonadSTM m
                     -> m (MiniProtocolState mode m)
 mkMiniProtocolState miniProtocolInfo = do
     miniProtocolIngressQueue <- newIngressQueue
+    miniProtocolEgressVar    <- newEgressVar
     miniProtocolStatusVar    <- newTVarIO StatusIdle
     return MiniProtocolState {
        miniProtocolInfo,
        miniProtocolIngressQueue,
+       miniProtocolEgressVar,
        miniProtocolStatusVar
      }
 
@@ -403,12 +405,14 @@ run Mux { muxMiniProtocols,
     labelTVarIO muxStatus (name ++ "-mux-status")
     labelTQueueIO muxControlCmdQueue (name ++ "-mux-ctrl")
 
-    -- The cells outlive the job pool, so every byte the muxer counted is in
-    -- them when they are retired; the demuxer counts in the ingress queues.
-    withByteCells muxCounters (miniProtocolIngressQueue <$> muxMiniProtocols) $ \sent ->
+    -- The counts live in the mini-protocols' own variables, which outlive
+    -- the job pool, so every byte the muxers and the demuxer counted is in
+    -- them when the cells are retired.
+    withByteCells muxCounters (miniProtocolEgressVar <$> muxMiniProtocols)
+                              (miniProtocolIngressQueue <$> muxMiniProtocols) $
       JobPool.withJobPool
         (\jobpool -> do
-          mapM_ (JobPool.forkJob jobpool) (laneMuxers sent)
+          mapM_ (JobPool.forkJob jobpool) laneMuxers
           JobPool.forkJob jobpool demuxerJob
           traceWith tracer_ (TraceState Mature)
 
@@ -441,18 +445,15 @@ run Mux { muxMiniProtocols,
     -- writability gate on its own, so a lane granted its tokens may find the
     -- socket filled by another lane's batch in between and block in its
     -- write for that batch's worth: the gate's promise holds per lane, to
-    -- within a batch of each other lane of the bearer. The muxers share the
-    -- mux's byte slots, given once the cells exist.
-    mkLanes :: m (Lanes m, ByteSlots m -> [JobPool.Job Group m JobResult])
+    -- within a batch of each other lane of the bearer.
+    mkLanes :: m (Lanes m, [JobPool.Job Group m JobResult])
     mkLanes = case muxEgress of
       Nothing -> do
         q <- newQueue "egress"
-        held <- newTVarIO 0
         return ( Lanes { laneQueue = const q
                        , laneOf    = \_ _ -> Scheduled
-                       , laneAll   = [(Scheduled, q)]
-                       , laneHeld  = held }
-               , \sent -> [muxerJob "muxer" q sent Unscheduled bearer] )
+                       , laneAll   = [(Scheduled, q)] }
+               , [muxerJob "muxer" q Unscheduled bearer] )
 
       Just MuxEgress { meBudget, meBudgetHandle, meSlice, meLaneOf, meCharge } -> do
         lock <- newTMVarIO ()
@@ -471,18 +472,17 @@ run Mux { muxMiniProtocols,
                                 -- charged like the rest of what we serve,
                                 -- rather than direct and uncapped
                                 Nothing -> queueOf Scheduled
-        held <- newTVarIO 0
-        return ( Lanes { laneQueue = queueOf, laneOf = meLaneOf, laneAll = qs, laneHeld = held }
-               , \sent -> [ muxerJob ("muxer-" ++ laneName lane) q sent (egressOf lane) locked
-                          | (lane, q) <- qs ] )
+        return ( Lanes { laneQueue = queueOf, laneOf = meLaneOf, laneAll = qs }
+               , [ muxerJob ("muxer-" ++ laneName lane) q (egressOf lane) locked
+                 | (lane, q) <- qs ] )
 
     newQueue label = do
       q <- atomically $ newTBQueue 100
       labelTBQueueIO q (name ++ "-mux-" ++ label)
       return q
 
-    muxerJob label q sent laneEgress b =
-      JobPool.Job (muxer q bearerTracer_ sent muxCounters laneEgress b)
+    muxerJob label q laneEgress b =
+      JobPool.Job (muxer q bearerTracer_ muxCounters laneEgress b)
                   (return . MuxerException)
                   MuxJob
                   (name ++ "-" ++ label)
@@ -511,7 +511,7 @@ miniProtocolJob TracersI {
                   tracer_,
                   channelTracer_
                 }
-                Lanes { laneQueue, laneOf, laneHeld }
+                Lanes { laneQueue, laneOf }
                 MiniProtocolState {
                   miniProtocolInfo =
                     MiniProtocolInfo {
@@ -519,6 +519,7 @@ miniProtocolJob TracersI {
                       miniProtocolDir
                     },
                   miniProtocolIngressQueue,
+                  miniProtocolEgressVar,
                   miniProtocolStatusVar
                 }
                MiniProtocolAction {
@@ -531,7 +532,7 @@ miniProtocolJob TracersI {
                 ("prtcl-" ++ (case miniProtocolNum of { MiniProtocolNum a -> show a}) ++ "." ++ show miniProtocolDirEnum)
   where
     jobAction = do
-      wanton@Wanton { want = w, held } <- newWanton laneHeld
+      wanton@Wanton { want = w, held } <- newWanton miniProtocolEgressVar
       let egressQueue = laneQueue (laneOf miniProtocolNum miniProtocolDirEnum)
           chan = muxChannel channelTracer_ egressQueue wanton
                             miniProtocolNum miniProtocolDirEnum
@@ -546,7 +547,7 @@ miniProtocolJob TracersI {
           -- SDUs have been written unless an exception/error is encountered. In
           -- that case all jobs will be cancelled directly.
           readTVar w >>= check . BL.null
-          readTVar held >>= check . (== 0)
+          readTVar held >>= check . (== 0) . esHeld
           writeTVar miniProtocolStatusVar StatusIdle
           putTMVar completionVar (Right result)
             `orElse` throwSTM (BlockedOnCompletionVar miniProtocolNum)
@@ -809,7 +810,8 @@ monitor tracers@TracersI {
             atomically $ do
               empties <- mapM (isEmptyTBQueue . snd) (laneAll lanes)
               check (and empties)
-              readTVar (laneHeld lanes) >>= check . (== 0)
+              helds <- mapM (readTVar . miniProtocolEgressVar) ptcls
+              check (all ((== 0) . esHeld) helds)
           atomically $ writeTVar muxStatus Stopped
           traceWith tracer TraceStopped
           -- by exiting the 'monitor' loop we let the job pool kill demuxer and

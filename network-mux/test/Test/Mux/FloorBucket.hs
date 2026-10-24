@@ -39,7 +39,7 @@ import Network.Mux.Egress.Bucket qualified as Bucket
 import Network.Mux.Egress.Burst qualified as Burst
 import Network.Mux.Egress.Counters qualified as Counters
 import Network.Mux.Egress.Floor (FloorClass, FloorState, floorClass)
-import Network.Mux.Types (MiniProtocolDir, MiniProtocolNum)
+import Network.Mux.Types (EgressState, MiniProtocolDir, MiniProtocolNum)
 import NoThunks.Class (NoThunks (..), OnlyCheckWhnfNamed (..), noThunks,
            unsafeNoThunks)
 
@@ -584,6 +584,8 @@ instance NoThunks FloorClass
 -- | And the scheduling counters.
 instance NoThunks Counters.SchedulingCounts
 instance NoThunks Counters.TierCounts
+deriving via OnlyCheckWhnfNamed "EgressState" EgressState
+  instance NoThunks EgressState
 deriving via OnlyCheckWhnfNamed "MiniProtocolNum" MiniProtocolNum
   instance NoThunks MiniProtocolNum
 deriving via OnlyCheckWhnfNamed "MiniProtocolDir" MiniProtocolDir
