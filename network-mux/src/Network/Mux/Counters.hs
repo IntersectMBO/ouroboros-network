@@ -15,7 +15,6 @@ module Network.Mux.Counters
   , TierCounts (..)
   , IngressCounts (..)
   , ByteCounts
-  , ByteSlots
   , MuxByteCells (..)
   , withByteCells
   , CountersTrace (..)
@@ -62,7 +61,8 @@ import Network.Mux.Egress.Bucket (Bucket, BucketStats (..), Burst (..),
            servedWithin, slowdownBounds, slowedByTier, takeBurstsAt, waitBounds)
 import Network.Mux.Egress.Burst (burstCap, burstGap, burstGrantFloor)
 import Network.Mux.Trace (Error (..))
-import Network.Mux.Types (MiniProtocolDir, MiniProtocolNum)
+import Network.Mux.Types (IngressQueue, IngressQueueState (..), MiniProtocolDir,
+           MiniProtocolNum)
 
 -- | The write side.
 data EgressCounts = EgressCounts {
@@ -138,23 +138,22 @@ data IngressCounts = IngressCounts {
 -- or what was read for them.
 type ByteCounts = Map (MiniProtocolNum, MiniProtocolDir) Word64
 
--- | Read-byte counters, one per mini-protocol and direction a mux runs; the
--- demuxer makes them and keeps each in its dispatch table entry.
-type ByteSlots m = Map (MiniProtocolNum, MiniProtocolDir) (StrictTVar m Word64)
-
 -- | One mux's byte counts, written only by its own muxers and demuxer, so no
 -- two connections share a variable on the data path: what was sent, once per
--- batch, and the read counters the demuxer publishes as it starts.
+-- batch, and the ingress queues, each carrying what the demuxer read for its
+-- mini-protocol.
 data MuxByteCells m = MuxByteCells {
   mbcSent :: !(StrictTVar m ByteCounts),
-  mbcRecv :: !(StrictTVar m (ByteSlots m))
+  mbcRecv :: !(Map (MiniProtocolNum, MiniProtocolDir) (IngressQueue m))
   }
   deriving Generic
 
--- | The counters as counts, leaving out the ones still at zero, as the sent
--- side does: a protocol appears once it has carried something.
-readSlots :: MonadSTM m => StrictTVar m (ByteSlots m) -> STM m ByteCounts
-readSlots cell = Map.filter (/= 0) <$> (readTVar cell >>= traverse readTVar)
+-- | The bytes read for each queue's mini-protocol, leaving out the ones still
+-- at zero, as the sent side does: a protocol appears once it has carried
+-- something.
+readReceived :: MonadSTM m
+             => Map (MiniProtocolNum, MiniProtocolDir) (IngressQueue m) -> STM m ByteCounts
+readReceived = fmap (Map.filter (/= 0)) . traverse (fmap iqReceived . readTVar)
 
 -- | Counters shared by every mux on one side: failures, counted as a mux
 -- dies, and the byte cells of the live muxes beside the totals of the ones
@@ -207,7 +206,7 @@ readMuxTotals MuxCounters { mcFailures, mcLive, mcRetired } =
 
 -- | One mux's bytes sent and read.
 readMuxCells :: MonadSTM m => MuxByteCells m -> STM m (ByteCounts, ByteCounts)
-readMuxCells MuxByteCells { mbcSent, mbcRecv } = (,) <$> readTVar mbcSent <*> readSlots mbcRecv
+readMuxCells MuxByteCells { mbcSent, mbcRecv } = (,) <$> readTVar mbcSent <*> readReceived mbcRecv
 
 sumMuxCounters :: (Sides EgressCounts IngressCounts, Sides ByteCounts ByteCounts)
                -> [(ByteCounts, ByteCounts)] -> (EgressCounts, IngressCounts)
@@ -215,23 +214,26 @@ sumMuxCounters (Sides eg ing, Sides sentDone recvDone) cells =
   ( eg  { ecBytes = Map.unionsWith (+) (sentDone : map fst cells) }
   , ing { icBytes = Map.unionsWith (+) (recvDone : map snd cells) } )
 
--- | Byte cells for one mux for the duration of @k@: registered as it starts,
--- and on the way out their counts move into the retired totals in the same
--- transaction that unregisters them. Without counters there are no cells.
+-- | Byte cells for one mux for the duration of @k@: a sent cell, and the
+-- ingress queues given, which count what the demuxer reads whether or not
+-- anyone looks; registered as the mux starts, and on the way out their
+-- counts move into the retired totals in the same transaction that
+-- unregisters them. Without counters there are no cells.
 withByteCells :: (MonadSTM m, MonadMask m)
-              => Maybe (MuxCounters m) -> (Maybe (MuxByteCells m) -> m a) -> m a
-withByteCells Nothing k = k Nothing
-withByteCells (Just MuxCounters { mcLive, mcNext, mcRetired }) k =
+              => Maybe (MuxCounters m)
+              -> Map (MiniProtocolNum, MiniProtocolDir) (IngressQueue m)
+              -> (Maybe (MuxByteCells m) -> m a) -> m a
+withByteCells Nothing _ k = k Nothing
+withByteCells (Just MuxCounters { mcLive, mcNext, mcRetired }) queues k =
     bracket register retire (k . Just . snd)
   where
     register = atomically $ do
       i     <- stateTVar mcNext (\n -> (n, n + 1))
-      cells <- MuxByteCells <$> newTVar Map.empty <*> newTVar Map.empty
+      cells <- (`MuxByteCells` queues) <$> newTVar Map.empty
       modifyTVar mcLive (IntMap.insert i cells)
       return (i, cells)
-    retire (i, MuxByteCells { mbcSent, mbcRecv }) = atomically $ do
-      sent <- readTVar mbcSent
-      recv <- readSlots mbcRecv
+    retire (i, cells) = atomically $ do
+      (sent, recv) <- readMuxCells cells
       modifyTVar mcRetired (\(Sides s r) -> Sides (Map.unionWith (+) s sent) (Map.unionWith (+) r recv))
       modifyTVar mcLive (IntMap.delete i)
 

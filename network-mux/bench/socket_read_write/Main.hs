@@ -11,13 +11,12 @@ import Control.Monad (forM, forM_, forever, replicateM, replicateM_, unless,
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer
-import Data.ByteString.Builder (Builder, toLazyByteString)
+import Data.ByteString.Builder (toLazyByteString)
 import Data.ByteString.Lazy qualified as BL
 import Data.Functor (void)
 import Data.Int
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Strict.Tuple as Strict (Pair ((:!:)))
 import Data.Word
 import Network.Socket (Socket)
 import Network.Socket qualified as Socket
@@ -87,16 +86,16 @@ readDemuxerQueueBenchmark sndSizeV sndSize addr = do
       withReadBufferIO (\buffer -> do
         bearer <- getBearer makeSocketBearer sduTimeout sd buffer
         ms42 <- mkMiniProtocolState 42
-        withAsync (demuxer [ms42] activeTracer Nothing bearer) $ \aid -> do
+        withAsync (demuxer [ms42] activeTracer bearer) $ \aid -> do
           doRead 0xa5 (totalPayloadLen sndSize) (miniProtocolIngressQueue ms42)
           cancel aid
        )
     )
  where
-   doRead :: Word8 -> Int64 -> StrictTVar IO (Strict.Pair Int64 Builder) -> IO ()
+   doRead :: Word8 -> Int64 -> IngressQueue IO -> IO ()
    doRead tag maxData queue = do
      msg <- atomically $ do
-       l :!: b <- readTVar queue
+       IngressQueueState l b _ <- readTVar queue
        if l == maxData
           then
             return (toLazyByteString b)
@@ -120,7 +119,7 @@ readDemuxerBenchmark sndSizeV sndSize addr = do
         bearer <- getBearer makeSocketBearer sduTimeout sd buffer
         ms42 <- mkMiniProtocolState 42
         ms41 <- mkMiniProtocolState 41
-        withAsync (demuxer [ms41, ms42] activeTracer Nothing bearer) $ \aid -> do
+        withAsync (demuxer [ms41, ms42] activeTracer bearer) $ \aid -> do
           withAsync (doRead 42 (totalPayloadLen sndSize) (miniProtocolIngressQueue ms42) 0) $ \aid42 -> do
             withAsync (doRead 41 (totalPayloadLen 10) (miniProtocolIngressQueue ms41) 0) $ \aid41 -> do
               _ <- waitBoth aid42 aid41
@@ -129,15 +128,15 @@ readDemuxerBenchmark sndSizeV sndSize addr = do
        )
     )
  where
-   doRead :: Word8 -> Int64 -> StrictTVar IO (Strict.Pair Int64 Builder) -> Int64 -> IO ()
+   doRead :: Word8 -> Int64 -> IngressQueue IO -> Int64 -> IO ()
    doRead _ maxData _ cnt | cnt >= maxData = return ()
    doRead tag maxData queue !cnt = do
      msg <- atomically $ do
-       l :!: b <- readTVar queue
+       IngressQueueState l b r <- readTVar queue
        if l == 0
           then retry
           else do
-            writeTVar queue $ 0 :!: mempty
+            writeTVar queue $ IngressQueueState 0 mempty r
             return (toLazyByteString b)
      if BL.all ( == tag) msg
         then doRead tag maxData queue (cnt + BL.length msg)
@@ -145,7 +144,7 @@ readDemuxerBenchmark sndSizeV sndSize addr = do
 
 mkMiniProtocolState :: MonadSTM m => Word16 -> m (MiniProtocolState 'InitiatorMode m)
 mkMiniProtocolState num = do
-  mpq <- newTVarIO $ 0 :!: mempty
+  mpq <- newIngressQueue
   mpv    <- newTVarIO StatusRunning
 
   let mpi = MiniProtocolInfo (MiniProtocolNum num) InitiatorDirectionOnly

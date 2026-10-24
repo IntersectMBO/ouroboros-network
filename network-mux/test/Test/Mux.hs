@@ -5243,15 +5243,30 @@ countersKey (n, initiator) = let !dir = if initiator then Mx.InitiatorDir else M
 countersMap :: [((Word16, Bool), Word64)] -> Mx.ByteCounts
 countersMap = MS.fromListWith (+) . map (\(k, b) -> (countersKey k, b))
 
+-- | Ingress queues under these keys, nothing read.
+newQueues :: MonadSTM m
+          => [(Mx.MiniProtocolNum, Mx.MiniProtocolDir)]
+          -> m (M.Map (Mx.MiniProtocolNum, Mx.MiniProtocolDir) (Mx.IngressQueue m))
+newQueues keys = M.fromList <$> mapM (\k -> (,) k <$> Mx.newIngressQueue) keys
+
+-- | Set the queues' read counts, as the mux's demuxer would have.
+fillQueues :: MonadSTM m
+           => M.Map (Mx.MiniProtocolNum, Mx.MiniProtocolDir) (Mx.IngressQueue m)
+           -> Mx.ByteCounts
+           -> STM m ()
+fillQueues queues counts =
+    forM_ (M.toList counts) $ \(k, b) ->
+      forM_ (M.lookup k queues) $ \q -> modifyTVar q (\iq -> iq { Mx.iqReceived = b })
+
 -- | Apply one step to a counter set: a mux that registers, writes its cells
 -- and ends, or a failure counted.
 countersStep :: (MonadSTM m, MonadMask m) => Mx.MuxCounters m -> CountersOp -> m ()
 countersStep counters op = case op of
-  RetireMux sent recv ->
-    Counters.withByteCells (Just counters) $ \cells_m -> forM_ cells_m $ \cells -> atomically $ do
+  RetireMux sent recv -> do
+    queues <- newQueues (M.keys (countersMap recv))
+    Counters.withByteCells (Just counters) queues $ \cells_m -> forM_ cells_m $ \cells -> atomically $ do
       writeTVar (Counters.mbcSent cells) (countersMap sent)
-      slots <- traverse newTVar (countersMap recv)
-      writeTVar (Counters.mbcRecv cells) slots
+      fillQueues (Counters.mbcRecv cells) (countersMap recv)
   MuxerDied w   -> atomically $ Mx.countMuxerFailure counters
                      (toException (if w then Mx.SDUWriteTimeout else Mx.SDUReadTimeout))
   GateTimedOut  -> atomically $ Counters.countGateTimeout counters
@@ -5396,11 +5411,11 @@ prop_mux_counters_snapshot_split ops (SplitStep k step) =
     startLive counters (s, r) = do
       cellsVar <- newTVarIO Nothing
       stop     <- newTVarIO False
-      a <- async $ Counters.withByteCells (Just counters) $ \cells_m -> forM_ cells_m $ \cells -> do
+      queues   <- newQueues (M.keys (countersMap r))
+      a <- async $ Counters.withByteCells (Just counters) queues $ \cells_m -> forM_ cells_m $ \cells -> do
         atomically $ do
           writeTVar (Counters.mbcSent cells) (countersMap s)
-          slots <- traverse newTVar (countersMap r)
-          writeTVar (Counters.mbcRecv cells) slots
+          fillQueues (Counters.mbcRecv cells) (countersMap r)
           writeTVar cellsVar (Just cells)
         atomically (readTVar stop >>= check)
       cells <- atomically (readTVar cellsVar >>= maybe retry return)
