@@ -24,6 +24,9 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Registry
   , sweepInterval
   , sweepBatch
   , drainPause
+  , doomGrace
+  , heldDoomed
+  , PeerCells (..)
   , withPeer
     -- * For tests
   , scrubFromPeerInFlight
@@ -31,7 +34,7 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Registry
   , awaitClaimableChangeImp
   , snapshotCountersWith
   , retirePeerCounters
-  , registerPeerCounters
+  , registerPeerCells
     -- re-exports
   , RegisteredDelay
   ) where
@@ -95,19 +98,28 @@ data PeerTierEntry m = PeerTierEntry {
     pteLocalRoot :: !(STM m Bool)
   }
 
--- | Registry of every live peer's private counters cell, keyed by the
--- peer's address and registration number, so that a release removes its
--- own entry whatever else registered under the address.
+-- | A live peer's cells: its counters, and its in-flight sets, which the
+-- counters thread's review of doomed entries reads, one peer per
+-- transaction ('heldDoomed').
+data PeerCells m = PeerCells {
+    peerCountersCell :: !(TxSubmissionCountersVar m),
+    peerInFlightCell :: !(PeerTxInFlightVar m)
+  }
+
+-- | Registry of every live peer's cells, keyed by the peer's address and
+-- registration number, so that a release removes its own entry whatever
+-- else registered under the address.
 --
--- 'withPeer' adds the cell on bracket-enter and removes it on
+-- 'withPeer' adds the cells on bracket-enter and removes them on
 -- bracket-exit (after scrubbing any contributions the peer still has
 -- to shared state and flushing its counters into the retired
--- accumulator); 'snapshotCountersWith' reads the cells to aggregate for
--- emission.
+-- accumulator); 'snapshotCountersWith' reads the counters cells to
+-- aggregate for emission, 'heldDoomed' the in-flight cells for the
+-- holders of doomed entries.
 data PeerTxRegistry m peeraddr = PeerTxRegistry {
     -- | The live peers' cells.
     registeredPeers  :: !(StrictTVar m (Map (PeerRegistration peeraddr)
-                                            (TxSubmissionCountersVar m))),
+                                            (PeerCells m))),
     -- | The next registration number.
     nextRegistration :: !(StrictTVar m Word64),
     -- | The peers in the order and their fetch tiers, as the salted order
@@ -171,7 +183,12 @@ newPeerTxRegistry rng =
 -- the coin: every 'txTierRotation' of the policy it draws a new salt and
 -- places the fetch tiers from the new order ('rotateTiers'), in a
 -- transaction of its own; without it the fast set would stay the one the
--- boot salt gave.  It runs once per node, so it is where a policy that
+-- boot salt gave.  A sweep dooms the active entries abandoned for a grace
+-- ('doomGrace'), and the next tick reviews them ('heldDoomed', then
+-- 'State.reviewDoomed' in the sweep's transaction): every
+-- live peer's advertised set in a transaction of its own, like the
+-- counters' cells, then one over the state that drops the doomed entries
+-- no peer holds.  It runs once per node, so it is where a policy that
 -- fails 'saneTxDecisionPolicy' is refused: 'InvalidTxDecisionPolicy'
 -- before anything else.
 txCountersThreadV2
@@ -193,6 +210,7 @@ txCountersThreadV2 policy countersTracer sharedStateTracer retiredCountersVar
     initialSt <- readTVarIO sharedStateVar
     go interval
        sweepStart
+       IntSet.empty
        mempty
        (sharedRevision   initialSt)
        (sharedGeneration initialSt)
@@ -203,10 +221,13 @@ txCountersThreadV2 policy countersTracer sharedStateTracer retiredCountersVar
     interval :: DiffTime
     interval = sweepInterval policy
 
+    grace :: DiffTime
+    grace = doomGrace policy
+
     countersInterval :: DiffTime
     countersInterval = 7
 
-    go !delay !cursor !previous !lastRev !lastGen !lastCensus !nextEmitAt !nextRotateAt = do
+    go !delay !cursor !doomed !previous !lastRev !lastGen !lastCensus !nextEmitAt !nextRotateAt = do
       threadDelay delay
       tickAt <- getMonotonicTime
       -- the coin, on its own cadence, before the sweep
@@ -215,9 +236,22 @@ txCountersThreadV2 policy countersTracer sharedStateTracer retiredCountersVar
            then do atomically (rotateTiers policy registry)
                    pure (nextRotation tickAt nextRotateAt)
            else pure nextRotateAt
-      (backlog, cursor') <- sweepWith $ \st ->
-        case State.sweepSharedStateUpTo sweepBatch tickAt cursor st of
-          (st', more, next) -> (st', (more, next))
+      -- the holders of what the last sweep doomed, one peer's cell per
+      -- transaction, for the review in this sweep's transaction: one
+      -- write per tick
+      held <- if IntSet.null doomed then pure IntSet.empty
+                                    else heldDoomed registry doomed
+      -- The review's entries count against the transaction's budget,
+      -- 'sweepBatch': the review, the expiry and the walk together do at
+      -- most that much work in it.
+      (backlog, cursor', doomed') <- sweepWith $ \st ->
+        let (reviewed, _) = State.reviewDoomed tickAt held doomed st in
+        case State.sweepSharedStateUpTo (sweepBatch - IntSet.size doomed) grace tickAt cursor reviewed of
+          (st', more, next, newlyDoomed) ->
+            ( if sharedRevision st' /= sharedRevision st
+                 then st' { sharedRevision = sharedRevision st + 1 }
+                 else st'
+            , (more, next, newlyDoomed) )
       _ <- drain backlog tickAt
       drained <- getMonotonicTime
       (previous', lastRev', lastGen', lastCensus', nextEmitAt') <-
@@ -229,7 +263,7 @@ txCountersThreadV2 policy countersTracer sharedStateTracer retiredCountersVar
       -- pause apart when a transaction overran the interval.
       now <- getMonotonicTime
       let delay' = max drainPause (addTime interval tickAt `diffTime` now)
-      go delay' cursor' previous' lastRev' lastGen' lastCensus' nextEmitAt' nextRotateAt'
+      go delay' cursor' doomed' previous' lastRev' lastGen' lastCensus' nextEmitAt' nextRotateAt'
 
     -- An emission: the counters when they changed since the last one, the
     -- shared state when a counter of it moved, the tier census when it
@@ -303,6 +337,15 @@ txCountersThreadV2 policy countersTracer sharedStateTracer retiredCountersVar
 sweepInterval :: TxDecisionPolicy -> DiffTime
 sweepInterval policy = max 0.1 (min 1 (bufferedTxsMinLifetime policy / 4))
 
+-- | How long an active entry stays claimable with nobody attempting or
+-- submitting it before a sweep dooms it, and how long a spared one stays
+-- out of review: two sweep intervals.  A fresh entry is claimed within a
+-- round trip, so a candidate is one whose advertisers all left, are full
+-- or are stalled; the doom costs them one write to clear it, or the
+-- review one read of each peer's cell, per grace.
+doomGrace :: TxDecisionPolicy -> DiffTime
+doomGrace policy = 2 * sweepInterval policy
+
 -- | Retained entries one sweep expires at most, and entries of the tx
 -- table it examines: positive, so a sweep that finds work makes progress
 -- on it.  Bounds the sweep's transaction, about 0.3 ms at this size,
@@ -350,22 +393,41 @@ snapshotCountersWith runTx retiredCountersVar registry = do
     (retired, cells) <- runTx $
       (,) <$> readTVar retiredCountersVar
           <*> (Map.elems <$> readTVar (registeredPeers registry))
-    live <- mapM (runTx . readTVar) cells
+    live <- mapM (runTx . readTVar . peerCountersCell) cells
     pure $! emittedCounters (mconcat (retired : live))
 
--- | Register a joining peer's counters cell under its address and a fresh
+-- | The keys among the given ones that some live peer advertises, read
+-- from one peer's in-flight cell per transaction like the counters'
+-- cells.  A peer registered after the cells were listed could not have
+-- advertised a doomed key before the doom, and its reply after it clears
+-- the doom; a peer that left meanwhile shows its last set, which spares
+-- at worst, and is not listed next time.
+heldDoomed
+  :: MonadSTM m
+  => PeerTxRegistry m peeraddr
+  -> IntSet.IntSet
+  -> m IntSet.IntSet
+heldDoomed registry doomed = do
+    cells <- Map.elems <$> readTVarIO (registeredPeers registry)
+    IntSet.unions <$>
+      mapM (\cell -> IntSet.intersection doomed . pifAdvertised
+                       <$> readTVarIO (peerInFlightCell cell))
+           cells
+
+-- | Register a joining peer's cells under its address and a fresh
 -- registration number: the key 'retirePeerCounters' takes.
-registerPeerCounters
+registerPeerCells
   :: (MonadSTM m, Ord peeraddr)
   => PeerTxRegistry m peeraddr
   -> peeraddr
   -> TxSubmissionCountersVar m
+  -> PeerTxInFlightVar m
   -> STM m (PeerRegistration peeraddr)
-registerPeerCounters registry peeraddr peerCountersVar = do
+registerPeerCells registry peeraddr peerCountersVar peerInFlightVar = do
     n <- readTVar (nextRegistration registry)
     writeTVar (nextRegistration registry) (n + 1)
     modifyTVar (registeredPeers registry)
-               (Map.insert (peeraddr, n) peerCountersVar)
+               (Map.insert (peeraddr, n) (PeerCells peerCountersVar peerInFlightVar))
     pure (peeraddr, n)
 
 -- | Move a leaving peer's counts into the retired accumulator and drop its
@@ -576,7 +638,7 @@ withPeer policy TxSubmissionMempoolReader { mempoolGetSnapshot }
       peerInFlightVar <- newTVarIO emptyPeerTxInFlight
       peerCountersVar <- newTVarIO mempty
       (registration, entry, seed) <- atomically $ do
-        registration <- registerPeerCounters registry peeraddr peerCountersVar
+        registration <- registerPeerCells registry peeraddr peerCountersVar peerInFlightVar
         (entry, seed) <- registerPeerTier registry localRoot
         pure (registration, entry, seed)
       pure (registration, peerInFlightVar, peerCountersVar, entry, seed)
@@ -646,8 +708,8 @@ scrubFromPeerInFlight peeraddr now pif st
       st {
           sharedTxTable    = sharedTxTable',
           -- A released lease, attempt or submission may grant another
-          -- peer an option: a wake.  An advertiser fewer grants none; the
-          -- entry it leaves abandoned is the sweep's to drop.
+          -- peer an option: a wake.  What the peer only advertised costs
+          -- nothing here: the sweep's review finds it abandoned.
           sharedGeneration = if tableWork then sharedGeneration st + 1
                                           else sharedGeneration st,
           sharedRevision   = sharedRevision st + 1,
@@ -663,19 +725,16 @@ scrubFromPeerInFlight peeraddr now pif st
         `IntSet.union` pifAttempting pif
         `IntSet.union` pifSubmitting pif
 
-    allKeys = workKeys `IntSet.union` pifAdvertised pif
+    presentKeys = IntMap.keysSet (sharedTxTable st `IntMap.restrictKeys` workKeys)
 
-    presentKeys = IntMap.keysSet (sharedTxTable st `IntMap.restrictKeys` allKeys)
-
-    tableWork = not (IntSet.null (presentKeys `IntSet.intersection` workKeys))
+    tableWork = not (IntSet.null presentKeys)
 
     sharedTxTable' = IntSet.foldl' scrubOne (sharedTxTable st) presentKeys
 
     scrubOne tbl k = IntMap.adjust (modifyEntry k) k tbl
 
     modifyEntry k =
-        applyIf (IntSet.member k (pifAdvertised pif)) State.dropAdvertiser
-      . applyIf (IntSet.member k (pifSubmitting pif)) clearSubmission
+        applyIf (IntSet.member k (pifSubmitting pif)) clearSubmission
       . applyIf (IntSet.member k (pifAttempting pif)) decAttempt
       . applyIf (IntSet.member k (pifLeased     pif)) releaseLease
 

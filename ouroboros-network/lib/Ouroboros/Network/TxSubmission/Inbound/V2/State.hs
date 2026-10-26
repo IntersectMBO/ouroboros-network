@@ -16,7 +16,7 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.State
   , sweepSharedState
   , sweepSharedStateUpTo
   , expireSharedStateUpTo
-  , dropAdvertiser
+  , reviewDoomed
     -- * For tests
   , walkFrom
   , residentKey
@@ -667,7 +667,9 @@ claimTx :: peeraddr
 claimTx peeraddr leaseUntil txEntry@TxEntry { txAttempt } =
   txEntry {
     txLease   = TxLeased peeraddr leaseUntil,
-    txAttempt = txAttempt + 1
+    txAttempt = txAttempt + 1,
+    -- a claim ends a review: the lease is a write anyway
+    txDoom    = Undoomed
   }
 
 -- | Time at which a leased entry becomes eligible for an inflight cap bump.
@@ -914,79 +916,144 @@ txIdAckable PeerActionContext { pacPeerState, pacPeerInFlight, pacSharedState }
 
 -- | Shared-state cleanup
 --
--- Drops two kinds of dead entries in one pass:
+-- Two kinds of dead entries go:
 --
 -- * Retained entries whose retention deadline has passed, with their
 --   lookup entries ('sharedTxIdToKey', 'sharedKeyToTxId'): a lookup entry
 --   lives with its residence.  A peer still holding the key in its
 --   unacknowledged queue acknowledges it as resolved ('txIdAckable'), and
---   a body arriving for it counts as late.
--- * Abandoned 'sharedTxTable' entries: no peer advertises, leases,
---   attempts or submits them, their advertisers having left or omitted
---   the body.  They go with their lookup entries.
+--   a body arriving for it counts as late.  The sweep drops these itself.
+-- * Abandoned 'sharedTxTable' entries: claimable for a grace with no
+--   attempt and no submission, and advertised by no live peer, their
+--   advertisers having left or omitted the body.  The sweep dooms the
+--   candidates among the entries it examines ('TxDoom'); the counters
+--   thread then asks every live peer's advertised set, one peer at a time,
+--   and 'reviewDoomed' drops the doomed entries no peer holds, with their
+--   lookup entries, and spares the rest.  An advertisement or a claim of a
+--   doomed entry meanwhile clears the doom, so no review drops an entry a
+--   peer came to advertise after the doom: its reply committed before it,
+--   and the peer's set shows the key, or after, and cleared it.
 --
--- Neither kind needs a peer's variables: the advertisers are counted on
--- the entry ('txAdvertisers') by the peers' own writes, so the sweep reads
--- nothing but the state and never drops an entry a peer still
--- advertises.
+-- The sweep reads nothing but the state, and the peers' sets are read
+-- outside its transaction, one per transaction.  Advertising an existing
+-- entry writes nothing shared unless the entry is under review.
 --
 -- Bumps only 'sharedRevision' (the structural dirty bit), not
 -- 'sharedGeneration' (the wake counter): neither removal grants another
 -- peer an option.  Waking parked peers here would cost a full
 -- 'nextPeerAction' pass per peer for nothing.
 sweepSharedState :: HasRawTxId txid
-                 => Time
+                 => DiffTime
+                 -> Time
                  -> SharedTxState peeraddr txid
                  -> SharedTxState peeraddr txid
-sweepSharedState now st =
-    case sweepSharedStateUpTo maxBound now sweepStart st of
-      (st', _, _) -> st'
+sweepSharedState grace now st =
+    case sweepSharedStateUpTo maxBound grace now sweepStart st of
+      (st', _, _, _) -> st'
 {-# INLINABLE sweepSharedState #-}
 
 -- | 'sweepSharedState' bounded: does at most @limit@ units of work.  It
 -- expires up to half of them, rounded up, as retained entries, the
 -- earliest first, the rest waiting, and examines what the expiry left of
--- the limit as entries of 'sharedTxTable' for abandoned ones, from its
--- cursor on and round the table, so that repeated bounded sweeps cover
--- what one unbounded sweep does.  Also whether any expired entry remains,
--- so the caller can go on with 'expireSharedStateUpTo' at once, and the
--- cursor to go on from.  A limit of zero or less does nothing and reports
--- no backlog.
+-- the limit as entries of 'sharedTxTable' for candidates to doom, from
+-- its cursor on and round the table, so that repeated bounded sweeps
+-- cover what one unbounded sweep does.  Also whether any expired entry
+-- remains, so the caller can go on with 'expireSharedStateUpTo' at once,
+-- the cursor to go on from, and the keys doomed, for the review.  A limit
+-- of zero or less does nothing and reports no backlog.
 sweepSharedStateUpTo :: HasRawTxId txid
                      => Int
+                     -> DiffTime
+                     -- ^ the grace: how long an entry is claimable, or
+                     -- spared, before it is a candidate
                      -> Time
                      -> SweepCursor
                      -> SharedTxState peeraddr txid
-                     -> (SharedTxState peeraddr txid, Bool, SweepCursor)
-sweepSharedStateUpTo limit now cursor st
-    | expired == 0 && IntSet.null abandoned = (st, more, cursor')
+                     -> (SharedTxState peeraddr txid, Bool, SweepCursor, IntSet)
+sweepSharedStateUpTo limit grace now cursor st
+    | expired == 0 && IntSet.null doomed = (st, more, cursor', IntSet.empty)
     | otherwise =
-        ( swept { sharedRevision = sharedRevision st + 1 }
+        ( doomedSt { sharedRevision = sharedRevision st + 1 }
         , more
-        , cursor' )
+        , cursor'
+        , doomed )
   where
     -- The expiry takes at most half the limit, rounded up, so that a
     -- backlog of expired entries never starves the walk: the drain between
     -- sweeps is where a backlog goes.
     (expiredSt, more, expired) = expireUpTo (limit - limit `div` 2) now st
-    swept = dropTxKeys abandoned expiredSt
 
-    -- Abandoned entries among the next table entries: no advertiser, no
-    -- lease, no attempt, no submission.  They go with their lookup entries
-    -- in 'dropTxKeys'.  The walk takes what the expiry left of the limit:
-    -- one transaction does at most the limit of work in all.
+    -- The candidates among the next table entries are doomed; the review
+    -- drops or spares them.  The walk takes what the expiry left of the
+    -- limit: one transaction does at most the limit of work in all.
     (tableEntries, from') =
       walkFrom (limit - expired) (sweepFrom cursor) (sharedTxTable expiredSt)
-    abandoned =
-      IntSet.fromList [ k | (k, entry) <- tableEntries, isAbandoned entry ]
+    doomed =
+      IntSet.fromList [ k | (k, entry) <- tableEntries, candidate entry ]
+    doomedSt =
+      expiredSt {
+        sharedTxTable =
+          IntSet.foldl' (\tbl k -> IntMap.adjust doom k tbl)
+                        (sharedTxTable expiredSt) doomed
+      }
+    doom entry = entry { txDoom = Doomed }
     cursor' = SweepCursor from'
 
-    isAbandoned TxEntry { txLease = TxLeased {} } = False
-    isAbandoned TxEntry { txAttempt, txInSubmission, txAdvertisers }
+    -- A candidate: claimable for the grace, nobody attempting or
+    -- submitting it, not under review already; a spared entry once its
+    -- grace has passed.
+    candidate TxEntry { txLease = TxLeased {} } = False
+    candidate TxEntry { txLease = TxClaimable since, txAttempt, txInSubmission, txDoom }
       | txAttempt > 0  = False
       | txInSubmission = False
-      | otherwise      = txAdvertisers <= 0
+      | otherwise      =
+          case txDoom of
+            Undoomed  -> addTime grace since <= now
+            Doomed    -> False
+            Spared at -> addTime grace at <= now
 {-# INLINABLE sweepSharedStateUpTo #-}
+
+-- | The review of the entries a sweep doomed, given the keys among them
+-- that some live peer advertises: those still claimable with no attempt
+-- and no submission that nobody holds are dropped with their lookup
+-- entries, the rest spared, candidates again a grace later.  A key no
+-- longer doomed, its doom cleared by an advertisement or a claim
+-- meanwhile, or gone, is left alone.  Also the keys dropped.  Bumps the
+-- revision when anything changed, never the wake counter: a drop grants
+-- nobody an option.
+reviewDoomed :: HasRawTxId txid
+             => Time
+             -> IntSet
+             -- ^ the doomed keys some live peer advertises
+             -> IntSet
+             -- ^ the keys the sweep doomed
+             -> SharedTxState peeraddr txid
+             -> (SharedTxState peeraddr txid, IntSet)
+reviewDoomed now held doomed st
+    | IntSet.null dropped && IntSet.null spared = (st, IntSet.empty)
+    | otherwise =
+        ( (dropTxKeys dropped st { sharedTxTable = sparedTable })
+            { sharedRevision = sharedRevision st + 1 }
+        , dropped )
+  where
+    reviewed =
+      [ (k, entry)
+      | k <- IntSet.toList doomed
+      , Just entry <- [IntMap.lookup k (sharedTxTable st)]
+      , txDoom entry == Doomed
+      ]
+    dropped = IntSet.fromList [ k | (k, entry) <- reviewed, abandoned k entry ]
+    spared  = IntSet.fromList [ k | (k, entry) <- reviewed, not (abandoned k entry) ]
+    abandoned k TxEntry { txLease, txAttempt, txInSubmission } =
+         not (IntSet.member k held)
+      && case txLease of TxClaimable {} -> True
+                         TxLeased {}    -> False
+      && txAttempt == 0
+      && not txInSubmission
+    sparedTable =
+      IntSet.foldl' (\tbl k -> IntMap.adjust (\e -> e { txDoom = Spared now }) k tbl)
+                    (sharedTxTable st) spared
+{-# INLINABLE reviewDoomed #-}
 
 -- | At most @limit@ entries of the map in key order from the key on, going
 -- on from the start once the end is reached, so that a walk takes its
@@ -1043,13 +1110,6 @@ expireUpTo limit now st
       retainedExpireUpTo limit now' (sharedRetainedTxs st)
     more = limit > 0 && retainedDueBy now' retained'
 {-# INLINABLE expireUpTo #-}
-
--- | One advertiser fewer for an entry: a peer omitted its body, had it
--- rejected, or left.  Not saturating: a count below zero is a release
--- without a registration, which the tests' invariants then see, and
--- which the sweep treats as abandonment rather than keeping the entry.
-dropAdvertiser :: TxEntry peeraddr -> TxEntry peeraddr
-dropAdvertiser entry = entry { txAdvertisers = txAdvertisers entry - 1 }
 
 -- | Whether a key is in the tx table or retained.
 residentKey :: SharedTxState peeraddr txid -> Int -> Bool
@@ -1182,31 +1242,16 @@ handleReceivedTxs mempoolHasTx now policy peeraddr txs peerState peerInFlight sh
     -- need to react to.  In the common case (all bodies received, no
     -- mempool race) no bump fires and the structural-but-pointer-different
     -- 'sharedStateReleased' is discarded by 'writeSharedStateIfChanged'.
-    -- The released keys this peer advertised have one advertiser fewer
-    -- where their entries remain: a structural change that grants no one
-    -- an option.
-    droppedAdvertising =
-      IntSet.filter (\k -> IntMap.member k (sharedTxTable sharedStateReleased))
-                    (releasedKeys `IntSet.intersection` pifAdvertised peerInFlight)
-    sharedStateAdjusted =
-      sharedStateReleased {
-        sharedTxTable =
-          IntSet.foldl' (\tbl k -> IntMap.adjust dropAdvertiser k tbl)
-                        (sharedTxTable sharedStateReleased) droppedAdvertising
-      }
-
+    -- The released keys this peer advertised cost nothing shared: the
+    -- sweep's review finds the ones left abandoned.
     sharedState'
       | wakeChangeFromHandle || wakeChangeFromOmit =
-          sharedStateAdjusted {
+          sharedStateReleased {
             sharedGeneration = sharedGeneration sharedState + 1,
             sharedRevision   = sharedRevision   sharedState + 1,
             -- an omitted body released a lease: claimable by another
             sharedClaimable  = sharedClaimable sharedState
                              + (if wakeChangeFromOmit then 1 else 0)
-          }
-      | not (IntSet.null droppedAdvertising) =
-          sharedStateAdjusted {
-            sharedRevision   = sharedRevision   sharedState + 1
           }
       | otherwise =
           sharedState
@@ -1438,15 +1483,12 @@ handleSubmittedTxs now policy peeraddr acceptedTxs rejectedTxs peerState peerInF
                  retainedInsertMax k' retainedUntil (sharedRetainedTxs sharedAcc')
              }
 
-    -- A rejected key stays active, this peer advertising it no longer.
+    -- A rejected key stays active for its other advertisers; this peer is
+    -- done with it.
     updateRejected sharedAcc k =
       sharedAcc {
-        sharedTxTable = IntMap.adjust (adjustRejected k) k (sharedTxTable sharedAcc)
+        sharedTxTable = IntMap.adjust markRejected k (sharedTxTable sharedAcc)
       }
-
-    adjustRejected k
-      | IntSet.member k (pifAdvertised peerInFlight) = dropAdvertiser . markRejected
-      | otherwise                                    = markRejected
 
     markRejected txEntry@TxEntry { txLease } =
       txEntry {
@@ -1634,7 +1676,7 @@ handleReceivedTxIds mempoolHasTx now policy requestedTxIds txidsAndSizes
               let txEntry = TxEntry {
                               txLease = TxClaimable now,
                               txAttempt = 0,
-                              txAdvertisers = 1,
+                              txDoom = Undoomed,
                               txInSubmission = False,
                               currentMaxInflightMultiplicity =
                                 txInflightMultiplicity policy
@@ -1648,29 +1690,26 @@ handleReceivedTxIds mempoolHasTx now policy requestedTxIds txidsAndSizes
                  , wakeAcc
                  , True
                  )
-            Just _
-              | IntSet.member k peerAdvertisedKeysAcc ->
-                  -- Existing entry this peer advertises already, the txid
-                  -- repeated: nothing shared changes beyond interning.
-                  ( txKey : unacknowledgedAcc
-                  , IntMap.insert k txSize availableAcc
-                  , sharedAcc'
-                  , peerAdvertisedKeysAcc
-                  , wakeAcc
-                  , revOnlyAcc'
-                  )
-              | otherwise ->
-                  -- Existing entry; one more advertiser.
-                  ( txKey : unacknowledgedAcc
-                  , IntMap.insert k txSize availableAcc
-                  , sharedAcc' {
+            Just entry ->
+              -- Existing entry: this peer advertises it too, which only
+              -- its own sets record, unless the entry is under review for
+              -- abandonment, which the advertisement ends: spared from now,
+              -- so the next walk does not doom it again at once on its old
+              -- claimable time.
+              ( txKey : unacknowledgedAcc
+              , IntMap.insert k txSize availableAcc
+              , case txDoom entry of
+                  Doomed ->
+                    sharedAcc' {
                       sharedTxTable =
-                        IntMap.adjust addAdvertiser k (sharedTxTable sharedAcc')
+                        IntMap.insert k entry { txDoom = Spared now }
+                                      (sharedTxTable sharedAcc')
                     }
-                  , IntSet.insert k peerAdvertisedKeysAcc
-                  , wakeAcc
-                  , True
-                  )
+                  _ -> sharedAcc'
+              , IntSet.insert k peerAdvertisedKeysAcc
+              , wakeAcc
+              , revOnlyAcc' || txDoom entry == Doomed
+              )
       where
         retainedAcc = sharedRetainedTxs sharedAcc'
         revOnlyAcc' = revOnlyAcc || txKeyWasNew
@@ -1679,6 +1718,4 @@ handleReceivedTxIds mempoolHasTx now policy requestedTxIds txidsAndSizes
     lookupOrInternTxId txid st =
       let (_, key, st') = internTxId txid st
       in (key, sharedNextTxKey st' /= sharedNextTxKey st, st')
-
-    addAdvertiser entry = entry { txAdvertisers = txAdvertisers entry + 1 }
 {-# INLINABLE handleReceivedTxIds #-}
