@@ -24,6 +24,8 @@ module Cardano.Network.NodeToNode
   , peerSharingProtocolLimits
   , perasCertDiffusionProtocolLimits
   , perasVoteDiffusionProtocolLimits
+  , maxCertSize
+  , maxVoteSize
   , defaultMiniProtocolParameters
   , NodeToNodeVersion (..)
   , NodeToNodeVersionData (..)
@@ -452,24 +454,36 @@ peerSharingProtocolLimits _ =
   maximumIngressQueue = 4 * 1440
   }
 
+-- | Diffusion budget for a CBOR-encoded Peras certificate, excluding the
+-- Object Diffusion message envelope. This allows 10% above consensus's current
+-- @dijkstraPerasMaxCertSize@ forging budget of 40,000 bytes. Revisit this budget
+-- when that limit or the encoding changes; it is not a cryptographic maximum.
+maxCertSize :: SizeInBytes
+maxCertSize = 44_000
+
+-- | Conservative diffusion budget for a CBOR-encoded Peras vote, excluding the
+-- Object Diffusion message envelope. This retains the provisional 1 kB budget;
+-- it is not a maximum derived from the cryptographic scheme.
+maxVoteSize :: SizeInBytes
+maxVoteSize = 1_000
+
 perasCertDiffusionProtocolLimits MiniProtocolParameters { perasCertDiffusionMaxObjectsUnacknowledged } =
   MiniProtocolLimits {
       -- The reasoning here is very similar to the 'txSubmissionProtocolLimits'.
       --
-      -- Peras certificates will definitely be smaller than 20 kB; potentially
-      -- even much smaller.
-      -- See https://github.com/tweag/cardano-peras/issues/97
+      -- The 10% margin also covers ID replies, CBOR framing and control
+      -- messages, which are small compared to the object size budget.
       maximumIngressQueue = addSafetyMargin $
-        fromIntegral perasCertDiffusionMaxObjectsUnacknowledged * 20_000
+        fromIntegral perasCertDiffusionMaxObjectsUnacknowledged
+          * fromIntegral maxCertSize
     }
 
 perasVoteDiffusionProtocolLimits MiniProtocolParameters { perasVoteDiffusionMaxObjectsUnacknowledged } =
   MiniProtocolLimits {
-      -- Peras votes are expected to be much smaller than Peras certificates.
-      -- We assume an upper bound of 1 kB per vote.
-      -- See https://github.com/tweag/cardano-peras/issues/97
+      -- As for certificates, the margin covers ID replies and CBOR framing.
       maximumIngressQueue = addSafetyMargin $
-        fromIntegral perasVoteDiffusionMaxObjectsUnacknowledged * 1_000
+        fromIntegral perasVoteDiffusionMaxObjectsUnacknowledged
+          * fromIntegral maxVoteSize
     }
 
 chainSyncMiniProtocolNum :: MiniProtocolNum

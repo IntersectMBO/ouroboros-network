@@ -22,7 +22,9 @@ module Ouroboros.Network.Protocol.ObjectDiffusion.Test
   ) where
 
 import Control.Monad (void)
+import Data.ByteString qualified as BS
 import Data.ByteString.Lazy (ByteString)
+import Data.ByteString.Lazy qualified as BL
 import Data.List.NonEmpty qualified as NonEmpty
 
 import Control.Monad.Class.MonadAsync (MonadAsync)
@@ -44,6 +46,7 @@ import Ouroboros.Network.Channel (Channel, createConnectedBufferedChannels,
 import Ouroboros.Network.Driver (runPeer, runPipelinedPeer)
 import Ouroboros.Network.Util.ShowProxy
 
+import Ouroboros.Network.Protocol.Limits (ProtocolSizeLimits (..))
 import Ouroboros.Network.Protocol.ObjectDiffusion.Codec
 import Ouroboros.Network.Protocol.ObjectDiffusion.Type
 
@@ -83,6 +86,8 @@ tests =
   testGroup "Ouroboros.Network.Protocol"
     [ testGroup "ObjectDiffusion"
         [ testProperty "codec"                      prop_codec
+        , testProperty "byte limits"                prop_byteLimits
+        , testProperty "byte limit boundaries"      prop_byteLimitsBoundaries
         , testProperty "codec id"                   prop_codec_id
         , testProperty "codec 2-splits"           $ withMaxSize 50
                                                     prop_codec_splits2
@@ -222,6 +227,63 @@ codec = codecObjectDiffusion
           Serialise.encode Serialise.decode
           Serialise.encode Serialise.decode
 
+
+-- | Check every message against limits sized for its batch. The test types
+-- encode as Word64s, whose maximum CBOR size is nine bytes.
+prop_byteLimits :: AnyMessage (ObjectDiffusion ObjectId Object) -> Bool
+prop_byteLimits (AnyMessage (msg :: Message (ObjectDiffusion ObjectId Object) st st')) =
+    dataSize (encode msg) <= sizeLimitForState (stateToken :: StateToken st)
+  where
+    Codec { encode } = codec :: Codec (ObjectDiffusion ObjectId Object) DeserialiseFailure IO ByteString
+    ProtocolSizeLimits { sizeLimitForState, dataSize } =
+      byteLimitsObjectDiffusion batchLimit batchLimit (fromIntegral . BL.length)
+    batchLimit = 4 + 9 * fromIntegral batchSize
+    batchSize :: Int
+    batchSize = case msg of
+      MsgReplyObjectIds ids   -> length ids
+      MsgRequestObjects ids   -> length ids
+      MsgReplyObjects objects -> length objects
+      _                       -> 0
+
+-- | Exercise the actual CBOR framing at the maximum batch size and one element
+-- beyond it, including ID requests in StIdle and both blocking reply phases.
+-- Objects deliberately have a different encoded size from IDs.
+prop_byteLimitsBoundaries :: Property
+prop_byteLimitsBoundaries = forAll (chooseInt (1, 100)) $ \batchSize ->
+    conjoin
+      [ check batchSize (==) msg | msg <- messages batchSize ]
+      .&&. conjoin
+      [ check batchSize (>) msg | msg <- messages (batchSize + 1) ]
+  where
+    messages n =
+      let ids = replicate n (ObjectId maxBound)
+          objects = replicate n (BS.replicate 256 0)
+      in [ AnyMessage (MsgReplyObjectIds (NonBlockingReply ids))
+         , AnyMessage (MsgReplyObjectIds (BlockingReply (NonEmpty.fromList ids))
+             :: Message (ObjectDiffusion ObjectId BS.ByteString)
+                  (StObjectIds ('StObjectIdsBlocking 'StCanAwait)) StIdle)
+         , AnyMessage (MsgReplyObjectIds (BlockingReply (NonEmpty.fromList ids))
+             :: Message (ObjectDiffusion ObjectId BS.ByteString)
+                  (StObjectIds ('StObjectIdsBlocking 'StMustReply)) StIdle)
+         , AnyMessage (MsgRequestObjects ids)
+         , AnyMessage (MsgReplyObjects objects)
+         ]
+
+    check batchSize cmp (AnyMessage (msg :: Message (ObjectDiffusion ObjectId BS.ByteString) st st')) =
+      counterexample ("Encoded size: " ++ show actual ++ "; limit: " ++ show limit) $
+        actual `cmp` limit
+      where
+        actual = dataSize (encode msg)
+        limit = sizeLimitForState (stateToken :: StateToken st)
+        Codec { encode } = codecObjectDiffusion
+          Serialise.encode Serialise.decode Serialise.encode Serialise.decode
+            :: Codec (ObjectDiffusion ObjectId BS.ByteString) DeserialiseFailure IO ByteString
+        -- A 256-byte CBOR byte string has a three-byte length header.
+        ProtocolSizeLimits { sizeLimitForState, dataSize } =
+          byteLimitsObjectDiffusion
+            (4 + 9 * fromIntegral batchSize)
+            (4 + 259 * fromIntegral batchSize)
+            (fromIntegral . BL.length)
 
 -- | Check the codec round trip property.
 --
