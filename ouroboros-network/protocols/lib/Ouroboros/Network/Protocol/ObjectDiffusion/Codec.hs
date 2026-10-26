@@ -30,12 +30,19 @@ import Network.TypedProtocol.Codec.CBOR
 import Ouroboros.Network.Protocol.Limits
 import Ouroboros.Network.Protocol.ObjectDiffusion.Type
 
--- | Byte Limits.
+-- | Byte limits for complete object and ID list messages.
+--
+-- Include all elements and four CBOR framing bytes: the outer list header,
+-- message tag, indefinite list header and break. The ID limit covers both
+-- requests and replies.
 byteLimitsObjectDiffusion
   :: forall bytes objectId object.
-     (bytes -> Word)
+     SizeInBytes -- ^ Maximum encoded ID list message size.
+  -> SizeInBytes -- ^ Maximum encoded object list message size.
+  -> (bytes -> Word)
   -> ProtocolSizeLimits (ObjectDiffusion objectId object) bytes
-byteLimitsObjectDiffusion = ProtocolSizeLimits stateToLimit
+byteLimitsObjectDiffusion maxIdsSize maxObjectsSize =
+    ProtocolSizeLimits stateToLimit
   where
     stateToLimit
       :: forall (st :: ObjectDiffusion objectId object).
@@ -43,9 +50,11 @@ byteLimitsObjectDiffusion = ProtocolSizeLimits stateToLimit
       => StateToken st
       -> Word
     stateToLimit SingInit          = smallByteLimit
-    stateToLimit (SingObjectIds _) = largeByteLimit
-    stateToLimit SingObjects       = largeByteLimit
-    stateToLimit SingIdle          = smallByteLimit
+    stateToLimit (SingObjectIds _) = fromIntegral maxIdsSize
+    stateToLimit SingObjects       = fromIntegral maxObjectsSize
+    -- MsgRequestObjectIds occupies at most nine bytes (two Word16s); the
+    -- other potentially large message in this state is MsgRequestObjects.
+    stateToLimit SingIdle          = max 9 (fromIntegral maxIdsSize)
     stateToLimit a@SingDone        = notActiveState a
 
 -- | 'ObjectDiffusion' time limits.
