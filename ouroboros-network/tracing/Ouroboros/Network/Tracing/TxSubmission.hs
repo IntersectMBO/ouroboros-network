@@ -102,7 +102,7 @@ instance MetaTrace (TraceTxLogic peeraddr txid tx) where
     , (sharedStateMetric "claimableTxCount", "active entries nobody is downloading")
     , (sharedStateMetric "totalAttemptCount", "download attempts over the active entries")
     , (sharedStateMetric "submittingTxCount", "active entries being added to the mempool")
-    , (sharedStateMetric "advertiserCount", "advertisers over the active entries, one per peer and key")
+    , (sharedStateMetric "doomedTxCount", "active entries under review for abandonment, dropped at the next review unless a peer still advertises them")
     ]
   metricsDocFor (Namespace [] ["TraceTxTiers"]) =
     [ (tiersMetric name, doc) | (name, doc) <- tierCensusDocs ]

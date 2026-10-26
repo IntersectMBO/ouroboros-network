@@ -67,6 +67,7 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Types
   , TxSubmissionProtocolError (..)
   , RequestedTxBatch (..)
   , TxLease (..)
+  , TxDoom (..)
   , TxEntry (..)
   , PeerAction (..)
   , ResolvedPeerAction (..)
@@ -143,6 +144,25 @@ data TxLease peeraddr = TxLeased !peeraddr !Time
   deriving stock (Eq, Show, Generic)
   deriving anyclass (NFData, NoThunks)
 
+-- | The sweep's review of an active entry for abandonment.  An entry
+-- claimable for a grace with nobody attempting or submitting it is a
+-- candidate: one sweep dooms it, and the counters thread then asks every
+-- live peer's advertised set, one peer at a time, before the next review
+-- drops it.  An advertisement or a claim of a doomed entry meanwhile
+-- clears the doom, a holder found spares it, and a spared entry is a
+-- candidate again a grace later.  So advertising an existing entry writes
+-- nothing shared unless the entry is under review, and the review never
+-- drops an entry a peer still advertises: its reply committed before the
+-- doom, and its set shows the key, or after, and cleared it.
+data TxDoom
+  = Undoomed
+  | Doomed
+    -- ^ under review: dropped by the next review unless a holder is found
+  | Spared !Time
+    -- ^ a holder was found at this time; a candidate again after the grace
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass (NFData, NoThunks)
+
 -- | Shared per-tx state.
 --
 -- V2 keeps all cross-peer coordination at tx granularity. The first
@@ -182,16 +202,11 @@ data TxEntry peeraddr = TxEntry {
     -- contains this key.
     txInSubmission                 :: !Bool,
 
-    -- | Number of registered peers with this key in their 'pifAdvertised':
-    -- one more when a peer comes to advertise the entry, one fewer when it
-    -- omits the body, has it rejected, or leaves.  Kept on the entry by
-    -- the peers' own writes so that the sweep reads no peer's variables:
-    -- an entry nobody advertises, leases, attempts or submits is
-    -- abandoned.
+    -- | The sweep's review of the entry for abandonment, see 'TxDoom'.
     --
-    -- Invariant: equals the number of registered peers whose
-    -- 'pifAdvertised' contains this key.
-    txAdvertisers                  :: !Int,
+    -- Invariant: a 'Doomed' entry is claimable with no attempt and no
+    -- submission; a claim clears the doom with the lease it takes.
+    txDoom                         :: !TxDoom,
 
     -- | Effective per-tx inflight multiplicity cap.
     --
@@ -207,11 +222,12 @@ data TxEntry peeraddr = TxEntry {
 -- | Per-peer in-flight tracking, owned by 'withPeer'.
 --
 -- The peer thread updates this TVar in the same STM transaction as
--- the shared 'TxEntry' so the two stay coherent.  Its one other reader
--- is 'withPeer's bracket finalizer, which on exit reverses each per-peer
+-- the shared 'TxEntry' so the two stay coherent.  Its other readers are
+-- 'withPeer's bracket finalizer, which on exit reverses each per-peer
 -- contribution: releases any held lease, decrements 'txAttempt' for each
--- attempted key, clears 'txInSubmission' for any in-flight submission.
--- The sweep never reads it.
+-- attempted key, clears 'txInSubmission' for any in-flight submission;
+-- and the counters thread's review of doomed entries, which reads the
+-- advertised set of one peer per transaction, never inside the sweep's.
 --
 -- Invariant: 'pifAttempting' and 'pifSubmitting' are disjoint; a key
 -- moves from the former to the latter atomically on the submit
@@ -690,8 +706,8 @@ emptyPeerTxLocalState = PeerTxLocalState {
 -- advances 'sharedRevision' too; @writeSharedStateIfChanged@ silently
 -- drops a commit that leaves the revision where it read it.
 data SharedTxState peeraddr txid = SharedTxState {
-    -- | Active unresolved txs that still participate in leasing, buffering,
-    -- submission and advertiser tracking.
+    -- | Active unresolved txs that still participate in leasing, buffering
+    -- and submission, and that the sweep reviews for abandonment.
     sharedTxTable     :: !(IntMap (TxEntry peeraddr)),
     -- | Accepted txs retained locally for a bounded time so later txid
     -- advertisements can be acked without re-requesting the body.
@@ -915,8 +931,8 @@ data SharedTxStateCounts = SharedTxStateCounts {
     claimableTxCount  :: !Int,
     totalAttemptCount :: !Int,
     submittingTxCount :: !Int,
-    -- | Advertisers over the active entries, one per peer and key.
-    advertiserCount   :: !Int
+    -- | Active entries under review for abandonment ('Doomed').
+    doomedTxCount     :: !Int
   }
   deriving stock (Eq, Show, Generic)
 
@@ -931,24 +947,24 @@ sharedTxStateCounts SharedTxState { sharedTxTable, sharedRetainedTxs,
       claimableTxCount  = claimable,
       totalAttemptCount = attempts,
       submittingTxCount = submitting,
-      advertiserCount   = advertisers
+      doomedTxCount     = doomed
     }
   where
     active   = IntMap.size sharedTxTable
     retained = retainedSize sharedRetainedTxs
     interned = Map.size sharedTxIdToKey
 
-    (leased, claimable, attempts, submitting, advertisers) =
+    (leased, claimable, attempts, submitting, doomed) =
       IntMap.foldl' count (0, 0, 0, 0, 0) sharedTxTable
 
-    count (!l, !c, !a, !s, !v) TxEntry { txLease, txAttempt, txInSubmission, txAdvertisers } =
+    count (!l, !c, !a, !s, !d) TxEntry { txLease, txAttempt, txInSubmission, txDoom } =
       ( case txLease of TxLeased {}    -> l + 1
                         TxClaimable {} -> l
       , case txLease of TxClaimable {} -> c + 1
                         TxLeased {}    -> c
       , a + txAttempt
       , if txInSubmission then s + 1 else s
-      , v + txAdvertisers
+      , if txDoom == Doomed then d + 1 else d
       )
 
 -- | The counts by their fields' names, the names they are traced under,
@@ -963,7 +979,7 @@ sharedTxStateCountFields counts =
   , ("claimableTxCount",  claimableTxCount  counts)
   , ("totalAttemptCount", totalAttemptCount counts)
   , ("submittingTxCount", submittingTxCount counts)
-  , ("advertiserCount",   advertiserCount   counts)
+  , ("doomedTxCount",     doomedTxCount     counts)
   ]
 
 -- | The tier census counts by their fields' names, the names they are

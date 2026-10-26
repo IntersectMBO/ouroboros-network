@@ -12,7 +12,10 @@ import Data.IntMap.Strict qualified as IntMap
 import Data.Map.Strict qualified as Map
 import Test.Tasty.Bench
 
-import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (sweepBatch)
+import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
+           (defaultTxDecisionPolicy)
+import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (doomGrace,
+           sweepBatch)
 import Ouroboros.Network.TxSubmission.Inbound.V2.State (expireSharedStateUpTo,
            sweepSharedState, sweepSharedStateUpTo)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
@@ -62,18 +65,23 @@ activeStateExpired n a e =
     entry k = TxEntry {
         txLease = TxClaimable now,
         txAttempt = if even k then 1 else 0,
-        txAdvertisers = 1,
+        txDoom = Undoomed,
         txInSubmission = False,
         currentMaxInflightMultiplicity = 1
       }
+
+-- | The grace before a claimable entry is doomed, as the counters thread
+-- has it under the default policy.
+grace :: DiffTime
+grace = doomGrace defaultTxDecisionPolicy
 
 -- | One sweep, then expiry-only batches as the counters thread runs them,
 -- until none remain.
 drain :: SharedTxState Int Int -> SharedTxState Int Int
 drain st0 =
-  case sweepSharedStateUpTo sweepBatch now sweepStart st0 of
-    (st, True, _)  -> go st
-    (st, False, _) -> st
+  case sweepSharedStateUpTo sweepBatch grace now sweepStart st0 of
+    (st, True, _, _)  -> go st
+    (st, False, _, _) -> st
   where
     go st = case expireSharedStateUpTo sweepBatch now st of
               (st', True)  -> go st'
@@ -89,22 +97,22 @@ benchmarks =
     , bgroup "unbounded"
         [ env (prepareEnv (retainedState n e)) $ \st ->
             bench (show n ++ "retained/" ++ show e ++ "expired") $
-              whnf (sweepSharedState now) st
+              whnf (sweepSharedState grace now) st
         | (n, e) <- sizes ]
     , bgroup "active"
         [ env (prepareEnv (activeState n a)) $ \st ->
             bench (show n ++ "retained/" ++ show a ++ "active/0expired") $
-              whnf (sweepSharedState now) st
+              whnf (sweepSharedState grace now) st
         | (n, a) <- [(100_000, 10_000), (100_000, 50_000)] ]
     , bgroup "bounded"
         [ env (prepareEnv (retainedState n e)) $ \st ->
             bench (show n ++ "retained/" ++ show e ++ "expired/" ++ show sweepBatch) $
-              whnf (swept . sweepSharedStateUpTo sweepBatch now sweepStart) st
+              whnf (swept . sweepSharedStateUpTo sweepBatch grace now sweepStart) st
         | (n, e) <- sizes ]
     , bgroup "walk"
         [ env (prepareEnv (activeState n a)) $ \st ->
             bench (show n ++ "retained/" ++ show a ++ "active/0expired/" ++ show sweepBatch) $
-              whnf (swept . sweepSharedStateUpTo sweepBatch now sweepStart) st
+              whnf (swept . sweepSharedStateUpTo sweepBatch grace now sweepStart) st
         | (n, a) <- [(100_000, 10_000), (100_000, 50_000)] ]
     , bgroup "expire"
         [ env (prepareEnv (activeStateExpired n a e)) $ \st ->
