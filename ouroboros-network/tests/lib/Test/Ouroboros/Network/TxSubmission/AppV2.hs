@@ -80,7 +80,7 @@ import "quickcheck-monoids" Test.QuickCheck.Monoids
 #endif
 import System.Random (mkStdGen)
 import Test.Tasty (TestTree, testGroup)
-import Test.Tasty.HUnit (Assertion, assertBool, assertEqual, testCase)
+import Test.Tasty.HUnit (Assertion, assertEqual, testCase)
 import Test.Tasty.QuickCheck (testProperty)
 
 
@@ -131,10 +131,7 @@ tests = testGroup "AppV2"
   , testCase     "counterEmission/cadence"      unit_counterEmission_cadence
   , testCase     "counterEmission/subMsDurations"
                                         unit_counterEmission_subMsDurations
-  , testCase     "score/wellBehavedStaysAtZero" unit_score_wellBehavedStaysAtZero
-  , testCase     "score/persistentBadStaysHigh" unit_score_persistentBadStaysHigh
-  , testCase     "score/recoversAfterBurst"     unit_score_recoversAfterBurst
-  , testProperty "score/acceptsForgiveEarlierRejections" prop_score_acceptsForgive
+  , testProperty "score/batches"                prop_score_batches
   ]
 
 data TestVersion = TestVersion
@@ -1100,25 +1097,61 @@ prop_txSubmission_sizeTolerance (SizeSlack slack larger) =
       , decisionPolicy = unsafeMkTxDecisionPolicy defaultTxSubmissionConfigV2
       }
 
--- | Accepts forgive earlier rejections at 'scoreAcceptDecrement' each: a
--- burst of invalid bodies filling one request at the cap, then so many
--- valid ones in the next, with no decay, leave the burst's count less the
--- decrement per accept, floored at zero.
-prop_score_acceptsForgive :: NonNegative Int -> Property
-prop_score_acceptsForgive (NonNegative valids0) =
-    counterexample ("final scores: " ++ show finalScores) $
-      Map.findWithDefault 0 1 finalScores === expected
+-- | The validity of a lone peer's txs, up to three batches' worth: all
+-- valid, all invalid, a burst of invalid ones then valid ones, or any
+-- mix.
+newtype Validities = Validities [Bool]
+  deriving Show
+
+instance Arbitrary Validities where
+  arbitrary = do
+    n <- choose (1, 30)
+    Validities <$> frequency
+      [ (1, pure (replicate n True))
+      , (1, pure (replicate n False))
+      , (2, do k <- choose (1, n); pure (replicate k False ++ replicate (n - k) True))
+      , (3, vectorOf n arbitrary)
+      ]
+  shrink (Validities vs) = [ Validities vs' | vs' <- shrink vs, not (null vs') ]
+
+-- | The score through the simulation, batch by batch: a lone peer's txs,
+-- each valid or not as drawn, are submitted in the batches the server
+-- makes of them, each read from the trace with its accepts and
+-- rejections, and each batch takes 'scoreAcceptDecrement' per accept off
+-- the score it finds, no further than zero, then adds its own
+-- rejections, capped at 'scoreMax'; with no decay the final score is
+-- that fold.  So a stream of valid bodies leaves zero, one of invalid
+-- bodies its own count, a burst followed by accepts what the accepts
+-- leave, and a mixed batch after a score keeps its own rejections whole.
+-- Every body is counted once, and the batches hold several bodies: a
+-- fetch budget that submitted them one by one would show as coverage
+-- lost, not as a wrong score.
+prop_score_batches :: Validities -> Property
+prop_score_batches (Validities valid) =
+    checkCoverage $
+    cover 10 (and valid) "every body valid" $
+    cover 10 (not (or valid)) "every body invalid" $
+    cover 20 (any mixed (drop 1 batches)) "a mixed batch after an earlier one" $
+    cover 5 (expected == 0 && not (and valid)) "rejections forgiven to zero" $
+    cover 20 (expected > 0) "a score left" $
+    cover 50 (any ((> 1) . size) batches) "a batch of several bodies" $
+    counterexample ("batches " ++ show batches ++ ", final scores " ++ show finalScores) $
+         counterexample "every body accepted or rejected once"
+           ((sum (map fst batches), sum (map snd batches)) === (length (filter id valid), length (filter not valid)))
+    .&&. counterexample "the score, the fold over the batches"
+           (Map.findWithDefault 0 1 finalScores === expected)
   where
-    valids   = valids0 `mod` 5
     config   = defaultTxSubmissionConfigV2
     policy   = (unsafeMkTxDecisionPolicy config) { scoreRate = 0 }
-    invalids = fromIntegral (getNumTxIdsToReq (maxNumTxIdsToRequest config)) :: Int
-    expected = max 0 (fromIntegral invalids - fromIntegral valids * scoreAcceptDecrement policy)
+    mixed (accepted, rejected) = accepted > 0 && rejected > 0
+    size  (accepted, rejected) = accepted + rejected
+    -- the specification, batch by batch
+    step score (accepted, rejected) =
+      min (scoreMax policy)
+          (max 0 (score - fromIntegral accepted * scoreAcceptDecrement policy) + fromIntegral rejected)
+    expected = foldl step 0 batches :: Double
     st = TxSubmissionState
-      { peerMap = Map.singleton 1
-          ( [ mkTx i False | i <- [0 .. invalids - 1] ]
-         ++ [ mkTx i True  | i <- [invalids .. invalids + valids - 1] ]
-          , Nothing, Nothing )
+      { peerMap = Map.singleton 1 ([ mkTx i v | (i, v) <- zip [0 ..] valid ], Nothing, Nothing)
       , peerImpairment = Map.empty
       , outboundVersion = maxBound
       , submissionConfig = config
@@ -1126,7 +1159,13 @@ prop_score_acceptsForgive (NonNegative valids0) =
       , decisionPolicy = policy
       }
     -- the exchanges are over in seconds; settled half a minute after them
-    finalScores = peerFinalScore (runSimTrace (void (txSubmissionSimulationSettling 30 Set.empty 0 st)))
+    tr = runSimTrace (void (txSubmissionSimulationSettling 30 Set.empty 0 st))
+    finalScores = peerFinalScore tr
+    -- the batches as submitted, each with its accepts and rejections, in order
+    batches = [ (ptxcAccepted c, ptxcRejected c)
+              | PeerInboundTrace 1 (TraceTxSubmissionProcessed c) <- events ]
+    events :: [PeerInboundTraceType]
+    events = Trace.toList (traceSelectTraceEventsDynamic tr)
 
 -- | Tests overall tx submission semantics. The properties checked in this
 -- property test are the same as for tx submission v1. We need this to know we
@@ -1949,104 +1988,9 @@ peerScoresBy combine tr =
     events :: [PeerInboundTraceType]
     events = Trace.toList $ traceSelectTraceEventsDynamic tr
 
-peerPeakScore, peerFinalScore :: SimTrace a -> Map PeerAddr Double
-peerPeakScore  = peerScoresBy max
+peerFinalScore :: SimTrace a -> Map PeerAddr Double
 peerFinalScore = peerScoresBy const
 
-
--- | A peer that delivers only invalid bodies accumulates a non-zero
--- score from the mempool-reject penalty path. Sole advertiser, so no
--- multiplicity races: the score gain comes purely from the rejection
--- count attributed to this peer. With no accepts to offset, the score
--- cannot drain back to zero before the run ends.
-unit_score_persistentBadStaysHigh :: Assertion
-unit_score_persistentBadStaysHigh = do
-    let config = defaultTxSubmissionConfigV2
-        policy = unsafeMkTxDecisionPolicy config
-        st = TxSubmissionState
-              { peerMap        = Map.singleton 1
-                                   ([ mkTx i False | i <- [0..9] ], Nothing, Nothing)
-              , peerImpairment = Map.empty
-              , outboundVersion = maxBound
-              , decisionPolicy = policy
-              , submissionConfig = config
-              , outboundWindows = Map.empty
-              }
-        tr          = runSimTrace (void $ txSubmissionSimulation st)
-        peakScores  = peerPeakScore tr
-        finalScores = peerFinalScore tr
-        peakPeer1   = Map.findWithDefault 0 1 peakScores
-        finalPeer1  = Map.findWithDefault 0 1 finalScores
-        ctx :: String
-        ctx = "peak score:  " ++ show peakScores
-           ++ "\nfinal score: " ++ show finalScores
-    assertBool (ctx ++ "\npeer1 must accumulate score from mempool rejects")
-               (peakPeer1 > 0)
-    assertBool (ctx ++ "\npeer1 score must stay within scoreMax")
-               (peakPeer1 <= scoreMax policy)
-    assertBool (ctx ++ "\npeer1 has no accepts to offset the rejections, score must stay above zero")
-               (finalPeer1 > 0)
-
--- | A peer that delivers a burst of invalid bodies and then valid
--- bodies recovers via decrement-on-accept: the score climbs during
--- the invalid phase, then drops back to zero as the accepts cancel
--- the rejection accumulation (with default 'scoreAcceptDecrement' of
--- 1 and equal-or-greater valid count).
-unit_score_recoversAfterBurst :: Assertion
-unit_score_recoversAfterBurst = do
-    let invalids = 10
-        valids   = 4
-        config = defaultTxSubmissionConfigV2
-        policy = unsafeMkTxDecisionPolicy config
-        st = TxSubmissionState
-              { peerMap        = Map.singleton 1
-                                   ( [ mkTx i False | i <- [0..invalids - 1] ]
-                                  ++ [ mkTx i True  | i <- [invalids .. invalids + valids - 1] ]
-                                   , Nothing, Nothing)
-              , peerImpairment = Map.empty
-              , outboundVersion = maxBound
-              , decisionPolicy = policy
-              , submissionConfig = config
-              , outboundWindows = Map.empty
-              }
-        tr          = runSimTrace (void $ txSubmissionSimulation st)
-        peakScores  = peerPeakScore tr
-        finalScores = peerFinalScore tr
-        peakPeer1   = Map.findWithDefault 0 1 peakScores
-        finalPeer1  = Map.findWithDefault 0 1 finalScores
-        ctx :: String
-        ctx = "peak score:  " ++ show peakScores
-           ++ "\nfinal score: " ++ show finalScores
-    assertBool (ctx ++ "\npeer1 must briefly accumulate score during the invalid burst")
-               (peakPeer1 > 0)
-    assertEqual (ctx ++ "\npeer1 must end at zero once valid accepts have drained the rejections")
-                0
-                finalPeer1
-
--- | A well-behaved peer that is the sole advertiser of every tx it
--- carries never sees a late or rejected event, so its score stays at
--- zero throughout the run.  Documents that decrement-on-accept does
--- not push the score below the floor when there is nothing to drain.
-unit_score_wellBehavedStaysAtZero :: Assertion
-unit_score_wellBehavedStaysAtZero = do
-    let config = defaultTxSubmissionConfigV2
-        policy = unsafeMkTxDecisionPolicy config
-        st = TxSubmissionState
-              { peerMap        = Map.singleton 1
-                                   ([ mkTx i True | i <- [0..9] ], Nothing, Nothing)
-              , peerImpairment = Map.empty
-              , outboundVersion = maxBound
-              , decisionPolicy = policy
-              , submissionConfig = config
-              , outboundWindows = Map.empty
-              }
-        tr         = runSimTrace (void $ txSubmissionSimulation st)
-        peakScores = peerPeakScore tr
-        peakPeer1  = Map.findWithDefault 0 1 peakScores
-    assertEqual ("peak score: " ++ show peakScores
-                  ++ "\npeer1 must never accumulate any score")
-                0
-                peakPeer1
 
 
 prop_sharedTxStateInvariant :: TxSubmissionState
