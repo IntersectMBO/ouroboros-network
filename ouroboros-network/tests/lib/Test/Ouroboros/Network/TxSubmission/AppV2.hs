@@ -744,6 +744,10 @@ unit_counterEmission_subMsDurations = do
       peer 0 $ peer 1 $ snapshotCountersWith atomically countersVar registry
 
 
+-- | The replies counted by size: the answers to requests for txids.
+bucketed :: TxSubmissionCounters -> Word64
+bucketed s = txIdReplies0 s + txIdReplies1 s + txIdReplies2to4 s + txIdReplies5to9 s + txIdReplies10 s
+
 -- | Invariants over the counter snapshots emitted by 'txCountersThreadV2'.
 -- Asserts monotonicity of every field, protocol-level causality bounds,
 -- agreement of the txid request counters with the @MsgRequestTxIds@
@@ -782,6 +786,11 @@ prop_counterInvariants tr =
       , ("txIdsRequested",        txIdsRequested)
       , ("txIdRepliesReceived",   txIdRepliesReceived)
       , ("txIdsReceived",         txIdsReceived)
+      , ("txIdReplies0",          txIdReplies0)
+      , ("txIdReplies1",          txIdReplies1)
+      , ("txIdReplies2to4",       txIdReplies2to4)
+      , ("txIdReplies5to9",       txIdReplies5to9)
+      , ("txIdReplies10",         txIdReplies10)
       , ("txMessagesSent",        txMessagesSent)
       , ("txsRequested",          txsRequested)
       , ("txRepliesReceived",     txRepliesReceived)
@@ -1190,6 +1199,10 @@ prop_tierCounterBounds policy config tr =
                                       ++ show (txIdsReceived s))
                       (txIdsReceivedSlow s === txIdsReceived s)
                else property True)
+      .&&. counterexample "reply sizes exceed the replies"
+             (bucketed s <= txIdRepliesReceived s)
+      .&&. counterexample "replies beyond the reply sizes and the requests for acknowledgements alone"
+             (txIdRepliesReceived s <= bucketed s + txIdAckOnlySent s)
       | s <- selectTraceEventsDynamic tr :: [TxSubmissionCounters]
       ]
   where
