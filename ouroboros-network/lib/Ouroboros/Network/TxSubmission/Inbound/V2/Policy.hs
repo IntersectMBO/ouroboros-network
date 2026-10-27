@@ -6,9 +6,13 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Policy
   ( TxDecisionPolicy (..)
   , mkTxDecisionPolicy
   , saneTxDecisionPolicy
+  , minTierRotation
+  , maxSlowWait
   , TxConfigurationError (..)
   , TxSubmissionConfig (..)
   , defaultTxSubmissionConfigV2
+  , maxSourceWindow
+  , maxSourceCount
   , max_TX_SIZE
   , max_TXID_SIZE
     -- * Re-exports
@@ -108,8 +112,32 @@ data TxDecisionPolicy = TxDecisionPolicy {
       -- ^ Maximum time a peer's attempt may sit between claim and
       -- entering submission before the per-entry inflight-multiplicity
       -- cap is bumped, allowing another peer to attempt in parallel.
-      maxPeerClaimDelay              :: !DiffTime
+      maxPeerClaimDelay              :: !DiffTime,
       -- ^ Maximum delay penalty for poor performing peers.
+
+      -- Fetch tiers: see 'Ouroboros.Network.TxSubmission.Inbound.V2.Tier'.
+      --
+      txFastPeers                    :: !Int,
+      -- ^ how many inbound peers the salted order keeps on the fast tier,
+      -- polled for txids as soon as there is something to acknowledge.
+      -- Local roots and tx sources are fast besides.
+      txSlowCadence                  :: !DiffTime,
+      -- ^ the least time between two txid requests to a slow-tier peer,
+      -- blocking ones included, before jitter; jittered up, at most
+      -- 'maxSlowWait'.
+      txSlowJitter                   :: !Double,
+      -- ^ the fraction of 'txSlowCadence' each wait is jittered by, drawn
+      -- afresh per request, so slow peers never fire together.  In @[0, 1)@.
+      txTierRotation                 :: !DiffTime,
+      -- ^ how often the coin draws a new salt, reordering the fast tier;
+      -- served at the counters thread's sweeps, so at least their
+      -- interval, 'minTierRotation'.
+      txSourceCount                  :: !Int,
+      -- ^ a peer that delivered this many novel accepted txs inside
+      -- 'txSourceWindow' is a tx source and fast while it lasts.  Zero
+      -- disables the rule; at most 'maxSourceCount'.
+      txSourceWindow                 :: !DiffTime
+      -- ^ the window 'txSourceCount' is counted over.
     }
   deriving (Eq, Show)
 
@@ -145,7 +173,13 @@ mkTxDecisionPolicy config =
       scoreAcceptDecrement   = 3,
       interTxSpace           = 0.250,
       inflightTimeout        = 0.600,
-      maxPeerClaimDelay      = 0.250
+      maxPeerClaimDelay      = 0.250,
+      txFastPeers            = 20,
+      txSlowCadence          = 0.500,
+      txSlowJitter           = 0.2,
+      txTierRotation         = 293,
+      txSourceCount          = 10,
+      txSourceWindow         = 10
     }
     -- for `~2.5MB`, leave 50KB room
     safeLimit :: SizeInBytes -> SizeInBytes
@@ -190,7 +224,12 @@ data TxSubmissionConfig =
       -- `NodeToNodeV_16` it is a protocol parameter and must not be changed;
       -- since `NodeToNodeV_16` it is a local setting.
       maxNumTxIdsToRequest      :: !NumTxIdsToReq
-      -- ^ maximum number of txids an inbound client can request at a time.
+      -- ^ maximum number of txids an inbound client can request at a time;
+      -- a request is sized by the window's room as well, so a cap above
+      -- the window never binds.  Best kept at the window while a slow
+      -- fetch tier exists, so a slow peer hands over what accumulated
+      -- during its wait in one exchange; below it the peer catches up only
+      -- as blocks clear its mempool.
     }
   deriving (Eq, Show)
 
@@ -202,7 +241,7 @@ instance NFData TxSubmissionConfig where
 defaultTxSubmissionConfigV2 :: TxSubmissionConfig
 defaultTxSubmissionConfigV2 = TxSubmissionConfig {
     maxNumUnacknowledgedTxIds = NumTxIdsToAck 10,
-    maxNumTxIdsToRequest      = NumTxIdsToReq 6
+    maxNumTxIdsToRequest      = NumTxIdsToReq 10
   }
 
 -- | Why a `TxDecisionPolicy` with a `TxSubmissionConfig` isn't sane, see
@@ -245,6 +284,27 @@ data TxConfigurationError
   | InflightTimeoutTooSmall DiffTime DiffTime
   -- | `maxPeerClaimDelay` must be non-negative
   | MaxPeerClaimDelayTooSmall DiffTime
+  -- | `txFastPeers` must be non-negative
+  | TxFastPeersTooSmall Int
+  -- | `txSlowCadence` must be non-negative
+  | TxSlowCadenceTooSmall DiffTime
+  -- | `txSlowJitter` must be non-negative
+  | TxSlowJitterTooSmall Double
+  -- | `txSlowJitter` must be below one
+  | TxSlowJitterTooLarge Double
+  -- | `txSlowCadence` jittered up must be at most `maxSlowWait`
+  | TxSlowWaitTooLarge DiffTime
+  -- | `txTierRotation` must be at least `minTierRotation`, the sweep
+  -- interval at which the rotation is served
+  | TxTierRotationTooSmall DiffTime
+  -- | `txSourceCount` must be non-negative
+  | TxSourceCountTooSmall Int
+  -- | `txSourceCount` must be at most `maxSourceCount`
+  | TxSourceCountTooLarge Int
+  -- | `txSourceWindow` must be positive
+  | TxSourceWindowTooSmall DiffTime
+  -- | `txSourceWindow` must be at most `maxSourceWindow`
+  | TxSourceWindowTooLarge DiffTime
   deriving (Eq, Show)
 
 instance Exception TxConfigurationError
@@ -266,11 +326,15 @@ instance Exception TxConfigurationError
 -- `const_MAX_TX_SIZE_DISCREPANCY`. A `MsgRequestTxs` with
 -- `maxNumUnacknowledgedTxIds` txids of size `max_TXID_SIZE` MUST fit within
 -- the `StIdle` size limit. `max_TX_SIZE * maxNumTxIdsToRequest` MUST fit in
--- `SizeInBytes`.
+-- `SizeInBytes`.  The tier fields must be non-negative, the jitter below one
+-- (a wait at or above the cadence's whole would turn negative and the slow
+-- gate open), the rotation and source window positive and the window at
+-- most 'maxSourceWindow'.  'txCountersThreadV2' refuses a policy and config
+-- that fail it.
 saneTxDecisionPolicy :: TxDecisionPolicy
                      -> TxSubmissionConfig
                      -> Either TxConfigurationError ()
-saneTxDecisionPolicy TxDecisionPolicy {
+saneTxDecisionPolicy policy@TxDecisionPolicy {
                        txsSizeInflightPerPeer,
                        txsSizePerBatch,
                        maxOutstandingTxBatchesPerPeer,
@@ -281,7 +345,13 @@ saneTxDecisionPolicy TxDecisionPolicy {
                        scoreAcceptDecrement,
                        interTxSpace,
                        inflightTimeout,
-                       maxPeerClaimDelay
+                       maxPeerClaimDelay,
+                       txFastPeers,
+                       txSlowCadence,
+                       txSlowJitter,
+                       txTierRotation,
+                       txSourceCount,
+                       txSourceWindow
                      }
                      TxSubmissionConfig {
                        maxNumUnacknowledgedTxIds,
@@ -326,3 +396,53 @@ saneTxDecisionPolicy TxDecisionPolicy {
       $ Left (InflightTimeoutTooSmall inflightTimeout interTxSpace)
     unless (maxPeerClaimDelay >= 0)
       $ Left (MaxPeerClaimDelayTooSmall maxPeerClaimDelay)
+    unless (txFastPeers >= 0)
+      $ Left (TxFastPeersTooSmall txFastPeers)
+    unless (txSlowCadence >= 0)
+      $ Left (TxSlowCadenceTooSmall txSlowCadence)
+    unless (txSlowJitter >= 0)
+      $ Left (TxSlowJitterTooSmall txSlowJitter)
+    unless (txSlowJitter < 1)
+      $ Left (TxSlowJitterTooLarge txSlowJitter)
+    unless (txSlowCadence * realToFrac (1 + txSlowJitter) <= maxSlowWait)
+      $ Left (TxSlowWaitTooLarge (txSlowCadence * realToFrac (1 + txSlowJitter)))
+    unless (txTierRotation >= minTierRotation policy)
+      $ Left (TxTierRotationTooSmall txTierRotation)
+    unless (txSourceCount >= 0)
+      $ Left (TxSourceCountTooSmall txSourceCount)
+    unless (txSourceCount <= maxSourceCount)
+      $ Left (TxSourceCountTooLarge txSourceCount)
+    unless (txSourceWindow > 0)
+      $ Left (TxSourceWindowTooSmall txSourceWindow)
+    unless (txSourceWindow <= maxSourceWindow)
+      $ Left (TxSourceWindowTooLarge txSourceWindow)
+
+-- | The longest source window 'saneTxDecisionPolicy' accepts: an hour.
+-- A source window is seconds to minutes; a longer one is a unit error
+-- (ten seconds given in microseconds), and the record a peer keeps of its
+-- accepts ('peerNovelAt') grows with the window.
+maxSourceWindow :: DiffTime
+maxSourceWindow = 3600
+
+-- | The longest slow wait 'saneTxDecisionPolicy' accepts, the cadence
+-- jittered up: a minute.  The outbound side ends the protocol at a
+-- blocking txid request only, and the governor gives a hot peer's
+-- demotion five minutes (its deactivate timeout) before it drops the
+-- connection, so a slow peer must be asked well within that; a longer
+-- cadence is a unit error besides.
+maxSlowWait :: DiffTime
+maxSlowWait = 60
+
+-- | The most accepts in a window 'saneTxDecisionPolicy' lets
+-- 'txSourceCount' ask for: a hundred.  A peer's record of its accepts
+-- ('peerNovelAt') holds that many entries at most, and every decision
+-- folds over it.
+maxSourceCount :: Int
+maxSourceCount = 100
+
+-- | The shortest rotation period 'saneTxDecisionPolicy' accepts: the
+-- counters thread's sweep interval, a quarter of the retention lifetime
+-- kept between 100 ms and 1 s, since the rotation is served at the
+-- sweeps; a shorter period would be served at the sweeps all the same.
+minTierRotation :: TxDecisionPolicy -> DiffTime
+minTierRotation policy = max 0.1 (min 1 (bufferedTxsMinLifetime policy / 4))

@@ -38,6 +38,8 @@ import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToAck,
            SizeInBytes)
 import Ouroboros.Network.Tx (HasRawTxId (..))
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
+import Ouroboros.Network.TxSubmission.Inbound.V2.Tier (effectiveTier,
+           nextJitter, recordNovel, slowWait)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
 
 data TxIdRequestMode = AllowAnyTxIdRequests | AllowPipelinedTxIdRequests
@@ -61,7 +63,9 @@ data PeerActionContext peeraddr txid tx = PeerActionContext {
     -- | Shared tx-submission state after shared pruning has been applied.
     pacSharedState  :: !(SharedTxState peeraddr txid),
     -- | Score-derived delay this peer must wait after a tx becomes claimable.
-    pacClaimDelay   :: !DiffTime
+    pacClaimDelay   :: !DiffTime,
+    -- | The tier the peer is served on now ('effectiveTier').
+    pacTier         :: !PeerTier
   }
 
 -- | Decision produced by 'pickPeerActionChoice'; consumed by
@@ -78,9 +82,11 @@ data PeerActionChoice peeraddr =
     -- whether the message is blocking or pipelined based on the
     -- (post-ack) unack queue.
   | ChooseRequestTxIds ![TxKey] !NumTxIdsToAck !NumTxIdsToReq !(StrictSeq.StrictSeq TxKey)
-    -- | Park until shared state advances or the wake delay elapses: the
-    -- observed shared-state generation and an optional wake delay.
-  | ChooseDoNothing !Word64 !(Maybe DiffTime)
+    -- | Park until the shared state advances or the wake delay elapses:
+    -- the generation seen, an optional wake delay and, for the slow
+    -- tier's wait while its gate holds a txid request, the claimable
+    -- counter seen, to park on instead of the generation.
+  | ChooseDoNothing !Word64 !(Maybe DiffTime) !(Maybe Word64)
 
 -- | Build a precomputed context for selecting the next action for a peer.
 --
@@ -101,7 +107,8 @@ mkPeerActionContext now policy config peeraddr peerState peerInFlight sharedStat
     pacPeerState = peerState',
     pacPeerInFlight = peerInFlight',
     pacSharedState = sharedState,
-    pacClaimDelay = peerClaimDelay policy now (peerScore peerState')
+    pacClaimDelay = peerClaimDelay policy now (peerScore peerState'),
+    pacTier = effectiveTier policy now peerState'
     }
   where
     -- Drop locally buffered bodies whose 'sharedTxTable' entry is gone:
@@ -223,13 +230,47 @@ pickPeerActionChoice txIdRequestMode ctx
   -- Pick TXs to fetch
   | Just (txsToRequest, txsToRequestSize, txTable') <- pickRequestTxsAction ctx =
       ChooseRequestTxs txsToRequest txsToRequestSize txTable'
-  -- Pick TXids to ack and/or request more TXids.
+  -- Pick TXids to ack and/or request more TXids, unless the slow tier's
+  -- gate holds the request.  Acknowledgements that free a buffered body
+  -- pass the gate, in a request for no txids, which leaves the gate as
+  -- it is; not pipelined, where a request for nothing burns a slot.
   | Just (acknowledgedTxIds, txIdsToAcknowledge, txIdsToRequest, unacknowledgedTxIds') <-
       pickRequestTxIdsAction txIdRequestMode ctx =
-      ChooseRequestTxIds acknowledgedTxIds txIdsToAcknowledge txIdsToRequest unacknowledgedTxIds'
-  -- Do nothing
+      case slowGate ctx of
+        Nothing        -> ChooseRequestTxIds acknowledgedTxIds txIdsToAcknowledge
+                                             txIdsToRequest unacknowledgedTxIds'
+        Just gateUntil
+          | txIdRequestMode == AllowAnyTxIdRequests
+          , txIdsToAcknowledge > 0
+          , Just _ <- pickSubmitFrom ctx unacknowledgedTxIds' ->
+              ChooseRequestTxIds acknowledgedTxIds txIdsToAcknowledge 0 unacknowledgedTxIds'
+          | otherwise -> waitGate gateUntil
+  -- Nothing to do now.  A slow peer whose gate holds waits for the gate
+  -- as for a gated request, unless it holds a buffered body; anyone else
+  -- parks on the generation.
+  | Just gateUntil <- slowGate ctx
+  , noBuffered =
+      waitGate gateUntil
   | otherwise =
-      ChooseDoNothing (sharedGeneration (pacSharedState ctx)) (nextWakeDelay ctx)
+      ChooseDoNothing generation (nextWakeDelay ctx) Nothing
+  where
+    generation = sharedGeneration (pacSharedState ctx)
+    noBuffered = IntMap.null (peerDownloadedTxs (pacPeerState ctx))
+
+    -- Wait for the gate, or less for a timed claim or bump, parked on the
+    -- claimable counter rather than the generation, which moves on every
+    -- accept: a slow peer re-evaluating at each of those would cost what
+    -- the tier saves, while a lease released elsewhere still wakes it.  A
+    -- peer holding a buffered body keeps the generation, since another
+    -- peer's accept may be what lets it submit that body, and the gate is
+    -- only meant to space txid requests.
+    waitGate gateUntil =
+        ChooseDoNothing generation (Just delay) park
+      where
+        gateDelay = gateUntil `diffTime` pacNow ctx
+        delay     = maybe gateDelay (min gateDelay) (nextWakeDelay ctx)
+        park | noBuffered = Just $! sharedClaimable (pacSharedState ctx)
+             | otherwise  = Nothing
 
 -- | Execute a chosen peer action and compute resulting state updates
 applyPeerActionChoice :: PeerActionContext peeraddr txid tx
@@ -245,8 +286,24 @@ applyPeerActionChoice ctx choice =
                           unacknowledgedTxIds' ->
          applyRequestTxIdsChoice ctx acknowledgedTxIds txIdsToAcknowledge txIdsToRequest
                                  unacknowledgedTxIds'
-       ChooseDoNothing generation wakeDelay ->
-         applyDoNothingChoice ctx generation wakeDelay
+       ChooseDoNothing generation wakeDelay park ->
+         applyDoNothingChoice ctx generation wakeDelay park
+
+-- | The slow tier's gate on a txid request: the time it opens, when the
+-- peer is slow and the gate set by the previous request for txids has
+-- not passed.  It holds blocking requests too: a peer with a stream
+-- answers one at once, so leaving them open would leave the tier nothing
+-- to slow; a peer without one waits for a tx either way, so the gate
+-- costs it at most one cadence on its first.  A buffered body behind a
+-- key dead for the peer, a body it omitted or an entry resolved since,
+-- waits for that key's acknowledgement, which goes out at once in a
+-- request for no txids ('pickPeerActionChoice').
+slowGate :: PeerActionContext peeraddr txid tx -> Maybe Time
+slowGate PeerActionContext { pacNow, pacPeerState, pacTier }
+  | pacTier == FastTier = Nothing
+  | Just gateUntil <- peerSlowGate pacPeerState
+  , gateUntil > pacNow  = Just gateUntil
+  | otherwise           = Nothing
 
 -- | Construct a 'PeerSubmitTxs' action for buffered transactions.
 --
@@ -328,13 +385,39 @@ applyRequestTxIdsChoice ctx acknowledgedTxIds txIdsToAcknowledge txIdsToRequest 
   where
     peerState0 = pacPeerState ctx
     acknowledgedKeys = IntSet.fromList (unTxKey <$> acknowledgedTxIds)
-    peerState'' =
-      peerState0 {
+    -- the request is recorded behind the earlier outstanding ones: for
+    -- txids on the peer's own tier, a slow one carrying the wait it
+    -- drew, as a source's when its standing serves it fast off a slow
+    -- tier of its own, or for acknowledgements alone
+    request | txIdsToRequest <= 0             = AcksOnly
+            | peerTier peerState0 == FastTier = TxIdsOnFast
+            | pacTier ctx == FastTier         = TxIdsAsSource
+            | otherwise                       = TxIdsOnSlow wait
+    -- on the slow tier a request for txids draws its wait, the cadence
+    -- jittered by a draw from the peer's own generator
+    (wait, seed') = let (u, s) = nextJitter (peerJitterSeed peerState0)
+                    in (slowWait (pacPolicy ctx) u, s)
+    peerState' =
+      recordTxIdRequest request peerState0 {
         peerAvailableTxIds =
           IntMap.withoutKeys (peerAvailableTxIds peerState0) acknowledgedKeys,
+        peerCreditedTxIds =
+          peerCreditedTxIds peerState0 `IntSet.difference` acknowledgedKeys,
         peerUnacknowledgedTxIds = unacknowledgedTxIds',
         peerRequestedTxIds = peerRequestedTxIds peerState0 + txIdsToRequest
       }
+    -- on the slow tier a request for txids sets the gate for the next
+    -- one, its wait past the decision; one for acknowledgements alone
+    -- leaves the gate
+    peerState''
+      | pacTier ctx == SlowTier
+      , txIdsToRequest > 0 =
+          let !gateUntil = wait `addTime` pacNow ctx
+          in peerState' {
+            peerSlowGate   = Just gateUntil,
+            peerJitterSeed = seed'
+          }
+      | otherwise = peerState'
     pif = pacPeerInFlight ctx
     peerInFlight'' = pif {
         pifAdvertised = pifAdvertised pif `IntSet.difference` acknowledgedKeys
@@ -345,9 +428,10 @@ applyDoNothingChoice
   :: PeerActionContext peeraddr txid tx
   -> Word64
   -> Maybe DiffTime
+  -> Maybe Word64
   -> (PeerAction, PeerTxLocalState tx, PeerTxInFlight, SharedTxState peeraddr txid)
-applyDoNothingChoice ctx generation wakeDelay =
-  ( PeerDoNothing generation wakeDelay
+applyDoNothingChoice ctx generation wakeDelay park =
+  ( PeerDoNothing generation wakeDelay park
   , pacPeerState ctx
   , pacPeerInFlight ctx
   , pacSharedState ctx
@@ -357,7 +441,16 @@ applyDoNothingChoice ctx generation wakeDelay =
 pickSubmitAction
   :: PeerActionContext peeraddr txid tx
   -> Maybe [TxKey]
-pickSubmitAction PeerActionContext { pacPeerState, pacSharedState } =
+pickSubmitAction ctx@PeerActionContext { pacPeerState } =
+    pickSubmitFrom ctx (peerUnacknowledgedTxIds pacPeerState)
+
+-- | 'pickSubmitAction' over a given unacknowledged queue: the one an
+-- acknowledgement leaves, for whether it frees a buffered body.
+pickSubmitFrom
+  :: PeerActionContext peeraddr txid tx
+  -> StrictSeq.StrictSeq TxKey
+  -> Maybe [TxKey]
+pickSubmitFrom PeerActionContext { pacPeerState, pacSharedState } unacknowledgedTxIds =
   if null pickBufferedTxsToSubmit
      then Nothing
      else Just pickBufferedTxsToSubmit
@@ -400,7 +493,7 @@ pickSubmitAction PeerActionContext { pacPeerState, pacSharedState } =
     -- most once per scheduler invocation; the duplicates remain in the
     -- queue so the ack-by-count handshake stays in sync with the sender.
     pickBufferedTxsToSubmit =
-        go IntSet.empty [] (toList (peerUnacknowledgedTxIds pacPeerState))
+        go IntSet.empty [] (toList unacknowledgedTxIds)
       where
         go _    acc [] = reverse acc
         go seen acc (txKey@(TxKey k) : rest)
@@ -702,7 +795,8 @@ bumpStuckEntries now policy downloadedTxs st =
     if anyBumped
        then st { sharedTxTable    = txTable',
                  sharedGeneration = sharedGeneration st + 1,
-                 sharedRevision   = sharedRevision st + 1 }
+                 sharedRevision   = sharedRevision st + 1,
+                 sharedClaimable  = sharedClaimable st + 1 }
        else st
   where
     (anyBumped, txTable') =
@@ -1217,7 +1311,7 @@ handleReceivedTxs mempoolHasTx now policy peeraddr txs peerState peerInFlight sh
     -- in-flight set and the shared 'txAttempt' counters via 'releaseLease'.
     releasedKeys = requestedKeys `IntSet.difference` bufferedKeys
 
-    -- Bump both counters only when something happened that other peers
+    -- Bump the counters only when something happened that other peers
     -- need to react to.  In the common case (all bodies received, no
     -- mempool race) no bump fires and the structural-but-pointer-different
     -- 'sharedStateReleased' is discarded by 'writeSharedStateIfChanged'.
@@ -1227,7 +1321,10 @@ handleReceivedTxs mempoolHasTx now policy peeraddr txs peerState peerInFlight sh
       | wakeChangeFromHandle || wakeChangeFromOmit =
           sharedStateReleased {
             sharedGeneration = sharedGeneration sharedState + 1,
-            sharedRevision   = sharedRevision   sharedState + 1
+            sharedRevision   = sharedRevision   sharedState + 1,
+            -- an omitted body released a lease: claimable by another
+            sharedClaimable  = sharedClaimable sharedState
+                             + (if wakeChangeFromOmit then 1 else 0)
           }
       | otherwise =
           sharedState
@@ -1377,8 +1474,21 @@ handleSubmittedTxs now policy peeraddr acceptedTxs rejectedTxs peerState peerInF
         peerDownloadedTxs =
           IntMap.withoutKeys (peerDownloadedTxs peerState) submittedKeys,
         peerAvailableTxIds =
-          IntMap.withoutKeys (peerAvailableTxIds peerState) submittedKeys
+          IntMap.withoutKeys (peerAvailableTxIds peerState) submittedKeys,
+        -- what the mempool accepted from this peer it had from no one
+        -- else: the peer is that much of a source, for the keys it
+        -- brought off a slow tier of its own ('peerCreditedTxIds'); a
+        -- fast peer's count for nothing, as it wins the races and would
+        -- make a source of itself, keeping the standing once the coin
+        -- drops it.  A peer producing at the slow cadence is the source
+        -- the rule is after, and one fast by that standing keeps
+        -- producing to keep it.
+        peerNovelAt =
+          recordNovel policy now (IntSet.size creditedKeys) (peerNovelAt peerState),
+        peerCreditedTxIds =
+          peerCreditedTxIds peerState `IntSet.difference` submittedKeys
       }
+    creditedKeys = acceptedKeys `IntSet.intersection` peerCreditedTxIds peerState
 
     -- Submission outcomes clear the peer's submission and advertised
     -- contributions for these keys; the peer is done with them.  The
@@ -1403,8 +1513,20 @@ handleSubmittedTxs now policy peeraddr acceptedTxs rejectedTxs peerState peerInF
     sharedState' =
       sharedStateAfterRejected {
         sharedGeneration = sharedGeneration sharedState + 1,
-        sharedRevision   = sharedRevision   sharedState + 1
+        sharedRevision   = sharedRevision   sharedState + 1,
+        -- a rejection reopens its entry: out of submission, and this
+        -- peer's lease, where it held one, released ('markRejected'), so
+        -- another peer may claim it, at once or once the lease it still
+        -- carries lapses.  Not a rejected key whose entry is gone:
+        -- nothing of it opens to anyone.
+        sharedClaimable  = sharedClaimable sharedState
+                         + (if reopenedAny then 1 else 0)
       }
+
+    -- whether a rejected key still has an entry, the one 'markRejected'
+    -- reopens
+    reopenedAny =
+      any (`IntMap.member` sharedTxTable sharedStateAfterAccepted) (IntSet.toList rejectedKeys)
 
     retainedUntil = retainDeadline (addTime (bufferedTxsMinLifetime policy) now)
 
@@ -1535,12 +1657,37 @@ handleReceivedTxIds mempoolHasTx now policy requestedTxIds txidsAndSizes
     peerUnacknowledgedTxIds' =
       peerUnacknowledgedTxIds peerState <> StrictSeq.fromList (reverse receivedTxKeysRev)
 
-    peerState'' = peerState {
+    -- the reply answers the oldest outstanding request; the keys it
+    -- brought, those it added to the advertised set, credit the peer's
+    -- source record when the request went out off a slow tier of its
+    -- own ('peerCreditedTxIds')
+    (request, peerStateAnswered) = takeTxIdReply peerState
+    credited = case request of
+      TxIdsOnSlow _ -> True
+      TxIdsAsSource -> True
+      _             -> False
+    -- the reply to a request off the slow tier sets the gate again, the
+    -- request's own wait past the reply where that is later than the
+    -- gate found: the request set it past the decision's clock read,
+    -- which the trace, the transaction and the send may have left a
+    -- cadence behind, and a request pipelined behind this one may have
+    -- set it later still
+    peerSlowGate' = case request of
+      TxIdsOnSlow wait -> let !anchor = wait `addTime` now
+                          in Just $! maybe anchor (max anchor) (peerSlowGate peerState)
+      _                -> peerSlowGate peerState
+    peerState'' = peerStateAnswered {
+        peerSlowGate = peerSlowGate',
         peerUnacknowledgedTxIds = peerUnacknowledgedTxIds',
         peerRequestedTxIds =
           assert (requestedTxIds <= peerRequestedTxIds peerState)
                  (peerRequestedTxIds peerState - requestedTxIds),
-        peerAvailableTxIds = peerAvailableTxIds'
+        peerAvailableTxIds = peerAvailableTxIds',
+        peerCreditedTxIds =
+          if credited
+             then peerCreditedTxIds peerState
+                    `IntSet.union` (peerAdvertisedKeys' `IntSet.difference` peerAdvertisedKeys0)
+             else peerCreditedTxIds peerState
       }
 
     -- An empty reply leaves the advertised set unchanged (the fold doesn't

@@ -77,7 +77,9 @@ collectAndContinueWithState (StatefulCollect f) !st =
 
 -- | A tx-submission inbound side (server, sic!).
 --
--- Each call to 'runNextPeerAction' atomically inspects the shared state and
+-- After the initial delay the server puts the peer in the fetch tiers'
+-- order ('joinTiers'), once.  Each call to 'runNextPeerAction' then
+-- atomically inspects the shared state and
 -- this peer's local protocol state and returns one of: submit buffered
 -- bodies to the mempool, request bodies, request txids (blocking or
 -- pipelined), or do nothing.  When idle, the server parks on
@@ -91,7 +93,9 @@ collectAndContinueWithState (StatefulCollect f) !st =
 -- Depth 'n' tracks outstanding pipelined replies (type-level Nat).
 --
 -- States (non-pipelined, n = 0):
---   serverIdle           - park on awaitSharedChange or pick next action
+--   serverIdle           - park on awaitSharedChange (or, while the slow
+--                          tier's gate holds a txid request, on
+--                          awaitClaimableChange) or pick next action
 --   serverReqTxIds 0     - send a txid request (blocking or pipelined)
 --   submitBufferedTxs    - submit buffered bodies, run continuation
 --   requestTxBodies      - send a pipelined body request, depth + 1
@@ -107,6 +111,7 @@ collectAndContinueWithState (StatefulCollect f) !st =
 --
 --   serverIdle
 --     [PeerDoNothing]       --> awaitSharedChange   --> serverIdle
+--                               (awaitClaimableChange when gated)
 --     [PeerSubmitTxs ks]    --> submitBufferedTxs ks serverIdle
 --     [PeerRequestTxs ks]   --> requestTxBodies 0 ks
 --                                 --> continueAfterBodyRequests 1
@@ -149,7 +154,10 @@ txSubmissionInboundV2
     TxSubmissionMempoolWriter { txId, mempoolAddTxs }
     txSize
     PeerTxAPI {
+      apiJitterSeed,
+      joinTiers,
       awaitSharedChange,
+      awaitClaimableChange,
       runNextPeerAction,
       runNextPeerActionPipelined,
       applyReceivedTxIds,
@@ -162,7 +170,10 @@ txSubmissionInboundV2
       case initDelay of
         TxSubmissionInitDelay delay -> threadDelay delay
         NoTxSubmissionInitDelay     -> return ()
-      continueWithStateM serverIdle emptyPeerTxLocalState
+      -- in the order from here on: a peer not polling yet holds no fast slot
+      joinTiers
+      continueWithStateM serverIdle
+        emptyPeerTxLocalState { peerJitterSeed = apiJitterSeed }
   where
 
     -- Mirror V1's TraceTxInboundCan/CannotRequestMoreTxs: emit once per
@@ -197,7 +208,7 @@ txSubmissionInboundV2
         runNextPeerAction now mDownloadTime
           (State.drainPeerScore policy now peerState')
       case peerAction of
-           PeerDoNothing generation mDelay -> do
+           PeerDoNothing generation mDelay mClaimable -> do
              -- An Active->Idle transition means this peer has just become
              -- eligible for actions it could not take before (e.g. claiming
              -- expired leases as an idle claimant). Re-run the scheduler
@@ -209,7 +220,14 @@ txSubmissionInboundV2
                 then continueWithStateM serverIdle peerState''
                 else do
                   mRegisteredDelay <- traverse RegisteredDelay.new mDelay
-                  atomically $ awaitSharedChange generation mRegisteredDelay
+                  case mClaimable of
+                    -- the slow tier's gate alone held a txid request: wait
+                    -- for the gate, or for an entry becoming claimable, not
+                    -- for every move of the shared generation
+                    Just claimable ->
+                      atomically $ awaitClaimableChange claimable mRegisteredDelay
+                    Nothing ->
+                      atomically $ awaitSharedChange generation mRegisteredDelay
                   continueWithStateM serverIdle peerState''
            PeerSubmitTxs txKeys ->
              continueWithStateM (submitBufferedTxs txKeys serverIdle) peerState''
@@ -289,20 +307,8 @@ txSubmissionInboundV2
     continueAfterReplies :: forall (n :: N).
                             Nat n
                          -> StatefulM (PeerTxLocalState tx) n txid tx m
-    continueAfterReplies Zero = serverIdle
-    continueAfterReplies n@Succ{} = StatefulM $ \peerState -> do
-      now <- getMonotonicTime
-      traceCanRequest n peerState
-      (peerAction, peerState') <- runNextPeerActionPipelined now (State.drainPeerScore policy now peerState)
-      case peerAction of
-        PeerSubmitTxs txKeys ->
-          continueWithStateM (submitBufferedTxs txKeys (continueAfterReplies n)) peerState'
-        PeerRequestTxs txKeys ->
-          continueWithStateM (requestTxBodies n txKeys) peerState'
-        PeerRequestTxIds txIdsToAck txIdsToReq ->
-          continueWithStateM (serverReqTxIds n txIdsToAck txIdsToReq) peerState'
-        PeerDoNothing {} ->
-          pure $ continueWithState (handleReplies n) peerState'
+    continueAfterReplies Zero     = serverIdle
+    continueAfterReplies n@Succ{} = continueAfterBodyRequests n
 
     -- Continue processing after receiving transaction body replies in pipelined mode.
     continueAfterBodyRequests :: forall (n :: N).
