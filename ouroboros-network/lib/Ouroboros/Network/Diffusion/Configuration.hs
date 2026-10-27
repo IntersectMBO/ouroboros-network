@@ -16,6 +16,7 @@ module Ouroboros.Network.Diffusion.Configuration
   , PeerSelectionTargets (..)
   , PeerSharing (..)
   , defaultEgressPollInterval
+  , defaultMuxCountersInterval
   , deactivateTimeout
   , closeConnectionTimeout
   , peerMetricsConfiguration
@@ -30,6 +31,8 @@ module Ouroboros.Network.Diffusion.Configuration
   ) where
 
 import Control.Monad.Class.MonadTime.SI
+
+import Network.Mux qualified as Mx
 
 import Ouroboros.Network.ConnectionManager.Core (defaultProtocolIdleTimeout,
            defaultResetTimeout, defaultTimeWaitTimeout)
@@ -111,3 +114,8 @@ local_TIME_WAIT_TIMEOUT = 0
 -- for tuning latency vs. network efficiency
 defaultEgressPollInterval :: DiffTime
 defaultEgressPollInterval = 0
+
+-- | How often diffusion traces its mux counters, see
+-- 'Ouroboros.Network.Diffusion.Types.dcMuxCountersInterval'; zero keeps none.
+defaultMuxCountersInterval :: DiffTime
+defaultMuxCountersInterval = Mx.countersInterval

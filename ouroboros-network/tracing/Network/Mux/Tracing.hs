@@ -8,10 +8,16 @@
 
 module Network.Mux.Tracing () where
 
-import Data.Aeson (Value (String), (.=))
+import Data.Aeson (Object, Value (String), object, (.=))
+import Data.Aeson.Key (Key)
+import Data.Aeson.Key qualified as Key
 import Data.List (isPrefixOf)
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
 import Data.Text (Text)
+import Data.Text qualified as Text
 import Data.Typeable
+import Data.Word (Word64)
 import Formatting
 
 import Cardano.Logging
@@ -19,7 +25,8 @@ import Network.Mux qualified as Mux
 #ifdef linux_HOST_OS
 import Network.Mux.TCPInfo (StructTCPInfo (..))
 #endif
-import Network.Mux.Types (SDUHeader (..), unRemoteClockModel)
+import Network.Mux.Types (MiniProtocolDir (..), SDUHeader (..),
+           unRemoteClockModel)
 
 --------------------------------------------------------------------------------
 -- Mux Tracer
@@ -564,3 +571,163 @@ instance MetaTrace Mux.Trace where
       , Namespace [] ["Stopping"]
       , Namespace [] ["Stopped"]
       ]
+
+--------------------------------------------------------------------------------
+-- Mux counters
+--------------------------------------------------------------------------------
+
+-- | Which muxes a counters snapshot is of.
+data Side = Remote | Local
+
+sideDoc :: Side -> Text
+sideDoc Remote = "node-to-node"
+sideDoc Local  = "node-to-client"
+
+-- | A metric's name on a side: the node-to-node name as given, the
+-- node-to-client one marked local.
+onSide :: Side -> Text -> Text
+onSide Remote name = name
+onSide Local  name = "local" <> Text.toUpper (Text.take 1 name) <> Text.drop 1 name
+
+-- | One failure count of the bearer sides: its node-to-node metric's name,
+-- in the egress or the ingress family or by itself; its label; the count;
+-- and what the metric documents.
+data FailureCount = FailureCount {
+    fcName  :: Text,
+    fcLabel :: Text,
+    fcCount :: Word64,
+    fcDoc   :: Text
+  }
+
+-- | A failure count's JSON key: its name without the family.
+fcKey :: FailureCount -> Key
+fcKey = Key.fromText . Text.takeWhileEnd (/= '.') . fcName
+
+-- | The failure counts of the bearer sides; the mini-protocols' are by
+-- protocol, apart.
+failureCounts :: Mux.MuxFailures -> [FailureCount]
+failureCounts Mux.MuxFailures {
+                Mux.mfWriteTimeouts, Mux.mfWriteErrors, Mux.mfReadTimeouts,
+                Mux.mfOverruns, Mux.mfProtocolErrors, Mux.mfReadErrors,
+                Mux.mfPeerClosed, Mux.mfOtherErrors } =
+  [ FailureCount "egress.writeTimeouts" "write timeouts" mfWriteTimeouts
+      "Muxes dropped because the peer took nothing within the SDU timeout."
+  , FailureCount "egress.writeErrors" "write errors" mfWriteErrors
+      "Muxes dropped because a write failed otherwise than by the peer closing."
+  , FailureCount "ingress.readTimeouts" "read timeouts" mfReadTimeouts
+      "Muxes dropped because an SDU did not arrive in full within the SDU timeout."
+  , FailureCount "ingress.overruns" "overruns" mfOverruns
+      "Muxes dropped because the peer exceeded a mini-protocol's ingress limit."
+  , FailureCount "ingress.protocolErrors" "protocol errors" mfProtocolErrors
+      ("Muxes dropped for undecodable SDUs, unknown mini-protocols, or data "
+         <> "an initiator-only mux cannot take.")
+  , FailureCount "ingress.readErrors" "read errors" mfReadErrors
+      ("Muxes dropped because a read failed otherwise than by the peer closing: "
+         <> "a connection that timed out, a host unreachable.")
+  , FailureCount "peerClosed" "peers closed" mfPeerClosed
+      ("Muxes dropped because the peer closed the connection: read as its end while "
+         <> "a mini-protocol was running, or met as a reset or a broken pipe by a "
+         <> "read or a write.")
+  , FailureCount "otherErrors" "other errors" mfOtherErrors
+      ("Muxes dropped because the muxer or the demuxer died with an exception of "
+         <> "a kind not listed: an encoding that would not force, a bug.")
+  ]
+
+-- | Our side's direction of a mini-protocol, as metric names carry it.
+dirName :: MiniProtocolDir -> Text
+dirName InitiatorDir = "initiator"
+dirName ResponderDir = "responder"
+
+instance LogFormatting Mux.CountersTrace where
+    forMachine _dtal = \case
+      Mux.TraceRemoteCounters c -> countsObject "Mux.TraceRemoteCounters" c
+      Mux.TraceLocalCounters  c -> countsObject "Mux.TraceLocalCounters" c
+      where
+        countsObject :: Text -> Mux.MuxCounts -> Object
+        countsObject kind Mux.MuxCounts { Mux.mcFailures = failures } =
+          mconcat $
+               [ "kind" .= String kind ]
+            ++ [ fcKey c .= fcCount c | c <- failureCounts failures ]
+            ++ [ "miniProtocolFailures" .= sum protocols
+               , "miniProtocolFailuresByProtocol" .= byProtocol "failures" protocols
+               ]
+          where
+            protocols :: Map (Mux.MiniProtocolNum, MiniProtocolDir) Word64
+            protocols = Mux.mfMiniProtocols failures
+        byProtocol :: Key -> Map (Mux.MiniProtocolNum, MiniProtocolDir) Word64 -> [Value]
+        byProtocol what counts =
+          [ object [ "protocol" .= n, "direction" .= String (showT d), what .= b ]
+          | ((Mux.MiniProtocolNum n, d), b) <- Map.toList counts
+          ]
+    forHuman = \case
+      Mux.TraceRemoteCounters c -> "Node-to-node mux counters: " <> countsLine c
+      Mux.TraceLocalCounters  c -> "Node-to-client mux counters: " <> countsLine c
+      where
+        -- The failure counts that are not zero.
+        countsLine :: Mux.MuxCounts -> Text
+        countsLine Mux.MuxCounts { Mux.mcFailures = failures } =
+          (\parts -> if null parts then "no failures" else Text.intercalate ", " parts) $
+               [ showT (fcCount c) <> " " <> fcLabel c
+               | c <- failureCounts failures
+               , fcCount c /= 0
+               ]
+            ++ [ showT n <> " mini-protocol failures"
+               | let n = sum (Mux.mfMiniProtocols failures)
+               , n /= 0
+               ]
+    asMetrics = \case
+      Mux.TraceRemoteCounters c -> countsMetrics Remote c
+      Mux.TraceLocalCounters  c -> countsMetrics Local c
+      where
+        countsMetrics :: Side -> Mux.MuxCounts -> [Metric]
+        countsMetrics side Mux.MuxCounts { Mux.mcFailures = failures } =
+             [ IntM (onSide side (fcName c)) (fromIntegral (fcCount c))
+             | c <- failureCounts failures
+             ]
+          ++ perProtocol (onSide side "miniProtocols.failures") (Mux.mfMiniProtocols failures)
+
+        -- The total, and one counter per mini-protocol number and direction;
+        -- the numbers are the application's, so the names carry them.
+        perProtocol :: Text -> Map (Mux.MiniProtocolNum, MiniProtocolDir) Word64 -> [Metric]
+        perProtocol name counts =
+            IntM name (fromIntegral (sum counts))
+          : [ IntM (name <> "." <> showT n <> "." <> dirName d) (fromIntegral b)
+            | ((Mux.MiniProtocolNum n, d), b) <- Map.toList counts
+            ]
+
+instance MetaTrace Mux.CountersTrace where
+    namespaceFor Mux.TraceRemoteCounters {} = Namespace [] ["Remote"]
+    namespaceFor Mux.TraceLocalCounters {}  = Namespace [] ["Local"]
+
+    severityFor (Namespace _ ["Remote"]) _ = Just Info
+    severityFor (Namespace _ ["Local"])  _ = Just Info
+    severityFor _ _                        = Nothing
+
+    documentFor (Namespace _ ["Remote"]) = Just (countersDoc Remote)
+    documentFor (Namespace _ ["Local"])  = Just (countersDoc Local)
+    documentFor _                        = Nothing
+
+    metricsDocFor (Namespace _ ["Remote"]) = metricsDoc Remote
+    metricsDocFor (Namespace _ ["Local"])  = metricsDoc Local
+    metricsDocFor _                        = []
+
+    allNamespaces = [ Namespace [] ["Remote"], Namespace [] ["Local"] ]
+
+-- | What a side's snapshots are.
+countersDoc :: Side -> Text
+countersDoc side =
+  "Node-wide counters of the " <> sideDoc side <> " muxes, every counters "
+    <> "interval: how they have failed."
+
+-- | The metrics of one side. The per-protocol ones, named by the
+-- application's numbers, are described with their totals.
+metricsDoc :: Side -> [(Text, Text)]
+metricsDoc side =
+     [ (onSide side (fcName c), fcDoc c)
+     | c <- failureCounts Mux.noFailures
+     ]
+  ++ [ (onSide side "miniProtocols.failures",
+        "Muxes dropped because a mini-protocol's thread died with an exception of its "
+          <> "own; the same per mini-protocol and direction under "
+          <> ".failures.<num>.<initiator|responder>.")
+     ]

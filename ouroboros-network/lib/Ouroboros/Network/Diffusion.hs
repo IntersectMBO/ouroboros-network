@@ -201,6 +201,7 @@ runM Interfaces
        , dtLocalServerTracer
        , dtLocalInboundGovernorTracer
        , dtDnsTracer
+       , dtMuxCountersTracer
        }
      Arguments
        { daNtnDataFlow
@@ -239,6 +240,7 @@ runM Interfaces
        , dcReadLedgerPeerSnapshot
        , dcMuxForkPolicy
        , dcLocalMuxForkPolicy
+       , dcMuxCountersInterval
        }
      Applications
        { daApplicationInitiatorMode
@@ -255,18 +257,41 @@ runM Interfaces
     -- Thread to which 'RethrowPolicy' will throw fatal exceptions.
     mainThreadId <- myThreadId
 
+    -- The mux counters, if the node keeps any, which it does when it traces
+    -- them: an interval of zero, or less, keeps none. A set for the
+    -- node-to-node muxes and, with a local address, one for the
+    -- node-to-client muxes.
+    counters <- if dcMuxCountersInterval > 0
+                   then Just <$> ((,) <$> Mx.newMuxCounters
+                                      <*> traverse (const Mx.newMuxCounters) dcLocalAddress)
+                   else return Nothing
+    let muxCounters, localMuxCounters :: Maybe (Mx.MuxCounters m)
+        muxCounters      = fst <$> counters
+        localMuxCounters = snd =<< counters
+
     -- If we have a local address, race the remote and local threads. Otherwise
     -- just launch the remote thread.
-    case dcLocalAddress of
-      Just addr ->
-        fmap (either id id) $
-          mkRemoteThread mainThreadId
-          `Async.race`
-          mkLocalThread mainThreadId addr
-      Nothing ->
-          mkRemoteThread mainThreadId
+    withCountersLoop counters $
+      case dcLocalAddress of
+        Just addr ->
+          fmap (either id id) $
+            mkRemoteThread mainThreadId muxCounters
+            `Async.race`
+            mkLocalThread mainThreadId addr localMuxCounters
+        Nothing ->
+            mkRemoteThread mainThreadId muxCounters
 
   where
+    -- The mux counters loop over the sets the node keeps, if any, raced with
+    -- the rest as the remote and local threads are.
+    withCountersLoop :: Maybe (Mx.MuxCounters m, Maybe (Mx.MuxCounters m)) -> m Void -> m Void
+    withCountersLoop Nothing                diffusion = diffusion
+    withCountersLoop (Just (remote, local)) diffusion =
+      fmap (either id id) $
+        (do labelThisThread "diffusion-mux-counters"
+            Mx.countersLoop (Just remote) local dcMuxCountersInterval dtMuxCountersTracer)
+        `Async.race` diffusion
+
     (ledgerPeersRng, rng1) = splitGen diRng
     (churnRng,       rng2) = splitGen rng1
     (fuzzRng,        rng3) = splitGen rng2
@@ -324,8 +349,8 @@ runM Interfaces
 
     -- | mkLocalThread - create local connection manager
     --
-    mkLocalThread :: ThreadId m -> Either ntcFd ntcAddr -> m Void
-    mkLocalThread mainThreadId localAddr = do
+    mkLocalThread :: ThreadId m -> Either ntcFd ntcAddr -> Maybe (Mx.MuxCounters m) -> m Void
+    mkLocalThread mainThreadId localAddr localMuxCounters = do
      labelThisThread "diffusion-local"
      withLocalSocket tracer diNtcGetFileDescriptor
                      diNtcConfigureSocketFile
@@ -345,6 +370,7 @@ runM Interfaces
                   Mx.bearerTracer  = dtLocalBearerTracer
                 }
                 dcLocalMuxForkPolicy
+                localMuxCounters
                 daNtcHandshakeArguments
                 ( ( \ (OuroborosApplication apps)
                    -> TemperatureBundle
@@ -414,8 +440,8 @@ runM Interfaces
 
     -- | mkRemoteThread - create remote connection manager
     --
-    mkRemoteThread :: ThreadId m -> m Void
-    mkRemoteThread mainThreadId = do
+    mkRemoteThread :: ThreadId m -> Maybe (Mx.MuxCounters m) -> m Void
+    mkRemoteThread mainThreadId muxCounters = do
       labelThisThread "diffusion-remote"
       let
         exitPolicy :: ExitPolicy a
@@ -528,6 +554,7 @@ runM Interfaces
                 Mx.bearerTracer  = dtBearerTracer
               }
               dcMuxForkPolicy
+              muxCounters
               daNtnHandshakeArguments
               versions
               (mainThreadId, rethrowPolicy <> daRethrowPolicy)

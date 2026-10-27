@@ -292,6 +292,9 @@ data Tracers ntnAddr ntnVersion ntnVersionData
 
     , dtDnsTracer :: Tracer m DNSTrace
 
+      -- | The mux counters diffusion keeps, every 'dcMuxCountersInterval'.
+    , dtMuxCountersTracer :: Tracer m Mx.CountersTrace
+
       --
       -- NodeToClient tracers
       --
@@ -346,6 +349,7 @@ nullTracers = Tracers {
   , dtLocalServerTracer                          = nullTracer
   , dtLocalInboundGovernorTracer                 = nullTracer
   , dtDnsTracer                                  = nullTracer
+  , dtMuxCountersTracer                          = nullTracer
   }
 
 -- | Diffusion arguments which allow to instantiate a completely different
@@ -579,6 +583,16 @@ data Configuration extraFlags m ntnFd ntnAddr ntcFd ntcAddr = Configuration {
     -- | A fork policy for node-to-client mini-protocols threads spawn by mux.
     --
     , dcLocalMuxForkPolicy :: Mx.ForkPolicy ntcAddr
+
+      -- | How often diffusion traces the mux counters on 'dtMuxCountersTracer':
+      -- a set the node-to-node muxes count in and, with a local address, one
+      -- the node-to-client muxes count in, both made by diffusion. Zero, or
+      -- less, keeps none: no mux counts and nothing is traced; under a second
+      -- traces every second, the loop's floor. The default is
+      -- 'Ouroboros.Network.Diffusion.Configuration.defaultMuxCountersInterval';
+      -- a deployment may align it with its scrape.
+      --
+    , dcMuxCountersInterval :: DiffTime
 
     -- | Mux egress queue's poll interval
     , dcEgressPollInterval :: DiffTime

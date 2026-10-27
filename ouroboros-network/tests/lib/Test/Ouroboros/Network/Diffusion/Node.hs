@@ -173,6 +173,9 @@ data Arguments extraChurnArgs extraFlags m = Arguments
     , aExtraChurnArgs       :: extraChurnArgs
     , aTxDecisionPolicy     :: TxDecisionPolicy
     , aTxs                  :: [Tx Int]
+    , aMuxCountersInterval  :: DiffTime
+      -- ^ how often diffusion traces the node-to-node muxes' counters; zero,
+      -- and the node keeps none
     }
 
 run :: forall extraState extraDebugState extraAPI
@@ -478,6 +481,7 @@ run blockGeneratorArgs ni na
       , Diffusion.dcReadLedgerPeerSnapshot = pure Nothing -- ^ tested independently
       , Diffusion.dcMuxForkPolicy          = noBindForkPolicy
       , Diffusion.dcLocalMuxForkPolicy     = noBindForkPolicy
+      , Diffusion.dcMuxCountersInterval    = aMuxCountersInterval na
       , Diffusion.dcEgressPollInterval     = 0.001
       }
 
