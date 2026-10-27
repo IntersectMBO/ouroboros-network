@@ -483,22 +483,12 @@ pickRequestTxIdsAction :: TxIdRequestMode
 pickRequestTxIdsAction txIdRequestMode ctx@PeerActionContext { pacPolicy, pacPeerState }
   | txIdsToAcknowledge <= 0 && txIdsToRequest <= 0 = Nothing
 
-  -- Benchmark hook: when 'disablePipelinedTxIdRequests' is set, never
-  -- fire a request that would be sent as pipelined.  Pipelined fires
-  -- whenever the post-ack queue is non-empty (or we're already in
-  -- pipelined mode), so this guard suppresses both.  The peer then
-  -- parks until the queue can drain via acks, yielding pure blocking
-  -- request behaviour at the wire.
-  | disablePipelinedTxIdRequests pacPolicy
-  , txIdRequestMode == AllowPipelinedTxIdRequests
-    || not (StrictSeq.null unacknowledgedTxIds) = Nothing
-
-  -- A pure-ack pipelined message would burn a pipeline slot for an
-  -- empty reply ('req=0' forces the response empty by construction) and
-  -- shrink our window without growing it.  Defer the ack until we can
-  -- also request more txids.
+  -- A pipelined txid request must both ack and request: with nothing to
+  -- ack the peer waits for its unacked txids to resolve rather than poll
+  -- with 'ack=0, req=N' messages.  Stricter than V1, which pipelines
+  -- such a poll after a body request while the window has room.
   | txIdRequestMode == AllowPipelinedTxIdRequests
-  , txIdsToRequest <= 0 = Nothing
+  , txIdsToAcknowledge <= 0 || txIdsToRequest <= 0 = Nothing
 
   -- Spec: a pipelined (non-blocking) request requires the post-ack
   -- queue to be non-empty.  When the peer's unacked queue is empty to
@@ -506,16 +496,6 @@ pickRequestTxIdsAction txIdRequestMode ctx@PeerActionContext { pacPolicy, pacPee
   -- in pipelined mode, so wait for a later wake.
   | txIdRequestMode == AllowPipelinedTxIdRequests
   , StrictSeq.null (peerUnacknowledgedTxIds pacPeerState) = Nothing
-
-  -- Backoff after an empty txid reply: if our last request came back
-  -- with zero txids and we still have nothing to ack, suppress the
-  -- next 'ack=0, req=N' pipelined wire message (V2.hs sends pipelined
-  -- whenever the unacked queue is non-empty).  The flag is cleared by
-  -- a non-empty txid reply or by the mempool accepting one of this
-  -- peer's txs - both signs that the peer may have new work for us.
-  | peerLastTxIdReplyWasEmpty pacPeerState
-  , txIdsToAcknowledge <= 0
-  , not (StrictSeq.null (peerUnacknowledgedTxIds pacPeerState)) = Nothing
 
   | otherwise = Just (acknowledgedTxIds, txIdsToAcknowledge, txIdsToRequest, unacknowledgedTxIds)
   where
@@ -551,14 +531,17 @@ pickRequestTxIdsAction txIdRequestMode ctx@PeerActionContext { pacPolicy, pacPee
       (peerUnacknowledgedTxIds pacPeerState)
     unackedAndRequested = numOfUnacked + numOfRequested
 
-    -- How many new txids we can request: capped by the unack-window
+    -- How many new txids we can request: zero while txids sit unacked
+    -- with nothing ackable yet, otherwise capped by the unack-window
     -- room left after this round's ack ('maxUnacknowledgedTxIds -
     -- unackedAndRequested + numOfAcked') and by the per-message
     -- request limit ('maxNumTxIdsToRequest - numOfRequested').
-    txIdsToRequest =
-      fromIntegral $ max 0 $ min
-        (fromIntegral (maxUnacknowledgedTxIds pacPolicy) - unackedAndRequested + numOfAcked)
-        (fromIntegral (maxNumTxIdsToRequest pacPolicy) - numOfRequested)
+    txIdsToRequest
+      | numOfAcked == 0 && numOfUnacked > 0 = 0
+      | otherwise =
+          fromIntegral $ max 0 $ min
+            (fromIntegral (maxUnacknowledgedTxIds pacPolicy) - unackedAndRequested + numOfAcked)
+            (fromIntegral (maxNumTxIdsToRequest pacPolicy) - numOfRequested)
 
 -- | Compute the time delay until the peer should next wake to check for work.
 nextWakeDelay :: PeerActionContext peeraddr txid tx
@@ -1182,12 +1165,7 @@ handleSubmittedTxs now policy peeraddr acceptedTxs rejectedTxs peerState peerInF
         peerDownloadedTxs =
           IntMap.withoutKeys (peerDownloadedTxs peerState) submittedKeys,
         peerAvailableTxIds =
-          IntMap.withoutKeys (peerAvailableTxIds peerState) submittedKeys,
-        -- An accepted tx from this peer is a demonstrable sign of
-        -- progress: clear the empty-reply backoff flag so the txid
-        -- picker may resume issuing pipelined 'ack=0, req=N' requests.
-        peerLastTxIdReplyWasEmpty =
-          null acceptedTxs && peerLastTxIdReplyWasEmpty peerState
+          IntMap.withoutKeys (peerAvailableTxIds peerState) submittedKeys
       }
 
     -- Submission outcomes clear the peer's submission and advertised
@@ -1334,11 +1312,7 @@ handleReceivedTxIds mempoolHasTx now policy requestedTxIds txidsAndSizes
         peerRequestedTxIds =
           assert (requestedTxIds <= peerRequestedTxIds peerState)
                  (peerRequestedTxIds peerState - requestedTxIds),
-        peerAvailableTxIds = peerAvailableTxIds',
-        -- Track empty-reply state so the txid picker can back off
-        -- 'ack=0, req=N' pipelined requests until the peer makes
-        -- progress.
-        peerLastTxIdReplyWasEmpty = null txidsAndSizes
+        peerAvailableTxIds = peerAvailableTxIds'
       }
 
     -- An empty reply leaves both sets unchanged (the fold doesn't fire),
