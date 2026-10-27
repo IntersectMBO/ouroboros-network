@@ -119,7 +119,7 @@ tests =
     , testCase     "nextPeerAction clears in-flight tracking when an orphaned body is pruned" unit_nextPeerAction_clearsInFlightForPrunedBody
     , testProperty "nextPeerAction prunes expired retained txs" prop_nextPeerAction_prunesExpiredRetained
     , testProperty "nextPeerAction keeps retained txs before expiry" prop_nextPeerAction_keepsRetained
-    , testProperty "nextPeerActionPipelined allows request-only (ack=0) when the queue is non-empty" prop_nextPeerActionPipelined_allowsRequestOnly
+    , testProperty "nextPeerActionPipelined never requests txids without acknowledging, whatever the queue" prop_nextPeerActionPipelined_rejectsRequestOnly
     , testCaseSteps "nextPeerActionPipelined rejects pure-ack (ack=N, req=0) messages" unit_nextPeerActionPipelined_rejectsPureAck
     , testProperty "nextPeerActionPipelined emits a pipelined txid request when ack and request fire together" prop_nextPeerActionPipelined_requestsTxIds
     , testProperty "nextPeerActionPipelined opens a second outstanding body batch" prop_nextPeerActionPipelined_secondBodyBatch
@@ -133,6 +133,7 @@ tests =
     , testCaseSteps "nextPeerAction requests other work despite a blocked buffered tx" unit_nextPeerAction_requestsOtherWorkDespiteBlockedBufferedTx
     , testCaseSteps "nextPeerAction submits buffered bodies across a resolved-elsewhere gap" unit_nextPeerAction_submitsBufferedAcrossResolvedGap
     , testProperty "nextPeerAction keeps non-owner txids unacked until resolved" prop_nextPeerAction_nonOwnerWaitsUntilResolved
+    , testProperty "a txid request without acks comes only on an empty unacked queue" prop_nextPeerAction_blockingOnlyWhenEmpty
     , testProperty "nextPeerAction claims a claimable tx for the best idle advertiser" prop_nextPeerAction_claimsClaimableTx
     ]
 
@@ -919,8 +920,7 @@ instance Arbitrary ArbTxDecisionPolicy where
                 <*> choose (0, 5)
                 <*> pure interTxSpaceVal
                 <*> pure inflightTimeoutVal
-                <*> (realToFrac <$> choose (0.1, 1 :: Double))
-                <*> pure False))
+                <*> (realToFrac <$> choose (0.1, 1 :: Double))))
         ]
 
     shrink (ArbTxDecisionPolicy a)
@@ -1993,10 +1993,6 @@ prop_nextPeerAction_keepsRetained (ArbTxDecisionPolicy policy)
 -- nextPeerActionPipelined
 --
 
--- | In pipelined mode 'pickRequestTxIdsAction' must return @Nothing@
--- when either the ack count or the request count is zero (the wire
--- format would otherwise produce an ack-only or request-only
--- pipelined message, which is not allowed).
 -- | When the peer has at least one ackable txid AND room to request
 -- more, 'nextPeerActionPipelined' emits a 'PeerRequestTxIds' with both
 -- counts non-zero.
@@ -2064,73 +2060,43 @@ unit_nextPeerActionPipelined_keepsOneUnackedWithOutstandingBodyReply step = do
 
     step "Pipelined response must keep the txid unacked while the body batch is outstanding"
     case action of
-      PeerRequestTxIds ack _ ->
-        ack @?= 0
       PeerDoNothing {} ->
-        -- Acceptable: not enough room to request anything.
+        -- the only ackable txid must stay unacked, and a pipelined request
+        -- has to ack as well as request: the peer waits
         pure ()
       other ->
         assertFailure ("unexpected action: " ++ show other)
   where
     peerAddr = 1 :: PeerAddr
 
--- | When the peer has an unacked txid that is *not* ackable (so the
--- ack prefix is empty) but the unack window still has room, the
--- pipelined picker emits a request-only message ('ack=0, req=N').
--- Filling the window without acking is spec-compliant and matches V1's
--- behaviour.
-prop_nextPeerActionPipelined_allowsRequestOnly
-  :: ArbTxDecisionPolicy
-  -> Property
-prop_nextPeerActionPipelined_allowsRequestOnly (ArbTxDecisionPolicy policy) =
-  let
-    -- Small windows, so the property is easy to reason about.
-    config = TxSubmissionConfig { maxNumUnacknowledgedTxIds = 4
-                                , maxNumTxIdsToRequest      = 4 }
-    txid :: TxId
-    txid = 1
-    -- Pre-state: peer has one unacked txid that is *not* ackable
-    -- (entry sits TxClaimable with no peer attempt and the peer is
-    -- still tracking it as advertised), AND there is already a
-    -- pipelined request outstanding so 'keepOneUnackedForPipelinedRequest'
-    -- forces num_acked = 0.
-    sharedState0 = mkActiveSharedState [peerAddr] peerAddr [] [(txid, 64)]
-    keyInt = unTxKey (lookupKeyOrFail txid sharedState0)
-    -- Strip the leaseholder so the entry is TxClaimable, attempt 0.
-    sharedState1 = sharedState0 {
-        sharedTxTable =
-          IntMap.adjust
-            (\entry -> entry {
-                 txLease   = TxClaimable now,
-                 txAttempt = 0
-               })
-            keyInt (sharedTxTable sharedState0)
-      }
-    -- Leave 'peerAvailableTxIds' empty so 'pickRequestTxsAction' finds no
-    -- body candidate and the scheduler falls through to the txid picker.
-    peerState0 = emptyPeerTxLocalState {
-        peerUnacknowledgedTxIds = StrictSeq.singleton (TxKey keyInt),
-        peerRequestedTxIds = 1  -- pretend there's a pipelined req in flight
-      }
-    peerInFlight0 = emptyPeerTxInFlight {
-        pifAdvertised = IntSet.singleton keyInt
-      }
-
-    (action, _, _, _) =
-      nextPeerActionPipelined now policy config peerAddr peerState0
-                              peerInFlight0 sharedState1
-  in
-    counterexample ("got: " ++ show action) $
-      case action of
-        PeerRequestTxIds ack req ->
-          conjoin [ counterexample "ack should be zero (nothing ackable)"
-                      (ack == 0)
-                  , counterexample "req should be non-zero (window has room)"
-                      (req /= 0)
-                  ]
-        _ -> property False
+-- | In pipelined mode a txid request has to both acknowledge and request:
+-- the outbound counts requests, not acknowledgements, so a request
+-- acknowledging nothing would let the window fill with txids the inbound
+-- never clears.  Over a queue of any length whose txids sit unacked with
+-- nothing ackable, the pipelined picker never emits a request that
+-- acknowledges nothing: on a non-empty queue the general rule withholds
+-- the request, on an empty one the pipelined guard refuses it.
+prop_nextPeerActionPipelined_rejectsRequestOnly :: ArbTxDecisionPolicy -> NonNegative Int -> Property
+prop_nextPeerActionPipelined_rejectsRequestOnly (ArbTxDecisionPolicy policy) (NonNegative n0) =
+  let n = n0 `mod` 7
+      txids = [1 .. n] :: [TxId]
+      -- the entries leased to another peer and not downloaded here: nothing
+      -- for this peer to ack, claim or submit
+      shared0 = mkActiveSharedState [leaseholder] leaseholder [] [ (txid, 64) | txid <- txids ]
+      keys = [ lookupKeyOrFail txid shared0 | txid <- txids ]
+      peerState0 = emptyPeerTxLocalState { peerUnacknowledgedTxIds = StrictSeq.fromList keys }
+      pif0 = emptyPeerTxInFlight { pifAdvertised = IntSet.fromList (map unTxKey keys) }
+      (action, _, _, _) = nextPeerActionPipelined now policy defaultTxSubmissionConfigV2 peerAddr
+                                                  peerState0 pif0 shared0
+  in counterexample (show action) $
+       cover 10 (n == 0) "empty queue" $
+       case action of
+         PeerRequestTxIds ack _ -> counterexample "a pipelined request acknowledging nothing" (ack > 0)
+         PeerDoNothing {}       -> property True
+         unexpected             -> counterexample ("unexpected " ++ show unexpected) False
   where
-    peerAddr = 1 :: PeerAddr
+    peerAddr    = 1 :: PeerAddr
+    leaseholder = 2 :: PeerAddr
 
 -- | Pure-ack pipelined messages (ack=N, req=0) burn a pipeline slot for
 -- an empty reply and shrink the txid window without growing it.  The
@@ -2839,14 +2805,11 @@ prop_nextPeerAction_nonOwnerWaitsUntilResolved (ArbTxDecisionPolicy policy)
                      resolvedSharedState
   in
     conjoin
-      [ counterexample "unresolved: must not ack the unresolved txid" $
+      [ counterexample "unresolved: must wait, the txid unacked and no request sent" $
           case unresolvedAction of
             PeerDoNothing _ _ ->
               peerUnacknowledgedTxIds unresolvedPeerState'
                 === peerUnacknowledgedTxIds peerState0
-            PeerRequestTxIds ack _ ->
-              counterexample ("ack should be 0, got " ++ show ack)
-                (ack === 0)
             other ->
               counterexample ("unexpected unresolved action: " ++ show other)
                              False
@@ -2863,6 +2826,35 @@ prop_nextPeerAction_nonOwnerWaitsUntilResolved (ArbTxDecisionPolicy policy)
       ]
   where
     peerAddr = 1 :: PeerAddr
+
+-- | In non-pipelined mode a txid request without acks is the blocking poll
+-- of an empty unacked queue; while txids sit unacked with nothing ackable
+-- the peer waits rather than polling with @ack=0, req=N@.
+prop_nextPeerAction_blockingOnlyWhenEmpty :: ArbTxDecisionPolicy -> NonNegative Int -> Property
+prop_nextPeerAction_blockingOnlyWhenEmpty (ArbTxDecisionPolicy policy) (NonNegative n0) =
+  let n = n0 `mod` 7
+      txids = [1 .. n] :: [TxId]
+      -- the entries leased to another peer and not downloaded here: nothing
+      -- for this peer to ack, claim or submit
+      shared0 = mkActiveSharedState [leaseholder] leaseholder [] [ (txid, 64) | txid <- txids ]
+      keys = [ lookupKeyOrFail txid shared0 | txid <- txids ]
+      peerState0 = emptyPeerTxLocalState { peerUnacknowledgedTxIds = StrictSeq.fromList keys }
+      pif0 = emptyPeerTxInFlight { pifAdvertised = IntSet.fromList (map unTxKey keys) }
+      (action, _, _, _) = nextPeerAction now policy defaultTxSubmissionConfigV2 peerAddr
+                                         peerState0 pif0 shared0
+  in counterexample (show action) $
+       classify (n == 0) "empty queue" $
+       case action of
+         PeerRequestTxIds ack req ->
+           counterexample "a request without acks while txids sit unacked"
+             (n === 0 .&&. ack === 0 .&&. property (req > 0))
+         PeerDoNothing {} ->
+           counterexample "waiting on an empty queue" (property (n > 0))
+         unexpected ->
+           counterexample ("unexpected " ++ show unexpected) False
+  where
+    peerAddr    = 1 :: PeerAddr
+    leaseholder = 2 :: PeerAddr
 
 -- | Roles for 'prop_nextPeerAction_claimsClaimableTx': 'Good' has no
 -- score and can claim immediately; 'Bad' has a non-zero score that
@@ -3691,8 +3683,7 @@ genPeerTxLocalState = sized $ \n -> do
       peerRequestedTxIds,
       peerDownloadedTxs,
       peerDownloadStartTime = Nothing,
-      peerScore = PeerScore peerScoreValue peerScoreTs,
-      peerLastTxIdReplyWasEmpty = False
+      peerScore = PeerScore peerScoreValue peerScoreTs
     }
   where
     genAvailableTx key = do
