@@ -481,7 +481,12 @@ pickRequestTxsAction ctx@PeerActionContext { pacNow, pacPolicy, pacPeerState, pa
         -- The inflight size limit is soft by up to one tx size, so a peer with
         -- spare capacity may still request its first tx in a batch even when
         -- that single tx exceeds the remaining byte budget. The per-batch
-        -- limit is hard, including for the first transaction.
+        -- limit is hard, including for the first transaction (we are relying
+        -- on the `txsSizePerBatch >= max_TX_SIZE` invariant).
+        --
+        -- An advertised txid with size above `max_TX_SIZE` is a protocol
+        -- error, thus when `selectedSize = 0`, `txSize` is at most
+        -- `txsSizePerBatch`.
         exceedsBudget selectedSize txSize
             | selectedSize + txSize > txsSizePerBatch pacPolicy = True
             | selectedSize + txSize <= sizeBudget = False

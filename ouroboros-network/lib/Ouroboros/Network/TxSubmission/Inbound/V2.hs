@@ -344,8 +344,8 @@ txSubmissionInboundV2
                     (\txids -> do
                         now <- getMonotonicTime
                         let txids' = NonEmpty.toList txids
-                        unless (length txids' <= fromIntegral txIdsToReq) $
-                          throwIO ProtocolErrorTxIdsNotRequested
+                        -- protocol checks
+                        checkReceivedTxIds txIdsToReq txids'
                         peerState' <- applyReceivedTxIds now
                                         (Just (now `diffTime` sendTime))
                                         txIdsToReq txids' peerState
@@ -377,8 +377,8 @@ txSubmissionInboundV2
                 -> StatefulCollect (PeerTxLocalState tx) n txid tx m
     handleReply n = StatefulCollect $ \peerState -> \case
       CollectTxIds txIdsToReq txids -> do
-        unless (length txids <= fromIntegral txIdsToReq) $
-          throwIO ProtocolErrorTxIdsNotRequested
+        -- protocol checks
+        checkReceivedTxIds txIdsToReq txids
         now <- getMonotonicTime
         peerState' <- applyReceivedTxIds now Nothing txIdsToReq txids peerState
         continueWithStateM (continueAfterReplies n) peerState'
@@ -408,6 +408,22 @@ txSubmissionInboundV2
                    }
                pure ps
         continueWithStateM (continueAfterReplies n) peerState''
+
+    -- Validate a txid reply: the peer must not send more txids than we asked
+    -- for, nor advertise a tx above `max_TX_SIZE`.  The latter guarantees
+    -- that any advertised tx fits in a body batch on its own (see
+    -- `txsSizePerBatch`).
+    checkReceivedTxIds :: NumTxIdsToReq
+                       -> [(txid, SizeInBytes)]
+                       -> m ()
+    checkReceivedTxIds txIdsToReq txids = do
+      unless (length txids <= fromIntegral txIdsToReq) $
+        throwIO ProtocolErrorTxIdsNotRequested
+      let tooLarge = filter ((> max_TX_SIZE) . snd) txids
+      unless (null tooLarge) $ do
+        let protocolError = ProtocolErrorTxSizeTooLarge tooLarge
+        traceWith tracer (TraceTxInboundError protocolError)
+        throwIO protocolError
 
     -- Collect transactions with size mismatches between advertised and actual.
     collectWrongSizedTxs :: Map.Map txid SizeInBytes

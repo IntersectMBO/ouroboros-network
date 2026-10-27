@@ -8,6 +8,7 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Policy
   , TxSubmissionConfig (..)
   , defaultTxSubmissionConfigV2
   , max_TX_SIZE
+  , max_TXID_SIZE
     -- * Re-exports
   , NumTxIdsToReq (..)
   ) where
@@ -18,11 +19,15 @@ import Control.Monad.Class.MonadTime.SI
 import Ouroboros.Network.Protocol.Limits (sizeLimitForState)
 import Ouroboros.Network.Protocol.TxSubmission2.Codec (byteLimitsTxSubmission2)
 import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToAck (..),
-           NumTxIdsToReq (..), SingTxSubmission (SingTxs))
+           NumTxIdsToReq (..), SingTxSubmission (SingIdle, SingTxs))
 import Ouroboros.Network.SizeInBytes (SizeInBytes (..))
 
 
 -- | Maximal tx size.
+--
+-- It bounds the advertised tx size: the inbound side disconnects from
+-- a peer which advertises a larger tx (`ProtocolErrorTxSizeTooLarge`).
+-- Increasing it requires a new node-to-node version.
 --
 -- Affects:
 --
@@ -32,6 +37,17 @@ import Ouroboros.Network.SizeInBytes (SizeInBytes (..))
 --
 max_TX_SIZE :: SizeInBytes
 max_TX_SIZE = 65_540
+
+
+-- | Upper bound on the size of an encoded txid, the same as used by
+-- `Cardano.Network.NodeToNode.txSubmissionProtocolLimits`.
+--
+-- It bounds `maxNumUnacknowledgedTxIds`: a `MsgRequestTxs` can carry up to
+-- `maxNumUnacknowledgedTxIds` txids and must fit within the `StIdle` size
+-- limit, see `saneTxDecisionPolicy`.
+--
+max_TXID_SIZE :: SizeInBytes
+max_TXID_SIZE = 44
 
 
 -- | Policy for making decisions
@@ -132,9 +148,11 @@ defaultTxDecisionPolicy config =
 data TxSubmissionConfig =
     TxSubmissionConfig {
       maxNumUnacknowledgedTxIds :: !NumTxIdsToAck,
-      -- ^ maximum number of unacknowledged txids; it MUST be positive.
-      -- Before `NodeToNodeV_16` it is a protocol parameter and must not be
-      -- changed; since `NodeToNodeV_16` it is a local setting.
+      -- ^ maximum number of unacknowledged txids; it MUST be positive, and
+      -- small enough for a `MsgRequestTxs` with that many txids to fit within
+      -- the `StIdle` size limit (see `max_TXID_SIZE`).  Before
+      -- `NodeToNodeV_16` it is a protocol parameter and must not be changed;
+      -- since `NodeToNodeV_16` it is a local setting.
       maxNumTxIdsToRequest      :: !NumTxIdsToReq
       -- ^ maximum number of txids an inbound client can request at a time.
     }
@@ -160,14 +178,22 @@ defaultTxSubmissionConfigV2 = TxSubmissionConfig {
 -- (their difference is used as a non-negative delay when bumping a stuck
 -- entry's inflight-multiplicity cap).  'defaultTxDecisionPolicy' satisfies
 -- it.  `txsSizePerBatch` MUST be equal or greater than `max_TX_SIZE`.
+-- A `MsgRequestTxs` with `maxNumUnacknowledgedTxIds` txids of size
+-- `max_TXID_SIZE` MUST fit within the `StIdle` size limit.
 saneTxDecisionPolicy :: TxDecisionPolicy -> TxSubmissionConfig -> Bool
 saneTxDecisionPolicy p c =
        maxNumUnacknowledgedTxIds      c >= 1
+       -- `MsgRequestTxs` has four bytes of CBOR framing: the outer list,
+       -- message tag, indefinite txid list and break marker.
+    &&    4 + fromIntegral max_TXID_SIZE * fromIntegral (maxNumUnacknowledgedTxIds c)
+       <= toInteger (sizeLimitForState
+                      (byteLimitsTxSubmission2 (error "invariant violation!"))
+                      SingIdle)
     &&    fromIntegral  max_TX_SIZE * fromIntegral (maxNumTxIdsToRequest c)
        <= fromIntegral @SizeInBytes @Integer maxBound
     && maxNumTxIdsToRequest           c >= 1
     && txsSizeInflightPerPeer         p >  0
-    && txsSizePerBatch                p >  0
+    && txsSizePerBatch                p >= max_TX_SIZE
     && maxOutstandingTxBatchesPerPeer p >= 1
     && txInflightMultiplicity         p >= 1
     && bufferedTxsMinLifetime         p >= 0

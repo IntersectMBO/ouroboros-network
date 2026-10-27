@@ -1150,9 +1150,9 @@ prop_nextPeerAction_picksTxsRespectingBudget (ArbTxDecisionPolicy policy0)
     peerAddr = 1 :: PeerAddr
 
 -- | Advertised transaction sizes and a policy covering either a large
--- inflight window, or a first transaction at or above the hard batch limit
--- with a smaller soft inflight limit. Sizes are at least two so all policy
--- limits can remain positive.
+-- inflight window, or a first transaction at the hard batch limit with
+-- a smaller soft inflight limit. Sizes are at least two so all policy limits
+-- can remain positive.
 --
 data ArbBodyBatchScenario = ArbBodyBatchScenario {
       bbsTxSizes :: NonEmpty SizeInBytes,
@@ -1175,7 +1175,6 @@ instance Arbitrary ArbBodyBatchScenario where
                     ]
               <*> chooseEnum (sum sizes, 2 * sum sizes)
         , (,) <$> pure firstSize <*> chooseEnum (1, firstSize - 1)
-        , (,) <$> chooseEnum (1, firstSize - 1) <*> chooseEnum (1, firstSize - 1)
         ]
       pure ArbBodyBatchScenario {
           bbsTxSizes = sizes,
@@ -1213,14 +1212,14 @@ instance Arbitrary ArbBodyBatchScenario where
           && (   (maximum sizes <= txsSizePerBatch
                && txsSizePerBatch < sum sizes
                && sum sizes <= txsSizeInflightPerPeer)
-              || (txsSizePerBatch <= firstSize
-               && txsSizeInflightPerPeer < firstSize))
+               || (   txsSizePerBatch == firstSize
+                   && txsSizeInflightPerPeer < firstSize))
 
 
 -- | A large inflight window may span several batches. Each batch respects
 -- its hard limit, while all advertised transactions can still be requested
--- in order. The hard limit also applies to the first transaction, even when
--- the soft inflight limit would otherwise allow it.
+-- in order. The first transaction is requested even when it exceeds the soft
+-- inflight limit, as long as it fits within the hard limit.
 --
 prop_nextPeerAction_capsBodyBatches :: ArbBodyBatchScenario -> Property
 prop_nextPeerAction_capsBodyBatches ArbBodyBatchScenario {
@@ -1250,9 +1249,8 @@ prop_nextPeerAction_capsBodyBatches ArbBodyBatchScenario {
 
         expectedKeys :: [TxKey]
         expectedKeys
-          | firstSize > txsSizePerBatch       = []
           | firstSize > txsSizeInflightPerPeer = take 1 advertisedKeys
-          | otherwise                        = advertisedKeys
+          | otherwise                          = advertisedKeys
 
         sizeOf :: TxKey -> SizeInBytes
         sizeOf key = peerAvailableTxIds peerState IntMap.! unTxKey key
@@ -1298,9 +1296,6 @@ prop_nextPeerAction_capsBodyBatches ArbBodyBatchScenario {
      $ cover 20
          (firstSize == txsSizePerBatch && firstSize > txsSizeInflightPerPeer)
          "first transaction at the hard limit"
-     $ cover 20
-         (firstSize > txsSizePerBatch && firstSize > txsSizeInflightPerPeer)
-         "first transaction above the hard limit"
      $ cover 50 (length (nub sizes) > 1) "mixed transaction sizes"
      $ conjoin
          [ counterexample "batch exceeds the hard size limit"

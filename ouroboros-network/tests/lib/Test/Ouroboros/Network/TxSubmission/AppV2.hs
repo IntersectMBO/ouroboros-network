@@ -915,7 +915,9 @@ prop_txSubmission_inflight st@TxSubmissionState { peerMap = state,
 -- wrapped in any combination of 'omitBodies' and 'delayBodies', every tx
 -- contributed by a well-behaved peer must still reach the inbound mempool.
 -- Exercises V2's cross-peer retry path (omission) and stuck-leaseholder
--- bump path (delay).
+-- bump path (delay).  The inbound side must raise
+-- 'ProtocolErrorTxSizeTooLarge' for, and only for, the peers which advertise
+-- a txid above 'max_TX_SIZE'.
 --
 -- Contributions from an impaired peer are not asserted: omitted bodies
 -- may never reach the mempool, and severely delayed bodies may not arrive
@@ -991,6 +993,15 @@ prop_txSubmission_resilientToImpairment
                   $ concatMap (\(txs, _, _) -> getTxId <$> txs)
                   $ Map.elems (peerMap st)
         tr        = runSimTrace (txSubmissionSimulation st)
+        -- every peer has a tx to advertise, so the first (blocking) reply of
+        -- an 'impairOversizedTxIds' peer always carries an oversized txid
+        oversizedAddrs = Map.keysSet (Map.filter impairOversizedTxIds imp)
+        sizeErrorAddrs = Set.fromList
+          [ addr
+          | PeerInboundTrace addr
+              (TraceTxInboundError ProtocolErrorTxSizeTooLarge {})
+              <- selectTraceEventsDynamic tr :: [PeerInboundTraceType]
+          ]
     in label ("impaired peers: "     ++ show (Map.size imp))
      $ label ("well-behaved peers: " ++ show (Set.size wbAddrs))
      $ tabulate "impairment kind" (kindOf <$> Map.elems imp)
@@ -1002,6 +1013,8 @@ prop_txSubmission_resilientToImpairment
              counterexample (ppSayTrace tr)
            $ conjoin (validateWellBehaved inmp `map` wbPeerTxs)
              .&&. noContamination allOutIds inmp
+             .&&. counterexample "ProtocolErrorTxSizeTooLarge not raised exactly for the oversized-txids peers"
+                    (sizeErrorAddrs === oversizedAddrs)
              .&&. prop_counterInvariants 0 tr
              .&&. prop_sharedStateClean finalState
   where
