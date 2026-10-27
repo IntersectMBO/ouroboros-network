@@ -830,9 +830,16 @@ makeDebugPeerSelectionState PeerSelectionState {..} up bp es am getPromotedHotTi
 -- This data type should not expose too much information and keep only
 -- essential data needed for computing the peer sharing request result
 --
-newtype PublicPeerSelectionState peeraddr =
+data PublicPeerSelectionState peeraddr =
   PublicPeerSelectionState {
-    availableToShare :: Set peeraddr
+    availableToShare :: Set peeraddr,
+    -- | The local roots' addresses; inbound tx-submission's fetch tiers keep
+    -- them fast by standing.  A root is recognised on an inbound connection
+    -- by its remote address being one of these, which holds when the root
+    -- binds its outbound connections to its listening address, as an
+    -- initiator-and-responder node does; a root that connects from another
+    -- address or port is served by the coin like any other peer.
+    localRootAddrs   :: Set peeraddr
   }
   deriving Show
 
@@ -840,7 +847,8 @@ emptyPublicPeerSelectionState :: Ord peeraddr
                               => PublicPeerSelectionState peeraddr
 emptyPublicPeerSelectionState =
   PublicPeerSelectionState {
-    availableToShare = mempty
+    availableToShare = mempty,
+    localRootAddrs   = Set.empty
   }
 
 makePublicPeerSelectionStateVar
@@ -855,10 +863,11 @@ makePublicPeerSelectionStateVar = newTVarIO emptyPublicPeerSelectionState
 --
 toPublicState :: PeerSelectionState extraState extraFlags extraPeers peeraddr peerconn
               -> PublicPeerSelectionState peeraddr
-toPublicState PeerSelectionState { knownPeers } =
+toPublicState PeerSelectionState { knownPeers, localRootPeers } =
    PublicPeerSelectionState {
      availableToShare =
-       KnownPeers.getPeerSharingResponsePeers knownPeers
+       KnownPeers.getPeerSharingResponsePeers knownPeers,
+     localRootAddrs   = LocalRootPeers.keysSet localRootPeers
    }
 
 -- | Peer selection view.

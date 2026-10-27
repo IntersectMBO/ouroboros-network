@@ -96,7 +96,8 @@ import Ouroboros.Network.Snocket (LocalAddress (..), RemoteAddress)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types (ProcessedTxCount (..),
            SharedTxState (..), SharedTxStateCounts, TraceTxLogic (..),
            TraceTxSubmissionInbound (..), TxSubmissionLogicVersion (..),
-           retainTimeSeconds, retainedToList, sharedTxStateCountFields)
+           retainTimeSeconds, retainedToList, sharedTxStateCountFields,
+           tierCensusFields)
 import Ouroboros.Network.TxSubmission.Outbound (TraceTxSubmissionOutbound (..))
 
 -- Helper function for ToJSON instances with a "kind" field
@@ -1866,11 +1867,13 @@ traceSharedTxStateToJSON SharedTxState {
                            sharedTxIdToKey,
                            sharedKeyToTxId,
                            sharedGeneration,
-                           sharedRevision
+                           sharedRevision,
+                           sharedClaimable
                          } counts =
     object $
       [ "sharedGeneration" .= sharedGeneration
       , "sharedRevision" .= sharedRevision
+      , "sharedClaimable" .= sharedClaimable
       ]
       ++
       [ Key.fromString name .= n
@@ -1901,6 +1904,9 @@ instance ( Show addr
     object [ "kind" .= String "SharedTxState"
            , "sharedTxState" .= traceSharedTxStateToJSON st counts
            ]
+  toJSON (TraceTxTiers census) =
+    object $ ("kind" .= String "TxTiers")
+           : [ Key.fromString name .= n | (name, n) <- tierCensusFields census ]
 
 
 -- TODO: we need verbosity levels, this instance should be removed once

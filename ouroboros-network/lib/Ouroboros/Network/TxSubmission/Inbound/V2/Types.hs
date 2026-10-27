@@ -45,6 +45,7 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Types
   , SharedTxStateCounts (..)
   , sharedTxStateCounts
   , sharedTxStateCountFields
+  , tierCensusFields
     -- * Traces
   , TraceTxLogic (..)
   , TxSubmissionInitDelay (..)
@@ -69,6 +70,12 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Types
   , TxEntry (..)
   , PeerAction (..)
   , PeerPhase (..)
+  , PeerTier (..)
+  , recordRequestTier
+  , takeReplyTier
+  , TierStanding (..)
+  , TierCensus (..)
+  , PeerTierState (..)
   , PeerScore (..)
   , PeerTxLocalState (..)
   , PeerTxInFlight (..)
@@ -250,8 +257,11 @@ emptyPeerTxInFlight = PeerTxInFlight {
 -- it out directly.
 data PeerAction
   = -- | No immediate work is available.  The peer should wait for either a
-    -- shared-state generation change or the optional timeout.
-    PeerDoNothing !Word64 !(Maybe DiffTime)
+    -- shared-state generation change or the optional timeout; or, when the
+    -- third field is set, for the 'sharedClaimable' counter to move past it
+    -- instead of the generation: the slow fetch tier's park while its gate
+    -- holds a txid request.
+    PeerDoNothing !Word64 !(Maybe DiffTime) !(Maybe Word64)
   | -- | Send a txid protocol message acknowledging the first argument and
     -- requesting the second argument.
     PeerRequestTxIds !NumTxIdsToAck !NumTxIdsToReq
@@ -296,6 +306,58 @@ data PeerPhase
   deriving anyclass NFData
 
 instance NoThunks PeerPhase
+
+-- | A peer's fetch tier (see "Ouroboros.Network.TxSubmission.Inbound.V2.Tier"):
+-- fast peers are polled for txids as soon as there is something to
+-- acknowledge, slow peers at 'txSlowCadence'.
+data PeerTier
+  = FastTier
+  | SlowTier
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving anyclass NFData
+
+instance NoThunks PeerTier
+
+-- | Why a peer is served on the tier it is: the standing the registry keeps
+-- per peer for the tier census.  A peer with several claims to the fast
+-- tier counts once, root first, coin before source, since the coin's
+-- slot is its whatever the source rule says.
+data TierStanding
+  = StandingRoot
+    -- ^ fast by standing: a local root
+  | StandingCoin
+    -- ^ fast by the coin: among the first in the salted order
+  | StandingSource
+    -- ^ fast by the source rule while the coin left it slow
+  | StandingSlow
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving anyclass NFData
+
+instance NoThunks TierStanding
+
+-- | How many live peers are served on each standing.
+data TierCensus = TierCensus {
+    censusFastByRoot   :: !Int,
+    censusFastByCoin   :: !Int,
+    censusFastBySource :: !Int,
+    censusSlow         :: !Int
+  }
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass NFData
+
+-- | A peer's place in the tiers, as the registry keeps it: the coin's
+-- verdict, written by a placement; whether it is a local root and whether
+-- it is a source, written by its decisions.  Its standing follows from the
+-- three (see 'Ouroboros.Network.TxSubmission.Inbound.V2.Tier.tierStanding').
+data PeerTierState = PeerTierState {
+    ptsCoin   :: !PeerTier,
+    ptsRoot   :: !Bool,
+    ptsSource :: !Bool
+  }
+  deriving stock (Eq, Show, Generic)
+  deriving anyclass NFData
+
+instance NoThunks PeerTierState
 
 -- | Peer usefulness score.
 --
@@ -353,6 +415,12 @@ data TxSubmissionCountersOf t = TxSubmissionCounters {
     -- ^ Txid request messages sent as blocking requests.
     txIdPipelinedReqsSent :: !Word64,
     -- ^ Txid request messages sent as pipelined (non-blocking) requests.
+    txIdSlowReqsSent      :: !Word64,
+    -- ^ Txid request messages sent to peers on the slow tier (a subset of
+    -- 'txIdMessagesSent').
+    txIdsReceivedSlow     :: !Word64,
+    -- ^ Txids received in replies to requests sent on the slow tier (a
+    -- subset of 'txIdsReceived').
     txIdBlockingWait      :: !t,
     -- ^ Cumulative time spent waiting for replies to blocking txid
     -- requests.  High values indicate the system is mostly idle (no new
@@ -395,6 +463,8 @@ instance Num t => Semigroup (TxSubmissionCountersOf t) where
     txsRejected           = txsRejected a + txsRejected b,
     txIdBlockingReqsSent  = txIdBlockingReqsSent  a + txIdBlockingReqsSent  b,
     txIdPipelinedReqsSent = txIdPipelinedReqsSent a + txIdPipelinedReqsSent b,
+    txIdSlowReqsSent      = txIdSlowReqsSent      a + txIdSlowReqsSent      b,
+    txIdsReceivedSlow     = txIdsReceivedSlow     a + txIdsReceivedSlow     b,
     txIdBlockingWait      = txIdBlockingWait      a + txIdBlockingWait      b,
     txPipelineWait        = txPipelineWait        a + txPipelineWait        b,
     txSubmissionWait      = txSubmissionWait      a + txSubmissionWait      b
@@ -416,6 +486,8 @@ instance Num t => Monoid (TxSubmissionCountersOf t) where
     txsRejected = 0,
     txIdBlockingReqsSent  = 0,
     txIdPipelinedReqsSent = 0,
+    txIdSlowReqsSent = 0,
+    txIdsReceivedSlow = 0,
     txIdBlockingWait      = 0,
     txPipelineWait        = 0,
     txSubmissionWait      = 0
@@ -502,10 +574,49 @@ data PeerTxLocalState tx = PeerTxLocalState {
 
     -- | Usefulness score for this peer, tracking rejection penalties and
     -- time-based decay.
-    peerScore               :: !PeerScore
+    peerScore               :: !PeerScore,
+
+    -- | The tier the coin or the peer's standing put it on, written by the
+    -- registry before each decision.  A tx source is fast whatever this
+    -- says (see 'peerNovelAt').
+    peerTier                :: !PeerTier,
+
+    -- | When the mempool last accepted txs this peer delivered, newest
+    -- last, at most as many as 'txSourceRate' over 'txSourceWindow'
+    -- amounts to: the peer is a source while the oldest is inside the
+    -- window.
+    peerNovelAt             :: !(StrictSeq Time),
+
+    -- | On the slow tier, the time before which no further txid request
+    -- goes out, set when one is sent.
+    peerSlowGate            :: !(Maybe Time),
+
+    -- | The generator state the slow tier's jitter is drawn from, seeded by
+    -- the registry at registration.
+    peerJitterSeed          :: !Word64,
+
+    -- | The tiers the outstanding txid requests went out on, the oldest
+    -- first: replies come in that order, and each reply's txids are counted
+    -- on the tier that asked for them, whatever the tier is when they
+    -- arrive or became while an earlier request was still out.
+    peerRequestTiers        :: !(StrictSeq PeerTier)
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (NFData, NoThunks)
+
+-- | Record the tier a txid request goes out on, behind the outstanding
+-- ones ('peerRequestTiers').
+recordRequestTier :: PeerTier -> PeerTxLocalState tx -> PeerTxLocalState tx
+recordRequestTier tier peerState =
+  peerState { peerRequestTiers = peerRequestTiers peerState StrictSeq.|> tier }
+
+-- | The tier the oldest outstanding txid request went out on, the one a
+-- reply answers, and the state without it; 'FastTier' when none is out.
+takeReplyTier :: PeerTxLocalState tx -> (PeerTier, PeerTxLocalState tx)
+takeReplyTier peerState =
+  case peerRequestTiers peerState of
+    tier StrictSeq.:<| rest -> (tier, peerState { peerRequestTiers = rest })
+    _                       -> (FastTier, peerState)
 
 emptyPeerTxLocalState :: PeerTxLocalState tx
 emptyPeerTxLocalState = PeerTxLocalState {
@@ -518,7 +629,12 @@ emptyPeerTxLocalState = PeerTxLocalState {
     peerRequestedTxIds        = 0,
     peerDownloadedTxs         = IntMap.empty,
     peerDownloadStartTime     = Nothing,
-    peerScore                 = emptyPeerScore (Time 0)
+    peerScore                 = emptyPeerScore (Time 0),
+    peerTier                  = FastTier,
+    peerNovelAt               = StrictSeq.empty,
+    peerSlowGate              = Nothing,
+    peerJitterSeed            = 0,
+    peerRequestTiers          = StrictSeq.empty
   }
 
 -- | Shared V2 state.
@@ -565,7 +681,14 @@ data SharedTxState peeraddr txid = SharedTxState {
     -- | Write counter.  Bumped by every step that changes the state, the
     -- ones that bump 'sharedGeneration' included; 'writeSharedStateIfChanged'
     -- writes the TVar exactly when it moved, so it counts committed writes.
-    sharedRevision    :: !Word64
+    sharedRevision    :: !Word64,
+    -- | Bumped when an entry becomes claimable for another peer: a lease
+    -- released by a rejection or an omitted body, a stuck entry's cap
+    -- raised, a leaving peer's leases scrubbed.  The slow fetch tier parks
+    -- on it instead of 'sharedGeneration', which also moves on every
+    -- accept, so a held txid request costs no re-evaluation per accept but
+    -- a re-fetch chain still runs at round-trip speed.
+    sharedClaimable   :: !Word64
   }
   deriving stock Generic
 
@@ -619,7 +742,8 @@ emptySharedTxState = SharedTxState {
     sharedKeyToTxId        = IntMap.empty,
     sharedNextTxKey        = 0,
     sharedGeneration       = 0,
-    sharedRevision         = 0
+    sharedRevision         = 0,
+    sharedClaimable        = 0
   }
 
 retainedEmpty :: RetainedTxs
@@ -811,6 +935,16 @@ sharedTxStateCountFields counts =
   , ("advertiserCount",   advertiserCount   counts)
   ]
 
+-- | The tier census counts by their fields' names, the names they are
+-- traced under, listed by hand like 'sharedTxStateCountFields'.
+tierCensusFields :: TierCensus -> [(String, Int)]
+tierCensusFields census =
+  [ ("fastByRoot",   censusFastByRoot   census)
+  , ("fastByCoin",   censusFastByCoin   census)
+  , ("fastBySource", censusFastBySource census)
+  , ("slow",         censusSlow         census)
+  ]
+
 -- | Whether any retained entry is due by @currentTime@.
 retainedDueBy :: RetainTime -> RetainedTxs -> Bool
 retainedDueBy currentTime retained =
@@ -882,6 +1016,8 @@ data TraceTxLogic peeraddr txid tx =
     TraceSharedTxState (SharedTxState peeraddr txid) SharedTxStateCounts
     -- ^ the state and its counts, folded once by the counters thread for
     -- every renderer
+  | TraceTxTiers TierCensus
+    -- ^ the live peers by the standing they are served on
   deriving Show
 
 
