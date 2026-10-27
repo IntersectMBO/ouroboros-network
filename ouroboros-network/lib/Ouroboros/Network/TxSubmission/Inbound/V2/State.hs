@@ -844,10 +844,10 @@ drainPeerScore policy now peerState@PeerTxLocalState { peerScore }
 {-# INLINE drainPeerScore #-}
 
 -- | Apply a batch of accept/reject events to the peer's local score.
--- Drains the score by elapsed time at 'scoreRate', then adds the
--- rejection count and subtracts 'scoreAcceptDecrement' per accept;
--- clamps to @[0, scoreMax]@. Returns the new score value (for
--- tracing) and the updated local state.
+-- Drains the score by elapsed time at 'scoreRate', subtracts
+-- 'scoreAcceptDecrement' per accept from what remains, then adds the
+-- rejection count; clamps to @[0, scoreMax]@. Returns the new score
+-- value (for tracing) and the updated local state.
 applyPeerEvents :: TxDecisionPolicy
                 -> Time
                 -> Int  -- ^ accepted count (decrements score)
@@ -869,9 +869,13 @@ applyPeerEvents policy@TxDecisionPolicy { scoreMax, scoreAcceptDecrement }
   where
     rejGain = fromIntegral rejectedCount :: Double
     accDec  = fromIntegral acceptedCount * scoreAcceptDecrement
+    -- The accepts forgive earlier rejections, never this batch's: a batch
+    -- mixing invalid bodies with valid ones would otherwise net to
+    -- nothing, up to seven invalid beside three valid at the default
+    -- decrement and a window's worth per batch.
     peerScore' =
       let !drained = currentPeerScore policy now peerScore
-          !final   = min scoreMax (max 0 (drained + rejGain - accDec)) in
+          !final   = min scoreMax (max 0 (drained - accDec) + rejGain) in
       peerScore { peerScoreValue = final, peerScoreTs = now }
 {-# INLINE applyPeerEvents #-}
 
