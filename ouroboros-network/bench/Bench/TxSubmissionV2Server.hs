@@ -28,7 +28,7 @@ import GHC.Generics (Generic)
 import Ouroboros.Network.Protocol.TxSubmission2.Server
 import Ouroboros.Network.Protocol.TxSubmission2.Type
            (NumTxIdsToReq (getNumTxIdsToReq), SizeInBytes (..))
-import Ouroboros.Network.TxSubmission.Inbound.V2 (TxDecisionPolicy,
+import Ouroboros.Network.TxSubmission.Inbound.V2 (TxDecisionPolicy (..),
            TxSubmissionInitDelay (NoTxSubmissionInitDelay),
            defaultTxDecisionPolicy, txSubmissionInboundV2)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (newPeerTxRegistry,
@@ -36,6 +36,7 @@ import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (newPeerTxRegistry,
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types (TxSubmissionCounters,
            emittedCounters, emptySharedTxState)
 
+import System.Random (mkStdGen)
 import Test.Ouroboros.Network.TxSubmission.Types (Tx (..), TxId, emptyMempool,
            getMempoolReader, getMempoolWriter, readMempool)
 
@@ -70,7 +71,7 @@ mkDirectServerFixture batches =
     { dsPeerCount        = 1
     , dsTxIdReplyBatches = batches
     , dsTxSize           = SizeInBytes 1024
-    , dsPolicy           = defaultTxDecisionPolicy
+    , dsPolicy           = defaultTxDecisionPolicy { txFastPeers = 1 }
     }
 
 
@@ -87,6 +88,9 @@ mkDirectServerFixture batches =
 -- txid request needs a non-zero ack and a non-zero request count), so
 -- the txid path contributes no wire-level churn of its own.  Body
 -- requests still use the protocol's pipelined wire form.
+--
+-- Every peer is on the fast tier: the slow tier's gate is a real-time
+-- wait between txid requests, not what this measures.
 mkMultiPeerFixture
   :: Int -- ^ peer count
   -> Int -- ^ batches per peer
@@ -96,7 +100,7 @@ mkMultiPeerFixture peers batches =
     { dsPeerCount        = peers
     , dsTxIdReplyBatches = batches
     , dsTxSize           = SizeInBytes 1024
-    , dsPolicy           = defaultTxDecisionPolicy
+    , dsPolicy           = defaultTxDecisionPolicy { txFastPeers = peers }
     }
 
 
@@ -111,7 +115,7 @@ runDirectServerBenchmark DirectServerFixture {
   inboundMempool <- emptyMempool
   duplicateTxIdsVar <- Lazy.newTVarIO []
   sharedStateVar <- newSharedTxStateVar emptySharedTxState
-  inFlightRegistry <- newPeerTxRegistry
+  inFlightRegistry <- newPeerTxRegistry (mkStdGen 7)
   countersVar <- newTxSubmissionCountersVar mempty
 
   let writer = getMempoolWriter duplicateTxIdsVar inboundMempool
@@ -124,6 +128,7 @@ runDirectServerBenchmark DirectServerFixture {
           inFlightRegistry
           countersVar
           addr
+          (pure False)
           $ \api -> do
             let server =
                   txSubmissionInboundV2
