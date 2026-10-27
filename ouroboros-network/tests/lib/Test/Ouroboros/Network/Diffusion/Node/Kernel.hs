@@ -332,7 +332,7 @@ newNodeKernel :: ( MonadTraceSTM m
               -> Int
               -> [Tx txid]
               -> m (NodeKernel header block rng txid m)
-newNodeKernel psRng _txSeed txs = do
+newNodeKernel psRng txSeed txs = do
     publicStateVar <- makePublicPeerSelectionStateVar
     labelTVarIO publicStateVar "public-peer-selection-state-var"
     traceTVarIO publicStateVar (\_ a -> return $ TraceString (show a))
@@ -350,7 +350,7 @@ newNodeKernel psRng _txSeed txs = do
       <*> newMempool txs
       <*> newTxSubmissionCountersVar mempty
       <*> newSharedTxStateVar emptySharedTxState
-      <*> newPeerTxRegistry
+      <*> newPeerTxRegistry (Random.mkStdGen txSeed)
 
 -- | Register a new upstream chain-sync client.
 --

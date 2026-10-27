@@ -40,6 +40,7 @@ import Data.ByteString.Lazy (ByteString)
 import Data.Functor (($>))
 import Data.Maybe (fromMaybe)
 import Data.Monoid.Synchronisation
+import Data.Set qualified as Set
 import Data.Void (Void)
 import Pipes qualified
 import System.Random (RandomGen, StdGen, mkStdGen)
@@ -91,6 +92,8 @@ import Ouroboros.Network.Mock.Chain qualified as Chain
 import Ouroboros.Network.Mock.ConcreteBlock
 import Ouroboros.Network.Mock.ProducerState
 import Ouroboros.Network.Mux
+import Ouroboros.Network.PeerSelection.Governor.Types
+           (PublicPeerSelectionState (..))
 import Ouroboros.Network.PeerSelection.PeerMetric (PeerMetrics)
 import Ouroboros.Network.PeerSelection.PeerSharing qualified as PSTypes
 import Ouroboros.Network.PeerSharing (PeerSharingAPI, bracketPeerSharingClient,
@@ -391,7 +394,8 @@ applications debugTracer txSubmissionInboundTracer nodeKernel
                     (txSubmissionResponder (nkMempool nodeKernel)
                                            (nkTxCountersVar nodeKernel)
                                            (nkSharedTxStateVar nodeKernel)
-                                           (nkPeerTxRegistry nodeKernel))
+                                           (nkPeerTxRegistry nodeKernel)
+                                           (nkPublicPeerSelectionVar nodeKernel))
             }
           ]
       , withWarm = WithWarm
@@ -734,8 +738,10 @@ applications debugTracer txSubmissionInboundTracer nodeKernel
       -> TxSubmissionCountersVar m
       -> SharedTxStateVar m NtNAddr Int
       -> PeerTxRegistry m NtNAddr
+      -> StrictTVar m (PublicPeerSelectionState NtNAddr)
       -> MiniProtocolCb (ResponderContext NtNAddr) ByteString m ()
-    txSubmissionResponder mempool txCountersVar sharedTxStateVar inFlightRegistry =
+    txSubmissionResponder mempool txCountersVar sharedTxStateVar inFlightRegistry
+                          publicStateVar =
       MiniProtocolCb $
         \ ResponderContext { rcConnectionId = connId@ConnectionId { remoteAddress = them }} channel
         -> do
@@ -744,7 +750,9 @@ applications debugTracer txSubmissionInboundTracer nodeKernel
                    sharedTxStateVar
                    inFlightRegistry
                    txCountersVar
-                   them $ \api -> do
+                   them
+                   (Set.member them . localRootAddrs <$> readTVar publicStateVar)
+                   $ \api -> do
             let server = txSubmissionInboundV2
                            ((them,) `contramap` txSubmissionInboundTracer)
                            NoTxSubmissionInitDelay

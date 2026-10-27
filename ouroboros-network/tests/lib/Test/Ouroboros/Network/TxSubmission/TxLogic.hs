@@ -31,17 +31,19 @@ module Test.Ouroboros.Network.TxSubmission.TxLogic
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.DeepSeq (NFData (rnf))
 import Control.Exception (evaluate)
-import Control.Monad (forM_)
+import Control.Monad (filterM, foldM, forM, forM_)
 import Control.Monad.Class.MonadAsync (withAsync)
+import Control.Monad.Class.MonadThrow (try)
 import Control.Monad.Class.MonadTime.SI (DiffTime, Time (..), addTime, diffTime,
            getMonotonicTime)
-import Control.Monad.Class.MonadTimer.SI (threadDelay)
+import Control.Monad.Class.MonadTimer.SI (threadDelay, timeout)
 import Control.Monad.IOSim (IOSim, runSimOrThrow)
 import Data.Foldable (toList)
 import Data.Function (on)
 import Data.IntMap.Strict qualified as IntMap
 import Data.IntSet qualified as IntSet
-import Data.List (elemIndex, mapAccumL, nub, nubBy, sort, sortBy, sortOn)
+import Data.List (elemIndex, mapAccumL, nub, nubBy, sort, sortBy, sortOn,
+           unfoldr)
 import Data.List as List (foldl')
 import Data.Map.Strict qualified as Map
 import Data.Maybe (listToMaybe)
@@ -55,20 +57,30 @@ import NoThunks.Class (NoThunks, unsafeNoThunks)
 
 
 
+import Ouroboros.Network.Hashable (hashWithSalt, mkSalt)
 import Ouroboros.Network.Protocol.TxSubmission2.Type
+import Ouroboros.Network.RegisteredDelay qualified as RegisteredDelay
 import Ouroboros.Network.Tx (HasRawTxId (..), getRawTxId)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
 import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (PeerRegistration,
-           PeerTxRegistry (..), SharedTxStateVar, TxSubmissionCountersVar,
-           drainPause, newPeerTxRegistry, newSharedTxStateVar,
-           newTxSubmissionCountersVar, registerPeerCounters, retirePeerCounters,
-           scrubFromPeerInFlight, snapshotCountersWith, sweepBatch,
-           sweepInterval, txCountersThreadV2, writeSharedStateIfChanged)
+           PeerTierEntry (..), PeerTxAPI (..), PeerTxRegistry (..),
+           SharedTxStateVar, TxSubmissionCountersVar, awaitClaimableChangeImp,
+           drainPause, joinTier, leaveTier, newPeerTxRegistry,
+           newSharedTxStateVar, newTxSubmissionCountersVar,
+           registerPeerCounters, registerPeerTier, retirePeerCounters,
+           rotateTiers, scrubFromPeerInFlight, snapshotCountersWith, sweepBatch,
+           sweepInterval, tierCensus, txCountersThreadV2, withPeer, withTier,
+           writeSharedStateIfChanged)
 import Ouroboros.Network.TxSubmission.Inbound.V2.State
+import Ouroboros.Network.TxSubmission.Inbound.V2.Tier (censusOf, effectiveTier,
+           isSource, nextJitter, orderFast, recordNovel, slowWait, sourceCount,
+           standingOf, tierStanding)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
 
 import Test.Ouroboros.Network.TxSubmission.Types
 
+import System.Random (StdGen, mkStdGen)
+import System.Random.SplitMix (mkSMGen, nextWord64)
 import Test.QuickCheck
 import Test.Tasty (TestTree, localOption, testGroup)
 import Test.Tasty.HUnit (Assertion, assertBool, assertFailure, testCase,
@@ -106,6 +118,7 @@ tests =
     , testProperty "handleSubmittedTxs retains the accepted keys still interned, and a dead one's txid afresh" prop_handleSubmittedTxs_deadKeys
     , testProperty "handleReceivedTxs buffers requested bodies and releases omitted ones" prop_handleReceivedTxs
     , testProperty "handleSubmittedTxs retains accepted and drops rejected" prop_handleSubmittedTxs_retainsAcceptedAndDropsRejected
+    , testProperty "handleSubmittedTxs records novelty only off the fast tier" prop_handleSubmittedTxs_novelOffFastOnly
     , testProperty "nextPeerAction returns the current shared generation when idle" prop_nextPeerAction_returnsSharedGeneration
     , testProperty "nextPeerAction respects the inflight size budget" prop_nextPeerAction_picksTxsRespectingBudget
     , testProperty "nextPeerAction submits buffered owned txs before acking" prop_nextPeerAction_ownerSubmitsBuffered
@@ -149,6 +162,36 @@ tests =
     , testCaseSteps "nextPeerAction submits buffered bodies across a resolved-elsewhere gap" unit_nextPeerAction_submitsBufferedAcrossResolvedGap
     , testProperty "nextPeerAction keeps non-owner txids unacked until resolved" prop_nextPeerAction_nonOwnerWaitsUntilResolved
     , testProperty "nextPeerAction claims a claimable tx for the best idle advertiser" prop_nextPeerAction_claimsClaimableTx
+    , testGroup "Tiers"
+        [ testProperty "a slow peer's txid requests are never closer than the cadence less its jitter" prop_tier_slowRequestSpacing
+        , testProperty "a fast peer is served as under a zero cadence" prop_tier_fastIgnoresCadence
+        , testProperty "a slow peer's txid request sets the gate within the jitter band" prop_tier_slowSetsGate
+        , testProperty "isSource agrees with the count of accepts inside the window" prop_tier_sourceOracle
+        , testProperty "recordNovel keeps the newest source count of timestamps and no more" prop_tier_recordNovelTrim
+        , localOption (QuickCheckTests 2000) $ testProperty "the source count is the exact ceiling of rate times window" prop_tier_sourceCountExact
+        , testProperty "the order places exactly the first k by salted rank after every join, leave and rotation" prop_tier_orderOracle
+        , localOption (QuickCheckTests 20) $ testProperty "the salted order is fair" prop_tier_orderUniform
+        , testProperty "the slow wait lies in the jitter band and the generator moves" prop_tier_jitterBand
+        , testProperty "a leaving fast peer's slot goes to the next in order at once; a peer holds none before its first decision" prop_tier_registry
+        , testProperty "a gated txid request parks on the claimable counter read then" prop_tier_gateParksOnClaimable
+        , testProperty "the gate holds txid requests and parks an idle slow peer; a buffered body keeps the generation" prop_tier_gateHoldsOnlyTxIdRequests
+        , testProperty "local roots are fast by standing and hold no coin slot" prop_tier_rootsOutsideCoin
+        , testProperty "a peer leaving withPeer frees its fast slot at once" prop_withPeer_leaveFreesSlot
+        , testProperty "the census counts each standing once, root before coin before source" prop_tier_censusOracle
+        , testProperty "a decision's tier read writes the standing it is served on" prop_tier_withTierStanding
+        , testProperty "the tier states and the census follow the flags as the peers' reads left them" prop_tier_censusFollowsFlags
+        , testProperty "the request tiers are a queue: a reply takes the oldest request's tier" prop_requestTiers_fifo
+        , testProperty "a reply's txids are counted on the tier of the oldest outstanding request" prop_requestTiers_counted
+        , testProperty "a txid request records the tier it is served on" prop_requestTier_recorded
+        , testProperty "the counters thread rotates the order once a period, not before" prop_countersThread_rotates
+        , testProperty "the counters thread refuses a policy that fails the sanity check" prop_countersThread_refusesInsane
+        ]
+    , testGroup "Claimable"
+        [ testProperty "the claimable counter moves on an omitted body or a rejection, and only then" prop_claimable_releases
+        , testProperty "a stuck entry's cap bump moves the claimable counter" prop_claimable_stuckBump
+        , testProperty "a leaving peer's scrub moves the claimable counter iff it held work" prop_claimable_scrub
+        , testProperty "the slow park wakes on the claimable counter or the delay, not on the generation" prop_claimable_park
+        ]
     ]
 
 -- | The 'ArbTxDecisionPolicy' generator only produces policies that pass
@@ -571,11 +614,12 @@ instance Arbitrary ArbTxDecisionPolicy where
             interTxSpaceVal <- realToFrac <$> choose (0 :: Double, 1)
             offset          <- choose (0.01 :: Double, 10)
             let inflightTimeoutVal = interTxSpaceVal + realToFrac offset
+            -- the request cap at most the window
+            window <- getSmall . getPositive <$> arbitrary
+            cap    <- NumTxIdsToReq <$> choose (1, getNumTxIdsToReq window)
             ArbTxDecisionPolicy <$> (
-              TxDecisionPolicy . getSmall . getPositive
-                <$> arbitrary
-                <*> (getSmall . getPositive <$> arbitrary)
-                <*> (SizeInBytes . getPositive <$> arbitrary)
+              TxDecisionPolicy cap window
+                <$> (SizeInBytes . getPositive <$> arbitrary)
                 <*> choose (1, 10)
                 <*> (getSmall . getPositive <$> arbitrary)
                 <*> (realToFrac <$> choose (0 :: Double, 2))
@@ -584,7 +628,15 @@ instance Arbitrary ArbTxDecisionPolicy where
                 <*> choose (0, 5)
                 <*> pure interTxSpaceVal
                 <*> pure inflightTimeoutVal
-                <*> (realToFrac <$> choose (0.1, 1 :: Double))))
+                <*> (realToFrac <$> choose (0.1, 1 :: Double))
+                -- fast slots often below the peer counts the simulations
+                -- draw, so fast and slow peers run together
+                <*> frequency [(1, choose (0, 50)), (1, choose (0, 10))]
+                <*> (realToFrac <$> choose (0 :: Double, 2))
+                <*> choose (0, 0.9)
+                <*> (realToFrac <$> choose (1 :: Double, 600))
+                <*> choose (0, 5)
+                <*> (realToFrac <$> choose (0.1 :: Double, 60))))
         ]
 
     shrink (ArbTxDecisionPolicy a)
@@ -594,7 +646,8 @@ instance Arbitrary ArbTxDecisionPolicy where
         : [ ArbTxDecisionPolicy a { maxNumTxIdsToRequest = NumTxIdsToReq x }
           | (Positive (Small x)) <- shrink (Positive (Small (getNumTxIdsToReq (maxNumTxIdsToRequest a))))
           ]
-        ++ [ ArbTxDecisionPolicy a { maxUnacknowledgedTxIds = x }
+        ++ [ ArbTxDecisionPolicy a { maxUnacknowledgedTxIds = x
+                                   , maxNumTxIdsToRequest = min (maxNumTxIdsToRequest a) x }
            | (Positive (Small x)) <- shrink (Positive (Small (maxUnacknowledgedTxIds a)))
            ]
         ++ [ ArbTxDecisionPolicy a { txsSizeInflightPerPeer = SizeInBytes s }
@@ -625,21 +678,44 @@ instance Arbitrary ArbTxDecisionPolicy where
            | NonNegative x <- shrink (NonNegative (realToFrac (inflightTimeout a) :: Double))
            , realToFrac x > interTxSpace a
            ]
+        ++ [ ArbTxDecisionPolicy a { txFastPeers = x }
+           | NonNegative x <- shrink (NonNegative (txFastPeers a))
+           ]
+        ++ [ ArbTxDecisionPolicy a { txSlowCadence = realToFrac x }
+           | NonNegative x <- shrink (NonNegative (realToFrac (txSlowCadence a) :: Double))
+           ]
+        ++ [ ArbTxDecisionPolicy a { txSlowJitter = x }
+           | NonNegative x <- shrink (NonNegative (txSlowJitter a)), x < 1
+           ]
+        ++ [ ArbTxDecisionPolicy a { txTierRotation = realToFrac x }
+           | Positive x <- shrink (Positive (realToFrac (txTierRotation a) :: Double))
+           ]
+        ++ [ ArbTxDecisionPolicy a { txSourceRate = x }
+           | NonNegative x <- shrink (NonNegative (txSourceRate a))
+           ]
+        ++ [ ArbTxDecisionPolicy a { txSourceWindow = realToFrac x }
+           | Positive x <- shrink (Positive (realToFrac (txSourceWindow a) :: Double))
+           ]
 
 instance Arbitrary ArbPeerTxLocalState where
   arbitrary = ArbPeerTxLocalState <$> genPeerTxLocalState
 
+  -- a candidate equal to the input would shrink forever
   shrink (ArbPeerTxLocalState peerState)
     | peerState == emptyPeerTxLocalState = []
     | otherwise =
-        [ ArbPeerTxLocalState emptyPeerTxLocalState
-        , ArbPeerTxLocalState peerState
-            { peerRequestedTxs = IntSet.empty
-            , peerRequestedTxBatches = StrictSeq.empty
-            , peerRequestedTxsSize = 0
-            , peerRequestedTxIds = 0
-            , peerDownloadedTxs = IntMap.empty
-            }
+        [ ArbPeerTxLocalState peerState'
+        | peerState' <-
+            [ emptyPeerTxLocalState
+            , peerState
+                { peerRequestedTxs = IntSet.empty
+                , peerRequestedTxBatches = StrictSeq.empty
+                , peerRequestedTxsSize = 0
+                , peerRequestedTxIds = 0
+                , peerDownloadedTxs = IntMap.empty
+                }
+            ]
+        , peerState' /= peerState
         ]
 
 instance Arbitrary ArbSharedTxState where
@@ -967,23 +1043,30 @@ prop_handleReceivedTxs_keyFates (NonEmpty requested) =
     other    = 1
 
 -- | A write of the shared state advances the revision by exactly one past
--- the revision read, whatever the step bumped it by; a step that moved
--- neither counter writes nothing.
-prop_writeSharedStateIfChanged_countsOne :: Positive Word64 -> Bool -> Property
-prop_writeSharedStateIfChanged_countsOne (Positive bumps) wake = runSimOrThrow $ do
+-- the revision read, whatever the step bumped it by, and brings the
+-- claimable counter's mirror up to the state's; a step that moved
+-- neither counter writes nothing, the mirror included.
+prop_writeSharedStateIfChanged_countsOne :: Positive Word64 -> Bool -> Word64 -> Property
+prop_writeSharedStateIfChanged_countsOne (Positive bumps) wake claimable = runSimOrThrow $ do
     let st0 = emptySharedTxState :: SharedTxState PeerAddr TxId
         st1 = st0 { sharedRevision   = sharedRevision st0 + bumps
-                  , sharedGeneration = sharedGeneration st0 + (if wake then 1 else 0) }
+                  , sharedGeneration = sharedGeneration st0 + (if wake then 1 else 0)
+                  , sharedClaimable  = claimable }
+    mirror <- newTVarIO 0
     var <- newSharedTxStateVar st0
-    atomically $ writeSharedStateIfChanged var (sharedRevision st0) st1
+    atomically $ writeSharedStateIfChanged mirror var (sharedRevision st0) st1
     written <- readTVarIO var
+    mirrored <- readTVarIO mirror
     same <- newSharedTxStateVar st0
-    atomically $ writeSharedStateIfChanged same (sharedRevision st0) st0
+    atomically $ writeSharedStateIfChanged mirror same (sharedRevision st0) st0
     unwritten <- readTVarIO same
+    mirroredAfter <- readTVarIO mirror
     pure $ counterexample (show written) $
            counterexample "revision after a write" (sharedRevision written === sharedRevision st0 + 1)
       .&&. counterexample "generation after a write" (sharedGeneration written === sharedGeneration st1)
+      .&&. counterexample "the mirror follows a write" (mirrored === claimable)
       .&&. counterexample "no write without a bump" (sharedRevision unwritten === sharedRevision st0)
+      .&&. counterexample "the mirror is untouched without a write" (mirroredAfter === claimable)
 
 -- | What became of a dead key's txid meanwhile: nothing more, another
 -- peer advertised it again (an active entry under a fresh key), or
@@ -1117,8 +1200,49 @@ prop_handleSubmittedTxs_deadKeys (ArbTxDecisionPolicy policy) (NonEmpty submitte
               (pifSubmitting pif' === IntSet.empty
                .&&. pifLeased pif' === IntSet.empty
                .&&. pifAdvertised pif' === IntSet.empty)
+       -- only a live key's rejection releases this peer's lease; a dead key
+       -- has no entry, or an entry not leased to this peer, to release
+       .&&. counterexample "the claimable counter moves iff a live key was rejected"
+              (sharedClaimable shared' === sharedClaimable shared2
+                 + (if any (\(_, _, SubmittedKey live acc _) -> live && not acc) keyed then 1 else 0))
        .&&. combinedStateInvariantStep policy (Map.singleton peerAddr (peerState', pif')) shared2 shared'
        .&&. peerTxLocalStateInvariant policy peerState'
+  where
+    peerAddr :: PeerAddr
+    peerAddr = 1
+
+-- | A submission's accepts record novelty only off the fast tier: a peer
+-- the coin or its standing has fast wins the races and would make a
+-- source of itself; one served on the slow tier records what the mempool
+-- accepted, up to the source count.
+prop_handleSubmittedTxs_novelOffFastOnly
+  :: ArbTxDecisionPolicy -> Bool -> Positive Int -> Property
+prop_handleSubmittedTxs_novelOffFastOnly (ArbTxDecisionPolicy policy0) fast (Positive n0) =
+  let n       = n0 `mod` 12 + 1
+      policy  = policy0 { txSourceRate = max 1 (txSourceRate policy0) }
+      txids   = [1 .. n] :: [TxId]
+      shared0 = mkActiveSharedState [peerAddr] peerAddr [] [ (txid, 64) | txid <- txids ]
+      shared1 = shared0 {
+          sharedTxTable = IntMap.map (\e -> e { txAttempt = 0, txInSubmission = True }) (sharedTxTable shared0)
+        }
+      accepted  = [ (lookupKeyOrFail txid shared1, txid) | txid <- txids ]
+      keys      = [ unTxKey k | (k, _) <- accepted ]
+      pif       = emptyPeerTxInFlight {
+          pifSubmitting = IntSet.fromList keys,
+          pifLeased     = IntSet.fromList keys,
+          pifAdvertised = IntSet.fromList keys
+        }
+      peerState = (emptyPeerTxLocalState :: PeerTxLocalState (Tx TxId)) {
+          peerTier                = if fast then FastTier else SlowTier,
+          peerUnacknowledgedTxIds = StrictSeq.fromList (map TxKey keys),
+          peerDownloadedTxs       = IntMap.fromList [ (unTxKey k, mkTx txid 64) | (k, txid) <- accepted ]
+        }
+      (peerState', _, _) = handleSubmittedTxs now policy peerAddr accepted [] peerState pif shared1
+      expected = if fast then 0 else min n (sourceCount policy)
+  in counterexample (show (peerNovelAt peerState')) $
+       cover 30 fast "fast" $
+       cover 30 (not fast) "slow" $
+       StrictSeq.length (peerNovelAt peerState') === expected
   where
     peerAddr :: PeerAddr
     peerAddr = 1
@@ -1376,7 +1500,7 @@ prop_nextPeerAction_returnsSharedGeneration (ArbTxDecisionPolicy policy0) gen =
                      emptyPeerTxInFlight sharedState
   in
     case action of
-      PeerDoNothing g _ -> g === gen
+      PeerDoNothing g _ _ -> g === gen
       _                 -> counterexample (show action)
                                           False
   where
@@ -1824,6 +1948,10 @@ prop_snapshotCounters_exactlyOnce (CounterScript peers batches) = runSimOrThrow 
                     <$> newTVarIO (Map.fromList [ ((p, fromIntegral p), c)
                                                 | (p, c) <- zip [0 ..] cells ])
                     <*> newTVarIO (fromIntegral peers)
+                    <*> newTVarIO Map.empty
+                    <*> newTVarIO (fst (mkSalt (mkStdGen 7)))
+                    <*> newTVarIO (mkStdGen 7)
+                    <*> newTVarIO 0
     ceAllCells <- newTVarIO (Map.fromList (zip [0 ..] cells))
     ceBumps    <- newTVarIO 0
     ceApplied  <- newTVarIO Map.empty
@@ -1905,7 +2033,7 @@ prop_snapshotCounters_exactlyOnce (CounterScript peers batches) = runSimOrThrow 
 prop_registry_releaseOwn :: Word64 -> Word64 -> Property
 prop_registry_releaseOwn a b = runSimOrThrow $ do
     retired  <- newTVarIO mempty
-    registry <- newPeerTxRegistry
+    registry <- newPeerTxRegistry (mkStdGen 7)
     cellA    <- newTVarIO (counted a)
     cellB    <- newTVarIO (counted b)
     keyA     <- atomically (registerPeerCounters registry (1 :: Int) cellA)
@@ -1948,7 +2076,7 @@ withCountersThread :: TxDecisionPolicy
                    -> IOSim s a
 withCountersThread policy tracer st0 experiment = do
     sharedStateVar <- newSharedTxStateVar st0
-    registry       <- newPeerTxRegistry
+    registry       <- newPeerTxRegistry (mkStdGen 7)
     retired        <- newTxSubmissionCountersVar mempty
     withAsync (txCountersThreadV2 policy nullTracer tracer
                                   retired sharedStateVar registry) $ \_ ->
@@ -2153,13 +2281,15 @@ watchWrites st0 sharedStateVar for = do
          , [ t | ((t, size), (_, before)) <- zip (drop 1 obs) obs, size < before ]
          )
 
--- | What an emission's traces take, as a share of the sweep interval: up
--- to half of it, which the interval has room for.
+-- | What each of an emission's traces takes, as a share of the sweep
+-- interval: up to a third of it, which the interval has room for with the
+-- three traces an emission carries at most (counters, census, shared
+-- state).
 newtype EmissionShare = EmissionShare Int
   deriving Show
 
 instance Arbitrary EmissionShare where
-  arbitrary = EmissionShare <$> choose (1, 50)
+  arbitrary = EmissionShare <$> choose (1, 33)
   shrink (EmissionShare p) = [ EmissionShare p' | p' <- shrink p, p' >= 1 ]
 
 -- | An emission, however long its traces take, does not delay the sweep
@@ -3072,7 +3202,7 @@ unit_nextPeerAction_claimsFreshTxWhenFirstAdvertiserIsFull step = do
           nextPeerAction now defaultTxDecisionPolicy peerA
             peerAState1 peerAInFlight1 sharedState1
     case peerAAction of
-      PeerDoNothing _ _ -> pure ()
+      PeerDoNothing _ _ _ -> pure ()
       PeerRequestTxIds {} -> pure ()
       other -> assertFailure ("unexpected peer A action: " ++ show other)
 
@@ -3388,7 +3518,7 @@ prop_nextPeerAction_nonOwnerWaitsUntilResolved (ArbTxDecisionPolicy policy)
     conjoin
       [ counterexample "unresolved: must not ack the unresolved txid" $
           case unresolvedAction of
-            PeerDoNothing _ _ ->
+            PeerDoNothing _ _ _ ->
               peerUnacknowledgedTxIds unresolvedPeerState'
                 === peerUnacknowledgedTxIds peerState0
             PeerRequestTxIds ack _ ->
@@ -3474,7 +3604,7 @@ prop_nextPeerAction_claimsClaimableTx
         , counterexample ("Bad must yield with the score-delay derived wake: "
                             ++ show (lookupAction Bad)) $
             case lookupAction Bad of
-              Just (PeerDoNothing _ (Just delay), _, _) ->
+              Just (PeerDoNothing _ (Just delay) _, _, _) ->
                 let diff = abs (delay - expectedBadDelay) in
                 counterexample
                   ("delay = " ++ show delay
@@ -3486,8 +3616,8 @@ prop_nextPeerAction_claimsClaimableTx
         , counterexample ("Confounder must do nothing with no scheduled wake: "
                             ++ show (lookupAction Confounder)) $
             case lookupAction Confounder of
-              Just (PeerDoNothing _ Nothing, _, _) -> True
-              _                                    -> False
+              Just (PeerDoNothing _ Nothing _, _, _) -> True
+              _                                      -> False
         , counterexample "Lease must end up at Good" $
             case IntMap.lookup k (sharedTxTable sharedStateFinal) of
               Just entry -> case txLease entry of
@@ -4128,11 +4258,11 @@ prop_nextPeerAction_processesAllTriggers
                         ss'
                     ] in
               case action of
-                PeerDoNothing _ Nothing ->
+                PeerDoNothing _ Nothing _ ->
                   let schedule' = Map.insert p (Nothing, ps', pif') schedule in
                   runLoop ss' schedule' pendingPre subs reqs acks
                        ((step, p, inv) : drainInvs ++ invs) step lastTime'
-                PeerDoNothing _ (Just delay) ->
+                PeerDoNothing _ (Just delay) _ ->
                   let nextWake = addTime (max delay 0.001) time
                       schedule' = Map.insert p (Just nextWake, ps', pif') schedule in
                   runLoop ss' schedule' pendingPre subs reqs acks
@@ -4231,7 +4361,12 @@ genPeerTxLocalState = sized $ \n -> do
       peerRequestedTxIds,
       peerDownloadedTxs,
       peerDownloadStartTime = Nothing,
-      peerScore = PeerScore peerScoreValue peerScoreTs
+      peerScore = PeerScore peerScoreValue peerScoreTs,
+      peerTier = FastTier,
+      peerNovelAt = StrictSeq.empty,
+      peerSlowGate = Nothing,
+      peerJitterSeed = 0,
+      peerRequestTiers = StrictSeq.empty
     }
   where
     genAvailableTx key = do
@@ -4337,7 +4472,9 @@ shrinkSharedTxState
   :: SharedTxState PeerAddr TxId
   -> [SharedTxState PeerAddr TxId]
 shrinkSharedTxState sharedState =
-  nub $
+  -- rebuilding with the counters at zero reproduces an input whose
+  -- counters are zero already; such a candidate would shrink forever
+  filter (/= sharedState) $ nub $
     [ emptySharedTxState
     , buildSharedTxState [] retainedEntries 0
     , buildSharedTxState activeEntries [] 0
@@ -4491,6 +4628,11 @@ lookupKeyOrFail txid st =
 withTxIds :: SharedTxState PeerAddr TxId -> [TxKey] -> [(TxKey, TxId)]
 withTxIds st ks =
   [ (k, txid) | k@(TxKey i) <- ks, Just txid <- [IntMap.lookup i (sharedKeyToTxId st)] ]
+
+-- | A registry for the tests' 'PeerAddr' peers, the address type pinned
+-- where nothing else fixes it.
+newPeerAddrRegistry :: MonadSTM m => StdGen -> m (PeerTxRegistry m PeerAddr)
+newPeerAddrRegistry = newPeerTxRegistry
 
 -- Look up an active tx entry and fail fast in test setup code.
 lookupEntryOrFail :: TxKey -> SharedTxState PeerAddr TxId -> TxEntry PeerAddr
@@ -4759,3 +4901,1104 @@ retainAllActiveTxs st@SharedTxState { sharedTxTable, sharedRetainedTxs, sharedGe
 
     retainOne retainedAcc k _ =
       retainedInsertMax k retainUntil retainedAcc
+
+--
+-- Fetch tiers
+--
+
+-- | A slow peer with a stream of txids the node already holds, so nothing
+-- but the gate ever spaces its txid requests: the policy, the peer's jitter
+-- seed and the steps of the clock between decisions, in milliseconds.
+data SlowStream = SlowStream ArbTxDecisionPolicy Word64 [Positive Int]
+  deriving Show
+
+instance Arbitrary SlowStream where
+  arbitrary =
+    SlowStream <$> arbitrary <*> arbitrary
+               <*> listOf1 (Positive <$> frequency [ (3, choose (1, 50))
+                                                   , (2, choose (51, 400))
+                                                   , (1, choose (401, 3000)) ])
+  shrink (SlowStream p s steps) =
+       [ SlowStream p' s steps | p' <- shrink p ]
+    ++ [ SlowStream p s steps' | steps' <- shrink steps, not (null steps') ]
+
+-- | Drive one peer through the non-pipelined decision loop against a
+-- stream of txids the mempool already holds.  Each txid request is
+-- answered at once with as many fresh ids as it asked for.  Returns the
+-- times of the txid requests and the final local state.
+runStream :: TxDecisionPolicy
+          -> PeerTxLocalState (Tx TxId)
+          -> [Positive Int]
+          -> ([Time], PeerTxLocalState (Tx TxId))
+runStream policy peerState0 = go (Time 0) peerState0 emptyPeerTxInFlight
+                                 emptySharedTxState 1 []
+  where
+    peer = 0 :: PeerAddr
+    go _ ps _ _ _ acc [] = (reverse acc, ps)
+    go t ps pif ss nextId acc (Positive ms : rest) =
+      let later = addTime (fromIntegral ms / 1000) t
+          (action, ps', pif', ss') = nextPeerAction t policy peer ps pif ss
+      in case action of
+           PeerRequestTxIds _ req ->
+             let n   = fromIntegral req :: Int
+                 ids = [ (txid, 100) | txid <- [nextId .. nextId + n - 1] ]
+                 (ps'', pif'', ss'') =
+                   handleReceivedTxIds (const True) t policy req ids ps' pif' ss'
+             in go later ps'' pif'' ss'' (nextId + n) (t : acc) rest
+           _ -> go later ps' pif' ss' nextId acc rest
+
+-- | On the slow tier two txid requests are never closer than the cadence
+-- less its jitter, blocking ones included: the stream is all duplicates,
+-- so every request would otherwise be blocking and immediate.
+prop_tier_slowRequestSpacing :: SlowStream -> Property
+prop_tier_slowRequestSpacing (SlowStream (ArbTxDecisionPolicy policy0) seed steps) =
+      cover 40 (length requests >= 2) "two or more requests"
+    . cover 20 (length requests >= 5) "five or more requests"
+    $ conjoin
+        [ counterexample ("requests at " ++ show t0 ++ " and " ++ show t1
+                          ++ ", least " ++ show least)
+            (t1 `diffTime` t0 >= least - 1e-9)
+        | (t0, t1) <- zip requests (drop 1 requests)
+        ]
+  where
+    policy = policy0 { txSlowCadence = max 0.05 (txSlowCadence policy0)
+                     , txSourceRate  = 0 }
+    least  = txSlowCadence policy * realToFrac (1 - txSlowJitter policy)
+    (requests, _) =
+      runStream policy emptyPeerTxLocalState { peerTier = SlowTier
+                                             , peerJitterSeed = seed } steps
+
+-- | A fast peer is served as if there were no cadence: the same requests
+-- at the same times as under a zero cadence, and no gate is ever set.
+prop_tier_fastIgnoresCadence :: SlowStream -> Property
+prop_tier_fastIgnoresCadence (SlowStream (ArbTxDecisionPolicy policy) seed steps) =
+      cover 40 (length requests >= 2) "two or more requests"
+    $ requests === requests0
+ .&&. peerSlowGate final === Nothing
+  where
+    fast = emptyPeerTxLocalState { peerTier = FastTier, peerJitterSeed = seed }
+    (requests, final) = runStream policy fast steps
+    (requests0, _)    = runStream policy { txSlowCadence = 0, txSlowJitter = 0 } fast steps
+
+-- | A slow peer's txid request sets the gate within the jittered cadence.
+prop_tier_slowSetsGate :: SlowStream -> Property
+prop_tier_slowSetsGate (SlowStream (ArbTxDecisionPolicy policy0) seed steps) =
+      cover 40 (not (null requests)) "a request"
+    $ case (requests, peerSlowGate final) of
+        ([], _)         -> property True
+        (_, Nothing)    -> counterexample "no gate after a request" False
+        (rs, Just gate) ->
+          let wait = gate `diffTime` last rs in
+          counterexample ("wait " ++ show wait ++ " outside " ++ show (lo, hi))
+            (wait >= lo - 1e-9 && wait <= hi + 1e-9)
+  where
+    policy = policy0 { txSourceRate = 0 }
+    lo = txSlowCadence policy * realToFrac (1 - txSlowJitter policy)
+    hi = txSlowCadence policy * realToFrac (1 + txSlowJitter policy)
+    (requests, final) =
+      runStream policy emptyPeerTxLocalState { peerTier = SlowTier
+                                             , peerJitterSeed = seed } steps
+
+-- | Accepted txs from a peer: gaps between them and how many each time, in
+-- milliseconds, with the window in the same units; and when to ask, either
+-- some time after the last accept or exactly a window after one of them,
+-- so the boundary is hit.
+data Accepts = Accepts ArbTxDecisionPolicy [(Positive Int, Positive Int)] AskAt
+  deriving Show
+
+data AskAt = AfterLast (Positive Int) | WindowAfter (NonNegative Int)
+  deriving Show
+
+instance Arbitrary AskAt where
+  arbitrary = oneof [ AfterLast <$> arbitrary, WindowAfter <$> arbitrary ]
+  shrink (AfterLast l)   = [ AfterLast l' | l' <- shrink l ]
+  shrink (WindowAfter i) = [ WindowAfter i' | i' <- shrink i ]
+
+instance Arbitrary Accepts where
+  arbitrary = do
+    p <- arbitrary
+    n <- choose (0, 30)
+    events <- vectorOf n ((,) <$> (Positive <$> choose (1, 2000)) <*> (Positive <$> choose (1, 4)))
+    Accepts p events <$> arbitrary
+  shrink (Accepts p es a) =
+       [ Accepts p' es a | p' <- shrink p ]
+    ++ [ Accepts p es' a | es' <- shrink es ]
+    ++ [ Accepts p es a' | a' <- shrink a ]
+
+-- | 'isSource' over the states 'recordNovel' builds agrees with the count
+-- over the whole history: a source has at least 'sourceCount' accepts
+-- inside the window, and 'sourceCount' is at least one.
+prop_tier_sourceOracle :: Accepts -> Property
+prop_tier_sourceOracle (Accepts (ArbTxDecisionPolicy policy0) events askAt) =
+      cover 20 oracle "source"
+    . cover 20 (not oracle && n >= 1) "not a source"
+    . cover 10 onBoundary "asked exactly a window after an accept"
+    $ isSource policy at folded === oracle
+  where
+    -- whole milliseconds, so the window boundary is reachable
+    policy = policy0 { txSourceWindow = fromIntegral (max 1 (round (txSourceWindow policy0 * 1000) :: Int)) / 1000 }
+    n      = sourceCount policy
+    times  = scanl1 (+) [ g | (Positive g, _) <- events ] :: [Int]
+    history = zip (map ms times) [ c | (_, Positive c) <- events ]
+    at = case askAt of
+      AfterLast (Positive lag) -> ms (lag + (if null times then 0 else last times))
+      WindowAfter (NonNegative i)
+        | null times -> ms 0
+        | otherwise  -> addTime (txSourceWindow policy) (ms (times !! (i `mod` length times)))
+    onBoundary = case askAt of
+      WindowAfter _ -> not (null times)
+      AfterLast _   -> False
+    ms t   = Time (fromIntegral (t :: Int) / 1000)
+    folded = foldl (\acc (t, c) -> recordNovel policy t c acc) StrictSeq.empty history
+    inWindow = sum [ c | (t, c) <- history, t `addTime'` txSourceWindow policy >= at ]
+    addTime' t d = addTime d t
+    oracle = n >= 1 && inWindow >= n
+
+-- | 'sourceCount' is the ceiling of the rate times the window computed
+-- exactly, for rates and windows given to a thousandth: where the two
+-- multiply to a whole number on paper, the machine's product may land
+-- either side of it.
+-- | 'recordNovel' keeps the newest 'sourceCount' timestamps of the ones it
+-- had and the batch, the oldest going first, and never more; an empty
+-- batch or a zero source count changes nothing.
+prop_tier_recordNovelTrim
+  :: ArbTxDecisionPolicy -> NonNegative Int -> [NonNegative Int] -> NonNegative Int -> Property
+prop_tier_recordNovelTrim (ArbTxDecisionPolicy policy) (NonNegative count0) ages (NonNegative atS) =
+  let n      = sourceCount policy
+      count  = count0 `mod` (2 * max 1 n + 3)
+      at     = Time (fromIntegral atS)
+      -- the timestamps so far, in order, none after the batch's time
+      before = StrictSeq.fromList (sort [ addTime (negate (fromIntegral a)) at | NonNegative a <- ages ])
+      after  = recordNovel policy at count before
+      expected
+        | n <= 0 || count <= 0 = before
+        | otherwise = StrictSeq.fromList (lastN n (toList before ++ replicate count at))
+      lastN k xs = drop (length xs - k) xs
+  in counterexample (show (n, count, after)) $
+       classify (n > 0 && count > 0 && StrictSeq.length before + count > n) "trimmed" $
+       after === expected
+
+prop_tier_sourceCountExact :: Property
+prop_tier_sourceCountExact =
+    forAllShrink pair shrinkPair $ \(k, w) ->
+      let rate   = fromIntegral k / 1000 :: Double
+          window = fromRational (fromIntegral w / 1000) :: DiffTime
+          exact  = fromIntegral (k * w) / 1000000 :: Rational
+          policy = defaultTxDecisionPolicy { txSourceRate = rate, txSourceWindow = window }
+      in cover 30 ((k * w) `mod` 1000000 == 0) "a whole product"
+       $ counterexample (show (rate, window, exact))
+       $ sourceCount policy === ceiling exact
+  where
+    -- thousandths of a rate and of a window: any pair, or more often one
+    -- whose product is whole: a rate with a factor of a million's among
+    -- its thousandths and a window a multiple of the cofactor, which
+    -- leaves the window below a minute; a few percent of these land
+    -- above the whole number in doubles, hence the case count
+    pair :: Gen (Int, Int)
+    pair = frequency
+      [ (1, (,) <$> choose (1, 5000) <*> choose (1, 60000))
+      , (2, do g <- elements [ d | d <- [20 .. 5000], 1000000 `mod` d == 0 ]
+               k <- (g *) <$> choose (1, 5000 `div` g)
+               let m = 1000000 `div` gcd k 1000000
+               w <- (m *) <$> choose (1, 60000 `div` m)
+               pure (k, w))
+      ]
+    shrinkPair (k, w) = [ (k', w) | k' <- shrink k, k' >= 1 ] ++ [ (k, w') | w' <- shrink w, w' >= 1 ]
+
+-- | The counters thread refuses a policy that fails the sanity check
+-- before it does anything, naming the policy, and runs on one that
+-- passes.  Each case says what it expects on its own, so the check under
+-- test is not the oracle: a generated sane policy runs, each listed
+-- corruption of it is refused, and a request cap above the window, which
+-- the window's room bounds at use, runs.
+prop_countersThread_refusesInsane :: ArbTxDecisionPolicy -> Property
+prop_countersThread_refusesInsane (ArbTxDecisionPolicy policy) =
+    forAllBlind (elements (("sane", id, False) : corruptions)) $ \(name, corrupt, refused) ->
+      let policy' = corrupt policy
+          outcome = runSimOrThrow $ do
+            registry  <- newPeerAddrRegistry (mkStdGen 7)
+            sharedVar <- newSharedTxStateVar (emptySharedTxState :: SharedTxState PeerAddr TxId)
+            retired   <- newTxSubmissionCountersVar mempty
+            try (timeout 1 (txCountersThreadV2 policy' nullTracer nullTracer retired sharedVar registry))
+      in label name $ case outcome of
+           Left (InvalidTxDecisionPolicy p) ->
+                  counterexample "refused, but this case expects it to run" refused
+             .&&. counterexample "the exception names another policy" (p === policy')
+           Right _ ->
+             counterexample "ran, but this case expects a refusal" (not refused)
+  where
+    corruptions :: [(String, TxDecisionPolicy -> TxDecisionPolicy, Bool)]
+    corruptions =
+      [ ("jitter one",       \p -> p { txSlowJitter = 1 },                        True)
+      , ("jitter above one", \p -> p { txSlowJitter = 1.5 },                      True)
+      , ("negative cadence", \p -> p { txSlowCadence = -1 },                      True)
+      , ("no rotation",      \p -> p { txTierRotation = 0 },                      True)
+      , ("no source window", \p -> p { txSourceWindow = 0 },                      True)
+      , ("empty window",     \p -> p { maxUnacknowledgedTxIds = 0 },              True)
+      , ("no cap",           \p -> p { maxNumTxIdsToRequest = 0 },                True)
+      , ("timeout below the space", \p -> p { inflightTimeout = interTxSpace p - 0.001 }, True)
+      , ("cap above window", \p -> p { maxNumTxIdsToRequest =
+                                         NumTxIdsToReq (getNumTxIdsToReq (maxUnacknowledgedTxIds p) + 1) }
+                             , False)
+      ]
+
+-- | A peer leaving frees its fast slot at once, through the release of
+-- 'withPeer': with one coin slot and two peers in the order, after either
+-- one leaves the other decides on the fast tier, whichever of them the
+-- order had put first; while both are in, exactly one is fast.
+prop_withPeer_leaveFreesSlot :: Int -> Property
+prop_withPeer_leaveFreesSlot seed = runSimOrThrow $ do
+    outcomes <- forM [(1, 2), (2, 1)] $ \(outer, inner) -> do
+      registry  <- newPeerAddrRegistry (mkStdGen seed)
+      sharedVar <- newSharedTxStateVar (emptySharedTxState :: SharedTxState PeerAddr TxId)
+      retired   <- newTxSubmissionCountersVar mempty
+      mempool   <- emptyMempool
+      let run addr = withPeer policy (getMempoolReader mempool) sharedVar registry retired
+                              (addr :: PeerAddr) (pure False)
+          tierOf api = peerTier . snd <$> runNextPeerAction api (Time 1) Nothing
+                                             emptyPeerTxLocalState { peerJitterSeed = apiJitterSeed api }
+      run outer $ \apiOuter -> do
+        joinTiers apiOuter
+        both <- run inner $ \apiInner -> do
+          joinTiers apiInner
+          (,) <$> tierOf apiOuter <*> tierOf apiInner
+        -- the inner peer has left: its release took it out of the order
+        afterLeave <- tierOf apiOuter
+        pure (outer, both, afterLeave)
+    pure $ conjoin
+      [ counterexample (show o) $
+             counterexample "exactly one fast while both are in"
+               (length [ () | FastTier <- [tOuter, tInner] ] === 1)
+        .&&. counterexample "the remaining peer is fast after the other left" (after === FastTier)
+      | o@(_, (tOuter, tInner), after) <- outcomes ]
+  where
+    policy = defaultTxDecisionPolicy { txFastPeers = 1, txSourceRate = 0 }
+
+-- | One step of a tier script over a few peer ids: a peer registering and
+-- taking its first decision, registering only, deciding later, leaving,
+-- or a rotation.  Ids repeat, so leaves find peers.
+data TierEvent
+  = TierJoin Int Bool
+  | TierRegister Int Bool
+  | TierStart Int
+  | TierLeave Int
+  | TierRotate
+  deriving (Eq, Show)
+
+newtype TierScript = TierScript [TierEvent]
+  deriving Show
+
+instance Arbitrary TierScript where
+  arbitrary = TierScript <$> listOf event
+    where
+      peer  = choose (0, 7 :: Int)
+      root  = frequency [(3, pure False), (1, pure True)]
+      event = frequency
+        [ (4, TierJoin <$> peer <*> root)
+        , (1, TierRegister <$> peer <*> root)
+        , (1, TierStart <$> peer)
+        , (3, TierLeave <$> peer)
+        , (1, pure TierRotate)
+        ]
+  shrink (TierScript es) = TierScript <$> shrinkList shrinkEvent es
+    where
+      shrinkEvent (TierJoin p r)     = [ TierJoin p' r | p' <- shrink p ] ++ [ TierJoin p False | r ]
+      shrinkEvent (TierRegister p r) = [ TierRegister p' r | p' <- shrink p ] ++ [ TierRegister p False | r ]
+      shrinkEvent (TierStart p)      = [ TierStart p' | p' <- shrink p ]
+      shrinkEvent (TierLeave p)      = [ TierLeave p' | p' <- shrink p ]
+      shrinkEvent TierRotate         = []
+
+-- | The placement against the exact oracle after every step of a script:
+-- the order holds exactly the peers that have decided; every root in it
+-- is fast; of the others exactly the first k by salted rank are, the rank
+-- recomputed here from the salt the registry holds; a peer that has not
+-- decided is slow; and a rotation changes the salt.
+prop_tier_orderOracle :: ArbTxDecisionPolicy -> NonNegative Int -> TierScript -> Int -> Property
+prop_tier_orderOracle (ArbTxDecisionPolicy policy0) (NonNegative k0) (TierScript events) seed =
+    runSimOrThrow $ do
+      registry <- newPeerTxRegistry (mkStdGen seed)
+      (checks, backfills) <- go registry Map.empty events
+      pure $ cover 30 (backfills > 0) "a fast peer left a full order"
+           $ conjoin checks
+  where
+    k      = k0 `mod` 5
+    policy = policy0 { txFastPeers = k }
+
+    -- live peers by id: registration, entry, root variable, decided yet
+    go _ _ [] = pure ([], 0 :: Int)
+    go registry live (ev : rest) = do
+      (live', backfill, extra) <- step registry live ev
+      verdict <- oracle registry live'
+      (checks, backfills) <- go registry live' rest
+      pure (counterexample (show ev) (extra .&&. verdict) : checks, backfill + backfills)
+
+    step registry live ev = case ev of
+      TierJoin p root     -> register registry live p root >>= start registry p
+      TierRegister p root -> (\live' -> (live', 0, property True)) <$> register registry live p root
+      TierStart p         -> start registry p live
+      TierLeave p         -> case Map.lookup p live of
+        Nothing -> pure (live, 0, property True)
+        Just (r, e, _, _) -> do
+          wasFast <- (== FastTier) . ptsCoin <$> readTVarIO (pteState e)
+          inOrder <- Map.size <$> readTVarIO (peerTiers registry)
+          atomically (leaveTier policy registry r)
+          pure (Map.delete p live, if wasFast && inOrder > k then 1 else 0, property True)
+      TierRotate -> do
+        before <- saltKey registry
+        atomically (rotateTiers policy registry)
+        after <- saltKey registry
+        pure (live, 0, counterexample "salt unchanged" (before =/= after))
+
+    register registry live p root
+      | Map.member p live = pure live
+      | otherwise = do
+          c <- newTVarIO mempty
+          rootVar <- newTVarIO root
+          (r, e) <- atomically $ do
+            r <- registerPeerCounters registry p c
+            (e, _) <- registerPeerTier registry (readTVar rootVar)
+            pure (r, e)
+          pure (Map.insert p (r, e, rootVar, False) live)
+
+    start registry p live = case Map.lookup p live of
+      Just (r, e, rootVar, False) -> do
+        atomically (joinTier policy registry r e)
+        pure (Map.insert p (r, e, rootVar, True) live, 0, property True)
+      _ -> pure (live, 0, property True)
+
+    -- the salt, as the hash it gives a fixed key: distinct salts hash it apart
+    saltKey registry = (\salt -> hashWithSalt salt (0 :: Int)) <$> readTVarIO (registrySalt registry)
+
+    oracle registry live = do
+      tiers <- readTVarIO (peerTiers registry)
+      salt  <- readTVarIO (registrySalt registry)
+      rows  <- forM (Map.toList live) $ \(p, (r, e, rootVar, decided)) -> do
+        root <- readTVarIO rootVar
+        -- the tier a decision is served on, read as a decision reads it,
+        -- which places the tiers when the peer's root flag changed
+        served <- peerTier <$> atomically (withTier policy (Time 1) registry e (emptyPeerTxLocalState :: PeerTxLocalState ()))
+        coin <- ptsCoin <$> readTVarIO (pteState e)
+        pure (p, r, root, decided, coin, served)
+      let decidedSet = Set.fromList [ r | (_, r, _, True, _, _) <- rows ]
+          others     = [ r | (_, r, False, True, _, _) <- rows ]
+          rank (addr, n) = (fst (nextWord64 (mkSMGen (fromIntegral (hashWithSalt salt addr)))), n)
+          fastSet    = Set.fromList (take k (sortOn rank others))
+          -- the coin is the order's verdict alone: a root is outside the order
+          expectedCoin (_, r, root, decided, _, _)
+            | not decided || root  = SlowTier
+            | Set.member r fastSet = FastTier
+            | otherwise            = SlowTier
+          -- served: a root fast by standing, the others by their coin
+          expectedServed row@(_, _, root, _, _, _)
+            | root      = FastTier
+            | otherwise = expectedCoin row
+      pure $ conjoin
+        [ counterexample "the order holds the decided peers" (Map.keysSet tiers === decidedSet)
+        , conjoin [ counterexample ("peer " ++ show p ++ " root " ++ show root ++ " decided " ++ show decided ++ " coin")
+                                   (coin === expectedCoin row)
+                    .&&. counterexample ("peer " ++ show p ++ " root " ++ show root ++ " decided " ++ show decided ++ " served")
+                                   (served === expectedServed row)
+                  | row@(p, _, root, decided, coin, served) <- rows ]
+        ]
+
+-- | The salted order is fair: over many salts every key is among the first
+-- k about k/n of the time, whatever the keys' own hashes do.  Two thousand
+-- salts put the standard error below 0.012, so the 0.1 band is nine of
+-- them.
+prop_tier_orderUniform :: Int -> Property
+prop_tier_orderUniform seed0 =
+    forAll (choose (2, 6)) $ \n ->
+    forAll (choose (1, n - 1)) $ \k ->
+      let keys   = [ (key, 0) | key <- [0 .. n - 1] ] :: [(Int, Word64)]
+          draws  = 2000 :: Int
+          salts  = take draws (unfoldr (Just . mkSalt) (mkStdGen seed0))
+          counts = foldl (\acc salt -> foldr (\(key, _) -> Map.insertWith (+) key (1 :: Int)) acc
+                                            (orderFast k salt keys))
+                         Map.empty salts
+          expected = fromIntegral k / fromIntegral n :: Double
+      in conjoin
+           [ counterexample ("key " ++ show key ++ " fast " ++ show c ++ " of " ++ show draws)
+               (abs (fromIntegral c / fromIntegral draws - expected) < 0.1)
+           | (key, _) <- keys
+           , let c = Map.findWithDefault 0 key counts
+           ]
+
+-- | The slow wait lies within the jitter band, and the generator moves.
+prop_tier_jitterBand :: ArbTxDecisionPolicy -> Word64 -> Property
+prop_tier_jitterBand (ArbTxDecisionPolicy policy) seed =
+    conjoin
+      [ counterexample ("u " ++ show u) (u >= 0 && u < 1)
+      , counterexample "seed unchanged" (seed' =/= seed)
+      , counterexample ("wait " ++ show wait) (wait >= lo - 1e-9 && wait <= hi + 1e-9)
+      ]
+  where
+    (u, seed') = nextJitter seed
+    wait = slowWait policy u
+    lo = txSlowCadence policy * realToFrac (1 - txSlowJitter policy)
+    hi = txSlowCadence policy * realToFrac (1 + txSlowJitter policy)
+
+-- | The first decisions fill the fast tier to 'txFastPeers' and no
+-- further and a rotation keeps exactly min(k, n) peers fast; a peer
+-- leaving a fast slot hands it to the next in the order at once, before
+-- any arrival; a peer that registered but has not decided holds nothing,
+-- and takes its place at its first decision.
+prop_tier_registry :: ArbTxDecisionPolicy -> NonNegative Int -> Int -> Property
+prop_tier_registry (ArbTxDecisionPolicy policy) (NonNegative n0) seed =
+    runSimOrThrow $ do
+      registry <- newPeerTxRegistry (mkStdGen seed)
+      regs <- mapM (joinPeer registry) [1 .. n]
+      placed <- fastCount registry
+      atomically (rotateTiers policy registry)
+      rotated <- fastCount registry
+      fastRegs <- filterM (\(_, v) -> (== FastTier) . ptsCoin <$> readTVarIO v) regs
+      churn <- case fastRegs of
+        [] -> pure []
+        ((r, _) : _) -> do
+          atomically (leaveTier policy registry r)
+          refilled <- fastCount registry
+          (r', e') <- register registry (n + 1)
+          waiting <- fastCount registry
+          atomically (joinTier policy registry r' e')
+          decided <- fastCount registry
+          pure [ counterexample ("refilled " ++ show refilled) (refilled === min k (n - 1))
+               , counterexample ("waiting "  ++ show waiting)  (waiting  === min k (n - 1))
+               , counterexample ("decided "  ++ show decided)  (decided  === min k n)
+               ]
+      pure $ conjoin $
+        [ counterexample ("placed " ++ show placed)   (placed   === min k n)
+        , counterexample ("rotated " ++ show rotated) (rotated  === min k n)
+        ] ++ churn
+  where
+    n = n0 `mod` 50
+    k = txFastPeers policy
+    register registry p = do
+      c <- newTVarIO mempty
+      atomically $ do
+        r <- registerPeerCounters registry (p :: Int) c
+        (e, _) <- registerPeerTier registry (pure False)
+        pure (r, e)
+    joinPeer registry p = do
+      (r, e) <- register registry p
+      atomically (joinTier policy registry r e)
+      pure (r, pteState e)
+    fastCount registry = do
+      tiers <- readTVarIO (peerTiers registry)
+      length . filter ((== FastTier) . ptsCoin)
+        <$> mapM (readTVarIO . pteState) (Map.elems tiers)
+
+
+-- | Every decision of a stream run: the time, the action, the local state
+-- after it and the shared counter it saw.
+runStreamTrace :: TxDecisionPolicy
+               -> PeerTxLocalState (Tx TxId)
+               -> [Positive Int]
+               -> [(Time, PeerAction, PeerTxLocalState (Tx TxId), Word64)]
+runStreamTrace policy peerState0 = go (Time 0) peerState0 emptyPeerTxInFlight emptySharedTxState 1
+  where
+    peer = 0 :: PeerAddr
+    go _ _ _ _ _ [] = []
+    go t ps pif ss nextId (Positive ms : rest) =
+      let later = addTime (fromIntegral ms / 1000) t
+          (action, ps', pif', ss') = nextPeerAction t policy peer ps pif ss
+          step = (t, action, ps', sharedClaimable ss')
+      in case action of
+           PeerRequestTxIds _ req ->
+             let n   = fromIntegral req :: Int
+                 ids = [ (txid, 100) | txid <- [nextId .. nextId + n - 1] ]
+                 (ps'', pif'', ss'') = handleReceivedTxIds (const True) t policy req ids ps' pif' ss'
+             in step : go later ps'' pif'' ss'' (nextId + n) rest
+           _ -> step : go later ps' pif' ss' nextId rest
+
+-- | A 'PeerDoNothing' chosen while the gate holds a txid request carries
+-- the claimable counter the decision saw; any other park carries none.
+-- The stream never buffers a body, so every gated park is a claimable one.
+prop_tier_gateParksOnClaimable :: SlowStream -> Property
+prop_tier_gateParksOnClaimable (SlowStream (ArbTxDecisionPolicy policy0) seed steps) =
+      cover 30 (any gated trace) "a gated park"
+    $ conjoin
+        [ counterexample (show (t, action, c)) $
+            case action of
+              PeerDoNothing _ _ park | gateHolds t ps -> park === Just c
+              PeerDoNothing _ _ park                  -> park === Nothing
+              _                                       -> property True
+        | (t, action, ps, c) <- trace
+        ]
+  where
+    policy = policy0 { txSlowCadence = max 0.05 (txSlowCadence policy0), txSourceRate = 0 }
+    trace  = runStreamTrace policy emptyPeerTxLocalState { peerTier = SlowTier, peerJitterSeed = seed } steps
+    gateHolds t ps = maybe False (> t) (peerSlowGate ps)
+    gated (t, PeerDoNothing {}, ps, _) = gateHolds t ps
+    gated _                            = False
+
+-- | The gate holds txid requests, and parks a slow peer with nothing to
+-- do.  With the gate open the decision is whatever it is; with it
+-- holding, a txid request becomes a park until the gate opens or an
+-- earlier wake, on the claimable counter when the peer buffers no body
+-- after the decision (bodies of resolved entries are dropped on the way
+-- in) and on the generation when it does; a peer with nothing to do and no
+-- buffered body parks the same way, rather than on the generation that
+-- moves with every accept; and every other decision, a peer holding a
+-- buffered body with nothing to do included, is the same as with the gate
+-- open.
+prop_tier_gateHoldsOnlyTxIdRequests
+  :: ArbTxDecisionPolicy
+  -> ArbPeerTxLocalState
+  -> ArbSharedTxState
+  -> Positive Int
+  -> Property
+prop_tier_gateHoldsOnlyTxIdRequests (ArbTxDecisionPolicy policy0)
+                                    (ArbPeerTxLocalState ps0)
+                                    (ArbSharedTxState ss)
+                                    (Positive ms) =
+      cover 20 (isRequest open) "gate held a txid request"
+    $ cover 5 (isRequest open && buffered) "held with a buffered body"
+    $ cover 5 (isIdle open && not buffered) "idle without a body, parked"
+    $ cover 5 (isIdle open && buffered) "idle with a body, kept the generation"
+    $ counterexample ("open:  " ++ show open ++ "\ngated: " ++ show gated)
+    $ case open of
+        PeerRequestTxIds {}             -> parked
+        PeerDoNothing {} | not buffered -> parked
+        _                               -> gated === open
+  where
+    parked = case gated of
+      PeerDoNothing g (Just d) park ->
+        conjoin
+          [ counterexample "generation" (g === sharedGeneration ss)
+          , counterexample ("wake " ++ show d ++ " past the gate " ++ show gateDelay)
+              (d <= gateDelay + 1e-9)
+          , counterexample "park"
+              (park === if buffered then Nothing else Just (sharedClaimable ss))
+          ]
+      _ -> counterexample "not a park" False
+    isIdle PeerDoNothing {} = True
+    isIdle _                = False
+    policy    = policy0 { txSourceRate = 0 }
+    t0        = Time 10
+    gateDelay = fromIntegral ms / 1000
+    ps        = ps0 { peerTier     = SlowTier
+                    , peerNovelAt  = StrictSeq.empty
+                    , peerSlowGate = Just (gateDelay `addTime` t0)
+                    }
+    buffered  = not (IntMap.null (peerDownloadedTxs psGated))
+    peer      = 1 :: PeerAddr
+    (open,  _, _, _)       = nextPeerAction t0 policy peer ps { peerSlowGate = Nothing }
+                                            emptyPeerTxInFlight ss
+    (gated, psGated, _, _) = nextPeerAction t0 policy peer ps emptyPeerTxInFlight ss
+    isRequest PeerRequestTxIds {} = True
+    isRequest _                   = False
+
+-- | Local roots are fast by standing and hold none of the coin's slots:
+-- after the first decisions and after a rotation every root is fast and
+-- exactly min(k, n) of the others are; roots that lose their standing
+-- are placed at their next decision, like the rest from then on, before
+-- any rotation.  The registry's census says the same at each step, with
+-- no source among peers that never delivered.
+prop_tier_rootsOutsideCoin :: ArbTxDecisionPolicy -> [Bool] -> Int -> Property
+prop_tier_rootsOutsideCoin (ArbTxDecisionPolicy policy) roots0 seed =
+    cover 30 (nRoots > 0 && n > k) "roots beside a full coin" $
+    runSimOrThrow $ do
+      registry <- newPeerTxRegistry (mkStdGen seed)
+      regs <- forM (zip [1 ..] roots) $ \(p, isRoot) -> do
+        c <- newTVarIO mempty
+        rootVar <- newTVarIO isRoot
+        atomically $ do
+          r <- registerPeerCounters registry (p :: Int) c
+          (e, _) <- registerPeerTier registry (readTVar rootVar)
+          joinTier policy registry r e
+          pure (rootVar, e)
+      placed <- census registry regs
+      placedCensus <- atomically (tierCensus registry)
+      atomically (rotateTiers policy registry)
+      rotated <- census registry regs
+      rotatedCensus <- atomically (tierCensus registry)
+      -- the roots stop being roots: each one's next decision places the
+      -- tiers with it among the candidates, so once every ex-root has
+      -- decided the coin's slots go to the first k of all n, before any
+      -- rotation; the first pass of decisions places, the second reads the
+      -- settled tiers
+      forM_ regs $ \(rootVar, _) -> atomically (writeTVar rootVar False)
+      _ <- census registry regs
+      replaced <- census registry regs
+      replacedCensus <- atomically (tierCensus registry)
+      atomically (rotateTiers policy registry)
+      demoted <- census registry regs
+      demotedCensus <- atomically (tierCensus registry)
+      pure $ conjoin
+        [ counterexample ("placed "  ++ show placed)  (placed  === (nRoots, min k nOthers))
+        , counterexample ("rotated " ++ show rotated) (rotated === (nRoots, min k nOthers))
+        , counterexample ("replaced " ++ show replaced) (replaced === (0, min k n))
+        , counterexample ("demoted " ++ show demoted) (demoted === (0, min k n))
+        , counterexample "placed census"  (placedCensus  === expectedCensus nRoots nOthers)
+        , counterexample "rotated census" (rotatedCensus === expectedCensus nRoots nOthers)
+        , counterexample "replaced census" (replacedCensus === expectedCensus 0 n)
+        , counterexample "demoted census" (demotedCensus === expectedCensus 0 n)
+        ]
+  where
+    expectedCensus r o = TierCensus { censusFastByRoot   = r
+                                    , censusFastByCoin   = min k o
+                                    , censusFastBySource = 0
+                                    , censusSlow         = o - min k o }
+    roots   = take 50 roots0
+    n       = length roots
+    nRoots  = length (filter id roots)
+    nOthers = n - nRoots
+    k       = txFastPeers policy
+    -- (fast roots, fast others) by the tier each peer is served on at a
+    -- decision, which also writes its standing for the census
+    census registry regs = do
+      pairs <- forM regs $ \(rootVar, e) -> do
+        root <- readTVarIO rootVar
+        ps   <- atomically (withTier policy (Time 1) registry e (emptyPeerTxLocalState :: PeerTxLocalState ()))
+        pure (root, peerTier ps)
+      pure ( length [ () | (True,  FastTier) <- pairs ]
+           , length [ () | (False, FastTier) <- pairs ] )
+
+-- | A push of a request's tier or a pop by a reply.
+data TierOp = Push PeerTier | Pop
+  deriving Show
+
+instance Arbitrary TierOp where
+  arbitrary = frequency [ (2, Push <$> elements [FastTier, SlowTier]), (1, pure Pop) ]
+  shrink (Push SlowTier) = [Push FastTier, Pop]
+  shrink (Push FastTier) = [Pop]
+  shrink Pop             = []
+
+-- | The request tiers are a queue: a reply takes the tiers in the order the
+-- requests recorded them, a fast tier when none is outstanding, and what is
+-- left is what was pushed and not taken.
+prop_requestTiers_fifo :: [TierOp] -> Property
+prop_requestTiers_fifo ops =
+    cover 30 (length [ () | Pop <- ops ] >= 2) "two replies" $
+    go ops [] (emptyPeerTxLocalState :: PeerTxLocalState ())
+  where
+    go [] model st = counterexample "left over" (toList (peerRequestTiers st) === model)
+    go (Push t : rest) model st = go rest (model ++ [t]) (recordRequestTier t st)
+    go (Pop : rest) model st =
+      let (t, st') = takeReplyTier st
+          (expected, model') = case model of
+            m : ms -> (m, ms)
+            []     -> (FastTier, [])
+      in counterexample ("took " ++ show t ++ ", expected " ++ show expected) (t === expected)
+         .&&. go rest model' st'
+
+-- | Each reply's txids are counted on the tier of the oldest outstanding
+-- request, whatever the later requests went out on, and every reply takes
+-- its request's tier off the queue.
+prop_requestTiers_counted :: ArbTxDecisionPolicy -> NonEmptyList (Bool, NonNegative Int) -> Property
+prop_requestTiers_counted (ArbTxDecisionPolicy policy0) (NonEmpty replies0) =
+    cover 30 (length replies >= 2 && any fst replies && not (all fst replies)) "slow and fast outstanding" $
+    runSimOrThrow $ do
+      registry  <- newPeerTxRegistry (mkStdGen 5)
+      sharedVar <- newSharedTxStateVar (emptySharedTxState :: SharedTxState PeerAddr TxId)
+      retired   <- newTxSubmissionCountersVar mempty
+      mempool   <- emptyMempool
+      final <- withPeer policy (getMempoolReader mempool) sharedVar registry retired
+                        (0 :: PeerAddr) (pure False) $ \api ->
+        foldM (\ps (i, (_, n)) ->
+                 applyReceivedTxIds api (Time (fromIntegral i)) Nothing (fromIntegral n) (idsOf i n)
+                                    ps { peerRequestedTxIds = fromIntegral n })
+              emptyPeerTxLocalState { peerRequestTiers = StrictSeq.fromList tiers }
+              (zip [1 :: Int ..] replies)
+      c <- snapshotCountersWith atomically retired registry
+      pure $ counterexample ("slow ids " ++ show (txIdsReceivedSlow c)) (txIdsReceivedSlow c === expectedSlow)
+        .&&. counterexample ("tiers left " ++ show (peerRequestTiers final)) (StrictSeq.null (peerRequestTiers final))
+  where
+    policy       = policy0 { txSourceRate = 0 }
+    replies      = [ (slow, n `mod` 13) | (slow, NonNegative n) <- take 8 replies0 ]
+    tiers        = [ if slow then SlowTier else FastTier | (slow, _) <- replies ]
+    idsOf i n    = [ (i * 100 + j, 100) | j <- [1 .. n] ] :: [(TxId, SizeInBytes)]
+    expectedSlow = sum [ fromIntegral n | (True, n) <- replies ]
+
+-- | A decision that sends a txid request records the tier it is served on:
+-- a local root's as fast, a lone peer's as slow when the coin has no slots.
+prop_requestTier_recorded :: ArbTxDecisionPolicy -> Bool -> Property
+prop_requestTier_recorded (ArbTxDecisionPolicy policy0) isRoot =
+    runSimOrThrow $ do
+      registry  <- newPeerTxRegistry (mkStdGen 7)
+      sharedVar <- newSharedTxStateVar (emptySharedTxState :: SharedTxState PeerAddr TxId)
+      retired   <- newTxSubmissionCountersVar mempty
+      mempool   <- emptyMempool
+      withPeer policy (getMempoolReader mempool) sharedVar registry retired
+               (0 :: PeerAddr) (pure isRoot) $ \api -> do
+        (action, ps) <- runNextPeerAction api (Time 1) Nothing
+                          emptyPeerTxLocalState { peerJitterSeed = apiJitterSeed api }
+        let requested = case action of
+              PeerRequestTxIds {} -> True
+              _                   -> False
+        pure $ counterexample "not a txid request" requested
+          .&&. counterexample ("tiers " ++ show (peerRequestTiers ps))
+                 (peerRequestTiers ps === StrictSeq.fromList [if isRoot then FastTier else SlowTier])
+  where
+    policy = policy0 { txFastPeers = 0, txSourceRate = 0 }
+
+-- | The counters thread runs the coin: the salt is the boot one until a
+-- rotation period has passed, and another one a sweep interval after.
+prop_countersThread_rotates :: ArbTxDecisionPolicy -> Positive Int -> Int -> Property
+prop_countersThread_rotates (ArbTxDecisionPolicy policy0) (Positive tenths) seed =
+    runSimOrThrow $ do
+      registry  <- newPeerTxRegistry (mkStdGen seed)
+      sharedVar <- newSharedTxStateVar (emptySharedTxState :: SharedTxState PeerAddr TxId)
+      retired   <- newTxSubmissionCountersVar mempty
+      salt0 <- saltKey registry
+      withAsync (txCountersThreadV2 policy nullTracer nullTracer retired sharedVar registry) $ \_ -> do
+        threadDelay (period / 2)
+        salt1 <- saltKey registry
+        threadDelay (period / 2 + sweepInterval policy + 0.001)
+        salt2 <- saltKey registry
+        pure $ counterexample "rotated before a period" (salt1 === salt0)
+          .&&. counterexample "not rotated a period and a sweep later" (salt2 =/= salt0)
+  where
+    period = fromIntegral (tenths `mod` 50 + 1) / 10 :: DiffTime
+    policy = policy0 { txTierRotation = period }
+    saltKey registry = (\salt -> hashWithSalt salt (0 :: Int)) <$> readTVarIO (registrySalt registry)
+
+-- | The census counts each standing once and classifies root before coin
+-- before source, against explicit counts over generated peers.
+prop_tier_censusOracle :: [(Bool, Bool, Bool)] -> Property
+prop_tier_censusOracle peers =
+      cover 20 (any (\(r, c, s) -> not r && not c && s) peers) "a source"
+    $ cover 20 (any (\(r, _, _) -> r) peers) "a root"
+    $ censusOf standings === TierCensus
+        { censusFastByRoot   = length [ () | (True, _, _) <- peers ]
+        , censusFastByCoin   = length [ () | (False, True, _) <- peers ]
+        , censusFastBySource = length [ () | (False, False, True) <- peers ]
+        , censusSlow         = length [ () | (False, False, False) <- peers ]
+        }
+  where
+    standings = [ standingOf root coin (if root || coinFast || source then FastTier else SlowTier)
+                | (root, coinFast, source) <- peers
+                , let coin = if coinFast then FastTier else SlowTier ]
+
+-- | A decision's tier read puts the peer on root-or-coin and writes the
+-- root and source flags it read to the registry's entry, whose standing
+-- is then the one the peer is served on, source rule included; reading
+-- again changes nothing.
+prop_tier_withTierStanding
+  :: ArbTxDecisionPolicy -> Bool -> Bool -> Bool -> NonNegative Int -> Property
+prop_tier_withTierStanding (ArbTxDecisionPolicy policy0) root coinFast promote (NonNegative extra) =
+      cover 10 (not root && not coinFast && source) "promoted source"
+    $ cover 10 (not root && not coinFast && not source) "slow"
+    $ runSimOrThrow $ do
+        -- an entry outside any order: the placement a root change runs
+        -- finds nothing to place
+        registry <- newPeerAddrRegistry (mkStdGen 1)
+        entry <- PeerTierEntry <$> newTVarIO (PeerTierState coin False False)
+                               <*> pure (pure root)
+        ps'  <- atomically (withTier policy t0 registry entry ps)
+        s1   <- readTVarIO (pteState entry)
+        ps'' <- atomically (withTier policy t0 registry entry ps')
+        s2   <- readTVarIO (pteState entry)
+        pure $ conjoin
+          [ counterexample "tier" (peerTier ps' === if root then FastTier else coin)
+          , counterexample "flags" (s1 === PeerTierState coin root source)
+          , counterexample "standing"
+              (tierStanding s1 === standingOf root coin (effectiveTier policy t0 ps'))
+          , counterexample "source" ((tierStanding s1 == StandingSource) === (not root && not coinFast && source))
+          , counterexample "second read" (ps'' === ps' .&&. s2 === s1)
+          ]
+  where
+    policy = policy0 { txSourceRate = max 1 (txSourceRate policy0) }
+    t0     = Time 100
+    coin   = if coinFast then FastTier else SlowTier
+    -- accepts at or above the source count, or short of it
+    accepts | promote   = sourceCount policy + extra
+            | otherwise = max 0 (sourceCount policy - 1 - extra)
+    ps     = emptyPeerTxLocalState { peerNovelAt = recordNovel policy t0 accepts StrictSeq.empty }
+               :: PeerTxLocalState (Tx TxId)
+    source = isSource policy t0 (peerNovelAt ps)
+
+-- | One step of a flag script over a few peer ids: a peer joining with a
+-- root flag, deciding with a count of novel accepts, its root flag changing
+-- under it, leaving, or a rotation.  Ids repeat, so later events find peers.
+data FlagEvent
+  = FlagJoin Int Bool
+  | FlagDecide Int Int
+  | FlagRoot Int Bool
+  | FlagLeave Int
+  | FlagRotate
+  deriving (Eq, Show)
+
+newtype FlagScript = FlagScript [FlagEvent]
+  deriving Show
+
+instance Arbitrary FlagScript where
+  arbitrary = FlagScript <$> listOf event
+    where
+      peer  = choose (0, 7 :: Int)
+      root  = frequency [(3, pure False), (1, pure True)]
+      event = frequency
+        [ (4, FlagJoin <$> peer <*> root)
+        , (4, FlagDecide <$> peer <*> frequency [(1, pure 0), (1, choose (1, 20))])
+        , (2, FlagRoot <$> peer <*> root)
+        , (2, FlagLeave <$> peer)
+        , (1, pure FlagRotate)
+        ]
+  shrink (FlagScript es) = FlagScript <$> shrinkList shrinkEvent es
+    where
+      shrinkEvent (FlagJoin p r)   = [ FlagJoin p' r | p' <- shrink p ] ++ [ FlagJoin p False | r ]
+      shrinkEvent (FlagDecide p n) = [ FlagDecide p' n | p' <- shrink p ] ++ [ FlagDecide p n' | n' <- shrink n ]
+      shrinkEvent (FlagRoot p r)   = [ FlagRoot p' r | p' <- shrink p ] ++ [ FlagRoot p False | r ]
+      shrinkEvent (FlagLeave p)    = [ FlagLeave p' | p' <- shrink p ]
+      shrinkEvent FlagRotate       = []
+
+-- | A live peer of the flag model: its registration and entry, its root
+-- variable, and what the registry should know of it: the root flag as its
+-- join or last decision read it, whether it is a source as its last
+-- decision found, and the coin the last placement gave it.
+data FlagPeer m = FlagPeer {
+    fpRegistration :: PeerRegistration Int,
+    fpEntry        :: PeerTierEntry m,
+    fpRootVar      :: StrictTVar m Bool,
+    fpState        :: PeerTierState
+  }
+
+-- | The registry's tier states and census follow the flags as the peers'
+-- own reads left them, after every step of a script: a placement keeps a
+-- root out of the candidates by what its join or last decision read, not
+-- by what the governor says now; a decision writes the root and source
+-- flags it read and is served on root-or-coin; a source keeps its standing
+-- through a placement that takes its coin slot.  The model keeps the flags
+-- and places the coins from the salt itself.
+prop_tier_censusFollowsFlags :: ArbTxDecisionPolicy -> NonNegative Int -> FlagScript -> Int -> Property
+prop_tier_censusFollowsFlags (ArbTxDecisionPolicy policy0) (NonNegative k0) (FlagScript events) seed =
+    runSimOrThrow $ do
+      registry <- newPeerTxRegistry (mkStdGen seed)
+      (checks, demoted) <- go registry Map.empty events
+      pure $ cover 10 (demoted > 0) "a source lost its coin slot"
+           $ conjoin checks
+  where
+    k      = k0 `mod` 5
+    policy = policy0 { txFastPeers = k, txSourceRate = max 1 (txSourceRate policy0) }
+    t0     = Time 100
+
+    go _ _ [] = pure ([], 0 :: Int)
+    go registry live (ev : rest) = do
+      (live', demoted, extra) <- step registry live ev
+      verdict <- oracle registry live'
+      (checks, demotedMore) <- go registry live' rest
+      pure (counterexample (show ev) (extra .&&. verdict) : checks, demoted + demotedMore)
+
+    step registry live ev = case ev of
+      FlagJoin p root
+        | Map.member p live -> pure (live, 0, property True)
+        | otherwise -> do
+            c <- newTVarIO mempty
+            rootVar <- newTVarIO root
+            (r, e) <- atomically $ do
+              r <- registerPeerCounters registry p c
+              (e, _) <- registerPeerTier registry (readTVar rootVar)
+              joinTier policy registry r e
+              pure (r, e)
+            place registry (Map.insert p (FlagPeer r e rootVar (PeerTierState SlowTier root False)) live)
+      FlagDecide p accepts -> case Map.lookup p live of
+        Nothing -> pure (live, 0, property True)
+        Just fp -> do
+          root <- readTVarIO (fpRootVar fp)
+          let ps = emptyPeerTxLocalState { peerNovelAt = recordNovel policy t0 accepts StrictSeq.empty }
+                     :: PeerTxLocalState ()
+          ps' <- atomically (withTier policy t0 registry (fpEntry fp) ps)
+          let s      = fpState fp
+              s'     = s { ptsRoot = root, ptsSource = accepts >= sourceCount policy }
+              live'  = Map.insert p fp { fpState = s' } live
+          -- a root flag that changed places the tiers at this decision,
+          -- in the model as in the registry
+          (live'', demoted) <-
+            if ptsRoot s /= root
+               then (\(l, d, _) -> (l, d)) <$> place registry live'
+               else pure (live', 0)
+          let served = if root then FastTier
+                               else maybe SlowTier (ptsCoin . fpState) (Map.lookup p live'')
+          pure ( live''
+               , demoted
+               , counterexample ("served " ++ show (peerTier ps')) (peerTier ps' === served) )
+      FlagRoot p root -> case Map.lookup p live of
+        Nothing -> pure (live, 0, property True)
+        Just fp -> do
+          atomically (writeTVar (fpRootVar fp) root)
+          pure (live, 0, property True)
+      FlagLeave p -> case Map.lookup p live of
+        Nothing -> pure (live, 0, property True)
+        Just fp -> do
+          atomically (leaveTier policy registry (fpRegistration fp))
+          place registry (Map.delete p live)
+      FlagRotate -> do
+        atomically (rotateTiers policy registry)
+        place registry live
+
+    -- the model's placement from the salt the registry holds: the first k
+    -- of the non-roots by salted rank are fast; how many sources lost
+    -- their slot to it
+    place registry live = do
+      salt <- readTVarIO (registrySalt registry)
+      let rank (addr, n) = (fst (nextWord64 (mkSMGen (fromIntegral (hashWithSalt salt addr)))), n)
+          others  = [ fpRegistration fp | fp <- Map.elems live, not (ptsRoot (fpState fp)) ]
+          fastSet = Set.fromList (take k (sortOn rank others))
+          coinOf fp | Set.member (fpRegistration fp) fastSet = FastTier
+                    | otherwise                              = SlowTier
+          placed  = Map.map (\fp -> fp { fpState = (fpState fp) { ptsCoin = coinOf fp } }) live
+          demoted = length [ ()
+                           | fp <- Map.elems live
+                           , ptsSource (fpState fp)
+                           , ptsCoin (fpState fp) == FastTier
+                           , coinOf fp == SlowTier
+                           ]
+      pure (placed, demoted, property True)
+
+    oracle registry live = do
+      census <- atomically (tierCensus registry)
+      states <- forM (Map.toList live) $ \(p, fp) -> (,) p <$> readTVarIO (pteState (fpEntry fp))
+      pure $ conjoin
+        [ counterexample "census"
+            (census === censusOf [ tierStanding (fpState fp) | fp <- Map.elems live ])
+        , conjoin [ counterexample ("peer " ++ show p ++ " state") (s === fpState (live Map.! p))
+                  | (p, s) <- states ]
+        ]
+
+-- | One fetch cycle for a peer: txids it advertises, which of the requested
+-- bodies it delivers, and which of the delivered ones the mempool rejects.
+data FetchCycle = FetchCycle ArbTxDecisionPolicy (Positive Int) [Bool] [Bool]
+  deriving Show
+
+instance Arbitrary FetchCycle where
+  arbitrary = do
+    n <- choose (1, 8)
+    FetchCycle <$> arbitrary <*> pure (Positive n) <*> vectorOf n arbitrary <*> vectorOf n arbitrary
+  shrink (FetchCycle p (Positive n) ds rs) =
+       [ FetchCycle p' (Positive n) ds rs | p' <- shrink p ]
+    ++ [ FetchCycle p (Positive n') (take n' ds) (take n' rs) | n' <- [1 .. n - 1] ]
+    ++ [ FetchCycle p (Positive n) ds' rs | ds' <- shrink ds, length ds' == n ]
+    ++ [ FetchCycle p (Positive n) ds rs' | rs' <- shrink rs, length rs' == n ]
+
+-- | The claimable counter moves exactly once when a reply omits a requested
+-- body (a lease released) and exactly once when a submission is rejected
+-- (a lease released), and not when txids arrive, bodies are requested,
+-- bodies arrive or accepts happen; the generation moves on accepts too.
+prop_claimable_releases :: FetchCycle -> Property
+prop_claimable_releases (FetchCycle (ArbTxDecisionPolicy policy0) (Positive n) delivers rejects) =
+      cover 30 (omitted > 0) "a body omitted"
+    . cover 25 (rejected > 0) "a submission rejected"
+    . cover 30 (accepted > 0) "a submission accepted"
+    $ conjoin
+        [ counterexample "txids arriving moved the claimable counter" (c1 === c0)
+        , counterexample "requesting bodies moved the claimable counter" (c2 === c1)
+        , counterexample ("bodies arriving: omitted " ++ show omitted) (c3 === c2 + (if omitted > 0 then 1 else 0))
+        , counterexample ("submission: rejected " ++ show rejected) (c4 === c3 + (if rejected > 0 then 1 else 0))
+        , counterexample "an accept must still move the generation"
+            (not submittedAny || sharedGeneration ss4 > sharedGeneration ss3)
+        ]
+  where
+    policy = policy0 { txsSizeInflightPerPeer = max_TX_SIZE * fromIntegral (max 1 n)
+                     , maxOutstandingTxBatchesPerPeer = max 1 n
+                     , txInflightMultiplicity = max 1 (txInflightMultiplicity policy0) }
+    peer = 0 :: PeerAddr; at = Time 1
+    ids = [ (txid, 100) | txid <- [1 .. n] ]
+    ps0 = emptyPeerTxLocalState { peerRequestedTxIds = fromIntegral n }
+    ss0 = emptySharedTxState; c0 = sharedClaimable ss0
+    (ps1, pif1, ss1) = handleReceivedTxIds (const False) at policy (fromIntegral n) ids ps0 emptyPeerTxInFlight ss0
+    c1 = sharedClaimable ss1
+    (act2, ps2, pif2, ss2) = nextPeerAction at policy peer ps1 pif1 ss1
+    requested = case act2 of PeerRequestTxs ks -> ks; _ -> []
+    c2 = sharedClaimable ss2
+    txidOf (TxKey k) = sharedKeyToTxId ss2 IntMap.! k
+    delivered = [ (txidOf k, mkTx (txidOf k) 100) | (k, True) <- zip requested delivers ]
+    omitted   = length requested - length delivered
+    (_, _, ps3, pif3, ss3) = handleReceivedTxs (const False) at policy peer delivered ps2 pif2 ss2
+    c3 = sharedClaimable ss3
+    (act4, ps4, pif4, ss4a) = nextPeerAction at policy peer ps3 pif3 ss3
+    submitted = case act4 of PeerSubmitTxs ks -> ks; _ -> []
+    submittedAny = not (null submitted)
+    (acceptedKs, rejectedKs) = ( [ k | (k, False) <- zip submitted rejects ], [ k | (k, True) <- zip submitted rejects ] )
+    accepted = length acceptedKs; rejected = length rejectedKs
+    (_, _, ss4) | submittedAny = handleSubmittedTxs at policy peer (withTxIds ss4a acceptedKs) rejectedKs ps4 pif4 ss4a
+                | otherwise    = (ps4, pif4, ss4a)
+    c4 = sharedClaimable ss4
+
+-- | A stuck entry: leased by another peer past its attempt cap while this
+-- peer holds the body.  The decision bumps the cap, and the claimable
+-- counter with it, exactly when the lease is old enough.
+-- | How long ago a lease was taken, in milliseconds, ranging over the
+-- inflight timeouts the policy generator produces (up to about 11 s).
+newtype LeaseAge = LeaseAge Int
+  deriving Show
+
+instance Arbitrary LeaseAge where
+  arbitrary = LeaseAge <$> frequency [ (1, choose (0, 300)), (3, choose (0, 15000)) ]
+  shrink (LeaseAge a) = [ LeaseAge a' | NonNegative a' <- shrink (NonNegative a) ]
+
+prop_claimable_stuckBump :: ArbTxDecisionPolicy -> Positive Int -> LeaseAge -> Bool -> Property
+prop_claimable_stuckBump (ArbTxDecisionPolicy policy) (Positive capN) (LeaseAge ageMs) inSubmission =
+      cover 30 eligible "bump due"
+    . cover 30 (not eligible) "no bump due"
+    $ counterexample (show (eligible, sharedClaimable ss0, sharedClaimable ss1))
+        (sharedClaimable ss1 === sharedClaimable ss0 + (if eligible then 1 else 0))
+ .&&. counterexample "the cap must move iff the counter does"
+        ((currentMaxInflightMultiplicity entry1 > cap) === eligible)
+  where
+    cap = (capN `mod` 4) + 1
+    at = Time 1000
+    leaseUntil = addTime (negate (fromIntegral ageMs / 1000)) at
+    entry0 = TxEntry { txLease = TxLeased (1 :: PeerAddr) leaseUntil, txAttempt = cap, txAdvertisers = 2
+                     , txInSubmission = inSubmission, currentMaxInflightMultiplicity = cap }
+    ss0 = (mkSharedState [7]) { sharedTxTable = IntMap.singleton 0 entry0 }
+    ps0 = emptyPeerTxLocalState { peerUnacknowledgedTxIds = StrictSeq.singleton (TxKey 0)
+                                , peerDownloadedTxs = IntMap.singleton 0 (mkTx 7 100) }
+    pif0 = emptyPeerTxInFlight { pifAdvertised = IntSet.singleton 0 }
+    (_, _, _, ss1) = nextPeerAction at policy (0 :: PeerAddr) ps0 pif0 ss0
+    entry1 = sharedTxTable ss1 IntMap.! 0
+    eligible = not inSubmission && at >= addTime (inflightTimeout policy - interTxSpace policy) leaseUntil
+
+-- | A leaving peer's scrub moves the claimable counter iff it released a
+-- lease, an attempt or a submission on a present entry; advertising alone
+-- releases nothing.
+-- | Four sparse flag lists: which of four entries a leaving peer advertises,
+-- leases, attempts and submits.
+data ScrubFlags = ScrubFlags [Bool] [Bool] [Bool] [Bool]
+  deriving Show
+
+instance Arbitrary ScrubFlags where
+  arbitrary = ScrubFlags <$> flags <*> flags <*> flags <*> flags
+    where flags = vectorOf 4 (frequency [ (9, pure False), (1, pure True) ])
+  shrink (ScrubFlags a l t u) =
+    [ ScrubFlags a' l' t' u' | (a', l', t', u') <- shrink (a, l, t, u)
+                             , all ((== 4) . length) [a', l', t', u'] ]
+
+prop_claimable_scrub :: ScrubFlags -> Property
+prop_claimable_scrub (ScrubFlags adv lea att sub) =
+      cover 25 work "work released"
+    . cover 25 (not work) "nothing released"
+    $ sharedClaimable ss1 === sharedClaimable ss0 + (if work then 1 else 0)
+  where
+    n = 4
+    keys flags = IntSet.fromList [ k | (k, True) <- zip [0 .. n - 1] (take n (flags ++ repeat False)) ]
+    pif = PeerTxInFlight { pifAdvertised = keys adv, pifLeased = keys lea, pifAttempting = keys att, pifSubmitting = keys sub }
+    entry = TxEntry { txLease = TxLeased (0 :: PeerAddr) (Time 5), txAttempt = 1, txAdvertisers = 1
+                    , txInSubmission = False, currentMaxInflightMultiplicity = 2 }
+    ss0 = (mkSharedState [1 .. n]) { sharedTxTable = IntMap.fromList [ (k, entry) | k <- [0 .. n - 1] ] }
+    ss1 = scrubFromPeerInFlight (0 :: PeerAddr) (Time 10) pif ss0
+    work = not (IntSet.null (keys lea `IntSet.union` keys att `IntSet.union` keys sub))
+
+-- | The slow tier's park returns when the claimable counter's mirror has
+-- moved or its delay has expired, and not when only the shared state
+-- moved, its generation included: the park reads the mirror alone.
+prop_claimable_park :: Word64 -> Word64 -> Positive Word64 -> Bool -> Bool -> Property
+prop_claimable_park claimable0 generation0 (Positive bump) moveClaimable withDelay =
+    runSimOrThrow $ do
+      var <- newTVarIO emptySharedTxState { sharedClaimable = claimable0, sharedGeneration = generation0 }
+      mirror <- newTVarIO claimable0
+      -- the move happens half a second in; the delay, when given, a second in
+      let move = do
+            threadDelay 0.5
+            atomically $
+              if moveClaimable
+                 then do modifyTVar var $ \st -> st { sharedClaimable = sharedClaimable st + bump }
+                         writeTVar mirror (claimable0 + bump)
+                 else modifyTVar var $ \st -> st { sharedGeneration = sharedGeneration st + bump }
+      withAsync move $ \_ -> do
+        mDelay <- if withDelay then Just <$> RegisteredDelay.new 1 else pure Nothing
+        woke <- timeout 2 (atomically (awaitClaimableChangeImp mirror claimable0 mDelay))
+        t <- getMonotonicTime
+        pure $ counterexample (show (moveClaimable, withDelay, woke, t)) $
+          case (moveClaimable, withDelay) of
+            (True, _)      -> woke === Just () .&&. counterexample "woke by the move" (t < Time 1)
+            (False, True)  -> woke === Just () .&&. counterexample "woke by the delay" (t >= Time 1 && t < Time 2)
+            (False, False) -> woke === Nothing

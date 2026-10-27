@@ -50,6 +50,7 @@ import NoThunks.Class (NoThunks (..))
 import Options.Applicative
 import Statistics.Quantile qualified as Stat
 import System.IO (hPutStrLn, stderr)
+import System.Random (mkStdGen)
 import System.Random.SplitMix qualified as SM
 
 import Network.Mux qualified as Mx
@@ -469,7 +470,7 @@ runTxInbound Addr { addr, port } txDecisionPolicy version txDelay = do
         -- V2 only
         txSharedState <- V2.newSharedTxStateVar V2.emptySharedTxState
         txCountersVar <- V2.newTxSubmissionCountersVar mempty
-        txRegistry <- V2.newPeerTxRegistry
+        txRegistry <- V2.newPeerTxRegistry (mkStdGen 42)
         case version of
           TxSubmissionLogicV1 -> return ()
           TxSubmissionLogicV2 -> do
@@ -559,6 +560,7 @@ runTxInbound Addr { addr, port } txDecisionPolicy version txDelay = do
                             txRegistry
                             txCountersVar
                             addr'
+                            (pure False)   -- no local roots in the demo
                             $ \peerTxApi ->
                               Driver.runPipelinedAnnotatedPeerWithLimits
                                 (Mx.WithBearer addr' >$< txSubmissionTracer traceLock)

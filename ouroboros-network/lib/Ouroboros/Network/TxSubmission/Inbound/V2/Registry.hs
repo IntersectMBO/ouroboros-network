@@ -13,6 +13,14 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Registry
   , newPeerTxRegistry
   , newTxSubmissionCountersVar
   , txCountersThreadV2
+  , rotateTiers
+  , placeTiers
+  , registerPeerTier
+  , joinTier
+  , leaveTier
+  , PeerTierEntry (..)
+  , tierCensus
+  , withTier
   , sweepInterval
   , sweepBatch
   , drainPause
@@ -20,6 +28,7 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Registry
     -- * For tests
   , scrubFromPeerInFlight
   , writeSharedStateIfChanged
+  , awaitClaimableChangeImp
   , snapshotCountersWith
   , retirePeerCounters
   , registerPeerCounters
@@ -28,7 +37,7 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Registry
   ) where
 
 import Control.Concurrent.Class.MonadSTM.Strict
-import Control.Monad (when)
+import Control.Monad (forM_, unless, when)
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
@@ -39,16 +48,23 @@ import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Sequence.Strict qualified as StrictSeq
+import Data.Set qualified as Set
 import Data.Void (Void)
 import Data.Word (Word64)
 import GHC.Stack (HasCallStack)
+import System.Random (StdGen, uniform)
 
+import Ouroboros.Network.Hashable (Hashable, Salt, mkSalt)
 import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Ouroboros.Network.RegisteredDelay (RegisteredDelay)
 import Ouroboros.Network.RegisteredDelay qualified as RegisteredDelay
 import Ouroboros.Network.Tx (HasRawTxId)
-import Ouroboros.Network.TxSubmission.Inbound.V2.Policy (TxDecisionPolicy (..))
+import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
+           (InvalidTxDecisionPolicy (..), TxDecisionPolicy (..),
+           saneTxDecisionPolicy)
 import Ouroboros.Network.TxSubmission.Inbound.V2.State qualified as State
+import Ouroboros.Network.TxSubmission.Inbound.V2.Tier (censusOf, effectiveTier,
+           isSource, orderFast, tierStanding)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
 import Ouroboros.Network.TxSubmission.Mempool.Reader
 
@@ -67,6 +83,18 @@ type PeerTxInFlightVar m = StrictTVar m PeerTxInFlight
 -- | A peer's key in the registry: its address and its registration number.
 type PeerRegistration peeraddr = (peeraddr, Word64)
 
+-- | A live peer's tier bookkeeping.
+data PeerTierEntry m = PeerTierEntry {
+    -- | The peer's place in the tiers: the coin's verdict, 'SlowTier'
+    -- until it joined, written by a placement; whether it is a local root
+    -- and a source, written by its decisions.  One variable, written on a
+    -- change only, so a placement reads one per peer and the governor's
+    -- state not at all.
+    pteState     :: !(StrictTVar m PeerTierState),
+    -- | Whether the peer is a local root now, from the governor.
+    pteLocalRoot :: !(STM m Bool)
+  }
+
 -- | Registry of every live peer's private counters cell, keyed by the
 -- peer's address and registration number, so that a release removes its
 -- own entry whatever else registered under the address.
@@ -81,7 +109,23 @@ data PeerTxRegistry m peeraddr = PeerTxRegistry {
     registeredPeers  :: !(StrictTVar m (Map (PeerRegistration peeraddr)
                                             (TxSubmissionCountersVar m))),
     -- | The next registration number.
-    nextRegistration :: !(StrictTVar m Word64)
+    nextRegistration :: !(StrictTVar m Word64),
+    -- | The peers in the order and their fetch tiers, as the salted order
+    -- placed them ('placeTiers'); each peer's decisions read its own
+    -- tier, and local roots stay out of the order, fast by standing beside
+    -- the 'txFastPeers' first in it.
+    peerTiers        :: !(StrictTVar m (Map (PeerRegistration peeraddr)
+                                            (PeerTierEntry m))),
+    -- | The salt the order is by, drawn afresh by each rotation.
+    registrySalt     :: !(StrictTVar m Salt),
+    -- | The generator the coin draws salts from, and the peers' jitter
+    -- seeds.
+    registryRng      :: !(StrictTVar m StdGen),
+    -- | The shared state's claimable counter, mirrored in a variable of
+    -- its own by every write of the state through this module, so that the
+    -- slow tier's park waits on it alone and not on every write of the
+    -- state.
+    registryClaimable :: !(StrictTVar m Word64)
   }
 
 newSharedTxStateVar
@@ -98,8 +142,15 @@ newTxSubmissionCountersVar = newTVarIO
 
 newPeerTxRegistry
   :: MonadSTM m
-  => m (PeerTxRegistry m peeraddr)
-newPeerTxRegistry = PeerTxRegistry <$> newTVarIO Map.empty <*> newTVarIO 0
+  => StdGen
+  -- ^ the coin's generator
+  -> m (PeerTxRegistry m peeraddr)
+newPeerTxRegistry rng =
+    PeerTxRegistry <$> newTVarIO Map.empty <*> newTVarIO 0
+                   <*> newTVarIO Map.empty <*> newTVarIO salt <*> newTVarIO rng'
+                   <*> newTVarIO 0
+  where
+    (salt, rng') = mkSalt rng
 
 -- | Central bookkeeping thread for V2.
 --
@@ -116,10 +167,17 @@ newPeerTxRegistry = PeerTxRegistry <$> newTVarIO Map.empty <*> newTVarIO 0
 -- the aggregated counters -- the retired-peers accumulator plus every live
 -- peer's cell -- when they differ from the last emission, and a
 -- 'TraceSharedTxState' snapshot when @sharedRevision@ or
--- @sharedGeneration@ has moved since the last emission.
+-- @sharedGeneration@ has moved since the last emission.  It also runs
+-- the coin: every 'txTierRotation' of the policy it draws a new salt and
+-- places the fetch tiers from the new order ('rotateTiers'), in a
+-- transaction of its own; without it the fast set would stay the one the
+-- boot salt gave.  It runs once per node, so it is where a policy that
+-- fails 'saneTxDecisionPolicy' is refused: 'InvalidTxDecisionPolicy'
+-- before anything else.
 txCountersThreadV2
   :: forall m peeraddr txid tx.
-     (MonadDelay m, MonadSTM m, HasRawTxId txid)
+     ( MonadDelay m, MonadSTM m, MonadThrow m
+     , HasRawTxId txid, Ord peeraddr, Hashable peeraddr )
   => TxDecisionPolicy
   -> Tracer m TxSubmissionCounters
   -> Tracer m (TraceTxLogic peeraddr txid tx)
@@ -129,6 +187,8 @@ txCountersThreadV2
   -> m Void
 txCountersThreadV2 policy countersTracer sharedStateTracer retiredCountersVar
                    sharedStateVar registry = do
+    unless (saneTxDecisionPolicy policy) $
+      throwIO (InvalidTxDecisionPolicy policy)
     now <- getMonotonicTime
     initialSt <- readTVarIO sharedStateVar
     go interval
@@ -136,7 +196,9 @@ txCountersThreadV2 policy countersTracer sharedStateTracer retiredCountersVar
        mempty
        (sharedRevision   initialSt)
        (sharedGeneration initialSt)
+       Nothing
        (addTime countersInterval now)
+       (addTime (txTierRotation policy) now)
   where
     interval :: DiffTime
     interval = sweepInterval policy
@@ -144,51 +206,61 @@ txCountersThreadV2 policy countersTracer sharedStateTracer retiredCountersVar
     countersInterval :: DiffTime
     countersInterval = 7
 
-    go !delay !cursor !previous !lastRev !lastGen !nextEmitAt = do
+    go !delay !cursor !previous !lastRev !lastGen !lastCensus !nextEmitAt !nextRotateAt = do
       threadDelay delay
       tickAt <- getMonotonicTime
+      -- the coin, on its own cadence, before the sweep
+      nextRotateAt' <-
+        if tickAt >= nextRotateAt
+           then do atomically (rotateTiers policy registry)
+                   pure (nextRotation tickAt nextRotateAt)
+           else pure nextRotateAt
       (backlog, cursor') <- sweepWith $ \st ->
         case State.sweepSharedStateUpTo sweepBatch tickAt cursor st of
           (st', more, next) -> (st', (more, next))
       _ <- drain backlog tickAt
       drained <- getMonotonicTime
-      (previous', lastRev', lastGen', nextEmitAt') <-
+      (previous', lastRev', lastGen', lastCensus', nextEmitAt') <-
         if drained >= nextEmitAt
-           then emit previous lastRev lastGen (nextEmission drained nextEmitAt)
-           else pure (previous, lastRev, lastGen, nextEmitAt)
+           then emit previous lastRev lastGen lastCensus (nextEmission drained nextEmitAt)
+           else pure (previous, lastRev, lastGen, lastCensus, nextEmitAt)
       -- The next sweep: an interval after this one, whatever the drain and
       -- an emission took, and a pause at least, so that the writes stay a
       -- pause apart when a transaction overran the interval.
       now <- getMonotonicTime
       let delay' = max drainPause (addTime interval tickAt `diffTime` now)
-      go delay' cursor' previous' lastRev' lastGen' nextEmitAt'
+      go delay' cursor' previous' lastRev' lastGen' lastCensus' nextEmitAt' nextRotateAt'
 
     -- An emission: the counters when they changed since the last one, the
-    -- shared state when a counter of it moved; what the next one carries.
-    emit :: TxSubmissionCounters -> Word64 -> Word64 -> Time
-         -> m (TxSubmissionCounters, Word64, Word64, Time)
-    emit previous lastRev lastGen nextEmitAt = do
+    -- shared state when a counter of it moved, the tier census when it
+    -- changed (always the first time); what the next one carries.
+    emit :: TxSubmissionCounters -> Word64 -> Word64 -> Maybe TierCensus -> Time
+         -> m (TxSubmissionCounters, Word64, Word64, Maybe TierCensus, Time)
+    emit previous lastRev lastGen lastCensus nextEmitAt = do
       current <- snapshotCountersWith atomically retiredCountersVar registry
       when (current /= previous) $ traceWith countersTracer current
+      census <- atomically (tierCensus registry)
+      when (Just census /= lastCensus) $ traceWith sharedStateTracer (TraceTxTiers census)
       st <- readTVarIO sharedStateVar
       let curRev = sharedRevision   st
           curGen = sharedGeneration st
       if curRev /= lastRev || curGen /= lastGen
          then do
            traceWith sharedStateTracer (TraceSharedTxState st (sharedTxStateCounts st))
-           pure (current, curRev, curGen, nextEmitAt)
-         else pure (current, lastRev, lastGen, nextEmitAt)
+           pure (current, curRev, curGen, Just census, nextEmitAt)
+         else pure (current, lastRev, lastGen, Just census, nextEmitAt)
 
     -- One transaction over the state alone: the step applied, the state
-    -- written when it changed, the step's result returned.
+    -- written when it changed, as one write whatever the step bumped the
+    -- revision by, the step's result returned.
     sweepWith :: (     SharedTxState peeraddr txid
                     -> (SharedTxState peeraddr txid, a))
               -> m a
     sweepWith step = atomically $ do
       st <- readTVar sharedStateVar
       let (st', result) = step st
-      when (sharedRevision st' /= sharedRevision st) $
-        writeTVar sharedStateVar st'
+      writeSharedStateIfChanged (registryClaimable registry) sharedStateVar
+                                (sharedRevision st) st'
       return result
 
     -- Drain a backlog in expiry-only transactions 'drainPause' apart,
@@ -216,6 +288,15 @@ txCountersThreadV2 policy countersTracer sharedStateTracer retiredCountersVar
       | otherwise  = addTime countersInterval now
       where
         next = addTime countersInterval dueAt
+
+    -- The next rotation: a period after the one due, or after now when
+    -- that is already past.
+    nextRotation :: Time -> Time -> Time
+    nextRotation now dueAt
+      | next > now = next
+      | otherwise  = addTime (txTierRotation policy) now
+      where
+        next = addTime (txTierRotation policy) dueAt
 
 -- | How often the counters thread sweeps: a quarter of the retention
 -- lifetime, kept between 100 ms and 1 s.
@@ -302,6 +383,101 @@ retirePeerCounters retiredCountersVar registry registration peerCountersVar = do
     modifyTVar retiredCountersVar (<> peerCounters)
     modifyTVar (registeredPeers registry) (Map.delete registration)
 
+-- | Make a joining peer's tier entry and draw its jitter seed from the
+-- coin's generator.  The peer is not in the order yet: 'joinTier' puts it
+-- there once its server's initial delay has passed.
+registerPeerTier
+  :: MonadSTM m
+  => PeerTxRegistry m peeraddr
+  -> STM m Bool
+  -- ^ whether the peer is a local root now
+  -> STM m (PeerTierEntry m, Word64)
+registerPeerTier registry localRoot = do
+    entry <- PeerTierEntry <$> newTVar (PeerTierState SlowTier False False)
+                           <*> pure localRoot
+    g <- readTVar (registryRng registry)
+    let (seed, g') = uniform g
+    writeTVar (registryRng registry) g'
+    pure (entry, seed)
+
+-- | Put a peer in the order and place the tiers, with whether it is a
+-- local root read from the governor now, so that a root takes no coin
+-- slot at its own placement; nothing when it is in the order already.
+-- The server calls it once its initial delay has passed, before its
+-- first decision, so a peer not polling yet holds no fast slot and the
+-- first decision is served on the tier it was placed on.
+joinTier
+  :: (MonadSTM m, Ord peeraddr, Hashable peeraddr)
+  => TxDecisionPolicy
+  -> PeerTxRegistry m peeraddr
+  -> PeerRegistration peeraddr
+  -> PeerTierEntry m
+  -> STM m ()
+joinTier policy registry registration entry@PeerTierEntry { pteState, pteLocalRoot } = do
+    tiers <- readTVar (peerTiers registry)
+    unless (Map.member registration tiers) $ do
+      root <- pteLocalRoot
+      modifyTVar pteState (\s -> s { ptsRoot = root })
+      writeTVar (peerTiers registry) (Map.insert registration entry tiers)
+      placeTiers policy registry
+
+-- | Take a leaving peer out of the order and place the tiers, so the next
+-- peer in the order moves up at once; nothing when it never joined.
+leaveTier
+  :: (MonadSTM m, Ord peeraddr, Hashable peeraddr)
+  => TxDecisionPolicy
+  -> PeerTxRegistry m peeraddr
+  -> PeerRegistration peeraddr
+  -> STM m ()
+leaveTier policy registry registration = do
+    tiers <- readTVar (peerTiers registry)
+    when (Map.member registration tiers) $ do
+      writeTVar (peerTiers registry) (Map.delete registration tiers)
+      placeTiers policy registry
+
+-- | One rotation: a new salt from the coin's generator, and the tiers
+-- placed from the order it gives.
+rotateTiers :: (MonadSTM m, Ord peeraddr, Hashable peeraddr)
+            => TxDecisionPolicy
+            -> PeerTxRegistry m peeraddr
+            -> STM m ()
+rotateTiers policy registry = do
+    g <- readTVar (registryRng registry)
+    let (salt, g') = mkSalt g
+    writeTVar (registryRng registry) g'
+    writeTVar (registrySalt registry) salt
+    placeTiers policy registry
+
+-- | Place the tiers from the salted order: the first 'txFastPeers' of the
+-- peers in the order that are not local roots, as their decisions last
+-- read it, are fast, the local roots are fast besides, the rest slow.
+-- Writes a peer's coin on a change only.  One read per peer and the
+-- sort of the candidates; it reads nothing of the governor's, so only a
+-- join, a leave or a peer's rare flag write restarts it.
+placeTiers :: (MonadSTM m, Ord peeraddr, Hashable peeraddr)
+           => TxDecisionPolicy
+           -> PeerTxRegistry m peeraddr
+           -> STM m ()
+placeTiers policy registry = do
+    tiers  <- readTVar (peerTiers registry)
+    states <- traverse (readTVar . pteState) tiers
+    salt   <- readTVar (registrySalt registry)
+    let candidates = [ r | (r, s) <- Map.toList states, not (ptsRoot s) ]
+        fastSet    = Set.fromList (orderFast (txFastPeers policy) salt candidates)
+    forM_ (Map.toList (Map.intersectionWith (,) tiers states)) $
+      \(registration, (PeerTierEntry { pteState }, s)) -> do
+        -- the order's verdict alone: a root is fast by standing at each
+        -- decision ('withTier'), so one that stops being a root is served
+        -- by its coin at once, not fast until the next placement
+        let coin = if registration `Set.member` fastSet then FastTier else SlowTier
+        when (coin /= ptsCoin s) $ writeTVar pteState s { ptsCoin = coin }
+
+-- | The peers in the order by the standing they are served on.
+tierCensus :: MonadSTM m => PeerTxRegistry m peeraddr -> STM m TierCensus
+tierCensus registry = do
+    tiers <- readTVar (peerTiers registry)
+    censusOf . map tierStanding <$> mapM (readTVar . pteState) (Map.elems tiers)
+
 -- | Peer-facing coordination API.
 --
 -- The peer thread keeps its local protocol state in a local
@@ -310,9 +486,22 @@ retirePeerCounters retiredCountersVar registry registration peerCountersVar = do
 -- helper that needs peer-local state should take it explicitly as an
 -- argument.
 data PeerTxAPI m txid tx = PeerTxAPI {
+    -- | The seed of the peer's jitter generator, for its initial local state.
+    apiJitterSeed        :: Word64,
+
+    -- | Put the peer in the salted order and place the tiers: once, after
+    -- the server's initial delay and before its first decision.
+    joinTiers            :: m (),
+
     -- | Wait until either 'sharedGeneration' moves past the given
     -- value or the optional timeout expires.
     awaitSharedChange    :: Word64
+                         -> Maybe (RegisteredDelay m)
+                         -> STM m (),
+
+    -- | Wait until 'sharedClaimable' moves past the given value or the
+    -- optional timeout expires: the slow tier's park.
+    awaitClaimableChange :: Word64
                          -> Maybe (RegisteredDelay m)
                          -> STM m (),
 
@@ -374,6 +563,7 @@ withPeer
      ( MonadMask m
      , MonadTimer m
      , Ord peeraddr
+     , Hashable peeraddr
      , Show peeraddr
      , Ord txid
      , HasRawTxId txid
@@ -384,52 +574,65 @@ withPeer
   -> PeerTxRegistry m peeraddr
   -> TxSubmissionCountersVar m
   -> peeraddr
+  -> STM m Bool
+  -- ^ whether the peer is a local root now: fast by standing
   -> (PeerTxAPI m txid tx -> m a)
   -> m a
 withPeer policy TxSubmissionMempoolReader { mempoolGetSnapshot }
-         sharedStateVar registry retiredCountersVar peeraddr io =
+         sharedStateVar registry retiredCountersVar peeraddr localRoot io =
     bracket acquire release run
   where
     acquire = do
       peerInFlightVar <- newTVarIO emptyPeerTxInFlight
       peerCountersVar <- newTVarIO mempty
-      registration <- atomically
-                        (registerPeerCounters registry peeraddr peerCountersVar)
-      pure (registration, peerInFlightVar, peerCountersVar)
+      (registration, entry, seed) <- atomically $ do
+        registration <- registerPeerCounters registry peeraddr peerCountersVar
+        (entry, seed) <- registerPeerTier registry localRoot
+        pure (registration, entry, seed)
+      pure (registration, peerInFlightVar, peerCountersVar, entry, seed)
 
     -- On exit: reverse this peer's in-flight contributions to shared
     -- state, flush its accumulated counters into the retired
     -- accumulator (so the emitted aggregate stays monotonic across
-    -- disconnects), then drop it from the registry.  Flush and removal
-    -- commit in one transaction so 'snapshotCountersWith' counts this peer
-    -- exactly once: via its live cell before exit, via the retired
-    -- accumulator after.
-    release (registration, peerInFlightVar, peerCountersVar) = do
+    -- disconnects), then drop it from the registry and the order, so the
+    -- next peer in the order takes its fast slot at once.  The flush and
+    -- the retirement commit in one transaction so 'snapshotCountersWith'
+    -- counts this peer exactly once: via its live cell before exit, via
+    -- the retired accumulator after.  Leaving the order is a transaction
+    -- of its own: placing reads every peer's tier state and sorts the
+    -- candidates, which would make the scrub's transaction long and
+    -- retried by every decision.
+    release (registration, peerInFlightVar, peerCountersVar, _, _) = do
       now <- getMonotonicTime
       atomically $ do
         pif <- readTVar peerInFlightVar
         sharedState <- readTVar sharedStateVar
-        writeSharedStateIfChanged sharedStateVar (sharedRevision sharedState)
+        writeSharedStateIfChanged claimableVar sharedStateVar (sharedRevision sharedState)
                                   (scrubFromPeerInFlight peeraddr now pif sharedState)
         retirePeerCounters retiredCountersVar registry registration
                            peerCountersVar
+      atomically $ leaveTier policy registry registration
 
-    run (_, peerInFlightVar, peerCountersVar) = io PeerTxAPI {
-          awaitSharedChange = awaitSharedChangeImp sharedStateVar
-        , runNextPeerAction = runNextPeerActionImp policy sharedStateVar
-                                peerInFlightVar peerCountersVar peeraddr
-        , runNextPeerActionPipelined = runNextPeerActionPipelinedImp policy
+    run (registration, peerInFlightVar, peerCountersVar, entry, seed) = io PeerTxAPI {
+          apiJitterSeed = seed
+        , joinTiers = atomically (joinTier policy registry registration entry)
+        , awaitSharedChange = awaitSharedChangeImp sharedStateVar
+        , awaitClaimableChange = awaitClaimableChangeImp claimableVar
+        , runNextPeerAction = runNextPeerActionImp policy registry sharedStateVar
+                                peerInFlightVar peerCountersVar entry peeraddr
+        , runNextPeerActionPipelined = runNextPeerActionPipelinedImp policy registry
                                          sharedStateVar peerInFlightVar
-                                         peerCountersVar peeraddr
-        , applyReceivedTxIds = applyReceivedTxIdsImp policy mempoolGetSnapshot
+                                         peerCountersVar entry peeraddr
+        , applyReceivedTxIds = applyReceivedTxIdsImp policy mempoolGetSnapshot claimableVar
                                  sharedStateVar peerInFlightVar peerCountersVar
-        , applyReceivedTxs = applyReceivedTxsImp policy mempoolGetSnapshot
+        , applyReceivedTxs = applyReceivedTxsImp policy mempoolGetSnapshot claimableVar
                                sharedStateVar peerInFlightVar peerCountersVar peeraddr
-        , applySubmittedTxs = applySubmittedTxsImp policy sharedStateVar
+        , applySubmittedTxs = applySubmittedTxsImp policy claimableVar sharedStateVar
                                 peerInFlightVar peerCountersVar peeraddr
         , resolveTxRequest = resolveTxRequestImp sharedStateVar
         , resolveBufferedTxs = resolveBufferedTxsImp sharedStateVar
         }
+    claimableVar = registryClaimable registry
 
 -- | Reverse this peer's still-outstanding contributions to the shared
 -- 'TxEntry' counters.  Run by the bracket finalizer; uses the per-peer
@@ -458,7 +661,9 @@ scrubFromPeerInFlight peeraddr now pif st
           -- entry it leaves abandoned is the sweep's to drop.
           sharedGeneration = if tableWork then sharedGeneration st + 1
                                           else sharedGeneration st,
-          sharedRevision   = sharedRevision st + 1
+          sharedRevision   = sharedRevision st + 1,
+          sharedClaimable  = if tableWork then sharedClaimable st + 1
+                                          else sharedClaimable st
         }
   where
     -- Walk each unique key once and apply all the modifications in a
@@ -496,6 +701,19 @@ scrubFromPeerInFlight peeraddr now pif st
 
     clearSubmission entry = entry { txInSubmission = False }
 
+-- | Wait until a counter of the shared state moves past the given value or
+-- the optional timeout expires.
+awaitCounterChange :: MonadTimer m
+                   => (SharedTxState peeraddr txid -> Word64)
+                   -> SharedTxStateVar m peeraddr txid
+                   -> Word64
+                   -> Maybe (RegisteredDelay m)
+                   -> STM m ()
+awaitCounterChange counter sharedStateVar seen mRegisteredDelay = do
+  sharedState <- readTVar sharedStateVar
+  expired <- maybe (pure False) RegisteredDelay.read mRegisteredDelay
+  check (counter sharedState /= seen || expired)
+
 -- | Wait until either 'sharedGeneration' moves past the given value or the
 -- optional timeout expires.
 --
@@ -510,31 +728,50 @@ awaitSharedChangeImp :: MonadTimer m
                      -> Word64
                      -> Maybe (RegisteredDelay m)
                      -> STM m ()
-awaitSharedChangeImp sharedStateVar generation mRegisteredDelay =
-  case mRegisteredDelay of
-       Nothing -> do
-         sharedState <- readTVar sharedStateVar
-         check (sharedGeneration sharedState /= generation)
-       Just registeredDelay -> do
-         sharedState <- readTVar sharedStateVar
-         expired <- RegisteredDelay.read registeredDelay
-         check (sharedGeneration sharedState /= generation || expired)
+awaitSharedChangeImp = awaitCounterChange sharedGeneration
+
+-- | The slow tier's park: until the claimable counter's mirror
+-- ('registryClaimable') moves past the value seen or the delay expires.
+-- The mirror, not the state: a loaded relay writes the state many times a
+-- second, and the parked peers would re-check at every write.
+awaitClaimableChangeImp :: MonadTimer m
+                        => StrictTVar m Word64
+                        -> Word64
+                        -> Maybe (RegisteredDelay m)
+                        -> STM m ()
+awaitClaimableChangeImp claimableVar seen mRegisteredDelay = do
+  claimable <- readTVar claimableVar
+  expired <- maybe (pure False) RegisteredDelay.read mRegisteredDelay
+  check (claimable /= seen || expired)
 
 -- | Write the shared TVar when the pure state step moved the revision,
 -- with 'sharedRevision' one past the revision read whatever the step
 -- bumped it by: the revision counts committed writes, and one step may
 -- bump it twice (a stuck-entry bump and a submission in one transaction).
 -- Every bump of the wake counter comes with one of the revision, so the
--- revision alone says whether the step changed the state.
+-- revision alone says whether the step changed the state.  The claimable
+-- counter's mirror follows in the same transaction.
 writeSharedStateIfChanged :: MonadSTM m
-                          => SharedTxStateVar m peeraddr txid
+                          => StrictTVar m Word64    -- ^ the claimable counter's mirror
+                          -> SharedTxStateVar m peeraddr txid
                           -> Word64                 -- ^ pre-step 'sharedRevision'
                           -> SharedTxState peeraddr txid
                           -> STM m ()
-writeSharedStateIfChanged sharedStateVar sharedRevision0 sharedState'
+writeSharedStateIfChanged claimableVar sharedStateVar sharedRevision0 sharedState'
   | sharedRevision sharedState' == sharedRevision0 = pure ()
-  | otherwise =
+  | otherwise = do
       writeTVar sharedStateVar sharedState' { sharedRevision = sharedRevision0 + 1 }
+      mirrorClaimable claimableVar sharedState'
+
+-- | Bring the claimable counter's mirror up to the state's, written only
+-- when it moved, so that the parked peers wake for that alone.
+mirrorClaimable :: MonadSTM m
+                => StrictTVar m Word64
+                -> SharedTxState peeraddr txid
+                -> STM m ()
+mirrorClaimable claimableVar st = do
+  seen <- readTVar claimableVar
+  when (seen /= sharedClaimable st) $ writeTVar claimableVar (sharedClaimable st)
 
 -- | Avoid rewriting the per-peer TVar when nothing changed.
 writePeerInFlightIfChanged :: MonadSTM m
@@ -566,11 +803,13 @@ txIdRequestKind peerState =
 updateCountersForAction :: MonadSTM m
                         => TxSubmissionCountersVar m
                         -> TxIdRequestKind
+                        -> PeerTier
+                        -- ^ the tier the peer was served on
                         -> Maybe DiffTime
                         -- ^ duration of the episode that has just drained
                         -> PeerAction
                         -> STM m ()
-updateCountersForAction countersVar kind pipelineWait_m peerAction =
+updateCountersForAction countersVar kind tier pipelineWait_m peerAction =
   case peerAction of
     PeerRequestTxIds txIdsToAck txIdsToReq
       | txIdsToAck /= 0 || txIdsToReq /= 0 ->
@@ -579,6 +818,7 @@ updateCountersForAction countersVar kind pipelineWait_m peerAction =
             , txIdsRequested        = txIdsRequested c + fromIntegral txIdsToReq
             , txIdBlockingReqsSent  = txIdBlockingReqsSent c + blockingSent
             , txIdPipelinedReqsSent = txIdPipelinedReqsSent c + pipelinedSent
+            , txIdSlowReqsSent      = txIdSlowReqsSent c + slowSent
             , txPipelineWait        = txPipelineWait c + pipelineWait
             }
     PeerRequestTxs txKeys ->
@@ -596,56 +836,101 @@ updateCountersForAction countersVar kind pipelineWait_m peerAction =
       case kind of
         BlockingTxIdRequest  -> (1, 0)
         PipelinedTxIdRequest -> (0, 1)
+    slowSent = case tier of
+      SlowTier -> 1
+      FastTier -> 0
 
 -- | Compute the next action for this peer in non-pipelined mode.
 runNextPeerActionImp :: ( MonadSTM m
-                        , Ord peeraddr )
+                        , Ord peeraddr
+                        , Hashable peeraddr )
                      => TxDecisionPolicy
+                     -> PeerTxRegistry m peeraddr
                      -> SharedTxStateVar m peeraddr txid
                      -> PeerTxInFlightVar m
                      -> TxSubmissionCountersVar m
+                     -> PeerTierEntry m
                      -> peeraddr
                      -> Time
                      -> Maybe DiffTime
                      -> PeerTxLocalState tx
                      -> m (PeerAction, PeerTxLocalState tx)
-runNextPeerActionImp policy sharedStateVar peerInFlightVar countersVar peeraddr
-                     now downloadTime_m peerState = atomically $ do
-  sharedState <- readTVar sharedStateVar
-  peerInFlight <- readTVar peerInFlightVar
-  let sharedRevision0 = sharedRevision sharedState
-      (peerAction, peerState', peerInFlight', sharedState') =
-        State.nextPeerAction now policy peeraddr peerState peerInFlight sharedState
-  writeSharedStateIfChanged sharedStateVar sharedRevision0 sharedState'
-  writePeerInFlightIfChanged peerInFlightVar peerInFlight peerInFlight'
-  updateCountersForAction countersVar (txIdRequestKind peerState') downloadTime_m
-                          peerAction
-  return (peerAction, peerState')
+runNextPeerActionImp policy registry sharedStateVar peerInFlightVar countersVar entry
+                     peeraddr now downloadTime_m peerState = do
+  -- the tier is read in a transaction of its own: the governor rewrites
+  -- its public state every iteration, and reading it inside the decision
+  -- transaction would retry every in-flight decision on each tick
+  peerState0 <- atomically $ withTier policy now registry entry peerState
+  atomically $ do
+    sharedState <- readTVar sharedStateVar
+    peerInFlight <- readTVar peerInFlightVar
+    let sharedRevision0 = sharedRevision sharedState
+        (peerAction, peerState', peerInFlight', sharedState') =
+          State.nextPeerAction now policy peeraddr peerState0 peerInFlight sharedState
+    writeSharedStateIfChanged (registryClaimable registry) sharedStateVar
+                              sharedRevision0 sharedState'
+    writePeerInFlightIfChanged peerInFlightVar peerInFlight peerInFlight'
+    updateCountersForAction countersVar (txIdRequestKind peerState')
+                            (effectiveTier policy now peerState0) downloadTime_m
+                            peerAction
+    return (peerAction, peerState')
+
+-- | The peer's tier, read into its local state before a decision, in a
+-- transaction of its own: a local root is fast whatever the coin said.
+-- Whether the peer is a root and whether it is a source go to its tier
+-- state when they changed, for the placements and the census.  A peer
+-- that stopped being a root, or became one, is in or out of the order's
+-- candidates from now: the tiers are placed at once, so an ex-root takes
+-- a free fast slot now rather than at the next rotation.
+withTier :: (MonadSTM m, Ord peeraddr, Hashable peeraddr)
+         => TxDecisionPolicy
+         -> Time
+         -> PeerTxRegistry m peeraddr
+         -> PeerTierEntry m
+         -> PeerTxLocalState tx
+         -> STM m (PeerTxLocalState tx)
+withTier policy now registry PeerTierEntry { pteState, pteLocalRoot } peerState = do
+  root <- pteLocalRoot
+  s <- readTVar pteState
+  let s' = s { ptsRoot   = root
+             , ptsSource = isSource policy now (peerNovelAt peerState) }
+  when (s' /= s) $ writeTVar pteState s'
+  coin <- if ptsRoot s' /= ptsRoot s
+            then placeTiers policy registry >> (ptsCoin <$> readTVar pteState)
+            else pure (ptsCoin s')
+  let tier = if root then FastTier else coin
+  pure $ if peerTier peerState == tier then peerState else peerState { peerTier = tier }
 
 -- | Compute the next action for this peer in pipelined mode.
 runNextPeerActionPipelinedImp :: ( MonadSTM m
-                                  , Ord peeraddr )
+                                  , Ord peeraddr
+                                  , Hashable peeraddr )
                               => TxDecisionPolicy
+                              -> PeerTxRegistry m peeraddr
                               -> SharedTxStateVar m peeraddr txid
                               -> PeerTxInFlightVar m
                               -> TxSubmissionCountersVar m
+                              -> PeerTierEntry m
                               -> peeraddr
                               -> Time
                               -> PeerTxLocalState tx
                               -> m (PeerAction, PeerTxLocalState tx)
-runNextPeerActionPipelinedImp policy sharedStateVar peerInFlightVar countersVar
-                              peeraddr now peerState =
+runNextPeerActionPipelinedImp policy registry sharedStateVar peerInFlightVar countersVar
+                              entry peeraddr now peerState = do
+    peerState0 <- atomically $ withTier policy now registry entry peerState
     atomically $ do
       sharedState <- readTVar sharedStateVar
       peerInFlight <- readTVar peerInFlightVar
       let sharedRevision0 = sharedRevision sharedState
           (peerAction, peerState', peerInFlight', sharedState') =
-            State.nextPeerActionPipelined now policy peeraddr peerState
+            State.nextPeerActionPipelined now policy peeraddr peerState0
                                           peerInFlight sharedState
-      writeSharedStateIfChanged sharedStateVar sharedRevision0 sharedState'
+      writeSharedStateIfChanged (registryClaimable registry) sharedStateVar
+                                sharedRevision0 sharedState'
       writePeerInFlightIfChanged peerInFlightVar peerInFlight peerInFlight'
       -- The pipeline cannot have drained at depth above zero.
-      updateCountersForAction countersVar PipelinedTxIdRequest Nothing peerAction
+      updateCountersForAction countersVar PipelinedTxIdRequest
+                              (effectiveTier policy now peerState0) Nothing peerAction
       return (peerAction, peerState')
 
 -- | Process a batch of txids received from this peer.
@@ -653,6 +938,8 @@ applyReceivedTxIdsImp :: ( MonadSTM m
                          , HasRawTxId txid )
                       => TxDecisionPolicy
                       -> STM m (MempoolSnapshot txid tx idx)
+                      -> StrictTVar m Word64
+                      -- ^ the claimable counter's mirror
                       -> SharedTxStateVar m peeraddr txid
                       -> PeerTxInFlightVar m
                       -> TxSubmissionCountersVar m
@@ -665,7 +952,7 @@ applyReceivedTxIdsImp :: ( MonadSTM m
                       -- ^ actually received txid's with sizes
                       -> PeerTxLocalState tx
                       -> m (PeerTxLocalState tx)
-applyReceivedTxIdsImp policy mempoolGetSnapshot sharedStateVar peerInFlightVar
+applyReceivedTxIdsImp policy mempoolGetSnapshot claimableVar sharedStateVar peerInFlightVar
                       countersVar now blockingWait_m txIdsToReq txidsAndSizes
                       peerState = do
   -- Snapshot the mempool outside the per-peer STM transaction so mempool
@@ -681,11 +968,17 @@ applyReceivedTxIdsImp policy mempoolGetSnapshot sharedStateVar peerInFlightVar
         (peerState', peerInFlight', sharedState') =
           State.handleReceivedTxIds mempoolHasTx now policy txIdsToReq txidsAndSizes
                                     peerState peerInFlight sharedState
-    writeSharedStateIfChanged sharedStateVar sharedRevision0 sharedState'
+    writeSharedStateIfChanged claimableVar sharedStateVar sharedRevision0 sharedState'
     writePeerInFlightIfChanged peerInFlightVar peerInFlight peerInFlight'
+    let received = fromIntegral (length txidsAndSizes)
+        -- the reply answers the oldest outstanding request, on the tier
+        -- recorded when it went out
+        replyTier = fst (takeReplyTier peerState)
     modifyTVar countersVar $ \c -> c
       { txIdRepliesReceived = txIdRepliesReceived c + 1
-      , txIdsReceived       = txIdsReceived c + fromIntegral (length txidsAndSizes)
+      , txIdsReceived       = txIdsReceived c + received
+      , txIdsReceivedSlow   = txIdsReceivedSlow c
+                            + (if replyTier == SlowTier then received else 0)
       , txIdBlockingWait    = txIdBlockingWait c + fromMaybe 0 blockingWait_m
       }
     return peerState'
@@ -697,6 +990,8 @@ applyReceivedTxsImp :: ( MonadSTM m
                        , HasRawTxId txid )
                     => TxDecisionPolicy
                     -> STM m (MempoolSnapshot txid tx idx)
+                    -> StrictTVar m Word64
+                    -- ^ the claimable counter's mirror
                     -> SharedTxStateVar m peeraddr txid
                     -> PeerTxInFlightVar m
                     -> TxSubmissionCountersVar m
@@ -705,7 +1000,7 @@ applyReceivedTxsImp :: ( MonadSTM m
                     -> [(txid, tx)]
                     -> PeerTxLocalState tx
                     -> m (Int, PeerTxLocalState tx)
-applyReceivedTxsImp policy mempoolGetSnapshot sharedStateVar peerInFlightVar
+applyReceivedTxsImp policy mempoolGetSnapshot claimableVar sharedStateVar peerInFlightVar
                     countersVar peeraddr now txs peerState = do
   -- Mempool snapshot taken in its own STM tx; see 'applyReceivedTxIdsImp'.
   MempoolSnapshot { mempoolHasTx } <- atomically mempoolGetSnapshot
@@ -716,7 +1011,7 @@ applyReceivedTxsImp policy mempoolGetSnapshot sharedStateVar peerInFlightVar
         (omittedCount, lateCount, peerState', peerInFlight', sharedState') =
           State.handleReceivedTxs mempoolHasTx now policy peeraddr txs
                                   peerState peerInFlight sharedState
-    writeSharedStateIfChanged sharedStateVar sharedRevision0 sharedState'
+    writeSharedStateIfChanged claimableVar sharedStateVar sharedRevision0 sharedState'
     writePeerInFlightIfChanged peerInFlightVar peerInFlight peerInFlight'
     modifyTVar countersVar $ \c -> c
       { txRepliesReceived = txRepliesReceived c + 1
@@ -731,6 +1026,8 @@ applySubmittedTxsImp :: ( MonadSTM m
                        , Eq peeraddr
                        , HasRawTxId txid )
                      => TxDecisionPolicy
+                     -> StrictTVar m Word64
+                     -- ^ the claimable counter's mirror
                      -> SharedTxStateVar m peeraddr txid
                      -> PeerTxInFlightVar m
                      -> TxSubmissionCountersVar m
@@ -743,7 +1040,7 @@ applySubmittedTxsImp :: ( MonadSTM m
                      -> [TxKey]
                      -> PeerTxLocalState tx
                      -> m (PeerTxLocalState tx)
-applySubmittedTxsImp policy sharedStateVar peerInFlightVar countersVar peeraddr
+applySubmittedTxsImp policy claimableVar sharedStateVar peerInFlightVar countersVar peeraddr
                      now submissionWait acceptedTxs rejectedTxs peerState =
   atomically $ do
     sharedState <- readTVar sharedStateVar
@@ -752,7 +1049,7 @@ applySubmittedTxsImp policy sharedStateVar peerInFlightVar countersVar peeraddr
         (peerState', peerInFlight', sharedState') =
           State.handleSubmittedTxs now policy peeraddr acceptedTxs
                                    rejectedTxs peerState peerInFlight sharedState
-    writeSharedStateIfChanged sharedStateVar sharedRevision0 sharedState'
+    writeSharedStateIfChanged claimableVar sharedStateVar sharedRevision0 sharedState'
     writePeerInFlightIfChanged peerInFlightVar peerInFlight peerInFlight'
     modifyTVar countersVar $ \c -> c
       { txsAccepted      = txsAccepted c + fromIntegral (length acceptedTxs)
