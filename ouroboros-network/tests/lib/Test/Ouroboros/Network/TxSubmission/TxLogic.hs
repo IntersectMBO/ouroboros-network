@@ -142,8 +142,6 @@ tests =
                          prop_txSubmission2Messages_fitByteLimits
           ]
     , testProperty "nextPeerAction processes all multi-peer triggers" prop_nextPeerAction_processesAllTriggers
-    , testCaseSteps "peerScore decays linearly over time at scoreRate" unit_peerScore_decaysOverTime
-    , testCaseSteps "applyPeerEvents drains the existing score before adding the new rejection count" unit_applyPeerEvents_drainsThenAdds
     , testProperty "handleReceivedTxIds classifies incoming txids" prop_handleReceivedTxIds
     , testCaseSteps "handleReceivedTxIds tracks the advertise without mutating an existing entry" unit_handleReceivedTxIds_advertisesExistingEntry
     , testProperty "handleReceivedTxIds writes nothing shared for a peer advertising an existing entry, however often, unless it is under review" prop_handleReceivedTxIds_repeatCountsOnce
@@ -235,7 +233,59 @@ tests =
         , testProperty "a leaving peer's scrub moves the claimable counter iff it held work" prop_claimable_scrub
         , testProperty "the slow park wakes on the claimable counter or the delay, not on the generation" prop_claimable_park
         ]
+    , testGroup "Score"
+        [ testProperty "a batch's accepts forgive the score they find, never the batch's own rejections" prop_score_batch
+        ]
     ]
+
+-- | A batch of events moves the score as specified: drained by the time
+-- since its stamp at 'scoreRate', less 'scoreAcceptDecrement' per accept
+-- and no further than zero, plus one per rejection, capped at
+-- 'scoreMax', and stamped with the batch's time; so a batch's accepts
+-- forgive the score they find and never the batch's own rejections,
+-- which stand whole up to the cap.  A batch with no rejection on a score
+-- of zero leaves the state as it was.  The score is compared to a
+-- nanoth, so the order of production's operations is its own.
+prop_score_batch :: ArbTxDecisionPolicy -> NonNegative Int -> NonNegative Int -> NonNegative Int -> NonNegative Int -> Property
+prop_score_batch (ArbTxDecisionPolicy policy) (NonNegative prior0) (NonNegative elapsed0) (NonNegative accepted0) (NonNegative rejected0) =
+    checkCoverage $
+    cover 20 (prior > 0 && accepted > 0 && rejected > 0) "a mixed batch on a prior score" $
+    cover 5 (prior > 0 && drained == 0) "the prior score drained away" $
+    cover 10 (rejected > 0 && drained < accDec) "more forgiven than found" $
+    cover 1 (rejected > 0 && expected == scoreMax policy) "the cap reached" $
+    cover 5 (prior == 0 && rejected == 0) "nothing to move" $
+    counterexample (show (prior, at, accepted, rejected, drained, expected)) $
+         counterexample "the score, to rounding" (abs (value - expected) < 1e-9)
+    .&&. counterexample "the state carries the score and the batch's time"
+           (if prior == 0 && rejected == 0
+              then ps' === ps0
+              else peerScore ps' === PeerScore { peerScoreValue = value, peerScoreTs = at })
+    .&&. counterexample "a batch's rejections stand whole up to the cap"
+           (rejected == 0 || value >= min (scoreMax policy) (fromIntegral rejected))
+  where
+    -- the prior score: the cap, zero, or a share of the cap; the batch's
+    -- time, from its stamp: none or a share of an hour and more, enough to
+    -- drain any score at the slowest rate; the counts, often zero
+    share k  = fromIntegral (k `mod` 101) / 100 :: Double
+    prior | prior0 `mod` 4 == 0 = scoreMax policy
+          | prior0 `mod` 4 == 1 = 0
+          | otherwise           = share prior0 * scoreMax policy
+    at | elapsed0 `mod` 4 == 0 = Time 0
+       | otherwise             = Time (realToFrac (share elapsed0 * 4000))
+    accepted | accepted0 `mod` 3 == 0 = 0
+             | otherwise              = accepted0 `mod` 30
+    rejected | rejected0 `mod` 3 == 0 = 0
+             | otherwise              = rejected0 `mod` 30
+    ps0 = emptyPeerTxLocalState { peerScore = PeerScore { peerScoreValue = prior, peerScoreTs = Time 0 } }
+            :: PeerTxLocalState (Tx TxId)
+    (value, ps') = applyPeerEvents policy at accepted rejected ps0
+    -- the specification: the prior drained to the batch's time, the accepts off what
+    -- is left, the rejections on top, within the bounds
+    drained | prior == 0    = 0
+            | at <= Time 0  = prior
+            | otherwise     = max 0 (prior - realToFrac (at `diffTime` Time 0) * scoreRate policy)
+    accDec   = fromIntegral accepted * scoreAcceptDecrement policy
+    expected = min (scoreMax policy) (max 0 (drained - accDec) + fromIntegral rejected)
 
 -- | The 'ArbTxDecisionPolicy' generator only produces policies that pass
 -- 'saneTxDecisionPolicy'.
@@ -1275,40 +1325,6 @@ instance Arbitrary ArbSharedTxState where
   shrink (ArbSharedTxState sharedState)
     | sharedState == emptySharedTxState = []
     | otherwise = ArbSharedTxState <$> shrinkSharedTxState sharedState
-
---
--- Peer score tests
---
-
--- | 'currentPeerScore' decays the score linearly at 'scoreRate' per second.
-unit_peerScore_decaysOverTime :: (String -> IO ()) -> Assertion
-unit_peerScore_decaysOverTime step = do
-    step "After 50 seconds at scoreRate 0.1 a score of 10 should drain to 5"
-    currentPeerScore policy (Time 50) score0 @?= 5
-    step "After 200 seconds the score should be fully decayed (clamped to 0)"
-    currentPeerScore policy (Time 200) score0 @?= 0
-    step "Reading at the same instant as the last update returns the unchanged value"
-    currentPeerScore policy (Time 0) score0 @?= peerScoreValue score0
-  where
-    -- Pin scoreRate to a value that makes the test arithmetic obvious;
-    -- the production default may be tuned without affecting this
-    -- formula-level invariant.
-    policy = (unsafeMkTxDecisionPolicy defaultTxSubmissionConfigV2) { scoreRate = 0.1 }
-    score0 = PeerScore { peerScoreValue = 10, peerScoreTs = Time 0 }
-
--- | A new rejection drains the existing score at 'scoreRate' per second
--- since its last update before adding the rejection count.
-unit_applyPeerEvents_drainsThenAdds :: (String -> IO ()) -> Assertion
-unit_applyPeerEvents_drainsThenAdds step = do
-    step "Starting score 10 at Time 0; one rejection 50s later: 10 - (50 * 0.1) + 1 = 6"
-    fst (applyPeerEvents policy (Time 50) 0 1 peerState0) @?= 6
-  where
-    -- See 'unit_peerScore_decaysOverTime' for why the test pins
-    -- scoreRate explicitly.
-    policy     = (unsafeMkTxDecisionPolicy defaultTxSubmissionConfigV2) { scoreRate = 0.1 }
-    peerState0 = emptyPeerTxLocalState
-                   { peerScore = PeerScore { peerScoreValue = 10
-                                           , peerScoreTs    = Time 0 } }
 
 --
 -- handleReceivedTxIds
