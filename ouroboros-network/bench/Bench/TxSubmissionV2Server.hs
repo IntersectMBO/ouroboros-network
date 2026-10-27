@@ -11,6 +11,7 @@ module Bench.TxSubmissionV2Server
   , DirectServerResult
   , mkDirectServerFixture
   , mkMultiPeerFixture
+  , batchesLabel
   , runDirectServerBenchmark
   ) where
 
@@ -37,10 +38,19 @@ import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (newPeerTxRegistry,
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types (TxSubmissionCounters,
            emittedCounters, emptySharedTxState)
 
+import System.Random (mkStdGen)
 import Test.Ouroboros.Network.TxSubmission.Types (Tx (..), TxId, emptyMempool,
            getMempoolReader, getMempoolWriter, readMempool,
            unsafeMkTxDecisionPolicy)
 
+
+-- | A benchmark name's part for a number of txid reply batches, with the
+-- txids each carries, the config's request cap: a cap change renames the
+-- benchmark rather than changing its work under the old name.
+batchesLabel :: Int -> String
+batchesLabel batches =
+    show batches ++ "batches/"
+    ++ show (getNumTxIdsToReq (maxNumTxIdsToRequest defaultTxSubmissionConfigV2)) ++ "txids"
 
 data DirectServerFixture = DirectServerFixture
   { dsPeerCount        :: !Int
@@ -76,7 +86,7 @@ mkDirectServerFixture batches =
     { dsPeerCount        = 1
     , dsTxIdReplyBatches = batches
     , dsTxSize           = SizeInBytes 1024
-    , dsPolicy           = policy
+    , dsPolicy           = policy { txFastPeers = 1 }
     , dsConfig           = config
     }
 
@@ -94,6 +104,9 @@ mkDirectServerFixture batches =
 -- txid request needs a non-zero ack and a non-zero request count), so
 -- the txid path contributes no wire-level churn of its own.  Body
 -- requests still use the protocol's pipelined wire form.
+--
+-- Every peer is on the fast tier: the slow tier's gate is a real-time
+-- wait between txid requests, not what this measures.
 mkMultiPeerFixture
   :: Int -- ^ peer count
   -> Int -- ^ batches per peer
@@ -106,7 +119,7 @@ mkMultiPeerFixture peers batches =
     { dsPeerCount        = peers
     , dsTxIdReplyBatches = batches
     , dsTxSize           = SizeInBytes 1024
-    , dsPolicy           = policy
+    , dsPolicy           = policy { txFastPeers = peers }
     , dsConfig           = config
     }
 
@@ -123,7 +136,7 @@ runDirectServerBenchmark DirectServerFixture {
   inboundMempool <- emptyMempool
   duplicateTxIdsVar <- Lazy.newTVarIO []
   sharedStateVar <- newSharedTxStateVar emptySharedTxState
-  inFlightRegistry <- newPeerTxRegistry
+  inFlightRegistry <- newPeerTxRegistry (mkStdGen 7) (pure (const False))
   countersVar <- newTxSubmissionCountersVar mempty
 
   let writer = getMempoolWriter duplicateTxIdsVar inboundMempool
@@ -146,7 +159,8 @@ runDirectServerBenchmark DirectServerFixture {
                     writer
                     getTxSize
                     api
-                stream = [1 .. dsTxIdReplyBatches * 6]
+                -- one reply batch per request at the config's cap
+                stream = [1 .. dsTxIdReplyBatches * fromIntegral (getNumTxIdsToReq (maxNumTxIdsToRequest dsConfig))]
             case server of
               TxSubmissionServerPipelined initServer -> do
                 st0 <- initServer

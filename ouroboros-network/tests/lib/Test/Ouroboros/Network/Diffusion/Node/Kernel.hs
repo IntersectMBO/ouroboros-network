@@ -50,6 +50,7 @@ import Data.IP qualified as IP
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Monoid.Synchronisation
+import Data.Set qualified as Set
 import Data.Void (Void)
 import GHC.Generics (Generic)
 import Numeric.Natural (Natural)
@@ -73,7 +74,7 @@ import Ouroboros.Network.Mock.ProducerState
 import Simulation.Network.Snocket (AddressType (..), GlobalAddressScheme (..))
 
 import Ouroboros.Network.PeerSelection (PeerSharing, RelayAccessPoint (..))
-import Ouroboros.Network.PeerSelection.Governor (PublicPeerSelectionState,
+import Ouroboros.Network.PeerSelection.Governor (PublicPeerSelectionState (..),
            makePublicPeerSelectionStateVar)
 import Ouroboros.Network.PeerSharing (PeerSharingAPI, PeerSharingRegistry (..),
            newPeerSharingAPI, newPeerSharingRegistry,
@@ -332,7 +333,7 @@ newNodeKernel :: ( MonadTraceSTM m
               -> Int
               -> [Tx txid]
               -> m (NodeKernel header block rng txid m)
-newNodeKernel psRng _txSeed txs = do
+newNodeKernel psRng txSeed txs = do
     publicStateVar <- makePublicPeerSelectionStateVar
     labelTVarIO publicStateVar "public-peer-selection-state-var"
     traceTVarIO publicStateVar (\_ a -> return $ TraceString (show a))
@@ -350,7 +351,8 @@ newNodeKernel psRng _txSeed txs = do
       <*> newMempool txs
       <*> newTxSubmissionCountersVar mempty
       <*> newSharedTxStateVar emptySharedTxState
-      <*> newPeerTxRegistry
+      <*> newPeerTxRegistry (Random.mkStdGen txSeed)
+                            (flip Set.member . localRootAddrs <$> readTVar publicStateVar)
 
 -- | Register a new upstream chain-sync client.
 --

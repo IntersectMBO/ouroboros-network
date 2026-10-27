@@ -21,6 +21,7 @@ module Ouroboros.Network.OrphanInstances
   , demotionScoresToJSON
   , sharedTxStateCounterPairs
   , sharedTxStateTablePairs
+  , tierCensusPairs
   , JSONField (..)
   ) where
 
@@ -96,9 +97,10 @@ import Ouroboros.Network.Server.RateLimiting (AcceptConnectionsPolicyTrace (..),
            AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket (LocalAddress (..), RemoteAddress)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types (ProcessedTxCount (..),
-           SharedTxState (..), SharedTxStateCounts, TraceTxLogic (..),
-           TraceTxSubmissionInbound (..), TxSubmissionLogicVersion (..),
-           retainTimeSeconds, retainedToList, sharedTxStateCountFields)
+           SharedTxState (..), SharedTxStateCounts, TierCensus,
+           TraceTxLogic (..), TraceTxSubmissionInbound (..),
+           TxSubmissionLogicVersion (..), retainTimeSeconds, retainedToList,
+           sharedTxStateCountFields, tierCensusFields)
 import Ouroboros.Network.TxSubmission.Outbound (TraceTxSubmissionOutbound (..))
 
 -- Helper function for ToJSON instances with a "kind" field
@@ -1865,9 +1867,10 @@ instance ( ToJSON txid
 -- | The shared state's counters and counts as JSON pairs: what every
 -- rendering of a 'TraceSharedTxState' carries.
 sharedTxStateCounterPairs :: SharedTxState addr txid -> SharedTxStateCounts -> [Pair]
-sharedTxStateCounterPairs SharedTxState { sharedGeneration, sharedRevision } counts =
+sharedTxStateCounterPairs SharedTxState { sharedGeneration, sharedRevision, sharedClaimable } counts =
     [ "sharedGeneration" .= sharedGeneration
     , "sharedRevision" .= sharedRevision
+    , "sharedClaimable" .= sharedClaimable
     ]
     ++
     [ Key.fromString name .= n
@@ -1897,6 +1900,11 @@ sharedTxStateTablePairs SharedTxState {
     renderTxId txKey =
       maybe "<missing-txid>" show (IntMap.lookup txKey sharedKeyToTxId)
 
+-- | The tier census as JSON pairs, by the fields' names.
+tierCensusPairs :: TierCensus -> [Pair]
+tierCensusPairs census =
+    [ Key.fromString name .= n | (name, n) <- tierCensusFields census ]
+
 -- TODO: in cardano-node in the `coot/tx-submission-10.5` branch there's
 -- a better instance.
 instance ( Show addr
@@ -1910,6 +1918,8 @@ instance ( Show addr
            , "sharedTxState" .= object (sharedTxStateCounterPairs st counts
                                         ++ sharedTxStateTablePairs st)
            ]
+  toJSON (TraceTxTiers census) =
+    object $ ("kind" .= String "TxTiers") : tierCensusPairs census
 
 
 -- TODO: we need verbosity levels, this instance should be removed once
