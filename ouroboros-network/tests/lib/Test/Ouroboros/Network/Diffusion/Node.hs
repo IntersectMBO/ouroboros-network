@@ -111,7 +111,8 @@ import Ouroboros.Network.Snocket (MakeBearer, Snocket, TestAddress (..),
            invalidFileDescriptor)
 import Ouroboros.Network.Util (PrettyShow (..))
 
-import Ouroboros.Network.TxSubmission.Inbound.V2.Policy (TxDecisionPolicy)
+import Ouroboros.Network.TxSubmission.Inbound.V2.Policy (TxDecisionPolicy,
+           TxSubmissionConfig)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (txCountersThreadV2)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types (TraceTxLogic)
 
@@ -172,6 +173,7 @@ data Arguments extraChurnArgs extraFlags m = Arguments
     , aDebugTracer          :: Tracer m String
     , aExtraChurnArgs       :: extraChurnArgs
     , aTxDecisionPolicy     :: TxDecisionPolicy
+    , aTxSubmissionConfig   :: TxSubmissionConfig
     , aTxs                  :: [Tx Int]
     , aMuxCountersInterval  :: DiffTime
       -- ^ how often diffusion traces the node-to-node muxes' counters; zero,
@@ -347,6 +349,7 @@ run blockGeneratorArgs ni na
                withAsync (blockFetch nodeKernel) $ \blockFetchLogicThread ->
                  withAsync (txCountersThreadV2
                               (aTxDecisionPolicy na)
+                              (aTxSubmissionConfig na)
                               nullTracer
                               tracerTxLogic
                               (nkTxCountersVar nodeKernel)

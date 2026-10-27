@@ -45,16 +45,16 @@ main =
                 bench ("scenario/fanout-retained/100peers/3txids/" ++ benchLoopsLabel) $
                   nfAppIO (TX.runFanoutLoop benchLoops) fixture
           , env (pure (DirectV2.mkDirectServerFixture 1_000)) $ \fixture ->
-                bench "server/direct-interpreter/single-peer/1000batches" $
+                bench ("server/direct-interpreter/single-peer/" ++ DirectV2.batchesLabel 1_000) $
                   nfAppIO DirectV2.runDirectServerBenchmark fixture
           , env (pure (DirectV2.mkMultiPeerFixture 10 1_000)) $ \fixture ->
-                bench "server/direct-interpreter/multi-peer/10peers/1000batches" $
+                bench ("server/direct-interpreter/multi-peer/10peers/" ++ DirectV2.batchesLabel 1_000) $
                   nfAppIO DirectV2.runDirectServerBenchmark fixture
           , env (pure (DirectV2.mkMultiPeerFixture 100 100)) $ \fixture ->
-                bench "server/direct-interpreter/multi-peer/100peers/100batches" $
+                bench ("server/direct-interpreter/multi-peer/100peers/" ++ DirectV2.batchesLabel 100) $
                   nfAppIO DirectV2.runDirectServerBenchmark fixture
           , env (pure (DirectV2.mkMultiPeerFixture 100 1_000)) $ \fixture ->
-                bench "server/direct-interpreter/multi-peer/100peers/1000batches" $
+                bench ("server/direct-interpreter/multi-peer/100peers/" ++ DirectV2.batchesLabel 1_000) $
                   nfAppIO DirectV2.runDirectServerBenchmark fixture
           , Sweep.benchmarks
           ]
