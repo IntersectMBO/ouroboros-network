@@ -135,6 +135,7 @@ tests = testGroup "AppV2"
   , testCase     "score/wellBehavedStaysAtZero" unit_score_wellBehavedStaysAtZero
   , testCase     "score/persistentBadStaysHigh" unit_score_persistentBadStaysHigh
   , testCase     "score/recoversAfterBurst"     unit_score_recoversAfterBurst
+  , testCase     "score/mixedBatchPenalised"    unit_score_mixedBatchPenalised
   ]
 
 data TestVersion = TestVersion
@@ -1623,11 +1624,13 @@ unit_score_persistentBadStaysHigh = do
     assertBool (ctx ++ "\npeer1 has no accepts to offset the rejections, score must stay above zero")
                (finalPeer1 > 0)
 
--- | A peer that delivers a burst of invalid bodies and then valid
--- bodies recovers via decrement-on-accept: the score climbs during
--- the invalid phase, then drops back to zero as the accepts cancel
--- the rejection accumulation (with default 'scoreAcceptDecrement' of
--- 1 and equal-or-greater valid count).
+-- | A peer that delivers a burst of invalid bodies and then valid bodies
+-- recovers via decrement-on-accept: the score climbs during the invalid
+-- phase, then drops back to zero as the accepts forgive the rejections
+-- (with the default 'scoreAcceptDecrement' of 3, four accepts forgive a
+-- burst of ten).  The accepts forgive earlier batches' rejections only,
+-- never their own batch's, so the burst fills one request at the default
+-- cap and the valid bodies come in the next.
 unit_score_recoversAfterBurst :: Assertion
 unit_score_recoversAfterBurst = do
     let invalids = 10
@@ -1653,6 +1656,27 @@ unit_score_recoversAfterBurst = do
     assertEqual (ctx ++ "\npeer1 must end at zero once valid accepts have drained the rejections")
                 0
                 finalPeer1
+
+-- | A batch mixing invalid bodies with valid ones is penalised for the
+-- invalid ones: the accepts forgive earlier rejections, never their own
+-- batch's, so seven invalid beside three valid in one window's worth
+-- leave a score of seven rather than netting to nothing.
+unit_score_mixedBatchPenalised :: Assertion
+unit_score_mixedBatchPenalised = do
+    let st = TxSubmissionState
+              { peerMap        = Map.singleton 1
+                                   ( [ mkTx i (i `mod` 3 == 0) | i <- [0..9] ]
+                                   , Nothing, Nothing )
+              , peerImpairment = Map.empty
+              , decisionPolicy = defaultTxDecisionPolicy
+              }
+        tr          = runSimTrace (void $ txSubmissionSimulation st)
+        finalScores = peerFinalScore tr
+        finalPeer1  = Map.findWithDefault 0 1 finalScores
+        ctx :: String
+        ctx = "final score: " ++ show finalScores
+    assertBool (ctx ++ "\nseven invalid bodies in one batch with three valid ones must leave a score")
+               (finalPeer1 >= 6)
 
 -- | A well-behaved peer that is the sole advertiser of every tx it
 -- carries never sees a late or rejected event, so its score stays at
