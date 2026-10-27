@@ -10,22 +10,33 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Policy
   , TxSubmissionConfig (..)
   , defaultTxSubmissionConfigV2
   , max_TX_SIZE
+  , max_TXID_SIZE
     -- * Re-exports
   , NumTxIdsToReq (..)
   ) where
 
 import Control.DeepSeq
-import Control.Exception (Exception, assert)
+import Control.Exception (Exception)
 import Control.Monad (unless)
 import Control.Monad.Class.MonadTime.SI
 import Ouroboros.Network.Protocol.Limits (sizeLimitForState)
 import Ouroboros.Network.Protocol.TxSubmission2.Codec (byteLimitsTxSubmission2)
 import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToAck (..),
-           NumTxIdsToReq (..), SingTxSubmission (SingTxs))
+           NumTxIdsToReq (..), SingTxSubmission (SingIdle, SingTxs))
 import Ouroboros.Network.SizeInBytes (SizeInBytes (..))
+import Ouroboros.Network.TxSubmission.Inbound.V2.Types
+           (const_MAX_TX_SIZE_DISCREPANCY)
 
 
 -- | Maximal tx size.
+--
+-- It bounds the advertised tx size on every node-to-node version: the V2
+-- inbound disconnects from a peer which advertises a larger tx
+-- (`ProtocolErrorTxSizeTooLarge`).  The bound is far above the ledger's
+-- maximal tx size, and every version was already limited by it through the
+-- ingress queue of the mini-protocol (see below).  Increasing it requires
+-- a new node-to-node version, since nodes running older versions disconnect
+-- from peers which advertise larger txs.
 --
 -- Affects:
 --
@@ -35,6 +46,17 @@ import Ouroboros.Network.SizeInBytes (SizeInBytes (..))
 --
 max_TX_SIZE :: SizeInBytes
 max_TX_SIZE = 65_540
+
+
+-- | Upper bound on the size of an encoded txid, the same as used by
+-- `Cardano.Network.NodeToNode.txSubmissionProtocolLimits`.
+--
+-- It bounds `maxNumUnacknowledgedTxIds`: a `MsgRequestTxs` can carry up to
+-- `maxNumUnacknowledgedTxIds` txids and must fit within the `StIdle` size
+-- limit, see `saneTxDecisionPolicy`.
+--
+max_TXID_SIZE :: SizeInBytes
+max_TXID_SIZE = 44
 
 
 -- | Policy for making decisions
@@ -50,8 +72,14 @@ data TxDecisionPolicy = TxDecisionPolicy {
 
       txsSizePerBatch                :: !SizeInBytes,
       -- ^ Hard limit on the total advertised transaction size in one body
-      -- request batch. The default reserves space for reply framing.
-      -- MUST be equal or larger than a maximum tx size (see `max_TX_SIZE`).
+      -- request batch, except for the first tx in a batch, which is
+      -- requested even if it is larger.  Hence a batch is at most
+      -- `max txsSizePerBatch max_TX_SIZE`.  The default reserves space for
+      -- reply framing and for the `const_MAX_TX_SIZE_DISCREPANCY` tolerance
+      -- of each tx.  It MUST be positive, and the reply to the largest batch
+      -- MUST fit within the `StTxs` size limit (see `saneTxDecisionPolicy`).
+      -- It can be smaller than `max_TX_SIZE`: a larger tx is requested in
+      -- a batch on its own.
 
       maxOutstandingTxBatchesPerPeer :: !Int,
       -- ^ a limit of outstanding tx-body request batches from a single peer.
@@ -105,23 +133,16 @@ mkTxDecisionPolicy config =
     policy <$ saneTxDecisionPolicy policy config
   where
     policy = TxDecisionPolicy {
+      -- Saturates rather than wraps around if `maxNumTxIdsToRequest` is too
+      -- large (such a config does not pass `saneTxDecisionPolicy`).
       txsSizeInflightPerPeer =
-        assert (    fromIntegral max_TX_SIZE * fromIntegral (maxNumTxIdsToRequest config)
-                 <= fromIntegral @SizeInBytes @Integer maxBound
-               )
-        max_TX_SIZE * (fromIntegral (maxNumTxIdsToRequest config)),
-      -- MsgReplyTxs has four bytes of CBOR framing: the outer list, message
-      -- tag, indefinite transaction list and break marker.
+        fromIntegral @Integer @SizeInBytes
+          $ min (toInteger (maxBound :: SizeInBytes))
+                (toInteger max_TX_SIZE * toInteger (maxNumTxIdsToRequest config)),
       txsSizePerBatch =
-        let sizePerBatch =
-                safeLimit
-              $ fromIntegral
-                  (sizeLimitForState
-                    (byteLimitsTxSubmission2 (error "invariant violation!"))
-                    SingTxs)
-              - 4
-        in assert (sizePerBatch >= max_TX_SIZE)
-           sizePerBatch,
+          safeLimit
+        $ fromIntegral stTxsSizeLimit
+        - msgReplyTxsFraming,
       maxOutstandingTxBatchesPerPeer = 4,
       txInflightMultiplicity = 2,
       bufferedTxsMinLifetime = 2,
@@ -137,14 +158,44 @@ mkTxDecisionPolicy config =
     safeLimit :: SizeInBytes -> SizeInBytes
     safeLimit limit = limit - limit `div` 50
 
+-- | `MsgReplyTxs` has four bytes of CBOR framing: the outer list, message
+-- tag, indefinite transaction list and break marker.
+--
+msgReplyTxsFraming :: SizeInBytes
+msgReplyTxsFraming = 4
+
+-- | `MsgRequestTxs` has four bytes of CBOR framing: the outer list, message
+-- tag, indefinite txid list and break marker.
+--
+msgRequestTxsFraming :: SizeInBytes
+msgRequestTxsFraming = 4
+
+-- | Size limit of the `StTxs` state, i.e. of a `MsgReplyTxs` message.
+--
+stTxsSizeLimit :: Word
+stTxsSizeLimit =
+    sizeLimitForState
+      (byteLimitsTxSubmission2 (error "invariant violation!"))
+      SingTxs
+
+-- | Size limit of the `StIdle` state, i.e. of a `MsgRequestTxs` message.
+--
+stIdleSizeLimit :: Word
+stIdleSizeLimit =
+    sizeLimitForState
+      (byteLimitsTxSubmission2 (error "invariant violation!"))
+      SingIdle
+
 -- | Shared options between the inbound and outbound side.
 --
 data TxSubmissionConfig =
     TxSubmissionConfig {
       maxNumUnacknowledgedTxIds :: !NumTxIdsToAck,
-      -- ^ maximum number of unacknowledged txids; it MUST be positive.
-      -- Before `NodeToNodeV_16` it is a protocol parameter and must not be
-      -- changed; since `NodeToNodeV_16` it is a local setting.
+      -- ^ maximum number of unacknowledged txids; it MUST be positive, and
+      -- small enough for a `MsgRequestTxs` with that many txids to fit within
+      -- the `StIdle` size limit (see `max_TXID_SIZE`).  Before
+      -- `NodeToNodeV_16` it is a protocol parameter and must not be changed;
+      -- since `NodeToNodeV_16` it is a local setting.
       maxNumTxIdsToRequest      :: !NumTxIdsToReq
       -- ^ maximum number of txids an inbound client can request at a time.
     }
@@ -167,6 +218,9 @@ defaultTxSubmissionConfigV2 = TxSubmissionConfig {
 data TxConfigurationError
   -- | `maxNumUnacknowledgedTxIds` must be positive
   = NumUnacknowledgedTxIdsTooSmall NumTxIdsToAck
+  -- | a `MsgRequestTxs` with `maxNumUnacknowledgedTxIds` txids of size
+  -- `max_TXID_SIZE` doesn't fit within the `StIdle` size limit
+  | NumUnacknowledgedTxIdsTooLarge NumTxIdsToAck
   -- | `maxNumTxIdsToRequest` must be positive
   | MaxNumTxIdsToRequestTooSmall NumTxIdsToReq
   -- | @max_TX_SIZE * maxNumTxIdsToRequest@ doesn't fit in `SizeInBytes`
@@ -175,6 +229,10 @@ data TxConfigurationError
   | TxsSizeInflightPerPeerTooSmall SizeInBytes
   -- | `txsSizePerBatch` must be positive
   | TxsSizePerBatchTooSmall SizeInBytes
+  -- | the reply to the largest batch, with `maxNumUnacknowledgedTxIds` txs
+  -- each up to `const_MAX_TX_SIZE_DISCREPANCY` larger than advertised,
+  -- doesn't fit within the `StTxs` size limit
+  | TxsSizePerBatchTooLarge SizeInBytes NumTxIdsToAck
   -- | `maxOutstandingTxBatchesPerPeer` must be positive
   | MaxOutstandingTxBatchesPerPeerTooSmall Int
   -- | `txInflightMultiplicity` must be positive
@@ -207,7 +265,15 @@ instance Exception TxConfigurationError
 -- be non-negative, and 'inflightTimeout' must be at least 'interTxSpace'
 -- (their difference is used as a non-negative delay when bumping a stuck
 -- entry's inflight-multiplicity cap).  'mkTxDecisionPolicy' satisfies
--- it.  `txsSizePerBatch` MUST be equal or greater than `max_TX_SIZE`.
+-- it.  The reply to the largest batch MUST fit within the `StTxs` size
+-- limit.  A batch can exceed `txsSizePerBatch` by being a single tx (of at
+-- most `max_TX_SIZE`), so its advertised size is at most `max txsSizePerBatch
+-- max_TX_SIZE`.  It holds at most `maxNumUnacknowledgedTxIds` txs, and each
+-- received tx can be larger than advertised by up to
+-- `const_MAX_TX_SIZE_DISCREPANCY`. A `MsgRequestTxs` with
+-- `maxNumUnacknowledgedTxIds` txids of size `max_TXID_SIZE` MUST fit within
+-- the `StIdle` size limit. `max_TX_SIZE * maxNumTxIdsToRequest` MUST fit in
+-- `SizeInBytes`.
 saneTxDecisionPolicy :: TxDecisionPolicy
                      -> TxSubmissionConfig
                      -> Either TxConfigurationError ()
@@ -230,6 +296,10 @@ saneTxDecisionPolicy TxDecisionPolicy {
                      } = do
     unless (maxNumUnacknowledgedTxIds >= 1)
       $ Left (NumUnacknowledgedTxIdsTooSmall maxNumUnacknowledgedTxIds)
+    unless (   toInteger msgRequestTxsFraming
+             + toInteger max_TXID_SIZE * toInteger maxNumUnacknowledgedTxIds
+            <= toInteger stIdleSizeLimit)
+      $ Left (NumUnacknowledgedTxIdsTooLarge maxNumUnacknowledgedTxIds)
     unless (maxNumTxIdsToRequest >= 1)
       $ Left (MaxNumTxIdsToRequestTooSmall maxNumTxIdsToRequest)
     unless (    toInteger max_TX_SIZE * toInteger maxNumTxIdsToRequest
@@ -239,6 +309,12 @@ saneTxDecisionPolicy TxDecisionPolicy {
       $ Left (TxsSizeInflightPerPeerTooSmall txsSizeInflightPerPeer)
     unless (txsSizePerBatch > 0)
       $ Left (TxsSizePerBatchTooSmall txsSizePerBatch)
+    unless (   toInteger msgReplyTxsFraming
+             + toInteger (max txsSizePerBatch max_TX_SIZE)
+             + toInteger const_MAX_TX_SIZE_DISCREPANCY
+               * toInteger maxNumUnacknowledgedTxIds
+            <= toInteger stTxsSizeLimit)
+      $ Left (TxsSizePerBatchTooLarge txsSizePerBatch maxNumUnacknowledgedTxIds)
     unless (maxOutstandingTxBatchesPerPeer >= 1)
       $ Left (MaxOutstandingTxBatchesPerPeerTooSmall maxOutstandingTxBatchesPerPeer)
     unless (txInflightMultiplicity >= 1)

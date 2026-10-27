@@ -15,9 +15,13 @@ For top level release notes, leave all the headers commented out.
   `maxNumTxIdsToRequest` and `maxNumUnacknowledgedTxIds` (a `NumTxIdsToAck`)
   of `TxSubmissionConfig` instead.
 - Added the `txsSizePerBatch` field to `TxDecisionPolicy`: a hard limit on the
-  total advertised size of the txs requested in a single `MsgRequestTxs`.
+  total advertised size of the txs requested in a single `MsgRequestTxs`,
+  except for the first tx, which is requested even if it is larger.
   `mkTxDecisionPolicy` sets it about 2% below the size limit of
-  `MsgReplyTxs`.
+  `MsgReplyTxs`; `saneTxDecisionPolicy` checks that it is positive and that
+  the reply to the largest batch (including the
+  `const_MAX_TX_SIZE_DISCREPANCY` tolerance of each tx) fits within the
+  `MsgReplyTxs` size limit.
 - `defaultTxDecisionPolicy` is replaced by `mkTxDecisionPolicy`, which takes
   a `TxSubmissionConfig`, computes `txsSizeInflightPerPeer` from its
   `maxNumTxIdsToRequest` (the value is unchanged for
@@ -51,9 +55,13 @@ For top level release notes, leave all the headers commented out.
   within the `MsgReplyTxs` size limit (see also `clampMaxNumTxsToRequest`).
   `defaultTxSubmissionConfigV1` (10 unacknowledged txids, 3 txids per request)
   and `defaultMaxNumTxsToRequest` (2 txs per request) keep the previous values.
+- Added `ProtocolErrorTxSizeTooLarge` to `TxSubmissionProtocolError` in
+  `Ouroboros.Network.TxSubmission.Inbound.V2.Types`: the V2 inbound
+  disconnects from a peer which advertises a tx larger than `max_TX_SIZE`,
+  on every node-to-node version, including those before `NodeToNodeV_16`.
 - `ouroboros-network:ouroboros-network-tests-lib`: `Impairment` in
-  `Test.Ouroboros.Network.TxSubmission.Impaired` has a new
-  `impairSplitAcknowledgements` field.
+  `Test.Ouroboros.Network.TxSubmission.Impaired` has new
+  `impairSplitAcknowledgements` and `impairOversizedTxIds` fields.
 
 ### Non-Breaking
 
@@ -64,6 +72,10 @@ For top level release notes, leave all the headers commented out.
   `defaultTxSubmissionConfigV2` to
   `Ouroboros.Network.TxSubmission.Inbound.V2.Policy` (re-exported by
   `Ouroboros.Network.TxSubmission.Inbound.V2`).
+- Added `max_TXID_SIZE` to `Ouroboros.Network.TxSubmission.Inbound.V2.Policy`.
+  `saneTxDecisionPolicy` checks that a `MsgRequestTxs` with
+  `maxNumUnacknowledgedTxIds` txids of size `max_TXID_SIZE` fits within the
+  `StIdle` size limit (at most 1489 unacknowledged txids).
 - `TxSubmissionConfig` is re-exported by
   `Ouroboros.Network.TxSubmission.Inbound.V1`,
   `Ouroboros.Network.TxSubmission.Inbound.V2` and
@@ -75,7 +87,8 @@ For top level release notes, leave all the headers commented out.
     `ArbTxSubmissionConfig` and `ArbTxOutboundVersion` generators and
     re-exports `TxSubmissionConfig`.
   - `Test.Ouroboros.Network.TxSubmission.Impaired` exports
-    `splitAcknowledgements` and `impairmentSplitAcknowledgements`.
+    `splitAcknowledgements`, `impairmentSplitAcknowledgements` and
+    `oversizedTxIds`.
 
 <!--
 ### Patch

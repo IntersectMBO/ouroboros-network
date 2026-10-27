@@ -32,6 +32,7 @@ import Control.Monad.IOSim
 import Control.Tracer (Tracer, contramap, mkTracer, nullTracer, traceWith)
 
 import Data.ByteString.Lazy qualified as BSL
+import Data.Either (isRight)
 import Data.Foldable (traverse_)
 import Data.Function (on)
 import Data.IntMap.Strict qualified as IntMap
@@ -466,32 +467,12 @@ validTxSubmissionState TxSubmissionState { peerMap,
      not (Map.null peerMap)
   && Map.keysSet peerImpairment `Set.isSubsetOf` Map.keysSet peerMap
   && all validPeer (Map.elems peerMap)
-  && validPolicy policy config
+  && isRight (saneTxDecisionPolicy policy config)
   where
     validPeer (txs, _, _) =
       let txids = getTxId <$> txs in
          not (null txs)
       && length txids == Set.size (Set.fromList txids)
-
-validPolicy :: TxDecisionPolicy -> TxSubmissionConfig -> Bool
-validPolicy TxDecisionPolicy
-            { txsSizeInflightPerPeer, maxOutstandingTxBatchesPerPeer
-            , txInflightMultiplicity, bufferedTxsMinLifetime
-            , scoreRate, scoreMax, interTxSpace, inflightTimeout
-            }
-            TxSubmissionConfig
-            {  maxNumTxIdsToRequest, maxNumUnacknowledgedTxIds }
-            =
-     getNumTxIdsToReq maxNumTxIdsToRequest      >= 1
-  && getNumTxIdsToAck maxNumUnacknowledgedTxIds >= 1
-  && getSizeInBytes txsSizeInflightPerPeer      >= 1
-  && maxOutstandingTxBatchesPerPeer             >= 1
-  && txInflightMultiplicity                     >= 1
-  && bufferedTxsMinLifetime                     >= 0
-  && scoreRate                                  >= 0
-  && scoreMax                                   >= 0
-  && interTxSpace                               >= 0
-  && inflightTimeout                            >  interTxSpace
 
 prop_TxSubmissionState_validGen :: TxSubmissionState -> Property
 prop_TxSubmissionState_validGen st =
@@ -915,7 +896,9 @@ prop_txSubmission_inflight st@TxSubmissionState { peerMap = state,
 -- wrapped in any combination of 'omitBodies' and 'delayBodies', every tx
 -- contributed by a well-behaved peer must still reach the inbound mempool.
 -- Exercises V2's cross-peer retry path (omission) and stuck-leaseholder
--- bump path (delay).
+-- bump path (delay).  The inbound side must raise
+-- 'ProtocolErrorTxSizeTooLarge' for, and only for, the peers which advertise
+-- a txid above 'max_TX_SIZE'.
 --
 -- Contributions from an impaired peer are not asserted: omitted bodies
 -- may never reach the mempool, and severely delayed bodies may not arrive
@@ -991,6 +974,15 @@ prop_txSubmission_resilientToImpairment
                   $ concatMap (\(txs, _, _) -> getTxId <$> txs)
                   $ Map.elems (peerMap st)
         tr        = runSimTrace (txSubmissionSimulation st)
+        -- every peer has a tx to advertise, so the first (blocking) reply of
+        -- an 'impairOversizedTxIds' peer always carries an oversized txid
+        oversizedAddrs = Map.keysSet (Map.filter impairOversizedTxIds imp)
+        sizeErrorAddrs = Set.fromList
+          [ addr
+          | PeerInboundTrace addr
+              (TraceTxInboundError ProtocolErrorTxSizeTooLarge {})
+              <- selectTraceEventsDynamic tr :: [PeerInboundTraceType]
+          ]
     in label ("impaired peers: "     ++ show (Map.size imp))
      $ label ("well-behaved peers: " ++ show (Set.size wbAddrs))
      $ tabulate "impairment kind" (kindOf <$> Map.elems imp)
@@ -1002,6 +994,8 @@ prop_txSubmission_resilientToImpairment
              counterexample (ppSayTrace tr)
            $ conjoin (validateWellBehaved inmp `map` wbPeerTxs)
              .&&. noContamination allOutIds inmp
+             .&&. counterexample "ProtocolErrorTxSizeTooLarge not raised exactly for the oversized-txids peers"
+                    (sizeErrorAddrs === oversizedAddrs)
              .&&. prop_counterInvariants 0 tr
              .&&. prop_sharedStateClean finalState
   where

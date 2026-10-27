@@ -33,7 +33,7 @@ import Data.Foldable (toList)
 import Data.Function (on)
 import Data.IntMap.Strict qualified as IntMap
 import Data.IntSet qualified as IntSet
-import Data.List (elemIndex, mapAccumL, nub, nubBy, sortBy)
+import Data.List (elemIndex, isPrefixOf, mapAccumL, nub, nubBy, sortBy)
 import Data.List as List (foldl')
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map.Strict qualified as Map
@@ -544,8 +544,13 @@ instance Arbitrary ArbTxDecisionPolicy where
             ArbTxDecisionPolicy <$> (
               TxDecisionPolicy
                 <$> (SizeInBytes . getPositive <$> arbitrary)
-                <*> (SizeInBytes <$> choose (getSizeInBytes max_TX_SIZE,
-                      getSizeInBytes (txsSizePerBatch (unsafeMkTxDecisionPolicy defaultTxSubmissionConfigV2))))
+                -- biased towards values below `max_TX_SIZE`, for which
+                -- a larger tx is requested in a batch on its own
+                <*> (SizeInBytes <$> frequency
+                      [ (1, choose (1, getSizeInBytes max_TX_SIZE - 1))
+                      , (1, choose (getSizeInBytes max_TX_SIZE,
+                                    getSizeInBytes (txsSizePerBatch (unsafeMkTxDecisionPolicy defaultTxSubmissionConfigV2))))
+                      ])
                 <*> choose (1, 10)
                 <*> (getSmall . getPositive <$> arbitrary)
                 <*> (realToFrac <$> choose (0 :: Double, 2))
@@ -566,8 +571,7 @@ instance Arbitrary ArbTxDecisionPolicy where
            | Positive s <- shrink (Positive (getSizeInBytes (txsSizeInflightPerPeer a)))
            ]
         ++ [ ArbTxDecisionPolicy a { txsSizePerBatch = SizeInBytes s }
-           | s <- shrink (getSizeInBytes (txsSizePerBatch a))
-           , s >= getSizeInBytes max_TX_SIZE
+           | Positive s <- shrink (Positive (getSizeInBytes (txsSizePerBatch a)))
            ]
         ++ [ ArbTxDecisionPolicy a { maxOutstandingTxBatchesPerPeer = x }
            | x <- shrink (maxOutstandingTxBatchesPerPeer a), x >= 1
@@ -1116,9 +1120,6 @@ prop_nextPeerAction_picksTxsRespectingBudget (ArbTxDecisionPolicy policy0)
         (IntMap.lookup k (peerAvailableTxIds peerState1))
 
     budget = getSizeInBytes (txsSizeInflightPerPeer policy)
-    isPrefix _ []          = True
-    isPrefix [] _          = False
-    isPrefix (x:xs) (y:ys) = x == y && isPrefix xs ys
   in
     case action of
       PeerRequestTxs picked ->
@@ -1130,7 +1131,7 @@ prop_nextPeerAction_picksTxsRespectingBudget (ArbTxDecisionPolicy policy0)
             tailSize = pickedSize - maybe 0 sizeOf (listToMaybe pickedKeys)
         in conjoin
              [ counterexample "picked is not a prefix of the unacked queue"
-                 (pickedKeys `isPrefix` keyOrder)
+                 (pickedKeys `isPrefixOf` keyOrder)
              , counterexample
                  ("tail of picked exceeds budget: " ++ show pickedSize)
                  (tailSize <= budget)
@@ -1158,9 +1159,9 @@ prop_nextPeerAction_picksTxsRespectingBudget (ArbTxDecisionPolicy policy0)
     peerAddr = 1 :: PeerAddr
 
 -- | Advertised transaction sizes and a policy covering either a large
--- inflight window, or a first transaction at or above the hard batch limit
--- with a smaller soft inflight limit. Sizes are at least two so all policy
--- limits can remain positive.
+-- inflight window, or a first transaction at the hard batch limit with
+-- a smaller soft inflight limit. Sizes are at least two so all policy limits
+-- can remain positive.
 --
 data ArbBodyBatchScenario = ArbBodyBatchScenario {
       bbsTxSizes :: NonEmpty SizeInBytes,
@@ -1183,7 +1184,9 @@ instance Arbitrary ArbBodyBatchScenario where
                     ]
               <*> chooseEnum (sum sizes, 2 * sum sizes)
         , (,) <$> pure firstSize <*> chooseEnum (1, firstSize - 1)
-        , (,) <$> chooseEnum (1, firstSize - 1) <*> chooseEnum (1, firstSize - 1)
+          -- the batch limit is below the first tx's size
+        , (,) <$> chooseEnum (1, firstSize - 1)
+              <*> chooseEnum (sum sizes, 2 * sum sizes)
         ]
       pure ArbBodyBatchScenario {
           bbsTxSizes = sizes,
@@ -1221,14 +1224,17 @@ instance Arbitrary ArbBodyBatchScenario where
           && (   (maximum sizes <= txsSizePerBatch
                && txsSizePerBatch < sum sizes
                && sum sizes <= txsSizeInflightPerPeer)
-              || (txsSizePerBatch <= firstSize
-               && txsSizeInflightPerPeer < firstSize))
+               || (   txsSizePerBatch == firstSize
+                   && txsSizeInflightPerPeer < firstSize)
+               || (   txsSizePerBatch < firstSize
+                   && sum sizes <= txsSizeInflightPerPeer))
 
 
 -- | A large inflight window may span several batches. Each batch respects
 -- its hard limit, while all advertised transactions can still be requested
--- in order. The hard limit also applies to the first transaction, even when
--- the soft inflight limit would otherwise allow it.
+-- in order. The first transaction is requested even when it exceeds the soft
+-- inflight limit.  A transaction above the hard limit is requested in a batch
+-- on its own.
 --
 prop_nextPeerAction_capsBodyBatches :: ArbBodyBatchScenario -> Property
 prop_nextPeerAction_capsBodyBatches ArbBodyBatchScenario {
@@ -1258,9 +1264,8 @@ prop_nextPeerAction_capsBodyBatches ArbBodyBatchScenario {
 
         expectedKeys :: [TxKey]
         expectedKeys
-          | firstSize > txsSizePerBatch       = []
           | firstSize > txsSizeInflightPerPeer = take 1 advertisedKeys
-          | otherwise                        = advertisedKeys
+          | otherwise                          = advertisedKeys
 
         sizeOf :: TxKey -> SizeInBytes
         sizeOf key = peerAvailableTxIds peerState IntMap.! unTxKey key
@@ -1306,13 +1311,14 @@ prop_nextPeerAction_capsBodyBatches ArbBodyBatchScenario {
      $ cover 20
          (firstSize == txsSizePerBatch && firstSize > txsSizeInflightPerPeer)
          "first transaction at the hard limit"
-     $ cover 20
-         (firstSize > txsSizePerBatch && firstSize > txsSizeInflightPerPeer)
+     $ cover 20 (firstSize > txsSizePerBatch)
          "first transaction above the hard limit"
      $ cover 50 (length (nub sizes) > 1) "mixed transaction sizes"
      $ conjoin
          [ counterexample "batch exceeds the hard size limit"
-             (all (<= txsSizePerBatch) batchSizes)
+             (and [ batchSize <= txsSizePerBatch || length batch == 1
+                  | (batch, batchSize) <- zip batches batchSizes
+                  ])
          , counterexample "empty body request"
              (all (not . null) batches)
          , counterexample "batch left room for the next transaction"

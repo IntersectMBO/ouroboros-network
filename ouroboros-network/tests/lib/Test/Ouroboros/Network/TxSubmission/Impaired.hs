@@ -16,6 +16,7 @@ module Test.Ouroboros.Network.TxSubmission.Impaired
   , omitBodies
   , extraTxIds
   , unrequestedTx
+  , oversizedTxIds
   , splitAcknowledgements
   , Impairment (..)
   , noImpairment
@@ -41,6 +42,7 @@ import System.Random (StdGen, mkStdGen, uniformR)
 import Ouroboros.Network.Protocol.TxSubmission2.Client
 import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToReq (..))
 import Ouroboros.Network.SizeInBytes (SizeInBytes)
+import Ouroboros.Network.TxSubmission.Inbound.V2.Policy (max_TX_SIZE)
 
 import Test.QuickCheck (Gen, arbitrary, choose, oneof, shrink)
 
@@ -213,6 +215,46 @@ unrequestedTx mkBad (TxSubmissionClient mIdle) =
         SendMsgReplyTxs (txs ++ [mkBad txids x]) (wrapIdle k)
 
 
+-- | Advertise the first txid of each non-empty 'MsgReplyTxIds' with a size
+-- one byte above 'max_TX_SIZE'. Replies that are empty pass through
+-- unchanged.
+--
+-- Triggers 'ProtocolErrorTxSizeTooLarge' on the inbound side.
+oversizedTxIds
+  :: forall txid tx m a.
+     Monad m
+  => TxSubmissionClient txid tx m a
+  -> TxSubmissionClient txid tx m a
+oversizedTxIds (TxSubmissionClient mIdle) =
+    TxSubmissionClient (wrapIdle <$> mIdle)
+  where
+    wrapIdle :: ClientStIdle txid tx m a -> ClientStIdle txid tx m a
+    wrapIdle ClientStIdle { recvMsgRequestTxIds, recvMsgRequestTxs } = ClientStIdle
+      { recvMsgRequestTxIds = \blocking ack req -> do
+          reply <- recvMsgRequestTxIds blocking ack req
+          pure (wrapTxIds reply)
+      , recvMsgRequestTxs   = \txids -> do
+          reply <- recvMsgRequestTxs txids
+          pure (wrapTxs reply)
+      }
+
+    wrapTxIds :: ClientStTxIds blocking txid tx m a
+              -> ClientStTxIds blocking txid tx m a
+    wrapTxIds (SendMsgReplyTxIds reply k) = SendMsgReplyTxIds (inflate reply) (wrapIdle k)
+    wrapTxIds (SendMsgDone a)             = SendMsgDone a
+
+    wrapTxs :: ClientStTxs txid tx m a -> ClientStTxs txid tx m a
+    wrapTxs (SendMsgReplyTxs txs k) = SendMsgReplyTxs txs (wrapIdle k)
+
+    inflate :: BlockingReplyList blocking (txid, SizeInBytes)
+            -> BlockingReplyList blocking (txid, SizeInBytes)
+    inflate (BlockingReply ((txid, _) NonEmpty.:| xs)) =
+        BlockingReply ((txid, max_TX_SIZE + 1) NonEmpty.:| xs)
+    inflate (NonBlockingReply [])              = NonBlockingReply []
+    inflate (NonBlockingReply ((txid, _) : xs)) =
+        NonBlockingReply ((txid, max_TX_SIZE + 1) : xs)
+
+
 -- | This function is used to test `txSubmissionOutbound` against a client which
 -- splits non-blocking txid requests carrying acknowledgements and requests into
 -- an acknowledgement-only request followed by a request-only request. The
@@ -270,6 +312,8 @@ data Impairment = Impairment
     -- ^ append one fabricated body whose txid is not in the request
   , impairSplitAcknowledgements :: Bool
     -- ^ exercise acknowledgement-only txid requests at the outbound peer
+  , impairOversizedTxIds        :: Bool
+    -- ^ advertise a txid with a size above 'max_TX_SIZE'
   } deriving (Eq, Show)
 
 -- | The neutral impairment: no delay, no omission. Equivalent to running the
@@ -281,6 +325,7 @@ noImpairment = Impairment { impairBodyDelay     = Nothing
                           , impairExtraTxIds    = 0
                           , impairUnrequestedTx = False
                           , impairSplitAcknowledgements = False
+                          , impairOversizedTxIds = False
                           }
 
 impairmentSplitAcknowledgements :: Impairment
@@ -290,7 +335,7 @@ impairmentSplitAcknowledgements = noImpairment { impairSplitAcknowledgements = T
 -- preserve: the omission probability is in [0, 1] and any body delay is
 -- strictly positive. The seed, the duplicate count ('impairExtraTxIds' is
 -- a 'Word16', so always non-negative) and the unrequested-tx flag are
--- unconstrained.
+-- unconstrained, so are the remaining flags.
 validImpairment :: Impairment -> Bool
 validImpairment imp =
      impairOmitProb imp >= 0
@@ -308,7 +353,8 @@ applyImpairment :: (MonadDelay m, MonadSTM m)
                 -> m (TxSubmissionClient txid tx m a)
 applyImpairment Impairment { impairBodyDelay, impairOmitProb, impairSeed
                            , impairExtraTxIds, impairUnrequestedTx
-                           , impairSplitAcknowledgements } mkBad c0 = do
+                           , impairSplitAcknowledgements
+                           , impairOversizedTxIds } mkBad c0 = do
     c1 <- if impairOmitProb > 0
             then do
               genVar <- newTVarIO (mkStdGen impairSeed)
@@ -321,13 +367,17 @@ applyImpairment Impairment { impairBodyDelay, impairOmitProb, impairSeed
            | otherwise            = c2
         c4 | impairUnrequestedTx = unrequestedTx mkBad c3
            | otherwise           = c3
-    pure $ if impairSplitAcknowledgements then splitAcknowledgements c4 else c4
+        c5 | impairOversizedTxIds = oversizedTxIds c4
+           | otherwise            = c4
+    pure $ if impairSplitAcknowledgements then splitAcknowledgements c5 else c5
 
 
 -- | Generate a single 'Impairment': a mix of body delay, per-body
--- omission, txid overflow, or unrequested body injection.
+-- omission, txid overflow, unrequested body injection, or an oversized
+-- advertised txid.
 genOneImpairment :: Gen Impairment
-genOneImpairment = oneof [genOmit, genDelay, genBoth, genExtraTxIds, genUnrequestedTx]
+genOneImpairment = oneof [ genOmit, genDelay, genBoth, genExtraTxIds
+                         , genUnrequestedTx, genOversizedTxIds ]
   where
     genOmit = do
       p    <- choose (0.1 :: Double, 0.9)
@@ -348,12 +398,14 @@ genOneImpairment = oneof [genOmit, genDelay, genBoth, genExtraTxIds, genUnreques
       n <- choose (1, 5 :: Int)
       pure noImpairment { impairExtraTxIds = fromIntegral n }
     genUnrequestedTx = pure noImpairment { impairUnrequestedTx = True }
+    genOversizedTxIds = pure noImpairment { impairOversizedTxIds = True }
 
 -- | Shrink an 'Impairment' towards 'noImpairment'.
 shrinkImpairment :: Impairment -> [Impairment]
 shrinkImpairment imp = List.nub $
      [ imp { impairSplitAcknowledgements = False } | impairSplitAcknowledgements imp ]
   ++ [ imp { impairUnrequestedTx = False } | impairUnrequestedTx imp ]
+  ++ [ imp { impairOversizedTxIds = False } | impairOversizedTxIds imp ]
   ++ [ imp { impairExtraTxIds = a }        | a <- shrink (impairExtraTxIds imp) ]
   ++ [ imp { impairBodyDelay = Nothing }   | isJust (impairBodyDelay imp) ]
   ++ [ imp { impairOmitProb = 0 }          | impairOmitProb imp > 0 ]
@@ -373,6 +425,7 @@ shrinkImpairment imp = List.nub $
 kindOf :: Impairment -> String
 kindOf Impairment { impairSplitAcknowledgements = True } = "split-acknowledgements"
 kindOf Impairment { impairUnrequestedTx = True }                    = "unrequested-tx"
+kindOf Impairment { impairOversizedTxIds = True }                   = "oversized-txids"
 kindOf Impairment { impairExtraTxIds = n }                | n > 0   = "extra-txids"
 kindOf Impairment { impairBodyDelay = Just _,  impairOmitProb = 0 } = "delay-only"
 kindOf Impairment { impairBodyDelay = Just _,  impairOmitProb = _ } = "delay+omit"
