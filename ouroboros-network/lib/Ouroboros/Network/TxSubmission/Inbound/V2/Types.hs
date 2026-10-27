@@ -421,6 +421,14 @@ data TxSubmissionCountersOf t = TxSubmissionCounters {
     txIdsReceivedSlow     :: !Word64,
     -- ^ Txids received in replies to requests sent on the slow tier (a
     -- subset of 'txIdsReceived').
+    txIdReplies0          :: !Word64,
+    txIdReplies1          :: !Word64,
+    txIdReplies2to4       :: !Word64,
+    txIdReplies5to9       :: !Word64,
+    txIdReplies10         :: !Word64,
+    -- ^ Txid replies by the number of txids they carried: none, one, two
+    -- to four, five to nine, ten or more (a partition of
+    -- 'txIdRepliesReceived').
     txIdBlockingWait      :: !t,
     -- ^ Cumulative time spent waiting for replies to blocking txid
     -- requests.  High values indicate the system is mostly idle (no new
@@ -465,6 +473,11 @@ instance Num t => Semigroup (TxSubmissionCountersOf t) where
     txIdPipelinedReqsSent = txIdPipelinedReqsSent a + txIdPipelinedReqsSent b,
     txIdSlowReqsSent      = txIdSlowReqsSent      a + txIdSlowReqsSent      b,
     txIdsReceivedSlow     = txIdsReceivedSlow     a + txIdsReceivedSlow     b,
+    txIdReplies0          = txIdReplies0          a + txIdReplies0          b,
+    txIdReplies1          = txIdReplies1          a + txIdReplies1          b,
+    txIdReplies2to4       = txIdReplies2to4       a + txIdReplies2to4       b,
+    txIdReplies5to9       = txIdReplies5to9       a + txIdReplies5to9       b,
+    txIdReplies10         = txIdReplies10         a + txIdReplies10         b,
     txIdBlockingWait      = txIdBlockingWait      a + txIdBlockingWait      b,
     txPipelineWait        = txPipelineWait        a + txPipelineWait        b,
     txSubmissionWait      = txSubmissionWait      a + txSubmissionWait      b
@@ -488,6 +501,11 @@ instance Num t => Monoid (TxSubmissionCountersOf t) where
     txIdPipelinedReqsSent = 0,
     txIdSlowReqsSent = 0,
     txIdsReceivedSlow = 0,
+    txIdReplies0 = 0,
+    txIdReplies1 = 0,
+    txIdReplies2to4 = 0,
+    txIdReplies5to9 = 0,
+    txIdReplies10 = 0,
     txIdBlockingWait      = 0,
     txPipelineWait        = 0,
     txSubmissionWait      = 0

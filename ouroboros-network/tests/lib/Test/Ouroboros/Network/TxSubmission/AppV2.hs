@@ -645,6 +645,11 @@ prop_counterInvariants slack tr =
       , ("txIdsRequested",        txIdsRequested)
       , ("txIdRepliesReceived",   txIdRepliesReceived)
       , ("txIdsReceived",         txIdsReceived)
+      , ("txIdReplies0",          txIdReplies0)
+      , ("txIdReplies1",          txIdReplies1)
+      , ("txIdReplies2to4",       txIdReplies2to4)
+      , ("txIdReplies5to9",       txIdReplies5to9)
+      , ("txIdReplies10",         txIdReplies10)
       , ("txMessagesSent",        txMessagesSent)
       , ("txsRequested",          txsRequested)
       , ("txRepliesReceived",     txRepliesReceived)
@@ -960,6 +965,9 @@ prop_tierCounterBounds policy tr =
                                       ++ show (txIdsReceived s))
                       (txIdsReceivedSlow s === txIdsReceived s)
                else property True)
+      .&&. counterexample "reply sizes partition the replies"
+             (txIdReplies0 s + txIdReplies1 s + txIdReplies2to4 s + txIdReplies5to9 s + txIdReplies10 s
+                === txIdRepliesReceived s)
       | s <- selectTraceEventsDynamic tr :: [TxSubmissionCounters]
       ]
   where
