@@ -108,14 +108,8 @@ data TxDecisionPolicy = TxDecisionPolicy {
       -- ^ Maximum time a peer's attempt may sit between claim and
       -- entering submission before the per-entry inflight-multiplicity
       -- cap is bumped, allowing another peer to attempt in parallel.
-      maxPeerClaimDelay              :: !DiffTime,
+      maxPeerClaimDelay              :: !DiffTime
       -- ^ Maximum delay penalty for poor performing peers.
-
-      disablePipelinedTxIdRequests   :: !Bool
-      -- ^ When 'True', the txid picker never issues pipelined
-      -- @MsgRequestTxIds@ messages; only blocking requests fire (and
-      -- only when the unack window has been fully drained). Used
-      -- by some benchmarks.
     }
   deriving (Eq, Show)
 
@@ -151,8 +145,7 @@ mkTxDecisionPolicy config =
       scoreAcceptDecrement   = 3,
       interTxSpace           = 0.250,
       inflightTimeout        = 0.600,
-      maxPeerClaimDelay      = 0.250,
-      disablePipelinedTxIdRequests = False
+      maxPeerClaimDelay      = 0.250
     }
     -- for `~2.5MB`, leave 50KB room
     safeLimit :: SizeInBytes -> SizeInBytes

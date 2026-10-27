@@ -888,12 +888,11 @@ prop_txSubmissionTrace TxSubmissionState { peerMap = peers } tr =
 
 -- | With `TxOutboundV_2` a peer's outbound can have a smaller window than
 -- the inbound's, and clamps the inbound's requests to it (see
--- `traceOutboundRequests`).  An empty reply to a non-blocking request which
--- acknowledges nothing makes the inbound back off: it doesn't send such
--- a request again until the peer made progress, i.e. a non-empty txid reply
--- or one of its txs accepted by the mempool.  So, per peer, the number of
--- these empty replies is at most one more than the number of non-empty txid
--- replies and of delivered txs.
+-- `traceOutboundRequests`).  A non-blocking request always acknowledges
+-- something (see `pickRequestTxIdsAction`), so once the peer applies the
+-- acknowledgement its window has room for at least that many txids: no
+-- request is clamped to zero, and an empty reply means the peer has
+-- nothing new rather than no room, so the inbound needs no back-off.
 --
 prop_txSubmission_windowMismatch :: TxSubmissionState -> Property
 prop_txSubmission_windowMismatch st =
@@ -902,18 +901,17 @@ prop_txSubmission_windowMismatch st =
         requests = selectTraceEventsDynamic tr
         events = [ event | PeerOutboundRequest _ (RequestTxIds _ _ _ event _)
                              <- requests ]
-    -- The requests are checked as the simulation produces them: without the
-    -- back-off the inbound would keep sending requests, and the trace would
-    -- grow without bound.
-    in case firstViolation Map.empty requests of
-         Just (peer, counts) ->
-           counterexample ("peer " ++ show peer ++ " doesn't back off: "
-                           ++ show counts)
+    -- The requests are checked as the simulation produces them: an inbound
+    -- which polls with requests that acknowledge nothing fails here rather
+    -- than grow the trace without bound.
+    in case List.find violation requests of
+         Just request ->
+           counterexample ("a non-blocking request acknowledged nothing or "
+                           ++ "was clamped to zero: " ++ show request)
            False
          Nothing ->
              checkCoverage
            . cover 20 (Clamped `elem` events) "clamped"
-           . cover 10 (ClampedToZero `elem` events) "clamped to zero"
            . tabulate "MsgRequestTxIds" (show <$> events)
            $ case traceResult True tr of
                Left e ->
@@ -922,31 +920,10 @@ prop_txSubmission_windowMismatch st =
                  $ False
                Right _ -> property True
   where
-    -- Per peer: empty replies to non-blocking requests which acknowledge
-    -- nothing, non-empty txid replies, and delivered txs.
-    firstViolation :: Map PeerAddr BackOffCounts
-                   -> [PeerOutboundRequest PeerAddr]
-                   -> Maybe (PeerAddr, BackOffCounts)
-    firstViolation _ [] = Nothing
-    firstViolation counts (PeerOutboundRequest peer request : rest) =
-      let c  = Map.findWithDefault (BackOffCounts 0 0 0) peer counts
-          c' = case request of
-                 RequestTxIds False 0 reqNo _ 0
-                   | reqNo > 0 -> c { emptyReplies = emptyReplies c + 1 }
-                 RequestTxIds _ _ _ _ n
-                   | n > 0     -> c { nonEmptyReplies = nonEmptyReplies c + 1 }
-                 RequestTxs n  -> c { delivered = delivered c + n }
-                 _             -> c
-      in if emptyReplies c' > 1 + nonEmptyReplies c' + delivered c'
-           then Just (peer, c')
-           else firstViolation (Map.insert peer c' counts) rest
-
-data BackOffCounts = BackOffCounts {
-    emptyReplies    :: !Int,
-    nonEmptyReplies :: !Int,
-    delivered       :: !Int
-  }
-  deriving Show
+    violation :: PeerOutboundRequest PeerAddr -> Bool
+    violation (PeerOutboundRequest _ (RequestTxIds blocking ackNo _ event _)) =
+      (not blocking && ackNo == 0) || event == ClampedToZero
+    violation _ = False
 
 -- | Reuse the application property while exercising acknowledgement-only
 -- requests, which the production inbound scheduler normally suppresses.
