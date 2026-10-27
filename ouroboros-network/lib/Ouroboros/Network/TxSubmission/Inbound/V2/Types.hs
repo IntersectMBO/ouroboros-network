@@ -456,47 +456,42 @@ data PeerTxLocalState tx = PeerTxLocalState {
     -- 'nextPeerAction' / 'nextPeerActionPipelined' when an action is
     -- chosen and inspected in 'serverIdle' to decide whether to skip
     -- 'awaitSharedChange' on an Active->Idle transition.
-    peerPhase                 :: !PeerPhase,
+    peerPhase               :: !PeerPhase,
 
     -- | Unacknowledged txids in the order advertised by the peer.
-    peerUnacknowledgedTxIds   :: !(StrictSeq TxKey),
+    peerUnacknowledgedTxIds :: !(StrictSeq TxKey),
 
     -- | Txids this peer currently advertises and that may be requested from
     -- it if the peer becomes the owner.
-    peerAvailableTxIds        :: !(IntMap SizeInBytes),
+    peerAvailableTxIds      :: !(IntMap SizeInBytes),
 
     -- | Requested txids that have not yet been replied to.
-    peerRequestedTxs          :: !IntSet,
+    peerRequestedTxs        :: !IntSet,
 
     -- | Outstanding tx-body request batches, in request order.  Their
     -- 'requestedTxBatchSet's union to 'peerRequestedTxs' and their
     -- 'requestedTxBatchSize's sum to 'peerRequestedTxsSize'.
-    peerRequestedTxBatches    :: !(StrictSeq RequestedTxBatch),
+    peerRequestedTxBatches  :: !(StrictSeq RequestedTxBatch),
 
     -- | Total serialized size of all outstanding requested tx bodies.
-    peerRequestedTxsSize      :: !SizeInBytes,
+    peerRequestedTxsSize    :: !SizeInBytes,
 
     -- | Number of txids requested from this peer but not yet replied to
     -- (the in-flight txid-request window).
-    peerRequestedTxIds        :: !NumTxIdsToReq,
+    peerRequestedTxIds      :: !NumTxIdsToReq,
 
     -- | Tx bodies downloaded from this peer and buffered locally until they
     -- are either submitted to the mempool or superseded by shared-state
     -- resolution.
-    peerDownloadedTxs         :: !(IntMap tx),
+    peerDownloadedTxs       :: !(IntMap tx),
 
     -- | Time at which the first outstanding body-request batch was
     -- sent in the current download episode.
-    peerDownloadStartTime     :: !(Maybe Time),
+    peerDownloadStartTime   :: !(Maybe Time),
 
     -- | Usefulness score for this peer, tracking rejection penalties and
     -- time-based decay.
-    peerScore                 :: !PeerScore,
-
-    -- | Set on a txid reply that returned zero new txids; cleared on a
-    -- non-empty txid reply or when the mempool accepts at least one tx
-    -- delivered by this peer.
-    peerLastTxIdReplyWasEmpty :: !Bool
+    peerScore               :: !PeerScore
   }
   deriving stock (Eq, Show, Generic)
   deriving anyclass (NFData, NoThunks)
@@ -512,8 +507,7 @@ emptyPeerTxLocalState = PeerTxLocalState {
     peerRequestedTxIds        = 0,
     peerDownloadedTxs         = IntMap.empty,
     peerDownloadStartTime     = Nothing,
-    peerScore                 = emptyPeerScore (Time 0),
-    peerLastTxIdReplyWasEmpty = False
+    peerScore                 = emptyPeerScore (Time 0)
   }
 
 -- | Shared V2 state.

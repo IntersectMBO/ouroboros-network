@@ -119,7 +119,7 @@ tests =
     , testCase     "nextPeerAction clears in-flight tracking when an orphaned body is pruned" unit_nextPeerAction_clearsInFlightForPrunedBody
     , testProperty "nextPeerAction prunes expired retained txs" prop_nextPeerAction_prunesExpiredRetained
     , testProperty "nextPeerAction keeps retained txs before expiry" prop_nextPeerAction_keepsRetained
-    , testProperty "nextPeerActionPipelined allows request-only (ack=0) when the queue is non-empty" prop_nextPeerActionPipelined_allowsRequestOnly
+    , testProperty "nextPeerActionPipelined acks the ackable prefix but one and requests the window room, or waits" prop_nextPeerActionPipelined_rejectsRequestOnly
     , testCaseSteps "nextPeerActionPipelined rejects pure-ack (ack=N, req=0) messages" unit_nextPeerActionPipelined_rejectsPureAck
     , testProperty "nextPeerActionPipelined emits a pipelined txid request when ack and request fire together" prop_nextPeerActionPipelined_requestsTxIds
     , testProperty "nextPeerActionPipelined opens a second outstanding body batch" prop_nextPeerActionPipelined_secondBodyBatch
@@ -133,6 +133,7 @@ tests =
     , testCaseSteps "nextPeerAction requests other work despite a blocked buffered tx" unit_nextPeerAction_requestsOtherWorkDespiteBlockedBufferedTx
     , testCaseSteps "nextPeerAction submits buffered bodies across a resolved-elsewhere gap" unit_nextPeerAction_submitsBufferedAcrossResolvedGap
     , testProperty "nextPeerAction keeps non-owner txids unacked until resolved" prop_nextPeerAction_nonOwnerWaitsUntilResolved
+    , testProperty "a txid request without acks comes only on an empty unacked queue; an ackable prefix is acked with the window room requested" prop_nextPeerAction_blockingOnlyWhenEmpty
     , testProperty "nextPeerAction claims a claimable tx for the best idle advertiser" prop_nextPeerAction_claimsClaimableTx
     ]
 
@@ -919,8 +920,7 @@ instance Arbitrary ArbTxDecisionPolicy where
                 <*> choose (0, 5)
                 <*> pure interTxSpaceVal
                 <*> pure inflightTimeoutVal
-                <*> (realToFrac <$> choose (0.1, 1 :: Double))
-                <*> pure False))
+                <*> (realToFrac <$> choose (0.1, 1 :: Double))))
         ]
 
     shrink (ArbTxDecisionPolicy a)
@@ -1891,42 +1891,49 @@ unit_nextPeerAction_dedupsSubmitOnDuplicateTxIds = do
 unit_nextPeerAction_clearsInFlightForPrunedBody :: Assertion
 unit_nextPeerAction_clearsInFlightForPrunedBody = do
     let sz = SizeInBytes 512
-        txid :: TxId
-        txid = 1
+        txid, txid2 :: TxId
+        txid  = 1
+        txid2 = 2
         config = defaultTxSubmissionConfigV2
         policy = unsafeMkTxDecisionPolicy config
 
-        -- Peer A receives the txid advertisement.
+        -- Peer A receives two txid advertisements: one whose body it will
+        -- buffer and see resolved elsewhere, and one whose body stays live.
         (peerState1, peerInFlight1, sharedState1) =
-          handleReceivedTxIds (const False) now policy 1 [(txid, sz)]
-                              (emptyPeerTxLocalState { peerRequestedTxIds = 1 })
+          handleReceivedTxIds (const False) now policy 2 [(txid, sz), (txid2, sz)]
+                              (emptyPeerTxLocalState { peerRequestedTxIds = 2 })
                               emptyPeerTxInFlight emptySharedTxState
 
         txKey      = lookupKeyOrFail txid sharedState1
         keyInt     = unTxKey txKey
+        key2Int    = unTxKey (lookupKeyOrFail txid2 sharedState1)
         leaseUntil = addTime (interTxSpace policy) now
 
-        -- Peer A has claimed the lease and buffered the downloaded body.
-        sharedState2 = sharedState1 {
-            sharedTxTable =
-              IntMap.adjust
-                (\entry -> entry {
-                     txLease   = TxLeased peerAddr leaseUntil,
-                     txAttempt = txAttempt entry + 1
-                   })
-                keyInt (sharedTxTable sharedState1)
-          }
-        peerState2 = peerState1 {
-            peerDownloadedTxs = IntMap.singleton keyInt (mkTx txid sz)
-          }
-        peerInFlight2 = peerInFlight1 {
-            pifLeased     = IntSet.insert keyInt (pifLeased peerInFlight1),
-            pifAttempting = IntSet.insert keyInt (pifAttempting peerInFlight1)
+        claimed entry = entry {
+            txLease   = TxLeased peerAddr leaseUntil,
+            txAttempt = txAttempt entry + 1
           }
 
-        -- Simulate a sibling advertiser submitting the same tx to the
-        -- mempool.  The active entry moves to 'sharedRetainedTxs'; peer
-        -- A's local body buffer is now orphaned.
+        -- Peer A has claimed both leases and buffered both downloaded bodies.
+        sharedState2 = sharedState1 {
+            sharedTxTable =
+              IntMap.adjust claimed key2Int
+                (IntMap.adjust claimed keyInt (sharedTxTable sharedState1))
+          }
+        peerState2 = peerState1 {
+            peerDownloadedTxs =
+              IntMap.fromList [ (keyInt, mkTx txid sz), (key2Int, mkTx txid2 sz) ]
+          }
+        peerInFlight2 = peerInFlight1 {
+            pifLeased     = IntSet.insert key2Int
+                              (IntSet.insert keyInt (pifLeased peerInFlight1)),
+            pifAttempting = IntSet.insert key2Int
+                              (IntSet.insert keyInt (pifAttempting peerInFlight1))
+          }
+
+        -- Simulate a sibling advertiser submitting the first tx to the
+        -- mempool.  Its entry moves to 'sharedRetainedTxs' and peer A's
+        -- buffer for it is orphaned; the second key's entry stays active.
         retainUntil = addTime (bufferedTxsMinLifetime policy) now
         sharedState3 = sharedState2 {
             sharedTxTable     = IntMap.delete keyInt (sharedTxTable sharedState2),
@@ -1938,14 +1945,23 @@ unit_nextPeerAction_clearsInFlightForPrunedBody = do
         (_action, peerState', peerInFlight', _sharedState') =
           nextPeerAction now policy config peerAddr peerState2 peerInFlight2 sharedState3
 
-    -- The orphaned body is pruned from the local buffer.
+    -- The orphaned body is pruned from the local buffer, the live one kept.
     assertBool "peerDownloadedTxs must drop the orphaned body"
       (IntMap.notMember keyInt (peerDownloadedTxs peerState'))
-    -- The matching in-flight tracking entries must be cleared in lockstep.
+    assertBool "peerDownloadedTxs must keep the live body"
+      (IntMap.member key2Int (peerDownloadedTxs peerState'))
+    -- The matching in-flight tracking entries must be cleared in lockstep,
+    -- and only for the orphan: the live key stays leased, and attempting
+    -- or submitting depending on whether the decision picks it to submit.
     assertBool "pifLeased must drop the orphaned key"
       (IntSet.notMember keyInt (pifLeased peerInFlight'))
+    assertBool "pifLeased must keep the live key"
+      (IntSet.member key2Int (pifLeased peerInFlight'))
     assertBool "pifAttempting must drop the orphaned key"
       (IntSet.notMember keyInt (pifAttempting peerInFlight'))
+    assertBool "the live key must stay tracked, attempting or submitting"
+      (IntSet.member key2Int
+        (pifAttempting peerInFlight' `IntSet.union` pifSubmitting peerInFlight'))
   where
     peerAddr = 1 :: PeerAddr
 
@@ -1993,10 +2009,6 @@ prop_nextPeerAction_keepsRetained (ArbTxDecisionPolicy policy)
 -- nextPeerActionPipelined
 --
 
--- | In pipelined mode 'pickRequestTxIdsAction' must return @Nothing@
--- when either the ack count or the request count is zero (the wire
--- format would otherwise produce an ack-only or request-only
--- pipelined message, which is not allowed).
 -- | When the peer has at least one ackable txid AND room to request
 -- more, 'nextPeerActionPipelined' emits a 'PeerRequestTxIds' with both
 -- counts non-zero.
@@ -2064,73 +2076,88 @@ unit_nextPeerActionPipelined_keepsOneUnackedWithOutstandingBodyReply step = do
 
     step "Pipelined response must keep the txid unacked while the body batch is outstanding"
     case action of
-      PeerRequestTxIds ack _ ->
-        ack @?= 0
       PeerDoNothing {} ->
-        -- Acceptable: not enough room to request anything.
+        -- the only ackable txid must stay unacked, and a pipelined request
+        -- has to ack as well as request: the peer waits
         pure ()
       other ->
         assertFailure ("unexpected action: " ++ show other)
   where
     peerAddr = 1 :: PeerAddr
 
--- | When the peer has an unacked txid that is *not* ackable (so the
--- ack prefix is empty) but the unack window still has room, the
--- pipelined picker emits a request-only message ('ack=0, req=N').
--- Filling the window without acking is spec-compliant and matches V1's
--- behaviour.
-prop_nextPeerActionPipelined_allowsRequestOnly
-  :: ArbTxDecisionPolicy
-  -> Property
-prop_nextPeerActionPipelined_allowsRequestOnly (ArbTxDecisionPolicy policy) =
-  let
-    -- Small windows, so the property is easy to reason about.
-    config = TxSubmissionConfig { maxNumUnacknowledgedTxIds = 4
-                                , maxNumTxIdsToRequest      = 4 }
-    txid :: TxId
-    txid = 1
-    -- Pre-state: peer has one unacked txid that is *not* ackable
-    -- (entry sits TxClaimable with no peer attempt and the peer is
-    -- still tracking it as advertised), AND there is already a
-    -- pipelined request outstanding so 'keepOneUnackedForPipelinedRequest'
-    -- forces num_acked = 0.
-    sharedState0 = mkActiveSharedState [peerAddr] peerAddr [] [(txid, 64)]
-    keyInt = unTxKey (lookupKeyOrFail txid sharedState0)
-    -- Strip the leaseholder so the entry is TxClaimable, attempt 0.
-    sharedState1 = sharedState0 {
-        sharedTxTable =
-          IntMap.adjust
-            (\entry -> entry {
-                 txLease   = TxClaimable now,
-                 txAttempt = 0
-               })
-            keyInt (sharedTxTable sharedState0)
-      }
-    -- Leave 'peerAvailableTxIds' empty so 'pickRequestTxsAction' finds no
-    -- body candidate and the scheduler falls through to the txid picker.
-    peerState0 = emptyPeerTxLocalState {
-        peerUnacknowledgedTxIds = StrictSeq.singleton (TxKey keyInt),
-        peerRequestedTxIds = 1  -- pretend there's a pipelined req in flight
-      }
-    peerInFlight0 = emptyPeerTxInFlight {
-        pifAdvertised = IntSet.singleton keyInt
-      }
-
-    (action, _, _, _) =
-      nextPeerActionPipelined now policy config peerAddr peerState0
-                              peerInFlight0 sharedState1
-  in
-    counterexample ("got: " ++ show action) $
-      case action of
-        PeerRequestTxIds ack req ->
-          conjoin [ counterexample "ack should be zero (nothing ackable)"
-                      (ack == 0)
-                  , counterexample "req should be non-zero (window has room)"
-                      (req /= 0)
-                  ]
-        _ -> property False
+-- | The pipelined picker's txid request, with a request already in
+-- flight so the message is non-blocking: it acknowledges the ackable
+-- prefix of the queue, less one txid when that prefix is the whole
+-- queue, since the outbound needs a txid left unacked; it requests the
+-- window's room after that ack, capped by the per-message limit less
+-- the request in flight; and it emits the request iff both counts are
+-- positive, otherwise it waits.  A request that acknowledges nothing
+-- would let the window fill with txids the inbound never clears, and a
+-- pure ack would burn a pipeline slot on an empty reply.
+prop_nextPeerActionPipelined_rejectsRequestOnly
+  :: ArbTxDecisionPolicy -> NonNegative Int -> NonNegative Int -> Property
+prop_nextPeerActionPipelined_rejectsRequestOnly (ArbTxDecisionPolicy policy)
+                                                (NonNegative n0) (NonNegative a0) =
+  let n = n0 `mod` 5
+      nAckable = a0 `mod` (n + 1)
+      -- a window the queue can fill, so the room after the ack binds
+      window = 4 :: Int
+      cap    = 4 :: Int
+      inFlight = 1 :: Int
+      config = defaultTxSubmissionConfigV2
+                 { maxNumUnacknowledgedTxIds = fromIntegral window
+                 , maxNumTxIdsToRequest      = fromIntegral cap
+                 }
+      txids = [1 .. n] :: [TxId]
+      ackableTxids = take nAckable txids
+      -- every entry is leased to another peer, so this peer has nothing to
+      -- claim or submit; the first 'nAckable' are retained and so ackable
+      shared0 = mkActiveSharedState [leaseholder] leaseholder [] [ (txid, 64) | txid <- txids ]
+      shared1 = seedRetainedTxids policy [ (txid, 64) | txid <- ackableTxids ] shared0
+      ackableKeys = [ lookupKeyOrFail txid shared1 | txid <- ackableTxids ]
+      shared2 = shared1 {
+          sharedTxTable =
+            foldr (IntMap.delete . unTxKey) (sharedTxTable shared1) ackableKeys
+        }
+      keys = [ lookupKeyOrFail txid shared2 | txid <- txids ]
+      peerState0 = emptyPeerTxLocalState {
+          peerUnacknowledgedTxIds = StrictSeq.fromList keys,
+          peerRequestedTxIds      = fromIntegral inFlight
+        }
+      pif0 = emptyPeerTxInFlight { pifAdvertised = IntSet.fromList (map unTxKey keys) }
+      (action, _, _, _) = nextPeerActionPipelined now policy config peerAddr
+                                                  peerState0 pif0 shared2
+      -- the model: the ackable prefix, keeping one txid unacked; the
+      -- window's room after that ack under the per-message cap
+      ackExpected = max 0 (min nAckable (n - 1))
+      reqExpected = max 0 (min (window - (n + inFlight) + ackExpected)
+                               (cap - inFlight))
+      expectRequest = ackExpected > 0 && reqExpected > 0
+  in counterexample (show (action, n, nAckable)) $
+       checkCoverage $
+       cover 10 (n == 0) "empty queue" $
+       cover 10 (n > 0 && nAckable == 0) "nothing ackable" $
+       cover 10 (nAckable > 0 && nAckable < n) "mixed ackable/unackable" $
+       cover 10 (n > 0 && nAckable == n) "all ackable, one is kept unacked" $
+       cover 3 (nAckable > 0 && not expectRequest) "ackable but no request fits" $
+       cover 10 (expectRequest && reqExpected < cap - inFlight) "the window room binds" $
+       case action of
+         PeerRequestTxIds ack req ->
+           conjoin
+             [ counterexample "a request where the picker should wait" expectRequest
+             , counterexample "the acknowledgements"
+                 (fromIntegral ack === ackExpected)
+             , counterexample "the request count"
+                 (fromIntegral req === reqExpected)
+             ]
+         PeerDoNothing {} ->
+           counterexample "waiting with an ack and a request to send"
+             (not expectRequest)
+         unexpected ->
+           counterexample ("unexpected " ++ show unexpected) False
   where
-    peerAddr = 1 :: PeerAddr
+    peerAddr    = 1 :: PeerAddr
+    leaseholder = 2 :: PeerAddr
 
 -- | Pure-ack pipelined messages (ack=N, req=0) burn a pipeline slot for
 -- an empty reply and shrink the txid window without growing it.  The
@@ -2839,14 +2866,11 @@ prop_nextPeerAction_nonOwnerWaitsUntilResolved (ArbTxDecisionPolicy policy)
                      resolvedSharedState
   in
     conjoin
-      [ counterexample "unresolved: must not ack the unresolved txid" $
+      [ counterexample "unresolved: must wait, the txid unacked and no request sent" $
           case unresolvedAction of
             PeerDoNothing _ _ ->
               peerUnacknowledgedTxIds unresolvedPeerState'
                 === peerUnacknowledgedTxIds peerState0
-            PeerRequestTxIds ack _ ->
-              counterexample ("ack should be 0, got " ++ show ack)
-                (ack === 0)
             other ->
               counterexample ("unexpected unresolved action: " ++ show other)
                              False
@@ -2863,6 +2887,59 @@ prop_nextPeerAction_nonOwnerWaitsUntilResolved (ArbTxDecisionPolicy policy)
       ]
   where
     peerAddr = 1 :: PeerAddr
+
+-- | In non-pipelined mode a txid request without acks is the blocking poll
+-- of an empty unacked queue; while txids sit unacked with nothing ackable
+-- the peer waits rather than polling with @ack=0, req=N@.  A queue whose
+-- front is ackable still requests: the ack does not stop the poll.
+prop_nextPeerAction_blockingOnlyWhenEmpty
+  :: ArbTxDecisionPolicy -> NonNegative Int -> NonNegative Int -> Property
+prop_nextPeerAction_blockingOnlyWhenEmpty (ArbTxDecisionPolicy policy)
+                                          (NonNegative n0) (NonNegative r0) =
+  let n = n0 `mod` 4
+      r = r0 `mod` 2
+      retainedTxids = [1 .. r] :: [TxId]
+      activeTxids   = [r + 1 .. r + n] :: [TxId]
+      -- the entries leased to another peer and not downloaded here: nothing
+      -- for this peer to claim or submit.  The retained prefix is ackable.
+      shared0 = seedRetainedTxids policy
+                  [ (txid, 64) | txid <- retainedTxids ]
+                  (mkActiveSharedState [leaseholder] leaseholder []
+                     [ (txid, 64) | txid <- activeTxids ])
+      retainedKeys = [ lookupKeyOrFail txid shared0 | txid <- retainedTxids ]
+      activeKeys   = [ lookupKeyOrFail txid shared0 | txid <- activeTxids ]
+      peerState0 = emptyPeerTxLocalState
+        { peerUnacknowledgedTxIds =
+            StrictSeq.fromList (retainedKeys ++ activeKeys) }
+      pif0 = emptyPeerTxInFlight
+        { pifAdvertised = IntSet.fromList (map unTxKey activeKeys) }
+      (action, _, _, _) = nextPeerAction now policy defaultTxSubmissionConfigV2 peerAddr
+                                         peerState0 pif0 shared0
+      config = defaultTxSubmissionConfigV2
+      window = fromIntegral (maxNumUnacknowledgedTxIds config) :: Int
+      cap    = fromIntegral (maxNumTxIdsToRequest config) :: Int
+      -- the window's room after acking the prefix: the active tail
+      expectedReq = fromIntegral (max 0 (min (window - n) cap))
+  in counterexample (show (r, n, action)) $
+     checkCoverage $
+     cover 5 (r == 0 && n == 0) "empty queue" $
+     cover 10 (r == 0 && n > 0) "unacked, nothing ackable" $
+     cover 5 (r > 0 && n == 0) "only ackable keys" $
+     cover 15 (r > 0 && n > 0) "ackable prefix and unacked tail" $
+     case action of
+       PeerRequestTxIds ack req ->
+         counterexample "a request without acks while txids sit unacked"
+           (property (r > 0 || n == 0))
+         .&&. counterexample "the acknowledgements" (ack === fromIntegral r)
+         .&&. counterexample "the request count" (req === expectedReq)
+       PeerDoNothing {} ->
+         counterexample "waiting on an empty or ackable queue"
+           (property (r == 0 && n > 0))
+       unexpected ->
+         counterexample ("unexpected " ++ show unexpected) False
+  where
+    peerAddr    = 1 :: PeerAddr
+    leaseholder = 2 :: PeerAddr
 
 -- | Roles for 'prop_nextPeerAction_claimsClaimableTx': 'Good' has no
 -- score and can claim immediately; 'Bad' has a non-zero score that
@@ -3691,8 +3768,7 @@ genPeerTxLocalState = sized $ \n -> do
       peerRequestedTxIds,
       peerDownloadedTxs,
       peerDownloadStartTime = Nothing,
-      peerScore = PeerScore peerScoreValue peerScoreTs,
-      peerLastTxIdReplyWasEmpty = False
+      peerScore = PeerScore peerScoreValue peerScoreTs
     }
   where
     genAvailableTx key = do
