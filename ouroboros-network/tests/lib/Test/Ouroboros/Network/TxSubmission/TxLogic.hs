@@ -182,6 +182,7 @@ tests =
     , testProperty "the shared state's counts are traced under every field's name, each the count its name says" prop_countFields_everyField
     , testProperty "nanosecond deadlines never expire early, and expire within 1 ns" prop_retainDeadline_rounding
     , testProperty "counters snapshot counts every peer exactly once" prop_snapshotCounters_exactlyOnce
+    , testProperty "the reply-size counters bucket each reply to a request for txids by its txids, skip a reply to one for acknowledgements alone, and count the txids on the oldest request's tier" prop_replySizeCounters
     , testProperty "a release removes its own registration, not another under its address" prop_registry_releaseOwn
     , testProperty "nextPeerActionPipelined never requests txids without acknowledging, whatever the queue" prop_nextPeerActionPipelined_rejectsRequestOnly
     , testCaseSteps "nextPeerActionPipelined rejects pure-ack (ack=N, req=0) messages" unit_nextPeerActionPipelined_rejectsPureAck
@@ -221,7 +222,6 @@ tests =
         , testProperty "the tier states and the census follow the flags as the joins, refreshes and decisions left them" prop_tier_censusFollowsFlags
         , testProperty "between a refresh's snapshot and its write, the later ask of the governor wins" prop_tier_refreshRace
         , testProperty "the request tiers are a queue: a reply takes the oldest request's tier" prop_requestTiers_fifo
-        , testProperty "a reply's txids are counted on the tier of the oldest outstanding request" prop_requestTiers_counted
         , testProperty "a txid request records the tier it is served on" prop_requestTier_recorded
         , testProperty "a request for acknowledgements alone counts as a message and as such, not as a slow request" prop_counters_txIdRequest
         , testProperty "the counters thread rotates the order once a period, not before" prop_countersThread_rotates
@@ -7126,34 +7126,6 @@ prop_requestTiers_fifo ops =
       in counterexample ("took " ++ show t ++ ", expected " ++ show expected) (t === expected)
          .&&. go rest model' st'
 
--- | Each reply's txids are counted on the tier of the oldest outstanding
--- request, whatever the later requests went out on, and every reply takes
--- its request's tier off the queue.
-prop_requestTiers_counted :: ArbTxDecisionPolicy -> NonEmptyList (Bool, NonNegative Int) -> Property
-prop_requestTiers_counted (ArbTxDecisionPolicy policy0) (NonEmpty replies0) =
-    cover 30 (length replies >= 2 && any fst replies && not (all fst replies)) "slow and fast outstanding" $
-    runSimOrThrow $ do
-      registry  <- noRootsRegistry (mkStdGen 5)
-      sharedVar <- newSharedTxStateVar (emptySharedTxState :: SharedTxState PeerAddr TxId)
-      retired   <- newTxSubmissionCountersVar mempty
-      mempool   <- emptyMempool
-      final <- withPeer policy defaultTxSubmissionConfigV2 (getMempoolReader mempool)
-                        sharedVar registry retired (0 :: PeerAddr) $ \api ->
-        foldM (\ps (i, (_, n)) ->
-                 applyReceivedTxIds api (Time (fromIntegral i)) Nothing (fromIntegral n) (idsOf i n)
-                                    ps { peerRequestedTxIds = fromIntegral n })
-              emptyPeerTxLocalState { peerTxIdRequests = StrictSeq.fromList (map TxIdsOn tiers) }
-              (zip [1 :: Int ..] replies)
-      c <- snapshotCountersWith atomically retired registry
-      pure $ counterexample ("slow ids " ++ show (txIdsReceivedSlow c)) (txIdsReceivedSlow c === expectedSlow)
-        .&&. counterexample ("requests left " ++ show (peerTxIdRequests final)) (StrictSeq.null (peerTxIdRequests final))
-  where
-    policy       = policy0 { txSourceCount = 0 }
-    replies      = [ (slow, n `mod` 13) | (slow, NonNegative n) <- take 8 replies0 ]
-    tiers        = [ if slow then SlowTier else FastTier | (slow, _) <- replies ]
-    idsOf i n    = [ (i * 100 + j, 100) | j <- [1 .. n] ] :: [(TxId, SizeInBytes)]
-    expectedSlow = sum [ fromIntegral n | (True, n) <- replies ]
-
 -- | A decision that sends a txid request records the tier it is served on:
 -- a local root's as fast, a lone peer's as fast when the coin has a slot
 -- for it and as slow when it has none.
@@ -7651,6 +7623,66 @@ prop_tier_censusFollowsFlags (ArbTxDecisionPolicy policy0) (NonNegative k0) (Fla
         , conjoin [ counterexample ("peer " ++ show p ++ " state") (s === fpState (live Map.! p))
                   | (p, s) <- states ]
         ]
+
+-- | The record of an outstanding txid request a reply answers.
+newtype ArbTxIdRequest = ArbTxIdRequest TxIdRequest
+  deriving Show
+
+instance Arbitrary ArbTxIdRequest where
+  arbitrary = ArbTxIdRequest <$> elements [TxIdsOn FastTier, TxIdsOn SlowTier, AcksOnly]
+  shrink (ArbTxIdRequest AcksOnly)           = map ArbTxIdRequest [TxIdsOn SlowTier, TxIdsOn FastTier]
+  shrink (ArbTxIdRequest (TxIdsOn SlowTier)) = [ArbTxIdRequest (TxIdsOn FastTier)]
+  shrink (ArbTxIdRequest (TxIdsOn FastTier)) = []
+
+-- | The reply-size counters through the registry: replies answering a
+-- queue of outstanding requests in turn, each with so many txids, bump
+-- the bucket of each reply's size once for a request for txids and no
+-- bucket for one for acknowledgements alone, count every reply and every
+-- txid, and count a reply's txids on the slow tier exactly when the
+-- oldest outstanding request was for txids on it; the queue is empty at
+-- the end.
+prop_replySizeCounters :: ArbTxDecisionPolicy -> NonEmptyList (ArbTxIdRequest, NonNegative Int) -> Property
+prop_replySizeCounters (ArbTxDecisionPolicy policy0) (NonEmpty replies0) =
+    cover 20 (any ((== AcksOnly) . fst) replies) "acknowledgements alone" $
+    cover 30 (length replies >= 2 && any ((== TxIdsOn SlowTier) . fst) replies
+              && not (all ((== TxIdsOn SlowTier) . fst) replies)) "slow and other requests outstanding" $
+    runSimOrThrow $ do
+      registry  <- noRootsRegistry (mkStdGen 3)
+      sharedVar <- newSharedTxStateVar (emptySharedTxState :: SharedTxState PeerAddr TxId)
+      retired   <- newTxSubmissionCountersVar mempty
+      mempool   <- emptyMempool
+      final <- withPeer policy defaultTxSubmissionConfigV2 (getMempoolReader mempool)
+                        sharedVar registry retired (0 :: PeerAddr) $ \api ->
+        -- each reply answers the oldest request with n ids of its own
+        foldM (\ps (i, (_, n)) ->
+                 applyReceivedTxIds api (Time (fromIntegral i)) Nothing (fromIntegral n) (idsOf i n)
+                                    ps { peerRequestedTxIds = fromIntegral n })
+              emptyPeerTxLocalState { peerTxIdRequests = StrictSeq.fromList (map fst replies) }
+              (zip [1 :: Int ..] replies)
+      c <- snapshotCountersWith atomically retired registry
+      let buckets = (txIdReplies0 c, txIdReplies1 c, txIdReplies2to4 c, txIdReplies5to9 c, txIdReplies10 c)
+      pure $ conjoin
+        [ counterexample ("replies " ++ show (txIdRepliesReceived c)) (txIdRepliesReceived c === fromIntegral (length replies))
+        , counterexample ("received " ++ show (txIdsReceived c)) (txIdsReceived c === fromIntegral (sum (map snd replies)))
+        , counterexample ("slow " ++ show (txIdsReceivedSlow c)) (txIdsReceivedSlow c === expectedSlow)
+        , counterexample ("buckets " ++ show buckets) (buckets === expectedBuckets)
+        , counterexample ("requests left " ++ show (peerTxIdRequests final)) (StrictSeq.null (peerTxIdRequests final))
+        ]
+  where
+    policy  = policy0 { txSourceCount = 0 }
+    replies = [ (request, n `mod` 13) | (ArbTxIdRequest request, NonNegative n) <- take 8 replies0 ]
+    idsOf i n = [ (i * 100 + j, 100) | j <- [1 .. n] ] :: [(TxId, SizeInBytes)]
+    expectedSlow :: Word64
+    expectedSlow = sum [ fromIntegral n | (TxIdsOn SlowTier, n) <- replies ]
+    expectedBuckets :: (Word64, Word64, Word64, Word64, Word64)
+    expectedBuckets = List.foldl' add (0, 0, 0, 0, 0) replies
+    add bs (AcksOnly, _) = bs
+    add (b0, b1, b2, b5, b10) (_, n)
+      | n == 0    = (b0 + 1, b1, b2, b5, b10)
+      | n == 1    = (b0, b1 + 1, b2, b5, b10)
+      | n <= 4    = (b0, b1, b2 + 1, b5, b10)
+      | n <= 9    = (b0, b1, b2, b5 + 1, b10)
+      | otherwise = (b0, b1, b2, b5, b10 + 1)
 
 -- | One fetch cycle for a peer: txids it advertises, which of the requested
 -- bodies it delivers, and which of the delivered ones the mempool rejects.
