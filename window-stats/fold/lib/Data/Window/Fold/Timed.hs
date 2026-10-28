@@ -54,7 +54,8 @@ windowScan timedWindowDuration = F.Fold step initial extract
     step :: (W.TimedWindow t v a, S.Seq v) -> (t, a) -> (W.TimedWindow t v a, S.Seq v)
     step (w, ms) (t, a) =
       let !w'  = W.insert (t, a) w
-          !ms' = ms S.|> W.windowMeasure w'
+          !m   = W.windowMeasure w'
+          !ms' = ms S.|> m
       in  (w', ms')
     initial = (W.empty timedWindowDuration, S.empty)
     extract = snd
@@ -89,7 +90,8 @@ windowFoldRolling :: forall t v a r. (TimeDuration t, FT.Measured v a)
 windowFoldRolling timedWindowDuration = F.purely $ \innerStep innerInit innerExtract ->
   let step (!w, !s) (t, a) =
         let !w' = W.insert (t, a) w
-            !s' = innerStep s (W.windowMeasure w')
+            !m  = W.windowMeasure w'
+            !s' = innerStep s m
         in  (w', s')
   in  F.Fold step (W.empty timedWindowDuration :: W.TimedWindow t v a, innerInit) (innerExtract . snd)
 
@@ -110,8 +112,9 @@ windowFoldRollingFull :: forall t v a r. (TimeDuration t, FT.Measured v a)
 windowFoldRollingFull timedWindowDuration = F.purely $ \innerStep innerInit innerExtract ->
   let step (!w, !s) (t, a) =
         let !w' = W.insert (t, a) w
+            !m  = W.windowMeasure w'
             !s' = if maybe False (>= timedWindowDuration) (W.windowDuration w')
-                    then innerStep s (W.windowMeasure w')
+                    then innerStep s m
                     else s
         in  (w', s')
   in  F.Fold step (W.empty timedWindowDuration :: W.TimedWindow t v a, innerInit) (innerExtract . snd)
@@ -128,7 +131,8 @@ windowFoldRollingM :: forall m t v a r. (Monad m, TimeDuration t, FT.Measured v 
 windowFoldRollingM timedWindowDuration = F.impurely $ \innerStep innerInit innerExtract ->
   let step (w, s) (t, a) = do
         let !w' = W.insert (t, a) w
-        !s' <- innerStep s (W.windowMeasure w')
+            !m  = W.windowMeasure w'
+        !s' <- innerStep s m
         return (w', s')
       init' = do
         s <- innerInit
@@ -158,7 +162,9 @@ windowFoldRolling2 short long = F.purely $ \innerStep innerInit innerExtract ->
   let step (ws, wl, s) (t, a) =
         let !ws' = W.insert (t, a) ws
             !wl' = W.insert (t, a) wl
-            !s'  = innerStep s (W.windowMeasure ws', W.windowMeasure wl')
+            !ms  = W.windowMeasure ws'
+            !ml  = W.windowMeasure wl'
+            !s'  = innerStep s (ms, ml)
         in  (ws', wl', s')
       init' = ( W.empty short :: W.TimedWindow t v a
               , W.empty long  :: W.TimedWindow t v a
@@ -182,9 +188,11 @@ windowFoldRolling2Full short long = F.purely $ \innerStep innerInit innerExtract
   let step (ws, wl, s) (t, a) =
         let !ws' = W.insert (t, a) ws
             !wl' = W.insert (t, a) wl
+            !ms  = W.windowMeasure ws'
+            !ml  = W.windowMeasure wl'
             !s'  = if maybe False (>= short) (W.windowDuration ws')
                       && maybe False (>= long) (W.windowDuration wl')
-                     then innerStep s (W.windowMeasure ws', W.windowMeasure wl')
+                     then innerStep s (ms, ml)
                      else s
         in  (ws', wl', s')
       init' = ( W.empty short :: W.TimedWindow t v a

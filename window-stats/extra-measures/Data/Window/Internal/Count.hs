@@ -169,7 +169,7 @@ insert val win@Window { windowMaxSize, windowTree } = win { windowTree = ftree' 
                          FT.EmptyR      -> error "impossible"
                          prefix FT.:> _ -> prefix
                   else ftree
-    !_ = FT.measure ftree'
+    !_ = wmV $ FT.measure ftree'
 
 
 -- | Insert many samples into the window, evicting as soon
@@ -195,7 +195,7 @@ evictOldest win@Window { windowTree } =
   case FT.viewr windowTree of
     FT.EmptyR      -> win
     prefix FT.:> _ ->
-      let !_ = FT.measure prefix
+      let !_ = wmV $ FT.measure prefix
        in win { windowTree = prefix }
 
 
@@ -319,7 +319,7 @@ fromListN windowMaxSize as =
       }
   where
     windowTree' = FT.fromList . map (Sample . coerce) . take windowMaxSize $ as
-    !_          = FT.measure windowTree'
+    !_          = wmV $ FT.measure windowTree'
 
 
 -- | Construct a window from a 'Foldable' collection,
