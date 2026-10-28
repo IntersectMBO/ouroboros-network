@@ -52,8 +52,8 @@ library
     base,
     deepseq,
     fingertree,
+    io-classes:si-timers ^>=1.8,
     tdigest,
-    io-classes:si-timers ^>= 1.8,
 
   hs-source-dirs:
     lib
@@ -75,7 +75,7 @@ library extra-measures
   build-depends:
     base >=4.14 && <4.23,
     deepseq,
-    fingertree ^>= 0.1.6.1,
+    fingertree ^>=0.1.6.1,
     io-classes:si-timers ^>=1.8,
     time,
     window-stats,
