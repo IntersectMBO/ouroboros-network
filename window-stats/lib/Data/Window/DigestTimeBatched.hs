@@ -15,8 +15,8 @@
 -- multiple quantiles can be queried cheaply over the same window
 -- without recomputing.
 --
--- The time representation is abstracted via 'TimeLike' from
--- "Data.Window.TimeLike", so the same combinators work for wall-clock
+-- The time representation is abstracted via 'TimeDuration' from
+-- "Data.Window.TimeDuration", so the same combinators work for wall-clock
 -- ('UTCTime') and monotonic
 -- ('Control.Monad.Class.MonadTime.SI.Time') timestamps.
 --
@@ -55,7 +55,7 @@ module Data.Window.DigestTimeBatched
   , evictBefore
   , reset
     -- * re-exports
-  , TimeLike (..)
+  , TimeDuration (..)
   , TDigest
   ) where
 
@@ -63,4 +63,4 @@ import Prelude hiding (null)
 import Data.TDigest (TDigest)
 
 import Data.Window.Internal.DigestTimeBatched
-import Data.Window.TimeLike
+import Data.Window.TimeDuration

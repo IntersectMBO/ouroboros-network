@@ -28,45 +28,45 @@
 --
 -- = Laws
 --
--- For any @t1, t2 :: t@ and @d :: 'Dur' t@:
+-- For any @t1, t2 :: t@ and @d :: 'Duration' t@:
 --
 -- @
 -- ('diffT' t2 t1) \`'addT'\` t1  ==  t2
 -- 'diffT' ('addT' d t) t        ==  d
 -- @
 --
-module Data.Window.TimeLike (TimeLike (..)) where
+module Data.Window.TimeDuration (TimeDuration (..)) where
 
 import Control.Monad.Class.MonadTime.SI
 
 -- | Absolute time type @t@ paired with its associated duration type
--- @'Dur' t@.
+-- @'Duration' t@.
 --
--- The 'Dur' type family is __injective__: given the duration GHC can
+-- The 'Duration' type family is __injective__: given the duration GHC can
 -- recover the time, so users rarely need explicit type annotations.
 --
-class (Ord t, Ord (Dur t), Num (Dur t)) => TimeLike t where
+class (Ord t, Ord (Duration t), Num (Duration t)) => TimeDuration t where
   -- | The duration type associated with @t@.
-  type Dur t = d | d -> t
+  type Duration t = d | d -> t
 
   -- | @'diffT' t2 t1@ is the duration from @t1@ to @t2@.
-  diffT :: t -> t -> Dur t
+  diffT :: t -> t -> Duration t
 
   -- | @'addT' d t@ shifts @t@ forward (or backward, for negative @d@)
   -- by @d@.
-  addT  :: Dur t -> t -> t
+  addT  :: Duration t -> t -> t
 
 
-instance TimeLike UTCTime where
-  type Dur UTCTime = NominalDiffTime
+instance TimeDuration UTCTime where
+  type Duration UTCTime = NominalDiffTime
   diffT = diffUTCTime
   {-# INLINE diffT #-}
   addT = addUTCTime
   {-# INLINE addT #-}
 
 
-instance TimeLike Time where
-  type Dur Time = DiffTime
+instance TimeDuration Time where
+  type Duration Time = DiffTime
   diffT (Time a) (Time b) = a - b
   {-# INLINE diffT #-}
   addT  d (Time t) = Time (d + t)

@@ -22,7 +22,7 @@ import Data.TDigest.Internal (Mean)
 import GHC.Generics
 import GHC.TypeLits
 
-import Data.Window.TimeLike
+import Data.Window.TimeDuration
 
 
 -- | Finger-tree measure over the sealed buckets.
@@ -72,8 +72,8 @@ data OpenBucket t (comp :: Nat) = OpenBucket
 -- | A time-bucketed sliding window.  The finger tree holds sealed buckets,
 -- newest at the right; 'tdwBucket' is the bucket currently being filled.
 data TimedDigestWindow t (comp :: Nat) = TimedDigestWindow
-  { tdwDuration       :: !(Dur t) -- ^ duration of the whole window
-  , tdwBucketDuration :: !(Dur t) -- ^ duration of a single bucket
+  { tdwDuration       :: !(Duration t) -- ^ duration of the whole window
+  , tdwBucketDuration :: !(Duration t) -- ^ duration of a single bucket
   , tdwBucket         :: !(Maybe (OpenBucket t comp))
   , tdwTree           :: !(FingerTree (BucketMeasure t comp) (SealedBucket t comp))
   , tdwCacheDigest    :: !(Maybe (TDigest comp))
@@ -84,12 +84,12 @@ data TimedDigestWindow t (comp :: Nat) = TimedDigestWindow
     -- field directly.
   }
 
-deriving instance (Show (Dur t), Show t) => Show (TimedDigestWindow t comp)
+deriving instance (Show (Duration t), Show t) => Show (TimedDigestWindow t comp)
 
 
 -- | An empty window with the given bucket width and retention duration (a multiple
 -- of bucket width).
-empty :: (TimeLike t, KnownNat comp) => Dur t -> Int -> TimedDigestWindow t comp
+empty :: (TimeDuration t, KnownNat comp) => Duration t -> Int -> TimedDigestWindow t comp
 empty tdwBucketDuration r =
   TimedDigestWindow
     { tdwDuration = fromIntegral r * tdwBucketDuration
@@ -137,7 +137,7 @@ windowDigest tdw = case tdwCacheDigest tdw of
 -- that have spilled past the window duration. Note that eviction
 -- occurs at the granularity of buckets so only when a new bucket
 -- is added.
-insert :: (TimeLike t, KnownNat comp)
+insert :: (TimeDuration t, KnownNat comp)
        => (t, Double)
        -> TimedDigestWindow t comp
        -> TimedDigestWindow t comp
@@ -177,7 +177,7 @@ insert (t, a) tdw@TimedDigestWindow { tdwBucketDuration, tdwDuration, tdwBucket,
 
 -- | Drop all buckets whose newest sample timestamp is older than the given value
 --
-evictBefore :: (KnownNat comp, TimeLike t)
+evictBefore :: (KnownNat comp, TimeDuration t)
             => t
             -> TimedDigestWindow t comp
             -> TimedDigestWindow t comp
@@ -210,9 +210,9 @@ evictBefore cutoff win = win { tdwTree = tdwTree'
 -- samples held by up to one bucket period over which actually there aren't
 -- any samples held.
 --
-windowDuration :: (KnownNat comp, TimeLike t)
+windowDuration :: (KnownNat comp, TimeDuration t)
                => TimedDigestWindow t comp
-               -> Maybe (Dur t)
+               -> Maybe (Duration t)
 windowDuration TimedDigestWindow { tdwBucket, tdwBucketDuration, tdwTree } =
     do
     start  <- start'

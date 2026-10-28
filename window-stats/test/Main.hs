@@ -32,9 +32,9 @@ newtype Cap = Cap Int deriving Show
 instance Arbitrary Cap where
   arbitrary = Cap <$> choose (1, 32)
 
-newtype Dur = Dur NominalDiffTime deriving Show
-instance Arbitrary Dur where
-  arbitrary = Dur . fromInteger <$> choose (1, 60)
+newtype Duration = Duration NominalDiffTime deriving Show
+instance Arbitrary Duration where
+  arbitrary = Duration . fromInteger <$> choose (1, 60)
 
 
 -- Count ---------------------------------------------------------------------
@@ -88,8 +88,8 @@ prop_evictOldestN (Cap n) xs (NonNegative k) =
 
 -- evictBefore retains only samples with timestamp >= cutoff. Input is
 -- sorted to honour the non-decreasing-timestamp invariant of insertMany.
-prop_evictBefore :: Dur -> [(NonNegative Int, Int)] -> Int -> Property
-prop_evictBefore (Dur d) tvs offset =
+prop_evictBefore :: Duration -> [(NonNegative Int, Int)] -> Int -> Property
+prop_evictBefore (Duration d) tvs offset =
   let base   = UTCTime (fromGregorian 2024 1 1) 0
       sorted = sortBy (comparing fst) tvs
       pairs  = [ (fromIntegral s `addUTCTime` base, v)
@@ -102,8 +102,8 @@ prop_evictBefore (Dur d) tvs offset =
 
 -- windowDuration on a freshly-built window from a non-decreasing
 -- timestamp list equals (newest - oldest), within the configured cap.
-prop_windowDuration :: Dur -> [NonNegative Int] -> Property
-prop_windowDuration (Dur d) ts0 =
+prop_windowDuration :: Duration -> [NonNegative Int] -> Property
+prop_windowDuration (Duration d) ts0 =
   let sorted = sort (map getNonNegative ts0)
       pairs  = [ (mkT (fromIntegral s), 0 :: Int) | s <- sorted ]
       w      = T.insertMany pairs (T.empty d :: TimedW)
