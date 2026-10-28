@@ -18,7 +18,7 @@ import Data.FingerTree (FingerTree, ViewL (..), ViewR (..))
 import Data.FingerTree qualified as FT
 import Data.Foldable
 import Data.Maybe (listToMaybe)
-import Data.Monoid (Last(..), Sum(..))
+import Data.Monoid (Last (..), Sum (..))
 import Data.Time (UTCTime)
 import GHC.Generics
 
@@ -230,7 +230,9 @@ insert (t, a) win@TimedWindow { twDuration, twTree } =
 -- Elements should be provided in __non-decreasing__ timestamp order for
 -- correct eviction behaviour.
 -- @a@ must be the unwrapped version of b.
--- \(O(\n log w)\), use when n >> w
+-- \(O(n)\); all @n@ samples are held until the final trim, so memory is
+-- \(O(w + n)\). When @n >> w@, prefer folding 'insert', which keeps memory
+-- bounded by the window.
 --
 insertMany :: (TimeDuration t, FT.Measured v b, Foldable f, Coercible a b)
            => f (t, a)
@@ -238,7 +240,12 @@ insertMany :: (TimeDuration t, FT.Measured v b, Foldable f, Coercible a b)
            -> TimedWindow t v b
 insertMany as win@TimedWindow { twDuration, twTree } = maybe win (`evictBefore` toWin twTree') cutoff
   where
-    step (ft, finish') (t, a) = (TimedSample t (coerce a) FT.<| ft, finish' <> pure t)
+    -- Force the user measure as we go, otherwise it builds an @n@-long
+    -- chain of '<>' thunks which the final trim forces all at once.
+    step (!ft, !finish') (t, a) =
+      let !ft' = TimedSample t (coerce a) FT.<| ft
+          !_   = tmV $ FT.measure ft'
+       in (ft', finish' <> pure t)
     (!twTree', !finish) = foldl' step (twTree, mempty) as
     cutoff = do
       finish' <- getLast finish
@@ -252,21 +259,24 @@ insertMany as win@TimedWindow { twDuration, twTree } = maybe win (`evictBefore` 
 --
 -- Elements should be provided in __non-increasing__ timestamp order
 -- for correct behaviour (__note__: this is opposite from 'insertMany' and 'fromFoldable')
+-- Only the elements within the duration are consumed, so the input
+-- may be arbitrarily long.
 -- \(O(\w log w)\)
 --
 fromListN :: (TimeDuration t, FT.Measured v b, Coercible a b)
          => Duration t
          -> [(t, a)]
          -> TimedWindow t v b
-fromListN twDuration as = maybe (empty twDuration) (`evictBefore` win) cutoff
+fromListN twDuration as = maybe (empty twDuration) (\c -> evictBefore c (win c)) cutoff
   where
     step ft (t, a) = ft FT.|> TimedSample t (coerce a)
-    twTree = foldl' step mempty as
     cutoff = do
       finish' <- fst <$> listToMaybe as
       pure $ negate twDuration `addT` finish'
 
-    win = TimedWindow { twDuration, twTree }
+    win c = TimedWindow { twDuration
+                        , twTree = foldl' step mempty (takeWhile ((> c) . fst) as)
+                        }
 
 
 -- | Construct a window from a 'Foldable' collection, performing
@@ -279,15 +289,7 @@ fromFoldable :: (TimeDuration t, FT.Measured v b, Foldable f, Coercible a b)
              => Duration t
              -> f (t, a)
              -> TimedWindow t v b
-fromFoldable twDuration as = maybe (empty twDuration) (`evictBefore` win) cutoff
-  where
-    step (ft, finish') (t, a) = (TimedSample t (coerce a) FT.<| ft, finish' <> pure t)
-    (!twTree, !finish) = foldl' step (mempty, mempty) as
-    cutoff = do
-      finish' <- getLast finish
-      pure $ negate twDuration `addT` finish'
-
-    win = TimedWindow { twDuration, twTree }
+fromFoldable twDuration as = insertMany as (empty twDuration)
 
 
 -- | Trim the window from the oldest end, keeping the longest

@@ -1,5 +1,5 @@
-{-# LANGUAGE CPP              #-}
-{-# LANGUAGE DataKinds        #-}
+{-# LANGUAGE CPP       #-}
+{-# LANGUAGE DataKinds #-}
 
 module Main (main) where
 
@@ -11,7 +11,7 @@ import Data.Maybe (isNothing)
 import Data.Monoid (Sum (..))
 import Data.Ord (comparing)
 import Data.Time (NominalDiffTime, UTCTime (..), addUTCTime, diffUTCTime,
-                  fromGregorian)
+           fromGregorian)
 import Test.QuickCheck
 import Test.Tasty
 import Test.Tasty.QuickCheck (testProperty)
@@ -120,6 +120,30 @@ prop_windowDuration (Duration d) ts0 =
     utcTimeDiff a b =
       let toS (UTCTime _ d') = realToFrac d' :: Double
       in  toS a - toS b
+
+-- The bulk constructors agree with repeated 'insert' on a
+-- non-decreasing timestamp list ('fromListN' takes it newest-first).
+prop_timed_bulk_eq_foldl :: Duration -> [(NonNegative Int, Int)] -> Property
+prop_timed_bulk_eq_foldl (Duration d) tvs =
+  let pairs = [ (mkT (fromIntegral s), v)
+              | (NonNegative s, v) <- sortBy (comparing fst) tvs ]
+      ref   = toL (foldl' (flip T.insert) (T.empty d :: TimedW) pairs)
+  in  conjoin
+        [ counterexample "insertMany"   $ toL (T.insertMany pairs (T.empty d)) === ref
+        , counterexample "fromFoldable" $ toL (T.fromFoldable d pairs) === ref
+        , counterexample "fromListN"    $ toL (T.fromListN d (reverse pairs)) === ref
+        ]
+  where
+    toL :: TimedW -> [(UTCTime, Int)]
+    toL = T.toTimedNewestFirst
+
+-- 'fromListN' consumes only the samples within the duration, so it
+-- terminates on an infinite newest-first input.
+unit_timed_fromListN_lazy :: Property
+unit_timed_fromListN_lazy =
+  within 1000000 $
+    let w = T.fromListN 10 [ (mkT (negate (fromIntegral i)), i) | i <- [0 :: Int ..] ] :: TimedW
+    in  T.size w === 10
 
 
 -- DigestTimeBatched ---------------------------------------------------------
@@ -379,6 +403,8 @@ tests =
     , testGroup "Timed"
         [ testProperty "evictBefore keeps t >= cutoff" prop_evictBefore
         , testProperty "windowDuration = newest - oldest" prop_windowDuration
+        , testProperty "bulk constructors ≡ foldl' insert" prop_timed_bulk_eq_foldl
+        , testProperty "fromListN stops at the cutoff"     unit_timed_fromListN_lazy
         ]
     , testGroup "DigestTimeBatched"
         [ testProperty "open bucket resets on seal (bug #1 regression)"
