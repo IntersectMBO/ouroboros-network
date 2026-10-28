@@ -192,12 +192,20 @@ evictBefore cutoff win = win { tdwTree = tdwTree'
                        then tdwBucket win
                        else assert (FT.null tdwTree') Nothing
 
-    tdwTree' = FT.dropUntil (maybe False (> cutoff) . bmFinish)
-                            (tdwTree win)
+    -- 'FT.dropUntil' always rebuilds the spine, even when nothing is
+    -- evicted, since its predicate holds for the whole tree; forcing the
+    -- rebuilt root digest then costs several digest merges. Keep the
+    -- tree, and hence its already computed root digest, when the oldest
+    -- bucket is within the window.
+    tdwTree' = case FT.viewl (tdwTree win) of
+      SealedBucket { sbFinish } :< _
+        | sbFinish > cutoff -> tdwTree win
+      _otherwise -> FT.dropUntil (maybe False (> cutoff) . bmFinish)
+                        (tdwTree win)
+
     -- Force the post-eviction tree measure. This bounds the tail
-    -- latency of the next 'windowDigest' by one '<>' with 'obDigest',
-    -- and drops thunks for evicted subtrees without ever combining
-    -- them.
+    -- latency of the next 'windowDigest' by one '<>' with 'obDigest'.
+    -- See @docs/digest-window-performance.md@ for the trade-off.
     !treeDigest = bmDigest $ FT.measure tdwTree'
 
     -- Lazy cache thunk closing over the post-eviction state.

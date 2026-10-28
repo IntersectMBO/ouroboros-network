@@ -6,6 +6,7 @@ module Main (main) where
 #if !MIN_VERSION_base(4,20,0)
 import Data.Foldable
 #endif
+import Data.FingerTree qualified as FT
 import Data.List (sort, sortBy, tails)
 import Data.Maybe (isNothing)
 import Data.Monoid (Sum (..))
@@ -18,6 +19,7 @@ import Test.Tasty.QuickCheck (testProperty)
 
 import Data.Window.Count qualified as C
 import Data.Window.DigestTimeBatched qualified as DTB
+import Data.Window.Internal.DigestTimeBatched qualified as DTBI
 import Data.Window.Timed qualified as T
 
 
@@ -322,6 +324,41 @@ prop_dtb_evictionRetainsOnlyRecent =
       return [ (mkT t, v) | (t, v) <- zip offsets values ]
 
 
+-- evictBefore agrees with a reference which always uses 'FT.dropUntil'
+-- (the fast path keeps the tree when nothing is evicted). Digests are
+-- compared by presence only: the two trees may combine bucket digests
+-- in a different order, which perturbs t-digest results slightly.
+prop_dtb_evictBefore_eq_dropUntil :: Property
+prop_dtb_evictBefore_eq_dropUntil =
+  forAll (genTimedSamplesIn 30.0) $ \samples ->
+  forAll (choose (-5, 35)) $ \offset ->
+    let w      = buildDigestW 1.0 60 samples   -- window = 60s, nothing evicted yet
+        cutoff = mkT offset
+        w'     = DTB.evictBefore cutoff w
+        ref    = refEvict cutoff w
+    in      shape w' === shape ref
+       .&&. DTB.sampleCount w'    === DTB.sampleCount ref
+       .&&. DTB.windowDuration w' === DTB.windowDuration ref
+       .&&. isNothing (DTB.windowDigest w') === isNothing (DTB.windowDigest ref)
+  where
+    shape :: DigestW -> ([(UTCTime, Int)], Maybe (UTCTime, UTCTime, Int))
+    shape tdw =
+      ( [ (DTBI.sbFinish b, DTBI.sbCount b) | b <- toList (DTBI.tdwTree tdw) ]
+      , (\b -> (DTBI.obStart b, DTBI.obFinish b, DTBI.obCount b)) <$> DTBI.tdwBucket tdw
+      )
+
+    refEvict :: UTCTime -> DigestW -> DigestW
+    refEvict cutoff tdw =
+      let tree'   = FT.dropUntil (maybe False (> cutoff) . DTBI.bmFinish) (DTBI.tdwTree tdw)
+          bucket' = case DTBI.tdwBucket tdw of
+            Just b | DTBI.obFinish b > cutoff -> Just b
+            _                                 -> Nothing
+      in tdw { DTBI.tdwTree        = tree'
+             , DTBI.tdwBucket      = bucket'
+             , DTBI.tdwCacheDigest = (\b -> DTBI.bmDigest (FT.measure tree') <> DTBI.obDigest b) <$> bucket'
+             }
+
+
 -- windowDuration reports a value bounded below by the actual sample
 -- duration (newest - oldest) and above by that duration plus one
 -- bucket period, per its haddock. The upper slack is the range of
@@ -421,6 +458,8 @@ tests =
                        prop_dtb_quantileAccuracy
         , testProperty "eviction retains only recent samples"
                        prop_dtb_evictionRetainsOnlyRecent
+        , testProperty "evictBefore ≡ dropUntil reference"
+                       prop_dtb_evictBefore_eq_dropUntil
         , testProperty "windowDuration is bounded [actual, actual + bucketDur]"
                        prop_dtb_windowDurationApproximate
         , testProperty "cascade generator has dense stretches"
