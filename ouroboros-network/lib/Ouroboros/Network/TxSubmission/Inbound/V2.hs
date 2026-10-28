@@ -74,10 +74,13 @@ collectAndContinueWithState (StatefulCollect f) !st =
 
 -- | A tx-submission inbound side (server, sic!).
 --
--- Each call to 'runNextPeerAction' atomically inspects the shared state and
+-- After the initial delay the server puts the peer in the fetch tiers'
+-- order ('joinTiers'), once.  Each call to 'runNextPeerAction' then
+-- atomically inspects the shared state and
 -- this peer's local protocol state and returns one of: submit buffered
 -- bodies to the mempool, request bodies, request txids (blocking or
--- pipelined), or do nothing.  When idle, the server parks on
+-- pipelined), or do nothing, with the bodies or the txids to send
+-- resolved in that same transaction.  When idle, the server parks on
 -- 'awaitSharedChange' until the shared-state generation moves or an
 -- optional wake delay expires, then re-evaluates.  Body requests are
 -- pipelined; in pipelined mode txid requests become non-blocking and the
@@ -88,7 +91,9 @@ collectAndContinueWithState (StatefulCollect f) !st =
 -- Depth 'n' tracks outstanding pipelined replies (type-level Nat).
 --
 -- States (non-pipelined, n = 0):
---   serverIdle           - park on awaitSharedChange or pick next action
+--   serverIdle           - park on awaitSharedChange (or, while the slow
+--                          tier's gate holds a txid request, on
+--                          awaitClaimableChange) or pick next action
 --   serverReqTxIds 0     - send a txid request (blocking or pipelined)
 --   submitBufferedTxs    - submit buffered bodies, run continuation
 --   requestTxBodies      - send a pipelined body request, depth + 1
@@ -103,13 +108,14 @@ collectAndContinueWithState (StatefulCollect f) !st =
 -- Transitions:
 --
 --   serverIdle
---     [PeerDoNothing]       --> awaitSharedChange   --> serverIdle
---     [PeerSubmitTxs ks]    --> submitBufferedTxs ks serverIdle
---     [PeerRequestTxs ks]   --> requestTxBodies 0 ks
+--     [ResolvedDoNothing]       --> awaitSharedChange   --> serverIdle
+--                               (awaitClaimableChange when gated)
+--     [ResolvedSubmitTxs txs]    --> submitBufferedTxs txs serverIdle
+--     [ResolvedRequestTxs txs]   --> requestTxBodies 0 txs
 --                                 --> continueAfterBodyRequests 1
---     [PeerRequestTxIds] when unack queue empty --> blocking wire request,
+--     [ResolvedRequestTxIds] when unack queue empty --> blocking wire request,
 --                                                    wait for reply --> serverIdle
---     [PeerRequestTxIds] otherwise              --> pipelined wire request
+--     [ResolvedRequestTxIds] otherwise              --> pipelined wire request
 --                                                    --> handleReplies 1
 --
 --   handleReplies n --> handleReply (n-1)
@@ -119,10 +125,10 @@ collectAndContinueWithState (StatefulCollect f) !st =
 --
 --   continueAfterReplies 0 = serverIdle
 --   continueAfterReplies n@(>0), continueAfterBodyRequests n
---     [PeerSubmitTxs ks]    --> submitBufferedTxs ks (continueAfterReplies n)
---     [PeerRequestTxs ks]   --> requestTxBodies n ks
---     [PeerRequestTxIds]    --> serverReqTxIds n
---     [PeerDoNothing]       --> handleReplies n
+--     [ResolvedSubmitTxs txs]    --> submitBufferedTxs txs (continueAfterReplies n)
+--     [ResolvedRequestTxs txs]   --> requestTxBodies n txs
+--     [ResolvedRequestTxIds]    --> serverReqTxIds n
+--     [ResolvedDoNothing]       --> handleReplies n
 txSubmissionInboundV2
   :: forall txid tx idx m err.
      ( MonadDelay m
@@ -146,20 +152,24 @@ txSubmissionInboundV2
     TxSubmissionMempoolWriter { txId, mempoolAddTxs }
     txSize
     PeerTxAPI {
+      apiJitterSeed,
+      joinTiers,
       awaitSharedChange,
+      awaitClaimableChange,
       runNextPeerAction,
       runNextPeerActionPipelined,
       applyReceivedTxIds,
       applyReceivedTxs,
-      applySubmittedTxs,
-      resolveTxRequest,
-      resolveBufferedTxs
+      applySubmittedTxs
     } =
     TxSubmissionServerPipelined $ do
       case initDelay of
         TxSubmissionInitDelay delay -> threadDelay delay
         NoTxSubmissionInitDelay     -> return ()
-      continueWithStateM serverIdle emptyPeerTxLocalState
+      -- in the order from here on: a peer not polling yet holds no fast slot
+      joinTiers
+      continueWithStateM serverIdle
+        emptyPeerTxLocalState { peerJitterSeed = apiJitterSeed }
   where
 
     -- Mirror V1's TraceTxInboundCan/CannotRequestMoreTxs: emit once per
@@ -177,7 +187,7 @@ txSubmissionInboundV2
     -- This function is called when:
     --   1. The server first starts
     --   2. All pipelined requests have completed and the counter returns to zero
-    --   3. An idle peer wakes up after a @PeerDoNothing@ wait
+    --   3. An idle peer wakes up after a @ResolvedDoNothing@ wait
     serverIdle :: StatefulM (PeerTxLocalState tx) Z txid tx m
     serverIdle = StatefulM $ \peerState -> do
       now <- getMonotonicTime
@@ -194,7 +204,7 @@ txSubmissionInboundV2
         runNextPeerAction now mDownloadTime
           (State.drainPeerScore policy now peerState')
       case peerAction of
-           PeerDoNothing generation mDelay -> do
+           ResolvedDoNothing generation mDelay mClaimable -> do
              -- An Active->Idle transition means this peer has just become
              -- eligible for actions it could not take before (e.g. claiming
              -- expired leases as an idle claimant). Re-run the scheduler
@@ -206,24 +216,29 @@ txSubmissionInboundV2
                 then continueWithStateM serverIdle peerState''
                 else do
                   mRegisteredDelay <- traverse RegisteredDelay.new mDelay
-                  atomically $ awaitSharedChange generation mRegisteredDelay
+                  case mClaimable of
+                    -- the slow tier's gate alone held a txid request: wait
+                    -- for the gate, or for an entry becoming claimable, not
+                    -- for every move of the shared generation
+                    Just claimable ->
+                      atomically $ awaitClaimableChange claimable mRegisteredDelay
+                    Nothing ->
+                      atomically $ awaitSharedChange generation mRegisteredDelay
                   continueWithStateM serverIdle peerState''
-           PeerSubmitTxs txKeys ->
-             continueWithStateM (submitBufferedTxs txKeys serverIdle) peerState''
-           PeerRequestTxs txKeys ->
-             continueWithStateM (requestTxBodies Zero txKeys) peerState''
-           PeerRequestTxIds txIdsToAck txIdsToReq ->
+           ResolvedSubmitTxs bufferedTxs ->
+             continueWithStateM (submitBufferedTxs bufferedTxs serverIdle) peerState''
+           ResolvedRequestTxs txsToRequest ->
+             continueWithStateM (requestTxBodies Zero txsToRequest) peerState''
+           ResolvedRequestTxIds txIdsToAck txIdsToReq ->
              continueWithStateM (serverReqTxIds Zero txIdsToAck txIdsToReq) peerState''
 
     -- | Submit buffered transaction bodies to the mempool.
     submitBufferedTxs :: forall (n :: N).
-                         [TxKey]
+                         [(TxKey, txid, tx)]
                       -> StatefulM (PeerTxLocalState tx) n txid tx m
                       -- ^ a continuation
                       -> StatefulM (PeerTxLocalState tx) n txid tx m
-    submitBufferedTxs txKeys k = StatefulM $ \peerState -> do
-      bufferedTxs <- resolveBufferedTxs peerState txKeys
-
+    submitBufferedTxs bufferedTxs k = StatefulM $ \peerState -> do
       start <- getMonotonicTime
       let submitted = [ (txKey, txid') | (txKey, txid', _) <- bufferedTxs ]
           toSubmit  = [ tx | (_, _, tx) <- bufferedTxs ]
@@ -237,14 +252,17 @@ txSubmissionInboundV2
       -- rejected (see 'TxSubmissionMempoolWriter'); map each verdict's
       -- txids back to our 'TxKey's via the submitted batch.
       let submittedKeyOf   = Map.fromList [ (txid', txKey) | (txKey, txid') <- submitted ]
-          resolvedTxKeys   = mapMaybe (`Map.lookup` submittedKeyOf) acceptedTxIds
+          -- the accepted txs with their txids: one whose key is gone
+          -- meanwhile is retained afresh under a new key
+          acceptedKeyed    = [ (txKey, txid') | txid' <- acceptedTxIds
+                                              , Just txKey <- [Map.lookup txid' submittedKeyOf] ]
           rejectedKeys     = mapMaybe ((`Map.lookup` submittedKeyOf) . fst) rejectedTxs
           rejectedForTrace = fmap fst rejectedTxs
           acceptedCount    = length acceptedTxIds
           rejectedCount    = length rejectedTxs
           delta            = end `diffTime` start
 
-      peerState' <- applySubmittedTxs end delta resolvedTxKeys rejectedKeys
+      peerState' <- applySubmittedTxs end delta acceptedKeyed rejectedKeys
                                       peerState
       let (score, peerState'') =
             State.applyPeerEvents policy end acceptedCount rejectedCount peerState'
@@ -263,10 +281,9 @@ txSubmissionInboundV2
     -- Request transaction bodies from the peer.
     requestTxBodies :: forall (n :: N).
                        Nat n
-                    -> [TxKey]
+                    -> Map.Map txid SizeInBytes
                     -> StatefulM (PeerTxLocalState tx) n txid tx m
-    requestTxBodies n txKeys = StatefulM $ \peerState -> do
-      txsToRequest <- resolveTxRequest peerState txKeys
+    requestTxBodies n txsToRequest = StatefulM $ \peerState -> do
       traceWith tracer (TraceTxInboundRequestTxs (Map.keys txsToRequest))
 
       -- Record the start of the download episode on the first outstanding
@@ -289,13 +306,13 @@ txSubmissionInboundV2
       traceCanRequest n peerState
       (peerAction, peerState') <- runNextPeerActionPipelined now (State.drainPeerScore policy now peerState)
       case peerAction of
-        PeerSubmitTxs txKeys ->
-          continueWithStateM (submitBufferedTxs txKeys (continueAfterReplies n)) peerState'
-        PeerRequestTxs txKeys ->
-          continueWithStateM (requestTxBodies n txKeys) peerState'
-        PeerRequestTxIds txIdsToAck txIdsToReq ->
+        ResolvedSubmitTxs bufferedTxs ->
+          continueWithStateM (submitBufferedTxs bufferedTxs (continueAfterReplies n)) peerState'
+        ResolvedRequestTxs txsToRequest ->
+          continueWithStateM (requestTxBodies n txsToRequest) peerState'
+        ResolvedRequestTxIds txIdsToAck txIdsToReq ->
           continueWithStateM (serverReqTxIds n txIdsToAck txIdsToReq) peerState'
-        PeerDoNothing {} ->
+        ResolvedDoNothing {} ->
           pure $ continueWithState (handleReplies n) peerState'
 
     -- Continue processing after receiving transaction body replies in pipelined mode.
@@ -307,13 +324,13 @@ txSubmissionInboundV2
       traceCanRequest n peerState
       (peerAction, peerState') <- runNextPeerActionPipelined now (State.drainPeerScore policy now peerState)
       case peerAction of
-        PeerSubmitTxs txKeys ->
-          continueWithStateM (submitBufferedTxs txKeys (continueAfterReplies n)) peerState'
-        PeerRequestTxs txKeys ->
-          continueWithStateM (requestTxBodies n txKeys) peerState'
-        PeerRequestTxIds txIdsToAck txIdsToReq ->
+        ResolvedSubmitTxs bufferedTxs ->
+          continueWithStateM (submitBufferedTxs bufferedTxs (continueAfterReplies n)) peerState'
+        ResolvedRequestTxs txsToRequest ->
+          continueWithStateM (requestTxBodies n txsToRequest) peerState'
+        ResolvedRequestTxIds txIdsToAck txIdsToReq ->
           continueWithStateM (serverReqTxIds n txIdsToAck txIdsToReq) peerState'
-        PeerDoNothing {} ->
+        ResolvedDoNothing {} ->
           pure $ continueWithState (handleReplies n) peerState'
 
     -- Construct and send a txid request message to the peer.
@@ -384,7 +401,12 @@ txSubmissionInboundV2
       CollectTxs requested txs -> do
         let received = Map.fromList [ (txId tx, tx) | tx <- txs ]
             wrongSizedTxs = collectWrongSizedTxs requested received
-        unless (Map.keysSet received `Set.isSubsetOf` Map.keysSet requested) $
+        -- every body answers a requested txid, and no txid twice: a second
+        -- copy would answer no pending key and pass for a late body,
+        -- cancelling the omission of a key the peer left out
+        unless (Map.keysSet received `Set.isSubsetOf` Map.keysSet requested
+                && Map.size received == length txs) $ do
+          traceWith tracer (TraceTxInboundError ProtocolErrorTxNotRequested)
           throwIO ProtocolErrorTxNotRequested
         traceWith tracer $ TraceTxSubmissionCollected (txId <$> txs)
         unless (null wrongSizedTxs) $ do
