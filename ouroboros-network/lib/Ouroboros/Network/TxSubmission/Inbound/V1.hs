@@ -10,11 +10,15 @@
 
 module Ouroboros.Network.TxSubmission.Inbound.V1
   ( txSubmissionInbound
+  , defaultTxSubmissionConfigV1
+  , defaultMaxNumTxsToRequest
+    -- * Re-exports
   , TxSubmissionInitDelay (..)
   , TxSubmissionMempoolWriter (..)
   , TraceTxSubmissionInbound (..)
   , TxSubmissionProtocolError (..)
   , ProcessedTxCount (..)
+  , TxSubmissionConfig (..)
   ) where
 
 import Data.Foldable as Foldable (foldl', toList)
@@ -48,6 +52,21 @@ import Ouroboros.Network.TxSubmission.Inbound.V2.Types (ProcessedTxCount (..),
            TxSubmissionMempoolWriter (..), TxSubmissionProtocolError (..))
 import Ouroboros.Network.TxSubmission.Mempool.Reader (MempoolSnapshot (..),
            TxSubmissionMempoolReader (..))
+import Ouroboros.Network.TxSubmission.Outbound (TxSubmissionConfig (..))
+
+
+-- | `TxSubmissionConfig` for `TxSubmissionLogicV1`.
+--
+defaultTxSubmissionConfigV1 :: TxSubmissionConfig
+defaultTxSubmissionConfigV1 = TxSubmissionConfig {
+    maxNumUnacknowledgedTxIds = NumTxIdsToAck 10,
+    maxNumTxIdsToRequest      = NumTxIdsToReq 3
+  }
+
+-- | The default number of txs to request.
+--
+defaultMaxNumTxsToRequest :: NumTxsToReq
+defaultMaxNumTxsToRequest = NumTxsToReq 2
 
 -- | Information maintained internally in the 'txSubmissionInbound' server
 -- implementation.
@@ -121,7 +140,7 @@ initialServerState = ServerState 0 Seq.empty Map.empty Map.empty 0
 
 
 txSubmissionInbound
-  :: forall txid tx idx m err version.
+  :: forall txid tx idx m err.
      ( Ord txid
      , NoThunks txid
      , NoThunks tx
@@ -131,23 +150,26 @@ txSubmissionInbound
      )
   => Tracer m (TraceTxSubmissionInbound txid tx)
   -> TxSubmissionInitDelay
-  -> NumTxIdsToAck  -- ^ Maximum number of unacknowledged txids allowed
+  -> TxSubmissionConfig
+  -- ^ configuration, `defaultTxSubmissionConfigV1`
+  -> NumTxsToReq
+  -- ^ maximum number of txs to request, `defaultMaxNumTxsToRequest`
   -> TxSubmissionMempoolReader txid tx idx m
   -> TxSubmissionMempoolWriter txid tx idx m err
-  -> version
   -> TxSubmissionServerPipelined txid tx m ()
-txSubmissionInbound tracer initDelay (NumTxIdsToAck maxUnacked) mpReader mpWriter _version =
+txSubmissionInbound tracer initDelay config maxNumTxsToRequest mpReader mpWriter =
     TxSubmissionServerPipelined $ do
       case initDelay of
         TxSubmissionInitDelay delay -> threadDelay delay
         NoTxSubmissionInitDelay     -> return ()
       continueWithStateM (serverIdle Zero) initialServerState
   where
+    NumTxIdsToAck maxUnacked = maxNumUnacknowledgedTxIds config
     -- TODO #1656: replace these fixed limits by policies based on
     -- SizeInBytes and delta-Q and the bandwidth/delay product.
     -- These numbers are for demo purposes only, the throughput will be low.
-    maxTxIdsToRequest = 3 :: Word16
-    maxTxToRequest    = 2 :: Word16
+    NumTxIdsToReq maxTxIdsToRequest = maxNumTxIdsToRequest config
+    NumTxsToReq maxTxToRequest      = maxNumTxsToRequest
 
     TxSubmissionMempoolReader{mempoolGetSnapshot} = mpReader
 

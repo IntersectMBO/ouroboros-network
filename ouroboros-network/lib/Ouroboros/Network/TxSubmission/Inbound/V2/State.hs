@@ -44,6 +44,8 @@ data PeerActionContext peeraddr txid tx = PeerActionContext {
     pacNow          :: !Time,
     -- | Decision policy that governs request, retry, and scoring limits.
     pacPolicy       :: !TxDecisionPolicy,
+    -- | Configuration options
+    pacConfig       :: !TxSubmissionConfig,
     -- | Address of the peer whose next action is being chosen.
     pacPeerAddr     :: !peeraddr,
     -- | Current peer-local state after local pruning has been applied.
@@ -78,15 +80,17 @@ data PeerActionChoice peeraddr =
 --
 mkPeerActionContext :: Time
                     -> TxDecisionPolicy
+                    -> TxSubmissionConfig
                     -> peeraddr
                     -> PeerTxLocalState tx
                     -> PeerTxInFlight
                     -> SharedTxState peeraddr txid
                     -> PeerActionContext peeraddr txid tx
-mkPeerActionContext now policy peeraddr peerState peerInFlight sharedState =
+mkPeerActionContext now policy config peeraddr peerState peerInFlight sharedState =
   PeerActionContext {
     pacNow = now,
     pacPolicy = policy,
+    pacConfig = config,
     pacPeerAddr = peeraddr,
     pacPeerState = peerState',
     pacPeerInFlight = peerInFlight',
@@ -133,6 +137,7 @@ mkPeerActionContext now policy peeraddr peerState peerInFlight sharedState =
 nextPeerAction :: Ord peeraddr
                => Time
                -> TxDecisionPolicy
+               -> TxSubmissionConfig
                -> peeraddr
                -> PeerTxLocalState tx
                -> PeerTxInFlight
@@ -145,6 +150,7 @@ nextPeerAction = nextPeerActionWithMode AllowAnyTxIdRequests
 nextPeerActionPipelined :: Ord peeraddr
                         => Time
                         -> TxDecisionPolicy
+                        -> TxSubmissionConfig
                         -> peeraddr
                         -> PeerTxLocalState tx
                         -> PeerTxInFlight
@@ -166,12 +172,13 @@ nextPeerActionWithMode :: Ord peeraddr
                        => TxIdRequestMode
                        -> Time
                        -> TxDecisionPolicy
+                       -> TxSubmissionConfig
                        -> peeraddr
                        -> PeerTxLocalState tx
                        -> PeerTxInFlight
                        -> SharedTxState peeraddr txid
                        -> (PeerAction, PeerTxLocalState tx, PeerTxInFlight, SharedTxState peeraddr txid)
-nextPeerActionWithMode txIdRequestMode now policy peeraddr peerState peerInFlight sharedState =
+nextPeerActionWithMode txIdRequestMode now policy config peeraddr peerState peerInFlight sharedState =
     let (action, peerState', peerInFlight', sharedState'') =
           applyPeerActionChoice ctx (pickPeerActionChoice txIdRequestMode ctx)
         newPhase = phaseForAction txIdRequestMode (peerPhase peerState) action
@@ -181,7 +188,7 @@ nextPeerActionWithMode txIdRequestMode now policy peeraddr peerState peerInFligh
     in (action, peerState'', peerInFlight', sharedState'')
   where
     sharedState' = bumpStuckEntries now policy (peerDownloadedTxs peerState) sharedState
-    ctx = mkPeerActionContext now policy peeraddr peerState peerInFlight sharedState'
+    ctx = mkPeerActionContext now policy config peeraddr peerState peerInFlight sharedState'
 
 -- | Compute the new 'PeerPhase' for the chosen 'PeerAction'.
 --
@@ -394,7 +401,8 @@ pickSubmitAction PeerActionContext { pacPeerState, pacSharedState } =
 -- Tx keys to request (in the peer's advertisement order)
 -- Total serialized size of the requested txs
 -- Updated shared state with new lease ownership for selected txs
-pickRequestTxsAction :: Eq peeraddr
+pickRequestTxsAction :: forall peeraddr txid tx.
+                        Eq peeraddr
                      => PeerActionContext peeraddr txid tx
                      -> Maybe ([TxKey], SizeInBytes, IntMap.IntMap (TxEntry peeraddr))
 pickRequestTxsAction ctx@PeerActionContext { pacNow, pacPolicy, pacPeerState, pacSharedState } =
@@ -403,24 +411,16 @@ pickRequestTxsAction ctx@PeerActionContext { pacNow, pacPolicy, pacPeerState, pa
      then Nothing
      else Just (txsToRequest, txsToRequestSize, sharedState')
   where
-
     -- Picks txs from the peer's available set that are not yet requested or
     -- downloaded, assigning leases with expiry timestamps.
-    -- Respects 'maxOutstandingTxBatchesPerPeer' and 'txsSizeInflightPerPeer' policy
-    -- constraints.
+    -- Respects 'maxOutstandingTxBatchesPerPeer', 'txsSizeInflightPerPeer' and
+    -- 'txsSizePerBatch' policy constraints.
     pickTxsToRequest =
       if StrictSeq.length (peerRequestedTxBatches pacPeerState) >=
            maxOutstandingTxBatchesPerPeer pacPolicy
          then ([], 0, sharedTxTable pacSharedState)
          else go IntSet.empty [] 0 (sharedTxTable pacSharedState) candidates
       where
-        -- Remaining bytes available for requesting new tx, based on the
-        -- per-peer inflight size limit.
-        sizeBudget =
-          if peerRequestedTxsSize pacPeerState >= txsSizeInflightPerPeer pacPolicy
-             then 0
-             else txsSizeInflightPerPeer pacPolicy - peerRequestedTxsSize pacPeerState
-
         leaseUntil = addTime (interTxSpace pacPolicy) pacNow
 
         -- Iterate the peer's unacknowledged queue, which preserves the order
@@ -428,6 +428,7 @@ pickRequestTxsAction ctx@PeerActionContext { pacNow, pacPolicy, pacPeerState, pa
         -- order aligns our fetch order with the peer's advertisement order,
         -- which preserves whatever submission-validity ordering the peer
         -- intended within the batch.
+        candidates :: [(Int, SizeInBytes)]
         candidates =
           [ (k, txSize)
           | TxKey k <- toList (peerUnacknowledgedTxIds pacPeerState)
@@ -446,6 +447,15 @@ pickRequestTxsAction ctx@PeerActionContext { pacNow, pacPolicy, pacPeerState, pa
         -- 'Map txid SizeInBytes' already deduplicates, and we must not
         -- inflate 'txAttempt' or 'peerRequestedTxsSize' with phantom
         -- second claims.
+        go :: IntSet
+           -> [TxKey]
+           -- ^ selected `TxKey`s to request
+           -> SizeInBytes
+           -- ^ overall size of the requested txs
+           -> IntMap.IntMap (TxEntry peeraddr)
+           -> [(Int, SizeInBytes)]
+           -- ^ candidates
+           -> ([TxKey], SizeInBytes, IntMap.IntMap (TxEntry peeraddr))
         go _    selectedRev selectedSize txTable [] = (reverse selectedRev, selectedSize, txTable)
         go seen selectedRev selectedSize txTable ((k, txSize) : rest)
           | IntSet.member k seen = go seen selectedRev selectedSize txTable rest
@@ -470,17 +480,32 @@ pickRequestTxsAction ctx@PeerActionContext { pacNow, pacPolicy, pacPeerState, pa
         --
         -- The inflight size limit is soft by up to one tx size, so a peer with
         -- spare capacity may still request its first tx in a batch even when
-        -- that single tx exceeds the remaining byte budget.
+        -- that single tx exceeds the remaining byte budget. The per-batch
+        -- limit is hard, including for the first transaction (we are relying
+        -- on the `txsSizePerBatch >= max_TX_SIZE` invariant).
+        --
+        -- An advertised txid with size above `max_TX_SIZE` is a protocol
+        -- error, thus when `selectedSize = 0`, `txSize` is at most
+        -- `txsSizePerBatch`.
         exceedsBudget selectedSize txSize
-          | selectedSize + txSize <= sizeBudget = False
-          | selectedSize /= 0 = True
-          | otherwise = peerRequestedTxsSize pacPeerState >= txsSizeInflightPerPeer pacPolicy
+            | selectedSize + txSize > txsSizePerBatch pacPolicy = True
+            | selectedSize + txSize <= sizeBudget = False
+            | selectedSize /= 0 = True
+            | otherwise = peerRequestedTxsSize pacPeerState >= txsSizeInflightPerPeer pacPolicy
+
+        -- Remaining bytes available for requesting new tx, based on the
+        -- per-peer inflight size limit.
+        sizeBudget =
+          if peerRequestedTxsSize pacPeerState >= txsSizeInflightPerPeer pacPolicy
+             then 0
+             else txsSizeInflightPerPeer pacPolicy - peerRequestedTxsSize pacPeerState
+
 
 -- | Determine txid acknowledgment and request counts, if any work is available.
 pickRequestTxIdsAction :: TxIdRequestMode
                        -> PeerActionContext peeraddr txid tx
                        -> Maybe ([TxKey], NumTxIdsToAck, NumTxIdsToReq, StrictSeq.StrictSeq TxKey)
-pickRequestTxIdsAction txIdRequestMode ctx@PeerActionContext { pacPolicy, pacPeerState }
+pickRequestTxIdsAction txIdRequestMode ctx@PeerActionContext { pacPolicy, pacConfig, pacPeerState }
   | txIdsToAcknowledge <= 0 && txIdsToRequest <= 0 = Nothing
 
   -- Benchmark hook: when 'disablePipelinedTxIdRequests' is set, never
@@ -552,13 +577,25 @@ pickRequestTxIdsAction txIdRequestMode ctx@PeerActionContext { pacPolicy, pacPee
     unackedAndRequested = numOfUnacked + numOfRequested
 
     -- How many new txids we can request: capped by the unack-window
-    -- room left after this round's ack ('maxUnacknowledgedTxIds -
+    -- room left after this round's ack ('maxNumUnacknowledgedTxIds -
     -- unackedAndRequested + numOfAcked') and by the per-message
     -- request limit ('maxNumTxIdsToRequest - numOfRequested').
+    --
+    -- Window mismatch (design decision): with 'TxOutboundV_2' the window
+    -- is a local setting of each side and it is not negotiated, so we size
+    -- requests from our own window.  If the peer's window is smaller, it
+    -- clamps our request, and an 'ack=0' request sent when its window is
+    -- full gets an empty reply: a wasted round trip.  We accept that cost
+    -- rather than announcing the window size through handshake which would
+    -- allow us to distinguish a full window from an unchanged mempool.  The cost
+    -- is bounded: the reply is a small pipelined message which doesn't delay
+    -- body requests, and 'peerLastTxIdReplyWasEmpty' suppresses further
+    -- 'ack=0' requests until the peer shows progress (see
+    -- 'pickRequestTxIdsAction').  With equal windows it never happens.
     txIdsToRequest =
       fromIntegral $ max 0 $ min
-        (fromIntegral (maxUnacknowledgedTxIds pacPolicy) - unackedAndRequested + numOfAcked)
-        (fromIntegral (maxNumTxIdsToRequest pacPolicy) - numOfRequested)
+        (fromIntegral (maxNumUnacknowledgedTxIds pacConfig) - unackedAndRequested + numOfAcked)
+        (fromIntegral (maxNumTxIdsToRequest pacConfig) - numOfRequested)
 
 -- | Compute the time delay until the peer should next wake to check for work.
 nextWakeDelay :: PeerActionContext peeraddr txid tx

@@ -26,6 +26,8 @@ data ProtocolSizeLimits ps bytes = ProtocolSizeLimits {
        sizeLimitForState :: forall (st :: ps). ActiveState st
                          => StateToken st -> Word,
 
+       -- TODO: it shouldn't be part of `ProtocolSizeLimits`, it should be
+       -- passed to `runPeerWithLimits` & co directly.
        dataSize          :: bytes -> Word
      }
 

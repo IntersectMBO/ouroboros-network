@@ -102,17 +102,18 @@ import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharing)
 import Ouroboros.Network.Protocol.TxSubmission2.Client (txSubmissionClientPeer)
 import Ouroboros.Network.Protocol.TxSubmission2.Server
            (txSubmissionServerPeerPipelined)
-import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToAck (..),
-           NumTxIdsToReq (..), TxSubmission2)
+import Ouroboros.Network.Protocol.TxSubmission2.Type (TxSubmission2)
 import Ouroboros.Network.RethrowPolicy
 import Ouroboros.Network.TxSubmission.Inbound.V2 (TxSubmissionInitDelay (..),
            txSubmissionInboundV2)
-import Ouroboros.Network.TxSubmission.Inbound.V2.Policy (TxDecisionPolicy (..))
+import Ouroboros.Network.TxSubmission.Inbound.V2.Policy (TxDecisionPolicy (..),
+           TxSubmissionConfig (..))
 import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (PeerTxRegistry,
            SharedTxStateVar, TxSubmissionCountersVar, withPeer)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
            (TraceTxSubmissionInbound)
-import Ouroboros.Network.TxSubmission.Outbound (txSubmissionOutbound)
+import Ouroboros.Network.TxSubmission.Outbound (TxOutboundVersion (..),
+           txSubmissionOutbound)
 import Ouroboros.Network.Util
 
 import Test.Ouroboros.Network.Diffusion.Node.Kernel
@@ -242,8 +243,14 @@ data AppArgs header block m = AppArgs
      :: PSTypes.PeerSharing
   , aaPeerMetrics
      :: PeerMetrics m NtNAddr
-  , aaTxDecisionPolicy :: TxDecisionPolicy
-  , aaTxImpairment     :: Impairment
+  , aaTxDecisionPolicy
+    :: TxDecisionPolicy
+  , aaTxSubmissionConfig
+    :: TxSubmissionConfig
+  , aaTxOutboundVersion
+    :: TxOutboundVersion
+  , aaTxImpairment
+    :: Impairment
     -- ^ behavioural fault injection on this node's outbound
     -- 'TxSubmissionClient' (default: 'noImpairment')
   }
@@ -304,6 +311,8 @@ applications debugTracer txSubmissionInboundTracer nodeKernel
                , aaPeerSharing
                , aaPeerMetrics
                , aaTxDecisionPolicy
+               , aaTxSubmissionConfig
+               , aaTxOutboundVersion
                , aaTxImpairment
                }
              toHeader
@@ -387,7 +396,7 @@ applications debugTracer txSubmissionInboundTracer nodeKernel
               miniProtocolLimits = txSubmissionLimits limits,
               miniProtocolRun    =
                   InitiatorAndResponderProtocol
-                    (txSubmissionInitiator aaTxDecisionPolicy (nkMempool nodeKernel))
+                    (txSubmissionInitiator (nkMempool nodeKernel))
                     (txSubmissionResponder (nkMempool nodeKernel)
                                            (nkTxCountersVar nodeKernel)
                                            (nkSharedTxStateVar nodeKernel)
@@ -694,10 +703,9 @@ applications debugTracer txSubmissionInboundTracer nodeKernel
         $ peerSharingServer psAPI
 
     txSubmissionInitiator
-      :: TxDecisionPolicy
-      -> Mempool m TxId (Tx TxId)
+      :: Mempool m TxId (Tx TxId)
       -> MiniProtocolCb (ExpandedInitiatorContext NtNAddr PeerTrustable m) ByteString m ()
-    txSubmissionInitiator txDecisionPolicy mempool =
+    txSubmissionInitiator mempool =
       MiniProtocolCb $
         \ ExpandedInitiatorContext {
             eicConnectionId   = connId,
@@ -707,10 +715,9 @@ applications debugTracer txSubmissionInboundTracer nodeKernel
         -> do
           let baseClient = txSubmissionOutbound
                              (((prettyShow connId ++) . (" " ++) . show) `contramap` debugTracer)
-                             (NumTxIdsToAck $ getNumTxIdsToReq
-                                            $ maxUnacknowledgedTxIds txDecisionPolicy)
+                             aaTxSubmissionConfig
                              (getMempoolReader mempool)
-                             (maxBound :: UnversionedProtocol)
+                             aaTxOutboundVersion
                              controlMessageSTM
           client <- applyImpairment aaTxImpairment mkUnrequested baseClient
           labelThisThread "TxSubmissionClient"
@@ -740,6 +747,7 @@ applications debugTracer txSubmissionInboundTracer nodeKernel
         \ ResponderContext { rcConnectionId = connId@ConnectionId { remoteAddress = them }} channel
         -> do
           withPeer aaTxDecisionPolicy
+                   aaTxSubmissionConfig
                    (getMempoolReader mempool)
                    sharedTxStateVar
                    inFlightRegistry

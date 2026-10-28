@@ -6,7 +6,9 @@
 {-# LANGUAGE StandaloneDeriving  #-}
 
 module Ouroboros.Network.TxSubmission.Outbound
-  ( txSubmissionOutbound
+  ( TxSubmissionConfig (..)
+  , TxOutboundVersion (..)
+  , txSubmissionOutbound
   , TraceTxSubmissionOutbound (..)
   , TxSubmissionProtocolError (..)
   ) where
@@ -29,6 +31,8 @@ import Ouroboros.Network.ControlMessage (ControlMessage, ControlMessageSTM,
            timeoutWithControlMessage)
 import Ouroboros.Network.Protocol.TxSubmission2.Client
 import Ouroboros.Network.Protocol.TxSubmission2.Type
+import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
+           (TxSubmissionConfig (..))
 import Ouroboros.Network.TxSubmission.Mempool.Reader (MempoolSnapshot (..),
            TxSubmissionMempoolReader (..))
 
@@ -82,18 +86,39 @@ instance Exception TxSubmissionProtocolError where
       "The peer requested duplicate txIds: " ++ show txids
 
 
+-- | Version of the outbound side of the tx-submission mini-protocol.
+--
+-- It decides how the outbound side treats a request for txids which would
+-- exceed its `maxNumUnacknowledgedTxIds` limit.  It's selected by the
+-- negotiated node-to-node version (`ouroboros-network` doesn't depend on it,
+-- see `Cardano.Network.NodeToNode.txOutboundVersion`).
+--
+data TxOutboundVersion =
+    TxOutboundV_1
+    -- ^ `maxNumUnacknowledgedTxIds` is a protocol parameter shared by both
+    -- sides; a request which would exceed it is a protocol error
+    -- (`ProtocolErrorRequestedTooManyTxids`).
+  | TxOutboundV_2
+    -- ^ `maxNumUnacknowledgedTxIds` is a local setting, which the inbound
+    -- side doesn't know; the outbound side replies with only as many txids
+    -- as fit, which can be none for a non-blocking request.
+  deriving (Show, Eq, Ord, Enum, Bounded)
+
+
 txSubmissionOutbound
-  :: forall version txid tx idx m.
+  :: forall txid tx idx m.
      (Ord txid, Show txid, Ord idx, MonadSTM m, MonadThrow m)
   => Tracer m (TraceTxSubmissionOutbound txid tx)
-  -> NumTxIdsToAck  -- ^ Maximum number of unacknowledged txids allowed
+  -> TxSubmissionConfig
   -> TxSubmissionMempoolReader txid tx idx m
-  -> version
+  -> TxOutboundVersion
   -> ControlMessageSTM m
   -> TxSubmissionClient txid tx m ()
-txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version controlMessageSTM =
+txSubmissionOutbound tracer config TxSubmissionMempoolReader{..} version controlMessageSTM =
     TxSubmissionClient (pure (client Seq.empty mempoolZeroIdx))
   where
+    maxUnacked = maxNumUnacknowledgedTxIds config
+
     client :: StrictSeq (txid, idx) -> idx -> ClientStIdle txid tx m ()
     client !unackedSeq !lastIdx =
         ClientStIdle { recvMsgRequestTxIds, recvMsgRequestTxs }
@@ -103,12 +128,28 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version co
                             -> NumTxIdsToAck
                             -> NumTxIdsToReq
                             -> m (ClientStTxIds blocking txid tx m ())
-        recvMsgRequestTxIds blocking ackNo reqNo = do
+        recvMsgRequestTxIds blocking ackNo reqNo0 = do
           when (getNumTxIdsToAck ackNo > fromIntegral (Seq.length unackedSeq)) $
             throwIO ProtocolErrorAckedTooManyTxids
 
           let unackedNo :: Int
               unackedNo = Seq.length unackedSeq
+
+              reqNo = case version of
+                TxOutboundV_1
+                  -> reqNo0
+                TxOutboundV_2
+                  -> let -- Maximum number of txids to request which is allowed
+                         -- by the server to not exceed its `maxUnacked` limit.
+                         -- At this stage we know that `unackedNo >= ackNo` and
+                         -- since we never exceed `maxUnacked` we also know that
+                         -- `maxUnacked >= unackedNo`.
+                         maxReqNo :: NumTxIdsToReq
+                         maxReqNo = fromIntegral
+                                  $ maxUnacked - (fromIntegral unackedNo - ackNo)
+                     in reqNo0 `min` maxReqNo
+
+          -- for TxOutboundV_2 this never fires
           when (  unackedNo
                 - fromIntegral ackNo
                 + fromIntegral reqNo
@@ -137,7 +178,7 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version co
           -- up to the number that the peer has requested.
           case blocking of
             SingBlocking -> do
-              when (reqNo == 0) $
+              when (reqNo0 == 0) $
                 throwIO ProtocolErrorRequestedNothing
               unless (Seq.null unackedSeq') $
                 throwIO ProtocolErrorRequestBlocking
@@ -155,24 +196,43 @@ txSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version co
                   let !(txs', client') = update txs
                       txs'' = case NonEmpty.nonEmpty txs' of
                         Just x -> x
-                        -- Assert txs is non-empty: we blocked until txs was non-null,
-                        -- and we know reqNo > 0, hence `take reqNo txs` is non-null.
+                        -- Assert txs is non-empty: we blocked until txs was non-null.
+                        --
+                        -- Lemma
+                        --   `reqNo > 0`, when `maxUnacked > 0`
+                        -- Proof
+                        --   TxOutboundV_1: `reqNo = reqNo0 /= 0`
+                        --   TxOutboundV_2:
+                        --     `unackedSeq'` is empty, so `unackedNo = ackNo`,
+                        --     `maxReqNo = maxUnacked` and `reqNo = min reqNo0 maxUnacked`,
+                        --     which is non-zero as long as `maxUnacked > 0`.
+                        -- QED
+                        --
+                        -- Since `reqNo > 0`, `take reqNo txs` is non-null.
                         Nothing -> error "txSubmissionOutbound: empty transaction's list"
                   in  pure (SendMsgReplyTxIds (BlockingReply txs'') client')
 
             SingNonBlocking -> do
-              when (reqNo == 0 && ackNo == 0) $
+              when (reqNo0 == 0 && ackNo == 0) $
                 throwIO ProtocolErrorRequestedNothing
               when (Seq.null unackedSeq') $
                 throwIO ProtocolErrorRequestNonBlocking
 
-              txs <- atomically $ do
-                MempoolSnapshot{mempoolTxIdsAfter} <- mempoolGetSnapshot
-                let txs = mempoolTxIdsAfter lastIdx
-                return (take (fromIntegral reqNo) txs)
-
-              let !(txs', client') = update txs
-              pure (SendMsgReplyTxIds (NonBlockingReply txs') client')
+              if reqNo == 0
+                -- nothing to send: either the peer only acknowledges txids
+                -- (`reqNo0 = 0`), or, with `TxOutboundV_2`, the request was
+                -- clamped to 0 because our unacked window is full; continue
+                -- without the acknowledged txids.
+                then pure $ SendMsgReplyTxIds
+                              (NonBlockingReply [])
+                              (client unackedSeq' lastIdx)
+                else do
+                  txs <- atomically $ do
+                    MempoolSnapshot{mempoolTxIdsAfter} <- mempoolGetSnapshot
+                    let txs = mempoolTxIdsAfter lastIdx
+                    return (take (fromIntegral reqNo) txs)
+                  let !(txs', client') = update txs
+                  pure (SendMsgReplyTxIds (NonBlockingReply txs') client')
 
         recvMsgRequestTxs :: [txid]
                           -> m (ClientStTxs txid tx m ())

@@ -825,6 +825,9 @@ data TxSubmissionProtocolError =
        => ProtocolErrorTxSizeError [(txid, SizeInBytes, SizeInBytes)]
      -- ^ a list of txid for which the received size and advertised size didn't
      -- match.
+     | forall txid. (Typeable txid, Show txid, Eq txid)
+       => ProtocolErrorTxSizeTooLarge [(txid, SizeInBytes)]
+     -- ^ a list of txids advertised with a size above `max_TX_SIZE`.
 
 instance Eq   TxSubmissionProtocolError where
     ProtocolErrorTxNotRequested    == ProtocolErrorTxNotRequested      = True
@@ -837,6 +840,12 @@ instance Eq   TxSubmissionProtocolError where
           Nothing   -> False
           Just Refl -> as == as'
     ProtocolErrorTxSizeError {} == _ = False
+    ProtocolErrorTxSizeTooLarge (as :: [(a, SizeInBytes)])
+      == ProtocolErrorTxSizeTooLarge (as' :: [(a', SizeInBytes)]) =
+        case eqT @a @a' of
+          Nothing   -> False
+          Just Refl -> as == as'
+    ProtocolErrorTxSizeTooLarge {} == _ = False
 
 deriving instance Show TxSubmissionProtocolError
 
@@ -847,6 +856,8 @@ instance Exception TxSubmissionProtocolError where
       "The peer replied with more txids than we asked for."
   displayException (ProtocolErrorTxSizeError txids) =
       "The peer received txs with wrong sizes " ++ show txids
+  displayException (ProtocolErrorTxSizeTooLarge txids) =
+      "The peer advertised txs above the maximum tx size " ++ show txids
 
 data TxSubmissionInitDelay =
      TxSubmissionInitDelay DiffTime
