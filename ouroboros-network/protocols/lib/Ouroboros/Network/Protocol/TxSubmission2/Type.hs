@@ -214,9 +214,17 @@ instance Protocol (TxSubmission2 txid tx) where
     -- The request gives the maximum number of transaction identifiers that
     -- can be accepted in the response. This must be greater than zero in the
     -- 'TokBlocking' case. In the 'TokNonBlocking' case either the numbers
-    -- acknowledged or the number requested __MUST__ be non-zero. In either
-    -- case, the number requested __MUST__ not put the total outstanding over
-    -- the fixed protocol limit.
+    -- acknowledged or the number requested __MUST__ be non-zero.
+    --
+    -- The total outstanding is bounded by the maximum number of
+    -- unacknowledged transaction identifiers.  Where it is a protocol
+    -- parameter shared by both sides (e.g. before @NodeToNodeV_16@ for
+    -- Cardano), the number requested __MUST__ not put the total outstanding
+    -- over it, otherwise the client terminates the connection.  Where it is
+    -- a local setting of the client (from @NodeToNodeV_16@), the client
+    -- replies with at most as many transaction identifiers as fit within its
+    -- limit, which in the 'TokNonBlocking' case can be none (see
+    -- @TxOutboundVersion@ in "Ouroboros.Network.TxSubmission.Outbound").
     --
     -- The request also gives the number of outstanding transaction identifiers
     -- that can now be acknowledged. The actual transactions to acknowledge are
