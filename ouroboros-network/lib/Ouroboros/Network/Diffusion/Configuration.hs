@@ -116,13 +116,13 @@ local_TIME_WAIT_TIMEOUT = 0
 defaultEgressPollInterval :: DiffTime
 defaultEgressPollInterval = 0
 
--- | Scheduled egress at a 950 Mb/s budget, the line rate of a 1 Gb/s uplink:
+-- | Scheduled egress at a 250 Mb/s budget, the line rate of a 1 Gb/s uplink:
 -- a bucket of two batches, 15% of it reserved for the slice lane, the order
 -- within a tier re-dealt every 599 s, and TCP_NOTSENT_LOWAT at one batch. The
 -- lane rule is the caller's, since it names the tx-submission protocol.
 defaultEgressSchedulingWith :: (MiniProtocolNum -> MiniProtocolDir -> Mx.Lane) -> EgressScheduling
 defaultEgressSchedulingWith laneOf = EgressScheduling {
-    esBudget         = 950e6 / 8,
+    esBudget         = 250e6 / 8,
     esCapacity       = 2 * 131072,
     esSlicePercent   = 15,
     esFloorPercent   = 10,
