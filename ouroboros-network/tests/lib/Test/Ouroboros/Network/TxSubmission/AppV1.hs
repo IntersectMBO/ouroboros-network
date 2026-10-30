@@ -16,6 +16,7 @@ import NoThunks.Class
 
 import Control.Concurrent.Class.MonadMVar (MonadMVar)
 import Control.Concurrent.Class.MonadSTM
+import Control.Monad (unless, void)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadSay
@@ -85,14 +86,20 @@ txSubmissionSimulation
   => Tracer m (String, TraceSendRecv (TxSubmission2 txid (Tx txid)))
   -> NumTxIdsToAck
   -> [Tx txid]
-  -> ControlMessageSTM m
+  -> Maybe Int
+  -- ^ number of txs expected in the inbound mempool; the simulation stops
+  -- once they arrived, or at the deadline
+  -> DiffTime
+  -- ^ deadline
   -> Maybe DiffTime
   -> Maybe DiffTime
   -> m ([Tx txid], [Tx txid])
 txSubmissionSimulation tracer maxUnacked outboundTxs
-                       controlMessageSTM
-                       inboundDelay outboundDelay = do
+                       expectedTxs
+                       deadline inboundDelay outboundDelay = do
 
+    controlMessageVar <- newTVarIO Continue
+    let controlMessageSTM = readTVar controlMessageVar
     inboundMempool  <- emptyMempool
     duplicateTxIdsVar <- newTVarIO []
     outboundMempool <- newMempool outboundTxs
@@ -104,7 +111,7 @@ txSubmissionSimulation tracer maxUnacked outboundTxs
                 (byteLimitsTxSubmission2 (fromIntegral . BSL.length))
                 timeLimitsTxSubmission2
                 (maybe id delayChannel outboundDelay outboundChannel)
-                (txSubmissionClientPeer (outboundPeer outboundMempool))
+                (txSubmissionClientPeer (outboundPeer controlMessageSTM outboundMempool))
 
     inboundAsync <-
       async $ runPipelinedPeerWithLimits
@@ -115,15 +122,30 @@ txSubmissionSimulation tracer maxUnacked outboundTxs
                 (maybe id delayChannel inboundDelay inboundChannel)
                 (txSubmissionServerPeerPipelined (inboundPeer duplicateTxIdsVar inboundMempool))
 
+    -- terminate the outbound once the expected txs arrived, or at the
+    -- deadline
+    terminateAsync <-
+      async $ do
+        let delivered expected = do
+              inmp <- readMempool inboundMempool
+              unless (length inmp >= expected) $
+                threadDelay 1 >> delivered expected
+        case expectedTxs of
+          Nothing       -> threadDelay deadline
+          Just expected -> void $ timeout deadline (delivered expected)
+        atomically (writeTVar controlMessageVar Terminate)
+
     _ <- waitAnyCancel [ outboundAsync, inboundAsync ]
+    cancel terminateAsync
 
     inmp <- readMempool inboundMempool
     outmp <- readMempool outboundMempool
     return (inmp, outmp)
   where
-
-    outboundPeer :: Mempool m txid (Tx txid) -> TxSubmissionClient txid (Tx txid) m ()
-    outboundPeer outboundMempool =
+    outboundPeer :: ControlMessageSTM m
+                 -> Mempool m txid (Tx txid)
+                 -> TxSubmissionClient txid (Tx txid) m ()
+    outboundPeer controlMessageSTM outboundMempool =
       txSubmissionOutbound
         nullTracer
         maxUnacked
@@ -152,19 +174,24 @@ prop_txSubmission :: Positive Word16
                   -> Property
 prop_txSubmission (Positive maxUnacked) (NonEmpty outboundTxs) delay =
     let mbDelayTime = getSmallDelay . getPositive <$> delay
-        tr = runSimTrace $ do
-               controlMessageVar <- newTVarIO Continue
-               _ <-
-                 async $ do
-                   threadDelay
-                     (fromMaybe 1 mbDelayTime
-                       * realToFrac (length outboundTxs `div` 4))
-                   atomically (writeTVar controlMessageVar Terminate)
+        outUniqueTxIds = nubBy (on (==) getTxId) outboundTxs
+        outValidTxs    = filter getTxValid outboundTxs
+        uniqueTxIds    = length outUniqueTxIds == length outboundTxs
+        -- with unique txids every valid tx must arrive; otherwise run until
+        -- the deadline
+        expectedTxs | uniqueTxIds = Just (length outValidTxs)
+                    | otherwise   = Nothing
+        -- generous: each tx takes a few round trips
+        deadline = 60 + 20 * fromMaybe 1 mbDelayTime
+                            * realToFrac (length outboundTxs)
+        tr = runSimTrace $
                txSubmissionSimulation
                  verboseTracer
                  (NumTxIdsToAck maxUnacked) outboundTxs
-                 (readTVar controlMessageVar)
-                 mbDelayTime mbDelayTime
+                 expectedTxs
+                 deadline
+                 mbDelayTime
+                 mbDelayTime
     in
     ioProperty $ do
         tr' <- evaluateTrace tr
@@ -174,22 +201,21 @@ prop_txSubmission (Positive maxUnacked) (NonEmpty outboundTxs) delay =
              SimDeadLock trace -> do
                  return $ counterexample (intercalate "\n" $ "Deadlock" : trace) False
              SimReturn (inmp, outmp) trace -> do
-                 let outUniqueTxIds = nubBy (on (==) getTxId) outmp
-                     outValidTxs    = filter getTxValid outmp
-                 case (length outUniqueTxIds == length outmp, length outValidTxs == length outmp) of
+                 -- the protocol only reads the outbound mempool
+                 case (uniqueTxIds, length outValidTxs == length outmp) of
                       a@(True, True) ->
                           -- If we are presented with a stream of unique txids for valid
                           -- transactions the inbound transactions should match the outbound
-                          -- transactions exactly.
+                          -- transactions exactly: all of them arrived, in order.
                           return $ counterexample (intercalate "\n" trace)
                                  $ counterexample (show a)
-                                 $ inmp === take (length inmp) outValidTxs
+                                 $ inmp === outValidTxs
                       a@(True, False) ->
                           -- If we are presented with a stream of unique txids then we should have
                           -- fetched all valid transactions.
                           return $ counterexample (intercalate "\n" trace)
                                  $ counterexample (show a)
-                                 $ inmp === take (length inmp) outValidTxs
+                                 $ inmp === outValidTxs
                       a@(False, True) ->
                           -- If we are presented with a stream of valid txids then we should have
                           -- fetched some version of those transactions.
