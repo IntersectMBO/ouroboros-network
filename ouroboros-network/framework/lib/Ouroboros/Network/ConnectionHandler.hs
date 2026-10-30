@@ -259,6 +259,8 @@ makeConnectionHandler
        )
     => Mx.TracersWithBearer (ConnectionId peerAddr) m
     -> ForkPolicy peerAddr
+    -> Maybe (Mx.MuxCounters m)
+    -- ^ Node-wide counters every mux this handler creates is counted in.
     -> HandshakeArguments (ConnectionId peerAddr) versionNumber versionData m
     -> Versions versionNumber versionData
                 (OuroborosBundle muxMode initiatorCtx responderCtx ByteString m a b)
@@ -268,7 +270,7 @@ makeConnectionHandler
     -> MkMuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr versionNumber versionData ByteString m a b
     -> MuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr
                             versionNumber versionData ByteString m a b
-makeConnectionHandler muxTracers forkPolicy
+makeConnectionHandler muxTracers forkPolicy muxCounters
                       handshakeArguments
                       versionedApplication
                       (mainThreadId, rethrowPolicy) =
@@ -283,6 +285,11 @@ makeConnectionHandler muxTracers forkPolicy
         (outboundConnectionHandler connectionDataFlow $ InResponderMode (inboundGovernorMuxTracer, connectionDataFlow))
         (inboundConnectionHandler connectionDataFlow inboundGovernorMuxTracer)
   where
+    -- A mux counted in the node-wide counters, when there are any.
+    newMux :: forall (mode :: Mx.Mode).
+              Mx.Tracers m -> [Mx.MiniProtocolInfo mode] -> m (Mx.Mux mode m)
+    newMux tracers ptcls = Mx.new tracers muxCounters ptcls
+
     -- install classify exception handler
     classifyExceptions :: forall x.
                           Tracer m (ConnectionHandlerTrace versionNumber versionData)
@@ -374,8 +381,8 @@ makeConnectionHandler muxTracers forkPolicy
                                                     Outbound
                                                     (dataFlow agreedOptions)
                                                     app
-                mux <- Mx.new muxTracers'
-                             mpInfos
+                mux <- newMux muxTracers'
+                              mpInfos
                 let !handle = Handle {
                         hMux            = mux,
                         hMuxBundle      = app,
@@ -450,7 +457,7 @@ makeConnectionHandler muxTracers forkPolicy
                                                    (dataFlow agreedOptions)
                                                    app
 
-               mux <- Mx.new (Mx.tracersWithBearer connectionId muxTracers {
+               mux <- newMux (Mx.tracersWithBearer connectionId muxTracers {
                                Mx.tracer = Mx.tracer muxTracers <> inboundGovernorMuxTracer countersVar
                              })
                              mpInfos
