@@ -113,6 +113,7 @@ tests = testGroup "AppV2"
   , testProperty "txSubmission/splitAcknowledgements"
       prop_txSubmission_splitAcknowledgements
   , testProperty "inflight"              prop_txSubmission_inflight
+  , testProperty "windowMismatch"        prop_txSubmission_windowMismatch
   , testProperty "resilientToImpairment" prop_txSubmission_resilientToImpairment
   , testProperty "peerDisconnect"        prop_txSubmission_peerDisconnect
   , testProperty "SharedTxState" $ withMaxSize 25
@@ -142,6 +143,11 @@ data TxSubmissionState =
     , outboundVersion :: TxOutboundVersion
     , decisionPolicy :: TxDecisionPolicy
     , submissionConfig :: TxSubmissionConfig
+    , outboundWindows :: Map Int NumTxIdsToAck
+    -- ^ outbound windows which differ from the inbound's
+    -- (`maxNumUnacknowledgedTxIds` of `submissionConfig`); only with
+    -- `TxOutboundV_2`, where the window is a local setting of each side.
+    -- The outbound clamps the inbound's requests to its window.
   } deriving (Eq, Show)
 
 instance Arbitrary TxSubmissionState where
@@ -158,15 +164,28 @@ instance Arbitrary TxSubmissionState where
     peers <- vectorOf peersN arbitrary
     peersState <- zipWith (curry (\(a, (b, c)) -> (a, b, c))) txs
               <$> vectorOf peersN arbitrary
+    outboundWindows <- case outboundVersion of
+      TxOutboundV_1 -> pure Map.empty
+      TxOutboundV_2 -> do
+        let NumTxIdsToAck window = maxNumUnacknowledgedTxIds config
+        Map.fromList <$> sequence
+          [ (peer,) . NumTxIdsToAck <$> frequency
+              [ (3, choose (1, window))
+              , (1, choose (1, 2 * window))
+              ]
+          | peer <- peers ]
     return TxSubmissionState  { peerMap = Map.fromList (zip peers peersState),
                                 peerImpairment = Map.empty,
                                 outboundVersion,
                                 decisionPolicy,
-                                submissionConfig = config
+                                submissionConfig = config,
+                                outboundWindows
                               }
   -- TODO: peerImpairment shrinking is missing
-  shrink st@TxSubmissionState { peerMap, outboundVersion, decisionPolicy, submissionConfig } =
-       [ st { peerMap = peerMap' }
+  shrink st@TxSubmissionState { peerMap, outboundVersion, decisionPolicy,
+                                submissionConfig, outboundWindows } =
+       [ st { peerMap = peerMap',
+              outboundWindows = outboundWindows `Map.restrictKeys` Map.keysSet peerMap' }
        | peerMap' <- shrinkMap1 peerMap
        ]
     ++ [ st { decisionPolicy = policy }
@@ -175,8 +194,13 @@ instance Arbitrary TxSubmissionState where
     ++ [ st { submissionConfig = config }
        | ArbTxSubmissionConfig config <- shrink (ArbTxSubmissionConfig submissionConfig)
        ]
-    ++ [ st { outboundVersion = version }
+    ++ [ st { outboundVersion = version, outboundWindows = Map.empty }
        | ArbTxOutboundVersion version <- shrink (ArbTxOutboundVersion outboundVersion)
+       ]
+    ++ [ st { outboundWindows = Map.insert peer (NumTxIdsToAck window') outboundWindows }
+       | (peer, NumTxIdsToAck window) <- Map.toList outboundWindows
+       , window' <- shrink window
+       , window' >= 1
        ]
     where
       shrinkMap1 :: (Eq v, Ord k, Arbitrary k, Arbitrary v) => Map k v -> [Map k v]
@@ -187,6 +211,12 @@ instance Arbitrary TxSubmissionState where
         where
           singletonMaps = [Map.singleton k v | (k, v) <- Map.toList m]
 
+
+-- | A request received by a peer's outbound, see `traceOutboundRequests`.
+--
+data PeerOutboundRequest peeraddr =
+    PeerOutboundRequest peeraddr OutboundRequest
+  deriving Show
 
 newtype TxStateTrace peeraddr txid =
     TxStateTrace (SharedTxState peeraddr txid)
@@ -235,6 +265,7 @@ runTxSubmission
   -> Tracer m (TraceTxLogic peeraddr txid (Tx txid))
   -> Tracer m TxSubmissionCounters
   -> Tracer m (PeerInboundTrace peeraddr txid (Tx txid))
+  -> Tracer m (PeerOutboundRequest peeraddr)
   -> Map peeraddr ( [Tx txid]
                   , ControlMessageSTM m
                   , Maybe DiffTime
@@ -247,14 +278,17 @@ runTxSubmission
   -> TxOutboundVersion
   -> TxDecisionPolicy
   -> TxSubmissionConfig
+  -> Map peeraddr NumTxIdsToAck
+     -- ^ outbound windows which differ from the inbound's
   -> m ([Tx txid], [[Tx txid]], SharedTxState peeraddr txid)
   -- ^ inbound mempool, outbound mempools, final shared state
-runTxSubmission tracer tracerTxLogic countersTracer inboundTracer
+runTxSubmission tracer tracerTxLogic countersTracer inboundTracer outboundTracer
                 st0
                 peerImpairmentMap cancelSchedule
                 txOutboundVersion
                 txDecisionPolicy
-                submissionConfig = do
+                submissionConfig
+                outboundWindows = do
     st <- traverse (\(b, c, d, e) -> do
         mempool <- newMempool b
         (outChannel, inChannel) <- createConnectedChannels
@@ -273,9 +307,17 @@ runTxSubmission tracer tracerTxLogic countersTracer inboundTracer
     labelTVarIO sharedTxStateVar "shared-tx-state"
 
     let clients = (\(addr, (mempool {- txs -}, ctrlMsgSTM, outDelay, _, outChannel, _)) -> do
-                    let baseClient = txSubmissionOutbound
+                    let outboundConfig =
+                          maybe submissionConfig
+                                (\window -> submissionConfig
+                                   { maxNumUnacknowledgedTxIds = window })
+                                (Map.lookup addr outboundWindows)
+                        baseClient = traceOutboundRequests
+                                       (PeerOutboundRequest addr `contramap` outboundTracer)
+                                       (maxNumUnacknowledgedTxIds outboundConfig)
+                                   $ txSubmissionOutbound
                                        (mkTracer $ say . show)
-                                       submissionConfig
+                                       outboundConfig
                                        (getMempoolReader mempool)
                                        txOutboundVersion
                                        ctrlMsgSTM
@@ -385,7 +427,8 @@ txSubmissionSimulation
     peerImpairment,
     outboundVersion,
     decisionPolicy,
-    submissionConfig
+    submissionConfig,
+    outboundWindows
   }
   = do
   state' <- traverse (\(txs, mbOutDelay, mbInDelay) -> do
@@ -425,12 +468,13 @@ txSubmissionSimulation
     ) \_ -> do
       let tracer :: forall a. (Show a, Typeable a) => Tracer (IOSim s) a
           tracer = dynamicTracer <> sayTracer -- <> verboseTracer <> debugTracer
-      runTxSubmission tracer tracer tracer tracer
+      runTxSubmission tracer tracer tracer tracer tracer
                       state'' peerImpairment
                       Map.empty
                       outboundVersion
                       decisionPolicy
                       submissionConfig
+                      outboundWindows
 
 filterValidTxs :: [Tx txid] -> [Tx txid]
 filterValidTxs
@@ -461,6 +505,8 @@ ppSayTrace tr =
 validTxSubmissionState :: TxSubmissionState -> Bool
 validTxSubmissionState TxSubmissionState { peerMap,
                                            peerImpairment,
+                                           outboundVersion,
+                                           outboundWindows,
                                            decisionPolicy = policy,
                                            submissionConfig = config
                                          } =
@@ -468,6 +514,9 @@ validTxSubmissionState TxSubmissionState { peerMap,
   && Map.keysSet peerImpairment `Set.isSubsetOf` Map.keysSet peerMap
   && all validPeer (Map.elems peerMap)
   && isRight (saneTxDecisionPolicy policy config)
+  && Map.keysSet outboundWindows `Set.isSubsetOf` Map.keysSet peerMap
+  && all (>= 1) outboundWindows
+  && (outboundVersion == TxOutboundV_2 || Map.null outboundWindows)
   where
     validPeer (txs, _, _) =
       let txids = getTxId <$> txs in
@@ -812,6 +861,68 @@ prop_txSubmission st@TxSubmissionState { peerMap = peers } =
            -- without error.
            property True
 
+
+-- | With `TxOutboundV_2` a peer's outbound can have a smaller window than
+-- the inbound's, and clamps the inbound's requests to it (see
+-- `traceOutboundRequests`).  An empty reply to a non-blocking request which
+-- acknowledges nothing makes the inbound back off: it doesn't send such
+-- a request again until the peer made progress, i.e. a non-empty txid reply
+-- or one of its txs accepted by the mempool.  So, per peer, the number of
+-- these empty replies is at most one more than the number of non-empty txid
+-- replies and of delivered txs.
+--
+prop_txSubmission_windowMismatch :: TxSubmissionState -> Property
+prop_txSubmission_windowMismatch st =
+    let tr = runSimTrace (txSubmissionSimulation st)
+        requests :: [PeerOutboundRequest PeerAddr]
+        requests = selectTraceEventsDynamic tr
+        events = [ event | PeerOutboundRequest _ (RequestTxIds _ _ _ event _)
+                             <- requests ]
+    -- The requests are checked as the simulation produces them: without the
+    -- back-off the inbound would keep sending requests, and the trace would
+    -- grow without bound.
+    in case firstViolation Map.empty requests of
+         Just (peer, counts) ->
+           counterexample ("peer " ++ show peer ++ " doesn't back off: "
+                           ++ show counts)
+           False
+         Nothing ->
+             checkCoverage
+           . cover 20 (Clamped `elem` events) "clamped"
+           . cover 10 (ClampedToZero `elem` events) "clamped to zero"
+           . tabulate "MsgRequestTxIds" (show <$> events)
+           $ case traceResult True tr of
+               Left e ->
+                   counterexample (show e)
+                 . counterexample (ppSayTrace tr)
+                 $ False
+               Right _ -> property True
+  where
+    -- Per peer: empty replies to non-blocking requests which acknowledge
+    -- nothing, non-empty txid replies, and delivered txs.
+    firstViolation :: Map PeerAddr BackOffCounts
+                   -> [PeerOutboundRequest PeerAddr]
+                   -> Maybe (PeerAddr, BackOffCounts)
+    firstViolation _ [] = Nothing
+    firstViolation counts (PeerOutboundRequest peer request : rest) =
+      let c  = Map.findWithDefault (BackOffCounts 0 0 0) peer counts
+          c' = case request of
+                 RequestTxIds False 0 reqNo _ 0
+                   | reqNo > 0 -> c { emptyReplies = emptyReplies c + 1 }
+                 RequestTxIds _ _ _ _ n
+                   | n > 0     -> c { nonEmptyReplies = nonEmptyReplies c + 1 }
+                 RequestTxs n  -> c { delivered = delivered c + n }
+                 _             -> c
+      in if emptyReplies c' > 1 + nonEmptyReplies c' + delivered c'
+           then Just (peer, c')
+           else firstViolation (Map.insert peer c' counts) rest
+
+data BackOffCounts = BackOffCounts {
+    emptyReplies    :: !Int,
+    nonEmptyReplies :: !Int,
+    delivered       :: !Int
+  }
+  deriving Show
 
 -- | Reuse the application property while exercising acknowledgement-only
 -- requests, which the production inbound scheduler normally suppresses.
@@ -1215,13 +1326,14 @@ txSubmissionSimulationDisconnect
                  [ x | x@(_, (_, ExitClean)) <- Map.toList schedule ]
       let tracer :: forall a. (Show a, Typeable a) => Tracer (IOSim s) a
           tracer = dynamicTracer <> sayTracer
-      result <- runTxSubmission tracer tracer tracer tracer
+      result <- runTxSubmission tracer tracer tracer tracer tracer
                                 combinedState
                                 peerImpairment
                                 cancelSchedule
                                 outboundVersion
                                 decisionPolicy
                                 submissionConfig
+                                Map.empty
       traverse_ cancel disconnectAids
       pure result
 
@@ -1385,6 +1497,7 @@ unit_score_persistentBadStaysHigh = do
               , outboundVersion = maxBound
               , decisionPolicy = policy
               , submissionConfig = config
+              , outboundWindows = Map.empty
               }
         tr          = runSimTrace (void $ txSubmissionSimulation st)
         peakScores  = peerPeakScore tr
@@ -1421,6 +1534,7 @@ unit_score_recoversAfterBurst = do
               , outboundVersion = maxBound
               , decisionPolicy = policy
               , submissionConfig = config
+              , outboundWindows = Map.empty
               }
         tr          = runSimTrace (void $ txSubmissionSimulation st)
         peakScores  = peerPeakScore tr
@@ -1451,6 +1565,7 @@ unit_score_wellBehavedStaysAtZero = do
               , outboundVersion = maxBound
               , decisionPolicy = policy
               , submissionConfig = config
+              , outboundWindows = Map.empty
               }
         tr         = runSimTrace (void $ txSubmissionSimulation st)
         peakScores = peerPeakScore tr
