@@ -167,7 +167,7 @@ demo chain0 updates delay = do
                        Nothing
 
     clientAsync <- async $ do
-      clientMux <- Mx.new (Mx.Tracers activeTracer activeTracer activeTracer)
+      clientMux <- Mx.new (Mx.Tracers activeTracer activeTracer activeTracer) Nothing
                           (toMiniProtocolInfos (\_ _ -> Nothing) Outbound Duplex consumerApp)
       let initCtx = MinimalInitiatorContext (ConnectionId "consumer" "producer")
       resOps <- sequence
@@ -193,7 +193,7 @@ demo chain0 updates delay = do
         wait aid
 
     serverAsync <- async $ do
-      serverMux <- Mx.new (Mx.Tracers activeTracer activeTracer activeTracer)
+      serverMux <- Mx.new (Mx.Tracers activeTracer activeTracer activeTracer) Nothing
                           (toMiniProtocolInfos (\_ _ -> Nothing) Inbound Duplex producerApp)
       let respCtx = ResponderContext (ConnectionId "producer" "consumer")
       resOps <- sequence

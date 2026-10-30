@@ -1312,6 +1312,7 @@ pingClient' stdout infoTracer headerTracer stderr opts@PingOpts{..} signalVar ad
                   stdGen <- initStdGen
                   mx <- Mx.new
                           Mx.nullTracers
+                          Nothing
                           [MiniProtocolInfo {
                             miniProtocolNum        = case protocol of
                                                        NodeToNode -> NodeToNode.chainSyncMiniProtocolNum
@@ -1353,6 +1354,7 @@ pingClient' stdout infoTracer headerTracer stderr opts@PingOpts{..} signalVar ad
                   --
                   mx <- Mx.new
                           Mx.nullTracers
+                          Nothing
                           [MiniProtocolInfo {
                             miniProtocolNum        = NodeToNode.keepAliveMiniProtocolNum,
                             miniProtocolDir        = Mx.InitiatorDirectionOnly,
