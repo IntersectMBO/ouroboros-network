@@ -51,7 +51,7 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Time (secondsToDiffTime)
 import Data.Typeable (Typeable)
-import Data.Word (Word32)
+import Data.Word (Word32, Word64)
 import GHC.IO.Exception (IOErrorType (..), IOException (..))
 import System.Random (mkStdGen)
 import Text.Printf as Text
@@ -59,10 +59,11 @@ import Text.Printf as Text
 import Network.DNS.Types qualified as DNS
 import Network.Mux qualified as Mux
 import Network.Mux.Trace qualified as Mx
+import Network.Mux.Types (MiniProtocolDir (..))
 
 import Cardano.Network.ConsensusMode
 import Cardano.Network.LedgerStateJudgement
-import Cardano.Network.NodeToNode (DiffusionMode (..))
+import Cardano.Network.NodeToNode (DiffusionMode (..), chainSyncMiniProtocolNum)
 import Cardano.Network.PeerSelection (NumberOfBigLedgerPeers (..),
            PeerTrustable (..), UseBootstrapPeers (..))
 import Cardano.Network.PeerSelection qualified as Cardano
@@ -655,8 +656,15 @@ data Run = Run {
     runEnd        :: Time,
     runSnapshots  :: [(Time, Mux.MuxCounts)],
     -- ^ the node-to-node counters, as traced
-    runLocal      :: [Time]
+    runLocal      :: [Time],
     -- ^ node-to-client snapshots, of which none is expected
+    runInitiators :: [(Time, ConnectionId NtNAddr)],
+    -- ^ chain-sync initiators started, by connection
+    runResponders :: [Time],
+    -- ^ chain-sync responders started on demand
+    runEnds       :: [(Time, ConnectionId NtNAddr)]
+    -- ^ a mux stopping or dead, or its chain-sync initiator ending, by
+    -- connection
   }
 
 -- | The mux counters diffusion traces for every node, from the node-to-node
@@ -673,7 +681,14 @@ data Run = Run {
 --   and their counts retire;
 --
 -- * no protocol error or overrun anywhere, every node speaking the same
---   protocols.
+--   protocols;
+--
+-- * a chain-sync initiator started sends its first message at once, so the
+--   next snapshot shows chain-sync bytes sent unless the mux or the
+--   initiator ended first;
+--
+-- * a chain-sync responder is started on demand by an SDU counted as it was
+--   queued, so the next snapshot shows chain-sync bytes read.
 --
 -- The node has no node-to-client set, so none is ever traced.
 prop_diffusion_mux_counters :: forall r. MuxCountersInterval -> SimTrace r -> Int -> Property
@@ -683,6 +698,8 @@ prop_diffusion_mux_counters (MuxCountersInterval interval) ioSimTrace traceNumbe
              [ showBucket 5 (length (runSnapshots nodeRun)) | nodeRun <- allRuns ] $
     classify (any ((> 1) . length . runSnapshots) allRuns) "a run with two or more snapshots" $
     classify (any ((< traceEnd) . runEnd) allRuns)         "a run ended before the trace" $
+    classify (any (not . null . initiatorsJudged) allRuns) "a chain-sync initiator start judged" $
+    classify (any (not . null . respondersJudged) allRuns) "a chain-sync responder start judged" $
     conjoin [ counterexample (show name) (runProperty nodeRun)
             | (name, nodeRun) <- namedRuns
             ]
@@ -742,10 +759,27 @@ prop_diffusion_mux_counters (MuxCountersInterval interval) ioSimTrace traceNumbe
 
             countersEvents :: [(Time, Mux.CountersTrace)]
             countersEvents = [ (t, c) | (t, DiffusionMuxCountersTrace c) <- inRun ]
+
+            muxEvents :: [(Time, ConnectionId NtNAddr, Mux.Trace)]
+            muxEvents = [ (t, connId, ev)
+                        | (t, DiffusionMuxTrace (Mux.WithBearer connId ev)) <- inRun
+                        ]
         in Run { runStart      = t0,
                  runEnd        = t1,
                  runSnapshots  = [ (t, c) | (t, Mux.TraceRemoteCounters c) <- countersEvents ],
-                 runLocal      = [ t | (t, Mux.TraceLocalCounters _) <- countersEvents ]
+                 runLocal      = [ t | (t, Mux.TraceLocalCounters _) <- countersEvents ],
+                 runInitiators = [ (t, connId)
+                                 | (t, connId, Mux.TraceStartEagerly num InitiatorDir) <- muxEvents
+                                 , num == chainSyncMiniProtocolNum
+                                 ],
+                 runResponders = [ t
+                                 | (t, _, Mux.TraceStartedOnDemand num ResponderDir) <- muxEvents
+                                 , num == chainSyncMiniProtocolNum
+                                 ],
+                 runEnds       = [ (t, connId)
+                                 | (t, connId, ev) <- muxEvents
+                                 , ended ev
+                                 ]
                }
            : runs later
       where
@@ -757,8 +791,19 @@ prop_diffusion_mux_counters (MuxCountersInterval interval) ioSimTrace traceNumbe
         ending (DiffusionSimulationTrace TrTerminated)  = True
         ending _                                        = False
 
+        -- The mux stopping or dead, or its chain-sync initiator ending.
+        ended :: Mux.Trace -> Bool
+        ended Mux.TraceStopping                           = True
+        ended Mux.TraceStopped                            = True
+        ended (Mux.TraceState Mux.Dead)                   = True
+        ended (Mux.TraceCleanExit num InitiatorDir)       = num == chainSyncMiniProtocolNum
+        ended (Mux.TraceExceptionExit num InitiatorDir _) = num == chainSyncMiniProtocolNum
+        ended (Mux.TraceTerminating num InitiatorDir)     = num == chainSyncMiniProtocolNum
+        ended _                                           = False
+
     runProperty :: Run -> Property
-    runProperty Run { runStart = t0, runEnd = t1, runSnapshots = snapshots, runLocal } =
+    runProperty nodeRun@Run { runStart = t0, runEnd = t1, runSnapshots = snapshots,
+                              runLocal, runInitiators, runResponders } =
       counterexample ("run from " ++ show t0 ++ " to " ++ show t1) $ conjoin
         [ counterexample ("snapshots at " ++ show (map fst snapshots)) $
             if interval == 0
@@ -777,12 +822,25 @@ prop_diffusion_mux_counters (MuxCountersInterval interval) ioSimTrace traceNumbe
                 ]
         , counterexample ("the node-to-client set traced at " ++ show runLocal) $
             null runLocal
+        , counterexample ("a chain-sync initiator started at " ++ show runInitiators
+                            ++ " sent nothing by the next snapshot: " ++ show snapshots) $
+            and [ sentOn initiator later > sentOn initiator earlier
+                | (earlier, later) <- initiatorsJudged nodeRun
+                ]
+        , counterexample ("a chain-sync responder started at " ++ show runResponders
+                            ++ " read nothing by the next snapshot: " ++ show snapshots) $
+            and [ receivedOn responder later > receivedOn responder earlier
+                | (earlier, later) <- respondersJudged nodeRun
+                ]
         ]
 
     -- Every count of the later snapshot at least the earlier one's; keys are
     -- only ever added.
     nonDecreasing :: Mux.MuxCounts -> Mux.MuxCounts -> Bool
-    nonDecreasing a b = failuresNonDecreasing (Mux.mcFailures a) (Mux.mcFailures b)
+    nonDecreasing a b =
+         failuresNonDecreasing (Mux.mcFailures a) (Mux.mcFailures b)
+      && Map.isSubmapOfBy (<=) (Mux.mcSent a) (Mux.mcSent b)
+      && Map.isSubmapOfBy (<=) (Mux.mcReceived a) (Mux.mcReceived b)
 
     failuresNonDecreasing :: Mux.MuxFailures -> Mux.MuxFailures -> Bool
     failuresNonDecreasing a b =
@@ -792,6 +850,51 @@ prop_diffusion_mux_counters (MuxCountersInterval interval) ioSimTrace traceNumbe
                     , Mux.mfOtherErrors ]
              ]
       && Map.isSubmapOfBy (<=) (Mux.mfMiniProtocols a) (Mux.mfMiniProtocols b)
+
+    -- The snapshots on either side of each chain-sync initiator start whose
+    -- mux and initiator both outlived the later one: the last before the
+    -- start, or nothing counted, and the first after it.
+    initiatorsJudged :: Run -> [(Mux.MuxCounts, Mux.MuxCounts)]
+    initiatorsJudged Run { runSnapshots, runInitiators, runEnds } =
+      [ (earlier, later)
+      | (ts, connId) <- runInitiators
+      , Just (earlier, (tl, later)) <- [around runSnapshots ts]
+      , null [ ()
+             | (te, c) <- runEnds
+             , c == connId
+             , te >= ts
+             , te <= tl
+             ]
+      ]
+
+    -- The same on either side of each chain-sync responder start.
+    respondersJudged :: Run -> [(Mux.MuxCounts, Mux.MuxCounts)]
+    respondersJudged Run { runSnapshots, runResponders } =
+      [ (earlier, later)
+      | ts <- runResponders
+      , Just (earlier, (_, later)) <- [around runSnapshots ts]
+      ]
+
+    -- The counts on either side of an instant: the last snapshot before it,
+    -- or nothing counted, and the first after it with its time, if there is
+    -- one.
+    around :: [(Time, Mux.MuxCounts)] -> Time -> Maybe (Mux.MuxCounts, (Time, Mux.MuxCounts))
+    around snapshots t = case [ s | s@(t', _) <- snapshots, t' > t ] of
+      []        -> Nothing
+      later : _ -> Just (earlier, later)
+      where
+        earlier :: Mux.MuxCounts
+        earlier = case reverse [ c | (t', c) <- snapshots, t' < t ] of
+          e : _ -> e
+          []    -> Mux.noCounts
+
+    initiator, responder :: (Mux.MiniProtocolNum, MiniProtocolDir)
+    initiator = (chainSyncMiniProtocolNum, InitiatorDir)
+    responder = (chainSyncMiniProtocolNum, ResponderDir)
+
+    sentOn, receivedOn :: (Mux.MiniProtocolNum, MiniProtocolDir) -> Mux.MuxCounts -> Word64
+    sentOn k     = Map.findWithDefault 0 k . Mux.mcSent
+    receivedOn k = Map.findWithDefault 0 k . Mux.mcReceived
 
 prop_diffusion_mux_counters_iosimpor
   :: MuxCountersInterval -> AbsBearerInfo -> DiffusionScript -> Property

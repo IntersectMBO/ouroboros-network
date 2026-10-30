@@ -17,7 +17,6 @@ import Data.ByteString.Builder.Internal (lazyByteStringInsert,
            lazyByteStringThreshold)
 import Data.ByteString.Lazy qualified as BL
 import Data.List (nub)
-import Data.Strict.Tuple (pattern (:!:))
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad
@@ -107,9 +106,20 @@ demuxer :: (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
       -> m void
 demuxer ptcls tracer bearer =
   let !dispatchTable = setupDispatchTable ptcls in
+  -- The loop runs masked, as the muxer's is, so nothing lands between the
+  -- read's return and the queueing that counts the SDU. A cancellation
+  -- lands in the read, where the bearer's timeout lands too, or in the
+  -- bearer's tail once it has the SDU, which leaves that SDU unqueued and
+  -- uncounted on a mux that is ending anyway. The read runs unmasked to
+  -- work around an io-sim bug: a timeout under a mask leaks its exception
+  -- past its frame when the timed call finishes as the timer fires
+  -- (IntersectMBO/io-sim#269), which GHC retracts; once that is fixed the
+  -- unmask can go, the read blocking interruptibly under the mask. Masked
+  -- once, outside the loop, an SDU pays the one unmask application.
   withTimeoutSerial $ \timeout ->
+  mask $ \unmask ->
   forever $ do
-    (sdu, _) <- Mx.read bearer tracer timeout
+    (sdu, _) <- unmask (Mx.read bearer tracer timeout)
     case lookupMiniProtocol dispatchTable (msNum sdu)
                             -- Notice the mode reversal, ResponderDir is
                             -- delivered to InitiatorDir and vice versa:
@@ -119,8 +129,12 @@ demuxer ptcls tracer bearer =
                    throwIO (InitiatorOnly (msNum sdu))
       Just (MiniProtocolDispatchInfo q qMax) ->
         atomically $ do
-          len :!: buf <- readTVar q
-          let !len' = len + BL.length (msBlob sdu)
+          IngressQueueState len buf received <- readTVar q
+          let !blobLen   = BL.length (msBlob sdu)
+              !len'      = len + blobLen
+              -- The bytes read for the mini-protocol, header included and
+              -- the blob as delivered, in the write that queues them.
+              !received' = received + fromIntegral msHeaderLength + fromIntegral blobLen
           if len' <= fromIntegral qMax
               then do
                 let !buf' = if len == 0
@@ -128,7 +142,7 @@ demuxer ptcls tracer bearer =
                                  lazyByteStringInsert $ msBlob sdu
                                else -- Copy payloads smaller than 128 bytes
                                  buf <> lazyByteStringThreshold 128 (msBlob sdu)
-                writeTVar q $ len' :!: buf'
+                writeTVar q $ IngressQueueState len' buf' received'
               else throwSTM $ IngressQueueOverRun (msNum sdu) (msDir sdu)
 
 lookupMiniProtocol :: MiniProtocolDispatch m

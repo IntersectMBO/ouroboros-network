@@ -644,12 +644,17 @@ instance LogFormatting Mux.CountersTrace where
       Mux.TraceLocalCounters  c -> countsObject "Mux.TraceLocalCounters" c
       where
         countsObject :: Text -> Mux.MuxCounts -> Object
-        countsObject kind Mux.MuxCounts { Mux.mcFailures = failures } =
+        countsObject kind
+                     Mux.MuxCounts { Mux.mcFailures = failures, Mux.mcSent, Mux.mcReceived } =
           mconcat $
                [ "kind" .= String kind ]
             ++ [ fcKey c .= fcCount c | c <- failureCounts failures ]
             ++ [ "miniProtocolFailures" .= sum protocols
                , "miniProtocolFailuresByProtocol" .= byProtocol "failures" protocols
+               , "bytesSent" .= sum mcSent
+               , "bytesSentByProtocol" .= byProtocol "bytes" mcSent
+               , "bytesReceived" .= sum mcReceived
+               , "bytesReceivedByProtocol" .= byProtocol "bytes" mcReceived
                ]
           where
             protocols :: Map (Mux.MiniProtocolNum, MiniProtocolDir) Word64
@@ -663,11 +668,13 @@ instance LogFormatting Mux.CountersTrace where
       Mux.TraceRemoteCounters c -> "Node-to-node mux counters: " <> countsLine c
       Mux.TraceLocalCounters  c -> "Node-to-client mux counters: " <> countsLine c
       where
-        -- The failure counts that are not zero.
+        -- The byte totals, and the failure counts that are not zero.
         countsLine :: Mux.MuxCounts -> Text
-        countsLine Mux.MuxCounts { Mux.mcFailures = failures } =
-          (\parts -> if null parts then "no failures" else Text.intercalate ", " parts) $
-               [ showT (fcCount c) <> " " <> fcLabel c
+        countsLine Mux.MuxCounts { Mux.mcFailures = failures, Mux.mcSent, Mux.mcReceived } =
+          Text.intercalate ", " $
+               [ showT (sum mcSent) <> " bytes sent"
+               , showT (sum mcReceived) <> " bytes received" ]
+            ++ [ showT (fcCount c) <> " " <> fcLabel c
                | c <- failureCounts failures
                , fcCount c /= 0
                ]
@@ -680,11 +687,14 @@ instance LogFormatting Mux.CountersTrace where
       Mux.TraceLocalCounters  c -> countsMetrics Local c
       where
         countsMetrics :: Side -> Mux.MuxCounts -> [Metric]
-        countsMetrics side Mux.MuxCounts { Mux.mcFailures = failures } =
+        countsMetrics side
+                      Mux.MuxCounts { Mux.mcFailures = failures, Mux.mcSent, Mux.mcReceived } =
              [ IntM (onSide side (fcName c)) (fromIntegral (fcCount c))
              | c <- failureCounts failures
              ]
           ++ perProtocol (onSide side "miniProtocols.failures") (Mux.mfMiniProtocols failures)
+          ++ perProtocol (onSide side "egress.bytes")           mcSent
+          ++ perProtocol (onSide side "ingress.bytes")          mcReceived
 
         -- The total, and one counter per mini-protocol number and direction;
         -- the numbers are the application's, so the names carry them.
@@ -717,7 +727,7 @@ instance MetaTrace Mux.CountersTrace where
 countersDoc :: Side -> Text
 countersDoc side =
   "Node-wide counters of the " <> sideDoc side <> " muxes, every counters "
-    <> "interval: how they have failed."
+    <> "interval: how they have failed, and the bytes they sent and read."
 
 -- | The metrics of one side. The per-protocol ones, named by the
 -- application's numbers, are described with their totals.
@@ -730,4 +740,12 @@ metricsDoc side =
         "Muxes dropped because a mini-protocol's thread died with an exception of its "
           <> "own; the same per mini-protocol and direction under "
           <> ".failures.<num>.<initiator|responder>.")
+     , (onSide side "egress.bytes",
+        "Bytes written, SDU headers included; the same per mini-protocol and "
+          <> "direction under .bytes.<num>.<initiator|responder>, the numbers "
+          <> "the application's.")
+     , (onSide side "ingress.bytes",
+        "Bytes read, SDU headers included; an SDU that overran its ingress limit is "
+          <> "not counted; the same per mini-protocol and direction under "
+          <> ".bytes.<num>.<initiator|responder>.")
      ]

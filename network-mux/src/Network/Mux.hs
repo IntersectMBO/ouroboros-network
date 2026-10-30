@@ -52,6 +52,7 @@ module Network.Mux
   , MuxFailures (..)
   , noFailures
   , noCounts
+  , ByteCounts
   , CountersTrace (..)
   , countersInterval
     -- * Errors
@@ -79,7 +80,6 @@ import Data.Map (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (isNothing)
 import Data.Monoid.Synchronisation (FirstToFinish (..))
-import Data.Strict.Tuple (pattern (:!:))
 
 import Control.Applicative
 import Control.Concurrent.Class.MonadSTM.Strict
@@ -116,8 +116,8 @@ data Mux (mode :: Mode) m =
        muxStatus          :: StrictTVar m Status,
        muxTracers         :: Tracers m,
        muxCounters        :: !(Maybe (MuxCounters m))
-       -- ^ Node-wide counters this mux's failures are counted in, given
-       -- to 'new'.
+       -- ^ Node-wide counters this mux's failures and bytes are counted in,
+       -- given to 'new'.
      }
 
 
@@ -147,9 +147,9 @@ new :: forall (mode :: Mode) m.
        MonadLabelledSTM m
     => Tracers m
     -> Maybe (MuxCounters m)
-    -- ^ node-wide counters to count the mux's failures in, shared with
-    -- every other mux made with them, or none; a set is only ever read by
-    -- the loop 'withMuxCounters' runs for it.
+    -- ^ node-wide counters to count the mux's failures and bytes in, shared
+    -- with every other mux made with them, or none; a set is only ever read
+    -- by the loop 'withMuxCounters' runs for it.
     -> [MiniProtocolInfo mode]
     -- ^ description of protocols run by the mux layer.  Only these protocols
     -- one will be able to execute.
@@ -182,7 +182,7 @@ mkMiniProtocolState :: MonadSTM m
                     => MiniProtocolInfo mode
                     -> m (MiniProtocolState mode m)
 mkMiniProtocolState miniProtocolInfo = do
-    miniProtocolIngressQueue <- newTVarIO $ 0 :!: mempty
+    miniProtocolIngressQueue <- newIngressQueue
     miniProtocolStatusVar    <- newTVarIO StatusIdle
     return MiniProtocolState {
        miniProtocolInfo,
@@ -273,24 +273,27 @@ run Mux { muxMiniProtocols,
     labelTVarIO muxStatus (name ++ "-mux-status")
     labelTQueueIO muxControlCmdQueue (name ++ "-mux-ctrl")
 
-    JobPool.withJobPool
-      (\jobpool -> do
-        JobPool.forkJob jobpool (muxerJob egressQueue)
-        JobPool.forkJob jobpool demuxerJob
-        traceWith tracer_ (TraceState Mature)
+    -- The cells outlive the job pool, so every byte the muxer counted is in
+    -- them when they are retired; the demuxer counts in the ingress queues.
+    withByteCells muxCounters (miniProtocolIngressQueue <$> muxMiniProtocols) $ \sent ->
+      JobPool.withJobPool
+        (\jobpool -> do
+          JobPool.forkJob jobpool (muxerJob egressQueue sent)
+          JobPool.forkJob jobpool demuxerJob
+          traceWith tracer_ (TraceState Mature)
 
-        -- Wait for someone to shut us down by calling muxStop or an error.
-        -- Outstanding jobs are shut down Upon completion of withJobPool.
-        withTimeoutSerial $ \timeout ->
-          monitor tracers
-                  muxCounters
-                  (Map.elems muxMiniProtocols)
-                  timeout
-                  jobpool
-                  egressQueue
-                  muxControlCmdQueue
-                  muxStatus
-      )
+          -- Wait for someone to shut us down by calling muxStop or an error.
+          -- Outstanding jobs are shut down Upon completion of withJobPool.
+          withTimeoutSerial $ \timeout ->
+            monitor tracers
+                    muxCounters
+                    (Map.elems muxMiniProtocols)
+                    timeout
+                    jobpool
+                    egressQueue
+                    muxControlCmdQueue
+                    muxStatus
+        )
     -- Only handle async exceptions, 'monitor' sets 'muxStatus' before throwing
     -- an exception.  Setting 'muxStatus' is necessary to resolve a possible
     -- deadlock of mini-protocol completion action.
@@ -300,8 +303,8 @@ run Mux { muxMiniProtocols,
       throwIO e
   where
 
-    muxerJob egressQueue =
-      JobPool.Job (muxer egressQueue bearerTracer_ bearer)
+    muxerJob egressQueue sent =
+      JobPool.Job (muxer egressQueue bearerTracer_ sent bearer)
                   (return . MuxerException)
                   MuxJob
                   (name ++ "-muxer")
@@ -367,9 +370,9 @@ miniProtocolJob TracersI {
           `orElse` throwSTM (BlockedOnCompletionVar miniProtocolNum)
         case remainder of
           Just trailing ->
-            modifyTVar miniProtocolIngressQueue $ \(l :!: b) ->
-                  BL.length trailing + l
-              :!: lazyByteString trailing <> b
+            modifyTVar miniProtocolIngressQueue $ \q ->
+              q { iqLength  = BL.length trailing + iqLength q,
+                  iqBuilder = lazyByteString trailing <> iqBuilder q }
           Nothing ->
             pure ()
 
@@ -666,7 +669,7 @@ monitor tracers@TracersI {
 
     checkNonEmptyQueue :: IngressQueue m -> STM m ()
     checkNonEmptyQueue q = do
-      l :!: _ <- readTVar q
+      l <- iqLength <$> readTVar q
       check (l /= 0)
 
     protocolKey :: MiniProtocolState mode m -> MiniProtocolKey
@@ -767,10 +770,13 @@ muxChannel tracer egressQueue want@(Wanton w) mc md q =
         -- matching ingress queue. This is the same queue the 'demux' thread writes to.
         traceWith tracer $ TraceChannelRecvStart mc
         blob <- atomically $ do
-            l :!: blob <- readTVar q
-            if l == 0
+            queued <- readTVar q
+            if iqLength queued == 0
                 then retry
-                else writeTVar q (0 :!: mempty) >> return (toLazyByteString blob)
+                else do
+                  -- The bytes read for the protocol stay counted.
+                  writeTVar q queued { iqLength = 0, iqBuilder = mempty }
+                  return (toLazyByteString (iqBuilder queued))
         traceWith tracer $ TraceChannelRecvEnd mc (fromIntegral $ BL.length blob)
         return $ Just blob
 

@@ -3,6 +3,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeFamilies          #-}
 
 module Network.Mux.Egress
@@ -18,6 +19,8 @@ module Network.Mux.Egress
 import Control.Monad
 import Data.ByteString.Lazy qualified as BL
 import Data.Int (Int64)
+import Data.Map.Strict qualified as Map
+import Data.Word (Word64)
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadAsync
@@ -26,6 +29,7 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI hiding (timeout)
 import Control.Tracer (Tracer)
 
+import Network.Mux.Counters (ByteSlots)
 import Network.Mux.Timeout
 import Network.Mux.Types
 
@@ -162,18 +166,42 @@ muxer
        )
     => EgressQueue m
     -> Tracer m BearerTrace
+    -> ByteSlots m
+    -- ^ This mux's byte slots, one per mini-protocol and direction it runs.
     -> Bearer m
     -> m void
-muxer egressQueue tracer Bearer { writeMany, sduSize, batchSize, egressInterval } =
+muxer egressQueue tracer byteSlots Bearer { writeMany, sduSize, batchSize, egressInterval } =
     withTimeoutSerial $ \timeout ->
+    -- The loop runs masked, so a count means bytes handed to the kernel:
+    -- nothing lands between the write's return and the count. A
+    -- cancellation lands in the write, where the bearer's timeout lands
+    -- too, or in the bearer's tail once the kernel has the bytes, which
+    -- leaves that batch uncounted on a mux that is ending anyway, or at the
+    -- loop's other blocking points, the queue read and the poll delay. The
+    -- write runs unmasked to work around an io-sim bug: a timeout under a
+    -- mask leaks its exception past its frame when the timed call finishes
+    -- as the timer fires (IntersectMBO/io-sim#269), which GHC retracts; once
+    -- that is fixed the unmask can go, the write blocking interruptibly
+    -- under the mask as the queue read does. Masked once, outside the loop,
+    -- a batch pays the one unmask application.
+    mask $ \unmask ->
     forever $ do
       start <- getMonotonicTime
       TLSRDemand mpc md d <- atomically $ readTBQueue egressQueue
       sdu <- processSingleWanton egressQueue sduSize mpc md d
       sdus <- buildBatch [sdu] (sduLength sdu)
-      void $ writeMany tracer timeout sdus
+      -- A write that throws, part of the batch sent or none, is not counted:
+      -- the connection is gone with it.
+      unmask (void (writeMany tracer timeout sdus))
       end <- getMonotonicTime
-      empty <- atomically $ isEmptyTBQueue egressQueue
+      -- The batch summed by mini-protocol and direction first, so the
+      -- transaction updates a slot once per protocol in the batch, not once
+      -- per SDU; a mux without counters has no slots and sums nothing.
+      let !bytes = if Map.null byteSlots then [] else batchBytes sdus
+      empty <- atomically $ do
+        forM_ bytes $ \(key, n) ->
+          forM_ (Map.lookup key byteSlots) $ \slot -> modifyTVar slot (+ n)
+        isEmptyTBQueue egressQueue
       when empty $ do
         let delta = diffTime end start
         threadDelay (egressInterval - delta)
@@ -184,6 +212,38 @@ muxer egressQueue tracer Bearer { writeMany, sduSize, batchSize, egressInterval 
 
     sduLength :: SDU -> Int
     sduLength sdu = fromIntegral msHeaderLength + fromIntegral (msLength sdu)
+
+    -- The bytes of a batch by mini-protocol and direction, header included,
+    -- as a list: a batch holds few protocols, so it is short. A run of SDUs
+    -- on one protocol is summed as it goes and merged once, at its end, so a
+    -- batch on one protocol merges once.
+    batchBytes :: [SDU] -> [((MiniProtocolNum, MiniProtocolDir), Word64)]
+    batchBytes []           = []
+    batchBytes (sdu : sdus) = runs [] (keyOf sdu) (bytesOf sdu) sdus
+      where
+        runs :: [((MiniProtocolNum, MiniProtocolDir), Word64)]
+             -> (MiniProtocolNum, MiniProtocolDir) -> Word64 -> [SDU]
+             -> [((MiniProtocolNum, MiniProtocolDir), Word64)]
+        runs acc key !n []            = insert key n acc
+        runs acc key !n (sdu' : rest)
+          | key' == key = runs acc key (n + bytesOf sdu') rest
+          | otherwise   = runs (insert key n acc) key' (bytesOf sdu') rest
+          where
+            key' = keyOf sdu'
+
+        keyOf :: SDU -> (MiniProtocolNum, MiniProtocolDir)
+        keyOf sdu' = (msNum sdu', msDir sdu')
+
+        bytesOf :: SDU -> Word64
+        bytesOf = fromIntegral . sduLength
+
+        insert :: (MiniProtocolNum, MiniProtocolDir) -> Word64
+               -> [((MiniProtocolNum, MiniProtocolDir), Word64)]
+               -> [((MiniProtocolNum, MiniProtocolDir), Word64)]
+        insert key n [] = [(key, n)]
+        insert key n ((key', n') : rest)
+          | key == key' = let !m = n' + n in (key', m) : rest
+          | otherwise   = (key', n') : insert key n rest
 
     -- Build a batch of SDUs to submit in one go to the bearer.
     -- The egress queue is still processed one SDU at the time
