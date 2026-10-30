@@ -1,6 +1,10 @@
-{-# LANGUAGE BangPatterns   #-}
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE RankNTypes     #-}
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 
 module Test.Ouroboros.Network.TxSubmission.TxLogic
   ( tests
@@ -29,6 +33,8 @@ module Test.Ouroboros.Network.TxSubmission.TxLogic
 import Control.DeepSeq (NFData (rnf))
 import Control.Exception (evaluate)
 import Control.Monad.Class.MonadTime.SI (DiffTime, Time (..), addTime, diffTime)
+import Data.ByteString.Lazy qualified as BSL
+import Data.Either (isRight)
 import Data.Foldable (toList)
 import Data.Function (on)
 import Data.IntMap.Strict qualified as IntMap
@@ -40,17 +46,24 @@ import Data.Map.Strict qualified as Map
 import Data.Maybe (listToMaybe)
 import Data.Sequence.Strict qualified as StrictSeq
 import Data.Set qualified as Set
-import Data.Word (Word64)
+import Data.Word (Word16, Word64)
 
 import NoThunks.Class (NoThunks, unsafeNoThunks)
 
 
+import Network.TypedProtocol.Codec (AnyMessage (..), CodecF (..))
+import Network.TypedProtocol.Core (StateToken, StateTokenI (..))
 
+import Ouroboros.Network.Protocol.Limits (sizeLimitForState)
+import Ouroboros.Network.Protocol.TxSubmission2.Codec (byteLimitsTxSubmission2)
 import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Ouroboros.Network.Tx (HasRawTxId (..), getRawTxId)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
 import Ouroboros.Network.TxSubmission.Inbound.V2.State
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
+import Test.Ouroboros.Network.TxSubmission.SizedBytes (SizedBytes,
+           TxSubmission2Bounds (..), codec_sized, genBoundedMessage,
+           shrinkBoundedMessage, withinBounds)
 
 import Test.Ouroboros.Network.TxSubmission.Types
 
@@ -79,6 +92,16 @@ tests =
                          prop_ArbTxDecisionPolicy_generatesSane
           , testProperty "shrinker produces sane policies"
                          prop_ArbTxDecisionPolicy_shrinkSane
+          , testProperty "default policy is sane up to the config bounds"
+                         prop_mkTxDecisionPolicy_saneAtBounds
+          , testProperty "sane policy accepts exactly the policies within the bounds"
+                         prop_saneTxDecisionPolicy_exactBounds
+          , testProperty "sane messages generator is valid"
+                         prop_ArbSaneMessages_generatesValid
+          , testProperty "sane messages shrinker is valid"
+                         prop_ArbSaneMessages_shrinkValid
+          , testProperty "messages within a sane policy fit within the size limits"
+                         prop_txSubmission2Messages_fitByteLimits
           ]
     , testProperty "nextPeerAction processes all multi-peer triggers" prop_nextPeerAction_processesAllTriggers
     , testCaseSteps "peerScore decays linearly over time at scoreRate" unit_peerScore_decaysOverTime
@@ -137,6 +160,343 @@ prop_ArbTxDecisionPolicy_shrinkSane policy@(ArbTxDecisionPolicy p)
   where
     check p' c' = counterexample (show (p', c'))
                 $ saneTxDecisionPolicy p' c' === Right ()
+
+-- | The largest window for which a `MsgRequestTxs` with txids of size
+-- `max_TXID_SIZE` fits within the `StIdle` size limit:
+-- @(65535 - 4) `div` max_TXID_SIZE@.
+--
+maxSaneNumUnacknowledgedTxIds :: Word16
+maxSaneNumUnacknowledgedTxIds = 1489
+
+-- | The largest `maxNumTxIdsToRequest` for which
+-- @max_TX_SIZE * maxNumTxIdsToRequest@ fits in `SizeInBytes`:
+-- @(2^32 - 1) `div` 65540@.
+--
+maxSaneNumTxIdsToRequest :: Word16
+maxSaneNumTxIdsToRequest = 65532
+
+-- | A `TxSubmissionConfig` with large values, mostly close to the bounds
+-- checked by 'saneTxDecisionPolicy'.
+--
+newtype ArbLargeTxSubmissionConfig =
+    ArbLargeTxSubmissionConfig TxSubmissionConfig
+  deriving Show
+
+instance Arbitrary ArbLargeTxSubmissionConfig where
+  arbitrary =
+    fmap ArbLargeTxSubmissionConfig $
+    TxSubmissionConfig
+      <$> frequency
+            [ (1, pure (NumTxIdsToAck maxSaneNumUnacknowledgedTxIds))
+            , (1, pure (NumTxIdsToAck (maxSaneNumUnacknowledgedTxIds + 1)))
+            , (3, NumTxIdsToAck <$> choose ( maxSaneNumUnacknowledgedTxIds - 10
+                                           , maxSaneNumUnacknowledgedTxIds + 10))
+            , (1, NumTxIdsToAck <$> arbitraryBoundedIntegral)
+            ]
+      <*> frequency
+            [ (1, pure (NumTxIdsToReq maxSaneNumTxIdsToRequest))
+            , (1, pure (NumTxIdsToReq (maxSaneNumTxIdsToRequest + 1)))
+            , (3, NumTxIdsToReq <$> choose ( maxSaneNumTxIdsToRequest - 10
+                                           , maxBound))
+            , (1, NumTxIdsToReq <$> arbitraryBoundedIntegral)
+            ]
+
+  -- shrink each field independently; the configs have no invariants
+  shrink (ArbLargeTxSubmissionConfig c) =
+       [ ArbLargeTxSubmissionConfig c { maxNumUnacknowledgedTxIds = NumTxIdsToAck w }
+       | w <- shrink (getNumTxIdsToAck (maxNumUnacknowledgedTxIds c)) ]
+    ++ [ ArbLargeTxSubmissionConfig c { maxNumTxIdsToRequest = NumTxIdsToReq r }
+       | r <- shrink (getNumTxIdsToReq (maxNumTxIdsToRequest c)) ]
+
+-- | 'mkTxDecisionPolicy' returns a (sane) policy for exactly those
+-- configs whose window and `maxNumTxIdsToRequest` are positive and within
+-- the bounds.  In
+-- particular the reply to the largest batch, with the
+-- `const_MAX_TX_SIZE_DISCREPANCY` tolerance for every txid in the window,
+-- fits within the `StTxs` size limit, and the default
+-- `txsSizeInflightPerPeer` doesn't saturate.
+--
+prop_mkTxDecisionPolicy_saneAtBounds :: ArbLargeTxSubmissionConfig
+                                          -> Property
+prop_mkTxDecisionPolicy_saneAtBounds (ArbLargeTxSubmissionConfig c) =
+    let window = getNumTxIdsToAck (maxNumUnacknowledgedTxIds c)
+        reqNo  = getNumTxIdsToReq (maxNumTxIdsToRequest c)
+        result = mkTxDecisionPolicy c
+        inBounds =
+             window >= 1 && window <= maxSaneNumUnacknowledgedTxIds
+          && reqNo  >= 1 && reqNo  <= maxSaneNumTxIdsToRequest
+    in checkCoverage
+     $ cover 1 (window == maxSaneNumUnacknowledgedTxIds)     "window at the bound"
+     $ cover 1 (window == maxSaneNumUnacknowledgedTxIds + 1) "window above the bound"
+     $ cover 1 (reqNo  == maxSaneNumTxIdsToRequest)          "request at the bound"
+     $ cover 1 (reqNo  == maxSaneNumTxIdsToRequest + 1)      "request above the bound"
+     $ cover 20 inBounds "within the bounds"
+     $ counterexample (show result)
+     $ case result of
+         Left _  -> counterexample "mkTxDecisionPolicy rejects the config"
+                      (not inBounds)
+         Right p ->
+           conjoin
+             [ counterexample "mkTxDecisionPolicy accepts the config"
+                 inBounds
+             , counterexample "txsSizeInflightPerPeer saturated"
+                 (   toInteger (txsSizeInflightPerPeer p)
+                  == toInteger max_TX_SIZE * toInteger reqNo)
+             ]
+
+-- | The largest `txsSizePerBatch` for which the reply to a batch with
+-- a full window of txs, each up to `const_MAX_TX_SIZE_DISCREPANCY` larger
+-- than advertised, fits within the `StTxs` size limit:
+-- @2500000 - 4 - 32 * window@.
+--
+maxSaneTxsSizePerBatch :: Word16 -> Integer
+maxSaneTxsSizePerBatch window = 2499996 - 32 * toInteger window
+
+-- | A policy field which `perturbPolicy` puts out of its range.
+--
+data PolicyField =
+    TxsSizeInflightPerPeer
+  | TxsSizePerBatch
+  | MaxOutstandingTxBatchesPerPeer
+  | TxInflightMultiplicity
+  | BufferedTxsMinLifetime
+  | ScoreRate
+  | ScoreMax
+  | ScoreAcceptDecrement
+  | InterTxSpace
+  | InflightTimeout
+  | MaxPeerClaimDelay
+  deriving (Show, Eq, Enum, Bounded)
+
+perturbPolicy :: PolicyField -> TxDecisionPolicy -> TxDecisionPolicy
+perturbPolicy field p = case field of
+    TxsSizeInflightPerPeer         -> p { txsSizeInflightPerPeer = 0 }
+    TxsSizePerBatch                -> p { txsSizePerBatch = 0 }
+    MaxOutstandingTxBatchesPerPeer -> p { maxOutstandingTxBatchesPerPeer = 0 }
+    TxInflightMultiplicity         -> p { txInflightMultiplicity = 0 }
+    BufferedTxsMinLifetime         -> p { bufferedTxsMinLifetime = -1 }
+    ScoreRate                      -> p { scoreRate = -1 }
+    ScoreMax                       -> p { scoreMax = -1 }
+    ScoreAcceptDecrement           -> p { scoreAcceptDecrement = -1 }
+    InterTxSpace                   -> p { interTxSpace = -1 }
+    InflightTimeout                -> p { inflightTimeout = interTxSpace p - 0.001 }
+    MaxPeerClaimDelay              -> p { maxPeerClaimDelay = -1 }
+
+-- | A policy and a config, mostly close to the bounds checked by
+-- 'saneTxDecisionPolicy'.  The policy is built by 'nearBoundsPolicy' from
+-- a base policy, a `txsSizePerBatch` and sometimes a field put out of its
+-- range, so that each part shrinks on its own.
+--
+data ArbPolicyNearBounds = ArbPolicyNearBounds {
+    apnBasePolicy      :: TxDecisionPolicy,
+    apnConfig          :: TxSubmissionConfig,
+    apnTxsSizePerBatch :: SizeInBytes,
+    apnPerturbed       :: Maybe PolicyField
+  }
+  deriving Show
+
+nearBoundsPolicy :: ArbPolicyNearBounds -> TxDecisionPolicy
+nearBoundsPolicy ArbPolicyNearBounds { apnBasePolicy, apnTxsSizePerBatch,
+                                       apnPerturbed } =
+    maybe id perturbPolicy apnPerturbed
+      apnBasePolicy { txsSizePerBatch = apnTxsSizePerBatch }
+
+nearBoundsSane :: ArbPolicyNearBounds -> Bool
+nearBoundsSane a = isRight (saneTxDecisionPolicy (nearBoundsPolicy a) (apnConfig a))
+
+instance Arbitrary ArbPolicyNearBounds where
+  arbitrary = do
+    ArbTxDecisionPolicy apnBasePolicy <- arbitrary
+    apnConfig <- frequency
+      [ (1, (\(ArbTxSubmissionConfig c) -> c) <$> arbitrary)
+      , (3, (\(ArbLargeTxSubmissionConfig c) -> c) <$> arbitrary)
+      ]
+    let maxBatch = maxSaneTxsSizePerBatch
+                     (getNumTxIdsToAck (maxNumUnacknowledgedTxIds apnConfig))
+        discrepancy = toInteger const_MAX_TX_SIZE_DISCREPANCY
+    apnTxsSizePerBatch <- frequency
+      [ (2, pure (txsSizePerBatch apnBasePolicy))
+      , (1, pure (fromIntegral (max 1 maxBatch)))
+      , (1, pure (fromIntegral (max 1 (maxBatch + 1))))
+      , (4, fromIntegral <$> choose ( max 1 (maxBatch - discrepancy)
+                                    , maxBatch + discrepancy))
+      ]
+    apnPerturbed <- frequency
+      [ (4, pure Nothing)
+      , (1, Just <$> arbitraryBoundedEnum)
+      ]
+    pure ArbPolicyNearBounds { apnBasePolicy, apnConfig,
+                               apnTxsSizePerBatch, apnPerturbed }
+
+  shrink a@ArbPolicyNearBounds { apnBasePolicy, apnConfig,
+                                 apnTxsSizePerBatch, apnPerturbed } =
+       [ a { apnPerturbed = Nothing } | Just _ <- [apnPerturbed] ]
+    ++ [ a { apnConfig = c }
+       | ArbLargeTxSubmissionConfig c <- shrink (ArbLargeTxSubmissionConfig apnConfig) ]
+    ++ [ a { apnTxsSizePerBatch = SizeInBytes s }
+       | s <- shrink (getSizeInBytes apnTxsSizePerBatch) ]
+    ++ [ a { apnBasePolicy = p }
+       | ArbTxDecisionPolicy p <- shrink (ArbTxDecisionPolicy apnBasePolicy) ]
+
+-- | 'saneTxDecisionPolicy' accepts exactly the policies and configs within
+-- the bounds stated numerically here:
+--
+-- * window in @[1, 1489]@ (`MsgRequestTxs` within the `StIdle` size limit);
+-- * `maxNumTxIdsToRequest` in @[1, 65532]@ (no overflow of the in-flight
+--   size);
+-- * `txsSizePerBatch` in @[1, 2500000 - 4 - 32 * window]@ (`MsgReplyTxs`
+--   within the `StTxs` size limit);
+-- * the remaining fields positive or non-negative, and @inflightTimeout >=
+--   interTxSpace@.
+--
+-- 'prop_txSubmission2Messages_fitByteLimits' checks that these bounds keep
+-- the messages within the size limits.
+--
+prop_saneTxDecisionPolicy_exactBounds :: ArbPolicyNearBounds -> Property
+prop_saneTxDecisionPolicy_exactBounds a@ArbPolicyNearBounds { apnConfig = c,
+                                                              apnPerturbed } =
+    let p      = nearBoundsPolicy a
+        window = getNumTxIdsToAck (maxNumUnacknowledgedTxIds c)
+        reqNo  = getNumTxIdsToReq (maxNumTxIdsToRequest c)
+        batch  = toInteger (txsSizePerBatch p)
+        windowInBounds = window >= 1 && window <= maxSaneNumUnacknowledgedTxIds
+        inBounds =
+             windowInBounds
+          && reqNo  >= 1 && reqNo  <= maxSaneNumTxIdsToRequest
+          && batch  >= 1 && batch  <= maxSaneTxsSizePerBatch window
+          && txsSizeInflightPerPeer         p >  0
+          && maxOutstandingTxBatchesPerPeer p >= 1
+          && txInflightMultiplicity         p >= 1
+          && bufferedTxsMinLifetime         p >= 0
+          && scoreRate                      p >= 0
+          && scoreMax                       p >= 0
+          && scoreAcceptDecrement           p >= 0
+          && interTxSpace                   p >= 0
+          && inflightTimeout                p >= interTxSpace p
+          && maxPeerClaimDelay              p >= 0
+    in checkCoverage
+     $ cover 1 (window == maxSaneNumUnacknowledgedTxIds)     "window at the bound"
+     $ cover 1 (window == maxSaneNumUnacknowledgedTxIds + 1) "window above the bound"
+     $ cover 1 (reqNo  == maxSaneNumTxIdsToRequest)          "request at the bound"
+     $ cover 1 (reqNo  == maxSaneNumTxIdsToRequest + 1)      "request above the bound"
+     $ cover 1 (windowInBounds && batch == maxSaneTxsSizePerBatch window)
+               "batch at the bound"
+     $ cover 1 (windowInBounds && batch == maxSaneTxsSizePerBatch window + 1)
+               "batch above the bound"
+     $ cover 10 (apnPerturbed /= Nothing) "another field out of range"
+     $ cover 20 inBounds "within the bounds"
+     $ tabulate "out of range" (maybe [] (pure . show) apnPerturbed)
+     $ counterexample (show p)
+     $ counterexample (show (saneTxDecisionPolicy p c))
+     $ isRight (saneTxDecisionPolicy p c) === inBounds
+
+-- | The bounds on messages which a policy and a config allow:
+--
+-- * at most `maxNumUnacknowledgedTxIds` txids of up to `max_TXID_SIZE` in
+--   a message;
+-- * a `MsgReplyTxs` with a single tx of up to `max_TX_SIZE` (which can exceed
+--   `txsSizePerBatch`), or with txs advertised with up to `txsSizePerBatch`
+--   bytes in total.  Each tx can be up to `const_MAX_TX_SIZE_DISCREPANCY`
+--   larger than advertised.
+--
+policyBounds :: TxDecisionPolicy -> TxSubmissionConfig -> TxSubmission2Bounds
+policyBounds p c =
+    TxSubmission2Bounds {
+      tbMaxNumTxIds = window,
+      tbMaxTxIdSize = fromIntegral max_TXID_SIZE,
+      tbMaxTxSize   = fromIntegral max_TX_SIZE + discrepancy,
+      tbMaxTxsSize  = fromIntegral (txsSizePerBatch p)
+                    + discrepancy * fromIntegral window
+    }
+  where
+    window = getNumTxIdsToAck (maxNumUnacknowledgedTxIds c)
+    discrepancy = fromIntegral const_MAX_TX_SIZE_DISCREPANCY :: Word
+
+-- | A sane policy and config, and messages within the bounds they allow
+-- (see 'policyBounds').
+--
+data ArbSaneMessages =
+    ArbSaneMessages ArbPolicyNearBounds
+                    [AnyMessage (TxSubmission2 SizedBytes SizedBytes)]
+  deriving Show
+
+saneMessagesBounds :: ArbPolicyNearBounds -> TxSubmission2Bounds
+saneMessagesBounds a = policyBounds (nearBoundsPolicy a) (apnConfig a)
+
+instance Arbitrary ArbSaneMessages where
+  arbitrary = do
+    a <- arbitrary `suchThat` nearBoundsSane
+    ArbSaneMessages a <$> vectorOf 5 (genBoundedMessage (saneMessagesBounds a))
+
+  -- shrink the policy and config only while they stay sane and the messages
+  -- stay within their bounds
+  shrink (ArbSaneMessages a msgs) =
+       [ ArbSaneMessages a' msgs
+       | a' <- shrink a
+       , nearBoundsSane a'
+       , all (withinBounds (saneMessagesBounds a')) msgs
+       ]
+    ++ [ ArbSaneMessages a msgs'
+       | msgs' <- shrinkList shrinkBoundedMessage msgs
+       , not (null msgs')
+       ]
+
+-- | The 'ArbSaneMessages' generator only produces sane policies and messages
+-- within their bounds.
+--
+prop_ArbSaneMessages_generatesValid :: ArbSaneMessages -> Property
+prop_ArbSaneMessages_generatesValid (ArbSaneMessages a msgs) =
+         counterexample "not sane" (nearBoundsSane a)
+    .&&. counterexample "messages not within the bounds"
+           (all (withinBounds (saneMessagesBounds a)) msgs)
+
+-- | Shrinking an 'ArbSaneMessages' preserves its invariants.  Only the first
+-- 100 shrinks are checked: a message with many txids has many shrinks.
+--
+prop_ArbSaneMessages_shrinkValid :: ArbSaneMessages -> Property
+prop_ArbSaneMessages_shrinkValid x =
+    conjoin
+      [ prop_ArbSaneMessages_generatesValid x'
+      | x' <- take 100 (shrink x)
+      ]
+
+-- | Messages within the bounds which a sane policy and config allow (see
+-- 'policyBounds') fit within the size limits of 'byteLimitsTxSubmission2'
+-- when encoded with 'codecTxSubmission2'.
+--
+prop_txSubmission2Messages_fitByteLimits :: ArbSaneMessages -> Property
+prop_txSubmission2Messages_fitByteLimits (ArbSaneMessages _ msgs) =
+    let sizes = zip msgs (map messageSize msgs)
+    in checkCoverage
+     $ cover 5 (or [ isReplyTxs msg
+                     && limit - size < toInteger const_MAX_TX_SIZE_DISCREPANCY
+                   | (msg, (size, limit)) <- sizes ])
+               "MsgReplyTxs within const_MAX_TX_SIZE_DISCREPANCY of the limit"
+     $ cover 1 (or [ isRequestTxs msg
+                     && limit - size < toInteger max_TXID_SIZE
+                   | (msg, (size, limit)) <- sizes ])
+               "MsgRequestTxs within a txid of the limit"
+     $ conjoin
+         [ counterexample (show size ++ " > " ++ show limit)
+         $ size <= limit
+         | (_, (size, limit)) <- sizes
+         ]
+  where
+    -- encoded size and the size limit of its state
+    messageSize :: AnyMessage (TxSubmission2 SizedBytes SizedBytes)
+                -> (Integer, Integer)
+    messageSize (AnyMessage (msg :: Message (TxSubmission2 SizedBytes SizedBytes) st st')) =
+      ( toInteger (BSL.length (encode (codec_sized @IO) msg))
+      , toInteger (sizeLimitForState
+                     (byteLimitsTxSubmission2 (error "unused"))
+                     (stateToken :: StateToken st))
+      )
+
+    isReplyTxs, isRequestTxs :: AnyMessage (TxSubmission2 txid tx) -> Bool
+    isReplyTxs (AnyMessage MsgReplyTxs {}) = True
+    isReplyTxs _                           = False
+    isRequestTxs (AnyMessage MsgRequestTxs {}) = True
+    isRequestTxs _                             = False
 
 --
 -- NoThunks invariant checks

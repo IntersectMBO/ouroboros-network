@@ -1,10 +1,12 @@
 {-# LANGUAGE BlockArguments      #-}
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeOperators       #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -33,14 +35,20 @@ import Data.Function (on)
 import Data.List (intercalate, nubBy)
 import Data.Maybe (fromMaybe)
 
+import Network.TypedProtocol.Codec (CodecF (..))
+
 import Ouroboros.Network.Channel
 import Ouroboros.Network.ControlMessage (ControlMessage (..), ControlMessageSTM)
 import Ouroboros.Network.Driver
+import Ouroboros.Network.Protocol.Limits (sizeLimitForState)
 import Ouroboros.Network.Protocol.TxSubmission2.Client
 import Ouroboros.Network.Protocol.TxSubmission2.Codec
 import Ouroboros.Network.Protocol.TxSubmission2.Server
 import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Ouroboros.Network.TxSubmission.Inbound.V1
+import Ouroboros.Network.TxSubmission.Inbound.V2.Policy (max_TX_SIZE)
+import Ouroboros.Network.TxSubmission.Inbound.V2.Types
+           (const_MAX_TX_SIZE_DISCREPANCY)
 import Ouroboros.Network.TxSubmission.Outbound
 import Ouroboros.Network.Util.ShowProxy
 
@@ -48,6 +56,8 @@ import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
 
+import Test.Ouroboros.Network.TxSubmission.SizedBytes (SizedBytes (..),
+           codec_sized)
 import Test.Ouroboros.Network.TxSubmission.Types
 import Test.Ouroboros.Network.Utils
 
@@ -57,6 +67,8 @@ tests = testGroup "AppV1"
   [ testProperty "txSubmission" (checkCoverage prop_txSubmission)
   , testProperty "maxNumTxsToRequest is clamped to the sane range"
                  prop_clampMaxNumTxsToRequest
+  , testProperty "maxSaneNumTxsToRequest txs fit within the size limit"
+                 prop_maxSaneNumTxsToRequest_fitsSizeLimit
   ]
 
 data TestVersion = TestVersion
@@ -304,3 +316,32 @@ prop_clampMaxNumTxsToRequest (ArbNumTxsToRequest n) =
        counterexample (show (clampMaxNumTxsToRequest n)) $
             saneMaxNumTxsToRequest (clampMaxNumTxsToRequest n)
        .&&. (not sane || clampMaxNumTxsToRequest n == n)
+
+
+-- | `maxSaneNumTxsToRequest` is the largest number of txs of `max_TX_SIZE`,
+-- each `const_MAX_TX_SIZE_DISCREPANCY` larger, for which a `MsgReplyTxs`
+-- encoded with `codecTxSubmission2` fits within the `StTxs` size limit.
+--
+prop_maxSaneNumTxsToRequest_fitsSizeLimit :: Property
+prop_maxSaneNumTxsToRequest_fitsSizeLimit =
+    once $
+         counterexample ("reply with " ++ show n ++ " txs: " ++ show (replySize n))
+           (replySize n <= limit)
+    .&&. counterexample ("reply with " ++ show (n + 1) ++ " txs: " ++ show (replySize (n + 1)))
+           (replySize (n + 1) > limit)
+  where
+    n :: Int
+    n = fromIntegral maxSaneNumTxsToRequest
+
+    tx :: SizedBytes
+    tx = SizedBytes (fromIntegral (max_TX_SIZE + const_MAX_TX_SIZE_DISCREPANCY))
+
+    replySize :: Int -> Integer
+    replySize k =
+      toInteger . BSL.length . encode (codec_sized @IO)
+        $ (MsgReplyTxs (replicate k tx)
+            :: Message (TxSubmission2 SizedBytes SizedBytes) StTxs StIdle)
+
+    limit :: Integer
+    limit = toInteger
+          $ sizeLimitForState (byteLimitsTxSubmission2 (error "unused")) SingTxs
