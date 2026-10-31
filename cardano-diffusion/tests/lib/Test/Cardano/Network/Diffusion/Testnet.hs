@@ -88,6 +88,8 @@ import Ouroboros.Network.PeerSelection.Governor qualified as Governor
 import Ouroboros.Network.PeerSelection.Governor.Types
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
 import Ouroboros.Network.PeerSelection.RootPeersDNS (DNSorIOError (DNSError))
+import Ouroboros.Network.PeerSelection.RootPeersDNS.LocalRootPeers
+           (TraceLocalRootPeers (..))
 import Ouroboros.Network.PeerSelection.State.EstablishedPeers qualified as EstablishedPeers
 import Ouroboros.Network.PeerSelection.State.KnownPeers qualified as KnownPeers
 import Ouroboros.Network.PeerSelection.State.LocalRootPeers qualified as LocalRootPeers
@@ -260,6 +262,22 @@ tests =
                    prop_only_bootstrap_peers_in_fallback_state_iosim
     , testProperty "bootstrap peers timeout"
                    prop_bootstrap_timeout_iosim
+    , testGroup "Egress scheduling"
+      [ testProperty "tx chain integrity"
+                     prop_egress_txSubmission_chainIntegrity
+      , testProperty "no failure"
+                     prop_egress_diffusion_nofail
+      , testProperty "no livelock"
+                     prop_egress_diffusion_nolivelock
+      , testProperty "connection manager valid transitions"
+                     prop_egress_diffusion_cm_valid_transitions
+      , testProperty "inbound governor valid transitions"
+                     prop_egress_diffusion_ig_valid_transitions
+      , testProperty "shrinking never re-runs the same simulation"
+                     prop_egress_shrink
+      , testProperty "local roots are served first"
+                     prop_egress_local_roots_first
+      ]
     , testGroup "local root diffusion mode"
         [ testProperty "InitiatorOnly"
           (unit_local_root_diffusion_mode InitiatorOnlyDiffusionMode)
@@ -427,7 +445,7 @@ unit_cm_valid_transitions =
             , abiSDUSize                 = LargeSDU
             }
       ds = DiffusionScript
-            (SimArgs 1 10 defaultTxDecisionPolicy)
+            (SimArgs 1 10 defaultTxDecisionPolicy Nothing)
             (Script ((Map.empty, ShortDelay) :| [(Map.empty, LongDelay)]))
             [ ( NodeArgs
                   (-2)
@@ -646,7 +664,7 @@ unit_connection_manager_trace_coverage =
 
     script@(DiffusionScript _ _ nodes) =
       DiffusionScript
-        (SimArgs 1 20 defaultTxDecisionPolicy)
+        (SimArgs 1 20 defaultTxDecisionPolicy Nothing)
         (singletonTimedScript Map.empty)
         [ -- a relay node
           (NodeArgs {
@@ -772,7 +790,7 @@ unit_connection_manager_transitions_coverage =
 
     script@(DiffusionScript _ _ nodes) =
       DiffusionScript
-        (SimArgs 1 20 defaultTxDecisionPolicy)
+        (SimArgs 1 20 defaultTxDecisionPolicy Nothing)
         (singletonTimedScript Map.empty)
         [ -- a relay node
           (NodeArgs {
@@ -948,7 +966,7 @@ prop_txSubmission_allTransactions (ArbTxDecisionPolicy decisionPolicy)
                           IsNotTrustable
       diffScript =
         DiffusionScript
-          (SimArgs 1 10 decisionPolicy)
+          (SimArgs 1 10 decisionPolicy Nothing)
           (singletonTimedScript Map.empty)
           [(NodeArgs
               (-3)
@@ -1142,7 +1160,7 @@ txChainIntegrityDiffScript (ArbTxDecisionPolicy decisionPolicy)
         }
 
   in DiffusionScript
-       (SimArgs 1 10 decisionPolicy)
+       (SimArgs 1 10 decisionPolicy Nothing)
        (singletonTimedScript Map.empty)
        [ ( NodeArgs
              (-1)
@@ -1441,7 +1459,7 @@ txScoreImpairmentDiffScript ScoreImpairmentInput { siiTxCount, siiBDelayMul, sii
         cImpairment = noImpairment { impairBodyDelay = Just cDelay }
 
     in DiffusionScript
-         (SimArgs 1 10 txScoreImpairmentPolicy)
+         (SimArgs 1 10 txScoreImpairmentPolicy Nothing)
          (singletonTimedScript Map.empty)
          [ ( NodeArgs
                (-1)
@@ -1613,7 +1631,7 @@ prop_check_inflight_ratio bi ds@(DiffusionScript simArgs _ _) =
         $ Signal.eventsToList
         $ Signal.selectEvents
            (\case
-               DiffusionTxLogic (TraceSharedTxState d) -> Just (inflightAttemptCounts d)
+               DiffusionTxLogic (TraceSharedTxState d _) -> Just (inflightAttemptCounts d)
                _                                       -> Nothing
            )
           events
@@ -1965,7 +1983,7 @@ unit_4177 = prop_inbound_governor_transitions_coverage absNoAttenuation script
   where
     script :: DiffusionScript
     script =
-      DiffusionScript (SimArgs 1 10 defaultTxDecisionPolicy)
+      DiffusionScript (SimArgs 1 10 defaultTxDecisionPolicy Nothing)
         (singletonTimedScript Map.empty)
         [ ( NodeArgs (-6) InitiatorAndResponderDiffusionMode
               (Map.fromList [(RelayAccessDomain "test2" 65_535, DoAdvertisePeer)])
@@ -2598,7 +2616,7 @@ unit_4191 = testWithIOSim prop_diffusion_dns_can_recover long_trace absInfo scri
         }
     script =
       DiffusionScript
-        (SimArgs 1 20 defaultTxDecisionPolicy)
+        (SimArgs 1 20 defaultTxDecisionPolicy Nothing)
         (singletonTimedScript $
            Map.fromList
              [ (("test2", DNS.A), Left [ (read "810b:4c8a:b3b5:741:8c0c:b437:64cf:1bd9", 300)
@@ -2726,7 +2744,7 @@ prop_connect_failure (AbsIOError ioerr) =
 
     script =
       DiffusionScript
-        (SimArgs 1 20 defaultTxDecisionPolicy)
+        (SimArgs 1 20 defaultTxDecisionPolicy Nothing)
         (singletonTimedScript Map.empty)
         [ (NodeArgs {
             naSeed = 0,
@@ -2856,7 +2874,7 @@ prop_accept_failure (AbsIOError ioerr) =
 
     script =
       DiffusionScript
-        (SimArgs 1 20 defaultTxDecisionPolicy)
+        (SimArgs 1 20 defaultTxDecisionPolicy Nothing)
         (singletonTimedScript Map.empty)
         [ (NodeArgs {
             naSeed = 0,
@@ -3983,7 +4001,8 @@ async_demotion_network_script =
     simArgs = SimArgs {
         saSlot             = secondsToDiffTime 1,
         saQuota            = 5,  -- 5% chance of producing a block
-        saTxDecisionPolicy = defaultTxDecisionPolicy
+        saTxDecisionPolicy = defaultTxDecisionPolicy,
+        saEgress = Nothing
       }
     peerTargets = Governor.nullPeerSelectionTargets {
       targetNumberOfKnownPeers = 1,
@@ -4552,7 +4571,7 @@ prop_unit_4258 =
                      abiSDUSize = LargeSDU
                    }
       diffScript = DiffusionScript
-        (SimArgs 1 10 defaultTxDecisionPolicy)
+        (SimArgs 1 10 defaultTxDecisionPolicy Nothing)
         (singletonTimedScript Map.empty)
         [( NodeArgs (-3) InitiatorAndResponderDiffusionMode
              Map.empty
@@ -4659,7 +4678,7 @@ prop_unit_reconnect :: Property
 prop_unit_reconnect =
   let diffScript =
         DiffusionScript
-          (SimArgs 1 10 defaultTxDecisionPolicy)
+          (SimArgs 1 10 defaultTxDecisionPolicy Nothing)
           (singletonTimedScript Map.empty)
           [(NodeArgs
               (-3)
@@ -5847,7 +5866,7 @@ unit_local_root_diffusion_mode diffusionMode =
 
     script =
       DiffusionScript
-        (SimArgs 1 20 defaultTxDecisionPolicy)
+        (SimArgs 1 20 defaultTxDecisionPolicy Nothing)
         (singletonTimedScript Map.empty)
         [ -- a relay node
           (NodeArgs {
@@ -6189,6 +6208,7 @@ labelDiffusionScript (DiffusionScript args _ nodes) =
               ++ renderSimArgs args)
     . label ("Nº nodes: "
               ++ show (length nodes))
+    . label ("egress: " ++ maybe "off" (const "on") (saEgress args))
     . label ("Nº nodes in InitiatorOnlyDiffusionMode: "
               ++ show (length $ filter ((== InitiatorOnlyDiffusionMode) . naDiffusionMode . fst) nodes))
     -- todo: add label for GenesisMode syncTargets
@@ -6225,3 +6245,135 @@ showBucket size a | a < size
                            , show (a `div` size * size + size)
                            , ")"
                            ]
+
+
+--
+-- Egress scheduling
+--
+-- Every node runs with scheduled egress ('EgressArgs'): a budget and a bucket
+-- small enough for the simulation's traffic to wait, TxSubmission's initiator
+-- on a slice that borrows the budget's idle capacity, and a within-tier order
+-- re-dealt every few minutes. The oracle is what holds without it: timing
+-- changes, but no invariant may break and nothing may stop arriving. A wedged
+-- queue, a lost wake-up or a starved slice shows up as data that never
+-- arrives.
+
+-- | Every tx still reaches the nodes it should, with TxSubmission's
+-- initiator on the slice.
+prop_egress_txSubmission_chainIntegrity :: Egress
+                                        -> ArbTxDecisionPolicy
+                                        -> ChainedPeerTxs
+                                        -> Property
+prop_egress_txSubmission_chainIntegrity egress argPolicy chainedTxs =
+  let diffScript = withEgress egress (txChainIntegrityDiffScript argPolicy chainedTxs)
+      expected   = txChainIntegrityExpected chainedTxs in
+  counterexample (show egress) $
+  checkTxChainIntegrity
+    chainedTxs
+    expected
+    (runSimTrace (diffusionSimulation noAttenuation diffScript))
+    long_trace
+
+-- | Scheduled egress ranks a node's local roots first; anyone else starts in
+-- the residual tier, a pool relay with credit, since a pool's buckets are full
+-- as the list is built, or a stranger at rest, since its own bucket is locked
+-- as its connection begins, under any lock.
+prop_egress_local_roots_first :: AbsBearerInfo -> EgressScript -> Property
+prop_egress_local_roots_first =
+  egressIOSim prop_local_roots_first long_trace
+
+-- | A connection's mux is ranked 0 iff its peer is one of the node's resolved
+-- local roots, and 2 or 4 otherwise: at setup no peer runs our hot
+-- mini-protocols yet, so none is a partner, and a stranger's own bucket opens
+-- only after its lock, so it is never credited at setup. The handler reads
+-- the roots from the variable the resolver writes; the resolver traces them a
+-- moment after writing, so a rank is judged by the roots traced last before
+-- it or first after it.
+prop_local_roots_first :: SimTrace DiffSimResult -> Int -> Property
+prop_local_roots_first ioSimTrace traceNumber =
+  let events = fmap (\(WithTime t (WithName name b)) -> WithName name (WithTime t b))
+             . withTimeNameTraceEvents @DiffusionTestTrace @NtNAddr
+             . Trace.take traceNumber
+             $ ioSimTrace
+      ranks  = concatMap nodeRanks (Trace.toList (splitWithNameTrace events))
+      judged = [ r | r@(_, _, _, roots) <- ranks, not (null roots) ]
+  in classify (any (\(_, _, rank, _) -> rank == Mx.Rank 0) judged) "a local root ranked first"
+   . classify (any (\(_, _, rank, _) -> rank == Mx.Rank 2) judged) "a big-ledger relay ranked as a pool"
+   . classify (any (\(_, _, rank, _) -> rank == Mx.Rank 4) judged) "a stranger at rest behind its lock"
+   . classify (length judged < length ranks) "a rank before any roots were traced"
+   . classify (null ranks) "no scheduled connection"
+   $ conjoin
+       [ counterexample (show (node, addr, rank, roots)) $
+           property (or [ rank `elem` ranksOf (addr `Set.member` rs) | rs <- roots ])
+       | (node, addr, rank, roots) <- judged ]
+  where
+    ranksOf isRoot = if isRoot then [Mx.Rank 0] else [Mx.Rank 2, Mx.Rank 4]
+
+    -- one node's ranks, each with the root sets it may be judged by
+    nodeRanks :: [WithName NtNAddr (WithTime DiffusionTestTrace)]
+              -> [(NtNAddr, NtNAddr, Mx.Rank, [Set NtNAddr])]
+    nodeRanks evs =
+      [ (node, addr, rank, [ rs | (_, rs) <- take 1 (reverse earlier) ++ take 1 later ])
+      | (i, WithName node (WithTime _ (DiffusionMuxTrace
+            (Mx.WithBearer ConnectionId { remoteAddress = addr } (Mx.TraceEgressRank rank)))))
+          <- indexed
+      , let (earlier, later) = span ((< i) . fst) groups ]
+      where
+        indexed = zip [0 :: Int ..] evs
+        groups  = [ (i, LocalRootPeers.keysSet (LocalRootPeers.fromGroups gs))
+                  | (i, WithName _ (WithTime _ (DiffusionLocalRootPeerTrace
+                                                  (TraceLocalRootGroups gs)))) <- indexed ]
+
+-- | The governor's state stays valid.
+prop_egress_diffusion_nofail :: AbsBearerInfo -> EgressScript -> Property
+prop_egress_diffusion_nofail =
+  egressIOSim prop_diffusion_nofail long_trace
+
+-- | No burst of events without time advancing: a wake-up storm among bearers
+-- sharing a bucket would show up here.
+prop_egress_diffusion_nolivelock :: AbsBearerInfo -> EgressScript -> Property
+prop_egress_diffusion_nolivelock =
+  egressIOSim prop_diffusion_nolivelock long_trace
+
+-- | Scheduling changes when connections change state, never which states
+-- they pass through.
+prop_egress_diffusion_cm_valid_transitions
+  :: AbsBearerInfo -> EgressScript -> Property
+prop_egress_diffusion_cm_valid_transitions =
+  egressIOSim prop_diffusion_cm_valid_transitions long_trace
+
+prop_egress_diffusion_ig_valid_transitions
+  :: AbsBearerInfo -> EgressScript -> Property
+prop_egress_diffusion_ig_valid_transitions =
+  egressIOSim prop_diffusion_ig_valid_transitions long_trace
+
+egressIOSim :: (SimTrace DiffSimResult -> Int -> Property)
+            -> Int
+            -> AbsBearerInfo
+            -> EgressScript
+            -> Property
+egressIOSim prop traceNumber bi es =
+  testWithIOSim prop traceNumber bi (egressRun es)
+
+-- | Shrinking an egress script never re-runs the simulation it shrinks: the
+-- first candidate runs with egress off, the rest with it on, and none runs
+-- the original script. Likewise for egress on its own. Only the first
+-- candidates are judged: every egress one comes first, and a script's own
+-- shrinks run to thousands.
+prop_egress_shrink :: EgressScript -> Egress -> Property
+prop_egress_shrink es egress =
+    classify (length runs > 1) "more than egress to shrink" $
+         counterexample "a candidate runs the original"
+           (all ((/= show (egressRun es)) . show) runs)
+    .&&. counterexample "egress not turned off first"
+           (map (not . isJust . egressOf) (take 1 runs) === [True])
+    .&&. counterexample "egress turned off again"
+           (all (isJust . egressOf) (drop 1 runs))
+    .&&. counterexample "an egress candidate runs the original"
+           (all ((/= show (with egress)) . show . with) (shrink egress))
+    .&&. counterexample "egress not turned off first, on its own"
+           (map (not . isJust . egressOf . with) (take 1 (shrink egress)) === [True])
+  where
+    runs = map egressRun (take 16 (shrink es))
+    egressOf (DiffusionScript sa _ _) = saEgress sa
+    with e = withEgress e (egressRun es)

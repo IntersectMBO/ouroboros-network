@@ -67,11 +67,11 @@ library
     io-classes:{io-classes, si-timers, strict-stm} ^>=1.8,
     monoidal-synchronisation >=0.1 && <0.2,
     network ^>=3.2.7,
+    splitmix,
     process ^>=1.6,
     quiet,
     scientific,
     statistics-linreg >=0.3 && <0.4,
-    strict,
     time >=1.9.1 && <1.16,
     vector >=0.12 && <0.14,
 
@@ -93,11 +93,15 @@ library
     Network.Mux.Bearer.Socket
     Network.Mux.Channel
     Network.Mux.Codec
+    Network.Mux.Counters
     Network.Mux.DeltaQ.TraceStats
     Network.Mux.DeltaQ.TraceStatsSupport
     Network.Mux.DeltaQ.TraceTransformer
     Network.Mux.DeltaQ.TraceTypes
     Network.Mux.Egress
+    Network.Mux.Egress.Bucket
+    Network.Mux.Egress.Burst
+    Network.Mux.Egress.Floor
     Network.Mux.Ingress
     Network.Mux.TCPInfo
     Network.Mux.Time
@@ -138,6 +142,9 @@ test-suite test
   main-is: Main.hs
   other-modules:
     Test.Mux
+    Test.Mux.Burst
+    Test.Mux.Floor
+    Test.Mux.FloorBucket
     Test.Mux.ReqResp
     Test.Mux.Timeout
 
@@ -158,6 +165,7 @@ test-suite test
     io-sim,
     network,
     network-mux,
+    nothunks,
     primitive,
     quickcheck-instances,
     serialise,
@@ -216,6 +224,29 @@ executable mux-demo
       directory,
       network,
 
+executable mux-bucket-demo
+  import: demo-deps
+  hs-source-dirs:
+    demo
+    test
+
+  main-is: mux-bucket-demo.hs
+  other-modules: Test.Mux.ReqResp
+  ghc-options: -rtsopts "-with-rtsopts=-N4"
+  build-depends:
+    Win32-network,
+    base >=4.14 && <4.23,
+    binary,
+    bytestring,
+    cborg,
+    contra-tracer,
+    io-classes:{io-classes, si-timers, strict-stm},
+    network,
+    network-mux,
+    optparse-applicative,
+    primitive,
+    serialise,
+
 executable mux-leios-demo
   import: demo-deps
   hs-source-dirs:
@@ -243,6 +274,30 @@ executable mux-leios-demo
     -rtsopts
     -threaded
 
+benchmark send-encode-benchmarks
+  type: exitcode-stdio-1.0
+  hs-source-dirs: bench/send_encode
+  main-is: Main.hs
+  build-depends:
+    base >=4.14 && <4.23,
+    bytestring,
+    cborg,
+    deepseq,
+    network-mux,
+    tasty-bench,
+
+  default-extensions:
+    ImportQualifiedPost
+    NumericUnderscores
+
+  ghc-options:
+    -rtsopts
+    -Wall
+    -Wcompat
+    -Wunused-packages
+
+  default-language: Haskell2010
+
 benchmark socket-read-write-benchmarks
   type: exitcode-stdio-1.0
   hs-source-dirs: bench/socket_read_write
@@ -251,11 +306,11 @@ benchmark socket-read-write-benchmarks
   build-depends:
     base >=4.14 && <4.23,
     bytestring,
+    containers,
     contra-tracer,
     io-classes:{io-classes, si-timers, strict-stm},
     network,
     network-mux,
-    strict,
     tasty-bench,
 
   default-extensions: ImportQualifiedPost

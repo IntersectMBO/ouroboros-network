@@ -29,16 +29,22 @@ import Control.Exception (ErrorCall (..))
 import Control.Monad
 import Data.Binary.Put qualified as Bin
 import Data.Bits
+import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BL
 import Data.ByteString.Lazy.Char8 qualified as BL8 (pack)
+import Data.ByteString.Lazy.Internal qualified as BLI
+import Data.Functor.Identity (Identity (..))
 import Data.List (dropWhileEnd, nub)
 import Data.List qualified as List
 import Data.Map qualified as M
-import Data.Maybe (fromMaybe, isNothing)
+import Data.Map.Strict qualified as MS
+import Data.Maybe (fromJust, fromMaybe, isJust, isNothing)
+import Data.Set qualified as Set
 import Data.Tuple (swap)
 import Data.Word
 import Formatting (formatToString, (%), (%+))
 import Formatting qualified as F
+import NoThunks.Class (unsafeNoThunks)
 import System.Random.SplitMix qualified as SM
 import Test.Cardano.Base.QuickCheck qualified as BaseQC
 import Test.QuickCheck hiding ((.&.))
@@ -51,6 +57,7 @@ import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadSay
 import Control.Monad.Class.MonadST
+import Control.Monad.Class.MonadTest (exploreRaces)
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
@@ -71,6 +78,7 @@ import System.Process (createPipe)
 #endif
 import System.IOManager
 
+import Test.Mux.FloorBucket ()
 import Test.Mux.ReqResp
 
 import Network.Mux (Mux)
@@ -80,6 +88,11 @@ import Network.Mux.Bearer.AttenuatedChannel as AttenuatedChannel
 import Network.Mux.Bearer.Pipe qualified as Mx
 import Network.Mux.Bearer.Queues as Mx
 import Network.Mux.Codec qualified as Mx
+import Network.Mux.Counters qualified as Counters
+import Network.Mux.Egress (forcePrefix)
+import Network.Mux.Egress qualified as Egress
+import Network.Mux.Egress.Bucket qualified as Bucket
+import Network.Mux.Egress.Floor (floorClass)
 import Network.Mux.Types (MiniProtocolInfo (..), MiniProtocolLimits (..))
 import Network.Mux.Types qualified as Mx
 import Network.Socket qualified as Socket
@@ -112,6 +125,69 @@ tests =
   , testProperty "pure exception (Sim)"         prop_mux_pure_exception_iosim
   , testProperty "pure exception (IO)"          prop_mux_pure_exception_io
   , testProperty "sdu codec"                    prop_sdu_codec
+  , testGroup "Egress bucket"
+    [ testProperty "grantAt: earliest instant"    prop_grantAt_ready
+    , testProperty "grantAt: not late"            prop_grantAt_tight
+    , testProperty "grantAt: takes what it grants" prop_grantAt_take
+    , testProperty "grantAt: rate zero disables"  prop_grantAt_disabled
+    , testProperty "wakeAt: within a microsecond" prop_wakeAt
+    , testProperty "atRate: keeps the level"      prop_atRate
+    , testProperty "rotatedRank: re-dealt each period" prop_rotatedRank
+    , testProperty "queueRank: zero period is none"   prop_queueRank_zeroPeriod
+    , testProperty "served: each bearer once per tier, within the window" prop_served_window
+    , testProperty "forcePrefix: evaluates up to the limit, no further" prop_forcePrefix
+    , testProperty "send forces a message only up to the soft limit" prop_mux_send_forces_prefix_only
+    , testProperty "served: the counters drop the stale bearers" prop_served_counters
+    , testProperty "served: the record prunes itself, bounded" prop_served_bounded
+    , testProperty "served: an unqueued grant asks its tier once a refresh" prop_served_fast_tier
+    , testProperty "slowed: a standing is a decayed ratio" prop_slowdown_laws
+    , testProperty "slowed: counted per tier"              prop_slowed_by_tier
+    , testProperty "slowed: the counters count the slowed bearers of each tier" prop_slowed_counters
+    , testProperty "queueRank: turns from the threshold" prop_queueRank_turns
+    , testProperty "chargeAt: takes without waiting"  prop_chargeAt
+    , testProperty "schedule matches the replay"  prop_bucket_schedule
+    , testProperty "the counters hold no thunks"  prop_bucket_stats_no_thunks
+    , testProperty "schedule matches the replay, idle floor attached" prop_bucket_schedule_idle_floor
+    , testProperty "cancellation is safe"         prop_bucket_cancel
+    , testProperty "cancellation is safe with a floor" prop_bucket_cancel_floor
+    , testProperty "disabled bucket never waits"  prop_bucket_disabled
+    , testProperty "disabled bucket never waits, floor attached" prop_bucket_disabled_floor
+    , testProperty "rate change takes effect"     prop_bucket_rate_change
+    , testProperty "tiers: one number each, one name each, the floor on the credited"
+                   prop_tiers
+    ]
+  , testGroup "Egress lanes"
+    [ testProperty "own requests never wait, the slice gets its share"
+                   (BaseQC.withNumTests 30 prop_mux_lanes)
+    , testProperty "a torn-down head hands the queue on"
+                   prop_mux_egress_head_torn_down
+    , testProperty "the muxer reports the gate and the write to the budget"
+                   prop_mux_scheduled_own_time
+    , testProperty "a final message is written before completion is reported"
+                   prop_mux_final_message_before_release
+    , testProperty "own requests wait at the gate, charged once written"
+                   (BaseQC.withNumTests 30 prop_mux_direct_gate)
+    , testProperty "counters are snapshotted every interval"
+                   prop_egress_counters_loop
+    , testProperty "bytes the bearer took are counted under their protocols and charged, cancelled or not"
+                   prop_mux_written_is_accounted
+    , testProperty "a write blocked part way takes the cancellation, nothing counted"
+                   prop_mux_partial_write_cancelled
+    ]
+  , testGroup "Counters"
+    [ testProperty "each failure is counted once, where it belongs"
+                   prop_mux_counters_failure
+    , testProperty "both sides are snapshotted every interval"
+                   prop_mux_counters_loop
+    , testProperty "bytes are counted per protocol and direction, and survive the mux"
+                   prop_mux_counters_bytes
+    , testProperty "a snapshot sees a concurrent step whole or not at all, one transaction per mux"
+                   prop_mux_counters_snapshot_split
+    , testProperty "the scheduling counters take a transaction per bucket"
+                   prop_scheduling_counts_split
+    , testProperty "the counters hold no thunks, and sum every mux and failure"
+                   prop_mux_counters_no_thunks
+    ]
   , testGroup "Generators"
     [ testProperty "genByteString"              prop_arbitrary_genByteString
     , testProperty "genLargeByteString"         prop_arbitrary_genLargeByteString
@@ -2727,3 +2803,2904 @@ compareErrors Mx.SDUReadTimeout {}      Mx.SDUReadTimeout {}      = True
 compareErrors Mx.SDUWriteTimeout {}     Mx.SDUWriteTimeout {}     = True
 compareErrors Mx.Shutdown {}            Mx.Shutdown {}            = True
 compareErrors _ _                                                 = False
+
+
+--
+-- Egress bucket
+--
+-- The arithmetic is the pure 'Bucket.grantAt', checked on its own.  The queue
+-- is checked by driving concurrent requests through a real bucket in IOSim and
+-- comparing every grant instant, exactly, with a replay through the pure core
+-- in (rank, arrival) order: rate, work conservation, priority and FIFO all
+-- follow.  Liveness under cancellation is checked separately.
+
+-- | 10 kB/s .. 1 GB/s: schedules from microseconds to seconds.  'byteEps' is
+-- sized for the top of this range.
+genRate :: Gen Double
+genRate = do
+    e <- choose (4, 8 :: Int)
+    m <- choose (1, 9.99 :: Double)
+    return (m * 10 ^^ e)
+
+genCapacity :: Gen Int
+genCapacity = (4096 *) <$> choose (1, 8)
+
+-- | Exactly @n@ picoseconds: @1e-12 :: DiffTime@ is the resolution.
+picos :: Integer -> DiffTime
+picos n = fromIntegral n * 1e-12
+
+-- | A 'Time' as whole picoseconds.  'DiffTime' is fixed point, so going
+-- through 'Rational' loses nothing.
+picosOf :: Time -> Integer
+picosOf t = round (toRational (t `diffTime` Time 0) * 1e12)
+
+-- | Sizes straddle the capacity; an oversized request is the one case that
+-- puts the bucket in debt.
+genBytes :: Int -> Gen Int
+genBytes cap = frequency [ (3, choose (1, cap))
+                         , (2, choose (cap, 2 * cap))
+                         , (1, choose (1, 64)) ]
+
+--
+-- Pure core
+--
+
+-- | One take from a bucket in any state, from long full to deep in debt.
+data BucketTake = BucketTake {
+    tkRate :: !Double,
+    tkCap  :: !Int,
+    tkNow  :: !Time,
+    tkFull :: !Time,
+    tkNeed :: !Int
+  }
+  deriving Show
+
+instance Arbitrary BucketTake where
+    arbitrary = do
+      rate <- genRate
+      cap  <- genCapacity
+      now  <- Time . realToFrac <$> choose (0, 100 :: Double)
+      let fillTime = fromIntegral cap / rate :: Double
+      d    <- choose (-2 * fillTime, 3 * fillTime)
+      need <- genBytes cap
+      return BucketTake { tkRate = rate, tkCap = cap, tkNow = now,
+                          tkFull = realToFrac d `addTime` now, tkNeed = need }
+
+    shrink tk@BucketTake { tkRate, tkCap, tkNow, tkFull, tkNeed } =
+         -- the bucket's state is the offset of @tkFull@ from @tkNow@, so move
+         -- @tkNow@ to the origin and carry @tkFull@ with it
+         [ tk { tkNow = Time 0, tkFull = (tkFull `diffTime` tkNow) `addTime` Time 0 }
+         | tkNow /= Time 0 ]
+      ++ [ tk { tkFull = tkNow } | tkFull /= tkNow ]           -- exactly full
+         -- then halve what is left, so an offset that must stay non-zero
+         -- still reaches a small round number
+      ++ [ tk { tkFull = (offset / 2) `addTime` tkNow }
+         | let offset = tkFull `diffTime` tkNow, abs offset > 1e-12 ]
+      ++ [ tk { tkNeed = n }
+         | n <- [1, tkCap, tkCap + 1], n < tkNeed ]            -- the credit boundary
+      ++ [ tk { tkCap = 4096 } | tkCap > 4096 ]
+      ++ [ tk { tkRate = r } | r <- [1e4, 1e6], r < tkRate ]
+
+-- | Slack in bytes, at a given rate, for the picosecond truncation in the
+-- pure core: @realToFrac :: Double -> DiffTime@ truncates, so each conversion
+-- can lose a whole picosecond's worth of bytes, and a law that recomputes a
+-- level stacks two of them.  The constant term covers float error at low
+-- rates, where a picosecond is worth almost nothing.
+byteEps :: Double -> Double
+byteEps rate = 4 * rate * 1e-12 + 1e-9
+
+-- | Over every place in the queue and every tier: a tier's place maps back to
+-- it, the places past the tiers have none, every place has its own name, a
+-- tier's place is named after it, and the floor serves exactly the credited
+-- tiers -- partners, pool relays, strangers -- in a class each; and the
+-- names, which metric names carry, are the ones dashboards know.
+prop_tiers :: Property
+prop_tiers = once $
+       counterexample "a tier's place is not its own"
+         (conjoin [ Mx.numberTier (Mx.tierNumber t) === Just t | t <- tiers ])
+  .&&. counterexample "a place past the tiers has one"
+         (conjoin [ Mx.numberTier n === Nothing | n <- places, n > Mx.tierNumber maxBound ])
+  .&&. counterexample "two places share a name" (length (nub names) === length names)
+  .&&. counterexample "a tier's place is not named after it"
+         (conjoin [ Mx.numberName (Mx.tierNumber t) === Mx.tierName t | t <- tiers ])
+  .&&. counterexample "the floor serves other than the credited"
+         (conjoin [ counterexample (Mx.numberName n) $
+                      isJust (floorClass n) === (Mx.numberTier n `elem` map Just credited)
+                  | n <- places ])
+  .&&. counterexample "credited tiers share a floor class"
+         (length (nub [ floorClass (Mx.tierNumber t) | t <- credited ]) === length credited)
+    -- the names are in metric names, so dashboards depend on them
+  .&&. counterexample "a metric name changed"
+         (map Mx.numberName [0 .. 4] ++ [Mx.numberName maxBound]
+            === ["localRoot", "partner", "pool", "stranger", "rest", "unranked"])
+  where
+    tiers    = [minBound .. maxBound] :: [Mx.Tier]
+    places   = [minBound .. maxBound] :: [Word8]
+    names    = map Mx.numberName places
+    credited = [Mx.PartnerTier, Mx.PoolTier, Mx.StrangerTier]
+
+-- | The cases that matter for the pure laws: an oversized request is served
+-- on credit, and 'Bucket.tokenLevel' saturates once the bucket is full, so a
+-- law stated over the level alone says little about those grants.
+labelTake :: BucketTake -> Property -> Property
+labelTake BucketTake { tkRate, tkCap, tkNow, tkFull, tkNeed } =
+      classify (tkNeed >= tkCap) "oversized"
+    . classify (ready == tkNow)  "granted at once"
+    . classify (level < 0)       "in debt"
+  where
+    (ready, _) = Bucket.grantAt tkRate tkCap tkFull tkNow tkNeed
+    level      = Bucket.tokenLevel tkRate tkCap tkFull tkNow
+
+-- | Grants at the earliest instant the bytes are there: never before the
+-- request, and if it waits, exactly when the level reaches the target.
+prop_grantAt_ready :: BucketTake -> Property
+prop_grantAt_ready tk@BucketTake { tkRate, tkCap, tkNow, tkFull, tkNeed } =
+    labelTake tk $
+    counterexample (show (ready, level, target)) $
+         ready >= tkNow
+      && level >= target - eps
+      && (ready == tkNow || level <= target + eps)
+  where
+    (ready, _) = Bucket.grantAt tkRate tkCap tkFull tkNow tkNeed
+    level      = Bucket.tokenLevel tkRate tkCap tkFull ready
+    target     = fromIntegral (min tkNeed tkCap) :: Double
+    eps        = byteEps tkRate
+
+-- | A take that must wait, held as the generator's own inputs so that
+-- shrinking any of them still waits: the bucket is full again @bwExtra@
+-- picoseconds past the instant its level would reach the target, so the target
+-- is out of reach at @bwNow@ and 'Bucket.grantAt' cannot serve it there.
+data BucketWait = BucketWait {
+    bwRate  :: !Double,
+    bwCap   :: !Int,
+    bwNeed  :: !Int,
+    bwNow   :: !Time,
+    bwExtra :: !Integer   -- ^ picoseconds past the deficit, at least one
+  }
+  deriving Show
+
+waitTake :: BucketWait -> BucketTake
+waitTake BucketWait { bwRate, bwCap, bwNeed, bwNow, bwExtra } =
+    BucketTake { tkRate = bwRate, tkCap = bwCap, tkNeed = bwNeed,
+                 tkNow  = bwNow,
+                 tkFull = (deficit spare + picos bwExtra) `addTime` bwNow }
+  where
+    -- the bucket reaches the target this far below its capacity
+    spare = bwCap - min bwNeed bwCap
+
+    -- the same expression as the accrual inside 'Bucket.grantAt', so the
+    -- offset is exact and the wait is a whole number of picoseconds
+    deficit :: Int -> DiffTime
+    deficit n = realToFrac (fromIntegral n / bwRate)
+
+instance Arbitrary BucketWait where
+    arbitrary = do
+      rate  <- genRate
+      cap   <- genCapacity
+      need  <- genBytes cap
+      now   <- Time . realToFrac <$> choose (0, 100 :: Double)
+      let perByte = max 1 (ceiling (1e12 / rate))                     :: Integer
+          perFill = max 1 (ceiling (1e12 * fromIntegral cap / rate))  :: Integer
+      extra <- frequency [ (1, return 1)                  -- tightest wait
+                         , (3, choose (1, perByte))       -- under a byte
+                         , (3, choose (1, perFill))       -- part of a fill
+                         , (1, choose (1, 3 * perFill)) ] -- in debt
+      return BucketWait { bwRate = rate, bwCap = cap, bwNeed = need,
+                          bwNow = now, bwExtra = extra }
+
+    shrink bw@BucketWait { bwRate, bwCap, bwNeed, bwNow, bwExtra } =
+         [ bw { bwNow   = Time 0 } | bwNow /= Time 0 ]
+      ++ [ bw { bwExtra = e } | e <- shrinkIntegral bwExtra, e >= 1 ]
+      ++ [ bw { bwNeed  = n } | n <- [1, bwCap, bwCap + 1], n < bwNeed ]
+      ++ [ bw { bwCap   = 4096 } | bwCap > 4096 ]
+      ++ [ bw { bwRate  = r } | r <- [1e4, 1e6], r < bwRate ]
+
+-- | A grant that waited is not late: one byte's accrual before it, the bucket
+-- was still short of the target.  'prop_grantAt_ready' cannot check this,
+-- because 'Bucket.tokenLevel' clamps at the capacity and a request of at least
+-- the capacity targets all of it: there the level reads as the target at
+-- @ready@ and at every instant after, so an arbitrarily late grant passes.
+-- Before @ready@ the level is still rising.
+--
+-- @probe@ negates a converted positive, as the implementation's own accrual
+-- does: 'realToFrac' floors to the picosecond, so converting the negative
+-- overshoots by one.  For the tightest waits @probe@ falls before @tkNow@,
+-- which is sound: 'Bucket.tokenLevel' is linear there and @probe@ stays below
+-- @tkFull@, so it is clear of the clamp.
+prop_grantAt_tight :: BucketWait -> Property
+prop_grantAt_tight bw =
+    labelTake tk $
+    counterexample (show (ready, probe, level, target)) $
+         ready > tkNow          -- the generator guarantees a wait, so a grant
+                                -- that never waits is caught here
+      && level <= target - 1 + byteEps tkRate
+  where
+    tk@BucketTake { tkRate, tkCap, tkNow, tkFull, tkNeed } = waitTake bw
+    (ready, _) = Bucket.grantAt tkRate tkCap tkFull tkNow tkNeed
+    probe      = negate (realToFrac (1 / tkRate)) `addTime` ready
+    level      = Bucket.tokenLevel tkRate tkCap tkFull probe
+    target     = fromIntegral (min tkNeed tkCap) :: Double
+
+-- | Taking lowers the level, as of the grant instant, by exactly the bytes
+-- granted.
+prop_grantAt_take :: BucketTake -> Property
+prop_grantAt_take tk@BucketTake { tkRate, tkCap, tkNow, tkFull, tkNeed } =
+    labelTake tk $
+    classify (tkFull <= ready) "full at the grant" $
+    counterexample (show (levelBefore, levelAfter)) $
+      abs (levelAfter - (levelBefore - fromIntegral tkNeed)) <= byteEps tkRate
+  where
+    (ready, full') = Bucket.grantAt tkRate tkCap tkFull tkNow tkNeed
+    levelBefore = Bucket.tokenLevel tkRate tkCap tkFull ready
+    levelAfter  = Bucket.tokenLevel tkRate tkCap full' ready
+
+-- | A rate of zero grants everything at once.
+prop_grantAt_disabled :: BucketTake -> Property
+prop_grantAt_disabled BucketTake { tkCap, tkNow, tkFull, tkNeed } =
+    fst (Bucket.grantAt 0 tkCap tkFull tkNow tkNeed) === tkNow
+
+-- | A short bearer wakes no earlier than its bytes are there and less than a
+-- microsecond later.
+prop_wakeAt :: BucketTake -> Property
+prop_wakeAt BucketTake { tkRate, tkCap, tkNow, tkFull, tkNeed } =
+    counterexample (show (ready, wake)) $
+      ready == tkNow || (wake >= ready && wake `diffTime` ready < 1e-6)
+  where
+    (ready, _) = Bucket.grantAt tkRate tkCap tkFull tkNow tkNeed
+    wake       = Bucket.wakeAt tkNow ready
+
+-- | A rate change keeps the token level.
+prop_atRate :: BucketTake -> Property
+prop_atRate BucketTake { tkRate, tkCap, tkNow, tkFull } =
+    forAll genRate $ \rate' ->
+      let full'  = Bucket.atRate tkRate rate' tkCap tkNow tkFull
+          levelBefore = Bucket.tokenLevel tkRate tkCap tkFull tkNow
+          levelAfter  = Bucket.tokenLevel rate'  tkCap full'  tkNow
+      in counterexample (show (levelBefore, levelAfter)) $
+           abs (levelAfter - levelBefore) <= byteEps (max tkRate rate')
+
+-- | Taking on credit lowers the level at @now@ by exactly the bytes, whatever
+-- the state of the bucket -- there is no wait to move the instant.
+prop_chargeAt :: BucketTake -> Property
+prop_chargeAt tk@BucketTake { tkRate, tkCap, tkNow, tkFull, tkNeed } =
+    labelTake tk $
+    counterexample (show (levelBefore, levelAfter)) $
+      abs (levelAfter - (levelBefore - fromIntegral tkNeed)) <= byteEps tkRate
+  where
+    full'       = Bucket.chargeAt tkRate tkFull tkNow tkNeed
+    levelBefore = Bucket.tokenLevel tkRate tkCap tkFull tkNow
+    levelAfter  = Bucket.tokenLevel tkRate tkCap full' tkNow
+
+-- | A rotation, a period number, and two offsets into that period.
+data RotationCase = RotationCase {
+    rcRotation :: !Bucket.Rotation,
+    rcPeriod   :: !Word64,
+    rcOffsets  :: !(Integer, Integer)   -- ^ picoseconds into the period
+  }
+  deriving Show
+
+instance Arbitrary RotationCase where
+    arbitrary = do
+      seed   <- arbitrary
+      -- a millisecond to a day
+      period <- picos <$> choose (1000000000, 86400000000000000)
+      p      <- choose (0, 10000)
+      let inside = choose (0, picosOf (period `addTime` Time 0) - 1)
+      offs   <- (,) <$> inside <*> inside
+      return RotationCase { rcRotation = Bucket.Rotation seed period maxBound,
+                            rcPeriod = p, rcOffsets = offs }
+
+    shrink rc@RotationCase { rcRotation = Bucket.Rotation seed period _, rcPeriod, rcOffsets } =
+         [ rc { rcRotation = Bucket.Rotation 0 period maxBound } | seed /= 0 ]
+      ++ [ rc { rcPeriod = 0 } | rcPeriod /= 0 ]
+      ++ [ rc { rcOffsets = (0, snd rcOffsets) } | fst rcOffsets /= 0 ]
+      ++ [ rc { rcOffsets = (fst rcOffsets, 0) } | snd rcOffsets /= 0 ]
+
+-- | Within a period a bearer keeps its place, and it fits in 24 bits; across
+-- a boundary the places are re-dealt: of a hundred bearers, at most a few keep
+-- theirs (each does with probability 2^-24).
+prop_rotatedRank :: RotationCase -> Property
+prop_rotatedRank RotationCase { rcRotation = ro, rcPeriod, rcOffsets = (o1, o2) } =
+    counterexample (show (kept, map (rank t1) bearers)) $
+         all (\b -> rank t1 b == rank t2 b) bearers
+      && all (\b -> rank t1 b < 2 ^ (24 :: Int)) bearers
+      && length kept <= 3
+  where
+    bearers = [0 .. 99]
+    at p o  = picos (p * picosOf (Bucket.roPeriod ro `addTime` Time 0) + o) `addTime` Time 0
+    t1      = at (fromIntegral rcPeriod) o1
+    t2      = at (fromIntegral rcPeriod) o2
+    t3      = at (fromIntegral rcPeriod + 1) o1
+    rank t b = Bucket.rotatedRank ro b t
+    kept    = [ b | b <- bearers, rank t1 b == rank t3 b ]
+
+-- | A rotation with a period of zero is no rotation: a bearer queues exactly
+-- where it would without one.
+-- | From the threshold up a tier queues as without a rotation, so its order
+-- is the tickets' and backlogged bearers take turns, and so do the local
+-- roots, tier 0, whatever the threshold; below it the dealt place still
+-- decides. The tier byte is untouched either way.
+prop_queueRank_turns :: Word64 -> Word64 -> TierArg -> Word8 -> Positive Integer
+                     -> NonNegative Integer -> Property
+prop_queueRank_turns seed bearer (TierArg tier) from (Positive period) (NonNegative ps) =
+    classify (tier >= from) "takes turns" $
+    classify (tier == 0 && from > 0) "a local root below the threshold" $
+    if tier >= from || tier == 0
+       then with === Bucket.queueRank Nothing bearer (Bucket.Rank tier) t
+       else with === (fromIntegral tier `shiftL` 24 .|. Bucket.rotatedRank ro bearer t)
+  where
+    ro   = Bucket.Rotation seed (picos period) from
+    with = Bucket.queueRank (Just ro) bearer (Bucket.Rank tier) t
+    t    = Time (picos ps)
+
+-- | A tier for the rank laws: the local roots often, the small tiers often,
+-- and any byte.
+newtype TierArg = TierArg Word8
+  deriving Show
+
+instance Arbitrary TierArg where
+  arbitrary = TierArg <$> frequency [ (1, pure 0), (1, choose (1, 5)), (1, arbitrary) ]
+  shrink (TierArg t) = [ TierArg t' | t' <- shrink t ]
+
+prop_queueRank_zeroPeriod :: Word64 -> Word64 -> Word8 -> NonNegative Integer
+                          -> Property
+prop_queueRank_zeroPeriod seed bearer tier (NonNegative ps) =
+    Bucket.queueRank (Just (Bucket.Rotation seed 0 maxBound)) bearer (Bucket.Rank tier) t
+      === Bucket.queueRank Nothing bearer (Bucket.Rank tier) t
+  where
+    t = picos ps `addTime` Time 0
+
+-- | 'forcePrefix' evaluates chunks until they hold at least the limit, and
+-- nothing after: a tail that throws when evaluated is reached exactly when the
+-- chunks before it hold fewer bytes than the limit.
+prop_forcePrefix :: Property
+prop_forcePrefix =
+    forAllShrink genSizes (shrinkList (map getPositive . shrink . Positive)) $ \sizes ->
+    forAll (genLimit (sum sizes)) $ \limit ->
+      let size    = sum sizes
+          tailBomb = error "forcePrefix: evaluated past the limit"
+          bs      = foldr (\s rest -> BLI.Chunk (BS.replicate s 0) rest) tailBomb sizes
+      in classify (fromIntegral limit == size) "limit at the end of the chunks" $
+         classify (limit <= 0)                   "no limit" $
+         classify (fromIntegral limit > size)    "limit past the chunks" $
+         ioProperty $ do
+           r <- try (evaluate (forcePrefix limit bs))
+           return $ counterexample (show (size, limit))
+                  $ either (\(_ :: ErrorCall) -> True) (const False) r === (fromIntegral size < limit)
+  where
+    genSizes = listOf (choose (1, 3000))
+    genLimit n = frequency [ (1, choose (-10, 0))
+                           , (2, pure (fromIntegral n))
+                           , (2, pure (fromIntegral n + 1))
+                           , (2, pure (max 0 (fromIntegral n - 1)))
+                           , (3, choose (0, fromIntegral n + 3000)) ]
+
+-- | The same bound on the real send path. A responder sends a message whose
+-- tail throws when evaluated, through a mux whose channel tracer evaluates
+-- every event, then a second message the soft limit holds back while the
+-- muxer holds the first batch for a budget too slow to grant it. The send
+-- forces the soft limit's worth and the trace one byte more; the soft-limit
+-- check, run again on every retry, counts the buffer up to the limit, so at
+-- most the limit past what the muxer has taken. The tail sits beyond both:
+-- the first send returns, the second waits, and the protocol has not
+-- failed. Measuring the whole message, as before, reaches it.
+prop_mux_send_forces_prefix_only :: Positive Int -> NonNegative Int -> Property
+prop_mux_send_forces_prefix_only (Positive chunk0) (NonNegative extra0) =
+    BaseQC.withNumTests 20 $
+    counterexample (show (chunk, prefix)) $
+      ioProperty $ (=== (True, False, Nothing)) <$> run
+  where
+    softLimit = 0x3ffff :: Int
+    chunk     = 1 + chunk0 `mod` 20000
+    -- past the first send's forcing and the limit beyond the muxer's
+    -- batch, at most two 24 KiB SDUs and the one that crosses the batch size
+    prefix    = 2 * (softLimit + 1) + 3 * 24576 + extra0 `mod` 20000
+    message   = foldr (\n rest -> BLI.Chunk (BS.replicate n 0x61) rest)
+                      (error "send: evaluated past the soft limit")
+                      (chunks prefix)
+    chunks n | n <= 0    = []
+             | otherwise = min chunk n : chunks (n - chunk)
+
+    -- in IO, where an exception raised evaluating a transaction is the
+    -- protocol thread's for certain
+    run :: IO (Bool, Bool, Maybe String)
+    run = do
+      -- a budget too slow to grant the muxer's first batch within the run
+      budget <- Bucket.newBucket 1 1 Nothing
+      let policy = Mx.EgressPolicy { Mx.egressBudget = budget, Mx.egressSlice = Nothing,
+                                     Mx.egressLaneOf = Mx.directionSplit }
+          evaluating = Tracer (emit (\(Identity ev) -> case length (show ev) of n -> n `seq` return ()))
+          tracers = (Mx.nullTracers :: Mx.Tracers IO) { Mx.channelTracer = evaluating }
+      client_w <- atomically $ newTBQueue 10
+      client_r <- atomically $ newTBQueue 10
+      clientBearer <- getBearer makeQueueChannelBearer (-1)
+                        QueueChannel { writeQueue = client_w, readQueue = client_r } Nothing
+      serverBearer <- getBearer makeQueueChannelBearer (-1)
+                        QueueChannel { writeQueue = client_r, readQueue = client_w } Nothing
+      let info dir = MiniProtocolInfo {
+              miniProtocolNum = bulkNum, miniProtocolDir = dir,
+              miniProtocolLimits = MiniProtocolLimits { maximumIngressQueue = 16000000 },
+              miniProtocolCapability = Nothing }
+      serverMux <- Mx.newWithEgress policy tracers [info Mx.ResponderDirection]
+      clientMux <- Mx.new Mx.nullTracers [info Mx.InitiatorDirection]
+      _ <- async (Mx.run serverMux serverBearer)
+      _ <- async (Mx.run clientMux clientBearer)
+      first  <- newTVarIO False
+      second <- newTVarIO False
+      failed <- newTVarIO Nothing
+      -- a send that reaches the tail throws in the protocol's thread; caught
+      -- here, since a failing protocol takes the mux down with it
+      let sending var bs chan = do
+            r <- try (Mx.send chan bs)
+            case r of
+                 Left (e :: ErrorCall) -> atomically (writeTVar failed (Just (show e)))
+                 Right ()              -> atomically (writeTVar var True)
+      _ <- Mx.runMiniProtocol serverMux bulkNum Mx.ResponderDirection Mx.StartOnDemand $ \chan -> do
+                      _ <- Mx.recv chan
+                      sending first message chan
+                      sending second (BL8.pack "after") chan
+                      return ((), Nothing)
+      _ <- Mx.runMiniProtocol clientMux bulkNum Mx.InitiatorDirection Mx.StartEagerly $ \chan -> do
+             Mx.send chan (BL8.pack "req")
+             return ((), Nothing)
+      _ <- timeout 5 $ atomically $ readTVar first >>= check
+      threadDelay 0.2
+      atomically $ (,,) <$> readTVar first <*> readTVar second <*> readTVar failed
+
+-- | Grants at tiers and bearers, recorded in time order, then counted at
+-- @now@: a tier counts each bearer it granted within the window once,
+-- however often, and none granted only before it.
+prop_served_window :: ServedGrants -> Property
+prop_served_window (ServedGrants window now grants) =
+    classify (any (\(_, _, t) -> now `diffTime` t == window) grants) "a grant on the boundary" $
+    classify (any (\(_, _, t) -> now `diffTime` t > window) grants)  "a grant aged out" $
+    classify (M.size oracle > 1)                                     "several tiers" $
+    classify (any (> 1) (M.elems oracle))                            "several bearers in a tier" $
+      Bucket.servedByTier (Bucket.servedWithin window now recorded) === oracle
+  where
+    recorded = Bucket.bsServed $ List.foldl'
+                 (\st (tier, b, t) -> Bucket.recordServed tier b t 0 0 st)
+                 Bucket.emptyBucketStats grants
+    oracle = servedOracle window now grants
+
+-- | The served record with nothing else running: replayed exactly against the
+-- model after every grant, never holding a grant two windows old, and
+-- counting at each grant's instant what the oracle counts over the whole
+-- history.
+prop_served_bounded :: ServedHistory -> Property
+prop_served_bounded (ServedHistory grants) =
+    classify (snd (servedModel (map plain grants)) > Time 0)     "pruned" $
+    classify (any (== w) gaps)                                   "a gap of exactly the window" $
+    classify (any (\(st, (_, _, t)) -> any (\s -> t `diffTime` s > w) (lasts st))
+                  (zip states grants))                           "a grant kept past one window" $
+      conjoin
+        [ counterexample ("after grant " ++ show i) $
+               (Bucket.bsServed st, Bucket.bsServedPruned st) === servedModel (map plain prefix)
+          .&&. counterexample "older than two windows"
+                 (all (\s -> t `diffTime` s <= 2 * w) (lasts st))
+          .&&. Bucket.servedByTier (Bucket.servedWithin w t (Bucket.bsServed st))
+                 === servedOracle w t prefix
+        | (i, st, prefix, (_, _, t)) <- zip4 [1 :: Int ..] states (drop 1 (List.inits grants)) grants ]
+  where
+    w      = Bucket.servedWindow
+    states = drop 1 (scanl (\st (tier, b, t) -> Bucket.recordServed tier b t 0 0 st)
+                           Bucket.emptyBucketStats grants)
+    lasts  = map Bucket.svLast . M.elems . Bucket.bsServed
+    gaps   = zipWith (\(_, _, a) (_, _, b) -> b `diffTime` a) grants (drop 1 grants)
+    zip4 (a : as) (b : bs) (c : cs) (d : ds) = (a, b, c, d) : zip4 as bs cs ds
+    zip4 _ _ _ _                             = []
+
+-- | The served record and when it was last pruned, after grants in time
+-- order, each with its token wait and the bearer's own time: once a window
+-- after the last prune, a grant drops every bearer not granted within the
+-- window.
+servedModel :: [(Word8, Word64, Time, DiffTime, DiffTime)]
+            -> (M.Map (Word8, Word64) Bucket.Served, Time)
+servedModel = List.foldl' step (M.empty, Time 0)
+  where
+    w = Bucket.servedWindow
+    step (m, pruned) (tier, b, t, waited, own)
+      | t `diffTime` pruned >= w
+      = (record (M.filter (\sv -> t `diffTime` Bucket.svLast sv <= w) m), t)
+      | otherwise
+      = (record m, pruned)
+      where
+        record = M.alter (Just . Bucket.servedStep t waited own) (tier, b)
+
+-- | A grant that neither waited nor reported any own time.
+plain :: (Word8, Word64, Time) -> (Word8, Word64, Time, DiffTime, DiffTime)
+plain (tier, b, t) = (tier, b, t, 0, 0)
+
+-- | Grants in time order, gaps in whole seconds with exactly the window
+-- weighted up, so prunes land on the boundary and past it.
+newtype ServedHistory = ServedHistory [(Word8, Word64, Time)]
+  deriving Show
+
+instance Arbitrary ServedHistory where
+    arbitrary = do
+      let w = round (realToFrac Bucket.servedWindow :: Double) :: Integer
+      gaps <- listOf1 (frequency [ (3, choose (0, 5)), (2, choose (6, w - 1))
+                                 , (2, pure w), (1, choose (w + 1, 3 * w)) ])
+      let times = map (Time . fromIntegral) (scanl1 (+) gaps)
+      ServedHistory <$> mapM (\t -> (,,) <$> elements [0, 1, 2, 3, 4, 255]
+                                         <*> (fromIntegral <$> choose (0, 5 :: Int))
+                                         <*> pure t) times
+    shrink (ServedHistory grants) =
+      [ ServedHistory gs | gs <- shrinkList (const []) grants, not (null gs) ]
+
+-- | Per tier, the bearers with a grant within @window@ of @now@.
+servedOracle :: DiffTime -> Time -> [(Word8, Word64, Time)] -> M.Map Word8 Int
+servedOracle window now grants =
+    M.fromListWith (+)
+      [ (tier, 1)
+      | (tier, b) <- Set.toList (Set.fromList [ (tier, b) | (tier, b, _) <- grants ])
+      , any (\(tier', b', t) -> tier' == tier && b' == b && now `diffTime` t <= window)
+            grants ]
+
+-- | The same grants through a real bucket, every one on the fast path, and
+-- the counters' snapshot at @now@: its served count per tier is the oracle's
+-- over 'Bucket.servedWindow'. The times are stretched so that the window
+-- splits them.
+prop_served_counters :: ServedGrants -> Property
+prop_served_counters (ServedGrants _ now0 grants0) =
+    classify (any (\(_, _, t) -> now `diffTime` t == Bucket.servedWindow) grants) "a grant on the boundary" $
+    classify (any (\(_, _, t) -> now `diffTime` t > Bucket.servedWindow) grants)  "a grant aged out" $
+      counted === M.toList (servedOracle Bucket.servedWindow now grants)
+  where
+    stretch (Time d) = Time (4 * d)
+    now    = stretch now0
+    grants = [ (tier, b, stretch t) | (tier, b, t) <- grants0 ]
+    counted = runSimOrThrow $ do
+      bucket <- Bucket.newBucket 1e12 (1024 * 1024) Nothing
+      hs <- mapM (const (Bucket.registerBearer bucket)) [0 .. 5 :: Int]
+      forM_ grants $ \(tier, b, t) -> do
+        t0 <- getMonotonicTime
+        threadDelay (t `diffTime` t0)
+        let h = hs !! fromIntegral b
+        atomically $ Bucket.setRank h (Bucket.Rank tier)
+        Bucket.awaitGrant h 1
+      t0 <- getMonotonicTime
+      threadDelay (now `diffTime` t0)
+      sc <- atomically $ Counters.schedulingCounts now (bucket, Nothing)
+      return [ (tier, Counters.tcServed c) | (tier, c) <- Counters.scTiers sc
+                                           , Counters.tcServed c > 0 ]
+
+-- | Grants that never queue record the tier their bearer's rule last gave,
+-- asking it again only once that answer is 'Bucket.tierRefresh' old or the
+-- rule is installed anew.  A rule over a variable per bearer, changed and
+-- reinstalled between requests, is replayed exactly: the record and how many
+-- times the rules were asked.
+prop_served_fast_tier :: FastTiers -> Property
+prop_served_fast_tier (FastTiers n events) =
+    classify (boundary > 0) "a request exactly a refresh after its ask" $
+    classify (stale > 0)    "a grant recorded at a tier its rule no longer gives" $
+    classify (any reinstalls events) "a rule installed again" $
+      observed === (served, asks)
+  where
+    (served, asks, boundary, stale) = fastTierOracle events
+    reinstalls (_, FastReinstall _) = True
+    reinstalls _                    = False
+    observed = runSimOrThrow $ do
+      bucket <- Bucket.newBucket 1e12 (1024 * 1024) Nothing
+      asked  <- newTVarIO (0 :: Int)
+      let rule v = \_ -> modifyTVar asked (+ 1) >> readTVar v
+      hvs <- forM [1 .. n] $ \_ -> do
+        h <- Bucket.registerBearer bucket
+        v <- newTVarIO (Bucket.Rank 0)
+        atomically $ Bucket.setRankSource h (rule v)
+        return (h, v)
+      forM_ events $ \(t, e) -> do
+        t0 <- getMonotonicTime
+        threadDelay (t `diffTime` t0)
+        case e of
+             FastRequest b    -> void $ Bucket.awaitGrant (fst (hvs !! b)) 1
+             FastSetTier b r  -> atomically $ writeTVar (snd (hvs !! b)) (Bucket.Rank r)
+             FastReinstall b  -> let (h, v) = hvs !! b
+                                 in atomically $ Bucket.setRankSource h (rule v)
+      now <- getMonotonicTime
+      (st, _, _, _) <- atomically $ Bucket.bucketSnapshot bucket now
+      (,) (Bucket.bsServed st) <$> readTVarIO asked
+
+-- | The record and the number of asks, and how many requests came exactly a
+-- refresh after their bearer's last ask and how many grants were recorded at
+-- a tier other than the rule's.
+fastTierOracle :: [(Time, FastEvent)] -> (M.Map (Word8, Word64) Bucket.Served, Int, Int, Int)
+fastTierOracle = go M.empty M.empty [] 0 0 0
+  where
+    go _ _ served asks boundary stale [] =
+      (fst (servedModel (map plain (reverse served))), asks, boundary, stale)
+    go tiers cache served asks boundary stale ((t, e) : rest) = case e of
+      FastSetTier b r -> go (M.insert b r tiers) cache served asks boundary stale rest
+      FastReinstall b -> go tiers (M.delete b cache) served asks boundary stale rest
+      FastRequest b ->
+        let current  = M.findWithDefault 0 b tiers
+            onEdge   = maybe False (\(_, at) -> t `diffTime` at == Bucket.tierRefresh)
+                             (M.lookup b cache)
+            (tier, cache', asks') = case M.lookup b cache of
+              Just (r, at) | t `diffTime` at < Bucket.tierRefresh -> (r, cache, asks)
+              _ -> (current, M.insert b (current, t) cache, asks + 1)
+        in go tiers cache' ((tier, fromIntegral b, t) : served) asks'
+              (boundary + fromEnum onEdge) (stale + fromEnum (tier /= current)) rest
+
+data FastEvent = FastRequest Int        -- ^ the bearer asks for one byte
+               | FastSetTier Int Word8  -- ^ the bearer's rule gives this tier from now
+               | FastReinstall Int      -- ^ the bearer's rule is installed again
+  deriving (Eq, Show)
+
+-- | Bearers, and their events in time order on a one-second grid, with gaps
+-- of exactly a refresh weighted up.
+data FastTiers = FastTiers Int [(Time, FastEvent)]
+  deriving Show
+
+instance Arbitrary FastTiers where
+    arbitrary = do
+      n   <- choose (1, 3)
+      len <- choose (1, 30)
+      let refresh = round (realToFrac Bucket.tierRefresh :: Double) :: Integer
+          steps :: Int -> Time -> Gen [(Time, FastEvent)]
+          steps 0 _ = return []
+          steps k t = do
+            gap <- frequency [ (3, return 0), (4, choose (1, refresh - 1))
+                             , (3, return refresh), (1, choose (refresh + 1, 2 * refresh)) ]
+            e   <- frequency [ (3, FastRequest <$> choose (0, n - 1))
+                             , (1, FastSetTier <$> choose (0, n - 1) <*> choose (0, 3))
+                             , (1, FastReinstall <$> choose (0, n - 1)) ]
+            let t' = fromIntegral gap `addTime` t
+            ((t', e) :) <$> steps (k - 1) t'
+      FastTiers n <$> steps len (Time 0)
+
+    shrink (FastTiers n events) =
+         [ FastTiers n es | es <- shrinkList (const []) events, not (null es) ]
+      ++ [ FastTiers n (take i events ++ [(t, FastSetTier b 0)] ++ drop (i + 1) events)
+         | (i, (t, FastSetTier b r)) <- zip [0 ..] events, r /= 0 ]
+
+-- | A bearer's standing after grants in time order, each with its token wait
+-- and the bearer's own time. The sums decay, so the verdicts of
+-- 'Bucket.slowedBy' are those of a ratio over the recent window: scaling
+-- every time by a power of two leaves them unchanged, exactly; a bearer that
+-- only waited is slowed by every bound and one that never waited by none; an
+-- idle window carries @e@ less of the standing into the next grant; and
+-- after a long idle a grant stands alone.
+prop_slowdown_laws :: SlowHistory -> Property
+prop_slowdown_laws (SlowHistory k grants) =
+    classify (any (\(_, w, _) -> w == 0) grants) "a grant that did not wait" $
+    classify (any (\(_, _, o) -> o == 0) grants) "a grant with no own time" $
+    classify (or verdicts)                        "slowed by some bound" $
+    classify (and verdicts)                       "slowed by every bound" $
+    conjoin
+      [ counterexample "a sum is negative"
+          (Bucket.svWaited standing >= 0 && Bucket.svOwn standing >= 0)
+      , counterexample "slowed by a bound but not by a smaller one"
+          (and (zipWith (>=) verdicts (drop 1 verdicts)))
+      , counterexample "scaling every time changed a verdict"
+          (map (`Bucket.slowedBy` standingOf scaled) Bucket.slowdownBounds === verdicts)
+      , counterexample "waited only, yet not slowed by every bound"
+          (not (all (\(_, _, o) -> o == 0) grants && any (\(_, w, _) -> w > 0) grants) || and verdicts)
+      , counterexample "never waited, yet slowed"
+          (any (\(_, w, _) -> w > 0) grants || not (or verdicts))
+      , counterexample "an idle window does not carry e less" $
+          let rested = Bucket.servedStep (Bucket.servedWindow `addTime` lastT) 0 0 (Just standing)
+          in (Bucket.svWaited rested, Bucket.svOwn rested)
+               === (Bucket.svWaited standing * exp (-1), Bucket.svOwn standing * exp (-1))
+      , counterexample "after a long idle a grant does not stand alone" $
+          let alone = Bucket.servedStep ((100 * Bucket.servedWindow) `addTime` lastT) w0 o0 (Just standing)
+          in close (Bucket.svWaited alone) (realToFrac w0) && close (Bucket.svOwn alone) (realToFrac o0)
+      ]
+  where
+    standing     = standingOf grants
+    verdicts     = map (`Bucket.slowedBy` standing) Bucket.slowdownBounds
+    scaled       = [ (t, w * 2 ^ k, o * 2 ^ k) | (t, w, o) <- grants ]
+    lastT        = (\(t, _, _) -> t) (last grants)
+    (_, w0, o0)  = head grants
+    close a b    = abs (a - b) <= 1e-12 * max 1 b
+    standingOf   = fromJust . List.foldl' (\sv_m (t, w, o) -> Just (Bucket.servedStep t w o sv_m)) Nothing
+
+-- | One bearer's grants in time order, gaps of up to two windows, and a
+-- scale: whole microseconds, waits and own times of the same size so the
+-- verdicts fall on both sides of every bound and, at times, exactly on one.
+data SlowHistory = SlowHistory Int [(Time, DiffTime, DiffTime)]
+  deriving Show
+
+instance Arbitrary SlowHistory where
+    arbitrary = do
+      k    <- choose (0, 20)
+      n    <- frequency [ (1, choose (1, 3)), (2, choose (1, 30)) ]
+      gaps <- vectorOf n (frequency [ (2, pure 0), (3, choose (1, 10000000))
+                                    , (1, choose (1, 120000000 :: Int)) ])
+      let times = map (\us -> Time (fromIntegral us / 1000000)) (scanl1 (+) gaps)
+      grants <- forM times $ \t -> do
+        own    <- genOwn
+        waited <- frequency [ (1, pure 0), (3, genOwn)
+                            , (2, (\f -> (realToFrac f - 1) * own) <$> elements Bucket.slowdownBounds) ]
+        return (t, waited, own)
+      return (SlowHistory k grants)
+      where
+        genOwn = frequency [ (2, pure 0)
+                           , (3, (\us -> fromIntegral (us :: Int) / 1000000) <$> choose (1, 10000000)) ]
+    shrink (SlowHistory k grants) =
+         [ SlowHistory k gs | gs <- shrinkList (const []) grants, not (null gs) ]
+      ++ [ SlowHistory 0 grants | k /= 0 ]
+
+-- | Per tier, 'Bucket.slowedByTier' counts the bearers whose standing is
+-- slowed by at least each bound; the count is stated literally.
+prop_slowed_by_tier :: Standings -> Property
+prop_slowed_by_tier (Standings m) =
+    classify (M.size m > 1)         "several bearers" $
+    classify (any onBound (M.elems m)) "a standing exactly on a bound" $
+      Bucket.slowedByTier m === M.fromListWith (zipWith (+))
+        [ (tier, [ if Bucket.svWaited sv > 0 && Bucket.svWaited sv >= (f - 1) * Bucket.svOwn sv
+                      then 1 else 0
+                 | f <- Bucket.slowdownBounds ])
+        | ((tier, _), sv) <- M.toList m ]
+  where
+    onBound sv = any (\f -> Bucket.svWaited sv == (f - 1) * Bucket.svOwn sv) Bucket.slowdownBounds
+
+newtype Standings = Standings (M.Map (Word8, Word64) Bucket.Served)
+  deriving Show
+
+instance Arbitrary Standings where
+    arbitrary = do
+      n <- choose (0, 12)
+      Standings . M.fromList <$> vectorOf n ((,) <$> key <*> standing)
+      where
+        key = (,) <$> elements [0, 1, 2, 3, 4, 255] <*> (fromIntegral <$> choose (0, 5 :: Int))
+        standing = do
+          own    <- frequency [ (1, pure 0), (3, choose (0, 20)) ]
+          waited <- frequency [ (1, pure 0), (3, choose (0, 20))
+                              , (2, (\f -> (f - 1) * own) <$> elements Bucket.slowdownBounds) ]
+          return (Bucket.Served (Time 0) waited own)
+    shrink (Standings m) = [ Standings (M.fromList kvs) | kvs <- shrinkList (const []) (M.toList m) ]
+
+-- | Bearers at fixed tiers, each reporting a gate wait and a write with
+-- every request, served by a bucket slow enough to queue them; the counters'
+-- snapshot counts per tier the bearers served within the window and, of
+-- those, the ones slowed by each bound, as the model says from the waits the
+-- harness saw.
+prop_slowed_counters :: SlowRun -> Property
+prop_slowed_counters SlowRun { srRate, srCapacity, srBearers, srAfter } =
+    classify (any (\(_, _, asked, granted, _, _) -> granted > asked) grants) "a grant that waited" $
+    classify (any (\(_, _, _, granted, _, _) -> now `diffTime` granted > Bucket.servedWindow) grants)
+             "a grant aged out" $
+    classify (any (\(_, _, slowed) -> any ((> 0) . snd) slowed) counted) "a bearer slowed" $
+      counted === oracle
+  where
+    (now, grants, counted) = runSimOrThrow $ do
+      bucket <- Bucket.newBucket srRate srCapacity Nothing
+      -- registered in order, so bearer @i@ has id @i@
+      hs <- mapM (const (Bucket.registerBearer bucket)) srBearers
+      gs <- forConcurrently (zip hs srBearers) $ \(h, SlowBearer { sbTier, sbStart, sbTakes }) -> do
+        atomically $ Bucket.setRank h (Bucket.Rank sbTier)
+        threadDelay sbStart
+        forM sbTakes $ \(gap, bytes, gate, wrote) -> do
+          threadDelay gap
+          asked <- getMonotonicTime
+          void $ Bucket.awaitGrantWaited Nothing gate wrote h bytes
+          granted <- getMonotonicTime
+          return (asked, granted, gate, wrote)
+      threadDelay srAfter
+      end <- getMonotonicTime
+      sc  <- atomically $ Counters.schedulingCounts end (bucket, Nothing)
+      return ( end
+             , [ (sbTier b, i, asked, granted, gate, wrote)
+               | (i, b, g) <- zip3 [0 ..] srBearers gs, (asked, granted, gate, wrote) <- g ]
+             , [ (t, Counters.tcServed c, Counters.tcSlowed c)
+               | (t, c) <- Counters.scTiers sc, Counters.tcServed c > 0 ] )
+    standings = fst (servedModel (List.sortOn (\(_, _, t, _, _) -> t)
+                       [ (tier, i, granted, granted `diffTime` asked, gate + wrote)
+                       | (tier, i, asked, granted, gate, wrote) <- grants ]))
+    recent    = M.filter (\sv -> now `diffTime` Bucket.svLast sv <= Bucket.servedWindow) standings
+    oracle    = [ (tier, length svs, [ (f, length (filter (Bucket.slowedBy f) svs))
+                                     | f <- Bucket.slowdownBounds ])
+                | tier <- nub [ t | (t, _) <- M.keys recent ]
+                , let svs = [ sv | ((t, _), sv) <- M.toList recent, t == tier ] ]
+
+data SlowBearer = SlowBearer {
+    sbTier  :: !Word8,
+    sbStart :: !DiffTime,
+    sbTakes :: ![(DiffTime, Int, DiffTime, DiffTime)]
+      -- ^ after the previous grant: the gap before asking, the bytes, the
+      -- gate wait and the write reported with the request
+  }
+  deriving Show
+
+data SlowRun = SlowRun {
+    srRate     :: !Double,
+    srCapacity :: !Int,
+    srBearers  :: ![SlowBearer],
+    srAfter    :: !DiffTime        -- ^ from the last grant to the snapshot
+  }
+  deriving Show
+
+instance Arbitrary SlowRun where
+    arbitrary = do
+      rate <- genRate
+      cap  <- genCapacity
+      n    <- choose (1, 4)
+      -- asking again at once is weighted up: that is what makes bearers
+      -- queue; the gate waits and writes are short next to a queued wait
+      bearers <- vectorOf n $ do
+        tier  <- elements [0, 1, 2, 3, 4, 255]
+        start <- millis 1000
+        takes <- choose (1, 10 :: Int) >>= \m -> vectorOf m $
+          (,,,) <$> frequency [ (3, pure 0), (2, millis 500) ] <*> genBytes cap
+                <*> frequency [ (1, pure 0), (2, millis 200) ]
+                <*> frequency [ (1, pure 0), (2, millis 20) ]
+        return (SlowBearer tier start takes)
+      rest <- elements [0, w / 2, w, 2 * w]
+      return (SlowRun rate cap bearers rest)
+      where
+        w = Bucket.servedWindow
+        millis m = (\k -> fromIntegral (k :: Int) / 1000) <$> choose (0, m)
+    shrink run@SlowRun { srBearers, srAfter } =
+         [ run { srBearers = bs } | bs <- shrinkList shrinkBearer srBearers, not (null bs) ]
+      ++ [ run { srAfter = 0 } | srAfter /= 0 ]
+      where
+        shrinkBearer b =
+             [ b { sbTakes = ts } | ts <- shrinkList shrinkTake (sbTakes b), not (null ts) ]
+          ++ [ b { sbTier = 0 } | sbTier b /= 0 ]
+          ++ [ b { sbStart = 0 } | sbStart b /= 0 ]
+        shrinkTake (gap, bytes, gate, wrote) =
+             [ (0, bytes, gate, wrote) | gap /= 0 ]
+          ++ [ (gap, bytes, 0, wrote)  | gate /= 0 ]
+          ++ [ (gap, bytes, gate, 0)   | wrote /= 0 ]
+          ++ [ (gap, 1024, gate, wrote) | bytes > 1024 ]
+
+-- | A window, the instant of the count, and grants in time order before it,
+-- on a coarse grid so that some land exactly on the window's edge.
+data ServedGrants = ServedGrants DiffTime Time [(Word8, Word64, Time)]
+  deriving Show
+
+instance Arbitrary ServedGrants where
+    arbitrary = do
+      window <- (fromIntegral :: Int -> DiffTime) <$> choose (0, 30)
+      steps  <- listOf (choose (0, 3 :: Int))
+      let times = map (\s -> Time (fromIntegral s)) (scanl1 (+) steps)
+      grants <- mapM (\t -> (,,) <$> elements [0, 1, 2, 3, 4, 255]
+                                  <*> (fromIntegral <$> choose (0, 5 :: Int))
+                                  <*> pure t) times
+      extra  <- choose (0, 10 :: Int)
+      let lastT = maybe (Time 0) (\(_, _, t) -> t) (lastMaybe grants)
+      return (ServedGrants window (fromIntegral extra `addTime` lastT) grants)
+      where
+        lastMaybe xs = if null xs then Nothing else Just (last xs)
+    shrink (ServedGrants window now grants) =
+      [ ServedGrants window now gs | gs <- shrinkList (const []) grants ]
+      ++ [ ServedGrants w now grants | w <- [0, window / 2], w < window ]
+
+--
+-- Queue
+--
+
+-- | One bearer: its rank, when it first asks, and the takes it makes -- all
+-- on one handle, as the muxer does, each one asking again after its previous
+-- grant.  Times are counted in rounds, a round being one picosecond per bearer
+-- in the run; see 'askAt'.
+data BucketBearer = BucketBearer {
+    bbRank  :: !Word8,
+    bbStart :: !Integer,           -- ^ rounds before the first request
+    bbFirst :: !Int,               -- ^ bytes of the first take
+    bbMore  :: ![(Integer, Int, Word8)],
+                                   -- ^ rounds after a grant, then bytes and rank
+    bbKill  :: !(Maybe Int),       -- ^ cancel it this far, in 256ths, into
+                                   --   the first wait the replay gives it
+    bbSlice :: !Bool               -- ^ asks the slice, borrowing the budget;
+                                   --   only when the schedule has a slice
+  }
+  deriving (Eq, Show)
+
+-- | A bucket and the bearers taking from it.
+data BucketSched = BucketSched {
+    schRate     :: !Double,        -- ^ bytes/s
+    schCapacity :: !Int,           -- ^ bytes
+    schRotation :: !(Maybe Bucket.Rotation),
+    schSlice    :: !(Maybe Int),   -- ^ the slice's share of the rate, percent
+    schFloor    :: !(Maybe Int),   -- ^ the floor's share of the rate, percent
+    schBearers  :: ![BucketBearer]
+  }
+  deriving Show
+
+instance Arbitrary BucketSched where
+    arbitrary = do
+      rate <- genRate
+      cap  <- genCapacity
+      n    <- choose (1, 12)
+      BucketSched rate cap
+        <$> frequency [ (1, return Nothing), (2, Just <$> genRotation rate cap) ]
+        <*> frequency [ (1, return Nothing), (1, Just <$> choose (5, 50)) ]
+        <*> pure Nothing
+        <*> vectorOf n (genBucketBearer rate cap n)
+
+    shrink sch@BucketSched { schRate, schCapacity, schRotation, schSlice, schFloor, schBearers } =
+         [ sch { schBearers = bs }
+         | bs <- shrinkList shrinkBearer schBearers, not (null bs) ]
+      ++ [ sch { schSlice = Nothing } | Just _ <- [schSlice] ]
+      ++ [ sch { schFloor = Nothing } | Just _ <- [schFloor] ]
+      ++ [ sch { schRotation = Nothing } | Just _ <- [schRotation] ]
+      ++ [ sch { schCapacity = 4096 } | schCapacity > 4096 ]
+      ++ [ sch { schRate = r } | r <- [1e4, 1e6], r < schRate ]
+      where
+        shrinkBearer b =
+             [ b { bbRank  = 0 }  | bbRank b /= 0 ]
+          ++ [ b { bbStart = 0 }  | bbStart b /= 0 ]
+          ++ [ b { bbMore  = ms } | ms <- shrinkList shrinkTake (bbMore b) ]
+          ++ [ b { bbFirst = sz } | sz <- [1024, schCapacity], sz < bbFirst b ]
+          ++ [ b { bbKill  = Nothing } | Just _ <- [bbKill b] ]
+          ++ [ b { bbKill  = Just f }
+             | Just f0 <- [bbKill b], f <- [0, 128], f < f0 ]
+          ++ [ b { bbSlice = False } | bbSlice b ]
+
+        shrinkTake (k, sz, r) =
+             [ (0, sz, r)  | k /= 0 ]
+          ++ [ (k, sz', r) | sz' <- [1024, schCapacity], sz' < sz ]
+          ++ [ (k, sz, 0)  | r /= 0 ]
+
+-- | Periods of a quarter to four fill times, so that schedules straddle a
+-- boundary.
+genRotation :: Double -> Int -> Gen Bucket.Rotation
+genRotation rate cap = do
+    seed <- arbitrary
+    f    <- choose (0.25, 4 :: Double)
+    return (Bucket.Rotation seed (realToFrac (f * fromIntegral cap / rate)) maxBound)
+
+-- | Few ranks, so ties are common.  Asking again at once, and starting in the
+-- opening burst, are both weighted up: those are what make bearers queue.
+genBucketBearer :: Double -> Int -> Int -> Gen BucketBearer
+genBucketBearer rate cap n =
+    BucketBearer <$> choose (0, 3)
+                 <*> genRounds
+                 <*> genBytes cap
+                 <*> (do extra <- frequency [ (3, return 0), (4, choose (1, 3)) ]
+                         vectorOf extra ((,,) <$> genRounds <*> genBytes cap <*> choose (0, 3)))
+                 <*> frequency [ (3, return Nothing)
+                               , (1, Just <$> choose (0, 255))
+                               , (1, Just <$> choose (192, 255)) ]
+                 <*> arbitrary
+  where
+    fillPs   = ceiling (1e12 * fromIntegral cap / rate) :: Integer
+    rounds k = k `div` fromIntegral n
+    genRounds = frequency [ (4, return 0)                      -- at once
+                          , (3, choose (0, rounds fillPs))
+                          , (1, choose (0, rounds (4 * fillPs))) ]
+
+-- | One request: which bearer made it and which of its takes this is, its rank
+-- and size, when it was made, and what that bearer has still to ask for.
+data Arrival = Arrival {
+    arBearer :: !Int,
+    arTake   :: !Int,
+    arRank   :: !Word8,
+    arBytes  :: !Int,
+    arAt     :: !Time,
+    arMore   :: ![(Integer, Int, Word8)],
+    arSlice  :: !Bool              -- ^ asks the slice, borrowing the budget
+  }
+  deriving (Eq, Show)
+
+-- | When bearer @i@ of @n@ asks, @k@ rounds after @t@: the first instant past
+-- @t@ congruent to @i@ modulo @n@ picoseconds, plus @k@ whole rounds.  Every
+-- request a bearer makes therefore lands on a picosecond no other bearer can
+-- use, so no two requests in a run are ever simultaneous, tickets are handed
+-- out in request order, and the replay never has to guess whose came first.
+askAt :: Int -> Int -> Integer -> Time -> Time
+askAt n i k t = picos ((k + 1) * fromIntegral n + delta) `addTime` t
+  where
+    delta = (fromIntegral i - picosOf t) `mod` fromIntegral n
+
+-- | The first request of every bearer.
+arrivals :: BucketSched -> [Arrival]
+arrivals BucketSched { schSlice, schBearers } =
+    [ Arrival { arBearer = i, arTake = 0, arRank = bbRank, arBytes = bbFirst,
+                arAt = askAt n i bbStart (Time 0), arMore = bbMore,
+                arSlice = bbSlice && isJust schSlice }
+    | (i, BucketBearer { bbRank, bbStart, bbFirst, bbMore, bbSlice }) <- zip [0 ..] schBearers
+    ]
+  where
+    n = length schBearers
+
+-- | The same bearer's next request, once this one is granted at @t@.
+nextArrival :: Int -> Arrival -> Time -> Maybe Arrival
+nextArrival n a t =
+    case arMore a of
+      []                -> Nothing
+      (k, bytes, rank) : more -> Just a { arTake  = arTake a + 1
+                                  , arBytes = bytes
+                                  , arRank  = rank
+                                  , arAt    = askAt n (arBearer a) k t
+                                  , arMore  = more }
+
+labelBucket :: BucketSched -> Property -> Property
+labelBucket BucketSched { schRotation, schSlice, schFloor, schBearers } =
+      classify (any (not . null . bbMore) schBearers) "reuses a handle"
+    . classify (isJust schFloor)                      "with a floor"
+    . classify (any (\b -> any (\(_, _, r) -> r /= bbRank b) (bbMore b)) schBearers)
+               "changes rank between takes"
+    . classify (isJust schRotation)                   "rotating"
+    . classify (isJust schSlice)                      "with a slice"
+
+-- | Grant instants from a real bucket in IOSim, by bearer and take.  Each
+-- bearer keeps one handle for all of its takes.
+runBucketSched :: BucketSched -> [((Int, Int), Time)]
+runBucketSched = fst . runBucketSchedStats
+
+-- | 'runBucketSched', with the budget's and the slice's counters at the end.
+runBucketSchedStats :: BucketSched
+                    -> ([((Int, Int), Time)], (Bucket.BucketStats, Maybe Bucket.BucketStats))
+runBucketSchedStats sch@BucketSched { schRate, schCapacity, schRotation, schSlice, schFloor,
+                                      schBearers } =
+    runSimOrThrow $ do
+      bucket <- Bucket.newBucket schRate schCapacity schRotation
+      forM_ schFloor $ \pct -> Bucket.attachFloor bucket (fromIntegral pct / 100)
+      slice  <- traverse (\pct -> Bucket.newBucket (schRate * fromIntegral pct / 100)
+                                                  schCapacity Nothing) schSlice
+      -- registered on the budget in schedule order, so bearer @i@ has id @i@,
+      -- as the replay assumes; every bearer also has a slice handle if there
+      -- is a slice
+      hs <- mapM (const (Bucket.registerBearer bucket)) schBearers
+      ss <- mapM (const (traverse Bucket.registerBearer slice)) schBearers
+      grants <- forConcurrently (zip3 hs ss (arrivals sch)) $ \(h, s_m, a0) -> do
+        -- the rank as a rule over a variable, as the node does: the variable
+        -- holds each take's rank before it is asked for
+        rankVar <- newTVarIO (Bucket.Rank (arRank a0))
+        atomically $ Bucket.setRankSource h (\_ -> readTVar rankVar)
+        forM_ s_m $ \s -> atomically $ Bucket.setRankSource s (\_ -> readTVar rankVar)
+        -- what the slice lane does: its own bucket, charged to the budget on
+        -- credit, or the budget's idle capacity
+        let grant a = case s_m of
+              Just s | arSlice a -> void $ Bucket.awaitGrantBorrowing s bucket (arBytes a)
+              _                  -> Bucket.awaitGrant h (arBytes a)
+            takeAll a = do
+              now <- getMonotonicTime
+              threadDelay (arAt a `diffTime` now)
+              atomically $ writeTVar rankVar (Bucket.Rank (arRank a))
+              grant a
+              t <- getMonotonicTime
+              (((arBearer a, arTake a), t) :)
+                <$> maybe (return []) takeAll (nextArrival n a t)
+        takeAll a0
+      now <- getMonotonicTime
+      stats <- atomically $ do
+        (b, _, _, _) <- Bucket.bucketSnapshot bucket now
+        s' <- traverse (\sl -> (\(st, _, _, _) -> st) <$> Bucket.bucketSnapshot sl now) slice
+        return (b, s')
+      return (concat grants, stats)
+  where
+    n = length schBearers
+
+-- | How a replayed grant was paid for.
+data ReplayPay = FromBudget | FromSlice | Borrowed
+  deriving (Eq, Show)
+
+-- | What the replay saw: a grant, a slice head that went to sleep on the
+-- budget's ready instant, or two events in the same instant whose order the
+-- replay cannot know.
+data ReplayEvent = RGrant !ReplayPay ((Int, Int), (Time, Time))
+                 | RSleptOnBudget
+                 | RTie
+                 | RBudgetQueue !Time !Int !(Int, Int) !Bool
+                   -- ^ the budget's queue changed: when, its new length, whose
+                   -- request, and whether it joined
+                 | RSliceQueue !Time !Int !(Int, Int) !Bool
+                   -- ^ the same, for the slice's queue
+  deriving (Eq, Show)
+
+-- | Grant instants from the pure core, with each take's request instant
+-- alongside.  Each bucket has its own queue, served lowest (rank, request)
+-- first: the head takes at once if its bytes are there, else sleeps until
+-- 'Bucket.wakeAt' -- unless a lower key arrives first and takes the head.  A
+-- slice head that is short borrows the budget if nobody is queued on it and
+-- the bytes are there; short on both, it sleeps until the earlier of the two,
+-- and nothing but its own queue wakes it.  A slice-paid grant is charged to
+-- the budget on credit.  A granted bearer re-joins with its next take.
+--
+-- The two queues run concurrently, so two checks in the same instant, one on
+-- each queue, happen in an order the replay cannot see. Those end the replay
+-- with 'RTie'.
+replayEvents :: BucketSched -> [ReplayEvent]
+replayEvents sch@BucketSched { schRate, schCapacity, schRotation, schSlice, schBearers } =
+    go (Time 0) (Time 0) (Time 0) (List.sortOn arAt (arrivals sch)) [] [] Nothing Nothing Nothing
+  where
+    n         = length schBearers
+    sliceRate = maybe 0 (\pct -> schRate * fromIntegral pct / 100) schSlice
+
+    -- the rank a request holds at @t@, as each bucket computes it: on the
+    -- budget the place dealt at its last refresh at or before @t@, or where
+    -- it queued, since a waiting request asks again every
+    -- 'Bucket.tierRefresh' and moves to the place of the period it then
+    -- finds itself in, checking the queue in the same instant. (A head
+    -- whose wake falls in the very instant of its refresh checks first and
+    -- refreshes after; the replay does not model that coincidence, which
+    -- needs a token instant to land on a whole microsecond seven seconds
+    -- after a request.) The slice deals no places.
+    keyB t a = ( Bucket.queueRank schRotation (fromIntegral (arBearer a))
+                                  (Bucket.Rank (arRank a)) (refreshUpTo (arAt a) t)
+               , arAt a )
+    -- the same with the refreshes at @t@ still to come
+    keyBefore t a = ( Bucket.queueRank schRotation (fromIntegral (arBearer a))
+                                       (Bucket.Rank (arRank a)) (refreshBefore (arAt a) t)
+                    , arAt a )
+    keyS a = (Bucket.queueRank Nothing 0 (Bucket.Rank (arRank a)) (arAt a), arAt a)
+
+    refreshBefore asked t = refreshNth asked (max 0 (ceiling (waited asked t / period) - 1))
+    refreshUpTo   asked t = refreshNth asked (max 0 (floor   (waited asked t / period)))
+    refreshNth asked k    = (fromIntegral (k :: Int) * Bucket.tierRefresh) `addTime` asked
+    waited asked t        = realToFrac (t `diffTime` asked) :: Double
+    period                = realToFrac Bucket.tierRefresh :: Double
+
+    -- the next refresh of any request waiting on the budget after @now@,
+    -- and whose it is; no two share an instant, since requests do not
+    nextRefresh now wb = case [ (refreshNth (arAt a) (floor (waited (arAt a) now / period) + 1), a) | a <- wb ] of
+                              [] -> Nothing
+                              rs -> Just (List.minimumBy (\(t, _) (t', _) -> compare t t') rs)
+
+    headBy k waiting = case List.sortOn k waiting of
+                            []    -> Nothing
+                            h : _ -> Just h
+
+    enqueue = List.insertBy (\x y -> compare (arAt x) (arAt y))
+
+    next h now pending = maybe pending (`enqueue` pending) (nextArrival n h now)
+
+    -- pending: not yet requested, by request instant
+    -- wb, ws:  the budget's and the slice's queues; each head is the lowest key
+    -- kb, ks:  when each queue's short head checks again
+    -- lst:     the instant and queue of the last check
+    go now fb fs pending wb ws kb ks lst
+      -- the budget's head checks
+      | Just h <- headBy (keyB now) wb, Nothing <- kb =
+          if crossed True then [RTie] else
+          let (ready, fb') = Bucket.grantAt schRate schCapacity fb now (arBytes h)
+              lst'         = Just (now, True)
+          in if ready == now
+                then RGrant FromBudget (grant h)
+                   : RBudgetQueue now (length wb - 1) (arBearer h, arTake h) False
+                   : go now fb' fs (next h now pending) (List.delete h wb) ws Nothing ks lst'
+                else go now fb fs pending wb ws (Just (Bucket.wakeAt now ready)) ks lst'
+      -- the slice's head checks: its own bucket, else the budget's idle capacity
+      | Just h <- headBy keyS ws, Nothing <- ks =
+          let need          = arBytes h
+              (readyS, fs') = Bucket.grantAt sliceRate schCapacity fs now need
+              (readyB, fb') = Bucket.grantAt schRate schCapacity fb now need
+              idle          = null wb
+          in if crossed False then [RTie] else
+             if readyS == now
+                then RGrant FromSlice (grant h)
+                   : RSliceQueue now (length ws - 1) (arBearer h, arTake h) False
+                   : go now (Bucket.chargeAt schRate fb now need) fs'
+                        (next h now pending) wb (List.delete h ws) kb Nothing
+                        (Just (now, False))
+             else if idle && readyB == now
+                then RGrant Borrowed (grant h)
+                   : RSliceQueue now (length ws - 1) (arBearer h, arTake h) False
+                   : go now fb' fs (next h now pending) wb (List.delete h ws) kb Nothing
+                        (Just (now, False))
+             else [ RSleptOnBudget | idle, readyB < readyS ]
+               ++ go now fb fs pending wb ws kb
+                     (Just (Bucket.wakeAt now (if idle then min readyS readyB else readyS)))
+                     (Just (now, False))
+      -- a waiting request's refresh before both wakes and the next request:
+      -- if its key moves, whoever is then the budget's head checks at once,
+      -- the request itself if it stays or becomes the head, or the one its
+      -- move hands the head to
+      | Just (r, a) <- nextRefresh now wb, all (r <) kb, all (r <) ks, all ((r <) . arAt) (take 1 pending) =
+          let moved   = keyBefore r a /= keyB r a
+              headWas = fmap keyOf (headBy (keyBefore r) wb)
+              headNow = fmap keyOf (headBy (keyB r) wb)
+              checks  = moved && (headNow /= headWas || headNow == Just (keyOf a))
+              keyOf x = (arBearer x, arTake x)
+          in go r fb fs pending wb ws (if checks then Nothing else kb) ks lst
+      -- a request before both wakes joins its own queue; a lower key takes
+      -- that queue's head
+      | p : ps <- pending, all (arAt p <) kb, all (arAt p <) ks =
+          if arSlice p
+             then let displaces = maybe False ((keyS p <) . keyS) (headBy keyS ws)
+                  in RSliceQueue (arAt p) (length ws + 1) (arBearer p, arTake p) True
+                   : go (arAt p) fb fs ps wb (p : ws) kb (if displaces then Nothing else ks) lst
+             else let displaces = maybe False ((keyB (arAt p) p <) . keyB (arAt p)) (headBy (keyB (arAt p)) wb)
+                  in RBudgetQueue (arAt p) (length wb + 1) (arBearer p, arTake p) True
+                   : go (arAt p) fb fs ps (p : wb) ws (if displaces then Nothing else kb) ks lst
+      -- the earlier wake fires
+      | otherwise =
+          case (kb, ks) of
+               (Just b, Just s') | b == s'   -> [RTie]
+                                 | b < s'    -> go b  fb fs pending wb ws Nothing ks lst
+                                 | otherwise -> go s' fb fs pending wb ws kb Nothing lst
+               (Just b, Nothing)  -> go b  fb fs pending wb ws Nothing ks lst
+               (Nothing, Just s') -> go s' fb fs pending wb ws kb Nothing lst
+               (Nothing, Nothing) -> []
+      where
+        grant h = ((arBearer h, arTake h), (arAt h, now))
+        -- the last check was on the other queue, in this same instant
+        crossed onBudget = case lst of
+                                Just (t, q) -> t == now && q /= onBudget
+                                Nothing     -> False
+
+-- | The grants of 'replayEvents', whatever it could not order.
+replayRun :: BucketSched -> [((Int, Int), (Time, Time))]
+replayRun sch = [ g | RGrant _ g <- replayEvents sch ]
+
+-- | The counters each bucket should hold after the replay's grants.
+replayStats :: BucketSched -> (Bucket.BucketStats, Maybe Bucket.BucketStats)
+replayStats sch@BucketSched { schSlice, schBearers } =
+    ( withBursts budgetQueue (stats (queuedIn budgetQueue) [ g | RGrant FromBudget g <- events ] [])
+    , withBursts sliceQueue (stats (queuedIn sliceQueue)
+                                   [ g | RGrant pay g <- events, pay /= FromBudget ]
+                                   [ g | RGrant Borrowed g <- events ]) <$ schSlice )
+  where
+    events = replayEvents sch
+
+    -- the budget's queue as the bucket sees it: a request that joins an empty
+    -- queue and is granted at once took the fast path and never queued
+    budgetQueue = dropFastPath [ (t, n, k, j) | RBudgetQueue t n k j <- events ]
+    sliceQueue  = dropFastPath [ (t, n, k, j) | RSliceQueue t n k j <- events ]
+
+    dropFastPath ((t, 1, k, True) : (t', 0, k', False) : rest)
+      | t == t' && k == k' = dropFastPath rest
+    dropFastPath (e : rest) = e : dropFastPath rest
+    dropFastPath []         = []
+
+    -- busy periods from the credited queue's lengths, in the order they
+    -- changed: a bearer at rest rank or beyond joins and leaves unseen
+    withBursts q st = go 0 Nothing Nothing 0 st (creditedLengths 0 q)
+      where
+        creditedLengths _ [] = []
+        creditedLengths c ((t, _, k, joined) : rest)
+          | rankOf k < 4 = let c' = if joined then c + 1 else c - 1
+                           in (t, c') : creditedLengths c' rest
+          | otherwise    = creditedLengths c rest
+        go _ _ _ _ acc [] = acc
+        go n0 since cSince peak acc ((t, n1) : rest) =
+          let started = n0 == 0 && n1 >= 1
+              since'  = if started then Just t else since
+              peak'   = if started then n1 else max peak n1
+              acc1    = if started then acc { Bucket.bsBursts = Bucket.bsBursts acc + 1 } else acc
+              (cSince', acc2)
+                | n0 < 2 && n1 >= 2, Nothing <- cSince = (Just t, acc1)
+                | n0 >= 2 && n1 < 2, Just c <- cSince  =
+                    (Nothing, acc1 { Bucket.bsContendedTime =
+                                       Bucket.bsContendedTime acc1 + (t `diffTime` c) })
+                | otherwise = (cSince, acc1)
+          in if n0 >= 1 && n1 == 0
+                then case since' of
+                       Just s0 ->
+                         let len = t `diffTime` s0
+                             acc3 = acc2 {
+                               Bucket.bsBusyTime    = Bucket.bsBusyTime acc2 + len,
+                               Bucket.bsBurstsOver  =
+                                 zipWith (\b c -> if len > b then c + 1 else c)
+                                         Bucket.burstBounds (Bucket.bsBurstsOver acc2),
+                               Bucket.bsBurstsWider =
+                                 zipWith (\w c -> if peak' >= w then c + 1 else c)
+                                         Bucket.burstWidths (Bucket.bsBurstsWider acc2) }
+                         in go n1 Nothing cSince' 0 acc3 rest
+                       Nothing -> go n1 Nothing cSince' 0 acc2 rest
+                else go n1 since' cSince' peak' acc2 rest
+
+    -- bytes and rank of take @k@ of bearer @b@
+    bytesOf (b, k) = let bb = schBearers !! b
+                     in if k == 0 then bbFirst bb else (\(_, sz, _) -> sz) (bbMore bb !! (k - 1))
+    rankOf  (b, k) = let bb = schBearers !! b
+                     in if k == 0 then bbRank bb else (\(_, _, r) -> r) (bbMore bb !! (k - 1))
+
+    -- the requests that joined a queue: the fast path leaves no trace
+    queuedIn q = Set.fromList [ k | (_, _, k, True) <- q ]
+
+    stats queued gs borrowed =
+      let waits = [ granted `diffTime` asked | (_, (asked, granted)) <- gs ]
+          bytesIn = sum . map (fromIntegral . bytesOf . fst)
+      in Bucket.BucketStats {
+           Bucket.bsBytes        = bytesIn gs,
+           Bucket.bsBatches      = fromIntegral (length gs),
+           Bucket.bsBorrowed     = bytesIn borrowed,
+           Bucket.bsCredited     = 0,
+           Bucket.bsWaitTokens   = sum waits,
+           Bucket.bsWaitWritable = 0,
+           Bucket.bsWaitsOver    = [ fromIntegral (length (filter (> b) waits))
+                                   | b <- Bucket.waitBounds ],
+           Bucket.bsBursts        = 0,
+           Bucket.bsBusyTime      = 0,
+           Bucket.bsContendedTime = 0,
+           Bucket.bsBurstsOver    = map (const 0) Bucket.burstBounds,
+           Bucket.bsBurstsWider   = map (const 0) Bucket.burstWidths,
+           Bucket.bsTiers         = M.fromListWith (<>)
+                                      [ (rankOf k, Bucket.TierGrants (fromIntegral (bytesOf k)) 1)
+                                      | (k, _) <- gs, k `Set.member` queued ],
+           Bucket.bsFloorTiers    = M.empty,
+           Bucket.bsServed        = served,
+           Bucket.bsServedPruned  = pruned,
+           Bucket.bsBurstsDropped = 0
+         }
+      where
+        -- the harness reports no gate waits or writes, so a standing is the
+        -- token waits alone
+        (served, pruned) = servedModel (List.sortOn (\(_, _, t, _, _) -> t)
+                             [ (tier, fromIntegral (fst k), granted, granted `diffTime` asked, 0)
+                             | (k, tier, asked, granted) <- servedTiers queued gs ])
+
+    -- the tier each grant records: a queued one its rank, asked as it joined
+    -- and again at every refresh it waited through, the last of which stamps
+    -- the cache; an unqueued one the tier last asked, unless that is
+    -- 'Bucket.tierRefresh' old, when its own rank is asked
+    servedTiers queued gs =
+      concatMap (go Nothing . List.sortOn (snd . fst))
+                (M.elems (M.fromListWith (++) [ (fst k, [g]) | g@(k, _) <- gs ]))
+      where
+        go _ [] = []
+        go cache ((k, (asked, granted)) : rest)
+          | k `Set.member` queued
+          = (k, rankOf k, asked, granted) : go (Just (rankOf k, lastRefresh asked granted)) rest
+          | Just (tier, at) <- cache, granted `diffTime` at < Bucket.tierRefresh
+          = (k, tier, asked, granted) : go cache rest
+          | otherwise
+          = (k, rankOf k, asked, granted) : go (Just (rankOf k, granted)) rest
+
+    -- the last refresh a wait from @asked@ to @granted@ went through: the
+    -- refreshes fall at @asked@ plus whole refresh intervals, and one that
+    -- falls at the grant's instant is overtaken by the grant
+    lastRefresh asked granted =
+      let waited = realToFrac (granted `diffTime` asked) :: Double
+          period = realToFrac Bucket.tierRefresh :: Double
+          n      = max 0 (ceiling (waited / period) - 1) :: Int
+      in (fromIntegral n * Bucket.tierRefresh) `addTime` asked
+
+replaySched :: BucketSched -> [((Int, Int), Time)]
+replaySched = map (\(k, (_, granted)) -> (k, granted)) . replayRun
+
+-- | Where each take is granted when nothing ever waits, so the chain follows
+-- from the schedule alone.
+instantGrants :: BucketSched -> [((Int, Int), Time)]
+instantGrants sch@BucketSched { schBearers } = concatMap chain (arrivals sch)
+  where
+    n = length schBearers
+    chain a = ((arBearer a, arTake a), arAt a)
+            : maybe [] chain (nextArrival n a (arAt a))
+
+-- | Whatever the schedule, the counters the budget and the slice keep hold no
+-- thunks: one left behind per grant would grow with every batch sent.
+prop_bucket_stats_no_thunks :: BucketSched -> Property
+prop_bucket_stats_no_thunks sch =
+    labelBucket sch $
+    case runBucketSchedStats sch of
+      (_, (!budget, slice_m)) ->
+             noThunksIn "budget" budget
+        .&&. case slice_m of
+               Just !slice -> noThunksIn "slice" slice
+               Nothing     -> property True
+  where
+    noThunksIn what st = counterexample (what ++ ": " ++ show (unsafeNoThunks st))
+                                        (isNothing (unsafeNoThunks st))
+
+-- | Every grant happens exactly when the replay says.
+prop_bucket_schedule :: BucketSched -> Property
+prop_bucket_schedule sch
+  | RTie `elem` events = discard
+  | otherwise =
+      labelBucket sch $
+      classify (queued == 0)                  "nothing queued" $
+      classify (paid Borrowed)                "borrowed" $
+      classify (paid FromSlice)               "slice paid, charged on credit" $
+      classify (RSleptOnBudget `elem` events) "slice slept on the budget" $
+      classify (Bucket.bsBursts (fst (replayStats sch)) > 0) "the budget was busy" $
+      classify (Bucket.bsContendedTime (fst (replayStats sch)) > 0) "bearers contended" $
+        (List.sortOn fst grants === List.sortOn fst (replaySched sch)
+         .&&. counterexample "counters" (stats === replayStats sch))
+  where
+    events = replayEvents sch
+    (grants, stats) = runBucketSchedStats sch
+    paid k = any (\e -> case e of { RGrant k' _ -> k' == k; _ -> False }) events
+    queued = length [ () | (_, (asked, granted)) <- replayRun sch
+                         , granted > asked ]
+
+-- | Killing a bearer mid-wait hands the queue on: every other bearer still
+-- completes all of its takes, and the cancellation itself returns.  A
+-- cancelled head must wake its successor, or the bucket wedges.
+--
+-- The instant comes from the replay, so a cancellation always lands inside
+-- 'Bucket.awaitGrant' rather than whenever a fixed delay happens to fall:
+-- @bbKill@ says how far into the bearer's first wait to strike, and a bearer
+-- the replay never makes wait is left alone.  Waiting on the cancellations as
+-- well as on the survivors keeps the property meaningful even when every
+-- bearer is killed, which would otherwise leave nothing to wait for.
+prop_bucket_cancel :: BucketSched -> Property
+prop_bucket_cancel sch0 = prop_bucket_cancel' sch0 { schSlice = Nothing }
+
+prop_bucket_cancel' :: BucketSched -> Property
+prop_bucket_cancel' sch@BucketSched { schRate, schCapacity, schRotation, schFloor, schBearers } =
+    labelBucket sch
+      $ classify (not (null killed))    "kills someone"
+      $ classify (any killsHead killed) "kills the next to be served"
+      $ counterexample ("kept " ++ show (length kept))
+      -- and once everyone is done, killed or served, no busy period is left
+      -- open: a cancelled waiter must close it as it leaves the queue; nor is
+      -- anyone left in the floor's queue
+      $ outcome === Just (length kept, False, 0)
+  where
+    n    = length schBearers
+    run  = replayRun sch
+
+    plan   = [ (a, bbKill b >>= strikeAt (arBearer a))
+             | (a, b) <- zip (arrivals sch) schBearers ]
+    killed = [ (a, t) | (a, Just t)  <- plan ]
+    kept   = [ a      | (a, Nothing) <- plan ]
+
+    -- @f@ 256ths into the first wait this bearer has, if it has one
+    strikeAt b f =
+      case List.sortOn fst [ (tk, (asked, granted))
+                           | ((b', tk), (asked, granted)) <- run
+                           , b' == b, granted > asked ] of
+        []                        -> Nothing
+        (_, (asked, granted)) : _ -> Just (part asked granted f)
+
+    part asked granted f =
+      picos (picosOf asked
+              + ((picosOf granted - picosOf asked) * fromIntegral f) `div` 256)
+        `addTime` Time 0
+
+    -- of the bearers waiting at @t@, the one the queue is about to serve
+    killsHead (a, t) =
+      case [ (granted, b) | ((b, _), (asked, granted)) <- run
+                          , asked <= t, t < granted ] of
+        [] -> False
+        ws -> snd (minimum ws) == arBearer a
+
+    -- generous: the last first-request, every gap, four times the fluid time
+    -- for every byte, and a second
+    limit = maximum [ arAt a `diffTime` Time 0 | a <- arrivals sch ]
+          + picos (sum [ (k + 2) * fromIntegral n
+                       | b <- schBearers, (k, _, _) <- bbMore b ])
+          + realToFrac (4 * bytes / schRate) + 1
+    bytes = sum [ fromIntegral (bbFirst b) + sum (map (\(_, sz, _) -> fromIntegral sz) (bbMore b))
+                | b <- schBearers ] :: Double
+
+    outcome = runSimOrThrow $ do
+      bucket <- Bucket.newBucket schRate schCapacity schRotation
+      forM_ schFloor $ \pct -> Bucket.attachFloor bucket (fromIntegral pct / 100)
+      hs <- mapM (const (Bucket.registerBearer bucket)) schBearers
+      as <- forM (zip hs plan) $ \(h, (a0, kill)) -> do
+        atomically $ Bucket.setRank h (Bucket.Rank (arRank a0))
+        let takeAll a = do
+              now <- getMonotonicTime
+              threadDelay (arAt a `diffTime` now)
+              Bucket.awaitGrant h (arBytes a)
+              t <- getMonotonicTime
+              maybe (return ()) takeAll (nextArrival n a t)
+        asy <- async (takeAll a0)
+        return (kill, asy)
+
+      killers <- forM [ (asy, t) | (Just t, asy) <- as ] $ \(asy, t) ->
+        async $ do
+          now <- getMonotonicTime
+          threadDelay (t `diffTime` now)
+          cancel asy
+
+      done <- timeout limit
+        (do mapM_ wait killers                        -- each cancel returns
+            mapM wait [ asy | (Nothing, asy) <- as ]) -- survivors finish
+      case done of
+           Nothing -> return Nothing
+           Just rs -> do
+             t0 <- getMonotonicTime
+             (st0, _, _, _) <- atomically $ Bucket.bucketSnapshot bucket t0
+             threadDelay 1
+             t1 <- getMonotonicTime
+             (st1, _, _, _) <- atomically $ Bucket.bucketSnapshot bucket t1
+             pending <- atomically $ Bucket.floorPending bucket
+             return (Just (length rs, Bucket.bsBusyTime st1 /= Bucket.bsBusyTime st0, pending))
+
+-- | 'prop_bucket_cancel' with a floor attached: the generated ranks 1 to 3
+-- are credited, so cancellations land on bearers waiting in both queues.
+prop_bucket_cancel_floor :: BucketSched -> Positive Int -> Property
+prop_bucket_cancel_floor sch0 (Positive pct) =
+    prop_bucket_cancel' sch0 { schSlice = Nothing, schFloor = Just (5 + pct `mod` 30) }
+
+-- | A disabled budget disables its floor with it: still nothing ever waits.
+prop_bucket_disabled_floor :: BucketSched -> Positive Int -> Property
+prop_bucket_disabled_floor sch (Positive pct) =
+    prop_bucket_disabled sch { schFloor = Just (5 + pct `mod` 30) }
+
+-- | A floor nobody is eligible for adds nothing to the budget's path: with
+-- every rank at 0 or above 3, the schedule still matches the replay exactly.
+-- The replay orders by rank value, so moving ranks 1 to 3 up by three keeps
+-- its prediction and takes every bearer out of the floor's classes.
+prop_bucket_schedule_idle_floor :: BucketSched -> Positive Int -> Property
+prop_bucket_schedule_idle_floor sch (Positive pct) =
+    prop_bucket_schedule sch { schFloor   = Just (5 + pct `mod` 30)
+                             , schBearers = map uncredited (schBearers sch) }
+  where
+    uncredited b = b { bbRank = up (bbRank b)
+                     , bbMore = [ (k, sz, up r) | (k, sz, r) <- bbMore b ] }
+    up r = if r == 0 then 0 else r + 3
+
+-- | A rate of zero disables the bucket: nothing ever waits.
+prop_bucket_disabled :: BucketSched -> Property
+prop_bucket_disabled sch =
+    labelBucket sch $
+      List.sortOn fst (runBucketSched sch { schRate = 0 })
+        === List.sortOn fst (instantGrants sch)
+
+-- | 'Bucket.setBucketRate' takes effect: later grants are paced by the new
+-- rate.  (A bearer already asleep is not woken early.)
+prop_bucket_rate_change :: BucketSched -> Property
+prop_bucket_rate_change BucketSched { schRate, schCapacity } =
+    counterexample (show (spent, expected)) (abs (spent - expected) <= tolerance)
+  where
+    n         = 4 :: Int
+    newRate   = 8 * schRate
+    expected  = fromIntegral (n * schCapacity) / newRate
+    tolerance = expected * 0.02 + fromIntegral n * 1e-6
+    spent = runSimOrThrow $ do
+      bucket <- Bucket.newBucket schRate schCapacity Nothing
+      h      <- Bucket.registerBearer bucket
+      Bucket.awaitGrant h schCapacity        -- drains the full bucket
+      t0 <- getMonotonicTime
+      atomically $ Bucket.setBucketRate bucket t0 newRate
+      replicateM_ n (Bucket.awaitGrant h schCapacity)
+      t1 <- getMonotonicTime
+      return (realToFrac (t1 `diffTime` t0) :: Double)
+
+
+--
+-- Egress lanes
+--
+-- A scheduled server mux over the Queues bearer, in IOSim: a bulk responder
+-- protocol saturating the scheduled lane, a small request protocol the server
+-- initiates on the direct lane, and a stream it initiates on a reserved slice.
+-- The client mux is unscheduled. The same run with every protocol on the
+-- scheduled lane is the control: there the requests do queue behind the bulk.
+
+data LaneCase = LaneCase {
+    lcRate     :: !Double,   -- ^ budget, bytes/s
+    lcSlicePct :: !Int,      -- ^ the slice's share of it
+    lcBatches  :: !Int       -- ^ the bulk protocol serves this many batches
+  }
+  deriving Show
+
+instance Arbitrary LaneCase where
+    arbitrary = do
+      e   <- choose (5, 7 :: Int)
+      m   <- choose (1, 9.99 :: Double)
+      pct <- choose (5, 30)
+      n   <- choose (20, 200)
+      return LaneCase { lcRate = m * 10 ^^ e, lcSlicePct = pct, lcBatches = n }
+    shrink LaneCase { lcRate, lcSlicePct, lcBatches } =
+         [ LaneCase r lcSlicePct lcBatches | r <- [1e5, 1e6], r < lcRate ]
+      ++ [ LaneCase lcRate p lcBatches | p <- [5, 15], p < lcSlicePct ]
+      ++ [ LaneCase lcRate lcSlicePct n | n <- [20, 50], n < lcBatches ]
+
+-- | The Queues bearer writes two SDUs per batch.
+laneBatch :: Int
+laneBatch = 2 * fromIntegral (Mx.getSDUSize laneSduSize)
+
+-- | What a run measured: the bulk's transfer time, the longest probe round
+-- trip, and the bytes the slice stream delivered while the bulk was running.
+data LaneRun = LaneRun {
+    lrBulkTime   :: !Double,
+    lrProbeMax   :: !Double,
+    lrProbes     :: !Int,
+    lrSliced     :: !Int,      -- ^ slice bytes delivered while the bulk ran
+    lrIdle       :: !Double,   -- ^ seconds the link was idle before the bulk
+    lrSlicedIdle :: !Int,      -- ^ slice bytes delivered in that time
+    lrCharged    :: !(M.Map Mx.MiniProtocolNum Int),
+    -- ^ what the charge sink was handed, per mini-protocol
+    lrExpected   :: !(M.Map Mx.MiniProtocolNum Int)
+    -- ^ what the bearer wrote on scheduled-lane protocols, headers included
+  }
+  deriving Show
+
+laneSduSize :: Mx.SDUSize
+laneSduSize = Mx.SDUSize 12288
+
+runLanes :: (Mx.MiniProtocolNum -> Mx.MiniProtocolDir -> Mx.Lane) -> LaneCase -> LaneRun
+runLanes laneOf LaneCase { lcRate, lcSlicePct, lcBatches } = runSimOrThrow $ do
+    let cap    = 2 * laneBatch                                    -- two batches
+        lcBulk = lcBatches * laneBatch
+        -- a probe every quarter of a batch's worth of budget
+        probeEvery = realToFrac (fromIntegral laneBatch / lcRate / 4) :: DiffTime
+        -- the bulk starts after thirty batches' worth of idle link, during
+        -- which the slice stream has the budget to itself
+        idlePhase  = realToFrac (30 * fromIntegral laneBatch / lcRate) :: DiffTime
+    budget <- Bucket.newBucket lcRate cap Nothing
+    slice  <- Bucket.newBucket (lcRate * fromIntegral lcSlicePct / 100) cap Nothing
+
+    client_w <- atomically $ newTBQueue 10
+    client_r <- atomically $ newTBQueue 10
+    clientBearer <- getBearer makeQueueChannelBearer (-1)
+                      QueueChannel { writeQueue = client_w, readQueue = client_r } Nothing
+    serverBearer <- getBearer makeQueueChannelBearer (-1)
+                      QueueChannel { writeQueue = client_r, readQueue = client_w } Nothing
+
+    stopVar   <- newTVarIO False
+    probeVar  <- newTVarIO (0 :: Int, 0 :: Double)     -- probes done, longest round trip
+    slicedVar <- newTVarIO (0 :: Int)
+    -- the oracle for the charge sink: every SDU the server bearer writes, by
+    -- mini-protocol and direction, header included
+    writtenVar <- newTVarIO (M.empty :: M.Map (Mx.MiniProtocolNum, Mx.MiniProtocolDir) Int)
+    chargedVar <- newTVarIO (M.empty :: M.Map Mx.MiniProtocolNum Int)
+    let sduBytes sdu = fromIntegral Mx.msHeaderLength + fromIntegral (Mx.msLength sdu)
+        recorded = serverBearer {
+          Mx.writeMany = \tr to sdus -> do
+            atomically $ modifyTVar writtenVar $ \m ->
+              foldr (\sdu -> M.insertWith (+) (Mx.mhNum (Mx.msHeader sdu), Mx.mhDir (Mx.msHeader sdu))
+                                                (sduBytes sdu))
+                    m sdus
+            Mx.writeMany serverBearer tr to sdus }
+
+    let info :: Mx.MiniProtocolNum -> Mx.MiniProtocolDirection Mx.InitiatorResponderMode
+             -> MiniProtocolInfo Mx.InitiatorResponderMode
+        info num dir = MiniProtocolInfo {
+            miniProtocolNum = num, miniProtocolDir = dir,
+            miniProtocolLimits = MiniProtocolLimits { maximumIngressQueue = 16000000 },
+            miniProtocolCapability = Nothing }
+        bulkN = Mx.MiniProtocolNum 2
+        probeN = Mx.MiniProtocolNum 3
+        sliceN = Mx.MiniProtocolNum 4
+
+        policy = Mx.EgressPolicy { Mx.egressBudget = budget, Mx.egressSlice = Just slice,
+                                   Mx.egressLaneOf = laneOf }
+    serverMux <- Mx.newWithEgress policy Mx.nullTracers
+                   [ info bulkN Mx.ResponderDirection, info probeN Mx.InitiatorDirection
+                   , info sliceN Mx.InitiatorDirection ]
+    atomically $ Mx.setEgressChargeSink serverMux $ \_ num n ->
+      modifyTVar chargedVar (M.insertWith (+) num n)
+    clientMux <- Mx.new Mx.nullTracers
+                   [ info bulkN Mx.InitiatorDirection, info probeN Mx.ResponderDirection
+                   , info sliceN Mx.ResponderDirection ]
+
+    let untilStopped act = do
+          stopped <- readTVarIO stopVar
+          unless stopped act
+
+        -- the bulk: one request, lcBulk bytes back in 8 kB messages
+        bulkServer chan = do
+          _ <- Mx.recv chan
+          forM_ (chunks lcBulk) $ \n -> Mx.send chan (BL.replicate (fromIntegral n) 0x78)
+          return ((), Nothing)
+        bulkClient chan = do
+          threadDelay idlePhase
+          slicedIdle <- readTVarIO slicedVar
+          t0 <- getMonotonicTime
+          Mx.send chan (BL8.pack "req")
+          drain chan lcBulk
+          t1 <- getMonotonicTime
+          return ((realToFrac (t1 `diffTime` t0) :: Double, slicedIdle), Nothing)
+
+        -- the probe: 32 bytes out, 32 back, every quarter batch
+        probeServer chan = do
+          let loop = untilStopped $ do
+                t0 <- getMonotonicTime
+                Mx.send chan (BL.replicate 32 0x70)
+                drain chan 32
+                t1 <- getMonotonicTime
+                atomically $ modifyTVar probeVar $ \(n, mx) ->
+                  (n + 1, max mx (realToFrac (t1 `diffTime` t0)))
+                threadDelay probeEvery
+                loop
+          loop
+          return ((), Nothing)
+        echo chan = do
+          let loop = do
+                mbs <- Mx.recv chan
+                case mbs of
+                  Nothing -> return ()
+                  Just bs -> Mx.send chan bs >> loop
+          loop
+          return ((), Nothing)
+
+        -- the slice stream: 4 kB messages as fast as the lane takes them
+        sliceServer chan = do
+          let loop = untilStopped $ Mx.send chan (BL.replicate 4096 0x74) >> loop
+          loop
+          return ((), Nothing)
+        sink chan = do
+          let loop = do
+                mbs <- Mx.recv chan
+                case mbs of
+                  Nothing -> return ()
+                  Just bs -> do
+                    stopped <- readTVarIO stopVar
+                    unless stopped $
+                      atomically $ modifyTVar slicedVar (+ fromIntegral (BL.length bs))
+                    loop
+          loop
+          return ((), Nothing)
+
+    withAsync (Mx.run serverMux recorded) $ \_ ->
+      withAsync (Mx.run clientMux clientBearer) $ \_ -> do
+        _ <- Mx.runMiniProtocol serverMux bulkN  Mx.ResponderDirection Mx.StartOnDemand bulkServer
+        _ <- Mx.runMiniProtocol serverMux probeN Mx.InitiatorDirection Mx.StartEagerly probeServer
+        _ <- Mx.runMiniProtocol serverMux sliceN Mx.InitiatorDirection Mx.StartEagerly sliceServer
+        _ <- Mx.runMiniProtocol clientMux probeN Mx.ResponderDirection Mx.StartOnDemand echo
+        _ <- Mx.runMiniProtocol clientMux sliceN Mx.ResponderDirection Mx.StartOnDemand sink
+        bulk <- Mx.runMiniProtocol clientMux bulkN Mx.InitiatorDirection Mx.StartEagerly bulkClient
+        r <- atomically bulk
+        atomically $ writeTVar stopVar True
+        (probes, probeMax) <- readTVarIO probeVar
+        sliced <- readTVarIO slicedVar
+        Mx.stop serverMux
+        Mx.stop clientMux
+        written <- readTVarIO writtenVar
+        charged <- readTVarIO chargedVar
+        let expected = M.fromListWith (+) [ (num, n) | ((num, dir), n) <- M.toList written
+                                                    , laneOf num dir == Mx.Scheduled ]
+        case r of
+          Left e -> throwIO e
+          Right (bulkTime, slicedIdle) ->
+            return LaneRun { lrBulkTime = bulkTime, lrProbeMax = probeMax, lrProbes = probes,
+                             lrSliced = sliced - slicedIdle,
+                             lrIdle = realToFrac idlePhase, lrSlicedIdle = slicedIdle,
+                             lrCharged = charged, lrExpected = expected }
+  where
+    chunks n | n <= 0    = []
+             | otherwise = min 8192 n : chunks (n - 8192)
+
+    -- read until @n@ bytes have arrived
+    drain :: Monad m => Mx.ByteChannel m -> Int -> m ()
+    drain _    n | n <= 0 = return ()
+    drain chan n = do
+      mbs <- Mx.recv chan
+      case mbs of
+        Nothing -> return ()
+        Just bs -> drain chan (n - fromIntegral (BL.length bs))
+
+-- | With the lanes: no probe ever waits (in IOSim the direct path takes no
+-- simulated time at all); while the link is idle the slice stream borrows the
+-- budget and runs near the link rate; while the bulk runs the slice delivers
+-- its share -- no less than most of it, no more than its bucket allows, which
+-- is its capacity's burst plus its rate -- and the bulk gets the rest.
+-- Without the lanes, everything scheduled, the probes queue behind the bulk's
+-- batches, which is the failure the lanes exist to prevent.
+prop_mux_lanes :: LaneCase -> Property
+prop_mux_lanes lc@LaneCase { lcRate, lcSlicePct, lcBatches } =
+    counterexample (show (lc, lanes, control)) $
+         counterexample "probe waited"            (lrProbeMax lanes < batchTime / 100)
+    .&&. counterexample "slice did not borrow the idle link"
+           (fromIntegral (lrSlicedIdle lanes) >= 0.7 * lcRate * lrIdle lanes)
+    .&&. counterexample "no probes"               (lrProbes lanes > 0)
+    .&&. counterexample "slice short of its share" (sliced >= 0.7 * slice * bulkTime)
+    .&&. counterexample "slice over its bucket"    (sliced <= cap + slice * bulkTime + batch)
+    .&&. counterexample "bulk faster than budget"  (bulkTime >= 0.9 * fluid)
+    .&&. counterexample "bulk starved"             (bulkTime <= 1.3 * fluid / (1 - share))
+    .&&. counterexample "control did not queue"    (lrProbeMax control >= batchTime / 8)
+    -- the charge sink sees exactly the scheduled lane's bytes: the bulk alone
+    -- with the lanes, everything in the control, headers included, never a
+    -- direct or slice byte
+    .&&. counterexample "charged /= scheduled bytes"  (lrCharged lanes === lrExpected lanes)
+    .&&. counterexample "control charged /= all bytes" (lrCharged control === lrExpected control)
+  where
+    lanes     = runLanes laneRule lc
+    control   = runLanes (\_ _ -> Mx.Scheduled) lc
+    share     = fromIntegral lcSlicePct / 100
+    slice     = share * lcRate
+    bulkTime  = lrBulkTime lanes
+    sliced    = fromIntegral (lrSliced lanes) :: Double
+    batch     = fromIntegral laneBatch :: Double
+    batchTime = batch / lcRate
+    fluid     = fromIntegral lcBatches * batchTime
+    cap       = 2 * batch                     -- the slice bucket's capacity, as 'runLanes' sizes it
+
+    laneRule (Mx.MiniProtocolNum 4) Mx.InitiatorDir = Mx.Slice
+    laneRule num dir                                = Mx.directionSplit num dir
+
+-- | Through the muxer, every scheduled batch reports to the budget the time
+-- it waited at the writability gate and the time the batch before it took to
+-- write. Over a bearer whose gate and writes take a known time, with one
+-- message at a time and a pause between them so that each is one batch, the
+-- bearer's standing is exactly the model's over those times, and the gate
+-- waits sum to one per message; nothing waits for tokens.
+prop_mux_scheduled_own_time :: OwnTimeCase -> Property
+prop_mux_scheduled_own_time oc@OwnTimeCase { otGate, otWrite, otMsgs } =
+    counterexample (show oc) $
+    classify (otGate == 0)       "no gate wait" $
+    classify (otWrite == 0)      "writes take no time" $
+    classify (length otMsgs > 1) "several batches" $
+    case runSimOrThrow run of
+      (st, sent) ->
+             counterexample "standing" (Bucket.bsServed st === fst (servedModel (model sent)))
+        .&&. counterexample "gate waits"
+               (Bucket.bsWaitWritable st === fromIntegral (length otMsgs) * otGate)
+  where
+    num   = Mx.MiniProtocolNum 2
+    pause = otGate + otWrite + 0.001
+
+    -- the bearer is the budget's first and has no rank: unranked, id 0;
+    -- a batch is granted once its gate opens, and reports the gate and the
+    -- write before it, none before the first
+    model sent = [ (255, 0, otGate `addTime` t, 0, otGate + (if k == 0 then 0 else otWrite))
+                 | (k, t) <- zip [0 :: Int ..] sent ]
+
+    run :: IOSim s (Bucket.BucketStats, [Time])
+    run = do
+      w <- atomically $ newTBQueue 2
+      r <- atomically $ newTBQueue 2
+      base <- getBearer makeQueueChannelBearer (-1)
+                QueueChannel { writeQueue = w, readQueue = r } Nothing
+      let bearer = base
+            { Mx.awaitWritable = \_ _ -> threadDelay otGate
+            , Mx.writeMany     = \tr to sdus -> threadDelay otWrite >> Mx.writeMany base tr to sdus }
+          info :: MiniProtocolInfo Mx.InitiatorMode
+          info = MiniProtocolInfo {
+              miniProtocolNum        = num,
+              miniProtocolDir        = Mx.InitiatorDirectionOnly,
+              miniProtocolLimits     = MiniProtocolLimits { maximumIngressQueue = 16 },
+              miniProtocolCapability = Nothing }
+      budget <- Bucket.newBucket 1e9 65536 Nothing
+      let policy = Mx.EgressPolicy { Mx.egressBudget = budget, Mx.egressSlice = Nothing,
+                                     Mx.egressLaneOf = \_ _ -> Mx.Scheduled }
+      mux <- Mx.newWithEgress policy Mx.nullTracers [info]
+      -- the peer takes everything
+      _ <- async $ forever $ atomically (readTBQueue w)
+      withAsync (Mx.run mux bearer) $ \_ -> do
+        sent <- newTVarIO []
+        _ <- Mx.runMiniProtocol mux num Mx.InitiatorDirectionOnly Mx.StartEagerly $ \chan -> do
+          forM_ otMsgs $ \n -> do
+            t <- getMonotonicTime
+            Mx.send chan (BL.replicate (fromIntegral n) 7)
+            atomically $ modifyTVar sent (t :)
+            threadDelay pause
+          return ((), Nothing)
+        atomically $ readTVar sent >>= check . (== length otMsgs) . length
+        threadDelay pause
+        now <- getMonotonicTime
+        (st, _, _, _) <- atomically $ Bucket.bucketSnapshot budget now
+        (,) st . reverse <$> readTVarIO sent
+
+-- | A gate wait and a write time, whole microseconds up to 50 ms and often
+-- none, and messages of one SDU each: the queue bearer's SDU is 1280 bytes.
+data OwnTimeCase = OwnTimeCase {
+    otGate  :: !DiffTime,
+    otWrite :: !DiffTime,
+    otMsgs  :: ![Int]
+  }
+  deriving Show
+
+instance Arbitrary OwnTimeCase where
+    arbitrary = OwnTimeCase <$> micros <*> micros
+                            <*> listOf1 (choose (1, 1280))
+      where
+        micros = frequency [ (1, pure 0)
+                           , (3, (\us -> fromIntegral (us :: Int) / 1000000) <$> choose (1, 50000)) ]
+    shrink oc@OwnTimeCase { otGate, otWrite, otMsgs } =
+         [ oc { otMsgs = ms } | ms <- shrinkList (const []) otMsgs, not (null ms) ]
+      ++ [ oc { otGate = 0 }  | otGate /= 0 ]
+      ++ [ oc { otWrite = 0 } | otWrite /= 0 ]
+
+-- | Own requests through a bearer whose peer stops and starts draining: the
+-- gate is shut and the link stalls in the closed phases, and in the open ones
+-- the link drains at a rate, so a batch may block half written.
+data GateCase = GateCase {
+    gcMsgs   :: ![(Int, Int)],   -- ^ ms after the previous send, and bytes
+    gcPhases :: ![Int],          -- ^ phase lengths in ms, closed first, alternating
+    gcRate   :: !Int             -- ^ bytes per ms the open link drains
+  }
+  deriving Show
+
+instance Arbitrary GateCase where
+    arbitrary = GateCase <$> listOf1 ((,) <$> choose (0, 20)
+                                          <*> frequency [ (1, choose (1, 2000))
+                                                        , (2, choose (1, 200000)) ])
+                         <*> listOf1 (choose (1, 40))
+                         <*> choose (1000, 50000)
+    shrink gc@GateCase { gcMsgs, gcPhases } =
+         [ gc { gcMsgs = ms }   | ms <- shrinkList shrinkMsg gcMsgs, not (null ms) ]
+      ++ [ gc { gcPhases = ps } | ps <- shrinkList shrinkIntegral gcPhases, not (null ps), all (> 0) ps ]
+      where
+        shrinkMsg (d, n) = [ (d', n) | d' <- shrinkIntegral d ] ++ [ (d, n') | n' <- shrinkIntegral n, n' > 0 ]
+
+-- | The node's own requests are charged to the budget on credit, never made
+-- to wait for tokens -- but only for bytes handed to the bearer, and only once
+-- the bearer can take them. Sampled every 100 us while the phases run: no byte
+-- is handed over while the gate is shut, and the budget's credited bytes never
+-- run ahead of the bytes handed over; once the link stays open, the two are
+-- equal and every message has gone.
+prop_mux_direct_gate :: GateCase -> Property
+prop_mux_direct_gate gc@GateCase { gcMsgs, gcPhases, gcRate } =
+    counterexample (show gc) $
+    classify (any (\(_, n) -> n > 12288) gcMsgs) "a message of several SDUs" $
+    classify (any (\(_, n) -> n <= 2000) gcMsgs) "a small message" $
+    classify (length gcPhases > 2) "the gate shuts again" $
+      case runSimOrThrow run of
+           (closedWrites, ahead, final) ->
+                  counterexample "handed over while shut" (closedWrites === [])
+             .&&. counterexample "charged ahead of the write" (ahead === [])
+             .&&. counterexample "at the end, credited /= handed or a message missing"
+                    (final === Just (True, sum (map snd gcMsgs)))
+  where
+    num = Mx.MiniProtocolNum 2
+
+    run :: IOSim s ([(Time, Int)], [(Time, Int, Int)], Maybe (Bool, Int))
+    run = do
+      open    <- newTVarIO False
+      handed  <- newTVarIO (0 :: Int)
+      w <- atomically $ newTBQueue 2
+      r <- atomically $ newTBQueue 2
+      base <- getBearer makeQueueChannelBearer (-1)
+                QueueChannel { writeQueue = w, readQueue = r } Nothing
+      let bearer = base
+            { Mx.awaitWritable = \_ _ -> atomically (readTVar open >>= check)
+            , Mx.writeMany     = \tr to sdus -> do
+                t <- Mx.writeMany base tr to sdus
+                atomically $ modifyTVar handed
+                  (+ sum [ 8 + fromIntegral (BL.length (Mx.msBlob s)) | s <- sdus ])
+                return t }
+          info :: MiniProtocolInfo Mx.InitiatorMode
+          info = MiniProtocolInfo {
+              miniProtocolNum        = num,
+              miniProtocolDir        = Mx.InitiatorDirectionOnly,
+              miniProtocolLimits     = MiniProtocolLimits { maximumIngressQueue = 16 },
+              miniProtocolCapability = Nothing }
+      budget <- Bucket.newBucket 1e9 65536 Nothing
+      let policy = Mx.EgressPolicy { Mx.egressBudget = budget, Mx.egressSlice = Nothing,
+                                     Mx.egressLaneOf = Mx.directionSplit }
+          credited = (\(st, _, _, _) -> fromIntegral (Bucket.bsCredited st))
+                       <$> (getMonotonicTime >>= atomically . Bucket.bucketSnapshot budget)
+      mux <- Mx.newWithEgress policy Mx.nullTracers [info]
+      -- the peer: reads at the link rate while open, not at all while shut
+      _ <- async $ forever $ do
+        bs <- atomically $ do readTVar open >>= check; readTBQueue w
+        threadDelay (realToFrac (fromIntegral (BL.length bs) / fromIntegral gcRate / 1000 :: Double))
+      withAsync (Mx.run mux bearer) $ \_ -> do
+        received <- newTVarIO (0 :: Int)
+        _ <- Mx.runMiniProtocol mux num Mx.InitiatorDirectionOnly Mx.StartEagerly $ \chan -> do
+          forM_ gcMsgs $ \(d, n) -> do
+            threadDelay (fromIntegral d / 1000)
+            Mx.send chan (BL.replicate (fromIntegral n) 7)
+            atomically $ modifyTVar received (+ n)
+          return ((), Nothing)
+        -- the phases, sampled
+        samples <- fmap concat $ forM (zip (cycle [False, True]) gcPhases) $ \(isOpen, ms) -> do
+          atomically $ writeTVar open isOpen
+          forM [1 .. ms * 10] $ \_ -> do
+            h0 <- readTVarIO handed
+            threadDelay 0.0001
+            h1 <- readTVarIO handed
+            c  <- credited
+            now <- getMonotonicTime
+            return (now, isOpen, h0, h1, c)
+        let closedWrites = [ (t, h1 - h0) | (t, False, h0, h1, _) <- samples, h1 /= h0 ]
+            ahead        = [ (t, c, h1) | (t, _, _, h1, c) <- samples, c > h1 ]
+        -- then open for good, until every message is handed over
+        atomically $ writeTVar open True
+        final <- timeout 60 $ do
+          atomically $ readTVar received >>= check . (== sum (map snd gcMsgs))
+          threadDelay 1
+          (,) <$> ((==) <$> credited <*> readTVarIO handed) <*> readTVarIO received
+        return (closedWrites, ahead, final)
+
+-- | Several muxes share one budget; one of them, the head of its queue, is
+-- torn down mid-wait.
+data HeadKill = HeadKill {
+    hkRate    :: !Double,        -- ^ budget, bytes/s
+    hkMuxes   :: !Int,           -- ^ muxes, the victim among them
+    hkBatches :: !Int,           -- ^ batches each serves
+    hkAt      :: !Int,           -- ^ tear the victim down this far, in 256ths,
+                                 --   into its own transfer
+    hkHow     :: !TearDown
+  }
+  deriving Show
+
+data TearDown = StopMux | CancelRun
+  deriving (Show, Eq, Enum, Bounded)
+
+instance Arbitrary HeadKill where
+    arbitrary = HeadKill <$> ((* 1e5) <$> choose (1, 99))
+                         <*> choose (2, 5)
+                         <*> choose (10, 60)
+                         <*> choose (16, 240)
+                         <*> arbitraryBoundedEnum
+    shrink hk@HeadKill { hkMuxes, hkBatches, hkHow } =
+         [ hk { hkMuxes = 2 }       | hkMuxes > 2 ]
+      ++ [ hk { hkBatches = 10 }    | hkBatches > 10 ]
+      ++ [ hk { hkHow = CancelRun } | hkHow == StopMux ]
+
+-- | Tearing down the head of the budget's queue hands the queue on: every
+-- other mux still delivers all of its bulk. The victim has rank 0 and the rest
+-- rank 1, so whenever the victim waits for tokens it is the head, with the
+-- others waiting behind it on their own wake variables; writes to the Queues
+-- bearer take no simulated time, so at any instant of its transfer it is
+-- asleep at the head. A head that leaves without waking its successor wedges
+-- everyone behind it.
+prop_mux_egress_head_torn_down :: HeadKill -> Property
+prop_mux_egress_head_torn_down hk@HeadKill { hkRate, hkMuxes, hkBatches, hkAt, hkHow } =
+    counterexample (show hk) $
+    tabulate "tear-down" [show hkHow] $
+      runSimOrThrow run === Just (hkMuxes - 1)
+  where
+    bulk     = hkBatches * laneBatch
+    batch    = fromIntegral laneBatch :: Double
+    victimT  = realToFrac (fromIntegral hkBatches * batch / hkRate) :: DiffTime
+    killAt   = victimT * fromIntegral hkAt / 256
+    -- everyone's bulk at the budget rate, twice over, the 2 s drain, a margin
+    deadline = realToFrac (2 * fromIntegral (hkMuxes * hkBatches) * batch / hkRate) + 5
+
+    run :: IOSim s (Maybe Int)
+    run = do
+      budget <- Bucket.newBucket hkRate (2 * laneBatch) Nothing
+      let policy = Mx.EgressPolicy { Mx.egressBudget = budget, Mx.egressSlice = Nothing,
+                                     Mx.egressLaneOf = Mx.directionSplit }
+      pairs <- forM [0 .. hkMuxes - 1] $ \i -> do
+        (serverMux, clientMux, serverBearer, clientBearer) <- headKillPair policy
+        atomically $ Mx.setEgressRank serverMux (Bucket.Rank (if i == 0 then 0 else 1))
+        serverA <- async (Mx.run serverMux serverBearer)
+        _       <- async (Mx.run clientMux clientBearer)
+        _ <- Mx.runMiniProtocol serverMux bulkNum Mx.ResponderDirection Mx.StartOnDemand
+               (headKillServer bulk)
+        done <- Mx.runMiniProtocol clientMux bulkNum Mx.InitiatorDirection Mx.StartEagerly
+                  (headKillClient bulk)
+        return (serverMux, serverA, done)
+      case pairs of
+           [] -> return Nothing
+           (victimMux, victimA, _) : others -> do
+             _ <- async $ do
+               threadDelay killAt
+               case hkHow of
+                    StopMux   -> Mx.stop victimMux
+                    CancelRun -> cancel victimA
+             timeout deadline $
+               length <$> mapM (\(_, _, done) -> atomically done) others
+
+-- | A demoted peer's last message: a protocol sends it and completes while
+-- the budget is busy with another connection's bulk, so the muxer holds the
+-- batch waiting for its grant. As the connection manager does on release,
+-- the connection's thread is cancelled the moment the protocol reports
+-- completion; completion waits for the held batch to be written, so the
+-- peer has the whole message. Or the mux is stopped as soon as the message
+-- is sent, as on a timeout: the drain waits up to two seconds for the held
+-- batch, and the bulk ahead of it takes at most one.
+data FinalCase = FinalCase {
+    fcRate    :: !Double,   -- ^ budget, bytes/s
+    fcBatches :: !Int,      -- ^ the other connection's bulk, in batches
+    fcFinal   :: !Int,      -- ^ the last message, bytes
+    fcRank    :: !Word8,    -- ^ the demoted peer's tier
+    fcHow     :: !FinalEnd
+  }
+  deriving Show
+
+data FinalEnd = CancelOnCompletion | StopWhenSent
+  deriving (Show, Eq, Enum, Bounded)
+
+instance Arbitrary FinalCase where
+  arbitrary = FinalCase <$> choose (1e5, 1e6) <*> choose (2, 20)
+                        <*> choose (1, 20000) <*> choose (1, 4)
+                        <*> elements [minBound .. maxBound]
+  shrink fc@FinalCase { fcBatches, fcFinal } =
+       [ fc { fcBatches = b } | b <- shrink fcBatches, b >= 2 ]
+    ++ [ fc { fcFinal = f } | f <- shrink fcFinal, f >= 1 ]
+
+prop_mux_final_message_before_release :: FinalCase -> Property
+prop_mux_final_message_before_release fc@FinalCase { fcRate, fcBatches, fcFinal, fcRank, fcHow } =
+    counterexample (show fc) $
+    tabulate "end" [show fcHow] $
+      runSimOrThrow run === Just fcFinal
+  where
+    -- stopped, the bulk ahead must clear within a second of the drain's two
+    bulk     = case fcHow of
+                    CancelOnCompletion -> fcBatches * laneBatch
+                    StopWhenSent       -> min (fcBatches * laneBatch) (floor (fcRate * 0.5))
+    deadline = realToFrac (2 * fromIntegral (bulk + fcFinal) / fcRate) + 5 :: DiffTime
+
+    run :: IOSim s (Maybe Int)
+    run = do
+      budget <- Bucket.newBucket fcRate (2 * laneBatch) Nothing
+      let policy = Mx.EgressPolicy { Mx.egressBudget = budget, Mx.egressSlice = Nothing,
+                                     Mx.egressLaneOf = Mx.directionSplit }
+      -- the busy connection: a local root taking the budget
+      (busyMux, busyClient, busyBearer, busyClientBearer) <- headKillPair policy
+      atomically $ Mx.setEgressRank busyMux (Bucket.Rank 0)
+      _ <- async (Mx.run busyMux busyBearer)
+      _ <- async (Mx.run busyClient busyClientBearer)
+      _ <- Mx.runMiniProtocol busyMux bulkNum Mx.ResponderDirection Mx.StartOnDemand
+             (headKillServer bulk)
+      _ <- Mx.runMiniProtocol busyClient bulkNum Mx.InitiatorDirection Mx.StartEagerly
+             (headKillClient bulk)
+      -- the demoted peer: one request, one last message, done
+      (peerMux, peerClient, peerBearer, peerClientBearer) <- headKillPair policy
+      atomically $ Mx.setEgressRank peerMux (Bucket.Rank fcRank)
+      peerA <- async (Mx.run peerMux peerBearer)
+      _     <- async (Mx.run peerClient peerClientBearer)
+      threadDelay 0.001     -- the bulk has the budget first
+      sent <- newTVarIO False
+      completion <- Mx.runMiniProtocol peerMux bulkNum Mx.ResponderDirection Mx.StartOnDemand $ \chan -> do
+                      _ <- Mx.recv chan
+                      Mx.send chan (BL.replicate (fromIntegral fcFinal) 0x78)
+                      atomically (writeTVar sent True)
+                      return ((), Nothing)
+      received <- newTVarIO 0
+      _ <- Mx.runMiniProtocol peerClient bulkNum Mx.InitiatorDirection Mx.StartEagerly $ \chan -> do
+             Mx.send chan (BL8.pack "req")
+             let go = do
+                   mbs <- Mx.recv chan
+                   case mbs of
+                        Nothing -> return ()
+                        Just bs -> atomically (modifyTVar received (+ fromIntegral (BL.length bs))) >> go
+             go
+             return ((), Nothing)
+      case fcHow of
+           -- the release: cancel the connection as soon as the protocol is done
+           CancelOnCompletion -> do
+             _ <- atomically completion
+             cancel peerA
+           -- a stop with the message sent, not yet written
+           StopWhenSent -> do
+             atomically (readTVar sent >>= check)
+             Mx.stop peerMux
+      timeout deadline $ atomically $ do
+        n <- readTVar received
+        check (n >= fcFinal)
+        return n
+
+bulkNum :: Mx.MiniProtocolNum
+bulkNum = Mx.MiniProtocolNum 2
+
+-- | A scheduled server mux and a plain client mux over a pair of Queues
+-- bearers, each with the bulk protocol.
+headKillPair :: Mx.EgressPolicy (IOSim s)
+         -> IOSim s ( Mx.Mux Mx.InitiatorResponderMode (IOSim s)
+                    , Mx.Mux Mx.InitiatorResponderMode (IOSim s)
+                    , Mx.Bearer (IOSim s), Mx.Bearer (IOSim s) )
+headKillPair policy = do
+    client_w <- atomically $ newTBQueue 10
+    client_r <- atomically $ newTBQueue 10
+    clientBearer <- getBearer makeQueueChannelBearer (-1)
+                      QueueChannel { writeQueue = client_w, readQueue = client_r } Nothing
+    serverBearer <- getBearer makeQueueChannelBearer (-1)
+                      QueueChannel { writeQueue = client_r, readQueue = client_w } Nothing
+    let info dir = MiniProtocolInfo {
+            miniProtocolNum = bulkNum, miniProtocolDir = dir,
+            miniProtocolLimits = MiniProtocolLimits { maximumIngressQueue = 16000000 },
+            miniProtocolCapability = Nothing }
+    serverMux <- Mx.newWithEgress policy Mx.nullTracers [info Mx.ResponderDirection]
+    clientMux <- Mx.new Mx.nullTracers [info Mx.InitiatorDirection]
+    return (serverMux, clientMux, serverBearer, clientBearer)
+
+-- | One request, then @n@ bytes back in 8 kB messages.
+headKillServer :: Int -> Mx.ByteChannel (IOSim s) -> IOSim s ((), Maybe BL.ByteString)
+headKillServer n chan = do
+    _ <- Mx.recv chan
+    forM_ (chunksOf8k n) $ \k -> Mx.send chan (BL.replicate (fromIntegral k) 0x78)
+    return ((), Nothing)
+  where
+    chunksOf8k m | m <= 0    = []
+                 | otherwise = min 8192 m : chunksOf8k (m - 8192)
+
+-- | Ask, then read until @n@ bytes have arrived.
+headKillClient :: Int -> Mx.ByteChannel (IOSim s) -> IOSim s ((), Maybe BL.ByteString)
+headKillClient n chan = do
+    Mx.send chan (BL8.pack "req")
+    let go m | m <= 0    = return ()
+             | otherwise = do
+                 mbs <- Mx.recv chan
+                 case mbs of
+                      Nothing -> return ()
+                      Just bs -> go (m - fromIntegral (BL.length bs))
+    go n
+    return ((), Nothing)
+
+--
+-- The muxer's write and the accounting after it: bytes the bearer took
+-- are counted and charged whatever cancels the muxer, and a write blocked
+-- part way through still takes the cancellation.
+--
+
+data WriteLane = WriteDirect | WriteScheduled
+  deriving (Show, Eq, Enum, Bounded)
+
+-- | Messages queued before the muxer starts, so its first batch carries
+-- them all, on the direct or the scheduled lane, each on one of a few
+-- mini-protocols and directions, so a batch carries several protocols.
+data WriteCase = WriteCase {
+    wcLane :: WriteLane,
+    wcMsgs :: [((Word16, Bool), Int)]
+  }
+  deriving Show
+
+instance Arbitrary WriteCase where
+  arbitrary = WriteCase <$> elements [minBound .. maxBound]
+                        <*> (choose (1, 6) >>= \n -> vectorOf n msg)
+    where msg = (,) <$> ((,) <$> choose (0, 3) <*> arbitrary) <*> choose (1, 30000)
+  shrink WriteCase { wcLane, wcMsgs } =
+    [ WriteCase wcLane ms
+    | ms <- shrinkList (\(k, m) -> [ (k, m') | m' <- shrink m, m' >= 1 ]) wcMsgs, not (null ms) ]
+
+writtenBytes :: Mx.SDU -> Int
+writtenBytes sdu = fromIntegral Mx.msHeaderLength + fromIntegral (Mx.msLength sdu)
+
+-- | The bytes of a batch by mini-protocol and direction, headers included.
+writtenByKey :: [Mx.SDU] -> Mx.ByteCounts
+writtenByKey sdus =
+    MS.fromListWith (+) [ ((Mx.msNum s, Mx.msDir s), fromIntegral (writtenBytes s)) | s <- sdus ]
+
+-- | The muxer over a modelled bearer whose batch write is @write@; returns
+-- the muxer, the bytes counted for each mini-protocol and direction, and the
+-- bytes charged: the budget's credit on the direct lane, the sink's total on
+-- the scheduled.
+withWriteMuxer :: forall s. WriteCase -> ([Mx.SDU] -> IOSim s ())
+               -> IOSim s (Async (IOSim s) (), IOSim s Mx.ByteCounts, IOSim s Int)
+withWriteMuxer WriteCase { wcLane, wcMsgs } write = do
+    q        <- newTBQueueIO 100
+    -- one egress state per mini-protocol and direction, as the mux keeps
+    vars     <- M.fromList <$> mapM (\k -> (,) k <$> Mx.newEgressVar)
+                                    (nub (map (countersKey . fst) wcMsgs))
+    charged  <- newTVarIO 0
+    budget   <- Bucket.newBucket 1e9 1000000000 Nothing
+    lane <- case wcLane of
+      WriteDirect    -> return (Egress.Credit budget)
+      WriteScheduled -> do
+        h <- Bucket.registerBearer budget
+        atomically $ Bucket.setRank h (Bucket.Rank 2)
+        sink <- newTVarIO (\_ _ n -> modifyTVar charged (+ n))
+        return (Egress.Scheduled_ h sink)
+    muxHeld <- newTVarIO 0
+    forM_ wcMsgs $ \(k, n) -> do
+      let key@(num, dir) = countersKey k
+      wt <- Egress.newWanton (vars M.! key) muxHeld
+      atomically $ do
+        writeTVar (Egress.want wt) (BL.replicate (fromIntegral n) 0x55)
+        writeTBQueue q (Egress.TLSRDemand num dir wt)
+    let bearer = Mx.Bearer {
+            Mx.write          = \_ _ _ -> error "single writes are not used",
+            Mx.writeMany      = \_ _ sdus -> write sdus >> getMonotonicTime,
+            Mx.read           = \_ _ -> error "the muxer does not read",
+            Mx.sduSize        = Mx.SDUSize 12288,
+            Mx.batchSize      = 1000000,
+            Mx.name           = "modelled",
+            Mx.egressInterval = 0,
+            Mx.awaitWritable  = \_ _ -> return ()
+          }
+    mx <- async (void (Egress.muxer q nullTracer Nothing lane bearer))
+    let counted = M.filter (/= 0) <$> traverse (fmap Mx.esSent . readTVarIO) vars
+        chargedNow = case wcLane of
+          WriteDirect    -> do now <- getMonotonicTime
+                               (st, _, _, _) <- atomically $ Bucket.bucketSnapshot budget now
+                               return (fromIntegral (Bucket.bsCredited st))
+          WriteScheduled -> readTVarIO charged
+    return (mx, counted, chargedNow)
+
+-- | The bearer takes the whole batch and says so; a canceller waiting for
+-- that cancels the muxer. Explored with IOSimPOR, so the cancellation also
+-- lands between the write's return and the accounting: the bytes taken
+-- are counted, each under its own mini-protocol and direction, and charged
+-- in every schedule.
+prop_mux_written_is_accounted :: WriteCase -> Property
+prop_mux_written_is_accounted wc =
+  exploreSimTrace (\o -> o { explorationScheduleBound = 40 }) sim $ \_ trace ->
+    case traceResult False trace of
+      Left e -> counterexample (show e) False
+      Right r@(written, counted, charged) ->
+        counterexample (show r) $
+               counterexample "counted by protocol" (written === counted)
+          .&&. counterexample "charged" (sum (M.elems written) === fromIntegral charged)
+  where
+    sim :: forall s. IOSim s (Mx.ByteCounts, Mx.ByteCounts, Int)
+    sim = do
+      exploreRaces
+      written <- newTVarIO M.empty
+      (mx, counted, charged) <- withWriteMuxer wc $ \sdus ->
+        atomically $ modifyTVar written (M.unionWith (+) (writtenByKey sdus))
+      canceller <- async $ do
+        atomically $ readTVar written >>= check . not . M.null
+        cancel mx
+      wait canceller
+      (,,) <$> readTVarIO written <*> counted <*> charged
+
+-- | The bearer takes part of the batch and then waits for room that never
+-- comes, as a socket with a full send buffer does. Cancelled then, the
+-- muxer is gone in the same instant, and the half-sent batch is not
+-- counted; the scheduled lane's allowance was charged the whole batch when
+-- it was granted, the direct lane's credit nothing.
+prop_mux_partial_write_cancelled :: WriteCase -> Property
+prop_mux_partial_write_cancelled wc@WriteCase { wcLane } =
+  case traceResult False (runSimTrace sim) of
+    Left e -> counterexample (show e) False
+    Right r@(waited, written, batch, counted, charged) ->
+      counterexample (show r) $
+           counterexample "the cancellation waited" (waited === 0)
+      .&&. counterexample "part of the batch was written" (written > 0 && written < batch)
+      .&&. counterexample "counted" (counted === M.empty)
+      .&&. counterexample "charged" (charged === (if wcLane == WriteScheduled then batch else 0))
+  where
+    sim :: forall s. IOSim s (DiffTime, Int, Int, Mx.ByteCounts, Int)
+    sim = do
+      written <- newTVarIO 0
+      batch   <- newTVarIO 0
+      room    <- newTVarIO False
+      (mx, counted, charged) <- withWriteMuxer wc $ \sdus -> do
+        let whole = sum (map writtenBytes sdus)
+        atomically $ writeTVar batch whole >> modifyTVar written (+ max 1 (whole `div` 2))
+        atomically $ readTVar room >>= check
+      atomically $ readTVar written >>= check . (> 0)
+      t0 <- getMonotonicTime
+      cancel mx
+      t1 <- getMonotonicTime
+      (,,,,) (t1 `diffTime` t0) <$> readTVarIO written <*> readTVarIO batch <*> counted <*> charged
+
+--
+-- Counters
+--
+
+-- | The ways a mux can fail that the counters distinguish.
+data MuxFailure = ReadTimeout | PeerClosed | DecodeError | UnknownProtocol
+                | InitiatorOnlyData | Overrun | WriteTimeout | GateTimeout
+  deriving (Show, Eq, Enum, Bounded)
+
+instance Arbitrary MuxFailure where
+    arbitrary = arbitraryBoundedEnum
+
+-- | A mux that fails in the given way counts that failure, once, and nothing
+-- else. The protocol-level failures come from real SDUs through the demuxer;
+-- the timeouts and the close are thrown by the bearer, as the socket bearer
+-- does.
+prop_mux_counters_failure :: MuxFailure -> Property
+prop_mux_counters_failure failure =
+    counterexample (show failure) $
+      runSimOrThrow run === Just (expected failure)
+  where
+    num = Mx.MiniProtocolNum 2
+
+    -- bytes too: nothing is written when the write fails, and of the SDUs
+    -- read only the overrun's is counted, header included, for the responder
+    -- the peer's initiator was talking to; an unknown or unwanted protocol
+    -- is never counted
+    expected :: MuxFailure -> (Mx.EgressCounts, Mx.IngressCounts)
+    expected f = case f of
+      WriteTimeout      -> (Mx.EgressCounts 1 0 Nothing M.empty, Mx.IngressCounts 0 0 0 0 M.empty)
+      -- a write timeout, at the gate of a scheduled mux
+      GateTimeout       -> (Mx.EgressCounts 1 1 Nothing M.empty, Mx.IngressCounts 0 0 0 0 M.empty)
+      ReadTimeout       -> (Mx.EgressCounts 0 0 Nothing M.empty, Mx.IngressCounts 1 0 0 0 M.empty)
+      Overrun           -> (Mx.EgressCounts 0 0 Nothing M.empty,
+                            Mx.IngressCounts 0 1 0 0 (M.singleton (num, Mx.InitiatorDir) (8 + 100)))
+      DecodeError       -> (Mx.EgressCounts 0 0 Nothing M.empty, Mx.IngressCounts 0 0 1 0 M.empty)
+      UnknownProtocol   -> (Mx.EgressCounts 0 0 Nothing M.empty, Mx.IngressCounts 0 0 1 0 M.empty)
+      InitiatorOnlyData -> (Mx.EgressCounts 0 0 Nothing M.empty, Mx.IngressCounts 0 0 1 0 M.empty)
+      PeerClosed        -> (Mx.EgressCounts 0 0 Nothing M.empty, Mx.IngressCounts 0 0 0 1 M.empty)
+
+    -- an SDU as the peer would send it
+    sdu n dir payload = Mx.encodeSDU Mx.SDU {
+        Mx.msHeader = Mx.SDUHeader { Mx.mhTimestamp = Mx.RemoteClockModel 0
+                                   , Mx.mhNum       = n
+                                   , Mx.mhDir       = dir
+                                   , Mx.mhLength    = fromIntegral (BL.length payload) },
+        Mx.msBlob   = payload }
+
+    run :: IOSim s (Maybe (Mx.EgressCounts, Mx.IngressCounts))
+    run = do
+      counters <- Mx.newMuxCounters
+      w <- atomically $ newTBQueue 10
+      r <- atomically $ newTBQueue 10
+      base <- getBearer makeQueueChannelBearer (-1)
+                QueueChannel { writeQueue = w, readQueue = r } Nothing
+      let bearer = case failure of
+            ReadTimeout  -> base { Mx.read      = \_ _   -> throwIO Mx.SDUReadTimeout }
+            PeerClosed   -> base { Mx.read      = \_ _   -> throwIO (Mx.BearerClosed "peer") }
+            WriteTimeout -> base { Mx.writeMany = \_ _ _ -> throwIO Mx.SDUWriteTimeout }
+            GateTimeout  -> base { Mx.awaitWritable = \_ _ -> throwIO Mx.SDUWriteTimeout }
+            _            -> base
+          info :: MiniProtocolInfo Mx.InitiatorMode
+          info = MiniProtocolInfo {
+              miniProtocolNum        = num,
+              miniProtocolDir        = Mx.InitiatorDirectionOnly,
+              miniProtocolLimits     = MiniProtocolLimits { maximumIngressQueue = 16 },
+              miniProtocolCapability = Nothing }
+      budget <- Bucket.newBucket 1e9 65536 Nothing
+      let policy = Mx.EgressPolicy { Mx.egressBudget = budget, Mx.egressSlice = Nothing,
+                                     Mx.egressLaneOf = \_ _ -> Mx.Scheduled }
+      mux <- Mx.withCounters counters <$>
+               case failure of
+                    GateTimeout -> Mx.newWithEgress policy Mx.nullTracers [info]
+                    _           -> Mx.new Mx.nullTracers [info]
+      withAsync (Mx.run mux bearer) $ \muxA -> do
+        case failure of
+             DecodeError       -> atomically $ writeTBQueue r (BL.replicate 3 0)
+             UnknownProtocol   -> atomically $ writeTBQueue r (sdu (Mx.MiniProtocolNum 99) Mx.ResponderDir (BL8.pack "x"))
+             -- data from an initiator, for a responder this mux does not run
+             InitiatorOnlyData -> atomically $ writeTBQueue r (sdu num Mx.InitiatorDir (BL8.pack "x"))
+             Overrun           -> atomically $ writeTBQueue r (sdu num Mx.ResponderDir (BL.replicate 100 0))
+             _ | failure `elem` [WriteTimeout, GateTimeout] ->
+               void $ Mx.runMiniProtocol mux num Mx.InitiatorDirectionOnly Mx.StartEagerly
+                        (\chan -> Mx.send chan (BL8.pack "x") >> return ((), Nothing))
+             _                 -> return ()
+        done <- timeout 10 (waitCatch muxA)
+        case done of
+             Nothing -> return Nothing
+             Just _  -> Just <$> atomically (Mx.readMuxCounters counters)
+
+-- | One step against a counter set: a mux that ends with these bytes sent and
+-- read, by protocol and direction, or a failure counted.
+data CountersOp = RetireMux [((Word16, Bool), Word64)] [((Word16, Bool), Word64)]
+                | MuxerDied Bool   -- ^ of a write timeout, or of something else
+                | GateTimedOut
+                | DemuxerDied Int  -- ^ of the n-th of 'demuxerErrors'
+  deriving Show
+
+-- | What the demuxer can die of: the counted kinds, and one that is not.
+demuxerErrors :: [Mx.Error]
+demuxerErrors = [ Mx.SDUReadTimeout
+                , Mx.IngressQueueOverRun (Mx.MiniProtocolNum 2) Mx.InitiatorDir
+                , Mx.UnknownMiniProtocol (Mx.MiniProtocolNum 99)
+                , Mx.InitiatorOnly (Mx.MiniProtocolNum 2)
+                , Mx.SDUDecodeError "x"
+                , Mx.BearerClosed "peer"
+                , Mx.SDUWriteTimeout ]
+
+instance Arbitrary CountersOp where
+    arbitrary = frequency
+      [ (3, RetireMux <$> bytes <*> bytes)
+      , (1, MuxerDied <$> arbitrary)
+      , (1, pure GateTimedOut)
+      , (2, DemuxerDied <$> choose (0, length demuxerErrors - 1)) ]
+      where
+        bytes = listOf (((,) <$> ((,) <$> choose (0, 3) <*> arbitrary)) <*> choose (1, 1000000))
+    shrink (RetireMux s r) = [ RetireMux s' r | s' <- shrinkList (const []) s ]
+                          ++ [ RetireMux s r' | r' <- shrinkList (const []) r ]
+    shrink _               = []
+
+-- | In IO, where a TVar's contents can be inspected: halfway through a run
+-- of muxes ending and failures counted, and after it, a counter set holds no
+-- thunks; and what it reads is the sum of every mux and every counted kind.
+prop_mux_counters_no_thunks :: [CountersOp] -> Property
+prop_mux_counters_no_thunks ops = ioProperty $ do
+    -- the record itself is built lazily, once; what matters is inside it
+    counters <- Mx.newMuxCounters >>= evaluate
+    let (first, second) = splitAt (length ops `div` 2) ops
+    mapM_ (countersStep counters) first
+    half <- evaluate (unsafeNoThunks counters)
+    mapM_ (countersStep counters) second
+    end  <- evaluate (unsafeNoThunks counters)
+    got  <- atomically (Mx.readMuxCounters counters)
+    return $ counterexample (show half) (isNothing half)
+        .&&. counterexample (show end)  (isNothing end)
+        .&&. got === countersModel ops
+
+-- | A byte-count key as the mux builds its own: evaluated, since a map of
+-- one never compares them.
+countersKey :: (Word16, Bool) -> (Mx.MiniProtocolNum, Mx.MiniProtocolDir)
+countersKey (n, initiator) = let !dir = if initiator then Mx.InitiatorDir else Mx.ResponderDir
+                             in (Mx.MiniProtocolNum n, dir)
+
+countersMap :: [((Word16, Bool), Word64)] -> Mx.ByteCounts
+countersMap = MS.fromListWith (+) . map (\(k, b) -> (countersKey k, b))
+
+-- | Ingress queues under these keys, nothing read.
+newQueues :: MonadSTM m
+          => [(Mx.MiniProtocolNum, Mx.MiniProtocolDir)]
+          -> m (M.Map (Mx.MiniProtocolNum, Mx.MiniProtocolDir) (Mx.IngressQueue m))
+newQueues keys = M.fromList <$> mapM (\k -> (,) k <$> Mx.newIngressQueue) keys
+
+-- | Set the queues' read counts, as the mux's demuxer would have.
+fillQueues :: MonadSTM m
+           => M.Map (Mx.MiniProtocolNum, Mx.MiniProtocolDir) (Mx.IngressQueue m)
+           -> Mx.ByteCounts
+           -> STM m ()
+fillQueues queues counts =
+    forM_ (M.toList counts) $ \(k, b) ->
+      forM_ (M.lookup k queues) $ \q -> modifyTVar q (\iq -> iq { Mx.iqReceived = b })
+
+-- | A mux's cells: each mini-protocol's egress state under the sent keys and
+-- its ingress queue under the read keys, nothing written or read.
+newCells :: MonadSTM m
+         => [(Mx.MiniProtocolNum, Mx.MiniProtocolDir)]
+         -> [(Mx.MiniProtocolNum, Mx.MiniProtocolDir)]
+         -> m (Counters.MuxByteCells m)
+newCells sentKeys recvKeys =
+    Counters.MuxByteCells <$> (M.fromList <$> mapM (\k -> (,) k <$> Mx.newEgressVar) sentKeys)
+                          <*> newQueues recvKeys
+
+-- | Set the egress states' sent counts, as the mux's muxers would have.
+fillSent :: MonadSTM m
+         => M.Map (Mx.MiniProtocolNum, Mx.MiniProtocolDir) (Mx.EgressVar m)
+         -> Mx.ByteCounts
+         -> STM m ()
+fillSent vars counts =
+    forM_ (M.toList counts) $ \(k, b) ->
+      forM_ (M.lookup k vars) $ \v -> modifyTVar v (\es -> es { Mx.esSent = b })
+
+-- | Apply one step to a counter set: a mux that registers, writes its cells
+-- and ends, or a failure counted.
+countersStep :: (MonadSTM m, MonadMask m) => Mx.MuxCounters m -> CountersOp -> m ()
+countersStep counters op = case op of
+  RetireMux sent recv -> do
+    cells <- newCells (M.keys (countersMap sent)) (M.keys (countersMap recv))
+    Counters.withByteCells (Just counters) cells $ atomically $ do
+      fillSent   (Counters.mbcSent cells) (countersMap sent)
+      fillQueues (Counters.mbcRecv cells) (countersMap recv)
+  MuxerDied w   -> atomically $ Mx.countMuxerFailure counters
+                     (toException (if w then Mx.SDUWriteTimeout else Mx.SDUReadTimeout))
+  GateTimedOut  -> atomically $ Counters.countGateTimeout counters
+  DemuxerDied i -> atomically $ Mx.countDemuxerFailure counters
+                     (toException (demuxerErrors !! i))
+
+-- | What a counter set reads after these steps: every mux's bytes, ended or
+-- not, and every counted failure.
+countersModel :: [CountersOp] -> (Mx.EgressCounts, Mx.IngressCounts)
+countersModel ops =
+      ( Mx.EgressCounts
+          (count (\op -> case op of MuxerDied True -> True; _ -> False))
+          (count (\op -> case op of GateTimedOut -> True; _ -> False))
+          Nothing
+          (M.unionsWith (+) [ countersMap s | RetireMux s _ <- ops ])
+      , Mx.IngressCounts
+          (count (demuxed (\e -> case e of Mx.SDUReadTimeout -> True; _ -> False)))
+          (count (demuxed (\e -> case e of Mx.IngressQueueOverRun {} -> True; _ -> False)))
+          (count (demuxed (\e -> case e of Mx.UnknownMiniProtocol {} -> True
+                                           Mx.InitiatorOnly {}       -> True
+                                           Mx.SDUDecodeError {}      -> True
+                                           _                         -> False)))
+          (count (demuxed (\e -> case e of Mx.BearerClosed {} -> True; _ -> False)))
+          (M.unionsWith (+) [ countersMap r | RetireMux _ r <- ops ]) )
+  where
+    count p = fromIntegral (length (filter p ops))
+    demuxed e = \op -> case op of
+      DemuxerDied i -> e (demuxerErrors !! i)
+      _             -> False
+
+-- | A counter set's history for a snapshot: steps done, and muxes that are
+-- still running, each holding its cells, written once.
+data SplitOp = Ended CountersOp
+             | Live [((Word16, Bool), Word64)] [((Word16, Bool), Word64)]
+  deriving Show
+
+instance Arbitrary SplitOp where
+    arbitrary = frequency [ (2, Ended <$> arbitrary), (3, Live <$> bytes <*> bytes) ]
+      where bytes = listOf (((,) <$> ((,) <$> choose (0, 3) <*> arbitrary)) <*> choose (1, 1000000))
+    shrink (Ended op)  = map Ended (shrink op)
+    shrink (Live s r) = [ Live s' r | s' <- shrinkList (const []) s ] ++ [ Live s r' | r' <- shrinkList (const []) r ]
+
+-- | One step taken while a snapshot runs, priorTotal its @k@-th transaction.
+data SplitStep = SplitStep Int Step
+  deriving Show
+
+data Step = StepEnd Int        -- ^ the n-th live mux ends, modulo how many there are
+          | StepStart [((Word16, Bool), Word64)] [((Word16, Bool), Word64)]
+                               -- ^ a mux starts, with these bytes
+          | StepGrow Int Word64 -- ^ the n-th live mux sends this much more
+          | StepFail CountersOp -- ^ a failure is counted
+  deriving Show
+
+instance Arbitrary SplitStep where
+    arbitrary = SplitStep <$> choose (0, 6) <*> frequency
+      [ (3, StepEnd <$> arbitrary)
+      , (1, StepStart <$> bytes <*> bytes)
+      , (2, StepGrow <$> arbitrary <*> choose (1, 1000000))
+      , (1, StepFail <$> (arbitrary `suchThat` \op -> case op of RetireMux {} -> False; _ -> True)) ]
+      where bytes = listOf (((,) <$> ((,) <$> choose (0, 3) <*> arbitrary)) <*> choose (1, 1000000))
+    shrink (SplitStep k s) = [ SplitStep k' s | k' <- shrink k ]
+
+-- | A live mux the harness holds open: its thread, the flag that ends it, and
+-- its cells.
+data LiveMux m = LiveMux (Async m ()) (StrictTVar m Bool) (Counters.MuxByteCells m)
+
+-- | A snapshot in small transactions sees one concurrent step whole or not
+-- at all: with the step taken priorTotal the snapshot's @k@-th transaction, what
+-- it reads is the exact total priorTotal the step or laterTotal it -- a mux that ends
+-- in between is counted once, never twice and never not at all -- and it
+-- runs one transaction for the totals and one per live mux.
+prop_mux_counters_snapshot_split :: [SplitOp] -> SplitStep -> Property
+prop_mux_counters_snapshot_split ops (SplitStep k step) =
+    classify injected                         "a step taken mid-snapshot" $
+    classify (injected && isEnd && liveBefore > 0) "a mux ends mid-snapshot" $
+    classify (liveBefore > 0)                 "live muxes" $
+         counterexample ("transactions " ++ show txs ++ ", live at the totals " ++ show liveAtTotals)
+           (txs === 1 + liveAtTotals)
+    .&&. counterexample ("read " ++ show result ++ "\nbefore " ++ show priorTotal ++ "\nafter " ++ show laterTotal)
+           (if injected then result == priorTotal || result == laterTotal else result == priorTotal)
+  where
+    (txs, result, injected) = runSimOrThrow run
+
+    isEnd = case step of StepEnd {} -> True; _ -> False
+    liveBefore = length [ () | Live {} <- ops ]
+    liveAtTotals
+      | injected && k == 0 = liveBefore + case step of
+                               StepStart {}                -> 1
+                               StepEnd {} | liveBefore > 0 -> -1
+                               _                           -> 0
+      | otherwise = liveBefore
+
+    asOp (Ended op) = op
+    asOp (Live s r) = RetireMux s r
+    priorTotal = countersModel (map asOp ops)
+    laterTotal  = countersModel (map asOp ops ++ case step of
+               StepStart s r                 -> [RetireMux s r]
+               StepGrow _ d | liveBefore > 0 -> [RetireMux [((0, True), d)] []]
+               StepFail op                   -> [op]
+               _                             -> [])
+
+    run :: forall s. IOSim s (Int, (Mx.EgressCounts, Mx.IngressCounts), Bool)
+    run = do
+      counters <- Mx.newMuxCounters
+      mapM_ (countersStep counters) [ op | Ended op <- ops ]
+      lives <- forM [ (s, r) | Live s r <- ops ] (startLive counters)
+      liveVar     <- newTVarIO lives
+      txCount     <- newTVarIO (0 :: Int)
+      injectedVar <- newTVarIO False
+      let inject = do
+            ls <- readTVarIO liveVar
+            case step of
+              StepEnd i | not (null ls) -> do
+                let n = i `mod` length ls
+                    LiveMux a stop _ = ls !! n
+                atomically (writeTVar stop True)
+                wait a
+                atomically (writeTVar liveVar (take n ls ++ drop (n + 1) ls))
+              StepStart s r -> do
+                lm <- startLive counters (s, r)
+                atomically (modifyTVar liveVar (++ [lm]))
+              StepGrow i d | not (null ls) -> do
+                let LiveMux _ _ cells = ls !! (i `mod` length ls)
+                atomically $
+                  forM_ (M.lookup (countersKey (0, True)) (Counters.mbcSent cells)) $ \v ->
+                    modifyTVar v (\es -> es { Mx.esSent = Mx.esSent es + d })
+              StepFail op -> countersStep counters op
+              _ -> return ()
+          runTx :: forall a. STM (IOSim s) a -> IOSim s a
+          runTx tx = do
+            n <- atomically $ stateTVar txCount (\c -> (c, c + 1))
+            when (n == k) $ do
+              inject
+              atomically (writeTVar injectedVar True)
+            atomically tx
+      got <- Counters.snapshotMuxCountersWith runTx counters
+      ls  <- readTVarIO liveVar
+      forM_ ls $ \(LiveMux a stop _) -> atomically (writeTVar stop True) >> wait a
+      (,,) <$> readTVarIO txCount <*> pure got <*> readTVarIO injectedVar
+
+    -- a mux that registers, writes its cells and holds them until told to end
+    startLive :: Mx.MuxCounters (IOSim s) -> ([((Word16, Bool), Word64)], [((Word16, Bool), Word64)])
+              -> IOSim s (LiveMux (IOSim s))
+    startLive counters (s, r) = do
+      ready <- newTVarIO False
+      stop  <- newTVarIO False
+      -- the key a live mux grows under is always among its own
+      cells <- newCells (nub (countersKey (0, True) : M.keys (countersMap s))) (M.keys (countersMap r))
+      a <- async $ Counters.withByteCells (Just counters) cells $ do
+        atomically $ do
+          fillSent   (Counters.mbcSent cells) (countersMap s)
+          fillQueues (Counters.mbcRecv cells) (countersMap r)
+          writeTVar ready True
+        atomically (readTVar stop >>= check)
+      atomically (readTVar ready >>= check)
+      return (LiveMux a stop cells)
+
+-- | The scheduling counters are read in a transaction for the budget and one
+-- for the slice, and read the same as in one.
+prop_scheduling_counts_split :: Bool -> Property
+prop_scheduling_counts_split withSlice =
+    counterexample (show (txs, split, whole)) $
+      txs === (if withSlice then 2 else 1) .&&. split === whole
+  where
+    (txs, split, whole) = runSimOrThrow $ do
+      budget  <- Bucket.newBucket 1e6 65536 Nothing
+      slice_m <- if withSlice then Just <$> Bucket.newBucket 1e5 65536 Nothing else return Nothing
+      h <- Bucket.registerBearer budget
+      Bucket.awaitGrant h 4096
+      now <- getMonotonicTime
+      txCount <- newTVarIO (0 :: Int)
+      let runTx :: forall s a. StrictTVar (IOSim s) Int -> STM (IOSim s) a -> IOSim s a
+          runTx c tx = atomically (modifyTVar c (+ 1)) >> atomically tx
+      s <- Counters.schedulingCountsWith (runTx txCount) now (budget, slice_m)
+      w <- atomically (Counters.schedulingCounts now (budget, slice_m))
+      (,,) <$> readTVarIO txCount <*> pure s <*> pure w
+
+-- | The loop traces both sides of both counter sets every interval, and the
+-- values it traces are the counters at that instant.
+prop_mux_counters_loop :: Positive Int -> Property
+prop_mux_counters_loop (Positive k) =
+    counterexample (show seen) $
+         map fst seen === concat [ replicate 4 ((fromIntegral i * interval) `addTime` Time 0)
+                                 | i <- [1 .. 3 :: Int] ]
+    .&&. map snd seen === concat (replicate 3
+           [ Mx.TraceRemoteEgress (Mx.EgressCounts 0 0 Nothing M.empty)
+           , Mx.TraceRemoteIngress (Mx.IngressCounts 0 0 0 1 M.empty)
+           , Mx.TraceLocalEgress (Mx.EgressCounts 1 0 Nothing M.empty)
+           , Mx.TraceLocalIngress (Mx.IngressCounts 0 0 0 0 M.empty) ])
+  where
+    interval = fromIntegral (1 + k `mod` 10) :: DiffTime
+
+    seen :: [(Time, Mx.CountersTrace)]
+    seen = runSimOrThrow $ do
+      remote <- Mx.newMuxCounters
+      local  <- Mx.newMuxCounters
+      atomically $ do
+        Mx.countDemuxerFailure remote (toException (Mx.BearerClosed "peer"))
+        Mx.countMuxerFailure local (toException Mx.SDUWriteTimeout)
+      v <- newTVarIO []
+      let tracer = mkTracer $ \ev -> do
+            t <- getMonotonicTime
+            atomically $ modifyTVar v ((t, ev) :)
+      _ <- async (Mx.countersLoop remote local Nothing interval tracer)
+      threadDelay (3 * interval + interval / 2)
+      reverse <$> readTVarIO v
+-- | One request and its response on a mini-protocol: which mux's initiator
+-- asks, and the two sizes, each at most one SDU so every message is one SDU.
+data Exchange = Exchange {
+    exNum      :: !Word16,
+    exFromA    :: !Bool,
+    exRequest  :: !Int,
+    exResponse :: !Int
+  }
+  deriving Show
+
+data BytesCase = BytesCase {
+    bcScheduled :: !Bool,      -- ^ mux A on scheduled egress
+    bcExchanges :: ![Exchange]
+  }
+  deriving Show
+
+bytesNums :: [Word16]
+bytesNums = [2, 3, 19]
+
+instance Arbitrary BytesCase where
+    arbitrary = do
+      sched <- arbitrary
+      n     <- choose (0, 30)
+      exs   <- vectorOf n $ Exchange <$> elements bytesNums <*> arbitrary
+                                     <*> choose (1, 1280) <*> choose (1, 1280)
+      return (BytesCase sched exs)
+    shrink (BytesCase s exs) =
+         [ BytesCase s exs' | exs' <- shrinkList (const []) exs ]
+      ++ [ BytesCase False exs | s ]
+
+-- | What each mux sent and read, by protocol and its own direction: the
+-- asking side's initiator writes the request and reads the response, the
+-- other side's responder the reverse, each message one SDU with its header.
+expectedBytes :: [Exchange] -> ((Mx.ByteCounts, Mx.ByteCounts), (Mx.ByteCounts, Mx.ByteCounts))
+expectedBytes exs = ((sentOf True, recvOf True), (sentOf False, recvOf False))
+  where
+    entries isA = concat
+      [ if exFromA == isA
+          then [ (True,  (key Mx.InitiatorDir, exRequest + 8)), (False, (key Mx.InitiatorDir, exResponse + 8)) ]
+          else [ (False, (key Mx.ResponderDir, exRequest + 8)), (True,  (key Mx.ResponderDir, exResponse + 8)) ]
+      | Exchange { exNum, exFromA, exRequest, exResponse } <- exs
+      , let key d = (Mx.MiniProtocolNum exNum, d) ]
+    sentOf isA = M.fromListWith (+) [ (k, fromIntegral b) | (True,  (k, b)) <- entries isA ]
+    recvOf isA = M.fromListWith (+) [ (k, fromIntegral b) | (False, (k, b)) <- entries isA ]
+
+-- | Two muxes, each with its own node-wide counters, run the exchanges one
+-- at a time. Each side's counts are exactly its messages plus their headers,
+-- by protocol and direction, A's sent is B's read with the directions
+-- swapped, and the totals stay put once both muxes have ended and their
+-- cells are retired.
+prop_mux_counters_bytes :: BytesCase -> Property
+prop_mux_counters_bytes BytesCase { bcScheduled, bcExchanges } =
+    classify bcScheduled "A on scheduled egress"
+  . classify (length bcExchanges > 10) "more than ten exchanges"
+  . counterexample (show (live, ended))
+  $ live === expected .&&. ended === expected
+  where
+    expected = expectedBytes bcExchanges
+    (live, ended) = runSimOrThrow run
+
+    bytesOf (e, i) = (Mx.ecBytes e, Mx.icBytes i)
+
+    apps :: [MiniProtocolInfo Mx.InitiatorResponderMode]
+    apps = [ MiniProtocolInfo { miniProtocolNum = Mx.MiniProtocolNum n,
+                                miniProtocolDir = d,
+                                miniProtocolLimits = defaultMiniProtocolLimits,
+                                miniProtocolCapability = Nothing }
+           | n <- bytesNums, d <- [Mx.InitiatorDirection, Mx.ResponderDirection] ]
+
+    run :: IOSim s ( ((Mx.ByteCounts, Mx.ByteCounts), (Mx.ByteCounts, Mx.ByteCounts))
+                   , ((Mx.ByteCounts, Mx.ByteCounts), (Mx.ByteCounts, Mx.ByteCounts)) )
+    run = do
+      a_w <- atomically $ newTBQueue 10
+      a_r <- atomically $ newTBQueue 10
+      bearerA <- getBearer makeQueueChannelBearer (-1) QueueChannel { writeQueue = a_w, readQueue = a_r } Nothing
+      bearerB <- getBearer makeQueueChannelBearer (-1) QueueChannel { writeQueue = a_r, readQueue = a_w } Nothing
+      countersA <- Mx.newMuxCounters
+      countersB <- Mx.newMuxCounters
+      budget <- Bucket.newBucket 1e9 65536 Nothing
+      let policy = Mx.EgressPolicy { Mx.egressBudget = budget, Mx.egressSlice = Nothing,
+                                     Mx.egressLaneOf = \_ _ -> Mx.Scheduled }
+      muxA <- Mx.withCounters countersA <$>
+                if bcScheduled then Mx.newWithEgress policy Mx.nullTracers apps
+                               else Mx.new Mx.nullTracers apps
+      muxB <- Mx.withCounters countersB <$> Mx.new Mx.nullTracers apps
+      runA <- async (Mx.run muxA bearerA)
+      runB <- async (Mx.run muxB bearerB)
+      forM_ bcExchanges $ \Exchange { exNum, exFromA, exRequest, exResponse } -> do
+        let num = Mx.MiniProtocolNum exNum
+            (asker, answerer) = if exFromA then (muxA, muxB) else (muxB, muxA)
+        server <- Mx.runMiniProtocol answerer num Mx.ResponderDirection Mx.StartOnDemand $ \chan -> do
+          _ <- recvAtLeast chan exRequest
+          Mx.send chan (BL.replicate (fromIntegral exResponse) 1)
+          return ((), Nothing)
+        client <- Mx.runMiniProtocol asker num Mx.InitiatorDirection Mx.StartEagerly $ \chan -> do
+          Mx.send chan (BL.replicate (fromIntegral exRequest) 0)
+          _ <- recvAtLeast chan exResponse
+          return ((), Nothing)
+        _ <- atomically client
+        _ <- atomically server
+        return ()
+      -- the last response is read before the client finishes; give the
+      -- server's muxer the instant to record its write
+      threadDelay 1
+      whileLive <- atomically $ (,) <$> (bytesOf <$> Mx.readMuxCounters countersA)
+                                    <*> (bytesOf <$> Mx.readMuxCounters countersB)
+      Mx.stop muxA
+      Mx.stop muxB
+      _ <- waitCatch runA
+      _ <- waitCatch runB
+      afterEnd <- atomically $ (,) <$> (bytesOf <$> Mx.readMuxCounters countersA)
+                                   <*> (bytesOf <$> Mx.readMuxCounters countersB)
+      return (whileLive, afterEnd)
+
+    recvAtLeast chan n = go 0
+      where
+        go k | k >= n = return k
+             | otherwise = do
+                 m <- Mx.recv chan
+                 case m of
+                      Nothing -> return k
+                      Just bs -> go (k + fromIntegral (BL.length bs))
+
+-- | A snapshot loop over a budget that one bearer takes from and the direct
+-- lane charges on credit.
+data CountersCase = CountersCase {
+    ccInterval :: !Integer,        -- ^ seconds
+    ccRate     :: !Double,         -- ^ bytes/s
+    ccTakes    :: ![(Integer, Int)],
+      -- ^ milliseconds before each take, and its bytes
+    ccCredits  :: ![(Integer, Int)]
+      -- ^ milliseconds before each charge on credit, and its bytes
+  }
+  deriving Show
+
+instance Arbitrary CountersCase where
+    arbitrary = do
+      interval <- choose (1, 10)
+      rate     <- (* 1e4) <$> choose (1, 100)
+      let step = (,) <$> choose (0, 500) <*> choose (1, 8192)
+      CountersCase interval rate <$> listOf step <*> listOf step
+    shrink cc@CountersCase { ccTakes, ccCredits } =
+         [ cc { ccTakes = ts }   | ts <- shrinkList (const []) ccTakes ]
+      ++ [ cc { ccCredits = cs } | cs <- shrinkList (const []) ccCredits ]
+
+-- | Snapshots arrive exactly every interval; every counter only grows; and
+-- once the traffic is over, the last snapshot holds exactly what was sent.
+prop_egress_counters_loop :: CountersCase -> Property
+prop_egress_counters_loop cc@CountersCase { ccInterval, ccRate, ccTakes, ccCredits } =
+    counterexample (show cc) $
+    counterexample (show snapshots) $
+         counterexample "snapshot times"
+           (map fst snapshots === [ (fromIntegral k * interval) `addTime` Time 0
+                                  | k <- [1 .. length snapshots] ])
+    .&&. counterexample "counters shrank" (and (zipWith grows cs (drop 1 cs)))
+    .&&. counterexample "final counters"
+           (fmap (\c -> (Mx.scScheduledBytes c, Mx.scScheduledBatches c, Mx.scDirectBytes c))
+                 (lastMaybe cs)
+              === Just (sum (map (fromIntegral . snd) ccTakes), fromIntegral (length ccTakes),
+                        sum (map (fromIntegral . snd) ccCredits)) )
+  where
+    interval = fromIntegral ccInterval :: DiffTime
+    -- time for all the traffic at the budget rate, and three snapshots after
+    horizon  = realToFrac (fromIntegral (sum (map snd (ccTakes ++ ccCredits))) / ccRate)
+             + fromIntegral (length (ccTakes ++ ccCredits)) * 0.5
+             + 3 * interval + interval / 2
+
+    cs = map snd snapshots
+    lastMaybe xs = if null xs then Nothing else Just (last xs)
+
+    grows a b =  Mx.scScheduledBytes a   <= Mx.scScheduledBytes b
+              && Mx.scScheduledBatches a <= Mx.scScheduledBatches b
+              && Mx.scDirectBytes a      <= Mx.scDirectBytes b
+              && Mx.scWaitTokens a       <= Mx.scWaitTokens b
+              && and (zipWith (<=) (map snd (Mx.scWaitsOver a)) (map snd (Mx.scWaitsOver b)))
+
+    snapshots :: [(Time, Mx.SchedulingCounts)]
+    snapshots = runSimOrThrow $ do
+      budget <- Bucket.newBucket ccRate 16384 Nothing
+      h      <- Bucket.registerBearer budget
+      seen   <- newTVarIO []
+      remote <- Mx.newMuxCounters
+      local  <- Mx.newMuxCounters
+      let tracer = mkTracer $ \ev -> case ev of
+            Mx.TraceRemoteEgress Mx.EgressCounts { Mx.ecScheduling = Just c } -> do
+              t <- getMonotonicTime
+              atomically $ modifyTVar seen ((t, c) :)
+            _ -> return ()
+      _ <- async (Mx.countersLoop remote local (Just (budget, Nothing)) interval tracer)
+      _ <- async $ forM_ ccTakes $ \(ms, bytes) -> do
+             threadDelay (fromIntegral ms / 1000)
+             Bucket.awaitGrant h bytes
+      _ <- async $ forM_ ccCredits $ \(ms, bytes) -> do
+             threadDelay (fromIntegral ms / 1000)
+             now <- getMonotonicTime
+             atomically $ Bucket.takeOnCredit budget now bytes
+      threadDelay horizon
+      reverse <$> readTVarIO seen

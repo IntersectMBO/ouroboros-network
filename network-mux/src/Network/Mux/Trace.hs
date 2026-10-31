@@ -17,6 +17,7 @@ module Network.Mux.Trace
   , handleIOException
     -- * Trace events
   , Trace (..)
+  , Rank (..)
   , ChannelTrace (..)
   , BearerTrace (..)
     -- * Tracers
@@ -48,6 +49,7 @@ import Data.Functor.Identity
 import GHC.Generics (Generic (..))
 import Quiet (Quiet (..))
 
+import Network.Mux.Egress.Bucket (Rank (..))
 import Network.Mux.Types
 
 
@@ -137,6 +139,9 @@ data ChannelTrace =
       TraceChannelRecvStart MiniProtocolNum
     | TraceChannelRecvEnd MiniProtocolNum Int
     | TraceChannelSendStart MiniProtocolNum Int
+      -- ^ the message's length, counted no further than one byte past the
+      -- channel's 256 KiB soft limit, so a longer message is not encoded
+      -- to trace it
     | TraceChannelSendEnd MiniProtocolNum
 
 instance Show ChannelTrace where
@@ -171,6 +176,8 @@ data Trace =
     | TraceStarting
     | TraceStopping
     | TraceStopped
+    | TraceEgressRank Rank
+      -- ^ the tier this mux's peer is served in
 
 instance Show Trace where
     show (TraceState new) =
@@ -210,6 +217,7 @@ instance Show Trace where
     show TraceStarting = "Mux starting"
     show TraceStopping = "Mux stopping"
     show TraceStopped  = "Mux stoppped"
+    show (TraceEgressRank rank) = "Egress rank " ++ show rank
 
 
 -- | Bundle of tracers used directly by mux.

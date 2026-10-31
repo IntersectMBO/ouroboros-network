@@ -13,6 +13,7 @@ module Ouroboros.Network.Diffusion.Types
   , Tracers (..)
   , nullTracers
   , Configuration (..)
+  , EgressScheduling (..)
   , Applications (..)
   , Arguments (..)
   , Interfaces (..)
@@ -68,7 +69,7 @@ import Data.Word (Word32)
 import System.Random (StdGen)
 
 import Network.Mux qualified as Mx
-import Network.Mux.Types (ReadBuffer)
+import Network.Mux.Types (MiniProtocolDir, MiniProtocolNum, ReadBuffer)
 import Network.Socket qualified as Socket
 
 import Ouroboros.Network.Mux (OuroborosApplicationWithMinimalCtx,
@@ -81,6 +82,7 @@ import Ouroboros.Network.ConnectionManager.Core qualified as CM
 import Ouroboros.Network.ConnectionManager.State qualified as CM
 import Ouroboros.Network.ConnectionManager.Types
 import Ouroboros.Network.Context
+import Ouroboros.Network.Diffusion.PoolRelays (TracePoolRelays)
 import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.Driver.Simple (TraceSendRecv)
 import Ouroboros.Network.ExitPolicy
@@ -259,6 +261,11 @@ data Tracers ntnAddr ntnVersion ntnVersionData
     , dtTraceLedgerPeersTracer
         :: Tracer m TraceLedgerPeers
 
+      -- | The thread that maps big-ledger relays to the residual tier's
+      -- credit buckets
+    , dtPoolRelaysTracer
+        :: Tracer m TracePoolRelays
+
     , dtTracePeerSelectionTracer
         :: Tracer m (TracePeerSelection extraDebugState extraFlags extraPeers ntnAddr)
 
@@ -291,6 +298,9 @@ data Tracers ntnAddr ntnVersion ntnVersionData
         :: Tracer m (IG.RemoteTransitionTrace ntnAddr)
 
     , dtDnsTracer :: Tracer m DNSTrace
+
+      -- | Node-wide mux counters, both sides, every 'Mx.countersInterval'
+    , dtMuxCountersTracer :: Tracer m Mx.CountersTrace
 
       --
       -- NodeToClient tracers
@@ -333,6 +343,7 @@ nullTracers = Tracers {
   , dtTraceLocalRootPeersTracer                  = nullTracer
   , dtTracePublicRootPeersTracer                 = nullTracer
   , dtTraceLedgerPeersTracer                     = nullTracer
+  , dtPoolRelaysTracer                           = nullTracer
   , dtTracePeerSelectionTracer                   = nullTracer
   , dtDebugPeerSelectionTracer                   = nullTracer
   , dtTracePeerSelectionCounters                 = nullTracer
@@ -346,6 +357,7 @@ nullTracers = Tracers {
   , dtLocalServerTracer                          = nullTracer
   , dtLocalInboundGovernorTracer                 = nullTracer
   , dtDnsTracer                                  = nullTracer
+  , dtMuxCountersTracer                          = nullTracer
   }
 
 -- | Diffusion arguments which allow to instantiate a completely different
@@ -465,6 +477,24 @@ data Arguments extraState extraDebugState extraFlags extraPeers
     -- | SRV Prefix, as defined in CIP#0155
     --
   , daSRVPrefix :: SRVPrefix
+
+    -- | The address as the residual tier's credit buckets key it: a peer's
+    -- address with its port removed, since a relay behind a NAT may connect
+    -- from an ephemeral one and must still find its pool's bucket
+    --
+  , daEgressPoolKey :: ntnAddr -> ntnAddr
+
+    -- | The bytes the chain has freshly announced, a monotone count from
+    -- consensus that refills the egress credit buckets
+    --
+  , daFreshBytes :: STM m Int
+
+    -- | The most bytes one announcement can carry under the chain's current
+    -- parameters, from consensus: the block body plus, where the chain has
+    -- Leios, an endorser block and its closure, each at its maximum. Sizes
+    -- the credit buckets and follows the parameters as they change.
+    --
+  , daFreshMaxBytes :: STM m Int
   }
 
 -- | Required Diffusion Arguments to run network layer
@@ -583,6 +613,42 @@ data Configuration extraFlags m ntnFd ntnAddr ntcFd ntcAddr = Configuration {
     -- | Mux egress queue's poll interval
     , dcEgressPollInterval :: DiffTime
 
+    -- | Scheduled egress for node-to-node connections; 'Nothing' leaves the
+    -- mux unscheduled. Node-to-client connections are never scheduled.
+    , dcEgressScheduling :: Maybe EgressScheduling
+
+  }
+
+-- | One token bucket for the uplink budget, shared by every node-to-node
+-- connection; a slice of it reserved for the lane the lane rule names
+-- 'Mx.Slice'; the order within a tier re-dealt every period; and
+-- TCP_NOTSENT_LOWAT on every node-to-node socket, so a peer that stops reading
+-- holds at most one batch.
+data EgressScheduling = EgressScheduling {
+    esBudget              :: Double,       -- ^ bytes per second
+    esCapacity            :: Int,          -- ^ bucket capacity, bytes: a couple of batches
+    esSlicePercent        :: Int,          -- ^ share reserved for the slice lane; 0 for none
+    esFloorPercent        :: Int,
+    -- ^ the floor's share of the budget, percent: a small allowance handed out
+    -- in bytes across the credited classes the strict order does not reach,
+    -- charged to the budget on credit; zero disables it
+    esRotationPeriod      :: DiffTime,     -- ^ how often the order within a tier is
+                                      --   re-dealt; 0 for none, FIFO within a tier;
+                                      --   local roots take turns regardless
+    esNotSentLowWat       :: Maybe Int,    -- ^ bytes
+    esLaneOf              :: MiniProtocolNum -> MiniProtocolDir -> Mx.Lane,
+    esTenureThreshold     :: DiffTime,
+    -- ^ how long a duplex peer must have been hot upstream before, hot both
+    -- ways, it is served as a partner: tier 1, behind local roots
+    esStrangerLock        :: DiffTime,
+    -- ^ how long a stranger stays connected before its own bucket opens:
+    -- wall-clock time from the connection; the bucket then opens empty at
+    -- that moment's reading and fills at the fresh rate, and a reconnection
+    -- starts the wait over
+    esUnchargedProtocols  :: [MiniProtocolNum]
+    -- ^ scheduled-lane protocols whose bytes never count against a bucket:
+    -- only what a client cannot drive to volume, keep-alive and the
+    -- server-push notifications; everything else is charged
   }
 
 

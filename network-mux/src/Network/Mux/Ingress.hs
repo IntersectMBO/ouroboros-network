@@ -17,7 +17,6 @@ import Data.ByteString.Builder.Internal (lazyByteStringInsert,
            lazyByteStringThreshold)
 import Data.ByteString.Lazy qualified as BL
 import Data.List (nub)
-import Data.Strict.Tuple (pattern (:!:))
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad
@@ -105,10 +104,9 @@ demuxer :: (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
       -> Tracer m BearerTrace
       -> Bearer m
       -> m void
-demuxer ptcls tracer bearer =
-  let !dispatchTable = setupDispatchTable ptcls in
-  withTimeoutSerial $ \timeout ->
-  forever $ do
+demuxer ptcls tracer bearer = do
+  let !dispatchTable = setupDispatchTable ptcls
+  withTimeoutSerial $ \timeout -> forever $ do
     (sdu, _) <- Mx.read bearer tracer timeout
     case lookupMiniProtocol dispatchTable (msNum sdu)
                             -- Notice the mode reversal, ResponderDir is
@@ -117,10 +115,16 @@ demuxer ptcls tracer bearer =
       Nothing   -> throwIO (UnknownMiniProtocol (msNum sdu))
       Just MiniProtocolDirUnused ->
                    throwIO (InitiatorOnly (msNum sdu))
-      Just (MiniProtocolDispatchInfo q qMax) ->
-        atomically $ do
-          len :!: buf <- readTVar q
+      Just (MiniProtocolDispatchInfo q qMax) -> do
+        -- the bytes are counted whether the queue takes them or overruns, so
+        -- the overrun is thrown after the transaction rather than inside it
+        accepted <- atomically $ do
+          IngressQueueState len buf received <- readTVar q
           let !len' = len + BL.length (msBlob sdu)
+              -- the bytes read for the mini-protocol, header included, in
+              -- the write that queues them: the queue's state carries the
+              -- count, so counting costs no variable of its own
+              !received' = received + fromIntegral (msHeaderLength + BL.length (msBlob sdu))
           if len' <= fromIntegral qMax
               then do
                 let !buf' = if len == 0
@@ -128,8 +132,12 @@ demuxer ptcls tracer bearer =
                                  lazyByteStringInsert $ msBlob sdu
                                else -- Copy payloads smaller than 128 bytes
                                  buf <> lazyByteStringThreshold 128 (msBlob sdu)
-                writeTVar q $ len' :!: buf'
-              else throwSTM $ IngressQueueOverRun (msNum sdu) (msDir sdu)
+                writeTVar q $ IngressQueueState len' buf' received'
+                return True
+              else do
+                writeTVar q $ IngressQueueState len buf received'
+                return False
+        unless accepted $ throwIO $ IngressQueueOverRun (msNum sdu) (msDir sdu)
 
 lookupMiniProtocol :: MiniProtocolDispatch m
                    -> MiniProtocolNum

@@ -36,7 +36,7 @@ import Control.Tracer (Tracer, mkTracer)
 
 import Data.Bifoldable (bitraverse_)
 import Data.ByteString.Char8 qualified as BS
-import Data.Either (rights)
+import Data.Either (isLeft, rights)
 import Data.Foldable (traverse_)
 import Data.Function (on)
 import Data.IP qualified as IP
@@ -200,6 +200,8 @@ tests =
     , testProperty "3494" prop_issue_3494
     , testProperty "3515" prop_issue_3515
     , testProperty "3550" prop_issue_3550
+    , testProperty "peer share failure after disconnect"
+                   prop_governor_peershare_failure_after_disconnect
     ]
   , testProperty "governor repromote delay with fuzz"   prop_governor_repromote_delay
   , testProperty "governor peer share reachable in 1hr" prop_governor_peershare_1hr
@@ -4679,6 +4681,70 @@ _governorFindingPublicRoots targetNumberOfRootPeers readDomains readUseBootstrap
     transformPeerSelectionAction :: (Int -> IO (Map SockAddr PeerAdvertise, TTL))
                                  -> (Int -> IO (CardanoPublicRootPeers SockAddr, DiffTime))
     transformPeerSelectionAction = fmap (fmap (\(a, ttl) -> (Cardano.PublicRootPeers.fromMapAndSet a Set.empty Set.empty Set.empty, ttlDiffTime ttl)))
+
+-- | A peer can disconnect while its peer sharing request is in flight.  Check
+-- all three completion paths: a complete first batch, a partial first batch,
+-- and the overall timeout in the second phase.
+prop_governor_peershare_failure_after_disconnect :: TestSeed -> Property
+prop_governor_peershare_failure_after_disconnect seed =
+    forAll (chooseInt (1, 9)) $ \tenths ->
+      let offset = fromIntegral tenths / 10
+      in conjoin
+        [ counterexample "complete first batch" $
+            checkCase Nothing PeerShareTimeQuick (300 + offset)
+        , counterexample "partial first batch" $
+            checkCase Nothing PeerShareTimeSlow (300 + offset)
+        , counterexample "second phase timeout" $
+            checkCase (Just ([], PeerShareTimeTimeout)) PeerShareTimeQuick (303 + offset)
+        ]
+  where
+    checkCase firstResult secondTime delay =
+      let peerSharingScript = singletonScript PeerSharingEnabled
+          completions = mockPeerShareCompletions (MaxTime (Time 320)) $
+            GovernorMockEnvironment {
+                peerGraph = PeerGraph
+                  [ (PeerAddr 0, [], GovernorScripts {
+                      peerShareScript = singletonScript firstResult,
+                      peerSharingScript,
+                      connectionScript = Script ((ToCold, Delay delay) :| [(Noop, NoDelay)])
+                    })
+                  , (PeerAddr 1, [], GovernorScripts {
+                      peerShareScript = singletonScript (Just ([], secondTime)),
+                      peerSharingScript,
+                      connectionScript = singletonTimedScript Noop
+                    })
+                  ],
+                localRootPeers = LocalRootPeers.fromGroups
+                  [(1, 2, Map.fromList
+                    [ (peer, LocalRootConfig DoAdvertisePeer
+                                            InitiatorAndResponderDiffusionMode
+                                            Outbound IsNotTrustable)
+                    | peer <- [PeerAddr 0, PeerAddr 1] ])],
+                publicRootPeers = PublicRootPeers.empty Cardano.ExtraPeers.empty,
+                targets = singletonTimedScript
+                  (nullPeerSelectionTargets {
+                      targetNumberOfKnownPeers = 3,
+                      targetNumberOfEstablishedPeers = 2,
+                      targetNumberOfActivePeers = 1 }, nullPeerSelectionTargets),
+                pickKnownPeersForPeerShare = singletonScript PickAll,
+                pickColdPeersToPromote = singletonScript PickFirst,
+                pickWarmPeersToPromote = singletonScript PickFirst,
+                pickHotPeersToDemote = singletonScript PickFirst,
+                pickWarmPeersToDemote = singletonScript PickFirst,
+                pickColdPeersToForget = singletonScript PickFirst,
+                pickInboundPeers = singletonScript PickFirst,
+                peerSharingFlag = PeerSharingEnabled,
+                consensusMode = PraosMode,
+                useBootstrapPeers = singletonTimedScript DontUseBootstrapPeers,
+                useLedgerPeers = singletonTimedScript DontUseLedgerPeers,
+                ledgerStateJudgement = singletonTimedScript YoungEnough,
+                seed
+              }
+      in checkPeerShareCompletions completions
+         .&&. counterexample "missing peer sharing failure for the disconnected peer"
+               (any (any (\(peer, result) -> peer == PeerAddr 0 && isLeft result)
+                         . pscResults)
+                    (rights completions))
 
 prop_issue_3550 :: Property
 prop_issue_3550 = prop_governor_target_established_below defaultMaxTime $

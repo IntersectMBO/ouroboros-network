@@ -1,0 +1,390 @@
+{-# LANGUAGE DeriveGeneric  #-}
+{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE RankNTypes     #-}
+
+-- | Node-wide mux counters: how muxes on one side, node-to-node or
+-- node-to-client, have failed, counted once per mux as it dies, and traced
+-- periodically.
+--
+module Network.Mux.Counters
+  ( MuxCounters
+  , Sides
+  , newMuxCounters
+  , EgressCounts (..)
+  , SchedulingCounts (..)
+  , TierCounts (..)
+  , IngressCounts (..)
+  , ByteCounts
+  , MuxByteCells (..)
+  , withByteCells
+  , CountersTrace (..)
+  , Burst (..)
+  , burstDuration
+  , TierGrants (..)
+  , countMuxerFailure
+  , countDemuxerFailure
+  , countGateTimeout
+  , readMuxCounters
+  , snapshotMuxCountersWith
+  , countersLoop
+  , schedulingCounts
+  , schedulingCountsWith
+  , countersInterval
+  , egressWaitBounds
+  , egressBurstBounds
+  , egressBurstWidths
+  , egressBurstGap
+  , egressBurstCap
+  , egressBurstGrantFloor
+  , egressServedWindow
+  , egressSlowdownBounds
+  ) where
+
+import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Exception (SomeException, fromException)
+import Control.Monad (forM_, forever)
+import Control.Monad.Class.MonadThrow (MonadMask, bracket)
+import Control.Monad.Class.MonadTime.SI
+import Control.Monad.Class.MonadTimer.SI
+import Control.Tracer (Tracer, traceWith)
+
+import Data.IntMap.Strict (IntMap)
+import Data.IntMap.Strict qualified as IntMap
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Word (Word64, Word8)
+import GHC.Generics (Generic)
+
+import Network.Mux.Egress.Bucket (Bucket, BucketStats (..), Burst (..),
+           TierGrants (..), bucketSnapshot, burstBounds, burstDuration,
+           burstWidths, emptyBucketStats, servedByTier, servedWindow,
+           servedWithin, slowdownBounds, slowedByTier, takeBurstsAt, waitBounds)
+import Network.Mux.Egress.Burst (burstCap, burstGap, burstGrantFloor)
+import Network.Mux.Trace (Error (..))
+import Network.Mux.Types (EgressState (..), EgressVar, IngressQueue,
+           IngressQueueState (..), MiniProtocolDir, MiniProtocolNum)
+
+-- | The write side.
+data EgressCounts = EgressCounts {
+  ecWriteTimeouts     :: !Word64,  -- ^ peers that took nothing within the SDU timeout
+  ecWriteTimeoutsGate :: !Word64,  -- ^ of those, at the writability gate of
+                                   --   scheduled egress, before the write
+  ecScheduling        :: !(Maybe SchedulingCounts),
+    -- ^ scheduled egress, in a snapshot of node-to-node counters when egress
+    -- is scheduled
+  ecBytes             :: !ByteCounts
+    -- ^ bytes written, by mini-protocol and direction
+  }
+  deriving (Eq, Show, Generic)
+
+-- | Scheduled egress. Counters are cumulative; the level and the queue
+-- lengths are values at the snapshot.
+data SchedulingCounts = SchedulingCounts {
+  scDirectBytes        :: !Word64,     -- ^ the node's own requests, on credit
+  scSliceBytes         :: !Word64,     -- ^ the slice, from its own share
+  scSliceBorrowedBytes :: !Word64,     -- ^ the slice, on the budget's idle capacity
+  scScheduledBytes     :: !Word64,
+  scScheduledBatches   :: !Word64,
+  scWaitTokens         :: !DiffTime,   -- ^ scheduled and slice grants together
+  scWaitWritable       :: !DiffTime,
+  scWaitsOver          :: ![(DiffTime, Word64)],
+    -- ^ grants whose token wait exceeded each bound
+  scBudgetLevel        :: !Int,        -- ^ bytes; negative while repaying credit
+  scBudgetQueued       :: !Int,
+  scSliceQueued        :: !Int,
+  scBursts             :: !Word64,     -- ^ busy periods of the budget's queue:
+                                       --   from a first credited bearer queued to none
+  scBusyTime           :: !DiffTime,   -- ^ time with a credited bearer queued on the budget
+  scContendedTime      :: !DiffTime,   -- ^ time with two or more, when the order decides
+  scBurstsOver         :: ![(DiffTime, Word64)],
+    -- ^ busy periods longer than each bound
+  scBurstsWider        :: ![(Int, Word64)],
+    -- ^ busy periods with at least this many credited bearers queued at once
+  scBurstsDropped      :: !Word64,
+    -- ^ burst records closed with no room to keep them until the next trace
+  scTiers              :: ![(Word8, TierCounts)]
+    -- ^ by tier: what the queue granted its bearers, and how many wait now
+  }
+  deriving (Eq, Show, Generic)
+
+-- | The budget's queue seen from one tier: 0 local roots, 1 partners, 2 pool
+-- relays, 3 strangers, 4 the rest, 255 unranked bearers. The fast path is not
+-- ranked for the bytes and batches, but its bearers count as served.
+data TierCounts = TierCounts {
+  tcBytes   :: !Word64,
+  tcBatches :: !Word64,
+  tcQueued  :: !Int,
+  tcServed  :: !Int,    -- ^ bearers granted within 'egressServedWindow'
+  tcSlowed  :: ![(Double, Int)]
+    -- ^ of those, the bearers whose batches have lately taken at least this
+    -- many times their own time, waiting for tokens the rest: one count per
+    -- bound of 'egressSlowdownBounds'
+  }
+  deriving (Eq, Show, Generic)
+
+-- | The read side.
+data IngressCounts = IngressCounts {
+  icReadTimeouts   :: !Word64,    -- ^ an SDU header arrived, the rest did not in time
+  icOverruns       :: !Word64,    -- ^ a peer exceeded a mini-protocol's ingress limit
+  icProtocolErrors :: !Word64,    -- ^ undecodable SDUs, unknown mini-protocols,
+                                  --   data an initiator-only mux cannot take
+  icBearerClosed   :: !Word64,    -- ^ the peer closed the connection
+  icBytes          :: !ByteCounts -- ^ bytes read, by mini-protocol and direction
+  }
+  deriving (Eq, Show, Generic)
+
+-- | Bytes on the wire, SDU headers included, by mini-protocol number and the
+-- direction of our side of it: what our initiators and our responders sent,
+-- or what was read for them.
+type ByteCounts = Map (MiniProtocolNum, MiniProtocolDir) Word64
+
+-- | One mux's byte counts: each mini-protocol's egress state, carrying what
+-- the muxers wrote for it, and its ingress queue, carrying what the demuxer
+-- read; written only by the mux's own threads, so no two connections share a
+-- variable on the data path, and counted whether or not anyone looks.
+data MuxByteCells m = MuxByteCells {
+  mbcSent :: !(Map (MiniProtocolNum, MiniProtocolDir) (EgressVar m)),
+  mbcRecv :: !(Map (MiniProtocolNum, MiniProtocolDir) (IngressQueue m))
+  }
+  deriving Generic
+
+-- | The bytes written for each mini-protocol, leaving out the ones still at
+-- zero: a protocol appears once it has carried something.
+readSent :: MonadSTM m
+         => Map (MiniProtocolNum, MiniProtocolDir) (EgressVar m) -> STM m ByteCounts
+readSent = fmap (Map.filter (/= 0)) . traverse (fmap esSent . readTVar)
+
+-- | The bytes read for each queue's mini-protocol, likewise.
+readReceived :: MonadSTM m
+             => Map (MiniProtocolNum, MiniProtocolDir) (IngressQueue m) -> STM m ByteCounts
+readReceived = fmap (Map.filter (/= 0)) . traverse (fmap iqReceived . readTVar)
+
+-- | Counters shared by every mux on one side: failures, counted as a mux
+-- dies, and the byte cells of the live muxes beside the totals of the ones
+-- that have ended, so a total never goes down when a connection closes.
+data MuxCounters m = MuxCounters {
+  mcFailures :: !(StrictTVar m (Sides EgressCounts IngressCounts)),
+  mcLive     :: !(StrictTVar m (IntMap (MuxByteCells m))),
+  mcNext     :: !(StrictTVar m Int),
+  mcRetired  :: !(StrictTVar m (Sides ByteCounts ByteCounts))
+  }
+  deriving Generic
+
+-- | The write side's count and the read side's, each evaluated as it is
+-- stored, so an update never leaves the previous count behind a thunk.
+data Sides a b = Sides !a !b
+  deriving (Eq, Show, Generic)
+
+newMuxCounters :: MonadSTM m => m (MuxCounters m)
+newMuxCounters =
+  MuxCounters <$> newTVarIO (Sides (EgressCounts 0 0 Nothing Map.empty) (IngressCounts 0 0 0 0 Map.empty))
+              <*> newTVarIO IntMap.empty
+              <*> newTVarIO 0
+              <*> newTVarIO (Sides Map.empty Map.empty)
+
+-- | The failure counts with the bytes of every mux, ended or live, summed in,
+-- in one transaction.
+readMuxCounters :: MonadSTM m => MuxCounters m -> STM m (EgressCounts, IngressCounts)
+readMuxCounters = snapshotMuxCountersWith id
+
+-- | The same, with each read run by @runTx@: in a transaction for the totals
+-- and one per live mux, so no transaction spans what every muxer and demuxer
+-- writes. The totals and the live set go together, before the cells: a mux
+-- that ends in between is in the live set and not yet in the totals, and its
+-- cell, which ending leaves as it was, counts it once; a sum never goes down
+-- across snapshots.
+snapshotMuxCountersWith :: (MonadSTM m, Monad n)
+                        => (forall a. STM m a -> n a)
+                        -> MuxCounters m -> n (EgressCounts, IngressCounts)
+snapshotMuxCountersWith runTx counters = do
+  (totals, live) <- runTx (readMuxTotals counters)
+  sumMuxCounters totals <$> mapM (runTx . readMuxCells) live
+
+-- | The failure counts, the totals of the muxes that have ended, and the
+-- cells of the ones alive.
+readMuxTotals :: MonadSTM m => MuxCounters m
+              -> STM m ((Sides EgressCounts IngressCounts, Sides ByteCounts ByteCounts), [MuxByteCells m])
+readMuxTotals MuxCounters { mcFailures, mcLive, mcRetired } =
+  (,) <$> ((,) <$> readTVar mcFailures <*> readTVar mcRetired)
+      <*> (IntMap.elems <$> readTVar mcLive)
+
+-- | One mux's bytes sent and read.
+readMuxCells :: MonadSTM m => MuxByteCells m -> STM m (ByteCounts, ByteCounts)
+readMuxCells MuxByteCells { mbcSent, mbcRecv } = (,) <$> readSent mbcSent <*> readReceived mbcRecv
+
+sumMuxCounters :: (Sides EgressCounts IngressCounts, Sides ByteCounts ByteCounts)
+               -> [(ByteCounts, ByteCounts)] -> (EgressCounts, IngressCounts)
+sumMuxCounters (Sides eg ing, Sides sentDone recvDone) cells =
+  ( eg  { ecBytes = Map.unionsWith (+) (sentDone : map fst cells) }
+  , ing { icBytes = Map.unionsWith (+) (recvDone : map snd cells) } )
+
+-- | A mux's cells for the duration of @k@: registered as the mux starts, and
+-- on the way out their counts move into the retired totals in the same
+-- transaction that unregisters them. Without counters nothing is registered,
+-- and the mux counts into its variables unread.
+withByteCells :: (MonadSTM m, MonadMask m)
+              => Maybe (MuxCounters m) -> MuxByteCells m -> m a -> m a
+withByteCells Nothing _ k = k
+withByteCells (Just MuxCounters { mcLive, mcNext, mcRetired }) cells k =
+    bracket register retire (const k)
+  where
+    register = atomically $ do
+      i <- stateTVar mcNext (\n -> (n, n + 1))
+      modifyTVar mcLive (IntMap.insert i cells)
+      return i
+    retire i = atomically $ do
+      (sent, recv) <- readMuxCells cells
+      modifyTVar mcRetired (\(Sides s r) -> Sides (Map.unionWith (+) s sent) (Map.unionWith (+) r recv))
+      modifyTVar mcLive (IntMap.delete i)
+
+-- | Count the exception a mux's muxer died with.
+countMuxerFailure :: MonadSTM m => MuxCounters m -> SomeException -> STM m ()
+countMuxerFailure MuxCounters { mcFailures = v } e =
+  case fromException e of
+       Just SDUWriteTimeout ->
+         modifyTVar v (\(Sides eg ing) -> Sides eg { ecWriteTimeouts = ecWriteTimeouts eg + 1 } ing)
+       _ -> return ()
+
+-- | Count a writability gate that timed out; the write timeout itself is
+-- counted by 'countMuxerFailure' when the mux dies of it.
+countGateTimeout :: MonadSTM m => MuxCounters m -> STM m ()
+countGateTimeout MuxCounters { mcFailures = v } =
+  modifyTVar v (\(Sides eg ing) -> Sides eg { ecWriteTimeoutsGate = ecWriteTimeoutsGate eg + 1 } ing)
+
+-- | Count the exception a mux's demuxer died with.
+countDemuxerFailure :: MonadSTM m => MuxCounters m -> SomeException -> STM m ()
+countDemuxerFailure MuxCounters { mcFailures = v } e =
+  case fromException e of
+       Just SDUReadTimeout          -> bump (\c -> c { icReadTimeouts   = icReadTimeouts c + 1 })
+       Just IngressQueueOverRun {}  -> bump (\c -> c { icOverruns       = icOverruns c + 1 })
+       Just UnknownMiniProtocol {}  -> bump (\c -> c { icProtocolErrors = icProtocolErrors c + 1 })
+       Just InitiatorOnly {}        -> bump (\c -> c { icProtocolErrors = icProtocolErrors c + 1 })
+       Just SDUDecodeError {}       -> bump (\c -> c { icProtocolErrors = icProtocolErrors c + 1 })
+       Just BearerClosed {}         -> bump (\c -> c { icBearerClosed   = icBearerClosed c + 1 })
+       _                            -> return ()
+  where
+    bump f = modifyTVar v (\(Sides eg ing) -> Sides eg (f ing))
+
+-- | A snapshot of one side's counters, or one burst of credited demand on
+-- the budget, closed by the time of the snapshot that carries it.
+data CountersTrace =
+    TraceRemoteEgress  EgressCounts
+  | TraceRemoteIngress IngressCounts
+  | TraceLocalEgress   EgressCounts
+  | TraceLocalIngress  IngressCounts
+  | TraceEgressBurst   DiffTime Burst
+    -- ^ a burst, and how long before the snapshot that carries it it ended
+  deriving (Eq, Show)
+
+-- | The token-wait bounds 'scWaitsOver' counts against.
+egressWaitBounds :: [DiffTime]
+egressWaitBounds = waitBounds
+
+-- | The busy-period lengths 'scBurstsOver' counts against.
+egressBurstBounds :: [DiffTime]
+egressBurstBounds = burstBounds
+
+-- | The queue widths 'scBurstsWider' counts against.
+egressBurstWidths :: [Int]
+egressBurstWidths = burstWidths
+
+-- | The least idle time that ends a burst of credited demand.
+egressBurstGap :: DiffTime
+egressBurstGap = burstGap
+
+-- | The longest burst record; a longer burst is closed and the next opened.
+egressBurstCap :: DiffTime
+egressBurstCap = burstCap
+
+-- | The least grant that opens or extends a burst; smaller ones are filler.
+egressBurstGrantFloor :: Int
+egressBurstGrantFloor = burstGrantFloor
+
+-- | How long a grant keeps its bearer in 'tcServed', and over how long its
+-- slowdown is weighted.
+egressServedWindow :: DiffTime
+egressServedWindow = servedWindow
+
+-- | The slowdowns 'tcSlowed' counts bearers against.
+egressSlowdownBounds :: [Double]
+egressSlowdownBounds = slowdownBounds
+
+-- | A prime, so that snapshots do not keep step with other periodic work such
+-- as keep-alive, and below a 10 s scrape.
+countersInterval :: DiffTime
+countersInterval = 7
+
+-- | Every @interval@, snapshot the node-to-node and the node-to-client
+-- counters and trace both sides of each; with scheduled egress, the budget's
+-- bucket and the slice's, if any, go into the node-to-node egress snapshot,
+-- and the bursts the budget closed since the last snapshot follow it, one
+-- trace each.
+countersLoop :: (MonadDelay m, MonadSTM m)
+             => MuxCounters m    -- ^ node-to-node
+             -> MuxCounters m    -- ^ node-to-client
+             -> Maybe (Bucket m, Maybe (Bucket m))
+             -> DiffTime
+             -> Tracer m CountersTrace
+             -> m void
+countersLoop remote local buckets interval tracer = forever $ do
+  threadDelay interval
+  now <- getMonotonicTime
+  -- small transactions, one per mux and per bucket: the counters need no
+  -- consistency across them, and one over everything the muxes write would
+  -- be restarted by every batch
+  (re, ri) <- snapshotMuxCountersWith atomically remote
+  (le, li) <- snapshotMuxCountersWith atomically local
+  sc       <- traverse (schedulingCountsWith atomically now) buckets
+  traceWith tracer (TraceRemoteEgress re { ecScheduling = sc })
+  traceWith tracer (TraceRemoteIngress ri)
+  traceWith tracer (TraceLocalEgress le)
+  traceWith tracer (TraceLocalIngress li)
+  forM_ buckets $ \(budget, _) -> do
+    bursts <- atomically (takeBurstsAt budget now)
+    mapM_ (\b -> traceWith tracer (TraceEgressBurst (now `diffTime` bEnd b) b)) bursts
+
+-- | The scheduling counters, in one transaction.
+schedulingCounts :: MonadSTM m => Time -> (Bucket m, Maybe (Bucket m)) -> STM m SchedulingCounts
+schedulingCounts = schedulingCountsWith id
+
+-- | The same, the budget's snapshot and the slice's in a transaction each.
+schedulingCountsWith :: (MonadSTM m, Monad n)
+                     => (forall a. STM m a -> n a)
+                     -> Time -> (Bucket m, Maybe (Bucket m)) -> n SchedulingCounts
+schedulingCountsWith runTx now (budget, slice_m) = do
+  (b, level, queued, queuedByTier) <- runTx (bucketSnapshot budget now)
+  s_m <- traverse (runTx . (`bucketSnapshot` now)) slice_m
+  let slice       = maybe emptyStats (\(st, _, _, _) -> st) s_m
+      sliceQueued = maybe 0 (\(_, _, q, _) -> q) s_m
+      served      = servedWithin servedWindow now (bsServed b)
+      none        = map (\f -> (f, 0)) slowdownBounds
+      tiers       = Map.toList $ Map.unionsWith plus
+                      [ (\(TierGrants n k) -> TierCounts n k 0 0 none) <$> bsTiers b
+                      , (\q -> TierCounts 0 0 q 0 none) <$> queuedByTier
+                      , (\s -> TierCounts 0 0 0 s none) <$> servedByTier served
+                      , TierCounts 0 0 0 0 . zip slowdownBounds <$> slowedByTier served ]
+      plus (TierCounts n k q s sl) (TierCounts n' k' q' s' sl') =
+        TierCounts (n + n') (k + k') (q + q') (s + s')
+                   (zipWith (\(f, c) (_, c') -> (f, c + c')) sl sl')
+  return SchedulingCounts {
+    scDirectBytes        = bsCredited b,
+    scSliceBytes         = bsBytes slice - bsBorrowed slice,
+    scSliceBorrowedBytes = bsBorrowed slice,
+    scScheduledBytes     = bsBytes b,
+    scScheduledBatches   = bsBatches b,
+    scWaitTokens         = bsWaitTokens b + bsWaitTokens slice,
+    scWaitWritable       = bsWaitWritable b + bsWaitWritable slice,
+    scWaitsOver          = zip waitBounds (zipWith (+) (bsWaitsOver b) (bsWaitsOver slice)),
+    scBudgetLevel        = floor level,
+    scBudgetQueued       = queued,
+    scSliceQueued        = sliceQueued,
+    scBursts             = bsBursts b,
+    scBusyTime           = bsBusyTime b,
+    scContendedTime      = bsContendedTime b,
+    scBurstsOver         = zip burstBounds (bsBurstsOver b),
+    scBurstsWider        = zip burstWidths (bsBurstsWider b),
+    scBurstsDropped      = bsBurstsDropped b,
+    scTiers              = tiers
+  }
+  where
+    emptyStats = emptyBucketStats

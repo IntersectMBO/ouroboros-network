@@ -16,6 +16,7 @@ module Ouroboros.Network.Diffusion.Configuration
   , PeerSelectionTargets (..)
   , PeerSharing (..)
   , defaultEgressPollInterval
+  , defaultEgressSchedulingWith
   , deactivateTimeout
   , closeConnectionTimeout
   , peerMetricsConfiguration
@@ -31,10 +32,13 @@ module Ouroboros.Network.Diffusion.Configuration
 
 import Control.Monad.Class.MonadTime.SI
 
+import Network.Mux qualified as Mx
+import Network.Mux.Types (MiniProtocolDir, MiniProtocolNum)
 import Ouroboros.Network.ConnectionManager.Core (defaultProtocolIdleTimeout,
            defaultResetTimeout, defaultTimeWaitTimeout)
 import Ouroboros.Network.Diffusion.Policies (closeConnectionTimeout,
            deactivateTimeout, peerMetricsConfiguration)
+import Ouroboros.Network.Diffusion.Types (EgressScheduling (..))
 import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.PeerSelection.Governor.Types
            (PeerSelectionTargets (..))
@@ -111,3 +115,27 @@ local_TIME_WAIT_TIMEOUT = 0
 -- for tuning latency vs. network efficiency
 defaultEgressPollInterval :: DiffTime
 defaultEgressPollInterval = 0
+
+-- | Scheduled egress at a 250 Mb/s budget, the line rate of a 1 Gb/s uplink:
+-- a bucket of two batches, 15% of it reserved for the slice lane, the order
+-- within a tier re-dealt every 599 s, and TCP_NOTSENT_LOWAT at one batch. The
+-- lane rule is the caller's, since it names the tx-submission protocol.
+defaultEgressSchedulingWith :: (MiniProtocolNum -> MiniProtocolDir -> Mx.Lane) -> EgressScheduling
+defaultEgressSchedulingWith laneOf = EgressScheduling {
+    esBudget         = 250e6 / 8,
+    esCapacity       = 2 * 131072,
+    esSlicePercent   = 15,
+    esFloorPercent   = 10,
+    esRotationPeriod = 599,
+    esNotSentLowWat  = Just 131072,
+    esLaneOf         = laneOf,
+    -- two deadline churn rounds at their longest, an interval plus the churn
+    -- governor's 600 s of fuzz each, plus the time it waits for the demotions
+    -- of the second to complete: a partner has outlived two churns for certain
+    esTenureThreshold = 2 * (defaultDeadlineChurnInterval + 600) + deactivateTimeout,
+    -- about a quarter of an hour; a prime, like the other periods, so it does
+    -- not compete with them
+    esStrangerLock        = 887,
+    -- the protocol numbers are the application's to name
+    esUnchargedProtocols  = []
+  }

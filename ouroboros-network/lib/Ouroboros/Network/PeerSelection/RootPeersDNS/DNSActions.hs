@@ -25,6 +25,8 @@ module Ouroboros.Network.PeerSelection.RootPeersDNS.DNSActions
   , constantResource
     -- ** Exposed for testing purposes
   , dispatchLookupWithTTL
+  , srvTargetsWithTTL
+  , addressLookupsWithTTL
     -- ** Error type
   , DNSorIOError (..)
     -- * Tracing types
@@ -79,6 +81,10 @@ import Ouroboros.Network.PeerSelection.RelayAccessPoint
 data DNSPeersKind = DNSLocalPeer
                   | DNSPublicPeer
                   | DNSLedgerPeer SomeLedgerPeersKind
+                  | DNSPoolRelay
+                  -- ^ a lookup for the pool-relay index, which takes an SRV
+                  -- name's targets with 'dnsLookupSRV' and a name's
+                  -- addresses by record type with 'dnsLookupIPs'
   deriving Show
 
 -- | Provides DNS lookup trace information
@@ -244,7 +250,28 @@ data DNSActions peerAddr resolver m = DNSActions {
                              -> DNS.ResolvConf
                              -> resolver
                              -> StdGen
-                             -> m (DNSLookupResult peerAddr)
+                             -> m (DNSLookupResult peerAddr),
+
+    -- | The targets of an SRV name: every target of every priority, in
+    -- priority order, the "." marker left out.  For an index of
+    -- memberships, which then looks each target up as a name of its own.
+    --
+    dnsLookupSRV             :: DNSPeersKind
+                             -> DNS.Domain
+                             -> DNS.ResolvConf
+                             -> resolver
+                             -> m (Either DNSError [(DNS.Domain, PortNumber)]),
+
+    -- | A name's addresses by record type, one outcome per type the lookup
+    -- type asks for: an answer, which may be empty, or the error, so that a
+    -- caller keeping what it knew can tell a name that is gone from one it
+    -- could not reach.
+    --
+    dnsLookupIPs             :: DNSPeersKind
+                             -> DNS.Domain
+                             -> DNS.ResolvConf
+                             -> resolver
+                             -> m [(DNS.TYPE, Either DNSError [(IP, TTL)])]
   }
 
 
@@ -286,7 +313,11 @@ ioDNSActions tracer lookupType toPeerAddr =
     DNSActions {
       dnsResolverResource      = resolverResource,
       dnsAsyncResolverResource = asyncResolverResource,
-      dnsLookupWithTTL         = dispatchLookupWithTTL lookupType mkResolveDNSIOAction tracer toPeerAddr
+      dnsLookupWithTTL         = dispatchLookupWithTTL lookupType mkResolveDNSIOAction tracer toPeerAddr,
+      dnsLookupSRV             = \kind d conf resolver ->
+                                   srvTargetsWithTTL tracer kind d (mkResolveDNSIOAction resolver conf),
+      dnsLookupIPs             = \kind d conf resolver ->
+                                   addressLookupsWithTTL tracer lookupType kind d (mkResolveDNSIOAction resolver conf)
     }
   where
     mkResolveDNSIOAction resolver resolvConf domain ofType =
@@ -434,14 +465,19 @@ srvRecordLookupWithTTL ofType tracer toPeerAddr peerType domainSRV resolveDNS rn
         traceWith tracer $ DNSLookupError peerType Nothing domainSRV err
         return . Left $ [err]
       Just (Right msg) ->
-        case DNS.fromDNSMessage msg selectSRV of
+        case DNS.fromDNSMessage msg srvRecords of
           Left err -> do
             traceWith tracer $ DNSLookupError peerType Nothing domainSRV err
             return . Left $ [err]
           Right services -> do
             traceWith tracer $ SRVLookupResult peerType domainSRV services
             let srvByPriority = filter ((BS.pack "." /=) . pickDomain) $ sortOn priority services
-                grouped       = NE.groupWith priority srvByPriority
+            pickOne (NE.groupWith priority srvByPriority)
+
+      where
+        pickOne :: [NonEmpty (DNS.Domain, Word16, Word16, Word16, TTL)]
+                -> m (DNSLookupResult peerAddr)
+        pickOne grouped = do
             (result, domain) <- do
               case listToMaybe grouped of
                 Just topPriority ->
@@ -459,7 +495,6 @@ srvRecordLookupWithTTL ofType tracer toPeerAddr peerType domainSRV resolveDNS rn
                 traceWith tracer $ DNSLookupResult peerType domain (Just domainSRV) ipsttls
             return $ map (\(ip, port, ttl) -> (toPeerAddr ip port, ttl)) <$> result
 
-      where
         ipsttlsWithPort port ttl = map (\(ip, _ttl) -> (ip, fromIntegral port, ttl))
 
         runWeightedLookup :: NonEmpty (DNS.Domain, Word16, Word16, Word16, TTL)
@@ -475,17 +510,75 @@ srvRecordLookupWithTTL ofType tracer toPeerAddr peerType domainSRV resolveDNS rn
           let upper' = weight srv + upper
            in (upper', (upper', srv):cdf)
 
-        selectSRV DNS.DNSMessage { DNS.answer } =
-          [ (domain', priority', weight', port, mkClippedTTL ttl)
-          | DNS.ResourceRecord {
-              DNS.rdata = DNS.RD_SRV priority' weight' port domain',
-              DNS.rrttl = ttl
-            } <- answer
-          ]
-
         weight   (_, _, w, _, _)   = w
         priority (_, p, _, _, _)   = p
         pickDomain (d, _, _, _, _) = d
+
+
+-- | The SRV records of an answer.
+srvRecords :: DNSMessage -> [(DNS.Domain, Word16, Word16, Word16, TTL)]
+srvRecords DNS.DNSMessage { DNS.answer } =
+  [ (domain', priority', weight', port, mkClippedTTL ttl)
+  | DNS.ResourceRecord {
+      DNS.rdata = DNS.RD_SRV priority' weight' port domain',
+      DNS.rrttl = ttl
+    } <- answer
+  ]
+
+-- | The targets of an SRV name, every priority in priority order and the
+-- "." marker left out, or the error as the resolver gave it, a timeout
+-- included.  A membership index looks each target up as a name of its own,
+-- so a target that fails costs nothing but itself.
+srvTargetsWithTTL :: Monad m
+                  => Tracer m DNSTrace
+                  -> DNSPeersKind
+                  -> DNS.Domain
+                  -> (DNS.Domain -> DNS.TYPE -> m (Maybe (Either DNSError DNSMessage)))
+                  -> m (Either DNSError [(DNS.Domain, PortNumber)])
+srvTargetsWithTTL tracer peerType domainSRV resolveDNS = do
+    reply <- resolveDNS domainSRV DNS.SRV
+    case reply of
+      Nothing          -> failed DNS.TimeoutExpired
+      Just (Left  err) -> failed err
+      Just (Right msg) ->
+        case DNS.fromDNSMessage msg srvRecords of
+          Left err       -> failed err
+          Right services -> do
+            traceWith tracer $ SRVLookupResult peerType domainSRV services
+            return $ Right [ (d, fromIntegral port)
+                           | (d, _, _, port, _) <- sortOn priority services
+                           , d /= BS.pack "." ]
+  where
+    failed err = do
+      traceWith tracer $ DNSLookupError peerType Nothing domainSRV err
+      return (Left err)
+    priority (_, p, _, _, _) = p
+
+-- | A name's addresses by record type, one outcome per type the lookup
+-- type asks for; errors traced as 'domainLookupWithTTL' traces them.
+addressLookupsWithTTL :: MonadAsync m
+                      => Tracer m DNSTrace
+                      -> DNSLookupType
+                      -> DNSPeersKind
+                      -> DNS.Domain
+                      -> (DNS.Domain -> DNS.TYPE -> m (Maybe (Either DNSError DNSMessage)))
+                      -> m [(DNS.TYPE, Either DNSError [(IP, TTL)])]
+addressLookupsWithTTL tracer lookupType peerType d resolveDNS =
+    case lookupType of
+      LookupReqAOnly    -> (: []) <$> a
+      LookupReqAAAAOnly -> (: []) <$> aaaa
+      LookupReqAAndAAAA -> do
+        (r6, r4) <- concurrently aaaa a
+        return [r6, r4]
+  where
+    a    = one LookupReqAOnly    DNS.A    domainALookupWithTTL
+    aaaa = one LookupReqAAAAOnly DNS.AAAA domainAAAALookupWithTTL
+    one look ty prim = do
+      r <- prim (resolveDNS d ty)
+      case r of
+        Left err -> traceWith tracer $ DNSLookupError peerType (Just look) d err
+        Right _  -> return ()
+      return (ty, r)
 
 
 dispatchLookupWithTTL :: (MonadAsync m)

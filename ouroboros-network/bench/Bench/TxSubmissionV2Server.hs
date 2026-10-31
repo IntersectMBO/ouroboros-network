@@ -36,6 +36,7 @@ import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (newPeerTxRegistry,
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types (TxSubmissionCounters,
            emittedCounters, emptySharedTxState)
 
+import System.Random (mkStdGen)
 import Test.Ouroboros.Network.TxSubmission.Types (Tx (..), TxId, emptyMempool,
            getMempoolReader, getMempoolWriter, readMempool)
 
@@ -70,7 +71,7 @@ mkDirectServerFixture batches =
     { dsPeerCount        = 1
     , dsTxIdReplyBatches = batches
     , dsTxSize           = SizeInBytes 1024
-    , dsPolicy           = defaultTxDecisionPolicy
+    , dsPolicy           = defaultTxDecisionPolicy { txFastPeers = 1 }
     }
 
 
@@ -82,10 +83,14 @@ mkDirectServerFixture batches =
 -- peers find the txid in the retained set and ack-skip without ever
 -- requesting the body.
 --
--- The fixture disables pipelined txid requests so the benchmark measures
--- STM contention on the shared state without picker cycles introduced by
--- the pipelined-txid loosening.  Body requests still use the protocol's
--- pipelined wire form.
+-- What this measures is STM contention on the shared state: the txid
+-- picker only ever ends up issuing blocking requests here (a pipelined
+-- txid request needs a non-zero ack and a non-zero request count), so
+-- the txid path contributes no wire-level churn of its own.  Body
+-- requests still use the protocol's pipelined wire form.
+--
+-- Every peer is on the fast tier: the slow tier's gate is a real-time
+-- wait between txid requests, not what this measures.
 mkMultiPeerFixture
   :: Int -- ^ peer count
   -> Int -- ^ batches per peer
@@ -95,9 +100,7 @@ mkMultiPeerFixture peers batches =
     { dsPeerCount        = peers
     , dsTxIdReplyBatches = batches
     , dsTxSize           = SizeInBytes 1024
-    , dsPolicy           = defaultTxDecisionPolicy {
-                             disablePipelinedTxIdRequests = True
-                           }
+    , dsPolicy           = defaultTxDecisionPolicy { txFastPeers = peers }
     }
 
 
@@ -112,7 +115,7 @@ runDirectServerBenchmark DirectServerFixture {
   inboundMempool <- emptyMempool
   duplicateTxIdsVar <- Lazy.newTVarIO []
   sharedStateVar <- newSharedTxStateVar emptySharedTxState
-  inFlightRegistry <- newPeerTxRegistry
+  inFlightRegistry <- newPeerTxRegistry (mkStdGen 7)
   countersVar <- newTxSubmissionCountersVar mempty
 
   let writer = getMempoolWriter duplicateTxIdsVar inboundMempool
@@ -125,6 +128,7 @@ runDirectServerBenchmark DirectServerFixture {
           inFlightRegistry
           countersVar
           addr
+          (pure False)
           $ \api -> do
             let server =
                   txSubmissionInboundV2

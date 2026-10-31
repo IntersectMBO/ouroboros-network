@@ -36,6 +36,7 @@ module Ouroboros.Network.ConnectionHandler
   , MkMuxConnectionHandler (..)
   , MuxConnectionHandler
   , makeConnectionHandler
+  , EgressPolicyRule
   , MuxConnectionManager
   , ConnectionManagerWithExpandedCtx
     -- * tracing
@@ -55,6 +56,7 @@ import Control.Tracer (Tracer, traceWith)
 
 import Data.ByteString.Lazy (ByteString)
 import Data.Map (Map)
+import Data.Map qualified as Map
 import Data.Maybe.Strict
 import Data.Text (Text)
 import Data.Typeable (Typeable)
@@ -62,6 +64,7 @@ import Data.Typeable (Typeable)
 import Network.Mux (Mux)
 import Network.Mux qualified as Mx
 import Network.Mux.Trace
+import Network.Mux.Types (MiniProtocolDir (..), MiniProtocolStatus (..))
 
 import Ouroboros.Network.ConnectionId (ConnectionId (..))
 import Ouroboros.Network.ConnectionManager.Types
@@ -240,6 +243,14 @@ type ConnectionManagerWithExpandedCtx muxMode socket peerAddr extraFlags version
 -- inbound and (negotiated) outbound duplex connections. This tracer
 -- efficiently informs the IG loop of miniprotocol activity.
 --
+-- | The egress tier of a peer's connection, asked as its bearer queues: from
+-- the peer's address, the connection's data flow, whether the peer runs every
+-- hot mini-protocol against us at that moment, and the moment itself.
+--
+type EgressPolicyRule m peerAddr =
+       peerAddr -> DataFlow -> STM m Bool
+    -> m (Time -> STM m Mx.Rank, Mx.ChargeSink m)
+
 makeConnectionHandler
     :: forall initiatorCtx responderCtx peerAddr muxMode socket versionNumber versionData m a b.
        ( Alternative (STM m)
@@ -259,6 +270,13 @@ makeConnectionHandler
        )
     => Mx.TracersWithBearer (ConnectionId peerAddr) m
     -> ForkPolicy peerAddr
+    -> Maybe (Mx.MuxCounters m)
+    -- ^ node-wide counters every mux this handler creates is counted in
+    -> Maybe (Mx.EgressPolicy m)
+    -- ^ scheduled egress, shared by every connection this handler creates
+    -> EgressPolicyRule m peerAddr
+    -- ^ per connection, the egress tier rule asked as its bearer queues and
+    -- the sink its scheduled bytes are reported to
     -> HandshakeArguments (ConnectionId peerAddr) versionNumber versionData m
     -> Versions versionNumber versionData
                 (OuroborosBundle muxMode initiatorCtx responderCtx ByteString m a b)
@@ -268,7 +286,7 @@ makeConnectionHandler
     -> MkMuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr versionNumber versionData ByteString m a b
     -> MuxConnectionHandler muxMode socket initiatorCtx responderCtx peerAddr
                             versionNumber versionData ByteString m a b
-makeConnectionHandler muxTracers forkPolicy
+makeConnectionHandler muxTracers forkPolicy muxCounters egressPolicy egressRuleOf
                       handshakeArguments
                       versionedApplication
                       (mainThreadId, rethrowPolicy) =
@@ -277,12 +295,49 @@ makeConnectionHandler muxTracers forkPolicy
       ConnectionHandler . WithInitiatorMode
       $ outboundConnectionHandler NotInResponderMode
     MuxResponderConnectionHandler inboundGovernorMuxTracer ->
-      ConnectionHandler . WithResponderMode . inboundConnectionHandler $ inboundGovernorMuxTracer
+      -- a responder-only node fetches from no one, so no peer is its partner
+      ConnectionHandler . WithResponderMode
+      $ inboundConnectionHandler (const Unidirectional) inboundGovernorMuxTracer
     MuxInitiatorResponderConnectionHandler connectionDataFlow inboundGovernorMuxTracer ->
       ConnectionHandler $ WithInitiatorResponderMode
         (outboundConnectionHandler $ InResponderMode (inboundGovernorMuxTracer, connectionDataFlow))
-        (inboundConnectionHandler inboundGovernorMuxTracer)
+        (inboundConnectionHandler connectionDataFlow inboundGovernorMuxTracer)
   where
+    -- a mux on the node's scheduled egress, ranked by its peer, or a plain one
+    newMux :: forall (mode :: Mx.Mode).
+              Mx.Tracers m -> peerAddr -> DataFlow
+           -> OuroborosBundle mode initiatorCtx responderCtx ByteString m a b
+           -> [Mx.MiniProtocolInfo mode] -> m (Mx.Mux mode m)
+    newMux tracers@TracersI { tracer_ } remoteAddress dataFlow app ptcls = do
+      mux <- case egressPolicy of
+                  Nothing     -> Mx.new tracers ptcls
+                  Just policy -> do
+                    mux <- Mx.newWithEgress policy tracers ptcls
+                    -- the rule is kept, not its answer, and asked whenever the
+                    -- bearer joins the queue; whether the peer runs every hot
+                    -- mini-protocol against us at that moment is read off this
+                    -- mux, the one place that knows all of them
+                    let hotNums = map miniProtocolNum (withoutProtocolTemperature (withHot app))
+                        hotResponders =
+                          [ status
+                          | ((num, ResponderDir), status)
+                              <- Map.toList (Mx.miniProtocolStateMap mux)
+                          , num `elem` hotNums ]
+                        remoteHot
+                          | null hotResponders = return False
+                          | otherwise = all (== StatusRunning) <$> sequence hotResponders
+                    (rule, sink) <- egressRuleOf remoteAddress dataFlow remoteHot
+                    now  <- getMonotonicTime
+                    rank <- atomically $ do
+                      Mx.setEgressRankSource mux rule
+                      Mx.setEgressChargeSink mux sink
+                      rule now
+                    traceWith tracer_ (Mx.TraceEgressRank rank)
+                    return mux
+      return $ case muxCounters of
+                    Nothing -> mux
+                    Just c  -> Mx.withCounters c mux
+
     -- install classify exception handler
     classifyExceptions :: forall x.
                           Tracer m (ConnectionHandlerTrace versionNumber versionData)
@@ -367,7 +422,11 @@ makeConnectionHandler muxTracers forkPolicy
                         -- If this is InitiatorOnly, or a server where unidirectional flow was negotiated
                         -- the IG will never be informed of this remote for obvious reasons.
                         pure $ Mx.tracersWithBearer connectionId muxTracers
-                mux <- Mx.new muxTracers' (mkMiniProtocolInfos (runForkPolicy forkPolicy remoteAddress) app)
+                let dataFlow = case inResponderMode of
+                      InResponderMode (_, connectionDataFlow) -> connectionDataFlow agreedOptions
+                      NotInResponderMode                      -> Unidirectional
+                mux <- newMux muxTracers' remoteAddress dataFlow app
+                              (mkMiniProtocolInfos (runForkPolicy forkPolicy remoteAddress) app)
                 let !handle = Handle {
                         hMux            = mux,
                         hMuxBundle      = app,
@@ -385,7 +444,8 @@ makeConnectionHandler muxTracers forkPolicy
 
 
     inboundConnectionHandler
-      :: (   StrictTVar m (StrictMaybe ResponderCounters)
+      :: (versionData -> DataFlow)
+      -> (   StrictTVar m (StrictMaybe ResponderCounters)
           -> Tracer m (WithBearer (ConnectionId peerAddr) Trace))
       -> ConnectionHandlerFn (ConnectionHandlerTrace versionNumber versionData)
                              socket
@@ -395,7 +455,7 @@ makeConnectionHandler muxTracers forkPolicy
                              versionNumber
                              versionData
                              m
-    inboundConnectionHandler inboundGovernorMuxTracer
+    inboundConnectionHandler connectionDataFlow inboundGovernorMuxTracer
                              updateVersionDataFn
                              socket
                              PromiseWriter { writePromise }
@@ -435,9 +495,10 @@ makeConnectionHandler muxTracers forkPolicy
                      <*> newTVarIO Continue
 
                countersVar <- newTVarIO . SJust $ ResponderCounters 0 0
-               mux <- Mx.new (Mx.tracersWithBearer connectionId muxTracers {
+               mux <- newMux (Mx.tracersWithBearer connectionId muxTracers {
                                Mx.tracer = Mx.tracer muxTracers <> inboundGovernorMuxTracer countersVar
                              })
+                             remoteAddress (connectionDataFlow agreedOptions) app
                              (mkMiniProtocolInfos (runForkPolicy forkPolicy remoteAddress) app)
 
                let !handle = Handle {

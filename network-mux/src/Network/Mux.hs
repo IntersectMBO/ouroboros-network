@@ -18,6 +18,11 @@
 module Network.Mux
   ( -- * Defining 'Mux' protocol bundles
     new
+  , newWithEgress
+  , EgressPolicy (..)
+  , directionSplit
+  , egressBuckets
+  , Lane (..)
   , Mux
   , Mode (..)
   , HasInitiator
@@ -41,9 +46,51 @@ module Network.Mux
   , ReadBuffer
   , MonadReadBuffer (..)
   , SDUSize (..)
+    -- * Egress scheduling
+  , Bucket
+  , newBucket
+  , attachFloor
+  , setBucketRate
+  , Rank (..)
+  , Tier (..)
+  , tierNumber
+  , numberTier
+  , tierName
+  , numberName
+  , Rotation (..)
+  , setEgressRank
+  , setEgressRankSource
+  , ChargeSink
+  , setEgressChargeSink
     -- * Monitoring
   , miniProtocolStateMap
   , stopped
+    -- * Counters
+  , MuxCounters
+  , newMuxCounters
+  , withCounters
+  , readMuxCounters
+  , countMuxerFailure
+  , countDemuxerFailure
+  , EgressCounts (..)
+  , SchedulingCounts (..)
+  , TierCounts (..)
+  , IngressCounts (..)
+  , ByteCounts
+  , CountersTrace (..)
+  , Burst (..)
+  , burstDuration
+  , TierGrants (..)
+  , countersLoop
+  , countersInterval
+  , egressWaitBounds
+  , egressBurstBounds
+  , egressBurstWidths
+  , egressBurstGap
+  , egressBurstCap
+  , egressBurstGrantFloor
+  , egressServedWindow
+  , egressSlowdownBounds
     -- * Errors
   , Error (..)
   , RuntimeError (..)
@@ -67,9 +114,8 @@ import Data.ByteString.Lazy qualified as BL
 import Data.Int (Int64)
 import Data.Map (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (isNothing)
+import Data.Maybe (isJust)
 import Data.Monoid.Synchronisation (FirstToFinish (..))
-import Data.Strict.Tuple (pattern (:!:))
 
 import Control.Applicative
 import Control.Concurrent.Class.MonadSTM.Strict
@@ -79,12 +125,17 @@ import Control.Monad
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI (Time)
 import Control.Monad.Class.MonadTimer.SI hiding (timeout)
 import Control.Tracer
 
 import Network.Mux.Bearer
 import Network.Mux.Channel
+import Network.Mux.Counters
 import Network.Mux.Egress as Egress
+import Network.Mux.Egress.Bucket (Bucket, BucketHandle, Rotation (..),
+           attachFloor, newBucket, registerBearer, setBucketRate, setRank,
+           setRankSource)
 import Network.Mux.Ingress as Ingress
 import Network.Mux.Timeout
 import Network.Mux.Trace
@@ -103,8 +154,44 @@ data Mux (mode :: Mode) m =
                                    (MiniProtocolState mode m)),
        muxControlCmdQueue :: !(StrictTQueue m (ControlCmd mode m)),
        muxStatus          :: StrictTVar m Status,
-       muxTracers         :: Tracers m
+       muxTracers         :: Tracers m,
+       muxCounters        :: !(Maybe (MuxCounters m)),
+       -- ^ node-wide counters this mux's failures are counted in
+       -- ('withCounters')
+       muxEgress          :: !(Maybe (MuxEgress m))
+       -- ^ this connection's part of the node's scheduled egress, if any
+       -- ('newWithEgress')
      }
+
+-- | Scheduled egress: the budget's bucket, an optional reserved slice with its
+-- own bucket, and the lane each mini-protocol travels in. The default lane
+-- rule is 'directionSplit'; diffusion sends TxSubmission's initiator to the
+-- slice.
+data EgressPolicy m = EgressPolicy {
+    egressBudget :: Bucket m,
+    egressSlice  :: Maybe (Bucket m),
+    egressLaneOf :: MiniProtocolNum -> MiniProtocolDir -> Lane
+  }
+
+-- | The buckets behind a policy, for 'countersLoop'.
+egressBuckets :: EgressPolicy m -> (Bucket m, Maybe (Bucket m))
+egressBuckets EgressPolicy { egressBudget, egressSlice } = (egressBudget, egressSlice)
+
+-- | Our own requests go direct; what we serve is scheduled.
+directionSplit :: MiniProtocolNum -> MiniProtocolDir -> Lane
+directionSplit _ InitiatorDir = Direct
+directionSplit _ ResponderDir = Scheduled
+
+-- | A connection's handles on the node's egress buckets.
+data MuxEgress m = MuxEgress {
+    meBudget       :: Bucket m,
+    meBudgetHandle :: BucketHandle m,
+    meSlice        :: Maybe (BucketHandle m),
+    meLaneOf       :: MiniProtocolNum -> MiniProtocolDir -> Lane,
+    meCharge       :: StrictTVar m (ChargeSink m)
+    -- ^ where the scheduled lane reports what a batch carries as it is
+    --   granted; a no-op until installed
+  }
 
 
 -- | Get information about all statically registered mini-protocols.
@@ -115,6 +202,12 @@ miniProtocolStateMap :: MonadSTM m
                             (STM m MiniProtocolStatus)
 miniProtocolStateMap = fmap (readTVar . miniProtocolStatusVar)
                      . muxMiniProtocols
+
+-- | Count the mux's failures in node-wide 'MuxCounters', shared with every
+-- other mux given the same counters.
+--
+withCounters :: MuxCounters m -> Mux mode m -> Mux mode m
+withCounters counters mux = mux { muxCounters = Just counters }
 
 -- | Await until mux stopped.
 --
@@ -136,7 +229,33 @@ new :: forall (mode :: Mode) m.
     -- ^ description of protocols run by the mux layer.  Only these protocols
     -- one will be able to execute.
     -> m (Mux mode m)
-new muxTracers ptcls = do
+new = mkMux Nothing
+
+-- | Like 'new', with this connection's egress scheduled by the node's
+-- 'EgressPolicy': one queue and one muxer per lane, the scheduled lane taking a
+-- grant from the budget's bucket for every batch it writes.
+--
+newWithEgress :: forall (mode :: Mode) m.
+                 MonadLabelledSTM m
+              => EgressPolicy m
+              -> Tracers m
+              -> [MiniProtocolInfo mode]
+              -> m (Mux mode m)
+newWithEgress EgressPolicy { egressBudget, egressSlice, egressLaneOf } muxTracers ptcls = do
+    meBudgetHandle <- registerBearer egressBudget
+    meSlice        <- traverse registerBearer egressSlice
+    meCharge       <- newTVarIO (\_ _ _ -> return ())
+    mkMux (Just MuxEgress { meBudget = egressBudget, meBudgetHandle, meSlice,
+                            meLaneOf = egressLaneOf, meCharge })
+          muxTracers ptcls
+
+mkMux :: forall (mode :: Mode) m.
+         MonadLabelledSTM m
+      => Maybe (MuxEgress m)
+      -> Tracers m
+      -> [MiniProtocolInfo mode]
+      -> m (Mux mode m)
+mkMux muxEgress muxTracers ptcls = do
     traceWith (tracer_ muxTracers) (TraceNewMux ptcls)
     muxMiniProtocols   <- mkMiniProtocolStateMap ptcls
     muxControlCmdQueue <- atomically newTQueue
@@ -145,8 +264,35 @@ new muxTracers ptcls = do
       muxMiniProtocols,
       muxControlCmdQueue,
       muxStatus,
-      muxTracers
+      muxTracers,
+      muxCounters = Nothing,
+      muxEgress
     }
+
+-- | Service order of this connection under scheduled egress (lower first).
+-- No effect on a mux created with 'new'.
+--
+setEgressRank :: MonadSTM m => Mux mode m -> Rank -> STM m ()
+setEgressRank Mux { muxEgress } rank =
+    case muxEgress of
+         Just MuxEgress { meBudgetHandle } -> setRank meBudgetHandle rank
+         Nothing                           -> return ()
+
+-- | Like 'setEgressRank', with a rule asked whenever the bearer joins the
+-- queue, given that moment.
+setEgressRankSource :: MonadSTM m => Mux mode m -> (Time -> STM m Rank) -> STM m ()
+setEgressRankSource Mux { muxEgress } rank =
+    case muxEgress of
+         Just MuxEgress { meBudgetHandle } -> setRankSource meBudgetHandle rank
+         Nothing                           -> return ()
+
+-- | Install where the scheduled lane reports the bytes each batch carries, per
+-- mini-protocol, as the batch is granted. Nothing on an unscheduled mux.
+setEgressChargeSink :: MonadSTM m => Mux mode m -> ChargeSink m -> STM m ()
+setEgressChargeSink Mux { muxEgress } sink =
+    case muxEgress of
+         Just MuxEgress { meCharge } -> writeTVar meCharge sink
+         Nothing                     -> return ()
 
 mkMiniProtocolStateMap :: MonadSTM m
                        => [MiniProtocolInfo mode]
@@ -163,11 +309,13 @@ mkMiniProtocolState :: MonadSTM m
                     => MiniProtocolInfo mode
                     -> m (MiniProtocolState mode m)
 mkMiniProtocolState miniProtocolInfo = do
-    miniProtocolIngressQueue <- newTVarIO $ 0 :!: mempty
+    miniProtocolIngressQueue <- newIngressQueue
+    miniProtocolEgressVar    <- newEgressVar
     miniProtocolStatusVar    <- newTVarIO StatusIdle
     return MiniProtocolState {
        miniProtocolInfo,
        miniProtocolIngressQueue,
+       miniProtocolEgressVar,
        miniProtocolStatusVar
      }
 
@@ -241,21 +389,28 @@ run Mux { muxMiniProtocols,
           muxTracers = tracers@TracersI {
               tracer_,
               bearerTracer_
-            }
+            },
+          muxCounters,
+          muxEgress
         }
     bearer@Bearer{name} = do
 
     traceWith tracer_ TraceStarting
-    egressQueue <- atomically $ newTBQueue 100
+    (lanes, laneMuxers) <- mkLanes
 
     -- label shared variables
-    labelTBQueueIO egressQueue (name ++ "-mux-egress")
     labelTVarIO muxStatus (name ++ "-mux-status")
     labelTQueueIO muxControlCmdQueue (name ++ "-mux-ctrl")
 
-    JobPool.withJobPool
+    -- the counts live in the mini-protocols' own variables, which outlive
+    -- the job pool, so every byte the muxers and the demuxer counted is in
+    -- them when the cells are retired
+    withByteCells muxCounters
+                  MuxByteCells { mbcSent = miniProtocolEgressVar    <$> muxMiniProtocols,
+                                 mbcRecv = miniProtocolIngressQueue <$> muxMiniProtocols } $
+     JobPool.withJobPool
       (\jobpool -> do
-        JobPool.forkJob jobpool (muxerJob egressQueue)
+        mapM_ (JobPool.forkJob jobpool) laneMuxers
         JobPool.forkJob jobpool demuxerJob
         traceWith tracer_ (TraceState Mature)
 
@@ -263,9 +418,10 @@ run Mux { muxMiniProtocols,
         -- Outstanding jobs are shut down Upon completion of withJobPool.
         withTimeoutSerial $ \timeout ->
           monitor tracers
+                  muxCounters
                   timeout
                   jobpool
-                  egressQueue
+                  lanes
                   muxControlCmdQueue
                   muxStatus
       )
@@ -278,11 +434,51 @@ run Mux { muxMiniProtocols,
       throwIO e
   where
 
-    muxerJob egressQueue =
-      JobPool.Job (muxer egressQueue bearerTracer_ bearer)
+    -- One egress queue and one muxer per lane in use. Unscheduled: a single
+    -- queue and a single muxer. Scheduled: the lanes write through one lock
+    -- so their batches never interleave on the wire. The lock is held for the
+    -- write only, never while a lane waits for a grant, so a direct SDU waits
+    -- for at most one batch of another lane.
+    mkLanes :: m (Lanes m, [JobPool.Job Group m JobResult])
+    mkLanes = case muxEgress of
+      Nothing -> do
+        q <- newQueue "egress"
+        held <- newTVarIO 0
+        return ( Lanes { laneQueue = const q
+                       , laneOf    = \_ _ -> Scheduled
+                       , laneAll   = [(Scheduled, q)]
+                       , laneHeld  = held }
+               , [muxerJob "muxer" q Unscheduled bearer] )
+
+      Just MuxEgress { meBudget, meBudgetHandle, meSlice, meLaneOf, meCharge } -> do
+        lock <- newTMVarIO ()
+        let locked = bearer { writeMany = \tr timeout sdus ->
+                                bracket_ (atomically (takeTMVar lock))
+                                         (atomically (putTMVar lock ()))
+                                         (writeMany bearer tr timeout sdus) }
+            inUse  = [Direct, Scheduled] ++ [Slice | isJust meSlice]
+            egressOf Direct    = Credit meBudget
+            egressOf Slice     = maybe (Credit meBudget) (`Reserved` meBudget) meSlice
+            egressOf Scheduled = Scheduled_ meBudgetHandle meCharge
+        qs <- forM inUse $ \lane -> (\q -> (lane, q)) <$> newQueue ("egress-" ++ laneName lane)
+        let queueOf lane = case lookup lane qs of
+                                Just q  -> q
+                                Nothing -> queueOf Direct     -- 'Slice' without a slice bucket
+        held <- newTVarIO 0
+        return ( Lanes { laneQueue = queueOf, laneOf = meLaneOf, laneAll = qs, laneHeld = held }
+               , [ muxerJob ("muxer-" ++ laneName lane) q (egressOf lane) locked
+                 | (lane, q) <- qs ] )
+
+    newQueue label = do
+      q <- atomically $ newTBQueue 100
+      labelTBQueueIO q (name ++ "-mux-" ++ label)
+      return q
+
+    muxerJob label q laneEgress b =
+      JobPool.Job (muxer q bearerTracer_ muxCounters laneEgress b)
                   (return . MuxerException)
                   MuxJob
-                  (name ++ "-muxer")
+                  (name ++ "-" ++ label)
 
     demuxerJob =
       JobPool.Job (demuxer (Map.elems muxMiniProtocols) bearerTracer_ bearer)
@@ -300,7 +496,7 @@ miniProtocolJob
      , MonadThrow (STM m)
      )
   => Tracers m
-  -> EgressQueue m
+  -> Lanes m
   -> MiniProtocolState mode m
   -> MiniProtocolAction m
   -> JobPool.Job Group m JobResult
@@ -308,7 +504,7 @@ miniProtocolJob TracersI {
                   tracer_,
                   channelTracer_
                 }
-                egressQueue
+                Lanes { laneQueue, laneOf, laneHeld }
                 MiniProtocolState {
                   miniProtocolInfo =
                     MiniProtocolInfo {
@@ -316,6 +512,7 @@ miniProtocolJob TracersI {
                       miniProtocolDir
                     },
                   miniProtocolIngressQueue,
+                  miniProtocolEgressVar,
                   miniProtocolStatusVar
                 }
                MiniProtocolAction {
@@ -328,26 +525,29 @@ miniProtocolJob TracersI {
                 ("prtcl-" ++ (case miniProtocolNum of { MiniProtocolNum a -> show a}) ++ "." ++ show miniProtocolDirEnum)
   where
     jobAction = do
-      w <- newTVarIO BL.empty
-      let chan = muxChannel channelTracer_ egressQueue (Wanton w)
+      wanton@Wanton { want = w, held } <- newWanton miniProtocolEgressVar laneHeld
+      let egressQueue = laneQueue (laneOf miniProtocolNum miniProtocolDirEnum)
+          chan = muxChannel channelTracer_ egressQueue wanton
                             miniProtocolNum miniProtocolDirEnum
                             miniProtocolIngressQueue
       (result, remainder) <- miniProtocolAction chan
       traceWith tracer_ (TraceTerminating miniProtocolNum miniProtocolDirEnum)
       atomically $ do
-        -- The Wanton w is the SDUs that are queued but not yet sent for this job.
-        -- Job threads will be prevented from exiting until all their SDUs have been
-        -- transmitted unless an exception/error is encountered. In that case all
-        -- jobs will be cancelled directly.
+        -- The Wanton w is the SDUs that are queued but not yet sent for this job,
+        -- and 'held' what a muxer has taken from it into a batch it has not yet
+        -- written. Job threads will be prevented from exiting until all their
+        -- SDUs have been written unless an exception/error is encountered. In
+        -- that case all jobs will be cancelled directly.
         readTVar w >>= check . BL.null
+        readTVar held >>= check . (== 0) . esHeld
         writeTVar miniProtocolStatusVar StatusIdle
         putTMVar completionVar (Right result)
           `orElse` throwSTM (BlockedOnCompletionVar miniProtocolNum)
         case remainder of
           Just trailing ->
-            modifyTVar miniProtocolIngressQueue $ \(l :!: b) ->
-                  BL.length trailing + l
-              :!: lazyByteString trailing <> b
+            modifyTVar miniProtocolIngressQueue $ \q ->
+              q { iqLength  = BL.length trailing + iqLength q,
+                  iqBuilder = lazyByteString trailing <> iqBuilder q }
           Nothing ->
             pure ()
 
@@ -410,9 +610,10 @@ monitor :: forall mode m.
            , MonadThrow (STM m)
            )
         => Tracers m
+        -> Maybe (MuxCounters m)
         -> TimeoutFn m
         -> JobPool.JobPool JobPool.WithQueue Group m JobResult
-        -> EgressQueue m
+        -> Lanes m
         -> StrictTQueue m (ControlCmd mode m)
         -> StrictTVar m Status
         -> m ()
@@ -420,7 +621,7 @@ monitor tracers@TracersI {
           tracer_       = tracer,
           bearerTracer_ = bearerTracer
         }
-        timeout jobpool egressQueue cmdQueue muxStatus =
+        counters timeout jobpool lanes cmdQueue muxStatus =
     go (MonitorCtx Map.empty Map.empty)
   where
     go :: MonitorCtx m mode -> m ()
@@ -472,11 +673,18 @@ monitor tracers@TracersI {
         -- the source of the failure, e.g. specific mini-protocol. If we're
         -- propagating exceptions, we don't need to log them.
         EventJobResult (MuxerException e) -> do
-          atomically $ writeTVar muxStatus $ Failed e
+          atomically $ do
+            writeTVar muxStatus $ Failed e
+            case counters of
+                 Just c  -> countMuxerFailure c e
+                 Nothing -> return ()
           traceWith tracer (TraceState Dead)
           throwIO e
         EventJobResult (DemuxerException e) -> do
           r <- atomically $ do
+            case counters of
+                 Just c  -> countDemuxerFailure c e
+                 Nothing -> return ()
             size <- JobPool.readGroupSize jobpool MiniProtocolJob
             case size of
               0  | Just BearerClosed {} <- fromException e
@@ -504,14 +712,14 @@ monitor tracers@TracersI {
               JobPool.forkJob jobpool $
                 miniProtocolJob
                   tracers
-                  egressQueue
+                  lanes
                   ptclState
                   ptclAction
             Just cap ->
               JobPool.forkJobOn cap jobpool $
                 miniProtocolJob
                   tracers
-                  egressQueue
+                  lanes
                   ptclState
                   ptclAction
           go monitorCtx
@@ -556,11 +764,13 @@ monitor tracers@TracersI {
           traceWith tracer TraceStopping
           atomically $ writeTVar muxStatus Stopping
           JobPool.cancelGroup jobpool MiniProtocolJob
-          -- wait for 2 seconds before the egress queue is drained
+          -- wait for 2 seconds before every lane's egress queue is drained and
+          -- every batch a muxer holds is written
           _ <- timeout 2 $
-            atomically $
-                  tryPeekTBQueue egressQueue
-              >>= check . isNothing
+            atomically $ do
+              empties <- mapM (isEmptyTBQueue . snd) (laneAll lanes)
+              check (and empties)
+              readTVar (laneHeld lanes) >>= check . (== 0)
           atomically $ writeTVar muxStatus Stopped
           traceWith tracer TraceStopped
           -- by exiting the 'monitor' loop we let the job pool kill demuxer and
@@ -611,20 +821,20 @@ monitor tracers@TracersI {
           JobPool.forkJob jobpool $
             miniProtocolJob
               tracers
-              egressQueue
+              lanes
               ptclState
               ptclAction
         Just cap ->
           JobPool.forkJobOn cap jobpool $
             miniProtocolJob
               tracers
-              egressQueue
+              lanes
               ptclState
               ptclAction
 
     checkNonEmptyQueue :: IngressQueue m -> STM m ()
     checkNonEmptyQueue q = do
-      l :!: _ <- readTVar q
+      l <- iqLength <$> readTVar q
       check (l /= 0)
 
     protocolKey :: MiniProtocolState mode m -> MiniProtocolKey
@@ -678,7 +888,7 @@ muxChannel
     -> MiniProtocolDir
     -> IngressQueue m
     -> ByteChannel m
-muxChannel tracer egressQueue want@(Wanton w) mc md q =
+muxChannel tracer egressQueue want@Wanton { want = w } mc md q =
     Channel { send, recv }
   where
     -- A soft limit on the egress buffer (Wanton) size.
@@ -691,16 +901,32 @@ muxChannel tracer egressQueue want@(Wanton w) mc md q =
     egressSoftBufferLimit :: Int64
     egressSoftBufferLimit = 0x3ffff
 
+    -- the length of a lazy 'BL.ByteString', counting no further than @n@
+    lengthUpTo :: Int64 -> BL.ByteString -> Int64
+    lengthUpTo n = BL.length . BL.take n
+
     send :: BL.ByteString -> m ()
     send encoding = do
         -- We send CBOR encoded messages by encoding them into by ByteString
         -- forwarding them to the 'mux' thread, see 'Desired servicing semantics'.
 
-        traceWith tracer $ TraceChannelSendStart mc (fromIntegral $ BL.length encoding)
+        -- Encoded here, in the mini-protocol's thread, up to the soft limit:
+        -- unforced, a message waiting for egress capacity keeps alive, through
+        -- every garbage collection, whatever the encoder refers to. A longer
+        -- tail is encoded by the muxer as it is sent, so a large message's
+        -- first bytes are not held back for the rest.
+        let !() = forcePrefix egressSoftBufferLimit encoding
+        -- and no further: the trace carries the length up to one byte past
+        -- the soft limit, and the limit is checked as far as it reaches, so
+        -- neither forces the rest of a long message, here or on a retry (the
+        -- check relied on bytestring's length/compare rewrite rule before,
+        -- which an unoptimised build does not apply)
+        traceWith tracer $ TraceChannelSendStart mc
+                             (fromIntegral $ lengthUpTo (egressSoftBufferLimit + 1) encoding)
 
         atomically $ do
             buf <- readTVar w
-            if BL.length buf < egressSoftBufferLimit
+            if lengthUpTo egressSoftBufferLimit buf < egressSoftBufferLimit
                then do
                    let wasEmpty = BL.null buf
                    writeTVar w (BL.append buf encoding)
@@ -716,10 +942,13 @@ muxChannel tracer egressQueue want@(Wanton w) mc md q =
         -- matching ingress queue. This is the same queue the 'demux' thread writes to.
         traceWith tracer $ TraceChannelRecvStart mc
         blob <- atomically $ do
-            l :!: blob <- readTVar q
-            if l == 0
+            queued <- readTVar q
+            if iqLength queued == 0
                 then retry
-                else writeTVar q (0 :!: mempty) >> return (toLazyByteString blob)
+                else do
+                  -- the bytes read for the protocol stay counted
+                  writeTVar q queued { iqLength = 0, iqBuilder = mempty }
+                  return (toLazyByteString (iqBuilder queued))
         traceWith tracer $ TraceChannelRecvEnd mc (fromIntegral $ BL.length blob)
         return $ Just blob
 

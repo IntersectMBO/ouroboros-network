@@ -24,6 +24,11 @@ module Network.Mux.Types
   , HasResponder
   , Status (..)
   , IngressQueue
+  , IngressQueueState (..)
+  , newIngressQueue
+  , EgressState (..)
+  , EgressVar
+  , newEgressVar
   , MiniProtocolIx
   , MiniProtocolDir (..)
   , protocolDirEnum
@@ -45,6 +50,13 @@ module Network.Mux.Types
   , RuntimeError (..)
   , ReadBuffer (..)
   , BearerTrace (..)
+    -- * Egress tiers
+  , Tier (..)
+  , tierNumber
+  , numberTier
+  , unrankedNumber
+  , tierName
+  , numberName
   ) where
 
 import Prelude hiding (read)
@@ -57,16 +69,16 @@ import Data.Functor (void)
 import Data.Int
 import Data.Ix (Ix (..))
 import Data.Scientific qualified as F (FPFormat (..), fromFloatDigits)
-import Data.Strict.Tuple as Strict (Pair)
 import Data.Word
 import Foreign.Ptr (Ptr)
-import Formatting (formatToString, (%+))
+import Formatting (formatToString, (%), (%+))
 import Formatting qualified as F
 import Quiet
 
 import GHC.Generics (Generic)
 
-import Control.Concurrent.Class.MonadSTM.Strict (StrictTVar)
+import Control.Concurrent.Class.MonadSTM.Strict (MonadSTM, StrictTVar,
+           newTVarIO)
 import Control.Monad.Class.MonadTime.SI
 
 import Network.Mux.Channel (ByteChannel, Channel (..))
@@ -202,7 +214,37 @@ data Status
 -- Mux internal types
 --
 
-type IngressQueue m = StrictTVar m (Strict.Pair Int64 Builder)
+-- | A mini-protocol's ingress queue: what the demuxer has queued for it and
+-- it has not yet taken, as a builder with its length, and the bytes read for
+-- it since the mux started, SDU headers included, which the mux counters
+-- report.
+data IngressQueueState = IngressQueueState {
+    iqLength   :: {-# UNPACK #-} !Int64,
+    iqBuilder  :: !Builder,
+    iqReceived :: {-# UNPACK #-} !Word64
+  }
+
+type IngressQueue m = StrictTVar m IngressQueueState
+
+-- | An empty queue, nothing read.
+newIngressQueue :: MonadSTM m => m (IngressQueue m)
+newIngressQueue = newTVarIO (IngressQueueState 0 mempty 0)
+
+-- | A mini-protocol's standing with the muxers: the batches a muxer has taken
+-- some of its bytes into and not yet written, so the protocol is not done
+-- until this is zero, and the bytes written for it since the mux started,
+-- SDU headers included, which the mux counters report; both change in the
+-- write that releases a batch.
+data EgressState = EgressState {
+    esHeld :: {-# UNPACK #-} !Int,
+    esSent :: {-# UNPACK #-} !Word64
+  }
+
+type EgressVar m = StrictTVar m EgressState
+
+-- | Nothing held, nothing written.
+newEgressVar :: MonadSTM m => m (EgressVar m)
+newEgressVar = newTVarIO (EgressState 0 0)
 
 -- | The index of a protocol in a MuxApplication, used for array indices
 newtype MiniProtocolIx = MiniProtocolIx Int
@@ -220,6 +262,7 @@ protocolDirEnum ResponderDirection     = ResponderDir
 data MiniProtocolState mode m = MiniProtocolState {
        miniProtocolInfo         :: MiniProtocolInfo mode,
        miniProtocolIngressQueue :: IngressQueue m,
+       miniProtocolEgressVar    :: EgressVar m,
        miniProtocolStatusVar    :: StrictTVar m MiniProtocolStatus
      }
 
@@ -284,7 +327,49 @@ data Bearer m = Bearer {
     , name           :: String
     -- | Egress poll interval
     , egressInterval :: DiffTime
+    -- | Block until the bearer can take another write without blocking,
+    -- for a socket, until it is writable. The egress scheduler gates token
+    -- grants on this, so tokens go only to bearers that can put bytes on
+    -- the wire now. Bearers without back-pressure return immediately. A
+    -- socket that does not become writable within the SDU timeout fails
+    -- with 'SDUWriteTimeout', as a blocked write would.
+    , awaitWritable  :: Tracer m BearerTrace -> TimeoutFn m -> m ()
     }
+
+-- | The tiers scheduled egress ranks bearers in, lowest first: local roots
+-- head the cascade, partners follow; the residual tier is a big-ledger
+-- pool's relay with credit, then any other peer with credit; at zero credit
+-- a peer is at rest. The one place their numbering is written down.
+data Tier = LocalRootTier | PartnerTier | PoolTier | StrangerTier | RestTier
+  deriving (Eq, Ord, Enum, Bounded, Show)
+
+-- | A tier's place in the queue.
+tierNumber :: Tier -> Word8
+tierNumber = fromIntegral . fromEnum
+
+-- | The tier at a place in the queue, if any.
+numberTier :: Word8 -> Maybe Tier
+numberTier n
+  | n <= tierNumber maxBound = Just (toEnum (fromIntegral n))
+  | otherwise                = Nothing
+
+-- | Where a bearer without a rank queues: after every tier.
+unrankedNumber :: Word8
+unrankedNumber = maxBound
+
+tierName :: Tier -> String
+tierName LocalRootTier = "localRoot"
+tierName PartnerTier   = "partner"
+tierName PoolTier      = "pool"
+tierName StrangerTier  = "stranger"
+tierName RestTier      = "rest"
+
+-- | The name of a place in the queue: its tier's, "unranked", or the number.
+numberName :: Word8 -> String
+numberName n = case numberTier n of
+  Just t                        -> tierName t
+  Nothing | n == unrankedNumber -> "unranked"
+          | otherwise           -> "tier" ++ show n
 
 newtype SDUSize = SDUSize { getSDUSize :: Word16 }
   deriving Generic
@@ -367,6 +452,8 @@ data BearerTrace =
     | TraceSDUReadTimeoutException
     | TraceSDUWriteTimeoutException
     | TraceTCPInfo StructTCPInfo Word16
+    | TraceEgressGrant Int DiffTime DiffTime Bool
+      -- ^ bytes, waited for writability, waited for tokens, from the floor
 
 instance Show BearerTrace where
     show TraceRecvHeaderStart = "Bearer Receive Header Start"
@@ -403,6 +490,10 @@ instance Show BearerTrace where
     show TraceSendEnd = "Bearer Send End"
     show TraceSDUReadTimeoutException = "Timed out reading SDU"
     show TraceSDUWriteTimeoutException = "Timed out writing SDU"
+    show (TraceEgressGrant len tw tt fromFloor) =
+      formatToString
+        ("Egress grant: bytes" %+ F.int %+ "waited writable" %+ F.shown %+ "waited tokens" %+ F.shown % F.string)
+        len tw tt (if fromFloor then " from the floor" else "")
 #ifdef linux_HOST_OS
     show (TraceTCPInfo StructTCPInfo
             { tcpi_snd_mss, tcpi_rcv_mss, tcpi_lost, tcpi_retrans

@@ -15,6 +15,7 @@ module Cardano.Network.Diffusion.Configuration
   , defaultMiniProtocolParameters
   , TxSubmissionLogicVersion (..)
   , defaultTxSubmissionLogicVersion
+  , defaultEgressScheduling
   , srvPrefix
     -- * Re-exports
   , ChainSyncIdleTimeout (..)
@@ -26,9 +27,14 @@ module Cardano.Network.Diffusion.Configuration
   ) where
 
 import Cardano.Network.NodeToNode (MiniProtocolParameters (..),
-           defaultMiniProtocolParameters)
+           defaultMiniProtocolParameters, keepAliveMiniProtocolNum,
+           txSubmissionMiniProtocolNum)
 import Cardano.Network.PeerSelection.Governor.PeerSelectionState
            (NumberOfBigLedgerPeers (..))
+import Network.Mux qualified as Mx
+import Network.Mux.Types (MiniProtocolDir (..))
+import Ouroboros.Network.Diffusion.Configuration qualified as Diffusion
+import Ouroboros.Network.Diffusion.Types (EgressScheduling (..))
 
 import Ouroboros.Network.BlockFetch (BlockFetchConfiguration (..),
            GenesisBlockFetchConfiguration (..))
@@ -39,6 +45,19 @@ import Ouroboros.Network.PeerSelection.RelayAccessPoint (SRVPrefix)
 import Ouroboros.Network.Protocol.ChainSync.Codec (ChainSyncIdleTimeout (..))
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
            (TxSubmissionLogicVersion (..))
+
+-- | Scheduled egress ('Diffusion.defaultEgressSchedulingWith'):
+--
+-- Responder traffic is ranked in the budget's bucket, its own requests go direct,
+-- and the tx bodies its peers pull go in the reserved slice.
+defaultEgressScheduling :: EgressScheduling
+defaultEgressScheduling = (Diffusion.defaultEgressSchedulingWith laneOf) {
+    -- one small reply per request, nothing a client can drive to volume
+    esUnchargedProtocols = [keepAliveMiniProtocolNum]
+  }
+  where
+    laneOf num InitiatorDir | num == txSubmissionMiniProtocolNum = Mx.Slice
+    laneOf num dir = Mx.directionSplit num dir
 
 -- | Default number of bootstrap peers
 --

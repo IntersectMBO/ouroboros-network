@@ -208,7 +208,7 @@ prop_bidirectional_Sim (Fixed rnd) data0 data1 =
           Snocket.listen snock socket0
           Snocket.listen snock socket1
           bidirectionalExperiment False  (mkStdGen rnd)simTimeouts snock
-                                        makeFDBearer
+                                        makeFDBearer Nothing
                                         (\_ -> pure ())
                                         socket0 socket1
                                         addr0 addr1
@@ -275,6 +275,7 @@ bidirectional_IG_delay_sim rnd data0 data1 =
             }
             False (mkStdGen rnd) simTimeouts snock
             makeFDBearer
+            Nothing -- no scheduled egress
             (\_ -> pure ())
             socket0 socket1
             addr0 addr1
@@ -972,7 +973,7 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer debugTracer cmTracer
                           inboundTrTracer trTracer cmTracer
                           inboundTracer muxTracers debugTracer
                           stdGen
-                          snocket makeBearer connStateIdSupply
+                          snocket makeBearer Nothing connStateIdSupply
                           (\_ -> pure ()) fd (Just localAddr) serverAcc
                           (mkNextRequests connVar)
                           timeLimitsHandshake
@@ -2433,6 +2434,7 @@ prop_server_accept_error (Fixed rnd) (AbsIOError ioerr) =
                                                   (mkStdGen rnd)
                                                   snock
                                                   makeFDBearer
+                                                  Nothing
                                                   connStateIdSupply
                                                   (\_ -> pure ())
                                                   socket0 (Just addr)

@@ -238,6 +238,9 @@ withBidirectionalConnectionManager snocket makeBearer socket
         mkConnectionHandler = makeConnectionHandler
           muxTracers
           noBindForkPolicy
+          Nothing                  -- no mux counters
+          Nothing                  -- no scheduled egress
+          (\_ _ _ -> return (\_ -> return (Mx.Rank 0), \_ _ _ -> return ()))
           HandshakeArguments {
               -- TraceSendRecv
               haHandshakeTracer = ("handshake",) `contramap` debugTracer,
