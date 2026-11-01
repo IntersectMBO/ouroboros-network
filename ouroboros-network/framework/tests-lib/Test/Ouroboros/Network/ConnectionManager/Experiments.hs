@@ -683,8 +683,9 @@ runInitiatorProtocols
                                ByteString m a b
     -> TemperatureBundle (StrictTVar m ControlMessage)
     -> ConnectionId addr
+    -> ConnStateId
     -> m (TemperatureBundle a)
-runInitiatorProtocols singMuxMode mux bundle controlBundle connId = do
+runInitiatorProtocols singMuxMode mux bundle controlBundle connId connStateId = do
     -- start all mini-protocols
     bundle' <- traverse (uncurry runInitiator) ((,) <$> (head <$> bundle)
                                                     <*> (readTVar <$> controlBundle))
@@ -711,6 +712,7 @@ runInitiatorProtocols singMuxMode mux bundle controlBundle connId = do
       where
         initiatorCtx = ExpandedInitiatorContext {
             eicConnectionId    = connId,
+            eicConnStateId     = connStateId,
             eicControlMessage  = controlMessage,
             eicIsBigLedgerPeer = IsNotBigLedgerPeer,
             eicExtraFlags      = ()
@@ -787,15 +789,15 @@ unidirectionalExperiment stdGen timeouts snocket makeBearer confSock socket clie
                   (bracket
                      (acquireOutboundConnection connectionManager InitiatorOnlyDiffusionMode serverAddr Outbound)
                      (\case
-                        Connected connId _ _ -> releaseOutboundConnection connectionManager connId
+                        Connected connId _ _ _ -> releaseOutboundConnection connectionManager connId
                         Disconnected {} -> error "unidirectionalExperiment: impossible happened")
                      (\case
-                        Connected connId _ (Handle mux muxBundle controlBundle _
+                        Connected connId connStateId _ (Handle mux muxBundle controlBundle _
                                         :: HandleWithExpandedCtx Mx.InitiatorMode peerAddr ()
                                               DataFlowProtocolData ByteString m [resp] Void) ->
                           try @_ @SomeException $
                             (runInitiatorProtocols
-                              SingInitiatorMode mux muxBundle controlBundle connId
+                              SingInitiatorMode mux muxBundle controlBundle connId connStateId
                               :: m (TemperatureBundle [resp])
                             )
                         Disconnected _ err ->
@@ -942,18 +944,18 @@ bidirectionalExperimentWith
                         localAddr1
                         Outbound))
                     (\case
-                      Connected connId _ _ ->
+                      Connected connId _ _ _ ->
                         releaseOutboundConnection
                           connectionManager0
                           connId
                       Disconnected {} ->
                         error "bidirectionalExperiment: impossible happened")
                     (\case
-                      Connected connId _ (Handle mux muxBundle controlBundle _) -> do
+                      Connected connId connStateId _ (Handle mux muxBundle controlBundle _) -> do
                         try @_ @SomeException $
                           runInitiatorProtocols
                             SingInitiatorResponderMode
-                            mux muxBundle controlBundle connId
+                            mux muxBundle controlBundle connId connStateId
                       Disconnected _ err ->
                         throwIO (userError $ "bidirectionalExperiment: " ++ show err)
                   ))
@@ -968,18 +970,18 @@ bidirectionalExperimentWith
                         localAddr0
                         Outbound))
                     (\case
-                      Connected connId _ _ ->
+                      Connected connId _ _ _ ->
                         releaseOutboundConnection
                           connectionManager1
                           connId
                       Disconnected {} ->
                         error "bidirectionalExperiment: impossible happened")
                     (\case
-                      Connected connId _ (Handle mux muxBundle controlBundle _) -> do
+                      Connected connId connStateId _ (Handle mux muxBundle controlBundle _) -> do
                         try @_ @SomeException $
                           runInitiatorProtocols
                             SingInitiatorResponderMode
-                            mux muxBundle controlBundle connId
+                            mux muxBundle controlBundle connId connStateId
                       Disconnected _ err ->
                         throwIO (userError $ "bidirectionalExperiment: " ++ show err)
                   ))

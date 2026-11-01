@@ -1039,14 +1039,14 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer debugTracer cmTracer
          -> StrictTQueue m (ConnectionHandlerMessage peerAddr req)
          -- ^ control channel
          -> ConnectionManagerWithExpandedCtx muxMode socket peerAddr () DataFlowProtocolData UnversionedProtocol ByteString m [resp] a
-         -> Map.Map peerAddr (HandleWithExpandedCtx muxMode peerAddr () DataFlowProtocolData ByteString m [resp] a)
+         -> Map.Map peerAddr (ConnStateId, HandleWithExpandedCtx muxMode peerAddr () DataFlowProtocolData ByteString m [resp] a)
          -- ^ active connections
          -> StrictTVar m (Map.Map (ConnectionId peerAddr) (TemperatureBundle (StrictTQueue m [req])))
          -- ^ mini protocol queues
          -> m ()
     connectionLoop muxMode localAddr cc cm connMap0 connVar = go connMap0
       where
-        go :: Map.Map peerAddr (HandleWithExpandedCtx muxMode peerAddr () DataFlowProtocolData ByteString m [resp] a) -- active connections
+        go :: Map.Map peerAddr (ConnStateId, HandleWithExpandedCtx muxMode peerAddr () DataFlowProtocolData ByteString m [resp] a) -- active connections
            -> m ()
         go !connMap = atomically (readTQueue cc) >>= \ case
           NewConnection remoteAddr -> do
@@ -1067,11 +1067,11 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer debugTracer cmTracer
             case connHandle of
               Left _ ->
                 go connMap
-              Right (Connected _ _ h) -> do
+              Right (Connected _ connStateId _ h) -> do
                 qs <- atomically $ sequenceA $ makeBundle mkQueue
                 atomically $ modifyTVar connVar
                            $ Map.insert (connId remoteAddr) qs
-                go (Map.insert remoteAddr h connMap)
+                go (Map.insert remoteAddr (connStateId, h) connMap)
               Right Disconnected {} -> return ()
           Disconnect remoteAddr -> do
             atomically $ do
@@ -1097,7 +1097,7 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer debugTracer cmTracer
               Nothing -> -- TODO: as above
                          -- throwIO (NoActiveConnection localAddr remoteAddr)
                          return ()
-              Just (Handle mux muxBundle controlBundle _) -> do
+              Just (connStateId, Handle mux muxBundle controlBundle _) -> do
                 -- TODO:
                 -- At times this throws 'ProtocolAlreadyRunning'.
                 r <- tryJust (\(e :: SomeException) ->
@@ -1111,6 +1111,7 @@ multinodeExperiment inboundTrTracer trTracer inboundTracer debugTracer cmTracer
                           ConnectionId { localAddress  = localAddr,
                                          remoteAddress = remoteAddr
                                        }
+                          connStateId
                 case r of
                   -- Lost connection to peer
                   Left  {} -> do

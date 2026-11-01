@@ -182,7 +182,7 @@ import System.Random (StdGen)
 import Network.Mux.Types (HasInitiator, HasResponder)
 import Network.Mux.Types qualified as Mux
 
-import Ouroboros.Network.ConnectionId (ConnectionId (..))
+import Ouroboros.Network.ConnectionId (ConnStateId, ConnectionId (..))
 import Ouroboros.Network.ConnectionManager.ConnMap (ConnMap)
 import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.MuxMode
@@ -478,7 +478,7 @@ data DemotedToColdRemoteTr =
 data Connected peerAddr handle handleError =
     -- | We are connected and mux is running.
     --
-    Connected    !(ConnectionId peerAddr) !DataFlow !handle
+    Connected    !(ConnectionId peerAddr) !ConnStateId !DataFlow !handle
 
     -- | There was an error during handshake negotiation.
     --

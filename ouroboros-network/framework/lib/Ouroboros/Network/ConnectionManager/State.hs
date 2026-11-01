@@ -37,7 +37,6 @@ import Prelude hiding (lookup)
 import Ouroboros.Network.ConnectionId
 import Ouroboros.Network.ConnectionManager.ConnMap as ConnMap
 import Ouroboros.Network.ConnectionManager.Types
-import Ouroboros.Network.Util (PrettyShow (..))
 
 import Test.Ouroboros.Network.Utils (WithName (..))
 
@@ -61,17 +60,6 @@ readAbstractStateMap
   => ConnectionManagerState peerAddr handle handleError version m
   -> STM m (ConnMap peerAddr AbstractState)
 readAbstractStateMap = traverse (fmap (abstractState . Known) . readTVar . connVar)
-
--- | A unique identifier of a connection.
---
--- It's used even when we don't yet know `ConnectionId`.
---
-newtype ConnStateId = ConnStateId Int
-  deriving stock (Eq, Ord, Show)
-  deriving newtype Enum
-
-instance PrettyShow ConnStateId where
-  prettyShow (ConnStateId connStateId) = show connStateId
 
 -- | 'MutableConnState', which supplies a unique identifier.
 --

@@ -496,7 +496,7 @@ bidirectionalExperiment
           connHandle <-
                 connect 10 connectionManager
           case connHandle of
-            Connected connId _ (Handle mux muxBundle controlMessageBundle _) -> do
+            Connected connId connStateId _ (Handle mux muxBundle controlMessageBundle _) -> do
               traceWith debugTracer ( "initiator-loop"
                                     , "connected"
                                     )
@@ -506,6 +506,7 @@ bidirectionalExperiment
                   mux
                   (\tok -> ExpandedInitiatorContext {
                              eicConnectionId    = connId,
+                             eicConnStateId     = connStateId,
                              eicControlMessage  = readTVar
                                                 . projectBundle tok
                                                 $ controlMessageBundle,

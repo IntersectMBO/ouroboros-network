@@ -1,9 +1,10 @@
-{-# LANGUAGE DeriveFunctor       #-}
-{-# LANGUAGE DeriveGeneric       #-}
-{-# LANGUAGE DerivingVia         #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DeriveFunctor              #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingVia                #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE NamedFieldPuns             #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 
 module Ouroboros.Network.ConnectionId where
 
@@ -47,3 +48,23 @@ instance Hashable a => Hashable (ConnectionId a)
 
 instance forall addr. ShowProxy addr => ShowProxy (ConnectionId addr) where
   showProxy _ = "ConnectionId " ++ showProxy (Proxy :: Proxy addr)
+
+
+-- | A unique identifier of a connection.
+--
+-- It's used even when we don't yet know `ConnectionId`.
+--
+-- Successive connections between two nodes often have the same 'ConnectionId'.
+-- 'ConnStateId', on the other hand, is never reused. Thus "per-peer state" (eg
+-- shared/maintained by the various mini protocols) should be indexed by
+-- 'ConnStateId' instead of 'ConnectionId'.
+--
+-- The connection manager draws a fresh one for every connection it creates,
+-- inbound or outbound.
+--
+newtype ConnStateId = ConnStateId Int
+  deriving stock (Eq, Ord, Show)
+  deriving newtype (Enum, NoThunks)
+
+instance PrettyShow ConnStateId where
+  prettyShow (ConnStateId connStateId) = show connStateId

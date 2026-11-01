@@ -987,7 +987,7 @@ with args@Arguments {
                                        infoChannel $
                                        NewConnection (NewConnectionInfo provenance connId dataFlow handle)
                       _ -> return ()
-                    return $ Connected connId dataFlow handle
+                    return $ Connected connId connStateId dataFlow handle
 
                   -- the connection is in `TerminatingState` or
                   -- `TerminatedState`.
@@ -1343,7 +1343,7 @@ with args@Arguments {
                          , Just $ TransitionTrace
                                    connStateId
                                    (mkTransition connState connState')
-                         , Right (mutableConnState, Here (Connected connId dataFlow handle))
+                         , Right (mutableConnState, Here (Connected connId connStateId dataFlow handle))
                          )
 
                 InboundState connId _connThread _handle Unidirectional -> do
@@ -1366,7 +1366,7 @@ with args@Arguments {
                          , Just (TransitionTrace
                                    connStateId
                                    (mkTransition connState connState'))
-                         , Right (mutableConnState, Here (Connected connId dataFlow handle))
+                         , Right (mutableConnState, Here (Connected connId connStateId dataFlow handle))
                          )
 
                 DuplexState _connId _connThread  _handle ->
@@ -1660,7 +1660,7 @@ with args@Arguments {
                           mbTransition
                 traceCounters stateVar
                 return $ case mbTransition of
-                  Right _  -> Connected    connId dataFlow handle
+                  Right _  -> Connected    connId connStateId dataFlow handle
                   Left err -> Disconnected connId err
 
           Right (MutableConnState { connVar, connStateId }, There connId) -> do
@@ -1704,7 +1704,7 @@ with args@Arguments {
                   return ( Left (TransitionTrace
                                   connStateId
                                   (mkTransition connState connState'))
-                         , Connected connId dataFlow handle
+                         , Connected connId connStateId dataFlow handle
                          )
 
                 InboundIdleState _connId _connThread _handle Unidirectional ->
@@ -1729,7 +1729,7 @@ with args@Arguments {
                   return ( Left (TransitionTrace
                                   connStateId
                                   (mkTransition connState connState'))
-                         , Connected connId dataFlow handle
+                         , Connected connId connStateId dataFlow handle
                          )
 
                 InboundState _ _ _ Unidirectional ->

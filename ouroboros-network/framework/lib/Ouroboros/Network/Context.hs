@@ -7,6 +7,7 @@ module Ouroboros.Network.Context
   , MinimalInitiatorContext (..)
   , ResponderContext (..)
     -- * Re-exports
+  , ConnStateId (..)
   , ConnectionId (..)
   , ControlMessageSTM
   , IsBigLedgerPeer (..)
@@ -21,6 +22,8 @@ import Ouroboros.Network.PeerSelection.LedgerPeers.Type
 --
 data ExpandedInitiatorContext addr extraFlags m = ExpandedInitiatorContext {
     eicConnectionId    :: !(ConnectionId addr),
+    eicConnStateId     :: !ConnStateId,
+    -- ^ Unlike 'eicConnectionId', never reused; see 'ConnStateId'.
     eicControlMessage  :: !(ControlMessageSTM m),
     eicIsBigLedgerPeer :: !IsBigLedgerPeer,
     eicExtraFlags      :: !extraFlags

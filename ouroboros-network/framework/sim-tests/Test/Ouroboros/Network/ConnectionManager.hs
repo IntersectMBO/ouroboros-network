@@ -841,7 +841,7 @@ prop_valid_transitions (Fixed rnd) (SkewedBool bindToLocalAddress) scheduleMap =
 
                             Right (Just (Disconnected {})) -> pure ()
 
-                            Right (Just (Connected connId _ _)) -> do
+                            Right (Just (Connected connId _ _ _)) -> do
                               threadDelay (either id id (seActiveDelay conn))
                               -- if this outbound connection is not
                               -- executed within inbound connection,

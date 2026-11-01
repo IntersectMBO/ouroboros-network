@@ -434,6 +434,7 @@ awaitAllResults tok bundle = do
 --
 data PeerConnectionHandle (muxMode :: Mux.Mode) responderCtx peerAddr extraFlags versionData bytes m a b = PeerConnectionHandle {
     pchConnectionId    :: !(ConnectionId peerAddr),
+    pchConnStateId     :: !ConnStateId,
     pchPeerStatus      :: !(StrictTVar m PeerStatus),
     pchMux             :: !(Mux.Mux muxMode m),
     pchAppHandles      :: !(TemperatureBundle (ApplicationHandle muxMode responderCtx peerAddr extraFlags bytes m a b)),
@@ -459,11 +460,13 @@ mkInitiatorContext :: MonadSTM m
 mkInitiatorContext tok isBigLedgerPeer extraFlags
                    PeerConnectionHandle {
                        pchConnectionId = connectionId,
+                       pchConnStateId  = connStateId,
                        pchAppHandles   = appHandles
                     }
                    =
                    ExpandedInitiatorContext {
                        eicConnectionId    = connectionId,
+                       eicConnStateId     = connStateId,
                        eicControlMessage  = readTVar (getControlVar tok appHandles),
                        eicIsBigLedgerPeer = isBigLedgerPeer,
                        eicExtraFlags      = extraFlags
@@ -801,6 +804,7 @@ withPeerStateActions PeerStateActionsArguments {
                 ShutdownPeer -> throwIO e
 
             Right (Connected connId@ConnectionId { localAddress, remoteAddress }
+                             connStateId
                              _dataFlow
                             (Handle mux muxBundle controlMessageBundle versionData)) -> do
 
@@ -815,6 +819,7 @@ withPeerStateActions PeerStateActionsArguments {
               let connHandle =
                     PeerConnectionHandle {
                         pchConnectionId = connId,
+                        pchConnStateId  = connStateId,
                         pchPeerStatus   = peerStateVar,
                         pchMux          = mux,
                         pchAppHandles   = mkApplicationHandleBundle
