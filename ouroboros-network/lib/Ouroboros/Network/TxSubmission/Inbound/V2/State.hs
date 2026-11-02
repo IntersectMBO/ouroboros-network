@@ -567,15 +567,10 @@ pickRequestTxIdsAction txIdRequestMode ctx@PeerActionContext { pacPolicy, pacPee
   -- ack the peer waits for its unacked txids to resolve rather than poll
   -- with 'ack=0, req=N' messages.  Stricter than V1, which pipelines
   -- such a poll after a body request while the window has room.
+  -- (An empty unacked queue has nothing to ack, so this also keeps the
+  -- post-ack queue non-empty, as a pipelined request requires.)
   | txIdRequestMode == AllowPipelinedTxIdRequests
   , txIdsToAcknowledge <= 0 || txIdsToRequest <= 0 = Nothing
-
-  -- Spec: a pipelined (non-blocking) request requires the post-ack
-  -- queue to be non-empty.  When the peer's unacked queue is empty to
-  -- begin with we can't satisfy that, and there's no blocking option
-  -- in pipelined mode, so wait for a later wake.
-  | txIdRequestMode == AllowPipelinedTxIdRequests
-  , StrictSeq.null (peerUnacknowledgedTxIds pacPeerState) = Nothing
 
   | otherwise = Just (acknowledgedTxIds, txIdsToAcknowledge, txIdsToRequest, unacknowledgedTxIds)
   where
@@ -948,14 +943,16 @@ txIdAckable PeerActionContext { pacPeerState, pacPeerInFlight, pacSharedState }
 -- 'sharedGeneration' (the wake counter): neither removal grants another
 -- peer an option.  Waking parked peers here would cost a full
 -- 'nextPeerAction' pass per peer for nothing.
+--
+-- Also the keys doomed, for 'reviewDoomed'.
 sweepSharedState :: HasRawTxId txid
                  => DiffTime
                  -> Time
                  -> SharedTxState peeraddr txid
-                 -> SharedTxState peeraddr txid
+                 -> (SharedTxState peeraddr txid, IntSet)
 sweepSharedState grace now st =
     case sweepSharedStateUpTo maxBound grace now sweepStart st of
-      (st', _, _, _) -> st'
+      (st', _, _, doomed) -> (st', doomed)
 {-# INLINABLE sweepSharedState #-}
 
 -- | 'sweepSharedState' bounded: does at most @limit@ units of work.  It
@@ -1038,7 +1035,10 @@ reviewDoomed :: HasRawTxId txid
 reviewDoomed now held doomed st
     | IntSet.null dropped && IntSet.null spared = (st, IntSet.empty)
     | otherwise =
-        ( (dropTxKeys dropped st { sharedTxTable = sparedTable })
+        -- the dropped are table entries, never retained: no retained
+        -- delete
+        ( (dropLookupEntries dropped
+             st { sharedTxTable = IntMap.withoutKeys sparedTable dropped })
             { sharedRevision = sharedRevision st + 1 }
         , dropped )
   where
@@ -1123,17 +1123,6 @@ expireUpTo limit now st
 residentKey :: SharedTxState peeraddr txid -> Int -> Bool
 residentKey st k =
   IntMap.member k (sharedTxTable st) || retainedMember k (sharedRetainedTxs st)
-
--- | Remove transaction entries from all shared state maps by key.
-dropTxKeys :: HasRawTxId txid
-           => IntSet -> SharedTxState peeraddr txid -> SharedTxState peeraddr txid
-dropTxKeys keys s@SharedTxState { sharedTxTable, sharedRetainedTxs }
-  | IntSet.null keys = s
-  | otherwise =
-      dropLookupEntries keys
-        s { sharedTxTable     = IntMap.withoutKeys sharedTxTable keys,
-            sharedRetainedTxs = retainedDeleteKeys keys sharedRetainedTxs }
-{-# INLINABLE dropTxKeys #-}
 
 -- | Remove only the txid <-> key lookup entries.  Used for keys that have
 -- outlived their 'sharedTxTable' and retained residence but had their

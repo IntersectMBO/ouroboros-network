@@ -141,6 +141,7 @@ tests =
     , testProperty "the counters thread's review drops the doomed entries no live peer advertises and spares the others" prop_thread_review
     , testProperty "bounded sweeps round the table equal one unbounded sweep" prop_sweep_rotation
     , testProperty "one bounded sweep does at most its limit of each kind of work" prop_sweepUpTo_boundedWork
+    , localOption (QuickCheckTests 20) $ testProperty "every write of the counters thread does at most one batch of work" prop_thread_oneBudget
     , testProperty "a walk takes its limit of entries in cyclic key order" prop_walkFrom_cyclic
     , testProperty "expiry alone drops the expired keys with their lookup entries" prop_expireUpTo_lookupEntries
     , testProperty "the counters thread's first sweep is the unbounded sweep at that time" prop_thread_rotation
@@ -166,6 +167,7 @@ tests =
     , testCaseSteps "nextPeerAction requests other work despite a blocked buffered tx" unit_nextPeerAction_requestsOtherWorkDespiteBlockedBufferedTx
     , testCaseSteps "nextPeerAction submits buffered bodies across a resolved-elsewhere gap" unit_nextPeerAction_submitsBufferedAcrossResolvedGap
     , testProperty "nextPeerAction keeps non-owner txids unacked until resolved" prop_nextPeerAction_nonOwnerWaitsUntilResolved
+    , testProperty "a txid request without acks comes only on an empty unacked queue" prop_nextPeerAction_blockingOnlyWhenEmpty
     , testProperty "nextPeerAction claims a claimable tx for the best idle advertiser" prop_nextPeerAction_claimsClaimableTx
     , testGroup "Tiers"
         [ testProperty "a slow peer's txid requests are never closer than the cadence less its jitter" prop_tier_slowRequestSpacing
@@ -368,6 +370,9 @@ peerTxInFlightInvariant pif =
 -- cross-state coherence constraints that need both shared and per-peer
 -- views to express:
 --
+--   * Every key in any peer's 'pifAdvertised' references an active
+--     entry or a retained one, the keys given as expired aside
+--     ('combinedStateInvariantExpired').
 --   * Each entry's 'txAttempt' equals the number of peers in the map
 --     whose 'pifAttempting' contains the key.
 --   * Each entry's 'txInSubmission' is true iff some peer in the map
@@ -394,7 +399,27 @@ combinedStateInvariant
   -> Map.Map peeraddr (PeerTxLocalState tx, PeerTxInFlight)
   -> SharedTxState peeraddr txid
   -> Property
-combinedStateInvariant policy peers sharedState =
+combinedStateInvariant = combinedStateInvariantExpired IntSet.empty
+
+-- | 'combinedStateInvariant' with the given keys allowed in advertised
+-- sets though neither active nor retained: keys whose retention expired
+-- before their advertisers acknowledged them, the one way an advertised
+-- key loses its residence ('prop_sweep_expiredAdvertised').
+combinedStateInvariantExpired
+  :: forall peeraddr txid tx.
+     ( Ord peeraddr
+     , Ord txid
+     , HasRawTxId txid
+     , Show peeraddr
+     , Show txid
+     , NoThunks tx
+     )
+  => IntSet.IntSet
+  -> TxDecisionPolicy
+  -> Map.Map peeraddr (PeerTxLocalState tx, PeerTxInFlight)
+  -> SharedTxState peeraddr txid
+  -> Property
+combinedStateInvariantExpired expired policy peers sharedState =
   conjoin $
        [ counterexample ("PeerTxLocalState invariant violated for peer "
                           ++ show p)
@@ -405,6 +430,12 @@ combinedStateInvariant policy peers sharedState =
            (peerTxInFlightInvariant pif)
        | (p, (_, pif)) <- Map.toList peers ]
     ++ [ sharedTxStateInvariant sharedState ]
+    ++ [ counterexample ("peer " ++ show p
+                          ++ " advertises keys that are neither active nor retained: "
+                          ++ show (IntSet.toList stray))
+           (IntSet.null stray)
+       | (p, (_, pif)) <- Map.toList peers
+       , let stray = pifAdvertised pif `IntSet.difference` (liveKeys `IntSet.union` expired) ]
     ++ [ counterexample ("txAttempt mismatch for entry " ++ show k
                           ++ ": expected " ++ show expectedAttempt
                           ++ " (sum across peers' pifAttempting)"
@@ -432,6 +463,9 @@ combinedStateInvariant policy peers sharedState =
        | (k, entry) <- IntMap.toList (sharedTxTable sharedState)
        , TxLeased owner _ <- [txLease entry]
        ]
+  where
+    liveKeys = IntMap.keysSet (sharedTxTable sharedState)
+                 `IntSet.union` retainedKeysSet (sharedRetainedTxs sharedState)
 
 -- | Cross-step invariant on shared state: any change to fields other
 -- than the two counters ('sharedGeneration' and 'sharedRevision') must
@@ -1892,7 +1926,7 @@ prop_nextPeerAction_prunesExpiredRetained (ArbTxDecisionPolicy policy)
 
     sharedState0 = seedRetainedTxids policy txidsAndSizes emptySharedTxState
     expired      = addTime (bufferedTxsMinLifetime policy + 1) now
-    sharedState' = sweepSharedState grace expired sharedState0
+    sharedState' = fst (sweepSharedState grace expired sharedState0)
   in
     counterexample
       ("retained set after sweep: " ++ show (retainedSize (sharedRetainedTxs sharedState')))
@@ -1912,7 +1946,7 @@ prop_nextPeerAction_keepsRetained (ArbTxDecisionPolicy policy)
       [ (t, SizeInBytes 64) | t <- [1 .. n] ]
 
     sharedState0 = seedRetainedTxids policy txidsAndSizes emptySharedTxState
-    sharedState' = sweepSharedState grace now sharedState0
+    sharedState' = fst (sweepSharedState grace now sharedState0)
   in
     retainedSize (sharedRetainedTxs sharedState') === n
 
@@ -2172,7 +2206,7 @@ prop_thread_rotation ss@SweepState { ssRetained } =
     st <- readTVarIO sharedStateVar
     pure $ counterexample (show st) $
            counterexample "state after the first sweep"
-             (st { sharedRevision = 0 } === (sweepSharedState grace (Time tick) st0) { sharedRevision = 0 })
+             (st { sharedRevision = 0 } === (fst (sweepSharedState grace (Time tick) st0)) { sharedRevision = 0 })
       .&&. sharedTxStateInvariant st
   where
     tick :: DiffTime
@@ -2308,14 +2342,14 @@ prop_thread_drainCap (Lifetime lifetime) = runSimOrThrow $
             (retainedBacklog (4 * (ceiling (interval / drainPause) + 1) * sweepBatch))
 
 -- | Watch a running counters thread through the state's writes for the
--- given time: the time of every write, and of every sweep, which shows as
--- the table shrinking, its review dropping the orphans the sweep before
--- doomed, which no batch does.
-watchWrites :: SharedTxState PeerAddr TxId
+-- given time: the time and the shape of the state after every write, the
+-- initial shape at time zero first.  The shape: the table's size, the
+-- doomed entries in it and the retained entries.
+watchShapes :: SharedTxState PeerAddr TxId
             -> SharedTxStateVar (IOSim s) PeerAddr TxId
             -> DiffTime
-            -> IOSim s ([Time], [Time])
-watchWrites st0 sharedStateVar for = do
+            -> IOSim s [(Time, (Int, Int, Int))]
+watchShapes st0 sharedStateVar for = do
     observations <- newTVarIO [(Time 0, shape st0)]
     let watch rev = do
           (rev', sh) <- atomically $ do
@@ -2326,16 +2360,79 @@ watchWrites st0 sharedStateVar for = do
           atomically (modifyTVar observations ((t, sh) :))
           watch rev'
     withAsync (watch (sharedRevision st0)) $ \_ -> threadDelay for
-    obs <- reverse <$> readTVarIO observations
+    reverse <$> readTVarIO observations
+  where
+    shape st = ( IntMap.size (sharedTxTable st)
+               , IntMap.size (IntMap.filter ((== Doomed) . txDoom) (sharedTxTable st))
+               , retainedSize (sharedRetainedTxs st) )
+
+-- | 'watchShapes' read as the time of every write, and of every sweep,
+-- which shows as the table shrinking, its review dropping the orphans the
+-- sweep before doomed, which no batch does.
+watchWrites :: SharedTxState PeerAddr TxId
+            -> SharedTxStateVar (IOSim s) PeerAddr TxId
+            -> DiffTime
+            -> IOSim s ([Time], [Time])
+watchWrites st0 sharedStateVar for = do
+    obs <- watchShapes st0 sharedStateVar for
     -- a sweep shows as the table shrinking (its review dropping what the
     -- sweep before doomed) or as entries doomed; a drain does neither
     pure ( map fst (drop 1 obs)
-         , [ t | ((t, (size, doomed)), (_, (before, doomedBefore))) <- zip (drop 1 obs) obs
+         , [ t | ((t, (size, doomed, _)), (_, (before, doomedBefore, _))) <- zip (drop 1 obs) obs
                , size < before || doomed > doomedBefore ]
          )
+
+-- | Orphans for the counters thread's walks: none, or up to three batches'
+-- worth.
+newtype Orphans = Orphans Int
+  deriving Show
+
+instance Arbitrary Orphans where
+  arbitrary = Orphans <$> frequency [ (1, pure 0), (4, choose (1, 3 * sweepBatch)) ]
+  shrink (Orphans n) = [ Orphans n' | n' <- shrink n ]
+
+-- | A backlog of expired entries as a share of what the drains of one
+-- interval clear: none, or up to twice that.
+newtype BacklogShare = BacklogShare Double
+  deriving Show
+
+instance Arbitrary BacklogShare where
+  arbitrary = BacklogShare <$> frequency [ (1, pure 0), (4, choose (0, 2)) ]
+  shrink (BacklogShare s) = [ BacklogShare s' | s' <- shrink s, s' >= 0 ]
+
+-- | Every write of the counters thread does at most 'sweepBatch' units of
+-- work: what a sweep's review drops, what it expires and what it dooms
+-- count against the one budget, and a drain batch expires at most that
+-- much.  Orphans held by nobody, so a review drops all the sweep before
+-- doomed, and a backlog of expired entries, both drawn; a backlog beyond
+-- what the drains of one interval clear makes a sweep review, expire and
+-- doom in one transaction.
+prop_thread_oneBudget :: Lifetime -> Orphans -> BacklogShare -> Property
+prop_thread_oneBudget (Lifetime lifetime) (Orphans orphans) (BacklogShare share) = runSimOrThrow $
+    withCountersThread policy nullTracer st0 $ \sharedStateVar -> do
+      obs <- watchShapes st0 sharedStateVar (4 * interval + drainPause / 2)
+      let work = [ (t, dropped, expired, newlyDoomed)
+                 | ((t, (table, doomed, retained)), (_, (table0, doomed0, retained0))) <- zip (drop 1 obs) obs
+                 , let dropped     = table0 - table
+                       expired     = retained0 - retained
+                       newlyDoomed = doomed - (doomed0 - dropped) ]
+      pure $ counterexample (show (orphans, backlog, work)) $
+             cover 25 (any (\(_, d, e, n) -> d > 0 && e > 0 && n > 0) work)
+                      "a sweep reviews, expires and dooms in one transaction" $
+             conjoin [ counterexample ("over the budget: " ++ show w) (d + e + n <= sweepBatch)
+                     | w@(_, d, e, n) <- work ]
   where
-    shape st = ( IntMap.size (sharedTxTable st)
-               , IntMap.size (IntMap.filter ((== Doomed) . txDoom) (sharedTxTable st)) )
+    policy :: TxDecisionPolicy
+    policy = defaultTxDecisionPolicy { bufferedTxsMinLifetime = lifetime }
+
+    interval :: DiffTime
+    interval = sweepInterval policy
+
+    backlog :: Int
+    backlog = round (share * fromIntegral ((ceiling (interval / drainPause) + 1) * sweepBatch))
+
+    st0 :: SharedTxState PeerAddr TxId
+    st0 = withOrphans orphans (retainedBacklog backlog)
 
 -- | What each of an emission's traces takes, as a share of the sweep
 -- interval: up to a third of it, which the interval has room for with the
@@ -2491,7 +2588,7 @@ prop_sweepUpTo_converges (Positive limit) ro =
                   (st', True, _, _)  -> step st'
                   (st', False, _, _) -> st'
   in retainedToList (sharedRetainedTxs final)
-     === retainedToList (sharedRetainedTxs (sweepSharedState grace now st0))
+     === retainedToList (sharedRetainedTxs (fst (sweepSharedState grace now st0)))
 
 -- | A shared state as the sweep finds it: retained entries due a few
 -- seconds either side of a time, and active entries of every kind,
@@ -2572,8 +2669,8 @@ doomedKeys st =
 -- state's holders: what the counters thread does over two ticks.
 sweepAndReview :: SweepState -> SharedTxState PeerAddr TxId -> SharedTxState PeerAddr TxId
 sweepAndReview ss st =
-  let st' = sweepSharedState grace now st
-  in fst (reviewDoomed now (holdersOf ss) (doomedKeys st') st')
+  let (st', doomed) = sweepSharedState grace now st
+  in fst (reviewDoomed now (holdersOf ss) doomed st')
 
 -- | After a sweep and its review a lookup entry remains exactly for the
 -- keys that still have a residence; and the state's invariants hold
@@ -2581,7 +2678,7 @@ sweepAndReview ss st =
 prop_sweep_lookupEntries :: SweepState -> Property
 prop_sweep_lookupEntries ss =
   let st   = sweepStateOf ss
-      st'  = sweepSharedState grace now st
+      st'  = fst (sweepSharedState grace now st)
       st'' = sweepAndReview ss st
       resident'' = IntMap.keysSet (sharedTxTable st'')
                      `IntSet.union` retainedKeysSet (sharedRetainedTxs st'')
@@ -2616,8 +2713,7 @@ prop_sweep_dropsAbandoned ss@SweepState { ssActive } =
 -- ever reaching the mempool.
 prop_review_dropsUnheld :: SweepState -> [Bool] -> Property
 prop_review_dropsUnheld ss@SweepState { ssActive } flags =
-  let st0 = sweepSharedState grace now (sweepStateOf ss)
-      doomed = doomedKeys st0
+  let (st0, doomed) = sweepSharedState grace now (sweepStateOf ss)
       held = IntSet.fromList [ k | ((k, _, _), True) <- zip ssActive (flags ++ repeat False) ]
       (st1, dropped) = reviewDoomed now held doomed st0
       expectDropped = doomed `IntSet.difference` held
@@ -2625,7 +2721,8 @@ prop_review_dropsUnheld ss@SweepState { ssActive } flags =
   in counterexample (show (st0, st1)) $
        classify (not (IntSet.null expectDropped)) "drops something" $
        classify (not (IntSet.null expectSpared)) "spares something" $
-       counterexample "dropped" (dropped === expectDropped)
+       counterexample "the keys the sweep reported doomed" (doomed === doomedKeys st0)
+       .&&. counterexample "dropped" (dropped === expectDropped)
        .&&. counterexample "tx table after the review"
               (IntMap.keysSet (sharedTxTable st1)
                  === IntMap.keysSet (sharedTxTable st0) `IntSet.difference` expectDropped)
@@ -2663,8 +2760,7 @@ instance Arbitrary SinceDoom where
 -- write iff it did anything.
 prop_review_leavesCleared :: SweepState -> [SinceDoom] -> [Bool] -> Property
 prop_review_leavesCleared ss@SweepState { ssActive } fates holdFlags =
-  let st0     = sweepSharedState grace now (sweepStateOf ss)
-      doomed0 = doomedKeys st0
+  let (st0, doomed0) = sweepSharedState grace now (sweepStateOf ss)
       fateOf  = Map.fromList (zip (IntSet.toList doomed0) (fates ++ repeat StillDoomed))
       group f = [ k | (k, f') <- Map.toList fateOf, f' == f ]
       replied  = group Replied
@@ -2701,8 +2797,9 @@ prop_review_leavesCleared ss@SweepState { ssActive } fates holdFlags =
        classify (not (null claimed)) "a claim since" $
        classify (not (null accepted)) "a submission since" $
        classify (not (IntSet.null expectDropped)) "drops something" $
-       counterexample "the cleared are not doomed before the review"
-         (all (\k -> fmap txDoom (entryIn st3 k) /= Just Doomed) (IntSet.toList cleared))
+       counterexample "the keys the sweep reported doomed" (doomed0 === doomedKeys st0)
+       .&&. counterexample "the cleared are not doomed before the review"
+              (all (\k -> fmap txDoom (entryIn st3 k) /= Just Doomed) (IntSet.toList cleared))
        .&&. counterexample "the claimed are leased before the review"
               (all (\k -> case fmap txLease (entryIn st3 k) of
                             Just (TxLeased 2 _) -> True
@@ -2785,7 +2882,7 @@ prop_sweep_doomsCandidates ss@SweepState { ssActive } dooms =
       st0 = (sweepStateOf ss) {
           sharedTxTable = IntMap.fromList [ (k, standing kind d) | (k, kind, d) <- stands ]
         }
-      st1 = sweepSharedState grace now st0
+      (st1, doomedNow) = sweepSharedState grace now st0
       aged n = addTime grace (addTime (negate (fromIntegral n)) now) <= now
       expectDoomed = IntSet.fromList
         [ k | (k, Claimable, d) <- stands
@@ -2797,6 +2894,7 @@ prop_sweep_doomsCandidates ss@SweepState { ssActive } dooms =
        classify (not (IntSet.null expectDoomed)) "dooms something" $
        counterexample "the doomed"
          (doomedKeys st1 === expectDoomed `IntSet.union` doomedKeys st0)
+       .&&. counterexample "the keys reported doomed" (doomedNow === expectDoomed)
        .&&. counterexample "the others"
               (IntMap.restrictKeys (sharedTxTable st1) untouched
                  === IntMap.restrictKeys (sharedTxTable st0) untouched)
@@ -2839,7 +2937,7 @@ prop_sweep_expiredAdvertised ss@SweepState { ssRetained } flags =
           peerAvailableTxIds      = IntMap.fromList [ (k, 64) | k <- mine ]
         }
       pif = emptyPeerTxInFlight { pifAdvertised = IntSet.fromList mine }
-      st1 = sweepSharedState grace later st0
+      st1 = fst (sweepSharedState grace later st0)
       (action, peerState', pif', st2) =
         nextPeerAction later defaultTxDecisionPolicy peerAddr peerState pif st1
       st3 = scrubFromPeerInFlight peerAddr later pif st1
@@ -2847,7 +2945,8 @@ prop_sweep_expiredAdvertised ss@SweepState { ssRetained } flags =
        classify (not (null mine)) "advertises something expired" $
        counterexample "retained entries after the sweep"
          (retainedSize (sharedRetainedTxs st1) === 0)
-       .&&. combinedStateInvariant defaultTxDecisionPolicy (Map.singleton peerAddr (peerState, pif)) st1
+       .&&. combinedStateInvariantExpired (IntSet.fromList mine) defaultTxDecisionPolicy
+              (Map.singleton peerAddr (peerState, pif)) st1
        .&&. counterexample "the action acknowledges every expired key"
               (case action of
                  PeerRequestTxIds acked _ -> fromIntegral acked === length mine
@@ -2948,7 +3047,7 @@ prop_sweep_rotation ss@SweepState { ssLimit } =
       -- The sweeps that cover the table once: entries only leave it
       -- meanwhile, and each sweep walks what its expiry left of the limit.
       (final, sweeps) = rotate st0 sweepStart 0 0
-      unbounded = sweepSharedState grace now st0
+      unbounded = fst (sweepSharedState grace now st0)
   in counterexample (show (sweeps, final)) $
        counterexample "state after the rotation"
          (final { sharedRevision = 0 } === unbounded { sharedRevision = 0 })
@@ -2967,21 +3066,22 @@ prop_sweep_rotation ss@SweepState { ssLimit } =
             else rotate st' cursor' walked' (n + 1)
 
 -- | One bounded sweep expires at most half its limit of retained entries,
--- rounded up, tears down at most its limit of table entries, at most its
--- limit of both together, and drops at most its limit of lookup entries:
--- the expired ones' and the orphans'.
+-- rounded up, dooms at most what the expiry left of the limit, drops no
+-- table entry (the review does) and exactly the expired entries' lookup
+-- entries.
 prop_sweepUpTo_boundedWork :: SweepState -> Property
-prop_sweepUpTo_boundedWork ss@SweepState { ssLimit } =
+prop_sweepUpTo_boundedWork ss@SweepState { ssActive, ssLimit } =
   let st = sweepStateOf ss
-      (st', _, _, _) = sweepSharedStateUpTo ssLimit grace now sweepStart st
+      (st', _, _, doomed) = sweepSharedStateUpTo ssLimit grace now sweepStart st
       shrank f = f st - f st'
       expired = shrank (retainedSize . sharedRetainedTxs)
-      tornDown = shrank (IntMap.size . sharedTxTable)
-  in counterexample (show st') $
+      candidates = length [ () | (_, _, Claimable) <- ssActive ]
+  in counterexample (show (st', doomed)) $
+     cover 20 (expired > 0 && candidates > ssLimit - expired) "the expiry cuts the walk short" $
           counterexample "retained" (expired <= ssLimit - ssLimit `div` 2)
-     .&&. counterexample "tx table" (tornDown <= ssLimit)
-     .&&. counterexample "both together" (expired + tornDown <= ssLimit)
-     .&&. counterexample "lookup entries" (shrank (IntMap.size . sharedKeyToTxId) <= ssLimit)
+     .&&. counterexample "doomed" (IntSet.size doomed <= ssLimit - expired)
+     .&&. counterexample "tx table" (shrank (IntMap.size . sharedTxTable) === 0)
+     .&&. counterexample "lookup entries" (shrank (IntMap.size . sharedKeyToTxId) === expired)
 
 -- | Walks from any key on, each going on from where the last stopped,
 -- take the map's keys in cyclic order, the limit of them each time or the
@@ -3070,10 +3170,9 @@ unit_nextPeerActionPipelined_keepsOneUnackedWithOutstandingBodyReply step = do
 
     step "Pipelined response must keep the txid unacked while the body batch is outstanding"
     case action of
-      PeerRequestTxIds ack _ ->
-        ack @?= 0
       PeerDoNothing {} ->
-        -- Acceptable: not enough room to request anything.
+        -- the only ackable txid must stay unacked, and a pipelined request
+        -- has to ack as well as request: the peer waits
         pure ()
       other ->
         assertFailure ("unexpected action: " ++ show other)
@@ -3837,14 +3936,11 @@ prop_nextPeerAction_nonOwnerWaitsUntilResolved (ArbTxDecisionPolicy policy)
                      resolvedSharedState
   in
     conjoin
-      [ counterexample "unresolved: must not ack the unresolved txid" $
+      [ counterexample "unresolved: must wait, the txid unacked and no request sent" $
           case unresolvedAction of
             PeerDoNothing _ _ _ ->
               peerUnacknowledgedTxIds unresolvedPeerState'
                 === peerUnacknowledgedTxIds peerState0
-            PeerRequestTxIds ack _ ->
-              counterexample ("ack should be 0, got " ++ show ack)
-                (ack === 0)
             other ->
               counterexample ("unexpected unresolved action: " ++ show other)
                              False
@@ -3861,6 +3957,34 @@ prop_nextPeerAction_nonOwnerWaitsUntilResolved (ArbTxDecisionPolicy policy)
       ]
   where
     peerAddr = 1 :: PeerAddr
+
+-- | In non-pipelined mode a txid request without acks is the blocking poll
+-- of an empty unacked queue; while txids sit unacked with nothing ackable
+-- the peer waits rather than polling with @ack=0, req=N@.
+prop_nextPeerAction_blockingOnlyWhenEmpty :: ArbTxDecisionPolicy -> NonNegative Int -> Property
+prop_nextPeerAction_blockingOnlyWhenEmpty (ArbTxDecisionPolicy policy) (NonNegative n0) =
+  let n = n0 `mod` 7
+      txids = [1 .. n] :: [TxId]
+      -- the entries leased to another peer and not downloaded here: nothing
+      -- for this peer to ack, claim or submit
+      shared0 = mkActiveSharedState [leaseholder] leaseholder [] [ (txid, 64) | txid <- txids ]
+      keys = [ lookupKeyOrFail txid shared0 | txid <- txids ]
+      peerState0 = emptyPeerTxLocalState { peerUnacknowledgedTxIds = StrictSeq.fromList keys }
+      pif0 = emptyPeerTxInFlight { pifAdvertised = IntSet.fromList (map unTxKey keys) }
+      (action, _, _, _) = nextPeerAction now policy peerAddr peerState0 pif0 shared0
+  in counterexample (show action) $
+       classify (n == 0) "empty queue" $
+       case action of
+         PeerRequestTxIds ack req ->
+           counterexample "a request without acks while txids sit unacked"
+             (n === 0 .&&. ack === 0 .&&. property (req > 0))
+         PeerDoNothing {} ->
+           counterexample "waiting on an empty queue" (property (n > 0))
+         unexpected ->
+           counterexample ("unexpected " ++ show unexpected) False
+  where
+    peerAddr    = 1 :: PeerAddr
+    leaseholder = 2 :: PeerAddr
 
 -- | Roles for 'prop_nextPeerAction_claimsClaimableTx': 'Good' has no
 -- score and can claim immediately; 'Bad' has a non-zero score that

@@ -176,11 +176,13 @@ newPeerTxRegistry rng =
 -- | Central bookkeeping thread for V2.
 --
 -- Wakes every 'sweepInterval' to run 'State.sweepSharedStateUpTo' on the
--- shared tx state, which reads nothing else.  Each sweep
--- expires at most 'sweepBatch' retained entries and examines as many
--- entries of the tx table from where the last one stopped, so its
+-- shared tx state, which reads nothing else.  Each sweep does at most
+-- 'sweepBatch' units of work in its transaction: the review of what the
+-- sweep before doomed is charged first, the expiry of retained entries
+-- takes at most half of the rest, rounded up, and the walk of the tx
+-- table, from where the last one stopped, the remainder; so its
 -- transaction stays short however large the state and however far behind
--- it is; while expired entries remain it goes on with
+-- it is.  While expired entries remain it goes on with
 -- 'State.expireSharedStateUpTo' in further such transactions, 'drainPause'
 -- apart so that peers' transactions commit between them, for at most one
 -- interval before the next sweep.  On a fixed cadence (every
@@ -351,17 +353,23 @@ sweepInterval policy = max 0.1 (min 1 (bufferedTxsMinLifetime policy / 4))
 doomGrace :: TxDecisionPolicy -> DiffTime
 doomGrace policy = 2 * sweepInterval policy
 
--- | Retained entries one sweep expires at most, and entries of the tx
--- table it examines: positive, so a sweep that finds work makes progress
--- on it.  Bounds the sweep's transaction, about 0.3 ms at this size,
--- against the peers' writes to the shared state, each of which restarts
--- it: at R writes a second it commits with probability about
--- exp(-R * 0.3 ms) per attempt, a few attempts at the thousands of writes
--- a second of a loaded relay.  Not a policy knob: the transaction length
--- is a property of this node's STM, not of the protocol, and the drain
--- rate it gives with 'drainPause', a hundred thousand entries a second,
--- exceeds any arrival rate, which is what the expiry rate equals whatever
--- the retention lifetime; only 'sweepInterval' follows the policy.  Steady
+-- | The work one sweep's transaction does at most: the doomed entries its
+-- review examines, the retained entries it expires and the entries of
+-- the tx table it walks, together ('txCountersThreadV2'); positive, so a
+-- sweep that finds work makes progress on it.  Bounds the sweep's
+-- transaction against the peers' writes to the shared state, each of
+-- which restarts it: about 0.3 ms for a sweep and up to a millisecond
+-- for an expiry-only batch on a state of a hundred thousand entries with
+-- 32-byte txids, as the sweep benchmark measures them, three
+-- milliseconds with a million entries retained; at R writes a second and
+-- t per transaction it commits with probability about exp(-R * t) per
+-- attempt, a few attempts at the hundreds to a thousand writes a second
+-- of a loaded relay.  Not a policy knob: the transaction length is a
+-- property of this node's STM, not of the protocol, and the drain rate
+-- it gives with 'drainPause', close to a hundred thousand entries a
+-- second, exceeds any arrival rate, which is what the expiry rate equals
+-- whatever the retention lifetime; only 'sweepInterval' follows the
+-- policy.  Steady
 -- state expires the arrivals of one sweep interval, a few hundred at most.
 -- An orphan waits for the walk to pass, a sweep per limit of table
 -- entries: a larger walk would lengthen the transaction the limit is there
@@ -406,7 +414,8 @@ snapshotCountersWith runTx retiredCountersVar registry = do
 -- cells.  A peer registered after the cells were listed could not have
 -- advertised a doomed key before the doom, and its reply after it clears
 -- the doom; a peer that left meanwhile shows its last set, which spares
--- at worst, and is not listed next time.
+-- at worst, and is not listed next time.  Forced here, so that the
+-- sweep's transaction, which takes the result, does none of the work.
 heldDoomed
   :: MonadSTM m
   => PeerTxRegistry m peeraddr
@@ -414,10 +423,11 @@ heldDoomed
   -> m IntSet.IntSet
 heldDoomed registry doomed = do
     cells <- Map.elems <$> readTVarIO (registeredPeers registry)
-    IntSet.unions <$>
-      mapM (\cell -> IntSet.intersection doomed . pifAdvertised
-                       <$> readTVarIO (peerInFlightCell cell))
-           cells
+    held <- mapM (\cell -> do
+                    pif <- readTVarIO (peerInFlightCell cell)
+                    pure $! IntSet.intersection doomed (pifAdvertised pif))
+                 cells
+    pure $! IntSet.unions held
 
 -- | Register a joining peer's cells under its address and a fresh
 -- registration number: the key 'retirePeerCounters' takes.
