@@ -17,6 +17,7 @@ module Test.Cardano.Network.Diffusion.Testnet.MiniProtocols
   , LimitsAndTimeouts (..)
   , AppArgs (..)
   , applications
+  , ChainSyncClientLifetimeBoundary (..)
     -- * configuration constants
   , config_REPROMOTE_DELAY
   ) where
@@ -32,7 +33,7 @@ import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer (Tracer (..), contramap, nullTracer)
+import Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)
 
 import Codec.CBOR.Read qualified as CBOR
 import Codec.Serialise qualified as Serialise
@@ -249,6 +250,15 @@ data AppArgs header block m = AppArgs
   }
 
 
+-- | The start and the end of a run of a ChainSync client, with its
+-- connection's 'ConnectionId' and 'ConnStateId'.
+--
+data ChainSyncClientLifetimeBoundary =
+    ChainSyncClientStarted !(ConnectionId NtNAddr) !ConnStateId
+  | ChainSyncClientEnded   !(ConnectionId NtNAddr) !ConnStateId
+  deriving Show
+
+
 -- | Protocol handlers.
 --
 applications :: forall block header s m.
@@ -277,6 +287,7 @@ applications :: forall block header s m.
              -> Tracer m (NtNAddr, TraceTxSubmissionInbound Int (Tx Int))
              -- ^ tagged with the remote peer address so per-peer scoring
              --   events can be folded out of the trace
+             -> Tracer m ChainSyncClientLifetimeBoundary
              -> NodeKernel header block s Int m
              -> Codecs NtNAddr header block m
              -> LimitsAndTimeouts header block
@@ -286,7 +297,7 @@ applications :: forall block header s m.
              -> Diffusion.Applications NtNAddr NtNVersion NtNVersionData
                                        NtCAddr NtCVersion NtCVersionData
                                        PeerTrustable m ()
-applications debugTracer txSubmissionInboundTracer nodeKernel
+applications debugTracer txSubmissionInboundTracer chainSyncClientTracer nodeKernel
              Codecs { chainSyncCodec, blockFetchCodec
                     , keepAliveCodec, pingPongCodec
                     , peerSharingCodec
@@ -442,6 +453,7 @@ applications debugTracer txSubmissionInboundTracer nodeKernel
       MiniProtocolCb $
         \  ExpandedInitiatorContext {
              eicConnectionId   = connId,
+             eicConnStateId    = connStateId,
              eicControlMessage = controlMessageSTM,
              eicExtraFlags     = extraFlags
            }
@@ -472,23 +484,25 @@ applications debugTracer txSubmissionInboundTracer nodeKernel
                                        else Right go
                     }
           in do labelThisThread "ChainSyncClient"
-                bracketSyncWithFetchClient (nkFetchClientRegistry nodeKernel)
-                                           (remoteAddress connId) $
-                  bracket (registerClientChains nodeKernel (remoteAddress connId))
-                          (\_ -> unregisterClientChains nodeKernel (remoteAddress connId))
-                          (\chainVar ->
-                            runPeerWithLimitsRnd
-                              (((prettyShow connId ++) . (" " ++) . show) `contramap` debugTracer)
-                              (mkStdGen 0) -- TODO
-                              chainSyncCodec
-                              (chainSyncSizeLimits limits)
-                              (chainSyncTimeLimits limits extraFlags)
-                              channel
-                              (chainSyncClientPeer $
-                                 chainSyncClientExample
-                                   chainVar
-                                   client)
-                          )
+                bracket_ (traceWith chainSyncClientTracer (ChainSyncClientStarted connId connStateId))
+                         (traceWith chainSyncClientTracer (ChainSyncClientEnded connId connStateId)) $
+                  bracketSyncWithFetchClient (nkFetchClientRegistry nodeKernel)
+                                             (remoteAddress connId) $
+                    bracket (registerClientChains nodeKernel (remoteAddress connId))
+                            (\_ -> unregisterClientChains nodeKernel (remoteAddress connId))
+                            (\chainVar ->
+                              runPeerWithLimitsRnd
+                                (((prettyShow connId ++) . (" " ++) . show) `contramap` debugTracer)
+                                (mkStdGen 0) -- TODO
+                                chainSyncCodec
+                                (chainSyncSizeLimits limits)
+                                (chainSyncTimeLimits limits extraFlags)
+                                channel
+                                (chainSyncClientPeer $
+                                   chainSyncClientExample
+                                     chainVar
+                                     client)
+                            )
 
     chainSyncResponder
       :: MiniProtocolCb (ResponderContext NtNAddr) ByteString m ()

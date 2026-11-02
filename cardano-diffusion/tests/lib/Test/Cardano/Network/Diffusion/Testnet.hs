@@ -100,6 +100,8 @@ import Simulation.Network.Snocket (BearerInfo (..), noAttenuation)
 
 import Test.Cardano.Network.Diffusion.Testnet.ChainedTxs (ChainedPeerTxs (..))
 import Test.Cardano.Network.Diffusion.Testnet.ChainedTxs qualified as ChainedTxs
+import Test.Cardano.Network.Diffusion.Testnet.MiniProtocols
+           (ChainSyncClientLifetimeBoundary (..))
 import Test.Cardano.Network.Diffusion.Testnet.Simulation
 import Test.Ouroboros.Network.TxSubmission.Impaired (Impairment (..),
            noImpairment)
@@ -236,6 +238,8 @@ tests =
                    prop_diffusion_cm_valid_transitions_iosim
     , testProperty "connection manager valid transition order"
                    prop_diffusion_cm_valid_transition_order_iosim
+    , testProperty "ChainSync clients sharing a ConnStateId never overlap"
+                   prop_diffusion_chainsync_conn_state_id_iosim
     , testProperty "unit 4258"
                    prop_unit_4258
     , testProperty "connection manager no dodgy traces"
@@ -4520,6 +4524,83 @@ prop_diffusion_cm_valid_transition_order_iosim
   :: AbsBearerInfo -> DiffusionScript -> Property
 prop_diffusion_cm_valid_transition_order_iosim
   = testWithIOSim prop_diffusion_cm_valid_transition_order'' long_trace
+
+
+prop_diffusion_chainsync_conn_state_id_iosim
+  :: AbsBearerInfo -> DiffusionScript -> Property
+prop_diffusion_chainsync_conn_state_id_iosim
+  = testWithIOSim prop_diffusion_chainsync_conn_state_id long_trace
+
+-- | No two runs of a node's ChainSync clients with the same 'ConnStateId'
+-- overlap.
+--
+-- Each run traces its start and its end, and IOSim records them in the order
+-- they happen, so the check needs neither timestamps nor any other notion of a
+-- connection's lifetime. If two of a node's connections shared a
+-- 'ConnStateId', it would fail as soon as both were hot.
+--
+prop_diffusion_chainsync_conn_state_id :: forall r.
+                                          SimTrace r
+                                       -> Int
+                                       -> Property
+prop_diffusion_chainsync_conn_state_id ioSimTrace traceNumber =
+      cover 1 (any ((> 1) . maxInProgress) boundariesPerNode)
+        "a node with two runs at once"
+    . cover 1 (any (any (> 1) . runsPerConnStateId) boundariesPerNode)
+        "a ConnStateId with two runs"
+    . cover 1 (any (any ((> 1) . Set.size) . connStateIdsPerConnectionId) boundariesPerNode)
+        "a ConnectionId with two ConnStateIds"
+    . conjoin
+    . Map.elems
+    . Map.mapWithKey (\node -> counterexample (show node) . noOverlap Set.empty)
+    $ boundariesPerNode
+  where
+    -- each node's ChainSync client lifetime boundaries, in the order they
+    -- happened
+    boundariesPerNode :: Map NtNAddr [ChainSyncClientLifetimeBoundary]
+    boundariesPerNode =
+        foldr (\(WithTime _ (WithName node ev)) -> case ev of
+                  DiffusionChainSyncClientLifetimeBoundary boundary ->
+                    Map.insertWith (++) node [boundary]
+                  _ -> id)
+              Map.empty
+      . Trace.toList
+      . withTimeNameTraceEvents @DiffusionTestTrace @NtNAddr
+      . Trace.take traceNumber
+      $ ioSimTrace
+
+    -- the first argument holds the 'ConnStateId's of the runs in progress
+    noOverlap :: Set ConnStateId -> [ChainSyncClientLifetimeBoundary] -> Property
+    noOverlap _ [] = property True
+    noOverlap inProgress (ChainSyncClientStarted connId connStateId : boundaries)
+      | connStateId `Set.member` inProgress
+      = counterexample
+          ( "a ChainSync client on " ++ show connId
+         ++ " started while another with " ++ show connStateId
+         ++ " was running" )
+          False
+      | otherwise
+      = noOverlap (Set.insert connStateId inProgress) boundaries
+    noOverlap inProgress (ChainSyncClientEnded _ connStateId : boundaries) =
+      noOverlap (Set.delete connStateId inProgress) boundaries
+
+    maxInProgress :: [ChainSyncClientLifetimeBoundary] -> Int
+    maxInProgress = snd . List.foldl' step (0, 0)
+      where
+        step (n, most) ChainSyncClientStarted {} = (n + 1, max most (n + 1))
+        step (n, most) ChainSyncClientEnded {}   = (n - 1, most)
+
+    runsPerConnStateId :: [ChainSyncClientLifetimeBoundary] -> Map ConnStateId Int
+    runsPerConnStateId boundaries =
+      Map.fromListWith (+)
+        [ (connStateId, 1) | ChainSyncClientStarted _ connStateId <- boundaries ]
+
+    connStateIdsPerConnectionId
+      :: [ChainSyncClientLifetimeBoundary] -> Map (ConnectionId NtNAddr) (Set ConnStateId)
+    connStateIdsPerConnectionId boundaries =
+      Map.fromListWith Set.union
+        [ (connId, Set.singleton connStateId)
+        | ChainSyncClientStarted connId connStateId <- boundaries ]
 
 
 -- | Unit test that checks issue 4258

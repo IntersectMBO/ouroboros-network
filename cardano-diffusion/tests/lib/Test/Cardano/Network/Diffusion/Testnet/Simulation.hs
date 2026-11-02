@@ -983,6 +983,7 @@ data DiffusionTestTrace =
     | DiffusionDebugTrace String
     | DiffusionDNSTrace DNSTrace
     | DiffusionMuxTrace (Mux.WithBearer (ConnectionId NtNAddr) Mux.Trace)
+    | DiffusionChainSyncClientLifetimeBoundary Node.ChainSyncClientLifetimeBoundary
     deriving Show
 
 
@@ -1006,6 +1007,7 @@ ppDiffusionTestTrace (DiffusionTxLogic tr)                          = show tr
 ppDiffusionTestTrace (DiffusionDebugTrace tr)                       =      tr
 ppDiffusionTestTrace (DiffusionDNSTrace tr)                         = show tr
 ppDiffusionTestTrace (DiffusionMuxTrace tr)                         = show tr
+ppDiffusionTestTrace (DiffusionChainSyncClientLifetimeBoundary tr)  = show tr
 
 
 type DiffSimResult = Void
@@ -1371,6 +1373,7 @@ diffusionSimulationM
               Node.applications
                    (Node.aDebugTracer arguments)
                    tracerTxSubmissionInbound
+                   tracerChainSyncClientLifetimeBoundary
                    nodeKernel
                    Node.cborCodecs
                    limitsAndTimeouts
@@ -1384,6 +1387,12 @@ diffusionSimulationM
                 . tracerWithTime
                 $ nodeTracer )
                 -- <> sayTracer
+
+              tracerChainSyncClientLifetimeBoundary =
+                ( contramap DiffusionChainSyncClientLifetimeBoundary
+                . tracerWithName addr
+                . tracerWithTime
+                $ nodeTracer )
 
               appArgs :: Node.AppArgs BlockHeader Block m
               appArgs = Node.AppArgs
