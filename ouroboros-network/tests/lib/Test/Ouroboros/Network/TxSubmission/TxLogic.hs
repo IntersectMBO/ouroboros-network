@@ -62,10 +62,10 @@ import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Ouroboros.Network.RegisteredDelay qualified as RegisteredDelay
 import Ouroboros.Network.Tx (HasRawTxId (..), getRawTxId)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
-import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (PeerCells (..),
-           PeerRegistration, PeerTierEntry (..), PeerTxAPI (..),
+import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (CounterMirrors (..),
+           PeerCells (..), PeerRegistration, PeerTierEntry (..), PeerTxAPI (..),
            PeerTxRegistry (..), SharedTxStateVar, TxSubmissionCountersVar,
-           awaitClaimableChangeImp, doomGrace, drainPause, joinTier, leaveTier,
+           awaitMirrorChange, doomGrace, drainPause, joinTier, leaveTier,
            newPeerTxRegistry, newSharedTxStateVar, newTxSubmissionCountersVar,
            registerPeerCells, registerPeerTier, retirePeerCounters, rotateTiers,
            scrubFromPeerInFlight, snapshotCountersWith, sweepBatch,
@@ -182,6 +182,8 @@ tests =
         , testProperty "the gate holds txid requests and parks an idle slow peer; a buffered body keeps the generation" prop_tier_gateHoldsOnlyTxIdRequests
         , testProperty "local roots are fast by standing and hold no coin slot" prop_tier_rootsOutsideCoin
         , testProperty "a peer leaving withPeer frees its fast slot at once" prop_withPeer_leaveFreesSlot
+        , testProperty "a gated park takes the claimable mirror's value, not the state's" prop_withPeer_parkReadsTheMirror
+        , testProperty "a fast peer's park takes the generation mirror's value, not the state's" prop_withPeer_generationParkReadsTheMirror
         , testProperty "the census counts each standing once, root before coin before source" prop_tier_censusOracle
         , testProperty "a decision's tier read writes the standing it is served on" prop_tier_withTierStanding
         , testProperty "the tier states and the census follow the flags as the peers' reads left them" prop_tier_censusFollowsFlags
@@ -1056,29 +1058,32 @@ prop_handleReceivedTxs_keyFates (NonEmpty requested) =
 
 -- | A write of the shared state advances the revision by exactly one past
 -- the revision read, whatever the step bumped it by, and brings the
--- claimable counter's mirror up to the state's; a step that moved
--- neither counter writes nothing, the mirror included.
-prop_writeSharedStateIfChanged_countsOne :: Positive Word64 -> Bool -> Word64 -> Property
-prop_writeSharedStateIfChanged_countsOne (Positive bumps) wake claimable = runSimOrThrow $ do
+-- counters' mirrors up to the state's; a step that moved neither counter
+-- writes nothing, the mirrors included.
+prop_writeSharedStateIfChanged_countsOne :: Positive Word64 -> Word64 -> Word64 -> Property
+prop_writeSharedStateIfChanged_countsOne (Positive bumps) generation claimable = runSimOrThrow $ do
     let st0 = emptySharedTxState :: SharedTxState PeerAddr TxId
         st1 = st0 { sharedRevision   = sharedRevision st0 + bumps
-                  , sharedGeneration = sharedGeneration st0 + (if wake then 1 else 0)
+                  , sharedGeneration = generation
                   , sharedClaimable  = claimable }
-    mirror <- newTVarIO 0
+    mirrors <- CounterMirrors <$> newTVarIO 0 <*> newTVarIO 0
     var <- newSharedTxStateVar st0
-    atomically $ writeSharedStateIfChanged mirror var (sharedRevision st0) st1
+    atomically $ writeSharedStateIfChanged mirrors var (sharedRevision st0) st1
     written <- readTVarIO var
-    mirrored <- readTVarIO mirror
+    mirrored <- readMirrors mirrors
     same <- newSharedTxStateVar st0
-    atomically $ writeSharedStateIfChanged mirror same (sharedRevision st0) st0
+    atomically $ writeSharedStateIfChanged mirrors same (sharedRevision st0) st0
     unwritten <- readTVarIO same
-    mirroredAfter <- readTVarIO mirror
+    mirroredAfter <- readMirrors mirrors
     pure $ counterexample (show written) $
            counterexample "revision after a write" (sharedRevision written === sharedRevision st0 + 1)
-      .&&. counterexample "generation after a write" (sharedGeneration written === sharedGeneration st1)
-      .&&. counterexample "the mirror follows a write" (mirrored === claimable)
+      .&&. counterexample "generation after a write" (sharedGeneration written === generation)
+      .&&. counterexample "the mirrors follow a write" (mirrored === (generation, claimable))
       .&&. counterexample "no write without a bump" (sharedRevision unwritten === sharedRevision st0)
-      .&&. counterexample "the mirror is untouched without a write" (mirroredAfter === claimable)
+      .&&. counterexample "the mirrors are untouched without a write" (mirroredAfter === (generation, claimable))
+  where
+    readMirrors CounterMirrors { generationMirror, claimableMirror } =
+      (,) <$> readTVarIO generationMirror <*> readTVarIO claimableMirror
 
 -- | What became of a dead key's txid meanwhile: nothing more, another
 -- peer advertised it again (an active entry under a fresh key), or
@@ -1964,7 +1969,7 @@ prop_snapshotCounters_exactlyOnce (CounterScript peers batches) = runSimOrThrow 
                     <*> newTVarIO Map.empty
                     <*> newTVarIO (fst (mkSalt (mkStdGen 7)))
                     <*> newTVarIO (mkStdGen 7)
-                    <*> newTVarIO 0
+                    <*> (CounterMirrors <$> newTVarIO 0 <*> newTVarIO 0)
     ceAllCells <- newTVarIO (Map.fromList (zip [0 ..] cells))
     ceBumps    <- newTVarIO 0
     ceApplied  <- newTVarIO Map.empty
@@ -5464,6 +5469,138 @@ prop_withPeer_leaveFreesSlot seed = runSimOrThrow $ do
   where
     policy = defaultTxDecisionPolicy { txFastPeers = 1, txSourceRate = 0 }
 
+-- | A step of a script against a counter of the shared state: a write
+-- through the registry, which moves the counter and its mirror together,
+-- or a bump behind the registry's back, which moves the counter alone.
+data MirrorStep = ThroughRegistry Word64 | BehindTheBack Word64
+  deriving Show
+
+newtype MirrorScript = MirrorScript [MirrorStep]
+  deriving Show
+
+instance Arbitrary MirrorScript where
+  arbitrary = MirrorScript <$> listOf (oneof [ ThroughRegistry <$> choose (1, 100), BehindTheBack <$> choose (1, 100) ])
+  shrink (MirrorScript steps) = MirrorScript <$> shrinkList shrinkStep steps
+    where
+      shrinkStep (ThroughRegistry n) = [ ThroughRegistry n' | n' <- shrink n, n' >= 1 ]
+      shrinkStep (BehindTheBack n)   = [ BehindTheBack n' | n' <- shrink n, n' >= 1 ]
+
+-- | What a mirror shows after a script, from what it and its counter
+-- showed before: the counter's value at the last write through the
+-- registry, or what it showed before without one.
+mirrorAfter :: Word64 -> Word64 -> [MirrorStep] -> Word64
+mirrorAfter = go
+  where
+    go mirror _ []                            = mirror
+    go _ counter (ThroughRegistry n : rest)   = go (counter + n) (counter + n) rest
+    go mirror counter (BehindTheBack n : rest) = go mirror (counter + n) rest
+
+-- | Run a script against a counter of the shared state, given how a bump
+-- moves it.
+runMirrorScript :: PeerTxRegistry (IOSim s) PeerAddr
+                -> SharedTxStateVar (IOSim s) PeerAddr TxId
+                -> (Word64 -> SharedTxState PeerAddr TxId -> SharedTxState PeerAddr TxId)
+                -> [MirrorStep]
+                -> IOSim s ()
+runMirrorScript registry sharedVar bump = mapM_ step
+  where
+    step (ThroughRegistry n) = atomically $ do
+      st <- readTVar sharedVar
+      writeSharedStateIfChanged (registryMirrors registry) sharedVar (sharedRevision st)
+        (bump n st) { sharedRevision = sharedRevision st + 1 }
+    step (BehindTheBack n) = atomically $ modifyTVar sharedVar (bump n)
+
+-- | A gated slow peer parks on the claimable mirror's value, read in the
+-- decision's own transaction, never on the state's counter: after any
+-- script of writes through the registry and bumps behind its back the
+-- park is what the mirror shows, the counter's value at the last write
+-- through the registry, while the state's counter may be ahead of it,
+-- and a park past a value the mirror never shows would wake at once and
+-- spin.
+prop_withPeer_parkReadsTheMirror :: Int -> Word64 -> MirrorScript -> Property
+prop_withPeer_parkReadsTheMirror seed claimable0 (MirrorScript script) = runSimOrThrow $ do
+    registry  <- newPeerAddrRegistry (mkStdGen seed)
+    sharedVar <- newSharedTxStateVar (emptySharedTxState { sharedClaimable = claimable0 } :: SharedTxState PeerAddr TxId)
+    retired   <- newTxSubmissionCountersVar mempty
+    mempool   <- emptyMempool
+    let mirrorOf = readTVarIO (claimableMirror (registryMirrors registry))
+    withPeer policy (getMempoolReader mempool) sharedVar registry retired (1 :: PeerAddr) (pure False) $ \api -> do
+      joinTiers api
+      let ps0 = emptyPeerTxLocalState { peerJitterSeed = apiJitterSeed api }
+      (first, ps1) <- runNextPeerAction api (Time 1) Nothing ps0
+      mirror0  <- mirrorOf
+      counter0 <- sharedClaimable <$> readTVarIO sharedVar
+      runMirrorScript registry sharedVar (\n st -> st { sharedClaimable = sharedClaimable st + n }) script
+      mirror <- mirrorOf
+      (second, _) <- runNextPeerAction api (Time 1.001) Nothing ps1
+      final <- sharedClaimable <$> readTVarIO sharedVar
+      let expected = mirrorAfter mirror0 counter0 script
+      pure $ counterexample (unwords ["first", describeResolved first, "second", describeResolved second
+                                     , "mirrors", show (mirror0, mirror), "state", show final]) $
+        cover 30 (expected /= final) "the state's counter ahead of the mirror" $
+        case (first, second) of
+          (ResolvedRequestTxIds 0 _, ResolvedDoNothing _ (Just _) (Just park)) ->
+                 counterexample "the mirror after the script" (mirror === expected)
+            .&&. counterexample "the park" (park === expected)
+          _ -> counterexample "expected a blocking request, then a gated park" False
+  where
+    policy = defaultTxDecisionPolicy { txFastPeers = 0, txSourceRate = 0, txSlowCadence = 10, txSlowJitter = 0 }
+
+describeResolved :: ResolvedPeerAction TxId (Tx TxId) -> String
+describeResolved (ResolvedRequestTxIds a r) = "request" ++ show (a, r)
+describeResolved (ResolvedDoNothing g d c)  = "doNothing" ++ show (g, d, c)
+describeResolved (ResolvedRequestTxs m)     = "requestTxs" ++ show (Map.keys m)
+describeResolved (ResolvedSubmitTxs txs)    = "submit" ++ show (length txs)
+
+-- | A fast peer's park takes the generation mirror's value, read in the
+-- decision's own transaction, never the state's counter, for the same
+-- reason: after any script of writes through the registry and bumps
+-- behind its back the park is what the mirror shows, while the state's
+-- counter may be ahead of it.
+prop_withPeer_generationParkReadsTheMirror :: Int -> Word64 -> MirrorScript -> Property
+prop_withPeer_generationParkReadsTheMirror seed generation0 (MirrorScript script) = runSimOrThrow $ do
+    registry  <- newPeerAddrRegistry (mkStdGen seed)
+    sharedVar <- newSharedTxStateVar st0
+    retired   <- newTxSubmissionCountersVar mempty
+    mempool   <- emptyMempool
+    let mirrorOf = readTVarIO (generationMirror (registryMirrors registry))
+    -- a local root: fast by standing, so its parks are on the generation
+    withPeer policy (getMempoolReader mempool) sharedVar registry retired (1 :: PeerAddr) (pure True) $ \api -> do
+      joinTiers api
+      -- it advertises the one txid, whose entry is leased elsewhere:
+      -- nothing to ack, no body to request, a park
+      ps0 <- applyReceivedTxIds api (Time 1) Nothing 1 [(7, 100)]
+               emptyPeerTxLocalState { peerJitterSeed = apiJitterSeed api, peerRequestedTxIds = 1 }
+      mirror0 <- mirrorOf
+      (first, ps1) <- runNextPeerAction api (Time 1) Nothing ps0
+      mirror1  <- mirrorOf
+      counter1 <- sharedGeneration <$> readTVarIO sharedVar
+      runMirrorScript registry sharedVar (\n st -> st { sharedGeneration = sharedGeneration st + n }) script
+      mirror <- mirrorOf
+      (second, _) <- runNextPeerAction api (Time 1.001) Nothing ps1
+      final <- sharedGeneration <$> readTVarIO sharedVar
+      let expected = mirrorAfter mirror1 counter1 script
+      pure $ counterexample (unwords ["first", describeResolved first, "second", describeResolved second
+                                     , "mirrors", show (mirror0, mirror1, mirror), "state", show final]) $
+        cover 30 (expected /= final) "the state's counter ahead of the mirror" $
+        case (first, second) of
+          (ResolvedDoNothing park0 _ Nothing, ResolvedDoNothing park _ Nothing) ->
+                 counterexample "the first park" (park0 === mirror0)
+            .&&. counterexample "the mirror after the script" (mirror === expected)
+            .&&. counterexample "the second park" (park === expected)
+          _ -> counterexample "expected two parks on the generation" False
+  where
+    policy = defaultTxDecisionPolicy { txSourceRate = 0 }
+    st0 = emptySharedTxState
+      { sharedGeneration = generation0
+      , sharedTxTable = IntMap.singleton 0 TxEntry
+          { txLease = TxLeased 2 (Time 100), txAttempt = 1, txDoom = Undoomed
+          , txInSubmission = False, currentMaxInflightMultiplicity = 1 }
+      , sharedTxIdToKey = Map.singleton (getRawTxId (7 :: TxId)) (TxKey 0)
+      , sharedKeyToTxId = IntMap.singleton 0 7
+      , sharedNextTxKey = 1
+      } :: SharedTxState PeerAddr TxId
+
 -- | One step of a tier script over a few peer ids: a peer registering and
 -- taking its first decision, registering only, deciding later, leaving,
 -- or a rotation.  Ids repeat, so leaves find peers.
@@ -6323,7 +6460,7 @@ prop_claimable_park claimable0 generation0 (Positive bump) moveClaimable withDel
                  else modifyTVar var $ \st -> st { sharedGeneration = sharedGeneration st + bump }
       withAsync move $ \_ -> do
         mDelay <- if withDelay then Just <$> RegisteredDelay.new 1 else pure Nothing
-        woke <- timeout 2 (atomically (awaitClaimableChangeImp mirror claimable0 mDelay))
+        woke <- timeout 2 (atomically (awaitMirrorChange mirror claimable0 mDelay))
         t <- getMonotonicTime
         pure $ counterexample (show (moveClaimable, withDelay, woke, t)) $
           case (moveClaimable, withDelay) of
