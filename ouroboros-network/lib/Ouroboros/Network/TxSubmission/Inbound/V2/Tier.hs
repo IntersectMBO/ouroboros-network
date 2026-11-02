@@ -39,6 +39,7 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Tier
   ) where
 
 import Control.Monad.Class.MonadTime.SI
+import Data.Foldable (foldl')
 import Data.List (sortOn)
 import Data.Sequence.Strict (StrictSeq)
 import Data.Sequence.Strict qualified as StrictSeq
@@ -59,38 +60,51 @@ effectiveTier policy now PeerTxLocalState { peerTier, peerNovelAt }
   | otherwise                        = SlowTier
 
 -- | How many novel accepted txs inside 'txSourceWindow' make a source:
--- 'txSourceRate' sustained over the window, rounded up.  A product within
--- a billionth of a whole number is that number, so a rate and window that
--- multiply to one on paper do not round up to the next on the machine.
--- Zero when the rule is off.
+-- 'txSourceRate' sustained over the window, rounded up, within a billion
+-- so that no product, however absurd the policy, wraps the count.  A
+-- product within a billionth of a whole number is that number, so a rate
+-- and window that multiply to one on paper do not round up to the next
+-- on the machine.  Zero when the rule is off.
 sourceCount :: TxDecisionPolicy -> Int
-sourceCount TxDecisionPolicy { txSourceRate, txSourceWindow }
+sourceCount policy@TxDecisionPolicy { txSourceRate }
   | txSourceRate <= 0 = 0
-  | otherwise         = ceiling (txSourceRate * realToFrac txSourceWindow - 1e-9)
+  | otherwise         = ceiling (min 1e9 (txSourceRate * sourceWindowSeconds policy - 1e-9))
 
--- | A peer is a source while it has delivered 'sourceCount' novel accepted
--- txs and the oldest of those is still inside the window.
-isSource :: TxDecisionPolicy -> Time -> StrictSeq Time -> Bool
-isSource policy now novelAt =
-    n >= 1
- && StrictSeq.length novelAt >= n
- && case StrictSeq.lookup (StrictSeq.length novelAt - n) novelAt of
-         Just oldest -> oldest `addTime'` txSourceWindow policy >= now
-         Nothing     -> False
+-- | A peer is a source while the accepts recorded inside the window reach
+-- 'sourceCount'.
+isSource :: TxDecisionPolicy -> Time -> StrictSeq (Time, Int) -> Bool
+isSource policy now novelAt = n >= 1 && inWindow >= n
   where
     n = sourceCount policy
-    addTime' t d = addTime d t
+    inWindow = foldl' (\acc (t, c) -> if addTime (txSourceWindow policy) t >= now then acc + c else acc)
+                      0 novelAt
 
--- | Record @count@ novel accepted txs at @now@, keeping the newest
--- 'sourceCount' of them: enough to answer 'isSource' and no more.
-recordNovel :: TxDecisionPolicy -> Time -> Int -> StrictSeq Time -> StrictSeq Time
+-- | Record a submission's @count@ novel accepted txs at @now@: one more
+-- entry, or the last one's count raised when it bears the same time.
+-- Then the entries outside the window at @now@ go, since the clock only
+-- advances, and the oldest go while the rest still reach 'sourceCount':
+-- enough to answer 'isSource' and no more, at most one entry per
+-- accepting submission inside the window.
+recordNovel :: TxDecisionPolicy -> Time -> Int -> StrictSeq (Time, Int) -> StrictSeq (Time, Int)
 recordNovel policy now count novelAt
   | n <= 0 || count <= 0 = novelAt
-  | otherwise =
-      let novelAt' = novelAt <> StrictSeq.fromList (replicate (min n count) now)
-      in StrictSeq.drop (StrictSeq.length novelAt' - n) novelAt'
+  | otherwise            = trim (StrictSeq.dropWhileL stale appended)
   where
     n = sourceCount policy
+
+    appended =
+      case StrictSeq.lookup (StrictSeq.length novelAt - 1) novelAt of
+        Just (t, c) | t == now -> StrictSeq.take (StrictSeq.length novelAt - 1) novelAt StrictSeq.|> (now, c + count)
+        _                      -> novelAt StrictSeq.|> (now, count)
+
+    stale (t, _) = addTime (txSourceWindow policy) t < now
+
+    trim entries = go entries (foldl' (\acc (_, c) -> acc + c) 0 entries)
+      where
+        go s total =
+          case StrictSeq.lookup 0 s of
+            Just (_, c) | total - c >= n -> go (StrictSeq.drop 1 s) (total - c)
+            _                            -> s
 
 -- | The slow tier's wait before its next txid request:
 -- 'txSlowCadence' jittered by 'txSlowJitter', so slow peers do not fire

@@ -892,24 +892,23 @@ prop_txSubmission_fastTierWired (FastWiring n m) =
 -- | A gated slow peer parks on the claimable counter, not on the
 -- generation: while a root delivers a stream of txs, each accept moving
 -- the generation, a slow peer waiting out its cadence with nothing to do
--- decides a handful of times, not once per accept.
+-- decides at most once more than it does beside a root with one tx to
+-- deliver, a handful of times, not once per accept.
 prop_txSubmission_gatedPeerSleeps :: Positive Int -> Property
 prop_txSubmission_gatedPeerSleeps (Positive stream0) =
-    let tr        = runSimTrace (txSubmissionSimulationWith (Set.singleton root) 0 st)
-        decisions = Map.findWithDefault 0 slow (decisionCounts tr)
-    in case traceResult True tr of
-         Left e ->
-             counterexample (show e)
-           . counterexample (ppSayTrace tr)
-           $ False
-         Right (inmp, _, _) ->
-             counterexample (ppSayTrace tr)
-           $ counterexample ("the slow peer decided " ++ show decisions ++ " times")
-           $ conjoin
-               [ counterexample "the stream did not all reach the mempool"
-                   (length inmp === stream + own)
-               , property (decisions <= 12)
-               ]
+    case (outcome stream, outcome 1) of
+      ((_, Right (decisions, inmp, _)), (_, Right (decisions1, inmp1, _))) ->
+            conjoin
+              [ counterexample "the stream did not all reach the mempool"
+                  (length inmp === stream + own)
+              , counterexample "the one tx did not reach the mempool"
+                  (length inmp1 === 1 + own)
+              , counterexample ("the slow peer decided " ++ show decisions ++ " times under the stream, "
+                                  ++ show decisions1 ++ " times beside one tx")
+                  (decisions <= decisions1 + 1)
+              ]
+      ((tr, Left e), _) -> counterexample (show e) $ counterexample (ppSayTrace tr) False
+      (_, (tr, Left e)) -> counterexample (show e) $ counterexample (ppSayTrace tr) False
   where
     root   = 1 :: PeerAddr
     slow   = 2 :: PeerAddr
@@ -917,9 +916,16 @@ prop_txSubmission_gatedPeerSleeps (Positive stream0) =
     own    = 5
     tx i = Tx { getTxId = i, getTxSize = 100, getTxAdvSize = 100
               , getTxValid = True, getTxParent = Nothing }
-    st = TxSubmissionState
+    -- the simulation with the root delivering @n@ txs: the slow peer's
+    -- decisions, the mempool and the final shared state
+    outcome n =
+      let tr = runSimTrace (txSubmissionSimulationWith (Set.singleton root) 0 (st n))
+      in ( tr
+         , (\(inmp, _, final) -> (Map.findWithDefault 0 slow (decisionCounts tr), inmp, final))
+             <$> traceResult True tr )
+    st n = TxSubmissionState
       { peerMap = Map.fromList
-          [ (root, (map tx [1 .. stream], Just (Positive (SmallDelay 0.1)), Just (Positive (SmallDelay 0.1))))
+          [ (root, (map tx [1 .. n], Just (Positive (SmallDelay 0.1)), Just (Positive (SmallDelay 0.1))))
           , (slow, (map tx [1000 .. 1000 + own - 1], Just (Positive (SmallDelay 0.1)), Just (Positive (SmallDelay 0.1))))
           ]
       , peerImpairment = Map.empty
@@ -1659,8 +1665,8 @@ unit_score_recoversAfterBurst = do
 
 -- | A batch mixing invalid bodies with valid ones is penalised for the
 -- invalid ones: the accepts forgive earlier rejections, never their own
--- batch's, so seven invalid beside three valid in one window's worth
--- leave a score of seven rather than netting to nothing.
+-- batch's, so six invalid beside four valid in one window's worth leave
+-- a score of six rather than netting to nothing.
 unit_score_mixedBatchPenalised :: Assertion
 unit_score_mixedBatchPenalised = do
     let st = TxSubmissionState

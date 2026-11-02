@@ -628,11 +628,12 @@ data PeerTxLocalState tx = PeerTxLocalState {
     -- says (see 'peerNovelAt').
     peerTier                :: !PeerTier,
 
-    -- | When the mempool last accepted txs this peer delivered, newest
-    -- last, at most as many as 'txSourceRate' over 'txSourceWindow'
-    -- amounts to: the peer is a source while the oldest is inside the
-    -- window.
-    peerNovelAt             :: !(StrictSeq Time),
+    -- | The mempool's accepts of txs this peer delivered: one entry per
+    -- submission that accepted some, the time and how many, newest last,
+    -- trimmed to the entries inside 'txSourceWindow' that still reach the
+    -- count 'txSourceRate' over the window amounts to.  The peer is a
+    -- source while the entries inside the window reach it.
+    peerNovelAt             :: !(StrictSeq (Time, Int)),
 
     -- | On the slow tier, the time before which no further txid request
     -- goes out, set when one is sent.

@@ -1,6 +1,10 @@
-{-# LANGUAGE BangPatterns   #-}
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE RankNTypes     #-}
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeOperators       #-}
 
 module Test.Ouroboros.Network.TxSubmission.TxLogic
   ( tests
@@ -42,15 +46,19 @@ import Data.Foldable (toList)
 import Data.Function (on)
 import Data.IntMap.Strict qualified as IntMap
 import Data.IntSet qualified as IntSet
+import Data.Kind (Type)
 import Data.List (elemIndex, mapAccumL, nub, nubBy, sort, sortBy, sortOn,
            unfoldr)
 import Data.List as List (foldl')
 import Data.Map.Strict qualified as Map
 import Data.Maybe (listToMaybe)
+import Data.Proxy (Proxy (..))
 import Data.Sequence.Strict qualified as StrictSeq
 import Data.Set qualified as Set
 import Data.Time.Clock (picosecondsToDiffTime)
 import Data.Word (Word64)
+import GHC.Generics (C, D, K1 (..), M1 (..), Rep, S, Selector (..), (:*:) (..))
+import GHC.Generics qualified as Generics (from)
 
 import Control.Tracer (Tracer (..), emit, nullTracer)
 import NoThunks.Class (NoThunks, unsafeNoThunks)
@@ -148,7 +156,7 @@ tests =
     , testProperty "the counters thread emits on its cadence through drains" prop_thread_emissionCadence
     , localOption (QuickCheckTests 20) $ testProperty "under a backlog the counters thread's sweeps are at most an interval apart" prop_thread_drainCap
     , localOption (QuickCheckTests 20) $ testProperty "an emission does not delay the counters thread's next sweep" prop_thread_emissionCost
-    , testProperty "the shared state's counts are traced under every field's name" prop_countFields_everyField
+    , testProperty "the shared state's counts are traced under every field's name, each the count its name says" prop_countFields_everyField
     , testProperty "nanosecond deadlines never expire early, and expire within 1 ns" prop_retainDeadline_rounding
     , testProperty "counters snapshot counts every peer exactly once" prop_snapshotCounters_exactlyOnce
     , testProperty "the reply-size counters bucket each txid reply by the txids it carried" prop_replySizeCounters
@@ -174,8 +182,9 @@ tests =
         , testProperty "a fast peer is served as under a zero cadence" prop_tier_fastIgnoresCadence
         , testProperty "a slow peer's txid request sets the gate within the jitter band" prop_tier_slowSetsGate
         , testProperty "isSource agrees with the count of accepts inside the window" prop_tier_sourceOracle
-        , testProperty "recordNovel keeps the newest source count of timestamps and no more" prop_tier_recordNovelTrim
+        , testProperty "recordNovel keeps one entry per accepting submission inside the window, the newest that reach the count" prop_tier_recordNovelTrim
         , localOption (QuickCheckTests 2000) $ testProperty "the source count is the exact ceiling of rate times window" prop_tier_sourceCountExact
+        , testProperty "the source count never wraps, and the sanity check refuses a window over an hour" prop_tier_sourceWindowSane
         , testProperty "the order places exactly the first k by salted rank after every join, leave and rotation" prop_tier_orderOracle
         , localOption (QuickCheckTests 20) $ testProperty "the salted order is fair" prop_tier_orderUniform
         , testProperty "the slow wait lies in the jitter band and the generator moves" prop_tier_jitterBand
@@ -1314,11 +1323,11 @@ prop_handleSubmittedTxs_novelOffFastOnly (ArbTxDecisionPolicy policy0) fast (Pos
           peerDownloadedTxs       = IntMap.fromList [ (unTxKey k, mkTx txid 64) | (k, txid) <- accepted ]
         }
       (peerState', _, _) = handleSubmittedTxs now policy peerAddr accepted [] peerState pif shared1
-      expected = if fast then 0 else min n (sourceCount policy)
+      expected = if fast then StrictSeq.empty else StrictSeq.singleton (now, n)
   in counterexample (show (peerNovelAt peerState')) $
        cover 30 fast "fast" $
        cover 30 (not fast) "slow" $
-       StrictSeq.length (peerNovelAt peerState') === expected
+       peerNovelAt peerState' === expected
   where
     peerAddr :: PeerAddr
     peerAddr = 1
@@ -2476,22 +2485,71 @@ prop_thread_emissionCost (Lifetime lifetime) (EmissionShare share) = runSimOrThr
     st0 :: SharedTxState PeerAddr TxId
     st0 = withOrphans ((ceiling ((7 + 2 * interval) / interval) + 2) * sweepBatch) emptySharedTxState
 
--- | The counts are traced under every field's name, each with its own
--- value: a field added to the record is traced or fails, never shifted
--- onto another's name.
-prop_countFields_everyField :: SweepState -> Property
-prop_countFields_everyField ss =
-  let counts = sharedTxStateCounts (sweepStateOf ss)
-  in sharedTxStateCountFields counts
-       === [ ("activeTxCount",     activeTxCount     counts)
-           , ("retainedTxCount",   retainedTxCount   counts)
-           , ("internedTxCount",   internedTxCount   counts)
-           , ("leasedTxCount",     leasedTxCount     counts)
-           , ("claimableTxCount",  claimableTxCount  counts)
-           , ("totalAttemptCount", totalAttemptCount counts)
-           , ("submittingTxCount", submittingTxCount counts)
-           , ("doomedTxCount",     doomedTxCount     counts)
-           ]
+-- | The selector names of a record's 'Generic' representation, in field
+-- order.
+class GSelectors (f :: Type -> Type) where
+  gselectors :: Proxy f -> [String]
+
+instance GSelectors f => GSelectors (M1 D d f) where
+  gselectors _ = gselectors (Proxy :: Proxy f)
+
+instance GSelectors f => GSelectors (M1 C c f) where
+  gselectors _ = gselectors (Proxy :: Proxy f)
+
+instance (GSelectors f, GSelectors g) => GSelectors (f :*: g) where
+  gselectors _ = gselectors (Proxy :: Proxy f) ++ gselectors (Proxy :: Proxy g)
+
+instance Selector s => GSelectors (M1 S s f) where
+  gselectors _ = [selName (undefined :: M1 S s f ())]
+
+-- | The 'Int' fields of a record's 'Generic' representation, in field
+-- order.
+class GIntFields f where
+  gintFields :: f p -> [Int]
+
+instance GIntFields f => GIntFields (M1 i c f) where
+  gintFields (M1 x) = gintFields x
+
+instance (GIntFields f, GIntFields g) => GIntFields (f :*: g) where
+  gintFields (f :*: g) = gintFields f ++ gintFields g
+
+instance GIntFields (K1 i Int) where
+  gintFields (K1 n) = [n]
+
+-- | The counts are traced under every field's name: the traced list is
+-- the record's fields in order, names and values from its 'Generic'
+-- representation, so a field added to the record but not to the list
+-- fails, and each field holds the count its name says of the state,
+-- doomed and spared entries among them.
+prop_countFields_everyField :: SweepState -> [DoomAt] -> Property
+prop_countFields_everyField ss dooms =
+  let st = (sweepStateOf ss) {
+         sharedTxTable = IntMap.fromList
+           [ (k, doomAt e d)
+           | ((k, e), d) <- zip (IntMap.toList (sharedTxTable (sweepStateOf ss))) (dooms ++ repeat (UndoomedFor 0)) ]
+       }
+      entries = IntMap.elems (sharedTxTable st)
+      count p = length (filter p entries)
+      counts  = sharedTxStateCounts st
+      record  = zip (gselectors (Proxy :: Proxy (Rep SharedTxStateCounts))) (gintFields (Generics.from counts))
+  in cover 30 (any ((== Doomed) . txDoom) entries) "some doomed" $
+          counterexample "the traced list against the record"
+            (sharedTxStateCountFields counts === record)
+     .&&. counterexample "the record against the state"
+            (record
+               === [ ("activeTxCount",     IntMap.size (sharedTxTable st))
+                   , ("retainedTxCount",   retainedSize (sharedRetainedTxs st))
+                   , ("internedTxCount",   Map.size (sharedTxIdToKey st))
+                   , ("leasedTxCount",     count (\e -> case txLease e of TxLeased {} -> True; TxClaimable {} -> False))
+                   , ("claimableTxCount",  count (\e -> case txLease e of TxClaimable {} -> True; TxLeased {} -> False))
+                   , ("totalAttemptCount", sum (map txAttempt entries))
+                   , ("submittingTxCount", count txInSubmission)
+                   , ("doomedTxCount",     count ((== Doomed) . txDoom))
+                   ])
+  where
+    doomAt e (UndoomedFor _) = e
+    doomAt e (SparedFor n)   = e { txDoom = Spared (addTime (negate (fromIntegral n)) now) }
+    doomAt e DoomedNow       = e { txDoom = Doomed }
 
 -- | A deadline and a current time, in picoseconds: the deadline anywhere
 -- from before the clock's origin (a non-positive lifetime) through the
@@ -5470,8 +5528,9 @@ instance Arbitrary Accepts where
     ++ [ Accepts p es a' | a' <- shrink a ]
 
 -- | 'isSource' over the states 'recordNovel' builds agrees with the count
--- over the whole history: a source has at least 'sourceCount' accepts
--- inside the window, and 'sourceCount' is at least one.
+-- over the whole history up to the asking time: a source has at least
+-- 'sourceCount' accepts inside the window, and 'sourceCount' is at least
+-- one.
 prop_tier_sourceOracle :: Accepts -> Property
 prop_tier_sourceOracle (Accepts (ArbTxDecisionPolicy policy0) events askAt) =
       cover 20 oracle "source"
@@ -5483,7 +5542,6 @@ prop_tier_sourceOracle (Accepts (ArbTxDecisionPolicy policy0) events askAt) =
     policy = policy0 { txSourceWindow = fromIntegral (max 1 (round (txSourceWindow policy0 * 1000) :: Int)) / 1000 }
     n      = sourceCount policy
     times  = scanl1 (+) [ g | (Positive g, _) <- events ] :: [Int]
-    history = zip (map ms times) [ c | (_, Positive c) <- events ]
     at = case askAt of
       AfterLast (Positive lag) -> ms (lag + (if null times then 0 else last times))
       WindowAfter (NonNegative i)
@@ -5493,6 +5551,8 @@ prop_tier_sourceOracle (Accepts (ArbTxDecisionPolicy policy0) events askAt) =
       WindowAfter _ -> not (null times)
       AfterLast _   -> False
     ms t   = Time (fromIntegral (t :: Int) / 1000)
+    -- the submissions so far when asked: the clock only advances
+    history = [ (t, c) | (t, c) <- zip (map ms times) [ c | (_, Positive c) <- events ], t <= at ]
     folded = foldl (\acc (t, c) -> recordNovel policy t c acc) StrictSeq.empty history
     inWindow = sum [ c | (t, c) <- history, t `addTime'` txSourceWindow policy >= at ]
     addTime' t d = addTime d t
@@ -5502,25 +5562,61 @@ prop_tier_sourceOracle (Accepts (ArbTxDecisionPolicy policy0) events askAt) =
 -- exactly, for rates and windows given to a thousandth: where the two
 -- multiply to a whole number on paper, the machine's product may land
 -- either side of it.
--- | 'recordNovel' keeps the newest 'sourceCount' timestamps of the ones it
--- had and the batch, the oldest going first, and never more; an empty
--- batch or a zero source count changes nothing.
-prop_tier_recordNovelTrim
-  :: ArbTxDecisionPolicy -> NonNegative Int -> [NonNegative Int] -> NonNegative Int -> Property
-prop_tier_recordNovelTrim (ArbTxDecisionPolicy policy) (NonNegative count0) ages (NonNegative atS) =
-  let n      = sourceCount policy
-      count  = count0 `mod` (2 * max 1 n + 3)
-      at     = Time (fromIntegral atS)
-      -- the timestamps so far, in order, none after the batch's time
-      before = StrictSeq.fromList (sort [ addTime (negate (fromIntegral a)) at | NonNegative a <- ages ])
-      after  = recordNovel policy at count before
-      expected
-        | n <= 0 || count <= 0 = before
-        | otherwise = StrictSeq.fromList (lastN n (toList before ++ replicate count at))
-      lastN k xs = drop (length xs - k) xs
-  in counterexample (show (n, count, after)) $
-       classify (n > 0 && count > 0 && StrictSeq.length before + count > n) "trimmed" $
-       after === expected
+-- | The record 'recordNovel' builds over a history of accepting
+-- submissions is what the whole history says: one entry per submission
+-- time, inside the window at the last one, the newest that still reach
+-- 'sourceCount' and no older; a zero source count records nothing.
+prop_tier_recordNovelTrim :: Accepts -> Property
+prop_tier_recordNovelTrim (Accepts (ArbTxDecisionPolicy policy) events _) =
+  let n       = sourceCount policy
+      times   = scanl1 (+) [ g | (Positive g, _) <- events ] :: [Int]
+      history = zip (map ms times) [ c | (_, Positive c) <- events ]
+      ms t    = Time (fromIntegral (t :: Int) / 1000)
+      folded  = foldl (\acc (t, c) -> recordNovel policy t c acc) StrictSeq.empty history
+      -- the oracle: the history merged by time, cut to the window at the
+      -- last submission, then to the shortest suffix reaching the count
+      merged  = Map.toAscList (Map.fromListWith (+) history)
+      inWindow = case history of
+        [] -> []
+        _  -> [ (t, c) | (t, c) <- merged, addTime (txSourceWindow policy) t >= fst (last history) ]
+      suffix xs | sum (map snd (drop 1 xs)) >= n, not (null xs) = suffix (drop 1 xs)
+                | otherwise = xs
+      expected | n <= 0    = StrictSeq.empty
+               | otherwise = StrictSeq.fromList (suffix inWindow)
+  in counterexample (show (n, history, folded)) $
+       classify (n > 0 && length inWindow < length merged) "cut by the window" $
+       classify (n > 0 && StrictSeq.length expected < length inWindow) "cut to the count" $
+       folded === expected
+
+-- | A source rule's rate and window: windows from a tenth of a second to
+-- an hour, up to a day, or absurd ones, a window given in the wrong unit
+-- and beyond, whose product wraps a machine integer.
+data SourceRule = SourceRule Double DiffTime
+  deriving Show
+
+instance Arbitrary SourceRule where
+  arbitrary = SourceRule <$> choose (0.01, 5)
+                         <*> (realToFrac <$> frequency [ (3, choose (0.1, 3600 :: Double))
+                                                       , (2, choose (3600, 86400))
+                                                       , (1, choose (1e7, 1e9))
+                                                       , (1, choose (1e18, 1e21)) ])
+  shrink (SourceRule r w) =
+       [ SourceRule r' w | Positive r' <- shrink (Positive r) ]
+    ++ [ SourceRule r (realToFrac w') | Positive w' <- shrink (Positive (realToFrac w :: Double)) ]
+
+-- | The source count never wraps, whatever the window, and the sanity
+-- check refuses a window over 'maxSourceWindow', as one given in the
+-- wrong unit is, while passing one at or under it.
+prop_tier_sourceWindowSane :: ArbTxDecisionPolicy -> SourceRule -> Property
+prop_tier_sourceWindowSane (ArbTxDecisionPolicy policy0) (SourceRule rate window) =
+  let policy = policy0 { txSourceRate = rate, txSourceWindow = window }
+      n      = sourceCount policy
+  in cover 20 (window > maxSourceWindow) "over the window bound" $
+     cover 20 (window <= maxSourceWindow) "within the window bound" $
+     cover 10 (rate * fromRational (toRational window) > 1e19) "a product past the machine integers" $
+     counterexample (show (window, n)) $
+          counterexample "the count" (n >= 0 && n <= 1000000000)
+     .&&. counterexample "the sanity check" (saneTxDecisionPolicy policy === (window <= maxSourceWindow))
 
 prop_tier_sourceCountExact :: Property
 prop_tier_sourceCountExact =
@@ -5578,6 +5674,7 @@ prop_countersThread_refusesInsane (ArbTxDecisionPolicy policy) =
       , ("negative cadence", \p -> p { txSlowCadence = -1 },                      True)
       , ("no rotation",      \p -> p { txTierRotation = 0 },                      True)
       , ("no source window", \p -> p { txSourceWindow = 0 },                      True)
+      , ("source window in the wrong unit", \p -> p { txSourceWindow = 10000000 }, True)
       , ("empty window",     \p -> p { maxUnacknowledgedTxIds = 0 },              True)
       , ("no cap",           \p -> p { maxNumTxIdsToRequest = 0 },                True)
       , ("timeout below the space", \p -> p { inflightTimeout = interTxSpace p - 0.001 }, True)

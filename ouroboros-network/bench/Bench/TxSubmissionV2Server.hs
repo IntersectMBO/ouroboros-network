@@ -138,7 +138,8 @@ runDirectServerBenchmark DirectServerFixture {
                     writer
                     getTxSize
                     api
-                stream = [1 .. dsTxIdReplyBatches * 6]
+                -- one reply batch per request at the policy's cap
+                stream = [1 .. dsTxIdReplyBatches * fromIntegral (getNumTxIdsToReq (maxNumTxIdsToRequest dsPolicy))]
             case server of
               TxSubmissionServerPipelined initServer -> do
                 st0 <- initServer

@@ -4,6 +4,8 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Policy
   ( TxDecisionPolicy (..)
   , defaultTxDecisionPolicy
   , saneTxDecisionPolicy
+  , maxSourceWindow
+  , sourceWindowSeconds
   , InvalidTxDecisionPolicy (..)
   , max_TX_SIZE
     -- * Re-exports
@@ -13,6 +15,7 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Policy
 import Control.DeepSeq
 import Control.Exception (Exception)
 import Control.Monad.Class.MonadTime.SI
+import Data.Time.Clock (diffTimeToPicoseconds)
 import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToReq (..))
 import Ouroboros.Network.SizeInBytes (SizeInBytes (..))
 
@@ -142,9 +145,10 @@ defaultTxDecisionPolicy =
 -- used as a non-negative delay when bumping a stuck entry's
 -- inflight-multiplicity cap).  The tier fields must be non-negative, the
 -- jitter below one (a wait at or above the cadence's whole would turn
--- negative and the slow gate open) and the rotation and source window
--- positive.  'defaultTxDecisionPolicy' satisfies it; 'txCountersThreadV2'
--- refuses a policy that does not.
+-- negative and the slow gate open), the rotation and source window
+-- positive and the window at most 'maxSourceWindow'.
+-- 'defaultTxDecisionPolicy' satisfies it; 'txCountersThreadV2' refuses a
+-- policy that does not.
 saneTxDecisionPolicy :: TxDecisionPolicy -> Bool
 saneTxDecisionPolicy p =
        maxNumTxIdsToRequest           p >= 1
@@ -166,6 +170,20 @@ saneTxDecisionPolicy p =
     && txTierRotation                 p >  0
     && txSourceRate                   p >= 0
     && txSourceWindow                 p >  0
+    && txSourceWindow                 p <= maxSourceWindow
+
+-- | The longest source window 'saneTxDecisionPolicy' accepts: an hour.
+-- A source window is seconds to minutes; a longer one is a unit error
+-- (ten seconds given in microseconds), and the record a peer keeps of its
+-- accepts ('peerNovelAt') grows with the window.
+maxSourceWindow :: DiffTime
+maxSourceWindow = 3600
+
+-- | The source window in seconds as a 'Double', read from picoseconds:
+-- 'realToFrac' on a 'DiffTime' goes through 'Rational', and the source
+-- count is taken on every decision.
+sourceWindowSeconds :: TxDecisionPolicy -> Double
+sourceWindowSeconds p = fromIntegral (diffTimeToPicoseconds (txSourceWindow p)) / 1e12
 
 -- | A policy that fails 'saneTxDecisionPolicy', thrown by
 -- 'txCountersThreadV2' before it does anything, so a node with one fails
