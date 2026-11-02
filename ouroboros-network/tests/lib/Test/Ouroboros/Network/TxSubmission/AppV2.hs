@@ -779,9 +779,15 @@ prop_counterInvariants slack tr =
 --
 prop_txSubmission :: TxSubmissionState
                   -> Property
-prop_txSubmission st@TxSubmissionState { peerMap = peers } =
-    let tr = runSimTrace (txSubmissionSimulation st)
-        numPeersWithWronglySizedTx :: Int
+prop_txSubmission st =
+    prop_txSubmissionTrace st (runSimTrace (txSubmissionSimulation st))
+
+-- | 'prop_txSubmission' for the given simulation trace of the state.
+prop_txSubmissionTrace :: TxSubmissionState
+                       -> SimTrace ([Tx Int], [[Tx Int]], SharedTxState PeerAddr TxId)
+                       -> Property
+prop_txSubmissionTrace TxSubmissionState { peerMap = peers } tr =
+    let numPeersWithWronglySizedTx :: Int
         numPeersWithWronglySizedTx =
           foldr
             (\(txs, _, _) r ->
@@ -926,13 +932,35 @@ data BackOffCounts = BackOffCounts {
 
 -- | Reuse the application property while exercising acknowledgement-only
 -- requests, which the production inbound scheduler normally suppresses.
+--
+-- The impairment consumes the reply to each acknowledgement-only request
+-- itself, so the property checks that reply here: it must be empty, otherwise
+-- the outbound's window and the inbound's would drift apart.  The outbound
+-- requests are traced after the split; our inbound never sends an
+-- acknowledgement-only request, so each one comes from a split.
 prop_txSubmission_splitAcknowledgements :: TxSubmissionState -> Property
 prop_txSubmission_splitAcknowledgements st@TxSubmissionState{peerMap} =
-    prop_txSubmission st {
-      peerImpairment =
-        -- use `impairmentSplitAcknowledgements` for all peers
-        impairmentSplitAcknowledgements <$ peerMap
-    }
+    let st' = st {
+                peerImpairment =
+                  -- use `impairmentSplitAcknowledgements` for all peers
+                  impairmentSplitAcknowledgements <$ peerMap
+              }
+        tr  = runSimTrace (txSubmissionSimulation st')
+        -- lengths of the replies to acknowledgement-only requests;
+        -- `selectTraceEventsDynamic'` doesn't throw if the simulation failed,
+        -- `prop_txSubmission` reports that
+        ackOnly :: [Int]
+        ackOnly = [ n
+                  | PeerOutboundRequest _ (RequestTxIds False ack 0 _ n)
+                    <- selectTraceEventsDynamic' tr
+                       :: [PeerOutboundRequest PeerAddr]
+                  , ack > 0 ]
+    in checkCoverage
+     . cover 50 (not (null ackOnly)) "split happened"
+     . tabulate "splits per run" [renderRanges 5 (length ackOnly)]
+     $ counterexample "acknowledgement-only request got a non-empty reply"
+         (all (== 0) ackOnly)
+       .&&. prop_txSubmissionTrace st' tr
 
 
 -- | This test checks that all txs are downloaded from all available peers if
