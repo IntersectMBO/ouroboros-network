@@ -1465,20 +1465,19 @@ handleSubmittedTxs now policy peeraddr acceptedTxs rejectedTxs peerState peerInF
       sharedStateAfterRejected {
         sharedGeneration = sharedGeneration sharedState + 1,
         sharedRevision   = sharedRevision   sharedState + 1,
-        -- a rejection released this peer's lease: claimable by another.
-        -- Not a rejected key whose entry is gone, or whose lease is not
-        -- this peer's any more: nothing of it opens to anyone.
+        -- a rejection reopens its entry: out of submission, and this
+        -- peer's lease, where it held one, released ('markRejected'), so
+        -- another peer may claim it, at once or once the lease it still
+        -- carries lapses.  Not a rejected key whose entry is gone:
+        -- nothing of it opens to anyone.
         sharedClaimable  = sharedClaimable sharedState
-                         + (if releasedAny then 1 else 0)
+                         + (if reopenedAny then 1 else 0)
       }
 
-    -- whether a rejected key's entry still carried this peer's lease, the
-    -- one 'markRejected' turns claimable
-    releasedAny = any ownLease (IntSet.toList rejectedKeys)
-    ownLease k =
-      case IntMap.lookup k (sharedTxTable sharedStateAfterAccepted) of
-        Just TxEntry { txLease = TxLeased owner _ } -> owner == peeraddr
-        _                                           -> False
+    -- whether a rejected key still has an entry, the one 'markRejected'
+    -- reopens
+    reopenedAny =
+      any (`IntMap.member` sharedTxTable sharedStateAfterAccepted) (IntSet.toList rejectedKeys)
 
     retainedUntil = retainDeadline (addTime (bufferedTxsMinLifetime policy) now)
 

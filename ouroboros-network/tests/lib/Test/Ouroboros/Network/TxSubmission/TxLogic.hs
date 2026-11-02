@@ -1099,19 +1099,31 @@ instance Arbitrary DeadFate where
   shrink ActiveAgain       = [Gone]
   shrink (RetainedAgain d) = Gone : ActiveAgain : [ RetainedAgain d' | d' <- shrink d ]
 
+-- | The lease a live key's entry carries when the submission completes:
+-- this peer's still, another peer's (taken once this peer's expired), or
+-- none (expired and released).
+data LeaseState = OwnLease | OtherLease | NoLease
+  deriving (Eq, Show)
+
+instance Arbitrary LeaseState where
+  arbitrary = frequency [ (2, pure OwnLease), (1, pure OtherLease), (1, pure NoLease) ]
+  shrink OwnLease = []
+  shrink _        = [OwnLease]
+
 -- | A key of a submission's outcome: still interned, or dead, its lookup
 -- entries gone, another peer having retained the tx meanwhile and that
--- retention having expired, with what became of its txid since; and
--- whether the mempool accepted it.
-data SubmittedKey = SubmittedKey { skLive :: Bool, skAccepted :: Bool, skFate :: DeadFate }
+-- retention having expired, with what became of its txid since; whether
+-- the mempool accepted it; and, live, the lease its entry carries.
+data SubmittedKey = SubmittedKey { skLive :: Bool, skAccepted :: Bool, skFate :: DeadFate, skLease :: LeaseState }
   deriving Show
 
 instance Arbitrary SubmittedKey where
-  arbitrary = SubmittedKey <$> arbitrary <*> arbitrary <*> arbitrary
-  shrink (SubmittedKey live accepted fate) =
-       [ SubmittedKey True accepted fate | not live ]
-    ++ [ SubmittedKey live True fate | not accepted ]
-    ++ [ SubmittedKey live accepted fate' | fate' <- shrink fate ]
+  arbitrary = SubmittedKey <$> arbitrary <*> arbitrary <*> arbitrary <*> arbitrary
+  shrink (SubmittedKey live accepted fate lease) =
+       [ SubmittedKey True accepted fate lease | not live ]
+    ++ [ SubmittedKey live True fate lease | not accepted ]
+    ++ [ SubmittedKey live accepted fate' lease | fate' <- shrink fate ]
+    ++ [ SubmittedKey live accepted fate lease' | lease' <- shrink lease ]
 
 -- | A submission completing retains each accepted key still interned,
 -- under the retention deadline, keeps each rejected one active, claimable
@@ -1125,20 +1137,28 @@ instance Arbitrary SubmittedKey where
 prop_handleSubmittedTxs_deadKeys :: ArbTxDecisionPolicy -> NonEmptyList SubmittedKey -> Property
 prop_handleSubmittedTxs_deadKeys (ArbTxDecisionPolicy policy) (NonEmpty submitted) =
   let txids = zip [1 :: TxId ..] submitted
-      -- The live keys' entries, leased to this peer and in submission.
+      -- The live keys' entries, in submission by this peer, each with the
+      -- lease its key says: this peer's, another's, or none.
       shared0 = mkActiveSharedState [peerAddr] peerAddr []
-                  [ (txid, 64) | (txid, SubmittedKey True _ _) <- txids ]
+                  [ (txid, 64) | (txid, SubmittedKey True _ _ _) <- txids ]
+      leaseOfTxid = Map.fromList [ (txid, skLease sk) | (txid, sk) <- txids ]
       shared1 = shared0 {
-          sharedTxTable = IntMap.map (\e -> e { txAttempt = 0, txInSubmission = True }) (sharedTxTable shared0)
+          sharedTxTable = IntMap.mapWithKey release (sharedTxTable shared0)
         }
+      release k e =
+        e { txAttempt = 0, txInSubmission = True
+          , txLease = case leaseOfTxid Map.! (sharedKeyToTxId shared0 IntMap.! k) of
+                        OwnLease   -> txLease e
+                        OtherLease -> TxLeased other (addTime 10 now)
+                        NoLease    -> TxClaimable now }
       -- The key submitted: the live key, or a key no txid maps to.
-      keyOf (txid, SubmittedKey True _ _) = unTxKey (lookupKeyOrFail txid shared1)
-      keyOf (txid, _)                     = 1000 + txid
+      keyOf (txid, SubmittedKey True _ _ _) = unTxKey (lookupKeyOrFail txid shared1)
+      keyOf (txid, _)                       = 1000 + txid
       keyed = [ (keyOf t, txid, sk) | t@(txid, sk) <- txids ]
       keys  = [ k | (k, _, _) <- keyed ]
       -- The dead txids interned again meanwhile, by another peer: active
       -- under a fresh key, or retained until a deadline of their own.
-      broughtBack = [ (txid, fate) | (txid, SubmittedKey False _ fate) <- txids, fate /= Gone ]
+      broughtBack = [ (txid, fate) | (txid, SubmittedKey False _ fate _) <- txids, fate /= Gone ]
       shared2 = List.foldl' bringBack shared1 broughtBack
       bringBack st (txid, fate) =
         let (_, TxKey k, st') = internTxId txid st in
@@ -1155,11 +1175,11 @@ prop_handleSubmittedTxs_deadKeys (ArbTxDecisionPolicy policy) (NonEmpty submitte
         }
       deadlineAt d = retainDeadline (addTime (fromIntegral (d :: Int)) now)
       againKey txid = unTxKey (lookupKeyOrFail txid shared2)
-      accepted = [ (TxKey k, txid) | (k, txid, SubmittedKey _ True _) <- keyed ]
-      rejected = [ TxKey k | (k, _, SubmittedKey _ False _) <- keyed ]
+      accepted = [ (TxKey k, txid) | (k, txid, SubmittedKey _ True _ _) <- keyed ]
+      rejected = [ TxKey k | (k, _, SubmittedKey _ False _ _) <- keyed ]
       pif = emptyPeerTxInFlight {
           pifSubmitting = IntSet.fromList keys,
-          pifLeased     = IntSet.fromList [ k | (k, _, SubmittedKey True _ _) <- keyed ],
+          pifLeased     = IntSet.fromList [ k | (k, _, SubmittedKey True _ _ OwnLease) <- keyed ],
           pifAdvertised = IntSet.fromList keys
         }
       peerState = (emptyPeerTxLocalState :: PeerTxLocalState (Tx TxId)) {
@@ -1178,24 +1198,27 @@ prop_handleSubmittedTxs_deadKeys (ArbTxDecisionPolicy policy) (NonEmpty submitte
       txidOfKey k = IntMap.lookup k (sharedKeyToTxId shared')
       retainedTxIds = sort [ txid | (k, _) <- retained, Just txid <- [txidOfKey k] ]
       expectRetainedTxIds =
-        sort [ txid | (_, txid, SubmittedKey live acc fate) <- keyed
+        sort [ txid | (_, txid, SubmittedKey live acc fate _) <- keyed
                     , (acc && (live || fate /= ActiveAgain)) || isRetainedAgain (live, fate) ]
       isRetainedAgain (False, RetainedAgain _) = True
       isRetainedAgain _                        = False
-      expectDeadline (SubmittedKey False acc (RetainedAgain d))
+      expectDeadline (SubmittedKey False acc (RetainedAgain d) _)
         | acc       = max (deadlineAt d) retainUntil
         | otherwise = deadlineAt d
       expectDeadline _ = retainUntil
       deadlinesOf txid = [ until' | (k, until') <- retained, txidOfKey k == Just txid ]
       freshKeys = [ k | (k, _) <- retained, k >= sharedNextTxKey shared2 ]
-      deadAccepted = length [ () | (_, _, SubmittedKey False True Gone) <- keyed ]
-      expectActive   = IntSet.fromList ([ k | (k, _, SubmittedKey True False _) <- keyed ]
+      deadAccepted = length [ () | (_, _, SubmittedKey False True Gone _) <- keyed ]
+      expectActive   = IntSet.fromList ([ k | (k, _, SubmittedKey True False _ _) <- keyed ]
                                         ++ [ againKey txid | (txid, ActiveAgain) <- broughtBack ])
+      -- a rejected entry is out of submission; this peer's lease is gone,
+      -- another peer's stays
       rejectedEntry e =
         counterexample (show e) $
-          case txLease e of
-            TxClaimable _ -> property (not (txInSubmission e))
-            TxLeased {}   -> counterexample "still leased" False
+          property (not (txInSubmission e))
+          .&&. case txLease e of
+                 TxLeased owner _ -> counterexample "still leased by this peer" (owner =/= peerAddr)
+                 TxClaimable _    -> property True
   in counterexample (show shared') $
        classify (any (not . skLive) submitted) "has dead keys" $
        classify (not (null broughtBack)) "has txids interned again" $
@@ -1217,16 +1240,18 @@ prop_handleSubmittedTxs_deadKeys (ArbTxDecisionPolicy policy) (NonEmpty submitte
               (pifSubmitting pif' === IntSet.empty
                .&&. pifLeased pif' === IntSet.empty
                .&&. pifAdvertised pif' === IntSet.empty)
-       -- only a live key's rejection releases this peer's lease; a dead key
-       -- has no entry, or an entry not leased to this peer, to release
+       -- only a live key's rejection reopens an entry (out of submission,
+       -- this peer's lease released): a wake, whatever lease the entry
+       -- carried; a dead key has no entry to reopen
        .&&. counterexample "the claimable counter moves iff a live key was rejected"
               (sharedClaimable shared' === sharedClaimable shared2
-                 + (if any (\(_, _, SubmittedKey live acc _) -> live && not acc) keyed then 1 else 0))
+                 + (if any (\(_, _, SubmittedKey live acc _ _) -> live && not acc) keyed then 1 else 0))
        .&&. combinedStateInvariantStep policy (Map.singleton peerAddr (peerState', pif')) shared2 shared'
        .&&. peerTxLocalStateInvariant policy peerState'
   where
-    peerAddr :: PeerAddr
+    peerAddr, other :: PeerAddr
     peerAddr = 1
+    other    = 2
 
 -- | A submission's accepts record novelty only off the fast tier: a peer
 -- the coin or its standing has fast wins the races and would make a
