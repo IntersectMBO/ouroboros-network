@@ -458,6 +458,9 @@ peerSharingProtocolLimits _ =
 -- Object Diffusion message envelope. This allows 10% above consensus's current
 -- @dijkstraPerasMaxCertSize@ forging budget of 40,000 bytes. Revisit this budget
 -- when that limit or the encoding changes; it is not a cryptographic maximum.
+--
+-- TODO: Import @dijkstraPerasMaxCertSize@ from cardano-base once
+-- https://github.com/IntersectMBO/cardano-base/pull/701 is merged.
 maxCertSize :: SizeInBytes
 maxCertSize = 44_000
 
