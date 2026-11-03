@@ -22,8 +22,9 @@ module Ouroboros.Network.Protocol.ObjectDiffusion.Test
   ) where
 
 import Control.Monad (void)
+import Data.ByteString qualified as BS
 import Data.ByteString.Lazy (ByteString)
-import Data.List.NonEmpty (NonEmpty ((:|)))
+import Data.ByteString.Lazy qualified as BL
 import Data.List.NonEmpty qualified as NonEmpty
 
 import Control.Monad.Class.MonadAsync (MonadAsync)
@@ -45,6 +46,7 @@ import Ouroboros.Network.Channel (Channel, createConnectedBufferedChannels,
 import Ouroboros.Network.Driver (runPeer, runPipelinedPeer)
 import Ouroboros.Network.Util.ShowProxy
 
+import Ouroboros.Network.Protocol.Limits (ProtocolSizeLimits (..))
 import Ouroboros.Network.Protocol.ObjectDiffusion.Codec
 import Ouroboros.Network.Protocol.ObjectDiffusion.Type
 
@@ -61,8 +63,8 @@ import GHC.Generics
 import GHC.Natural (Natural)
 import Ouroboros.Network.Protocol.ObjectDiffusion.Direct (directPipelined)
 import Ouroboros.Network.Protocol.ObjectDiffusion.Examples
-           (TraceObjectDiffusionTestImplem, WithCaughtUpDetection (..),
-           testObjectDiffusionInbound, testObjectDiffusionOutbound)
+           (TraceObjectDiffusionTestImplem, testObjectDiffusionInbound,
+           testObjectDiffusionOutbound)
 import Ouroboros.Network.Protocol.ObjectDiffusion.Inbound
            (ObjectDiffusionInboundPipelined,
            objectDiffusionInboundPeerPipelined)
@@ -84,6 +86,8 @@ tests =
   testGroup "Ouroboros.Network.Protocol"
     [ testGroup "ObjectDiffusion"
         [ testProperty "codec"                      prop_codec
+        , testProperty "byte limits"                prop_byteLimits
+        , testProperty "byte limit boundaries"      prop_byteLimitsBoundaries
         , testProperty "codec id"                   prop_codec_id
         , testProperty "codec 2-splits"           $ withMaxSize 50
                                                     prop_codec_splits2
@@ -112,15 +116,8 @@ newtype Object = Object { getObjectId :: ObjectId }
 instance ShowProxy Object where
     showProxy _ = "Object"
 
-newtype ObjectId = ObjectId (Maybe Word64)
-  deriving (Eq, Ord, Show, Serialise, Generic, NFData)
-
-instance Arbitrary ObjectId where
-  -- | We never generate the `Nothing` variant, since it is reserved for the sentinel value used to detect that the peer is caught up.
-  arbitrary = ObjectId . Just <$> arbitrary
-
-instance WithCaughtUpDetection ObjectId where
-  caughtUpSentinel = ObjectId Nothing :| []
+newtype ObjectId = ObjectId Word64
+  deriving (Eq, Ord, Show, Arbitrary, Serialise, Generic, NFData)
 
 instance ShowProxy ObjectId where
     showProxy _ = "ObjectId"
@@ -132,41 +129,53 @@ instance (Arbitrary objectId, Arbitrary object)
       => Arbitrary (AnyMessage (ObjectDiffusion objectId object)) where
   arbitrary = oneof
     [ pure $ AnyMessage MsgInit
-    , AnyMessage
-        <$> ( MsgRequestObjectIds SingBlocking
-            <$> arbitrary
-            <*> arbitrary
+    , do
+        ackNo <- arbitrary
+        reqNo <- arbitrary
+        pure $ AnyMessage $ MsgRequestObjectIds SingRequestObjectIdsBlocking ackNo reqNo
+    , do
+        ackNo <- arbitrary
+        reqNo <- arbitrary
+        pure $ AnyMessage $ MsgRequestObjectIds SingRequestObjectIdsNonBlocking ackNo reqNo
+    , do
+        objectIds <- NonEmpty.fromList . QC.getNonEmpty <$> arbitrary
+        pure $
+          AnyMessage
+            ( MsgReplyObjectIds (BlockingReply objectIds)
+                :: Message
+                    (ObjectDiffusion objectId object)
+                    (StObjectIds ('StObjectIdsBlocking 'StCanAwait))
+                    StIdle
             )
-
-    , AnyMessage
-        <$> ( MsgRequestObjectIds SingNonBlocking
-            <$> arbitrary
-            <*> arbitrary
+    , do
+        objectIds <- NonEmpty.fromList . QC.getNonEmpty <$> arbitrary
+        pure $
+          AnyMessage
+            ( MsgReplyObjectIds (BlockingReply objectIds)
+                :: Message
+                    (ObjectDiffusion objectId object)
+                    (StObjectIds ('StObjectIdsBlocking 'StMustReply))
+                    StIdle
             )
-
-    , AnyMessage
-        <$> MsgReplyObjectIds
-        <$> ( BlockingReply
-            . NonEmpty.fromList
-            . QC.getNonEmpty
+    , do
+        objectIds <- arbitrary
+        pure $
+          AnyMessage
+            ( MsgReplyObjectIds (NonBlockingReply objectIds)
+                :: Message
+                    (ObjectDiffusion objectId object)
+                    (StObjectIds 'StObjectIdsNonBlocking)
+                    StIdle
             )
-        <$> arbitrary
-
-    , AnyMessage
-        <$> MsgReplyObjectIds
-        <$> NonBlockingReply
-        <$> arbitrary
-
-    , AnyMessage
-        <$> MsgRequestObjects
-        <$> arbitrary
-
-    , AnyMessage
-        <$> MsgReplyObjects
-        <$> arbitrary
-
-    , AnyMessage
-        <$> pure MsgDone
+    , pure $ AnyMessage MsgServerIdle
+    , pure $ AnyMessage MsgAwaitReply
+    , do
+        objectIds <- arbitrary
+        pure $ AnyMessage $ MsgRequestObjects objectIds
+    , do
+        objects <- arbitrary
+        pure $ AnyMessage $ MsgReplyObjects objects
+    , pure $ AnyMessage MsgDone
     ]
 
 instance (Eq objectId, Eq object)
@@ -175,12 +184,12 @@ instance (Eq objectId, Eq object)
   (==) (AnyMessage MsgInit)
        (AnyMessage MsgInit) = True
 
-  (==) (AnyMessage (MsgRequestObjectIds SingBlocking ackNo  reqNo))
-       (AnyMessage (MsgRequestObjectIds SingBlocking ackNo' reqNo')) =
+  (==) (AnyMessage (MsgRequestObjectIds SingRequestObjectIdsBlocking ackNo  reqNo))
+       (AnyMessage (MsgRequestObjectIds SingRequestObjectIdsBlocking ackNo' reqNo')) =
     (ackNo, reqNo) == (ackNo', reqNo')
 
-  (==) (AnyMessage (MsgRequestObjectIds SingNonBlocking ackNo  reqNo))
-       (AnyMessage (MsgRequestObjectIds SingNonBlocking ackNo' reqNo')) =
+  (==) (AnyMessage (MsgRequestObjectIds SingRequestObjectIdsNonBlocking ackNo  reqNo))
+       (AnyMessage (MsgRequestObjectIds SingRequestObjectIdsNonBlocking ackNo' reqNo')) =
     (ackNo, reqNo) == (ackNo', reqNo')
 
   (==) (AnyMessage (MsgReplyObjectIds (BlockingReply objectIds)))
@@ -190,6 +199,12 @@ instance (Eq objectId, Eq object)
   (==) (AnyMessage (MsgReplyObjectIds (NonBlockingReply objectIds)))
        (AnyMessage (MsgReplyObjectIds (NonBlockingReply objectIds'))) =
     objectIds == objectIds'
+
+  (==) (AnyMessage MsgServerIdle)
+       (AnyMessage MsgServerIdle) = True
+
+  (==) (AnyMessage MsgAwaitReply)
+       (AnyMessage MsgAwaitReply) = True
 
   (==) (AnyMessage (MsgRequestObjects objectIds))
        (AnyMessage (MsgRequestObjects objectIds')) = objectIds == objectIds'
@@ -212,6 +227,63 @@ codec = codecObjectDiffusion
           Serialise.encode Serialise.decode
           Serialise.encode Serialise.decode
 
+
+-- | Check every message against limits sized for its batch. The test types
+-- encode as Word64s, whose maximum CBOR size is nine bytes.
+prop_byteLimits :: AnyMessage (ObjectDiffusion ObjectId Object) -> Bool
+prop_byteLimits (AnyMessage (msg :: Message (ObjectDiffusion ObjectId Object) st st')) =
+    dataSize (encode msg) <= sizeLimitForState (stateToken :: StateToken st)
+  where
+    Codec { encode } = codec :: Codec (ObjectDiffusion ObjectId Object) DeserialiseFailure IO ByteString
+    ProtocolSizeLimits { sizeLimitForState, dataSize } =
+      byteLimitsObjectDiffusion batchLimit batchLimit (fromIntegral . BL.length)
+    batchLimit = 4 + 9 * fromIntegral batchSize
+    batchSize :: Int
+    batchSize = case msg of
+      MsgReplyObjectIds ids   -> length ids
+      MsgRequestObjects ids   -> length ids
+      MsgReplyObjects objects -> length objects
+      _                       -> 0
+
+-- | Exercise the actual CBOR framing at the maximum batch size and one element
+-- beyond it, including ID requests in StIdle and both blocking reply phases.
+-- Objects deliberately have a different encoded size from IDs.
+prop_byteLimitsBoundaries :: Property
+prop_byteLimitsBoundaries = forAll (chooseInt (1, 100)) $ \batchSize ->
+    conjoin
+      [ check batchSize (==) msg | msg <- messages batchSize ]
+      .&&. conjoin
+      [ check batchSize (>) msg | msg <- messages (batchSize + 1) ]
+  where
+    messages n =
+      let ids = replicate n (ObjectId maxBound)
+          objects = replicate n (BS.replicate 256 0)
+      in [ AnyMessage (MsgReplyObjectIds (NonBlockingReply ids))
+         , AnyMessage (MsgReplyObjectIds (BlockingReply (NonEmpty.fromList ids))
+             :: Message (ObjectDiffusion ObjectId BS.ByteString)
+                  (StObjectIds ('StObjectIdsBlocking 'StCanAwait)) StIdle)
+         , AnyMessage (MsgReplyObjectIds (BlockingReply (NonEmpty.fromList ids))
+             :: Message (ObjectDiffusion ObjectId BS.ByteString)
+                  (StObjectIds ('StObjectIdsBlocking 'StMustReply)) StIdle)
+         , AnyMessage (MsgRequestObjects ids)
+         , AnyMessage (MsgReplyObjects objects)
+         ]
+
+    check batchSize cmp (AnyMessage (msg :: Message (ObjectDiffusion ObjectId BS.ByteString) st st')) =
+      counterexample ("Encoded size: " ++ show actual ++ "; limit: " ++ show limit) $
+        actual `cmp` limit
+      where
+        actual = dataSize (encode msg)
+        limit = sizeLimitForState (stateToken :: StateToken st)
+        Codec { encode } = codecObjectDiffusion
+          Serialise.encode Serialise.decode Serialise.encode Serialise.decode
+            :: Codec (ObjectDiffusion ObjectId BS.ByteString) DeserialiseFailure IO ByteString
+        -- A 256-byte CBOR byte string has a three-byte length header.
+        ProtocolSizeLimits { sizeLimitForState, dataSize } =
+          byteLimitsObjectDiffusion
+            (4 + 9 * fromIntegral batchSize)
+            (4 + 259 * fromIntegral batchSize)
+            (fromIntegral . BL.length)
 
 -- | Check the codec round trip property.
 --
@@ -266,6 +338,8 @@ labelMsg (AnyMessage msg) =
            MsgInit                -> "MsgInit"
            MsgRequestObjectIds {} -> "MsgRequestObjectIds"
            MsgReplyObjectIds as   -> "MsgReplyObjectIds " ++ renderRanges 3 (length as)
+           MsgAwaitReply          -> "MsgAwaitReply"
+           MsgServerIdle          -> "MsgServerIdle"
            MsgRequestObjects as   -> "MsgRequestObjects " ++ renderRanges 3 (length as)
            MsgReplyObjects as     -> "MsgReplyObjects "   ++ renderRanges 3 (length as)
            MsgDone                -> "MsgDone"
@@ -301,7 +375,8 @@ positiveWord16ToNat :: ChannelSize -> Natural
 positiveWord16ToNat (Positive (Small n)) = fromIntegral n
 
 testInboundPipelined
-  :: Tracer m (TraceObjectDiffusionTestImplem ObjectId Object)
+  :: Applicative m
+  => Tracer m (TraceObjectDiffusionTestImplem ObjectId Object)
   -> ObjectDiffusionTestParams
   -> ObjectDiffusionInboundPipelined ObjectId Object m [Object]
 testInboundPipelined
