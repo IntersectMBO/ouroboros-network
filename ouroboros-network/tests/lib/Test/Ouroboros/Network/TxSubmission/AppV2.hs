@@ -212,6 +212,14 @@ instance Arbitrary TxSubmissionState where
           singletonMaps = [Map.singleton k v | (k, v) <- Map.toList m]
 
 
+-- | The number of inbound servers which exited with an exception, including
+-- cancelled ones.  'runTxSubmission' traces it once every server exited.
+-- Each such server may have counted a txid request which it never sent, see
+-- 'prop_counterInvariants'.
+--
+newtype ServerExceptionExits = ServerExceptionExits Int
+  deriving Show
+
 -- | A request received by a peer's outbound, see `traceOutboundRequests`.
 --
 data PeerOutboundRequest peeraddr =
@@ -266,6 +274,7 @@ runTxSubmission
   -> Tracer m TxSubmissionCounters
   -> Tracer m (PeerInboundTrace peeraddr txid (Tx txid))
   -> Tracer m (PeerOutboundRequest peeraddr)
+  -> Tracer m ServerExceptionExits
   -> Map peeraddr ( [Tx txid]
                   , ControlMessageSTM m
                   , Maybe DiffTime
@@ -283,6 +292,7 @@ runTxSubmission
   -> m ([Tx txid], [[Tx txid]], SharedTxState peeraddr txid)
   -- ^ inbound mempool, outbound mempools, final shared state
 runTxSubmission tracer tracerTxLogic countersTracer inboundTracer outboundTracer
+                exitsTracer
                 st0
                 peerImpairmentMap cancelSchedule
                 txOutboundVersion
@@ -368,7 +378,9 @@ runTxSubmission tracer tracerTxLogic countersTracer inboundTracer outboundTracer
                            threadDelay t
                            mapM_ cancel (Map.lookup addr serverAsyncs))
                         (Map.toList cancelSchedule)
-        _ <- waitAllServers as
+        results <- waitAllServers as
+        traceWith exitsTracer
+                  (ServerExceptionExits (length [ () | Left _ <- results ]))
 
         -- All peers have scrubbed their per-peer state via the
         -- 'withPeer' bracket finalizer.  Wait long enough for retained
@@ -468,7 +480,7 @@ txSubmissionSimulation
     ) \_ -> do
       let tracer :: forall a. (Show a, Typeable a) => Tracer (IOSim s) a
           tracer = dynamicTracer <> sayTracer -- <> verboseTracer <> debugTracer
-      runTxSubmission tracer tracer tracer tracer tracer
+      runTxSubmission tracer tracer tracer tracer tracer tracer
                       state'' peerImpairment
                       Map.empty
                       outboundVersion
@@ -670,14 +682,16 @@ unit_counterEmission_subMsDurations = do
 -- (received bounded by requested, classified bounded by received).
 --
 -- The wire check compares the final snapshot, which 'runTxSubmission'
--- emits after every peer has exited. @slack@ is how many requests may
--- have been counted but never sent: a server cancelled mid-protocol can
--- be interrupted between the counter bump in 'runNextPeerAction' and the
--- driver's send, at most once per cancelled peer. Clean and exception
--- exits have no such gap, so their callers pass 0 and the check is an
--- equality.
-prop_counterInvariants :: Word64 -> SimTrace a -> Property
-prop_counterInvariants slack tr =
+-- emits after every peer has exited.  A server which exits with an exception
+-- can be interrupted between the counter bump in 'runNextPeerAction' and the
+-- driver's send, so it may have counted a request which it never sent: when
+-- it is cancelled, or when the driver throws, e.g. 'ExceededTimeLimit' while
+-- the send waits on a slow channel.  The slack, i.e. how many requests may
+-- have been counted but never sent, is the number of such servers
+-- ('ServerExceptionExits').  With clean exits only it is 0 and the check is
+-- an equality.
+prop_counterInvariants :: SimTrace a -> Property
+prop_counterInvariants tr =
     let snapshots :: [TxSubmissionCounters]
         snapshots = selectTraceEventsDynamic tr in
         counterexample ("snapshots: " ++ show (length snapshots))
@@ -689,6 +703,10 @@ prop_counterInvariants slack tr =
               (conjoin (checkBodyAccounting <$> snapshots))
           ]
   where
+    slack :: Word64
+    slack = sum [ fromIntegral n
+                | ServerExceptionExits n <- selectTraceEventsDynamic tr ]
+
     counterFields :: [(String, TxSubmissionCounters -> Word64)]
     counterFields =
       [ ("txIdMessagesSent",      txIdMessagesSent)
@@ -814,7 +832,7 @@ prop_txSubmissionTrace TxSubmissionState { peerMap = peers } tr =
          Right (inmp, outmps, finalState) ->
              counterexample (ppSayTrace tr)
            $ conjoin (validate inmp `map` outmps)
-             .&&. prop_counterInvariants 0 tr
+             .&&. prop_counterInvariants tr
              .&&. prop_sharedStateClean finalState
   where
     -- | Asserts that every txid produced is present in the consumer set.
@@ -996,7 +1014,7 @@ prop_txSubmission_inflight st@TxSubmissionState { peerMap = state,
           . counterexample ("hasInvalidSize: " <> show hasInvalidSize)
           . counterexample ("Result valid [(txid, repeated)]:\n" <> show resultRepeatedValidTxs)
           . counterexample ("Testcase max valid [(txid, repeated)]:\n" <> show maxRepeatedValidTxs)
-          . (\p -> p .&&. prop_counterInvariants 0 trace
+          . (\p -> p .&&. prop_counterInvariants trace
                      .&&. prop_sharedStateClean finalState)
           . conjoin . Map.elems $ if hasInvalidSize
               then merge (mapMissing \_txid _left  -> error "impossible")
@@ -1135,7 +1153,7 @@ prop_txSubmission_resilientToImpairment
              .&&. noContamination allOutIds inmp
              .&&. counterexample "ProtocolErrorTxSizeTooLarge not raised exactly for the oversized-txids peers"
                     (sizeErrorAddrs === oversizedAddrs)
-             .&&. prop_counterInvariants 0 tr
+             .&&. prop_counterInvariants tr
              .&&. prop_sharedStateClean finalState
   where
     -- Same shape as 'validate' inside 'prop_txSubmission'. Only assert
@@ -1354,7 +1372,7 @@ txSubmissionSimulationDisconnect
                  [ x | x@(_, (_, ExitClean)) <- Map.toList schedule ]
       let tracer :: forall a. (Show a, Typeable a) => Tracer (IOSim s) a
           tracer = dynamicTracer <> sayTracer
-      result <- runTxSubmission tracer tracer tracer tracer tracer
+      result <- runTxSubmission tracer tracer tracer tracer tracer tracer
                                 combinedState
                                 peerImpairment
                                 cancelSchedule
@@ -1383,11 +1401,6 @@ prop_txSubmission_peerDisconnect
     let allAddrs    = Map.keysSet (peerMap st)
         disconnected = Map.keysSet schedule
         survivors    = allAddrs `Set.difference` disconnected
-        -- Upper bound on requests counted but never sent, see
-        -- 'prop_counterInvariants'.
-        cancelledPeers :: Word64
-        cancelledPeers = fromIntegral
-          (length [ () | (_, ExitCancel) <- Map.elems schedule ])
         survivorTxs = [ txs | addr <- Set.toList survivors
                             , let (txs, _, _) = peerMap st Map.! addr ]
         allOutIds   = Set.fromList
@@ -1428,7 +1441,7 @@ prop_txSubmission_peerDisconnect
              counterexample (ppSayTrace tr)
            $ conjoin (validateSurvivor inmp `map` survivorTxs)
              .&&. noContamination allOutIds inmp
-             .&&. prop_counterInvariants cancelledPeers tr
+             .&&. prop_counterInvariants tr
              .&&. prop_sharedStateClean finalState
   where
     validateSurvivor :: [Tx Int] -> [Tx Int] -> Property
