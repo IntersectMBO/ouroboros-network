@@ -83,7 +83,7 @@ readDemuxerQueueBenchmark sndSizeV sndSize addr = do
       withReadBufferIO (\buffer -> do
         bearer <- getBearer makeSocketBearer sduTimeout sd buffer
         ms42 <- mkMiniProtocolState 42
-        withAsync (demuxer [ms42] activeTracer bearer) $ \aid -> do
+        withAsync (demuxer False [ms42] activeTracer bearer) $ \aid -> do
           doRead 0xa5 (totalPayloadLen sndSize) (miniProtocolIngressQueue ms42)
           cancel aid
        )
@@ -102,8 +102,9 @@ readDemuxerQueueBenchmark sndSizeV sndSize addr = do
         then return ()
         else error "corrupt stream"
 
--- Like readBenchmark but uses a demuxer thread. The server's muxer counts the
--- bytes it writes when @counted@, as a mux with node-wide counters does.
+-- Like readBenchmark but uses a demuxer thread. When @counted@, the server's
+-- muxer counts the bytes it writes and the demuxer the bytes it reads, as a
+-- mux with node-wide counters does.
 readDemuxerBenchmark :: StrictTMVar IO (Int64, Bool) -> Int64 -> Bool -> Socket.SockAddr -> IO ()
 readDemuxerBenchmark sndSizeV sndSize counted addr = do
   bracket
@@ -117,7 +118,7 @@ readDemuxerBenchmark sndSizeV sndSize counted addr = do
         bearer <- getBearer makeSocketBearer sduTimeout sd buffer
         ms42 <- mkMiniProtocolState 42
         ms41 <- mkMiniProtocolState 41
-        withAsync (demuxer [ms41, ms42] activeTracer bearer) $ \aid -> do
+        withAsync (demuxer counted [ms41, ms42] activeTracer bearer) $ \aid -> do
           withAsync (doRead 42 (totalPayloadLen sndSize) (miniProtocolIngressQueue ms42) 0) $ \aid42 -> do
             withAsync (doRead 41 (totalPayloadLen 10) (miniProtocolIngressQueue ms41) 0) $ \aid41 -> do
               _ <- waitBoth aid42 aid41
@@ -134,7 +135,7 @@ readDemuxerBenchmark sndSizeV sndSize counted addr = do
        if l == 0
           then retry
           else do
-            writeTVar queue q { iqLength = 0, iqBuilder = mempty }
+            writeTVar queue (drainedIngressQueue q)
             return (toLazyByteString b)
      if BL.all ( == tag) msg
         then doRead tag maxData queue (cnt + BL.length msg)

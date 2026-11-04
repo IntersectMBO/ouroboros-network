@@ -26,6 +26,7 @@ module Network.Mux.Types
   , IngressQueue
   , IngressQueueState (..)
   , newIngressQueue
+  , drainedIngressQueue
   , MiniProtocolIx
   , MiniProtocolDir (..)
   , protocolDirEnum
@@ -218,7 +219,18 @@ type IngressQueue m = StrictTVar m IngressQueueState
 
 -- | An empty queue, nothing read.
 newIngressQueue :: MonadSTM m => m (IngressQueue m)
-newIngressQueue = newTVarIO (IngressQueueState 0 mempty 0)
+newIngressQueue = newTVarIO emptyIngressQueueState
+
+emptyIngressQueueState :: IngressQueueState
+emptyIngressQueueState = IngressQueueState 0 mempty 0
+
+-- | A queue once what it holds is taken: the bytes read for it kept. A queue
+-- of a mux without counters has read nothing, so it becomes the shared empty
+-- state and taking allocates nothing.
+drainedIngressQueue :: IngressQueueState -> IngressQueueState
+drainedIngressQueue IngressQueueState { iqReceived = 0 } = emptyIngressQueueState
+drainedIngressQueue queued = queued { iqLength = 0, iqBuilder = mempty }
+{-# INLINE drainedIngressQueue #-}
 
 -- | The index of a protocol in a MuxApplication, used for array indices
 newtype MiniProtocolIx = MiniProtocolIx Int

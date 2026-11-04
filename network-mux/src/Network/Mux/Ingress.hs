@@ -99,11 +99,14 @@ data MiniProtocolDispatchInfo m =
 -- the underlying Bearer and forwards it to the matching ingress queue.
 demuxer :: (MonadAsync m, MonadFork m, MonadMask m, MonadThrow (STM m),
             MonadTimer m)
-      => [MiniProtocolState mode m]
+      => Bool
+      -- ^ whether the mux counts the bytes it reads; one without counters
+      -- leaves its queues' counts at zero
+      -> [MiniProtocolState mode m]
       -> Tracer m BearerTrace
       -> Bearer m
       -> m void
-demuxer ptcls tracer bearer =
+demuxer counting ptcls tracer bearer =
   let !dispatchTable = setupDispatchTable ptcls in
   -- The loop runs masked, as the muxer's is, so nothing lands between the
   -- read's return and the queueing that counts the SDU. A cancellation
@@ -133,7 +136,9 @@ demuxer ptcls tracer bearer =
               !len'      = len + blobLen
               -- The bytes read for the mini-protocol, header included and
               -- the blob as delivered, in the write that queues them.
-              !received' = received + fromIntegral msHeaderLength + fromIntegral blobLen
+              !received' | counting  = received + fromIntegral msHeaderLength
+                                                + fromIntegral blobLen
+                         | otherwise = received
           if len' <= fromIntegral qMax
               then do
                 let !buf' = if len == 0

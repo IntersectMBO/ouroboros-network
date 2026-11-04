@@ -76,7 +76,7 @@ import Data.ByteString.Lazy qualified as BL
 import Data.Int (Int64)
 import Data.Map (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (isNothing)
+import Data.Maybe (isJust, isNothing)
 import Data.Monoid.Synchronisation (FirstToFinish (..))
 
 import Control.Applicative
@@ -311,7 +311,8 @@ run Mux { muxMiniProtocols,
                   (name ++ "-muxer")
 
     demuxerJob =
-      JobPool.Job (demuxer (Map.elems muxMiniProtocols) bearerTracer_ bearer)
+      JobPool.Job (demuxer (isJust muxCounters) (Map.elems muxMiniProtocols)
+                           bearerTracer_ bearer)
                   (return . DemuxerException)
                   MuxJob
                   (name ++ "-demuxer")
@@ -776,7 +777,7 @@ muxChannel tracer egressQueue want@(Wanton w) mc md q =
                 then retry
                 else do
                   -- The bytes read for the protocol stay counted.
-                  writeTVar q queued { iqLength = 0, iqBuilder = mempty }
+                  writeTVar q (drainedIngressQueue queued)
                   return (toLazyByteString (iqBuilder queued))
         traceWith tracer $ TraceChannelRecvEnd mc (fromIntegral $ BL.length blob)
         return $ Just blob
