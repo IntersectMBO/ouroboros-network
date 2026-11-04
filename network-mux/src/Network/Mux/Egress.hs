@@ -3,6 +3,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE RankNTypes            #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeFamilies          #-}
 
 module Network.Mux.Egress
@@ -150,6 +151,29 @@ egressSoftBufferLimit :: Int64
 egressSoftBufferLimit = 0x3ffff
 
 
+-- | The bytes of a batch by mini-protocol and direction: a strict list, so
+-- the sums stay unboxed and merging a run leaves no thunk.
+--
+data BatchBytes
+    = NoBatchBytes
+    | BatchBytes !MiniProtocolNum !MiniProtocolDir {-# UNPACK #-} !Word64 !BatchBytes
+
+-- | Add the bytes of a run to the entry of its mini-protocol and direction,
+-- or append one.
+--
+insertBatchBytes
+  :: MiniProtocolNum
+  -> MiniProtocolDir
+  -> Word64
+  -> BatchBytes
+  -> BatchBytes
+insertBatchBytes !num !dir !n NoBatchBytes = BatchBytes num dir n NoBatchBytes
+insertBatchBytes !num !dir !n (BatchBytes num' dir' n' rest)
+  | num == num'
+  , dir == dir' = BatchBytes num' dir' (n' + n) rest
+  | otherwise   = BatchBytes num' dir' n' (insertBatchBytes num dir n rest)
+
+
 -- | Process the messages from the mini protocols - there is a single
 -- shared FIFO that contains the items of work. This is processed so
 -- that each active demand gets a `maxSDU`s work of data processed
@@ -196,10 +220,9 @@ muxer egressQueue tracer byteSlots Bearer { writeMany, sduSize, batchSize, egres
       -- The batch summed by mini-protocol and direction first, so the
       -- transaction updates a slot once per protocol in the batch, not once
       -- per SDU; a mux without counters has no slots and sums nothing.
-      let !bytes = if Map.null byteSlots then [] else batchBytes sdus
+      let !bytes = if Map.null byteSlots then NoBatchBytes else batchBytes sdus
       empty <- atomically $ do
-        forM_ bytes $ \(key, n) ->
-          forM_ (Map.lookup key byteSlots) $ \slot -> modifyTVar slot (+ n)
+        countBytes bytes
         isEmptyTBQueue egressQueue
       when empty $ do
         let delta = diffTime end start
@@ -212,37 +235,37 @@ muxer egressQueue tracer byteSlots Bearer { writeMany, sduSize, batchSize, egres
     sduLength :: SDU -> Int
     sduLength sdu = fromIntegral msHeaderLength + fromIntegral (msLength sdu)
 
-    -- The bytes of a batch by mini-protocol and direction, header included,
-    -- as a list: a batch holds few protocols, so it is short. A run of SDUs
-    -- on one protocol is summed as it goes and merged once, at its end, so a
-    -- batch on one protocol merges once.
-    batchBytes :: [SDU] -> [((MiniProtocolNum, MiniProtocolDir), Word64)]
-    batchBytes []           = []
-    batchBytes (sdu : sdus) = runs [] (keyOf sdu) (bytesOf sdu) sdus
+    -- The bytes of a batch by mini-protocol and direction, header included:
+    -- a batch holds few protocols, so the list is short. A run of SDUs on
+    -- one protocol is summed as it goes, unboxed, and merged once, at its
+    -- end, so a batch on one protocol merges once.
+    batchBytes :: [SDU] -> BatchBytes
+    batchBytes []           = NoBatchBytes
+    batchBytes (sdu : sdus) = runs NoBatchBytes (msNum sdu) (msDir sdu) (bytesOf sdu) sdus
       where
-        runs :: [((MiniProtocolNum, MiniProtocolDir), Word64)]
-             -> (MiniProtocolNum, MiniProtocolDir) -> Word64 -> [SDU]
-             -> [((MiniProtocolNum, MiniProtocolDir), Word64)]
-        runs acc key !n []            = insert key n acc
-        runs acc key !n (sdu' : rest)
-          | key' == key = runs acc key (n + bytesOf sdu') rest
-          | otherwise   = runs (insert key n acc) key' (bytesOf sdu') rest
-          where
-            key' = keyOf sdu'
-
-        keyOf :: SDU -> (MiniProtocolNum, MiniProtocolDir)
-        keyOf sdu' = (msNum sdu', msDir sdu')
+        runs :: BatchBytes
+             -> MiniProtocolNum
+             -> MiniProtocolDir
+             -> Word64
+             -> [SDU] -> BatchBytes
+        runs !acc !num !dir !n []
+          = insertBatchBytes num dir n acc
+        runs !acc !num !dir !n (sdu' : rest)
+          | msNum sdu' == num, msDir sdu' == dir
+          = runs acc num dir (n + bytesOf sdu') rest
+          | otherwise
+          = runs (insertBatchBytes num dir n acc) (msNum sdu') (msDir sdu') (bytesOf sdu') rest
 
         bytesOf :: SDU -> Word64
         bytesOf = fromIntegral . sduLength
 
-        insert :: (MiniProtocolNum, MiniProtocolDir) -> Word64
-               -> [((MiniProtocolNum, MiniProtocolDir), Word64)]
-               -> [((MiniProtocolNum, MiniProtocolDir), Word64)]
-        insert key n [] = [(key, n)]
-        insert key n ((key', n') : rest)
-          | key == key' = let !m = n' + n in (key', m) : rest
-          | otherwise   = (key', n') : insert key n rest
+    -- Add a batch's bytes to its slots, in the transaction that polls the
+    -- queue.
+    countBytes :: BatchBytes -> STM m ()
+    countBytes NoBatchBytes = return ()
+    countBytes (BatchBytes num dir n rest) = do
+      forM_ (Map.lookup (num, dir) byteSlots) $ \slot -> modifyTVar slot (+ n)
+      countBytes rest
 
     -- Build a batch of SDUs to submit in one go to the bearer.
     -- The egress queue is still processed one SDU at the time
