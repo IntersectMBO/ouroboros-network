@@ -501,6 +501,7 @@ runTxInbound Addr { addr, port } txDecisionPolicy version txDelay = do
                           { Mx.tracer = Mx.WithBearer addr' . runIdentity >$< printTracer traceLock
                           -- , Mx.bearerTracer = Mx.WithBearer addr' . runIdentity >$< printTracer traceLock
                           }
+                   Nothing
                    (protocols dir)
             withAsync (Mx.run mux bearer) $ \_ ->
                   either throwIO return
@@ -633,6 +634,7 @@ runTxOutbound stderrTracer inboundAddr outboundAddr
                         { Mx.tracer = Mx.WithBearer addr' . runIdentity >$< printTracer traceLock
                         -- , Mx.bearerTracer = Mx.WithBearer addr' . runIdentity >$< printTracer traceLock
                         }
+                 Nothing
                  (protocols dir)
           withAsync (Mx.run mux bearer) $ \_ -> do
             let reader =

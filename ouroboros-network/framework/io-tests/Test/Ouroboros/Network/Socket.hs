@@ -365,7 +365,8 @@ prop_socket_recv_error f rerr =
                     _ <- async $ do
                       threadDelay 0.1
                       atomically $ putTMVar lock ()
-                    mux <- Mx.new Mx.nullTracers (toMiniProtocolInfos (\_ _ -> Nothing) Inbound Duplex app)
+                    mux <- Mx.new Mx.nullTracers Nothing
+                             (toMiniProtocolInfos (\_ _ -> Nothing) Inbound Duplex app)
                     let respCtx = ResponderContext connectionId
                     resOps <- sequence
                       [ Mx.runMiniProtocol
