@@ -71,7 +71,6 @@ module Ouroboros.Network.TxSubmission.Inbound.V2.Types
   , PeerAction (..)
   , ResolvedPeerAction (..)
   , ParkCounter (..)
-  , PeerPhase (..)
   , PeerTier (..)
   , TxIdRequest (..)
   , recordTxIdRequest
@@ -331,24 +330,6 @@ data RequestedTxBatch = RequestedTxBatch {
   deriving stock (Eq, Show, Generic)
   deriving anyclass (NFData, NoThunks)
 
--- | Coarse phase of a peer worker thread.
---
--- The phase is used when deciding whether a peer is currently eligible
--- to claim an expired tx lease.
-data PeerPhase
-  = -- | The peer worker is idle and may claim work for advertised txs.
-    PeerIdle
-  | -- | The peer worker is waiting for a txid reply from the remote peer.
-    PeerWaitingTxIds
-  | -- | The peer worker is waiting for a tx-body reply from the remote peer.
-    PeerWaitingTxs
-  | -- | The peer worker is submitting buffered txs to the local mempool.
-    PeerSubmittingToMempool
-  deriving stock (Eq, Ord, Show, Generic)
-  deriving anyclass NFData
-
-instance NoThunks PeerPhase
-
 -- | A peer's fetch tier (see "Ouroboros.Network.TxSubmission.Inbound.V2.Tier"):
 -- fast peers are polled for txids as soon as there is something to
 -- acknowledge, slow peers at 'txSlowCadence'.
@@ -589,10 +570,7 @@ emptyPeerScore scoreTs = PeerScore {
 
 -- | Per-peer protocol state.
 --
--- Owned by the worker thread for one peer. Includes the peer's coarse
--- protocol phase ('peerPhase'), which is purely peer-local: only this
--- peer's own scheduler reads and updates it, so it doesn't belong in
--- shared state.
+-- Owned by the worker thread for one peer.
 --
 -- Invariants (see @peerTxLocalStateInvariant@):
 --
@@ -607,12 +585,6 @@ emptyPeerScore scoreTs = PeerScore {
 --   'requestedTxBatchSize'.
 -- * the 'peerScore' value stays in @[0, scoreMax]@.
 data PeerTxLocalState tx = PeerTxLocalState {
-    -- | Coarse phase of this peer's worker thread. Updated by
-    -- 'nextPeerAction' / 'nextPeerActionPipelined' when an action is
-    -- chosen and inspected in 'serverIdle' to decide whether to skip
-    -- 'awaitPark' on an Active->Idle transition.
-    peerPhase               :: !PeerPhase,
-
     -- | Unacknowledged txids in the order advertised by the peer.
     peerUnacknowledgedTxIds :: !(StrictSeq TxKey),
 
@@ -700,7 +672,6 @@ takeTxIdReply peerState =
 
 emptyPeerTxLocalState :: PeerTxLocalState tx
 emptyPeerTxLocalState = PeerTxLocalState {
-    peerPhase                 = PeerIdle,
     peerUnacknowledgedTxIds   = StrictSeq.empty,
     peerAvailableTxIds        = IntMap.empty,
     peerRequestedTxs          = IntSet.empty,

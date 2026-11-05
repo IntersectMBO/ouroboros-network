@@ -34,6 +34,7 @@ module Test.Ouroboros.Network.TxSubmission.TxLogic
   , sharedGenerationBumpInvariant
   ) where
 
+import Control.Concurrent.Class.MonadSTM qualified as LazySTM
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.DeepSeq (NFData (rnf))
 import Control.Exception (evaluate)
@@ -44,8 +45,9 @@ import Control.Monad.Class.MonadThrow (try)
 import Control.Monad.Class.MonadTime.SI (DiffTime, Time (..), addTime, diffTime,
            getMonotonicTime)
 import Control.Monad.Class.MonadTimer.SI (threadDelay, timeout)
-import Control.Monad.IOSim (IOSim, SimEventType (..), runSimOrThrow,
-           runSimTrace, traceEvents, traceM, traceResult)
+import Control.Monad.IOSim (IOSim, IOSimThreadId, SimEventType (..),
+           ThreadLabel, runSimOrThrow, runSimTrace, traceEvents, traceM,
+           traceResult)
 import Data.Char (toLower)
 import Data.Dynamic (fromDynamic)
 import Data.Either (isRight)
@@ -58,6 +60,7 @@ import Data.List (elemIndex, isPrefixOf, mapAccumL, nub, nubBy, sort, sortBy,
            sortOn, unfoldr)
 import Data.List as List (foldl')
 import Data.List.NonEmpty (NonEmpty (..))
+import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Strict qualified as Map
 import Data.Maybe (isJust, isNothing, listToMaybe)
 import Data.Proxy (Proxy (..))
@@ -69,15 +72,19 @@ import GHC.Generics (C, D, K1 (..), M1 (..), Rep, S, Selector (..), (:*:) (..))
 import GHC.Generics qualified as Generics (from)
 
 import Control.Tracer (Tracer (..), emit, nullTracer)
+import Network.TypedProtocol (N (..))
 import NoThunks.Class (NoThunks, OnlyCheckWhnf (..), unsafeNoThunks)
 
 
 import Network.TypedProtocol.Codec (AnyMessage)
 
 import Ouroboros.Network.Hashable (hashWithSalt, mkSalt)
+import Ouroboros.Network.Protocol.TxSubmission2.Server (ServerStIdle,
+           TxSubmissionServerPipelined (..))
 import Ouroboros.Network.Protocol.TxSubmission2.Type
 import Ouroboros.Network.RegisteredDelay qualified as RegisteredDelay
 import Ouroboros.Network.Tx (HasRawTxId (..), getRawTxId)
+import Ouroboros.Network.TxSubmission.Inbound.V2 (txSubmissionInboundV2)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Policy
 import Ouroboros.Network.TxSubmission.Inbound.V2.Registry (CounterMirrors (..),
            PeerCells (..), PeerRegistration, PeerTierEntry (..), PeerTxAPI (..),
@@ -230,6 +237,7 @@ tests =
         , testProperty "the counters thread follows a root flip within a sweep interval and places" prop_countersThread_refreshesRoots
         , testProperty "a decision is one transaction" prop_decision_oneTransaction
         , testProperty "a resolved decision carries no thunk" prop_resolve_noThunks
+        , testProperty "the server parks straight after a decision with nothing to do" prop_server_oneDecisionPerWake
         , testProperty "the counters thread refuses a policy that fails the sanity check" prop_countersThread_refusesInsane
         ]
     , testGroup "Claimable"
@@ -5533,7 +5541,6 @@ genPeerTxLocalState = sized $ \n -> do
   -- Generated peer states default to a zero score.
   let peerScoreValue = 0
   pure PeerTxLocalState {
-      peerPhase = PeerIdle,
       peerUnacknowledgedTxIds,
       peerAvailableTxIds,
       peerRequestedTxs = requestedSet,
@@ -6537,7 +6544,7 @@ prop_withPeer_park kind seed counter0 (BumpScript script) bumpOf =
                      -- a local root: fast by standing, so its parks are on the wake counter
                      FastWakePark -> newPeerTxRegistry (mkStdGen seed) (pure (const True))
                      _            -> newPeerAddrRegistry (mkStdGen seed)
-      sharedVar <- newSharedTxStateVar st0
+      sharedVar <- newSharedTxStateVar (leasedElsewhere [7])
       retired   <- newTxSubmissionCountersVar mempty
       mempool   <- emptyMempool
       let bumpBy n st = case parkedOn of
@@ -6583,15 +6590,6 @@ prop_withPeer_park kind seed counter0 (BumpScript script) bumpOf =
       FastWakePark -> (unsafeMkTxDecisionPolicy defaultTxSubmissionConfigV2) { txSourceCount = 0 }
       _            -> (unsafeMkTxDecisionPolicy defaultTxSubmissionConfigV2)
                         { txFastPeers = 0, txSourceCount = 0, txSlowCadence = 10, txSlowJitter = 0 }
-    -- the one entry, leased elsewhere: a live key
-    st0 = emptySharedTxState
-      { sharedTxTable = IntMap.singleton 0 TxEntry
-          { txLease = TxLeased 9 (Time 100), txAttempt = 1, txDoom = Undoomed
-          , txInSubmission = False, currentMaxInflightMultiplicity = 1 }
-      , sharedTxIdToKey = Map.singleton (getRawTxId (7 :: TxId)) (TxKey 0)
-      , sharedKeyToTxId = IntMap.singleton 0 7
-      , sharedNextTxKey = 1
-      } :: SharedTxState PeerAddr TxId
 -- | The kind of park a peer takes: a fast peer's on the wake counter, a
 -- gated slow peer's on the claimable counter with an advertised key live
 -- elsewhere, on no counter with no key advertised.
@@ -7633,6 +7631,96 @@ prop_decision_oneTransaction (ArbTxDecisionPolicy policy0) isRoot pipelined sour
         Just (length [ () | (_, tid', _, EventTxCommitted {}) <- take (j - i - 1) (drop (i + 1) events)
                           , tid' == tid ])
       _ -> Nothing
+
+-- | A shared state with the given txids interned and leased to another
+-- peer: a peer advertising them has nothing to request and nothing to ack.
+leasedElsewhere :: [TxId] -> SharedTxState PeerAddr TxId
+leasedElsewhere txids = emptySharedTxState
+    { sharedTxTable   = IntMap.fromList [ (k, leased) | (k, _) <- keyed ]
+    , sharedTxIdToKey = Map.fromList [ (getRawTxId txid, TxKey k) | (k, txid) <- keyed ]
+    , sharedKeyToTxId = IntMap.fromList keyed
+    , sharedNextTxKey = length txids
+    }
+  where
+    keyed  = zip [0 ..] txids
+    leased = TxEntry { txLease = TxLeased 9 (Time 100), txAttempt = 1, txDoom = Undoomed
+                     , txInSubmission = False, currentMaxInflightMultiplicity = 1 }
+
+-- | A mark in the sim trace of a run of the server: a decision, and the
+-- ends of a stretch of the run.
+data ServerMark = Decided | StretchStart | StretchEnd | Returned
+  deriving (Eq, Show)
+
+-- | The events of a sim trace between the first 'StretchStart' and the
+-- 'StretchEnd' after it, and whether both were found within a bound: a
+-- server that never comes to rest leaves the stretch open.
+stretchOf :: [(Time, IOSimThreadId, Maybe ThreadLabel, SimEventType)]
+          -> (Bool, [SimEventType])
+stretchOf events = case break (isMark StretchStart) (take 200000 events) of
+    (_, _ : rest) -> case break (isMark StretchEnd) rest of
+      (inside, _ : _) -> (True, [ e | (_, _, _, e) <- inside ])
+      (inside, [])    -> (False, [ e | (_, _, _, e) <- inside ])
+    (_, []) -> (False, [])
+  where
+    isMark m (_, _, _, EventLog dyn) = fromDynamic dyn == Just m
+    isMark _ _                       = False
+
+-- | The V2 server over the test registry for one peer, its decisions marked
+-- in the trace: the first state it reaches, which is a blocking txid
+-- request when the shared state offers it nothing.
+startServer :: PeerTxAPI (IOSim s) TxId (Tx TxId)
+            -> TxDecisionPolicy
+            -> Mempool (IOSim s) TxId (Tx TxId)
+            -> IOSim s (ServerStIdle Z TxId (Tx TxId) (IOSim s) ())
+startServer api policy mempool = do
+    duplicates <- LazySTM.newTVarIO []
+    let marked = api { runNextPeerAction = \t d ps ->
+                         traceM Decided >> runNextPeerAction api t d ps }
+    case txSubmissionInboundV2 nullTracer NoTxSubmissionInitDelay policy
+           (getMempoolWriter duplicates mempool) getTxSize marked of
+      TxSubmissionServerPipelined initServer -> initServer
+
+-- | The server parks straight after a decision with nothing to do: after
+-- a blocking txid reply whose txids are all leased elsewhere, as many as
+-- the request allowed or fewer, a root or a slow peer under any policy
+-- decides once and parks, with no decision more.
+prop_server_oneDecisionPerWake :: ArbTxDecisionPolicy -> Bool -> Positive Int -> Positive Int -> Property
+prop_server_oneDecisionPerWake (ArbTxDecisionPolicy policy0) isRoot (Positive req0) (Positive n0) =
+    counterexample (show (ended, decisions, returned)) (ended .&&. decisions === 1 .&&. not returned)
+  where
+    -- the continuation returned instead of parking: it polled or left
+    returned = or [ True | EventLog dyn <- inside, fromDynamic dyn == Just Returned ]
+    req = req0 `mod` 10 + 1
+    n = n0 `mod` req + 1
+    txids = [1 .. n]
+    config = defaultTxSubmissionConfigV2 { maxNumTxIdsToRequest = fromIntegral req }
+    -- a cadence that outlasts the stretch, its jitter allowed for: the
+    -- gate's own timer does not wake a slow peer inside it
+    policy = policy0 { txFastPeers = 0, txSourceCount = 0
+                     , txSlowCadence = max (txSlowCadence policy0)
+                                           (realToFrac (1.2 / (1 - txSlowJitter policy0))) }
+    (ended, inside) = stretchOf (traceEvents trace)
+    decisions = length [ () | EventLog dyn <- inside, fromDynamic dyn == Just Decided ]
+    trace = runSimTrace $ do
+      registry  <- newPeerTxRegistry (mkStdGen 7) (pure (const isRoot))
+      sharedVar <- newSharedTxStateVar (leasedElsewhere txids)
+      retired   <- newTxSubmissionCountersVar mempty
+      mempool   <- emptyMempool
+      withPeer policy config (getMempoolReader mempool)
+               sharedVar registry retired (0 :: PeerAddr) $
+        \api -> do
+        st <- startServer api policy mempool
+        case blockingTxIdRequest st of
+          Just k -> do
+            traceM StretchStart
+            -- the reply's continuation decides and parks; a second later
+            -- the stretch ends with it still parked
+            withAsync (k (NonEmpty.fromList [ (txid, 100) | txid <- txids ])) $ \parked -> do
+              threadDelay 1
+              done <- Async.poll parked
+              when (isJust done) (traceM Returned)
+              traceM StretchEnd
+          Nothing -> pure ()
 
 -- | The census counts each standing once and classifies root before coin
 -- before source, against explicit counts over generated peers.
