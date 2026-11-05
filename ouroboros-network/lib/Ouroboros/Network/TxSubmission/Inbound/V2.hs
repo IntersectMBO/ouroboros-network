@@ -205,32 +205,25 @@ txSubmissionInboundV2
           (State.drainPeerScore policy now peerState')
       case peerAction of
            ResolvedDoNothing mDelay counter seen -> do
-             -- An Active->Idle transition means this peer has just become
-             -- eligible for actions it could not take before (e.g. claiming
-             -- expired leases as an idle claimant). Re-run the scheduler
-             -- immediately rather than parking on a wake condition that may
-             -- not fire.
-             let cameToIdle = peerPhase peerState' /= PeerIdle
-                           && peerPhase peerState'' == PeerIdle
-             if cameToIdle
-                then continueWithStateM serverIdle peerState''
-                else do
-                  mRegisteredDelay <- traverse RegisteredDelay.new mDelay
-                  -- on the counter the decision chose: the claimable one
-                  -- when the slow tier's gate alone held a txid request, so
-                  -- that the peer waits for the gate or for an entry
-                  -- becoming claimable, not for every move of the wake
-                  -- counter; none when nothing it advertises is live, the
-                  -- gate alone; and on the tier the decision was served
-                  -- on: a promotion or a demotion ends the park
-                  atomically $ awaitPark counter seen mRegisteredDelay (peerTier peerState'')
-                  continueWithStateM serverIdle peerState''
+             -- Park at once: a second decision could find nothing this
+             -- one did not, since the counter's value was read in its
+             -- transaction and its delay is the earliest timed wake.  On
+             -- the counter the decision chose: the claimable one when the
+             -- slow tier's gate alone held a txid request, so that the
+             -- peer waits for the gate or for an entry becoming claimable,
+             -- not for every move of the wake counter; none when nothing
+             -- it advertises is live, the gate alone.  And on the tier
+             -- the decision was served on: a promotion or a demotion ends
+             -- the park.
+             mRegisteredDelay <- traverse RegisteredDelay.new mDelay
+             atomically $ awaitPark counter seen mRegisteredDelay (peerTier peerState'')
+             continueWithStateM serverIdle peerState''
            ResolvedSubmitTxs bufferedTxs ->
              continueWithStateM (submitBufferedTxs bufferedTxs serverIdle) peerState''
            ResolvedRequestTxs txsToRequest ->
              continueWithStateM (requestTxBodies Zero txsToRequest) peerState''
            ResolvedRequestTxIds txIdsToAck txIdsToReq ->
-             continueWithStateM (serverReqTxIds Zero txIdsToAck txIdsToReq) peerState''
+             continueWithStateM (serverReqTxIds Zero (gateSetAt now peerState' peerState'') txIdsToAck txIdsToReq) peerState''
 
     -- | Submit buffered transaction bodies to the mempool.
     submitBufferedTxs :: forall (n :: N).
@@ -317,29 +310,33 @@ txSubmissionInboundV2
         ResolvedRequestTxs txsToRequest ->
           continueWithStateM (requestTxBodies n txsToRequest) peerState'
         ResolvedRequestTxIds txIdsToAck txIdsToReq ->
-          continueWithStateM (serverReqTxIds n txIdsToAck txIdsToReq) peerState'
+          continueWithStateM (serverReqTxIds n (gateSetAt now peerState peerState') txIdsToAck txIdsToReq) peerState'
         ResolvedDoNothing {} ->
           pure $ continueWithState (handleReplies n) peerState'
 
-    -- Construct and send a txid request message to the peer.
+    -- Construct and send a txid request message to the peer, with the
+    -- decision's clock read when it set the slow gate, which then runs
+    -- from the send.
     serverReqTxIds :: forall (n :: N).
                       Nat n
+                   -> Maybe Time
                    -> NumTxIdsToAck
                    -> NumTxIdsToReq
                    -> StatefulM (PeerTxLocalState tx) n txid tx m
     -- No requests pending; transitions back to @serverIdle@
-    serverReqTxIds Zero 0 0 = serverIdle
+    serverReqTxIds Zero _ 0 0 = serverIdle
 
     -- Requests complete but pipeline not empty, continues to
     -- @handleReplies@ to process remaining in-flight replies
-    serverReqTxIds n@Succ{} 0 0 = StatefulM $ \peerState ->
+    serverReqTxIds n@Succ{} _ 0 0 = StatefulM $ \peerState ->
       pure $ continueWithState (handleReplies n) peerState
 
     -- Non-pipelined request, may send a blocking request
-    serverReqTxIds Zero txIdsToAck txIdsToReq = StatefulM $ \peerState ->
+    serverReqTxIds Zero decidedAt txIdsToAck txIdsToReq = StatefulM $ \peerState0 -> do
+      sendTime <- getMonotonicTime
+      let peerState = gateFromSend sendTime decidedAt peerState0
       if StrictSeq.null (peerUnacknowledgedTxIds peerState)
-         then do
-           sendTime <- getMonotonicTime
+         then
            pure $ SendMsgRequestTxIdsBlocking
                     txIdsToAck
                     txIdsToReq
@@ -361,11 +358,30 @@ txSubmissionInboundV2
 
     -- Pipelined request at depth > 0. Sends a pipelined message and continues
     -- to @handleReplies@.
-    serverReqTxIds n@Succ{} txIdsToAck txIdsToReq = StatefulM $ \peerState ->
+    serverReqTxIds n@Succ{} decidedAt txIdsToAck txIdsToReq = StatefulM $ \peerState0 -> do
+      sendTime <- getMonotonicTime
+      let peerState = gateFromSend sendTime decidedAt peerState0
       pure $ SendMsgRequestTxIdsPipelined
                txIdsToAck
                txIdsToReq
                (pure $ continueWithState (handleReplies (Succ n)) peerState)
+
+    -- The decision's clock read when it set the slow gate, which is
+    -- 'peerSlowGate' after against before; nothing otherwise.
+    gateSetAt :: Time -> PeerTxLocalState tx -> PeerTxLocalState tx -> Maybe Time
+    gateSetAt now before after
+      | peerSlowGate after /= peerSlowGate before = Just now
+      | otherwise                                 = Nothing
+
+    -- A gate the decision set runs from the send: the decision put it a
+    -- wait past its clock read, taken before the trace and the
+    -- transaction, which may have taken a cadence of their own; moved by
+    -- what they took, the next request to a slow peer is a wait after
+    -- this one went out, not after it was decided.
+    gateFromSend :: Time -> Maybe Time -> PeerTxLocalState tx -> PeerTxLocalState tx
+    gateFromSend sendTime (Just decidedAt) ps =
+      ps { peerSlowGate = addTime (sendTime `diffTime` decidedAt) <$> peerSlowGate ps }
+    gateFromSend _ Nothing ps = ps
 
     -- Prepare to collect pipelined replies from the peer.
     handleReplies :: forall (n :: N).
